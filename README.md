@@ -18,5 +18,5 @@ codeql database create --overwrite --search-path codeql/teal/extractor-pack -l t
 
 ## 
 
-Made with love.
+Made in Argentina with love.
 If you are into this kind of stuff you may also go check: [TEALFuzz](), a custom made fuzzer for TEAL programs that makes use of TealQL to aid in the creation of a fuzzing campaign setup.
