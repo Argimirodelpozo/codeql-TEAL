@@ -66,7 +66,7 @@ class InnerTransactionField extends AstNode instanceof TOpcode_itxn_field{
         // (itxnClosure instanceof InnerTransactionNext or itxnClosure instanceof InnerTransactionSubmit)
     }
 
-    SSAVar getItxnFieldVal(){
+    StackVar getItxnFieldVal(){
         result = this.getConsumedVars()
     }
 
@@ -95,6 +95,18 @@ class InnerTransactionSubmit extends InnerTransactionEnd instanceof TOpcode_itxn
 
     InnerTransactionNext getItxnNext(){
         result.getItxnClosure() = this
+    }
+
+    //TODO: get group
+    AstNode crossContractCallNextOp(){
+        if exists(InnerTransactionField field | 
+            // field.getItxnField() = "Type" and
+            // field.getConsumedVars().tryCastToInt() = 3 and //TODO: cual es el appcall? es 3?
+            field.contributesToItxn(this.getStart(), this)
+        )
+        // disallow reentrancy
+        then exists(AstNode n | n.getFile() != this.getFile() and result = n)
+        else none()
     }
 }
 

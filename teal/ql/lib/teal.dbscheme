@@ -472,74 +472,22 @@ teal_intcblock_opcode_def(
   unique int id: @teal_intcblock_opcode
 );
 
-case @teal_itxn_field_opcode.txn_field of
-  0 = @teal_itxn_field_opcode__amount
-| 1 = @teal_itxn_field_opcode__application_i_d
-| 2 = @teal_itxn_field_opcode__approval_program
-| 3 = @teal_itxn_field_opcode__asset_amount
-| 4 = @teal_itxn_field_opcode__asset_close_to
-| 5 = @teal_itxn_field_opcode__asset_receiver
-| 6 = @teal_itxn_field_opcode__asset_sender
-| 7 = @teal_itxn_field_opcode__clear_state_program
-| 8 = @teal_itxn_field_opcode__close_remainder_to
-| 9 = @teal_itxn_field_opcode__config_asset
-| 10 = @teal_itxn_field_opcode__config_asset_clawback
-| 11 = @teal_itxn_field_opcode__config_asset_decimals
-| 12 = @teal_itxn_field_opcode__config_asset_default_frozen
-| 13 = @teal_itxn_field_opcode__config_asset_freeze
-| 14 = @teal_itxn_field_opcode__config_asset_manager
-| 15 = @teal_itxn_field_opcode__config_asset_metadata_hash
-| 16 = @teal_itxn_field_opcode__config_asset_name
-| 17 = @teal_itxn_field_opcode__config_asset_reserve
-| 18 = @teal_itxn_field_opcode__config_asset_total
-| 19 = @teal_itxn_field_opcode__config_asset_u_r_l
-| 20 = @teal_itxn_field_opcode__config_asset_unit_name
-| 21 = @teal_itxn_field_opcode__created_application_i_d
-| 22 = @teal_itxn_field_opcode__created_asset_i_d
-| 23 = @teal_itxn_field_opcode__extra_program_pages
-| 24 = @teal_itxn_field_opcode__fee
-| 25 = @teal_itxn_field_opcode__first_valid
-| 26 = @teal_itxn_field_opcode__first_valid_time
-| 27 = @teal_itxn_field_opcode__freeze_asset
-| 28 = @teal_itxn_field_opcode__freeze_asset_account
-| 29 = @teal_itxn_field_opcode__freeze_asset_frozen
-| 30 = @teal_itxn_field_opcode__global_num_byte_slice
-| 31 = @teal_itxn_field_opcode__global_num_uint
-| 32 = @teal_itxn_field_opcode__group_index
-| 33 = @teal_itxn_field_opcode__last_log
-| 34 = @teal_itxn_field_opcode__last_valid
-| 35 = @teal_itxn_field_opcode__lease
-| 36 = @teal_itxn_field_opcode__local_num_byte_slice
-| 37 = @teal_itxn_field_opcode__local_num_uint
-| 38 = @teal_itxn_field_opcode__nonparticipation
-| 39 = @teal_itxn_field_opcode__note
-| 40 = @teal_itxn_field_opcode__num_accounts
-| 41 = @teal_itxn_field_opcode__num_app_args
-| 42 = @teal_itxn_field_opcode__num_applications
-| 43 = @teal_itxn_field_opcode__num_approval_program_pages
-| 44 = @teal_itxn_field_opcode__num_assets
-| 45 = @teal_itxn_field_opcode__num_clear_state_program_pages
-| 46 = @teal_itxn_field_opcode__num_logs
-| 47 = @teal_itxn_field_opcode__on_completion
-| 48 = @teal_itxn_field_opcode__receiver
-| 49 = @teal_itxn_field_opcode__rekey_to
-| 50 = @teal_itxn_field_opcode__selection_p_k
-| 51 = @teal_itxn_field_opcode__sender
-| 52 = @teal_itxn_field_opcode__state_proof_p_k
-| 53 = @teal_itxn_field_opcode__tx_i_d
-| 54 = @teal_itxn_field_opcode__type
-| 55 = @teal_itxn_field_opcode__type_enum
-| 56 = @teal_itxn_field_opcode__vote_first
-| 57 = @teal_itxn_field_opcode__vote_key_dilution
-| 58 = @teal_itxn_field_opcode__vote_last
-| 59 = @teal_itxn_field_opcode__vote_p_k
-| 60 = @teal_itxn_field_opcode__xfer_asset
-;
+@teal_itxn_field_opcode_txn_array_field_type = @teal_reserved_word
 
+teal_itxn_field_opcode_txn_array_field(
+  unique int teal_itxn_field_opcode: @teal_itxn_field_opcode ref,
+  unique int txn_array_field: @teal_itxn_field_opcode_txn_array_field_type ref
+);
+
+@teal_itxn_field_opcode_txn_field_type = @teal_reserved_word
+
+teal_itxn_field_opcode_txn_field(
+  unique int teal_itxn_field_opcode: @teal_itxn_field_opcode ref,
+  unique int txn_field: @teal_itxn_field_opcode_txn_field_type ref
+);
 
 teal_itxn_field_opcode_def(
-  unique int id: @teal_itxn_field_opcode,
-  int txn_field: int ref
+  unique int id: @teal_itxn_field_opcode
 );
 
 case @teal_itxn_opcode.txn_field of
@@ -720,7 +668,7 @@ teal_single_numeric_argument_opcode_def(
   int value: @teal_token_numeric_argument ref
 );
 
-@teal_source_child_type = @teal_b_opcode | @teal_block_opcode | @teal_bnz_opcode | @teal_bytecblock_opcode | @teal_bz_opcode | @teal_callsub_opcode | @teal_double_numeric_argument_opcode | @teal_ec_opcode | @teal_ecdsa_opcode | @teal_gitxn_opcode | @teal_gitxna_opcode | @teal_gitxnas_opcode | @teal_global_opcode | @teal_gtxn_opcode | @teal_gtxna_opcode | @teal_gtxnas_opcode | @teal_gtxns_opcode | @teal_gtxnsa_opcode | @teal_gtxnsas_opcode | @teal_intc_opcode | @teal_intcblock_opcode | @teal_itxn_field_opcode | @teal_itxn_opcode | @teal_itxna_opcode | @teal_itxnas_opcode | @teal_label | @teal_load_opcode | @teal_match_opcode | @teal_pushbytes_opcode | @teal_pushbytess_opcode | @teal_pushints_opcode | @teal_single_numeric_argument_opcode | @teal_store_opcode | @teal_switch_opcode | @teal_token_acct_params_get_opcode | @teal_token_app_params_get_opcode | @teal_token_asset_holding_get_opcode | @teal_token_asset_params_get_opcode | @teal_token_base64_decode_opcode | @teal_token_json_ref_opcode | @teal_token_mimc_opcode | @teal_token_pragma | @teal_token_voter_params_get_opcode | @teal_token_vrf_verify_opcode | @teal_token_zero_argument_opcode | @teal_txn_opcode | @teal_txna_opcode | @teal_txnas_opcode
+@teal_source_child_type = @teal_b_opcode | @teal_block_opcode | @teal_bnz_opcode | @teal_bytecblock_opcode | @teal_bz_opcode | @teal_callsub_opcode | @teal_double_numeric_argument_opcode | @teal_ec_opcode | @teal_ecdsa_opcode | @teal_gitxn_opcode | @teal_gitxna_opcode | @teal_gitxnas_opcode | @teal_global_opcode | @teal_gtxn_opcode | @teal_gtxna_opcode | @teal_gtxnas_opcode | @teal_gtxns_opcode | @teal_gtxnsa_opcode | @teal_gtxnsas_opcode | @teal_intc_opcode | @teal_intcblock_opcode | @teal_itxn_field_opcode | @teal_itxn_opcode | @teal_itxna_opcode | @teal_itxnas_opcode | @teal_label | @teal_load_opcode | @teal_match_opcode | @teal_pushbytes_opcode | @teal_pushbytess_opcode | @teal_pushints_opcode | @teal_single_numeric_argument_opcode | @teal_store_opcode | @teal_switch_opcode | @teal_token_acct_params_get_opcode | @teal_token_app_params_get_opcode | @teal_token_asset_holding_get_opcode | @teal_token_asset_params_get_opcode | @teal_token_base64_decode_opcode | @teal_token_json_ref_opcode | @teal_token_mimc_opcode | @teal_token_pragma_typetrack | @teal_token_pragma_version | @teal_token_voter_params_get_opcode | @teal_token_vrf_verify_opcode | @teal_token_zero_argument_opcode | @teal_txn_opcode | @teal_txna_opcode | @teal_txnas_opcode
 
 #keyset[teal_source, index]
 teal_source_child(
@@ -824,11 +772,12 @@ case @teal_token.kind of
 | 9 = @teal_token_label_identifier
 | 10 = @teal_token_mimc_opcode
 | 11 = @teal_token_numeric_argument
-| 12 = @teal_token_pragma
-| 13 = @teal_token_string_argument
-| 14 = @teal_token_voter_params_get_opcode
-| 15 = @teal_token_vrf_verify_opcode
-| 16 = @teal_token_zero_argument_opcode
+| 12 = @teal_token_pragma_typetrack
+| 13 = @teal_token_pragma_version
+| 14 = @teal_token_string_argument
+| 15 = @teal_token_voter_params_get_opcode
+| 16 = @teal_token_vrf_verify_opcode
+| 17 = @teal_token_zero_argument_opcode
 ;
 
 

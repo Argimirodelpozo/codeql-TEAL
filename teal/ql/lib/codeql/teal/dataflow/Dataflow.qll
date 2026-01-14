@@ -3,12 +3,12 @@ private import codeql.teal.ast.AST
 private import codeql.teal.cfg.CFG::CfgImpl as Cfg
 private import codeql.teal.SSA.SSA as Ssa
 private import codeql.Locations
-private import codeql.teal.ast.scratchSpace
+// private import codeql.teal.ast.scratchSpace
 
 
 private module Private {
-  cached
-  newtype TContent = 
+  // cached
+  // newtype TContent = 
   
   cached
   newtype TNode =
@@ -21,9 +21,17 @@ private module Private {
 
     // TExprNode(DataFlowExpr e) or
     // TReturningNode(Cfg::Node n) { n.getAstNode() = any(FunctionDefinition d).getBody() } or
-    TOpcodeNode(Cfg::Node op){op.getAstNode() instanceof TOpcode} or  //TODO: placeholder for now
-
-    TSsaDefinitionNode(Ssa::Definition def) 
+    // TOpcodeNode(Cfg::Node op){op.getAstNode() instanceof TOpcode} or  //TODO: placeholder for now
+    TStackVarNode(StackVar op) or  //TODO: placeholder for now
+    TSsaDefinitionNode(Ssa::Definition def) or
+    TScratchLoadNode(StackVar op){
+      op.getDeclarationNode() instanceof TOpcode_load or
+      op.getDeclarationNode() instanceof TOpcode_loads 
+      // or
+      // op.getDeclarationNode() instanceof TOpcode_gload or
+      // op.getDeclarationNode() instanceof TOpcode_gloads or
+      // op.getDeclarationNode() instanceof TOpcode_gloadss
+    }
     // or
     // TExitNode(Cfg::Node op){op.getAstNode() instanceof ContractExitOpcode} or
     // TLoadNode(Cfg::Node op){op.getAstNode() instanceof LoadOpcode} or
@@ -91,6 +99,8 @@ private module Public {
 
     Location getLocation() { none() }
 
+    abstract AstNode getUnderlyingASTNode();
+
     /**
      * Holds if this element is at the specified location.
      * The location spans column `startcolumn` of line `startline` to
@@ -119,16 +129,24 @@ private module Public {
   //   override Location getLocation() { result = expr.getLocation() }
   // }
 
-  class OpcodeNode extends Node, TOpcodeNode {
-    private Cfg::Node expr;
+  // class OpcodeNode extends Node, TOpcodeNode {
+  class OpcodeNode extends Node, TStackVarNode {
+    // private Cfg::Node expr;
+    private StackVar expr;
 
-    OpcodeNode() { this = TOpcodeNode(expr) }
+    // OpcodeNode() { this = TOpcodeNode(expr) }
+    OpcodeNode() { this = TStackVarNode(expr) }
 
-    Cfg::Node getCfgNode() { result = expr }
+    // Cfg::Node getCfgNode() { result = expr }
+    Cfg::Node getCfgNode() { result.getAstNode() = expr.getDeclarationNode() }
 
     override string toString() { result = expr.toString() }
 
     override Location getLocation() { result = expr.getLocation() }
+
+    override AstNode getUnderlyingASTNode(){
+      result = this.getCfgNode().getAstNode()
+    }
   }
 
   // class ParameterNode extends Node, TParameterNode {
@@ -197,6 +215,7 @@ private module Public {
 
   /**
    */
+  // class SsaDefinitionNode extends Node, TSsaDefinitionNode {
   class SsaDefinitionNode extends Node, TSsaDefinitionNode {
     Ssa::Definition def;
 
@@ -207,16 +226,36 @@ private module Public {
     override string toString() { result = def.toString() }
 
     override Location getLocation() { result = def.getLocation() }
+
+    override AstNode getUnderlyingASTNode(){
+      if def instanceof SSAWriteDef then result = def.(SSAWriteDef).getRHS()
+      else none() //for now lets leave phi out so its one single result
+    
+      // else if def instanceof DirectPhi then result = def.(DirectPhi).getOriginatingInput().getDeclarationNode()
+      // else result = def.(IndirectPhi).getGenerator().getOriginatingInput().getDeclarationNode()
+    }
+  }
+
+  predicate isBarrier(Node n){
+    exists(AstNode s |
+      n.(SsaDefinitionNode).asDefinition().(SSAWriteDef).getRHS() = s and
+      not (s instanceof TOpcode_bury or s instanceof TOpcode_dig or 
+        s instanceof TOpcode_cover or s instanceof TOpcode_uncover or
+        s instanceof TOpcode_swap or s instanceof TOpcode_dup or
+        s instanceof TOpcode_dup2 or s instanceof TOpcode_dupn)
+      )
   }
 
   predicate simpleLocalFlowStep(Node nodeFrom, Node nodeTo) {
     // LocalFlow::localFlowStep(nodeFrom, nodeTo)
     // or
+    // not isBarrier(nodeFrom) and
     LocalFlow::localSsaFlowStep(nodeFrom, nodeTo)
   }
 }
 
-private module LocalFlow {
+// private module LocalFlow {
+module LocalFlow {
   private import Public
   private import codeql.teal.cfg.BasicBlocks
 
@@ -240,45 +279,158 @@ private module LocalFlow {
   //   nodeTo.asDefinition().definesAt(nodeFrom.getParameter(), _, _)
   // }
 
+  // TODO: USE DEFINITIONS HERE. That way we include phi
+  //this is for strict flow, aka. v_in_a = v_out_b, for some positive integer a,b
+  //taint is handled in its own module
+  // stacks look like this:
+  // [v3 v2 v1] -> OP -> [v1 v2 v3] (yes, they are backwards on exit...Why. Did. I. Do. This?)
+  predicate defSSAFlowThroughOp(Definition defFrom, AstNode op, Definition defTo){
+    op.getAnOutputVar().toDef() = defTo and
+    exists(int inOrd, int outOrd |
+      inOrd = op.getStackInputOrderByDef(defFrom) and
+      outOrd = defTo.(SSAWriteDef).getVar().getInternalOutputIndex() 
+      and(
+
+        op instanceof DigOpcode and (
+          inOrd = op.getNumberOfConsumedArgs() and (outOrd = op.getNumberOfOutputArgs() or outOrd = 1)
+          or
+          inOrd in [1 .. op.getNumberOfConsumedArgs()-1] and outOrd = inOrd+1
+        )
+        or
+
+        op instanceof TOpcode_dup and(
+          inOrd = 1 and outOrd in [1..2]
+        )
+        or
+
+        op instanceof TOpcode_dup2 and (
+          inOrd = 1 and (outOrd = 1 or outOrd = 3)
+          or inOrd = 2 and (outOrd = 2 or outOrd = 4)
+        )
+        or
+
+        op instanceof TOpcode_dupn and (
+          inOrd = 1 and outOrd in [1 .. op.getNumberOfOutputArgs()]
+        )
+        or
+
+        op instanceof TOpcode_swap and (
+          inOrd = 1 and outOrd = 2
+          or
+          inOrd = 2 and outOrd = 1
+        )
+        or
+
+        op instanceof TOpcode_cover and (
+          inOrd = 1 and outOrd = op.getNumberOfOutputArgs()
+          or
+          inOrd in [2 .. op.getNumberOfConsumedArgs()] and outOrd = inOrd - 1
+        )
+        or
+
+        op instanceof TOpcode_uncover and (
+          inOrd = op.getNumberOfConsumedArgs() and outOrd = 1
+          or
+          inOrd in [1 .. op.getNumberOfConsumedArgs()-1] and outOrd = inOrd + 1
+        )
+
+
+        //TODO: complete with ALL ops that allow a full value to flow through into
+        // the stack!!
+      )
+    )
+  }
+
   /**
    * Holds if there is a local flow step from `nodeFrom` to `nodeTo` involving
    * SSA.
    */
   predicate localSsaFlowStep(Node nodeFrom, Node nodeTo) {
-    exists(Ssa::Definition def |
-      // Step from assignment RHS to def
-      // def.(Ssa::SSAVar2).assigns(nodeFrom.(ExprNode).getCfgNode()) and
-      def.(Ssa::SSAWriteDef).getRHS() = nodeFrom.(OpcodeNode).getCfgNode().getAstNode() and
-      nodeTo.(SsaDefinitionNode).asDefinition() = def
-      or
-      // step from def to first read
-      nodeFrom.(SsaDefinitionNode).asDefinition() = def and
-      // nodeTo.(OpcodeNode).getCfgNode() = def.getAFirstRead()
-      (
-        nodeTo.(OpcodeNode).getCfgNode().getAstNode() = 
-          def.(Ssa::SSAWriteDef).getVar().getConsumedBy(def.(Ssa::SSAWriteDef).getVar())
-        or
-        nodeTo.(OpcodeNode).getCfgNode().getAstNode() = 
-          def.(Ssa::DirectPhi).getConsumedBy()
-        or 
-        nodeTo.(OpcodeNode).getCfgNode().getAstNode() = 
-        def.(Ssa::IndirectPhi).getConsumedBy()
+
+    defSSAFlowThroughOp(
+      nodeFrom.(SsaDefinitionNode).asDefinition(), 
+      nodeTo.(SsaDefinitionNode).asDefinition().(SSAWriteDef).getRHS(),
+      nodeTo.(SsaDefinitionNode).asDefinition() //this one should always be a SSAWrite
+      //probably can get rid of the op in the middle
       )
-      // or
-      // // use-use flow
-      // localSsaFlowStepUseUse(def, nodeFrom, nodeTo)
-      // or
-      // step from previous read to Phi node
-      // localFlowSsaInput(nodeFrom, def, nodeTo.(SsaDefinitionNode).asDefinition())
+    or
+
+    //TODO: this should be solved in the "normal" side, as it goes from SSA to "out"
+    //[ssawrite|direct phi|indirect phi] -> use
+    // all "stack reorg" nodes should be considered in the previous subquery and thus excluded here
+    not (
+      nodeTo.(SsaDefinitionNode).getUnderlyingASTNode() instanceof DigOpcode
+      or nodeTo.(SsaDefinitionNode).getUnderlyingASTNode() instanceof TOpcode_bury
+      or nodeTo.(SsaDefinitionNode).getUnderlyingASTNode() instanceof TOpcode_cover
+      or nodeTo.(SsaDefinitionNode).getUnderlyingASTNode() instanceof TOpcode_uncover
+      or nodeTo.(SsaDefinitionNode).getUnderlyingASTNode() instanceof TOpcode_swap
+      or nodeTo.(SsaDefinitionNode).getUnderlyingASTNode() instanceof TOpcode_dup
+      or nodeTo.(SsaDefinitionNode).getUnderlyingASTNode() instanceof TOpcode_dup2
+      or nodeTo.(SsaDefinitionNode).getUnderlyingASTNode() instanceof TOpcode_dupn
     )
+    and
+    nodeFrom.(SsaDefinitionNode).asDefinition().(SSAWriteDef) = 
+    nodeTo.(SsaDefinitionNode).asDefinition().(SSAWriteDef).getRHS().getConsumedValues()
+    or
+
+    //(d)phi -> ssa_write flow
+    nodeFrom.(SsaDefinitionNode).asDefinition().(DirectPhi) = 
+    nodeTo.(SsaDefinitionNode).asDefinition().(SSAWriteDef).getRHS().getConsumedValues()
+    or
+
+    //(i)phi -> ssa_write flow
+    nodeFrom.(SsaDefinitionNode).asDefinition().(IndirectPhi) = 
+    nodeTo.(SsaDefinitionNode).asDefinition().(SSAWriteDef).getRHS().getConsumedValues()
+    or
+
+    //ssawrite to phi (direct)
+    nodeFrom.(SsaDefinitionNode).asDefinition().(SSAWriteDef) =
+    nodeTo.(SsaDefinitionNode).asDefinition().(DirectPhi).getOriginatingInput().toDef()
+    or
+
+    //phi-to-phi flow (first phi can be d|i, second phi is always indirect)
+    nodeFrom.(SsaDefinitionNode).asDefinition() = 
+    nodeTo.(SsaDefinitionNode).asDefinition().(IndirectPhi).getGenerator()
+
+
     // or
-    // localFlowSsaParamInput(nodeFrom, nodeTo)
+    // exists(Ssa::Definition def |
+    //   // Step from assignment RHS to def
+    //   // def.(Ssa::SSAVar2).assigns(nodeFrom.(ExprNode).getCfgNode()) and
+    //   def.(Ssa::SSAWriteDef).getRHS() = nodeFrom.(OpcodeNode).getCfgNode().getAstNode() and
+    //   nodeTo.(SsaDefinitionNode).asDefinition() = def
+    //   or
+    //   // step from def to first read
+    //   nodeFrom.(SsaDefinitionNode).asDefinition() = def and
+    //   // nodeTo.(OpcodeNode).getCfgNode() = def.getAFirstRead()
+    //   (
+    //     nodeTo.(OpcodeNode).getCfgNode().getAstNode() = 
+    //       def.(Ssa::SSAWriteDef).getVar().getDeclarationNode().getConsumedBy(def.(Ssa::SSAWriteDef).getVar())
+    //     or
+    //     nodeTo.(OpcodeNode).getCfgNode().getAstNode() = 
+    //       def.(Ssa::DirectPhi).getConsumedBy()
+    //     or 
+    //     nodeTo.(OpcodeNode).getCfgNode().getAstNode() = 
+    //     def.(Ssa::IndirectPhi).getConsumedBy()
+    //   )
+      
+
+    //   // or
+    //   // // use-use flow
+    //   // localSsaFlowStepUseUse(def, nodeFrom, nodeTo)
+    //   // or
+    //   // step from previous read to Phi node
+    //   // localFlowSsaInput(nodeFrom, def, nodeTo.(SsaDefinitionNode).asDefinition())
+    // )
+    // // or
+    // // localFlowSsaParamInput(nodeFrom, nodeTo)
   }
 
   pragma[nomagic]
   predicate localFlowStep(Node nodeFrom, Node nodeTo) {
     nodeFrom.(OpcodeNode).getCfgNode().getAstNode().getConsumedBy(_) = 
     nodeTo.(OpcodeNode).getCfgNode().getAstNode()
+    
 
     // //  Parenthesized expression
     // nodeTo.(ExprNode).getCfgNode() = nodeFrom.(ExprNode).getCfgNode().getASuccessor() and
@@ -296,6 +448,32 @@ private module LocalFlow {
     // nodeTo.(ExprNode).getCfgNode() = nodeFrom.(ExprNode).getCfgNode().getASuccessor() and
     // nodeTo.(ExprNode).getCfgNode().getAstNode().(VarInExpression).getBody() =
     //   nodeFrom.(ExprNode).getCfgNode().getAstNode()
+  }
+
+  // pragma[nomagic]
+  // predicate localFlow(Node source, Node sink) {
+  //   simpleLocalFlowStep*(source, sink)
+  // }
+
+  //not that this flow model does not implement taint:
+  // either a source flows fully through an intermediate node towards the sink,
+  // or it is modified in any way and thus "stopped"/"consumed".
+  //The isBarrier() predicate could be made parametrisable so as to
+  // be able to define more complex models (e.g. sanitization).
+  pragma[nomagic]
+  predicate localFlow(Node source, Node sink) {
+    //all nodes flow with themselves
+    source = sink
+    or
+    //For the last step we don't check for barrier since we arrived to the sink
+    simpleLocalFlowStep(source, sink)
+    or
+    //recursive step: there is a "mid" node we may go through
+    exists(Node mid |
+      (simpleLocalFlowStep(source, mid) and
+      mid != source and mid != sink and
+      not isBarrier(mid) and localFlow(mid, sink))
+    )
   }
 }
 

@@ -734,135 +734,17 @@ module Teal {
     /** Gets the name of the primary QL class for this element. */
     final override string getAPrimaryQlClass() { result = "ItxnFieldOpcode" }
 
+    /** Gets the node corresponding to the field `txn_array_field`. */
+    final AstNode getTxnArrayField() { teal_itxn_field_opcode_txn_array_field(this, result) }
+
     /** Gets the node corresponding to the field `txn_field`. */
-    final string getTxnField() {
-      exists(int value | teal_itxn_field_opcode_def(this, value) |
-        result = "Amount" and value = 0
-        or
-        result = "ApplicationID" and value = 1
-        or
-        result = "ApprovalProgram" and value = 2
-        or
-        result = "AssetAmount" and value = 3
-        or
-        result = "AssetCloseTo" and value = 4
-        or
-        result = "AssetReceiver" and value = 5
-        or
-        result = "AssetSender" and value = 6
-        or
-        result = "ClearStateProgram" and value = 7
-        or
-        result = "CloseRemainderTo" and value = 8
-        or
-        result = "ConfigAsset" and value = 9
-        or
-        result = "ConfigAssetClawback" and value = 10
-        or
-        result = "ConfigAssetDecimals" and value = 11
-        or
-        result = "ConfigAssetDefaultFrozen" and value = 12
-        or
-        result = "ConfigAssetFreeze" and value = 13
-        or
-        result = "ConfigAssetManager" and value = 14
-        or
-        result = "ConfigAssetMetadataHash" and value = 15
-        or
-        result = "ConfigAssetName" and value = 16
-        or
-        result = "ConfigAssetReserve" and value = 17
-        or
-        result = "ConfigAssetTotal" and value = 18
-        or
-        result = "ConfigAssetURL" and value = 19
-        or
-        result = "ConfigAssetUnitName" and value = 20
-        or
-        result = "CreatedApplicationID" and value = 21
-        or
-        result = "CreatedAssetID" and value = 22
-        or
-        result = "ExtraProgramPages" and value = 23
-        or
-        result = "Fee" and value = 24
-        or
-        result = "FirstValid" and value = 25
-        or
-        result = "FirstValidTime" and value = 26
-        or
-        result = "FreezeAsset" and value = 27
-        or
-        result = "FreezeAssetAccount" and value = 28
-        or
-        result = "FreezeAssetFrozen" and value = 29
-        or
-        result = "GlobalNumByteSlice" and value = 30
-        or
-        result = "GlobalNumUint" and value = 31
-        or
-        result = "GroupIndex" and value = 32
-        or
-        result = "LastLog" and value = 33
-        or
-        result = "LastValid" and value = 34
-        or
-        result = "Lease" and value = 35
-        or
-        result = "LocalNumByteSlice" and value = 36
-        or
-        result = "LocalNumUint" and value = 37
-        or
-        result = "Nonparticipation" and value = 38
-        or
-        result = "Note" and value = 39
-        or
-        result = "NumAccounts" and value = 40
-        or
-        result = "NumAppArgs" and value = 41
-        or
-        result = "NumApplications" and value = 42
-        or
-        result = "NumApprovalProgramPages" and value = 43
-        or
-        result = "NumAssets" and value = 44
-        or
-        result = "NumClearStateProgramPages" and value = 45
-        or
-        result = "NumLogs" and value = 46
-        or
-        result = "OnCompletion" and value = 47
-        or
-        result = "Receiver" and value = 48
-        or
-        result = "RekeyTo" and value = 49
-        or
-        result = "SelectionPK" and value = 50
-        or
-        result = "Sender" and value = 51
-        or
-        result = "StateProofPK" and value = 52
-        or
-        result = "TxID" and value = 53
-        or
-        result = "Type" and value = 54
-        or
-        result = "TypeEnum" and value = 55
-        or
-        result = "VoteFirst" and value = 56
-        or
-        result = "VoteKeyDilution" and value = 57
-        or
-        result = "VoteLast" and value = 58
-        or
-        result = "VotePK" and value = 59
-        or
-        result = "XferAsset" and value = 60
-      )
-    }
+    final AstNode getTxnField() { teal_itxn_field_opcode_txn_field(this, result) }
 
     /** Gets a field or child node of this node. */
-    final override AstNode getAFieldOrChild() { none() }
+    final override AstNode getAFieldOrChild() {
+      teal_itxn_field_opcode_txn_array_field(this, result) or
+      teal_itxn_field_opcode_txn_field(this, result)
+    }
   }
 
   /** A class representing `itxn_opcode` nodes. */
@@ -1117,10 +999,16 @@ module Teal {
     final override string getAPrimaryQlClass() { result = "NumericArgument" }
   }
 
-  /** A class representing `pragma` tokens. */
-  class Pragma extends @teal_token_pragma, Token {
+  /** A class representing `pragma_typetrack` tokens. */
+  class PragmaTypetrack extends @teal_token_pragma_typetrack, Token {
     /** Gets the name of the primary QL class for this element. */
-    final override string getAPrimaryQlClass() { result = "Pragma" }
+    final override string getAPrimaryQlClass() { result = "PragmaTypetrack" }
+  }
+
+  /** A class representing `pragma_version` tokens. */
+  class PragmaVersion extends @teal_token_pragma_version, Token {
+    /** Gets the name of the primary QL class for this element. */
+    final override string getAPrimaryQlClass() { result = "PragmaVersion" }
   }
 
   /** A class representing `pushbytes_opcode` nodes. */

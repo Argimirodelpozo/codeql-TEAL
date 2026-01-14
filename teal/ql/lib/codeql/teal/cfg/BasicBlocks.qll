@@ -293,6 +293,9 @@ private module Cached {
      */
 
     exists(cfn.getAPredecessor(any(BooleanSuccessor s)))
+  
+    //TODO: testing added
+    or exists(Ast::Codeblock c | c = cfn.getAstNode())
   }
 
   /**

@@ -153,23 +153,31 @@ private class ProgramTree extends ControlFlowTree instanceof Program {
       c instanceof UnconditionalJumpCompletion and
       first(pred.(BOpcode).getTargetLabel().(Codeblock), succ)
       or
+
+      last(pred.getCodeblockStart().(CodeblockTree), pred, c) and
+      pred instanceof MatchOpcode and
+      c instanceof MultilabelJumpCompletion and
+      first(pred.(MatchOpcode).getNextNode(_).(Codeblock), succ)
+      or
+
       last(pred.getCodeblockStart().(CodeblockTree), pred, c) and
       pred instanceof CallsubOpcode and
       c instanceof UnconditionalJumpCompletion and
-      first(pred.(CallsubOpcode).getTargetLabel().(CodeblockTree), succ)
+      first(pred.(CallsubOpcode).getTargetLabel().(Codeblock), succ)
       or
       last(pred.getCodeblockStart().(CodeblockTree), pred, c) and
       pred instanceof RetsubOpcode and
       c instanceof RetsubCompletion and
+      succ = pred.(RetsubOpcode).predictRetsubReturn() and
       first(pred.(RetsubOpcode).predictRetsubReturn().(CodeblockTree), succ)
 
         or
         last(pred.getCodeblockStart().(CodeblockTree), pred, c) and
-        pred.getNextLine() instanceof Label and 
-        // not (pred instanceof UnconditionalBranches 
-        //   or pred instanceof SimpleConditionalBranches or pred instanceof ContractExitOpcode or
-        //   pred instanceof MultiTargetConditionalBranch) 
-          // and
+        pred.getNextLine() instanceof Label and succ = pred.getNextLine() and
+        not (pred instanceof UnconditionalBranches 
+          or pred instanceof SimpleConditionalBranches or pred instanceof ContractExitOpcode or
+          pred instanceof MultiTargetConditionalBranch) 
+        and
         c instanceof SimpleCompletion and
         first(pred.getNextLine().(Codeblock), succ)
         or
@@ -213,7 +221,8 @@ private class CodeblockTree extends ControlFlowTree instanceof Codeblock{
   override predicate first(AstNode first) { first = this.getCodeblockStart() }
 
   override predicate succ(AstNode pred, AstNode succ, Completion c) {
-    pred.isInSameCodeblock(this) and succ.isInSameCodeblock(this)
+    pred.isInSameCodeblock(this) and succ.isInSameCodeblock(this) and 
+    pred.isInSameCodeblock(succ)
     and succ = pred.getNextLine() and c instanceof SimpleCompletion
   }
 
@@ -225,6 +234,8 @@ private class CodeblockTree extends ControlFlowTree instanceof Codeblock{
       or last instanceof AssertOpcode and c instanceof AssertCompletion
       or last instanceof BOpcode and c instanceof UnconditionalJumpCompletion
       or last instanceof CallsubOpcode and c instanceof UnconditionalJumpCompletion
+
+      or last instanceof MatchOpcode and c instanceof MultilabelJumpCompletion
 
       or last instanceof RetsubOpcode and c instanceof RetsubCompletion
       or last instanceof SimpleConditionalBranches and c instanceof ConditionalJumpCompletion
@@ -243,108 +254,3 @@ private class OpcodeTree extends LeafTree instanceof AstNode {
     and not this instanceof Codeblock
   }
 }
-
-// private class LabelTree extends LeafTree instanceof Label {}
-
-// private class FunctionCallExpressionTree extends StandardPostOrderTree instanceof FunctionCallExpression
-// {
-//   override ControlFlowTree getChildNode(int i) { result = super.getArgument(i) }
-// }
-
-// private class BinaryOpExpressionTree extends StandardPostOrderTree instanceof BinaryOpExpression {
-//   override ControlFlowTree getChildNode(int i) {
-//     result = super.getLhs() and i = 0
-//     or
-//     result = super.getRhs() and i = 1
-//   }
-// }
-
-// private class ConditionalExpressionTree extends PostOrderTree instanceof ConditionalExpression {
-//   override predicate propagatesAbnormal(AstNode child) { none() }
-
-//   override predicate first(AstNode first) { first(super.getCondition(), first) }
-
-//   override predicate succ(AstNode pred, AstNode succ, Completion c) {
-//     last(super.getCondition(), pred, c) and
-//     (
-//       first(super.getThen(), succ) and c.(BooleanCompletion).getValue() = true
-//       or
-//       first(super.getElse(), succ) and c.(BooleanCompletion).getValue() = false
-//     )
-//     or
-//     last(super.getThen(), pred, c) and
-//     succ = this and
-//     c instanceof SimpleCompletion
-//     or
-//     last(super.getElse(), pred, c) and
-//     succ = this and
-//     c instanceof SimpleCompletion
-//   }
-// }
-
-// /**
-//  * From https://llvm.org/docs/tutorial/MyFirstLanguageFrontend/LangImpl05.html#code-generation-for-the-for-loop in the LLVM tutorial it appears that
-//  * for loop conditions are checked at the end of the body, not the start. So for loops are roughly translated as follows:
-//  * ```
-//  * for VAR = INIT, CONDITION, STEP in
-//  *   BODY
-//  * ```
-//  * -->
-//  * ```
-//  * VAR = INIT
-//  * do {
-//  *   BODY
-//  *   VAR = VAR + STEP
-//  * } while (CONDITION)
-//  * ```
-//  */
-// private class ForExpressionTree extends PostOrderTree instanceof ForExpression {
-//   override predicate propagatesAbnormal(AstNode child) { none() }
-
-//   override predicate first(AstNode first) { first(super.getInitializer(), first) }
-
-//   override predicate succ(AstNode pred, AstNode succ, Completion c) {
-//     last(super.getInitializer(), pred, c) and
-//     first(super.getBody(), succ) and
-//     c instanceof SimpleCompletion
-//     or
-//     last(super.getCondition(), pred, c) and
-//     (
-//       first(super.getBody(), succ) and c.(BooleanCompletion).getValue() = true
-//       or
-//       succ = this and c.(BooleanCompletion).getValue() = false
-//     )
-//     or
-//     last(super.getBody(), pred, c) and
-//     first(super.getStep(), succ) and
-//     c instanceof SimpleCompletion
-//     or
-//     last(super.getStep(), pred, c) and
-//     first(super.getCondition(), succ) and
-//     c instanceof SimpleCompletion
-//   }
-// }
-
-// private class InitializerTree extends StandardPostOrderTree instanceof Initializer {
-//   override ControlFlowTree getChildNode(int i) { result = super.getExpression() and i = 0 }
-// }
-
-// private class NumberTree extends LeafTree instanceof Number { }
-
-// private class ParenExpressionTree extends StandardPostOrderTree instanceof ParenExpression {
-//   override ControlFlowTree getChildNode(int i) { result = super.getExpression() and i = 0 }
-// }
-
-// private class UnaryOpExpressionTree extends StandardPostOrderTree instanceof UnaryOpExpression {
-//   override ControlFlowTree getChildNode(int i) { result = super.getOperand() and i = 0 }
-// }
-
-// private class VarInExpressionTree extends StandardPostOrderTree instanceof VarInExpression {
-//   override ControlFlowTree getChildNode(int i) {
-//     result = super.getInitializer(i)
-//     or
-//     result = super.getBody() and i = count(super.getInitializer(_))
-//   }
-// }
-
-// private class VariableExpressionTree extends LeafTree instanceof VariableExpression { }

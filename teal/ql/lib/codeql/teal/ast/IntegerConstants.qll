@@ -31,7 +31,7 @@ class IntcOpcode extends IntegerConstant instanceof TOpcode_intc{
         )
     }
 
-    override string toString(){result = this.getValue().toString()}
+    // override string toString(){result = this.getValue().toString()}
 }
 
 class Intc0Opcode extends IntegerConstant instanceof TOpcode_intc_0{
@@ -43,7 +43,7 @@ class Intc0Opcode extends IntegerConstant instanceof TOpcode_intc_0{
         )
     }
 
-    override string toString(){result = this.getValue().toString()}
+    // override string toString(){result = this.getValue().toString()}
 }
 
 class Intc1Opcode extends IntegerConstant instanceof TOpcode_intc_1{
@@ -56,7 +56,7 @@ class Intc1Opcode extends IntegerConstant instanceof TOpcode_intc_1{
         )
     }
 
-    override string toString(){result = this.getValue().toString()}
+    // override string toString(){result = this.getValue().toString()}
 }
 
 class Intc2Opcode extends IntegerConstant instanceof TOpcode_intc_2{
@@ -69,7 +69,7 @@ class Intc2Opcode extends IntegerConstant instanceof TOpcode_intc_2{
         )
     }
 
-    override string toString(){result = this.getValue().toString()}
+    // override string toString(){result = this.getValue().toString()}
 }
 
 class Intc3Opcode extends IntegerConstant instanceof TOpcode_intc_3{
@@ -82,13 +82,15 @@ class Intc3Opcode extends IntegerConstant instanceof TOpcode_intc_3{
         )
     }
 
-    override string toString(){result = this.getValue().toString()}
+    // override string toString(){result = this.getValue().toString()}
 }
 
-class PushintOpocode extends IntegerConstant instanceof TOpcode_pushint{
+class PushintOpcode extends IntegerConstant instanceof TOpcode_pushint{
     override int getValue(){
         result = toTreeSitter(this).(Teal::SingleNumericArgumentOpcode).getValue().toString().toInt()
     }
 
-    override string toString(){result = this.getValue().toString()}
+    // override string toString(){result = this.getValue().toString()}
 }
+
+//TODO: add btoi from bytearray constant, decidable comparison

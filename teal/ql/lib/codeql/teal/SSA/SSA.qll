@@ -3,7 +3,18 @@ private import codeql.Locations
 private import codeql.teal.cfg.CFG as Cfg
 private import codeql.teal.ast.AST
 private import codeql.teal.ast.IntegerConstants
+private import codeql.teal.ast.ScratchSpace
+private import codeql.teal.ast.Transaction
+private import codeql.teal.ast.Global
 // private import codeql.teal.SSA.SSA
+
+// class AVMBool extends int{
+//   AVMBool(){this = 0 or this = 1}
+// }
+
+// class AVMByes extends string{
+//   AVMBytes(){this.length() <= 4096}
+// }
 
 
 // private newtype TDefinition = 
@@ -13,7 +24,7 @@ private import codeql.teal.ast.IntegerConstants
 //   varInternalIdx in [1 .. bb.getNode(bbi).getAstNode().getNumberOfOutputArgs()]
 //   }
 //   or TPhiNode(BasicBlock bb, int stackOrd, boolean comesFromVars){
-//   exists (SSAVar v | v.getDeclarationNode().getBasicBlock() = bb.getAPredecessor() and 
+//   exists (StackVar v | v.getDeclarationNode().getBasicBlock() = bb.getAPredecessor() and 
 //     v.reachesEndOfOriginBB() and stackOrd = v.outStackOrder() and comesFromVars = true)
 //     or exists(PhiNode n, BasicBlock b, int ord| b = bb.getAPredecessor() and
 //       n = TPhiNode(b, ord, _) and not exists(phiNodeGetsConsumedBy(ord, b)) and comesFromVars = false
@@ -102,14 +113,14 @@ private import codeql.teal.ast.IntegerConstants
 //   //     rank[h]())
 //   // }
 
-//   // SSAVar getAnInput_var(){result = rank[this.getIndexInPreStack()]
-//   //   (SSAVar v | v = this.getBasicBlock().getAPredecessor().getANode().getAstNode().getAnOutputVar() and 
+//   // StackVar getAnInput_var(){result = rank[this.getIndexInPreStack()]
+//   //   (StackVar v | v = this.getBasicBlock().getAPredecessor().getANode().getAstNode().getAnOutputVar() and 
 //   //     v.reachesEndOfOriginBB() |
 //   //   v order by v.getBBI())}
 
 //   predicate hasInputFromBlock(BasicBlock b){
 //     b.getASuccessor() = this.getBasicBlock() and 
-//     exists(SSAVar v | v.reachesEndOfOriginBB()) or
+//     exists(StackVar v | v.reachesEndOfOriginBB()) or
 //     exists(PhiNode n | n.reachesEndOfOriginBB())
 //   }
 
@@ -125,7 +136,7 @@ private import codeql.teal.ast.IntegerConstants
 //       (PhiNode n | this.getBasicBlock().getAPredecessor() = n.getBasicBlock() and 
 //       n.reachesEndOfOriginBB() | n order by n.getIndexInPreStack()) or
 //       result = rank[this.getIndexInPreStack()]
-//       (SSAVar n | this.getBasicBlock().getAPredecessor() = n.getBasicBlock() and 
+//       (StackVar n | this.getBasicBlock().getAPredecessor() = n.getBasicBlock() and 
 //       n.reachesEndOfOriginBB() | n.toWriteDef() order by n.outStackOrder())
 //     }
 
@@ -136,15 +147,15 @@ private import codeql.teal.ast.IntegerConstants
 //         result = "phi" + this.getBasicBlock().getFirstNode().getAstNode().getLineNumber() 
 //           + "_" + this.getIndexInPreStack()
 //       // else 
-//       //   exists(SSAVar v | v.reachesEndOfOriginBB() and
+//       //   exists(StackVar v | v.reachesEndOfOriginBB() and
 //       //   result = "phi_" + this.getIndexInPreStack() + " = PHI(" + 
 //       //   v + " " + v.getLineNumber() + ")")
 //     }
 
 //     // Location showAllInput(){
-//     //   exists(SSAVar v| v.reachesEndOfOriginBB() 
+//     //   exists(StackVar v| v.reachesEndOfOriginBB() 
 //     //   and v.getBasicBlock() = this.getBasicBlock().getAPredecessor() | result = v.getLocation())
-//     //   // result = concat(SSAVar v | v.reachesEndOfOriginBB() 
+//     //   // result = concat(StackVar v | v.reachesEndOfOriginBB() 
 //     //   //   and v.getBasicBlock() = this.getBasicBlock().getAPredecessor() | v.toString(), " ")
 //     // }
   
@@ -195,11 +206,9 @@ private import codeql.teal.ast.IntegerConstants
 // }
 
 newtype TDefinition = 
-  TSSAVar(int varIndex, AstNode n){
-    varIndex in [1 .. n.getNumberOfOutputArgs()]
-  } or
+  TSSAVar(StackVar v) or
   TDirectPhi(int varIndex, BasicBlock bb){
-    exists(SSAVar v | v.reachesEndOfOriginBB()
+    exists(StackVar v | v.reachesEndOfOriginBB()
     and bb = v.getBasicBlock().getASuccessor() and
     varIndex = v.outStackOrder())
   } or
@@ -221,56 +230,86 @@ abstract class Definition extends TDefinition{
 
   abstract Location getLocation();
 
-  predicate definesAt(SSAVar v, int i, BasicBlock bb){
-    this instanceof SSAWriteDef and v.toDef() = this 
-      and v.getDeclarationNode() = bb.getNode(i).getAstNode() or
-    this instanceof DirectPhi and i = -1 and this.(DirectPhi).getBasicBlock() = bb
-      and v.getBasicBlock() = bb and v = bb.getFirstNode().getAstNode() 
-      and v.getInternalOutputIndex() = this.(DirectPhi).getInitialStackIndex()
-      or
-    this instanceof IndirectPhi and i = -1 and this.(IndirectPhi).getBasicBlock() = bb
-      and v.getBasicBlock() = bb and v = bb.getFirstNode().getAstNode()
-      and v.getInternalOutputIndex() = this.(IndirectPhi).getInitialStackIndex()
-  }
+  abstract int getOrd();
 
-
+  // predicate definesAt(StackVar v, int i, BasicBlock bb){
+  //   this instanceof SSAWriteDef and v.toDef() = this 
+  //     and v.getDeclarationNode() = bb.getNode(i).getAstNode() or
+  //   this instanceof DirectPhi and i = -1 and this.(DirectPhi).getBasicBlock() = bb
+  //     and v.getBasicBlock() = bb and v.getDeclarationNode() = bb.getFirstNode().getAstNode() 
+  //     and v.getInternalOutputIndex() = this.(DirectPhi).getInitialStackIndex()
+  //     or
+  //   this instanceof IndirectPhi and i = -1 and this.(IndirectPhi).getBasicBlock() = bb
+  //     and v.getBasicBlock() = bb and v.getDeclarationNode() = bb.getFirstNode().getAstNode()
+  //     and v.getInternalOutputIndex() = this.(IndirectPhi).getInitialStackIndex()
+  // }
 }
+
+// AVMIntType extends string{
+//   AVMIntType(){this.char in "0123456789"}
+// }
+
+// newtype AVMIntType = exists string t | t.
+// newtype AVMBytesType = string;
+
+// newtype AVMType = AVMIntType | AVMBytesType;
 
 class SSAWriteDef extends Definition instanceof TSSAVar{
-  SSAVar v;
-
-  SSAWriteDef(){this = TSSAVar(v.getInternalOutputIndex(), v.getDeclarationNode())}
-
-  override string toString(){
-    result = "var_" + v.getDeclarationNode() + "_" + v.getInternalOutputIndex()
+  // SSAWriteDef(){this.internalOutputInd() = v.getInternalOutputIndex() and this = TSSAVar(v.getInternalOutputIndex(), v.getDeclarationNode())}
+  SSAWriteDef(){
+    exists(StackVar v |
+      this = TSSAVar(v)
+    )
   }
 
-  override Location getLocation(){result = v.getDeclarationNode().getLocation()}
+  // int internalOutputInd(){this = TSSAVar(result, _, v)}
 
-  AstNode getRHS(){result = v.getDeclarationNode()}
+  // Write definition identifier.
+  // "var", effective line number, declaration node, and finally (internal) output index 
+  override string toString(){
+    result = "var_" + "L" + 
+    this.getVar().getDeclarationNode().getLineNumber() + "_" + 
+    this.getVar().getDeclarationNode() + "_" + 
+    this.getVar().getInternalOutputIndex()
+  }
 
-  SSAVar getVar(){result = v}
+  override Location getLocation(){result = this.getVar().getDeclarationNode().getLocation()}
+
+  AstNode getRHS(){result = this.getVar().getDeclarationNode()}
+
+  StackVar getVar(){this = TSSAVar(result)}
+
+  override
+  int getOrd(){result = -1}
+}
+
+newtype TStackVar_type = TStackVar(int idx, AstNode n){
+  idx in [1 .. n.getNumberOfOutputArgs()]
 }
 
 
+class StackVar extends TStackVar{
+    StackVar(){ 
+      // exists(AstNode n| this = n and varInternalIndex in [1 .. n.getNumberOfOutputArgs()]) }
+      exists(AstNode n, int i| this = TStackVar(i, n)) }
 
-class SSAVar extends AstNode{
-int varInternalIndex;
-// boolean phi;
-// string varIdentifier;
+    string getIdentifier(){result = "V" + this.getDeclarationNode().getLineNumber() + "_" + this.getInternalOutputIndex().toString()}
+    
+    string toString(){result = this.getIdentifier()}
 
-    SSAVar(){ 
-      exists(AstNode n| this = n and varInternalIndex in [1 .. n.getNumberOfOutputArgs()])}
+    // SSAWriteDef toDef(){result = TStackVar(this.getInternalOutputIndex(), this)}
+    SSAWriteDef toDef(){
+      exists(SSAWriteDef def | def.getVar() = this and 
+      def.getRHS() = this.getDeclarationNode() and result=def)
+    }
 
-    string getIdentifier(){result = "V" + this.getLineNumber() + "_" + this.getInternalOutputIndex().toString()}
+    Location getLocation(){
+      result = this.getDeclarationNode().getLocation()
+    }
 
-    SSAWriteDef toDef(){result = TSSAVar(this.getInternalOutputIndex(), this)}
-    // SSAWriteDefinition toWriteDef(){result.getBasicBlock() = this.getDeclarationNode().getBasicBlock()
-    //   and result.getBasicBlockIndex() = this.getBBI() and result.getVarInternalIndex() = this.getInternalOutputIndex()}
+    AstNode getDeclarationNode(){this = TStackVar(_, result)}
 
-    AstNode getDeclarationNode(){result = this}
-
-    int getInternalOutputIndex(){result = varInternalIndex}
+    int getInternalOutputIndex(){this = TStackVar(result, _)}
 
     int getBBI(){this.getDeclarationNode().getBasicBlock().getNode(result).getAstNode() = this.getDeclarationNode()}
 
@@ -280,26 +319,279 @@ int varInternalIndex;
   }
 
   int outStackOrder(){
-    this = rank[result](SSAVar v | this.getDeclarationNode().getBasicBlock().getANode().getAstNode().getAnOutputVar() = v and v.reachesEndOfOriginBB() | 
+    this = rank[result](StackVar v | this.getDeclarationNode().getBasicBlock().getANode().getAstNode().getAnOutputVar() = v and v.reachesEndOfOriginBB() | 
      v order by v.getDeclarationNode().getLineNumber() desc)
     //  v order by v.getDeclarationNode().getLineNumber())
   }
 
-  int tryAsInt(){
-    result = this.getDeclarationNode().(IntegerConstant).getValue()
+  BasicBlock getBasicBlock(){
+    result = this.getDeclarationNode().getBasicBlock()
+  }
+
+  predicate reaches(AstNode n){
+    this.getDeclarationNode().reaches(n)
+  }
+
+  int tryCastToInt(){
+    this.inferType() = "uint64" and
+    result = this.getDeclarationNode().(IntegerConstant).getValue() or
+    result = this.getDeclarationNode().(LoadOpcode).getScratchSpaceStoredVariable().tryCastToInt()
     // or result = this.getDeclarationNode().(IntegerAddOpcode).
     //or
     //TODO: add all cases of operations that end up becoming integer constants
     //e.g. a btoi of a byte constant
+    //TODO: we might now use infertype()
+  }
+
+  //TODO:
+  //this is running out of mem. Instead of doing it like this, put type inference on each op separately
+  cached
+  string inferType(){
+    if this.getDeclarationNode() instanceof TOpcode_btoi
+    or this.getDeclarationNode() instanceof TOpcode_add
+    or this.getDeclarationNode() instanceof TOpcode_pushint
+    or this.getDeclarationNode() instanceof TOpcode_pushints
+    or this.getDeclarationNode() instanceof TOpcode_intc
+    or this.getDeclarationNode() instanceof TOpcode_intc_0
+    or this.getDeclarationNode() instanceof TOpcode_intc_1
+    or this.getDeclarationNode() instanceof TOpcode_intc_2
+    or this.getDeclarationNode() instanceof TOpcode_intc_3
+    or this.getDeclarationNode() instanceof TOpcode_div
+    or this.getDeclarationNode() instanceof TOpcode_mul
+    or this.getDeclarationNode() instanceof TOpcode_mod
+    or this.getDeclarationNode() instanceof TOpcode_len
+    or this.getDeclarationNode() instanceof TOpcode_shl
+    or this.getDeclarationNode() instanceof TOpcode_shr
+    or this.getDeclarationNode() instanceof TOpcode_sub
+    or this.getDeclarationNode() instanceof TOpcode_not
+    or this.getDeclarationNode() instanceof TOpcode_sqrt
+    or this.getDeclarationNode() instanceof TOpcode_exp
+    or this.getDeclarationNode() instanceof TOpcode_extract_uint16
+    or this.getDeclarationNode() instanceof TOpcode_extract_uint32
+    or this.getDeclarationNode() instanceof TOpcode_extract_uint64
+
+    or this.getDeclarationNode() instanceof TOpcode_and
+    or this.getDeclarationNode() instanceof TOpcode_or
+
+    // the top output of this opcode is a boolean flag
+    or this.getDeclarationNode() instanceof TOpcode_app_global_get_ex
+    and this.getInternalOutputIndex() = 2
+
+    // the top output of this opcode is a boolean flag
+    or this.getDeclarationNode() instanceof TOpcode_app_local_get_ex
+    and this.getInternalOutputIndex() = 2
+
+    or this.getDeclarationNode() instanceof TxnOpcode and
+      this.getDeclarationNode().(TxnOpcode).isIntegerField()
+
+    or this.getDeclarationNode() instanceof GtxnOpcode and
+      this.getDeclarationNode().(GtxnOpcode).isIntegerField()
+
+    or this.getDeclarationNode() instanceof GtxnsOpcode and
+      this.getDeclarationNode().(GtxnsOpcode).isIntegerField()
+
+    or this.getDeclarationNode() instanceof TxnaOpcode and
+      this.getDeclarationNode().(TxnaOpcode).isIntegerField()
+
+    or this.getDeclarationNode() instanceof GlobalOpcode and
+      this.getDeclarationNode().(GlobalOpcode).isIntegerField()
+  
+    or this.getDeclarationNode() instanceof TOpcode_gt
+    or this.getDeclarationNode() instanceof TOpcode_gte
+    or this.getDeclarationNode() instanceof TOpcode_lt
+    or this.getDeclarationNode() instanceof TOpcode_lte
+    or this.getDeclarationNode() instanceof TOpcode_neq
+    or this.getDeclarationNode() instanceof TOpcode_eq
+    or this.getDeclarationNode() instanceof TOpcode_app_opted_in
+    or this.getDeclarationNode() instanceof TOpcode_ed25519verify_bare
+    or this.getDeclarationNode() instanceof TOpcode_ec_pairing_check
+
+    or this.getDeclarationNode() instanceof TOpcode_getbit
+
+    or this.getDeclarationNode() instanceof TOpcode_bitlen
+  
+    or this.getDeclarationNode() instanceof TOpcode_min_balance
+    or this.getDeclarationNode() instanceof TOpcode_online_stake
+    or this.getDeclarationNode() instanceof TOpcode_addw
+    or this.getDeclarationNode() instanceof TOpcode_mulw
+    or this.getDeclarationNode() instanceof TOpcode_divmodw
+    or this.getDeclarationNode() instanceof TOpcode_expw
+  
+    or this.getDeclarationNode() instanceof TOpcode_getbyte
+
+    //pseudo opcodes
+    or this.getDeclarationNode() instanceof TOpcode_int
+
+    then
+    result = "uint64"
+    
+    else if this.getDeclarationNode() instanceof LoadOpcode then
+    result = this.getDeclarationNode().(LoadOpcode).getScratchSpaceStoredVariable().inferType()
+
+    else if this.getDeclarationNode() instanceof TOpcode_pushbytes
+    or this.getDeclarationNode() instanceof TOpcode_pushbytess
+    or this.getDeclarationNode() instanceof TOpcode_itob
+    or this.getDeclarationNode() instanceof TOpcode_bytec
+    or this.getDeclarationNode() instanceof TOpcode_bytec_0
+    or this.getDeclarationNode() instanceof TOpcode_bytec_1
+    or this.getDeclarationNode() instanceof TOpcode_bytec_2
+    or this.getDeclarationNode() instanceof TOpcode_bytec_3
+
+    or this.getDeclarationNode() instanceof TOpcode_badd
+    or this.getDeclarationNode() instanceof TOpcode_bmul
+    or this.getDeclarationNode() instanceof TOpcode_bsub
+    or this.getDeclarationNode() instanceof TOpcode_bdiv
+    or this.getDeclarationNode() instanceof TOpcode_bmod
+
+    or this.getDeclarationNode() instanceof TOpcode_concat
+    or this.getDeclarationNode() instanceof TOpcode_keccak256
+    or this.getDeclarationNode() instanceof TOpcode_ecdsa_pk_recover
+    or this.getDeclarationNode() instanceof TOpcode_ecdsa_pk_decompress
+    or this.getDeclarationNode() instanceof TOpcode_sha256
+    or this.getDeclarationNode() instanceof TOpcode_sha3_256
+    or this.getDeclarationNode() instanceof TOpcode_sha512_256
+
+    or this.getDeclarationNode() instanceof TxnOpcode and
+      this.getDeclarationNode().(TxnOpcode).isBytesField()
+
+    or this.getDeclarationNode() instanceof TxnaOpcode and
+      this.getDeclarationNode().(TxnaOpcode).isBytesField()
+
+    or this.getDeclarationNode() instanceof GlobalOpcode and
+      this.getDeclarationNode().(GlobalOpcode).isBytesField()
+
+    // or this.getDeclarationNode() instanceof GtxnOpcode and
+    //   this.getDeclarationNode().(GtxnOpcode).isBytesField()
+
+    or this.getDeclarationNode() instanceof GtxnsOpcode and
+      this.getDeclarationNode().(GtxnsOpcode).isBytesField()
+
+    or this.getDeclarationNode() instanceof TOpcode_extract
+    or this.getDeclarationNode() instanceof TOpcode_extract3
+    or this.getDeclarationNode() instanceof TOpcode_box_extract
+  
+    or this.getDeclarationNode() instanceof TOpcode_replace2
+    or this.getDeclarationNode() instanceof TOpcode_replace3
+    or this.getDeclarationNode() instanceof TOpcode_substring
+    or this.getDeclarationNode() instanceof TOpcode_substring3
+
+    or this.getDeclarationNode() instanceof TOpcode_bzero
+
+    then
+    result = "bytes"
+
+    //Stack reorganization opcodes need to apply  type inference according to
+    // their "passthrough" schema
+    else if this.getDeclarationNode() instanceof TOpcode_dup
+      then result = getGenerator(this.getDeclarationNode().getStackInputByOrder(1)).inferType()
+    
+    else if this.getDeclarationNode() instanceof TOpcode_swap
+      and this.getInternalOutputIndex() = 1
+      then result = getGenerator(this.getDeclarationNode().getStackInputByOrder(1)).inferType()
+
+    else if this.getDeclarationNode() instanceof TOpcode_swap
+      and this.getInternalOutputIndex() = 2
+      then result = getGenerator(this.getDeclarationNode().getStackInputByOrder(2)).inferType()
+    
+    // //In a cover, if this is the first output, give me the type of the first input:
+    // // s_n      <---- n in input order
+    // // s_n-1    <---- n-1 in input order
+    // // ...
+    // // s_2      <---- 2 in input order
+    // // s_1      <---- 1 in input order 
+    // // cover n
+    // // s_1      <---- 1 in output order
+    // // s_n      <---- 2 in output order
+    // // s_n-1    <---- 3 in output order
+    // // ...
+    // // s_2      <---- n in output order
+    // else if this.getDeclarationNode() instanceof TOpcode_cover
+    //   and this.getInternalOutputIndex() = 1
+    //   then result = getGenerator(this.getDeclarationNode().getStackInputByOrder(1)).inferType()
+    // else if this.getDeclarationNode() instanceof TOpcode_cover
+    //   and this.getInternalOutputIndex() != 1
+    //   and this.getInternalOutputIndex() in [2 .. this.getDeclarationNode().getNumberOfOutputArgs()]
+    //   then result = getGenerator(this.getDeclarationNode().getStackInputByOrder(
+    //     this.getDeclarationNode().getNumberOfConsumedArgs() + 2 - this.getInternalOutputIndex()
+    //   )).inferType()
+
+    // uncover is the reverse of cover
+    // s_n      <---- n in input order
+    // s_n-1    <---- n-1 in input order
+    // ...
+    // s_2      <---- 2 in input order
+    // s_1      <---- 1 in input order
+    // uncover n
+    // s_n-1    <---- 1 in output order
+    // ...
+    // s_2      <---- n-2 in output order
+    // s_1      <---- n-1 in output order
+    // s_n      <---- n in output order
+    else if this.getDeclarationNode() instanceof TOpcode_uncover then(
+      this.getInternalOutputIndex() = this.getDeclarationNode().getNumberOfOutputArgs()
+      and result = getGenerator(this.getDeclarationNode().getStackInputByOrder(
+        this.getDeclarationNode().getNumberOfConsumedArgs()
+      )).inferType()
+      or
+      this.getInternalOutputIndex() != this.getDeclarationNode().getNumberOfOutputArgs()
+      // and this.getInternalOutputIndex() in [1 .. this.getDeclarationNode().getNumberOfOutputArgs()-1]
+      and result = getGenerator(this.getDeclarationNode().getStackInputByOrder(
+        this.getDeclarationNode().getNumberOfConsumedArgs() - this.getInternalOutputIndex()
+      )).inferType()
+    )
+    
+    // dig is the reverse of cover
+    // s_n+1    <---- n+1 in input order
+    // s_n      <---- n in input order
+    // s_n-1    <---- n-1 in input order
+    // ...
+    // s_2      <---- 2 in input order
+    // s_1      <---- 1 in input order
+    // dig n
+    // s_n+1    <---- 1 in output order
+    // ...
+    // s_2      <---- n-1 in output order
+    // s_1      <---- n in output order
+    // s_n+1    <---- n+1 in output order
+    else if this.getDeclarationNode() instanceof TOpcode_dig then(
+      (this.getInternalOutputIndex() = 1 or this.getInternalOutputIndex() = this.getDeclarationNode().getNumberOfOutputArgs())
+      and result = getGenerator(this.getDeclarationNode().getStackInputByOrder(
+        this.getDeclarationNode().getNumberOfConsumedArgs()
+      )).inferType()
+      or
+    // this.getInternalOutputIndex() in [2 .. this.getDeclarationNode().getNumberOfOutputArgs() - 1]
+      this.getInternalOutputIndex() != 1 and this.getInternalOutputIndex() != this.getDeclarationNode().getNumberOfOutputArgs()
+      and result = getGenerator(this.getDeclarationNode().getStackInputByOrder(
+        this.getInternalOutputIndex()-1
+      )).inferType()
+    )
+
+    else result = "Undefined"
   }
 }
+
+// newtype TBool = Bool(int n){n = 0 or n = 1}
+// class AVMBool extends TBool{
+//   private int value;
+
+//   AVMBool(){(value = 0 or value = 1) and this = Bool(value)}
+
+//   string toString(){if value = 0 then result = "true" else result = "false"}
+// }
+
+// newtype UInt64 = TUInt64();
+
+// class AVMType extends TUint64
+
+// newtype AVMType = TBytes(int len){len in [0 .. 4096]} or TUint64(QlBuiltins::BigInt b){b in [0 .. QlBuiltins::BigInt(18446744073709551615)]};
+
 
 class DirectPhi extends Definition instanceof TDirectPhi{
   int initialStackIndex;
   BasicBlock bb;
 
   DirectPhi(){
-    exists(SSAVar v | v.reachesEndOfOriginBB()
+    exists(StackVar v | v.reachesEndOfOriginBB()
       and bb = v.getBasicBlock().getASuccessor() 
       and v.reaches(bb.getFirstNode().getAstNode())
       and
@@ -310,6 +602,9 @@ class DirectPhi extends Definition instanceof TDirectPhi{
 
   int getInitialStackIndex(){result = initialStackIndex}
 
+  override
+  int getOrd(){result = this.getInitialStackIndex()}
+
   BasicBlock getBasicBlock(){result = bb}
 
   // IndirectPhi getInput(){
@@ -317,7 +612,7 @@ class DirectPhi extends Definition instanceof TDirectPhi{
   //   this = phiNodeExitIndex(result, result.getBasicBlock())
   // }
 
-  SSAVar getOriginatingInput(){
+  StackVar getOriginatingInput(){
     result.getBasicBlock() = bb.getAPredecessor() and
     this.getInitialStackIndex() = result.outStackOrder()
   }
@@ -325,7 +620,7 @@ class DirectPhi extends Definition instanceof TDirectPhi{
   override Location getLocation(){result = bb.getFirstNode().getLocation()}
 
   override string toString(){
-    result = "phi_" + bb.getFirstNode() + "_" + this.getInitialStackIndex()
+    result = "(d)phi_" + bb.getFirstNode() + "_" + this.getInitialStackIndex()
   }
 
   AstNode getConsumedBy(){
@@ -345,12 +640,12 @@ class DirectPhi extends Definition instanceof TDirectPhi{
 //   stackOrder = phiNodeExitIndex(result, result.getBasicBlock())
 // }
 
-// SSAVar getStackInput_Var(int stackOrder, BasicBlock bb){
+// StackVar getStackInput_Var(int stackOrder, BasicBlock bb){
 //   result.getBasicBlock().getASuccessor() = bb and
 //   stackOrder = result.outStackOrder()
 // }
 
-SSAVar getGenerator(Definition def){
+StackVar getGenerator(Definition def){
   def instanceof DirectPhi and result = def.(DirectPhi).getOriginatingInput()
   or def instanceof IndirectPhi and result = getGenerator(def.(IndirectPhi).getGenerator()) 
   or def instanceof SSAWriteDef and result.toDef() = def
@@ -407,6 +702,8 @@ class IndirectPhi extends Definition instanceof TIndirectPhi{
   }
 
   override Location getLocation(){result = this.getBasicBlock().getLocation()}
+
+  override int getOrd(){result = this.getInitialStackIndex()}
 }
 
 
@@ -430,7 +727,7 @@ class IndirectPhi extends Definition instanceof TIndirectPhi{
 // it tells me which nodes would be consumed and if so by which opcodes
 cached
 AstNode phiNodeGetsConsumedBy(int hypotheticalPhiIndex, BasicBlock b){
-  hypotheticalPhiIndex in [1 .. 1000] and
+  hypotheticalPhiIndex in [1 .. 100] and //should be 1000 for max stack, but we use 100 for perf. reasons
     result = rank[1](AstNode end|
         end = b.getANode().getAstNode() and
         hypotheticalPhiIndex + getPartialStackSizeBeforeOutput(end.getBasicBlock().getFirstNode().getAstNode(), end) <= 0
@@ -442,7 +739,7 @@ cached
 int phiNodeExitIndex(int hypotheticalPhiNodeExitIndex, BasicBlock b){
   hypotheticalPhiNodeExitIndex in [1 .. 1000] and
   not exists(phiNodeGetsConsumedBy(hypotheticalPhiNodeExitIndex, b)) and
-  result = max(SSAVar v | v.getBasicBlock() = b | v.outStackOrder()) +
+  result = max(StackVar v | v.getBasicBlock() = b | v.outStackOrder()) +
   hypotheticalPhiNodeExitIndex - count(int h | exists(phiNodeGetsConsumedBy(h, b)) and 
     h in [1 .. hypotheticalPhiNodeExitIndex])
 }

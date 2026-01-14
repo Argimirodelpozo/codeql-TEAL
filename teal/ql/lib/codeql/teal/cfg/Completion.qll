@@ -6,6 +6,7 @@ module Completion {
       TSimpleCompletion() or
       TConditionalJumpCompletion(boolean b){ b in [false, true] } or
       TUnconditionalJumpCompletion() or
+      TMultilabelJumpCompletion() or
       TErrCompletion() or
       TAssertCompletion(boolean b){ b in [false, true] } or
       TReturnCompletion() or
@@ -45,6 +46,25 @@ module Completion {
   
       final boolean getValue() { result = value }
     }
+
+    class MultilabelJumpCompletion extends NormalCompletion, TMultilabelJumpCompletion {
+      // int value;
+  
+      MultilabelJumpCompletion() { this = TMultilabelJumpCompletion() 
+        // and 
+        // exists(MatchOpcode op | value in [0 .. count(op.getTargetLabels())])
+      }
+  
+      // override string toString() { result = "ConditionalJumpCompletion(" + value + ")" }
+      override string toString() { result = "ConditionalJumpCompletion(" + ")" }
+  
+      override predicate isValidForSpecific(AstNode e) {e instanceof MatchOpcode}
+  
+      // override NormalSuccessor getAMatchingSuccessorType() { result.getValue() = value }
+      override NormalSuccessor getAMatchingSuccessorType() { any() }
+  
+      // final int getValue() { result = value }
+    }
   
     class ReturnCompletion extends Completion, TReturnCompletion {
       override string toString() { result = "ReturnCompletion" }
@@ -74,7 +94,7 @@ module Completion {
         // e.(RetsubOpcode).getEntrypoint() = this.getOriginalCallsub().getTargetLabel()
       }
   
-      override RetsubSuccessor getAMatchingSuccessorType() { any() }
+      override NormalSuccessor getAMatchingSuccessorType() { any() }
     }
   
     class ErrCompletion extends Completion, TErrCompletion {
@@ -89,7 +109,7 @@ module Completion {
       boolean value;
       AssertCompletion() { this = TAssertCompletion(value) }
   
-      override string toString() { result = "AssertCompletion" }
+      override string toString() { result = "AssertCompletion(" + value + ")" }
   
       override predicate isValidForSpecific(AstNode e) { e instanceof AssertOpcode }
   
@@ -102,7 +122,7 @@ module Completion {
     private newtype TSuccessorType =
       TNormalSuccessor() or
       TBooleanSuccessor(boolean b) { b in [false, true] } or
-      TRetsubSuccessor(CallsubOpcode n)
+      TRetsubSuccessor()
       // or
       // TReturnSuccessor()
   
@@ -125,7 +145,7 @@ module Completion {
     }
 
     class RetsubSuccessor extends SuccessorType, TRetsubSuccessor {
-      override string toString() {result = "retsub"}
+      override string toString() {result = "RetsubSuccessor"}
     // class ReturnSuccessor extends SuccessorType, TReturnSuccessor {
     //   override string toString() { result = "return" }
     }

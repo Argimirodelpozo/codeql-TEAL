@@ -5,6 +5,8 @@ private import codeql.teal.SSA.SSA
 private import codeql.teal.cfg.Completion::Completion
 private import codeql.teal.ast.IntegerConstants
 private import codeql.teal.ast.InnerTransactions
+import codeql.teal.ast.Jumps
+import codeql.teal.ast.Program
 
 cached
 newtype TAstNode = 
@@ -180,6 +182,7 @@ TOpcode_intcblock(Teal::IntcblockOpcode op) or
 TOpcode_itxn_field(Teal::ItxnFieldOpcode op) or
 TOpcode_itxna(Teal::ItxnaOpcode op) or
 TOpcode_itxnas(Teal::ItxnasOpcode op) or
+TOpcode_itxn(Teal::ItxnOpcode op) or
 TOpcode_json_ref(Teal::JsonRefOpcode op) or
 TOpcode_mimc(Teal::MimcOpcode op) or
 // TPragma(Teal::Pragma p)
@@ -191,12 +194,6 @@ TOpcode_txna(Teal::TxnaOpcode op) or
 TOpcode_txnas(Teal::TxnasOpcode op) or
 TOpcode_voter_params_get(Teal::VoterParamsGetOpcode op) or
 TOpcode_vrf_verify(Teal::VrfVerifyOpcode op) 
-// or
-// TSubroutineCodeblock(Teal::CallsubOpcode originalCall){
-//     exists(AstNode n |
-//     originalCall = toTreeSitter(n) and n.getPreviousLine() instanceof Label
-//     )
-// }
 
 Teal::AstNode toTreeSitter(TAstNode node){
     TSource(result) = node or
@@ -375,6 +372,7 @@ Teal::AstNode toTreeSitter(TAstNode node){
     TOpcode_itxn_field(result) = node or
     TOpcode_itxna(result) = node or
     TOpcode_itxnas(result) = node or
+    TOpcode_itxn(result) = node or
     TOpcode_json_ref(result) = node or
     TOpcode_mimc(result) = node or
     TOpcode_pushbytes(result) = node or
@@ -446,7 +444,7 @@ TOpcode_ecdsa_pk_recover or TOpcode_gitxn or TOpcode_gitxna or TOpcode_gitxnas o
 TOpcode_gtxn or TOpcode_gtxna or TOpcode_gtxnas or TOpcode_gtxns or TOpcode_gtxnsa or TOpcode_gtxnsas or
 TOpcode_intcblock or TOpcode_itxn_field or TOpcode_itxna or TOpcode_itxnas or TOpcode_json_ref or
 TOpcode_mimc or TOpcode_pushbytes or TOpcode_pushbytess or TOpcode_pushints or TOpcode_txn or TOpcode_txna or
-TOpcode_txnas or TOpcode_voter_params_get or TOpcode_vrf_verify;
+TOpcode_txnas or TOpcode_voter_params_get or TOpcode_vrf_verify or TOpcode_itxn;
 
 cached
 class TUnconditionalBranches = TOpcode_b or TOpcode_callsub or TOpcode_retsub;
@@ -489,7 +487,7 @@ class AstNode instanceof TAstNode{
 
     // Get opcode immediately next to this one in the code (not accounting for branches)
     AstNode getNextLine(){
-        exists(int i | this.getProgram().getChild(i) = this 
+        exists(int i | this.getProgram().getChild(i) = this
         | result = this.getProgram().getChild(i+1))
     }
 
@@ -650,6 +648,8 @@ class AstNode instanceof TAstNode{
         this instanceof TOpcode_itxn_submit or
         this instanceof TOpcode_gaid or
         this instanceof TOpcode_itxn_next or
+        this instanceof TOpcode_pushbytess or
+        this instanceof TOpcode_gtxn or
         this instanceof TOpcode_b then result = 0
 
         else if this instanceof TOpcode_keccak256 or
@@ -681,6 +681,9 @@ class AstNode instanceof TAstNode{
         this instanceof TOpcode_asset_params_get or
         this instanceof TOpcode_acct_params_get or
         this instanceof TOpcode_app_params_get or
+        this instanceof TOpcode_balance or
+        this instanceof TOpcode_min_balance or
+        this instanceof TOpcode_bitnot or
         this instanceof TOpcode_args then result = 1
 
         else if this instanceof TOpcode_ed25519verify or
@@ -719,6 +722,8 @@ class AstNode instanceof TAstNode{
         this instanceof TOpcode_bitxor or
         this instanceof TOpcode_shr or
         this instanceof TOpcode_shl or
+        this instanceof TOpcode_extract_uint16 or
+        this instanceof TOpcode_asset_holding_get or
         this instanceof TOpcode_div then result = 2
 
         else if this instanceof TOpcode_ed25519verify or
@@ -741,7 +746,19 @@ class AstNode instanceof TAstNode{
             result = toTreeSitter(this).(Teal::SingleNumericArgumentOpcode).getValue().toString().toInt() + 1
 
         else if this instanceof TOpcode_popn then
-            result = toTreeSitter(this).(Teal::SingleNumericArgumentOpcode).getValue().toString().toInt() + 1
+            result = toTreeSitter(this).(Teal::SingleNumericArgumentOpcode).getValue().toString().toInt()
+
+        else if this instanceof TOpcode_dupn then
+            result = 1
+        
+        else if this instanceof TOpcode_match then
+            result = count(toTreeSitter(this).(Teal::MatchOpcode).getChild(_)) + 1
+        
+        else if this instanceof TOpcode_dig then
+            result = toTreeSitter(this).(Teal::SingleNumericArgumentOpcode).getValue().getValue().toInt() + 1
+        
+        else if this instanceof TOpcode_bury then
+            result = toTreeSitter(this).(Teal::SingleNumericArgumentOpcode).getValue().getValue().toInt() + 1
         
         else result = -1
     }
@@ -769,6 +786,7 @@ class AstNode instanceof TAstNode{
         this instanceof TOpcode_app_global_del or
         this instanceof TOpcode_store or
         this instanceof TOpcode_log or
+        this instanceof TOpcode_match or
         this instanceof TOpcode_retsub then result = 0
 
         else if this instanceof TOpcode_add or 
@@ -830,6 +848,12 @@ class AstNode instanceof TAstNode{
         this instanceof TOpcode_getbyte or
         this instanceof TOpcode_setbyte or
         this instanceof TOpcode_ecdsa_verify or
+        this instanceof TOpcode_not or
+        this instanceof TOpcode_extract_uint16 or
+        this instanceof TOpcode_balance or
+        this instanceof TOpcode_min_balance or
+        this instanceof TOpcode_gtxn or
+        this instanceof TOpcode_select or
         this instanceof TOpcode_pushbytes then result = 1
 
         else if this instanceof TOpcode_addw or
@@ -842,7 +866,12 @@ class AstNode instanceof TAstNode{
         this instanceof TOpcode_app_global_get_ex or
         this instanceof TOpcode_expw or
         this instanceof TOpcode_ecdsa_pk_recover or
+        this instanceof TOpcode_swap or
+        this instanceof TOpcode_dup or
         this instanceof TOpcode_ecdsa_pk_decompress then result = 2
+
+        else if this instanceof TOpcode_dup2 or
+        this instanceof TOpcode_divmodw then result = 4
 
         else if this instanceof TOpcode_cover then
             result = toTreeSitter(this).(Teal::SingleNumericArgumentOpcode).getValue().toString().toInt() + 1
@@ -850,15 +879,46 @@ class AstNode instanceof TAstNode{
         else if this instanceof TOpcode_uncover then
             result = toTreeSitter(this).(Teal::SingleNumericArgumentOpcode).getValue().toString().toInt() + 1
 
+        else if this instanceof TOpcode_dupn then
+            result = toTreeSitter(this).(Teal::SingleNumericArgumentOpcode).getValue().toString().toInt() + 1
+
         else if this instanceof TOpcode_pushints then
             result = strictcount(toTreeSitter(this).(Teal::PushintsOpcode).getValue(_))
         
         else if this instanceof TOpcode_pushbytess then
             result = strictcount(toTreeSitter(this).(Teal::PushbytessOpcode).getChild(_))
+        
+        else if this instanceof TOpcode_dig then
+            result = toTreeSitter(this).(Teal::SingleNumericArgumentOpcode).getValue().getValue().toInt() + 2
 
-        // else if this instanceof TOpcode_pushbytess then result = or //TODO: no va aca este
+        else if this instanceof TOpcode_bury then
+            result = toTreeSitter(this).(Teal::SingleNumericArgumentOpcode).getValue().getValue().toInt()
 
         else result  = -1
+    }
+
+    //TODO: TEST THOROUGHLY! We assume its correct for now
+    // get definitions that get consumed by this opcode, ordered from closest to furthest
+    //to order in ssawrites (first branch), we use 1000 because its the maximum height of the stack
+    // (therefore, no op could push more than 1000 elems to stack)
+    Definition getStackInputByOrder(int ord){
+        ord <= count(this.getConsumedValues()) and
+        ord > 0 and
+        result = 
+        rank[ord](StackVar var, AstNode n | this = n.getConsumedBy(var) | 
+            var.toDef() order by ((this.getLineNumber() - n.getLineNumber())*1000 + var.getInternalOutputIndex()) 
+        )
+        or
+        (
+            result = rank[ord](Definition def | 
+                (def instanceof DirectPhi or def instanceof IndirectPhi) and 
+                this.getConsumedValues() = def | def order by 
+                def.getOrd() desc)
+        )
+    }
+
+    int getStackInputOrderByDef(Definition def){
+        this.getStackInputByOrder(result) = def
     }
 
 
@@ -866,16 +926,21 @@ class AstNode instanceof TAstNode{
         result.(DirectPhi).getConsumedBy() = this 
         or
         result.(IndirectPhi).getConsumedBy() = this or
-        exists(SSAVar v |
+        exists(StackVar v |
         v.getDeclarationNode().getBasicBlock() = this.getBasicBlock() and
         v.getDeclarationNode().getConsumedBy(v) = this and
         result = v.toDef()
         )
     }
 
-    SSAVar getConsumedVars(){
-        result = getGenerator(this.getConsumedValues()) and result.reaches(this)
+    StackVar getConsumedVars(){
+        result = getGenerator(this.getConsumedValues()) 
+        and result.reaches(this)  //TODO: why this? Might be wrong
     }
+
+    // string getConsumedVars_str(){
+    //     result = this.getConsumedVars().getIdentifier()
+    // }
 
 
     //True if the input nodes to this AstNode may be predicted with certanity.
@@ -889,7 +954,7 @@ class AstNode instanceof TAstNode{
 
 
     cached
-    AstNode getConsumedBy(SSAVar var){
+    AstNode getConsumedBy(StackVar var){
         this.getAnOutputVar() = var and
         result = rank[1](AstNode end |
             end.getBasicBlock() = this.getBasicBlock() and
@@ -898,13 +963,13 @@ class AstNode instanceof TAstNode{
         )
     }
 
-    SSAVar getOutputVar(int i){
+    StackVar getOutputVar(int i){
         this.getNumberOfOutputArgs() > 0 and
-        exists(SSAVar v | v.getDeclarationNode() = this and v.getInternalOutputIndex() = i
+        exists(StackVar v | v.getDeclarationNode() = this and v.getInternalOutputIndex() = i
             | result = v)
     }
 
-    SSAVar getAnOutputVar(){result = this.getOutputVar(_)}
+    StackVar getAnOutputVar(){result = this.getOutputVar(_)}
 }
 
 
@@ -944,15 +1009,14 @@ class Codeblock extends AstNode{
     Codeblock(){this.startsACodeblock()}
 
     AstNode getChild(int i){
-        i >= 0 and this.getLineNumber()+i <= this.getCodeblockEnd().getLineNumber()
+        i in [0 .. this.getCodeblockEnd().getLineNumber() - this.getLineNumber()]
+        // i >= 0 and this.getLineNumber()+i <= this.getCodeblockEnd().getLineNumber()
         and result = this.getProgram().getChild(this.getLineNumber()+i)
     }
 
     int numberOfLines(){
         result = count(this.getChild(_))
     }
-
-    override string toString(){result = "codeblock: "}
 }
 
 class Subroutine extends AstNode{
@@ -982,11 +1046,6 @@ class Subroutine extends AstNode{
             h = getNextNode_subroutineAux*(this) and h.getSubroutine().mayReachNode(j)
             | n=j)
     }
-
-    override string toString(){
-        result = "subroutine: "
-    }
-
 }
 
 AstNode getNextNode_subroutineAux(AstNode prev){
@@ -1000,23 +1059,6 @@ AstNode getNextNode_subroutineAux(AstNode prev){
         or not (prev instanceof BOpcode or prev instanceof BzOpcode or prev instanceof BnzOpcode
             or prev instanceof CallsubOpcode) and result = prev.getNextLine()
     )
-}
-
-
-class Program extends AstNode instanceof TSource{
-    Program(){toTreeSitter(this) instanceof Teal::Source}
-
-    // This function accounts for starting pragmas and stuff that is not an AstNode but is still
-    // a child of the Teal::Source
-    AstNode getChild(int i){
-        exists(int k |
-            k = min(int h | 
-                    exists(AstNode n | toTreeSitter(n) = toTreeSitter(this).(Teal::Source).getChild(h))
-             ) | toTreeSitter(result) = toTreeSitter(this).(Teal::Source).getChild(k+i)
-        )
-    }
-
-    override AstNode getParent(){none()}
 }
 
 
@@ -1043,27 +1085,20 @@ class Opcode extends AstNode instanceof TOpcode{}
 
 
 class ContractExitOpcode extends AstNode instanceof TContractExitOpcode{
-
 }
 
-class ReturnOpcode extends ContractExitOpcode{
-    ReturnOpcode(){toTreeSitter(this) instanceof Teal::ZeroArgumentOpcode 
-        and toTreeSitter(this).(Teal::Token).getValue() = "return"}
+class ReturnOpcode extends ContractExitOpcode instanceof TOpcode_return{
     
-    SSAVar getTopOfStackAtEnd(){
+    StackVar getTopOfStackAtEnd(){
         result.getBasicBlock() = this.getBasicBlock() 
         and result.outStackOrder() = 1
     }
 }
 
-class ErrOpcode extends ContractExitOpcode{
-    ErrOpcode(){toTreeSitter(this) instanceof Teal::ZeroArgumentOpcode 
-        and toTreeSitter(this).(Teal::Token).getValue() = "err"}
+class ErrOpcode extends ContractExitOpcode instanceof TOpcode_err{
 }
 
-class AssertOpcode extends ContractExitOpcode{
-    AssertOpcode(){toTreeSitter(this) instanceof Teal::ZeroArgumentOpcode 
-        and toTreeSitter(this).(Teal::Token).getValue() = "assert"}
+class AssertOpcode extends ContractExitOpcode  instanceof TOpcode_assert{
 }
 
 
@@ -1075,8 +1110,7 @@ class UnconditionalBranches extends AstNode instanceof TUnconditionalBranches{
     //     l.getName() = toTreeSitter(this).(Teal::Token).getValue() | result = l)}
 }
 
-class BOpcode extends UnconditionalBranches{
-    BOpcode(){toTreeSitter(this) instanceof Teal::BOpcode}
+class BOpcode extends UnconditionalBranches instanceof TOpcode_b{
 
     Label getTargetLabel(){
         exists(Label l | 
@@ -1085,8 +1119,7 @@ class BOpcode extends UnconditionalBranches{
     }
 }
 
-class CallsubOpcode extends UnconditionalBranches{
-    CallsubOpcode(){toTreeSitter(this) instanceof Teal::CallsubOpcode}
+class CallsubOpcode extends UnconditionalBranches instanceof TOpcode_callsub{
 
     Label getTargetLabel(){
         exists(Label l | 
@@ -1100,8 +1133,6 @@ class CallsubOpcode extends UnconditionalBranches{
 }
 
 class RetsubOpcode extends UnconditionalBranches instanceof TOpcode_retsub{
-    RetsubOpcode(){toTreeSitter(this) instanceof Teal::ZeroArgumentOpcode and 
-        toTreeSitter(this).(Teal::Token).getValue() = "retsub"}
 
     Label getEntrypoint(){
         exists(int i, Label l | i <= this.getPreviousLine().getParentIndex() and
@@ -1118,39 +1149,16 @@ class RetsubOpcode extends UnconditionalBranches instanceof TOpcode_retsub{
 }
 
 
-class SimpleConditionalBranches extends AstNode instanceof TSimpleConditionalBranches{
-    Label getTargetLabel(){exists(Label l | 
-        l.getProgram() = this.getProgram() and (
-            l.getName() = toTreeSitter(this).(Teal::BnzOpcode).getChild().(Teal::Token).getValue()
-            or l.getName() = toTreeSitter(this).(Teal::BzOpcode).getChild().(Teal::Token).getValue()
-        )
-        | result = l)}
-}
-
-class BnzOpcode extends SimpleConditionalBranches{
-    BnzOpcode(){toTreeSitter(this) instanceof Teal::BnzOpcode}
-
-    AstNode getNextNode(boolean s){
-        s = true and result = this.getTargetLabel() or
-        s = false and result = this.getNextLine()
-    }
-}
-
-class BzOpcode extends SimpleConditionalBranches{
-    BzOpcode(){toTreeSitter(this) instanceof Teal::BzOpcode}
-
-    AstNode getNextNode(boolean s){
-        s = false and result = this.getTargetLabel() or
-        s = true and result = this.getNextLine()
-    }
-}
-
-
 class MultiTargetConditionalBranch extends AstNode instanceof TMultiTargetConditionalBranch{
     Label getTargetLabels(){
         result.getName() = toTreeSitter(this).(Teal::SwitchOpcode).getChild(_).getValue() or
         result.getName() = toTreeSitter(this).(Teal::MatchOpcode).getChild(_).getValue() 
         // toTreeSitter(result).(Teal::Label).getName() = toTreeSitter(this).getAFieldOrChild()
+    }
+
+    Label getTargetLabel(int i){
+        result.getName() = toTreeSitter(this).(Teal::SwitchOpcode).getChild(i).getValue() or 
+        result.getName() = toTreeSitter(this).(Teal::MatchOpcode).getChild(i).getValue()
     }
 
     //UNTESTED! TODO: test
@@ -1161,6 +1169,28 @@ class SwitchOpcode extends MultiTargetConditionalBranch{
 }
 
 class MatchOpcode extends MultiTargetConditionalBranch{
-     MatchOpcode(){toTreeSitter(this) instanceof Teal::MatchOpcode}
+    MatchOpcode(){toTreeSitter(this) instanceof Teal::MatchOpcode}
+
+     // Get next node. 0 represents failure (continue to next line)
+     // 1 to label count represents the corresponding label
+    AstNode getNextNode(int value){
+        value = 0 and result = this.getNextLine()
+        or
+        value > 0 and result = this.getTargetLabel(value-1)
+    }
 }
 
+class DigOpcode extends AstNode, TOpcode_dig{
+    DigOpcode(){toTreeSitter(this) instanceof Teal::SingleNumericArgumentOpcode}
+
+    int getValue(){result = 
+        toTreeSitter(this).(Teal::SingleNumericArgumentOpcode).getValue().getValue().toInt()}
+}
+
+// class TxnOpcode extends AstNode, TOpcode_txn{
+//     TxnOpcode(){toTreeSitter(this) instanceof Teal::TxnOpcode}
+
+//     string getField(){result = 
+//         toTreeSitter(this).(Teal::TxnOpcode).getTxnField().toString()
+//     }
+// }

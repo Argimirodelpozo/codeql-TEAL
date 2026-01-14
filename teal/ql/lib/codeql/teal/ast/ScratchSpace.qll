@@ -9,7 +9,7 @@ class LoadOpcode extends AstNode instanceof TOpcode_load{
         result = toTreeSitter(this).(Teal::LoadOpcode).getValue().toString().toInt()
     }
 
-    SSAVar getScratchSpaceStoredVariable(){
+    StackVar getScratchSpaceStoredVariable(){
         result = this.getInfluencingStore().getScratchSpaceStoredVariable()
     }
 
@@ -25,10 +25,10 @@ class LoadOpcode extends AstNode instanceof TOpcode_load{
             and result = store)
     }
 
-    SSAVar getOriginVariable(){
-        result = this.getScratchSpaceStoredVariable*() 
-            and not result.getDeclarationNode() instanceof LoadOpcode
-    }
+    // SSAVar getOriginVariable(){
+    //     result = this.getScratchSpaceStoredVariable*()
+    //         and not result.getDeclarationNode() instanceof LoadOpcode
+    // }
 }
 
 class StoreOpcode extends AstNode instanceof TOpcode_store{
@@ -36,7 +36,7 @@ class StoreOpcode extends AstNode instanceof TOpcode_store{
         result = toTreeSitter(this).(Teal::StoreOpcode).getValue().toString().toInt()
     }
 
-    SSAVar getScratchSpaceStoredVariable(){
+    StackVar getScratchSpaceStoredVariable(){
         result = this.getConsumedVars()
     }
 

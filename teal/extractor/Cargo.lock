@@ -792,7 +792,7 @@ checksum = "c4013970217383f67b18aef68f6fb2e8d409bc5755227092d32efb0422ba24b8"
 [[package]]
 name = "tree-sitter-teal"
 version = "0.1.0"
-source = "git+https://github.com/Argimirodelpozo/tree-sitter-teal.git?rev=12e42bde8731cd306b51d601343f3f2ae98e112f#12e42bde8731cd306b51d601343f3f2ae98e112f"
+source = "git+https://github.com/Argimirodelpozo/tree-sitter-teal.git#e587c096296600781012848084aeff88ea9e53c2"
 dependencies = [
  "cc",
  "tree-sitter-language",
