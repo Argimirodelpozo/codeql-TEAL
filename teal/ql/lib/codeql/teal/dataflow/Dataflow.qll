@@ -403,15 +403,16 @@ module LocalFlow {
 
     // No output nodes should be sinks: they don't emit vars
     // but do consume them
-    or
-    nodeFrom.(SsaDefinitionNode).asDefinition().(SSAWriteDef).getVar() = 
-    nodeTo.(NoOutputNode).getUnderlyingASTNode().getConsumedVars()
-    or
-    nodeFrom.(SsaDefinitionNode).asDefinition().(DirectPhi).getConsumedBy() = 
-    nodeTo.(NoOutputNode).getUnderlyingASTNode()
-    or
-    nodeFrom.(SsaDefinitionNode).asDefinition().(IndirectPhi).getConsumedBy() = 
-    nodeTo.(NoOutputNode).getUnderlyingASTNode()
+    //TODO: test, review, and complete this
+    // or
+    // nodeFrom.(SsaDefinitionNode).asDefinition().(SSAWriteDef).getVar() = 
+    // nodeTo.(NoOutputNode).getUnderlyingASTNode().getConsumedVars()
+    // or
+    // nodeFrom.(SsaDefinitionNode).asDefinition().(DirectPhi).getConsumedBy() = 
+    // nodeTo.(NoOutputNode).getUnderlyingASTNode()
+    // or
+    // nodeFrom.(SsaDefinitionNode).asDefinition().(IndirectPhi).getConsumedBy() = 
+    // nodeTo.(NoOutputNode).getUnderlyingASTNode()
 
 
     // or
