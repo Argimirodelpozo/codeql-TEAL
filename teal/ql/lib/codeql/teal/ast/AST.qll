@@ -905,7 +905,7 @@ class AstNode instanceof TAstNode{
         ord <= count(this.getConsumedValues()) and
         ord > 0 and
         result = 
-        rank[ord](StackVar var, AstNode n | this = n.getConsumedBy(var) | 
+        rank[ord](SSAVar var, AstNode n | this = n.getConsumedBy(var) | 
             var.toDef() order by ((this.getLineNumber() - n.getLineNumber())*1000 + var.getInternalOutputIndex()) 
         )
         or
@@ -926,14 +926,14 @@ class AstNode instanceof TAstNode{
         result.(DirectPhi).getConsumedBy() = this 
         or
         result.(IndirectPhi).getConsumedBy() = this or
-        exists(StackVar v |
+        exists(SSAVar v |
         v.getDeclarationNode().getBasicBlock() = this.getBasicBlock() and
         v.getDeclarationNode().getConsumedBy(v) = this and
         result = v.toDef()
         )
     }
 
-    StackVar getConsumedVars(){
+    SSAVar getConsumedVars(){
         result = getGenerator(this.getConsumedValues()) 
         and result.reaches(this)  //TODO: why this? Might be wrong
     }
@@ -954,7 +954,7 @@ class AstNode instanceof TAstNode{
 
 
     cached
-    AstNode getConsumedBy(StackVar var){
+    AstNode getConsumedBy(SSAVar var){
         this.getAnOutputVar() = var and
         result = rank[1](AstNode end |
             end.getBasicBlock() = this.getBasicBlock() and
@@ -963,13 +963,13 @@ class AstNode instanceof TAstNode{
         )
     }
 
-    StackVar getOutputVar(int i){
+    SSAVar getOutputVar(int i){
         this.getNumberOfOutputArgs() > 0 and
-        exists(StackVar v | v.getDeclarationNode() = this and v.getInternalOutputIndex() = i
+        exists(SSAVar v | v.getDeclarationNode() = this and v.getInternalOutputIndex() = i
             | result = v)
     }
 
-    StackVar getAnOutputVar(){result = this.getOutputVar(_)}
+    SSAVar getAnOutputVar(){result = this.getOutputVar(_)}
 }
 
 
@@ -1018,6 +1018,7 @@ class Codeblock extends AstNode{
         result = count(this.getChild(_))
     }
 }
+
 
 class Subroutine extends AstNode{
     private CallsubOpcode originalCall;
@@ -1089,7 +1090,7 @@ class ContractExitOpcode extends AstNode instanceof TContractExitOpcode{
 
 class ReturnOpcode extends ContractExitOpcode instanceof TOpcode_return{
     
-    StackVar getTopOfStackAtEnd(){
+    SSAVar getTopOfStackAtEnd(){
         result.getBasicBlock() = this.getBasicBlock() 
         and result.outStackOrder() = 1
     }

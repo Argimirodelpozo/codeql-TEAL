@@ -1,3 +1,10 @@
+/**
+ * @id teal/inner-txn-summary
+ * @name Inner transaction review
+ * @kind table
+ */
+
+
 // To create db, from root folder do:
 // codeql database create --overwrite --search-path codeql/teal/extractor-pack -l teal test-projects/db1 -s test-projects/
 
@@ -31,4 +38,4 @@ private import codeql.teal.ast.InnerTransactions
 
 from InnerTransactionField field, InnerTransactionStart start, InnerTransactionEnd end
 where field.contributesToItxn(start, end)
-select start, field, end
+select start, start.getLocation(), start.getLocation().getStartLine(), field.getLocation().getStartLine(), field.getItxnField(), field.getConsumedValues(), field.getConsumedVars(), end, end.getLocation().getStartLine()

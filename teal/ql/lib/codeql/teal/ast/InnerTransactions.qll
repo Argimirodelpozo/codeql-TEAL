@@ -66,12 +66,12 @@ class InnerTransactionField extends AstNode instanceof TOpcode_itxn_field{
         // (itxnClosure instanceof InnerTransactionNext or itxnClosure instanceof InnerTransactionSubmit)
     }
 
-    StackVar getItxnFieldVal(){
+    SSAVar getItxnFieldVal(){
         result = this.getConsumedVars()
     }
 
     string getItxnField(){
-        result = toTreeSitter(this).(Teal::ItxnFieldOpcode).getTxnField()
+        result = toTreeSitter(this).(Teal::ItxnFieldOpcode).getTxnField().toString()
     }
 }
 

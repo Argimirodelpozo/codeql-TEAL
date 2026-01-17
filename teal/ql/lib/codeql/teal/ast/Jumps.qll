@@ -13,7 +13,7 @@ class SimpleConditionalBranches extends AstNode instanceof TSimpleConditionalBra
         )
         | result = l)}
 
-    StackVar getGoverningVal(){
+    SSAVar getGoverningVal(){
         result = this.getConsumedVars()
     }
 

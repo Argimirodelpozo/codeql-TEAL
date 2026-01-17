@@ -63,6 +63,7 @@ BasicBlock firstDeploymentBlock(){
 BasicBlock deploymentCFG(){
     result = firstDeploymentBlock().getAPredecessor+() or
     result = firstDeploymentBlock().getASuccessor*()
+    
 }
 
 //TODO: get basic blocks dominated by this

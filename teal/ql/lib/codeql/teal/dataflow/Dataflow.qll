@@ -12,8 +12,8 @@ private module Private {
   
   cached
   newtype TNode =
-    // TStackPushNode(Cfg::Node n) or
-    // TStackPopNode(Cfg::Node n) 
+  TNoOutputNodes(AstNode n){n.getNumberOfOutputArgs() = 0 and n.getNumberOfConsumedArgs() > 0}
+  or
     // or
 
     // TLoadNode(Cfg::Node n) or
@@ -22,9 +22,9 @@ private module Private {
     // TExprNode(DataFlowExpr e) or
     // TReturningNode(Cfg::Node n) { n.getAstNode() = any(FunctionDefinition d).getBody() } or
     // TOpcodeNode(Cfg::Node op){op.getAstNode() instanceof TOpcode} or  //TODO: placeholder for now
-    TStackVarNode(StackVar op) or  //TODO: placeholder for now
+    TStackVarNode(SSAVar op) or  //TODO: placeholder for now
     TSsaDefinitionNode(Ssa::Definition def) or
-    TScratchLoadNode(StackVar op){
+    TScratchLoadNode(SSAVar op){
       op.getDeclarationNode() instanceof TOpcode_load or
       op.getDeclarationNode() instanceof TOpcode_loads 
       // or
@@ -129,10 +129,18 @@ private module Public {
   //   override Location getLocation() { result = expr.getLocation() }
   // }
 
+  class NoOutputNode extends Node, TNoOutputNodes {
+    Cfg::Node getCfgNode() { result.getAstNode() = this.getUnderlyingASTNode() }
+
+    override AstNode getUnderlyingASTNode(){
+      this = TNoOutputNodes(result)
+    }
+  }
+
   // class OpcodeNode extends Node, TOpcodeNode {
   class OpcodeNode extends Node, TStackVarNode {
     // private Cfg::Node expr;
-    private StackVar expr;
+    private SSAVar expr;
 
     // OpcodeNode() { this = TOpcodeNode(expr) }
     OpcodeNode() { this = TStackVarNode(expr) }
@@ -238,6 +246,7 @@ private module Public {
 
   predicate isBarrier(Node n){
     exists(AstNode s |
+      n.getUnderlyingASTNode() instanceof MatchOpcode or
       n.(SsaDefinitionNode).asDefinition().(SSAWriteDef).getRHS() = s and
       not (s instanceof TOpcode_bury or s instanceof TOpcode_dig or 
         s instanceof TOpcode_cover or s instanceof TOpcode_uncover or
@@ -391,6 +400,18 @@ module LocalFlow {
     //phi-to-phi flow (first phi can be d|i, second phi is always indirect)
     nodeFrom.(SsaDefinitionNode).asDefinition() = 
     nodeTo.(SsaDefinitionNode).asDefinition().(IndirectPhi).getGenerator()
+
+    // No output nodes should be sinks: they don't emit vars
+    // but do consume them
+    or
+    nodeFrom.(SsaDefinitionNode).asDefinition().(SSAWriteDef).getVar() = 
+    nodeTo.(NoOutputNode).getUnderlyingASTNode().getConsumedVars()
+    or
+    nodeFrom.(SsaDefinitionNode).asDefinition().(DirectPhi).getConsumedBy() = 
+    nodeTo.(NoOutputNode).getUnderlyingASTNode()
+    or
+    nodeFrom.(SsaDefinitionNode).asDefinition().(IndirectPhi).getConsumedBy() = 
+    nodeTo.(NoOutputNode).getUnderlyingASTNode()
 
 
     // or

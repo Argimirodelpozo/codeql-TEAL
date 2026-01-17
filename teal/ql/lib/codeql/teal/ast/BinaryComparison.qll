@@ -19,7 +19,7 @@ class LogicalComparisonOp extends AstNode instanceof TLogicalComparisonOp{
 
     boolean attemptInference(){
         this.getOperator() = ">" and
-        if getGenerator(this.firstOp()).tryCastToInt() = getGenerator(this.secondOp()).tryCastToInt()
+        if getGenerator(this.firstOp()).tryAsInt() = getGenerator(this.secondOp()).tryAsInt()
         then result = true 
         else result = false
     }
@@ -34,3 +34,17 @@ class EqualsComparisonOpcode extends LogicalComparisonOp{
 class NotEqualsComparisonOpcode extends LogicalComparisonOp{
     NotEqualsComparisonOpcode(){this.getOperator() = "!="}
 }
+
+
+//TODO: a function that says:
+// given this binary op comparison, and given this op in the code, does it hold
+//  that being in this specific place mean the binary op is implied to be true/false?
+//  this means we have to follow the binop into AND conditions, jumps, and through asserts,
+//  and then asess dominance of the block where it stops having controlflow influence
+
+//auxiliary predicate:
+// given a binary op, what is the extent of its influence in CFG?
+// logical/boolean dataflow and find all sinks
+// in this dataflow scenario, AND is let through
+// or creates uncertainty (it may or may not be through)
+// not cuts, and so does any consumption
