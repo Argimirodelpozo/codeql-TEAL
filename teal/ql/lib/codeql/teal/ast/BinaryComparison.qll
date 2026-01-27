@@ -18,8 +18,8 @@ class LogicalComparisonOp extends AstNode instanceof TLogicalComparisonOp{
     // Location getLocation(){result = this.(AstNode).getLocation()}
 
     boolean attemptInference(){
-        this.getOperator() = ">" and
-        if getGenerator(this.firstOp()).tryAsInt() = getGenerator(this.secondOp()).tryAsInt()
+        this.getOperator() = "==" and
+        if getGenerator(this.firstOp()).tryCastToInt() = getGenerator(this.secondOp()).tryCastToInt()
         then result = true 
         else result = false
     }
