@@ -256,6 +256,11 @@ class SSAWriteDef extends Definition instanceof TSSAVar{
   override int getOrd(){result = -1}
 }
 
+//TODO: try with this one, and see if it still causes 
+//  the "cartesian explosion" bug with simple flow queries
+// newtype TStackVar = TSSaVarType(int index, Location loc){
+//   exists(AstNode n | n.getLocation() = loc and index in [1 .. n.getNumberOfOutputArgs()])
+// }
 
 
 class SSAVar extends AstNode{
@@ -266,7 +271,7 @@ int varInternalIndex;
     SSAVar(){ 
       exists(AstNode n| this = n and varInternalIndex in [1 .. n.getNumberOfOutputArgs()])}
 
-    string getIdentifier(){result = "V" + this.getLineNumber() + "_" + this.getInternalOutputIndex().toString()}
+    string getIdentifier(){result = "V" + "#" + this.getInternalOutputIndex().toString() + "@L" + this.getLineNumberInFile()}
 
     SSAWriteDef toDef(){result = TSSAVar(this.getInternalOutputIndex(), this)}
     // SSAWriteDefinition toWriteDef(){result.getBasicBlock() = this.getDeclarationNode().getBasicBlock()

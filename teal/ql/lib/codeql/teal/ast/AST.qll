@@ -485,6 +485,10 @@ class AstNode instanceof TAstNode{
         exists(int i | this.getProgram().getChild(i) = this | result = i)
     }
 
+    int getLineNumberInFile(){
+        result = this.getLocation().getStartLine()
+    }
+
     // Get opcode immediately next to this one in the code (not accounting for branches)
     AstNode getNextLine(){
         exists(int i | this.getProgram().getChild(i) = this
