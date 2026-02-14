@@ -7,7 +7,7 @@ TealQL is an SAST powered by GitHub Advanced Security's CodeQL, bringing the lat
 ### 1. Clone the Repository
 
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/Argimirodelpozo/codeql-TEAL.git 
 cd codeql-TEAL
 ```
 
