@@ -3,10 +3,26 @@ private import codeql.teal.ast.internal.TreeSitter
 private import codeql.teal.cfg.BasicBlocks
 private import codeql.teal.SSA.SSA
 private import codeql.teal.cfg.Completion::Completion
-private import codeql.teal.ast.IntegerConstants
-private import codeql.teal.ast.InnerTransactions
-import codeql.teal.ast.Jumps
 import codeql.teal.ast.Program
+import codeql.teal.ast.opcodes.Arithmetic
+import codeql.teal.ast.opcodes.ByteArithmetic
+import codeql.teal.ast.opcodes.Comparison
+import codeql.teal.ast.opcodes.ByteComparison
+import codeql.teal.ast.opcodes.Logic
+import codeql.teal.ast.opcodes.Hashing
+import codeql.teal.ast.opcodes.Crypto
+import codeql.teal.ast.opcodes.EllipticCurve
+import codeql.teal.ast.opcodes.Constants
+import codeql.teal.ast.opcodes.Transaction
+import codeql.teal.ast.opcodes.GlobalState
+import codeql.teal.ast.opcodes.InnerTransactions
+import codeql.teal.ast.opcodes.ControlFlow
+import codeql.teal.ast.opcodes.StackManipulation
+import codeql.teal.ast.opcodes.ScratchSpace
+import codeql.teal.ast.opcodes.ByteOps
+import codeql.teal.ast.opcodes.BoxStorage
+import codeql.teal.ast.opcodes.Logging
+import codeql.teal.ast.opcodes.Misc
 
 cached
 newtype TAstNode = 
@@ -159,7 +175,7 @@ TOpcode_substring(Teal::DoubleNumericArgumentOpcode op){op.getOp() = "substring"
 TOpcode_gload(Teal::DoubleNumericArgumentOpcode op){op.getOp() = "gload"} or
 TOpcode_proto(Teal::DoubleNumericArgumentOpcode op){op.getOp() = "proto"} or
 TOpcode_ec_add(Teal::EcOpcode op){op.getOp() = "ec_add"} or
-TOpcode_ec_mul(Teal::EcOpcode op){op.getOp() = "ec_mul"} or
+TOpcode_ec_mul(Teal::EcOpcode op){op.getOp() = "ec_mul"} or //TODO: ERROR IN OPCODE! FIX. IT IS ec_scalar_mul
 TOpcode_ec_pairing_check(Teal::EcOpcode op){op.getOp() = "ec_pairing_check"} or
 TOpcode_ec_multi_scalar_mul(Teal::EcOpcode op){op.getOp() = "ec_multi_scalar_mul"} or
 TOpcode_ec_subgroup_check(Teal::EcOpcode op){op.getOp() = "ec_subgroup_check"} or
@@ -600,13 +616,13 @@ class AstNode instanceof TAstNode{
         )
     }
 
-    //TODO: TERMINARRRR
+    // this function is ONLY concerned with the delta (not the actual values)
+    // unlike consumption/output, this one is useful to know the SIZE of a given stack,
+    // without caring about the dataflow pattern of said stack through the opcode
+    int getStackDelta(){
+        result = 0
+    }
 
-    //TODO: handle special case "bury"
-    // probably consumes N and returns N new vars
-    // that are copies of the previous N plus the new one
-    //TODO: handle special case "dupn"
-    //TODO: handle special case "dig"
     cached
     int getNumberOfConsumedArgs(){
         //TODO: finish
@@ -644,7 +660,6 @@ class AstNode instanceof TAstNode{
         this instanceof TOpcode_txna or
         this instanceof TOpcode_gtxna or
         this instanceof TOpcode_gload or
-        this instanceof TOpcode_retsub or
         this instanceof TOpcode_callsub or
         this instanceof TOpcode_pushint or
         this instanceof TOpcode_pushbytes or
@@ -653,7 +668,17 @@ class AstNode instanceof TAstNode{
         this instanceof TOpcode_gaid or
         this instanceof TOpcode_itxn_next or
         this instanceof TOpcode_pushbytess or
+        this instanceof TOpcode_pushints or
         this instanceof TOpcode_gtxn or
+        this instanceof TOpcode_proto or
+        this instanceof TOpcode_frame_dig or // TODO: REVIEW!
+        this instanceof TOpcode_online_stake or
+        this instanceof TOpcode_gitxn or
+        this instanceof TOpcode_gitxna or
+        this instanceof TOpcode_itxn or
+        this instanceof TOpcode_itxna or
+        this instanceof TOpcode_retsub or  //TODO: this should consume whole stack at that point
+                                           // if there is a proto affecting it
         this instanceof TOpcode_b then result = 0
 
         else if this instanceof TOpcode_keccak256 or
@@ -688,10 +713,29 @@ class AstNode instanceof TAstNode{
         this instanceof TOpcode_balance or
         this instanceof TOpcode_min_balance or
         this instanceof TOpcode_bitnot or
+        this instanceof TOpcode_bnot or
+        this instanceof TOpcode_frame_bury or // TODO: REVIEW!
+        this instanceof TOpcode_sqrt or
+        this instanceof TOpcode_bitlen or
+        this instanceof TOpcode_bsqrt or
+        this instanceof TOpcode_sha3_256 or
+        this instanceof TOpcode_box_del or
+        this instanceof TOpcode_box_len or
+        this instanceof TOpcode_box_get or
+        this instanceof TOpcode_base64_decode or
+        this instanceof TOpcode_block or
+        this instanceof TOpcode_ec_subgroup_check or
+        this instanceof TOpcode_ec_map_to or
+        this instanceof TOpcode_gitxnas or
+        this instanceof TOpcode_gtxnas or
+        this instanceof TOpcode_itxnas or
+        this instanceof TOpcode_txnas or
+        this instanceof TOpcode_mimc or
+        this instanceof TOpcode_voter_params_get or
+        this instanceof TOpcode_switch or
         this instanceof TOpcode_args then result = 1
 
-        else if this instanceof TOpcode_ed25519verify or
-        this instanceof TOpcode_add or 
+        else if this instanceof TOpcode_add or 
         this instanceof TOpcode_sub or
         this instanceof TOpcode_mul or
         this instanceof TOpcode_lt or
@@ -706,7 +750,6 @@ class AstNode instanceof TAstNode{
         this instanceof TOpcode_bor or
         this instanceof TOpcode_band or
         this instanceof TOpcode_bxor or
-        this instanceof TOpcode_bnot or
         this instanceof TOpcode_mulw or
         this instanceof TOpcode_addw or
         this instanceof TOpcode_stores or
@@ -717,7 +760,6 @@ class AstNode instanceof TAstNode{
         this instanceof TOpcode_getbyte or
         this instanceof TOpcode_app_global_get_ex or
         this instanceof TOpcode_app_global_put or
-        this instanceof TOpcode_app_local_put or
         this instanceof TOpcode_app_local_get or
         this instanceof TOpcode_app_local_del or
         this instanceof TOpcode_exp or
@@ -726,9 +768,35 @@ class AstNode instanceof TAstNode{
         this instanceof TOpcode_bitxor or
         this instanceof TOpcode_shr or
         this instanceof TOpcode_shl or
-        this instanceof TOpcode_extract_uint16 or
         this instanceof TOpcode_asset_holding_get or
-        this instanceof TOpcode_div then result = 2
+        this instanceof TOpcode_div or
+        this instanceof TOpcode_replace2 or
+        this instanceof TOpcode_extract_uint16 or
+        this instanceof TOpcode_extract_uint32 or
+        this instanceof TOpcode_extract_uint64 or
+        this instanceof TOpcode_app_opted_in or
+        this instanceof TOpcode_expw or
+        this instanceof TOpcode_badd or
+        this instanceof TOpcode_bsub or
+        this instanceof TOpcode_bdiv or
+        this instanceof TOpcode_bmul or
+        this instanceof TOpcode_blt or
+        this instanceof TOpcode_bgt or
+        this instanceof TOpcode_blte or
+        this instanceof TOpcode_bgte or
+        this instanceof TOpcode_beq or
+        this instanceof TOpcode_bneq or
+        this instanceof TOpcode_bmod or
+        this instanceof TOpcode_box_create or
+        this instanceof TOpcode_box_put or
+        this instanceof TOpcode_box_resize or
+        this instanceof TOpcode_gloadss or
+        this instanceof TOpcode_ec_add or
+        // this instanceof TOpcode_ec_mul or // TODO: REVIEW! TODO: FIX ERROR IN GRAMMAR!
+        this instanceof TOpcode_ec_pairing_check or
+        this instanceof TOpcode_ec_multi_scalar_mul or
+        this instanceof TOpcode_json_ref or
+        this instanceof TOpcode_gtxnsas then result = 2
 
         else if this instanceof TOpcode_ed25519verify or
         this instanceof TOpcode_substring3 or
@@ -736,10 +804,18 @@ class AstNode instanceof TAstNode{
         this instanceof TOpcode_setbyte or
         this instanceof TOpcode_extract3 or
         this instanceof TOpcode_app_local_get_ex or
-        this instanceof TOpcode_select then result = 3
+        this instanceof TOpcode_app_local_put or
+        this instanceof TOpcode_select or
+        this instanceof TOpcode_replace3 or
+        this instanceof TOpcode_ed25519verify_bare or
+        this instanceof TOpcode_divw or
+        this instanceof TOpcode_box_extract or
+        this instanceof TOpcode_box_replace or
+        this instanceof TOpcode_vrf_verify then result = 3
 
         else if this instanceof TOpcode_ecdsa_pk_recover or
-        this instanceof TOpcode_divmodw then result = 4
+        this instanceof TOpcode_divmodw or
+        this instanceof TOpcode_box_splice then result = 4
 
         else if this instanceof TOpcode_ecdsa_verify then result = 5
 
@@ -763,6 +839,11 @@ class AstNode instanceof TAstNode{
         
         else if this instanceof TOpcode_bury then
             result = toTreeSitter(this).(Teal::SingleNumericArgumentOpcode).getValue().getValue().toInt() + 1
+
+        // else if this instanceof TOpcode_retsub then
+            // this.(RetsubOpcode).getAffectingProto() and consumefullstack() or
+            // result = 0
+        //         result = this.(RetsubOpcode).getAffectingProto().getNumberOfInputArgs()
         
         else result = -1
     }
@@ -791,7 +872,14 @@ class AstNode instanceof TAstNode{
         this instanceof TOpcode_store or
         this instanceof TOpcode_log or
         this instanceof TOpcode_match or
-        this instanceof TOpcode_retsub then result = 0
+        this instanceof TOpcode_retsub or
+        this instanceof TOpcode_proto or
+        this instanceof TOpcode_frame_bury or // TODO: REVIEW!
+        this instanceof TOpcode_stores or
+        this instanceof TOpcode_box_replace or
+        this instanceof TOpcode_box_put or
+        this instanceof TOpcode_box_splice or
+        this instanceof TOpcode_box_resize then result = 0
 
         else if this instanceof TOpcode_add or 
         this instanceof TOpcode_sub or
@@ -858,7 +946,70 @@ class AstNode instanceof TAstNode{
         this instanceof TOpcode_min_balance or
         this instanceof TOpcode_gtxn or
         this instanceof TOpcode_select or
-        this instanceof TOpcode_pushbytes then result = 1
+        this instanceof TOpcode_bnot or
+        this instanceof TOpcode_pushbytes or
+        this instanceof TOpcode_arg_0 or
+        this instanceof TOpcode_arg_1 or
+        this instanceof TOpcode_arg_2 or
+        this instanceof TOpcode_arg_3 or
+        this instanceof TOpcode_arg or
+        this instanceof TOpcode_gaids or
+        this instanceof TOpcode_loads or
+        this instanceof TOpcode_args or
+        this instanceof TOpcode_gloads or
+        this instanceof TOpcode_gload or
+        this instanceof TOpcode_gaid or
+        this instanceof TOpcode_gtxna or
+        this instanceof TOpcode_bor or
+        this instanceof TOpcode_band or
+        this instanceof TOpcode_bxor or
+        this instanceof TOpcode_replace2 or
+        this instanceof TOpcode_replace3 or
+        this instanceof TOpcode_extract_uint32 or
+        this instanceof TOpcode_extract_uint64 or
+        this instanceof TOpcode_app_opted_in or
+        this instanceof TOpcode_online_stake or
+        this instanceof TOpcode_ed25519verify_bare or
+        this instanceof TOpcode_sqrt or
+        this instanceof TOpcode_bitlen or
+        this instanceof TOpcode_bsqrt or
+        this instanceof TOpcode_divw or
+        this instanceof TOpcode_sha3_256 or
+        this instanceof TOpcode_badd or
+        this instanceof TOpcode_bsub or
+        this instanceof TOpcode_bdiv or
+        this instanceof TOpcode_bmul or
+        this instanceof TOpcode_blt or
+        this instanceof TOpcode_bgt or
+        this instanceof TOpcode_blte or
+        this instanceof TOpcode_bgte or
+        this instanceof TOpcode_beq or
+        this instanceof TOpcode_bneq or
+        this instanceof TOpcode_bmod or
+        this instanceof TOpcode_box_create or
+        this instanceof TOpcode_box_extract or
+        this instanceof TOpcode_box_del or
+        this instanceof TOpcode_gloadss or
+        this instanceof TOpcode_base64_decode or
+        this instanceof TOpcode_block or
+        this instanceof TOpcode_ec_add or
+        // this instanceof TOpcode_ec_mul or // TODO: REVIEW! TODO: FIX OPCODE ERROR 
+        this instanceof TOpcode_ec_pairing_check or
+        this instanceof TOpcode_ec_multi_scalar_mul or
+        this instanceof TOpcode_ec_subgroup_check or
+        this instanceof TOpcode_ec_map_to or
+        this instanceof TOpcode_gitxn or
+        this instanceof TOpcode_gitxna or
+        this instanceof TOpcode_gitxnas or
+        this instanceof TOpcode_gtxnas or
+        this instanceof TOpcode_gtxnsas or
+        this instanceof TOpcode_itxn or
+        this instanceof TOpcode_itxna or
+        this instanceof TOpcode_itxnas or
+        this instanceof TOpcode_txnas or
+        this instanceof TOpcode_json_ref or
+        this instanceof TOpcode_mimc or
+        this instanceof TOpcode_frame_dig then result = 1 // TODO: REVIEW!
 
         else if this instanceof TOpcode_addw or
         this instanceof TOpcode_asset_holding_get or
@@ -872,7 +1023,12 @@ class AstNode instanceof TAstNode{
         this instanceof TOpcode_ecdsa_pk_recover or
         this instanceof TOpcode_swap or
         this instanceof TOpcode_dup or
-        this instanceof TOpcode_ecdsa_pk_decompress then result = 2
+        this instanceof TOpcode_ecdsa_pk_decompress or
+        this instanceof TOpcode_app_local_get_ex or
+        this instanceof TOpcode_box_len or
+        this instanceof TOpcode_box_get or
+        this instanceof TOpcode_voter_params_get or
+        this instanceof TOpcode_vrf_verify then result = 2
 
         else if this instanceof TOpcode_dup2 or
         this instanceof TOpcode_divmodw then result = 4
@@ -897,6 +1053,10 @@ class AstNode instanceof TAstNode{
 
         else if this instanceof TOpcode_bury then
             result = toTreeSitter(this).(Teal::SingleNumericArgumentOpcode).getValue().getValue().toInt()
+
+        // else if this instanceof TOpcode_frame_bury then
+        //     if toTreeSitter(this).(Teal::SingleNumericArgumentOpcode).getValue().getValue().toInt() < 0
+        //     then result = 
 
         else result  = -1
     }
@@ -1084,118 +1244,10 @@ class Label extends AstNode instanceof TLabel{
 }
 
 
-class Opcode extends AstNode instanceof TOpcode{}
-
-
-
-
-class ContractExitOpcode extends AstNode instanceof TContractExitOpcode{
-}
-
-class ReturnOpcode extends ContractExitOpcode instanceof TOpcode_return{
-    
-    SSAVar getTopOfStackAtEnd(){
-        result.getBasicBlock() = this.getBasicBlock() 
-        and result.outStackOrder() = 1
-    }
-}
-
-class ErrOpcode extends ContractExitOpcode instanceof TOpcode_err{
-}
-
-class AssertOpcode extends ContractExitOpcode  instanceof TOpcode_assert{
+class Opcode extends AstNode instanceof TOpcode {
+    override int getStackDelta() { result = this.getNumberOfOutputArgs() - this.getNumberOfConsumedArgs() }
 }
 
 
 
 
-class UnconditionalBranches extends AstNode instanceof TUnconditionalBranches{
-    // Label getTargetLabel(){
-    //     exists(Label l | 
-    //     l.getName() = toTreeSitter(this).(Teal::Token).getValue() | result = l)}
-}
-
-class BOpcode extends UnconditionalBranches instanceof TOpcode_b{
-
-    Label getTargetLabel(){
-        exists(Label l | 
-        l.getProgram() = this.getProgram() and
-        l.getName() = toTreeSitter(this).(Teal::BOpcode).getChild().getValue() | result = l)
-    }
-}
-
-class CallsubOpcode extends UnconditionalBranches instanceof TOpcode_callsub{
-
-    Label getTargetLabel(){
-        exists(Label l | 
-            l.getProgram() = this.getProgram() and
-            l.getName() = toTreeSitter(this).(Teal::CallsubOpcode).getChild().getValue() | result = l)
-    }
-
-    Subroutine getSubroutine(){
-        result.getCallingOpcode() = this and result = this.getTargetLabel()
-    }
-}
-
-class RetsubOpcode extends UnconditionalBranches instanceof TOpcode_retsub{
-
-    Label getEntrypoint(){
-        exists(int i, Label l | i <= this.getPreviousLine().getParentIndex() and
-            this.getProgram().getChild(i) = l and exists(l.getCallsubToLabel()) and not
-            exists(int h, Label l2 | h < this.getParentIndex() and h > i and 
-                this.getProgram().getChild(h) = l2 and exists(l2.getCallsubToLabel())
-            ) | result = l
-        )
-    }
-    
-    AstNode predictRetsubReturn(){
-        result = this.getEntrypoint().getCallsubToLabel().getNextLine()
-    }
-}
-
-
-class MultiTargetConditionalBranch extends AstNode instanceof TMultiTargetConditionalBranch{
-    Label getTargetLabels(){
-        result.getName() = toTreeSitter(this).(Teal::SwitchOpcode).getChild(_).getValue() or
-        result.getName() = toTreeSitter(this).(Teal::MatchOpcode).getChild(_).getValue() 
-        // toTreeSitter(result).(Teal::Label).getName() = toTreeSitter(this).getAFieldOrChild()
-    }
-
-    Label getTargetLabel(int i){
-        result.getName() = toTreeSitter(this).(Teal::SwitchOpcode).getChild(i).getValue() or 
-        result.getName() = toTreeSitter(this).(Teal::MatchOpcode).getChild(i).getValue()
-    }
-
-    //UNTESTED! TODO: test
-}
-
-class SwitchOpcode extends MultiTargetConditionalBranch{
-    SwitchOpcode(){toTreeSitter(this) instanceof Teal::SwitchOpcode}
-}
-
-class MatchOpcode extends MultiTargetConditionalBranch{
-    MatchOpcode(){toTreeSitter(this) instanceof Teal::MatchOpcode}
-
-     // Get next node. 0 represents failure (continue to next line)
-     // 1 to label count represents the corresponding label
-    AstNode getNextNode(int value){
-        value = 0 and result = this.getNextLine()
-        or
-        value > 0 and result = this.getTargetLabel(value-1)
-    }
-}
-
-class DigOpcode extends AstNode, TOpcode_dig{
-    DigOpcode(){toTreeSitter(this) instanceof Teal::SingleNumericArgumentOpcode}
-
-    int getValue(){result = 
-        toTreeSitter(this).(Teal::SingleNumericArgumentOpcode).getValue().getValue().toInt()}
-}
-
-// class TxnOpcode extends AstNode, TOpcode_txn{
-//     TxnOpcode(){toTreeSitter(this) instanceof Teal::TxnOpcode}
-
-//     string getField(){result = 
-//         toTreeSitter(this).(Teal::TxnOpcode).getTxnField().toString()
-//     }
-// }
