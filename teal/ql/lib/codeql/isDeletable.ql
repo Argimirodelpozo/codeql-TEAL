@@ -12,7 +12,7 @@
 
 import codeql.teal.ast.AST
 import codeql.teal.cfg.BasicBlocks
-import OnCompletionGuards
+import codeql.guards.OnCompletionGuards
 
 /**
  * Flag if there exists an approval exit that is NOT guarded against

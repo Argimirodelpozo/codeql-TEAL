@@ -18,7 +18,7 @@ import codeql.teal.SSA.SSA
 import codeql.teal.cfg.BasicBlocks
 import codeql.teal.ast.opcodes.Transaction
 import codeql.teal.ast.opcodes.Comparison
-import codeql.OnCompletionGuards
+import codeql.guards.OnCompletionGuards
 
 // ---------------------------------------------------------------------------
 // This was taken from TealerCommon (Claude-generated).

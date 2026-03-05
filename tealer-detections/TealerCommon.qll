@@ -12,7 +12,7 @@
 import codeql.teal.ast.AST
 import codeql.teal.SSA.SSA
 import codeql.teal.cfg.BasicBlocks
-import codeql.OnCompletionGuards
+import codeql.guards.OnCompletionGuards
 private import codeql.teal.cfg.Completion::Completion
 
 // ---------------------------------------------------------------------------

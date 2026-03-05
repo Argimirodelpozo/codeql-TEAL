@@ -13,8 +13,8 @@
 
 import codeql.teal.ast.AST
 import codeql.teal.cfg.BasicBlocks
-import codeql.OnCompletionGuards
-import codeql.FeeValidationGuards
+import codeql.guards.OnCompletionGuards
+import codeql.guards.FeeValidationGuards
 
 /**
  * Flag programs that have at least one approval exit but no fee check

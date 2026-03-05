@@ -11,7 +11,7 @@
  */
 
 import codeql.teal.ast.AST
-import codeql.OnCompletionGuards
+import codeql.guards.OnCompletionGuards
 import TealerCommon
 
 from Program prog, BasicBlock approvalBB
