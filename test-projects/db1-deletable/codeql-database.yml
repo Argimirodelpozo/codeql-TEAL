@@ -1,0 +1,12 @@
+---
+sourceLocationPrefix: /Users/sarajane/testQLSetup/codeql-TEAL/test-projects/oncomp-deletable
+baselineLinesOfCode: 0
+unicodeNewlines: false
+columnKind: utf8
+primaryLanguage: teal
+creationMetadata:
+  cliVersion: 2.23.9
+  creationTime: 2026-03-04T21:59:09.212538Z
+overlayBaseDatabase: false
+finalised: true
+overlayDatabase: false

@@ -1,0 +1,19 @@
+[2026-03-04 21:59:09] This is codeql database index-files --verbosity=progress --include-extension=.teal --exclude=**/.git --size-limit=5m --language=teal --working-dir=. /Users/sarajane/testQLSetup/codeql-TEAL/test-projects/db1-deletable
+[2026-03-04 21:59:09] Log file was started late.
+[2026-03-04 21:59:09] Using index-files script /Users/sarajane/testQLSetup/codeql-TEAL/.codeql-extractors/teal/tools/index-files.sh.
+[2026-03-04 21:59:09] [PROGRESS] database index-files> Scanning for files in /Users/sarajane/testQLSetup/codeql-TEAL/test-projects/oncomp-deletable...
+[2026-03-04 21:59:09] Calling plumbing command: codeql resolve files --include-extension=.teal --exclude=**/.git --size-limit=5m /Users/sarajane/testQLSetup/codeql-TEAL/test-projects/oncomp-deletable --format=json
+[2026-03-04 21:59:09] [PROGRESS] resolve files> Scanning /Users/sarajane/testQLSetup/codeql-TEAL/test-projects/oncomp-deletable...
+[2026-03-04 21:59:09] Plumbing command codeql resolve files completed:
+                      [
+                        "/Users/sarajane/testQLSetup/codeql-TEAL/test-projects/oncomp-deletable/fixed.teal",
+                        "/Users/sarajane/testQLSetup/codeql-TEAL/test-projects/oncomp-deletable/vuln.teal"
+                      ]
+[2026-03-04 21:59:09] [DETAILS] database index-files> Found 2 files.
+[2026-03-04 21:59:10] [PROGRESS] database index-files> /Users/sarajane/testQLSetup/codeql-TEAL/test-projects/db1-deletable: Indexing files in in /Users/sarajane/testQLSetup/codeql-TEAL/test-projects/oncomp-deletable...
+[2026-03-04 21:59:10] Using index-files script /Users/sarajane/testQLSetup/codeql-TEAL/.codeql-extractors/teal/tools/index-files.sh.
+[2026-03-04 21:59:10] [PROGRESS] database index-files> Running command in /Users/sarajane/testQLSetup/codeql-TEAL/test-projects/oncomp-deletable: [/Users/sarajane/testQLSetup/codeql-TEAL/.codeql-extractors/teal/tools/index-files.sh, /Users/sarajane/testQLSetup/codeql-TEAL/test-projects/db1-deletable/working/files-to-index17801687558565640556.list]
+[2026-03-04 21:59:10] [build-stdout]  INFO Extraction started
+[2026-03-04 21:59:10] [build-stdout]  INFO Using 7 threads
+[2026-03-04 21:59:10] [build-stdout]  INFO Extraction complete
+[2026-03-04 21:59:10] Terminating normally.

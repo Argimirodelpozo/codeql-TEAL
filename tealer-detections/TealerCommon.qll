@@ -12,6 +12,7 @@
 import codeql.teal.ast.AST
 import codeql.teal.SSA.SSA
 import codeql.teal.cfg.BasicBlocks
+import codeql.OnCompletionGuards
 private import codeql.teal.cfg.Completion::Completion
 
 // ---------------------------------------------------------------------------
@@ -21,20 +22,6 @@ private import codeql.teal.cfg.Completion::Completion
 /** A basic block whose last node is a contract exit opcode. */
 BasicBlock exitBlock() { result.getLastNode().getAstNode() instanceof TContractExitOpcode }
 
-/**
- * A basic block ending in `return` where the return value may be non-zero
- * (i.e. the transaction is approved).
- */
-BasicBlock approvalExit() {
-  result = exitBlock() and
-  result.getLastNode().getAstNode() instanceof ReturnOpcode and
-  (
-    result.getLastNode().getAstNode().(ReturnOpcode).getTopOfStackAtEnd().tryAsInt() != 0
-    or
-    not exists(result.getLastNode().getAstNode().(ReturnOpcode).getTopOfStackAtEnd().tryAsInt())
-  )
-}
-
 /** A basic block ending in `err` or `return 0` — guaranteed rejection. */
 BasicBlock rejectionExit() {
   result.getLastNode().getAstNode() instanceof ErrOpcode
@@ -43,85 +30,9 @@ BasicBlock rejectionExit() {
   result.getLastNode().getAstNode().(ReturnOpcode).getTopOfStackAtEnd().tryAsInt() = 0
 }
 
-// ---------------------------------------------------------------------------
-// OnCompletion helpers
-// ---------------------------------------------------------------------------
-
-/** OnCompletion action constants (AVM spec). */
-int onCompletionNoOp() { result = 0 }
-
-int onCompletionOptIn() { result = 1 }
-
-int onCompletionCloseOut() { result = 2 }
-
-int onCompletionClearState() { result = 3 }
-
-int onCompletionUpdateApplication() { result = 4 }
-
-int onCompletionDeleteApplication() { result = 5 }
-
-/** A `txn OnCompletion` read. */
-TxnOpcode onCompletionRead() { result.getField() = "OnCompletion" }
-
-/**
- * Holds when `cb` is a condition block that compares OnCompletion
- * against constant `actionInt` using `==`, with the equality
- * holding on `equalBranch`.
- */
-predicate onCompletionEqualityGuard(
-  ConditionBlock cb, int actionInt, BooleanSuccessor equalBranch
-) {
-  exists(
-    SimpleConditionalBranches branch, SSAVar gov, AstNode comp, Definition firstDef,
-    Definition secondDef, SSAVar firstVar, SSAVar secondVar
-  |
-    branch.getBasicBlock() = cb and
-    gov = branch.getGoverningVal() and
-    comp = gov.getDeclarationNode() and
-    (
-      comp instanceof IntegerEqualsOpcode and equalBranch.getValue() = true
-      or
-      comp instanceof IntegerNotEqualsOpcode and equalBranch.getValue() = false
-    ) and
-    firstDef = comp.(LogicalComparisonOp).firstOp() and
-    secondDef = comp.(LogicalComparisonOp).secondOp() and
-    firstVar = getGenerator(firstDef) and
-    secondVar = getGenerator(secondDef) and
-    (
-      firstVar.getDeclarationNode() = onCompletionRead() and
-      actionInt = secondVar.tryAsInt()
-      or
-      secondVar.getDeclarationNode() = onCompletionRead() and
-      actionInt = firstVar.tryAsInt()
-    )
-  )
-}
-
-/**
- * Holds if `approvalBB` is an approval exit reachable without being
- * guarded by an OnCompletion == `actionInt` check.
- *
- * In other words: there is an approval exit that the OnCompletion guard
- * does NOT dominate for the given action.
- */
-/**
- * Holds if the approval exit `approvalBB` is safe for action `actionInt`:
- * an OnCompletion guard exists, and the non-equality branch (where
- * OnCompletion != actionInt) controls the approval exit.
- */
-private predicate approvalExitGuardedForAction(BasicBlock approvalBB, int actionInt) {
-  exists(ConditionBlock cb, BooleanSuccessor equalBranch, BooleanSuccessor nonEqualBranch |
-    onCompletionEqualityGuard(cb, actionInt, equalBranch) and
-    nonEqualBranch.getValue() != equalBranch.getValue() and
-    cb.controls(approvalBB, nonEqualBranch)
-  )
-}
-
-predicate approvalExitUnguardedForAction(BasicBlock approvalBB, int actionInt) {
-  approvalBB = approvalExit() and
-  actionInt in [0 .. 5] and
-  not approvalExitGuardedForAction(approvalBB, actionInt)
-}
+// approvalExit, onCompletionNoOp..DeleteApplication, onCompletionRead,
+// onCompletionEqualityGuard, approvalExitGuardedForAction, approvalExitUnguardedForAction
+// are imported from OnCompletionGuards.
 
 // ---------------------------------------------------------------------------
 // Transaction field validation helpers

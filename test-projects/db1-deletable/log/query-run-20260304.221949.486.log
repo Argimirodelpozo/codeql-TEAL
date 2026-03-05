@@ -1,0 +1,11 @@
+[2026-03-04 22:19:49] This is codeql query run teal/ql/lib/codeql/isDeletable.ql --database test-projects/db1-deletable --output=/tmp/isDeletable.bqrs
+[2026-03-04 22:19:49] Log file was started late.
+[2026-03-04 22:19:49] Calling plumbing command: codeql resolve ram --dataset=/Users/sarajane/testQLSetup/codeql-TEAL/test-projects/db1-deletable/db-teal --format=json
+[2026-03-04 22:19:49] [PROGRESS] resolve ram> Stringpool size measured as 2146714
+[2026-03-04 22:19:49] Plumbing command codeql resolve ram completed:
+                      [
+                        "-J-Xmx1800M",
+                        "--off-heap-ram=1606"
+                      ]
+[2026-03-04 22:19:49] Chaining via /var/folders/ng/5t2hkd65473cjm0vw3mr1swr0000gn/T/codeql.XXXXXXXX.SP0OLvsplD to plumbing: execute queries -J-Xmx1800M --off-heap-ram=1606 --verbosity=progress --logdir=/Users/sarajane/testQLSetup/codeql-TEAL/test-projects/db1-deletable/log --evaluator-log-level=5 --warnings=show --qlconfig-file=/Users/sarajane/testQLSetup/codeql-TEAL/qlconfig.yml --dynamic-join-order-mode=none --output=/tmp/isDeletable.bqrs -- /Users/sarajane/testQLSetup/codeql-TEAL/test-projects/db1-deletable/db-teal path:/Users/sarajane/testQLSetup/codeql-TEAL/teal/ql/lib/codeql/isDeletable.ql
+[2026-03-04 22:19:49] Exiting with code 70
