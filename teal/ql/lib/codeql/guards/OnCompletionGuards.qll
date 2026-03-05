@@ -84,6 +84,26 @@ BasicBlock approvalExit() {
 // ---------------------------------------------------------------------------
 
 /**
+ * Holds when SSA variable `v` has a known integer value `val`.
+ * Handles IntegerConstant (via tryAsInt) and IntegerAddOpcode when both
+ * operands are constants. Two whole numbers added together (e.g. int 2; int 3; +)
+ * are treated as a single constant for guard matching — equivalent to, for
+ * example, int 4 or int 5.
+ */
+private predicate getConstantInt(SSAVar v, int val) {
+  val = v.tryAsInt()
+  or
+  exists(IntegerAddOpcode add, SSAVar v1, SSAVar v2, int i1, int i2 |
+    add = v.getDeclarationNode() and
+    v1 = getGenerator(add.getStackInputByOrder(1)) and
+    v2 = getGenerator(add.getStackInputByOrder(2)) and
+    i1 = v1.tryAsInt() and
+    i2 = v2.tryAsInt() |
+    val = i1 + i2
+  )
+}
+
+/**
  * Holds when `cb` is a condition block that compares OnCompletion against
  * constant `actionInt` using `==` or `!=`.
  *
@@ -91,7 +111,7 @@ BasicBlock approvalExit() {
  * - For `!=`: equality holds on the false branch (bz jumps when equal)
  *
  * We trace operands via SSA: one side must be txn OnCompletion, the other
- * must be the constant actionInt.
+ * must be the constant actionInt (literal or computed, e.g. 2+3).
  */
 predicate onCompletionEqualityGuard(
   ConditionBlock cb, int actionInt, BooleanSuccessor equalBranch
@@ -114,10 +134,10 @@ predicate onCompletionEqualityGuard(
     secondVar = getGenerator(secondDef) and
     (
       firstVar.getDeclarationNode() = onCompletionRead() and
-      actionInt = secondVar.tryAsInt()
+      getConstantInt(secondVar, actionInt)
       or
       secondVar.getDeclarationNode() = onCompletionRead() and
-      actionInt = firstVar.tryAsInt()
+      getConstantInt(firstVar, actionInt)
     )
   )
 }

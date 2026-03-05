@@ -1,0 +1,11 @@
+#pragma version 8
+// Evasion attempt: checks Fee (always passes) but never guards OnCompletion.
+// DeleteApplication can still reach approval.
+txn Fee
+int 0
+>=
+bnz approve
+err
+approve:
+int 1
+return
