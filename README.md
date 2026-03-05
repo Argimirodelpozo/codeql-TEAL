@@ -32,14 +32,14 @@ cp -R teal/extractor-pack/* .codeql-extractors/teal/
 ### 4. Create a CodeQL Database
 
 ```bash
-codeql database create test-projects/my-db --overwrite -l teal -s test-projects/missing-fee --search-path "$(pwd)/.codeql-extractors"
+codeql database create test-projects/gen-dbs/my-db --overwrite -l teal -s test-projects/teal-contracts/fee-validation --search-path "$(pwd)/.codeql-extractors"
 ```
 
 ### 5. Run a Query
 
 **CLI:**
 ```bash
-codeql query run teal/ql/lib/codeql/missingTxnFeeValidation.ql --database test-projects/my-db
+codeql query run teal/ql/lib/codeql/missingTxnFeeValidation.ql --database test-projects/gen-dbs/my-db
 ```
 
 **Or use the CodeQL VS Code extension** for an interactive UI experience.

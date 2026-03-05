@@ -1,0 +1,25 @@
+[2026-03-05 13:02:25] This is codeql database index-files --verbosity=progress --include-extension=.teal --exclude=**/.git --size-limit=5m --language=teal --working-dir=. /Users/sarajane/testQLSetup/codeql-TEAL/test-projects/gen-dbs/my-db
+[2026-03-05 13:02:25] Log file was started late.
+[2026-03-05 13:02:25] Using index-files script /Users/sarajane/testQLSetup/codeql-TEAL/.codeql-extractors/teal/tools/index-files.sh.
+[2026-03-05 13:02:25] [PROGRESS] database index-files> Scanning for files in /Users/sarajane/testQLSetup/codeql-TEAL/test-projects/teal-contracts/fee-validation...
+[2026-03-05 13:02:25] Calling plumbing command: codeql resolve files --include-extension=.teal --exclude=**/.git --size-limit=5m /Users/sarajane/testQLSetup/codeql-TEAL/test-projects/teal-contracts/fee-validation --format=json
+[2026-03-05 13:02:25] [PROGRESS] resolve files> Scanning /Users/sarajane/testQLSetup/codeql-TEAL/test-projects/teal-contracts/fee-validation...
+[2026-03-05 13:02:25] [PROGRESS] resolve files> Scanning /Users/sarajane/testQLSetup/codeql-TEAL/test-projects/teal-contracts/fee-validation/01-no-fee-check...
+[2026-03-05 13:02:25] [PROGRESS] resolve files> Scanning /Users/sarajane/testQLSetup/codeql-TEAL/test-projects/teal-contracts/fee-validation/03-fee-dominates...
+[2026-03-05 13:02:25] [PROGRESS] resolve files> Scanning /Users/sarajane/testQLSetup/codeql-TEAL/test-projects/teal-contracts/fee-validation/02-fee-bypass...
+[2026-03-05 13:02:25] Plumbing command codeql resolve files completed:
+                      [
+                        "/Users/sarajane/testQLSetup/codeql-TEAL/test-projects/teal-contracts/fee-validation/01-no-fee-check/fixed.teal",
+                        "/Users/sarajane/testQLSetup/codeql-TEAL/test-projects/teal-contracts/fee-validation/01-no-fee-check/vuln.teal",
+                        "/Users/sarajane/testQLSetup/codeql-TEAL/test-projects/teal-contracts/fee-validation/02-fee-bypass/fixed.teal",
+                        "/Users/sarajane/testQLSetup/codeql-TEAL/test-projects/teal-contracts/fee-validation/02-fee-bypass/vuln.teal",
+                        "/Users/sarajane/testQLSetup/codeql-TEAL/test-projects/teal-contracts/fee-validation/03-fee-dominates/fixed.teal"
+                      ]
+[2026-03-05 13:02:25] [DETAILS] database index-files> Found 5 files.
+[2026-03-05 13:02:25] [PROGRESS] database index-files> /Users/sarajane/testQLSetup/codeql-TEAL/test-projects/gen-dbs/my-db: Indexing files in in /Users/sarajane/testQLSetup/codeql-TEAL/test-projects/teal-contracts/fee-validation...
+[2026-03-05 13:02:25] Using index-files script /Users/sarajane/testQLSetup/codeql-TEAL/.codeql-extractors/teal/tools/index-files.sh.
+[2026-03-05 13:02:25] [PROGRESS] database index-files> Running command in /Users/sarajane/testQLSetup/codeql-TEAL/test-projects/teal-contracts/fee-validation: [/Users/sarajane/testQLSetup/codeql-TEAL/.codeql-extractors/teal/tools/index-files.sh, /Users/sarajane/testQLSetup/codeql-TEAL/test-projects/gen-dbs/my-db/working/files-to-index3743348903369262653.list]
+[2026-03-05 13:02:25] [build-stdout] [32m INFO[0m Extraction started
+[2026-03-05 13:02:25] [build-stdout] [32m INFO[0m Using 7 threads
+[2026-03-05 13:02:25] [build-stdout] [32m INFO[0m Extraction complete
+[2026-03-05 13:02:25] Terminating normally.

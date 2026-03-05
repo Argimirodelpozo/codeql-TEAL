@@ -14,6 +14,7 @@
 import codeql.teal.ast.AST
 import codeql.teal.SSA.SSA
 import codeql.teal.cfg.BasicBlocks
+import codeql.FeeValidationGuards
 import TealerCommon
 
 from Program prog

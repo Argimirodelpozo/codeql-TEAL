@@ -163,35 +163,6 @@ predicate hasGroupSizeCheck() {
 }
 
 // ---------------------------------------------------------------------------
-// Fee validation
+// Fee validation (hasFeeCheck from FeeValidationGuards; use
+// feeCheckDominatesAllApprovalsIn(prog) for CFG/dominance-aware check)
 // ---------------------------------------------------------------------------
-
-/**
- * Holds when `txn Fee` is read and compared (<=, <, ==) against some value,
- * indicating fee validation.
- */
-predicate hasFeeCheck() {
-  exists(TxnOpcode fee, LogicalComparisonOp cmp, SSAVar feeVar |
-    fee.getField() = "Fee" and
-    feeVar = fee.getAnOutputVar() and
-    (
-      getGenerator(cmp.firstOp()) = feeVar or
-      getGenerator(cmp.secondOp()) = feeVar
-    )
-  )
-}
-
-/**
- * Holds when the fee check dominates all approval exits.
- */
-predicate feeCheckDominatesAllApprovals() {
-  exists(TxnOpcode fee, LogicalComparisonOp cmp, SSAVar feeVar |
-    fee.getField() = "Fee" and
-    feeVar = fee.getAnOutputVar() and
-    (
-      getGenerator(cmp.firstOp()) = feeVar or
-      getGenerator(cmp.secondOp()) = feeVar
-    ) and
-    forall(BasicBlock exit | exit = approvalExit() | cmp.getBasicBlock().dominates(exit))
-  )
-}

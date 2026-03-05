@@ -1,0 +1,3 @@
+# Keep this folder. Generate databases here with:
+#   codeql database create test-projects/gen-dbs/my-db --overwrite -l teal \
+#     -s test-projects/teal-contracts/fee-validation --search-path "$(pwd)/.codeql-extractors"

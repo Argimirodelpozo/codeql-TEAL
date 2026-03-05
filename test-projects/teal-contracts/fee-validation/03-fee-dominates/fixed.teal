@@ -1,0 +1,8 @@
+#pragma version 8
+// Correct: fee check dominates all paths to approval (single linear path)
+txn Fee
+int 1000
+<=
+assert
+int 1
+return
