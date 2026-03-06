@@ -85,8 +85,8 @@ BasicBlock approvalExit() {
 
 /**
  * Holds when SSA variable `v` has a known integer value `val`.
- * Handles IntegerConstant (via tryAsInt) and IntegerAddOpcode when both
- * operands are constants. Two whole numbers added together (e.g. int 2; int 3; +)
+ * Handles IntegerConstant (via tryAsInt) and arithmetic opcodes when both
+ * operands are constants: +, -, *, /. Computed constants (e.g. 2+3, 10/2)
  * are treated as a single constant for guard matching — equivalent to, for
  * example, int 4 or int 5.
  */
@@ -100,6 +100,35 @@ private predicate getConstantInt(SSAVar v, int val) {
     i1 = v1.tryAsInt() and
     i2 = v2.tryAsInt() |
     val = i1 + i2
+  )
+  or
+  exists(SubOpcode sub, SSAVar v1, SSAVar v2, int i1, int i2 |
+    sub = v.getDeclarationNode() and
+    v1 = getGenerator(sub.getStackInputByOrder(1)) and
+    v2 = getGenerator(sub.getStackInputByOrder(2)) and
+    i1 = v1.tryAsInt() and
+    i2 = v2.tryAsInt() and
+    i2 >= i1 |
+    val = i2 - i1
+  )
+  or
+  exists(MulOpcode mul, SSAVar v1, SSAVar v2, int i1, int i2 |
+    mul = v.getDeclarationNode() and
+    v1 = getGenerator(mul.getStackInputByOrder(1)) and
+    v2 = getGenerator(mul.getStackInputByOrder(2)) and
+    i1 = v1.tryAsInt() and
+    i2 = v2.tryAsInt() |
+    val = i1 * i2
+  )
+  or
+  exists(DivOpcode div, SSAVar v1, SSAVar v2, int i1, int i2 |
+    div = v.getDeclarationNode() and
+    v1 = getGenerator(div.getStackInputByOrder(1)) and
+    v2 = getGenerator(div.getStackInputByOrder(2)) and
+    i1 = v1.tryAsInt() and
+    i2 = v2.tryAsInt() and
+    i1 != 0 |
+    val = i2 / i1
   )
 }
 
