@@ -30,6 +30,7 @@ import codeql.teal.SSA.SSA
 import codeql.teal.cfg.BasicBlocks
 import codeql.teal.ast.opcodes.Transaction
 import codeql.teal.ast.opcodes.Comparison
+import codeql.teal.ast.opcodes.ScratchSpace
 private import codeql.teal.cfg.Completion::Completion
 
 // ---------------------------------------------------------------------------
@@ -85,13 +86,18 @@ BasicBlock approvalExit() {
 
 /**
  * Holds when SSA variable `v` has a known integer value `val`.
- * Handles IntegerConstant (via tryAsInt) and arithmetic opcodes when both
- * operands are constants: +, -, *, /. Computed constants (e.g. 2+3, 10/2)
- * are treated as a single constant for guard matching — equivalent to, for
- * example, int 4 or int 5.
+ * Handles IntegerConstant (via tryAsInt), arithmetic opcodes when both
+ * operands are constants: +, -, *, /, and LoadOpcode when the loaded value
+ * is a constant (e.g. int 5; store 0; ...; load 0).
  */
 private predicate getConstantInt(SSAVar v, int val) {
   val = v.tryAsInt()
+  or
+  exists(LoadOpcode load, SSAVar storedVar |
+    load = v.getDeclarationNode() and
+    storedVar = load.getScratchSpaceStoredVariable() and
+    getConstantInt(storedVar, val)
+  )
   or
   exists(IntegerAddOpcode add, SSAVar v1, SSAVar v2, int i1, int i2 |
     add = v.getDeclarationNode() and
