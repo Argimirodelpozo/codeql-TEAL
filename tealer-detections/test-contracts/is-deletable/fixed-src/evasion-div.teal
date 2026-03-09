@@ -1,0 +1,12 @@
+#pragma version 8
+// Evasion: use division (10/2) to produce 5 for DeleteApplication guard.
+int 10
+int 2
+/
+txn OnCompletion
+==
+bnz reject
+int 1
+return
+reject:
+err

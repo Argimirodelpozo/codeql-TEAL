@@ -2,7 +2,8 @@
  * @name Updatable Application
  * @description Detects TEAL contracts that allow UpdateApplication.
  *              A contract is updatable if OnCompletion == 4 (UpdateApplication)
- *              is never explicitly checked/rejected.
+ *              can reach an approval exit without being guarded by a check.
+ *              Uses CFG and dominance analysis for accurate detection.
  * @kind problem
  * @severity high
  * @id teal/is-updatable
@@ -11,64 +12,21 @@
 
 import codeql.teal.ast.AST
 import codeql.teal.cfg.BasicBlocks
-import codeql.teal.ast.internal.TreeSitter
-import codeql.teal.ast.opcodes.Transaction
+import codeql.guards.OnCompletionGuards
 
 /**
- * True if this node is a `txn OnCompletion` access
+ * Flag if there exists an approval exit that is NOT guarded against
+ * UpdateApplication (OnCompletion == 4).
+ *
+ * CFG/dominance logic: We find approval exits (blocks ending in return that
+ * may approve). For each, we check if an OnCompletion == 4 guard controls it.
+ * The guard must exist and the "non-equality" branch (reject path) must
+ * dominate the path to approval — so we only approve when OnCompletion != 4.
  */
-predicate isOnCompletionAccess(AstNode n) {
-  n instanceof TOpcode_txn and
-  n.(TxnOpcode).getField() = "OnCompletion"
-}
-
-/**
- * True if this node pushes the integer 4 onto the stack
- * (covers `int 4` and `pushint 4`)
- */
-predicate isIntFour(AstNode n) {
-  (n instanceof TOpcode_int or n instanceof TOpcode_pushint) and
-  toTreeSitter(n).(Teal::SingleNumericArgumentOpcode).getValue().toString() = "4"
-}
-
-/**
- * True if this basic block ends with an approval exit
- * i.e. its last AST node is a `return` or `int 1` / `return` pattern.
- * We use AnnotatedExitBasicBlock (normal exit) from BasicBlocks.
- */
-predicate isApprovalExit(BasicBlock bb) {
-  bb instanceof AnnotatedExitBasicBlock and
-  bb.(AnnotatedExitBasicBlock).isNormal()
-}
-
-/**
- * True if the program contains a structural comparison of OnCompletion to 4.
- * Pattern: txn OnCompletion ... int 4 ... == (or !=)
- * We check at the token level (same approach as missingTxnFeeValidation)
- * since the AST-level operand wiring isn't exposed yet.
- */
-predicate hasUpdateComparisonToken(Program p) {
-  exists(AstNode txnNode, AstNode intNode, AstNode cmpNode |
-    txnNode.getProgram() = p and
-    isOnCompletionAccess(txnNode) and
-    intNode.getProgram() = p and
-    isIntFour(intNode) and
-    cmpNode.getProgram() = p and
-    (cmpNode instanceof TOpcode_eq or cmpNode instanceof TOpcode_neq)
-  )
-}
-
-/**
- * Flag if:
- *  - The program has a normal (approval) exit
- *  - AND there is NO OnCompletion == 4 / != 4 comparison anywhere in it
- */
-from Program p
+from Program prog, BasicBlock approvalBB
 where
-  exists(BasicBlock bb |
-    bb.getANode().getAstNode().getProgram() = p and
-    isApprovalExit(bb)
-  ) and
-  not hasUpdateComparisonToken(p)
-select p,
-  "Application may be updatable: no OnCompletion == 4 check found."
+  approvalBB = approvalExit() and
+  approvalBB.getFirstNode().getAstNode().getProgram() = prog and
+  approvalExitUnguardedForAction(approvalBB, onCompletionUpdateApplication())
+select prog,
+  "Application may be updatable: OnCompletion == UpdateApplication can reach an approval exit without a guard."

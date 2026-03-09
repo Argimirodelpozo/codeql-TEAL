@@ -1,0 +1,11 @@
+#pragma version 8
+// Vulnerable: fee check on one path only; arg_0 non-zero bypasses to approval
+arg_0
+bnz skip_fee
+txn Fee
+int 1000
+<=
+assert
+skip_fee:
+int 1
+return
