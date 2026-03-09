@@ -13,6 +13,7 @@ class IntegerConstant extends AstNode instanceof TIntegerConstant {
 /** The `int` pseudo-opcode: push an integer constant. */
 class IntOpcode extends IntegerConstant instanceof TOpcode_int {
     override int getStackDelta() { result = 1 }
+    override int getNumberOfOutputArgs() { result = 1 }
 
     override int getValue() {
         result = toTreeSitter(this).(Teal::SingleNumericArgumentOpcode).getValue().toString().toInt()
@@ -31,6 +32,7 @@ class IntcblockOpcode extends AstNode instanceof TOpcode_intcblock {
 /** The `intc` opcode: push integer constant by index. */
 class IntcOpcode extends IntegerConstant instanceof TOpcode_intc {
     override int getStackDelta() { result = 1 }
+    override int getNumberOfOutputArgs() { result = 1 }
 
     int getIndex() {
         result = toTreeSitter(this).(Teal::IntcOpcode).getValue().toString().toInt()
@@ -48,6 +50,7 @@ class IntcOpcode extends IntegerConstant instanceof TOpcode_intc {
 /** The `intc_0` opcode: push integer constant 0 from intcblock. */
 class Intc0Opcode extends IntegerConstant instanceof TOpcode_intc_0 {
     override int getStackDelta() { result = 1 }
+    override int getNumberOfOutputArgs() { result = 1 }
 
     //TODO: deberia ser el intcblock MAS CERCANO. Por ahora asumimos que hay uno solo
     override int getValue() {
@@ -61,6 +64,7 @@ class Intc0Opcode extends IntegerConstant instanceof TOpcode_intc_0 {
 /** The `intc_1` opcode: push integer constant 1 from intcblock. */
 class Intc1Opcode extends IntegerConstant instanceof TOpcode_intc_1 {
     override int getStackDelta() { result = 1 }
+    override int getNumberOfOutputArgs() { result = 1 }
 
     //TODO: deberia ser el intcblock MAS CERCANO. Por ahora asumimos que hay uno solo
     override int getValue() {
@@ -74,6 +78,7 @@ class Intc1Opcode extends IntegerConstant instanceof TOpcode_intc_1 {
 /** The `intc_2` opcode: push integer constant 2 from intcblock. */
 class Intc2Opcode extends IntegerConstant instanceof TOpcode_intc_2 {
     override int getStackDelta() { result = 1 }
+    override int getNumberOfOutputArgs() { result = 1 }
 
     //TODO: deberia ser el intcblock MAS CERCANO. Por ahora asumimos que hay uno solo
     override int getValue() {
@@ -87,6 +92,7 @@ class Intc2Opcode extends IntegerConstant instanceof TOpcode_intc_2 {
 /** The `intc_3` opcode: push integer constant 3 from intcblock. */
 class Intc3Opcode extends IntegerConstant instanceof TOpcode_intc_3 {
     override int getStackDelta() { result = 1 }
+    override int getNumberOfOutputArgs() { result = 1 }
 
     //TODO: deberia ser el intcblock MAS CERCANO. Por ahora asumimos que hay uno solo
     override int getValue() {
@@ -100,6 +106,7 @@ class Intc3Opcode extends IntegerConstant instanceof TOpcode_intc_3 {
 /** The `pushint` opcode: push an immediate integer constant. */
 class PushintOpcode extends IntegerConstant instanceof TOpcode_pushint {
     override int getStackDelta() { result = 1 }
+    override int getNumberOfOutputArgs() { result = 1 }
 
     override int getValue() {
         result = toTreeSitter(this).(Teal::SingleNumericArgumentOpcode).getValue().toString().toInt()
@@ -109,6 +116,10 @@ class PushintOpcode extends IntegerConstant instanceof TOpcode_pushint {
 /** The `pushints` opcode: push multiple immediate integer constants. */
 class PushintsOpcode extends AstNode instanceof TOpcode_pushints {
     override int getStackDelta() {
+        result = strictcount(toTreeSitter(this).(Teal::PushintsOpcode).getValue(_))
+    }
+
+    override int getNumberOfOutputArgs() {
         result = strictcount(toTreeSitter(this).(Teal::PushintsOpcode).getValue(_))
     }
 }
@@ -125,6 +136,7 @@ class BytecblockOpcode extends AstNode instanceof TOpcode_bytecblock {
 /** The `bytec` opcode: push byte constant by index. */
 class BytecOpcode extends AstNode instanceof TOpcode_bytec {
     override int getStackDelta() { result = 1 }
+    override int getNumberOfOutputArgs() { result = 1 }
 
     int getIndex() {
         result = toTreeSitter(this).(Teal::SingleNumericArgumentOpcode).getValue().toString().toInt()
@@ -141,6 +153,7 @@ class BytecOpcode extends AstNode instanceof TOpcode_bytec {
 /** The `bytec_0` opcode: push byte constant 0 from bytecblock. */
 class Bytec0Opcode extends AstNode instanceof TOpcode_bytec_0 {
     override int getStackDelta() { result = 1 }
+    override int getNumberOfOutputArgs() { result = 1 }
 
     //TODO: deberia ser el bytecblock MAS CERCANO. Por ahora asumimos que hay uno solo
     string getValue() {
@@ -153,6 +166,7 @@ class Bytec0Opcode extends AstNode instanceof TOpcode_bytec_0 {
 /** The `bytec_1` opcode: push byte constant 1 from bytecblock. */
 class Bytec1Opcode extends AstNode instanceof TOpcode_bytec_1 {
     override int getStackDelta() { result = 1 }
+    override int getNumberOfOutputArgs() { result = 1 }
 
     //TODO: deberia ser el bytecblock MAS CERCANO. Por ahora asumimos que hay uno solo
     string getValue() {
@@ -165,6 +179,7 @@ class Bytec1Opcode extends AstNode instanceof TOpcode_bytec_1 {
 /** The `bytec_2` opcode: push byte constant 2 from bytecblock. */
 class Bytec2Opcode extends AstNode instanceof TOpcode_bytec_2 {
     override int getStackDelta() { result = 1 }
+    override int getNumberOfOutputArgs() { result = 1 }
 
     //TODO: deberia ser el bytecblock MAS CERCANO. Por ahora asumimos que hay uno solo
     string getValue() {
@@ -177,6 +192,7 @@ class Bytec2Opcode extends AstNode instanceof TOpcode_bytec_2 {
 /** The `bytec_3` opcode: push byte constant 3 from bytecblock. */
 class Bytec3Opcode extends AstNode instanceof TOpcode_bytec_3 {
     override int getStackDelta() { result = 1 }
+    override int getNumberOfOutputArgs() { result = 1 }
 
     //TODO: deberia ser el bytecblock MAS CERCANO. Por ahora asumimos que hay uno solo
     string getValue() {
@@ -189,6 +205,7 @@ class Bytec3Opcode extends AstNode instanceof TOpcode_bytec_3 {
 /** The `pushbytes` opcode: push an immediate byte constant. */
 class PushbytesOpcode extends AstNode instanceof TOpcode_pushbytes {
     override int getStackDelta() { result = 1 }
+    override int getNumberOfOutputArgs() { result = 1 }
 }
 
 /** The `pushbytess` opcode: push multiple immediate byte constants. */
@@ -196,9 +213,15 @@ class PushbytessOpcode extends AstNode instanceof TOpcode_pushbytess {
     override int getStackDelta() {
         result = strictcount(toTreeSitter(this).(Teal::PushbytessOpcode).getChild(_))
     }
+
+    override int getNumberOfOutputArgs() {
+        result = strictcount(toTreeSitter(this).(Teal::PushbytessOpcode).getChild(_))
+    }
 }
 
 /** The `bzero` opcode: push a zero-filled byte array. */
 class BzeroOpcode extends AstNode instanceof TOpcode_bzero {
     override int getStackDelta() { result = 0 }
+    override int getNumberOfConsumedArgs() { result = 1 }
+    override int getNumberOfOutputArgs() { result = 1 }
 }

@@ -24,11 +24,15 @@ class NotEqualsComparisonOpcode extends LogicalComparisonOp {
 /** The `not` opcode: logical NOT. */
 class NotOpcode extends AstNode instanceof TOpcode_not {
     override int getStackDelta() { result = 0 }
+    override int getNumberOfConsumedArgs() { result = 1 }
+    override int getNumberOfOutputArgs() { result = 1 }
 }
 
 /** The `<` opcode with integer value prediction. */
 class IntegerLessThanOpcode extends AstNode instanceof TOpcode_lt {
     override int getStackDelta() { result = -1 }
+    override int getNumberOfConsumedArgs() { result = 2 }
+    override int getNumberOfOutputArgs() { result = 1 }
 
     // TODO: re-enable when SSA type inference (tryCastToInt) is implemented
     // int predictValue() {
@@ -44,6 +48,8 @@ class IntegerLessThanOpcode extends AstNode instanceof TOpcode_lt {
 /** The `<=` opcode with integer value prediction. */
 class IntegerLteOpcode extends AstNode instanceof TOpcode_lte {
     override int getStackDelta() { result = -1 }
+    override int getNumberOfConsumedArgs() { result = 2 }
+    override int getNumberOfOutputArgs() { result = 1 }
 
     // TODO: re-enable when SSA type inference (tryCastToInt) is implemented
     // int predictValue() {
@@ -59,6 +65,8 @@ class IntegerLteOpcode extends AstNode instanceof TOpcode_lte {
 /** The `>` opcode with integer value prediction. */
 class IntegerGreaterThanOpcode extends AstNode instanceof TOpcode_gt {
     override int getStackDelta() { result = -1 }
+    override int getNumberOfConsumedArgs() { result = 2 }
+    override int getNumberOfOutputArgs() { result = 1 }
 
     // TODO: re-enable when SSA type inference (tryCastToInt) is implemented
     // int predictValue() {
@@ -74,6 +82,8 @@ class IntegerGreaterThanOpcode extends AstNode instanceof TOpcode_gt {
 /** The `>=` opcode with integer value prediction. */
 class IntegerGteOpcode extends AstNode instanceof TOpcode_gte {
     override int getStackDelta() { result = -1 }
+    override int getNumberOfConsumedArgs() { result = 2 }
+    override int getNumberOfOutputArgs() { result = 1 }
 
     // TODO: re-enable when SSA type inference (tryCastToInt) is implemented
     // int predictValue() {
@@ -89,6 +99,8 @@ class IntegerGteOpcode extends AstNode instanceof TOpcode_gte {
 /** The `==` opcode with integer value prediction. */
 class IntegerEqualsOpcode extends AstNode instanceof TOpcode_eq {
     override int getStackDelta() { result = -1 }
+    override int getNumberOfConsumedArgs() { result = 2 }
+    override int getNumberOfOutputArgs() { result = 1 }
 
     // TODO: re-enable when SSA type inference (tryCastToInt/StackVar) is implemented
     // int predictValue() {
@@ -104,6 +116,8 @@ class IntegerEqualsOpcode extends AstNode instanceof TOpcode_eq {
 /** The `!=` opcode with integer value prediction. */
 class IntegerNotEqualsOpcode extends AstNode instanceof TOpcode_neq {
     override int getStackDelta() { result = -1 }
+    override int getNumberOfConsumedArgs() { result = 2 }
+    override int getNumberOfOutputArgs() { result = 1 }
 
     // TODO: re-enable when SSA type inference (tryCastToInt) is implemented
     // int predictValue() {

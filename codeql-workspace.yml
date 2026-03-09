@@ -2,3 +2,4 @@ paths:
   - shared
   - teal/ql
   - tealer-detections
+  - teal-verifier-detections

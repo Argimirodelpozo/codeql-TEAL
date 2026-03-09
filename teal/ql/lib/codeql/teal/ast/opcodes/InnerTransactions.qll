@@ -22,6 +22,7 @@ class InnerTransactionBegin extends InnerTransactionStart instanceof TOpcode_itx
 
 class InnerTransactionField extends AstNode instanceof TOpcode_itxn_field {
     override int getStackDelta() { result = -1 }
+    override int getNumberOfConsumedArgs() { result = 1 }
 
     predicate contributesToItxn(InnerTransactionStart begin, InnerTransactionEnd itxnClosure) {
         //eliminate trivial case itxn_next = itxn_next
@@ -98,14 +99,18 @@ class ItxnFieldName extends string {
 /** The `itxn` opcode: access last inner transaction fields. */
 class ItxnOpcode extends AstNode instanceof TOpcode_itxn {
     override int getStackDelta() { result = 1 }
+    override int getNumberOfOutputArgs() { result = 1 }
 }
 
 /** The `itxna` opcode: access last inner transaction array fields. */
 class ItxnaOpcode extends AstNode instanceof TOpcode_itxna {
     override int getStackDelta() { result = 1 }
+    override int getNumberOfOutputArgs() { result = 1 }
 }
 
 /** The `itxnas` opcode: access last inner transaction array fields by stack index. */
 class ItxnasOpcode extends AstNode instanceof TOpcode_itxnas {
     override int getStackDelta() { result = 0 }
+    override int getNumberOfConsumedArgs() { result = 1 }
+    override int getNumberOfOutputArgs() { result = 1 }
 }

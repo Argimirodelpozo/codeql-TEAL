@@ -6,6 +6,7 @@ import codeql.teal.SSA.SSA
 /** The `txn` opcode: access current transaction fields. */
 class TxnOpcode extends AstNode instanceof TOpcode_txn {
     override int getStackDelta() { result = 1 }
+    override int getNumberOfOutputArgs() { result = 1 }
 
     string getField() {
         result = toTreeSitter(this).(Teal::TxnOpcode).getTxnField().(Teal::Token).getValue().toString()
@@ -41,6 +42,7 @@ class TxnOpcode extends AstNode instanceof TOpcode_txn {
 /** The `txna` opcode: access current transaction array fields. */
 class TxnaOpcode extends AstNode instanceof TOpcode_txna {
     override int getStackDelta() { result = 1 }
+    override int getNumberOfOutputArgs() { result = 1 }
 
     string getField() {
         result = toTreeSitter(this).(Teal::TxnaOpcode).getTxnArrayField()
@@ -73,6 +75,7 @@ AstNode getOnCompletionUsage() {result.(TxnaOpcode).getField() = "OnCompletion"}
 /** The `gtxn` opcode: access group transaction fields by index. */
 class GtxnOpcode extends AstNode instanceof TOpcode_gtxn {
     override int getStackDelta() { result = 1 }
+    override int getNumberOfOutputArgs() { result = 1 }
 
     string getField() {
         result = toTreeSitter(this).(Teal::GtxnOpcode).getTxnField().(Teal::Token).getValue().toString()
@@ -96,6 +99,8 @@ class GtxnOpcode extends AstNode instanceof TOpcode_gtxn {
 /** The `gtxns` opcode: access group transaction fields by stack index. */
 class GtxnsOpcode extends AstNode instanceof TOpcode_gtxns {
     override int getStackDelta() { result = 0 }
+    override int getNumberOfConsumedArgs() { result = 1 }
+    override int getNumberOfOutputArgs() { result = 1 }
 
     string getField() {
         result = toTreeSitter(this).(Teal::GtxnsOpcode).getTxnField().(Teal::Token).getValue().toString()
@@ -119,39 +124,52 @@ class GtxnsOpcode extends AstNode instanceof TOpcode_gtxns {
 /** The `txnas` opcode: access current transaction array fields by stack index. */
 class TxnasOpcode extends AstNode instanceof TOpcode_txnas {
     override int getStackDelta() { result = 0 }
+    override int getNumberOfConsumedArgs() { result = 1 }
+    override int getNumberOfOutputArgs() { result = 1 }
 }
 
 /** The `gtxna` opcode: access group transaction array fields. */
 class GtxnaOpcode extends AstNode instanceof TOpcode_gtxna {
     override int getStackDelta() { result = 1 }
+    override int getNumberOfOutputArgs() { result = 1 }
 }
 
 /** The `gtxnas` opcode: access group transaction array fields by stack index. */
 class GtxnasOpcode extends AstNode instanceof TOpcode_gtxnas {
     override int getStackDelta() { result = 0 }
+    override int getNumberOfConsumedArgs() { result = 1 }
+    override int getNumberOfOutputArgs() { result = 1 }
 }
 
 /** The `gtxnsa` opcode: access group transaction array fields by stack group index. */
 class GtxnsaOpcode extends AstNode instanceof TOpcode_gtxnsa {
     override int getStackDelta() { result = 0 }
+    override int getNumberOfConsumedArgs() { result = 1 }
+    override int getNumberOfOutputArgs() { result = 1 }
 }
 
 /** The `gtxnsas` opcode: access group transaction array fields by stack group and array index. */
 class GtxnsasOpcode extends AstNode instanceof TOpcode_gtxnsas {
     override int getStackDelta() { result = -1 }
+    override int getNumberOfConsumedArgs() { result = 2 }
+    override int getNumberOfOutputArgs() { result = 1 }
 }
 
 /** The `gitxn` opcode: access inner transaction fields by index. */
 class GitxnOpcode extends AstNode instanceof TOpcode_gitxn {
     override int getStackDelta() { result = 1 }
+    override int getNumberOfOutputArgs() { result = 1 }
 }
 
 /** The `gitxna` opcode: access inner transaction array fields by index. */
 class GitxnaOpcode extends AstNode instanceof TOpcode_gitxna {
     override int getStackDelta() { result = 1 }
+    override int getNumberOfOutputArgs() { result = 1 }
 }
 
 /** The `gitxnas` opcode: access inner transaction array fields by stack index. */
 class GitxnasOpcode extends AstNode instanceof TOpcode_gitxnas {
     override int getStackDelta() { result = 0 }
+    override int getNumberOfConsumedArgs() { result = 1 }
+    override int getNumberOfOutputArgs() { result = 1 }
 }

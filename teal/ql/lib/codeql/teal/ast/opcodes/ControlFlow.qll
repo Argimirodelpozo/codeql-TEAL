@@ -25,6 +25,7 @@ class ErrOpcode extends ContractExitOpcode instanceof TOpcode_err {
 /** The `assert` opcode: fails if top of stack is zero. */
 class AssertOpcode extends ContractExitOpcode instanceof TOpcode_assert {
     override int getStackDelta() { result = -1 }
+    override int getNumberOfConsumedArgs() { result = 1 }
 }
 
 /** Unconditional branch opcodes. */
@@ -62,8 +63,29 @@ class RetsubOpcode extends UnconditionalBranches instanceof TOpcode_retsub {
     override int getStackDelta() {
         // Retsub's local stack delta is 0; the effective subroutine-level delta
         // (accounting for proto) is computed by retsubEffectiveDelta in StackDepth.qll
-        result = 0
+        if exists(this.getAffectingProto()) then 
+        result = 
+            -this.getEntrypoint().(Subroutine).getFrameRelativeSubroutineStackHeight(this) + 
+            this.getAffectingProto().getNumberOfSubroutineOutputArgs()
+        else result = 0
     }
+
+    override int getNumberOfConsumedArgs(){
+        if not exists(this.getAffectingProto()) then result = 0
+        else result = this.getEntrypoint().(Subroutine).getFrameRelativeSubroutineStackHeight(this)
+    }
+
+    override int getNumberOfOutputArgs(){
+        if not exists(this.getAffectingProto()) then result = 0
+        else result = this.getAffectingProto().getNumberOfSubroutineOutputArgs()
+    }
+
+    //TODO: this should consume whole stack at that point
+    // if there is a proto affecting it
+
+    // this.(RetsubOpcode).getAffectingProto() and consumefullstack() or
+    // result = 0
+    //         result = this.(RetsubOpcode).getAffectingProto().getNumberOfInputArgs()
 
     Label getEntrypoint() {
         exists(int i, Label l | i <= this.getPreviousLine().getParentIndex() and
@@ -102,6 +124,7 @@ class SimpleConditionalBranches extends AstNode instanceof TSimpleConditionalBra
 /** The `bnz` opcode: branch if top of stack is non-zero. */
 class BnzOpcode extends SimpleConditionalBranches instanceof TOpcode_bnz {
     override int getStackDelta() { result = -1 }
+    override int getNumberOfConsumedArgs() { result = 1 }
 
     AstNode getNextNode(boolean s) {
         s = true and result = this.getTargetLabel() or
@@ -112,6 +135,7 @@ class BnzOpcode extends SimpleConditionalBranches instanceof TOpcode_bnz {
 /** The `bz` opcode: branch if top of stack is zero. */
 class BzOpcode extends SimpleConditionalBranches instanceof TOpcode_bz {
     override int getStackDelta() { result = -1 }
+    override int getNumberOfConsumedArgs() { result = 1 }
 
     AstNode getNextNode(boolean s) {
         s = false and result = this.getTargetLabel() or
@@ -137,6 +161,7 @@ class SwitchOpcode extends MultiTargetConditionalBranch {
     SwitchOpcode() { toTreeSitter(this) instanceof Teal::SwitchOpcode }
 
     override int getStackDelta() { result = -1 }
+    override int getNumberOfConsumedArgs() { result = 1 }
 }
 
 /** The `match` opcode: branch to label matching top of stack. */
@@ -145,6 +170,10 @@ class MatchOpcode extends MultiTargetConditionalBranch {
 
     override int getStackDelta() {
         result = -(count(toTreeSitter(this).(Teal::MatchOpcode).getChild(_)) + 1)
+    }
+
+    override int getNumberOfConsumedArgs() {
+        result = count(toTreeSitter(this).(Teal::MatchOpcode).getChild(_)) + 1
     }
 
      // Get next node. 0 represents failure (continue to next line)
