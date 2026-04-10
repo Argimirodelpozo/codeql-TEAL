@@ -1,4 +1,5 @@
-name: codeql/teal-verifier-detections
-version: 0.0.1-dev
+name: argimirodelpozo/teal-verifier-detections
+version: 0.1.0
+groups: teal
 dependencies:
-  codeql/teal-all: ${workspace}
+  argimirodelpozo/teal-all: ${workspace}

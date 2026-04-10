@@ -18,6 +18,6 @@ import SecGuideCommon
 
 from Program prog
 where
-  not txnFieldIsChecked("RekeyTo")
+  not txnFieldValidatedOnAllPaths("RekeyTo")
 select prog,
   "Contract does not validate txn RekeyTo — an attacker can rekey the account to themselves, gaining full control."

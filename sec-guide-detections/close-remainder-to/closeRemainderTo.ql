@@ -18,6 +18,6 @@ import SecGuideCommon
 
 from Program prog
 where
-  not txnFieldIsChecked("CloseRemainderTo")
+  not txnFieldValidatedOnAllPaths("CloseRemainderTo")
 select prog,
   "Contract does not validate txn CloseRemainderTo — the account's entire ALGO balance can be drained."

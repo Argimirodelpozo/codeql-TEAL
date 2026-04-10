@@ -1,0 +1,120 @@
+#pragma version 8
+// FIXED: Same complex app but with timelock on the update path
+
+txn ApplicationID
+int 0
+==
+bnz handle_create
+
+txn OnCompletion
+int 0
+==
+bnz handle_noop
+
+txn OnCompletion
+int 4
+==
+bnz handle_update
+
+txn OnCompletion
+int 5
+==
+bnz handle_delete
+
+err
+
+handle_create:
+  callsub init_globals
+  int 1
+  return
+
+handle_noop:
+  txn ApplicationArgs 0
+  pushbytes "deposit"
+  ==
+  bnz method_deposit
+
+  txn ApplicationArgs 0
+  pushbytes "withdraw"
+  ==
+  bnz method_withdraw
+
+  txn ApplicationArgs 0
+  pushbytes "announce_upgrade"
+  ==
+  bnz method_announce_upgrade
+
+  err
+
+handle_update:
+  callsub require_creator
+  callsub require_timelock
+  // Clear upgrade announcement after applying
+  pushbytes "upgrade_timestamp"
+  app_global_del
+  int 1
+  return
+
+handle_delete:
+  callsub require_creator
+  callsub check_drained
+  int 1
+  return
+
+method_deposit:
+  callsub do_deposit
+  int 1
+  return
+
+method_withdraw:
+  callsub do_withdraw
+  int 1
+  return
+
+method_announce_upgrade:
+  // Only creator can announce; sets timestamp
+  callsub require_creator
+  pushbytes "upgrade_timestamp"
+  global LatestTimestamp
+  app_global_put
+  int 1
+  return
+
+require_creator:
+  txn Sender
+  global CreatorAddress
+  ==
+  assert
+  retsub
+
+require_timelock:
+  // Enforce 24-hour delay since announcement
+  global LatestTimestamp
+  pushbytes "upgrade_timestamp"
+  app_global_get
+  int 86400
+  +
+  >=
+  assert
+  retsub
+
+init_globals:
+  pushbytes "total_deposited"
+  int 0
+  app_global_put
+  retsub
+
+do_deposit:
+  retsub
+
+do_withdraw:
+  retsub
+
+check_drained:
+  global CurrentApplicationAddress
+  balance
+  global CurrentApplicationAddress
+  min_balance
+  ==
+  assert
+  retsub

@@ -1,0 +1,35 @@
+#pragma version 8
+// VULNERABLE: Fee check only on one branch — the other path reaches
+// approval without any fee validation
+
+txn TypeEnum
+int 1
+==
+bnz is_payment
+
+// Application call path — has fee check
+txn Fee
+global MinTxnFee
+<=
+assert
+txn OnCompletion
+int 0
+==
+assert
+b approve
+
+is_payment:
+// Payment path — MISSING fee check!
+txn Amount
+int 500000
+<=
+assert
+txn Receiver
+addr AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ
+==
+assert
+// No fee check here — attacker drains via inflated fees
+
+approve:
+int 1
+return

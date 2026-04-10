@@ -1,0 +1,39 @@
+#pragma version 8
+// FIXED: GroupSize validated early, then gtxn access in subroutines
+
+// Validate group size FIRST
+callsub require_group_size
+
+callsub validate_payment
+assert
+callsub validate_app_call
+assert
+int 1
+return
+
+require_group_size:
+  global GroupSize
+  int 2
+  ==
+  assert
+  retsub
+
+validate_payment:
+  gtxn 0 TypeEnum
+  int 1
+  ==
+  gtxn 0 Amount
+  int 1000000
+  >=
+  &&
+  gtxn 0 Receiver
+  global CurrentApplicationAddress
+  ==
+  &&
+  retsub
+
+validate_app_call:
+  gtxn 1 TypeEnum
+  int 6
+  ==
+  retsub

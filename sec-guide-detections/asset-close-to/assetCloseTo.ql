@@ -18,6 +18,6 @@ import SecGuideCommon
 
 from Program prog
 where
-  not txnFieldIsChecked("AssetCloseTo")
+  not txnFieldValidatedOnAllPaths("AssetCloseTo")
 select prog,
   "Contract does not validate txn AssetCloseTo — all asset units can be drained from the account."

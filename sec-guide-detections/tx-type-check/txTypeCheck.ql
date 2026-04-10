@@ -18,7 +18,7 @@ import SecGuideCommon
 
 from Program prog
 where
-  not txnFieldIsChecked("TypeEnum") and
-  not txnFieldIsChecked("Type")
+  not txnFieldValidatedOnAllPaths("TypeEnum") and
+  not txnFieldValidatedOnAllPaths("Type")
 select prog,
   "Contract does not restrict the transaction type — any transaction type is accepted, allowing unintended operations."

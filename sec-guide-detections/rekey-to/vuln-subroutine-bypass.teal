@@ -1,0 +1,40 @@
+#pragma version 8
+// VULNERABLE: RekeyTo check exists in a subroutine but one callsite
+// skips it by jumping directly to the approval label
+
+arg_0
+int 0
+==
+bnz admin_path
+
+// Normal path — calls safety checks (including RekeyTo)
+txn Amount
+int 100000
+<=
+assert
+callsub safety_checks
+b approve
+
+admin_path:
+// "Admin" path — bypasses the safety subroutine entirely
+// by jumping straight to approve
+txn Amount
+int 1000000
+<=
+assert
+b approve
+
+approve:
+int 1
+return
+
+safety_checks:
+  txn RekeyTo
+  global ZeroAddress
+  ==
+  assert
+  txn Fee
+  global MinTxnFee
+  <=
+  assert
+  retsub

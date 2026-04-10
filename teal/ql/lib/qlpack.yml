@@ -1,5 +1,5 @@
-name: codeql/teal-all
-version: 0.0.1-dev
+name: argimirodelpozo/teal-all
+version: 0.1.0
 groups: teal
 extractor: teal
 dbscheme: teal.dbscheme

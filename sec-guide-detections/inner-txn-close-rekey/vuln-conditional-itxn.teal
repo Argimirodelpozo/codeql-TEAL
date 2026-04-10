@@ -1,0 +1,50 @@
+#pragma version 8
+// VULNERABLE: Inner transaction with CloseRemainderTo set conditionally
+// via subroutine — still flagged because the field IS set
+
+txn OnCompletion
+int 0
+==
+assert
+
+txn Sender
+global CreatorAddress
+==
+bnz creator_withdraw
+
+// Normal user: send fixed amount
+callsub send_payment
+int 1
+return
+
+creator_withdraw:
+// Creator: drain all remaining via CloseRemainderTo
+callsub send_close_payment
+int 1
+return
+
+send_payment:
+  itxn_begin
+  int 1
+  itxn_field TypeEnum
+  txn Sender
+  itxn_field Receiver
+  int 100000
+  itxn_field Amount
+  int 0
+  itxn_field Fee
+  itxn_submit
+  retsub
+
+send_close_payment:
+  itxn_begin
+  int 1
+  itxn_field TypeEnum
+  txn Sender
+  itxn_field Receiver
+  txn Sender
+  itxn_field CloseRemainderTo    // DANGER: drains entire balance
+  int 0
+  itxn_field Fee
+  itxn_submit
+  retsub
