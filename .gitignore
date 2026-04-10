@@ -1,4 +1,5 @@
 # Extractor build artifacts
+sec-guide-detections/.codeql/
 .codeql-extractors/
 teal/extractor/target/
 
