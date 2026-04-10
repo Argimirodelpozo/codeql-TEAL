@@ -3,3 +3,4 @@ paths:
   - teal/ql
   - tealer-detections
   - teal-verifier-detections
+  - sec-guide-detections

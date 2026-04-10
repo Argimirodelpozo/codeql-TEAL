@@ -1,0 +1,20 @@
+#pragma version 8
+// FIXED: XferAsset validated against expected asset ID
+txn TypeEnum
+int 4
+==
+txn XferAsset
+int 31566704
+==
+&&
+txn AssetReceiver
+global CurrentApplicationAddress
+==
+&&
+txn AssetAmount
+int 1000
+>=
+&&
+assert
+int 1
+return

@@ -1,0 +1,16 @@
+#pragma version 8
+// FIXED: AssetCloseTo validated against ZeroAddress
+txn XferAsset
+int 12345
+==
+txn AssetAmount
+int 1000
+<=
+&&
+txn AssetCloseTo
+global ZeroAddress
+==
+&&
+assert
+int 1
+return

@@ -1,0 +1,18 @@
+#pragma version 8
+// VULNERABLE: Accepts asset transfer without checking which asset
+// Attacker can send a worthless token instead of the expected one
+txn TypeEnum
+int 4
+==
+txn AssetReceiver
+global CurrentApplicationAddress
+==
+&&
+txn AssetAmount
+int 1000
+>=
+&&
+// Missing: txn XferAsset == int <expected_asset_id>
+assert
+int 1
+return

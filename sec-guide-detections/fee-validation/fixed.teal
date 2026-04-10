@@ -1,0 +1,16 @@
+#pragma version 8
+// FIXED: Fee bounded to minimum transaction fee
+txn Amount
+int 1000000
+<=
+txn TypeEnum
+int 1
+==
+&&
+txn Fee
+global MinTxnFee
+<=
+&&
+assert
+int 1
+return

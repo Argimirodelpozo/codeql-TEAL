@@ -1,0 +1,13 @@
+#pragma version 8
+// VULNERABLE: No fee check — attacker can set arbitrary high fees
+txn Amount
+int 1000000
+<=
+txn TypeEnum
+int 1
+==
+&&
+// Missing: txn Fee <= global MinTxnFee
+assert
+int 1
+return

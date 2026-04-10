@@ -1,0 +1,16 @@
+#pragma version 8
+// FIXED: RekeyTo validated against ZeroAddress
+txn Amount
+int 500000
+<=
+txn Fee
+global MinTxnFee
+<=
+&&
+txn RekeyTo
+global ZeroAddress
+==
+&&
+assert
+int 1
+return

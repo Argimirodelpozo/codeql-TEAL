@@ -1,0 +1,15 @@
+#pragma version 8
+// FIXED: DeleteApplication restricted to creator only
+txn OnCompletion
+int 5
+==
+bnz delete_handler
+int 1
+return
+delete_handler:
+txn Sender
+global CreatorAddress
+==
+assert
+int 1
+return
