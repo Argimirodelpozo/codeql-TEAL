@@ -1,0 +1,5 @@
+| fixed-callsub.teal:1:1:42:9 | Source | Contract does not validate txn CloseRemainderTo \u2014 the account's entire ALGO balance can be drained. |
+| fixed.teal:1:1:16:7 | Source | Contract does not validate txn CloseRemainderTo \u2014 the account's entire ALGO balance can be drained. |
+| vuln-loop-like.teal:1:1:46:9 | Source | Contract does not validate txn CloseRemainderTo \u2014 the account's entire ALGO balance can be drained. |
+| vuln-split-paths.teal:1:1:36:7 | Source | Contract does not validate txn CloseRemainderTo \u2014 the account's entire ALGO balance can be drained. |
+| vuln.teal:1:1:13:7 | Source | Contract does not validate txn CloseRemainderTo \u2014 the account's entire ALGO balance can be drained. |

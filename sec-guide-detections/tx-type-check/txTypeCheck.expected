@@ -1,0 +1,4 @@
+| fixed-subroutine-dispatch.teal:1:1:45:9 | Source | Contract does not restrict the transaction type \u2014 any transaction type is accepted, allowing unintended operations. |
+| fixed.teal:1:1:20:7 | Source | Contract does not restrict the transaction type \u2014 any transaction type is accepted, allowing unintended operations. |
+| vuln-subroutine-dispatch.teal:1:1:40:9 | Source | Contract does not restrict the transaction type \u2014 any transaction type is accepted, allowing unintended operations. |
+| vuln.teal:1:1:17:7 | Source | Contract does not restrict the transaction type \u2014 any transaction type is accepted, allowing unintended operations. |

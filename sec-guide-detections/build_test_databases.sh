@@ -25,7 +25,8 @@ DETECTIONS=(
 )
 
 for dir in "${DETECTIONS[@]}"; do
-  for variant in vuln fixed; do
+  # Prefer real-world gabe_* pairs when present; fall back to vuln/fixed.
+  for variant in gabe_vuln gabe_fixed vuln fixed; do
     teal_file="$DETECTIONS_DIR/$dir/${variant}.teal"
     if [ ! -f "$teal_file" ]; then
       echo "SKIP $dir/$variant (no ${variant}.teal)"
