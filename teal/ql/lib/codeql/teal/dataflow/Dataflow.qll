@@ -7,9 +7,7 @@ private import codeql.Locations
 
 
 private module Private {
-  // cached
-  // newtype TContent = 
-  
+
   cached
   newtype TNode =
   TNoOutputNodes(AstNode n){n.getNumberOfOutputArgs() = 0 and n.getNumberOfConsumedArgs() > 0}
@@ -25,8 +23,8 @@ private module Private {
     TStackVarNode(SSAVar op) or  //TODO: placeholder for now
     TSsaDefinitionNode(Ssa::Definition def) or
     TScratchLoadNode(SSAVar op){
-      op.getDeclarationNode() instanceof TOpcode_load or
-      op.getDeclarationNode() instanceof TOpcode_loads 
+      op.getDeclarationNode() instanceof LoadOpcode or
+      op.getDeclarationNode() instanceof LoadsOpcode 
       // or
       // op.getDeclarationNode() instanceof TOpcode_gload or
       // op.getDeclarationNode() instanceof TOpcode_gloads or
@@ -221,9 +219,7 @@ private module Public {
   //   override string toString() { result = "return" }
   // }
 
-  /**
-   */
-  // class SsaDefinitionNode extends Node, TSsaDefinitionNode {
+
   class SsaDefinitionNode extends Node, TSsaDefinitionNode {
     Ssa::Definition def;
 
@@ -248,10 +244,12 @@ private module Public {
     exists(AstNode s |
       n.getUnderlyingASTNode() instanceof MatchOpcode or
       n.(SsaDefinitionNode).asDefinition().(SSAWriteDef).getRHS() = s and
-      not (s instanceof TOpcode_bury or s instanceof TOpcode_dig or 
-        s instanceof TOpcode_cover or s instanceof TOpcode_uncover or
-        s instanceof TOpcode_swap or s instanceof TOpcode_dup or
-        s instanceof TOpcode_dup2 or s instanceof TOpcode_dupn)
+      not (s instanceof BuryOpcode or s instanceof DigOpcode or 
+        s instanceof CoverOpcode or s instanceof UncoverOpcode or
+        s instanceof SwapOpcode or s instanceof DupOpcode or
+        s instanceof Dup2Opcode or s instanceof DupnOpcode or
+        s instanceof FrameDigOpcode or s instanceof FrameBuryOpcode or
+        s instanceof RetsubOpcode)
       )
   }
 
@@ -288,9 +286,9 @@ module LocalFlow {
   //   nodeTo.asDefinition().definesAt(nodeFrom.getParameter(), _, _)
   // }
 
-  // TODO: USE DEFINITIONS HERE. That way we include phi
+  // TODO: USE DEFINITIONS HERE. That way we include phi (seems like we already did this?)
   //this is for strict flow, aka. v_in_a = v_out_b, for some positive integer a,b
-  //taint is handled in its own module
+  //taint is handled in its own module (TODO: handle taint :p)
   // stacks look like this:
   // [v3 v2 v1] -> OP -> [v1 v2 v3] (yes, they are backwards on exit...Why. Did. I. Do. This?)
   predicate defSSAFlowThroughOp(Definition defFrom, AstNode op, Definition defTo){
@@ -306,43 +304,75 @@ module LocalFlow {
           inOrd in [1 .. op.getNumberOfConsumedArgs()-1] and outOrd = inOrd+1
         )
         or
+        
+        //TODO: test
+        op instanceof BuryOpcode and (
+          inOrd = 1 and outOrd = op.getNumberOfOutputArgs()
+          or
+          inOrd in [1 .. op.getNumberOfConsumedArgs()-1] and outOrd = inOrd+1
+        )
+        or
 
-        op instanceof TOpcode_dup and(
+        op instanceof DupOpcode and(
           inOrd = 1 and outOrd in [1..2]
         )
         or
 
-        op instanceof TOpcode_dup2 and (
+        op instanceof Dup2Opcode and (
           inOrd = 1 and (outOrd = 1 or outOrd = 3)
           or inOrd = 2 and (outOrd = 2 or outOrd = 4)
         )
         or
 
-        op instanceof TOpcode_dupn and (
+        op instanceof DupnOpcode and (
           inOrd = 1 and outOrd in [1 .. op.getNumberOfOutputArgs()]
         )
         or
 
-        op instanceof TOpcode_swap and (
+        op instanceof SwapOpcode and (
           inOrd = 1 and outOrd = 2
           or
           inOrd = 2 and outOrd = 1
         )
         or
 
-        op instanceof TOpcode_cover and (
+        op instanceof CoverOpcode and (
           inOrd = 1 and outOrd = op.getNumberOfOutputArgs()
           or
           inOrd in [2 .. op.getNumberOfConsumedArgs()] and outOrd = inOrd - 1
         )
         or
 
-        op instanceof TOpcode_uncover and (
+        op instanceof UncoverOpcode and (
           inOrd = op.getNumberOfConsumedArgs() and outOrd = 1
           or
           inOrd in [1 .. op.getNumberOfConsumedArgs()-1] and outOrd = inOrd + 1
         )
+        or
 
+        op instanceof FrameDigOpcode and (
+          inOrd = op.getNumberOfConsumedArgs() and (outOrd = op.getNumberOfOutputArgs() or outOrd = 1)
+          or
+          inOrd in [1 .. op.getNumberOfConsumedArgs()-1] and outOrd = inOrd+1
+        )
+        or
+
+        //TODO: test
+        op instanceof FrameBuryOpcode and (
+          inOrd = 1 and outOrd = op.getNumberOfOutputArgs()
+          or
+          inOrd in [1 .. op.getNumberOfConsumedArgs()-1] and outOrd = inOrd+1
+        )
+        or
+
+        //TODO: test
+        op instanceof RetsubOpcode and 
+        (
+          inOrd in [1 .. op.(RetsubOpcode).getAffectingProto().getNumberOfSubroutineOutputArgs()] and
+          outOrd = op.(RetsubOpcode).getAffectingProto().getNumberOfSubroutineOutputArgs() - inOrd
+          // inOrd = op.getNumberOfConsumedArgs() + op.(RetsubOpcode).getImmediate()
+          // and outOrd = op.getNumberOfOutputArgs()
+        )
 
         //TODO: complete with ALL ops that allow a full value to flow through into
         // the stack!!
@@ -369,13 +399,16 @@ module LocalFlow {
     // all "stack reorg" nodes should be considered in the previous subquery and thus excluded here
     not (
       nodeTo.(SsaDefinitionNode).getUnderlyingASTNode() instanceof DigOpcode
-      or nodeTo.(SsaDefinitionNode).getUnderlyingASTNode() instanceof TOpcode_bury
-      or nodeTo.(SsaDefinitionNode).getUnderlyingASTNode() instanceof TOpcode_cover
-      or nodeTo.(SsaDefinitionNode).getUnderlyingASTNode() instanceof TOpcode_uncover
-      or nodeTo.(SsaDefinitionNode).getUnderlyingASTNode() instanceof TOpcode_swap
-      or nodeTo.(SsaDefinitionNode).getUnderlyingASTNode() instanceof TOpcode_dup
-      or nodeTo.(SsaDefinitionNode).getUnderlyingASTNode() instanceof TOpcode_dup2
-      or nodeTo.(SsaDefinitionNode).getUnderlyingASTNode() instanceof TOpcode_dupn
+      or nodeTo.(SsaDefinitionNode).getUnderlyingASTNode() instanceof BuryOpcode
+      or nodeTo.(SsaDefinitionNode).getUnderlyingASTNode() instanceof CoverOpcode
+      or nodeTo.(SsaDefinitionNode).getUnderlyingASTNode() instanceof UncoverOpcode
+      or nodeTo.(SsaDefinitionNode).getUnderlyingASTNode() instanceof SwapOpcode
+      or nodeTo.(SsaDefinitionNode).getUnderlyingASTNode() instanceof DupOpcode
+      or nodeTo.(SsaDefinitionNode).getUnderlyingASTNode() instanceof Dup2Opcode
+      or nodeTo.(SsaDefinitionNode).getUnderlyingASTNode() instanceof DupnOpcode
+      or nodeTo.(SsaDefinitionNode).getUnderlyingASTNode() instanceof FrameBuryOpcode
+      or nodeTo.(SsaDefinitionNode).getUnderlyingASTNode() instanceof FrameDigOpcode
+      or nodeTo.(SsaDefinitionNode).getUnderlyingASTNode() instanceof RetsubOpcode
     )
     and
     nodeFrom.(SsaDefinitionNode).asDefinition().(SSAWriteDef) = 

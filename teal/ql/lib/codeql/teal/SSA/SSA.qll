@@ -3,7 +3,6 @@ private import codeql.Locations
 private import codeql.teal.cfg.CFG as Cfg
 private import codeql.teal.ast.AST
 private import codeql.teal.ast.IntegerConstants
-// private import codeql.teal.SSA.SSA
 
 
 // private newtype TDefinition = 
@@ -294,13 +293,13 @@ int varInternalIndex;
     //  v order by v.getDeclarationNode().getLineNumber())
   }
 
-  int tryAsInt(){
-    result = this.getDeclarationNode().(IntegerConstant).getValue()
-    // or result = this.getDeclarationNode().(IntegerAddOpcode).
-    //or
-    //TODO: add all cases of operations that end up becoming integer constants
-    //e.g. a btoi of a byte constant
-  }
+  // int tryAsInt(){
+  //   result = this.getDeclarationNode().(IntegerConstant).getValue()
+  //   // or result = this.getDeclarationNode().(IntegerAddOpcode).
+  //   //or
+  //   //TODO: add all cases of operations that end up becoming integer constants
+  //   //e.g. a btoi of a byte constant
+  // }
 
   override string toString(){result = this.getIdentifier()}
 }
@@ -325,11 +324,6 @@ class DirectPhi extends Definition instanceof TDirectPhi{
 
   override int getOrd(){result = this.getInitialStackIndex()}
 
-  // IndirectPhi getInput(){
-  //   result.getBasicBlock() = bb.getAPredecessor() and
-  //   this = phiNodeExitIndex(result, result.getBasicBlock())
-  // }
-
   SSAVar getOriginatingInput(){
     result.getBasicBlock() = bb.getAPredecessor() and
     this.getInitialStackIndex() = result.outStackOrder()
@@ -344,24 +338,7 @@ class DirectPhi extends Definition instanceof TDirectPhi{
   AstNode getConsumedBy(){
     result = phiNodeGetsConsumedBy(initialStackIndex, bb)
   }
-
-  // override Location getLocation(){result = this.getBasicBlock().getLocation()}
 }
-
-// DirectPhi getStackInput_DP(int stackOrder, BasicBlock bb){
-//   result.getBasicBlock().getASuccessor() = bb and
-//   stackOrder = phiNodeExitIndex(result.getInitialStackIndex(), result.getBasicBlock())
-// }
-
-// IndirectPhi getStackInput_IP(int stackOrder, BasicBlock bb){
-//   result.getBasicBlock().getASuccessor() = bb and
-//   stackOrder = phiNodeExitIndex(result, result.getBasicBlock())
-// }
-
-// SSAVar getStackInput_Var(int stackOrder, BasicBlock bb){
-//   result.getBasicBlock().getASuccessor() = bb and
-//   stackOrder = result.outStackOrder()
-// }
 
 SSAVar getGenerator(Definition def){
   def instanceof DirectPhi and result = def.(DirectPhi).getOriginatingInput()
@@ -448,13 +425,3 @@ int phiNodeExitIndex(int hypotheticalPhiNodeExitIndex, BasicBlock b){
   hypotheticalPhiNodeExitIndex - count(int h | exists(phiNodeGetsConsumedBy(h, b)) and 
     h in [1 .. hypotheticalPhiNodeExitIndex])
 }
-
-// cached
-// AstNode writeDefGetsConsumedBy(int writeDefInternalIndex, AstNode defNode, BasicBlock b){
-//   writeDefInternalIndex in [1 .. defNode.getNumberOfOutputArgs()] and
-//     result = rank[1](AstNode end|
-//         end = b.getANode().getAstNode() and end.getLineNumber() > defNode.getLineNumber() and
-//         writeDefInternalIndex + getPartialStackSizeBeforeOutput(defNode.getNextLine(), end) <= 0
-//         | end order by end.getLineNumber()
-//     )
-// }

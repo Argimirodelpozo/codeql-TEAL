@@ -185,7 +185,7 @@ predicate onCompletionEqualityGuard(
  * So: all paths to approval go through the branch where we determined
  * OnCompletion != actionInt — meaning we reject when OnCompletion == actionInt.
  */
-private predicate approvalExitGuardedForAction(BasicBlock approvalBB, int actionInt) {
+predicate approvalExitGuardedForAction(BasicBlock approvalBB, int actionInt) {
   exists(ConditionBlock cb, BooleanSuccessor equalBranch, BooleanSuccessor nonEqualBranch |
     onCompletionEqualityGuard(cb, actionInt, equalBranch) and
     nonEqualBranch.getValue() != equalBranch.getValue() and
