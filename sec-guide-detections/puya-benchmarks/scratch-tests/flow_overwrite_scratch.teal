@@ -1,0 +1,19 @@
+#pragma version 8
+bytecblock "k"
+
+// Store txna 0 to slot 0 ...
+txna ApplicationArgs 0
+store 0
+
+// ... then unconditionally overwrite slot 0 with txna 1.
+// `load 0` below MUST read txna 1, so the first store is effectively dead
+// and should NOT show up as an influencing store.
+txna ApplicationArgs 1
+store 0
+
+bytec_0
+load 0
+app_global_put
+
+intc_0
+return

@@ -1,0 +1,29 @@
+#pragma version 8
+bytecblock "k1" "k2" "k3"
+
+// Store txna ApplicationArgs 0 to scratch slot 0
+txna ApplicationArgs 0
+store 0
+
+// Store txna ApplicationArgs 1 to scratch slot 1
+txna ApplicationArgs 1
+store 1
+
+// Load slot 0 and write to global state k1
+bytec_0
+load 0
+app_global_put
+
+// Load slot 1 and write to global state k2
+bytec_1
+load 1
+app_global_put
+
+// Load slot 0 AGAIN from a different location (call-site sensitivity
+// analogue: both loads must correctly point back to the same store)
+bytec_2
+load 0
+app_global_put
+
+intc_0
+return

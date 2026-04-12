@@ -249,7 +249,13 @@ private module Public {
         s instanceof SwapOpcode or s instanceof DupOpcode or
         s instanceof Dup2Opcode or s instanceof DupnOpcode or
         s instanceof FrameDigOpcode or s instanceof FrameBuryOpcode or
-        s instanceof RetsubOpcode)
+        s instanceof RetsubOpcode or
+        // `load N` is not a barrier: it is an identity pass-through for the
+        // value written by the corresponding `store N`. The connection is
+        // added by `scratchBridge` in `localSsaFlowStep`, so letting flow
+        // continue through the load's SSAWriteDef makes that bridge
+        // transitively composable with the rest of the flow graph.
+        s instanceof LoadOpcode)
       )
     or
     // Subroutine entry phis are barriers at the top-level flow: they represent
@@ -468,13 +474,42 @@ module LocalFlow {
   }
 
   /**
+   * Scratch-slot bridge: connects the value consumed by a `store N` to the
+   * value produced by each `load N` it may influence.
+   *
+   * This handles the immediate form only (`store N` / `load N` where the
+   * slot index is a compile-time constant). The dynamic forms (`stores` /
+   * `loads`, which pop the slot index off the stack) are intentionally out
+   * of scope for now — they require resolving the index at analysis time.
+   *
+   * The edge added is `stored_value_def -> load_output_def`. It is a direct
+   * SSA-to-SSA connection — no stack manipulation involved — because the
+   * slot index acts as a named channel between the two opcodes. In
+   * `localFlow` this lets flow "skip" the stack and cross through scratch.
+   *
+   * Per-slot separation and the may-influence relation are both delegated
+   * to `LoadOpcode.getInfluencingStore()` (see ScratchSpace.qll).
+   */
+  predicate scratchBridge(Node nodeFrom, Node nodeTo) {
+    exists(StoreOpcode store, LoadOpcode load, SSAVar storedVar, SSAVar loadedVar |
+      load.getInfluencingStore() = store and
+      // Source side: the SSAVar whose value the store consumed from the stack.
+      storedVar = store.getScratchSpaceStoredVariable() and
+      nodeFrom.(SsaDefinitionNode).asDefinition() = storedVar.toDef() and
+      // Sink side: the SSAVar produced by the load.
+      loadedVar = load.getAnOutputVar() and
+      nodeTo.(SsaDefinitionNode).asDefinition() = loadedVar.toDef()
+    )
+  }
+
+  /**
    * Holds if there is a local flow step from `nodeFrom` to `nodeTo` involving
    * SSA.
    */
   predicate localSsaFlowStep(Node nodeFrom, Node nodeTo) {
 
     defSSAFlowThroughOp(
-      nodeFrom.(SsaDefinitionNode).asDefinition(), 
+      nodeFrom.(SsaDefinitionNode).asDefinition(),
       nodeTo.(SsaDefinitionNode).asDefinition().(SSAWriteDef).getRHS(),
       nodeTo.(SsaDefinitionNode).asDefinition() //this one should always be a SSAWrite
       //probably can get rid of the op in the middle
@@ -547,6 +582,12 @@ module LocalFlow {
     // `global; retsub`) do not go through any entry phi, so they propagate
     // through retsub naturally via the standard SSA branches above.
     callsubBridge(nodeFrom, nodeTo)
+    or
+
+    // Scratch-slot bridge: `store N` feeds every `load N` that it influences
+    // (see `scratchBridge` above). This is a direct SSA-to-SSA channel that
+    // bypasses the stack entirely and keeps per-slot flows independent.
+    scratchBridge(nodeFrom, nodeTo)
   }
 
   pragma[nomagic]
