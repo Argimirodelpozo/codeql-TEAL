@@ -892,6 +892,18 @@ class Opcode extends AstNode instanceof TOpcode {
     override int getStackDelta() { result = this.getNumberOfOutputArgs() - this.getNumberOfConsumedArgs() }
 }
 
+/**
+ * Represents a comment token in TEAL source code.
+ * Comments in TEAL start with `//` and extend to the end of the line.
+ */
+class Comment extends Teal::Comment {
+    /** Gets the text content of this comment, including the `//` prefix. */
+    string getText() { result = this.getValue() }
 
+    /** Gets the comment text without the `//` prefix and leading whitespace. */
+    string getContent() {
+        result = this.getValue().substring(2, this.getValue().length())
+    }
+}
 
 
