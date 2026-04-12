@@ -371,10 +371,11 @@ module LocalFlow {
         )
         or
 
-        //TODO: test
+        //TODO: test! I commented the flag out (think of STARTING inside a subroutine)
         // Retsub propagation is only enabled when includeRetsub=true.
         // This avoids cross-callsite contamination at the top-level flow.
-        op instanceof RetsubOpcode and includeRetsub = true and
+        op instanceof RetsubOpcode and
+        // and includeRetsub = true and
         (
           inOrd in [1 .. op.(RetsubOpcode).getAffectingProto().getNumberOfSubroutineOutputArgs()] and
           outOrd = op.(RetsubOpcode).getAffectingProto().getNumberOfSubroutineOutputArgs() - inOrd
