@@ -13,14 +13,22 @@ import codeql.teal.ast.opcodes.GlobalState
 from Dataflow::Node txSource, Dataflow::Node storageSink
 where
   (
-    txSource.getUnderlyingASTNode() instanceof GtxnOpcode or
-    txSource.getUnderlyingASTNode() instanceof GtxnsOpcode or
-    txSource.getUnderlyingASTNode() instanceof TxnaOpcode or
-    txSource.getUnderlyingASTNode() instanceof TxnOpcode
-  ) and
+    // txSource.getUnderlyingASTNode() instanceof TOpcode_dup and
+    // txSource.getUnderlyingASTNode().getLocation().getEndLine() = 216
+
+    // txSource.getUnderlyingASTNode() instanceof TOpcode_txna and
+    // txSource.getUnderlyingASTNode().(TxnaOpcode).getField() = "ApplicationArgs" and
+    // txSource.getUnderlyingASTNode().(TxnaOpcode).getIndex() = 8
+  
+    txSource.getUnderlyingASTNode() instanceof TOpcode_gtxn or
+    txSource.getUnderlyingASTNode() instanceof TOpcode_gtxns or
+    txSource.getUnderlyingASTNode() instanceof TOpcode_txna or
+    txSource.getUnderlyingASTNode() instanceof TOpcode_txn
+  ) 
+  and
   (
-    storageSink.getUnderlyingASTNode() instanceof AppGlobalPutOpcode or
-    storageSink.getUnderlyingASTNode() instanceof AppLocalPutOpcode
+    storageSink.getUnderlyingASTNode() instanceof TOpcode_app_global_put or
+    storageSink.getUnderlyingASTNode() instanceof TOpcode_app_local_put
   ) and
   LocalFlow::localFlow(txSource, storageSink)
 select storageSink.getUnderlyingASTNode(), 

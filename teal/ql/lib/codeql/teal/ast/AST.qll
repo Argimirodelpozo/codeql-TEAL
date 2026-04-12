@@ -642,8 +642,8 @@ class AstNode instanceof TAstNode{
         ord <= count(this.getConsumedValues()) and
         ord > 0 and
         result = 
-        rank[ord](SSAVar var, AstNode n | this = n.getConsumedBy(var) | 
-            var.toDef() order by ((this.getLineNumber() - n.getLineNumber())*1000 + var.getInternalOutputIndex()) 
+        rank[ord](SSAVar var, AstNode n | this = n.getConsumedBy(var.getInternalOutputIndex()) |
+            var.toDef() order by ((this.getLineNumber() - n.getLineNumber())*1000 + var.getInternalOutputIndex())
         )
         or
         (
@@ -665,7 +665,7 @@ class AstNode instanceof TAstNode{
         result.(IndirectPhi).getConsumedBy() = this or
         exists(SSAVar v |
         v.getDeclarationNode().getBasicBlock() = this.getBasicBlock() and
-        v.getDeclarationNode().getConsumedBy(v) = this and
+        v.getDeclarationNode().getConsumedBy(v.getInternalOutputIndex()) = this and
         result = v.toDef()
         )
     }
@@ -691,11 +691,11 @@ class AstNode instanceof TAstNode{
 
 
     cached
-    AstNode getConsumedBy(SSAVar var){
-        this.getAnOutputVar() = var and
+    AstNode getConsumedBy(int outputIndex){
+        outputIndex in [1 .. this.getNumberOfOutputArgs()] and
         result = rank[1](AstNode end |
             end.getBasicBlock() = this.getBasicBlock() and
-            var.getInternalOutputIndex() + getPartialStackSizeBeforeOutput(this.getNextLine(), end) <= 0
+            outputIndex + getPartialStackSizeBeforeOutput(this.getNextLine(), end) <= 0
             | end order by end.getLineNumber()
         )
     }

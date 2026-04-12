@@ -292,10 +292,12 @@ module LocalFlow {
   // stacks look like this:
   // [v3 v2 v1] -> OP -> [v1 v2 v3] (yes, they are backwards on exit...Why. Did. I. Do. This?)
   predicate defSSAFlowThroughOp(Definition defFrom, AstNode op, Definition defTo){
+    op = defTo.(SSAWriteDef).getRHS() and
     op.getAnOutputVar().toDef() = defTo and
+    op.getConsumedValues() = defFrom and
     exists(int inOrd, int outOrd |
       inOrd = op.getStackInputOrderByDef(defFrom) and
-      outOrd = defTo.(SSAWriteDef).getVar().getInternalOutputIndex() 
+      outOrd = defTo.(SSAWriteDef).getVar().getInternalOutputIndex()
       and(
 
         op instanceof DigOpcode and (
@@ -398,12 +400,12 @@ module LocalFlow {
     //[ssawrite|direct phi|indirect phi] -> use
     // all "stack reorg" nodes should be considered in the previous subquery and thus excluded here
     not (
-      nodeTo.(SsaDefinitionNode).getUnderlyingASTNode() instanceof DigOpcode
-      or nodeTo.(SsaDefinitionNode).getUnderlyingASTNode() instanceof BuryOpcode
-      or nodeTo.(SsaDefinitionNode).getUnderlyingASTNode() instanceof CoverOpcode
+      nodeTo.(SsaDefinitionNode).getUnderlyingASTNode() instanceof TOpcode_dig
+      or nodeTo.(SsaDefinitionNode).getUnderlyingASTNode() instanceof TOpcode_bury
+      or nodeTo.(SsaDefinitionNode).getUnderlyingASTNode() instanceof TOpcode_cover
       or nodeTo.(SsaDefinitionNode).getUnderlyingASTNode() instanceof UncoverOpcode
       or nodeTo.(SsaDefinitionNode).getUnderlyingASTNode() instanceof SwapOpcode
-      or nodeTo.(SsaDefinitionNode).getUnderlyingASTNode() instanceof DupOpcode
+      or nodeTo.(SsaDefinitionNode).getUnderlyingASTNode() instanceof TOpcode_dup
       or nodeTo.(SsaDefinitionNode).getUnderlyingASTNode() instanceof Dup2Opcode
       or nodeTo.(SsaDefinitionNode).getUnderlyingASTNode() instanceof DupnOpcode
       or nodeTo.(SsaDefinitionNode).getUnderlyingASTNode() instanceof FrameBuryOpcode

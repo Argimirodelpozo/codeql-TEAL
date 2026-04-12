@@ -284,13 +284,12 @@ int varInternalIndex;
 
   /** Holds if `(this, v)` reaches the end of its origin basic block. */
   predicate reachesEndOfOriginBB() {
-      not exists(this.getDeclarationNode().getConsumedBy(this))
+      not exists(this.getDeclarationNode().getConsumedBy(this.getInternalOutputIndex()))
   }
 
   int outStackOrder(){
-    this = rank[result](SSAVar v | this.getDeclarationNode().getBasicBlock().getANode().getAstNode().getAnOutputVar() = v and v.reachesEndOfOriginBB() | 
-     v order by v.getDeclarationNode().getLineNumber() desc)
-    //  v order by v.getDeclarationNode().getLineNumber())
+    this = rank[result](SSAVar v | this.getDeclarationNode().getBasicBlock().getANode().getAstNode().getAnOutputVar() = v and v.reachesEndOfOriginBB() |
+     v order by v.getDeclarationNode().getLineNumber() desc, v.getInternalOutputIndex() asc)
   }
 
   // int tryAsInt(){
