@@ -638,18 +638,29 @@ class AstNode instanceof TAstNode{
     // get definitions that get consumed by this opcode, ordered from closest to furthest
     //to order in ssawrites (first branch), we use 1000 because its the maximum height of the stack
     // (therefore, no op could push more than 1000 elems to stack)
+    //
+    // IMPORTANT: the rank ranges over `(int varIdx, AstNode n)` rather
+    // than `(SSAVar var, AstNode n)`. Using `SSAVar` here would drag in
+    // the non-unique `varInternalIndex` field, which CodeQL re-
+    // existentially-quantifies at every predicate boundary — so a
+    // ranked tuple "about" a specific SSAVar would actually fan out
+    // across every valid field of the underlying AstNode, producing
+    // spurious duplicates and multi-valued stack-input orderings.
+    // Representing the output index as a plain `int` keeps each tuple
+    // precisely pinned to one stack input, and the result is constructed
+    // via the `TSSAVar` newtype which is field-aware by identity.
     Definition getStackInputByOrder(int ord){
         ord <= count(this.getConsumedValues()) and
         ord > 0 and
-        result = 
-        rank[ord](SSAVar var, AstNode n | this = n.getConsumedBy(var.getInternalOutputIndex()) |
-            var.toDef() order by ((this.getLineNumber() - n.getLineNumber())*1000 + var.getInternalOutputIndex())
+        result =
+        rank[ord](int varIdx, AstNode n | this = n.getConsumedBy(varIdx) |
+            TSSAVar(varIdx, n) order by ((this.getLineNumber() - n.getLineNumber())*1000 + varIdx)
         )
         or
         (
-            result = rank[ord](Definition def | 
-                (def instanceof DirectPhi or def instanceof IndirectPhi) and 
-                this.getConsumedValues() = def | def order by 
+            result = rank[ord](Definition def |
+                (def instanceof DirectPhi or def instanceof IndirectPhi) and
+                this.getConsumedValues() = def | def order by
                 def.getOrd() desc)
         )
     }

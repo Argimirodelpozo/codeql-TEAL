@@ -333,12 +333,21 @@ module LocalFlow {
   //   continuation phi. This is exactly the semantics we want: an internally-
   //   produced value IS returned to whoever called the subroutine.
   predicate defSSAFlowThroughOp(Definition defFrom, AstNode op, Definition defTo){
-    op = defTo.(SSAWriteDef).getRHS() and
-    op.getAnOutputVar().toDef() = defTo and
+    // Destructure defTo through the underlying TSSAVar newtype so that
+    // both `op` (the declaring AstNode) and the output index are bound
+    // as proper newtype components — not as SSAVar member accesses.
+    //
+    // Going via `defTo.(SSAWriteDef).getVar().getInternalOutputIndex()`
+    // passes through SSAVar's non-unique `varInternalIndex` field, which
+    // CodeQL re-existentially-quantifies at every predicate boundary.
+    // The result is that for one specific `defTo = TSSAVar(1, dig)` the
+    // expression returns *every* valid index for the declaring AstNode
+    // (1, 2, 3, 4 for `dig 2`), silently wiring every input position to
+    // every output position. Direct destructure pins the identity.
+    exists(int outOrd | defTo = TSSAVar(outOrd, op) |
     op.getConsumedValues() = defFrom and
-    exists(int inOrd, int outOrd |
-      inOrd = op.getStackInputOrderByDef(defFrom) and
-      outOrd = defTo.(SSAWriteDef).getVar().getInternalOutputIndex()
+    exists(int inOrd |
+      inOrd = op.getStackInputOrderByDef(defFrom)
       and(
 
         op instanceof DigOpcode and (
@@ -348,11 +357,22 @@ module LocalFlow {
         )
         or
         
-        //TODO: test
+        // `bury N` semantics: pop the top value, overwrite the value at
+        // depth N with it. The popped top therefore ends up at the new
+        // depth N-1 (i.e. output position N — the deepest of the N
+        // outputs). The old value at depth N is discarded; everything
+        // between shifts up by one position.
+        //
+        //   consumed = N+1  (top + the N values beneath it)
+        //   output   = N    (the new top N values after the bury)
+        //
+        //   inOrd=1        (top)           -> outOrd = N         (buried slot)
+        //   inOrd=k in [2..N]               -> outOrd = k-1       (shifted up)
+        //   inOrd=N+1       (old depth N)  -> DISCARDED (no edge)
         op instanceof BuryOpcode and (
           inOrd = 1 and outOrd = op.getNumberOfOutputArgs()
           or
-          inOrd in [1 .. op.getNumberOfConsumedArgs()-1] and outOrd = inOrd+1
+          inOrd in [2 .. op.getNumberOfConsumedArgs()-1] and outOrd = inOrd - 1
         )
         or
 
@@ -400,11 +420,20 @@ module LocalFlow {
         )
         or
 
-        //TODO: test
+        // `frame_bury i` — same shape as `bury` but the buried slot is
+        // frame-relative instead of stack-relative. The popped top ends
+        // up at the buried slot (output position N, the deepest of the
+        // outputs within the frame_bury's window); the values between
+        // the old top and that slot shift up by one; the value at the
+        // buried slot itself is discarded.
+        //
+        //   inOrd=1        (top)           -> outOrd = N         (buried slot)
+        //   inOrd=k in [2..N]               -> outOrd = k-1       (shifted up)
+        //   inOrd=N+1       (old buried)   -> DISCARDED (no edge)
         op instanceof FrameBuryOpcode and (
           inOrd = 1 and outOrd = op.getNumberOfOutputArgs()
           or
-          inOrd in [1 .. op.getNumberOfConsumedArgs()-1] and outOrd = inOrd+1
+          inOrd in [2 .. op.getNumberOfConsumedArgs()-1] and outOrd = inOrd - 1
         )
         or
 
@@ -427,6 +456,7 @@ module LocalFlow {
         //TODO: complete with ALL ops that allow a full value to flow through into
         // the stack!!
       )
+    )
     )
   }
 
