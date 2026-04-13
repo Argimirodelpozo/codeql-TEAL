@@ -34,7 +34,7 @@ predicate balanceMinusHardcodedConstant(BalanceOpcode bal, SubOpcode sub) {
       constVar = getGenerator(sub.getStackInputByOrder(2))
     ) and
     constVar != balVar and
-    exists(constVar.tryAsInt())
+    exists(tryAsInt(constVar))
   )
 }
 

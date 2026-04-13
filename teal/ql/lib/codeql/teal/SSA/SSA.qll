@@ -292,14 +292,6 @@ int varInternalIndex;
      v order by v.getDeclarationNode().getLineNumber() desc, v.getInternalOutputIndex() asc)
   }
 
-  // int tryAsInt(){
-  //   result = this.getDeclarationNode().(IntegerConstant).getValue()
-  //   // or result = this.getDeclarationNode().(IntegerAddOpcode).
-  //   //or
-  //   //TODO: add all cases of operations that end up becoming integer constants
-  //   //e.g. a btoi of a byte constant
-  // }
-
   override string toString(){result = this.getIdentifier()}
 }
 

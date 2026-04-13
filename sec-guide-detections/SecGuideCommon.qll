@@ -29,7 +29,7 @@ BasicBlock rejectionExit() {
   result.getLastNode().getAstNode() instanceof ErrOpcode
   or
   result = exitBlock() and
-  result.getLastNode().getAstNode().(ReturnOpcode).getTopOfStackAtEnd().tryAsInt() = 0
+  tryAsInt(result.getLastNode().getAstNode().(ReturnOpcode).getTopOfStackAtEnd()) = 0
 }
 
 // approvalExit, onCompletionNoOp..DeleteApplication, onCompletionRead,
@@ -179,6 +179,6 @@ predicate innerTxnSetsNonZeroFee(InnerTransactionField itxnField) {
   itxnField.getItxnField() = "Fee" and
   exists(SSAVar feeVal |
     feeVal = itxnField.getItxnFieldVal() and
-    feeVal.tryAsInt() != 0
+    tryAsInt(feeVal) != 0
   )
 }
