@@ -31,6 +31,6 @@ where
   isTestSource(src) and isTestSink(sink) and
   LocalFlow::localFlow(src, sink)
 select sink.getUnderlyingASTNode(),
-  src.getUnderlyingASTNode().toString() +
+  src.toString() +
   " at L" + src.getUnderlyingASTNode().getLocation().getStartLine().toString() +
   " → app_global_put at L" + sink.getUnderlyingASTNode().getLocation().getStartLine().toString()
