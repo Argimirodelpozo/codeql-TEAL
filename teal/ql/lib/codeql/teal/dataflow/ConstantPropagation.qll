@@ -115,11 +115,17 @@ int tryAsIntDef(Definition def) {
 /**
  * Ergonomic wrapper for callers that already have an `SSAVar` in hand.
  *
- * `v.toDef()` is evaluated in the CALLER'S scope before crossing the
- * `tryAsIntDef` boundary, so the caller's specific `varInternalIndex`
- * binding survives — the field loss only happens when SSAVar itself is
- * the parameter type.
+ * Marked `pragma[inline]` so the wrapper body is splice-evaluated in the
+ * caller's scope. This is important because `SSAVar` has a non-unique
+ * `varInternalIndex` field that CodeQL re-existentially-quantifies at
+ * every predicate boundary — without inlining, `v.toDef()` inside the
+ * wrapper would fan out across every valid index for the underlying
+ * AstNode, silently making `tryAsInt(v)` return *every* constant that
+ * reaches *any* output of the opcode that produced `v`. Inlining forces
+ * the `toDef()` call to happen at the callsite, where the query's
+ * specific field binding still applies.
  */
+pragma[inline]
 int tryAsInt(SSAVar v) {
   result = tryAsIntDef(v.toDef())
 }
