@@ -1,0 +1,25 @@
+#pragma version 8
+// T1: bytes negative test — guard on one branch, read on sibling.
+// `txn Sender == <addr>` is asserted only on the admin branch; the
+// user branch's read must NOT narrow.
+
+arg_0
+int 0
+==
+bnz admin
+
+// user path — no sender check
+txn Sender       // must NOT narrow
+pop
+int 1
+return
+
+admin:
+txn Sender
+pushbytes 0x5555555555555555555555555555555555555555555555555555555555555555
+==
+assert
+txn Sender       // SHOULD narrow to 0x5555...
+pop
+int 1
+return

@@ -28,6 +28,160 @@ private import codeql.teal.ast.AST
 private import codeql.teal.SSA.SSA
 private import codeql.teal.ast.IntegerConstants
 private import codeql.teal.dataflow.Dataflow
+private import codeql.teal.cfg.BasicBlocks
+private import codeql.teal.cfg.Completion::Completion
+
+/**
+ * Canonical string key for an opcode that reads a deterministic field of
+ * the current execution context. Two opcodes with the same key are
+ * guaranteed to return the same runtime value within a single transaction,
+ * so a guard that pins one can narrow the other on dominated BBs.
+ *
+ * Safe (deterministic, static-index) field-read opcodes enumerated here:
+ *   - `txn F`          — current transaction's field
+ *   - `txna F i`       — current transaction's array field at static index
+ *   - `gtxn t F`       — group transaction at static group index `t`, field
+ *   - `global F`       — chain/transaction-level constant
+ *
+ * Deliberately excluded:
+ *
+ *   - Dynamic-index variants (`txnas`, `gtxns`, `gtxnsa`, `gtxnas`,
+ *     `gtxnsas`, `gitxnas`): the field being read depends on a stack
+ *     value, so two opcodes with the same AstNode shape can refer to
+ *     different runtime fields. Keying by AstNode identity alone would
+ *     be unsound.
+ *
+ *   - Inner-transaction reads (`itxn`, `itxna`, `gitxn`, `gitxna`): these
+ *     reference builder/submitted-inner-txn state that mutates during
+ *     program execution (via `itxn_begin` / `itxn_submit`), so two reads
+ *     at different program points can legitimately return different
+ *     values.
+ *
+ *   - App state reads (`app_global_get`, `app_local_get`, `app_params_get`,
+ *     ...): conditionally deterministic — only safe to narrow between
+ *     reads when no intervening `app_*_put` / `app_*_del` writes the
+ *     same key. Handling this requires a kill analysis similar to the
+ *     scratch-space bridge; out of scope here.
+ *
+ *   - `balance`, `min_balance`, `asset_holding_get`, etc.: take an
+ *     account/asset index off the stack and can be mutated by inner
+ *     transactions, so they're not safe to cross-narrow by AST identity.
+ *
+ * The key is opaque to the rest of the narrowing machinery — extending
+ * this predicate with more opcodes (once their accessors are exposed and
+ * their determinism justified) is sufficient to pick up additional
+ * narrowing without further changes elsewhere.
+ */
+string fieldReadKey(AstNode op) {
+  op instanceof TxnOpcode and
+  result = "txn." + op.(TxnOpcode).getField()
+  or
+  op instanceof TxnaOpcode and
+  result = "txna." + op.(TxnaOpcode).getField() + "[" + op.(TxnaOpcode).getIndex() + "]"
+  or
+  op instanceof GtxnOpcode and
+  result = "gtxn[" + op.(GtxnOpcode).getIndex() + "]." + op.(GtxnOpcode).getField()
+  or
+  op instanceof GtxnaOpcode and
+  result =
+    "gtxna[" + op.(GtxnaOpcode).getIndex() + "]." + op.(GtxnaOpcode).getField() +
+      "[" + op.(GtxnaOpcode).getArrayIndex() + "]"
+  or
+  op instanceof GlobalOpcode and
+  result = "global." + op.(GlobalOpcode).getField()
+}
+
+/**
+ * Holds if `def`'s runtime value is identity-equivalent to reading a
+ * field-read opcode with canonical key `fieldKey`. Uses `LocalFlow` so the
+ * identity chain can traverse stack manipulation, phi nodes, the scratch
+ * bridge, and the callsub bridge.
+ */
+private predicate defResolvesToFieldRead(Definition def, string fieldKey) {
+  exists(AstNode op, Dataflow::Node srcNode, Dataflow::Node defNode |
+    fieldKey = fieldReadKey(op) and
+    srcNode.(Dataflow::SsaDefinitionNode).asDefinition() = TSSAVar(1, op) and
+    defNode.(Dataflow::SsaDefinitionNode).asDefinition() = def and
+    LocalFlow::localFlow(srcNode, defNode)
+  )
+}
+
+/**
+ * Holds if, whenever the value of `governingDef` evaluates to true, the
+ * field identified by `fieldKey` is guaranteed to equal `value`.
+ *
+ * Leaf case: `governingDef` is produced by an `==` cmp with a field read
+ * on one side and a compile-time-constant expression on the other (both
+ * operand orderings are handled). The constant side is resolved
+ * recursively via `tryAsIntDef`, so nested arithmetic / constants /
+ * stack-threaded literals all work.
+ *
+ * Compositional case: `governingDef` is produced by `&&`; if either
+ * operand subtree asserts the equality then the whole AND does too
+ * (because both operands must be true when the AND is true).
+ *
+ * Not handled in v1 (deliberately):
+ *   - `||` — at polarity true, one-or-the-other doesn't pin a field.
+ *   - `!` — would require tracking polarity=false through the recursion.
+ *   - `!=` — yields disequalities, which we're not storing.
+ */
+private predicate guardDefAssertsEquality(Definition governingDef, string fieldKey, int value) {
+  exists(EqualsComparisonOpcode eq, Definition fieldSide, Definition constSide |
+    governingDef.(SSAWriteDef).getRHS() = eq and
+    (
+      fieldSide = eq.firstOp() and constSide = eq.secondOp()
+      or
+      fieldSide = eq.secondOp() and constSide = eq.firstOp()
+    ) and
+    defResolvesToFieldRead(fieldSide, fieldKey) and
+    value = tryAsIntDef(constSide)
+  )
+  or
+  exists(AndOpcode a |
+    governingDef.(SSAWriteDef).getRHS() = a and
+    (
+      guardDefAssertsEquality(a.getStackInputByOrder(1), fieldKey, value)
+      or
+      guardDefAssertsEquality(a.getStackInputByOrder(2), fieldKey, value)
+    )
+  )
+}
+
+/**
+ * Holds if on every path reaching `bb`, control has passed through a
+ * guard that asserts `fieldKey == value`. Three sources are recognised:
+ *
+ *  1. A preceding `assert(g)` whose BB's successor dominates `bb` (the
+ *     assert is a terminator, so its immediate post-successor is the BB
+ *     where the asserted condition is known to hold).
+ *
+ *  2. A preceding `bnz(g)` whose "value was non-zero" successor dominates
+ *     `bb` (non-zero = guard evaluated true).
+ *
+ *  3. A preceding `bz(g)` whose "value was non-zero" successor dominates
+ *     `bb` (for bz, non-zero means the branch fell through; the CFG
+ *     models the fall-through as a true-valued `BooleanSuccessor`).
+ *
+ * In all three cases, `g` must itself assert `fieldKey == value` via
+ * `guardDefAssertsEquality`.
+ */
+private predicate equalityHoldsAt(BasicBlock bb, string fieldKey, int value) {
+  exists(Definition governingDef |
+    guardDefAssertsEquality(governingDef, fieldKey, value)
+    |
+    exists(AssertOpcode a, BasicBlock assertBB |
+      assertBB.getLastNode().getAstNode() = a and
+      a.getConsumedValues() = governingDef and
+      assertBB.getASuccessor().dominates(bb)
+    )
+    or
+    exists(SimpleConditionalBranches br, BasicBlock brBB |
+      brBB.getLastNode().getAstNode() = br and
+      br.getConsumedValues() = governingDef and
+      brBB.getASuccessor(any(BooleanSuccessor s | s.getValue() = true)).dominates(bb)
+    )
+  )
+}
 
 /**
  * Gets a concrete compile-time integer value for the value produced by
@@ -109,6 +263,26 @@ int tryAsIntDef(Definition def) {
     v2 = tryAsIntDef(op.getStackInputByOrder(2)) and
     v1 != 0 and
     result = v2 % v1
+  )
+  or
+  // Field-read narrowing via a dominating equality guard.
+  //
+  // `def` is identity-equivalent to some field-read opcode `op` (either
+  // `def` is `op`'s own def, or `op`'s value flows to `def` through
+  // stack manipulation / phi / scratch / callsub). If there is a guard
+  // on any path reaching `op`'s basic block that pins the field to
+  // `result`, then at `op` — and therefore at `def` — the value is
+  // `result`.
+  //
+  // Cross-opcode narrowing: the guard's cmp does not need to reference
+  // `op` itself. Any other field-read opcode with the same `fieldKey`
+  // counts, because field reads are deterministic within a transaction.
+  exists(AstNode op, string fieldKey, Dataflow::Node srcNode, Dataflow::Node defNode |
+    fieldKey = fieldReadKey(op) and
+    srcNode.(Dataflow::SsaDefinitionNode).asDefinition() = TSSAVar(1, op) and
+    defNode.(Dataflow::SsaDefinitionNode).asDefinition() = def and
+    LocalFlow::localFlow(srcNode, defNode) and
+    equalityHoldsAt(op.getBasicBlock(), fieldKey, result)
   )
 }
 

@@ -1,0 +1,19 @@
+#pragma version 8
+// cmp1 (Fee == 1000) && cmp2 (OnCompletion == 0); assert.
+// On the post-assert branch, both Fee == 1000 and OnCompletion == 0 hold.
+// A downstream read of either should be narrowable.
+
+txn Fee
+int 1000
+==
+txn OnCompletion
+int 0
+==
+&&
+assert
+
+// Here: txn Fee should narrow to 1000, txn OnCompletion to 0.
+txn Fee
+txn OnCompletion
++
+return

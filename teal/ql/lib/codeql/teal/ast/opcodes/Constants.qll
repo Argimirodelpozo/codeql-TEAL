@@ -124,6 +124,18 @@ class PushintsOpcode extends AstNode instanceof TOpcode_pushints {
     }
 }
 
+class TBytesConstant = TOpcode_pushbytes or TOpcode_bytec or TOpcode_bytec_0 or
+    TOpcode_bytec_1 or TOpcode_bytec_2 or TOpcode_bytec_3;
+
+/**
+ * An opcode that pushes a compile-time byte constant. Subclasses expose
+ * the concrete value via `getValue()`, which returns the opcode's canonical
+ * string representation (raw token text — `0xdeadbeef`, `"hello"`, etc.).
+ */
+class BytesConstant extends AstNode instanceof TBytesConstant {
+    abstract string getValue();
+}
+
 /** The `bytecblock` opcode: define a block of byte constants. */
 class BytecblockOpcode extends AstNode instanceof TOpcode_bytecblock {
     override int getStackDelta() { result = 0 }
@@ -134,7 +146,7 @@ class BytecblockOpcode extends AstNode instanceof TOpcode_bytecblock {
 }
 
 /** The `bytec` opcode: push byte constant by index. */
-class BytecOpcode extends AstNode instanceof TOpcode_bytec {
+class BytecOpcode extends BytesConstant instanceof TOpcode_bytec {
     override int getStackDelta() { result = 1 }
     override int getNumberOfOutputArgs() { result = 1 }
 
@@ -143,7 +155,7 @@ class BytecOpcode extends AstNode instanceof TOpcode_bytec {
     }
 
     //TODO: deberia ser el bytecblock MAS CERCANO. Por ahora asumimos que hay uno solo
-    string getValue() {
+    override string getValue() {
         result = any(BytecblockOpcode bytecblock).getValue(this.getIndex())
     }
 
@@ -151,12 +163,12 @@ class BytecOpcode extends AstNode instanceof TOpcode_bytec {
 }
 
 /** The `bytec_0` opcode: push byte constant 0 from bytecblock. */
-class Bytec0Opcode extends AstNode instanceof TOpcode_bytec_0 {
+class Bytec0Opcode extends BytesConstant instanceof TOpcode_bytec_0 {
     override int getStackDelta() { result = 1 }
     override int getNumberOfOutputArgs() { result = 1 }
 
     //TODO: deberia ser el bytecblock MAS CERCANO. Por ahora asumimos que hay uno solo
-    string getValue() {
+    override string getValue() {
         result = any(BytecblockOpcode bytecblock).getValue(0)
     }
 
@@ -164,12 +176,12 @@ class Bytec0Opcode extends AstNode instanceof TOpcode_bytec_0 {
 }
 
 /** The `bytec_1` opcode: push byte constant 1 from bytecblock. */
-class Bytec1Opcode extends AstNode instanceof TOpcode_bytec_1 {
+class Bytec1Opcode extends BytesConstant instanceof TOpcode_bytec_1 {
     override int getStackDelta() { result = 1 }
     override int getNumberOfOutputArgs() { result = 1 }
 
     //TODO: deberia ser el bytecblock MAS CERCANO. Por ahora asumimos que hay uno solo
-    string getValue() {
+    override string getValue() {
         result = any(BytecblockOpcode bytecblock).getValue(1)
     }
 
@@ -177,12 +189,12 @@ class Bytec1Opcode extends AstNode instanceof TOpcode_bytec_1 {
 }
 
 /** The `bytec_2` opcode: push byte constant 2 from bytecblock. */
-class Bytec2Opcode extends AstNode instanceof TOpcode_bytec_2 {
+class Bytec2Opcode extends BytesConstant instanceof TOpcode_bytec_2 {
     override int getStackDelta() { result = 1 }
     override int getNumberOfOutputArgs() { result = 1 }
 
     //TODO: deberia ser el bytecblock MAS CERCANO. Por ahora asumimos que hay uno solo
-    string getValue() {
+    override string getValue() {
         result = any(BytecblockOpcode bytecblock).getValue(2)
     }
 
@@ -190,12 +202,12 @@ class Bytec2Opcode extends AstNode instanceof TOpcode_bytec_2 {
 }
 
 /** The `bytec_3` opcode: push byte constant 3 from bytecblock. */
-class Bytec3Opcode extends AstNode instanceof TOpcode_bytec_3 {
+class Bytec3Opcode extends BytesConstant instanceof TOpcode_bytec_3 {
     override int getStackDelta() { result = 1 }
     override int getNumberOfOutputArgs() { result = 1 }
 
     //TODO: deberia ser el bytecblock MAS CERCANO. Por ahora asumimos que hay uno solo
-    string getValue() {
+    override string getValue() {
         result = any(BytecblockOpcode bytecblock).getValue(3)
     }
 
@@ -203,9 +215,22 @@ class Bytec3Opcode extends AstNode instanceof TOpcode_bytec_3 {
 }
 
 /** The `pushbytes` opcode: push an immediate byte constant. */
-class PushbytesOpcode extends AstNode instanceof TOpcode_pushbytes {
+class PushbytesOpcode extends BytesConstant instanceof TOpcode_pushbytes {
     override int getStackDelta() { result = 1 }
     override int getNumberOfOutputArgs() { result = 1 }
+
+    /**
+     * Raw token text of the byte literal. Returned in whatever form the
+     * source uses — `0xdeadbeef` for hex literals, `"hello"` for string
+     * literals. Two pushbytes with the same source text produce the same
+     * key; mixed encodings of the same bytes (e.g. `0x68656c6c6f` and
+     * `"hello"`) are NOT unified today.
+     */
+    override string getValue() {
+        result = toTreeSitter(this).(Teal::PushbytesOpcode).getValue().toString()
+    }
+
+    override string toString() { result = this.getValue() }
 }
 
 /** The `pushbytess` opcode: push multiple immediate byte constants. */

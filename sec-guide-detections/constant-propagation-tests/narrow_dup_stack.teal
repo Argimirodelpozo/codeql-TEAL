@@ -1,0 +1,19 @@
+#pragma version 8
+// T2: stack-manipulation transparency. `txn Fee; dup; int 1000; ==;
+// assert; txn Fee`. The cmp consumes the dup output (not the original
+// txn Fee's SSAVar), but since both read the same field, the
+// cross-opcode narrowing should still fire via fieldReadKey matching.
+
+txn Fee
+dup
+int 1000
+==
+assert
+// Stack had [Fee, Fee] after dup, [Fee, Fee, 1000] then [Fee, bool]
+// then [Fee] after assert consumed the bool. Discard:
+pop
+
+txn Fee          // should narrow to 1000
+pop
+int 1
+return
