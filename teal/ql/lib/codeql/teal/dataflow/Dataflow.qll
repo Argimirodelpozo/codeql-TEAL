@@ -244,13 +244,32 @@ private module Public {
     exists(AstNode s |
       n.getUnderlyingASTNode() instanceof MatchOpcode or
       n.(SsaDefinitionNode).asDefinition().(SSAWriteDef).getRHS() = s and
-      not (s instanceof BuryOpcode or s instanceof DigOpcode or 
+      not (s instanceof BuryOpcode or s instanceof DigOpcode or
         s instanceof CoverOpcode or s instanceof UncoverOpcode or
         s instanceof SwapOpcode or s instanceof DupOpcode or
         s instanceof Dup2Opcode or s instanceof DupnOpcode or
         s instanceof FrameDigOpcode or s instanceof FrameBuryOpcode or
-        s instanceof RetsubOpcode)
+        s instanceof RetsubOpcode or
+        // `load N` is not a barrier: it is an identity pass-through for the
+        // value written by the corresponding `store N`. The connection is
+        // added by `scratchBridge` in `localSsaFlowStep`, so letting flow
+        // continue through the load's SSAWriteDef makes that bridge
+        // transitively composable with the rest of the flow graph.
+        s instanceof LoadOpcode)
       )
+    or
+    // Subroutine entry phis are barriers at the top-level flow: they represent
+    // the MERGE of arguments from every caller of the subroutine, so letting
+    // flow propagate through one would immediately leak caller A's value into
+    // caller B's context (cross-callsite contamination). The top-level flow
+    // is therefore forced to STOP at any subroutine boundary; the only way to
+    // cross is via `callsubBridge`, which injects per-call-site edges based on
+    // a context-specific `SubroutineFlow` analysis. This also generalises to
+    // nested subroutines: a nested sub's entry phi is likewise a barrier, and
+    // the nested callsub bridge will handle the boundary.
+    exists(Subroutine sub |
+      n.(SsaDefinitionNode).asDefinition().(DirectPhi).getBasicBlock() = sub.getBasicBlock()
+    )
   }
 
   predicate simpleLocalFlowStep(Node nodeFrom, Node nodeTo) {
@@ -286,16 +305,49 @@ module LocalFlow {
   //   nodeTo.asDefinition().definesAt(nodeFrom.getParameter(), _, _)
   // }
 
-  // TODO: USE DEFINITIONS HERE. That way we include phi (seems like we already did this?)
-  //this is for strict flow, aka. v_in_a = v_out_b, for some positive integer a,b
-  //taint is handled in its own module (TODO: handle taint :p)
-  // stacks look like this:
-  // [v3 v2 v1] -> OP -> [v1 v2 v3] (yes, they are backwards on exit...Why. Did. I. Do. This?)
+  // Strict SSA-level flow through a single opcode.
+  //
+  // Stack convention (from the original author):
+  //   [v3 v2 v1] -> OP -> [v1 v2 v3]
+  //   Inputs are numbered from the top of stack (v1 is `inOrd=1`). On exit,
+  //   output positions are numbered from the "bottom" (reversed relative to
+  //   the physical stack), which is why retsub uses `N+1-inOrd`.
+  //
+  // CALL-SITE SENSITIVITY:
+  //   When the op is `retsub` and `defFrom` is a phi at the subroutine entry
+  //   BB, we *block* the propagation. A phi at the subroutine entry merges the
+  //   argument values passed in by every caller of that subroutine; if we
+  //   allowed it to flow through retsub, the value would then be visible at
+  //   every caller's continuation phi, meaning caller A's arg would appear to
+  //   flow into caller B's post-callsub consumers. That is the "cross-callsite
+  //   contamination" bug.
+  //
+  //   Instead, for caller-arg flow we use `callsubBridge` (below), which
+  //   directly connects caller A's arg to caller A's continuation phi (and
+  //   nothing else) — so it's inherently call-site-specific.
+  //
+  //   For flow that *originates inside* the subroutine body (for example
+  //   `global LatestTimestamp; retsub`), the source is an SSAWriteDef of an
+  //   internal opcode, NOT an entry phi, so the block above does not apply
+  //   and the flow propagates naturally through retsub to every caller's
+  //   continuation phi. This is exactly the semantics we want: an internally-
+  //   produced value IS returned to whoever called the subroutine.
   predicate defSSAFlowThroughOp(Definition defFrom, AstNode op, Definition defTo){
-    op.getAnOutputVar().toDef() = defTo and
-    exists(int inOrd, int outOrd |
-      inOrd = op.getStackInputOrderByDef(defFrom) and
-      outOrd = defTo.(SSAWriteDef).getVar().getInternalOutputIndex() 
+    // Destructure defTo through the underlying TSSAVar newtype so that
+    // both `op` (the declaring AstNode) and the output index are bound
+    // as proper newtype components — not as SSAVar member accesses.
+    //
+    // Going via `defTo.(SSAWriteDef).getVar().getInternalOutputIndex()`
+    // passes through SSAVar's non-unique `varInternalIndex` field, which
+    // CodeQL re-existentially-quantifies at every predicate boundary.
+    // The result is that for one specific `defTo = TSSAVar(1, dig)` the
+    // expression returns *every* valid index for the declaring AstNode
+    // (1, 2, 3, 4 for `dig 2`), silently wiring every input position to
+    // every output position. Direct destructure pins the identity.
+    exists(int outOrd | defTo = TSSAVar(outOrd, op) |
+    op.getConsumedValues() = defFrom and
+    exists(int inOrd |
+      inOrd = op.getStackInputOrderByDef(defFrom)
       and(
 
         op instanceof DigOpcode and (
@@ -305,11 +357,22 @@ module LocalFlow {
         )
         or
         
-        //TODO: test
+        // `bury N` semantics: pop the top value, overwrite the value at
+        // depth N with it. The popped top therefore ends up at the new
+        // depth N-1 (i.e. output position N — the deepest of the N
+        // outputs). The old value at depth N is discarded; everything
+        // between shifts up by one position.
+        //
+        //   consumed = N+1  (top + the N values beneath it)
+        //   output   = N    (the new top N values after the bury)
+        //
+        //   inOrd=1        (top)           -> outOrd = N         (buried slot)
+        //   inOrd=k in [2..N]               -> outOrd = k-1       (shifted up)
+        //   inOrd=N+1       (old depth N)  -> DISCARDED (no edge)
         op instanceof BuryOpcode and (
           inOrd = 1 and outOrd = op.getNumberOfOutputArgs()
           or
-          inOrd in [1 .. op.getNumberOfConsumedArgs()-1] and outOrd = inOrd+1
+          inOrd in [2 .. op.getNumberOfConsumedArgs()-1] and outOrd = inOrd - 1
         )
         or
 
@@ -357,26 +420,115 @@ module LocalFlow {
         )
         or
 
-        //TODO: test
+        // `frame_bury i` — same shape as `bury` but the buried slot is
+        // frame-relative instead of stack-relative. The popped top ends
+        // up at the buried slot (output position N, the deepest of the
+        // outputs within the frame_bury's window); the values between
+        // the old top and that slot shift up by one; the value at the
+        // buried slot itself is discarded.
+        //
+        //   inOrd=1        (top)           -> outOrd = N         (buried slot)
+        //   inOrd=k in [2..N]               -> outOrd = k-1       (shifted up)
+        //   inOrd=N+1       (old buried)   -> DISCARDED (no edge)
         op instanceof FrameBuryOpcode and (
           inOrd = 1 and outOrd = op.getNumberOfOutputArgs()
           or
-          inOrd in [1 .. op.getNumberOfConsumedArgs()-1] and outOrd = inOrd+1
+          inOrd in [2 .. op.getNumberOfConsumedArgs()-1] and outOrd = inOrd - 1
         )
         or
 
-        //TODO: test
-        op instanceof RetsubOpcode and 
+        // retsub: conceptually, the top N values of the stack at retsub time
+        // become the N return values. The "reversed" convention means
+        // inOrd=1 (topmost input) maps to outOrd=N (bottommost output), hence
+        // `outOrd = N + 1 - inOrd` (both are 1-based).
+        //
+        // Note that we allow any `defFrom` here, including the subroutine
+        // entry phi. The call-site-sensitivity guarantee is instead enforced
+        // by `isBarrier` marking subroutine entry phis as barriers, which
+        // prevents the recursive `localFlow` from routing a caller arg
+        // through `entry_phi -> retsub_out -> contPhi` transitively.
+        op instanceof RetsubOpcode and
         (
           inOrd in [1 .. op.(RetsubOpcode).getAffectingProto().getNumberOfSubroutineOutputArgs()] and
-          outOrd = op.(RetsubOpcode).getAffectingProto().getNumberOfSubroutineOutputArgs() - inOrd
-          // inOrd = op.getNumberOfConsumedArgs() + op.(RetsubOpcode).getImmediate()
-          // and outOrd = op.getNumberOfOutputArgs()
+          outOrd = op.(RetsubOpcode).getAffectingProto().getNumberOfSubroutineOutputArgs() + 1 - inOrd
         )
 
         //TODO: complete with ALL ops that allow a full value to flow through into
         // the stack!!
       )
+    )
+    )
+  }
+
+  /**
+   * Callsub bridge: at a callsub site, connect a caller arg to the
+   * corresponding continuation phi if SubroutineFlow shows the matching
+   * subroutine entry phi reaches the matching retsub output.
+   *
+   * - The caller arg is an SSAVar in the caller's BB at stack position `inIdx`.
+   * - The continuation phi is a DirectPhi in the BB starting after the callsub,
+   *   at initialStackIndex `outIdx`.
+   * - The bridge is added if SubroutineFlow shows the entry phi at position
+   *   `inIdx` reaches the retsub output at position `outIdx` within the
+   *   called subroutine.
+   *
+   * This is call-site sensitive: each callsub gets its own bridge edges,
+   * connecting only that callsub's args to that callsub's continuation phis.
+   */
+  predicate callsubBridge(Node nodeFrom, Node nodeTo) {
+    exists(
+      CallsubOpcode cs, Subroutine sub, int inIdx, int outIdx,
+      SSAVar argVar, DirectPhi contPhi, DirectPhi entryPhi, SSAVar retsubOut,
+      Node entryNode, Node retsubOutNode
+    |
+      sub = cs.getSubroutine() and
+      // Caller's arg at input position inIdx
+      argVar.getBasicBlock() = cs.getBasicBlock() and
+      argVar.outStackOrder() = inIdx and
+      nodeFrom.(SsaDefinitionNode).asDefinition() = argVar.toDef() and
+      // Caller's continuation phi at output position outIdx (the BB after callsub)
+      contPhi.getBasicBlock() = cs.getNextLine().getBasicBlock() and
+      contPhi.getInitialStackIndex() = outIdx and
+      nodeTo.(SsaDefinitionNode).asDefinition() = contPhi and
+      // Subroutine entry phi at position inIdx
+      entryPhi.getBasicBlock() = sub.getBasicBlock() and
+      entryPhi.getInitialStackIndex() = inIdx and
+      entryNode.(SsaDefinitionNode).asDefinition() = entryPhi and
+      // Retsub output at position outIdx
+      retsubOut.getDeclarationNode() = sub.getRetsubOpcode() and
+      retsubOut.getInternalOutputIndex() = outIdx and
+      retsubOutNode.(SsaDefinitionNode).asDefinition() = retsubOut.toDef() and
+      // The mapping must hold inside the subroutine
+      SubroutineFlow::flowThroughSubroutine(entryNode, retsubOutNode)
+    )
+  }
+
+  /**
+   * Scratch-slot bridge: connects the value consumed by a `store N` to the
+   * value produced by each `load N` it may influence.
+   *
+   * This handles the immediate form only (`store N` / `load N` where the
+   * slot index is a compile-time constant). The dynamic forms (`stores` /
+   * `loads`, which pop the slot index off the stack) are intentionally out
+   * of scope for now — they require resolving the index at analysis time.
+   *
+   * The edge added is `stored_value_def -> load_output_def`. It is a direct
+   * SSA-to-SSA connection — no stack manipulation involved — because the
+   * slot index acts as a named channel between the two opcodes. In
+   * `localFlow` this lets flow "skip" the stack and cross through scratch.
+   *
+   * Per-slot separation and the may-influence relation are both delegated
+   * to `LoadOpcode.getInfluencingStore()` (see ScratchSpace.qll).
+   */
+  predicate scratchBridge(Node nodeFrom, Node nodeTo) {
+    exists(StoreOpcode store, LoadOpcode load, SSAVar storedVar, SSAVar loadedVar |
+      load.getInfluencingStore() = store and
+      // Source side: the SSAVar whose value the store consumed from the stack.
+      storedVar = store.getScratchSpaceStoredVariable() and
+      nodeFrom.(SsaDefinitionNode).asDefinition() = storedVar.toDef() and
+      // Sink side: the SSAVar produced by the load.
+      loadedVar = load.getAnOutputVar() and
+      nodeTo.(SsaDefinitionNode).asDefinition() = loadedVar.toDef()
     )
   }
 
@@ -387,7 +539,7 @@ module LocalFlow {
   predicate localSsaFlowStep(Node nodeFrom, Node nodeTo) {
 
     defSSAFlowThroughOp(
-      nodeFrom.(SsaDefinitionNode).asDefinition(), 
+      nodeFrom.(SsaDefinitionNode).asDefinition(),
       nodeTo.(SsaDefinitionNode).asDefinition().(SSAWriteDef).getRHS(),
       nodeTo.(SsaDefinitionNode).asDefinition() //this one should always be a SSAWrite
       //probably can get rid of the op in the middle
@@ -396,32 +548,36 @@ module LocalFlow {
 
     //TODO: this should be solved in the "normal" side, as it goes from SSA to "out"
     //[ssawrite|direct phi|indirect phi] -> use
-    // all "stack reorg" nodes should be considered in the previous subquery and thus excluded here
+    // The stack-manipulation exclusion below avoids creating duplicate edges
+    // for operations that are already handled by `defSSAFlowThroughOp`.
+    // Retsub is not in this list because propagation through retsub is now
+    // uniformly handled: retsub->caller flows via the standard ssawrite->phi
+    // branch (legal for internal sources), while caller->retsub leaks are
+    // blocked by the subroutine-entry-phi barrier in `isBarrier` above.
     not (
-      nodeTo.(SsaDefinitionNode).getUnderlyingASTNode() instanceof DigOpcode
-      or nodeTo.(SsaDefinitionNode).getUnderlyingASTNode() instanceof BuryOpcode
-      or nodeTo.(SsaDefinitionNode).getUnderlyingASTNode() instanceof CoverOpcode
+      nodeTo.(SsaDefinitionNode).getUnderlyingASTNode() instanceof TOpcode_dig
+      or nodeTo.(SsaDefinitionNode).getUnderlyingASTNode() instanceof TOpcode_bury
+      or nodeTo.(SsaDefinitionNode).getUnderlyingASTNode() instanceof TOpcode_cover
       or nodeTo.(SsaDefinitionNode).getUnderlyingASTNode() instanceof UncoverOpcode
       or nodeTo.(SsaDefinitionNode).getUnderlyingASTNode() instanceof SwapOpcode
-      or nodeTo.(SsaDefinitionNode).getUnderlyingASTNode() instanceof DupOpcode
+      or nodeTo.(SsaDefinitionNode).getUnderlyingASTNode() instanceof TOpcode_dup
       or nodeTo.(SsaDefinitionNode).getUnderlyingASTNode() instanceof Dup2Opcode
       or nodeTo.(SsaDefinitionNode).getUnderlyingASTNode() instanceof DupnOpcode
       or nodeTo.(SsaDefinitionNode).getUnderlyingASTNode() instanceof FrameBuryOpcode
       or nodeTo.(SsaDefinitionNode).getUnderlyingASTNode() instanceof FrameDigOpcode
       or nodeTo.(SsaDefinitionNode).getUnderlyingASTNode() instanceof RetsubOpcode
-    )
-    and
-    nodeFrom.(SsaDefinitionNode).asDefinition().(SSAWriteDef) = 
+    ) and
+    nodeFrom.(SsaDefinitionNode).asDefinition().(SSAWriteDef) =
     nodeTo.(SsaDefinitionNode).asDefinition().(SSAWriteDef).getRHS().getConsumedValues()
     or
 
     //(d)phi -> ssa_write flow
-    nodeFrom.(SsaDefinitionNode).asDefinition().(DirectPhi) = 
+    nodeFrom.(SsaDefinitionNode).asDefinition().(DirectPhi) =
     nodeTo.(SsaDefinitionNode).asDefinition().(SSAWriteDef).getRHS().getConsumedValues()
     or
 
     //(i)phi -> ssa_write flow
-    nodeFrom.(SsaDefinitionNode).asDefinition().(IndirectPhi) = 
+    nodeFrom.(SsaDefinitionNode).asDefinition().(IndirectPhi) =
     nodeTo.(SsaDefinitionNode).asDefinition().(SSAWriteDef).getRHS().getConsumedValues()
     or
 
@@ -431,77 +587,43 @@ module LocalFlow {
     or
 
     //phi-to-phi flow (first phi can be d|i, second phi is always indirect)
-    nodeFrom.(SsaDefinitionNode).asDefinition() = 
+    nodeFrom.(SsaDefinitionNode).asDefinition() =
     nodeTo.(SsaDefinitionNode).asDefinition().(IndirectPhi).getGenerator()
 
     // No output nodes should be sinks: they don't emit vars
     // but do consume them
     or
-    nodeFrom.(SsaDefinitionNode).asDefinition().(SSAWriteDef).getVar() = 
+    nodeFrom.(SsaDefinitionNode).asDefinition().(SSAWriteDef).getVar() =
     nodeTo.(NoOutputNode).getUnderlyingASTNode().getConsumedVars()
     or
-    nodeFrom.(SsaDefinitionNode).asDefinition().(DirectPhi).getConsumedBy() = 
+    nodeFrom.(SsaDefinitionNode).asDefinition().(DirectPhi).getConsumedBy() =
     nodeTo.(NoOutputNode).getUnderlyingASTNode()
     or
-    nodeFrom.(SsaDefinitionNode).asDefinition().(IndirectPhi).getConsumedBy() = 
+    nodeFrom.(SsaDefinitionNode).asDefinition().(IndirectPhi).getConsumedBy() =
     nodeTo.(NoOutputNode).getUnderlyingASTNode()
+    or
 
+    // Callsub bridge: the ONLY way caller-arg flow crosses a subroutine
+    // boundary. `isBarrier` marks subroutine entry phis as barriers, which
+    // prevents the recursive `localFlow` from transitively routing through
+    // them. `callsubBridge` then adds a direct, per-callsite edge from each
+    // caller arg to its own continuation phi, using SubroutineFlow to verify
+    // the subroutine's input/output mapping. Internal-source flows (like
+    // `global; retsub`) do not go through any entry phi, so they propagate
+    // through retsub naturally via the standard SSA branches above.
+    callsubBridge(nodeFrom, nodeTo)
+    or
 
-    // or
-    // exists(Ssa::Definition def |
-    //   // Step from assignment RHS to def
-    //   // def.(Ssa::SSAVar2).assigns(nodeFrom.(ExprNode).getCfgNode()) and
-    //   def.(Ssa::SSAWriteDef).getRHS() = nodeFrom.(OpcodeNode).getCfgNode().getAstNode() and
-    //   nodeTo.(SsaDefinitionNode).asDefinition() = def
-    //   or
-    //   // step from def to first read
-    //   nodeFrom.(SsaDefinitionNode).asDefinition() = def and
-    //   // nodeTo.(OpcodeNode).getCfgNode() = def.getAFirstRead()
-    //   (
-    //     nodeTo.(OpcodeNode).getCfgNode().getAstNode() = 
-    //       def.(Ssa::SSAWriteDef).getVar().getDeclarationNode().getConsumedBy(def.(Ssa::SSAWriteDef).getVar())
-    //     or
-    //     nodeTo.(OpcodeNode).getCfgNode().getAstNode() = 
-    //       def.(Ssa::DirectPhi).getConsumedBy()
-    //     or 
-    //     nodeTo.(OpcodeNode).getCfgNode().getAstNode() = 
-    //     def.(Ssa::IndirectPhi).getConsumedBy()
-    //   )
-      
-
-    //   // or
-    //   // // use-use flow
-    //   // localSsaFlowStepUseUse(def, nodeFrom, nodeTo)
-    //   // or
-    //   // step from previous read to Phi node
-    //   // localFlowSsaInput(nodeFrom, def, nodeTo.(SsaDefinitionNode).asDefinition())
-    // )
-    // // or
-    // // localFlowSsaParamInput(nodeFrom, nodeTo)
+    // Scratch-slot bridge: `store N` feeds every `load N` that it influences
+    // (see `scratchBridge` above). This is a direct SSA-to-SSA channel that
+    // bypasses the stack entirely and keeps per-slot flows independent.
+    scratchBridge(nodeFrom, nodeTo)
   }
 
   pragma[nomagic]
   predicate localFlowStep(Node nodeFrom, Node nodeTo) {
     nodeFrom.(OpcodeNode).getCfgNode().getAstNode().getConsumedBy(_) = 
     nodeTo.(OpcodeNode).getCfgNode().getAstNode()
-    
-
-    // //  Parenthesized expression
-    // nodeTo.(ExprNode).getCfgNode() = nodeFrom.(ExprNode).getCfgNode().getASuccessor() and
-    // nodeTo.(ExprNode).getCfgNode().getAstNode().(ParenExpression).getExpression() =
-    //   nodeFrom.(ExprNode).getCfgNode().getAstNode()
-    // or
-    // Conditional expression
-    // exists(ConditionalExpression c |
-    //   c = nodeTo.(ExprNode).getCfgNode().getAstNode() and
-    //   nodeTo.(ExprNode).getCfgNode() = nodeFrom.(ExprNode).getCfgNode().getASuccessor() and
-    //   nodeFrom.(ExprNode).getCfgNode().getAstNode() = [c.getThen(), c.getElse()]
-    // )
-    // or
-    //  VarIn expression
-    // nodeTo.(ExprNode).getCfgNode() = nodeFrom.(ExprNode).getCfgNode().getASuccessor() and
-    // nodeTo.(ExprNode).getCfgNode().getAstNode().(VarInExpression).getBody() =
-    //   nodeFrom.(ExprNode).getCfgNode().getAstNode()
   }
 
   // pragma[nomagic]
@@ -527,6 +649,120 @@ module LocalFlow {
       (simpleLocalFlowStep(source, mid) and
       mid != source and mid != sink and
       not isBarrier(mid) and localFlow(mid, sink))
+    )
+  }
+}
+
+/**
+ * Subroutine-aware flow analysis. Used by `LocalFlow::callsubBridge` to
+ * determine, for a given subroutine, which input argument positions flow to
+ * which return value positions. Unlike the top-level LocalFlow, it does NOT
+ * treat subroutine entry phis as barriers, so it can propagate from an entry
+ * phi (representing an argument) all the way through the subroutine body to
+ * a retsub output.
+ *
+ * This analysis is context-agnostic: it answers "does the subroutine's logic
+ * route input #i to output #j?" without regard to which specific caller is
+ * asking. The per-call-site routing is applied afterwards by `callsubBridge`,
+ * which uses the answer from here to add per-caller edges in `LocalFlow`.
+ */
+module SubroutineFlow {
+  private import Public
+  private import codeql.teal.cfg.BasicBlocks
+
+  /**
+   * SSA flow step reused from LocalFlow's building blocks. The key difference
+   * is that SubroutineFlow's `flowThroughSubroutine` (below) does not apply
+   * the subroutine-entry-phi barrier, so flow can enter and leave a subroutine
+   * freely — which is what we need to compute the input/output routing.
+   */
+  predicate localSsaFlowStep(Node nodeFrom, Node nodeTo) {
+
+    LocalFlow::defSSAFlowThroughOp(
+      nodeFrom.(SsaDefinitionNode).asDefinition(),
+      nodeTo.(SsaDefinitionNode).asDefinition().(SSAWriteDef).getRHS(),
+      nodeTo.(SsaDefinitionNode).asDefinition()
+      )
+    or
+
+    not (
+      nodeTo.(SsaDefinitionNode).getUnderlyingASTNode() instanceof TOpcode_dig
+      or nodeTo.(SsaDefinitionNode).getUnderlyingASTNode() instanceof TOpcode_bury
+      or nodeTo.(SsaDefinitionNode).getUnderlyingASTNode() instanceof TOpcode_cover
+      or nodeTo.(SsaDefinitionNode).getUnderlyingASTNode() instanceof UncoverOpcode
+      or nodeTo.(SsaDefinitionNode).getUnderlyingASTNode() instanceof SwapOpcode
+      or nodeTo.(SsaDefinitionNode).getUnderlyingASTNode() instanceof TOpcode_dup
+      or nodeTo.(SsaDefinitionNode).getUnderlyingASTNode() instanceof Dup2Opcode
+      or nodeTo.(SsaDefinitionNode).getUnderlyingASTNode() instanceof DupnOpcode
+      or nodeTo.(SsaDefinitionNode).getUnderlyingASTNode() instanceof FrameBuryOpcode
+      or nodeTo.(SsaDefinitionNode).getUnderlyingASTNode() instanceof FrameDigOpcode
+      or nodeTo.(SsaDefinitionNode).getUnderlyingASTNode() instanceof RetsubOpcode
+    )
+    and
+    nodeFrom.(SsaDefinitionNode).asDefinition().(SSAWriteDef) =
+    nodeTo.(SsaDefinitionNode).asDefinition().(SSAWriteDef).getRHS().getConsumedValues()
+    or
+
+    nodeFrom.(SsaDefinitionNode).asDefinition().(DirectPhi) =
+    nodeTo.(SsaDefinitionNode).asDefinition().(SSAWriteDef).getRHS().getConsumedValues()
+    or
+
+    nodeFrom.(SsaDefinitionNode).asDefinition().(IndirectPhi) =
+    nodeTo.(SsaDefinitionNode).asDefinition().(SSAWriteDef).getRHS().getConsumedValues()
+    or
+
+    nodeFrom.(SsaDefinitionNode).asDefinition().(SSAWriteDef) =
+    nodeTo.(SsaDefinitionNode).asDefinition().(DirectPhi).getOriginatingInput().toDef()
+    or
+
+    nodeFrom.(SsaDefinitionNode).asDefinition() =
+    nodeTo.(SsaDefinitionNode).asDefinition().(IndirectPhi).getGenerator()
+
+    or
+    nodeFrom.(SsaDefinitionNode).asDefinition().(SSAWriteDef).getVar() =
+    nodeTo.(NoOutputNode).getUnderlyingASTNode().getConsumedVars()
+    or
+    nodeFrom.(SsaDefinitionNode).asDefinition().(DirectPhi).getConsumedBy() =
+    nodeTo.(NoOutputNode).getUnderlyingASTNode()
+    or
+    nodeFrom.(SsaDefinitionNode).asDefinition().(IndirectPhi).getConsumedBy() =
+    nodeTo.(NoOutputNode).getUnderlyingASTNode()
+  }
+
+  predicate simpleLocalFlowStep(Node nodeFrom, Node nodeTo) {
+    localSsaFlowStep(nodeFrom, nodeTo)
+  }
+
+  /**
+   * Subroutine-aware flow closure. Used to determine, for a given subroutine,
+   * which input argument positions flow to which return value positions.
+   *
+   * Critically, this predicate does NOT consider subroutine entry phis to be
+   * barriers (the top-level LocalFlow does). That allows us to start at an
+   * entry phi representing "input at position i" and propagate all the way
+   * to a retsub output representing "return value at position j" — exactly
+   * the question that `callsubBridge` needs to answer.
+   *
+   * This is context-agnostic (doesn't know about a specific caller) and is
+   * safe to recurse: if the analyzed subroutine itself makes a nested
+   * callsub, the nested subroutine's entry phi is also not a barrier here,
+   * so the flow passes through it naturally inside SubroutineFlow.
+   */
+  pragma[nomagic]
+  predicate flowThroughSubroutine(Node source, Node sink) {
+    source = sink
+    or
+    simpleLocalFlowStep(source, sink)
+    or
+    exists(Node mid |
+      simpleLocalFlowStep(source, mid) and
+      mid != source and mid != sink and
+      // Note: we deliberately do NOT call `Public::isBarrier(mid)` here,
+      // because that predicate marks subroutine entry phis as barriers
+      // (a top-level-only concern). Inside a subroutine analysis we must
+      // be able to cross those phis, otherwise we could never connect an
+      // argument slot to a retsub output slot.
+      flowThroughSubroutine(mid, sink)
     )
   }
 }

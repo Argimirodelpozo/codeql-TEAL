@@ -1,0 +1,22 @@
+#pragma version 8
+// T1: bytes narrowing via `&&` + assert. Both operands of the AND are
+// byte-equality checks; on the post-assert block both fields are pinned.
+
+txn Sender
+pushbytes 0x3333333333333333333333333333333333333333333333333333333333333333
+==
+txn RekeyTo
+pushbytes 0x4444444444444444444444444444444444444444444444444444444444444444
+==
+&&
+assert
+
+// Both should narrow:
+//   txn Sender → 0x3333...
+//   txn RekeyTo → 0x4444...
+txn Sender
+txn RekeyTo
+concat
+pop
+int 1
+return

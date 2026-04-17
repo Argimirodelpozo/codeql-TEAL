@@ -16,16 +16,50 @@ class LoadOpcode extends AstNode instanceof TOpcode_load {
         result = this.getInfluencingStore().getScratchSpaceStoredVariable()
     }
 
+    /**
+     * Gets every `StoreOpcode` that may influence the value read by this
+     * `load N`. A store "may influence" this load if it writes to the same
+     * slot and can reach this load along some CFG path — i.e. there exists
+     * an execution in which the value written by that store is the value
+     * read here.
+     *
+     * This is a MAY-reach relation, not a MUST-reach / dominance one:
+     *
+     *   - In a diamond like
+     *         if cond: store 0 (A)
+     *         else:    store 0 (B)
+     *         load 0
+     *     neither A nor B individually dominates the load, but both of them
+     *     may supply the value that the load observes at runtime. A dominance
+     *     only check would return no influencing store at all and silently
+     *     lose both flows.
+     *
+     *   - BUT we do kill a store whose value is unconditionally overwritten
+     *     by a later store on the same slot before the load runs. This is
+     *     the purpose of the `not exists(overwrite | ...)` clause below:
+     *     a store `result` is excluded when there exists another store
+     *     `overwrite` on the same slot such that
+     *       - `result.reaches(overwrite)` (so `overwrite` is after `result`),
+     *         and
+     *       - `overwrite.getBasicBlock().dominates(load)` (so *every* path
+     *         from the program entry to the load goes through `overwrite`).
+     *     Combining those two facts: every path from `result` to the load
+     *     also goes through `overwrite`, so `result`'s value is guaranteed
+     *     to be clobbered before the load observes anything.
+     *
+     * Per-slot isolation is still enforced: we only pair stores and loads
+     * that target the same slot index, so a `load 0` is never wired to a
+     * `store 1`.
+     */
     StoreOpcode getInfluencingStore() {
-        exists(StoreOpcode store | store.getSPVarIndex() = this.getSPVarIndex() and store.reaches(this)
-            and store.getBasicBlock().dominates(this.getBasicBlock())
-            and not exists(StoreOpcode alt_store |
-                alt_store.getSPVarIndex() = this.getSPVarIndex() and
-                store.reaches(alt_store) and
-                alt_store.reaches(this) and
-                alt_store != store and
-                store.getBasicBlock().dominates(alt_store.getBasicBlock()) and alt_store.getBasicBlock().dominates(this.getBasicBlock()))
-            and result = store)
+        result.getSPVarIndex() = this.getSPVarIndex() and
+        result.reaches(this) and
+        not exists(StoreOpcode overwrite |
+            overwrite.getSPVarIndex() = this.getSPVarIndex() and
+            overwrite != result and
+            result.reaches(overwrite) and
+            overwrite.getBasicBlock().dominates(this.getBasicBlock())
+        )
     }
 }
 

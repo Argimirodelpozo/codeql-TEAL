@@ -1,0 +1,5 @@
+| fixed-callsub.teal:1:1:47:9 | Source | Contract does not validate txn RekeyTo \u2014 an attacker can rekey the account to themselves, gaining full control. |
+| gabe_fixed.teal:1:1:79:11 | Source | Contract does not validate txn RekeyTo \u2014 an attacker can rekey the account to themselves, gaining full control. |
+| gabe_vuln.teal:1:1:70:11 | Source | Contract does not validate txn RekeyTo \u2014 an attacker can rekey the account to themselves, gaining full control. |
+| vuln-partial-branch.teal:1:1:35:7 | Source | Contract does not validate txn RekeyTo \u2014 an attacker can rekey the account to themselves, gaining full control. |
+| vuln-subroutine-bypass.teal:1:1:40:9 | Source | Contract does not validate txn RekeyTo \u2014 an attacker can rekey the account to themselves, gaining full control. |

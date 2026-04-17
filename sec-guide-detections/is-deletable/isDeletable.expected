@@ -1,0 +1,4 @@
+| fixed-complex-dispatch.teal:1:1:75:9 | Source | Application is deletable: OnCompletion == DeleteApplication can reach approval without a guard. |
+| gabe_fixed.teal:1:1:77:11 | Source | Application is deletable: OnCompletion == DeleteApplication can reach approval without a guard. |
+| gabe_vuln.teal:1:1:63:11 | Source | Application is deletable: OnCompletion == DeleteApplication can reach approval without a guard. |
+| vuln-complex-dispatch.teal:1:1:58:9 | Source | Application is deletable: OnCompletion == DeleteApplication can reach approval without a guard. |

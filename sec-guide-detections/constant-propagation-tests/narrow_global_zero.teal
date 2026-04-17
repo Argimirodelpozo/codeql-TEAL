@@ -1,0 +1,15 @@
+#pragma version 8
+// T1: `global ZeroAddress` special case. The ZeroAddress constant is
+// hardcoded in BytesPropagation as 32 zero bytes. A guard comparing
+// `txn Sender == global ZeroAddress` should narrow the downstream read
+// to the zero hex.
+
+txn Sender
+global ZeroAddress
+==
+assert
+
+txn Sender       // should narrow to 0x00..00 (32 bytes)
+pop
+int 1
+return

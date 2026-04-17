@@ -1,0 +1,4 @@
+| fixed-dispatch-table.teal:1:1:65:9 | Source | Application is deletable by anyone: no sender == creator check guards the approval path for DeleteApplication. |
+| gabe_fixed.teal:1:1:77:11 | Source | Application is deletable by anyone: no sender == creator check guards the approval path for DeleteApplication. |
+| gabe_vuln.teal:1:1:73:11 | Source | Application is deletable by anyone: no sender == creator check guards the approval path for DeleteApplication. |
+| vuln-dispatch-table.teal:1:1:44:9 | Source | Application is deletable by anyone: no sender == creator check guards the approval path for DeleteApplication. |

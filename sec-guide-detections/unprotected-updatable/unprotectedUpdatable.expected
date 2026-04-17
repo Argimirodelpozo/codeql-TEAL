@@ -1,0 +1,4 @@
+| fixed-dispatch-table.teal:1:1:48:9 | Source | Application is updatable by anyone: no sender == creator check guards the approval path for UpdateApplication. |
+| vuln-dispatch-table.teal:1:1:48:9 | Source | Application is updatable by anyone: no sender == creator check guards the approval path for UpdateApplication. |
+| vuln-nested-dispatch.teal:1:1:49:9 | Source | Application is updatable by anyone: no sender == creator check guards the approval path for UpdateApplication. |
+| vuln.teal:1:1:13:7 | Source | Application is updatable by anyone: no sender == creator check guards the approval path for UpdateApplication. |

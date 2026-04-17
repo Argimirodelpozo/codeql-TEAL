@@ -1,0 +1,18 @@
+#pragma version 8
+// T1: bz-based guard. `cmp; bz reject; ...continuation...; reject: err`.
+// On the fall-through (value = true = cmp passed), `txn Fee` should
+// narrow to 1000.
+
+txn Fee
+int 1000
+==
+bz reject
+
+// fall-through: Fee = 1000 here
+txn Fee
+pop
+int 1
+return
+
+reject:
+err

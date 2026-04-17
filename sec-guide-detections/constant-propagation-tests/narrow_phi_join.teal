@@ -1,0 +1,33 @@
+#pragma version 8
+// T3: two predecessors each assert a different K for the same field;
+// the post-join read is dominated by BOTH guards (each on a different
+// path). Since `tryAsIntDef` is multi-valued, the post-join read should
+// narrow to both values (1000 AND 2000).
+
+txn TypeEnum
+int 1
+==
+bnz branch_a
+
+// branch B: Fee == 2000
+txn Fee
+int 2000
+==
+assert
+b join
+
+branch_a:
+// branch A: Fee == 1000
+txn Fee
+int 1000
+==
+assert
+// fall-through to join
+
+join:
+// Dominated by BOTH (via each predecessor's assert). Multi-valued
+// narrowing means BOTH 1000 and 2000 should appear.
+txn Fee          // ideally narrows to {1000, 2000}
+pop
+int 1
+return

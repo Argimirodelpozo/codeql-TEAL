@@ -193,7 +193,26 @@ private import codeql.teal.ast.IntegerConstants
 //   }
 // }
 
-newtype TDefinition = 
+/**
+ * Separate newtype for `SSAVar`'s identity. We cannot reuse `TSSAVar` (a
+ * branch of `TDefinition`) directly here because `TDefinition` also has
+ * the `TIndirectPhi` branch, whose characteristic depends on
+ * `phiNodeExitIndex`, which in turn depends on `SSAVar.outStackOrder`.
+ * If `SSAVar`'s identity flowed through `TDefinition`, the back-edge
+ * would go through `not exists(phiNodeGetsConsumedBy(...))` inside
+ * `phiNodeExitIndex`, producing a non-monotonic recursion error at
+ * compile time.
+ *
+ * The workaround is to give `SSAVar` its own dedicated newtype that
+ * carries the same shape `(idx, node)` but does NOT sit under
+ * `TDefinition`. Conversion to/from `SSAWriteDef` is a cheap
+ * constructor on `TSSAVar`.
+ */
+newtype TSSAVarIdentity = MkSSAVar(int idx, AstNode node) {
+  idx in [1 .. node.getNumberOfOutputArgs()]
+}
+
+newtype TDefinition =
   TSSAVar(int varIndex, AstNode n){
     varIndex in [1 .. n.getNumberOfOutputArgs()]
   } or
@@ -237,22 +256,39 @@ abstract class Definition extends TDefinition{
 
 }
 
-class SSAWriteDef extends Definition instanceof TSSAVar{
-  SSAVar v;
+/**
+ * A `Definition` produced by an SSA write at a specific opcode output.
+ *
+ * Now that `SSAVar` has its own newtype identity (see `TSSAVarIdentity`
+ * above), `SSAWriteDef` lives in a different newtype (`TSSAVar` as a
+ * branch of `TDefinition`). The two are still isomorphic — both are
+ * keyed by `(idx, node)` — and we convert between them via
+ * `SSAVar.toDef()` and `SSAWriteDef.getVar()`.
+ */
+class SSAWriteDef extends Definition instanceof TSSAVar {
+  int varInternalIndex;
+  AstNode declNode;
 
-  SSAWriteDef(){this = TSSAVar(v.getInternalOutputIndex(), v.getDeclarationNode())}
+  SSAWriteDef() { this = TSSAVar(varInternalIndex, declNode) }
 
-  override string toString(){
-    result = "var_" + v.getDeclarationNode() + "_" + v.getInternalOutputIndex()
+  int getInternalOutputIndex() { result = varInternalIndex }
+
+  override string toString() {
+    result = "var_V#" + varInternalIndex.toString() +
+      "@L" + declNode.getLocation().getStartLine().toString()
   }
 
-  override Location getLocation(){result = v.getDeclarationNode().getLocation()}
+  override Location getLocation() { result = declNode.getLocation() }
 
-  AstNode getRHS(){result = v.getDeclarationNode()}
+  AstNode getRHS() { result = declNode }
 
-  SSAVar getVar(){result = v}
+  /**
+   * Gets the `SSAVar` view of this `SSAWriteDef`. Because both are keyed
+   * by `(idx, node)`, this is a bijection.
+   */
+  SSAVar getVar() { result = MkSSAVar(varInternalIndex, declNode) }
 
-  override int getOrd(){result = -1}
+  override int getOrd() { result = -1 }
 }
 
 //TODO: try with this one, and see if it still causes 
@@ -262,46 +298,71 @@ class SSAWriteDef extends Definition instanceof TSSAVar{
 // }
 
 
-class SSAVar extends AstNode{
-int varInternalIndex;
-// boolean phi;
-// string varIdentifier;
+/**
+ * A stack variable produced by some opcode.
+ *
+ * NEWTYPE-BASED IDENTITY. Each `(output index, declaring AstNode)` pair
+ * is a distinct `MkSSAVar` newtype instance, so an `SSAVar` carries its
+ * output index as part of its identity. Passing `v` as a parameter no
+ * longer re-existentially-quantifies the index — it is pinned by the
+ * entity itself. This is the fix for the systemic field-propagation
+ * bug that the previous class-with-field definition suffered from.
+ *
+ * Note: `SSAVar` lives in a *separate* newtype from `TDefinition` to
+ * avoid a non-monotonic recursion with `TIndirectPhi` — see the comment
+ * on `TSSAVarIdentity` above.
+ */
+class SSAVar extends TSSAVarIdentity {
+  int varInternalIndex;
+  AstNode declNode;
 
-    SSAVar(){ 
-      exists(AstNode n| this = n and varInternalIndex in [1 .. n.getNumberOfOutputArgs()])}
+  SSAVar() { this = MkSSAVar(varInternalIndex, declNode) }
 
-    string getIdentifier(){result = "V" + "#" + this.getInternalOutputIndex().toString() + "@L" + this.getLineNumberInFile()}
+  int getInternalOutputIndex() { result = varInternalIndex }
 
-    SSAWriteDef toDef(){result = TSSAVar(this.getInternalOutputIndex(), this)}
-    // SSAWriteDefinition toWriteDef(){result.getBasicBlock() = this.getDeclarationNode().getBasicBlock()
-    //   and result.getBasicBlockIndex() = this.getBBI() and result.getVarInternalIndex() = this.getInternalOutputIndex()}
+  AstNode getDeclarationNode() { result = declNode }
 
-    AstNode getDeclarationNode(){result = this}
+  // Members we used to inherit from `AstNode`. `SSAVar` is no longer an
+  // `AstNode` subtype (it lives in its own newtype) so these delegate to
+  // `declNode`.
+  BasicBlock getBasicBlock() { result = declNode.getBasicBlock() }
+  Location getLocation() { result = declNode.getLocation() }
+  int getLineNumberInFile() { result = declNode.getLocation().getStartLine() }
+  int getLineNumber() { result = declNode.getLineNumber() }
+  predicate reaches(AstNode target) { declNode.reaches(target) }
 
-    int getInternalOutputIndex(){result = varInternalIndex}
+  string getIdentifier() {
+    result = "V#" + varInternalIndex.toString() + "@L" + this.getLineNumberInFile().toString()
+  }
 
-    int getBBI(){this.getDeclarationNode().getBasicBlock().getNode(result).getAstNode() = this.getDeclarationNode()}
+  /**
+   * Returns this `SSAVar` viewed as an `SSAWriteDef`. Because `SSAVar`
+   * and `SSAWriteDef` have different underlying newtypes, this is a
+   * real constructor call — but `(idx, node)` uniquely identifies the
+   * corresponding `TSSAVar` entity, so the mapping is 1-to-1.
+   */
+  SSAWriteDef toDef() { result = TSSAVar(varInternalIndex, declNode) }
 
-  /** Holds if `(this, v)` reaches the end of its origin basic block. */
+  int getBBI() {
+    this.getBasicBlock().getNode(result).getAstNode() = declNode
+  }
+
+  /** Holds if this SSAVar reaches the end of its origin basic block. */
   predicate reachesEndOfOriginBB() {
-      not exists(this.getDeclarationNode().getConsumedBy(this))
+    not exists(declNode.getConsumedBy(varInternalIndex))
   }
 
-  int outStackOrder(){
-    this = rank[result](SSAVar v | this.getDeclarationNode().getBasicBlock().getANode().getAstNode().getAnOutputVar() = v and v.reachesEndOfOriginBB() | 
-     v order by v.getDeclarationNode().getLineNumber() desc)
-    //  v order by v.getDeclarationNode().getLineNumber())
+  int outStackOrder() {
+    this = rank[result](SSAVar v |
+        v.getDeclarationNode().getBasicBlock() = declNode.getBasicBlock() and
+        declNode.getBasicBlock().getANode().getAstNode().getAnOutputVar() = v and
+        v.reachesEndOfOriginBB()
+      |
+        v order by v.getDeclarationNode().getLineNumber() desc, v.getInternalOutputIndex() asc
+      )
   }
 
-  // int tryAsInt(){
-  //   result = this.getDeclarationNode().(IntegerConstant).getValue()
-  //   // or result = this.getDeclarationNode().(IntegerAddOpcode).
-  //   //or
-  //   //TODO: add all cases of operations that end up becoming integer constants
-  //   //e.g. a btoi of a byte constant
-  // }
-
-  override string toString(){result = this.getIdentifier()}
+  string toString() { result = this.getIdentifier() }
 }
 
 class DirectPhi extends Definition instanceof TDirectPhi{

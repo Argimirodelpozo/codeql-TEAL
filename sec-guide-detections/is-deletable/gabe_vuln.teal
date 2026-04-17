@@ -1,0 +1,63 @@
+#pragma version 11
+#pragma typetrack false
+// Source: real-world-examples/.../2-access-control/VulnerableContract.approval.teal
+// gabe_vuln: deleteApplication routes to approval without creator/drain safeguards (unrestricted delete path).
+
+// @algorandfoundation/algorand-typescript/arc4/index.d.ts::Contract.approvalProgram() -> uint64:
+main:
+    intcblock 1
+    // smart_contracts/2-access-control/access-control.algo.ts:4
+    // export class VulnerableContract extends Contract {
+    txn NumAppArgs
+    bz main___algots__.defaultCreate@7
+    pushbytess 0x46f76533 0x2487c32c 0x79a9fd50 // method "updateApplication()void", method "deleteApplication()void", method "doSomething()void"
+    txna ApplicationArgs 0
+    match main_updateApplication_route@3 main_deleteApplication_route@4 main_doSomething_route@5
+    err
+
+main_doSomething_route@5:
+    // smart_contracts/2-access-control/access-control.algo.ts:13
+    // public doSomething(): void {
+    txn OnCompletion
+    !
+    txn ApplicationID
+    &&
+    assert // OnCompletion must be NoOp && can only call when not creating
+    intc_0 // 1
+    return
+
+main_deleteApplication_route@4:
+    // smart_contracts/2-access-control/access-control.algo.ts:9
+    // public deleteApplication(): void {
+    txn OnCompletion
+    pushint 5 // DeleteApplication
+    ==
+    txn ApplicationID
+    &&
+    assert // OnCompletion must be DeleteApplication && can only call when not creating
+    intc_0 // 1
+    return
+
+main_updateApplication_route@3:
+    // smart_contracts/2-access-control/access-control.algo.ts:5
+    // public updateApplication(): void {
+    txn OnCompletion
+    pushint 4 // UpdateApplication
+    ==
+    txn ApplicationID
+    &&
+    assert // OnCompletion must be UpdateApplication && can only call when not creating
+    intc_0 // 1
+    return
+
+main___algots__.defaultCreate@7:
+    // smart_contracts/2-access-control/access-control.algo.ts:4
+    // export class VulnerableContract extends Contract {
+    txn OnCompletion
+    !
+    txn ApplicationID
+    !
+    &&
+    assert // OnCompletion must be NoOp && can only call when creating
+    intc_0 // 1
+    return

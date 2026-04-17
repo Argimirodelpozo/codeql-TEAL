@@ -1,0 +1,1 @@
+ERROR: No values can satisfy this term, because Constants::TIntegerConstant is incompatible with AST::TOpcode_balance in term. (hardcodedMinBalance.ql:36,5-23)

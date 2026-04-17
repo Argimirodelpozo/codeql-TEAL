@@ -81,6 +81,10 @@ class GtxnOpcode extends AstNode instanceof TOpcode_gtxn {
         result = toTreeSitter(this).(Teal::GtxnOpcode).getTxnField().(Teal::Token).getValue().toString()
     }
 
+    int getIndex() {
+        result = toTreeSitter(this).(Teal::GtxnOpcode).getChild().getValue().toInt()
+    }
+
     predicate isIntegerField() {
         this.getField() = "NumApprovalProgramPages" or
         this.getField() = "NumClearProgramPages" or
@@ -132,6 +136,21 @@ class TxnasOpcode extends AstNode instanceof TOpcode_txnas {
 class GtxnaOpcode extends AstNode instanceof TOpcode_gtxna {
     override int getStackDelta() { result = 1 }
     override int getNumberOfOutputArgs() { result = 1 }
+
+    /** The static group transaction index. */
+    int getIndex() {
+        result = toTreeSitter(this).(Teal::GtxnaOpcode).getIndex().getValue().toInt()
+    }
+
+    /** The transaction array field name (e.g. `ApplicationArgs`). */
+    string getField() {
+        result = toTreeSitter(this).(Teal::GtxnaOpcode).getTxnArrayField()
+    }
+
+    /** The static array index within the referenced field. */
+    int getArrayIndex() {
+        result = toTreeSitter(this).(Teal::GtxnaOpcode).getChild().getValue().toInt()
+    }
 }
 
 /** The `gtxnas` opcode: access group transaction array fields by stack index. */

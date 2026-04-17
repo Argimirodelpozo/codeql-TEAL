@@ -1,0 +1,30 @@
+#pragma version 8
+// FIXED: RekeyTo is stored into slot 0 in main, unrelated work happens
+// in between, and then a subroutine is called that loads slot 0 and
+// asserts the value equals ZeroAddress.
+
+txn RekeyTo
+store 0
+
+// unrelated work between the store and the eventual load
+txn Amount
+int 500000
+<=
+assert
+
+txn Fee
+global MinTxnFee
+<=
+assert
+
+callsub check_rekey_from_slot
+
+int 1
+return
+
+check_rekey_from_slot:
+  load 0
+  global ZeroAddress
+  ==
+  assert
+  retsub

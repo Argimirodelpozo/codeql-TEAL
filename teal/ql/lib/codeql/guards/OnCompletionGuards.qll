@@ -31,6 +31,7 @@ import codeql.teal.cfg.BasicBlocks
 import codeql.teal.ast.opcodes.Transaction
 import codeql.teal.ast.opcodes.Comparison
 import codeql.teal.ast.opcodes.ScratchSpace
+import codeql.teal.dataflow.ConstantPropagation
 private import codeql.teal.cfg.Completion::Completion
 
 // ---------------------------------------------------------------------------
@@ -74,9 +75,9 @@ TxnOpcode onCompletionRead() { result.getField() = "OnCompletion" }
 BasicBlock approvalExit() {
   result.getLastNode().getAstNode() instanceof ReturnOpcode and
   (
-    result.getLastNode().getAstNode().(ReturnOpcode).getTopOfStackAtEnd().tryAsInt() != 0
+    tryAsInt(result.getLastNode().getAstNode().(ReturnOpcode).getTopOfStackAtEnd()) != 0
     or
-    not exists(result.getLastNode().getAstNode().(ReturnOpcode).getTopOfStackAtEnd().tryAsInt())
+    not exists(tryAsInt(result.getLastNode().getAstNode().(ReturnOpcode).getTopOfStackAtEnd()))
   )
 }
 
@@ -86,56 +87,14 @@ BasicBlock approvalExit() {
 
 /**
  * Holds when SSA variable `v` has a known integer value `val`.
- * Handles IntegerConstant (via tryAsInt), arithmetic opcodes when both
- * operands are constants: +, -, *, /, and LoadOpcode when the loaded value
- * is a constant (e.g. int 5; store 0; ...; load 0).
+ *
+ * Delegates to the top-level `tryAsInt` from `ConstantPropagation.qll`,
+ * which already handles literal constants, arithmetic (`+`, `-`, `*`, `/`,
+ * `%`), scratch-slot loads, stack manipulation via strict `localFlow`, and
+ * (transitively) subroutine passthrough.
  */
 private predicate getConstantInt(SSAVar v, int val) {
-  val = v.tryAsInt()
-  or
-  exists(LoadOpcode load, SSAVar storedVar |
-    load = v.getDeclarationNode() and
-    storedVar = load.getScratchSpaceStoredVariable() and
-    getConstantInt(storedVar, val)
-  )
-  or
-  exists(IntegerAddOpcode add, SSAVar v1, SSAVar v2, int i1, int i2 |
-    add = v.getDeclarationNode() and
-    v1 = getGenerator(add.getStackInputByOrder(1)) and
-    v2 = getGenerator(add.getStackInputByOrder(2)) and
-    i1 = v1.tryAsInt() and
-    i2 = v2.tryAsInt() |
-    val = i1 + i2
-  )
-  or
-  exists(SubOpcode sub, SSAVar v1, SSAVar v2, int i1, int i2 |
-    sub = v.getDeclarationNode() and
-    v1 = getGenerator(sub.getStackInputByOrder(1)) and
-    v2 = getGenerator(sub.getStackInputByOrder(2)) and
-    i1 = v1.tryAsInt() and
-    i2 = v2.tryAsInt() and
-    i2 >= i1 |
-    val = i2 - i1
-  )
-  or
-  exists(MulOpcode mul, SSAVar v1, SSAVar v2, int i1, int i2 |
-    mul = v.getDeclarationNode() and
-    v1 = getGenerator(mul.getStackInputByOrder(1)) and
-    v2 = getGenerator(mul.getStackInputByOrder(2)) and
-    i1 = v1.tryAsInt() and
-    i2 = v2.tryAsInt() |
-    val = i1 * i2
-  )
-  or
-  exists(DivOpcode div, SSAVar v1, SSAVar v2, int i1, int i2 |
-    div = v.getDeclarationNode() and
-    v1 = getGenerator(div.getStackInputByOrder(1)) and
-    v2 = getGenerator(div.getStackInputByOrder(2)) and
-    i1 = v1.tryAsInt() and
-    i2 = v2.tryAsInt() and
-    i1 != 0 |
-    val = i2 / i1
-  )
+  val = tryAsInt(v)
 }
 
 /**
