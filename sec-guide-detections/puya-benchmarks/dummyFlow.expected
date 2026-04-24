@@ -7,3 +7,5 @@
 | scratch-tests/flow_through_scratch.teal:15:1:15:14 | app_global_put | Storage write receives data from $@ | scratch-tests/flow_through_scratch.teal:5:1:5:22 | TxnaOpcode | transaction |
 | scratch-tests/flow_through_scratch.teal:20:1:20:14 | app_global_put | Storage write receives data from $@ | scratch-tests/flow_through_scratch.teal:9:1:9:22 | TxnaOpcode | transaction |
 | scratch-tests/flow_through_scratch.teal:26:1:26:14 | app_global_put | Storage write receives data from $@ | scratch-tests/flow_through_scratch.teal:5:1:5:22 | TxnaOpcode | transaction |
+| voting_approval.teal:322:5:322:18 | app_global_put | Storage write receives data from $@ | voting_approval.teal:193:5:193:26 | TxnaOpcode | transaction |
+| voting_approval.teal:327:5:327:18 | app_global_put | Storage write receives data from $@ | voting_approval.teal:193:5:193:26 | TxnaOpcode | transaction |

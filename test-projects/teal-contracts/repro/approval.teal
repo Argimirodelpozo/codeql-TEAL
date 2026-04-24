@@ -1,0 +1,44 @@
+#pragma version 11
+// repro.CustomApproval.approval_program() -> uint64:
+main:
+    // repro.py:3
+    // class CustomApproval(ARC4Contract):
+    pushint 0
+    txn NumAppArgs
+    bz main___algopy_default_create@5
+    pushbytes 0xb17ea35d // method "known_method()void"
+    txna ApplicationArgs 0
+    match main_known_method_route@3
+main_after_if_else@6:
+    // repro.py:5
+    // return not super().approval_program()
+    dup
+    !
+    return
+main_known_method_route@3:
+    // repro.py:7
+    // @public
+    txn OnCompletion
+    !
+    txn ApplicationID
+    &&
+    assert
+    // repro.py:9
+    // log("called known_method")
+    pushbytes "called known_method"
+    log
+    // repro.py:7
+    // @public
+    pushint 1
+    bury 1
+    b main_after_if_else@6
+main___algopy_default_create@5:
+    txn OnCompletion
+    !
+    txn ApplicationID
+    !
+    &&
+    assert
+    pushint 1
+    bury 1
+    b main_after_if_else@6

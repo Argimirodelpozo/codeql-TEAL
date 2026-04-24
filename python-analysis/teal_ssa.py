@@ -139,6 +139,35 @@ class Phi:
         return "phi(" + ", ".join(repr(a) for a in self.args) + ")"
 
 
+class MatPhiVar:
+    """A materialised-phi variable produced by :meth:`SSAProgram.materialize_phis`.
+
+    Identity: ``index`` (monotonic, globally unique per program). Unlike
+    :class:`SSAVar`, a ``MatPhiVar`` has *multiple* definitions — one per
+    DirectPhi argument — which is a legitimate post-SSA-lowering state
+    where each copy assignment targets the same variable. Strict SSA is
+    intentionally broken; see the "out-of-SSA" literature.
+    """
+
+    __slots__ = ("index",)
+
+    def __init__(self, index: int):
+        self.index = index
+
+    @property
+    def identifier(self) -> str:
+        return f"mat_phi_{self.index}"
+
+    def __hash__(self) -> int:
+        return hash(("MatPhi", self.index))
+
+    def __eq__(self, other) -> bool:
+        return isinstance(other, MatPhiVar) and self.index == other.index
+
+    def __repr__(self) -> str:
+        return self.identifier
+
+
 @dataclass(frozen=True)
 class Const:
     """A resolved compile-time literal. ``kind`` ∈ ``{"int", "bytes"}``."""
@@ -149,14 +178,20 @@ class Const:
         return self.value
 
 
-Operand = Union[SSAVar, Phi, Const]
+Operand = Union[SSAVar, Phi, Const, MatPhiVar]
 
 
 @dataclass
 class Assignment:
-    """``outputs = op immediates (inputs)`` — one TEAL opcode's SSA form."""
+    """``outputs = op immediates (inputs)`` — one TEAL opcode's SSA form.
 
-    outputs: list[SSAVar]
+    After :meth:`SSAProgram.materialize_phis`, outputs may include
+    :class:`MatPhiVar` instances (for synthetic ``mat_phi_k = arg``
+    copies inserted at the original phi-argument def sites), and inputs
+    may reference :class:`MatPhiVar` where phis used to be.
+    """
+
+    outputs: list[Union[SSAVar, MatPhiVar]]
     op: str
     immediates: str
     inputs: list[Operand]
@@ -169,6 +204,10 @@ class Assignment:
         out_str = ", ".join(v.identifier for v in self.outputs)
         if resolve_consts and self.const is not None:
             return f"{out_str} = {self.const.value}" if self.outputs else self.const.value
+        # Copy assignment (materialized phi): render `mat_phi_k = arg` without
+        # the opcode/tuple syntax.
+        if self.op == "=" and len(self.inputs) == 1 and self.outputs:
+            return f"{out_str} = {self.inputs[0]!r}"
         in_str = "(" + ", ".join(repr(i) for i in self.inputs) + ")"
         rhs = f"{self.op} {self.immediates} {in_str}" if self.immediates else f"{self.op} {in_str}"
         return f"{out_str} = {rhs}" if self.outputs else rhs
@@ -242,6 +281,8 @@ class SSAProgram:
         self.phis: dict[tuple, Phi] = {}
         self.assignments: list[Assignment] = []
         self.blocks: dict[tuple, BasicBlock] = {}
+        self.mat_phis: list[MatPhiVar] = []
+        self._materialized: bool = False
 
         # Index graph-side phis by key for fast lookup during lazy materialization.
         g_phi_by_key: dict[tuple, tg.PhiNode] = {}
@@ -412,6 +453,147 @@ class SSAProgram:
             out.append(a)
         return out
 
+    # -- passes -------------------------------------------------------------
+
+    def materialize_phis(self) -> None:
+        """Out-of-SSA lowering: replace each live :class:`Phi` with a
+        synthetic :class:`MatPhiVar`, inserting copy assignments
+        ``mat_phi_k = leaf_ssavar`` at each reachable leaf's def site.
+
+        **DirectPhi ``p`` with args ``(v1, …, vN)``** — all SSAVars:
+            1. Allocate a fresh ``mat_phi_k``.
+            2. Insert one copy per ``v_i`` at ``v_i``'s def site.
+            3. Consumers reading ``p`` now read ``mat_phi_k``.
+
+        **IndirectPhi ``ip``** — ``args`` is a list of :class:`Phi`
+        (DirectPhi roots from the QL ``getGenerator()`` walk):
+
+            - Single root ``[root]``: ``ip`` re-uses ``root``'s
+              ``mat_phi_k``. No extra allocation or copies.
+            - Multiple roots ``[r1, r2, …]``: ``ip`` represents a meet
+              across *all* rs. Allocate a fresh ``mat_phi_k`` for
+              ``ip`` and insert copies at every originating SSAVar leaf
+              transitively reachable from any ``r_i`` (so every
+              incoming edge in the meet gets represented, none dropped).
+
+        Idempotent — calling twice is a no-op.
+        """
+        if self._materialized:
+            return
+
+        def _leaf_ssavars(phi: Phi) -> list[SSAVar]:
+            """Transitive SSAVar leaves reachable from ``phi.args``.
+            Terminates on cycles via the ``seen`` set (the args DAG may
+            rarely cycle under the raw SSA model; guard anyway)."""
+            seen: set[Phi] = set()
+            leaves: list[SSAVar] = []
+            stack = [phi]
+            while stack:
+                cur = stack.pop()
+                if cur in seen:
+                    continue
+                seen.add(cur)
+                for arg in cur.args:
+                    if isinstance(arg, SSAVar):
+                        leaves.append(arg)
+                    elif isinstance(arg, Phi):
+                        stack.append(arg)
+            return leaves
+
+        # Deterministic ordering so mat_phi indices are stable across runs.
+        sorted_phis = sorted(
+            self.phis.values(),
+            key=lambda p: (p.file, p.line, p.kind, p.stack_index),
+        )
+
+        phi_to_mat: dict[Phi, MatPhiVar] = {}
+        next_idx = 0
+
+        # Pass A: allocate mat vars.
+        #   DirectPhi: always fresh.
+        #   IndirectPhi with 1 arg: alias its root's mat var (allocated
+        #     earlier in the sort order if possible; otherwise deferred).
+        #   IndirectPhi with >=2 args: fresh mat var — it's a true meet.
+        # We do a second pass for the 1-arg indirects so their root's mat
+        # is guaranteed to exist.
+        for phi in sorted_phis:
+            if phi.kind == "DirectPhi":
+                next_idx += 1
+                mv = MatPhiVar(next_idx)
+                phi_to_mat[phi] = mv
+                self.mat_phis.append(mv)
+            elif phi.kind == "IndirectPhi" and len(phi.args) >= 2:
+                next_idx += 1
+                mv = MatPhiVar(next_idx)
+                phi_to_mat[phi] = mv
+                self.mat_phis.append(mv)
+
+        # IndirectPhi with exactly 1 arg: alias if possible, else fresh.
+        for phi in sorted_phis:
+            if phi.kind != "IndirectPhi" or len(phi.args) != 1:
+                continue
+            parent = phi.args[0]
+            if isinstance(parent, Phi) and parent in phi_to_mat:
+                phi_to_mat[phi] = phi_to_mat[parent]
+            else:
+                # Defensive — shouldn't happen if the closure pass populated args.
+                next_idx += 1
+                mv = MatPhiVar(next_idx)
+                phi_to_mat[phi] = mv
+                self.mat_phis.append(mv)
+
+        # Pass B: insert copy assignments. For each phi with its own mat
+        # var (DirectPhi or multi-arg IndirectPhi), emit `mat = leaf` at
+        # every reachable SSAVar leaf's def site.
+        seen_owned: set[MatPhiVar] = set()
+        new_copies: list[Assignment] = []
+        for phi in sorted_phis:
+            mv = phi_to_mat.get(phi)
+            if mv is None or mv in seen_owned:
+                continue
+            # Only emit copies for the phi that OWNS this mat var (first
+            # occurrence in sorted order). Aliased indirects skip.
+            if phi.kind == "IndirectPhi" and len(phi.args) == 1:
+                # Single-arg indirect: already aliased to its parent's mat,
+                # so the parent emits the copies.
+                continue
+            seen_owned.add(mv)
+            for leaf in _leaf_ssavars(phi):
+                producer = leaf.defined_by
+                if producer is None:
+                    continue
+                copy = Assignment(
+                    outputs=[mv],
+                    op="=",
+                    immediates="",
+                    inputs=[leaf],
+                    location=Location(producer.location.file, producer.location.line),
+                    ast_code=f"mat_phi_{mv.index} = {leaf.identifier}",
+                    const=None,
+                    basic_block=producer.basic_block,
+                )
+                new_copies.append(copy)
+                leaf.uses.append(copy)
+                if producer.basic_block is not None:
+                    producer.basic_block.assignments.append(copy)
+
+        # Pass C: rewrite every Assignment's inputs — phis → mat vars.
+        for a in self.assignments:
+            new_inputs: list[Operand] = []
+            for inp in a.inputs:
+                if isinstance(inp, Phi) and inp in phi_to_mat:
+                    new_inputs.append(phi_to_mat[inp])
+                else:
+                    new_inputs.append(inp)
+            a.inputs = new_inputs
+
+        self.assignments.extend(new_copies)
+        self.assignments.sort(key=lambda a: (a.location.file, a.location.line))
+        for bb in self.blocks.values():
+            bb.assignments.sort(key=lambda a: a.location.line)
+
+        self._materialized = True
+
     # -- rendering ----------------------------------------------------------
 
     def functional(
@@ -498,3 +680,93 @@ class SSAProgram:
             for succ in bb.successors:
                 h.add_edge(bb, succ)
         return h
+
+    # -- graphviz rendering ------------------------------------------------
+
+    def to_dot(
+        self,
+        *,
+        file: Optional[str] = None,
+        resolve_consts: bool = True,
+        rankdir: str = "TB",
+        max_lines_per_bb: int = 80,
+    ) -> str:
+        """Emit Graphviz DOT source: one rounded box per BB, labeled with
+        entry phis + functional assignments; edges are pred→succ. Pass
+        ``file`` to restrict to one source file."""
+
+        def _esc(s: str) -> str:
+            return s.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+
+        def _bb_id(bb: BasicBlock) -> str:
+            return f'"BB_{bb.file}_{bb.first_line}_{bb.last_line}"'
+
+        def _bb_label(bb: BasicBlock) -> str:
+            header = f"BB L{bb.first_line}-L{bb.last_line}"
+            lines_out = [header]
+            for phi in bb.phis:
+                lines_out.append(f"  φ_{phi.stack_index}[{phi.kind[0]}] = {repr(phi)}")
+            for a in bb.assignments:
+                lines_out.append(f"  L{a.location.line:>4}: {a.functional(resolve_consts=resolve_consts)}")
+            if len(lines_out) > max_lines_per_bb:
+                elided = len(lines_out) - (max_lines_per_bb - 1)
+                lines_out = lines_out[: max_lines_per_bb - 1] + [f"  ... (+{elided} more)"]
+            return "\\l".join(lines_out) + "\\l"
+
+        blocks = [
+            bb for bb in self.blocks.values()
+            if file is None or bb.file == file
+        ]
+        blocks.sort(key=lambda bb: (bb.file, bb.first_line))
+
+        out = [
+            "digraph TEAL_SSA {",
+            f"  rankdir={rankdir};",
+            "  overlap=false;",
+            "  splines=true;",
+            '  node [shape=box, fontname="Monospace", fontsize=9];',
+            '  edge [fontname="Monospace", fontsize=9];',
+        ]
+        node_set = set(blocks)
+        for bb in blocks:
+            attrs = (
+                f'label="{_esc(_bb_label(bb))}", '
+                'style="rounded,filled", fillcolor="#f4f4f8"'
+            )
+            out.append(f"  {_bb_id(bb)} [{attrs}];")
+        seen = set()
+        for bb in blocks:
+            for succ in bb.successors:
+                if succ not in node_set:
+                    continue
+                pair = (bb, succ)
+                if pair in seen:
+                    continue
+                seen.add(pair)
+                out.append(f"  {_bb_id(bb)} -> {_bb_id(succ)};")
+        out.append("}")
+        return "\n".join(out)
+
+    def draw(
+        self,
+        *,
+        file: Optional[str] = None,
+        resolve_consts: bool = True,
+        format: str = "svg",
+        engine: str = "dot",
+        rankdir: str = "TB",
+        max_lines_per_bb: int = 80,
+    ):
+        """Render :meth:`to_dot` via Graphviz; returns a Jupyter-renderable
+        SVG (same ``_SvgResult`` type :mod:`teal_graphs` uses)."""
+        from teal_graphs import _render_dot  # reuse the same subprocess helper
+        return _render_dot(
+            self.to_dot(
+                file=file,
+                resolve_consts=resolve_consts,
+                rankdir=rankdir,
+                max_lines_per_bb=max_lines_per_bb,
+            ),
+            format=format,
+            engine=engine,
+        )

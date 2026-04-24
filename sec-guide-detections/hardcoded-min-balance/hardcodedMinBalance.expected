@@ -1,1 +1,1 @@
-ERROR: No values can satisfy this term, because Constants::TIntegerConstant is incompatible with AST::TOpcode_balance in term. (hardcodedMinBalance.ql:36,5-23)
+| vuln.teal:11:1:11:1 | - | Balance minus hardcoded constant \u2014 use the min_balance opcode instead to dynamically account for boxes, opt-ins, and local state. |

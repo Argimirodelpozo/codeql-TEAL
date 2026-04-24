@@ -507,7 +507,23 @@ cached
 int phiNodeExitIndex(int hypotheticalPhiNodeExitIndex, BasicBlock b){
   hypotheticalPhiNodeExitIndex in [1 .. 1000] and
   not exists(phiNodeGetsConsumedBy(hypotheticalPhiNodeExitIndex, b)) and
-  result = max(SSAVar v | v.getBasicBlock() = b | v.outStackOrder()) +
-  hypotheticalPhiNodeExitIndex - count(int h | exists(phiNodeGetsConsumedBy(h, b)) and 
-    h in [1 .. hypotheticalPhiNodeExitIndex])
+  exists(int localHigh |
+    // `localHigh` = number of locally-produced SSAVars in `b` that reach
+    // end-of-BB (things pushed above the incoming phi). When `b`'s locals
+    // are all consumed in-BB — e.g. a push/push/match pattern — `max`
+    // aggregates over an empty set and has no result; in that case the
+    // incoming phi still survives with zero locals stacked on top of it,
+    // i.e. at exit slot `hypoth - consumedBelow`. Treat the empty case
+    // as `localHigh = 0` so IndirectPhi propagation is constructed.
+    (
+      localHigh = max(SSAVar v | v.getBasicBlock() = b | v.outStackOrder())
+      or
+      not exists(SSAVar v | v.getBasicBlock() = b and exists(v.outStackOrder())) and
+      localHigh = 0
+    ) and
+    result = localHigh + hypotheticalPhiNodeExitIndex -
+      count(int h |
+        exists(phiNodeGetsConsumedBy(h, b)) and
+        h in [1 .. hypotheticalPhiNodeExitIndex])
+  )
 }
