@@ -408,33 +408,58 @@ SSAVar getGenerator(Definition def){
 }
 
 
+/**
+ * Holds if the raw phi newtype ``def`` is live — i.e. either directly
+ * consumed in its own BB, OR has a live ``TIndirectPhi`` descendant
+ * reachable through the ``phiNodeExitIndex`` propagation chain. Defined
+ * on the raw ``TDefinition`` newtype (not on ``IndirectPhi`` class) so
+ * the ``IndirectPhi`` class-level filter below can depend on it without
+ * circularity. Backward data-flow: leaves are consumer-carrying phis,
+ * recursion propagates "live" back up the propagation chain, so a phi
+ * stays alive as long as *any* transitive descendant is consumed —
+ * regardless of how many BB hops away the consumer sits.
+ */
+private predicate phiIsLive(TDefinition def) {
+  // Directly consumed at the phi's BB.
+  exists(int k, BasicBlock b |
+    (def = TDirectPhi(k, b) or def = TIndirectPhi(k, b)) and
+    exists(phiNodeGetsConsumedBy(k, b)))
+  or
+  // Has a live indirect descendant via the propagation chain.
+  exists(int k, BasicBlock b, int exitIdx, BasicBlock succ |
+    (def = TDirectPhi(k, b) or def = TIndirectPhi(k, b)) and
+    exitIdx = phiNodeExitIndex(k, b) and
+    succ = b.getASuccessor() and
+    phiIsLive(TIndirectPhi(exitIdx, succ)))
+}
+
 class IndirectPhi extends Definition instanceof TIndirectPhi{
   int initialStackIndex;
   BasicBlock bb;
 
   IndirectPhi(){
-    exists(DirectPhi phi | initialStackIndex = phiNodeExitIndex(phi.getInitialStackIndex(), phi.getBasicBlock())
-      and bb = phi.getBasicBlock().getASuccessor()
+    (
+      exists(DirectPhi phi | initialStackIndex = phiNodeExitIndex(phi.getInitialStackIndex(), phi.getBasicBlock())
+        and bb = phi.getBasicBlock().getASuccessor()
 
-      //testing
-      and any(phi.getOriginatingInput()).reaches(bb.getFirstNode().getAstNode())
-
-      and this = TIndirectPhi(initialStackIndex, bb)
-      // and this = "IPhi_" + bb.getFirstNode().getAstNode() + "_" + initialStackIndex.toString() + "D"
-      // and generator = phi
-      ) 
-      or 
-      // not exists(DirectPhi phi | initialStackIndex = phiNodeExitIndex(phi.getInitialStackIndex(), phi.getBasicBlock())
-      // and bb = phi.getBasicBlock().getASuccessor()) and
-    exists(IndirectPhi phi | phi.getBasicBlock().getASuccessor() = bb and 
-        initialStackIndex = phiNodeExitIndex(phi.getInitialStackIndex(), phi.getBasicBlock())
-        
         //testing
-        and exists(DirectPhi d_phi | d_phi = phi.getGenerator() and d_phi.getOriginatingInput().reaches(bb.getFirstNode().getAstNode())) 
-        // and exists(phi.getGenerator()) 
+        and any(phi.getOriginatingInput()).reaches(bb.getFirstNode().getAstNode())
 
         and this = TIndirectPhi(initialStackIndex, bb)
+      )
+      or
+      exists(IndirectPhi phi | phi.getBasicBlock().getASuccessor() = bb and
+          initialStackIndex = phiNodeExitIndex(phi.getInitialStackIndex(), phi.getBasicBlock())
+
+          //testing
+          and exists(DirectPhi d_phi | d_phi = phi.getGenerator() and d_phi.getOriginatingInput().reaches(bb.getFirstNode().getAstNode()))
+
+          and this = TIndirectPhi(initialStackIndex, bb)
+      )
     )
+    // Liveness filter: drop IndirectPhis whose propagation chain never
+    // reaches a consumer. See `phiIsLive` for the backward-dataflow def.
+    and phiIsLive(this)
   }
 
   BasicBlock getBasicBlock(){result = bb}
