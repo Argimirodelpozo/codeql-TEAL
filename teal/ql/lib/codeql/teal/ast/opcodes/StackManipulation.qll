@@ -146,19 +146,20 @@ class FrameDigOpcode extends AstNode instanceof TOpcode_frame_dig {
         result = toTreeSitter(this).(Teal::SingleNumericArgumentOpcode).getValue().toString().toInt()
     }
 
-    Subroutine getSubroutine(){
-        exists(Subroutine sub | sub.mayReachNode(this) |
-            result = sub and
-            not exists(Subroutine inner |
-                inner.mayReachNode(this) and
-                inner.getLineNumber() > sub.getLineNumber()
-            )
-        )
+    // Return the subroutine that physically contains this frame_dig —
+    // i.e. the one whose body's subroutine-local CFG reaches us. The
+    // previous implementation used ``mayReachNode`` which crosses
+    // callsub boundaries, so any caller subroutine also "reached" this
+    // node; the max-line tiebreaker would then pick the caller whose
+    // label sits later in the source file, giving the wrong frame
+    // owner whenever subroutines are defined in reverse call order.
+    Subroutine getSubroutine() {
+        result.subroutineLocallyContains(this)
     }
 
     // frame_dig reads from a frame-relative position without popping
-    override int getNumberOfConsumedArgs() { 
-        result = 
+    override int getNumberOfConsumedArgs() {
+        result =
             this.getSubroutine().getFrameRelativeSubroutineStackHeight(this) -
             this.getSubroutine().getAffectingProto().getNumberOfSubroutineInputArgs() -
             this.getImmediate() }
@@ -180,19 +181,14 @@ class FrameBuryOpcode extends AstNode instanceof TOpcode_frame_bury {
         result = toTreeSitter(this).(Teal::SingleNumericArgumentOpcode).getValue().toString().toInt()
     }
 
-    Subroutine getSubroutine(){
-        exists(Subroutine sub | sub.mayReachNode(this) |
-            result = sub and
-            not exists(Subroutine inner |
-                inner.mayReachNode(this) and
-                inner.getLineNumber() > sub.getLineNumber()
-            )
-        )
+    // See comment on FrameDigOpcode.getSubroutine() for rationale.
+    Subroutine getSubroutine() {
+        result.subroutineLocallyContains(this)
     }
 
-    // frame_dig reads from a frame-relative position without popping
-    override int getNumberOfConsumedArgs() { 
-        result = 
+    // frame_bury pops top and stores into frame position
+    override int getNumberOfConsumedArgs() {
+        result =
             this.getSubroutine().getFrameRelativeSubroutineStackHeight(this) -
             this.getSubroutine().getAffectingProto().getNumberOfSubroutineInputArgs() -
             this.getImmediate() }

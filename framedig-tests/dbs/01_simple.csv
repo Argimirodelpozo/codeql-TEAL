@@ -1,0 +1,5 @@
+"line","kind","imm","subLine","consumed","outputs","ssaVarCount"
+10,"dig",-1,8,1,2,2
+11,"dig",-2,8,3,4,4
+13,"bury",-1,8,2,1,1
+14,"dig",-1,8,1,2,2

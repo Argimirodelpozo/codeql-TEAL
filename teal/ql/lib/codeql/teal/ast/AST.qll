@@ -790,10 +790,25 @@ class Subroutine extends AstNode{
     }
 
     predicate mayReachNode(AstNode n){
-        n = getNextNode_subroutineAux*(this) or 
-        exists(CallsubOpcode h, AstNode j | 
+        n = getNextNode_subroutineAux*(this) or
+        exists(CallsubOpcode h, AstNode j |
             h = getNextNode_subroutineAux*(this) and h.getSubroutine().mayReachNode(j)
             | n=j)
+    }
+
+    /**
+     * Holds if ``n`` is in this subroutine's *own* body — reachable from
+     * the subroutine's entry label via the subroutine-local CFG, which
+     * does NOT descend into called subroutines. Unlike ``mayReachNode``,
+     * this is the "which subroutine physically owns this node" relation:
+     * for well-formed TEAL every opcode belongs to at most one subroutine
+     * body.
+     *
+     * Used by ``FrameDigOpcode.getSubroutine()`` / ``FrameBuryOpcode``
+     * to identify the frame that an opcode accesses.
+     */
+    predicate subroutineLocallyContains(AstNode n) {
+        n = getNextNode_subroutineAux*(this)
     }
 
     ProtoOpcode getAffectingProto() {

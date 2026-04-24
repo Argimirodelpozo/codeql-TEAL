@@ -1,0 +1,30 @@
+#pragma version 10
+// Case 05: one callee invoked from two callers. `shared` is called by
+// both `caller_one` and `caller_two`. frame_dig inside `shared` must
+// resolve to `shared` (unambiguous), regardless of which caller the
+// static analyzer considers reachable.
+intc_0
+callsub caller_one
+callsub caller_two
+return
+
+shared:
+    proto 1 1
+    frame_dig -1
+    intc_1
+    +
+    retsub
+
+caller_one:
+    proto 0 0
+    pushint 1
+    callsub shared
+    pop
+    retsub
+
+caller_two:
+    proto 0 0
+    pushint 2
+    callsub shared
+    pop
+    retsub

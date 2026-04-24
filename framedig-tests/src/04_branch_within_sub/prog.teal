@@ -1,0 +1,24 @@
+#pragma version 10
+// Case 04: frame_dig after a local label inside a subroutine.
+// The sub has a bnz jumping forward to a local label; frame_dig after the
+// local label should still belong to the enclosing sub, not be orphaned
+// or attributed elsewhere.
+intc_0
+callsub with_branch
+return
+
+with_branch:
+    proto 1 1
+    frame_dig -1       // pre-branch frame_dig
+    intc_0
+    ==
+    bnz skip
+    frame_dig -1       // frame_dig on fall-through path
+    intc_1
+    +
+    b done
+skip:
+    frame_dig -1       // frame_dig reached via the bnz
+    intc_0
+done:
+    retsub

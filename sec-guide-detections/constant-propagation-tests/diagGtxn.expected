@@ -1,0 +1,3 @@
+| narrow_gtxn.teal:7:1:7:10 | GtxnOpcode | gtxn at L7 toString=GtxnOpcode |
+| narrow_gtxn.teal:13:1:13:10 | GtxnOpcode | gtxn at L13 toString=GtxnOpcode |
+| narrow_gtxn.teal:15:1:15:10 | GtxnOpcode | gtxn at L15 toString=GtxnOpcode |

@@ -1,0 +1,4 @@
+| flow_nested_subroutines.teal:8:1:8:14 | app_global_put | var_V#1@L6 at L6 \u2192 app_global_put at L8 |
+| flow_nested_subroutines.teal:14:1:14:14 | app_global_put | var_V#1@L12 at L12 \u2192 app_global_put at L14 |
+| flow_nested_subroutines.teal:19:1:19:14 | app_global_put | var_V#1@L44 at L44 \u2192 app_global_put at L19 |
+| flow_nested_subroutines.teal:24:1:24:14 | app_global_put | var_V#1@L57 at L57 \u2192 app_global_put at L24 |
