@@ -161,6 +161,18 @@ string tryAsBytesDef(Definition def) {
 }
 
 /**
+ * Bytes mirror of `tryAsIntPhi`. See that predicate's docstring for
+ * the rationale (higher-stratum, soundness via per-arg
+ * `strictcount = 1`, coverage trade-off for phi-of-phis chains).
+ */
+string tryAsBytesPhi(DirectPhi phi) {
+  forex(SSAVar arg | arg = phi.getOriginatingInput() |
+    strictcount(string s | s = tryAsBytesDef(arg.toDef())) = 1 and
+    result = tryAsBytesDef(arg.toDef())
+  )
+}
+
+/**
  * Ergonomic wrapper for callers that already have an `SSAVar` in hand.
  * Inlined for the same field-propagation reason as `tryAsInt`.
  */

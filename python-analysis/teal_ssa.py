@@ -539,9 +539,37 @@ class SSAProgram:
             if v.defined_by is not None and v.defined_by.const is not None:
                 v.const_value = v.defined_by.const
 
-        # Pass 2: Phis where every arg resolves to the same literal.
-        # Fixed-point iteration: a phi may reference another phi that only
-        # becomes constant after a later iteration.
+        # Pass 2: fixed point over (a) phi-arg unification and (b) the
+        # value-identity step relation from `valueIdentitySteps.ql`.
+        #
+        # (a) phi unification: a phi resolves when every arg resolves to
+        #     the same literal. Covers phi-of-phi chains via iteration.
+        # (b) identity steps: the QL lib emits one row per src/sink pair
+        #     where `valueIdentityFlowStep` proves the runtime values are
+        #     equal (stack passthrough, single-source phi, callsub /
+        #     scratch bridge). If src has a `const_value`, sink shares it.
+        #     This is what plugs the gap multi-arg phi unification can't
+        #     close at the lib stratum: a phi K resolved by `tryAsIntPhi`
+        #     in the query layer flows here into downstream consumer
+        #     SSAVars and further phis.
+        steps = self._graph.graph.get("identity_steps", []) or []
+
+        def _resolve_endpoint(key):
+            if key[0] == "var":
+                _, f, l, i = key
+                return self.vars.get((f, l, i))
+            _, f, l, kind, idx = key
+            return self.phis.get((f, l, kind, idx))
+
+        # Pre-resolve endpoints once; skip steps where either side is
+        # missing (e.g. a phi pruned by the SSA layer).
+        resolved_steps: list[tuple] = []
+        for src_key, snk_key in steps:
+            src = _resolve_endpoint(src_key)
+            snk = _resolve_endpoint(snk_key)
+            if src is not None and snk is not None and src is not snk:
+                resolved_steps.append((src, snk))
+
         changed = True
         while changed:
             changed = False
@@ -563,6 +591,10 @@ class SSAProgram:
                     arg_consts.append(cv)
                 if ok and arg_consts and all(c == arg_consts[0] for c in arg_consts):
                     phi.const_value = arg_consts[0]
+                    changed = True
+            for src, snk in resolved_steps:
+                if src.const_value is not None and snk.const_value is None:
+                    snk.const_value = src.const_value
                     changed = True
 
         self._consts_propagated = True

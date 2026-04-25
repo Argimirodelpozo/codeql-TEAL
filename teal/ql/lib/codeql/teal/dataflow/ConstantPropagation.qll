@@ -287,6 +287,34 @@ int tryAsIntDef(Definition def) {
 }
 
 /**
+ * Multi-arg phi unification, layered ABOVE `tryAsIntDef`.
+ *
+ * Lives at a higher stratum because the structural "every arg
+ * uniquely resolves to the same K" check uses `forex` and
+ * `strictcount`, which would introduce non-monotonic recursion if
+ * placed inside `tryAsIntDef` itself.
+ *
+ * Coverage trade-off: a phi-of-phis chain only resolves at the
+ * lowest-level phi (whose args are non-phi defs). Higher phis whose
+ * args are themselves multi-arg phis won't be unified — `tryAsIntDef`
+ * doesn't see this predicate's result, so the recursion stops at the
+ * lib boundary. Acceptable in practice because most real-world
+ * uniformly-K phis are 2-3 args of literal-yielding ops; if needed,
+ * iterate the query layer to a fixed point.
+ *
+ * Soundness: per-arg `strictcount = 1` rules out the
+ * multi-valued-intersection trap ({1,2} ∩ {1,2} → {1,2} would be
+ * unsound; runtime may pick different members on different paths).
+ * `forex` (forall + non-empty) guarantees at least one contributor.
+ */
+int tryAsIntPhi(DirectPhi phi) {
+  forex(SSAVar arg | arg = phi.getOriginatingInput() |
+    strictcount(int k | k = tryAsIntDef(arg.toDef())) = 1 and
+    result = tryAsIntDef(arg.toDef())
+  )
+}
+
+/**
  * Ergonomic wrapper for callers that already have an `SSAVar` in hand.
  *
  * Marked `pragma[inline]` so the wrapper body is splice-evaluated in the

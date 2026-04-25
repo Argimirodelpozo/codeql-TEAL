@@ -64,6 +64,7 @@ QUERY_NAMES = (
     "constValues",
     "mustValues",
     "scratchInfluence",
+    "valueIdentitySteps",
 )
 
 
@@ -439,6 +440,25 @@ def load_graph(
                     continue
                 must = g.nodes[node].setdefault("must_outputs", {})
                 must[int(out_idx)] = (kind, value)
+        elif q == "valueIdentitySteps":
+            # One row per ``valueIdentityFlowStep(src, sink)``: src and
+            # sink defs hold the same runtime value (stack passthrough,
+            # single-source phi, callsub bridge, scratch bridge).
+            # Stored on the graph as ``g.graph['identity_steps']``: a list
+            # of ``(src_key, sink_key)`` where each key is one of:
+            #   ("var",  file, line, idx)            for an SSAVar def
+            #   ("phi",  file, line, kind, stack_idx) for a DirectPhi/IndirectPhi
+            # Python's `propagate_constants` iterates these to fixed point
+            # so a value resolved at a multi-arg phi can flow through to
+            # downstream SSAVars.
+            steps = g.graph.setdefault("identity_steps", [])
+            for row in rows:
+                (sf, sl, si, sk, df, dl, di, dk) = row
+                src = (("var", sf, int(sl), int(si)) if sk == "SSAVar"
+                       else ("phi", sf, int(sl), sk, int(si)))
+                snk = (("var", df, int(dl), int(di)) if dk == "SSAVar"
+                       else ("phi", df, int(dl), dk, int(di)))
+                steps.append((src, snk))
         elif q == "scratchInfluence":
             # Per `load N` op, list every may-influencing `store N` plus
             # the SSAVar key (file, line, outputIdx) of the value the

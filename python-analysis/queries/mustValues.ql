@@ -12,6 +12,13 @@
  *              flow through and be reported as the value. Single-valued
  *              ``tryAsInt`` therefore implies "must be K," not "may be K."
  *
+ *              On top of the lib, we layer multi-arg DirectPhi unification
+ *              (``tryAsIntPhi`` / ``tryAsBytesPhi``). The lib can't host
+ *              that case directly — its ``forex``/``strictcount`` shape
+ *              would create non-monotonic recursion inside ``tryAsIntDef``
+ *              — so we apply it at the query stratum: a phi K propagates
+ *              to any SSAVar reached from the phi via ``valueIdentityFlow``.
+ *
  *              Row: astFile, astLine, outIdx, kind, value
  * @id tealql/python-analysis/must-values
  */
@@ -20,20 +27,51 @@ import codeql.teal.ast.AST
 import codeql.teal.SSA.SSA
 import codeql.teal.dataflow.ConstantPropagation
 import codeql.teal.dataflow.BytesPropagation
+import codeql.teal.dataflow.Dataflow
+
+/**
+ * Every integer value `v` may take, combining (1) the lib's
+ * ``tryAsInt`` (literal/flow/arith/field-narrowing) and (2) multi-arg
+ * DirectPhi unification reached through identity-preserving flow.
+ *
+ * Single-source phis are already covered by ``tryAsInt`` itself via
+ * ``valueIdentityFlow``'s ssawrite→phi edge.
+ */
+private int possibleInt(SSAVar v) {
+  result = tryAsInt(v)
+  or
+  exists(DirectPhi phi, Dataflow::Node phiNode, Dataflow::Node defNode |
+    result = tryAsIntPhi(phi) and
+    phiNode.(Dataflow::SsaDefinitionNode).asDefinition() = phi and
+    defNode.(Dataflow::SsaDefinitionNode).asDefinition() = v.toDef() and
+    LocalFlow::valueIdentityFlow(phiNode, defNode)
+  )
+}
+
+private string possibleBytes(SSAVar v) {
+  result = tryAsBytes(v)
+  or
+  exists(DirectPhi phi, Dataflow::Node phiNode, Dataflow::Node defNode |
+    result = tryAsBytesPhi(phi) and
+    phiNode.(Dataflow::SsaDefinitionNode).asDefinition() = phi and
+    defNode.(Dataflow::SsaDefinitionNode).asDefinition() = v.toDef() and
+    LocalFlow::valueIdentityFlow(phiNode, defNode)
+  )
+}
 
 from int outIdx, AstNode declNode, SSAVar v, string kind, string value
 where
   v = MkSSAVar(outIdx, declNode) and
   (
     exists(int k |
-      k = tryAsInt(v) and
-      strictcount(int m | m = tryAsInt(v)) = 1 and
+      k = possibleInt(v) and
+      strictcount(int m | m = possibleInt(v)) = 1 and
       kind = "int" and
       value = k.toString())
     or
     exists(string s |
-      s = tryAsBytes(v) and
-      strictcount(string t | t = tryAsBytes(v)) = 1 and
+      s = possibleBytes(v) and
+      strictcount(string t | t = possibleBytes(v)) = 1 and
       kind = "bytes" and
       value = s)
   )
