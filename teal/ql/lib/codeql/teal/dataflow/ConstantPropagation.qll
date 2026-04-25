@@ -102,7 +102,7 @@ private predicate defResolvesToFieldRead(Definition def, string fieldKey) {
     fieldKey = fieldReadKey(op) and
     srcNode.(Dataflow::SsaDefinitionNode).asDefinition() = TSSAVar(1, op) and
     defNode.(Dataflow::SsaDefinitionNode).asDefinition() = def and
-    LocalFlow::localFlow(srcNode, defNode)
+    LocalFlow::valueIdentityFlow(srcNode, defNode)
   )
 }
 
@@ -215,7 +215,7 @@ int tryAsIntDef(Definition def) {
   exists(IntegerConstant c, Dataflow::Node cNode, Dataflow::Node defNode |
     cNode.(Dataflow::SsaDefinitionNode).asDefinition() = TSSAVar(1, c) and
     defNode.(Dataflow::SsaDefinitionNode).asDefinition() = def and
-    LocalFlow::localFlow(cNode, defNode) and
+    LocalFlow::valueIdentityFlow(cNode, defNode) and
     result = c.getValue()
   )
   or
@@ -281,7 +281,7 @@ int tryAsIntDef(Definition def) {
     fieldKey = fieldReadKey(op) and
     srcNode.(Dataflow::SsaDefinitionNode).asDefinition() = TSSAVar(1, op) and
     defNode.(Dataflow::SsaDefinitionNode).asDefinition() = def and
-    LocalFlow::localFlow(srcNode, defNode) and
+    LocalFlow::valueIdentityFlow(srcNode, defNode) and
     equalityHoldsAt(op.getBasicBlock(), fieldKey, result)
   )
 }

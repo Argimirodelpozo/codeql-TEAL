@@ -650,18 +650,39 @@ class AstNode instanceof TAstNode{
     // precisely pinned to one stack input, and the result is constructed
     // via the `TSSAVar` newtype which is field-aware by identity.
     Definition getStackInputByOrder(int ord){
-        ord <= count(this.getConsumedValues()) and
-        ord > 0 and
-        result =
-        rank[ord](int varIdx, AstNode n | this = n.getConsumedBy(varIdx) |
-            TSSAVar(varIdx, n) order by ((this.getLineNumber() - n.getLineNumber())*1000 + varIdx)
-        )
-        or
-        (
-            result = rank[ord](Definition def |
-                (def instanceof DirectPhi or def instanceof IndirectPhi) and
-                this.getConsumedValues() = def | def order by
-                def.getOrd() desc)
+        // ``ord`` is a 1-based stack position (1 = top consumed). Inputs
+        // are ranked top-of-stack first, with locally-produced SSAVars
+        // sitting above any incoming phis (a phi entered with the BB and
+        // anything pushed locally landed on top of it).
+        //
+        // Single unified rank: each candidate Definition gets a `score`
+        // that's small for recent SSAVars and large (BASELINE +
+        // ``getOrd``) for incoming phis, so ASC-sorting interleaves them
+        // correctly. When DirectPhi + IndirectPhi co-exist at the same
+        // ``(bb, slot)`` their scores tie, and rank returns BOTH at the
+        // same ord — they are parallel views of the same stack position,
+        // not separate inputs. Consumers that need a per-slot unique
+        // view dedupe by ord; consumers that need every contributing
+        // Definition (dataflow, materialize_phis) iterate the full set.
+        //
+        // BASELINE = 10^8: any local SSAVar score is at most
+        // ``(file_lines * 1000) + max_outputs`` ≪ 10^8, so phis are
+        // strictly below all locals in the ordering.
+        ord in [1 .. this.getNumberOfConsumedArgs()] and
+        result = rank[ord](Definition def, int score |
+            // Local SSAVar input.
+            exists(int varIdx, AstNode n |
+                this = n.getConsumedBy(varIdx) and
+                def = TSSAVar(varIdx, n) and
+                score = (this.getLineNumber() - n.getLineNumber()) * 1000 + varIdx
+            )
+            or
+            // Incoming Phi input (DirectPhi or IndirectPhi).
+            (def instanceof DirectPhi or def instanceof IndirectPhi) and
+            this.getConsumedValues() = def and
+            score = 100000000 + def.getOrd()
+        |
+            def order by score asc
         )
     }
 

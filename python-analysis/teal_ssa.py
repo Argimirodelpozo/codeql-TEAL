@@ -74,7 +74,7 @@ class SSAVar:
     ``V#{index}@L{line}`` matches ``SSAVar.getIdentifier()`` in QL.
     """
 
-    __slots__ = ("file", "line", "index", "defined_by", "uses")
+    __slots__ = ("file", "line", "index", "defined_by", "uses", "const_value")
 
     def __init__(self, file: str, line: int, index: int):
         self.file = file
@@ -82,6 +82,10 @@ class SSAVar:
         self.index = index
         self.defined_by: Optional["Assignment"] = None
         self.uses: list["Assignment"] = []
+        # Resolved by SSAProgram.propagate_constants(): when set, this
+        # SSAVar's value is statically known and renders as the literal
+        # in functional form. None means "unknown / not constant".
+        self.const_value: Optional["Const"] = None
 
     @property
     def identifier(self) -> str:
@@ -111,7 +115,7 @@ class Phi:
 
     __slots__ = (
         "file", "line", "stack_index", "kind",
-        "args", "uses", "basic_block",
+        "args", "uses", "basic_block", "const_value",
     )
 
     def __init__(self, file: str, line: int, stack_index: int, kind: str):
@@ -122,6 +126,9 @@ class Phi:
         self.args: list[Union[SSAVar, "Phi"]] = []
         self.uses: list["Assignment"] = []
         self.basic_block: Optional["BasicBlock"] = None
+        # Resolved by SSAProgram.propagate_constants(): set when every
+        # arg of this phi resolves to the same constant literal.
+        self.const_value: Optional["Const"] = None
 
     def _key(self) -> tuple:
         return (self.file, self.line, self.kind, self.stack_index)
@@ -200,15 +207,36 @@ class Assignment:
     const: Optional[Const] = None
     basic_block: Optional["BasicBlock"] = None
 
-    def functional(self, *, resolve_consts: bool = True) -> str:
+    def functional(
+        self,
+        *,
+        resolve_consts: bool = True,
+        propagate_consts: bool = True,
+    ) -> str:
+        """Render this assignment in functional form.
+
+        ``resolve_consts``: replace constblock-referencing opcodes
+            (``intc_*``/``bytec_*``) with the resolved literal as the RHS.
+        ``propagate_consts``: when an input's :class:`SSAVar` or :class:`Phi`
+            has been resolved by :meth:`SSAProgram.propagate_constants`,
+            render it as its literal instead of the variable identifier.
+        """
         out_str = ", ".join(v.identifier for v in self.outputs)
         if resolve_consts and self.const is not None:
             return f"{out_str} = {self.const.value}" if self.outputs else self.const.value
+
+        def _input_label(operand) -> str:
+            if propagate_consts:
+                cv = getattr(operand, "const_value", None)
+                if cv is not None:
+                    return cv.value
+            return repr(operand)
+
         # Copy assignment (materialized phi): render `mat_phi_k = arg` without
         # the opcode/tuple syntax.
         if self.op == "=" and len(self.inputs) == 1 and self.outputs:
-            return f"{out_str} = {self.inputs[0]!r}"
-        in_str = "(" + ", ".join(repr(i) for i in self.inputs) + ")"
+            return f"{out_str} = {_input_label(self.inputs[0])}"
+        in_str = "(" + ", ".join(_input_label(i) for i in self.inputs) + ")"
         rhs = f"{self.op} {self.immediates} {in_str}" if self.immediates else f"{self.op} {in_str}"
         return f"{out_str} = {rhs}" if self.outputs else rhs
 
@@ -261,8 +289,13 @@ class BasicBlock:
 
 
 _CONST_BLOCK_REF_NAMES = frozenset({
+    # constblock references
     "Intc0Opcode", "Intc1Opcode", "Intc2Opcode", "Intc3Opcode", "IntcOpcode",
     "Bytec0Opcode", "Bytec1Opcode", "Bytec2Opcode", "Bytec3Opcode", "BytecOpcode",
+    # inline-literal pushers (carry their literal in immediates; constValues.ql
+    # already emits values for them via the IntegerConstant/BytesConstant
+    # superclasses, so propagation reads through naturally).
+    "IntOpcode", "PushintOpcode", "PushbytesOpcode",
 })
 
 
@@ -283,6 +316,9 @@ class SSAProgram:
         self.blocks: dict[tuple, BasicBlock] = {}
         self.mat_phis: list[MatPhiVar] = []
         self._materialized: bool = False
+        self._consts_propagated: bool = False
+        self._dead_eliminated: bool = False
+        self._scratch_propagated: bool = False
 
         # Index graph-side phis by key for fast lookup during lazy materialization.
         g_phi_by_key: dict[tuple, tg.PhiNode] = {}
@@ -353,6 +389,23 @@ class SSAProgram:
             self.assignments.append(a)
             for v in outs:
                 v.defined_by = a
+            # Pre-attach per-output constant literals from constValues.ql
+            # (literal-only, sound) AND from mustValues.ql (dataflow-
+            # extended, also sound — covers arithmetic, scratch, callsub
+            # bridges via the ConstantPropagation library, but with a
+            # must-overwrite check that excludes may-be-K results).
+            # constValues is the literal source; mustValues only fills
+            # in slots not already populated.
+            const_outputs = g.nodes[n].get("const_outputs") or {}
+            must_outputs = g.nodes[n].get("must_outputs") or {}
+            for v in outs:
+                co = const_outputs.get(v.index)
+                if co is not None:
+                    v.const_value = Const(*co)
+                    continue
+                mo = must_outputs.get(v.index)
+                if mo is not None:
+                    v.const_value = Const(*mo)
             for inp in ins:
                 inp.uses.append(a)
             if bb is not None:
@@ -454,6 +507,199 @@ class SSAProgram:
         return out
 
     # -- passes -------------------------------------------------------------
+
+    def propagate_constants(self) -> None:
+        """Resolve each :class:`SSAVar` and :class:`Phi` to its compile-time
+        literal value where statically known.
+
+        Two passes:
+
+        1. Every SSAVar whose defining :class:`Assignment` has ``const`` set
+           (an ``intc_*``/``bytec_*``/``intc``/``bytec`` opcode resolved
+           via the constblock) is tagged with that ``Const``. ``pushint``,
+           ``pushbytes``, and the ``int`` pseudo-opcode all carry their
+           literal in immediates and are similarly resolvable, but only
+           constblock references currently set ``Assignment.const``; the
+           others are left for later (extend ``_CONST_BLOCK_REF_NAMES`` in
+           ``__init__`` to widen).
+
+        2. A :class:`Phi` whose every arg (recursively) resolves to the
+           *same* literal becomes constant. Iterates to a fixed point so
+           phi → phi → … chains converge.
+
+        After this pass, :meth:`Assignment.functional` substitutes any
+        SSAVar/Phi input with its literal when ``propagate_consts=True``
+        (default). Idempotent.
+        """
+        if self._consts_propagated:
+            return
+
+        # Pass 1: SSAVars from their defining Assignment's resolved constant.
+        for v in self.vars.values():
+            if v.defined_by is not None and v.defined_by.const is not None:
+                v.const_value = v.defined_by.const
+
+        # Pass 2: Phis where every arg resolves to the same literal.
+        # Fixed-point iteration: a phi may reference another phi that only
+        # becomes constant after a later iteration.
+        changed = True
+        while changed:
+            changed = False
+            for phi in self.phis.values():
+                if phi.const_value is not None:
+                    continue
+                arg_consts: list[Const] = []
+                ok = True
+                for arg in phi.args:
+                    if isinstance(arg, SSAVar):
+                        cv = arg.const_value
+                    elif isinstance(arg, Phi):
+                        cv = arg.const_value
+                    else:
+                        cv = None
+                    if cv is None:
+                        ok = False
+                        break
+                    arg_consts.append(cv)
+                if ok and arg_consts and all(c == arg_consts[0] for c in arg_consts):
+                    phi.const_value = arg_consts[0]
+                    changed = True
+
+        self._consts_propagated = True
+
+    def propagate_scratch_constants(self) -> None:
+        """Resolve each ``load N`` opcode's output to a literal when every
+        ``store N`` that may influence the load wrote the same compile-
+        time literal value.
+
+        A separate pass from :meth:`propagate_constants` so the scratch
+        analysis can be reasoned about (and toggled) independently of
+        stack-based propagation. The QL ``scratchInfluence.ql`` query
+        provides the may-influence relation and the SSAVar key of each
+        store's consumed value; this pass aggregates them in Python.
+        Must-semantics: any load whose stores include even one non-
+        constant value is left non-resolved.
+        """
+        if self._scratch_propagated:
+            return
+        # Stack-side propagation needs to have run first so each store's
+        # consumed SSAVar already has its const_value (if any) set.
+        if not self._consts_propagated:
+            self.propagate_constants()
+
+        # Iterate to fixed point: a load resolved to K can in turn flow
+        # back into another store, whose load can then resolve, and so on.
+        changed = True
+        while changed:
+            changed = False
+            for n in self._graph.nodes:
+                stores = self._graph.nodes[n].get("scratch_stores")
+                if not stores:
+                    continue
+                # The load op `n` has a single output SSAVar at outIdx=1.
+                load_var = self.var(n.location.file, n.location.start_line, 1)
+                if load_var is None or load_var.const_value is not None:
+                    continue
+                # Look up each store's consumed-value SSAVar by its key.
+                resolved: list[Const] = []
+                ok = True
+                for sv_file, sv_line, sv_idx in stores:
+                    src = self.var(sv_file, sv_line, sv_idx)
+                    if src is None or src.const_value is None:
+                        ok = False
+                        break
+                    resolved.append(src.const_value)
+                if ok and resolved and all(c == resolved[0] for c in resolved):
+                    load_var.const_value = resolved[0]
+                    changed = True
+
+        self._scratch_propagated = True
+
+    def eliminate_dead_constants(self) -> None:
+        """Inline constant literals into every consumer's input list, then
+        drop the now-orphan SSAVars / Phis and any Assignment whose
+        outputs are *all* dead.
+
+        Conservative: only touches SSAVars/Phis with ``const_value`` set
+        (i.e. things whose literal was resolved by
+        :meth:`propagate_constants`). Non-constant producers — ``txn``
+        reads, ``load N``, function-call results — are kept even if they
+        end up unreferenced after the inlining, because their AST node
+        carries side-effect / source-meaning information we want to
+        preserve in the trace.
+
+        Effect on the functional dump: trivial constant pushes
+        (``L 5: V#1@L5 = 0``) disappear, and consumers that previously
+        showed ``(V#1@L5, …)`` already render as ``(0, …)``.
+
+        Idempotent. Implicitly runs :meth:`propagate_constants` first if
+        that hasn't been done.
+        """
+        if self._dead_eliminated:
+            return
+        if not self._consts_propagated:
+            self.propagate_constants()
+
+        def _resolve(o):
+            if isinstance(o, (SSAVar, Phi)) and o.const_value is not None:
+                return o.const_value
+            return o
+
+        # Pass 1: replace every const-resolvable reference with its literal.
+        for a in self.assignments:
+            a.inputs = [_resolve(i) for i in a.inputs]
+        for ph in self.phis.values():
+            ph.args = [_resolve(arg) for arg in ph.args]
+
+        # Pass 2: recompute structural reference sets.
+        ref_vars: set[SSAVar] = set()
+        ref_phis: set[Phi] = set()
+        for a in self.assignments:
+            for i in a.inputs:
+                if isinstance(i, SSAVar):
+                    ref_vars.add(i)
+                elif isinstance(i, Phi):
+                    ref_phis.add(i)
+        for ph in self.phis.values():
+            for arg in ph.args:
+                if isinstance(arg, SSAVar):
+                    ref_vars.add(arg)
+                elif isinstance(arg, Phi):
+                    ref_phis.add(arg)
+
+        # Pass 3: identify dead constant SSAVars / Phis (have const_value
+        # AND no remaining structural references).
+        dead_vars = {
+            v for v in self.vars.values()
+            if v.const_value is not None and v not in ref_vars
+        }
+        dead_phis = {
+            ph for ph in self.phis.values()
+            if ph.const_value is not None and ph not in ref_phis
+        }
+
+        # Pass 4: assignments whose every output is dead are dropped. Use
+        # `id()` for set membership because :class:`Assignment` is an
+        # unfrozen dataclass and not hashable.
+        dead_assignment_ids: set[int] = {
+            id(a) for a in self.assignments
+            if a.outputs and all(o in dead_vars for o in a.outputs)
+        }
+        # Also clear `defined_by` on the dropped SSAVars (defensive — they're
+        # being removed from `self.vars` so back-refs into them shouldn't
+        # accidentally bring them back).
+        for v in dead_vars:
+            v.defined_by = None
+
+        # Pass 5: commit removals.
+        self.vars = {k: v for k, v in self.vars.items() if v not in dead_vars}
+        self.phis = {k: ph for k, ph in self.phis.items() if ph not in dead_phis}
+        self.assignments = [a for a in self.assignments if id(a) not in dead_assignment_ids]
+        for bb in self.blocks.values():
+            bb.assignments = [a for a in bb.assignments if id(a) not in dead_assignment_ids]
+            bb.phis = [ph for ph in bb.phis if ph not in dead_phis]
+
+        self._dead_eliminated = True
 
     def materialize_phis(self) -> None:
         """Out-of-SSA lowering: replace each live :class:`Phi` with a
@@ -602,10 +848,14 @@ class SSAProgram:
         file: Optional[str] = None,
         line_range: Optional[tuple[int, int]] = None,
         resolve_consts: bool = True,
+        propagate_consts: bool = True,
     ) -> str:
         lines = []
         for a in self.assignments_in(file=file, line_range=line_range):
-            lines.append(f"L{a.location.line:>4}: {a.functional(resolve_consts=resolve_consts)}")
+            lines.append(
+                f"L{a.location.line:>4}: "
+                f"{a.functional(resolve_consts=resolve_consts, propagate_consts=propagate_consts)}"
+            )
         return "\n".join(lines)
 
     def print_functional(self, **kwargs) -> None:
@@ -616,6 +866,7 @@ class SSAProgram:
         *,
         file: Optional[str] = None,
         resolve_consts: bool = True,
+        propagate_consts: bool = True,
     ) -> str:
         """Same as :meth:`functional` but groups assignments by BB with a
         header line and predecessor/successor summary per block."""
@@ -631,7 +882,10 @@ class SSAProgram:
             for p in bb.phis:
                 out.append(f"  {p.kind[0]}_{p.stack_index} = {p!r}")
             for a in bb.assignments:
-                out.append(f"  L{a.location.line:>4}: {a.functional(resolve_consts=resolve_consts)}")
+                out.append(
+                    f"  L{a.location.line:>4}: "
+                    f"{a.functional(resolve_consts=resolve_consts, propagate_consts=propagate_consts)}"
+                )
             out.append("")
         return "\n".join(out)
 

@@ -53,7 +53,7 @@ private predicate defResolvesToBytesFieldRead(Definition def, string fieldKey) {
     fieldKey = fieldReadKey(op) and
     srcNode.(Dataflow::SsaDefinitionNode).asDefinition() = TSSAVar(1, op) and
     defNode.(Dataflow::SsaDefinitionNode).asDefinition() = def and
-    LocalFlow::localFlow(srcNode, defNode)
+    LocalFlow::valueIdentityFlow(srcNode, defNode)
   )
 }
 
@@ -130,7 +130,7 @@ string tryAsBytesDef(Definition def) {
   exists(BytesConstant c, Dataflow::Node cNode, Dataflow::Node defNode |
     cNode.(Dataflow::SsaDefinitionNode).asDefinition() = TSSAVar(1, c) and
     defNode.(Dataflow::SsaDefinitionNode).asDefinition() = def and
-    LocalFlow::localFlow(cNode, defNode) and
+    LocalFlow::valueIdentityFlow(cNode, defNode) and
     result = c.getValue()
   )
   or
@@ -146,7 +146,7 @@ string tryAsBytesDef(Definition def) {
     g.getField() = "ZeroAddress" and
     cNode.(Dataflow::SsaDefinitionNode).asDefinition() = TSSAVar(1, g) and
     defNode.(Dataflow::SsaDefinitionNode).asDefinition() = def and
-    LocalFlow::localFlow(cNode, defNode) and
+    LocalFlow::valueIdentityFlow(cNode, defNode) and
     result = zeroAddressHex()
   )
   or
@@ -155,7 +155,7 @@ string tryAsBytesDef(Definition def) {
     fieldKey = fieldReadKey(op) and
     srcNode.(Dataflow::SsaDefinitionNode).asDefinition() = TSSAVar(1, op) and
     defNode.(Dataflow::SsaDefinitionNode).asDefinition() = def and
-    LocalFlow::localFlow(srcNode, defNode) and
+    LocalFlow::valueIdentityFlow(srcNode, defNode) and
     bytesEqualityHoldsAt(op.getBasicBlock(), fieldKey, result)
   )
 }

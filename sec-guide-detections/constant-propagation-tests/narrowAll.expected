@@ -1,4 +1,3 @@
-| narrow_arith_const.teal:13:1:13:7 | TxnOpcode | L13 TxnOpcode narrows[int] to 500 |
 | narrow_arith_const.teal:13:1:13:7 | TxnOpcode | L13 TxnOpcode narrows[int] to 1000 |
 | narrow_assert_and.teal:16:1:16:7 | TxnOpcode | L16 TxnOpcode narrows[int] to 1000 |
 | narrow_assert_and.teal:17:1:17:16 | TxnOpcode | L17 TxnOpcode narrows[int] to 0 |

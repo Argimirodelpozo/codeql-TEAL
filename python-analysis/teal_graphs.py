@@ -62,6 +62,8 @@ QUERY_NAMES = (
     "ssaInputs",
     "phiArgs",
     "constValues",
+    "mustValues",
+    "scratchInfluence",
 )
 
 
@@ -410,13 +412,50 @@ def load_graph(
                 if outs:
                     outs.sort(key=lambda x: x.output_index)
         elif q == "constValues":
-            # Attach (kind, value) resolved constant for every intc/bytec-family
-            # opcode. kind ∈ {"int", "bytes"}; value is a string.
-            for ast_file, ast_line, kind, value in rows:
+            # Literal-only resolved constants per (op, outputIdx). Sound.
+            # Per-output schema: ``g.nodes[op]["const_outputs"]`` is
+            # ``{outIdx: (kind, value)}``. Single-value back-compat field
+            # ``g.nodes[op]["const_value"]`` is set when only one output.
+            for ast_file, ast_line, out_idx, kind, value in rows:
                 node = by_loc.get((ast_file, int(ast_line)))
                 if node is None:
                     continue
-                g.nodes[node]["const_value"] = (kind, value)
+                outs = g.nodes[node].setdefault("const_outputs", {})
+                outs[int(out_idx)] = (kind, value)
+                if int(out_idx) == 1 and len(outs) == 1:
+                    g.nodes[node]["const_value"] = (kind, value)
+                elif "const_value" in g.nodes[node] and len(outs) > 1:
+                    g.nodes[node].pop("const_value", None)
+        elif q == "mustValues":
+            # Dataflow-extended must-be-constant resolutions per
+            # (op, outputIdx). Sound (uses ``LocalFlow::valueIdentityFlow``
+            # under the hood — strict value-equality flow, not the broad
+            # taint pass-through). Covers arithmetic folds, scratch reads,
+            # callsub bridges, phi convergence, and identity-preserving
+            # stack manipulations.
+            for ast_file, ast_line, out_idx, kind, value in rows:
+                node = by_loc.get((ast_file, int(ast_line)))
+                if node is None:
+                    continue
+                must = g.nodes[node].setdefault("must_outputs", {})
+                must[int(out_idx)] = (kind, value)
+        elif q == "scratchInfluence":
+            # Per `load N` op, list every may-influencing `store N` plus
+            # the SSAVar key (file, line, outputIdx) of the value the
+            # store writes. Python's scratch-prop pass uses this to
+            # decide if every influencing store wrote the same constant.
+            #
+            # Storage on the LOAD node:
+            #   g.nodes[load]["scratch_stores"] = [(store_value_key, ...), ...]
+            # where store_value_key = (file, line, outputIdx).
+            for row in rows:
+                (load_file, load_line, _store_file, _store_line,
+                 sv_file, sv_line, sv_idx) = row
+                load_node = by_loc.get((load_file, int(load_line)))
+                if load_node is None:
+                    continue
+                stores_list = g.nodes[load_node].setdefault("scratch_stores", [])
+                stores_list.append((sv_file, int(sv_line), int(sv_idx)))
         elif q == "phiArgs":
             # Attach each phi's expansion arguments. DirectPhi -> SSAVars;
             # IndirectPhi -> the root DirectPhi (a PhiNode).
@@ -447,6 +486,13 @@ def load_graph(
         elif q == "ssaInputs":
             # Per-op list of consumed Definitions, ordered by getStackInputByOrder `ord` (1-based).
             # Each entry is either an SSAVar, a DirectPhi PhiNode, or an IndirectPhi PhiNode.
+            #
+            # When DirectPhi + IndirectPhi co-exist at the same ``(bb, slot)``
+            # they appear as two rows at the same ``ord`` (parallel views of
+            # the same stack position). Dedupe by (node, ord) for display —
+            # prefer DirectPhi as canonical so the args render via the local-
+            # origin tree. Both phis still exist in the graph for dataflow
+            # purposes (Dataflow.qll uses getConsumedValues directly).
             pending: dict = {}
             for row in rows:
                 ast_file, ast_line, ord_, def_kind, def_file, def_line, def_idx = row
@@ -457,10 +503,37 @@ def load_graph(
                     d = _resolve_var(def_file, int(def_line), int(def_idx))
                 else:
                     d = _resolve_phi(def_file, int(def_line), def_kind, int(def_idx))
-                pending.setdefault(node, []).append((int(ord_), d))
+                pending.setdefault(node, []).append((int(ord_), def_kind, d))
+            # Stash the (ord, kind, d) entries as a node attribute; the
+            # final dedupe + arg-merge happens post-loop after phiArgs has
+            # populated phi.args.
             for node, items in pending.items():
-                items.sort(key=lambda x: x[0])
-                g.nodes[node]["stack_inputs"] = [d for _, d in items]
+                items.sort(key=lambda x: (x[0], 0 if x[1] == "DirectPhi" else 1))
+                g.nodes[node]["_stack_inputs_raw"] = items
+
+    # Post-pass: dedupe stack_inputs by ord, merging args of DirectPhi +
+    # IndirectPhi pairs at the same slot so the IndirectPhi's propagated
+    # chain remains visible in the displayed phi(...) expansion. Runs
+    # AFTER phiArgs has populated phi.args.
+    for node in list(g.nodes):
+        items = g.nodes[node].pop("_stack_inputs_raw", None)
+        if items is None:
+            continue
+        seen: dict = {}
+        deduped = []
+        for ord_, kind, d in items:
+            if ord_ not in seen:
+                seen[ord_] = d
+                deduped.append((ord_, kind, d))
+                continue
+            canonical = seen[ord_]
+            if isinstance(canonical, PhiNode) and isinstance(d, PhiNode):
+                existing = set(canonical.args)
+                for arg in d.args:
+                    if arg not in existing:
+                        canonical.args.append(arg)
+                        existing.add(arg)
+        g.nodes[node]["stack_inputs"] = [d for _, _, d in deduped]
 
     if verbose:
         print(

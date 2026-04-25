@@ -122,6 +122,15 @@ class PushintsOpcode extends AstNode instanceof TOpcode_pushints {
     override int getNumberOfOutputArgs() {
         result = strictcount(toTreeSitter(this).(Teal::PushintsOpcode).getValue(_))
     }
+
+    /**
+     * The i-th immediate integer literal (0-indexed in source order),
+     * which becomes the SSAVar at output index ``i+1`` (since SSA output
+     * indices are 1-based).
+     */
+    int getValue(int i) {
+        result = toTreeSitter(this).(Teal::PushintsOpcode).getValue(i).toString().toInt()
+    }
 }
 
 class TBytesConstant = TOpcode_pushbytes or TOpcode_bytec or TOpcode_bytec_0 or
@@ -241,6 +250,15 @@ class PushbytessOpcode extends AstNode instanceof TOpcode_pushbytess {
 
     override int getNumberOfOutputArgs() {
         result = strictcount(toTreeSitter(this).(Teal::PushbytessOpcode).getChild(_))
+    }
+
+    /**
+     * The i-th immediate byte literal in source-order text form
+     * (e.g. ``"0xdeadbeef"``, ``"\"hello\""``). 0-indexed; becomes the
+     * SSAVar at output index ``i+1``.
+     */
+    string getValue(int i) {
+        result = toTreeSitter(this).(Teal::PushbytessOpcode).getChild(i).toString()
     }
 }
 

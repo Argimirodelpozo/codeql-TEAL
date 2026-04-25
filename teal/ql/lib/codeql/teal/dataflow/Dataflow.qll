@@ -651,6 +651,79 @@ module LocalFlow {
       not isBarrier(mid) and localFlow(mid, sink))
     )
   }
+
+  /**
+   * Strict value-identity flow step. Subset of ``localSsaFlowStep`` that
+   * only includes opcodes/edges where the destination node's value is
+   * *literally equal* to the source node's value:
+   *
+   *   - ``defSSAFlowThroughOp`` — stack-manip ops with explicit
+   *     input→output slot mappings (``dig``, ``bury``, ``swap``, ``dup*``,
+   *     ``frame_dig``, ``frame_bury``, ``retsub``, ...).
+   *   - ``ssawrite -> direct phi`` and ``phi -> indirect phi`` —
+   *     phi-merge passes a single contributing value through unchanged.
+   *   - ``scratchBridge`` — ``store N`` writes a value, ``load N`` reads it back.
+   *   - ``callsubBridge`` — caller arg = callee entry phi; sub return = caller phi.
+   *
+   * Excluded (vs ``localSsaFlowStep``): the broad "any opcode not in
+   * the stack-manip exclusion list flows inputs to outputs" clause.
+   * That clause is correct for taint analysis (data dependency
+   * between an op and its inputs) but unsound for value-equality
+   * because every transformer opcode (``app_global_get``, ``txn``,
+   * ``+`` without explicit fold, etc.) reports "input value flows to
+   * output," which would let consumers conclude the output equals the
+   * input — wrong: the output is the storage value / field / sum,
+   * not the key / arg.
+   *
+   * Used by ``ConstantPropagation::tryAsInt`` /
+   * ``BytesPropagation::tryAsBytes`` for sound value-equality
+   * conclusions. The original ``localFlow`` is retained for taint
+   * reasoning by sec-guide detection queries.
+   */
+  predicate valueIdentityFlowStep(Node nodeFrom, Node nodeTo) {
+    defSSAFlowThroughOp(
+      nodeFrom.(SsaDefinitionNode).asDefinition(),
+      nodeTo.(SsaDefinitionNode).asDefinition().(SSAWriteDef).getRHS(),
+      nodeTo.(SsaDefinitionNode).asDefinition()
+    )
+    or
+    // ssawrite -> direct phi: ONLY value-identity when the phi has
+    // exactly one originating SSAVar (single-source phi). A multi-arg
+    // phi is a meet of several values; propagating any single
+    // contributing literal as if it were the phi's value would be
+    // unsound (the phi's runtime value may equal another contributor
+    // along a different path). Multi-arg phis must instead be resolved
+    // by the structural "every arg yields the same K" check inside
+    // ``tryAsIntDef`` / ``tryAsBytesDef``.
+    nodeFrom.(SsaDefinitionNode).asDefinition().(SSAWriteDef) =
+    nodeTo.(SsaDefinitionNode).asDefinition().(DirectPhi).getOriginatingInput().toDef() and
+    strictcount(SSAVar v |
+      v = nodeTo.(SsaDefinitionNode).asDefinition().(DirectPhi).getOriginatingInput()
+    ) = 1
+    or
+    // phi -> indirect phi (chain root). The IndirectPhi structurally
+    // carries the value of its single root DirectPhi; the multi-arg
+    // safety lives at that root's ssawrite-to-phi step (above).
+    nodeFrom.(SsaDefinitionNode).asDefinition() =
+    nodeTo.(SsaDefinitionNode).asDefinition().(IndirectPhi).getGenerator()
+    or
+    callsubBridge(nodeFrom, nodeTo)
+    or
+    scratchBridge(nodeFrom, nodeTo)
+  }
+
+  pragma[nomagic]
+  predicate valueIdentityFlow(Node source, Node sink) {
+    source = sink
+    or
+    valueIdentityFlowStep(source, sink)
+    or
+    exists(Node mid |
+      valueIdentityFlowStep(source, mid) and
+      mid != source and mid != sink and
+      not isBarrier(mid) and valueIdentityFlow(mid, sink)
+    )
+  }
 }
 
 /**

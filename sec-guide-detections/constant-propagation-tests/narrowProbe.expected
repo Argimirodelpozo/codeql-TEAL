@@ -1,4 +1,3 @@
-| narrow_arith_const.teal:13:1:13:7 | TxnOpcode | field read TxnOpcode at L13 narrows to 500 |
 | narrow_arith_const.teal:13:1:13:7 | TxnOpcode | field read TxnOpcode at L13 narrows to 1000 |
 | narrow_assert_and.teal:16:1:16:7 | TxnOpcode | field read TxnOpcode at L16 narrows to 1000 |
 | narrow_assert_and.teal:17:1:17:16 | TxnOpcode | field read TxnOpcode at L17 narrows to 0 |
