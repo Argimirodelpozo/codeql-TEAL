@@ -155,9 +155,9 @@ private class ProgramTree extends ControlFlowTree instanceof Program {
       or
 
       last(pred.getCodeblockStart().(CodeblockTree), pred, c) and
-      pred instanceof MatchOpcode and
+      pred instanceof MultiTargetConditionalBranch and
       c instanceof MultilabelJumpCompletion and
-      first(pred.(MatchOpcode).getNextNode(_).(Codeblock), succ)
+      first(pred.(MultiTargetConditionalBranch).getNextNode(_).(Codeblock), succ)
       or
 
       last(pred.getCodeblockStart().(CodeblockTree), pred, c) and
@@ -195,12 +195,9 @@ private class ProgramTree extends ControlFlowTree instanceof Program {
         last(pred.getCodeblockStart().(CodeblockTree), pred, c) and
         pred instanceof AssertOpcode and c.(AssertCompletion).getValue() = false and succ = this.(Program)
 
-      //TODO: test
-      or
-      last(pred.getCodeblockStart().(CodeblockTree), pred, c) and
-      pred instanceof MultiTargetConditionalBranch and
-      c instanceof UnconditionalJumpCompletion and
-      first(pred.(MultiTargetConditionalBranch).getTargetLabels(), succ)
+      // The MultiTargetConditionalBranch + MultilabelJumpCompletion clause
+      // above already covers both switch and match; there is no remaining
+      // case here.
       )
   }
 
@@ -235,7 +232,7 @@ private class CodeblockTree extends ControlFlowTree instanceof Codeblock{
       or last instanceof BOpcode and c instanceof UnconditionalJumpCompletion
       or last instanceof CallsubOpcode and c instanceof UnconditionalJumpCompletion
 
-      or last instanceof MatchOpcode and c instanceof MultilabelJumpCompletion
+      or last instanceof MultiTargetConditionalBranch and c instanceof MultilabelJumpCompletion
 
       or last instanceof RetsubOpcode and c instanceof RetsubCompletion
       or last instanceof SimpleConditionalBranches and c instanceof ConditionalJumpCompletion

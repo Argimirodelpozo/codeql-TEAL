@@ -154,6 +154,16 @@ class MultiTargetConditionalBranch extends AstNode instanceof TMultiTargetCondit
         result.getName() = toTreeSitter(this).(Teal::SwitchOpcode).getChild(i).getValue() or
         result.getName() = toTreeSitter(this).(Teal::MatchOpcode).getChild(i).getValue()
     }
+
+    // Get next node. 0 represents fall-through (continue to next line);
+    // 1..N represents the corresponding target label. Switch and match
+    // share the same fall-through-on-mismatch semantics, so this lives
+    // on the parent class.
+    AstNode getNextNode(int value) {
+        value = 0 and result = this.getNextLine()
+        or
+        value > 0 and result = this.getTargetLabel(value - 1)
+    }
 }
 
 /** The `switch` opcode: branch to one of multiple labels based on top of stack. */
@@ -174,13 +184,5 @@ class MatchOpcode extends MultiTargetConditionalBranch {
 
     override int getNumberOfConsumedArgs() {
         result = count(toTreeSitter(this).(Teal::MatchOpcode).getChild(_)) + 1
-    }
-
-     // Get next node. 0 represents failure (continue to next line)
-     // 1 to label count represents the corresponding label
-    AstNode getNextNode(int value) {
-        value = 0 and result = this.getNextLine()
-        or
-        value > 0 and result = this.getTargetLabel(value-1)
     }
 }

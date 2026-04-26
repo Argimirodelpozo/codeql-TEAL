@@ -58,7 +58,7 @@ module Completion {
       // override string toString() { result = "ConditionalJumpCompletion(" + value + ")" }
       override string toString() { result = "ConditionalJumpCompletion(" + ")" }
   
-      override predicate isValidForSpecific(AstNode e) {e instanceof MatchOpcode}
+      override predicate isValidForSpecific(AstNode e) {e instanceof MultiTargetConditionalBranch}
   
       // override NormalSuccessor getAMatchingSuccessorType() { result.getValue() = value }
       override NormalSuccessor getAMatchingSuccessorType() { any() }
