@@ -74,7 +74,10 @@ class SSAVar:
     ``V#{index}@L{line}`` matches ``SSAVar.getIdentifier()`` in QL.
     """
 
-    __slots__ = ("file", "line", "index", "defined_by", "uses", "const_value")
+    __slots__ = (
+        "file", "line", "index", "defined_by", "uses",
+        "const_value", "range", "type",
+    )
 
     def __init__(self, file: str, line: int, index: int):
         self.file = file
@@ -86,6 +89,10 @@ class SSAVar:
         # SSAVar's value is statically known and renders as the literal
         # in functional form. None means "unknown / not constant".
         self.const_value: Optional["Const"] = None
+        # Resolved by SSAProgram.propagate_ranges(): independent pass,
+        # purely informational. None means "no range info yet".
+        self.range: Optional["IntRange"] = None
+        self.type: Optional["TealType"] = None
 
     @property
     def identifier(self) -> str:
@@ -115,7 +122,8 @@ class Phi:
 
     __slots__ = (
         "file", "line", "stack_index", "kind",
-        "args", "uses", "basic_block", "const_value",
+        "args", "uses", "basic_block",
+        "const_value", "range", "type",
     )
 
     def __init__(self, file: str, line: int, stack_index: int, kind: str):
@@ -129,6 +137,11 @@ class Phi:
         # Resolved by SSAProgram.propagate_constants(): set when every
         # arg of this phi resolves to the same constant literal.
         self.const_value: Optional["Const"] = None
+        # Resolved by SSAProgram.propagate_ranges(): tracked on phis so
+        # ranges can flow through joins (union of arg ranges). Not
+        # rendered — annotations are only attached to SSAVar outputs.
+        self.range: Optional["IntRange"] = None
+        self.type: Optional["TealType"] = None
 
     def _key(self) -> tuple:
         return (self.file, self.line, self.kind, self.stack_index)
@@ -185,6 +198,38 @@ class Const:
         return self.value
 
 
+@dataclass(frozen=True)
+class IntRange:
+    """Inclusive integer range ``[lo..hi]`` for a uint64-typed value.
+
+    Set by :meth:`SSAProgram.propagate_ranges`. Currently only seeded
+    from boolean-returning ops (always ``[0..1]``) and unioned through
+    phis; collections-of-values aren't represented yet.
+    """
+    lo: int
+    hi: int
+
+    def __post_init__(self):
+        if self.lo > self.hi:
+            raise ValueError(f"IntRange lo>hi: {self.lo}..{self.hi}")
+
+    def annotate(self, var_id: str) -> str:
+        if self.lo == self.hi:
+            return f"[{var_id}={self.lo}]"
+        if self.lo == 0:
+            return f"[{var_id}<={self.hi}]"
+        return f"[{self.lo}<={var_id}<={self.hi}]"
+
+
+@dataclass(frozen=True)
+class TealType:
+    """Static type of a stack value. ``kind`` ∈ ``{"uint64", "bytes"}``.
+    For ``"bytes"``, ``byte_length`` is the known length when statically
+    derivable, else ``None``."""
+    kind: str
+    byte_length: Optional[int] = None
+
+
 Operand = Union[SSAVar, Phi, Const, MatPhiVar]
 
 
@@ -212,6 +257,7 @@ class Assignment:
         *,
         resolve_consts: bool = True,
         propagate_consts: bool = True,
+        show_ranges: bool = False,
     ) -> str:
         """Render this assignment in functional form.
 
@@ -220,8 +266,19 @@ class Assignment:
         ``propagate_consts``: when an input's :class:`SSAVar` or :class:`Phi`
             has been resolved by :meth:`SSAProgram.propagate_constants`,
             render it as its literal instead of the variable identifier.
+        ``show_ranges``: when an SSAVar has a ``range`` set by
+            :meth:`SSAProgram.propagate_ranges`, suffix it with a
+            ``/*[V<=hi]*/``-style annotation. Constant-collapsed inputs
+            and phi expressions are not annotated.
         """
-        out_str = ", ".join(v.identifier for v in self.outputs)
+        def _annotate_var(v: "SSAVar") -> str:
+            label = v.identifier
+            if show_ranges and v.range is not None:
+                label += f" /*{v.range.annotate(v.identifier)}*/"
+            return label
+
+        out_str = ", ".join(_annotate_var(v) if isinstance(v, SSAVar) else v.identifier
+                            for v in self.outputs)
         if resolve_consts and self.const is not None:
             return f"{out_str} = {self.const.value}" if self.outputs else self.const.value
 
@@ -230,6 +287,8 @@ class Assignment:
                 cv = getattr(operand, "const_value", None)
                 if cv is not None:
                     return cv.value
+            if isinstance(operand, SSAVar):
+                return _annotate_var(operand)
             return repr(operand)
 
         # Copy assignment (materialized phi): render `mat_phi_k = arg` without
@@ -299,6 +358,148 @@ _CONST_BLOCK_REF_NAMES = frozenset({
 })
 
 
+# Per-op uint64 output ranges for ops whose bound is determined by the
+# op semantics alone (no operand or immediate dependency). Source for
+# `propagate_ranges`. AVM bytes-stack values are capped at 4096 bytes,
+# which gives `len`/`bitlen` their upper bounds.
+_OP_RANGE_SEEDS: dict = None  # filled in below
+
+def _build_op_range_seeds():
+    bool_ops = (
+        "<", ">", "<=", ">=", "==", "!=",
+        "b<", "b>", "b<=", "b>=", "b==", "b!=",
+        "&&", "||", "!",
+    )
+    return {
+        **{op: ("uint64", 0, 1) for op in bool_ops},
+        # bit/byte extraction with hard-coded output width
+        "getbit":         ("uint64", 0, 1),
+        "getbyte":        ("uint64", 0, 0xFF),
+        "extract_uint16": ("uint64", 0, 0xFFFF),
+        "extract_uint32": ("uint64", 0, 0xFFFFFFFF),
+        # length ops bounded by AVM stack-bytes cap (4096 bytes)
+        "len":    ("uint64", 0, 4096),
+        "bitlen": ("uint64", 0, 4096 * 8),
+    }
+
+_OP_RANGE_SEEDS = _build_op_range_seeds()
+
+# Bounded enum fields for txn-family / global field reads. Values track
+# the AVM spec: OnCompletion in {0..5}, TypeEnum in {0..6} (unknown..appl),
+# GroupIndex 0-based with max group size 16, GroupSize ≥ 1.
+_TXN_FIELD_RANGES: dict = {
+    "OnCompletion": (0, 5),
+    "TypeEnum":     (0, 6),
+    "GroupIndex":   (0, 15),
+}
+_GLOBAL_FIELD_RANGES: dict = {
+    "GroupSize": (1, 16),
+}
+
+
+# Pure stack-shuffle opcodes — they don't compute, they only permute /
+# duplicate / drop existing stack values (or, for the frame variants,
+# move values between the stack top and the visible frame slots). For
+# each, the per-output input index is fixed by the opcode plus its
+# immediate, so every output SSAVar can be rewritten to its source
+# value at every consumer (see :meth:`SSAProgram.propagate_stack_shuffles`).
+_STACK_SHUFFLE_OPS: frozenset = frozenset({
+    "swap", "dup", "dup2", "dupn", "cover", "uncover", "dig", "bury",
+    "frame_dig", "frame_bury",
+})
+
+
+def _shuffle_mapping(a: "Assignment") -> Optional[list[int]]:
+    """Return ``m`` such that ``a.outputs[i] = a.inputs[m[i]]`` for the
+    pure stack-shuffle opcodes in :data:`_STACK_SHUFFLE_OPS`. Returns
+    ``None`` when ``a`` isn't a shuffle, or when its input/output shape
+    doesn't match the immediate (defensive — a malformed Assignment
+    should not silently get its consumers redirected).
+
+    Stack convention: ``inputs`` and ``outputs`` are ordered bottom→top
+    (rightmost = top of stack), matching the order produced by the QL
+    ``stackInputs`` / ``stackOutputs`` predicates.
+    """
+    op = a.op
+    n_in = len(a.inputs)
+    n_out = len(a.outputs)
+    if op == "swap":
+        return [1, 0] if (n_in == 2 and n_out == 2) else None
+    if op == "dup":
+        return [0, 0] if (n_in == 1 and n_out == 2) else None
+    if op == "dup2":
+        return [0, 1, 0, 1] if (n_in == 2 and n_out == 4) else None
+    if op not in ("dupn", "cover", "uncover", "dig", "bury",
+                  "frame_dig", "frame_bury"):
+        return None
+    toks = a.immediates.split()
+    if not toks:
+        return None
+    try:
+        n = int(toks[0])
+    except ValueError:
+        return None
+    if op == "dupn":
+        # ... a → ... a a … a   (n+1 copies of the original top)
+        if n_in == 1 and n_out == n + 1:
+            return [0] * (n + 1)
+    elif op == "cover":
+        # ... a_n … a_1 a_0  →  ... a_0 a_n … a_1
+        # in (bottom→top):  [a_n, …, a_1, a_0]   (n+1 elts)
+        # out (bottom→top): [a_0, a_n, …, a_1]   (n+1 elts)
+        if n_in == n + 1 and n_out == n + 1:
+            return [n] + list(range(n))
+    elif op == "uncover":
+        # ... a_n … a_0  →  ... a_{n-1} … a_0 a_n
+        # in:  [a_n, a_{n-1}, …, a_0]
+        # out: [a_{n-1}, …, a_0, a_n]
+        if n_in == n + 1 and n_out == n + 1:
+            return list(range(1, n + 1)) + [0]
+    elif op == "dig":
+        # ... a_n … a_0  →  ... a_n … a_0 a_n   (a_n copied to top)
+        # in (n+1):  [a_n, …, a_0]
+        # out (n+2): [a_n, …, a_0, a_n]
+        if n_in == n + 1 and n_out == n + 2:
+            return list(range(n + 1)) + [0]
+    elif op == "bury":
+        # ... a_n a_{n-1} … a_1 a_0  →  ... a_0 a_{n-1} … a_1
+        # in (n+1):  [a_n, a_{n-1}, …, a_1, a_0]
+        # out (n):   [a_0,           a_{n-1}, …, a_1]
+        if n_in == n + 1 and n_out == n:
+            return [n] + list(range(1, n))
+    elif op == "frame_dig":
+        # SSA model layout: ``inputs`` is the visible block of frame
+        # slots (bottom→top); ``outputs`` is that same block plus one
+        # extra slot on top — the dug copy. The immediate ``n`` is the
+        # signed frame offset; non-negative reads from the frame base,
+        # negative from the frame top. We translate that to an index
+        # into ``inputs``: ``n`` directly when ≥ 0, ``n_in + n`` when
+        # negative. Skip whenever the shape doesn't match (``n_out !=
+        # n_in + 1``) or the resolved index falls outside the visible
+        # block — both can happen in real dumps when the model only
+        # captures a partial frame and we'd otherwise mis-redirect.
+        if n_out != n_in + 1:
+            return None
+        dug = n if n >= 0 else n_in + n
+        if not (0 <= dug < n_in):
+            return None
+        return list(range(n_in)) + [dug]
+    elif op == "frame_bury":
+        # SSA model layout: ``inputs[0]`` is the stack top being
+        # popped (the value to bury); ``inputs[1:]`` is the visible
+        # frame block (bottom→top), and ``outputs`` is that block
+        # post-bury — one slot replaced by ``inputs[0]``. The
+        # immediate ``n`` is the (non-negative) frame offset. Negative
+        # offsets (which would mean writing into the caller's args
+        # block) aren't propagated: the model's ord-0 placement of
+        # those isn't validated against real dumps yet. ``n`` must
+        # also fall inside the visible output block.
+        if n_in != n_out + 1 or n < 0 or n >= n_out:
+            return None
+        return [0 if i == n else i + 1 for i in range(n_out)]
+    return None
+
+
 class SSAProgram:
     """Typed SSA-form representation of a TEAL program."""
 
@@ -319,6 +520,8 @@ class SSAProgram:
         self._consts_propagated: bool = False
         self._dead_eliminated: bool = False
         self._scratch_propagated: bool = False
+        self._ranges_propagated: bool = False
+        self._shuffles_propagated: bool = False
 
         # Index graph-side phis by key for fast lookup during lazy materialization.
         g_phi_by_key: dict[tuple, tg.PhiNode] = {}
@@ -647,6 +850,184 @@ class SSAProgram:
 
         self._scratch_propagated = True
 
+    def propagate_ranges(self) -> None:
+        """Tag SSAVars / Phis with a static integer range and type.
+
+        Independent, idempotent. Seeds come from three tables:
+        :data:`_OP_RANGE_SEEDS` (op alone determines the bound, e.g.
+        bool-shaped comparisons, ``getbyte``, ``len``),
+        :data:`_TXN_FIELD_RANGES` (``txn``/``gtxn``/``gtxns``/``itxn``
+        with an enum-valued field name as immediate), and
+        :data:`_GLOBAL_FIELD_RANGES` (``global FIELD``). A second pass
+        unions arg ranges through phis to fixed point.
+        """
+        if self._ranges_propagated:
+            return
+
+        UINT64 = TealType("uint64")
+
+        def _seed(o, lo: int, hi: int) -> None:
+            if isinstance(o, SSAVar) and o.range is None:
+                o.range = IntRange(lo, hi)
+                o.type = UINT64
+
+        # Pass 1: seed from per-op rules. Single-output guard reflects
+        # that every range-yielding op here produces exactly one stack
+        # output; anything else would be a malformed Assignment.
+        for a in self.assignments:
+            if len(a.outputs) != 1:
+                continue
+            o = a.outputs[0]
+
+            # 1a. Op alone gives the range (covers comparisons,
+            # logical ops, getbit/getbyte, extract_uint{16,32},
+            # len/bitlen).
+            seed = _OP_RANGE_SEEDS.get(a.op)
+            if seed is not None:
+                _, lo, hi = seed
+                _seed(o, lo, hi)
+                continue
+
+            if not a.immediates:
+                continue
+            toks = a.immediates.split()
+
+            # 1b. txn-family field reads where the field carries the
+            # range. ``txn``/``gtxns``/``itxn`` put the field in the
+            # first immediate; ``gtxn`` / ``gtxna`` / ``gtxnsa`` etc.
+            # put a group index first and the field second.
+            field: Optional[str] = None
+            if a.op in ("txn", "gtxns", "itxn") and toks:
+                field = toks[0]
+            elif a.op in ("gtxn", "gtxna", "gtxnas") and len(toks) >= 2:
+                field = toks[1]
+            if field is not None:
+                rng = _TXN_FIELD_RANGES.get(field)
+                if rng is not None:
+                    _seed(o, *rng)
+                    continue
+
+            # 1c. global FIELD (only enum-valued fields seed).
+            if a.op == "global" and toks:
+                rng = _GLOBAL_FIELD_RANGES.get(toks[0])
+                if rng is not None:
+                    _seed(o, *rng)
+                    continue
+
+        # Pass 2: union ranges through phis to fixed point. A phi gets a
+        # range only if every arg has one; the result is the smallest
+        # box covering all of them. Type unifies to uint64 only when
+        # every arg agrees.
+        changed = True
+        while changed:
+            changed = False
+            for ph in self.phis.values():
+                if ph.range is not None or not ph.args:
+                    continue
+                arg_ranges: list[IntRange] = []
+                ok = True
+                for arg in ph.args:
+                    r = getattr(arg, "range", None)
+                    if r is None:
+                        ok = False
+                        break
+                    arg_ranges.append(r)
+                if not ok:
+                    continue
+                lo = min(r.lo for r in arg_ranges)
+                hi = max(r.hi for r in arg_ranges)
+                ph.range = IntRange(lo, hi)
+                arg_types = [getattr(arg, "type", None) for arg in ph.args]
+                if all(t is not None and t.kind == "uint64" for t in arg_types):
+                    ph.type = UINT64
+                changed = True
+
+        self._ranges_propagated = True
+
+    def propagate_stack_shuffles(self) -> None:
+        """Copy-propagate the outputs of pure stack-shuffle opcodes
+        (:data:`_STACK_SHUFFLE_OPS`) into their consumers, then drop
+        the shuffle assignments and their orphaned output SSAVars.
+
+        For each shuffle ``a``, :func:`_shuffle_mapping` gives the
+        per-output input index. Each output SSAVar ``a.outputs[i]`` is
+        therefore guaranteed equal at runtime to ``a.inputs[m[i]]``, so
+        we rewrite every consumer (other ``Assignment.inputs`` slots
+        and ``Phi.args``) to read the input directly, then prune the
+        now-dead shuffle from ``self.assignments`` / ``bb.assignments``
+        and its outputs from ``self.vars``. Chains of shuffles are
+        flattened in one pass via :func:`_resolve` so a single rewrite
+        of consumers suffices.
+
+        Should run before :meth:`materialize_phis` — phi args are
+        list[SSAVar | Phi] until materialisation; rewriting them after
+        materialisation could inject :class:`MatPhiVar` and break that
+        invariant. Idempotent.
+        """
+        if self._shuffles_propagated:
+            return
+
+        # Step 1: collect the shuffle assignments and the per-output
+        # redirect from each output SSAVar to its source operand.
+        redirect: dict[SSAVar, Operand] = {}
+        shuffle_assigns: list[Assignment] = []
+        for a in self.assignments:
+            if a.op not in _STACK_SHUFFLE_OPS:
+                continue
+            mapping = _shuffle_mapping(a)
+            if mapping is None:
+                continue
+            shuffle_assigns.append(a)
+            for out_idx, in_idx in enumerate(mapping):
+                out = a.outputs[out_idx]
+                if isinstance(out, SSAVar):
+                    redirect[out] = a.inputs[in_idx]
+
+        if not redirect:
+            self._shuffles_propagated = True
+            return
+
+        # Step 2: flatten shuffle-of-shuffle chains so each output
+        # resolves to its deepest non-shuffle source in one hop.
+        def _resolve(o: Operand) -> Operand:
+            seen: set[SSAVar] = set()
+            while isinstance(o, SSAVar) and o in redirect:
+                if o in seen:
+                    break  # defensive: cycles shouldn't exist on valid TEAL
+                seen.add(o)
+                o = redirect[o]
+            return o
+
+        final: dict[SSAVar, Operand] = {v: _resolve(v) for v in redirect}
+
+        # Step 3: rewrite every consumer. Both Assignment.inputs and
+        # Phi.args may reference shuffle outputs.
+        for a in self.assignments:
+            a.inputs = [final.get(i, i) if isinstance(i, SSAVar) else i
+                        for i in a.inputs]
+        for ph in self.phis.values():
+            ph.args = [final.get(arg, arg) if isinstance(arg, SSAVar) else arg
+                       for arg in ph.args]
+
+        # Step 4: prune the now-dead shuffle assignments and their
+        # orphaned output SSAVars from the program structure.
+        dead_assignment_ids: set[int] = {id(a) for a in shuffle_assigns}
+        dead_outputs: set[SSAVar] = set()
+        for a in shuffle_assigns:
+            for o in a.outputs:
+                if isinstance(o, SSAVar):
+                    dead_outputs.add(o)
+                    o.defined_by = None
+
+        self.assignments = [a for a in self.assignments
+                            if id(a) not in dead_assignment_ids]
+        self.vars = {k: v for k, v in self.vars.items() if v not in dead_outputs}
+        for bb in self.blocks.values():
+            bb.assignments = [a for a in bb.assignments
+                              if id(a) not in dead_assignment_ids]
+
+        self._shuffles_propagated = True
+
     def eliminate_dead_constants(self) -> None:
         """Inline constant literals into every consumer's input list, then
         drop the now-orphan SSAVars / Phis and any Assignment whose
@@ -870,6 +1251,16 @@ class SSAProgram:
         for bb in self.blocks.values():
             bb.assignments.sort(key=lambda a: a.location.line)
 
+        # Pass D: prune the original phis. Pass C just rewrote every
+        # Assignment.inputs reference from Phi to MatPhiVar, so no
+        # Assignment still consumes a Phi; their only remaining incoming
+        # references are within other Phi.args (the phi-of-phi DAG),
+        # which becomes structurally unreachable from the program once
+        # we clear self.phis and bb.phis. Python GC reclaims it.
+        self.phis = {}
+        for bb in self.blocks.values():
+            bb.phis = []
+
         self._materialized = True
 
     # -- rendering ----------------------------------------------------------
@@ -881,12 +1272,13 @@ class SSAProgram:
         line_range: Optional[tuple[int, int]] = None,
         resolve_consts: bool = True,
         propagate_consts: bool = True,
+        show_ranges: bool = False,
     ) -> str:
         lines = []
         for a in self.assignments_in(file=file, line_range=line_range):
             lines.append(
                 f"L{a.location.line:>4}: "
-                f"{a.functional(resolve_consts=resolve_consts, propagate_consts=propagate_consts)}"
+                f"{a.functional(resolve_consts=resolve_consts, propagate_consts=propagate_consts, show_ranges=show_ranges)}"
             )
         return "\n".join(lines)
 
@@ -899,6 +1291,7 @@ class SSAProgram:
         file: Optional[str] = None,
         resolve_consts: bool = True,
         propagate_consts: bool = True,
+        show_ranges: bool = False,
     ) -> str:
         """Same as :meth:`functional` but groups assignments by BB with a
         header line and predecessor/successor summary per block."""
@@ -916,7 +1309,7 @@ class SSAProgram:
             for a in bb.assignments:
                 out.append(
                     f"  L{a.location.line:>4}: "
-                    f"{a.functional(resolve_consts=resolve_consts, propagate_consts=propagate_consts)}"
+                    f"{a.functional(resolve_consts=resolve_consts, propagate_consts=propagate_consts, show_ranges=show_ranges)}"
                 )
             out.append("")
         return "\n".join(out)
