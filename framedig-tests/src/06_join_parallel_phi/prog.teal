@@ -1,0 +1,42 @@
+#pragma version 10
+// Case 06: a join label reached by two paths, where the SSA model
+// produces both DirectPhi and IndirectPhi at the join's first stack
+// slot (parallel views) plus a propagated phi at a deeper slot. With
+// the broken ranking in getStackInputByOrder, the deeper-slot phi was
+// unreachable via ord iteration; with the fix it appears at ord 2.
+//
+// Mirrors the shape of xgov-db's itoa_1_l3 join site.
+intc_0
+callsub itoa
+return
+
+itoa:
+    proto 1 1
+    frame_dig -1
+    intc_0
+    ==
+    bnz l_zero
+    frame_dig -1
+    intc_2 // 10
+    /
+    intc_0
+    >
+    bnz l_recurse
+    bytec_1 // ""
+l_join:
+    frame_dig -1   // ← target of the test: must resolve all consumed slots
+    intc_2 // 10
+    %
+    callsub itoa
+    concat
+    b l_done
+l_recurse:
+    frame_dig -1
+    intc_2 // 10
+    /
+    callsub itoa
+    b l_join
+l_zero:
+    pushbytes 0x30 // "0"
+l_done:
+    retsub

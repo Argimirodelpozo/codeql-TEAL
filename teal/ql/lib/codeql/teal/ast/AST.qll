@@ -655,34 +655,69 @@ class AstNode instanceof TAstNode{
         // sitting above any incoming phis (a phi entered with the BB and
         // anything pushed locally landed on top of it).
         //
-        // Single unified rank: each candidate Definition gets a `score`
-        // that's small for recent SSAVars and large (BASELINE +
-        // ``getOrd``) for incoming phis, so ASC-sorting interleaves them
-        // correctly. When DirectPhi + IndirectPhi co-exist at the same
-        // ``(bb, slot)`` their scores tie, and rank returns BOTH at the
-        // same ord — they are parallel views of the same stack position,
-        // not separate inputs. Consumers that need a per-slot unique
-        // view dedupe by ord; consumers that need every contributing
-        // Definition (dataflow, materialize_phis) iterate the full set.
+        // Two-stage rank to handle parallel views correctly:
+        //
+        //   (1) Each consumed Definition is keyed by an integer
+        //       ``slotScore`` — small for recent SSAVars and large
+        //       (BASELINE + getOrd) for incoming phis. DirectPhi +
+        //       IndirectPhi at the same ``(bb, slot)`` deliberately
+        //       collapse to the *same* slotScore: they are parallel
+        //       views of one stack position, not two.
+        //
+        //   (2) ``rank`` is taken over the **distinct** slotScores
+        //       (an int domain), then projected back to every Definition
+        //       at the chosen score. Ranking distinct ints — instead of
+        //       ranking Definitions and tolerating ties — guarantees
+        //       no rank gaps. Earlier behaviour used
+        //       ``rank[ord](Definition def, int score | … | def order by
+        //       score asc)``, where CodeQL's competition ranking pushed
+        //       deeper slots past ``ord = numberOfConsumedArgs`` whenever
+        //       a higher slot tied (e.g. parallel DirectPhi/IndirectPhi),
+        //       silently hiding their phi from every consumer.
         //
         // BASELINE = 10^8: any local SSAVar score is at most
         // ``(file_lines * 1000) + max_outputs`` ≪ 10^8, so phis are
         // strictly below all locals in the ordering.
         ord in [1 .. this.getNumberOfConsumedArgs()] and
-        result = rank[ord](Definition def, int score |
-            // Local SSAVar input.
+        exists(int slotScore |
+            slotScore = rank[ord](int s |
+                this.consumedSlotHasScore(s)
+            |
+                s order by s asc
+            ) and
+            this.consumedDefAtScore(slotScore, result)
+        )
+    }
+
+    /**
+     * Holds when some Definition consumed by ``this`` has slot score
+     * ``score``. See ``getStackInputByOrder`` for the score scheme.
+     * Defined as a thin existential over ``consumedDefAtScore`` so the
+     * rank in ``getStackInputByOrder`` can range over distinct ints.
+     */
+    private predicate consumedSlotHasScore(int score) {
+        exists(Definition def | this.consumedDefAtScore(score, def))
+    }
+
+    /**
+     * Maps each Definition consumed by ``this`` to its slot score.
+     * SSAVars get a small score that grows with line distance and
+     * output index; phis get ``BASELINE + def.getOrd()`` so they sort
+     * strictly below all locals. DirectPhi and IndirectPhi at the same
+     * ``(bb, slot)`` deliberately share a score — they're parallel
+     * views of one stack position.
+     */
+    private predicate consumedDefAtScore(int score, Definition def) {
+        this.getConsumedValues() = def and
+        (
             exists(int varIdx, AstNode n |
-                this = n.getConsumedBy(varIdx) and
                 def = TSSAVar(varIdx, n) and
+                this = n.getConsumedBy(varIdx) and
                 score = (this.getLineNumber() - n.getLineNumber()) * 1000 + varIdx
             )
             or
-            // Incoming Phi input (DirectPhi or IndirectPhi).
             (def instanceof DirectPhi or def instanceof IndirectPhi) and
-            this.getConsumedValues() = def and
             score = 100000000 + def.getOrd()
-        |
-            def order by score asc
         )
     }
 

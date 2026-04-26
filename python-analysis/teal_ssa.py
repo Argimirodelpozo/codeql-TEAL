@@ -251,6 +251,12 @@ class Assignment:
     ast_code: str
     const: Optional[Const] = None
     basic_block: Optional["BasicBlock"] = None
+    # Set by :meth:`SSAProgram.propagate_stack_shuffles`. When True, this
+    # opcode is a pure stack shuffle whose outputs have all been
+    # redirected to their producing inputs at every consumer; the
+    # assignment is kept around but rendered with a ``//`` comment
+    # prefix so the original stack movement stays inspectable.
+    shuffled: bool = False
 
     def functional(
         self,
@@ -280,7 +286,8 @@ class Assignment:
         out_str = ", ".join(_annotate_var(v) if isinstance(v, SSAVar) else v.identifier
                             for v in self.outputs)
         if resolve_consts and self.const is not None:
-            return f"{out_str} = {self.const.value}" if self.outputs else self.const.value
+            body = f"{out_str} = {self.const.value}" if self.outputs else self.const.value
+            return f"// {body}" if self.shuffled else body
 
         def _input_label(operand) -> str:
             if propagate_consts:
@@ -294,10 +301,12 @@ class Assignment:
         # Copy assignment (materialized phi): render `mat_phi_k = arg` without
         # the opcode/tuple syntax.
         if self.op == "=" and len(self.inputs) == 1 and self.outputs:
-            return f"{out_str} = {_input_label(self.inputs[0])}"
+            body = f"{out_str} = {_input_label(self.inputs[0])}"
+            return f"// {body}" if self.shuffled else body
         in_str = "(" + ", ".join(_input_label(i) for i in self.inputs) + ")"
         rhs = f"{self.op} {self.immediates} {in_str}" if self.immediates else f"{self.op} {in_str}"
-        return f"{out_str} = {rhs}" if self.outputs else rhs
+        body = f"{out_str} = {rhs}" if self.outputs else rhs
+        return f"// {body}" if self.shuffled else body
 
     def __repr__(self) -> str:
         return self.functional()
@@ -416,18 +425,29 @@ def _shuffle_mapping(a: "Assignment") -> Optional[list[int]]:
     doesn't match the immediate (defensive — a malformed Assignment
     should not silently get its consumers redirected).
 
-    Stack convention: ``inputs`` and ``outputs`` are ordered bottom→top
-    (rightmost = top of stack), matching the order produced by the QL
-    ``stackInputs`` / ``stackOutputs`` predicates.
+    Stack convention: **top-first**. ``inputs[0]`` and ``outputs[0]``
+    are the topmost stack value (ord 1 in QL terms); the deepest
+    consumed/produced value sits at index ``n - 1``. This matches the
+    QL doc on ``getStackInputByOrder`` (`AST.qll`) — *"ord is a 1-based
+    stack position (1 = top consumed)"* — and the SSAVar identity
+    convention where ``output_index 1`` ranks first by
+    ``outStackOrder`` (i.e. is the topmost output).
     """
     op = a.op
     n_in = len(a.inputs)
     n_out = len(a.outputs)
     if op == "swap":
+        # ... a b  →  ... b a   (b was top; a becomes new top)
+        # in (top-first):  [b, a]
+        # out (top-first): [a, b]
         return [1, 0] if (n_in == 2 and n_out == 2) else None
     if op == "dup":
+        # ... a  →  ... a a   (both outputs = a)
         return [0, 0] if (n_in == 1 and n_out == 2) else None
     if op == "dup2":
+        # ... a b  →  ... a b a b   (b was top)
+        # in (top-first):  [b, a]
+        # out (top-first): [b, a, b, a]
         return [0, 1, 0, 1] if (n_in == 2 and n_out == 4) else None
     if op not in ("dupn", "cover", "uncover", "dig", "bury",
                   "frame_dig", "frame_bury"):
@@ -440,63 +460,65 @@ def _shuffle_mapping(a: "Assignment") -> Optional[list[int]]:
     except ValueError:
         return None
     if op == "dupn":
-        # ... a → ... a a … a   (n+1 copies of the original top)
+        # ... a  →  ... a a … a   (n+1 copies of the original top)
         if n_in == 1 and n_out == n + 1:
             return [0] * (n + 1)
     elif op == "cover":
-        # ... a_n … a_1 a_0  →  ... a_0 a_n … a_1
-        # in (bottom→top):  [a_n, …, a_1, a_0]   (n+1 elts)
-        # out (bottom→top): [a_0, a_n, …, a_1]   (n+1 elts)
-        if n_in == n + 1 and n_out == n + 1:
-            return [n] + list(range(n))
-    elif op == "uncover":
-        # ... a_n … a_0  →  ... a_{n-1} … a_0 a_n
-        # in:  [a_n, a_{n-1}, …, a_0]
-        # out: [a_{n-1}, …, a_0, a_n]
+        # cover n: pop top A, place it n positions down. Before:
+        # ... X_n X_{n-1} … X_1 A   (A = top). After:
+        # ... A X_n X_{n-1} … X_1   (X_1 = new top).
+        # in  (top-first): [A, X_1, X_2, …, X_n]
+        # out (top-first): [X_1, X_2, …, X_n, A]
         if n_in == n + 1 and n_out == n + 1:
             return list(range(1, n + 1)) + [0]
+    elif op == "uncover":
+        # uncover n: lift the value at depth n to the top. Before:
+        # ... X_n X_{n-1} … X_1 X_0   (X_0 = top, X_n at depth n).
+        # After: ... X_{n-1} … X_1 X_0 X_n   (X_n = new top).
+        # in  (top-first): [X_0, X_1, …, X_n]
+        # out (top-first): [X_n, X_0, X_1, …, X_{n-1}]
+        if n_in == n + 1 and n_out == n + 1:
+            return [n] + list(range(n))
     elif op == "dig":
-        # ... a_n … a_0  →  ... a_n … a_0 a_n   (a_n copied to top)
-        # in (n+1):  [a_n, …, a_0]
-        # out (n+2): [a_n, …, a_0, a_n]
+        # dig n: copy the value at depth n to the top (no pops).
+        # in  (top-first): [X_0, X_1, …, X_n]                (n+1 elts)
+        # out (top-first): [X_n, X_0, X_1, …, X_{n-1}, X_n]  (n+2 elts)
         if n_in == n + 1 and n_out == n + 2:
-            return list(range(n + 1)) + [0]
+            return [n] + list(range(n + 1))
     elif op == "bury":
-        # ... a_n a_{n-1} … a_1 a_0  →  ... a_0 a_{n-1} … a_1
-        # in (n+1):  [a_n, a_{n-1}, …, a_1, a_0]
-        # out (n):   [a_0,           a_{n-1}, …, a_1]
+        # bury n: pop top A, overwrite the value at depth n with A.
+        # Before: ... X_n X_{n-1} … X_1 A     (A = top, n+1 elts).
+        # After:  ... A   X_{n-1} … X_1       (n elts).
+        # in  (top-first): [A, X_1, X_2, …, X_n]
+        # out (top-first): [X_1, X_2, …, X_{n-1}, A]
         if n_in == n + 1 and n_out == n:
-            return [n] + list(range(1, n))
+            return list(range(1, n)) + [0]
     elif op == "frame_dig":
-        # SSA model layout: ``inputs`` is the visible block of frame
-        # slots (bottom→top); ``outputs`` is that same block plus one
-        # extra slot on top — the dug copy. The immediate ``n`` is the
-        # signed frame offset; non-negative reads from the frame base,
-        # negative from the frame top. We translate that to an index
-        # into ``inputs``: ``n`` directly when ≥ 0, ``n_in + n`` when
-        # negative. Skip whenever the shape doesn't match (``n_out !=
-        # n_in + 1``) or the resolved index falls outside the visible
-        # block — both can happen in real dumps when the model only
-        # captures a partial frame and we'd otherwise mis-redirect.
-        if n_out != n_in + 1:
+        # SSA model layout (top-first): ``inputs`` is [top_local,
+        # next_local, …, frame[N]]; the dug slot ``frame[N]`` is the
+        # **deepest** of the consumed range, so ``inputs[n_in-1]``
+        # always holds it regardless of whether ``N`` is positive
+        # (locals above frame ptr) or negative (args below it).
+        # ``outputs`` is the same block with the dug copy prepended on
+        # top: ``[dug, top_local, …, frame[N]]``. We don't even need
+        # to look at ``N`` — the model's ``n_in`` already encodes the
+        # span "from dug slot up to top".
+        if n_in < 1 or n_out != n_in + 1:
             return None
-        dug = n if n >= 0 else n_in + n
-        if not (0 <= dug < n_in):
-            return None
-        return list(range(n_in)) + [dug]
+        return [n_in - 1] + list(range(n_in))
     elif op == "frame_bury":
-        # SSA model layout: ``inputs[0]`` is the stack top being
-        # popped (the value to bury); ``inputs[1:]`` is the visible
-        # frame block (bottom→top), and ``outputs`` is that block
-        # post-bury — one slot replaced by ``inputs[0]``. The
-        # immediate ``n`` is the (non-negative) frame offset. Negative
-        # offsets (which would mean writing into the caller's args
-        # block) aren't propagated: the model's ord-0 placement of
-        # those isn't validated against real dumps yet. ``n`` must
-        # also fall inside the visible output block.
-        if n_in != n_out + 1 or n < 0 or n >= n_out:
+        # SSA model layout (top-first): ``inputs[0]`` is the stack top
+        # being popped (the value to bury); ``inputs[1:]`` is the
+        # consumed frame band [top_local, …, frame[N+1]] (the dug
+        # target ``frame[N]`` itself isn't consumed because it's
+        # only being written, not read). After the bury, ``frame[N]``
+        # holds the popped value, so the new output band is
+        # ``[top_local, …, frame[N+1], frame[N]_new]`` — i.e. the
+        # input frame slots shifted, with the popped value at the
+        # deepest output position. Independent of ``N``.
+        if n_out < 1 or n_in != n_out + 1:
             return None
-        return [0 if i == n else i + 1 for i in range(n_out)]
+        return list(range(1, n_out)) + [0]
     return None
 
 
@@ -505,7 +527,7 @@ class SSAProgram:
 
     def __init__(self, db_path: str | Path, *, refresh: bool = False, verbose: bool = False):
         import teal_graphs as tg
-        from teal_ast import Opcode
+        from teal_ast import Opcode, Label
 
         g = tg.load_graph(db_path, refresh=refresh, verbose=verbose)
         self._graph = g
@@ -516,6 +538,10 @@ class SSAProgram:
         self.assignments: list[Assignment] = []
         self.blocks: dict[tuple, BasicBlock] = {}
         self.mat_phis: list[MatPhiVar] = []
+        # Sorted (file, line, label_text) — purely for rendering. Labels
+        # have no SSA effect, but interleaving them with assignments in
+        # ``functional()`` keeps the dump anchored to the source layout.
+        self.labels: list[tuple[str, int, str]] = []
         self._materialized: bool = False
         self._consts_propagated: bool = False
         self._dead_eliminated: bool = False
@@ -664,6 +690,17 @@ class SSAProgram:
             seen_edges.add((u_bb, v_bb))
             u_bb.successors.append(v_bb)
             v_bb.predecessors.append(u_bb)
+
+        # Pass 5: collect Label nodes for rendering. They aren't part of
+        # the SSA — they don't define or consume values — but printing
+        # them in :meth:`functional` lets the dump line up with the
+        # source listing (branch targets stay visible).
+        for n in g.nodes:
+            if isinstance(n, Label):
+                self.labels.append(
+                    (n.location.file, n.location.start_line, n.code or "")
+                )
+        self.labels.sort()
 
         # Final ordering.
         self.assignments.sort(key=lambda a: (a.location.file, a.location.line))
@@ -946,18 +983,19 @@ class SSAProgram:
 
     def propagate_stack_shuffles(self) -> None:
         """Copy-propagate the outputs of pure stack-shuffle opcodes
-        (:data:`_STACK_SHUFFLE_OPS`) into their consumers, then drop
-        the shuffle assignments and their orphaned output SSAVars.
+        (:data:`_STACK_SHUFFLE_OPS`) into their consumers and mark the
+        shuffle assignments themselves with :attr:`Assignment.shuffled`
+        so :meth:`Assignment.functional` renders them as ``// …``
+        comments — the structural rewrite happens, but the original
+        stack movement stays visible in the dump for inspection.
 
         For each shuffle ``a``, :func:`_shuffle_mapping` gives the
         per-output input index. Each output SSAVar ``a.outputs[i]`` is
         therefore guaranteed equal at runtime to ``a.inputs[m[i]]``, so
-        we rewrite every consumer (other ``Assignment.inputs`` slots
-        and ``Phi.args``) to read the input directly, then prune the
-        now-dead shuffle from ``self.assignments`` / ``bb.assignments``
-        and its outputs from ``self.vars``. Chains of shuffles are
-        flattened in one pass via :func:`_resolve` so a single rewrite
-        of consumers suffices.
+        every consumer (other ``Assignment.inputs`` slots and
+        ``Phi.args``) is rewritten to read the input directly. Chains
+        of shuffles are flattened in one pass via :func:`_resolve` so a
+        single rewrite of consumers suffices.
 
         Should run before :meth:`materialize_phis` — phi args are
         list[SSAVar | Phi] until materialisation; rewriting them after
@@ -1009,22 +1047,13 @@ class SSAProgram:
             ph.args = [final.get(arg, arg) if isinstance(arg, SSAVar) else arg
                        for arg in ph.args]
 
-        # Step 4: prune the now-dead shuffle assignments and their
-        # orphaned output SSAVars from the program structure.
-        dead_assignment_ids: set[int] = {id(a) for a in shuffle_assigns}
-        dead_outputs: set[SSAVar] = set()
+        # Step 4: mark the shuffle assignments. They stay in
+        # ``self.assignments`` / ``bb.assignments`` and their output
+        # SSAVars stay in ``self.vars`` so the commented dump line can
+        # still resolve identifiers; the ``shuffled`` flag drives the
+        # ``// …`` prefix in :meth:`Assignment.functional`.
         for a in shuffle_assigns:
-            for o in a.outputs:
-                if isinstance(o, SSAVar):
-                    dead_outputs.add(o)
-                    o.defined_by = None
-
-        self.assignments = [a for a in self.assignments
-                            if id(a) not in dead_assignment_ids]
-        self.vars = {k: v for k, v in self.vars.items() if v not in dead_outputs}
-        for bb in self.blocks.values():
-            bb.assignments = [a for a in bb.assignments
-                              if id(a) not in dead_assignment_ids]
+            a.shuffled = True
 
         self._shuffles_propagated = True
 
@@ -1274,12 +1303,30 @@ class SSAProgram:
         propagate_consts: bool = True,
         show_ranges: bool = False,
     ) -> str:
-        lines = []
+        # Merge labels and assignments by (file, line). Labels carry no
+        # SSA effect, so the ``kind`` tiebreaker (0 for label, 1 for
+        # assignment) just makes labels sort above assignments at the
+        # same line — matching how they appear in the source.
+        items: list[tuple] = []
+        for lbl_file, lbl_line, lbl_code in self.labels:
+            if file is not None and lbl_file != file:
+                continue
+            if line_range is not None and not (line_range[0] <= lbl_line <= line_range[1]):
+                continue
+            items.append((lbl_file, lbl_line, 0, lbl_code))
         for a in self.assignments_in(file=file, line_range=line_range):
-            lines.append(
-                f"L{a.location.line:>4}: "
-                f"{a.functional(resolve_consts=resolve_consts, propagate_consts=propagate_consts, show_ranges=show_ranges)}"
-            )
+            items.append((a.location.file, a.location.line, 1, a))
+        items.sort(key=lambda x: (x[0], x[1], x[2]))
+
+        lines = []
+        for _, line, kind, obj in items:
+            if kind == 0:  # Label
+                lines.append(f"L{line:>4}: {obj}")
+            else:
+                lines.append(
+                    f"L{line:>4}: "
+                    f"{obj.functional(resolve_consts=resolve_consts, propagate_consts=propagate_consts, show_ranges=show_ranges)}"
+                )
         return "\n".join(lines)
 
     def print_functional(self, **kwargs) -> None:

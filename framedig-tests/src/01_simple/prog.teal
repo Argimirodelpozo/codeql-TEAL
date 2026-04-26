@@ -2,6 +2,7 @@
 // Case 01: one proto-ful subroutine, frame_dig + frame_bury inside.
 // Expected: getSubroutine() returns "mysub" (label at L8); consumed/output resolve.
 intc_0
+intc_0
 callsub mysub
 return
 

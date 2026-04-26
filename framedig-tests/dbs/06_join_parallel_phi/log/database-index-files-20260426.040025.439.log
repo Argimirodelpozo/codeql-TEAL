@@ -1,0 +1,18 @@
+[2026-04-26 04:00:25] This is codeql database index-files --verbosity=progress --include-extension=.teal --exclude=**/.git --size-limit=5m --language=teal --working-dir=. /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/framedig-tests/dbs/06_join_parallel_phi
+[2026-04-26 04:00:25] Log file was started late.
+[2026-04-26 04:00:25] Using index-files script /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/.codeql-extractors/teal/tools/index-files.sh.
+[2026-04-26 04:00:25] [PROGRESS] database index-files> Scanning for files in /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/framedig-tests/src/06_join_parallel_phi...
+[2026-04-26 04:00:25] Calling plumbing command: codeql resolve files --include-extension=.teal --exclude=**/.git --size-limit=5m /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/framedig-tests/src/06_join_parallel_phi --format=json
+[2026-04-26 04:00:25] [PROGRESS] resolve files> Scanning /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/framedig-tests/src/06_join_parallel_phi...
+[2026-04-26 04:00:25] Plumbing command codeql resolve files completed:
+                      [
+                        "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/framedig-tests/src/06_join_parallel_phi/prog.teal"
+                      ]
+[2026-04-26 04:00:25] [DETAILS] database index-files> Found 1 files.
+[2026-04-26 04:00:25] [PROGRESS] database index-files> /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/framedig-tests/dbs/06_join_parallel_phi: Indexing files in in /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/framedig-tests/src/06_join_parallel_phi...
+[2026-04-26 04:00:25] Using index-files script /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/.codeql-extractors/teal/tools/index-files.sh.
+[2026-04-26 04:00:25] [PROGRESS] database index-files> Running command in /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/framedig-tests/src/06_join_parallel_phi: [/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/.codeql-extractors/teal/tools/index-files.sh, /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/framedig-tests/dbs/06_join_parallel_phi/working/files-to-index17388622961138959695.list]
+[2026-04-26 04:00:25] [build-stdout] [32m INFO[0m Extraction started
+[2026-04-26 04:00:25] [build-stdout] [32m INFO[0m Using 5 threads
+[2026-04-26 04:00:25] [build-stdout] [32m INFO[0m Extraction complete
+[2026-04-26 04:00:25] Terminating normally.
