@@ -65,6 +65,7 @@ QUERY_NAMES = (
     "mustValues",
     "scratchInfluence",
     "valueIdentitySteps",
+    "stackHeights",
 )
 
 
@@ -459,6 +460,21 @@ def load_graph(
                 snk = (("var", df, int(dl), int(di)) if dk == "SSAVar"
                        else ("phi", df, int(dl), dk, int(di)))
                 steps.append((src, snk))
+        elif q == "stackHeights":
+            # Per AST node × possible stack height before it executes.
+            # Stored on the node as ``g.nodes[n]["stack_heights"]`` =
+            # set[int]. Multiple values denote inconsistent depth (paths
+            # disagree); single-value sets are the common case. The
+            # stack simulator uses ``min(...)`` to bound BB-entry phi
+            # lists so the model's [1..1000] IndirectPhi explosion at
+            # recursive subroutines doesn't leak into per-line views.
+            for row in rows:
+                (sh_file, sh_line, depth) = row
+                node = by_loc.get((sh_file, int(sh_line)))
+                if node is None:
+                    continue
+                heights = g.nodes[node].setdefault("stack_heights", set())
+                heights.add(int(depth))
         elif q == "scratchInfluence":
             # Per `load N` op, list every may-influencing `store N` plus
             # the SSAVar key (file, line, outputIdx) of the value the
