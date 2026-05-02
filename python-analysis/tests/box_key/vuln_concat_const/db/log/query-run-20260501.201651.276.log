@@ -1,0 +1,10 @@
+[2026-05-01 20:16:51] This is codeql query run --database /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/python-analysis/tests/box_key/vuln_concat_const/db --output /home/argi/.cache/teal-graphs/fc677acb9395ce41/mustValues.bqrs /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/python-analysis/queries/mustValues.ql
+[2026-05-01 20:16:51] Log file was started late.
+[2026-05-01 20:16:51] Calling plumbing command: codeql resolve ram --dataset=/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/python-analysis/tests/box_key/vuln_concat_const/db/db-teal --format=json
+[2026-05-01 20:16:51] [PROGRESS] resolve ram> Stringpool size measured as 2146714
+[2026-05-01 20:16:51] Plumbing command codeql resolve ram completed:
+                      [
+                        "-J-Xmx1391M"
+                      ]
+[2026-05-01 20:16:51] Chaining via /tmp/codeql.UPcgMuST to plumbing: execute queries -J-Xmx1391M --verbosity=progress --logdir=/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/python-analysis/tests/box_key/vuln_concat_const/db/log --evaluator-log-level=5 --warnings=show --qlconfig-file=/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/python-analysis/qlconfig.yml --dynamic-join-order-mode=none --output=/home/argi/.cache/teal-graphs/fc677acb9395ce41/mustValues.bqrs -- /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/python-analysis/tests/box_key/vuln_concat_const/db/db-teal path:/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/python-analysis/queries/mustValues.ql
+[2026-05-01 20:16:51] Exiting with code 70

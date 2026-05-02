@@ -1,0 +1,12 @@
+---
+sourceLocationPrefix: /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/python-analysis/tests/box_key/vuln_extract
+baselineLinesOfCode: 0
+unicodeNewlines: false
+columnKind: utf8
+primaryLanguage: teal
+creationMetadata:
+  cliVersion: 2.23.9
+  creationTime: 2026-05-01T23:15:37.673724743Z
+overlayBaseDatabase: false
+overlayDatabase: false
+finalised: true

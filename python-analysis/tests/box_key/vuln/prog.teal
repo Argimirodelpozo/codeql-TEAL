@@ -1,0 +1,21 @@
+#pragma version 10
+// VULN: ASA name flows directly into box_create + box_put as the key.
+// Two ASAs with the same name collide on the same box.
+
+txna ApplicationArgs 0
+btoi
+asset_params_get AssetName       // (name, exists)
+assert                           // pop exists -> stack: [name]
+pushint 64
+box_create                       // KEY=name, LENGTH=64  <-- VIOLATION
+pop
+
+txna ApplicationArgs 0
+btoi
+asset_params_get AssetName
+assert                           // stack: [name]
+txna ApplicationArgs 1
+box_put                          // KEY=name, VALUE=arg1  <-- VIOLATION
+
+pushint 1
+return

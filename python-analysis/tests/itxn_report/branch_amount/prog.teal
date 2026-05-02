@@ -1,0 +1,31 @@
+#pragma version 10
+// Amount differs by branch — should show {100 | 200} for the field.
+
+txna ApplicationArgs 0
+btoi
+intc_0
+==                              // arg0 == 0?
+bnz l_zero
+
+itxn_begin
+pushint 1
+itxn_field TypeEnum
+txn Sender
+itxn_field Receiver
+pushint 200
+itxn_field Amount
+b l_submit
+
+l_zero:
+itxn_begin
+pushint 1
+itxn_field TypeEnum
+txn Sender
+itxn_field Receiver
+pushint 100
+itxn_field Amount
+
+l_submit:
+itxn_submit
+pushint 1
+return

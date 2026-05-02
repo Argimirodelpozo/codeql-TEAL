@@ -243,6 +243,23 @@ class StackSimulation:
         #
         # Phis at slots above ``max`` are the ``[1..1000]`` artifacts
         # from ``phiNodeExitIndex`` — those are what we want to clip.
+        #
+        # CAVEAT: ``nodeStackDepth`` in ``StackDepth.qll`` filters
+        # forward-CFG-only for branch-induced edges (``b``, ``bz``,
+        # ``bnz``, ``switch``, ``match``) — its propagation requires
+        # ``cb.getLineNumber() < lineNum``. So back-edges from those
+        # ops are silently dropped from the depth analysis, and a BB
+        # reached by such a back-edge has an UNDER-reported max depth.
+        # Applying the depth bound to such BBs would clip real,
+        # SSA-live phis at deeper slots (the ``loop_dig_deep`` test
+        # case demonstrates this — a ``dig 1`` inside the loop reads
+        # a slot pushed by the previous iteration; the SSA emits a
+        # DirectPhi at slot 2 of l_loop, but ``nodeStackDepth(l_loop)
+        # = {1}`` because the bnz back-edge was filtered out).
+        # Callsub back-edges are exempt — ``nodeStackDepth`` doesn't
+        # restrict callsub propagation, so recursive subroutines
+        # (the framedig-tests/06 itoa case) still get their
+        # depth-bound trim.
         first_node_by_bb: dict[BasicBlock, object] = {}
         for n in prog._graph.nodes:
             bb_id = prog._graph.nodes[n].get("bb")
@@ -254,6 +271,10 @@ class StackSimulation:
             first_node_by_bb[bb] = n
         bb_entry_depth: dict[BasicBlock, int] = {}
         for bb, fn in first_node_by_bb.items():
+            if _has_unsound_back_edge_predecessor(bb):
+                # Skip the bound — we can't trust ``nodeStackDepth``
+                # at this BB. Keep every phi the SSA emits.
+                continue
             heights = prog._graph.nodes[fn].get("stack_heights")
             if heights:
                 bb_entry_depth[bb] = max(heights)
@@ -380,14 +401,21 @@ class StackSimulation:
         max_slots: int = 12,
         show_in: bool = True,
         show_out: bool = True,
+        layout: str = "auto",
     ) -> str:
-        """Source-aligned listing: one line per opcode, with IN/OUT
-        stacks alongside.
+        """Source-aligned listing: one entry per opcode, with IN/OUT stacks.
 
-        ``max_slots`` truncates very deep stacks with a ``…+N`` marker
-        so the dump stays readable for programs that intentionally let
-        the stack grow large (e.g. ABI router shims that build up a
-        return tuple in place).
+        ``max_slots`` truncates very deep stacks with a ``…+N`` marker.
+
+        ``layout``:
+            - ``"single"``: one row per opcode, columns aligned. Compact
+              and easy to scan when stacks fit in roughly one terminal width.
+            - ``"multi"``: opcode on its own line, IN/OUT on indented
+              follow-up lines. Stays readable when one row's stack
+              contains a phi-of-phi tree thousands of characters wide
+              (xgov's recursive ``itoa_1`` is the canonical example).
+            - ``"auto"`` (default): picks ``"multi"`` when any rendered
+              stack exceeds 120 chars, ``"single"`` otherwise.
         """
         snaps = sorted(
             (
@@ -399,8 +427,6 @@ class StackSimulation:
         )
         if not snaps:
             return ""
-        # Build rows then align column widths so the IN/OUT columns line
-        # up — easier to scan than per-line printf'ing.
         rows: list[tuple[str, str, str, str]] = []
         for s in snaps:
             line_str = f"L{s.line:>4}"
@@ -408,24 +434,76 @@ class StackSimulation:
             in_str = _fmt_stack_truncated(s.in_stack, max_slots) if show_in else ""
             out_str = _fmt_stack_truncated(s.out_stack, max_slots) if show_out else ""
             rows.append((line_str, op, in_str, out_str))
+
+        if layout == "auto":
+            widest = max((len(r[2]) for r in rows), default=0)
+            widest = max(widest, max((len(r[3]) for r in rows), default=0))
+            layout = "multi" if widest > 120 else "single"
+
+        if layout == "single":
+            line_w = max(len(r[0]) for r in rows)
+            op_w = max(len(r[1]) for r in rows)
+            in_w = max(len(r[2]) for r in rows) if show_in else 0
+            out: list[str] = []
+            for line_str, op, in_str, out_str in rows:
+                parts = [line_str.ljust(line_w), op.ljust(op_w)]
+                if show_in:
+                    parts.append(f"IN  {in_str.ljust(in_w)}")
+                if show_out:
+                    parts.append(f"OUT {out_str}")
+                out.append("  ".join(parts))
+            return "\n".join(out)
+
+        # layout == "multi"
         line_w = max(len(r[0]) for r in rows)
         op_w = max(len(r[1]) for r in rows)
-        in_w = max(len(r[2]) for r in rows) if show_in else 0
-        out: list[str] = []
+        indent = " " * (line_w + 2 + op_w + 2)
+        out_lines: list[str] = []
         for line_str, op, in_str, out_str in rows:
-            parts = [line_str.ljust(line_w), op.ljust(op_w)]
+            header = f"{line_str.ljust(line_w)}  {op.ljust(op_w)}"
             if show_in:
-                parts.append(f"IN  {in_str.ljust(in_w)}")
-            if show_out:
-                parts.append(f"OUT {out_str}")
-            out.append("  ".join(parts))
-        return "\n".join(out)
+                out_lines.append(f"{header}  IN  {in_str}")
+                if show_out:
+                    out_lines.append(f"{indent}OUT {out_str}")
+            elif show_out:
+                out_lines.append(f"{header}  OUT {out_str}")
+            else:
+                out_lines.append(header)
+        return "\n".join(out_lines)
 
     def print(self, **kwargs) -> None:
         print(self.render(**kwargs))
 
 
 # --- helpers ---------------------------------------------------------
+
+
+# Branch ops whose back-edges are filtered out by ``nodeStackDepth``'s
+# forward-only propagation in ``StackDepth.qll`` (see ``cb.getLineNumber()
+# < lineNum`` on each rule for ``BOpcode`` / ``SimpleConditionalBranches``
+# / ``MultiTargetConditionalBranch``). Callsub edges are NOT filtered
+# there, so they're sound to use as-is for the depth bound.
+_UNSOUND_BACK_EDGE_OPS: frozenset = frozenset({
+    "b", "bz", "bnz", "switch", "match",
+})
+
+
+def _has_unsound_back_edge_predecessor(bb: BasicBlock) -> bool:
+    """True if ``bb`` is reached by an edge from a non-callsub branch
+    op whose source line is greater than ``bb``'s entry line.
+
+    Inspects each predecessor BB's last assignment. ``SSAProgram``'s
+    pass 4 now correctly includes self-loops (a one-BB loop's
+    back-edge appears as ``bb`` in its own ``predecessors``), so this
+    helper doesn't need to walk the raw CFG graph anymore.
+    """
+    for pred in bb.predecessors:
+        if not pred.assignments:
+            continue
+        last = pred.assignments[-1]
+        if last.op in _UNSOUND_BACK_EDGE_OPS and last.location.line > bb.first_line:
+            return True
+    return False
 
 
 def _bb_entry_stack(bb: BasicBlock) -> tuple[StackSlot, ...]:

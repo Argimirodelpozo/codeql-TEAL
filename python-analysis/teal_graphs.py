@@ -66,6 +66,7 @@ QUERY_NAMES = (
     "scratchInfluence",
     "valueIdentitySteps",
     "stackHeights",
+    "innerTxnFields",
 )
 
 
@@ -460,6 +461,32 @@ def load_graph(
                 snk = (("var", df, int(dl), int(di)) if dk == "SSAVar"
                        else ("phi", df, int(dl), dk, int(di)))
                 steps.append((src, snk))
+        elif q == "innerTxnFields":
+            # Per (start, end, itxn_field) triple from
+            # contributesToItxn. Stored as a list of dicts on
+            # ``g.graph['inner_txn_fields']`` for the python aggregator
+            # in ``teal_inner_txn_report``.
+            entries = g.graph.setdefault("inner_txn_fields", [])
+            for row in rows:
+                (
+                    field_file, field_line, field_name,
+                    start_line, start_kind,
+                    end_line, end_kind,
+                    def_kind, def_file, def_line, def_idx,
+                ) = row
+                entries.append({
+                    "field_file": field_file,
+                    "field_line": int(field_line),
+                    "field_name": field_name,
+                    "start_line": int(start_line),
+                    "start_kind": start_kind,
+                    "end_line": int(end_line),
+                    "end_kind": end_kind,
+                    "def_kind": def_kind,
+                    "def_file": def_file,
+                    "def_line": int(def_line),
+                    "def_idx": int(def_idx),
+                })
         elif q == "stackHeights":
             # Per AST node × possible stack height before it executes.
             # Stored on the node as ``g.nodes[n]["stack_heights"]`` =

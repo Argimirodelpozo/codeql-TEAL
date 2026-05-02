@@ -667,9 +667,17 @@ class SSAProgram:
                 p.basic_block = bb
                 bb.phis.append(p)
 
-        # Pass 4: wire BB predecessor/successor from inter-BB CFG edges.
-        # Walk the op-level CFG in `g`, skip PhiIn/PhiOut (not actual control
-        # flow), and project each inter-BB edge onto BasicBlock pairs.
+        # Pass 4: wire BB predecessor/successor from CFG edges that
+        # cross BB *boundaries*. An edge ``u → v`` represents entering
+        # ``v``'s BB iff ``v`` is its BB's first node — that's the only
+        # way to land on the BB. Filtering on "v is first node of v's
+        # BB" rather than on "u_bb != v_bb" correctly captures
+        # self-loops (single-BB loops where the BB's tail branch
+        # targets the BB's own head — e.g. ``bnz l_loop`` at L25
+        # branching back to the ``l_loop:`` label at L16, both inside
+        # the same BB). The previous "u_bb != v_bb" filter dropped
+        # such self-loops, so ``bb.predecessors`` for a one-BB loop
+        # missed the back-edge entirely.
         seen_edges: set[tuple[BasicBlock, BasicBlock]] = set()
         for u, v, data in g.edges(data=True):
             if data.get("kind") != "cfg":
@@ -679,7 +687,12 @@ class SSAProgram:
                 continue
             u_bb_id = g.nodes[u].get("bb")
             v_bb_id = g.nodes[v].get("bb")
-            if u_bb_id is None or v_bb_id is None or u_bb_id == v_bb_id:
+            if u_bb_id is None or v_bb_id is None:
+                continue
+            # Only edges into the BB's first node represent BB entry.
+            # Intra-BB sequential edges (op → next op within one BB)
+            # target later nodes and don't add BB-level info.
+            if v.location.start_line != v_bb_id[1]:
                 continue
             u_bb = self.blocks.get(u_bb_id)
             v_bb = self.blocks.get(v_bb_id)

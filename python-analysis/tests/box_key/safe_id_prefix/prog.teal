@@ -1,0 +1,18 @@
+#pragma version 10
+// SAFE: composite key = itob(asset_id) ++ AssetName.
+// asset_id makes the key unique even if two ASAs share a name.
+
+txna ApplicationArgs 0
+btoi                              // asset_id (uint64)
+dup                               // [id, id]
+itob                              // [id, id_bytes]
+swap                              // [id_bytes, id]
+asset_params_get AssetName        // [id_bytes, name, exists]
+assert                            // [id_bytes, name]
+concat                            // [id_bytes ++ name]   ← concat blocks taint
+pushint 64
+box_create
+pop
+
+pushint 1
+return
