@@ -1,5 +1,0 @@
-name: argimirodelpozo/teal-tealer-detections
-version: 0.1.0
-groups: teal
-dependencies:
-  argimirodelpozo/teal-all: ${workspace}
