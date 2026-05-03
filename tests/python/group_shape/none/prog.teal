@@ -1,0 +1,5 @@
+#pragma version 10
+// No group inspection at all — every group shape is admissible.
+
+pushint 1
+return

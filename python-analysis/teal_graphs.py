@@ -7,7 +7,7 @@ Quick start
 -----------
     >>> from teal_graphs import load_graph, cfg_view, dataflow_view
     >>> from teal_ast import Opcode, IntegerAddOpcode
-    >>> g = load_graph("test-dbs/xgov-db")
+    >>> g = load_graph("tests/dbs/xgov-db")
     >>> g.number_of_nodes(), g.number_of_edges()
     >>> # Typed node filtering:
     >>> [n for n in g if isinstance(n, IntegerAddOpcode)]

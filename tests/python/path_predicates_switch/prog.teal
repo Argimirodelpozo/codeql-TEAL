@@ -1,0 +1,30 @@
+#pragma version 10
+// switch with three targets — verify per-target eq predicates and
+// the not-in-range fall-through.
+
+txna ApplicationArgs 0
+btoi
+switch l_zero l_one l_two
+b l_default
+
+l_zero:
+// Predicate: (key == 0)
+pushint 100
+b l_done
+
+l_one:
+// Predicate: (key == 1)
+pushint 200
+b l_done
+
+l_two:
+// Predicate: (key == 2)
+pushint 300
+b l_done
+
+l_default:
+// Predicate: (key not in [0..2])
+pushint 0
+
+l_done:
+return

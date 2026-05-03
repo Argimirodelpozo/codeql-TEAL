@@ -6,7 +6,7 @@ classes are what :mod:`teal_graphs` stores as the NetworkX node objects,
 so you get typed node inspection for free:
 
     >>> from teal_ast import IntegerAddOpcode, Opcode, ArithmeticOpcode
-    >>> g = load_graph("test-dbs/xgov-db")
+    >>> g = load_graph("tests/dbs/xgov-db")
     >>> [n for n in g if isinstance(n, IntegerAddOpcode)]
     >>> [n for n in g if isinstance(n, ArithmeticOpcode)]
 

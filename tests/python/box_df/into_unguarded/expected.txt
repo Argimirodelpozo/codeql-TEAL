@@ -1,0 +1,1 @@
+txna ApplicationArgs@prog.teal:5  →  box_put value@prog.teal:6  (key = V#1@L5)

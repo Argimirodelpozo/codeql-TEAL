@@ -1,0 +1,1 @@
+app_global_put@prog.teal:6  (state-mutating op)  preds: <no guard>

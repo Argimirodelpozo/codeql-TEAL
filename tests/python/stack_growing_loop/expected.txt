@@ -1,0 +1,10 @@
+blocks      = 3
+assignments = 7
+phis        = 0
+vars        = 5
+opcodes:
+  bnz                      1
+  btoi                     1
+  pushint                  3
+  return                   1
+  txna                     1

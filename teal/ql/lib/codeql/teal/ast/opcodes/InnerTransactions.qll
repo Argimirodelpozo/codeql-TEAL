@@ -37,6 +37,8 @@ class InnerTransactionField extends AstNode instanceof TOpcode_itxn_field {
 
     string getItxnField() {
         result = toTreeSitter(this).(Teal::ItxnFieldOpcode).getTxnField().toString()
+        or
+        result = toTreeSitter(this).(Teal::ItxnFieldOpcode).getTxnArrayField().toString()
     }
 }
 

@@ -1,0 +1,30 @@
+#pragma version 10
+// Three branches and an assert. Validates path-predicate
+// accumulation: each tail BB should report only the conjunction of
+// predicates that hold on every reaching path.
+
+txna ApplicationArgs 0
+btoi
+bnz l_admin
+
+// non-admin path: caller must NOT pass arg0=true.
+// At pre-l_admin tail: {(btoi, "zero")}.
+txn Sender
+global ZeroAddress
+==
+assert
+// After assert: {(btoi, "zero"), (==, "nonzero")}.
+pushint 1
+return
+
+l_admin:
+// admin path: caller passed arg0=true.
+// At l_admin entry: {(btoi, "nonzero")}.
+txna ApplicationArgs 1
+btoi
+pushint 5
+==
+assert
+// After assert: {(btoi, "nonzero"), (==, "nonzero")}.
+pushint 1
+return

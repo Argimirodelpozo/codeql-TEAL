@@ -1,0 +1,35 @@
+#pragma version 10
+// match key against three candidate values pushed onto the stack:
+// {100, 200, 300}. Verify per-target eq predicates carry the
+// candidate operand, and the fall-through carries neq_all.
+
+pushint 100                     // candidate v0
+pushint 200                     // candidate v1
+pushint 300                     // candidate v2
+txna ApplicationArgs 0
+btoi                            // key
+match l_v0 l_v1 l_v2
+
+b l_default
+
+l_v0:
+// Predicate: (key == 100)
+pushint 1
+b l_done
+
+l_v1:
+// Predicate: (key == 200)
+pushint 2
+b l_done
+
+l_v2:
+// Predicate: (key == 300)
+pushint 3
+b l_done
+
+l_default:
+// Predicate: (key not in {100, 200, 300})
+pushint 0
+
+l_done:
+return

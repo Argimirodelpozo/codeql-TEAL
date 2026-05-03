@@ -1,12 +1,12 @@
 ---
-sourceLocationPrefix: /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/python-analysis/tests/box_key/vuln_concat_const
+sourceLocationPrefix: /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tests/python/box_key/vuln_concat_const
 baselineLinesOfCode: 0
 unicodeNewlines: false
 columnKind: utf8
 primaryLanguage: teal
 creationMetadata:
   cliVersion: 2.23.9
-  creationTime: 2026-05-01T23:15:30.708995904Z
+  creationTime: 2026-05-03T01:12:23.085143967Z
 overlayBaseDatabase: false
 overlayDatabase: false
 finalised: true

@@ -1,0 +1,16 @@
+#pragma version 10
+// External arg → box_put at key "k" → box_get at the same key → app_global_put.
+// End-to-end attacker-controlled chain via box-state correlation.
+
+pushbytes "k"
+txna ApplicationArgs 1
+box_put
+
+pushbytes "g"
+pushbytes "k"
+box_get
+pop
+app_global_put
+
+pushint 1
+return

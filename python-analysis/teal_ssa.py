@@ -8,7 +8,7 @@ object: a sequence of :class:`Assignment`\\ s grouped into
 and :class:`Const` literals.
 
     from teal_ssa import SSAProgram
-    p = SSAProgram("test-dbs/xgov-db")
+    p = SSAProgram("tests/dbs/xgov-db")
     print(p.functional(file="approval.teal", line_range=(225, 260)))
 
 Model

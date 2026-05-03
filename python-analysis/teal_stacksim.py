@@ -12,7 +12,7 @@ per-line snapshot.
     from teal_ssa import SSAProgram
     from teal_stacksim import StackSimulation
 
-    prog = SSAProgram("test-dbs/xgov-db")
+    prog = SSAProgram("tests/dbs/xgov-db")
     sim = StackSimulation(prog)
 
     snap = sim.at(file="approval.teal", line=42)
@@ -238,7 +238,7 @@ class StackSimulation:
         #     that are reachable. ``max`` captures every real slot.
         #   - Using ``min`` would silently drop phis that ARE live on
         #     deeper-stack paths (the L42 retsub case in
-        #     framedig-tests/06: heights {0,1,2}; min=0 hides the
+        #     tests/framedig/06: heights {0,1,2}; min=0 hides the
         #     return-value phi).
         #
         # Phis at slots above ``max`` are the ``[1..1000]`` artifacts
@@ -258,7 +258,7 @@ class StackSimulation:
         # = {1}`` because the bnz back-edge was filtered out).
         # Callsub back-edges are exempt — ``nodeStackDepth`` doesn't
         # restrict callsub propagation, so recursive subroutines
-        # (the framedig-tests/06 itoa case) still get their
+        # (the tests/framedig/06 itoa case) still get their
         # depth-bound trim.
         first_node_by_bb: dict[BasicBlock, object] = {}
         for n in prog._graph.nodes:

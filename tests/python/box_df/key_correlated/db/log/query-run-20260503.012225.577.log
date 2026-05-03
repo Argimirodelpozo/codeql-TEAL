@@ -1,0 +1,10 @@
+[2026-05-03 01:22:25] This is codeql query run --database /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tests/python/box_df/key_correlated/db --output /home/argi/.cache/teal-graphs/dfd00c92e84da41b/basicBlocks.bqrs /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/python-analysis/queries/basicBlocks.ql
+[2026-05-03 01:22:25] Log file was started late.
+[2026-05-03 01:22:25] Calling plumbing command: codeql resolve ram --dataset=/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tests/python/box_df/key_correlated/db/db-teal --format=json
+[2026-05-03 01:22:25] [PROGRESS] resolve ram> Stringpool size measured as 2146714
+[2026-05-03 01:22:25] Plumbing command codeql resolve ram completed:
+                      [
+                        "-J-Xmx1391M"
+                      ]
+[2026-05-03 01:22:25] Chaining via /tmp/codeql.HuYVTxyH to plumbing: execute queries -J-Xmx1391M --verbosity=progress --logdir=/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tests/python/box_df/key_correlated/db/log --evaluator-log-level=5 --warnings=show --qlconfig-file=/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/qlconfig.yml --dynamic-join-order-mode=none --output=/home/argi/.cache/teal-graphs/dfd00c92e84da41b/basicBlocks.bqrs -- /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tests/python/box_df/key_correlated/db/db-teal path:/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/python-analysis/queries/basicBlocks.ql
+[2026-05-03 01:22:25] Exiting with code 70

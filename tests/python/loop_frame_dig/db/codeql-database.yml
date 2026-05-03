@@ -1,12 +1,12 @@
 ---
-sourceLocationPrefix: /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/python-analysis/tests/loop_frame_dig
+sourceLocationPrefix: /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tests/python/loop_frame_dig
 baselineLinesOfCode: 0
 unicodeNewlines: false
 columnKind: utf8
 primaryLanguage: teal
 creationMetadata:
   cliVersion: 2.23.9
-  creationTime: 2026-05-02T03:16:09.029372058Z
+  creationTime: 2026-05-03T01:13:01.358233149Z
 overlayBaseDatabase: false
 overlayDatabase: false
 finalised: true

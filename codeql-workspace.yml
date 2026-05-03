@@ -1,7 +1,6 @@
 paths:
   - shared
   - teal/ql
-  - tealer-detections
   - teal-verifier-detections
   - sec-guide-detections
   - python-analysis/queries

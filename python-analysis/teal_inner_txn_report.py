@@ -8,7 +8,7 @@ operand and (when statically known) its literal value.
     from teal_ssa import SSAProgram
     from teal_inner_txn_report import InnerTxnReport
 
-    prog = SSAProgram("test-dbs/xgov-db")
+    prog = SSAProgram("tests/dbs/xgov-db")
     prog.propagate_constants()             # optional but improves resolution
     prog.propagate_scratch_constants()     # ditto
 

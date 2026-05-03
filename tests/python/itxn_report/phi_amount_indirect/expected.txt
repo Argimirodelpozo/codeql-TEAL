@@ -1,0 +1,5 @@
+=== Inner-txn group  prog.teal  submit@L32  (1 txn) ===
+  Txn 1  (itxn_begin@L12 → itxn_submit@L32)
+    TypeEnum = 1  (set@L14)
+    Amount   = {100 | 200}  (set@L30)
+

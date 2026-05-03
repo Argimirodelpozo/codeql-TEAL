@@ -1,0 +1,7 @@
+=== Inner-txn group  prog.teal  submit@L13  (1 txn) ===
+  Txn 1  (itxn_begin@L4 → itxn_submit@L13)
+    TypeEnum = 1  (set@L6)
+    Receiver = txn Sender  (set@L8)
+    Amount   = 100  (set@L10)
+    Fee      = 0  (set@L12)
+

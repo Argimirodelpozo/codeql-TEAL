@@ -1,0 +1,1 @@
+txna ApplicationArgs@prog.teal:6  →  box_put@prog.teal:7  →  box_get@prog.teal:11  →  app_global_put value@prog.teal:13  (sink_value = V#2@L11)

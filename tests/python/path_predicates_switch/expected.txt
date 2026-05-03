@@ -1,0 +1,7 @@
+BB L  5-L7    (none)
+BB L  8-L8    (V#1@L6 not in [0..2])
+BB L 10-L13   (V#1@L6 == 0)
+BB L 15-L18   (V#1@L6 == 1)
+BB L 20-L23   (V#1@L6 == 2)
+BB L 25-L27   (V#1@L6 not in [0..2])
+BB L 29-L30   (none)

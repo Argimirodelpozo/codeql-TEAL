@@ -1,12 +1,12 @@
 ---
-sourceLocationPrefix: /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/python-analysis/tests/itxn_report/phi_amount_indirect
+sourceLocationPrefix: /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tests/python/itxn_report/phi_amount_indirect
 baselineLinesOfCode: 0
 unicodeNewlines: false
 columnKind: utf8
 primaryLanguage: teal
 creationMetadata:
   cliVersion: 2.23.9
-  creationTime: 2026-05-02T01:46:30.848280420Z
+  creationTime: 2026-05-03T01:12:48.447157678Z
 overlayBaseDatabase: false
 overlayDatabase: false
 finalised: true

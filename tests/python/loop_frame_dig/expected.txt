@@ -1,0 +1,15 @@
+blocks      = 5
+assignments = 10
+phis        = 1999
+vars        = 1005
+opcodes:
+  bnz                      1
+  btoi                     1
+  callsub                  1
+  frame_dig                1
+  intc_0                   1
+  proto                    1
+  pushint                  1
+  retsub                   1
+  return                   1
+  txna                     1

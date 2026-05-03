@@ -1,0 +1,11 @@
+=== Inner-txn group  prog.teal  submit@L22  (2 txn) ===
+  Txn 1  (itxn_begin@L4 → itxn_next@L12)
+    TypeEnum = 1  (set@L6)
+    Receiver = txn Sender  (set@L8)
+    Amount   = 50  (set@L10)
+  Txn 2  (itxn_next@L12 → itxn_submit@L22)
+    TypeEnum      = 4  (set@L14)
+    AssetReceiver = txn Sender  (set@L16)
+    XferAsset     = 7777  (set@L18)
+    AssetAmount   = 1  (set@L20)
+
