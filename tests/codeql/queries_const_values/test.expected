@@ -1,0 +1,4 @@
+| prog.teal | 5 | 1 | int | 42 |
+| prog.teal | 7 | 1 | bytes | "hello" |
+| prog.teal | 9 | 1 | bytes | 0xdeadbeef |
+| prog.teal | 12 | 1 | int | 1 |

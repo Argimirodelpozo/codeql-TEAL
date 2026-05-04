@@ -1,0 +1,16 @@
+#pragma version 10
+// A value reaches a join via two arms — the SSA layer must emit at
+// least one phi at the join BB. Failure would mean an SSA regression
+// that silently breaks downstream analyses (path predicates, taint,
+// itxn-report, ...) by losing per-path witnesses.
+
+txn ApplicationID
+bnz l_b
+pushint 100
+b l_done
+
+l_b:
+pushint 200
+
+l_done:
+return

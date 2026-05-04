@@ -1,6 +1,0 @@
-name: argimirodelpozo/teal-python-analysis
-version: 0.1.0
-groups: teal
-extractor: teal
-dependencies:
-  argimirodelpozo/teal-all: ${workspace}

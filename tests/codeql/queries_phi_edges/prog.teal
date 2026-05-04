@@ -1,0 +1,14 @@
+#pragma version 10
+// Branching+join — phiEdges.ql maps each predecessor BB to the
+// phi entries it contributes to.
+
+txn ApplicationID
+bnz l_b
+pushint 100
+b l_done
+
+l_b:
+pushint 200
+
+l_done:
+return

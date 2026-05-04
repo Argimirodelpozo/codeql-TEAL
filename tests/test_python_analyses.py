@@ -1,9 +1,12 @@
-"""Snapshot harness for the python-analysis detectors.
+"""Snapshot harness for the tealtools detectors.
 
-Discovers fixtures under ``tests/python/<analysis>/[<case>/]db/`` and
-runs the matching analysis against each. Output is compared to a
+Discovers fixtures under ``tests/tealtools/<analysis>/[<case>/]db/``
+and runs the matching analysis against each. Output is compared to a
 checked-in ``expected.txt`` next to the fixture; mismatches fail the
 test with a unified diff.
+
+Missing CodeQL DBs are built on demand by a session-scoped fixture in
+``conftest.py`` — no separate build step needed.
 
 Regenerate snapshots with::
 
@@ -16,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-PY_TESTS = Path(__file__).resolve().parent / "python"
+PY_TESTS = Path(__file__).resolve().parent / "tealtools"
 UPDATE = os.environ.get("UPDATE_SNAPSHOTS") == "1"
 
 # Fixture dirs without a detector — exercised as SSA construction
@@ -61,10 +64,10 @@ def _ssa_summary(prog) -> str:
 
 
 def _render(analysis: str, case_dir: Path) -> str:
-    from teal_ssa import SSAProgram
+    from tealtools.ssa import SSAProgram
 
     if analysis == "xcontract":
-        from teal_xcontract import (
+        from tealtools.xcontract import (
             XContractGraph,
             cross_auth_findings,
             load_registry,
@@ -87,50 +90,70 @@ def _render(analysis: str, case_dir: Path) -> str:
     prog = SSAProgram(str(case_dir / "db"))
 
     if analysis == "auth_domination":
-        from teal_auth_domination import AuthDominationDetector
+        from tealtools.auth_domination import AuthDominationDetector
 
         violations = AuthDominationDetector(prog).detect()
         body = "\n".join(v.pretty() for v in violations) or "(no violations)"
         return body + "\n"
 
     if analysis == "box_key":
-        from teal_nonunique_box_key import NonUniqueBoxKeyDetector
+        from tealtools.nonunique_box_key import NonUniqueBoxKeyDetector
 
         violations = NonUniqueBoxKeyDetector(prog).detect()
         body = "\n".join(v.pretty() for v in violations) or "(no violations)"
         return body + "\n"
 
     if analysis == "box_df":
-        from teal_box_dataflow import (
+        from tealtools.box_dataflow import (
             detect_correlated_flows,
             detect_into_box_flows,
             detect_out_of_box_flows,
         )
+        from tealtools.predicate_aware import filter_validated
 
         case_name = case_dir.name
-        if case_name.startswith("out_"):
-            violations = detect_out_of_box_flows(prog)
-        elif case_name.startswith("key_correlated"):
+        if case_name.startswith("key_correlated"):
+            # CorrelatedViolation has a different shape; predicate-
+            # aware filtering for chains is a future iteration.
             violations = detect_correlated_flows(prog)
+            body = "\n".join(v.pretty() for v in violations) or "(no violations)"
+            return body + "\n"
+        if case_name.startswith("out_"):
+            raw = detect_out_of_box_flows(prog)
         else:
-            violations = detect_into_box_flows(prog)
-        body = "\n".join(v.pretty() for v in violations) or "(no violations)"
-        return body + "\n"
+            raw = detect_into_box_flows(prog)
+        remaining, suppressed = filter_validated(raw, prog)
+        parts: list[str] = []
+        if remaining:
+            parts.append("\n".join(v.pretty() for v in remaining))
+        elif not suppressed:
+            parts.append("(no violations)")
+        if suppressed:
+            parts.append(
+                "suppressed:\n  "
+                + "\n  ".join(s.pretty() for s in suppressed)
+            )
+        return "\n".join(parts) + "\n"
 
     if analysis == "itxn_report":
-        from teal_inner_txn_report import InnerTxnReport
+        from tealtools.inner_txn_report import InnerTxnReport
 
         return InnerTxnReport(prog).render() + "\n"
 
     if analysis.startswith("path_predicates"):
-        from teal_path_predicates import PathPredicateAnalysis
+        from tealtools.path_predicates import PathPredicateAnalysis
 
         return PathPredicateAnalysis(prog).render() + "\n"
 
     if analysis == "group_shape":
-        from teal_group_reasoning import analyze
+        from tealtools.group_reasoning import analyze
 
         return analyze(prog).render() + "\n"
+
+    if analysis == "cost":
+        from tealtools.cost_analysis import render
+
+        return render(prog) + "\n"
 
     if analysis in SSA_SMOKE:
         return _ssa_summary(prog)

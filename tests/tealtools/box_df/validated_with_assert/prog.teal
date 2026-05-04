@@ -1,0 +1,24 @@
+#pragma version 10
+// External arg validated against a known constant before reaching
+// box_put. Without predicate-awareness: flagged (taint reaches sink).
+// With predicate-awareness: suppressed (the assert at L7 constrains
+// the SSAVar that's also consumed by box_put).
+//
+// `dup` ensures the assert and the sink see the *same* SSAVar — the
+// analysis layer otherwise treats two `txna ApplicationArgs 1` reads
+// as distinct vars (a known precision limitation).
+
+txna ApplicationArgs 1
+dup
+pushbytes "allowed"
+==
+assert
+// stack now: [arg]
+
+pushbytes "k"
+swap
+// stack: [k, arg]
+box_put
+
+pushint 1
+return

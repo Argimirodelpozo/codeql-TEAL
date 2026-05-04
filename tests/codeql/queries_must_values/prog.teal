@@ -1,0 +1,11 @@
+#pragma version 10
+// Const flowing through identity ops + arithmetic. Locks the
+// row schema mustValues.ql produces (file, line, outIdx, kind, value).
+
+pushint 42
+dup
++
+pushbytes "hello"
+pop
+pushint 1
+return

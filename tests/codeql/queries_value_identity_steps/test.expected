@@ -1,0 +1,3 @@
+| prog.teal | 5 | 1 | SSAVar | prog.teal | 6 | 1 | SSAVar |
+| prog.teal | 5 | 1 | SSAVar | prog.teal | 6 | 2 | SSAVar |
+| prog.teal | 6 | 1 | SSAVar | prog.teal | 8 | 1 | SSAVar |

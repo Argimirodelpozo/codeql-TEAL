@@ -3,7 +3,7 @@
  * @kind table
  *
  * Regression probe for the parallel-view rank-gap bug in
- * ``AstNode.getStackInputByOrder`` (see ``teal/ql/lib/codeql/teal/ast/
+ * ``AstNode.getStackInputByOrder`` (see ``codeql-backend/teal/ql/lib/codeql/teal/ast/
  * AST.qll``). For every stack-consuming opcode the predicate must
  * resolve a Definition at every ``ord`` in ``[1 .. n.getNumberOfConsumedArgs()]``.
  * Rows = violations. Empty result = invariant holds.

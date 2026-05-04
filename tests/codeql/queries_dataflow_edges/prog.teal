@@ -1,0 +1,10 @@
+#pragma version 10
+// Identity-preserving steps (dup) + arithmetic. dataflowEdges.ql
+// should emit edges for the identity steps and (possibly) for
+// arithmetic depending on the lib's coverage.
+
+pushint 42
+dup
++
+pushint 1
+return

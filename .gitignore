@@ -8,9 +8,6 @@ teal/extractor/target/
 tests/dbs/
 sec-guide-detections-dbs/
 
-# Analysis report output
-tests/projects/*-report*.txt
-
 # Python
 __pycache__/
 *.pyc

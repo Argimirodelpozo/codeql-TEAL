@@ -1,0 +1,14 @@
+#pragma version 10
+// Two arms join — phiNodes.ql should emit at least one phi
+// at the join.
+
+txn ApplicationID
+bnz l_b
+pushint 100
+b l_done
+
+l_b:
+pushint 200
+
+l_done:
+return

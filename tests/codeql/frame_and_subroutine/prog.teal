@@ -1,0 +1,16 @@
+#pragma version 10
+// Subroutine with proto signature, frame_dig accessing the input
+// arg via a negative immediate, callsub resolving to a label.
+
+pushint 0
+callsub mysub
+return
+
+mysub:
+proto 1 1
+frame_dig -1
+pushint 100
++
+frame_bury -1
+frame_dig -1
+retsub

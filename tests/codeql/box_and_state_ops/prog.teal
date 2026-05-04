@@ -1,0 +1,21 @@
+#pragma version 10
+// Box + global-state opcodes. Confirms each AST class binds the
+// right grammar node, line by line.
+
+pushbytes "k"
+pushbytes "v"
+box_put
+
+pushbytes "k"
+box_get
+pop
+pop
+
+pushbytes "g"
+pushint 1
+app_global_put
+
+pushbytes "g"
+app_global_get
+
+return

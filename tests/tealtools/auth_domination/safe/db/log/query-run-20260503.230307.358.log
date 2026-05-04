@@ -1,0 +1,10 @@
+[2026-05-03 23:03:07] This is codeql query run --database /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tests/analysis-tools/auth_domination/safe/db --output /home/argi/.cache/teal-graphs/330a722a2279922a/constValues.bqrs /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/analysis-tools/queries/constValues.ql
+[2026-05-03 23:03:07] Log file was started late.
+[2026-05-03 23:03:07] Calling plumbing command: codeql resolve ram --dataset=/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tests/analysis-tools/auth_domination/safe/db/db-teal --format=json
+[2026-05-03 23:03:07] [PROGRESS] resolve ram> Stringpool size measured as 2146714
+[2026-05-03 23:03:07] Plumbing command codeql resolve ram completed:
+                      [
+                        "-J-Xmx1391M"
+                      ]
+[2026-05-03 23:03:07] Chaining via /tmp/codeql.DbuktZR3 to plumbing: execute queries -J-Xmx1391M --verbosity=progress --logdir=/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tests/analysis-tools/auth_domination/safe/db/log --evaluator-log-level=5 --warnings=show --qlconfig-file=/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/qlconfig.yml --dynamic-join-order-mode=none --output=/home/argi/.cache/teal-graphs/330a722a2279922a/constValues.bqrs -- /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tests/analysis-tools/auth_domination/safe/db/db-teal path:/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/analysis-tools/queries/constValues.ql
+[2026-05-03 23:03:07] Exiting with code 70

@@ -1,0 +1,11 @@
+#pragma version 10
+// Identity-preserving steps (dup, store/load) — valueIdentitySteps.ql
+// records the per-step identity flow the lib uses for const propagation.
+
+pushint 42
+dup
+store 5
+load 5
++
+pushint 1
+return

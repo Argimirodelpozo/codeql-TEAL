@@ -1,0 +1,15 @@
+#pragma version 10
+// Branching program — locks the CFG-edge row schema cfgEdges.ql
+// produces (the BB-level edges python-analysis reads to build
+// SSAProgram.blocks).
+
+txn ApplicationID
+bnz l_b
+pushint 1
+b l_done
+
+l_b:
+pushint 2
+
+l_done:
+return

@@ -1,0 +1,13 @@
+#pragma version 10
+// Direct const-pushers across kinds (int, bytes, hex bytes).
+// constValues.ql is the non-propagating literal source.
+
+pushint 42
+pop
+pushbytes "hello"
+pop
+pushbytes 0xdeadbeef
+pop
+
+pushint 1
+return

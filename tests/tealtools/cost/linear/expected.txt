@@ -1,0 +1,6 @@
+prog.teal:L5    pushbytes  op_cost=1     cum=1
+prog.teal:L6    sha256     op_cost=35    cum=36
+prog.teal:L7    pushint    op_cost=1     cum=37
+prog.teal:L8    +          op_cost=1     cum=38
+prog.teal:L9    pushint    op_cost=1     cum=39
+prog.teal:L10   return     op_cost=1     cum=40

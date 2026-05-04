@@ -1,0 +1,12 @@
+#pragma version 10
+// Mixed-opcode program — locks the row schema nodes.ql produces
+// (per-assignment node info that python-analysis reads as the
+// foundation for SSAProgram.assignments).
+
+pushint 42
+dup
++
+pushbytes "k"
+pop
+pushint 1
+return

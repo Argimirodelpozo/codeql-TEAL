@@ -1,6 +1,6 @@
 paths:
-  - shared
-  - teal/ql
-  - teal-verifier-detections
+  - codeql-backend/shared
+  - codeql-backend/teal/ql
   - sec-guide-detections
-  - python-analysis/queries
+  - tealtools/queries
+  - tests/codeql

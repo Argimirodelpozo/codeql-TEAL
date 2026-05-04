@@ -1,0 +1,3 @@
+| prog.teal | 9 | TypeEnum | 7 | itxn_begin | 14 | itxn_submit | SSAVar | prog.teal | 8 | 1 |
+| prog.teal | 11 | ApplicationID | 7 | itxn_begin | 14 | itxn_submit | SSAVar | prog.teal | 10 | 1 |
+| prog.teal | 13 | ApplicationArgs | 7 | itxn_begin | 14 | itxn_submit | SSAVar | prog.teal | 12 | 1 |

@@ -1,0 +1,11 @@
+#pragma version 10
+// Mixed stack motion: pushes, dup (extra +1), arithmetic (-1), pop.
+// stackHeights.ql tracks the height before/after each opcode.
+
+pushint 10
+pushint 20
++
+dup
+pop
+pushint 1
+return

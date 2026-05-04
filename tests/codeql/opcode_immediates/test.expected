@@ -1,0 +1,4 @@
+| 7 | txna | ApplicationArgs[0] |
+| 9 | txna | ApplicationArgs[2] |
+| 11 | gtxn | [0].Sender |
+| 13 | gtxn | [1].Receiver |

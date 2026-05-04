@@ -1,0 +1,13 @@
+#pragma version 10
+// Branching → multiple BBs. basicBlocks.ql should enumerate each.
+
+txn ApplicationID
+bnz l_b
+pushint 1
+b l_done
+
+l_b:
+pushint 2
+
+l_done:
+return
