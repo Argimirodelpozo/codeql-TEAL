@@ -1,0 +1,20 @@
+#pragma version 8
+// VULNERABLE: The cmp `txn RekeyTo == global ZeroAddress` is present on
+// the path, but it is consumed by a `bz` whose target is the approval
+// label — so the FALSE case (RekeyTo is non-zero) is the one that
+// approves. The cmp result never reaches an `assert`.
+//
+// A purely-reachability detector would call this "protected"; the
+// assert-reach guard is what rejects it.
+
+txn RekeyTo
+global ZeroAddress
+==
+bz approve       // false (RekeyTo != ZeroAddress) → approve
+
+int 0
+return
+
+approve:
+int 1
+return

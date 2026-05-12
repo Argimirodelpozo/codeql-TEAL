@@ -1,0 +1,12 @@
+---
+sourceLocationPrefix: /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tests/tealtools/xcontract_sec_guide/deletable_callee/caller
+baselineLinesOfCode: 0
+unicodeNewlines: false
+columnKind: utf8
+primaryLanguage: teal
+creationMetadata:
+  cliVersion: 2.23.9
+  creationTime: 2026-05-09T18:09:59.366380205Z
+overlayBaseDatabase: false
+overlayDatabase: false
+finalised: true

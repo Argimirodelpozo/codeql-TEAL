@@ -1,0 +1,1 @@
+Application is deletable by anyone at exit prog.teal:39: no sender == creator check guards the approval path for DeleteApplication.

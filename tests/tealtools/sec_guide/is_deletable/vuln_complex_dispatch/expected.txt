@@ -1,0 +1,2 @@
+Application is deletable at exit prog.teal:34: OnCompletion == DeleteApplication can reach approval without a guard.
+Application is deletable at exit prog.teal:53: OnCompletion == DeleteApplication can reach approval without a guard.

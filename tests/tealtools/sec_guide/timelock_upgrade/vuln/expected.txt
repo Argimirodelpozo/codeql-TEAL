@@ -1,0 +1,1 @@
+Application allows creator updates at exit prog.teal:17 without a timelock delay — users cannot review code changes before they take effect.

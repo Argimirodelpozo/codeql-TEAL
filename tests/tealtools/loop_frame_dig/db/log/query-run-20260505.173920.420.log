@@ -1,0 +1,10 @@
+[2026-05-05 17:39:20] This is codeql query run --search-path=/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/.codeql-extractors --database=tests/tealtools/loop_frame_dig/db tealtools/queries/taintFlowEdges.ql
+[2026-05-05 17:39:20] Log file was started late.
+[2026-05-05 17:39:20] Calling plumbing command: codeql resolve ram --dataset=/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tests/tealtools/loop_frame_dig/db/db-teal --format=json
+[2026-05-05 17:39:20] [PROGRESS] resolve ram> Stringpool size measured as 2146714
+[2026-05-05 17:39:20] Plumbing command codeql resolve ram completed:
+                      [
+                        "-J-Xmx1391M"
+                      ]
+[2026-05-05 17:39:20] Chaining via /tmp/codeql.vMU7poNJ to plumbing: execute queries -J-Xmx1391M --verbosity=progress --logdir=/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tests/tealtools/loop_frame_dig/db/log --evaluator-log-level=5 --warnings=show --search-path=/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/.codeql-extractors --qlconfig-file=/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/qlconfig.yml --dynamic-join-order-mode=none -- /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tests/tealtools/loop_frame_dig/db/db-teal path:/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tealtools/queries/taintFlowEdges.ql
+[2026-05-05 17:39:20] Exiting with code 70

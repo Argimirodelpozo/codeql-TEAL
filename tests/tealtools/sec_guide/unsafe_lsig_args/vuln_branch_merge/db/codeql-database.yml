@@ -1,0 +1,12 @@
+---
+sourceLocationPrefix: /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tests/tealtools/sec_guide/unsafe_lsig_args/vuln_branch_merge
+baselineLinesOfCode: 0
+unicodeNewlines: false
+columnKind: utf8
+primaryLanguage: teal
+creationMetadata:
+  cliVersion: 2.23.9
+  creationTime: 2026-05-09T16:50:34.744417580Z
+overlayBaseDatabase: false
+overlayDatabase: false
+finalised: true

@@ -33,7 +33,7 @@ def _cmd_auth(args) -> int:
 
 
 def _cmd_box_key(args) -> int:
-    from .nonunique_box_key import NonUniqueBoxKeyDetector
+    from .dataflow.nonunique_box_key import NonUniqueBoxKeyDetector
     prog = _load(args.db)
     violations = NonUniqueBoxKeyDetector(prog).detect()
     if not violations:
@@ -45,7 +45,7 @@ def _cmd_box_key(args) -> int:
 
 
 def _cmd_box_df(args) -> int:
-    from .box_dataflow import (
+    from .dataflow.box import (
         detect_into_box_flows,
         detect_out_of_box_flows,
         detect_correlated_flows,
@@ -90,6 +90,62 @@ def _cmd_path_predicates(args) -> int:
     from .path_predicates import PathPredicateAnalysis
     prog = _load(args.db)
     print(PathPredicateAnalysis(prog).render())
+    return 0
+
+
+def _cmd_all(args) -> int:
+    from .detector import run_all
+    print(run_all(_load(args.db)), end="")
+    return 0
+
+
+def _cmd_cfg(args) -> int:
+    from .cfg import CFG
+    prog = _load(args.db)
+    cfg = CFG.of(prog)
+    print(cfg.to_dot(file=args.file, with_assignments=not args.skeleton))
+    return 0
+
+
+def _cmd_sec_guide(args) -> int:
+    from .sec_guide import DETECTORS
+
+    prog = _load(args.db)
+    names = list(DETECTORS) if args.detector == "all" else [args.detector]
+    any_findings = False
+    for name in names:
+        cls = DETECTORS[name]
+        violations = cls(prog).detect()
+        if args.detector == "all":
+            print(f"=== sec-guide/{name} ===")
+        if violations:
+            any_findings = True
+            for v in violations:
+                print(v.pretty())
+        elif args.detector == "all":
+            print("(no findings)")
+        if args.detector == "all":
+            print()
+    if args.detector != "all" and not any_findings:
+        print("(no findings)")
+    return 0
+
+
+def _cmd_sec_guide_scan(args) -> int:
+    from pathlib import Path
+    from .sec_guide.scan import (
+        DEFAULT_CACHE, ScanConfig, render_json, render_text, scan,
+    )
+
+    config = ScanConfig.from_path(Path(args.config)) if args.config else ScanConfig.empty()
+    cache = Path(args.cache) if args.cache else DEFAULT_CACHE
+    findings = scan(
+        Path(args.root),
+        config=config,
+        cache_root=cache,
+        verbose=args.verbose,
+    )
+    print(render_json(findings) if args.json else render_text(findings))
     return 0
 
 
@@ -141,11 +197,59 @@ def build_parser() -> argparse.ArgumentParser:
     add_db(sub.add_parser("path-predicates", help="per-BB path predicates"),
            _cmd_path_predicates)
 
+    add_db(sub.add_parser("all", help="run every detector + report"),
+           _cmd_all)
+
+    cfg_p = sub.add_parser("cfg", help="dump basic-block CFG as Graphviz DOT")
+    cfg_p.add_argument("db", help="path to the CodeQL DB")
+    cfg_p.add_argument("--file", default=None,
+                       help="restrict to a single source file (e.g. prog.teal)")
+    cfg_p.add_argument("--skeleton", action="store_true",
+                       help="omit assignments; show only BB labels + edges")
+    cfg_p.set_defaults(handler=_cmd_cfg)
+
     xc = sub.add_parser("xcontract", help="cross-contract appcall analysis")
     xc.add_argument("caller_db", help="caller CodeQL DB")
     xc.add_argument("--registry", required=True,
                     help="yaml mapping AppID → callee DB path")
     xc.set_defaults(handler=_cmd_xcontract)
+
+    from .sec_guide import DETECTORS as _SG
+    sg = sub.add_parser(
+        "sec-guide",
+        help="run a security-guide detector (or all of them)",
+    )
+    sg.add_argument(
+        "detector",
+        choices=["all", *sorted(_SG.keys())],
+        help="detector short name, or 'all' for the full sec-guide suite",
+    )
+    sg.add_argument("db", help="path to the CodeQL DB")
+    sg.set_defaults(handler=_cmd_sec_guide)
+
+    sgs = sub.add_parser(
+        "sec-guide-scan",
+        help="recursively scan a directory of .teal files; build per-dir DBs"
+             " and run the configured sec-guide detectors on each program",
+    )
+    sgs.add_argument("root", help="directory to walk for .teal files")
+    sgs.add_argument(
+        "--config", default=None,
+        help="optional yaml/json with `rules:` (match-glob → only/exclude detectors)",
+    )
+    sgs.add_argument(
+        "--cache", default=None,
+        help="DB cache root (default: ~/.cache/teal-sec-guide-scan/)",
+    )
+    sgs.add_argument(
+        "--json", action="store_true",
+        help="emit JSON findings instead of one-line-per-finding text",
+    )
+    sgs.add_argument(
+        "-v", "--verbose", action="store_true",
+        help="print DB-build progress to stderr",
+    )
+    sgs.set_defaults(handler=_cmd_sec_guide_scan)
 
     return p
 

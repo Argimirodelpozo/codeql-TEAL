@@ -1,0 +1,48 @@
+#pragma version 8
+// VULNERABLE: Complex dispatch table — UpdateApplication path lacks
+// sender == creator check even though DeleteApplication path has one
+
+txn OnCompletion
+int 0
+==
+bnz handle_noop
+
+txn OnCompletion
+int 4
+==
+bnz handle_update
+
+txn OnCompletion
+int 5
+==
+bnz handle_delete
+
+// Reject everything else
+err
+
+handle_noop:
+  // Normal app call
+  callsub business_logic
+  int 1
+  return
+
+handle_update:
+  // BUG: No access control — anyone can update!
+  // Developer probably copy-pasted and forgot the creator check
+  int 1
+  return
+
+handle_delete:
+  // Delete is properly protected
+  txn Sender
+  global CreatorAddress
+  ==
+  assert
+  int 1
+  return
+
+business_logic:
+  // ... application logic ...
+  int 42
+  pop
+  retsub

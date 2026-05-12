@@ -1,2 +1,2 @@
 suppressed:
-  txna ApplicationArgs@prog.teal:11  →  box_put value@prog.teal:21  (key = V#1@L19)  (validated by (V#1@L14 != 0))
+  txna ApplicationArgs@prog.teal:11  →  box_put value@prog.teal:21  (operand = V#1@L19)  (validated by (V#1@L14 != 0))

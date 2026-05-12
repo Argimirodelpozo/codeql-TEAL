@@ -1,0 +1,28 @@
+#pragma version 8
+// FIXED: Dynamic minimum balance using min_balance opcode
+txn OnCompletion
+int 0
+==
+assert
+global CurrentApplicationAddress
+balance
+global CurrentApplicationAddress
+min_balance
+-
+store 0
+load 0
+int 0
+>
+assert
+itxn_begin
+int 1
+itxn_field TypeEnum
+txn Sender
+itxn_field Receiver
+load 0
+itxn_field Amount
+int 0
+itxn_field Fee
+itxn_submit
+int 1
+return

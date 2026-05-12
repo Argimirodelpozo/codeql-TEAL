@@ -1,0 +1,206 @@
+[2026-05-09 14:29:43] This is codeql execute queries -J-Xmx1391M --verbosity=progress --logdir=/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tests/tealtools/sec_guide/fee_validation/gabe_fixed/db/log --evaluator-log-level=5 --warnings=show --qlconfig-file=/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/qlconfig.yml --dynamic-join-order-mode=none --output=/home/argi/.cache/teal-graphs/e342ee6261bc9ddf/mustValues.bqrs -- /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tests/tealtools/sec_guide/fee_validation/gabe_fixed/db/db-teal path:/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tealtools/queries/mustValues.ql
+[2026-05-09 14:29:43] Calling plumbing command: codeql resolve queries --qlconfig-file=/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/qlconfig.yml --format=json -- path:/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tealtools/queries/mustValues.ql
+[2026-05-09 14:29:44] [PROGRESS] resolve queries> Recording pack reference argimirodelpozo/tealtools at /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tealtools/queries.
+[2026-05-09 14:29:44] Plumbing command codeql resolve queries completed:
+                      [
+                        "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tealtools/queries/mustValues.ql"
+                      ]
+[2026-05-09 14:29:44] Refusing fancy output: $CODEQL_ISATTY terminal indication is missing
+[2026-05-09 14:29:44] Creating executor with 1 threads.
+[2026-05-09 14:29:46] Calling plumbing command: codeql resolve extensions --qlconfig-file=/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/qlconfig.yml --include-extension-row-locations path:/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tealtools/queries/mustValues.ql
+[2026-05-09 14:29:46] Calling plumbing command: codeql resolve queries --qlconfig-file=/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/qlconfig.yml --allow-library-packs --format startingpacks -- path:/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tealtools/queries/mustValues.ql
+[2026-05-09 14:29:46] [PROGRESS] resolve queries> Recording pack reference argimirodelpozo/tealtools at /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tealtools/queries.
+[2026-05-09 14:29:46] Plumbing command codeql resolve queries completed:
+                      [
+                        "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tealtools/queries"
+                      ]
+[2026-05-09 14:29:46] Calling plumbing command: codeql resolve extensions-by-pack --qlconfig-file=/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/qlconfig.yml --include-extension-row-locations -- /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tealtools/queries
+[2026-05-09 14:29:46] [SPAMMY] resolve extensions-by-pack> [INCOMPATIBILITY] argimirodelpozo/tealtools: not 0.1.0 {root: argimirodelpozo/tealtools@0.1.0}
+[2026-05-09 14:29:46] [SPAMMY] resolve extensions-by-pack> [DERIVATION] argimirodelpozo/tealtools: 0.1.0 {argimirodelpozo/tealtools: not 0.1.0 {root: argimirodelpozo/tealtools@0.1.0}}
+[2026-05-09 14:29:51] [SPAMMY] resolve extensions-by-pack> [INCOMPATIBILITY] argimirodelpozo/tealtools: * [*], argimirodelpozo/teal-all: not * [*] {dependency: argimirodelpozo/tealtools@* [*] requires argimirodelpozo/teal-all@0.2.0}
+[2026-05-09 14:29:51] [SPAMMY] resolve extensions-by-pack> [DECISION 1] argimirodelpozo/tealtools: 0.1.0
+[2026-05-09 14:29:51] [SPAMMY] resolve extensions-by-pack> [DERIVATION] argimirodelpozo/teal-all: * [*] {argimirodelpozo/tealtools: * [*], argimirodelpozo/teal-all: not * [*] {dependency: argimirodelpozo/tealtools@* [*] requires argimirodelpozo/teal-all@0.2.0}}
+[2026-05-09 14:29:51] [SPAMMY] resolve extensions-by-pack> [INCOMPATIBILITY] argimirodelpozo/teal-all: * [*], codeql/controlflow: not * [*] {dependency: argimirodelpozo/teal-all@* [*] requires codeql/controlflow@*}
+[2026-05-09 14:29:51] [SPAMMY] resolve extensions-by-pack> [INCOMPATIBILITY] argimirodelpozo/teal-all: * [*], codeql/dataflow: not * [*] {dependency: argimirodelpozo/teal-all@* [*] requires codeql/dataflow@*}
+[2026-05-09 14:29:51] [SPAMMY] resolve extensions-by-pack> [INCOMPATIBILITY] argimirodelpozo/teal-all: * [*], codeql/mad: not * [*] {dependency: argimirodelpozo/teal-all@* [*] requires codeql/mad@*}
+[2026-05-09 14:29:51] [SPAMMY] resolve extensions-by-pack> [INCOMPATIBILITY] argimirodelpozo/teal-all: * [*], codeql/regex: not * [*] {dependency: argimirodelpozo/teal-all@* [*] requires codeql/regex@*}
+[2026-05-09 14:29:51] [SPAMMY] resolve extensions-by-pack> [INCOMPATIBILITY] argimirodelpozo/teal-all: * [*], codeql/ssa: not * [*] {dependency: argimirodelpozo/teal-all@* [*] requires codeql/ssa@*}
+[2026-05-09 14:29:51] [SPAMMY] resolve extensions-by-pack> [INCOMPATIBILITY] argimirodelpozo/teal-all: * [*], codeql/tutorial: not * [*] {dependency: argimirodelpozo/teal-all@* [*] requires codeql/tutorial@*}
+[2026-05-09 14:29:51] [SPAMMY] resolve extensions-by-pack> [INCOMPATIBILITY] argimirodelpozo/teal-all: * [*], codeql/util: not * [*] {dependency: argimirodelpozo/teal-all@* [*] requires codeql/util@*}
+[2026-05-09 14:29:51] [SPAMMY] resolve extensions-by-pack> [DECISION 2] argimirodelpozo/teal-all: 0.2.0
+[2026-05-09 14:29:51] [SPAMMY] resolve extensions-by-pack> [DERIVATION] codeql/util: * [*] {argimirodelpozo/teal-all: * [*], codeql/util: not * [*] {dependency: argimirodelpozo/teal-all@* [*] requires codeql/util@*}}
+[2026-05-09 14:29:51] [SPAMMY] resolve extensions-by-pack> [DERIVATION] codeql/tutorial: * [*] {argimirodelpozo/teal-all: * [*], codeql/tutorial: not * [*] {dependency: argimirodelpozo/teal-all@* [*] requires codeql/tutorial@*}}
+[2026-05-09 14:29:51] [SPAMMY] resolve extensions-by-pack> [DERIVATION] codeql/ssa: * [*] {argimirodelpozo/teal-all: * [*], codeql/ssa: not * [*] {dependency: argimirodelpozo/teal-all@* [*] requires codeql/ssa@*}}
+[2026-05-09 14:29:51] [SPAMMY] resolve extensions-by-pack> [DERIVATION] codeql/regex: * [*] {argimirodelpozo/teal-all: * [*], codeql/regex: not * [*] {dependency: argimirodelpozo/teal-all@* [*] requires codeql/regex@*}}
+[2026-05-09 14:29:51] [SPAMMY] resolve extensions-by-pack> [DERIVATION] codeql/mad: * [*] {argimirodelpozo/teal-all: * [*], codeql/mad: not * [*] {dependency: argimirodelpozo/teal-all@* [*] requires codeql/mad@*}}
+[2026-05-09 14:29:51] [SPAMMY] resolve extensions-by-pack> [DERIVATION] codeql/dataflow: * [*] {argimirodelpozo/teal-all: * [*], codeql/dataflow: not * [*] {dependency: argimirodelpozo/teal-all@* [*] requires codeql/dataflow@*}}
+[2026-05-09 14:29:51] [SPAMMY] resolve extensions-by-pack> [DERIVATION] codeql/controlflow: * [*] {argimirodelpozo/teal-all: * [*], codeql/controlflow: not * [*] {dependency: argimirodelpozo/teal-all@* [*] requires codeql/controlflow@*}}
+[2026-05-09 14:29:51] [SPAMMY] resolve extensions-by-pack> [INCOMPATIBILITY] codeql/controlflow: * [*], codeql/util: not * [*] {dependency: codeql/controlflow@* [*] requires codeql/util@2.0.8-dev}
+[2026-05-09 14:29:51] [SPAMMY] resolve extensions-by-pack> [DECISION 3] codeql/controlflow: 2.0.5-dev
+[2026-05-09 14:29:51] [SPAMMY] resolve extensions-by-pack> [INCOMPATIBILITY] codeql/dataflow: * [*], codeql/ssa: not * [*] {dependency: codeql/dataflow@* [*] requires codeql/ssa@1.0.21-dev}
+[2026-05-09 14:29:51] [SPAMMY] resolve extensions-by-pack> [INCOMPATIBILITY] codeql/dataflow: * [*], codeql/typetracking: not * [*] {dependency: codeql/dataflow@* [*] requires codeql/typetracking@2.0.5-dev}
+[2026-05-09 14:29:51] [SPAMMY] resolve extensions-by-pack> [INCOMPATIBILITY] codeql/dataflow: * [*], codeql/util: not * [*] {dependency: codeql/dataflow@* [*] requires codeql/util@2.0.8-dev}
+[2026-05-09 14:29:51] [SPAMMY] resolve extensions-by-pack> [DECISION 4] codeql/dataflow: 2.0.5-dev
+[2026-05-09 14:29:51] [SPAMMY] resolve extensions-by-pack> [DERIVATION] codeql/typetracking: * [*] {codeql/dataflow: * [*], codeql/typetracking: not * [*] {dependency: codeql/dataflow@* [*] requires codeql/typetracking@2.0.5-dev}}
+[2026-05-09 14:29:51] [SPAMMY] resolve extensions-by-pack> [INCOMPATIBILITY] codeql/mad: * [*], codeql/dataflow: not * [*] {dependency: codeql/mad@* [*] requires codeql/dataflow@2.0.5-dev}
+[2026-05-09 14:29:51] [SPAMMY] resolve extensions-by-pack> [INCOMPATIBILITY] codeql/mad: * [*], codeql/util: not * [*] {dependency: codeql/mad@* [*] requires codeql/util@2.0.8-dev}
+[2026-05-09 14:29:51] [SPAMMY] resolve extensions-by-pack> [DECISION 5] codeql/mad: 1.0.21-dev
+[2026-05-09 14:29:51] [SPAMMY] resolve extensions-by-pack> [INCOMPATIBILITY] codeql/regex: * [*], codeql/util: not * [*] {dependency: codeql/regex@* [*] requires codeql/util@2.0.8-dev}
+[2026-05-09 14:29:51] [SPAMMY] resolve extensions-by-pack> [DECISION 6] codeql/regex: 1.0.21-dev
+[2026-05-09 14:29:51] [SPAMMY] resolve extensions-by-pack> [INCOMPATIBILITY] codeql/ssa: * [*], codeql/util: not * [*] {dependency: codeql/ssa@* [*] requires codeql/util@2.0.8-dev}
+[2026-05-09 14:29:51] [SPAMMY] resolve extensions-by-pack> [DECISION 7] codeql/ssa: 1.0.21-dev
+[2026-05-09 14:29:51] [SPAMMY] resolve extensions-by-pack> [DECISION 8] codeql/tutorial: 1.0.21-dev
+[2026-05-09 14:29:51] [SPAMMY] resolve extensions-by-pack> [INCOMPATIBILITY] codeql/typetracking: * [*], codeql/util: not * [*] {dependency: codeql/typetracking@* [*] requires codeql/util@2.0.8-dev}
+[2026-05-09 14:29:51] [SPAMMY] resolve extensions-by-pack> [DECISION 9] codeql/typetracking: 2.0.5-dev
+[2026-05-09 14:29:51] [SPAMMY] resolve extensions-by-pack> [DECISION 10] codeql/util: 2.0.8-dev
+[2026-05-09 14:29:52] [PROGRESS] resolve extensions-by-pack> Loading data extensions in /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/ext/default-alert-filter.yml.
+[2026-05-09 14:29:52] [DETAILS] resolve extensions-by-pack>   Found extension targeting codeql/util:restrictAlertsTo: 0 tuples.
+[2026-05-09 14:29:52] Calling plumbing command: codeql generate extensible-predicate-metadata /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util
+[2026-05-09 14:29:52] Calling plumbing command: codeql pack packlist /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util --format=json
+[2026-05-09 14:29:52] Calling plumbing command: codeql resolve files --include=**/*.qll --include=**/*.dbscheme --include=**/*.dbscheme.stats --include=**/*.md --include=**/*.qls --include=**/*.qlref --include=**/*.yml --include=**/*.yaml --include=**/upgrade.properties --include=**/*.ql --include=!**/.* --include=!**/qlpack.auth.yml --include=!**/qlconfig.yml --include=!codeql-pack.lock.yml --include=!qlpack.lock.yml --include=!codeql-pack.release.yml --include=!change-notes --include=!**/*.qhelp --include=codeql-pack.yml --include=qlpack.yml --include=LICENSE --include=README.md --include=CHANGELOG.md --include=!**/*.qlx --include=ext/*.yml /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util --format=json
+[2026-05-09 14:29:52] [PROGRESS] resolve files> Scanning /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util...
+[2026-05-09 14:29:52] [PROGRESS] resolve files> Scanning /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/ext...
+[2026-05-09 14:29:52] [PROGRESS] resolve files> Scanning /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/codeql...
+[2026-05-09 14:29:52] [PROGRESS] resolve files> Scanning /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/codeql/util...
+[2026-05-09 14:29:52] [PROGRESS] resolve files> Scanning /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/codeql/util/suppression...
+[2026-05-09 14:29:52] [PROGRESS] resolve files> Scanning /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/codeql/util/test...
+[2026-05-09 14:29:52] Plumbing command codeql resolve files completed:
+                      [
+                        "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/CHANGELOG.md",
+                        "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/codeql/util/AlertFiltering.qll",
+                        "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/codeql/util/Boolean.qll",
+                        "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/codeql/util/DenseRank.qll",
+                        "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/codeql/util/Either.qll",
+                        "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/codeql/util/FilePath.qll",
+                        "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/codeql/util/FileSystem.qll",
+                        "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/codeql/util/Location.qll",
+                        "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/codeql/util/Numbers.qll",
+                        "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/codeql/util/Option.qll",
+                        "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/codeql/util/ReportStats.qll",
+                        "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/codeql/util/Strings.qll",
+                        "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/codeql/util/Unit.qll",
+                        "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/codeql/util/Void.qll",
+                        "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/codeql/util/suppression/AlertSuppression.qll",
+                        "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/codeql/util/test/InlineExpectationsTest.qll",
+                        "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/ext/default-alert-filter.yml",
+                        "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/qlpack.yml"
+                      ]
+[2026-05-09 14:29:52] Plumbing command codeql pack packlist completed:
+                      {
+                        "paths" : [
+                          "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/CHANGELOG.md",
+                          "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/codeql/util/AlertFiltering.qll",
+                          "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/codeql/util/Boolean.qll",
+                          "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/codeql/util/DenseRank.qll",
+                          "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/codeql/util/Either.qll",
+                          "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/codeql/util/FilePath.qll",
+                          "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/codeql/util/FileSystem.qll",
+                          "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/codeql/util/Location.qll",
+                          "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/codeql/util/Numbers.qll",
+                          "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/codeql/util/Option.qll",
+                          "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/codeql/util/ReportStats.qll",
+                          "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/codeql/util/Strings.qll",
+                          "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/codeql/util/Unit.qll",
+                          "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/codeql/util/Void.qll",
+                          "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/codeql/util/suppression/AlertSuppression.qll",
+                          "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/codeql/util/test/InlineExpectationsTest.qll",
+                          "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/ext/default-alert-filter.yml",
+                          "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/qlpack.yml"
+                        ]
+                      }
+[2026-05-09 14:29:53] Plumbing command codeql generate extensible-predicate-metadata completed:
+                      {
+                        "extensible_predicates" : [
+                          {
+                            "name" : "restrictAlertsTo",
+                            "parameters" : [
+                              {
+                                "name" : "filePath",
+                                "type" : "string"
+                              },
+                              {
+                                "name" : "startLineStart",
+                                "type" : "int"
+                              },
+                              {
+                                "name" : "startLineEnd",
+                                "type" : "int"
+                              }
+                            ],
+                            "has_origin" : false,
+                            "path" : "codeql/util/AlertFiltering.qll",
+                            "start_line" : 38,
+                            "start_column" : 1,
+                            "end_line" : 38,
+                            "end_column" : 94
+                          },
+                          {
+                            "name" : "restrictAlertsToExactLocation",
+                            "parameters" : [
+                              {
+                                "name" : "filePath",
+                                "type" : "string"
+                              },
+                              {
+                                "name" : "startLine",
+                                "type" : "int"
+                              },
+                              {
+                                "name" : "startColumn",
+                                "type" : "int"
+                              },
+                              {
+                                "name" : "endLine",
+                                "type" : "int"
+                              },
+                              {
+                                "name" : "endColumn",
+                                "type" : "int"
+                              }
+                            ],
+                            "has_origin" : false,
+                            "path" : "codeql/util/AlertFiltering.qll",
+                            "start_line" : 70,
+                            "start_column" : 1,
+                            "end_line" : 72,
+                            "end_column" : 3
+                          }
+                        ]
+                      }
+[2026-05-09 14:29:53] [DETAILS] resolve extensions-by-pack>   Found extension targeting codeql/util:restrictAlertsToExactLocation: 0 tuples.
+[2026-05-09 14:29:53] [WARN] resolve extensions-by-pack> WARNING: Pattern 'codeql/teal/frameworks/**/model.yml' did not match any extension files. (/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/teal/ql/lib/qlpack.yml:1,1-1)
+[2026-05-09 14:29:53] [WARN] resolve extensions-by-pack> WARNING: Pattern 'codeql/teal/frameworks/**/*.model.yml' did not match any extension files. (/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/teal/ql/lib/qlpack.yml:1,1-1)
+[2026-05-09 14:29:53] Plumbing command codeql resolve extensions-by-pack completed:
+                      {
+                        "models" : [ ],
+                        "data" : {
+                          "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tealtools/queries" : [
+                            {
+                              "predicate" : "restrictAlertsTo",
+                              "file" : "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/ext/default-alert-filter.yml",
+                              "index" : 0,
+                              "firstRowId" : 0,
+                              "rowCount" : 0,
+                              "predicateHasOrigin" : false,
+                              "locations" : {
+                                "lineNumbers" : "A",
+                                "columnNumbers" : "A"
+                              }
+                            },
+                            {
+                              "predicate" : "restrictAlertsToExactLocation",
+                              "file" : "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/ext/default-alert-filter.yml",
+                              "index" : 1,
+                              "firstRowId" : 0,
+                              "rowCount" : 0,
+                              "predicateHasOrigin" : false,
+                              "locations" : {
+                                "lineNumbers" : "A",
+                                "columnNumbers" : "A"
+                              }
+                            }
+                          ]
+                        },
+                        "threatModels" : { },
+                        "extensionPacks" : [ ]
+                      }

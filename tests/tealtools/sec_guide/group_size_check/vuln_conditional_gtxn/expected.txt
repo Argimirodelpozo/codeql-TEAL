@@ -1,0 +1,6 @@
+gtxn@prog.teal:19  gtxn access uses an absolute group index without validating global GroupSize — attackers can pad the group with extra transactions.
+gtxn@prog.teal:23  gtxn access uses an absolute group index without validating global GroupSize — attackers can pad the group with extra transactions.
+gtxn@prog.teal:31  gtxn access uses an absolute group index without validating global GroupSize — attackers can pad the group with extra transactions.
+gtxn@prog.teal:34  gtxn access uses an absolute group index without validating global GroupSize — attackers can pad the group with extra transactions.
+gtxn@prog.teal:42  gtxn access uses an absolute group index without validating global GroupSize — attackers can pad the group with extra transactions.
+gtxn@prog.teal:53  gtxn access uses an absolute group index without validating global GroupSize — attackers can pad the group with extra transactions.

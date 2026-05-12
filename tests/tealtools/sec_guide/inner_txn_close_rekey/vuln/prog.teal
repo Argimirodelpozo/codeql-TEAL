@@ -1,0 +1,19 @@
+#pragma version 8
+// VULNERABLE: Inner transaction sets CloseRemainderTo to user-controlled address
+// Attacker can drain the application's entire balance
+txn OnCompletion
+int 0
+==
+assert
+itxn_begin
+int 1
+itxn_field TypeEnum
+txn Sender
+itxn_field Receiver
+txn Sender
+itxn_field CloseRemainderTo
+int 0
+itxn_field Fee
+itxn_submit
+int 1
+return

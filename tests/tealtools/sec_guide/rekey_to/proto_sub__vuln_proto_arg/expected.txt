@@ -1,0 +1,1 @@
+Approval exit at prog.teal:28 is reachable without a RekeyTo check — an attacker can rekey the account.

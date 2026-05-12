@@ -1,0 +1,38 @@
+#pragma version 8
+// VULNERABLE: counterpart to fixed-scratch-cross-sub.teal. RekeyTo is
+// stored into slot 0 in main, but the subroutine that loads and checks
+// it is only called on the payment branch — the app-call branch reaches
+// the approval exit without ever invoking the load-and-assert.
+
+txn RekeyTo
+store 0
+
+txn TypeEnum
+int 1
+==
+bnz payment_path
+
+// App call path — no check_rekey_from_slot, no RekeyTo assertion
+txn OnCompletion
+int 0
+==
+assert
+b approve
+
+payment_path:
+callsub check_rekey_from_slot
+txn Amount
+int 500000
+<=
+assert
+
+approve:
+int 1
+return
+
+check_rekey_from_slot:
+  load 0
+  global ZeroAddress
+  ==
+  assert
+  retsub

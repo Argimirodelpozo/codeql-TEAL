@@ -1,0 +1,1 @@
+Application handles DeleteApplication at exit prog.teal:17 without checking balance == min_balance — funds may be locked permanently on deletion.

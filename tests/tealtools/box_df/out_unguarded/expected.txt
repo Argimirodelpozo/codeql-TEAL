@@ -1,1 +1,1 @@
-box_get value@prog.teal:7  →  app_global_put value@prog.teal:9  (key = V#2@L7)
+box_get value@prog.teal:7  →  app_global_put value@prog.teal:9  (operand = V#2@L7)

@@ -1,0 +1,1 @@
+Contract does not validate txn Fee — an attacker can set excessively high fees to drain the account.

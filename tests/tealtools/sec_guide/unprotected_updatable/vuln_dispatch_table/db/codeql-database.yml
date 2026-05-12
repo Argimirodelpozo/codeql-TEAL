@@ -1,0 +1,12 @@
+---
+sourceLocationPrefix: /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tests/tealtools/sec_guide/unprotected_updatable/vuln_dispatch_table
+baselineLinesOfCode: 0
+unicodeNewlines: false
+columnKind: utf8
+primaryLanguage: teal
+creationMetadata:
+  cliVersion: 2.23.9
+  creationTime: 2026-05-09T16:50:11.613818173Z
+overlayBaseDatabase: false
+overlayDatabase: false
+finalised: true

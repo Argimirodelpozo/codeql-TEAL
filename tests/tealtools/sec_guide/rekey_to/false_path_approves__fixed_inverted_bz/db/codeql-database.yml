@@ -1,0 +1,12 @@
+---
+sourceLocationPrefix: /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tests/tealtools/sec_guide/rekey_to/false_path_approves__fixed_inverted_bz
+baselineLinesOfCode: 0
+unicodeNewlines: false
+columnKind: utf8
+primaryLanguage: teal
+creationMetadata:
+  cliVersion: 2.23.9
+  creationTime: 2026-05-09T16:47:06.585223531Z
+overlayBaseDatabase: false
+overlayDatabase: false
+finalised: true

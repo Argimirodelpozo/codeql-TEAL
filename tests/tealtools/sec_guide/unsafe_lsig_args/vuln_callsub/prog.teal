@@ -1,0 +1,43 @@
+#pragma version 8
+// VULNERABLE: arg flows through subroutine + store/load before comparison
+// The arg value is laundered through a helper but still used for access control
+
+arg_0
+store 0                    // stash arg in scratch space
+
+// Branch: pick which "password" to compare against
+arg_1
+int 1
+==
+bnz use_alt_password
+
+// Primary password path
+load 0
+pushbytes "pr1mary_pass"
+callsub check_password
+assert
+b after_auth
+
+use_alt_password:
+// Secondary password path — still vuln, just a different constant
+load 0
+pushbytes "b4ckup_pass"
+callsub check_password
+assert
+
+after_auth:
+txn Amount
+int 500000
+<=
+assert
+txn Fee
+global MinTxnFee
+<=
+assert
+int 1
+return
+
+// Subroutine: compare two values on stack
+check_password:
+  ==
+  retsub

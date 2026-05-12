@@ -1,0 +1,10 @@
+[2026-05-09 16:20:48] This is codeql query run --database /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tests/tealtools/sec_guide/rekey_to/callsub__vuln_callsub/db --output /home/argi/.cache/teal-graphs/b2920c6598eb545b/mustValues.bqrs /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tealtools/queries/mustValues.ql
+[2026-05-09 16:20:48] Log file was started late.
+[2026-05-09 16:20:48] Calling plumbing command: codeql resolve ram --dataset=/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tests/tealtools/sec_guide/rekey_to/callsub__vuln_callsub/db/db-teal --format=json
+[2026-05-09 16:20:48] [PROGRESS] resolve ram> Stringpool size measured as 2146714
+[2026-05-09 16:20:48] Plumbing command codeql resolve ram completed:
+                      [
+                        "-J-Xmx1391M"
+                      ]
+[2026-05-09 16:20:48] Chaining via /tmp/codeql.xjURn0nw to plumbing: execute queries -J-Xmx1391M --verbosity=progress --logdir=/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tests/tealtools/sec_guide/rekey_to/callsub__vuln_callsub/db/log --evaluator-log-level=5 --warnings=show --qlconfig-file=/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/qlconfig.yml --dynamic-join-order-mode=none --output=/home/argi/.cache/teal-graphs/b2920c6598eb545b/mustValues.bqrs -- /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tests/tealtools/sec_guide/rekey_to/callsub__vuln_callsub/db/db-teal path:/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tealtools/queries/mustValues.ql
+[2026-05-09 16:20:48] Exiting with code 70

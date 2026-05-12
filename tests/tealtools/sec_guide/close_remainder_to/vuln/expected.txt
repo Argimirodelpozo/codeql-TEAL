@@ -1,0 +1,1 @@
+Contract does not validate txn CloseRemainderTo — the account's entire ALGO balance can be drained.

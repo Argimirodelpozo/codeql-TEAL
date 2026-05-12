@@ -1,0 +1,12 @@
+---
+sourceLocationPrefix: /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tests/tealtools/sec_guide/close_remainder_to/vuln
+baselineLinesOfCode: 0
+unicodeNewlines: false
+columnKind: utf8
+primaryLanguage: teal
+creationMetadata:
+  cliVersion: 2.23.9
+  creationTime: 2026-05-09T16:38:24.519811342Z
+overlayBaseDatabase: false
+overlayDatabase: false
+finalised: true

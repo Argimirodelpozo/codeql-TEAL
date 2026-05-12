@@ -1,0 +1,15 @@
+call site: prog.teal:L13  appl→7000002  (callee/db)  args[0]="process"
+  seeds:   (V#1@L6 == "process")
+  summary: (V#1@L6 == "process"), (V#1@L8 != 0)
+
+cross-contract sec-guide findings:
+app7000002  sec-guide/asset-close-to  callee/db  Contract does not validate txn AssetCloseTo — all asset units can be drained from the account.
+app7000002  sec-guide/close-remainder-to  callee/db  Contract does not validate txn CloseRemainderTo — the account's entire ALGO balance can be drained.
+app7000002  sec-guide/delete-funds-check  callee/db  Application handles DeleteApplication at exit prog.teal:16 without checking balance == min_balance — funds may be locked permanently on deletion.
+app7000002  sec-guide/fee-validation  callee/db  Contract does not validate txn Fee — an attacker can set excessively high fees to drain the account.
+app7000002  sec-guide/is-deletable  callee/db  Application is deletable at exit prog.teal:16: OnCompletion == DeleteApplication can reach approval without a guard.
+app7000002  sec-guide/is-updatable  callee/db  Application is updatable at exit prog.teal:16: OnCompletion == UpdateApplication can reach approval without a guard.
+app7000002  sec-guide/rekey-to  callee/db  Approval exit at prog.teal:16 is reachable without a RekeyTo check — an attacker can rekey the account.
+app7000002  sec-guide/tx-type-check  callee/db  Contract does not restrict the transaction type — any transaction type is accepted, allowing unintended operations.
+app7000002  sec-guide/unprotected-deletable  callee/db  Application is deletable by anyone at exit prog.teal:16: no sender == creator check guards the approval path for DeleteApplication.
+app7000002  sec-guide/unprotected-updatable  callee/db  Application is updatable by anyone at exit prog.teal:16: no sender == creator check guards the approval path for UpdateApplication.

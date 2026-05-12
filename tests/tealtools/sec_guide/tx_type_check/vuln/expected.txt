@@ -1,0 +1,1 @@
+Contract does not restrict the transaction type — any transaction type is accepted, allowing unintended operations.

@@ -1,0 +1,3 @@
+arg_0@prog.teal:11  LogicSig argument used in equality comparison — args are not covered by delegation signatures and provide zero security for access control.
+arg_1@prog.teal:19  LogicSig argument used in equality comparison — args are not covered by delegation signatures and provide zero security for access control.
+arg_2@prog.teal:24  LogicSig argument used in equality comparison — args are not covered by delegation signatures and provide zero security for access control.

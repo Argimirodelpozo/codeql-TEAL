@@ -1,0 +1,10 @@
+[2026-05-09 15:36:53] This is codeql query run --database /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tests/tealtools/xcontract_sec_guide/rekey_unchecked_callee/callee/db --output /home/argi/.cache/teal-graphs/26068454c305ec42/stackHeights.bqrs /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tealtools/queries/stackHeights.ql
+[2026-05-09 15:36:53] Log file was started late.
+[2026-05-09 15:36:53] Calling plumbing command: codeql resolve ram --dataset=/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tests/tealtools/xcontract_sec_guide/rekey_unchecked_callee/callee/db/db-teal --format=json
+[2026-05-09 15:36:53] [PROGRESS] resolve ram> Stringpool size measured as 2146714
+[2026-05-09 15:36:53] Plumbing command codeql resolve ram completed:
+                      [
+                        "-J-Xmx1391M"
+                      ]
+[2026-05-09 15:36:54] Chaining via /tmp/codeql.MoGMWmaB to plumbing: execute queries -J-Xmx1391M --verbosity=progress --logdir=/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tests/tealtools/xcontract_sec_guide/rekey_unchecked_callee/callee/db/log --evaluator-log-level=5 --warnings=show --qlconfig-file=/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/qlconfig.yml --dynamic-join-order-mode=none --output=/home/argi/.cache/teal-graphs/26068454c305ec42/stackHeights.bqrs -- /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tests/tealtools/xcontract_sec_guide/rekey_unchecked_callee/callee/db/db-teal path:/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tealtools/queries/stackHeights.ql
+[2026-05-09 15:36:54] Exiting with code 70

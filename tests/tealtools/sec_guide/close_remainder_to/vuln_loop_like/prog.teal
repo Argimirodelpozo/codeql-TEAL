@@ -1,0 +1,46 @@
+#pragma version 8
+// VULNERABLE: Contract processes multiple "modes" via arg with
+// backwards branch — CloseRemainderTo never checked in any mode
+
+arg_0
+store 0          // mode selector
+
+// Mode dispatch
+load 0
+int 1
+==
+bnz mode_transfer
+
+load 0
+int 2
+==
+bnz mode_optin
+
+// Default: reject unknown modes
+err
+
+mode_transfer:
+  txn Amount
+  int 500000
+  <=
+  assert
+  txn Fee
+  global MinTxnFee
+  <=
+  assert
+  txn Receiver
+  addr AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ
+  ==
+  assert
+  // Missing CloseRemainderTo check
+  int 1
+  return
+
+mode_optin:
+  txn TypeEnum
+  int 4
+  ==
+  assert
+  // Missing CloseRemainderTo check
+  int 1
+  return

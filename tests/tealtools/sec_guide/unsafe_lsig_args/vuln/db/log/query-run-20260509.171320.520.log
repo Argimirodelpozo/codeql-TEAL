@@ -1,0 +1,10 @@
+[2026-05-09 17:13:20] This is codeql query run --database /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tests/tealtools/sec_guide/unsafe_lsig_args/vuln/db --output /home/argi/.cache/teal-graphs/74aacbc30a4872c3/phiArgs.bqrs /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tealtools/queries/phiArgs.ql
+[2026-05-09 17:13:20] Log file was started late.
+[2026-05-09 17:13:20] Calling plumbing command: codeql resolve ram --dataset=/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tests/tealtools/sec_guide/unsafe_lsig_args/vuln/db/db-teal --format=json
+[2026-05-09 17:13:20] [PROGRESS] resolve ram> Stringpool size measured as 2146714
+[2026-05-09 17:13:20] Plumbing command codeql resolve ram completed:
+                      [
+                        "-J-Xmx1391M"
+                      ]
+[2026-05-09 17:13:20] Chaining via /tmp/codeql.tm0WOmqL to plumbing: execute queries -J-Xmx1391M --verbosity=progress --logdir=/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tests/tealtools/sec_guide/unsafe_lsig_args/vuln/db/log --evaluator-log-level=5 --warnings=show --qlconfig-file=/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/qlconfig.yml --dynamic-join-order-mode=none --output=/home/argi/.cache/teal-graphs/74aacbc30a4872c3/phiArgs.bqrs -- /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tests/tealtools/sec_guide/unsafe_lsig_args/vuln/db/db-teal path:/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tealtools/queries/phiArgs.ql
+[2026-05-09 17:13:20] Exiting with code 70

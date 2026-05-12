@@ -1,0 +1,143 @@
+#pragma version 11
+#pragma typetrack false
+// Source: real-world-examples/.../4-transaction-input-validation/SecureDepositContract.approval.teal
+// gabe_vuln: Intentionally omits validation of gtxns AssetCloseTo on deposit(axfer) — asset can be drained via close-to.
+
+// @algorandfoundation/algorand-typescript/arc4/index.d.ts::Contract.approvalProgram() -> uint64:
+main:
+    intcblock 1 0 8 4
+    bytecblock "asset"
+    // smart_contracts/4-transaction-input-validation/contract.algo.ts:22
+    // export class SecureDepositContract extends Contract {
+    txn NumAppArgs
+    bz main___algots__.defaultCreate@10
+    txn OnCompletion
+    !
+    assert // OnCompletion must be NoOp
+    txn ApplicationID
+    assert
+    pushbytess 0x3d726f86 0x6fe9af85 0x93353186 // method "setAsset(uint64)void", method "optInToAsset(uint64)void", method "deposit(axfer)void"
+    txna ApplicationArgs 0
+    match setAsset optInToAsset deposit
+    err
+
+main___algots__.defaultCreate@10:
+    // smart_contracts/4-transaction-input-validation/contract.algo.ts:22
+    // export class SecureDepositContract extends Contract {
+    txn OnCompletion
+    !
+    txn ApplicationID
+    !
+    &&
+    assert // OnCompletion must be NoOp && can only call when creating
+    intc_0 // 1
+    return
+
+
+// smart_contracts/4-transaction-input-validation/contract.algo.ts::SecureDepositContract.setAsset[routing]() -> void:
+setAsset:
+    // smart_contracts/4-transaction-input-validation/contract.algo.ts:25
+    // public setAsset(asset: Asset): void {
+    txna ApplicationArgs 1
+    dup
+    len
+    intc_2 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    btoi
+    // smart_contracts/4-transaction-input-validation/contract.algo.ts:26
+    // assert(Txn.sender === Global.creatorAddress, 'Only creator can set asset')
+    txn Sender
+    global CreatorAddress
+    ==
+    assert // Only creator can set asset
+    // smart_contracts/4-transaction-input-validation/contract.algo.ts:23
+    // public acceptedAsset = GlobalState<Asset>({ key: 'asset' })
+    bytec_0 // "asset"
+    // smart_contracts/4-transaction-input-validation/contract.algo.ts:27
+    // this.acceptedAsset.value = asset
+    swap
+    app_global_put
+    // smart_contracts/4-transaction-input-validation/contract.algo.ts:25
+    // public setAsset(asset: Asset): void {
+    intc_0 // 1
+    return
+
+
+// smart_contracts/4-transaction-input-validation/contract.algo.ts::SecureDepositContract.optInToAsset[routing]() -> void:
+optInToAsset:
+    // smart_contracts/4-transaction-input-validation/contract.algo.ts:30
+    // public optInToAsset(asset: Asset): void {
+    txna ApplicationArgs 1
+    dup
+    len
+    intc_2 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    btoi
+    // smart_contracts/4-transaction-input-validation/contract.algo.ts:31
+    // assert(Txn.sender === Global.creatorAddress, 'Only creator')
+    txn Sender
+    global CreatorAddress
+    ==
+    assert // Only creator
+    // smart_contracts/4-transaction-input-validation/contract.algo.ts:32
+    // itxn.assetTransfer({ assetReceiver: Global.currentApplicationAddress, xferAsset: asset, assetAmount: 0, fee: 0 }).submit()
+    itxn_begin
+    global CurrentApplicationAddress
+    intc_1 // 0
+    itxn_field AssetAmount
+    itxn_field AssetReceiver
+    itxn_field XferAsset
+    intc_3 // 4
+    itxn_field TypeEnum
+    intc_1 // 0
+    itxn_field Fee
+    itxn_submit
+    // smart_contracts/4-transaction-input-validation/contract.algo.ts:30
+    // public optInToAsset(asset: Asset): void {
+    intc_0 // 1
+    return
+
+
+// smart_contracts/4-transaction-input-validation/contract.algo.ts::SecureDepositContract.deposit[routing]() -> void:
+deposit:
+    // smart_contracts/4-transaction-input-validation/contract.algo.ts:36
+    // public deposit(payment: gtxn.AssetTransferTxn): void {
+    txn GroupIndex
+    intc_0 // 1
+    -
+    dup
+    gtxns TypeEnum
+    intc_3 // axfer
+    ==
+    assert // transaction type is axfer
+    // smart_contracts/4-transaction-input-validation/contract.algo.ts:37
+    // assert(payment.assetReceiver === Global.currentApplicationAddress, 'Must send to app')
+    dup
+    gtxns AssetReceiver
+    global CurrentApplicationAddress
+    ==
+    assert // Must send to app
+    // smart_contracts/4-transaction-input-validation/contract.algo.ts:38
+    // assert(payment.xferAsset.id === this.acceptedAsset.value.id, 'Wrong asset')
+    dup
+    gtxns XferAsset
+    intc_1 // 0
+    // smart_contracts/4-transaction-input-validation/contract.algo.ts:23
+    // public acceptedAsset = GlobalState<Asset>({ key: 'asset' })
+    bytec_0 // "asset"
+    // smart_contracts/4-transaction-input-validation/contract.algo.ts:38
+    // assert(payment.xferAsset.id === this.acceptedAsset.value.id, 'Wrong asset')
+    app_global_get_ex
+    assert // check GlobalState exists
+    ==
+    assert // Wrong asset
+    // smart_contracts/4-transaction-input-validation/contract.algo.ts:39
+    // assert(payment.assetAmount > Uint64(0), 'Must send nonzero amount')
+    gtxns AssetAmount
+    assert // Must send nonzero amount
+    // smart_contracts/4-transaction-input-validation/contract.algo.ts:36
+    // public deposit(payment: gtxn.AssetTransferTxn): void {
+    intc_0 // 1
+    return

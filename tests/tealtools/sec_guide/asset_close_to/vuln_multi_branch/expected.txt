@@ -1,0 +1,1 @@
+Contract does not validate txn AssetCloseTo — all asset units can be drained from the account.

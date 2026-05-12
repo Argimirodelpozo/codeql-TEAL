@@ -1,0 +1,1 @@
+itxn_field CloseRemainderTo@prog.teal:46  Inner transaction sets CloseRemainderTo — this can drain the application account or transfer signing authority. Omit this field entirely.

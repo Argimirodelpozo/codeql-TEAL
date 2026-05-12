@@ -28,6 +28,7 @@ SSA_SMOKE = {"loop_dig_deep", "loop_frame_dig", "stack_growing_loop"}
 
 
 XC_ROOT = PY_TESTS / "xcontract"
+XC_SG_ROOT = PY_TESTS / "xcontract_sec_guide"
 
 
 def _discover():
@@ -36,10 +37,18 @@ def _discover():
     if XC_ROOT.exists():
         for case in sorted(p for p in XC_ROOT.iterdir() if p.is_dir()):
             yield pytest.param("xcontract", case, id=f"xcontract/{case.name}")
+    if XC_SG_ROOT.exists():
+        for case in sorted(p for p in XC_SG_ROOT.iterdir() if p.is_dir()):
+            yield pytest.param(
+                "xcontract_sec_guide", case,
+                id=f"xcontract_sec_guide/{case.name}",
+            )
     for db_yml in sorted(PY_TESTS.rglob("codeql-database.yml")):
         case_dir = db_yml.parent.parent
         if XC_ROOT in case_dir.parents or case_dir == XC_ROOT:
             continue  # already collected as a single xcontract case
+        if XC_SG_ROOT in case_dir.parents or case_dir == XC_SG_ROOT:
+            continue  # ditto for the sec-guide xcontract tree
         rel = case_dir.relative_to(PY_TESTS)
         analysis = rel.parts[0]
         yield pytest.param(analysis, case_dir, id=str(rel))
@@ -87,6 +96,22 @@ def _render(analysis: str, case_dir: Path) -> str:
         body += render_caller_feedback(graph, relative_to=case_dir)
         return body + "\n"
 
+    if analysis == "xcontract_sec_guide":
+        from tealtools.xcontract import XContractGraph, load_registry, render_xcontract
+        from tealtools.sec_guide.xcontract import (
+            cross_sec_guide_findings,
+            render_findings as render_sg_findings,
+        )
+
+        registry = load_registry(case_dir / "registry.yml")
+        caller_prog = SSAProgram(str(case_dir / "caller" / "db"))
+        graph = XContractGraph.build(caller_prog, registry)
+        findings = cross_sec_guide_findings(graph)
+        body = render_xcontract(graph.sites, graph.analyses, relative_to=case_dir)
+        body += "\n\ncross-contract sec-guide findings:\n"
+        body += render_sg_findings(graph, findings, relative_to=case_dir)
+        return body + "\n"
+
     prog = SSAProgram(str(case_dir / "db"))
 
     if analysis == "auth_domination":
@@ -97,19 +122,19 @@ def _render(analysis: str, case_dir: Path) -> str:
         return body + "\n"
 
     if analysis == "box_key":
-        from tealtools.nonunique_box_key import NonUniqueBoxKeyDetector
+        from tealtools.dataflow.nonunique_box_key import NonUniqueBoxKeyDetector
 
         violations = NonUniqueBoxKeyDetector(prog).detect()
         body = "\n".join(v.pretty() for v in violations) or "(no violations)"
         return body + "\n"
 
     if analysis == "box_df":
-        from tealtools.box_dataflow import (
+        from tealtools.dataflow.box import (
             detect_correlated_flows,
             detect_into_box_flows,
             detect_out_of_box_flows,
         )
-        from tealtools.predicate_aware import filter_validated
+        from tealtools.dataflow.predicate_aware import filter_validated
 
         case_name = case_dir.name
         if case_name.startswith("key_correlated"):
@@ -154,6 +179,20 @@ def _render(analysis: str, case_dir: Path) -> str:
         from tealtools.cost_analysis import render
 
         return render(prog) + "\n"
+
+    if analysis == "sec_guide":
+        # Detection name is the parent dir of the case dir, snake-case;
+        # map back to the kebab-case keys in `sec_guide.DETECTORS`.
+        from tealtools.sec_guide import DETECTORS
+
+        detection = case_dir.parent.name.replace("_", "-")
+        if detection not in DETECTORS:
+            raise NotImplementedError(
+                f"no sec-guide detector registered for {detection!r}"
+            )
+        violations = DETECTORS[detection](prog).detect()
+        body = "\n".join(v.pretty() for v in violations) or "(no violations)"
+        return body + "\n"
 
     if analysis in SSA_SMOKE:
         return _ssa_summary(prog)

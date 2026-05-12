@@ -1,0 +1,58 @@
+#pragma version 8
+// VULNERABLE: gtxn used conditionally based on a branch — but no
+// GroupSize check on either path
+
+txn ApplicationID
+int 0
+==
+bnz handle_create
+
+// Existing app: validate group transaction
+callsub check_paired_payment
+assert
+callsub business_logic
+int 1
+return
+
+handle_create:
+  // Creation path also uses gtxn without GroupSize check
+  gtxn 0 TypeEnum
+  int 1
+  ==
+  assert
+  gtxn 0 Amount
+  int 10000000
+  >=
+  assert
+  int 1
+  return
+
+check_paired_payment:
+  gtxn 0 TypeEnum
+  int 1
+  ==
+  gtxn 0 Amount
+  int 500000
+  >=
+  &&
+  retsub
+
+business_logic:
+  // Complex internal logic with branching
+  gtxn 0 Amount
+  int 5000000
+  >=
+  bnz premium_tier
+
+  // Standard tier
+  int 1
+  retsub
+
+  premium_tier:
+    // Premium tier — extra validation
+    gtxn 0 Sender
+    txn Sender
+    ==
+    assert
+    int 1
+    retsub

@@ -1,0 +1,24 @@
+#pragma version 8
+// FIXED: switch-on-OnCompletion routes 0..3 to handlers and OC=4,5
+// to fall-through err. Approval is unreachable for OC=5, so the app
+// is NOT deletable.
+
+txn OnCompletion
+switch handle_noop handle_optin handle_closeout handle_clear
+err          // OC in {4, 5} (and >5) → reject
+
+handle_noop:
+  int 1
+  return
+
+handle_optin:
+  int 1
+  return
+
+handle_closeout:
+  int 1
+  return
+
+handle_clear:
+  int 1
+  return

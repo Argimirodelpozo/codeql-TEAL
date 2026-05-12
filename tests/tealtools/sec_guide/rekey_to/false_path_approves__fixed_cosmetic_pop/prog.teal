@@ -1,0 +1,12 @@
+#pragma version 8
+// FIXED: counterpart to vuln-cosmetic-pop.teal. The `==` result is
+// consumed by `assert` (not discarded by `pop`), so when RekeyTo is
+// non-zero the assert fires and the program rejects.
+
+txn RekeyTo
+global ZeroAddress
+==
+assert
+
+int 1
+return

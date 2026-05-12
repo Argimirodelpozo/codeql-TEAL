@@ -1,0 +1,1014 @@
+"""Shared helpers for sec-guide detector ports.
+
+Mirrors the QL helper layer (``SecGuideCommon.qll`` + ``OnCompletionGuards.qll``
++ ``FeeValidationGuards.qll``) on top of the :class:`SSAProgram` substrate
+and :class:`PathPredicateAnalysis`. Each detector module imports the
+predicates it needs from here rather than rebuilding them.
+
+Where possible, we lean on :meth:`PathPredicateAnalysis.predicates_at` for
+"must hold on every path" reasoning — it's already a sound, cached
+abstraction over branch / assert outcomes. Hand-rolled CFG reachability
+only shows up in :func:`approval_exit_protected_for_field` (where the QL
+form is strictly stronger than what path predicates alone can express).
+
+The QL detector outputs are intentionally over-conservative on several
+fixtures (e.g. ``is-deletable`` flags ``fixed-complex-dispatch.teal``
+because the OnCompletion==5 reject sits *after* the dispatch). We mirror
+that semantics rather than improve on it — the goal of this port is
+parity, not strictly tighter detection. Improvements live in follow-ups.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Iterable, Optional
+
+from ..path_predicates import BranchCondition, PathPredicateAnalysis
+from ..ssa import (
+    Assignment,
+    BasicBlock,
+    Const,
+    Phi,
+    SSAProgram,
+    SSAVar,
+)
+
+
+# ---------------------------------------------------------------------------
+# OnCompletion constants (AVM spec)
+# ---------------------------------------------------------------------------
+
+
+ONC_NOOP = 0
+ONC_OPTIN = 1
+ONC_CLOSEOUT = 2
+ONC_CLEAR_STATE = 3
+ONC_UPDATE_APPLICATION = 4
+ONC_DELETE_APPLICATION = 5
+
+
+# ---------------------------------------------------------------------------
+# Approval / rejection exits
+# ---------------------------------------------------------------------------
+
+
+def _is_const_zero(operand) -> bool:
+    cv = getattr(operand, "const_value", None) if not isinstance(operand, Const) else operand
+    return isinstance(cv, Const) and cv.kind == "int" and cv.value == "0"
+
+
+def _return_likely_zero(bb: BasicBlock) -> bool:
+    """Heuristic for ``int 0; return``: the SSA model strips the
+    ``return`` opcode's stack input, so we can't read the return
+    value off ``last.inputs``. The next-best signal is the BB's
+    second-to-last assignment — if it produces a const-int 0 SSAVar
+    that nothing else consumes, the program is almost certainly
+    returning 0.
+
+    Conservative: when in doubt, return False (so the BB stays
+    classified as a potential approval and downstream analyses see it).
+    Matches QL's ``approvalExit``, which includes returns whose value
+    isn't statically resolvable."""
+    if len(bb.assignments) < 2:
+        return False
+    if bb.assignments[-1].op != "return":
+        return False
+    prev = bb.assignments[-2]
+    if not prev.outputs:
+        return False
+    out = prev.outputs[0]
+    return _is_const_zero(out)
+
+
+def is_approval_exit(bb: BasicBlock) -> bool:
+    """Mirrors QL ``approvalExit``: BB ends in ``return`` and the
+    return value is non-zero or its constness is unknown.
+
+    The SSA model in :mod:`tealtools.ssa` represents ``return`` with
+    an empty stack-input list (``last.inputs == []``); we recover the
+    likely return value via :func:`_return_likely_zero`. A BB whose
+    ``int 0; return`` shape we can prove is excluded; everything else
+    counts as approval-or-unknown — same as QL."""
+    if not bb.assignments:
+        return False
+    if bb.assignments[-1].op != "return":
+        return False
+    return not _return_likely_zero(bb)
+
+
+def is_rejection_exit(bb: BasicBlock) -> bool:
+    """Mirrors QL ``rejectionExit``: BB ends in ``err`` or ``return 0``."""
+    if not bb.assignments:
+        return False
+    last = bb.assignments[-1]
+    if last.op == "err":
+        return True
+    if last.op == "return" and _return_likely_zero(bb):
+        return True
+    return False
+
+
+# ---------------------------------------------------------------------------
+# File-scoped iteration
+#
+# Most helpers below accept an optional ``file: Optional[str] = None``
+# kwarg. When set, the iteration is restricted to ops/blocks whose
+# ``location.file == file``. This is what lets a single
+# :class:`SSAProgram` built from a multi-program directory (one DB per
+# dir, several .teal files inside) be analysed program-by-program by
+# threading the filename through every iteration.
+# ---------------------------------------------------------------------------
+
+
+def _file_match(loc_file: str, want: Optional[str]) -> bool:
+    return want is None or loc_file == want
+
+
+def approving_exits(
+    prog: SSAProgram, *, file: Optional[str] = None,
+) -> list[BasicBlock]:
+    """Every BB that is an approval exit (QL ``approvalExit`` semantics).
+
+    Stricter than :meth:`PathPredicateAnalysis.approving_exits` — that
+    method includes every ``return`` regardless of operand constness;
+    here we exclude provably-zero returns to match the QL detector.
+
+    ``file``: restrict to BBs in this source file (basename); if None,
+    every BB across the loaded program."""
+    return [
+        bb for bb in prog.blocks.values()
+        if _file_match(bb.file, file) and is_approval_exit(bb)
+    ]
+
+
+def entry_blocks(
+    prog: SSAProgram, *, file: Optional[str] = None,
+) -> list[BasicBlock]:
+    """BBs with no CFG predecessors — program entries."""
+    return [
+        bb for bb in prog.blocks.values()
+        if _file_match(bb.file, file) and not bb.predecessors
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Field-read iteration
+# ---------------------------------------------------------------------------
+
+
+def txn_field_reads(
+    prog: SSAProgram, field: str, *, file: Optional[str] = None,
+) -> list[Assignment]:
+    """Every ``txn FIELD`` assignment in ``prog`` (matches QL
+    ``TxnOpcode.getField()``). Includes the bare ``txn`` op only —
+    ``gtxn``, ``itxn``, etc. are separate predicates."""
+    return [
+        a for a in prog.assignments
+        if a.op == "txn" and a.immediates.strip() == field
+        and _file_match(a.location.file, file)
+    ]
+
+
+def gtxn_field_reads(
+    prog: SSAProgram, field: str, *, file: Optional[str] = None,
+) -> list[Assignment]:
+    """Every group-transaction field read of ``field``, across both
+    immediate-index and dynamic-index variants:
+
+    - ``gtxn N FIELD`` / ``gtxna N FIELD I`` / ``gtxnas N FIELD``
+      — group index in the first immediate, field in the second.
+    - ``gtxns FIELD`` / ``gtxnsa FIELD I`` / ``gtxnsas FIELD``
+      — group index popped off the stack, field in the first immediate.
+
+    The mapping mirrors QL's ``GtxnOpcode``/``GtxnsOpcode`` families."""
+    out: list[Assignment] = []
+    for a in prog.assignments:
+        if not _file_match(a.location.file, file):
+            continue
+        toks = a.immediates.split()
+        if a.op in ("gtxn", "gtxna", "gtxnas") and len(toks) >= 2 and toks[1] == field:
+            out.append(a)
+        elif a.op in ("gtxns", "gtxnsa", "gtxnsas") and toks and toks[0] == field:
+            out.append(a)
+    return out
+
+
+def global_field_reads(
+    prog: SSAProgram, field: str, *, file: Optional[str] = None,
+) -> list[Assignment]:
+    """Every ``global FIELD`` assignment in ``prog``."""
+    return [
+        a for a in prog.assignments
+        if a.op == "global" and a.immediates.strip() == field
+        and _file_match(a.location.file, file)
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Comparison-operand wiring
+# ---------------------------------------------------------------------------
+
+
+_LOGICAL_COMPARISON_OPS = frozenset({
+    "==", "!=", "<", ">", "<=", ">=",
+    "b==", "b!=", "b<", "b>", "b<=", "b>=",
+})
+
+
+def is_comparison(a: Assignment) -> bool:
+    """An ``Assignment`` whose op compares two stack values."""
+    return a.op in _LOGICAL_COMPARISON_OPS
+
+
+def is_equality_comparison(a: Assignment) -> bool:
+    return a.op in ("==", "b==")
+
+
+def assignments_consuming(var: SSAVar) -> list[Assignment]:
+    """Direct uses of ``var`` (one-hop). For multi-hop forward walks
+    use :func:`forward_consumers`."""
+    return list(var.uses)
+
+
+def _generator(operand) -> Optional[SSAVar]:
+    """Mirror of QL ``getGenerator``: the SSAVar a comparison operand
+    ultimately reads from. For an :class:`SSAVar` we return it as-is;
+    for a :class:`Phi`, return ``None`` (the caller can handle joins
+    separately if needed). For a :class:`Const` (post-DCE inlining)
+    return ``None``."""
+    if isinstance(operand, SSAVar):
+        return operand
+    return None
+
+
+def field_compared_anywhere(
+    prog: SSAProgram,
+    *,
+    txn_field: Optional[str] = None,
+    gtxn_field: Optional[str] = None,
+    file: Optional[str] = None,
+) -> bool:
+    """A ``txn FIELD`` (or ``gtxn N FIELD``) read flows into one operand
+    of a comparison op anywhere in the program.
+
+    Mirrors QL ``txnFieldIsChecked``: the QL form uses
+    ``getGenerator(cmp.firstOp())`` which walks through stack
+    pass-through and phi joins to find the originating SSAVar. We do
+    the same here via :func:`_operand_flows_from_field_var`, so
+    consumers reached through a single-arg phi (the common
+    cross-block case) are recognised. Scratch routing is also
+    accepted — same as the LocalFlow bridges in QL — although the
+    bare ``hasFeeCheck`` / ``hasGroupSizeCheck`` callers don't
+    require it."""
+    field_vars: set = set()
+    if txn_field is not None:
+        for a in txn_field_reads(prog, txn_field, file=file):
+            for out in a.outputs:
+                if isinstance(out, SSAVar):
+                    field_vars.add(out)
+    if gtxn_field is not None:
+        for a in gtxn_field_reads(prog, gtxn_field, file=file):
+            for out in a.outputs:
+                if isinstance(out, SSAVar):
+                    field_vars.add(out)
+    if not field_vars:
+        return False
+    for cmp in prog.assignments:
+        if not _file_match(cmp.location.file, file):
+            continue
+        if not is_comparison(cmp) or len(cmp.inputs) != 2:
+            continue
+        for op in cmp.inputs:
+            if _operand_flows_from_field_var(prog, op, field_vars):
+                return True
+    return False
+
+
+def field_compared_against_zero_address(
+    prog: SSAProgram, field: str, *, file: Optional[str] = None,
+) -> bool:
+    """``txn FIELD`` read flows into a comparison whose other operand
+    is ``global ZeroAddress`` (mirrors QL ``txnFieldCheckedAgainstZeroAddress``).
+    Phi-aware on both operands so a cross-BB cmp is recognised."""
+    field_vars = {
+        o for a in txn_field_reads(prog, field, file=file) for o in a.outputs
+        if isinstance(o, SSAVar)
+    }
+    zero_vars = {
+        o for a in global_field_reads(prog, "ZeroAddress", file=file) for o in a.outputs
+        if isinstance(o, SSAVar)
+    }
+    if not field_vars or not zero_vars:
+        return False
+    for cmp in prog.assignments:
+        if not _file_match(cmp.location.file, file):
+            continue
+        if not is_equality_comparison(cmp) or len(cmp.inputs) != 2:
+            continue
+        a0, a1 = cmp.inputs
+        if (
+            (_operand_flows_from_field_var(prog, a0, field_vars)
+             and _operand_flows_from_field_var(prog, a1, zero_vars))
+            or
+            (_operand_flows_from_field_var(prog, a1, field_vars)
+             and _operand_flows_from_field_var(prog, a0, zero_vars))
+        ):
+            return True
+    return False
+
+
+# ---------------------------------------------------------------------------
+# Field-validated-on-all-paths (QL `txnFieldValidatedOnAllPaths`)
+#
+# QL form: there exists a single comparison BB that *dominates* every
+# approval exit. This is strictly weaker than the path-aware
+# `approvalExitProtectedForField` — replicated per-branch checks fail
+# the dominance form but pass the reachability form. Several QL queries
+# (asset-close-to, close-remainder-to, tx-type-check) use the
+# dominance form anyway, so the Python port preserves the same shape
+# (and the same over-conservatism).
+# ---------------------------------------------------------------------------
+
+
+def _bb_strict_dominators(
+    prog: SSAProgram, *, file: Optional[str] = None,
+) -> dict[BasicBlock, set[BasicBlock]]:
+    """Iterative dataflow over the BB CFG: ``dom(b)`` = intersection of
+    ``dom(p)`` over predecessors, plus ``b`` itself. Entry BBs (no
+    predecessors) dominate only themselves at the start. Returns a
+    map ``bb -> {bbs that dominate bb}`` (including ``bb`` itself).
+
+    Multiple entry BBs are handled by giving each entry only itself as
+    its initial dominator set; non-entry BBs intersect across all
+    predecessors. Standard worklist algorithm.
+
+    With ``file`` set, only blocks in that file participate — useful
+    when one DB carries multiple programs and dominance must stay
+    intra-program. (BB CFG edges don't cross files in tealtools'
+    model, so the result is structurally the same as building a
+    program-only DB.)"""
+    blocks = [
+        bb for bb in prog.blocks.values() if _file_match(bb.file, file)
+    ]
+    all_blocks = set(blocks)
+    dom: dict[BasicBlock, set[BasicBlock]] = {}
+    for bb in blocks:
+        if not bb.predecessors:
+            dom[bb] = {bb}
+        else:
+            dom[bb] = set(all_blocks)
+    changed = True
+    while changed:
+        changed = False
+        for bb in blocks:
+            if not bb.predecessors:
+                continue
+            new = set(all_blocks)
+            for pred in bb.predecessors:
+                # Predecessors should be in the same file by construction;
+                # defensively skip cross-file edges if any ever appear.
+                if not _file_match(pred.file, file):
+                    continue
+                new &= dom[pred]
+            new.add(bb)
+            if new != dom[bb]:
+                dom[bb] = new
+                changed = True
+    return dom
+
+
+def field_validated_on_all_paths(
+    prog: SSAProgram, field: str, *, file: Optional[str] = None,
+) -> bool:
+    """QL ``txnFieldValidatedOnAllPaths(field)``: there is a single
+    comparison whose BB dominates every approval exit, and one operand
+    of the comparison reads from ``txn FIELD``.
+
+    Phi-aware on the operand check (cross-BB cmps are common when the
+    field read sits in one BB and the comparison in a successor)."""
+    field_vars = {
+        out for a in txn_field_reads(prog, field, file=file) for out in a.outputs
+        if isinstance(out, SSAVar)
+    }
+    if not field_vars:
+        return False
+    exits = approving_exits(prog, file=file)
+    if not exits:
+        return False
+    dom = _bb_strict_dominators(prog, file=file)
+    for cmp in prog.assignments:
+        if not _file_match(cmp.location.file, file):
+            continue
+        if not is_comparison(cmp) or len(cmp.inputs) != 2:
+            continue
+        if not any(
+            _operand_flows_from_field_var(prog, op, field_vars)
+            for op in cmp.inputs
+        ):
+            continue
+        cmp_bb = cmp.basic_block
+        if cmp_bb is None:
+            continue
+        if all(cmp_bb in dom[exit] for exit in exits):
+            return True
+    return False
+
+
+# ---------------------------------------------------------------------------
+# Path-aware "approval exit protected for field" (QL form)
+#
+# Here we DO need to mirror the QL formulation: every path from any
+# program entry to the exit crosses a BB containing a comparison that
+# (a) consumes a txn FIELD read transitively (via a few sub / scratch
+# bridges) and (b) whose result reaches an enforcement sink (assert /
+# bnz to err / bz to err).
+#
+# This is materially stronger than dominance: it correctly accepts
+# replicated per-branch checks. Used by the `rekey-to` detector.
+# ---------------------------------------------------------------------------
+
+
+_ENFORCEMENT_TERM_OPS = frozenset({"assert", "bnz", "bz"})
+
+
+def _block_first_op_is_err(bb: BasicBlock) -> bool:
+    return bool(bb.assignments) and bb.assignments[0].op == "err"
+
+
+def _label_to_bb_first_line(prog: SSAProgram) -> dict[tuple[str, str], int]:
+    """``(file, label_name) -> source line of the label`` for branch
+    target resolution. Same shape as the index inside
+    ``PathPredicateAnalysis``."""
+    out: dict[tuple[str, str], int] = {}
+    for f, ln, code in prog.labels:
+        out[(f, code.rstrip(":").strip())] = ln
+    return out
+
+
+def _bb_at(prog: SSAProgram, file: str, line: int) -> Optional[BasicBlock]:
+    for bb in prog.blocks.values():
+        if bb.file == file and bb.first_line == line:
+            return bb
+    return None
+
+
+def def_forward_reaches_enforcement(
+    prog: SSAProgram,
+    var: SSAVar,
+    *,
+    label_lines: Optional[dict[tuple[str, str], int]] = None,
+    seen: Optional[set[SSAVar]] = None,
+) -> bool:
+    """Mirrors QL ``defForwardReachesAssert``: the SSA chain rooted at
+    ``var`` terminates in some opcode that enforces rejection when the
+    original value is false.
+
+    Recognised sinks:
+      - ``assert`` consumes the SSA chain.
+      - ``bnz target`` consumes it and the fall-through is ``err``
+        (so cmp=false ⇒ fall through ⇒ reject).
+      - ``bz target`` consumes it and the target's first op is ``err``
+        (so cmp=false ⇒ branch to ``err`` ⇒ reject).
+
+    Walks through every consuming opcode that produces an SSA def
+    (``&&``, ``||``, ``dup``, etc.), so compositions like ``cmp1; cmp2;
+    &&; assert`` and ``cmp; dup; bnz target; err`` are all recognised.
+    """
+    if seen is None:
+        seen = set()
+    if var in seen:
+        return False
+    seen.add(var)
+    label_lines = label_lines if label_lines is not None else _label_to_bb_first_line(prog)
+    for cons in var.uses:
+        if cons.op == "assert":
+            return True
+        if cons.op == "bnz":
+            # Fall-through line is the opcode just after the bnz at the
+            # source position. Easiest: the bnz BB's successors should
+            # contain the fall-through BB; an alternative is to look for
+            # the next assignment in source order. We approximate by
+            # checking whether the bnz's BB has a successor whose first
+            # line is greater than bnz's line and whose first op is err.
+            bnz_bb = cons.basic_block
+            if bnz_bb is not None:
+                fall_through = _fall_through_bb(prog, bnz_bb)
+                if fall_through is not None and _block_first_op_is_err(fall_through):
+                    return True
+        elif cons.op == "bz":
+            target_name = cons.immediates.strip()
+            target_line = label_lines.get((cons.location.file, target_name))
+            if target_line is not None:
+                target_bb = _bb_at(prog, cons.location.file, target_line)
+                if target_bb is not None and _block_first_op_is_err(target_bb):
+                    return True
+        # Step: consume produces an SSA def whose forward chain we walk.
+        for out in cons.outputs:
+            if not isinstance(out, SSAVar):
+                continue
+            if def_forward_reaches_enforcement(
+                prog, out, label_lines=label_lines, seen=seen,
+            ):
+                return True
+    return False
+
+
+def _fall_through_bb(prog: SSAProgram, bb: BasicBlock) -> Optional[BasicBlock]:
+    """The CFG successor that represents falling through past ``bb``'s
+    terminating branch (rather than taking the branch). Identified as
+    the successor whose first line is the smallest source line strictly
+    greater than ``bb.last_line`` — branches' targets sit at labelled
+    lines often elsewhere; the fall-through is the next sequential BB.
+    """
+    candidates: list[BasicBlock] = []
+    for succ in bb.successors:
+        if succ.first_line > bb.last_line:
+            candidates.append(succ)
+    if not candidates:
+        return None
+    candidates.sort(key=lambda b: b.first_line)
+    return candidates[0]
+
+
+def _operand_flows_from_field_var(
+    prog: SSAProgram,
+    operand,
+    field_vars: set,
+    *,
+    depth: int = 4,
+    seen: Optional[set] = None,
+) -> bool:
+    """True if ``operand`` provably reads from one of the SSAVars in
+    ``field_vars``, allowing for SSA-level bridges:
+
+      - direct: operand is the SSAVar itself.
+      - phi join: every arg flows from a field var (MUST semantics).
+      - scratch: operand is a ``load N`` output whose every may-influencing
+        store wrote a field-flowing SSAVar (MUST semantics, mirrors
+        :meth:`SSAProgram.propagate_scratch_constants`).
+
+    Conservative on cycles: if the recursion depth runs out or a node
+    repeats, returns False — correctness over completeness.
+    """
+    if depth <= 0 or operand is None:
+        return False
+    if seen is None:
+        seen = set()
+    if operand in field_vars:
+        return True
+    if isinstance(operand, SSAVar):
+        if operand in seen:
+            return False
+        seen.add(operand)
+        # Scratch bridge: load N reads from a slot. Every may-influencing
+        # store must have written a field-flowing SSAVar.
+        if operand.defined_by is not None and operand.defined_by.op == "load":
+            stores = _scratch_stores_for(prog, operand)
+            if not stores:
+                return False
+            return all(
+                _operand_flows_from_field_var(
+                    prog, prog.var(*s), field_vars,
+                    depth=depth - 1, seen=seen,
+                )
+                for s in stores
+            )
+        return False
+    if isinstance(operand, Phi):
+        if operand in seen or not operand.args:
+            return False
+        seen.add(operand)
+        return all(
+            _operand_flows_from_field_var(
+                prog, arg, field_vars, depth=depth - 1, seen=seen,
+            )
+            for arg in operand.args
+        )
+    return False
+
+
+def _scratch_stores_for(prog: SSAProgram, load_var: SSAVar) -> Optional[list]:
+    """``g.nodes[load_node]["scratch_stores"]`` for the ``load`` opcode
+    that produced ``load_var``. Returns the raw list of
+    ``(file, line, output_idx)`` tuples that
+    :func:`tealtools.graphs.load_graph` populated, or ``None`` when the
+    load isn't covered (dynamic-slot ``loads`` op, or the scratch
+    influence query found no stores)."""
+    if load_var.defined_by is None or load_var.defined_by.op != "load":
+        return None
+    for n in prog._graph.nodes:
+        loc = getattr(n, "location", None)
+        if loc is None:
+            continue
+        if loc.file == load_var.file and loc.start_line == load_var.line:
+            return prog._graph.nodes[n].get("scratch_stores")
+    return None
+
+
+def is_protected_bb(
+    prog: SSAProgram, bb: BasicBlock, field: str,
+    *, file: Optional[str] = None,
+) -> bool:
+    """A BB is "protected for ``field``" if it contains a comparison
+    consuming a value that flows from ``txn FIELD`` (directly,
+    through phi joins, or through must-scratch routing) AND whose
+    result reaches an enforcement sink (``assert`` / ``bnz`` to
+    ``err`` / ``bz`` to ``err``).
+
+    Mirrors QL ``isProtectedBB`` + the inner ``txnFieldFlowsToComparison``
+    using a subset of LocalFlow's bridges:
+
+      - direct producer: the SSAVar of the ``txn FIELD`` read.
+      - phi: every arg of the join must flow from the field.
+      - scratch: every may-influencing store of the load must have
+        written a field-flowing SSAVar.
+
+    Subroutine ``callsub`` / ``proto`` bridges are handled implicitly
+    by the SSA model: phis at the sub's entry connect back to the
+    caller's argument SSAVars, and the cmp inside a shared subroutine
+    that itself reads ``txn FIELD`` is recognised at that BB.
+
+    ``file`` (defaults to ``bb.file``): scopes the field-read seed
+    set to a single program in a multi-program DB."""
+    if file is None:
+        file = bb.file
+    field_vars = {
+        out for a in txn_field_reads(prog, field, file=file) for out in a.outputs
+        if isinstance(out, SSAVar)
+    }
+    if not field_vars:
+        return False
+    label_lines = _label_to_bb_first_line(prog)
+    for cmp in bb.assignments:
+        if not is_comparison(cmp) or len(cmp.inputs) != 2:
+            continue
+        if not any(
+            _operand_flows_from_field_var(prog, op, field_vars)
+            for op in cmp.inputs
+        ):
+            continue
+        if not cmp.outputs or not isinstance(cmp.outputs[0], SSAVar):
+            continue
+        if def_forward_reaches_enforcement(
+            prog, cmp.outputs[0], label_lines=label_lines,
+        ):
+            return True
+    return False
+
+
+def approval_exit_protected_for_field(
+    prog: SSAProgram, exit_bb: BasicBlock, field: str,
+    *, file: Optional[str] = None,
+) -> bool:
+    """QL ``approvalExitProtectedForField``: every CFG path from any
+    program entry to ``exit_bb`` crosses at least one BB protected
+    for ``field``. Equivalently, ``exit_bb`` is *not* reachable from
+    any entry along a path of unprotected BBs. Mirrors QL
+    ``not reachableWithoutProtection``."""
+    # Backward BFS from `exit_bb` along predecessor edges, treating
+    # protected BBs (including exit_bb itself) as non-traversable. If
+    # we reach an entry BB (no predecessors) that is itself unprotected
+    # without crossing a protected BB, then there exists an unprotected
+    # path → exit_bb is NOT protected.
+    if file is None:
+        file = exit_bb.file
+    if is_protected_bb(prog, exit_bb, field, file=file):
+        # The exit's own BB doing the check counts as protected.
+        return True
+    visited: set[BasicBlock] = {exit_bb}
+    stack: list[BasicBlock] = [exit_bb]
+    while stack:
+        bb = stack.pop()
+        for pred in bb.predecessors:
+            if pred in visited:
+                continue
+            visited.add(pred)
+            if is_protected_bb(prog, pred, field, file=file):
+                continue
+            if not pred.predecessors:
+                # Reached an unprotected entry BB.
+                return False
+            stack.append(pred)
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Fee / GroupSize one-shot checks
+# ---------------------------------------------------------------------------
+
+
+def has_fee_check(prog: SSAProgram, *, file: Optional[str] = None) -> bool:
+    """``txn Fee`` read flows directly into one operand of a comparison."""
+    return field_compared_anywhere(prog, txn_field="Fee", file=file)
+
+
+def has_groupsize_check(prog: SSAProgram, *, file: Optional[str] = None) -> bool:
+    """``global GroupSize`` read flows into one operand of a
+    comparison (Phi-aware on the operand check)."""
+    gs_vars = {
+        out for a in global_field_reads(prog, "GroupSize", file=file) for out in a.outputs
+        if isinstance(out, SSAVar)
+    }
+    if not gs_vars:
+        return False
+    for cmp in prog.assignments:
+        if not _file_match(cmp.location.file, file):
+            continue
+        if not is_comparison(cmp) or len(cmp.inputs) != 2:
+            continue
+        if any(
+            _operand_flows_from_field_var(prog, op, gs_vars)
+            for op in cmp.inputs
+        ):
+            return True
+    return False
+
+
+# ---------------------------------------------------------------------------
+# Sender == Creator guard
+# ---------------------------------------------------------------------------
+
+
+def _is_txn_field_var(var, field: str) -> bool:
+    if not isinstance(var, SSAVar) or var.defined_by is None:
+        return False
+    a = var.defined_by
+    return a.op == "txn" and a.immediates.strip() == field
+
+
+def _is_global_field_var(var, field: str) -> bool:
+    if not isinstance(var, SSAVar) or var.defined_by is None:
+        return False
+    a = var.defined_by
+    return a.op == "global" and a.immediates.strip() == field
+
+
+def _is_sender_eq_creator(cmp: Assignment) -> bool:
+    if cmp.op != "==" or len(cmp.inputs) != 2:
+        return False
+    a0, a1 = cmp.inputs
+    return (
+        (_is_txn_field_var(a0, "Sender") and _is_global_field_var(a1, "CreatorAddress"))
+        or
+        (_is_txn_field_var(a1, "Sender") and _is_global_field_var(a0, "CreatorAddress"))
+    )
+
+
+def has_sender_eq_creator_check(
+    prog: SSAProgram, *, file: Optional[str] = None,
+) -> bool:
+    """A comparison ``txn Sender == global CreatorAddress`` exists
+    anywhere in the program (optionally restricted to ``file``)."""
+    return any(
+        _is_sender_eq_creator(a)
+        for a in prog.assignments
+        if _file_match(a.location.file, file)
+    )
+
+
+def sender_creator_guard_dominates(
+    prog: SSAProgram,
+    pp: PathPredicateAnalysis,
+    bb: BasicBlock,
+) -> bool:
+    """``bb`` is reached only along paths where ``txn Sender == global
+    CreatorAddress`` was checked truthy.
+
+    We read this off path predicates: if ``bb``'s path predicates
+    include ``(V, "nonzero")`` for some SSAVar ``V`` produced by an
+    ``==`` op consuming ``txn Sender`` and ``global CreatorAddress``,
+    the guard dominates."""
+    for cond in pp.predicates_at(bb.file, bb.first_line):
+        if cond.kind != "nonzero":
+            continue
+        v = cond.value
+        if not isinstance(v, SSAVar) or v.defined_by is None:
+            continue
+        if _is_sender_eq_creator(v.defined_by):
+            return True
+    return False
+
+
+# ---------------------------------------------------------------------------
+# OnCompletion guards
+# ---------------------------------------------------------------------------
+
+
+def _is_oncompletion_var(var) -> bool:
+    return _is_txn_field_var(var, "OnCompletion")
+
+
+def _const_int_value(operand) -> Optional[int]:
+    """Return the integer value if ``operand`` resolves to a known int
+    const, else ``None``. Accepts a bare :class:`Const`, an SSAVar with
+    ``const_value`` set by :meth:`SSAProgram.propagate_constants`, or a
+    Phi whose every arg agrees on a literal."""
+    cv: Optional[Const]
+    if isinstance(operand, Const):
+        cv = operand
+    else:
+        cv = getattr(operand, "const_value", None)
+    if not isinstance(cv, Const) or cv.kind != "int":
+        return None
+    try:
+        return int(cv.value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _other_operand_resolves_to(operand, value: int) -> bool:
+    """The given operand is a constant whose integer value is ``value``."""
+    return _const_int_value(operand) == value
+
+
+def _matches_oncompletion_eq(cmp: Assignment, action_int: int) -> bool:
+    """Comparison shape: ``txn OnCompletion == <action_int>`` (operands
+    in either order). Used for both ``==`` and ``!=``."""
+    if len(cmp.inputs) != 2:
+        return False
+    a0, a1 = cmp.inputs
+    return (
+        (_is_oncompletion_var(a0) and _other_operand_resolves_to(a1, action_int))
+        or
+        (_is_oncompletion_var(a1) and _other_operand_resolves_to(a0, action_int))
+    )
+
+
+def _oncompletion_eq_const_value(cmp: Assignment) -> Optional[int]:
+    """If ``cmp`` is ``txn OnCompletion (==/!=) <const_K>`` (operands in
+    either order), return ``K``. Otherwise ``None``. Used by the
+    extended OC-guard analysis to recognise ``OC == K`` (or ``!= K``)
+    for any ``K``, not just for the action under test."""
+    if cmp.op not in ("==", "!=") or len(cmp.inputs) != 2:
+        return None
+    a0, a1 = cmp.inputs
+    if _is_oncompletion_var(a0):
+        return _const_int_value(a1)
+    if _is_oncompletion_var(a1):
+        return _const_int_value(a0)
+    return None
+
+
+def approval_exit_guarded_for_action(
+    prog: SSAProgram,
+    pp: PathPredicateAnalysis,
+    exit_bb: BasicBlock,
+    action_int: int,
+) -> bool:
+    """Every approving path to ``exit_bb`` proves ``OnCompletion !=
+    action_int``.
+
+    Recognised guard shapes (broader than QL's ``onCompletionEqualityGuard``):
+
+    1. **Direct equality / inequality** with the action under test:
+       - ``V = OC == action_int``, on a path where V is false → guarded.
+       - ``V = OC != action_int``, on a path where V is true → guarded.
+
+    2. **Equality with some other constant K**:
+       - ``V = OC == K``, on a path where V is true → ``OC == K`` →
+         ``OC != action_int`` whenever ``K != action_int``. This is what
+         catches ``bnz`` dispatch tables (``OC == 0; bnz handle_noop``
+         → at handle_noop, ``OC == 0`` → guarded against any non-0 action).
+       - Symmetric: ``V = OC != K``, V is false → ``OC == K`` → guarded
+         when ``K != action_int``.
+
+    3. **Switch dispatch on OnCompletion** (``txn OnCompletion; switch
+       handler_0 handler_1 ...``):
+       - On a target edge: predicate ``(OC, "eq", (Const(int, str(K)),))``
+         → ``OC == K`` → guarded when ``K != action``.
+       - On the fall-through edge: ``(OC, "not_in_range", (lo, hi))``
+         → ``OC ∉ [lo, hi)``. Guarded when ``action ∈ [lo, hi)`` (the
+         action would have routed to a target, but execution reached
+         the fall-through, so OC isn't action).
+
+    4. **Match dispatch on OnCompletion** (``... candidates ...; txn
+       OnCompletion; match h0 h1 ...``):
+       - On a target edge: predicate ``(OC, "eq", (candidate,))`` →
+         ``OC == candidate``. Guarded when the candidate resolves to a
+         const ``K != action``.
+       - On the fall-through edge: ``(OC, "neq_all", (c0, c1, …))``.
+         Guarded when any candidate resolves to ``action`` (the action
+         would have matched but didn't, so OC isn't action).
+
+    QL's ``onCompletionEqualityGuard`` only models case 1; everything
+    else is a deliberate enhancement (real Algorand routers / Puya
+    output use ``match`` dispatch on OC). Tighter than QL — fixtures
+    that QL flags as deletable / updatable but actually route OC=K to
+    err can no longer be flagged here."""
+    for cond in pp.predicates_at(exit_bb.file, exit_bb.first_line):
+        v = cond.value
+
+        # Case 3 + 4: switch / match edge predicates against an
+        # OnCompletion-typed key.
+        if cond.kind == "eq" and _is_oncompletion_var(v) and cond.args:
+            k = _const_int_value(cond.args[0])
+            if k is not None and k != action_int:
+                return True
+        if cond.kind == "not_in_range" and _is_oncompletion_var(v):
+            lo, hi = cond.args
+            if isinstance(lo, int) and isinstance(hi, int) and lo <= action_int < hi:
+                return True
+        if cond.kind == "neq_all" and _is_oncompletion_var(v):
+            for cand in cond.args:
+                if _const_int_value(cand) == action_int:
+                    return True
+
+        # Cases 1 + 2: SSA-level recognition of ``V = OC ==/!= K``
+        # whose truth/falsity is captured by the path predicate.
+        if isinstance(v, SSAVar) and v.defined_by is not None:
+            a = v.defined_by
+            if a.op in ("==", "!="):
+                k = _oncompletion_eq_const_value(a)
+                if k is not None:
+                    if a.op == "==":
+                        # V is (OC == K). nonzero ⇒ OC == K. zero ⇒ OC != K.
+                        if cond.kind == "nonzero" and k != action_int:
+                            return True
+                        if cond.kind == "zero" and k == action_int:
+                            return True
+                    else:  # "!="
+                        # V is (OC != K). nonzero ⇒ OC != K. zero ⇒ OC == K.
+                        if cond.kind == "nonzero" and k == action_int:
+                            return True
+                        if cond.kind == "zero" and k != action_int:
+                            return True
+    return False
+
+
+def approval_exit_unguarded_for_action(
+    prog: SSAProgram,
+    pp: PathPredicateAnalysis,
+    exit_bb: BasicBlock,
+    action_int: int,
+) -> bool:
+    return not approval_exit_guarded_for_action(prog, pp, exit_bb, action_int)
+
+
+# ---------------------------------------------------------------------------
+# Inner transaction helpers
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class InnerTxnFieldSet:
+    """One ``itxn_field FIELD`` assignment, with the SSA value being
+    written. Shape mirrors the QL ``InnerTransactionField`` class."""
+
+    assignment: Assignment
+    field: str
+    value: object  # SSAVar | Phi | Const
+
+    @property
+    def value_const(self) -> Optional[Const]:
+        v = self.value
+        if isinstance(v, Const):
+            return v
+        cv = getattr(v, "const_value", None)
+        if isinstance(cv, Const):
+            return cv
+        return None
+
+
+def inner_txn_field_assigns(
+    prog: SSAProgram, *, file: Optional[str] = None,
+) -> list[InnerTxnFieldSet]:
+    """Iterate every ``itxn_field FIELD`` opcode. The set value is
+    ``inputs[0]`` (top-of-stack at the itxn_field call)."""
+    out: list[InnerTxnFieldSet] = []
+    for a in prog.assignments:
+        if not _file_match(a.location.file, file):
+            continue
+        if a.op != "itxn_field" or not a.inputs:
+            continue
+        field = a.immediates.strip()
+        out.append(InnerTxnFieldSet(assignment=a, field=field, value=a.inputs[0]))
+    return out
+
+
+def inner_txn_sets_nonzero_fee(field_set: InnerTxnFieldSet) -> bool:
+    """``itxn_field Fee`` whose value resolves to a non-zero integer
+    constant (matches QL ``innerTxnSetsNonZeroFee``: a *known* non-zero
+    int — dynamic values aren't flagged)."""
+    if field_set.field != "Fee":
+        return False
+    cv = field_set.value_const
+    if cv is None or cv.kind != "int":
+        return False
+    try:
+        return int(cv.value) != 0
+    except (TypeError, ValueError):
+        return False
+
+
+# ---------------------------------------------------------------------------
+# Tiny presentation helper used by every detector module
+# ---------------------------------------------------------------------------
+
+
+def loc(a) -> str:
+    """``file:line`` formatter — the canonical location format used by
+    every existing detector's ``pretty()`` output."""
+    if hasattr(a, "location"):
+        return f"{a.location.file}:{a.location.line}"
+    if hasattr(a, "file") and hasattr(a, "first_line"):
+        return f"{a.file}:{a.first_line}"
+    return str(a)

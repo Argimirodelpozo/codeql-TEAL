@@ -1,0 +1,10 @@
+[2026-05-07 22:27:41] This is codeql query run --database /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tests/tealtools/box_key/vuln_hash/db --output /home/argi/.cache/teal-graphs/c88cacb9870a6ea1/scratchInfluence.bqrs /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tealtools/queries/scratchInfluence.ql
+[2026-05-07 22:27:41] Log file was started late.
+[2026-05-07 22:27:41] Calling plumbing command: codeql resolve ram --dataset=/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tests/tealtools/box_key/vuln_hash/db/db-teal --format=json
+[2026-05-07 22:27:41] [PROGRESS] resolve ram> Stringpool size measured as 2146714
+[2026-05-07 22:27:41] Plumbing command codeql resolve ram completed:
+                      [
+                        "-J-Xmx1391M"
+                      ]
+[2026-05-07 22:27:41] Chaining via /tmp/codeql.JabVoiBa to plumbing: execute queries -J-Xmx1391M --verbosity=progress --logdir=/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tests/tealtools/box_key/vuln_hash/db/log --evaluator-log-level=5 --warnings=show --qlconfig-file=/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/qlconfig.yml --dynamic-join-order-mode=none --output=/home/argi/.cache/teal-graphs/c88cacb9870a6ea1/scratchInfluence.bqrs -- /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tests/tealtools/box_key/vuln_hash/db/db-teal path:/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tealtools/queries/scratchInfluence.ql
+[2026-05-07 22:27:41] Exiting with code 70

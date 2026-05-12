@@ -1,0 +1,2 @@
+Application allows creator updates at exit prog.teal:50 without a timelock delay — users cannot review code changes before they take effect.
+Application allows creator updates at exit prog.teal:56 without a timelock delay — users cannot review code changes before they take effect.

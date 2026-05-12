@@ -1,0 +1,821 @@
+[2026-05-05 16:31:07] This is codeql execute queries -J-Xmx1391M --verbosity=progress --logdir=/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tests/tealtools/box_key/vuln_extract/db/log --evaluator-log-level=5 --warnings=show --qlconfig-file=/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/qlconfig.yml --dynamic-join-order-mode=none --output=/home/argi/.cache/teal-graphs/1e06161a599a58c4/innerTxnFields.bqrs -- /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tests/tealtools/box_key/vuln_extract/db/db-teal path:/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tealtools/queries/innerTxnFields.ql
+[2026-05-05 16:31:07] Calling plumbing command: codeql resolve queries --qlconfig-file=/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/qlconfig.yml --format=json -- path:/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tealtools/queries/innerTxnFields.ql
+[2026-05-05 16:31:08] [PROGRESS] resolve queries> Recording pack reference argimirodelpozo/tealtools at /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tealtools/queries.
+[2026-05-05 16:31:08] Plumbing command codeql resolve queries completed:
+                      [
+                        "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tealtools/queries/innerTxnFields.ql"
+                      ]
+[2026-05-05 16:31:08] Refusing fancy output: $CODEQL_ISATTY terminal indication is missing
+[2026-05-05 16:31:08] Creating executor with 1 threads.
+[2026-05-05 16:31:08] Calling plumbing command: codeql resolve extensions --qlconfig-file=/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/qlconfig.yml --include-extension-row-locations path:/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tealtools/queries/innerTxnFields.ql
+[2026-05-05 16:31:08] Calling plumbing command: codeql resolve queries --qlconfig-file=/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/qlconfig.yml --allow-library-packs --format startingpacks -- path:/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tealtools/queries/innerTxnFields.ql
+[2026-05-05 16:31:08] [PROGRESS] resolve queries> Recording pack reference argimirodelpozo/tealtools at /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tealtools/queries.
+[2026-05-05 16:31:08] Plumbing command codeql resolve queries completed:
+                      [
+                        "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tealtools/queries"
+                      ]
+[2026-05-05 16:31:08] Calling plumbing command: codeql resolve extensions-by-pack --qlconfig-file=/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/qlconfig.yml --include-extension-row-locations -- /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tealtools/queries
+[2026-05-05 16:31:08] [SPAMMY] resolve extensions-by-pack> [INCOMPATIBILITY] argimirodelpozo/tealtools: not 0.1.0 {root: argimirodelpozo/tealtools@0.1.0}
+[2026-05-05 16:31:08] [SPAMMY] resolve extensions-by-pack> [DERIVATION] argimirodelpozo/tealtools: 0.1.0 {argimirodelpozo/tealtools: not 0.1.0 {root: argimirodelpozo/tealtools@0.1.0}}
+[2026-05-05 16:31:09] [SPAMMY] resolve extensions-by-pack> [INCOMPATIBILITY] argimirodelpozo/tealtools: * [*], argimirodelpozo/teal-all: not * [*] {dependency: argimirodelpozo/tealtools@* [*] requires argimirodelpozo/teal-all@0.2.0}
+[2026-05-05 16:31:09] [SPAMMY] resolve extensions-by-pack> [DECISION 1] argimirodelpozo/tealtools: 0.1.0
+[2026-05-05 16:31:09] [SPAMMY] resolve extensions-by-pack> [DERIVATION] argimirodelpozo/teal-all: * [*] {argimirodelpozo/tealtools: * [*], argimirodelpozo/teal-all: not * [*] {dependency: argimirodelpozo/tealtools@* [*] requires argimirodelpozo/teal-all@0.2.0}}
+[2026-05-05 16:31:09] [SPAMMY] resolve extensions-by-pack> [INCOMPATIBILITY] argimirodelpozo/teal-all: * [*], codeql/controlflow: not * [*] {dependency: argimirodelpozo/teal-all@* [*] requires codeql/controlflow@*}
+[2026-05-05 16:31:09] [SPAMMY] resolve extensions-by-pack> [INCOMPATIBILITY] argimirodelpozo/teal-all: * [*], codeql/dataflow: not * [*] {dependency: argimirodelpozo/teal-all@* [*] requires codeql/dataflow@*}
+[2026-05-05 16:31:09] [SPAMMY] resolve extensions-by-pack> [INCOMPATIBILITY] argimirodelpozo/teal-all: * [*], codeql/mad: not * [*] {dependency: argimirodelpozo/teal-all@* [*] requires codeql/mad@*}
+[2026-05-05 16:31:09] [SPAMMY] resolve extensions-by-pack> [INCOMPATIBILITY] argimirodelpozo/teal-all: * [*], codeql/regex: not * [*] {dependency: argimirodelpozo/teal-all@* [*] requires codeql/regex@*}
+[2026-05-05 16:31:09] [SPAMMY] resolve extensions-by-pack> [INCOMPATIBILITY] argimirodelpozo/teal-all: * [*], codeql/ssa: not * [*] {dependency: argimirodelpozo/teal-all@* [*] requires codeql/ssa@*}
+[2026-05-05 16:31:09] [SPAMMY] resolve extensions-by-pack> [INCOMPATIBILITY] argimirodelpozo/teal-all: * [*], codeql/tutorial: not * [*] {dependency: argimirodelpozo/teal-all@* [*] requires codeql/tutorial@*}
+[2026-05-05 16:31:09] [SPAMMY] resolve extensions-by-pack> [INCOMPATIBILITY] argimirodelpozo/teal-all: * [*], codeql/util: not * [*] {dependency: argimirodelpozo/teal-all@* [*] requires codeql/util@*}
+[2026-05-05 16:31:09] [SPAMMY] resolve extensions-by-pack> [DECISION 2] argimirodelpozo/teal-all: 0.2.0
+[2026-05-05 16:31:09] [SPAMMY] resolve extensions-by-pack> [DERIVATION] codeql/util: * [*] {argimirodelpozo/teal-all: * [*], codeql/util: not * [*] {dependency: argimirodelpozo/teal-all@* [*] requires codeql/util@*}}
+[2026-05-05 16:31:09] [SPAMMY] resolve extensions-by-pack> [DERIVATION] codeql/tutorial: * [*] {argimirodelpozo/teal-all: * [*], codeql/tutorial: not * [*] {dependency: argimirodelpozo/teal-all@* [*] requires codeql/tutorial@*}}
+[2026-05-05 16:31:09] [SPAMMY] resolve extensions-by-pack> [DERIVATION] codeql/ssa: * [*] {argimirodelpozo/teal-all: * [*], codeql/ssa: not * [*] {dependency: argimirodelpozo/teal-all@* [*] requires codeql/ssa@*}}
+[2026-05-05 16:31:09] [SPAMMY] resolve extensions-by-pack> [DERIVATION] codeql/regex: * [*] {argimirodelpozo/teal-all: * [*], codeql/regex: not * [*] {dependency: argimirodelpozo/teal-all@* [*] requires codeql/regex@*}}
+[2026-05-05 16:31:09] [SPAMMY] resolve extensions-by-pack> [DERIVATION] codeql/mad: * [*] {argimirodelpozo/teal-all: * [*], codeql/mad: not * [*] {dependency: argimirodelpozo/teal-all@* [*] requires codeql/mad@*}}
+[2026-05-05 16:31:09] [SPAMMY] resolve extensions-by-pack> [DERIVATION] codeql/dataflow: * [*] {argimirodelpozo/teal-all: * [*], codeql/dataflow: not * [*] {dependency: argimirodelpozo/teal-all@* [*] requires codeql/dataflow@*}}
+[2026-05-05 16:31:09] [SPAMMY] resolve extensions-by-pack> [DERIVATION] codeql/controlflow: * [*] {argimirodelpozo/teal-all: * [*], codeql/controlflow: not * [*] {dependency: argimirodelpozo/teal-all@* [*] requires codeql/controlflow@*}}
+[2026-05-05 16:31:09] [SPAMMY] resolve extensions-by-pack> [INCOMPATIBILITY] codeql/controlflow: * [*], codeql/util: not * [*] {dependency: codeql/controlflow@* [*] requires codeql/util@2.0.8-dev}
+[2026-05-05 16:31:09] [SPAMMY] resolve extensions-by-pack> [DECISION 3] codeql/controlflow: 2.0.5-dev
+[2026-05-05 16:31:09] [SPAMMY] resolve extensions-by-pack> [INCOMPATIBILITY] codeql/dataflow: * [*], codeql/ssa: not * [*] {dependency: codeql/dataflow@* [*] requires codeql/ssa@1.0.21-dev}
+[2026-05-05 16:31:09] [SPAMMY] resolve extensions-by-pack> [INCOMPATIBILITY] codeql/dataflow: * [*], codeql/typetracking: not * [*] {dependency: codeql/dataflow@* [*] requires codeql/typetracking@2.0.5-dev}
+[2026-05-05 16:31:09] [SPAMMY] resolve extensions-by-pack> [INCOMPATIBILITY] codeql/dataflow: * [*], codeql/util: not * [*] {dependency: codeql/dataflow@* [*] requires codeql/util@2.0.8-dev}
+[2026-05-05 16:31:09] [SPAMMY] resolve extensions-by-pack> [DECISION 4] codeql/dataflow: 2.0.5-dev
+[2026-05-05 16:31:09] [SPAMMY] resolve extensions-by-pack> [DERIVATION] codeql/typetracking: * [*] {codeql/dataflow: * [*], codeql/typetracking: not * [*] {dependency: codeql/dataflow@* [*] requires codeql/typetracking@2.0.5-dev}}
+[2026-05-05 16:31:09] [SPAMMY] resolve extensions-by-pack> [INCOMPATIBILITY] codeql/mad: * [*], codeql/dataflow: not * [*] {dependency: codeql/mad@* [*] requires codeql/dataflow@2.0.5-dev}
+[2026-05-05 16:31:09] [SPAMMY] resolve extensions-by-pack> [INCOMPATIBILITY] codeql/mad: * [*], codeql/util: not * [*] {dependency: codeql/mad@* [*] requires codeql/util@2.0.8-dev}
+[2026-05-05 16:31:09] [SPAMMY] resolve extensions-by-pack> [DECISION 5] codeql/mad: 1.0.21-dev
+[2026-05-05 16:31:09] [SPAMMY] resolve extensions-by-pack> [INCOMPATIBILITY] codeql/regex: * [*], codeql/util: not * [*] {dependency: codeql/regex@* [*] requires codeql/util@2.0.8-dev}
+[2026-05-05 16:31:09] [SPAMMY] resolve extensions-by-pack> [DECISION 6] codeql/regex: 1.0.21-dev
+[2026-05-05 16:31:09] [SPAMMY] resolve extensions-by-pack> [INCOMPATIBILITY] codeql/ssa: * [*], codeql/util: not * [*] {dependency: codeql/ssa@* [*] requires codeql/util@2.0.8-dev}
+[2026-05-05 16:31:09] [SPAMMY] resolve extensions-by-pack> [DECISION 7] codeql/ssa: 1.0.21-dev
+[2026-05-05 16:31:09] [SPAMMY] resolve extensions-by-pack> [DECISION 8] codeql/tutorial: 1.0.21-dev
+[2026-05-05 16:31:09] [SPAMMY] resolve extensions-by-pack> [INCOMPATIBILITY] codeql/typetracking: * [*], codeql/util: not * [*] {dependency: codeql/typetracking@* [*] requires codeql/util@2.0.8-dev}
+[2026-05-05 16:31:09] [SPAMMY] resolve extensions-by-pack> [DECISION 9] codeql/typetracking: 2.0.5-dev
+[2026-05-05 16:31:09] [SPAMMY] resolve extensions-by-pack> [DECISION 10] codeql/util: 2.0.8-dev
+[2026-05-05 16:31:09] [PROGRESS] resolve extensions-by-pack> Loading data extensions in /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/ext/default-alert-filter.yml.
+[2026-05-05 16:31:09] [DETAILS] resolve extensions-by-pack>   Found extension targeting codeql/util:restrictAlertsTo: 0 tuples.
+[2026-05-05 16:31:09] Calling plumbing command: codeql generate extensible-predicate-metadata /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util
+[2026-05-05 16:31:10] Calling plumbing command: codeql pack packlist /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util --format=json
+[2026-05-05 16:31:10] Calling plumbing command: codeql resolve files --include=**/*.qll --include=**/*.dbscheme --include=**/*.dbscheme.stats --include=**/*.md --include=**/*.qls --include=**/*.qlref --include=**/*.yml --include=**/*.yaml --include=**/upgrade.properties --include=**/*.ql --include=!**/.* --include=!**/qlpack.auth.yml --include=!**/qlconfig.yml --include=!codeql-pack.lock.yml --include=!qlpack.lock.yml --include=!codeql-pack.release.yml --include=!change-notes --include=!**/*.qhelp --include=codeql-pack.yml --include=qlpack.yml --include=LICENSE --include=README.md --include=CHANGELOG.md --include=!**/*.qlx --include=ext/*.yml /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util --format=json
+[2026-05-05 16:31:10] [PROGRESS] resolve files> Scanning /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util...
+[2026-05-05 16:31:10] [PROGRESS] resolve files> Scanning /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/ext...
+[2026-05-05 16:31:10] [PROGRESS] resolve files> Scanning /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/codeql...
+[2026-05-05 16:31:10] [PROGRESS] resolve files> Scanning /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/codeql/util...
+[2026-05-05 16:31:10] [PROGRESS] resolve files> Scanning /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/codeql/util/suppression...
+[2026-05-05 16:31:10] [PROGRESS] resolve files> Scanning /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/codeql/util/test...
+[2026-05-05 16:31:10] Plumbing command codeql resolve files completed:
+                      [
+                        "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/CHANGELOG.md",
+                        "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/codeql/util/AlertFiltering.qll",
+                        "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/codeql/util/Boolean.qll",
+                        "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/codeql/util/DenseRank.qll",
+                        "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/codeql/util/Either.qll",
+                        "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/codeql/util/FilePath.qll",
+                        "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/codeql/util/FileSystem.qll",
+                        "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/codeql/util/Location.qll",
+                        "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/codeql/util/Numbers.qll",
+                        "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/codeql/util/Option.qll",
+                        "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/codeql/util/ReportStats.qll",
+                        "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/codeql/util/Strings.qll",
+                        "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/codeql/util/Unit.qll",
+                        "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/codeql/util/Void.qll",
+                        "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/codeql/util/suppression/AlertSuppression.qll",
+                        "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/codeql/util/test/InlineExpectationsTest.qll",
+                        "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/ext/default-alert-filter.yml",
+                        "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/qlpack.yml"
+                      ]
+[2026-05-05 16:31:10] Plumbing command codeql pack packlist completed:
+                      {
+                        "paths" : [
+                          "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/CHANGELOG.md",
+                          "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/codeql/util/AlertFiltering.qll",
+                          "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/codeql/util/Boolean.qll",
+                          "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/codeql/util/DenseRank.qll",
+                          "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/codeql/util/Either.qll",
+                          "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/codeql/util/FilePath.qll",
+                          "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/codeql/util/FileSystem.qll",
+                          "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/codeql/util/Location.qll",
+                          "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/codeql/util/Numbers.qll",
+                          "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/codeql/util/Option.qll",
+                          "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/codeql/util/ReportStats.qll",
+                          "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/codeql/util/Strings.qll",
+                          "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/codeql/util/Unit.qll",
+                          "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/codeql/util/Void.qll",
+                          "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/codeql/util/suppression/AlertSuppression.qll",
+                          "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/codeql/util/test/InlineExpectationsTest.qll",
+                          "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/ext/default-alert-filter.yml",
+                          "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/qlpack.yml"
+                        ]
+                      }
+[2026-05-05 16:31:10] Plumbing command codeql generate extensible-predicate-metadata completed:
+                      {
+                        "extensible_predicates" : [
+                          {
+                            "name" : "restrictAlertsTo",
+                            "parameters" : [
+                              {
+                                "name" : "filePath",
+                                "type" : "string"
+                              },
+                              {
+                                "name" : "startLineStart",
+                                "type" : "int"
+                              },
+                              {
+                                "name" : "startLineEnd",
+                                "type" : "int"
+                              }
+                            ],
+                            "has_origin" : false,
+                            "path" : "codeql/util/AlertFiltering.qll",
+                            "start_line" : 38,
+                            "start_column" : 1,
+                            "end_line" : 38,
+                            "end_column" : 94
+                          },
+                          {
+                            "name" : "restrictAlertsToExactLocation",
+                            "parameters" : [
+                              {
+                                "name" : "filePath",
+                                "type" : "string"
+                              },
+                              {
+                                "name" : "startLine",
+                                "type" : "int"
+                              },
+                              {
+                                "name" : "startColumn",
+                                "type" : "int"
+                              },
+                              {
+                                "name" : "endLine",
+                                "type" : "int"
+                              },
+                              {
+                                "name" : "endColumn",
+                                "type" : "int"
+                              }
+                            ],
+                            "has_origin" : false,
+                            "path" : "codeql/util/AlertFiltering.qll",
+                            "start_line" : 70,
+                            "start_column" : 1,
+                            "end_line" : 72,
+                            "end_column" : 3
+                          }
+                        ]
+                      }
+[2026-05-05 16:31:10] [DETAILS] resolve extensions-by-pack>   Found extension targeting codeql/util:restrictAlertsToExactLocation: 0 tuples.
+[2026-05-05 16:31:10] [WARN] resolve extensions-by-pack> WARNING: Pattern 'codeql/teal/frameworks/**/model.yml' did not match any extension files. (/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/teal/ql/lib/qlpack.yml:1,1-1)
+[2026-05-05 16:31:10] [WARN] resolve extensions-by-pack> WARNING: Pattern 'codeql/teal/frameworks/**/*.model.yml' did not match any extension files. (/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/teal/ql/lib/qlpack.yml:1,1-1)
+[2026-05-05 16:31:10] Plumbing command codeql resolve extensions-by-pack completed:
+                      {
+                        "models" : [ ],
+                        "data" : {
+                          "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tealtools/queries" : [
+                            {
+                              "predicate" : "restrictAlertsTo",
+                              "file" : "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/ext/default-alert-filter.yml",
+                              "index" : 0,
+                              "firstRowId" : 0,
+                              "rowCount" : 0,
+                              "predicateHasOrigin" : false,
+                              "locations" : {
+                                "lineNumbers" : "A",
+                                "columnNumbers" : "A"
+                              }
+                            },
+                            {
+                              "predicate" : "restrictAlertsToExactLocation",
+                              "file" : "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/ext/default-alert-filter.yml",
+                              "index" : 1,
+                              "firstRowId" : 0,
+                              "rowCount" : 0,
+                              "predicateHasOrigin" : false,
+                              "locations" : {
+                                "lineNumbers" : "A",
+                                "columnNumbers" : "A"
+                              }
+                            }
+                          ]
+                        },
+                        "threatModels" : { },
+                        "extensionPacks" : [ ]
+                      }
+[2026-05-05 16:31:10] Plumbing command codeql resolve extensions completed:
+                      {
+                        "models" : [ ],
+                        "data" : {
+                          "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tealtools/queries" : [
+                            {
+                              "predicate" : "restrictAlertsTo",
+                              "file" : "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/ext/default-alert-filter.yml",
+                              "index" : 0,
+                              "firstRowId" : 0,
+                              "rowCount" : 0,
+                              "predicateHasOrigin" : false,
+                              "locations" : {
+                                "lineNumbers" : "A",
+                                "columnNumbers" : "A"
+                              }
+                            },
+                            {
+                              "predicate" : "restrictAlertsToExactLocation",
+                              "file" : "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util/ext/default-alert-filter.yml",
+                              "index" : 1,
+                              "firstRowId" : 0,
+                              "rowCount" : 0,
+                              "predicateHasOrigin" : false,
+                              "locations" : {
+                                "lineNumbers" : "A",
+                                "columnNumbers" : "A"
+                              }
+                            }
+                          ]
+                        },
+                        "threatModels" : { },
+                        "extensionPacks" : [ ]
+                      }
+[2026-05-05 16:31:10] Calling plumbing command: codeql resolve library-path --qlconfig-file=/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/qlconfig.yml --query=/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tealtools/queries/innerTxnFields.ql --format=json
+[2026-05-05 16:31:10] [DETAILS] resolve library-path> Resolving query at normalized path /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tealtools/queries/innerTxnFields.ql.
+[2026-05-05 16:31:10] [DETAILS] resolve library-path> Found enclosing pack 'argimirodelpozo/tealtools' at /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tealtools/queries.
+[2026-05-05 16:31:10] [DETAILS] resolve library-path> Adding compilation cache at /home/argi/.codeql/compile-cache.
+[2026-05-05 16:31:10] [DETAILS] resolve library-path> Resolving library dependencies from /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tealtools/queries/qlpack.yml.
+[2026-05-05 16:31:10] [SPAMMY] resolve library-path> [INCOMPATIBILITY] argimirodelpozo/tealtools: not 0.1.0 {root: argimirodelpozo/tealtools@0.1.0}
+[2026-05-05 16:31:10] [SPAMMY] resolve library-path> [DERIVATION] argimirodelpozo/tealtools: 0.1.0 {argimirodelpozo/tealtools: not 0.1.0 {root: argimirodelpozo/tealtools@0.1.0}}
+[2026-05-05 16:31:10] [SPAMMY] resolve library-path> [INCOMPATIBILITY] argimirodelpozo/tealtools: * [*], argimirodelpozo/teal-all: not * [*] {dependency: argimirodelpozo/tealtools@* [*] requires argimirodelpozo/teal-all@0.2.0}
+[2026-05-05 16:31:10] [SPAMMY] resolve library-path> [DECISION 1] argimirodelpozo/tealtools: 0.1.0
+[2026-05-05 16:31:10] [SPAMMY] resolve library-path> [DERIVATION] argimirodelpozo/teal-all: * [*] {argimirodelpozo/tealtools: * [*], argimirodelpozo/teal-all: not * [*] {dependency: argimirodelpozo/tealtools@* [*] requires argimirodelpozo/teal-all@0.2.0}}
+[2026-05-05 16:31:10] [SPAMMY] resolve library-path> [INCOMPATIBILITY] argimirodelpozo/teal-all: * [*], codeql/controlflow: not * [*] {dependency: argimirodelpozo/teal-all@* [*] requires codeql/controlflow@*}
+[2026-05-05 16:31:10] [SPAMMY] resolve library-path> [INCOMPATIBILITY] argimirodelpozo/teal-all: * [*], codeql/dataflow: not * [*] {dependency: argimirodelpozo/teal-all@* [*] requires codeql/dataflow@*}
+[2026-05-05 16:31:10] [SPAMMY] resolve library-path> [INCOMPATIBILITY] argimirodelpozo/teal-all: * [*], codeql/mad: not * [*] {dependency: argimirodelpozo/teal-all@* [*] requires codeql/mad@*}
+[2026-05-05 16:31:10] [SPAMMY] resolve library-path> [INCOMPATIBILITY] argimirodelpozo/teal-all: * [*], codeql/regex: not * [*] {dependency: argimirodelpozo/teal-all@* [*] requires codeql/regex@*}
+[2026-05-05 16:31:10] [SPAMMY] resolve library-path> [INCOMPATIBILITY] argimirodelpozo/teal-all: * [*], codeql/ssa: not * [*] {dependency: argimirodelpozo/teal-all@* [*] requires codeql/ssa@*}
+[2026-05-05 16:31:10] [SPAMMY] resolve library-path> [INCOMPATIBILITY] argimirodelpozo/teal-all: * [*], codeql/tutorial: not * [*] {dependency: argimirodelpozo/teal-all@* [*] requires codeql/tutorial@*}
+[2026-05-05 16:31:10] [SPAMMY] resolve library-path> [INCOMPATIBILITY] argimirodelpozo/teal-all: * [*], codeql/util: not * [*] {dependency: argimirodelpozo/teal-all@* [*] requires codeql/util@*}
+[2026-05-05 16:31:10] [SPAMMY] resolve library-path> [DECISION 2] argimirodelpozo/teal-all: 0.2.0
+[2026-05-05 16:31:10] [SPAMMY] resolve library-path> [DERIVATION] codeql/util: * [*] {argimirodelpozo/teal-all: * [*], codeql/util: not * [*] {dependency: argimirodelpozo/teal-all@* [*] requires codeql/util@*}}
+[2026-05-05 16:31:10] [SPAMMY] resolve library-path> [DERIVATION] codeql/tutorial: * [*] {argimirodelpozo/teal-all: * [*], codeql/tutorial: not * [*] {dependency: argimirodelpozo/teal-all@* [*] requires codeql/tutorial@*}}
+[2026-05-05 16:31:10] [SPAMMY] resolve library-path> [DERIVATION] codeql/ssa: * [*] {argimirodelpozo/teal-all: * [*], codeql/ssa: not * [*] {dependency: argimirodelpozo/teal-all@* [*] requires codeql/ssa@*}}
+[2026-05-05 16:31:10] [SPAMMY] resolve library-path> [DERIVATION] codeql/regex: * [*] {argimirodelpozo/teal-all: * [*], codeql/regex: not * [*] {dependency: argimirodelpozo/teal-all@* [*] requires codeql/regex@*}}
+[2026-05-05 16:31:10] [SPAMMY] resolve library-path> [DERIVATION] codeql/mad: * [*] {argimirodelpozo/teal-all: * [*], codeql/mad: not * [*] {dependency: argimirodelpozo/teal-all@* [*] requires codeql/mad@*}}
+[2026-05-05 16:31:10] [SPAMMY] resolve library-path> [DERIVATION] codeql/dataflow: * [*] {argimirodelpozo/teal-all: * [*], codeql/dataflow: not * [*] {dependency: argimirodelpozo/teal-all@* [*] requires codeql/dataflow@*}}
+[2026-05-05 16:31:10] [SPAMMY] resolve library-path> [DERIVATION] codeql/controlflow: * [*] {argimirodelpozo/teal-all: * [*], codeql/controlflow: not * [*] {dependency: argimirodelpozo/teal-all@* [*] requires codeql/controlflow@*}}
+[2026-05-05 16:31:10] [SPAMMY] resolve library-path> [INCOMPATIBILITY] codeql/controlflow: * [*], codeql/util: not * [*] {dependency: codeql/controlflow@* [*] requires codeql/util@2.0.8-dev}
+[2026-05-05 16:31:10] [SPAMMY] resolve library-path> [DECISION 3] codeql/controlflow: 2.0.5-dev
+[2026-05-05 16:31:10] [SPAMMY] resolve library-path> [INCOMPATIBILITY] codeql/dataflow: * [*], codeql/ssa: not * [*] {dependency: codeql/dataflow@* [*] requires codeql/ssa@1.0.21-dev}
+[2026-05-05 16:31:10] [SPAMMY] resolve library-path> [INCOMPATIBILITY] codeql/dataflow: * [*], codeql/typetracking: not * [*] {dependency: codeql/dataflow@* [*] requires codeql/typetracking@2.0.5-dev}
+[2026-05-05 16:31:10] [SPAMMY] resolve library-path> [INCOMPATIBILITY] codeql/dataflow: * [*], codeql/util: not * [*] {dependency: codeql/dataflow@* [*] requires codeql/util@2.0.8-dev}
+[2026-05-05 16:31:10] [SPAMMY] resolve library-path> [DECISION 4] codeql/dataflow: 2.0.5-dev
+[2026-05-05 16:31:10] [SPAMMY] resolve library-path> [DERIVATION] codeql/typetracking: * [*] {codeql/dataflow: * [*], codeql/typetracking: not * [*] {dependency: codeql/dataflow@* [*] requires codeql/typetracking@2.0.5-dev}}
+[2026-05-05 16:31:10] [SPAMMY] resolve library-path> [INCOMPATIBILITY] codeql/mad: * [*], codeql/dataflow: not * [*] {dependency: codeql/mad@* [*] requires codeql/dataflow@2.0.5-dev}
+[2026-05-05 16:31:10] [SPAMMY] resolve library-path> [INCOMPATIBILITY] codeql/mad: * [*], codeql/util: not * [*] {dependency: codeql/mad@* [*] requires codeql/util@2.0.8-dev}
+[2026-05-05 16:31:10] [SPAMMY] resolve library-path> [DECISION 5] codeql/mad: 1.0.21-dev
+[2026-05-05 16:31:10] [SPAMMY] resolve library-path> [INCOMPATIBILITY] codeql/regex: * [*], codeql/util: not * [*] {dependency: codeql/regex@* [*] requires codeql/util@2.0.8-dev}
+[2026-05-05 16:31:10] [SPAMMY] resolve library-path> [DECISION 6] codeql/regex: 1.0.21-dev
+[2026-05-05 16:31:10] [SPAMMY] resolve library-path> [INCOMPATIBILITY] codeql/ssa: * [*], codeql/util: not * [*] {dependency: codeql/ssa@* [*] requires codeql/util@2.0.8-dev}
+[2026-05-05 16:31:10] [SPAMMY] resolve library-path> [DECISION 7] codeql/ssa: 1.0.21-dev
+[2026-05-05 16:31:10] [SPAMMY] resolve library-path> [DECISION 8] codeql/tutorial: 1.0.21-dev
+[2026-05-05 16:31:10] [SPAMMY] resolve library-path> [INCOMPATIBILITY] codeql/typetracking: * [*], codeql/util: not * [*] {dependency: codeql/typetracking@* [*] requires codeql/util@2.0.8-dev}
+[2026-05-05 16:31:10] [SPAMMY] resolve library-path> [DECISION 9] codeql/typetracking: 2.0.5-dev
+[2026-05-05 16:31:10] [SPAMMY] resolve library-path> [DECISION 10] codeql/util: 2.0.8-dev
+[2026-05-05 16:31:10] [DETAILS] resolve library-path> QL pack dependencies for /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tealtools/queries resolved OK.
+[2026-05-05 16:31:10] [DETAILS] resolve library-path> Found dbscheme through QL packs: /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/teal/ql/lib/teal.dbscheme.
+[2026-05-05 16:31:10] Plumbing command codeql resolve library-path completed:
+                      {
+                        "libraryPath" : [
+                          "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tealtools/queries",
+                          "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/teal/ql/lib",
+                          "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/controlflow",
+                          "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/dataflow",
+                          "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/mad",
+                          "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/regex",
+                          "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/ssa",
+                          "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/tutorial",
+                          "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/typetracking",
+                          "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/shared/util"
+                        ],
+                        "dbscheme" : "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/teal/ql/lib/teal.dbscheme",
+                        "compilationCache" : [
+                          "/home/argi/.codeql/compile-cache"
+                        ],
+                        "relativeName" : "argimirodelpozo/tealtools/innerTxnFields.ql",
+                        "qlPackName" : "argimirodelpozo/tealtools"
+                      }
+[2026-05-05 16:31:10] [PROGRESS] execute queries> Compiling query plan for /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tealtools/queries/innerTxnFields.ql.
+[2026-05-05 16:31:10] [DETAILS] execute queries> Resolving imports for /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tealtools/queries/innerTxnFields.ql.
+[2026-05-05 16:31:10] Resolved file set for /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tealtools/queries/innerTxnFields.ql hashes to 49af5d3ddb6928fafcbb3fb1f201422f.
+[2026-05-05 16:31:11] [DETAILS] execute queries> Compilation cache hit for /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tealtools/queries/innerTxnFields.ql.
+[2026-05-05 16:31:11] [WARN] execute queries> WARNING: reference to 'Completion' references a local library, not the named module (/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/teal/ql/lib/codeql/teal/cfg/CFG.qll:92,16-26)
+[2026-05-05 16:31:11] [WARN] execute queries> WARNING: predicate declaration 'maxSplits' does not implement a signature member, so it should be marked 'additional' (/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/codeql-backend/teal/ql/lib/codeql/teal/cfg/CFG.qll:52,7-16)
+[2026-05-05 16:31:11] [SPAMMY] execute queries> No database upgrade/downgrade needed for /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tealtools/queries/innerTxnFields.ql
+[2026-05-05 16:31:11] [PROGRESS] execute queries> [1/1] Found in cache: /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tealtools/queries/innerTxnFields.ql.
+[2026-05-05 16:31:11] Inferred that cached_Cfg::MakeWithSplitting<Locations::Location,CFG::Implementation,NoSplittingInput<Locations::Location,CFG::Implementation>,CFG::CfgImpl::ConditionalCompletionSplittingInput>::Cached::TSplitsCons#c1ae3754/3@f3fd132t is empty, due to Cfg::MakeWithSplitting<Locations::Location,CFG::Implementation,NoSplittingInput<Locations::Location,CFG::Implementation>,CFG::CfgImpl::ConditionalCompletionSplittingInput>::Cached::TSplitsCons#c1ae3754/3@f8d7786g.
+[2026-05-05 16:31:11] [PROGRESS] execute queries> Starting evaluation of argimirodelpozo/tealtools/innerTxnFields.ql.
+[2026-05-05 16:31:11] Starting evaluation of /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tealtools/queries/innerTxnFields.ql
+[2026-05-05 16:31:11] (0s) Start query execution
+[2026-05-05 16:31:11] (0s) Beginning execution of /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tealtools/queries/innerTxnFields.ql
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_itxn_begin#b6b420ce/2@aed535uu with empty relation.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_itxn_next#6f6bd91b/2@16c6d6pg with empty relation.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_itxn_submit#98162f8b/2@0ee6a35c with empty relation.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_ecdsa_pk_decompress#c6c63ad8/2@a73564e3 with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_ecdsa_pk_decompress#c6c63ad8_1#antijoin_rhs/1@72a32c21 is empty, due to cached_AST::TOpcode_ecdsa_pk_decompress#c6c63ad8/2@a73564e3.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_ec_multi_scalar_mul#07a4a921/2@de02bc45 with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_ec_multi_scalar_mul#07a4a921_1#antijoin_rhs/1@15e504pj is empty, due to cached_AST::TOpcode_ec_multi_scalar_mul#07a4a921/2@de02bc45.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_ed25519verify_bare#0a92dcd0/2@066067eo with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_ed25519verify_bare#0a92dcd0_1#antijoin_rhs/1@2013bcld is empty, due to cached_AST::TOpcode_ed25519verify_bare#0a92dcd0/2@066067eo.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_ec_subgroup_check#52ec81da/2@8499ecf6 with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_ec_subgroup_check#52ec81da_1#antijoin_rhs/1@76730e5s is empty, due to cached_AST::TOpcode_ec_subgroup_check#52ec81da/2@8499ecf6.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_asset_holding_get#4a7209cb/2@ba813b66 with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_asset_holding_get#4a7209cb_1#antijoin_rhs/1@926533f8 is empty, due to cached_AST::TOpcode_asset_holding_get#4a7209cb/2@ba813b66.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_app_global_get_ex#fc88c008/2@2f2d66l4 with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_app_global_get_ex#fc88c008_1#antijoin_rhs/1@e8fad3bi is empty, due to cached_AST::TOpcode_app_global_get_ex#fc88c008/2@2f2d66l4.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_voter_params_get#b99a3f57/2@631882cs with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_voter_params_get#b99a3f57_1#antijoin_rhs/1@0b7db18u is empty, due to cached_AST::TOpcode_voter_params_get#b99a3f57/2@631882cs.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_ecdsa_pk_recover#bcd39720/2@1596687u with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_ecdsa_pk_recover#bcd39720_1#antijoin_rhs/1@8adf096o is empty, due to cached_AST::TOpcode_ecdsa_pk_recover#bcd39720/2@1596687u.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_ec_pairing_check#73474a14/2@b82ca0q9 with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_ec_pairing_check#73474a14_1#antijoin_rhs/1@2e0b642b is empty, due to cached_AST::TOpcode_ec_pairing_check#73474a14/2@b82ca0q9.
+[2026-05-05 16:31:11] (0s)  >>> Full cache hit cached_AST::TOpcode_asset_params_get#bf66b91d/2@e03588iv with 1 rows and digest dc2bfadmq7ie2g8ai24vpi37uje.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_app_local_get_ex#f0a3aef6/2@b6ae6b3h with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_app_local_get_ex#f0a3aef6_1#antijoin_rhs/1@fda15fvd is empty, due to cached_AST::TOpcode_app_local_get_ex#f0a3aef6/2@b6ae6b3h.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_acct_params_get#3b1b75ae/2@799f654g with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_acct_params_get#3b1b75ae_1#antijoin_rhs/1@8c41fcru is empty, due to cached_AST::TOpcode_acct_params_get#3b1b75ae/2@799f654g.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_extract_uint64#1c629b8f/2@190d33sk with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_extract_uint64#1c629b8f_1#antijoin_rhs/1@b997c0d7 is empty, due to cached_AST::TOpcode_extract_uint64#1c629b8f/2@190d33sk.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_extract_uint32#5c6a576c/2@7c66b5ud with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_extract_uint32#5c6a576c_1#antijoin_rhs/1@b391c2hb is empty, due to cached_AST::TOpcode_extract_uint32#5c6a576c/2@7c66b5ud.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_extract_uint16#7687ebb3/2@08981fb6 with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_extract_uint16#7687ebb3_1#antijoin_rhs/1@ed48f6r6 is empty, due to cached_AST::TOpcode_extract_uint16#7687ebb3/2@08981fb6.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_app_params_get#c666de11/2@48cdbcl5 with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_app_params_get#c666de11_1#antijoin_rhs/1@841ff15l is empty, due to cached_AST::TOpcode_app_params_get#c666de11/2@48cdbcl5.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_app_global_put#53c6314d/2@8252ebrj with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_app_global_put#53c6314d_1#antijoin_rhs/1@980c6551 is empty, due to cached_AST::TOpcode_app_global_put#53c6314d/2@8252ebrj.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_app_global_get#d27aa394/2@181daf0p with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_app_global_get#d27aa394_1#antijoin_rhs/1@3744f1kk is empty, due to cached_AST::TOpcode_app_global_get#d27aa394/2@181daf0p.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_app_global_del#9106c0f4/2@1cfad251 with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_app_global_del#9106c0f4_1#antijoin_rhs/1@27f199ba is empty, due to cached_AST::TOpcode_app_global_del#9106c0f4/2@1cfad251.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_ed25519verify#18516b2f/2@48190bsa with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_ed25519verify#18516b2f_1#antijoin_rhs/1@b469aekh is empty, due to cached_AST::TOpcode_ed25519verify#18516b2f/2@48190bsa.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_base64_decode#6ec9c220/2@b571813o with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_base64_decode#6ec9c220_1#antijoin_rhs/1@0f373e57 is empty, due to cached_AST::TOpcode_base64_decode#6ec9c220/2@b571813o.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_app_local_put#d7ea8047/2@b0e3e36s with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_app_local_put#d7ea8047_1#antijoin_rhs/1@8339c9ab is empty, due to cached_AST::TOpcode_app_local_put#d7ea8047/2@b0e3e36s.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_app_local_get#a884e5c4/2@5e31de03 with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_app_local_get#a884e5c4_1#antijoin_rhs/1@ac132047 is empty, due to cached_AST::TOpcode_app_local_get#a884e5c4/2@5e31de03.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_app_local_del#1b63b54d/2@0d11b4hv with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_app_local_del#1b63b54d_1#antijoin_rhs/1@a309e8u0 is empty, due to cached_AST::TOpcode_app_local_del#1b63b54d/2@0d11b4hv.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_online_stake#968d111f/2@ede4d76f with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_online_stake#968d111f_1#antijoin_rhs/1@ac89d3c3 is empty, due to cached_AST::TOpcode_online_stake#968d111f/2@ede4d76f.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_ecdsa_verify#43b0ebfe/2@e5fd47f7 with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_ecdsa_verify#43b0ebfe_1#antijoin_rhs/1@3eb4c29t is empty, due to cached_AST::TOpcode_ecdsa_verify#43b0ebfe/2@e5fd47f7.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_app_opted_in#f49e553a/2@a07084ca with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_app_opted_in#f49e553a_1#antijoin_rhs/1@7be2744a is empty, due to cached_AST::TOpcode_app_opted_in#f49e553a/2@a07084ca.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_min_balance#ce5326e4/2@1df2earl with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_min_balance#ce5326e4_1#antijoin_rhs/1@32aef52q is empty, due to cached_AST::TOpcode_min_balance#ce5326e4/2@1df2earl.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_box_replace#0a7da3dc/2@4ea14f9j with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_box_replace#0a7da3dc_1#antijoin_rhs/1@6114dfc8 is empty, due to cached_AST::TOpcode_box_replace#0a7da3dc/2@4ea14f9j.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_box_extract#2c88bd80/2@244cd2hm with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_box_extract#2c88bd80_1#antijoin_rhs/1@9d12fe5d is empty, due to cached_AST::TOpcode_box_extract#2c88bd80/2@244cd2hm.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_vrf_verify#f270e9e0/2@1c6c48b1 with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_vrf_verify#f270e9e0_1#antijoin_rhs/1@f5f7afce is empty, due to cached_AST::TOpcode_vrf_verify#f270e9e0/2@1c6c48b1.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_substring3#9334c976/2@e95235d8 with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_substring3#9334c976_1#antijoin_rhs/1@a4f6a1s8 is empty, due to cached_AST::TOpcode_substring3#9334c976/2@e95235d8.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_sha512_256#c5f4ee0d/2@79e2a6cg with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_sha512_256#c5f4ee0d_1#antijoin_rhs/1@ace3c960 is empty, due to cached_AST::TOpcode_sha512_256#c5f4ee0d/2@79e2a6cg.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_pushbytess#8504b338/2@aefaf3pq with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_pushbytess#8504b338_1#antijoin_rhs/1@4be9561u is empty, due to cached_AST::TOpcode_pushbytess#8504b338/2@aefaf3pq.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_itxn_field#cc82bad2/2@e4332cnm with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_itxn_field#cc82bad2_1#antijoin_rhs/1@77d8a4v3 is empty, due to cached_AST::TOpcode_itxn_field#cc82bad2/2@e4332cnm.
+[2026-05-05 16:31:11] (0s) Inferred that _AST::AstNode.reaches/1#1c350270_10#join_rhs_AST::TOpcode_itxn_field#cc82bad2_1#antijoin_rhs#shared/2@c9810fop is empty, due to AST::TOpcode_itxn_field#cc82bad2_1#antijoin_rhs/1@77d8a4v3.
+[2026-05-05 16:31:11] (0s) Inferred that _AST::AstNode.reaches/1#1c350270_InnerTransactions::InnerTransactionStart#3d93085b__AST::AstNode.rea__#antijoin_rhs/2@d71a3fii is empty, due to _AST::AstNode.reaches/1#1c350270_10#join_rhs_AST::TOpcode_itxn_field#cc82bad2_1#antijoin_rhs#shared/2@c9810fop.
+[2026-05-05 16:31:11] (0s) Inferred that _AST::AstNode.reaches/1#1c350270_InnerTransactions::InnerTransactionEnd#41ab45f8_InnerTransactions::__#shared/3@539a208u is empty, due to _AST::AstNode.reaches/1#1c350270_10#join_rhs_AST::TOpcode_itxn_field#cc82bad2_1#antijoin_rhs#shared/2@c9810fop.
+[2026-05-05 16:31:11] (0s) Inferred that _AST::AstNode.reaches/1#1c350270_InnerTransactions::InnerTransactionEnd#41ab45f8__AST::AstNode.reach__#antijoin_rhs/3@de4bb0t8 is empty, due to _AST::AstNode.reaches/1#1c350270_InnerTransactions::InnerTransactionEnd#41ab45f8_InnerTransactions::__#shared/3@539a208u.
+[2026-05-05 16:31:11] (0s) Inferred that innerTxnFields::immediateContributes/3#b1bb7191/3@557915mh is empty, due to _AST::AstNode.reaches/1#1c350270_InnerTransactions::InnerTransactionEnd#41ab45f8_InnerTransactions::__#shared/3@539a208u.
+[2026-05-05 16:31:11] (0s) Inferred that InnerTransactions::InnerTransactionField.getItxnField/0#dispred#6d89b818#bf/2@17fed885 is empty, due to innerTxnFields::immediateContributes/3#b1bb7191/3@557915mh.
+[2026-05-05 16:31:11] (0s) Inferred that AST::AstNode.getConsumedValues/0#dispred#e29e86e8#bf/2@ace6cf4f is empty, due to innerTxnFields::immediateContributes/3#b1bb7191/3@557915mh.
+[2026-05-05 16:31:11] (0s) Inferred that #select#query/11@9f9bcerf is empty, due to InnerTransactions::InnerTransactionField.getItxnField/0#dispred#6d89b818#bf/2@17fed885.
+[2026-05-05 16:31:11] (0s) Inferred that AST::AstNode.getConsumedValues/0#dispred#e29e86e8#bf_10#join_rhs/2@ac2da2d3 is empty, due to AST::AstNode.getConsumedValues/0#dispred#e29e86e8#bf/2@ace6cf4f.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_frame_bury#676703d1/2@f085f043 with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_frame_bury#676703d1_1#antijoin_rhs/1@4ca819en is empty, due to cached_AST::TOpcode_frame_bury#676703d1/2@f085f043.
+[2026-05-05 16:31:11] (0s) Inferred that StackManipulation::FrameBuryOpcode.getImmediate/0#dispred#72516ad3/2@8fc447bl is empty, due to AST::TOpcode_frame_bury#676703d1_1#antijoin_rhs/1@4ca819en.
+[2026-05-05 16:31:11] (0s) Inferred that StackManipulation::FrameBuryOpcode.getSubroutine/0#dispred#4b598d8e/2@aead3bns is empty, due to AST::TOpcode_frame_bury#676703d1_1#antijoin_rhs/1@4ca819en.
+[2026-05-05 16:31:11] (0s) Inferred that StackManipulation::FrameBuryOpcode.getSubroutine/0#dispred#4b598d8e/2@d6161a2m is empty, due to AST::TOpcode_frame_bury#676703d1_1#antijoin_rhs/1@4ca819en.
+[2026-05-05 16:31:11] (0s) Inferred that StackManipulation::FrameBuryOpcode.getSubroutine/0#dispred#4b598d8e/2@96ab5fae is empty, due to AST::TOpcode_frame_bury#676703d1_1#antijoin_rhs/1@4ca819en.
+[2026-05-05 16:31:11] (0s) Inferred that StackManipulation::FrameBuryOpcode.getNumberOfConsumedArgs/0#dispred#487d91fb/2@5c0db1wf is empty, due to StackManipulation::FrameBuryOpcode.getImmediate/0#dispred#72516ad3/2@8fc447bl.
+[2026-05-05 16:31:11] (0s) Inferred that StackManipulation::FrameBuryOpcode.getNumberOfConsumedArgs/0#dispred#487d91fb/2@6d89b1w1 is empty, due to StackManipulation::FrameBuryOpcode.getImmediate/0#dispred#72516ad3/2@8fc447bl.
+[2026-05-05 16:31:11] (0s) Inferred that StackManipulation::FrameBuryOpcode.getNumberOfConsumedArgs/0#dispred#487d91fb/2@143a51wr is empty, due to StackManipulation::FrameBuryOpcode.getImmediate/0#dispred#72516ad3/2@8fc447bl.
+[2026-05-05 16:31:11] (0s) Inferred that StackManipulation::FrameBuryOpcode.getNumberOfConsumedArgs/0#dispred#487d91fb/2@67f151wr is empty, due to StackManipulation::FrameBuryOpcode.getImmediate/0#dispred#72516ad3/2@8fc447bl.
+[2026-05-05 16:31:11] (0s) Inferred that StackManipulation::FrameBuryOpcode.getSubroutine/0#dispred#4b598d8e_10#join_rhs/2@892bc2kh is empty, due to StackManipulation::FrameBuryOpcode.getSubroutine/0#dispred#4b598d8e/2@aead3bns.
+[2026-05-05 16:31:11] (0s) Inferred that StackManipulation::FrameBuryOpcode.getSubroutine/0#dispred#4b598d8e_10#join_rhs/2@d5acf3cu is empty, due to StackManipulation::FrameBuryOpcode.getSubroutine/0#dispred#4b598d8e/2@d6161a2m.
+[2026-05-05 16:31:11] (0s) Inferred that StackManipulation::FrameBuryOpcode.getSubroutine/0#dispred#4b598d8e_10#join_rhs/2@cf7c6cft is empty, due to StackManipulation::FrameBuryOpcode.getSubroutine/0#dispred#4b598d8e/2@96ab5fae.
+[2026-05-05 16:31:11] (0s) Inferred that _StackManipulation::FrameBuryOpcode.getSubroutine/0#dispred#4b598d8e_10#join_rhs__AST::Subroutine.ge__#join_rhs/2@f820a800 is empty, due to StackManipulation::FrameBuryOpcode.getSubroutine/0#dispred#4b598d8e_10#join_rhs/2@892bc2kh.
+[2026-05-05 16:31:11] (0s) Inferred that _StackManipulation::FrameBuryOpcode.getSubroutine/0#dispred#4b598d8e_10#join_rhs__AST::Subroutine.ge__#join_rhs/2@d4ffdbak is empty, due to StackManipulation::FrameBuryOpcode.getSubroutine/0#dispred#4b598d8e_10#join_rhs/2@d5acf3cu.
+[2026-05-05 16:31:11] (0s) Inferred that _StackManipulation::FrameBuryOpcode.getSubroutine/0#dispred#4b598d8e_10#join_rhs__AST::Subroutine.ge__#join_rhs/2@c8a9d257 is empty, due to StackManipulation::FrameBuryOpcode.getSubroutine/0#dispred#4b598d8e_10#join_rhs/2@cf7c6cft.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_bytecblock#6964ce80/2@ce6f27us with empty relation.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_box_splice#4e8bb10c/2@6ac115uc with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_box_splice#4e8bb10c_1#antijoin_rhs/1@bcf5b2ao is empty, due to cached_AST::TOpcode_box_splice#4e8bb10c/2@6ac115uc.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_box_resize#7a5791ac/2@a458897k with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_box_resize#7a5791ac_1#antijoin_rhs/1@cae791r0 is empty, due to cached_AST::TOpcode_box_resize#7a5791ac/2@a458897k.
+[2026-05-05 16:31:11] (0s)  >>> Full cache hit cached_AST::TOpcode_box_create#4f8f52db/2@9cc30fi7 with 1 rows and digest 9fcaeeal8qijl5i1q87famo1ii8.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_substring#4e1fd269/2@f9febfm2 with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_substring#4e1fd269_1#antijoin_rhs/1@df23e6hs is empty, due to cached_AST::TOpcode_substring#4e1fd269/2@f9febfm2.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_pushbytes#236d29d1/2@7b3d006v with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_pushbytes#236d29d1_1#antijoin_rhs/1@1c8127gg is empty, due to cached_AST::TOpcode_pushbytes#236d29d1/2@7b3d006v.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_keccak256#ab8641cb/2@15231fdr with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_keccak256#ab8641cb_1#antijoin_rhs/1@f9d3d2c5 is empty, due to cached_AST::TOpcode_keccak256#ab8641cb/2@15231fdr.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_intcblock#2d113bec/2@16f64156 with empty relation.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_frame_dig#fae5976e/2@b4b38fue with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_frame_dig#fae5976e_1#antijoin_rhs/1@be7609g5 is empty, due to cached_AST::TOpcode_frame_dig#fae5976e/2@b4b38fue.
+[2026-05-05 16:31:11] (0s) Inferred that StackManipulation::FrameDigOpcode.getImmediate/0#dispred#c7c2828e/2@0ceb2at7 is empty, due to AST::TOpcode_frame_dig#fae5976e_1#antijoin_rhs/1@be7609g5.
+[2026-05-05 16:31:11] (0s) Inferred that StackManipulation::FrameDigOpcode.getSubroutine/0#dispred#86eaf409/2@107cc30l is empty, due to AST::TOpcode_frame_dig#fae5976e_1#antijoin_rhs/1@be7609g5.
+[2026-05-05 16:31:11] (0s) Inferred that StackManipulation::FrameDigOpcode.getSubroutine/0#dispred#86eaf409/2@72bd2287 is empty, due to AST::TOpcode_frame_dig#fae5976e_1#antijoin_rhs/1@be7609g5.
+[2026-05-05 16:31:11] (0s) Inferred that StackManipulation::FrameDigOpcode.getSubroutine/0#dispred#86eaf409/2@afd2begi is empty, due to AST::TOpcode_frame_dig#fae5976e_1#antijoin_rhs/1@be7609g5.
+[2026-05-05 16:31:11] (0s) Inferred that StackManipulation::FrameDigOpcode.getNumberOfConsumedArgs/0#dispred#d986ca2b/2@5c0db2wf is empty, due to StackManipulation::FrameDigOpcode.getImmediate/0#dispred#c7c2828e/2@0ceb2at7.
+[2026-05-05 16:31:11] (0s) Inferred that StackManipulation::FrameDigOpcode.getNumberOfConsumedArgs/0#dispred#d986ca2b/2@6d89b2w1 is empty, due to StackManipulation::FrameDigOpcode.getImmediate/0#dispred#c7c2828e/2@0ceb2at7.
+[2026-05-05 16:31:11] (0s) Inferred that StackManipulation::FrameDigOpcode.getNumberOfConsumedArgs/0#dispred#d986ca2b/2@143a52wr is empty, due to StackManipulation::FrameDigOpcode.getImmediate/0#dispred#c7c2828e/2@0ceb2at7.
+[2026-05-05 16:31:11] (0s) Inferred that StackManipulation::FrameDigOpcode.getNumberOfConsumedArgs/0#dispred#d986ca2b/2@67f152wr is empty, due to StackManipulation::FrameDigOpcode.getImmediate/0#dispred#c7c2828e/2@0ceb2at7.
+[2026-05-05 16:31:11] (0s) Inferred that StackManipulation::FrameDigOpcode.getSubroutine/0#dispred#86eaf409_10#join_rhs/2@960f1cjd is empty, due to StackManipulation::FrameDigOpcode.getSubroutine/0#dispred#86eaf409/2@107cc30l.
+[2026-05-05 16:31:11] (0s) Inferred that StackManipulation::FrameDigOpcode.getSubroutine/0#dispred#86eaf409_10#join_rhs/2@1dbd52en is empty, due to StackManipulation::FrameDigOpcode.getSubroutine/0#dispred#86eaf409/2@72bd2287.
+[2026-05-05 16:31:11] (0s) Inferred that StackManipulation::FrameDigOpcode.getSubroutine/0#dispred#86eaf409_10#join_rhs/2@c4f417es is empty, due to StackManipulation::FrameDigOpcode.getSubroutine/0#dispred#86eaf409/2@afd2begi.
+[2026-05-05 16:31:11] (0s) Inferred that _StackManipulation::FrameDigOpcode.getSubroutine/0#dispred#86eaf409_10#join_rhs__AST::Subroutine.get__#join_rhs/2@6596b8ln is empty, due to StackManipulation::FrameDigOpcode.getSubroutine/0#dispred#86eaf409_10#join_rhs/2@960f1cjd.
+[2026-05-05 16:31:11] (0s) Inferred that _StackManipulation::FrameDigOpcode.getSubroutine/0#dispred#86eaf409_10#join_rhs__AST::Subroutine.get__#join_rhs/2@e01682r2 is empty, due to StackManipulation::FrameDigOpcode.getSubroutine/0#dispred#86eaf409_10#join_rhs/2@1dbd52en.
+[2026-05-05 16:31:11] (0s) Inferred that _StackManipulation::FrameDigOpcode.getSubroutine/0#dispred#86eaf409_10#join_rhs__AST::Subroutine.get__#join_rhs/2@5e3c68g6 is empty, due to StackManipulation::FrameDigOpcode.getSubroutine/0#dispred#86eaf409_10#join_rhs/2@c4f417es.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_ec_map_to#ab78b1d4/2@0bd5c81b with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_ec_map_to#ab78b1d4_1#antijoin_rhs/1@40a761al is empty, due to cached_AST::TOpcode_ec_map_to#ab78b1d4/2@0bd5c81b.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_sha3_256#a3d1b020/2@b46d72hv with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_sha3_256#a3d1b020_1#antijoin_rhs/1@f2fae0pj is empty, due to cached_AST::TOpcode_sha3_256#a3d1b020/2@b46d72hv.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_replace3#840bdc32/2@64292b6c with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_replace3#840bdc32_1#antijoin_rhs/1@e7c80fnd is empty, due to cached_AST::TOpcode_replace3#840bdc32/2@64292b6c.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_replace2#630b4fba/2@c3e180gj with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_replace2#630b4fba_1#antijoin_rhs/1@80ad3av3 is empty, due to cached_AST::TOpcode_replace2#630b4fba/2@c3e180gj.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_pushints#d13cf17b/2@5eecffca with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_pushints#d13cf17b_1#antijoin_rhs/1@e14465h9 is empty, due to cached_AST::TOpcode_pushints#d13cf17b/2@5eecffca.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_json_ref#42cc67c0/2@992acbni with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_json_ref#42cc67c0_1#antijoin_rhs/1@d4d39023 is empty, due to cached_AST::TOpcode_json_ref#42cc67c0/2@992acbni.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_extract3#7708c2a5/2@034b8dnj with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_extract3#7708c2a5_1#antijoin_rhs/1@f821fec8 is empty, due to cached_AST::TOpcode_extract3#7708c2a5/2@034b8dnj.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_uncover#9239ea4a/2@cb6b508m with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_uncover#9239ea4a_1#antijoin_rhs/1@625120iv is empty, due to cached_AST::TOpcode_uncover#9239ea4a/2@cb6b508m.
+[2026-05-05 16:31:11] (0s) Inferred that _AST::TOpcode_uncover#9239ea4a_1#antijoin_rhs_AST::toTreeSitter/1#4b5aba6d_teal_single_numeric_argum__#shared/2@6d64de74 is empty, due to AST::TOpcode_uncover#9239ea4a_1#antijoin_rhs/1@625120iv.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_setbyte#b3acc2d8/2@e2143fro with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_setbyte#b3acc2d8_1#antijoin_rhs/1@6b0d73j5 is empty, due to cached_AST::TOpcode_setbyte#b3acc2d8/2@e2143fro.
+[2026-05-05 16:31:11] (0s)  >>> Full cache hit cached_AST::TOpcode_pushint#f170c960/2@fac38ck1 with 2 rows and digest b307b9i63bij21fbhaaa6lna4g9.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_gtxnsas#6c8d4d97/2@acf4444g with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_gtxnsas#6c8d4d97_1#antijoin_rhs/1@ba431aeu is empty, due to cached_AST::TOpcode_gtxnsas#6c8d4d97/2@acf4444g.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_gloadss#24535565/2@dd7ac2vr with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_gloadss#24535565_1#antijoin_rhs/1@b2aad1v3 is empty, due to cached_AST::TOpcode_gloadss#24535565/2@dd7ac2vr.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_gitxnas#5c533e2a/2@00dee922 with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_gitxnas#5c533e2a_1#antijoin_rhs/1@6194329u is empty, due to cached_AST::TOpcode_gitxnas#5c533e2a/2@00dee922.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_getbyte#1e3b192e/2@b48751ml with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_getbyte#1e3b192e_1#antijoin_rhs/1@e3425e8r is empty, due to cached_AST::TOpcode_getbyte#1e3b192e/2@b48751ml.
+[2026-05-05 16:31:11] (0s)  >>> Full cache hit cached_AST::TOpcode_extract#719238a8/2@3f0a054l with 1 rows and digest 885866te6jr98vfuj9ifs3od5s6.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_divmodw#d008dd7e/2@c8baea98 with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_divmodw#d008dd7e_1#antijoin_rhs/1@0070c1cq is empty, due to cached_AST::TOpcode_divmodw#d008dd7e/2@c8baea98.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_callsub#5f94451f/2@5d7cfc26 with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_callsub#5f94451f_1#join_rhs/1@a2badcgj is empty, due to cached_AST::TOpcode_callsub#5f94451f/2@5d7cfc26.
+[2026-05-05 16:31:11] (0s) Inferred that _AST::AstNode.getNextLine/0#dispred#731ef99d_AST::TOpcode_callsub#5f94451f_1#antijoin_rhs#shared/2@44c259jo is empty, due to AST::TOpcode_callsub#5f94451f_1#antijoin_rhs/1@a2badcgj.
+[2026-05-05 16:31:11] (0s) Inferred that _AST::AstNode.getNextLine/0#dispred#731ef99d_AST::TOpcode_callsub#5f94451f_1#antijoin_rhs#shared/2@973c0efa is empty, due to AST::TOpcode_callsub#5f94451f_1#antijoin_rhs/1@a2badcgj.
+[2026-05-05 16:31:11] (0s) Inferred that _AST::AstNode.getBasicBlock/0#dispred#6e44479d_AST::AstNode.getBasicBlock/0#dispred#6e44479d_10#join__#shared/2@547da0la is empty, due to AST::TOpcode_callsub#5f94451f_1#join_rhs/1@a2badcgj.
+[2026-05-05 16:31:11] (0s) Inferred that _AST::AstNode.getNextLine/0#dispred#731ef99d__AST::AstNode.getBasicBlock/0#dispred#6e44479d_AST::Ast__#join_rhs/2@7edd07ng is empty, due to _AST::AstNode.getBasicBlock/0#dispred#6e44479d_AST::AstNode.getBasicBlock/0#dispred#6e44479d_10#join__#shared/2@547da0la.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_bytec_3#c10150d0/2@6efb9d51 with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_bytec_3#c10150d0_1#antijoin_rhs/1@1044bf3v is empty, due to cached_AST::TOpcode_bytec_3#c10150d0/2@6efb9d51.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_bytec_2#94ce25ba/2@b71ab33l with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_bytec_2#94ce25ba_1#antijoin_rhs/1@6e5e1585 is empty, due to cached_AST::TOpcode_bytec_2#94ce25ba/2@b71ab33l.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_bytec_1#ea07684c/2@fd427drg with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_bytec_1#ea07684c_1#antijoin_rhs/1@768e1dha is empty, due to cached_AST::TOpcode_bytec_1#ea07684c/2@fd427drg.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_bytec_0#541d19d9/2@a70c1ahd with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_bytec_0#541d19d9_1#antijoin_rhs/1@a1fe1dnh is empty, due to cached_AST::TOpcode_bytec_0#541d19d9/2@a70c1ahd.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_box_put#fa368f7c/2@67459e2i with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_box_put#fa368f7c_1#antijoin_rhs/1@15d0bcqk is empty, due to cached_AST::TOpcode_box_put#fa368f7c/2@67459e2i.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_box_len#4f157bdc/2@2bddf9c6 with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_box_len#4f157bdc_1#antijoin_rhs/1@604925uh is empty, due to cached_AST::TOpcode_box_len#4f157bdc/2@2bddf9c6.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_box_get#f99a2c3b/2@616000u2 with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_box_get#f99a2c3b_1#antijoin_rhs/1@661bcc5h is empty, due to cached_AST::TOpcode_box_get#f99a2c3b/2@616000u2.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_box_del#1b611925/2@f3933c0d with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_box_del#1b611925_1#antijoin_rhs/1@6ec5ffh9 is empty, due to cached_AST::TOpcode_box_del#1b611925/2@f3933c0d.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_balance#e1d5f48d/2@ce4d4656 with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_balance#e1d5f48d_1#antijoin_rhs/1@70b1911c is empty, due to cached_AST::TOpcode_balance#e1d5f48d/2@ce4d4656.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_switch#7f9fee3c/2@1f6c5fea with empty relation.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_stores#d5fa9f56/2@60b72000 with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_stores#d5fa9f56_1#antijoin_rhs/1@f2b878ug is empty, due to cached_AST::TOpcode_stores#d5fa9f56/2@60b72000.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_sha256#2d399619/2@c4888frk with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_sha256#2d399619_1#antijoin_rhs/1@77a1e9fo is empty, due to cached_AST::TOpcode_sha256#2d399619/2@c4888frk.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_setbit#b21085a3/2@0d0f0422 with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_setbit#b21085a3_1#antijoin_rhs/1@80c506u2 is empty, due to cached_AST::TOpcode_setbit#b21085a3/2@0d0f0422.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_select#1c5647d7/2@1f520929 with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_select#1c5647d7_1#antijoin_rhs/1@2bed70dl is empty, due to cached_AST::TOpcode_select#1c5647d7/2@1f520929.
+[2026-05-05 16:31:11] (0s)  >>> Full cache hit cached_AST::TOpcode_return#36716339/2@1b7147h8 with 1 rows and digest e45ef1p64803op8s3cbof7pppd8.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_retsub#885214b5/2@ad31c5el with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_retsub#885214b5_1#join_rhs/1@5a0650rm is empty, due to cached_AST::TOpcode_retsub#885214b5/2@ad31c5el.
+[2026-05-05 16:31:11] (0s) Inferred that AST::Subroutine.getRetsubOpcode/0#dispred#4d1e115b/2@13dd99dr is empty, due to cached_AST::TOpcode_retsub#885214b5/2@ad31c5el.
+[2026-05-05 16:31:11] (0s) Inferred that _AST::AstNode.getParentIndex/0#dispred#daad7df9_AST::AstNode.getProgram/0#8d4320be_AST::TOpcode_rets__#antijoin_rhs/3@32f6bdau is empty, due to AST::TOpcode_retsub#885214b5_1#join_rhs/1@5a0650rm.
+[2026-05-05 16:31:11] (0s) Inferred that ControlFlow::RetsubOpcode.getEntrypoint/0#dispred#5ffa1ed1/2@161921ue is empty, due to AST::TOpcode_retsub#885214b5_1#join_rhs/1@5a0650rm.
+[2026-05-05 16:31:11] (0s) Inferred that AST::AstNode.getPreviousLine/0#dispred#d3693e95#bf/2@ec4105cl is empty, due to AST::TOpcode_retsub#885214b5_1#join_rhs/1@5a0650rm.
+[2026-05-05 16:31:11] (0s) Inferred that AST::AstNode.getPreviousLine/0#dispred#d3693e95#bf/2@635b1b6c is empty, due to AST::TOpcode_retsub#885214b5_1#antijoin_rhs/1@5a0650rm.
+[2026-05-05 16:31:11] (0s) Inferred that _AST::AstNode.getBasicBlock/0#dispred#6e44479d_10#join_rhs_AST::AstNode.getNextLine/0#dispred#731ef9__#join_rhs/3@59051dq9 is empty, due to AST::TOpcode_retsub#885214b5_1#antijoin_rhs/1@5a0650rm.
+[2026-05-05 16:31:11] (0s) Inferred that cached_AST::Subroutine.getRetsubOpcode/0#dispred#4d1e115b/2@b3333dtk is empty, due to AST::Subroutine.getRetsubOpcode/0#dispred#4d1e115b/2@13dd99dr.
+[2026-05-05 16:31:11] (0s) Inferred that ControlFlow::RetsubOpcode.predictRetsubReturn/0#dispred#8f801436/2@cbb596sq is empty, due to ControlFlow::RetsubOpcode.getEntrypoint/0#dispred#5ffa1ed1/2@161921ue.
+[2026-05-05 16:31:11] (0s) Inferred that _AST::AstNode.getParentIndex/0#dispred#daad7df9_AST::AstNode.getPreviousLine/0#dispred#d3693e95#bf_A__#shared/3@cdca17p0 is empty, due to AST::AstNode.getPreviousLine/0#dispred#d3693e95#bf/2@ec4105cl.
+[2026-05-05 16:31:11] (0s) Inferred that _AST::AstNode.getParentIndex/0#dispred#daad7df9_AST::AstNode.getPreviousLine/0#dispred#d3693e95#bf_A__#shared/3@351eceg3 is empty, due to AST::AstNode.getPreviousLine/0#dispred#d3693e95#bf/2@635b1b6c.
+[2026-05-05 16:31:11] (0s) Inferred that _AST::AstNode.getParentIndex/0#dispred#daad7df9_AST::AstNode.getProgram/0#8d4320be_Program::Program.__#antijoin_rhs/4@d7ad34gf is empty, due to _AST::AstNode.getParentIndex/0#dispred#daad7df9_AST::AstNode.getPreviousLine/0#dispred#d3693e95#bf_A__#shared/3@cdca17p0.
+[2026-05-05 16:31:11] (0s) Inferred that ControlFlow::RetsubOpcode.getEntrypoint/0#dispred#5ffa1ed1/2@cf5eacki is empty, due to _AST::AstNode.getParentIndex/0#dispred#daad7df9_AST::AstNode.getPreviousLine/0#dispred#d3693e95#bf_A__#shared/3@cdca17p0.
+[2026-05-05 16:31:11] (0s) Inferred that _AST::AstNode.getParentIndex/0#dispred#daad7df9_AST::AstNode.getProgram/0#8d4320be_Program::Program.__#antijoin_rhs/4@9472c0nc is empty, due to _AST::AstNode.getParentIndex/0#dispred#daad7df9_AST::AstNode.getPreviousLine/0#dispred#d3693e95#bf_A__#shared/3@351eceg3.
+[2026-05-05 16:31:11] (0s) Inferred that ControlFlow::RetsubOpcode.getEntrypoint/0#dispred#5ffa1ed1/2@f41693fs is empty, due to _AST::AstNode.getParentIndex/0#dispred#daad7df9_AST::AstNode.getPreviousLine/0#dispred#d3693e95#bf_A__#shared/3@351eceg3.
+[2026-05-05 16:31:11] (0s) Inferred that ControlFlow::RetsubOpcode.getEntrypoint/0#dispred#5ffa1ed1_10#join_rhs/2@baabccjd is empty, due to ControlFlow::RetsubOpcode.getEntrypoint/0#dispred#5ffa1ed1/2@cf5eacki.
+[2026-05-05 16:31:11] (0s) Inferred that ControlFlow::RetsubOpcode.getEntrypoint/0#dispred#5ffa1ed1_10#join_rhs/2@b3a255jf is empty, due to ControlFlow::RetsubOpcode.getEntrypoint/0#dispred#5ffa1ed1/2@f41693fs.
+[2026-05-05 16:31:11] (0s) Inferred that ControlFlow::RetsubOpcode.getAffectingProto/0#dispred#1116d0df/2@facf17jk is empty, due to ControlFlow::RetsubOpcode.getEntrypoint/0#dispred#5ffa1ed1_10#join_rhs/2@baabccjd.
+[2026-05-05 16:31:11] (0s) Inferred that ControlFlow::RetsubOpcode.getAffectingProto/0#dispred#1116d0df/2@b432f140 is empty, due to ControlFlow::RetsubOpcode.getEntrypoint/0#dispred#5ffa1ed1_10#join_rhs/2@b3a255jf.
+[2026-05-05 16:31:11] (0s) Inferred that ControlFlow::RetsubOpcode.getAffectingProto/0#dispred#1116d0df_0#antijoin_rhs/1@b01956ve is empty, due to ControlFlow::RetsubOpcode.getAffectingProto/0#dispred#1116d0df/2@facf17jk.
+[2026-05-05 16:31:11] (0s) Inferred that ControlFlow::RetsubOpcode.getAffectingProto/0#dispred#1116d0df_0#antijoin_rhs/1@7a33f194 is empty, due to ControlFlow::RetsubOpcode.getAffectingProto/0#dispred#1116d0df/2@b432f140.
+[2026-05-05 16:31:11] (0s) Inferred that _AST::TOpcode_retsub#885214b5_1#join_rhs_ControlFlow::RetsubOpcode.getAffectingProto/0#dispred#1116d__#join_rhs/1@c143290p is empty, due to ControlFlow::RetsubOpcode.getAffectingProto/0#dispred#1116d0df_0#antijoin_rhs/1@b01956ve.
+[2026-05-05 16:31:11] (0s) Inferred that _AST::TOpcode_retsub#885214b5_1#antijoin_rhs_ControlFlow::RetsubOpcode.getAffectingProto/0#dispred#1__#join_rhs/1@fb020fcn is empty, due to ControlFlow::RetsubOpcode.getAffectingProto/0#dispred#1116d0df_0#antijoin_rhs/1@b01956ve.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_itxnas#4453fdee/2@4e16d6ed with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_itxnas#4453fdee_1#antijoin_rhs/1@1434702e is empty, due to cached_AST::TOpcode_itxnas#4453fdee/2@4e16d6ed.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_intc_3#17c41eec/2@2aea7bm0 with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_intc_3#17c41eec_1#antijoin_rhs/1@ce4c2ces is empty, due to cached_AST::TOpcode_intc_3#17c41eec/2@2aea7bm0.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_intc_2#7a980677/2@c874027l with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_intc_2#7a980677_1#antijoin_rhs/1@8fd6abkn is empty, due to cached_AST::TOpcode_intc_2#7a980677/2@c874027l.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_intc_1#ad96bb7a/2@da0f67k5 with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_intc_1#ad96bb7a_1#antijoin_rhs/1@935c40m9 is empty, due to cached_AST::TOpcode_intc_1#ad96bb7a/2@da0f67k5.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_intc_0#6d365924/2@032c52vi with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_intc_0#6d365924_1#antijoin_rhs/1@08f82fm5 is empty, due to cached_AST::TOpcode_intc_0#6d365924/2@032c52vi.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_gtxnsa#b4c0115d/2@b11decuc with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_gtxnsa#b4c0115d_1#antijoin_rhs/1@235a973l is empty, due to cached_AST::TOpcode_gtxnsa#b4c0115d/2@b11decuc.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_gtxnas#cfa96943/2@2baec2ku with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_gtxnas#cfa96943_1#antijoin_rhs/1@02abefea is empty, due to cached_AST::TOpcode_gtxnas#cfa96943/2@2baec2ku.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_global#8f3e663a/2@0983917l with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_global#8f3e663a_1#antijoin_rhs/1@e7e6f0qc is empty, due to cached_AST::TOpcode_global#8f3e663a/2@0983917l.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_gloads#3de55985/2@823d8dm1 with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_gloads#3de55985_1#antijoin_rhs/1@aec8c0e2 is empty, due to cached_AST::TOpcode_gloads#3de55985/2@823d8dm1.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_gitxna#674a2f76/2@9c405593 with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_gitxna#674a2f76_1#antijoin_rhs/1@846c377u is empty, due to cached_AST::TOpcode_gitxna#674a2f76/2@9c405593.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_getbit#69109981/2@b7cf75ug with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_getbit#69109981_1#antijoin_rhs/1@c7a64a9i is empty, due to cached_AST::TOpcode_getbit#69109981/2@b7cf75ug.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_ec_mul#eab11eba/2@c2550ef0 with empty relation.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_ec_add#69e5ca7f/2@e25637kh with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_ec_add#69e5ca7f_1#antijoin_rhs/1@e6d7d7qa is empty, due to cached_AST::TOpcode_ec_add#69e5ca7f/2@e25637kh.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_concat#f5bcda3d/2@e592297g with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_concat#f5bcda3d_1#antijoin_rhs/1@4181ab9c is empty, due to cached_AST::TOpcode_concat#f5bcda3d/2@e592297g.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_bitxor#bd4c140c/2@5f5f4dk1 with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_bitxor#bd4c140c_1#antijoin_rhs/1@583291gh is empty, due to cached_AST::TOpcode_bitxor#bd4c140c/2@5f5f4dk1.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_bitnot#795bac44/2@0048b7er with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_bitnot#795bac44_1#antijoin_rhs/1@8fe4cd32 is empty, due to cached_AST::TOpcode_bitnot#795bac44/2@0048b7er.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_bitlen#9dcb2d2c/2@ada69con with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_bitlen#9dcb2d2c_1#antijoin_rhs/1@7d4b3crm is empty, due to cached_AST::TOpcode_bitlen#9dcb2d2c/2@ada69con.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_bitand#bb3447fd/2@2e85245s with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_bitand#bb3447fd_1#antijoin_rhs/1@039f7bdn is empty, due to cached_AST::TOpcode_bitand#bb3447fd/2@2e85245s.
+[2026-05-05 16:31:11] (0s)  >>> Full cache hit cached_AST::TOpcode_assert#006ce8eb/2@e1f04a8q with 1 rows and digest 006eba9dievbno31ngqcb1ias2e.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_txnas#76fd64ed/2@36900drh with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_txnas#76fd64ed_1#antijoin_rhs/1@b552c0df is empty, due to cached_AST::TOpcode_txnas#76fd64ed/2@36900drh.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_store#57209232/2@b4c539r6 with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_store#57209232_1#antijoin_rhs/1@f0d6398h is empty, due to cached_AST::TOpcode_store#57209232/2@b4c539r6.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_proto#0b249e6c/2@ff2c3e3s with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that _AST::AstNode.getNextLine/0#dispred#731ef99d_10#join_rhs_AST::TOpcode_proto#0b249e6c#shared/2@fe42ffk9 is empty, due to cached_AST::TOpcode_proto#0b249e6c/2@ff2c3e3s.
+[2026-05-05 16:31:11] (0s) Inferred that _AST::TOpcode_proto#0b249e6c_AST::toTreeSitter/1#4b5aba6d#shared/2@6d293c1v is empty, due to cached_AST::TOpcode_proto#0b249e6c/2@ff2c3e3s.
+[2026-05-05 16:31:11] (0s) Inferred that _AST::AstNode.getNextLine/0#dispred#731ef99d_10#join_rhs_AST::TOpcode_proto#0b249e6c#shared/2@6cc907na is empty, due to cached_AST::TOpcode_proto#0b249e6c/2@ff2c3e3s.
+[2026-05-05 16:31:11] (0s) Inferred that AST::Subroutine.getAffectingProto/0#dispred#63edae13/2@a1b3c4cm is empty, due to _AST::AstNode.getNextLine/0#dispred#731ef99d_10#join_rhs_AST::TOpcode_proto#0b249e6c#shared/2@fe42ffk9.
+[2026-05-05 16:31:11] (0s) Inferred that StackManipulation::ProtoOpcode.getNumberOfSubroutineInputArgs/0#dispred#5de4c3fc/2@7e47a7f0 is empty, due to _AST::TOpcode_proto#0b249e6c_AST::toTreeSitter/1#4b5aba6d#shared/2@6d293c1v.
+[2026-05-05 16:31:11] (0s) Inferred that StackManipulation::ProtoOpcode.getNumberOfSubroutineOutputArgs/0#dispred#802ad88d/2@8651fd54 is empty, due to _AST::TOpcode_proto#0b249e6c_AST::toTreeSitter/1#4b5aba6d#shared/2@6d293c1v.
+[2026-05-05 16:31:11] (0s) Inferred that AST::Subroutine.getAffectingProto/0#dispred#63edae13/2@b3e2f6dr is empty, due to _AST::AstNode.getNextLine/0#dispred#731ef99d_10#join_rhs_AST::TOpcode_proto#0b249e6c#shared/2@6cc907na.
+[2026-05-05 16:31:11] (0s) Inferred that AST::Subroutine.getAffectingProto/0#dispred#63edae13_0#antijoin_rhs/1@cd8587kd is empty, due to AST::Subroutine.getAffectingProto/0#dispred#63edae13/2@a1b3c4cm.
+[2026-05-05 16:31:11] (0s) Inferred that _AST::Subroutine.getAffectingProto/0#dispred#63edae13_StackManipulation::ProtoOpcode.getNumberOfSubr__#shared/2@c59418g9 is empty, due to AST::Subroutine.getAffectingProto/0#dispred#63edae13/2@a1b3c4cm.
+[2026-05-05 16:31:11] (0s) Inferred that AST::Subroutine.getFrameRelativeSubroutineStackHeight/1#3a7cb486#reorder_1_0_2/3@5c0dbw7f is empty, due to AST::Subroutine.getAffectingProto/0#dispred#63edae13/2@a1b3c4cm.
+[2026-05-05 16:31:11] (0s) Inferred that AST::Subroutine.getFrameRelativeSubroutineStackHeight/1#3a7cb486#reorder_1_0_2/3@6d89bw01 is empty, due to AST::Subroutine.getAffectingProto/0#dispred#63edae13/2@a1b3c4cm.
+[2026-05-05 16:31:11] (0s) Inferred that _AST::Subroutine.getAffectingProto/0#dispred#63edae13_StackManipulation::ProtoOpcode.getNumberOfSubr__#shared/2@6f8e3dhd is empty, due to AST::Subroutine.getAffectingProto/0#dispred#63edae13/2@b3e2f6dr.
+[2026-05-05 16:31:11] (0s) Inferred that AST::Subroutine.getFrameRelativeSubroutineStackHeight/1#3a7cb486#reorder_1_0_2/3@143a5wer is empty, due to AST::Subroutine.getAffectingProto/0#dispred#63edae13/2@b3e2f6dr.
+[2026-05-05 16:31:11] (0s) Inferred that AST::Subroutine.getFrameRelativeSubroutineStackHeight/1#3a7cb486#reorder_1_0_2/3@67f15w8r is empty, due to AST::Subroutine.getAffectingProto/0#dispred#63edae13/2@b3e2f6dr.
+[2026-05-05 16:31:11] (0s) Inferred that AST::Subroutine.getAffectingProto/0#dispred#63edae13_0#antijoin_rhs/1@5a89c6r3 is empty, due to AST::Subroutine.getAffectingProto/0#dispred#63edae13/2@b3e2f6dr.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_match#0731c924/2@e9d57d83 with empty relation.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_loads#e0e05e86/2@fa9f9077 with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_loads#e0e05e86_1#antijoin_rhs/1@db55956a is empty, due to cached_AST::TOpcode_loads#e0e05e86/2@fa9f9077.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_itxna#6649cdbc/2@472d051o with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_itxna#6649cdbc_1#antijoin_rhs/1@1cca11f4 is empty, due to cached_AST::TOpcode_itxna#6649cdbc/2@472d051o.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_gtxns#e738ffd7/2@8b9fdeu3 with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_gtxns#e738ffd7_1#antijoin_rhs/1@687f3aeo is empty, due to cached_AST::TOpcode_gtxns#e738ffd7/2@8b9fdeu3.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_gtxna#aeb843f7/2@c12ceara with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_gtxna#aeb843f7_1#antijoin_rhs/1@eefafank is empty, due to cached_AST::TOpcode_gtxna#aeb843f7/2@c12ceara.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_gload#45174704/2@57da9c5m with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_gload#45174704_1#antijoin_rhs/1@05b0418o is empty, due to cached_AST::TOpcode_gload#45174704/2@57da9c5m.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_gitxn#36147293/2@b3ede6lo with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_gitxn#36147293_1#antijoin_rhs/1@62c4764j is empty, due to cached_AST::TOpcode_gitxn#36147293/2@b3ede6lo.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_gaids#1119052f/2@7f845ej6 with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_gaids#1119052f_1#antijoin_rhs/1@fd42b0r0 is empty, due to cached_AST::TOpcode_gaids#1119052f/2@7f845ej6.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_cover#b07d395e/2@994dfanf with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_cover#b07d395e_1#antijoin_rhs/1@1f092efg is empty, due to cached_AST::TOpcode_cover#b07d395e/2@994dfanf.
+[2026-05-05 16:31:11] (0s) Inferred that _AST::TOpcode_cover#b07d395e_1#antijoin_rhs_AST::toTreeSitter/1#4b5aba6d_teal_single_numeric_argumen__#shared/2@dbb881pj is empty, due to AST::TOpcode_cover#b07d395e_1#antijoin_rhs/1@1f092efg.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_bzero#de921cc7/2@9565c5ha with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_bzero#de921cc7_1#antijoin_rhs/1@b8bb5518 is empty, due to cached_AST::TOpcode_bzero#de921cc7/2@9565c5ha.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_bytec#91bd8abc/2@f4a1c41b with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_bytec#91bd8abc_1#antijoin_rhs/1@1d2e426h is empty, due to cached_AST::TOpcode_bytec#91bd8abc/2@f4a1c41b.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_bsqrt#37743457/2@1f46bctc with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_bsqrt#37743457_1#antijoin_rhs/1@5ab286vl is empty, due to cached_AST::TOpcode_bsqrt#37743457/2@1f46bctc.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_block#a9f34f51/2@2961c12h with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_block#a9f34f51_1#antijoin_rhs/1@ee3c8ae5 is empty, due to cached_AST::TOpcode_block#a9f34f51/2@2961c12h.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_bitor#7fa44945/2@0be950ai with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_bitor#7fa44945_1#antijoin_rhs/1@f453aavl is empty, due to cached_AST::TOpcode_bitor#7fa44945/2@0be950ai.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_arg_3#bc40c8e4/2@e5ed3bfj with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_arg_3#bc40c8e4_1#antijoin_rhs/1@fd7c57si is empty, due to cached_AST::TOpcode_arg_3#bc40c8e4/2@e5ed3bfj.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_arg_2#c4a9d668/2@a6d9fabu with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_arg_2#c4a9d668_1#antijoin_rhs/1@e507b89k is empty, due to cached_AST::TOpcode_arg_2#c4a9d668/2@a6d9fabu.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_arg_1#2ed3e222/2@7468b1og with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_arg_1#2ed3e222_1#antijoin_rhs/1@2e2145b1 is empty, due to cached_AST::TOpcode_arg_1#2ed3e222/2@7468b1og.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_arg_0#5e0a43e3/2@c17d2fhi with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_arg_0#5e0a43e3_1#antijoin_rhs/1@f71a70ta is empty, due to cached_AST::TOpcode_arg_0#5e0a43e3/2@c17d2fhi.
+[2026-05-05 16:31:11] (0s)  >>> Full cache hit cached_AST::TOpcode_txna#0d61cab8/2@3363582m with 1 rows and digest c255d2cfhilicddcjjkin0ditd7.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_swap#d7539846/2@01fc1fai with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_swap#d7539846_1#antijoin_rhs/1@82aee255 is empty, due to cached_AST::TOpcode_swap#d7539846/2@01fc1fai.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_sqrt#1f73e9bc/2@7f1717i2 with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_sqrt#1f73e9bc_1#antijoin_rhs/1@37b3c4p0 is empty, due to cached_AST::TOpcode_sqrt#1f73e9bc/2@7f1717i2.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_popn#e49eb35b/2@e8c0bc88 with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_popn#e49eb35b_1#antijoin_rhs/1@734fa1gn is empty, due to cached_AST::TOpcode_popn#e49eb35b/2@e8c0bc88.
+[2026-05-05 16:31:11] (0s) Inferred that _AST::TOpcode_popn#e49eb35b_1#antijoin_rhs_AST::toTreeSitter/1#4b5aba6d_teal_single_numeric_argument__#shared/2@357feer6 is empty, due to AST::TOpcode_popn#e49eb35b_1#antijoin_rhs/1@734fa1gn.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_mulw#006d0413/2@909d5dm9 with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_mulw#006d0413_1#antijoin_rhs/1@fc6ad724 is empty, due to cached_AST::TOpcode_mulw#006d0413/2@909d5dm9.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_mimc#60f7afb0/2@3b0b4enp with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_mimc#60f7afb0_1#antijoin_rhs/1@94b24am0 is empty, due to cached_AST::TOpcode_mimc#60f7afb0/2@3b0b4enp.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_load#9eb7783a/2@3c9906js with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_load#9eb7783a_1#antijoin_rhs/1@f81229dq is empty, due to cached_AST::TOpcode_load#9eb7783a/2@3c9906js.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_itxn#afb26b3b/2@17400e07 with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_itxn#afb26b3b_1#antijoin_rhs/1@090cd7ob is empty, due to cached_AST::TOpcode_itxn#afb26b3b/2@17400e07.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_itob#1502e5e9/2@2ea3f6e8 with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_itob#1502e5e9_1#antijoin_rhs/1@cbf72012 is empty, due to cached_AST::TOpcode_itob#1502e5e9/2@2ea3f6e8.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_intc#0dbf5579/2@8255a9vt with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_intc#0dbf5579_1#antijoin_rhs/1@4014b4pv is empty, due to cached_AST::TOpcode_intc#0dbf5579/2@8255a9vt.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_gtxn#318961b0/2@413645l6 with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_gtxn#318961b0_1#antijoin_rhs/1@9e6839so is empty, due to cached_AST::TOpcode_gtxn#318961b0/2@413645l6.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_gaid#0396b061/2@1931af7g with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_gaid#0396b061_1#antijoin_rhs/1@68c6aehf is empty, due to cached_AST::TOpcode_gaid#0396b061/2@1931af7g.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_expw#6b3a658b/2@0f402a8f with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_expw#6b3a658b_1#antijoin_rhs/1@5eb1f3cc is empty, due to cached_AST::TOpcode_expw#6b3a658b/2@0f402a8f.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_dupn#e5985b33/2@8de8e4pa with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_dupn#e5985b33_1#antijoin_rhs/1@04408d23 is empty, due to cached_AST::TOpcode_dupn#e5985b33/2@8de8e4pa.
+[2026-05-05 16:31:11] (0s) Inferred that _AST::TOpcode_dupn#e5985b33_1#antijoin_rhs_AST::toTreeSitter/1#4b5aba6d_teal_single_numeric_argument__#shared/2@dec5323g is empty, due to AST::TOpcode_dupn#e5985b33_1#antijoin_rhs/1@04408d23.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_dup2#70ff5059/2@ff62eacj with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_dup2#70ff5059_1#antijoin_rhs/1@9ba6a72u is empty, due to cached_AST::TOpcode_dup2#70ff5059/2@ff62eacj.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_divw#6c346905/2@54dd56v2 with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_divw#6c346905_1#antijoin_rhs/1@cb59a11f is empty, due to cached_AST::TOpcode_divw#6c346905/2@54dd56v2.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_bxor#62ca58fe/2@ca468dch with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_bxor#62ca58fe_1#antijoin_rhs/1@15a334a3 is empty, due to cached_AST::TOpcode_bxor#62ca58fe/2@ca468dch.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_bury#f80f1d83/2@eca63bl5 with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_bury#f80f1d83_1#antijoin_rhs/1@9de6bcni is empty, due to cached_AST::TOpcode_bury#f80f1d83/2@eca63bl5.
+[2026-05-05 16:31:11] (0s) Inferred that _AST::TOpcode_bury#f80f1d83_1#antijoin_rhs_AST::toTreeSitter/1#4b5aba6d_teal_single_numeric_argument__#shared/2@478834lr is empty, due to AST::TOpcode_bury#f80f1d83_1#antijoin_rhs/1@9de6bcni.
+[2026-05-05 16:31:11] (0s)  >>> Full cache hit cached_AST::TOpcode_btoi#482fa89f/2@ff31d7nh with 1 rows and digest 9f17d6ha4mgq8rb1u0ocnqjhb21.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_bsub#cb79ea80/2@7ef7bbum with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_bsub#cb79ea80_1#antijoin_rhs/1@c9bd87h2 is empty, due to cached_AST::TOpcode_bsub#cb79ea80/2@7ef7bbum.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_bnot#26bbe73b/2@353b548n with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_bnot#26bbe73b_1#antijoin_rhs/1@e8c87cc7 is empty, due to cached_AST::TOpcode_bnot#26bbe73b/2@353b548n.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_bneq#a822d39e/2@d51888ir with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_bneq#a822d39e_1#antijoin_rhs/1@9d540a7s is empty, due to cached_AST::TOpcode_bneq#a822d39e/2@d51888ir.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_bmul#d3834332/2@f1443fak with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_bmul#d3834332_1#antijoin_rhs/1@d0a13d0b is empty, due to cached_AST::TOpcode_bmul#d3834332/2@f1443fak.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_bmod#5eb70410/2@7bff54j6 with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_bmod#5eb70410_1#antijoin_rhs/1@3fd2aelp is empty, due to cached_AST::TOpcode_bmod#5eb70410/2@7bff54j6.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_blte#1c2038f7/2@d0b3f3ig with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_blte#1c2038f7_1#antijoin_rhs/1@bf64aalg is empty, due to cached_AST::TOpcode_blte#1c2038f7/2@d0b3f3ig.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_bgte#ebe6d31f/2@a9b3efmt with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_bgte#ebe6d31f_1#antijoin_rhs/1@260d66qt is empty, due to cached_AST::TOpcode_bgte#ebe6d31f/2@a9b3efmt.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_bdiv#2ff5804e/2@698d05v3 with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_bdiv#2ff5804e_1#antijoin_rhs/1@bede874q is empty, due to cached_AST::TOpcode_bdiv#2ff5804e/2@698d05v3.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_band#25265ccf/2@faa6875v with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_band#25265ccf_1#antijoin_rhs/1@289abaf6 is empty, due to cached_AST::TOpcode_band#25265ccf/2@faa6875v.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_badd#97b38561/2@cb9f178e with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_badd#97b38561_1#antijoin_rhs/1@dbb6be6p is empty, due to cached_AST::TOpcode_badd#97b38561/2@cb9f178e.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_args#34fafbcc/2@58e961fn with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_args#34fafbcc_1#antijoin_rhs/1@aab9a4hv is empty, due to cached_AST::TOpcode_args#34fafbcc/2@58e961fn.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_addw#e11bc826/2@bd7249ra with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_addw#e11bc826_1#antijoin_rhs/1@289a0a5q is empty, due to cached_AST::TOpcode_addw#e11bc826/2@bd7249ra.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_txn#124a9af4/2@8e9f53f0 with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_txn#124a9af4_1#antijoin_rhs/1@df8c61rr is empty, due to cached_AST::TOpcode_txn#124a9af4/2@8e9f53f0.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_sub#91f6392e/2@209bf1nf with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_sub#91f6392e_1#antijoin_rhs/1@5dc765cv is empty, due to cached_AST::TOpcode_sub#91f6392e/2@209bf1nf.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_shr#80756197/2@a3295c6v with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_shr#80756197_1#antijoin_rhs/1@92a9e079 is empty, due to cached_AST::TOpcode_shr#80756197/2@a3295c6v.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_shl#ad6bc3d8/2@94b01dnu with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_shl#ad6bc3d8_1#antijoin_rhs/1@86c00avn is empty, due to cached_AST::TOpcode_shl#ad6bc3d8/2@94b01dnu.
+[2026-05-05 16:31:11] (0s)  >>> Full cache hit cached_AST::TOpcode_pop#48e823dd/2@7e859b10 with 1 rows and digest 7f7cb8j35cjlbsmfl9fhucib5hb.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_not#579b4b0a/2@9ffcd50b with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_not#579b4b0a_1#antijoin_rhs/1@5247fefe is empty, due to cached_AST::TOpcode_not#579b4b0a/2@9ffcd50b.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_neq#f4fd4eb0/2@388114s8 with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_neq#f4fd4eb0_1#antijoin_rhs/1@a8b0adcl is empty, due to cached_AST::TOpcode_neq#f4fd4eb0/2@388114s8.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_mul#6fbfa23a/2@427247gu with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_mul#6fbfa23a_1#antijoin_rhs/1@1b083fl0 is empty, due to cached_AST::TOpcode_mul#6fbfa23a/2@427247gu.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_mod#471cf40f/2@cf94076o with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_mod#471cf40f_1#antijoin_rhs/1@f713e8g3 is empty, due to cached_AST::TOpcode_mod#471cf40f/2@cf94076o.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_lte#a9a337b1/2@0fe654ro with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_lte#a9a337b1_1#antijoin_rhs/1@7528fefr is empty, due to cached_AST::TOpcode_lte#a9a337b1/2@0fe654ro.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_log#66986246/2@50de627g with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_log#66986246_1#antijoin_rhs/1@1dfdb4q9 is empty, due to cached_AST::TOpcode_log#66986246/2@50de627g.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_len#ee1ecee0/2@dc9b371o with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_len#ee1ecee0_1#antijoin_rhs/1@5ccbe5eq is empty, due to cached_AST::TOpcode_len#ee1ecee0/2@dc9b371o.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_int#a195f587/2@3fac48bg with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_int#a195f587_1#antijoin_rhs/1@f7b5cbgk is empty, due to cached_AST::TOpcode_int#a195f587/2@3fac48bg.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_gte#f2aa8a32/2@c0ea321t with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_gte#f2aa8a32_1#antijoin_rhs/1@47e2c8ng is empty, due to cached_AST::TOpcode_gte#f2aa8a32/2@c0ea321t.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_exp#ee7614a7/2@c90928j1 with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_exp#ee7614a7_1#antijoin_rhs/1@d1664d4v is empty, due to cached_AST::TOpcode_exp#ee7614a7/2@c90928j1.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_err#1345d523/2@afd05d10 with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_err#1345d523_1#join_rhs/1@5d6c3b1s is empty, due to cached_AST::TOpcode_err#1345d523/2@afd05d10.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_dup#ed9a5d23/2@2c3313l0 with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_dup#ed9a5d23_1#antijoin_rhs/1@ca395ajs is empty, due to cached_AST::TOpcode_dup#ed9a5d23/2@2c3313l0.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_div#e7122035/2@6933a3pi with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_div#e7122035_1#antijoin_rhs/1@f4e274dt is empty, due to cached_AST::TOpcode_div#e7122035/2@6933a3pi.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_dig#d01bd583/2@f661b1dd with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that StackManipulation::DigOpcode#6911bc4c/1@3396e7ti is empty, due to cached_AST::TOpcode_dig#d01bd583/2@f661b1dd.
+[2026-05-05 16:31:11] (0s) Inferred that StackManipulation::DigOpcode.getValue/0#dispred#749d385c/2@243ee625 is empty, due to StackManipulation::DigOpcode#6911bc4c/1@3396e7ti.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_bor#6d0f4647/2@b0cbb7ge with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_bor#6d0f4647_1#antijoin_rhs/1@17ba4el1 is empty, due to cached_AST::TOpcode_bor#6d0f4647/2@b0cbb7ge.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_bnz#c4a198be/2@c54710l3 with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that ControlFlow::BnzOpcode.getNextNode/1#dispred#4ee3c78d/3@5af3ebb6 is empty, due to cached_AST::TOpcode_bnz#c4a198be/2@c54710l3.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_bnz#c4a198be_1#antijoin_rhs/1@66007cs3 is empty, due to cached_AST::TOpcode_bnz#c4a198be/2@c54710l3.
+[2026-05-05 16:31:11] (0s) Inferred that ControlFlow::BnzOpcode.getNextNode/1#dispred#4ee3c78d/3@e3040ade is empty, due to AST::TOpcode_bnz#c4a198be_1#antijoin_rhs/1@66007cs3.
+[2026-05-05 16:31:11] (0s) Inferred that ControlFlow::BnzOpcode.getNextNode/1#dispred#4ee3c78d/3@438721ca is empty, due to AST::TOpcode_bnz#c4a198be_1#antijoin_rhs/1@66007cs3.
+[2026-05-05 16:31:11] (0s) Inferred that ControlFlow::BnzOpcode.getNextNode/1#dispred#4ee3c78d/3@d38cbc73 is empty, due to AST::TOpcode_bnz#c4a198be_1#antijoin_rhs/1@66007cs3.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_blt#5a081cf5/2@49db1ark with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_blt#5a081cf5_1#antijoin_rhs/1@986278n4 is empty, due to cached_AST::TOpcode_blt#5a081cf5/2@49db1ark.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_bgt#7329cf0d/2@54afefn0 with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_bgt#7329cf0d_1#antijoin_rhs/1@eaecc9jg is empty, due to cached_AST::TOpcode_bgt#7329cf0d/2@54afefn0.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_beq#f8d0be1f/2@395abftm with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_beq#f8d0be1f_1#antijoin_rhs/1@f79283j7 is empty, due to cached_AST::TOpcode_beq#f8d0be1f/2@395abftm.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_arg#65bcc7cd/2@5adb105r with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_arg#65bcc7cd_1#antijoin_rhs/1@bd5458m5 is empty, due to cached_AST::TOpcode_arg#65bcc7cd/2@5adb105r.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_and#f22cb7f8/2@d8bcb0fe with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_and#f22cb7f8_1#antijoin_rhs/1@970cf94k is empty, due to cached_AST::TOpcode_and#f22cb7f8/2@d8bcb0fe.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_add#31c02f43/2@4c3b3d3s with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_add#31c02f43_1#antijoin_rhs/1@38586d9q is empty, due to cached_AST::TOpcode_add#31c02f43/2@4c3b3d3s.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_or#7254f70c/2@1c6ceb7n with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_or#7254f70c_1#antijoin_rhs/1@0103eaav is empty, due to cached_AST::TOpcode_or#7254f70c/2@1c6ceb7n.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_lt#e3770f51/2@91d747em with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_lt#e3770f51_1#antijoin_rhs/1@455dbe70 is empty, due to cached_AST::TOpcode_lt#e3770f51/2@91d747em.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_gt#70ac5da8/2@d57cbac6 with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_gt#70ac5da8_1#antijoin_rhs/1@25fe14hh is empty, due to cached_AST::TOpcode_gt#70ac5da8/2@d57cbac6.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_eq#22d16f98/2@d721e1mf with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_eq#22d16f98_1#antijoin_rhs/1@a5af4arm is empty, due to cached_AST::TOpcode_eq#22d16f98/2@d721e1mf.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_bz#b0aae5dc/2@9c3d51aj with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that ControlFlow::BzOpcode.getNextNode/1#dispred#a9df975a/3@6547b41p is empty, due to cached_AST::TOpcode_bz#b0aae5dc/2@9c3d51aj.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_bz#b0aae5dc_1#antijoin_rhs/1@78aeffc3 is empty, due to cached_AST::TOpcode_bz#b0aae5dc/2@9c3d51aj.
+[2026-05-05 16:31:11] (0s) Inferred that ControlFlow::BzOpcode.getNextNode/1#dispred#a9df975a/3@25d9941g is empty, due to AST::TOpcode_bz#b0aae5dc_1#antijoin_rhs/1@78aeffc3.
+[2026-05-05 16:31:11] (0s) Inferred that ControlFlow::BzOpcode.getNextNode/1#dispred#a9df975a/3@d53056pq is empty, due to AST::TOpcode_bz#b0aae5dc_1#antijoin_rhs/1@78aeffc3.
+[2026-05-05 16:31:11] (0s) Inferred that ControlFlow::BzOpcode.getNextNode/1#dispred#a9df975a/3@ed48ddgo is empty, due to AST::TOpcode_bz#b0aae5dc_1#antijoin_rhs/1@78aeffc3.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TOpcode_b#7c28639d/2@9f6b09p2 with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that AST::TOpcode_b#7c28639d_1#join_rhs/1@62664fkr is empty, due to cached_AST::TOpcode_b#7c28639d/2@9f6b09p2.
+[2026-05-05 16:31:11] (0s)  >>> Full cache hit cached_AST::TSource#9d6d8b58/2@2776bclb with 1 rows and digest fa00d65icu5d9mgj4sgsih1g5lf.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TLabel#f3717bf0/2@aeedfc5o with empty relation.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TMultiTargetConditionalBranch#59721682/1@7dac20bn with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that ControlFlow::MultiTargetConditionalBranch.getNextNode/1#dispred#1e7e4df9/3@0d8bdbth is empty, due to cached_AST::TMultiTargetConditionalBranch#59721682/1@7dac20bn.
+[2026-05-05 16:31:11] (0s) Inferred that _AST::TMultiTargetConditionalBranch#59721682__AST::AstNode.endsACodeblock/0#dispred#d0bbb5fe_AST::As__#shared/2@3e122296 is empty, due to cached_AST::TMultiTargetConditionalBranch#59721682/1@7dac20bn.
+[2026-05-05 16:31:11] (0s) Inferred that project#ControlFlow::MultiTargetConditionalBranch.getNextNode/1#dispred#1e7e4df9/2@8eeb2epg is empty, due to ControlFlow::MultiTargetConditionalBranch.getNextNode/1#dispred#1e7e4df9/3@0d8bdbth.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TSimpleConditionalBranches#21ad654c/1@e78ef2sd with empty relation.
+[2026-05-05 16:31:11] (0s) Inferred that _AST::TSimpleConditionalBranches#21ad654c__AST::AstNode.endsACodeblock/0#dispred#d0bbb5fe_AST::AstNo__#shared/2@7281ddga is empty, due to cached_AST::TSimpleConditionalBranches#21ad654c/1@e78ef2sd.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_AST::TUnconditionalBranches#2a6b7c04/1@eb2b6cbc with empty relation.
+[2026-05-05 16:31:11] (0s)  >>> Full cache hit cached_AST::TContractExitOpcode#b3705546/1@c39500eh with 2 rows and digest f0403ed2qoe79qd6co59ghh4a7a.
+[2026-05-05 16:31:11] (0s)  >>> Full cache hit cached_AST::AstNode.getCodeblockStart/0#64016aba/2@5449cbsm with 10 rows and digest 57a3d06bn13slpu5pcvbnbcn5dc.
+[2026-05-05 16:31:11] (0s)  >>> Full cache hit cached_AST::TAstNode#517a0ad6/1@0083b7am with 11 rows and digest 341bd2euvibi7c1mjsmd46eb4a3.
+[2026-05-05 16:31:11] (0s)  >>> Full cache hit cached_Completion::Completion::TNormalSuccessor#9b6f3a7f/1@ef0f25te with 1 rows and digest 19f2cevarof1fbaqkctt3t43if4.
+[2026-05-05 16:31:11] (0s)  >>> Full cache hit cached_Cfg::MakeWithSplitting<Locations::Location,CFG::Implementation,NoSplittingInput<Locations::Location,CFG::Implementation>,CFG::CfgImpl::ConditionalCompletionSplittingInput>::Cached::TAstNode#329930d8/4@189fc5mj with 11 rows and digest 9e9d8cafuhbuk5bjkbhmc2ihkad.
+[2026-05-05 16:31:11] (0s)  >>> Full cache hit cached_Completion::Completion::TBooleanSuccessor#d5c69caf/2@7e9235ia with 2 rows and digest cad59d1f424i34evjnuchesu99c.
+[2026-05-05 16:31:11] (0s)  >>> Full cache hit cached_Cfg::MakeWithSplitting<Locations::Location,CFG::Implementation,NoSplittingInput<Locations::Location,CFG::Implementation>,CFG::CfgImpl::ConditionalCompletionSplittingInput>::Cached::getASuccessor/2#b601c301/3@a6fcdbcg with 12 rows and digest 60445el97go0s4ml325k8thvdg6.
+[2026-05-05 16:31:11] (0s)  >>> Full cache hit cached_shortestDistances@BasicBlocks::Cached::startsBB/1#2e6b5781#1@BasicBlocks::Cached::intraBBSucc/2#531af47c#2/3@9fa96fl3 with 14 rows and digest 7f8b02sgegtdthhjj6it7an3mu2.
+[2026-05-05 16:31:11] (0s)  >>> Full cache hit cached_BasicBlocks::Cached::TBasicBlockStart#48abc063/2@3692a5ti with 4 rows and digest b871d47jmjlsd5ft6rlsbnkgr72.
+[2026-05-05 16:31:11] (0s)  >>> Full cache hit cached_AST::AstNode.getBasicBlock/0#dispred#6e44479d/2@837332lt with 11 rows and digest 320637t6vjea4m3vhn6j3841u3c.
+[2026-05-05 16:31:11] (0s)  >>> Full cache hit cached_AST::TOpcode#341e1f58/1@7a4eae1r with 10 rows and digest 9430c6orrvjnb1tsvqj72kglg18.
+[2026-05-05 16:31:11] (0s)  >>> Full cache hit cached_AST::AstNode.getConsumedBy/1#dispred#60439722/3@5f1799a2 with 6 rows and digest 60e3e3830qs033mogo4rfd18j40.
+[2026-05-05 16:31:11] (0s)  >>> Full cache hit cached_SSA::phiNodeGetsConsumedBy/2#da9c49b3/3@6ff3e0oi with 1 rows and digest e1cf9dc81ninhpfnef95ofbf284.
+[2026-05-05 16:31:11] (0s)  >>> Full cache hit cached_SSA::phiNodeExitIndex/2#29d5a021/3@730f0cma with 3999 rows and digest 5c92d4em7gov31q07fjtaolgeud.
+[2026-05-05 16:31:11] (0s)  >>> Full cache hit cached_Cfg::MakeWithSplitting<Locations::Location,CFG::Implementation,NoSplittingInput<Locations::Location,CFG::Implementation>,CFG::CfgImpl::ConditionalCompletionSplittingInput>::Cached::TAnnotatedExitNode#e3edc3ea/3@56b9b7ic with 1 rows and digest ce9edbdfuqft7g4fhj8bcp7kr85.
+[2026-05-05 16:31:11] (0s)  >>> Full cache hit cached_Cfg::MakeWithSplitting<Locations::Location,CFG::Implementation,NoSplittingInput<Locations::Location,CFG::Implementation>,CFG::CfgImpl::ConditionalCompletionSplittingInput>::Cached::TEntryNode#8df8123e/2@49b81b4p with 1 rows and digest 198aa4q9maoatf716hjrfvomhn3.
+[2026-05-05 16:31:11] (0s)  >>> Full cache hit cached_Cfg::MakeWithSplitting<Locations::Location,CFG::Implementation,NoSplittingInput<Locations::Location,CFG::Implementation>,CFG::CfgImpl::ConditionalCompletionSplittingInput>::Cached::TExitNode#25cb5579/2@487797no with 1 rows and digest 61efe1ipap80m73g7sra0vc2jq5.
+[2026-05-05 16:31:11] (0s)  >>> Full cache hit cached_BasicBlocks::Cached::TBasicBlock#13fd9993/1@86f840ld with 4 rows and digest 928b83hvk542icmije6r2cktl88.
+[2026-05-05 16:31:11] (0s)  >>> Full cache hit cached_BasicBlocks::Cached::bbIDominates/2#800135b3/2@deb324u6 with 2 rows and digest 665db0qp7m7aasn2ff77bk3evpc.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_BasicBlocks::Cached::bbIPostDominates/2#fa700745/2@1c4d14ss with empty relation.
+[2026-05-05 16:31:11] (0s)  >>> Full cache hit cached_BasicBlocks::Cached::controls/3#52e3ea75/3@2eed6dgl with 1 rows and digest 6392005n5liipqubah41r7nmjn9.
+[2026-05-05 16:31:11] (0s)  >>> Full cache hit cached_BasicBlocks::Cached::immediatelyControls/3#f7527c8d/3@e87a88n5 with 1 rows and digest 6392005n5liipqubah41r7nmjn9.
+[2026-05-05 16:31:11] (0s)  >>> Full cache hit cached_Cfg::MakeWithSplitting<Locations::Location,CFG::Implementation,NoSplittingInput<Locations::Location,CFG::Implementation>,CFG::CfgImpl::ConditionalCompletionSplittingInput>::Cached::Public::getNodeCfgScope/1#057c1716/2@e237d2uk with 14 rows and digest 46aed6nu9pu2j503ut6pfu9d5q7.
+[2026-05-05 16:31:11] (0s)  >>> Full cache hit cached_Cfg::MakeWithSplitting<Locations::Location,CFG::Implementation,NoSplittingInput<Locations::Location,CFG::Implementation>,CFG::CfgImpl::ConditionalCompletionSplittingInput>::Cached::TSplitsNil#065a9666/1@80f1772c with 1 rows and digest 19f2cevarof1fbaqkctt3t43if4.
+[2026-05-05 16:31:11] (0s)  >>> Full cache hit cached_Cfg::MakeWithSplitting<Locations::Location,CFG::Implementation,NoSplittingInput<Locations::Location,CFG::Implementation>,CFG::CfgImpl::ConditionalCompletionSplittingInput>::Cached::splitsToString/1#e34ee72c/2@11080cqp with 1 rows and digest 476087gn5glklbfr2fpufb8i9pf.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_BasicBlocks::Cached::getJoinBlockPredecessor/2#eaffa560/3@004ae5ms with empty relation.
+[2026-05-05 16:31:11] (0s)  >>> Full cache hit cached_Cfg::MakeWithSplitting<Locations::Location,CFG::Implementation,NoSplittingInput<Locations::Location,CFG::Implementation>,CFG::CfgImpl::ConditionalCompletionSplittingInput>::Cached::TNode#755bd563/1@6fbb408v with 14 rows and digest f9c5d2pmjtq94p3qe2mk7cipvq0.
+[2026-05-05 16:31:11] (0s)  >>> Full cache hit cached_Cfg::MakeWithSplitting<Locations::Location,CFG::Implementation,NoSplittingInput<Locations::Location,CFG::Implementation>,CFG::CfgImpl::ConditionalCompletionSplittingInput>::Cached::Public::forceCachingInSameStage/0#e15006a1/0@a80d27a0 with 1 rows and digest ac90f0ei322hhreshlvdl215c38.
+[2026-05-05 16:31:11] (0s)  >>> Full cache hit cached_Cfg::MakeWithSplitting<Locations::Location,CFG::Implementation,NoSplittingInput<Locations::Location,CFG::Implementation>,CFG::CfgImpl::ConditionalCompletionSplittingInput>::ControlFlowTree.first/1#dispred#15fc867b/2@68482csm with 11 rows and digest 0ce11et7v65kb4bku12ob2tqnpa.
+[2026-05-05 16:31:11] (0s)  >>> Full cache hit cached_Cfg::MakeWithSplitting<Locations::Location,CFG::Implementation,NoSplittingInput<Locations::Location,CFG::Implementation>,CFG::CfgImpl::ConditionalCompletionSplittingInput>::Cached::Public::getAControlFlowExitNode/1#7ff8e97d/2@84cfc5e4 with 11 rows and digest c5284189gll5cpujf9r52t5ot77.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_Cfg::MakeWithSplitting<Locations::Location,CFG::Implementation,NoSplittingInput<Locations::Location,CFG::Implementation>,CFG::CfgImpl::ConditionalCompletionSplittingInput>::Cached::getJoinBlockPredecessor/2#a5e0324a/3@6acbb7h5 with empty relation.
+[2026-05-05 16:31:11] (0s)  >>> Full cache hit cached_BasicBlock::Make<Locations::Location,Cfg::MakeWithSplitting<Locations::Location,CFG::Implementation,NoSplittingInput<Locations::Location,CFG::Implementation>,CFG::CfgImpl::ConditionalCompletionSplittingInput>::BasicBlocks::BasicBlockInputSig>::Cached::TBasicBlockStart#56ada6ae/2@32ed6dt3 with 3 rows and digest 01a4e6bguoiims6q7fn5chskoe0.
+[2026-05-05 16:31:11] (0s)  >>> Full cache hit cached_BasicBlock::Make<Locations::Location,Cfg::MakeWithSplitting<Locations::Location,CFG::Implementation,NoSplittingInput<Locations::Location,CFG::Implementation>,CFG::CfgImpl::ConditionalCompletionSplittingInput>::BasicBlocks::BasicBlockInputSig>::Cached::TBasicBlock#8cf8f3fb/1@a6f562go with 3 rows and digest 1e437594k4lrub4j1rp8ks3g8h1.
+[2026-05-05 16:31:11] (0s)  >>> Full cache hit cached_BasicBlock::Make<Locations::Location,Cfg::MakeWithSplitting<Locations::Location,CFG::Implementation,NoSplittingInput<Locations::Location,CFG::Implementation>,CFG::CfgImpl::ConditionalCompletionSplittingInput>::BasicBlocks::BasicBlockInputSig>::Cached::bbIDominates/2#599f091a/2@e7e589t7 with 1 rows and digest 282ab6apr3jfqf2a1rm63nq9q87.
+[2026-05-05 16:31:11] (0s)  >>> Full cache hit cached_BasicBlock::Make<Locations::Location,Cfg::MakeWithSplitting<Locations::Location,CFG::Implementation,NoSplittingInput<Locations::Location,CFG::Implementation>,CFG::CfgImpl::ConditionalCompletionSplittingInput>::BasicBlocks::BasicBlockInputSig>::Cached::getNode/2#eaf68e10/3@7197a3po with 14 rows and digest 5564acgualq7kddeirn3ss5ngub.
+[2026-05-05 16:31:11] (0s)  >>> First-level cache hit cached_BasicBlock::Make<Locations::Location,Cfg::MakeWithSplitting<Locations::Location,CFG::Implementation,NoSplittingInput<Locations::Location,CFG::Implementation>,CFG::CfgImpl::ConditionalCompletionSplittingInput>::BasicBlocks::BasicBlockInputSig>::Cached::bbIPostDominates/2#d676f8ed/2@079bednq with empty relation.
+[2026-05-05 16:31:11] (0s)  >>> Full cache hit cached_Completion::Completion::TSuccessorType#d6b5ccbb/1@0305824c with 4 rows and digest 928b83hvk542icmije6r2cktl88.
+[2026-05-05 16:31:11] (0s)  >>> Full cache hit cached_Completion::Completion::TRetsubSuccessor#c78a6298/1@818ae4ks with 1 rows and digest 10952drg6dialitmaeap0ujtdf7.
+[2026-05-05 16:31:11] (0s) Query done
+[2026-05-05 16:31:11] (0s) Sequence stamp origin is -5917393474151992718
+[2026-05-05 16:31:11] (0s) Pausing evaluation to sync to disk at sequence stamp o+0
+[2026-05-05 16:31:11] (0s) Unpausing evaluation
+[2026-05-05 16:31:11] Evaluation of /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tealtools/queries/innerTxnFields.ql produced BQRS results.
+[2026-05-05 16:31:11] [PROGRESS] execute queries> [1/1 eval 259ms] Evaluation done; writing results to /home/argi/.cache/teal-graphs/1e06161a599a58c4/innerTxnFields.bqrs.
+[2026-05-05 16:31:11] [PROGRESS] execute queries> Shutting down query evaluator.
+[2026-05-05 16:31:11] Pausing evaluation to close the cache at sequence stamp o+1
+[2026-05-05 16:31:11] The disk cache is freshly trimmed; leave it be.
+[2026-05-05 16:31:11] Unpausing evaluation
+[2026-05-05 16:31:11] Exiting with code 0

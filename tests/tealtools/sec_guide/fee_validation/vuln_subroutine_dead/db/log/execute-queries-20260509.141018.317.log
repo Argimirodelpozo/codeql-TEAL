@@ -1,0 +1,19 @@
+[2026-05-09 14:10:18] This is codeql execute queries -J-Xmx1391M --verbosity=progress --logdir=/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tests/tealtools/sec_guide/fee_validation/vuln_subroutine_dead/db/log --evaluator-log-level=5 --warnings=show --qlconfig-file=/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/qlconfig.yml --dynamic-join-order-mode=none --output=/home/argi/.cache/teal-graphs/5bfcde994d995bb1/cfgEdges.bqrs -- /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tests/tealtools/sec_guide/fee_validation/vuln_subroutine_dead/db/db-teal path:/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tealtools/queries/cfgEdges.ql
+[2026-05-09 14:10:18] Calling plumbing command: codeql resolve queries --qlconfig-file=/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/qlconfig.yml --format=json -- path:/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tealtools/queries/cfgEdges.ql
+[2026-05-09 14:10:19] [PROGRESS] resolve queries> Recording pack reference argimirodelpozo/tealtools at /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tealtools/queries.
+[2026-05-09 14:10:19] Plumbing command codeql resolve queries completed:
+                      [
+                        "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tealtools/queries/cfgEdges.ql"
+                      ]
+[2026-05-09 14:10:19] Refusing fancy output: $CODEQL_ISATTY terminal indication is missing
+[2026-05-09 14:10:19] Creating executor with 1 threads.
+[2026-05-09 14:10:20] Calling plumbing command: codeql resolve extensions --qlconfig-file=/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/qlconfig.yml --include-extension-row-locations path:/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tealtools/queries/cfgEdges.ql
+[2026-05-09 14:10:20] Calling plumbing command: codeql resolve queries --qlconfig-file=/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/qlconfig.yml --allow-library-packs --format startingpacks -- path:/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tealtools/queries/cfgEdges.ql
+[2026-05-09 14:10:20] [PROGRESS] resolve queries> Recording pack reference argimirodelpozo/tealtools at /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tealtools/queries.
+[2026-05-09 14:10:20] Plumbing command codeql resolve queries completed:
+                      [
+                        "/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tealtools/queries"
+                      ]
+[2026-05-09 14:10:20] Calling plumbing command: codeql resolve extensions-by-pack --qlconfig-file=/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/qlconfig.yml --include-extension-row-locations -- /home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tealtools/queries
+[2026-05-09 14:10:20] [SPAMMY] resolve extensions-by-pack> [INCOMPATIBILITY] argimirodelpozo/tealtools: not 0.1.0 {root: argimirodelpozo/tealtools@0.1.0}
+[2026-05-09 14:10:20] [SPAMMY] resolve extensions-by-pack> [DERIVATION] argimirodelpozo/tealtools: 0.1.0 {argimirodelpozo/tealtools: not 0.1.0 {root: argimirodelpozo/tealtools@0.1.0}}

@@ -1,0 +1,1 @@
+arg_0@prog.teal:4  LogicSig argument used in equality comparison — args are not covered by delegation signatures and provide zero security for access control.
