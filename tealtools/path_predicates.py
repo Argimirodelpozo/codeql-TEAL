@@ -237,6 +237,26 @@ class PathPredicateAnalysis:
             out.append(f"BB L{bb.first_line:>3}-L{bb.last_line:<3}  {body}")
         return "\n".join(out)
 
+    def to_dict(self, *, file: Optional[str] = None) -> dict:
+        """Structured per-BB dump for JSON output."""
+        blocks = []
+        for bb in sorted(
+            self.prog.blocks.values(),
+            key=lambda b: (b.file, b.first_line),
+        ):
+            if file is not None and bb.file != file:
+                continue
+            preds = self.bb_preds.get(bb, frozenset())
+            blocks.append({
+                "file": bb.file,
+                "first_line": bb.first_line,
+                "last_line": bb.last_line,
+                "predicates": [repr(p) for p in sorted(
+                    preds, key=lambda c: (c.kind, repr(c.value)))
+                ],
+            })
+        return {"blocks": blocks}
+
     # -- internals ------------------------------------------------------
 
     def _index_labels(self) -> dict[tuple[str, str], int]:

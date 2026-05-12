@@ -201,6 +201,13 @@ class AuthViolation:
         body = ", ".join(repr(p) for p in self.dominating_predicates) or "<no guard>"
         return f"{self.sink.op}@{loc.file}:{loc.line}  ({self.sink_class})  preds: {body}"
 
+    def to_dict(self) -> dict:
+        from .serialize import assignment_ref
+        return {
+            "sink": {"class": self.sink_class, **assignment_ref(self.sink)},
+            "dominating_predicates": [repr(p) for p in self.dominating_predicates],
+        }
+
     def __repr__(self) -> str:
         return f"AuthViolation({self.pretty()})"
 

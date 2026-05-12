@@ -64,6 +64,15 @@ class AppcallSite:
             f"appl→{self.app_id}  ({db})  {args}"
         )
 
+    def to_dict(self) -> dict:
+        return {
+            "file": self.file,
+            "submit_line": self.submit_line,
+            "app_id": self.app_id,
+            "callee_db": str(self.callee_db),
+            "const_args": {str(i): v for i, v in sorted(self.const_args.items())},
+        }
+
 
 def load_registry(path: str | Path) -> Registry:
     """Load an AppID → DB-path mapping from a yaml file.
@@ -328,6 +337,15 @@ class CrossAuthFinding:
             except ValueError:
                 pass
         return f"{db}  {self.violation.pretty()}"  # type: ignore[attr-defined]
+
+    def to_dict(self, callee_db: Optional[Path] = None) -> dict:
+        out: dict = {
+            "app_id": self.app_id,
+            "violation": self.violation.to_dict(),  # type: ignore[attr-defined]
+        }
+        if callee_db is not None:
+            out["callee_db"] = str(callee_db)
+        return out
 
 
 @dataclass(frozen=True)

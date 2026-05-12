@@ -100,6 +100,9 @@ class GroupConstraint:
     def render(self) -> str:
         return f"{self.ref!r} {self.op} {_render_rhs(self.rhs)}"
 
+    def to_dict(self) -> dict:
+        return {"ref": repr(self.ref), "op": self.op, "rhs": _render_rhs(self.rhs)}
+
 
 def _render_rhs(rhs: object) -> str:
     if isinstance(rhs, Const):
@@ -185,6 +188,11 @@ class GroupShape:
         return "\n".join(c.render() for c in sorted(
             self.constraints, key=_constraint_sort_key
         ))
+
+    def to_dict(self) -> dict:
+        return {"constraints": [
+            c.to_dict() for c in sorted(self.constraints, key=_constraint_sort_key)
+        ]}
 
 
 def _constraint_sort_key(c: GroupConstraint):

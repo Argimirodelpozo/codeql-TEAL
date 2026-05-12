@@ -123,6 +123,14 @@ class InnerTxnField:
             return vals[0]
         return "{" + " | ".join(vals) + "}"
 
+    def to_dict(self) -> dict:
+        return {
+            "name": self.name,
+            "file": self.file,
+            "line": self.line,
+            "possible_values": self.possible_values(),
+        }
+
 
 def _operand_possible_values(
     op: Optional[Operand], _seen: Optional[set] = None
@@ -217,6 +225,13 @@ class InnerTxn:
             out.setdefault(f.name, []).append(f)
         return out
 
+    def to_dict(self) -> dict:
+        return {
+            "begin": {"line": self.begin_line, "kind": self.begin_kind},
+            "end": {"line": self.end_line, "kind": self.end_kind},
+            "fields": [f.to_dict() for f in self.fields],
+        }
+
 
 @dataclass
 class InnerTxnGroup:
@@ -236,6 +251,13 @@ class InnerTxnGroup:
             f"InnerTxnGroup({self.file}:submit@L{self.submit_line}, "
             f"{len(self.txns)} txn{'s' if len(self.txns) != 1 else ''})"
         )
+
+    def to_dict(self) -> dict:
+        return {
+            "file": self.file,
+            "submit_line": self.submit_line,
+            "txns": [t.to_dict() for t in self.txns],
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -427,3 +449,6 @@ class InnerTxnReport:
 
     def print(self) -> None:
         print(self.render())
+
+    def to_dict(self) -> dict:
+        return {"groups": [g.to_dict() for g in self.groups]}

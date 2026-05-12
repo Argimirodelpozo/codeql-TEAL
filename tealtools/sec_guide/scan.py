@@ -40,25 +40,27 @@ CLI: ``python -m tealtools sec-guide-scan <root> [--config rules.yml]
 from __future__ import annotations
 
 import fnmatch
-import hashlib
 import json
 import os
-import shutil
 import subprocess
-import tempfile
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Optional
 
 from ..ssa import SSAProgram
+from ..targets import build_db_for_dir
 from . import DETECTORS
 
-# Lives outside the project so it survives `git clean`. The keys in
-# `_dir_db_cache_dir` are content-addressed, so re-running on the same
-# tree reuses prior DBs even after a checkout switch.
+# Content-addressed cache for per-dir DBs built by ``scan``. Override
+# with ``TEALQL_SEC_GUIDE_SCAN_CACHE`` (or the legacy
+# ``TEAL_SEC_GUIDE_SCAN_CACHE``). Distinct from the generic
+# ``~/.cache/tealql/dbs/`` because scan groups files by source dir, not
+# by the CLI's notion of a "target".
 DEFAULT_CACHE = Path(
-    os.environ.get("TEAL_SEC_GUIDE_SCAN_CACHE",
-                   Path.home() / ".cache" / "teal-sec-guide-scan")
+    os.environ.get("TEALQL_SEC_GUIDE_SCAN_CACHE",
+                   os.environ.get("TEAL_SEC_GUIDE_SCAN_CACHE",
+                                  Path.home() / ".cache" / "tealql"
+                                  / "sec-guide-scan"))
 )
 
 
@@ -135,84 +137,6 @@ class ScanConfig:
             if rule.matches(rel_path):
                 return rule.select(DETECTORS)
         return list(DETECTORS)
-
-
-# ---------------------------------------------------------------------------
-# Per-dir DB build (content-addressed cache)
-# ---------------------------------------------------------------------------
-
-
-def _codeql() -> str:
-    cmd = os.environ.get("CODEQL") or shutil.which("codeql")
-    if cmd is None:
-        raise RuntimeError(
-            "codeql binary not found (set $CODEQL or add to PATH)"
-        )
-    return cmd
-
-
-def _search_path() -> Optional[str]:
-    """The repo's bundled extractor lives at
-    ``<repo>/.codeql-extractors/``. We locate it relative to this file
-    so a freshly-cloned checkout works without environment setup."""
-    here = Path(__file__).resolve()
-    for parent in here.parents:
-        candidate = parent / ".codeql-extractors"
-        if candidate.exists():
-            return str(candidate)
-    return None
-
-
-def _dir_signature(teal_files: list[Path]) -> str:
-    """Hash the (basename, content) of every teal file in the dir.
-    Stable across path moves of the dir as long as basenames + content
-    don't change."""
-    h = hashlib.sha256()
-    for f in sorted(teal_files, key=lambda p: p.name):
-        h.update(f.name.encode())
-        h.update(b"\0")
-        h.update(f.read_bytes())
-        h.update(b"\0")
-    return h.hexdigest()[:16]
-
-
-def build_db_for_dir(
-    teal_files: list[Path],
-    *,
-    cache_root: Path = DEFAULT_CACHE,
-    verbose: bool = False,
-) -> Path:
-    """Build a CodeQL DB from ``teal_files`` (must all live in the same
-    parent dir). Returns the DB path. Idempotent when the contents
-    haven't changed.
-
-    The build copies each .teal to a per-cache-entry ``src/`` dir
-    (codeql's extractor doesn't follow symlinks), then runs
-    ``codeql database create``. Subsequent calls hit the cache.
-    """
-    if not teal_files:
-        raise ValueError("teal_files is empty")
-    sig = _dir_signature(teal_files)
-    cache_dir = cache_root / sig
-    db = cache_dir / "db"
-    if (db / "codeql-database.yml").exists():
-        return db
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    src = cache_dir / "src"
-    if src.exists():
-        shutil.rmtree(src)
-    src.mkdir()
-    for f in teal_files:
-        shutil.copy2(f, src / f.name)
-    cmd = [_codeql(), "database", "create", str(db),
-           "--overwrite", "-l", "teal", "-s", str(src)]
-    sp = _search_path()
-    if sp is not None:
-        cmd.append(f"--search-path={sp}")
-    if verbose:
-        print(f"[scan] building DB for {sig} from {len(teal_files)} files...")
-    subprocess.run(cmd, check=True, capture_output=not verbose)
-    return db
 
 
 # ---------------------------------------------------------------------------

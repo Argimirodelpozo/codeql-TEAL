@@ -45,6 +45,12 @@ class SuppressedViolation:
             f"(validated by {self.validated_by!r})"
         )
 
+    def to_dict(self) -> dict:
+        return {
+            "violation": self.violation.to_dict(),
+            "validated_by": repr(self.validated_by),
+        }
+
 
 def _taint_chain(operand, depth: int = 6) -> list:
     """Walk back from ``operand`` through ``defined_by`` chains and

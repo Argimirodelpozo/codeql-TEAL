@@ -1,0 +1,4 @@
+#pragma version 10
+// Missing txn Fee comparison — sec-guide/fee-validation flags this.
+pushint 1
+return

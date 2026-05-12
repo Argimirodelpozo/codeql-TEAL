@@ -12,3 +12,12 @@ sec-guide-detections-dbs/
 __pycache__/
 *.pyc
 .pytest_cache/
+*.egg-info/
+build/
+dist/
+
+# CodeQL runtime artifacts written into fixture DBs whenever a query
+# is run against them (diagnostic dumps + per-run log files). Not
+# part of the DB schema itself; safe to ignore.
+tests/**/db/diagnostic/
+tests/**/db/log/

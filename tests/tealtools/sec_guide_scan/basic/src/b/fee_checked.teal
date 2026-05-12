@@ -1,0 +1,8 @@
+#pragma version 10
+// Has txn Fee comparison — sec-guide/fee-validation passes.
+txn Fee
+pushint 1000
+<=
+assert
+pushint 1
+return

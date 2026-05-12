@@ -291,6 +291,17 @@ class CorrelatedViolation:
             f"(sink_value = {self.sink_operand!r})"
         )
 
+    def to_dict(self) -> dict:
+        from ..serialize import assignment_ref, operand_repr
+        return {
+            "initial_source": {"name": self.initial_source_name,
+                               **assignment_ref(self.initial_source)},
+            "box_write": assignment_ref(self.box_write),
+            "box_read": assignment_ref(self.box_read),
+            "sink": {"name": self.sink_name, **assignment_ref(self.sink)},
+            "operand": operand_repr(self.sink_operand),
+        }
+
 
 def detect_correlated_flows(
     prog: SSAProgram,

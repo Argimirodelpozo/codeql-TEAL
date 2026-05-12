@@ -185,6 +185,14 @@ class Violation:
             f"(operand = {self.sink_operand!r})"
         )
 
+    def to_dict(self) -> dict:
+        from ..serialize import assignment_ref, operand_repr
+        return {
+            "source": {"name": self.source_name, **assignment_ref(self.source)},
+            "sink": {"name": self.sink_name, **assignment_ref(self.sink)},
+            "operand": operand_repr(self.sink_operand),
+        }
+
     def __repr__(self) -> str:
         return f"Violation({self.pretty()})"
 

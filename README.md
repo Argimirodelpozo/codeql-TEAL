@@ -84,18 +84,55 @@ To export results to JSON, use `codeql bqrs decode --format=json`.
 
 `tealtools/` is a Python package over the CodeQL substrate. Each submodule loads a CodeQL database via `tealtools.SSAProgram(db_path)` and exposes either an SSA-level helper or a specific detector. Analyses run from regular Python — no QL eval each time once the per-DB cache (`~/.cache/teal-graphs/`) is warm.
 
-### CLI
+### Install
 
 ```bash
-python -m tealtools --help
-python -m tealtools auth <db>
-python -m tealtools box-key <db>
-python -m tealtools box-df {into|out|correlated} <db>
-python -m tealtools itxn-report <db>
-python -m tealtools group-shape <db>
-python -m tealtools cost <db>
-python -m tealtools path-predicates <db>
-python -m tealtools xcontract <caller-db> --registry <yml>
+pip install -e .
+```
+
+That puts a `tealql` binary on `$PATH`. `python -m tealtools` continues to work as a fallback.
+
+### CLI
+
+Every analysis subcommand takes a single `<target>` — a `.teal` file, a directory of `.teal` files, or an existing CodeQL DB. When the target is raw source, a DB is built on the fly and cached under `~/.cache/tealql/dbs/` (override via `$TEALQL_DB_CACHE`).
+
+```bash
+tealql --help
+
+# Detectors (emit findings; exit code 1 on any finding)
+tealql auth            <target>
+tealql box-key         <target>
+tealql box-df          <target> --flavour {into|out|correlated}
+tealql sec-guide       <target> {--detector NAME | --all}
+tealql sec-guide-scan  <root>   [--config rules.yml]
+
+# Reports
+tealql itxn-report     <target>
+tealql group-shape     <target>
+tealql cost            <target>
+tealql path-predicates <target>
+tealql cfg             <target> [--file F] [--skeleton]
+tealql xcontract       <target> --registry <yml>
+
+# Everything at once (all detectors + all reports)
+tealql all             <target>
+```
+
+Common flags accepted by every analysis subcommand:
+
+| Flag | Effect |
+| --- | --- |
+| `--json` | emit JSON instead of text |
+| `--db-cache DIR` | override the auto-built-DB cache root |
+| `--force-rebuild` | rebuild the DB even if a cached one exists |
+| `-v`, `--verbose` | print DB-build progress to stderr |
+
+For raw CodeQL operations there is a `debug` namespace:
+
+```bash
+tealql debug query <ql-file> <target>     # codeql query run, with target resolution
+tealql debug db    <target>                # resolve + print the DB path
+tealql debug cache {info|clear}            # inspect or clear the DB cache
 ```
 
 ### Modules

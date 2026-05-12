@@ -170,7 +170,7 @@ ALL_REPORTS: list[Report] = [
 def run_all(prog: SSAProgram) -> str:
     """Run every detector + report against ``prog`` and return one
     big text block, sectioned by analysis name. Convenient for
-    ``python -m tealtools all <db>``."""
+    ``tealql all <target>``."""
     out: list[str] = []
     for det in ALL_DETECTORS:
         out.append(f"=== {det.name} ===")
@@ -185,3 +185,27 @@ def run_all(prog: SSAProgram) -> str:
         out.append(rep.run(prog))
         out.append("")
     return "\n".join(out).rstrip() + "\n"
+
+
+def run_all_dict(prog: SSAProgram) -> dict:
+    """Same coverage as :func:`run_all` but returns a structured dict
+    suitable for JSON. Detector findings use each finding's
+    ``to_dict()`` if available, falling back to ``{"message": ...}``.
+    """
+    from .serialize import finding_to_dict
+    from .inner_txn_report import InnerTxnReport
+    from .group_reasoning import analyze
+    from .cost_analysis import to_dict as cost_to_dict
+    from .path_predicates import PathPredicateAnalysis
+
+    detectors: dict[str, list[dict]] = {}
+    for det in ALL_DETECTORS:
+        findings = list(det.run(prog))
+        detectors[det.name] = [finding_to_dict(f) for f in findings]
+    reports = {
+        "itxn-report": InnerTxnReport(prog).to_dict(),
+        "group-shape": analyze(prog).to_dict(),
+        "cost": cost_to_dict(prog),
+        "path-predicates": PathPredicateAnalysis(prog).to_dict(),
+    }
+    return {"detectors": detectors, "reports": reports}

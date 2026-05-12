@@ -200,3 +200,20 @@ def render(prog: SSAProgram) -> str:
             f"{f}:L{ln:<3}  {op.ljust(op_w)}  op_cost={oc:<4}  cum={cum_str}"
         )
     return "\n".join(out)
+
+
+def to_dict(prog: SSAProgram) -> dict:
+    """Structured equivalent of :func:`render` — one entry per
+    instruction with ``cumulative`` as either an int or the string
+    ``"unbounded"``."""
+    lines = per_line_costs(prog)
+    entries = []
+    for (f, ln), (op, oc, cum) in sorted(lines.items()):
+        entries.append({
+            "file": f,
+            "line": ln,
+            "op": op,
+            "op_cost": oc,
+            "cumulative": str(cum) if cum == UNBOUNDED else cum,
+        })
+    return {"entries": entries}
