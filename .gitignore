@@ -8,6 +8,11 @@ teal/extractor/target/
 tests/dbs/
 sec-guide-detections-dbs/
 
+# Editor / IDE / agent state
+.claude/
+.vscode/
+.idea/
+
 # Python
 __pycache__/
 *.pyc
