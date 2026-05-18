@@ -367,6 +367,19 @@ _CONST_BLOCK_REF_NAMES = frozenset({
 })
 
 
+# Control-flow terminators. These ops have side effects on the flow graph
+# independent of their SSA outputs, so dead-code elimination must NOT drop
+# them even if every output is a "dead constant" (e.g. a ``retsub`` whose
+# return-value output is constant-propagated and has no remaining consumers
+# in the SSA — the op still transfers control to the caller).
+_TERMINATOR_OPS = frozenset({
+    "callsub", "retsub",
+    "b", "bnz", "bz",
+    "return", "err",
+    "switch", "match",
+})
+
+
 # Per-op uint64 output ranges for ops whose bound is determined by the
 # op semantics alone (no operand or immediate dependency). Source for
 # `propagate_ranges`. AVM bytes-stack values are capped at 4096 bytes,
@@ -688,6 +701,19 @@ class SSAProgram:
             u_bb_id = g.nodes[u].get("bb")
             v_bb_id = g.nodes[v].get("bb")
             if u_bb_id is None or v_bb_id is None:
+                continue
+            # Intra-BB CFG edges must represent a back-edge from a
+            # branch at the BB's tail to its head — i.e. ``u.line >
+            # v.line``. Equal-line intra-BB edges arise from the
+            # CodeQL extractor modeling template markers
+            # (``pushint TMPL_FOO`` → ``Label@TMPL_FOO``) as
+            # same-line CFG edges that aren't real control flow;
+            # including them creates spurious BB-self-loops that
+            # ``find_loops`` then misclassifies as actual loops.
+            if (
+                u_bb_id == v_bb_id
+                and u.location.start_line <= v.location.start_line
+            ):
                 continue
             # Only edges into the BB's first node represent BB entry.
             # Intra-BB sequential edges (op → next op within one BB)
@@ -1135,10 +1161,18 @@ class SSAProgram:
 
         # Pass 4: assignments whose every output is dead are dropped. Use
         # `id()` for set membership because :class:`Assignment` is an
-        # unfrozen dataclass and not hashable.
+        # unfrozen dataclass and not hashable. Control-flow terminators
+        # (``retsub``, ``callsub``, ``b``, branches, ``return``, ``err``,
+        # ``switch``, ``match``) are *never* dead — they have flow-graph
+        # side effects independent of whether their SSA outputs have
+        # consumers. Excluding them here is the substrate's correctness
+        # guarantee that every consumer (control-tree builder, dataflow,
+        # path analyses) can rely on retsubs etc. remaining in the IR.
         dead_assignment_ids: set[int] = {
             id(a) for a in self.assignments
-            if a.outputs and all(o in dead_vars for o in a.outputs)
+            if a.outputs
+            and all(o in dead_vars for o in a.outputs)
+            and a.op not in _TERMINATOR_OPS
         }
         # Also clear `defined_by` on the dropped SSAVars (defensive — they're
         # being removed from `self.vars` so back-refs into them shouldn't

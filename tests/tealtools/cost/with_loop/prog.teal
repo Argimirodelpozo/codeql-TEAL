@@ -1,6 +1,6 @@
 #pragma version 10
 // Loop on a runtime arg — iteration count unknown statically.
-// Anything in or after the loop has cumulative = unbounded.
+// Lines in/after the loop cap at the program's budget ceiling.
 
 pushint 0
 l_loop:
