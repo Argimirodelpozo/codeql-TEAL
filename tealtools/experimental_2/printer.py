@@ -26,11 +26,18 @@ from ..control_tree import (
     SwitchR,
     build_control_tree,
 )
-from ..ssa import Assignment, BasicBlock, SSAProgram
+from ..ssa import Assignment, BasicBlock, Const, SSAProgram, SSAVar
 
 from .passes import run_all_passes
 
 _INDENT = "  "
+
+# Per-call state for ABI-dispatch extraction. Populated by
+# :func:`_collect_abi_dispatches` and read in :func:`_render_if`. We
+# keep it as module state for simplicity (single-threaded rendering);
+# :func:`structured_dump` sets it up and tears it down so consecutive
+# calls stay isolated.
+_ABI_DISPATCHES: dict[BasicBlock, tuple[str, str]] = {}
 
 
 def _build_label_index(prog: SSAProgram) -> dict[tuple[str, int], str]:
@@ -46,6 +53,110 @@ def _find_branch_terminator(bb: BasicBlock) -> Optional[Assignment]:
         if a.op in ("bnz", "bz"):
             return a
     return None
+
+
+def _get_cond_bb(cond_region: Region) -> Optional[BasicBlock]:
+    """Pull the conditional BB out of an if/guard/loop ``cond`` region.
+
+    Handles the two common shapes: a bare :class:`BlockR` or a
+    :class:`SequenceR` whose last part is a :class:`BlockR`. Returns
+    ``None`` for shapes we don't lift (e.g. when control_tree has
+    already pattern-matched the condition into a nested :class:`IfR`)."""
+    if isinstance(cond_region, BlockR):
+        return cond_region.bb
+    if isinstance(cond_region, SequenceR) and cond_region.parts:
+        last = cond_region.parts[-1]
+        if isinstance(last, BlockR):
+            return last.bb
+    return None
+
+
+def _detect_abi_selector(bb: BasicBlock) -> Optional[str]:
+    """If ``bb`` ends with the ABI dispatch pattern — a ``bnz``/``bz``
+    whose input traces back to an ``==`` comparing against a 4-byte
+    bytes literal — return the selector as ``"0xNNNNNNNN"``.
+
+    The pattern in source: ``txna ApplicationArgs 0; pushbytes
+    <selector>; ==; bnz <handler>``. After SSA + propagate_constants,
+    the bytes literal shows up either as a :class:`Const` input on the
+    ``==`` directly, or as the ``const_value`` annotation on an
+    :class:`SSAVar` input.
+    """
+    term = _find_branch_terminator(bb)
+    if term is None or not term.inputs:
+        return None
+    cond_in = term.inputs[0]
+    if not isinstance(cond_in, SSAVar):
+        return None
+    eq = cond_in.defined_by
+    if eq is None or eq.op != "==":
+        return None
+    for inp in eq.inputs:
+        const: Optional[Const] = None
+        if isinstance(inp, Const):
+            const = inp
+        else:
+            cv = getattr(inp, "const_value", None)
+            if cv is not None:
+                const = cv
+        if const is None or const.kind != "bytes":
+            continue
+        value = const.value
+        if isinstance(value, str) and len(value) == 10 and value.startswith("0x"):
+            return value
+    return None
+
+
+def _collect_abi_dispatches(
+    root: Region,
+    labels: dict[tuple[str, int], str],
+) -> tuple[dict[BasicBlock, tuple[str, str]], list[tuple[str, Region]]]:
+    """Pre-pass over the region tree to find ABI-dispatch guards.
+
+    Returns ``(abi_map, abi_subs)`` where ``abi_map`` keys each ABI
+    dispatch's cond BB to ``(selector_hex, sub_name)`` and ``abi_subs``
+    lists the bodies we want to emit as synthetic top-level subs.
+
+    A guard is treated as an ABI dispatch when its cond BB matches
+    :func:`_detect_abi_selector` (4-byte selector compared via ``==``
+    and ``bnz``/``bz``-ed). Each unique selector contributes one
+    synthetic sub; the body is taken from the first guard we encounter
+    that matches that selector."""
+    abi_map: dict[BasicBlock, tuple[str, str]] = {}
+    abi_subs: list[tuple[str, Region]] = []
+    seen_selectors: set[str] = set()
+    for r in root.walk():
+        if isinstance(r, GuardR):
+            cond_region, body = r.cond, r.exit_arm
+        elif isinstance(r, IfR):
+            cond_region, body = r.cond, r.then_branch
+        else:
+            continue
+        cond_bb = _get_cond_bb(cond_region)
+        if cond_bb is None or cond_bb in abi_map:
+            continue
+        selector = _detect_abi_selector(cond_bb)
+        if selector is None:
+            continue
+        # Polarity check: the ABI body (handler) must be on the branch-
+        # taken side of the bnz/bz. control_tree's _try_guard sometimes
+        # picks the *other* terminal successor (e.g. an ``err`` bailout
+        # right after the branch) as the exit_arm, in which case the
+        # real handler lives in the SequenceR continuation, not in
+        # ``body``. We can't reach that continuation from this region
+        # alone, so we skip ABI extraction here and let the guard
+        # render normally with negated polarity.
+        term = _find_branch_terminator(cond_bb)
+        if term is None or not _then_runs_when_cond_true(
+            term, cond_bb, body, labels
+        ):
+            continue
+        sub_name = f"abi_{selector[2:]}"
+        abi_map[cond_bb] = (selector, sub_name)
+        if selector not in seen_selectors:
+            abi_subs.append((sub_name, body))
+            seen_selectors.add(selector)
+    return abi_map, abi_subs
 
 
 def _then_runs_when_cond_true(
@@ -150,7 +261,12 @@ def _render_if(
         cond_str = f"!({cond_str})"
 
     out.append(f"{pad}if ({cond_str}) {{")
-    out.extend(_render_region(then_branch, labels, indent + 1))
+    abi_entry = _ABI_DISPATCHES.get(cond_bb) if else_branch is None else None
+    if abi_entry is not None:
+        selector, sub_name = abi_entry
+        out.append(f"{pad}{_INDENT}call {sub_name}();  // ABI dispatch {selector}")
+    else:
+        out.extend(_render_region(then_branch, labels, indent + 1))
     if else_branch is not None:
         out.append(f"{pad}}} else {{")
         out.extend(_render_region(else_branch, labels, indent + 1))
@@ -349,10 +465,24 @@ def _render_subroutine(
 
 
 def structured_dump(prog: SSAProgram, *, file: Optional[str] = None) -> str:
+    global _ABI_DISPATCHES
     run_all_passes(prog)
     root = build_control_tree(prog)
     labels = _build_label_index(prog)
-    text = "\n".join(_render_region(root, labels, 0))
+
+    abi_map, abi_subs = _collect_abi_dispatches(root, labels)
+    _ABI_DISPATCHES = abi_map
+    try:
+        lines = _render_region(root, labels, 0)
+        for sub_name, body in abi_subs:
+            lines.append("")
+            lines.append(f"sub {sub_name}() {{  // ABI handler")
+            lines.extend(_render_region(body, labels, 1))
+            lines.append("}")
+    finally:
+        _ABI_DISPATCHES = {}
+
+    text = "\n".join(lines)
     if file is not None:
         Path(file).write_text(text)
     return text

@@ -1148,11 +1148,41 @@ class SSAProgram:
                 elif isinstance(arg, Phi):
                     ref_phis.add(arg)
 
+        # Pass 2b: pin the topmost-stack SSAVar at every ``return`` op.
+        # The CodeQL extractor models ``return`` with 0 stack_inputs, so
+        # the program's exit value (always 1 popped value at runtime —
+        # ``pushint 1; return`` is the canonical success pattern) has no
+        # SSA consumer. Without this pin, propagate_constants resolves
+        # the exit value's SSAVar to a literal, ref_vars no longer
+        # includes it, and Pass 3 drops it — and Pass 4 then deletes
+        # the producing op (the ``pushint`` / ``intc_*``) from the dump
+        # entirely, even though that op *is* the program return value.
+        # Heuristic: in any BB whose last assignment is ``return``, the
+        # last op with non-empty ``outputs`` before the return produced
+        # the value being returned; keep its outputs alive.
+        returned_vars: set[SSAVar] = set()
+        for bb in self.blocks.values():
+            ret_idx = None
+            for i, a in enumerate(bb.assignments):
+                if a.op == "return":
+                    ret_idx = i
+                    break
+            if ret_idx is None:
+                continue
+            for a in reversed(bb.assignments[:ret_idx]):
+                if a.outputs:
+                    for v in a.outputs:
+                        if isinstance(v, SSAVar):
+                            returned_vars.add(v)
+                    break
+
         # Pass 3: identify dead constant SSAVars / Phis (have const_value
         # AND no remaining structural references).
         dead_vars = {
             v for v in self.vars.values()
-            if v.const_value is not None and v not in ref_vars
+            if v.const_value is not None
+            and v not in ref_vars
+            and v not in returned_vars
         }
         dead_phis = {
             ph for ph in self.phis.values()
