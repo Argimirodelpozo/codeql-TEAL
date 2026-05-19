@@ -41,7 +41,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from .ssa import Assignment, Const, Phi, SSAProgram, SSAVar
+from ..ssa import Assignment, Const, Phi, SSAProgram, SSAVar
 
 
 # Ops whose result is execution-stable, modulo their key.

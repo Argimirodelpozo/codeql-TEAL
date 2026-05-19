@@ -53,11 +53,11 @@ from .xcontract import (
     load_registry,
 )
 
-# Sec-guide detector subpackage. Importing the package here exposes
-# ``tealtools.sec_guide`` for ``from tealtools import sec_guide``;
-# individual detectors stay one import deeper to avoid 17 names at the
-# top level.
-from . import sec_guide
+# Detections subpackage (Algorand-security-guide ports + helpers).
+# Importing the package here exposes ``tealtools.detections`` for
+# ``from tealtools import detections``; individual detectors stay one
+# import deeper to avoid 17 names at the top level.
+from . import detections
 
 __all__ = [
     "SSAProgram", "BasicBlock", "Const", "Phi", "SSAVar", "Assignment",
@@ -76,5 +76,5 @@ __all__ = [
     "detect_into_box_flows", "detect_out_of_box_flows",
     "detect_correlated_flows", "CorrelatedViolation",
     "XContractGraph", "AppcallSite", "cross_auth_findings", "load_registry",
-    "sec_guide",
+    "detections",
 ]

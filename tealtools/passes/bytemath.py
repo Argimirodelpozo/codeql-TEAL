@@ -66,7 +66,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from .ssa import Const, IntRange, Phi, SSAProgram, SSAVar, TealType
+from ..ssa import Const, IntRange, Phi, SSAProgram, SSAVar, TealType
 
 
 _BYTES_OP_RULES = ("b+", "b-", "b*", "b/", "b%")

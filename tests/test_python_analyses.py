@@ -97,7 +97,7 @@ def _render(analysis: str, case_dir: Path, *, scan_cache: Path = None) -> str:
     from tealtools.ssa import SSAProgram
 
     if analysis == "sec_guide_scan":
-        from tealtools.sec_guide.scan import ScanConfig, render_text, scan
+        from tealtools.detections.scan import ScanConfig, render_text, scan
 
         rules = case_dir / "rules.yml"
         config = ScanConfig.from_path(rules) if rules.exists() else ScanConfig.empty()
@@ -131,15 +131,15 @@ def _render(analysis: str, case_dir: Path, *, scan_cache: Path = None) -> str:
 
     if analysis == "xcontract_sec_guide":
         from tealtools.xcontract import XContractGraph, load_registry, render_xcontract
-        from tealtools.sec_guide.xcontract import (
-            cross_sec_guide_findings,
+        from tealtools.detections.xcontract import (
+            cross_detection_findings,
             render_findings as render_sg_findings,
         )
 
         registry = load_registry(case_dir / "registry.yml")
         caller_prog = SSAProgram(str(case_dir / "caller" / "db"))
         graph = XContractGraph.build(caller_prog, registry)
-        findings = cross_sec_guide_findings(graph)
+        findings = cross_detection_findings(graph)
         body = render_xcontract(graph.sites, graph.analyses, relative_to=case_dir)
         body += "\n\ncross-contract sec-guide findings:\n"
         body += render_sg_findings(graph, findings, relative_to=case_dir)
@@ -223,8 +223,8 @@ def _render(analysis: str, case_dir: Path, *, scan_cache: Path = None) -> str:
     if analysis == "sec_guide":
         # Detection name is the parent dir of the case dir, snake-case;
         # map back to the kebab-case keys in `sec_guide.DETECTORS`.
-        from tealtools.sec_guide import DETECTORS
-        from tealtools.sec_guide.common import infer_program_type
+        from tealtools.detections import DETECTORS
+        from tealtools.detections.common import infer_program_type
 
         detection = case_dir.parent.name.replace("_", "-")
         if detection not in DETECTORS:

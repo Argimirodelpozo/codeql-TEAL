@@ -117,18 +117,17 @@ def _path_preds(prog: SSAProgram) -> str:
     return PathPredicateAnalysis(prog).render()
 
 
-def _sec_guide_factory(short_name):
+def _detection_factory(short_name):
     """Build a one-off ``Detector`` adapter that instantiates the
-    sec-guide detector class registered under ``short_name``. The
-    detector class is looked up lazily so importing this module stays
-    cheap."""
+    detector class registered under ``short_name``. The detector
+    class is looked up lazily so importing this module stays cheap."""
     def _run(prog: SSAProgram):
-        from .sec_guide import DETECTORS
+        from .detections import DETECTORS
         return DETECTORS[short_name](prog).detect()
-    return _FnDetector(f"sec-guide/{short_name}", _run)
+    return _FnDetector(f"detections/{short_name}", _run)
 
 
-_SEC_GUIDE_NAMES = (
+_DETECTION_NAMES = (
     "asset-close-to",
     "asset-id-validation",
     "close-remainder-to",
@@ -155,7 +154,7 @@ ALL_DETECTORS: list[Detector] = [
     _FnDetector("box-df-into", _box_into),
     _FnDetector("box-df-out", _box_out),
     _FnDetector("box-df-correlated", _box_corr),
-    *(_sec_guide_factory(n) for n in _SEC_GUIDE_NAMES),
+    *(_detection_factory(n) for n in _DETECTION_NAMES),
 ]
 
 

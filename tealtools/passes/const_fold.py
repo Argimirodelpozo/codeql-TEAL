@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from .ssa import Assignment, Const
+from ..ssa import Assignment, Const
 
 
 # ---------------------------------------------------------------------------

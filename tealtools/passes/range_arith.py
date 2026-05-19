@@ -21,7 +21,7 @@ This pass layers on top:
   - Re-unions phi ranges from scratch each iteration so that arms
     whose ranges only become known via arithmetic widen the join.
 
-Opt-in (not in :func:`tealtools.experimental_2.passes.run_all_passes`).
+Opt-in (not in :func:`tealtools.passes.run_all_passes`).
 Idempotent: a second call walks the fixed point again and finds
 nothing further to add. Lazily trips
 :meth:`SSAProgram.propagate_ranges` if it hasn't run, so seeding from
@@ -36,7 +36,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from .ssa import Const, IntRange, Phi, SSAProgram, SSAVar, TealType
+from ..ssa import Const, IntRange, Phi, SSAProgram, SSAVar, TealType
 
 
 _UINT64_MAX = (1 << 64) - 1

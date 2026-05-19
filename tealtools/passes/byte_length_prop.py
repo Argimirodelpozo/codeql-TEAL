@@ -3,7 +3,7 @@ output SSAVars / Phis whose length is statically derivable from the
 producing op's semantics.
 
 Independent, idempotent, opt-in (not part of
-:func:`tealtools.experimental_2.passes.run_all_passes`). Best run
+:func:`tealtools.passes.run_all_passes`). Best run
 after :meth:`tealtools.ssa.SSAProgram.propagate_constants` so any
 ``Const("bytes", ...)`` literals already on producers' ``const_value``
 can seed the analysis directly; the entry point lazy-trips
@@ -74,7 +74,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from .ssa import Assignment, Const, IntRange, Phi, SSAProgram, SSAVar, TealType
+from ..ssa import Assignment, Const, IntRange, Phi, SSAProgram, SSAVar, TealType
 
 
 _BYTES_STACK_CAP = 4096  # AVM bytes-stack values are capped at 4096 bytes.

@@ -3,7 +3,7 @@
 Per-approval-exit: each exit must be reachable only along CFG paths
 that cross a BB where ``global GroupSize`` flows into a comparison
 whose result reaches enforcement. Uses the same machinery as
-:mod:`tealtools.sec_guide.rekey_to`, but seeded from ``global FIELD``
+:mod:`tealtools.detections.rekey_to`, but seeded from ``global FIELD``
 reads instead of ``txn FIELD``.
 
 Replaces the old heuristic (``compared anywhere?`` + per-``gtxn``

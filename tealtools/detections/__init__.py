@@ -1,12 +1,13 @@
-"""Sec-guide detector ports.
+"""Algorand-security-guide detection ports.
 
-Each Algorand security-guide detection from
-``sec-guide-detections/<name>/<name>.ql`` has a Python equivalent here
-that consumes :class:`tealtools.SSAProgram` and emits one or more
-``Violation`` objects via ``.detect()``. The detectors are plugged
-into :data:`tealtools.detector.ALL_DETECTORS`, so they show up under
+Each detection from the top-level ``sec-guide-detections/<name>/<name>.ql``
+CodeQL pack has a Python equivalent here that consumes
+:class:`tealtools.SSAProgram` and emits one or more ``Violation``
+objects via ``.detect()``. The detectors are plugged into
+:data:`tealtools.detector.ALL_DETECTORS`, so they show up under
 ``python -m tealtools all <db>`` and can be invoked individually via
-``python -m tealtools sec-guide <name> <db>``.
+``python -m tealtools detections --detector <name> <db>`` (or
+``python -m tealtools detections --list`` to enumerate names).
 
 The ports preserve QL semantics — including the over-conservative
 shapes (e.g. ``is-deletable`` flagging ``fixed-complex-dispatch.teal``,
@@ -84,7 +85,8 @@ from .unsafe_lsig_args import (
 
 
 # Stable map ``"<short-name>" -> Detector class``. Used by the CLI
-# (``python -m tealtools sec-guide <name>``) and the test dispatch.
+# (``python -m tealtools detections --detector <name>``) and the test
+# dispatch.
 DETECTORS = {
     "asset-close-to": AssetCloseToDetector,
     "asset-id-validation": AssetIdValidationDetector,

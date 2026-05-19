@@ -23,13 +23,13 @@ Example::
 
     from tealtools.ssa import SSAProgram
     from tealtools.xcontract import XContractGraph, load_registry
-    from tealtools.sec_guide.xcontract import (
-        cross_sec_guide_findings, render_findings,
+    from tealtools.detections.xcontract import (
+        cross_detection_findings, render_findings,
     )
 
     caller = SSAProgram("caller-db")
     graph = XContractGraph.build(caller, load_registry("registry.yml"))
-    for f in cross_sec_guide_findings(graph):
+    for f in cross_detection_findings(graph):
         print(f.render(relative_to=...))
 """
 from __future__ import annotations
@@ -85,7 +85,7 @@ def _construct_detector(cls, callee, callee_analysis):
     return cls(callee)
 
 
-def cross_sec_guide_findings(
+def cross_detection_findings(
     graph: XContractGraph,
     *,
     detector_names: Optional[Iterable[str]] = None,
@@ -93,7 +93,7 @@ def cross_sec_guide_findings(
     """Run sec-guide detectors against every callee in ``graph``.
 
     ``detector_names``: kebab-case short names (the keys of
-    :data:`tealtools.sec_guide.DETECTORS`). If omitted, every
+    :data:`tealtools.detections.DETECTORS`). If omitted, every
     registered sec-guide detector runs.
 
     OnCompletion-guard family detectors (and any other detector that

@@ -3,7 +3,7 @@
 Per-approval-exit: each exit must be reachable only along CFG paths
 that cross a BB where ``txn Fee`` flows into a comparison whose result
 reaches enforcement (``assert`` / ``bnz`` to ``err`` / ``bz`` to ``err``).
-Same machinery as :mod:`tealtools.sec_guide.rekey_to`.
+Same machinery as :mod:`tealtools.detections.rekey_to`.
 
 Replaces the old whole-program existence check (``compared anywhere?``),
 which produced false negatives on programs that validated ``Fee`` only

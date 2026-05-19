@@ -29,7 +29,7 @@ JSON works the same way; the loader picks based on file extension.
 
 Library use::
 
-    from tealtools.sec_guide.scan import scan, ScanConfig
+    from tealtools.detections.scan import scan, ScanConfig
     findings = scan(Path("contracts/"), ScanConfig.from_path(Path("rules.yml")))
     for f in findings:
         print(f.format())

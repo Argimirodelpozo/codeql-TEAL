@@ -237,9 +237,13 @@ def _cmd_xcontract(args) -> int:
     return 1 if findings else 0
 
 
-def _cmd_sec_guide(args) -> int:
-    from .sec_guide import DETECTORS
+def _cmd_detections(args) -> int:
+    from .detections import DETECTORS
 
+    if args.list:
+        for name in sorted(DETECTORS):
+            print(name)
+        return 0
     prog = _load(args)
     names = list(DETECTORS) if args.all else [args.detector]
     if args.json_out:
@@ -270,8 +274,8 @@ def _cmd_sec_guide(args) -> int:
     return 1 if any_findings else 0
 
 
-def _cmd_sec_guide_scan(args) -> int:
-    from .sec_guide.scan import (
+def _cmd_detections_scan(args) -> int:
+    from .detections.scan import (
         DEFAULT_CACHE as SCAN_CACHE,
         ScanConfig, render_json, render_text, scan,
     )
@@ -426,24 +430,44 @@ def build_parser() -> argparse.ArgumentParser:
     xc.add_argument("--registry", required=True,
                     help="yaml mapping AppID → callee DB path")
 
-    from .sec_guide import DETECTORS as _SG
-    sg = add("sec-guide", "run a security-guide detector", _cmd_sec_guide)
-    group = sg.add_mutually_exclusive_group(required=True)
+    from .detections import DETECTORS as _DETECTORS
+    det = sub.add_parser(
+        "detections",
+        help="run one (or every) Algorand-security-guide detection",
+    )
+    det.set_defaults(handler=_cmd_detections)
+    # Target is optional here because ``--list`` doesn't need one.
+    det.add_argument(
+        "target", nargs="?", default=None,
+        help="path to a .teal file, a directory of .teal files, "
+             "or an existing CodeQL DB (omit when using --list)",
+    )
+    det.add_argument("--json", action="store_true", dest="json_out",
+                     help="emit JSON instead of text")
+    det.add_argument("--db-cache", default=None,
+                     help=f"DB cache root (default: {DEFAULT_CACHE})")
+    det.add_argument("--force-rebuild", action="store_true",
+                     help="rebuild the DB even if already cached")
+    det.add_argument("-v", "--verbose", action="store_true",
+                     help="print DB-build progress to stderr")
+    group = det.add_mutually_exclusive_group(required=True)
     group.add_argument(
-        "--detector", choices=sorted(_SG.keys()),
+        "--detector", choices=sorted(_DETECTORS.keys()),
         help="detector short name (e.g. fee-validation)",
     )
     group.add_argument("--all", action="store_true",
-                       help="run every sec-guide detector")
+                       help="run every detection")
+    group.add_argument("--list", action="store_true",
+                       help="list available detector short names and exit")
 
-    # sec-guide-scan is structurally different: it walks a directory of
+    # detections-scan is structurally different: it walks a directory of
     # .teal files and builds one DB per parent dir, so it bypasses
     # ``resolve_target``. Keep its flag shape intact, but route --json /
     # --verbose through the same shared flags.
     sgs = sub.add_parser(
-        "sec-guide-scan",
+        "detections-scan",
         help="recursively scan a directory of .teal files; build "
-             "per-dir DBs and run sec-guide detectors on each program",
+             "per-dir DBs and run detections on each program",
     )
     sgs.add_argument("root", help="directory to walk for .teal files")
     sgs.add_argument("--config", default=None,
@@ -454,7 +478,7 @@ def build_parser() -> argparse.ArgumentParser:
                      help="emit JSON findings instead of text")
     sgs.add_argument("-v", "--verbose", action="store_true",
                      help="print DB-build progress to stderr")
-    sgs.set_defaults(handler=_cmd_sec_guide_scan)
+    sgs.set_defaults(handler=_cmd_detections_scan)
 
     # --- debug namespace ---------------------------------------------
     dbg = sub.add_parser(
