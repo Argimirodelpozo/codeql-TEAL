@@ -67,9 +67,17 @@ class BranchCondition:
     ``kind``:
         - ``"nonzero"``: value != 0 (bnz-taken, bz-not-taken, asserted).
         - ``"zero"``: value == 0 (bnz-not-taken, bz-taken).
-        - ``"eq"``: value == ``args[0]`` (switch-target-k carries
-          ``args = (Const("int", k),)``; match-target-k carries the
-          candidate operand for that target).
+        - ``"eq"``: value == ``args[0]``. Emitted both for switch /
+          match (where ``args[0]`` is the target's literal) and for
+          a guarded ``==`` whose result feeds into a branch (where
+          ``args[0]`` is the other operand the value was compared with).
+        - ``"neq"``: value != ``args[0]``. Complement of ``eq``;
+          emitted on the negative side of a guarded ``==``, or directly
+          when ``!=`` drives the branch.
+        - ``"lt"`` / ``"le"`` / ``"gt"`` / ``"ge"``: value vs.
+          ``args[0]`` with the named relation. Emitted when an ordered
+          comparison (``<``/``<=``/``>``/``>=`` and the ``b``-prefixed
+          byte-arithmetic variants) drives the branch.
         - ``"not_in_range"``: value ∉ ``[args[0]..args[1] - 1]``
           (switch fall-through: index out of [0..N-1]).
         - ``"neq_all"``: value not equal to any of the operands in
@@ -95,12 +103,76 @@ class BranchCondition:
             return f"({v} == {_disp(self.args[0])})"
         if self.kind == "neq":
             return f"({v} != {_disp(self.args[0])})"
+        if self.kind == "lt":
+            return f"({v} < {_disp(self.args[0])})"
+        if self.kind == "le":
+            return f"({v} <= {_disp(self.args[0])})"
+        if self.kind == "gt":
+            return f"({v} > {_disp(self.args[0])})"
+        if self.kind == "ge":
+            return f"({v} >= {_disp(self.args[0])})"
         if self.kind == "not_in_range":
             lo, hi = self.args
             return f"({v} not in [{lo}..{hi - 1}])"
         if self.kind == "neq_all":
             return f"({v} not in {{{', '.join(_disp(a) for a in self.args)}}})"
         return f"({v} ?? {self.kind}{self.args})"
+
+
+# Branch-taken → kind map for each binary op. The "not-taken" side
+# uses the *negated* kind from the same table (eq ↔ neq, lt ↔ ge,
+# le ↔ gt, gt ↔ le, ge ↔ lt). Byte-arithmetic variants are treated
+# as the same predicate kinds for downstream reasoning; consumers
+# that care about width can inspect the operand types.
+_CMP_OP_TO_KIND_TAKEN: dict[str, str] = {
+    "==": "eq", "b==": "eq",
+    "!=": "neq", "b!=": "neq",
+    "<": "lt", "b<": "lt",
+    "<=": "le", "b<=": "le",
+    ">": "gt", "b>": "gt",
+    ">=": "ge", "b>=": "ge",
+}
+
+_KIND_NEGATION: dict[str, str] = {
+    "eq": "neq", "neq": "eq",
+    "lt": "ge", "ge": "lt",
+    "le": "gt", "gt": "le",
+    "nonzero": "zero", "zero": "nonzero",
+}
+
+
+# Swapping operands of an ordered comparison flips the relation
+# (``a < b`` ↔ ``b > a``). Equality and inequality are symmetric.
+_KIND_FLIP: dict[str, str] = {
+    "eq": "eq", "neq": "neq",
+    "lt": "gt", "gt": "lt",
+    "le": "ge", "ge": "le",
+}
+
+
+def _is_const_like(op: Operand) -> bool:
+    """``True`` when ``op`` resolves to a known constant — either a
+    bare :class:`Const`, or an SSAVar / Phi whose ``const_value`` was
+    set by :meth:`SSAProgram.propagate_constants`."""
+    if isinstance(op, Const):
+        return True
+    return getattr(op, "const_value", None) is not None
+
+
+def _canonical_binary_pred(
+    left: Operand, kind: str, right: Operand,
+) -> BranchCondition:
+    """Construct a binary :class:`BranchCondition` with the *variable*
+    side on the left when the other operand is a known constant. For
+    ordered relations, the operator is flipped to preserve semantics
+    after the swap (``5 < V`` ↦ ``V > 5``). Keeps downstream filtering
+    simple — consumers only have to check ``isinstance(p.value, SSAVar)``
+    once instead of also handling the reversed form. Const-resolved
+    SSAVars (e.g. an ``intc_0`` output that ``propagate_constants``
+    pinned to 0) count as "constant" for this swap."""
+    if _is_const_like(left) and not _is_const_like(right):
+        return BranchCondition(value=right, kind=_KIND_FLIP[kind], args=(left,))
+    return BranchCondition(value=left, kind=kind, args=(right,))
 
 
 def _disp(op) -> str:
@@ -185,6 +257,81 @@ class PathPredicateAnalysis:
         if bb is None:
             return frozenset()
         return self.bb_preds.get(bb, frozenset())
+
+    def ranges_at(
+        self, file: str, line: int,
+    ) -> dict[SSAVar, tuple[Optional[int], Optional[int]]]:
+        """Per-SSAVar integer interval at ``(file, line)``, aggregated
+        from the predicates known to hold there.
+
+        Returns ``{ssavar: (lo, hi)}`` with ``None`` on either side
+        meaning unbounded. ``(lo, lo)`` means the value is the constant
+        ``lo`` on every path here.
+
+        Currently only literal-int comparands are folded in — predicates
+        whose other operand is a non-const SSAVar are ignored. Gap
+        constraints from ``neq`` / ``not_in_range`` / ``neq_all`` aren't
+        modelled (they'd require a multi-interval representation).
+        """
+        return self._ranges_from(self.predicates_at(file, line))
+
+    def ranges_at_bb(
+        self, bb: BasicBlock,
+    ) -> dict[SSAVar, tuple[Optional[int], Optional[int]]]:
+        """Same as :meth:`ranges_at` but keyed by :class:`BasicBlock`
+        directly. Convenient when iterating over the program."""
+        return self._ranges_from(self.bb_preds.get(bb, frozenset()))
+
+    @staticmethod
+    def _const_int(operand: Operand) -> Optional[int]:
+        """Resolve ``operand`` to a Python int when it's a known
+        integer constant, else ``None``."""
+        if isinstance(operand, Const):
+            cv = operand
+        else:
+            cv = getattr(operand, "const_value", None)
+        if cv is None or cv.kind != "int":
+            return None
+        try:
+            return int(cv.value)
+        except (TypeError, ValueError):
+            return None
+
+    @classmethod
+    def _ranges_from(
+        cls, preds: frozenset[BranchCondition],
+    ) -> dict[SSAVar, tuple[Optional[int], Optional[int]]]:
+        ranges: dict[SSAVar, tuple[Optional[int], Optional[int]]] = {}
+        for p in preds:
+            if not isinstance(p.value, SSAVar):
+                continue
+            # Resolve the comparand to an int. ``zero``/``nonzero``
+            # carry an implicit 0; other kinds use ``args[0]``.
+            if p.kind in ("zero", "nonzero"):
+                arg = 0
+            else:
+                if not p.args:
+                    continue
+                arg = cls._const_int(p.args[0])
+                if arg is None:
+                    continue
+            lo, hi = ranges.get(p.value, (None, None))
+            if p.kind in ("eq", "zero"):
+                lo = arg if lo is None else max(lo, arg)
+                hi = arg if hi is None else min(hi, arg)
+            elif p.kind == "lt":
+                hi = arg - 1 if hi is None else min(hi, arg - 1)
+            elif p.kind == "le":
+                hi = arg if hi is None else min(hi, arg)
+            elif p.kind == "gt":
+                lo = arg + 1 if lo is None else max(lo, arg + 1)
+            elif p.kind == "ge":
+                lo = arg if lo is None else max(lo, arg)
+            # ``neq`` / ``nonzero``: would require gap-tracking; skip.
+            else:
+                continue
+            ranges[p.value] = (lo, hi)
+        return ranges
 
     def approving_exits(self) -> list[BasicBlock]:
         """BBs whose last opcode is ``return`` — approving exits in TEAL.
@@ -286,10 +433,8 @@ class PathPredicateAnalysis:
                 pred_preds = bb_preds[pred]
                 if pred_preds is _TOP:
                     continue
-                edge = self._edge_predicate(pred, bb)
-                contribution = set(pred_preds)  # type: ignore[arg-type]
-                if edge is not None:
-                    contribution.add(edge)
+                edge = self._edge_predicates(pred, bb)
+                contribution = set(pred_preds) | edge  # type: ignore[arg-type]
                 if new_preds is None:
                     new_preds = contribution
                 else:
@@ -312,41 +457,94 @@ class PathPredicateAnalysis:
                 bb_preds[bb] = frozenset()
         self.bb_preds = bb_preds  # type: ignore[assignment]
 
-    def _edge_predicate(
+    def _edge_predicates(
         self, pred: BasicBlock, succ: BasicBlock
-    ) -> Optional[BranchCondition]:
-        """Predicate added on the CFG edge ``pred → succ``, based on
-        ``pred``'s last assignment.
+    ) -> frozenset[BranchCondition]:
+        """All predicates added on the CFG edge ``pred → succ``, based
+        on ``pred``'s last assignment.
 
-        Returns ``None`` when the edge carries no predicate
-        information (sequential fall-through, callsub/retsub edges,
-        unmodelled ops like ``switch`` / ``match``).
-        """
+        For ``bnz`` / ``bz`` / ``assert``, returns the boolean predicate
+        on the cond input *plus* any decomposed predicates when the
+        cond is itself an SSAVar produced by a recognisable op
+        (binary comparison, ``&&``, ``||``, ``!``). For ``switch`` /
+        ``match``, returns the per-target equality (or fall-through
+        not-in-range / neq_all). Empty frozenset when the edge carries
+        no predicate information (sequential fall-through,
+        callsub/retsub edges, ops we don't model)."""
         if not pred.assignments:
-            return None
+            return frozenset()
         last = pred.assignments[-1]
         if not last.inputs:
-            return None
+            return frozenset()
         cond = last.inputs[0]
         if last.op == _ASSERT:
             # An asserter BB has exactly one successor (the success
             # path); the assertion guarantees the value was non-zero.
-            return BranchCondition(value=cond, kind="nonzero")
+            return self._decompose_cond(cond, taken=True)
         if last.op in (_BNZ, _BZ):
-            # Resolve the branch's target line via the label index.
             target_name = last.immediates.strip()
             target_line = self._label_lines.get((pred.file, target_name))
             if target_line is None:
-                return None
+                return frozenset()
             took_branch = succ.first_line == target_line
-            if last.op == _BNZ:
-                kind = "nonzero" if took_branch else "zero"
-            else:  # _BZ
-                kind = "zero" if took_branch else "nonzero"
-            return BranchCondition(value=cond, kind=kind)
+            # The cond is "truthy" when bnz fires (taken) or bz doesn't (fall-through).
+            taken_means_truthy = (
+                (last.op == _BNZ and took_branch)
+                or (last.op == _BZ and not took_branch)
+            )
+            return self._decompose_cond(cond, taken=taken_means_truthy)
         if last.op in (_SWITCH, _MATCH):
-            return self._switch_or_match_edge(pred, succ, last)
-        return None
+            edge = self._switch_or_match_edge(pred, succ, last)
+            return frozenset((edge,)) if edge is not None else frozenset()
+        return frozenset()
+
+    def _decompose_cond(
+        self, cond: Operand, *, taken: bool,
+    ) -> frozenset[BranchCondition]:
+        """Given a boolean cond at a branch point and whether the
+        "truthy" side is being taken, derive every predicate we can
+        prove on this edge.
+
+        Always emits the bare ``(cond, nonzero|zero)`` predicate. If
+        ``cond`` is an SSAVar whose producing op is a binary comparison
+        or a boolean connective (``&&``, ``||``, ``!``), additional
+        predicates on the underlying operands are emitted by
+        propagating through the op's semantics. The connective rules
+        are asymmetric: ``&&`` is fully decomposable on its truthy
+        side (both args must be non-zero) but not its falsy side (one
+        of them is zero — a disjunction we don't model); ``||`` is
+        the mirror image.
+        """
+        out: set[BranchCondition] = {
+            BranchCondition(value=cond, kind="nonzero" if taken else "zero"),
+        }
+        if not isinstance(cond, SSAVar):
+            return frozenset(out)
+        producer = cond.defined_by
+        if producer is None:
+            return frozenset(out)
+        op, ins = producer.op, producer.inputs
+        # Binary comparisons.
+        kind = _CMP_OP_TO_KIND_TAKEN.get(op)
+        if kind is not None and len(ins) == 2:
+            actual_kind = kind if taken else _KIND_NEGATION[kind]
+            out.add(_canonical_binary_pred(ins[0], actual_kind, ins[1]))
+            return frozenset(out)
+        # ``!``: invert the truthiness on the single operand.
+        if op == "!" and len(ins) == 1:
+            out |= self._decompose_cond(ins[0], taken=not taken)
+            return frozenset(out)
+        # ``&&``: only the truthy side is fully decomposable.
+        if op == "&&" and len(ins) == 2 and taken:
+            out |= self._decompose_cond(ins[0], taken=True)
+            out |= self._decompose_cond(ins[1], taken=True)
+            return frozenset(out)
+        # ``||``: only the falsy side is fully decomposable.
+        if op == "||" and len(ins) == 2 and not taken:
+            out |= self._decompose_cond(ins[0], taken=False)
+            out |= self._decompose_cond(ins[1], taken=False)
+            return frozenset(out)
+        return frozenset(out)
 
     def _switch_or_match_edge(
         self, pred: BasicBlock, succ: BasicBlock, last
