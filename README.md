@@ -100,11 +100,11 @@ Every analysis subcommand takes a single `<target>` — a `.teal` file, a direct
 tealql --help
 
 # Detectors (emit findings; exit code 1 on any finding)
-tealql auth            <target>
-tealql box-key         <target>
-tealql box-df          <target> --flavour {into|out|correlated}
-tealql sec-guide       <target> {--detector NAME | --all}
-tealql sec-guide-scan  <root>   [--config rules.yml]
+tealql auth             <target>
+tealql box-key          <target>
+tealql box-df           <target> --flavour {into|out|correlated}
+tealql detections       <target> {--detector NAME | --all | --list}
+tealql detections-scan  <root>   [--config rules.yml]
 
 # Reports
 tealql itxn-report     <target>
@@ -113,6 +113,9 @@ tealql cost            <target>
 tealql path-predicates <target>
 tealql cfg             <target> [--file F] [--skeleton]
 tealql xcontract       <target> --registry <yml>
+
+# Annotated SSA dump (runs every pass and prints functional form)
+tealql functional      <target> [--show-ranges] [--show-bytes] [--by-block]
 
 # Everything at once (all detectors + all reports)
 tealql all             <target>
@@ -134,6 +137,42 @@ tealql debug query <ql-file> <target>     # codeql query run, with target resolu
 tealql debug db    <target>                # resolve + print the DB path
 tealql debug cache {info|clear}            # inspect or clear the DB cache
 ```
+
+### Pipeline
+
+Every analysis builds on a canonical pass pipeline orchestrated by
+`tealtools.passes.run_all_passes`. Three phases run in order;
+`tealql functional` is the most convenient way to see the
+fully-annotated result.
+
+| Phase | Pass | What it adds |
+| --- | --- | --- |
+| **A. Value flow** | `propagate_constants` | `const_value` on literal-pushing producers |
+| | `propagate_scratch_constants` | same, across `store` / `load` for scratch slots |
+| | `propagate_inputs` | unify execution-stable reads (`txn` / `gtxn` / `global` / `arg`) to one canonical SSAVar per (op, immediates, stack-key) |
+| | `propagate_scratch_values` | forward a `load N` to its single may-store source SSAVar when every may-influencing store agrees |
+| **B. Analytical annotation** | `propagate_ranges` | uint64 `IntRange` from op tables (boolean comparisons, `getbyte`, txn enum fields, …) + phi union |
+| | `propagate_range_arithmetic` | composes ranges through `+` / `-` / `*` / `/` / `%` with phi re-union |
+| | `propagate_byte_lengths` | exact `TealType.byte_length` on bytes producers (`itob` → 8, `concat` → sum, `sha256` → 32, …) plus inverse `byte_length_range` constraints from `btoi` / `getbyte` / `extract_uint*` / etc. on their bytes inputs |
+| | `propagate_bytemath_ranges` | bigint `TealType.int_value_range` (Python arbitrary-precision ints) over `b+` / `b-` / `b*` / `b/` / `b%` with the `itob` / `btoi` bridge between uint64 and bytes-bigint value spaces |
+| **C. Structural lowering** | `propagate_stack_shuffles` | copy-propagate pure shuffles (`dup`, `swap`, `frame_dig`, …); mark them `shuffled=True` so they render as `// …` comments |
+| | `cleanup_unused_ssavars` | drop side-effect-free Assignments whose every output is dead (typical victims: duplicate reader Assignments from phase A) |
+| | `eliminate_dead_constants` | inline literal constants into consumers; drop now-orphan SSAVars / Phis / Assignments |
+| | `materialize_phis` | out-of-SSA lowering — each live phi becomes a `mat_phi_k` with a copy assignment at every contributing leaf's def site |
+
+Each pass is idempotent — running `run_all_passes` twice is a
+no-op the second time. The per-pass implementations live in
+`tealtools/passes/<name>.py`; the substrate
+(`tealtools/ssa.py`) carries only a thin lazy-import bridge
+method per pass (`SSAProgram.propagate_*` / `cleanup_*`) so
+analysis semantics stay out of the substrate.
+
+Inline annotations rendered by `tealql functional`:
+
+| Flag | Format | Source |
+| --- | --- | --- |
+| `--show-ranges` | `/*[V<=hi]*/` after a uint64 SSAVar | `propagate_ranges`, `propagate_range_arithmetic` |
+| `--show-bytes` | `/*len=N*/`, `/*N<=len<=M*/`, `/*val=…*/`, `/*val∈[lo..hi]*/` after a bytes SSAVar | `propagate_byte_lengths`, `propagate_bytemath_ranges` |
 
 ### Modules
 
