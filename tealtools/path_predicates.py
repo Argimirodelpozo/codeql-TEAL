@@ -375,6 +375,163 @@ class PredicateQuery:
         return "PredicateQuery(" + "; ".join(parts) + ")"
 
 
+# ---------------------------------------------------------------------------
+# Expression-form rendering — expand SSAVars recursively to their producing
+# opcodes so a predicate reads as ``txn NumAppArgs != 0`` instead of
+# ``V#1@L4 != 0``. Used by :meth:`PathPredicateAnalysis.render_annotated`.
+# ---------------------------------------------------------------------------
+
+
+# Infix forms for binary ops. Anything else falls back to ``op(args)``
+# function-call form. Byte-arith ``b``-prefixed comparisons inherit
+# the same symbol with the prefix preserved so a reader can tell which
+# semantics applies.
+_INFIX_BINARY: dict[str, str] = {
+    "==": "==", "!=": "!=", "<": "<", "<=": "<=", ">": ">", ">=": ">=",
+    "b==": "b==", "b!=": "b!=", "b<": "b<", "b<=": "b<=", "b>": "b>", "b>=": "b>=",
+    "+": "+", "-": "-", "*": "*", "/": "/", "%": "%",
+    "b+": "b+", "b-": "b-", "b*": "b*", "b/": "b/", "b%": "b%",
+    "&&": "&&", "||": "||",
+}
+
+
+# Comparison/boolean ops whose ``(V, nonzero|zero)`` envelope is a
+# "boolean envelope": the same information is already exposed by the
+# decomposed predicate (eq/neq/lt/...) emitted on the same edge. Render
+# filters drop the envelope so the user only sees the meaningful form.
+_BOOLEAN_PRODUCER_OPS: frozenset[str] = frozenset(_INFIX_BINARY) | {"!"}
+
+
+def _expand_operand(op: Operand, depth: int, seen: Optional[set] = None) -> str:
+    """Recursively render ``op`` as a TEAL-like expression by walking
+    through the producing :class:`Assignment` of any SSAVar.
+
+    ``depth`` caps the recursion so deeply-nested expressions stay
+    readable — at depth 0 we fall back to the SSA identifier.
+    Const-resolved operands always render as their literal regardless
+    of depth (cheap, terminal).
+
+    ``seen`` guards against cycles (e.g. through phis with self-edges).
+    """
+    if seen is None:
+        seen = set()
+    if isinstance(op, Const):
+        return op.value
+    cv = getattr(op, "const_value", None)
+    if cv is not None:
+        return cv.value
+    if not isinstance(op, SSAVar):
+        return repr(op)
+    if depth <= 0 or op in seen:
+        return op.identifier
+    a = op.defined_by
+    if a is None:
+        return op.identifier
+    seen = seen | {op}
+    return _expand_assignment(a, depth, seen)
+
+
+def _expand_assignment(a, depth: int, seen: set) -> str:
+    """Render an :class:`Assignment` as a TEAL-like expression. The
+    recursion bottoms out via :func:`_expand_operand` on each input."""
+    op, ins, imm = a.op, a.inputs, a.immediates
+    next_depth = depth - 1
+
+    # Infix binary forms.
+    if op in _INFIX_BINARY and len(ins) == 2:
+        return (
+            f"({_expand_operand(ins[0], next_depth, seen)} "
+            f"{_INFIX_BINARY[op]} "
+            f"{_expand_operand(ins[1], next_depth, seen)})"
+        )
+
+    # Unary not.
+    if op == "!" and len(ins) == 1:
+        return f"!({_expand_operand(ins[0], next_depth, seen)})"
+
+    # Field-read leaves: ``txn FIELD``, ``global FIELD``, ``txna FIELD i``,
+    # ``gtxn N FIELD``, ``itxn FIELD``, etc.
+    if op in ("txn", "global", "itxn") and imm:
+        return f"{op} {imm}"
+    if op in ("gtxn", "gtxna", "gtxnas") and imm and not ins:
+        return f"{op} {imm}"
+    if op in ("txna",) and imm:
+        # ``txna FIELD i`` — render with the immediate (which already has both).
+        return f"{op} {imm}"
+    if op in ("intc_0", "intc_1", "intc_2", "intc_3", "bytec_0", "bytec_1",
+              "bytec_2", "bytec_3", "intc", "bytec", "pushint", "pushbytes",
+              "int") and not ins:
+        # Constant pushes — the const_value was already returned above
+        # if known; this fallback handles unresolved ones.
+        return f"{op} {imm}" if imm else op
+    if op == "load" and imm:
+        return f"load {imm}"
+
+    # Default function-call form: ``op imm(args)`` or ``op(args)``.
+    args_str = ", ".join(_expand_operand(i, next_depth, seen) for i in ins)
+    if imm:
+        return f"{op} {imm}({args_str})" if args_str else f"{op} {imm}"
+    return f"{op}({args_str})"
+
+
+def _is_boolean_envelope(p: "BranchCondition") -> bool:
+    """``True`` when ``p`` is a ``(V, nonzero|zero)`` predicate whose
+    value is the output of a comparison/boolean op — the decomposed
+    operand-level predicate on the same edge already captures the
+    same information in a more readable form."""
+    if p.kind not in ("nonzero", "zero"):
+        return False
+    v = p.value
+    if not isinstance(v, SSAVar):
+        return False
+    if v.defined_by is None:
+        return False
+    return v.defined_by.op in _BOOLEAN_PRODUCER_OPS
+
+
+def _is_complement_pair(p: "BranchCondition", q: "BranchCondition") -> bool:
+    """Recognise trivial complement xor pairs — ``(V == K)`` vs
+    ``(V != K)`` and ``(V, "zero")`` vs ``(V, "nonzero")``. Useful
+    for filtering them out of the rendered xor list since they're
+    tautologically exclusive and tell the reader nothing new."""
+    if p.value != q.value:
+        return False
+    pairs = {(p.kind, q.kind), (q.kind, p.kind)}
+    if ("eq", "neq") in pairs and p.args == q.args:
+        return True
+    if ("nonzero", "zero") in pairs:
+        return True
+    if ("lt", "ge") in pairs and p.args == q.args:
+        return True
+    if ("le", "gt") in pairs and p.args == q.args:
+        return True
+    return False
+
+
+def _render_predicate(p: "BranchCondition", depth: int = 4) -> str:
+    """Format a :class:`BranchCondition` with both sides expression-
+    expanded. Mirrors :meth:`BranchCondition.__repr__` but threads
+    through :func:`_expand_operand` so SSAVars show as their producing
+    expression."""
+    v_str = _expand_operand(p.value, depth)
+    op_kinds = {
+        "eq": "==", "neq": "!=", "lt": "<", "le": "<=", "gt": ">", "ge": ">=",
+    }
+    if p.kind == "nonzero":
+        return f"({v_str} != 0)"
+    if p.kind == "zero":
+        return f"({v_str} == 0)"
+    if p.kind in op_kinds:
+        a_str = _expand_operand(p.args[0], depth) if p.args else "?"
+        return f"({v_str} {op_kinds[p.kind]} {a_str})"
+    if p.kind == "not_in_range":
+        lo, hi = p.args
+        return f"({v_str} not in [{lo}..{hi - 1}])"
+    if p.kind == "neq_all":
+        return f"({v_str} not in {{{', '.join(_expand_operand(a, depth) for a in p.args)}}})"
+    return repr(p)
+
+
 # Sentinel for the dataflow's "not yet computed" lattice top.
 class _Top:
     __slots__ = ()
@@ -607,23 +764,36 @@ class PathPredicateAnalysis:
             out.append(f"BB L{bb.first_line:>3}-L{bb.last_line:<3}  {body}")
         return "\n".join(out)
 
-    def render_annotated(self, *, file: Optional[str] = None) -> str:
-        """Per-BB annotated dump: each basic block prints with a
-        header banner of its path-aware predicate snapshot
-        (must-hold / may-only / XOR pairs), followed by the BB's
-        assignments in functional form. The output is meant for
-        visual inspection — scan the program from top to bottom and
-        see exactly which predicates dominate each region.
+    def render_annotated(
+        self,
+        *,
+        file: Optional[str] = None,
+        depth: int = 4,
+        compact: bool = True,
+    ) -> str:
+        """Per-BB annotated dump with expression-expanded predicates.
 
-        Format roughly:
+        Each basic block prints a banner showing the path-aware
+        predicates that hold there, followed by the BB's assignments
+        in functional form. SSAVars inside the predicates are
+        recursively replaced with their producing opcode's expression
+        (up to ``depth`` levels), so a predicate reads as
+        ``(txn NumAppArgs != 0)`` instead of ``(V#1@L4 != 0)``.
+
+        ``compact=True`` (default) hides the noise — boolean-envelope
+        predicates whose value is just the output of a comparison
+        (the decomposed form already says it) and trivial
+        complement XOR pairs (``V == K`` xor ``V != K``). Pass
+        ``compact=False`` to see everything verbatim.
+
+        Format:
 
             // === BB L8-L11 ===
-            //   must: (V != 0)
-            //   may : (V == 0)
-            //   xor : (V == 0) XOR (V != 0)
+            //   must: (txn NumAppArgs != 0)
+            //   may : (txna ApplicationArgs 0 == 0x101cea00)
+            //   xor : (txn NumAppArgs == 0) XOR (txn NumAppArgs != 0)
               L  8: V#1@L8 = txna ApplicationArgs 0 ()
-              L 10: V#1@L10 = == (0x101cea00, V#1@L8)
-              L 11: bnz main_l13 (V#1@L10)
+              ...
 
         Empty BBs (no assignments) are skipped. ``file=`` restricts
         to one source file in a multi-program DB."""
@@ -640,21 +810,35 @@ class PathPredicateAnalysis:
             may = self.bb_may_preds.get(bb, frozenset())
             only_may = may - must
             xor_pairs = find_exclusive_pairs(may)
+            if compact:
+                must = frozenset(p for p in must if not _is_boolean_envelope(p))
+                only_may = frozenset(
+                    p for p in only_may if not _is_boolean_envelope(p)
+                )
+                xor_pairs = [
+                    (p, q) for p, q in xor_pairs
+                    if not _is_complement_pair(p, q)
+                    and not _is_boolean_envelope(p)
+                    and not _is_boolean_envelope(q)
+                ]
 
             out.append(f"// === BB L{bb.first_line}-L{bb.last_line} ===")
             if must:
                 must_str = ", ".join(
-                    repr(p) for p in sorted(must, key=repr)
+                    _render_predicate(p, depth)
+                    for p in sorted(must, key=lambda c: _render_predicate(c, depth))
                 )
                 out.append(f"//   must: {must_str}")
             if only_may:
                 may_str = ", ".join(
-                    repr(p) for p in sorted(only_may, key=repr)
+                    _render_predicate(p, depth)
+                    for p in sorted(only_may, key=lambda c: _render_predicate(c, depth))
                 )
                 out.append(f"//   may : {may_str}")
             if xor_pairs:
                 xor_str = ", ".join(
-                    f"{p!r} XOR {q!r}" for p, q in xor_pairs
+                    f"{_render_predicate(p, depth)} XOR {_render_predicate(q, depth)}"
+                    for p, q in xor_pairs
                 )
                 out.append(f"//   xor : {xor_str}")
             for a in bb.assignments:
