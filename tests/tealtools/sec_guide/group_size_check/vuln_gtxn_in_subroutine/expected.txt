@@ -1,4 +1,1 @@
-gtxn@prog.teal:14  gtxn access uses an absolute group index without validating global GroupSize — attackers can pad the group with extra transactions.
-gtxn@prog.teal:17  gtxn access uses an absolute group index without validating global GroupSize — attackers can pad the group with extra transactions.
-gtxn@prog.teal:21  gtxn access uses an absolute group index without validating global GroupSize — attackers can pad the group with extra transactions.
-gtxn@prog.teal:29  gtxn access uses an absolute group index without validating global GroupSize — attackers can pad the group with extra transactions.
+Approval exit at prog.teal:10 is reachable without a global GroupSize check — attackers can pad the group with extra transactions.

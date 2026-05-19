@@ -1,1 +1,4 @@
-(no violations)
+Approval exit at prog.teal:33 handles asset transfers but is reachable without an XferAsset check — attackers can substitute worthless tokens for the intended asset.
+Approval exit at prog.teal:63 handles asset transfers but is reachable without an XferAsset check — attackers can substitute worthless tokens for the intended asset.
+Approval exit at prog.teal:99 handles asset transfers but is reachable without an XferAsset check — attackers can substitute worthless tokens for the intended asset.
+Approval exit at prog.teal:142 handles asset transfers but is reachable without an XferAsset check — attackers can substitute worthless tokens for the intended asset.

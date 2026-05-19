@@ -1,1 +1,1 @@
-Approval exit at prog.teal:67 is reachable without a RekeyTo check — an attacker can rekey the account.
+(no violations)

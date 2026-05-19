@@ -1,1 +1,1 @@
-Contract does not restrict the transaction type — any transaction type is accepted, allowing unintended operations.
+Approval exit at prog.teal:9 is reachable without a txn Type / TypeEnum check — any transaction type is accepted.

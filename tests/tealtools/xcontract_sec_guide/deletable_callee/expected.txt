@@ -7,14 +7,18 @@ app7000001  sec-guide/asset-close-to  callee/db  Contract does not validate txn 
 app7000001  sec-guide/close-remainder-to  callee/db  Contract does not validate txn CloseRemainderTo — the account's entire ALGO balance can be drained.
 app7000001  sec-guide/delete-funds-check  callee/db  Application handles DeleteApplication at exit prog.teal:23 without checking balance == min_balance — funds may be locked permanently on deletion.
 app7000001  sec-guide/delete-funds-check  callee/db  Application handles DeleteApplication at exit prog.teal:27 without checking balance == min_balance — funds may be locked permanently on deletion.
-app7000001  sec-guide/fee-validation  callee/db  Contract does not validate txn Fee — an attacker can set excessively high fees to drain the account.
+app7000001  sec-guide/fee-validation  callee/db  Approval exit at prog.teal:23 is reachable without a txn Fee check — an attacker can drain the account.
+app7000001  sec-guide/fee-validation  callee/db  Approval exit at prog.teal:27 is reachable without a txn Fee check — an attacker can drain the account.
+app7000001  sec-guide/group-size-check  callee/db  Approval exit at prog.teal:23 is reachable without a global GroupSize check — attackers can pad the group with extra transactions.
+app7000001  sec-guide/group-size-check  callee/db  Approval exit at prog.teal:27 is reachable without a global GroupSize check — attackers can pad the group with extra transactions.
 app7000001  sec-guide/is-deletable  callee/db  Application is deletable at exit prog.teal:23: OnCompletion == DeleteApplication can reach approval without a guard.
 app7000001  sec-guide/is-deletable  callee/db  Application is deletable at exit prog.teal:27: OnCompletion == DeleteApplication can reach approval without a guard.
 app7000001  sec-guide/is-updatable  callee/db  Application is updatable at exit prog.teal:23: OnCompletion == UpdateApplication can reach approval without a guard.
 app7000001  sec-guide/is-updatable  callee/db  Application is updatable at exit prog.teal:27: OnCompletion == UpdateApplication can reach approval without a guard.
 app7000001  sec-guide/rekey-to  callee/db  Approval exit at prog.teal:23 is reachable without a RekeyTo check — an attacker can rekey the account.
 app7000001  sec-guide/rekey-to  callee/db  Approval exit at prog.teal:27 is reachable without a RekeyTo check — an attacker can rekey the account.
-app7000001  sec-guide/tx-type-check  callee/db  Contract does not restrict the transaction type — any transaction type is accepted, allowing unintended operations.
+app7000001  sec-guide/tx-type-check  callee/db  Approval exit at prog.teal:23 is reachable without a txn Type / TypeEnum check — any transaction type is accepted.
+app7000001  sec-guide/tx-type-check  callee/db  Approval exit at prog.teal:27 is reachable without a txn Type / TypeEnum check — any transaction type is accepted.
 app7000001  sec-guide/unprotected-deletable  callee/db  Application is deletable by anyone at exit prog.teal:23: no sender == creator check guards the approval path for DeleteApplication.
 app7000001  sec-guide/unprotected-deletable  callee/db  Application is deletable by anyone at exit prog.teal:27: no sender == creator check guards the approval path for DeleteApplication.
 app7000001  sec-guide/unprotected-updatable  callee/db  Application is updatable by anyone at exit prog.teal:23: no sender == creator check guards the approval path for UpdateApplication.

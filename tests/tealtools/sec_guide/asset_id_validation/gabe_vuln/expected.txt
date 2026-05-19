@@ -1,1 +1,4 @@
-Contract handles asset transfers without validating XferAsset — attackers can substitute worthless tokens for the intended asset.
+Approval exit at prog.teal:34 handles asset transfers but is reachable without an XferAsset check — attackers can substitute worthless tokens for the intended asset.
+Approval exit at prog.teal:64 handles asset transfers but is reachable without an XferAsset check — attackers can substitute worthless tokens for the intended asset.
+Approval exit at prog.teal:100 handles asset transfers but is reachable without an XferAsset check — attackers can substitute worthless tokens for the intended asset.
+Approval exit at prog.teal:130 handles asset transfers but is reachable without an XferAsset check — attackers can substitute worthless tokens for the intended asset.

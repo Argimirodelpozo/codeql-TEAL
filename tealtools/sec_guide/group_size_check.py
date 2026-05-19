@@ -1,31 +1,35 @@
-"""sec-guide/group-size-check: gtxn used without GroupSize validation.
+"""sec-guide/group-size-check: missing GroupSize check (path-aware).
 
-Mirrors ``groupSizeCheck.ql``. Per-``gtxn`` finding when the program
-uses any absolute-index ``gtxn`` op AND doesn't validate ``global
-GroupSize`` anywhere. An attacker could pad the group with extra
-transactions otherwise.
+Per-approval-exit: each exit must be reachable only along CFG paths
+that cross a BB where ``global GroupSize`` flows into a comparison
+whose result reaches enforcement. Uses the same machinery as
+:mod:`tealtools.sec_guide.rekey_to`, but seeded from ``global FIELD``
+reads instead of ``txn FIELD``.
+
+Replaces the old heuristic (``compared anywhere?`` + per-``gtxn``
+finding gated on whole-program presence) which produced false
+negatives whenever the validation was on one branch only, or in a
+subroutine never called on every path.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Optional
 
-from ..ssa import Assignment, SSAProgram
+from ..ssa import BasicBlock, SSAProgram
 from . import common
-
-
-_GTXN_OPS = frozenset({"gtxn", "gtxna", "gtxnas"})
 
 
 @dataclass
 class GroupSizeCheckViolation:
-    gtxn_op: Assignment
+    exit_bb: BasicBlock
 
     def pretty(self) -> str:
+        line = self.exit_bb.last_line
         return (
-            f"{self.gtxn_op.op}@{common.loc(self.gtxn_op)}  "
-            "gtxn access uses an absolute group index without validating global "
-            "GroupSize — attackers can pad the group with extra transactions."
+            f"Approval exit at {self.exit_bb.file}:{line} "
+            "is reachable without a global GroupSize check — "
+            "attackers can pad the group with extra transactions."
         )
 
     def __repr__(self) -> str:
@@ -40,11 +44,13 @@ class GroupSizeCheckDetector:
         self.file = file
 
     def detect(self) -> list[GroupSizeCheckViolation]:
-        if common.has_groupsize_check(self.prog, file=self.file):
-            return []
-        return [
-            GroupSizeCheckViolation(gtxn_op=a)
-            for a in self.prog.assignments
-            if a.op in _GTXN_OPS
-            and common._file_match(a.location.file, self.file)
-        ]
+        out: list[GroupSizeCheckViolation] = []
+        for exit_bb in sorted(
+            common.approving_exits(self.prog, file=self.file),
+            key=lambda b: (b.file, b.first_line),
+        ):
+            if not common.approval_exit_protected_for_global_field(
+                self.prog, exit_bb, "GroupSize", file=self.file,
+            ):
+                out.append(GroupSizeCheckViolation(exit_bb))
+        return out

@@ -464,14 +464,20 @@ def def_forward_reaches_enforcement(
 
     Recognised sinks:
       - ``assert`` consumes the SSA chain.
-      - ``bnz target`` consumes it and the fall-through is ``err``
-        (so cmp=false ⇒ fall through ⇒ reject).
-      - ``bz target`` consumes it and the target's first op is ``err``
-        (so cmp=false ⇒ branch to ``err`` ⇒ reject).
+      - ``bnz target`` consumes it and the fall-through BB is a
+        *rejection exit* (``err`` or ``return 0`` — see
+        :func:`is_rejection_exit`), so cmp=false ⇒ fall through ⇒ reject.
+      - ``bz target`` consumes it and the target BB is a rejection exit,
+        so cmp=false ⇒ branch to rejection ⇒ reject.
 
     Walks through every consuming opcode that produces an SSA def
     (``&&``, ``||``, ``dup``, etc.), so compositions like ``cmp1; cmp2;
     &&; assert`` and ``cmp; dup; bnz target; err`` are all recognised.
+
+    The ``return 0`` form is essential for LogicSigs and ABI-router
+    code that branches on failure to a ``pushint 0; return`` block
+    rather than an explicit ``err`` — the old ``first-op-is-err`` check
+    silently missed every such guard.
     """
     if seen is None:
         seen = set()
@@ -483,23 +489,17 @@ def def_forward_reaches_enforcement(
         if cons.op == "assert":
             return True
         if cons.op == "bnz":
-            # Fall-through line is the opcode just after the bnz at the
-            # source position. Easiest: the bnz BB's successors should
-            # contain the fall-through BB; an alternative is to look for
-            # the next assignment in source order. We approximate by
-            # checking whether the bnz's BB has a successor whose first
-            # line is greater than bnz's line and whose first op is err.
             bnz_bb = cons.basic_block
             if bnz_bb is not None:
                 fall_through = _fall_through_bb(prog, bnz_bb)
-                if fall_through is not None and _block_first_op_is_err(fall_through):
+                if fall_through is not None and is_rejection_exit(fall_through):
                     return True
         elif cons.op == "bz":
             target_name = cons.immediates.strip()
             target_line = label_lines.get((cons.location.file, target_name))
             if target_line is not None:
                 target_bb = _bb_at(prog, cons.location.file, target_line)
-                if target_bb is not None and _block_first_op_is_err(target_bb):
+                if target_bb is not None and is_rejection_exit(target_bb):
                     return True
         # Step: consume produces an SSA def whose forward chain we walk.
         for out in cons.outputs:
@@ -604,6 +604,98 @@ def _scratch_stores_for(prog: SSAProgram, load_var: SSAVar) -> Optional[list]:
     return None
 
 
+def _is_protected_bb_for_seeds(
+    prog: SSAProgram,
+    bb: BasicBlock,
+    field_vars: set[SSAVar],
+    *,
+    file: Optional[str] = None,
+) -> bool:
+    """Core of :func:`is_protected_bb` — takes the seed set of
+    field-source SSAVars directly so callers can swap the source
+    (``txn`` / ``global`` / ``gtxn``) or pass a *union* of seeds for
+    disjunction (e.g. ``TypeEnum`` OR ``Type``).
+
+    A BB is protected for ``field_vars`` iff it contains a comparison
+    consuming a value that flows from any seed AND whose result
+    reaches enforcement (``assert`` / ``bnz`` to ``err`` / ``bz`` to
+    ``err``). Empty seeds → not protected (vacuously)."""
+    if not field_vars:
+        return False
+    if file is None:
+        file = bb.file
+    label_lines = _label_to_bb_first_line(prog)
+    for cmp in bb.assignments:
+        if not is_comparison(cmp) or len(cmp.inputs) != 2:
+            continue
+        if not any(
+            _operand_flows_from_field_var(prog, op, field_vars)
+            for op in cmp.inputs
+        ):
+            continue
+        if not cmp.outputs or not isinstance(cmp.outputs[0], SSAVar):
+            continue
+        if def_forward_reaches_enforcement(
+            prog, cmp.outputs[0], label_lines=label_lines,
+        ):
+            return True
+    return False
+
+
+def _approval_exit_protected_for_seeds(
+    prog: SSAProgram,
+    exit_bb: BasicBlock,
+    field_vars: set[SSAVar],
+    *,
+    file: Optional[str] = None,
+) -> bool:
+    """Core of :func:`approval_exit_protected_for_field` — same path
+    walk but parameterised on the seed set so we can reuse the
+    machinery for ``global FIELD`` / disjunctions / ``gtxn FIELD``."""
+    if file is None:
+        file = exit_bb.file
+    if _is_protected_bb_for_seeds(prog, exit_bb, field_vars, file=file):
+        return True
+    # If the exit_bb itself is an entry (no predecessors), the trivial
+    # zero-length path is from an unprotected entry — exit_bb is *not*
+    # protected. Without this guard the backward BFS below exhausts
+    # with no work to do and returns the wrong answer (True).
+    if not exit_bb.predecessors:
+        return False
+    visited: set[BasicBlock] = {exit_bb}
+    stack: list[BasicBlock] = [exit_bb]
+    while stack:
+        bb = stack.pop()
+        for pred in bb.predecessors:
+            if pred in visited:
+                continue
+            visited.add(pred)
+            if _is_protected_bb_for_seeds(prog, pred, field_vars, file=file):
+                continue
+            if not pred.predecessors:
+                return False
+            stack.append(pred)
+    return True
+
+
+def _txn_field_seeds(
+    prog: SSAProgram, field: str, *, file: Optional[str] = None,
+) -> set[SSAVar]:
+    return {
+        out for a in txn_field_reads(prog, field, file=file) for out in a.outputs
+        if isinstance(out, SSAVar)
+    }
+
+
+def _global_field_seeds(
+    prog: SSAProgram, gfield: str, *, file: Optional[str] = None,
+) -> set[SSAVar]:
+    return {
+        out for a in global_field_reads(prog, gfield, file=file) for out in a.outputs
+        if isinstance(out, SSAVar)
+    }
+
+
 def is_protected_bb(
     prog: SSAProgram, bb: BasicBlock, field: str,
     *, file: Optional[str] = None,
@@ -631,28 +723,9 @@ def is_protected_bb(
     set to a single program in a multi-program DB."""
     if file is None:
         file = bb.file
-    field_vars = {
-        out for a in txn_field_reads(prog, field, file=file) for out in a.outputs
-        if isinstance(out, SSAVar)
-    }
-    if not field_vars:
-        return False
-    label_lines = _label_to_bb_first_line(prog)
-    for cmp in bb.assignments:
-        if not is_comparison(cmp) or len(cmp.inputs) != 2:
-            continue
-        if not any(
-            _operand_flows_from_field_var(prog, op, field_vars)
-            for op in cmp.inputs
-        ):
-            continue
-        if not cmp.outputs or not isinstance(cmp.outputs[0], SSAVar):
-            continue
-        if def_forward_reaches_enforcement(
-            prog, cmp.outputs[0], label_lines=label_lines,
-        ):
-            return True
-    return False
+    return _is_protected_bb_for_seeds(
+        prog, bb, _txn_field_seeds(prog, field, file=file), file=file,
+    )
 
 
 def approval_exit_protected_for_field(
@@ -664,31 +737,40 @@ def approval_exit_protected_for_field(
     for ``field``. Equivalently, ``exit_bb`` is *not* reachable from
     any entry along a path of unprotected BBs. Mirrors QL
     ``not reachableWithoutProtection``."""
-    # Backward BFS from `exit_bb` along predecessor edges, treating
-    # protected BBs (including exit_bb itself) as non-traversable. If
-    # we reach an entry BB (no predecessors) that is itself unprotected
-    # without crossing a protected BB, then there exists an unprotected
-    # path → exit_bb is NOT protected.
     if file is None:
         file = exit_bb.file
-    if is_protected_bb(prog, exit_bb, field, file=file):
-        # The exit's own BB doing the check counts as protected.
-        return True
-    visited: set[BasicBlock] = {exit_bb}
-    stack: list[BasicBlock] = [exit_bb]
-    while stack:
-        bb = stack.pop()
-        for pred in bb.predecessors:
-            if pred in visited:
-                continue
-            visited.add(pred)
-            if is_protected_bb(prog, pred, field, file=file):
-                continue
-            if not pred.predecessors:
-                # Reached an unprotected entry BB.
-                return False
-            stack.append(pred)
-    return True
+    return _approval_exit_protected_for_seeds(
+        prog, exit_bb, _txn_field_seeds(prog, field, file=file), file=file,
+    )
+
+
+def approval_exit_protected_for_global_field(
+    prog: SSAProgram, exit_bb: BasicBlock, gfield: str,
+    *, file: Optional[str] = None,
+) -> bool:
+    """Like :func:`approval_exit_protected_for_field` but the seed
+    is ``global GFIELD`` rather than ``txn FIELD``. Used by detectors
+    whose validation target is a ``global`` field (e.g. ``GroupSize``)."""
+    if file is None:
+        file = exit_bb.file
+    return _approval_exit_protected_for_seeds(
+        prog, exit_bb, _global_field_seeds(prog, gfield, file=file), file=file,
+    )
+
+
+def approval_exit_protected_for_any_txn_field(
+    prog: SSAProgram, exit_bb: BasicBlock, fields: list[str],
+    *, file: Optional[str] = None,
+) -> bool:
+    """Disjunctive form: protected if *any* of ``fields`` is enforced
+    on every path. Used by tx-type-check (validating either ``TypeEnum``
+    or ``Type`` counts as fixed)."""
+    if file is None:
+        file = exit_bb.file
+    seeds: set[SSAVar] = set()
+    for f in fields:
+        seeds |= _txn_field_seeds(prog, f, file=file)
+    return _approval_exit_protected_for_seeds(prog, exit_bb, seeds, file=file)
 
 
 # ---------------------------------------------------------------------------

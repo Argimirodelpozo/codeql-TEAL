@@ -1,1 +1,1 @@
-(no violations)
+Approval exit at prog.teal:35 is reachable without a txn Fee check — an attacker can drain the account.
