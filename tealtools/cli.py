@@ -160,6 +160,39 @@ def _cmd_cost(args) -> int:
     )
 
 
+def _cmd_functional(args) -> int:
+    """Run the canonical SSA pipeline and print the functional dump.
+
+    ``--show-ranges`` adds inline ``/*[V<=hi]*/`` IntRange comments on
+    uint64 SSAVars (the substrate's existing renderer flag).
+    ``--show-bytes`` adds inline ``/*len=N*/`` / ``/*val=...*/``
+    annotations on bytes-typed SSAVars (post-process via
+    :mod:`tealtools.render_annotated`). ``--by-block`` groups
+    assignments per basic block with predecessor/successor headers.
+    """
+    from .experimental_2.passes import functional_dump
+    prog = _load(args)
+    line_range = None
+    if args.line_range:
+        try:
+            lo, hi = (int(x) for x in args.line_range.split("-", 1))
+            line_range = (lo, hi)
+        except ValueError:
+            print(f"error: --line-range expects 'LO-HI', got {args.line_range!r}",
+                  file=sys.stderr)
+            return 2
+    out = functional_dump(
+        prog,
+        file=args.file,
+        line_range=line_range,
+        by_block=args.by_block,
+        show_ranges=args.show_ranges,
+        show_bytes=args.show_bytes,
+    )
+    print(out)
+    return 0
+
+
 def _cmd_path_predicates(args) -> int:
     from .path_predicates import PathPredicateAnalysis
     pp = PathPredicateAnalysis(_load(args))
@@ -365,6 +398,23 @@ def build_parser() -> argparse.ArgumentParser:
     add("cost", "per-line opcode cost", _cmd_cost)
     add("path-predicates", "per-BB path predicates", _cmd_path_predicates)
     add("all", "run every detector + report", _cmd_all)
+
+    func_p = add(
+        "functional",
+        "SSA functional dump after the canonical pipeline "
+        "(constants, ranges, byte_lengths, bytemath, …)",
+        _cmd_functional,
+    )
+    func_p.add_argument("--file", default=None,
+                        help="restrict to a single source file (e.g. prog.teal)")
+    func_p.add_argument("--line-range", default=None,
+                        help="restrict to a LO-HI source-line range")
+    func_p.add_argument("--show-ranges", action="store_true",
+                        help="inline /*[V<=hi]*/ IntRange annotations on uint64 vars")
+    func_p.add_argument("--show-bytes", action="store_true",
+                        help="inline /*len=N val=...*/ annotations on bytes vars")
+    func_p.add_argument("--by-block", action="store_true",
+                        help="group assignments per basic block with pred/succ headers")
 
     cfg_p = add("cfg", "dump basic-block CFG as Graphviz DOT", _cmd_cfg)
     cfg_p.add_argument("--file", default=None,
