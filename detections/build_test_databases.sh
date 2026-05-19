@@ -6,8 +6,8 @@ set -e
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SEARCH_PATH="$REPO_ROOT/.codeql-extractors"
-DETECTIONS_DIR="$REPO_ROOT/sec-guide-detections"
-DB_DIR="$REPO_ROOT/sec-guide-detections-dbs"
+DETECTIONS_DIR="$REPO_ROOT/detections"
+DB_DIR="$REPO_ROOT/detections-dbs"
 
 mkdir -p "$DB_DIR"
 

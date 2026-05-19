@@ -54,7 +54,7 @@ All tests require the extractor to be built and registered first (steps 2-3 abov
 
 ### CodeQL Backend Tests
 
-Native CodeQL tests covering the QL libraries (`codeql-backend/teal/ql/lib/codeql/...`), the tealtools queries (`tealtools/queries/...`), and the sec-guide detection suite (`sec-guide-detections/...`). Each test is a directory with a `prog.teal` (or other `.teal`) source plus a `test.ql` (focused unit test) or `test.qlref` (invokes a production query) and a checked-in `*.expected` output. The runner builds a DB from the source, runs the query, and diffs against expected. Wrapped in pytest so it shares the same workflow as the tealtools tests.
+Native CodeQL tests covering the QL libraries (`codeql-backend/teal/ql/lib/codeql/...`), the tealtools queries (`tealtools/queries/...`), and the sec-guide detection suite (`detections/...`). Each test is a directory with a `prog.teal` (or other `.teal`) source plus a `test.ql` (focused unit test) or `test.qlref` (invokes a production query) and a checked-in `*.expected` output. The runner builds a DB from the source, runs the query, and diffs against expected. Wrapped in pytest so it shares the same workflow as the tealtools tests.
 
 ```bash
 # Verify every backend test
@@ -64,7 +64,7 @@ pytest tests/test_codeql_backend.py -v
 UPDATE_SNAPSHOTS=1 pytest tests/test_codeql_backend.py
 ```
 
-Discovery walks two roots — `tests/codeql/` and `sec-guide-detections/` — picking up any `.ql` / `.qlref` whose sibling `.expected` exists. The test pack at `tests/codeql/qlpack.yml` declares dependencies on `argimirodelpozo/teal-all` and `argimirodelpozo/tealtools` so `.qlref`s pointing at production queries resolve. First cold run after a QL change takes ~25 min (cache invalidates globally); subsequent runs are fast.
+Discovery walks two roots — `tests/codeql/` and `detections/` — picking up any `.ql` / `.qlref` whose sibling `.expected` exists. The test pack at `tests/codeql/qlpack.yml` declares dependencies on `argimirodelpozo/teal-all` and `argimirodelpozo/tealtools` so `.qlref`s pointing at production queries resolve. First cold run after a QL change takes ~25 min (cache invalidates globally); subsequent runs are fast.
 
 ### Running Individual Queries
 
