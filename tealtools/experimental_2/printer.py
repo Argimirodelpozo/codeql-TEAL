@@ -28,7 +28,7 @@ from ..control_tree import (
 )
 from ..ssa import Assignment, BasicBlock, Const, SSAProgram, SSAVar
 
-from .passes import run_all_passes
+from ..passes import run_all_passes
 
 _INDENT = "  "
 

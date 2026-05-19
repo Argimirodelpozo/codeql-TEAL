@@ -14,7 +14,7 @@ program's bytes-typed SSAVars, builds an identifier→comment table,
 and substitutes the comment after each occurrence of the
 identifier in the dump.
 
-Used by :func:`tealtools.experimental_2.passes.functional_dump`
+Used by :func:`tealtools.passes.functional_dump`
 when called with ``show_bytes=True``.
 """
 from __future__ import annotations

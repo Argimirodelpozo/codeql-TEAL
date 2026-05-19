@@ -915,7 +915,7 @@ class SSAProgram:
             # substrate carries no TEAL-semantics knowledge by itself.
             # Runs inside the fixpoint so a fold-then-propagate-then-
             # fold chain converges naturally.
-            from .const_fold import try_fold_assignment
+            from .passes.const_fold import try_fold_assignment
             for a in self.assignments:
                 if len(a.outputs) != 1:
                     continue
@@ -945,7 +945,7 @@ class SSAProgram:
         and can legitimately differ between submits."""
         if getattr(self, "_inputs_propagated", False):
             return
-        from .input_prop import propagate_inputs as _impl
+        from .passes.input_prop import propagate_inputs as _impl
         _impl(self)
         self._inputs_propagated = True
 
@@ -1018,7 +1018,7 @@ class SSAProgram:
         to drop. Lazily imports the implementation from
         :mod:`tealtools.cleanup` so the substrate stays free of the
         per-op pure-set decisions."""
-        from .cleanup import cleanup_unused_ssavars as _impl
+        from .passes.cleanup import cleanup_unused_ssavars as _impl
         return _impl(self)
 
     def propagate_scratch_constants(self) -> None:
@@ -1176,7 +1176,7 @@ class SSAProgram:
         composes them. Lazily imported from
         :mod:`tealtools.range_arith` so the substrate stays free of
         the AVM arithmetic semantics."""
-        from .range_arith import propagate_range_arithmetic as _impl
+        from .passes.range_arith import propagate_range_arithmetic as _impl
         return _impl(self)
 
     def propagate_bytemath_ranges(self) -> int:
@@ -1190,13 +1190,13 @@ class SSAProgram:
         :meth:`propagate_constants` and :meth:`propagate_ranges`
         first. Lazily imported from :mod:`tealtools.bytemath` so the
         substrate stays free of bytemath semantics."""
-        from .bytemath import propagate_bytemath_ranges as _impl
+        from .passes.bytemath import propagate_bytemath_ranges as _impl
         return _impl(self)
 
     def propagate_byte_lengths(self) -> int:
         """Tag bytes-producing SSAVars / Phis with their statically
         derivable :attr:`TealType.byte_length`. Opt-in (not part of
-        :func:`tealtools.experimental_2.passes.run_all_passes`) so
+        :func:`tealtools.passes.run_all_passes`) so
         analyses that don't care about lengths aren't paying for it.
 
         Covers ``itob`` (always 8), ``bzero N`` with const ``N``,
@@ -1210,7 +1210,7 @@ class SSAProgram:
         further to add. Lazily imported from
         :mod:`tealtools.byte_length_prop` so the TEAL byte-op
         semantics stay out of the substrate."""
-        from .byte_length_prop import propagate_byte_lengths as _impl
+        from .passes.byte_length_prop import propagate_byte_lengths as _impl
         return _impl(self)
 
     def propagate_stack_shuffles(self) -> None:

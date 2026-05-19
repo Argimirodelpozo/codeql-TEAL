@@ -170,7 +170,7 @@ def _cmd_functional(args) -> int:
     :mod:`tealtools.render_annotated`). ``--by-block`` groups
     assignments per basic block with predecessor/successor headers.
     """
-    from .experimental_2.passes import functional_dump
+    from .passes import functional_dump
     prog = _load(args)
     line_range = None
     if args.line_range:

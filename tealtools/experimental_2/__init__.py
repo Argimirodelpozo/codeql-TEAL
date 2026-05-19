@@ -1,14 +1,14 @@
 """Fresh-start experimental sandbox — second iteration.
 
-Built on the existing :mod:`tealtools.ssa` substrate. The first thing
-this package does is run every available SSA cleanup / propagation
-pass and expose the resulting program in its existing flat
-``functional()`` form. Later analyses build from there.
-
-See :mod:`tealtools.experimental_2.passes`.
+Built on the existing :mod:`tealtools.ssa` substrate. The pipeline
+and one-stop functional-dump entry points used to live here; they
+now live in :mod:`tealtools.passes` next to the per-pass helper
+modules. This package keeps the structured printer and re-exports
+the pipeline entry points so existing callers / notebooks keep
+working.
 """
 
-from .passes import run_all_passes, functional_dump
+from ..passes import functional_dump, run_all_passes
 from .printer import structured_dump
 
-__all__ = ["run_all_passes", "functional_dump", "structured_dump"]
+__all__ = ["functional_dump", "run_all_passes", "structured_dump"]
