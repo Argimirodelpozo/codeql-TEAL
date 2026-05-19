@@ -224,10 +224,24 @@ class IntRange:
 @dataclass(frozen=True)
 class TealType:
     """Static type of a stack value. ``kind`` ∈ ``{"uint64", "bytes"}``.
-    For ``"bytes"``, ``byte_length`` is the known length when statically
-    derivable, else ``None``."""
+
+    For ``"bytes"``:
+      - ``byte_length`` is the exact length when statically derivable
+        (forward propagation, e.g. ``itob`` always 8, ``sha256`` always
+        32, ``concat`` of two known-length inputs).
+      - ``byte_length_range`` is an inclusive ``[lo..hi]`` bound when
+        only the *range* is known (typically from inverse constraints:
+        ``btoi(X)`` succeeding ⇒ ``len(X) ∈ [1, 8]``, ``getbyte(X, i)``
+        succeeding ⇒ ``len(X) ≥ i+1``, …). When ``byte_length`` is set,
+        ``byte_length_range`` mirrors it as ``IntRange(N, N)`` so a
+        consumer that only cares about the range has one field to read.
+
+    For ``"uint64"`` both fields are unused (use :attr:`SSAVar.range`
+    instead).
+    """
     kind: str
     byte_length: Optional[int] = None
+    byte_length_range: Optional["IntRange"] = None
 
 
 Operand = Union[SSAVar, Phi, Const, MatPhiVar]

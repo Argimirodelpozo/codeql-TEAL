@@ -36,28 +36,48 @@ Op semantics covered (forward, single-output bytes producers):
     :meth:`propagate_constants` has its length lifted directly from
     the hex literal.
 
-A phi gets a byte_length only when every arg has the *same* known
-byte_length (intersect, not union — disagreeing args mean the value
-can be one of several lengths at runtime, so the static length is
-unknown). Iterated to fixed point so multi-hop chains converge.
+A phi gets an exact byte_length only when every arg has the *same*
+known byte_length (intersect, not union — disagreeing args mean the
+value can be one of several lengths at runtime, so the exact static
+length is unknown). When the exact lengths disagree but the args all
+have known length *ranges*, the phi adopts the union — a strictly
+looser bound, but still useful for downstream consumers that just
+want "at most this many bytes". Iterated to fixed point so multi-hop
+chains converge.
+
+Inverse range constraints (item 3): a single forward op whose
+successful execution constrains the byte_length of one of its inputs
+also installs a ``byte_length_range`` on that input:
+
+  - ``btoi(X)``                 → ``len(X) ∈ [1, 8]``.
+  - ``getbyte(X, i)`` (i const) → ``len(X) ≥ i + 1``.
+  - ``extract_uint16/32/64(X, i)`` (i const) → ``len(X) ≥ i + 2/4/8``.
+  - ``extract A B X``            → ``len(X) ≥ A + B``.
+  - ``substring A B X``          → ``len(X) ≥ B``.
+  - ``extract3 X A B`` (A, B const) → ``len(X) ≥ A + B``.
+  - ``substring3 X A B`` (B const)  → ``len(X) ≥ B``.
+  - ``setbyte X i b`` (i const) → ``len(X) ≥ i + 1``.
+
+The constraints intersect with anything already on the input's
+``byte_length_range`` (so multiple ops on the same SSAVar tighten
+the bound). Constraints are deliberately *not* applied when the
+input already has an exact ``byte_length`` — the exact value is
+strictly stronger.
 
 Mutates the SSA in place: sets :attr:`SSAVar.type` /
-:attr:`Phi.type` to ``TealType("bytes", byte_length=N)``. Never
-overwrites an existing ``byte_length`` (so multiple calls converge).
-
-Not included here, deferred to follow-up passes:
-
-  - Inverse range constraints (e.g. ``btoi(X)`` succeeding ⇒
-    ``len(X) ∈ [1, 8]``).
-  - Forward range arithmetic through ``+`` / ``-`` / ``*``.
-  - Length-preserving ops (``setbyte``, ``replace2``, ``replace3``)
-    and stack-indexed extract / substring variants.
+:attr:`Phi.type` to ``TealType("bytes", byte_length=N,
+byte_length_range=IntRange(N, N))`` for the exact case, or
+``TealType("bytes", byte_length_range=IntRange(lo, hi))`` for the
+ranged case.
 """
 from __future__ import annotations
 
 from typing import Optional
 
-from .ssa import Assignment, Const, Phi, SSAProgram, SSAVar, TealType
+from .ssa import Assignment, Const, IntRange, Phi, SSAProgram, SSAVar, TealType
+
+
+_BYTES_STACK_CAP = 4096  # AVM bytes-stack values are capped at 4096 bytes.
 
 
 def _const_bytes_length(c: Optional[Const]) -> Optional[int]:
@@ -209,22 +229,183 @@ def _op_byte_length(a: Assignment) -> Optional[int]:
     return None
 
 
+def _operand_byte_length_range(operand) -> Optional[IntRange]:
+    """Best-known length range for an operand. An exact byte_length
+    (from :func:`_operand_byte_length`) is returned as ``[N, N]``;
+    otherwise the operand's ``type.byte_length_range`` if set."""
+    n = _operand_byte_length(operand)
+    if n is not None:
+        return IntRange(n, n)
+    t = getattr(operand, "type", None)
+    if t is not None and t.kind == "bytes" and t.byte_length_range is not None:
+        return t.byte_length_range
+    return None
+
+
 def _set_byte_length(obj, n: int) -> bool:
-    """Set ``obj.type`` to ``TealType("bytes", byte_length=n)`` if it's
-    not already set with that length. Returns True when a change was
-    made (to drive the fixed-point loop)."""
+    """Set ``obj.type`` to ``TealType("bytes", byte_length=n,
+    byte_length_range=IntRange(n, n))`` if it's not already set with
+    that length. Returns True when a change was made (to drive the
+    fixed-point loop)."""
     existing = getattr(obj, "type", None)
     if existing is not None and existing.kind == "bytes" \
             and existing.byte_length is not None:
         return False
-    obj.type = TealType("bytes", byte_length=n)
+    obj.type = TealType(
+        "bytes",
+        byte_length=n,
+        byte_length_range=IntRange(n, n),
+    )
     return True
 
 
+def _set_byte_length_range(obj, lo: int, hi: int) -> bool:
+    """Install or *intersect* a byte_length range on ``obj``. Honours
+    an existing exact ``byte_length`` (would either confirm it or
+    indicate an infeasible path — we leave it alone in either case).
+    Returns True when the stored range was actually tightened so the
+    fixed-point loop knows to re-iterate."""
+    # Clamp to the AVM bytes-stack cap.
+    if lo < 0:
+        lo = 0
+    if hi > _BYTES_STACK_CAP:
+        hi = _BYTES_STACK_CAP
+    if lo > hi:
+        return False
+    existing = getattr(obj, "type", None)
+    if existing is not None and existing.kind == "bytes" \
+            and existing.byte_length is not None:
+        # Already pinned to an exact length; nothing to refine.
+        return False
+    if existing is not None and existing.byte_length_range is not None:
+        old = existing.byte_length_range
+        new_lo = max(old.lo, lo)
+        new_hi = min(old.hi, hi)
+        if new_lo > new_hi:
+            return False  # would yield an infeasible (empty) range
+        if new_lo == old.lo and new_hi == old.hi:
+            return False
+        lo, hi = new_lo, new_hi
+    obj.type = TealType(
+        "bytes",
+        byte_length=None,
+        byte_length_range=IntRange(lo, hi),
+    )
+    return True
+
+
+def _input_min_length(a: Assignment) -> Optional[tuple[int, int, Optional[int]]]:
+    """Return ``(input_index, min_len, max_len)`` for any op whose
+    successful execution constrains the byte_length of one of its
+    inputs. ``max_len`` is ``None`` when only a lower bound is known
+    (it gets clamped to the bytes-stack cap by the caller). Returns
+    ``None`` when the op doesn't carry a static input-length
+    constraint (or its key immediates / stack operands aren't
+    resolved to constants).
+    """
+    op = a.op
+
+    # btoi(X) succeeds ⇒ len(X) ∈ [1, 8]. (TEAL spec: btoi panics on
+    # an empty input or on length > 8.)
+    if op == "btoi":
+        if not a.inputs:
+            return None
+        return (0, 1, 8)
+
+    # getbyte(X, i) — needs len(X) ≥ i + 1 when i is a const.
+    if op == "getbyte":
+        if len(a.inputs) != 2:
+            return None
+        idx = _const_int_value(_operand_const(a.inputs[1]))
+        if idx is None or idx < 0:
+            return None
+        return (0, idx + 1, None)
+
+    # extract_uint{16,32,64}(X, i) — needs len(X) ≥ i + 2/4/8.
+    if op in ("extract_uint16", "extract_uint32", "extract_uint64"):
+        if len(a.inputs) != 2:
+            return None
+        idx = _const_int_value(_operand_const(a.inputs[1]))
+        if idx is None or idx < 0:
+            return None
+        width = {"extract_uint16": 2, "extract_uint32": 4, "extract_uint64": 8}[op]
+        return (0, idx + width, None)
+
+    # extract A B X  (immediate) — needs len(X) ≥ A + B when B != 0,
+    # ≥ A when B == 0 ("to end of input").
+    if op == "extract":
+        if not a.inputs or not a.immediates:
+            return None
+        toks = a.immediates.split()
+        if len(toks) != 2:
+            return None
+        try:
+            start, length = int(toks[0]), int(toks[1])
+        except ValueError:
+            return None
+        if length < 0 or start < 0:
+            return None
+        return (0, start + length, None)
+
+    # substring A B X (immediate) — needs len(X) ≥ B.
+    if op == "substring":
+        if not a.inputs or not a.immediates:
+            return None
+        toks = a.immediates.split()
+        if len(toks) != 2:
+            return None
+        try:
+            _start, end = int(toks[0]), int(toks[1])
+        except ValueError:
+            return None
+        if end < 0:
+            return None
+        return (0, end, None)
+
+    # extract3 X A B — needs len(X) ≥ A + B when both A and B are const.
+    if op == "extract3":
+        if len(a.inputs) != 3:
+            return None
+        start = _const_int_value(_operand_const(a.inputs[1]))
+        length = _const_int_value(_operand_const(a.inputs[2]))
+        if start is None or length is None or start < 0 or length < 0:
+            return None
+        return (0, start + length, None)
+
+    # substring3 X A B — needs len(X) ≥ B when B is a const.
+    if op == "substring3":
+        if len(a.inputs) != 3:
+            return None
+        end = _const_int_value(_operand_const(a.inputs[2]))
+        if end is None or end < 0:
+            return None
+        return (0, end, None)
+
+    # setbyte X i b — needs len(X) ≥ i + 1 when i is a const.
+    if op == "setbyte":
+        if len(a.inputs) != 3:
+            return None
+        idx = _const_int_value(_operand_const(a.inputs[1]))
+        if idx is None or idx < 0:
+            return None
+        return (0, idx + 1, None)
+
+    return None
+
+
 def propagate_byte_lengths(prog: SSAProgram) -> int:
-    """Walk ``prog`` to a fixed point, seeding ``TealType.byte_length``
-    on outputs of bytes-producing ops whose length is statically
-    derivable. Returns the number of SSAVars / Phis tagged."""
+    """Walk ``prog`` to a fixed point. In each iteration:
+
+      1. Forward-propagate exact ``byte_length`` from ops whose
+         output length is statically derivable.
+      2. Install inverse ``byte_length_range`` constraints on inputs
+         of ops whose successful execution implies a minimum length
+         (``btoi``, ``getbyte``, ``extract_*``, ``setbyte``, …).
+      3. Union arg lengths through phis — exact when every arg
+         agrees, else the looser ``byte_length_range`` union.
+
+    Returns the cumulative number of (byte_length, byte_length_range)
+    assignments made across the fixed-point walk."""
     if not getattr(prog, "_consts_propagated", False):
         prog.propagate_constants()
 
@@ -233,6 +414,7 @@ def propagate_byte_lengths(prog: SSAProgram) -> int:
     while changed:
         changed = False
 
+        # (1) Forward exact-length rules on bytes-producing ops.
         for a in prog.assignments:
             if len(a.outputs) != 1:
                 continue
@@ -250,6 +432,26 @@ def propagate_byte_lengths(prog: SSAProgram) -> int:
                 tagged += 1
                 changed = True
 
+        # (2) Inverse range constraints on input SSAVars: ops that
+        # require a minimum byte_length on one of their inputs to
+        # execute without halting carry that constraint backward.
+        for a in prog.assignments:
+            constraint = _input_min_length(a)
+            if constraint is None:
+                continue
+            idx, lo, hi = constraint
+            if idx >= len(a.inputs):
+                continue
+            target = a.inputs[idx]
+            if not isinstance(target, (SSAVar, Phi)):
+                continue
+            hi_eff = _BYTES_STACK_CAP if hi is None else hi
+            if _set_byte_length_range(target, lo, hi_eff):
+                tagged += 1
+                changed = True
+
+        # (3) Phi propagation: exact-length agreement first, range
+        # union as a fallback.
         for ph in prog.phis.values():
             existing = ph.type
             if existing is not None and existing.kind == "bytes" \
@@ -257,19 +459,22 @@ def propagate_byte_lengths(prog: SSAProgram) -> int:
                 continue
             if not ph.args:
                 continue
-            lengths = []
-            ok = True
-            for arg in ph.args:
-                la = _operand_byte_length(arg)
-                if la is None:
-                    ok = False
-                    break
-                lengths.append(la)
-            if not ok or not lengths:
+
+            lengths: list[Optional[int]] = [_operand_byte_length(a) for a in ph.args]
+            if all(l is not None for l in lengths) and lengths \
+                    and all(l == lengths[0] for l in lengths):
+                if _set_byte_length(ph, lengths[0]):  # type: ignore[arg-type]
+                    tagged += 1
+                    changed = True
+                    continue
+
+            # Range union: every arg must have at least a range bound.
+            ranges = [_operand_byte_length_range(a) for a in ph.args]
+            if any(r is None for r in ranges):
                 continue
-            if not all(l == lengths[0] for l in lengths):
-                continue
-            if _set_byte_length(ph, lengths[0]):
+            lo = min(r.lo for r in ranges)  # type: ignore[union-attr]
+            hi = max(r.hi for r in ranges)  # type: ignore[union-attr]
+            if _set_byte_length_range(ph, lo, hi):
                 tagged += 1
                 changed = True
 
