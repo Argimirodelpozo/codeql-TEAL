@@ -54,7 +54,7 @@ All tests require the extractor to be built and registered first (steps 2-3 abov
 
 ### CodeQL Backend Tests
 
-Native CodeQL tests covering the QL libraries (`codeql-backend/teal/ql/lib/codeql/...`), the tealtools queries (`tealtools/queries/...`), and the sec-guide detection suite (`detections/...`). Each test is a directory with a `prog.teal` (or other `.teal`) source plus a `test.ql` (focused unit test) or `test.qlref` (invokes a production query) and a checked-in `*.expected` output. The runner builds a DB from the source, runs the query, and diffs against expected. Wrapped in pytest so it shares the same workflow as the tealtools tests.
+Native CodeQL tests covering the QL libraries (`codeql-backend/teal/ql/lib/codeql/...`), the tealtools queries (`analysis/tealtools/queries/...`), and the sec-guide detection suite (`security/detections/...`). Each test is a directory with a `prog.teal` (or other `.teal`) source plus a `test.ql` (focused unit test) or `test.qlref` (invokes a production query) and a checked-in `*.expected` output. The runner builds a DB from the source, runs the query, and diffs against expected. Wrapped in pytest so it shares the same workflow as the tealtools tests.
 
 ```bash
 # Verify every backend test
@@ -64,7 +64,7 @@ pytest tests/test_codeql_backend.py -v
 UPDATE_SNAPSHOTS=1 pytest tests/test_codeql_backend.py
 ```
 
-Discovery walks two roots — `tests/codeql/` and `detections/` — picking up any `.ql` / `.qlref` whose sibling `.expected` exists. The test pack at `tests/codeql/qlpack.yml` declares dependencies on `argimirodelpozo/teal-all` and `argimirodelpozo/tealtools` so `.qlref`s pointing at production queries resolve. First cold run after a QL change takes ~25 min (cache invalidates globally); subsequent runs are fast.
+Discovery walks two roots — `tests/codeql/` and `security/detections/` — picking up any `.ql` / `.qlref` whose sibling `.expected` exists. The test pack at `tests/codeql/qlpack.yml` declares dependencies on `argimirodelpozo/teal-all` and `argimirodelpozo/tealtools` so `.qlref`s pointing at production queries resolve. First cold run after a QL change takes ~25 min (cache invalidates globally); subsequent runs are fast.
 
 ### Running Individual Queries
 
@@ -82,7 +82,7 @@ To export results to JSON, use `codeql bqrs decode --format=json`.
 
 > ⚠️ **Work in progress.** APIs, module names, snapshot formats, and detector defaults are all subject to change. Use as a research surface, not a stable interface.
 
-`tealtools/` is a Python package over the CodeQL substrate. Each submodule loads a CodeQL database via `tealtools.SSAProgram(db_path)` and exposes either an SSA-level helper or a specific detector. Analyses run from regular Python — no QL eval each time once the per-DB cache (`~/.cache/teal-graphs/`) is warm.
+`analysis/tealtools/` is a Python package (installed as `tealtools`) over the CodeQL substrate. Each submodule loads a CodeQL database via `tealtools.SSAProgram(db_path)` and exposes either an SSA-level helper or a specific detector. Analyses run from regular Python — no QL eval each time once the per-DB cache (`~/.cache/teal-graphs/`) is warm.
 
 ### Install
 
@@ -162,8 +162,8 @@ fully-annotated result.
 
 Each pass is idempotent — running `run_all_passes` twice is a
 no-op the second time. The per-pass implementations live in
-`tealtools/passes/<name>.py`; the substrate
-(`tealtools/ssa.py`) carries only a thin lazy-import bridge
+`analysis/tealtools/passes/<name>.py`; the substrate
+(`analysis/tealtools/ssa.py`) carries only a thin lazy-import bridge
 method per pass (`SSAProgram.propagate_*` / `cleanup_*`) so
 analysis semantics stay out of the substrate.
 
@@ -220,7 +220,7 @@ for f in cross_auth_findings(graph):
     print(f.violation.pretty())
 ```
 
-The notebooks under `tealtools/interactive-examples/` (`example.ipynb`, `example_xgov.ipynb`, `example_inner_txn_report.ipynb`, `example_box_key_detection.ipynb`, `example_path_predicates.ipynb`) walk through the same modules interactively.
+The notebooks under `analysis/tealtools/interactive-examples/` (`example.ipynb`, `example_xgov.ipynb`, `example_inner_txn_report.ipynb`, `example_box_key_detection.ipynb`, `example_path_predicates.ipynb`) walk through the same modules interactively.
 
 ### Snapshot test harness
 

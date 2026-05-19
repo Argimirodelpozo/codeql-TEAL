@@ -29,7 +29,7 @@ UPDATE = os.environ.get("UPDATE_SNAPSHOTS") == "1"
 # sibling ``*.expected`` file exists is treated as a test.
 TEST_ROOTS = [
     Path(__file__).resolve().parent / "codeql",
-    REPO_ROOT / "detections",
+    REPO_ROOT / "security" / "detections",
 ]
 
 

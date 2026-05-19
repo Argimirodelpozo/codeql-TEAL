@@ -1,6 +1,6 @@
 # Sec-Guide Detections: Test Suite Migration Summary
 
-This document summarizes the migration from the Algorand DevRel **smart-contract-examples** artifact tree (previously vendored under `real-world-examples/`) into `detections/`, for mentor review.
+This document summarizes the migration from the Algorand DevRel **smart-contract-examples** artifact tree (previously vendored under `real-world-examples/`) into `security/detections/`, for mentor review.
 
 The **real-world-examples** checkout has since been removed from this repo; sources are cited from the original paths under `smart-contract-examples/.../artifacts/`.
 
@@ -10,7 +10,7 @@ The **real-world-examples** checkout has since been removed from this repo; sour
 
 The following **numbered chapter folders** from the DevRel examples were used as the basis for **Gabe** (`gabe_fixed` / `gabe_vuln`) pairs:
 
-| DevRel folder (artifacts path) | Target `detections/` folder(s) | Primary source TEAL (compiler output) |
+| DevRel folder (artifacts path) | Target `security/detections/` folder(s) | Primary source TEAL (compiler output) |
 |--------------------------------|------------------------------------------|----------------------------------------|
 | `6-rekeying-draining/` | `rekey-to/` | `SafeLogicSig.teal` |
 | `4-transaction-input-validation/` | `asset-close-to/`, `asset-id-validation/` | `SecureDepositContract.approval.teal` |
@@ -91,9 +91,9 @@ Other folders (`delete-funds-check`, `hardcoded-min-balance`, etc.) still use th
 
 ### `run_tests.sh`
 
-- **Location:** `detections/run_tests.sh`
+- **Location:** `security/detections/run_tests.sh`
 - **Purpose:** Run `codeql test run` over this pack with:
-  - `ROOT` = repository root (parent of `detections/`)
+  - `ROOT` = repository root (two levels up from this script)
   - `CODEQL_EXTRACTOR_TEAL_ROOT` → `$ROOT/.codeql-extractors/teal`
   - `--search-path=$ROOT/.codeql-extractors` (avoids duplicate TEAL extractor roots under `teal/` and `teal/extractor-pack/`)
   - `--additional-packs=$ROOT/teal/ql/lib` for `argimirodelpozo/teal-all`
@@ -107,7 +107,7 @@ There are **17** query directories with **`*.expected`** files (one per main `.q
 
 ## 5. Gaps: DevRel folders not migrated (no matching sec-guide query yet)
 
-The following **artifact areas** existed in the DevRel tree but were **not** pulled into `detections/` as Gabe pairs, mainly because there is **no corresponding** `detections/<rule>/` query (or overlap was deemed out of scope):
+The following **artifact areas** existed in the DevRel tree but were **not** pulled into `security/detections/` as Gabe pairs, mainly because there is **no corresponding** `security/detections/<rule>/` query (or overlap was deemed out of scope):
 
 | DevRel area (examples) | Why not migrated here |
 |-------------------------|-------------------------|
@@ -119,7 +119,7 @@ The following **artifact areas** existed in the DevRel tree but were **not** pul
 | `hello_world/` | Tutorial-only; no security query target |
 | `fee_verification_test/` / other small demos | Narrow or redundant vs `fee-validation` |
 
-**Follow-up (optional):** Add new `detections/<topic>/` queries (and qltests) for arithmetic safety, access-control breadth, or operational pause patterns, then attach DevRel TEAL as `gabe_*` pairs.
+**Follow-up (optional):** Add new `security/detections/<topic>/` queries (and qltests) for arithmetic safety, access-control breadth, or operational pause patterns, then attach DevRel TEAL as `gabe_*` pairs.
 
 ---
 
@@ -128,7 +128,7 @@ The following **artifact areas** existed in the DevRel tree but were **not** pul
 From repository root:
 
 ```bash
-./detections/run_tests.sh
+./security/detections/run_tests.sh
 ```
 
 All **17** qltests should **extract, compile, and match** their `.expected` baselines when the toolchain and pack layout are unchanged.

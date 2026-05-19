@@ -1,13 +1,13 @@
 #!/bin/bash
 # Build all CodeQL databases for sec-guide detection test contracts.
-# Run from the repository root.
+# Run from anywhere; REPO_ROOT is derived from this script's location.
 
 set -e
 
-REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 SEARCH_PATH="$REPO_ROOT/.codeql-extractors"
-DETECTIONS_DIR="$REPO_ROOT/detections"
-DB_DIR="$REPO_ROOT/detections-dbs"
+DETECTIONS_DIR="$REPO_ROOT/security/detections"
+DB_DIR="$REPO_ROOT/security/detections-dbs"
 
 mkdir -p "$DB_DIR"
 

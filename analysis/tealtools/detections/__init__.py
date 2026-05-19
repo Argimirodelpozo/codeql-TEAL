@@ -1,6 +1,6 @@
 """Algorand-security-guide detection ports.
 
-Each detection from the top-level ``detections/<name>/<name>.ql``
+Each detection from the top-level ``security/detections/<name>/<name>.ql``
 CodeQL pack has a Python equivalent here that consumes
 :class:`tealtools.SSAProgram` and emits one or more ``Violation``
 objects via ``.detect()``. The detectors are plugged into

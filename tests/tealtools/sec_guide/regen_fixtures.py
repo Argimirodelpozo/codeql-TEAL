@@ -1,11 +1,11 @@
-"""Regenerate the sec-guide fixture tree from `detections/`.
+"""Regenerate the sec-guide fixture tree from `security/detections/`.
 
-Each `.teal` file under `detections/<detection>/` (recursive)
+Each `.teal` file under `security/detections/<detection>/` (recursive)
 gets a fixture directory at `tests/tealtools/sec_guide/<detection>/<case>/`
 with `prog.teal` copied in. Symlinks aren't used because the codeql
 extractor scanner doesn't follow them — copies make the DB build see
 the source directly. Run this script if you edit a fixture .teal in
-`detections/`; missing DBs are then auto-built by the
+`security/detections/`; missing DBs are then auto-built by the
 session-start hook in `tests/conftest.py`.
 
 Idempotent: existing prog.teal files are overwritten with the source
@@ -17,11 +17,11 @@ import shutil
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[3]
-SRC_ROOT = REPO / "detections"
+SRC_ROOT = REPO / "security" / "detections"
 DST_ROOT = REPO / "tests" / "tealtools" / "sec_guide"
 
 # Production sec-guide queries that have a Python port. Anything else
-# under detections/ (constant-propagation-tests, phi-liveness,
+# under security/detections/ (constant-propagation-tests, phi-liveness,
 # puya-benchmarks, experimental-archive) isn't a detection and is
 # skipped intentionally.
 PORTED = (
