@@ -1139,6 +1139,26 @@ class SSAProgram:
 
         self._ranges_propagated = True
 
+    def propagate_byte_lengths(self) -> int:
+        """Tag bytes-producing SSAVars / Phis with their statically
+        derivable :attr:`TealType.byte_length`. Opt-in (not part of
+        :func:`tealtools.experimental_2.passes.run_all_passes`) so
+        analyses that don't care about lengths aren't paying for it.
+
+        Covers ``itob`` (always 8), ``bzero N`` with const ``N``,
+        ``extract A B`` / ``substring A B`` (immediate forms),
+        ``concat`` (sum of input lengths), and lifts the length
+        directly from any ``Const("bytes", "0x..")`` literal already
+        on an output. Phis adopt a length only when every arg agrees.
+
+        Returns the number of SSAVars / Phis newly tagged. Idempotent:
+        a second call walks the fixed point again and finds nothing
+        further to add. Lazily imported from
+        :mod:`tealtools.byte_length_prop` so the TEAL byte-op
+        semantics stay out of the substrate."""
+        from .byte_length_prop import propagate_byte_lengths as _impl
+        return _impl(self)
+
     def propagate_stack_shuffles(self) -> None:
         """Copy-propagate the outputs of pure stack-shuffle opcodes
         (:data:`_STACK_SHUFFLE_OPS`) into their consumers and mark the
