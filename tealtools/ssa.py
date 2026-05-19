@@ -925,6 +925,20 @@ class SSAProgram:
         _impl(self)
         self._inputs_propagated = True
 
+    def cleanup_unused_ssavars(self) -> int:
+        """Drop side-effect-free :class:`Assignment` s whose every
+        output has empty ``uses``. Typically called after
+        :meth:`propagate_inputs` to physically remove the duplicate
+        input reads it unified semantically. Returns the count of
+        assignments removed.
+
+        Idempotent on a fixed IR — repeated calls find nothing more
+        to drop. Lazily imports the implementation from
+        :mod:`tealtools.cleanup` so the substrate stays free of the
+        per-op pure-set decisions."""
+        from .cleanup import cleanup_unused_ssavars as _impl
+        return _impl(self)
+
     def propagate_scratch_constants(self) -> None:
         """Resolve each ``load N`` opcode's output to a literal when every
         ``store N`` that may influence the load wrote the same compile-
