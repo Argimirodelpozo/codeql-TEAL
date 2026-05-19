@@ -22,6 +22,16 @@ Op semantics covered (forward, single-output bytes producers):
   - ``substring A B``           → ``B - A`` bytes.
   - ``concat X Y``              → ``len(X) + len(Y)`` when both inputs
                                   have a known byte_length.
+  - ``extract3 X A B``          → B bytes when B is a const int on the
+                                  stack.
+  - ``substring3 X A B``        → ``B - A`` bytes when A and B are
+                                  both const ints on the stack.
+  - ``setbyte X i b``           → preserves ``len(X)``.
+  - ``replace2 A X V``          → preserves ``len(X)`` (X is input[0]).
+  - ``replace3 X A V``          → preserves ``len(X)`` (X is input[0]).
+  - ``sha256`` / ``sha512_256``
+    / ``keccak256`` / ``sha3_256``  → 32 bytes (AVM hash digests have
+                                  fixed output width).
   - Any output already resolved to a ``Const("bytes", "0x..")`` via
     :meth:`propagate_constants` has its length lifted directly from
     the hex literal.
@@ -164,6 +174,37 @@ def _op_byte_length(a: Assignment) -> Optional[int]:
         if la is None or lb is None:
             return None
         return la + lb
+
+    if op == "extract3":
+        # Stack form: (X, A, B) → bytes[A : A + B]. Output length is B
+        # when the count is a const int.
+        if len(a.inputs) != 3:
+            return None
+        n = _const_int_value(_operand_const(a.inputs[2]))
+        if n is None or n < 0:
+            return None
+        return n
+
+    if op == "substring3":
+        # Stack form: (X, A, B) → bytes[A : B]. Need both endpoints
+        # const to know the length.
+        if len(a.inputs) != 3:
+            return None
+        start = _const_int_value(_operand_const(a.inputs[1]))
+        end = _const_int_value(_operand_const(a.inputs[2]))
+        if start is None or end is None or end < start:
+            return None
+        return end - start
+
+    # Length-preserving ops: result inherits input[0]'s byte_length.
+    if op in ("setbyte", "replace2", "replace3"):
+        if not a.inputs:
+            return None
+        return _operand_byte_length(a.inputs[0])
+
+    # Fixed-width hash digests.
+    if op in ("sha256", "sha512_256", "keccak256", "sha3_256"):
+        return 32
 
     return None
 
