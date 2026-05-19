@@ -17,7 +17,7 @@ from collections import deque
 from dataclasses import dataclass, field
 from typing import Optional
 
-from .ssa import BasicBlock, SSAProgram
+from ..ssa import BasicBlock, SSAProgram
 
 
 @dataclass
