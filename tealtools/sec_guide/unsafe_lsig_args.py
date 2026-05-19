@@ -35,6 +35,7 @@ class UnsafeLsigArgsViolation:
 
 class UnsafeLsigArgsDetector:
     name = "sec-guide/unsafe-lsig-args"
+    applies_to = frozenset({"logicsig"})  # arg* opcodes are logicsig-only
 
     def __init__(self, prog: SSAProgram, *, file: Optional[str] = None):
         self.prog = prog

@@ -34,6 +34,7 @@ class InnerTxnCloseRekeyViolation:
 
 class InnerTxnCloseRekeyDetector:
     name = "sec-guide/inner-txn-close-rekey"
+    applies_to = frozenset({"app"})  # itxn_* is app-only
 
     def __init__(self, prog: SSAProgram, *, file: Optional[str] = None):
         self.prog = prog

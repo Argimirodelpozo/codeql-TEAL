@@ -30,6 +30,7 @@ class IsUpdatableViolation:
 
 class IsUpdatableDetector:
     name = "sec-guide/is-updatable"
+    applies_to = frozenset({"app"})  # OnCompletion / app lifecycle
 
     def __init__(
         self,

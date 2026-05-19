@@ -102,14 +102,21 @@ def cross_sec_guide_findings(
     Detectors that don't take seeds run as plain
     ``cls(callee).detect()`` — they're program-level and don't depend
     on the call-site context."""
+    from .common import infer_program_type
     names = list(detector_names) if detector_names is not None else list(DETECTORS)
     out: list[CrossSecGuideFinding] = []
     for app_id, callee in graph.callees.items():
         ca = graph.analyses[app_id]
+        program_type = infer_program_type(callee)
         for name in names:
             cls = DETECTORS.get(name)
             if cls is None:
                 raise KeyError(f"unknown sec-guide detector: {name!r}")
+            applies = getattr(
+                cls, "applies_to", frozenset({"app", "logicsig"}),
+            )
+            if program_type not in applies:
+                continue
             det = _construct_detector(cls, callee, ca)
             for v in det.detect():
                 out.append(CrossSecGuideFinding(

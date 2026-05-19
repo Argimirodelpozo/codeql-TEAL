@@ -31,6 +31,7 @@ class UnprotectedUpdatableViolation:
 
 class UnprotectedUpdatableDetector:
     name = "sec-guide/unprotected-updatable"
+    applies_to = frozenset({"app"})  # OnCompletion / app lifecycle
 
     def __init__(
         self,

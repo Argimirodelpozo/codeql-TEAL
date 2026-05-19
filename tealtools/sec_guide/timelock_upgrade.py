@@ -41,6 +41,7 @@ def _has_timestamp_check(
 
 class TimelockUpgradeDetector:
     name = "sec-guide/timelock-upgrade"
+    applies_to = frozenset({"app"})  # UpdateApplication / app lifecycle
 
     def __init__(
         self,

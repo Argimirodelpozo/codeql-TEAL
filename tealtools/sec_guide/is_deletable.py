@@ -33,6 +33,7 @@ class IsDeletableViolation:
 
 class IsDeletableDetector:
     name = "sec-guide/is-deletable"
+    applies_to = frozenset({"app"})  # OnCompletion / app lifecycle
 
     def __init__(
         self,

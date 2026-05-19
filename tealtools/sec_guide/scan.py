@@ -198,12 +198,19 @@ def scan(
                 print(f"[scan] codeql build failed for {dir_path}: {e}")
             continue
         prog = SSAProgram(str(db))
+        from .common import infer_program_type
         for teal in teal_files:
             rel = teal.relative_to(root)
             names = config.detectors_for(str(rel))
+            program_type = infer_program_type(prog, file=teal.name)
             for name in names:
                 cls = DETECTORS.get(name)
                 if cls is None:
+                    continue
+                applies = getattr(
+                    cls, "applies_to", frozenset({"app", "logicsig"}),
+                )
+                if program_type not in applies:
                     continue
                 # The DB stores files by basename (since we copied them
                 # into the per-DB ``src/``); pass that as the file

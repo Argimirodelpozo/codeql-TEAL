@@ -224,13 +224,19 @@ def _render(analysis: str, case_dir: Path, *, scan_cache: Path = None) -> str:
         # Detection name is the parent dir of the case dir, snake-case;
         # map back to the kebab-case keys in `sec_guide.DETECTORS`.
         from tealtools.sec_guide import DETECTORS
+        from tealtools.sec_guide.common import infer_program_type
 
         detection = case_dir.parent.name.replace("_", "-")
         if detection not in DETECTORS:
             raise NotImplementedError(
                 f"no sec-guide detector registered for {detection!r}"
             )
-        violations = DETECTORS[detection](prog).detect()
+        cls = DETECTORS[detection]
+        applies = getattr(cls, "applies_to", frozenset({"app", "logicsig"}))
+        program_type = infer_program_type(prog)
+        if program_type not in applies:
+            return f"(not applicable to {program_type})\n"
+        violations = cls(prog).detect()
         body = "\n".join(v.pretty() for v in violations) or "(no violations)"
         return body + "\n"
 

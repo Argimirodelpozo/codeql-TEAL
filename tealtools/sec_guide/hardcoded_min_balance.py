@@ -42,6 +42,7 @@ def _operand_const_int(operand) -> Const | None:
 
 class HardcodedMinBalanceDetector:
     name = "sec-guide/hardcoded-min-balance"
+    applies_to = frozenset({"app"})  # min_balance is an app idiom
 
     def __init__(self, prog: SSAProgram, *, file: Optional[str] = None):
         # Constant propagation needed to recognise the hardcoded operand

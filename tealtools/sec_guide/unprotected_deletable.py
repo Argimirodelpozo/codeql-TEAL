@@ -31,6 +31,7 @@ class UnprotectedDeletableViolation:
 
 class UnprotectedDeletableDetector:
     name = "sec-guide/unprotected-deletable"
+    applies_to = frozenset({"app"})  # OnCompletion / app lifecycle
 
     def __init__(
         self,

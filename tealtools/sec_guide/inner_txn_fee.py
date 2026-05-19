@@ -30,6 +30,7 @@ class InnerTxnFeeViolation:
 
 class InnerTxnFeeDetector:
     name = "sec-guide/inner-txn-fee"
+    applies_to = frozenset({"app"})  # itxn_* is app-only
 
     def __init__(self, prog: SSAProgram, *, file: Optional[str] = None):
         # Constant propagation must have run so the value SSAVar carries

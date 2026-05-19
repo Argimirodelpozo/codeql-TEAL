@@ -48,6 +48,7 @@ def _has_balance_minbalance_pair(
 
 class DeleteFundsCheckDetector:
     name = "sec-guide/delete-funds-check"
+    applies_to = frozenset({"app"})  # DeleteApplication / balance / min_balance
 
     def __init__(
         self,
