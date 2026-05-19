@@ -569,6 +569,7 @@ class SSAProgram:
         self._scratch_propagated: bool = False
         self._ranges_propagated: bool = False
         self._shuffles_propagated: bool = False
+        self._inputs_propagated: bool = False
 
         # Index graph-side phis by key for fast lookup during lazy materialization.
         g_phi_by_key: dict[tuple, tg.PhiNode] = {}
@@ -903,6 +904,26 @@ class SSAProgram:
                     changed = True
 
         self._consts_propagated = True
+
+    def propagate_inputs(self) -> None:
+        """Unify execution-stable input reads (``txn`` / ``txna`` /
+        ``gtxn``-family / ``global`` / ``arg``) so multiple syntactic
+        reads of the same input collapse to one canonical SSAVar.
+
+        Idempotent. Mutates the SSA: duplicate readers' outputs get
+        rewired in every consumer (assignment inputs and phi args) to
+        point at the first reader's output. Lazily imported because
+        the unification logic lives in :mod:`tealtools.input_prop`
+        — the substrate just provides the entry point.
+
+        ``itxn``-family reads are deliberately *not* included; itxn
+        fields observe the most-recently-submitted inner transaction
+        and can legitimately differ between submits."""
+        if getattr(self, "_inputs_propagated", False):
+            return
+        from .input_prop import propagate_inputs as _impl
+        _impl(self)
+        self._inputs_propagated = True
 
     def propagate_scratch_constants(self) -> None:
         """Resolve each ``load N`` opcode's output to a literal when every
