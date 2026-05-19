@@ -607,6 +607,61 @@ class PathPredicateAnalysis:
             out.append(f"BB L{bb.first_line:>3}-L{bb.last_line:<3}  {body}")
         return "\n".join(out)
 
+    def render_annotated(self, *, file: Optional[str] = None) -> str:
+        """Per-BB annotated dump: each basic block prints with a
+        header banner of its path-aware predicate snapshot
+        (must-hold / may-only / XOR pairs), followed by the BB's
+        assignments in functional form. The output is meant for
+        visual inspection — scan the program from top to bottom and
+        see exactly which predicates dominate each region.
+
+        Format roughly:
+
+            // === BB L8-L11 ===
+            //   must: (V != 0)
+            //   may : (V == 0)
+            //   xor : (V == 0) XOR (V != 0)
+              L  8: V#1@L8 = txna ApplicationArgs 0 ()
+              L 10: V#1@L10 = == (0x101cea00, V#1@L8)
+              L 11: bnz main_l13 (V#1@L10)
+
+        Empty BBs (no assignments) are skipped. ``file=`` restricts
+        to one source file in a multi-program DB."""
+        out: list[str] = []
+        for bb in sorted(
+            self.prog.blocks.values(),
+            key=lambda b: (b.file, b.first_line),
+        ):
+            if file is not None and bb.file != file:
+                continue
+            if not bb.assignments:
+                continue
+            must = self.bb_preds.get(bb, frozenset())
+            may = self.bb_may_preds.get(bb, frozenset())
+            only_may = may - must
+            xor_pairs = find_exclusive_pairs(may)
+
+            out.append(f"// === BB L{bb.first_line}-L{bb.last_line} ===")
+            if must:
+                must_str = ", ".join(
+                    repr(p) for p in sorted(must, key=repr)
+                )
+                out.append(f"//   must: {must_str}")
+            if only_may:
+                may_str = ", ".join(
+                    repr(p) for p in sorted(only_may, key=repr)
+                )
+                out.append(f"//   may : {may_str}")
+            if xor_pairs:
+                xor_str = ", ".join(
+                    f"{p!r} XOR {q!r}" for p, q in xor_pairs
+                )
+                out.append(f"//   xor : {xor_str}")
+            for a in bb.assignments:
+                out.append(f"  L{a.location.line:>4}: {a.functional()}")
+            out.append("")
+        return "\n".join(out).rstrip() + "\n"
+
     def to_dict(self, *, file: Optional[str] = None) -> dict:
         """Structured per-BB dump for JSON output."""
         blocks = []
