@@ -925,6 +925,64 @@ class SSAProgram:
         _impl(self)
         self._inputs_propagated = True
 
+    def propagate_scratch_values(self) -> int:
+        """Generalises :meth:`propagate_scratch_constants` from compile-
+        time literals to arbitrary SSA values.
+
+        For each ``load N`` opcode whose may-influencing stores
+        (provided by the CodeQL ``scratch_stores`` annotation) all
+        write the *same* :class:`SSAVar` ``V``, rewire every consumer
+        of the load's output to reference ``V`` directly. The load's
+        ``Assignment`` stays in the IR with empty ``uses`` until a
+        subsequent :meth:`cleanup_unused_ssavars` removes it.
+
+        Returns the number of loads forwarded. Mutates the SSA in place.
+        Idempotent — a second call finds nothing further to forward.
+
+        Best run after :meth:`propagate_inputs` (so equivalent input
+        reads are already unified and forwarding through scratch can
+        see them as a single SSAVar) and :meth:`propagate_scratch_constants`
+        (so const stores resolve via const_value first). Not part of
+        :func:`run_all_passes` because — like ``propagate_inputs`` —
+        the SSAVar-identity change can surprise analyses that expect a
+        1:1 mapping between load assignments and their downstream uses.
+        """
+        forwarded = 0
+        for n in self._graph.nodes:
+            stores = self._graph.nodes[n].get("scratch_stores")
+            if not stores:
+                continue
+            load_var = self.var(n.location.file, n.location.start_line, 1)
+            if load_var is None:
+                continue
+            sources: list[SSAVar] = []
+            ok = True
+            for sv_file, sv_line, sv_idx in stores:
+                src = self.var(sv_file, sv_line, sv_idx)
+                if src is None:
+                    ok = False
+                    break
+                sources.append(src)
+            if not ok or not sources:
+                continue
+            first = sources[0]
+            if not all(s is first for s in sources):
+                continue
+            if load_var is first:
+                continue
+            for cons in list(load_var.uses):
+                for i, inp in enumerate(cons.inputs):
+                    if inp is load_var:
+                        cons.inputs[i] = first
+                        first.uses.append(cons)
+            for phi in self.phis.values():
+                for i, arg in enumerate(phi.args):
+                    if arg is load_var:
+                        phi.args[i] = first
+            load_var.uses = []
+            forwarded += 1
+        return forwarded
+
     def cleanup_unused_ssavars(self) -> int:
         """Drop side-effect-free :class:`Assignment` s whose every
         output has empty ``uses``. Typically called after

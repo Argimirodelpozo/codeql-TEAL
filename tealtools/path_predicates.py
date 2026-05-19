@@ -402,7 +402,10 @@ def _inline_input(operand) -> str:
     """Render an input operand. Inlines the producing expression when
     the operand is an SSAVar produced by a leaf input-read op; falls
     back to ``const_value`` (if set) or the bare SSA identifier
-    otherwise."""
+    otherwise. Recursive on leaf-op SSA inputs (e.g., ``gtxns FIELD``
+    pops its index off the stack — that index gets inlined too).
+    Recursion stops at any non-leaf op so we don't try to expand
+    arbitrary computations into one-liners."""
     if isinstance(operand, Const):
         return operand.value
     cv = getattr(operand, "const_value", None)
@@ -411,7 +414,11 @@ def _inline_input(operand) -> str:
     if isinstance(operand, SSAVar):
         a = operand.defined_by
         if a is not None and a.op in _INLINE_LEAF_OPS:
-            return f"{a.op} {a.immediates}" if a.immediates else a.op
+            head = f"{a.op} {a.immediates}" if a.immediates else a.op
+            if a.inputs:
+                args = ", ".join(_inline_input(i) for i in a.inputs)
+                return f"{head}({args})"
+            return head
         return operand.identifier
     return repr(operand)
 

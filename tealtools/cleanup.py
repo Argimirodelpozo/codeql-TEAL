@@ -88,6 +88,12 @@ _PURE_OPS: frozenset[str] = frozenset({
     "dup", "dup2", "dupn", "swap", "pop", "popn",
     "uncover", "cover",
     "frame_dig",
+    # Scratch loads — pure reads. After
+    # :meth:`SSAProgram.propagate_scratch_values` forwards a load's
+    # consumers to the unified store-source SSAVar, the load itself
+    # has empty uses and can be dropped here. The corresponding
+    # ``store`` ops stay live (they're side-effecting on scratch).
+    "load",
 })
 
 
