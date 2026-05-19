@@ -382,6 +382,56 @@ class PredicateQuery:
 # ---------------------------------------------------------------------------
 
 
+# Input-read ops whose results are effectively name-bindings for an
+# execution-stable value. We inline these into every consumer's input
+# list (so ``store 17 (V#1@L42)`` reads as ``store 17 (txna ApplicationArgs 1)``)
+# and drop the leaf-binding line itself from the BB-body listing —
+# its content is now fully visible at every use site.
+_INLINE_LEAF_OPS: frozenset[str] = frozenset({
+    "txn", "txna",
+    "gtxn", "gtxna", "gtxnas",
+    "gtxns", "gtxnsa", "gtxnsas",
+    "global",
+    "arg", "args",
+    "itxn", "itxna", "itxnas",
+    "gitxn", "gitxna", "gitxnas",
+})
+
+
+def _inline_input(operand) -> str:
+    """Render an input operand. Inlines the producing expression when
+    the operand is an SSAVar produced by a leaf input-read op; falls
+    back to ``const_value`` (if set) or the bare SSA identifier
+    otherwise."""
+    if isinstance(operand, Const):
+        return operand.value
+    cv = getattr(operand, "const_value", None)
+    if cv is not None:
+        return cv.value
+    if isinstance(operand, SSAVar):
+        a = operand.defined_by
+        if a is not None and a.op in _INLINE_LEAF_OPS:
+            return f"{a.op} {a.immediates}" if a.immediates else a.op
+        return operand.identifier
+    return repr(operand)
+
+
+def _render_assignment_inlined(a) -> str:
+    """Like :meth:`Assignment.functional` but inlines input-read
+    operands. Preserves the rest of the rendering (output bindings,
+    immediates, shuffle marker) verbatim."""
+    out_str = ", ".join(o.identifier for o in a.outputs)
+    if a.shuffled or a.op not in _INLINE_LEAF_OPS:
+        pass  # default formatting follows
+    in_str = "(" + ", ".join(_inline_input(i) for i in a.inputs) + ")"
+    if a.immediates:
+        rhs = f"{a.op} {a.immediates} {in_str}"
+    else:
+        rhs = f"{a.op} {in_str}"
+    body = f"{out_str} = {rhs}" if a.outputs else rhs
+    return f"// {body}" if a.shuffled else body
+
+
 # Infix forms for binary ops. Anything else falls back to ``op(args)``
 # function-call form. Byte-arith ``b``-prefixed comparisons inherit
 # the same symbol with the prefix preserved so a reader can tell which
@@ -842,7 +892,13 @@ class PathPredicateAnalysis:
                 )
                 out.append(f"//   xor : {xor_str}")
             for a in bb.assignments:
-                out.append(f"  L{a.location.line:>4}: {a.functional()}")
+                # Drop leaf input-read lines — they're inlined into
+                # consumers already, so the standalone binding
+                # ``V#1@L42 = txna ApplicationArgs 1 ()`` would just
+                # duplicate the inlined form at every consumer.
+                if a.op in _INLINE_LEAF_OPS:
+                    continue
+                out.append(f"  L{a.location.line:>4}: {_render_assignment_inlined(a)}")
             out.append("")
         return "\n".join(out).rstrip() + "\n"
 
