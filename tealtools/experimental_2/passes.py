@@ -1,38 +1,71 @@
 """Run every available SSA functional / cleanup pass on a program,
 in the canonical order, and return the flat functional rendering.
 
-Pass order matters — each pass's docstring in :mod:`tealtools.ssa`
-specifies prerequisites. The order here matches them:
+The canonical pipeline has three logical phases. Within a phase,
+pass order is constrained by per-pass docstring prerequisites; the
+phases themselves carry the high-level dependencies.
 
-1. :meth:`SSAProgram.propagate_constants` — set ``const_value`` on
-   SSAVars whose producer is a literal-pushing op. Other passes
-   reference these as a precondition.
-2. :meth:`SSAProgram.propagate_scratch_constants` — separately
-   propagates constants through ``store`` / ``load`` for scratch
-   slots. Runs after ``propagate_constants`` (lazy-trips it if not
-   already run). Idempotent.
-3. :meth:`SSAProgram.propagate_ranges` — integer range propagation
-   for SSAVars (lower/upper bounds), useful for downstream analyses
-   that care about bounds (overflow checks, box-size estimates, ...).
-4. :meth:`SSAProgram.propagate_stack_shuffles` — pure stack-shuffle
-   ops (``frame_dig``, ``dup``, ``swap``, ...) have their outputs
-   copy-propagated into every consumer; the shuffles themselves are
-   marked ``shuffled=True`` and rendered as ``// ...`` comments in
-   the functional dump. **Must** run before ``materialize_phis``
-   (the docstring spells out why — phi args are a different newtype
-   pre-materialisation).
-5. :meth:`SSAProgram.eliminate_dead_constants` — inlines literal
-   constants into every consumer and drops the now-orphan SSAVars
-   / Phi nodes / Assignments. Aggressive cleanup; runs last in the
-   pre-materialise group.
-6. :meth:`SSAProgram.materialize_phis` — out-of-SSA lowering: each
-   live phi becomes a synthetic ``mat_phi_k`` "mutable variable"
-   with a copy assignment inserted at each leaf's def site.
+**Phase A — value flow.** Resolve constants and unify equivalent
+reads so downstream propagation sees one canonical SSAVar per
+distinct value, not one per syntactic read site.
 
-After all six run, :meth:`SSAProgram.functional` (and
-``functional_by_block``) give the cleanest flat dump the substrate
-can produce. Every pass is idempotent — running ``run_all_passes``
-twice is a no-op the second time."""
+  1. :meth:`SSAProgram.propagate_constants` — ``const_value`` on
+     literal-pushing producers (other passes consume it).
+  2. :meth:`SSAProgram.propagate_scratch_constants` — same but
+     across ``store`` / ``load`` for scratch slots.
+  3. :meth:`SSAProgram.propagate_inputs` — unify execution-stable
+     reads (``txn``-family, ``global``, ``arg``). Rewires consumers
+     to a canonical SSAVar per ``(op, immediates [, stack-key])``.
+  4. :meth:`SSAProgram.propagate_scratch_values` — generalises (2)
+     to arbitrary SSA values: a load is forwarded to its single
+     may-store source when all influencing stores agree.
+
+**Phase B — analytical annotation.** Layer range / type / length
+annotations on the unified value flow. Order within the phase is
+driven by precondition: integer ranges first (other layers consume
+them), then arithmetic composition, then bytes-length, then bytes-
+as-bigint.
+
+  5. :meth:`SSAProgram.propagate_ranges` — uint64 ``IntRange`` seeds
+     from op tables (boolean comparisons, ``getbyte``, txn enum
+     fields, …) plus phi union.
+  6. :meth:`SSAProgram.propagate_range_arithmetic` — composes (5)
+     through ``+`` / ``-`` / ``*`` / ``/`` / ``%`` with phi re-union.
+  7. :meth:`SSAProgram.propagate_byte_lengths` — exact byte_length
+     on bytes producers (``itob``, ``concat``, ``sha256``, …) plus
+     inverse range constraints from ``btoi`` / ``getbyte`` /
+     ``extract_uint*`` / etc. on their bytes inputs.
+  8. :meth:`SSAProgram.propagate_bytemath_ranges` — bigint value
+     range via Python ints on bytemath ops (``b+``, ``b-``, ``b*``,
+     ``b/``, ``b%``) plus the ``itob`` / ``btoi`` bridge between
+     uint64 and bytes-bigint value spaces.
+
+**Phase C — structural lowering.** Once every annotation is in
+place, simplify the IR for rendering: collapse stack shuffles,
+prune dead pure-op assignments, inline literal constants, and
+finally materialise phis (which clears ``prog.phis`` — any pass
+that iterates it must have already run).
+
+  9. :meth:`SSAProgram.propagate_stack_shuffles` — copy-propagate
+     pure shuffles (``dup``, ``swap``, ``frame_dig``, …) into every
+     consumer; the shuffle Assignments stay in the IR with
+     ``shuffled=True`` so they render as ``// …`` comments.
+  10. :meth:`SSAProgram.cleanup_unused_ssavars` — drop side-effect-
+      free Assignments whose every output is now dead (the duplicate
+      readers from step 3 and the forwarded loads from step 4 are
+      the typical victims).
+  11. :meth:`SSAProgram.eliminate_dead_constants` — inline literal
+      constants into consumers and drop the now-orphan SSAVars /
+      Phis / Assignments.
+  12. :meth:`SSAProgram.materialize_phis` — out-of-SSA lowering;
+      each live phi becomes a synthetic ``mat_phi_k`` with a copy
+      assignment at every contributing leaf's def site.
+
+After all twelve run, :meth:`SSAProgram.functional` (and
+``functional_by_block``, plus :func:`functional_dump` here) give
+the most-annotated flat dump the substrate can produce. Every
+pass is idempotent — running ``run_all_passes`` twice is a no-op
+the second time."""
 from __future__ import annotations
 
 from typing import Optional
@@ -42,12 +75,22 @@ from ..ssa import SSAProgram
 
 def run_all_passes(prog: SSAProgram, *, verbose: bool = False) -> SSAProgram:
     """Apply every SSA functional pass in the canonical order.
-    Returns the same ``prog`` (mutated in place) for chaining."""
+    Returns the same ``prog`` (mutated in place) for chaining. See
+    the module docstring for the per-phase rationale."""
     passes = [
-        ("propagate_constants",        prog.propagate_constants),
+        # Phase A — value flow.
+        ("propagate_constants",         prog.propagate_constants),
         ("propagate_scratch_constants", prog.propagate_scratch_constants),
+        ("propagate_inputs",            prog.propagate_inputs),
+        ("propagate_scratch_values",    prog.propagate_scratch_values),
+        # Phase B — analytical annotation.
         ("propagate_ranges",            prog.propagate_ranges),
+        ("propagate_range_arithmetic",  prog.propagate_range_arithmetic),
+        ("propagate_byte_lengths",      prog.propagate_byte_lengths),
+        ("propagate_bytemath_ranges",   prog.propagate_bytemath_ranges),
+        # Phase C — structural lowering.
         ("propagate_stack_shuffles",    prog.propagate_stack_shuffles),
+        ("cleanup_unused_ssavars",      prog.cleanup_unused_ssavars),
         ("eliminate_dead_constants",    prog.eliminate_dead_constants),
         ("materialize_phis",            prog.materialize_phis),
     ]
@@ -69,11 +112,32 @@ def functional_dump(
     line_range: Optional[tuple[int, int]] = None,
     by_block: bool = False,
     show_ranges: bool = False,
+    show_bytes: bool = False,
 ) -> str:
     """Run all SSA passes (idempotent) then return the flat
-    functional dump. ``by_block=True`` groups assignments by BB
-    with a predecessor/successor header per block."""
+    functional dump.
+
+    ``by_block=True`` groups assignments by basic block with a
+    predecessor/successor header per block.
+
+    ``show_ranges=True`` adds ``/*[V<=hi]*/``-style annotations on
+    uint64 SSAVars whose :class:`tealtools.ssa.IntRange` is set.
+
+    ``show_bytes=True`` adds ``/*len=N*/`` / ``/*N<=len<=M*/`` /
+    ``/*val=…*/`` annotations on bytes-typed SSAVars whose
+    :class:`tealtools.ssa.TealType` carries length or value info.
+    Implemented via :mod:`tealtools.render_annotated` as a post-pass
+    over the existing functional output, so the substrate renderer
+    stays focused on IntRange.
+    """
     run_all_passes(prog)
     if by_block:
-        return prog.functional_by_block(file=file, show_ranges=show_ranges)
-    return prog.functional(file=file, line_range=line_range, show_ranges=show_ranges)
+        out = prog.functional_by_block(file=file, show_ranges=show_ranges)
+    else:
+        out = prog.functional(
+            file=file, line_range=line_range, show_ranges=show_ranges,
+        )
+    if show_bytes:
+        from ..render_annotated import annotate_bytes_inline
+        out = annotate_bytes_inline(prog, out)
+    return out
