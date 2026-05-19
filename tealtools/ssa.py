@@ -380,6 +380,14 @@ _TERMINATOR_OPS = frozenset({
 })
 
 
+# Op-level constant folding (concat / itob / extract / arithmetic /
+# comparisons / ...) is layered above the SSA substrate in
+# :mod:`tealtools.const_fold`; lazily imported inside
+# :meth:`SSAProgram.propagate_constants` so the substrate itself
+# carries no TEAL-semantics knowledge.
+
+
+
 # Per-op uint64 output ranges for ops whose bound is determined by the
 # op semantics alone (no operand or immediate dependency). Source for
 # `propagate_ranges`. AVM bytes-stack values are capped at 4096 bytes,
@@ -874,6 +882,24 @@ class SSAProgram:
             for src, snk in resolved_steps:
                 if src.const_value is not None and snk.const_value is None:
                     snk.const_value = src.const_value
+                    changed = True
+            # Op-level constant folding: any single-output Assignment
+            # whose every input is now const-resolved gets its output
+            # computed (concat / extract / itob / btoi / arithmetic /
+            # comparisons / logical / ...). Lazily imported so the
+            # substrate carries no TEAL-semantics knowledge by itself.
+            # Runs inside the fixpoint so a fold-then-propagate-then-
+            # fold chain converges naturally.
+            from .const_fold import try_fold_assignment
+            for a in self.assignments:
+                if len(a.outputs) != 1:
+                    continue
+                out = a.outputs[0]
+                if not isinstance(out, SSAVar) or out.const_value is not None:
+                    continue
+                folded = try_fold_assignment(a)
+                if folded is not None:
+                    out.const_value = folded
                     changed = True
 
         self._consts_propagated = True
