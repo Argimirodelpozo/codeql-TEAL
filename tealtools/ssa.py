@@ -1139,6 +1139,22 @@ class SSAProgram:
 
         self._ranges_propagated = True
 
+    def propagate_range_arithmetic(self) -> int:
+        """Forward ``IntRange`` annotations through ``+`` / ``-`` /
+        ``*`` / ``/`` / ``%`` (and re-union phis with the widened
+        ranges) — capabilities that :meth:`propagate_ranges` doesn't
+        provide. Opt-in.
+
+        Returns the number of SSAVars / Phis newly ranged or whose
+        range was widened during a phi re-union. Lazy-trips
+        :meth:`propagate_ranges` first so the stdlib seeds (boolean
+        ops, txn enum fields) are in place before arithmetic
+        composes them. Lazily imported from
+        :mod:`tealtools.range_arith` so the substrate stays free of
+        the AVM arithmetic semantics."""
+        from .range_arith import propagate_range_arithmetic as _impl
+        return _impl(self)
+
     def propagate_byte_lengths(self) -> int:
         """Tag bytes-producing SSAVars / Phis with their statically
         derivable :attr:`TealType.byte_length`. Opt-in (not part of
