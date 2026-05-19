@@ -4,7 +4,7 @@ Mirrors ``closeRemainderTo.ql``. Strict-dominance form.
 """
 from __future__ import annotations
 
-from ._field_validated import _FieldValidatedDetector, _FieldValidatedViolation
+from tealtools.detections._field_validated import _FieldValidatedDetector, _FieldValidatedViolation
 
 
 class CloseRemainderToViolation(_FieldValidatedViolation):

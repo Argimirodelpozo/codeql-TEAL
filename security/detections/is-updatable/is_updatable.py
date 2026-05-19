@@ -8,9 +8,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-from ..path_predicates import PathPredicateAnalysis
-from ..ssa import BasicBlock, SSAProgram
-from . import common
+from tealtools.path_predicates import PathPredicateAnalysis
+from tealtools.ssa import BasicBlock, SSAProgram
+from tealtools.detections import common
 
 
 @dataclass

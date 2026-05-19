@@ -15,8 +15,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-from ..ssa import BasicBlock, SSAProgram
-from . import common
+from tealtools.ssa import BasicBlock, SSAProgram
+from tealtools.detections import common
 
 
 @dataclass

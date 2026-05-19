@@ -5,7 +5,7 @@ must dominate every approval exit.
 """
 from __future__ import annotations
 
-from ._field_validated import _FieldValidatedDetector, _FieldValidatedViolation
+from tealtools.detections._field_validated import _FieldValidatedDetector, _FieldValidatedViolation
 
 
 class AssetCloseToViolation(_FieldValidatedViolation):

@@ -1,135 +1,119 @@
-"""Algorand-security-guide detection ports.
+"""Algorand-security-guide detection ports — registry.
 
-Each detection from the top-level ``security/detections/<name>/<name>.ql``
-CodeQL pack has a Python equivalent here that consumes
-:class:`tealtools.SSAProgram` and emits one or more ``Violation``
-objects via ``.detect()``. The detectors are plugged into
-:data:`tealtools.detector.ALL_DETECTORS`, so they show up under
-``python -m tealtools all <db>`` and can be invoked individually via
-``python -m tealtools detections --detector <name> <db>`` (or
-``python -m tealtools detections --list`` to enumerate names).
+The actual detector classes live next to their CodeQL counterparts at
+``security/detections/<kebab-case-name>/<snake_case_name>.py`` so each
+detection directory is fully self-contained: ``.ql`` query, ``.py``
+port, ``.teal`` test fixtures, and ``.expected`` output sit together.
+
+This package keeps the shared infrastructure here in
+``analysis/tealtools/detections/`` because it's library code that both
+ports and external callers consume:
+
+  - :mod:`.common`             — approval-exit detection, OnCompletion
+                                 guards, sender == creator, field-
+                                 validated-on-all-paths, path-aware
+                                 field-protected, inner-txn iteration.
+  - :mod:`._field_validated`   — shared base for strict-dominance
+                                 txn-field validation detectors.
+  - :mod:`.xcontract`          — cross-contract findings driver.
+  - :mod:`.scan`               — directory-walking scanner that builds
+                                 per-dir DBs and runs detections on each.
+
+The :data:`DETECTORS` map below is populated by importlib-loading each
+``security/detections/<kebab>/<snake>.py`` file at import time, so adding
+a new detection is a matter of dropping a file into the right directory
+with a known-named exported class.
 
 The ports preserve QL semantics — including the over-conservative
 shapes (e.g. ``is-deletable`` flagging ``fixed-complex-dispatch.teal``,
 the strict-dominance form of ``txnFieldValidatedOnAllPaths``). Tighter
 detectors are deliberate follow-ups, not changes to these ports.
-
-Modules
--------
-
-- :mod:`.common` — shared helpers (approval-exit, OnCompletion guards,
-  sender == creator, field-validated-on-all-paths, path-aware
-  field-protected, inner-txn iteration).
-- :mod:`.asset_close_to`, :mod:`.close_remainder_to`,
-  :mod:`.tx_type_check` — strict-dominance txn-field validation.
-- :mod:`.asset_id_validation`, :mod:`.fee_validation` — anywhere-checked
-  txn-field validation.
-- :mod:`.rekey_to` — per-exit path-aware RekeyTo protection.
-- :mod:`.is_deletable`, :mod:`.is_updatable`, :mod:`.unprotected_deletable`,
-  :mod:`.unprotected_updatable`, :mod:`.delete_funds_check`,
-  :mod:`.timelock_upgrade` — OnCompletion-guard family.
-- :mod:`.inner_txn_close_rekey`, :mod:`.inner_txn_fee` — itxn_field
-  pattern matches.
-- :mod:`.hardcoded_min_balance`, :mod:`.unsafe_lsig_args`,
-  :mod:`.group_size_check` — direct opcode-pattern matches.
 """
+from __future__ import annotations
 
-from . import common
-from .asset_close_to import AssetCloseToDetector, AssetCloseToViolation
-from .asset_id_validation import (
-    AssetIdValidationDetector,
-    AssetIdValidationViolation,
-)
-from .close_remainder_to import (
-    CloseRemainderToDetector,
-    CloseRemainderToViolation,
-)
-from .delete_funds_check import (
-    DeleteFundsCheckDetector,
-    DeleteFundsCheckViolation,
-)
-from .fee_validation import FeeValidationDetector, FeeValidationViolation
-from .group_size_check import (
-    GroupSizeCheckDetector,
-    GroupSizeCheckViolation,
-)
-from .hardcoded_min_balance import (
-    HardcodedMinBalanceDetector,
-    HardcodedMinBalanceViolation,
-)
-from .inner_txn_close_rekey import (
-    InnerTxnCloseRekeyDetector,
-    InnerTxnCloseRekeyViolation,
-)
-from .inner_txn_fee import InnerTxnFeeDetector, InnerTxnFeeViolation
-from .is_deletable import IsDeletableDetector, IsDeletableViolation
-from .is_updatable import IsUpdatableDetector, IsUpdatableViolation
-from .rekey_to import RekeyToDetector, RekeyToViolation
-from .timelock_upgrade import (
-    TimelockUpgradeDetector,
-    TimelockUpgradeViolation,
-)
-from .tx_type_check import TxTypeCheckDetector, TxTypeCheckViolation
-from .unprotected_deletable import (
-    UnprotectedDeletableDetector,
-    UnprotectedDeletableViolation,
-)
-from .unprotected_updatable import (
-    UnprotectedUpdatableDetector,
-    UnprotectedUpdatableViolation,
-)
-from .unsafe_lsig_args import (
-    UnsafeLsigArgsDetector,
-    UnsafeLsigArgsViolation,
+import importlib.util
+import sys
+from pathlib import Path
+from typing import Any
+
+# Shared modules are imported eagerly so detector .py files can resolve
+# ``from tealtools.detections.common import ...`` etc. when importlib
+# pulls them in below.
+from . import _field_validated, common  # noqa: F401
+
+
+# Repository root: this file is at <repo>/analysis/tealtools/detections/__init__.py
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_DETECTIONS_ROOT = _REPO_ROOT / "security" / "detections"
+
+
+# Stable map ``"<kebab-case-short-name>" -> (snake_case_module_name,
+# DetectorClassName, ViolationClassName)``. The CLI (``python -m
+# tealtools detections --detector <name>``) and the test dispatch
+# look up by the kebab-case key.
+_DETECTION_SPECS: tuple[tuple[str, str, str, str], ...] = (
+    ("asset-close-to",        "asset_close_to",        "AssetCloseToDetector",        "AssetCloseToViolation"),
+    ("asset-id-validation",   "asset_id_validation",   "AssetIdValidationDetector",   "AssetIdValidationViolation"),
+    ("close-remainder-to",    "close_remainder_to",    "CloseRemainderToDetector",    "CloseRemainderToViolation"),
+    ("delete-funds-check",    "delete_funds_check",    "DeleteFundsCheckDetector",    "DeleteFundsCheckViolation"),
+    ("fee-validation",        "fee_validation",        "FeeValidationDetector",       "FeeValidationViolation"),
+    ("group-size-check",      "group_size_check",      "GroupSizeCheckDetector",      "GroupSizeCheckViolation"),
+    ("hardcoded-min-balance", "hardcoded_min_balance", "HardcodedMinBalanceDetector", "HardcodedMinBalanceViolation"),
+    ("inner-txn-close-rekey", "inner_txn_close_rekey", "InnerTxnCloseRekeyDetector",  "InnerTxnCloseRekeyViolation"),
+    ("inner-txn-fee",         "inner_txn_fee",         "InnerTxnFeeDetector",         "InnerTxnFeeViolation"),
+    ("is-deletable",          "is_deletable",          "IsDeletableDetector",         "IsDeletableViolation"),
+    ("is-updatable",          "is_updatable",          "IsUpdatableDetector",         "IsUpdatableViolation"),
+    ("rekey-to",              "rekey_to",              "RekeyToDetector",             "RekeyToViolation"),
+    ("timelock-upgrade",      "timelock_upgrade",      "TimelockUpgradeDetector",     "TimelockUpgradeViolation"),
+    ("tx-type-check",         "tx_type_check",         "TxTypeCheckDetector",         "TxTypeCheckViolation"),
+    ("unprotected-deletable", "unprotected_deletable", "UnprotectedDeletableDetector", "UnprotectedDeletableViolation"),
+    ("unprotected-updatable", "unprotected_updatable", "UnprotectedUpdatableDetector", "UnprotectedUpdatableViolation"),
+    ("unsafe-lsig-args",      "unsafe_lsig_args",      "UnsafeLsigArgsDetector",      "UnsafeLsigArgsViolation"),
 )
 
 
-# Stable map ``"<short-name>" -> Detector class``. Used by the CLI
-# (``python -m tealtools detections --detector <name>``) and the test
-# dispatch.
-DETECTORS = {
-    "asset-close-to": AssetCloseToDetector,
-    "asset-id-validation": AssetIdValidationDetector,
-    "close-remainder-to": CloseRemainderToDetector,
-    "delete-funds-check": DeleteFundsCheckDetector,
-    "fee-validation": FeeValidationDetector,
-    "group-size-check": GroupSizeCheckDetector,
-    "hardcoded-min-balance": HardcodedMinBalanceDetector,
-    "inner-txn-close-rekey": InnerTxnCloseRekeyDetector,
-    "inner-txn-fee": InnerTxnFeeDetector,
-    "is-deletable": IsDeletableDetector,
-    "is-updatable": IsUpdatableDetector,
-    "rekey-to": RekeyToDetector,
-    "timelock-upgrade": TimelockUpgradeDetector,
-    "tx-type-check": TxTypeCheckDetector,
-    "unprotected-deletable": UnprotectedDeletableDetector,
-    "unprotected-updatable": UnprotectedUpdatableDetector,
-    "unsafe-lsig-args": UnsafeLsigArgsDetector,
-}
+def _load_detector_module(kebab: str, snake: str) -> Any:
+    """Importlib-load ``security/detections/<kebab>/<snake>.py`` under the
+    canonical module name ``tealtools.detections.<snake>`` so a
+    ``from tealtools.detections.<snake> import ...`` line elsewhere
+    in the codebase resolves through the standard import system."""
+    path = _DETECTIONS_ROOT / kebab / f"{snake}.py"
+    if not path.exists():
+        raise ImportError(
+            f"detection module missing: {path} "
+            f"(every entry in _DETECTION_SPECS must have a matching .py file)"
+        )
+    qualified_name = f"tealtools.detections.{snake}"
+    if qualified_name in sys.modules:
+        return sys.modules[qualified_name]
+    spec = importlib.util.spec_from_file_location(qualified_name, path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[qualified_name] = module
+    spec.loader.exec_module(module)
+    return module
 
 
-from . import xcontract  # noqa: E402  (import after DETECTORS to break circular)
+DETECTORS: dict[str, Any] = {}
+for _kebab, _snake, _det_cls_name, _viol_cls_name in _DETECTION_SPECS:
+    _module = _load_detector_module(_kebab, _snake)
+    _det_cls = getattr(_module, _det_cls_name)
+    _viol_cls = getattr(_module, _viol_cls_name)
+    DETECTORS[_kebab] = _det_cls
+    # Re-export each class at package level so ``from tealtools.detections
+    # import AssetCloseToDetector`` keeps working.
+    globals()[_det_cls_name] = _det_cls
+    globals()[_viol_cls_name] = _viol_cls
+
+
+# xcontract is imported last because it depends on individual detector
+# classes being loaded into this package's namespace already.
+from . import xcontract  # noqa: E402
 
 
 __all__ = [
     "DETECTORS",
     "common",
     "xcontract",
-    "AssetCloseToDetector", "AssetCloseToViolation",
-    "AssetIdValidationDetector", "AssetIdValidationViolation",
-    "CloseRemainderToDetector", "CloseRemainderToViolation",
-    "DeleteFundsCheckDetector", "DeleteFundsCheckViolation",
-    "FeeValidationDetector", "FeeValidationViolation",
-    "GroupSizeCheckDetector", "GroupSizeCheckViolation",
-    "HardcodedMinBalanceDetector", "HardcodedMinBalanceViolation",
-    "InnerTxnCloseRekeyDetector", "InnerTxnCloseRekeyViolation",
-    "InnerTxnFeeDetector", "InnerTxnFeeViolation",
-    "IsDeletableDetector", "IsDeletableViolation",
-    "IsUpdatableDetector", "IsUpdatableViolation",
-    "RekeyToDetector", "RekeyToViolation",
-    "TimelockUpgradeDetector", "TimelockUpgradeViolation",
-    "TxTypeCheckDetector", "TxTypeCheckViolation",
-    "UnprotectedDeletableDetector", "UnprotectedDeletableViolation",
-    "UnprotectedUpdatableDetector", "UnprotectedUpdatableViolation",
-    "UnsafeLsigArgsDetector", "UnsafeLsigArgsViolation",
+    *(name for _, _, det, viol in _DETECTION_SPECS for name in (det, viol)),
 ]

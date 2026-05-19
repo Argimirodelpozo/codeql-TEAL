@@ -11,8 +11,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-from ..ssa import Assignment, Const, SSAProgram, SSAVar
-from . import common
+from tealtools.ssa import Assignment, Const, SSAProgram, SSAVar
+from tealtools.detections import common
 
 
 @dataclass

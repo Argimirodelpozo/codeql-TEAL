@@ -10,8 +10,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-from ..ssa import Assignment, SSAProgram, SSAVar
-from . import common
+from tealtools.ssa import Assignment, SSAProgram, SSAVar
+from tealtools.detections import common
 
 
 _ARG_OPS = frozenset({"arg", "arg_0", "arg_1", "arg_2", "arg_3", "args"})

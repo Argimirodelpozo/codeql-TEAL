@@ -9,8 +9,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-from ..ssa import Assignment, SSAProgram
-from . import common
+from tealtools.ssa import Assignment, SSAProgram
+from tealtools.detections import common
 
 
 @dataclass
