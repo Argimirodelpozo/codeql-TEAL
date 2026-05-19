@@ -1,0 +1,314 @@
+"""Bytemath range propagation — flow ``IntRange`` annotations over
+the bytes-as-big-endian-unsigned-bigint abstraction the AVM's
+``b+`` / ``b-`` / ``b*`` / ``b/`` / ``b%`` family operates over.
+
+Why this is a separate pass rather than an extension of
+:mod:`tealtools.range_arith`:
+
+  - Different storage. The uint64 value range lives on
+    :attr:`tealtools.ssa.SSAVar.range`; the bigint value range lives
+    on :attr:`tealtools.ssa.TealType.int_value_range` (so a single
+    bytes SSAVar can carry both ``byte_length_range`` *and* a value
+    range, distinguishing "how many bytes" from "what number").
+  - Different bounds. Python ints are arbitrary precision, so a
+    bytemath ``b*`` chain can legitimately produce ranges whose
+    upper bounds exceed ``2^64-1``. No clamping to uint64.
+  - Cross-pollination with the uint64 side. ``itob X`` and
+    ``btoi X`` bridge the two value spaces — itob's bytes-output
+    bigint value equals its uint64 input, and a successful btoi's
+    uint64 output equals its bytes-input bigint value. Handled
+    inline here so the bridge stays in one place.
+
+Forward rules:
+
+  - ``Const("bytes", "0x..")``        → singleton bigint range from
+                                        ``int.from_bytes(..., "big")``.
+  - ``itob X``                        → ``X.range`` (carried across
+                                        the uint64/bytes boundary).
+  - ``b+ a b``                        → ``[a.lo+b.lo, a.hi+b.hi]``.
+  - ``b- a b``                        → AVM halts on underflow, so
+                                        result clamped to ``≥ 0``.
+  - ``b* a b``                        → ``[a.lo*b.lo, a.hi*b.hi]``.
+  - ``b/ a b``                        → AVM halts on divisor 0, so
+                                        smallest divisor is
+                                        ``max(b.lo, 1)``.
+  - ``b% a b``                        → ``[0, min(a.hi, b.hi-1)]``.
+
+Cross-pollination into uint64 land (writes :attr:`SSAVar.range`):
+
+  - ``btoi X``                        → ``X.int_value_range``
+                                        (assuming the call succeeds —
+                                        which also implies
+                                        ``len(X) ∈ [1, 8]``, a
+                                        constraint that
+                                        :mod:`tealtools.byte_length_prop`
+                                        already installs).
+
+Phi union iterates to fixed point, but the iteration counter is
+capped: bigint ranges can grow without bound in a cyclic CFG (no
+``2^64`` natural ceiling), so we bail with a warning rather than
+spinning forever. In practice convergence is fast — bytemath
+loops are rare and the cap is hit only on programs that need
+proper widening operators (an abstract-interpretation topic
+out of scope here).
+
+Bitwise (``b&`` / ``b|`` / ``b^`` / ``b~``) and ``bsqrt`` are
+deferred; their bound math is messier and they're uncommon in
+current fixtures. Comparison ops (``b<`` / ``b>`` / …) already
+get their ``[0..1]`` range from :meth:`SSAProgram.propagate_ranges`'
+``_OP_RANGE_SEEDS`` so they're not duplicated here.
+
+Opt-in. Lazily trips :meth:`SSAProgram.propagate_constants` and
+:meth:`SSAProgram.propagate_ranges` first so the bytes-const and
+uint64-range seeds are in place before bytemath composes them.
+"""
+from __future__ import annotations
+
+from typing import Optional
+
+from .ssa import Const, IntRange, Phi, SSAProgram, SSAVar, TealType
+
+
+_BYTES_OP_RULES = ("b+", "b-", "b*", "b/", "b%")
+
+# Safety net: bigint phi widening with no natural ceiling could
+# in principle loop forever. Bail before that. ``_PASS_ITER_CAP``
+# is intentionally generous — real programs converge in <10 passes.
+_PASS_ITER_CAP = 1000
+
+
+def _bytes_to_int(hex_value: str) -> Optional[int]:
+    h = hex_value
+    if h.startswith("0x") or h.startswith("0X"):
+        h = h[2:]
+    if len(h) % 2 != 0:
+        return None
+    try:
+        b = bytes.fromhex(h)
+    except ValueError:
+        return None
+    return int.from_bytes(b, "big") if b else 0
+
+
+def _const_bigint(c: Optional[Const]) -> Optional[int]:
+    if c is None or c.kind != "bytes":
+        return None
+    return _bytes_to_int(c.value)
+
+
+def _operand_const(operand) -> Optional[Const]:
+    if isinstance(operand, Const):
+        return operand
+    return getattr(operand, "const_value", None)
+
+
+def _operand_bigint_range(operand) -> Optional[IntRange]:
+    """Best-known bigint range for an operand. Looks at (a) its
+    :attr:`TealType.int_value_range`, (b) its ``const_value``
+    treated as a bigint, (c) the operand itself if it's a bytes
+    :class:`Const`."""
+    t = getattr(operand, "type", None)
+    if t is not None and t.kind == "bytes" and t.int_value_range is not None:
+        return t.int_value_range
+    n = _const_bigint(_operand_const(operand))
+    if n is not None:
+        return IntRange(n, n)
+    return None
+
+
+def _bytemath_result(
+    op: str, ra: IntRange, rb: IntRange,
+) -> Optional[tuple[int, int]]:
+    """Compute the ``(lo, hi)`` of a bytemath two-input op given its
+    operand bigint ranges. Returns ``None`` when the op halts
+    unconditionally on this range (e.g. ``b/`` with ``b`` certainly
+    zero) or isn't supported here."""
+    if op == "b+":
+        return (ra.lo + rb.lo, ra.hi + rb.hi)
+    if op == "b-":
+        lo = max(0, ra.lo - rb.hi)
+        hi = ra.hi - rb.lo
+        if hi < lo:
+            return None
+        return (lo, hi)
+    if op == "b*":
+        return (ra.lo * rb.lo, ra.hi * rb.hi)
+    if op == "b/":
+        if rb.hi == 0:
+            return None
+        return (ra.lo // rb.hi, ra.hi // max(rb.lo, 1))
+    if op == "b%":
+        if rb.hi == 0:
+            return None
+        return (0, min(ra.hi, max(rb.hi - 1, 0)))
+    return None
+
+
+def _set_int_value_range(obj, lo: int, hi: int) -> bool:
+    """Install / tighten ``int_value_range`` on ``obj``. Preserves
+    existing ``byte_length`` and ``byte_length_range`` so the three
+    fields can coexist on one TealType."""
+    if lo > hi:
+        return False
+    existing = getattr(obj, "type", None)
+    if existing is not None and existing.kind == "bytes":
+        if existing.int_value_range is not None:
+            old = existing.int_value_range
+            new_lo = max(old.lo, lo)
+            new_hi = min(old.hi, hi)
+            if new_lo > new_hi:
+                return False
+            if new_lo == old.lo and new_hi == old.hi:
+                return False
+            lo, hi = new_lo, new_hi
+        obj.type = TealType(
+            "bytes",
+            byte_length=existing.byte_length,
+            byte_length_range=existing.byte_length_range,
+            int_value_range=IntRange(lo, hi),
+        )
+    else:
+        # No existing TealType (or it's uint64 — shouldn't happen on a
+        # bytemath output, but be defensive).
+        obj.type = TealType("bytes", int_value_range=IntRange(lo, hi))
+    return True
+
+
+_UINT64 = TealType("uint64")
+
+
+def _set_uint64_range(obj, lo: int, hi: int) -> bool:
+    """Install / widen :attr:`SSAVar.range` on ``obj``. Used for the
+    ``btoi`` bridge that lifts a bigint range from bytes-land back
+    into uint64-land."""
+    if lo < 0 or hi > (1 << 64) - 1 or lo > hi:
+        return False
+    existing = getattr(obj, "range", None)
+    if existing is not None and existing.lo == lo and existing.hi == hi:
+        return False
+    obj.range = IntRange(lo, hi)
+    if obj.type is None:
+        obj.type = _UINT64
+    return True
+
+
+def propagate_bytemath_ranges(prog: SSAProgram) -> int:
+    """Walk ``prog`` to a fixed point. Each iteration:
+
+      1. Seed bigint ranges from bytes constants on operand sources
+         (``Const`` operands, ``const_value`` on producers).
+      2. Forward-propagate through bytemath arithmetic ops.
+      3. Cross-pollinate ``itob`` (uint64 ↦ bytes) and ``btoi``
+         (bytes ↦ uint64).
+      4. Union arg bigint ranges through phis.
+
+    Returns the cumulative count of range installations / tightenings.
+    Capped at :data:`_PASS_ITER_CAP` iterations to prevent runaway
+    growth on cyclic CFGs with bytemath loops."""
+    if not getattr(prog, "_consts_propagated", False):
+        prog.propagate_constants()
+    if not getattr(prog, "_ranges_propagated", False):
+        prog.propagate_ranges()
+
+    tagged = 0
+    for _ in range(_PASS_ITER_CAP):
+        changed = False
+
+        for a in prog.assignments:
+            if len(a.outputs) != 1:
+                continue
+            out = a.outputs[0]
+            if not isinstance(out, SSAVar):
+                continue
+            op = a.op
+
+            # itob X (uint64 → bytes): output bigint value == input uint64.
+            if op == "itob":
+                if len(a.inputs) != 1:
+                    continue
+                r = getattr(a.inputs[0], "range", None)
+                if r is None:
+                    # try const_value for direct uint64 literal inputs
+                    cv = getattr(a.inputs[0], "const_value", None) \
+                        or (a.inputs[0] if isinstance(a.inputs[0], Const) else None)
+                    if cv is not None and cv.kind == "int":
+                        try:
+                            n = int(cv.value)
+                            r = IntRange(n, n)
+                        except (TypeError, ValueError):
+                            r = None
+                if r is None:
+                    continue
+                if _set_int_value_range(out, r.lo, r.hi):
+                    tagged += 1
+                    changed = True
+                continue
+
+            # btoi X (bytes → uint64): output uint64 == input bigint, when
+            # the call could succeed (len(X) ∈ [1, 8] — checked by
+            # byte_length_prop, but we don't gate on it: if the bigint
+            # range doesn't fit in uint64, _set_uint64_range rejects it).
+            if op == "btoi":
+                if len(a.inputs) != 1:
+                    continue
+                r = _operand_bigint_range(a.inputs[0])
+                if r is None:
+                    continue
+                if _set_uint64_range(out, r.lo, r.hi):
+                    tagged += 1
+                    changed = True
+                continue
+
+            # Bytemath arithmetic.
+            if op in _BYTES_OP_RULES:
+                if len(a.inputs) != 2:
+                    continue
+                ra = _operand_bigint_range(a.inputs[0])
+                rb = _operand_bigint_range(a.inputs[1])
+                if ra is None or rb is None:
+                    continue
+                result = _bytemath_result(op, ra, rb)
+                if result is None:
+                    continue
+                if _set_int_value_range(out, *result):
+                    tagged += 1
+                    changed = True
+                continue
+
+            # Single-output bytes constants: seed singleton range from the
+            # const literal. Covers bytec / pushbytes / bytec_0..3.
+            if a.const is not None and a.const.kind == "bytes":
+                n = _bytes_to_int(a.const.value)
+                if n is not None:
+                    if _set_int_value_range(out, n, n):
+                        tagged += 1
+                        changed = True
+                continue
+
+        # Phi range union — every arg must have at least a bigint range.
+        for ph in prog.phis.values():
+            if not ph.args:
+                continue
+            ranges = [_operand_bigint_range(arg) for arg in ph.args]
+            if any(r is None for r in ranges):
+                continue
+            lo = min(r.lo for r in ranges)  # type: ignore[union-attr]
+            hi = max(r.hi for r in ranges)  # type: ignore[union-attr]
+            if _set_int_value_range(ph, lo, hi):
+                tagged += 1
+                changed = True
+
+        if not changed:
+            return tagged
+
+    # Iteration cap hit — emit a soft warning. We *don't* raise: a
+    # partial result is still useful, and downstream analyses already
+    # treat unbounded ranges as "no info".
+    import sys
+    print(
+        "tealtools.bytemath: propagate_bytemath_ranges hit iteration "
+        f"cap ({_PASS_ITER_CAP}); ranges may not have converged. "
+        "This usually means a bytemath loop needs proper widening.",
+        file=sys.stderr,
+    )
+    return tagged

@@ -236,12 +236,22 @@ class TealType:
         ``byte_length_range`` mirrors it as ``IntRange(N, N)`` so a
         consumer that only cares about the range has one field to read.
 
-    For ``"uint64"`` both fields are unused (use :attr:`SSAVar.range`
-    instead).
+    ``int_value_range`` (also bytes-only) is the inclusive range of
+    the bytes value *interpreted as a big-endian unsigned integer* —
+    the abstraction TEAL's bytemath ops (``b+``, ``b-``, ``b*``,
+    ``b/``, …) work over. Uses :class:`IntRange` storage but its
+    bounds are not capped at ``2^64-1`` — Python ints are arbitrary
+    precision, so a value derived from many ``b*``-style ops can
+    legitimately exceed uint64. Populated by
+    :meth:`SSAProgram.propagate_bytemath_ranges`.
+
+    For ``"uint64"`` all three bytes-specific fields are unused (use
+    :attr:`SSAVar.range` instead).
     """
     kind: str
     byte_length: Optional[int] = None
     byte_length_range: Optional["IntRange"] = None
+    int_value_range: Optional["IntRange"] = None
 
 
 Operand = Union[SSAVar, Phi, Const, MatPhiVar]
@@ -1167,6 +1177,20 @@ class SSAProgram:
         :mod:`tealtools.range_arith` so the substrate stays free of
         the AVM arithmetic semantics."""
         from .range_arith import propagate_range_arithmetic as _impl
+        return _impl(self)
+
+    def propagate_bytemath_ranges(self) -> int:
+        """Flow bigint ranges through bytemath ops (``b+``, ``b-``,
+        ``b*``, ``b/``, ``b%``) using Python's arbitrary-precision
+        ints, with ``itob`` / ``btoi`` bridging the uint64 ↔ bytes
+        value spaces. Populates :attr:`TealType.int_value_range`.
+
+        Returns the cumulative number of range installations /
+        tightenings. Opt-in. Lazily trips
+        :meth:`propagate_constants` and :meth:`propagate_ranges`
+        first. Lazily imported from :mod:`tealtools.bytemath` so the
+        substrate stays free of bytemath semantics."""
+        from .bytemath import propagate_bytemath_ranges as _impl
         return _impl(self)
 
     def propagate_byte_lengths(self) -> int:
