@@ -188,6 +188,193 @@ def _disp(op) -> str:
     return repr(op)
 
 
+# ---------------------------------------------------------------------------
+# Static-incompatibility check for exclusive-pair detection
+# ---------------------------------------------------------------------------
+
+
+def _operand_int_const(operand) -> Optional[int]:
+    """Get the integer value if ``operand`` resolves to an int literal,
+    else ``None``. Accepts a bare :class:`Const` or an SSAVar/Phi with
+    ``const_value`` set."""
+    if isinstance(operand, Const):
+        cv = operand
+    else:
+        cv = getattr(operand, "const_value", None)
+    if cv is None or cv.kind != "int":
+        return None
+    try:
+        return int(cv.value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _operand_bytes_const(operand) -> Optional[str]:
+    """Get the canonical hex string if ``operand`` resolves to a bytes
+    literal, else ``None``. The hex form is stable and hashable so we
+    can compare it for equality across operands."""
+    if isinstance(operand, Const):
+        cv = operand
+    else:
+        cv = getattr(operand, "const_value", None)
+    if cv is None or cv.kind != "bytes":
+        return None
+    return cv.value.lower()
+
+
+def _normalize_pred_kind(p: "BranchCondition") -> tuple[str, Optional[object]]:
+    """Project a :class:`BranchCondition` onto the (kind, comparand) axis
+    used by the incompatibility checker. ``zero``/``nonzero`` are
+    rewritten as ``eq 0`` / ``neq 0`` so the same case-table covers
+    everything. Returns ``(None, None)`` for predicates the checker
+    doesn't reason about (``not_in_range``, ``neq_all``)."""
+    if p.kind == "zero":
+        return ("eq", Const("int", "0"))
+    if p.kind == "nonzero":
+        return ("neq", Const("int", "0"))
+    if p.kind in ("eq", "neq", "lt", "le", "gt", "ge"):
+        if not p.args:
+            return (None, None)
+        return (p.kind, p.args[0])
+    return (None, None)
+
+
+def _kind_to_int_interval(
+    kind: str, k: int,
+) -> tuple[Optional[int], Optional[int]]:
+    """Closed-interval representation of ``value ⟨kind⟩ k`` over ints.
+    Returns ``(lo, hi)`` with ``None`` meaning unbounded on that side.
+    ``neq`` is *not* representable as a single interval; callers must
+    handle it specially."""
+    if kind == "eq":
+        return (k, k)
+    if kind == "lt":
+        return (None, k - 1)
+    if kind == "le":
+        return (None, k)
+    if kind == "gt":
+        return (k + 1, None)
+    if kind == "ge":
+        return (k, None)
+    return (None, None)
+
+
+def _intervals_disjoint(
+    a: tuple[Optional[int], Optional[int]],
+    b: tuple[Optional[int], Optional[int]],
+) -> bool:
+    """``True`` iff the closed integer intervals ``a`` and ``b`` have
+    empty intersection. ``None`` on a side means unbounded."""
+    a_lo, a_hi = a
+    b_lo, b_hi = b
+    if a_lo is not None and b_hi is not None and a_lo > b_hi:
+        return True
+    if b_lo is not None and a_hi is not None and b_lo > a_hi:
+        return True
+    return False
+
+
+def _are_predicates_incompatible(
+    p: "BranchCondition", q: "BranchCondition",
+) -> bool:
+    """``True`` iff ``p`` and ``q`` constrain the same operand in ways
+    that are statically unsatisfiable — they cannot both hold for any
+    integer value. Used to flag XOR / mutual-exclusion relationships
+    (e.g., ``selector == 0xAAA`` vs ``selector == 0xBBB`` on a dispatch
+    chain). Sound but incomplete: only catches same-operand
+    incompatibilities; cross-operand exclusions (e.g., ``a >= b`` vs.
+    ``sender == admin``) need path-level reasoning, not just
+    constraint inspection."""
+    if p.value != q.value:
+        return False
+    pk, pa = _normalize_pred_kind(p)
+    qk, qa = _normalize_pred_kind(q)
+    if pk is None or qk is None:
+        return False
+
+    # Bytes-equality: ``eq B1`` and ``eq B2`` with B1 != B2 ⇒ incompatible.
+    p_bytes = _operand_bytes_const(pa)
+    q_bytes = _operand_bytes_const(qa)
+    if p_bytes is not None and q_bytes is not None:
+        if pk == "eq" and qk == "eq":
+            return p_bytes != q_bytes
+        if {pk, qk} == {"eq", "neq"}:
+            return p_bytes == q_bytes
+        return False
+
+    # Int-typed comparisons: drop into the interval / neq case-table.
+    p_int = _operand_int_const(pa)
+    q_int = _operand_int_const(qa)
+    if p_int is None or q_int is None:
+        return False
+    if pk == "neq" and qk == "neq":
+        return False  # both excluded points; satisfiable elsewhere
+    if pk == "neq":
+        # Only ``q`` constrains a closed interval. ``p`` excludes ``p_int``.
+        # Incompatible iff ``q``'s interval is exactly ``{p_int}``.
+        return qk == "eq" and q_int == p_int
+    if qk == "neq":
+        return pk == "eq" and p_int == q_int
+    return _intervals_disjoint(
+        _kind_to_int_interval(pk, p_int),
+        _kind_to_int_interval(qk, q_int),
+    )
+
+
+def find_exclusive_pairs(
+    preds: frozenset["BranchCondition"],
+) -> list[tuple["BranchCondition", "BranchCondition"]]:
+    """All ``(p, q)`` pairs in ``preds`` that are statically
+    incompatible — at most one of them holds for any reaching path.
+    Each pair is returned once in deterministic order (sorted by repr)."""
+    items = sorted(preds, key=repr)
+    out: list[tuple[BranchCondition, BranchCondition]] = []
+    for i, p in enumerate(items):
+        for q in items[i + 1:]:
+            if _are_predicates_incompatible(p, q):
+                out.append((p, q))
+    return out
+
+
+@dataclass(frozen=True)
+class PredicateQuery:
+    """Per-line snapshot of path-aware predicates.
+
+    ``must_hold`` are predicates that hold on *every* path from
+    program entry to this location (the existing dataflow intersection).
+    ``may_hold`` are predicates that hold on at least one path
+    (forward union, includes ``must_hold``). ``exclusive_pairs`` are
+    statically-incompatible pairs in ``may_hold`` — at most one of
+    each pair can be true on any reaching path. See
+    :func:`_are_predicates_incompatible` for the constraint vocabulary
+    the checker covers (same-operand eq/neq/range, bytes equality)."""
+
+    must_hold: frozenset["BranchCondition"]
+    may_hold: frozenset["BranchCondition"]
+    exclusive_pairs: tuple[tuple["BranchCondition", "BranchCondition"], ...]
+
+    def __repr__(self) -> str:
+        parts: list[str] = []
+        if self.must_hold:
+            parts.append(
+                "must: " + ", ".join(
+                    repr(p) for p in sorted(self.must_hold, key=repr)
+                )
+            )
+        only_may = self.may_hold - self.must_hold
+        if only_may:
+            parts.append(
+                "may: " + ", ".join(repr(p) for p in sorted(only_may, key=repr))
+            )
+        if self.exclusive_pairs:
+            parts.append(
+                "exclusive: " + ", ".join(
+                    f"{p!r} XOR {q!r}" for p, q in self.exclusive_pairs
+                )
+            )
+        return "PredicateQuery(" + "; ".join(parts) + ")"
+
+
 # Sentinel for the dataflow's "not yet computed" lattice top.
 class _Top:
     __slots__ = ()
@@ -243,7 +430,13 @@ class PathPredicateAnalysis:
         # branch immediates (``bnz l_target`` ↦ which successor BB).
         self._label_lines: dict[tuple[str, str], int] = self._index_labels()
         self.bb_preds: dict[BasicBlock, frozenset[BranchCondition]] = {}
+        # May-hold (forward union) — predicates true on *some* path here
+        # rather than every path. ``must_hold ⊆ may_hold`` always. Used
+        # for the exclusive-pair query, which inspects pairs in the may
+        # set and checks static incompatibility.
+        self.bb_may_preds: dict[BasicBlock, frozenset[BranchCondition]] = {}
         self._compute()
+        self._compute_may()
 
     # -- public ---------------------------------------------------------
 
@@ -257,6 +450,36 @@ class PathPredicateAnalysis:
         if bb is None:
             return frozenset()
         return self.bb_preds.get(bb, frozenset())
+
+    def may_predicates_at(
+        self, file: str, line: int,
+    ) -> frozenset[BranchCondition]:
+        """Predicates that hold on at least one path from program entry
+        to ``(file, line)``. ``must_hold ⊆ may_hold`` — every must-hold
+        is in here too."""
+        bb = self.prog.block_containing(file, line)
+        if bb is None:
+            return frozenset()
+        return self.bb_may_preds.get(bb, frozenset())
+
+    def query(self, file: str, line: int) -> PredicateQuery:
+        """Combined snapshot at ``(file, line)``: must-hold predicates,
+        may-hold predicates, and statically-incompatible pairs among
+        the may set. The third is "at most one of these holds on any
+        reaching path" — a sound underapproximation of full
+        path-level XOR (cross-operand exclusions require path-level
+        reasoning we're not doing yet)."""
+        bb = self.prog.block_containing(file, line)
+        if bb is None:
+            return PredicateQuery(
+                must_hold=frozenset(),
+                may_hold=frozenset(),
+                exclusive_pairs=(),
+            )
+        must = self.bb_preds.get(bb, frozenset())
+        may = self.bb_may_preds.get(bb, frozenset())
+        excl = tuple(find_exclusive_pairs(may))
+        return PredicateQuery(must_hold=must, may_hold=may, exclusive_pairs=excl)
 
     def ranges_at(
         self, file: str, line: int,
@@ -405,6 +628,40 @@ class PathPredicateAnalysis:
         return {"blocks": blocks}
 
     # -- internals ------------------------------------------------------
+
+    def _compute_may(self) -> None:
+        """Forward dataflow with *union* at joins (dual of the
+        intersection in :meth:`_compute`). Each BB ends up with every
+        predicate that holds on at least one entry-to-BB path. Cheap
+        — single worklist pass over the same edge-predicate generator.
+        """
+        prog = self.prog
+        bb_may: dict[BasicBlock, frozenset[BranchCondition]] = {}
+        for bb in prog.blocks.values():
+            if not bb.predecessors:
+                bb_may[bb] = (
+                    self.entry_seeds | self.bb_seeds.get(bb, frozenset())
+                )
+            else:
+                bb_may[bb] = frozenset()
+        worklist = list(prog.blocks.values())
+        while worklist:
+            bb = worklist.pop()
+            if not bb.predecessors:
+                continue
+            new_may: set[BranchCondition] = set()
+            for pred in bb.predecessors:
+                new_may |= bb_may[pred]
+                new_may |= self._edge_predicates(pred, bb)
+            extra = self.bb_seeds.get(bb)
+            if extra:
+                new_may |= extra
+            new_frozen = frozenset(new_may)
+            if new_frozen != bb_may[bb]:
+                bb_may[bb] = new_frozen
+                for succ in bb.successors:
+                    worklist.append(succ)
+        self.bb_may_preds = bb_may
 
     def _index_labels(self) -> dict[tuple[str, str], int]:
         idx: dict[tuple[str, str], int] = {}
