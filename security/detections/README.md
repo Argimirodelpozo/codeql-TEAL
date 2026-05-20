@@ -55,12 +55,11 @@ Python-side shared helpers live in `analysis/tealtools/detections/`:
   resolves the callee in a registry, propagates seeded path predicates).
 - `scan.py` — directory walker that builds per-dir DBs and runs detections.
 
-CodeQL-side, `qlpack.yml` + `run_tests.sh` are kept here because the
-test_codeql_backend.py runner still walks `security/detections/` for
-`.ql` / `.qlref` files. After the recent cleanup all QL-substrate test
-sets (`tests/codeql/phi-liveness/`, `tests/codeql/puya-benchmarks/`,
-`tests/codeql/const_propagation/`) live under `tests/codeql/`, so the
-pack here is structurally a thin shell.
+No CodeQL pack lives here anymore — every QL-substrate test set
+(`tests/codeql/phi-liveness/`, `tests/codeql/puya-benchmarks/`,
+`tests/codeql/const_propagation/`) moved into `tests/codeql/`, which has its
+own `argimirodelpozo/teal-codeql-tests` pack and is the only path the
+`test_codeql_backend.py` runner walks.
 
 ## Running
 
@@ -70,12 +69,7 @@ python -m tealtools detections --list
 
 # Run one detection (or --all)
 python -m tealtools detections --detector rekey-to <path/to/db-or-source>
-
-# Run every native CodeQL test in this directory
-./security/detections/run_tests.sh
 ```
 
 After the cleanup, only the 17 detection directories live here alongside
-`qlpack.yml` / `run_tests.sh` / `REVIEW_MIGRATION.md`. Every non-detection
-artifact (qltests, benchmarks, archived TEAL fixtures) moved into
-`tests/codeql/` or was deleted.
+this `README.md` and `REVIEW_MIGRATION.md` (historical migration record).

@@ -1,6 +1,5 @@
 paths:
   - codeql-backend/shared
   - codeql-backend/teal/ql
-  - security/detections
   - analysis/tealtools/queries
   - tests/codeql

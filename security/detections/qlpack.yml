@@ -1,6 +1,0 @@
-name: argimirodelpozo/teal-detections
-version: 0.2.0
-groups: teal
-extractor: teal
-dependencies:
-  argimirodelpozo/teal-all: ${workspace}
