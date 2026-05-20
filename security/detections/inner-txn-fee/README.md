@@ -14,7 +14,5 @@ Dynamic (non-constant) fees aren't flagged. The detection deliberately only catc
 
 ## Files
 
-- `innerTxnFee.ql` — CodeQL implementation. Uses `innerTxnSetsNonZeroFee` from `SecGuideCommon.qll`.
 - `inner_txn_fee.py` — Python port. Calls `prog.propagate_constants()` then walks for `itxn_field Fee` with a non-zero const-int operand.
-- `innerTxnFee.expected` — `.expected` baseline for the QL test.
 - `*.teal` — fixtures: `vuln.teal` / `fixed.teal` (canonical pair), `vuln-dynamic-fee.teal` (dynamic fee — *not* flagged, kept to show the detector's blind spot).

@@ -16,7 +16,5 @@ The QL form is deliberately conservative: dispatch via `match` / `switch` tables
 
 ## Files
 
-- `isDeletable.ql` — CodeQL implementation. Uses `approvalExitUnguardedForAction` with `onCompletionDeleteApplication()`.
 - `is_deletable.py` — Python port. Builds `PathPredicateAnalysis(prog)` and checks each approval exit's predicates for an `OnCompletion != 5` constraint.
-- `isDeletable.expected` — `.expected` baseline for the QL test.
 - `*.teal` — fixtures: `gabe_vuln.teal` / `gabe_fixed.teal` (DevRel real-world pair), `vuln-complex-dispatch.teal` / `fixed-complex-dispatch.teal` (multi-branch dispatch — the "fixed" variant is the deliberately-flagged case the strict QL form treats as a false positive, kept for parity).

@@ -12,7 +12,5 @@ A LogicSig that doesn't bound `txn Fee`. Without an upper bound on the fee, an a
 
 ## Files
 
-- `feeValidation.ql` — CodeQL implementation. Uses `hasFeeCheck()` from `SecGuideCommon.qll`.
 - `fee_validation.py` — Python port. Walks `prog.assignments` for any comparison opcode whose inputs include a `txn Fee` read.
-- `feeValidation.expected` — `.expected` baseline for the QL test.
 - `*.teal` — fixtures: `gabe_vuln.teal` / `gabe_fixed.teal` (DevRel real-world pair), `vuln-branch-skip.teal` (per-branch fee check fails the anywhere requirement only if the path is conditionally dead), `vuln-subroutine-dead.teal` (fee check in dead code), `fixed-callsub.teal` (fee check in a live subroutine).

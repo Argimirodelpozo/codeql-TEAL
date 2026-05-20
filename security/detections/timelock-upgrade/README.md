@@ -19,7 +19,5 @@ This is a *contract-wide* gate on condition (3): the timestamp check just has to
 
 ## Files
 
-- `timelockUpgrade.ql` — CodeQL implementation. Combines `approvalExitUnguardedForAction(onCompletionUpdateApplication)`, `senderCreatorGuardDominates`, and `not hasTimestampCheck()`.
 - `timelock_upgrade.py` — Python port using the same three checks.
-- `timelockUpgrade.expected` — `.expected` baseline for the QL test.
 - `*.teal` — fixtures: `vuln.teal` / `fixed.teal` (canonical pair), `vuln-complex-dispatch.teal` / `fixed-complex-dispatch.teal` (multi-branch dispatch).

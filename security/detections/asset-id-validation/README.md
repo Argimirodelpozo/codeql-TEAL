@@ -12,7 +12,5 @@ A contract that handles asset-transfer transactions (`TypeEnum == axfer` is reac
 
 ## Files
 
-- `assetIdValidation.ql` — CodeQL implementation. Uses `handlesAssetTransfer()` and `hasXferAssetCheck()` from `SecGuideCommon.qll`.
 - `asset_id_validation.py` — Python port. Walks `prog.assignments` for both a `TypeEnum == axfer` axfer-reachability check and a `XferAsset` comparison anywhere.
-- `assetIdValidation.expected` — `.expected` baseline for the QL test.
 - `*.teal` — fixtures: `gabe_vuln.teal` / `gabe_fixed.teal` (DevRel real-world pair).

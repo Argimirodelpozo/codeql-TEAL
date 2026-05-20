@@ -1,3 +1,0 @@
-| gabe_fixed.teal:1:1:240:11 | Source | Application is updatable: OnCompletion == UpdateApplication can reach approval without a guard. |
-| gabe_vuln.teal:1:1:197:11 | Source | Application is updatable: OnCompletion == UpdateApplication can reach approval without a guard. |
-| vuln-fallthrough.teal:1:1:43:11 | Source | Application is updatable: OnCompletion == UpdateApplication can reach approval without a guard. |

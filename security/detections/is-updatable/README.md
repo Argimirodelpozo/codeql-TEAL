@@ -16,7 +16,5 @@ Same conservative shape as `is-deletable`: dispatch tables (`match` / `switch`) 
 
 ## Files
 
-- `isUpdatable.ql` — CodeQL implementation. Uses `approvalExitUnguardedForAction` with `onCompletionUpdateApplication()`.
 - `is_updatable.py` — Python port over `PathPredicateAnalysis(prog)`.
-- `isUpdatable.expected` — `.expected` baseline for the QL test.
 - `*.teal` — fixtures: `gabe_vuln.teal` / `gabe_fixed.teal` (DevRel real-world pair), `vuln-fallthrough.teal` (an OnCompletion check that falls through to the update path on equality, still flagged).

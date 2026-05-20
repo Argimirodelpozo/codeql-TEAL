@@ -12,7 +12,5 @@ A contract that processes ALGO payment transactions but never checks `txn CloseR
 
 ## Files
 
-- `closeRemainderTo.ql` — CodeQL implementation. Uses `txnFieldValidatedOnAllPaths` from `SecGuideCommon.qll`.
 - `close_remainder_to.py` — Python port. Uses `_FieldValidatedDetector` from `tealtools.detections._field_validated`.
-- `closeRemainderTo.expected` — `.expected` baseline for the QL test.
 - `*.teal` — fixtures: `vuln.teal` / `fixed.teal` (canonical pair), `vuln-loop-like.teal` / `vuln-split-paths.teal` (control-flow shapes that still need a dominating check), `fixed-callsub.teal` (proves a subroutine-encapsulated check still dominates).

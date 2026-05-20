@@ -1,2 +1,0 @@
-| vuln-conditional-itxn.teal:46:3:46:29 | ItxnFieldOpcode | Inner transaction sets CloseRemainderTo \u2014 this can drain the application account or transfer signing authority. Omit this field entirely. |
-| vuln.teal:14:1:14:27 | ItxnFieldOpcode | Inner transaction sets CloseRemainderTo \u2014 this can drain the application account or transfer signing authority. Omit this field entirely. |

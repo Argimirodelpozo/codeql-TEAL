@@ -14,8 +14,6 @@ This shape lets the detector handle realistic dispatch tables that route differe
 
 ## Files
 
-- `rekeyTo.ql` — CodeQL implementation. Uses `approvalExitProtectedForField` from `SecGuideCommon.qll`.
 - `rekey_to.py` — Python port. Builds `PathPredicateAnalysis(prog)` and checks each approval exit's dominating predicates for a `RekeyTo == 0` (or `== ZeroAddress`) constraint.
-- `rekeyTo.expected` — `.expected` baseline for the QL test.
 - Subdirectories `direct/`, `callsub/`, `proto-sub/`, `scratch-space/`, `partial-branch/`, `false-path-approves/` — fixture taxonomies covering each control-flow shape the path-aware analysis must handle (direct checks, checks behind subroutines, proto-sub args, scratch slots, partial-branch coverage, and cases where the *false* branch of a check is the approving one).
 - `gabe_vuln.teal` / `gabe_fixed.teal` — DevRel real-world pair.

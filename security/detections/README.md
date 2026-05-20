@@ -1,15 +1,17 @@
 # Algorand Security-Guide Detections
 
 Each subdirectory here is one self-contained Algorand-security-guide detection:
-a CodeQL query (`.ql`) and its checked-in baseline (`.expected`), a Python port
-(`.py`) over the `tealtools` SSA substrate, fixture programs (`*.teal`), and a
-`README.md` explaining what the detection looks for and how it works.
+a Python detector (`.py`) over the `tealtools` SSA substrate, fixture programs
+(`*.teal`), and a `README.md` explaining what the detection looks for and how
+it works.
 
-Both implementations preserve the same QL semantics — the Python ports were
-deliberately ported from the QL form, including the over-conservative shapes
-(e.g. `match`/`switch` dispatch tables aren't recognised as OnCompletion
-guards). Tighter detectors are deliberate follow-ups, not changes to these
-ports.
+Detectors were originally ported from CodeQL queries; the `.ql` versions have
+since been retired in favour of the Python implementations, which run faster
+and integrate directly with the `tealtools` pipeline (constant propagation,
+range propagation, path predicates, …). The over-conservative QL shapes are
+preserved (e.g. `match`/`switch` dispatch tables aren't recognised as
+OnCompletion guards) — tighter detectors are deliberate follow-ups, not silent
+changes.
 
 ## Detections
 
@@ -35,25 +37,28 @@ ports.
 
 ## Detection shapes — vocabulary
 
-- **strict-dominance txn-field** — a single comparison against `<FIELD>` must dominate every approval exit. One finding per program. Implementation: `txnFieldValidatedOnAllPaths(field)` (QL) / `_FieldValidatedDetector` (Python).
+- **strict-dominance txn-field** — a single comparison against `<FIELD>` must dominate every approval exit. One finding per program. Implemented by `_FieldValidatedDetector`.
 - **anywhere-checked** — the check just has to exist *somewhere* in the program. One finding per program.
-- **per-exit path-aware** — examine each approval exit's dominating predicates individually. One finding per unprotected exit. Implementation: `approvalExitProtectedForField` (QL) / `PathPredicateAnalysis` (Python).
+- **per-exit path-aware** — examine each approval exit's dominating predicates individually. One finding per unprotected exit. Built on `PathPredicateAnalysis`.
 - **OnCompletion-guard** — flag each approval exit reachable under a dangerous `OnCompletion` value. Optional conjuncts: `senderCreatorGuardDominates` for the *unprotected* variants, presence of specific opcodes (`balance`/`min_balance`, `Global.LatestTimestamp`) for funds-safety variants.
 - **per-itxn-field** / **per-opcode** / **opcode pattern** — simple syntactic walks over the IR with optional global-presence exemptions.
 - **dataflow** — trace SSAVar uses from a source opcode to a sink predicate.
 
 ## Shared infrastructure
 
-- `SecGuideCommon.qll` — every CodeQL detection's helper library: `approvalExit()`, `approvalExitProtectedForField`, `txnFieldValidatedOnAllPaths`, `senderCreatorGuardDominates`, etc.
-- `qlpack.yml` — declares this directory as the `argimirodelpozo/teal-detections` CodeQL pack.
-- `run_tests.sh` — `codeql test run security/detections/` driver.
-- `build_test_databases.sh` — bulk-rebuilds the per-detection fixture DBs under `security/detections-dbs/`.
-
 Python-side shared helpers live in `analysis/tealtools/detections/`:
-`common.py` (approval exits, OnCompletion guards, field-validated checks),
-`_field_validated.py` (base class for strict-dominance txn-field detectors),
-`xcontract.py` (cross-contract findings driver), `scan.py` (directory-walking
-scanner that builds per-dir DBs and runs detections).
+
+- `common.py` — approval exits, OnCompletion guards, sender == creator,
+  field-validated-on-all-paths, path-aware field-protected, inner-tx iteration.
+- `_field_validated.py` — base class for strict-dominance txn-field detectors.
+- `xcontract.py` — cross-contract findings driver (walks appcall itxns,
+  resolves the callee in a registry, propagates seeded path predicates).
+- `scan.py` — directory walker that builds per-dir DBs and runs detections.
+
+CodeQL-side, `qlpack.yml` + `run_tests.sh` still live here because the
+non-detection subdirectories (`constant-propagation-tests/`, `phi-liveness/`,
+`puya-benchmarks/`) hold qltests that exercise the QL analysis substrate
+(`codeql-backend/teal/ql/lib/codeql/...`) and need the pack to resolve.
 
 ## Running
 

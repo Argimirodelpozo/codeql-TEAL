@@ -1,1 +1,0 @@
-| vuln.teal:11:1:11:1 | - | Balance minus hardcoded constant \u2014 use the min_balance opcode instead to dynamically account for boxes, opt-ins, and local state. |

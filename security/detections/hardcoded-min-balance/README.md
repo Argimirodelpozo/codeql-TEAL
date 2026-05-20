@@ -16,7 +16,5 @@ This is a heuristic — the `balance` and `-` aren't required to be data-connect
 
 ## Files
 
-- `hardcodedMinBalance.ql` — CodeQL implementation. Uses `balanceMinusHardcodedConstant` from `SecGuideCommon.qll` plus the `min_balance` anywhere-exemption.
 - `hardcoded_min_balance.py` — Python port. Walks `prog.assignments` for the opcode triplet and a literal-int operand on the `-`.
-- `hardcodedMinBalance.expected` — `.expected` baseline for the QL test.
 - `*.teal` — fixtures: `vuln.teal` / `fixed.teal` (canonical pair — fixed uses `min_balance`).

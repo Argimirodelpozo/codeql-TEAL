@@ -14,7 +14,5 @@ The correct pattern is to omit the field entirely (it defaults to the zero addre
 
 ## Files
 
-- `innerTxnCloseRekey.ql` — CodeQL implementation. Walks `InnerTransactionField` nodes.
 - `inner_txn_close_rekey.py` — Python port. Walks `prog.assignments` for `op == "itxn_field"` and matching immediates.
-- `innerTxnCloseRekey.expected` — `.expected` baseline for the QL test.
 - `*.teal` — fixtures: `vuln.teal` / `fixed.teal` (canonical pair), `vuln-conditional-itxn.teal` (itxn under a guard — still flagged).

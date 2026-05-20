@@ -1,4 +1,0 @@
-| fixed-multi-branch.teal:1:1:65:9 | Source | Contract does not validate txn AssetCloseTo \u2014 all asset units can be drained from the account. |
-| gabe_fixed.teal:1:1:149:11 | Source | Contract does not validate txn AssetCloseTo \u2014 all asset units can be drained from the account. |
-| gabe_vuln.teal:1:1:143:11 | Source | Contract does not validate txn AssetCloseTo \u2014 all asset units can be drained from the account. |
-| vuln-multi-branch.teal:1:1:61:9 | Source | Contract does not validate txn AssetCloseTo \u2014 all asset units can be drained from the account. |

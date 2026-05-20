@@ -18,7 +18,5 @@ The detector reports each exit where both hold. The Python port reuses `PathPred
 
 ## Files
 
-- `unprotectedUpdatable.ql` — CodeQL implementation. Combines `approvalExitUnguardedForAction(onCompletionUpdateApplication)` and `not senderCreatorGuardDominates(approvalBB)`.
 - `unprotected_updatable.py` — Python port using the same two checks.
-- `unprotectedUpdatable.expected` — `.expected` baseline for the QL test.
 - `*.teal` — fixtures: `vuln.teal` / `fixed.teal` (canonical pair), `vuln-dispatch-table.teal` / `fixed-dispatch-table.teal` (dispatch tables), `vuln-nested-dispatch.teal` (nested dispatch through a subroutine).

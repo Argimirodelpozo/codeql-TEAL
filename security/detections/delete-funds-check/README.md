@@ -18,7 +18,5 @@ The presence-pair check is a proxy: it doesn't verify the two opcode outputs are
 
 ## Files
 
-- `deleteFundsCheck.ql` — CodeQL implementation. Combines `approvalExitUnguardedForAction(onCompletionDeleteApplication)` and `not hasBalanceMinBalanceCheck()`.
 - `delete_funds_check.py` — Python port. Walks `prog.assignments` once for each of the two opcodes.
-- `deleteFundsCheck.expected` — `.expected` baseline for the QL test.
 - `*.teal` — fixtures: `vuln.teal` / `fixed.teal` (canonical pair).

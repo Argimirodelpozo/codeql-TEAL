@@ -18,7 +18,5 @@ If both hold, the exit is reported. The Python port uses the same `PathPredicate
 
 ## Files
 
-- `unprotectedDeletable.ql` — CodeQL implementation. Combines `approvalExitUnguardedForAction(onCompletionDeleteApplication)` and `not senderCreatorGuardDominates(approvalBB)`.
 - `unprotected_deletable.py` — Python port using the same two checks.
-- `unprotectedDeletable.expected` — `.expected` baseline for the QL test.
 - `*.teal` — fixtures: `gabe_vuln.teal` / `gabe_fixed.teal` (DevRel pair), `vuln-dispatch-table.teal` / `fixed-dispatch-table.teal` (dispatch-table shapes — the "fixed" variant uses a `match` table that the conservative form doesn't recognise as a guard).

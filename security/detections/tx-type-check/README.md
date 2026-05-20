@@ -12,7 +12,5 @@ A contract — especially a LogicSig — that doesn't restrict `txn TypeEnum` (o
 
 ## Files
 
-- `txTypeCheck.ql` — CodeQL implementation. Uses `txnFieldValidatedOnAllPaths` twice (TypeEnum, Type) from `SecGuideCommon.qll`.
 - `tx_type_check.py` — Python port. Custom detector that runs the `_FieldValidatedDetector` machinery for both fields and flags only when neither is dominator-checked.
-- `txTypeCheck.expected` — `.expected` baseline for the QL test.
 - `*.teal` — fixtures: `vuln.teal` / `fixed.teal`, `vuln-subroutine-dispatch.teal` / `fixed-subroutine-dispatch.teal` (subroutine-encapsulated TypeEnum checks).

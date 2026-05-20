@@ -14,7 +14,5 @@ The correct pattern uses `txn Sender` (or fields covered by the AVM signature) f
 
 ## Files
 
-- `unsafeLsigArgs.ql` — CodeQL implementation. Uses `argUsedInEqualityCheck` from `SecGuideCommon.qll`.
 - `unsafe_lsig_args.py` — Python port. Walks `prog.assignments` for `arg` / `args` ops and traces each output SSAVar's uses to find comparison-op consumers.
-- `unsafeLsigArgs.expected` — `.expected` baseline for the QL test.
 - `*.teal` — fixtures: `vuln.teal` / `fixed.teal` (canonical pair), `vuln-callsub.teal` (arg consumed by a comparison inside a subroutine), `vuln-nested-sub.teal` (arg passed through nested subs to the comparison), `vuln-branch-merge.teal` (arg used in a comparison after a CFG join).

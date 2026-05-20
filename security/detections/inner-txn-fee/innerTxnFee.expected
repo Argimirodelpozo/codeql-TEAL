@@ -1,1 +1,0 @@
-| vuln.teal:14:1:14:14 | ItxnFieldOpcode | Inner transaction sets a non-zero fee \u2014 repeated calls can drain the application account. Use fee 0 and rely on caller fee pooling. |

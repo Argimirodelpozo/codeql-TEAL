@@ -1,5 +1,0 @@
-| vuln-branch-merge.teal:11:1:11:5 | arg_0 | LogicSig argument used in equality comparison \u2014 args are not covered by delegation signatures and provide zero security for access control. |
-| vuln-branch-merge.teal:19:1:19:5 | arg_1 | LogicSig argument used in equality comparison \u2014 args are not covered by delegation signatures and provide zero security for access control. |
-| vuln-branch-merge.teal:24:1:24:5 | arg_2 | LogicSig argument used in equality comparison \u2014 args are not covered by delegation signatures and provide zero security for access control. |
-| vuln-callsub.teal:9:1:9:5 | arg_1 | LogicSig argument used in equality comparison \u2014 args are not covered by delegation signatures and provide zero security for access control. |
-| vuln.teal:4:1:4:5 | arg_0 | LogicSig argument used in equality comparison \u2014 args are not covered by delegation signatures and provide zero security for access control. |

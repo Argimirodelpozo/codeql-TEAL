@@ -14,7 +14,5 @@ This is intentionally conservative: contracts that validate the field per-OnComp
 
 ## Files
 
-- `assetCloseTo.ql` — CodeQL implementation. Uses `txnFieldValidatedOnAllPaths` from `SecGuideCommon.qll`.
 - `asset_close_to.py` — Python port over `SSAProgram`. Uses `_FieldValidatedDetector` from `tealtools.detections._field_validated`.
-- `assetCloseTo.expected` — `.expected` baseline for the QL test.
 - `*.teal` — fixtures: `gabe_vuln.teal` / `gabe_fixed.teal` (DevRel real-world pair), `vuln-multi-branch.teal` / `fixed-multi-branch.teal` (synthetic per-branch-only check that the strict-dominance form flags).

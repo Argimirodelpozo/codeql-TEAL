@@ -14,7 +14,5 @@ Per-position constraints are meaningful only when the group's shape is locked do
 
 ## Files
 
-- `groupSizeCheck.ql` — CodeQL implementation. Walks `GtxnOpcode` nodes; uses `hasGroupSizeCheck()` from `SecGuideCommon.qll`.
 - `group_size_check.py` — Python port. Walks `prog.assignments` for `gtxn`-family ops and any `==` / `!=` / `<` / etc. comparison against `global GroupSize`.
-- `groupSizeCheck.expected` — `.expected` baseline for the QL test.
 - `*.teal` — fixtures: `gabe_vuln.teal` / `gabe_fixed.teal` (DevRel pair), `vuln-conditional-gtxn.teal` (conditional `gtxn`), `vuln-gtxn-in-subroutine.teal` / `fixed-gtxn-in-subroutine.teal` (subroutine-encapsulated `gtxn`).
