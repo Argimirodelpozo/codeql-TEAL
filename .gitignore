@@ -26,3 +26,10 @@ dist/
 # part of the DB schema itself; safe to ignore.
 tests/**/db/diagnostic/
 tests/**/db/log/
+
+# CodeQL query-evaluation cache inside each fixture DB. Regenerated
+# on demand by the evaluator and mutated by every test run, so it
+# can't be tracked without leaving the working tree perpetually
+# dirty. The actual DB relations (*.rel / *.rel.meta / pools /
+# strings) live alongside it and stay tracked.
+tests/**/db/db-teal/*/cache/
