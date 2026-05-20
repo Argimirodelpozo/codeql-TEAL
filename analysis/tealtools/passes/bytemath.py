@@ -1,6 +1,7 @@
 """Bytemath range propagation — flow ``IntRange`` annotations over
 the bytes-as-big-endian-unsigned-bigint abstraction the AVM's
-``b+`` / ``b-`` / ``b*`` / ``b/`` / ``b%`` family operates over.
+bytemath family (``b+`` ``b-`` ``b*`` ``b/`` ``b%`` ``b&`` ``b|``
+``b^``) operates over.
 
 Why this is a separate pass rather than an extension of
 :mod:`tealtools.range_arith`:
@@ -33,6 +34,10 @@ Forward rules:
                                         smallest divisor is
                                         ``max(b.lo, 1)``.
   - ``b% a b``                        → ``[0, min(a.hi, b.hi-1)]``.
+  - ``b& a b``                        → ``[0, min(a.hi, b.hi)]``.
+  - ``b| a b``                        → ``[max(a.lo, b.lo),
+                                        all-bits-set]``.
+  - ``b^ a b``                        → ``[0, all-bits-set]``.
 
 Cross-pollination into uint64 land (writes :attr:`SSAVar.range`):
 
@@ -52,11 +57,14 @@ loops are rare and the cap is hit only on programs that need
 proper widening operators (an abstract-interpretation topic
 out of scope here).
 
-Bitwise (``b&`` / ``b|`` / ``b^`` / ``b~``) and ``bsqrt`` are
-deferred; their bound math is messier and they're uncommon in
-current fixtures. Comparison ops (``b<`` / ``b>`` / …) already
-get their ``[0..1]`` range from :meth:`SSAProgram.propagate_ranges`'
-``_OP_RANGE_SEEDS`` so they're not duplicated here.
+``b~`` (bitwise complement) and ``bsqrt`` are deferred: ``b~``
+flips every bit of a byte-string, so its bigint value depends on
+the operand's *byte length* — which this value-range pass doesn't
+track (``byte_length_prop`` does). TEAL has no byte-shift ops, so
+there's no ``b<<`` / ``b>>`` analogue. Comparison ops (``b<`` /
+``b>`` / …) already get their ``[0..1]`` range from
+:meth:`SSAProgram.propagate_ranges`' ``_OP_RANGE_SEEDS`` so they're
+not duplicated here.
 
 Opt-in. Lazily trips :meth:`SSAProgram.propagate_constants` and
 :meth:`SSAProgram.propagate_ranges` first so the bytes-const and
@@ -69,7 +77,7 @@ from typing import Optional
 from ..ssa import Const, IntRange, Phi, SSAProgram, SSAVar, TealType
 
 
-_BYTES_OP_RULES = ("b+", "b-", "b*", "b/", "b%")
+_BYTES_OP_RULES = ("b+", "b-", "b*", "b/", "b%", "b&", "b|", "b^")
 
 # Safety net: bigint phi widening with no natural ceiling could
 # in principle loop forever. Bail before that. ``_PASS_ITER_CAP``
@@ -141,6 +149,19 @@ def _bytemath_result(
         if rb.hi == 0:
             return None
         return (0, min(ra.hi, max(rb.hi - 1, 0)))
+    if op == "b&":
+        # Bitwise AND clears bits — result ≤ each operand.
+        return (0, min(ra.hi, rb.hi))
+    if op == "b|":
+        # Bitwise OR only sets bits — result ≥ each operand. Ceiling:
+        # every bit set up to the wider operand's bit-length. Bigints,
+        # so no uint64 cap.
+        hi = (1 << max(ra.hi.bit_length(), rb.hi.bit_length())) - 1
+        return (max(ra.lo, rb.lo), hi)
+    if op == "b^":
+        # XOR: ``a ^ a == 0`` so the floor is 0; ceiling as for b|.
+        hi = (1 << max(ra.hi.bit_length(), rb.hi.bit_length())) - 1
+        return (0, hi)
     return None
 
 

@@ -14,10 +14,13 @@ This pass layers on top:
   - Seeds ranges from ``const_value`` (a literal int has the
     singleton range ``[N..N]``) for any operand the stdlib didn't
     cover.
-  - Propagates ranges through ``+``, ``-``, ``*``, ``/``, ``%``
-    using AVM semantics (the runtime halts on overflow / underflow
-    / divide-by-zero, so we can assume a successful execution
-    reaches the next instruction).
+  - Propagates ranges through the binary arithmetic ops ``+``,
+    ``-``, ``*``, ``/``, ``%``, the binary bitwise / shift ops
+    ``&``, ``|``, ``^``, ``<<``, ``>>``, and the unary ``~``, using
+    AVM semantics (``+`` / ``-`` / ``*`` halt on overflow /
+    underflow, ``/`` / ``%`` halt on divide-by-zero, ``<<`` wraps
+    mod 2^64 — so a successful execution reaches the next
+    instruction).
   - Re-unions phi ranges from scratch each iteration so that arms
     whose ranges only become known via arithmetic widen the join.
 
@@ -27,10 +30,9 @@ nothing further to add. Lazily trips
 :meth:`SSAProgram.propagate_ranges` if it hasn't run, so seeding from
 the stdlib tables happens first.
 
-Bitwise (``&``, ``|``, ``^``), shifts (``<<``, ``>>``), and
-``sqrt`` / ``exp`` are not yet covered — they're rare in current
-fixtures and the bound math (especially for ``|`` / ``^``) is
-fiddly.
+``sqrt`` / ``exp`` / ``expw`` aren't covered — rare, and ``expw``
+produces a two-word result that doesn't fit the single-output
+shape here.
 """
 from __future__ import annotations
 
@@ -109,6 +111,43 @@ def _arith_result_range(
             return None
         div_hi_minus_1 = max(rb.hi - 1, 0)
         return (0, min(ra.hi, div_hi_minus_1))
+    if op == "&":
+        # Bitwise AND clears bits — result ≤ each operand.
+        return (0, min(ra.hi, rb.hi))
+    if op == "|":
+        # Bitwise OR only sets bits — result ≥ each operand, so the
+        # floor is the larger operand's floor. Ceiling: every bit set
+        # up to the wider operand's bit-length.
+        hi = (1 << max(ra.hi.bit_length(), rb.hi.bit_length())) - 1
+        return (max(ra.lo, rb.lo), hi)
+    if op == "^":
+        # XOR: ``a ^ a == 0`` so the floor is 0; ceiling is the same
+        # all-bits-set bound as OR.
+        hi = (1 << max(ra.hi.bit_length(), rb.hi.bit_length())) - 1
+        return (0, hi)
+    if op == "<<":
+        # AVM ``<<`` is ``A * 2^B mod 2^64`` — it wraps, never halts.
+        # If any (a, b) pair can overflow uint64 the wrapped result is
+        # unconstrained; otherwise the shift is monotonic in both args.
+        if rb.hi >= 64:
+            return (0, _UINT64_MAX)
+        hi = ra.hi << rb.hi
+        if hi > _UINT64_MAX:
+            return (0, _UINT64_MAX)
+        return (ra.lo << rb.lo, hi)
+    if op == ">>":
+        # ``>>`` is ``A // 2^B`` — never overflows, monotonic (larger
+        # shift ⇒ smaller result). A shift ≥ 64 zeroes the value.
+        return (ra.lo >> min(rb.hi, 64), ra.hi >> min(rb.lo, 64))
+    return None
+
+
+def _unary_result_range(op: str, ra: IntRange) -> Optional[tuple[int, int]]:
+    """Compute the output ``(lo, hi)`` of a one-input AVM op given its
+    operand range. Returns ``None`` for unsupported ops."""
+    if op == "~":
+        # uint64 bitwise NOT: ``~a == (2^64-1) - a``.
+        return (_UINT64_MAX - ra.hi, _UINT64_MAX - ra.lo)
     return None
 
 
@@ -137,10 +176,11 @@ def _set_range(obj, lo: int, hi: int) -> bool:
 
 def propagate_range_arithmetic(prog: SSAProgram) -> int:
     """Walk ``prog`` to a fixed point, propagating ``IntRange``
-    annotations through ``+`` / ``-`` / ``*`` / ``/`` / ``%`` over
-    operands whose ranges are already known. Returns the number of
-    SSAVars / Phis whose range was newly set (or widened during a
-    phi re-union).
+    annotations through the arithmetic ops (``+`` ``-`` ``*`` ``/``
+    ``%``), the bitwise / shift ops (``&`` ``|`` ``^`` ``<<`` ``>>``
+    ``~``) over operands whose ranges are already known. Returns the
+    number of SSAVars / Phis whose range was newly set (or widened
+    during a phi re-union).
 
     Lazy-trips :meth:`SSAProgram.propagate_ranges` first so the
     stdlib seeds (boolean comparisons, txn enum fields, …) are in
@@ -149,7 +189,8 @@ def propagate_range_arithmetic(prog: SSAProgram) -> int:
     if not getattr(prog, "_ranges_propagated", False):
         prog.propagate_ranges()
 
-    _ARITH_OPS = {"+", "-", "*", "/", "%"}
+    _BINARY_OPS = {"+", "-", "*", "/", "%", "&", "|", "^", "<<", ">>"}
+    _UNARY_OPS = {"~"}
 
     changed_overall = 0
     changed = True
@@ -158,20 +199,24 @@ def propagate_range_arithmetic(prog: SSAProgram) -> int:
 
         # Arithmetic assignments: compute output range from inputs.
         for a in prog.assignments:
-            if a.op not in _ARITH_OPS:
-                continue
-            if len(a.outputs) != 1 or len(a.inputs) != 2:
+            if len(a.outputs) != 1:
                 continue
             out = a.outputs[0]
-            if not isinstance(out, SSAVar):
+            if not isinstance(out, SSAVar) or out.range is not None:
                 continue
-            if out.range is not None:
+            if a.op in _BINARY_OPS and len(a.inputs) == 2:
+                ra = _operand_range(a.inputs[0])
+                rb = _operand_range(a.inputs[1])
+                if ra is None or rb is None:
+                    continue
+                result = _arith_result_range(a.op, ra, rb)
+            elif a.op in _UNARY_OPS and len(a.inputs) == 1:
+                ra = _operand_range(a.inputs[0])
+                if ra is None:
+                    continue
+                result = _unary_result_range(a.op, ra)
+            else:
                 continue
-            ra = _operand_range(a.inputs[0])
-            rb = _operand_range(a.inputs[1])
-            if ra is None or rb is None:
-                continue
-            result = _arith_result_range(a.op, ra, rb)
             if result is None:
                 continue
             lo, hi = _clamp_uint64(*result)
