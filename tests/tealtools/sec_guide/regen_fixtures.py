@@ -21,9 +21,8 @@ SRC_ROOT = REPO / "security" / "detections"
 DST_ROOT = REPO / "tests" / "tealtools" / "sec_guide"
 
 # Production sec-guide queries that have a Python port. Anything else
-# under security/detections/ (constant-propagation-tests, phi-liveness,
-# puya-benchmarks, experimental-archive) isn't a detection and is
-# skipped intentionally.
+# under security/detections/ that isn't a detection (the qlpack.yml
+# / run_tests.sh scaffolding) is skipped intentionally.
 PORTED = (
     "asset-close-to", "asset-id-validation", "close-remainder-to",
     "delete-funds-check", "fee-validation", "group-size-check",
