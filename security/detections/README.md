@@ -72,4 +72,4 @@ python -m tealtools detections --detector rekey-to <path/to/db-or-source>
 ```
 
 After the cleanup, only the 17 detection directories live here alongside
-this `README.md` and `REVIEW_MIGRATION.md` (historical migration record).
+this `README.md`.
