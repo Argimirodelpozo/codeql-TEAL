@@ -27,16 +27,15 @@ dependencies = [
 Repository = "https://github.com/Argimirodelpozo/codeql-TEAL"
 
 [project.scripts]
-tealql = "tealtools.cli:main"
+tealql = "cli.main:main"
 
 [tool.hatch.build.targets.wheel]
-# The Python package; the CodeQL extractor + QL backend live outside
-# the Python tree and are expected to be available on the user's
-# machine (codeql CLI on PATH, repo's .codeql-extractors/ checked
-# out alongside the install for development use). The package lives
-# at ``analysis/tealtools/`` but installs as ``tealtools`` so the
-# import path stays stable.
-packages = ["analysis/tealtools"]
+# Two packages: the ``tealtools`` analysis library (at
+# ``analysis/tealtools/``) and the ``cli`` command-line front-end (at
+# the top-level ``cli/`` directory). The CodeQL extractor + QL backend
+# live outside the Python tree and are expected on the user's machine
+# (codeql CLI on PATH, repo's .codeql-extractors/ for development).
+packages = ["analysis/tealtools", "cli"]
 
 [tool.hatch.build.targets.wheel.force-include]
 # Bundle the .ql packs that tealtools.graphs depends on at runtime;

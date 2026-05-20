@@ -90,7 +90,7 @@ To export results to JSON, use `codeql bqrs decode --format=json`.
 pip install -e .
 ```
 
-That puts a `tealql` binary on `$PATH`. `python -m tealtools` continues to work as a fallback.
+That puts a `tealql` binary on `$PATH`. `python -m cli` works as a fallback.
 
 ### CLI
 

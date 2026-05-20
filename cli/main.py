@@ -32,7 +32,7 @@ import sys
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
-from .targets import (
+from tealtools.targets import (
     DEFAULT_CACHE, build_db_for_dir, is_codeql_db, resolve_target,
 )
 
@@ -72,7 +72,7 @@ def _resolve(args) -> Path:
 
 def _load(args):
     """Resolve target → DB → :class:`SSAProgram`."""
-    from .ssa import SSAProgram
+    from tealtools.ssa import SSAProgram
     return SSAProgram(str(_resolve(args)))
 
 
@@ -84,7 +84,7 @@ def _emit_findings(findings: Iterable, *, json_out: bool) -> int:
     """
     findings = list(findings)
     if json_out:
-        from .serialize import finding_to_dict
+        from tealtools.serialize import finding_to_dict
         print(_json.dumps([finding_to_dict(f) for f in findings], indent=2))
     else:
         if not findings:
@@ -108,7 +108,7 @@ def _emit_dict(payload: dict, *, json_out: bool, text: str) -> int:
 
 
 def _cmd_auth(args) -> int:
-    from .auth_domination import AuthDominationDetector
+    from tealtools.auth_domination import AuthDominationDetector
     return _emit_findings(
         AuthDominationDetector(_load(args)).detect(),
         json_out=args.json_out,
@@ -116,7 +116,7 @@ def _cmd_auth(args) -> int:
 
 
 def _cmd_box_df(args) -> int:
-    from .dataflow.box import (
+    from tealtools.dataflow.box import (
         detect_into_box_flows,
         detect_out_of_box_flows,
         detect_correlated_flows,
@@ -131,19 +131,19 @@ def _cmd_box_df(args) -> int:
 
 
 def _cmd_itxn_report(args) -> int:
-    from .inner_txn_report import InnerTxnReport
+    from tealtools.inner_txn_report import InnerTxnReport
     r = InnerTxnReport(_load(args))
     return _emit_dict(r.to_dict(), json_out=args.json_out, text=r.render())
 
 
 def _cmd_group_shape(args) -> int:
-    from .group_reasoning import analyze
+    from tealtools.group_reasoning import analyze
     s = analyze(_load(args))
     return _emit_dict(s.to_dict(), json_out=args.json_out, text=s.render())
 
 
 def _cmd_cost(args) -> int:
-    from . import cost_analysis
+    from tealtools import cost_analysis
     prog = _load(args)
     return _emit_dict(
         cost_analysis.to_dict(prog),
@@ -162,7 +162,7 @@ def _cmd_functional(args) -> int:
     :mod:`tealtools.render_annotated`). ``--by-block`` groups
     assignments per basic block with predecessor/successor headers.
     """
-    from .passes import functional_dump
+    from tealtools.passes import functional_dump
     prog = _load(args)
     line_range = None
     if args.line_range:
@@ -186,13 +186,13 @@ def _cmd_functional(args) -> int:
 
 
 def _cmd_path_predicates(args) -> int:
-    from .path_predicates import PathPredicateAnalysis
+    from tealtools.path_predicates import PathPredicateAnalysis
     pp = PathPredicateAnalysis(_load(args))
     return _emit_dict(pp.to_dict(), json_out=args.json_out, text=pp.render())
 
 
 def _cmd_cfg(args) -> int:
-    from .cfg import CFG
+    from tealtools.cfg import CFG
     cfg = CFG.of(_load(args))
     dot = cfg.to_dot(file=args.file, with_assignments=not args.skeleton)
     if args.json_out:
@@ -203,7 +203,7 @@ def _cmd_cfg(args) -> int:
 
 
 def _cmd_xcontract(args) -> int:
-    from .xcontract import (
+    from tealtools.xcontract import (
         XContractGraph,
         cross_auth_findings,
         load_registry,
@@ -215,7 +215,7 @@ def _cmd_xcontract(args) -> int:
     graph = XContractGraph.build(caller, registry)
     findings = cross_auth_findings(graph)
     if args.json_out:
-        from .serialize import finding_to_dict
+        from tealtools.serialize import finding_to_dict
         payload = {
             "sites": [s.to_dict() for s in graph.sites],
             "cross_auth_findings": [finding_to_dict(f) for f in findings],
@@ -238,14 +238,14 @@ def _resolve_mode(args) -> "str | None":
     if args.mode:
         return args.mode
     if args.config:
-        from .detections.config import DetectionConfig
+        from tealtools.detections.config import DetectionConfig
         cfg = DetectionConfig.from_path(Path(args.config))
         return cfg.mode_for(str(args.target))
     return None
 
 
 def _cmd_detections(args) -> int:
-    from .detections import DETECTORS
+    from tealtools.detections import DETECTORS
 
     if args.list:
         for name in sorted(DETECTORS):
@@ -264,7 +264,7 @@ def _cmd_detections(args) -> int:
                                frozenset({"app", "logicsig"}))
         ]
     if args.json_out:
-        from .serialize import finding_to_dict
+        from tealtools.serialize import finding_to_dict
         out: dict[str, list] = {}
         for name in names:
             cls = DETECTORS[name]
@@ -292,11 +292,11 @@ def _cmd_detections(args) -> int:
 
 
 def _cmd_detections_scan(args) -> int:
-    from .detections.scan import (
+    from tealtools.detections.scan import (
         DEFAULT_CACHE as SCAN_CACHE,
         ScanConfig, render_json, render_text, scan,
     )
-    from .detections.config import DetectionConfig
+    from tealtools.detections.config import DetectionConfig
 
     config = ScanConfig.from_path(Path(args.config)) if args.config else ScanConfig.empty()
     detection_config = (
@@ -316,7 +316,7 @@ def _cmd_detections_scan(args) -> int:
 
 
 def _cmd_all(args) -> int:
-    from .detector import run_all, run_all_dict
+    from tealtools.detector import run_all, run_all_dict
     prog = _load(args)
     if args.json_out:
         print(_json.dumps(run_all_dict(prog), indent=2))
@@ -452,7 +452,7 @@ def build_parser() -> argparse.ArgumentParser:
     xc.add_argument("--registry", required=True,
                     help="yaml mapping AppID → callee DB path")
 
-    from .detections import DETECTORS as _DETECTORS
+    from tealtools.detections import DETECTORS as _DETECTORS
     det = sub.add_parser(
         "detections",
         help="run one (or every) Algorand-security-guide detection",

@@ -18,7 +18,8 @@ from pathlib import Path
 
 import pytest
 
-from tealtools import cli, targets
+from tealtools import targets
+from cli.main import main
 from tealtools.serialize import finding_to_dict
 
 
@@ -166,7 +167,7 @@ def test_finding_to_dict_last_resort_str():
 
 
 def test_cli_exit_code_bad_target(capsys):
-    rc = cli.main(["auth", "/tmp/does-not-exist-xyz-tealql"])
+    rc = main(["auth", "/tmp/does-not-exist-xyz-tealql"])
     assert rc == 2
     err = capsys.readouterr().err
     assert "does not exist" in err
@@ -174,21 +175,21 @@ def test_cli_exit_code_bad_target(capsys):
 
 def test_cli_debug_db_passthrough(tmp_path, capsys):
     db = _make_stub_db(tmp_path / "stub-db")
-    rc = cli.main(["debug", "db", str(db)])
+    rc = main(["debug", "db", str(db)])
     assert rc == 0
     assert capsys.readouterr().out.strip() == str(db.resolve())
 
 
 def test_cli_debug_db_json(tmp_path, capsys):
     db = _make_stub_db(tmp_path / "stub-db")
-    rc = cli.main(["debug", "db", str(db), "--json"])
+    rc = main(["debug", "db", str(db), "--json"])
     assert rc == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload == {"db": str(db.resolve())}
 
 
 def test_cli_debug_cache_info_empty(tmp_path, capsys):
-    rc = cli.main([
+    rc = main([
         "debug", "cache", "info",
         "--db-cache", str(tmp_path / "empty-cache"),
         "--json",
@@ -203,7 +204,7 @@ def test_cli_debug_cache_info_populated(tmp_path, capsys):
     cache = tmp_path / "cache"
     (cache / "abc123").mkdir(parents=True)
     (cache / "def456").mkdir(parents=True)
-    rc = cli.main([
+    rc = main([
         "debug", "cache", "info",
         "--db-cache", str(cache),
         "--json",
@@ -218,7 +219,7 @@ def test_cli_debug_cache_info_populated(tmp_path, capsys):
 def test_cli_debug_cache_clear(tmp_path, capsys):
     cache = tmp_path / "cache"
     (cache / "xyz").mkdir(parents=True)
-    rc = cli.main(["debug", "cache", "clear", "--db-cache", str(cache)])
+    rc = main(["debug", "cache", "clear", "--db-cache", str(cache)])
     assert rc == 0
     assert not cache.exists()
 
@@ -230,14 +231,14 @@ def test_cli_debug_cache_clear(tmp_path, capsys):
 
 @requires_codeql
 def test_cli_exit_zero_on_clean(capsys):
-    rc = cli.main(["auth", str(SAFE_DB)])
+    rc = main(["auth", str(SAFE_DB)])
     assert rc == 0
     assert "no violations" in capsys.readouterr().out
 
 
 @requires_codeql
 def test_cli_exit_one_on_findings(capsys):
-    rc = cli.main(["auth", str(VULN_DB)])
+    rc = main(["auth", str(VULN_DB)])
     assert rc == 1
     out = capsys.readouterr().out
     assert "app_global_put" in out
@@ -246,7 +247,7 @@ def test_cli_exit_one_on_findings(capsys):
 
 @requires_codeql
 def test_cli_json_auth_shape(capsys):
-    cli.main(["auth", str(VULN_DB), "--json"])
+    main(["auth", str(VULN_DB), "--json"])
     data = json.loads(capsys.readouterr().out)
     assert isinstance(data, list)
     assert data, "expected at least one violation"
@@ -259,7 +260,7 @@ def test_cli_json_auth_shape(capsys):
 
 @requires_codeql
 def test_cli_json_group_shape_keys(capsys):
-    cli.main(["group-shape", str(VULN_DB), "--json"])
+    main(["group-shape", str(VULN_DB), "--json"])
     data = json.loads(capsys.readouterr().out)
     assert "constraints" in data
     assert isinstance(data["constraints"], list)
@@ -267,7 +268,7 @@ def test_cli_json_group_shape_keys(capsys):
 
 @requires_codeql
 def test_cli_json_cost_keys(capsys):
-    cli.main(["cost", str(VULN_DB), "--json"])
+    main(["cost", str(VULN_DB), "--json"])
     data = json.loads(capsys.readouterr().out)
     assert "entries" in data
     for e in data["entries"]:
@@ -278,7 +279,7 @@ def test_cli_json_cost_keys(capsys):
 
 @requires_codeql
 def test_cli_json_itxn_report_keys(capsys):
-    cli.main(["itxn-report", str(VULN_DB), "--json"])
+    main(["itxn-report", str(VULN_DB), "--json"])
     data = json.loads(capsys.readouterr().out)
     assert "groups" in data
     assert isinstance(data["groups"], list)
@@ -286,7 +287,7 @@ def test_cli_json_itxn_report_keys(capsys):
 
 @requires_codeql
 def test_cli_json_path_predicates_keys(capsys):
-    cli.main(["path-predicates", str(VULN_DB), "--json"])
+    main(["path-predicates", str(VULN_DB), "--json"])
     data = json.loads(capsys.readouterr().out)
     assert "blocks" in data
     for bb in data["blocks"]:
@@ -295,7 +296,7 @@ def test_cli_json_path_predicates_keys(capsys):
 
 @requires_codeql
 def test_cli_json_cfg_wraps_dot(capsys):
-    cli.main(["cfg", str(VULN_DB), "--json"])
+    main(["cfg", str(VULN_DB), "--json"])
     data = json.loads(capsys.readouterr().out)
     assert data["format"] == "dot"
     assert data["dot"].startswith("digraph")
@@ -303,7 +304,7 @@ def test_cli_json_cfg_wraps_dot(capsys):
 
 @requires_codeql
 def test_cli_json_all_aggregator(capsys):
-    cli.main(["all", str(VULN_DB), "--json"])
+    main(["all", str(VULN_DB), "--json"])
     data = json.loads(capsys.readouterr().out)
     assert {"detectors", "reports"} <= data.keys()
     # Every detector key maps to a list (possibly empty).
