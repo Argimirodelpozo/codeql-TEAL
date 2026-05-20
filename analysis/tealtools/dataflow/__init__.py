@@ -6,10 +6,12 @@ Layout:
   plus the descriptor classes (``Source``, ``Sink``, ``FlowRule``,
   ``Violation``) and the built-in propagation rules (hash / slice /
   concat-with-const).
-- :mod:`tealtools.dataflow.nonunique_box_key` — non-unique field →
-  box-key sink.
 - :mod:`tealtools.dataflow.box` — into-box / out-of-box / key-correlated
   flow detectors.
+
+The non-unique-box-key detector built on this framework is a
+first-class detection — it lives at ``security/detections/box-key/``
+and is reached via :data:`tealtools.detections.DETECTORS`.
 - :mod:`tealtools.dataflow.predicate_aware` — post-filter on any
   ``Violation`` list using path-predicate constraints.
 
@@ -29,15 +31,6 @@ from .engine import (
     TaintAnalysis,
     TaintedOperand,
     Violation,
-)
-
-from .nonunique_box_key import (
-    ASSET_PARAMS_NAME_SOURCE,
-    BOX_CREATE_SINK,
-    BOX_PUT_SINK,
-    DEFAULT_SINKS,
-    DEFAULT_SOURCES,
-    NonUniqueBoxKeyDetector,
 )
 
 from .box import (
@@ -69,10 +62,6 @@ __all__ = [
     "Violation", "Operand", "TaintedOperand",
     "HASH_PROPAGATION_RULE", "SLICE_PROPAGATION_RULE",
     "CONCAT_PROPAGATION_RULE", "DEFAULT_RULES",
-    # nonunique_box_key
-    "NonUniqueBoxKeyDetector",
-    "ASSET_PARAMS_NAME_SOURCE", "BOX_CREATE_SINK", "BOX_PUT_SINK",
-    "DEFAULT_SOURCES", "DEFAULT_SINKS",
     # box
     "detect_into_box_flows", "detect_out_of_box_flows",
     "detect_correlated_flows", "CorrelatedViolation",

@@ -16,7 +16,60 @@ Two conditions:
 
 The presence-pair check is a proxy: it doesn't verify the two opcode outputs are actually compared, only that both appear. This matches the original QL form deliberately; tightening to a real comparison check is a follow-up.
 
+## Examples
+
+Vulnerable — the detector flags this:
+
+```teal
+#pragma version 8
+// VULNERABLE: DeleteApplication allowed without checking if funds remain
+txn OnCompletion
+int 5
+==
+bnz delete_handler
+int 1
+return
+delete_handler:
+txn Sender
+global CreatorAddress
+==
+assert
+// Missing: balance == min_balance check
+// Funds locked permanently if not drained first
+int 1
+return
+```
+
+Fixed — the detector stays quiet:
+
+```teal
+#pragma version 8
+// FIXED: DeleteApplication only allowed when balance == min_balance
+txn OnCompletion
+int 5
+==
+bnz delete_handler
+int 1
+return
+delete_handler:
+txn Sender
+global CreatorAddress
+==
+assert
+global CurrentApplicationAddress
+balance
+global CurrentApplicationAddress
+min_balance
+==
+assert
+int 1
+return
+```
+
 ## Files
 
-- `delete_funds_check.py` — Python port. Walks `prog.assignments` once for each of the two opcodes.
-- `*.teal` — fixtures: `vuln.teal` / `fixed.teal` (canonical pair).
+- `delete_funds_check.py` — the detector.
+
+Test fixtures — `vuln` / `fixed` `.teal` programs, their built
+CodeQL DBs, and the expected detector output — live under
+`tests/tealtools/sec_guide/delete_funds_check/`, one directory per case.

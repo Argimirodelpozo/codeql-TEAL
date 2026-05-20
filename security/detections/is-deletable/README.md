@@ -14,7 +14,45 @@ This detector is the *unguarded* version: it flags any reachable delete path reg
 
 The QL form is deliberately conservative: dispatch via `match` / `switch` tables is not recognised as a guard (treated as if the exit were reachable from all OnCompletion values). The Python port preserves the same shape so its findings match the QL `.expected`.
 
+## Examples
+
+Vulnerable — the detector flags this:
+
+```teal
+#pragma version 8
+// VULNERABLE: DeleteApplication reaches an approving exit — nothing
+// branches OnCompletion == 5 away from approval
+txn OnCompletion
+int 5
+==
+bnz delete_handler
+int 1
+return
+delete_handler:
+int 1
+return
+```
+
+Fixed — the detector stays quiet:
+
+```teal
+#pragma version 8
+// FIXED: DeleteApplication is rejected
+txn OnCompletion
+int 5
+==
+bnz reject
+int 1
+return
+reject:
+int 0
+return
+```
+
 ## Files
 
-- `is_deletable.py` — Python port. Builds `PathPredicateAnalysis(prog)` and checks each approval exit's predicates for an `OnCompletion != 5` constraint.
-- `*.teal` — fixtures: `gabe_vuln.teal` / `gabe_fixed.teal` (DevRel real-world pair), `vuln-complex-dispatch.teal` / `fixed-complex-dispatch.teal` (multi-branch dispatch — the "fixed" variant is the deliberately-flagged case the strict QL form treats as a false positive, kept for parity).
+- `is_deletable.py` — the detector.
+
+Test fixtures — `vuln` / `fixed` `.teal` programs, their built
+CodeQL DBs, and the expected detector output — live under
+`tests/tealtools/sec_guide/is_deletable/`, one directory per case.

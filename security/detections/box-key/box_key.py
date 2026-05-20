@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import Iterable, Optional
 
-from .engine import (
+from tealtools.dataflow.engine import (
     DEFAULT_RULES,
     FlowRule,
     Sink,
@@ -24,11 +24,11 @@ from .engine import (
     TaintedOperand,
     Violation,
 )
-from ..ssa import Assignment, SSAProgram
+from tealtools.ssa import Assignment, SSAProgram
 
 
-# Re-export framework names so existing call sites that did
-# ``from tealtools.nonunique_box_key import Source`` keep working.
+# Re-export the taint-framework names this detector is configured from,
+# so callers can pull them straight off this module.
 __all__ = [
     "Source", "Sink", "FlowRule", "Violation", "TaintedOperand",
     "ASSET_PARAMS_NAME_SOURCE",
@@ -94,10 +94,15 @@ class NonUniqueBoxKeyDetector(TaintAnalysis):
     Override ``sources`` / ``sinks`` / ``rules`` for custom configs.
     """
 
+    # Boxes are application storage — ``box_create`` / ``box_put`` are
+    # app-only opcodes, so this detection never applies to a LogicSig.
+    applies_to = frozenset({"app"})
+
     def __init__(
         self,
         prog: SSAProgram,
         *,
+        file: Optional[str] = None,
         sources: Optional[Iterable[Source]] = None,
         sinks: Optional[Iterable[Sink]] = None,
         rules: Optional[Iterable[FlowRule]] = None,
@@ -109,4 +114,5 @@ class NonUniqueBoxKeyDetector(TaintAnalysis):
             sinks=sinks if sinks is not None else DEFAULT_SINKS,
             rules=rules,
             default_rules=default_rules,
+            file=file,
         )

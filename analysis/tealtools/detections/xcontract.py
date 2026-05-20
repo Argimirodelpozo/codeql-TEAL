@@ -102,12 +102,13 @@ def cross_detection_findings(
     Detectors that don't take seeds run as plain
     ``cls(callee).detect()`` — they're program-level and don't depend
     on the call-site context."""
-    from .common import infer_program_type
     names = list(detector_names) if detector_names is not None else list(DETECTORS)
     out: list[CrossSecGuideFinding] = []
     for app_id, callee in graph.callees.items():
         ca = graph.analyses[app_id]
-        program_type = infer_program_type(callee)
+        # A callee reached through an appcall itxn is, by construction, a
+        # stateful Application — you can only ``itxn`` an app. So filter
+        # to App-applicable detectors directly; no inference needed.
         for name in names:
             cls = DETECTORS.get(name)
             if cls is None:
@@ -115,7 +116,7 @@ def cross_detection_findings(
             applies = getattr(
                 cls, "applies_to", frozenset({"app", "logicsig"}),
             )
-            if program_type not in applies:
+            if "app" not in applies:
                 continue
             det = _construct_detector(cls, callee, ca)
             for v in det.detect():

@@ -1,14 +1,14 @@
 # Algorand Security-Guide Detections
 
-Each subdirectory here is one self-contained Algorand-security-guide detection:
-a Python detector (`.py`) over the `tealtools` SSA substrate, fixture programs
-(`*.teal`), and a `README.md` explaining what the detection looks for and how
-it works.
+Each subdirectory here is one Algorand-security-guide detection: a Python
+detector (`.py`) and a `README.md` explaining what the detection looks
+for and how it works. Test fixtures (`.teal` programs, built DBs,
+expected output) live separately, under `tests/tealtools/sec_guide/`.
 
 Detectors run over the `tealtools` pipeline (constant propagation, range
 propagation, path predicates, …). Their detection shapes are deliberately
 over-conservative — `match`/`switch` dispatch tables aren't recognised as
-OnCompletion guards, for instance — so a few of the checked-in `fixed-*.teal`
+OnCompletion guards, for instance — so a few of the checked-in `fixed-*`
 fixtures are still flagged. Tightening any individual detection is a
 deliberate follow-up, not a silent change.
 
@@ -18,6 +18,7 @@ deliberate follow-up, not a silent change.
 | --- | --- | --- | --- |
 | [`asset-close-to`](asset-close-to/) | high | strict-dominance txn-field | `AssetCloseTo` never validated → asset balance can be drained |
 | [`asset-id-validation`](asset-id-validation/) | high | anywhere-checked | handles axfer without checking `XferAsset` |
+| [`box-key`](box-key/) | high | dataflow | non-unique field (`AssetName`) flows into a box key → collisions |
 | [`close-remainder-to`](close-remainder-to/) | high | strict-dominance txn-field | `CloseRemainderTo` never validated → ALGO balance can be drained |
 | [`delete-funds-check`](delete-funds-check/) | high | OnCompletion + global | DeleteApplication reachable without `balance` / `min_balance` opcode pair |
 | [`fee-validation`](fee-validation/) | high | anywhere-checked | `Fee` never bounded → LogicSig can be drained via fee inflation |

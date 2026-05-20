@@ -27,7 +27,6 @@ from .dataflow.engine import (
 
 # Reports / detectors
 from .auth_domination import AuthDominationDetector, AuthViolation
-from .dataflow.nonunique_box_key import NonUniqueBoxKeyDetector
 from .inner_txn_report import InnerTxnReport
 from .group_reasoning import analyze as analyze_group_shape, GroupShape
 from .cost_analysis import (
@@ -56,8 +55,10 @@ from .xcontract import (
 # Detections subpackage (Algorand-security-guide ports + helpers).
 # Importing the package here exposes ``tealtools.detections`` for
 # ``from tealtools import detections``; individual detectors stay one
-# import deeper to avoid 17 names at the top level.
+# import deeper to avoid 18 names at the top level. ``NonUniqueBoxKeyDetector``
+# is surfaced at the top level for backwards compatibility.
 from . import detections
+from .detections import NonUniqueBoxKeyDetector
 
 __all__ = [
     "SSAProgram", "BasicBlock", "Const", "Phi", "SSAVar", "Assignment",

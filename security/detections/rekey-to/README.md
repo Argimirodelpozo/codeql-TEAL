@@ -12,8 +12,50 @@ A contract with at least one approval exit that doesn't validate `txn RekeyTo` a
 
 This shape lets the detector handle realistic dispatch tables that route different OnCompletion values down different branches, with `RekeyTo` checks only in the branches that actually need them.
 
+## Examples
+
+Vulnerable — the detector flags this:
+
+```teal
+#pragma version 8
+// VULNERABLE: No RekeyTo check — attacker can rekey account to themselves
+txn Amount
+int 500000
+<=
+txn Fee
+global MinTxnFee
+<=
+&&
+// Missing: txn RekeyTo == global ZeroAddress
+int 1
+return
+```
+
+Fixed — the detector stays quiet:
+
+```teal
+#pragma version 8
+// FIXED: RekeyTo validated against ZeroAddress
+txn Amount
+int 500000
+<=
+txn Fee
+global MinTxnFee
+<=
+&&
+txn RekeyTo
+global ZeroAddress
+==
+&&
+assert
+int 1
+return
+```
+
 ## Files
 
-- `rekey_to.py` — Python port. Builds `PathPredicateAnalysis(prog)` and checks each approval exit's dominating predicates for a `RekeyTo == 0` (or `== ZeroAddress`) constraint.
-- Subdirectories `direct/`, `callsub/`, `proto-sub/`, `scratch-space/`, `partial-branch/`, `false-path-approves/` — fixture taxonomies covering each control-flow shape the path-aware analysis must handle (direct checks, checks behind subroutines, proto-sub args, scratch slots, partial-branch coverage, and cases where the *false* branch of a check is the approving one).
-- `gabe_vuln.teal` / `gabe_fixed.teal` — DevRel real-world pair.
+- `rekey_to.py` — the detector.
+
+Test fixtures — `vuln` / `fixed` `.teal` programs, their built
+CodeQL DBs, and the expected detector output — live under
+`tests/tealtools/sec_guide/rekey_to/`, one directory per case.

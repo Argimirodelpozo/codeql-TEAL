@@ -113,7 +113,10 @@ def _validating_predicate(
     result reaches ``arg``, which is in the sink's chain.
     """
     sink_chain_ids = {id(o) for o in _taint_chain(operand)}
-    preds = pp.predicates_at(file, line)
+    # ``predicates_at`` returns a frozenset; its iteration order is
+    # hash-seed-dependent. Sort by repr so that when several predicates
+    # validate the same operand the *reported* one is deterministic.
+    preds = sorted(pp.predicates_at(file, line), key=repr)
     for p in preds:
         # Direct mention by value or args.
         if _predicate_mentions(p, operand):

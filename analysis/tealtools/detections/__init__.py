@@ -34,7 +34,7 @@ from __future__ import annotations
 import importlib.util
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 # Shared modules are imported eagerly so detector .py files can resolve
 # ``from tealtools.detections.common import ...`` etc. when importlib
@@ -50,10 +50,13 @@ _DETECTIONS_ROOT = _REPO_ROOT / "security" / "detections"
 # Stable map ``"<kebab-case-short-name>" -> (snake_case_module_name,
 # DetectorClassName, ViolationClassName)``. The CLI (``python -m
 # tealtools detections --detector <name>``) and the test dispatch
-# look up by the kebab-case key.
-_DETECTION_SPECS: tuple[tuple[str, str, str, str], ...] = (
+# look up by the kebab-case key. The fourth field is the paired
+# Violation class name, or ``None`` for detectors built on the taint
+# framework (which emit the generic ``dataflow.Violation``).
+_DETECTION_SPECS: tuple[tuple[str, str, str, "Optional[str]"], ...] = (
     ("asset-close-to",        "asset_close_to",        "AssetCloseToDetector",        "AssetCloseToViolation"),
     ("asset-id-validation",   "asset_id_validation",   "AssetIdValidationDetector",   "AssetIdValidationViolation"),
+    ("box-key",               "box_key",               "NonUniqueBoxKeyDetector",     None),
     ("close-remainder-to",    "close_remainder_to",    "CloseRemainderToDetector",    "CloseRemainderToViolation"),
     ("delete-funds-check",    "delete_funds_check",    "DeleteFundsCheckDetector",    "DeleteFundsCheckViolation"),
     ("fee-validation",        "fee_validation",        "FeeValidationDetector",       "FeeValidationViolation"),
@@ -98,12 +101,12 @@ DETECTORS: dict[str, Any] = {}
 for _kebab, _snake, _det_cls_name, _viol_cls_name in _DETECTION_SPECS:
     _module = _load_detector_module(_kebab, _snake)
     _det_cls = getattr(_module, _det_cls_name)
-    _viol_cls = getattr(_module, _viol_cls_name)
     DETECTORS[_kebab] = _det_cls
     # Re-export each class at package level so ``from tealtools.detections
     # import AssetCloseToDetector`` keeps working.
     globals()[_det_cls_name] = _det_cls
-    globals()[_viol_cls_name] = _viol_cls
+    if _viol_cls_name is not None:
+        globals()[_viol_cls_name] = getattr(_module, _viol_cls_name)
 
 
 # xcontract is imported last because it depends on individual detector
@@ -115,5 +118,6 @@ __all__ = [
     "DETECTORS",
     "common",
     "xcontract",
-    *(name for _, _, det, viol in _DETECTION_SPECS for name in (det, viol)),
+    *(det for _, _, det, _ in _DETECTION_SPECS),
+    *(viol for _, _, _, viol in _DETECTION_SPECS if viol is not None),
 ]

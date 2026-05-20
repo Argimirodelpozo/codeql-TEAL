@@ -10,7 +10,44 @@ A contract that handles asset-transfer transactions (`TypeEnum == axfer` is reac
 
 **Anywhere-checked form** — a weaker requirement than strict-dominance: the program just has to compare `XferAsset` against *some* value *somewhere*, not necessarily dominating every approval exit. The detector also gates on the contract actually being able to reach the axfer-handling code (otherwise the check is moot).
 
+## Examples
+
+Vulnerable — the detector flags this:
+
+```teal
+#pragma version 8
+// VULNERABLE: handles an asset transfer (reads AssetAmount) but never
+// checks XferAsset — the contract accepts ANY asset, not the intended one
+txn AssetAmount
+int 0
+>
+assert
+// Missing: txn XferAsset == <expected ASA id>
+int 1
+return
+```
+
+Fixed — the detector stays quiet:
+
+```teal
+#pragma version 8
+// FIXED: XferAsset pinned to the expected ASA before approval
+txn AssetAmount
+int 0
+>
+txn XferAsset
+int 31566704
+==
+&&
+assert
+int 1
+return
+```
+
 ## Files
 
-- `asset_id_validation.py` — Python port. Walks `prog.assignments` for both a `TypeEnum == axfer` axfer-reachability check and a `XferAsset` comparison anywhere.
-- `*.teal` — fixtures: `gabe_vuln.teal` / `gabe_fixed.teal` (DevRel real-world pair).
+- `asset_id_validation.py` — the detector.
+
+Test fixtures — `vuln` / `fixed` `.teal` programs, their built
+CodeQL DBs, and the expected detector output — live under
+`tests/tealtools/sec_guide/asset_id_validation/`, one directory per case.

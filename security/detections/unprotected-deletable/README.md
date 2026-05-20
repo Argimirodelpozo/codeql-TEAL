@@ -16,7 +16,50 @@ Two conjoined per-exit checks:
 
 If both hold, the exit is reported. The Python port uses the same `PathPredicateAnalysis` machinery and the `common.senderCreatorGuardDominates` helper.
 
+## Examples
+
+Vulnerable — the detector flags this:
+
+```teal
+#pragma version 8
+// VULNERABLE: DeleteApplication allowed without access control —
+// any account can delete the application
+txn OnCompletion
+int 5
+==
+bnz delete_handler
+int 1
+return
+delete_handler:
+// No sender == creator check
+int 1
+return
+```
+
+Fixed — the detector stays quiet:
+
+```teal
+#pragma version 8
+// FIXED: DeleteApplication restricted to the creator
+txn OnCompletion
+int 5
+==
+bnz delete_handler
+int 1
+return
+delete_handler:
+txn Sender
+global CreatorAddress
+==
+assert
+int 1
+return
+```
+
 ## Files
 
-- `unprotected_deletable.py` — Python port using the same two checks.
-- `*.teal` — fixtures: `gabe_vuln.teal` / `gabe_fixed.teal` (DevRel pair), `vuln-dispatch-table.teal` / `fixed-dispatch-table.teal` (dispatch-table shapes — the "fixed" variant uses a `match` table that the conservative form doesn't recognise as a guard).
+- `unprotected_deletable.py` — the detector.
+
+Test fixtures — `vuln` / `fixed` `.teal` programs, their built
+CodeQL DBs, and the expected detector output — live under
+`tests/tealtools/sec_guide/unprotected_deletable/`, one directory per case.

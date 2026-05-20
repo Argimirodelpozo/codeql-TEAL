@@ -14,7 +14,44 @@ The *unguarded* version, mirroring `is-deletable`. Pair with `unprotected-updata
 
 Same conservative shape as `is-deletable`: dispatch tables (`match` / `switch`) aren't recognised as guards.
 
+## Examples
+
+Vulnerable — the detector flags this:
+
+```teal
+#pragma version 8
+// VULNERABLE: UpdateApplication reaches an approving exit unguarded
+txn OnCompletion
+int 4
+==
+bnz update_handler
+int 1
+return
+update_handler:
+int 1
+return
+```
+
+Fixed — the detector stays quiet:
+
+```teal
+#pragma version 8
+// FIXED: UpdateApplication is rejected
+txn OnCompletion
+int 4
+==
+bnz reject
+int 1
+return
+reject:
+int 0
+return
+```
+
 ## Files
 
-- `is_updatable.py` — Python port over `PathPredicateAnalysis(prog)`.
-- `*.teal` — fixtures: `gabe_vuln.teal` / `gabe_fixed.teal` (DevRel real-world pair), `vuln-fallthrough.teal` (an OnCompletion check that falls through to the update path on equality, still flagged).
+- `is_updatable.py` — the detector.
+
+Test fixtures — `vuln` / `fixed` `.teal` programs, their built
+CodeQL DBs, and the expected detector output — live under
+`tests/tealtools/sec_guide/is_updatable/`, one directory per case.

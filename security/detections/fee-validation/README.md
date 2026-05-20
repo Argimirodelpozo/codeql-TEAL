@@ -10,7 +10,44 @@ A LogicSig that doesn't bound `txn Fee`. Without an upper bound on the fee, an a
 
 **Anywhere-checked form** — the program just has to compare `Fee` against *some* value *somewhere*. Path-aware variants (per-OnCompletion fee bounds) aren't required for the check to pass.
 
+## Examples
+
+Vulnerable — the detector flags this:
+
+```teal
+#pragma version 8
+// VULNERABLE: txn Fee is never bounded — an attacker can set an
+// enormous fee and drain the account
+txn Amount
+int 1000000
+<=
+// Missing: txn Fee <= global MinTxnFee
+assert
+int 1
+return
+```
+
+Fixed — the detector stays quiet:
+
+```teal
+#pragma version 8
+// FIXED: txn Fee bounded to the network minimum
+txn Fee
+global MinTxnFee
+<=
+txn Amount
+int 1000000
+<=
+&&
+assert
+int 1
+return
+```
+
 ## Files
 
-- `fee_validation.py` — Python port. Walks `prog.assignments` for any comparison opcode whose inputs include a `txn Fee` read.
-- `*.teal` — fixtures: `gabe_vuln.teal` / `gabe_fixed.teal` (DevRel real-world pair), `vuln-branch-skip.teal` (per-branch fee check fails the anywhere requirement only if the path is conditionally dead), `vuln-subroutine-dead.teal` (fee check in dead code), `fixed-callsub.teal` (fee check in a live subroutine).
+- `fee_validation.py` — the detector.
+
+Test fixtures — `vuln` / `fixed` `.teal` programs, their built
+CodeQL DBs, and the expected detector output — live under
+`tests/tealtools/sec_guide/fee_validation/`, one directory per case.

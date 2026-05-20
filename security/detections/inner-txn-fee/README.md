@@ -12,7 +12,59 @@ Dynamic (non-constant) fees aren't flagged. The detection deliberately only catc
 
 **Per-assignment finding** — every `itxn_field Fee` whose source operand resolves to a `Const` with `int` kind and a non-zero value is reported. The constant-propagation pass must have run for the operand to be classified as a const-int; the Python port triggers it explicitly.
 
+## Examples
+
+Vulnerable — the detector flags this:
+
+```teal
+#pragma version 8
+// VULNERABLE: Inner transaction with hardcoded non-zero fee
+// Repeated calls drain the application account
+txn OnCompletion
+int 0
+==
+assert
+itxn_begin
+int 1
+itxn_field TypeEnum
+txn Sender
+itxn_field Receiver
+int 1000
+itxn_field Fee
+int 100000
+itxn_field Amount
+itxn_submit
+int 1
+return
+```
+
+Fixed — the detector stays quiet:
+
+```teal
+#pragma version 8
+// FIXED: Inner transaction fee set to 0 — caller covers via fee pooling
+txn OnCompletion
+int 0
+==
+assert
+itxn_begin
+int 1
+itxn_field TypeEnum
+txn Sender
+itxn_field Receiver
+int 0
+itxn_field Fee
+int 100000
+itxn_field Amount
+itxn_submit
+int 1
+return
+```
+
 ## Files
 
-- `inner_txn_fee.py` — Python port. Calls `prog.propagate_constants()` then walks for `itxn_field Fee` with a non-zero const-int operand.
-- `*.teal` — fixtures: `vuln.teal` / `fixed.teal` (canonical pair), `vuln-dynamic-fee.teal` (dynamic fee — *not* flagged, kept to show the detector's blind spot).
+- `inner_txn_fee.py` — the detector.
+
+Test fixtures — `vuln` / `fixed` `.teal` programs, their built
+CodeQL DBs, and the expected detector output — live under
+`tests/tealtools/sec_guide/inner_txn_fee/`, one directory per case.

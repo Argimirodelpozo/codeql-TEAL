@@ -17,7 +17,65 @@ Three conjoined conditions per approval exit:
 
 This is a *contract-wide* gate on condition (3): the timestamp check just has to exist somewhere, not dominate the upgrade path. Tightening this is a follow-up.
 
+## Examples
+
+Vulnerable — the detector flags this:
+
+```teal
+#pragma version 8
+// VULNERABLE: Creator can update immediately — no timelock delay
+// Users have no time to review new code or exit before upgrade
+txn OnCompletion
+int 4
+==
+bnz update_handler
+int 1
+return
+update_handler:
+txn Sender
+global CreatorAddress
+==
+assert
+// Missing: LatestTimestamp >= announced_upgrade_time + delay
+int 1
+return
+```
+
+Fixed — the detector stays quiet:
+
+```teal
+#pragma version 8
+// FIXED: Update requires timelock — 24h delay after announcement
+txn OnCompletion
+int 4
+==
+bnz update_handler
+int 1
+return
+update_handler:
+txn Sender
+global CreatorAddress
+==
+assert
+// Enforce that current time >= announced upgrade time + 86400 (24 hours)
+global LatestTimestamp
+pushbytes "upgrade_timestamp"
+app_global_get
+int 86400
++
+>=
+assert
+// Clear upgrade state after successful upgrade
+pushbytes "upgrade_timestamp"
+app_global_del
+int 1
+return
+```
+
 ## Files
 
-- `timelock_upgrade.py` — Python port using the same three checks.
-- `*.teal` — fixtures: `vuln.teal` / `fixed.teal` (canonical pair), `vuln-complex-dispatch.teal` / `fixed-complex-dispatch.teal` (multi-branch dispatch).
+- `timelock_upgrade.py` — the detector.
+
+Test fixtures — `vuln` / `fixed` `.teal` programs, their built
+CodeQL DBs, and the expected detector output — live under
+`tests/tealtools/sec_guide/timelock_upgrade/`, one directory per case.

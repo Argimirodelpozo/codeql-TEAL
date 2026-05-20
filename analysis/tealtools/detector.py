@@ -77,11 +77,6 @@ def _auth(prog: SSAProgram):
     return AuthDominationDetector(prog).detect()
 
 
-def _box_key(prog: SSAProgram):
-    from .dataflow.nonunique_box_key import NonUniqueBoxKeyDetector
-    return NonUniqueBoxKeyDetector(prog).detect()
-
-
 def _box_into(prog: SSAProgram):
     from .dataflow.box import detect_into_box_flows
     return detect_into_box_flows(prog)
@@ -130,6 +125,7 @@ def _detection_factory(short_name):
 _DETECTION_NAMES = (
     "asset-close-to",
     "asset-id-validation",
+    "box-key",
     "close-remainder-to",
     "delete-funds-check",
     "fee-validation",
@@ -150,7 +146,6 @@ _DETECTION_NAMES = (
 
 ALL_DETECTORS: list[Detector] = [
     _FnDetector("auth-domination", _auth),
-    _FnDetector("box-key", _box_key),
     _FnDetector("box-df-into", _box_into),
     _FnDetector("box-df-out", _box_out),
     _FnDetector("box-df-correlated", _box_corr),

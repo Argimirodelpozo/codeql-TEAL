@@ -12,7 +12,51 @@ A contract that processes asset transfers but never checks `txn AssetCloseTo`. T
 
 This is intentionally conservative: contracts that validate the field per-OnCompletion branch but not in a single dominating predicate will be flagged. The per-exit path-aware form is `rekey-to`'s shape.
 
+## Examples
+
+Vulnerable — the detector flags this:
+
+```teal
+#pragma version 8
+// VULNERABLE: No AssetCloseTo check — every unit of the asset can be drained
+txn AssetAmount
+int 1000000
+<=
+txn Fee
+global MinTxnFee
+<=
+&&
+// Missing: txn AssetCloseTo == global ZeroAddress
+assert
+int 1
+return
+```
+
+Fixed — the detector stays quiet:
+
+```teal
+#pragma version 8
+// FIXED: AssetCloseTo validated against ZeroAddress
+txn AssetAmount
+int 1000000
+<=
+txn Fee
+global MinTxnFee
+<=
+&&
+txn AssetCloseTo
+global ZeroAddress
+==
+&&
+assert
+int 1
+return
+```
+
 ## Files
 
-- `asset_close_to.py` — Python port over `SSAProgram`. Uses `_FieldValidatedDetector` from `tealtools.detections._field_validated`.
-- `*.teal` — fixtures: `gabe_vuln.teal` / `gabe_fixed.teal` (DevRel real-world pair), `vuln-multi-branch.teal` / `fixed-multi-branch.teal` (synthetic per-branch-only check that the strict-dominance form flags).
+- `asset_close_to.py` — the detector.
+
+Test fixtures — `vuln` / `fixed` `.teal` programs, their built
+CodeQL DBs, and the expected detector output — live under
+`tests/tealtools/sec_guide/asset_close_to/`, one directory per case.

@@ -16,7 +16,50 @@ Conjoined per-exit:
 
 The detector reports each exit where both hold. The Python port reuses `PathPredicateAnalysis` and `common.senderCreatorGuardDominates`.
 
+## Examples
+
+Vulnerable — the detector flags this:
+
+```teal
+#pragma version 8
+// VULNERABLE: UpdateApplication allowed without access control
+// Any account can replace the contract code
+txn OnCompletion
+int 4
+==
+bnz update_handler
+int 1
+return
+update_handler:
+// No sender == creator check
+int 1
+return
+```
+
+Fixed — the detector stays quiet:
+
+```teal
+#pragma version 8
+// FIXED: UpdateApplication restricted to creator only
+txn OnCompletion
+int 4
+==
+bnz update_handler
+int 1
+return
+update_handler:
+txn Sender
+global CreatorAddress
+==
+assert
+int 1
+return
+```
+
 ## Files
 
-- `unprotected_updatable.py` — Python port using the same two checks.
-- `*.teal` — fixtures: `vuln.teal` / `fixed.teal` (canonical pair), `vuln-dispatch-table.teal` / `fixed-dispatch-table.teal` (dispatch tables), `vuln-nested-dispatch.teal` (nested dispatch through a subroutine).
+- `unprotected_updatable.py` — the detector.
+
+Test fixtures — `vuln` / `fixed` `.teal` programs, their built
+CodeQL DBs, and the expected detector output — live under
+`tests/tealtools/sec_guide/unprotected_updatable/`, one directory per case.

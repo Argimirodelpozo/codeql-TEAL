@@ -50,6 +50,7 @@ from typing import Iterable, Optional
 from ..ssa import SSAProgram
 from ..targets import build_db_for_dir
 from . import DETECTORS
+from .config import DetectionConfig
 
 # Content-addressed cache for per-dir DBs built by ``scan``. Override
 # with ``TEALQL_SEC_GUIDE_SCAN_CACHE`` (or the legacy
@@ -184,9 +185,17 @@ def scan(
     *,
     cache_root: Path = DEFAULT_CACHE,
     verbose: bool = False,
+    detection_config: "Optional[DetectionConfig]" = None,
 ) -> list[ScanFinding]:
     """Discover, build, and detect. Returns a flat list of findings
-    sorted by ``(rel_path, detector_name)``."""
+    sorted by ``(rel_path, detector_name)``.
+
+    ``config`` selects *which* detectors run per file (glob → only /
+    exclude). ``detection_config`` declares each file's *mode* (app /
+    logicsig); a detector whose ``applies_to`` excludes the declared
+    mode is skipped. A file the ``detection_config`` doesn't match (or
+    no ``detection_config`` at all) is left unfiltered — every selected
+    detector runs. No opcode inference happens."""
     root = Path(root).resolve()
     by_dir = discover_teal_files(root)
     findings: list[ScanFinding] = []
@@ -198,20 +207,21 @@ def scan(
                 print(f"[scan] codeql build failed for {dir_path}: {e}")
             continue
         prog = SSAProgram(str(db))
-        from .common import infer_program_type
         for teal in teal_files:
             rel = teal.relative_to(root)
             names = config.detectors_for(str(rel))
-            program_type = infer_program_type(prog, file=teal.name)
+            mode = (detection_config.mode_for(str(rel))
+                    if detection_config is not None else None)
             for name in names:
                 cls = DETECTORS.get(name)
                 if cls is None:
                     continue
-                applies = getattr(
-                    cls, "applies_to", frozenset({"app", "logicsig"}),
-                )
-                if program_type not in applies:
-                    continue
+                if mode is not None:
+                    applies = getattr(
+                        cls, "applies_to", frozenset({"app", "logicsig"}),
+                    )
+                    if mode not in applies:
+                        continue
                 # The DB stores files by basename (since we copied them
                 # into the per-DB ``src/``); pass that as the file
                 # filter so detectors see exactly this program.

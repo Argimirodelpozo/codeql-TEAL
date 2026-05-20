@@ -155,7 +155,7 @@ def _render(analysis: str, case_dir: Path, *, scan_cache: Path = None) -> str:
         return body + "\n"
 
     if analysis == "box_key":
-        from tealtools.dataflow.nonunique_box_key import NonUniqueBoxKeyDetector
+        from tealtools.detections import NonUniqueBoxKeyDetector
 
         violations = NonUniqueBoxKeyDetector(prog).detect()
         body = "\n".join(v.pretty() for v in violations) or "(no violations)"
@@ -222,20 +222,17 @@ def _render(analysis: str, case_dir: Path, *, scan_cache: Path = None) -> str:
 
     if analysis == "sec_guide":
         # Detection name is the parent dir of the case dir, snake-case;
-        # map back to the kebab-case keys in `sec_guide.DETECTORS`.
+        # map back to the kebab-case keys in `detections.DETECTORS`.
+        # Each fixture dir is named for the detection it exercises, so
+        # the detector runs directly — no program-mode gating here.
         from tealtools.detections import DETECTORS
-        from tealtools.detections.common import infer_program_type
 
         detection = case_dir.parent.name.replace("_", "-")
         if detection not in DETECTORS:
             raise NotImplementedError(
-                f"no sec-guide detector registered for {detection!r}"
+                f"no detection registered for {detection!r}"
             )
         cls = DETECTORS[detection]
-        applies = getattr(cls, "applies_to", frozenset({"app", "logicsig"}))
-        program_type = infer_program_type(prog)
-        if program_type not in applies:
-            return f"(not applicable to {program_type})\n"
         violations = cls(prog).detect()
         body = "\n".join(v.pretty() for v in violations) or "(no violations)"
         return body + "\n"

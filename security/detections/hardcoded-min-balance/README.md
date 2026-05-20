@@ -14,7 +14,78 @@ Pattern match: find a `balance` opcode and a `-` opcode in the same program wher
 
 This is a heuristic — the `balance` and `-` aren't required to be data-connected, only co-resident. The match-anywhere `min_balance` exemption is also coarse. False positives on contracts that subtract for unrelated reasons are possible; tightening this is a follow-up.
 
+## Examples
+
+Vulnerable — the detector flags this:
+
+```teal
+#pragma version 8
+// VULNERABLE: Hardcoded minimum balance of 100000 microALGO
+// Breaks when contract creates boxes or opts into assets
+txn OnCompletion
+int 0
+==
+assert
+global CurrentApplicationAddress
+balance
+int 100000
+-
+store 0
+load 0
+int 0
+>
+assert
+itxn_begin
+int 1
+itxn_field TypeEnum
+txn Sender
+itxn_field Receiver
+load 0
+itxn_field Amount
+int 0
+itxn_field Fee
+itxn_submit
+int 1
+return
+```
+
+Fixed — the detector stays quiet:
+
+```teal
+#pragma version 8
+// FIXED: Dynamic minimum balance using min_balance opcode
+txn OnCompletion
+int 0
+==
+assert
+global CurrentApplicationAddress
+balance
+global CurrentApplicationAddress
+min_balance
+-
+store 0
+load 0
+int 0
+>
+assert
+itxn_begin
+int 1
+itxn_field TypeEnum
+txn Sender
+itxn_field Receiver
+load 0
+itxn_field Amount
+int 0
+itxn_field Fee
+itxn_submit
+int 1
+return
+```
+
 ## Files
 
-- `hardcoded_min_balance.py` — Python port. Walks `prog.assignments` for the opcode triplet and a literal-int operand on the `-`.
-- `*.teal` — fixtures: `vuln.teal` / `fixed.teal` (canonical pair — fixed uses `min_balance`).
+- `hardcoded_min_balance.py` — the detector.
+
+Test fixtures — `vuln` / `fixed` `.teal` programs, their built
+CodeQL DBs, and the expected detector output — live under
+`tests/tealtools/sec_guide/hardcoded_min_balance/`, one directory per case.

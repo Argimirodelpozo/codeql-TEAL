@@ -115,14 +115,6 @@ def _cmd_auth(args) -> int:
     )
 
 
-def _cmd_box_key(args) -> int:
-    from .dataflow.nonunique_box_key import NonUniqueBoxKeyDetector
-    return _emit_findings(
-        NonUniqueBoxKeyDetector(_load(args)).detect(),
-        json_out=args.json_out,
-    )
-
-
 def _cmd_box_df(args) -> int:
     from .dataflow.box import (
         detect_into_box_flows,
@@ -237,6 +229,21 @@ def _cmd_xcontract(args) -> int:
     return 1 if findings else 0
 
 
+def _resolve_mode(args) -> "str | None":
+    """Determine the declared detection mode (``"app"`` / ``"logicsig"``
+    / ``None``) for the target. ``--mode`` wins outright; otherwise a
+    ``--config`` file is consulted by matching the *target string*
+    against its globs. ``None`` means "unfiltered — run every
+    detector"; no opcode inference happens."""
+    if args.mode:
+        return args.mode
+    if args.config:
+        from .detections.config import DetectionConfig
+        cfg = DetectionConfig.from_path(Path(args.config))
+        return cfg.mode_for(str(args.target))
+    return None
+
+
 def _cmd_detections(args) -> int:
     from .detections import DETECTORS
 
@@ -244,8 +251,18 @@ def _cmd_detections(args) -> int:
         for name in sorted(DETECTORS):
             print(name)
         return 0
+
+    mode = _resolve_mode(args)
     prog = _load(args)
     names = list(DETECTORS) if args.all else [args.detector]
+    # Mode filtering applies to --all only; an explicit --detector is an
+    # explicit request and runs regardless of declared mode.
+    if mode is not None and args.all:
+        names = [
+            n for n in names
+            if mode in getattr(DETECTORS[n], "applies_to",
+                               frozenset({"app", "logicsig"}))
+        ]
     if args.json_out:
         from .serialize import finding_to_dict
         out: dict[str, list] = {}
@@ -279,14 +296,20 @@ def _cmd_detections_scan(args) -> int:
         DEFAULT_CACHE as SCAN_CACHE,
         ScanConfig, render_json, render_text, scan,
     )
+    from .detections.config import DetectionConfig
 
     config = ScanConfig.from_path(Path(args.config)) if args.config else ScanConfig.empty()
+    detection_config = (
+        DetectionConfig.from_path(Path(args.mode_config))
+        if args.mode_config else None
+    )
     cache = Path(args.cache) if args.cache else SCAN_CACHE
     findings = scan(
         Path(args.root),
         config=config,
         cache_root=cache,
         verbose=args.verbose,
+        detection_config=detection_config,
     )
     print(render_json(findings) if args.json_out else render_text(findings))
     return 1 if findings else 0
@@ -389,7 +412,6 @@ def build_parser() -> argparse.ArgumentParser:
         return sp
 
     add("auth", "auth-domination detector", _cmd_auth)
-    add("box-key", "non-unique box-key detector", _cmd_box_key)
 
     box_df = add("box-df", "box dataflow (into / out / correlated)", _cmd_box_df)
     box_df.add_argument(
@@ -450,6 +472,12 @@ def build_parser() -> argparse.ArgumentParser:
                      help="rebuild the DB even if already cached")
     det.add_argument("-v", "--verbose", action="store_true",
                      help="print DB-build progress to stderr")
+    det.add_argument("--mode", choices=["app", "logicsig"], default=None,
+                     help="declare the target's mode; with --all, skips "
+                          "detectors that don't apply to that mode")
+    det.add_argument("--config", default=None,
+                     help="detection-mode config (yaml/json); the target "
+                          "path is matched against its globs to pick a mode")
     group = det.add_mutually_exclusive_group(required=True)
     group.add_argument(
         "--detector", choices=sorted(_DETECTORS.keys()),
@@ -472,6 +500,10 @@ def build_parser() -> argparse.ArgumentParser:
     sgs.add_argument("root", help="directory to walk for .teal files")
     sgs.add_argument("--config", default=None,
                      help="yaml/json with `rules:` for per-file detector selection")
+    sgs.add_argument("--mode-config", default=None,
+                     help="yaml/json with `modes:` declaring each file's "
+                          "app/logicsig mode; detectors that don't apply to "
+                          "a file's mode are skipped")
     sgs.add_argument("--cache", default=None,
                      help="DB cache root (default: ~/.cache/tealql/sec-guide-scan/)")
     sgs.add_argument("--json", action="store_true", dest="json_out",

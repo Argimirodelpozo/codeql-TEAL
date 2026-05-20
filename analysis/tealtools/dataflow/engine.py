@@ -15,9 +15,9 @@ Yields :class:`Violation` records — ``source → sink`` provenance pairs
 with the tainted operand at the sink.
 
 Consumed by:
-- :mod:`tealtools.nonunique_box_key` (asset-params source → box-key sinks)
-- :mod:`tealtools.box_dataflow` (external args / box reads / state writes)
-- :mod:`tealtools.predicate_aware` (post-filter on any TaintAnalysis result)
+- ``security/detections/box-key/`` (asset-params source → box-key sinks)
+- :mod:`tealtools.dataflow.box` (external args / box reads / state writes)
+- :mod:`tealtools.dataflow.predicate_aware` (post-filter on any result)
 
 Pre-materialized SSA only (phi structure is needed to track taint
 across BB joins; ``materialize_phis()`` would erase it).
@@ -215,6 +215,12 @@ class TaintAnalysis:
     cached ``scratch_stores`` annotation populated by
     ``scratchInfluence.ql``. Re-running SSA passes between calls is
     safe; the next ``detect()`` will see the updated state.
+
+    ``file`` scopes the analysis to a single source file: source
+    seeding and sink reporting only consider assignments in that
+    file. Since each ``.teal`` is an independent program (no SSAVars
+    shared across files), this isolates one program inside a
+    multi-file DB — the shape ``scan`` relies on.
     """
 
     def __init__(
@@ -225,6 +231,7 @@ class TaintAnalysis:
         sinks: Iterable[Sink],
         rules: Optional[Iterable[FlowRule]] = None,
         default_rules: Optional[Iterable[FlowRule]] = None,
+        file: Optional[str] = None,
     ):
         if getattr(prog, "_materialized", False):
             raise ValueError(
@@ -234,6 +241,7 @@ class TaintAnalysis:
                 "before materialization."
             )
         self.prog = prog
+        self.file = file
         self.sources: list[Source] = list(sources)
         self.sinks: list[Sink] = list(sinks)
         # Custom rules consulted first (user can pre-empt defaults).
@@ -247,10 +255,17 @@ class TaintAnalysis:
 
     # -- public ---------------------------------------------------------
 
+    def _in_scope(self, a: Assignment) -> bool:
+        """True if ``a`` belongs to the file this analysis is scoped to
+        (or no ``file`` scope was set)."""
+        return self.file is None or a.location.file == self.file
+
     def detect(self) -> list[Violation]:
         tainted, source_for = self._compute_taint()
         violations: list[Violation] = []
         for a in self.prog.assignments:
+            if not self._in_scope(a):
+                continue
             for sink in self.sinks:
                 if not sink.matches(a):
                     continue
@@ -285,8 +300,13 @@ class TaintAnalysis:
         tainted: set[TaintedOperand] = set()
         source_for: dict[TaintedOperand, tuple[Assignment, str]] = {}
 
-        # Step 1: seed from sources.
+        # Step 1: seed from sources. Scoped to ``self.file`` so a
+        # multi-file DB only seeds the program under analysis; taint
+        # then can't reach another file because SSAVars aren't shared
+        # across programs.
         for a in self.prog.assignments:
+            if not self._in_scope(a):
+                continue
             for src in self.sources:
                 if not src.matches(a):
                     continue
