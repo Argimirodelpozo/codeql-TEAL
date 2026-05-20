@@ -55,10 +55,12 @@ Python-side shared helpers live in `analysis/tealtools/detections/`:
   resolves the callee in a registry, propagates seeded path predicates).
 - `scan.py` — directory walker that builds per-dir DBs and runs detections.
 
-CodeQL-side, `qlpack.yml` + `run_tests.sh` still live here because the
-non-detection subdirectories (`constant-propagation-tests/`, `phi-liveness/`,
-`puya-benchmarks/`) hold qltests that exercise the QL analysis substrate
-(`codeql-backend/teal/ql/lib/codeql/...`) and need the pack to resolve.
+CodeQL-side, `qlpack.yml` + `run_tests.sh` still live here because
+`constant-propagation-tests/` holds qltests that exercise the QL analysis
+substrate (`codeql-backend/teal/ql/lib/codeql/...`) and needs the pack to
+resolve. Other QL-substrate test sets (`tests/codeql/phi-liveness/`,
+`tests/codeql/puya-benchmarks/`) moved into `tests/codeql/` since that's
+where the codeql backend test discovery already runs.
 
 ## Running
 
@@ -74,6 +76,6 @@ python -m tealtools detections --detector rekey-to <path/to/db-or-source>
 ```
 
 Non-detection sibling directories (`constant-propagation-tests/`,
-`phi-liveness/`, `puya-benchmarks/`, `experimental-archive/`) hold standalone
-analysis-substrate qltests and benchmarks; they're CodeQL test infrastructure,
-not security-guide detections.
+`experimental-archive/`) hold standalone analysis-substrate qltests and
+archived TEAL fixtures; they're CodeQL test infrastructure, not
+security-guide detections.
