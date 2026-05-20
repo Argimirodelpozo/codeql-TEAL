@@ -42,9 +42,11 @@ from typing import Any, Optional
 from . import _field_validated, common  # noqa: F401
 
 
-# Repository root: this file is at <repo>/analysis/tealtools/detections/__init__.py
-_REPO_ROOT = Path(__file__).resolve().parents[3]
-_DETECTIONS_ROOT = _REPO_ROOT / "security" / "detections"
+# Source root: this file is at <repo>/src/analysis/tealtools/detections/__init__.py,
+# so parents[3] is <repo>/src — the detection .py files sit beside their
+# CodeQL counterparts under src/security/detections/.
+_SRC_ROOT = Path(__file__).resolve().parents[3]
+_DETECTIONS_ROOT = _SRC_ROOT / "security" / "detections"
 
 
 # Stable map ``"<kebab-case-short-name>" -> (snake_case_module_name,

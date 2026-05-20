@@ -17,7 +17,7 @@ Each node carries two fields:
   (e.g. ``"int 1"``, ``"load 2"``, ``"txna ApplicationArgs 0"``).
 
 The hierarchy groups opcodes by the same families used in
-``codeql-backend/teal/ql/lib/codeql/teal/ast/opcodes/``. Family classes
+``src/codeql-backend/teal/ql/lib/codeql/teal/ast/opcodes/``. Family classes
 (``ArithmeticOpcode``, ``CryptoOpcode``, ...) are pure Python groupings —
 they do not correspond to CodeQL ``qlClass`` strings and are never
 instantiated directly by :func:`ast_node_from_row`.

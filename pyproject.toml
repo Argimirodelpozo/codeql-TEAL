@@ -31,14 +31,15 @@ tealql = "cli.main:main"
 
 [tool.hatch.build.targets.wheel]
 # Two packages: the ``tealtools`` analysis library (at
-# ``analysis/tealtools/``) and the ``cli`` command-line front-end (at
-# the top-level ``cli/`` directory). The CodeQL extractor + QL backend
-# live outside the Python tree and are expected on the user's machine
-# (codeql CLI on PATH, repo's .codeql-extractors/ for development).
-packages = ["analysis/tealtools", "cli"]
+# ``src/analysis/tealtools/``) and the ``cli`` command-line front-end
+# (at the top-level ``cli/`` directory). The CodeQL extractor + QL
+# backend live outside the Python tree and are expected on the user's
+# machine (codeql CLI on PATH, repo's .codeql-extractors/ for
+# development).
+packages = ["src/analysis/tealtools", "cli"]
 
 [tool.hatch.build.targets.wheel.force-include]
 # Bundle the .ql packs that tealtools.graphs depends on at runtime;
 # without them the SSAProgram loader can't refresh its cached
 # CodeQL annotations.
-"analysis/tealtools/queries" = "tealtools/queries"
+"src/analysis/tealtools/queries" = "tealtools/queries"

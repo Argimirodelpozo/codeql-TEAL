@@ -15,7 +15,7 @@ Yields :class:`Violation` records — ``source → sink`` provenance pairs
 with the tainted operand at the sink.
 
 Consumed by:
-- ``security/detections/box-key/`` (asset-params source → box-key sinks)
+- ``src/security/detections/box-key/`` (asset-params source → box-key sinks)
 - :mod:`tealtools.dataflow.box` (external args / box reads / state writes)
 - :mod:`tealtools.dataflow.predicate_aware` (post-filter on any result)
 
