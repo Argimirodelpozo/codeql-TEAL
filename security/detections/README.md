@@ -5,13 +5,12 @@ a Python detector (`.py`) over the `tealtools` SSA substrate, fixture programs
 (`*.teal`), and a `README.md` explaining what the detection looks for and how
 it works.
 
-Detectors were originally ported from CodeQL queries; the `.ql` versions have
-since been retired in favour of the Python implementations, which run faster
-and integrate directly with the `tealtools` pipeline (constant propagation,
-range propagation, path predicates, …). The over-conservative QL shapes are
-preserved (e.g. `match`/`switch` dispatch tables aren't recognised as
-OnCompletion guards) — tighter detectors are deliberate follow-ups, not silent
-changes.
+Detectors run over the `tealtools` pipeline (constant propagation, range
+propagation, path predicates, …). Their detection shapes are deliberately
+over-conservative — `match`/`switch` dispatch tables aren't recognised as
+OnCompletion guards, for instance — so a few of the checked-in `fixed-*.teal`
+fixtures are still flagged. Tightening any individual detection is a
+deliberate follow-up, not a silent change.
 
 ## Detections
 
@@ -55,10 +54,9 @@ Python-side shared helpers live in `analysis/tealtools/detections/`:
   resolves the callee in a registry, propagates seeded path predicates).
 - `scan.py` — directory walker that builds per-dir DBs and runs detections.
 
-No CodeQL pack lives here anymore — every QL-substrate test set
-(`tests/codeql/phi-liveness/`, `tests/codeql/puya-benchmarks/`,
-`tests/codeql/const_propagation/`) moved into `tests/codeql/`, which has its
-own `argimirodelpozo/teal-codeql-tests` pack and is the only path the
+This directory holds only the Python detectors. CodeQL qltests for the
+analysis substrate live under `tests/codeql/` (the
+`argimirodelpozo/teal-codeql-tests` pack), which is the path the
 `test_codeql_backend.py` runner walks.
 
 ## Running
@@ -70,6 +68,3 @@ python -m tealtools detections --list
 # Run one detection (or --all)
 python -m tealtools detections --detector rekey-to <path/to/db-or-source>
 ```
-
-After the cleanup, only the 17 detection directories live here alongside
-this `README.md`.
