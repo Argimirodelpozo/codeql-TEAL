@@ -1,0 +1,10 @@
+=== Inner-txn group  prog.teal  submit@L40  (1 txn) ===
+  Txn 1  (itxn_begin@L8 → itxn_submit@L40)
+    TypeEnum               = 6  (set@L10)
+    ApplicationArgs        = [0xaa01, 0xaa02]  (set@L13, L15)
+    Accounts               = [txn Sender, global CurrentApplicationAddress]  (set@L18, L20)
+    Assets                 = [100, 200]  (set@L23, L25)
+    Applications           = [300, 400]  (set@L28, L30)
+    ApprovalProgramPages   = [0xbb01, 0xbb02]  (set@L33, L35)
+    ClearStateProgramPages = [0xcc01]  (set@L38)
+
