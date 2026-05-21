@@ -82,6 +82,21 @@ from .ssa import (
 Operand = Union[SSAVar, Phi, Const]
 
 
+# AVM itxn fields that are *arrays*: each ``itxn_field F`` op APPENDS an
+# element rather than overwriting. So N field ops for one of these names
+# means an N-element array (in program order), not N alternative values
+# the way repeated scalar-field writes across branches would. The report
+# renders these as ordered ``[e0, e1, …]`` instead of a ``{a | b}`` set.
+_ARRAY_ITXN_FIELDS = frozenset({
+    "ApplicationArgs",
+    "Accounts",
+    "Assets",
+    "Applications",
+    "ApprovalProgramPages",
+    "ClearStateProgramPages",
+})
+
+
 @dataclass
 class InnerTxnField:
     """A single ``itxn_field F`` op in the program.
@@ -431,18 +446,24 @@ class InnerTxnReport:
                 w = max(len(n) for n in seen_names)
                 for name in seen_names:
                     fs = grouped[name]
-                    if len(fs) == 1:
+                    lines = ", ".join(f"L{f.line}" for f in fs)
+                    if name in _ARRAY_ITXN_FIELDS:
+                        # Array-valued field: each itxn_field op appends an
+                        # element, so render the ops in program order
+                        # (fs is line-sorted) as an ordered sequence.
+                        elems = ", ".join(f.value_str() for f in fs)
+                        out.append(f"    {name.ljust(w)} = [{elems}]  (set@{lines})")
+                    elif len(fs) == 1:
                         out.append(f"    {name.ljust(w)} = {fs[0].value_str()}  (set@L{fs[0].line})")
                     else:
-                        # Multiple itxn_field F ops along different
-                        # paths — show each with its set-line.
+                        # Scalar field written by multiple itxn_field ops
+                        # along different paths — show the union of values.
                         union_vals: list[str] = []
                         for f in fs:
                             for v in f.possible_values():
                                 if v not in union_vals:
                                     union_vals.append(v)
                         rendered = "{" + " | ".join(union_vals) + "}"
-                        lines = ", ".join(f"L{f.line}" for f in fs)
                         out.append(f"    {name.ljust(w)} = {rendered}  (set@{lines})")
             out.append("")
         return "\n".join(out)
