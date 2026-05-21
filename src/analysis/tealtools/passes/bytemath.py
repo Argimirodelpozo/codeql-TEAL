@@ -72,9 +72,12 @@ uint64-range seeds are in place before bytemath composes them.
 """
 from __future__ import annotations
 
+import logging
 from typing import Optional
 
 from ..ssa import Const, IntRange, Phi, SSAProgram, SSAVar, TealType
+
+logger = logging.getLogger("tealtools.passes.bytemath")
 
 
 _BYTES_OP_RULES = ("b+", "b-", "b*", "b/", "b%", "b&", "b|", "b^")
@@ -325,11 +328,9 @@ def propagate_bytemath_ranges(prog: SSAProgram) -> int:
     # Iteration cap hit — emit a soft warning. We *don't* raise: a
     # partial result is still useful, and downstream analyses already
     # treat unbounded ranges as "no info".
-    import sys
-    print(
-        "tealtools.bytemath: propagate_bytemath_ranges hit iteration "
-        f"cap ({_PASS_ITER_CAP}); ranges may not have converged. "
-        "This usually means a bytemath loop needs proper widening.",
-        file=sys.stderr,
+    logger.warning(
+        "propagate_bytemath_ranges hit iteration cap (%d); ranges may "
+        "not have converged. This usually means a bytemath loop needs "
+        "proper widening.", _PASS_ITER_CAP,
     )
     return tagged

@@ -68,15 +68,23 @@ pass is idempotent — running ``run_all_passes`` twice is a no-op
 the second time."""
 from __future__ import annotations
 
+import logging
+import time
 from typing import Optional
 
 from ..ssa import SSAProgram
 
+logger = logging.getLogger("tealtools.passes")
 
-def run_all_passes(prog: SSAProgram, *, verbose: bool = False) -> SSAProgram:
+
+def run_all_passes(prog: SSAProgram) -> SSAProgram:
     """Apply every SSA functional pass in the canonical order.
     Returns the same ``prog`` (mutated in place) for chaining. See
-    the module docstring for the per-phase rationale."""
+    the module docstring for the per-phase rationale.
+
+    Progress is reported through the ``tealtools`` logger: an
+    ``INFO`` line when the pipeline starts and a ``DEBUG`` line with
+    the wall-clock time for each pass (CLI ``-v`` / ``-vv``)."""
     passes = [
         # Phase A — value flow.
         ("propagate_constants",         prog.propagate_constants),
@@ -94,14 +102,11 @@ def run_all_passes(prog: SSAProgram, *, verbose: bool = False) -> SSAProgram:
         ("eliminate_dead_constants",    prog.eliminate_dead_constants),
         ("materialize_phis",            prog.materialize_phis),
     ]
+    logger.info("running SSA pass pipeline (%d passes)", len(passes))
     for name, fn in passes:
-        if verbose:
-            import time
-            t0 = time.perf_counter()
-            fn()
-            print(f"  {name}: {(time.perf_counter()-t0)*1000:.0f}ms", flush=True)
-        else:
-            fn()
+        t0 = time.perf_counter()
+        fn()
+        logger.debug("pass %s: %.0fms", name, (time.perf_counter() - t0) * 1000)
     return prog
 
 

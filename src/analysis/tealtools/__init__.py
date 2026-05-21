@@ -6,10 +6,19 @@ convenience interactive use::
 
     from tealtools import SSAProgram, AuthDominationDetector
 
-Run as a CLI::
+The CLI front-end lives in the separate ``cli`` package — run it with
+the ``tealql`` console script or ``python -m cli``.
 
-    python -m tealtools --help
+Progress logging: library modules emit through the ``tealtools``
+logger hierarchy (``tealtools.passes``, ``tealtools.targets``, …).
+As a library we attach only a :class:`logging.NullHandler` so nothing
+is printed unless the embedding application configures a handler; the
+CLI does that from its ``-v`` / ``-vv`` flags.
 """
+
+import logging as _logging
+
+_logging.getLogger("tealtools").addHandler(_logging.NullHandler())
 
 # Substrate
 from .ssa import SSAProgram, BasicBlock, Const, Phi, SSAVar, Assignment

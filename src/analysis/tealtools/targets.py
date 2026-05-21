@@ -19,11 +19,14 @@ needed in a fresh checkout.
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 import shutil
 import subprocess
 from pathlib import Path
 from typing import Optional
+
+logger = logging.getLogger("tealtools.targets")
 
 DEFAULT_CACHE = Path(
     os.environ.get("TEALQL_DB_CACHE",
@@ -75,7 +78,6 @@ def build_db_for_dir(
     *,
     cache_root: Path = DEFAULT_CACHE,
     force_rebuild: bool = False,
-    verbose: bool = False,
 ) -> Path:
     """Build (or re-use) a CodeQL DB from ``teal_files``. The files
     must all live in the same logical group; the cache key hashes
@@ -84,6 +86,9 @@ def build_db_for_dir(
     The build stages each .teal under a per-cache-entry ``src/`` dir
     (codeql's extractor doesn't follow symlinks), then runs
     ``codeql database create``. With a warm cache this is a no-op.
+
+    Progress is reported through the ``tealtools`` logger — run the
+    CLI with ``-v`` to see it.
     """
     if not teal_files:
         raise ValueError("teal_files is empty")
@@ -91,6 +96,7 @@ def build_db_for_dir(
     cache_dir = cache_root / sig
     db = cache_dir / "db"
     if not force_rebuild and (db / "codeql-database.yml").exists():
+        logger.info("reusing cached CodeQL DB: %s", db)
         return db
     cache_dir.mkdir(parents=True, exist_ok=True)
     src = cache_dir / "src"
@@ -104,9 +110,10 @@ def build_db_for_dir(
     sp = _search_path()
     if sp is not None:
         cmd.append(f"--search-path={sp}")
-    if verbose:
-        print(f"[tealql] building DB for {sig} ({len(teal_files)} files)...")
-    subprocess.run(cmd, check=True, capture_output=not verbose)
+    logger.info("building CodeQL DB: %d .teal file(s) → %s",
+                len(teal_files), db)
+    subprocess.run(cmd, check=True, capture_output=True)
+    logger.info("CodeQL DB ready: %s", db)
     return db
 
 
@@ -139,27 +146,31 @@ def resolve_target(
     *,
     cache_root: Path = DEFAULT_CACHE,
     force_rebuild: bool = False,
-    verbose: bool = False,
 ) -> Path:
     """Resolve a user-supplied path to a CodeQL DB.
 
     If ``target`` already points at a DB, it's returned as-is.
     Otherwise ``.teal`` files are discovered under ``target`` (which
     may be a single file or a directory tree) and a DB is built or
-    reused from the cache.
+    reused from the cache. Progress goes through the ``tealtools``
+    logger (CLI ``-v``).
     """
     path = Path(target).resolve()
     if not path.exists():
         raise FileNotFoundError(f"target does not exist: {target}")
+    logger.info("resolving target: %s", path)
     if is_codeql_db(path):
-        if force_rebuild and verbose:
-            print(f"[tealql] --force-rebuild ignored: {path} is a "
-                  f"pre-built DB, not a source tree")
+        if force_rebuild:
+            logger.warning(
+                "--force-rebuild ignored: %s is a pre-built DB, "
+                "not a source tree", path,
+            )
+        logger.info("target is a pre-built CodeQL DB: %s", path)
         return path
     teal_files = _discover_teal_files(path)
+    logger.info("discovered %d .teal file(s) under target", len(teal_files))
     return build_db_for_dir(
         teal_files,
         cache_root=cache_root,
         force_rebuild=force_rebuild,
-        verbose=verbose,
     )

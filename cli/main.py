@@ -16,7 +16,8 @@ Common flags accepted by every analysis subcommand:
   ``--json``           emit JSON instead of text
   ``--db-cache DIR``   alternative cache root for auto-built DBs
   ``--force-rebuild``  rebuild the DB even if a cached one exists
-  ``-v / --verbose``   show DB-build progress on stderr
+  ``-v`` / ``-vv``     progress logging to stderr (``-v`` = INFO
+                       milestones, ``-vv`` = DEBUG per-pass timings)
 
 A ``debug`` namespace exposes raw CodeQL operations (``debug query``,
 ``debug db``, ``debug cache``) for power-user troubleshooting and for
@@ -26,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 import json as _json
+import logging
 import shutil
 import subprocess
 import sys
@@ -35,6 +37,27 @@ from typing import Any, Callable, Iterable
 from tealtools.targets import (
     DEFAULT_CACHE, build_db_for_dir, is_codeql_db, resolve_target,
 )
+
+logger = logging.getLogger("tealtools.cli")
+
+
+def _configure_logging(verbosity: int) -> None:
+    """Wire the ``tealtools`` logger hierarchy to stderr at a level
+    set by the ``-v`` count: 0 → warnings only (quiet), 1 (``-v``) →
+    INFO progress milestones, 2+ (``-vv``) → DEBUG (per-pass timings,
+    finer detail). Library modules emit through this hierarchy; the
+    CLI is the only place a handler gets attached."""
+    if verbosity >= 2:
+        level = logging.DEBUG
+    elif verbosity == 1:
+        level = logging.INFO
+    else:
+        level = logging.WARNING
+    handler = logging.StreamHandler(sys.stderr)
+    handler.setFormatter(logging.Formatter("%(levelname)-7s %(message)s"))
+    root = logging.getLogger("tealtools")
+    root.setLevel(level)
+    root.addHandler(handler)
 
 
 # ---------------------------------------------------------------------------
@@ -56,8 +79,9 @@ def _add_target_args(sp: argparse.ArgumentParser, *, dest: str = "target") -> No
                     help=f"DB cache root (default: {DEFAULT_CACHE})")
     sp.add_argument("--force-rebuild", action="store_true",
                     help="rebuild the DB even if already cached")
-    sp.add_argument("-v", "--verbose", action="store_true",
-                    help="print DB-build progress to stderr")
+    sp.add_argument("-v", "--verbose", action="count", default=0,
+                    help="progress logging to stderr; repeat (-vv) for "
+                         "per-pass timings")
 
 
 def _resolve(args) -> Path:
@@ -66,14 +90,20 @@ def _resolve(args) -> Path:
         args.target,
         cache_root=Path(args.db_cache) if args.db_cache else DEFAULT_CACHE,
         force_rebuild=args.force_rebuild,
-        verbose=args.verbose,
     )
 
 
 def _load(args):
     """Resolve target → DB → :class:`SSAProgram`."""
     from tealtools.ssa import SSAProgram
-    return SSAProgram(str(_resolve(args)))
+    db = _resolve(args)
+    # INFO (not DEBUG): building the SSA program populates the graph
+    # cache on a cold DB, which runs CodeQL queries and can pause for
+    # a while — worth a signpost before the silence.
+    logger.info("building SSA program from %s", db)
+    prog = SSAProgram(str(db))
+    logger.info("SSA program ready (%d assignments)", len(prog.assignments))
+    return prog
 
 
 def _emit_findings(findings: Iterable, *, json_out: bool) -> int:
@@ -263,19 +293,26 @@ def _cmd_detections(args) -> int:
             if mode in getattr(DETECTORS[n], "applies_to",
                                frozenset({"app", "logicsig"}))
         ]
+    logger.info("running %d detection(s) (mode=%s)",
+                len(names), mode or "unfiltered")
     if args.json_out:
         from tealtools.serialize import finding_to_dict
         out: dict[str, list] = {}
         for name in names:
             cls = DETECTORS[name]
-            out[name] = [finding_to_dict(v) for v in cls(prog).detect()]
+            logger.info("running detection: %s", name)
+            findings = cls(prog).detect()
+            logger.info("  %s: %d finding(s)", name, len(findings))
+            out[name] = [finding_to_dict(v) for v in findings]
         print(_json.dumps(out, indent=2))
         any_findings = any(v for v in out.values())
     else:
         any_findings = False
         for name in names:
             cls = DETECTORS[name]
+            logger.info("running detection: %s", name)
             violations = cls(prog).detect()
+            logger.info("  %s: %d finding(s)", name, len(violations))
             if args.all:
                 print(f"=== sec-guide/{name} ===")
             if violations:
@@ -308,7 +345,6 @@ def _cmd_detections_scan(args) -> int:
         Path(args.root),
         config=config,
         cache_root=cache,
-        verbose=args.verbose,
         detection_config=detection_config,
     )
     print(render_json(findings) if args.json_out else render_text(findings))
@@ -470,8 +506,9 @@ def build_parser() -> argparse.ArgumentParser:
                      help=f"DB cache root (default: {DEFAULT_CACHE})")
     det.add_argument("--force-rebuild", action="store_true",
                      help="rebuild the DB even if already cached")
-    det.add_argument("-v", "--verbose", action="store_true",
-                     help="print DB-build progress to stderr")
+    det.add_argument("-v", "--verbose", action="count", default=0,
+                     help="progress logging to stderr; repeat (-vv) for "
+                          "per-pass timings")
     det.add_argument("--mode", choices=["app", "logicsig"], default=None,
                      help="declare the target's mode; with --all, skips "
                           "detectors that don't apply to that mode")
@@ -508,8 +545,9 @@ def build_parser() -> argparse.ArgumentParser:
                      help="DB cache root (default: ~/.cache/tealql/sec-guide-scan/)")
     sgs.add_argument("--json", action="store_true", dest="json_out",
                      help="emit JSON findings instead of text")
-    sgs.add_argument("-v", "--verbose", action="store_true",
-                     help="print DB-build progress to stderr")
+    sgs.add_argument("-v", "--verbose", action="count", default=0,
+                     help="progress logging to stderr; repeat (-vv) for "
+                          "per-pass timings")
     sgs.set_defaults(handler=_cmd_detections_scan)
 
     # --- debug namespace ---------------------------------------------
@@ -545,6 +583,8 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    # ``debug cache`` doesn't take ``-v``; default to quiet for it.
+    _configure_logging(getattr(args, "verbose", 0))
     try:
         return args.handler(args)
     except FileNotFoundError as e:

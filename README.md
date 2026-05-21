@@ -127,7 +127,7 @@ Common flags accepted by every analysis subcommand:
 | `--json` | emit JSON instead of text |
 | `--db-cache DIR` | override the auto-built-DB cache root |
 | `--force-rebuild` | rebuild the DB even if a cached one exists |
-| `-v`, `--verbose` | print DB-build progress to stderr |
+| `-v` / `-vv` | progress logging to stderr — `-v` for INFO milestones (target resolution, DB build, pass pipeline, per-detection counts), `-vv` adds DEBUG per-pass timings |
 
 For raw CodeQL operations there is a `debug` namespace:
 

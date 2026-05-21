@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import fnmatch
 import json
+import logging
 import os
 import subprocess
 from dataclasses import dataclass
@@ -51,6 +52,8 @@ from ..ssa import SSAProgram
 from ..targets import build_db_for_dir
 from . import DETECTORS
 from .config import DetectionConfig
+
+logger = logging.getLogger("tealtools.detections.scan")
 
 # Content-addressed cache for per-dir DBs built by ``scan``. Override
 # with ``TEALQL_SEC_GUIDE_SCAN_CACHE`` (or the legacy
@@ -184,7 +187,6 @@ def scan(
     config: ScanConfig = ScanConfig.empty(),
     *,
     cache_root: Path = DEFAULT_CACHE,
-    verbose: bool = False,
     detection_config: "Optional[DetectionConfig]" = None,
 ) -> list[ScanFinding]:
     """Discover, build, and detect. Returns a flat list of findings
@@ -195,16 +197,19 @@ def scan(
     logicsig); a detector whose ``applies_to`` excludes the declared
     mode is skipped. A file the ``detection_config`` doesn't match (or
     no ``detection_config`` at all) is left unfiltered — every selected
-    detector runs. No opcode inference happens."""
+    detector runs. No opcode inference happens.
+
+    Progress is reported through the ``tealtools`` logger (CLI ``-v``)."""
     root = Path(root).resolve()
     by_dir = discover_teal_files(root)
+    logger.info("scan: %d .teal file(s) across %d director(ies) under %s",
+                sum(len(v) for v in by_dir.values()), len(by_dir), root)
     findings: list[ScanFinding] = []
     for dir_path, teal_files in sorted(by_dir.items()):
         try:
-            db = build_db_for_dir(teal_files, cache_root=cache_root, verbose=verbose)
+            db = build_db_for_dir(teal_files, cache_root=cache_root)
         except subprocess.CalledProcessError as e:
-            if verbose:
-                print(f"[scan] codeql build failed for {dir_path}: {e}")
+            logger.warning("codeql build failed for %s: %s", dir_path, e)
             continue
         prog = SSAProgram(str(db))
         for teal in teal_files:
@@ -212,6 +217,8 @@ def scan(
             names = config.detectors_for(str(rel))
             mode = (detection_config.mode_for(str(rel))
                     if detection_config is not None else None)
+            logger.info("scanning %s (mode=%s): %d detection(s)",
+                        rel, mode or "unfiltered", len(names))
             for name in names:
                 cls = DETECTORS.get(name)
                 if cls is None:
