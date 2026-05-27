@@ -59,16 +59,21 @@ QUERY_NAMES = (
     "ssaOutputs",
     "ssaInputs",
     "constValues",
-    "scratchInfluence",
     "stackHeights",
     "innerTxnFields",
 )
-# ``valueIdentitySteps`` is no longer called: PySSA's
-# :func:`_apply_pyssa_to` populates ``prog._graph.graph["identity_steps"]``
-# directly from the in-memory PySSA structure — shuffle-output identity
-# (via ``_shuffle_mapping``), single-source phi convergence, and
-# scratch-load↔store edges. Same shape ``propagate_constants`` and
-# other consumers expect.
+# ``valueIdentitySteps`` and ``scratchInfluence`` are no longer
+# called: PySSA's :func:`_apply_pyssa_to` populates the same
+# annotations directly from the in-memory CFG.
+#  - ``identity_steps``: shuffle-output identity (via
+#    ``_shuffle_mapping``), single-source phi convergence, and
+#    scratch-load↔store edges.
+#  - ``scratch_stores``: per ``load N``, the set of ``store N``
+#    value-keys that may reach it via the CFG (reaching-defs with
+#    kill analysis in :func:`_compute_scratch_influence`).
+# Same shape consumers (``propagate_constants``,
+# ``propagate_scratch_constants``, taint engine step 2c, detectors)
+# expect, so they keep working unchanged.
 # ``mustValues`` is no longer called: PySSA's
 # :meth:`SSAProgram.propagate_constants` + ``const_fold.py`` cover
 # what it produced (literal pushes, identity flow, phi unification,

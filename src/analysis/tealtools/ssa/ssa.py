@@ -704,6 +704,110 @@ def _fold_spec_fixed(a):
     return fold_spec_fixed(a)
 
 
+def _compute_scratch_influence(prog: SSAProgram) -> dict:
+    """Per ``load N`` opcode, the set of stored-value SSAVar keys that
+    may reach it via the CFG. Classical reaching-definitions analysis
+    over scratch slots:
+
+      - ``store N``  → gen[B][N] = {value-key}, kill[B] ⊇ {N}
+      - ``load  N``  reads at this program point the union of ``store N``
+                     value-keys reaching here (in-set ∪ any earlier
+                     store in the same BB, with later same-slot stores
+                     in the BB killing earlier ones).
+
+    Returns ``{(load_file, load_line): [(val_file, val_line, val_idx), …]}``.
+    Replaces the ``scratchInfluence.ql`` query so we can drop that
+    from the load path.
+
+    Only handles the immediate forms (``store N`` / ``load N``); the
+    dynamic forms (``stores`` / ``loads``) pop the slot off the stack
+    and aren't covered, mirroring the QL query.
+    """
+    # Per-BB walk to collect store/load events in order. Each event
+    # is a tuple ``(kind, slot, val_key_or_None)``; ``kind`` is
+    # ``"store"`` or ``"load"``. Value keys are
+    # ``(file, line, index)`` matching the QL emission shape.
+    bb_events: dict = {}
+    bb_loads: dict = {}  # bb -> list of (load_op, slot, op_index)
+    for b in prog.blocks.values():
+        events: list = []
+        loads_here: list = []
+        for i, a in enumerate(b.assignments):
+            try:
+                slot = int(a.immediates.strip().split()[0])
+            except (ValueError, IndexError, AttributeError):
+                continue
+            if a.op == "store":
+                if a.inputs:
+                    v = a.inputs[0]
+                    if isinstance(v, SSAVar):
+                        events.append((
+                            i, "store", slot, (v.file, v.line, v.index)
+                        ))
+            elif a.op == "load":
+                events.append((i, "load", slot, None))
+                loads_here.append((a, slot, i))
+        bb_events[b] = events
+        bb_loads[b] = loads_here
+
+    # gen[B][slot] = set with the LAST store-slot's value-key in B.
+    # kill[B] = set of slots written in B.
+    gen: dict = {b: {} for b in prog.blocks.values()}
+    kill: dict = {b: set() for b in prog.blocks.values()}
+    for b, events in bb_events.items():
+        for _, kind, slot, val_key in events:
+            if kind == "store":
+                gen[b][slot] = val_key
+                kill[b].add(slot)
+
+    # Fixed-point reaching-definitions at BB granularity.
+    # in[B][slot] = ⋃_{pred} out[pred][slot]
+    # out[B][slot] = in[B][slot] (if slot not killed) ∪ gen[B][slot]
+    in_set: dict = {b: {} for b in prog.blocks.values()}
+    out_set: dict = {b: {} for b in prog.blocks.values()}
+    changed = True
+    while changed:
+        changed = False
+        for b in prog.blocks.values():
+            new_in: dict = {}
+            for pred in b.predecessors:
+                for slot, srcs in out_set[pred].items():
+                    if slot in new_in:
+                        new_in[slot].update(srcs)
+                    else:
+                        new_in[slot] = set(srcs)
+            new_out: dict = {}
+            for slot, srcs in new_in.items():
+                if slot not in kill[b]:
+                    new_out[slot] = set(srcs)
+            for slot, val_key in gen[b].items():
+                new_out[slot] = {val_key}
+            if new_in != in_set[b] or new_out != out_set[b]:
+                changed = True
+                in_set[b] = new_in
+                out_set[b] = new_out
+
+    # Per-BB op-walk: for each ``load N``, gather the reaching set at
+    # the load's program point (in-set merged with any earlier
+    # same-slot store in this BB; later same-slot stores kill).
+    influences: dict = {}
+    for b in prog.blocks.values():
+        local = {
+            slot: set(srcs) for slot, srcs in in_set[b].items()
+        }
+        for ev_i, kind, slot, val_key in bb_events[b]:
+            if kind == "store":
+                local[slot] = {val_key}
+            elif kind == "load":
+                srcs = local.get(slot)
+                if srcs:
+                    load_op = b.assignments[ev_i]
+                    key = (load_op.location.file, load_op.location.line)
+                    influences.setdefault(key, set()).update(srcs)
+
+    return {k: list(v) for k, v in influences.items()}
+
+
 def _to_ssaprogram(py: PySSA, source: SSAProgram) -> SSAProgram:
     """Translate a freshly-built :class:`PySSA` into a new
     ``SSAProgram`` shell using ``source`` as the read-only graph
@@ -925,6 +1029,29 @@ def _apply_pyssa_to(
 
     prog.assignments.sort(key=lambda a: (a.location.file, a.location.line))
 
+    # 6.45) Scratch-slot reaching-definitions. Computes, for every
+    # ``load N`` opcode, the set of ``store N`` value-SSAVars that may
+    # reach it via the CFG (with kill analysis: a later ``store N``
+    # supersedes an earlier one on the same path). Replaces
+    # ``scratchInfluence.ql`` so we can drop that query from the load
+    # path. Populates the graph annotation
+    # ``prog._graph.nodes[load_node]["scratch_stores"]`` in the same
+    # shape the QL loader used, so every existing consumer
+    # (``propagate_scratch_constants``, taint engine step 2c,
+    # ``detections.common._scratch_stores_for``, …) keeps working.
+    _scratch_stores = _compute_scratch_influence(prog)
+    if prog._graph is not None:
+        _nodes_by_loc: dict = {}
+        for _n in prog._graph.nodes:
+            _loc = getattr(_n, "location", None)
+            if _loc is not None:
+                _nodes_by_loc.setdefault(
+                    (_loc.file, _loc.start_line), []
+                ).append(_n)
+        for _load_key, _val_keys in _scratch_stores.items():
+            for _node in _nodes_by_loc.get(_load_key, []):
+                prog._graph.nodes[_node]["scratch_stores"] = list(_val_keys)
+
     # 6.5) Propagate const_value through value-identity edges. Two
     # sources, both replacing what ``mustValues.ql`` provided via
     # ``LocalFlow::valueIdentityFlow`` so the seed survives dropping
@@ -945,12 +1072,8 @@ def _apply_pyssa_to(
     # (e.g. const → swap → load → swap → consumer). Pre-filters the
     # candidate-op lists once so the fixpoint only scans ops that
     # could possibly seed a const, not every assignment in the prog.
-    _scratch_stores = {
-        (n.location.file, n.location.start_line): list(stores)
-        for n in src_graph_snapshot.nodes
-        for stores in [src_graph_snapshot.nodes[n].get("scratch_stores")]
-        if stores
-    } if src_graph_snapshot is not None else {}
+    # ``_scratch_stores`` was populated above by
+    # :func:`_compute_scratch_influence`.
     _shuffle_candidates: list[tuple] = []
     _load_candidates: list = []
     for _a in prog.assignments:
