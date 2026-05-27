@@ -209,9 +209,26 @@ def _run(cmd: list[str]) -> subprocess.CompletedProcess:
 
 
 def _ensure_pack_installed() -> None:
-    if (QUERIES_DIR / ".codeql" / "pack").exists():
+    # ``codeql pack install`` resolves dependencies into the global
+    # ``~/.codeql/packages`` cache; it doesn't create anything under
+    # ``QUERIES_DIR/.codeql/pack`` (the old check looked there), so
+    # without our own sentinel we'd pay ~5s of JVM startup per
+    # ``load_graph`` call just to learn "Nothing to install". Track
+    # install state with a marker file, invalidated when the pack
+    # manifest or lockfile changes (those are the inputs to
+    # dependency resolution).
+    manifest = QUERIES_DIR / "qlpack.yml"
+    lockfile = QUERIES_DIR / "codeql-pack.lock.yml"
+    sentinel = QUERIES_DIR / ".pack_installed_sig"
+    sig_parts: list[str] = []
+    for p in (manifest, lockfile):
+        if p.exists():
+            sig_parts.append(f"{p.name}:{p.stat().st_mtime_ns}")
+    sig = "|".join(sig_parts)
+    if sentinel.exists() and sentinel.read_text() == sig:
         return
     _run([_codeql(), "pack", "install", str(QUERIES_DIR)])
+    sentinel.write_text(sig)
 
 
 def _run_csv_query(db: Path, query: Path, out_dir: Path) -> None:
@@ -255,7 +272,13 @@ def _run_queries_batch(
               f"queries ({names}) ...", file=sys.stderr)
     _run([_codeql(), "database", "run-queries", "-j", "0", "--", str(db),
           *(str(q) for q in queries)])
-    results_root = db / "results" / _QL_PACK_NAME.replace("/", "/")
+    # ``codeql bqrs decode`` is one-file-per-invocation; running them
+    # serially pays JVM startup N times. Parallelise the decodes — N
+    # independent files, embarrassingly parallel, bounded by cores.
+    from concurrent.futures import ThreadPoolExecutor
+    import os as _os
+    results_root = db / "results" / _QL_PACK_NAME
+    decode_jobs: list[tuple[Path, Path]] = []
     for q in queries:
         bqrs = results_root / f"{q.stem}.bqrs"
         if not bqrs.exists():
@@ -263,11 +286,22 @@ def _run_queries_batch(
                 f"codeql database run-queries did not produce {bqrs}; "
                 f"check that ``{q}`` lives in the {_QL_PACK_NAME!r} pack."
             )
-        csv_out = out_dir / f"{q.stem}.csv"
+        decode_jobs.append((bqrs, out_dir / f"{q.stem}.csv"))
+
+    def _decode_one(job: tuple[Path, Path]) -> None:
+        bqrs, csv_out = job
         _run([_codeql(), "bqrs", "decode",
               "--format=csv",
               "--output", str(csv_out),
               str(bqrs)])
+
+    # Cap workers to (cores, len(jobs)) — more than that wastes
+    # context-switch overhead without speeding up.
+    n_workers = min(len(decode_jobs), _os.cpu_count() or 4)
+    with ThreadPoolExecutor(max_workers=n_workers) as ex:
+        # Materialise the iterator so any raised exception in a worker
+        # propagates here (otherwise it gets swallowed by the executor).
+        list(ex.map(_decode_one, decode_jobs))
 
 
 def _cache_dir_for(db: Path) -> Path:
