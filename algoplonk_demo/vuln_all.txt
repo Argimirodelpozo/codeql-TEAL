@@ -1,0 +1,657 @@
+=== auth-domination ===
+(no findings)
+
+=== box-df-into ===
+(no findings)
+
+=== box-df-out ===
+(no findings)
+
+=== box-df-correlated ===
+(no findings)
+
+=== detections/asset-close-to ===
+Contract does not validate txn AssetCloseTo — all asset units can be drained from the account.
+
+=== detections/asset-id-validation ===
+(no findings)
+
+=== detections/box-key ===
+(no findings)
+
+=== detections/close-remainder-to ===
+Contract does not validate txn CloseRemainderTo — the account's entire ALGO balance can be drained.
+
+=== detections/delete-funds-check ===
+Application handles DeleteApplication at exit prog.teal:1960 without checking balance == min_balance — funds may be locked permanently on deletion.
+
+=== detections/fee-validation ===
+Approval exit at prog.teal:1960 is reachable without a txn Fee check — an attacker can drain the account.
+
+=== detections/group-size-check ===
+Approval exit at prog.teal:1960 is reachable without a global GroupSize check — attackers can pad the group with extra transactions.
+
+=== detections/hardcoded-min-balance ===
+(no findings)
+
+=== detections/inner-txn-close-rekey ===
+(no findings)
+
+=== detections/inner-txn-fee ===
+(no findings)
+
+=== detections/is-deletable ===
+Application is deletable at exit prog.teal:1960: OnCompletion == DeleteApplication can reach approval without a guard.
+
+=== detections/is-updatable ===
+Application is updatable at exit prog.teal:1960: OnCompletion == UpdateApplication can reach approval without a guard.
+
+=== detections/rekey-to ===
+Approval exit at prog.teal:1960 is reachable without a RekeyTo check — an attacker can rekey the account.
+
+=== detections/timelock-upgrade ===
+(no findings)
+
+=== detections/tx-type-check ===
+Approval exit at prog.teal:1960 is reachable without a txn Type / TypeEnum check — any transaction type is accepted.
+
+=== detections/unprotected-deletable ===
+Application is deletable by anyone at exit prog.teal:1960: no sender == creator check guards the approval path for DeleteApplication.
+
+=== detections/unprotected-updatable ===
+Application is updatable by anyone at exit prog.teal:1960: no sender == creator check guards the approval path for UpdateApplication.
+
+=== detections/unsafe-lsig-args ===
+(no findings)
+
+=== itxn-report ===
+(no inner transactions)
+
+=== group-shape ===
+(no group-shape constraints)
+
+=== cost ===
+prog.teal:L6    intcblock   op_cost=1     cum=1
+prog.teal:L7    bytecblock  op_cost=1     cum=2
+prog.teal:L8    intc_1      op_cost=1     cum=3
+prog.teal:L9    dupn        op_cost=1     cum=4
+prog.teal:L10   bytec_2     op_cost=1     cum=5
+prog.teal:L11   dupn        op_cost=1     cum=6
+prog.teal:L18   txna        op_cost=1     cum=7
+prog.teal:L19   dup         op_cost=1     cum=8
+prog.teal:L20   len         op_cost=1     cum=9
+prog.teal:L21   intc_2      op_cost=1     cum=10
+prog.teal:L22   dig         op_cost=1     cum=11
+prog.teal:L23   >=          op_cost=1     cum=12
+prog.teal:L24   intc_2      op_cost=1     cum=13
+prog.teal:L25   dig         op_cost=1     cum=14
+prog.teal:L26   uncover     op_cost=1     cum=15
+prog.teal:L27   select      op_cost=1     cum=16
+prog.teal:L28   swap        op_cost=1     cum=17
+prog.teal:L29   substring3  op_cost=1     cum=18
+prog.teal:L32   txna        op_cost=1     cum=19
+prog.teal:L33   dup         op_cost=1     cum=20
+prog.teal:L34   len         op_cost=1     cum=21
+prog.teal:L35   intc_2      op_cost=1     cum=22
+prog.teal:L36   dig         op_cost=1     cum=23
+prog.teal:L37   >=          op_cost=1     cum=24
+prog.teal:L38   intc_2      op_cost=1     cum=25
+prog.teal:L39   dig         op_cost=1     cum=26
+prog.teal:L40   uncover     op_cost=1     cum=27
+prog.teal:L41   select      op_cost=1     cum=28
+prog.teal:L42   swap        op_cost=1     cum=29
+prog.teal:L43   substring3  op_cost=1     cum=30
+prog.teal:L44   dup         op_cost=1     cum=31
+prog.teal:L45   cover       op_cost=1     cum=32
+prog.teal:L49   dig         op_cost=1     cum=33
+prog.teal:L50   len         op_cost=1     cum=34
+prog.teal:L51   dup         op_cost=1     cum=35
+prog.teal:L52   intc        op_cost=1     cum=36
+prog.teal:L53   ==          op_cost=1     cum=37
+prog.teal:L54   assert      op_cost=1     cum=38
+prog.teal:L57   swap        op_cost=1     cum=39
+prog.teal:L58   len         op_cost=1     cum=40
+prog.teal:L59   dup         op_cost=1     cum=41
+prog.teal:L60   cover       op_cost=1     cum=42
+prog.teal:L61   pushint     op_cost=1     cum=43
+prog.teal:L62   ==          op_cost=1     cum=44
+prog.teal:L63   assert      op_cost=1     cum=45
+prog.teal:L68   intc_1      op_cost=1     cum=46
+prog.teal:L69   dig         op_cost=1     cum=47
+prog.teal:L70   >=          op_cost=1     cum=48
+prog.teal:L71   intc_1      op_cost=1     cum=49
+prog.teal:L72   dig         op_cost=1     cum=50
+prog.teal:L73   uncover     op_cost=1     cum=51
+prog.teal:L74   select      op_cost=1     cum=52
+prog.teal:L75   pushint     op_cost=1     cum=53
+prog.teal:L76   dig         op_cost=1     cum=54
+prog.teal:L77   >=          op_cost=1     cum=55
+prog.teal:L78   pushint     op_cost=1     cum=56
+prog.teal:L79   dig         op_cost=1     cum=57
+prog.teal:L80   uncover     op_cost=1     cum=58
+prog.teal:L81   select      op_cost=1     cum=59
+prog.teal:L82   dig         op_cost=1     cum=60
+prog.teal:L83   uncover     op_cost=1     cum=61
+prog.teal:L84   dig         op_cost=1     cum=62
+prog.teal:L85   substring3  op_cost=1     cum=63
+prog.teal:L86   cover       op_cost=1     cum=64
+prog.teal:L89   pushint     op_cost=1     cum=65
+prog.teal:L90   dig         op_cost=1     cum=66
+prog.teal:L91   >=          op_cost=1     cum=67
+prog.teal:L92   pushint     op_cost=1     cum=68
+prog.teal:L93   dig         op_cost=1     cum=69
+prog.teal:L94   uncover     op_cost=1     cum=70
+prog.teal:L95   select      op_cost=1     cum=71
+prog.teal:L96   dig         op_cost=1     cum=72
+prog.teal:L97   uncover     op_cost=1     cum=73
+prog.teal:L98   dig         op_cost=1     cum=74
+prog.teal:L99   substring3  op_cost=1     cum=75
+prog.teal:L100  cover       op_cost=1     cum=76
+prog.teal:L103  pushint     op_cost=1     cum=77
+prog.teal:L104  dig         op_cost=1     cum=78
+prog.teal:L105  >=          op_cost=1     cum=79
+prog.teal:L106  pushint     op_cost=1     cum=80
+prog.teal:L107  dig         op_cost=1     cum=81
+prog.teal:L108  uncover     op_cost=1     cum=82
+prog.teal:L109  select      op_cost=1     cum=83
+prog.teal:L110  dig         op_cost=1     cum=84
+prog.teal:L111  uncover     op_cost=1     cum=85
+prog.teal:L112  dig         op_cost=1     cum=86
+prog.teal:L113  substring3  op_cost=1     cum=87
+prog.teal:L114  cover       op_cost=1     cum=88
+prog.teal:L118  pushint     op_cost=1     cum=89
+prog.teal:L119  dig         op_cost=1     cum=90
+prog.teal:L120  >=          op_cost=1     cum=91
+prog.teal:L121  pushint     op_cost=1     cum=92
+prog.teal:L122  dig         op_cost=1     cum=93
+prog.teal:L123  uncover     op_cost=1     cum=94
+prog.teal:L124  select      op_cost=1     cum=95
+prog.teal:L125  dig         op_cost=1     cum=96
+prog.teal:L126  uncover     op_cost=1     cum=97
+prog.teal:L127  dig         op_cost=1     cum=98
+prog.teal:L128  substring3  op_cost=1     cum=99
+prog.teal:L129  cover       op_cost=1     cum=100
+prog.teal:L132  pushint     op_cost=1     cum=101
+prog.teal:L133  dig         op_cost=1     cum=102
+prog.teal:L134  >=          op_cost=1     cum=103
+prog.teal:L135  pushint     op_cost=1     cum=104
+prog.teal:L136  dig         op_cost=1     cum=105
+prog.teal:L137  uncover     op_cost=1     cum=106
+prog.teal:L138  select      op_cost=1     cum=107
+prog.teal:L139  dig         op_cost=1     cum=108
+prog.teal:L140  uncover     op_cost=1     cum=109
+prog.teal:L141  dig         op_cost=1     cum=110
+prog.teal:L142  substring3  op_cost=1     cum=111
+prog.teal:L143  cover       op_cost=1     cum=112
+prog.teal:L146  pushint     op_cost=1     cum=113
+prog.teal:L147  dig         op_cost=1     cum=114
+prog.teal:L148  >=          op_cost=1     cum=115
+prog.teal:L149  pushint     op_cost=1     cum=116
+prog.teal:L150  dig         op_cost=1     cum=117
+prog.teal:L151  uncover     op_cost=1     cum=118
+prog.teal:L152  select      op_cost=1     cum=119
+prog.teal:L153  dig         op_cost=1     cum=120
+prog.teal:L154  uncover     op_cost=1     cum=121
+prog.teal:L155  dig         op_cost=1     cum=122
+prog.teal:L156  substring3  op_cost=1     cum=123
+prog.teal:L157  cover       op_cost=1     cum=124
+prog.teal:L161  pushint     op_cost=1     cum=125
+prog.teal:L162  dig         op_cost=1     cum=126
+prog.teal:L163  >=          op_cost=1     cum=127
+prog.teal:L164  pushint     op_cost=1     cum=128
+prog.teal:L165  dig         op_cost=1     cum=129
+prog.teal:L166  uncover     op_cost=1     cum=130
+prog.teal:L167  select      op_cost=1     cum=131
+prog.teal:L168  dig         op_cost=1     cum=132
+prog.teal:L169  uncover     op_cost=1     cum=133
+prog.teal:L170  dig         op_cost=1     cum=134
+prog.teal:L171  substring3  op_cost=1     cum=135
+prog.teal:L172  dup         op_cost=1     cum=136
+prog.teal:L173  cover       op_cost=1     cum=137
+prog.teal:L174  cover       op_cost=1     cum=138
+prog.teal:L177  pushint     op_cost=1     cum=139
+prog.teal:L178  dig         op_cost=1     cum=140
+prog.teal:L179  >=          op_cost=1     cum=141
+prog.teal:L180  pushint     op_cost=1     cum=142
+prog.teal:L181  dig         op_cost=1     cum=143
+prog.teal:L182  uncover     op_cost=1     cum=144
+prog.teal:L183  select      op_cost=1     cum=145
+prog.teal:L184  dig         op_cost=1     cum=146
+prog.teal:L185  uncover     op_cost=1     cum=147
+prog.teal:L186  dig         op_cost=1     cum=148
+prog.teal:L187  substring3  op_cost=1     cum=149
+prog.teal:L188  cover       op_cost=1     cum=150
+prog.teal:L191  pushint     op_cost=1     cum=151
+prog.teal:L192  dig         op_cost=1     cum=152
+prog.teal:L193  >=          op_cost=1     cum=153
+prog.teal:L194  pushint     op_cost=1     cum=154
+prog.teal:L195  dig         op_cost=1     cum=155
+prog.teal:L196  uncover     op_cost=1     cum=156
+prog.teal:L197  select      op_cost=1     cum=157
+prog.teal:L198  dig         op_cost=1     cum=158
+prog.teal:L199  uncover     op_cost=1     cum=159
+prog.teal:L200  dig         op_cost=1     cum=160
+prog.teal:L201  substring3  op_cost=1     cum=161
+prog.teal:L202  cover       op_cost=1     cum=162
+prog.teal:L205  pushint     op_cost=1     cum=163
+prog.teal:L206  dig         op_cost=1     cum=164
+prog.teal:L207  >=          op_cost=1     cum=165
+prog.teal:L208  pushint     op_cost=1     cum=166
+prog.teal:L209  dig         op_cost=1     cum=167
+prog.teal:L210  uncover     op_cost=1     cum=168
+prog.teal:L211  select      op_cost=1     cum=169
+prog.teal:L212  dig         op_cost=1     cum=170
+prog.teal:L213  uncover     op_cost=1     cum=171
+prog.teal:L214  dig         op_cost=1     cum=172
+prog.teal:L215  substring3  op_cost=1     cum=173
+prog.teal:L216  cover       op_cost=1     cum=174
+prog.teal:L219  pushint     op_cost=1     cum=175
+prog.teal:L220  dig         op_cost=1     cum=176
+prog.teal:L221  >=          op_cost=1     cum=177
+prog.teal:L222  pushint     op_cost=1     cum=178
+prog.teal:L223  dig         op_cost=1     cum=179
+prog.teal:L224  uncover     op_cost=1     cum=180
+prog.teal:L225  select      op_cost=1     cum=181
+prog.teal:L226  dig         op_cost=1     cum=182
+prog.teal:L227  uncover     op_cost=1     cum=183
+prog.teal:L228  dig         op_cost=1     cum=184
+prog.teal:L229  substring3  op_cost=1     cum=185
+prog.teal:L230  cover       op_cost=1     cum=186
+prog.teal:L233  pushint     op_cost=1     cum=187
+prog.teal:L234  dig         op_cost=1     cum=188
+prog.teal:L235  >=          op_cost=1     cum=189
+prog.teal:L236  pushint     op_cost=1     cum=190
+prog.teal:L237  dig         op_cost=1     cum=191
+prog.teal:L238  uncover     op_cost=1     cum=192
+prog.teal:L239  select      op_cost=1     cum=193
+prog.teal:L240  dig         op_cost=1     cum=194
+prog.teal:L241  uncover     op_cost=1     cum=195
+prog.teal:L242  dig         op_cost=1     cum=196
+prog.teal:L243  substring3  op_cost=1     cum=197
+prog.teal:L244  cover       op_cost=1     cum=198
+prog.teal:L247  pushint     op_cost=1     cum=199
+prog.teal:L248  dig         op_cost=1     cum=200
+prog.teal:L249  >=          op_cost=1     cum=201
+prog.teal:L250  pushint     op_cost=1     cum=202
+prog.teal:L251  dig         op_cost=1     cum=203
+prog.teal:L252  uncover     op_cost=1     cum=204
+prog.teal:L253  select      op_cost=1     cum=205
+prog.teal:L254  dig         op_cost=1     cum=206
+prog.teal:L255  uncover     op_cost=1     cum=207
+prog.teal:L256  dig         op_cost=1     cum=208
+prog.teal:L257  substring3  op_cost=1     cum=209
+prog.teal:L258  cover       op_cost=1     cum=210
+prog.teal:L262  pushint     op_cost=1     cum=211
+prog.teal:L263  dig         op_cost=1     cum=212
+prog.teal:L264  >=          op_cost=1     cum=213
+prog.teal:L265  pushint     op_cost=1     cum=214
+prog.teal:L266  dig         op_cost=1     cum=215
+prog.teal:L267  uncover     op_cost=1     cum=216
+prog.teal:L268  select      op_cost=1     cum=217
+prog.teal:L269  dig         op_cost=1     cum=218
+prog.teal:L270  uncover     op_cost=1     cum=219
+prog.teal:L271  dig         op_cost=1     cum=220
+prog.teal:L272  substring3  op_cost=1     cum=221
+prog.teal:L273  cover       op_cost=1     cum=222
+prog.teal:L277  intc        op_cost=1     cum=223
+prog.teal:L278  dig         op_cost=1     cum=224
+prog.teal:L279  >=          op_cost=1     cum=225
+prog.teal:L280  intc        op_cost=1     cum=226
+prog.teal:L281  uncover     op_cost=1     cum=227
+prog.teal:L282  uncover     op_cost=1     cum=228
+prog.teal:L283  select      op_cost=1     cum=229
+prog.teal:L284  substring3  op_cost=1     cum=230
+prog.teal:L285  swap        op_cost=1     cum=231
+prog.teal:L288  bytec_0     op_cost=1     cum=232
+prog.teal:L292  b>=         op_cost=1     cum=233
+prog.teal:L301  bnz         op_cost=1     cum=234
+prog.teal:L304  dig         op_cost=1     cum=235
+prog.teal:L307  bytec_0     op_cost=1     cum=236
+prog.teal:L310  b>=         op_cost=1     cum=237
+prog.teal:L319  bnz         op_cost=1     cum=238
+prog.teal:L322  dig         op_cost=1     cum=239
+prog.teal:L325  bytec_0     op_cost=1     cum=240
+prog.teal:L328  b>=         op_cost=1     cum=241
+prog.teal:L337  bnz         op_cost=1     cum=242
+prog.teal:L340  dig         op_cost=1     cum=243
+prog.teal:L343  bytec_0     op_cost=1     cum=244
+prog.teal:L346  b>=         op_cost=1     cum=245
+prog.teal:L355  bnz         op_cost=1     cum=246
+prog.teal:L358  dig         op_cost=1     cum=247
+prog.teal:L361  bytec_0     op_cost=1     cum=248
+prog.teal:L364  b>=         op_cost=1     cum=249
+prog.teal:L373  bnz         op_cost=1     cum=250
+prog.teal:L376  dig         op_cost=1     cum=251
+prog.teal:L379  bytec_0     op_cost=1     cum=252
+prog.teal:L382  b>=         op_cost=1     cum=253
+prog.teal:L391  bz          op_cost=1     cum=254
+prog.teal:L396  err         op_cost=1     cum=255
+prog.teal:L401  intc_1      op_cost=1     cum=255
+prog.teal:L402  bury        op_cost=1     cum=256
+prog.teal:L407  dig         op_cost=1     cum=2777
+prog.teal:L411  intc_2      op_cost=1     cum=2778
+prog.teal:L414  <           op_cost=1     cum=2779
+prog.teal:L415  bz          op_cost=1     cum=2780
+prog.teal:L418  dig         op_cost=1     cum=2781
+prog.teal:L419  dup         op_cost=1     cum=2782
+prog.teal:L420  intc_0      op_cost=1     cum=2783
+prog.teal:L421  *           op_cost=1     cum=2784
+prog.teal:L422  dup         op_cost=1     cum=2785
+prog.teal:L423  dig         op_cost=1     cum=2786
+prog.teal:L424  dup         op_cost=1     cum=2787
+prog.teal:L425  cover       op_cost=1     cum=2788
+prog.teal:L426  >=          op_cost=1     cum=2789
+prog.teal:L427  dig         op_cost=1     cum=2790
+prog.teal:L428  swap        op_cost=1     cum=2791
+prog.teal:L429  select      op_cost=1     cum=2792
+prog.teal:L430  uncover     op_cost=1     cum=2793
+prog.teal:L431  intc_3      op_cost=1     cum=2794
+prog.teal:L432  +           op_cost=1     cum=2795
+prog.teal:L433  dup         op_cost=1     cum=2796
+prog.teal:L434  bury        op_cost=1     cum=2797
+prog.teal:L435  intc_0      op_cost=1     cum=2798
+prog.teal:L436  *           op_cost=1     cum=2799
+prog.teal:L437  dup         op_cost=1     cum=2800
+prog.teal:L438  dig         op_cost=1     cum=2756
+prog.teal:L439  >=          op_cost=1     cum=2757
+prog.teal:L440  swap        op_cost=1     cum=2758
+prog.teal:L441  uncover     op_cost=1     cum=2759
+prog.teal:L442  uncover     op_cost=1     cum=2760
+prog.teal:L443  select      op_cost=1     cum=2761
+prog.teal:L444  dup         op_cost=1     cum=2762
+prog.teal:L445  dig         op_cost=1     cum=2763
+prog.teal:L446  <           op_cost=1     cum=2764
+prog.teal:L447  dig         op_cost=1     cum=2765
+prog.teal:L448  swap        op_cost=1     cum=2766
+prog.teal:L449  select      op_cost=1     cum=2767
+prog.teal:L450  dig         op_cost=1     cum=2768
+prog.teal:L451  cover       op_cost=1     cum=2769
+prog.teal:L452  substring3  op_cost=1     cum=2770
+prog.teal:L455  bytec_0     op_cost=1     cum=2771
+prog.teal:L458  b>=         op_cost=1     cum=2772
+prog.teal:L459  bz          op_cost=1     cum=2773
+prog.teal:L462  err         op_cost=1     cum=2777
+prog.teal:L465  dig         op_cost=1     cum=2774
+prog.teal:L466  bury        op_cost=1     cum=2775
+prog.teal:L467  b           op_cost=1     cum=2776
+prog.teal:L473  pushbytes   op_cost=1     cum=2777
+prog.teal:L474  dig         op_cost=1     cum=2778
+prog.teal:L475  concat      op_cost=1     cum=2779
+prog.teal:L478  dig         op_cost=1     cum=2780
+prog.teal:L479  callsub     op_cost=14    cum=2794
+prog.teal:L484  concat      op_cost=1     cum=2795
+prog.teal:L487  dig         op_cost=1     cum=2796
+prog.teal:L488  callsub     op_cost=14    cum=2765
+prog.teal:L493  concat      op_cost=1     cum=2766
+prog.teal:L496  dig         op_cost=1     cum=2767
+prog.teal:L497  callsub     op_cost=14    cum=2781
+prog.teal:L502  concat      op_cost=1     cum=2782
+prog.teal:L503  sha256      op_cost=35    cum=2772
+prog.teal:L506  pushbytes   op_cost=1     cum=2773
+prog.teal:L507  dig         op_cost=1     cum=2774
+prog.teal:L508  concat      op_cost=1     cum=2775
+prog.teal:L509  sha256      op_cost=35    cum=2765
+prog.teal:L512  pushbytes   op_cost=1     cum=2766
+prog.teal:L513  dig         op_cost=1     cum=2767
+prog.teal:L514  concat      op_cost=1     cum=2768
+prog.teal:L515  dig         op_cost=1     cum=2769
+prog.teal:L516  callsub     op_cost=14    cum=2783
+prog.teal:L517  concat      op_cost=1     cum=2784
+prog.teal:L518  sha256      op_cost=35    cum=2774
+prog.teal:L521  pushbytes   op_cost=1     cum=2775
+prog.teal:L522  dig         op_cost=1     cum=2776
+prog.teal:L523  concat      op_cost=1     cum=2777
+prog.teal:L524  dig         op_cost=1     cum=2778
+prog.teal:L525  callsub     op_cost=14    cum=2792
+prog.teal:L526  concat      op_cost=1     cum=2793
+prog.teal:L527  dig         op_cost=1     cum=2794
+prog.teal:L528  callsub     op_cost=14    cum=2763
+prog.teal:L529  concat      op_cost=1     cum=2764
+prog.teal:L530  dig         op_cost=1     cum=2765
+prog.teal:L531  callsub     op_cost=14    cum=2779
+prog.teal:L532  concat      op_cost=1     cum=2780
+prog.teal:L533  sha256      op_cost=35    cum=2770
+prog.teal:L536  uncover     op_cost=1     cum=2771
+prog.teal:L537  bytec_0     op_cost=1     cum=2772
+prog.teal:L538  b%          op_cost=1     cum=2773
+prog.teal:L539  bury        op_cost=1     cum=2774
+prog.teal:L540  uncover     op_cost=1     cum=2775
+prog.teal:L541  bytec_0     op_cost=1     cum=2776
+prog.teal:L542  b%          op_cost=1     cum=2777
+prog.teal:L543  bury        op_cost=1     cum=2778
+prog.teal:L544  swap        op_cost=1     cum=2779
+prog.teal:L545  bytec_0     op_cost=1     cum=2780
+prog.teal:L546  b%          op_cost=1     cum=2781
+prog.teal:L547  bury        op_cost=1     cum=2782
+prog.teal:L548  bytec_0     op_cost=1     cum=2783
+prog.teal:L549  b%          op_cost=1     cum=2784
+prog.teal:L550  dup         op_cost=1     cum=2785
+prog.teal:L551  bury        op_cost=1     cum=2786
+prog.teal:L554  pushbytes   op_cost=1     cum=2787
+prog.teal:L557  bytec_0     op_cost=1     cum=2788
+prog.teal:L561  callsub     op_cost=33    cum=2776
+prog.teal:L1305  dig         op_cost=1     cum=2777
+prog.teal:L1306  dig         op_cost=1     cum=2778
+prog.teal:L1307  b*          op_cost=1     cum=2779
+prog.teal:L1310  bytec_0     op_cost=1     cum=2780
+prog.teal:L1314  b%          op_cost=1     cum=2781
+prog.teal:L1317  uncover     op_cost=1     cum=2782
+prog.teal:L1318  dig         op_cost=1     cum=2783
+prog.teal:L1319  b+          op_cost=1     cum=2784
+prog.teal:L1320  dig         op_cost=1     cum=2785
+prog.teal:L1321  b+          op_cost=1     cum=2786
+prog.teal:L1324  bytec_0     op_cost=1     cum=2787
+prog.teal:L1327  b%          op_cost=1     cum=2788
+prog.teal:L1330  uncover     op_cost=1     cum=2789
+prog.teal:L1331  dig         op_cost=1     cum=2790
+prog.teal:L1332  b+          op_cost=1     cum=2791
+prog.teal:L1333  dig         op_cost=1     cum=2792
+prog.teal:L1334  b+          op_cost=1     cum=2793
+prog.teal:L1337  bytec_0     op_cost=1     cum=2794
+prog.teal:L1340  b%          op_cost=1     cum=2795
+prog.teal:L1343  cover       op_cost=1     cum=2796
+prog.teal:L1344  b*          op_cost=1     cum=2797
+prog.teal:L1347  bytec_0     op_cost=1     cum=2798
+prog.teal:L1350  b%          op_cost=1     cum=2799
+prog.teal:L1353  b*          op_cost=1     cum=2800
+prog.teal:L1356  bytec_0     op_cost=1     cum=2756
+prog.teal:L1359  b%          op_cost=1     cum=2757
+prog.teal:L1362  dig         op_cost=1     cum=2758
+prog.teal:L1363  b*          op_cost=1     cum=2759
+prog.teal:L1366  bytec_0     op_cost=1     cum=2760
+prog.teal:L1369  b%          op_cost=1     cum=2761
+prog.teal:L1372  uncover     op_cost=1     cum=2762
+prog.teal:L1373  dig         op_cost=1     cum=2763
+prog.teal:L1374  b*          op_cost=1     cum=2764
+prog.teal:L1377  bytec_0     op_cost=1     cum=2765
+prog.teal:L1380  b%          op_cost=1     cum=2766
+prog.teal:L1383  dup         op_cost=1     cum=2767
+prog.teal:L1384  dig         op_cost=1     cum=2768
+prog.teal:L1385  b+          op_cost=1     cum=2769
+prog.teal:L1386  dig         op_cost=1     cum=2770
+prog.teal:L1387  b+          op_cost=1     cum=2771
+prog.teal:L1390  bytec_0     op_cost=1     cum=2772
+prog.teal:L1393  b%          op_cost=1     cum=2773
+prog.teal:L1396  dig         op_cost=1     cum=2774
+prog.teal:L1399  pushbytes   op_cost=1     cum=2775
+prog.teal:L1402  b*          op_cost=1     cum=2776
+prog.teal:L1405  bytec_0     op_cost=1     cum=2777
+prog.teal:L1408  b%          op_cost=1     cum=2778
+prog.teal:L1411  dig         op_cost=1     cum=2779
+prog.teal:L1412  b+          op_cost=1     cum=2780
+prog.teal:L1413  dig         op_cost=1     cum=2781
+prog.teal:L1414  b+          op_cost=1     cum=2782
+prog.teal:L1417  bytec_0     op_cost=1     cum=2783
+prog.teal:L1420  b%          op_cost=1     cum=2784
+prog.teal:L1423  uncover     op_cost=1     cum=2785
+prog.teal:L1426  pushbytes   op_cost=1     cum=2786
+prog.teal:L1429  b*          op_cost=1     cum=2787
+prog.teal:L1432  bytec_0     op_cost=1     cum=2788
+prog.teal:L1435  b%          op_cost=1     cum=2789
+prog.teal:L1438  dig         op_cost=1     cum=2790
+prog.teal:L1439  b+          op_cost=1     cum=2791
+prog.teal:L1440  uncover     op_cost=1     cum=2792
+prog.teal:L1441  b+          op_cost=1     cum=2793
+prog.teal:L1444  bytec_0     op_cost=1     cum=2794
+prog.teal:L1447  b%          op_cost=1     cum=2795
+prog.teal:L1450  cover       op_cost=1     cum=2796
+prog.teal:L1451  b*          op_cost=1     cum=2797
+prog.teal:L1454  bytec_0     op_cost=1     cum=2798
+prog.teal:L1457  b%          op_cost=1     cum=2799
+prog.teal:L1460  b*          op_cost=1     cum=2800
+prog.teal:L1463  bytec_0     op_cost=1     cum=2756
+prog.teal:L1466  b%          op_cost=1     cum=2757
+prog.teal:L1469  bytec_0     op_cost=1     cum=2758
+prog.teal:L1472  swap        op_cost=1     cum=2759
+prog.teal:L1473  b-          op_cost=1     cum=2760
+prog.teal:L1476  uncover     op_cost=1     cum=2761
+prog.teal:L1477  b*          op_cost=1     cum=2762
+prog.teal:L1478  uncover     op_cost=1     cum=2763
+prog.teal:L1479  b+          op_cost=1     cum=2764
+prog.teal:L1482  bytec_0     op_cost=1     cum=2765
+prog.teal:L1485  b%          op_cost=1     cum=2766
+prog.teal:L1488  pushbytes   op_cost=1     cum=2767
+prog.teal:L1491  dig         op_cost=1     cum=2768
+prog.teal:L1595  concat      op_cost=1     cum=1
+prog.teal:L1598  dig         op_cost=1     cum=2
+prog.teal:L1599  dup         op_cost=1     cum=3
+prog.teal:L1600  cover       op_cost=1     cum=4
+prog.teal:L1601  callsub     op_cost=14    cum=18
+prog.teal:L1605  concat      op_cost=1     cum=19
+prog.teal:L1608  dig         op_cost=1     cum=20
+prog.teal:L1609  dup         op_cost=1     cum=21
+prog.teal:L1610  cover       op_cost=1     cum=22
+prog.teal:L1611  callsub     op_cost=14    cum=36
+prog.teal:L1615  concat      op_cost=1     cum=37
+prog.teal:L1616  pushbytes   op_cost=1     cum=38
+prog.teal:L1617  concat      op_cost=1     cum=39
+prog.teal:L1622  uncover     op_cost=1     cum=40
+prog.teal:L1623  concat      op_cost=1     cum=41
+prog.teal:L1624  dig         op_cost=1     cum=42
+prog.teal:L1625  concat      op_cost=1     cum=43
+prog.teal:L1626  dig         op_cost=1     cum=44
+prog.teal:L1627  concat      op_cost=1     cum=45
+prog.teal:L1633  dig         op_cost=1     cum=46
+prog.teal:L1634  concat      op_cost=1     cum=47
+prog.teal:L1635  dig         op_cost=1     cum=48
+prog.teal:L1636  concat      op_cost=1     cum=49
+prog.teal:L1637  dig         op_cost=1     cum=50
+prog.teal:L1638  concat      op_cost=1     cum=51
+prog.teal:L1645  dig         op_cost=1     cum=52
+prog.teal:L1646  concat      op_cost=1     cum=53
+prog.teal:L1647  sha256      op_cost=35    cum=88
+prog.teal:L1650  bytec_0     op_cost=1     cum=89
+prog.teal:L1651  b%          op_cost=1     cum=90
+prog.teal:L1654  uncover     op_cost=1     cum=91
+prog.teal:L1655  dig         op_cost=1     cum=92
+prog.teal:L1825  concat      op_cost=1     cum=1
+prog.teal:L1830  dig         op_cost=1     cum=2
+prog.teal:L1831  dup         op_cost=1     cum=3
+prog.teal:L1832  cover       op_cost=1     cum=4
+prog.teal:L1833  concat      op_cost=1     cum=5
+prog.teal:L1834  uncover     op_cost=1     cum=6
+prog.teal:L1835  concat      op_cost=1     cum=7
+prog.teal:L1838  dig         op_cost=1     cum=8
+prog.teal:L1839  len         op_cost=1     cum=9
+prog.teal:L1840  intc_0      op_cost=1     cum=10
+prog.teal:L1841  <=          op_cost=1     cum=11
+prog.teal:L1842  assert      op_cost=1     cum=12
+prog.teal:L1843  uncover     op_cost=1     cum=13
+prog.teal:L1844  uncover     op_cost=1     cum=14
+prog.teal:L1845  b|          op_cost=1     cum=15
+prog.teal:L1850  concat      op_cost=1     cum=16
+prog.teal:L1851  sha256      op_cost=35    cum=51
+prog.teal:L1854  bytec_0     op_cost=1     cum=52
+prog.teal:L1855  b%          op_cost=1     cum=53
+prog.teal:L1858  dup2        op_cost=1     cum=54
+prog.teal:L1900  ec_add      op_cost=13    cum=13
+prog.teal:L1903  uncover     op_cost=1     cum=14
+prog.teal:L1904  dig         op_cost=1     cum=15
+prog.teal:L1948  concat      op_cost=1     cum=1
+prog.teal:L1954  pushbytes   op_cost=1     cum=2
+prog.teal:L1968  proto       op_cost=1     cum=1
+prog.teal:L1971  bytec_1     op_cost=1     cum=2
+prog.teal:L1976  frame_dig   op_cost=1     cum=2784
+prog.teal:L1977  bytec_2     op_cost=1     cum=2785
+prog.teal:L1978  b>          op_cost=1     cum=2786
+prog.teal:L1979  bz          op_cost=1     cum=2787
+prog.teal:L1982  frame_dig   op_cost=1     cum=2788
+prog.teal:L1983  pushbytes   op_cost=1     cum=2789
+prog.teal:L1984  b%          op_cost=1     cum=2790
+prog.teal:L1985  bytec_1     op_cost=1     cum=2791
+prog.teal:L1986  b==         op_cost=1     cum=2792
+prog.teal:L1987  bz          op_cost=1     cum=2793
+prog.teal:L1990  frame_dig   op_cost=1     cum=2794
+prog.teal:L1991  frame_dig   op_cost=1     cum=2795
+prog.teal:L1992  b*          op_cost=1     cum=2796
+prog.teal:L1993  frame_dig   op_cost=1     cum=2797
+prog.teal:L1994  b%          op_cost=1     cum=2798
+prog.teal:L1995  frame_bury  op_cost=1     cum=2799
+prog.teal:L2000  frame_dig   op_cost=1     cum=2800
+prog.teal:L2001  pushbytes   op_cost=1     cum=2795
+prog.teal:L2002  b/          op_cost=1     cum=2796
+prog.teal:L2003  frame_bury  op_cost=1     cum=2797
+prog.teal:L2006  frame_dig   op_cost=1     cum=2798
+prog.teal:L2007  dup         op_cost=1     cum=2799
+prog.teal:L2008  b*          op_cost=1     cum=2800
+prog.teal:L2009  frame_dig   op_cost=1     cum=2780
+prog.teal:L2010  b%          op_cost=1     cum=2781
+prog.teal:L2011  frame_bury  op_cost=1     cum=2782
+prog.teal:L2012  b           op_cost=1     cum=2783
+prog.teal:L2017  frame_dig   op_cost=1     cum=2784
+prog.teal:L2018  swap        op_cost=1     cum=2785
+prog.teal:L2019  retsub      op_cost=1     cum=2786
+prog.teal:L2085  proto       op_cost=1     cum=1
+prog.teal:L2088  pushint     op_cost=1     cum=2
+prog.teal:L2089  bzero       op_cost=1     cum=3
+prog.teal:L2090  frame_dig   op_cost=1     cum=4
+prog.teal:L2091  ==          op_cost=1     cum=5
+prog.teal:L2092  bz          op_cost=1     cum=6
+prog.teal:L2095  frame_dig   op_cost=1     cum=7
+prog.teal:L2096  intc_1      op_cost=1     cum=8
+prog.teal:L2097  intc_3      op_cost=1     cum=9
+prog.teal:L2098  setbit      op_cost=1     cum=10
+prog.teal:L2099  retsub      op_cost=1     cum=11
+prog.teal:L2104  frame_dig   op_cost=1     cum=7
+prog.teal:L2105  retsub      op_cost=1     cum=8
+
+=== path-predicates ===
+BB L  5-L54   (none)
+BB L 57-L63   (V#1@L51 == 1056), (V#1@L53 != 0)
+BB L 68-L301  (V#1@L51 == 1056), (V#1@L60 == 64), (V#1@L53 != 0), (V#1@L62 != 0)
+BB L304-L319  (V#1@L51 == 1056), (V#1@L60 == 64), (V#1@L285 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L53 != 0), (V#1@L62 != 0), (V#1@L292 == 0)
+BB L322-L337  (V#1@L51 == 1056), (V#1@L60 == 64), (V#1@L285 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L304 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L53 != 0), (V#1@L62 != 0), (V#1@L292 == 0), (V#1@L310 == 0)
+BB L340-L355  (V#1@L51 == 1056), (V#1@L60 == 64), (V#1@L285 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L304 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L322 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L53 != 0), (V#1@L62 != 0), (V#1@L292 == 0), (V#1@L310 == 0), (V#1@L328 == 0)
+BB L358-L373  (V#1@L51 == 1056), (V#1@L60 == 64), (V#1@L285 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L304 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L322 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L340 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L53 != 0), (V#1@L62 != 0), (V#1@L292 == 0), (V#1@L310 == 0), (V#1@L328 == 0), (V#1@L346 == 0)
+BB L376-L391  (V#1@L51 == 1056), (V#1@L60 == 64), (V#1@L285 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L304 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L322 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L340 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L358 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L53 != 0), (V#1@L62 != 0), (V#1@L292 == 0), (V#1@L310 == 0), (V#1@L328 == 0), (V#1@L346 == 0), (V#1@L364 == 0)
+BB L393-L396  (V#1@L51 == 1056), (V#1@L60 == 64), (V#1@L53 != 0), (V#1@L62 != 0)
+BB L398-L402  (V#1@L51 == 1056), (V#1@L60 == 64), (V#1@L285 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L304 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L322 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L340 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L358 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L376 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L53 != 0), (V#1@L62 != 0), (V#1@L292 == 0), (V#1@L310 == 0), (V#1@L328 == 0), (V#1@L346 == 0), (V#1@L364 == 0), (V#1@L382 == 0)
+BB L404-L415  (V#1@L51 == 1056), (V#1@L60 == 64), (V#1@L285 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L304 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L322 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L340 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L358 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L376 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L53 != 0), (V#1@L62 != 0), (V#1@L292 == 0), (V#1@L310 == 0), (V#1@L328 == 0), (V#1@L346 == 0), (V#1@L364 == 0), (V#1@L382 == 0)
+BB L418-L459  (V#1@L51 == 1056), (V#1@L60 == 64), (V#1@L285 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L304 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L322 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L340 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L358 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L376 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L407 > 2), (V#1@L414 != 0), (V#1@L53 != 0), (V#1@L62 != 0), (V#1@L292 == 0), (V#1@L310 == 0), (V#1@L328 == 0), (V#1@L346 == 0), (V#1@L364 == 0), (V#1@L382 == 0)
+BB L462-L462  (V#1@L51 == 1056), (V#1@L60 == 64), (V#1@L285 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L304 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L322 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L340 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L358 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L376 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L407 > 2), (V#1@L452 <= 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L414 != 0), (V#1@L458 != 0), (V#1@L53 != 0), (V#1@L62 != 0), (V#1@L292 == 0), (V#1@L310 == 0), (V#1@L328 == 0), (V#1@L346 == 0), (V#1@L364 == 0), (V#1@L382 == 0)
+BB L464-L467  (V#1@L51 == 1056), (V#1@L60 == 64), (V#1@L285 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L304 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L322 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L340 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L358 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L376 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L407 > 2), (V#1@L452 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L414 != 0), (V#1@L53 != 0), (V#1@L62 != 0), (V#1@L292 == 0), (V#1@L310 == 0), (V#1@L328 == 0), (V#1@L346 == 0), (V#1@L364 == 0), (V#1@L382 == 0), (V#1@L458 == 0)
+BB L469-L479  (V#1@L51 == 1056), (V#1@L60 == 64), (V#1@L285 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L304 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L322 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L340 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L358 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L376 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L407 <= 2), (V#1@L53 != 0), (V#1@L62 != 0), (V#1@L292 == 0), (V#1@L310 == 0), (V#1@L328 == 0), (V#1@L346 == 0), (V#1@L364 == 0), (V#1@L382 == 0), (V#1@L414 == 0)
+BB L484-L488  (V#1@L51 == 1056), (V#1@L60 == 64), (V#1@L285 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L304 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L322 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L340 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L358 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L376 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L407 <= 2), (V#1@L53 != 0), (V#1@L62 != 0), (V#1@L292 == 0), (V#1@L310 == 0), (V#1@L328 == 0), (V#1@L346 == 0), (V#1@L364 == 0), (V#1@L382 == 0), (V#1@L414 == 0)
+BB L493-L497  (V#1@L51 == 1056), (V#1@L60 == 64), (V#1@L285 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L304 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L322 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L340 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L358 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L376 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L407 <= 2), (V#1@L53 != 0), (V#1@L62 != 0), (V#1@L292 == 0), (V#1@L310 == 0), (V#1@L328 == 0), (V#1@L346 == 0), (V#1@L364 == 0), (V#1@L382 == 0), (V#1@L414 == 0)
+BB L502-L516  (V#1@L51 == 1056), (V#1@L60 == 64), (V#1@L285 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L304 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L322 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L340 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L358 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L376 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L407 <= 2), (V#1@L53 != 0), (V#1@L62 != 0), (V#1@L292 == 0), (V#1@L310 == 0), (V#1@L328 == 0), (V#1@L346 == 0), (V#1@L364 == 0), (V#1@L382 == 0), (V#1@L414 == 0)
+BB L517-L525  (V#1@L51 == 1056), (V#1@L60 == 64), (V#1@L285 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L304 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L322 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L340 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L358 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L376 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L407 <= 2), (V#1@L53 != 0), (V#1@L62 != 0), (V#1@L292 == 0), (V#1@L310 == 0), (V#1@L328 == 0), (V#1@L346 == 0), (V#1@L364 == 0), (V#1@L382 == 0), (V#1@L414 == 0)
+BB L526-L528  (V#1@L51 == 1056), (V#1@L60 == 64), (V#1@L285 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L304 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L322 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L340 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L358 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L376 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L407 <= 2), (V#1@L53 != 0), (V#1@L62 != 0), (V#1@L292 == 0), (V#1@L310 == 0), (V#1@L328 == 0), (V#1@L346 == 0), (V#1@L364 == 0), (V#1@L382 == 0), (V#1@L414 == 0)
+BB L529-L531  (V#1@L51 == 1056), (V#1@L60 == 64), (V#1@L285 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L304 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L322 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L340 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L358 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L376 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L407 <= 2), (V#1@L53 != 0), (V#1@L62 != 0), (V#1@L292 == 0), (V#1@L310 == 0), (V#1@L328 == 0), (V#1@L346 == 0), (V#1@L364 == 0), (V#1@L382 == 0), (V#1@L414 == 0)
+BB L532-L561  (V#1@L51 == 1056), (V#1@L60 == 64), (V#1@L285 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L304 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L322 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L340 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L358 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L376 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L407 <= 2), (V#1@L53 != 0), (V#1@L62 != 0), (V#1@L292 == 0), (V#1@L310 == 0), (V#1@L328 == 0), (V#1@L346 == 0), (V#1@L364 == 0), (V#1@L382 == 0), (V#1@L414 == 0)
+BB L1305-L1491  (V#1@L51 == 1056), (V#1@L60 == 64), (V#1@L285 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L304 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L322 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L340 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L358 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L376 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (0x <= 0x08), (V#1@L407 <= 2), (V#1@L53 != 0), (V#1@L62 != 0), (0 == 0), (V#1@L292 == 0), (V#1@L310 == 0), (V#1@L328 == 0), (V#1@L346 == 0), (V#1@L364 == 0), (V#1@L382 == 0), (V#1@L414 == 0)
+BB L1595-L1601  (V#1@L51 == 1056), (V#1@L60 == 64), (V#1@L285 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L304 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L322 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L340 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L358 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L376 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L407 <= 2), (V#1@L53 != 0), (V#1@L62 != 0), (V#1@L292 == 0), (V#1@L310 == 0), (V#1@L328 == 0), (V#1@L346 == 0), (V#1@L364 == 0), (V#1@L382 == 0), (V#1@L414 == 0)
+BB L1605-L1611  (V#1@L51 == 1056), (V#1@L60 == 64), (V#1@L285 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L304 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L322 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L340 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L358 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L376 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L407 <= 2), (V#1@L53 != 0), (V#1@L62 != 0), (V#1@L292 == 0), (V#1@L310 == 0), (V#1@L328 == 0), (V#1@L346 == 0), (V#1@L364 == 0), (V#1@L382 == 0), (V#1@L414 == 0)
+BB L1615-L1655  (V#1@L51 == 1056), (V#1@L60 == 64), (V#1@L285 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L304 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L322 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L340 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L358 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L376 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L407 <= 2), (V#1@L53 != 0), (V#1@L62 != 0), (V#1@L292 == 0), (V#1@L310 == 0), (V#1@L328 == 0), (V#1@L346 == 0), (V#1@L364 == 0), (V#1@L382 == 0), (V#1@L414 == 0)
+BB L1825-L1842  (V#1@L51 == 1056), (V#1@L60 == 64), (V#1@L285 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L304 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L322 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L340 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L358 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L376 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L407 <= 2), (V#1@L53 != 0), (V#1@L62 != 0), (V#1@L292 == 0), (V#1@L310 == 0), (V#1@L328 == 0), (V#1@L346 == 0), (V#1@L364 == 0), (V#1@L382 == 0), (V#1@L414 == 0)
+BB L1843-L1858  (V#1@L51 == 1056), (V#1@L60 == 64), (V#1@L1839 >= 32), (V#1@L285 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L304 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L322 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L340 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L358 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L376 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L407 <= 2), (V#1@L1841 != 0), (V#1@L53 != 0), (V#1@L62 != 0), (V#1@L292 == 0), (V#1@L310 == 0), (V#1@L328 == 0), (V#1@L346 == 0), (V#1@L364 == 0), (V#1@L382 == 0), (V#1@L414 == 0)
+BB L1900-L1904  (V#1@L51 == 1056), (V#1@L60 == 64), (V#1@L285 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L304 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L322 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L340 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L358 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L376 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (0x <= 0x08), (V#1@L407 <= 2), (V#1@L53 != 0), (V#1@L62 != 0), (0 == 0), (V#1@L292 == 0), (V#1@L310 == 0), (V#1@L328 == 0), (V#1@L346 == 0), (V#1@L364 == 0), (V#1@L382 == 0), (V#1@L414 == 0)
+BB L1948-L1960  (V#1@L51 == 1056), (V#1@L60 == 64), (V#1@L285 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L304 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L322 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L340 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L358 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L376 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (0x <= 0x08), (V#1@L407 <= 2), (V#1@L53 != 0), (V#1@L62 != 0), (0 == 0), (V#1@L292 == 0), (V#1@L310 == 0), (V#1@L328 == 0), (V#1@L346 == 0), (V#1@L364 == 0), (V#1@L382 == 0), (V#1@L414 == 0)
+BB L1964-L1971  (V#1@L51 == 1056), (V#1@L60 == 64), (V#1@L285 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L304 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L322 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L340 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L358 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L376 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L407 <= 2), (V#1@L53 != 0), (V#1@L62 != 0), (V#1@L292 == 0), (V#1@L310 == 0), (V#1@L328 == 0), (V#1@L346 == 0), (V#1@L364 == 0), (V#1@L382 == 0), (V#1@L414 == 0)
+BB L1973-L1979  (V#1@L51 == 1056), (V#1@L60 == 64), (V#1@L285 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L304 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L322 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L340 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L358 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L376 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L407 <= 2), (V#1@L53 != 0), (V#1@L62 != 0), (V#1@L292 == 0), (V#1@L310 == 0), (V#1@L328 == 0), (V#1@L346 == 0), (V#1@L364 == 0), (V#1@L382 == 0), (V#1@L414 == 0)
+BB L1982-L1987  (V#1@L51 == 1056), (V#1@L60 == 64), (0x > 0x08), (V#1@L285 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L304 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L322 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L340 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L358 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L376 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L407 <= 2), (0 != 0), (V#1@L53 != 0), (V#1@L62 != 0), (V#1@L292 == 0), (V#1@L310 == 0), (V#1@L328 == 0), (V#1@L346 == 0), (V#1@L364 == 0), (V#1@L382 == 0), (V#1@L414 == 0)
+BB L1990-L1995  (V#1@L1984 == 0x01), (V#1@L51 == 1056), (V#1@L60 == 64), (0x > 0x08), (V#1@L285 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L304 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L322 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L340 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L358 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L376 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L407 <= 2), (0 != 0), (V#1@L1986 != 0), (V#1@L53 != 0), (V#1@L62 != 0), (V#1@L292 == 0), (V#1@L310 == 0), (V#1@L328 == 0), (V#1@L346 == 0), (V#1@L364 == 0), (V#1@L382 == 0), (V#1@L414 == 0)
+BB L1997-L2012  (V#1@L51 == 1056), (V#1@L60 == 64), (0x > 0x08), (V#1@L285 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L304 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L322 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L340 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L358 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L376 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L407 <= 2), (0 != 0), (V#1@L53 != 0), (V#1@L62 != 0), (V#1@L292 == 0), (V#1@L310 == 0), (V#1@L328 == 0), (V#1@L346 == 0), (V#1@L364 == 0), (V#1@L382 == 0), (V#1@L414 == 0)
+BB L2014-L2019  (V#1@L51 == 1056), (V#1@L60 == 64), (V#1@L285 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L304 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L322 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L340 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L358 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L376 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (0x <= 0x08), (V#1@L407 <= 2), (V#1@L53 != 0), (V#1@L62 != 0), (0 == 0), (V#1@L292 == 0), (V#1@L310 == 0), (V#1@L328 == 0), (V#1@L346 == 0), (V#1@L364 == 0), (V#1@L382 == 0), (V#1@L414 == 0)
+BB L2081-L2092  (V#1@L51 == 1056), (V#1@L60 == 64), (V#1@L285 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L304 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L322 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L340 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L358 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L376 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L407 <= 2), (V#1@L53 != 0), (V#1@L62 != 0), (V#1@L292 == 0), (V#1@L310 == 0), (V#1@L328 == 0), (V#1@L346 == 0), (V#1@L364 == 0), (V#1@L382 == 0), (V#1@L414 == 0)
+BB L2095-L2099  (V#1@L2090 == 0x000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000), (V#1@L51 == 1056), (V#1@L60 == 64), (V#1@L285 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L304 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L322 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L340 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L358 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L376 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L407 <= 2), (V#1@L2091 != 0), (V#1@L53 != 0), (V#1@L62 != 0), (V#1@L292 == 0), (V#1@L310 == 0), (V#1@L328 == 0), (V#1@L346 == 0), (V#1@L364 == 0), (V#1@L382 == 0), (V#1@L414 == 0)
+BB L2101-L2105  (V#1@L51 == 1056), (V#1@L60 == 64), (V#1@L285 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L304 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L322 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L340 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L358 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L376 > 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001), (V#1@L407 <= 2), (V#1@L2090 != 0x000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000), (V#1@L53 != 0), (V#1@L62 != 0), (V#1@L2091 == 0), (V#1@L292 == 0), (V#1@L310 == 0), (V#1@L328 == 0), (V#1@L346 == 0), (V#1@L364 == 0), (V#1@L382 == 0), (V#1@L414 == 0)

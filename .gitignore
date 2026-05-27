@@ -26,6 +26,8 @@ dist/
 # part of the DB schema itself; safe to ignore.
 tests/**/db/diagnostic/
 tests/**/db/log/
+algoplonk_demo/**/db/diagnostic/
+algoplonk_demo/**/db/log/
 
 # CodeQL query-evaluation cache inside each fixture DB. Regenerated
 # on demand by the evaluator and mutated by every test run, so it
@@ -33,3 +35,10 @@ tests/**/db/log/
 # dirty. The actual DB relations (*.rel / *.rel.meta / pools /
 # strings) live alongside it and stay tracked.
 tests/**/db/db-teal/*/cache/
+algoplonk_demo/**/db/db-teal/*/cache/
+
+# BQRS artifacts from ``codeql database run-queries`` (the batched
+# entry point used by tealtools.graphs). Land under ``<db>/results/``
+# per pack; regenerated whenever a CSV cache miss triggers a re-run.
+tests/**/db/results/
+algoplonk_demo/**/db/results/

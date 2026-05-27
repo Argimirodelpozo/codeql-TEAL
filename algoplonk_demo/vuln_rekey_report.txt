@@ -1,0 +1,6 @@
+# RekeyToDetector report — vuln (DB: algoplonk_demo/vuln/db)
+# Violations: 1
+
+--- violation 1 ---
+RekeyToViolation(Approval exit at prog.teal:1960 is reachable without a RekeyTo check — an attacker can rekey the account.)
+

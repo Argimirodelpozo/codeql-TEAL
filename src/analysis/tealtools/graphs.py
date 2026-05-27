@@ -68,6 +68,13 @@ QUERY_NAMES = (
     "stackHeights",
     "innerTxnFields",
 )
+# Deferred follow-up: ``phiNodes`` / ``phiEdges`` / ``phiArgs`` could
+# be dropped because :class:`tealtools.ssa.PySSA` reconstructs SSA +
+# phis from the CFG. But every downstream consumer goes through
+# :class:`SSAProgram` directly (``prog = SSAProgram(db)``), which
+# still reads QL's phi data into ``prog.phis``. To drop them safely
+# we'd need :meth:`SSAProgram.__init__` to internally route through
+# :meth:`PySSA.build` for SSA construction.
 
 
 class PhiNode:
@@ -205,6 +212,10 @@ def _ensure_pack_installed() -> None:
 
 
 def _run_csv_query(db: Path, query: Path, out_dir: Path) -> None:
+    """Run one query and decode its result to CSV. Kept for the rare
+    case where only one query is missing — but the common path is
+    :func:`_run_queries_batch` which amortises JVM startup across all
+    missing queries."""
     qname = query.stem
     bqrs = out_dir / f"{qname}.bqrs"
     csv_out = out_dir / f"{qname}.csv"
@@ -218,8 +229,56 @@ def _run_csv_query(db: Path, query: Path, out_dir: Path) -> None:
           str(bqrs)])
 
 
+# Pack identity for ``codeql database run-queries`` BQRS output paths.
+# Must match ``QUERIES_DIR/qlpack.yml`` ``name:`` field.
+_QL_PACK_NAME = "argimirodelpozo/tealtools"
+
+
+def _run_queries_batch(
+    db: Path, queries: list[Path], out_dir: Path, *, verbose: bool = True,
+) -> None:
+    """Run ``queries`` in a single ``codeql database run-queries``
+    invocation (one JVM startup, parallel evaluation across cores)
+    and decode all BQRS results into ``out_dir/<query>.csv``.
+
+    The per-query alternative (one ``codeql query run`` subprocess
+    each) pays ~7s JVM startup × N queries; batching collapses that
+    to one startup."""
+    if not queries:
+        return
+    if verbose:
+        names = ", ".join(q.stem for q in queries)
+        print(f"[tealtools.graphs] batch-running {len(queries)} "
+              f"queries ({names}) ...", file=sys.stderr)
+    _run([_codeql(), "database", "run-queries", "-j", "0", "--", str(db),
+          *(str(q) for q in queries)])
+    results_root = db / "results" / _QL_PACK_NAME.replace("/", "/")
+    for q in queries:
+        bqrs = results_root / f"{q.stem}.bqrs"
+        if not bqrs.exists():
+            raise FileNotFoundError(
+                f"codeql database run-queries did not produce {bqrs}; "
+                f"check that ``{q}`` lives in the {_QL_PACK_NAME!r} pack."
+            )
+        csv_out = out_dir / f"{q.stem}.csv"
+        _run([_codeql(), "bqrs", "decode",
+              "--format=csv",
+              "--output", str(csv_out),
+              str(bqrs)])
+
+
 def _cache_dir_for(db: Path) -> Path:
-    sig_parts = [str(db.resolve()), str(db.stat().st_mtime_ns)]
+    # Use ``codeql-database.yml`` mtime rather than the DB dir's own
+    # mtime: ``codeql database run-queries`` writes to ``<db>/results/``
+    # which bumps the dir's mtime and would otherwise invalidate the
+    # cache on every run. The YAML manifest is stable across query
+    # execution.
+    manifest = db / "codeql-database.yml"
+    manifest_mtime = (
+        manifest.stat().st_mtime_ns if manifest.exists()
+        else db.stat().st_mtime_ns
+    )
+    sig_parts = [str(db.resolve()), str(manifest_mtime)]
     for q in sorted(QUERIES_DIR.glob("*.ql")):
         sig_parts.append(f"{q.name}:{q.stat().st_mtime_ns}")
     # Include teal-all library sources so edits to the QL library
@@ -356,12 +415,17 @@ def load_graph(
             return _resolve(file, line)
         return _resolve_phi(file, line, kind, stack_idx)
 
+    # Batch-run any missing queries in a single ``codeql database
+    # run-queries`` invocation — amortises ~7s JVM startup across the
+    # set instead of paying it per query.
+    missing = [QUERIES_DIR / f"{q}.ql"
+               for q in QUERY_NAMES
+               if not (cache / f"{q}.csv").exists()]
+    if missing:
+        _run_queries_batch(db, missing, cache, verbose=verbose)
+
     for q in QUERY_NAMES:
         csv_out = cache / f"{q}.csv"
-        if not csv_out.exists():
-            if verbose:
-                print(f"[tealtools.graphs] running {q}.ql ...", file=sys.stderr)
-            _run_csv_query(db, QUERIES_DIR / f"{q}.ql", cache)
         rows = _read_csv(csv_out)
 
         if q == "nodes":

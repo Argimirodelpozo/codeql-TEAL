@@ -3,23 +3,21 @@
 Re-exports the QL-loaded substrate from :mod:`tealtools.ssa_old`
 (``SSAProgram``, ``SSAVar``, ``Phi``, ``Assignment``, ``BasicBlock``,
 ``Const``, ``Location``, ``MatPhiVar``, ``TealType``, ``IntRange``)
-*and* provides the pure-Python SSA builder :class:`PySSA` plus
-:func:`wrap_as_ssa_program` which produces an ``SSAProgram``-compatible
-shell so existing analyses (constant propagation, taint, detectors,
-reports) run on PySSA-built SSA unchanged.
+and provides :meth:`PySSA.build` — the pure-Python SSA builder that
+returns an ``SSAProgram`` directly, ready for every existing analysis
+(constant propagation, taint, detectors, reports).
 
 Canonical idiom:
 
 ```python
-from tealtools.ssa import SSAProgram, PySSA, wrap_as_ssa_program
+from tealtools.ssa import SSAProgram, PySSA
 
 prog_ql = SSAProgram(db, verbose=False)
-py      = PySSA.build(prog_ql)
-prog    = wrap_as_ssa_program(py, source=prog_ql)
+prog    = PySSA.build(prog_ql)
 # every existing analysis runs on prog.
 ```
 
-Pipeline (:meth:`PySSA.build`):
+Pipeline (:meth:`PySSA._construct`):
 
   1. Instantiate PyVars per opcode output.
   2. BB arities + surviving locals (``outStackOrder``).
@@ -47,10 +45,10 @@ from collections import deque
 from dataclasses import dataclass, field
 from typing import Optional, Union
 
-# Re-export QL-loaded substrate so consumers keep importing
-# ``from tealtools.ssa import SSAProgram, SSAVar, Phi, ...`` without
-# caring that the substrate now lives in ssa_old.
-from .ssa_old import (  # noqa: F401
+# Data classes live in .models; the QL-loaded SSAProgram class lives
+# in .ssa_old. External consumers go through the package __init__
+# which re-exports both.
+from .models import (  # noqa: F401
     Assignment,
     BasicBlock,
     Const,
@@ -59,14 +57,14 @@ from .ssa_old import (  # noqa: F401
     MatPhiVar,
     Operand as QLOperand,
     Phi,
-    SSAProgram,
     SSAVar,
     TealType,
-    _TERMINATOR_OPS,
     _CONST_BLOCK_REF_NAMES,
     _OP_RANGE_SEEDS,
+    _TERMINATOR_OPS,
     _shuffle_mapping,
 )
+from .ssa_old import SSAProgram  # noqa: F401
 
 
 STACK_MAX = 1000
@@ -225,7 +223,22 @@ class PySSA:
     _proto_io: dict = field(default_factory=dict)
 
     @classmethod
-    def build(cls, prog: SSAProgram) -> "PySSA":
+    def build(cls, prog: SSAProgram) -> SSAProgram:
+        """End-to-end: construct SSA from a QL-loaded ``SSAProgram``
+        and return a fresh ``SSAProgram`` shell wired up with the
+        PySSA-built structures. Internal builder state is attached
+        to the result as ``prog._pyssa`` for the chain helpers
+        (:meth:`SSAProgram.chain_predecessors` et al.) — nothing in
+        the analysis layer touches it directly."""
+        py = cls._construct(prog)
+        return _to_ssaprogram(py, source=prog)
+
+    @classmethod
+    def _construct(cls, prog: SSAProgram) -> "PySSA":
+        """Run the 8-phase PySSA construction and return the builder
+        instance. Use :meth:`build` for the canonical
+        SSAProgram-returning entry point; this is exposed for
+        diagnostics (e.g. ``python -m tealtools.ssa``)."""
         self = cls()
         self._phase1_instantiate(prog)
         self._phase2_arities()
@@ -673,14 +686,16 @@ class PySSA:
 
 
 # ---------------------------------------------------------------------------
-# wrap_as_ssa_program — PySSA → SSAProgram-compatible shell.
+# _to_ssaprogram — PySSA → SSAProgram-compatible shell (internal).
 # ---------------------------------------------------------------------------
 
 
-def wrap_as_ssa_program(py: PySSA, source: SSAProgram) -> SSAProgram:
-    """Build an ``SSAProgram``-compatible shell from a :class:`PySSA`
-    so existing analyses (constant prop, taint, detectors, reports)
-    run on PySSA-built SSA unchanged.
+def _to_ssaprogram(py: PySSA, source: SSAProgram) -> SSAProgram:
+    """Translate a freshly-built :class:`PySSA` into an
+    ``SSAProgram``-compatible shell so existing analyses (constant
+    prop, taint, detectors, reports) run on PySSA-built SSA
+    unchanged. Used by :meth:`PySSA.build` — analysis-layer code
+    should call ``PySSA.build(prog_ql)`` instead of this directly.
 
     Steps:
 
@@ -878,12 +893,17 @@ def wrap_as_ssa_program(py: PySSA, source: SSAProgram) -> SSAProgram:
 
 
 def _demo(db_path: str) -> None:
+    """Render the PySSA-built SSA for a database. Uses the internal
+    :meth:`PySSA._construct` to get the builder instance directly so
+    we can call :meth:`PySSA.render` for the diagnostic dump — every
+    other caller should use :meth:`PySSA.build` which returns the
+    wrapped ``SSAProgram``."""
     import time
     t0 = time.perf_counter()
     prog = SSAProgram(db_path, verbose=False)
     t_ql = time.perf_counter() - t0
     t0 = time.perf_counter()
-    py = PySSA.build(prog)
+    py = PySSA._construct(prog)
     t_py = time.perf_counter() - t0
     if len(py.blocks) <= 30:
         print(py.render())
