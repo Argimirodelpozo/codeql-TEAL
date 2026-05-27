@@ -60,10 +60,15 @@ QUERY_NAMES = (
     "ssaInputs",
     "constValues",
     "scratchInfluence",
-    "valueIdentitySteps",
     "stackHeights",
     "innerTxnFields",
 )
+# ``valueIdentitySteps`` is no longer called: PySSA's
+# :func:`_apply_pyssa_to` populates ``prog._graph.graph["identity_steps"]``
+# directly from the in-memory PySSA structure — shuffle-output identity
+# (via ``_shuffle_mapping``), single-source phi convergence, and
+# scratch-load↔store edges. Same shape ``propagate_constants`` and
+# other consumers expect.
 # ``mustValues`` is no longer called: PySSA's
 # :meth:`SSAProgram.propagate_constants` + ``const_fold.py`` cover
 # what it produced (literal pushes, identity flow, phi unification,

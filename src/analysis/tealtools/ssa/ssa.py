@@ -942,53 +942,137 @@ def _apply_pyssa_to(
     #       inlined for the construction-time seed.
     #
     # Iterates to a fixed point so identity-of-identity chains flow
-    # (e.g. const → swap → load → swap → consumer).
+    # (e.g. const → swap → load → swap → consumer). Pre-filters the
+    # candidate-op lists once so the fixpoint only scans ops that
+    # could possibly seed a const, not every assignment in the prog.
     _scratch_stores = {
         (n.location.file, n.location.start_line): list(stores)
         for n in src_graph_snapshot.nodes
         for stores in [src_graph_snapshot.nodes[n].get("scratch_stores")]
         if stores
     } if src_graph_snapshot is not None else {}
+    _shuffle_candidates: list[tuple] = []
+    _load_candidates: list = []
+    for _a in prog.assignments:
+        _m = _shuffle_mapping(_a)
+        if _m is not None:
+            _shuffle_candidates.append((_a, _m))
+        if _a.op == "load" and len(_a.outputs) == 1:
+            _load_candidates.append(_a)
     _changed = True
     while _changed:
         _changed = False
-        for _a in prog.assignments:
-            # (a) shuffle propagation
-            mapping = _shuffle_mapping(_a)
-            if mapping is not None:
-                for _out_idx, _in_idx in enumerate(mapping):
-                    if _out_idx >= len(_a.outputs) or _in_idx >= len(_a.inputs):
-                        continue
-                    _out_v = _a.outputs[_out_idx]
-                    _in_o = _a.inputs[_in_idx]
-                    if not isinstance(_out_v, SSAVar) or _out_v.const_value is not None:
-                        continue
-                    _in_cv = getattr(_in_o, "const_value", None)
-                    if _in_cv is not None:
-                        _out_v.const_value = _in_cv
-                        _changed = True
-            # (b) scratch-load propagation
-            if _a.op == "load" and len(_a.outputs) == 1:
-                _out_v = _a.outputs[0]
-                if isinstance(_out_v, SSAVar) and _out_v.const_value is None:
-                    _stores = _scratch_stores.get(
-                        (_a.location.file, _a.location.line)
-                    )
-                    if _stores:
-                        _resolved: list[Const] = []
-                        _ok = True
-                        for _sv_file, _sv_line, _sv_idx in _stores:
-                            _src_v = prog.vars.get((_sv_file, _sv_line, _sv_idx))
-                            _src_cv = (
-                                _src_v.const_value if _src_v is not None else None
-                            )
-                            if _src_cv is None:
-                                _ok = False
-                                break
-                            _resolved.append(_src_cv)
-                        if _ok and _resolved and all(c == _resolved[0] for c in _resolved):
-                            _out_v.const_value = _resolved[0]
-                            _changed = True
+        for _a, _m in _shuffle_candidates:
+            for _out_idx, _in_idx in enumerate(_m):
+                if _out_idx >= len(_a.outputs) or _in_idx >= len(_a.inputs):
+                    continue
+                _out_v = _a.outputs[_out_idx]
+                if not isinstance(_out_v, SSAVar) or _out_v.const_value is not None:
+                    continue
+                _in_cv = getattr(_a.inputs[_in_idx], "const_value", None)
+                if _in_cv is not None:
+                    _out_v.const_value = _in_cv
+                    _changed = True
+        for _a in _load_candidates:
+            _out_v = _a.outputs[0]
+            if not isinstance(_out_v, SSAVar) or _out_v.const_value is not None:
+                continue
+            _stores = _scratch_stores.get(
+                (_a.location.file, _a.location.line)
+            )
+            if not _stores:
+                continue
+            _resolved: list[Const] = []
+            _ok = True
+            for _sv_file, _sv_line, _sv_idx in _stores:
+                _src_v = prog.vars.get((_sv_file, _sv_line, _sv_idx))
+                _src_cv = _src_v.const_value if _src_v is not None else None
+                if _src_cv is None:
+                    _ok = False
+                    break
+                _resolved.append(_src_cv)
+            if _ok and _resolved and all(c == _resolved[0] for c in _resolved):
+                _out_v.const_value = _resolved[0]
+                _changed = True
+
+    # 6.6) Identity-flow step relation. Same data
+    # ``valueIdentitySteps.ql`` used to emit, but computed from the
+    # PySSA structure so we can drop that QL query from the load path.
+    # Three sources:
+    #
+    #   (a) Stack-shuffle ops — each output[i] is identity-equal to
+    #       input[mapping[i]].
+    #   (b) Single-source phi — when every arg of a phi is identical
+    #       by identity, the phi is identity-equal to that arg.
+    #   (c) Scratch bridge — for each ``load N`` with a scratch_stores
+    #       annotation, the load output is identity-equal to each
+    #       store's consumed-value SSAVar (one step per store; the
+    #       must-semantics aggregation lives in
+    #       :meth:`propagate_scratch_constants`, which still consumes
+    #       this relation for its fixed-point step).
+    #
+    # Endpoint format matches what the old QL loader produced so
+    # downstream consumers (``propagate_constants``) work unchanged:
+    #   ("var",  file, line, idx)
+    #   ("phi",  file, line, kind, stack_idx)
+    _identity_steps: list = []
+
+    def _ssavar_key(v: SSAVar) -> tuple:
+        return ("var", v.file, v.line, v.index)
+
+    def _endpoint_key(o):
+        if isinstance(o, SSAVar):
+            return _ssavar_key(o)
+        if isinstance(o, Phi):
+            return ("phi", o.file, o.line, o.kind, o.stack_index)
+        return None
+
+    # (a) shuffle pass-through
+    for _a, _m in _shuffle_candidates:
+        for _out_idx, _in_idx in enumerate(_m):
+            if _out_idx >= len(_a.outputs) or _in_idx >= len(_a.inputs):
+                continue
+            _out_v = _a.outputs[_out_idx]
+            _in_o = _a.inputs[_in_idx]
+            if not isinstance(_out_v, SSAVar):
+                continue
+            _src = _endpoint_key(_in_o)
+            if _src is None or _src == _ssavar_key(_out_v):
+                continue
+            _identity_steps.append((_src, _ssavar_key(_out_v)))
+
+    # (b) single-source phi
+    for _p in prog.phis.values():
+        if not _p.args:
+            continue
+        _first = _p.args[0]
+        if all(a is _first for a in _p.args[1:]):
+            _src = _endpoint_key(_first)
+            _snk = ("phi", _p.file, _p.line, _p.kind, _p.stack_index)
+            if _src is not None and _src != _snk:
+                _identity_steps.append((_src, _snk))
+
+    # (c) scratch bridge
+    for _a in _load_candidates:
+        _out_v = _a.outputs[0]
+        if not isinstance(_out_v, SSAVar):
+            continue
+        _stores = _scratch_stores.get(
+            (_a.location.file, _a.location.line)
+        )
+        if not _stores:
+            continue
+        _snk = _ssavar_key(_out_v)
+        for _sv_file, _sv_line, _sv_idx in _stores:
+            _identity_steps.append(
+                (("var", _sv_file, _sv_line, _sv_idx), _snk)
+            )
+
+    # Stash on the graph in the same place the QL loader used to,
+    # so :meth:`SSAProgram.propagate_constants` (and any other
+    # consumer) picks them up without change.
+    if hasattr(prog._graph, "graph"):
+        prog._graph.graph["identity_steps"] = _identity_steps
 
     # 7) Drop phis not transitively consumed by any op input.
     _consumed: set = set()
