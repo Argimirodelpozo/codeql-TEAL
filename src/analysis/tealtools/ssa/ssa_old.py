@@ -249,6 +249,18 @@ class SSAProgram:
             bb.assignments.sort(key=lambda a: a.location.line)
             bb.phis.sort(key=lambda p: (p.kind, p.stack_index))
 
+        # Replace the QL-loaded SSA layer (phis + assignment inputs +
+        # block back-refs) with a PySSA-built one. The QL pre-pass
+        # above only needs to populate ``self._graph`` /
+        # ``self.vars`` (for const/range/type seeding) /
+        # ``self.blocks`` / ``self.assignments`` (for arity); PySSA
+        # then computes phi placement + chain collapse and overwrites
+        # in place. This is what unblocks dropping the slow
+        # ``phiArgs.ql`` / ``phiNodes.ql`` / ``phiEdges.ql`` queries
+        # from the load path (see ``graphs.QUERY_NAMES``).
+        from .ssa import PySSA, _apply_pyssa_to
+        _apply_pyssa_to(self, PySSA._construct(self))
+
     # -- iteration / lookup -------------------------------------------------
 
     def __iter__(self) -> Iterable[Assignment]:
@@ -261,7 +273,15 @@ class SSAProgram:
         return self.vars.get((file, line, index))
 
     def phi(self, file: str, line: int, kind: str, stack_index: int) -> Optional[Phi]:
-        return self.phis.get((file, line, kind, stack_index))
+        # PySSA-built progs unify the Direct/Indirect distinction
+        # under ``DirectPhi``. Fall back to the other kind so callers
+        # that get a ``kind`` from QL-row data (e.g.
+        # ``inner_txn_report._resolve_operand``) still resolve.
+        p = self.phis.get((file, line, kind, stack_index))
+        if p is not None:
+            return p
+        other = "IndirectPhi" if kind == "DirectPhi" else "DirectPhi"
+        return self.phis.get((file, line, other, stack_index))
 
     def block(self, file: str, first_line: int, last_line: int) -> Optional[BasicBlock]:
         return self.blocks.get((file, first_line, last_line))

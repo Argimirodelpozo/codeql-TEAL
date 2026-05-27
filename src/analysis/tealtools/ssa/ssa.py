@@ -229,7 +229,13 @@ class PySSA:
         PySSA-built structures. Internal builder state is attached
         to the result as ``prog._pyssa`` for the chain helpers
         (:meth:`SSAProgram.chain_predecessors` et al.) — nothing in
-        the analysis layer touches it directly."""
+        the analysis layer touches it directly.
+
+        Note: :meth:`SSAProgram.__init__` already routes through
+        :func:`_apply_pyssa_to` internally, so calling ``PySSA.build``
+        on a prog produced by ``SSAProgram(db)`` is idempotent — it
+        re-runs the same PySSA construction and returns an
+        equivalently-built fresh prog."""
         py = cls._construct(prog)
         return _to_ssaprogram(py, source=prog)
 
@@ -690,12 +696,39 @@ class PySSA:
 # ---------------------------------------------------------------------------
 
 
+def _fold_spec_fixed(a):
+    """Lazy import wrapper around :func:`const_fold.fold_spec_fixed`.
+    Kept module-private to avoid pulling the passes layer into
+    ``ssa.py``'s top-level imports."""
+    from ..passes.const_fold import fold_spec_fixed
+    return fold_spec_fixed(a)
+
+
 def _to_ssaprogram(py: PySSA, source: SSAProgram) -> SSAProgram:
-    """Translate a freshly-built :class:`PySSA` into an
-    ``SSAProgram``-compatible shell so existing analyses (constant
-    prop, taint, detectors, reports) run on PySSA-built SSA
-    unchanged. Used by :meth:`PySSA.build` — analysis-layer code
-    should call ``PySSA.build(prog_ql)`` instead of this directly.
+    """Translate a freshly-built :class:`PySSA` into a new
+    ``SSAProgram`` shell using ``source`` as the read-only graph
+    backend. See :func:`_apply_pyssa_to` for the version that mutates
+    an existing program in place (used by ``SSAProgram.__init__`` to
+    route SSA construction through PySSA)."""
+    prog = SSAProgram.__new__(SSAProgram)
+    _apply_pyssa_to(prog, py, source=source)
+    return prog
+
+
+def _apply_pyssa_to(
+    prog: SSAProgram, py: PySSA, *, source: Optional[SSAProgram] = None,
+) -> None:
+    """Mutate ``prog`` to use ``py``-built SSA: rebuilds ``prog.vars`` /
+    ``prog.phis`` / ``prog.assignments`` / ``prog.blocks`` from PySSA
+    structures and discards whatever was there before.
+
+    Used by:
+
+    - :meth:`PySSA.build` (with ``source`` == a separate ``prog_ql``).
+    - :meth:`SSAProgram.__init__` (with ``source is None`` — reads
+      directly from ``prog`` for graph + var const/range/type
+      annotations). This lets ``SSAProgram(db)`` route SSA
+      construction through PySSA without an external bridge step.
 
     Steps:
 
@@ -711,15 +744,27 @@ def _to_ssaprogram(py: PySSA, source: SSAProgram) -> SSAProgram:
       ``SSAProgram.chain_predecessors`` / ``chain_root`` /
       ``chain_reaches`` query through it backend-agnostically.
     """
-    prog = SSAProgram.__new__(SSAProgram)
+    # ``source`` defaults to ``prog`` for the in-place case. We read
+    # const_value / range / type from source.vars (already populated
+    # by the QL pre-pass) and reuse source._graph + source.labels.
+    # Snapshot anything we'll re-read from ``src`` *before* wiping
+    # ``prog`` — in the in-place case (``source is None``) ``src.vars``
+    # IS ``prog.vars``, so the wipe would otherwise clobber the data
+    # we need to copy over.
+    src = source if source is not None else prog
+    src_vars_snapshot = dict(getattr(src, "vars", {}))
+    src_labels_snapshot = list(getattr(src, "labels", []))
+    src_graph_snapshot = getattr(src, "_graph", None)
+    src_db_path_snapshot = getattr(src, "db_path", None)
+
     prog.vars = {}
     prog.phis = {}
     prog.assignments = []
     prog.blocks = {}
-    prog.labels = list(getattr(source, "labels", []))
+    prog.labels = src_labels_snapshot
     prog.mat_phis = []
-    prog._graph = source._graph
-    prog.db_path = getattr(source, "db_path", None)
+    prog._graph = src_graph_snapshot
+    prog.db_path = src_db_path_snapshot
     # Match the exact state flags ``SSAProgram.__init__`` sets, so every
     # pass that gates on one of them finds it.
     prog._materialized = False
@@ -730,13 +775,15 @@ def _to_ssaprogram(py: PySSA, source: SSAProgram) -> SSAProgram:
     prog._shuffles_propagated = False
     prog._inputs_propagated = False
 
-    # 1) SSAVars. Seed const_value / range / type from the source.
+    # 1) SSAVars. Seed const_value / range / type from the source
+    # prog's already-populated var table (QL pre-pass wired these from
+    # ``const_outputs`` / ``must_outputs`` graph annotations).
     var_map: dict = {}  # PyVar -> SSAVar
     for key, py_v in py.vars.items():
         v = SSAVar(py_v.file, py_v.line, py_v.idx)
         var_map[py_v] = v
         prog.vars[key] = v
-        src_v = source.vars.get(key)
+        src_v = src_vars_snapshot.get(key)
         if src_v is not None:
             if src_v.const_value is not None:
                 v.const_value = src_v.const_value
@@ -745,8 +792,13 @@ def _to_ssaprogram(py: PySSA, source: SSAProgram) -> SSAProgram:
             if src_v.type is not None:
                 v.type = src_v.type
 
-    # 2) Phis. PySSA has one phi per (bb_key, slot); kind doesn't
-    # apply in PySSA's unified model. Register under DirectPhi only.
+    # 2) Phis. PySSA has one phi per (bb_key, slot); the QL
+    # Direct/Indirect distinction is collapsed in PySSA's unified
+    # model. Register under DirectPhi only. Lookups via
+    # :meth:`SSAProgram.phi` are kind-agnostic so consumers that
+    # receive a kind from a QL row (e.g.
+    # ``inner_txn_report._resolve_operand``) still find the phi
+    # whether they ask for ``DirectPhi`` or ``IndirectPhi``.
     phi_map: dict = {}  # PyPhi -> Phi
     for (bb_key, slot), py_p in py.phis.items():
         p = Phi(bb_key[0], bb_key[1], slot, "DirectPhi")
@@ -852,6 +904,19 @@ def _to_ssaprogram(py: PySSA, source: SSAProgram) -> SSAProgram:
             )
             for v in outputs:
                 v.defined_by = a
+                # Inline seed for spec-fixed AVM ops whose value is a
+                # known compile-time literal (currently ``global
+                # ZeroAddress``). Replaces what ``mustValues.ql`` was
+                # emitting for these ops, so the seed survives
+                # dropping that query from the load path. Done here
+                # rather than during the QL pre-pass so the logic
+                # lives in :mod:`tealtools.ssa.ssa` alongside the rest
+                # of the PySSA pipeline (``ssa_old`` is the thing
+                # we're migrating away from).
+                if v.const_value is None:
+                    fold = _fold_spec_fixed(a)
+                    if fold is not None:
+                        v.const_value = fold
             for i in inputs:
                 if hasattr(i, "uses"):
                     i.uses.append(a)
@@ -859,6 +924,71 @@ def _to_ssaprogram(py: PySSA, source: SSAProgram) -> SSAProgram:
             bb.assignments.append(a)
 
     prog.assignments.sort(key=lambda a: (a.location.file, a.location.line))
+
+    # 6.5) Propagate const_value through value-identity edges. Two
+    # sources, both replacing what ``mustValues.ql`` provided via
+    # ``LocalFlow::valueIdentityFlow`` so the seed survives dropping
+    # that query:
+    #
+    #   (a) Stack-shuffle outputs (swap, dup, dupn, cover, uncover,
+    #       dig, bury, frame_dig, frame_bury): each output is
+    #       identity-equal to ``input[mapping[idx]]`` per
+    #       :func:`_shuffle_mapping`. Constant input → constant
+    #       output at the same shuffle position.
+    #   (b) ``load N`` (scratch read): if every ``store N`` annotated
+    #       as a possible source on the graph wrote the same compile-
+    #       time literal, the load resolves to that literal. Mirrors
+    #       :meth:`SSAProgram.propagate_scratch_constants`, just
+    #       inlined for the construction-time seed.
+    #
+    # Iterates to a fixed point so identity-of-identity chains flow
+    # (e.g. const → swap → load → swap → consumer).
+    _scratch_stores = {
+        (n.location.file, n.location.start_line): list(stores)
+        for n in src_graph_snapshot.nodes
+        for stores in [src_graph_snapshot.nodes[n].get("scratch_stores")]
+        if stores
+    } if src_graph_snapshot is not None else {}
+    _changed = True
+    while _changed:
+        _changed = False
+        for _a in prog.assignments:
+            # (a) shuffle propagation
+            mapping = _shuffle_mapping(_a)
+            if mapping is not None:
+                for _out_idx, _in_idx in enumerate(mapping):
+                    if _out_idx >= len(_a.outputs) or _in_idx >= len(_a.inputs):
+                        continue
+                    _out_v = _a.outputs[_out_idx]
+                    _in_o = _a.inputs[_in_idx]
+                    if not isinstance(_out_v, SSAVar) or _out_v.const_value is not None:
+                        continue
+                    _in_cv = getattr(_in_o, "const_value", None)
+                    if _in_cv is not None:
+                        _out_v.const_value = _in_cv
+                        _changed = True
+            # (b) scratch-load propagation
+            if _a.op == "load" and len(_a.outputs) == 1:
+                _out_v = _a.outputs[0]
+                if isinstance(_out_v, SSAVar) and _out_v.const_value is None:
+                    _stores = _scratch_stores.get(
+                        (_a.location.file, _a.location.line)
+                    )
+                    if _stores:
+                        _resolved: list[Const] = []
+                        _ok = True
+                        for _sv_file, _sv_line, _sv_idx in _stores:
+                            _src_v = prog.vars.get((_sv_file, _sv_line, _sv_idx))
+                            _src_cv = (
+                                _src_v.const_value if _src_v is not None else None
+                            )
+                            if _src_cv is None:
+                                _ok = False
+                                break
+                            _resolved.append(_src_cv)
+                        if _ok and _resolved and all(c == _resolved[0] for c in _resolved):
+                            _out_v.const_value = _resolved[0]
+                            _changed = True
 
     # 7) Drop phis not transitively consumed by any op input.
     _consumed: set = set()

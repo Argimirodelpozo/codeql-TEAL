@@ -282,6 +282,38 @@ def _fold_cmp(op: str, inputs: list[Const]) -> Optional[Const]:
     return None
 
 
+def _fold_global_field(immediates: str) -> Optional[Const]:
+    """Resolve a ``global FIELD`` opcode to its known compile-time
+    literal where the AVM spec fixes the value. Currently:
+
+    - ``ZeroAddress`` → 32 bytes of zero (the canonical zero address).
+
+    The other ``Global FIELD``s are either runtime (``LatestTimestamp``,
+    ``Round``, ``GroupSize``, ``GroupID``, ``CallerApplicationID``,
+    ``OpcodeBudget``, …) or protocol-config-dependent (``MinTxnFee``,
+    ``MinBalance``, ``MaxTxnLife``, ``LogicSigVersion``) which the QL
+    libs don't fold to a literal either."""
+    field = immediates.strip()
+    if field == "ZeroAddress":
+        # 32 zero bytes — AVM's canonical zero address. Matches
+        # ``BytesPropagation.qll::zeroAddressHex()``.
+        return Const("bytes", "0x" + "00" * 32)
+    return None
+
+
+def fold_spec_fixed(a: Assignment) -> Optional[Const]:
+    """Resolve opcodes whose value is fixed by the AVM spec (no
+    arithmetic / no inputs required). Currently only ``global
+    ZeroAddress``, but the dispatch is intentionally separate from
+    :func:`try_fold_assignment` because this set of folds is safe to
+    run during SSA construction (no dependency on prior
+    const-resolution of inputs) — whereas ``try_fold_assignment``
+    expects all inputs to be const-resolved already."""
+    if a.op == "global":
+        return _fold_global_field(a.immediates)
+    return None
+
+
 def _fold_logical(op: str, inputs: list[Const]) -> Optional[Const]:
     vals = [_int_from_const(c) for c in inputs]
     if any(v is None for v in vals):
@@ -317,6 +349,15 @@ def try_fold_assignment(a: Assignment) -> Optional[Const]:
     op = a.op
     if not a.outputs or len(a.outputs) != 1:
         return None
+    # ``global FIELD`` and ``txn FIELD`` have no stack inputs; resolve
+    # them from the immediate alone. Mirrors what
+    # ``BytesPropagation.qll`` / ``ConstantPropagation.qll`` do via
+    # ``tryAsBytesDef`` / ``tryAsIntDef``. Without this, dropping
+    # ``mustValues.ql`` from the load path loses field-constant
+    # resolution and breaks downstream rendering (e.g.
+    # ``Global ZeroAddress`` comparisons).
+    if op == "global":
+        return _fold_global_field(a.immediates)
     inputs: list[Const] = []
     for x in a.inputs:
         if isinstance(x, Const):

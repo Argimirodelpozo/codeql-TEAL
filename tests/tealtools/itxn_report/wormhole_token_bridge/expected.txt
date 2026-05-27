@@ -28,7 +28,7 @@
     Sender        = txna Accounts 3  (set@L902)
     TypeEnum      = 4  (set@L904)
     XferAsset     = load 47  (set@L906)
-    AssetAmount   = 0  (set@L908)
+    AssetAmount   = load 46  (set@L908)
     AssetReceiver = txn Sender  (set@L910)
     Fee           = 0  (set@L912)
 
@@ -43,7 +43,7 @@
     Sender   = txna Accounts 3  (set@L970)
     TypeEnum = 1  (set@L972)
     Receiver = txn Sender  (set@L974)
-    Amount   = 0  (set@L976)
+    Amount   = load 46  (set@L976)
     Fee      = 0  (set@L978)
 
 === Inner-txn group  prog.teal  submit@L1130  (2 txn) ===
@@ -81,7 +81,7 @@
     ConfigAssetName     = load 30  (set@L1509)
     ConfigAssetUnitName = load 29  (set@L1511)
     ConfigAssetTotal    = pushint 18446744073709550000  (set@L1513)
-    ConfigAssetDecimals = 8  (set@L1515)
+    ConfigAssetDecimals = load 28  (set@L1515)
     ConfigAssetManager  = global CurrentApplicationAddress  (set@L1517)
     ConfigAssetReserve  = txna Accounts 3  (set@L1519)
     ConfigAssetFreeze   = global CurrentApplicationAddress  (set@L1521)

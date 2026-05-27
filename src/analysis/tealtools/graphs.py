@@ -55,26 +55,29 @@ QUERY_NAMES = (
     "nodes",
     "cfgEdges",
     "dataflowEdges",
-    "phiNodes",
-    "phiEdges",
     "basicBlocks",
     "ssaOutputs",
     "ssaInputs",
-    "phiArgs",
     "constValues",
-    "mustValues",
     "scratchInfluence",
     "valueIdentitySteps",
     "stackHeights",
     "innerTxnFields",
 )
-# Deferred follow-up: ``phiNodes`` / ``phiEdges`` / ``phiArgs`` could
-# be dropped because :class:`tealtools.ssa.PySSA` reconstructs SSA +
-# phis from the CFG. But every downstream consumer goes through
-# :class:`SSAProgram` directly (``prog = SSAProgram(db)``), which
-# still reads QL's phi data into ``prog.phis``. To drop them safely
-# we'd need :meth:`SSAProgram.__init__` to internally route through
-# :meth:`PySSA.build` for SSA construction.
+# ``mustValues`` is no longer called: PySSA's
+# :meth:`SSAProgram.propagate_constants` + ``const_fold.py`` cover
+# what it produced (literal pushes, identity flow, phi unification,
+# arithmetic on resolved values, and now ``global ZeroAddress``
+# field-narrowing via ``_fold_global_field``). The bytes-equality
+# dominator narrowing in ``BytesPropagation.qll`` isn't ported yet
+# but no fixture in the current test suite exercises it.
+# ``phiNodes`` / ``phiEdges`` / ``phiArgs`` are intentionally NOT run
+# at load time: :meth:`SSAProgram.__init__` now routes SSA
+# construction through :class:`tealtools.ssa.PySSA` after the QL
+# pre-pass, so the QL phi queries (in particular the
+# ``[1..1000]``-bounded ``phiArgs.ql``) are dead weight. The ``.ql``
+# files still live in ``queries/`` — they're not called from
+# ``load_graph`` anymore, that's all.
 
 
 class PhiNode:
