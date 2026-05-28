@@ -35,6 +35,7 @@ from .models import (
     _TXN_FIELD_RANGES,
     _shuffle_mapping,
 )
+from ..opcode_sigs import op_arity
 
 
 class SSAProgram:
@@ -107,8 +108,6 @@ class SSAProgram:
         for n in g.nodes:
             if not isinstance(n, Opcode):
                 continue
-            outs_g = g.nodes[n].get("stack_outputs") or []
-            ins_g = g.nodes[n].get("stack_inputs") or []
             code = n.code or n.ql_class
             op_name, _, imms = code.partition(" ")
             cv = g.nodes[n].get("const_value")
@@ -119,8 +118,21 @@ class SSAProgram:
             bb_id = g.nodes[n].get("bb")
             bb = _bb_from_tuple(bb_id) if bb_id is not None else None
 
-            outs = [_to_var(v) for v in outs_g]
-            ins = [_to_operand(x) for x in ins_g]
+            # Output SSAVars from the opcode signature table (replaces QL's
+            # ssaOutputs query). Inputs are left empty here — PySSA
+            # reconstructs the operand wiring in _apply_pyssa_to. The output
+            # vars exist so the const_value/const_outputs seeding below
+            # (carried into the PySSA-built vars by key) has somewhere to land.
+            _, n_out = op_arity(op_name, imms.strip())
+            outs = []
+            for k in range(1, n_out + 1):
+                key = (n.location.file, n.location.start_line, k)
+                v = self.vars.get(key)
+                if v is None:
+                    v = SSAVar(*key)
+                    self.vars[key] = v
+                outs.append(v)
+            ins = []
             a = Assignment(
                 outputs=outs,
                 op=op_name,

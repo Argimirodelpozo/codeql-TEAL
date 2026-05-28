@@ -66,6 +66,7 @@ from .models import (  # noqa: F401
     _shuffle_mapping,
 )
 from .program import SSAProgram  # noqa: F401
+from ..opcode_sigs import op_arity
 
 
 STACK_MAX = 1000
@@ -264,14 +265,11 @@ class PySSA:
         for qbb in prog.blocks.values():
             b = PyBlock((qbb.file, qbb.first_line, qbb.last_line))
             for a in qbb.assignments:
-                n_in = len(a.inputs)
-                n_out = len(a.outputs)
-                if a.op == "frame_dig":
-                    n_in, n_out = 0, 1
-                elif a.op == "frame_bury":
-                    n_in, n_out = 1, 0
-                elif a.op in ("callsub", "retsub"):
-                    n_in, n_out = 0, 0
+                # Arities from the opcode signature table (replaces QL's
+                # ssaInputs/ssaOutputs row-counts). op_arity returns the
+                # simple phase-1 counts for frame_dig/frame_bury/callsub/
+                # retsub; their fat forms are rebuilt by later phases.
+                n_in, n_out = op_arity(a.op, a.immediates)
                 op = PyOp(
                     op=a.op, immediates=a.immediates,
                     file=a.location.file, line=a.location.line,

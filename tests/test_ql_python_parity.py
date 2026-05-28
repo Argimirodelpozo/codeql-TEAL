@@ -9,6 +9,7 @@ Run just these::
 
     pytest tests/test_ql_python_parity.py -q
 """
+import collections
 import os
 from pathlib import Path
 
@@ -16,6 +17,7 @@ import pytest
 
 from tealtools import graphs
 from tealtools.ast import Opcode
+from tealtools.opcode_sigs import op_arity
 from tealtools.graphs import (
     QUERIES_DIR,
     _cache_dir_for,
@@ -120,3 +122,46 @@ def test_constvalues_parity(db: Path) -> None:
     assert not unexplained, "unexpected PY-only rows:\n" + "\n".join(
         f"  +PY {r}" for r in unexplained
     )
+
+
+# Height-dependent ops: op_arity returns the simple phase-1 counts PySSA
+# expects; their fat/proto-aware forms are rebuilt by later PySSA phases,
+# so they intentionally diverge from QL's ssaOutputs/ssaInputs counts.
+_HEIGHT_DEP_OPS = frozenset({"frame_dig", "frame_bury", "retsub"})
+
+
+def _ops(g):
+    for n in g.nodes:
+        if isinstance(n, Opcode):
+            code = n.code or n.ql_class or ""
+            op, _, imms = code.partition(" ")
+            yield n.location.file, n.location.start_line, op, imms.strip()
+
+
+@pytest.mark.skipif("CODEQL" not in os.environ, reason="needs codeql")
+@pytest.mark.parametrize("db", _DBS, ids=_IDS)
+def test_opcode_arity_parity(db: Path) -> None:
+    """op_arity must reproduce QL's ssaOutputs count exactly (n_out), and
+    never under-count inputs vs QL's ssaInputs (n_in >= QL's resolved
+    count; QL drops boundary-unresolvable inputs, so the port may exceed)."""
+    g = graphs.load_graph(str(db), verbose=False)
+    out_count: dict = collections.Counter()
+    for r in _ql_rows(db, "ssaOutputs"):       # (file, line, outIdx)
+        out_count[(r[0], int(r[1]))] += 1
+    in_ord: dict = collections.defaultdict(set)
+    for r in _ql_rows(db, "ssaInputs"):        # (file, line, ord, ...)
+        in_ord[(r[0], int(r[1]))].add(r[2])
+
+    out_bad, in_bad = [], []
+    for f, ln, op, imms in _ops(g):
+        if op in _HEIGHT_DEP_OPS:
+            continue
+        n_in, n_out = op_arity(op, imms)
+        if n_out != out_count.get((f, ln), 0):
+            out_bad.append((f, ln, op, imms, n_out, out_count.get((f, ln), 0)))
+        if n_in < len(in_ord.get((f, ln), ())):
+            in_bad.append((f, ln, op, imms, n_in, len(in_ord[(f, ln)])))
+    assert not out_bad, "n_out != QL ssaOutputs:\n" + "\n".join(
+        f"  {b}" for b in out_bad[:30])
+    assert not in_bad, "n_in < QL ssaInputs (port lost an input):\n" + "\n".join(
+        f"  {b}" for b in in_bad[:30])

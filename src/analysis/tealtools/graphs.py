@@ -54,11 +54,16 @@ DEFAULT_CACHE = Path(
 QUERY_NAMES = (
     "nodes",
     "cfgEdges",
-    "dataflowEdges",
     "basicBlocks",
-    "ssaOutputs",
-    "ssaInputs",
 )
+# ``ssaOutputs`` / ``ssaInputs`` are no longer called: per-op stack
+# arities now come from :func:`tealtools.opcode_sigs.op_arity`, and PySSA
+# reconstructs the operand wiring + phis from those counts + the CFG
+# (basicBlocks + cfgEdges). Only the extractor floor (nodes / cfgEdges /
+# basicBlocks) is still loaded from CodeQL.
+# ``dataflowEdges`` is no longer called: it was visualization-only
+# (``to_dot`` / ``dataflow_view``); a def->use view is derivable from the
+# reconstructed operand wiring if a renderer needs it again.
 # ``constValues`` is no longer called: literal constants are computed in
 # Python by :func:`tealtools.const_values.compute_const_values` (the
 # post-load population near the end of ``load_graph``). The port keeps the
