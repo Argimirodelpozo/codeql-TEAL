@@ -58,13 +58,20 @@ QUERY_NAMES = (
     "basicBlocks",
     "ssaOutputs",
     "ssaInputs",
-    "constValues",
-    "stackHeights",
-    "innerTxnFields",
 )
-# ``valueIdentitySteps`` and ``scratchInfluence`` are no longer
-# called: PySSA's :func:`_apply_pyssa_to` populates the same
-# annotations directly from the in-memory CFG.
+# ``constValues`` is no longer called: literal constants are computed in
+# Python by :func:`tealtools.const_values.compute_const_values` (the
+# post-load population near the end of ``load_graph``). The port keeps the
+# real value in two cases QL drops — uint64 literals outside CodeQL's
+# 32-bit ``.toInt()`` range, and ``intc`` in code the dominance predicate
+# excludes (e.g. dead code). The ``elif q == "constValues"`` branch below
+# is dead (kept, like the other dropped-query branches, as a re-enable hook).
+# ``stackHeights`` is no longer called: its only reader was
+# ``stacksim.py`` (now dead code — nothing imports it), and PySSA
+# computes its own per-op heights in ``_phase5_heights``.
+# ``valueIdentitySteps``, ``scratchInfluence``, ``innerTxnFields``
+# are no longer called: PySSA's :func:`_apply_pyssa_to` populates
+# the same annotations directly from the in-memory CFG.
 #  - ``identity_steps``: shuffle-output identity (via
 #    ``_shuffle_mapping``), single-source phi convergence, and
 #    scratch-load↔store edges.
@@ -708,6 +715,21 @@ def load_graph(
                         canonical.args.append(arg)
                         existing.add(arg)
         g.nodes[node]["stack_inputs"] = [d for _, _, d in deduped]
+
+    # constValues port: resolved literal constants per output, computed in
+    # Python (replaces ``constValues.ql``). Populates ``const_outputs``
+    # ``{out_idx: (kind, value)}`` and the single-output back-compat scalar
+    # ``const_value`` — the same shape the QL handler produced.
+    from .const_values import compute_const_values
+    for cf, cl, coi, ckind, cval in compute_const_values(g):
+        node = by_loc.get((cf, int(cl)))
+        if node is None:
+            continue
+        g.nodes[node].setdefault("const_outputs", {})[int(coi)] = (ckind, cval)
+    for node in list(g.nodes):
+        outs = g.nodes[node].get("const_outputs")
+        if outs and len(outs) == 1 and 1 in outs:
+            g.nodes[node]["const_value"] = outs[1]
 
     if verbose:
         print(

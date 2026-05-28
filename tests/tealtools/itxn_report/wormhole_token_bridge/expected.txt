@@ -80,7 +80,7 @@
     TypeEnum            = 3  (set@L1507)
     ConfigAssetName     = load 30  (set@L1509)
     ConfigAssetUnitName = load 29  (set@L1511)
-    ConfigAssetTotal    = pushint 18446744073709550000  (set@L1513)
+    ConfigAssetTotal    = 18446744073709550000  (set@L1513)
     ConfigAssetDecimals = load 28  (set@L1515)
     ConfigAssetManager  = global CurrentApplicationAddress  (set@L1517)
     ConfigAssetReserve  = txna Accounts 3  (set@L1519)
