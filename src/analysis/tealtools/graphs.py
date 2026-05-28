@@ -72,8 +72,8 @@ QUERY_NAMES = (
 # excludes (e.g. dead code). The ``elif q == "constValues"`` branch below
 # is dead (kept, like the other dropped-query branches, as a re-enable hook).
 # ``stackHeights`` is no longer called: its only reader was
-# ``stacksim.py`` (now dead code — nothing imports it), and PySSA
-# computes its own per-op heights in ``_phase5_heights``.
+# ``stacksim.py`` (since removed), and PySSA computes its own per-op
+# heights in ``_phase5_heights``.
 # ``valueIdentitySteps``, ``scratchInfluence``, ``innerTxnFields``
 # are no longer called: PySSA's :func:`_apply_pyssa_to` populates
 # the same annotations directly from the in-memory CFG.
@@ -436,18 +436,6 @@ def load_graph(
 
     # (file, start_line) -> AstNode instance, for edge-endpoint lookup.
     by_loc: dict[tuple[str, int], AstNode] = {}
-    # (file, line, kind, stackIdx) -> PhiNode instance.
-    by_phi: dict[tuple[str, int, str, int], PhiNode] = {}
-    # (file, line, output_index) -> SSAVar instance.
-    by_var: dict[tuple[str, int, int], SSAVar] = {}
-
-    def _resolve_var(file: str, line: int, output_index: int) -> SSAVar:
-        key = (file, line, output_index)
-        v = by_var.get(key)
-        if v is None:
-            v = SSAVar(file, line, output_index)
-            by_var[key] = v
-        return v
 
     def _resolve(file: str, line: int) -> AstNode:
         key = (file, line)
@@ -459,20 +447,6 @@ def load_graph(
             by_loc[key] = node
             g.add_node(node)
         return node
-
-    def _resolve_phi(file: str, line: int, kind: str, stack_idx: int) -> PhiNode:
-        key = (file, line, kind, stack_idx)
-        node = by_phi.get(key)
-        if node is None:
-            node = PhiNode(Location(file, line, 0, line, 0), kind, stack_idx)
-            by_phi[key] = node
-            g.add_node(node)
-        return node
-
-    def _resolve_endpoint(file: str, line: int, stack_idx: int, kind: str):
-        if kind == "ast":
-            return _resolve(file, line)
-        return _resolve_phi(file, line, kind, stack_idx)
 
     # Batch-run any missing queries in a single ``codeql database
     # run-queries`` invocation — amortises ~7s JVM startup across the
@@ -499,23 +473,6 @@ def load_graph(
                 u = _resolve(sf, int(sl))
                 v = _resolve(df, int(dl))
                 g.add_edge(u, v, kind="cfg", successor=t)
-        elif q == "dataflowEdges":
-            for sf, sl, df, dl in rows:
-                u = _resolve(sf, int(sl))
-                v = _resolve(df, int(dl))
-                g.add_edge(u, v, kind="dataflow")
-        elif q == "phiNodes":
-            for file, line, stack_idx, kind in rows:
-                _resolve_phi(file, int(line), kind, int(stack_idx))
-        elif q == "phiEdges":
-            for (
-                sf, sl, ssi, sk,
-                df, dl, dsi, dk,
-                label,
-            ) in rows:
-                u = _resolve_endpoint(sf, int(sl), int(ssi), sk)
-                v = _resolve_endpoint(df, int(dl), int(dsi), dk)
-                g.add_edge(u, v, kind="cfg", successor=label)
         elif q == "basicBlocks":
             # Annotate each AstNode with its BB id = (file, firstLine, lastLine).
             for ast_file, ast_line, bb_first, bb_last in rows:
@@ -523,203 +480,6 @@ def load_graph(
                 if node is None:
                     continue
                 g.nodes[node]["bb"] = (ast_file, int(bb_first), int(bb_last))
-        elif q == "ssaOutputs":
-            # Per-op list of produced SSAVars, ordered by output_index (1-based).
-            for ast_file, ast_line, out_idx in rows:
-                node = by_loc.get((ast_file, int(ast_line)))
-                if node is None:
-                    continue
-                v = _resolve_var(ast_file, int(ast_line), int(out_idx))
-                outs = g.nodes[node].setdefault("stack_outputs", [])
-                outs.append(v)
-            # Finalize ordering by output_index.
-            for n in g.nodes:
-                outs = g.nodes[n].get("stack_outputs")
-                if outs:
-                    outs.sort(key=lambda x: x.output_index)
-        elif q == "constValues":
-            # Literal-only resolved constants per (op, outputIdx). Sound.
-            # Per-output schema: ``g.nodes[op]["const_outputs"]`` is
-            # ``{outIdx: (kind, value)}``. Single-value back-compat field
-            # ``g.nodes[op]["const_value"]`` is set when only one output.
-            for ast_file, ast_line, out_idx, kind, value in rows:
-                node = by_loc.get((ast_file, int(ast_line)))
-                if node is None:
-                    continue
-                outs = g.nodes[node].setdefault("const_outputs", {})
-                outs[int(out_idx)] = (kind, value)
-                if int(out_idx) == 1 and len(outs) == 1:
-                    g.nodes[node]["const_value"] = (kind, value)
-                elif "const_value" in g.nodes[node] and len(outs) > 1:
-                    g.nodes[node].pop("const_value", None)
-        elif q == "mustValues":
-            # Dataflow-extended must-be-constant resolutions per
-            # (op, outputIdx). Sound (uses ``LocalFlow::valueIdentityFlow``
-            # under the hood — strict value-equality flow, not the broad
-            # taint pass-through). Covers arithmetic folds, scratch reads,
-            # callsub bridges, phi convergence, and identity-preserving
-            # stack manipulations.
-            for ast_file, ast_line, out_idx, kind, value in rows:
-                node = by_loc.get((ast_file, int(ast_line)))
-                if node is None:
-                    continue
-                must = g.nodes[node].setdefault("must_outputs", {})
-                must[int(out_idx)] = (kind, value)
-        elif q == "valueIdentitySteps":
-            # One row per ``valueIdentityFlowStep(src, sink)``: src and
-            # sink defs hold the same runtime value (stack passthrough,
-            # single-source phi, callsub bridge, scratch bridge).
-            # Stored on the graph as ``g.graph['identity_steps']``: a list
-            # of ``(src_key, sink_key)`` where each key is one of:
-            #   ("var",  file, line, idx)            for an SSAVar def
-            #   ("phi",  file, line, kind, stack_idx) for a DirectPhi/IndirectPhi
-            # Python's `propagate_constants` iterates these to fixed point
-            # so a value resolved at a multi-arg phi can flow through to
-            # downstream SSAVars.
-            steps = g.graph.setdefault("identity_steps", [])
-            for row in rows:
-                (sf, sl, si, sk, df, dl, di, dk) = row
-                src = (("var", sf, int(sl), int(si)) if sk == "SSAVar"
-                       else ("phi", sf, int(sl), sk, int(si)))
-                snk = (("var", df, int(dl), int(di)) if dk == "SSAVar"
-                       else ("phi", df, int(dl), dk, int(di)))
-                steps.append((src, snk))
-        elif q == "innerTxnFields":
-            # Per (start, end, itxn_field) triple from
-            # contributesToItxn. Stored as a list of dicts on
-            # ``g.graph['inner_txn_fields']`` for the python aggregator
-            # in ``tealtools.inner_txn_report``.
-            entries = g.graph.setdefault("inner_txn_fields", [])
-            for row in rows:
-                (
-                    field_file, field_line, field_name,
-                    start_line, start_kind,
-                    end_line, end_kind,
-                    def_kind, def_file, def_line, def_idx,
-                ) = row
-                entries.append({
-                    "field_file": field_file,
-                    "field_line": int(field_line),
-                    "field_name": field_name,
-                    "start_line": int(start_line),
-                    "start_kind": start_kind,
-                    "end_line": int(end_line),
-                    "end_kind": end_kind,
-                    "def_kind": def_kind,
-                    "def_file": def_file,
-                    "def_line": int(def_line),
-                    "def_idx": int(def_idx),
-                })
-        elif q == "stackHeights":
-            # Per AST node × possible stack height before it executes.
-            # Stored on the node as ``g.nodes[n]["stack_heights"]`` =
-            # set[int]. Multiple values denote inconsistent depth (paths
-            # disagree); single-value sets are the common case. The
-            # stack simulator uses ``min(...)`` to bound BB-entry phi
-            # lists so the model's [1..1000] IndirectPhi explosion at
-            # recursive subroutines doesn't leak into per-line views.
-            for row in rows:
-                (sh_file, sh_line, depth) = row
-                node = by_loc.get((sh_file, int(sh_line)))
-                if node is None:
-                    continue
-                heights = g.nodes[node].setdefault("stack_heights", set())
-                heights.add(int(depth))
-        elif q == "scratchInfluence":
-            # Per `load N` op, list every may-influencing `store N` plus
-            # the SSAVar key (file, line, outputIdx) of the value the
-            # store writes. Python's scratch-prop pass uses this to
-            # decide if every influencing store wrote the same constant.
-            #
-            # Storage on the LOAD node:
-            #   g.nodes[load]["scratch_stores"] = [(store_value_key, ...), ...]
-            # where store_value_key = (file, line, outputIdx).
-            for row in rows:
-                (load_file, load_line, _store_file, _store_line,
-                 sv_file, sv_line, sv_idx) = row
-                load_node = by_loc.get((load_file, int(load_line)))
-                if load_node is None:
-                    continue
-                stores_list = g.nodes[load_node].setdefault("scratch_stores", [])
-                stores_list.append((sv_file, int(sv_line), int(sv_idx)))
-        elif q == "phiArgs":
-            # Attach each phi's expansion arguments. DirectPhi -> SSAVars;
-            # IndirectPhi -> the root DirectPhi (a PhiNode).
-            for row in rows:
-                (phi_file, phi_line, phi_idx, phi_kind,
-                 arg_file, arg_line, arg_idx, arg_kind) = row
-                phi = by_phi.get(
-                    (phi_file, int(phi_line), phi_kind, int(phi_idx))
-                )
-                if phi is None:
-                    continue
-                if arg_kind == "SSAVar":
-                    arg = _resolve_var(arg_file, int(arg_line), int(arg_idx))
-                elif arg_kind == "DirectPhi":
-                    arg = _resolve_phi(
-                        arg_file, int(arg_line), "DirectPhi", int(arg_idx)
-                    )
-                else:
-                    continue
-                phi.args.append(arg)
-            # Finalize ordering: SSAVar args by (line, output_index); phi
-            # args (single root for IndirectPhi) don't need sorting.
-            for p in by_phi.values():
-                p.args.sort(key=lambda a: (
-                    (a.line, a.output_index) if isinstance(a, SSAVar)
-                    else (a.location.start_line, a.stack_index)
-                ))
-        elif q == "ssaInputs":
-            # Per-op list of consumed Definitions, ordered by getStackInputByOrder `ord` (1-based).
-            # Each entry is either an SSAVar, a DirectPhi PhiNode, or an IndirectPhi PhiNode.
-            #
-            # When DirectPhi + IndirectPhi co-exist at the same ``(bb, slot)``
-            # they appear as two rows at the same ``ord`` (parallel views of
-            # the same stack position). Dedupe by (node, ord) for display —
-            # prefer DirectPhi as canonical so the args render via the local-
-            # origin tree. Both phis still exist in the graph for dataflow
-            # purposes (Dataflow.qll uses getConsumedValues directly).
-            pending: dict = {}
-            for row in rows:
-                ast_file, ast_line, ord_, def_kind, def_file, def_line, def_idx = row
-                node = by_loc.get((ast_file, int(ast_line)))
-                if node is None:
-                    continue
-                if def_kind == "SSAWriteDef":
-                    d = _resolve_var(def_file, int(def_line), int(def_idx))
-                else:
-                    d = _resolve_phi(def_file, int(def_line), def_kind, int(def_idx))
-                pending.setdefault(node, []).append((int(ord_), def_kind, d))
-            # Stash the (ord, kind, d) entries as a node attribute; the
-            # final dedupe + arg-merge happens post-loop after phiArgs has
-            # populated phi.args.
-            for node, items in pending.items():
-                items.sort(key=lambda x: (x[0], 0 if x[1] == "DirectPhi" else 1))
-                g.nodes[node]["_stack_inputs_raw"] = items
-
-    # Post-pass: dedupe stack_inputs by ord, merging args of DirectPhi +
-    # IndirectPhi pairs at the same slot so the IndirectPhi's propagated
-    # chain remains visible in the displayed phi(...) expansion. Runs
-    # AFTER phiArgs has populated phi.args.
-    for node in list(g.nodes):
-        items = g.nodes[node].pop("_stack_inputs_raw", None)
-        if items is None:
-            continue
-        seen: dict = {}
-        deduped = []
-        for ord_, kind, d in items:
-            if ord_ not in seen:
-                seen[ord_] = d
-                deduped.append((ord_, kind, d))
-                continue
-            canonical = seen[ord_]
-            if isinstance(canonical, PhiNode) and isinstance(d, PhiNode):
-                existing = set(canonical.args)
-                for arg in d.args:
-                    if arg not in existing:
-                        canonical.args.append(arg)
-                        existing.add(arg)
-        g.nodes[node]["stack_inputs"] = [d for _, _, d in deduped]
 
     # constValues port: resolved literal constants per output, computed in
     # Python (replaces ``constValues.ql``). Populates ``const_outputs``

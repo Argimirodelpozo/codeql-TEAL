@@ -66,37 +66,6 @@ class SSAProgram:
         self._shuffles_propagated: bool = False
         self._inputs_propagated: bool = False
 
-        # Index graph-side phis by key for fast lookup during lazy materialization.
-        g_phi_by_key: dict[tuple, tg.PhiNode] = {}
-        for n in g.nodes:
-            if isinstance(n, tg.PhiNode):
-                g_phi_by_key[
-                    (n.location.file, n.location.start_line, n.kind, n.stack_index)
-                ] = n
-
-        def _to_var(gv: "tg.SSAVar") -> SSAVar:
-            key = (gv.file, gv.line, gv.output_index)
-            v = self.vars.get(key)
-            if v is None:
-                v = SSAVar(*key)
-                self.vars[key] = v
-            return v
-
-        def _to_phi(gp: "tg.PhiNode") -> Phi:
-            key = (gp.location.file, gp.location.start_line, gp.kind, gp.stack_index)
-            p = self.phis.get(key)
-            if p is None:
-                p = Phi(gp.location.file, gp.location.start_line, gp.stack_index, gp.kind)
-                self.phis[key] = p
-            return p
-
-        def _to_operand(x) -> Operand:
-            if isinstance(x, tg.SSAVar):
-                return _to_var(x)
-            if isinstance(x, tg.PhiNode):
-                return _to_phi(x)
-            raise TypeError(f"unexpected stack-input type: {type(x).__name__}")
-
         def _bb_from_tuple(bb_id: tuple) -> BasicBlock:
             bb = self.blocks.get(bb_id)
             if bb is None:
@@ -104,7 +73,8 @@ class SSAProgram:
                 self.blocks[bb_id] = bb
             return bb
 
-        # Pass 1: build Assignments (creating SSAVars + phis lazily via _to_operand).
+        # Pass 1: build Assignments + their output SSAVars (arities from the
+        # opcode signature table; PySSA reconstructs operand wiring + phis).
         for n in g.nodes:
             if not isinstance(n, Opcode):
                 continue
@@ -146,56 +116,17 @@ class SSAProgram:
             self.assignments.append(a)
             for v in outs:
                 v.defined_by = a
-            # Pre-attach per-output constant literals from constValues.ql
-            # (literal-only, sound) AND from mustValues.ql (dataflow-
-            # extended, also sound — covers arithmetic, scratch, callsub
-            # bridges via the ConstantPropagation library, but with a
-            # must-overwrite check that excludes may-be-K results).
-            # constValues is the literal source; mustValues only fills
-            # in slots not already populated.
+            # Pre-attach per-output constant literals from the constValues
+            # Python port: g.nodes[n]["const_outputs"] = {out_idx: (kind, value)}.
             const_outputs = g.nodes[n].get("const_outputs") or {}
-            must_outputs = g.nodes[n].get("must_outputs") or {}
             for v in outs:
                 co = const_outputs.get(v.index)
                 if co is not None:
                     v.const_value = Const(*co)
-                    continue
-                mo = must_outputs.get(v.index)
-                if mo is not None:
-                    v.const_value = Const(*mo)
-            for inp in ins:
-                inp.uses.append(a)
             if bb is not None:
                 bb.assignments.append(a)
 
-        # Pass 2: close over transitively-referenced phis. Each phi we've
-        # already materialized references 0+ more phis via its ``args``;
-        # resolve args lazily so we only touch phis that actually matter.
-        pending = list(self.phis.values())
-        while pending:
-            p = pending.pop()
-            if p.args:
-                continue
-            gp = g_phi_by_key.get((p.file, p.line, p.kind, p.stack_index))
-            if gp is None:
-                continue
-            for a in gp.args:
-                arg = _to_operand(a)
-                p.args.append(arg)
-                if isinstance(arg, Phi) and not arg.args:
-                    pending.append(arg)
-
-        # Pass 3: attach phis to their host BBs (phi.line == bb.first_line).
-        bb_by_first_line: dict[tuple[str, int], BasicBlock] = {
-            (bb.file, bb.first_line): bb for bb in self.blocks.values()
-        }
-        for p in self.phis.values():
-            bb = bb_by_first_line.get((p.file, p.line))
-            if bb is not None:
-                p.basic_block = bb
-                bb.phis.append(p)
-
-        # Pass 4: wire BB predecessor/successor from CFG edges that
+        # Pass 2: wire BB predecessor/successor from CFG edges that
         # cross BB *boundaries*. An edge ``u → v`` represents entering
         # ``v``'s BB iff ``v`` is its BB's first node — that's the only
         # way to land on the BB. Filtering on "v is first node of v's
@@ -245,7 +176,7 @@ class SSAProgram:
             u_bb.successors.append(v_bb)
             v_bb.predecessors.append(u_bb)
 
-        # Pass 5: collect Label nodes for rendering. They aren't part of
+        # Pass 3: collect Label nodes for rendering. They aren't part of
         # the SSA — they don't define or consume values — but printing
         # them in :meth:`functional` lets the dump line up with the
         # source listing (branch targets stay visible).
