@@ -214,7 +214,6 @@ class PySSA:
     vars: dict[tuple, PyVar] = field(default_factory=dict)
     # phi key: ``(bb_key, slot)`` — slot is 1-based top-first.
     phis: dict[tuple, PyPhi] = field(default_factory=dict)
-    heights: dict[PyBlock, set] = field(default_factory=dict)
     # Per-BB cache populated in phase 2.
     _consumed: dict[PyBlock, int] = field(default_factory=dict)
     _locals: dict[PyBlock, int] = field(default_factory=dict)
@@ -243,16 +242,19 @@ class PySSA:
 
     @classmethod
     def _construct(cls, prog: SSAProgram) -> "PySSA":
-        """Run the 8-phase PySSA construction and return the builder
+        """Run the PySSA construction phases and return the builder
         instance. Use :meth:`build` for the canonical
         SSAProgram-returning entry point; this is exposed for
-        diagnostics (e.g. ``python -m tealtools.ssa``)."""
+        diagnostics (e.g. ``python -m tealtools.ssa``).
+
+        (The former phase 5 "heights" was removed: it ran a forward
+        height fixpoint whose result was never read — and it blew up to
+        ~STACK_MAX entries per BB on recursive subroutines.)"""
         self = cls()
         self._phase1_instantiate(prog)
         self._phase2_arities()
         self._phase3_direct_placement()
         self._phase4_indirect_propagation()
-        self._phase5_heights()
         self._phase6_sim_blocks()
         self._phase7_resolve_frame_negative()
         self._phase8_live_filter()
@@ -382,41 +384,6 @@ class PySSA:
                         wl.append(new_phi)
                         in_wl.add(id(new_phi))
 
-    # ----- Phase 5: heights (forward DF) ---------------------------------
-
-    def _phase5_heights(self) -> None:
-        self.heights = {b: set() for b in self.blocks}
-        entries = [b for b in self.blocks if not b.preds]
-        if not entries and self.blocks:
-            entries = [self.blocks[0]]
-        for b in entries:
-            self.heights[b].add(0)
-
-        def op_delta(op: PyOp) -> int:
-            if op.op in ("callsub", "retsub"):
-                return 0
-            return op.n_out - op.n_in
-
-        bb_delta = {b: sum(op_delta(op) for op in b.ops) for b in self.blocks}
-        wl: deque = deque(entries)
-        in_wl: set = set(entries)
-        while wl:
-            b = wl.popleft()
-            in_wl.discard(b)
-            delta = bb_delta[b]
-            exit_h: set = set()
-            for h in self.heights[b]:
-                nh = h + delta
-                if 0 <= nh <= STACK_MAX:
-                    exit_h.add(nh)
-            for s in b.succs:
-                new = exit_h - self.heights[s]
-                if new:
-                    self.heights[s] |= new
-                    if s not in in_wl:
-                        wl.append(s)
-                        in_wl.add(s)
-
     # ----- Phase 6: simulate each BB to fill op.inputs / exit_stack -----
 
     def _phase6_sim_blocks(self) -> None:
@@ -437,9 +404,17 @@ class PySSA:
         # 6a: pre-compute b.entry_stack for every BB so per-op fat
         # expansion below can read sub.entry_stack regardless of
         # iteration order.
+        # Max phi slot per BB in a single pass over self.phis. The previous
+        # per-block ``[s for (bb_key, s) in self.phis if bb_key == b.key]``
+        # rescanned every phi for every block — O(blocks x phis), which is
+        # tens of millions of iterations once a contract hits the
+        # [1..STACK_MAX] indirect-phi space (phis number 100k+).
+        max_slot_by_bb: dict = {}
+        for (bb_key, s) in self.phis:
+            if s > max_slot_by_bb.get(bb_key, 0):
+                max_slot_by_bb[bb_key] = s
         for b in self.blocks:
-            slots = [s for (bb_key, s) in self.phis if bb_key == b.key]
-            max_slot = max(slots) if slots else 0
+            max_slot = max_slot_by_bb.get(b.key, 0)
             entry = [None] * max_slot
             for k in range(1, max_slot + 1):
                 phi = self.phis.get((b.key, k))
