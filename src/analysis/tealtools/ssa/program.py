@@ -1,12 +1,13 @@
-"""QL-loaded ``SSAProgram`` substrate.
+"""The :class:`SSAProgram` class — the canonical program type every
+analysis consumes.
 
-Loads SSA data from a CodeQL TEAL database via
-:mod:`tealtools.graphs`, populating the data classes from
-:mod:`tealtools.ssa.models`. Constant-folding / range / liveness /
-materialize passes live here too because they were originally written
-against the QL-loaded view; pure-Python construction lives in
-:mod:`tealtools.ssa.ssa` (the :class:`PySSA` builder) which wraps into
-this same ``SSAProgram`` shape via :meth:`PySSA.build`.
+``SSAProgram(db)`` runs a QL pre-pass via :mod:`tealtools.graphs`
+(CFG / AST / arity / constant annotations, populating the data
+classes from :mod:`tealtools.ssa.models`), then routes SSA
+construction through :class:`PySSA` (:mod:`tealtools.ssa.ssa`) which
+overwrites the phi layer in place. The constant-folding / range /
+liveness / materialize passes live here as methods consumed by the
+detectors and reports.
 """
 from __future__ import annotations
 

@@ -16,9 +16,10 @@ Layout:
   TealType) plus op-classification helpers (``_shuffle_mapping``,
   ``_TERMINATOR_OPS``, ``_OP_RANGE_SEEDS``, ``_CONST_BLOCK_REF_NAMES``,
   ``_STACK_SHUFFLE_OPS``).
-- :mod:`tealtools.ssa.ssa_old`  — the QL-loaded :class:`SSAProgram`
-  class with its constant-folding / range / liveness / materialize
-  passes.
+- :mod:`tealtools.ssa.program`  — the :class:`SSAProgram` class. Its
+  ``__init__`` does a QL pre-pass (CFG / AST / arity) then routes SSA
+  construction through :class:`PySSA`; carries the constant-folding /
+  range / liveness / materialize passes consumed by every analysis.
 - :mod:`tealtools.ssa.ssa`      — the pure-Python :class:`PySSA`
   builder; :meth:`PySSA.build` returns an :class:`SSAProgram`
   wired up from PySSA-built structures (no separate wrap step).
@@ -44,8 +45,8 @@ from .models import (
     _shuffle_mapping,
 )
 
-# QL-loaded SSAProgram class from .ssa_old
-from .ssa_old import SSAProgram
+# The SSAProgram class from .program
+from .program import SSAProgram
 
 # Pure-Python SSA builder + its internal data types from .ssa
 from .ssa import (
