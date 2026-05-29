@@ -479,41 +479,8 @@ class SSAProgram:
         the SSAVar-identity change can surprise analyses that expect a
         1:1 mapping between load assignments and their downstream uses.
         """
-        forwarded = 0
-        for n in self._graph.nodes:
-            stores = self._graph.nodes[n].get("scratch_stores")
-            if not stores:
-                continue
-            load_var = self.var(n.location.file, n.location.start_line, 1)
-            if load_var is None:
-                continue
-            sources: list[SSAVar] = []
-            ok = True
-            for sv_file, sv_line, sv_idx in stores:
-                src = self.var(sv_file, sv_line, sv_idx)
-                if src is None:
-                    ok = False
-                    break
-                sources.append(src)
-            if not ok or not sources:
-                continue
-            first = sources[0]
-            if not all(s is first for s in sources):
-                continue
-            if load_var is first:
-                continue
-            for cons in list(load_var.uses):
-                for i, inp in enumerate(cons.inputs):
-                    if inp is load_var:
-                        cons.inputs[i] = first
-                        first.uses.append(cons)
-            for phi in self.phis.values():
-                for i, arg in enumerate(phi.args):
-                    if arg is load_var:
-                        phi.args[i] = first
-            load_var.uses = []
-            forwarded += 1
-        return forwarded
+        from ..passes.scratch_prop import propagate_scratch_values as _impl
+        return _impl(self)
 
     def cleanup_unused_ssavars(self) -> int:
         """Drop side-effect-free :class:`Assignment` s whose every
@@ -549,32 +516,8 @@ class SSAProgram:
         if not self._consts_propagated:
             self.propagate_constants()
 
-        # Iterate to fixed point: a load resolved to K can in turn flow
-        # back into another store, whose load can then resolve, and so on.
-        changed = True
-        while changed:
-            changed = False
-            for n in self._graph.nodes:
-                stores = self._graph.nodes[n].get("scratch_stores")
-                if not stores:
-                    continue
-                # The load op `n` has a single output SSAVar at outIdx=1.
-                load_var = self.var(n.location.file, n.location.start_line, 1)
-                if load_var is None or load_var.const_value is not None:
-                    continue
-                # Look up each store's consumed-value SSAVar by its key.
-                resolved: list[Const] = []
-                ok = True
-                for sv_file, sv_line, sv_idx in stores:
-                    src = self.var(sv_file, sv_line, sv_idx)
-                    if src is None or src.const_value is None:
-                        ok = False
-                        break
-                    resolved.append(src.const_value)
-                if ok and resolved and all(c == resolved[0] for c in resolved):
-                    load_var.const_value = resolved[0]
-                    changed = True
-
+        from ..passes.scratch_prop import propagate_scratch_constants as _impl
+        _impl(self)
         self._scratch_propagated = True
 
     def propagate_ranges(self) -> None:
