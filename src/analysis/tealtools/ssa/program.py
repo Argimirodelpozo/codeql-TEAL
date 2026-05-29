@@ -1307,8 +1307,8 @@ class SSAProgram:
         max_lines_per_bb: int = 80,
     ):
         """Render :meth:`to_dot` via Graphviz; returns a Jupyter-renderable
-        SVG (same ``_SvgResult`` type :mod:`tealtools.graphs` uses)."""
-        from ..graphs import _render_dot  # reuse the same subprocess helper
+        SVG (same ``_SvgResult`` type :mod:`tealtools.viz` uses)."""
+        from ..viz import _render_dot  # reuse the same subprocess helper
         return _render_dot(
             self.to_dot(
                 file=file,
