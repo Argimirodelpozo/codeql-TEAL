@@ -707,6 +707,239 @@ def _to_ssaprogram(py: PySSA, source: SSAProgram) -> SSAProgram:
     return prog
 
 
+def _collapse_phi_args_to_leaves(py: PySSA, phi_map: dict, var_map: dict) -> None:
+    """Collapse each ``Phi``'s args to the transitive ``SSAVar`` leaves
+    reachable through PySSA's ``PyPhi.args`` graph (SCC condensation,
+    O(N+E) memoized per SCC). Matches QL's ``phiArgs.ql`` projection."""
+    import networkx as nx
+    _g = nx.DiGraph()
+    _g.add_nodes_from(py.phis.values())
+    for _py_p in py.phis.values():
+        for _arg in _py_p.args:
+            if isinstance(_arg, PyPhi):
+                _g.add_edge(_py_p, _arg)
+    _sccs = list(nx.strongly_connected_components(_g))
+    _scc_of = {p: i for i, s in enumerate(_sccs) for p in s}
+    _scc_succs = [set() for _ in _sccs]
+    for _u, _v in _g.edges:
+        _su, _sv = _scc_of[_u], _scc_of[_v]
+        if _su != _sv:
+            _scc_succs[_su].add(_sv)
+    _scc_direct: list[list[PyVar]] = [[] for _ in _sccs]
+    for _py_p in py.phis.values():
+        _s = _scc_of[_py_p]
+        for _arg in _py_p.args:
+            if isinstance(_arg, PyVar):
+                _scc_direct[_s].append(_arg)
+    _cond = nx.DiGraph()
+    _cond.add_nodes_from(range(len(_sccs)))
+    for _u, _ss in enumerate(_scc_succs):
+        for _v in _ss:
+            _cond.add_edge(_u, _v)
+    _scc_leaves: list[list[PyVar]] = [[] for _ in _sccs]
+    for _s in reversed(list(nx.topological_sort(_cond))):
+        _seen_ids: set = set()
+        _out: list = []
+        for _v in _scc_direct[_s]:
+            if id(_v) not in _seen_ids:
+                _seen_ids.add(id(_v))
+                _out.append(_v)
+        for _succ in _scc_succs[_s]:
+            for _v in _scc_leaves[_succ]:
+                if id(_v) not in _seen_ids:
+                    _seen_ids.add(id(_v))
+                    _out.append(_v)
+        _scc_leaves[_s] = _out
+
+    for py_p, p in phi_map.items():
+        for _leaf_pv in _scc_leaves[_scc_of[py_p]]:
+            _ssa = var_map.get(_leaf_pv)
+            if _ssa is not None:
+                p.args.append(_ssa)
+
+
+def _build_assignments(prog: SSAProgram, py: PySSA, var_map: dict,
+                       phi_map: dict, bb_map: dict) -> None:
+    """Build ``prog.assignments`` (+ ``bb.assignments``, def/use back-refs,
+    and spec-fixed const seeds) from the PySSA ops."""
+    def _xlate(o):
+        if o is None:
+            return None
+        if isinstance(o, PyVar):
+            return var_map.get(o)
+        if isinstance(o, PyPhi):
+            return phi_map.get(o)
+        return o
+
+    for py_b in py.blocks:
+        bb = bb_map[py_b]
+        for py_op in py_b.ops:
+            inputs = [
+                _xlate(i) for i in py_op.inputs
+                if _xlate(i) is not None
+            ]
+            outputs = [
+                _xlate(v) for v in py_op.outputs
+                if isinstance(v, PyVar) and _xlate(v) is not None
+            ]
+            a = Assignment(
+                outputs=outputs,
+                op=py_op.op,
+                immediates=py_op.immediates,
+                inputs=inputs,
+                location=Location(py_op.file, py_op.line),
+                ast_code=f"{py_op.op} {py_op.immediates}".strip(),
+                basic_block=bb,
+            )
+            for v in outputs:
+                v.defined_by = a
+                # Inline seed for spec-fixed AVM ops whose value is a known
+                # compile-time literal (e.g. ``global ZeroAddress``) —
+                # replaces what ``mustValues.ql`` emitted for these ops.
+                if v.const_value is None:
+                    fold = _fold_spec_fixed(a)
+                    if fold is not None:
+                        v.const_value = fold
+            for i in inputs:
+                if hasattr(i, "uses"):
+                    i.uses.append(a)
+            prog.assignments.append(a)
+            bb.assignments.append(a)
+
+    prog.assignments.sort(key=lambda a: (a.location.file, a.location.line))
+
+
+def _seed_consts_and_identity_steps(prog: SSAProgram, scratch_stores: dict) -> None:
+    """Seed ``const_value`` through value-identity edges (shuffle pass-
+    through + scratch reads, to a fixed point) and build the identity-flow
+    step relation. Replaces ``mustValues.ql`` / ``valueIdentitySteps.ql``;
+    stashes the relation on ``prog._graph.graph["identity_steps"]``.
+
+    Pre-filters the candidate ops once so the fixpoint only scans ops that
+    could seed a const, then iterates so identity-of-identity chains flow
+    (e.g. const -> swap -> load -> swap -> consumer)."""
+    _shuffle_candidates: list[tuple] = []
+    _load_candidates: list = []
+    for _a in prog.assignments:
+        _m = _shuffle_mapping(_a)
+        if _m is not None:
+            _shuffle_candidates.append((_a, _m))
+        if _a.op == "load" and len(_a.outputs) == 1:
+            _load_candidates.append(_a)
+    _changed = True
+    while _changed:
+        _changed = False
+        for _a, _m in _shuffle_candidates:
+            for _out_idx, _in_idx in enumerate(_m):
+                if _out_idx >= len(_a.outputs) or _in_idx >= len(_a.inputs):
+                    continue
+                _out_v = _a.outputs[_out_idx]
+                if not isinstance(_out_v, SSAVar) or _out_v.const_value is not None:
+                    continue
+                _in_cv = getattr(_a.inputs[_in_idx], "const_value", None)
+                if _in_cv is not None:
+                    _out_v.const_value = _in_cv
+                    _changed = True
+        for _a in _load_candidates:
+            _out_v = _a.outputs[0]
+            if not isinstance(_out_v, SSAVar) or _out_v.const_value is not None:
+                continue
+            _stores = scratch_stores.get(
+                (_a.location.file, _a.location.line)
+            )
+            if not _stores:
+                continue
+            _resolved: list[Const] = []
+            _ok = True
+            for _sv_file, _sv_line, _sv_idx in _stores:
+                _src_v = prog.vars.get((_sv_file, _sv_line, _sv_idx))
+                _src_cv = _src_v.const_value if _src_v is not None else None
+                if _src_cv is None:
+                    _ok = False
+                    break
+                _resolved.append(_src_cv)
+            if _ok and _resolved and all(c == _resolved[0] for c in _resolved):
+                _out_v.const_value = _resolved[0]
+                _changed = True
+
+    _identity_steps: list = []
+
+    def _ssavar_key(v: SSAVar) -> tuple:
+        return ("var", v.file, v.line, v.index)
+
+    def _endpoint_key(o):
+        if isinstance(o, SSAVar):
+            return _ssavar_key(o)
+        if isinstance(o, Phi):
+            return ("phi", o.file, o.line, o.kind, o.stack_index)
+        return None
+
+    # (a) shuffle pass-through
+    for _a, _m in _shuffle_candidates:
+        for _out_idx, _in_idx in enumerate(_m):
+            if _out_idx >= len(_a.outputs) or _in_idx >= len(_a.inputs):
+                continue
+            _out_v = _a.outputs[_out_idx]
+            _in_o = _a.inputs[_in_idx]
+            if not isinstance(_out_v, SSAVar):
+                continue
+            _src = _endpoint_key(_in_o)
+            if _src is None or _src == _ssavar_key(_out_v):
+                continue
+            _identity_steps.append((_src, _ssavar_key(_out_v)))
+
+    # (b) single-source phi
+    for _p in prog.phis.values():
+        if not _p.args:
+            continue
+        _first = _p.args[0]
+        if all(a is _first for a in _p.args[1:]):
+            _src = _endpoint_key(_first)
+            _snk = ("phi", _p.file, _p.line, _p.kind, _p.stack_index)
+            if _src is not None and _src != _snk:
+                _identity_steps.append((_src, _snk))
+
+    # (c) scratch bridge
+    for _a in _load_candidates:
+        _out_v = _a.outputs[0]
+        if not isinstance(_out_v, SSAVar):
+            continue
+        _stores = scratch_stores.get(
+            (_a.location.file, _a.location.line)
+        )
+        if not _stores:
+            continue
+        _snk = _ssavar_key(_out_v)
+        for _sv_file, _sv_line, _sv_idx in _stores:
+            _identity_steps.append(
+                (("var", _sv_file, _sv_line, _sv_idx), _snk)
+            )
+
+    if hasattr(prog._graph, "graph"):
+        prog._graph.graph["identity_steps"] = _identity_steps
+
+
+def _drop_unconsumed_phis(prog: SSAProgram) -> None:
+    """Drop phis not transitively consumed by any op input, so ``prog.phis``
+    is the consumer set rather than the full builder output."""
+    _consumed: set = set()
+    for _a in prog.assignments:
+        for _inp in _a.inputs:
+            if isinstance(_inp, Phi):
+                _consumed.add(id(_inp))
+    _reached: set = set(_consumed)
+    _work: list = [p for p in prog.phis.values() if id(p) in _reached]
+    while _work:
+        _phi = _work.pop()
+        for _arg in _phi.args:
+            if isinstance(_arg, Phi) and id(_arg) not in _reached:
+                _reached.add(id(_arg))
+                _work.append(_arg)
+    prog.phis = {k: p for k, p in prog.phis.items() if id(p) in _reached}
+    for bb in prog.blocks.values():
+        bb.phis = [p for p in bb.phis if id(p) in _reached]
+
+
 def _apply_pyssa_to(
     prog: SSAProgram, py: PySSA, *, source: Optional[SSAProgram] = None,
 ) -> None:
@@ -814,106 +1047,12 @@ def _apply_pyssa_to(
             p.basic_block = bb
             bb.phis.append(p)
 
-    # 5) SCC-collapse PyPhi.args graph: each Phi's args become the
-    # transitive SSAVar leaves reachable through PySSA's PyPhi.args
-    # graph (memoized per SCC). Matches QL's ``phiArgs.ql`` projection;
-    # downstream analyses see SSAVar args directly.
-    import networkx as nx
-    _g = nx.DiGraph()
-    _g.add_nodes_from(py.phis.values())
-    for _py_p in py.phis.values():
-        for _arg in _py_p.args:
-            if isinstance(_arg, PyPhi):
-                _g.add_edge(_py_p, _arg)
-    _sccs = list(nx.strongly_connected_components(_g))
-    _scc_of = {p: i for i, s in enumerate(_sccs) for p in s}
-    _scc_succs = [set() for _ in _sccs]
-    for _u, _v in _g.edges:
-        _su, _sv = _scc_of[_u], _scc_of[_v]
-        if _su != _sv:
-            _scc_succs[_su].add(_sv)
-    _scc_direct: list[list[PyVar]] = [[] for _ in _sccs]
-    for _py_p in py.phis.values():
-        _s = _scc_of[_py_p]
-        for _arg in _py_p.args:
-            if isinstance(_arg, PyVar):
-                _scc_direct[_s].append(_arg)
-    _cond = nx.DiGraph()
-    _cond.add_nodes_from(range(len(_sccs)))
-    for _u, _ss in enumerate(_scc_succs):
-        for _v in _ss:
-            _cond.add_edge(_u, _v)
-    _scc_leaves: list[list[PyVar]] = [[] for _ in _sccs]
-    for _s in reversed(list(nx.topological_sort(_cond))):
-        _seen_ids: set = set()
-        _out: list = []
-        for _v in _scc_direct[_s]:
-            if id(_v) not in _seen_ids:
-                _seen_ids.add(id(_v))
-                _out.append(_v)
-        for _succ in _scc_succs[_s]:
-            for _v in _scc_leaves[_succ]:
-                if id(_v) not in _seen_ids:
-                    _seen_ids.add(id(_v))
-                    _out.append(_v)
-        _scc_leaves[_s] = _out
+    # 5) Collapse each Phi's args to the transitive SSAVar leaves reachable
+    # through PySSA's PyPhi.args graph (SCC condensation).
+    _collapse_phi_args_to_leaves(py, phi_map, var_map)
 
-    for py_p, p in phi_map.items():
-        for _leaf_pv in _scc_leaves[_scc_of[py_p]]:
-            _ssa = var_map.get(_leaf_pv)
-            if _ssa is not None:
-                p.args.append(_ssa)
-
-    # 6) Assignments + back-refs.
-    def _xlate(o):
-        if o is None:
-            return None
-        if isinstance(o, PyVar):
-            return var_map.get(o)
-        if isinstance(o, PyPhi):
-            return phi_map.get(o)
-        return o
-
-    for py_b in py.blocks:
-        bb = bb_map[py_b]
-        for py_op in py_b.ops:
-            inputs = [
-                _xlate(i) for i in py_op.inputs
-                if _xlate(i) is not None
-            ]
-            outputs = [
-                _xlate(v) for v in py_op.outputs
-                if isinstance(v, PyVar) and _xlate(v) is not None
-            ]
-            a = Assignment(
-                outputs=outputs,
-                op=py_op.op,
-                immediates=py_op.immediates,
-                inputs=inputs,
-                location=Location(py_op.file, py_op.line),
-                ast_code=f"{py_op.op} {py_op.immediates}".strip(),
-                basic_block=bb,
-            )
-            for v in outputs:
-                v.defined_by = a
-                # Inline seed for spec-fixed AVM ops whose value is a
-                # known compile-time literal (currently ``global
-                # ZeroAddress``). Replaces what ``mustValues.ql`` was
-                # emitting for these ops, so the seed survives
-                # dropping that query from the load path. Done here in
-                # the PySSA pipeline rather than in the QL pre-pass
-                # inside :mod:`tealtools.ssa.program`.
-                if v.const_value is None:
-                    fold = _fold_spec_fixed(a)
-                    if fold is not None:
-                        v.const_value = fold
-            for i in inputs:
-                if hasattr(i, "uses"):
-                    i.uses.append(a)
-            prog.assignments.append(a)
-            bb.assignments.append(a)
-
-    prog.assignments.sort(key=lambda a: (a.location.file, a.location.line))
+    # 6) Build Assignments (+ bb back-refs, def/use links, spec-fixed seeds).
+    _build_assignments(prog, py, var_map, phi_map, bb_map)
 
     # 6.4) Inner-transaction field grouping. For each ``itxn_field``
     # op, find the immediately-enclosing ``(start, end)`` pair via CFG
@@ -946,168 +1085,15 @@ def _apply_pyssa_to(
             for _node in _nodes_by_loc.get(_load_key, []):
                 prog._graph.nodes[_node]["scratch_stores"] = list(_val_keys)
 
-    # 6.5) Propagate const_value through value-identity edges. Two
-    # sources, both replacing what ``mustValues.ql`` provided via
-    # ``LocalFlow::valueIdentityFlow`` so the seed survives dropping
-    # that query:
-    #
-    #   (a) Stack-shuffle outputs (swap, dup, dupn, cover, uncover,
-    #       dig, bury, frame_dig, frame_bury): each output is
-    #       identity-equal to ``input[mapping[idx]]`` per
-    #       :func:`_shuffle_mapping`. Constant input → constant
-    #       output at the same shuffle position.
-    #   (b) ``load N`` (scratch read): if every ``store N`` annotated
-    #       as a possible source on the graph wrote the same compile-
-    #       time literal, the load resolves to that literal. Mirrors
-    #       :meth:`SSAProgram.propagate_scratch_constants`, just
-    #       inlined for the construction-time seed.
-    #
-    # Iterates to a fixed point so identity-of-identity chains flow
-    # (e.g. const → swap → load → swap → consumer). Pre-filters the
-    # candidate-op lists once so the fixpoint only scans ops that
-    # could possibly seed a const, not every assignment in the prog.
-    # ``_scratch_stores`` was populated above by
-    # :func:`_compute_scratch_influence`.
-    _shuffle_candidates: list[tuple] = []
-    _load_candidates: list = []
-    for _a in prog.assignments:
-        _m = _shuffle_mapping(_a)
-        if _m is not None:
-            _shuffle_candidates.append((_a, _m))
-        if _a.op == "load" and len(_a.outputs) == 1:
-            _load_candidates.append(_a)
-    _changed = True
-    while _changed:
-        _changed = False
-        for _a, _m in _shuffle_candidates:
-            for _out_idx, _in_idx in enumerate(_m):
-                if _out_idx >= len(_a.outputs) or _in_idx >= len(_a.inputs):
-                    continue
-                _out_v = _a.outputs[_out_idx]
-                if not isinstance(_out_v, SSAVar) or _out_v.const_value is not None:
-                    continue
-                _in_cv = getattr(_a.inputs[_in_idx], "const_value", None)
-                if _in_cv is not None:
-                    _out_v.const_value = _in_cv
-                    _changed = True
-        for _a in _load_candidates:
-            _out_v = _a.outputs[0]
-            if not isinstance(_out_v, SSAVar) or _out_v.const_value is not None:
-                continue
-            _stores = _scratch_stores.get(
-                (_a.location.file, _a.location.line)
-            )
-            if not _stores:
-                continue
-            _resolved: list[Const] = []
-            _ok = True
-            for _sv_file, _sv_line, _sv_idx in _stores:
-                _src_v = prog.vars.get((_sv_file, _sv_line, _sv_idx))
-                _src_cv = _src_v.const_value if _src_v is not None else None
-                if _src_cv is None:
-                    _ok = False
-                    break
-                _resolved.append(_src_cv)
-            if _ok and _resolved and all(c == _resolved[0] for c in _resolved):
-                _out_v.const_value = _resolved[0]
-                _changed = True
-
-    # 6.6) Identity-flow step relation. Same data
-    # ``valueIdentitySteps.ql`` used to emit, but computed from the
-    # PySSA structure so we can drop that QL query from the load path.
-    # Three sources:
-    #
-    #   (a) Stack-shuffle ops — each output[i] is identity-equal to
-    #       input[mapping[i]].
-    #   (b) Single-source phi — when every arg of a phi is identical
-    #       by identity, the phi is identity-equal to that arg.
-    #   (c) Scratch bridge — for each ``load N`` with a scratch_stores
-    #       annotation, the load output is identity-equal to each
-    #       store's consumed-value SSAVar (one step per store; the
-    #       must-semantics aggregation lives in
-    #       :meth:`propagate_scratch_constants`, which still consumes
-    #       this relation for its fixed-point step).
-    #
-    # Endpoint format matches what the old QL loader produced so
-    # downstream consumers (``propagate_constants``) work unchanged:
-    #   ("var",  file, line, idx)
-    #   ("phi",  file, line, kind, stack_idx)
-    _identity_steps: list = []
-
-    def _ssavar_key(v: SSAVar) -> tuple:
-        return ("var", v.file, v.line, v.index)
-
-    def _endpoint_key(o):
-        if isinstance(o, SSAVar):
-            return _ssavar_key(o)
-        if isinstance(o, Phi):
-            return ("phi", o.file, o.line, o.kind, o.stack_index)
-        return None
-
-    # (a) shuffle pass-through
-    for _a, _m in _shuffle_candidates:
-        for _out_idx, _in_idx in enumerate(_m):
-            if _out_idx >= len(_a.outputs) or _in_idx >= len(_a.inputs):
-                continue
-            _out_v = _a.outputs[_out_idx]
-            _in_o = _a.inputs[_in_idx]
-            if not isinstance(_out_v, SSAVar):
-                continue
-            _src = _endpoint_key(_in_o)
-            if _src is None or _src == _ssavar_key(_out_v):
-                continue
-            _identity_steps.append((_src, _ssavar_key(_out_v)))
-
-    # (b) single-source phi
-    for _p in prog.phis.values():
-        if not _p.args:
-            continue
-        _first = _p.args[0]
-        if all(a is _first for a in _p.args[1:]):
-            _src = _endpoint_key(_first)
-            _snk = ("phi", _p.file, _p.line, _p.kind, _p.stack_index)
-            if _src is not None and _src != _snk:
-                _identity_steps.append((_src, _snk))
-
-    # (c) scratch bridge
-    for _a in _load_candidates:
-        _out_v = _a.outputs[0]
-        if not isinstance(_out_v, SSAVar):
-            continue
-        _stores = _scratch_stores.get(
-            (_a.location.file, _a.location.line)
-        )
-        if not _stores:
-            continue
-        _snk = _ssavar_key(_out_v)
-        for _sv_file, _sv_line, _sv_idx in _stores:
-            _identity_steps.append(
-                (("var", _sv_file, _sv_line, _sv_idx), _snk)
-            )
-
-    # Stash on the graph in the same place the QL loader used to,
-    # so :meth:`SSAProgram.propagate_constants` (and any other
-    # consumer) picks them up without change.
-    if hasattr(prog._graph, "graph"):
-        prog._graph.graph["identity_steps"] = _identity_steps
+    # 6.5/6.6) Seed const_value through value-identity edges (shuffle
+    # pass-through + scratch reads, to a fixed point) and build the
+    # identity-flow step relation — both replacing what ``mustValues.ql``
+    # / ``valueIdentitySteps.ql`` provided. Stashes the relation on
+    # ``prog._graph.graph["identity_steps"]`` for ``propagate_constants``.
+    _seed_consts_and_identity_steps(prog, _scratch_stores)
 
     # 7) Drop phis not transitively consumed by any op input.
-    _consumed: set = set()
-    for _a in prog.assignments:
-        for _inp in _a.inputs:
-            if isinstance(_inp, Phi):
-                _consumed.add(id(_inp))
-    _reached: set = set(_consumed)
-    _work: list = [p for p in prog.phis.values() if id(p) in _reached]
-    while _work:
-        _phi = _work.pop()
-        for _arg in _phi.args:
-            if isinstance(_arg, Phi) and id(_arg) not in _reached:
-                _reached.add(id(_arg))
-                _work.append(_arg)
-    prog.phis = {k: p for k, p in prog.phis.items() if id(p) in _reached}
-    for bb in prog.blocks.values():
-        bb.phis = [p for p in bb.phis if id(p) in _reached]
+    _drop_unconsumed_phis(prog)
 
     for bb in prog.blocks.values():
         bb.assignments.sort(key=lambda a: a.location.line)
