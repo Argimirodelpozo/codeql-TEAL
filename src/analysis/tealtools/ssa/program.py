@@ -534,84 +534,8 @@ class SSAProgram:
         if self._ranges_propagated:
             return
 
-        UINT64 = TealType("uint64")
-
-        def _seed(o, lo: int, hi: int) -> None:
-            if isinstance(o, SSAVar) and o.range is None:
-                o.range = IntRange(lo, hi)
-                o.type = UINT64
-
-        # Pass 1: seed from per-op rules. Single-output guard reflects
-        # that every range-yielding op here produces exactly one stack
-        # output; anything else would be a malformed Assignment.
-        for a in self.assignments:
-            if len(a.outputs) != 1:
-                continue
-            o = a.outputs[0]
-
-            # 1a. Op alone gives the range (covers comparisons,
-            # logical ops, getbit/getbyte, extract_uint{16,32},
-            # len/bitlen).
-            seed = _OP_RANGE_SEEDS.get(a.op)
-            if seed is not None:
-                _, lo, hi = seed
-                _seed(o, lo, hi)
-                continue
-
-            if not a.immediates:
-                continue
-            toks = a.immediates.split()
-
-            # 1b. txn-family field reads where the field carries the
-            # range. ``txn``/``gtxns``/``itxn`` put the field in the
-            # first immediate; ``gtxn`` / ``gtxna`` / ``gtxnsa`` etc.
-            # put a group index first and the field second.
-            field: Optional[str] = None
-            if a.op in ("txn", "gtxns", "itxn") and toks:
-                field = toks[0]
-            elif a.op in ("gtxn", "gtxna", "gtxnas") and len(toks) >= 2:
-                field = toks[1]
-            if field is not None:
-                rng = _TXN_FIELD_RANGES.get(field)
-                if rng is not None:
-                    _seed(o, *rng)
-                    continue
-
-            # 1c. global FIELD (only enum-valued fields seed).
-            if a.op == "global" and toks:
-                rng = _GLOBAL_FIELD_RANGES.get(toks[0])
-                if rng is not None:
-                    _seed(o, *rng)
-                    continue
-
-        # Pass 2: union ranges through phis to fixed point. A phi gets a
-        # range only if every arg has one; the result is the smallest
-        # box covering all of them. Type unifies to uint64 only when
-        # every arg agrees.
-        changed = True
-        while changed:
-            changed = False
-            for ph in self.phis.values():
-                if ph.range is not None or not ph.args:
-                    continue
-                arg_ranges: list[IntRange] = []
-                ok = True
-                for arg in ph.args:
-                    r = getattr(arg, "range", None)
-                    if r is None:
-                        ok = False
-                        break
-                    arg_ranges.append(r)
-                if not ok:
-                    continue
-                lo = min(r.lo for r in arg_ranges)
-                hi = max(r.hi for r in arg_ranges)
-                ph.range = IntRange(lo, hi)
-                arg_types = [getattr(arg, "type", None) for arg in ph.args]
-                if all(t is not None and t.kind == "uint64" for t in arg_types):
-                    ph.type = UINT64
-                changed = True
-
+        from ..passes.range_seed import propagate_ranges as _impl
+        _impl(self)
         self._ranges_propagated = True
 
     def propagate_range_arithmetic(self) -> int:
@@ -688,56 +612,8 @@ class SSAProgram:
         if self._shuffles_propagated:
             return
 
-        # Step 1: collect the shuffle assignments and the per-output
-        # redirect from each output SSAVar to its source operand.
-        redirect: dict[SSAVar, Operand] = {}
-        shuffle_assigns: list[Assignment] = []
-        for a in self.assignments:
-            if a.op not in _STACK_SHUFFLE_OPS:
-                continue
-            mapping = _shuffle_mapping(a)
-            if mapping is None:
-                continue
-            shuffle_assigns.append(a)
-            for out_idx, in_idx in enumerate(mapping):
-                out = a.outputs[out_idx]
-                if isinstance(out, SSAVar):
-                    redirect[out] = a.inputs[in_idx]
-
-        if not redirect:
-            self._shuffles_propagated = True
-            return
-
-        # Step 2: flatten shuffle-of-shuffle chains so each output
-        # resolves to its deepest non-shuffle source in one hop.
-        def _resolve(o: Operand) -> Operand:
-            seen: set[SSAVar] = set()
-            while isinstance(o, SSAVar) and o in redirect:
-                if o in seen:
-                    break  # defensive: cycles shouldn't exist on valid TEAL
-                seen.add(o)
-                o = redirect[o]
-            return o
-
-        final: dict[SSAVar, Operand] = {v: _resolve(v) for v in redirect}
-
-        # Step 3: rewrite every consumer. Both Assignment.inputs and
-        # Phi.args may reference shuffle outputs.
-        for a in self.assignments:
-            a.inputs = [final.get(i, i) if isinstance(i, SSAVar) else i
-                        for i in a.inputs]
-        for ph in self.phis.values():
-            ph.args = [final.get(arg, arg) if isinstance(arg, SSAVar) else arg
-                       for arg in ph.args]
-
-        # Step 4: mark the shuffle assignments. They stay in
-        # ``self.assignments`` / ``bb.assignments`` and their output
-        # SSAVars stay in ``self.vars`` so the commented dump line can
-        # still resolve identifiers; the ``shuffled`` flag drives the
-        # ``// …`` prefix in :meth:`Assignment.functional`.
-        for a in shuffle_assigns:
-            a.shuffled = True
-
+        from ..passes.stack_shuffle import propagate_stack_shuffles as _impl
+        _impl(self)
         self._shuffles_propagated = True
 
     def eliminate_dead_constants(self) -> None:
