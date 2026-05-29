@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from ..ssa import BasicBlock, SSAProgram
+from ..dot import escape
 
 
 @dataclass
@@ -314,14 +315,10 @@ def _bb_id(bb: BasicBlock) -> str:
     return f"bb_{safe}_{bb.first_line}_{bb.last_line}"
 
 
-def _dot_escape(s: str) -> str:
-    return s.replace("\\", "\\\\").replace('"', '\\"')
-
-
 def _bb_label(bb: BasicBlock, *, with_assignments: bool) -> str:
     head = f"BB L{bb.first_line}-L{bb.last_line}"
     if not with_assignments or not bb.assignments:
-        return _dot_escape(head)
+        return escape(head)
     lines = [head]
     for a in bb.assignments:
         op = a.op
@@ -329,4 +326,4 @@ def _bb_label(bb: BasicBlock, *, with_assignments: bool) -> str:
         body = f"{op} {im}".strip()
         lines.append(f"L{a.location.line}: {body}")
     # `\\l` left-aligns each line in DOT.
-    return _dot_escape("\\l".join(lines)) + "\\l"
+    return escape("\\l".join(lines)) + "\\l"

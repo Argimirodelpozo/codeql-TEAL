@@ -36,6 +36,7 @@ from .models import (
     _shuffle_mapping,
 )
 from ..opcode_sigs import op_arity
+from ..dot import escape, render
 
 
 class SSAProgram:
@@ -1244,9 +1245,6 @@ class SSAProgram:
         entry phis + functional assignments; edges are pred→succ. Pass
         ``file`` to restrict to one source file."""
 
-        def _esc(s: str) -> str:
-            return s.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
-
         def _bb_id(bb: BasicBlock) -> str:
             return f'"BB_{bb.file}_{bb.first_line}_{bb.last_line}"'
 
@@ -1279,7 +1277,7 @@ class SSAProgram:
         node_set = set(blocks)
         for bb in blocks:
             attrs = (
-                f'label="{_esc(_bb_label(bb))}", '
+                f'label="{escape(_bb_label(bb))}", '
                 'style="rounded,filled", fillcolor="#f4f4f8"'
             )
             out.append(f"  {_bb_id(bb)} [{attrs}];")
@@ -1307,9 +1305,8 @@ class SSAProgram:
         max_lines_per_bb: int = 80,
     ):
         """Render :meth:`to_dot` via Graphviz; returns a Jupyter-renderable
-        SVG (same ``_SvgResult`` type :mod:`tealtools.viz` uses)."""
-        from ..viz import _render_dot  # reuse the same subprocess helper
-        return _render_dot(
+        SVG (same ``SvgResult`` type :mod:`tealtools.dot` uses)."""
+        return render(
             self.to_dot(
                 file=file,
                 resolve_consts=resolve_consts,

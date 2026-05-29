@@ -13,14 +13,12 @@ range resolution), use :meth:`tealtools.ssa.SSAProgram.functional` /
 """
 from __future__ import annotations
 
-import subprocess
-import sys
-from pathlib import Path
 from typing import Iterable
 
 import networkx as nx
 
 from .ast import AstNode, Location
+from .dot import escape, render
 
 
 class BasicBlockNode:
@@ -77,12 +75,8 @@ _CFG_EDGE_STYLES = {
 }
 
 
-def _dot_escape(s: str) -> str:
-    return s.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
-
-
 def _dot_id(n) -> str:
-    return '"' + _dot_escape(f"{n.location.file}:{n.location.start_line}") + '"'
+    return '"' + escape(f"{n.location.file}:{n.location.start_line}") + '"'
 
 
 def _edge_attrs(data: dict) -> str:
@@ -91,7 +85,7 @@ def _edge_attrs(data: dict) -> str:
         style = _CFG_EDGE_STYLES.get(succ)
         if style is not None:
             return style
-        return f'label="{_dot_escape(succ)}"'
+        return f'label="{escape(succ)}"'
     return ""
 
 
@@ -117,7 +111,7 @@ def to_dot(
     for n in sorted(nodes, key=lambda x: (x.location.file, x.location.start_line)):
         body = n.code or n.ql_class
         label = f"{n.location.start_line}: {body}"
-        lines.append(f'  {_dot_id(n)} [label="{_dot_escape(label)}"];')
+        lines.append(f'  {_dot_id(n)} [label="{escape(label)}"];')
 
     for u, v, _, data in g.edges(keys=True, data=True):
         if data.get("kind") != "cfg":
@@ -132,36 +126,6 @@ def to_dot(
     return "\n".join(lines)
 
 
-class _SvgResult:
-    def __init__(self, svg: bytes):
-        self.svg = svg
-
-    def _repr_svg_(self) -> str:
-        return self.svg.decode("utf-8")
-
-    def __bytes__(self) -> bytes:
-        return self.svg
-
-    def save(self, path: str | Path) -> Path:
-        p = Path(path)
-        p.write_bytes(self.svg)
-        return p
-
-
-def _render_dot(dot_source: str, *, format: str = "svg", engine: str = "dot"):
-    res = subprocess.run(
-        [engine, f"-T{format}"],
-        input=dot_source.encode("utf-8"),
-        capture_output=True,
-    )
-    if res.returncode != 0:
-        sys.stderr.write(res.stderr.decode("utf-8", errors="replace"))
-        raise RuntimeError(f"{engine} failed (exit {res.returncode})")
-    if format == "svg":
-        return _SvgResult(res.stdout)
-    return res.stdout
-
-
 def draw_cfg(
     g: nx.MultiDiGraph,
     *,
@@ -171,7 +135,7 @@ def draw_cfg(
     rankdir: str = "TB",
 ):
     """Render the op-level CFG as a layered DOT graph (Jupyter-renderable SVG)."""
-    return _render_dot(
+    return render(
         to_dot(g, file=file, rankdir=rankdir),
         format=format, engine=engine,
     )
@@ -242,7 +206,7 @@ def _bb_label(bb: BasicBlockNode, *, max_lines: int = 20) -> str:
 
 def _bb_dot_id(bb: BasicBlockNode) -> str:
     suffix = f"#{bb.first_line}-{bb.last_line}"
-    return '"' + _dot_escape(f"BB:{bb.file}{suffix}") + '"'
+    return '"' + escape(f"BB:{bb.file}{suffix}") + '"'
 
 
 def to_bb_dot(
@@ -265,7 +229,7 @@ def to_bb_dot(
     ]
     for n in sorted(nodes, key=lambda bb: (bb.file, bb.first_line)):
         attrs = (
-            f'label="{_dot_escape(_bb_label(n))}", '
+            f'label="{escape(_bb_label(n))}", '
             'shape=box, style="rounded,filled", fillcolor="#f4f4f8"'
         )
         lines.append(f"  {_bb_dot_id(n)} [{attrs}];")
@@ -295,7 +259,7 @@ def draw_cfg_bb(
     graph (collapsed internally) or a pre-built BB graph from
     :func:`cfg_bb_graph`."""
     h = g if any(isinstance(n, BasicBlockNode) for n in g.nodes) else cfg_bb_graph(g)
-    return _render_dot(
+    return render(
         to_bb_dot(h, file=file, rankdir=rankdir),
         format=format, engine=engine,
     )
