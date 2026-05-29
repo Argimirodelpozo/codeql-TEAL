@@ -292,7 +292,7 @@ class TealType:
 Operand = Union[SSAVar, Phi, Const, MatPhiVar]
 
 
-@dataclass
+@dataclass(eq=False)
 class Assignment:
     """``outputs = op immediates (inputs)`` — one TEAL opcode's SSA form.
 
