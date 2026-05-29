@@ -20,6 +20,7 @@ __pycache__/
 *.egg-info/
 build/
 dist/
+.ipynb_checkpoints/
 
 # CodeQL runtime artifacts written into fixture DBs whenever a query
 # is run against them (diagnostic dumps + per-run log files). Not
