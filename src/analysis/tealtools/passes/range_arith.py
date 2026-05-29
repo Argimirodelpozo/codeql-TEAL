@@ -38,7 +38,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from ..ssa import Const, IntRange, Phi, SSAProgram, SSAVar, TealType
+from ..ssa import Const, IntRange, SSAProgram, SSAVar, TealType
 
 
 _UINT64_MAX = (1 << 64) - 1

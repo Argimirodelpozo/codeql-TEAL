@@ -376,7 +376,7 @@ def detect_correlated_flows(
         # Output index: 2 for box_get/box_len (did_exist on top), 1 for box_extract.
         out_idx = 1 if read.op == "box_extract" else 2
         synth_sources.append(Source(
-            name=f"box read of correlated cluster",
+            name="box read of correlated cluster",
             matches=lambda x, target=read: x is target,
             tainted_outputs=lambda x, oi=out_idx: [oi],
         ))

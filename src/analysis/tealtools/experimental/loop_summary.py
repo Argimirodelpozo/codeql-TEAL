@@ -25,7 +25,6 @@ from typing import Optional
 from ..control_tree import LoopR, build_control_tree
 from ..cost_analysis import (
     _body_summary, _max_iters_full, ASSUMED_GROUP_SIZE, MAX_INNER_TXNS,
-    TXN_BUDGET, HARD_BUDGET_LIMIT,
 )
 from ..ssa import SSAProgram
 

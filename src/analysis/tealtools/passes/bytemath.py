@@ -75,7 +75,7 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from ..ssa import Const, IntRange, Phi, SSAProgram, SSAVar, TealType
+from ..ssa import Const, IntRange, SSAProgram, SSAVar, TealType
 
 logger = logging.getLogger("tealtools.passes.bytemath")
 

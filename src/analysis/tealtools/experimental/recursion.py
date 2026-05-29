@@ -15,7 +15,7 @@ from __future__ import annotations
 import networkx as nx
 
 from ..control_tree import (
-    build_control_tree, ProgramR, BlockR, Region,
+    build_control_tree, ProgramR, BlockR,
 )
 from ..ssa import BasicBlock, SSAProgram
 

@@ -32,7 +32,7 @@ Idempotent: a second invocation finds nothing further to drop.
 """
 from __future__ import annotations
 
-from ..ssa import Assignment, SSAProgram, SSAVar
+from ..ssa import SSAProgram, SSAVar
 
 
 # Side-effect-free ops whose dead instances can be safely removed.

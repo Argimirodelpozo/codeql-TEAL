@@ -22,7 +22,7 @@ from dataclasses import dataclass
 import networkx as nx
 
 from ..control_tree import (
-    BlockR, ProgramR, Region, build_control_tree,
+    BlockR, ProgramR, build_control_tree,
 )
 from ..ssa import BasicBlock, SSAProgram
 

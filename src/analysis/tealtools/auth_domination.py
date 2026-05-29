@@ -48,7 +48,6 @@ from typing import Callable, Iterable, Optional
 from .ssa import (
     Assignment,
     Const,
-    Phi,
     SSAProgram,
     SSAVar,
 )

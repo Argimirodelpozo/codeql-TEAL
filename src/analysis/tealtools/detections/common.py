@@ -20,9 +20,9 @@ parity, not strictly tighter detection. Improvements live in follow-ups.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable, Optional
+from typing import Optional
 
-from ..path_predicates import BranchCondition, PathPredicateAnalysis
+from ..path_predicates import PathPredicateAnalysis
 from ..ssa import (
     Assignment,
     BasicBlock,

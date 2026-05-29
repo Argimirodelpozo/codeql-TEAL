@@ -50,11 +50,9 @@ The module does not re-run CodeQL queries itself — it calls
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Iterable, Optional, Union
+from dataclasses import dataclass
+from typing import Optional, Union
 
-import networkx as nx
 
 
 @dataclass(frozen=True)

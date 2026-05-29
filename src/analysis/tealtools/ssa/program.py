@@ -12,7 +12,7 @@ detectors and reports.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Iterable, Optional, Union
+from typing import Iterable, Optional
 
 import networkx as nx
 
@@ -20,20 +20,11 @@ from .models import (
     Assignment,
     BasicBlock,
     Const,
-    IntRange,
     Location,
     MatPhiVar,
-    Operand,
     Phi,
     SSAVar,
-    TealType,
     _CONST_BLOCK_REF_NAMES,
-    _GLOBAL_FIELD_RANGES,
-    _OP_RANGE_SEEDS,
-    _STACK_SHUFFLE_OPS,
-    _TERMINATOR_OPS,
-    _TXN_FIELD_RANGES,
-    _shuffle_mapping,
 )
 from ..opcode_sigs import op_arity
 from ..dot import render

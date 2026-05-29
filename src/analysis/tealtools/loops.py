@@ -34,7 +34,7 @@ attributed to the loop's entry node in the outer-loop body DAG).
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Iterator, Optional
 
 import networkx as nx

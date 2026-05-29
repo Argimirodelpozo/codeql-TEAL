@@ -6,7 +6,6 @@ machine-parseable. ``pretty(prog)`` returns a string; pass an
 """
 from __future__ import annotations
 
-from typing import Union
 
 from . import ir
 

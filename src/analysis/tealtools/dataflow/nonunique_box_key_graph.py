@@ -24,7 +24,6 @@ and breaks the chain.
 """
 from __future__ import annotations
 
-from typing import Iterable
 
 from ..ssa import Const, SSAProgram
 from .engine import Violation
