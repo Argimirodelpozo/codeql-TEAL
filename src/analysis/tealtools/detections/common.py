@@ -409,7 +409,6 @@ def _operand_flows_from_field_var(
     operand,
     field_vars: set,
     *,
-    depth: int = 4,
     seen: Optional[set] = None,
 ) -> bool:
     """True if ``operand`` provably reads from one of the SSAVars in
@@ -421,10 +420,17 @@ def _operand_flows_from_field_var(
         store wrote a field-flowing SSAVar (MUST semantics, mirrors
         :meth:`SSAProgram.propagate_scratch_constants`).
 
-    Conservative on cycles: if the recursion depth runs out or a node
-    repeats, returns False — correctness over completeness.
+    Termination is bounded by ``seen``: each SSAVar / Phi in the finite
+    def-use graph is visited at most once, and a repeat visit returns
+    False — sound under the MUST ``all(...)`` semantics (an unprovable
+    arm just fails the conjunction). There is deliberately no separate
+    recursion-depth cap: the old ``depth=4`` limit was redundant with
+    ``seen`` for termination and only suppressed *real* field-flows
+    sitting behind deep scratch / phi indirection (common in compiled
+    Puya / ABI output), which made a present guard look absent — a
+    false-positive source.
     """
-    if depth <= 0 or operand is None:
+    if operand is None:
         return False
     if seen is None:
         seen = set()
@@ -442,8 +448,7 @@ def _operand_flows_from_field_var(
                 return False
             return all(
                 _operand_flows_from_field_var(
-                    prog, prog.var(*s), field_vars,
-                    depth=depth - 1, seen=seen,
+                    prog, prog.var(*s), field_vars, seen=seen,
                 )
                 for s in stores
             )
@@ -454,7 +459,7 @@ def _operand_flows_from_field_var(
         seen.add(operand)
         return all(
             _operand_flows_from_field_var(
-                prog, arg, field_vars, depth=depth - 1, seen=seen,
+                prog, arg, field_vars, seen=seen,
             )
             for arg in operand.args
         )
