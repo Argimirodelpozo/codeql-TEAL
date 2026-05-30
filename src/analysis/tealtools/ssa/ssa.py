@@ -529,38 +529,23 @@ class PySSA:
 
         if op.op == "frame_dig":
             n_out_new = n_consumed + 1
-            op.inputs = list(band_topfirst)
-            del local_stack[target_idx:]
-            new_outs: list = []
-            for k in range(1, n_out_new + 1):
-                v = PyVar(op.file, op.line, k)
-                self.vars[v.key()] = v
-                new_outs.append(v)
-            op.outputs = new_outs
-            op.n_in = n_consumed
-            op.n_out = n_out_new
-            # ``new_outs`` is top-first per shuffle convention; push
-            # back bottom-first.
-            local_stack.extend(reversed(new_outs))
-            return True
-        else:  # frame_bury
-            # Need at least 1 slot above the target to actually have
-            # something to bury (the popped top).
+        else:  # frame_bury -- need at least one slot above the target to pop.
             if n_consumed < 1:
                 return False
             n_out_new = n_consumed - 1
-            op.inputs = list(band_topfirst)
-            del local_stack[target_idx:]
-            new_outs = []
-            for k in range(1, n_out_new + 1):
-                v = PyVar(op.file, op.line, k)
-                self.vars[v.key()] = v
-                new_outs.append(v)
-            op.outputs = new_outs
-            op.n_in = n_consumed
-            op.n_out = n_out_new
-            local_stack.extend(reversed(new_outs))
-            return True
+        op.inputs = list(band_topfirst)
+        del local_stack[target_idx:]
+        new_outs: list = []
+        for k in range(1, n_out_new + 1):
+            v = PyVar(op.file, op.line, k)
+            self.vars[v.key()] = v
+            new_outs.append(v)
+        op.outputs = new_outs
+        op.n_in = n_consumed
+        op.n_out = n_out_new
+        # ``new_outs`` is top-first per shuffle convention; push back bottom-first.
+        local_stack.extend(reversed(new_outs))
+        return True
 
     # ----- Phase 8: liveness filter --------------------------------------
 
