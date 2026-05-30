@@ -7,20 +7,23 @@ provided registry, the corresponding callee's :class:`TaintGraph`
 is built and merged into one big :class:`networkx.DiGraph` with
 nodes qualified by AppID. Bridge edges connect:
 
-- **Forward** — caller's ``itxn_field ApplicationArgs`` (per index
-  ``i``) → every ``txna ApplicationArgs i`` read in the callee.
+- **Forward (args)** — caller's ``itxn_field ApplicationArgs`` (per
+  index ``i``) → every ``txna ApplicationArgs i`` read in the callee.
   Edge kind: ``"appcall-arg"``.
-- **Forward (Sender)** — implicitly: callee's ``txn Sender`` reads
-  resolve to the caller's app addr. Modelled as a sentinel source
-  node ``("caller-app-addr", caller_app_id)`` with edges to every
-  ``txn Sender`` in the callee. (TODO; not yet implemented.)
-- **Backward** — callee's ``log`` ops on approving paths →
-  caller's ``itxn``/``itxnas`` reads of ``ApplicationLogs`` after
-  the submit. Edge kind: ``"appcall-return"``. (TODO.)
+- **Forward (Sender)** — the callee's ``txn Sender`` reads resolve to
+  the caller's app address. Modelled as a single sentinel source node
+  (:data:`_CALLER_APP_ADDR`, scope ``None``) with edges to every
+  ``txn Sender`` read in the callee. Edge kind: ``"appcall-sender"``.
+- **Backward (return)** — the callee's ``log`` ops → the caller's
+  ``itxn``/``itxna``/``itxnas`` reads of the ``Logs`` field after the
+  submit. Edge kind: ``"appcall-return"``. ``log`` has no SSA output
+  but is still a graph node (the QL def-use step puts an edge into it
+  from the logged value's producer), so it can serve as the bridge
+  source directly.
 
-Slice 1 implements forward arg-flow bridges only — that's enough
-to demonstrate cross-contract reachability for the typical
-"attacker arg → callee state mutation" detector.
+Together these let :func:`cross_taint_findings` follow an attacker
+input from the caller, across the appcall boundary, to a sensitive
+sink in the callee (or back to the caller via the return channel).
 """
 from __future__ import annotations
 
@@ -102,7 +105,10 @@ class XContractTaintGraph:
         for site in sites:
             if site.app_id not in callees:
                 continue
-            _add_arg_bridges(big, caller_tg, callees[site.app_id], site)
+            callee_tg = callees[site.app_id]
+            _add_arg_bridges(big, caller_tg, callee_tg, site)
+            _add_sender_bridge(big, caller_tg, callee_tg, site)
+            _add_return_bridges(big, caller_tg, callee_tg, site)
         return big
 
     # --- queries (mirror TaintGraph) ----------------------------------
@@ -226,6 +232,66 @@ def _add_arg_bridges(
             )
 
 
+# Sentinel source standing in for "the caller's application address",
+# which is the Sender of every inner transaction the caller submits.
+_CALLER_APP_ADDR = Node(file="<caller-app-addr>", line=0, ql_class="CallerAppAddr")
+
+
+def _add_sender_bridge(
+    big: nx.DiGraph,
+    caller_tg: TaintGraph,
+    callee_tg: TaintGraph,
+    site: AppcallSite,
+) -> None:
+    """The callee's ``txn Sender`` reads resolve to the caller's app
+    address (the inner-txn sender). Seed a single sentinel source node
+    and connect it to every ``txn Sender`` read in the callee, so a
+    callee that trusts ``Sender`` is reachable from caller context."""
+    sender_reads = callee_tg.find(op="txn", immediates="Sender")
+    if not sender_reads:
+        return
+    sentinel = XContractNode(app_id=None, inner=_CALLER_APP_ADDR)
+    if sentinel not in big:
+        big.add_node(sentinel, op="caller-app-addr", immediates=None, const_values=())
+    for cn in sender_reads:
+        big.add_edge(
+            sentinel,
+            XContractNode(app_id=site.app_id, inner=cn),
+            kinds={"appcall-sender"},
+        )
+
+
+def _add_return_bridges(
+    big: nx.DiGraph,
+    caller_tg: TaintGraph,
+    callee_tg: TaintGraph,
+    site: AppcallSite,
+) -> None:
+    """The callee's ``log`` ops feed the caller's reads of the inner
+    txn's ``Logs`` field after the submit. Bridge every callee ``log``
+    node to every caller ``itxn``/``itxna``/``itxnas Logs`` read that
+    sits after this site's submit line."""
+    callee_logs = callee_tg.find(op="log")
+    if not callee_logs:
+        return
+    caller_log_reads = [
+        n for n in caller_tg.nodes()
+        if caller_tg.op_of(n) in ("itxn", "itxna", "itxnas")
+        and (caller_tg.immediates_of(n) or "").split()[:1] == ["Logs"]
+        and n.file == site.file
+        and n.line > site.submit_line
+    ]
+    if not caller_log_reads:
+        return
+    for ln in callee_logs:
+        for rn in caller_log_reads:
+            big.add_edge(
+                XContractNode(app_id=site.app_id, inner=ln),
+                XContractNode(app_id=None, inner=rn),
+                kinds={"appcall-return"},
+            )
+
+
 def _caller_arg_field_nodes(
     caller_tg: TaintGraph,
     site: AppcallSite,
@@ -257,3 +323,87 @@ def _caller_arg_field_nodes(
                     yield arg_index, n
                     break
             arg_index += 1
+
+
+# --- cross-contract taint reachability detector -------------------
+
+
+# Sinks whose operand governs value movement or control transfer; a
+# tainted value reaching one of these is the thing worth reporting.
+_SENSITIVE_ITXN_FIELDS = frozenset({
+    "Receiver", "Amount", "AssetReceiver", "AssetAmount",
+    "ApplicationID", "RekeyTo", "CloseRemainderTo", "AssetCloseTo",
+    "ApprovalProgram", "ClearStateProgram",
+})
+_STATE_WRITE_OPS = frozenset({"app_global_put", "app_local_put"})
+
+
+@dataclass(frozen=True)
+class CrossTaintFinding:
+    """An attacker-controlled caller input that reaches a sensitive
+    sink in a callee, across the appcall boundary."""
+
+    source: XContractNode
+    sink: XContractNode
+    sink_name: str
+    path: tuple  # tuple[XContractNode, ...] — a shortest witness path
+
+    def pretty(self) -> str:
+        via = " -> ".join(repr(n) for n in self.path)
+        return f"{self.source!r}  =>  {self.sink_name}@{self.sink!r}   [{via}]"
+
+    def to_dict(self) -> dict:
+        return {
+            "source": repr(self.source),
+            "sink": repr(self.sink),
+            "sink_name": self.sink_name,
+            "path": [repr(n) for n in self.path],
+        }
+
+
+def _sensitive_sinks(xtg: "XContractTaintGraph") -> list[tuple[XContractNode, str]]:
+    out: list[tuple[XContractNode, str]] = []
+    for xn in xtg.nodes():
+        op = xtg.op_of(xn)
+        imm = xtg.immediates_of(xn)
+        if op == "itxn_field" and imm in _SENSITIVE_ITXN_FIELDS:
+            out.append((xn, f"itxn_field {imm}"))
+        elif op in _STATE_WRITE_OPS:
+            out.append((xn, op))
+    return out
+
+
+def cross_taint_findings(xtg: "XContractTaintGraph") -> list[CrossTaintFinding]:
+    """Report caller-side attacker inputs (``txna ApplicationArgs``)
+    that reach a sensitive sink in a callee, following the appcall
+    bridge edges. One finding per (source, callee-sink) reachable pair,
+    carrying a shortest witness path.
+
+    Cross-boundary only: a sink in the caller's own scope is the job of
+    the single-program :mod:`tealtools.dataflow.box` / ``state`` flows;
+    here we report exactly the flows that cross an appcall, which is the
+    capability the bridges add."""
+    sources = [
+        xn for xn in xtg.find(app_id=None, op="txna")
+        if (xtg.immediates_of(xn) or "").startswith("ApplicationArgs")
+    ]
+    sinks = _sensitive_sinks(xtg)
+    findings: list[CrossTaintFinding] = []
+    for src in sources:
+        reach = xtg.reachable_from(src)
+        for sink_xn, name in sinks:
+            if sink_xn.app_id is None or sink_xn not in reach:
+                continue  # caller-scope sink, or unreachable
+            paths = xtg.paths_between([src], [sink_xn], max_paths=1)
+            path = tuple(paths[0]) if paths else (src, sink_xn)
+            findings.append(CrossTaintFinding(
+                source=src, sink=sink_xn, sink_name=name, path=path,
+            ))
+    findings.sort(key=lambda f: (repr(f.source), repr(f.sink)))
+    return findings
+
+
+def render_cross_taint(findings: list[CrossTaintFinding]) -> str:
+    if not findings:
+        return "(no cross-contract taint findings)"
+    return "\n".join(f.pretty() for f in findings)

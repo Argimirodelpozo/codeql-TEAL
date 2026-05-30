@@ -1,0 +1,2 @@
+# AppID -> CodeQL DB path (relative to this file's directory).
+1234567: callee/db

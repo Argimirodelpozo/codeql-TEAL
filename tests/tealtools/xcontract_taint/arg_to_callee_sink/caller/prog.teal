@@ -1,0 +1,16 @@
+#pragma version 10
+// Caller: forwards an attacker-controlled ApplicationArgs[0] into an
+// appl itxn to AppID 1234567, then reads the callee's logged return
+// value back out (the appcall-return channel).
+itxn_begin
+pushint 6
+itxn_field TypeEnum
+pushint 1234567
+itxn_field ApplicationID
+txna ApplicationArgs 0
+itxn_field ApplicationArgs
+itxn_submit
+itxna Logs 0
+log
+pushint 1
+return

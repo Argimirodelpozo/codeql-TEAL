@@ -30,6 +30,10 @@ SSA_SMOKE = {"loop_dig_deep", "loop_frame_dig", "stack_growing_loop"}
 XC_ROOT = PY_TESTS / "xcontract"
 XC_SG_ROOT = PY_TESTS / "xcontract_sec_guide"
 SGS_ROOT = PY_TESTS / "sec_guide_scan"
+# Cross-contract taint fixtures own a multi-DB caller/callee layout and
+# are covered by the dedicated tests/test_xcontract_taint.py integration
+# test, not the snapshot harness.
+XC_TAINT_ROOT = PY_TESTS / "xcontract_taint"
 
 
 def _discover():
@@ -62,6 +66,8 @@ def _discover():
             continue  # ditto for the sec-guide xcontract tree
         if SGS_ROOT in case_dir.parents or case_dir == SGS_ROOT:
             continue  # sec_guide_scan cases collected above
+        if XC_TAINT_ROOT in case_dir.parents or case_dir == XC_TAINT_ROOT:
+            continue  # covered by tests/test_xcontract_taint.py
         rel = case_dir.relative_to(PY_TESTS)
         analysis = rel.parts[0]
         yield pytest.param(analysis, case_dir, id=str(rel))
