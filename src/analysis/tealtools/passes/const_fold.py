@@ -58,6 +58,9 @@ def _int_const(n: int) -> Const:
     return Const("int", str(n))
 
 
+_UINT64_MAX = (1 << 64) - 1
+
+
 # ---------------------------------------------------------------------------
 # Per-op folders
 # ---------------------------------------------------------------------------
@@ -245,6 +248,47 @@ def _fold_int_arith(
     return _int_const(r)
 
 
+def _fold_bitwise(op: str, inputs: list[Const]) -> Optional[Const]:
+    """Fold the uint64 bitwise / shift binary ops. Operand order
+    matches the arithmetic folders and :mod:`tealtools.passes.range_arith`:
+    ``inputs[0]`` is the deeper stack value ``A``, ``inputs[1]`` the
+    top ``B``. AVM semantics: ``<<`` is ``A * 2^B mod 2^64`` (wraps,
+    never halts); ``>>`` is ``A // 2^B``; ``&`` / ``|`` / ``^`` are the
+    usual uint64 bit ops."""
+    if len(inputs) != 2:
+        return None
+    a, b = _int_from_const(inputs[0]), _int_from_const(inputs[1])
+    if a is None or b is None:
+        return None
+    if a < 0 or a > _UINT64_MAX or b < 0 or b > _UINT64_MAX:
+        return None
+    if op == "&":
+        r = a & b
+    elif op == "|":
+        r = a | b
+    elif op == "^":
+        r = a ^ b
+    elif op == "<<":
+        # B ≥ 64 zeroes the result. Guard the shift so we never
+        # materialise a multi-exabit Python int before masking.
+        r = 0 if b >= 64 else (a << b) & _UINT64_MAX
+    elif op == ">>":
+        r = 0 if b >= 64 else a >> b
+    else:
+        return None
+    return _int_const(r)
+
+
+def _fold_bitwise_not(inputs: list[Const]) -> Optional[Const]:
+    """uint64 bitwise NOT: ``~a == (2^64-1) - a``."""
+    if len(inputs) != 1:
+        return None
+    a = _int_from_const(inputs[0])
+    if a is None or a < 0 or a > _UINT64_MAX:
+        return None
+    return _int_const(_UINT64_MAX - a)
+
+
 def _fold_cmp(op: str, inputs: list[Const]) -> Optional[Const]:
     if len(inputs) != 2:
         return None
@@ -397,6 +441,10 @@ def try_fold_assignment(a: Assignment) -> Optional[Const]:
         return _fold_setbyte(inputs)
     if op in ("+", "-", "*", "/", "%"):
         return _fold_int_arith(op, inputs)
+    if op in ("&", "|", "^", "<<", ">>"):
+        return _fold_bitwise(op, inputs)
+    if op == "~":
+        return _fold_bitwise_not(inputs)
     if op in (
         "==", "!=", "<", "<=", ">", ">=",
         "b==", "b!=", "b<", "b<=", "b>", "b>=",
