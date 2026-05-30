@@ -646,7 +646,7 @@ def _try_sequence(g: nx.DiGraph, n: Region) -> bool:
     if g.in_degree(m) != 1:
         return False
     seq = _flatten_sequence([n, m])
-    _replace_pair(g, n, m, seq)
+    _replace(g, [n, m], seq)
     return True
 
 
@@ -668,7 +668,7 @@ def _try_if_else(g: nx.DiGraph, n: Region) -> bool:
     if j_a is not j_b:
         return False
     ifelse = IfElseR(cond=n, then_branch=a, else_branch=b)
-    _replace_triple(g, n, a, b, ifelse, joins_to=j_a)
+    _replace(g, [n, a, b], ifelse, joins_to=j_a)
     return True
 
 
@@ -690,7 +690,7 @@ def _try_if_then(g: nx.DiGraph, n: Region) -> bool:
         if succ is not join:
             continue
         if_r = IfR(cond=n, then_branch=then_arm)
-        _replace_pair_with_continuation(g, n, then_arm, if_r, joins_to=join)
+        _replace(g, [n, then_arm], if_r, joins_to=join)
         return True
     return False
 
@@ -749,7 +749,7 @@ def _try_switch(g: nx.DiGraph, n: Region) -> bool:
         return False
     join = joins[0]
     sw = SwitchR(cond=n, cases=arms)
-    _replace_switch(g, n, arms, sw, joins_to=join)
+    _replace(g, [n, *arms], sw, joins_to=join)
     return True
 
 
@@ -778,69 +778,33 @@ def _flatten_sequence(parts: list[Region]) -> SequenceR:
     return SequenceR(parts=flat)
 
 
-def _replace_pair(g: nx.DiGraph, a: Region, b: Region, new: Region) -> None:
-    """Contract edge ``a → b`` into ``new``. Inherits a's predecessors
-    and b's successors."""
-    preds = [p for p in g.predecessors(a) if p is not a and p is not b]
-    succs = [s for s in g.successors(b) if s is not a and s is not b]
-    g.remove_node(a)
-    g.remove_node(b)
+def _replace(
+    g: nx.DiGraph,
+    consumed: list[Region],
+    new: Region,
+    *,
+    joins_to: Optional[Region] = None,
+) -> None:
+    """Contract ``consumed`` (a head node + its companions) into ``new``.
+
+    ``new`` inherits the predecessors of ``consumed[0]`` (minus the consumed
+    set). Its successor is ``joins_to`` if given; otherwise ``new`` inherits
+    the successors of ``consumed[-1]`` (also minus the consumed set) -- the
+    "pair" case where the contraction has no explicit join target."""
+    head, tail = consumed[0], consumed[-1]
+    consumed_set = set(consumed)
+    preds = [p for p in g.predecessors(head) if p not in consumed_set]
+    if joins_to is None:
+        succs = [s for s in g.successors(tail) if s not in consumed_set]
+    else:
+        succs = [joins_to]
+    for node in consumed:
+        g.remove_node(node)
     g.add_node(new)
     for p in preds:
         g.add_edge(p, new)
     for s in succs:
         g.add_edge(new, s)
-
-
-def _replace_pair_with_continuation(
-    g: nx.DiGraph, n: Region, arm: Region, new: Region, *, joins_to: Region
-) -> None:
-    """Contract ``n`` + its ``arm`` (which falls through to
-    ``joins_to``) into ``new``; ``new`` connects to ``joins_to``
-    in place of both."""
-    preds = [p for p in g.predecessors(n) if p is not n and p is not arm]
-    g.remove_node(n)
-    g.remove_node(arm)
-    g.add_node(new)
-    for p in preds:
-        g.add_edge(p, new)
-    g.add_edge(new, joins_to)
-
-
-def _replace_triple(
-    g: nx.DiGraph,
-    n: Region,
-    a: Region,
-    b: Region,
-    new: Region,
-    *,
-    joins_to: Region,
-) -> None:
-    preds = [p for p in g.predecessors(n) if p not in (n, a, b)]
-    g.remove_node(n)
-    g.remove_node(a)
-    g.remove_node(b)
-    g.add_node(new)
-    for p in preds:
-        g.add_edge(p, new)
-    g.add_edge(new, joins_to)
-
-
-def _replace_switch(
-    g: nx.DiGraph,
-    n: Region,
-    arms: list[Region],
-    new: Region,
-    *,
-    joins_to: Region,
-) -> None:
-    preds = [p for p in g.predecessors(n) if p not in arms and p is not n]
-    for node in [n, *arms]:
-        g.remove_node(node)
-    g.add_node(new)
-    for p in preds:
-        g.add_edge(p, new)
-    g.add_edge(new, joins_to)
 
 
 def _contract_nodes(
