@@ -37,11 +37,11 @@ def _has_balance_minbalance_pair(
 ) -> bool:
     has_balance = any(
         a.op == "balance" for a in prog.assignments
-        if common._file_match(a.location.file, file)
+        if common.file_match(a.location.file, file)
     )
     has_min_balance = any(
         a.op == "min_balance" for a in prog.assignments
-        if common._file_match(a.location.file, file)
+        if common.file_match(a.location.file, file)
     )
     return has_balance and has_min_balance
 

@@ -57,12 +57,12 @@ class HardcodedMinBalanceDetector:
         # right primitive.
         if any(
             a.op == "min_balance" for a in self.prog.assignments
-            if common._file_match(a.location.file, self.file)
+            if common.file_match(a.location.file, self.file)
         ):
             return []
         out: list[HardcodedMinBalanceViolation] = []
         for sub in self.prog.assignments:
-            if not common._file_match(sub.location.file, self.file):
+            if not common.file_match(sub.location.file, self.file):
                 continue
             if sub.op != "-" or len(sub.inputs) != 2:
                 continue

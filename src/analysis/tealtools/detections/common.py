@@ -119,7 +119,7 @@ def is_rejection_exit(bb: BasicBlock) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def _file_match(loc_file: str, want: Optional[str]) -> bool:
+def file_match(loc_file: str, want: Optional[str]) -> bool:
     return want is None or loc_file == want
 
 
@@ -136,7 +136,7 @@ def approving_exits(
     every BB across the loaded program."""
     return [
         bb for bb in prog.blocks.values()
-        if _file_match(bb.file, file) and is_approval_exit(bb)
+        if file_match(bb.file, file) and is_approval_exit(bb)
     ]
 
 
@@ -149,7 +149,7 @@ def txn_field_reads(
     return [
         a for a in prog.assignments
         if a.op == "txn" and a.immediates.strip() == field
-        and _file_match(a.location.file, file)
+        and file_match(a.location.file, file)
     ]
 
 
@@ -167,7 +167,7 @@ def gtxn_field_reads(
     The mapping mirrors QL's ``GtxnOpcode``/``GtxnsOpcode`` families."""
     out: list[Assignment] = []
     for a in prog.assignments:
-        if not _file_match(a.location.file, file):
+        if not file_match(a.location.file, file):
             continue
         toks = a.immediates.split()
         if a.op in ("gtxn", "gtxna", "gtxnas") and len(toks) >= 2 and toks[1] == field:
@@ -184,7 +184,7 @@ def global_field_reads(
     return [
         a for a in prog.assignments
         if a.op == "global" and a.immediates.strip() == field
-        and _file_match(a.location.file, file)
+        and file_match(a.location.file, file)
     ]
 
 
@@ -222,7 +222,7 @@ def _bb_strict_dominators(
     model, so the result is structurally the same as building a
     program-only DB.)"""
     blocks = [
-        bb for bb in prog.blocks.values() if _file_match(bb.file, file)
+        bb for bb in prog.blocks.values() if file_match(bb.file, file)
     ]
     all_blocks = set(blocks)
     dom: dict[BasicBlock, set[BasicBlock]] = {}
@@ -241,7 +241,7 @@ def _bb_strict_dominators(
             for pred in bb.predecessors:
                 # Predecessors should be in the same file by construction;
                 # defensively skip cross-file edges if any ever appear.
-                if not _file_match(pred.file, file):
+                if not file_match(pred.file, file):
                     continue
                 new &= dom[pred]
             new.add(bb)
@@ -271,7 +271,7 @@ def field_validated_on_all_paths(
         return False
     dom = _bb_strict_dominators(prog, file=file)
     for cmp in prog.assignments:
-        if not _file_match(cmp.location.file, file):
+        if not file_match(cmp.location.file, file):
             continue
         if not is_comparison(cmp) or len(cmp.inputs) != 2:
             continue
@@ -856,7 +856,7 @@ def inner_txn_field_assigns(
     ``inputs[0]`` (top-of-stack at the itxn_field call)."""
     out: list[InnerTxnFieldSet] = []
     for a in prog.assignments:
-        if not _file_match(a.location.file, file):
+        if not file_match(a.location.file, file):
             continue
         if a.op != "itxn_field" or not a.inputs:
             continue

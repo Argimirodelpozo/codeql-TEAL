@@ -45,7 +45,7 @@ class UnsafeLsigArgsDetector:
         out: list[UnsafeLsigArgsViolation] = []
         seen: set[tuple[int, int]] = set()
         for arg_op in self.prog.assignments:
-            if not common._file_match(arg_op.location.file, self.file):
+            if not common.file_match(arg_op.location.file, self.file):
                 continue
             if arg_op.op not in _ARG_OPS:
                 continue
