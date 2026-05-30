@@ -140,21 +140,6 @@ def approving_exits(
     ]
 
 
-def entry_blocks(
-    prog: SSAProgram, *, file: Optional[str] = None,
-) -> list[BasicBlock]:
-    """BBs with no CFG predecessors — program entries."""
-    return [
-        bb for bb in prog.blocks.values()
-        if _file_match(bb.file, file) and not bb.predecessors
-    ]
-
-
-# ---------------------------------------------------------------------------
-# Field-read iteration
-# ---------------------------------------------------------------------------
-
-
 def txn_field_reads(
     prog: SSAProgram, field: str, *, file: Optional[str] = None,
 ) -> list[Assignment]:
@@ -217,116 +202,6 @@ _LOGICAL_COMPARISON_OPS = frozenset({
 def is_comparison(a: Assignment) -> bool:
     """An ``Assignment`` whose op compares two stack values."""
     return a.op in _LOGICAL_COMPARISON_OPS
-
-
-def is_equality_comparison(a: Assignment) -> bool:
-    return a.op in ("==", "b==")
-
-
-def assignments_consuming(var: SSAVar) -> list[Assignment]:
-    """Direct uses of ``var`` (one-hop). For multi-hop forward walks
-    use :func:`forward_consumers`."""
-    return list(var.uses)
-
-
-def _generator(operand) -> Optional[SSAVar]:
-    """Mirror of QL ``getGenerator``: the SSAVar a comparison operand
-    ultimately reads from. For an :class:`SSAVar` we return it as-is;
-    for a :class:`Phi`, return ``None`` (the caller can handle joins
-    separately if needed). For a :class:`Const` (post-DCE inlining)
-    return ``None``."""
-    if isinstance(operand, SSAVar):
-        return operand
-    return None
-
-
-def field_compared_anywhere(
-    prog: SSAProgram,
-    *,
-    txn_field: Optional[str] = None,
-    gtxn_field: Optional[str] = None,
-    file: Optional[str] = None,
-) -> bool:
-    """A ``txn FIELD`` (or ``gtxn N FIELD``) read flows into one operand
-    of a comparison op anywhere in the program.
-
-    Mirrors QL ``txnFieldIsChecked``: the QL form uses
-    ``getGenerator(cmp.firstOp())`` which walks through stack
-    pass-through and phi joins to find the originating SSAVar. We do
-    the same here via :func:`_operand_flows_from_field_var`, so
-    consumers reached through a single-arg phi (the common
-    cross-block case) are recognised. Scratch routing is also
-    accepted — same as the LocalFlow bridges in QL — although the
-    bare ``hasFeeCheck`` / ``hasGroupSizeCheck`` callers don't
-    require it."""
-    field_vars: set = set()
-    if txn_field is not None:
-        for a in txn_field_reads(prog, txn_field, file=file):
-            for out in a.outputs:
-                if isinstance(out, SSAVar):
-                    field_vars.add(out)
-    if gtxn_field is not None:
-        for a in gtxn_field_reads(prog, gtxn_field, file=file):
-            for out in a.outputs:
-                if isinstance(out, SSAVar):
-                    field_vars.add(out)
-    if not field_vars:
-        return False
-    for cmp in prog.assignments:
-        if not _file_match(cmp.location.file, file):
-            continue
-        if not is_comparison(cmp) or len(cmp.inputs) != 2:
-            continue
-        for op in cmp.inputs:
-            if _operand_flows_from_field_var(prog, op, field_vars):
-                return True
-    return False
-
-
-def field_compared_against_zero_address(
-    prog: SSAProgram, field: str, *, file: Optional[str] = None,
-) -> bool:
-    """``txn FIELD`` read flows into a comparison whose other operand
-    is ``global ZeroAddress`` (mirrors QL ``txnFieldCheckedAgainstZeroAddress``).
-    Phi-aware on both operands so a cross-BB cmp is recognised."""
-    field_vars = {
-        o for a in txn_field_reads(prog, field, file=file) for o in a.outputs
-        if isinstance(o, SSAVar)
-    }
-    zero_vars = {
-        o for a in global_field_reads(prog, "ZeroAddress", file=file) for o in a.outputs
-        if isinstance(o, SSAVar)
-    }
-    if not field_vars or not zero_vars:
-        return False
-    for cmp in prog.assignments:
-        if not _file_match(cmp.location.file, file):
-            continue
-        if not is_equality_comparison(cmp) or len(cmp.inputs) != 2:
-            continue
-        a0, a1 = cmp.inputs
-        if (
-            (_operand_flows_from_field_var(prog, a0, field_vars)
-             and _operand_flows_from_field_var(prog, a1, zero_vars))
-            or
-            (_operand_flows_from_field_var(prog, a1, field_vars)
-             and _operand_flows_from_field_var(prog, a0, zero_vars))
-        ):
-            return True
-    return False
-
-
-# ---------------------------------------------------------------------------
-# Field-validated-on-all-paths (QL `txnFieldValidatedOnAllPaths`)
-#
-# QL form: there exists a single comparison BB that *dominates* every
-# approval exit. This is strictly weaker than the path-aware
-# `approvalExitProtectedForField` — replicated per-branch checks fail
-# the dominance form but pass the reachability form. Several QL queries
-# (asset-close-to, close-remainder-to, tx-type-check) use the
-# dominance form anyway, so the Python port preserves the same shape
-# (and the same over-conservatism).
-# ---------------------------------------------------------------------------
 
 
 def _bb_strict_dominators(
@@ -611,7 +486,7 @@ def _is_protected_bb_for_seeds(
     *,
     file: Optional[str] = None,
 ) -> bool:
-    """Core of :func:`is_protected_bb` — takes the seed set of
+    """Takes the seed set of
     field-source SSAVars directly so callers can swap the source
     (``txn`` / ``global`` / ``gtxn``) or pass a *union* of seeds for
     disjunction (e.g. ``TypeEnum`` OR ``Type``).
@@ -696,38 +571,6 @@ def _global_field_seeds(
     }
 
 
-def is_protected_bb(
-    prog: SSAProgram, bb: BasicBlock, field: str,
-    *, file: Optional[str] = None,
-) -> bool:
-    """A BB is "protected for ``field``" if it contains a comparison
-    consuming a value that flows from ``txn FIELD`` (directly,
-    through phi joins, or through must-scratch routing) AND whose
-    result reaches an enforcement sink (``assert`` / ``bnz`` to
-    ``err`` / ``bz`` to ``err``).
-
-    Mirrors QL ``isProtectedBB`` + the inner ``txnFieldFlowsToComparison``
-    using a subset of LocalFlow's bridges:
-
-      - direct producer: the SSAVar of the ``txn FIELD`` read.
-      - phi: every arg of the join must flow from the field.
-      - scratch: every may-influencing store of the load must have
-        written a field-flowing SSAVar.
-
-    Subroutine ``callsub`` / ``proto`` bridges are handled implicitly
-    by the SSA model: phis at the sub's entry connect back to the
-    caller's argument SSAVars, and the cmp inside a shared subroutine
-    that itself reads ``txn FIELD`` is recognised at that BB.
-
-    ``file`` (defaults to ``bb.file``): scopes the field-read seed
-    set to a single program in a multi-program DB."""
-    if file is None:
-        file = bb.file
-    return _is_protected_bb_for_seeds(
-        prog, bb, _txn_field_seeds(prog, field, file=file), file=file,
-    )
-
-
 def approval_exit_protected_for_field(
     prog: SSAProgram, exit_bb: BasicBlock, field: str,
     *, file: Optional[str] = None,
@@ -778,38 +621,6 @@ def approval_exit_protected_for_any_txn_field(
 # ---------------------------------------------------------------------------
 
 
-def has_fee_check(prog: SSAProgram, *, file: Optional[str] = None) -> bool:
-    """``txn Fee`` read flows directly into one operand of a comparison."""
-    return field_compared_anywhere(prog, txn_field="Fee", file=file)
-
-
-def has_groupsize_check(prog: SSAProgram, *, file: Optional[str] = None) -> bool:
-    """``global GroupSize`` read flows into one operand of a
-    comparison (Phi-aware on the operand check)."""
-    gs_vars = {
-        out for a in global_field_reads(prog, "GroupSize", file=file) for out in a.outputs
-        if isinstance(out, SSAVar)
-    }
-    if not gs_vars:
-        return False
-    for cmp in prog.assignments:
-        if not _file_match(cmp.location.file, file):
-            continue
-        if not is_comparison(cmp) or len(cmp.inputs) != 2:
-            continue
-        if any(
-            _operand_flows_from_field_var(prog, op, gs_vars)
-            for op in cmp.inputs
-        ):
-            return True
-    return False
-
-
-# ---------------------------------------------------------------------------
-# Sender == Creator guard
-# ---------------------------------------------------------------------------
-
-
 def _is_txn_field_var(var, field: str) -> bool:
     if not isinstance(var, SSAVar) or var.defined_by is None:
         return False
@@ -832,18 +643,6 @@ def _is_sender_eq_creator(cmp: Assignment) -> bool:
         (_is_txn_field_var(a0, "Sender") and _is_global_field_var(a1, "CreatorAddress"))
         or
         (_is_txn_field_var(a1, "Sender") and _is_global_field_var(a0, "CreatorAddress"))
-    )
-
-
-def has_sender_eq_creator_check(
-    prog: SSAProgram, *, file: Optional[str] = None,
-) -> bool:
-    """A comparison ``txn Sender == global CreatorAddress`` exists
-    anywhere in the program (optionally restricted to ``file``)."""
-    return any(
-        _is_sender_eq_creator(a)
-        for a in prog.assignments
-        if _file_match(a.location.file, file)
     )
 
 
