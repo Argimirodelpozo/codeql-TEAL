@@ -53,6 +53,9 @@ from .dataflow.box import (
     CorrelatedViolation,
 )
 
+# App-state dataflow
+from .dataflow.state import detect_out_of_state_flows
+
 # Cross-contract
 from .xcontract import (
     XContractGraph,
@@ -85,6 +88,7 @@ __all__ = [
     "filter_validated", "SuppressedViolation",
     "detect_into_box_flows", "detect_out_of_box_flows",
     "detect_correlated_flows", "CorrelatedViolation",
+    "detect_out_of_state_flows",
     "XContractGraph", "AppcallSite", "cross_auth_findings", "load_registry",
     "detections",
 ]

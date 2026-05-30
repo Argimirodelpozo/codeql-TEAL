@@ -54,6 +54,16 @@ from .box import (
     detect_out_of_box_flows,
 )
 
+from .state import (
+    APP_GLOBAL_GET_SOURCE,
+    APP_GLOBAL_GET_EX_SOURCE,
+    APP_LOCAL_GET_SOURCE,
+    APP_LOCAL_GET_EX_SOURCE,
+    DEFAULT_OUT_OF_STATE_SINKS,
+    DEFAULT_OUT_OF_STATE_SOURCES,
+    detect_out_of_state_flows,
+)
+
 from .predicate_aware import SuppressedViolation, filter_validated
 
 __all__ = [
@@ -72,6 +82,11 @@ __all__ = [
     "APP_LOCAL_PUT_VALUE_SINK", "ITXN_FIELD_SENSITIVE_SINKS",
     "DEFAULT_INTO_BOX_SOURCES", "DEFAULT_INTO_BOX_SINKS",
     "DEFAULT_OUT_OF_BOX_SOURCES", "DEFAULT_OUT_OF_BOX_SINKS",
+    # state
+    "detect_out_of_state_flows",
+    "APP_GLOBAL_GET_SOURCE", "APP_GLOBAL_GET_EX_SOURCE",
+    "APP_LOCAL_GET_SOURCE", "APP_LOCAL_GET_EX_SOURCE",
+    "DEFAULT_OUT_OF_STATE_SOURCES", "DEFAULT_OUT_OF_STATE_SINKS",
     # predicate_aware
     "filter_validated", "SuppressedViolation",
 ]
