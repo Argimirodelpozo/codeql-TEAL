@@ -29,7 +29,6 @@ Pipeline (:meth:`PySSA._construct`):
      ``frame_dig`` / ``frame_bury`` (any-sign N) expand to QL's
      fat-stack convention (consume the band from current top down to
      the target slot, emit fresh outputs covering the post-stack).
-  7. No-op (legacy phase-7 slot for frame_dig narrow resolution).
   8. Liveness filter (drop phis not transitively consumed by any op).
 
 ``phiNodeExitIndex(k, b) = L_b + k - C_b`` if ``k > C_b``, else
@@ -116,19 +115,14 @@ class PyPhi:
     predecessor in propagation). The args graph can be cyclic at
     constant-stack CFG loops; consumers must walk with a ``visited``
     set.
-
-    ``result_var`` is reserved for an unused "this phi defines a
-    synthetic value" model. :class:`PySSA` does not populate it.
     """
 
-    __slots__ = ("bb_key", "slot", "args", "removed", "result_var")
+    __slots__ = ("bb_key", "slot", "args")
 
     def __init__(self, bb_key: tuple, slot: int):
         self.bb_key = bb_key
         self.slot = slot
         self.args: list[Optional[Operand]] = []
-        self.removed = False
-        self.result_var: Optional[PyVar] = None
 
     def key(self) -> tuple:
         return (self.bb_key, self.slot)
@@ -159,8 +153,6 @@ class PyOp:
     line: int
     n_in: int
     n_out: int
-    callee: Optional["PyBlock"] = None
-    caller_rel: int = 0
     inputs: list = field(default_factory=list)
     outputs: list = field(default_factory=list)
 
@@ -169,15 +161,12 @@ class PyBlock:
     """A basic block: ordered opcodes plus its CFG neighbours.
 
     ``preds`` / ``succs`` are the raw CFG (callsubs and retsubs
-    included). ``loc_preds`` / ``loc_succs`` are the subroutine-local
-    CFG used by builders that walk routines independently (``callsub``
-    passed over, ``retsub`` cut).
+    included).
     """
 
     __slots__ = (
-        "key", "ops", "preds", "succs", "loc_preds", "loc_succs",
-        "entry_rel", "exit_rel", "abs_depth",
-        "entry_phis", "entry_stack", "exit_stack", "sub",
+        "key", "ops", "preds", "succs",
+        "entry_phis", "entry_stack", "exit_stack",
     )
 
     def __init__(self, key: tuple):
@@ -185,19 +174,9 @@ class PyBlock:
         self.ops: list[PyOp] = []
         self.preds: list["PyBlock"] = []
         self.succs: list["PyBlock"] = []
-        self.loc_preds: list["PyBlock"] = []
-        self.loc_succs: list["PyBlock"] = []
-        self.entry_rel: Optional[int] = None  # depth relative to routine entry
-        self.exit_rel: Optional[int] = None
-        self.abs_depth: int = 0
         self.entry_phis: list[PyPhi] = []
         self.entry_stack: list[Operand] = []
         self.exit_stack: list[Operand] = []
-        self.sub: Optional["PyBlock"] = None  # owning routine entry BB
-
-    @property
-    def first_line(self) -> int:
-        return self.key[1]
 
     def __repr__(self) -> str:
         return f"BB(L{self.key[1]}-{self.key[2]})"
@@ -256,7 +235,6 @@ class PySSA:
         self._phase3_direct_placement()
         self._phase4_indirect_propagation()
         self._phase6_sim_blocks()
-        self._phase7_resolve_frame_negative()
         self._phase8_live_filter()
         return self
 
@@ -583,16 +561,6 @@ class PySSA:
             op.n_out = n_out_new
             local_stack.extend(reversed(new_outs))
             return True
-
-    # ----- Phase 7: frame_dig negative resolution ------------------------
-
-    def _phase7_resolve_frame_negative(self) -> None:
-        """Phase 6 now expands negative-N ``frame_dig`` / ``frame_bury``
-        in-line (full consumed band wired as inputs, fat outputs
-        produced via :meth:`_try_expand_frame_op`). This phase is left
-        as a no-op pending a fix for the positive-N case (locals above
-        frame_base); no fixture today exercises that path."""
-        return
 
     # ----- Phase 8: liveness filter --------------------------------------
 
