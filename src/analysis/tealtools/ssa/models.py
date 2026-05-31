@@ -377,12 +377,22 @@ class BasicBlock:
     ``phis`` is the list of :class:`Phi`\\ s attached at the BB's entry.
     ``predecessors`` / ``successors`` are the other BBs this BB is
     directly connected to via inter-BB CFG edges.
+
+    ``exit_stack`` is the operand in each stack slot at the BB's exit,
+    **bottom-first** (index 0 = bottom of stack, last = top), with
+    ``None`` for a slot whose value is dead. Each entry is an
+    :class:`SSAVar` or :class:`Phi`. It is surfaced verbatim from PySSA
+    construction (the per-edge value a successor's phi reads on this
+    edge) so out-of-SSA / block-argument lowering has the per-edge
+    values that ``Phi.args`` (a dedup'd value-set) no longer carries.
+    Empty unless construction populated it.
     """
 
     __slots__ = (
         "file", "first_line", "last_line",
         "assignments", "phis",
         "predecessors", "successors",
+        "exit_stack",
     )
 
     def __init__(self, file: str, first_line: int, last_line: int):
@@ -393,6 +403,7 @@ class BasicBlock:
         self.phis: list[Phi] = []
         self.predecessors: list["BasicBlock"] = []
         self.successors: list["BasicBlock"] = []
+        self.exit_stack: list = []
 
     def _key(self) -> tuple:
         return (self.file, self.first_line, self.last_line)

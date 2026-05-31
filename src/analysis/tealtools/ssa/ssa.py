@@ -1000,6 +1000,25 @@ def _apply_pyssa_to(
             p.basic_block = bb
             bb.phis.append(p)
 
+    # 4.5) Surface each BB's exit stack (the per-edge slot values) onto the
+    # public block, translated to public operands. Out-of-SSA / block-arg
+    # lowering reads ``pred.exit_stack[k]`` for the value a successor's
+    # slot-k phi receives on that edge -- info ``Phi.args`` (a dedup'd
+    # value-set) no longer carries. Verbatim order (bottom-first); a dead
+    # slot stays ``None``. Pure plumbing of construction data.
+    for py_b, bb in bb_map.items():
+        translated: list = []
+        for o in py_b.exit_stack:
+            if o is None:
+                translated.append(None)
+            elif o in var_map:
+                translated.append(var_map[o])
+            elif o in phi_map:
+                translated.append(phi_map[o])
+            else:
+                translated.append(None)
+        bb.exit_stack = translated
+
     # 5) Collapse each Phi's args to the transitive SSAVar leaves reachable
     # through PySSA's PyPhi.args graph (SCC condensation).
     _collapse_phi_args_to_leaves(py, phi_map, var_map)
