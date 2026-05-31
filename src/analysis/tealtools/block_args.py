@@ -46,6 +46,20 @@ from typing import Optional
 from .ssa import BasicBlock, Const, Phi, SSAProgram, SSAVar
 
 
+def _constlit(cv: Const) -> str:
+    """Bare literal for a resolved constant: the integer as-is, or ``0x…``
+    bytes with a short ASCII gloss when fully printable (TEAL state/box keys
+    and method selectors are usually ASCII, so the gloss is the useful bit)."""
+    if cv.kind == "bytes" and cv.value.startswith("0x"):
+        try:
+            raw = bytes.fromhex(cv.value[2:])
+        except ValueError:
+            raw = b""
+        if raw and all(32 <= b < 127 for b in raw):
+            return f'{cv.value} "{raw.decode()}"'
+    return cv.value
+
+
 def _fmt(o) -> str:
     """Compact operand label for the render. ``None`` is a dead slot."""
     if o is None:
@@ -55,7 +69,7 @@ def _fmt(o) -> str:
     if isinstance(o, Phi):
         return o._short()
     if isinstance(o, Const):
-        return f"{o.kind} {o.value}"
+        return _constlit(o)
     return repr(o)
 
 
@@ -163,6 +177,13 @@ class BlockArgForm:
                         srcs.append(f"L{pred.first_line}: {self._src(val)}")
                     out.append(f"    {_fmt(phi)} = phi(" + ", ".join(srcs) + ")")
             for a in bb.assignments:
+                # Constants are inlined at use sites by _src, so drop the
+                # pool decls and the now-redundant const-push lines.
+                if a.op in ("intcblock", "bytecblock"):
+                    continue
+                if (len(a.outputs) == 1 and not a.inputs
+                        and getattr(a.outputs[0], "const_value", None) is not None):
+                    continue
                 outs = ", ".join(_fmt(o) for o in a.outputs)
                 ins = ", ".join(self._src(x) for x in a.inputs)
                 imm = f" {a.immediates}" if a.immediates else ""
