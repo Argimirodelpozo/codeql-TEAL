@@ -297,7 +297,9 @@ def lower(prog: SSAProgram) -> ir.Program:
                                       returns=["?"] * nrets, body=body))
 
     _prune_dead_phis(subs)
+    _infer_types_from_uses(subs)
     _unify_phi_types(subs)
+    _infer_returns(subs)
 
     main = next(sub for sub in subs if sub.is_main)
     return ir.Program(main=main, subroutines=[s for s in subs if not s.is_main])
@@ -368,6 +370,120 @@ def _prune_dead_phis(subs) -> None:
     for sub in subs:
         for b in sub.body:
             b.phis = [phi for phi in b.phis if id(phi.register) in live]
+
+
+# Ops whose stack inputs are all uint64 / all bytes.
+_U64_IN_ALL = frozenset({
+    "+", "-", "*", "/", "%", "exp", "expw", "addw", "mulw", "divw", "divmodw",
+    "sqrt", "shl", "shr", "bitlen", "<", ">", "<=", ">=", "!", "&&", "||",
+    "itob", "assert",
+})
+_BYTES_IN_ALL = frozenset({
+    "concat", "len", "btoi", "sha256", "sha512_256", "keccak256", "sha3_256",
+    "bsqrt", "b+", "b-", "b*", "b/", "b%", "b|", "b&", "b^", "b~",
+    "b==", "b!=", "b<", "b>", "b<=", "b>=",
+})
+# Position-specific input types, indexed by SSA arg position which is
+# **top-first** (inputs[0] is the topmost popped value). So for a TEAL op
+# documented ``op A B C`` (A deepest, C on top) the SSA args are [C, B, A].
+# ``None`` = leave the value unknown.
+_POS_IN = {
+    "getbyte": ("uint64", "bytes"),               # A(bytes) B(idx) -> [B, A]
+    "getbit": ("uint64", "bytes"),
+    "setbyte": ("uint64", "uint64", "bytes"),     # A(bytes) B(idx) C(val)
+    "extract3": ("uint64", "uint64", "bytes"),    # A(bytes) B(start) C(len)
+    "substring3": ("uint64", "uint64", "bytes"),
+    "extract_uint16": ("uint64", "bytes"),        # A(bytes) B(offset)
+    "extract_uint32": ("uint64", "bytes"),
+    "extract_uint64": ("uint64", "bytes"),
+    "replace3": ("bytes", "uint64", "bytes"),     # A(bytes) B(start) C(bytes)
+    "extract": ("bytes",),                        # extract s l A(bytes)
+    "app_global_get": ("bytes",),                 # key
+    "app_global_put": (None, "bytes"),            # K(key) V(val) -> [V, K]
+    "bzero": ("uint64",), "txnas": ("uint64",), "gtxnas": ("uint64",),
+}
+
+
+def _expected_type(op, idx, args):
+    """Expected ``ir_type`` of ``args[idx]`` for ``op``, or ``None``."""
+    if op == "__cond__":
+        return "uint64"
+    if op in _U64_IN_ALL:
+        return "uint64"
+    if op in _BYTES_IN_ALL:
+        return "bytes"
+    pos = _POS_IN.get(op)
+    if pos and idx < len(pos):
+        return pos[idx]
+    if op in ("==", "!=") and len(args) == 2:
+        other = args[1 - idx]
+        ot = getattr(other, "ir_type", None)
+        return ot if ot and ot != "?" else None
+    return None
+
+
+def _infer_types_from_uses(subs) -> None:
+    """Refine ``?``-typed registers (params, locals, …) from the ops that
+    consume them: arithmetic/cmp inputs are uint64, bytes-op inputs are bytes,
+    ``==`` mirrors the other operand, branch conditions are uint64."""
+    reg_by_id: dict = {}
+    uses: dict = {}
+
+    def use(r, op, idx, args):
+        if isinstance(r, ir.Register):
+            reg_by_id[id(r)] = r
+            uses.setdefault(id(r), []).append((op, idx, args))
+
+    def note(vp):
+        if isinstance(vp, (ir.Intrinsic, ir.InvokeSubroutine)):
+            op = vp.op if isinstance(vp, ir.Intrinsic) else None
+            for i, a in enumerate(vp.args):
+                use(a, op, i, vp.args)
+
+    for sub in subs:
+        for b in sub.body:
+            for o in b.ops:
+                if isinstance(o, ir.Assignment):
+                    note(o.source)
+                elif isinstance(o, ir.IntrinsicOp):
+                    note(o.intrinsic)
+                elif isinstance(o, ir.Assert):
+                    use(o.condition, "assert", 0, [o.condition])
+            t = b.terminator
+            if isinstance(t, ir.ConditionalBranch):
+                use(t.condition, "__cond__", 0, [t.condition])
+
+    for _ in range(6):
+        changed = False
+        for rid, r in reg_by_id.items():
+            if r.ir_type != "?":
+                continue
+            inferred = {et for (op, i, args) in uses.get(rid, [])
+                        if (et := _expected_type(op, i, args)) and et != "?"}
+            if len(inferred) == 1:        # all uses agree -> safe to set
+                r.ir_type = next(iter(inferred))
+                changed = True
+        if not changed:
+            break
+
+
+def _infer_returns(subs) -> None:
+    """Set each subroutine's return types from its ``SubroutineReturn`` values
+    (first typed value per position, across return sites)."""
+    for sub in subs:
+        if sub.is_main:
+            continue
+        rets = None
+        for b in sub.body:
+            t = b.terminator
+            if isinstance(t, ir.SubroutineReturn):
+                ts = [getattr(v, "ir_type", "?") for v in t.result]
+                if rets is None:
+                    rets = ts
+                else:
+                    rets = [a if a != "?" else b2 for a, b2 in zip(rets, ts)]
+        if rets is not None:
+            sub.returns = rets
 
 
 def _unify_phi_types(subs) -> None:
