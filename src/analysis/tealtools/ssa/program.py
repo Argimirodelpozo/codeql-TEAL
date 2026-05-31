@@ -58,6 +58,7 @@ class SSAProgram:
         self._shuffles_propagated: bool = False
         self._inputs_propagated: bool = False
         self._stable_propagated: bool = False
+        self._phis_deduped: bool = False
 
         def _bb_from_tuple(bb_id: tuple) -> BasicBlock:
             bb = self.blocks.get(bb_id)
@@ -384,6 +385,22 @@ class SSAProgram:
         from ..passes.stable_prop import propagate_stable_expressions as _impl
         _impl(self)
         self._stable_propagated = True
+
+    def dedup_phis(self) -> int:
+        """Collapse redundant phi nodes — those with identical
+        ``(basic_block, kind, ordered-args)`` — to one canonical, to a
+        fixpoint. PySSA's constant-stack unroll over-generates phis
+        (xgov: ~21k phis, ~667 distinct); running this just before
+        :meth:`materialize_phis` keeps its ``mat_phi`` output bounded,
+        and it makes every phi-iterating analysis cheaper. Logic lives
+        in :mod:`tealtools.passes.phi_dedup`; idempotent. Returns the
+        number of phi objects removed."""
+        if getattr(self, "_phis_deduped", False):
+            return 0
+        from ..passes.phi_dedup import dedup_phis as _impl
+        n = _impl(self)
+        self._phis_deduped = True
+        return n
 
     def propagate_scratch_values(self) -> int:
         """Generalises :meth:`propagate_scratch_constants` from compile-

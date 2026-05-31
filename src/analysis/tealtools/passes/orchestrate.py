@@ -43,8 +43,9 @@ as-bigint.
 **Phase C — structural lowering.** Once every annotation is in
 place, simplify the IR for rendering: collapse stack shuffles, CSE
 the execution-stable expressions, prune dead pure-op assignments,
-inline literal constants, and finally materialise phis (which clears
-``prog.phis`` — any pass that iterates it must have already run).
+inline literal constants, de-duplicate the over-generated phis, and
+finally materialise phis (which clears ``prog.phis`` — any pass that
+iterates it must have already run).
 
   9. :meth:`SSAProgram.propagate_stack_shuffles` — copy-propagate
      pure shuffles (``dup``, ``swap``, ``frame_dig``, …) into every
@@ -63,11 +64,16 @@ inline literal constants, and finally materialise phis (which clears
   12. :meth:`SSAProgram.eliminate_dead_constants` — inline literal
       constants into consumers and drop the now-orphan SSAVars /
       Phis / Assignments.
-  13. :meth:`SSAProgram.materialize_phis` — out-of-SSA lowering;
+  13. :meth:`SSAProgram.dedup_phis` — collapse phis with identical
+      ``(basic_block, kind, ordered-args)`` to one, to a fixpoint.
+      PySSA's constant-stack unroll over-generates phi objects (xgov:
+      ~21k → ~667); running this right before materialisation keeps the
+      ``mat_phi`` count bounded instead of one copy per redundant phi.
+  14. :meth:`SSAProgram.materialize_phis` — out-of-SSA lowering;
       each live phi becomes a synthetic ``mat_phi_k`` with a copy
       assignment at every contributing leaf's def site.
 
-After all thirteen run, :meth:`SSAProgram.functional` (and
+After all fourteen run, :meth:`SSAProgram.functional` (and
 ``functional_by_block``, plus :func:`functional_dump` here) give
 the most-annotated flat dump the substrate can produce. Every
 pass is idempotent — running ``run_all_passes`` twice is a no-op
@@ -107,6 +113,7 @@ def run_all_passes(prog: SSAProgram) -> SSAProgram:
         ("propagate_stable_expressions", prog.propagate_stable_expressions),
         ("cleanup_unused_ssavars",      prog.cleanup_unused_ssavars),
         ("eliminate_dead_constants",    prog.eliminate_dead_constants),
+        ("dedup_phis",                  prog.dedup_phis),
         ("materialize_phis",            prog.materialize_phis),
     ]
     logger.info("running SSA pass pipeline (%d passes)", len(passes))
