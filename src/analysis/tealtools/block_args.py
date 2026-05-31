@@ -46,22 +46,10 @@ from typing import Optional
 from .ssa import BasicBlock, Const, Phi, SSAProgram, SSAVar
 
 
-def _constlit(cv: Const) -> str:
-    """Bare literal for a resolved constant: the integer as-is, or ``0x…``
-    bytes with a short ASCII gloss when fully printable (TEAL state/box keys
-    and method selectors are usually ASCII, so the gloss is the useful bit)."""
-    if cv.kind == "bytes" and cv.value.startswith("0x"):
-        try:
-            raw = bytes.fromhex(cv.value[2:])
-        except ValueError:
-            raw = b""
-        if raw and all(32 <= b < 127 for b in raw):
-            return f'{cv.value} "{raw.decode()}"'
-    return cv.value
-
-
 def _fmt(o) -> str:
-    """Compact operand label for the render. ``None`` is a dead slot."""
+    """Compact operand label for the render. ``None`` is a dead slot.
+    Resolved constants render as their bare literal — an integer, or ``0x…``
+    bytes verbatim."""
     if o is None:
         return "·"  # ·
     if isinstance(o, SSAVar):
@@ -69,7 +57,7 @@ def _fmt(o) -> str:
     if isinstance(o, Phi):
         return o._short()
     if isinstance(o, Const):
-        return _constlit(o)
+        return o.value
     return repr(o)
 
 
