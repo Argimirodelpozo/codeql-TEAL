@@ -310,7 +310,15 @@ def lower(prog: SSAProgram) -> ir.Program:
                 cs = callsite.get(bb)
                 target = (cs.target_name if cs and cs.target_name
                           else (a.immediates or "?"))
-                invoke = ir.InvokeSubroutine(target, [value(i) for i in a.inputs])
+                # Args are passed via scratch, not callsub operands, so take the
+                # caller's exit_stack top nargs in param order (es[-nargs+i]).
+                nargs = _proto_io(cs.target_entry)[0] if (cs and cs.target_entry) else 0
+                es = bb.exit_stack
+                if nargs and len(es) >= nargs:
+                    call_args = [value(es[-nargs + i]) for i in range(nargs)]
+                else:
+                    call_args = [value(i) for i in a.inputs]
+                invoke = ir.InvokeSubroutine(target, call_args)
                 shown = [o for o in a.outputs if isinstance(o, SSAVar)]
                 ops.append(ir.Assignment([reg(o) for o in shown], invoke)
                            if shown else ir.IntrinsicOp(invoke))
