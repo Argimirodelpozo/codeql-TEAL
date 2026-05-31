@@ -67,6 +67,22 @@ def lower(prog: SSAProgram) -> ir.Program:
     sub_of = {bb: s for s in struct.subroutines for bb in s.body}
     callsite = {cs.callsub_bb: cs for cs in struct.call_sites}
 
+    # SSA-level producer map + scratch reaching-def (per `load N`, the value
+    # SSAVars its influencing `store N`s wrote) -- used to type call args,
+    # which are passed via scratch (load/store) here, not as callsub operands.
+    producer = {o: a for a in prog.assignments
+                for o in a.outputs if isinstance(o, SSAVar)}
+    load_stores: dict = {}
+    g = getattr(prog, "_graph", None)
+    if g is not None:
+        for n in g.nodes:
+            stores = g.nodes[n].get("scratch_stores")
+            if not stores:
+                continue
+            lv = prog.var(n.location.file, n.location.start_line, 1)
+            if lv is not None:
+                load_stores[lv] = [prog.var(*k) for k in stores]
+
     def _key(bb):
         return (bb.file, bb.first_line)
 
@@ -318,7 +334,60 @@ def lower(prog: SSAProgram) -> ir.Program:
         return ir.BasicBlock(id=bid[bb], phis=phis, ops=ops,
                              terminator=control(bb), comment=f"L{bb.first_line}")
 
+    def _ssa_type(o, depth=0):
+        """Type an SSA operand by its producing op, tracing scratch loads
+        through the reaching-def to the stored value's type."""
+        if isinstance(o, Const):
+            return o.kind
+        if not isinstance(o, SSAVar) or depth > 6:
+            return "?"
+        a = producer.get(o)
+        op = a.op if a else None
+        imm = a.immediates if a else None
+        if op in _BOOL_OPS:
+            return "bool"
+        ft = _field_type(op, imm)
+        if ft:
+            return ft
+        t = getattr(o, "type", None)
+        if t is not None and getattr(t, "kind", None):
+            return t.kind
+        if getattr(o, "range", None) is not None:
+            return "uint64"
+        if op in _U64_OPS:
+            return "uint64"
+        if op in _BYTES_OPS:
+            return "bytes"
+        if o in load_stores:
+            ts = {_ssa_type(s, depth + 1) for s in load_stores[o] if s is not None}
+            ts.discard("?")
+            if len(ts) == 1:
+                return next(iter(ts))
+        return "?"
+
+    def _infer_params_from_callers(pairs):
+        # Sub args are passed via scratch here, so the caller's exit_stack top
+        # `nargs` (param order: es[-nargs+i]) are the args; type each by tracing
+        # its scratch store, and fill any param still `?`.
+        for ir_sub, s in pairs:
+            nargs = len(ir_sub.parameters)
+            if nargs == 0 or not s.callers:
+                continue
+            cols = [set() for _ in range(nargs)]
+            for cs in s.callers:
+                es = cs.callsub_bb.exit_stack
+                if len(es) < nargs:
+                    continue
+                for i in range(nargs):
+                    ty = _ssa_type(es[-nargs + i])
+                    if ty and ty != "?":
+                        cols[i].add(ty)
+            for i, pp in enumerate(ir_sub.parameters):
+                if pp.register.ir_type == "?" and len(cols[i]) == 1:
+                    pp.register.ir_type = next(iter(cols[i]))
+
     subs = []
+    sub_pairs = []                                # (ir.Subroutine, struct.Subroutine)
     for gname, s, gb in groups:
         cur_gname = gname
         if s is None:
@@ -336,11 +405,14 @@ def lower(prog: SSAProgram) -> ir.Program:
             subs.append(ir.Subroutine(id=file, parameters=[], returns=[],
                                       body=body, is_main=True))
         else:
-            subs.append(ir.Subroutine(id=gname, parameters=params,
-                                      returns=["?"] * nrets, body=body))
+            sub_ir = ir.Subroutine(id=gname, parameters=params,
+                                   returns=["?"] * nrets, body=body)
+            subs.append(sub_ir)
+            sub_pairs.append((sub_ir, s))
 
     _prune_dead_phis(subs)
     _infer_types_from_uses(subs)
+    _infer_params_from_callers(sub_pairs)
     _unify_phi_types(subs)
     _infer_returns(subs)
 
