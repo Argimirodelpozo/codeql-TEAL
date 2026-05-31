@@ -41,27 +41,33 @@ as-bigint.
      uint64 and bytes-bigint value spaces.
 
 **Phase C — structural lowering.** Once every annotation is in
-place, simplify the IR for rendering: collapse stack shuffles,
-prune dead pure-op assignments, inline literal constants, and
-finally materialise phis (which clears ``prog.phis`` — any pass
-that iterates it must have already run).
+place, simplify the IR for rendering: collapse stack shuffles, CSE
+the execution-stable expressions, prune dead pure-op assignments,
+inline literal constants, and finally materialise phis (which clears
+``prog.phis`` — any pass that iterates it must have already run).
 
   9. :meth:`SSAProgram.propagate_stack_shuffles` — copy-propagate
      pure shuffles (``dup``, ``swap``, ``frame_dig``, …) into every
      consumer; the shuffle Assignments stay in the IR with
      ``shuffled=True`` so they render as ``// …`` comments.
-  10. :meth:`SSAProgram.cleanup_unused_ssavars` — drop side-effect-
+  10. :meth:`SSAProgram.propagate_stable_expressions` — CSE over the
+      execution-stable sub-DAG: a pure op of stable inputs is itself
+      stable, so syntactically-equal stable expressions (e.g. two
+      ``sha256(txn Sender)``) unify to one canonical value. Runs here,
+      after shuffles, so compute ops reach their stable operands
+      directly.
+  11. :meth:`SSAProgram.cleanup_unused_ssavars` — drop side-effect-
       free Assignments whose every output is now dead (the duplicate
-      readers from step 3 and the forwarded loads from step 4 are
-      the typical victims).
-  11. :meth:`SSAProgram.eliminate_dead_constants` — inline literal
+      readers from step 3, the forwarded loads from step 4, and the
+      CSE'd duplicates from step 10 are the typical victims).
+  12. :meth:`SSAProgram.eliminate_dead_constants` — inline literal
       constants into consumers and drop the now-orphan SSAVars /
       Phis / Assignments.
-  12. :meth:`SSAProgram.materialize_phis` — out-of-SSA lowering;
+  13. :meth:`SSAProgram.materialize_phis` — out-of-SSA lowering;
       each live phi becomes a synthetic ``mat_phi_k`` with a copy
       assignment at every contributing leaf's def site.
 
-After all twelve run, :meth:`SSAProgram.functional` (and
+After all thirteen run, :meth:`SSAProgram.functional` (and
 ``functional_by_block``, plus :func:`functional_dump` here) give
 the most-annotated flat dump the substrate can produce. Every
 pass is idempotent — running ``run_all_passes`` twice is a no-op
@@ -98,6 +104,7 @@ def run_all_passes(prog: SSAProgram) -> SSAProgram:
         ("propagate_bytemath_ranges",   prog.propagate_bytemath_ranges),
         # Phase C — structural lowering.
         ("propagate_stack_shuffles",    prog.propagate_stack_shuffles),
+        ("propagate_stable_expressions", prog.propagate_stable_expressions),
         ("cleanup_unused_ssavars",      prog.cleanup_unused_ssavars),
         ("eliminate_dead_constants",    prog.eliminate_dead_constants),
         ("materialize_phis",            prog.materialize_phis),

@@ -57,6 +57,7 @@ class SSAProgram:
         self._ranges_propagated: bool = False
         self._shuffles_propagated: bool = False
         self._inputs_propagated: bool = False
+        self._stable_propagated: bool = False
 
         def _bb_from_tuple(bb_id: tuple) -> BasicBlock:
             bb = self.blocks.get(bb_id)
@@ -368,6 +369,21 @@ class SSAProgram:
         from ..passes.input_prop import propagate_inputs as _impl
         _impl(self)
         self._inputs_propagated = True
+
+    def propagate_stable_expressions(self) -> None:
+        """Transitive extension of :meth:`propagate_inputs`: a pure op
+        whose inputs are all execution-stable is itself stable, so
+        syntactically-equal stable expressions (e.g. two ``sha256(txn
+        Sender)``) unify to one canonical SSAVar via CSE. Logic lives in
+        :mod:`tealtools.passes.stable_prop`; idempotent. Best run after
+        ``propagate_inputs`` (leaves unified) and
+        ``propagate_stack_shuffles`` (operands reach compute ops
+        directly)."""
+        if getattr(self, "_stable_propagated", False):
+            return
+        from ..passes.stable_prop import propagate_stable_expressions as _impl
+        _impl(self)
+        self._stable_propagated = True
 
     def propagate_scratch_values(self) -> int:
         """Generalises :meth:`propagate_scratch_constants` from compile-

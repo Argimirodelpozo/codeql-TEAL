@@ -28,14 +28,23 @@ stays in the IR but its output now has empty ``uses`` — it's
 effectively dead from a value-flow perspective. Idempotent.
 
 Mutates the SSA in place, mirroring the shape of other
-``propagate_*`` passes on :class:`tealtools.ssa.SSAProgram`.
-Not currently part of :func:`run_all_passes` because it changes
-SSAVar identities across the program — opt-in for analyses that
-need the unification (path predicates, sec-guide field-flow checks).
-``itxn``-family reads are deliberately *not* included: itxn fields
-read the most-recently-submitted inner transaction, so two itxn
-reads separated by ``itxn_submit`` can legitimately observe
-different values.
+``propagate_*`` passes on :class:`tealtools.ssa.SSAProgram`. Runs as
+Phase A step 3 of :func:`tealtools.passes.run_all_passes` (after the
+constant passes, so const-folded immediates / stack indices are
+already in place when the canonical keys are composed), and is also
+opt-in for analyses that want the unification without the full
+pipeline (path predicates, sec-guide field-flow checks).
+
+What is *not* propagated, deliberately, is anything that can change
+within one execution:
+
+  - ``itxn``-family reads observe the most-recently-submitted inner
+    transaction, so two reads separated by ``itxn_submit`` can see
+    different values.
+  - application state (``app_global_get`` / ``app_local_get``) and
+    ``balance`` / ``min_balance`` / asset-holding reads can be mutated
+    mid-execution (``app_*_put``, inner-txn effects), so they are not
+    execution-stable and never unified here.
 """
 from __future__ import annotations
 
