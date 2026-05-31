@@ -7,19 +7,35 @@ merge point. Left alone, :meth:`SSAProgram.materialize_phis` then emits
 a ``mat_phi`` copy per (phi, contributing-leaf) pair, exploding into
 ~100k copy assignments.
 
-This pass merges phis that are provably the same value: identical
-``(basic_block, kind, ordered-args)``. Same merge point + same kind +
-same per-predecessor operands ⇒ same phi function ⇒ same value, so one
-representative replaces the rest and every reference (assignment inputs,
-other phis' args, the BB phi lists, ``prog.phis``) is rewired to it.
+This pass merges phis with an identical ``(basic_block, kind,
+ordered-args)`` key, rewiring every reference (assignment inputs, other
+phis' args, the BB phi lists, ``prog.phis``) to one representative.
 
-Run to a fixpoint: merging a group rewires phi-args that pointed at the
-duplicates to the canonical, which can make further phis identical.
-Sound but deliberately conservative — the ``basic_block`` component of
-the key means phis at *different* merge points are never merged even
-with the same args (their per-path selection can differ), and cyclic
-phi groups that are equal-up-to-congruence may stay separate (a missed
-merge, never a wrong one).
+Soundness rests on how phis are *consumed*, not on per-predecessor
+matching. A phi's ``args`` is a dedup-by-identity ordered *set* (built
+by :meth:`PySSA._add_arg`), not a strict one-arg-per-predecessor list,
+so equal args does not by itself mean "equal per-predecessor
+selection". What makes the merge sound is that every consumer treats a
+phi as the **may-set** of its args and nothing reads ``args[i]``
+positionally against ``predecessor[i]``:
+
+  - constant folding: a phi is constant iff *all* args agree;
+  - ranges / bytemath: a phi's range is the *union* of its args';
+  - taint: a phi is tainted iff *any* arg is;
+  - materialisation: the mat_phi SCC graph iterates ``args`` set-wise;
+  - ``IndirectPhi`` carries a single arg (the root it forwards).
+
+So two phis with the same arg *set* are interchangeable for every
+analysis, and the ``(ordered-args)`` key is a stricter subset of that.
+Verified value-preserving: const / range resolution is byte-identical
+before vs after dedup on xgov (57k SSAVars, 0 differences).
+
+``basic_block`` and ``kind`` in the key are conservatism, not necessity
+— same-arg-set phis would be may-set-interchangeable across BBs too,
+but keying on the merge point avoids any location-sensitivity. Run to a
+fixpoint (merging rewires phi-args, exposing further identical phis);
+cyclic phi groups equal-only-up-to-congruence may stay separate (a
+missed merge, never a wrong one).
 
 Best run just before :meth:`SSAProgram.materialize_phis`; it also makes
 every phi-iterating analysis cheaper. Idempotent. Mutates in place.
