@@ -20,6 +20,29 @@ def _prog():
         pytest.skip(f"could not build SSAProgram: {e}")
 
 
+class TestArgNormalization:
+    def test_normalize_drops_duplicate_values_order_preserving(self):
+        from tealtools.ssa import Phi, Const, SSAVar
+        from tealtools.passes.phi_dedup import _normalize_args
+        ph = Phi("f.teal", 1, 0, "DirectPhi")
+        v = SSAVar("f.teal", 2, 1)
+        c0a, c0b = Const("int", "0"), Const("int", "0")  # same value, distinct objs
+        ph.args = [v, c0a, c0b, v]  # v repeated, 0 repeated (distinct const objs)
+        changed = _normalize_args(ph)
+        assert changed
+        # First occurrence of each distinct value kept, in order.
+        assert ph.args == [v, c0a]
+
+    def test_normalize_noop_when_already_distinct(self):
+        from tealtools.ssa import Phi, Const, SSAVar
+        from tealtools.passes.phi_dedup import _normalize_args
+        ph = Phi("f.teal", 1, 0, "DirectPhi")
+        ph.args = [SSAVar("f.teal", 2, 1), Const("int", "0"), Const("int", "1")]
+        before = list(ph.args)
+        assert _normalize_args(ph) is False
+        assert ph.args == before
+
+
 class TestDedup:
     def test_reduces_phi_count(self):
         p = _prog()

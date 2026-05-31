@@ -7,9 +7,14 @@ merge point. Left alone, :meth:`SSAProgram.materialize_phis` then emits
 a ``mat_phi`` copy per (phi, contributing-leaf) pair, exploding into
 ~100k copy assignments.
 
-This pass merges phis with an identical ``(basic_block, ordered-args)``
-key, rewiring every reference (assignment inputs, other phis' args, the
-BB phi lists, ``prog.phis``) to one representative.
+This pass first normalises each phi's args — dropping duplicate *values*
+(order-preserving), since a repeated value adds nothing to the may-set —
+then merges phis with an identical ``(basic_block, ordered-args)`` key,
+rewiring every reference (assignment inputs, other phis' args, the BB phi
+lists, ``prog.phis``) to one representative. The arg-normalisation both
+lets value-equal phis (e.g. ones differing only by repeated ``0`` consts
+the unroll appended) share a signature, and cuts the number of mat_phi
+copies materialisation emits.
 
 Soundness rests on how phis are *consumed*, not on per-predecessor
 matching. A phi's ``args`` is a dedup-by-identity ordered *set* (built
@@ -92,11 +97,38 @@ def _apply_redirects(prog: SSAProgram, redirects: dict) -> None:
     prog.phis = {k: v for k, v in prog.phis.items() if v not in redirects}
 
 
+def _normalize_args(ph: Phi) -> bool:
+    """Drop duplicate-*value* args (order-preserving) from ``ph``. A
+    repeated value contributes nothing to the phi's may-set, so removing
+    it changes no analysis (and even the precise per-path value is
+    unchanged — it's the same value whichever predecessor supplied it).
+    Doing so lets value-equal phis share a signature and cuts the number
+    of mat_phi copies. Returns True if anything was removed."""
+    seen: set = set()
+    kept: list = []
+    for a in ph.args:
+        aid = _arg_id(a)
+        if aid not in seen:
+            seen.add(aid)
+            kept.append(a)
+    if len(kept) != len(ph.args):
+        ph.args[:] = kept
+        return True
+    return False
+
+
 def dedup_phis(prog: SSAProgram) -> int:
-    """Merge identical phis to a fixpoint. Returns the number of phi
-    objects removed."""
+    """Merge value-equal phis to a fixpoint. Each round first normalises
+    args (drops duplicate values — see :func:`_normalize_args`; also mops
+    up duplicates a prior round's rewiring introduced), then merges phis
+    with an identical ``(basic_block, ordered-args)`` signature. Returns
+    the number of phi objects removed."""
     removed = 0
     while True:
+        changed = False
+        for ph in prog.phis.values():
+            if _normalize_args(ph):
+                changed = True
         by_sig: dict[tuple, Phi] = {}
         redirects: dict[Phi, Phi] = {}
         # Deterministic order so the canonical pick is stable.
@@ -110,8 +142,10 @@ def dedup_phis(prog: SSAProgram) -> int:
                 by_sig[sig] = ph
             else:
                 redirects[ph] = rep
-        if not redirects:
+        if redirects:
+            _apply_redirects(prog, redirects)
+            removed += len(redirects)
+            changed = True
+        if not changed:
             break
-        _apply_redirects(prog, redirects)
-        removed += len(redirects)
     return removed
