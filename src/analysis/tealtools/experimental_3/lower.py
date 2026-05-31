@@ -344,11 +344,14 @@ def lower(prog: SSAProgram) -> ir.Program:
 
     def _ssa_type(o, depth=0):
         """Type an SSA operand by its producing op, tracing scratch loads
-        through the reaching-def to the stored value's type."""
+        through the reaching-def to the stored value's type, and frame reads
+        through to the param/local register they map to."""
         if isinstance(o, Const):
             return o.kind
         if not isinstance(o, SSAVar) or depth > 6:
             return "?"
+        if o in frame_map:                       # a param/local read
+            return frame_map[o].ir_type
         a = producer.get(o)
         op = a.op if a else None
         imm = a.immediates if a else None
@@ -374,9 +377,22 @@ def lower(prog: SSAProgram) -> ir.Program:
         return "?"
 
     def _infer_params_from_callers(pairs):
-        # Sub args are passed via scratch here, so the caller's exit_stack top
-        # `nargs` (param order: es[-nargs+i]) are the args; type each by tracing
-        # its scratch store, and fill any param still `?`.
+        # Sub args are passed via scratch / frame here, not callsub operands. The
+        # caller's exit_stack top `nargs` (param order es[-nargs+i]) are the
+        # args; type each by tracing its scratch store, and -- when it is a
+        # `frame_dig` -- directly through to the caller subroutine's own param
+        # (inter-procedural: the param index is the immediate + the caller's
+        # nargs, independent of the fat-frame output shape).
+        struct2ir = {sb: ir_s for ir_s, sb in pairs}
+
+        def _arg_type(arg, owner_ir, owner_nargs):
+            a = producer.get(arg) if isinstance(arg, SSAVar) else None
+            if a is not None and a.op == "frame_dig" and owner_ir is not None:
+                k = _imm0(a)
+                if k is not None and -owner_nargs <= k <= -1:
+                    return owner_ir.parameters[owner_nargs + k].register.ir_type
+            return _ssa_type(arg)
+
         for ir_sub, s in pairs:
             nargs = len(ir_sub.parameters)
             if nargs == 0 or not s.callers:
@@ -386,8 +402,11 @@ def lower(prog: SSAProgram) -> ir.Program:
                 es = cs.callsub_bb.exit_stack
                 if len(es) < nargs:
                     continue
+                owner = sub_of.get(cs.callsub_bb)
+                owner_ir = struct2ir.get(owner)
+                owner_nargs = _proto_io(owner.entry_bb)[0] if owner else 0
                 for i in range(nargs):
-                    ty = _ssa_type(es[-nargs + i])
+                    ty = _arg_type(es[-nargs + i], owner_ir, owner_nargs)
                     if ty and ty != "?":
                         cols[i].add(ty)
             for i, pp in enumerate(ir_sub.parameters):
@@ -420,7 +439,16 @@ def lower(prog: SSAProgram) -> ir.Program:
 
     _prune_dead_phis(subs)
     _infer_types_from_uses(subs)
-    _infer_params_from_callers(sub_pairs)
+
+    def _typed_params():
+        return sum(pp.register.ir_type != "?"
+                   for ir_sub, _ in sub_pairs for pp in ir_sub.parameters)
+
+    for _ in range(8):                   # fixpoint: a sub typed this round can
+        before = _typed_params()         # type another's frame-passed arg next
+        _infer_params_from_callers(sub_pairs)
+        if _typed_params() == before:
+            break
     _unify_phi_types(subs)
     _infer_returns(subs)
 
