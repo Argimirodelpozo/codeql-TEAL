@@ -24,7 +24,10 @@ UPDATE = os.environ.get("UPDATE_SNAPSHOTS") == "1"
 
 # Fixture dirs without a detector — exercised as SSA construction
 # smoke tests (snapshot a structural summary).
-SSA_SMOKE = {"loop_dig_deep", "loop_frame_dig", "stack_growing_loop"}
+SSA_SMOKE = {
+    "loop_dig_deep", "loop_frame_dig", "stack_growing_loop",
+    "conditional_swap",
+}
 
 
 XC_ROOT = PY_TESTS / "xcontract"

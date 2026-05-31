@@ -1,0 +1,10 @@
+blocks      = 3
+assignments = 7
+phis        = 4
+vars        = 6
+opcodes:
+  -                        1
+  bz                       1
+  return                   1
+  swap                     1
+  txn                      3

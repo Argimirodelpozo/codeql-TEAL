@@ -1,0 +1,9 @@
+#pragma version 8
+txn NumAppArgs
+txn NumAssets
+txn ApplicationID
+bz noswap
+swap
+noswap:
+-
+return
