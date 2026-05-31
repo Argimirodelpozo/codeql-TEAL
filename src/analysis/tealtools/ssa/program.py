@@ -388,7 +388,7 @@ class SSAProgram:
 
     def dedup_phis(self) -> int:
         """Collapse redundant phi nodes — those with identical
-        ``(basic_block, kind, ordered-args)`` — to one canonical, to a
+        ``(basic_block, ordered-args)`` — to one canonical, to a
         fixpoint. PySSA's constant-stack unroll over-generates phis
         (xgov: ~21k phis, ~667 distinct); running this just before
         :meth:`materialize_phis` keeps its ``mat_phi`` output bounded,

@@ -7,9 +7,9 @@ merge point. Left alone, :meth:`SSAProgram.materialize_phis` then emits
 a ``mat_phi`` copy per (phi, contributing-leaf) pair, exploding into
 ~100k copy assignments.
 
-This pass merges phis with an identical ``(basic_block, kind,
-ordered-args)`` key, rewiring every reference (assignment inputs, other
-phis' args, the BB phi lists, ``prog.phis``) to one representative.
+This pass merges phis with an identical ``(basic_block, ordered-args)``
+key, rewiring every reference (assignment inputs, other phis' args, the
+BB phi lists, ``prog.phis``) to one representative.
 
 Soundness rests on how phis are *consumed*, not on per-predecessor
 matching. A phi's ``args`` is a dedup-by-identity ordered *set* (built
@@ -22,20 +22,23 @@ positionally against ``predecessor[i]``:
   - constant folding: a phi is constant iff *all* args agree;
   - ranges / bytemath: a phi's range is the *union* of its args';
   - taint: a phi is tainted iff *any* arg is;
-  - materialisation: the mat_phi SCC graph iterates ``args`` set-wise;
-  - ``IndirectPhi`` carries a single arg (the root it forwards).
+  - materialisation: the mat_phi SCC graph iterates ``args`` set-wise.
 
 So two phis with the same arg *set* are interchangeable for every
 analysis, and the ``(ordered-args)`` key is a stricter subset of that.
 Verified value-preserving: const / range resolution is byte-identical
 before vs after dedup on xgov (57k SSAVars, 0 differences).
 
-``basic_block`` and ``kind`` in the key are conservatism, not necessity
-— same-arg-set phis would be may-set-interchangeable across BBs too,
-but keying on the merge point avoids any location-sensitivity. Run to a
-fixpoint (merging rewires phi-args, exposing further identical phis);
-cyclic phi groups equal-only-up-to-congruence may stay separate (a
-missed merge, never a wrong one).
+``kind`` is intentionally *not* in the key: PySSA's ``_apply_pyssa_to``
+collapses the QL Direct/Indirect distinction and registers every phi as
+``DirectPhi`` (so ``kind`` is constant and would do nothing), and even
+if both kinds existed they'd be may-set-equal for the same args.
+``basic_block`` is conservatism rather than necessity — same-arg-set
+phis would be interchangeable across BBs too, but keying on the merge
+point avoids any location-sensitivity. Run to a fixpoint (merging
+rewires phi-args, exposing further identical phis); cyclic phi groups
+equal-only-up-to-congruence may stay separate (a missed merge, never a
+wrong one).
 
 Best run just before :meth:`SSAProgram.materialize_phis`; it also makes
 every phi-iterating analysis cheaper. Idempotent. Mutates in place.
@@ -61,7 +64,7 @@ def _arg_id(operand) -> tuple:
 def _phi_sig(ph: Phi) -> tuple:
     bb = ph.basic_block
     bb_key = (bb.file, bb.first_line, bb.last_line) if bb is not None else None
-    return (bb_key, ph.kind, tuple(_arg_id(a) for a in ph.args))
+    return (bb_key, tuple(_arg_id(a) for a in ph.args))
 
 
 def _apply_redirects(prog: SSAProgram, redirects: dict) -> None:

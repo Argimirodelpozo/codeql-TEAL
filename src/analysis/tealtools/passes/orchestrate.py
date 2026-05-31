@@ -65,7 +65,7 @@ iterates it must have already run).
       constants into consumers and drop the now-orphan SSAVars /
       Phis / Assignments.
   13. :meth:`SSAProgram.dedup_phis` — collapse phis with identical
-      ``(basic_block, kind, ordered-args)`` to one, to a fixpoint.
+      ``(basic_block, ordered-args)`` to one, to a fixpoint.
       PySSA's constant-stack unroll over-generates phi objects (xgov:
       ~21k → ~667); running this right before materialisation keeps the
       ``mat_phi`` count bounded instead of one copy per redundant phi.
