@@ -490,6 +490,7 @@ def _is_protected_bb_for_seeds(
     field_vars: set[SSAVar],
     *,
     file: Optional[str] = None,
+    allow_unary_cmp: bool = False,
 ) -> bool:
     """Takes the seed set of
     field-source SSAVars directly so callers can swap the source
@@ -499,14 +500,25 @@ def _is_protected_bb_for_seeds(
     A BB is protected for ``field_vars`` iff it contains a comparison
     consuming a value that flows from any seed AND whose result
     reaches enforcement (``assert`` / ``bnz`` to ``err`` / ``bz`` to
-    ``err``). Empty seeds → not protected (vacuously)."""
+    ``err``). Empty seeds → not protected (vacuously).
+
+    ``allow_unary_cmp``: by default only two-operand comparisons count.
+    When a comparison's other operand is an *inlined literal* (e.g.
+    ``selector == 0x12345678``), the SSA materialises just one input —
+    the seed — so the comparison has arity 1. Field detectors compare
+    against opcode-produced values (``global ZeroAddress`` etc.) and
+    want the strict two-input form; the ABI-selector detector compares
+    against a literal and opts in to the one-input form."""
     if not field_vars:
         return False
     if file is None:
         file = bb.file
     label_lines = _label_to_bb_first_line(prog)
     for cmp in bb.assignments:
-        if not is_comparison(cmp) or len(cmp.inputs) != 2:
+        if not is_comparison(cmp):
+            continue
+        n_in = len(cmp.inputs)
+        if n_in != 2 and not (allow_unary_cmp and n_in == 1):
             continue
         if not any(
             _operand_flows_from_field_var(prog, op, field_vars)
@@ -528,13 +540,17 @@ def _approval_exit_protected_for_seeds(
     field_vars: set[SSAVar],
     *,
     file: Optional[str] = None,
+    allow_unary_cmp: bool = False,
 ) -> bool:
     """Core of :func:`approval_exit_protected_for_field` — same path
     walk but parameterised on the seed set so we can reuse the
-    machinery for ``global FIELD`` / disjunctions / ``gtxn FIELD``."""
+    machinery for ``global FIELD`` / disjunctions / ``gtxn FIELD``.
+    ``allow_unary_cmp`` is threaded to :func:`_is_protected_bb_for_seeds`."""
     if file is None:
         file = exit_bb.file
-    if _is_protected_bb_for_seeds(prog, exit_bb, field_vars, file=file):
+    if _is_protected_bb_for_seeds(
+        prog, exit_bb, field_vars, file=file, allow_unary_cmp=allow_unary_cmp,
+    ):
         return True
     # If the exit_bb itself is an entry (no predecessors), the trivial
     # zero-length path is from an unprotected entry — exit_bb is *not*
@@ -550,7 +566,9 @@ def _approval_exit_protected_for_seeds(
             if pred in visited:
                 continue
             visited.add(pred)
-            if _is_protected_bb_for_seeds(prog, pred, field_vars, file=file):
+            if _is_protected_bb_for_seeds(
+                prog, pred, field_vars, file=file, allow_unary_cmp=allow_unary_cmp,
+            ):
                 continue
             if not pred.predecessors:
                 return False
@@ -619,6 +637,38 @@ def approval_exit_protected_for_any_txn_field(
     for f in fields:
         seeds |= _txn_field_seeds(prog, f, file=file)
     return _approval_exit_protected_for_seeds(prog, exit_bb, seeds, file=file)
+
+
+def _txna_reads(
+    prog: SSAProgram, immediates: str, *, file: Optional[str] = None,
+) -> list[Assignment]:
+    """Every ``txna <immediates>`` array read in ``prog`` (e.g.
+    ``txna ApplicationArgs 0`` for the ABI method selector)."""
+    return [
+        a for a in prog.assignments
+        if a.op == "txna" and a.immediates.strip() == immediates
+        and file_match(a.location.file, file)
+    ]
+
+
+def approval_exit_protected_for_arg_reads(
+    prog: SSAProgram, exit_bb: BasicBlock, immediates: str,
+    *, file: Optional[str] = None,
+) -> bool:
+    """Like :func:`approval_exit_protected_for_field` but the seed is a
+    ``txna`` *array* read (e.g. ``ApplicationArgs 0``) rather than a
+    scalar ``txn FIELD``. Used by the ABI-method-selector detector,
+    where the value validated on every approving path is the method
+    selector ``txna ApplicationArgs 0``."""
+    if file is None:
+        file = exit_bb.file
+    seeds = {
+        out for a in _txna_reads(prog, immediates, file=file)
+        for out in a.outputs if isinstance(out, SSAVar)
+    }
+    return _approval_exit_protected_for_seeds(
+        prog, exit_bb, seeds, file=file, allow_unary_cmp=True,
+    )
 
 
 # ---------------------------------------------------------------------------

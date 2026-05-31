@@ -1,0 +1,1 @@
+Approval exit at prog.teal:14 is reachable without a Lease check — a delegated LogicSig that doesn't pin txn Lease can have its signed transaction replayed.

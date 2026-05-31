@@ -1,0 +1,18 @@
+#pragma version 10
+// Same delegated LogicSig, but it pins txn Lease to a non-zero value
+// (asserts Lease != ZeroAddress), making the (Sender, Lease) pair
+// single-use within the lease window. Should NOT be flagged.
+txn TypeEnum
+int pay
+==
+assert
+txn Amount
+int 1000000
+==
+assert
+txn Lease
+global ZeroAddress
+!=
+assert
+int 1
+return

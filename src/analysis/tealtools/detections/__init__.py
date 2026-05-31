@@ -56,6 +56,7 @@ _DETECTIONS_ROOT = _SRC_ROOT / "security" / "detections"
 # Violation class name, or ``None`` for detectors built on the taint
 # framework (which emit the generic ``dataflow.Violation``).
 _DETECTION_SPECS: tuple[tuple[str, str, str, "Optional[str]"], ...] = (
+    ("abi-method-selector",   "abi_method_selector",   "AbiMethodSelectorDetector",   "AbiMethodSelectorViolation"),
     ("asset-close-to",        "asset_close_to",        "AssetCloseToDetector",        "AssetCloseToViolation"),
     ("asset-id-validation",   "asset_id_validation",   "AssetIdValidationDetector",   "AssetIdValidationViolation"),
     ("box-key",               "box_key",               "NonUniqueBoxKeyDetector",     None),
@@ -68,6 +69,7 @@ _DETECTION_SPECS: tuple[tuple[str, str, str, "Optional[str]"], ...] = (
     ("inner-txn-fee",         "inner_txn_fee",         "InnerTxnFeeDetector",         "InnerTxnFeeViolation"),
     ("is-deletable",          "is_deletable",          "IsDeletableDetector",         "IsDeletableViolation"),
     ("is-updatable",          "is_updatable",          "IsUpdatableDetector",         "IsUpdatableViolation"),
+    ("lease-validation",      "lease_validation",      "LeaseValidationDetector",     "LeaseValidationViolation"),
     ("rekey-to",              "rekey_to",              "RekeyToDetector",             "RekeyToViolation"),
     ("timelock-upgrade",      "timelock_upgrade",      "TimelockUpgradeDetector",     "TimelockUpgradeViolation"),
     ("tx-type-check",         "tx_type_check",         "TxTypeCheckDetector",         "TxTypeCheckViolation"),
