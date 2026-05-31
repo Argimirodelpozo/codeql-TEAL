@@ -32,10 +32,10 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Callable, Iterable
+from typing import Callable, Iterable
 
 from tealtools.targets import (
-    DEFAULT_CACHE, build_db_for_dir, is_codeql_db, resolve_target,
+    DEFAULT_CACHE, resolve_target,
 )
 
 logger = logging.getLogger("tealtools.cli")
@@ -170,6 +170,12 @@ def _cmd_group_shape(args) -> int:
     from tealtools.group_reasoning import analyze
     s = analyze(_load(args))
     return _emit_dict(s.to_dict(), json_out=args.json_out, text=s.render())
+
+
+def _cmd_group_layout(args) -> int:
+    from tealtools.group_reasoning import analyze_layout
+    layout = analyze_layout(_load(args))
+    return _emit_dict(layout.to_dict(), json_out=args.json_out, text=layout.render())
 
 
 def _cmd_cost(args) -> int:
@@ -457,6 +463,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     add("itxn-report", "inner-transaction report", _cmd_itxn_report)
     add("group-shape", "forced group shape", _cmd_group_shape)
+    add("group-layout", "forced group size + per-position layout", _cmd_group_layout)
     add("cost", "per-line opcode cost", _cmd_cost)
     add("path-predicates", "per-BB path predicates", _cmd_path_predicates)
     add("all", "run every detector + report", _cmd_all)

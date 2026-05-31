@@ -230,3 +230,146 @@ def analyze(
         seen.add(c)
         constraints.append(c)
     return GroupShape(constraints=constraints)
+
+
+# ---------------------------------------------------------------------------
+# Group size + layout report (presentation over GroupShape)
+# ---------------------------------------------------------------------------
+
+
+def _gtxn_index(ref: GroupRef) -> Optional[int]:
+    """The absolute group index ``ref`` pins, if it's a ``gtxn[N]`` slot."""
+    if ref.slot.startswith("gtxn[") and ref.slot.endswith("]"):
+        try:
+            return int(ref.slot[5:-1])
+        except ValueError:
+            return None
+    return None
+
+
+@dataclass
+class GroupLayout:
+    """A group-size + per-position *layout* view of the forced shape:
+    the same :class:`GroupConstraint`s :func:`analyze` produces,
+    reorganised by the group slot each one pins and rendered in the
+    style of :class:`tealtools.inner_txn_report.InnerTxnReport`.
+
+    Buckets:
+      - ``Global.GroupSize`` constraints → the group size line.
+      - ``Txn.GroupIndex`` constraints → this app's own position.
+      - ``gtxn[N].field`` constraints → grouped under position ``N``.
+        A constraint relating a position to a literal / global / this
+        (either operand) is filed under that position so the slot's
+        requirements read together.
+      - remaining ``Txn.field`` / ``Global.field`` → "this txn" /
+        "globals" sections.
+    """
+
+    file: str
+    constraints: list[GroupConstraint]
+
+    def _buckets(self):
+        size: list[GroupConstraint] = []
+        index: list[GroupConstraint] = []
+        positions: dict[int, list[tuple[str, str, str]]] = {}
+        this_fields: list[GroupConstraint] = []
+        globals_: list[GroupConstraint] = []
+        for c in self.constraints:
+            ref, rhs = c.ref, c.rhs
+            if ref.slot == "global" and ref.field == "GroupSize":
+                size.append(c)
+                continue
+            if ref.slot == "this" and ref.field == "GroupIndex":
+                index.append(c)
+                continue
+            # Position bucket: prefer a gtxn slot on either side so the
+            # slot's requirements group together.
+            lhs_i = _gtxn_index(ref)
+            rhs_ref = classify(rhs)
+            rhs_i = _gtxn_index(rhs_ref) if rhs_ref is not None else None
+            if lhs_i is not None:
+                positions.setdefault(lhs_i, []).append(
+                    (ref.field, c.op, _render_rhs(rhs))
+                )
+            elif rhs_i is not None:
+                # ref is on the rhs of this slot's constraint; flip so
+                # the slot field reads on the left. ``ref`` renders via
+                # its own GroupRef repr (e.g. ``Global.CurrentAppAddr``).
+                positions.setdefault(rhs_i, []).append(
+                    (rhs_ref.field, _flip(c.op), repr(ref))
+                )
+            elif ref.slot == "this":
+                this_fields.append(c)
+            else:
+                globals_.append(c)
+        return size, index, positions, this_fields, globals_
+
+    def render(self) -> str:
+        if not self.constraints:
+            return f"=== Group layout  {self.file} ===\n  (no group-shape constraints)"
+        size, index, positions, this_fields, globals_ = self._buckets()
+        out = [f"=== Group layout  {self.file} ==="]
+        if size:
+            out.append("  group size : " + ", ".join(
+                f"{c.op} {_render_rhs(c.rhs)}" for c in size
+            ))
+        else:
+            out.append("  group size : (unconstrained)")
+        if index:
+            out.append("  this txn   : GroupIndex " + ", ".join(
+                f"{c.op} {_render_rhs(c.rhs)}" for c in index
+            ))
+        for i in sorted(positions):
+            out.append(f"  gtxn[{i}]:")
+            for fld, op, rhs in sorted(set(positions[i])):
+                out.append(f"      {fld} {op} {rhs}")
+        if this_fields:
+            out.append("  this txn fields:")
+            for c in sorted(this_fields, key=_constraint_sort_key):
+                out.append(f"      {c.ref.field} {c.op} {_render_rhs(c.rhs)}")
+        if globals_:
+            out.append("  globals:")
+            for c in sorted(globals_, key=_constraint_sort_key):
+                out.append(f"      {c.ref.field} {c.op} {_render_rhs(c.rhs)}")
+        return "\n".join(out)
+
+    def print(self) -> None:
+        print(self.render())
+
+    def to_dict(self) -> dict:
+        size, index, positions, this_fields, globals_ = self._buckets()
+        return {
+            "file": self.file,
+            "group_size": [f"{c.op} {_render_rhs(c.rhs)}" for c in size],
+            "this_index": [f"{c.op} {_render_rhs(c.rhs)}" for c in index],
+            "positions": {
+                str(i): [f"{fld} {op} {rhs}" for fld, op, rhs in sorted(set(positions[i]))]
+                for i in sorted(positions)
+            },
+            "this_txn_fields": [
+                f"{c.ref.field} {c.op} {_render_rhs(c.rhs)}"
+                for c in sorted(this_fields, key=_constraint_sort_key)
+            ],
+            "globals": [
+                f"{c.ref.field} {c.op} {_render_rhs(c.rhs)}"
+                for c in sorted(globals_, key=_constraint_sort_key)
+            ],
+        }
+
+
+def analyze_layout(
+    prog: SSAProgram, pp: Optional[PathPredicateAnalysis] = None
+) -> GroupLayout:
+    """Compute the forced group shape and present it as a size +
+    per-position :class:`GroupLayout`. Companion to :func:`analyze`
+    (which returns the flat constraint list)."""
+    pp = pp or PathPredicateAnalysis(prog)
+    shape = analyze(prog, pp)
+    files = sorted({bb.file for bb in pp.approving_exits()})
+    if len(files) == 1:
+        file = files[0]
+    elif files:
+        file = ", ".join(files)
+    else:
+        file = "(no approving exits)"
+    return GroupLayout(file=file, constraints=shape.constraints)

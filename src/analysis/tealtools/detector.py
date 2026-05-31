@@ -107,6 +107,11 @@ def _group_shape(prog: SSAProgram) -> str:
     return analyze(prog).render()
 
 
+def _group_layout(prog: SSAProgram) -> str:
+    from .group_reasoning import analyze_layout
+    return analyze_layout(prog).render()
+
+
 def _cost(prog: SSAProgram) -> str:
     from .cost_analysis import render
     return render(prog)
@@ -162,6 +167,7 @@ ALL_DETECTORS: list[Detector] = [
 ALL_REPORTS: list[Report] = [
     _FnReport("itxn-report", _itxn_report),
     _FnReport("group-shape", _group_shape),
+    _FnReport("group-layout", _group_layout),
     _FnReport("cost", _cost),
     _FnReport("path-predicates", _path_preds),
 ]
@@ -194,7 +200,7 @@ def run_all_dict(prog: SSAProgram) -> dict:
     """
     from .serialize import finding_to_dict
     from .inner_txn_report import InnerTxnReport
-    from .group_reasoning import analyze
+    from .group_reasoning import analyze, analyze_layout
     from .cost_analysis import to_dict as cost_to_dict
     from .path_predicates import PathPredicateAnalysis
 
@@ -205,6 +211,7 @@ def run_all_dict(prog: SSAProgram) -> dict:
     reports = {
         "itxn-report": InnerTxnReport(prog).to_dict(),
         "group-shape": analyze(prog).to_dict(),
+        "group-layout": analyze_layout(prog).to_dict(),
         "cost": cost_to_dict(prog),
         "path-predicates": PathPredicateAnalysis(prog).to_dict(),
     }
