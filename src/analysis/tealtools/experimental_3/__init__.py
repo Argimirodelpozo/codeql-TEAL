@@ -8,7 +8,8 @@ CLI surface. See :mod:`tealtools.experimental_3.pipeline`.
 
     python -m tealtools.experimental_3
 """
+from . import ir
+from .lower import lower
 from .pipeline import PASSES, main, render
-from .puya_ir import render_puya
 
-__all__ = ["PASSES", "main", "render", "render_puya"]
+__all__ = ["PASSES", "main", "render", "lower", "ir"]

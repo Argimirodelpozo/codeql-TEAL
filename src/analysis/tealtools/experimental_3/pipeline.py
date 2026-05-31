@@ -28,7 +28,7 @@ import sys
 from pathlib import Path
 
 from ..ssa import SSAProgram
-from .puya_ir import render_puya
+from .lower import lower
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 XGOV_DB = REPO_ROOT / "tests/dbs/xgov-db"
@@ -46,11 +46,11 @@ PASSES = [
 
 
 def render(prog: SSAProgram) -> str:
-    """Run :data:`PASSES` on ``prog`` (in place, idempotent) and return the
-    Puya-style IR render."""
+    """Run :data:`PASSES` on ``prog`` (in place, idempotent), lower it into the
+    Puya-shaped IR model, and render that model."""
     for name in PASSES:
         getattr(prog, name)()
-    return render_puya(prog)
+    return lower(prog).render()
 
 
 def main(argv=None) -> int:
