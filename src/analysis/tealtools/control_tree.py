@@ -252,7 +252,7 @@ def build_control_tree(prog: SSAProgram) -> Region:
     cfg = CFG.of(prog)
 
     # ---- Interprocedural pre-pass: identify subroutines + cut edges. ----
-    sub_info = _identify_subroutines(prog)
+    sub_info = identify_subroutines(prog)
     callsub_to_continuation = sub_info["continuations"]  # callsub_bb → continuation_bb
     sub_entries = sub_info["entries"]                    # set of subroutine entry BBs
     sub_bodies = sub_info["bodies"]                       # entry → set of body BBs
@@ -384,7 +384,7 @@ def build_control_tree(prog: SSAProgram) -> Region:
 # ---------------------------------------------------------------------------
 
 
-def _identify_subroutines(prog: SSAProgram) -> dict:
+def identify_subroutines(prog: SSAProgram) -> dict:
     """Inspect the CFG for ``callsub`` / ``retsub`` ops and produce:
 
     - ``entries``: BBs that are direct successors of any ``callsub``-
@@ -499,6 +499,7 @@ def _identify_subroutines(prog: SSAProgram) -> dict:
         "entries": entries,
         "bodies": bodies,
         "continuations": continuations,
+        "callsub_target": callsub_target,
     }
 
 

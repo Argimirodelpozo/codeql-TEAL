@@ -64,6 +64,14 @@ from .xcontract import (
     load_registry,
 )
 
+# Structural partition (routing / subroutines / call sites)
+from .structure import (
+    ProgramStructure,
+    Subroutine,
+    CallSite,
+    analyze_structure,
+)
+
 # Detections subpackage (Algorand-security-guide ports + helpers).
 # Importing the package here exposes ``tealtools.detections`` for
 # ``from tealtools import detections``; individual detectors stay one
@@ -90,5 +98,6 @@ __all__ = [
     "detect_correlated_flows", "CorrelatedViolation",
     "detect_out_of_state_flows",
     "XContractGraph", "AppcallSite", "cross_auth_findings", "load_registry",
+    "ProgramStructure", "Subroutine", "CallSite", "analyze_structure",
     "detections",
 ]
