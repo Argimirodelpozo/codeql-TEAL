@@ -28,7 +28,10 @@ from __future__ import annotations
 
 from . import ir
 from ..block_args import to_block_args
-from ..ssa import Const, Phi, SSAProgram, SSAVar, _TERMINATOR_OPS
+from ..ssa import (
+    Const, Phi, SSAProgram, SSAVar, _STACK_SHUFFLE_OPS, _TERMINATOR_OPS,
+    _shuffle_mapping,
+)
 from ..structure import analyze_structure
 from .puya_ir import (
     _BOOL_OPS, _BYTES_OPS, _COND_BRANCH, _NAME_PREFIX, _U64_OPS, _field_type,
@@ -98,6 +101,7 @@ def lower(prog: SSAProgram) -> ir.Program:
     ctr: dict = {}
     frame_map: dict = {}              # SSAVar (frame_dig out[0]) -> Register
     local_regs: dict = {}            # (gname, slot) -> Register
+    shuffle_src: dict = {}           # SSAVar (shuffle output) -> source operand
     cur_gname = "main"
 
     def _new_reg(prefix: str, ir_type: str) -> ir.Register:
@@ -136,6 +140,35 @@ def lower(prog: SSAProgram) -> ir.Program:
                     else:
                         frame_map[out0] = _local(k)
 
+    def _setup_shuffles(gb):
+        # A pure stack shuffle (dup/dupn/swap/…) just routes values; map each
+        # output to its source so consumers reference the value directly and
+        # the op drops out (Puya is value-based, no shuffles). Restricted to
+        # shuffles of *constants* -- routing value-carrying shuffles would
+        # re-expose fat-frame stack vars and undo the param/frame mapping; the
+        # real leftovers (dup/dupn of 0 / 0x) are all const anyway.
+        for bb in gb:
+            for a in bb.assignments:
+                if a.op not in _STACK_SHUFFLE_OPS:
+                    continue
+                m = _shuffle_mapping(a)
+                if m is None:
+                    continue
+                for i, src_idx in enumerate(m):
+                    if i < len(a.outputs) and 0 <= src_idx < len(a.inputs):
+                        out = a.outputs[i]
+                        src = a.inputs[src_idx]
+                        is_const = (isinstance(src, Const)
+                                    or getattr(src, "const_value", None) is not None)
+                        if isinstance(out, SSAVar) and is_const:
+                            shuffle_src[out] = src
+
+    def _is_routed_shuffle(a) -> bool:
+        if a.op not in _STACK_SHUFFLE_OPS:
+            return False
+        outs = [o for o in a.outputs if isinstance(o, SSAVar)]
+        return bool(outs) and all(o in shuffle_src for o in outs)
+
     def _name_group(gb):
         ctr.clear()
         for bb in gb:
@@ -146,6 +179,8 @@ def lower(prog: SSAProgram) -> ir.Program:
             for a in bb.assignments:
                 if a.op in _FRAME_OPS:
                     continue                       # frame outputs map to params/locals
+                if _is_routed_shuffle(a):
+                    continue                       # const shuffle outputs route to sources
                 if a.op in _TERMINATOR_OPS and a.op != "callsub":
                     continue
                 if a.op in ("intcblock", "bytecblock", "proto"):
@@ -160,17 +195,22 @@ def lower(prog: SSAProgram) -> ir.Program:
 
     def value(o, _seen=None):
         seen = _seen if _seen is not None else set()
-        while isinstance(o, Phi) and not _is_real_phi(o):
-            b = o.basic_block
-            if b is None or len(b.predecessors) != 1 or id(o) in seen:
-                break
-            seen.add(id(o))
-            es = b.predecessors[0].exit_stack
-            k = o.stack_index
-            nxt = es[-k] if 0 < k <= len(es) else None
-            if nxt is None:
-                break
-            o = nxt
+        while True:
+            if isinstance(o, SSAVar) and o in shuffle_src and id(o) not in seen:
+                seen.add(id(o))
+                o = shuffle_src[o]               # route through stack shuffles
+                continue
+            if isinstance(o, Phi) and not _is_real_phi(o) and id(o) not in seen:
+                b = o.basic_block
+                if b is not None and len(b.predecessors) == 1:
+                    seen.add(id(o))
+                    es = b.predecessors[0].exit_stack
+                    k = o.stack_index
+                    nxt = es[-k] if 0 < k <= len(es) else None
+                    if nxt is not None:
+                        o = nxt                  # inline trivial single-pred phi
+                        continue
+            break
         cv = getattr(o, "const_value", None)
         if cv is not None:
             return _const(cv)
@@ -241,6 +281,8 @@ def lower(prog: SSAProgram) -> ir.Program:
                 phis.append(ir.Phi(reg(ph), args))
         ops = []
         for a in bb.assignments:
+            if _is_routed_shuffle(a):
+                continue                            # const shuffle routed to source
             if a.op == "frame_dig":
                 continue                            # a param/local read (no op)
             if a.op == "frame_bury":
@@ -286,6 +328,7 @@ def lower(prog: SSAProgram) -> ir.Program:
             params = [ir.Parameter(ir.Register(f"p%{i}", 0, "?"))
                       for i in range(nargs)]
         _setup_frame(gb, params)
+        _setup_shuffles(gb)
         _name_group(gb)
         body = [_build_block(bb) for bb in gb]
         if s is None:
