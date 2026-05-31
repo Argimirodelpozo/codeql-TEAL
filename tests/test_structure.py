@@ -74,3 +74,51 @@ class TestSlice:
         assert ops.isdisjoint({
             "itxn_submit", "app_global_put", "app_local_put", "log",
         })
+
+
+class TestRender:
+    def test_render_has_routing_and_subroutine_sections(self):
+        _, s = _struct("unprotected_updatable/fixed_dispatch_table")
+        text = s.render()
+        # OnCompletion dispatch (not the ABI selector) -> "routing:".
+        assert "routing:" in text
+        # Each subroutine is its own labelled section with its lines.
+        assert "business_logic():" in text
+        assert "require_creator():" in text
+        # Actual functional lines appear under sections.
+        assert "txn Sender" in text
+        assert "callsub business_logic" in text
+
+    def test_handler_functions_partition_handlers(self):
+        _, s = _struct("unprotected_updatable/fixed_dispatch_table")
+        funcs = s.handler_functions()
+        # Components are disjoint and cover exactly the handler BBs.
+        covered = set()
+        for _, bbs in funcs:
+            assert covered.isdisjoint(bbs)
+            covered |= bbs
+        assert covered == set(s.handlers)
+        # Labelled route targets keep their label as the function name.
+        names = {name for name, _ in funcs}
+        assert "handle_noop" in names
+
+    def test_render_truncates_long_lines(self):
+        _, s = _struct("unprotected_updatable/fixed_dispatch_table")
+        text = s.render(max_width=40)
+        # max_width caps the functional body of assignment lines (those
+        # start with "    L<line>: "); section headers aren't capped.
+        asg_lines = [ln for ln in text.splitlines() if ln.startswith("    L")]
+        assert asg_lines  # sanity
+        assert all(len(ln) <= 40 + 12 for ln in asg_lines)
+
+    def test_arc4_router_labelled_arc4(self):
+        # A real ABI contract dispatches on txna ApplicationArgs 0.
+        from pathlib import Path
+        db = Path(__file__).resolve().parent / "dbs/xgov-db"
+        if not db.exists():
+            import pytest
+            pytest.skip("xgov-db fixture not present")
+        from tealtools.ssa import SSAProgram
+        from tealtools.structure import analyze_structure
+        s = analyze_structure(SSAProgram(str(db), verbose=False))
+        assert s.render().startswith("arc4_routing:")

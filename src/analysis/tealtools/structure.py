@@ -142,6 +142,98 @@ class ProgramStructure:
         out.sort(key=lambda a: (a.location.file, a.location.line))
         return out
 
+    def handler_functions(self) -> list[tuple[str, frozenset]]:
+        """Partition the handler BBs into per-route "functions" — the
+        connected components of the handler subgraph (each dispatch
+        target's body is its own component, since separate route bodies
+        connect only through the routing region). Each is named by its
+        entry BB's source label, else ``f{N}`` in entry order. Returns
+        ``[(name, frozenset[BasicBlock])]`` ordered by entry line."""
+        import networkx as nx
+
+        h: "nx.Graph" = nx.Graph()
+        h.add_nodes_from(self.handlers)
+        for bb in self.handlers:
+            for s in bb.successors:
+                if s in self.handlers:
+                    h.add_edge(bb, s)
+        comps = sorted(
+            nx.connected_components(h),
+            key=lambda c: min(b.first_line for b in c),
+        )
+        labels = _label_map(self.prog)
+        out: list[tuple[str, frozenset]] = []
+        n = 0
+        for comp in comps:
+            entry = min(comp, key=lambda b: b.first_line)
+            name = labels.get((entry.file, entry.first_line))
+            if not name:
+                n += 1
+                name = f"f{n}"
+            out.append((name, frozenset(comp)))
+        return out
+
+    def _is_arc4(self) -> bool:
+        """Heuristic: the program reads the ABI method selector
+        (``txna ApplicationArgs 0``) and has a dispatch — i.e. it routes
+        like an ARC4 router."""
+        if not self.dispatch:
+            return False
+        return any(
+            a.op == "txna" and a.immediates.strip() == "ApplicationArgs 0"
+            for a in self.prog.assignments
+        )
+
+    def _render_region(
+        self, bbs, *, show_ranges: bool, max_width: Optional[int] = 160,
+    ) -> list[str]:
+        """Functional lines for ``bbs``, with BB-head labels interleaved
+        so internal branch targets stay visible. ``max_width`` truncates
+        very long lines (raw-SSA phi expansions can be enormous before
+        the const/materialize passes collapse them); ``None`` disables."""
+        bb_set = set(bbs)
+        head_lines = {(bb.file, bb.first_line) for bb in bb_set}
+        labels = _label_map(self.prog)
+        items: list[tuple] = []
+        for (f, ln) in head_lines:
+            name = labels.get((f, ln))
+            if name:
+                items.append((ln, 0, f"  {name}:"))
+        for a in self.assignments_in(bb_set):
+            body = a.functional(show_ranges=show_ranges)
+            if max_width is not None and len(body) > max_width:
+                body = body[:max_width - 1] + "…"
+            items.append((a.location.line, 1, f"    L{a.location.line:>4}: {body}"))
+        items.sort(key=lambda x: (x[0], x[1]))
+        return [text for _, _, text in items] or ["    (empty)"]
+
+    def render(self, *, show_ranges: bool = False, max_width: Optional[int] = 160) -> str:
+        """Decompilation-style dump: the routing region, then each
+        handler function, then each subroutine — each as a labelled
+        section with its actual functional lines below."""
+        out: list[str] = []
+        rname = "arc4_routing" if self._is_arc4() else "routing"
+        out.append(f"{rname}:  // {len(self.routing)} BB(s)"
+                   + (f", {len(self.dispatch)} dispatch" if self.routing else ""))
+        out += self._render_region(self.routing, show_ranges=show_ranges, max_width=max_width)
+        out.append("")
+        for name, bbs in self.handler_functions():
+            out.append(f"{name}():  // handler, {len(bbs)} BB(s)")
+            out += self._render_region(bbs, show_ranges=show_ranges, max_width=max_width)
+            out.append("")
+        for sub in self.subroutines:
+            callers = ", ".join(f"L{c.line}" for c in sub.callers) or "uncalled"
+            out.append(
+                f"{sub.name or '?'}():  // subroutine, {len(sub.body)} BB(s), "
+                f"called from {callers}"
+            )
+            out += self._render_region(sub.body, show_ranges=show_ranges, max_width=max_width)
+            out.append("")
+        return "\n".join(out).rstrip() + "\n"
+
+    def print(self, *, show_ranges: bool = False) -> None:
+        print(self.render(show_ranges=show_ranges))
+
 
 def _label_map(prog: SSAProgram) -> dict:
     """``(file, line) -> label name`` from the program's label table."""
