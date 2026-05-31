@@ -29,6 +29,7 @@ from pathlib import Path
 
 from ..ssa import SSAProgram
 from .lower import lower
+from .transforms import collapse_dispatch
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 XGOV_DB = REPO_ROOT / "tests/dbs/xgov-db"
@@ -50,7 +51,9 @@ def render(prog: SSAProgram) -> str:
     Puya-shaped IR model, and render that model."""
     for name in PASSES:
         getattr(prog, name)()
-    return lower(prog).render()
+    program = lower(prog)
+    collapse_dispatch(program)
+    return program.render()
 
 
 def main(argv=None) -> int:
