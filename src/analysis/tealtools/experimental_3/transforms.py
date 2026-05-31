@@ -31,6 +31,79 @@ def _all_blocks(program):
             yield b
 
 
+# AVM ops with side effects (or that may trap) — never droppable even if their
+# result is unused. Everything else (arithmetic, comparisons, byte ops, txn /
+# state *reads*, loads, …) is pure and droppable when dead.
+_SIDE_EFFECT = frozenset({
+    "store", "stores", "log",
+    "app_global_put", "app_local_put", "app_global_del", "app_local_del",
+    "box_put", "box_del", "box_create", "box_replace", "box_resize",
+    "box_splice", "itxn_begin", "itxn_next", "itxn_field", "itxn_submit",
+    "gitxn_field", "assert", "return", "err", "callsub", "retsub",
+})
+
+
+def _collect_used(x, into: set) -> None:
+    if isinstance(x, ir.Register):
+        into.add(id(x))
+    elif isinstance(x, (ir.Intrinsic, ir.InvokeSubroutine)):
+        for a in x.args:
+            _collect_used(a, into)
+    elif isinstance(x, ir.ValueTuple):
+        for v in x.values:
+            _collect_used(v, into)
+
+
+def _used_registers(program) -> set:
+    used: set = set()
+    for b in _all_blocks(program):
+        for phi in b.phis:
+            for pa in phi.args:
+                _collect_used(pa.value, used)
+        for op in b.ops:
+            if isinstance(op, ir.Assignment):
+                _collect_used(op.source, used)      # source args are uses
+            elif isinstance(op, ir.Assert):
+                _collect_used(op.condition, used)
+            elif isinstance(op, ir.IntrinsicOp):
+                _collect_used(op.intrinsic, used)
+        t = b.terminator
+        if isinstance(t, ir.ConditionalBranch):
+            _collect_used(t.condition, used)
+        elif isinstance(t, (ir.Switch, ir.GotoNth)):
+            _collect_used(t.value, used)
+        elif isinstance(t, ir.SubroutineReturn):
+            for r in t.result:
+                _collect_used(r, used)
+        elif isinstance(t, ir.ProgramExit):
+            _collect_used(t.result, used)
+    return used
+
+
+def eliminate_dead_ops(program: ir.Program) -> int:
+    """Drop ``let``-bindings whose source is pure and whose every target is
+    unused, to a fixpoint (dropping one can orphan its inputs). Side-effecting
+    statements (``ir.Assert``, ``ir.IntrinsicOp``, calls) are always kept."""
+    removed = 0
+    changed = True
+    while changed:
+        changed = False
+        used = _used_registers(program)
+        for b in _all_blocks(program):
+            kept = []
+            for op in b.ops:
+                if (isinstance(op, ir.Assignment)
+                        and isinstance(op.source, ir.Intrinsic)
+                        and op.source.op not in _SIDE_EFFECT
+                        and all(id(t) not in used for t in op.targets)):
+                    removed += 1
+                    changed = True
+                else:
+                    kept.append(op)
+            b.ops = kept
+    return removed
+
+
 def simplify_trivial_phis(program: ir.Program) -> int:
     """Collapse trivial phis to a fixpoint. A phi is trivial when, ignoring
     arguments that reference its own register (loop self-edges), all remaining
