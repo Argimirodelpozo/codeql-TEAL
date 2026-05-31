@@ -60,7 +60,7 @@ class TestDedup:
         seen = set()
         for ph in p.phis.values():
             s = _phi_sig(ph)
-            assert s not in seen, "two survivors share a (bb, kind, args) signature"
+            assert s not in seen, "two survivors share a value-normalised arg signature"
             seen.add(s)
 
     def test_no_dangling_phi_args(self):

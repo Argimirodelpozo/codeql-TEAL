@@ -131,8 +131,9 @@ def dedup_phis(prog: SSAProgram) -> int:
     """Merge value-equal phis to a fixpoint. Each round first normalises
     args (drops duplicate values — see :func:`_normalize_args`; also mops
     up duplicates a prior round's rewiring introduced), then merges phis
-    with an identical ``(basic_block, ordered-args)`` signature. Returns
-    the number of phi objects removed."""
+    with an identical (value-normalised, merge-point-agnostic) arg
+    signature — see :func:`_phi_sig`. Returns the number of phi objects
+    removed."""
     removed = 0
     while True:
         changed = False
