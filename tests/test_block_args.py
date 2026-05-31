@@ -94,4 +94,7 @@ class TestBlockArgsSwap:
     def test_render_runs(self):
         _prog_, form = self._form()
         text = form.render()
-        assert "block L7" in text and "→ L7(" in text
+        # phi-at-join at the real merge, carry-over on the jumps, preds header
+        assert "= phi(L" in text          # join shows phi(pred: value, ...)
+        assert "-> L7(" in text           # jump carries values to the join
+        assert "(preds:" in text

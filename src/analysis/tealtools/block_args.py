@@ -113,28 +113,68 @@ class BlockArgForm:
                 return e
         return None
 
+    def _src(self, op) -> str:
+        """Display label for an operand. Inlines trivial (single-predecessor)
+        phis to their source, transitively, so they don't clutter use sites;
+        prefers a known constant value over the var name. A real (multi-
+        predecessor) phi passes through and is referenced by its name."""
+        seen: set = set()
+        while isinstance(op, Phi):
+            bb = op.basic_block
+            if bb is None or len(bb.predecessors) != 1 or id(op) in seen:
+                break
+            seen.add(id(op))
+            es = bb.predecessors[0].exit_stack
+            k = op.stack_index
+            nxt = es[-k] if 0 < k <= len(es) else None
+            if nxt is None:
+                break
+            op = nxt
+        cv = getattr(op, "const_value", None)
+        return _fmt(cv) if cv is not None else _fmt(op)
+
     def render(self) -> str:
-        """A readable functional dump: each block as ``L<n>(params):`` with
-        its assignments, then one ``-> L<succ>(args)`` line per CFG edge."""
+        """Readable *phi-at-join* dump. Each block is
+        ``block L<n>  (preds: …):``. A real join (>1 predecessor) shows each
+        of its phis at the join as ``<phi> = phi(L<pred>: <value>, …)`` — the
+        per-edge sources, labelled by predecessor, read in one place. Trivial
+        single-predecessor phis are inlined at their use sites (not shown).
+        Then the block's assignments, then one ``-> L<succ>(carried values)``
+        line per successor — the control jump *with* the values it carries to
+        that successor's slots (so the data flow reads forward on the edges
+        as well as backward at the join phis)."""
         out: list[str] = []
         for bb in sorted(self.prog.blocks.values(),
                          key=lambda b: (b.file, b.first_line)):
-            ps = self.params.get(bb, [])
             head = f"block L{bb.first_line}"
-            if ps:
-                head += "(" + ", ".join(_fmt(p) for p in ps) + ")"
+            if bb.predecessors:
+                head += ("  (preds: "
+                         + ", ".join(f"L{p.first_line}" for p in bb.predecessors)
+                         + ")")
             out.append(head + ":")
+            # Phi-at-join: only real joins define phis; trivial single-pred
+            # phis are inlined by _src at their uses.
+            if len(bb.predecessors) > 1:
+                for i, phi in enumerate(self.params.get(bb, [])):
+                    srcs = []
+                    for pred in bb.predecessors:
+                        e = self.edge(pred, bb)
+                        val = e.args[i] if (e is not None and i < len(e.args)) else None
+                        srcs.append(f"L{pred.first_line}: {self._src(val)}")
+                    out.append(f"    {_fmt(phi)} = phi(" + ", ".join(srcs) + ")")
             for a in bb.assignments:
-                out.append(f"    {a.functional()}")
+                outs = ", ".join(_fmt(o) for o in a.outputs)
+                ins = ", ".join(self._src(x) for x in a.inputs)
+                imm = f" {a.immediates}" if a.immediates else ""
+                lhs = f"{outs} = " if a.outputs else ""
+                out.append(f"    {lhs}{a.op}{imm} ({ins})")
             for succ in bb.successors:
                 e = self.edge(bb, succ)
                 if e is not None and e.args:
-                    out.append(
-                        f"    → L{succ.first_line}("
-                        + ", ".join(_fmt(x) for x in e.args) + ")"
-                    )
+                    out.append(f"    -> L{succ.first_line}("
+                               + ", ".join(self._src(x) for x in e.args) + ")")
                 else:
-                    out.append(f"    → L{succ.first_line}")
+                    out.append(f"    -> L{succ.first_line}")
             out.append("")
         return "\n".join(out)
 
