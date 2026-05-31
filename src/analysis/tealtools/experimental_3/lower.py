@@ -3,11 +3,15 @@
 ``lower(prog) -> ir.Program``. This is the representational-parity step: our
 SSA (blocks, phis, ``exit_stack``, opcode assignments, terminators) is
 *transformed into* the Puya IR classes in :mod:`tealtools.experimental_3.ir`,
-which then render themselves in the ``.ssa.slot.ir`` shape. Rendering is no
-longer a bespoke printer — it falls out of the model.
+which then render themselves in the ``.ssa.slot.ir`` shape.
 
-Scope of this first pass: everything goes under a single ``main`` subroutine
-(subroutine partitioning is a later tier; the model already supports it).
+Subroutine partitioning reuses :func:`tealtools.structure.analyze_structure`:
+the routing + handler BBs become ``main``; each ``callsub``-reachable routine
+becomes an ``ir.Subroutine``. Block ids and the ``tmp%N`` name counter restart
+per subroutine (matching Puya). ``callsub`` becomes ``ir.InvokeSubroutine`` and
+the block continues to the call's continuation; ``retsub`` becomes
+``ir.SubroutineReturn``; ``proto`` is consumed into the signature.
+
 Constants and trivial single-predecessor phis are inlined; the type/field
 tables are shared with :mod:`tealtools.experimental_3.puya_ir`.
 """
@@ -16,6 +20,7 @@ from __future__ import annotations
 from . import ir
 from ..block_args import to_block_args
 from ..ssa import Const, Phi, SSAProgram, SSAVar, _TERMINATOR_OPS
+from ..structure import analyze_structure
 from .puya_ir import (
     _BOOL_OPS, _BYTES_OPS, _COND_BRANCH, _NAME_PREFIX, _U64_OPS, _field_type,
 )
@@ -32,11 +37,31 @@ def _const(cv: Const):
 
 def lower(prog: SSAProgram) -> ir.Program:
     form = to_block_args(prog)
-    blocks = sorted(prog.blocks.values(), key=lambda b: (b.file, b.first_line))
-    bid = {bb: i for i, bb in enumerate(blocks)}
-    line2block = {bb.first_line: bb for bb in blocks}
     label2line = {code.rstrip(":").strip(): ln for (_f, ln, code) in prog.labels}
 
+    # ---- partition into main (routing + handlers) + subroutines ----------
+    struct = analyze_structure(prog)
+    sub_of = {bb: s for s in struct.subroutines for bb in s.body}
+    callsite = {cs.callsub_bb: cs for cs in struct.call_sites}
+
+    def _key(bb):
+        return (bb.file, bb.first_line)
+
+    all_blocks = sorted(prog.blocks.values(), key=_key)
+    main_blocks = [bb for bb in all_blocks if bb not in sub_of]
+    groups = [("main", None, main_blocks)]
+    for s in sorted(struct.subroutines, key=lambda s: _key(s.entry_bb)):
+        gb = sorted(s.body, key=_key)
+        groups.append((s.name or f"sub@L{s.entry_bb.first_line}", s, gb))
+
+    # Global block ids (unambiguous across groups). Puya restarts block@0 per
+    # subroutine; doing that here needs cross-routine edges (b/bz that leak
+    # between partitions) ironed out first, so keep ids global for now and
+    # only group the *rendering* into subroutine sections.
+    bid = {bb: i for i, bb in enumerate(all_blocks)}
+    line2block = {bb.first_line: bb for bb in all_blocks}
+
+    # ---- typing --------------------------------------------------------
     def type_of(o, op=None, imm=None) -> str:
         if op in _BOOL_OPS:
             return "bool"
@@ -54,14 +79,11 @@ def lower(prog: SSAProgram) -> ir.Program:
             return "bytes"
         return "?"
 
-    # ---- registers: one per shown SSAVar + each real-join phi, named in
-    # block order so block@0's values get the low numbers.
+    # ---- registers: per-group `tmp%N` counters (restart per subroutine) ---
     regs: dict = {}
     ctr: dict = {}
 
     def _new_reg(prefix: str, ir_type: str) -> ir.Register:
-        # Puya naming: name carries the allocation id (``tmp%5``); ``#version``
-        # is the SSA version (always 0 here -- our SSA is already per-def).
         n = ctr.get(prefix, 0)
         ctr[prefix] = n + 1
         return ir.Register(f"{prefix}%{n}", 0, ir_type)
@@ -70,21 +92,25 @@ def lower(prog: SSAProgram) -> ir.Program:
         bb = ph.basic_block
         return bb is not None and len(bb.predecessors) > 1
 
-    for bb in blocks:
-        if len(bb.predecessors) > 1:
-            for ph in sorted(bb.phis, key=lambda p: p.stack_index):
-                if ph not in regs:
-                    regs[ph] = _new_reg("tmp", type_of(ph))
-        for a in bb.assignments:
-            if a.op in _TERMINATOR_OPS or a.op in ("intcblock", "bytecblock"):
-                continue
-            if (len(a.outputs) == 1 and not a.inputs
-                    and getattr(a.outputs[0], "const_value", None) is not None):
-                continue
-            for o in a.outputs:
-                if isinstance(o, SSAVar) and o not in regs:
-                    regs[o] = _new_reg(_NAME_PREFIX.get(a.op, "tmp"),
-                                       type_of(o, a.op, a.immediates))
+    def _name_group(gb):
+        ctr.clear()
+        for bb in gb:
+            if len(bb.predecessors) > 1:
+                for ph in sorted(bb.phis, key=lambda p: p.stack_index):
+                    if ph not in regs:
+                        regs[ph] = _new_reg("tmp", type_of(ph))
+            for a in bb.assignments:
+                if a.op in _TERMINATOR_OPS and a.op != "callsub":
+                    continue
+                if a.op in ("intcblock", "bytecblock", "proto"):
+                    continue
+                if (len(a.outputs) == 1 and not a.inputs
+                        and getattr(a.outputs[0], "const_value", None) is not None):
+                    continue
+                pfx = "tmp" if a.op == "callsub" else _NAME_PREFIX.get(a.op, "tmp")
+                for o in a.outputs:
+                    if isinstance(o, SSAVar) and o not in regs:
+                        regs[o] = _new_reg(pfx, type_of(o, a.op, a.immediates))
 
     def reg(o) -> ir.Register:
         if o not in regs:
@@ -92,7 +118,6 @@ def lower(prog: SSAProgram) -> ir.Program:
         return regs[o]
 
     def value(o, _seen=None):
-        """Operand -> ir.Value, inlining consts + trivial single-pred phis."""
         seen = _seen if _seen is not None else set()
         while isinstance(o, Phi) and not _is_real_phi(o):
             b = o.basic_block
@@ -122,9 +147,15 @@ def lower(prog: SSAProgram) -> ir.Program:
         return last
 
     def control(bb):
-        succ = bb.successors
         t = term_assign(bb)
         op = t.op if t is not None else None
+        if op == "callsub":                       # call then continue
+            cs = callsite.get(bb)
+            cont = cs.continuation_bb if cs else None
+            if cont is not None and cont in bid:
+                return ir.Goto(bid[cont])
+            return ir.SubroutineReturn([])
+        succ = [s for s in bb.successors if s in bid]
         if not succ:
             if op == "return":
                 v = (value(bb.exit_stack[-1]) if bb.exit_stack
@@ -152,9 +183,7 @@ def lower(prog: SSAProgram) -> ir.Program:
                               [bid[s] for s in succ[:-1]], bid[succ[-1]])
         return ir.GotoNth(ir.Undefined(), [bid[s] for s in succ[:-1]], bid[succ[-1]])
 
-    # ---- build blocks
-    out_blocks = []
-    for bb in blocks:
+    def _build_block(bb):
         phis = []
         if len(bb.predecessors) > 1:
             params = list(form.params.get(bb, []))
@@ -162,6 +191,8 @@ def lower(prog: SSAProgram) -> ir.Program:
                 i = params.index(ph) if ph in params else None
                 args = []
                 for pred in bb.predecessors:
+                    if pred not in bid:
+                        continue
                     e = form.edge(pred, bb)
                     val = (e.args[i] if (e is not None and i is not None
                                          and i < len(e.args)) else None)
@@ -169,14 +200,24 @@ def lower(prog: SSAProgram) -> ir.Program:
                 phis.append(ir.Phi(reg(ph), args))
         ops = []
         for a in bb.assignments:
-            if a.op in _TERMINATOR_OPS or a.op in ("intcblock", "bytecblock"):
+            if a.op == "callsub":
+                cs = callsite.get(bb)
+                target = (cs.target_name if cs and cs.target_name
+                          else (a.immediates or "?"))
+                invoke = ir.InvokeSubroutine(target, [value(i) for i in a.inputs])
+                shown = [o for o in a.outputs if isinstance(o, SSAVar)]
+                ops.append(ir.Assignment([reg(o) for o in shown], invoke)
+                           if shown else ir.IntrinsicOp(invoke))
+                continue
+            if a.op in _TERMINATOR_OPS or a.op in ("intcblock", "bytecblock",
+                                                   "proto"):
                 continue
             if (len(a.outputs) == 1 and not a.inputs
                     and getattr(a.outputs[0], "const_value", None) is not None):
                 continue
             args = [value(i) for i in a.inputs]
-            imm = a.immediates.split() if a.immediates else []
-            intr = ir.Intrinsic(a.op, imm, args)
+            intr = ir.Intrinsic(a.op, a.immediates.split() if a.immediates else [],
+                                args)
             shown = [o for o in a.outputs if isinstance(o, SSAVar)]
             if a.op == "assert" and not shown:
                 ops.append(ir.Assert(args[0] if args else ir.Undefined()))
@@ -184,28 +225,54 @@ def lower(prog: SSAProgram) -> ir.Program:
                 ops.append(ir.Assignment([reg(o) for o in shown], intr))
             else:
                 ops.append(ir.IntrinsicOp(intr))
-        out_blocks.append(ir.BasicBlock(
-            id=bid[bb], phis=phis, ops=ops,
-            terminator=control(bb), comment=f"L{bb.first_line}",
-        ))
+        return ir.BasicBlock(id=bid[bb], phis=phis, ops=ops,
+                             terminator=control(bb), comment=f"L{bb.first_line}")
 
-    # Unify each phi's type from its arguments (fixpoint, for phi-of-phi
-    # chains): a phi whose every typed argument agrees takes that type.
+    # ---- build each group into an ir.Subroutine -------------------------
+    subs = []
+    for gname, s, gb in groups:
+        _name_group(gb)
+        body = [_build_block(bb) for bb in gb]
+        if s is None:
+            file = all_blocks[0].file.split("/")[-1] if all_blocks else "program"
+            subs.append(ir.Subroutine(id=file, parameters=[], returns=[],
+                                      body=body, is_main=True))
+        else:
+            nargs, nrets = _proto_io(s.entry_bb)
+            params = [ir.Parameter(ir.Register(f"p%{i}", 0, "?"))
+                      for i in range(nargs)]
+            subs.append(ir.Subroutine(id=gname, parameters=params,
+                                      returns=["?"] * nrets, body=body))
+
+    # phi-type unification (fixpoint, for phi-of-phi chains)
     for _ in range(8):
         changed = False
-        for b in out_blocks:
-            for phi in b.phis:
-                if phi.register.ir_type != "?":
-                    continue
-                ts = {a.value.ir_type for a in phi.args
-                      if getattr(a.value, "ir_type", "?") != "?"}
-                if len(ts) == 1:
-                    phi.register.ir_type = next(iter(ts))
-                    changed = True
+        for sub in subs:
+            for b in sub.body:
+                for phi in b.phis:
+                    if phi.register.ir_type != "?":
+                        continue
+                    ts = {a.value.ir_type for a in phi.args
+                          if getattr(a.value, "ir_type", "?") != "?"}
+                    if len(ts) == 1:
+                        phi.register.ir_type = next(iter(ts))
+                        changed = True
         if not changed:
             break
 
-    name = blocks[0].file.split("/")[-1] if blocks else "program"
-    main = ir.Subroutine(id=name, parameters=[], returns=[],
-                         body=out_blocks, is_main=True)
-    return ir.Program(main=main, subroutines=[])
+    main = next(sub for sub in subs if sub.is_main)
+    return ir.Program(main=main, subroutines=[s for s in subs if not s.is_main])
+
+
+def _proto_io(entry_bb):
+    """``(nargs, nreturns)`` from the ``proto`` op of a subroutine entry BB,
+    or ``(0, 0)`` if absent."""
+    for a in entry_bb.assignments:
+        if a.op == "proto":
+            toks = (a.immediates or "").split()
+            if len(toks) >= 2:
+                try:
+                    return int(toks[0]), int(toks[1])
+                except ValueError:
+                    break
+    return 0, 0
