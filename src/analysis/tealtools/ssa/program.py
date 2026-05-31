@@ -387,9 +387,10 @@ class SSAProgram:
         self._stable_propagated = True
 
     def dedup_phis(self) -> int:
-        """Collapse redundant phi nodes — those with identical
-        ``(basic_block, ordered-args)`` — to one canonical, to a
-        fixpoint. PySSA's constant-stack unroll over-generates phis
+        """Collapse value-equal phi nodes — those with identical
+        (value-normalised) args, merge-point-agnostic — to one
+        canonical, to a fixpoint. PySSA's constant-stack unroll
+        over-generates phis
         (xgov: ~21k phis, ~667 distinct); running this just before
         :meth:`materialize_phis` keeps its ``mat_phi`` output bounded,
         and it makes every phi-iterating analysis cheaper. Logic lives

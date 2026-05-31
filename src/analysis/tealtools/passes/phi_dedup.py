@@ -9,11 +9,11 @@ a ``mat_phi`` copy per (phi, contributing-leaf) pair, exploding into
 
 This pass first normalises each phi's args — dropping duplicate *values*
 (order-preserving), since a repeated value adds nothing to the may-set —
-then merges phis with an identical ``(basic_block, ordered-args)`` key,
-rewiring every reference (assignment inputs, other phis' args, the BB phi
-lists, ``prog.phis``) to one representative. The arg-normalisation both
-lets value-equal phis (e.g. ones differing only by repeated ``0`` consts
-the unroll appended) share a signature, and cuts the number of mat_phi
+then merges phis with identical (value-normalised) args, rewiring every
+reference (assignment inputs, other phis' args, the BB phi lists,
+``prog.phis``) to one representative. The arg-normalisation both lets
+value-equal phis (e.g. ones differing only by repeated ``0`` consts the
+unroll appended) share a signature, and cuts the number of mat_phi
 copies materialisation emits.
 
 Soundness rests on how phis are *consumed*, not on per-predecessor
@@ -34,16 +34,21 @@ analysis, and the ``(ordered-args)`` key is a stricter subset of that.
 Verified value-preserving: const / range resolution is byte-identical
 before vs after dedup on xgov (57k SSAVars, 0 differences).
 
-``kind`` is intentionally *not* in the key: PySSA's ``_apply_pyssa_to``
-collapses the QL Direct/Indirect distinction and registers every phi as
-``DirectPhi`` (so ``kind`` is constant and would do nothing), and even
-if both kinds existed they'd be may-set-equal for the same args.
-``basic_block`` is conservatism rather than necessity — same-arg-set
-phis would be interchangeable across BBs too, but keying on the merge
-point avoids any location-sensitivity. Run to a fixpoint (merging
-rewires phi-args, exposing further identical phis); cyclic phi groups
-equal-only-up-to-congruence may stay separate (a missed merge, never a
-wrong one).
+Neither ``kind`` nor ``basic_block`` is in the key. ``kind`` is constant
+(PySSA's ``_apply_pyssa_to`` collapses the QL Direct/Indirect
+distinction and registers every phi as ``DirectPhi``). ``basic_block``
+is omitted because no consumer distinguishes phis by merge point: every
+analysis uses a phi's args as a may-set, and materialisation places its
+copies at each *leaf*'s def site rather than the phi's BB — so merging
+value-equal phis across different merge points is observationally
+invisible. This is the assumption the pass rests on: a future analysis
+that reasoned about a phi *per merge point* (which arg came from which
+predecessor) would need to run before this pass or re-key it. On xgov
+the merge-point-agnostic key takes 21065 phis to ~109 (vs ~667 with a
+per-BB key), const/range resolution byte-identical either way. Run to a
+fixpoint (merging rewires phi-args, exposing further identical phis);
+cyclic phi groups equal-only-up-to-congruence may stay separate (a
+missed merge, never a wrong one).
 
 Best run just before :meth:`SSAProgram.materialize_phis`; it also makes
 every phi-iterating analysis cheaper. Idempotent. Mutates in place.
@@ -67,9 +72,14 @@ def _arg_id(operand) -> tuple:
 
 
 def _phi_sig(ph: Phi) -> tuple:
-    bb = ph.basic_block
-    bb_key = (bb.file, bb.first_line, bb.last_line) if bb is not None else None
-    return (bb_key, tuple(_arg_id(a) for a in ph.args))
+    # Keyed on the (value-normalised) arg sequence only — NOT the merge
+    # point. Two phis with the same args are the same may-set, and every
+    # consumer treats a phi as that may-set; crucially nothing reads
+    # ``phi.basic_block`` (materialisation places copies at each *leaf*'s
+    # def site, not the phi's BB), so merging value-equal phis across
+    # different merge points is observationally invisible. Verified
+    # value-preserving on xgov (const/range byte-identical; 667 -> 109).
+    return tuple(_arg_id(a) for a in ph.args)
 
 
 def _apply_redirects(prog: SSAProgram, redirects: dict) -> None:

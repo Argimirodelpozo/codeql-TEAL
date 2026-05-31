@@ -64,11 +64,12 @@ iterates it must have already run).
   12. :meth:`SSAProgram.eliminate_dead_constants` — inline literal
       constants into consumers and drop the now-orphan SSAVars /
       Phis / Assignments.
-  13. :meth:`SSAProgram.dedup_phis` — collapse phis with identical
-      ``(basic_block, ordered-args)`` to one, to a fixpoint.
-      PySSA's constant-stack unroll over-generates phi objects (xgov:
-      ~21k → ~667); running this right before materialisation keeps the
-      ``mat_phi`` count bounded instead of one copy per redundant phi.
+  13. :meth:`SSAProgram.dedup_phis` — collapse value-equal phis (same
+      value-normalised args, merge-point-agnostic) to one, to a
+      fixpoint. PySSA's constant-stack unroll over-generates phi objects
+      (xgov: ~21k → ~109); running this right before materialisation
+      keeps the ``mat_phi`` count bounded instead of one copy per
+      redundant phi.
   14. :meth:`SSAProgram.materialize_phis` — out-of-SSA lowering;
       each live phi becomes a synthetic ``mat_phi_k`` with a copy
       assignment at every contributing leaf's def site.
