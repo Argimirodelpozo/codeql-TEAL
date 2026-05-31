@@ -93,6 +93,12 @@ def lower(prog: SSAProgram) -> ir.Program:
         groups.append((s.name or f"sub@L{s.entry_bb.first_line}", s,
                        sorted(s.body, key=_key)))
 
+    # Global block ids. Puya restarts block@0 per subroutine, but that's not
+    # safe here: structure.py's partition has ~28 cross-routine branch edges
+    # (tail-calls / compiler-shared epilogues that don't belong to one
+    # routine), so a per-subroutine-local id would silently mis-target those
+    # gotos. Global ids keep control flow correct; per-sub numbering needs the
+    # routines to be closed CFG regions, which is a structure.py concern.
     bid = {bb: i for i, bb in enumerate(all_blocks)}
     line2block = {bb.first_line: bb for bb in all_blocks}
 
