@@ -101,13 +101,25 @@ def cleanup_unused_ssavars(prog: SSAProgram) -> int:
     """Drop side-effect-free :class:`Assignment` s whose every output
     has empty ``uses``. Mutates ``prog`` in place. Returns the number
     of assignments removed (so callers can log / verify)."""
+    # A var consumed only as a phi argument has an empty ``uses`` list
+    # (``uses`` records assignment consumers, not phi-arg references), yet
+    # it is *live* — its value flows through the phi. Removing its producer
+    # would leave the phi (and, after materialisation, every mat_phi copy)
+    # referencing an undefined SSAVar. Treat phi-arg SSAVars as live.
+    phi_leaf_vars = {
+        arg for ph in prog.phis.values() for arg in ph.args
+        if isinstance(arg, SSAVar)
+    }
     drop_ids: set[int] = set()
     for a in prog.assignments:
         if not a.outputs:
             continue
         if a.op not in _PURE_OPS:
             continue
-        if not all(isinstance(o, SSAVar) and not o.uses for o in a.outputs):
+        if not all(
+            isinstance(o, SSAVar) and not o.uses and o not in phi_leaf_vars
+            for o in a.outputs
+        ):
             continue
         drop_ids.add(id(a))
     if not drop_ids:
