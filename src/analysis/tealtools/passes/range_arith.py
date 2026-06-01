@@ -205,8 +205,13 @@ def propagate_range_arithmetic(prog: SSAProgram) -> int:
             if not isinstance(out, SSAVar) or out.range is not None:
                 continue
             if a.op in _BINARY_OPS and len(a.inputs) == 2:
-                ra = _operand_range(a.inputs[0])
-                rb = _operand_range(a.inputs[1])
+                # inputs are top-first (inputs[0] = topmost popped), but
+                # _arith_result_range is deepest-first: it computes ``A op B``
+                # with ``ra`` = the deeper operand ``A``. So A = inputs[1],
+                # B = inputs[0]. Without the swap, non-commutative ops (-, /,
+                # %, shifts) get their operands reversed.
+                ra = _operand_range(a.inputs[1])
+                rb = _operand_range(a.inputs[0])
                 if ra is None or rb is None:
                     continue
                 result = _arith_result_range(a.op, ra, rb)

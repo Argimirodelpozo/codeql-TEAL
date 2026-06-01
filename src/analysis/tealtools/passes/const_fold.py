@@ -411,6 +411,13 @@ def try_fold_assignment(a: Assignment) -> Optional[Const]:
         if cv is None:
             return None
         inputs.append(cv)
+    # ``Assignment.inputs`` are top-first (inputs[0] = topmost popped), but
+    # every folder below is written deepest-first (``inputs[0]`` = the deeper
+    # stack value ``A`` of ``A op B``). Reverse once so the folders see the
+    # operand order they assume — without this, non-commutative ops (``-``,
+    # ``/``, ``%``, shifts, ``concat``, ``extract*``, ``getbyte``, the
+    # inequality comparisons, …) fold with their operands swapped.
+    inputs.reverse()
     if op == "concat":
         return _fold_concat(inputs)
     if op == "extract":

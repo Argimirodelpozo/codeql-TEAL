@@ -69,13 +69,22 @@ class TestBitwiseNot:
 
 
 def _assign(op: str, *const_inputs: Const) -> Assignment:
-    """Minimal single-output Assignment with Const inputs for dispatch tests."""
+    """Minimal single-output Assignment with Const inputs for dispatch tests.
+
+    ``const_inputs`` are given in source order — ``A, B`` for the AVM op
+    ``A op B`` (``A`` the deeper stack value). Real ``Assignment.inputs`` are
+    **top-first** (``inputs[0]`` = topmost popped) per the SSA simulator, so we
+    store them reversed here. That way the dispatch tests exercise
+    ``try_fold_assignment`` with the same operand order it sees in production
+    (it reverses back internally) — which is what makes non-commutative folds
+    (``<<``, ``-``, ``/``, ``concat``, …) directional-correct.
+    """
     out = SSAVar("f.teal", 1, 1)
     return Assignment(
         outputs=[out],
         op=op,
         immediates="",
-        inputs=list(const_inputs),
+        inputs=list(reversed(const_inputs)),
         location=Location("f.teal", 1),
         ast_code=op,
         const=None,
