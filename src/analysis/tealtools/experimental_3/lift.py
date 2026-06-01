@@ -62,6 +62,18 @@ def _imm0(a) -> int | None:
         return None
 
 
+def _const_key(operand) -> "str | None":
+    """The constant bytes value of a state-key operand (verbatim ``0x…`` hex),
+    or ``None`` if the key isn't a static constant (a dynamic key can't be
+    matched across put / get)."""
+    if isinstance(operand, Const):
+        return operand.value if operand.kind == "bytes" else None
+    cv = getattr(operand, "const_value", None)
+    if cv is not None and getattr(cv, "kind", None) == "bytes":
+        return cv.value
+    return None
+
+
 _UINT64_MAX = (1 << 64) - 1
 
 
@@ -561,6 +573,44 @@ def lift(prog: SSAProgram) -> ir.Program:
             break
     _unify_phi_types(subs)
     _infer_returns(subs)
+
+    def _infer_state_types():
+        """Type global / local state read *values* from the contract's own put
+        schema: a value is whatever was put to its (constant) key. Runs after
+        param / return inference, so a value put straight from a typed param or
+        field resolves -- it reads each put value operand's *final* register
+        type (top-first inputs: value at [0], key at [1]). A key with
+        conflicting put types is left unknown. A read's key is always
+        ``inputs[0]``; ``*_get_ex`` keeps did_exist at output 0 and the value
+        at output 1, a plain ``*_get`` its sole output."""
+        key_types: dict = {}
+        for a in prog.assignments:
+            if a.op in ("app_global_put", "app_local_put") and len(a.inputs) >= 2:
+                key, v = _const_key(a.inputs[1]), a.inputs[0]
+                if key is None or not isinstance(v, (SSAVar, Phi)):
+                    continue
+                vt = reg(v).ir_type
+                if vt and vt != "?":
+                    key_types.setdefault(key, set()).add(vt)
+        key_types = {k: next(iter(s)) for k, s in key_types.items() if len(s) == 1}
+        if not key_types:
+            return
+        for a in prog.assignments:
+            if a.op in ("app_global_get", "app_local_get"):
+                val = a.outputs[0] if a.outputs else None
+            elif a.op in ("app_global_get_ex", "app_local_get_ex"):
+                val = a.outputs[1] if len(a.outputs) > 1 else None
+            else:
+                continue
+            if not isinstance(val, (SSAVar, Phi)):
+                continue
+            r = reg(val)
+            if r.ir_type == "?":
+                k = _const_key(a.inputs[0]) if a.inputs else None
+                if k in key_types:
+                    r.ir_type = key_types[k]
+
+    _infer_state_types()
 
     main = next(sub for sub in subs if sub.is_main)
     return ir.Program(main=main, subroutines=[s for s in subs if not s.is_main])
