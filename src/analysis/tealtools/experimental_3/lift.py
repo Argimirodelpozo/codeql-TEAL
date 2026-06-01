@@ -333,6 +333,14 @@ def lift(prog: SSAProgram) -> ir.Program:
             if cont is not None and cont in bid:
                 return ir.Goto(bid[cont])
             return ir.SubroutineReturn([])
+        if op == "retsub":
+            # A retsub returns to its caller. Its raw-CFG successors are the
+            # callers' continuations (interprocedural return edges), but each
+            # caller already reaches its own continuation via its callsub ->
+            # Goto(continuation). So model retsub as a value return, NOT a
+            # goto / goto_nth into the callers — the latter, with >1 caller,
+            # had no selector and rendered as `goto_nth undefined`.
+            return ir.SubroutineReturn([value(i) for i in (t.inputs or [])])
         succ = [s for s in bb.successors if s in bid]
         if not succ:
             if op == "return":
@@ -341,8 +349,6 @@ def lift(prog: SSAProgram) -> ir.Program:
                 return ir.ProgramExit(v)
             if op == "err":
                 return ir.Fail()
-            if op == "retsub":
-                return ir.SubroutineReturn([value(i) for i in (t.inputs or [])])
             return ir.ProgramExit(ir.UInt64Constant(0))
         if len(succ) == 1:
             return ir.Goto(bid[succ[0]])
