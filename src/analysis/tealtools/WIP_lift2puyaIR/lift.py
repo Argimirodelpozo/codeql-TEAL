@@ -3,7 +3,7 @@
 ``lift(prog) -> ir.Program``. This *raises* abstraction (the decompiler
 direction): our stack-machine TEAL SSA — frame slots, scratch, stack shuffles —
 becomes the value-based, typed, subroutine IR of
-:mod:`tealtools.experimental_3.ir`, which self-renders in the ``.ssa.slot.ir``
+:mod:`tealtools.WIP_lift2puyaIR.ir`, which self-renders in the ``.ssa.slot.ir``
 shape. (Puya itself *lowers* the other way: its AST → IR → TEAL.)
 
 Two structural rewrites happen here (both contained — no substrate change):
@@ -24,7 +24,7 @@ Two structural rewrites happen here (both contained — no substrate change):
   the unroll noise.
 
 Constants and trivial single-predecessor phis are inlined; type/field tables
-are shared with :mod:`tealtools.experimental_3.puya_ir`.
+are shared with :mod:`tealtools.WIP_lift2puyaIR.puya_ir`.
 """
 from __future__ import annotations
 
@@ -610,7 +610,53 @@ def lift(prog: SSAProgram) -> ir.Program:
                 if k in key_types:
                     r.ir_type = key_types[k]
 
+    def _propagate_copy_load_types():
+        """Close the remaining untyped registers at the IR level, to a
+        fixpoint: a copy / local store (``let l%N = <reg>``) takes its source
+        register's type, and a scratch ``(load N)`` takes the type stored to
+        its slot (via the reaching-def ``load_stores``). Iterated because a
+        typed load feeds a copy that feeds another load. Runs last, after
+        param / return / state inference have typed the leaves."""
+        def _src_type(v):
+            if isinstance(v, ir.Register):
+                return v.ir_type
+            if isinstance(v, ir.UInt64Constant):
+                return "uint64"
+            if isinstance(v, ir.BytesConstant):
+                return "bytes"
+            return None                          # Intrinsic / invoke: not a copy
+
+        # Monotonic: each step only turns a `?` into a concrete type, never the
+        # reverse (every write is guarded by `== "?"`), so this can't oscillate
+        # and converges in at worst one pass per register. Loop to the fixpoint
+        # rather than capping the depth, so a long copy/load chain can't be left
+        # half-typed.
+        changed = True
+        while changed:
+            changed = False
+            for sub in subs:
+                for bb in sub.body:
+                    for op in bb.ops:
+                        if (isinstance(op, ir.Assignment) and len(op.targets) == 1
+                                and op.targets[0].ir_type == "?"):
+                            st = _src_type(op.source)
+                            if st and st != "?":
+                                op.targets[0].ir_type = st
+                                changed = True
+            for a in prog.assignments:
+                if a.op != "load" or not a.outputs:
+                    continue
+                out = a.outputs[0]
+                if not isinstance(out, (SSAVar, Phi)) or reg(out).ir_type != "?":
+                    continue
+                tys = {reg(s).ir_type for s in load_stores.get(out, ())
+                       if isinstance(s, (SSAVar, Phi))} - {"?"}
+                if len(tys) == 1:
+                    reg(out).ir_type = next(iter(tys))
+                    changed = True
+
     _infer_state_types()
+    _propagate_copy_load_types()
 
     main = next(sub for sub in subs if sub.is_main)
     return ir.Program(main=main, subroutines=[s for s in subs if not s.is_main])

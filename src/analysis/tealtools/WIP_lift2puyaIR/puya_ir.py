@@ -27,12 +27,13 @@ _BOOL_OPS = frozenset({"==", "!=", "<", ">", "<=", ">=", "!", "&&", "||",
                        "b==", "b!=", "b<", "b>", "b<=", "b>="})
 _U64_OPS = frozenset({"+", "-", "*", "/", "%", "exp", "sqrt", "shl", "shr",
                       "bitlen", "len", "btoi", "getbyte", "getbit",
-                      "extract_uint16", "extract_uint32", "extract_uint64"})
+                      "extract_uint16", "extract_uint32", "extract_uint64",
+                      "box_create", "box_del"})   # both return a uint64 flag
 _BYTES_OPS = frozenset({"itob", "concat", "substring", "substring3", "extract",
                         "extract3", "replace2", "replace3", "sha256",
                         "sha512_256", "keccak256", "sha3_256", "bzero",
                         "setbyte", "setbit", "b+", "b-", "b*", "b/", "b%",
-                        "b|", "b&", "b^", "b~", "bsqrt"})
+                        "b|", "b&", "b^", "b~", "bsqrt", "box_extract"})
 _NAME_PREFIX = {"len": "len", "==": "eq", "!=": "ne", "<": "lt", ">": "gt",
                 "<=": "le", ">=": "ge", "!": "not", "&&": "and", "||": "or",
                 "btoi": "val", "concat": "concat", "itob": "enc"}
