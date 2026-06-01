@@ -193,6 +193,30 @@ def propagate_range_arithmetic(prog: SSAProgram) -> int:
     _UNARY_OPS = {"~"}
 
     changed_overall = 0
+
+    # Seed singleton ranges from ``const_value``: a value const-folded to a
+    # literal int N has the exact range ``[N, N]`` *everywhere* it is used — a
+    # constant is flow-insensitive, so this is unconditionally sound.
+    # ``propagate_ranges`` seeds from op / field *shape* (boolean comparisons,
+    # txn enum fields, …), not from const-prop results, so const vars are left
+    # unranged; this closes that gap and lets the arithmetic below compose them.
+    # (``_operand_range`` already lifts a const operand on the fly, but only the
+    # operands of arith ops — a detector reading ``var.range`` directly still
+    # saw ``None``.) Bytes constants stay unranged: ``_const_int`` rejects them.
+    def _seed_const(obj) -> None:
+        if obj.range is None:
+            n = _const_int(getattr(obj, "const_value", None))
+            if n is not None and 0 <= n <= _UINT64_MAX and _set_range(obj, n, n):
+                nonlocal changed_overall
+                changed_overall += 1
+
+    for a in prog.assignments:
+        for o in a.outputs:
+            if isinstance(o, SSAVar):
+                _seed_const(o)
+    for ph in prog.phis.values():
+        _seed_const(ph)
+
     changed = True
     while changed:
         changed = False
@@ -249,4 +273,5 @@ def propagate_range_arithmetic(prog: SSAProgram) -> int:
                 changed_overall += 1
                 changed = True
 
+    prog._range_arith_propagated = True
     return changed_overall
