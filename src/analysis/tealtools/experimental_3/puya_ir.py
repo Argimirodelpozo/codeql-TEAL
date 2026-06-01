@@ -112,6 +112,62 @@ def _field_type(op, immediates):
     return None
 
 
+# Per-output-slot types for multi-result intrinsics. The `*_get_ex` /
+# `*_params_get` / `*_holding_get` / `box_get` ops leave `did_exist` on top
+# (output 0, uint64) and the value below (output 1); `box_len` leaves
+# `did_exist` over a uint64 length; the `w` arithmetic ops produce all-uint64
+# word pairs / quads. (Output order per dataflow/state.py + dataflow/box.py.)
+_MULTI_ALL_U64 = frozenset({"addw", "mulw", "expw", "divmodw", "box_len"})
+_EX_FLAG_OPS = frozenset({
+    "app_global_get_ex", "app_local_get_ex", "asset_holding_get",
+    "asset_params_get", "app_params_get", "acct_params_get",
+})
+_PARAMS_FIELD_TYPE = {
+    # acct_params_get
+    "AcctBalance": "uint64", "AcctMinBalance": "uint64", "AcctAuthAddr": "account",
+    "AcctTotalNumUint": "uint64", "AcctTotalNumByteSlice": "uint64",
+    "AcctTotalExtraAppPages": "uint64", "AcctTotalAppsCreated": "uint64",
+    "AcctTotalAppsOptedIn": "uint64", "AcctTotalAssetsCreated": "uint64",
+    "AcctTotalAssets": "uint64", "AcctTotalBoxes": "uint64",
+    "AcctTotalBoxBytes": "uint64", "AcctIncentiveEligible": "bool",
+    "AcctLastProposed": "uint64", "AcctLastHeartbeat": "uint64",
+    # app_params_get
+    "AppApprovalProgram": "bytes", "AppClearStateProgram": "bytes",
+    "AppGlobalNumUint": "uint64", "AppGlobalNumByteSlice": "uint64",
+    "AppLocalNumUint": "uint64", "AppLocalNumByteSlice": "uint64",
+    "AppExtraProgramPages": "uint64", "AppCreator": "account",
+    "AppAddress": "account",
+    # asset_holding_get
+    "AssetBalance": "uint64", "AssetFrozen": "bool",
+    # asset_params_get
+    "AssetTotal": "uint64", "AssetDecimals": "uint64",
+    "AssetDefaultFrozen": "bool", "AssetUnitName": "bytes", "AssetName": "bytes",
+    "AssetURL": "bytes", "AssetMetadataHash": "bytes", "AssetManager": "account",
+    "AssetReserve": "account", "AssetFreeze": "account",
+    "AssetClawback": "account", "AssetCreator": "account",
+}
+
+
+def _multi_out_type(op, immediates, idx):
+    """Type of output slot ``idx`` (0 = top of stack) of a multi-result op, or
+    ``None`` when the op isn't a typed multi-result here, or the slot's type
+    is unknown — e.g. an ``app_global_get_ex`` / ``app_local_get_ex`` *value*,
+    whose type depends on the contract's state schema, not the op."""
+    if op in _MULTI_ALL_U64:
+        return "uint64"
+    if op == "box_get":
+        return "uint64" if idx == 0 else "bytes"   # did_exist, value
+    if op in _EX_FLAG_OPS:
+        if idx == 0:
+            return "uint64"                         # did_exist flag
+        toks = immediates.split() if immediates else []
+        for tk in toks:
+            if tk in _PARAMS_FIELD_TYPE:
+                return _PARAMS_FIELD_TYPE[tk]       # params/holding value field
+        return None                                 # state-schema-dependent value
+    return None
+
+
 def _typed_const(cv: Const) -> str:
     """Puya-style literal: ``<n>u`` for uint64, hex verbatim for bytes."""
     return f"{cv.value}u" if cv.kind == "uint64" else cv.value

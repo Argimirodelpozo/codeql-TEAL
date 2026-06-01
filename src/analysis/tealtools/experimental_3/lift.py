@@ -37,6 +37,7 @@ from ..ssa import (
 from ..structure import analyze_structure
 from .puya_ir import (
     _BOOL_OPS, _BYTES_OPS, _COND_BRANCH, _NAME_PREFIX, _U64_OPS, _field_type,
+    _multi_out_type,
 )
 
 _FRAME_OPS = frozenset({"frame_dig", "frame_bury"})
@@ -295,9 +296,14 @@ def lift(prog: SSAProgram) -> ir.Program:
                         and getattr(a.outputs[0], "const_value", None) is not None):
                     continue
                 pfx = "tmp" if a.op == "callsub" else _NAME_PREFIX.get(a.op, "tmp")
-                for o in a.outputs:
+                nssa = sum(isinstance(o, SSAVar) for o in a.outputs)
+                for idx, o in enumerate(a.outputs):
                     if isinstance(o, SSAVar) and o not in regs:
-                        regs[o] = _new_reg(pfx, type_of(o, a.op, a.immediates))
+                        # idx is the top-first output slot; multi-result ops
+                        # (get_ex / params / box / addw…) type their slots
+                        # individually -- type_of can't tell them apart.
+                        mt = _multi_out_type(a.op, a.immediates, idx) if nssa > 1 else None
+                        regs[o] = _new_reg(pfx, mt or type_of(o, a.op, a.immediates))
 
     def value(o, _seen=None):
         seen = _seen if _seen is not None else set()
