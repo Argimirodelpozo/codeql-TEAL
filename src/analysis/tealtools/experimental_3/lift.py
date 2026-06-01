@@ -1,8 +1,10 @@
-"""Lower an :class:`~tealtools.ssa.SSAProgram` into the Puya-shaped IR model.
+"""Lift an :class:`~tealtools.ssa.SSAProgram` into the Puya-shaped IR model.
 
-``lower(prog) -> ir.Program``. Transforms our SSA into the Puya IR classes in
-:mod:`tealtools.experimental_3.ir`, which self-render in the ``.ssa.slot.ir``
-shape.
+``lift(prog) -> ir.Program``. This *raises* abstraction (the decompiler
+direction): our stack-machine TEAL SSA — frame slots, scratch, stack shuffles —
+becomes the value-based, typed, subroutine IR of
+:mod:`tealtools.experimental_3.ir`, which self-renders in the ``.ssa.slot.ir``
+shape. (Puya itself *lowers* the other way: its AST → IR → TEAL.)
 
 Two structural rewrites happen here (both contained — no substrate change):
 
@@ -59,7 +61,7 @@ def _imm0(a) -> int | None:
         return None
 
 
-def lower(prog: SSAProgram) -> ir.Program:
+def lift(prog: SSAProgram) -> ir.Program:
     form = to_block_args(prog)
     label2line = {code.rstrip(":").strip(): ln for (_f, ln, code) in prog.labels}
 

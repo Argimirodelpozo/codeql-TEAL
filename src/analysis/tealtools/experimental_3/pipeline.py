@@ -28,7 +28,7 @@ import sys
 from pathlib import Path
 
 from ..ssa import SSAProgram
-from .lower import lower
+from .lift import lift
 from .transforms import (
     collapse_dispatch, eliminate_dead_ops, simplify_trivial_phis,
 )
@@ -49,11 +49,11 @@ PASSES = [
 
 
 def render(prog: SSAProgram) -> str:
-    """Run :data:`PASSES` on ``prog`` (in place, idempotent), lower it into the
+    """Run :data:`PASSES` on ``prog`` (in place, idempotent), lift it into the
     Puya-shaped IR model, and render that model."""
     for name in PASSES:
         getattr(prog, name)()
-    program = lower(prog)
+    program = lift(prog)
     collapse_dispatch(program)
     simplify_trivial_phis(program)
     eliminate_dead_ops(program)

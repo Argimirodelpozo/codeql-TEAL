@@ -1,7 +1,7 @@
 """Puya-shaped IR model — representational parity with ``puya/ir/models.py``.
 
 A faithful (simplified) mirror of Algorand Puya's IR model classes, so we can
-*lower our SSA into this model* (see :mod:`tealtools.experimental_3.lower`) and
+*lift our SSA into this model* (see :mod:`tealtools.experimental_3.lift`) and
 then render / analyse it as Puya-shaped IR — not merely print TEAL in a
 Puya-like style. Types are a single ``ir_type`` kind string
 (``uint64``/``bytes``/``bool``/``account``/``asset``/``application``/``?``)
