@@ -495,6 +495,39 @@ def identify_subroutines(prog: SSAProgram) -> dict:
                     )
         continuations[cs_bb] = cont
 
+    # Fold continuations back into the bodies. The body BFS above dead-ends at
+    # every ``callsub`` (a callsub BB's only raw successor is the *callee*
+    # entry, which is skipped as another subroutine), so the code that runs
+    # *after* an internal call — the continuation — was dropped from the body
+    # and leaked into the main flow. But that continuation executes within this
+    # subroutine's frame, before its own ``retsub``, so it belongs to the body
+    # (otherwise its ``frame_dig`` / ``frame_bury`` ops are mis-attributed to a
+    # frame-less main). Re-extend each body from its internal callsubs'
+    # continuations, intraprocedurally, threading nested calls through *their*
+    # continuations too.
+    for entry, body in bodies.items():
+        stack = [continuations[bb] for bb in list(body)
+                 if _terminator_op(bb) == "callsub" and continuations.get(bb)]
+        while stack:
+            bb = stack.pop()
+            if bb is None or bb in body:
+                continue
+            if bb in entries and bb is not entry:
+                continue  # never absorb another subroutine's entry
+            body.add(bb)
+            last_op = _terminator_op(bb)
+            if last_op == "retsub":
+                continue  # successors are caller continuations, not ours
+            if last_op == "callsub":
+                cont = continuations.get(bb)
+                if cont is not None:
+                    stack.append(cont)  # skip the callee, take the return point
+                continue
+            for s in bb.successors:
+                if s in entries and s is not entry:
+                    continue
+                stack.append(s)
+
     return {
         "entries": entries,
         "bodies": bodies,
