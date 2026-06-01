@@ -310,12 +310,21 @@ def lift(prog: SSAProgram) -> ir.Program:
                 pfx = "tmp" if a.op == "callsub" else _NAME_PREFIX.get(a.op, "tmp")
                 nssa = sum(isinstance(o, SSAVar) for o in a.outputs)
                 for idx, o in enumerate(a.outputs):
-                    if isinstance(o, SSAVar) and o not in regs:
-                        # idx is the top-first output slot; multi-result ops
-                        # (get_ex / params / box / addw…) type their slots
-                        # individually -- type_of can't tell them apart.
-                        mt = _multi_out_type(a.op, a.immediates, idx) if nssa > 1 else None
-                        regs[o] = _new_reg(pfx, mt or type_of(o, a.op, a.immediates))
+                    if not isinstance(o, SSAVar):
+                        continue
+                    # idx is the top-first output slot; multi-result ops
+                    # (get_ex / params / box / addw…) type their slots
+                    # individually -- type_of can't tell them apart.
+                    mt = _multi_out_type(a.op, a.immediates, idx) if nssa > 1 else None
+                    rt = mt or type_of(o, a.op, a.immediates)
+                    if o not in regs:
+                        regs[o] = _new_reg(pfx, rt)
+                    elif regs[o].ir_type == "?" and rt != "?":
+                        # already registered untyped by an earlier cross-group
+                        # reference (a tail-call / shared-epilogue edge reaches
+                        # value() before this, the defining, group is named);
+                        # now that we know its op, fix the type in place.
+                        regs[o].ir_type = rt
 
     def value(o, _seen=None):
         seen = _seen if _seen is not None else set()
@@ -512,6 +521,10 @@ def lift(prog: SSAProgram) -> ir.Program:
                 k = _imm0(a)
                 if k is not None and -owner_nargs <= k <= -1:
                     return owner_ir.parameters[owner_nargs + k].register.ir_type
+            if isinstance(arg, (SSAVar, Phi)):
+                rt = reg(arg).ir_type        # IR-level type is the complete one
+                if rt != "?":                # (render + use / state / copy-load)
+                    return rt
             return _ssa_type(arg)
 
         for ir_sub, s in pairs:
@@ -560,21 +573,6 @@ def lift(prog: SSAProgram) -> ir.Program:
             sub_pairs.append((sub_ir, s))
 
     _prune_dead_phis(subs)
-    _infer_types_from_uses(subs)
-
-    def _typed_params():
-        return sum(pp.register.ir_type != "?"
-                   for ir_sub, _ in sub_pairs for pp in ir_sub.parameters)
-
-    # Fixpoint: a sub typed this round can type another's frame-passed arg next.
-    # Monotonic (params only ever go `?` -> concrete), so loop to convergence.
-    while True:
-        before = _typed_params()
-        _infer_params_from_callers(sub_pairs)
-        if _typed_params() == before:
-            break
-    _unify_phi_types(subs)
-    _infer_returns(subs)
 
     def _infer_state_types():
         """Type global / local state read *values* from the contract's own put
@@ -657,8 +655,36 @@ def lift(prog: SSAProgram) -> ir.Program:
                     reg(out).ir_type = next(iter(tys))
                     changed = True
 
-    _infer_state_types()
-    _propagate_copy_load_types()
+    # Global type fixpoint. The register-typing passes feed each other: a typed
+    # caller arg types a callee param (_infer_params_from_callers); a typed
+    # param types its frame reads; a typed value types the slots it's stored to
+    # and the loads of them (_propagate_copy_load_types); a put types the
+    # matching get (_infer_state_types); uses and phi args pin the rest. Run
+    # them together until no register changes. Every pass is monotonic (only
+    # `?` -> a concrete type), so the untyped count strictly decreases and this
+    # terminates.
+    def _untyped():
+        n = 0
+        for sub in subs:
+            for pp in sub.parameters:
+                n += pp.register.ir_type == "?"
+            for bb in sub.body:
+                for phi in bb.phis:
+                    n += phi.register.ir_type == "?"
+                for op in bb.ops:
+                    if isinstance(op, ir.Assignment):
+                        n += sum(t.ir_type == "?" for t in op.targets)
+        return n
+
+    prev = -1
+    while prev != _untyped():
+        prev = _untyped()
+        _infer_types_from_uses(subs)
+        _infer_params_from_callers(sub_pairs)
+        _unify_phi_types(subs)
+        _infer_state_types()
+        _propagate_copy_load_types()
+    _infer_returns(subs)
 
     main = next(sub for sub in subs if sub.is_main)
     return ir.Program(main=main, subroutines=[s for s in subs if not s.is_main])
