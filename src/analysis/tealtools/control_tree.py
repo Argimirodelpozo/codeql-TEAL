@@ -402,7 +402,6 @@ def identify_subroutines(prog: SSAProgram) -> dict:
     """
     entries: set[BasicBlock] = set()
     callsub_target: dict[BasicBlock, BasicBlock] = {}
-    retsub_targets_per_sub: dict[BasicBlock, set[BasicBlock]] = {}
 
     callsub_bbs: list[BasicBlock] = []
     retsub_bbs: list[BasicBlock] = []
@@ -416,46 +415,8 @@ def identify_subroutines(prog: SSAProgram) -> dict:
         elif last == "retsub":
             retsub_bbs.append(bb)
 
-    # Compute each subroutine's body via intraprocedural BFS from
-    # its entry. Stop at retsub BBs (successors leave the body) and
-    # at OTHER subroutine entries (don't cross into other callees).
-    bodies: dict[BasicBlock, set[BasicBlock]] = {}
-    for entry in entries:
-        body: set[BasicBlock] = set()
-        stack: list[BasicBlock] = [entry]
-        while stack:
-            bb = stack.pop()
-            if bb in body:
-                continue
-            body.add(bb)
-            last_op = _terminator_op(bb)
-            if last_op == "retsub":
-                continue  # successors are caller continuations
-            for s in bb.successors:
-                # Don't cross into another subroutine.
-                if s in entries and s is not entry:
-                    continue
-                # Don't follow callsub→entry edges out of *this* sub.
-                if last_op == "callsub" and s in entries:
-                    continue
-                stack.append(s)
-        bodies[entry] = body
-        retsub_targets_per_sub[entry] = {
-            t for bb in body
-            if _terminator_op(bb) == "retsub"
-            for t in bb.successors
-        }
-
-    # Match each callsub to its continuation. Two layered heuristics
-    # (first one to find a candidate wins):
-    # 1. Source-order: smallest BB whose first line is strictly
-    #    greater than the callsub's last line, in the same file.
-    #    Compiled TEAL emits the continuation immediately after the
-    #    callsub op, so this is robust as long as the linker doesn't
-    #    interleave subroutine bodies between caller and continuation.
-    # 2. Retsub-targeted: smallest line > callsub_line among the
-    #    successors of any retsub in the called subroutine. Fallback
-    #    for cases where the linker did interleave.
+    # Source-ordered blocks per file, for the source-order continuation
+    # heuristic.
     bb_by_file_line: dict[str, list[BasicBlock]] = {}
     for bb in prog.blocks.values():
         if not bb.assignments:
@@ -465,68 +426,89 @@ def identify_subroutines(prog: SSAProgram) -> dict:
     for f in bb_by_file_line:
         bb_by_file_line[f].sort(key=lambda b: b.assignments[0].location.line)
 
-    continuations: dict[BasicBlock, BasicBlock | None] = {}
-    for cs_bb in callsub_bbs:
+    def _source_next(cs_bb: BasicBlock) -> Optional[BasicBlock]:
+        """Heuristic 1: the next BB in source order after the callsub,
+        excluding subroutine entries (those are call *targets*, not return
+        points). Compiled TEAL emits the continuation right after the callsub
+        op, so this resolves almost every call on its own."""
         last = cs_bb.assignments[-1].location
-        # Heuristic 1: next BB in source order (excluding subroutine
-        # entries — those are *targets*, not continuations).
-        cont = None
         for b in bb_by_file_line.get(last.file, ()):
             if b.assignments[0].location.line <= last.line:
                 continue
             if b in entries:
                 continue
-            cont = b
-            break
-        # Heuristic 2: retsub-targeted fallback.
-        if cont is None:
-            cs_target = callsub_target.get(cs_bb)
-            if cs_target in bodies:
-                candidates = [
-                    c for c in retsub_targets_per_sub.get(cs_target, ())
-                    if c.assignments
-                    and c.assignments[0].location.file == last.file
-                    and c.assignments[0].location.line > last.line
-                ]
-                if candidates:
-                    cont = min(
-                        candidates,
-                        key=lambda c: c.assignments[0].location.line,
-                    )
-        continuations[cs_bb] = cont
+            return b
+        return None
 
-    # Fold continuations back into the bodies. The body BFS above dead-ends at
-    # every ``callsub`` (a callsub BB's only raw successor is the *callee*
-    # entry, which is skipped as another subroutine), so the code that runs
-    # *after* an internal call — the continuation — was dropped from the body
-    # and leaked into the main flow. But that continuation executes within this
-    # subroutine's frame, before its own ``retsub``, so it belongs to the body
-    # (otherwise its ``frame_dig`` / ``frame_bury`` ops are mis-attributed to a
-    # frame-less main). Re-extend each body from its internal callsubs'
-    # continuations, intraprocedurally, threading nested calls through *their*
-    # continuations too.
-    for entry, body in bodies.items():
-        stack = [continuations[bb] for bb in list(body)
-                 if _terminator_op(bb) == "callsub" and continuations.get(bb)]
+    def _body(entry: BasicBlock, conts: dict) -> set[BasicBlock]:
+        """A subroutine's body: intraprocedural reachability from the entry,
+        modelling ``callsub`` as a *side-effecting op* that flows to its
+        continuation (the return point) — not a control transfer into the
+        callee. This is the same cut-callsub / splice-continuation model
+        :func:`build_control_tree` uses; doing it here keeps the continuation
+        (which runs in this sub's frame, before its own ``retsub``) in the
+        body rather than leaking it to the frame-less main flow. ``retsub`` is
+        terminal (its successors are caller continuations), and we never cross
+        into another subroutine's entry."""
+        body: set[BasicBlock] = set()
+        stack = [entry]
         while stack:
             bb = stack.pop()
-            if bb is None or bb in body:
+            if bb in body:
                 continue
-            if bb in entries and bb is not entry:
-                continue  # never absorb another subroutine's entry
             body.add(bb)
-            last_op = _terminator_op(bb)
-            if last_op == "retsub":
-                continue  # successors are caller continuations, not ours
-            if last_op == "callsub":
-                cont = continuations.get(bb)
-                if cont is not None:
-                    stack.append(cont)  # skip the callee, take the return point
+            op = _terminator_op(bb)
+            if op == "retsub":
+                continue
+            if op == "callsub":
+                cont = conts.get(bb)
+                if cont is not None and not (cont in entries and cont is not entry):
+                    stack.append(cont)
                 continue
             for s in bb.successors:
                 if s in entries and s is not entry:
                     continue
                 stack.append(s)
+        return body
+
+    # Bodies and continuations refine each other: a body must flow through
+    # each internal callsub's continuation, while the heuristic-2 continuation
+    # fallback needs the *callee's* retsubs — which live in a body. Seed the
+    # continuations with heuristic 1 (self-contained), then iterate to a
+    # fixpoint: heuristic 2 fills any callsub whose return point isn't the next
+    # source block (a linker that interleaved subroutine bodies). Converges in
+    # a round or two — each pass can only add continuations, never remove them.
+    continuations: dict[BasicBlock, Optional[BasicBlock]] = {
+        cs_bb: _source_next(cs_bb) for cs_bb in callsub_bbs
+    }
+    bodies: dict[BasicBlock, set[BasicBlock]] = {}
+    while True:
+        bodies = {entry: _body(entry, continuations) for entry in entries}
+        retsub_targets_per_sub = {
+            entry: {
+                t for bb in body
+                if _terminator_op(bb) == "retsub"
+                for t in bb.successors
+            }
+            for entry, body in bodies.items()
+        }
+        added = False
+        for cs_bb in callsub_bbs:
+            if continuations[cs_bb] is not None:
+                continue
+            last = cs_bb.assignments[-1].location
+            candidates = [
+                c for c in retsub_targets_per_sub.get(callsub_target.get(cs_bb), ())
+                if c.assignments
+                and c.assignments[0].location.file == last.file
+                and c.assignments[0].location.line > last.line
+            ]
+            if candidates:
+                continuations[cs_bb] = min(
+                    candidates, key=lambda c: c.assignments[0].location.line)
+                added = True
+        if not added:
+            break
 
     return {
         "entries": entries,
