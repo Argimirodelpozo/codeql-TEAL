@@ -1,0 +1,314 @@
+#pragma version 10
+txn NumAppArgs
+int 0
+==
+bnz main_l8
+txna ApplicationArgs 0
+method "create(address,address,address,uint64,uint64,uint64)void"
+==
+bnz main_l7
+txna ApplicationArgs 0
+method "initialise(account)void"
+==
+bnz main_l6
+txna ApplicationArgs 0
+method "mint(pay)void"
+==
+bnz main_l5
+err
+main_l5:
+txn OnCompletion
+int NoOp
+==
+txn ApplicationID
+int 0
+!=
+&&
+assert
+callsub mintcaster_8
+int 1
+return
+main_l6:
+txn OnCompletion
+int NoOp
+==
+txn ApplicationID
+int 0
+!=
+&&
+assert
+callsub initialisecaster_7
+int 1
+return
+main_l7:
+txn OnCompletion
+int NoOp
+==
+txn ApplicationID
+int 0
+==
+&&
+assert
+callsub createcaster_6
+int 1
+return
+main_l8:
+txn OnCompletion
+int UpdateApplication
+==
+bnz main_l10
+err
+main_l10:
+txn ApplicationID
+int 0
+!=
+assert
+byte "init"
+int 0
+app_global_put
+int 1
+return
+
+// get_transfer_inner_txn
+gettransferinnertxn_0:
+proto 4 0
+frame_dig -4
+itxn_field Sender
+int 0
+itxn_field Fee
+frame_dig -1
+bnz gettransferinnertxn_0_l2
+int pay
+itxn_field TypeEnum
+frame_dig -2
+itxn_field Amount
+frame_dig -3
+itxn_field Receiver
+b gettransferinnertxn_0_l3
+gettransferinnertxn_0_l2:
+int axfer
+itxn_field TypeEnum
+frame_dig -1
+itxn_field XferAsset
+frame_dig -2
+itxn_field AssetAmount
+frame_dig -3
+itxn_field AssetReceiver
+gettransferinnertxn_0_l3:
+retsub
+
+// get_proposer
+getproposer_1:
+proto 1 1
+frame_dig -1
+byte "num_proposers"
+app_global_get
+<
+assert
+byte "pr"
+frame_dig -1
+int 32
+*
+int 32
+box_extract
+retsub
+
+// mint_x_algo
+mintxalgo_2:
+proto 2 0
+itxn_begin
+global CurrentApplicationAddress
+frame_dig -1
+frame_dig -2
+byte "x_algo_id"
+app_global_get
+callsub gettransferinnertxn_0
+itxn_submit
+retsub
+
+// create
+create_3:
+proto 6 0
+byte "init"
+int 1
+app_global_put
+byte "admin"
+frame_dig -6
+app_global_put
+byte "register_admin"
+frame_dig -5
+app_global_put
+byte "xgov_admin"
+frame_dig -4
+app_global_put
+byte "time_delay"
+int 86400
+app_global_put
+byte "num_proposers"
+int 0
+app_global_put
+byte "max_proposer_balance"
+frame_dig -3
+app_global_put
+byte "fee"
+frame_dig -1
+app_global_put
+byte "premium"
+frame_dig -2
+app_global_put
+byte "last_proposers_active_balance"
+int 0
+app_global_put
+byte "total_pending_stake"
+int 0
+app_global_put
+byte "total_unclaimed_fees"
+int 0
+app_global_put
+byte "total_unclaimed_fees"
+int 0
+app_global_put
+byte "can_immediate_mint"
+int 1
+app_global_put
+byte "can_delay_mint"
+int 0
+app_global_put
+retsub
+
+// initialise
+initialise_4:
+proto 1 0
+itxn_begin
+int acfg
+itxn_field TypeEnum
+byte "Governance xAlgo"
+itxn_field ConfigAssetName
+byte "xALGO"
+itxn_field ConfigAssetUnitName
+int 10000000000000000
+itxn_field ConfigAssetTotal
+int 6
+itxn_field ConfigAssetDecimals
+global CurrentApplicationAddress
+itxn_field ConfigAssetReserve
+int 0
+itxn_field Fee
+itxn_submit
+byte "x_algo_id"
+itxn CreatedAssetID
+app_global_put
+frame_dig -1
+acct_params_get AcctAuthAddr
+store 1
+store 0
+load 1
+assert
+load 0
+global CurrentApplicationAddress
+==
+assert
+byte "num_proposers"
+int 1
+app_global_put
+byte "pr"
+int 32
+int 30
+*
+box_create
+assert
+byte "pr"
+int 0
+frame_dig -1
+txnas Accounts
+box_replace
+byte "ap"
+frame_dig -1
+txnas Accounts
+concat
+int 0
+box_create
+assert
+retsub
+
+// mint
+mint_5:
+proto 1 0
+frame_dig -1
+gtxns Receiver
+int 0
+callsub getproposer_1
+==
+assert
+frame_dig -1
+gtxns Amount
+txn Sender
+callsub mintxalgo_2
+byte "last_proposers_active_balance"
+byte "last_proposers_active_balance"
+app_global_get
+frame_dig -1
+gtxns Amount
++
+app_global_put
+retsub
+
+// create_caster
+createcaster_6:
+proto 0 0
+byte ""
+dupn 2
+int 0
+dupn 2
+txna ApplicationArgs 1
+frame_bury 0
+txna ApplicationArgs 2
+frame_bury 1
+txna ApplicationArgs 3
+frame_bury 2
+txna ApplicationArgs 4
+btoi
+frame_bury 3
+txna ApplicationArgs 5
+btoi
+frame_bury 4
+txna ApplicationArgs 6
+btoi
+frame_bury 5
+frame_dig 0
+frame_dig 1
+frame_dig 2
+frame_dig 3
+frame_dig 4
+frame_dig 5
+callsub create_3
+retsub
+
+// initialise_caster
+initialisecaster_7:
+proto 0 0
+int 0
+txna ApplicationArgs 1
+int 0
+getbyte
+frame_bury 0
+frame_dig 0
+callsub initialise_4
+retsub
+
+// mint_caster
+mintcaster_8:
+proto 0 0
+int 0
+txn GroupIndex
+int 1
+-
+frame_bury 0
+frame_dig 0
+gtxns TypeEnum
+int pay
+==
+assert
+frame_dig 0
+callsub mint_5
+retsub

@@ -1,0 +1,2145 @@
+#pragma version 10
+txna ApplicationArgs 0
+method "initialise()void"
+==
+bnz main_l42
+txna ApplicationArgs 0
+method "update_admin(string,address)void"
+==
+bnz main_l41
+txna ApplicationArgs 0
+method "schedule_update_sc(byte[32],byte[32])void"
+==
+bnz main_l40
+txna ApplicationArgs 0
+method "update_sc()void"
+==
+bnz main_l39
+txna ApplicationArgs 0
+method "add_proposer(account)void"
+==
+bnz main_l38
+txna ApplicationArgs 0
+method "update_max_proposer_balance(uint64)void"
+==
+bnz main_l37
+txna ApplicationArgs 0
+method "update_fee(uint64)void"
+==
+bnz main_l36
+txna ApplicationArgs 0
+method "claim_fee()void"
+==
+bnz main_l35
+txna ApplicationArgs 0
+method "update_premium(uint64)void"
+==
+bnz main_l34
+txna ApplicationArgs 0
+method "pause_minting(string,bool)void"
+==
+bnz main_l33
+txna ApplicationArgs 0
+method "set_proposer_admin(uint8,address)void"
+==
+bnz main_l32
+txna ApplicationArgs 0
+method "register_online(pay,uint8,address,address,byte[64],uint64,uint64,uint64)void"
+==
+bnz main_l31
+txna ApplicationArgs 0
+method "register_offline(uint8)void"
+==
+bnz main_l30
+txna ApplicationArgs 0
+method "subscribe_xgov(pay,uint8,application,address)void"
+==
+bnz main_l29
+txna ApplicationArgs 0
+method "unsubscribe_xgov(uint8,application)void"
+==
+bnz main_l28
+txna ApplicationArgs 0
+method "immediate_mint(pay,address,uint64)void"
+==
+bnz main_l27
+txna ApplicationArgs 0
+method "delayed_mint(pay,address,byte[2])void"
+==
+bnz main_l26
+txna ApplicationArgs 0
+method "claim_delayed_mint(address,byte[2])void"
+==
+bnz main_l25
+txna ApplicationArgs 0
+method "burn(axfer,address,uint64)void"
+==
+bnz main_l24
+txna ApplicationArgs 0
+method "get_xalgo_rate()(uint64,uint64,byte[])"
+==
+bnz main_l23
+txna ApplicationArgs 0
+method "dummy()void"
+==
+bnz main_l22
+err
+main_l22:
+txn OnCompletion
+int NoOp
+==
+txn ApplicationID
+int 0
+!=
+&&
+assert
+callsub dummycaster_66
+int 1
+return
+main_l23:
+txn OnCompletion
+int NoOp
+==
+txn ApplicationID
+int 0
+!=
+&&
+assert
+callsub getxalgoratecaster_65
+int 1
+return
+main_l24:
+txn OnCompletion
+int NoOp
+==
+txn ApplicationID
+int 0
+!=
+&&
+assert
+callsub burncaster_64
+int 1
+return
+main_l25:
+txn OnCompletion
+int NoOp
+==
+txn ApplicationID
+int 0
+!=
+&&
+assert
+callsub claimdelayedmintcaster_63
+int 1
+return
+main_l26:
+txn OnCompletion
+int NoOp
+==
+txn ApplicationID
+int 0
+!=
+&&
+assert
+callsub delayedmintcaster_62
+int 1
+return
+main_l27:
+txn OnCompletion
+int NoOp
+==
+txn ApplicationID
+int 0
+!=
+&&
+assert
+callsub immediatemintcaster_61
+int 1
+return
+main_l28:
+txn OnCompletion
+int NoOp
+==
+txn ApplicationID
+int 0
+!=
+&&
+assert
+callsub unsubscribexgovcaster_60
+int 1
+return
+main_l29:
+txn OnCompletion
+int NoOp
+==
+txn ApplicationID
+int 0
+!=
+&&
+assert
+callsub subscribexgovcaster_59
+int 1
+return
+main_l30:
+txn OnCompletion
+int NoOp
+==
+txn ApplicationID
+int 0
+!=
+&&
+assert
+callsub registerofflinecaster_58
+int 1
+return
+main_l31:
+txn OnCompletion
+int NoOp
+==
+txn ApplicationID
+int 0
+!=
+&&
+assert
+callsub registeronlinecaster_57
+int 1
+return
+main_l32:
+txn OnCompletion
+int NoOp
+==
+txn ApplicationID
+int 0
+!=
+&&
+assert
+callsub setproposeradmincaster_56
+int 1
+return
+main_l33:
+txn OnCompletion
+int NoOp
+==
+txn ApplicationID
+int 0
+!=
+&&
+assert
+callsub pausemintingcaster_55
+int 1
+return
+main_l34:
+txn OnCompletion
+int NoOp
+==
+txn ApplicationID
+int 0
+!=
+&&
+assert
+callsub updatepremiumcaster_54
+int 1
+return
+main_l35:
+txn OnCompletion
+int NoOp
+==
+txn ApplicationID
+int 0
+!=
+&&
+assert
+callsub claimfeecaster_53
+int 1
+return
+main_l36:
+txn OnCompletion
+int NoOp
+==
+txn ApplicationID
+int 0
+!=
+&&
+assert
+callsub updatefeecaster_52
+int 1
+return
+main_l37:
+txn OnCompletion
+int NoOp
+==
+txn ApplicationID
+int 0
+!=
+&&
+assert
+callsub updatemaxproposerbalancecaster_51
+int 1
+return
+main_l38:
+txn OnCompletion
+int NoOp
+==
+txn ApplicationID
+int 0
+!=
+&&
+assert
+callsub addproposercaster_50
+int 1
+return
+main_l39:
+txn OnCompletion
+int UpdateApplication
+==
+txn ApplicationID
+int 0
+!=
+&&
+assert
+callsub updatesccaster_49
+int 1
+return
+main_l40:
+txn OnCompletion
+int NoOp
+==
+txn ApplicationID
+int 0
+!=
+&&
+assert
+callsub scheduleupdatesccaster_48
+int 1
+return
+main_l41:
+txn OnCompletion
+int NoOp
+==
+txn ApplicationID
+int 0
+!=
+&&
+assert
+callsub updateadmincaster_47
+int 1
+return
+main_l42:
+txn OnCompletion
+int NoOp
+==
+txn ApplicationID
+int 0
+!=
+&&
+assert
+callsub initialisecaster_46
+int 1
+return
+
+// mul_scale
+mulscale_0:
+proto 3 1
+frame_dig -3
+frame_dig -2
+mulw
+frame_dig -1
+divw
+retsub
+
+// minimum
+minimum_1:
+proto 2 1
+frame_dig -2
+frame_dig -1
+<
+bnz minimum_1_l2
+frame_dig -1
+b minimum_1_l3
+minimum_1_l2:
+frame_dig -2
+minimum_1_l3:
+retsub
+
+// rekey_and_close_to_check
+rekeyandclosetocheck_2:
+proto 0 0
+txn RekeyTo
+global ZeroAddress
+==
+assert
+txn CloseRemainderTo
+global ZeroAddress
+==
+assert
+txn AssetCloseTo
+global ZeroAddress
+==
+assert
+retsub
+
+// address_length_check
+addresslengthcheck_3:
+proto 1 0
+frame_dig -1
+len
+int 32
+==
+assert
+retsub
+
+// get_transfer_inner_txn
+gettransferinnertxn_4:
+proto 4 0
+frame_dig -4
+itxn_field Sender
+int 0
+itxn_field Fee
+frame_dig -1
+bnz gettransferinnertxn_4_l2
+int pay
+itxn_field TypeEnum
+frame_dig -2
+itxn_field Amount
+frame_dig -3
+itxn_field Receiver
+b gettransferinnertxn_4_l3
+gettransferinnertxn_4_l2:
+int axfer
+itxn_field TypeEnum
+frame_dig -1
+itxn_field XferAsset
+frame_dig -2
+itxn_field AssetAmount
+frame_dig -3
+itxn_field AssetReceiver
+gettransferinnertxn_4_l3:
+retsub
+
+// check_admin_call
+checkadmincall_5:
+proto 0 0
+txn Sender
+byte "admin"
+app_global_get
+==
+assert
+retsub
+
+// is_register_admin_call
+isregisteradmincall_6:
+proto 0 1
+txn Sender
+byte "register_admin"
+app_global_get
+==
+retsub
+
+// check_register_admin_call
+checkregisteradmincall_7:
+proto 0 0
+callsub isregisteradmincall_6
+assert
+retsub
+
+// check_xgov_admin_call
+checkxgovadmincall_8:
+proto 0 0
+txn Sender
+byte "xgov_admin"
+app_global_get
+==
+assert
+retsub
+
+// check_proposer_admin_call
+checkproposeradmincall_9:
+proto 1 0
+byte "ap"
+frame_dig -1
+callsub getproposer_14
+concat
+box_get
+store 21
+store 20
+load 21
+assert
+global LatestTimestamp
+load 20
+int 0
+extract_uint64
+>
+assert
+txn Sender
+load 20
+extract 8 32
+==
+assert
+retsub
+
+// replace_proposer_admin
+replaceproposeradmin_10:
+proto 3 0
+byte "ap"
+frame_dig -3
+callsub getproposer_14
+concat
+frame_dig -2
+itob
+frame_dig -1
+concat
+box_put
+retsub
+
+// check_fee
+checkfee_11:
+proto 0 0
+byte "fee"
+app_global_get
+int 10000
+<=
+assert
+retsub
+
+// check_premium
+checkpremium_12:
+proto 0 0
+byte "premium"
+app_global_get
+int 100000000000000
+<=
+assert
+retsub
+
+// get_app_algo_balance
+getappalgobalance_13:
+proto 0 1
+global CurrentApplicationAddress
+balance
+global CurrentApplicationAddress
+min_balance
+-
+retsub
+
+// get_proposer
+getproposer_14:
+proto 1 1
+frame_dig -1
+byte "num_proposers"
+app_global_get
+<
+assert
+byte "pr"
+frame_dig -1
+int 32
+*
+int 32
+box_extract
+retsub
+
+// get_proposer_balance
+getproposerbalance_15:
+proto 2 1
+frame_dig -2
+callsub getproposer_14
+store 10
+load 10
+balance
+frame_dig -1
+bnz getproposerbalance_15_l2
+load 10
+min_balance
+b getproposerbalance_15_l3
+getproposerbalance_15_l2:
+int 0
+getproposerbalance_15_l3:
+-
+retsub
+
+// get_proposers_algo_balance
+getproposersalgobalance_16:
+proto 1 1
+byte "num_proposers"
+app_global_get
+store 7
+int 0
+store 8
+int 0
+store 9
+getproposersalgobalance_16_l1:
+load 9
+load 7
+<
+bz getproposersalgobalance_16_l3
+load 8
+load 9
+frame_dig -1
+callsub getproposerbalance_15
++
+store 8
+load 9
+int 1
++
+store 9
+b getproposersalgobalance_16_l1
+getproposersalgobalance_16_l3:
+load 8
+retsub
+
+// get_x_algo_circulating_supply
+getxalgocirculatingsupply_17:
+proto 0 1
+global CurrentApplicationAddress
+byte "x_algo_id"
+app_global_get
+asset_holding_get AssetBalance
+store 29
+store 28
+load 29
+assert
+int 10000000000000000
+load 28
+-
+retsub
+
+// sync_proposers_active_balance_and_unclaimed_fees
+syncproposersactivebalanceandunclaimedfees_18:
+proto 0 0
+int 0
+callsub getproposersalgobalance_16
+byte "total_pending_stake"
+app_global_get
+-
+store 6
+byte "total_unclaimed_fees"
+byte "total_unclaimed_fees"
+app_global_get
+load 6
+byte "last_proposers_active_balance"
+app_global_get
+-
+byte "fee"
+app_global_get
+int 10000
+callsub mulscale_0
++
+app_global_put
+byte "last_proposers_active_balance"
+load 6
+app_global_put
+retsub
+
+// receive_algo_to_proposers
+receivealgotoproposers_19:
+proto 1 0
+byte "num_proposers"
+app_global_get
+store 30
+int 1
+callsub getproposersalgobalance_16
+frame_dig -1
++
+load 30
+/
+int 1
++
+store 34
+load 34
+byte "max_proposer_balance"
+app_global_get
+<=
+assert
+int 0
+store 31
+frame_dig -1
+store 32
+receivealgotoproposers_19_l1:
+load 31
+load 30
+<
+load 32
+&&
+bz receivealgotoproposers_19_l5
+load 31
+int 1
+callsub getproposerbalance_15
+store 33
+load 33
+load 34
+<
+bnz receivealgotoproposers_19_l4
+receivealgotoproposers_19_l3:
+load 31
+int 1
++
+store 31
+b receivealgotoproposers_19_l1
+receivealgotoproposers_19_l4:
+load 34
+load 33
+-
+load 32
+callsub minimum_1
+store 35
+itxn_begin
+global CurrentApplicationAddress
+load 31
+callsub getproposer_14
+load 35
+int 0
+callsub gettransferinnertxn_4
+itxn_submit
+load 32
+load 35
+-
+store 32
+b receivealgotoproposers_19_l3
+receivealgotoproposers_19_l5:
+load 32
+!
+assert
+retsub
+
+// send_algo_from_proposers
+sendalgofromproposers_20:
+proto 2 0
+byte "num_proposers"
+app_global_get
+store 11
+int 1
+callsub getproposersalgobalance_16
+frame_dig -1
+-
+load 11
+/
+store 15
+int 0
+store 12
+frame_dig -1
+store 13
+sendalgofromproposers_20_l1:
+load 12
+load 11
+<
+load 13
+&&
+bz sendalgofromproposers_20_l5
+load 12
+int 1
+callsub getproposerbalance_15
+store 14
+load 14
+load 15
+>
+bnz sendalgofromproposers_20_l4
+sendalgofromproposers_20_l3:
+load 12
+int 1
++
+store 12
+b sendalgofromproposers_20_l1
+sendalgofromproposers_20_l4:
+load 14
+load 15
+-
+load 13
+callsub minimum_1
+store 16
+itxn_begin
+load 12
+callsub getproposer_14
+global CurrentApplicationAddress
+load 16
+int 0
+callsub gettransferinnertxn_4
+itxn_submit
+load 13
+load 16
+-
+store 13
+b sendalgofromproposers_20_l3
+sendalgofromproposers_20_l5:
+load 13
+!
+assert
+itxn_begin
+global CurrentApplicationAddress
+frame_dig -2
+frame_dig -1
+int 0
+callsub gettransferinnertxn_4
+itxn_submit
+retsub
+
+// send_unclaimed_fees
+sendunclaimedfees_21:
+proto 0 0
+callsub syncproposersactivebalanceandunclaimedfees_18
+byte "admin"
+app_global_get
+byte "total_unclaimed_fees"
+app_global_get
+callsub sendalgofromproposers_20
+byte "last_proposers_active_balance"
+byte "last_proposers_active_balance"
+app_global_get
+byte "total_unclaimed_fees"
+app_global_get
+-
+app_global_put
+byte "total_unclaimed_fees"
+int 0
+app_global_put
+retsub
+
+// mint_x_algo
+mintxalgo_22:
+proto 2 0
+itxn_begin
+global CurrentApplicationAddress
+frame_dig -1
+frame_dig -2
+byte "x_algo_id"
+app_global_get
+callsub gettransferinnertxn_4
+itxn_submit
+retsub
+
+// check_algo_sent
+checkalgosent_23:
+proto 2 0
+frame_dig -2
+gtxns TypeEnum
+int pay
+==
+assert
+frame_dig -2
+gtxns Sender
+txn Sender
+==
+assert
+frame_dig -2
+gtxns Receiver
+frame_dig -1
+==
+assert
+frame_dig -2
+gtxns CloseRemainderTo
+global ZeroAddress
+==
+assert
+frame_dig -2
+gtxns RekeyTo
+global ZeroAddress
+==
+assert
+retsub
+
+// check_x_algo_sent
+checkxalgosent_24:
+proto 1 0
+frame_dig -1
+gtxns TypeEnum
+int axfer
+==
+assert
+frame_dig -1
+gtxns XferAsset
+byte "x_algo_id"
+app_global_get
+==
+assert
+frame_dig -1
+gtxns Sender
+txn Sender
+==
+assert
+frame_dig -1
+gtxns AssetReceiver
+global CurrentApplicationAddress
+==
+assert
+frame_dig -1
+gtxns AssetCloseTo
+global ZeroAddress
+==
+assert
+frame_dig -1
+gtxns CloseRemainderTo
+global ZeroAddress
+==
+assert
+frame_dig -1
+gtxns RekeyTo
+global ZeroAddress
+==
+assert
+retsub
+
+// initialise
+initialise_25:
+proto 0 0
+callsub rekeyandclosetocheck_2
+byte "init"
+app_global_get
+!
+assert
+byte "init"
+int 1
+app_global_put
+retsub
+
+// update_admin
+updateadmin_26:
+proto 2 0
+callsub rekeyandclosetocheck_2
+byte "init"
+app_global_get
+assert
+frame_dig -2
+extract 2 0
+byte "admin"
+==
+frame_dig -2
+extract 2 0
+byte "register_admin"
+==
+||
+frame_dig -2
+extract 2 0
+byte "xgov_admin"
+==
+||
+assert
+txn Sender
+byte "admin"
+app_global_get
+==
+txn Sender
+frame_dig -2
+extract 2 0
+app_global_get
+==
+||
+assert
+frame_dig -1
+callsub addresslengthcheck_3
+frame_dig -2
+extract 2 0
+frame_dig -1
+app_global_put
+retsub
+
+// schedule_update_sc
+scheduleupdatesc_27:
+proto 2 0
+callsub rekeyandclosetocheck_2
+byte "init"
+app_global_get
+assert
+callsub checkadmincall_5
+frame_dig -2
+len
+int 32
+==
+assert
+frame_dig -1
+len
+int 32
+==
+assert
+global LatestTimestamp
+byte "time_delay"
+app_global_get
++
+store 0
+byte "sc"
+load 0
+itob
+frame_dig -2
+concat
+frame_dig -1
+concat
+box_put
+retsub
+
+// update_sc
+updatesc_28:
+proto 0 0
+callsub rekeyandclosetocheck_2
+byte "init"
+app_global_get
+assert
+callsub checkadmincall_5
+byte "sc"
+box_get
+store 2
+store 1
+load 2
+assert
+global LatestTimestamp
+load 1
+int 0
+extract_uint64
+>
+assert
+load 1
+extract 8 32
+txn ApprovalProgram
+sha256
+==
+assert
+load 1
+extract 40 32
+txn ClearStateProgram
+sha256
+==
+assert
+byte "sc"
+box_del
+assert
+itxn_begin
+global CurrentApplicationAddress
+txn Sender
+callsub getappalgobalance_13
+int 0
+callsub gettransferinnertxn_4
+itxn_submit
+byte "init"
+int 0
+app_global_put
+retsub
+
+// add_proposer
+addproposer_29:
+proto 1 0
+callsub rekeyandclosetocheck_2
+byte "init"
+app_global_get
+assert
+callsub checkregisteradmincall_7
+frame_dig -1
+acct_params_get AcctAuthAddr
+store 4
+store 3
+load 4
+assert
+load 3
+global CurrentApplicationAddress
+==
+assert
+byte "num_proposers"
+app_global_get
+store 5
+load 5
+int 30
+<
+assert
+byte "ap"
+frame_dig -1
+txnas Accounts
+concat
+int 0
+box_create
+assert
+byte "pr"
+load 5
+int 32
+*
+frame_dig -1
+txnas Accounts
+box_replace
+byte "num_proposers"
+load 5
+int 1
++
+app_global_put
+method "AddProposer(address)"
+frame_dig -1
+txnas Accounts
+concat
+log
+retsub
+
+// update_max_proposer_balance
+updatemaxproposerbalance_30:
+proto 1 0
+callsub rekeyandclosetocheck_2
+byte "init"
+app_global_get
+assert
+callsub checkadmincall_5
+byte "max_proposer_balance"
+frame_dig -1
+app_global_put
+method "UpdateMaxProposerBalance(uint64)"
+frame_dig -1
+itob
+concat
+log
+retsub
+
+// update_fee
+updatefee_31:
+proto 1 0
+callsub rekeyandclosetocheck_2
+byte "init"
+app_global_get
+assert
+callsub checkadmincall_5
+callsub sendunclaimedfees_21
+byte "fee"
+frame_dig -1
+app_global_put
+callsub checkfee_11
+method "UpdateFee(uint64)"
+frame_dig -1
+itob
+concat
+log
+retsub
+
+// claim_fee
+claimfee_32:
+proto 0 0
+callsub rekeyandclosetocheck_2
+byte "init"
+app_global_get
+assert
+callsub sendunclaimedfees_21
+retsub
+
+// update_premium
+updatepremium_33:
+proto 1 0
+callsub rekeyandclosetocheck_2
+byte "init"
+app_global_get
+assert
+callsub checkadmincall_5
+byte "premium"
+frame_dig -1
+app_global_put
+callsub checkpremium_12
+method "UpdatePremium(uint64)"
+frame_dig -1
+itob
+concat
+log
+retsub
+
+// pause_minting
+pauseminting_34:
+proto 2 0
+callsub rekeyandclosetocheck_2
+byte "init"
+app_global_get
+assert
+frame_dig -2
+extract 2 0
+byte "can_immediate_mint"
+==
+frame_dig -2
+extract 2 0
+byte "can_delay_mint"
+==
+||
+assert
+callsub checkadmincall_5
+frame_dig -2
+extract 2 0
+frame_dig -1
+!
+app_global_put
+method "PauseMinting(string,uint64)"
+frame_dig -2
+extract 2 0
+concat
+frame_dig -1
+itob
+concat
+log
+retsub
+
+// set_proposer_admin
+setproposeradmin_35:
+proto 2 0
+callsub rekeyandclosetocheck_2
+byte "init"
+app_global_get
+assert
+frame_dig -2
+byte "num_proposers"
+app_global_get
+<
+assert
+byte "ap"
+frame_dig -2
+callsub getproposer_14
+concat
+store 17
+load 17
+box_get
+store 19
+store 18
+load 19
+assert
+frame_dig -1
+callsub addresslengthcheck_3
+callsub isregisteradmincall_6
+bnz setproposeradmin_35_l2
+frame_dig -2
+callsub checkproposeradmincall_9
+frame_dig -2
+global LatestTimestamp
+frame_dig -1
+callsub replaceproposeradmin_10
+b setproposeradmin_35_l5
+setproposeradmin_35_l2:
+load 18
+len
+bnz setproposeradmin_35_l4
+load 17
+int 40
+box_resize
+frame_dig -2
+global LatestTimestamp
+frame_dig -1
+callsub replaceproposeradmin_10
+b setproposeradmin_35_l5
+setproposeradmin_35_l4:
+frame_dig -2
+global LatestTimestamp
+byte "time_delay"
+app_global_get
++
+frame_dig -1
+callsub replaceproposeradmin_10
+setproposeradmin_35_l5:
+retsub
+
+// register_online
+registeronline_36:
+proto 8 0
+callsub rekeyandclosetocheck_2
+byte "init"
+app_global_get
+assert
+frame_dig -7
+callsub checkproposeradmincall_9
+frame_dig -8
+frame_dig -7
+callsub getproposer_14
+callsub checkalgosent_23
+frame_dig -7
+byte "num_proposers"
+app_global_get
+<
+assert
+itxn_begin
+int keyreg
+itxn_field TypeEnum
+frame_dig -7
+callsub getproposer_14
+itxn_field Sender
+frame_dig -6
+itxn_field VotePK
+frame_dig -5
+itxn_field SelectionPK
+frame_dig -4
+itxn_field StateProofPK
+frame_dig -3
+itxn_field VoteFirst
+frame_dig -2
+itxn_field VoteLast
+frame_dig -1
+itxn_field VoteKeyDilution
+frame_dig -8
+gtxns Amount
+itxn_field Fee
+itxn_submit
+retsub
+
+// register_offline
+registeroffline_37:
+proto 1 0
+callsub rekeyandclosetocheck_2
+byte "init"
+app_global_get
+assert
+callsub isregisteradmincall_6
+!
+bz registeroffline_37_l2
+frame_dig -1
+callsub checkproposeradmincall_9
+registeroffline_37_l2:
+frame_dig -1
+byte "num_proposers"
+app_global_get
+<
+assert
+itxn_begin
+int keyreg
+itxn_field TypeEnum
+frame_dig -1
+callsub getproposer_14
+itxn_field Sender
+int 0
+itxn_field Fee
+itxn_submit
+retsub
+
+// subscribe_xgov
+subscribexgov_38:
+proto 4 0
+callsub rekeyandclosetocheck_2
+byte "init"
+app_global_get
+assert
+callsub checkxgovadmincall_8
+frame_dig -1
+callsub addresslengthcheck_3
+frame_dig -3
+byte "num_proposers"
+app_global_get
+<
+assert
+frame_dig -2
+txnas Applications
+app_params_get AppAddress
+store 23
+store 22
+frame_dig -2
+txnas Applications
+byte "xgov_fee"
+app_global_get_ex
+store 25
+store 24
+load 23
+assert
+load 25
+assert
+frame_dig -4
+global CurrentApplicationAddress
+callsub checkalgosent_23
+frame_dig -4
+gtxns Amount
+load 24
+==
+assert
+itxn_begin
+global CurrentApplicationAddress
+itxn_field Sender
+int pay
+itxn_field TypeEnum
+frame_dig -4
+gtxns Amount
+itxn_field Amount
+load 22
+itxn_field Receiver
+int 0
+itxn_field Fee
+itxn_next
+int appl
+itxn_field TypeEnum
+frame_dig -2
+txnas Applications
+itxn_field ApplicationID
+method "subscribe_xgov(address,pay)void"
+itxn_field ApplicationArgs
+frame_dig -1
+itxn_field ApplicationArgs
+frame_dig -3
+callsub getproposer_14
+itxn_field Sender
+int 0
+itxn_field Fee
+itxn_submit
+retsub
+
+// unsubscribe_xgov
+unsubscribexgov_39:
+proto 2 0
+byte ""
+callsub rekeyandclosetocheck_2
+byte "init"
+app_global_get
+assert
+callsub checkxgovadmincall_8
+frame_dig -2
+byte "num_proposers"
+app_global_get
+<
+assert
+frame_dig -2
+callsub getproposer_14
+frame_bury 0
+frame_dig 0
+len
+int 32
+==
+assert
+itxn_begin
+int appl
+itxn_field TypeEnum
+frame_dig -1
+txnas Applications
+itxn_field ApplicationID
+method "unsubscribe_xgov(address)void"
+itxn_field ApplicationArgs
+frame_dig 0
+itxn_field ApplicationArgs
+frame_dig 0
+itxn_field Sender
+int 0
+itxn_field Fee
+itxn_submit
+retsub
+
+// immediate_mint
+immediatemint_40:
+proto 3 0
+callsub rekeyandclosetocheck_2
+byte "init"
+app_global_get
+assert
+byte "can_immediate_mint"
+app_global_get
+assert
+frame_dig -2
+callsub addresslengthcheck_3
+callsub syncproposersactivebalanceandunclaimedfees_18
+frame_dig -3
+global CurrentApplicationAddress
+callsub checkalgosent_23
+frame_dig -3
+gtxns Amount
+callsub receivealgotoproposers_19
+byte "last_proposers_active_balance"
+app_global_get
+byte "total_unclaimed_fees"
+app_global_get
+-
+store 26
+load 26
+bnz immediatemint_40_l2
+frame_dig -3
+gtxns Amount
+b immediatemint_40_l3
+immediatemint_40_l2:
+frame_dig -3
+gtxns Amount
+callsub getxalgocirculatingsupply_17
+load 26
+callsub mulscale_0
+int 10000000000000000
+byte "premium"
+app_global_get
+-
+int 10000000000000000
+callsub mulscale_0
+immediatemint_40_l3:
+store 27
+byte "last_proposers_active_balance"
+byte "last_proposers_active_balance"
+app_global_get
+frame_dig -3
+gtxns Amount
++
+app_global_put
+load 27
+assert
+load 27
+frame_dig -1
+>=
+assert
+load 27
+frame_dig -2
+callsub mintxalgo_22
+method "ImmediateMint(address,address,uint64,uint64)"
+txn Sender
+concat
+frame_dig -2
+concat
+frame_dig -3
+gtxns Amount
+itob
+concat
+load 27
+itob
+concat
+log
+retsub
+
+// delayed_mint
+delayedmint_41:
+proto 3 0
+callsub rekeyandclosetocheck_2
+byte "init"
+app_global_get
+assert
+byte "can_delay_mint"
+app_global_get
+assert
+frame_dig -2
+callsub addresslengthcheck_3
+frame_dig -1
+len
+int 2
+==
+assert
+callsub syncproposersactivebalanceandunclaimedfees_18
+frame_dig -3
+global CurrentApplicationAddress
+callsub checkalgosent_23
+frame_dig -3
+gtxns Amount
+callsub receivealgotoproposers_19
+byte "total_pending_stake"
+byte "total_pending_stake"
+app_global_get
+frame_dig -3
+gtxns Amount
++
+app_global_put
+byte "dm"
+txn Sender
+concat
+frame_dig -1
+concat
+int 48
+box_create
+assert
+byte "dm"
+txn Sender
+concat
+frame_dig -1
+concat
+frame_dig -2
+frame_dig -3
+gtxns Amount
+itob
+concat
+global Round
+int 320
++
+itob
+concat
+box_put
+method "DelayedMint(byte[36],address,address,uint64)"
+byte "dm"
+txn Sender
+concat
+frame_dig -1
+concat
+concat
+txn Sender
+concat
+frame_dig -2
+concat
+frame_dig -3
+gtxns Amount
+itob
+concat
+log
+retsub
+
+// claim_delayed_mint
+claimdelayedmint_42:
+proto 2 0
+callsub rekeyandclosetocheck_2
+byte "init"
+app_global_get
+assert
+frame_dig -2
+callsub addresslengthcheck_3
+frame_dig -1
+len
+int 2
+==
+assert
+byte "dm"
+frame_dig -2
+concat
+frame_dig -1
+concat
+box_get
+store 37
+store 36
+load 37
+assert
+global Round
+load 36
+int 40
+extract_uint64
+>=
+assert
+callsub syncproposersactivebalanceandunclaimedfees_18
+byte "last_proposers_active_balance"
+app_global_get
+byte "total_unclaimed_fees"
+app_global_get
+-
+store 38
+load 38
+bnz claimdelayedmint_42_l2
+load 36
+int 32
+extract_uint64
+b claimdelayedmint_42_l3
+claimdelayedmint_42_l2:
+load 36
+int 32
+extract_uint64
+callsub getxalgocirculatingsupply_17
+load 38
+callsub mulscale_0
+claimdelayedmint_42_l3:
+store 39
+byte "last_proposers_active_balance"
+byte "last_proposers_active_balance"
+app_global_get
+load 36
+int 32
+extract_uint64
++
+app_global_put
+byte "total_pending_stake"
+byte "total_pending_stake"
+app_global_get
+load 36
+int 32
+extract_uint64
+-
+app_global_put
+load 39
+load 36
+extract 0 32
+callsub mintxalgo_22
+byte "dm"
+frame_dig -2
+concat
+frame_dig -1
+concat
+box_del
+assert
+itxn_begin
+global CurrentApplicationAddress
+txn Sender
+callsub getappalgobalance_13
+int 0
+callsub gettransferinnertxn_4
+itxn_submit
+method "ClaimDelayedMint(byte[36],address,address,uint64,uint64)"
+byte "dm"
+frame_dig -2
+concat
+frame_dig -1
+concat
+concat
+frame_dig -2
+concat
+load 36
+extract 0 32
+concat
+load 36
+int 32
+extract_uint64
+itob
+concat
+load 39
+itob
+concat
+log
+retsub
+
+// burn
+burn_43:
+proto 3 0
+callsub rekeyandclosetocheck_2
+byte "init"
+app_global_get
+assert
+frame_dig -2
+callsub addresslengthcheck_3
+frame_dig -3
+callsub checkxalgosent_24
+callsub syncproposersactivebalanceandunclaimedfees_18
+byte "last_proposers_active_balance"
+app_global_get
+byte "total_unclaimed_fees"
+app_global_get
+-
+store 40
+frame_dig -3
+gtxns AssetAmount
+load 40
+callsub getxalgocirculatingsupply_17
+frame_dig -3
+gtxns AssetAmount
++
+callsub mulscale_0
+store 41
+load 41
+assert
+load 41
+frame_dig -1
+>=
+assert
+frame_dig -2
+load 41
+callsub sendalgofromproposers_20
+byte "last_proposers_active_balance"
+byte "last_proposers_active_balance"
+app_global_get
+load 41
+-
+app_global_put
+method "Burn(address,uint64,uint64)"
+txn Sender
+concat
+frame_dig -3
+gtxns AssetAmount
+itob
+concat
+load 41
+itob
+concat
+log
+retsub
+
+// get_xalgo_rate
+getxalgorate_44:
+proto 0 1
+byte ""
+int 0
+dup
+byte ""
+int 0
+dup
+byte ""
+dup
+callsub rekeyandclosetocheck_2
+byte "init"
+app_global_get
+assert
+byte "num_proposers"
+app_global_get
+assert
+callsub syncproposersactivebalanceandunclaimedfees_18
+byte "last_proposers_active_balance"
+app_global_get
+byte "total_unclaimed_fees"
+app_global_get
+-
+frame_bury 1
+callsub getxalgocirculatingsupply_17
+frame_bury 2
+byte "num_proposers"
+app_global_get
+store 42
+load 42
+int 8
+*
+bzero
+store 44
+int 0
+store 43
+getxalgorate_44_l1:
+load 43
+load 42
+<
+bz getxalgorate_44_l3
+load 44
+load 43
+int 8
+*
+load 43
+int 1
+callsub getproposerbalance_15
+itob
+replace3
+store 44
+load 43
+int 1
++
+store 43
+b getxalgorate_44_l1
+getxalgorate_44_l3:
+load 44
+frame_bury 3
+frame_dig 3
+len
+itob
+extract 6 0
+frame_dig 3
+concat
+frame_bury 3
+frame_dig 1
+itob
+frame_dig 2
+itob
+concat
+frame_dig 3
+frame_bury 7
+frame_dig 7
+frame_bury 6
+int 18
+frame_bury 4
+frame_dig 4
+itob
+extract 6 0
+concat
+frame_dig 6
+concat
+frame_bury 0
+retsub
+
+// dummy
+dummy_45:
+proto 0 0
+retsub
+
+// initialise_caster
+initialisecaster_46:
+proto 0 0
+callsub initialise_25
+retsub
+
+// update_admin_caster
+updateadmincaster_47:
+proto 0 0
+byte ""
+dup
+txna ApplicationArgs 1
+frame_bury 0
+txna ApplicationArgs 2
+frame_bury 1
+frame_dig 0
+frame_dig 1
+callsub updateadmin_26
+retsub
+
+// schedule_update_sc_caster
+scheduleupdatesccaster_48:
+proto 0 0
+byte ""
+dup
+txna ApplicationArgs 1
+frame_bury 0
+txna ApplicationArgs 2
+frame_bury 1
+frame_dig 0
+frame_dig 1
+callsub scheduleupdatesc_27
+retsub
+
+// update_sc_caster
+updatesccaster_49:
+proto 0 0
+callsub updatesc_28
+retsub
+
+// add_proposer_caster
+addproposercaster_50:
+proto 0 0
+int 0
+txna ApplicationArgs 1
+int 0
+getbyte
+frame_bury 0
+frame_dig 0
+callsub addproposer_29
+retsub
+
+// update_max_proposer_balance_caster
+updatemaxproposerbalancecaster_51:
+proto 0 0
+int 0
+txna ApplicationArgs 1
+btoi
+frame_bury 0
+frame_dig 0
+callsub updatemaxproposerbalance_30
+retsub
+
+// update_fee_caster
+updatefeecaster_52:
+proto 0 0
+int 0
+txna ApplicationArgs 1
+btoi
+frame_bury 0
+frame_dig 0
+callsub updatefee_31
+retsub
+
+// claim_fee_caster
+claimfeecaster_53:
+proto 0 0
+callsub claimfee_32
+retsub
+
+// update_premium_caster
+updatepremiumcaster_54:
+proto 0 0
+int 0
+txna ApplicationArgs 1
+btoi
+frame_bury 0
+frame_dig 0
+callsub updatepremium_33
+retsub
+
+// pause_minting_caster
+pausemintingcaster_55:
+proto 0 0
+byte ""
+int 0
+txna ApplicationArgs 1
+frame_bury 0
+txna ApplicationArgs 2
+int 0
+int 8
+*
+getbit
+frame_bury 1
+frame_dig 0
+frame_dig 1
+callsub pauseminting_34
+retsub
+
+// set_proposer_admin_caster
+setproposeradmincaster_56:
+proto 0 0
+int 0
+byte ""
+txna ApplicationArgs 1
+int 0
+getbyte
+frame_bury 0
+txna ApplicationArgs 2
+frame_bury 1
+frame_dig 0
+frame_dig 1
+callsub setproposeradmin_35
+retsub
+
+// register_online_caster
+registeronlinecaster_57:
+proto 0 0
+int 0
+dup
+byte ""
+dupn 2
+int 0
+dupn 2
+txna ApplicationArgs 1
+int 0
+getbyte
+frame_bury 1
+txna ApplicationArgs 2
+frame_bury 2
+txna ApplicationArgs 3
+frame_bury 3
+txna ApplicationArgs 4
+frame_bury 4
+txna ApplicationArgs 5
+btoi
+frame_bury 5
+txna ApplicationArgs 6
+btoi
+frame_bury 6
+txna ApplicationArgs 7
+btoi
+frame_bury 7
+txn GroupIndex
+int 1
+-
+frame_bury 0
+frame_dig 0
+gtxns TypeEnum
+int pay
+==
+assert
+frame_dig 0
+frame_dig 1
+frame_dig 2
+frame_dig 3
+frame_dig 4
+frame_dig 5
+frame_dig 6
+frame_dig 7
+callsub registeronline_36
+retsub
+
+// register_offline_caster
+registerofflinecaster_58:
+proto 0 0
+int 0
+txna ApplicationArgs 1
+int 0
+getbyte
+frame_bury 0
+frame_dig 0
+callsub registeroffline_37
+retsub
+
+// subscribe_xgov_caster
+subscribexgovcaster_59:
+proto 0 0
+int 0
+dupn 2
+byte ""
+txna ApplicationArgs 1
+int 0
+getbyte
+frame_bury 1
+txna ApplicationArgs 2
+int 0
+getbyte
+frame_bury 2
+txna ApplicationArgs 3
+frame_bury 3
+txn GroupIndex
+int 1
+-
+frame_bury 0
+frame_dig 0
+gtxns TypeEnum
+int pay
+==
+assert
+frame_dig 0
+frame_dig 1
+frame_dig 2
+frame_dig 3
+callsub subscribexgov_38
+retsub
+
+// unsubscribe_xgov_caster
+unsubscribexgovcaster_60:
+proto 0 0
+int 0
+dup
+txna ApplicationArgs 1
+int 0
+getbyte
+frame_bury 0
+txna ApplicationArgs 2
+int 0
+getbyte
+frame_bury 1
+frame_dig 0
+frame_dig 1
+callsub unsubscribexgov_39
+retsub
+
+// immediate_mint_caster
+immediatemintcaster_61:
+proto 0 0
+int 0
+byte ""
+int 0
+txna ApplicationArgs 1
+frame_bury 1
+txna ApplicationArgs 2
+btoi
+frame_bury 2
+txn GroupIndex
+int 1
+-
+frame_bury 0
+frame_dig 0
+gtxns TypeEnum
+int pay
+==
+assert
+frame_dig 0
+frame_dig 1
+frame_dig 2
+callsub immediatemint_40
+retsub
+
+// delayed_mint_caster
+delayedmintcaster_62:
+proto 0 0
+int 0
+byte ""
+dup
+txna ApplicationArgs 1
+frame_bury 1
+txna ApplicationArgs 2
+frame_bury 2
+txn GroupIndex
+int 1
+-
+frame_bury 0
+frame_dig 0
+gtxns TypeEnum
+int pay
+==
+assert
+frame_dig 0
+frame_dig 1
+frame_dig 2
+callsub delayedmint_41
+retsub
+
+// claim_delayed_mint_caster
+claimdelayedmintcaster_63:
+proto 0 0
+byte ""
+dup
+txna ApplicationArgs 1
+frame_bury 0
+txna ApplicationArgs 2
+frame_bury 1
+frame_dig 0
+frame_dig 1
+callsub claimdelayedmint_42
+retsub
+
+// burn_caster
+burncaster_64:
+proto 0 0
+int 0
+byte ""
+int 0
+txna ApplicationArgs 1
+frame_bury 1
+txna ApplicationArgs 2
+btoi
+frame_bury 2
+txn GroupIndex
+int 1
+-
+frame_bury 0
+frame_dig 0
+gtxns TypeEnum
+int axfer
+==
+assert
+frame_dig 0
+frame_dig 1
+frame_dig 2
+callsub burn_43
+retsub
+
+// get_xalgo_rate_caster
+getxalgoratecaster_65:
+proto 0 0
+byte ""
+callsub getxalgorate_44
+frame_bury 0
+byte 0x151f7c75
+frame_dig 0
+concat
+log
+retsub
+
+// dummy_caster
+dummycaster_66:
+proto 0 0
+callsub dummy_45
+retsub
