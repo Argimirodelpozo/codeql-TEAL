@@ -1,7 +1,7 @@
 """Model-level transforms over the Puya-shaped IR (:mod:`ir`).
 
 These are the "Puya way" tiers: they rewrite the ``ir.*`` model in place, not
-the text. Run between :func:`tealtools.experimental_3.lift.lift` and
+the text. Run between :func:`tealtools.WIP_lift2puyaIR.lift.lift` and
 ``ir.Program.render()``.
 
 - :func:`collapse_dispatch` — fold an ABI method-selector ``==``/branch chain

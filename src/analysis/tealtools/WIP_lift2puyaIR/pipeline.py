@@ -2,11 +2,11 @@
 
 Builds xgov's :class:`~tealtools.ssa.SSAProgram`, runs the passes listed in
 :data:`PASSES` (edit that list as we add / debug passes), and renders the
-Puya-style SSA IR (:func:`tealtools.experimental_3.puya_ir.render_puya`,
+Puya-style SSA IR (:func:`tealtools.WIP_lift2puyaIR.puya_ir.render_puya`,
 built on the block-argument view) to ``xgov.ssa.ir`` in the repo root.
 
-    python -m tealtools.experimental_3            # render xgov
-    python -m tealtools.experimental_3 <other-db> # or some other DB
+    python -m tealtools.WIP_lift2puyaIR            # render xgov
+    python -m tealtools.WIP_lift2puyaIR <other-db> # or some other DB
 
 The default :data:`PASSES` are annotation-only (constants / ranges / byte-
 lengths): they decorate the IR with ``const_value`` / ``range`` / ``type``
