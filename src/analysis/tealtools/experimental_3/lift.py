@@ -171,6 +171,14 @@ def lift(prog: SSAProgram) -> ir.Program:
             return "uint64"
         if op in _BYTES_OPS:
             return "bytes"
+        if op == "load":
+            # A scratch load is typed by what was stored into the slot, via
+            # the reaching-def (``_ssa_type`` resolves it through
+            # ``load_stores`` with a depth guard); the slot itself carries no
+            # type, which is why the plain checks above leave it ``?``.
+            rt = _ssa_type(o)
+            if rt != "?":
+                return rt
         return "?"
 
     regs: dict = {}
@@ -179,6 +187,7 @@ def lift(prog: SSAProgram) -> ir.Program:
     local_regs: dict = {}            # (gname, slot) -> Register
     shuffle_src: dict = {}           # SSAVar (shuffle output) -> source operand
     cur_gname = "main"
+    cur_nret = 0                     # proto return count of the group being built
 
     def _new_reg(prefix: str, ir_type: str) -> ir.Register:
         n = ctr.get(prefix, 0)
@@ -339,8 +348,13 @@ def lift(prog: SSAProgram) -> ir.Program:
             # caller already reaches its own continuation via its callsub ->
             # Goto(continuation). So model retsub as a value return, NOT a
             # goto / goto_nth into the callers — the latter, with >1 caller,
-            # had no selector and rendered as `goto_nth undefined`.
-            return ir.SubroutineReturn([value(i) for i in (t.inputs or [])])
+            # had no selector and rendered as `goto_nth undefined`. The
+            # returned values are the top `cur_nret` of the (fat-frame) exit
+            # stack — the simulator leaves retsub.inputs empty. exit_stack is
+            # bottom-first, so the slice is already in declared return order.
+            rets = ([value(v) for v in bb.exit_stack[-cur_nret:]]
+                    if cur_nret and bb.exit_stack else [])
+            return ir.SubroutineReturn(rets)
         succ = [s for s in bb.successors if s in bid]
         if not succ:
             if op == "return":
@@ -512,6 +526,7 @@ def lift(prog: SSAProgram) -> ir.Program:
             nargs, nrets = _proto_io(s.entry_bb)
             params = [ir.Parameter(ir.Register(f"p%{i}", 0, "?"))
                       for i in range(nargs)]
+        cur_nret = nrets
         _setup_frame(gb, params)
         _setup_shuffles(gb)
         _name_group(gb)
