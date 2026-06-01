@@ -500,6 +500,19 @@ class SSAProgram:
         from ..passes.range_arith import propagate_range_arithmetic as _impl
         return _impl(self)
 
+    def propagate_assert_ranges(self) -> int:
+        """Tighten ``IntRange`` annotations from the contract's ``assert``
+        guards, flow-sensitively (a guard only constrains the paths it
+        dominates). Opt-in.
+
+        Returns the number of ranges newly tightened. Lazy-trips
+        :meth:`propagate_range_arithmetic` (hence :meth:`propagate_ranges`)
+        first so const / arithmetic bounds exist to refine. Lazily imported
+        from :mod:`tealtools.passes.range_assert` so the substrate stays free
+        of the dominance / refinement logic."""
+        from ..passes.range_assert import propagate_assert_ranges as _impl
+        return _impl(self)
+
     def propagate_bytemath_ranges(self) -> int:
         """Flow bigint ranges through bytemath ops (``b+``, ``b-``,
         ``b*``, ``b/``, ``b%``) using Python's arbitrary-precision
