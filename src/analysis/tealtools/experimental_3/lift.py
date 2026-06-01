@@ -61,6 +61,58 @@ def _imm0(a) -> int | None:
         return None
 
 
+_UINT64_MAX = (1 << 64) - 1
+
+
+def _range_note(local_id: str, rng) -> str | None:
+    """A compact ``// `` annotation for an :class:`IntRange`, or ``None`` when
+    the range is the full uint64 domain (uninformative). The uint64 ceiling is
+    rendered as an open ``>=`` floor rather than the 20-digit max."""
+    lo, hi = rng.lo, rng.hi
+    if lo <= 0 and hi >= _UINT64_MAX:
+        return None
+    if lo == hi:
+        return f"{local_id} = {lo}"
+    if hi >= _UINT64_MAX:
+        return f"{local_id} >= {lo}"
+    if lo <= 0:
+        return f"{local_id} <= {hi}"
+    return f"{lo} <= {local_id} <= {hi}"
+
+
+def _len_note(local_id: str, t) -> str | None:
+    """``len(x) = 8`` / ``len(x) <= 20`` / ``2 <= len(x) <= 4096`` from a bytes
+    type's exact ``byte_length`` or its ``byte_length_range``."""
+    bl = getattr(t, "byte_length", None)
+    if bl is not None:
+        return f"len({local_id}) = {bl}"
+    r = getattr(t, "byte_length_range", None)
+    if r is None:
+        return None
+    if r.lo == r.hi:
+        return f"len({local_id}) = {r.lo}"
+    if r.lo <= 0:
+        return f"len({local_id}) <= {r.hi}"
+    return f"{r.lo} <= len({local_id}) <= {r.hi}"
+
+
+def _val_note(local_id: str, t, cap: int = 40) -> str | None:
+    """``x = N`` / ``lo <= x <= hi`` from a bytes type's bigint
+    ``int_value_range`` (bytemath). Multi-hundred-digit bounds collapse to
+    ``<N-bit>`` so the line stays readable."""
+    r = getattr(t, "int_value_range", None)
+    if r is None:
+        return None
+
+    def _s(n: int) -> str:
+        s = str(n)
+        return s if len(s) <= cap else f"<{n.bit_length()}-bit>"
+
+    if r.lo == r.hi:
+        return f"{local_id} = {_s(r.lo)}"
+    return f"{_s(r.lo)} <= {local_id} <= {_s(r.hi)}"
+
+
 def lift(prog: SSAProgram) -> ir.Program:
     form = to_block_args(prog)
     label2line = {code.rstrip(":").strip(): ln for (_f, ln, code) in prog.labels}
@@ -149,6 +201,27 @@ def lift(prog: SSAProgram) -> ir.Program:
         if o not in regs:
             regs[o] = _new_reg("v", type_of(o))
         return regs[o]
+
+    def _range_comment(outs) -> str | None:
+        """``// v0 = 1, len(v1) = 8`` style note for the ranged outputs of an
+        assignment / phi. uint64 vars carry an ``IntRange`` (range_arith /
+        range_assert); bytes vars carry a byte length and/or a bigint value
+        range on their type (byte_lengths / bytemath). ``None`` when nothing
+        informative is annotated."""
+        parts = []
+        for o in outs:
+            lid = reg(o).local_id
+            rng = getattr(o, "range", None)
+            if rng is not None:
+                note = _range_note(lid, rng)
+                if note:
+                    parts.append(note)
+            t = getattr(o, "type", None)
+            if t is not None and getattr(t, "kind", None) == "bytes":
+                for note in (_len_note(lid, t), _val_note(lid, t)):
+                    if note:
+                        parts.append(note)
+        return ", ".join(parts) if parts else None
 
     def _setup_frame(gb, params):
         nargs = len(params)
@@ -302,7 +375,7 @@ def lift(prog: SSAProgram) -> ir.Program:
                     val = (e.args[i] if (e is not None and i is not None
                                          and i < len(e.args)) else None)
                     args.append(ir.PhiArgument(value(val), bid[pred]))
-                phis.append(ir.Phi(reg(ph), args))
+                phis.append(ir.Phi(reg(ph), args, comment=_range_comment([ph])))
         ops = []
         for a in bb.assignments:
             if _is_routed_shuffle(a):
@@ -328,7 +401,8 @@ def lift(prog: SSAProgram) -> ir.Program:
                     call_args = [value(i) for i in a.inputs]
                 invoke = ir.InvokeSubroutine(target, call_args)
                 shown = [o for o in a.outputs if isinstance(o, SSAVar)]
-                ops.append(ir.Assignment([reg(o) for o in shown], invoke)
+                ops.append(ir.Assignment([reg(o) for o in shown], invoke,
+                                         comment=_range_comment(shown))
                            if shown else ir.IntrinsicOp(invoke))
                 continue
             if a.op in _TERMINATOR_OPS or a.op in ("intcblock", "bytecblock",
@@ -344,7 +418,8 @@ def lift(prog: SSAProgram) -> ir.Program:
             if a.op == "assert" and not shown:
                 ops.append(ir.Assert(args[0] if args else ir.Undefined()))
             elif shown:
-                ops.append(ir.Assignment([reg(o) for o in shown], intr))
+                ops.append(ir.Assignment([reg(o) for o in shown], intr,
+                                         comment=_range_comment(shown)))
             else:
                 ops.append(ir.IntrinsicOp(intr))
         return ir.BasicBlock(id=bid[bb], phis=phis, ops=ops,

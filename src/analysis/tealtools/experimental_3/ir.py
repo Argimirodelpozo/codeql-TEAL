@@ -125,10 +125,12 @@ class Assignment:
     """Puya ``Assignment``: ``let <targets> = <source>``."""
     targets: list  # list[Register]
     source: object  # ValueProvider
+    comment: Optional[str] = None  # trailing annotation, e.g. value ranges
 
     def render(self) -> str:
         lhs = ", ".join(f"{t.local_id}: {t.ir_type}" for t in self.targets)
-        return f"let {lhs} = {self.source}"
+        out = f"let {lhs} = {self.source}"
+        return f"{out}  // {self.comment}" if self.comment else out
 
 
 @dataclass
@@ -170,10 +172,12 @@ class PhiArgument:
 class Phi:
     register: Register
     args: list  # list[PhiArgument]
+    comment: Optional[str] = None  # trailing annotation, e.g. value range
 
     def render(self) -> str:
         a = ", ".join(str(x) for x in self.args)
-        return f"let {self.register.local_id}: {self.register.ir_type} = φ({a})"
+        out = f"let {self.register.local_id}: {self.register.ir_type} = φ({a})"
+        return f"{out}  // {self.comment}" if self.comment else out
 
 
 # --------------------------------------------------------------------------

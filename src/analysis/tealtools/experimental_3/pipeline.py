@@ -42,6 +42,8 @@ PASSES = [
     "propagate_constants",
     "propagate_scratch_constants",
     "propagate_ranges",
+    "propagate_range_arithmetic",   # const->range + arithmetic composition
+    "propagate_assert_ranges",      # flow-sensitive guard refinement
     "propagate_byte_lengths",
     "propagate_bytemath_ranges",
     # add passes here as we debug ↓
