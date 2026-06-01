@@ -566,8 +566,10 @@ def lift(prog: SSAProgram) -> ir.Program:
         return sum(pp.register.ir_type != "?"
                    for ir_sub, _ in sub_pairs for pp in ir_sub.parameters)
 
-    for _ in range(8):                   # fixpoint: a sub typed this round can
-        before = _typed_params()         # type another's frame-passed arg next
+    # Fixpoint: a sub typed this round can type another's frame-passed arg next.
+    # Monotonic (params only ever go `?` -> concrete), so loop to convergence.
+    while True:
+        before = _typed_params()
         _infer_params_from_callers(sub_pairs)
         if _typed_params() == before:
             break
@@ -810,7 +812,11 @@ def _infer_types_from_uses(subs) -> None:
             if isinstance(t, ir.ConditionalBranch):
                 use(t.condition, "__cond__", 0, [t.condition])
 
-    for _ in range(6):
+    # Monotonic (only `?` -> a concrete type, guarded by `!= "?"`), so loop to
+    # the fixpoint: guaranteed to terminate, with no depth cap to truncate a
+    # long use-chain.
+    changed = True
+    while changed:
         changed = False
         for rid, r in reg_by_id.items():
             if r.ir_type != "?":
@@ -820,8 +826,6 @@ def _infer_types_from_uses(subs) -> None:
             if len(inferred) == 1:        # all uses agree -> safe to set
                 r.ir_type = next(iter(inferred))
                 changed = True
-        if not changed:
-            break
 
 
 def _infer_returns(subs) -> None:
@@ -844,7 +848,10 @@ def _infer_returns(subs) -> None:
 
 
 def _unify_phi_types(subs) -> None:
-    for _ in range(8):
+    # Monotonic (a phi register only ever goes `?` -> concrete), so loop to the
+    # fixpoint -- terminates, and a deep phi chain can't be left half-typed.
+    changed = True
+    while changed:
         changed = False
         for sub in subs:
             for b in sub.body:
@@ -856,5 +863,3 @@ def _unify_phi_types(subs) -> None:
                     if len(ts) == 1:
                         phi.register.ir_type = next(iter(ts))
                         changed = True
-        if not changed:
-            break
