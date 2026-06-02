@@ -44,7 +44,10 @@ _FRAME_OPS = frozenset({"frame_dig", "frame_bury"})
 
 
 def _const(cv: Const):
-    if cv.kind == "uint64":
+    # SSA integer consts carry kind "int" (not "uint64"); without this they all
+    # fell through to BytesConstant(decimal-string) -- rendered verbatim so it
+    # looked right, but semantically a uint64 stored as bytes (Puya wants `Nu`).
+    if cv.kind == "int":
         try:
             return ir.UInt64Constant(int(cv.value))
         except ValueError:
@@ -197,7 +200,10 @@ def lift(prog: SSAProgram) -> ir.Program:
     regs: dict = {}
     ctr: dict = {}
     frame_map: dict = {}              # SSAVar (frame_dig out[0]) -> Register
-    local_regs: dict = {}            # (gname, slot) -> Register
+    local_regs: dict = {}            # (gname, slot) -> Register (k<0 bury fallback)
+    local_ver: dict = {}             # (gname, slot) -> next version counter
+    bury_target: dict = {}           # id(frame_bury assignment) -> versioned Register
+    final_locals: dict = {}          # gname -> {slot: final versioned Register}
     shuffle_src: dict = {}           # SSAVar (shuffle output) -> source operand
     cur_gname = "main"
     cur_nret = 0                     # proto return count of the group being built
@@ -246,7 +252,23 @@ def lift(prog: SSAProgram) -> ir.Program:
         return ", ".join(parts) if parts else None
 
     def _setup_frame(gb, params):
+        # A non-negative frame slot is a subroutine *local*. Puya's compiler
+        # colours disjoint-lifetime locals onto one slot, so a slot may hold
+        # values of different types over its life -- not valid SSA as a single
+        # register. Version it: each `frame_bury` opens a new version, each
+        # `frame_dig` reads the version reaching it (block order; a true merge
+        # of differing versions would need a phi -- TODO, absent in the slot-
+        # colouring patterns seen so far). Negative slots are params (and the
+        # rare `frame_bury -k` keeps its old single-register fallback).
         nargs = len(params)
+        cur: dict = {}               # slot -> current versioned Register
+
+        def _fresh(slot: int) -> ir.Register:
+            key = (cur_gname, slot)
+            v = local_ver.get(key, 0)
+            local_ver[key] = v + 1
+            return ir.Register(f"l%{slot}", v, "?")
+
         for bb in gb:
             for a in bb.assignments:
                 if a.op == "frame_dig" and a.outputs:
@@ -257,7 +279,28 @@ def lift(prog: SSAProgram) -> ir.Program:
                     if -nargs <= k <= -1:
                         frame_map[out0] = params[nargs + k].register
                     else:
-                        frame_map[out0] = _local(k)
+                        r = cur.get(k)
+                        if r is None:                # read-before-write local
+                            r = cur[k] = _fresh(k)
+                        frame_map[out0] = r
+                    # fat-frame passthrough: dig pushes the slot on top, the rest
+                    # of the stack re-emerges shifted (out[i] = in[i-1]); route it
+                    # so later consumers of those slots resolve to the real value.
+                    for i in range(1, len(a.outputs)):
+                        o = a.outputs[i]
+                        if isinstance(o, SSAVar) and i - 1 < len(a.inputs):
+                            shuffle_src[o] = a.inputs[i - 1]
+                elif a.op == "frame_bury" and a.inputs:
+                    k = _imm0(a)
+                    if k is not None and k >= 0:
+                        bury_target[id(a)] = cur[k] = _fresh(k)
+                    # bury pops the top into the slot; the rest passes through
+                    # shifted the other way (out[i] = in[i+1]).
+                    for i in range(len(a.outputs)):
+                        o = a.outputs[i]
+                        if isinstance(o, SSAVar) and i + 1 < len(a.inputs):
+                            shuffle_src[o] = a.inputs[i + 1]
+        final_locals[cur_gname] = dict(cur)      # final reg per written slot
 
     def _setup_shuffles(gb):
         # A pure stack shuffle (dup/dupn/swap/…) just routes values; map each
@@ -329,6 +372,8 @@ def lift(prog: SSAProgram) -> ir.Program:
     def value(o, _seen=None):
         seen = _seen if _seen is not None else set()
         while True:
+            if isinstance(o, (SSAVar, Phi)) and o in frame_map:
+                break                            # param / local / callsub-return reg
             if isinstance(o, SSAVar) and o in shuffle_src and id(o) not in seen:
                 seen.add(id(o))
                 o = shuffle_src[o]               # route through stack shuffles
@@ -375,12 +420,21 @@ def lift(prog: SSAProgram) -> ir.Program:
             # caller already reaches its own continuation via its callsub ->
             # Goto(continuation). So model retsub as a value return, NOT a
             # goto / goto_nth into the callers — the latter, with >1 caller,
-            # had no selector and rendered as `goto_nth undefined`. The
-            # returned values are the top `cur_nret` of the (fat-frame) exit
-            # stack — the simulator leaves retsub.inputs empty. exit_stack is
-            # bottom-first, so the slice is already in declared return order.
-            rets = ([value(v) for v in bb.exit_stack[-cur_nret:]]
-                    if cur_nret and bb.exit_stack else [])
+            # had no selector and rendered as `goto_nth undefined`.
+            #
+            # The N returns are frame slots 0..N-1. A sub that *buries* its
+            # return into the slot (frame_bury 0) leaves the slot's current
+            # value there, not on the exit stack — so prefer the final slot
+            # local; only fall back to the (bottom-first) exit-stack slice for
+            # returns that were left on the stack.
+            slots = final_locals.get(cur_gname, {})
+            es = bb.exit_stack or []
+            rets = []
+            for j in range(cur_nret):
+                if j in slots:
+                    rets.append(slots[j])                  # buried into the slot
+                elif len(es) >= cur_nret - j:
+                    rets.append(value(es[-cur_nret + j]))  # left on the stack
             return ir.SubroutineReturn(rets)
         succ = [s for s in bb.successors if s in bid]
         if not succ:
@@ -432,7 +486,9 @@ def lift(prog: SSAProgram) -> ir.Program:
             if a.op == "frame_bury":
                 slot = _imm0(a)
                 if slot is not None and a.inputs:
-                    ops.append(ir.Assignment([_local(slot)], value(a.inputs[0])))
+                    # versioned local (slot >= 0); k < 0 keeps the single-reg fallback
+                    tgt = bury_target.get(id(a)) or _local(slot)
+                    ops.append(ir.Assignment([tgt], value(a.inputs[0])))
                 continue
             if a.op == "callsub":
                 cs = callsite.get(bb)
@@ -447,10 +503,11 @@ def lift(prog: SSAProgram) -> ir.Program:
                 else:
                     call_args = [value(i) for i in a.inputs]
                 invoke = ir.InvokeSubroutine(target, call_args)
-                shown = [o for o in a.outputs if isinstance(o, SSAVar)]
-                ops.append(ir.Assignment([reg(o) for o in shown], invoke,
-                                         comment=_range_comment(shown))
-                           if shown else ir.IntrinsicOp(invoke))
+                outs = call_results.get(bb)      # caller-local return registers
+                if outs:
+                    ops.append(ir.Assignment(list(outs), invoke))
+                else:
+                    ops.append(ir.IntrinsicOp(invoke))
                 continue
             if a.op in _TERMINATOR_OPS or a.op in ("intcblock", "bytecblock",
                                                    "proto"):
@@ -460,7 +517,7 @@ def lift(prog: SSAProgram) -> ir.Program:
                 continue
             args = [value(i) for i in a.inputs]
             intr = ir.Intrinsic(a.op, a.immediates.split() if a.immediates else [],
-                                args)
+                                args, line=a.location.line)
             shown = [o for o in a.outputs if isinstance(o, SSAVar)]
             if a.op == "assert" and not shown:
                 ops.append(ir.Assert(args[0] if args else ir.Undefined()))
@@ -546,6 +603,30 @@ def lift(prog: SSAProgram) -> ir.Program:
             for i, pp in enumerate(ir_sub.parameters):
                 if pp.register.ir_type == "?" and len(cols[i]) == 1:
                     pp.register.ir_type = next(iter(cols[i]))
+
+    # Inter-procedural return wiring. A callsub's continuation receives the
+    # callee's return value(s). In the raw CFG that value is a phi whose only
+    # predecessor is the callee's retsub block, so it would resolve into the
+    # callee's register space -- a different Puya subroutine, hence "undefined"
+    # in the caller. Bind it to the InvokeSubroutine's result instead: alias the
+    # continuation's top-of-stack return phi(s) to a caller-local result reg.
+    call_results: dict = {}          # callsub_bb -> [result Register], declared order
+    for cs in struct.call_sites:
+        cont, entry = cs.continuation_bb, cs.target_entry
+        if cont is None or entry is None:
+            continue
+        nret = _proto_io(entry)[1]
+        if nret <= 0:
+            continue
+        by_idx = {ph.stack_index: ph for ph in cont.phis}
+        outs = []
+        for j in range(nret):                # j: declared order; stack_index 1 = top
+            ph = by_idx.get(nret - j)
+            r = reg(ph) if ph is not None else _new_reg("cr", "?")
+            if ph is not None:
+                frame_map[ph] = r            # consumers resolve to the result reg
+            outs.append(r)
+        call_results[cs.callsub_bb] = outs
 
     subs = []
     sub_pairs = []                                # (ir.Subroutine, struct.Subroutine)
@@ -668,6 +749,7 @@ def lift(prog: SSAProgram) -> ir.Program:
         for sub in subs:
             for pp in sub.parameters:
                 n += pp.register.ir_type == "?"
+            n += sum(r == "?" for r in sub.returns)
             for bb in sub.body:
                 for phi in bb.phis:
                     n += phi.register.ir_type == "?"
@@ -675,6 +757,34 @@ def lift(prog: SSAProgram) -> ir.Program:
                     if isinstance(op, ir.Assignment):
                         n += sum(t.ir_type == "?" for t in op.targets)
         return n
+
+    name2sub = {s.id: s for s in subs if not s.is_main}
+
+    def _unify_call_returns():
+        # A callsite's result register and the callee's declared return are the
+        # same value -- unify their AVM types both ways, and pin the callee's
+        # SubroutineReturn value register too, so the callee types up internally.
+        for cs_bb, regs in call_results.items():
+            cs = callsite.get(cs_bb)
+            callee = name2sub.get(cs.target_name) if cs else None
+            if callee is None:
+                continue
+            for pos, rreg in enumerate(regs):
+                if pos >= len(callee.returns):
+                    continue
+                j = _avm_join([rreg.ir_type, callee.returns[pos]])
+                if j is None:
+                    continue
+                if rreg.ir_type == "?":
+                    rreg.ir_type = j
+                if callee.returns[pos] == "?":
+                    callee.returns[pos] = j
+                for b in callee.body:
+                    t = b.terminator
+                    if isinstance(t, ir.SubroutineReturn) and pos < len(t.result):
+                        rv = t.result[pos]
+                        if isinstance(rv, ir.Register) and rv.ir_type == "?":
+                            rv.ir_type = j
 
     prev = -1
     while prev != _untyped():
@@ -684,7 +794,8 @@ def lift(prog: SSAProgram) -> ir.Program:
         _unify_phi_types(subs)
         _infer_state_types()
         _propagate_copy_load_types()
-    _infer_returns(subs)
+        _infer_returns(subs)
+        _unify_call_returns()
 
     main = next(sub for sub in subs if sub.is_main)
     return ir.Program(main=main, subroutines=[s for s in subs if not s.is_main])
@@ -870,22 +981,54 @@ def _infer_returns(subs) -> None:
                 else:
                     rets = [a if a != "?" else b2 for a, b2 in zip(rets, ts)]
         if rets is not None:
-            sub.returns = rets
+            # monotonic: keep any return position already typed (e.g. pinned by
+            # inter-procedural unification from a caller), only fill the `?` ones.
+            old = sub.returns
+            sub.returns = [o if o != "?" else n
+                           for o, n in zip(old, rets)] if len(old) == len(rets) \
+                else rets
+
+
+_BYTES_FAMILY = frozenset({"bytes", "account"})
+_U64_FAMILY = frozenset({"uint64", "bool", "asset", "application"})
+
+
+def _avm_join(types) -> str | None:
+    """Common AVM type of a set of lift type strings, or None if they cross the
+    uint64/bytes divide. Puya phis/assignments check the *AVM* type, so an
+    `account` and a `bytes` unify to `bytes`, `bool` and `uint64` to `uint64`."""
+    ts = {t for t in types if t and t != "?"}
+    if not ts:
+        return None
+    if len(ts) == 1:
+        return next(iter(ts))
+    if ts <= _BYTES_FAMILY:
+        return "bytes"
+    if ts <= _U64_FAMILY:
+        return "uint64"
+    return None
 
 
 def _unify_phi_types(subs) -> None:
-    # Monotonic (a phi register only ever goes `?` -> concrete), so loop to the
-    # fixpoint -- terminates, and a deep phi chain can't be left half-typed.
+    # A phi merges one logical value, so its register and every arg share an AVM
+    # type. Propagate BOTH ways: args -> register (joined to their common AVM
+    # type) and register -> any still-`?` arg. Monotonic (only `?` -> concrete),
+    # so the fixpoint terminates and no phi web is left half-typed.
     changed = True
     while changed:
         changed = False
         for sub in subs:
             for b in sub.body:
                 for phi in b.phis:
-                    if phi.register.ir_type != "?":
-                        continue
-                    ts = {a.value.ir_type for a in phi.args
-                          if getattr(a.value, "ir_type", "?") != "?"}
-                    if len(ts) == 1:
-                        phi.register.ir_type = next(iter(ts))
-                        changed = True
+                    rt = phi.register.ir_type
+                    if rt == "?":
+                        j = _avm_join(getattr(a.value, "ir_type", "?")
+                                      for a in phi.args)
+                        if j is not None:
+                            phi.register.ir_type = rt = j
+                            changed = True
+                    if rt != "?":
+                        for a in phi.args:
+                            if getattr(a.value, "ir_type", None) == "?":
+                                a.value.ir_type = rt
+                                changed = True

@@ -88,6 +88,7 @@ class Intrinsic:
     op: str
     immediates: list  # list[str | int]
     args: list  # list[Value]
+    line: int = 0  # source line of the originating TEAL op (0 = unknown)
 
     def __str__(self) -> str:
         toks = [self.op, *(str(i) for i in self.immediates),
