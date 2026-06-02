@@ -772,19 +772,23 @@ def lift(prog: SSAProgram) -> ir.Program:
             for pos, rreg in enumerate(regs):
                 if pos >= len(callee.returns):
                     continue
-                j = _avm_join([rreg.ir_type, callee.returns[pos]])
-                if j is None:
-                    continue
-                if rreg.ir_type == "?":
-                    rreg.ir_type = j
-                if callee.returns[pos] == "?":
-                    callee.returns[pos] = j
-                for b in callee.body:
-                    t = b.terminator
-                    if isinstance(t, ir.SubroutineReturn) and pos < len(t.result):
-                        rv = t.result[pos]
-                        if isinstance(rv, ir.Register) and rv.ir_type == "?":
-                            rv.ir_type = j
+                ret = callee.returns[pos]
+                # The result register IS the callee's return value, so the two
+                # types must be equal. The callee return (typed from the value
+                # actually produced) is authoritative; on a cross-family clash
+                # it overrides the caller's use-derived guess (e.g. a `bytes`
+                # address result mis-typed `uint64` by an `==` peer). When the
+                # callee is still `?`, the caller's concrete type informs it.
+                if ret != "?":
+                    rreg.ir_type = ret
+                elif rreg.ir_type != "?":
+                    callee.returns[pos] = ret = rreg.ir_type
+                    for b in callee.body:
+                        t = b.terminator
+                        if isinstance(t, ir.SubroutineReturn) and pos < len(t.result):
+                            rv = t.result[pos]
+                            if isinstance(rv, ir.Register) and rv.ir_type == "?":
+                                rv.ir_type = ret
 
     prev = -1
     while prev != _untyped():
