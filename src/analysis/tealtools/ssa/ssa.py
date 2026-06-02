@@ -852,7 +852,13 @@ def _seed_consts_and_identity_steps(prog: SSAProgram, scratch_stores: dict) -> N
             if _src is not None and _src != _snk:
                 _identity_steps.append((_src, _snk))
 
-    # (c) scratch bridge
+    # (c) scratch bridge -- ONLY when the load has a single reaching store.
+    # An identity step asserts snk *is* src, so a load fed by >1 store would get
+    # one identity per store and const-prop would fold it to whichever store is
+    # constant first -- unsound when another reaching store is a runtime value
+    # (e.g. a slot that's 0 on a loop back-edge but a runtime btoi on entry).
+    # The sound all-stores-agree case is handled by propagate_scratch_constants
+    # (must-semantics); a multi-store load is a merge, not an identity.
     for _a in _load_candidates:
         _out_v = _a.outputs[0]
         if not isinstance(_out_v, SSAVar):
@@ -860,13 +866,12 @@ def _seed_consts_and_identity_steps(prog: SSAProgram, scratch_stores: dict) -> N
         _stores = scratch_stores.get(
             (_a.location.file, _a.location.line)
         )
-        if not _stores:
+        if not _stores or len(_stores) != 1:
             continue
-        _snk = _ssavar_key(_out_v)
-        for _sv_file, _sv_line, _sv_idx in _stores:
-            _identity_steps.append(
-                (("var", _sv_file, _sv_line, _sv_idx), _snk)
-            )
+        _sv_file, _sv_line, _sv_idx = next(iter(_stores))
+        _identity_steps.append(
+            (("var", _sv_file, _sv_line, _sv_idx), _ssavar_key(_out_v))
+        )
 
     if hasattr(prog._graph, "graph"):
         prog._graph.graph["identity_steps"] = _identity_steps
