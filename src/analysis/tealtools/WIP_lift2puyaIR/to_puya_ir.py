@@ -343,16 +343,25 @@ class _Translator:
                             message=o.message or "assert", explicit=True)
         raise TypeError(f"op: {type(o).__name__}")
 
+    def _u64_cond(self, v):
+        """A branch selector must be uint64. A bytes *constant* there is a
+        reconstruction artifact for an undefined value -> a sensible uint64."""
+        c = self.val(v)
+        if isinstance(c, M.BytesConstant):
+            return M.UInt64Constant(source_location=None,
+                                    value=int.from_bytes(c.value[-8:], "big") if c.value else 0)
+        return c
+
     def ctrl(self, t):
         B = self.blocks
         if isinstance(t, ir.Goto):
             return M.Goto(source_location=None, target=B[t.target])
         if isinstance(t, ir.ConditionalBranch):
             return M.ConditionalBranch(
-                source_location=None, condition=self.val(t.condition),
+                source_location=None, condition=self._u64_cond(t.condition),
                 non_zero=B[t.non_zero], zero=B[t.zero])
         if isinstance(t, ir.GotoNth):
-            return M.GotoNth(source_location=None, value=self.val(t.value),
+            return M.GotoNth(source_location=None, value=self._u64_cond(t.value),
                              blocks=[B[b] for b in t.blocks], default=B[t.default])
         if isinstance(t, ir.Switch):
             val = self.val(t.value)
