@@ -669,6 +669,8 @@ def lift(prog: SSAProgram) -> ir.Program:
 
         visit(entry_bb)
         order.reverse()                       # topological over forward edges
+        order += [b for b in body_list if b not in seen]   # cover any block the
+        #            forward DAG missed, so every op still gets clean resim_args
 
         def rv(o):                            # SSA operand -> mirror value
             cv = getattr(o, "const_value", None)
