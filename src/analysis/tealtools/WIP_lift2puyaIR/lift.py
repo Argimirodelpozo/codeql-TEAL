@@ -1157,8 +1157,48 @@ def lift(prog: SSAProgram) -> ir.Program:
     main = next(sub for sub in subs if sub.is_main)
     prog_ir = ir.Program(main=main, subroutines=[s for s in subs if not s.is_main])
     _reconcile_mixed_phis(prog_ir)
+    _realign_call_returns(prog_ir)
+    _propagate_copy_types(prog_ir)
     _materialize_phi_consts(prog_ir)
     return prog_ir
+
+
+def _propagate_copy_types(prog) -> None:
+    """Propagate a reconciled AVM type across register-to-register copies to a
+    fixpoint: a copy must preserve its operand's type, so when reconciliation
+    retyped a source to bytes/uint64 its copy targets (frame locals, temps) must
+    follow, else the copy fails Puya's assignment type check."""
+    changed = True
+    while changed:
+        changed = False
+        for sub in [prog.main, *prog.subroutines]:
+            for bb in sub.body:
+                for o in bb.ops:
+                    if (isinstance(o, ir.Assignment) and len(o.targets) == 1
+                            and isinstance(o.source, ir.Register)
+                            and o.source.ir_type in ("bytes", "uint64")
+                            and o.targets[0].ir_type != o.source.ir_type):
+                        o.targets[0].ir_type = o.source.ir_type
+                        changed = True
+
+
+def _realign_call_returns(prog) -> None:
+    """Re-pin each call-result register to its callee's (authoritative) return
+    type. `_reconcile_mixed_phis` can retype a callee's return value to bytes
+    without touching the caller's result registers, leaving the InvokeSubroutine
+    assignment's targets the wrong type; align them (targets are positional,
+    matching `returns`)."""
+    sub_by_id = {s.id: s for s in prog.subroutines}
+    for sub in [prog.main, *prog.subroutines]:
+        for bb in sub.body:
+            for o in bb.ops:
+                if isinstance(o, ir.Assignment) and isinstance(o.source, ir.InvokeSubroutine):
+                    callee = sub_by_id.get(o.source.target)
+                    if callee is None:
+                        continue
+                    for i, t in enumerate(o.targets):
+                        if i < len(callee.returns) and callee.returns[i] != "?":
+                            t.ir_type = callee.returns[i]
 
 
 # Ops whose operand AVM type is unambiguous (used as the strongest signal for a
