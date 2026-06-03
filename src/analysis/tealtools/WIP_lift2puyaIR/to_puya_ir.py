@@ -500,19 +500,58 @@ def _opt_passes():
             remove_unused_variables]
 
 
+_BYTES_IRT = frozenset({PT.bytes, PT.account})
+
+
+def _puya_zero(ir_type):
+    if ir_type in _BYTES_IRT:
+        return M.BytesConstant(source_location=None, value=b"",
+                               encoding=AVMBytesEncoding.utf8)
+    return M.UInt64Constant(source_location=None, value=0)
+
+
+def _define_named_orphan(subs, name: str, version: int) -> bool:
+    """Define a register the optimiser rejected as undefined (a value the
+    reconstruction lost to a frame / dynamic-scratch gap) as a typed zero at its
+    subroutine's entry. Precise: only the exact register Puya names is touched,
+    so a contract that optimises cleanly never reaches this."""
+    from puya.ir.models import _get_used_registers
+    for sub in subs:
+        if not sub.body:
+            continue
+        match = next((r for r in _get_used_registers(sub.body)
+                      if r.name == name and r.version == version), None)
+        if match is not None:
+            sub.body[0].ops.insert(0, M.Assignment(
+                source_location=None, targets=[match], source=_puya_zero(match.ir_type)))
+            return True
+    return False
+
+
 def optimize(subs, *, max_rounds: int = 100) -> int:
     """Run Puya's context-free optimiser passes over ``subs`` to a fixpoint.
     Mutates the subroutines in place; returns the number of rounds taken. Puya's
-    pass logging is silenced for the duration."""
+    pass logging is silenced for the duration. If a pass rejects a register the
+    reconstruction left undefined, define it (typed zero) and retry -- bounded,
+    and only ever engaged by a contract that fails to optimise."""
     import logging
+    import re
+    from puya.errors import InternalError
     passes = _opt_passes()
     log = logging.getLogger("puya")
     prev = log.level
     log.setLevel(logging.WARNING)
     try:
-        for rnd in range(1, max_rounds + 1):
-            if not any(pz(None, s) for s in subs for pz in passes):
-                return rnd
+        for _attempt in range(40):
+            try:
+                for rnd in range(1, max_rounds + 1):
+                    if not any(pz(None, s) for s in subs for pz in passes):
+                        return rnd
+                return max_rounds
+            except InternalError as e:
+                m = re.search(r"not defined: ([^#\s]+)#(\d+)", str(e))
+                if not (m and _define_named_orphan(subs, m.group(1), int(m.group(2)))):
+                    raise
         return max_rounds
     finally:
         log.setLevel(prev)
