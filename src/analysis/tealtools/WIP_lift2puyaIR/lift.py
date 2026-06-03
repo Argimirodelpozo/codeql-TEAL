@@ -559,8 +559,15 @@ def lift(prog: SSAProgram) -> ir.Program:
         succ = [s for s in bb.successors if s in bid]
         if not succ:
             if op == "return":
-                v = (value(bb.exit_stack[-1]) if bb.exit_stack
-                     else ir.UInt64Constant(0))
+                # `return` (arity 0/0) returns the stack top. For a re-simulated
+                # block use its clean local stack; bb.exit_stack is the fat
+                # STACK_MAX garbage and would yield an undefined operand.
+                if resim:
+                    rsx = resim_exit.get(bb, [])
+                    v = rsx[-1] if rsx else ir.UInt64Constant(0)
+                else:
+                    v = (value(bb.exit_stack[-1]) if bb.exit_stack
+                         else ir.UInt64Constant(0))
                 return ir.ProgramExit(v)
             if op == "err":
                 return ir.Fail()

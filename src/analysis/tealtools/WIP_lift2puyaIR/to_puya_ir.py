@@ -369,10 +369,18 @@ class _Translator:
         raise TypeError(f"ctrl: {type(t).__name__}")
 
     def phi(self, p):
-        return M.Phi(register=self.reg(p.register),
-                     args=[M.PhiArgument(value=self.reg(a.value),
-                                         through=self.blocks[a.through])
-                           for a in p.args if isinstance(a.value, ir.Register)])
+        # One arg per predecessor: when a block reaches a successor by >1 edge
+        # (e.g. two switch cases -> same target) the CFG-derived predecessor set
+        # holds it once, but our phi has one arg per edge -> dedup by `through`
+        # (the duplicate edges carry the same value).
+        seen, args = set(), []
+        for a in p.args:
+            if not isinstance(a.value, ir.Register) or a.through in seen:
+                continue
+            seen.add(a.through)
+            args.append(M.PhiArgument(value=self.reg(a.value),
+                                      through=self.blocks[a.through]))
+        return M.Phi(register=self.reg(p.register), args=args)
 
     def subroutine(self, s):
         params = []
@@ -400,6 +408,11 @@ def _term_targets(term):
 def to_puya(prog):
     """SSAProgram -> (main, subroutines) as real puya.ir.models objects."""
     mirror = lift(prog)
+    # Collapse trivial / self-referential phis (`r = phi(r)`) before lowering:
+    # Puya's own copy_propagation asserts on these (it can't represent a
+    # register replaced by itself), but our reconstruction can emit them.
+    from .transforms import simplify_trivial_phis
+    simplify_trivial_phis(mirror)
     t = _Translator(_load_src(getattr(prog, "db_path", "")))
     groups = [mirror.main, *mirror.subroutines]
 
