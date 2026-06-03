@@ -1,0 +1,1071 @@
+// puya-style SSA IR of xgov-db
+// passes: propagate_constants, propagate_scratch_constants, propagate_ranges, propagate_range_arithmetic, propagate_assert_ranges, propagate_byte_lengths, propagate_bytemath_ranges
+
+main approval.teal:
+    block@0: // L2
+        let tmp%0#0: uint64 = (txn NumAppArgs)
+        let eq%0#0: bool = (== 0 tmp%0#0)  // eq%0#0 <= 1
+        goto eq%0#0 ? block@29 : block@1
+
+    block@1: // L8
+        let tmp%1#0: bytes = (txna ApplicationArgs 0)
+        switch tmp%1#0 {0x101cea00 => block@25, 0x5d4cf066 => block@22, 0xa4e8d164 => block@18, 0x9546e10f => block@15, 0x36330824 => block@12, 0xc40ffdaa => block@8, * => block@7}
+
+    block@7: // L32
+        fail
+
+    block@8: // L33
+        let tmp%7#0: uint64 = (txn OnCompletion)  // tmp%7#0 <= 5
+        let eq%7#0: bool = (== 0 tmp%7#0)  // eq%7#0 <= 1
+        let tmp%8#0: application = (txn ApplicationID)
+        let ne%0#0: bool = (!= 0 tmp%8#0)  // ne%0#0 <= 1
+        let and%0#0: bool = (&& ne%0#0 eq%7#0)  // and%0#0 = 1
+        (assert and%0#0)
+        goto block@9
+
+    block@9: // L42
+        let tmp%9#0: bytes = (txna ApplicationArgs 1)
+        (store 17 tmp%9#0)
+        let tmp%10#0: bytes = (txna ApplicationArgs 2)  // 1 <= len(tmp%10#0) <= 8
+        let val%0#0: uint64 = (btoi tmp%10#0)
+        (store 18 val%0#0)
+        let tmp%11#0: bytes = (txna ApplicationArgs 3)
+        (store 19 tmp%11#0)
+        let tmp%12#0: bytes = (txna ApplicationArgs 4)
+        (store 20 tmp%12#0)
+        let tmp%13#0: bytes = (txna ApplicationArgs 5)
+        let tmp%14#0: uint64 = (getbyte 0 tmp%13#0)  // tmp%14#0 <= 255
+        (store 21 tmp%14#0)
+        let tmp%15#0: uint64 = (txn GroupIndex)  // tmp%15#0 <= 15
+        let tmp%16#0: uint64 = (- 1 tmp%15#0)  // tmp%16#0 <= 14
+        (store 16 tmp%16#0)
+        let tmp%17#0: uint64 = (load 16)
+        let tmp%18#0: uint64 = (gtxns TypeEnum tmp%17#0)  // tmp%18#0 = 1
+        let eq%8#0: bool = (== 1 tmp%18#0)  // eq%8#0 <= 1
+        (assert eq%8#0)
+        goto block@10
+
+    block@10: // L64
+        let tmp%19#0: uint64 = (load 16)
+        let tmp%20#0: bytes = (load 17)
+        let tmp%21#0: uint64 = (load 18)
+        let tmp%22#0: bytes = (load 19)
+        let tmp%23#0: bytes = (load 20)
+        let tmp%24#0: uint64 = (load 21)
+        (vote_12 tmp%19#0 tmp%20#0 tmp%21#0 tmp%22#0 tmp%23#0 tmp%24#0)
+        goto block@11
+
+    block@11: // L71
+        exit 1
+
+    block@12: // L73
+        let tmp%25#0: uint64 = (txn OnCompletion)  // tmp%25#0 <= 5
+        let eq%9#0: bool = (== 0 tmp%25#0)  // eq%9#0 <= 1
+        let tmp%26#0: application = (txn ApplicationID)
+        let ne%1#0: bool = (!= 0 tmp%26#0)  // ne%1#0 <= 1
+        let and%1#0: bool = (&& ne%1#0 eq%9#0)  // and%1#0 = 1
+        (assert and%1#0)
+        goto block@13
+
+    block@13: // L82
+        let tmp%27#0: bytes = (txna ApplicationArgs 1)
+        (store 12 tmp%27#0)
+        let tmp%28#0: bytes = (txna ApplicationArgs 2)  // 1 <= len(tmp%28#0) <= 8
+        let val%1#0: uint64 = (btoi tmp%28#0)
+        (store 13 val%1#0)
+        let tmp%29#0: bytes = (txna ApplicationArgs 3)
+        let tmp%30#0: uint64 = (getbyte 0 tmp%29#0)  // tmp%30#0 <= 255
+        (store 14 tmp%30#0)
+        let tmp%31#0: bytes = (load 12)
+        let tmp%32#0: uint64 = (load 13)
+        let tmp%33#0: uint64 = (load 14)
+        (getpreconditions_11 tmp%31#0 tmp%32#0 tmp%33#0)
+        goto block@14
+
+    block@14: // L95
+        (store 15 v%0#0)
+        let tmp%34#0: bytes = (load 15)
+        let concat%0#0: bytes = (concat tmp%34#0 0x151f7c75)
+        (log concat%0#0)
+        exit 1
+
+    block@15: // L102
+        let tmp%35#0: uint64 = (txn OnCompletion)  // tmp%35#0 <= 5
+        let eq%10#0: bool = (== 0 tmp%35#0)  // eq%10#0 <= 1
+        let tmp%36#0: application = (txn ApplicationID)
+        let ne%2#0: bool = (!= 0 tmp%36#0)  // ne%2#0 <= 1
+        let and%2#0: bool = (&& ne%2#0 eq%10#0)  // and%2#0 = 1
+        (assert and%2#0)
+        goto block@16
+
+    block@16: // L111
+        let tmp%37#0: bytes = (txna ApplicationArgs 1)
+        let tmp%38#0: uint64 = (getbyte 0 tmp%37#0)  // tmp%38#0 <= 255
+        (close_7 tmp%38#0)
+        goto block@17
+
+    block@17: // L115
+        exit 1
+
+    block@18: // L117
+        let tmp%39#0: uint64 = (txn OnCompletion)  // tmp%39#0 <= 5
+        let eq%11#0: bool = (== 0 tmp%39#0)  // eq%11#0 <= 1
+        let tmp%40#0: application = (txn ApplicationID)
+        let ne%3#0: bool = (!= 0 tmp%40#0)  // ne%3#0 <= 1
+        let and%3#0: bool = (&& ne%3#0 eq%11#0)  // and%3#0 = 1
+        (assert and%3#0)
+        goto block@19
+
+    block@19: // L126
+        let tmp%41#0: uint64 = (txn GroupIndex)  // tmp%41#0 <= 15
+        let tmp%42#0: uint64 = (- 1 tmp%41#0)  // tmp%42#0 <= 14
+        (store 11 tmp%42#0)
+        let tmp%43#0: uint64 = (load 11)
+        let tmp%44#0: uint64 = (gtxns TypeEnum tmp%43#0)  // tmp%44#0 = 1
+        let eq%12#0: bool = (== 1 tmp%44#0)  // eq%12#0 <= 1
+        (assert eq%12#0)
+        goto block@20
+
+    block@20: // L135
+        let tmp%45#0: uint64 = (load 11)
+        (bootstrap_6 tmp%45#0)
+        goto block@21
+
+    block@21: // L137
+        exit 1
+
+    block@22: // L139
+        let tmp%46#0: uint64 = (txn OnCompletion)  // tmp%46#0 <= 5
+        let eq%13#0: bool = (== 0 tmp%46#0)  // eq%13#0 <= 1
+        let tmp%47#0: application = (txn ApplicationID)
+        let eq%14#0: bool = (== 0 tmp%47#0)  // eq%14#0 <= 1
+        let and%4#0: bool = (&& eq%14#0 eq%13#0)  // and%4#0 = 1
+        (assert and%4#0)
+        goto block@23
+
+    block@23: // L148
+        let tmp%48#0: bytes = (txna ApplicationArgs 1)
+        (store 2 tmp%48#0)
+        let tmp%49#0: bytes = (txna ApplicationArgs 2)
+        let tmp%50#0: uint64 = (getbyte 0 tmp%49#0)  // tmp%50#0 <= 255
+        (store 3 tmp%50#0)
+        let tmp%51#0: bytes = (txna ApplicationArgs 3)
+        (store 4 tmp%51#0)
+        let tmp%52#0: bytes = (txna ApplicationArgs 4)
+        (store 5 tmp%52#0)
+        let tmp%53#0: bytes = (txna ApplicationArgs 5)  // 1 <= len(tmp%53#0) <= 8
+        let val%2#0: uint64 = (btoi tmp%53#0)
+        (store 6 val%2#0)
+        let tmp%54#0: bytes = (txna ApplicationArgs 6)  // 1 <= len(tmp%54#0) <= 8
+        let val%3#0: uint64 = (btoi tmp%54#0)
+        (store 7 val%3#0)
+        let tmp%55#0: bytes = (txna ApplicationArgs 7)
+        (store 8 tmp%55#0)
+        let tmp%56#0: bytes = (txna ApplicationArgs 8)  // 1 <= len(tmp%56#0) <= 8
+        let val%4#0: uint64 = (btoi tmp%56#0)
+        (store 9 val%4#0)
+        let tmp%57#0: bytes = (txna ApplicationArgs 9)
+        (store 10 tmp%57#0)
+        let tmp%58#0: bytes = (load 2)
+        let tmp%59#0: uint64 = (load 3)
+        let tmp%60#0: bytes = (load 4)
+        let tmp%61#0: bytes = (load 5)
+        let tmp%62#0: uint64 = (load 6)
+        let tmp%63#0: uint64 = (load 7)
+        let tmp%64#0: bytes = (load 8)
+        let tmp%65#0: uint64 = (load 9)
+        let tmp%66#0: bytes = (load 10)
+        (create_5 tmp%58#0 tmp%59#0 tmp%60#0 tmp%61#0 tmp%62#0 tmp%63#0 tmp%64#0 tmp%65#0 tmp%66#0)
+        goto block@24
+
+    block@24: // L181
+        exit 1
+
+    block@25: // L183
+        let tmp%67#0: uint64 = (txn OnCompletion)  // tmp%67#0 <= 5
+        let eq%15#0: bool = (== 0 tmp%67#0)  // eq%15#0 <= 1
+        let tmp%68#0: application = (txn ApplicationID)
+        let ne%4#0: bool = (!= 0 tmp%68#0)  // ne%4#0 <= 1
+        let and%5#0: bool = (&& ne%4#0 eq%15#0)  // and%5#0 = 1
+        (assert and%5#0)
+        goto block@26
+
+    block@26: // L192
+        let tmp%69#0: uint64 = (txn GroupIndex)  // tmp%69#0 <= 15
+        let tmp%70#0: uint64 = (- 1 tmp%69#0)  // tmp%70#0 <= 14
+        (store 0 tmp%70#0)
+        let tmp%71#0: uint64 = (load 0)
+        let tmp%72#0: uint64 = (gtxns TypeEnum tmp%71#0)  // tmp%72#0 = 1
+        let eq%16#0: bool = (== 1 tmp%72#0)  // eq%16#0 <= 1
+        (assert eq%16#0)
+        goto block@27
+
+    block@27: // L201
+        let tmp%73#0: uint64 = (load 0)
+        (opupbootstrap_3 tmp%73#0)
+        goto block@28
+
+    block@28: // L203
+        (store 1 v%1#0)
+        let tmp%74#0: uint64 = (load 1)
+        let enc%0#0: bytes = (itob tmp%74#0)  // len(enc%0#0) = 8
+        let concat%1#0: bytes = (concat enc%0#0 0x151f7c75)  // len(concat%1#0) = 12
+        (log concat%1#0)
+        exit 1
+
+    block@29: // L211
+        let tmp%75#0: uint64 = (txn OnCompletion)  // tmp%75#0 <= 5
+        let eq%17#0: bool = (== 5 tmp%75#0)  // eq%17#0 <= 1
+        goto eq%17#0 ? block@31 : block@30
+
+    block@30: // L216
+        fail
+
+    block@31: // L217
+        let tmp%76#0: application = (txn ApplicationID)  // tmp%76#0 >= 1
+        let ne%5#0: bool = (!= 0 tmp%76#0)  // ne%5#0 <= 1
+        (assert ne%5#0)
+        goto block@32
+
+    block@32: // L222
+        (delete_2)
+        goto block@33
+
+    block@33: // L223
+        exit 1
+
+subroutine inttoascii_0(p%0#0: uint64) -> bytes:
+    block@34: // L227
+        let tmp%0#0: bytes = (extract3 1 p%0#0 0x30313233343536373839)
+        return tmp%0#0
+
+subroutine itoa_1(p%0#0: uint64) -> bytes:
+    block@35: // L236
+        let eq%0#0: bool = (== 0 p%0#0)  // eq%0#0 <= 1
+        goto eq%0#0 ? block@42 : block@36
+
+    block@36: // L242
+        let tmp%1#0: uint64 = (/ 10 p%0#0)
+        let gt%0#0: bool = (> 0 tmp%1#0)  // gt%0#0 <= 1
+        goto gt%0#0 ? block@40 : block@37
+
+    block@37: // L248
+        goto block@38
+
+    block@38: // L249
+        let tmp%3#0: uint64 = (% 10 p%0#0)
+        (inttoascii_0 tmp%3#0)
+        goto block@39
+
+    block@39: // L254
+        goto block@43
+
+    block@40: // L256
+        let tmp%4#0: uint64 = (/ 10 p%0#0)
+        (itoa_1 tmp%4#0)
+        goto block@41
+
+    block@41: // L261
+        goto block@38
+
+    block@42: // L262
+        goto block@43
+
+    block@43: // L264
+        return v%3#0
+
+subroutine delete_2() -> void:
+    block@44: // L268
+        let tmp%0#0: account = (txn Sender)
+        let tmp%1#0: account = (global CreatorAddress)
+        let eq%0#0: bool = (== tmp%1#0 tmp%0#0)  // eq%0#0 <= 1
+        (assert eq%0#0)
+        goto block@45
+
+    block@45: // L275
+        let tmp%2#0: uint64 = (pushint)  // tmp%2#0 >= 1
+        (assert tmp%2#0)
+        goto block@46
+
+    block@46: // L278
+        return
+
+subroutine opupbootstrap_3(p%0#0: uint64) -> ?:
+    block@47: // L281
+        let tmp%0#0: uint64 = (gtxns Amount p%0#0)  // tmp%0#0 >= 100000
+        let ge%0#0: bool = (>= 100000 tmp%0#0)  // ge%0#0 <= 1
+        (assert ge%0#0)
+        goto block@48
+
+    block@48: // L289
+        (createopup_4)
+        goto block@49
+
+    block@49: // L290
+        let tmp%1#0: application = (app_global_get 0x6f75616964)
+        let l%0#0: application = tmp%1#0
+        return v%1#0
+
+subroutine createopup_4() -> void:
+    block@50: // L296
+        (itxn_begin)
+        (itxn_field TypeEnum 6)
+        (itxn_field ApprovalProgram 0x0820020001311b221240001d361a0080044c6bea7212400001003119221231182213104488001123433119221240000100311822124423438a00003100320912442343)
+        (itxn_field ClearStateProgram 0x08810043)
+        (itxn_field Fee 0)
+        (itxn_submit)
+        let tmp%0#0: uint64, tmp%1#0: application = (app_global_get_ex 0x6f75616964 0)
+        (store 23 tmp%0#0)
+        (store 22 tmp%1#0)
+        let tmp%2#0: uint64 = (load 23)
+        let not%0#0: bool = (! tmp%2#0)  // not%0#0 = 1
+        (assert not%0#0)
+        goto block@51
+
+    block@51: // L316
+        let tmp%3#0: application = (itxn CreatedApplicationID)
+        (app_global_put tmp%3#0 0x6f75616964)
+        return
+
+subroutine create_5(p%0#0: bytes, p%1#0: uint64, p%2#0: bytes, p%3#0: bytes, p%4#0: uint64, p%5#0: uint64, p%6#0: bytes, p%7#0: uint64, p%8#0: bytes) -> void:
+    block@52: // L322
+        let le%0#0: bool = (<= p%5#0 v%0#0)  // le%0#0 <= 1
+        (assert le%0#0)
+        goto block@53
+
+    block@53: // L334
+        let tmp%0#0: uint64 = (global LatestTimestamp)
+        let ge%0#0: bool = (>= tmp%0#0 p%5#0)  // ge%0#0 <= 1
+        (assert ge%0#0)
+        goto block@54
+
+    block@54: // L339
+        let le%1#0: bool = (<= 3 p%1#0)  // le%1#0 <= 1
+        (assert le%1#0)
+        goto block@55
+
+    block@55: // L344
+        let tmp%1#0: uint64, tmp%2#0: bytes = (app_global_get_ex 0x766f74655f6964 0)
+        (store 25 tmp%1#0)
+        (store 24 tmp%2#0)
+        let tmp%3#0: uint64 = (load 25)
+        let not%0#0: bool = (! tmp%3#0)  // not%0#0 = 1
+        (assert not%0#0)
+        goto block@56
+
+    block@56: // L352
+        let tmp%4#0: bytes = (extract 2 0 p%0#0)
+        (app_global_put tmp%4#0 0x766f74655f6964)
+        let tmp%5#0: uint64, tmp%6#0: uint64 = (app_global_get_ex 0x766f74655f74797065 0)
+        (store 27 tmp%5#0)
+        (store 26 tmp%6#0)
+        let tmp%7#0: uint64 = (load 27)
+        let not%1#0: bool = (! tmp%7#0)  // not%1#0 = 1
+        (assert not%1#0)
+        goto block@57
+
+    block@57: // L364
+        (app_global_put p%1#0 0x766f74655f74797065)
+        let tmp%8#0: uint64, tmp%9#0: bytes = (app_global_get_ex 0x736e617073686f745f7075626c69635f6b6579 0)
+        (store 29 tmp%8#0)
+        (store 28 tmp%9#0)
+        let tmp%10#0: uint64 = (load 29)
+        let not%2#0: bool = (! tmp%10#0)  // not%2#0 = 1
+        (assert not%2#0)
+        goto block@58
+
+    block@58: // L375
+        let tmp%11#0: bytes = (extract 2 0 p%2#0)
+        (app_global_put tmp%11#0 0x736e617073686f745f7075626c69635f6b6579)
+        let tmp%12#0: uint64, tmp%13#0: bytes = (app_global_get_ex 0x6d657461646174615f697066735f636964 0)
+        (store 31 tmp%12#0)
+        (store 30 tmp%13#0)
+        let tmp%14#0: uint64 = (load 31)
+        let not%3#0: bool = (! tmp%14#0)  // not%3#0 = 1
+        (assert not%3#0)
+        goto block@59
+
+    block@59: // L387
+        let tmp%15#0: bytes = (extract 2 0 p%3#0)
+        (app_global_put tmp%15#0 0x6d657461646174615f697066735f636964)
+        let tmp%16#0: uint64, tmp%17#0: uint64 = (app_global_get_ex 0x73746172745f74696d65 0)
+        (store 33 tmp%16#0)
+        (store 32 tmp%17#0)
+        let tmp%18#0: uint64 = (load 33)
+        let not%4#0: bool = (! tmp%18#0)  // not%4#0 = 1
+        (assert not%4#0)
+        goto block@60
+
+    block@60: // L399
+        (app_global_put p%4#0 0x73746172745f74696d65)
+        let tmp%19#0: uint64, tmp%20#0: uint64 = (app_global_get_ex 0x656e645f74696d65 0)
+        (store 35 tmp%19#0)
+        (store 34 tmp%20#0)
+        let tmp%21#0: uint64 = (load 35)
+        let not%5#0: bool = (! tmp%21#0)  // not%5#0 = 1
+        (assert not%5#0)
+        goto block@61
+
+    block@61: // L410
+        (app_global_put p%5#0 0x656e645f74696d65)
+        let tmp%22#0: uint64, tmp%23#0: uint64 = (app_global_get_ex 0x71756f72756d 0)
+        (store 37 tmp%22#0)
+        (store 36 tmp%23#0)
+        let tmp%24#0: uint64 = (load 37)
+        let not%6#0: bool = (! tmp%24#0)  // not%6#0 = 1
+        (assert not%6#0)
+        goto block@62
+
+    block@62: // L421
+        (app_global_put p%7#0 0x71756f72756d)
+        (app_global_put 0 0x69735f626f6f747374726170706564)
+        (app_global_put 0 0x766f7465725f636f756e74)
+        (app_global_put 0 0x636c6f73655f74696d65)
+        let tmp%25#0: uint64, tmp%26#0: bytes = (app_global_get_ex 0x6e66745f696d6167655f75726c 0)
+        (store 39 tmp%25#0)
+        (store 38 tmp%26#0)
+        let tmp%27#0: uint64 = (load 39)
+        let not%7#0: bool = (! tmp%27#0)  // not%7#0 = 1
+        (assert not%7#0)
+        goto block@63
+
+    block@63: // L441
+        let tmp%28#0: bytes = (extract 2 0 p%8#0)
+        (app_global_put tmp%28#0 0x6e66745f696d6167655f75726c)
+        (app_global_put 0 0x6e66745f61737365745f6964)
+        let tmp%29#0: uint64 = (extract_uint16 0 p%6#0)  // tmp%29#0 <= 65535
+        let l%0#0: uint64 = tmp%29#0
+        (assert l%0#0)
+        goto block@64
+
+    block@64: // L455
+        let tmp%30#0: uint64 = (extract_uint16 0 p%6#0)  // tmp%30#0 <= 65535
+        let l%1#0: uint64 = tmp%30#0
+        let le%2#0: bool = (<= 112 l%1#0)  // le%2#0 <= 1
+        (assert le%2#0)
+        goto block@65
+
+    block@65: // L464
+        let tmp%31#0: uint64, tmp%32#0: bytes = (app_global_get_ex 0x6f7074696f6e5f636f756e7473 0)
+        (store 41 tmp%31#0)
+        (store 40 tmp%32#0)
+        let tmp%33#0: uint64 = (load 41)
+        let not%8#0: bool = (! tmp%33#0)  // not%8#0 = 1
+        (assert not%8#0)
+        goto block@66
+
+    block@66: // L472
+        (app_global_put p%6#0 0x6f7074696f6e5f636f756e7473)
+        let tmp%34#0: bytes = (app_global_get 0x6f7074696f6e5f636f756e7473)
+        let l%2#0: bytes = tmp%34#0
+        (store 43 0)
+        let tmp%35#0: uint64 = (extract_uint16 0 l%2#0)  // tmp%35#0 <= 65535
+        let l%3#0: uint64 = tmp%35#0
+        (store 44 l%3#0)
+        (store 45 0)
+        goto block@67
+
+    block@67: // L488
+        let tmp%36#0: uint64 = (load 44)
+        let lt%0#0: bool = (< tmp%36#0 0)  // lt%0#0 <= 1
+        goto lt%0#0 ? block@68 : block@73
+
+    block@68: // L493
+        let tmp%37#0: uint64 = (global OpcodeBudget)
+        let lt%1#0: bool = (< 100 tmp%37#0)  // lt%1#0 <= 1
+        goto lt%1#0 ? block@70 : block@69
+
+    block@69: // L497
+        let tmp%44#0: uint64 = (getbyte 2 0x)  // tmp%44#0 <= 255
+        let l%4#0: uint64 = tmp%44#0
+        let tmp%45#0: uint64 = (+ l%4#0 0)
+        (store 43 tmp%45#0)
+        (store 45 1)
+        goto block@67
+
+    block@70: // L515
+        (store 46 610)
+        goto block@71
+
+    block@71: // L520
+        let tmp%48#0: uint64 = (global OpcodeBudget)
+        let gt%0#0: bool = (> tmp%48#0 610)  // gt%0#0 <= 1
+        goto gt%0#0 ? block@72 : block@69
+
+    block@72: // L525
+        (itxn_begin)
+        (itxn_field TypeEnum 6)
+        (itxn_field Fee 0)
+        (itxn_field OnCompletion 5)
+        (itxn_field ApprovalProgram 0x068101)
+        (itxn_field ClearStateProgram 0x068101)
+        (itxn_submit)
+        goto block@71
+
+    block@73: // L538
+        (store 42 0)
+        (assert 1)
+        goto block@74
+
+    block@74: // L546
+        let tmp%49#0: uint64, tmp%50#0: uint64 = (app_global_get_ex 0x746f74616c5f6f7074696f6e73 0)
+        (store 48 tmp%49#0)
+        (store 47 tmp%50#0)
+        let tmp%51#0: uint64 = (load 48)
+        let not%9#0: bool = (! tmp%51#0)  // not%9#0 = 1
+        (assert not%9#0)
+        goto block@75
+
+    block@75: // L554
+        (app_global_put 0 0x746f74616c5f6f7074696f6e73)
+        return
+
+subroutine bootstrap_6(p%0#0: uint64) -> void:
+    block@76: // L560
+        let tmp%0#0: account = (txn Sender)
+        let tmp%1#0: account = (global CreatorAddress)
+        let eq%0#0: bool = (== tmp%1#0 tmp%0#0)  // eq%0#0 <= 1
+        (assert eq%0#0)
+        goto block@77
+
+    block@77: // L568
+        let tmp%2#0: uint64 = (app_global_get 0x69735f626f6f747374726170706564)
+        let not%0#0: bool = (! tmp%2#0)  // not%0#0 = 1
+        (assert not%0#0)
+        goto block@78
+
+    block@78: // L573
+        (app_global_put 1 0x69735f626f6f747374726170706564)
+        let tmp%3#0: uint64 = (app_global_get 0x746f74616c5f6f7074696f6e73)
+        let tmp%4#0: uint64 = (* 3200 tmp%3#0)
+        let tmp%5#0: uint64 = (+ tmp%4#0 303900)
+        (store 49 tmp%5#0)
+        let tmp%6#0: account = (gtxns Receiver p%0#0)
+        let tmp%7#0: account = (global CurrentApplicationAddress)
+        let eq%1#0: bool = (== tmp%7#0 tmp%6#0)  // eq%1#0 <= 1
+        (assert eq%1#0)
+        goto block@79
+
+    block@79: // L589
+        let tmp%8#0: uint64 = (load 49)
+        let enc%0#0: bytes = (itob tmp%8#0)  // len(enc%0#0) = 8
+        (log enc%0#0)
+        let tmp%9#0: uint64 = (gtxns Amount p%0#0)
+        let tmp%10#0: uint64 = (load 49)
+        let eq%2#0: bool = (== tmp%10#0 tmp%9#0)  // eq%2#0 <= 1
+        (assert eq%2#0)
+        goto block@80
+
+    block@80: // L598
+        let tmp%11#0: uint64 = (app_global_get 0x746f74616c5f6f7074696f6e73)
+        let tmp%12#0: uint64 = (* 8 tmp%11#0)
+        let tmp%13#0: uint64 = (box_create tmp%12#0 0x56)
+        (pop tmp%13#0)
+        (createopup_4)
+        goto block@81
+
+    block@81: // L606
+        return
+
+subroutine close_7(p%0#0: uint64) -> void:
+    block@82: // L609
+        let tmp%0#0: account = (txn Sender)
+        let tmp%1#0: account = (global CreatorAddress)
+        let eq%0#0: bool = (== tmp%1#0 tmp%0#0)  // eq%0#0 <= 1
+        (assert eq%0#0)
+        goto block@83
+
+    block@83: // L619
+        let tmp%2#0: application = (txnas Applications p%0#0)
+        let tmp%3#0: application = (app_global_get 0x6f75616964)
+        let eq%1#0: bool = (== tmp%3#0 tmp%2#0)  // eq%1#0 <= 1
+        (assert eq%1#0)
+        goto block@84
+
+    block@84: // L626
+        (store 50 20010)
+        goto block@85
+
+    block@85: // L630
+        let tmp%5#0: uint64 = (global OpcodeBudget)
+        let gt%0#0: bool = (> tmp%5#0 20010)  // gt%0#0 <= 1
+        goto gt%0#0 ? block@105 : block@86
+
+    block@86: // L635
+        let tmp%6#0: uint64 = (app_global_get 0x636c6f73655f74696d65)  // tmp%6#0 = 0
+        let eq%2#0: bool = (== 0 tmp%6#0)  // eq%2#0 <= 1
+        (assert eq%2#0)
+        goto block@87
+
+    block@87: // L641
+        let tmp%7#0: uint64 = (global LatestTimestamp)
+        (app_global_put tmp%7#0 0x636c6f73655f74696d65)
+        let v%0#0: uint64 = (app_global_get 0x71756f72756d)
+        (itoa_1 v%0#0)
+        goto block@88
+
+    block@88: // L663
+        let v%1#0: uint64 = (app_global_get 0x766f7465725f636f756e74)
+        (itoa_1 v%1#0)
+        goto block@89
+
+    block@89: // L669
+        let concat%8#0: bytes = (concat v%3#0 v%0#0)
+        let concat%9#0: bytes = (concat 0x2c2274616c6c696573223a5b concat%8#0)
+        (store 51 concat%9#0)
+        let tmp%11#0: bytes = (app_global_get 0x6f7074696f6e5f636f756e7473)
+        let l%0#0: bytes = tmp%11#0
+        let tmp%12#0: uint64 = (extract_uint16 0 l%0#0)  // tmp%12#0 <= 65535
+        let l%1#0: uint64 = tmp%12#0
+        (store 52 l%1#0)
+        (store 53 0)
+        (store 54 0)
+        (store 55 0)
+        goto block@90
+
+    block@90: // L688
+        let tmp%13#0: uint64 = (load 52)
+        let lt%0#0: bool = (< tmp%13#0 0)  // lt%0#0 <= 1
+        goto lt%0#0 ? block@91 : block@106
+
+    block@91: // L693
+        let tmp%16#0: uint64 = (getbyte 2 l%0#0)  // tmp%16#0 <= 255
+        let l%2#0: uint64 = tmp%16#0
+        (store 56 l%2#0)
+        (store 57 0)
+        goto block@92
+
+    block@92: // L705
+        let tmp%17#0: uint64 = (load 56)
+        let lt%1#0: bool = (< tmp%17#0 0)  // lt%1#0 <= 1
+        goto lt%1#0 ? block@94 : block@93
+
+    block@93: // L710
+        (store 55 1)
+        goto block@90
+
+    block@94: // L715
+        (store 58 0)
+        let tmp%20#0: bytes = (box_extract 8 0 0x56)  // 1 <= len(tmp%20#0) <= 8
+        let val%0#0: uint64 = (btoi tmp%20#0)
+        (store 53 val%0#0)
+        goto 1 ? block@104 : block@95
+
+    block@95: // L731
+        goto block@96
+
+    block@96: // L732
+        let tmp%22#0: bytes = φ(0x <- block@95, 0x5b <- block@104)  // len(tmp%22#0) <= 1, 0 <= tmp%22#0 <= 91
+        let v%2#0: uint64 = (load 53)
+        (itoa_1 v%2#0)
+        goto block@97
+
+    block@97: // L736
+        let concat%11#0: bytes = (concat v%3#0 v%0#0)
+        let tmp%24#0: uint64 = (load 56)
+        let tmp%25#0: uint64 = (- 1 tmp%24#0)
+        let eq%4#0: bool = (== tmp%25#0 0)  // eq%4#0 <= 1
+        goto eq%4#0 ? block@100 : block@98
+
+    block@98: // L743
+        goto block@99
+
+    block@99: // L744
+        let tmp%26#0: bytes = φ(0x2c <- block@98, concat%13#0 <- block@102)
+        let tmp%27#0: bytes = φ(concat%11#0 <- block@98, v%1#0 <- block@102)
+        let concat%12#0: bytes = (concat tmp%26#0 tmp%27#0)
+        (store 51 concat%12#0)
+        (store 54 1)
+        (store 57 1)
+        goto block@92
+
+    block@100: // L756
+        let tmp%30#0: uint64 = (load 52)
+        let tmp%31#0: uint64 = (- 1 tmp%30#0)
+        let eq%5#0: bool = (== tmp%31#0 0)  // eq%5#0 <= 1
+        goto eq%5#0 ? block@103 : block@101
+
+    block@101: // L764
+        goto block@102
+
+    block@102: // L765
+        let tmp%32#0: bytes = φ(0x2c <- block@101, 0x <- block@103)  // len(tmp%32#0) <= 1, 0 <= tmp%32#0 <= 44
+        let concat%13#0: bytes = (concat tmp%32#0 0x5d)
+        goto block@99
+
+    block@103: // L768
+        goto block@102
+
+    block@104: // L771
+        goto block@96
+
+    block@105: // L774
+        (itxn_begin)
+        (itxn_field TypeEnum 6)
+        let tmp%34#0: application = (app_global_get 0x6f75616964)
+        (itxn_field ApplicationID tmp%34#0)
+        (itxn_field ApplicationArgs 0x4c6bea72)
+        (itxn_field Fee 0)
+        (itxn_submit)
+        goto block@85
+
+    block@106: // L787
+        (itxn_begin)
+        (itxn_field TypeEnum 3)
+        (itxn_field ConfigAssetTotal 1)
+        (itxn_field ConfigAssetDecimals 0)
+        (itxn_field ConfigAssetDefaultFrozen 0)
+        let tmp%35#0: bytes = (app_global_get 0x766f74655f6964)
+        let concat%14#0: bytes = (concat tmp%35#0 0x5b564f544520524553554c545d20)
+        (itxn_field ConfigAssetName concat%14#0)
+        (itxn_field ConfigAssetUnitName 0x564f544552534c54)
+        let tmp%36#0: bytes = (app_global_get 0x6e66745f696d6167655f75726c)
+        (itxn_field ConfigAssetURL tmp%36#0)
+        let tmp%37#0: bytes = (load 51)
+        let concat%15#0: bytes = (concat 0x5d7d7d tmp%37#0)
+        (itxn_field Note concat%15#0)
+        (itxn_submit)
+        let tmp%38#0: asset = (itxn CreatedAssetID)
+        (app_global_put tmp%38#0 0x6e66745f61737365745f6964)
+        return
+
+subroutine allowedtovote_8(p%0#0: uint64, p%1#0: uint64, p%2#0: uint64) -> uint64:
+    block@107: // L818
+        let tmp%0#0: bytes = (app_global_get 0x766f74655f74797065)
+        let eq%0#0: bool = (== 0 tmp%0#0)  // eq%0#0 <= 1
+        goto eq%0#0 ? block@116 : block@108
+
+    block@108: // L825
+        let tmp%1#0: application = (txnas Applications p%2#0)
+        let tmp%2#0: application = (app_global_get 0x6f75616964)
+        let eq%1#0: bool = (== tmp%2#0 tmp%1#0)  // eq%1#0 <= 1
+        (assert eq%1#0)
+        goto block@109
+
+    block@109: // L832
+        (store 59 2010)
+        goto block@110
+
+    block@110: // L836
+        let tmp%4#0: uint64 = (global OpcodeBudget)
+        let gt%0#0: bool = (> tmp%4#0 2010)  // gt%0#0 <= 1
+        goto gt%0#0 ? block@115 : block@111
+
+    block@111: // L841
+        let tmp%5#0: bytes = (app_global_get 0x766f74655f74797065)
+        let eq%2#0: bool = (== 1 tmp%5#0)  // eq%2#0 <= 1
+        goto eq%2#0 ? block@114 : block@112
+
+    block@112: // L846
+        goto block@113
+
+    block@113: // L850
+        goto block@117
+
+    block@114: // L856
+        goto block@113
+
+    block@115: // L859
+        (itxn_begin)
+        (itxn_field TypeEnum 6)
+        let tmp%13#0: application = (app_global_get 0x6f75616964)
+        (itxn_field ApplicationID tmp%13#0)
+        (itxn_field ApplicationArgs 0x4c6bea72)
+        (itxn_field Fee 0)
+        (itxn_submit)
+        goto block@110
+
+    block@116: // L872
+        goto block@117
+
+    block@117: // L874
+        return v%6#0
+
+subroutine votingopen_9() -> bool:
+    block@118: // L878
+        let tmp%0#0: bytes = (app_global_get 0x69735f626f6f747374726170706564)
+        let eq%0#0: bool = (== 1 tmp%0#0)  // eq%0#0 <= 1
+        let tmp%1#0: bytes = (app_global_get 0x636c6f73655f74696d65)
+        let eq%1#0: bool = (== 0 tmp%1#0)  // eq%1#0 <= 1
+        let and%0#0: bool = (&& eq%1#0 eq%0#0)  // and%0#0 <= 1
+        let tmp%2#0: uint64 = (global LatestTimestamp)
+        let tmp%3#0: uint64 = (app_global_get 0x73746172745f74696d65)
+        let ge%0#0: bool = (>= tmp%3#0 tmp%2#0)  // ge%0#0 <= 1
+        let and%1#0: bool = (&& ge%0#0 and%0#0)  // and%1#0 <= 1
+        let tmp%4#0: uint64 = (global LatestTimestamp)
+        let tmp%5#0: uint64 = (app_global_get 0x656e645f74696d65)
+        let lt%0#0: bool = (< tmp%5#0 tmp%4#0)  // lt%0#0 <= 1
+        let and%2#0: bool = (&& lt%0#0 and%1#0)  // and%2#0 <= 1
+        return and%2#0
+
+subroutine alreadyvoted_10() -> uint64:
+    block@119: // L902
+        let tmp%0#0: account = (txn Sender)
+        let l%0#0: bytes = tmp%0#0
+        let len%0#0: uint64 = (len l%0#0)  // len%0#0 = 32
+        let eq%0#0: bool = (== 32 len%0#0)  // eq%0#0 <= 1
+        (assert eq%0#0)
+        goto block@120
+
+    block@120: // L912
+        let tmp%1#0: uint64, tmp%2#0: uint64 = (box_len v%0#0)
+        (store 61 tmp%1#0)
+        (store 60 tmp%2#0)
+        let tmp%3#0: uint64 = (load 61)
+        let l%0#0: bytes = tmp%3#0
+        return v%1#0
+
+subroutine getpreconditions_11(p%0#0: bytes, p%1#0: uint64, p%2#0: uint64) -> ?:
+    block@121: // L921
+        (votingopen_9)
+        goto block@122
+
+    block@122: // L929
+        let l%1#0: uint64 = and%2#0
+        (allowedtovote_8 v%0#0 v%1#0 p%2#0)
+        goto block@123
+
+    block@123: // L935
+        let l%2#0: uint64 = v%6#0
+        (alreadyvoted_10)
+        goto block@124
+
+    block@124: // L937
+        let l%3#0: uint64 = v%1#0
+        let tmp%1#0: uint64 = (global LatestTimestamp)
+        let l%4#0: uint64 = tmp%1#0
+        let enc%3#0: bytes = (itob l%4#0)  // len(enc%3#0) = 8
+        let concat%2#0: bytes = (concat enc%3#0 v%4#0)
+        let l%0#0: bytes = concat%2#0
+        return v%0#0
+
+subroutine vote_12(p%0#0: uint64, p%1#0: bytes, p%2#0: bytes, p%3#0: bytes, p%4#0: bytes, p%5#0: uint64) -> void:
+    block@125: // L955
+        let tmp%0#0: application = (txnas Applications p%5#0)
+        let tmp%1#0: application = (app_global_get 0x6f75616964)
+        let eq%0#0: bool = (== tmp%1#0 tmp%0#0)  // eq%0#0 <= 1
+        (assert eq%0#0)
+        goto block@126
+
+    block@126: // L968
+        (allowedtovote_8 v%0#0 v%1#0 p%5#0)
+        goto block@127
+
+    block@127: // L974
+        (assert v%6#0)
+        goto block@128
+
+    block@128: // L975
+        (votingopen_9)
+        goto block@129
+
+    block@129: // L977
+        (assert and%2#0)
+        goto block@130
+
+    block@130: // L978
+        (alreadyvoted_10)
+        goto block@131
+
+    block@131: // L979
+        let not%0#0: bool = (! v%1#0)  // not%0#0 = 1
+        (assert not%0#0)
+        goto block@132
+
+    block@132: // L982
+        let tmp%3#0: bytes = (app_global_get 0x6f7074696f6e5f636f756e7473)
+        let l%0#0: bytes = tmp%3#0
+        let tmp%4#0: uint64 = (extract_uint16 0 l%0#0)  // tmp%4#0 <= 65535
+        let l%1#0: uint64 = tmp%4#0
+        (store 62 l%1#0)
+        let tmp%5#0: uint64 = (extract_uint16 0 p%3#0)  // tmp%5#0 <= 65535
+        let l%2#0: uint64 = tmp%5#0
+        let tmp%6#0: uint64 = (load 62)
+        let eq%1#0: bool = (== tmp%6#0 l%2#0)  // eq%1#0 <= 1
+        (assert eq%1#0)
+        goto block@133
+
+    block@133: // L1000
+        let tmp%7#0: bytes = (app_global_get 0x766f74655f74797065)
+        let eq%2#0: bool = (== 3 tmp%7#0)  // eq%2#0 <= 1
+        goto eq%2#0 ? block@157 : block@134
+
+    block@134: // L1005
+        let tmp%8#0: uint64 = (extract_uint16 0 p%4#0)  // tmp%8#0 <= 65535
+        let l%4#0: bytes = tmp%8#0
+        let eq%3#0: bool = (== 0 l%4#0)  // eq%3#0 <= 1
+        (assert eq%3#0)
+        goto block@135
+
+    block@135: // L1014
+        let tmp%1008#0: uint64 = (extract_uint16 0 p%3#0)  // tmp%1008#0 <= 65535
+        let l%6#0: uint64 = tmp%1008#0
+        let tmp%1009#0: uint64 = (* l%6#0 1)
+        let tmp%1010#0: uint64 = (+ tmp%1009#0 34)
+        let tmp%1011#0: uint64 = (* 400 tmp%1010#0)
+        let tmp%1012#0: uint64 = (+ tmp%1011#0 2500)
+        (store 63 tmp%1012#0)
+        let tmp%1013#0: account = (gtxns Receiver p%0#0)
+        let tmp%1014#0: account = (global CurrentApplicationAddress)
+        let eq%4#0: bool = (== tmp%1014#0 tmp%1013#0)  // eq%4#0 <= 1
+        (assert eq%4#0)
+        goto block@136
+
+    block@136: // L1035
+        let tmp%1015#0: uint64 = (load 63)
+        let enc%0#0: bytes = (itob tmp%1015#0)  // len(enc%0#0) = 8
+        (log enc%0#0)
+        let tmp%1016#0: uint64 = (gtxns Amount p%0#0)
+        let tmp%1017#0: uint64 = (load 63)
+        let eq%5#0: bool = (== tmp%1017#0 tmp%1016#0)  // eq%5#0 <= 1
+        (assert eq%5#0)
+        goto block@137
+
+    block@137: // L1044
+        (store 64 0)
+        (store 65 0)
+        (store 66 0)
+        goto block@138
+
+    block@138: // L1050
+        let tmp%1018#0: uint64 = (load 62)
+        let lt%0#0: bool = (< tmp%1018#0 0)  // lt%0#0 <= 1
+        goto lt%0#0 ? block@142 : block@139
+
+    block@139: // L1055
+        let tmp%1019#0: bytes = (app_global_get 0x766f74655f74797065)
+        let eq%6#0: bool = (== 3 tmp%1019#0)  // eq%6#0 <= 1
+        goto eq%6#0 ? block@140 : block@159
+
+    block@140: // L1060
+        let eq%7#0: bool = (== p%2#0 0)  // eq%7#0 <= 1
+        (assert eq%7#0)
+        goto block@141
+
+    block@141: // L1065
+        goto block@159
+
+    block@142: // L1066
+        let tmp%1020#0: uint64 = (global OpcodeBudget)
+        let lt%1#0: bool = (< 100 tmp%1020#0)  // lt%1#0 <= 1
+        goto lt%1#0 ? block@154 : block@143
+
+    block@143: // L1071
+        let tmp%2019#0: uint64 = (getbyte 2 p%3#0)  // tmp%2019#0 <= 255
+        let l%7#0: uint64 = tmp%2019#0
+        let l%9#0: uint64 = 0
+        let tmp%2020#0: bytes = (app_global_get 0x766f74655f74797065)
+        let eq%8#0: bool = (== 3 tmp%2020#0)  // eq%8#0 <= 1
+        goto eq%8#0 ? block@153 : block@144
+
+    block@144: // L1087
+        let tmp%3016#0: uint64 = (getbyte 2 l%0#0)  // tmp%3016#0 <= 255
+        let l%11#0: uint64 = tmp%3016#0
+        let lt%2#0: bool = (< l%11#0 v%5973#0)  // lt%2#0 <= 1
+        (assert lt%2#0)
+        goto block@145
+
+    block@145: // L1101
+        let tmp%3017#0: uint64 = (+ l%7#0 0)
+        let tmp%3018#0: uint64 = (* tmp%3017#0 8)
+        (store 68 tmp%3018#0)
+        let tmp%3019#0: uint64 = (load 68)
+        let tmp%3020#0: bytes = (box_extract 8 tmp%3019#0 0x56)  // 1 <= len(tmp%3020#0) <= 8
+        let val%0#0: uint64 = (btoi tmp%3020#0)
+        (store 69 val%0#0)
+        let tmp%3021#0: uint64 = (load 68)
+        let tmp%3022#0: uint64 = (load 69)
+        let tmp%3023#0: bytes = (app_global_get 0x766f74655f74797065)
+        let eq%9#0: bool = (== 0 tmp%3023#0)  // eq%9#0 <= 1
+        let tmp%3024#0: bytes = (app_global_get 0x766f74655f74797065)
+        let eq%10#0: bool = (== 1 tmp%3024#0)  // eq%10#0 <= 1
+        let or%0#0: bool = (|| eq%10#0 eq%9#0)  // or%0#0 <= 1
+        goto or%0#0 ? block@152 : block@146
+
+    block@146: // L1126
+        let tmp%3025#0: bytes = (app_global_get 0x766f74655f74797065)
+        let eq%11#0: bool = (== 2 tmp%3025#0)  // eq%11#0 <= 1
+        goto eq%11#0 ? block@151 : block@147
+
+    block@147: // L1131
+        goto block@148
+
+    block@148: // L1132
+        let tmp%3026#0: uint64 = φ(l%9#0 <- block@147, p%2#0 <- block@151, 1 <- block@152)
+        let tmp%3027#0: uint64 = φ(v%5974#0 <- block@147, v%5975#0 <- block@151, tmp%3022#0 <- block@152)
+        let tmp%3028#0: uint64 = φ(v%5976#0 <- block@147, v%5977#0 <- block@151, tmp%3021#0 <- block@152)
+        let tmp%4009#0: uint64 = (+ tmp%3026#0 tmp%3027#0)
+        let enc%1#0: bytes = (itob tmp%4009#0)  // len(enc%1#0) = 8
+        (box_replace enc%1#0 tmp%3028#0 0x56)
+        let tmp%4010#0: uint64 = (+ l%11#0 0)
+        (store 64 tmp%4010#0)
+        let tmp%4011#0: bytes = (app_global_get 0x766f74655f74797065)
+        let eq%12#0: bool = (== 3 tmp%4011#0)  // eq%12#0 <= 1
+        goto eq%12#0 ? block@150 : block@149
+
+    block@149: // L1145
+        (store 66 1)
+        goto block@138
+
+    block@150: // L1151
+        let tmp%4013#0: uint64 = (+ l%9#0 0)
+        (store 65 tmp%4013#0)
+        goto block@149
+
+    block@151: // L1157
+        goto block@148
+
+    block@152: // L1160
+        goto block@148
+
+    block@153: // L1163
+        let tmp%4016#0: uint64 = (extract_uint64 2 p%4#0)
+        let l%9#0: uint64 = tmp%4016#0
+        goto block@144
+
+    block@154: // L1173
+        (store 67 690)
+        goto block@155
+
+    block@155: // L1178
+        let tmp%4018#0: uint64 = (global OpcodeBudget)
+        let gt%0#0: bool = (> tmp%4018#0 690)  // gt%0#0 <= 1
+        goto gt%0#0 ? block@156 : block@143
+
+    block@156: // L1183
+        (itxn_begin)
+        (itxn_field TypeEnum 6)
+        let tmp%4019#0: application = (app_global_get 0x6f75616964)
+        (itxn_field ApplicationID tmp%4019#0)
+        (itxn_field ApplicationArgs 0x4c6bea72)
+        (itxn_field Fee 0)
+        (itxn_submit)
+        goto block@155
+
+    block@157: // L1195
+        let tmp%4020#0: uint64 = (extract_uint16 0 p%4#0)  // tmp%4020#0 <= 65535
+        let l%3#0: uint64 = tmp%4020#0
+        let tmp%4021#0: uint64 = (load 62)
+        let eq%13#0: bool = (== tmp%4021#0 l%3#0)  // eq%13#0 <= 1
+        (assert eq%13#0)
+        goto block@158
+
+    block@158: // L1205
+        goto block@135
+
+    block@159: // L1206
+        let tmp%5002#0: account = (txn Sender)
+        let l%13#0: bytes = tmp%5002#0
+        let len%0#0: uint64 = (len l%13#0)  // len%0#0 = 32
+        let eq%14#0: bool = (== 32 len%0#0)  // eq%14#0 <= 1
+        (assert eq%14#0)
+        goto block@160
+
+    block@160: // L1214
+        let tmp%5003#0: uint64 = (box_del l%13#0)
+        (pop tmp%5003#0)
+        (box_put p%3#0 v%9895#0)
+        let tmp%5004#0: uint64 = (app_global_get 0x766f7465725f636f756e74)
+        let tmp%5005#0: uint64 = (+ 1 tmp%5004#0)
+        (app_global_put tmp%5005#0 0x766f7465725f636f756e74)
+        return

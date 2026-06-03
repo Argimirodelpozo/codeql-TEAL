@@ -195,8 +195,8 @@ class _Translator:
                 source_location=None, targets=targets,
                 source=self.vp(o.source, [t.ir_type for t in targets]))
         if isinstance(o, ir.IntrinsicOp):
-            if isinstance(o.intrinsic, ir.Intrinsic) and o.intrinsic.op == "pop":
-                return None                      # pop = discard; unused value, no-op in SSA
+            if isinstance(o.intrinsic, ir.Intrinsic) and o.intrinsic.op in ("pop", "popn"):
+                return None                      # pop/popn = discard; unused value, no-op in SSA
             return self.vp(o.intrinsic)          # side-effecting intrinsic = an Op
         if isinstance(o, ir.Assert):
             return M.Assert(source_location=None, condition=self.val(o.condition),

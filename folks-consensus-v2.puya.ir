@@ -1,0 +1,235 @@
+main consensus_v2_approval.teal:
+    block@0: // L2
+        let tmp%0#0: uint64 = (txn NumAppArgs)
+        let eq%0#0: bool = (== tmp%0#0 0u)
+        goto eq%0#0 ? block@14 : block@1
+    block@1: // L6
+        let tmp%1#0: bytes = (txna ApplicationArgs 0)
+        let eq%1#0: bool = (== tmp%1#0 0xcfe58d05)
+        goto eq%1#0 ? block@11 : block@2
+    block@2: // L10
+        let tmp%2#0: bytes = (txna ApplicationArgs 0)
+        let eq%2#0: bool = (== tmp%2#0 0xaf3da81d)
+        goto eq%2#0 ? block@8 : block@3
+    block@3: // L14
+        let tmp%3#0: bytes = (txna ApplicationArgs 0)
+        let eq%3#0: bool = (== tmp%3#0 0xb5678e7e)
+        goto eq%3#0 ? block@5 : block@4
+    block@4: // L18
+        fail // err
+    block@5: // L19
+        let tmp%4#0: uint64 = (txn OnCompletion)
+        let eq%4#0: bool = (== tmp%4#0 0u)
+        let tmp%5#0: uint64 = (txn ApplicationID)
+        let ne%0#0: bool = (!= tmp%5#0 0u)
+        let and%0#0: bool = (&& eq%4#0 ne%0#0)
+        (assert and%0#0) // assert
+        goto block@6
+    block@6: // L28
+        mintcaster_8()
+        goto block@7
+    block@7: // L29
+        exit 1u
+    block@8: // L31
+        let tmp%6#0: uint64 = (txn OnCompletion)
+        let eq%5#0: bool = (== tmp%6#0 0u)
+        let tmp%7#0: uint64 = (txn ApplicationID)
+        let ne%1#0: bool = (!= tmp%7#0 0u)
+        let and%1#0: bool = (&& eq%5#0 ne%1#0)
+        (assert and%1#0) // assert
+        goto block@9
+    block@9: // L40
+        initialisecaster_7()
+        goto block@10
+    block@10: // L41
+        exit 1u
+    block@11: // L43
+        let tmp%8#0: uint64 = (txn OnCompletion)
+        let eq%6#0: bool = (== tmp%8#0 0u)
+        let tmp%9#0: uint64 = (txn ApplicationID)
+        let eq%7#0: bool = (== tmp%9#0 0u)
+        let and%2#0: bool = (&& eq%6#0 eq%7#0)
+        (assert and%2#0) // assert
+        goto block@12
+    block@12: // L52
+        createcaster_6()
+        goto block@13
+    block@13: // L53
+        exit 1u
+    block@14: // L55
+        let tmp%10#0: uint64 = (txn OnCompletion)
+        let eq%8#0: bool = (== tmp%10#0 4u)
+        goto eq%8#0 ? block@16 : block@15
+    block@15: // L60
+        fail // err
+    block@16: // L61
+        let tmp%11#0: uint64 = (txn ApplicationID)
+        let ne%2#0: bool = (!= tmp%11#0 0u)
+        (assert ne%2#0) // assert
+        goto block@17
+    block@17: // L66
+        (app_global_put 0x696e6974 0u)
+        exit 1u
+
+subroutine gettransferinnertxn_0(p%0: uint64, p%1: uint64, p%2: uint64, p%3: uint64) -> void:
+    block@18: // L73
+        ((itxn_field Sender) p%0#0)
+        ((itxn_field Fee) 0u)
+        goto p%3#0 ? block@20 : block@19
+    block@19: // L81
+        ((itxn_field TypeEnum) 1u)
+        ((itxn_field Amount) p%2#0)
+        ((itxn_field Receiver) p%1#0)
+        goto block@21
+    block@20: // L88
+        ((itxn_field TypeEnum) 4u)
+        ((itxn_field XferAsset) p%3#0)
+        ((itxn_field AssetAmount) p%2#0)
+        ((itxn_field AssetReceiver) p%1#0)
+        goto block@21
+    block@21: // L97
+        return 
+
+subroutine getproposer_1(p%0: uint64) -> bytes:
+    block@22: // L101
+        let tmp%0#0: uint64 = (app_global_get 0x6e756d5f70726f706f73657273)
+        let lt%0#0: bool = (< p%0#0 tmp%0#0)
+        (assert lt%0#0) // assert
+        goto block@23
+    block@23: // L108
+        let tmp%1#0: uint64 = (* p%0#0 32u)
+        let tmp%2#0: bytes = (box_extract 0x7072 tmp%1#0 32u)
+        return tmp%2#0
+
+subroutine mintxalgo_2(p%0: uint64, p%1: account) -> void:
+    block@24: // L117
+        itxn_begin
+        let tmp%0#0: account = (global CurrentApplicationAddress)
+        let tmp%1#0: uint64 = (app_global_get 0x785f616c676f5f6964)
+        gettransferinnertxn_0(tmp%1#0, p%0#0, p%1#0, tmp%0#0)
+        goto block@25
+    block@25: // L126
+        itxn_submit
+        return 
+
+subroutine create_3(p%0: uint64, p%1: uint64, p%2: uint64, p%3: uint64, p%4: uint64, p%5: uint64) -> void:
+    block@26: // L130
+        (app_global_put 0x696e6974 1u)
+        (app_global_put 0x61646d696e p%0#0)
+        (app_global_put 0x72656769737465725f61646d696e p%1#0)
+        (app_global_put 0x78676f765f61646d696e p%2#0)
+        (app_global_put 0x74696d655f64656c6179 86400u)
+        (app_global_put 0x6e756d5f70726f706f73657273 0u)
+        (app_global_put 0x6d61785f70726f706f7365725f62616c616e6365 p%3#0)
+        (app_global_put 0x666565 p%5#0)
+        (app_global_put 0x7072656d69756d p%4#0)
+        (app_global_put 0x6c6173745f70726f706f736572735f6163746976655f62616c616e6365 0u)
+        (app_global_put 0x746f74616c5f70656e64696e675f7374616b65 0u)
+        (app_global_put 0x746f74616c5f756e636c61696d65645f66656573 0u)
+        (app_global_put 0x746f74616c5f756e636c61696d65645f66656573 0u)
+        (app_global_put 0x63616e5f696d6d6564696174655f6d696e74 1u)
+        (app_global_put 0x63616e5f64656c61795f6d696e74 0u)
+        return 
+
+subroutine initialise_4(p%0: uint64) -> void:
+    block@27: // L180
+        itxn_begin
+        ((itxn_field TypeEnum) 3u)
+        ((itxn_field ConfigAssetName) 0x476f7665726e616e63652078416c676f)
+        ((itxn_field ConfigAssetUnitName) 0x78414c474f)
+        ((itxn_field ConfigAssetTotal) 10000000000000000u)
+        ((itxn_field ConfigAssetDecimals) 6u)
+        let tmp%0#0: account = (global CurrentApplicationAddress)
+        ((itxn_field ConfigAssetReserve) tmp%0#0)
+        ((itxn_field Fee) 0u)
+        itxn_submit
+        let tmp%1#0: uint64 = (itxn CreatedAssetID)
+        (app_global_put 0x785f616c676f5f6964 tmp%1#0)
+        let (tmp%3#0: account, tmp%2#0: uint64) = ((acct_params_get AcctAuthAddr) p%0#0)
+        ((store 1) tmp%2#0)
+        ((store 0) tmp%3#0)
+        let tmp%4#0: uint64 = (load 1)
+        (assert tmp%4#0) // assert
+        goto block@28
+    block@28: // L207
+        let tmp%5#0: account = (load 0)
+        let tmp%6#0: account = (global CurrentApplicationAddress)
+        let eq%0#0: bool = (== tmp%5#0 tmp%6#0)
+        (assert eq%0#0) // assert
+        goto block@29
+    block@29: // L211
+        (app_global_put 0x6e756d5f70726f706f73657273 1u)
+        let tmp%7#0: uint64 = (* 32u 30u)
+        let tmp%8#0: uint64 = (box_create 0x7072 tmp%7#0)
+        (assert tmp%8#0) // assert
+        goto block@30
+    block@30: // L220
+        let tmp%9#0: account = ((txnas Accounts) p%0#0)
+        (box_replace 0x7072 0u tmp%9#0)
+        let tmp%10#0: account = ((txnas Accounts) p%0#0)
+        let concat%0#0: bytes = (concat 0x6170 tmp%10#0)
+        let tmp%11#0: uint64 = (box_create concat%0#0 0u)
+        (assert tmp%11#0) // assert
+        goto block@31
+    block@31: // L232
+        return 
+
+subroutine mint_5(p%0: uint64) -> void:
+    block@32: // L235
+        let tmp%0#0: account = ((gtxns Receiver) p%0#0)
+        let v%0#0: bytes = getproposer_1(0u)
+        goto block@33
+    block@33: // L241
+        let eq%0#0: bool = (== 0u v%0#0)
+        (assert eq%0#0) // assert
+        goto block@34
+    block@34: // L243
+        let tmp%1#0: uint64 = ((gtxns Amount) p%0#0)
+        let tmp%2#0: account = (txn Sender)
+        mintxalgo_2(tmp%2#0, tmp%1#0)
+        goto block@35
+    block@35: // L247
+        let tmp%3#0: uint64 = (app_global_get 0x6c6173745f70726f706f736572735f6163746976655f62616c616e6365)
+        let tmp%4#0: uint64 = ((gtxns Amount) p%0#0)
+        let tmp%5#0: uint64 = (+ tmp%3#0 tmp%4#0)
+        (app_global_put 0x6c6173745f70726f706f736572735f6163746976655f62616c616e6365 tmp%5#0)
+        return 
+
+subroutine createcaster_6() -> void:
+    block@36: // L257
+        let tmp%0#0: bytes = (txna ApplicationArgs 1)
+        let tmp%1#0: bytes = (txna ApplicationArgs 2)
+        let tmp%2#0: bytes = (txna ApplicationArgs 3)
+        let tmp%3#0: bytes = (txna ApplicationArgs 4)
+        let val%0#0: uint64 = (btoi tmp%3#0)
+        let tmp%4#0: bytes = (txna ApplicationArgs 5)
+        let val%1#0: uint64 = (btoi tmp%4#0)
+        let tmp%5#0: bytes = (txna ApplicationArgs 6)
+        let val%2#0: uint64 = (btoi tmp%5#0)
+        create_3(l%5#0, l%4#0, l%3#0, l%2#0, l%1#0, l%0#0)
+        goto block@37
+    block@37: // L285
+        return 
+
+subroutine initialisecaster_7() -> void:
+    block@38: // L288
+        let tmp%0#0: bytes = (txna ApplicationArgs 1)
+        let tmp%1#0: uint64 = (getbyte tmp%0#0 0u)
+        initialise_4(l%0#0)
+        goto block@39
+    block@39: // L297
+        return 
+
+subroutine mintcaster_8() -> void:
+    block@40: // L300
+        let tmp%0#0: uint64 = (txn GroupIndex)
+        let tmp%1#0: uint64 = (- tmp%0#0 1u)
+        let tmp%2#0: uint64 = ((gtxns TypeEnum) l%0#0)
+        let eq%0#0: bool = (== tmp%2#0 1u)
+        (assert eq%0#0) // assert
+        goto block@41
+    block@41: // L312
+        mint_5(l%0#0)
+        goto block@42
+    block@42: // L314
+        return 

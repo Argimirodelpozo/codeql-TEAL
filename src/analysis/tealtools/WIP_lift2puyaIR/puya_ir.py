@@ -25,16 +25,23 @@ from ..ssa import Const, Phi, SSAProgram, SSAVar, _TERMINATOR_OPS
 
 _BOOL_OPS = frozenset({"==", "!=", "<", ">", "<=", ">=", "!", "&&", "||",
                        "b==", "b!=", "b<", "b>", "b<=", "b>="})
+# Const-push / const-load ops are normally typed by their folded const value;
+# they fall back to these sets only when the extractor dropped the operand
+# (`pushbytes base64(..)`, `bytec N`) so there is no value to type them from.
+_U64_PUSH = frozenset({"pushint", "pushints", "intc",
+                       "intc_0", "intc_1", "intc_2", "intc_3"})
+_BYTES_PUSH = frozenset({"pushbytes", "pushbytess", "bytec",
+                         "bytec_0", "bytec_1", "bytec_2", "bytec_3"})
 _U64_OPS = frozenset({"+", "-", "*", "/", "%", "exp", "sqrt", "shl", "shr",
                       "bitlen", "len", "btoi", "getbyte", "getbit",
                       "extract_uint16", "extract_uint32", "extract_uint64",
                       "box_create", "box_del",     # both return a uint64 flag
-                      "balance", "min_balance", "app_opted_in"})
+                      "balance", "min_balance", "app_opted_in"}) | _U64_PUSH
 _BYTES_OPS = frozenset({"itob", "concat", "substring", "substring3", "extract",
                         "extract3", "replace2", "replace3", "sha256",
                         "sha512_256", "keccak256", "sha3_256", "bzero",
                         "setbyte", "setbit", "b+", "b-", "b*", "b/", "b%",
-                        "b|", "b&", "b^", "b~", "bsqrt", "box_extract"})
+                        "b|", "b&", "b^", "b~", "bsqrt", "box_extract"}) | _BYTES_PUSH
 _NAME_PREFIX = {"len": "len", "==": "eq", "!=": "ne", "<": "lt", ">": "gt",
                 "<=": "le", ">=": "ge", "!": "not", "&&": "and", "||": "or",
                 "btoi": "val", "concat": "concat", "itob": "enc"}
