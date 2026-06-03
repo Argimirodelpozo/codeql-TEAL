@@ -1178,6 +1178,22 @@ def _empty_bytes(b) -> bool:
     return v in ("", "0x", '""', "''")
 
 
+def _itxn_field_avm(field: str):
+    """The AVM type ('b'/'u') a given `itxn_field <Field>` operand must be, from
+    Puya's own transaction-field registry (OnCompletion -> uint64, Note -> bytes,
+    Receiver -> account/bytes, ...). None for an unknown field."""
+    try:
+        from puya.awst.txn_fields import TxnField
+        w = str(getattr(TxnField[field], "wtype", "")).lower()
+    except Exception:
+        return None
+    if "byte" in w or "account" in w or "string" in w:
+        return "b"
+    if "uint64" in w or "bool" in w or "asset" in w or "application" in w:
+        return "u"
+    return None
+
+
 def _itob_const(v: int) -> "ir.BytesConstant":
     """A uint64 placeholder rewritten to bytes: empty for the (dead) 0 seed
     that a `bytes` accumulator slot is initialised with, else its itob form."""
@@ -1275,6 +1291,8 @@ def _reconcile_mixed_phis(prog) -> None:
             if isinstance(src, ir.Intrinsic):
                 k = ("u" if src.op in _U64_CONSUME
                      else "b" if src.op in _BYTES_CONSUME else None)
+                if k is None and src.op == "itxn_field" and src.immediates:
+                    k = _itxn_field_avm(str(src.immediates[0]).strip())
                 if k:
                     for r in reg_args(src):
                         if id(r) in phi_ids:
