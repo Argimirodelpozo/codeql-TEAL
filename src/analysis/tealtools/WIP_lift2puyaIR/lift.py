@@ -1174,11 +1174,15 @@ def _propagate_copy_types(prog) -> None:
         for sub in [prog.main, *prog.subroutines]:
             for bb in sub.body:
                 for o in bb.ops:
-                    if (isinstance(o, ir.Assignment) and len(o.targets) == 1
-                            and isinstance(o.source, ir.Register)
-                            and o.source.ir_type in ("bytes", "uint64")
-                            and o.targets[0].ir_type != o.source.ir_type):
-                        o.targets[0].ir_type = o.source.ir_type
+                    if not (isinstance(o, ir.Assignment) and len(o.targets) == 1
+                            and isinstance(o.source, ir.Register)):
+                        continue
+                    s, t = o.source, o.targets[0]
+                    if s.ir_type in ("bytes", "uint64") and t.ir_type != s.ir_type:
+                        t.ir_type = s.ir_type            # forward: source -> target
+                        changed = True
+                    elif t.ir_type in ("bytes", "uint64") and s.ir_type == "?":
+                        s.ir_type = t.ir_type            # back: typed slot -> ? source
                         changed = True
 
 
