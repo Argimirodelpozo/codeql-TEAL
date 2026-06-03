@@ -133,9 +133,11 @@ class _Translator:
                 immediates=[self._imm(i) for i in s.immediates],
                 args=[self.val(a) for a in reversed(s.args)], **kw)
         if isinstance(s, ir.InvokeSubroutine):
+            # Subroutine args are positional (args[i] -> param i), NOT AVM-order
+            # like Intrinsic args -- Puya builds them `for param in parameters`.
             return M.InvokeSubroutine(
                 source_location=None, target=self.subs[s.target],
-                args=[self.val(a) for a in reversed(s.args)])
+                args=[self.val(a) for a in s.args])
         if isinstance(s, ir.ValueTuple):
             return M.ValueTuple(source_location=None,
                                 values=[self.val(v) for v in s.values])

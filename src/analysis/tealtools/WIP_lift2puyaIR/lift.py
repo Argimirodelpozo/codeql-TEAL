@@ -35,12 +35,101 @@ from ..ssa import (
     _shuffle_mapping,
 )
 from ..structure import analyze_structure
+from ..opcode_sigs import op_arity
 from .puya_ir import (
     _BOOL_OPS, _BYTES_OPS, _COND_BRANCH, _NAME_PREFIX, _U64_OPS, _field_type,
     _multi_out_type,
 )
 
 _FRAME_OPS = frozenset({"frame_dig", "frame_bury"})
+
+
+def _infer_arities(struct, callsite) -> dict:
+    """``Subroutine -> (nargs, nret)`` for every routine. Proto subs read it off
+    their ``proto`` op; legacy (pre-proto) subs pass args / return on the stack,
+    so infer it from a cross-procedural stack-depth fixpoint.
+
+    Per sub, propagate stack depth over its *internal* CFG (a ``callsub`` flows
+    to its continuation, NOT into the callee, applying the callee's current
+    arity -- recursion converges via the outer fixpoint). Depth is relative to
+    entry (= 0); the deepest point below entry is ``nargs`` (values read from the
+    caller), a ``retsub``'s depth above that floor is ``nret``."""
+    by_name = {s.name: s for s in struct.subroutines}
+    proto = {s: _proto_io(s.entry_bb) if any(a.op == "proto" for a in s.entry_bb.assignments)
+             else None for s in struct.subroutines}
+    arity = {s: (p if p is not None else (0, 0)) for s, p in proto.items()}
+
+    def block_io(b, depth_in):
+        d = mn = depth_in
+        for a in b.assignments:
+            if a.op == "retsub":
+                break
+            if a.op == "callsub":
+                cs = callsite.get(b)
+                ce = by_name.get(cs.target_name) if cs else None
+                pop, push = arity.get(ce, (0, 0)) if ce else (0, 0)
+            else:
+                pop, push = op_arity(a.op, a.immediates)
+            d -= pop
+            mn = min(mn, d)
+            d += push
+        return d, mn
+
+    def internal_succ(b, body):
+        cs = callsite.get(b)
+        if cs is not None and cs.continuation_bb is not None:
+            return [cs.continuation_bb] if cs.continuation_bb in body else []
+        return [s for s in b.successors if s in body]
+
+    for _ in range(len(struct.subroutines) + 4):
+        changed = False
+        for s in struct.subroutines:
+            if proto[s] is not None:
+                continue
+            depth = {s.entry_bb: 0}
+            order = [s.entry_bb]
+            floor = 0
+            ret_d = None
+            i = 0
+            while i < len(order):
+                b = order[i]
+                i += 1
+                d_out, mn = block_io(b, depth[b])
+                floor = min(floor, mn)
+                if b.assignments and b.assignments[-1].op == "retsub" and ret_d is None:
+                    ret_d = d_out
+                for su in internal_succ(b, s.body):
+                    if su not in depth:
+                        depth[su] = d_out
+                        order.append(su)
+            na, nr = -floor, (ret_d - floor if ret_d is not None else 0)
+            if arity[s] != (na, nr):
+                arity[s] = (na, nr)
+                changed = True
+        if not changed:
+            break
+    return arity
+
+
+def _recursive_subs(struct) -> set:
+    """Subroutines that (transitively) call themselves. A recursive sub's stack
+    is statically unbounded, so PySSA caps it at ``[1..STACK_MAX]`` -- the fat
+    stack that corrupts post-call survivors in non-proto recursive subs."""
+    by_name = {s.name: s for s in struct.subroutines}
+    callees: dict = {s: set() for s in struct.subroutines}
+    for cs in struct.call_sites:
+        caller = next((s for s in struct.subroutines if cs.callsub_bb in s.body), None)
+        callee = by_name.get(cs.target_name)
+        if caller is not None and callee is not None:
+            callees[caller].add(callee)
+
+    def reaches(a, b, seen):
+        if a in seen:
+            return False
+        seen.add(a)
+        return b in callees[a] or any(reaches(c, b, seen) for c in callees[a])
+
+    return {s for s in struct.subroutines if reaches(s, s, set())}
 
 
 def _const(cv: Const):
@@ -138,6 +227,28 @@ def lift(prog: SSAProgram) -> ir.Program:
     callsite = {cs.callsub_bb: cs for cs in struct.call_sites}
     cont_site = {cs.continuation_bb: cs for cs in struct.call_sites
                  if cs.continuation_bb is not None}
+    # Subroutine (nargs, nret): proto subs declare it; legacy non-proto subs pass
+    # args / return on the stack, so it is inferred (see `_infer_arities`).
+    _arity = _infer_arities(struct, callsite)
+    _io_by_entry = {s.entry_bb: a for s, a in _arity.items()}
+
+    def _sub_io(entry_bb):
+        return _io_by_entry.get(entry_bb) or _proto_io(entry_bb)
+
+    # Every legacy non-proto sub needs its value-stack re-simulated with correct
+    # callsub arities (see `_resim`): PySSA threads the whole-program stack
+    # through them (proto subs escape via frame ops + dead-phi pruning), so it
+    # caps at STACK_MAX and corrupts their args / survivors / returns. `resim_*`
+    # carry that re-simulation into `_build_block`, replacing the fat SSA wiring.
+    _proto_entries = {s.entry_bb for s in struct.subroutines
+                      if any(a.op == "proto" for a in s.entry_bb.assignments)}
+    _resim_subs = {s for s in struct.subroutines
+                   if s.entry_bb not in _proto_entries}
+    resim_args: dict = {}                # id(assignment) -> [mirror operand]
+    resim_phis: dict = {}                # PyBlock -> [ir.Phi]
+    resim_exit: dict = {}                # PyBlock -> re-simulated exit stack
+    resim_blocks: set = set()            # blocks whose ops use re-simulated args
+    _param_phis: set = set()             # non-proto entry arg phis -> params (skip)
 
     # SSA-level producer map + scratch reaching-def (per `load N`, the value
     # SSAVars its influencing `store N`s wrote) -- used to type call args,
@@ -305,12 +416,12 @@ def lift(prog: SSAProgram) -> ir.Program:
         final_locals[cur_gname] = dict(cur)      # final reg per written slot
 
     def _setup_shuffles(gb):
-        # A pure stack shuffle (dup/dupn/swap/…) just routes values; map each
-        # output to its source so consumers reference the value directly and
-        # the op drops out (Puya is value-based, no shuffles). Restricted to
-        # shuffles of *constants* -- routing value-carrying shuffles would
-        # re-expose fat-frame stack vars and undo the param/frame mapping; the
-        # real leftovers (dup/dupn of 0 / 0x) are all const anyway.
+        # A pure stack shuffle (dup/dupn/swap/cover/uncover) just reorders or
+        # duplicates values; map each output to its source operand so consumers
+        # reference the value directly and the op drops out (Puya is value-based,
+        # no shuffles). The mapping is exact (out[i] = in[m[i]]), so this is
+        # always value-preserving; fat-frame stack vars a routed source lands on
+        # resolve through the frame-op passthrough routing in `_setup_frame`.
         for bb in gb:
             for a in bb.assignments:
                 if a.op not in _STACK_SHUFFLE_OPS:
@@ -321,11 +432,8 @@ def lift(prog: SSAProgram) -> ir.Program:
                 for i, src_idx in enumerate(m):
                     if i < len(a.outputs) and 0 <= src_idx < len(a.inputs):
                         out = a.outputs[i]
-                        src = a.inputs[src_idx]
-                        is_const = (isinstance(src, Const)
-                                    or getattr(src, "const_value", None) is not None)
-                        if isinstance(out, SSAVar) and is_const:
-                            shuffle_src[out] = src
+                        if isinstance(out, SSAVar):
+                            shuffle_src[out] = a.inputs[src_idx]
 
     def _is_routed_shuffle(a) -> bool:
         if a.op not in _STACK_SHUFFLE_OPS:
@@ -410,6 +518,13 @@ def lift(prog: SSAProgram) -> ir.Program:
     def control(bb):
         t = term_assign(bb)
         op = t.op if t is not None else None
+        resim = bb in resim_blocks
+
+        def _cond():                          # branch/switch selector value
+            if resim and t is not None and resim_args.get(id(t)):
+                return resim_args[id(t)][0]
+            return value(t.inputs[0]) if (t and t.inputs) else ir.Undefined()
+
         if op == "callsub":
             cs = callsite.get(bb)
             cont = cs.continuation_bb if cs else None
@@ -429,6 +544,9 @@ def lift(prog: SSAProgram) -> ir.Program:
             # value there, not on the exit stack — so prefer the final slot
             # local; only fall back to the (bottom-first) exit-stack slice for
             # returns that were left on the stack.
+            if resim:                                      # clean re-simulated stack
+                rsx = resim_exit.get(bb, [])
+                return ir.SubroutineReturn(rsx[-cur_nret:] if cur_nret else [])
             slots = final_locals.get(cur_gname, {})
             es = bb.exit_stack or []
             rets = []
@@ -450,7 +568,7 @@ def lift(prog: SSAProgram) -> ir.Program:
         if len(succ) == 1:
             return ir.Goto(bid[succ[0]])
         if len(succ) == 2 and op in _COND_BRANCH and t is not None:
-            cond = value(t.inputs[0]) if t.inputs else ir.Undefined()
+            cond = _cond()
             taken = line2block.get(label2line.get((t.immediates or "").strip()))
             if taken in succ:
                 other = succ[0] if succ[1] is taken else succ[1]
@@ -460,17 +578,159 @@ def lift(prog: SSAProgram) -> ir.Program:
                 return ir.ConditionalBranch(cond, bid[taken], bid[other])
             return ir.ConditionalBranch(cond, bid[other], bid[taken])  # bz
         if op in ("switch", "match"):
-            return ir.GotoNth(value(t.inputs[0]) if (t and t.inputs) else ir.Undefined(),
+            return ir.GotoNth(_cond(),
                               [bid[s] for s in succ[:-1]], bid[succ[-1]])
         return ir.GotoNth(ir.Undefined(), [bid[s] for s in succ[:-1]], bid[succ[-1]])
 
+    def _resim(body_list, entry_bb, params):
+        """Re-simulate a non-proto recursive sub's value-stack with correct
+        callsub arities. PySSA caps such a sub's (unbounded) stack at STACK_MAX,
+        so its post-call survivors come back as fat-phi garbage; here every op's
+        operands instead come from a clean local stack -- args are the params,
+        `callsub` pops nargs and pushes the invoke result, shuffles reorder in
+        place. Fills `resim_args` (per-op operands), `resim_phis` (merge phis),
+        and `resim_exit` (per-block stacks, for returns)."""
+        body = set(body_list)
+
+        def isucc(b):
+            # retsub/return/err leave the sub -- their raw successors are the
+            # callers' continuations (interprocedural return edges), NOT internal
+            # flow. A callsub flows to its continuation, not into the callee.
+            if b.assignments and b.assignments[-1].op in ("retsub", "return", "err"):
+                return []
+            cs = callsite.get(b)
+            if cs is not None and cs.continuation_bb in body:
+                return [cs.continuation_bb]
+            return [s for s in b.successors if s in body]
+
+        # Back-edge detection (DFS), so loops work: a loop header's phis are
+        # created up-front from the forward edge, and their back-edge args are
+        # filled once the body has been simulated.
+        WHITE, GRAY, BLACK = 0, 1, 2
+        color: dict = {b: WHITE for b in body_list}
+        back: set = set()
+
+        def dfs(b):
+            color[b] = GRAY
+            for su in isucc(b):
+                if color.get(su) == GRAY:
+                    back.add((b, su))
+                elif color.get(su) == WHITE:
+                    dfs(su)
+            color[b] = BLACK
+
+        dfs(entry_bb)
+        back_targets = {dst for _, dst in back}
+        fpred: dict = {b: [] for b in body_list}
+        bpred: dict = {b: [] for b in body_list}
+        for b in body_list:
+            for su in isucc(b):
+                (bpred if (b, su) in back else fpred)[su].append(b)
+        order, seen = [], set()
+
+        def visit(b):
+            if b in seen:
+                return
+            seen.add(b)
+            for s in isucc(b):
+                if (b, s) not in back:
+                    visit(s)
+            order.append(b)
+
+        visit(entry_bb)
+        order.reverse()                       # topological over forward edges
+
+        def rv(o):                            # SSA operand -> mirror value
+            cv = getattr(o, "const_value", None)
+            if cv is not None:
+                return _const(cv)
+            if isinstance(o, Const):
+                return _const(o)
+            if isinstance(o, SSAVar):
+                return reg(o)
+            return value(o)
+
+        pending: list = []                    # (phi, slot, back-pred) to close
+        for b in order:
+            preds = [p for p in fpred[b] if p in resim_exit]
+            if b is entry_bb or not preds:
+                stack = [pp.register for pp in params]      # entry: the args
+            elif b in back_targets:                         # loop header
+                depth = min(len(resim_exit[p]) for p in preds)
+                stack, phis = [], []
+                for slot in range(depth):
+                    r = _new_reg("tmp", "?")
+                    ph = ir.Phi(r, [ir.PhiArgument(resim_exit[p][slot], bid[p])
+                                    for p in preds])
+                    phis.append(ph)
+                    stack.append(r)
+                    for bp in bpred[b]:
+                        pending.append((ph, slot, bp))
+                resim_phis[b] = phis
+            elif len(preds) == 1:
+                stack = list(resim_exit[preds[0]])
+            else:                                           # plain merge: phi/slot
+                depth = min(len(resim_exit[p]) for p in preds)
+                stack, phis = [], []
+                for slot in range(depth):
+                    vals = [resim_exit[p][slot] for p in preds]
+                    if all(v is vals[0] for v in vals):
+                        stack.append(vals[0])
+                    else:
+                        r = _new_reg("tmp", "?")
+                        phis.append(ir.Phi(r, [ir.PhiArgument(resim_exit[p][slot],
+                                                              bid[p]) for p in preds]))
+                        stack.append(r)
+                if phis:
+                    resim_phis[b] = phis
+            for a in b.assignments:
+                if a.op in _STACK_SHUFFLE_OPS:
+                    m = _shuffle_mapping(a)
+                    if m is None or len(stack) < len(a.inputs):
+                        continue
+                    ins = [stack.pop() for _ in range(len(a.inputs))]   # top-first
+                    for v in reversed([ins[k] for k in m]):
+                        stack.append(v)
+                    continue
+                if a.op == "callsub":
+                    cs = callsite.get(b)
+                    nargs = _sub_io(cs.target_entry)[0] if (cs and cs.target_entry) else 0
+                    nargs = min(nargs, len(stack))
+                    resim_args[id(a)] = stack[len(stack) - nargs:]      # param order
+                    if nargs:
+                        del stack[len(stack) - nargs:]
+                    for r in call_results.get(b, []):
+                        stack.append(r)
+                    continue
+                if (len(a.outputs) == 1 and not a.inputs
+                        and getattr(a.outputs[0], "const_value", None) is not None):
+                    stack.append(_const(a.outputs[0].const_value))      # const push
+                    continue
+                if a.op in ("intcblock", "bytecblock", "proto"):
+                    continue
+                ni, _ = op_arity(a.op, a.immediates)
+                ni = min(ni, len(stack))
+                resim_args[id(a)] = [stack.pop() for _ in range(ni)]    # top-first
+                if a.op not in _TERMINATOR_OPS:
+                    for o in reversed([o for o in a.outputs if isinstance(o, SSAVar)]):
+                        stack.append(rv(o))
+            resim_exit[b] = stack
+        for ph, slot, bp in pending:          # close loop back-edges
+            if bp in resim_exit and slot < len(resim_exit[bp]):
+                ph.args.append(ir.PhiArgument(resim_exit[bp][slot], bid[bp]))
+
     def _build_block(bb):
+        resim = bb in resim_blocks               # re-simulated (non-proto / main)
         phis = []
-        if len(bb.predecessors) > 1:
+        if resim:
+            phis = resim_phis.get(bb, [])
+        elif len(bb.predecessors) > 1:
             params = list(form.params.get(bb, []))
             cs = cont_site.get(bb)
             callee_sub = sub_of.get(cs.target_entry) if cs else None
             for ph in sorted(bb.phis, key=lambda p: p.stack_index):
+                if ph in _param_phis:
+                    continue                        # non-proto arg -> param
                 i = params.index(ph) if ph in params else None
                 args = []
                 for pred in bb.predecessors:
@@ -492,7 +752,7 @@ def lift(prog: SSAProgram) -> ir.Program:
                                                        bid[cs.callsub_bb]))
                             continue
                         es = cs.callsub_bb.exit_stack or []
-                        nargs = _proto_io(cs.target_entry)[0]
+                        nargs = _sub_io(cs.target_entry)[0]
                         depth = nargs + (si - nret)
                         if depth <= len(es):
                             args.append(ir.PhiArgument(value(es[-depth]),
@@ -505,6 +765,8 @@ def lift(prog: SSAProgram) -> ir.Program:
                 phis.append(ir.Phi(reg(ph), args, comment=_range_comment([ph])))
         ops = []
         for a in bb.assignments:
+            if resim and a.op in _STACK_SHUFFLE_OPS:
+                continue                            # re-sim reorders the stack itself
             if _is_routed_shuffle(a):
                 continue                            # const shuffle routed to source
             if a.op == "frame_dig":
@@ -522,9 +784,11 @@ def lift(prog: SSAProgram) -> ir.Program:
                           else (a.immediates or "?"))
                 # Args are passed via scratch, not callsub operands, so take the
                 # caller's exit_stack top nargs in param order (es[-nargs+i]).
-                nargs = _proto_io(cs.target_entry)[0] if (cs and cs.target_entry) else 0
+                nargs = _sub_io(cs.target_entry)[0] if (cs and cs.target_entry) else 0
                 es = bb.exit_stack
-                if nargs and len(es) >= nargs:
+                if resim:
+                    call_args = resim_args.get(id(a), [])
+                elif nargs and len(es) >= nargs:
                     call_args = [value(es[-nargs + i]) for i in range(nargs)]
                 else:
                     call_args = [value(i) for i in a.inputs]
@@ -541,7 +805,8 @@ def lift(prog: SSAProgram) -> ir.Program:
             if (len(a.outputs) == 1 and not a.inputs
                     and getattr(a.outputs[0], "const_value", None) is not None):
                 continue
-            args = [value(i) for i in a.inputs]
+            args = resim_args[id(a)] if resim and id(a) in resim_args \
+                else [value(i) for i in a.inputs]
             intr = ir.Intrinsic(a.op, a.immediates.split() if a.immediates else [],
                                 args, line=a.location.line)
             shown = [o for o in a.outputs if isinstance(o, SSAVar)]
@@ -621,7 +886,7 @@ def lift(prog: SSAProgram) -> ir.Program:
                     continue
                 owner = sub_of.get(cs.callsub_bb)
                 owner_ir = struct2ir.get(owner)
-                owner_nargs = _proto_io(owner.entry_bb)[0] if owner else 0
+                owner_nargs = _sub_io(owner.entry_bb)[0] if owner else 0
                 for i in range(nargs):
                     ty = _arg_type(es[-nargs + i], owner_ir, owner_nargs)
                     if ty and ty != "?":
@@ -641,16 +906,22 @@ def lift(prog: SSAProgram) -> ir.Program:
         cont, entry = cs.continuation_bb, cs.target_entry
         if cont is None or entry is None:
             continue
-        nret = _proto_io(entry)[1]
+        nret = _sub_io(entry)[1]
         if nret <= 0:
             continue
         by_idx = {ph.stack_index: ph for ph in cont.phis}
         outs = []
         for j in range(nret):                # j: declared order; stack_index 1 = top
             ph = by_idx.get(nret - j)
-            r = reg(ph) if ph is not None else _new_reg("cr", "?")
+            # Use a `cr` prefix (not reg()'s `v`): this pre-pass runs before the
+            # per-group `_name_group`, whose `ctr.clear()` would otherwise restart
+            # the `v` counter and collide these with a group's own `v%N`.
             if ph is not None:
+                r = regs.get(ph) or _new_reg("cr", type_of(ph))
+                regs[ph] = r
                 frame_map[ph] = r            # consumers resolve to the result reg
+            else:
+                r = _new_reg("cr", "?")
             outs.append(r)
         call_results[cs.callsub_bb] = outs
 
@@ -661,13 +932,30 @@ def lift(prog: SSAProgram) -> ir.Program:
         if s is None:
             params, nrets = [], 0
         else:
-            nargs, nrets = _proto_io(s.entry_bb)
+            nargs, nrets = _sub_io(s.entry_bb)
             params = [ir.Parameter(ir.Register(f"p%{i}", 0, "?"))
                       for i in range(nargs)]
+            # Legacy non-proto subs have no `frame_dig`: their args are the entry
+            # block's stack-index phis (merged from the call sites). The mirror
+            # sub entry has no predecessors, so map those phis to params (entry
+            # stack_index k = k-th from top = param[nargs-k]) and skip building
+            # them -- mirroring how proto subs read args off the frame.
+            if s.entry_bb not in _proto_entries:
+                for ph in s.entry_bb.phis:
+                    if 1 <= ph.stack_index <= nargs:
+                        frame_map[ph] = params[nargs - ph.stack_index].register
+                        _param_phis.add(ph)
         cur_nret = nrets
         _setup_frame(gb, params)
         _setup_shuffles(gb)
         _name_group(gb)
+        # `main` and every non-proto sub thread the whole-program stack (which
+        # PySSA fattens), so re-simulate their value-stacks for clean operands.
+        if s is None or s in _resim_subs:
+            entry = (s.entry_bb if s is not None
+                     else next((b for b in gb if not b.predecessors), gb[0]))
+            _resim(gb, entry, params)
+            resim_blocks.update(gb)
         body = [_build_block(bb) for bb in gb]
         if s is None:
             file = all_blocks[0].file.split("/")[-1] if all_blocks else "program"
@@ -834,7 +1122,39 @@ def lift(prog: SSAProgram) -> ir.Program:
         _unify_call_returns()
 
     main = next(sub for sub in subs if sub.is_main)
-    return ir.Program(main=main, subroutines=[s for s in subs if not s.is_main])
+    prog_ir = ir.Program(main=main, subroutines=[s for s in subs if not s.is_main])
+    _materialize_phi_consts(prog_ir)
+    return prog_ir
+
+
+def _materialize_phi_consts(prog) -> None:
+    """Puya requires phi arguments to be registers, so a phi merging a constant
+    on some edge (a path-dependent literal) needs that constant materialized: a
+    ``let r = <const>`` at the end of the through block, with the phi arg pointing
+    at ``r``. (Without this the translator silently drops the const arg, leaving
+    the phi short an operand vs its predecessors.)"""
+    block_by_id: dict = {}
+    for sub in [prog.main, *prog.subroutines]:
+        for bb in sub.body:
+            block_by_id[bb.id] = bb
+    n = 0
+    for sub in [prog.main, *prog.subroutines]:
+        for bb in sub.body:
+            for ph in bb.phis:
+                for arg in ph.args:
+                    if isinstance(arg.value, ir.Register):
+                        continue
+                    through = block_by_id.get(arg.through)
+                    if through is None:
+                        continue
+                    ty = ph.register.ir_type
+                    if ty == "?":
+                        ty = ("uint64" if isinstance(arg.value, ir.UInt64Constant)
+                              else "bytes")
+                    r = ir.Register(f"pc%{n}", 0, ty)
+                    n += 1
+                    through.ops.append(ir.Assignment([r], arg.value))
+                    arg.value = r
 
 
 def _proto_io(entry_bb):
