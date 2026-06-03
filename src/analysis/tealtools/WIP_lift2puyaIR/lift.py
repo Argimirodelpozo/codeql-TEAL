@@ -577,6 +577,29 @@ def lift(prog: SSAProgram) -> ir.Program:
             if op == "bnz":
                 return ir.ConditionalBranch(cond, bid[taken], bid[other])
             return ir.ConditionalBranch(cond, bid[other], bid[taken])  # bz
+        if op == "match" and t is not None:
+            # `match t0..t_{n-1}`: matched value on top, the n case values below
+            # (deepest = C_0). It's a Switch on a (usually bytes) value against
+            # const keys -- NOT a uint64-indexed GotoNth. The popped operands are
+            # [value, C_{n-1}, …, C_0] top-first, so C_i sits at index n-i.
+            labels = (t.immediates or "").split()
+            n = len(labels)
+            ins = (resim_args.get(id(t)) if (resim and id(t) in resim_args)
+                   else [value(x) for x in t.inputs])
+            cases, targets = [], set()
+            for i, lbl in enumerate(labels):
+                blk = line2block.get(label2line.get(lbl))
+                ci = ins[n - i] if (n - i) < len(ins) else None
+                key = getattr(ci, "value", None) if isinstance(ci, ir.BytesConstant) else None
+                if blk is None or blk not in bid or key is None:
+                    cases = None
+                    break
+                cases.append((key, bid[blk]))
+                targets.add(blk)
+            default = next((s for s in succ if s not in targets), None)
+            if cases and default is not None:
+                val = ins[0] if ins else ir.Undefined()
+                return ir.Switch(val, cases, bid[default])
         if op in ("switch", "match"):
             return ir.GotoNth(_cond(),
                               [bid[s] for s in succ[:-1]], bid[succ[-1]])
