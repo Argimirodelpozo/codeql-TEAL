@@ -1,0 +1,34 @@
+#pragma version 2
+intcblock 0 1
+bytecblock 0x6f6e5f757064617465 0x63726561746f72 0x7175616e74697479 0x7072696365
+txn ApplicationID
+intc_0 // 0
+==
+bnz label1
+txna ApplicationArgs 0
+bytec_0 // "on_update"
+==
+bnz label2
+err
+label2:
+txn Sender
+bytec_1 // "creator"
+app_global_get
+==
+bnz label3
+err
+label3:
+bytec_2 // "quantity"
+txna ApplicationArgs 1
+app_global_put
+bytec_3 // "price"
+txna ApplicationArgs 2
+app_global_put
+intc_1 // 1
+return
+label1:
+bytec_1 // "creator"
+txn Sender
+app_global_put
+intc_1 // 1
+return

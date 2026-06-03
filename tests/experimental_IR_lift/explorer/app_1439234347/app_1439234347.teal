@@ -1,0 +1,1333 @@
+#pragma version 10
+intcblock 0 1 16 8 64 10000 6 128 4 20000 32 144 5 160 48 56 10 256
+bytecblock 0x70 0x00000000000000010000000000000000 0x6d696e696e674170706c69636174696f6e 0x746f74616c4465706f7369746564 0x 0x706f6f6c41646472657373 0x70656e64696e67436f7374 0x6d696e696e67546f6b656e 0x706f6f6c546f6b656e 0xffffffffffffffffffffffffffffffff 0x706f6f6c4170706c69636174696f6e 0x6261736554786e466565 0x746f74616c5370656e74 0x7370656e74506572546f6b656e 0x726577617264506572546f6b656e 0xffffffffffffffff 0x6d616e61676572 0x6d696e4465706f736974 0x6d61726b657452617465427073 0x746f74616c57697468647261776e 0x6c6173745370656e74 0x6c61737452657761726473 0x6c6173745072696365526f756e64 0x00000000000000000000000000000000 0xab2370cc 0x00000000000000000000000000000064
+txn ApplicationID
+!
+intc 6 // 6
+*
+txn OnCompletion
++
+switch label1 label2 label2 label2 label3 label2 label4 label2 label2 label2 label2 label2
+label2:
+err
+label48:
+callsub label5
+intc_1 // 1
+return
+label5:
+proto 0 0
+bytec 16 // "manager"
+txn Sender
+app_global_put
+bytec_2 // "miningApplication"
+pushint 1284326447
+app_global_put
+bytec 7 // "miningToken"
+pushint 1284444444
+app_global_put
+bytec 5 // "poolAddress"
+pushbytes 0x9c444c769934c1334cbd56e9cd21839f3df1f087afe5d6612162d9804709764a // addr TRCEY5UZGTATGTF5K3U42IMDT467D4EHV7S5MYJBMLMYARYJOZFATORMUM
+app_global_put
+bytec 10 // "poolApplication"
+pushint 1002541853
+app_global_put
+bytec 8 // "poolToken"
+pushint 1294765516
+app_global_put
+bytec 17 // "minDeposit"
+pushint 100000
+app_global_put
+bytec 11 // "baseTxnFee"
+intc 9 // 20000
+app_global_put
+bytec 18 // "marketRateBps"
+pushint 10500
+app_global_put
+bytec_3 // "totalDeposited"
+intc_0 // 0
+app_global_put
+bytec 12 // "totalSpent"
+intc_0 // 0
+app_global_put
+bytec 19 // "totalWithdrawn"
+intc_0 // 0
+app_global_put
+bytec 20 // "lastSpent"
+intc_0 // 0
+app_global_put
+bytec 21 // "lastRewards"
+intc_0 // 0
+app_global_put
+bytec 13 // "spentPerToken"
+bytec 23 // 0x00000000000000000000000000000000
+app_global_put
+bytec 14 // "rewardPerToken"
+bytec 23 // 0x00000000000000000000000000000000
+app_global_put
+bytec 22 // "lastPriceRound"
+intc_0 // 0
+app_global_put
+bytec 6 // "pendingCost"
+intc_0 // 0
+app_global_put
+retsub
+label54:
+callsub label6
+intc_1 // 1
+return
+label6:
+proto 0 0
+txn Sender
+bytec 16 // "manager"
+app_global_get
+==
+assert
+retsub
+label49:
+txna ApplicationArgs 3
+btoi
+txna ApplicationArgs 2
+btoi
+txna ApplicationArgs 1
+btoi
+callsub label7
+intc_1 // 1
+return
+label7:
+proto 3 0
+txn Sender
+bytec 16 // "manager"
+app_global_get
+==
+assert
+frame_dig -2
+global MinTxnFee
+>=
+assert
+frame_dig -2
+intc 9 // 20000
+<=
+assert
+frame_dig -1
+pushint 1000000
+<=
+assert
+frame_dig -1
+pushint 50000
+>=
+assert
+frame_dig -3
+intc 9 // 20000
+<=
+assert
+bytec_0 // "p"
+box_len
+swap
+pop
+!
+bz label8
+bytec_0 // "p"
+intc 13 // 160
+box_create
+pop
+label8:
+global CurrentApplicationAddress
+bytec 7 // "miningToken"
+app_global_get
+asset_holding_get AssetBalance
+swap
+pop
+!
+bz label9
+itxn_begin
+intc 8 // 4
+itxn_field TypeEnum
+bytec 7 // "miningToken"
+app_global_get
+itxn_field XferAsset
+global CurrentApplicationAddress
+itxn_field AssetReceiver
+intc_0 // 0
+itxn_field AssetAmount
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+itxn_begin
+intc 6 // 6
+itxn_field TypeEnum
+bytec_2 // "miningApplication"
+app_global_get
+itxn_field ApplicationID
+intc_1 // 1
+itxn_field OnCompletion
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+itxn_begin
+intc 8 // 4
+itxn_field TypeEnum
+bytec 8 // "poolToken"
+app_global_get
+itxn_field XferAsset
+global CurrentApplicationAddress
+itxn_field AssetReceiver
+intc_0 // 0
+itxn_field AssetAmount
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+label9:
+bytec 17 // "minDeposit"
+frame_dig -1
+app_global_put
+bytec 11 // "baseTxnFee"
+frame_dig -2
+app_global_put
+bytec 18 // "marketRateBps"
+frame_dig -3
+app_global_put
+retsub
+label13:
+proto 0 0
+bytec 4 // ""
+dupn 5
+bytec_3 // "totalDeposited"
+app_global_get
+intc_0 // 0
+>
+bz label10
+bytec_1 // 0x00000000000000010000000000000000
+frame_bury 0
+bytec 12 // "totalSpent"
+app_global_get
+bytec 20 // "lastSpent"
+app_global_get
+-
+itob
+frame_bury 1
+global CurrentApplicationAddress
+bytec 8 // "poolToken"
+app_global_get
+asset_holding_get AssetBalance
+pop
+bytec 19 // "totalWithdrawn"
+app_global_get
++
+frame_bury 2
+frame_dig 2
+bytec 21 // "lastRewards"
+app_global_get
+-
+itob
+frame_bury 3
+frame_dig 1
+bytec_1 // 0x00000000000000010000000000000000
+b*
+bytec_3 // "totalDeposited"
+app_global_get
+itob
+b/
+frame_bury 4
+frame_dig 3
+bytec_1 // 0x00000000000000010000000000000000
+b*
+bytec_3 // "totalDeposited"
+app_global_get
+itob
+b/
+frame_bury 5
+bytec 13 // "spentPerToken"
+dup
+app_global_get
+frame_dig 4
+b+
+dup
+bitlen
+intc 7 // 128
+<=
+assert
+bytec 9 // 0xffffffffffffffffffffffffffffffff
+b&
+dup
+len
+dup
+intc_2 // 16
+-
+swap
+substring3
+app_global_put
+bytec 14 // "rewardPerToken"
+dup
+app_global_get
+frame_dig 5
+b+
+dup
+bitlen
+intc 7 // 128
+<=
+assert
+bytec 9 // 0xffffffffffffffffffffffffffffffff
+b&
+dup
+len
+dup
+intc_2 // 16
+-
+swap
+substring3
+app_global_put
+bytec 20 // "lastSpent"
+bytec 12 // "totalSpent"
+app_global_get
+app_global_put
+bytec 21 // "lastRewards"
+frame_dig 2
+app_global_put
+label10:
+retsub
+label14:
+proto 2 1
+bytec 4 // ""
+dupn 5
+frame_dig -1
+box_len
+swap
+pop
+!
+bz label11
+frame_dig -1
+pushint 72
+box_create
+pop
+frame_dig -2
+pushint 44100
+-
+frame_bury -2
+label11:
+frame_dig -1
+frame_bury 0
+bytec_1 // 0x00000000000000010000000000000000
+frame_bury 1
+bytec_3 // "totalDeposited"
+dup
+app_global_get
+frame_dig -1
+intc_0 // 0
+intc_3 // 8
+box_extract
+btoi
+-
+app_global_put
+bytec 13 // "spentPerToken"
+app_global_get
+frame_dig -1
+intc_2 // 16
+intc_2 // 16
+box_extract
+b-
+frame_bury 2
+frame_dig -1
+intc_0 // 0
+intc_3 // 8
+box_extract
+btoi
+itob
+frame_dig 2
+b*
+bytec_1 // 0x00000000000000010000000000000000
+b/
+dup
+bitlen
+intc 4 // 64
+<=
+assert
+bytec 15 // 0xffffffffffffffff
+b&
+dup
+len
+dup
+intc_3 // 8
+-
+swap
+substring3
+btoi
+frame_bury 3
+bytec 14 // "rewardPerToken"
+app_global_get
+frame_dig -1
+intc 10 // 32
+intc_2 // 16
+box_extract
+b-
+frame_bury 4
+frame_dig -1
+intc_0 // 0
+intc_3 // 8
+box_extract
+btoi
+itob
+frame_dig 4
+b*
+bytec_1 // 0x00000000000000010000000000000000
+b/
+dup
+bitlen
+intc 4 // 64
+<=
+assert
+bytec 15 // 0xffffffffffffffff
+b&
+dup
+len
+dup
+intc_3 // 8
+-
+swap
+substring3
+btoi
+frame_bury 5
+intc_0 // 0
+frame_dig -1
+intc_0 // 0
+intc_3 // 8
+box_extract
+btoi
+frame_dig -2
++
+frame_dig 3
+-
+itob
+frame_dig 0
+cover 2
+box_replace
+intc 4 // 64
+frame_dig -1
+intc 4 // 64
+intc_3 // 8
+box_extract
+btoi
+frame_dig 5
++
+itob
+frame_dig 0
+cover 2
+box_replace
+intc_3 // 8
+global LatestTimestamp
+itob
+frame_dig 0
+cover 2
+box_replace
+intc_2 // 16
+bytec 13 // "spentPerToken"
+app_global_get
+frame_dig 0
+cover 2
+box_replace
+intc 10 // 32
+bytec 14 // "rewardPerToken"
+app_global_get
+frame_dig 0
+cover 2
+box_replace
+intc 14 // 48
+frame_dig -1
+intc 14 // 48
+intc_3 // 8
+box_extract
+btoi
+frame_dig 3
++
+itob
+frame_dig 0
+cover 2
+box_replace
+bytec_3 // "totalDeposited"
+dup
+app_global_get
+frame_dig -1
+intc_0 // 0
+intc_3 // 8
+box_extract
+btoi
++
+app_global_put
+frame_dig 3
+frame_bury 0
+popn 5
+retsub
+label50:
+callsub label12
+intc_1 // 1
+return
+label12:
+proto 0 0
+bytec 4 // ""
+txn GroupIndex
+intc_0 // 0
+>
+assert
+txn GroupIndex
+intc_1 // 1
+-
+frame_bury 0
+frame_dig 0
+gtxns TypeEnum
+intc_1 // 1
+==
+assert
+frame_dig 0
+gtxns Receiver
+global CurrentApplicationAddress
+==
+assert
+callsub label13
+frame_dig 0
+gtxns Amount
+txn Sender
+callsub label14
+txn Sender
+box_get
+assert
+log
+retsub
+label18:
+proto 3 0
+bytec 4 // ""
+dup
+frame_dig -1
+frame_bury 0
+frame_dig -1
+intc 4 // 64
+intc_3 // 8
+box_extract
+btoi
+frame_dig -3
+*
+intc 5 // 10000
+/
+frame_bury 1
+frame_dig 1
+intc_0 // 0
+>
+bz label15
+itxn_begin
+intc 8 // 4
+itxn_field TypeEnum
+bytec 8 // "poolToken"
+app_global_get
+itxn_field XferAsset
+frame_dig -2
+itxn_field AssetReceiver
+frame_dig 1
+itxn_field AssetAmount
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+bytec 19 // "totalWithdrawn"
+dup
+app_global_get
+frame_dig 1
++
+app_global_put
+intc 15 // 56
+frame_dig -1
+intc 15 // 56
+intc_3 // 8
+box_extract
+btoi
+frame_dig 1
++
+itob
+frame_dig 0
+cover 2
+box_replace
+intc 4 // 64
+frame_dig -1
+intc 4 // 64
+intc_3 // 8
+box_extract
+btoi
+frame_dig 1
+-
+itob
+frame_dig 0
+cover 2
+box_replace
+label15:
+retsub
+label19:
+proto 3 0
+bytec 4 // ""
+dup
+frame_dig -1
+frame_bury 0
+frame_dig -1
+intc_0 // 0
+intc_3 // 8
+box_extract
+btoi
+frame_dig -3
+*
+intc 5 // 10000
+/
+frame_bury 1
+frame_dig 1
+intc_1 // 1
+>
+bz label16
+itxn_begin
+intc_1 // 1
+itxn_field TypeEnum
+frame_dig -2
+itxn_field Receiver
+frame_dig 1
+intc_1 // 1
+-
+itxn_field Amount
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+label16:
+bytec_3 // "totalDeposited"
+dup
+app_global_get
+frame_dig 1
+-
+app_global_put
+intc_0 // 0
+frame_dig -1
+intc_0 // 0
+intc_3 // 8
+box_extract
+btoi
+frame_dig 1
+-
+itob
+frame_dig 0
+cover 2
+box_replace
+retsub
+label51:
+txna ApplicationArgs 2
+btoi
+txna ApplicationArgs 1
+btoi
+callsub label17
+intc_1 // 1
+return
+label17:
+proto 2 0
+frame_dig -1
+intc 5 // 10000
+<=
+assert
+frame_dig -2
+intc 5 // 10000
+<=
+assert
+callsub label13
+intc_0 // 0
+txn Sender
+callsub label14
+frame_dig -1
+txn Sender
+txn Sender
+callsub label18
+frame_dig -2
+txn Sender
+txn Sender
+callsub label19
+txn Sender
+box_get
+assert
+log
+retsub
+label52:
+txna ApplicationArgs 1
+dup
+len
+intc 10 // 32
+==
+assert
+callsub label20
+intc_1 // 1
+return
+label20:
+proto 1 0
+bytec 4 // ""
+dupn 4
+txn GroupIndex
+intc_0 // 0
+>
+assert
+txn GroupIndex
+intc_1 // 1
+-
+frame_bury 0
+frame_dig 0
+gtxns TypeEnum
+intc_1 // 1
+==
+assert
+frame_dig 0
+gtxns Receiver
+global CurrentApplicationAddress
+==
+assert
+callsub label13
+frame_dig -1
+frame_bury 1
+frame_dig -1
+intc_0 // 0
+intc_3 // 8
+box_extract
+btoi
+frame_bury 2
+frame_dig 0
+gtxns Amount
+frame_dig -1
+callsub label14
+frame_bury 3
+frame_dig 3
+bytec 17 // "minDeposit"
+app_global_get
++
+frame_dig 2
+>
+assert
+frame_dig 3
+frame_dig 2
+>
+bz label21
+frame_dig 2
+intc 5 // 10000
+*
+frame_dig 3
+/
+frame_bury 4
+intc 5 // 10000
+frame_dig 4
+-
+txn Sender
+frame_dig -1
+callsub label18
+label21:
+intc 5 // 10000
+txn Sender
+frame_dig -1
+callsub label19
+frame_dig -1
+box_get
+assert
+log
+retsub
+label31:
+proto 0 1
+bytec 4 // ""
+dupn 6
+global Round
+bytec 22 // "lastPriceRound"
+app_global_get
+-
+frame_bury 0
+bytec_1 // 0x00000000000000010000000000000000
+frame_bury 1
+bytec 10 // "poolApplication"
+app_global_get
+bytec 5 // "poolAddress"
+app_global_get
+pushbytes 0x61737365745f315f7265736572766573 // "asset_1_reserves"
+swap
+cover 2
+app_local_get_ex
+assert
+frame_bury 2
+bytec 10 // "poolApplication"
+app_global_get
+bytec 5 // "poolAddress"
+app_global_get
+pushbytes 0x61737365745f325f7265736572766573 // "asset_2_reserves"
+swap
+cover 2
+app_local_get_ex
+assert
+frame_bury 3
+frame_dig 3
+itob
+bytec_1 // 0x00000000000000010000000000000000
+b*
+frame_dig 2
+itob
+b/
+frame_bury 4
+frame_dig 0
+intc_0 // 0
+>
+bz label22
+frame_dig 0
+intc 16 // 10
+>
+bz label23
+bytec_0 // "p"
+pushbytes 0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000 // 0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+box_put
+label23:
+frame_dig 4
+bytec_0 // "p"
+intc_0 // 0
+intc_2 // 16
+box_extract
+b<
+bz label24
+bytec_0 // "p"
+frame_dig 4
+dup
+bitlen
+intc 7 // 128
+<=
+assert
+bytec 9 // 0xffffffffffffffffffffffffffffffff
+b&
+dup
+len
+dup
+intc_2 // 16
+-
+swap
+substring3
+bytec_0 // "p"
+intc_0 // 0
+intc 11 // 144
+box_extract
+concat
+box_put
+b label22
+label24:
+frame_dig 4
+bytec_0 // "p"
+intc 11 // 144
+intc_2 // 16
+box_extract
+b>=
+bz label25
+bytec_0 // "p"
+dup
+intc_2 // 16
+intc 11 // 144
+box_extract
+frame_dig 4
+dup
+bitlen
+intc 7 // 128
+<=
+assert
+bytec 9 // 0xffffffffffffffffffffffffffffffff
+b&
+dup
+len
+dup
+intc_2 // 16
+-
+swap
+substring3
+concat
+box_put
+b label22
+label25:
+intc_1 // 1
+frame_bury 5
+label27:
+frame_dig 5
+intc 16 // 10
+<
+bz label22
+frame_dig 4
+frame_dig 5
+intc_2 // 16
+*
+intc_2 // 16
+bytec_0 // "p"
+cover 2
+box_extract
+b<=
+bz label26
+intc_2 // 16
+frame_dig 5
+*
+frame_bury 6
+bytec_0 // "p"
+dup
+box_get
+assert
+intc_2 // 16
+frame_dig 6
+intc_2 // 16
+-
+extract3
+frame_dig 4
+dup
+bitlen
+intc 7 // 128
+<=
+assert
+bytec 9 // 0xffffffffffffffffffffffffffffffff
+b&
+dup
+len
+dup
+intc_2 // 16
+-
+swap
+substring3
+concat
+bytec_0 // "p"
+box_get
+assert
+frame_dig 6
+intc 13 // 160
+frame_dig 6
+-
+extract3
+concat
+box_put
+b label22
+label26:
+frame_dig 5
+intc_1 // 1
++
+frame_bury 5
+b label27
+label22:
+bytec 22 // "lastPriceRound"
+global Round
+app_global_put
+frame_dig 4
+frame_bury 0
+popn 6
+retsub
+label47:
+proto 2 0
+itxn_begin
+intc 8 // 4
+itxn_field TypeEnum
+bytec 7 // "miningToken"
+app_global_get
+itxn_field XferAsset
+frame_dig -1
+itxn_field AssetAmount
+bytec 5 // "poolAddress"
+app_global_get
+itxn_field AssetReceiver
+intc_0 // 0
+itxn_field Fee
+itxn_next
+intc_1 // 1
+itxn_field TypeEnum
+frame_dig -2
+itxn_field Amount
+bytec 5 // "poolAddress"
+app_global_get
+itxn_field Receiver
+intc_0 // 0
+itxn_field Fee
+itxn_next
+intc 6 // 6
+itxn_field TypeEnum
+bytec 10 // "poolApplication"
+app_global_get
+itxn_field ApplicationID
+pushbytes 0x6164645f6c6971756964697479 // "add_liquidity"
+itxn_field ApplicationArgs
+pushbytes 0x666c657869626c65 // "flexible"
+itxn_field ApplicationArgs
+pushbytes 0x0000000000000000 // 0x0000000000000000
+itxn_field ApplicationArgs
+bytec 8 // "poolToken"
+app_global_get
+itxn_field Assets
+bytec 5 // "poolAddress"
+app_global_get
+itxn_field Accounts
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+bytec 12 // "totalSpent"
+dup
+app_global_get
+frame_dig -2
++
+bytec 6 // "pendingCost"
+app_global_get
++
+app_global_put
+bytec 6 // "pendingCost"
+intc_0 // 0
+app_global_put
+retsub
+label53:
+callsub label28
+intc_1 // 1
+return
+label28:
+proto 0 0
+bytec 4 // ""
+dupn 19
+bytec_3 // "totalDeposited"
+app_global_get
+intc_0 // 0
+>
+assert
+global Round
+global Round
+intc 12 // 5
+%
+-
+frame_bury 0
+frame_dig 0
+bytec_2 // "miningApplication"
+app_global_get
+pushbytes 0x626c6f636b // "block"
+app_global_get_ex
+assert
+!=
+frame_bury 1
+bytec_2 // "miningApplication"
+app_global_get
+pushbytes 0x63757272656e745f6d696e6572 // "current_miner"
+app_global_get_ex
+assert
+frame_bury 2
+frame_dig 1
+dup
+bnz label29
+global CurrentApplicationAddress
+frame_dig 2
+!=
+||
+label29:
+assert
+global MinTxnFee
+frame_bury 3
+pushint 3
+frame_bury 4
+frame_dig 1
+bz label30
+frame_dig 3
+global MinTxnFee
++
+frame_bury 3
+frame_dig 4
+intc_1 // 1
++
+frame_bury 4
+label30:
+itxn_begin
+intc 6 // 6
+itxn_field TypeEnum
+bytec 24 // 0xab2370cc
+itxn_field ApplicationArgs
+bytec_2 // "miningApplication"
+app_global_get
+itxn_field ApplicationID
+frame_dig 3
+itxn_field Fee
+global CurrentApplicationAddress
+itxn_field ApplicationArgs
+itxn_submit
+bytec 6 // "pendingCost"
+dup
+app_global_get
+frame_dig 3
++
+app_global_put
+callsub label31
+frame_bury 5
+bytec_0 // "p"
+intc 4 // 64
+intc_2 // 16
+box_extract
+frame_bury 6
+frame_dig 5
+frame_dig 6
+b<
+bz label32
+frame_dig 5
+b label33
+label32:
+frame_dig 6
+label33:
+frame_bury 7
+bytec_1 // 0x00000000000000010000000000000000
+frame_bury 8
+bytec_2 // "miningApplication"
+app_global_get
+pushbytes 0x6d696e65725f726577617264 // "miner_reward"
+app_global_get_ex
+assert
+frame_bury 9
+bytec 18 // "marketRateBps"
+app_global_get
+itob
+frame_dig 9
+itob
+b*
+frame_dig 7
+b*
+pushbytes 0x00000000000000000000000000002710 // 0x00000000000000000000000000002710
+bytec_1 // 0x00000000000000010000000000000000
+b*
+b/
+dup
+bitlen
+intc 4 // 64
+<=
+assert
+bytec 15 // 0xffffffffffffffff
+b&
+dup
+len
+dup
+intc_3 // 8
+-
+swap
+substring3
+btoi
+frame_bury 10
+bytec_2 // "miningApplication"
+app_global_get
+pushbytes 0x6c6173745f6d696e6572 // "last_miner"
+app_global_get_ex
+assert
+frame_bury 11
+bytec_2 // "miningApplication"
+app_global_get
+pushbytes 0x6c6173745f6d696e65725f6566666f7274 // "last_miner_effort"
+app_global_get_ex
+assert
+frame_bury 12
+bytec_2 // "miningApplication"
+app_global_get
+pushbytes 0x6566666f7274 // "effort"
+global CurrentApplicationAddress
+cover 2
+app_local_get_ex
+assert
+frame_bury 13
+frame_dig 11
+global CurrentApplicationAddress
+==
+bz label34
+frame_dig 13
+frame_dig 12
+-
+frame_bury 13
+label34:
+pushint 2
+global MinTxnFee
+*
+frame_bury 14
+global CurrentApplicationAddress
+bytec 7 // "miningToken"
+app_global_get
+asset_holding_get AssetBalance
+pop
+frame_bury 15
+pushbytes 0x0000000000000000000000000000005f // 0x0000000000000000000000000000005f
+frame_dig 6
+b*
+bytec 25 // 0x00000000000000000000000000000064
+b/
+frame_bury 16
+pushbytes 0x00000000000000000000000000000069 // 0x00000000000000000000000000000069
+frame_dig 6
+b*
+bytec 25 // 0x00000000000000000000000000000064
+b/
+frame_bury 17
+frame_dig 15
+intc_0 // 0
+>
+dup
+bz label35
+frame_dig 16
+frame_dig 5
+b<
+&&
+label35:
+dup
+bz label36
+frame_dig 17
+frame_dig 5
+b>
+&&
+label36:
+frame_bury 18
+frame_dig 18
+bz label37
+frame_dig 14
+intc 12 // 5
+global MinTxnFee
+*
++
+frame_bury 14
+frame_dig 4
+intc 12 // 5
++
+frame_bury 4
+label37:
+frame_dig 10
+frame_dig 13
+frame_dig 14
++
+>
+bz label38
+frame_dig 10
+frame_dig 13
+-
+frame_bury 14
+label38:
+frame_dig 14
+intc_0 // 0
+>
+dup
+bz label39
+frame_dig 4
+intc 17 // 256
+<
+&&
+label39:
+bz label40
+frame_dig 4
+intc_1 // 1
++
+frame_bury 4
+frame_dig 14
+bytec 11 // "baseTxnFee"
+app_global_get
+>
+bz label41
+bytec 11 // "baseTxnFee"
+app_global_get
+b label42
+label41:
+frame_dig 14
+label42:
+frame_bury 19
+frame_dig 4
+intc 17 // 256
+!=
+dup
+bz label43
+frame_dig 19
+frame_dig 14
+!=
+&&
+label43:
+dup
+bz label44
+frame_dig 14
+global MinTxnFee
+frame_dig 19
++
+<
+&&
+label44:
+bz label45
+frame_dig 19
+global MinTxnFee
+-
+frame_bury 19
+label45:
+frame_dig 14
+frame_dig 19
+-
+frame_bury 14
+bytec 6 // "pendingCost"
+dup
+app_global_get
+frame_dig 19
++
+app_global_put
+itxn_begin
+intc 6 // 6
+itxn_field TypeEnum
+bytec 24 // 0xab2370cc
+itxn_field ApplicationArgs
+bytec_2 // "miningApplication"
+app_global_get
+itxn_field ApplicationID
+frame_dig 19
+itxn_field Fee
+global CurrentApplicationAddress
+itxn_field ApplicationArgs
+itxn_submit
+b label38
+label40:
+itxn_begin
+intc_1 // 1
+itxn_field TypeEnum
+txn Sender
+itxn_field Receiver
+global MinTxnFee
+itxn_field Amount
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+bytec 6 // "pendingCost"
+dup
+app_global_get
+global MinTxnFee
++
+app_global_put
+frame_dig 18
+bz label46
+frame_dig 15
+itob
+frame_dig 5
+b*
+bytec_1 // 0x00000000000000010000000000000000
+b/
+dup
+bitlen
+intc 4 // 64
+<=
+assert
+bytec 15 // 0xffffffffffffffff
+b&
+dup
+len
+dup
+intc_3 // 8
+-
+swap
+substring3
+btoi
+frame_dig 15
+callsub label47
+label46:
+retsub
+label4:
+txn NumAppArgs
+bz label48
+pushbytes 0xb8447b36 // 0xb8447b36
+txna ApplicationArgs 0
+match label48
+err
+label1:
+pushbytes 0xc8d3b47b // 0xc8d3b47b
+pushbytes 0x92e03b1c // 0x92e03b1c
+pushbytes 0xe3aeb25c // 0xe3aeb25c
+pushbytes 0x3c69a7f7 // 0x3c69a7f7
+pushbytes 0x784ab77a // 0x784ab77a
+txna ApplicationArgs 0
+match label49 label50 label51 label52 label53
+err
+err
+label3:
+txn NumAppArgs
+bz label54
+pushbytes 0x46f76533 // 0x46f76533
+txna ApplicationArgs 0
+match label54
+err

@@ -584,9 +584,15 @@ class PySSA:
 
     @property
     def _bb_by_key(self) -> dict:
-        if not hasattr(self, "__bb_by_key"):
-            self.__bb_by_key = {b.key: b for b in self.blocks}
-        return self.__bb_by_key
+        # `self.blocks` is fixed once (built in __init__) before this is used, so
+        # the lookup is cached. (NB single-underscore name: a `__`-prefixed
+        # attribute is name-mangled, so the old `hasattr("__bb_by_key")` never
+        # matched the stored `_PySSA__bb_by_key` and the dict was rebuilt on
+        # every call -- an O(calls x blocks) hot spot on large programs.)
+        cache = getattr(self, "_bb_by_key_cache", None)
+        if cache is None:
+            cache = self._bb_by_key_cache = {b.key: b for b in self.blocks}
+        return cache
 
     # ----- diagnostic render --------------------------------------------
 

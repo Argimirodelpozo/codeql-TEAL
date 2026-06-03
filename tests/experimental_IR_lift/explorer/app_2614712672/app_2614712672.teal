@@ -1,0 +1,756 @@
+#pragma version 10
+pushbytes 0x6372656174655f6170706c69636174696f6e // "create_application"
+pushbytes 0x7570646174655f6170706c69636174696f6e // "update_application"
+pushbytes 0x61737365745f6f70745f696e // "asset_opt_in"
+pushbytes 0x70726f706f73655f6d616e61676572 // "propose_manager"
+pushbytes 0x6163636570745f6d616e61676572 // "accept_manager"
+pushbytes 0x7365745f65787472615f636f6c6c6563746f72 // "set_extra_collector"
+pushbytes 0x636c61696d5f6578747261 // "claim_extra"
+pushbytes 0x6e6f6f70 // "noop"
+pushbytes 0x73776170 // "swap"
+txna ApplicationArgs 0
+match label1 label2 label3 label4 label5 label6 label7 label8 label9
+err
+label1:
+txn ApplicationID
+pushint 0
+==
+assert
+txna ApplicationArgs 1
+btoi
+txna ApplicationArgs 2
+btoi
+txna ApplicationArgs 3
+btoi
+callsub label10
+pushint 1
+return
+label2:
+txn OnCompletion
+pushint 4
+==
+assert
+callsub label11
+pushint 1
+return
+label3:
+txn OnCompletion
+pushint 0
+==
+assert
+txna ApplicationArgs 1
+dup
+len
+pushint 64
+==
+assert
+callsub label12
+pushint 1
+return
+label4:
+txn OnCompletion
+pushint 0
+==
+assert
+txna ApplicationArgs 1
+dup
+len
+pushint 32
+==
+assert
+callsub label13
+pushint 1
+return
+label5:
+txn OnCompletion
+pushint 0
+==
+assert
+callsub label14
+pushint 1
+return
+label6:
+txn OnCompletion
+pushint 0
+==
+assert
+txna ApplicationArgs 1
+dup
+len
+pushint 32
+==
+assert
+callsub label15
+pushint 1
+return
+label7:
+txn OnCompletion
+pushint 0
+==
+assert
+txna ApplicationArgs 1
+btoi
+callsub label16
+pushint 1
+return
+label8:
+txn OnCompletion
+pushint 0
+==
+assert
+callsub label17
+pushint 1
+return
+label9:
+txn OnCompletion
+pushint 0
+==
+assert
+txna ApplicationArgs 1
+btoi
+txna ApplicationArgs 2
+btoi
+txna ApplicationArgs 3
+dup
+len
+pushint 64
+==
+assert
+txna ApplicationArgs 4
+dup
+len
+pushint 256
+==
+assert
+txna ApplicationArgs 5
+btoi
+callsub label18
+pushint 1
+return
+label10:
+store 1
+store 2
+store 3
+pushbytes 0x74616c676f5f6170705f6964 // "talgo_app_id"
+load 2
+app_global_put
+load 2
+app_params_get AppAddress
+pop
+store 4
+pushbytes 0x74616c676f5f6170705f61646472657373 // "talgo_app_address"
+load 4
+app_global_put
+pushbytes 0x74616c676f5f61737365745f6964 // "talgo_asset_id"
+load 1
+app_global_put
+pushbytes 0x74696e796d616e5f6170705f6964 // "tinyman_app_id"
+load 3
+app_global_put
+pushbytes 0x6d616e61676572 // "manager"
+txn Sender
+app_global_put
+pushbytes 0x70726f706f7365645f6d616e61676572 // "proposed_manager"
+pushbytes 0x // ""
+app_global_put
+pushbytes 0x65787472615f636f6c6c6563746f72 // "extra_collector"
+txn Sender
+app_global_put
+retsub
+label11:
+txn Sender
+pushbytes 0x6d616e61676572 // "manager"
+app_global_get
+==
+assert
+retsub
+label17:
+retsub
+label12:
+store 5
+pushint 0
+store 6
+label21:
+load 6
+pushint 8
+==
+bnz label19
+load 5
+pushint 8
+load 6
+*
+pushint 8
+extract3
+btoi
+callsub label20
+load 6
+pushint 1
++
+store 6
+b label21
+label19:
+retsub
+label18:
+store 7
+store 8
+store 9
+store 10
+store 11
+txn Sender
+store 12
+load 9
+pushint 8
+pushint 0
+*
+pushint 8
+extract3
+btoi
+store 13
+load 9
+pushint 8
+load 7
+*
+pushint 8
+extract3
+btoi
+store 14
+txn GroupIndex
+assert
+txn GroupIndex
+pushint 1
+-
+store 15
+load 15
+gtxns Sender
+load 12
+==
+assert
+load 15
+gtxns TypeEnum
+pushint 1
+==
+bz label22
+load 15
+gtxns Receiver
+global CurrentApplicationAddress
+==
+assert
+load 13
+!
+assert
+load 15
+gtxns Amount
+load 11
+==
+assert
+b label23
+label22:
+load 15
+gtxns TypeEnum
+pushint 4
+==
+bz label24
+load 15
+gtxns AssetReceiver
+global CurrentApplicationAddress
+==
+assert
+load 13
+load 15
+gtxns XferAsset
+==
+assert
+load 15
+gtxns AssetAmount
+load 11
+==
+assert
+b label23
+label24:
+err
+label23:
+load 11
+assert
+load 11
+store 19
+pushint 0
+store 20
+label32:
+load 20
+load 7
+==
+bnz label25
+load 9
+pushint 8
+load 20
+*
+pushint 8
+extract3
+btoi
+store 16
+load 9
+pushint 8
+load 20
+pushint 1
++
+*
+pushint 8
+extract3
+btoi
+store 17
+load 8
+pushint 32
+load 20
+*
+pushint 32
+extract3
+store 18
+load 18
+pushbytes 0x74616c676f5f6170705f61646472657373 // "talgo_app_address"
+app_global_get
+==
+load 16
+pushint 0
+==
+&&
+bz label26
+load 19
+callsub label27
+store 19
+b label28
+label26:
+load 18
+pushbytes 0x74616c676f5f6170705f61646472657373 // "talgo_app_address"
+app_global_get
+==
+load 17
+pushint 0
+==
+&&
+bz label29
+load 19
+callsub label30
+store 19
+b label28
+label29:
+load 18
+pushbytes 0x66697865642d696e707574 // "fixed-input"
+load 16
+load 17
+load 19
+pushint 1
+callsub label31
+store 19
+pop
+label28:
+load 20
+pushint 1
++
+store 20
+b label32
+label25:
+load 17
+load 14
+==
+assert
+load 19
+store 21
+load 21
+load 10
+>=
+assert
+load 14
+load 21
+global CurrentApplicationAddress
+load 12
+callsub label33
+pushbytes 0x8162da9e // 0x8162da9e
+load 13
+itob
+load 14
+itob
+load 11
+itob
+load 21
+itob
+concat
+concat
+concat
+concat
+log
+retsub
+label13:
+store 22
+txn Sender
+pushbytes 0x6d616e61676572 // "manager"
+app_global_get
+==
+assert
+pushbytes 0x70726f706f7365645f6d616e61676572 // "proposed_manager"
+load 22
+app_global_put
+pushbytes 0x9f8a67ff // 0x9f8a67ff
+load 22
+concat
+log
+retsub
+label14:
+pushbytes 0x70726f706f7365645f6d616e61676572 // "proposed_manager"
+app_global_get
+store 23
+txn Sender
+load 23
+==
+assert
+pushbytes 0x6d616e61676572 // "manager"
+load 23
+app_global_put
+pushbytes 0x70726f706f7365645f6d616e61676572 // "proposed_manager"
+pushbytes 0x // ""
+app_global_put
+pushbytes 0xbb6affe3 // 0xbb6affe3
+load 23
+concat
+log
+retsub
+label15:
+store 24
+txn Sender
+pushbytes 0x6d616e61676572 // "manager"
+app_global_get
+==
+assert
+pushbytes 0x65787472615f636f6c6c6563746f72 // "extra_collector"
+load 24
+app_global_put
+retsub
+label16:
+store 25
+txn GroupIndex
+pushint 0
+==
+assert
+txn Sender
+pushbytes 0x65787472615f636f6c6c6563746f72 // "extra_collector"
+app_global_get
+==
+assert
+txn NumAssets
+store 28
+global CurrentApplicationAddress
+load 25
+callsub label34
+store 26
+load 26
+assert
+load 25
+load 26
+global CurrentApplicationAddress
+pushbytes 0x65787472615f636f6c6c6563746f72 // "extra_collector"
+app_global_get
+callsub label33
+retsub
+label27:
+store 29
+callsub label35
+callsub label36
+pushint 1
+itxn_field TypeEnum
+pushint 0
+itxn_field Fee
+pushbytes 0x74616c676f5f6170705f61646472657373 // "talgo_app_address"
+app_global_get
+itxn_field Receiver
+load 29
+itxn_field Amount
+callsub label37
+callsub label36
+pushint 6
+itxn_field TypeEnum
+pushint 0
+itxn_field Fee
+pushbytes 0x74616c676f5f6170705f6964 // "talgo_app_id"
+app_global_get
+itxn_field ApplicationID
+pushbytes 0x6d696e74 // "mint"
+itxn_field ApplicationArgs
+load 29
+itob
+itxn_field ApplicationArgs
+callsub label37
+callsub label38
+itxn LastLog
+pushint 44
+extract_uint64
+store 30
+load 30
+retsub
+label30:
+store 31
+callsub label35
+callsub label36
+pushint 4
+itxn_field TypeEnum
+pushint 0
+itxn_field Fee
+pushbytes 0x74616c676f5f6170705f61646472657373 // "talgo_app_address"
+app_global_get
+itxn_field AssetReceiver
+load 31
+itxn_field AssetAmount
+pushbytes 0x74616c676f5f61737365745f6964 // "talgo_asset_id"
+app_global_get
+itxn_field XferAsset
+callsub label37
+callsub label36
+pushint 6
+itxn_field TypeEnum
+pushint 0
+itxn_field Fee
+pushbytes 0x74616c676f5f6170705f6964 // "talgo_app_id"
+app_global_get
+itxn_field ApplicationID
+pushbytes 0x6275726e // "burn"
+itxn_field ApplicationArgs
+load 31
+itob
+itxn_field ApplicationArgs
+callsub label37
+callsub label38
+itxn LastLog
+pushint 44
+extract_uint64
+store 32
+load 32
+retsub
+label31:
+store 33
+store 34
+store 35
+store 36
+store 37
+store 38
+global CurrentApplicationAddress
+load 36
+callsub label34
+store 39
+global CurrentApplicationAddress
+load 35
+callsub label34
+store 40
+load 36
+bz label39
+callsub label35
+callsub label36
+pushint 4
+itxn_field TypeEnum
+pushint 0
+itxn_field Fee
+load 38
+itxn_field AssetReceiver
+load 34
+itxn_field AssetAmount
+load 36
+itxn_field XferAsset
+callsub label37
+callsub label36
+pushint 6
+itxn_field TypeEnum
+pushint 0
+itxn_field Fee
+pushbytes 0x74696e796d616e5f6170705f6964 // "tinyman_app_id"
+app_global_get
+itxn_field ApplicationID
+pushbytes 0x73776170 // "swap"
+itxn_field ApplicationArgs
+load 37
+itxn_field ApplicationArgs
+load 33
+itob
+itxn_field ApplicationArgs
+load 38
+itxn_field Accounts
+load 36
+itxn_field Assets
+load 35
+itxn_field Assets
+txn Note
+itxn_field Note
+callsub label37
+callsub label38
+b label40
+label39:
+callsub label35
+callsub label36
+pushint 1
+itxn_field TypeEnum
+pushint 0
+itxn_field Fee
+load 38
+itxn_field Receiver
+load 34
+itxn_field Amount
+callsub label37
+callsub label36
+pushint 6
+itxn_field TypeEnum
+pushint 0
+itxn_field Fee
+pushbytes 0x74696e796d616e5f6170705f6964 // "tinyman_app_id"
+app_global_get
+itxn_field ApplicationID
+pushbytes 0x73776170 // "swap"
+itxn_field ApplicationArgs
+load 37
+itxn_field ApplicationArgs
+load 33
+itob
+itxn_field ApplicationArgs
+load 38
+itxn_field Accounts
+load 36
+itxn_field Assets
+load 35
+itxn_field Assets
+txn Note
+itxn_field Note
+callsub label37
+callsub label38
+label40:
+global CurrentApplicationAddress
+load 36
+callsub label34
+store 41
+global CurrentApplicationAddress
+load 35
+callsub label34
+store 42
+load 42
+load 40
+-
+store 43
+load 41
+load 39
+load 34
+-
+-
+store 44
+load 44
+load 43
+retsub
+label20:
+store 45
+load 45
+bz label41
+global CurrentApplicationAddress
+load 45
+asset_holding_get AssetBalance
+store 46
+pop
+load 46
+pushint 0
+==
+bz label41
+load 45
+pushint 0
+global CurrentApplicationAddress
+global CurrentApplicationAddress
+callsub label33
+label41:
+retsub
+label34:
+store 47
+store 48
+pushint 0
+store 49
+load 47
+!
+bz label42
+load 48
+balance
+load 48
+min_balance
+-
+store 49
+b label43
+label42:
+load 48
+load 47
+asset_holding_get AssetBalance
+pop
+store 49
+label43:
+load 49
+retsub
+label33:
+store 50
+store 51
+store 52
+store 53
+load 53
+!
+bz label44
+callsub label36
+pushint 1
+itxn_field TypeEnum
+load 51
+itxn_field Sender
+load 50
+itxn_field Receiver
+load 52
+itxn_field Amount
+pushint 0
+itxn_field Fee
+callsub label37
+b label45
+label44:
+callsub label36
+pushint 4
+itxn_field TypeEnum
+load 51
+itxn_field Sender
+load 50
+itxn_field AssetReceiver
+load 52
+itxn_field AssetAmount
+load 53
+itxn_field XferAsset
+pushint 0
+itxn_field Fee
+callsub label37
+label45:
+retsub
+label35:
+load 54
+!
+assert
+pushint 1
+store 54
+retsub
+label36:
+load 54
+switch label46 label47 label48
+err
+label46:
+itxn_begin
+retsub
+label47:
+itxn_begin
+pushint 2
+store 54
+retsub
+label48:
+itxn_next
+retsub
+label37:
+load 54
+bz label49
+retsub
+label49:
+itxn_submit
+retsub
+label38:
+itxn_submit
+pushint 0
+store 54
+retsub

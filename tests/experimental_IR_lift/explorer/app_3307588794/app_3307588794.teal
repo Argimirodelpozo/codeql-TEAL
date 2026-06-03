@@ -1,0 +1,154 @@
+#pragma version 11
+intcblock 1 0
+bytecblock 0x61646d696e5f6163636f756e74 0x707269636573
+txn NumAppArgs
+bz label1
+pushbytess 0xda53fefe 0x3baf88d1 0x82829c5d 0xac13e004 0x23ab9b6a
+txna ApplicationArgs 0
+match label2 label3 label4 label5 label6
+label1:
+intc_1 // 0
+return
+label6:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+assert
+txna ApplicationArgs 1
+callsub label7
+intc_0 // 1
+return
+label5:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+assert
+txna ApplicationArgs 1
+callsub label8
+pushbytes 0x151f7c75 // 0x151f7c75
+swap
+concat
+log
+intc_0 // 1
+return
+label4:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+assert
+txna ApplicationArgs 1
+txna ApplicationArgs 2
+callsub label9
+intc_0 // 1
+return
+label3:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+assert
+txna ApplicationArgs 1
+txna ApplicationArgs 2
+callsub label10
+intc_0 // 1
+return
+label2:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+!
+assert
+txna ApplicationArgs 1
+btoi
+txnas Accounts
+callsub label11
+intc_0 // 1
+return
+label11:
+proto 1 0
+bytec_0 // "admin_account"
+frame_dig -1
+app_global_put
+retsub
+label10:
+proto 2 0
+txn Sender
+intc_1 // 0
+bytec_0 // "admin_account"
+app_global_get_ex
+assert
+==
+assert
+global LatestTimestamp
+itob
+frame_dig -2
+frame_dig -1
+concat
+swap
+concat
+bytec_1 // "prices"
+frame_dig -2
+concat
+swap
+box_put
+retsub
+label9:
+proto 2 0
+txn Sender
+intc_1 // 0
+bytec_0 // "admin_account"
+app_global_get_ex
+assert
+==
+assert
+bytec_1 // "prices"
+frame_dig -2
+concat
+dup
+box_len
+bury 1
+assert
+global LatestTimestamp
+itob
+frame_dig -2
+frame_dig -1
+concat
+swap
+concat
+box_put
+retsub
+label8:
+proto 1 1
+bytec_1 // "prices"
+frame_dig -1
+concat
+dup
+box_len
+bury 1
+assert
+box_get
+assert
+retsub
+label7:
+proto 1 0
+txn Sender
+intc_1 // 0
+bytec_0 // "admin_account"
+app_global_get_ex
+assert
+==
+assert
+bytec_1 // "prices"
+frame_dig -1
+concat
+dup
+box_len
+bury 1
+assert
+box_del
+pop
+retsub

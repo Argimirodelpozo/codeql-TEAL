@@ -1,0 +1,375 @@
+#pragma version 9
+intcblock 0 1 400000000000000 16 2
+bytecblock 0x6c6173745f6d696e6572 0x68616c76696e675f737570706c79 0x6c6173745f6d696e65725f6566666f7274 0x6566666f7274 0x746f6b656e 0x68616c76696e67 0x6d696e65645f737570706c79 0x6d696e65725f726577617264 0x63757272656e745f6d696e65725f6566666f7274 0x626c6f636b 0x746f74616c5f6566666f7274 0x746f74616c5f7472616e73616374696f6e73 0x63757272656e745f6d696e6572 0x73746172745f74696d657374616d70 0x
+txn ApplicationID
+intc_0 // 0
+>
+pushint 6
+*
+txn OnCompletion
++
+switch label1 label2 label3 label3 label3 label3 label4 label5
+label3:
+err
+label24:
+callsub label6
+intc_1 // 1
+return
+label6:
+proto 0 0
+bytec 4 // "token"
+intc_0 // 0
+app_global_put
+bytec 9 // "block"
+intc_0 // 0
+app_global_put
+bytec 10 // "total_effort"
+intc_0 // 0
+app_global_put
+bytec 11 // "total_transactions"
+intc_0 // 0
+app_global_put
+bytec 5 // "halving"
+intc_0 // 0
+app_global_put
+bytec_1 // "halving_supply"
+pushint 200000000000000
+app_global_put
+bytec 6 // "mined_supply"
+intc_0 // 0
+app_global_put
+bytec 7 // "miner_reward"
+pushint 104857600
+app_global_put
+bytec_0 // "last_miner"
+global ZeroAddress
+app_global_put
+bytec_2 // "last_miner_effort"
+intc_0 // 0
+app_global_put
+bytec 12 // "current_miner"
+global ZeroAddress
+app_global_put
+bytec 8 // "current_miner_effort"
+intc_0 // 0
+app_global_put
+bytec 13 // "start_timestamp"
+pushint 1704067200
+app_global_put
+retsub
+label9:
+proto 0 0
+bytec 4 // "token"
+itxn_begin
+pushint 3
+itxn_field TypeEnum
+pushbytes 0x4f72616e6765 // "Orange"
+itxn_field ConfigAssetName
+pushbytes 0x4f5241 // "ORA"
+itxn_field ConfigAssetUnitName
+global CurrentApplicationAddress
+itxn_field ConfigAssetManager
+global CurrentApplicationAddress
+itxn_field ConfigAssetReserve
+global ZeroAddress
+itxn_field ConfigAssetFreeze
+global ZeroAddress
+itxn_field ConfigAssetClawback
+intc_2 // 400000000000000
+itxn_field ConfigAssetTotal
+pushint 8
+itxn_field ConfigAssetDecimals
+pushbytes 0x697066733a2f2f516d556974784a75504a4a726375416441695664454570757a476d73454c47674176684c643546695852536845752361726333 // "ipfs://QmUitxJuPJJrcuAdAiVdEEpuzGmsELGgAvhLd5FiXRShEu#arc3"
+itxn_field ConfigAssetURL
+pushbytes 0xd3fd51be2ee8c2b17a7ae826d349c0df20feab8a4d680303401c741560c32436 // addr 2P6VDPRO5DBLC6T25ATNGSOA34QP5K4KJVUAGA2ADR2BKYGDEQ3NXZ5RSQ
+itxn_field ConfigAssetMetadataHash
+intc_0 // 0
+itxn_field Fee
+pushbytes 0x4a6f686e20416c616e20576f6f64732030312f4465632f3230323320596f75206b6e6f772c20492063616e2070756c6c206d657472696373206f7574206f66207468652061697220746f6f2c2077686174657665722c2038206d696c6c696f6e207472616e73616374696f6e73206f76657220746865206c617374207765656b2c204920646f6e2774206b6e6f772c206d79206d6f6d2068617320666f7572206f72616e6765732e // "John Alan Woods 01/Dec/2023 You know, I can pull metrics out of the air too, whatever, 8 million transactions over the last week, I don't know, my mom has four oranges."
+itxn_field Note
+itxn_submit
+itxn CreatedAssetID
+app_global_put
+retsub
+label26:
+callsub label7
+intc_1 // 1
+return
+label7:
+proto 0 0
+bytec 4 // "token"
+app_global_get
+intc_0 // 0
+==
+bz label8
+callsub label9
+label8:
+txn Sender
+bytec_3 // "effort"
+intc_0 // 0
+app_local_put
+retsub
+label19:
+proto 3 0
+global Round
+global Round
+pushint 5
+%
+-
+frame_bury -1
+bytec 9 // "block"
+app_global_get
+frame_dig -1
+!=
+bz label10
+bytec_0 // "last_miner"
+app_global_get
+bytec 4 // "token"
+app_global_get
+asset_holding_get AssetBalance
+swap
+pop
+bz label11
+bytec_1 // "halving_supply"
+app_global_get
+bytec 7 // "miner_reward"
+app_global_get
+>
+bz label12
+bytec 7 // "miner_reward"
+app_global_get
+b label13
+label12:
+bytec_1 // "halving_supply"
+app_global_get
+label13:
+frame_bury -2
+itxn_begin
+pushint 4
+itxn_field TypeEnum
+bytec 4 // "token"
+app_global_get
+itxn_field XferAsset
+bytec_0 // "last_miner"
+app_global_get
+itxn_field AssetReceiver
+frame_dig -2
+itxn_field AssetAmount
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+bytec_0 // "last_miner"
+app_global_get
+bytec_2 // "last_miner_effort"
+app_global_get
+itob
+concat
+log
+bytec 6 // "mined_supply"
+bytec 6 // "mined_supply"
+app_global_get
+frame_dig -2
++
+app_global_put
+bytec_1 // "halving_supply"
+bytec_1 // "halving_supply"
+app_global_get
+frame_dig -2
+-
+app_global_put
+bytec_1 // "halving_supply"
+app_global_get
+intc_0 // 0
+==
+bz label11
+bytec 5 // "halving"
+bytec 5 // "halving"
+app_global_get
+intc_1 // 1
++
+app_global_put
+bytec 5 // "halving"
+app_global_get
+intc_3 // 16
+>=
+bz label14
+bytec_1 // "halving_supply"
+intc_2 // 400000000000000
+bytec 6 // "mined_supply"
+app_global_get
+-
+app_global_put
+b label11
+label14:
+bytec_1 // "halving_supply"
+intc_2 // 400000000000000
+bytec 6 // "mined_supply"
+app_global_get
+-
+intc 4 // 2
+/
+app_global_put
+bytec 7 // "miner_reward"
+bytec 7 // "miner_reward"
+app_global_get
+intc 4 // 2
+/
+app_global_put
+label11:
+bytec_0 // "last_miner"
+app_global_get
+txna Applications 0
+app_opted_in
+bz label15
+bytec_0 // "last_miner"
+app_global_get
+bytec_3 // "effort"
+app_local_get
+frame_bury -3
+bytec_0 // "last_miner"
+app_global_get
+bytec_3 // "effort"
+frame_dig -3
+bytec_2 // "last_miner_effort"
+app_global_get
+>
+bz label16
+frame_dig -3
+bytec_2 // "last_miner_effort"
+app_global_get
+-
+b label17
+label16:
+intc_0 // 0
+label17:
+app_local_put
+label15:
+bytec 9 // "block"
+frame_dig -1
+app_global_put
+bytec_0 // "last_miner"
+bytec 12 // "current_miner"
+app_global_get
+app_global_put
+bytec_2 // "last_miner_effort"
+bytec 8 // "current_miner_effort"
+app_global_get
+app_global_put
+bytec 8 // "current_miner_effort"
+intc_0 // 0
+app_global_put
+label10:
+retsub
+label25:
+bytec 14 // ""
+dup
+txna ApplicationArgs 1
+dup
+len
+pushint 32
+==
+assert
+callsub label18
+intc_1 // 1
+return
+label18:
+proto 3 0
+frame_dig -1
+txna Applications 0
+bytec_3 // "effort"
+app_local_get_ex
+swap
+pop
+assert
+global LatestTimestamp
+bytec 13 // "start_timestamp"
+app_global_get
+>=
+assert
+bytec 5 // "halving"
+app_global_get
+intc_3 // 16
+<=
+assert
+txn Fee
+pushint 20000
+<=
+assert
+bytec 14 // ""
+dupn 2
+callsub label19
+bytec 10 // "total_effort"
+bytec 10 // "total_effort"
+app_global_get
+txn Fee
++
+app_global_put
+bytec 11 // "total_transactions"
+bytec 11 // "total_transactions"
+app_global_get
+intc_1 // 1
++
+app_global_put
+frame_dig -1
+bytec_3 // "effort"
+app_local_get
+txn Fee
++
+frame_bury -2
+frame_dig -1
+bytec_3 // "effort"
+frame_dig -2
+app_local_put
+frame_dig -2
+frame_bury -3
+bytec_0 // "last_miner"
+app_global_get
+frame_dig -1
+==
+bz label20
+frame_dig -3
+bytec_2 // "last_miner_effort"
+app_global_get
+>
+bz label21
+frame_dig -3
+bytec_2 // "last_miner_effort"
+app_global_get
+-
+b label22
+label21:
+intc_0 // 0
+label22:
+frame_bury -3
+label20:
+frame_dig -3
+bytec 8 // "current_miner_effort"
+app_global_get
+>
+bz label23
+bytec 12 // "current_miner"
+frame_dig -1
+app_global_put
+bytec 8 // "current_miner_effort"
+frame_dig -3
+app_global_put
+label23:
+retsub
+label1:
+txn NumAppArgs
+bz label24
+pushbytes 0xb8447b36 // 0xb8447b36
+txna ApplicationArgs 0
+match label24
+err
+label4:
+pushbytes 0xab2370cc // 0xab2370cc
+txna ApplicationArgs 0
+match label25
+err
+label2:
+err
+label5:
+txn NumAppArgs
+bz label26
+err

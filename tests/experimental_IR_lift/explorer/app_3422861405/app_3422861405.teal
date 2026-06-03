@@ -1,0 +1,1070 @@
+#pragma version 10
+pushbytes 0x6372656174655f6170706c69636174696f6e // "create_application"
+pushbytes 0x7570646174655f6170706c69636174696f6e // "update_application"
+pushbytes 0x70726f706f73655f6d616e61676572 // "propose_manager"
+pushbytes 0x6163636570745f6d616e61676572 // "accept_manager"
+pushbytes 0x7365745f65787472615f636f6c6c6563746f72 // "set_extra_collector"
+pushbytes 0x636c61696d5f6578747261 // "claim_extra"
+pushbytes 0x61737365745f6f70745f696e // "asset_opt_in"
+pushbytes 0x6e6f6f70 // "noop"
+pushbytes 0x73746172745f737761705f67726f7570 // "start_swap_group"
+pushbytes 0x656e645f737761705f67726f7570 // "end_swap_group"
+pushbytes 0x73776170 // "swap"
+txna ApplicationArgs 0
+match label1 label2 label3 label4 label5 label6 label7 label8 label9 label10 label11
+err
+label1:
+txn ApplicationID
+pushint 0
+==
+assert
+txna ApplicationArgs 1
+btoi
+txna ApplicationArgs 2
+btoi
+txna ApplicationArgs 3
+btoi
+callsub label12
+pushint 1
+return
+label2:
+txn OnCompletion
+pushint 4
+==
+assert
+callsub label13
+pushint 1
+return
+label3:
+txn OnCompletion
+pushint 0
+==
+assert
+txna ApplicationArgs 1
+dup
+len
+pushint 32
+==
+assert
+callsub label14
+pushint 1
+return
+label4:
+txn OnCompletion
+pushint 0
+==
+assert
+callsub label15
+pushint 1
+return
+label5:
+txn OnCompletion
+pushint 0
+==
+assert
+txna ApplicationArgs 1
+dup
+len
+pushint 32
+==
+assert
+callsub label16
+pushint 1
+return
+label6:
+txn OnCompletion
+pushint 0
+==
+assert
+txna ApplicationArgs 1
+btoi
+callsub label17
+pushint 1
+return
+label7:
+txn OnCompletion
+pushint 0
+==
+assert
+txna ApplicationArgs 1
+dup
+len
+pushint 64
+==
+assert
+callsub label18
+pushint 1
+return
+label8:
+txn OnCompletion
+pushint 0
+==
+assert
+callsub label19
+pushint 1
+return
+label9:
+txn OnCompletion
+pushint 0
+==
+assert
+txna ApplicationArgs 1
+btoi
+txna ApplicationArgs 2
+btoi
+txna ApplicationArgs 3
+btoi
+txna ApplicationArgs 4
+btoi
+callsub label20
+pushint 1
+return
+label10:
+txn OnCompletion
+pushint 0
+==
+assert
+txna ApplicationArgs 1
+btoi
+txna ApplicationArgs 2
+btoi
+txna ApplicationArgs 3
+btoi
+txna ApplicationArgs 4
+btoi
+txna ApplicationArgs 5
+btoi
+callsub label21
+pushint 1
+return
+label11:
+txn OnCompletion
+pushint 0
+==
+assert
+txna ApplicationArgs 1
+btoi
+txna ApplicationArgs 2
+dup
+len
+pushint 64
+==
+assert
+txna ApplicationArgs 3
+dup
+len
+pushint 256
+==
+assert
+txna ApplicationArgs 4
+btoi
+callsub label22
+pushint 1
+return
+label12:
+store 1
+store 2
+store 3
+pushbytes 0x74616c676f5f6170705f6964 // "talgo_app_id"
+load 2
+app_global_put
+load 2
+app_params_get AppAddress
+pop
+store 4
+pushbytes 0x74616c676f5f6170705f61646472657373 // "talgo_app_address"
+load 4
+app_global_put
+pushbytes 0x74616c676f5f61737365745f6964 // "talgo_asset_id"
+load 1
+app_global_put
+pushbytes 0x74696e796d616e5f6170705f6964 // "tinyman_app_id"
+load 3
+app_global_put
+pushbytes 0x6d616e61676572 // "manager"
+txn Sender
+app_global_put
+pushbytes 0x70726f706f7365645f6d616e61676572 // "proposed_manager"
+pushbytes 0x // ""
+app_global_put
+pushbytes 0x65787472615f636f6c6c6563746f72 // "extra_collector"
+txn Sender
+app_global_put
+retsub
+label13:
+txn Sender
+pushbytes 0x6d616e61676572 // "manager"
+app_global_get
+==
+assert
+retsub
+label20:
+store 5
+store 6
+store 7
+store 8
+txn GroupIndex
+assert
+txn GroupIndex
+store 9
+load 9
+pushint 1
+-
+store 10
+load 10
+gtxns Sender
+txn Sender
+==
+assert
+load 10
+gtxns TypeEnum
+pushint 1
+==
+bz label23
+load 8
+!
+assert
+load 10
+gtxns Receiver
+global CurrentApplicationAddress
+==
+assert
+load 10
+gtxns Amount
+load 6
+==
+assert
+b label24
+label23:
+load 10
+gtxns TypeEnum
+pushint 4
+==
+bz label25
+load 10
+gtxns XferAsset
+load 8
+==
+assert
+load 10
+gtxns AssetReceiver
+global CurrentApplicationAddress
+==
+assert
+load 10
+gtxns AssetAmount
+load 6
+==
+assert
+b label24
+label25:
+err
+label24:
+pushint 0
+store 11
+pushint 1
+store 12
+label30:
+load 12
+load 5
+==
+bnz label26
+load 9
+load 12
++
+gtxns Sender
+txn Sender
+==
+assert
+load 9
+load 12
++
+gtxns TypeEnum
+pushint 6
+==
+assert
+load 9
+load 12
++
+gtxns OnCompletion
+pushint 0
+==
+assert
+load 9
+load 12
++
+gtxns ApplicationID
+global CurrentApplicationID
+==
+assert
+load 9
+load 12
++
+gtxnsa ApplicationArgs 0
+store 13
+load 13
+pushbytes 0x73776170 // "swap"
+==
+bz label27
+load 11
+load 9
+load 12
++
+gtxnsa ApplicationArgs 1
+btoi
++
+store 11
+load 9
+load 12
++
+gtxnsa ApplicationArgs 2
+dup
+len
+pushint 64
+==
+assert
+store 14
+load 9
+load 12
++
+gtxnsa ApplicationArgs 4
+btoi
+store 15
+load 14
+pushint 8
+pushint 0
+*
+pushint 8
+extract3
+btoi
+load 8
+==
+assert
+load 14
+pushint 8
+load 15
+*
+pushint 8
+extract3
+btoi
+load 7
+==
+assert
+b label28
+label27:
+load 13
+pushbytes 0x6e6f6f70 // "noop"
+==
+bz label29
+b label28
+label29:
+err
+label28:
+load 12
+pushint 1
++
+store 12
+b label30
+label26:
+load 11
+load 6
+==
+assert
+load 9
+load 5
++
+gtxns Sender
+txn Sender
+==
+assert
+load 9
+load 5
++
+gtxns TypeEnum
+pushint 6
+==
+assert
+load 9
+load 5
++
+gtxns OnCompletion
+pushint 0
+==
+assert
+load 9
+load 5
++
+gtxns ApplicationID
+global CurrentApplicationID
+==
+assert
+load 9
+load 5
++
+gtxnsa ApplicationArgs 0
+pushbytes 0x656e645f737761705f67726f7570 // "end_swap_group"
+==
+assert
+load 9
+load 5
++
+gtxnsa ApplicationArgs 1
+load 8
+itob
+==
+assert
+load 9
+load 5
++
+gtxnsa ApplicationArgs 2
+load 7
+itob
+==
+assert
+load 9
+load 5
++
+gtxnsa ApplicationArgs 3
+load 6
+itob
+==
+assert
+pushint 0
+store 16
+load 7
+bz label31
+global CurrentApplicationAddress
+load 7
+asset_holding_get AssetBalance
+pop
+store 16
+b label32
+label31:
+global CurrentApplicationAddress
+balance
+store 16
+label32:
+pushbytes 0x73746172745f6f75747075745f61737365745f62616c616e6365 // "start_output_asset_balance"
+load 16
+app_global_put
+retsub
+label21:
+store 17
+store 18
+store 19
+store 20
+store 21
+txn GroupIndex
+store 22
+load 22
+load 17
+-
+gtxns Sender
+txn Sender
+==
+assert
+load 22
+load 17
+-
+gtxns TypeEnum
+pushint 6
+==
+assert
+load 22
+load 17
+-
+gtxns OnCompletion
+pushint 0
+==
+assert
+load 22
+load 17
+-
+gtxns ApplicationID
+global CurrentApplicationID
+==
+assert
+load 22
+load 17
+-
+gtxnsa ApplicationArgs 0
+pushbytes 0x73746172745f737761705f67726f7570 // "start_swap_group"
+==
+assert
+load 22
+load 17
+-
+gtxnsa ApplicationArgs 4
+load 17
+itob
+==
+assert
+pushint 0
+store 23
+load 20
+bz label33
+global CurrentApplicationAddress
+load 20
+asset_holding_get AssetBalance
+pop
+store 23
+b label34
+label33:
+global CurrentApplicationAddress
+balance
+store 23
+label34:
+pushbytes 0x73746172745f6f75747075745f61737365745f62616c616e6365 // "start_output_asset_balance"
+app_global_get
+store 24
+load 23
+load 24
+-
+store 25
+load 25
+load 18
+>=
+assert
+load 20
+load 25
+global CurrentApplicationAddress
+txn Sender
+callsub label35
+pushbytes 0x78b9cd04 // 0x78b9cd04
+load 21
+itob
+load 20
+itob
+load 19
+itob
+load 25
+itob
+concat
+concat
+concat
+concat
+log
+retsub
+label22:
+store 26
+store 27
+store 28
+store 29
+txn Sender
+store 30
+load 28
+pushint 8
+pushint 0
+*
+pushint 8
+extract3
+btoi
+store 31
+load 28
+pushint 8
+load 26
+*
+pushint 8
+extract3
+btoi
+store 32
+load 29
+assert
+load 29
+store 36
+pushint 0
+store 37
+label43:
+load 37
+load 26
+==
+bnz label36
+load 28
+pushint 8
+load 37
+*
+pushint 8
+extract3
+btoi
+store 33
+load 28
+pushint 8
+load 37
+pushint 1
++
+*
+pushint 8
+extract3
+btoi
+store 34
+load 27
+pushint 32
+load 37
+*
+pushint 32
+extract3
+store 35
+load 35
+pushbytes 0x74616c676f5f6170705f61646472657373 // "talgo_app_address"
+app_global_get
+==
+load 33
+pushint 0
+==
+&&
+bz label37
+load 36
+callsub label38
+store 36
+b label39
+label37:
+load 35
+pushbytes 0x74616c676f5f6170705f61646472657373 // "talgo_app_address"
+app_global_get
+==
+load 34
+pushint 0
+==
+&&
+bz label40
+load 36
+callsub label41
+store 36
+b label39
+label40:
+load 35
+pushbytes 0x66697865642d696e707574 // "fixed-input"
+load 33
+load 34
+load 36
+pushint 1
+callsub label42
+store 36
+pop
+label39:
+load 37
+pushint 1
++
+store 37
+b label43
+label36:
+load 34
+load 32
+==
+assert
+pushbytes 0x8162da9e // 0x8162da9e
+load 31
+itob
+load 32
+itob
+load 29
+itob
+load 36
+itob
+concat
+concat
+concat
+concat
+log
+retsub
+label19:
+retsub
+label18:
+store 38
+pushint 0
+store 39
+label46:
+load 39
+pushint 8
+==
+bnz label44
+load 38
+pushint 8
+load 39
+*
+pushint 8
+extract3
+btoi
+callsub label45
+load 39
+pushint 1
++
+store 39
+b label46
+label44:
+retsub
+label14:
+store 40
+txn Sender
+pushbytes 0x6d616e61676572 // "manager"
+app_global_get
+==
+assert
+pushbytes 0x70726f706f7365645f6d616e61676572 // "proposed_manager"
+load 40
+app_global_put
+pushbytes 0x9f8a67ff // 0x9f8a67ff
+load 40
+concat
+log
+retsub
+label15:
+pushbytes 0x70726f706f7365645f6d616e61676572 // "proposed_manager"
+app_global_get
+store 41
+txn Sender
+load 41
+==
+assert
+pushbytes 0x6d616e61676572 // "manager"
+load 41
+app_global_put
+pushbytes 0x70726f706f7365645f6d616e61676572 // "proposed_manager"
+pushbytes 0x // ""
+app_global_put
+pushbytes 0xbb6affe3 // 0xbb6affe3
+load 41
+concat
+log
+retsub
+label16:
+store 42
+txn Sender
+pushbytes 0x6d616e61676572 // "manager"
+app_global_get
+==
+assert
+pushbytes 0x65787472615f636f6c6c6563746f72 // "extra_collector"
+load 42
+app_global_put
+retsub
+label17:
+store 43
+txn GroupIndex
+pushint 0
+==
+assert
+txn Sender
+pushbytes 0x65787472615f636f6c6c6563746f72 // "extra_collector"
+app_global_get
+==
+assert
+txn NumAssets
+store 46
+global CurrentApplicationAddress
+load 43
+callsub label47
+store 44
+load 44
+assert
+load 43
+load 44
+global CurrentApplicationAddress
+pushbytes 0x65787472615f636f6c6c6563746f72 // "extra_collector"
+app_global_get
+callsub label35
+retsub
+label38:
+store 47
+callsub label48
+callsub label49
+pushint 1
+itxn_field TypeEnum
+pushint 0
+itxn_field Fee
+pushbytes 0x74616c676f5f6170705f61646472657373 // "talgo_app_address"
+app_global_get
+itxn_field Receiver
+load 47
+itxn_field Amount
+callsub label50
+callsub label49
+pushint 6
+itxn_field TypeEnum
+pushint 0
+itxn_field Fee
+pushbytes 0x74616c676f5f6170705f6964 // "talgo_app_id"
+app_global_get
+itxn_field ApplicationID
+pushbytes 0x6d696e74 // "mint"
+itxn_field ApplicationArgs
+load 47
+itob
+itxn_field ApplicationArgs
+callsub label50
+callsub label51
+itxn LastLog
+pushint 44
+extract_uint64
+store 48
+load 48
+retsub
+label41:
+store 49
+callsub label48
+callsub label49
+pushint 4
+itxn_field TypeEnum
+pushint 0
+itxn_field Fee
+pushbytes 0x74616c676f5f6170705f61646472657373 // "talgo_app_address"
+app_global_get
+itxn_field AssetReceiver
+load 49
+itxn_field AssetAmount
+pushbytes 0x74616c676f5f61737365745f6964 // "talgo_asset_id"
+app_global_get
+itxn_field XferAsset
+callsub label50
+callsub label49
+pushint 6
+itxn_field TypeEnum
+pushint 0
+itxn_field Fee
+pushbytes 0x74616c676f5f6170705f6964 // "talgo_app_id"
+app_global_get
+itxn_field ApplicationID
+pushbytes 0x6275726e // "burn"
+itxn_field ApplicationArgs
+load 49
+itob
+itxn_field ApplicationArgs
+callsub label50
+callsub label51
+itxn LastLog
+pushint 44
+extract_uint64
+store 50
+load 50
+retsub
+label42:
+store 51
+store 52
+store 53
+store 54
+store 55
+store 56
+global CurrentApplicationAddress
+load 54
+callsub label47
+store 57
+global CurrentApplicationAddress
+load 53
+callsub label47
+store 58
+load 54
+bz label52
+callsub label48
+callsub label49
+pushint 4
+itxn_field TypeEnum
+pushint 0
+itxn_field Fee
+load 56
+itxn_field AssetReceiver
+load 52
+itxn_field AssetAmount
+load 54
+itxn_field XferAsset
+callsub label50
+callsub label49
+pushint 6
+itxn_field TypeEnum
+pushint 0
+itxn_field Fee
+pushbytes 0x74696e796d616e5f6170705f6964 // "tinyman_app_id"
+app_global_get
+itxn_field ApplicationID
+pushbytes 0x73776170 // "swap"
+itxn_field ApplicationArgs
+load 55
+itxn_field ApplicationArgs
+load 51
+itob
+itxn_field ApplicationArgs
+load 56
+itxn_field Accounts
+load 54
+itxn_field Assets
+load 53
+itxn_field Assets
+txn Note
+itxn_field Note
+callsub label50
+callsub label51
+b label53
+label52:
+callsub label48
+callsub label49
+pushint 1
+itxn_field TypeEnum
+pushint 0
+itxn_field Fee
+load 56
+itxn_field Receiver
+load 52
+itxn_field Amount
+callsub label50
+callsub label49
+pushint 6
+itxn_field TypeEnum
+pushint 0
+itxn_field Fee
+pushbytes 0x74696e796d616e5f6170705f6964 // "tinyman_app_id"
+app_global_get
+itxn_field ApplicationID
+pushbytes 0x73776170 // "swap"
+itxn_field ApplicationArgs
+load 55
+itxn_field ApplicationArgs
+load 51
+itob
+itxn_field ApplicationArgs
+load 56
+itxn_field Accounts
+load 54
+itxn_field Assets
+load 53
+itxn_field Assets
+txn Note
+itxn_field Note
+callsub label50
+callsub label51
+label53:
+global CurrentApplicationAddress
+load 54
+callsub label47
+store 59
+global CurrentApplicationAddress
+load 53
+callsub label47
+store 60
+load 60
+load 58
+-
+store 61
+load 59
+load 57
+load 52
+-
+-
+store 62
+load 62
+load 61
+retsub
+label45:
+store 63
+load 63
+bz label54
+global CurrentApplicationAddress
+load 63
+asset_holding_get AssetBalance
+store 64
+pop
+load 64
+pushint 0
+==
+bz label54
+load 63
+pushint 0
+global CurrentApplicationAddress
+global CurrentApplicationAddress
+callsub label35
+label54:
+retsub
+label47:
+store 65
+store 66
+pushint 0
+store 67
+load 65
+!
+bz label55
+load 66
+balance
+load 66
+min_balance
+-
+store 67
+b label56
+label55:
+load 66
+load 65
+asset_holding_get AssetBalance
+pop
+store 67
+label56:
+load 67
+retsub
+label35:
+store 68
+store 69
+store 70
+store 71
+load 71
+!
+bz label57
+callsub label49
+pushint 1
+itxn_field TypeEnum
+load 69
+itxn_field Sender
+load 68
+itxn_field Receiver
+load 70
+itxn_field Amount
+pushint 0
+itxn_field Fee
+callsub label50
+b label58
+label57:
+callsub label49
+pushint 4
+itxn_field TypeEnum
+load 69
+itxn_field Sender
+load 68
+itxn_field AssetReceiver
+load 70
+itxn_field AssetAmount
+load 71
+itxn_field XferAsset
+pushint 0
+itxn_field Fee
+callsub label50
+label58:
+retsub
+label48:
+load 72
+!
+assert
+pushint 1
+store 72
+retsub
+label49:
+load 72
+switch label59 label60 label61
+err
+label59:
+itxn_begin
+retsub
+label60:
+itxn_begin
+pushint 2
+store 72
+retsub
+label61:
+itxn_next
+retsub
+label50:
+load 72
+bz label62
+retsub
+label62:
+itxn_submit
+retsub
+label51:
+itxn_submit
+pushint 0
+store 72
+retsub

@@ -1,0 +1,737 @@
+#pragma version 11
+intcblock 1 0 8 4 152 102500
+bytecblock 0x61 0x6e6578745f61756374696f6e5f6964 0x
+txn ApplicationID
+bnz label1
+bytec_1 // "next_auction_id"
+intc_1 // 0
+app_global_put
+label1:
+txn NumAppArgs
+bz label2
+txn OnCompletion
+!
+assert
+txn ApplicationID
+assert
+pushbytess 0x931d90e6 0xd58a1900 0x772b39ba 0x58a020de 0x3d1d2f0f 0xf0a2a20e
+txna ApplicationArgs 0
+match label3 label4 label5 label6 label7 label8
+err
+label2:
+intc_1 // 0
+intc_3 // 4
+txn OnCompletion
+match label9 label10
+err
+label10:
+txn ApplicationID
+assert
+txn Sender
+global CreatorAddress
+==
+assert
+intc_0 // 1
+return
+label9:
+txn ApplicationID
+!
+return
+label3:
+txn GroupIndex
+intc_0 // 1
+-
+dupn 2
+gtxns TypeEnum
+intc_0 // 1
+==
+assert
+txna ApplicationArgs 1
+dup
+cover 2
+dup
+len
+intc_2 // 8
+==
+assert
+txna ApplicationArgs 2
+dup
+cover 3
+dup
+len
+intc_2 // 8
+==
+assert
+txna ApplicationArgs 3
+dup
+cover 4
+dup
+len
+intc_2 // 8
+==
+assert
+txna ApplicationArgs 4
+dup
+len
+intc_2 // 8
+==
+assert
+txna ApplicationArgs 5
+dup
+cover 6
+dup
+len
+intc_2 // 8
+==
+assert
+txna ApplicationArgs 6
+dup
+cover 7
+dup
+len
+intc_2 // 8
+==
+assert
+txna ApplicationArgs 7
+dup
+cover 8
+len
+pushint 32
+==
+assert
+dig 6
+gtxns GroupIndex
+intc_0 // 1
++
+txn GroupIndex
+==
+assert
+dig 6
+gtxns Sender
+txn Sender
+==
+assert
+uncover 6
+gtxns Receiver
+global CurrentApplicationAddress
+==
+assert
+txn GroupIndex
+intc_0 // 1
++
+dup
+gtxns TypeEnum
+intc_3 // 4
+==
+assert
+dup
+gtxns Sender
+txn Sender
+==
+assert
+dup
+gtxns AssetSender
+global ZeroAddress
+==
+assert
+dup
+gtxns AssetReceiver
+global CurrentApplicationAddress
+==
+assert
+dup
+gtxns AssetAmount
+intc_0 // 1
+==
+assert
+gtxns XferAsset
+uncover 6
+btoi
+dup
+cover 7
+==
+assert
+uncover 4
+btoi
+dup
+cover 5
+assert
+uncover 2
+btoi
+dup
+cover 4
+dup
+assert
+pushint 2592000
+<=
+assert
+btoi
+assert
+btoi
+pushint 3600
+<=
+assert
+btoi
+dup
+bz label11
+dup
+dig 3
+>=
+assert
+label11:
+global CurrentApplicationAddress
+dig 4
+dup
+cover 2
+asset_holding_get AssetBalance
+bury 1
+!
+assert
+intc_1 // 0
+bytec_1 // "next_auction_id"
+app_global_get_ex
+assert
+dup
+itob
+swap
+intc_0 // 1
++
+bytec_1 // "next_auction_id"
+swap
+app_global_put
+global LatestTimestamp
+dig 4
++
+global ZeroAddress
+txn Sender
+uncover 2
+itob
+swap
+dig 14
+concat
+dig 13
+concat
+dig 12
+concat
+swap
+concat
+dig 10
+concat
+dig 9
+concat
+dig 8
+concat
+pushbytes 0x0000000000000000 // 0x0000000000000000
+concat
+swap
+concat
+pushbytes 0x00000000000000000000000000000000 // 0x00000000000000000000000000000000
+concat
+bytec_0 // "a"
+dig 2
+concat
+dup
+uncover 2
+box_put
+itxn_begin
+global CurrentApplicationAddress
+intc_1 // 0
+itxn_field AssetAmount
+itxn_field AssetReceiver
+uncover 2
+itxn_field XferAsset
+intc_3 // 4
+itxn_field TypeEnum
+intc_1 // 0
+itxn_field Fee
+itxn_submit
+box_len
+pop
+intc_2 // 8
++
+pushint 400
+*
+intc 5 // 102500
++
+dig 12
+gtxns Amount
+==
+assert
+pushbytes 0x151f7c75 // 0x151f7c75
+swap
+concat
+log
+intc_0 // 1
+return
+label4:
+bytec_2 // ""
+txn GroupIndex
+intc_0 // 1
+-
+dupn 2
+gtxns TypeEnum
+intc_0 // 1
+==
+assert
+txna ApplicationArgs 1
+dup
+len
+intc_2 // 8
+==
+assert
+bytec_0 // "a"
+swap
+concat
+dup
+cover 2
+box_get
+swap
+dup
+cover 2
+cover 3
+assert
+dup
+intc 4 // 152
+extract_uint64
+!
+assert
+global LatestTimestamp
+dig 1
+pushint 56
+extract_uint64
+dup
+cover 4
+<
+assert
+txn Sender
+dig 1
+extract 0 32
+!=
+assert
+dig 1
+gtxns GroupIndex
+intc_0 // 1
++
+txn GroupIndex
+==
+assert
+dig 1
+gtxns Sender
+txn Sender
+==
+assert
+swap
+gtxns Receiver
+global CurrentApplicationAddress
+==
+assert
+pushint 112
+extract_uint64
+dup
+bnz label12
+dig 4
+gtxns Amount
+dig 3
+pushint 40
+extract_uint64
+>=
+assert
+label15:
+dup
+bz label13
+itxn_begin
+dig 2
+extract 120 32
+dig 1
+itxn_field Amount
+itxn_field Receiver
+intc_0 // 1
+itxn_field TypeEnum
+intc_1 // 0
+itxn_field Fee
+itxn_submit
+label13:
+dig 2
+pushint 64
+extract_uint64
+dup
+bury 7
+bz label14
+dig 1
+global LatestTimestamp
+-
+dig 6
+<
+bz label14
+global LatestTimestamp
+dig 6
++
+itob
+dig 3
+swap
+replace2 56
+bury 3
+label14:
+dig 4
+gtxns Amount
+itob
+dig 3
+swap
+replace2 112
+txn Sender
+replace2 120
+dig 4
+swap
+box_put
+intc_0 // 1
+return
+label12:
+dig 4
+gtxns Amount
+dig 3
+pushint 72
+extract_uint64
+dig 2
++
+>=
+assert
+b label15
+label5:
+txna ApplicationArgs 1
+dup
+len
+intc_2 // 8
+==
+assert
+bytec_0 // "a"
+dig 1
+concat
+box_get
+assert
+txn Sender
+dig 1
+extract 0 32
+swap
+dig 1
+==
+assert
+dig 1
+pushint 112
+extract_uint64
+!
+assert
+dig 1
+intc 4 // 152
+extract_uint64
+!
+assert
+itxn_begin
+swap
+pushint 32
+extract_uint64
+intc_0 // 1
+itxn_field AssetAmount
+dig 1
+itxn_field AssetCloseTo
+dig 1
+itxn_field AssetReceiver
+itxn_field XferAsset
+intc_3 // 4
+itxn_field TypeEnum
+intc_1 // 0
+itxn_field Fee
+itxn_submit
+callsub label16
+intc_0 // 1
+return
+label6:
+bytec_2 // ""
+dupn 4
+txna ApplicationArgs 1
+dupn 2
+len
+intc_2 // 8
+==
+assert
+bytec_0 // "a"
+swap
+concat
+dup
+box_get
+swap
+dup
+uncover 2
+assert
+dup
+intc 4 // 152
+extract_uint64
+!
+assert
+global LatestTimestamp
+dig 1
+pushint 56
+extract_uint64
+>=
+assert
+dup
+pushint 112
+extract_uint64
+swap
+pushint 48
+extract_uint64
+dup
+bz label17
+dup2
+<
+bz label17
+intc_0 // 1
+bury 7
+label25:
+dig 1
+bz label18
+dig 6
+bz label19
+label18:
+dig 1
+bz label20
+itxn_begin
+dig 2
+extract 120 32
+dig 2
+itxn_field Amount
+itxn_field Receiver
+intc_0 // 1
+itxn_field TypeEnum
+intc_1 // 0
+itxn_field Fee
+itxn_submit
+label20:
+itxn_begin
+dig 2
+dup
+pushint 32
+extract_uint64
+swap
+extract 0 32
+intc_0 // 1
+itxn_field AssetAmount
+dup
+itxn_field AssetCloseTo
+dup
+itxn_field AssetReceiver
+swap
+itxn_field XferAsset
+intc_3 // 4
+itxn_field TypeEnum
+intc_1 // 0
+itxn_field Fee
+itxn_submit
+dig 5
+swap
+callsub label16
+label24:
+intc_0 // 1
+return
+label19:
+dig 2
+pushint 32
+extract_uint64
+bury 8
+dig 1
+dup
+pushint 500
+*
+pushint 10000
+/
+dup
+cover 2
+bury 12
+dup
+pushint 300
+*
+pushint 10000
+/
+dup
+bury 12
+swap
+dig 2
+-
+swap
+-
+bury 7
+bz label21
+itxn_begin
+dig 7
+asset_params_get AssetCreator
+assert
+pushbytes 0x53746174746f2061756374696f6e20726f79616c7479 // "Statto auction royalty"
+itxn_field Note
+dig 10
+itxn_field Amount
+itxn_field Receiver
+intc_0 // 1
+itxn_field TypeEnum
+intc_1 // 0
+itxn_field Fee
+itxn_submit
+label21:
+dig 8
+bz label22
+itxn_begin
+dig 2
+extract 80 32
+dig 9
+itxn_field Amount
+itxn_field Receiver
+intc_0 // 1
+itxn_field TypeEnum
+intc_1 // 0
+itxn_field Fee
+itxn_submit
+label22:
+dig 5
+bz label23
+itxn_begin
+dig 2
+extract 0 32
+dig 6
+itxn_field Amount
+itxn_field Receiver
+intc_0 // 1
+itxn_field TypeEnum
+intc_1 // 0
+itxn_field Fee
+itxn_submit
+label23:
+dig 2
+pushbytes 0x0000000000000001 // 0x0000000000000001
+replace2 152
+global Round
+itob
+replace2 160
+dig 4
+swap
+box_put
+b label24
+label17:
+intc_1 // 0
+bury 7
+b label25
+label7:
+txna ApplicationArgs 1
+dup
+len
+intc_2 // 8
+==
+assert
+bytec_0 // "a"
+dig 1
+concat
+box_get
+assert
+dup
+intc 4 // 152
+extract_uint64
+intc_0 // 1
+==
+assert
+itxn_begin
+dup
+pushint 32
+extract_uint64
+dig 1
+extract 120 32
+intc_0 // 1
+itxn_field AssetAmount
+dup
+itxn_field AssetCloseTo
+itxn_field AssetReceiver
+itxn_field XferAsset
+intc_3 // 4
+itxn_field TypeEnum
+intc_1 // 0
+itxn_field Fee
+itxn_submit
+extract 0 32
+callsub label16
+intc_0 // 1
+return
+label8:
+txna ApplicationArgs 1
+dup
+len
+intc_2 // 8
+==
+assert
+bytec_0 // "a"
+dig 1
+concat
+box_get
+assert
+txn Sender
+dig 1
+extract 0 32
+swap
+dig 1
+==
+assert
+dig 1
+intc 4 // 152
+extract_uint64
+intc_0 // 1
+==
+assert
+global Round
+dig 2
+pushint 160
+extract_uint64
+pushint 432000
++
+>=
+assert
+itxn_begin
+swap
+pushint 32
+extract_uint64
+intc_0 // 1
+itxn_field AssetAmount
+dig 1
+itxn_field AssetCloseTo
+dig 1
+itxn_field AssetReceiver
+itxn_field XferAsset
+intc_3 // 4
+itxn_field TypeEnum
+intc_1 // 0
+itxn_field Fee
+itxn_submit
+callsub label16
+intc_0 // 1
+return
+label16:
+proto 2 0
+bytec_0 // "a"
+frame_dig -2
+concat
+dup
+box_len
+assert
+intc_2 // 8
++
+pushint 400
+*
+swap
+box_del
+pop
+itxn_begin
+intc 5 // 102500
++
+itxn_field Amount
+frame_dig -1
+itxn_field Receiver
+intc_0 // 1
+itxn_field TypeEnum
+intc_1 // 0
+itxn_field Fee
+itxn_submit
+retsub
