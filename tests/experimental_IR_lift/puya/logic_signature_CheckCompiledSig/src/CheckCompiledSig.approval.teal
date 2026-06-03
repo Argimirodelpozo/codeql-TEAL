@@ -1,0 +1,49 @@
+#pragma version 11
+#pragma typetrack false
+
+// algopy.arc4.ARC4Contract.approval_program() -> uint64:
+main:
+    // logic_signature/compiled_logic_sig.py:15
+    // class CheckCompiledSig(arc4.ARC4Contract):
+    txn NumAppArgs
+    bz main___algopy_default_create@5
+    pushbytes 0xbb31fc82 // method "check_sig_with_logic_sig_only_op_compiles()void"
+    txna ApplicationArgs 0
+    match main_check_sig_with_logic_sig_only_op_compiles_route@3
+    err
+
+main_check_sig_with_logic_sig_only_op_compiles_route@3:
+    // logic_signature/compiled_logic_sig.py:16
+    // @arc4.abimethod()
+    txn OnCompletion
+    !
+    txn ApplicationID
+    &&
+    assert
+    b check_sig_with_logic_sig_only_op_compiles
+
+main___algopy_default_create@5:
+    txn OnCompletion
+    !
+    txn ApplicationID
+    !
+    &&
+    return
+
+
+// test_cases.logic_signature.compiled_logic_sig.CheckCompiledSig.check_sig_with_logic_sig_only_op_compiles[routing]() -> void:
+check_sig_with_logic_sig_only_op_compiles:
+    // logic_signature/compiled_logic_sig.py:19
+    // Txn.sender == compile_logicsig(dont_use_this).account
+    txn Sender
+    pushbytes base32(FLKURIXDVLIMVYMT5CZOYXMJ26X7X6B2BA5RKJY7Y75QS5AGFVNQ) // addr FLKURIXDVLIMVYMT5CZOYXMJ26X7X6B2BA5RKJY7Y75QS5AGFVNQ4747FI
+    ==
+    // logic_signature/compiled_logic_sig.py:18-20
+    // assert (
+    //     Txn.sender == compile_logicsig(dont_use_this).account
+    // ), "expected to be signed by logic sig"
+    assert // expected to be signed by logic sig
+    // logic_signature/compiled_logic_sig.py:16
+    // @arc4.abimethod()
+    pushint 1
+    return

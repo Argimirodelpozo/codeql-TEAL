@@ -1,0 +1,44 @@
+#pragma version 11
+#pragma typetrack false
+
+// algopy.arc4.ARC4Contract.approval_program() -> uint64:
+main:
+    // compile/apps.py:37
+    // class LargeProgram(ARC4Contract):
+    txn NumAppArgs
+    bz main___algopy_default_create@6
+    pushbytess 0x24378d3c 0xf5e4fd4d // method "delete()void", method "get_big_bytes_length()uint64"
+    txna ApplicationArgs 0
+    match main_delete_route@3 main_get_big_bytes_length_route@4
+    err
+
+main_get_big_bytes_length_route@4:
+    // compile/apps.py:38
+    // @arc4.abimethod()
+    txn OnCompletion
+    !
+    txn ApplicationID
+    &&
+    assert
+    pushbytes 0x151f7c750000000000001000
+    log
+    pushint 1
+    return
+
+main_delete_route@3:
+    // compile/apps.py:42
+    // @arc4.abimethod(allow_actions=["DeleteApplication"])
+    txn OnCompletion
+    pushint 5 // DeleteApplication
+    ==
+    txn ApplicationID
+    &&
+    return
+
+main___algopy_default_create@6:
+    txn OnCompletion
+    !
+    txn ApplicationID
+    !
+    &&
+    return

@@ -1,0 +1,51 @@
+#pragma version 11
+#pragma typetrack false
+
+// algopy.arc4.ARC4Contract.approval_program() -> uint64:
+main:
+    // group_side_effects/other.py:4
+    // class AppCall(ARC4Contract):
+    txn NumAppArgs
+    bz main___algopy_default_create@5
+    pushbytes 0xd3479e65 // method "some_value()uint64"
+    txna ApplicationArgs 0
+    match main_some_value_route@3
+    err
+
+main_some_value_route@3:
+    // group_side_effects/other.py:5
+    // @arc4.abimethod()
+    txn OnCompletion
+    !
+    txn ApplicationID
+    &&
+    assert
+    b some_value
+
+main___algopy_default_create@5:
+    txn OnCompletion
+    !
+    txn ApplicationID
+    !
+    &&
+    return
+
+
+// test_cases.group_side_effects.other.AppCall.some_value[routing]() -> void:
+some_value:
+    // group_side_effects/other.py:7
+    // return Global.group_size * (Txn.group_index + 1)
+    global GroupSize
+    txn GroupIndex
+    pushint 1
+    +
+    *
+    // group_side_effects/other.py:5
+    // @arc4.abimethod()
+    itob
+    pushbytes 0x151f7c75
+    swap
+    concat
+    log
+    pushint 1
+    return

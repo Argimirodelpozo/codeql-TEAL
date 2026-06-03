@@ -1,0 +1,17 @@
+#pragma version 11
+#pragma typetrack false
+
+// test_cases.stubs.biguint.BigUIntContract.approval_program() -> uint64:
+main:
+    // stubs/biguint.py:10
+    // assert BigUInt(1 if Txn.num_app_args else 5) == 5, "constructor expressions supported"
+    pushbytess 0x05 0x01
+    txn NumAppArgs
+    select
+    pushbytes 0x05
+    b==
+    assert // constructor expressions supported
+    // stubs/biguint.py:13
+    // return True
+    pushint 1
+    return

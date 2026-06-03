@@ -1,0 +1,124 @@
+#pragma version 11
+#pragma typetrack false
+
+// algopy.arc4.ARC4Contract.approval_program() -> uint64:
+main:
+    intcblock 0
+    // avm_11/contract.py:4
+    // class Contract(ARC4Contract, avm_version=11):
+    txn NumAppArgs
+    bz main___algopy_default_create@5
+    pushbytes 0xc2b8dd8a // method "test_new_ops()void"
+    txna ApplicationArgs 0
+    match main_test_new_ops_route@3
+    err
+
+main_test_new_ops_route@3:
+    // avm_11/contract.py:5
+    // @arc4.abimethod
+    txn OnCompletion
+    !
+    txn ApplicationID
+    &&
+    assert
+    b test_new_ops
+
+main___algopy_default_create@5:
+    txn OnCompletion
+    !
+    txn ApplicationID
+    !
+    &&
+    return
+
+
+// test_cases.avm_11.contract.Contract.test_new_ops[routing]() -> void:
+test_new_ops:
+    // avm_11/contract.py:7-8
+    // # op functions
+    // assert op.online_stake()
+    online_stake
+    assert
+    // avm_11/contract.py:9
+    // assert op.mimc(op.MiMCConfigurations.BN254Mp110, op.bzero(32))
+    pushint 32
+    bzero
+    mimc BN254Mp110
+    pop
+    // avm_11/contract.py:16-17
+    // # Block
+    // assert not op.Block.blk_proposer(0), "proposer"
+    intc_0 // 0
+    block BlkProposer
+    global ZeroAddress
+    ==
+    assert // proposer
+    // avm_11/contract.py:18
+    // assert op.Block.blk_fees_collected(0), "fees collected"
+    intc_0 // 0
+    block BlkFeesCollected
+    assert // fees collected
+    // avm_11/contract.py:19
+    // assert op.Block.blk_bonus(0), "bonus"
+    intc_0 // 0
+    block BlkBonus
+    assert // bonus
+    // avm_11/contract.py:21
+    // assert op.Block.blk_fee_sink(0), "fee sink"
+    intc_0 // 0
+    block BlkFeeSink
+    global ZeroAddress
+    !=
+    assert // fee sink
+    // avm_11/contract.py:22
+    // assert op.Block.blk_protocol(0), "protocol"
+    intc_0 // 0
+    block BlkProtocol
+    len
+    assert // protocol
+    // avm_11/contract.py:23
+    // assert op.Block.blk_txn_counter(0), "txn counter"
+    intc_0 // 0
+    block BlkTxnCounter
+    assert // txn counter
+    // avm_11/contract.py:24
+    // assert op.Block.blk_proposer_payout(0), "proposer payout"
+    intc_0 // 0
+    block BlkProposerPayout
+    assert // proposer payout
+    // avm_11/contract.py:26-27
+    // # Global
+    // assert op.Global.payouts_enabled, "payouts_enabled"
+    global PayoutsEnabled
+    assert // payouts_enabled
+    // avm_11/contract.py:28
+    // assert op.Global.payouts_go_online_fee, "payouts_go_online_fee"
+    global PayoutsGoOnlineFee
+    assert // payouts_go_online_fee
+    // avm_11/contract.py:29
+    // assert op.Global.payouts_percent, "payouts_percent"
+    global PayoutsPercent
+    assert // payouts_percent
+    // avm_11/contract.py:30
+    // assert op.Global.payouts_min_balance, "payouts_min_balance"
+    global PayoutsMinBalance
+    assert // payouts_min_balance
+    // avm_11/contract.py:31
+    // assert op.Global.payouts_max_balance, "payouts_max_balance"
+    global PayoutsMaxBalance
+    assert // payouts_max_balance
+    // avm_11/contract.py:33-34
+    // # Voter params
+    // g, h = op.VoterParamsGet.voter_balance(0)
+    intc_0 // 0
+    voter_params_get VoterBalance
+    popn 2
+    // avm_11/contract.py:35
+    // i, j = op.VoterParamsGet.voter_incentive_eligible(0)
+    intc_0 // 0
+    voter_params_get VoterIncentiveEligible
+    popn 2
+    // avm_11/contract.py:5
+    // @arc4.abimethod
+    pushint 1
+    return

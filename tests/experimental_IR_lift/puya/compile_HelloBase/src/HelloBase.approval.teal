@@ -1,0 +1,103 @@
+#pragma version 11
+#pragma typetrack false
+
+// algopy.arc4.ARC4Contract.approval_program() -> uint64:
+main:
+    bytecblock "greeting"
+    txn ApplicationID
+    bnz main_after_if_else@2
+    // compile/apps.py:22
+    // self.greeting = String()
+    bytec_0 // "greeting"
+    pushbytes ""
+    app_global_put
+
+main_after_if_else@2:
+    // compile/apps.py:20
+    // class HelloBase(ARC4Contract):
+    txn NumAppArgs
+    bz main_bare_routing@8
+    pushbytess 0x24378d3c 0xd0a28200 // method "delete()void", method "greet(string)string"
+    txna ApplicationArgs 0
+    match main_delete_route@5 main_greet_route@6
+    err
+
+main_greet_route@6:
+    // compile/apps.py:32
+    // @arc4.abimethod()
+    txn OnCompletion
+    !
+    txn ApplicationID
+    &&
+    assert
+    b greet
+
+main_delete_route@5:
+    // compile/apps.py:24
+    // @arc4.abimethod(allow_actions=["DeleteApplication"])
+    txn OnCompletion
+    pushint 5 // DeleteApplication
+    ==
+    txn ApplicationID
+    &&
+    return
+
+main_bare_routing@8:
+    // compile/apps.py:20
+    // class HelloBase(ARC4Contract):
+    pushints 0 4 // NoOp, UpdateApplication
+    txn OnCompletion
+    match main___algopy_default_create@9 main_update@10
+    err
+
+main_update@10:
+    // compile/apps.py:28
+    // @arc4.baremethod(allow_actions=["UpdateApplication"])
+    txn ApplicationID
+    return
+
+main___algopy_default_create@9:
+    txn ApplicationID
+    !
+    return
+
+
+// test_cases.compile.apps.HelloBase.greet[routing]() -> void:
+greet:
+    // compile/apps.py:32
+    // @arc4.abimethod()
+    txna ApplicationArgs 1
+    dup
+    pushint 0
+    extract_uint16 // on error: invalid array length header
+    pushint 2
+    +
+    dig 1
+    len
+    ==
+    assert // invalid number of bytes for arc4.dynamic_array<arc4.uint8>
+    extract 2 0
+    // compile/apps.py:34
+    // return self.greeting + " " + name
+    pushint 0
+    bytec_0 // "greeting"
+    app_global_get_ex
+    assert // check self.greeting exists
+    pushbytes " "
+    concat
+    swap
+    concat
+    // compile/apps.py:32
+    // @arc4.abimethod()
+    dup
+    len
+    itob
+    extract 6 2
+    swap
+    concat
+    pushbytes 0x151f7c75
+    swap
+    concat
+    log
+    pushint 1
+    return

@@ -7,6 +7,8 @@ teal/extractor/target/
 *-db/
 tests/dbs/
 src/security/detections-dbs/
+# Experimental IR-lift corpus: keep the .teal sources, ignore the heavy DBs
+tests/experimental_IR_lift/**/db/
 
 # Editor / IDE / agent state
 .claude/

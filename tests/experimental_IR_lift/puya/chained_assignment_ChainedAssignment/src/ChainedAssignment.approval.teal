@@ -1,0 +1,44 @@
+#pragma version 11
+#pragma typetrack false
+
+// test_cases.chained_assignment.contract.ChainedAssignment.approval_program() -> uint64:
+main:
+    bytecblock 0x48656c6c6f2c20776f726c642120f09f918b
+    txn ApplicationID
+    bnz main_after_if_else@2
+    // chained_assignment/contract.py:29
+    // result = left + b" " + right
+    bytec_0 // 0x48656c6c6f2c20776f726c642120f09f918b
+    // chained_assignment/contract.py:30
+    // log(result)
+    log
+    // chained_assignment/contract.py:10
+    // self.state1 = self.state2 = join_log_and_return(
+    pushbytes "state2"
+    // chained_assignment/contract.py:29
+    // result = left + b" " + right
+    bytec_0 // 0x48656c6c6f2c20776f726c642120f09f918b
+    // chained_assignment/contract.py:10-13
+    // self.state1 = self.state2 = join_log_and_return(
+    //     right=Bytes(WAVE),
+    //     left=Bytes(b"Hello, world!"),
+    // )
+    app_global_put
+    // chained_assignment/contract.py:10
+    // self.state1 = self.state2 = join_log_and_return(
+    pushbytes "state1"
+    // chained_assignment/contract.py:29
+    // result = left + b" " + right
+    bytec_0 // 0x48656c6c6f2c20776f726c642120f09f918b
+    // chained_assignment/contract.py:10-13
+    // self.state1 = self.state2 = join_log_and_return(
+    //     right=Bytes(WAVE),
+    //     left=Bytes(b"Hello, world!"),
+    // )
+    app_global_put
+
+main_after_if_else@2:
+    // chained_assignment/contract.py:21
+    // return True
+    pushint 1
+    return

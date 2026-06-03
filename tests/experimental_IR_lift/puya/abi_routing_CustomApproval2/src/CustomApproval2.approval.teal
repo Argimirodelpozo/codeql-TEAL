@@ -1,0 +1,17 @@
+#pragma version 11
+#pragma typetrack false
+
+// test_cases.abi_routing.custom_approval.CustomApproval2.approval_program() -> uint64:
+main:
+    txn ApplicationID
+    bnz main_after_if_else@2
+    // abi_routing/custom_approval.py:9
+    // assert Txn.application_id == 0, "nonsense assert just to generate an init method"
+    txn ApplicationID
+    !
+    assert // nonsense assert just to generate an init method
+
+main_after_if_else@2:
+    // abi_routing/custom_approval.py:31
+    // return False
+    err

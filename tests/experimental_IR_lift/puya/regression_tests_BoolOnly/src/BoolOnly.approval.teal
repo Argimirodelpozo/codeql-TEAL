@@ -1,0 +1,150 @@
+#pragma version 11
+#pragma typetrack false
+
+// algopy.arc4.ARC4Contract.approval_program() -> uint64:
+main:
+    intcblock 0 1 2
+    bytecblock 0x151f7c75
+    // regression_tests/bool_only.py:4
+    // class BoolOnly(arc4.ARC4Contract):
+    txn NumAppArgs
+    bz main___algopy_default_create@10
+    txn OnCompletion
+    !
+    assert
+    txn ApplicationID
+    assert
+    pushbytess 0xa85bff00 0xc4af225c 0x83589f2d // method "set_0_convert(byte[])byte[]", method "set_0_compare(byte[])byte[]", method "bool_only_properties()void"
+    txna ApplicationArgs 0
+    match set_0_convert set_0_compare bool_only_properties
+    err
+
+main___algopy_default_create@10:
+    txn OnCompletion
+    !
+    txn ApplicationID
+    !
+    &&
+    return
+
+
+// test_cases.regression_tests.bool_only.BoolOnly.set_0_convert[routing]() -> void:
+set_0_convert:
+    // regression_tests/bool_only.py:5
+    // @arc4.abimethod()
+    txna ApplicationArgs 1
+    dup
+    intc_0 // 0
+    extract_uint16 // on error: invalid array length header
+    intc_2 // 2
+    +
+    dig 1
+    len
+    ==
+    assert // invalid number of bytes for arc4.dynamic_array<arc4.uint8>
+    extract 2 0
+    // regression_tests/bool_only.py:7
+    // return op.setbit_bytes(inp, 0, bool(Txn.num_app_args))
+    txn NumAppArgs
+    intc_0 // 0
+    !=
+    intc_0 // 0
+    swap
+    setbit
+    // regression_tests/bool_only.py:5
+    // @arc4.abimethod()
+    dup
+    len
+    itob
+    extract 6 2
+    swap
+    concat
+    bytec_0 // 0x151f7c75
+    swap
+    concat
+    log
+    intc_1 // 1
+    return
+
+
+// test_cases.regression_tests.bool_only.BoolOnly.set_0_compare[routing]() -> void:
+set_0_compare:
+    // regression_tests/bool_only.py:9
+    // @arc4.abimethod()
+    txna ApplicationArgs 1
+    dup
+    intc_0 // 0
+    extract_uint16 // on error: invalid array length header
+    intc_2 // 2
+    +
+    dig 1
+    len
+    ==
+    assert // invalid number of bytes for arc4.dynamic_array<arc4.uint8>
+    extract 2 0
+    // regression_tests/bool_only.py:11
+    // return op.setbit_bytes(inp, 0, Txn.num_app_args > 0)
+    txn NumAppArgs
+    intc_0 // 0
+    >
+    intc_0 // 0
+    swap
+    setbit
+    // regression_tests/bool_only.py:9
+    // @arc4.abimethod()
+    dup
+    len
+    itob
+    extract 6 2
+    swap
+    concat
+    bytec_0 // 0x151f7c75
+    swap
+    concat
+    log
+    intc_1 // 1
+    return
+
+
+// test_cases.regression_tests.bool_only.BoolOnly.bool_only_properties[routing]() -> void:
+bool_only_properties:
+    // regression_tests/bool_only.py:15
+    // op.ITxnCreate.begin()
+    itxn_begin
+    // regression_tests/bool_only.py:16
+    // op.ITxnCreate.set_type_enum(TransactionType.AssetConfig)
+    pushint 3 // acfg
+    itxn_field TypeEnum
+    // regression_tests/bool_only.py:17
+    // op.ITxnCreate.set_config_asset_default_frozen(bool(Txn.num_app_args))
+    txn NumAppArgs
+    intc_0 // 0
+    !=
+    itxn_field ConfigAssetDefaultFrozen
+    // regression_tests/bool_only.py:18
+    // op.ITxnCreate.submit()
+    itxn_submit
+    // regression_tests/bool_only.py:20-22
+    // itxn.KeyRegistration(
+    //     non_participation=True,
+    // ).submit()
+    itxn_begin
+    // regression_tests/bool_only.py:21
+    // non_participation=True,
+    intc_1 // 1
+    itxn_field Nonparticipation
+    // regression_tests/bool_only.py:20
+    // itxn.KeyRegistration(
+    intc_2 // keyreg
+    itxn_field TypeEnum
+    intc_0 // 0
+    itxn_field Fee
+    // regression_tests/bool_only.py:20-22
+    // itxn.KeyRegistration(
+    //     non_participation=True,
+    // ).submit()
+    itxn_submit
+    // regression_tests/bool_only.py:13
+    // @arc4.abimethod()
+    intc_1 // 1
+    return

@@ -1,0 +1,145 @@
+#pragma version 11
+#pragma typetrack false
+
+// algopy.arc4.ARC4Contract.approval_program() -> uint64:
+main:
+    intcblock 0 1000
+    // inner_transactions/asset_transfer.py:10
+    // class CreateAndTransferContract(ARC4Contract):
+    txn NumAppArgs
+    bz main___algopy_default_create@5
+    pushbytes 0x48e9ed7c // method "create_and_transfer()void"
+    txna ApplicationArgs 0
+    match main_create_and_transfer_route@3
+    err
+
+main_create_and_transfer_route@3:
+    // inner_transactions/asset_transfer.py:11
+    // @arc4.abimethod()
+    txn OnCompletion
+    !
+    txn ApplicationID
+    &&
+    assert
+    b create_and_transfer
+
+main___algopy_default_create@5:
+    txn OnCompletion
+    !
+    txn ApplicationID
+    !
+    &&
+    return
+
+
+// test_cases.inner_transactions.asset_transfer.CreateAndTransferContract.create_and_transfer[routing]() -> void:
+create_and_transfer:
+    // inner_transactions/asset_transfer.py:15-23
+    // itxn.AssetConfig(
+    //     total=1000,
+    //     asset_name="test",
+    //     unit_name="TST",
+    //     decimals=0,
+    //     manager=op.Global.current_application_address,
+    //     clawback=op.Global.current_application_address,
+    // )
+    // .submit()
+    itxn_begin
+    // inner_transactions/asset_transfer.py:20
+    // manager=op.Global.current_application_address,
+    global CurrentApplicationAddress
+    // inner_transactions/asset_transfer.py:21
+    // clawback=op.Global.current_application_address,
+    dup
+    itxn_field ConfigAssetClawback
+    itxn_field ConfigAssetManager
+    // inner_transactions/asset_transfer.py:19
+    // decimals=0,
+    intc_0 // 0
+    itxn_field ConfigAssetDecimals
+    // inner_transactions/asset_transfer.py:18
+    // unit_name="TST",
+    pushbytes "TST"
+    itxn_field ConfigAssetUnitName
+    // inner_transactions/asset_transfer.py:17
+    // asset_name="test",
+    pushbytes "test"
+    itxn_field ConfigAssetName
+    // inner_transactions/asset_transfer.py:16
+    // total=1000,
+    intc_1 // 1000
+    itxn_field ConfigAssetTotal
+    // inner_transactions/asset_transfer.py:15
+    // itxn.AssetConfig(
+    pushint 3 // acfg
+    itxn_field TypeEnum
+    intc_0 // 0
+    itxn_field Fee
+    // inner_transactions/asset_transfer.py:15-23
+    // itxn.AssetConfig(
+    //     total=1000,
+    //     asset_name="test",
+    //     unit_name="TST",
+    //     decimals=0,
+    //     manager=op.Global.current_application_address,
+    //     clawback=op.Global.current_application_address,
+    // )
+    // .submit()
+    itxn_submit
+    // inner_transactions/asset_transfer.py:15-24
+    // itxn.AssetConfig(
+    //     total=1000,
+    //     asset_name="test",
+    //     unit_name="TST",
+    //     decimals=0,
+    //     manager=op.Global.current_application_address,
+    //     clawback=op.Global.current_application_address,
+    // )
+    // .submit()
+    // .created_asset
+    itxn CreatedAssetID
+    // inner_transactions/asset_transfer.py:27-33
+    // # transfer
+    // itxn.AssetTransfer(
+    //     asset_sender=new_asset.creator,
+    //     asset_receiver=Global.current_application_address,
+    //     asset_amount=1000,
+    //     xfer_asset=new_asset,
+    // ).submit()
+    itxn_begin
+    // inner_transactions/asset_transfer.py:29
+    // asset_sender=new_asset.creator,
+    dup
+    asset_params_get AssetCreator
+    assert // asset exists
+    // inner_transactions/asset_transfer.py:30
+    // asset_receiver=Global.current_application_address,
+    global CurrentApplicationAddress
+    uncover 2
+    itxn_field XferAsset
+    // inner_transactions/asset_transfer.py:31
+    // asset_amount=1000,
+    intc_1 // 1000
+    itxn_field AssetAmount
+    itxn_field AssetReceiver
+    itxn_field AssetSender
+    // inner_transactions/asset_transfer.py:27-28
+    // # transfer
+    // itxn.AssetTransfer(
+    pushint 4 // axfer
+    itxn_field TypeEnum
+    intc_0 // 0
+    itxn_field Fee
+    // inner_transactions/asset_transfer.py:27-33
+    // # transfer
+    // itxn.AssetTransfer(
+    //     asset_sender=new_asset.creator,
+    //     asset_receiver=Global.current_application_address,
+    //     asset_amount=1000,
+    //     xfer_asset=new_asset,
+    // ).submit()
+    itxn_submit
+    // inner_transactions/asset_transfer.py:11
+    // @arc4.abimethod()
+    pushint 1
+    return

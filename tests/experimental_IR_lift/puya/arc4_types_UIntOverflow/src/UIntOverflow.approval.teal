@@ -1,0 +1,139 @@
+#pragma version 11
+#pragma typetrack false
+
+// algopy.arc4.ARC4Contract.approval_program() -> uint64:
+main:
+    intcblock 1 16 8
+    // arc4_types/uint_overflow.py:4
+    // class UIntOverflow(arc4.ARC4Contract):
+    txn NumAppArgs
+    bz main___algopy_default_create@11
+    txn OnCompletion
+    !
+    assert
+    txn ApplicationID
+    assert
+    pushbytess 0xea71ee7d 0xe31958f9 0xc7ed8497 0x65117897 // method "test_uint8()void", method "test_uint16()void", method "test_uint32()void", method "test_as_uint64()void"
+    txna ApplicationArgs 0
+    match test_uint8 test_uint16 test_uint32 test_as_uint64
+    err
+
+main___algopy_default_create@11:
+    txn OnCompletion
+    !
+    txn ApplicationID
+    !
+    &&
+    return
+
+
+// test_cases.arc4_types.uint_overflow.UIntOverflow.test_uint8[routing]() -> void:
+test_uint8:
+    // arc4_types/uint_overflow.py:7
+    // too_big = arc4.UInt8(Txn.num_app_args + 2**8)  # should fail here with overflow
+    txn NumAppArgs
+    pushint 256
+    +
+    itob
+    dup
+    bitlen
+    intc_2 // 8
+    <=
+    assert // overflow
+    extract 7 1
+    // arc4_types/uint_overflow.py:8
+    // assert too_big.bytes != b"\x01", "this should not happen"
+    pushbytes 0x01
+    !=
+    assert // this should not happen
+    // arc4_types/uint_overflow.py:5
+    // @arc4.abimethod()
+    intc_0 // 1
+    return
+
+
+// test_cases.arc4_types.uint_overflow.UIntOverflow.test_uint16[routing]() -> void:
+test_uint16:
+    // arc4_types/uint_overflow.py:12
+    // too_big = arc4.UInt16(Txn.num_app_args + 2**16)  # should fail here with overflow
+    txn NumAppArgs
+    pushint 65536
+    +
+    itob
+    dup
+    bitlen
+    intc_1 // 16
+    <=
+    assert // overflow
+    extract 6 2
+    // arc4_types/uint_overflow.py:13
+    // assert too_big.bytes != b"\x00\x01", "this should not happen"
+    pushbytes 0x0001
+    !=
+    assert // this should not happen
+    // arc4_types/uint_overflow.py:10
+    // @arc4.abimethod()
+    intc_0 // 1
+    return
+
+
+// test_cases.arc4_types.uint_overflow.UIntOverflow.test_uint32[routing]() -> void:
+test_uint32:
+    // arc4_types/uint_overflow.py:17
+    // too_big = arc4.UInt32(Txn.num_app_args + 2**32)  # should fail here with overflow
+    txn NumAppArgs
+    pushint 4294967296
+    +
+    itob
+    dup
+    bitlen
+    pushint 32
+    <=
+    assert // overflow
+    extract 4 4
+    // arc4_types/uint_overflow.py:18
+    // assert too_big.bytes != b"\x00\x00\x00\x01", "this should not happen"
+    pushbytes 0x00000001
+    !=
+    assert // this should not happen
+    // arc4_types/uint_overflow.py:15
+    // @arc4.abimethod()
+    intc_0 // 1
+    return
+
+
+// test_cases.arc4_types.uint_overflow.UIntOverflow.test_as_uint64[routing]() -> void:
+test_as_uint64:
+    // arc4_types/uint_overflow.py:22
+    // biguint = BigUInt(2**64) + Txn.num_app_args
+    txn NumAppArgs
+    itob
+    pushbytes 0x010000000000000000
+    b+
+    // arc4_types/uint_overflow.py:23
+    // too_big = arc4.UInt128(biguint).as_uint64()  # should fail here with overflow
+    dup
+    len
+    intc_1 // 16
+    <=
+    assert // overflow
+    intc_1 // 16
+    bzero
+    b|
+    dup
+    bitlen
+    pushint 64
+    <=
+    assert // overflow
+    dup
+    len
+    intc_2 // 8
+    -
+    extract_uint64
+    // arc4_types/uint_overflow.py:24
+    // assert too_big != 0, "this should not happen"
+    assert // this should not happen
+    // arc4_types/uint_overflow.py:20
+    // @arc4.abimethod()
+    intc_0 // 1
+    return

@@ -1,0 +1,126 @@
+#pragma version 11
+#pragma typetrack false
+
+// algopy.arc4.ARC4Contract.approval_program() -> uint64:
+main:
+    intcblock 1 8 0
+    // inner_transactions/itxn_tuple.py:11
+    // class ItxnNamedTuple(arc4.ARC4Contract):
+    txn NumAppArgs
+    bz main___algopy_default_create@10
+    txn OnCompletion
+    !
+    assert
+    txn ApplicationID
+    assert
+    pushbytess 0xdf478c6e 0x20694f7b 0xd6ca0578 // method "named_tuple_itxn(uint64)void", method "named_tuple_itxn2(uint64)void", method "named_tuple_itxn3(uint64)void"
+    txna ApplicationArgs 0
+    match named_tuple_itxn named_tuple_itxn2 named_tuple_itxn3
+    err
+
+main___algopy_default_create@10:
+    txn OnCompletion
+    !
+    txn ApplicationID
+    !
+    &&
+    return
+
+
+// test_cases.inner_transactions.itxn_tuple.ItxnNamedTuple.named_tuple_itxn[routing]() -> void:
+named_tuple_itxn:
+    // inner_transactions/itxn_tuple.py:12
+    // @arc4.abimethod()
+    txna ApplicationArgs 1
+    dup
+    len
+    intc_1 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    btoi
+    // inner_transactions/itxn_tuple.py:14
+    // hmm = Hmmm(foo=amt, bar=itxn.Payment(receiver=Txn.sender, amount=amt).submit())
+    itxn_begin
+    txn Sender
+    itxn_field Receiver
+    itxn_field Amount
+    intc_0 // pay
+    itxn_field TypeEnum
+    intc_2 // 0
+    itxn_field Fee
+    itxn_submit
+    itxn Amount
+    // inner_transactions/itxn_tuple.py:15
+    // assert hmm.bar.amount == 0
+    !
+    assert
+    // inner_transactions/itxn_tuple.py:12
+    // @arc4.abimethod()
+    intc_0 // 1
+    return
+
+
+// test_cases.inner_transactions.itxn_tuple.ItxnNamedTuple.named_tuple_itxn2[routing]() -> void:
+named_tuple_itxn2:
+    // inner_transactions/itxn_tuple.py:17
+    // @arc4.abimethod()
+    txna ApplicationArgs 1
+    dup
+    len
+    intc_1 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    btoi
+    // inner_transactions/itxn_tuple.py:19
+    // txn = Hmmm(foo=amt, bar=itxn.Payment(receiver=Txn.sender, amount=amt).submit()).bar
+    itxn_begin
+    txn Sender
+    itxn_field Receiver
+    itxn_field Amount
+    intc_0 // pay
+    itxn_field TypeEnum
+    intc_2 // 0
+    itxn_field Fee
+    itxn_submit
+    itxn Amount
+    // inner_transactions/itxn_tuple.py:20
+    // assert txn.amount == 0
+    !
+    assert
+    // inner_transactions/itxn_tuple.py:17
+    // @arc4.abimethod()
+    intc_0 // 1
+    return
+
+
+// test_cases.inner_transactions.itxn_tuple.ItxnNamedTuple.named_tuple_itxn3[routing]() -> void:
+named_tuple_itxn3:
+    // inner_transactions/itxn_tuple.py:22
+    // @arc4.abimethod()
+    txna ApplicationArgs 1
+    dup
+    len
+    intc_1 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    btoi
+    // inner_transactions/itxn_tuple.py:24
+    // hmmm = Hmmm(foo=amt, bar=itxn.Payment(receiver=Txn.sender, amount=amt).submit())
+    itxn_begin
+    txn Sender
+    itxn_field Receiver
+    itxn_field Amount
+    intc_0 // pay
+    itxn_field TypeEnum
+    intc_2 // 0
+    itxn_field Fee
+    itxn_submit
+    itxn Amount
+    // inner_transactions/itxn_tuple.py:26
+    // assert txn.amount == 0
+    !
+    assert
+    // inner_transactions/itxn_tuple.py:22
+    // @arc4.abimethod()
+    intc_0 // 1
+    return

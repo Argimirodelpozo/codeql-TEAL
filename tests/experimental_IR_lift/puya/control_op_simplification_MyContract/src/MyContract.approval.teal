@@ -1,0 +1,49 @@
+#pragma version 11
+#pragma typetrack false
+
+// test_cases.control_op_simplification.contract.MyContract.approval_program() -> uint64:
+main:
+    // control_op_simplification/contract.py:6
+    // do_log = False
+    pushint 0
+    // control_op_simplification/contract.py:7
+    // match op.Txn.num_app_args:
+    txn NumAppArgs
+    // control_op_simplification/contract.py:7-11
+    // match op.Txn.num_app_args:
+    //     case UInt64(1):
+    //         do_log = True
+    //     case UInt64(3):
+    //         do_log = True
+    switch main_switch_case_next@3 main_switch_case_0@1 main_switch_case_next@3 main_switch_case_1@2
+
+main_switch_case_next@3:
+    // control_op_simplification/contract.py:12
+    // if do_log:
+    dup
+    bz main_after_if_else@5
+    // control_op_simplification/contract.py:13
+    // log(op.itob(op.Txn.num_app_args))
+    txn NumAppArgs
+    itob
+    log
+
+main_after_if_else@5:
+    // control_op_simplification/contract.py:14
+    // return True
+    pushint 1
+    return
+
+main_switch_case_1@2:
+    // control_op_simplification/contract.py:11
+    // do_log = True
+    pushint 1
+    bury 1
+    b main_switch_case_next@3
+
+main_switch_case_0@1:
+    // control_op_simplification/contract.py:9
+    // do_log = True
+    pushint 1
+    bury 1
+    b main_switch_case_next@3

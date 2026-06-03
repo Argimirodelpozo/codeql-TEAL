@@ -1,0 +1,122 @@
+#pragma version 11
+#pragma typetrack false
+
+// algopy.arc4.ARC4Contract.approval_program() -> uint64:
+main:
+    intcblock 0 2
+    bytecblock 0x068101
+    // regression_tests/branch_to_proto.py:4
+    // class VRFVerifier(ARC4Contract):
+    txn NumAppArgs
+    bz main___algopy_default_create@5
+    pushbytes 0x6e50bd99 // method "verify(byte[],byte[],byte[])(byte[],bool)"
+    txna ApplicationArgs 0
+    match main_verify_route@3
+    err
+
+main_verify_route@3:
+    // regression_tests/branch_to_proto.py:5
+    // @arc4.abimethod
+    txn OnCompletion
+    !
+    txn ApplicationID
+    &&
+    assert
+    b verify
+
+main___algopy_default_create@5:
+    txn OnCompletion
+    !
+    txn ApplicationID
+    !
+    &&
+    return
+
+
+// test_cases.regression_tests.branch_to_proto.VRFVerifier.verify[routing]() -> void:
+verify:
+    // regression_tests/branch_to_proto.py:5
+    // @arc4.abimethod
+    txna ApplicationArgs 1
+    dup
+    intc_0 // 0
+    extract_uint16 // on error: invalid array length header
+    intc_1 // 2
+    +
+    dig 1
+    len
+    ==
+    assert // invalid number of bytes for arc4.dynamic_array<arc4.uint8>
+    extract 2 0
+    txna ApplicationArgs 2
+    dup
+    intc_0 // 0
+    extract_uint16 // on error: invalid array length header
+    intc_1 // 2
+    +
+    dig 1
+    len
+    ==
+    assert // invalid number of bytes for arc4.dynamic_array<arc4.uint8>
+    extract 2 0
+    txna ApplicationArgs 3
+    dup
+    intc_0 // 0
+    extract_uint16 // on error: invalid array length header
+    intc_1 // 2
+    +
+    dig 1
+    len
+    ==
+    assert // invalid number of bytes for arc4.dynamic_array<arc4.uint8>
+    extract 2 0
+
+verify_while_top@2:
+    pushint 10010
+    global OpcodeBudget
+    >
+    bz verify_after_while@7
+    itxn_begin
+    pushint 6 // appl
+    itxn_field TypeEnum
+    pushint 5 // DeleteApplication
+    itxn_field OnCompletion
+    bytec_0 // 0x068101
+    itxn_field ApprovalProgram
+    bytec_0 // 0x068101
+    itxn_field ClearStateProgram
+    global MinTxnFee
+    itxn_field Fee
+    itxn_submit
+    b verify_while_top@2
+
+verify_after_while@7:
+    // regression_tests/branch_to_proto.py:8
+    // return op.vrf_verify(op.VrfVerify.VrfAlgorand, message, proof, pk)
+    dig 2
+    dig 2
+    dig 2
+    vrf_verify VrfAlgorand
+    // regression_tests/branch_to_proto.py:5
+    // @arc4.abimethod
+    dig 1
+    len
+    itob
+    extract 6 2
+    uncover 2
+    concat
+    pushbytes 0x00
+    intc_0 // 0
+    uncover 3
+    setbit
+    pushbytes 0x0003
+    swap
+    concat
+    swap
+    concat
+    pushbytes 0x151f7c75
+    swap
+    concat
+    log
+    pushint 1
+    return

@@ -1,0 +1,25 @@
+#pragma version 11
+#pragma typetrack false
+
+// algopy.arc4.ARC4Contract.approval_program() -> uint64:
+main:
+    txn ApplicationID
+    bnz main_after_if_else@2
+    // abi_routing/minimal.py:6
+    // self.gvalue = UInt64(4)
+    pushbytes "gvalue"
+    pushint 4
+    app_global_put
+
+main_after_if_else@2:
+    // abi_routing/minimal.py:4
+    // class MinimumARC4(ARC4Contract):
+    txn NumAppArgs
+    !
+    assert
+    txn OnCompletion
+    !
+    txn ApplicationID
+    !
+    &&
+    return

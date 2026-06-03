@@ -1,0 +1,25 @@
+#pragma version 11
+#pragma typetrack false
+
+// algopy.arc4.ARC4Contract.approval_program() -> uint64:
+main:
+    txn ApplicationID
+    bnz main_after_if_else@2
+    // regression_tests/issue_491.py:7
+    // self.is_initialised = False
+    pushbytes "is_initialised"
+    pushint 0
+    app_global_put
+
+main_after_if_else@2:
+    // regression_tests/issue_491.py:15
+    // class Child(Orphan, Parent):
+    txn NumAppArgs
+    !
+    assert
+    txn OnCompletion
+    !
+    txn ApplicationID
+    !
+    &&
+    return

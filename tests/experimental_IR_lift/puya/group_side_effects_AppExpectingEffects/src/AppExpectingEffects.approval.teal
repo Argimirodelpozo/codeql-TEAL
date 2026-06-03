@@ -1,0 +1,169 @@
+#pragma version 11
+#pragma typetrack false
+
+// algopy.arc4.ARC4Contract.approval_program() -> uint64:
+main:
+    intcblock 1 6
+    bytecblock 0x151f7c75
+    // group_side_effects/contract.py:4
+    // class AppExpectingEffects(ARC4Contract):
+    txn NumAppArgs
+    bz main___algopy_default_create@9
+    txn OnCompletion
+    !
+    assert
+    txn ApplicationID
+    assert
+    pushbytess 0x6d3a0439 0x62a0ef62 // method "create_group(acfg,appl)(uint64,uint64)", method "log_group(appl)void"
+    txna ApplicationArgs 0
+    match create_group log_group
+    err
+
+main___algopy_default_create@9:
+    txn OnCompletion
+    !
+    txn ApplicationID
+    !
+    &&
+    return
+
+
+// test_cases.group_side_effects.contract.AppExpectingEffects.create_group[routing]() -> void:
+create_group:
+    // group_side_effects/contract.py:5
+    // @arc4.abimethod
+    txn GroupIndex
+    pushint 2
+    -
+    dup
+    gtxns TypeEnum
+    pushint 3 // acfg
+    ==
+    assert // transaction type is acfg
+    txn GroupIndex
+    intc_0 // 1
+    -
+    dup
+    gtxns TypeEnum
+    intc_1 // appl
+    ==
+    assert // transaction type is appl
+    // group_side_effects/contract.py:11
+    // assert asset_create.created_asset.id, "expected asset created"
+    dig 1
+    gtxns CreatedAssetID
+    dup
+    assert // expected asset created
+    // group_side_effects/contract.py:13
+    // op.gaid(asset_create.group_index) == asset_create.created_asset.id
+    uncover 2
+    gtxns GroupIndex
+    gaids
+    dig 1
+    ==
+    // group_side_effects/contract.py:12-14
+    // assert (
+    //     op.gaid(asset_create.group_index) == asset_create.created_asset.id
+    // ), "expected correct asset id"
+    assert // expected correct asset id
+    // group_side_effects/contract.py:15
+    // assert app_create.created_app.id, "expected app created"
+    dig 1
+    gtxns CreatedApplicationID
+    dup
+    assert // expected app created
+    // group_side_effects/contract.py:17
+    // op.gaid(app_create.group_index) == app_create.created_app.id
+    uncover 2
+    gtxns GroupIndex
+    gaids
+    dig 1
+    ==
+    // group_side_effects/contract.py:16-18
+    // assert (
+    //     op.gaid(app_create.group_index) == app_create.created_app.id
+    // ), "expected correct app id"
+    assert // expected correct app id
+    // group_side_effects/contract.py:5
+    // @arc4.abimethod
+    swap
+    itob
+    swap
+    itob
+    concat
+    bytec_0 // 0x151f7c75
+    swap
+    concat
+    log
+    intc_0 // 1
+    return
+
+
+// test_cases.group_side_effects.contract.AppExpectingEffects.log_group[routing]() -> void:
+log_group:
+    // group_side_effects/contract.py:22
+    // @arc4.abimethod
+    txn GroupIndex
+    intc_0 // 1
+    -
+    dup
+    gtxns TypeEnum
+    intc_1 // appl
+    ==
+    assert // transaction type is appl
+    // group_side_effects/contract.py:24
+    // assert app_call.app_args(0) == arc4.arc4_signature(
+    dup
+    gtxnsa ApplicationArgs 0
+    // group_side_effects/contract.py:24-26
+    // assert app_call.app_args(0) == arc4.arc4_signature(
+    //     "some_value()uint64"
+    // ), "expected correct method called"
+    pushbytes 0xd3479e65 // method "some_value()uint64"
+    ==
+    assert // expected correct method called
+    // group_side_effects/contract.py:27
+    // assert app_call.num_logs == 1, "expected logs"
+    dup
+    gtxns NumLogs
+    intc_0 // 1
+    ==
+    assert // expected logs
+    // group_side_effects/contract.py:29
+    // arc4.UInt64.from_log(app_call.last_log)
+    dup
+    gtxns LastLog
+    dup
+    extract 0 4
+    bytec_0 // 0x151f7c75
+    ==
+    assert // application log value is not the result of an ABI return
+    extract 4 0
+    dup
+    len
+    pushint 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    // group_side_effects/contract.py:30
+    // == (app_call.group_index + 1) * Global.group_size
+    swap
+    gtxns GroupIndex
+    intc_0 // 1
+    +
+    global GroupSize
+    *
+    // group_side_effects/contract.py:29-30
+    // arc4.UInt64.from_log(app_call.last_log)
+    // == (app_call.group_index + 1) * Global.group_size
+    itob
+    b==
+    // group_side_effects/contract.py:28-31
+    // assert (
+    //     arc4.UInt64.from_log(app_call.last_log)
+    //     == (app_call.group_index + 1) * Global.group_size
+    // )
+    assert
+    // group_side_effects/contract.py:22
+    // @arc4.abimethod
+    intc_0 // 1
+    return

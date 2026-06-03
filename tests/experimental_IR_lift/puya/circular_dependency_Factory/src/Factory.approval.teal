@@ -1,0 +1,80 @@
+#pragma version 11
+#pragma typetrack false
+
+// algopy.arc4.ARC4Contract.approval_program() -> uint64:
+main:
+    intcblock 6 0 1
+    bytecblock base64(C4EBQw==) 0x151f7c75
+    // circular_dependency/factory.py:4
+    // class Factory(ARC4Contract):
+    txn NumAppArgs
+    bz main___algopy_default_create@9
+    txn OnCompletion
+    !
+    assert
+    txn ApplicationID
+    assert
+    pushbytess 0x48feec7e 0xd02a4bc9 // method "deploy_a()uint64", method "deploy_b()uint64"
+    txna ApplicationArgs 0
+    match deploy_a deploy_b
+    err
+
+main___algopy_default_create@9:
+    txn OnCompletion
+    !
+    txn ApplicationID
+    !
+    &&
+    return
+
+
+// test_cases.circular_dependency.factory.Factory.deploy_a[routing]() -> void:
+deploy_a:
+    // circular_dependency/factory.py:9
+    // txn = arc4.arc4_create(A)
+    itxn_begin
+    bytec_0 // base64(C4EBQw==)
+    itxn_field ClearStateProgramPages
+    pushbytes base64(CyAEAQgABiYBBBUffHUxG0EARjEZFEQxGESCBAQZdQYWBDUeArYEgQs7rARguYUhNhoAjgQAEAAkAAEAXACAChUffHUABHBvbmewIkOABxUffHUAAUGwIkMxGRQxGBQQQzYaAUkVIxJEF7GyGIAEsTLAVrIaJbIQJLIBs7Q+SVcABCgSRFcEAEkkWYECCEsBFRJEKExQsCJDNhoBSRUjEkQXsbIYgATQKkvJsholshAksgGztD5JVwAEKBJEVwQASRUjEkQoTFCwIkM=)
+    itxn_field ApprovalProgramPages
+    intc_0 // appl
+    itxn_field TypeEnum
+    intc_1 // 0
+    itxn_field Fee
+    itxn_submit
+    itxn CreatedApplicationID
+    // circular_dependency/factory.py:5
+    // @arc4.abimethod
+    itob
+    bytec_1 // 0x151f7c75
+    swap
+    concat
+    log
+    intc_2 // 1
+    return
+
+
+// test_cases.circular_dependency.factory.Factory.deploy_b[routing]() -> void:
+deploy_b:
+    // circular_dependency/factory.py:16
+    // txn = arc4.arc4_create(B)
+    itxn_begin
+    bytec_0 // base64(C4EBQw==)
+    itxn_field ClearStateProgramPages
+    pushbytes base64(CyAEAQgABiYBBBUffHUxG0EARjEZFEQxGESCBAQZdQYWBLEywFYE9J6JyQQVGRkeNhoAjgQAEAABACQAXACAChUffHUABHBpbmewIkOABxUffHUAAUKwIkMxGRQxGBQQQzYaAUkVIxJEF7GyGIAEgQs7rLIaJbIQJLIBs7Q+SVcABCgSRFcEAEkkWYECCEsBFRJEKExQsCJDNhoBSRUjEkQXsbIYgARI/ux+sholshAksgGztD5JVwAEKBJEVwQASRUjEkQoTFCwIkM=)
+    itxn_field ApprovalProgramPages
+    intc_0 // appl
+    itxn_field TypeEnum
+    intc_1 // 0
+    itxn_field Fee
+    itxn_submit
+    itxn CreatedApplicationID
+    // circular_dependency/factory.py:12
+    // @arc4.abimethod
+    itob
+    bytec_1 // 0x151f7c75
+    swap
+    concat
+    log
+    intc_2 // 1
+    return

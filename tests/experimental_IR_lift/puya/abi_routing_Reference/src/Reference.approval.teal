@@ -1,0 +1,1942 @@
+#pragma version 11
+#pragma typetrack false
+
+// algopy.arc4.ARC4Contract.approval_program() -> uint64:
+main:
+    intcblock 8 0 1 2
+    bytecblock 0x151f7c75 "asa" 0x151f7c7500000000000001c8 "local_uint" "local_bytes"
+    txn ApplicationID
+    bnz main_after_if_else@2
+    // abi_routing/contract.py:26
+    // self.asa = Asset(123)
+    bytec_1 // "asa"
+    pushint 123
+    app_global_put
+    // abi_routing/contract.py:27
+    // self.an_int = UInt64(2)
+    pushbytes "an_int"
+    intc_3 // 2
+    app_global_put
+    // abi_routing/contract.py:28
+    // self.some_bytes = Bytes3(arc4.Byte(7), arc4.Byte(8), arc4.Byte(9))
+    pushbytess "some_bytes" 0x070809
+    app_global_put
+    // abi_routing/contract.py:29
+    // self.creator = op.Txn.sender
+    pushbytes "creator"
+    txn Sender
+    app_global_put
+    // abi_routing/contract.py:30
+    // self.app = Application(123)
+    pushbytes "app"
+    pushint 123
+    app_global_put
+
+main_after_if_else@2:
+    // abi_routing/contract.py:24
+    // class Reference(ARC4Contract):
+    txn NumAppArgs
+    bz main_bare_abi_config@25
+    pushbytess 0x01040023 0x3a5353fc 0xd2f2f53c // method "opt_in(uint64,byte[])void", method "all_the_things(uint64)uint8", method "mixed_oca(uint64)uint8"
+    txna ApplicationArgs 0
+    match main_opt_in_route@5 full_abi_config main_mixed_oca_route@7
+
+main_switch_case_next@8:
+    // abi_routing/contract.py:24
+    // class Reference(ARC4Contract):
+    txn OnCompletion
+    !
+    assert
+    txn ApplicationID
+    assert
+    pushbytess 0xd78db35b 0xd8f62d9a 0xb8431119 0xc416372d 0x7fad9780 0x2fdf95a4 0x1399826c 0xa1300821 0x6137dc37 0x5732195a 0xf6096c82 0x9023bb19 // method "noop_with_uint64(uint64)uint8", method "opt_into_asset(uint64)void", method "with_transactions(uint64,uint64,pay,uint64)void", method "compare_assets(uint64,uint64)void", method "get_address()address", method "get_asset()uint64", method "get_application()uint64", method "get_an_int()uint64", method "method_with_default_args(uint64,uint64,address,address,uint64,uint64,byte[3],uint64,uint64,uint32,string,uint64,byte[])void", method "method_with_15_args(uint64,uint64,uint64,uint64,uint64,uint64,uint64,uint64,uint64,uint64,uint64,uint64,uint64,uint64,byte[])byte[]", method "method_with_more_than_15_args(uint64,uint64,uint64,uint64,uint64,uint64,uint64,pay,uint64,uint64,uint64,uint64,uint64,uint64,uint64,uint64,uint64,uint64,uint64,uint64,byte[],byte[],uint64,pay,uint64,uint64)uint64", method "hello_with_algopy_string(string)string"
+    txna ApplicationArgs 0
+    match noop_with_uint64 opt_into_asset with_transactions compare_assets main_get_address_route@14 main_get_asset_route@15 main_get_application_route@16 main_get_an_int_route@17 method_with_default_args method_with_15_args method_with_more_than_15_args hello_with_algopy_string
+    err
+
+main_get_an_int_route@17:
+    // abi_routing/contract.py:138
+    // @arc4.abimethod(readonly=True, name="get_an_int")
+    pushbytes 0x151f7c750000000000000003
+    log
+    intc_2 // 1
+    return
+
+main_get_application_route@16:
+    // abi_routing/contract.py:134
+    // @arc4.abimethod(readonly=True, name="get_application")
+    bytec_2 // 0x151f7c7500000000000001c8
+    log
+    intc_2 // 1
+    return
+
+main_get_asset_route@15:
+    // abi_routing/contract.py:130
+    // @arc4.abimethod(readonly=True)
+    bytec_2 // 0x151f7c7500000000000001c8
+    log
+    intc_2 // 1
+    return
+
+main_get_address_route@14:
+    // abi_routing/contract.py:126
+    // @arc4.abimethod(readonly=True)
+    pushbytes base32(CUPXY5IAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA)
+    log
+    intc_2 // 1
+    return
+
+main_mixed_oca_route@7:
+    // abi_routing/contract.py:66-74
+    // @arc4.abimethod(
+    //     allow_actions=[
+    //         "NoOp",
+    //         "CloseOut",
+    //         "DeleteApplication",
+    //     ],
+    //     create="disallow",
+    //     readonly=True,
+    // )
+    intc_2 // 1
+    txn OnCompletion
+    shl
+    pushint 37
+    &
+    txn ApplicationID
+    &&
+    assert
+    b mixed_oca
+
+main_opt_in_route@5:
+    // abi_routing/contract.py:45
+    // @arc4.abimethod(allow_actions=[OnCompleteAction.OptIn])
+    txn OnCompletion
+    intc_2 // OptIn
+    ==
+    txn ApplicationID
+    &&
+    assert
+    b opt_in
+
+main_bare_abi_config@25:
+    // abi_routing/contract.py:79-88
+    // @arc4.baremethod(
+    //     allow_actions=[
+    //         "NoOp",
+    //         "OptIn",
+    //         "CloseOut",
+    //         "UpdateApplication",
+    //         "DeleteApplication",
+    //     ],
+    //     create="require",
+    // )
+    txn ApplicationID
+    !
+    assert
+    // abi_routing/contract.py:90
+    // log("Hello World")
+    pushbytes "Hello World"
+    log
+    // abi_routing/contract.py:79-88
+    // @arc4.baremethod(
+    //     allow_actions=[
+    //         "NoOp",
+    //         "OptIn",
+    //         "CloseOut",
+    //         "UpdateApplication",
+    //         "DeleteApplication",
+    //     ],
+    //     create="require",
+    // )
+    intc_2 // 1
+    return
+
+
+// test_cases.abi_routing.contract.Reference.noop_with_uint64[routing]() -> void:
+noop_with_uint64:
+    // abi_routing/contract.py:40
+    // @arc4.abimethod
+    txna ApplicationArgs 1
+    dup
+    len
+    intc_0 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    // abi_routing/contract.py:42
+    // result = 1 + a.as_uint64()
+    btoi
+    intc_2 // 1
+    +
+    // abi_routing/contract.py:43
+    // return arc4.UInt8(result)
+    itob
+    dup
+    bitlen
+    intc_0 // 8
+    <=
+    assert // overflow
+    extract 7 1
+    // abi_routing/contract.py:40
+    // @arc4.abimethod
+    bytec_0 // 0x151f7c75
+    swap
+    concat
+    log
+    intc_2 // 1
+    return
+
+
+// test_cases.abi_routing.contract.Reference.opt_in[routing]() -> void:
+opt_in:
+    // abi_routing/contract.py:45
+    // @arc4.abimethod(allow_actions=[OnCompleteAction.OptIn])
+    txna ApplicationArgs 1
+    dup
+    len
+    intc_0 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    btoi
+    txna ApplicationArgs 2
+    dup
+    intc_1 // 0
+    extract_uint16 // on error: invalid array length header
+    intc_3 // 2
+    +
+    dig 1
+    len
+    ==
+    assert // invalid number of bytes for arc4.dynamic_array<arc4.uint8>
+    extract 2 0
+    // abi_routing/contract.py:47
+    // self.local_uint[Txn.sender] = uint
+    txn Sender
+    bytec_3 // "local_uint"
+    uncover 3
+    app_local_put
+    // abi_routing/contract.py:48
+    // self.local_bytes[Txn.sender] = bites
+    txn Sender
+    bytec 4 // "local_bytes"
+    uncover 2
+    app_local_put
+    // abi_routing/contract.py:45
+    // @arc4.abimethod(allow_actions=[OnCompleteAction.OptIn])
+    intc_2 // 1
+    return
+
+
+// test_cases.abi_routing.contract.Reference.full_abi_config[routing]() -> void:
+full_abi_config:
+    // abi_routing/contract.py:50-61
+    // @arc4.abimethod(
+    //     allow_actions=[
+    //         "NoOp",
+    //         OnCompleteAction.OptIn,
+    //         "CloseOut",
+    //         OnCompleteAction.UpdateApplication,
+    //         OnCompleteAction.DeleteApplication,
+    //     ],
+    //     name="all_the_things",
+    //     create="allow",
+    //     readonly=True,
+    // )
+    txna ApplicationArgs 1
+    dup
+    len
+    intc_0 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    // abi_routing/contract.py:63
+    // result = UInt64(1) + a.as_uint64()
+    btoi
+    intc_2 // 1
+    +
+    // abi_routing/contract.py:64
+    // return arc4.UInt8(result)
+    itob
+    dup
+    bitlen
+    intc_0 // 8
+    <=
+    assert // overflow
+    extract 7 1
+    // abi_routing/contract.py:50-61
+    // @arc4.abimethod(
+    //     allow_actions=[
+    //         "NoOp",
+    //         OnCompleteAction.OptIn,
+    //         "CloseOut",
+    //         OnCompleteAction.UpdateApplication,
+    //         OnCompleteAction.DeleteApplication,
+    //     ],
+    //     name="all_the_things",
+    //     create="allow",
+    //     readonly=True,
+    // )
+    bytec_0 // 0x151f7c75
+    swap
+    concat
+    log
+    intc_2 // 1
+    return
+
+
+// test_cases.abi_routing.contract.Reference.mixed_oca[routing]() -> void:
+mixed_oca:
+    // abi_routing/contract.py:66-74
+    // @arc4.abimethod(
+    //     allow_actions=[
+    //         "NoOp",
+    //         "CloseOut",
+    //         "DeleteApplication",
+    //     ],
+    //     create="disallow",
+    //     readonly=True,
+    // )
+    txna ApplicationArgs 1
+    dup
+    len
+    intc_0 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    // abi_routing/contract.py:76
+    // result = UInt64(1) + a.as_uint64()
+    btoi
+    intc_2 // 1
+    +
+    // abi_routing/contract.py:77
+    // return arc4.UInt8(result)
+    itob
+    dup
+    bitlen
+    intc_0 // 8
+    <=
+    assert // overflow
+    extract 7 1
+    // abi_routing/contract.py:66-74
+    // @arc4.abimethod(
+    //     allow_actions=[
+    //         "NoOp",
+    //         "CloseOut",
+    //         "DeleteApplication",
+    //     ],
+    //     create="disallow",
+    //     readonly=True,
+    // )
+    bytec_0 // 0x151f7c75
+    swap
+    concat
+    log
+    intc_2 // 1
+    return
+
+
+// test_cases.abi_routing.contract.Reference.opt_into_asset[routing]() -> void:
+opt_into_asset:
+    // abi_routing/contract.py:92
+    // @arc4.abimethod
+    txna ApplicationArgs 1
+    dup
+    len
+    intc_0 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    btoi
+    // abi_routing/contract.py:94-95
+    // # Only allow app creator to opt the app account into a ASA
+    // assert op.Txn.sender == op.Global.creator_address, "Only creator can opt in to ASA"
+    txn Sender
+    global CreatorAddress
+    ==
+    assert // Only creator can opt in to ASA
+    // abi_routing/contract.py:96-97
+    // # Verify a ASA hasn't already been opted into
+    // assert not self.asa, "ASA already opted in"
+    intc_1 // 0
+    bytec_1 // "asa"
+    app_global_get_ex
+    assert // check self.asa exists
+    !
+    assert // ASA already opted in
+    // abi_routing/contract.py:98-99
+    // # Save ASA ID in global state
+    // self.asa = asset
+    bytec_1 // "asa"
+    dig 1
+    app_global_put
+    // abi_routing/contract.py:101-102
+    // # Submit opt-in transaction: 0 asset transfer to self
+    // op.ITxnCreate.begin()
+    itxn_begin
+    // abi_routing/contract.py:103
+    // op.ITxnCreate.set_type_enum(TransactionType.AssetTransfer)
+    pushint 4 // axfer
+    itxn_field TypeEnum
+    // abi_routing/contract.py:104
+    // op.ITxnCreate.set_fee(UInt64(0))  # cover fee with outer txn
+    intc_1 // 0
+    itxn_field Fee
+    // abi_routing/contract.py:105
+    // op.ITxnCreate.set_asset_receiver(op.Global.current_application_address)
+    global CurrentApplicationAddress
+    itxn_field AssetReceiver
+    // abi_routing/contract.py:106
+    // op.ITxnCreate.set_xfer_asset(asset)
+    itxn_field XferAsset
+    // abi_routing/contract.py:107
+    // op.ITxnCreate.submit()
+    itxn_submit
+    // abi_routing/contract.py:92
+    // @arc4.abimethod
+    intc_2 // 1
+    return
+
+
+// test_cases.abi_routing.contract.Reference.with_transactions[routing]() -> void:
+with_transactions:
+    // abi_routing/contract.py:109
+    // @arc4.abimethod
+    txna ApplicationArgs 1
+    dup
+    len
+    intc_0 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    btoi
+    txna ApplicationArgs 2
+    dup
+    len
+    intc_0 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    txn GroupIndex
+    intc_2 // 1
+    -
+    dup
+    gtxns TypeEnum
+    intc_2 // pay
+    ==
+    assert // transaction type is pay
+    txna ApplicationArgs 3
+    dup
+    len
+    intc_0 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    // abi_routing/contract.py:117
+    // assert self.asa == asset, "is correct asset"
+    intc_1 // 0
+    bytec_1 // "asa"
+    app_global_get_ex
+    assert // check self.asa exists
+    uncover 4
+    ==
+    assert // is correct asset
+    // abi_routing/contract.py:118
+    // assert an_int.as_uint64() == 1, "is correct int"
+    uncover 2
+    btoi
+    intc_2 // 1
+    ==
+    assert // is correct int
+    // abi_routing/contract.py:119
+    // assert pay.receiver == op.Global.current_application_address, "is payment to app"
+    swap
+    gtxns Receiver
+    global CurrentApplicationAddress
+    ==
+    assert // is payment to app
+    // abi_routing/contract.py:120
+    // assert another_int.as_uint64() == 2, "is correct int"
+    btoi
+    intc_3 // 2
+    ==
+    assert // is correct int
+    // abi_routing/contract.py:109
+    // @arc4.abimethod
+    intc_2 // 1
+    return
+
+
+// test_cases.abi_routing.contract.Reference.compare_assets[routing]() -> void:
+compare_assets:
+    // abi_routing/contract.py:122
+    // @arc4.abimethod
+    txna ApplicationArgs 1
+    dup
+    len
+    intc_0 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    btoi
+    txna ApplicationArgs 2
+    dup
+    len
+    intc_0 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    btoi
+    // abi_routing/contract.py:124
+    // assert asset_a == asset_b, "asset a == b"
+    ==
+    assert // asset a == b
+    // abi_routing/contract.py:122
+    // @arc4.abimethod
+    intc_2 // 1
+    return
+
+
+// test_cases.abi_routing.contract.Reference.method_with_default_args[routing]() -> void:
+method_with_default_args:
+    // abi_routing/contract.py:142-158
+    // @arc4.abimethod(
+    //     default_args={
+    //         "asset_from_storage": "asa",
+    //         "asset_from_function": get_asset,
+    //         "account_from_storage": "creator",
+    //         "account_from_function": "get_address",
+    //         "application_from_storage": "app",
+    //         "application_from_function": get_app,
+    //         "bytes_from_storage": "some_bytes",
+    //         "int_from_storage": "an_int",
+    //         "int_from_function": "get_a_int",
+    //         "int_from_const": arc4.UInt32(123),
+    //         "str_from_const": arc4.String("abc"),
+    //         "int_from_local": "local_uint",
+    //         "bytes_from_local": "local_bytes",
+    //     }
+    // )
+    txna ApplicationArgs 1
+    dup
+    len
+    intc_0 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    btoi
+    txna ApplicationArgs 2
+    dup
+    len
+    intc_0 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    btoi
+    txna ApplicationArgs 3
+    dup
+    len
+    pushint 32
+    ==
+    assert // invalid number of bytes for arc4.static_array<arc4.uint8, 32>
+    txna ApplicationArgs 4
+    dup
+    len
+    pushint 32
+    ==
+    assert // invalid number of bytes for arc4.static_array<arc4.uint8, 32>
+    txna ApplicationArgs 5
+    dup
+    len
+    intc_0 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    btoi
+    txna ApplicationArgs 6
+    dup
+    len
+    intc_0 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    btoi
+    txna ApplicationArgs 7
+    dup
+    len
+    pushint 3
+    ==
+    assert // invalid number of bytes for arc4.static_array<arc4.uint8, 3>
+    txna ApplicationArgs 8
+    dup
+    len
+    intc_0 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    txna ApplicationArgs 9
+    dup
+    len
+    intc_0 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    txna ApplicationArgs 10
+    dup
+    len
+    pushint 4
+    ==
+    assert // invalid number of bytes for arc4.uint32
+    txna ApplicationArgs 11
+    dup
+    intc_1 // 0
+    extract_uint16 // on error: invalid array length header
+    intc_3 // 2
+    +
+    dig 1
+    len
+    ==
+    assert // invalid number of bytes for arc4.dynamic_array<arc4.uint8>
+    txna ApplicationArgs 12
+    dup
+    len
+    intc_0 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    btoi
+    txna ApplicationArgs 13
+    dup
+    intc_1 // 0
+    extract_uint16 // on error: invalid array length header
+    intc_3 // 2
+    +
+    dig 1
+    len
+    ==
+    assert // invalid number of bytes for arc4.dynamic_array<arc4.uint8>
+    extract 2 0
+    // abi_routing/contract.py:175
+    // assert asset_from_storage == Asset(123), "wrong asset from storage"
+    uncover 12
+    pushint 123
+    ==
+    assert // wrong asset from storage
+    // abi_routing/contract.py:176
+    // assert asset_from_function == Asset(456), "wrong asset from function"
+    uncover 11
+    pushint 456
+    ==
+    assert // wrong asset from function
+    // abi_routing/contract.py:177
+    // assert account_from_storage == op.Global.creator_address, "wrong account from storage"
+    global CreatorAddress
+    uncover 11
+    ==
+    assert // wrong account from storage
+    // abi_routing/contract.py:178
+    // assert account_from_function == op.Global.zero_address, "wrong account from function"
+    global ZeroAddress
+    uncover 10
+    ==
+    assert // wrong account from function
+    // abi_routing/contract.py:179
+    // assert application_from_storage == Application(123), "wrong application from storage"
+    uncover 8
+    pushint 123
+    ==
+    assert // wrong application from storage
+    // abi_routing/contract.py:180
+    // assert application_from_function == Application(456), "wrong application from function"
+    uncover 7
+    pushint 456
+    ==
+    assert // wrong application from function
+    // abi_routing/contract.py:181
+    // assert bytes_from_storage[0] == arc4.Byte(7), "wrong 0th byte from storage"
+    dig 6
+    extract 0 1 // on error: index access is out of bounds
+    pushbytes 0x07
+    b==
+    assert // wrong 0th byte from storage
+    // abi_routing/contract.py:182
+    // assert bytes_from_storage[1] == arc4.Byte(8), "wrong 1st byte from storage"
+    dig 6
+    extract 1 1 // on error: index access is out of bounds
+    pushbytes 0x08
+    b==
+    assert // wrong 1st byte from storage
+    // abi_routing/contract.py:183
+    // assert bytes_from_storage[2] == arc4.Byte(9), "wrong 2nd byte from storage"
+    uncover 6
+    extract 2 1 // on error: index access is out of bounds
+    pushbytes 0x09
+    b==
+    assert // wrong 2nd byte from storage
+    // abi_routing/contract.py:184
+    // assert int_from_storage.as_uint64() == 2, "wrong int from storage"
+    uncover 5
+    btoi
+    intc_3 // 2
+    ==
+    assert // wrong int from storage
+    // abi_routing/contract.py:185
+    // assert int_from_function.as_uint64() == 3, "wrong int from function"
+    uncover 4
+    btoi
+    pushint 3
+    ==
+    assert // wrong int from function
+    // abi_routing/contract.py:186
+    // assert int_from_const == 123
+    uncover 3
+    pushbytes 0x0000007b
+    b==
+    assert
+    // abi_routing/contract.py:187
+    // assert str_from_const == "abc"
+    uncover 2
+    pushbytes 0x0003616263
+    ==
+    assert
+    // abi_routing/contract.py:188
+    // assert int_from_local == self.local_uint[Txn.sender]
+    txn Sender
+    intc_1 // 0
+    bytec_3 // "local_uint"
+    app_local_get_ex
+    assert // check self.local_uint exists for account
+    uncover 2
+    ==
+    assert
+    // abi_routing/contract.py:189
+    // assert bytes_from_local == self.local_bytes[Txn.sender]
+    txn Sender
+    intc_1 // 0
+    bytec 4 // "local_bytes"
+    app_local_get_ex
+    assert // check self.local_bytes exists for account
+    ==
+    assert
+    // abi_routing/contract.py:142-158
+    // @arc4.abimethod(
+    //     default_args={
+    //         "asset_from_storage": "asa",
+    //         "asset_from_function": get_asset,
+    //         "account_from_storage": "creator",
+    //         "account_from_function": "get_address",
+    //         "application_from_storage": "app",
+    //         "application_from_function": get_app,
+    //         "bytes_from_storage": "some_bytes",
+    //         "int_from_storage": "an_int",
+    //         "int_from_function": "get_a_int",
+    //         "int_from_const": arc4.UInt32(123),
+    //         "str_from_const": arc4.String("abc"),
+    //         "int_from_local": "local_uint",
+    //         "bytes_from_local": "local_bytes",
+    //     }
+    // )
+    intc_2 // 1
+    return
+
+
+// test_cases.abi_routing.contract.Reference.method_with_15_args[routing]() -> void:
+method_with_15_args:
+    // abi_routing/contract.py:191
+    // @arc4.abimethod
+    txna ApplicationArgs 1
+    dup
+    len
+    intc_0 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    btoi
+    txna ApplicationArgs 2
+    dup
+    len
+    intc_0 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    btoi
+    txna ApplicationArgs 3
+    dup
+    len
+    intc_0 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    btoi
+    txna ApplicationArgs 4
+    dup
+    len
+    intc_0 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    btoi
+    txna ApplicationArgs 5
+    dup
+    len
+    intc_0 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    btoi
+    txna ApplicationArgs 6
+    dup
+    len
+    intc_0 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    btoi
+    txna ApplicationArgs 7
+    dup
+    len
+    intc_0 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    btoi
+    txna ApplicationArgs 8
+    dup
+    len
+    intc_0 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    btoi
+    txna ApplicationArgs 9
+    dup
+    len
+    intc_0 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    btoi
+    txna ApplicationArgs 10
+    dup
+    len
+    intc_0 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    btoi
+    txna ApplicationArgs 11
+    dup
+    len
+    intc_0 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    btoi
+    txna ApplicationArgs 12
+    dup
+    len
+    intc_0 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    btoi
+    txna ApplicationArgs 13
+    dup
+    len
+    intc_0 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    btoi
+    txna ApplicationArgs 14
+    dup
+    len
+    intc_0 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    btoi
+    txna ApplicationArgs 15
+    dup
+    intc_1 // 0
+    extract_uint16 // on error: invalid array length header
+    intc_3 // 2
+    +
+    dig 1
+    len
+    ==
+    assert // invalid number of bytes for arc4.dynamic_array<arc4.uint8>
+    // abi_routing/contract.py:212-213
+    // one
+    // + two
+    uncover 14
+    uncover 14
+    +
+    // abi_routing/contract.py:212-214
+    // one
+    // + two
+    // + three
+    uncover 13
+    +
+    // abi_routing/contract.py:212-215
+    // one
+    // + two
+    // + three
+    // + four
+    uncover 12
+    +
+    // abi_routing/contract.py:212-216
+    // one
+    // + two
+    // + three
+    // + four
+    // + five
+    uncover 11
+    +
+    // abi_routing/contract.py:212-217
+    // one
+    // + two
+    // + three
+    // + four
+    // + five
+    // + six
+    uncover 10
+    +
+    // abi_routing/contract.py:212-218
+    // one
+    // + two
+    // + three
+    // + four
+    // + five
+    // + six
+    // + seven
+    uncover 9
+    +
+    // abi_routing/contract.py:212-219
+    // one
+    // + two
+    // + three
+    // + four
+    // + five
+    // + six
+    // + seven
+    // + eight
+    uncover 8
+    +
+    // abi_routing/contract.py:212-220
+    // one
+    // + two
+    // + three
+    // + four
+    // + five
+    // + six
+    // + seven
+    // + eight
+    // + nine
+    uncover 7
+    +
+    // abi_routing/contract.py:212-221
+    // one
+    // + two
+    // + three
+    // + four
+    // + five
+    // + six
+    // + seven
+    // + eight
+    // + nine
+    // + ten
+    uncover 6
+    +
+    // abi_routing/contract.py:212-222
+    // one
+    // + two
+    // + three
+    // + four
+    // + five
+    // + six
+    // + seven
+    // + eight
+    // + nine
+    // + ten
+    // + eleven
+    uncover 5
+    +
+    // abi_routing/contract.py:212-223
+    // one
+    // + two
+    // + three
+    // + four
+    // + five
+    // + six
+    // + seven
+    // + eight
+    // + nine
+    // + ten
+    // + eleven
+    // + twelve
+    uncover 4
+    +
+    // abi_routing/contract.py:212-224
+    // one
+    // + two
+    // + three
+    // + four
+    // + five
+    // + six
+    // + seven
+    // + eight
+    // + nine
+    // + ten
+    // + eleven
+    // + twelve
+    // + thirteen
+    uncover 3
+    +
+    // abi_routing/contract.py:212-225
+    // one
+    // + two
+    // + three
+    // + four
+    // + five
+    // + six
+    // + seven
+    // + eight
+    // + nine
+    // + ten
+    // + eleven
+    // + twelve
+    // + thirteen
+    // + fourteen
+    uncover 2
+    +
+    // abi_routing/contract.py:211-226
+    // assert (
+    //     one
+    //     + two
+    //     + three
+    //     + four
+    //     + five
+    //     + six
+    //     + seven
+    //     + eight
+    //     + nine
+    //     + ten
+    //     + eleven
+    //     + twelve
+    //     + thirteen
+    //     + fourteen
+    // )
+    assert
+    // abi_routing/contract.py:191
+    // @arc4.abimethod
+    bytec_0 // 0x151f7c75
+    swap
+    concat
+    log
+    intc_2 // 1
+    return
+
+
+// test_cases.abi_routing.contract.Reference.method_with_more_than_15_args[routing]() -> void:
+method_with_more_than_15_args:
+    // abi_routing/contract.py:229
+    // @arc4.abimethod
+    txna ApplicationArgs 1
+    dup
+    len
+    intc_0 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    txna ApplicationArgs 2
+    dup
+    len
+    intc_0 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    txna ApplicationArgs 3
+    dup
+    len
+    intc_0 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    txna ApplicationArgs 4
+    dup
+    len
+    intc_0 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    btoi
+    txna ApplicationArgs 5
+    dup
+    len
+    intc_0 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    btoi
+    txna ApplicationArgs 6
+    dup
+    len
+    intc_0 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    txna ApplicationArgs 7
+    dup
+    len
+    intc_0 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    txn GroupIndex
+    intc_3 // 2
+    -
+    dup
+    gtxns TypeEnum
+    intc_2 // pay
+    ==
+    assert // transaction type is pay
+    txna ApplicationArgs 8
+    dup
+    len
+    intc_0 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    txna ApplicationArgs 9
+    dup
+    len
+    intc_0 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    txna ApplicationArgs 10
+    dup
+    len
+    intc_0 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    txna ApplicationArgs 11
+    dup
+    len
+    intc_0 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    txna ApplicationArgs 12
+    dup
+    len
+    intc_0 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    txna ApplicationArgs 13
+    dup
+    len
+    intc_0 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    txna ApplicationArgs 14
+    dup
+    len
+    intc_0 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    txna ApplicationArgs 15
+    dup
+    len
+    dig 1
+    pushint 40
+    extract_uint16 // on error: invalid tuple encoding
+    dup
+    pushint 68
+    ==
+    assert // invalid tail pointer at index 5 of (uint64,uint64,uint64,uint64,uint64,(len+uint8[]),(len+uint8[]),uint64,uint64,uint64)
+    dig 2
+    swap
+    dig 2
+    substring3
+    intc_1 // 0
+    extract_uint16 // on error: invalid array length header
+    pushint 70
+    +
+    dig 2
+    pushint 42
+    extract_uint16 // on error: invalid tuple encoding
+    dup
+    dig 2
+    ==
+    assert // invalid tail pointer at index 6 of (uint64,uint64,uint64,uint64,uint64,(len+uint8[]),(len+uint8[]),uint64,uint64,uint64)
+    dig 3
+    swap
+    dig 3
+    substring3
+    intc_1 // 0
+    extract_uint16 // on error: invalid array length header
+    intc_3 // 2
+    +
+    +
+    ==
+    assert // invalid number of bytes for arc4.tuple<arc4.uint64,arc4.uint64,arc4.uint64,arc4.uint64,arc4.uint64,arc4.dynamic_array<arc4.uint8>,arc4.dynamic_array<arc4.uint8>,arc4.uint64,arc4.uint64,arc4.uint64>
+    txna ApplicationArgs 15
+    dup
+    len
+    dig 1
+    pushint 40
+    extract_uint16 // on error: invalid tuple encoding
+    dup
+    pushint 68
+    ==
+    assert // invalid tail pointer at index 5 of (uint64,uint64,uint64,uint64,uint64,(len+uint8[]),(len+uint8[]),uint64,uint64,uint64)
+    dig 2
+    swap
+    dig 2
+    substring3
+    intc_1 // 0
+    extract_uint16 // on error: invalid array length header
+    pushint 70
+    +
+    dig 2
+    pushint 42
+    extract_uint16 // on error: invalid tuple encoding
+    dup
+    dig 2
+    ==
+    assert // invalid tail pointer at index 6 of (uint64,uint64,uint64,uint64,uint64,(len+uint8[]),(len+uint8[]),uint64,uint64,uint64)
+    dig 3
+    swap
+    dig 3
+    substring3
+    intc_1 // 0
+    extract_uint16 // on error: invalid array length header
+    intc_3 // 2
+    +
+    +
+    ==
+    assert // invalid number of bytes for arc4.tuple<arc4.uint64,arc4.uint64,arc4.uint64,arc4.uint64,arc4.uint64,arc4.dynamic_array<arc4.uint8>,arc4.dynamic_array<arc4.uint8>,arc4.uint64,arc4.uint64,arc4.uint64>
+    txna ApplicationArgs 15
+    dup
+    len
+    dig 1
+    pushint 40
+    extract_uint16 // on error: invalid tuple encoding
+    dup
+    pushint 68
+    ==
+    assert // invalid tail pointer at index 5 of (uint64,uint64,uint64,uint64,uint64,(len+uint8[]),(len+uint8[]),uint64,uint64,uint64)
+    dig 2
+    swap
+    dig 2
+    substring3
+    intc_1 // 0
+    extract_uint16 // on error: invalid array length header
+    pushint 70
+    +
+    dig 2
+    pushint 42
+    extract_uint16 // on error: invalid tuple encoding
+    dup
+    dig 2
+    ==
+    assert // invalid tail pointer at index 6 of (uint64,uint64,uint64,uint64,uint64,(len+uint8[]),(len+uint8[]),uint64,uint64,uint64)
+    dig 3
+    swap
+    dig 3
+    substring3
+    intc_1 // 0
+    extract_uint16 // on error: invalid array length header
+    intc_3 // 2
+    +
+    +
+    ==
+    assert // invalid number of bytes for arc4.tuple<arc4.uint64,arc4.uint64,arc4.uint64,arc4.uint64,arc4.uint64,arc4.dynamic_array<arc4.uint8>,arc4.dynamic_array<arc4.uint8>,arc4.uint64,arc4.uint64,arc4.uint64>
+    pushint 16
+    extract_uint64
+    txna ApplicationArgs 15
+    dup
+    len
+    dig 1
+    pushint 40
+    extract_uint16 // on error: invalid tuple encoding
+    dup
+    pushint 68
+    ==
+    assert // invalid tail pointer at index 5 of (uint64,uint64,uint64,uint64,uint64,(len+uint8[]),(len+uint8[]),uint64,uint64,uint64)
+    dig 2
+    swap
+    dig 2
+    substring3
+    intc_1 // 0
+    extract_uint16 // on error: invalid array length header
+    pushint 70
+    +
+    dig 2
+    pushint 42
+    extract_uint16 // on error: invalid tuple encoding
+    dup
+    dig 2
+    ==
+    assert // invalid tail pointer at index 6 of (uint64,uint64,uint64,uint64,uint64,(len+uint8[]),(len+uint8[]),uint64,uint64,uint64)
+    dig 3
+    swap
+    dig 3
+    substring3
+    intc_1 // 0
+    extract_uint16 // on error: invalid array length header
+    intc_3 // 2
+    +
+    +
+    ==
+    assert // invalid number of bytes for arc4.tuple<arc4.uint64,arc4.uint64,arc4.uint64,arc4.uint64,arc4.uint64,arc4.dynamic_array<arc4.uint8>,arc4.dynamic_array<arc4.uint8>,arc4.uint64,arc4.uint64,arc4.uint64>
+    txna ApplicationArgs 15
+    dup
+    len
+    dig 1
+    pushint 40
+    extract_uint16 // on error: invalid tuple encoding
+    dup
+    pushint 68
+    ==
+    assert // invalid tail pointer at index 5 of (uint64,uint64,uint64,uint64,uint64,(len+uint8[]),(len+uint8[]),uint64,uint64,uint64)
+    dig 2
+    swap
+    dig 2
+    substring3
+    intc_1 // 0
+    extract_uint16 // on error: invalid array length header
+    pushint 70
+    +
+    dig 2
+    pushint 42
+    extract_uint16 // on error: invalid tuple encoding
+    dup
+    dig 2
+    ==
+    assert // invalid tail pointer at index 6 of (uint64,uint64,uint64,uint64,uint64,(len+uint8[]),(len+uint8[]),uint64,uint64,uint64)
+    dig 3
+    swap
+    dig 3
+    substring3
+    intc_1 // 0
+    extract_uint16 // on error: invalid array length header
+    intc_3 // 2
+    +
+    +
+    ==
+    assert // invalid number of bytes for arc4.tuple<arc4.uint64,arc4.uint64,arc4.uint64,arc4.uint64,arc4.uint64,arc4.dynamic_array<arc4.uint8>,arc4.dynamic_array<arc4.uint8>,arc4.uint64,arc4.uint64,arc4.uint64>
+    txna ApplicationArgs 15
+    dup
+    len
+    dig 1
+    pushint 40
+    extract_uint16 // on error: invalid tuple encoding
+    dup
+    pushint 68
+    ==
+    assert // invalid tail pointer at index 5 of (uint64,uint64,uint64,uint64,uint64,(len+uint8[]),(len+uint8[]),uint64,uint64,uint64)
+    dig 2
+    dig 1
+    dig 3
+    substring3
+    intc_1 // 0
+    extract_uint16 // on error: invalid array length header
+    pushint 70
+    +
+    dig 3
+    pushint 42
+    extract_uint16 // on error: invalid tuple encoding
+    dup
+    dig 2
+    ==
+    assert // invalid tail pointer at index 6 of (uint64,uint64,uint64,uint64,uint64,(len+uint8[]),(len+uint8[]),uint64,uint64,uint64)
+    dig 4
+    dig 1
+    dig 5
+    substring3
+    intc_1 // 0
+    extract_uint16 // on error: invalid array length header
+    intc_3 // 2
+    +
+    uncover 2
+    +
+    uncover 3
+    ==
+    assert // invalid number of bytes for arc4.tuple<arc4.uint64,arc4.uint64,arc4.uint64,arc4.uint64,arc4.uint64,arc4.dynamic_array<arc4.uint8>,arc4.dynamic_array<arc4.uint8>,arc4.uint64,arc4.uint64,arc4.uint64>
+    substring3
+    extract 2 0
+    txna ApplicationArgs 15
+    dup
+    len
+    dig 1
+    pushint 40
+    extract_uint16 // on error: invalid tuple encoding
+    dup
+    pushint 68
+    ==
+    assert // invalid tail pointer at index 5 of (uint64,uint64,uint64,uint64,uint64,(len+uint8[]),(len+uint8[]),uint64,uint64,uint64)
+    dig 2
+    swap
+    dig 2
+    substring3
+    intc_1 // 0
+    extract_uint16 // on error: invalid array length header
+    pushint 70
+    +
+    dig 2
+    pushint 42
+    extract_uint16 // on error: invalid tuple encoding
+    dup
+    dig 2
+    ==
+    assert // invalid tail pointer at index 6 of (uint64,uint64,uint64,uint64,uint64,(len+uint8[]),(len+uint8[]),uint64,uint64,uint64)
+    uncover 3
+    swap
+    dig 3
+    substring3
+    dup
+    intc_1 // 0
+    extract_uint16 // on error: invalid array length header
+    intc_3 // 2
+    +
+    uncover 2
+    +
+    uncover 2
+    ==
+    assert // invalid number of bytes for arc4.tuple<arc4.uint64,arc4.uint64,arc4.uint64,arc4.uint64,arc4.uint64,arc4.dynamic_array<arc4.uint8>,arc4.dynamic_array<arc4.uint8>,arc4.uint64,arc4.uint64,arc4.uint64>
+    extract 2 0
+    txna ApplicationArgs 15
+    dup
+    len
+    dig 1
+    pushint 40
+    extract_uint16 // on error: invalid tuple encoding
+    dup
+    pushint 68
+    ==
+    assert // invalid tail pointer at index 5 of (uint64,uint64,uint64,uint64,uint64,(len+uint8[]),(len+uint8[]),uint64,uint64,uint64)
+    dig 2
+    swap
+    dig 2
+    substring3
+    intc_1 // 0
+    extract_uint16 // on error: invalid array length header
+    pushint 70
+    +
+    dig 2
+    pushint 42
+    extract_uint16 // on error: invalid tuple encoding
+    dup
+    dig 2
+    ==
+    assert // invalid tail pointer at index 6 of (uint64,uint64,uint64,uint64,uint64,(len+uint8[]),(len+uint8[]),uint64,uint64,uint64)
+    dig 3
+    swap
+    dig 3
+    substring3
+    intc_1 // 0
+    extract_uint16 // on error: invalid array length header
+    intc_3 // 2
+    +
+    +
+    ==
+    assert // invalid number of bytes for arc4.tuple<arc4.uint64,arc4.uint64,arc4.uint64,arc4.uint64,arc4.uint64,arc4.dynamic_array<arc4.uint8>,arc4.dynamic_array<arc4.uint8>,arc4.uint64,arc4.uint64,arc4.uint64>
+    pushint 44
+    extract_uint64
+    txn GroupIndex
+    intc_2 // 1
+    -
+    dup
+    gtxns TypeEnum
+    intc_2 // pay
+    ==
+    assert // transaction type is pay
+    txna ApplicationArgs 15
+    dup
+    len
+    dig 1
+    pushint 40
+    extract_uint16 // on error: invalid tuple encoding
+    dup
+    pushint 68
+    ==
+    assert // invalid tail pointer at index 5 of (uint64,uint64,uint64,uint64,uint64,(len+uint8[]),(len+uint8[]),uint64,uint64,uint64)
+    dig 2
+    swap
+    dig 2
+    substring3
+    intc_1 // 0
+    extract_uint16 // on error: invalid array length header
+    pushint 70
+    +
+    dig 2
+    pushint 42
+    extract_uint16 // on error: invalid tuple encoding
+    dup
+    dig 2
+    ==
+    assert // invalid tail pointer at index 6 of (uint64,uint64,uint64,uint64,uint64,(len+uint8[]),(len+uint8[]),uint64,uint64,uint64)
+    dig 3
+    swap
+    dig 3
+    substring3
+    intc_1 // 0
+    extract_uint16 // on error: invalid array length header
+    intc_3 // 2
+    +
+    +
+    ==
+    assert // invalid number of bytes for arc4.tuple<arc4.uint64,arc4.uint64,arc4.uint64,arc4.uint64,arc4.uint64,arc4.dynamic_array<arc4.uint8>,arc4.dynamic_array<arc4.uint8>,arc4.uint64,arc4.uint64,arc4.uint64>
+    txna ApplicationArgs 15
+    dup
+    len
+    dig 1
+    pushint 40
+    extract_uint16 // on error: invalid tuple encoding
+    dup
+    pushint 68
+    ==
+    assert // invalid tail pointer at index 5 of (uint64,uint64,uint64,uint64,uint64,(len+uint8[]),(len+uint8[]),uint64,uint64,uint64)
+    dig 2
+    swap
+    dig 2
+    substring3
+    intc_1 // 0
+    extract_uint16 // on error: invalid array length header
+    pushint 70
+    +
+    dig 2
+    pushint 42
+    extract_uint16 // on error: invalid tuple encoding
+    dup
+    dig 2
+    ==
+    assert // invalid tail pointer at index 6 of (uint64,uint64,uint64,uint64,uint64,(len+uint8[]),(len+uint8[]),uint64,uint64,uint64)
+    dig 3
+    swap
+    dig 3
+    substring3
+    intc_1 // 0
+    extract_uint16 // on error: invalid array length header
+    intc_3 // 2
+    +
+    +
+    ==
+    assert // invalid number of bytes for arc4.tuple<arc4.uint64,arc4.uint64,arc4.uint64,arc4.uint64,arc4.uint64,arc4.dynamic_array<arc4.uint8>,arc4.dynamic_array<arc4.uint8>,arc4.uint64,arc4.uint64,arc4.uint64>
+    // abi_routing/contract.py:264
+    // assert op.Txn.num_app_args == 16
+    txn NumAppArgs
+    pushint 16
+    ==
+    assert
+    // abi_routing/contract.py:265
+    // assert pay.amount == 100000
+    uncover 18
+    gtxns Amount
+    pushint 100000
+    ==
+    assert
+    // abi_routing/contract.py:266
+    // assert pay2.amount == 200000
+    uncover 2
+    gtxns Amount
+    pushint 200000
+    ==
+    assert
+    // abi_routing/contract.py:267
+    // assert asset.id
+    uncover 19
+    assert
+    // abi_routing/contract.py:268
+    // assert asset2.id
+    uncover 2
+    assert
+    // abi_routing/contract.py:270
+    // log(s + t)
+    uncover 3
+    uncover 3
+    concat
+    log
+    // abi_routing/contract.py:273
+    // a.as_uint64()
+    uncover 19
+    btoi
+    // abi_routing/contract.py:274
+    // + b.as_uint64()
+    uncover 19
+    btoi
+    // abi_routing/contract.py:273-274
+    // a.as_uint64()
+    // + b.as_uint64()
+    +
+    // abi_routing/contract.py:275
+    // + c.as_uint64()
+    uncover 18
+    btoi
+    // abi_routing/contract.py:273-275
+    // a.as_uint64()
+    // + b.as_uint64()
+    // + c.as_uint64()
+    +
+    // abi_routing/contract.py:273-276
+    // a.as_uint64()
+    // + b.as_uint64()
+    // + c.as_uint64()
+    // + d
+    uncover 17
+    +
+    // abi_routing/contract.py:277
+    // + e.as_uint64()
+    uncover 16
+    btoi
+    // abi_routing/contract.py:273-277
+    // a.as_uint64()
+    // + b.as_uint64()
+    // + c.as_uint64()
+    // + d
+    // + e.as_uint64()
+    +
+    // abi_routing/contract.py:278
+    // + f.as_uint64()
+    uncover 15
+    btoi
+    // abi_routing/contract.py:273-278
+    // a.as_uint64()
+    // + b.as_uint64()
+    // + c.as_uint64()
+    // + d
+    // + e.as_uint64()
+    // + f.as_uint64()
+    +
+    // abi_routing/contract.py:279
+    // + g.as_uint64()
+    uncover 14
+    btoi
+    // abi_routing/contract.py:273-279
+    // a.as_uint64()
+    // + b.as_uint64()
+    // + c.as_uint64()
+    // + d
+    // + e.as_uint64()
+    // + f.as_uint64()
+    // + g.as_uint64()
+    +
+    // abi_routing/contract.py:280
+    // + h.as_uint64()
+    uncover 13
+    btoi
+    // abi_routing/contract.py:273-280
+    // a.as_uint64()
+    // + b.as_uint64()
+    // + c.as_uint64()
+    // + d
+    // + e.as_uint64()
+    // + f.as_uint64()
+    // + g.as_uint64()
+    // + h.as_uint64()
+    +
+    // abi_routing/contract.py:281
+    // + i.as_uint64()
+    uncover 12
+    btoi
+    // abi_routing/contract.py:273-281
+    // a.as_uint64()
+    // + b.as_uint64()
+    // + c.as_uint64()
+    // + d
+    // + e.as_uint64()
+    // + f.as_uint64()
+    // + g.as_uint64()
+    // + h.as_uint64()
+    // + i.as_uint64()
+    +
+    // abi_routing/contract.py:282
+    // + j.as_uint64()
+    uncover 11
+    btoi
+    // abi_routing/contract.py:273-282
+    // a.as_uint64()
+    // + b.as_uint64()
+    // + c.as_uint64()
+    // + d
+    // + e.as_uint64()
+    // + f.as_uint64()
+    // + g.as_uint64()
+    // + h.as_uint64()
+    // + i.as_uint64()
+    // + j.as_uint64()
+    +
+    // abi_routing/contract.py:283
+    // + k.as_uint64()
+    uncover 10
+    btoi
+    // abi_routing/contract.py:273-283
+    // a.as_uint64()
+    // + b.as_uint64()
+    // + c.as_uint64()
+    // + d
+    // + e.as_uint64()
+    // + f.as_uint64()
+    // + g.as_uint64()
+    // + h.as_uint64()
+    // + i.as_uint64()
+    // + j.as_uint64()
+    // + k.as_uint64()
+    +
+    // abi_routing/contract.py:284
+    // + l.as_uint64()
+    uncover 9
+    btoi
+    // abi_routing/contract.py:273-284
+    // a.as_uint64()
+    // + b.as_uint64()
+    // + c.as_uint64()
+    // + d
+    // + e.as_uint64()
+    // + f.as_uint64()
+    // + g.as_uint64()
+    // + h.as_uint64()
+    // + i.as_uint64()
+    // + j.as_uint64()
+    // + k.as_uint64()
+    // + l.as_uint64()
+    +
+    // abi_routing/contract.py:285
+    // + m.as_uint64()
+    uncover 8
+    btoi
+    // abi_routing/contract.py:273-285
+    // a.as_uint64()
+    // + b.as_uint64()
+    // + c.as_uint64()
+    // + d
+    // + e.as_uint64()
+    // + f.as_uint64()
+    // + g.as_uint64()
+    // + h.as_uint64()
+    // + i.as_uint64()
+    // + j.as_uint64()
+    // + k.as_uint64()
+    // + l.as_uint64()
+    // + m.as_uint64()
+    +
+    // abi_routing/contract.py:286
+    // + n.as_uint64()
+    uncover 7
+    // abi_routing/contract.py:229
+    // @arc4.abimethod
+    intc_1 // 0
+    // abi_routing/contract.py:286
+    // + n.as_uint64()
+    extract_uint64
+    // abi_routing/contract.py:273-286
+    // a.as_uint64()
+    // + b.as_uint64()
+    // + c.as_uint64()
+    // + d
+    // + e.as_uint64()
+    // + f.as_uint64()
+    // + g.as_uint64()
+    // + h.as_uint64()
+    // + i.as_uint64()
+    // + j.as_uint64()
+    // + k.as_uint64()
+    // + l.as_uint64()
+    // + m.as_uint64()
+    // + n.as_uint64()
+    +
+    // abi_routing/contract.py:287
+    // + o.as_uint64()
+    uncover 6
+    // abi_routing/contract.py:229
+    // @arc4.abimethod
+    intc_0 // 8
+    // abi_routing/contract.py:287
+    // + o.as_uint64()
+    extract_uint64
+    // abi_routing/contract.py:273-287
+    // a.as_uint64()
+    // + b.as_uint64()
+    // + c.as_uint64()
+    // + d
+    // + e.as_uint64()
+    // + f.as_uint64()
+    // + g.as_uint64()
+    // + h.as_uint64()
+    // + i.as_uint64()
+    // + j.as_uint64()
+    // + k.as_uint64()
+    // + l.as_uint64()
+    // + m.as_uint64()
+    // + n.as_uint64()
+    // + o.as_uint64()
+    +
+    // abi_routing/contract.py:273-288
+    // a.as_uint64()
+    // + b.as_uint64()
+    // + c.as_uint64()
+    // + d
+    // + e.as_uint64()
+    // + f.as_uint64()
+    // + g.as_uint64()
+    // + h.as_uint64()
+    // + i.as_uint64()
+    // + j.as_uint64()
+    // + k.as_uint64()
+    // + l.as_uint64()
+    // + m.as_uint64()
+    // + n.as_uint64()
+    // + o.as_uint64()
+    // + p
+    uncover 5
+    +
+    // abi_routing/contract.py:289
+    // + q.as_uint64()
+    uncover 4
+    // abi_routing/contract.py:229
+    // @arc4.abimethod
+    pushint 24
+    // abi_routing/contract.py:289
+    // + q.as_uint64()
+    extract_uint64
+    // abi_routing/contract.py:273-289
+    // a.as_uint64()
+    // + b.as_uint64()
+    // + c.as_uint64()
+    // + d
+    // + e.as_uint64()
+    // + f.as_uint64()
+    // + g.as_uint64()
+    // + h.as_uint64()
+    // + i.as_uint64()
+    // + j.as_uint64()
+    // + k.as_uint64()
+    // + l.as_uint64()
+    // + m.as_uint64()
+    // + n.as_uint64()
+    // + o.as_uint64()
+    // + p
+    // + q.as_uint64()
+    +
+    // abi_routing/contract.py:290
+    // + r.as_uint64()
+    uncover 3
+    // abi_routing/contract.py:229
+    // @arc4.abimethod
+    pushint 32
+    // abi_routing/contract.py:290
+    // + r.as_uint64()
+    extract_uint64
+    // abi_routing/contract.py:273-290
+    // a.as_uint64()
+    // + b.as_uint64()
+    // + c.as_uint64()
+    // + d
+    // + e.as_uint64()
+    // + f.as_uint64()
+    // + g.as_uint64()
+    // + h.as_uint64()
+    // + i.as_uint64()
+    // + j.as_uint64()
+    // + k.as_uint64()
+    // + l.as_uint64()
+    // + m.as_uint64()
+    // + n.as_uint64()
+    // + o.as_uint64()
+    // + p
+    // + q.as_uint64()
+    // + r.as_uint64()
+    +
+    // abi_routing/contract.py:291
+    // + u.as_uint64()
+    uncover 2
+    // abi_routing/contract.py:229
+    // @arc4.abimethod
+    pushint 52
+    // abi_routing/contract.py:291
+    // + u.as_uint64()
+    extract_uint64
+    // abi_routing/contract.py:273-291
+    // a.as_uint64()
+    // + b.as_uint64()
+    // + c.as_uint64()
+    // + d
+    // + e.as_uint64()
+    // + f.as_uint64()
+    // + g.as_uint64()
+    // + h.as_uint64()
+    // + i.as_uint64()
+    // + j.as_uint64()
+    // + k.as_uint64()
+    // + l.as_uint64()
+    // + m.as_uint64()
+    // + n.as_uint64()
+    // + o.as_uint64()
+    // + p
+    // + q.as_uint64()
+    // + r.as_uint64()
+    // + u.as_uint64()
+    +
+    // abi_routing/contract.py:292
+    // + v.as_uint64()
+    swap
+    // abi_routing/contract.py:229
+    // @arc4.abimethod
+    pushint 60
+    // abi_routing/contract.py:292
+    // + v.as_uint64()
+    extract_uint64
+    // abi_routing/contract.py:273-292
+    // a.as_uint64()
+    // + b.as_uint64()
+    // + c.as_uint64()
+    // + d
+    // + e.as_uint64()
+    // + f.as_uint64()
+    // + g.as_uint64()
+    // + h.as_uint64()
+    // + i.as_uint64()
+    // + j.as_uint64()
+    // + k.as_uint64()
+    // + l.as_uint64()
+    // + m.as_uint64()
+    // + n.as_uint64()
+    // + o.as_uint64()
+    // + p
+    // + q.as_uint64()
+    // + r.as_uint64()
+    // + u.as_uint64()
+    // + v.as_uint64()
+    +
+    // abi_routing/contract.py:272-293
+    // return arc4.UInt64(
+    //     a.as_uint64()
+    //     + b.as_uint64()
+    //     + c.as_uint64()
+    //     + d
+    //     + e.as_uint64()
+    //     + f.as_uint64()
+    //     + g.as_uint64()
+    //     + h.as_uint64()
+    //     + i.as_uint64()
+    //     + j.as_uint64()
+    //     + k.as_uint64()
+    //     + l.as_uint64()
+    //     + m.as_uint64()
+    //     + n.as_uint64()
+    //     + o.as_uint64()
+    //     + p
+    //     + q.as_uint64()
+    //     + r.as_uint64()
+    //     + u.as_uint64()
+    //     + v.as_uint64()
+    // )
+    itob
+    // abi_routing/contract.py:229
+    // @arc4.abimethod
+    bytec_0 // 0x151f7c75
+    swap
+    concat
+    log
+    intc_2 // 1
+    return
+
+
+// test_cases.abi_routing.contract.Reference.hello_with_algopy_string[routing]() -> void:
+hello_with_algopy_string:
+    // abi_routing/contract.py:295
+    // @arc4.abimethod
+    txna ApplicationArgs 1
+    dup
+    intc_1 // 0
+    extract_uint16 // on error: invalid array length header
+    intc_3 // 2
+    +
+    dig 1
+    len
+    ==
+    assert // invalid number of bytes for arc4.dynamic_array<arc4.uint8>
+    extract 2 0
+    // abi_routing/contract.py:297
+    // return "Hello " + name + "!"
+    pushbytes "Hello "
+    swap
+    concat
+    pushbytes "!"
+    concat
+    // abi_routing/contract.py:295
+    // @arc4.abimethod
+    dup
+    len
+    itob
+    extract 6 2
+    swap
+    concat
+    bytec_0 // 0x151f7c75
+    swap
+    concat
+    log
+    intc_2 // 1
+    return

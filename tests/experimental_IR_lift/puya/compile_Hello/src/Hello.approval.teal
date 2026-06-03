@@ -1,0 +1,127 @@
+#pragma version 11
+#pragma typetrack false
+
+// algopy.arc4.ARC4Contract.approval_program() -> uint64:
+main:
+    intcblock 0 2 1
+    bytecblock "greeting"
+    txn ApplicationID
+    bnz main_after_if_else@2
+    // compile/apps.py:22
+    // self.greeting = String()
+    bytec_0 // "greeting"
+    pushbytes ""
+    app_global_put
+
+main_after_if_else@2:
+    // compile/apps.py:52
+    // class Hello(HelloBase):
+    txn NumAppArgs
+    bz main_update@14
+    pushbytes 0x24378d3c // method "delete()void"
+    txna ApplicationArgs 0
+    match main_delete_route@5
+    txn OnCompletion
+    !
+    assert
+    txn ApplicationID
+    bz main_create_NoOp@10
+    pushbytes 0xd0a28200 // method "greet(string)string"
+    txna ApplicationArgs 0
+    match greet
+    err
+
+main_create_NoOp@10:
+    // compile/apps.py:52
+    // class Hello(HelloBase):
+    pushbytes 0x20df3a54 // method "create(string)void"
+    txna ApplicationArgs 0
+    match create
+    err
+
+main_delete_route@5:
+    // compile/apps.py:24
+    // @arc4.abimethod(allow_actions=["DeleteApplication"])
+    txn OnCompletion
+    pushint 5 // DeleteApplication
+    ==
+    txn ApplicationID
+    &&
+    return
+
+main_update@14:
+    // compile/apps.py:28
+    // @arc4.baremethod(allow_actions=["UpdateApplication"])
+    txn OnCompletion
+    pushint 4 // UpdateApplication
+    ==
+    txn ApplicationID
+    &&
+    return
+
+
+// test_cases.compile.apps.Hello.create[routing]() -> void:
+create:
+    // compile/apps.py:53
+    // @arc4.abimethod(create="require")
+    txna ApplicationArgs 1
+    dup
+    intc_0 // 0
+    extract_uint16 // on error: invalid array length header
+    intc_1 // 2
+    +
+    dig 1
+    len
+    ==
+    assert // invalid number of bytes for arc4.dynamic_array<arc4.uint8>
+    extract 2 0
+    // compile/apps.py:55
+    // self.greeting = greeting
+    bytec_0 // "greeting"
+    swap
+    app_global_put
+    // compile/apps.py:53
+    // @arc4.abimethod(create="require")
+    intc_2 // 1
+    return
+
+
+// test_cases.compile.apps.HelloBase.greet[routing]() -> void:
+greet:
+    // compile/apps.py:32
+    // @arc4.abimethod()
+    txna ApplicationArgs 1
+    dup
+    intc_0 // 0
+    extract_uint16 // on error: invalid array length header
+    intc_1 // 2
+    +
+    dig 1
+    len
+    ==
+    assert // invalid number of bytes for arc4.dynamic_array<arc4.uint8>
+    extract 2 0
+    // compile/apps.py:34
+    // return self.greeting + " " + name
+    intc_0 // 0
+    bytec_0 // "greeting"
+    app_global_get_ex
+    assert // check self.greeting exists
+    pushbytes " "
+    concat
+    swap
+    concat
+    // compile/apps.py:32
+    // @arc4.abimethod()
+    dup
+    len
+    itob
+    extract 6 2
+    swap
+    concat
+    pushbytes 0x151f7c75
+    swap
+    concat
+    log
+    intc_2 // 1
+    return

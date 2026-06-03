@@ -1,0 +1,645 @@
+#pragma version 11
+#pragma typetrack false
+
+// test_cases.arc4_types.mutation.Arc4MutationContract.approval_program() -> uint64:
+main:
+    intcblock 0 2 1 16
+    bytecblock 0x00 0x80 0x00020004000b000548656c6c6f0005576f726c64 0x000800100017001e00230028002f0036003b000548656c6c6f0005576f726c640003466f6f0003426172000548656c6c6f0005576f726c640003466f6f0003426172 0x000548656c6c6f
+    // arc4_types/mutation.py:168
+    // dynamic_bool_array = DynamicArray[Bool](Bool(True), Bool(False))
+    pushbytes 0x000280
+    // arc4_types/mutation.py:170
+    // dynamic_bool_array.extend((Bool(True), Bool(False)))
+    bytec_1 // 0x80
+    intc_1 // 2
+    intc_2 // 1
+    callsub dynamic_array_concat_bits
+    // arc4_types/mutation.py:171
+    // assert dynamic_bool_array.bytes == Bytes.from_hex("0004A0")
+    dup
+    pushbytes 0x0004a0
+    ==
+    assert
+    // arc4_types/mutation.py:175
+    // dynamic_bool_array.extend(dynamic_bool_array)
+    dup
+    extract 2 0
+    dig 1
+    intc_0 // 0
+    extract_uint16 // on error: invalid array length header
+    intc_2 // 1
+    callsub dynamic_array_concat_bits
+    // arc4_types/mutation.py:177-186
+    // assert dynamic_bool_array == DynamicArray[Bool](
+    //     Bool(True),
+    //     Bool(False),
+    //     Bool(True),
+    //     Bool(False),
+    //     Bool(True),
+    //     Bool(False),
+    //     Bool(True),
+    //     Bool(False),
+    // )
+    dup
+    pushbytes 0x0008aa
+    ==
+    assert
+    // arc4_types/mutation.py:168
+    // dynamic_bool_array = DynamicArray[Bool](Bool(True), Bool(False))
+    bytec_1 // 0x80
+    // arc4_types/mutation.py:187
+    // dynamic_bool_array.append(Bool(True))
+    intc_2 // 1
+    dup
+    callsub dynamic_array_concat_bits
+    // arc4_types/mutation.py:189-199
+    // assert dynamic_bool_array == DynamicArray[Bool](
+    //     Bool(True),
+    //     Bool(False),
+    //     Bool(True),
+    //     Bool(False),
+    //     Bool(True),
+    //     Bool(False),
+    //     Bool(True),
+    //     Bool(False),
+    //     Bool(True),
+    // )
+    dup
+    pushbytes 0x0009aa80
+    ==
+    assert
+    // arc4_types/mutation.py:201
+    // assert dynamic_bool_array.pop() == Bool(True)
+    dup
+    intc_0 // 0
+    extract_uint16 // on error: invalid array length header
+    intc_2 // 1
+    - // on error: cannot pop from empty array
+    intc_3 // 16
+    +
+    dig 1
+    swap
+    getbit
+    bytec_0 // 0x00
+    intc_0 // 0
+    uncover 2
+    setbit
+    swap
+    callsub dynamic_array_pop_bit
+    swap
+    // arc4_types/mutation.py:168
+    // dynamic_bool_array = DynamicArray[Bool](Bool(True), Bool(False))
+    bytec_1 // 0x80
+    // arc4_types/mutation.py:201
+    // assert dynamic_bool_array.pop() == Bool(True)
+    ==
+    assert
+    // arc4_types/mutation.py:202
+    // assert dynamic_bool_array.pop() == Bool(False)
+    dup
+    intc_0 // 0
+    extract_uint16 // on error: invalid array length header
+    intc_2 // 1
+    - // on error: cannot pop from empty array
+    intc_3 // 16
+    +
+    dig 1
+    swap
+    getbit
+    bytec_0 // 0x00
+    intc_0 // 0
+    uncover 2
+    setbit
+    swap
+    callsub dynamic_array_pop_bit
+    swap
+    // arc4_types/mutation.py:168
+    // dynamic_bool_array = DynamicArray[Bool](Bool(True), Bool(False))
+    bytec_0 // 0x00
+    // arc4_types/mutation.py:202
+    // assert dynamic_bool_array.pop() == Bool(False)
+    ==
+    assert
+    // arc4_types/mutation.py:203-211
+    // assert dynamic_bool_array == DynamicArray[Bool](
+    //     Bool(True),
+    //     Bool(False),
+    //     Bool(True),
+    //     Bool(False),
+    //     Bool(True),
+    //     Bool(False),
+    //     Bool(True),
+    // )
+    pushbytes 0x0007aa
+    ==
+    assert
+    // arc4_types/mutation.py:219
+    // dynamic_string_array = DynamicArray(hello, world)
+    bytec_2 // 0x00020004000b000548656c6c6f0005576f726c64
+    // arc4_types/mutation.py:223
+    // dynamic_string_array.extend((foo, bar))
+    pushbytes 0x0003466f6f0003426172
+    intc_1 // 2
+    callsub dynamic_array_concat_byte_length_head
+    // arc4_types/mutation.py:225-227
+    // assert dynamic_string_array.bytes == Bytes(
+    //     b"\x00\x04\x00\x08\x00\x0f\x00\x16\x00\x1b\x00\x05Hello\x00\x05World\x00\x03Foo\x00\x03Bar"
+    // )
+    dup
+    pushbytes 0x00040008000f0016001b000548656c6c6f0005576f726c640003466f6f0003426172
+    ==
+    assert
+    // arc4_types/mutation.py:229
+    // dynamic_string_array.extend(dynamic_string_array)
+    dup
+    extract 2 0
+    dig 1
+    intc_0 // 0
+    extract_uint16 // on error: invalid array length header
+    dup
+    intc_1 // 2
+    *
+    dig 2
+    len
+    uncover 3
+    cover 2
+    substring3
+    swap
+    callsub dynamic_array_concat_byte_length_head
+    // arc4_types/mutation.py:231
+    // assert dynamic_string_array == DynamicArray(hello, world, foo, bar, hello, world, foo, bar)
+    bytec_3 // 0x000800100017001e00230028002f0036003b000548656c6c6f0005576f726c640003466f6f0003426172000548656c6c6f0005576f726c640003466f6f0003426172
+    ==
+    assert
+    bytec_3 // 0x000800100017001e00230028002f0036003b000548656c6c6f0005576f726c640003466f6f0003426172000548656c6c6f0005576f726c640003466f6f0003426172
+    // arc4_types/mutation.py:215
+    // hello = String("Hello")
+    bytec 4 // 0x000548656c6c6f
+    // arc4_types/mutation.py:233
+    // dynamic_string_array[3] = hello
+    pushint 3
+    callsub dynamic_array_replace_byte_length_head
+    dup
+    intc_0 // 0
+    extract_uint16
+    // arc4_types/mutation.py:234
+    // dynamic_string_array[5] = hello
+    pushint 5
+    >
+    assert // index out of bounds
+    // arc4_types/mutation.py:215
+    // hello = String("Hello")
+    bytec 4 // 0x000548656c6c6f
+    // arc4_types/mutation.py:234
+    // dynamic_string_array[5] = hello
+    pushint 5
+    callsub dynamic_array_replace_byte_length_head
+    // arc4_types/mutation.py:236-238
+    // assert dynamic_string_array == DynamicArray(
+    //     hello, world, foo, hello, hello, hello, foo, bar
+    // )
+    dup
+    pushbytes 0x000800100017001e0023002a00310038003d000548656c6c6f0005576f726c640003466f6f000548656c6c6f000548656c6c6f000548656c6c6f0003466f6f0003426172
+    ==
+    assert
+    // arc4_types/mutation.py:240
+    // assert dynamic_string_array.pop() == bar
+    dup
+    intc_0 // 0
+    extract_uint16 // on error: invalid array length header
+    intc_2 // 1
+    - // on error: cannot pop from empty array
+    dig 1
+    swap
+    callsub dynamic_array_read_byte_length_element
+    swap
+    callsub dynamic_array_pop_byte_length_head
+    swap
+    // arc4_types/mutation.py:218
+    // bar = String("Bar")
+    pushbytes 0x0003426172
+    // arc4_types/mutation.py:240
+    // assert dynamic_string_array.pop() == bar
+    ==
+    assert
+    // arc4_types/mutation.py:241
+    // assert dynamic_string_array.pop() == foo
+    dup
+    intc_0 // 0
+    extract_uint16 // on error: invalid array length header
+    intc_2 // 1
+    - // on error: cannot pop from empty array
+    dig 1
+    swap
+    callsub dynamic_array_read_byte_length_element
+    swap
+    callsub dynamic_array_pop_byte_length_head
+    swap
+    // arc4_types/mutation.py:217
+    // foo = String("Foo")
+    pushbytes 0x0003466f6f
+    // arc4_types/mutation.py:241
+    // assert dynamic_string_array.pop() == foo
+    ==
+    assert
+    // arc4_types/mutation.py:242
+    // assert dynamic_string_array == DynamicArray(hello, world, foo, hello, hello, hello)
+    pushbytes 0x0006000c0013001a001f0026002d000548656c6c6f0005576f726c640003466f6f000548656c6c6f000548656c6c6f000548656c6c6f
+    ==
+    assert
+    // arc4_types/mutation.py:72
+    // array_of_array = DynamicArray[DynamicArray[UInt8]]()
+    pushbytess 0x0000 0x00010a
+    // arc4_types/mutation.py:74
+    // array_of_array.append(DynamicArray[UInt8](UInt8(10)))
+    intc_2 // 1
+    callsub dynamic_array_concat_byte_length_head
+    // arc4_types/mutation.py:75
+    // assert array_of_array.bytes == Bytes.from_hex("0001000200010A")
+    dup
+    pushbytes 0x0001000200010a
+    ==
+    assert
+    // arc4_types/mutation.py:76
+    // array_of_array.append(DynamicArray[UInt8](UInt8(16)))
+    pushbytes 0x000110
+    intc_2 // 1
+    callsub dynamic_array_concat_byte_length_head
+    // arc4_types/mutation.py:77
+    // assert array_of_array.bytes == Bytes.from_hex("00020004000700010A000110")
+    dup
+    pushbytes 0x00020004000700010a000110
+    ==
+    assert
+    dup
+    intc_0 // 0
+    extract_uint16
+    assert // index out of bounds
+    // arc4_types/mutation.py:78
+    // array_of_array[0].append(UInt8(255))
+    dup
+    intc_0 // 0
+    callsub dynamic_array_read_byte_length_element
+    dup
+    intc_0 // 0
+    extract_uint16
+    // arc4_types/mutation.py:78
+    // array_of_array[0].append(UInt8(255))
+    intc_2 // 1
+    +
+    itob
+    extract 6 0
+    replace2 0
+    // arc4_types/mutation.py:78
+    // array_of_array[0].append(UInt8(255))
+    pushbytes 0xff
+    concat
+    // arc4_types/mutation.py:78
+    // array_of_array[0].append(UInt8(255))
+    intc_0 // 0
+    callsub dynamic_array_replace_byte_length_head
+    // arc4_types/mutation.py:80
+    // assert array_of_array.bytes == Bytes.from_hex("00020004000800020AFF000110")
+    dup
+    pushbytes 0x00020004000800020aff000110
+    ==
+    assert
+    dup
+    intc_0 // 0
+    extract_uint16
+    assert // index out of bounds
+    // arc4_types/mutation.py:82
+    // array_of_array[0][1] = UInt8(0)
+    dup
+    intc_0 // 0
+    callsub dynamic_array_read_byte_length_element
+    bytec_0 // 0x00
+    replace2 3 // on error: index access is out of bounds
+    intc_0 // 0
+    callsub dynamic_array_replace_byte_length_head
+    // arc4_types/mutation.py:83
+    // assert array_of_array.bytes == Bytes.from_hex("00020004000800020A00000110")
+    pushbytes 0x00020004000800020a00000110
+    ==
+    assert
+    // arc4_types/mutation.py:67
+    // hello_world_concat = DynamicArray(String("Hello")) + DynamicArray(String("World"))
+    pushbytess 0x00010002000548656c6c6f 0x0005576f726c64
+    intc_2 // 1
+    callsub dynamic_array_concat_byte_length_head
+    // arc4_types/mutation.py:219
+    // dynamic_string_array = DynamicArray(hello, world)
+    bytec_2 // 0x00020004000b000548656c6c6f0005576f726c64
+    // arc4_types/mutation.py:68
+    // assert hello_world == hello_world_concat
+    ==
+    assert
+    // arc4_types/mutation.py:43
+    // return True
+    intc_2 // 1
+    return
+
+
+// _puya_lib.arc4.dynamic_array_pop_bit(array: bytes) -> bytes:
+dynamic_array_pop_bit:
+    proto 1 1
+    frame_dig -1
+    intc_0 // 0
+    extract_uint16
+    intc_2 // 1
+    -
+    dup
+    itob
+    extract 6 0
+    frame_dig -1
+    extract 2 0
+    dig 2
+    intc_0 // 0
+    setbit
+    uncover 2
+    pushint 7
+    +
+    pushint 8
+    /
+    intc_0 // 0
+    swap
+    extract3
+    concat
+    retsub
+
+
+// _puya_lib.arc4.dynamic_array_pop_byte_length_head(array: bytes) -> bytes:
+dynamic_array_pop_byte_length_head:
+    proto 1 1
+    frame_dig -1
+    intc_0 // 0
+    extract_uint16
+    intc_2 // 1
+    -
+    dup
+    itob
+    extract 6 0
+    frame_dig -1
+    extract 2 0
+    dig 2
+    intc_1 // 2
+    *
+    dup2
+    extract_uint16
+    dig 2
+    intc_0 // 0
+    dig 3
+    substring3
+    uncover 2
+    intc_1 // 2
+    +
+    uncover 3
+    swap
+    uncover 3
+    substring3
+    concat
+    uncover 2
+    intc_0 // 0
+    callsub _recalculate_head_for_elements_with_byte_length_head
+    concat
+    retsub
+
+
+// _puya_lib.arc4.dynamic_array_read_byte_length_element(array: bytes, index: uint64) -> bytes:
+dynamic_array_read_byte_length_element:
+    proto 2 1
+    frame_dig -2
+    extract 2 0
+    frame_dig -1
+    intc_1 // 2
+    *
+    dig 1
+    swap
+    extract_uint16
+    dup2
+    extract_uint16
+    intc_1 // 2
+    +
+    extract3
+    retsub
+
+
+// _puya_lib.arc4.dynamic_array_concat_bits(array: bytes, new_items_bytes: bytes, new_items_count: uint64, read_step: uint64) -> bytes:
+dynamic_array_concat_bits:
+    proto 4 1
+    pushbytes ""
+    dupn 2
+    frame_dig -4
+    intc_0 // 0
+    extract_uint16
+    dupn 2
+    frame_dig -2
+    +
+    dup
+    itob
+    extract 6 0
+    frame_dig -4
+    swap
+    replace2 0
+    cover 2
+    swap
+    pushint 7
+    +
+    pushint 8
+    /
+    dup
+    uncover 2
+    pushint 7
+    +
+    pushint 8
+    /
+    dup
+    cover 2
+    <
+    bz dynamic_array_concat_bits_after_if_else@2
+    frame_dig 6
+    frame_dig 5
+    -
+    bzero
+    frame_dig 4
+    swap
+    concat
+    frame_bury 4
+
+dynamic_array_concat_bits_after_if_else@2:
+    intc_0 // 0
+    frame_bury 0
+    frame_dig 3
+    intc_3 // 16
+    +
+    dup
+    frame_bury 2
+    frame_dig -2
+    +
+    frame_bury 1
+
+dynamic_array_concat_bits_while_top@3:
+    frame_dig 2
+    frame_dig 1
+    <
+    bz dynamic_array_concat_bits_after_while@5
+    frame_dig -3
+    frame_dig 0
+    dup
+    cover 2
+    getbit
+    frame_dig 4
+    frame_dig 2
+    dup
+    cover 3
+    uncover 2
+    setbit
+    frame_bury 4
+    intc_2 // 1
+    +
+    frame_bury 2
+    frame_dig -1
+    +
+    frame_bury 0
+    b dynamic_array_concat_bits_while_top@3
+
+dynamic_array_concat_bits_after_while@5:
+    frame_dig 4
+    frame_bury 0
+    retsub
+
+
+// _puya_lib.arc4.dynamic_array_concat_byte_length_head(array: bytes, new_items_bytes: bytes, new_items_count: uint64) -> bytes:
+dynamic_array_concat_byte_length_head:
+    proto 3 1
+    frame_dig -3
+    intc_0 // 0
+    extract_uint16
+    dup
+    intc_1 // 2
+    *
+    intc_1 // 2
+    +
+    frame_dig -3
+    intc_1 // 2
+    dig 2
+    substring3
+    frame_dig -1
+    intc_1 // 2
+    *
+    bzero
+    concat
+    frame_dig -3
+    len
+    frame_dig -3
+    uncover 3
+    uncover 2
+    substring3
+    frame_dig -2
+    concat
+    concat
+    swap
+    frame_dig -1
+    +
+    dup
+    itob
+    extract 6 0
+    cover 2
+    intc_0 // 0
+    callsub _recalculate_head_for_elements_with_byte_length_head
+    concat
+    retsub
+
+
+// _puya_lib.arc4.dynamic_array_replace_byte_length_head(array: bytes, new_item: bytes, index: uint64) -> bytes:
+dynamic_array_replace_byte_length_head:
+    proto 3 1
+    frame_dig -3
+    substring 0 2
+    dup
+    btoi
+    frame_dig -3
+    extract 2 0
+    frame_dig -1
+    intc_1 // 2
+    *
+    dig 1
+    swap
+    extract_uint16
+    dup2
+    extract_uint16
+    dig 1
+    +
+    intc_1 // 2
+    +
+    dig 2
+    intc_0 // 0
+    uncover 3
+    substring3
+    frame_dig -2
+    concat
+    dig 2
+    len
+    uncover 3
+    uncover 3
+    uncover 2
+    substring3
+    concat
+    swap
+    frame_dig -1
+    callsub _recalculate_head_for_elements_with_byte_length_head
+    concat
+    retsub
+
+
+// _puya_lib.arc4._recalculate_head_for_elements_with_byte_length_head(array_head_and_tail: bytes, length: uint64, start_at_index: uint64) -> bytes:
+_recalculate_head_for_elements_with_byte_length_head:
+    proto 3 1
+    frame_dig -2
+    intc_1 // 2
+    *
+    dup
+    frame_dig -1
+    intc_1 // 2
+    *
+    frame_dig -3
+    dig 1
+    extract_uint16
+    uncover 2
+    swap
+    frame_dig -1
+    select
+    swap
+
+_recalculate_head_for_elements_with_byte_length_head_for_header@1:
+    frame_dig 2
+    frame_dig 0
+    <
+    bz _recalculate_head_for_elements_with_byte_length_head_after_for@4
+    frame_dig 1
+    dup
+    itob
+    extract 6 0
+    frame_dig -3
+    frame_dig 2
+    dup
+    cover 4
+    uncover 2
+    replace3
+    dup
+    frame_bury -3
+    dig 1
+    extract_uint16
+    intc_1 // 2
+    +
+    +
+    frame_bury 1
+    intc_1 // 2
+    +
+    frame_bury 2
+    b _recalculate_head_for_elements_with_byte_length_head_for_header@1
+
+_recalculate_head_for_elements_with_byte_length_head_after_for@4:
+    frame_dig -3
+    frame_bury 0
+    retsub

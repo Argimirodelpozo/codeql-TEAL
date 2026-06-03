@@ -1154,8 +1154,167 @@ def lift(prog: SSAProgram) -> ir.Program:
 
     main = next(sub for sub in subs if sub.is_main)
     prog_ir = ir.Program(main=main, subroutines=[s for s in subs if not s.is_main])
+    _reconcile_mixed_phis(prog_ir)
     _materialize_phi_consts(prog_ir)
     return prog_ir
+
+
+# Ops whose operand AVM type is unambiguous (used as the strongest signal for a
+# phi-web's type). `==`/`!=` are excluded -- they accept both; `itxn_field` /
+# `setbyte` are excluded -- their operand type is field/position dependent.
+_U64_CONSUME = frozenset({
+    "+", "-", "*", "/", "%", "exp", "sqrt", "shl", "shr", "<", ">", "<=", ">=",
+    "itob", "bitlen", "!", "&&", "||", "assert", "&", "|", "^", "~"})
+_BYTES_CONSUME = frozenset({
+    "concat", "len", "btoi", "log", "sha256", "sha512_256", "keccak256",
+    "sha3_256", "extract", "extract3", "substring", "substring3", "replace2",
+    "replace3", "b+", "b-", "b*", "b/", "b%", "b<", "b>",
+    "extract_uint16", "extract_uint32", "extract_uint64"})
+
+
+def _empty_bytes(b) -> bool:
+    """True if a BytesConstant is the empty-bytes placeholder (`""` / `0x`)."""
+    v = (getattr(b, "value", "") or "").strip()
+    return v in ("", "0x", '""', "''")
+
+
+def _itob_const(v: int) -> "ir.BytesConstant":
+    """A uint64 placeholder rewritten to bytes: empty for the (dead) 0 seed
+    that a `bytes` accumulator slot is initialised with, else its itob form."""
+    return ir.BytesConstant("0x" if v == 0 else "0x" + v.to_bytes(8, "big").hex())
+
+
+def _to_u64_const(b) -> "ir.UInt64Constant":
+    """A bytes placeholder rewritten to uint64 (the symmetric case: a uint64
+    slot seeded with empty `""`/`0x`); empty -> 0, else its btoi value."""
+    from .to_puya_ir import _const_bytes
+    try:
+        raw, _ = _const_bytes(getattr(b, "value", "") or "0x")
+        return ir.UInt64Constant(int.from_bytes(raw[-8:], "big") if raw else 0)
+    except Exception:
+        return ir.UInt64Constant(0)
+
+
+def _reconcile_mixed_phis(prog) -> None:
+    """Re-type a phi-web the value-stack reconstruction left holding a constant
+    of the wrong AVM type. A `bytes` accumulator slot is seeded with the cheaper
+    `intc_0 0` (and a `uint64` slot, symmetrically, with empty `""`) before the
+    loop fills it, so its loop-header phi merges the placeholder with the real
+    value -- which Puya's typed IR rejects. When a connected web of phis has hard
+    evidence of exactly one AVM type (a typed def or a typed consumer; constants
+    are soft) we retype the web and rewrite the opposite-typed constant
+    placeholders to match (they are dead -- overwritten before any read -- so any
+    same-typed value is sound). Webs are keyed by register *identity*, not name
+    (`tmp%`/`cr%` names repeat across subroutine groups). Skip a web with hard
+    evidence of BOTH types (a genuine merge we must not silently coerce)."""
+    blocks = [bb for sub in [prog.main, *prog.subroutines] for bb in sub.body]
+    parent: dict = {}                    # id(Register) -> id(Register)
+    obj: dict = {}                       # id(Register) -> Register
+
+    def find(x):
+        parent.setdefault(x, x)
+        root = x
+        while parent[root] != root:
+            root = parent[root]
+        while parent[x] != root:
+            parent[x], x = root, parent[x]
+        return root
+
+    def note(r):
+        obj[id(r)] = r
+        return id(r)
+
+    phi_ids: set = set()
+    for bb in blocks:
+        for ph in bb.phis:
+            phi_ids.add(note(ph.register))
+            for a in ph.args:
+                if isinstance(a.value, ir.Register):
+                    parent[find(note(ph.register))] = find(note(a.value))
+
+    def avm(t):
+        return ("b" if t in ("bytes", "account")
+                else "u" if t in ("uint64", "bool", "asset", "application")
+                else "?")
+
+    def reg_args(x):
+        out = []
+        if isinstance(x, ir.Register):
+            out.append(x)
+        for a in (getattr(x, "args", None) or []) + (getattr(x, "values", None) or []):
+            out += reg_args(a)
+        return out
+
+    # Evidence in priority tiers, aggregated per web root. A phi-web's type is
+    # decided by, in order: how its values are *consumed* (strongest -- the seed
+    # of a wrong type is dead and can't be consumed as that type anyway), then a
+    # non-placeholder constant arg, then a non-phi member's own def type.
+    from collections import defaultdict
+    consumer: dict = defaultdict(set)
+    constev: dict = defaultdict(set)
+    defev: dict = defaultdict(set)
+
+    for bb in blocks:
+        for ph in bb.phis:
+            root = find(id(ph.register))
+            for a in ph.args:            # non-placeholder consts are real data
+                v = a.value              # (empty bytes / uint64 0 are dead seeds)
+                if isinstance(v, ir.UInt64Constant) and v.value != 0:
+                    constev[root].add("u")
+                elif isinstance(v, ir.BytesConstant) and not _empty_bytes(v):
+                    constev[root].add("b")
+        for o in bb.ops:
+            if isinstance(o, ir.Assignment) and not isinstance(o.source, ir.Phi):
+                for t in o.targets:
+                    if id(t) in parent and id(t) not in phi_ids and avm(t.ir_type) != "?":
+                        defev[find(id(t))].add(avm(t.ir_type))
+            # Consumer evidence counts only *phi* registers (the accumulator
+            # values): a seed register's own uses elsewhere (e.g. NumAppArgs in
+            # routing) say nothing about the accumulator phi it merely seeds.
+            src = getattr(o, "source", None) or getattr(o, "intrinsic", None)
+            if isinstance(src, ir.Intrinsic):
+                k = ("u" if src.op in _U64_CONSUME
+                     else "b" if src.op in _BYTES_CONSUME else None)
+                if k:
+                    for r in reg_args(src):
+                        if id(r) in phi_ids:
+                            consumer[find(id(r))].add(k)
+            if isinstance(o, ir.Assert):
+                for r in reg_args(o.condition):
+                    if id(r) in phi_ids:
+                        consumer[find(id(r))].add("u")
+
+    webtype: dict = {}                   # web root -> 'bytes' / 'uint64'
+    for root in {find(rid) for rid in phi_ids}:
+        for tier in (consumer, constev, defev):
+            ev = tier.get(root, set())
+            if len(ev) == 1:             # unanimous at this tier decides it
+                webtype[root] = "bytes" if "b" in ev else "uint64"
+                break
+
+    def placeholder(T):
+        return _itob_const(0) if T == "bytes" else ir.UInt64Constant(0)
+
+    for bb in blocks:                    # retype every phi-register member
+        for ph in bb.phis:
+            T = webtype.get(find(id(ph.register)))
+            if T:
+                ph.register.ir_type = T
+    for bb in blocks:                    # coerce args of the wrong AVM type
+        for ph in bb.phis:
+            T = webtype.get(find(id(ph.register)))
+            if not T:
+                continue
+            want = "b" if T == "bytes" else "u"
+            for a in ph.args:
+                v = a.value
+                if isinstance(v, ir.UInt64Constant) and T == "bytes":
+                    a.value = _itob_const(v.value)
+                elif isinstance(v, ir.BytesConstant) and T == "uint64":
+                    a.value = _to_u64_const(v)
+                elif (isinstance(v, ir.Register) and id(v) not in phi_ids
+                      and avm(v.ir_type) not in ("?", want)):
+                    a.value = placeholder(T)   # cross-type non-phi seed -> dead placeholder
 
 
 def _materialize_phi_consts(prog) -> None:
