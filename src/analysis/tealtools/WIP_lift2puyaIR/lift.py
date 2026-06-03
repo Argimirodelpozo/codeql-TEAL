@@ -1056,12 +1056,34 @@ def lift(prog: SSAProgram) -> ir.Program:
         for a in prog.assignments:
             if a.op in ("app_global_put", "app_local_put") and len(a.inputs) >= 2:
                 key, v = _const_key(a.inputs[1]), a.inputs[0]
-                if key is None or not isinstance(v, (SSAVar, Phi)):
+                if key is None:
                     continue
-                vt = reg(v).ir_type
+                if isinstance(v, (SSAVar, Phi)):
+                    vt = reg(v).ir_type
+                    if vt == "?":                    # folded const lost its reg type
+                        cv = getattr(v, "const_value", None)
+                        if getattr(cv, "kind", None):
+                            vt = "uint64" if cv.kind == "int" else "bytes"
+                elif isinstance(v, Const):           # a constant put still types the key
+                    vt = "uint64" if v.kind == "int" else "bytes"
+                else:
+                    vt = None
                 if vt and vt != "?":
                     key_types.setdefault(key, set()).add(vt)
-        key_types = {k: next(iter(s)) for k, s in key_types.items() if len(s) == 1}
+
+        def _resolve(types: set):
+            # One put type -> that type. On a conflict, a `bytes` put is
+            # authoritative: a Puya-typed key never mixes types, so a bytes/
+            # uint64 clash means some reads of a bytes key (an address/hash) were
+            # mistyped uint64 by an `==` peer and then re-stored -- resolve the
+            # whole chain to bytes. (Puya-compiled contracts never conflict, so
+            # this only fires on decompiled type-recovery slips.)
+            if len(types) == 1:
+                return next(iter(types))
+            return "bytes" if "bytes" in types else None
+
+        key_types = {k: t for k, s in key_types.items()
+                     if (t := _resolve(s)) is not None}
         if not key_types:
             return
         for a in prog.assignments:
@@ -1073,11 +1095,18 @@ def lift(prog: SSAProgram) -> ir.Program:
                 continue
             if not isinstance(val, (SSAVar, Phi)):
                 continue
+            k = _const_key(a.inputs[0]) if a.inputs else None
+            if k not in key_types:
+                continue
+            # The put is authoritative: a read of a key with one consistent put
+            # type *is* that type. Correct a read mistyped by use-inference (e.g.
+            # an address read typed uint64 by an `==` peer) -- else a value-cache
+            # optimiser pass substitutes the stored value into the wrong-typed
+            # register. For consistent (puya-compiled) contracts the read type
+            # already matches, so this is a no-op there.
             r = reg(val)
-            if r.ir_type == "?":
-                k = _const_key(a.inputs[0]) if a.inputs else None
-                if k in key_types:
-                    r.ir_type = key_types[k]
+            if r.ir_type != key_types[k]:
+                r.ir_type = key_types[k]
 
     def _propagate_copy_load_types():
         """Close the remaining untyped registers at the IR level, to a

@@ -519,18 +519,30 @@ def identify_subroutines(prog: SSAProgram) -> dict:
             }
             for entry, body in bodies.items()
         }
-        # A callsub's continuation may not lie inside the callee's *own* body
-        # (entry -> retsub) unless it is one of the callee's retsub targets:
-        # when the linker placed that body right after the callsub, heuristic 1
-        # mis-picked a callee block (not a return point) as the continuation.
-        # Drop it so heuristic 2 refills from the retsub targets. The pure body
-        # (no spliced continuations) and the retsub-target exemption together
-        # keep a block legitimately shared with the callee from being dropped.
+        has_retsub = {
+            entry: any(_terminator_op(bb) == "retsub" for bb in body)
+            for entry, body in bodies.items()
+        }
+        # Fix mis-attributed continuations:
+        #  (a) a callee that never `retsub`s (it ends every path in `return` /
+        #      `err`) does not return, so its callsub has *no* continuation --
+        #      heuristic 1's next-source-block guess is spurious (and may land in
+        #      an unrelated subroutine's body, leaking a cross-group edge);
+        #  (b) a continuation may not lie inside the callee's *own* body
+        #      (entry -> retsub) unless it is a retsub target -- when the linker
+        #      placed that body right after the callsub, heuristic 1 mis-picked a
+        #      callee block as the return point. Drop it so heuristic 2 refills.
+        # The pure body (no spliced continuations) and the retsub-target
+        # exemption keep a block legitimately shared with the callee from being
+        # dropped.
         for cs_bb in callsub_bbs:
             callee = callsub_target.get(cs_bb)
             cont = continuations[cs_bb]
-            if (cont is not None and callee is not None
-                    and cont in pure.get(callee, ())
+            if cont is None or callee is None:
+                continue
+            if not has_retsub.get(callee, True):
+                continuations[cs_bb] = None
+            elif (cont in pure.get(callee, ())
                     and cont not in retsub_targets_per_sub.get(callee, ())):
                 continuations[cs_bb] = None
         added = False

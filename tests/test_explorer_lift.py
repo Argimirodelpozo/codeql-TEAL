@@ -8,7 +8,9 @@ correctness test (real-world TEAL hits known reconstruction limits, and very
 large programs are slow in PySSA construction). It asserts the WIP lift handles
 real input *robustly* -- a healthy majority lift to real Puya IR, and nothing
 crashes or hangs the harness -- and prints the breakdown so the coverage is
-visible. See ``project_puya_corpus_lift`` for the puya-corpus (248/248) result.
+visible. (At time of writing all 15 lift; the threshold is kept loose so a
+future re-sample with harder TEAL doesn't spuriously fail.) See
+``project_puya_corpus_lift`` for the puya-corpus (248/248) result.
 
 Each contract is lifted in its own subprocess with a hard timeout, so a program
 that is merely slow to reconstruct (a known PySSA perf limit on 2000+ line
