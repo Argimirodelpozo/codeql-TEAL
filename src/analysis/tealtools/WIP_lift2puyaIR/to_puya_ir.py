@@ -331,8 +331,12 @@ class _Translator:
                 source_location=None, targets=targets,
                 source=self.vp(o.source, [t.ir_type for t in targets]))
         if isinstance(o, ir.IntrinsicOp):
-            if isinstance(o.intrinsic, ir.Intrinsic) and o.intrinsic.op in ("pop", "popn"):
-                return None                      # pop/popn = discard; unused value, no-op in SSA
+            if isinstance(o.intrinsic, ir.Intrinsic) and o.intrinsic.op in (
+                    "pop", "popn", "pushbytess", "pushints"):
+                # pop/popn discard; a 0-output pushbytess/pushints is a phantom
+                # push (operands dropped by the extractor) whose values, if used,
+                # are recovered elsewhere (e.g. match keys from source) -- no-op.
+                return None
             return self.vp(o.intrinsic)          # side-effecting intrinsic = an Op
         if isinstance(o, ir.Assert):
             return M.Assert(source_location=None, condition=self.val(o.condition),
@@ -351,12 +355,17 @@ class _Translator:
             return M.GotoNth(source_location=None, value=self.val(t.value),
                              blocks=[B[b] for b in t.blocks], default=B[t.default])
         if isinstance(t, ir.Switch):
+            val = self.val(t.value)
+            is_u64 = getattr(val, "ir_type", None) == PT.uint64
             cases = {}
             for lbl, blk in t.cases:
-                raw, enc = _const_bytes(str(lbl))
-                key = M.BytesConstant(source_location=None, value=raw, encoding=enc)
+                if is_u64:                       # uint64-keyed match (e.g. OnCompletion)
+                    key = M.UInt64Constant(source_location=None, value=int(str(lbl), 0))
+                else:
+                    raw, enc = _const_bytes(str(lbl))
+                    key = M.BytesConstant(source_location=None, value=raw, encoding=enc)
                 cases[key] = B[blk]
-            return M.Switch(source_location=None, value=self.val(t.value),
+            return M.Switch(source_location=None, value=val,
                             cases=cases, default=B[t.default])
         if isinstance(t, ir.SubroutineReturn):
             return M.SubroutineReturn(source_location=None,

@@ -515,6 +515,34 @@ def lift(prog: SSAProgram) -> ir.Program:
                 last = a
         return last
 
+    def _recover_match_keys(bb, labels):
+        """Recover a `match`'s case keys from source when the extractor dropped
+        them (a `pushbytess base32(..) ..` whose operands it stripped, leaving a
+        phantom 0-output push). The keys are the push's operands, in label order;
+        stored as their source literal (`to_puya_ir._const_bytes` parses them)."""
+        from .to_puya_ir import _load_src, _tokenize_operands
+        src = _load_src(getattr(prog, "db_path", ""))
+        if len(src) != 1:
+            return None, set()
+        lines = next(iter(src.values()))
+        push = next((a for a in reversed(bb.assignments)
+                     if a.op in ("pushbytess", "pushints")), None)
+        ln = push.location.line if push is not None else 0
+        if not (1 <= ln <= len(lines)):
+            return None, set()
+        parts = lines[ln - 1].strip().split(None, 1)
+        ops_ = _tokenize_operands(parts[1]) if len(parts) == 2 else []
+        if len(ops_) < len(labels):
+            return None, set()
+        cases, targets = [], set()
+        for i, lbl in enumerate(labels):
+            blk = line2block.get(label2line.get(lbl))
+            if blk is None or blk not in bid:
+                return None, set()
+            cases.append((ops_[i], bid[blk]))
+            targets.add(blk)
+        return cases, targets
+
     def control(bb):
         t = term_assign(bb)
         op = t.op if t is not None else None
@@ -597,12 +625,19 @@ def lift(prog: SSAProgram) -> ir.Program:
             for i, lbl in enumerate(labels):
                 blk = line2block.get(label2line.get(lbl))
                 ci = ins[n - i] if (n - i) < len(ins) else None
-                key = getattr(ci, "value", None) if isinstance(ci, ir.BytesConstant) else None
+                if isinstance(ci, ir.BytesConstant):
+                    key = ci.value                       # bytes-keyed match
+                elif isinstance(ci, ir.UInt64Constant):
+                    key = str(ci.value)                  # uint64-keyed match
+                else:
+                    key = None
                 if blk is None or blk not in bid or key is None:
                     cases = None
                     break
                 cases.append((key, bid[blk]))
                 targets.add(blk)
+            if cases is None:                 # extractor dropped the case keys
+                cases, targets = _recover_match_keys(bb, labels)  # (from source)
             default = next((s for s in succ if s not in targets), None)
             if cases and default is not None:
                 val = ins[0] if ins else ir.Undefined()
