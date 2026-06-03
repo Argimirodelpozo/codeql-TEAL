@@ -94,27 +94,89 @@ def _teal_str_bytes(s: str) -> bytes:
     return bytes(out)
 
 
+def _b64(s: str) -> bytes:
+    import base64
+    return base64.b64decode(s.strip() + "=" * (-len(s.strip()) % 4))
+
+
+def _b32(s: str) -> bytes:
+    import base64                       # TEAL omits padding; addresses are 52 chars
+    return base64.b32decode(s.strip() + "=" * (-len(s.strip()) % 8))
+
+
 def _const_bytes(v: str):
     """Parse a TEAL byte literal -> (raw bytes, AVM encoding). Accepts the
-    `0x..` / `"str"` / `b64 ..` / `base64(..)` / `b32 ..` / `base32(..)` forms."""
-    import base64
+    `0x..` / `"str"` / `b64 ..` / `base64(..)` / `b32 ..` / `base32(..)` forms.
+    Base64/base32 bodies are re-padded (TEAL writes them without `=`)."""
     v = v.strip()
     if v.startswith("0x"):
         return bytes.fromhex(v[2:]), AVMBytesEncoding.base16
     if len(v) >= 2 and v[0] == '"' and v[-1] == '"':
         return _teal_str_bytes(v[1:-1]), AVMBytesEncoding.utf8
     if v.startswith(("b64 ", "base64 ")):
-        return base64.b64decode(v.split(None, 1)[1]), AVMBytesEncoding.base64
+        return _b64(v.split(None, 1)[1]), AVMBytesEncoding.base64
     if v.startswith("base64(") and v.endswith(")"):
-        return base64.b64decode(v[7:-1]), AVMBytesEncoding.base64
+        return _b64(v[7:-1]), AVMBytesEncoding.base64
     if v.startswith(("b32 ", "base32 ")):
-        return base64.b32decode(v.split(None, 1)[1]), AVMBytesEncoding.base32
+        return _b32(v.split(None, 1)[1]), AVMBytesEncoding.base32
     if v.startswith("base32(") and v.endswith(")"):
-        return base64.b32decode(v[7:-1]), AVMBytesEncoding.base32
+        return _b32(v[7:-1]), AVMBytesEncoding.base32
     try:
         return bytes.fromhex(v), AVMBytesEncoding.base16
     except ValueError:
         return v.encode("utf-8"), AVMBytesEncoding.utf8
+
+
+def _tokenize_operands(text: str) -> list:
+    """Split a TEAL operand list (the text after the opcode) into operand
+    tokens, honoring ``"quoted strings"`` and parenthesised ``base64(..)`` /
+    ``base32(..)`` groups (which can contain spaces and ``/``). Stops at an
+    inline ``//`` comment that sits between tokens (depth 0, outside quotes)."""
+    toks: list = []
+    i, n = 0, len(text)
+    while i < n:
+        c = text[i]
+        if c.isspace():
+            i += 1
+            continue
+        if text[i:i + 2] == "//":            # inline comment (between operands)
+            break
+        if c == '"':
+            j = i + 1
+            while j < n and not (text[j] == '"' and text[j - 1] != "\\"):
+                j += 1
+            toks.append(text[i:j + 1])
+            i = j + 1
+            continue
+        j, depth = i, 0
+        while j < n and (depth > 0 or not text[j].isspace()):
+            if text[j] == "(":
+                depth += 1
+            elif text[j] == ")":
+                depth -= 1
+            j += 1
+        toks.append(text[i:j])
+        i = j
+    return toks
+
+
+def _make_const(operand: str, is_u64: bool):
+    """A recovered operand string -> a Puya constant / template var, or None."""
+    operand = operand.strip()
+    if operand.startswith("TMPL_"):
+        return M.TemplateVar(source_location=None, name=operand,
+                             ir_type=PT.uint64 if is_u64 else PT.bytes)
+    if is_u64:
+        try:
+            return M.UInt64Constant(source_location=None, value=int(operand, 0))
+        except ValueError:
+            return None
+    raw, enc = _const_bytes(operand)
+    return M.BytesConstant(source_location=None, value=raw, encoding=enc)
+
+
+#: ``intc_N`` / ``bytec_N`` -> the const-block index N they load.
+_INDEXED = {f"{p}_{i}": i for p in ("intc", "bytec") for i in range(4)}
 
 
 def _sl(line: int) -> SourceLocation:
@@ -132,6 +194,7 @@ class _Translator:
         self.blocks: dict = {}    # mirror block id -> M.BasicBlock
         self.subs: dict = {}      # mirror Subroutine.id -> M.Subroutine
         self.src: dict = src_map or {}
+        self._block_cache: dict = {}   # (kind, line) -> recovered const block
 
     def ty(self, s):
         return _IRT.get(s, PT.uint64)
@@ -161,13 +224,70 @@ class _Translator:
         s = str(i)
         return int(s) if s.lstrip("-").isdigit() else s
 
+    def _src_lines(self) -> list:
+        """The single source program's lines, or [] if ambiguous/absent."""
+        return next(iter(self.src.values())) if len(self.src) == 1 else []
+
+    def _operands_at(self, line: int) -> list:
+        """Operand tokens on source ``line`` (after the opcode)."""
+        lines = self._src_lines()
+        if not (line and 1 <= line <= len(lines)):
+            return []
+        parts = lines[line - 1].strip().split(None, 1)
+        return _tokenize_operands(parts[1]) if len(parts) == 2 else []
+
+    def _const_block(self, kind: str, line: int) -> list:
+        """The ``intcblock`` / ``bytecblock`` operand list in scope at ``line``
+        (the latest definition at or before it), recovered from source. The
+        extractor truncates these blocks (drops ``TMPL_*`` / encoded entries),
+        so the SSA can't resolve ``bytec N`` into a dropped slot -- source can."""
+        key = (kind, line)
+        if key in self._block_cache:
+            return self._block_cache[key]
+        op = kind + "block"
+        best: list = []
+        for idx, text in enumerate(self._src_lines(), start=1):
+            t = text.strip()
+            if t.startswith(op + " ") and (not line or idx <= line):
+                best = _tokenize_operands(t[len(op):])
+        self._block_cache[key] = best
+        return best
+
+    def _block_value(self, op_name: str, idx: int, line: int):
+        """Resolve an ``intc_N`` / ``bytec_N`` / ``intc N`` / ``bytec N`` load
+        whose const-block slot the extractor dropped, from the source block."""
+        kind = "intc" if op_name.startswith("intc") else "bytec"
+        entries = self._const_block(kind, line)
+        if 0 <= idx < len(entries):
+            return _make_const(entries[idx], is_u64=(kind == "intc"))
+        return None
+
     def vp(self, s, result_types=None):
         if isinstance(s, ir.Intrinsic):
+            # const-load by index (intc_N / bytec_N / `intc N` / `bytec N`)
+            # whose const-block slot the extractor dropped -> recover from source.
+            idx = None
+            if s.op in ("bytec", "intc") and len(s.immediates) == 1 and not s.args:
+                idx = int(self._imm(s.immediates[0]))
+            elif s.op in _INDEXED and not s.args:
+                idx = _INDEXED[s.op]
+            if idx is not None:
+                v = self._block_value(s.op, idx, s.line)
+                if v is not None:
+                    return v
+            # const-push whose inline operand the extractor dropped (e.g.
+            # `pushbytes base64(..)`): recover the literal, else a template var.
             if (s.op in _PUSH_U64 or s.op in _PUSH_BYTES) and not s.args \
                     and not s.immediates:
-                ty = PT.uint64 if s.op in _PUSH_U64 else PT.bytes
-                return M.TemplateVar(source_location=None,
-                                     name=_tmpl_name(self.src, s.line), ir_type=ty)
+                is_u64 = s.op in _PUSH_U64
+                ops = self._operands_at(s.line)
+                if ops and not ops[0].startswith("TMPL_"):
+                    v = _make_const(ops[0], is_u64)
+                    if v is not None:
+                        return v
+                name = ops[0] if ops else _tmpl_name(self.src, s.line)
+                return M.TemplateVar(source_location=None, name=name,
+                                     ir_type=PT.uint64 if is_u64 else PT.bytes)
             kw = {} if result_types is None else {"types": result_types}
             return M.Intrinsic(
                 source_location=None, op=AVMOp(s.op),
@@ -186,6 +306,22 @@ class _Translator:
 
     def op(self, o):
         if isinstance(o, ir.Assignment):
+            # Multi-const push (`pushbytess` / `pushints`) whose inline operands
+            # the extractor dropped: Puya has no such op, so split into one
+            # `let target_i = <const_i>` per value (targets reversed to source
+            # order). Recovered from source; only when counts line up.
+            src = o.source
+            if isinstance(src, ir.Intrinsic) and src.op in ("pushbytess", "pushints") \
+                    and not src.args:
+                ops = self._operands_at(src.line)
+                tgts = [self.reg(t) for t in o.targets][::-1]
+                is_u64 = src.op == "pushints"
+                if ops and len(ops) == len(tgts):
+                    out = []
+                    for tgt, operand in zip(tgts, ops):
+                        out.append(M.Assignment(source_location=None, targets=[tgt],
+                                                source=_make_const(operand, is_u64)))
+                    return out
             targets = [self.reg(t) for t in o.targets]
             # Our outputs are top-first; Puya intrinsics return bottom-first
             # (AVM order), so a multi-output intrinsic's targets/types reverse.
@@ -285,7 +421,12 @@ def to_puya(prog):
         for bb in s.body:
             mb = t.blocks[bb.id]
             mb.phis = [t.phi(p) for p in bb.phis]
-            mb.ops = [m for m in (t.op(o) for o in bb.ops) if m is not None]
+            mb.ops = []
+            for o in bb.ops:                     # op() may split into a list
+                m = t.op(o)
+                if m is None:
+                    continue
+                mb.ops.extend(m) if isinstance(m, list) else mb.ops.append(m)
             mb.terminator = t.ctrl(bb.terminator) if bb.terminator else None
         body = [t.blocks[bb.id] for bb in s.body]
         if s.is_main:
