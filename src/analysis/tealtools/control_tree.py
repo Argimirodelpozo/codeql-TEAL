@@ -403,15 +403,32 @@ def identify_subroutines(prog: SSAProgram) -> dict:
     entries: set[BasicBlock] = set()
     callsub_target: dict[BasicBlock, BasicBlock] = {}
 
+    # label name -> source line, and blocks by source line, to resolve a callsub
+    # whose CFG entry edge is missing -- a subroutine whose own entry block is
+    # empty and merged into a reentrant loop-header successor leaves the
+    # `callsub -> entry` edge dangling, so the callee is never seen via
+    # `bb.successors`. Resolving the `callsub <label>` immediate to the first
+    # block at/after that label recovers it.
+    _label_line = {code.rstrip(":").strip(): ln for _f, ln, code in prog.labels}
+    _by_line = sorted(prog.blocks.values(), key=lambda b: b.first_line)
+
+    def _target_by_name(bb: BasicBlock) -> Optional[BasicBlock]:
+        imm = next((a.immediates for a in bb.assignments if a.op == "callsub"), None)
+        ln = _label_line.get((imm or "").strip())
+        if ln is None:
+            return None
+        return next((b for b in _by_line if b.first_line >= ln), None)
+
     callsub_bbs: list[BasicBlock] = []
     retsub_bbs: list[BasicBlock] = []
     for bb in prog.blocks.values():
         last = _terminator_op(bb)
         if last == "callsub":
             callsub_bbs.append(bb)
-            if bb.successors:
-                callsub_target[bb] = bb.successors[0]
-                entries.add(bb.successors[0])
+            target = bb.successors[0] if bb.successors else _target_by_name(bb)
+            if target is not None:
+                callsub_target[bb] = target
+                entries.add(target)
         elif last == "retsub":
             retsub_bbs.append(bb)
 
@@ -440,7 +457,7 @@ def identify_subroutines(prog: SSAProgram) -> dict:
             return b
         return None
 
-    def _body(entry: BasicBlock, conts: dict) -> set[BasicBlock]:
+    def _body(entry: BasicBlock, conts: dict, *, follow_callsub: bool = True) -> set[BasicBlock]:
         """A subroutine's body: intraprocedural reachability from the entry,
         modelling ``callsub`` as a *side-effecting op* that flows to its
         continuation (the return point) — not a control transfer into the
@@ -449,7 +466,12 @@ def identify_subroutines(prog: SSAProgram) -> dict:
         (which runs in this sub's frame, before its own ``retsub``) in the
         body rather than leaking it to the frame-less main flow. ``retsub`` is
         terminal (its successors are caller continuations), and we never cross
-        into another subroutine's entry."""
+        into another subroutine's entry.
+
+        With ``follow_callsub=False`` an internal ``callsub`` is terminal too,
+        giving the sub's *own* blocks (entry → retsub) without the spliced-in
+        caller continuations — used to test "is X inside this callee?" without
+        the false overlaps the spliced continuations create."""
         body: set[BasicBlock] = set()
         stack = [entry]
         while stack:
@@ -461,9 +483,10 @@ def identify_subroutines(prog: SSAProgram) -> dict:
             if op == "retsub":
                 continue
             if op == "callsub":
-                cont = conts.get(bb)
-                if cont is not None and not (cont in entries and cont is not entry):
-                    stack.append(cont)
+                if follow_callsub:
+                    cont = conts.get(bb)
+                    if cont is not None and not (cont in entries and cont is not entry):
+                        stack.append(cont)
                 continue
             for s in bb.successors:
                 if s in entries and s is not entry:
@@ -482,8 +505,12 @@ def identify_subroutines(prog: SSAProgram) -> dict:
         cs_bb: _source_next(cs_bb) for cs_bb in callsub_bbs
     }
     bodies: dict[BasicBlock, set[BasicBlock]] = {}
-    while True:
+    # bounded (the body/continuation refinement is monotone; the cap only guards
+    # against a pathological invalidate<->refill oscillation).
+    for _round in range(len(callsub_bbs) + len(entries) + 8):
         bodies = {entry: _body(entry, continuations) for entry in entries}
+        pure = {entry: _body(entry, continuations, follow_callsub=False)
+                for entry in entries}
         retsub_targets_per_sub = {
             entry: {
                 t for bb in body
@@ -492,6 +519,20 @@ def identify_subroutines(prog: SSAProgram) -> dict:
             }
             for entry, body in bodies.items()
         }
+        # A callsub's continuation may not lie inside the callee's *own* body
+        # (entry -> retsub) unless it is one of the callee's retsub targets:
+        # when the linker placed that body right after the callsub, heuristic 1
+        # mis-picked a callee block (not a return point) as the continuation.
+        # Drop it so heuristic 2 refills from the retsub targets. The pure body
+        # (no spliced continuations) and the retsub-target exemption together
+        # keep a block legitimately shared with the callee from being dropped.
+        for cs_bb in callsub_bbs:
+            callee = callsub_target.get(cs_bb)
+            cont = continuations[cs_bb]
+            if (cont is not None and callee is not None
+                    and cont in pure.get(callee, ())
+                    and cont not in retsub_targets_per_sub.get(callee, ())):
+                continuations[cs_bb] = None
         added = False
         for cs_bb in callsub_bbs:
             if continuations[cs_bb] is not None:
