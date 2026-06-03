@@ -702,9 +702,10 @@ def lift(prog: SSAProgram) -> ir.Program:
                     for r in call_results.get(b, []):
                         stack.append(r)
                     continue
-                if (len(a.outputs) == 1 and not a.inputs
-                        and getattr(a.outputs[0], "const_value", None) is not None):
-                    stack.append(_const(a.outputs[0].const_value))      # const push
+                if (not a.inputs and a.outputs and all(           # const push(es)
+                        getattr(o, "const_value", None) is not None for o in a.outputs)):
+                    for o in reversed(a.outputs):                 # pushints/pushbytess
+                        stack.append(_const(o.const_value))
                     continue
                 if a.op in ("intcblock", "bytecblock", "proto"):
                     continue
@@ -802,8 +803,8 @@ def lift(prog: SSAProgram) -> ir.Program:
             if a.op in _TERMINATOR_OPS or a.op in ("intcblock", "bytecblock",
                                                    "proto"):
                 continue
-            if (len(a.outputs) == 1 and not a.inputs
-                    and getattr(a.outputs[0], "const_value", None) is not None):
+            if (not a.inputs and a.outputs and all(       # const push(es): inlined
+                    getattr(o, "const_value", None) is not None for o in a.outputs)):
                 continue
             args = resim_args[id(a)] if resim and id(a) in resim_args \
                 else [value(i) for i in a.inputs]

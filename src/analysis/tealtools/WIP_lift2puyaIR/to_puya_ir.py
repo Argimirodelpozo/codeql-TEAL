@@ -74,6 +74,49 @@ def _tmpl_name(src_map: dict, line: int) -> str:
     return f"TMPL_anon_{line}" if line else "TMPL_anon"
 
 
+def _teal_str_bytes(s: str) -> bytes:
+    """Decode a TEAL ``byte "..."`` string body (handles \\\\ \\" \\n \\r \\t \\xNN)."""
+    out = bytearray()
+    i = 0
+    while i < len(s):
+        c = s[i]
+        if c == "\\" and i + 1 < len(s):
+            n = s[i + 1]
+            if n == "x" and i + 3 < len(s) + 1:
+                out.append(int(s[i + 2:i + 4], 16))
+                i += 4
+                continue
+            out.append({"n": 10, "r": 13, "t": 9, "\\": 92, '"': 34}.get(n, ord(n)))
+            i += 2
+            continue
+        out.extend(c.encode("utf-8"))
+        i += 1
+    return bytes(out)
+
+
+def _const_bytes(v: str):
+    """Parse a TEAL byte literal -> (raw bytes, AVM encoding). Accepts the
+    `0x..` / `"str"` / `b64 ..` / `base64(..)` / `b32 ..` / `base32(..)` forms."""
+    import base64
+    v = v.strip()
+    if v.startswith("0x"):
+        return bytes.fromhex(v[2:]), AVMBytesEncoding.base16
+    if len(v) >= 2 and v[0] == '"' and v[-1] == '"':
+        return _teal_str_bytes(v[1:-1]), AVMBytesEncoding.utf8
+    if v.startswith(("b64 ", "base64 ")):
+        return base64.b64decode(v.split(None, 1)[1]), AVMBytesEncoding.base64
+    if v.startswith("base64(") and v.endswith(")"):
+        return base64.b64decode(v[7:-1]), AVMBytesEncoding.base64
+    if v.startswith(("b32 ", "base32 ")):
+        return base64.b32decode(v.split(None, 1)[1]), AVMBytesEncoding.base32
+    if v.startswith("base32(") and v.endswith(")"):
+        return base64.b32decode(v[7:-1]), AVMBytesEncoding.base32
+    try:
+        return bytes.fromhex(v), AVMBytesEncoding.base16
+    except ValueError:
+        return v.encode("utf-8"), AVMBytesEncoding.utf8
+
+
 def _sl(line: int) -> SourceLocation:
     return SourceLocation(file=None, line=line or 1)
 
@@ -107,10 +150,8 @@ class _Translator:
         if isinstance(v, ir.UInt64Constant):
             return M.UInt64Constant(source_location=None, value=v.value)
         if isinstance(v, ir.BytesConstant):
-            h = v.value[2:] if v.value.startswith("0x") else v.value
-            return M.BytesConstant(source_location=None,
-                                   value=bytes.fromhex(h or ""),
-                                   encoding=AVMBytesEncoding.base16)
+            raw, enc = _const_bytes(v.value or "0x")
+            return M.BytesConstant(source_location=None, value=raw, encoding=enc)
         if isinstance(v, ir.Undefined):
             return M.Undefined(source_location=None, ir_type=PT.uint64)
         raise TypeError(f"val: {type(v).__name__}")
@@ -176,10 +217,8 @@ class _Translator:
         if isinstance(t, ir.Switch):
             cases = {}
             for lbl, blk in t.cases:
-                h = lbl[2:] if str(lbl).startswith("0x") else str(lbl)
-                key = M.BytesConstant(source_location=None,
-                                      value=bytes.fromhex(h),
-                                      encoding=AVMBytesEncoding.base16)
+                raw, enc = _const_bytes(str(lbl))
+                key = M.BytesConstant(source_location=None, value=raw, encoding=enc)
                 cases[key] = B[blk]
             return M.Switch(source_location=None, value=self.val(t.value),
                             cases=cases, default=B[t.default])
