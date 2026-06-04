@@ -182,3 +182,15 @@ def avm(t) -> str:
     return ("b" if t in ("bytes", "account")
             else "u" if t in ("uint64", "bool", "asset", "application")
             else "?")
+
+
+def _imm0(a) -> int | None:
+    """First immediate of an SSA assignment as an int (slot / frame index / ...),
+    or None when it has none or it isn't an integer."""
+    toks = (a.immediates or "").split()
+    if not toks:
+        return None
+    try:
+        return int(toks[0])
+    except ValueError:
+        return None
