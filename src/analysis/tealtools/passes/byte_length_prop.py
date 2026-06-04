@@ -73,6 +73,7 @@ ranged case.
 from __future__ import annotations
 
 import functools
+from collections import deque
 from typing import Optional
 
 from ..ssa import Assignment, Const, IntRange, Phi, SSAProgram, SSAVar, TealType
@@ -419,72 +420,105 @@ def propagate_byte_lengths(prog: SSAProgram) -> int:
         prog.propagate_constants()
 
     tagged = 0
-    changed = True
-    while changed:
-        changed = False
 
-        # (1) Forward exact-length rules on bytes-producing ops.
-        for a in prog.assignments:
-            if len(a.outputs) != 1:
-                continue
-            out = a.outputs[0]
-            if not isinstance(out, SSAVar):
-                continue
-            existing = out.type
-            if existing is not None and existing.kind == "bytes" \
-                    and existing.byte_length is not None:
-                continue
-            n = _op_byte_length(a)
-            if n is None or n < 0:
-                continue
-            if _set_byte_length(out, n):
+    # Worklist instead of a fixpoint that re-walks all ~4M assignments + phis
+    # every round: a value flows only to the assignments that use it (.uses) and
+    # the phis that take it as an arg (phi_consumers), so when an operand's
+    # byte_length / range changes only its consumers are re-evaluated. The
+    # lattice is monotonic (byte_length set once, ranges only intersect), so the
+    # least fixed point -- and the final type state -- is identical.
+    phis = list(prog.phis.values())
+    phi_consumers: dict = {}
+    for ph in phis:
+        for arg in ph.args:
+            phi_consumers.setdefault(id(arg), []).append(ph)
+
+    work: deque = deque()
+    queued: set = set()
+
+    def enqueue(item) -> None:
+        if id(item) not in queued:
+            queued.add(id(item))
+            work.append(item)
+
+    def fan_out(v) -> None:
+        for u in v.uses:
+            enqueue(u)
+        for ph in phi_consumers.get(id(v), ()):
+            enqueue(ph)
+
+    # (1) Forward exact-length rule for one bytes-producing op.
+    def do_assignment(a) -> None:
+        nonlocal tagged
+        if len(a.outputs) != 1:
+            return
+        out = a.outputs[0]
+        if not isinstance(out, SSAVar):
+            return
+        existing = out.type
+        if existing is not None and existing.kind == "bytes" \
+                and existing.byte_length is not None:
+            return
+        n = _op_byte_length(a)
+        if n is None or n < 0:
+            return
+        if _set_byte_length(out, n):
+            tagged += 1
+            fan_out(out)
+
+    # (3) Phi propagation: exact-length agreement first, range union fallback.
+    def do_phi(ph) -> None:
+        nonlocal tagged
+        existing = ph.type
+        if existing is not None and existing.kind == "bytes" \
+                and existing.byte_length is not None:
+            return
+        if not ph.args:
+            return
+        lengths: list[Optional[int]] = [_operand_byte_length(a) for a in ph.args]
+        if all(n is not None for n in lengths) and lengths \
+                and all(n == lengths[0] for n in lengths):
+            if _set_byte_length(ph, lengths[0]):  # type: ignore[arg-type]
                 tagged += 1
-                changed = True
+                fan_out(ph)
+                return
+        ranges = [_operand_byte_length_range(a) for a in ph.args]
+        if any(r is None for r in ranges):
+            return
+        lo = min(r.lo for r in ranges)  # type: ignore[union-attr]
+        hi = max(r.hi for r in ranges)  # type: ignore[union-attr]
+        if _set_byte_length_range(ph, lo, hi):
+            tagged += 1
+            fan_out(ph)
 
-        # (2) Inverse range constraints on input SSAVars: ops that
-        # require a minimum byte_length on one of their inputs to
-        # execute without halting carry that constraint backward.
-        for a in prog.assignments:
-            constraint = _input_min_length(a)
-            if constraint is None:
-                continue
-            idx, lo, hi = constraint
-            if idx >= len(a.inputs):
-                continue
-            target = a.inputs[idx]
-            if not isinstance(target, (SSAVar, Phi)):
-                continue
-            hi_eff = _BYTES_STACK_CAP if hi is None else hi
-            if _set_byte_length_range(target, lo, hi_eff):
-                tagged += 1
-                changed = True
+    # (2) Inverse length constraints are op-only (op / immediates / const
+    # operands), stable across the walk -- a one-shot seed, not in the fixpoint.
+    for a in prog.assignments:
+        constraint = _input_min_length(a)
+        if constraint is None:
+            continue
+        idx, lo, hi = constraint
+        if idx >= len(a.inputs):
+            continue
+        target = a.inputs[idx]
+        if not isinstance(target, (SSAVar, Phi)):
+            continue
+        hi_eff = _BYTES_STACK_CAP if hi is None else hi
+        if _set_byte_length_range(target, lo, hi_eff):
+            tagged += 1
+            fan_out(target)
 
-        # (3) Phi propagation: exact-length agreement first, range
-        # union as a fallback.
-        for ph in prog.phis.values():
-            existing = ph.type
-            if existing is not None and existing.kind == "bytes" \
-                    and existing.byte_length is not None:
-                continue
-            if not ph.args:
-                continue
-
-            lengths: list[Optional[int]] = [_operand_byte_length(a) for a in ph.args]
-            if all(n is not None for n in lengths) and lengths \
-                    and all(n == lengths[0] for n in lengths):
-                if _set_byte_length(ph, lengths[0]):  # type: ignore[arg-type]
-                    tagged += 1
-                    changed = True
-                    continue
-
-            # Range union: every arg must have at least a range bound.
-            ranges = [_operand_byte_length_range(a) for a in ph.args]
-            if any(r is None for r in ranges):
-                continue
-            lo = min(r.lo for r in ranges)  # type: ignore[union-attr]
-            hi = max(r.hi for r in ranges)  # type: ignore[union-attr]
-            if _set_byte_length_range(ph, lo, hi):
-                tagged += 1
-                changed = True
+    # Seed every assignment + phi once, then propagate only to consumers.
+    for a in prog.assignments:
+        enqueue(a)
+    for ph in phis:
+        enqueue(ph)
+    while work:
+        item = work.popleft()
+        queued.discard(id(item))
+        if isinstance(item, Assignment):
+            do_assignment(item)
+        else:
+            do_phi(item)
 
     return tagged
