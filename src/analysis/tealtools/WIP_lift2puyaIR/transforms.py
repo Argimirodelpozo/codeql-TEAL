@@ -75,45 +75,11 @@ def simplify_trivial_phis(program: pre_ir.Program) -> int:
     for b in _all_blocks(program):
         b.phis = [phi for phi in b.phis if id(phi.register) not in repl]
 
-    def fix_vp(vp):
-        if isinstance(vp, (pre_ir.Intrinsic, pre_ir.InvokeSubroutine)):
-            vp.args = [resolve(a) for a in vp.args]
-        elif isinstance(vp, pre_ir.ValueTuple):
-            vp.values = [resolve(a) for a in vp.values]
-
-    for b in _all_blocks(program):
-        for phi in b.phis:
-            for a in phi.args:
-                a.value = resolve(a.value)
-        for op in b.ops:
-            if isinstance(op, pre_ir.Assignment):
-                fix_vp(op.source)
-            elif isinstance(op, pre_ir.Assert):
-                op.condition = resolve(op.condition)
-            elif isinstance(op, pre_ir.IntrinsicOp):
-                fix_vp(op.intrinsic)
-        t = b.terminator
-        if isinstance(t, pre_ir.ConditionalBranch):
-            t.condition = resolve(t.condition)
-        elif isinstance(t, (pre_ir.Switch, pre_ir.GotoNth)):
-            t.value = resolve(t.value)
-        elif isinstance(t, pre_ir.SubroutineReturn):
-            t.result = [resolve(r) for r in t.result]
-        elif isinstance(t, pre_ir.ProgramExit):
-            t.result = resolve(t.result)
+    for b in _all_blocks(program):           # copy_source=False: don't forward a
+        for node in (*b.phis, *b.ops, b.terminator):   # copy's source into a
+            pre_ir.map_operands(node, resolve, copy_source=False)  # removed phi reg
     return len(repl)
 
-
-
-def _collect_regs(x, into: set) -> None:
-    if isinstance(x, pre_ir.Register):
-        into.add(id(x))
-    elif isinstance(x, (pre_ir.Intrinsic, pre_ir.InvokeSubroutine)):
-        for a in x.args:
-            _collect_regs(a, into)
-    elif isinstance(x, pre_ir.ValueTuple):
-        for v in x.values:
-            _collect_regs(v, into)
 
 
 def prune_dead_phis(subs) -> None:
@@ -128,24 +94,11 @@ def prune_dead_phis(subs) -> None:
             for phi in b.phis:
                 phi_by_reg[id(phi.register)] = phi
     for sub in subs:
-        for b in sub.body:
-            for op in b.ops:
-                if isinstance(op, pre_ir.Assignment):
-                    _collect_regs(op.source, live)
-                elif isinstance(op, pre_ir.Assert):
-                    _collect_regs(op.condition, live)
-                elif isinstance(op, pre_ir.IntrinsicOp):
-                    _collect_regs(op.intrinsic, live)
-            t = b.terminator
-            if isinstance(t, pre_ir.ConditionalBranch):
-                _collect_regs(t.condition, live)
-            elif isinstance(t, (pre_ir.Switch, pre_ir.GotoNth)):
-                _collect_regs(t.value, live)
-            elif isinstance(t, pre_ir.SubroutineReturn):
-                for r in t.result:
-                    _collect_regs(r, live)
-            elif isinstance(t, pre_ir.ProgramExit):
-                _collect_regs(t.result, live)
+        for b in sub.body:                   # seed from ops / terminator, NOT phis
+            for node in (*b.ops, b.terminator):
+                for v in pre_ir.operands(node):
+                    if isinstance(v, pre_ir.Register):
+                        live.add(id(v))
     work = list(live)
     while work:
         phi = phi_by_reg.get(work.pop())
@@ -167,31 +120,10 @@ def _subst_value(v, m: dict):
 
 def _subst_block(bb, m: dict) -> None:
     """Apply the substitution map to every operand position in a block."""
-    for ph in bb.phis:
-        ph.args = [pre_ir.PhiArgument(_subst_value(a.value, m), a.through)
-                   for a in ph.args]
-    for o in bb.ops:
-        if isinstance(o, pre_ir.Assignment):
-            s = o.source
-            if isinstance(s, (pre_ir.Intrinsic, pre_ir.InvokeSubroutine)):
-                s.args = [_subst_value(a, m) for a in s.args]
-            elif isinstance(s, pre_ir.ValueTuple):
-                s.values = [_subst_value(v, m) for v in s.values]
-            else:
-                o.source = _subst_value(s, m)
-        elif isinstance(o, pre_ir.IntrinsicOp):
-            o.intrinsic.args = [_subst_value(a, m) for a in o.intrinsic.args]
-        elif isinstance(o, pre_ir.Assert):
-            o.condition = _subst_value(o.condition, m)
-    t = bb.terminator
-    if isinstance(t, pre_ir.ConditionalBranch):
-        t.condition = _subst_value(t.condition, m)
-    elif isinstance(t, (pre_ir.Switch, pre_ir.GotoNth)):
-        t.value = _subst_value(t.value, m)
-    elif isinstance(t, pre_ir.SubroutineReturn):
-        t.result = [_subst_value(r, m) for r in t.result]
-    elif isinstance(t, pre_ir.ProgramExit):
-        t.result = _subst_value(t.result, m)
+    def sub(v):
+        return _subst_value(v, m)
+    for node in (*bb.phis, *bb.ops, bb.terminator):
+        pre_ir.map_operands(node, sub)
 
 
 def isolate_cross_group_phis(subs) -> int:
@@ -219,24 +151,11 @@ def isolate_cross_group_phis(subs) -> int:
     removed: set = set()
     for b_group in subs:
         used: set = set()
-        for bb in b_group.body:
-            for o in bb.ops:
-                if isinstance(o, pre_ir.Assignment):
-                    _collect_regs(o.source, used)
-                elif isinstance(o, pre_ir.IntrinsicOp):
-                    _collect_regs(o.intrinsic, used)
-                elif isinstance(o, pre_ir.Assert):
-                    _collect_regs(o.condition, used)
-            t = bb.terminator
-            if isinstance(t, pre_ir.ConditionalBranch):
-                _collect_regs(t.condition, used)
-            elif isinstance(t, (pre_ir.Switch, pre_ir.GotoNth)):
-                _collect_regs(t.value, used)
-            elif isinstance(t, pre_ir.SubroutineReturn):
-                for r in t.result:
-                    _collect_regs(r, used)
-            elif isinstance(t, pre_ir.ProgramExit):
-                _collect_regs(t.result, used)
+        for bb in b_group.body:              # uses in ops / terminator, NOT phis
+            for node in (*bb.ops, bb.terminator):
+                for v in pre_ir.operands(node):
+                    if isinstance(v, pre_ir.Register):
+                        used.add(id(v))
         sub_map: dict = {}
         for rid in used:
             entry = phi_by_reg.get(rid)

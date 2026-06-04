@@ -320,3 +320,78 @@ class Program:
 
     def render(self) -> str:
         return "\n\n".join(s.render() for s in (self.main, *self.subroutines))
+
+
+# --------------------------------------------------------------------------
+# Operand access — the one place that knows where each node's Values live, so
+# passes (collect / substitute / type) don't each re-spell the Op/ControlOp
+# dispatch. ``operands`` reads, ``map_operands`` rewrites in place.
+# --------------------------------------------------------------------------
+
+
+def _vp_values(vp):
+    """The Value list inside a ValueProvider (or the bare Value itself)."""
+    if isinstance(vp, (Intrinsic, InvokeSubroutine)):
+        return vp.args
+    if isinstance(vp, ValueTuple):
+        return vp.values
+    return (vp,)                              # a copy's bare source / a constant
+
+
+def operands(node):
+    """Yield each :data:`Value` operand of an Op / ControlOp / Phi — the leaf
+    values, descending into ``Intrinsic``/``InvokeSubroutine`` args and
+    ``ValueTuple`` values. Nothing for operand-less nodes (Goto, Fail, None)."""
+    if isinstance(node, Phi):
+        for a in node.args:
+            yield a.value
+    elif isinstance(node, Assignment):
+        yield from _vp_values(node.source)
+    elif isinstance(node, IntrinsicOp):
+        yield from _vp_values(node.intrinsic)
+    elif isinstance(node, (Assert, ConditionalBranch)):
+        yield node.condition
+    elif isinstance(node, (Switch, GotoNth)):
+        yield node.value
+    elif isinstance(node, SubroutineReturn):
+        yield from node.result
+    elif isinstance(node, ProgramExit):
+        yield node.result
+
+
+def _map_vp(vp, fn, copy_source):
+    if isinstance(vp, (Intrinsic, InvokeSubroutine)):
+        vp.args = [fn(a) for a in vp.args]
+        return vp
+    if isinstance(vp, ValueTuple):
+        vp.values = [fn(v) for v in vp.values]
+        return vp
+    return fn(vp) if copy_source else vp     # bare register/const copy source
+
+
+def map_operands(node, fn, *, copy_source: bool = True) -> None:
+    """Rewrite each Value operand of ``node`` through ``fn`` in place — the write
+    twin of :func:`operands`; no-op for operand-less nodes or None.
+
+    ``copy_source`` governs a register-to-register/const *copy* (an Assignment
+    whose source is a bare Value, not an Intrinsic/InvokeSubroutine/ValueTuple):
+    ``True`` rewrites it too (substitution must touch every reference);
+    ``False`` leaves it (trivial-phi collapse must not forward a copy's source
+    into a removed register — see :func:`simplify_trivial_phis`)."""
+    if isinstance(node, Phi):
+        for a in node.args:
+            a.value = fn(a.value)
+    elif isinstance(node, Assignment):
+        node.source = _map_vp(node.source, fn, copy_source)
+    elif isinstance(node, IntrinsicOp):
+        _map_vp(node.intrinsic, fn, copy_source)
+    elif isinstance(node, Assert):
+        node.condition = fn(node.condition)
+    elif isinstance(node, ConditionalBranch):
+        node.condition = fn(node.condition)
+    elif isinstance(node, (Switch, GotoNth)):
+        node.value = fn(node.value)
+    elif isinstance(node, SubroutineReturn):
+        node.result = [fn(r) for r in node.result]
+    elif isinstance(node, ProgramExit):
+        node.result = fn(node.result)
