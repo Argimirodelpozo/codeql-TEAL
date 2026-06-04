@@ -671,22 +671,33 @@ def _collapse_phi_args_to_leaves(py: PySSA, phi_map: dict, var_map: dict) -> Non
     reachable through PySSA's ``PyPhi.args`` graph (SCC condensation,
     O(N+E) memoized per SCC). Matches QL's ``phiArgs.ql`` projection."""
     import networkx as nx
+    # Graph nodes are integer indices, not the PyPhi objects: PyPhi.__hash__
+    # rebuilds + hashes the ``(bb_key, slot)`` tuple, and using phis as nodes
+    # called it millions of times across add_node / add_edge / SCC / lookups.
+    # networkx iterates nodes + adjacency in INSERTION order, so inserting
+    # ``0..N-1`` and the edges in the original phi order yields the identical SCC
+    # condensation + leaf order -- only the per-lookup hashing gets cheaper.
+    _phis = list(py.phis.values())
+    _key2i = {p.key(): i for i, p in enumerate(_phis)}
     _g = nx.DiGraph()
-    _g.add_nodes_from(py.phis.values())
-    for _py_p in py.phis.values():
+    _g.add_nodes_from(range(len(_phis)))
+    for _i, _py_p in enumerate(_phis):
         for _arg in _py_p.args:
             if isinstance(_arg, PyPhi):
-                _g.add_edge(_py_p, _arg)
+                _g.add_edge(_i, _key2i[_arg.key()])
     _sccs = list(nx.strongly_connected_components(_g))
-    _scc_of = {p: i for i, s in enumerate(_sccs) for p in s}
+    _scc_of = [0] * len(_phis)
+    for _si, _s in enumerate(_sccs):
+        for _n in _s:
+            _scc_of[_n] = _si
     _scc_succs = [set() for _ in _sccs]
     for _u, _v in _g.edges:
         _su, _sv = _scc_of[_u], _scc_of[_v]
         if _su != _sv:
             _scc_succs[_su].add(_sv)
     _scc_direct: list[list[PyVar]] = [[] for _ in _sccs]
-    for _py_p in py.phis.values():
-        _s = _scc_of[_py_p]
+    for _i, _py_p in enumerate(_phis):
+        _s = _scc_of[_i]
         for _arg in _py_p.args:
             if isinstance(_arg, PyVar):
                 _scc_direct[_s].append(_arg)
@@ -711,7 +722,7 @@ def _collapse_phi_args_to_leaves(py: PySSA, phi_map: dict, var_map: dict) -> Non
         _scc_leaves[_s] = _out
 
     for py_p, p in phi_map.items():
-        for _leaf_pv in _scc_leaves[_scc_of[py_p]]:
+        for _leaf_pv in _scc_leaves[_scc_of[_key2i[py_p.key()]]]:
             _ssa = var_map.get(_leaf_pv)
             if _ssa is not None:
                 p.args.append(_ssa)
