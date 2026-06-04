@@ -74,9 +74,10 @@ from __future__ import annotations
 
 import functools
 import logging
+from collections import deque
 from typing import Optional
 
-from ..ssa import Const, IntRange, SSAProgram, SSAVar, TealType
+from ..ssa import Assignment, Const, IntRange, SSAProgram, SSAVar, TealType
 
 logger = logging.getLogger("tealtools.passes.bytemath")
 
@@ -240,102 +241,131 @@ def propagate_bytemath_ranges(prog: SSAProgram) -> int:
         prog.propagate_ranges()
 
     tagged = 0
-    for _ in range(_PASS_ITER_CAP):
-        changed = False
 
-        for a in prog.assignments:
-            if len(a.outputs) != 1:
-                continue
-            out = a.outputs[0]
-            if not isinstance(out, SSAVar):
-                continue
-            op = a.op
+    # Worklist instead of re-walking all ~assignments + phis each round: a value
+    # flows only to the assignments that use it (.uses) and the phis that take it
+    # as an arg, so when an operand's range / int_value_range changes only its
+    # consumers are re-evaluated. _set_int_value_range only intersects (and the
+    # phi union's grown bounding is intersected away), so the lattice is
+    # monotonic and the final type state is identical -- just reached without the
+    # redundant re-walks. A defensive pop cap stands in for the old iteration cap.
+    phis = list(prog.phis.values())
+    phi_consumers: dict = {}
+    for ph in phis:
+        for arg in ph.args:
+            phi_consumers.setdefault(id(arg), []).append(ph)
 
-            # itob X (uint64 → bytes): output bigint value == input uint64.
-            if op == "itob":
-                if len(a.inputs) != 1:
-                    continue
-                r = getattr(a.inputs[0], "range", None)
-                if r is None:
-                    # try const_value for direct uint64 literal inputs
-                    cv = getattr(a.inputs[0], "const_value", None) \
-                        or (a.inputs[0] if isinstance(a.inputs[0], Const) else None)
-                    if cv is not None and cv.kind == "int":
-                        try:
-                            n = int(cv.value)
-                            r = IntRange(n, n)
-                        except (TypeError, ValueError):
-                            r = None
-                if r is None:
-                    continue
-                if _set_int_value_range(out, r.lo, r.hi):
-                    tagged += 1
-                    changed = True
-                continue
+    work: deque = deque()
+    queued: set = set()
 
-            # btoi X (bytes → uint64): output uint64 == input bigint, when
-            # the call could succeed (len(X) ∈ [1, 8] — checked by
-            # byte_length_prop, but we don't gate on it: if the bigint
-            # range doesn't fit in uint64, _set_uint64_range rejects it).
-            if op == "btoi":
-                if len(a.inputs) != 1:
-                    continue
-                r = _operand_bigint_range(a.inputs[0])
-                if r is None:
-                    continue
-                if _set_uint64_range(out, r.lo, r.hi):
-                    tagged += 1
-                    changed = True
-                continue
+    def enqueue(item) -> None:
+        if id(item) not in queued:
+            queued.add(id(item))
+            work.append(item)
 
-            # Bytemath arithmetic.
-            if op in _BYTES_OP_RULES:
-                if len(a.inputs) != 2:
-                    continue
-                ra = _operand_bigint_range(a.inputs[0])
-                rb = _operand_bigint_range(a.inputs[1])
-                if ra is None or rb is None:
-                    continue
-                result = _bytemath_result(op, ra, rb)
-                if result is None:
-                    continue
-                if _set_int_value_range(out, *result):
-                    tagged += 1
-                    changed = True
-                continue
+    def fan_out(v) -> None:
+        for u in v.uses:
+            enqueue(u)
+        for ph in phi_consumers.get(id(v), ()):
+            enqueue(ph)
 
-            # Single-output bytes constants: seed singleton range from the
-            # const literal. Covers bytec / pushbytes / bytec_0..3.
-            if a.const is not None and a.const.kind == "bytes":
-                n = _bytes_to_int(a.const.value)
-                if n is not None:
-                    if _set_int_value_range(out, n, n):
-                        tagged += 1
-                        changed = True
-                continue
+    def do_assignment(a) -> None:
+        nonlocal tagged
+        if len(a.outputs) != 1:
+            return
+        out = a.outputs[0]
+        if not isinstance(out, SSAVar):
+            return
+        op = a.op
 
-        # Phi range union — every arg must have at least a bigint range.
-        for ph in prog.phis.values():
-            if not ph.args:
-                continue
-            ranges = [_operand_bigint_range(arg) for arg in ph.args]
-            if any(r is None for r in ranges):
-                continue
-            lo = min(r.lo for r in ranges)  # type: ignore[union-attr]
-            hi = max(r.hi for r in ranges)  # type: ignore[union-attr]
-            if _set_int_value_range(ph, lo, hi):
+        # itob X (uint64 → bytes): output bigint value == input uint64.
+        if op == "itob":
+            if len(a.inputs) != 1:
+                return
+            r = getattr(a.inputs[0], "range", None)
+            if r is None:
+                cv = getattr(a.inputs[0], "const_value", None) \
+                    or (a.inputs[0] if isinstance(a.inputs[0], Const) else None)
+                if cv is not None and cv.kind == "int":
+                    try:
+                        n = int(cv.value)
+                        r = IntRange(n, n)
+                    except (TypeError, ValueError):
+                        r = None
+            if r is None:
+                return
+            if _set_int_value_range(out, r.lo, r.hi):
                 tagged += 1
-                changed = True
+                fan_out(out)
+            return
 
-        if not changed:
-            return tagged
+        # btoi X (bytes → uint64): output uint64 == input bigint (rejected by
+        # _set_uint64_range if the bigint range doesn't fit in uint64).
+        if op == "btoi":
+            if len(a.inputs) != 1:
+                return
+            r = _operand_bigint_range(a.inputs[0])
+            if r is None:
+                return
+            if _set_uint64_range(out, r.lo, r.hi):
+                tagged += 1
+                fan_out(out)
+            return
 
-    # Iteration cap hit — emit a soft warning. We *don't* raise: a
-    # partial result is still useful, and downstream analyses already
-    # treat unbounded ranges as "no info".
-    logger.warning(
-        "propagate_bytemath_ranges hit iteration cap (%d); ranges may "
-        "not have converged. This usually means a bytemath loop needs "
-        "proper widening.", _PASS_ITER_CAP,
-    )
+        # Bytemath arithmetic.
+        if op in _BYTES_OP_RULES:
+            if len(a.inputs) != 2:
+                return
+            ra = _operand_bigint_range(a.inputs[0])
+            rb = _operand_bigint_range(a.inputs[1])
+            if ra is None or rb is None:
+                return
+            result = _bytemath_result(op, ra, rb)
+            if result is None:
+                return
+            if _set_int_value_range(out, *result):
+                tagged += 1
+                fan_out(out)
+            return
+
+        # Single-output bytes constants: seed singleton range from the literal.
+        if a.const is not None and a.const.kind == "bytes":
+            n = _bytes_to_int(a.const.value)
+            if n is not None and _set_int_value_range(out, n, n):
+                tagged += 1
+                fan_out(out)
+
+    def do_phi(ph) -> None:
+        nonlocal tagged
+        if not ph.args:
+            return
+        ranges = [_operand_bigint_range(arg) for arg in ph.args]
+        if any(r is None for r in ranges):
+            return
+        lo = min(r.lo for r in ranges)  # type: ignore[union-attr]
+        hi = max(r.hi for r in ranges)  # type: ignore[union-attr]
+        if _set_int_value_range(ph, lo, hi):
+            tagged += 1
+            fan_out(ph)
+
+    for a in prog.assignments:
+        enqueue(a)
+    for ph in phis:
+        enqueue(ph)
+    cap = _PASS_ITER_CAP * (len(prog.assignments) + len(phis) + 1)
+    pops = 0
+    while work and pops < cap:
+        pops += 1
+        item = work.popleft()
+        queued.discard(id(item))
+        if isinstance(item, Assignment):
+            do_assignment(item)
+        else:
+            do_phi(item)
+    if pops >= cap:
+        logger.warning(
+            "propagate_bytemath_ranges hit iteration cap (%d); ranges may "
+            "not have converged. This usually means a bytemath loop needs "
+            "proper widening.", _PASS_ITER_CAP,
+        )
     return tagged
