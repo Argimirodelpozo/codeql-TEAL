@@ -24,6 +24,7 @@ from ..ssa import (
     _shuffle_mapping,
 )
 from ..structure import analyze_structure
+from ..passes.frame_resolution import resolve_sub
 from ..opcode_sigs import op_arity
 from .optypes import (
     _BOOL_OPS, _BYTES_OPS, _COND_BRANCH, _NAME_PREFIX, _U64_OPS, _field_type,
@@ -234,7 +235,7 @@ class _Lifter:
         self.ctr: dict = {}
         self.frame_map: dict = {}              # SSAVar (frame_dig out[0]) -> Register
         self.local_regs: dict = {}            # (gname, slot) -> Register (k<0 bury fallback)
-        self.local_ver: dict = {}             # (gname, slot) -> next version counter
+        self._fr_regs: dict = {}              # (gname, slot, version) -> local Register
         self.bury_target: dict = {}           # id(frame_bury assignment) -> versioned Register
         self.final_locals: dict = {}          # gname -> {slot: final versioned Register}
         self.shuffle_src: dict = {}           # SSAVar (shuffle output) -> source operand
@@ -403,55 +404,29 @@ class _Lifter:
         return ", ".join(parts) if parts else None
 
     def _setup_frame(self, gb, params):
-        # A non-negative frame slot is a subroutine *local*. Puya's compiler
-        # colours disjoint-lifetime locals onto one slot, so a slot may hold
-        # values of different types over its life -- not valid SSA as a single
-        # register. Version it: each `frame_bury` opens a new version, each
-        # `frame_dig` reads the version reaching it (block order; a true merge
-        # of differing versions would need a phi -- TODO, absent in the slot-
-        # colouring patterns seen so far). Negative slots are params (and the
-        # rare `frame_bury -k` keeps its old single-register fallback).
-        nargs = len(params)
-        cur: dict = {}               # slot -> current versioned Register
+        # frame_dig / frame_bury are resolved to params / versioned locals by
+        # passes.frame_resolution (precise for proto subs -- the sound case, and
+        # the only place frame ops occur); bind that substrate slot model onto
+        # this group's registers. The k<0 `frame_bury` fallback stays in
+        # `_build_block` via `_local`.
+        res = resolve_sub(gb, len(params))
+        for out0, i in res.dig_param.items():
+            self.frame_map[out0] = params[i].register
+        for out0, (slot, ver) in res.dig_local.items():
+            self.frame_map[out0] = self._local_reg(slot, ver)
+        for aid, (slot, ver) in res.bury.items():
+            self.bury_target[aid] = self._local_reg(slot, ver)
+        self.shuffle_src.update(res.passthrough)
+        self.final_locals[self.cur_gname] = {
+            slot: self._local_reg(slot, ver) for slot, ver in res.final.items()}
 
-        def _fresh(slot: int) -> pre_ir.Register:
-            key = (self.cur_gname, slot)
-            v = self.local_ver.get(key, 0)
-            self.local_ver[key] = v + 1
-            return pre_ir.Register(f"l%{slot}", v, "?")
-
-        for bb in gb:
-            for a in bb.assignments:
-                if a.op == "frame_dig" and a.outputs:
-                    k = _imm0(a)
-                    if k is None:
-                        continue
-                    out0 = a.outputs[0]
-                    if -nargs <= k <= -1:
-                        self.frame_map[out0] = params[nargs + k].register
-                    else:
-                        r = cur.get(k)
-                        if r is None:                # read-before-write local
-                            r = cur[k] = _fresh(k)
-                        self.frame_map[out0] = r
-                    # fat-frame passthrough: dig pushes the slot on top, the rest
-                    # of the stack re-emerges shifted (out[i] = in[i-1]); route it
-                    # so later consumers of those slots resolve to the real value.
-                    for i in range(1, len(a.outputs)):
-                        o = a.outputs[i]
-                        if isinstance(o, SSAVar) and i - 1 < len(a.inputs):
-                            self.shuffle_src[o] = a.inputs[i - 1]
-                elif a.op == "frame_bury" and a.inputs:
-                    k = _imm0(a)
-                    if k is not None and k >= 0:
-                        self.bury_target[id(a)] = cur[k] = _fresh(k)
-                    # bury pops the top into the slot; the rest passes through
-                    # shifted the other way (out[i] = in[i+1]).
-                    for i in range(len(a.outputs)):
-                        o = a.outputs[i]
-                        if isinstance(o, SSAVar) and i + 1 < len(a.inputs):
-                            self.shuffle_src[o] = a.inputs[i + 1]
-        self.final_locals[self.cur_gname] = dict(cur)      # final reg per written slot
+    def _local_reg(self, slot: int, ver: int) -> pre_ir.Register:
+        """The (cached, identity-stable) versioned local register for a slot."""
+        key = (self.cur_gname, slot, ver)
+        r = self._fr_regs.get(key)
+        if r is None:
+            r = self._fr_regs[key] = pre_ir.Register(f"l%{slot}", ver, "?")
+        return r
 
     def _setup_shuffles(self, gb):
         # A pure stack shuffle (dup/dupn/swap/cover/uncover) just reorders or

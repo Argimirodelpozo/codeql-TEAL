@@ -1,0 +1,106 @@
+"""Precise frame-slot resolution — an opt-in layer over PySSA's conservative
+fat-frame model (which stays the sound substrate for the may-analyses).
+
+`frame_dig`/`frame_bury` only occur in `proto` subroutines, where the AVM frame
+layout is exact, so resolving each to its logical param / versioned local is
+*sound*, not heuristic. PySSA keeps modelling them as wide stack ops (so taint /
+const / range carry through conservatively); consumers wanting precision read the
+per-op slot model here instead, leaving the substrate untouched.
+
+`resolve_sub(blocks, nargs)` is the core (a sub's blocks + its proto arg count);
+`resolve(prog)` partitions via `structure.analyze_structure` and resolves every
+proto sub.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+
+from ..ssa import SSAVar
+
+
+def _imm0(a) -> int | None:
+    toks = (a.immediates or "").split()
+    try:
+        return int(toks[0]) if toks else None
+    except ValueError:
+        return None
+
+
+@dataclass
+class SubFrames:
+    """One subroutine's frame-slot model — substrate-level (SSA vars + ints, no
+    IR registers): which param / versioned local each frame op accesses, plus the
+    fat-frame band passthrough."""
+    dig_param: dict = field(default_factory=dict)    # frame_dig out0 -> param index
+    dig_local: dict = field(default_factory=dict)    # frame_dig out0 -> (slot, version)
+    bury: dict = field(default_factory=dict)         # id(frame_bury) -> (slot, version)
+    passthrough: dict = field(default_factory=dict)  # fat-frame out -> source operand
+    final: dict = field(default_factory=dict)        # slot -> final version
+
+
+def resolve_sub(blocks, nargs: int) -> SubFrames:
+    """Resolve one subroutine's frames: ``frame_dig -k`` (k in proto args) reads
+    param ``nargs-k``; other ``frame_dig``/``frame_bury`` read/write a versioned
+    local (each bury opens a version, each read takes the version reaching it in
+    block order). Also routes the fat-frame band passthrough (out[i] = in[i∓1])."""
+    res = SubFrames()
+    cur: dict = {}                           # slot -> current version
+    nextver: dict = {}                       # slot -> next version
+
+    def fresh(slot: int) -> int:
+        v = nextver.get(slot, 0)
+        nextver[slot] = v + 1
+        cur[slot] = v
+        return v
+
+    for bb in blocks:
+        for a in bb.assignments:
+            if a.op == "frame_dig" and a.outputs:
+                k = _imm0(a)
+                if k is None:
+                    continue
+                out0 = a.outputs[0]
+                if -nargs <= k <= -1:
+                    res.dig_param[out0] = nargs + k
+                else:
+                    v = cur.get(k)
+                    res.dig_local[out0] = (k, v if v is not None else fresh(k))
+                for i in range(1, len(a.outputs)):   # dig: out[i] = in[i-1]
+                    o = a.outputs[i]
+                    if isinstance(o, SSAVar) and i - 1 < len(a.inputs):
+                        res.passthrough[o] = a.inputs[i - 1]
+            elif a.op == "frame_bury" and a.inputs:
+                k = _imm0(a)
+                if k is not None and k >= 0:
+                    res.bury[id(a)] = (k, fresh(k))
+                for i in range(len(a.outputs)):      # bury: out[i] = in[i+1]
+                    o = a.outputs[i]
+                    if isinstance(o, SSAVar) and i + 1 < len(a.inputs):
+                        res.passthrough[o] = a.inputs[i + 1]
+    res.final = dict(cur)
+    return res
+
+
+def _proto_nargs(entry_bb) -> int | None:
+    """Arg count from a sub entry's ``proto A R`` op, or None for a legacy
+    non-proto sub (which has no frame ops)."""
+    for a in entry_bb.assignments:
+        if a.op == "proto":
+            toks = (a.immediates or "").split()
+            try:
+                return int(toks[0]) if toks else 0
+            except ValueError:
+                return 0
+    return None
+
+
+def resolve(prog) -> dict:
+    """``{structure.Subroutine: SubFrames}`` for every proto subroutine."""
+    from ..structure import analyze_structure
+    out: dict = {}
+    for s in analyze_structure(prog).subroutines:
+        nargs = _proto_nargs(s.entry_bb)
+        if nargs is not None:                # skip legacy non-proto (no frame ops)
+            out[s] = resolve_sub(sorted(s.body, key=lambda bb: (bb.file, bb.first_line)),
+                                 nargs)
+    return out
