@@ -72,6 +72,7 @@ ranged case.
 """
 from __future__ import annotations
 
+import functools
 from typing import Optional
 
 from ..ssa import Assignment, Const, IntRange, Phi, SSAProgram, SSAVar, TealType
@@ -80,12 +81,12 @@ from ..ssa import Assignment, Const, IntRange, Phi, SSAProgram, SSAVar, TealType
 _BYTES_STACK_CAP = 4096  # AVM bytes-stack values are capped at 4096 bytes.
 
 
-def _const_bytes_length(c: Optional[Const]) -> Optional[int]:
-    """Length in bytes of a ``Const("bytes", "0x...")`` literal, or
-    ``None`` if the operand isn't a parseable bytes constant."""
-    if c is None or c.kind != "bytes":
-        return None
-    h = c.value
+@functools.lru_cache(maxsize=None)
+def _hex_byte_length(h: str) -> Optional[int]:
+    """Byte length of a ``0x...`` hex literal, or ``None`` if unparseable.
+    Cached: a constant's length is immutable, but the naive byte-length fixpoint
+    re-derives it for every operand on every iteration -- tens of millions of
+    times on large contracts (40M ``fromhex`` re-parses on folks-v3)."""
     if h.startswith("0x") or h.startswith("0X"):
         h = h[2:]
     if len(h) % 2 != 0:
@@ -95,6 +96,14 @@ def _const_bytes_length(c: Optional[Const]) -> Optional[int]:
     except ValueError:
         return None
     return len(h) // 2
+
+
+def _const_bytes_length(c: Optional[Const]) -> Optional[int]:
+    """Length in bytes of a ``Const("bytes", "0x...")`` literal, or
+    ``None`` if the operand isn't a parseable bytes constant."""
+    if c is None or c.kind != "bytes":
+        return None
+    return _hex_byte_length(c.value)
 
 
 def _const_int_value(c: Optional[Const]) -> Optional[int]:
@@ -461,8 +470,8 @@ def propagate_byte_lengths(prog: SSAProgram) -> int:
                 continue
 
             lengths: list[Optional[int]] = [_operand_byte_length(a) for a in ph.args]
-            if all(l is not None for l in lengths) and lengths \
-                    and all(l == lengths[0] for l in lengths):
+            if all(n is not None for n in lengths) and lengths \
+                    and all(n == lengths[0] for n in lengths):
                 if _set_byte_length(ph, lengths[0]):  # type: ignore[arg-type]
                     tagged += 1
                     changed = True
