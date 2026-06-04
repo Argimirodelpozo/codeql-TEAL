@@ -9,13 +9,39 @@ duck-types operands (``getattr(operand, "type"/"const_value", …)``), so it run
 as plain unit tests over hand-built ``Assignment``s with real ``Const`` /
 ``TealType`` operands — no SSA fixpoint, DB, or puya.
 """
-from tealtools.passes.byte_length_prop import _hex_byte_length, _op_byte_length
-from tealtools.ssa import Assignment, Const, Location, SSAVar, TealType
+from types import SimpleNamespace
+
+from tealtools.passes.byte_length_prop import (
+    _hex_byte_length,
+    _input_min_length,
+    _op_byte_length,
+    propagate_byte_lengths,
+)
+from tealtools.ssa import Assignment, Const, IntRange, Location, Phi, SSAVar, TealType
 
 
-def _asn(op, *, imm="", inputs=(), const=None):
-    return Assignment(outputs=[], op=op, immediates=imm, inputs=list(inputs),
-                      location=Location("t.teal", 1), ast_code="", const=const)
+def _asn(op, *, imm="", inputs=(), outputs=(), const=None):
+    a = Assignment(outputs=list(outputs), op=op, immediates=imm, inputs=list(inputs),
+                   location=Location("t.teal", 1), ast_code="", const=const)
+    for o in outputs:
+        if isinstance(o, SSAVar):
+            o.defined_by = a
+    return a
+
+
+def _var(line=10, index=0):
+    return SSAVar("t.teal", line, index)
+
+
+def _prog(assignments, phis=()):
+    """A minimal stand-in for the SSAProgram surface propagate_byte_lengths
+    reads: a flat assignment list, a phi dict, and the consts-already-done flag
+    so it skips propagate_constants()."""
+    return SimpleNamespace(
+        assignments=list(assignments),
+        phis={i: p for i, p in enumerate(phis)},
+        _consts_propagated=True,
+    )
 
 
 def _bytes_operand(byte_length):
@@ -141,3 +167,91 @@ def test_length_preserving_unknown_input_is_none():
 
 def test_unknown_op_is_none():
     assert _op_byte_length(_asn("addw", inputs=[_int(1), _int(2)])) is None
+
+
+# -- _input_min_length: inverse constraints (a successful op bounds an input) --
+
+
+def test_input_min_length_btoi():
+    # btoi(X) succeeds => len(X) in [1, 8]
+    assert _input_min_length(_asn("btoi", inputs=[_var()])) == (0, 1, 8)
+
+
+def test_input_min_length_getbyte_const_index():
+    assert _input_min_length(_asn("getbyte", inputs=[_var(), _int(5)])) == (0, 6, None)
+
+
+def test_input_min_length_getbyte_non_const_index_is_none():
+    assert _input_min_length(_asn("getbyte", inputs=[_var(), _bytes_operand(1)])) is None
+
+
+def test_input_min_length_extract_uint_widths():
+    assert _input_min_length(_asn("extract_uint16", inputs=[_var(), _int(4)])) == (0, 6, None)
+    assert _input_min_length(_asn("extract_uint32", inputs=[_var(), _int(4)])) == (0, 8, None)
+    assert _input_min_length(_asn("extract_uint64", inputs=[_var(), _int(0)])) == (0, 8, None)
+
+
+def test_input_min_length_extract_and_substring_immediate():
+    assert _input_min_length(_asn("extract", imm="2 5", inputs=[_var()])) == (0, 7, None)
+    assert _input_min_length(_asn("substring", imm="2 7", inputs=[_var()])) == (0, 7, None)
+
+
+def test_input_min_length_extract3_substring3_const():
+    assert _input_min_length(_asn("extract3", inputs=[_var(), _int(2), _int(5)])) == (0, 7, None)
+    assert _input_min_length(_asn("substring3", inputs=[_var(), _int(2), _int(7)])) == (0, 7, None)
+
+
+def test_input_min_length_setbyte():
+    assert _input_min_length(_asn("setbyte", inputs=[_var(), _int(3), _int(255)])) == (0, 4, None)
+
+
+def test_input_min_length_none_for_unconstraining_op():
+    assert _input_min_length(_asn("concat", inputs=[_var(), _var()])) is None
+
+
+# -- propagate_byte_lengths: the worklist end-to-end on tiny SSA graphs --
+
+
+def test_propagate_forward_chain_through_fan_out():
+    # itob -> v1 (8), then concat v1 v1 -> v2 (16). The assignments are seeded in
+    # REVERSE (concat before itob) so v2 can only get its length once v1's change
+    # fans out along v1.uses — exercising the worklist's re-trigger, not seed luck.
+    v1, v2 = _var(10, 0), _var(11, 1)
+    a_itob = _asn("itob", inputs=[_int(5)], outputs=[v1])
+    a_concat = _asn("concat", inputs=[v1, v1], outputs=[v2])
+    v1.uses.append(a_concat)
+    propagate_byte_lengths(_prog([a_concat, a_itob]))
+    assert v1.type.byte_length == 8
+    assert v2.type.byte_length == 16
+
+
+def test_propagate_phi_exact_length_agreement():
+    # both phi args are length 8 -> phi pinned to exact length 8
+    v1, v2 = _var(10, 0), _var(11, 1)
+    a1 = _asn("itob", inputs=[_int(5)], outputs=[v1])
+    a2 = _asn("itob", inputs=[_int(6)], outputs=[v2])
+    ph = Phi("t.teal", 12, 0, "DirectPhi")
+    ph.args = [v1, v2]
+    propagate_byte_lengths(_prog([a1, a2], phis=[ph]))
+    assert ph.type.byte_length == 8
+
+
+def test_propagate_phi_range_union_on_disagreement():
+    # args of length 8 and 32 disagree -> phi falls back to the range [8, 32]
+    v1, v2 = _var(10, 0), _var(11, 1)
+    a1 = _asn("itob", inputs=[_int(5)], outputs=[v1])           # 8
+    a2 = _asn("sha256", inputs=[_bytes_operand(3)], outputs=[v2])  # 32
+    ph = Phi("t.teal", 12, 0, "DirectPhi")
+    ph.args = [v1, v2]
+    propagate_byte_lengths(_prog([a1, a2], phis=[ph]))
+    assert ph.type.byte_length is None
+    assert ph.type.byte_length_range == IntRange(8, 32)
+
+
+def test_propagate_inverse_constraint_seeds_input_range():
+    # btoi(v1) succeeding bounds v1's length to [1, 8] even though nothing
+    # forward-derives v1's own length.
+    v1, v2 = _var(10, 0), _var(11, 1)
+    propagate_byte_lengths(_prog([_asn("btoi", inputs=[v1], outputs=[v2])]))
+    assert v1.type.byte_length is None
+    assert v1.type.byte_length_range == IntRange(1, 8)

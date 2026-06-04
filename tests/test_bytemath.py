@@ -8,16 +8,43 @@ tests with real ``IntRange`` / ``Const`` / ``TealType`` — no SSA fixpoint, DB,
 or puya. Ranges are arbitrary-precision (no uint64 cap): a long ``b*`` chain can
 legitimately exceed 2**64.
 """
+from types import SimpleNamespace
+
 from tealtools.passes.bytemath import (
     _bytemath_result,
     _bytes_to_int,
     _operand_bigint_range,
+    propagate_bytemath_ranges,
 )
-from tealtools.ssa import Const, IntRange, SSAVar, TealType
+from tealtools.ssa import Assignment, Const, IntRange, Location, Phi, SSAVar, TealType
 
 
 def _R(lo, hi):
     return IntRange(lo, hi)
+
+
+def _asn(op, *, inputs=(), outputs=(), const=None):
+    a = Assignment(outputs=list(outputs), op=op, immediates="", inputs=list(inputs),
+                   location=Location("t.teal", 1), ast_code="", const=const)
+    for o in outputs:
+        if isinstance(o, SSAVar):
+            o.defined_by = a
+    return a
+
+
+def _var(line=10, index=0):
+    return SSAVar("t.teal", line, index)
+
+
+def _prog(assignments, phis=()):
+    """Minimal SSAProgram stand-in: a flat assignment list, a phi dict, and the
+    consts/ranges-already-done flags so the pass skips the upstream passes."""
+    return SimpleNamespace(
+        assignments=list(assignments),
+        phis={i: p for i, p in enumerate(phis)},
+        _consts_propagated=True,
+        _ranges_propagated=True,
+    )
 
 
 # -- _bytes_to_int: the lru_cache'd literal-value helper added this session --
@@ -120,3 +147,49 @@ def test_operand_range_from_const_value():
 
 def test_operand_range_unknown_is_none():
     assert _operand_bigint_range(SSAVar("t.teal", 1, 0)) is None
+
+
+# -- propagate_bytemath_ranges: the worklist end-to-end on tiny SSA graphs --
+
+
+def test_propagate_forward_chain_through_fan_out():
+    # two bytes consts (10, 3) feed b+ -> 13. Seeded in REVERSE (the b+ before its
+    # operand producers) so the result depends on the consts' changes fanning out
+    # along .uses, exercising the worklist re-trigger rather than seed order.
+    v1, v2, v3 = _var(10, 0), _var(11, 1), _var(12, 2)
+    a1 = _asn("bytec_0", outputs=[v1], const=Const("bytes", "0x0a"))   # 10
+    a2 = _asn("bytec_1", outputs=[v2], const=Const("bytes", "0x03"))   # 3
+    a3 = _asn("b+", inputs=[v1, v2], outputs=[v3])
+    v1.uses.append(a3)
+    v2.uses.append(a3)
+    propagate_bytemath_ranges(_prog([a3, a1, a2]))
+    assert v1.type.int_value_range == _R(10, 10)
+    assert v3.type.int_value_range == _R(13, 13)
+
+
+def test_propagate_itob_seeds_bigint_range_from_const_int():
+    # itob (uint64 -> bytes) carries the integer value across into bytes-land.
+    v = _var(10, 0)
+    propagate_bytemath_ranges(_prog([_asn("itob", inputs=[Const("int", "7")], outputs=[v])]))
+    assert v.type.int_value_range == _R(7, 7)
+
+
+def test_propagate_btoi_bridges_to_uint64_range():
+    # btoi (bytes -> uint64) lifts the bigint range back into the SSAVar.range
+    # uint64 lattice (not int_value_range).
+    v_bytes, v_int = _var(10, 0), _var(11, 1)
+    a1 = _asn("bytec_0", outputs=[v_bytes], const=Const("bytes", "0x03"))
+    a2 = _asn("btoi", inputs=[v_bytes], outputs=[v_int])
+    v_bytes.uses.append(a2)
+    propagate_bytemath_ranges(_prog([a2, a1]))
+    assert v_int.range == _R(3, 3)
+
+
+def test_propagate_phi_unions_bigint_ranges():
+    v1, v2 = _var(10, 0), _var(11, 1)
+    a1 = _asn("bytec_0", outputs=[v1], const=Const("bytes", "0x05"))   # 5
+    a2 = _asn("bytec_1", outputs=[v2], const=Const("bytes", "0x0a"))   # 10
+    ph = Phi("t.teal", 12, 0, "DirectPhi")
+    ph.args = [v1, v2]
+    propagate_bytemath_ranges(_prog([a1, a2], phis=[ph]))
+    assert ph.type.int_value_range == _R(5, 10)
