@@ -1,16 +1,19 @@
-"""Experimental sandbox — third iteration.
+"""Lift a :class:`tealtools.ssa.SSAProgram` into genuine ``puya.ir.models``.
 
-A Puya-shaped IR **lifter** for debugging xgov: build the SSAProgram, run the
-passes in :data:`~tealtools.WIP_lift2puyaIR.pipeline.PASSES`, ``lift`` it into
-the Puya IR model (:mod:`~tealtools.WIP_lift2puyaIR.ir`), apply the model
-transforms, and render the ``.ssa.slot.ir`` shape to the repo-root
-``xgov.ssa.ir``. Exploratory / demo; not wired into the detector or CLI
-surface. See :mod:`tealtools.WIP_lift2puyaIR.pipeline`.
+The lift reconstructs a typed, Puya-shaped IR from decompiled TEAL and renders /
+optimises it with Puya's own machinery (its text emitter and optimiser passes):
 
-    python -m tealtools.WIP_lift2puyaIR
+    from tealtools.ssa import SSAProgram
+    from tealtools.WIP_lift2puyaIR import render
+    print(render(SSAProgram(db), optimize_ir=True))
+
+Pipeline: ``lift`` (:mod:`lift`) builds an intermediate *mirror* model
+(:mod:`ir`); ``render`` (:mod:`to_puya_ir`) lowers it to the real Puya IR. Shared
+op/type metadata lives in :mod:`optypes`, TEAL-literal parsing in
+:mod:`teal_const`.  ``python -m tealtools.WIP_lift2puyaIR <db>`` renders a DB.
 """
 from . import ir
 from .lift import lift
-from .pipeline import PASSES, main, render
+from .to_puya_ir import render
 
-__all__ = ["PASSES", "main", "render", "lift", "ir"]
+__all__ = ["render", "lift", "ir"]

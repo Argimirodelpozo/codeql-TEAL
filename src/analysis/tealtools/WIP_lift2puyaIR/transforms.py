@@ -1,13 +1,12 @@
-"""Model-level transforms over the Puya-shaped IR (:mod:`ir`).
+"""Model-level transforms over the Puya-shaped (mirror) IR (:mod:`ir`).
 
-These are the "Puya way" tiers: they rewrite the ``ir.*`` model in place, not
-the text. Run between :func:`tealtools.WIP_lift2puyaIR.lift.lift` and
-``ir.Program.render()``.
+Rewrite the ``ir.*`` model in place. Run by :func:`to_puya_ir.to_puya` between
+:func:`lift.lift` and lowering to the real ``puya.ir.models``.
 
-- :func:`collapse_dispatch` — fold an ABI method-selector ``==``/branch chain
-  into one :class:`ir.Switch` (Puya's ``switch sel {0x… => block@N, …}``).
 - :func:`simplify_trivial_phis` — drop phis whose arguments are all the same
-  value (ignoring self-references) and forward that value to every use.
+  value (ignoring self-references) and forward that value to every use. Puya's
+  own ``copy_propagation`` asserts on a register replaced by itself, so these
+  must be collapsed before lowering.
 """
 from __future__ import annotations
 
@@ -41,67 +40,6 @@ _SIDE_EFFECT = frozenset({
     "box_splice", "itxn_begin", "itxn_next", "itxn_field", "itxn_submit",
     "gitxn_field", "assert", "return", "err", "callsub", "retsub",
 })
-
-
-def _collect_used(x, into: set) -> None:
-    if isinstance(x, ir.Register):
-        into.add(id(x))
-    elif isinstance(x, (ir.Intrinsic, ir.InvokeSubroutine)):
-        for a in x.args:
-            _collect_used(a, into)
-    elif isinstance(x, ir.ValueTuple):
-        for v in x.values:
-            _collect_used(v, into)
-
-
-def _used_registers(program) -> set:
-    used: set = set()
-    for b in _all_blocks(program):
-        for phi in b.phis:
-            for pa in phi.args:
-                _collect_used(pa.value, used)
-        for op in b.ops:
-            if isinstance(op, ir.Assignment):
-                _collect_used(op.source, used)      # source args are uses
-            elif isinstance(op, ir.Assert):
-                _collect_used(op.condition, used)
-            elif isinstance(op, ir.IntrinsicOp):
-                _collect_used(op.intrinsic, used)
-        t = b.terminator
-        if isinstance(t, ir.ConditionalBranch):
-            _collect_used(t.condition, used)
-        elif isinstance(t, (ir.Switch, ir.GotoNth)):
-            _collect_used(t.value, used)
-        elif isinstance(t, ir.SubroutineReturn):
-            for r in t.result:
-                _collect_used(r, used)
-        elif isinstance(t, ir.ProgramExit):
-            _collect_used(t.result, used)
-    return used
-
-
-def eliminate_dead_ops(program: ir.Program) -> int:
-    """Drop ``let``-bindings whose source is pure and whose every target is
-    unused, to a fixpoint (dropping one can orphan its inputs). Side-effecting
-    statements (``ir.Assert``, ``ir.IntrinsicOp``, calls) are always kept."""
-    removed = 0
-    changed = True
-    while changed:
-        changed = False
-        used = _used_registers(program)
-        for b in _all_blocks(program):
-            kept = []
-            for op in b.ops:
-                if (isinstance(op, ir.Assignment)
-                        and isinstance(op.source, ir.Intrinsic)
-                        and op.source.op not in _SIDE_EFFECT
-                        and all(id(t) not in used for t in op.targets)):
-                    removed += 1
-                    changed = True
-                else:
-                    kept.append(op)
-            b.ops = kept
-    return removed
 
 
 def simplify_trivial_phis(program: ir.Program) -> int:
@@ -170,76 +108,3 @@ def simplify_trivial_phis(program: ir.Program) -> int:
     return len(repl)
 
 
-def _is_selector(hexval: str) -> bool:
-    """A 4-byte bytes literal — the shape of an ARC4 method selector."""
-    return hexval.startswith("0x") and len(hexval) == 10  # 0x + 8 hex = 4 bytes
-
-
-def _selector_eq(block: ir.BasicBlock):
-    """If ``block`` ends in ``goto (== <selector> <v>) ? nz : zero``, return
-    ``(selector_hex, v, nz, zero, eq_op)``; else ``None``."""
-    term = block.terminator
-    if not isinstance(term, ir.ConditionalBranch):
-        return None
-    cond = term.condition
-    if not isinstance(cond, ir.Register):
-        return None
-    for op in block.ops:
-        if isinstance(op, ir.Assignment) and cond in op.targets:
-            src = op.source
-            if (isinstance(src, ir.Intrinsic) and src.op == "=="
-                    and len(src.args) == 2):
-                a, b = src.args
-                if isinstance(a, ir.BytesConstant) and _is_selector(a.value):
-                    return (a.value, b, term.non_zero, term.zero, op)
-                if isinstance(b, ir.BytesConstant) and _is_selector(b.value):
-                    return (b.value, a, term.non_zero, term.zero, op)
-    return None
-
-
-def collapse_dispatch(program: ir.Program) -> int:
-    """Fold ABI selector ``==``/branch chains into ``ir.Switch``. Returns the
-    number of chains collapsed."""
-    n = 0
-    for sub in (program.main, *program.subroutines):
-        n += _collapse_in(sub)
-    return n
-
-
-def _collapse_in(sub: ir.Subroutine) -> int:
-    by_id = {b.id: b for b in sub.body}
-    absorbed: set = set()
-    collapsed = 0
-    for head in sub.body:
-        if head.id in absorbed:
-            continue
-        info = _selector_eq(head)
-        if info is None:
-            continue
-        head_val = info[1]
-        head_eq = info[4]
-        cases: list = []
-        default = None
-        cur = head
-        while True:
-            ci = _selector_eq(cur)
-            if ci is None:
-                default = cur.id
-                break
-            sel_hex, _v, nz, zero, _eq = ci
-            cases.append((sel_hex, nz))
-            if cur is not head:
-                absorbed.add(cur.id)
-            nxt = by_id.get(zero)
-            if nxt is None:
-                default = zero
-                break
-            cur = nxt
-        if len(cases) < 2:           # a lone `== selector` isn't a dispatch
-            continue
-        head.ops = [o for o in head.ops if o is not head_eq]
-        head.terminator = ir.Switch(head_val, cases, default)
-        collapsed += 1
-    if absorbed:
-        sub.body = [b for b in sub.body if b.id not in absorbed]
-    return collapsed

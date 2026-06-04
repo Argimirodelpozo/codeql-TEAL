@@ -23,8 +23,8 @@ Two structural rewrites happen here (both contained — no substrate change):
   (best-effort on locals / odd frame shapes), but it removes essentially all of
   the unroll noise.
 
-Constants and trivial single-predecessor phis are inlined; type/field tables
-are shared with :mod:`tealtools.WIP_lift2puyaIR.puya_ir`.
+Constants and trivial single-predecessor phis are inlined; op result/operand
+type and ``txn``/``global`` field tables come from :mod:`optypes`.
 """
 from __future__ import annotations
 
@@ -36,10 +36,11 @@ from ..ssa import (
 )
 from ..structure import analyze_structure
 from ..opcode_sigs import op_arity
-from .puya_ir import (
-    _BOOL_OPS, _BYTES_OPS, _COND_BRANCH, _NAME_PREFIX, _U64_OPS, _field_type,
-    _multi_out_type,
+from .optypes import (
+    _BOOL_OPS, _BYTES_CONSUME, _BYTES_OPS, _COND_BRANCH, _NAME_PREFIX,
+    _U64_CONSUME, _U64_OPS, _field_type, _multi_out_type, avm,
 )
+from .teal_const import _const_bytes, _load_src, _tokenize_operands
 
 _FRAME_OPS = frozenset({"frame_dig", "frame_bury"})
 
@@ -519,8 +520,7 @@ def lift(prog: SSAProgram) -> ir.Program:
         """Recover a `match`'s case keys from source when the extractor dropped
         them (a `pushbytess base32(..) ..` whose operands it stripped, leaving a
         phantom 0-output push). The keys are the push's operands, in label order;
-        stored as their source literal (`to_puya_ir._const_bytes` parses them)."""
-        from .to_puya_ir import _load_src, _tokenize_operands
+        stored as their source literal (`teal_const._const_bytes` parses them)."""
         src = _load_src(getattr(prog, "db_path", ""))
         if len(src) != 1:
             return None, set()
@@ -1269,19 +1269,6 @@ def _realign_call_returns(prog) -> None:
                             t.ir_type = callee.returns[i]
 
 
-# Ops whose operand AVM type is unambiguous (used as the strongest signal for a
-# phi-web's type). `==`/`!=` are excluded -- they accept both; `itxn_field` /
-# `setbyte` are excluded -- their operand type is field/position dependent.
-_U64_CONSUME = frozenset({
-    "+", "-", "*", "/", "%", "exp", "sqrt", "shl", "shr", "<", ">", "<=", ">=",
-    "itob", "bitlen", "!", "&&", "||", "assert", "&", "|", "^", "~"})
-_BYTES_CONSUME = frozenset({
-    "concat", "len", "btoi", "log", "sha256", "sha512_256", "keccak256",
-    "sha3_256", "extract", "extract3", "substring", "substring3", "replace2",
-    "replace3", "b+", "b-", "b*", "b/", "b%", "b<", "b>",
-    "extract_uint16", "extract_uint32", "extract_uint64"})
-
-
 def _empty_bytes(b) -> bool:
     """True if a BytesConstant is the empty-bytes placeholder (`""` / `0x`)."""
     v = (getattr(b, "value", "") or "").strip()
@@ -1313,7 +1300,6 @@ def _itob_const(v: int) -> "ir.BytesConstant":
 def _to_u64_const(b) -> "ir.UInt64Constant":
     """A bytes placeholder rewritten to uint64 (the symmetric case: a uint64
     slot seeded with empty `""`/`0x`); empty -> 0, else its btoi value."""
-    from .to_puya_ir import _const_bytes
     try:
         raw, _ = _const_bytes(getattr(b, "value", "") or "0x")
         return ir.UInt64Constant(int.from_bytes(raw[-8:], "big") if raw else 0)
@@ -1357,11 +1343,6 @@ def _reconcile_mixed_phis(prog) -> None:
             for a in ph.args:
                 if isinstance(a.value, ir.Register):
                     parent[find(note(ph.register))] = find(note(a.value))
-
-    def avm(t):
-        return ("b" if t in ("bytes", "account")
-                else "u" if t in ("uint64", "bool", "asset", "application")
-                else "?")
 
     def reg_args(x):
         out = []
