@@ -305,10 +305,6 @@ def field_validated_on_all_paths(
 _ENFORCEMENT_TERM_OPS = frozenset({"assert", "bnz", "bz"})
 
 
-def _block_first_op_is_err(bb: BasicBlock) -> bool:
-    return bool(bb.assignments) and bb.assignments[0].op == "err"
-
-
 def _label_to_bb_first_line(prog: SSAProgram) -> dict[tuple[str, str], int]:
     """``(file, label_name) -> source line of the label`` for branch
     target resolution. Same shape as the index inside
@@ -749,24 +745,6 @@ def _const_int_value(operand) -> Optional[int]:
         return int(cv.value)
     except (TypeError, ValueError):
         return None
-
-
-def _other_operand_resolves_to(operand, value: int) -> bool:
-    """The given operand is a constant whose integer value is ``value``."""
-    return _const_int_value(operand) == value
-
-
-def _matches_oncompletion_eq(cmp: Assignment, action_int: int) -> bool:
-    """Comparison shape: ``txn OnCompletion == <action_int>`` (operands
-    in either order). Used for both ``==`` and ``!=``."""
-    if len(cmp.inputs) != 2:
-        return False
-    a0, a1 = cmp.inputs
-    return (
-        (_is_oncompletion_var(a0) and _other_operand_resolves_to(a1, action_int))
-        or
-        (_is_oncompletion_var(a1) and _other_operand_resolves_to(a0, action_int))
-    )
 
 
 def _oncompletion_eq_const_value(cmp: Assignment) -> Optional[int]:
