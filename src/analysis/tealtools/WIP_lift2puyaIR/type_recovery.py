@@ -159,18 +159,17 @@ def _infer_types_from_uses(subs) -> None:
             for i, a in enumerate(vp.args):
                 use(a, op, i, vp.args)
 
-    for sub in subs:
-        for b in sub.body:
-            for o in b.ops:
-                if isinstance(o, pre_ir.Assignment):
-                    note(o.source)
-                elif isinstance(o, pre_ir.IntrinsicOp):
-                    note(o.intrinsic)
-                elif isinstance(o, pre_ir.Assert):
-                    use(o.condition, "assert", 0, [o.condition])
-            t = b.terminator
-            if isinstance(t, pre_ir.ConditionalBranch):
-                use(t.condition, "__cond__", 0, [t.condition])
+    for b in pre_ir.blocks(subs):
+        for o in b.ops:
+            if isinstance(o, pre_ir.Assignment):
+                note(o.source)
+            elif isinstance(o, pre_ir.IntrinsicOp):
+                note(o.intrinsic)
+            elif isinstance(o, pre_ir.Assert):
+                use(o.condition, "assert", 0, [o.condition])
+        t = b.terminator
+        if isinstance(t, pre_ir.ConditionalBranch):
+            use(t.condition, "__cond__", 0, [t.condition])
 
     # Monotonic (only `?` -> a concrete type, guarded by `!= "?"`), so loop to
     # the fixpoint: guaranteed to terminate, with no depth cap to truncate a
@@ -220,21 +219,20 @@ def _unify_phi_types(subs) -> None:
     changed = True
     while changed:
         changed = False
-        for sub in subs:
-            for b in sub.body:
-                for phi in b.phis:
-                    rt = phi.register.ir_type
-                    if rt == "?":
-                        j = _avm_join(getattr(a.value, "ir_type", "?")
-                                      for a in phi.args)
-                        if j is not None:
-                            phi.register.ir_type = rt = j
+        for b in pre_ir.blocks(subs):
+            for phi in b.phis:
+                rt = phi.register.ir_type
+                if rt == "?":
+                    j = _avm_join(getattr(a.value, "ir_type", "?")
+                                  for a in phi.args)
+                    if j is not None:
+                        phi.register.ir_type = rt = j
+                        changed = True
+                if rt != "?":
+                    for a in phi.args:
+                        if getattr(a.value, "ir_type", None) == "?":
+                            a.value.ir_type = rt
                             changed = True
-                    if rt != "?":
-                        for a in phi.args:
-                            if getattr(a.value, "ir_type", None) == "?":
-                                a.value.ir_type = rt
-                                changed = True
 
 
 def _reconcile_mixed_phis(prog) -> None:
@@ -246,7 +244,7 @@ def _reconcile_mixed_phis(prog) -> None:
     of hard evidence decides -- consumer > non-placeholder const > non-phi def --
     then retype and rewrite the dead placeholders to match; skip a web showing
     both types (a real merge)."""
-    blocks = [bb for sub in [prog.main, *prog.subroutines] for bb in sub.body]
+    blocks = list(pre_ir.blocks(prog))
     parent: dict = {}                    # id(Register) -> id(Register)
     obj: dict = {}                       # id(Register) -> Register
 
@@ -360,17 +358,16 @@ def _realign_call_returns(prog) -> None:
     assignment's targets the wrong type; align them (targets are positional,
     matching `returns`)."""
     sub_by_id = {s.id: s for s in prog.subroutines}
-    for sub in [prog.main, *prog.subroutines]:
-        for bb in sub.body:
-            for o in bb.ops:
-                if isinstance(o, pre_ir.Assignment) and isinstance(
-                        o.source, pre_ir.InvokeSubroutine):
-                    callee = sub_by_id.get(o.source.target)
-                    if callee is None:
-                        continue
-                    for i, t in enumerate(o.targets):
-                        if i < len(callee.returns) and callee.returns[i] != "?":
-                            t.ir_type = callee.returns[i]
+    for bb in pre_ir.blocks(prog):
+        for o in bb.ops:
+            if isinstance(o, pre_ir.Assignment) and isinstance(
+                    o.source, pre_ir.InvokeSubroutine):
+                callee = sub_by_id.get(o.source.target)
+                if callee is None:
+                    continue
+                for i, t in enumerate(o.targets):
+                    if i < len(callee.returns) and callee.returns[i] != "?":
+                        t.ir_type = callee.returns[i]
 
 
 def _propagate_copy_types(prog) -> None:
@@ -381,19 +378,18 @@ def _propagate_copy_types(prog) -> None:
     changed = True
     while changed:
         changed = False
-        for sub in [prog.main, *prog.subroutines]:
-            for bb in sub.body:
-                for o in bb.ops:
-                    if not (isinstance(o, pre_ir.Assignment) and len(o.targets) == 1
-                            and isinstance(o.source, pre_ir.Register)):
-                        continue
-                    s, t = o.source, o.targets[0]
-                    if s.ir_type in ("bytes", "uint64") and t.ir_type != s.ir_type:
-                        t.ir_type = s.ir_type            # forward: source -> target
-                        changed = True
-                    elif t.ir_type in ("bytes", "uint64") and s.ir_type == "?":
-                        s.ir_type = t.ir_type            # back: typed slot -> ? source
-                        changed = True
+        for bb in pre_ir.blocks(prog):
+            for o in bb.ops:
+                if not (isinstance(o, pre_ir.Assignment) and len(o.targets) == 1
+                        and isinstance(o.source, pre_ir.Register)):
+                    continue
+                s, t = o.source, o.targets[0]
+                if s.ir_type in ("bytes", "uint64") and t.ir_type != s.ir_type:
+                    t.ir_type = s.ir_type            # forward: source -> target
+                    changed = True
+                elif t.ir_type in ("bytes", "uint64") and s.ir_type == "?":
+                    s.ir_type = t.ir_type            # back: typed slot -> ? source
+                    changed = True
 
 
 def _untyped(subs):
@@ -540,15 +536,14 @@ def _propagate_copy_load_types(lifter):
     changed = True
     while changed:
         changed = False
-        for sub in lifter.subs:
-            for bb in sub.body:
-                for op in bb.ops:
-                    if (isinstance(op, pre_ir.Assignment) and len(op.targets) == 1
-                            and op.targets[0].ir_type == "?"):
-                        st = _src_type(op.source)
-                        if st and st != "?":
-                            op.targets[0].ir_type = st
-                            changed = True
+        for bb in pre_ir.blocks(lifter.subs):
+            for op in bb.ops:
+                if (isinstance(op, pre_ir.Assignment) and len(op.targets) == 1
+                        and op.targets[0].ir_type == "?"):
+                    st = _src_type(op.source)
+                    if st and st != "?":
+                        op.targets[0].ir_type = st
+                        changed = True
         for a in lifter.prog.assignments:
             if a.op != "load" or not a.outputs:
                 continue

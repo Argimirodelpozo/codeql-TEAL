@@ -304,10 +304,19 @@ class Program:
 
 
 # --------------------------------------------------------------------------
-# Operand access — the one place that knows where each node's Values live, so
-# passes (collect / substitute / type) don't each re-spell the Op/ControlOp
-# dispatch. ``operands`` reads, ``map_operands`` rewrites in place.
+# Traversal & operand access — the one place that knows a program's blocks and
+# where each node's Values live, so passes don't re-spell the iteration / the
+# Op/ControlOp dispatch. ``operands`` reads, ``map_operands`` rewrites in place.
 # --------------------------------------------------------------------------
+
+
+def blocks(prog_or_subs):
+    """Every :class:`BasicBlock` of a :class:`Program` (main first) or of an
+    iterable of :class:`Subroutine`, in order."""
+    subs = ((prog_or_subs.main, *prog_or_subs.subroutines)
+            if isinstance(prog_or_subs, Program) else prog_or_subs)
+    for s in subs:
+        yield from s.body
 
 
 def _vp_values(vp):

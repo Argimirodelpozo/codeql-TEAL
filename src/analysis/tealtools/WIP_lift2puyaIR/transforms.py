@@ -22,12 +22,6 @@ def _vkey(v):
     return ("o", id(v))
 
 
-def _all_blocks(program):
-    for sub in (program.main, *program.subroutines):
-        for b in sub.body:
-            yield b
-
-
 def simplify_trivial_phis(program: pre_ir.Program) -> int:
     """Collapse trivial phis to a fixpoint. A phi is trivial when, ignoring
     arguments that reference its own register (loop self-edges), all remaining
@@ -45,7 +39,7 @@ def simplify_trivial_phis(program: pre_ir.Program) -> int:
     changed = True
     while changed:                       # fixpoint: a collapse can expose more
         changed = False
-        for b in _all_blocks(program):
+        for b in pre_ir.blocks(program):
             for phi in b.phis:
                 if id(phi.register) in repl:
                     continue
@@ -62,10 +56,10 @@ def simplify_trivial_phis(program: pre_ir.Program) -> int:
     if not repl:
         return 0
 
-    for b in _all_blocks(program):
+    for b in pre_ir.blocks(program):
         b.phis = [phi for phi in b.phis if id(phi.register) not in repl]
 
-    for b in _all_blocks(program):           # copy_source=False: don't forward a
+    for b in pre_ir.blocks(program):           # copy_source=False: don't forward a
         for node in (*b.phis, *b.ops, b.terminator):   # copy's source into a
             pre_ir.map_operands(node, resolve, copy_source=False)  # removed phi reg
     return len(repl)
@@ -79,16 +73,14 @@ def prune_dead_phis(subs) -> None:
     backward through phi arguments; keep only live phis."""
     live: set = set()
     phi_by_reg: dict = {}
-    for sub in subs:
-        for b in sub.body:
-            for phi in b.phis:
-                phi_by_reg[id(phi.register)] = phi
-    for sub in subs:
-        for b in sub.body:                   # seed from ops / terminator, NOT phis
-            for node in (*b.ops, b.terminator):
-                for v in pre_ir.operands(node):
-                    if isinstance(v, pre_ir.Register):
-                        live.add(id(v))
+    for b in pre_ir.blocks(subs):
+        for phi in b.phis:
+            phi_by_reg[id(phi.register)] = phi
+    for b in pre_ir.blocks(subs):            # seed from ops / terminator, NOT phis
+        for node in (*b.ops, b.terminator):
+            for v in pre_ir.operands(node):
+                if isinstance(v, pre_ir.Register):
+                    live.add(id(v))
     work = list(live)
     while work:
         phi = phi_by_reg.get(work.pop())
@@ -98,9 +90,8 @@ def prune_dead_phis(subs) -> None:
             if isinstance(pa.value, pre_ir.Register) and id(pa.value) not in live:
                 live.add(id(pa.value))
                 work.append(id(pa.value))
-    for sub in subs:
-        for b in sub.body:
-            b.phis = [phi for phi in b.phis if id(phi.register) in live]
+    for b in pre_ir.blocks(subs):
+        b.phis = [phi for phi in b.phis if id(phi.register) in live]
 
 
 def _subst_value(v, m: dict):
@@ -157,10 +148,9 @@ def isolate_cross_group_phis(subs) -> int:
             for bb in b_group.body:
                 _subst_block(bb, sub_map)
     if removed:
-        for g in subs:
-            for bb in g.body:
-                bb.phis = [ph for ph in bb.phis
-                           if id(ph.register) not in removed]
+        for bb in pre_ir.blocks(subs):
+            bb.phis = [ph for ph in bb.phis
+                       if id(ph.register) not in removed]
     return len(removed)
 
 
@@ -171,24 +161,22 @@ def materialize_phi_consts(prog) -> None:
     at ``r``. (Without this the translator silently drops the const arg, leaving
     the phi short an operand vs its predecessors.)"""
     block_by_id: dict = {}
-    for sub in [prog.main, *prog.subroutines]:
-        for bb in sub.body:
-            block_by_id[bb.id] = bb
+    for bb in pre_ir.blocks(prog):
+        block_by_id[bb.id] = bb
     n = 0
-    for sub in [prog.main, *prog.subroutines]:
-        for bb in sub.body:
-            for ph in bb.phis:
-                for arg in ph.args:
-                    if isinstance(arg.value, pre_ir.Register):
-                        continue
-                    through = block_by_id.get(arg.through)
-                    if through is None:
-                        continue
-                    ty = ph.register.ir_type
-                    if ty == "?":
-                        ty = ("uint64" if isinstance(arg.value, pre_ir.UInt64Constant)
-                              else "bytes")
-                    r = pre_ir.Register(f"pc%{n}", 0, ty)
-                    n += 1
-                    through.ops.append(pre_ir.Assignment([r], arg.value))
-                    arg.value = r
+    for bb in pre_ir.blocks(prog):
+        for ph in bb.phis:
+            for arg in ph.args:
+                if isinstance(arg.value, pre_ir.Register):
+                    continue
+                through = block_by_id.get(arg.through)
+                if through is None:
+                    continue
+                ty = ph.register.ir_type
+                if ty == "?":
+                    ty = ("uint64" if isinstance(arg.value, pre_ir.UInt64Constant)
+                          else "bytes")
+                r = pre_ir.Register(f"pc%{n}", 0, ty)
+                n += 1
+                through.ops.append(pre_ir.Assignment([r], arg.value))
+                arg.value = r
