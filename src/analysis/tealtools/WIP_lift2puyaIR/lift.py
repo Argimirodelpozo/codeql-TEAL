@@ -245,8 +245,15 @@ class _Lifter:
         self.callsite = {cs.callsub_bb: cs for cs in struct.call_sites}
         self.cont_site = {cs.continuation_bb: cs for cs in struct.call_sites
                           if cs.continuation_bb is not None}
+        # Subroutine (nargs, nret): proto subs declare it; legacy non-proto subs pass
+        # args / return on the stack, so it is inferred (see `_infer_arities`).
         _arity = _infer_arities(struct, self.callsite)
         self._io_by_entry = {s.entry_bb: a for s, a in _arity.items()}
+        # Every legacy non-proto sub needs its value-stack re-simulated with correct
+        # callsub arities (see `_resim`): PySSA threads the whole-program stack
+        # through them (proto subs escape via frame ops + dead-phi pruning), so it
+        # caps at STACK_MAX and corrupts their args / survivors / returns. `resim_*`
+        # carry that re-simulation into `_build_block`, replacing the fat SSA wiring.
         self._proto_entries = {s.entry_bb for s in struct.subroutines
                                if any(a.op == "proto" for a in s.entry_bb.assignments)}
         _resim_subs = {s for s in struct.subroutines
@@ -256,6 +263,9 @@ class _Lifter:
         self.resim_exit: dict = {}                # PyBlock -> re-simulated exit stack
         self.resim_blocks: set = set()            # blocks whose ops use re-simulated args
         self._param_phis: set = set()             # non-proto entry arg phis -> params (skip)
+        # SSA-level producer map + scratch reaching-def (per `load N`, the value
+        # SSAVars its influencing `store N`s wrote) -- used to type call args,
+        # which are passed via scratch (load/store) here, not as callsub operands.
         self.producer = {o: a for a in self.prog.assignments
                          for o in a.outputs if isinstance(o, SSAVar)}
         self.load_stores: dict = {}
@@ -274,6 +284,12 @@ class _Lifter:
         for s in sorted(struct.subroutines, key=lambda s: self._key(s.entry_bb)):
             groups.append((s.name or f"sub@L{s.entry_bb.first_line}", s,
                            sorted(s.body, key=self._key)))
+        # Global block ids. Puya restarts block@0 per subroutine, but that's not
+        # safe here: structure.py's partition has ~28 cross-routine branch edges
+        # (tail-calls / compiler-shared epilogues that don't belong to one
+        # routine), so a per-subroutine-local id would silently mis-target those
+        # gotos. Global ids keep control flow correct; per-sub numbering needs the
+        # routines to be closed CFG regions, which is a structure.py concern.
         self.bid = {bb: i for i, bb in enumerate(all_blocks)}
         self.line2block = {bb.first_line: bb for bb in all_blocks}
         self.regs: dict = {}
@@ -286,6 +302,12 @@ class _Lifter:
         self.shuffle_src: dict = {}           # SSAVar (shuffle output) -> source operand
         self.cur_gname = "main"
         self.cur_nret = 0                     # proto return count of the group being built
+        # Inter-procedural return wiring. A callsub's continuation receives the
+        # callee's return value(s). In the raw CFG that value is a phi whose only
+        # predecessor is the callee's retsub block, so it would resolve into the
+        # callee's register space -- a different Puya subroutine, hence "undefined"
+        # in the caller. Bind it to the InvokeSubroutine's result instead: alias the
+        # continuation's top-of-stack return phi(s) to a caller-local result reg.
         self.call_results: dict = {}          # callsub_bb -> [result Register], declared order
         for cs in struct.call_sites:
             cont, entry = cs.continuation_bb, cs.target_entry
@@ -351,10 +373,21 @@ class _Lifter:
                 self.subs.append(sub_ir)
                 sub_pairs.append((sub_ir, s))
         _prune_dead_phis(self.subs)
+        # Replace cross-group passthrough phis with each caller's own value (loop:
+        # a passthrough value can itself be another passthrough), then re-prune the
+        # phis they orphaned.
         while _isolate_cross_group_phis(self.subs):
             pass
         _prune_dead_phis(self.subs)
         self.name2sub = {s.id: s for s in self.subs if not s.is_main}
+        # Global type fixpoint. The register-typing passes feed each other: a typed
+        # caller arg types a callee param (_infer_params_from_callers); a typed
+        # param types its frame reads; a typed value types the slots it's stored to
+        # and the loads of them (_propagate_copy_load_types); a put types the
+        # matching get (_infer_state_types); uses and phi args pin the rest. Run
+        # them together until no register changes. Every pass is monotonic (only
+        # `?` -> a concrete type), so the untyped count strictly decreases and this
+        # terminates.
         prev = -1
         while prev != self._untyped():
             prev = self._untyped()
