@@ -657,6 +657,19 @@ class SSAProgram:
         from .render import cfg as _impl
         return _impl(self)
 
+    # -- frame view (opt-in precision over PySSA's fat-frame substrate) ------
+
+    def frame_resolution(self) -> dict:
+        """Precise frame-slot model ``{Subroutine: passes.frame_resolution.SubFrames}``
+        — each ``frame_dig``/``frame_bury`` resolved to its logical param / versioned
+        local. Opt-in precision; the conservative fat-frame substrate the may-analyses
+        rely on is untouched. Lazy + cached."""
+        cache = getattr(self, "_frame_resolution_cache", None)
+        if cache is None:
+            from ..passes.frame_resolution import resolve
+            cache = self._frame_resolution_cache = resolve(self)
+        return cache
+
     # -- graphviz rendering ------------------------------------------------
 
     def to_dot(self, **kwargs) -> str:
