@@ -1,11 +1,9 @@
-"""AVM opcode / type classification — shared metadata for the lift.
+"""AVM opcode / type metadata — pure data + functions, no IR dependency (so both
+`lift` and `to_puya_ir` import it without a cycle).
 
-The result type an op leaves on the stack (`_U64_OPS` / `_BYTES_OPS` / the
-`txn`/`global` field tables via `_field_type`, multi-result slots via
-`_multi_out_type`), the operand type an op consumes (`_U64_CONSUME` /
-`_BYTES_CONSUME`), and the coarse `avm()` lattice ('b'ytes / 'u'int64 / '?').
-Pure data + pure functions, no IR dependency, so both `lift` and `to_puya_ir`
-can import it without a cycle.
+Op result types (`_U64_OPS`/`_BYTES_OPS`, `txn`/`global` fields via `_field_type`,
+multi-result slots via `_multi_out_type`), operand types (`_*_CONSUME`), the
+coarse `avm()` lattice ('b'/'u'/'?'), and `_imm0`.
 """
 from __future__ import annotations
 

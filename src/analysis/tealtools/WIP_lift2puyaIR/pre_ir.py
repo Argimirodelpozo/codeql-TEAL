@@ -1,31 +1,12 @@
-"""Pre-IR — the Puya-shaped *working* model the lift builds, before it is lowered
-to the real ``puya.ir.models`` (see :mod:`tealtools.WIP_lift2puyaIR.to_puya_ir`).
+"""Pre-IR — the Puya-shaped *working* model the lift builds, lowered to real
+``puya.ir.models`` by :mod:`to_puya_ir`.
 
-A faithful (simplified) stand-in for Algorand Puya's IR model classes, so we can
-*lift our SSA into it* (see :mod:`tealtools.WIP_lift2puyaIR.lift`) and then render
-/ analyse it as Puya-shaped IR — not merely print TEAL in a Puya-like style.
-
-It is a *separate* model rather than the real one because the lift recovers types
-by a fixpoint: registers are born ``?`` and refined in place. Puya's ``Register``
-is ``@attrs.frozen`` with no unknown ``IRType``, so it cannot hold a not-yet-typed
-value — this mutable pre-IR is the working form, lowered to the frozen Puya model
-only once types are resolved. Types here are a single ``ir_type`` kind string
-(``uint64``/``bytes``/``bool``/``account``/``asset``/``application``/``?``) rather
-than Puya's full ``IRType`` lattice; everything else matches the upstream
-class/field structure.
-
-Upstream → here:
-  Value          : Register, UInt64Constant, BytesConstant, Undefined
-  ValueProvider  : Intrinsic, InvokeSubroutine, ValueTuple (+ the Values)
-  Op             : Assignment, Assert, IntrinsicOp
-  Phi            : Phi, PhiArgument
-  ControlOp      : Goto, ConditionalBranch, Switch, GotoNth,
-                   SubroutineReturn, ProgramExit, Fail
-  structural     : BasicBlock, Parameter, Subroutine, Program
-
-Each node self-renders in the ``.ssa.slot.ir`` text shape via ``str()`` /
-``render()``; a separate printer is unnecessary because the model *is* the
-Puya shape.
+A *separate*, mutable model is needed because the lift recovers types by a
+fixpoint (registers born ``?``, refined in place), while Puya's ``Register`` is
+``@attrs.frozen`` with no unknown ``IRType``. Types here are one ``ir_type`` kind
+string (uint64/bytes/bool/account/asset/application/?); the class/field structure
+otherwise matches ``puya/ir/models.py`` (Value, ValueProvider, Op, Phi, ControlOp,
+structural). Nodes self-render the ``.ssa.slot.ir`` shape via ``render()``.
 """
 from __future__ import annotations
 
@@ -371,13 +352,12 @@ def _map_vp(vp, fn, copy_source):
 
 def map_operands(node, fn, *, copy_source: bool = True) -> None:
     """Rewrite each Value operand of ``node`` through ``fn`` in place — the write
-    twin of :func:`operands`; no-op for operand-less nodes or None.
+    twin of :func:`operands`; no-op for operand-less nodes / None.
 
-    ``copy_source`` governs a register-to-register/const *copy* (an Assignment
-    whose source is a bare Value, not an Intrinsic/InvokeSubroutine/ValueTuple):
-    ``True`` rewrites it too (substitution must touch every reference);
-    ``False`` leaves it (trivial-phi collapse must not forward a copy's source
-    into a removed register — see :func:`simplify_trivial_phis`)."""
+    ``copy_source`` governs a bare copy source (an Assignment whose source is a
+    plain Value): ``True`` rewrites it (substitution touches every reference),
+    ``False`` leaves it (trivial-phi collapse must not forward a copy into a
+    removed register)."""
     if isinstance(node, Phi):
         for a in node.args:
             a.value = fn(a.value)

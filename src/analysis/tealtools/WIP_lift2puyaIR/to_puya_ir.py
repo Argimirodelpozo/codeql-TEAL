@@ -1,21 +1,12 @@
-"""Translate our pre-IR ``pre_ir.Program`` into the *real* ``puya.ir.models`` and
-render / optimise it with Puya's own machinery.
+"""Lower the pre-IR (:mod:`pre_ir`) to *real* ``puya.ir.models``, then render /
+optimise with Puya's own renderer and optimiser passes (:func:`optimize`).
 
-Our :mod:`lift` builds a typed, well-formed Puya-shaped IR against a local
-shape of ``puya/ir/models.py``. This walks that pre-IR and rebuilds it with the
-genuine Puya classes, so we can reuse Puya's text renderer (``to_text_visitor``)
-and -- via :func:`optimize` -- its real optimiser passes: constant propagation,
-copy propagation, control-op simplification, block merging, CSE, and dead-code
-elimination (see :func:`_opt_passes`). The IR satisfies Puya's own validators
-(``BasicBlock``/``Subroutine`` ``_check_*``), so the passes run unmodified.
-
-Constraints Puya enforces that the translation respects: intrinsic args in AVM
-order (our top-first inputs reversed), multi-result intrinsic outputs reversed to
-bottom-first, every used register defined (by object identity), block predecessor
-lists wired, real ``IRType`` / ``AVMOp`` values, ``SourceLocation`` on each block,
-and the typed information our lift adds that decompiled TEAL lacks -- polymorphic
-op result types (``load`` / ``app_global_get``), and deploy-time ``TemplateVar``s
-recovered from source where the extractor dropped the immediate.
+:func:`to_puya` rebuilds the pre-IR with genuine Puya classes, respecting what
+Puya enforces: intrinsic args in AVM order (our top-first inputs reversed),
+bottom-first multi-result outputs, every used register defined by identity, wired
+predecessor lists, real ``IRType``/``AVMOp``, a ``SourceLocation`` per block --
+plus the types the lift adds that TEAL lacks (polymorphic ``load`` /
+``app_global_get``, and source-recovered ``TemplateVar``s).
 """
 from __future__ import annotations
 

@@ -1,11 +1,9 @@
-"""TEAL source / literal parsing — pure text helpers shared by the lift.
+"""TEAL source / literal parsing — pure text helpers, no IR dependency (so both
+`lift` and `to_puya_ir` import it without a cycle).
 
-Load a DB's `.teal` source (`_load_src`), recover a dropped template-var name
-from a line (`_tmpl_name`), and parse TEAL operands: byte literals
-(`_const_bytes`, honouring 0x / "str" / base64(..) / base32(..)) and
-space-separated operand lists (`_tokenize_operands`). No IR dependency, so both
-`lift` and `to_puya_ir` import it without a cycle (this is what previously made
-`lift` lazily reach back into `to_puya_ir`).
+Load a DB's `.teal` (`_load_src`), recover a dropped template-var name
+(`_tmpl_name`), parse byte literals (`_const_bytes`: 0x / "str" / base64 / base32)
+and operand lists (`_tokenize_operands`).
 """
 from __future__ import annotations
 

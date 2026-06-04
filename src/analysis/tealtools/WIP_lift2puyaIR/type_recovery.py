@@ -1,13 +1,10 @@
 """AVM type / phi recovery for the lift (see :mod:`lift`).
 
-After :class:`lift._Lifter` builds the Puya-shaped IR, most registers carry a
-recovered AVM type but some are still ``?`` (params/returns crossing
-subroutines, scratch loads, state reads, placeholder-seeded phi webs). These
-passes close them: :func:`recover_types` runs the per-subroutine fixpoint
-(uses, callers, state schema, copies, phis -- all monotonic ``?`` -> concrete)
-and :func:`finalize_types` reconciles mixed-type phi webs on the assembled
-program. They read the lifter's register maps via a duck-typed ``lifter``
-handle (this module never imports :mod:`lift`).
+After :class:`lift._Lifter` builds the IR, some registers are still ``?`` (params
+/ returns crossing subroutines, scratch loads, state reads, placeholder phi webs).
+:func:`recover_types` closes them with a monotonic per-sub fixpoint;
+:func:`finalize_types` reconciles mixed-type phi webs on the assembled program.
+Both read the lifter's maps via a duck-typed ``lifter`` (never imports lift).
 """
 from __future__ import annotations
 
@@ -241,17 +238,14 @@ def _unify_phi_types(subs) -> None:
 
 
 def _reconcile_mixed_phis(prog) -> None:
-    """Re-type a phi-web the value-stack reconstruction left holding a constant
-    of the wrong AVM type. A `bytes` accumulator slot is seeded with the cheaper
-    `intc_0 0` (and a `uint64` slot, symmetrically, with empty `""`) before the
-    loop fills it, so its loop-header phi merges the placeholder with the real
-    value -- which Puya's typed IR rejects. When a connected web of phis has hard
-    evidence of exactly one AVM type (a typed def or a typed consumer; constants
-    are soft) we retype the web and rewrite the opposite-typed constant
-    placeholders to match (they are dead -- overwritten before any read -- so any
-    same-typed value is sound). Webs are keyed by register *identity*, not name
-    (`tmp%`/`cr%` names repeat across subroutine groups). Skip a web with hard
-    evidence of BOTH types (a genuine merge we must not silently coerce)."""
+    """Re-type a phi-web left holding a wrong-AVM-type constant: a `bytes`
+    accumulator slot is seeded with the cheaper `intc_0 0` (uint64 slots with
+    empty `""`) before the loop fills it, so the loop-header phi merges the dead
+    placeholder with the real value, which Puya's typed IR rejects. Per web (keyed
+    by register *identity* -- `tmp%`/`cr%` names repeat across groups), one tier
+    of hard evidence decides -- consumer > non-placeholder const > non-phi def --
+    then retype and rewrite the dead placeholders to match; skip a web showing
+    both types (a real merge)."""
     blocks = [bb for sub in [prog.main, *prog.subroutines] for bb in sub.body]
     parent: dict = {}                    # id(Register) -> id(Register)
     obj: dict = {}                       # id(Register) -> Register
@@ -460,14 +454,11 @@ def _infer_params_from_callers(lifter, pairs):
 
 
 def _infer_state_types(lifter):
-    """Type global / local state read *values* from the contract's own put
-    schema: a value is whatever was put to its (constant) key. Runs after
-    param / return inference, so a value put straight from a typed param or
-    field resolves -- it reads each put value operand's *final* register
-    type (top-first inputs: value at [0], key at [1]). A key with
-    conflicting put types is left unknown. A read's key is always
-    ``inputs[0]``; ``*_get_ex`` keeps did_exist at output 0 and the value
-    at output 1, a plain ``*_get`` its sole output."""
+    """Type state read *values* from the contract's own put schema: a value is
+    whatever was put to its (constant) key. Reads each put value's *final*
+    register type (top-first: value [0], key [1]); a key with conflicting put
+    types stays unknown. The read value is output 1 for ``*_get_ex`` (did_exist
+    at 0), the sole output for ``*_get``."""
     key_types: dict = {}
     for a in lifter.prog.assignments:
         if a.op in ("app_global_put", "app_local_put") and len(a.inputs) >= 2:
@@ -603,13 +594,10 @@ def _unify_call_returns(lifter):
 
 
 def recover_types(lifter, sub_pairs) -> None:
-    """Global type fixpoint. The register-typing passes feed each other: a typed
-    caller arg types a callee param (_infer_params_from_callers); a typed param
-    types its frame reads; a typed value types the slots it's stored to and the
-    loads of them (_propagate_copy_load_types); a put types the matching get
-    (_infer_state_types); uses and phi args pin the rest. Run them together until
-    no register changes. Every pass is monotonic (only ``?`` -> a concrete type),
-    so the untyped count strictly decreases and this terminates."""
+    """Run the type passes to a fixpoint -- they feed each other (a typed caller
+    arg types a callee param; a typed value types the slots/loads of it; a put
+    types its matching get; uses and phi args pin the rest). Each is monotonic
+    (only ``?`` -> concrete), so the untyped count falls and this terminates."""
     subs = lifter.subs
     prev = -1
     while prev != _untyped(subs):

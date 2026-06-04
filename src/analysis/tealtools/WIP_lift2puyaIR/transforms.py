@@ -1,20 +1,10 @@
-"""Structural rewrites over the Puya-shaped pre-IR (:mod:`pre_ir`).
+"""In-place structural rewrites over the pre-IR (:mod:`pre_ir`) — phi / block
+cleanup and out-of-SSA prep, as distinct from :mod:`type_recovery` (types only).
 
-Each pass rewrites the ``pre_ir.*`` model in place (phi / block cleanup, out-of-SSA
-prep), as distinct from :mod:`type_recovery` (which only assigns AVM types). The
-:class:`lift._Lifter` build calls the first three; :func:`to_puya_ir.to_puya`
-calls :func:`simplify_trivial_phis` just before lowering to ``puya.ir.models``.
-
-- :func:`prune_dead_phis` — drop phis not reachable through phi args from a real
-  use (the frame stack-model phis, once frame ops no longer consume them).
-- :func:`isolate_cross_group_phis` — resolve a passthrough value PySSA shares
-  across subroutine groups to each caller's own arg, then drop the orphaned phi.
-- :func:`materialize_phi_consts` — give a phi merging a constant on some edge a
-  ``let r = <const>`` in the through block (Puya requires phi args be registers).
-- :func:`simplify_trivial_phis` — drop phis whose arguments are all the same
-  value (ignoring self-references) and forward that value to every use. Puya's
-  own ``copy_propagation`` asserts on a register replaced by itself, so these
-  must be collapsed before lowering.
+:func:`prune_dead_phis`, :func:`isolate_cross_group_phis` and
+:func:`materialize_phi_consts` run during :class:`lift._Lifter` build;
+:func:`simplify_trivial_phis` runs in :func:`to_puya_ir.to_puya` before lowering.
+See each function for details.
 """
 from __future__ import annotations
 
@@ -127,20 +117,15 @@ def _subst_block(bb, m: dict) -> None:
 
 
 def isolate_cross_group_phis(subs) -> int:
-    """Resolve passthrough values that PySSA shares across subroutine groups.
+    """Resolve passthrough values PySSA shares across subroutine groups; returns
+    the phis dropped (loop: a passthrough can chain to another).
 
-    A callee's entry block can carry *passthrough* phis -- caller stack that
-    survives the call (it sits below the call args, is untouched by the callee,
-    and re-emerges in the continuation). PySSA's whole-program stack model puts
-    ONE such phi at the callee entry, merged across every caller, so its register
-    ends up *used in a different subroutine group than it is defined in*. That is
-    invalid for Puya (registers are per-subroutine) and the source of the
-    cross-family phi conflicts (one phi merging two callers' bytes + uint64).
-
-    Each caller already supplies its own value as the phi arg flowing in from its
-    callsub block, so resolve every cross-group use to that arg and drop the now
-    -unreferenced phi from the callee. Returns the number of phis dropped (so the
-    caller can loop -- a passthrough value can itself be another passthrough)."""
+    Caller stack surviving a call (below the args, untouched by the callee,
+    re-emerging in the continuation) becomes ONE phi at the callee entry merged
+    across all callers -- so its register is used in a different group than it's
+    defined in, invalid for Puya and the source of cross-family phi conflicts.
+    Each caller already supplies its own value as the arg from its callsub block;
+    resolve every cross-group use to that arg and drop the orphaned phi."""
     phi_by_reg: dict = {}                # id(register) -> (group, phi)
     blocks_of: dict = {}                 # id(group) -> {pre-IR block ids}
     for g in subs:

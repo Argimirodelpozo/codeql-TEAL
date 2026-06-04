@@ -1,30 +1,19 @@
-"""Lift an :class:`~tealtools.ssa.SSAProgram` into the Puya-shaped IR model.
+"""Lift a :class:`~tealtools.ssa.SSAProgram` into the Puya-shaped IR
+(``lift(prog) -> pre_ir.Program``) — the decompiler direction: stack-machine TEAL
+SSA (frame slots, scratch, shuffles) becomes value-based, typed, subroutine IR.
 
-``lift(prog) -> pre_ir.Program``. This *raises* abstraction (the decompiler
-direction): our stack-machine TEAL SSA — frame slots, scratch, stack shuffles —
-becomes the value-based, typed, subroutine IR of
-:mod:`tealtools.WIP_lift2puyaIR.pre_ir`, which self-renders in the ``.ssa.slot.ir``
-shape. (Puya itself *lowers* the other way: its AST → IR → TEAL.)
+Two structural rewrites (both contained, no substrate change):
 
-Two structural rewrites happen here (both contained — no substrate change):
+- **Subroutine partitioning** (via :func:`tealtools.structure.analyze_structure`):
+  routing/handler BBs become ``main``; each ``callsub``-reachable routine becomes
+  a ``pre_ir.Subroutine``; ``callsub``/``retsub`` -> Invoke / Return.
+- **Frame modeling** de-noises PySSA's ``_try_expand_frame_op``, which models
+  ``frame_dig``/``frame_bury`` as ~1000-wide stack ops over the ``[1..STACK_MAX]``
+  unroll. Here ``frame_dig -k`` reads param ``nargs-k`` and other slots read/write
+  a local (single values), the fat frame ops drop, and the now-dead stack-model
+  phis are pruned by liveness. Heuristic, but removes essentially all the noise.
 
-- **Subroutine partitioning** via :func:`tealtools.structure.analyze_structure`:
-  routing + handler BBs become ``main``; each ``callsub``-reachable routine
-  becomes an ``pre_ir.Subroutine`` with params from its ``proto``. ``callsub`` ->
-  ``pre_ir.InvokeSubroutine`` + continue; ``retsub`` -> ``pre_ir.SubroutineReturn``.
-
-- **Frame modeling** (de-noises the unroll): PySSA's ``_try_expand_frame_op``
-  models ``frame_dig``/``frame_bury`` as ~1000-wide stack ops over the
-  ``[1..STACK_MAX]`` unroll, so the deep stack-slot phis exist only to feed
-  them. Here ``frame_dig -k`` (k within proto args) reads parameter ``nargs-k``
-  and ``frame_dig``/``frame_bury`` on other slots read/write a local — single
-  values, severing the stack dependency. The fat frame ops are dropped, and the
-  now-unreferenced stack-model phis are pruned by forward liveness. Heuristic
-  (best-effort on locals / odd frame shapes), but it removes essentially all of
-  the unroll noise.
-
-Constants and trivial single-predecessor phis are inlined; op result/operand
-type and ``txn``/``global`` field tables come from :mod:`optypes`.
+Constants and trivial single-pred phis are inlined; types come from :mod:`optypes`.
 """
 from __future__ import annotations
 
@@ -47,14 +36,11 @@ _FRAME_OPS = frozenset({"frame_dig", "frame_bury"})
 
 def _infer_arities(struct, callsite) -> dict:
     """``Subroutine -> (nargs, nret)`` for every routine. Proto subs read it off
-    their ``proto`` op; legacy (pre-proto) subs pass args / return on the stack,
-    so infer it from a cross-procedural stack-depth fixpoint.
-
-    Per sub, propagate stack depth over its *internal* CFG (a ``callsub`` flows
-    to its continuation, NOT into the callee, applying the callee's current
-    arity -- recursion converges via the outer fixpoint). Depth is relative to
-    entry (= 0); the deepest point below entry is ``nargs`` (values read from the
-    caller), a ``retsub``'s depth above that floor is ``nret``."""
+    their ``proto``; legacy subs pass args / return on the stack, so infer it from
+    a cross-procedural stack-depth fixpoint: propagate depth over each sub's
+    internal CFG (a ``callsub`` flows to its continuation with the callee's current
+    arity), where the deepest point below entry is ``nargs`` and a ``retsub``'s
+    depth above that floor is ``nret``."""
     by_name = {s.name: s for s in struct.subroutines}
     proto = {s: _proto_io(s.entry_bb) if any(a.op == "proto" for a in s.entry_bb.assignments)
              else None for s in struct.subroutines}
@@ -182,14 +168,9 @@ def lift(prog: SSAProgram) -> pre_ir.Program:
 
 
 class _Lifter:
-    """Stateful builder behind :func:`lift`.
-
-    One instance lifts one program: the constructor records nothing, ``build``
-    drives the whole pipeline (partition into subroutines, model frames /
-    shuffles, re-simulate stacks, recover types to a fixpoint) and the methods
-    share their working state -- register maps, the block-id table, the frame /
-    local / shuffle routing -- as instance attributes.
-    """
+    """Stateful builder behind :func:`lift` (one instance per program). ``build``
+    drives the pipeline; the methods share working state -- register maps, the
+    block-id table, frame / local / shuffle routing -- as instance attributes."""
 
     def __init__(self, prog: SSAProgram) -> None:
         self.prog = prog
@@ -705,13 +686,11 @@ class _Lifter:
                               [self.bid[s] for s in succ[:-1]], self.bid[succ[-1]])
 
     def _resim(self, body_list, entry_bb, params):
-        """Re-simulate a non-proto recursive sub's value-stack with correct
-        callsub arities. PySSA caps such a sub's (unbounded) stack at STACK_MAX,
-        so its post-call survivors come back as fat-phi garbage; here every op's
-        operands instead come from a clean local stack -- args are the params,
-        `callsub` pops nargs and pushes the invoke result, shuffles reorder in
-        place. Fills `resim_args` (per-op operands), `resim_phis` (merge phis),
-        and `resim_exit` (per-block stacks, for returns)."""
+        """Re-simulate a non-proto sub's value-stack with correct callsub arities.
+        PySSA caps such a sub's stack at STACK_MAX, so its post-call survivors come
+        back as fat-phi garbage; here operands come from a clean local stack
+        instead. Fills `resim_args` (per-op operands), `resim_phis` (merge phis),
+        `resim_exit` (per-block stacks)."""
         body = set(body_list)
 
         def isucc(b):
