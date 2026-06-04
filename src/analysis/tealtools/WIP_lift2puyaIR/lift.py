@@ -28,7 +28,7 @@ type and ``txn``/``global`` field tables come from :mod:`optypes`.
 """
 from __future__ import annotations
 
-from . import ir, type_recovery
+from . import ir, transforms, type_recovery
 from ..block_args import to_block_args
 from ..ssa import (
     Const, Phi, SSAProgram, SSAVar, _STACK_SHUFFLE_OPS, _TERMINATOR_OPS,
@@ -350,13 +350,13 @@ class _Lifter:
                                        returns=["?"] * nrets, body=body)
                 self.subs.append(sub_ir)
                 sub_pairs.append((sub_ir, s))
-        _prune_dead_phis(self.subs)
+        transforms.prune_dead_phis(self.subs)
         # Replace cross-group passthrough phis with each caller's own value (loop:
         # a passthrough value can itself be another passthrough), then re-prune the
         # phis they orphaned.
-        while _isolate_cross_group_phis(self.subs):
+        while transforms.isolate_cross_group_phis(self.subs):
             pass
-        _prune_dead_phis(self.subs)
+        transforms.prune_dead_phis(self.subs)
         self.name2sub = {s.id: s for s in self.subs if not s.is_main}
         # Recover the register / return / phi AVM types to a fixpoint (see
         # :mod:`type_recovery`), then assemble the program and reconcile the
@@ -365,7 +365,7 @@ class _Lifter:
         main = next(sub for sub in self.subs if sub.is_main)
         prog_ir = ir.Program(main=main, subroutines=[s for s in self.subs if not s.is_main])
         type_recovery.finalize_types(prog_ir)
-        _materialize_phi_consts(prog_ir)
+        transforms.materialize_phi_consts(prog_ir)
         return prog_ir
 
     def _sub_io(self, entry_bb):
@@ -1000,36 +1000,6 @@ class _Lifter:
         return "?"
 
 
-def _materialize_phi_consts(prog) -> None:
-    """Puya requires phi arguments to be registers, so a phi merging a constant
-    on some edge (a path-dependent literal) needs that constant materialized: a
-    ``let r = <const>`` at the end of the through block, with the phi arg pointing
-    at ``r``. (Without this the translator silently drops the const arg, leaving
-    the phi short an operand vs its predecessors.)"""
-    block_by_id: dict = {}
-    for sub in [prog.main, *prog.subroutines]:
-        for bb in sub.body:
-            block_by_id[bb.id] = bb
-    n = 0
-    for sub in [prog.main, *prog.subroutines]:
-        for bb in sub.body:
-            for ph in bb.phis:
-                for arg in ph.args:
-                    if isinstance(arg.value, ir.Register):
-                        continue
-                    through = block_by_id.get(arg.through)
-                    if through is None:
-                        continue
-                    ty = ph.register.ir_type
-                    if ty == "?":
-                        ty = ("uint64" if isinstance(arg.value, ir.UInt64Constant)
-                              else "bytes")
-                    r = ir.Register(f"pc%{n}", 0, ty)
-                    n += 1
-                    through.ops.append(ir.Assignment([r], arg.value))
-                    arg.value = r
-
-
 def _proto_io(entry_bb):
     for a in entry_bb.assignments:
         if a.op == "proto":
@@ -1040,160 +1010,3 @@ def _proto_io(entry_bb):
                 except ValueError:
                     break
     return 0, 0
-
-
-def _collect_regs(x, into: set) -> None:
-    if isinstance(x, ir.Register):
-        into.add(id(x))
-    elif isinstance(x, (ir.Intrinsic, ir.InvokeSubroutine)):
-        for a in x.args:
-            _collect_regs(a, into)
-    elif isinstance(x, ir.ValueTuple):
-        for v in x.values:
-            _collect_regs(v, into)
-
-
-def _prune_dead_phis(subs) -> None:
-    """Drop phis not reachable (through phi args) from a real use — i.e. the
-    frame stack-model phis, now that frame ops no longer consume them. Forward
-    liveness: seed from ops / control / returns (NOT phi args), then propagate
-    backward through phi arguments; keep only live phis."""
-    live: set = set()
-    phi_by_reg: dict = {}
-    for sub in subs:
-        for b in sub.body:
-            for phi in b.phis:
-                phi_by_reg[id(phi.register)] = phi
-    for sub in subs:
-        for b in sub.body:
-            for op in b.ops:
-                if isinstance(op, ir.Assignment):
-                    _collect_regs(op.source, live)
-                elif isinstance(op, ir.Assert):
-                    _collect_regs(op.condition, live)
-                elif isinstance(op, ir.IntrinsicOp):
-                    _collect_regs(op.intrinsic, live)
-            t = b.terminator
-            if isinstance(t, ir.ConditionalBranch):
-                _collect_regs(t.condition, live)
-            elif isinstance(t, (ir.Switch, ir.GotoNth)):
-                _collect_regs(t.value, live)
-            elif isinstance(t, ir.SubroutineReturn):
-                for r in t.result:
-                    _collect_regs(r, live)
-            elif isinstance(t, ir.ProgramExit):
-                _collect_regs(t.result, live)
-    work = list(live)
-    while work:
-        phi = phi_by_reg.get(work.pop())
-        if phi is None:
-            continue
-        for pa in phi.args:
-            if isinstance(pa.value, ir.Register) and id(pa.value) not in live:
-                live.add(id(pa.value))
-                work.append(id(pa.value))
-    for sub in subs:
-        for b in sub.body:
-            b.phis = [phi for phi in b.phis if id(phi.register) in live]
-
-
-def _subst_value(v, m: dict):
-    """Replace a Register operand per the id -> Value map (else unchanged)."""
-    return m.get(id(v), v) if isinstance(v, ir.Register) else v
-
-
-def _subst_block(bb, m: dict) -> None:
-    """Apply the substitution map to every operand position in a block."""
-    for ph in bb.phis:
-        ph.args = [ir.PhiArgument(_subst_value(a.value, m), a.through)
-                   for a in ph.args]
-    for o in bb.ops:
-        if isinstance(o, ir.Assignment):
-            s = o.source
-            if isinstance(s, (ir.Intrinsic, ir.InvokeSubroutine)):
-                s.args = [_subst_value(a, m) for a in s.args]
-            elif isinstance(s, ir.ValueTuple):
-                s.values = [_subst_value(v, m) for v in s.values]
-            else:
-                o.source = _subst_value(s, m)
-        elif isinstance(o, ir.IntrinsicOp):
-            o.intrinsic.args = [_subst_value(a, m) for a in o.intrinsic.args]
-        elif isinstance(o, ir.Assert):
-            o.condition = _subst_value(o.condition, m)
-    t = bb.terminator
-    if isinstance(t, ir.ConditionalBranch):
-        t.condition = _subst_value(t.condition, m)
-    elif isinstance(t, (ir.Switch, ir.GotoNth)):
-        t.value = _subst_value(t.value, m)
-    elif isinstance(t, ir.SubroutineReturn):
-        t.result = [_subst_value(r, m) for r in t.result]
-    elif isinstance(t, ir.ProgramExit):
-        t.result = _subst_value(t.result, m)
-
-
-def _isolate_cross_group_phis(subs) -> int:
-    """Resolve passthrough values that PySSA shares across subroutine groups.
-
-    A callee's entry block can carry *passthrough* phis -- caller stack that
-    survives the call (it sits below the call args, is untouched by the callee,
-    and re-emerges in the continuation). PySSA's whole-program stack model puts
-    ONE such phi at the callee entry, merged across every caller, so its register
-    ends up *used in a different subroutine group than it is defined in*. That is
-    invalid for Puya (registers are per-subroutine) and the source of the
-    cross-family phi conflicts (one phi merging two callers' bytes + uint64).
-
-    Each caller already supplies its own value as the phi arg flowing in from its
-    callsub block, so resolve every cross-group use to that arg and drop the now
-    -unreferenced phi from the callee. Returns the number of phis dropped (so the
-    caller can loop -- a passthrough value can itself be another passthrough)."""
-    phi_by_reg: dict = {}                # id(register) -> (group, phi)
-    blocks_of: dict = {}                 # id(group) -> {mirror block ids}
-    for g in subs:
-        blocks_of[id(g)] = {bb.id for bb in g.body}
-        for bb in g.body:
-            for ph in bb.phis:
-                phi_by_reg[id(ph.register)] = (g, ph)
-    removed: set = set()
-    for b_group in subs:
-        used: set = set()
-        for bb in b_group.body:
-            for o in bb.ops:
-                if isinstance(o, ir.Assignment):
-                    _collect_regs(o.source, used)
-                elif isinstance(o, ir.IntrinsicOp):
-                    _collect_regs(o.intrinsic, used)
-                elif isinstance(o, ir.Assert):
-                    _collect_regs(o.condition, used)
-            t = bb.terminator
-            if isinstance(t, ir.ConditionalBranch):
-                _collect_regs(t.condition, used)
-            elif isinstance(t, (ir.Switch, ir.GotoNth)):
-                _collect_regs(t.value, used)
-            elif isinstance(t, ir.SubroutineReturn):
-                for r in t.result:
-                    _collect_regs(r, used)
-            elif isinstance(t, ir.ProgramExit):
-                _collect_regs(t.result, used)
-        sub_map: dict = {}
-        for rid in used:
-            entry = phi_by_reg.get(rid)
-            if entry is None or entry[0] is b_group:
-                continue                     # not a phi, or same group -- fine
-            ph = entry[1]
-            # the value this group itself supplied: the phi arg flowing in from
-            # one of its own (callsub) blocks. Exactly one => unambiguous.
-            mine = [a.value for a in ph.args if a.through in blocks_of[id(b_group)]]
-            if len(mine) == 1:
-                sub_map[rid] = mine[0]
-                removed.add(rid)
-        if sub_map:
-            for bb in b_group.body:
-                _subst_block(bb, sub_map)
-    if removed:
-        for g in subs:
-            for bb in g.body:
-                bb.phis = [ph for ph in bb.phis
-                           if id(ph.register) not in removed]
-    return len(removed)
-
-
