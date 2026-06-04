@@ -72,6 +72,7 @@ uint64-range seeds are in place before bytemath composes them.
 """
 from __future__ import annotations
 
+import functools
 import logging
 from typing import Optional
 
@@ -88,7 +89,11 @@ _BYTES_OP_RULES = ("b+", "b-", "b*", "b/", "b%", "b&", "b|", "b^")
 _PASS_ITER_CAP = 1000
 
 
+@functools.lru_cache(maxsize=None)
 def _bytes_to_int(hex_value: str) -> Optional[int]:
+    # Cached: a constant's bigint value is immutable, but the naive bytemath
+    # fixpoint re-derives it for every operand on every iteration (~4M fromhex
+    # re-parses on folks-v3). Pure function of the hex string -> identical result.
     h = hex_value
     if h.startswith("0x") or h.startswith("0X"):
         h = h[2:]
