@@ -112,27 +112,6 @@ def _infer_arities(struct, callsite) -> dict:
     return arity
 
 
-def _recursive_subs(struct) -> set:
-    """Subroutines that (transitively) call themselves. A recursive sub's stack
-    is statically unbounded, so PySSA caps it at ``[1..STACK_MAX]`` -- the fat
-    stack that corrupts post-call survivors in non-proto recursive subs."""
-    by_name = {s.name: s for s in struct.subroutines}
-    callees: dict = {s: set() for s in struct.subroutines}
-    for cs in struct.call_sites:
-        caller = next((s for s in struct.subroutines if cs.callsub_bb in s.body), None)
-        callee = by_name.get(cs.target_name)
-        if caller is not None and callee is not None:
-            callees[caller].add(callee)
-
-    def reaches(a, b, seen):
-        if a in seen:
-            return False
-        seen.add(a)
-        return b in callees[a] or any(reaches(c, b, seen) for c in callees[a])
-
-    return {s for s in struct.subroutines if reaches(s, s, set())}
-
-
 def _const(cv: Const):
     # SSA integer consts carry kind "int" (not "uint64"); without this they all
     # fell through to BytesConstant(decimal-string) -- rendered verbatim so it
