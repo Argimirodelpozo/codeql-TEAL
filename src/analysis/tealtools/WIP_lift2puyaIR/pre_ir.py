@@ -1,12 +1,18 @@
-"""Puya-shaped IR model — representational parity with ``puya/ir/models.py``.
+"""Pre-IR — the Puya-shaped *working* model the lift builds, before it is lowered
+to the real ``puya.ir.models`` (see :mod:`tealtools.WIP_lift2puyaIR.to_puya_ir`).
 
-A faithful (simplified) mirror of Algorand Puya's IR model classes, so we can
-*lift our SSA into this model* (see :mod:`tealtools.WIP_lift2puyaIR.lift`) and
-then render / analyse it as Puya-shaped IR — not merely print TEAL in a
-Puya-like style. Types are a single ``ir_type`` kind string
-(``uint64``/``bytes``/``bool``/``account``/``asset``/``application``/``?``)
-rather than Puya's full ``IRType`` lattice; everything else mirrors the
-upstream class/field structure.
+A faithful (simplified) stand-in for Algorand Puya's IR model classes, so we can
+*lift our SSA into it* (see :mod:`tealtools.WIP_lift2puyaIR.lift`) and then render
+/ analyse it as Puya-shaped IR — not merely print TEAL in a Puya-like style.
+
+It is a *separate* model rather than the real one because the lift recovers types
+by a fixpoint: registers are born ``?`` and refined in place. Puya's ``Register``
+is ``@attrs.frozen`` with no unknown ``IRType``, so it cannot hold a not-yet-typed
+value — this mutable pre-IR is the working form, lowered to the frozen Puya model
+only once types are resolved. Types here are a single ``ir_type`` kind string
+(``uint64``/``bytes``/``bool``/``account``/``asset``/``application``/``?``) rather
+than Puya's full ``IRType`` lattice; everything else matches the upstream
+class/field structure.
 
 Upstream → here:
   Value          : Register, UInt64Constant, BytesConstant, Undefined

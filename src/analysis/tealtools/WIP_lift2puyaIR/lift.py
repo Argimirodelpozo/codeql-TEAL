@@ -1,17 +1,17 @@
 """Lift an :class:`~tealtools.ssa.SSAProgram` into the Puya-shaped IR model.
 
-``lift(prog) -> ir.Program``. This *raises* abstraction (the decompiler
+``lift(prog) -> pre_ir.Program``. This *raises* abstraction (the decompiler
 direction): our stack-machine TEAL SSA — frame slots, scratch, stack shuffles —
 becomes the value-based, typed, subroutine IR of
-:mod:`tealtools.WIP_lift2puyaIR.ir`, which self-renders in the ``.ssa.slot.ir``
+:mod:`tealtools.WIP_lift2puyaIR.pre_ir`, which self-renders in the ``.ssa.slot.ir``
 shape. (Puya itself *lowers* the other way: its AST → IR → TEAL.)
 
 Two structural rewrites happen here (both contained — no substrate change):
 
 - **Subroutine partitioning** via :func:`tealtools.structure.analyze_structure`:
   routing + handler BBs become ``main``; each ``callsub``-reachable routine
-  becomes an ``ir.Subroutine`` with params from its ``proto``. ``callsub`` ->
-  ``ir.InvokeSubroutine`` + continue; ``retsub`` -> ``ir.SubroutineReturn``.
+  becomes an ``pre_ir.Subroutine`` with params from its ``proto``. ``callsub`` ->
+  ``pre_ir.InvokeSubroutine`` + continue; ``retsub`` -> ``pre_ir.SubroutineReturn``.
 
 - **Frame modeling** (de-noises the unroll): PySSA's ``_try_expand_frame_op``
   models ``frame_dig``/``frame_bury`` as ~1000-wide stack ops over the
@@ -28,7 +28,7 @@ type and ``txn``/``global`` field tables come from :mod:`optypes`.
 """
 from __future__ import annotations
 
-from . import ir, transforms, type_recovery
+from . import pre_ir, transforms, type_recovery
 from ..block_args import to_block_args
 from ..ssa import (
     Const, Phi, SSAProgram, SSAVar, _STACK_SHUFFLE_OPS, _TERMINATOR_OPS,
@@ -118,10 +118,10 @@ def _const(cv: Const):
     # looked right, but semantically a uint64 stored as bytes (Puya wants `Nu`).
     if cv.kind == "int":
         try:
-            return ir.UInt64Constant(int(cv.value))
+            return pre_ir.UInt64Constant(int(cv.value))
         except ValueError:
-            return ir.UInt64Constant(0)
-    return ir.BytesConstant(cv.value)
+            return pre_ir.UInt64Constant(0)
+    return pre_ir.BytesConstant(cv.value)
 
 
 _UINT64_MAX = (1 << 64) - 1
@@ -176,7 +176,7 @@ def _val_note(local_id: str, t, cap: int = 40) -> str | None:
     return f"{_s(r.lo)} <= {local_id} <= {_s(r.hi)}"
 
 
-def lift(prog: SSAProgram) -> ir.Program:
+def lift(prog: SSAProgram) -> pre_ir.Program:
     """Lift ``prog`` into the Puya-shaped IR model (see module docstring)."""
     return _Lifter(prog).build()
 
@@ -194,7 +194,7 @@ class _Lifter:
     def __init__(self, prog: SSAProgram) -> None:
         self.prog = prog
 
-    def build(self) -> ir.Program:
+    def build(self) -> pre_ir.Program:
         self.form = to_block_args(self.prog)
         self.label2line = {code.rstrip(":").strip(): ln for (_f, ln, code) in self.prog.labels}
         struct = analyze_structure(self.prog)
@@ -215,8 +215,8 @@ class _Lifter:
                                if any(a.op == "proto" for a in s.entry_bb.assignments)}
         _resim_subs = {s for s in struct.subroutines
                        if s.entry_bb not in self._proto_entries}
-        self.resim_args: dict = {}                # id(assignment) -> [mirror operand]
-        self.resim_phis: dict = {}                # PyBlock -> [ir.Phi]
+        self.resim_args: dict = {}                # id(assignment) -> [pre-IR operand]
+        self.resim_phis: dict = {}                # PyBlock -> [pre_ir.Phi]
         self.resim_exit: dict = {}                # PyBlock -> re-simulated exit stack
         self.resim_blocks: set = set()            # blocks whose ops use re-simulated args
         self._param_phis: set = set()             # non-proto entry arg phis -> params (skip)
@@ -289,20 +289,20 @@ class _Lifter:
                 outs.append(r)
             self.call_results[cs.callsub_bb] = outs
         self.subs = []
-        sub_pairs = []                                # (ir.Subroutine, struct.Subroutine)
+        sub_pairs = []                                # (pre_ir.Subroutine, struct.Subroutine)
         for gname, s, gb in groups:
             self.cur_gname = gname
             if s is None:
                 params, nrets = [], 0
             else:
                 nargs, nrets = self._sub_io(s.entry_bb)
-                params = [ir.Parameter(ir.Register(f"p%{i}", 0, "?"))
+                params = [pre_ir.Parameter(pre_ir.Register(f"p%{i}", 0, "?"))
                           for i in range(nargs)]
                 # Legacy non-proto subs have no `frame_dig`: their args are the entry
-                # block's stack-index phis (merged from the call sites). The mirror
+                # block's stack-index phis (merged from the call sites). The pre-IR
                 # sub entry has no predecessors, so map those phis to params (entry
                 # stack_index k = k-th from top = param[nargs-k]) and skip building
-                # them -- mirroring how proto subs read args off the frame.
+                # them -- matching how proto subs read args off the frame.
                 if s.entry_bb not in self._proto_entries:
                     for ph in s.entry_bb.phis:
                         if 1 <= ph.stack_index <= nargs:
@@ -322,10 +322,10 @@ class _Lifter:
             body = [self._build_block(bb) for bb in gb]
             if s is None:
                 file = all_blocks[0].file.split("/")[-1] if all_blocks else "program"
-                self.subs.append(ir.Subroutine(id=file, parameters=[], returns=[],
+                self.subs.append(pre_ir.Subroutine(id=file, parameters=[], returns=[],
                                                body=body, is_main=True))
             else:
-                sub_ir = ir.Subroutine(id=gname, parameters=params,
+                sub_ir = pre_ir.Subroutine(id=gname, parameters=params,
                                        returns=["?"] * nrets, body=body)
                 self.subs.append(sub_ir)
                 sub_pairs.append((sub_ir, s))
@@ -342,7 +342,7 @@ class _Lifter:
         # placeholder-seeded mixed-type phi webs on its final shape.
         type_recovery.recover_types(self, sub_pairs)
         main = next(sub for sub in self.subs if sub.is_main)
-        prog_ir = ir.Program(main=main, subroutines=[s for s in self.subs if not s.is_main])
+        prog_ir = pre_ir.Program(main=main, subroutines=[s for s in self.subs if not s.is_main])
         type_recovery.finalize_types(prog_ir)
         transforms.materialize_phi_consts(prog_ir)
         return prog_ir
@@ -378,22 +378,22 @@ class _Lifter:
                 return rt
         return "?"
 
-    def _new_reg(self, prefix: str, ir_type: str) -> ir.Register:
+    def _new_reg(self, prefix: str, ir_type: str) -> pre_ir.Register:
         n = self.ctr.get(prefix, 0)
         self.ctr[prefix] = n + 1
-        return ir.Register(f"{prefix}%{n}", 0, ir_type)
+        return pre_ir.Register(f"{prefix}%{n}", 0, ir_type)
 
-    def _local(self, slot: int) -> ir.Register:
+    def _local(self, slot: int) -> pre_ir.Register:
         key = (self.cur_gname, slot)
         if key not in self.local_regs:
-            self.local_regs[key] = ir.Register(f"l%{slot}", 0, "?")
+            self.local_regs[key] = pre_ir.Register(f"l%{slot}", 0, "?")
         return self.local_regs[key]
 
     def _is_real_phi(self, ph: Phi) -> bool:
         bb = ph.basic_block
         return bb is not None and len(bb.predecessors) > 1
 
-    def reg(self, o) -> ir.Register:
+    def reg(self, o) -> pre_ir.Register:
         if o in self.frame_map:
             return self.frame_map[o]
         if o not in self.regs:
@@ -433,11 +433,11 @@ class _Lifter:
         nargs = len(params)
         cur: dict = {}               # slot -> current versioned Register
 
-        def _fresh(slot: int) -> ir.Register:
+        def _fresh(slot: int) -> pre_ir.Register:
             key = (self.cur_gname, slot)
             v = self.local_ver.get(key, 0)
             self.local_ver[key] = v + 1
-            return ir.Register(f"l%{slot}", v, "?")
+            return pre_ir.Register(f"l%{slot}", v, "?")
 
         for bb in gb:
             for a in bb.assignments:
@@ -560,7 +560,7 @@ class _Lifter:
         if cv is not None:
             return _const(cv)
         if o is None:
-            return ir.Undefined()
+            return pre_ir.Undefined()
         if isinstance(o, Const):
             return _const(o)
         return self.reg(o)
@@ -607,14 +607,14 @@ class _Lifter:
         def _cond():                          # branch/switch selector value
             if resim and t is not None and self.resim_args.get(id(t)):
                 return self.resim_args[id(t)][0]
-            return self.value(t.inputs[0]) if (t and t.inputs) else ir.Undefined()
+            return self.value(t.inputs[0]) if (t and t.inputs) else pre_ir.Undefined()
 
         if op == "callsub":
             cs = self.callsite.get(bb)
             cont = cs.continuation_bb if cs else None
             if cont is not None and cont in self.bid:
-                return ir.Goto(self.bid[cont])
-            return ir.SubroutineReturn([])
+                return pre_ir.Goto(self.bid[cont])
+            return pre_ir.SubroutineReturn([])
         if op == "retsub":
             # A retsub returns to its caller. Its raw-CFG successors are the
             # callers' continuations (interprocedural return edges), but each
@@ -630,7 +630,7 @@ class _Lifter:
             # returns that were left on the stack.
             if resim:                                      # clean re-simulated stack
                 rsx = self.resim_exit.get(bb, [])
-                return ir.SubroutineReturn(rsx[-self.cur_nret:] if self.cur_nret else [])
+                return pre_ir.SubroutineReturn(rsx[-self.cur_nret:] if self.cur_nret else [])
             slots = self.final_locals.get(self.cur_gname, {})
             es = bb.exit_stack or []
             rets = []
@@ -639,7 +639,7 @@ class _Lifter:
                     rets.append(slots[j])                  # buried into the slot
                 elif len(es) >= self.cur_nret - j:
                     rets.append(self.value(es[-self.cur_nret + j]))  # left on the stack
-            return ir.SubroutineReturn(rets)
+            return pre_ir.SubroutineReturn(rets)
         succ = [s for s in bb.successors if s in self.bid]
         if not succ:
             if op == "return":
@@ -648,16 +648,16 @@ class _Lifter:
                 # STACK_MAX garbage and would yield an undefined operand.
                 if resim:
                     rsx = self.resim_exit.get(bb, [])
-                    v = rsx[-1] if rsx else ir.UInt64Constant(0)
+                    v = rsx[-1] if rsx else pre_ir.UInt64Constant(0)
                 else:
                     v = (self.value(bb.exit_stack[-1]) if bb.exit_stack
-                         else ir.UInt64Constant(0))
-                return ir.ProgramExit(v)
+                         else pre_ir.UInt64Constant(0))
+                return pre_ir.ProgramExit(v)
             if op == "err":
-                return ir.Fail()
-            return ir.ProgramExit(ir.UInt64Constant(0))
+                return pre_ir.Fail()
+            return pre_ir.ProgramExit(pre_ir.UInt64Constant(0))
         if len(succ) == 1:
-            return ir.Goto(self.bid[succ[0]])
+            return pre_ir.Goto(self.bid[succ[0]])
         if len(succ) == 2 and op in _COND_BRANCH and t is not None:
             cond = _cond()
             taken = self.line2block.get(self.label2line.get((t.immediates or "").strip()))
@@ -666,8 +666,8 @@ class _Lifter:
             else:
                 taken, other = succ[0], succ[1]
             if op == "bnz":
-                return ir.ConditionalBranch(cond, self.bid[taken], self.bid[other])
-            return ir.ConditionalBranch(cond, self.bid[other], self.bid[taken])  # bz
+                return pre_ir.ConditionalBranch(cond, self.bid[taken], self.bid[other])
+            return pre_ir.ConditionalBranch(cond, self.bid[other], self.bid[taken])  # bz
         if op == "match" and t is not None:
             # `match t0..t_{n-1}`: matched value on top, the n case values below
             # (deepest = C_0). It's a Switch on a (usually bytes) value against
@@ -681,9 +681,9 @@ class _Lifter:
             for i, lbl in enumerate(labels):
                 blk = self.line2block.get(self.label2line.get(lbl))
                 ci = ins[n - i] if (n - i) < len(ins) else None
-                if isinstance(ci, ir.BytesConstant):
+                if isinstance(ci, pre_ir.BytesConstant):
                     key = ci.value                       # bytes-keyed match
-                elif isinstance(ci, ir.UInt64Constant):
+                elif isinstance(ci, pre_ir.UInt64Constant):
                     key = str(ci.value)                  # uint64-keyed match
                 else:
                     key = None
@@ -696,12 +696,13 @@ class _Lifter:
                 cases, targets = self._recover_match_keys(bb, labels)  # (from source)
             default = next((s for s in succ if s not in targets), None)
             if cases and default is not None:
-                val = ins[0] if ins else ir.Undefined()
-                return ir.Switch(val, cases, self.bid[default])
+                val = ins[0] if ins else pre_ir.Undefined()
+                return pre_ir.Switch(val, cases, self.bid[default])
         if op in ("switch", "match"):
-            return ir.GotoNth(_cond(),
+            return pre_ir.GotoNth(_cond(),
                               [self.bid[s] for s in succ[:-1]], self.bid[succ[-1]])
-        return ir.GotoNth(ir.Undefined(), [self.bid[s] for s in succ[:-1]], self.bid[succ[-1]])
+        return pre_ir.GotoNth(pre_ir.Undefined(),
+                              [self.bid[s] for s in succ[:-1]], self.bid[succ[-1]])
 
     def _resim(self, body_list, entry_bb, params):
         """Re-simulate a non-proto recursive sub's value-stack with correct
@@ -763,7 +764,7 @@ class _Lifter:
         order += [b for b in body_list if b not in seen]   # cover any block the
         #            forward DAG missed, so every op still gets clean resim_args
 
-        def rv(o):                            # SSA operand -> mirror value
+        def rv(o):                            # SSA operand -> pre-IR value
             cv = getattr(o, "const_value", None)
             if cv is not None:
                 return _const(cv)
@@ -783,7 +784,7 @@ class _Lifter:
                 stack, phis = [], []
                 for slot in range(depth):
                     r = self._new_reg("tmp", "?")
-                    ph = ir.Phi(r, [ir.PhiArgument(self.resim_exit[p][slot], self.bid[p])
+                    ph = pre_ir.Phi(r, [pre_ir.PhiArgument(self.resim_exit[p][slot], self.bid[p])
                                     for p in preds])
                     phis.append(ph)
                     stack.append(r)
@@ -801,7 +802,7 @@ class _Lifter:
                         stack.append(vals[0])
                     else:
                         r = self._new_reg("tmp", "?")
-                        phis.append(ir.Phi(r, [ir.PhiArgument(self.resim_exit[p][slot],
+                        phis.append(pre_ir.Phi(r, [pre_ir.PhiArgument(self.resim_exit[p][slot],
                                                               self.bid[p]) for p in preds]))
                         stack.append(r)
                 if phis:
@@ -841,7 +842,7 @@ class _Lifter:
             self.resim_exit[b] = stack
         for ph, slot, bp in pending:          # close loop back-edges
             if bp in self.resim_exit and slot < len(self.resim_exit[bp]):
-                ph.args.append(ir.PhiArgument(self.resim_exit[bp][slot], self.bid[bp]))
+                ph.args.append(pre_ir.PhiArgument(self.resim_exit[bp][slot], self.bid[bp]))
 
     def _build_block(self, bb):
         resim = bb in self.resim_blocks               # re-simulated (non-proto / main)
@@ -861,7 +862,7 @@ class _Lifter:
                     if pred not in self.bid:
                         continue
                     # A continuation's predecessor that lies *inside the callee*
-                    # is the interprocedural return edge: in the mirror, bb is
+                    # is the interprocedural return edge: in the pre-IR, bb is
                     # reached from the callsub block (Goto), carrying the invoke
                     # result, not from the callee. Relabel the arg to the callsub
                     # block and supply the result (or, for a value below the
@@ -872,21 +873,21 @@ class _Lifter:
                         nret = len(res)
                         si = ph.stack_index
                         if 1 <= si <= nret:
-                            args.append(ir.PhiArgument(res[nret - si],
+                            args.append(pre_ir.PhiArgument(res[nret - si],
                                                        self.bid[cs.callsub_bb]))
                             continue
                         es = cs.callsub_bb.exit_stack or []
                         nargs = self._sub_io(cs.target_entry)[0]
                         depth = nargs + (si - nret)
                         if depth <= len(es):
-                            args.append(ir.PhiArgument(self.value(es[-depth]),
+                            args.append(pre_ir.PhiArgument(self.value(es[-depth]),
                                                        self.bid[cs.callsub_bb]))
                             continue
                     e = self.form.edge(pred, bb)
                     val = (e.args[i] if (e is not None and i is not None
                                          and i < len(e.args)) else None)
-                    args.append(ir.PhiArgument(self.value(val), self.bid[pred]))
-                phis.append(ir.Phi(self.reg(ph), args, comment=self._range_comment([ph])))
+                    args.append(pre_ir.PhiArgument(self.value(val), self.bid[pred]))
+                phis.append(pre_ir.Phi(self.reg(ph), args, comment=self._range_comment([ph])))
         ops = []
         for a in bb.assignments:
             if resim and a.op in _STACK_SHUFFLE_OPS:
@@ -900,7 +901,7 @@ class _Lifter:
                 if slot is not None and a.inputs:
                     # versioned local (slot >= 0); k < 0 keeps the single-reg fallback
                     tgt = self.bury_target.get(id(a)) or self._local(slot)
-                    ops.append(ir.Assignment([tgt], self.value(a.inputs[0])))
+                    ops.append(pre_ir.Assignment([tgt], self.value(a.inputs[0])))
                 continue
             if a.op == "callsub":
                 cs = self.callsite.get(bb)
@@ -916,12 +917,12 @@ class _Lifter:
                     call_args = [self.value(es[-nargs + i]) for i in range(nargs)]
                 else:
                     call_args = [self.value(i) for i in a.inputs]
-                invoke = ir.InvokeSubroutine(target, call_args)
+                invoke = pre_ir.InvokeSubroutine(target, call_args)
                 outs = self.call_results.get(bb)      # caller-local return registers
                 if outs:
-                    ops.append(ir.Assignment(list(outs), invoke))
+                    ops.append(pre_ir.Assignment(list(outs), invoke))
                 else:
-                    ops.append(ir.IntrinsicOp(invoke))
+                    ops.append(pre_ir.IntrinsicOp(invoke))
                 continue
             if a.op in _TERMINATOR_OPS or a.op in ("intcblock", "bytecblock",
                                                    "proto"):
@@ -931,17 +932,17 @@ class _Lifter:
                 continue
             args = self.resim_args[id(a)] if resim and id(a) in self.resim_args \
                 else [self.value(i) for i in a.inputs]
-            intr = ir.Intrinsic(a.op, a.immediates.split() if a.immediates else [],
+            intr = pre_ir.Intrinsic(a.op, a.immediates.split() if a.immediates else [],
                                 args, line=a.location.line)
             shown = [o for o in a.outputs if isinstance(o, SSAVar)]
             if a.op == "assert" and not shown:
-                ops.append(ir.Assert(args[0] if args else ir.Undefined()))
+                ops.append(pre_ir.Assert(args[0] if args else pre_ir.Undefined()))
             elif shown:
-                ops.append(ir.Assignment([self.reg(o) for o in shown], intr,
+                ops.append(pre_ir.Assignment([self.reg(o) for o in shown], intr,
                                          comment=self._range_comment(shown)))
             else:
-                ops.append(ir.IntrinsicOp(intr))
-        return ir.BasicBlock(id=self.bid[bb], phis=phis, ops=ops,
+                ops.append(pre_ir.IntrinsicOp(intr))
+        return pre_ir.BasicBlock(id=self.bid[bb], phis=phis, ops=ops,
                              terminator=self.control(bb), comment=f"L{bb.first_line}")
 
     def _ssa_type(self, o, depth=0):

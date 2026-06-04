@@ -1,8 +1,8 @@
-"""Translate our (mirror) ``ir.Program`` into the *real* ``puya.ir.models`` and
+"""Translate our pre-IR ``pre_ir.Program`` into the *real* ``puya.ir.models`` and
 render / optimise it with Puya's own machinery.
 
 Our :mod:`lift` builds a typed, well-formed Puya-shaped IR against a local
-mirror of ``puya/ir/models.py``. This walks that mirror and rebuilds it with the
+shape of ``puya/ir/models.py``. This walks that pre-IR and rebuilds it with the
 genuine Puya classes, so we can reuse Puya's text renderer (``to_text_visitor``)
 and -- via :func:`optimize` -- its real optimiser passes: constant propagation,
 copy propagation, control-op simplification, block merging, CSE, and dead-code
@@ -24,7 +24,7 @@ from puya.ir.avm_ops import AVMOp
 from puya.ir.types_ import AVMBytesEncoding, PrimitiveIRType as PT
 from puya.parse import SourceLocation
 
-from . import ir
+from . import pre_ir
 from .lift import lift
 from .teal_const import (
     _const_bytes, _load_src, _tmpl_name, _tokenize_operands,
@@ -75,9 +75,9 @@ def _line_of(bb) -> int:
 
 class _Translator:
     def __init__(self, src_map: dict | None = None):
-        self.regs: dict = {}      # id(mirror Register) -> M.Register
-        self.blocks: dict = {}    # mirror block id -> M.BasicBlock
-        self.subs: dict = {}      # mirror Subroutine.id -> M.Subroutine
+        self.regs: dict = {}      # id(pre-IR Register) -> M.Register
+        self.blocks: dict = {}    # pre-IR block id -> M.BasicBlock
+        self.subs: dict = {}      # pre-IR Subroutine.id -> M.Subroutine
         self.src: dict = src_map or {}
         self._block_cache: dict = {}   # (kind, line) -> recovered const block
 
@@ -93,14 +93,14 @@ class _Translator:
         return self.regs[k]
 
     def val(self, v):
-        if isinstance(v, ir.Register):
+        if isinstance(v, pre_ir.Register):
             return self.reg(v)
-        if isinstance(v, ir.UInt64Constant):
+        if isinstance(v, pre_ir.UInt64Constant):
             return M.UInt64Constant(source_location=None, value=v.value)
-        if isinstance(v, ir.BytesConstant):
+        if isinstance(v, pre_ir.BytesConstant):
             raw, enc = _const_bytes(v.value or "0x")
             return M.BytesConstant(source_location=None, value=raw, encoding=enc)
-        if isinstance(v, ir.Undefined):
+        if isinstance(v, pre_ir.Undefined):
             return M.Undefined(source_location=None, ir_type=PT.uint64)
         raise TypeError(f"val: {type(v).__name__}")
 
@@ -148,7 +148,7 @@ class _Translator:
         return None
 
     def vp(self, s, result_types=None):
-        if isinstance(s, ir.Intrinsic):
+        if isinstance(s, pre_ir.Intrinsic):
             # const-load by index (intc_N / bytec_N / `intc N` / `bytec N`)
             # whose const-block slot the extractor dropped -> recover from source.
             idx = None
@@ -178,25 +178,25 @@ class _Translator:
                 source_location=None, op=AVMOp(s.op),
                 immediates=[self._imm(i) for i in s.immediates],
                 args=[self.val(a) for a in reversed(s.args)], **kw)
-        if isinstance(s, ir.InvokeSubroutine):
+        if isinstance(s, pre_ir.InvokeSubroutine):
             # Subroutine args are positional (args[i] -> param i), NOT AVM-order
             # like Intrinsic args -- Puya builds them `for param in parameters`.
             return M.InvokeSubroutine(
                 source_location=None, target=self.subs[s.target],
                 args=[self.val(a) for a in s.args])
-        if isinstance(s, ir.ValueTuple):
+        if isinstance(s, pre_ir.ValueTuple):
             return M.ValueTuple(source_location=None,
                                 values=[self.val(v) for v in s.values])
         return self.val(s)
 
     def op(self, o):
-        if isinstance(o, ir.Assignment):
+        if isinstance(o, pre_ir.Assignment):
             # Multi-const push (`pushbytess` / `pushints`) whose inline operands
             # the extractor dropped: Puya has no such op, so split into one
             # `let target_i = <const_i>` per value (targets reversed to source
             # order). Recovered from source; only when counts line up.
             src = o.source
-            if isinstance(src, ir.Intrinsic) and src.op in ("pushbytess", "pushints") \
+            if isinstance(src, pre_ir.Intrinsic) and src.op in ("pushbytess", "pushints") \
                     and not src.args:
                 ops = self._operands_at(src.line)
                 tgts = [self.reg(t) for t in o.targets][::-1]
@@ -210,20 +210,20 @@ class _Translator:
             targets = [self.reg(t) for t in o.targets]
             # Our outputs are top-first; Puya intrinsics return bottom-first
             # (AVM order), so a multi-output intrinsic's targets/types reverse.
-            if isinstance(o.source, ir.Intrinsic) and len(targets) > 1:
+            if isinstance(o.source, pre_ir.Intrinsic) and len(targets) > 1:
                 targets = targets[::-1]
             return M.Assignment(
                 source_location=None, targets=targets,
                 source=self.vp(o.source, [t.ir_type for t in targets]))
-        if isinstance(o, ir.IntrinsicOp):
-            if isinstance(o.intrinsic, ir.Intrinsic) and o.intrinsic.op in (
+        if isinstance(o, pre_ir.IntrinsicOp):
+            if isinstance(o.intrinsic, pre_ir.Intrinsic) and o.intrinsic.op in (
                     "pop", "popn", "pushbytess", "pushints"):
                 # pop/popn discard; a 0-output pushbytess/pushints is a phantom
                 # push (operands dropped by the extractor) whose values, if used,
                 # are recovered elsewhere (e.g. match keys from source) -- no-op.
                 return None
             return self.vp(o.intrinsic)          # side-effecting intrinsic = an Op
-        if isinstance(o, ir.Assert):
+        if isinstance(o, pre_ir.Assert):
             return M.Assert(source_location=None, condition=self.val(o.condition),
                             message=o.message or "assert", explicit=True)
         raise TypeError(f"op: {type(o).__name__}")
@@ -239,16 +239,16 @@ class _Translator:
 
     def ctrl(self, t):
         B = self.blocks
-        if isinstance(t, ir.Goto):
+        if isinstance(t, pre_ir.Goto):
             return M.Goto(source_location=None, target=B[t.target])
-        if isinstance(t, ir.ConditionalBranch):
+        if isinstance(t, pre_ir.ConditionalBranch):
             return M.ConditionalBranch(
                 source_location=None, condition=self._u64_cond(t.condition),
                 non_zero=B[t.non_zero], zero=B[t.zero])
-        if isinstance(t, ir.GotoNth):
+        if isinstance(t, pre_ir.GotoNth):
             return M.GotoNth(source_location=None, value=self._u64_cond(t.value),
                              blocks=[B[b] for b in t.blocks], default=B[t.default])
-        if isinstance(t, ir.Switch):
+        if isinstance(t, pre_ir.Switch):
             val = self.val(t.value)
             is_u64 = getattr(val, "ir_type", None) == PT.uint64
             cases = {}
@@ -261,12 +261,12 @@ class _Translator:
                 cases[key] = B[blk]
             return M.Switch(source_location=None, value=val,
                             cases=cases, default=B[t.default])
-        if isinstance(t, ir.SubroutineReturn):
+        if isinstance(t, pre_ir.SubroutineReturn):
             return M.SubroutineReturn(source_location=None,
                                       result=[self.val(v) for v in t.result])
-        if isinstance(t, ir.ProgramExit):
+        if isinstance(t, pre_ir.ProgramExit):
             return M.ProgramExit(source_location=None, result=self.val(t.result))
-        if isinstance(t, ir.Fail):
+        if isinstance(t, pre_ir.Fail):
             return M.Fail(source_location=None,
                           error_message=t.error_message or "err", explicit=True)
         raise TypeError(f"ctrl: {type(t).__name__}")
@@ -278,7 +278,7 @@ class _Translator:
         # (the duplicate edges carry the same value).
         seen, args = set(), []
         for a in p.args:
-            if not isinstance(a.value, ir.Register) or a.through in seen:
+            if not isinstance(a.value, pre_ir.Register) or a.through in seen:
                 continue
             seen.add(a.through)
             args.append(M.PhiArgument(value=self.reg(a.value),
@@ -297,27 +297,27 @@ class _Translator:
 
 
 def _term_targets(term):
-    if isinstance(term, ir.Goto):
+    if isinstance(term, pre_ir.Goto):
         return [term.target]
-    if isinstance(term, ir.ConditionalBranch):
+    if isinstance(term, pre_ir.ConditionalBranch):
         return [term.non_zero, term.zero]
-    if isinstance(term, ir.GotoNth):
+    if isinstance(term, pre_ir.GotoNth):
         return [*term.blocks, term.default]
-    if isinstance(term, ir.Switch):
+    if isinstance(term, pre_ir.Switch):
         return [b for _, b in term.cases] + [term.default]
     return []
 
 
 def to_puya(prog):
     """SSAProgram -> (main, subroutines) as real puya.ir.models objects."""
-    mirror = lift(prog)
+    lifted = lift(prog)
     # Collapse trivial / self-referential phis (`r = phi(r)`) before lowering:
     # Puya's own copy_propagation asserts on these (it can't represent a
     # register replaced by itself), but our reconstruction can emit them.
     from .transforms import simplify_trivial_phis
-    simplify_trivial_phis(mirror)
+    simplify_trivial_phis(lifted)
     t = _Translator(_load_src(getattr(prog, "db_path", "")))
-    groups = [mirror.main, *mirror.subroutines]
+    groups = [lifted.main, *lifted.subroutines]
 
     # Pass 1: shells (empty body validates trivially), so control ops and
     # InvokeSubroutine can reference real block / subroutine objects.
@@ -325,7 +325,7 @@ def to_puya(prog):
         for bb in s.body:
             t.blocks[bb.id] = M.BasicBlock(source_location=_sl(_line_of(bb)),
                                            id=bb.id, ops=[], terminator=None)
-    for s in mirror.subroutines:
+    for s in lifted.subroutines:
         t.subs[s.id] = M.Subroutine(id=s.id, short_name=s.id, source_location=None,
                                     parameters=[], returns=[t.ty(r) for r in s.returns],
                                     body=[], inline=None)
@@ -358,9 +358,9 @@ def to_puya(prog):
             for succ in _term_targets(bb.terminator):
                 t.blocks[succ]._predecessors[mb] = None
 
-    main = M.Subroutine(id=mirror.main.id, short_name="main", source_location=None,
+    main = M.Subroutine(id=lifted.main.id, short_name="main", source_location=None,
                         parameters=[], returns=[], body=main_body, inline=None)
-    return main, [t.subs[s.id] for s in mirror.subroutines]
+    return main, [t.subs[s.id] for s in lifted.subroutines]
 
 
 def _opt_passes():

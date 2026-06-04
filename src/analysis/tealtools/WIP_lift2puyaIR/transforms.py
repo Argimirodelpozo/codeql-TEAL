@@ -1,6 +1,6 @@
-"""Structural rewrites over the Puya-shaped (mirror) IR (:mod:`ir`).
+"""Structural rewrites over the Puya-shaped pre-IR (:mod:`pre_ir`).
 
-Each pass rewrites the ``ir.*`` model in place (phi / block cleanup, out-of-SSA
+Each pass rewrites the ``pre_ir.*`` model in place (phi / block cleanup, out-of-SSA
 prep), as distinct from :mod:`type_recovery` (which only assigns AVM types). The
 :class:`lift._Lifter` build calls the first three; :func:`to_puya_ir.to_puya`
 calls :func:`simplify_trivial_phis` just before lowering to ``puya.ir.models``.
@@ -18,16 +18,16 @@ calls :func:`simplify_trivial_phis` just before lowering to ``puya.ir.models``.
 """
 from __future__ import annotations
 
-from . import ir
+from . import pre_ir
 
 
 def _vkey(v):
     """Value-identity key: registers by object identity, constants by value."""
-    if isinstance(v, ir.Register):
+    if isinstance(v, pre_ir.Register):
         return ("r", id(v))
-    if isinstance(v, ir.UInt64Constant):
+    if isinstance(v, pre_ir.UInt64Constant):
         return ("u", v.value)
-    if isinstance(v, ir.BytesConstant):
+    if isinstance(v, pre_ir.BytesConstant):
         return ("b", v.value)
     return ("o", id(v))
 
@@ -38,7 +38,7 @@ def _all_blocks(program):
             yield b
 
 
-def simplify_trivial_phis(program: ir.Program) -> int:
+def simplify_trivial_phis(program: pre_ir.Program) -> int:
     """Collapse trivial phis to a fixpoint. A phi is trivial when, ignoring
     arguments that reference its own register (loop self-edges), all remaining
     arguments are the same value -- then the phi *is* that value. Returns the
@@ -47,7 +47,7 @@ def simplify_trivial_phis(program: ir.Program) -> int:
 
     def resolve(v, _seen=None):
         seen = _seen if _seen is not None else set()
-        while isinstance(v, ir.Register) and id(v) in repl and id(v) not in seen:
+        while isinstance(v, pre_ir.Register) and id(v) in repl and id(v) not in seen:
             seen.add(id(v))
             v = repl[id(v)]
         return v
@@ -62,12 +62,12 @@ def simplify_trivial_phis(program: ir.Program) -> int:
                 distinct = {}
                 for a in phi.args:
                     v = resolve(a.value)
-                    if isinstance(v, ir.Register) and v is phi.register:
+                    if isinstance(v, pre_ir.Register) and v is phi.register:
                         continue          # self-reference
                     distinct[_vkey(v)] = v
                 if len(distinct) <= 1:
                     repl[id(phi.register)] = (next(iter(distinct.values()))
-                                              if distinct else ir.Undefined())
+                                              if distinct else pre_ir.Undefined())
                     changed = True
     if not repl:
         return 0
@@ -76,9 +76,9 @@ def simplify_trivial_phis(program: ir.Program) -> int:
         b.phis = [phi for phi in b.phis if id(phi.register) not in repl]
 
     def fix_vp(vp):
-        if isinstance(vp, (ir.Intrinsic, ir.InvokeSubroutine)):
+        if isinstance(vp, (pre_ir.Intrinsic, pre_ir.InvokeSubroutine)):
             vp.args = [resolve(a) for a in vp.args]
-        elif isinstance(vp, ir.ValueTuple):
+        elif isinstance(vp, pre_ir.ValueTuple):
             vp.values = [resolve(a) for a in vp.values]
 
     for b in _all_blocks(program):
@@ -86,32 +86,32 @@ def simplify_trivial_phis(program: ir.Program) -> int:
             for a in phi.args:
                 a.value = resolve(a.value)
         for op in b.ops:
-            if isinstance(op, ir.Assignment):
+            if isinstance(op, pre_ir.Assignment):
                 fix_vp(op.source)
-            elif isinstance(op, ir.Assert):
+            elif isinstance(op, pre_ir.Assert):
                 op.condition = resolve(op.condition)
-            elif isinstance(op, ir.IntrinsicOp):
+            elif isinstance(op, pre_ir.IntrinsicOp):
                 fix_vp(op.intrinsic)
         t = b.terminator
-        if isinstance(t, ir.ConditionalBranch):
+        if isinstance(t, pre_ir.ConditionalBranch):
             t.condition = resolve(t.condition)
-        elif isinstance(t, (ir.Switch, ir.GotoNth)):
+        elif isinstance(t, (pre_ir.Switch, pre_ir.GotoNth)):
             t.value = resolve(t.value)
-        elif isinstance(t, ir.SubroutineReturn):
+        elif isinstance(t, pre_ir.SubroutineReturn):
             t.result = [resolve(r) for r in t.result]
-        elif isinstance(t, ir.ProgramExit):
+        elif isinstance(t, pre_ir.ProgramExit):
             t.result = resolve(t.result)
     return len(repl)
 
 
 
 def _collect_regs(x, into: set) -> None:
-    if isinstance(x, ir.Register):
+    if isinstance(x, pre_ir.Register):
         into.add(id(x))
-    elif isinstance(x, (ir.Intrinsic, ir.InvokeSubroutine)):
+    elif isinstance(x, (pre_ir.Intrinsic, pre_ir.InvokeSubroutine)):
         for a in x.args:
             _collect_regs(a, into)
-    elif isinstance(x, ir.ValueTuple):
+    elif isinstance(x, pre_ir.ValueTuple):
         for v in x.values:
             _collect_regs(v, into)
 
@@ -130,21 +130,21 @@ def prune_dead_phis(subs) -> None:
     for sub in subs:
         for b in sub.body:
             for op in b.ops:
-                if isinstance(op, ir.Assignment):
+                if isinstance(op, pre_ir.Assignment):
                     _collect_regs(op.source, live)
-                elif isinstance(op, ir.Assert):
+                elif isinstance(op, pre_ir.Assert):
                     _collect_regs(op.condition, live)
-                elif isinstance(op, ir.IntrinsicOp):
+                elif isinstance(op, pre_ir.IntrinsicOp):
                     _collect_regs(op.intrinsic, live)
             t = b.terminator
-            if isinstance(t, ir.ConditionalBranch):
+            if isinstance(t, pre_ir.ConditionalBranch):
                 _collect_regs(t.condition, live)
-            elif isinstance(t, (ir.Switch, ir.GotoNth)):
+            elif isinstance(t, (pre_ir.Switch, pre_ir.GotoNth)):
                 _collect_regs(t.value, live)
-            elif isinstance(t, ir.SubroutineReturn):
+            elif isinstance(t, pre_ir.SubroutineReturn):
                 for r in t.result:
                     _collect_regs(r, live)
-            elif isinstance(t, ir.ProgramExit):
+            elif isinstance(t, pre_ir.ProgramExit):
                 _collect_regs(t.result, live)
     work = list(live)
     while work:
@@ -152,7 +152,7 @@ def prune_dead_phis(subs) -> None:
         if phi is None:
             continue
         for pa in phi.args:
-            if isinstance(pa.value, ir.Register) and id(pa.value) not in live:
+            if isinstance(pa.value, pre_ir.Register) and id(pa.value) not in live:
                 live.add(id(pa.value))
                 work.append(id(pa.value))
     for sub in subs:
@@ -162,35 +162,35 @@ def prune_dead_phis(subs) -> None:
 
 def _subst_value(v, m: dict):
     """Replace a Register operand per the id -> Value map (else unchanged)."""
-    return m.get(id(v), v) if isinstance(v, ir.Register) else v
+    return m.get(id(v), v) if isinstance(v, pre_ir.Register) else v
 
 
 def _subst_block(bb, m: dict) -> None:
     """Apply the substitution map to every operand position in a block."""
     for ph in bb.phis:
-        ph.args = [ir.PhiArgument(_subst_value(a.value, m), a.through)
+        ph.args = [pre_ir.PhiArgument(_subst_value(a.value, m), a.through)
                    for a in ph.args]
     for o in bb.ops:
-        if isinstance(o, ir.Assignment):
+        if isinstance(o, pre_ir.Assignment):
             s = o.source
-            if isinstance(s, (ir.Intrinsic, ir.InvokeSubroutine)):
+            if isinstance(s, (pre_ir.Intrinsic, pre_ir.InvokeSubroutine)):
                 s.args = [_subst_value(a, m) for a in s.args]
-            elif isinstance(s, ir.ValueTuple):
+            elif isinstance(s, pre_ir.ValueTuple):
                 s.values = [_subst_value(v, m) for v in s.values]
             else:
                 o.source = _subst_value(s, m)
-        elif isinstance(o, ir.IntrinsicOp):
+        elif isinstance(o, pre_ir.IntrinsicOp):
             o.intrinsic.args = [_subst_value(a, m) for a in o.intrinsic.args]
-        elif isinstance(o, ir.Assert):
+        elif isinstance(o, pre_ir.Assert):
             o.condition = _subst_value(o.condition, m)
     t = bb.terminator
-    if isinstance(t, ir.ConditionalBranch):
+    if isinstance(t, pre_ir.ConditionalBranch):
         t.condition = _subst_value(t.condition, m)
-    elif isinstance(t, (ir.Switch, ir.GotoNth)):
+    elif isinstance(t, (pre_ir.Switch, pre_ir.GotoNth)):
         t.value = _subst_value(t.value, m)
-    elif isinstance(t, ir.SubroutineReturn):
+    elif isinstance(t, pre_ir.SubroutineReturn):
         t.result = [_subst_value(r, m) for r in t.result]
-    elif isinstance(t, ir.ProgramExit):
+    elif isinstance(t, pre_ir.ProgramExit):
         t.result = _subst_value(t.result, m)
 
 
@@ -210,7 +210,7 @@ def isolate_cross_group_phis(subs) -> int:
     -unreferenced phi from the callee. Returns the number of phis dropped (so the
     caller can loop -- a passthrough value can itself be another passthrough)."""
     phi_by_reg: dict = {}                # id(register) -> (group, phi)
-    blocks_of: dict = {}                 # id(group) -> {mirror block ids}
+    blocks_of: dict = {}                 # id(group) -> {pre-IR block ids}
     for g in subs:
         blocks_of[id(g)] = {bb.id for bb in g.body}
         for bb in g.body:
@@ -221,21 +221,21 @@ def isolate_cross_group_phis(subs) -> int:
         used: set = set()
         for bb in b_group.body:
             for o in bb.ops:
-                if isinstance(o, ir.Assignment):
+                if isinstance(o, pre_ir.Assignment):
                     _collect_regs(o.source, used)
-                elif isinstance(o, ir.IntrinsicOp):
+                elif isinstance(o, pre_ir.IntrinsicOp):
                     _collect_regs(o.intrinsic, used)
-                elif isinstance(o, ir.Assert):
+                elif isinstance(o, pre_ir.Assert):
                     _collect_regs(o.condition, used)
             t = bb.terminator
-            if isinstance(t, ir.ConditionalBranch):
+            if isinstance(t, pre_ir.ConditionalBranch):
                 _collect_regs(t.condition, used)
-            elif isinstance(t, (ir.Switch, ir.GotoNth)):
+            elif isinstance(t, (pre_ir.Switch, pre_ir.GotoNth)):
                 _collect_regs(t.value, used)
-            elif isinstance(t, ir.SubroutineReturn):
+            elif isinstance(t, pre_ir.SubroutineReturn):
                 for r in t.result:
                     _collect_regs(r, used)
-            elif isinstance(t, ir.ProgramExit):
+            elif isinstance(t, pre_ir.ProgramExit):
                 _collect_regs(t.result, used)
         sub_map: dict = {}
         for rid in used:
@@ -275,16 +275,16 @@ def materialize_phi_consts(prog) -> None:
         for bb in sub.body:
             for ph in bb.phis:
                 for arg in ph.args:
-                    if isinstance(arg.value, ir.Register):
+                    if isinstance(arg.value, pre_ir.Register):
                         continue
                     through = block_by_id.get(arg.through)
                     if through is None:
                         continue
                     ty = ph.register.ir_type
                     if ty == "?":
-                        ty = ("uint64" if isinstance(arg.value, ir.UInt64Constant)
+                        ty = ("uint64" if isinstance(arg.value, pre_ir.UInt64Constant)
                               else "bytes")
-                    r = ir.Register(f"pc%{n}", 0, ty)
+                    r = pre_ir.Register(f"pc%{n}", 0, ty)
                     n += 1
-                    through.ops.append(ir.Assignment([r], arg.value))
+                    through.ops.append(pre_ir.Assignment([r], arg.value))
                     arg.value = r

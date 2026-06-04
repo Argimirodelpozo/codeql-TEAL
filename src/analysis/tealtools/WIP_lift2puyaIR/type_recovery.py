@@ -12,7 +12,7 @@ handle (this module never imports :mod:`lift`).
 from __future__ import annotations
 
 
-from . import ir
+from . import pre_ir
 from ..ssa import Const, Phi, SSAVar
 from .optypes import _BYTES_CONSUME, _U64_CONSUME, _imm0, avm
 from .teal_const import _const_bytes
@@ -40,20 +40,20 @@ def _itxn_field_avm(field: str):
     return None
 
 
-def _itob_const(v: int) -> "ir.BytesConstant":
+def _itob_const(v: int) -> "pre_ir.BytesConstant":
     """A uint64 placeholder rewritten to bytes: empty for the (dead) 0 seed
     that a `bytes` accumulator slot is initialised with, else its itob form."""
-    return ir.BytesConstant("0x" if v == 0 else "0x" + v.to_bytes(8, "big").hex())
+    return pre_ir.BytesConstant("0x" if v == 0 else "0x" + v.to_bytes(8, "big").hex())
 
 
-def _to_u64_const(b) -> "ir.UInt64Constant":
+def _to_u64_const(b) -> "pre_ir.UInt64Constant":
     """A bytes placeholder rewritten to uint64 (the symmetric case: a uint64
     slot seeded with empty `""`/`0x`); empty -> 0, else its btoi value."""
     try:
         raw, _ = _const_bytes(getattr(b, "value", "") or "0x")
-        return ir.UInt64Constant(int.from_bytes(raw[-8:], "big") if raw else 0)
+        return pre_ir.UInt64Constant(int.from_bytes(raw[-8:], "big") if raw else 0)
     except Exception:
-        return ir.UInt64Constant(0)
+        return pre_ir.UInt64Constant(0)
 
 
 def _const_key(operand) -> "str | None":
@@ -147,32 +147,32 @@ def _expected_type(op, idx, args):
 def _infer_types_from_uses(subs) -> None:
     """Refine ``?``-typed registers (params, locals, …) from the ops that
     consume them: arithmetic/cmp inputs are uint64, bytes-op inputs are bytes,
-    ``==`` mirrors the other operand, branch conditions are uint64."""
+    ``==`` matches the other operand, branch conditions are uint64."""
     reg_by_id: dict = {}
     uses: dict = {}
 
     def use(r, op, idx, args):
-        if isinstance(r, ir.Register):
+        if isinstance(r, pre_ir.Register):
             reg_by_id[id(r)] = r
             uses.setdefault(id(r), []).append((op, idx, args))
 
     def note(vp):
-        if isinstance(vp, (ir.Intrinsic, ir.InvokeSubroutine)):
-            op = vp.op if isinstance(vp, ir.Intrinsic) else None
+        if isinstance(vp, (pre_ir.Intrinsic, pre_ir.InvokeSubroutine)):
+            op = vp.op if isinstance(vp, pre_ir.Intrinsic) else None
             for i, a in enumerate(vp.args):
                 use(a, op, i, vp.args)
 
     for sub in subs:
         for b in sub.body:
             for o in b.ops:
-                if isinstance(o, ir.Assignment):
+                if isinstance(o, pre_ir.Assignment):
                     note(o.source)
-                elif isinstance(o, ir.IntrinsicOp):
+                elif isinstance(o, pre_ir.IntrinsicOp):
                     note(o.intrinsic)
-                elif isinstance(o, ir.Assert):
+                elif isinstance(o, pre_ir.Assert):
                     use(o.condition, "assert", 0, [o.condition])
             t = b.terminator
-            if isinstance(t, ir.ConditionalBranch):
+            if isinstance(t, pre_ir.ConditionalBranch):
                 use(t.condition, "__cond__", 0, [t.condition])
 
     # Monotonic (only `?` -> a concrete type, guarded by `!= "?"`), so loop to
@@ -200,7 +200,7 @@ def _infer_returns(subs) -> None:
         rets = None
         for b in sub.body:
             t = b.terminator
-            if isinstance(t, ir.SubroutineReturn):
+            if isinstance(t, pre_ir.SubroutineReturn):
                 ts = [getattr(v, "ir_type", "?") for v in t.result]
                 if rets is None:
                     rets = ts
@@ -274,12 +274,12 @@ def _reconcile_mixed_phis(prog) -> None:
         for ph in bb.phis:
             phi_ids.add(note(ph.register))
             for a in ph.args:
-                if isinstance(a.value, ir.Register):
+                if isinstance(a.value, pre_ir.Register):
                     parent[find(note(ph.register))] = find(note(a.value))
 
     def reg_args(x):
         out = []
-        if isinstance(x, ir.Register):
+        if isinstance(x, pre_ir.Register):
             out.append(x)
         for a in (getattr(x, "args", None) or []) + (getattr(x, "values", None) or []):
             out += reg_args(a)
@@ -299,12 +299,12 @@ def _reconcile_mixed_phis(prog) -> None:
             root = find(id(ph.register))
             for a in ph.args:            # non-placeholder consts are real data
                 v = a.value              # (empty bytes / uint64 0 are dead seeds)
-                if isinstance(v, ir.UInt64Constant) and v.value != 0:
+                if isinstance(v, pre_ir.UInt64Constant) and v.value != 0:
                     constev[root].add("u")
-                elif isinstance(v, ir.BytesConstant) and not _empty_bytes(v):
+                elif isinstance(v, pre_ir.BytesConstant) and not _empty_bytes(v):
                     constev[root].add("b")
         for o in bb.ops:
-            if isinstance(o, ir.Assignment) and not isinstance(o.source, ir.Phi):
+            if isinstance(o, pre_ir.Assignment) and not isinstance(o.source, pre_ir.Phi):
                 for t in o.targets:
                     if id(t) in parent and id(t) not in phi_ids and avm(t.ir_type) != "?":
                         defev[find(id(t))].add(avm(t.ir_type))
@@ -312,7 +312,7 @@ def _reconcile_mixed_phis(prog) -> None:
             # values): a seed register's own uses elsewhere (e.g. NumAppArgs in
             # routing) say nothing about the accumulator phi it merely seeds.
             src = getattr(o, "source", None) or getattr(o, "intrinsic", None)
-            if isinstance(src, ir.Intrinsic):
+            if isinstance(src, pre_ir.Intrinsic):
                 k = ("u" if src.op in _U64_CONSUME
                      else "b" if src.op in _BYTES_CONSUME else None)
                 if k is None and src.op == "itxn_field" and src.immediates:
@@ -321,7 +321,7 @@ def _reconcile_mixed_phis(prog) -> None:
                     for r in reg_args(src):
                         if id(r) in phi_ids:
                             consumer[find(id(r))].add(k)
-            if isinstance(o, ir.Assert):
+            if isinstance(o, pre_ir.Assert):
                 for r in reg_args(o.condition):
                     if id(r) in phi_ids:
                         consumer[find(id(r))].add("u")
@@ -335,7 +335,7 @@ def _reconcile_mixed_phis(prog) -> None:
                 break
 
     def placeholder(T):
-        return _itob_const(0) if T == "bytes" else ir.UInt64Constant(0)
+        return _itob_const(0) if T == "bytes" else pre_ir.UInt64Constant(0)
 
     for bb in blocks:                    # retype every phi-register member
         for ph in bb.phis:
@@ -350,11 +350,11 @@ def _reconcile_mixed_phis(prog) -> None:
             want = "b" if T == "bytes" else "u"
             for a in ph.args:
                 v = a.value
-                if isinstance(v, ir.UInt64Constant) and T == "bytes":
+                if isinstance(v, pre_ir.UInt64Constant) and T == "bytes":
                     a.value = _itob_const(v.value)
-                elif isinstance(v, ir.BytesConstant) and T == "uint64":
+                elif isinstance(v, pre_ir.BytesConstant) and T == "uint64":
                     a.value = _to_u64_const(v)
-                elif (isinstance(v, ir.Register) and id(v) not in phi_ids
+                elif (isinstance(v, pre_ir.Register) and id(v) not in phi_ids
                       and avm(v.ir_type) not in ("?", want)):
                     a.value = placeholder(T)   # cross-type non-phi seed -> dead placeholder
 
@@ -369,7 +369,8 @@ def _realign_call_returns(prog) -> None:
     for sub in [prog.main, *prog.subroutines]:
         for bb in sub.body:
             for o in bb.ops:
-                if isinstance(o, ir.Assignment) and isinstance(o.source, ir.InvokeSubroutine):
+                if isinstance(o, pre_ir.Assignment) and isinstance(
+                        o.source, pre_ir.InvokeSubroutine):
                     callee = sub_by_id.get(o.source.target)
                     if callee is None:
                         continue
@@ -389,8 +390,8 @@ def _propagate_copy_types(prog) -> None:
         for sub in [prog.main, *prog.subroutines]:
             for bb in sub.body:
                 for o in bb.ops:
-                    if not (isinstance(o, ir.Assignment) and len(o.targets) == 1
-                            and isinstance(o.source, ir.Register)):
+                    if not (isinstance(o, pre_ir.Assignment) and len(o.targets) == 1
+                            and isinstance(o.source, pre_ir.Register)):
                         continue
                     s, t = o.source, o.targets[0]
                     if s.ir_type in ("bytes", "uint64") and t.ir_type != s.ir_type:
@@ -411,7 +412,7 @@ def _untyped(subs):
             for phi in bb.phis:
                 n += phi.register.ir_type == "?"
             for op in bb.ops:
-                if isinstance(op, ir.Assignment):
+                if isinstance(op, pre_ir.Assignment):
                     n += sum(t.ir_type == "?" for t in op.targets)
     return n
 
@@ -532,11 +533,11 @@ def _propagate_copy_load_types(lifter):
     typed load feeds a copy that feeds another load. Runs last, after
     param / return / state inference have typed the leaves."""
     def _src_type(v):
-        if isinstance(v, ir.Register):
+        if isinstance(v, pre_ir.Register):
             return v.ir_type
-        if isinstance(v, ir.UInt64Constant):
+        if isinstance(v, pre_ir.UInt64Constant):
             return "uint64"
-        if isinstance(v, ir.BytesConstant):
+        if isinstance(v, pre_ir.BytesConstant):
             return "bytes"
         return None                          # Intrinsic / invoke: not a copy
 
@@ -551,7 +552,7 @@ def _propagate_copy_load_types(lifter):
         for sub in lifter.subs:
             for bb in sub.body:
                 for op in bb.ops:
-                    if (isinstance(op, ir.Assignment) and len(op.targets) == 1
+                    if (isinstance(op, pre_ir.Assignment) and len(op.targets) == 1
                             and op.targets[0].ir_type == "?"):
                         st = _src_type(op.source)
                         if st and st != "?":
@@ -595,9 +596,9 @@ def _unify_call_returns(lifter):
                 callee.returns[pos] = ret = rreg.ir_type
                 for b in callee.body:
                     t = b.terminator
-                    if isinstance(t, ir.SubroutineReturn) and pos < len(t.result):
+                    if isinstance(t, pre_ir.SubroutineReturn) and pos < len(t.result):
                         rv = t.result[pos]
-                        if isinstance(rv, ir.Register) and rv.ir_type == "?":
+                        if isinstance(rv, pre_ir.Register) and rv.ir_type == "?":
                             rv.ir_type = ret
 
 
@@ -623,7 +624,7 @@ def recover_types(lifter, sub_pairs) -> None:
 
 
 def finalize_types(prog) -> None:
-    """Reconcile and re-align types on the assembled ir.Program (post-fixpoint):
+    """Reconcile and re-align types on the assembled pre_ir.Program (post-fixpoint):
     re-type placeholder-seeded mixed phi webs, then propagate the result across
     call-result registers and copies."""
     _reconcile_mixed_phis(prog)
