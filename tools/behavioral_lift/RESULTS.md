@@ -53,6 +53,15 @@ to `... ==; return` and is behaviourally faithful (approve=10). This is the
 behavioural test working as intended -- real execution surfaced a bug that
 validity / structural checks never would.
 
+**Confirmed after the fix**: a full fixed-code re-run of the 60-contract batch
+gives **59 FAITHFUL / 0 DIVERGES / 1 SKIP / 0 TIMEOUT** -- every contract that
+lifts is behaviourally faithful, the one skip is a pre-existing lift gap (not a
+divergence). And the fix is **regression-clean**: the corpus+backend sweep
+(`LIFT_SEMANTICS_CORPUS=1 LIFT_SEMANTICS_BACKEND=1`) is 510 passed / 5 failed,
+where all 5 are pre-existing Tier-2 corpus gaps (call-arity + `gaid`/`gload`
+type-recovery) that fail identically on the parent commit `41b39067~1` -- disjoint
+from the `control()` terminator change.
+
 **33/33 of the first 35 contracts are behaviourally faithful** — across 695 dryrun
 inputs the recompiled program's approve/reject decision matches the original on
 every one. Of those, **75 inputs APPROVE in both original and recompiled with
