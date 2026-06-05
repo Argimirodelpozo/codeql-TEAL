@@ -726,11 +726,13 @@ def _collapse_phi_args_to_leaves(py: PySSA, phi_map: dict, var_map: dict) -> Non
                     _out.append(_v)
         _scc_leaves[_s] = _out
 
+    # Resolve each SCC's leaves to SSAVars ONCE: phis sharing an SCC share the
+    # same leaf set, so the per-phi var_map.get was ~33M lookups on big proto
+    # contracts. Same SSAVars in the same order -> byte-identical.
+    _scc_leaf_ssa = [[s for _pv in _leaves if (s := var_map.get(_pv)) is not None]
+                     for _leaves in _scc_leaves]
     for py_p, p in phi_map.items():
-        for _leaf_pv in _scc_leaves[_scc_of[_key2i[py_p.key()]]]:
-            _ssa = var_map.get(_leaf_pv)
-            if _ssa is not None:
-                p.args.append(_ssa)
+        p.args.extend(_scc_leaf_ssa[_scc_of[_key2i[py_p.key()]]])
 
 
 def _build_assignments(prog: SSAProgram, py: PySSA, var_map: dict,
