@@ -38,6 +38,14 @@ lines -> 5509 bytes). NB: big proto/recursive mainnet contracts are slow to lift
 | explorer (13 that lift) | **13/13** | 315 | **0** |
 | mainnet, first 20       | **20/20** | 380 | **0** |
 | mainnet batch, 60       | **58/59** old code → **59/59** fixed | 1180 (127 both-APPROVE) | **1** real bug → 0 |
+| newest 42 (IDs 2.3-2.9B)| **24/24** that lift (11 skip, 7 timeout) | 80 both-APPROVE | **0** |
+| old-era 23 (IDs 60-230M)| **23/23** (0 skip/timeout) | 103 both-APPROVE | **0** |
+| mid-era 40 (IDs 300-900M)| **38/38** that lift (2 skip) | — | **0** |
+
+**Across 6 batches (~195 real contracts, ~177 that lift) the differential dryrun
+has found exactly ONE behavioural divergence — app_1200031257, found and fixed.**
+Every contract that lifts is behaviourally faithful. The skips/timeouts are lift
+coverage/perf gaps (see frontier section), never silent wrong answers.
 
 ### The test found and drove a real fix
 
@@ -87,12 +95,26 @@ are lift-COVERAGE gaps, caught cleanly as failures (never silent wrong answers)*
 clustering into ~5 known classes: `l-stack too small for callsub` (x4 -- an
 interprocedural stack-survivor variant the re-sim-all fix doesn't cover),
 used-but-never-defined register (x3), incompatible-type assignment (x2),
-`explicit condition check removed` (x1), non-uint64 branch condition (x1). The 7
-timeouts are the known super-linear SSA-construction perf on big contracts (180s
-per-contract cap). Takeaway: across **155 real contracts over 5 batches the lift
-has produced exactly ONE behavioural divergence (app_1200031257, found+fixed)**;
-the remaining work is lift *coverage/perf* on cutting-edge AVM contracts, not
-faithfulness.
+`explicit condition check removed` (x1), non-uint64 branch condition (x1). The
+l-stack one was root-caused (read-only): NOT an arity error — the callsub's args
+are missing (l-stack empty), an interprocedural stack-survivor/arg-population loss
+on non-proto contracts.
+
+**The 7 timeouts are CodeQL-side, not Python (diagnosed).** faulthandler sampling
+put 59/59 samples in `graphs.py:load_graph` blocked on the `codeql database
+run-queries` subprocess; direct timing confirms `run-queries` on these ~3900-line/
+59-`proto` contracts runs **>240s (killed at 4:00)** — the standard CFG library's
+`BasicBlock::Make<...MakeWithSplitting...>` machinery is super-linear on 59-
+subroutine CFGs. So it's the **CodeQL CFG extraction query**, NOT the (already
+optimised) Python phi-collapse. `load_graph` caches per-DB, so it's a one-time
+first-analysis cost. Fix = optimise/simplify the CFG-library config or move basic-
+block reconstruction into PySSA — both suite-path + risky, left for review.
+
+Takeaway: across **~195 real contracts over 6 batches (explorer + 5 mainnet eras)
+the lift has produced exactly ONE behavioural divergence (app_1200031257,
+found+fixed)**; every contract that lifts is faithful. The remaining work is lift
+*coverage* (interprocedural stack survival, type recovery) and *perf* (the CodeQL
+CFG query) on a minority of cutting-edge AVM contracts — not faithfulness.
 
 Reproduce: `python -m tools.behavioral_lift.fetch_mainnet /tmp/m && \
 python -m tools.behavioral_lift.compare /tmp/m` (needs a localnet on :4001).
