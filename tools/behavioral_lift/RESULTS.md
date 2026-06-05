@@ -36,9 +36,24 @@ lines -> 5509 bytes). NB: big proto/recursive mainnet contracts are slow to lift
 | corpus | behaviourally faithful | inputs (outcome-matched) | real divergences |
 |--------|------------------------|--------------------------|------------------|
 | explorer (13 that lift) | **13/13** | 315 | **0** |
-| mainnet (20)            | **20/20** | 380 | **0** |
+| mainnet, first 20       | **20/20** | 380 | **0** |
+| mainnet, 55 more        | found **1 real bug** (fixed, see below) | — | — |
 
-**33/33 contracts that lift are behaviourally faithful** — across 695 dryrun
+### The test found and drove a real fix
+
+On the second, larger mainnet batch the differential dryrun caught a genuine
+lift correctness bug: **app_1200031257** -- a v6 *bare-expression* program
+(`txn Sender; global CreatorAddress; ==`, no explicit `return`) -- APPROVES
+on-chain when sender==creator, but the lift recompiled it to an unconditional
+reject. Cause: a block that falls off the end with no terminator was lowered to
+`ProgramExit(0)`, discarding the stack top; falling off the end returns the top
+implicitly, like `return`. **Fixed in commit 41b39067** (byte-identical for Puya
+contracts, which always emit an explicit `return`); the contract now recompiles
+to `... ==; return` and is behaviourally faithful (approve=10). This is the
+behavioural test working as intended -- real execution surfaced a bug that
+validity / structural checks never would.
+
+**33/33 of the first 35 contracts are behaviourally faithful** — across 695 dryrun
 inputs the recompiled program's approve/reject decision matches the original on
 every one. Of those, **75 inputs APPROVE in both original and recompiled with
 identical logs** (positive approve-path equivalence, not just reject-consistency
