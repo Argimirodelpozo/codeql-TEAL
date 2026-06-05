@@ -45,9 +45,9 @@ def lift_to_teal(db: str) -> str:
         provider = object.__new__(CompiledProgramProvider)
     ctx = ArtifactCompileContext(options=PuyaOptions(), compilation_set={}, sources_by_path={},
                                  compiled_program_provider=provider, output_path_provider=None)
-    program = M.Program(kind=ProgramKind.approval, main=main, subroutines=list(subs), avm_version=10,
-                        slot_allocation=SlotAllocation(reserved=frozenset(),
-                                                       strategy=SlotAllocationStrategy.none))
+    program = M.Program(
+        kind=ProgramKind.approval, main=main, subroutines=list(subs), avm_version=10,
+        slot_allocation=SlotAllocation(reserved=frozenset(), strategy=SlotAllocationStrategy.none))
     for s in [main, *subs]:
         _split_parallel_copies(ctx, s)
     destructure_ssa(ctx, program)
@@ -57,7 +57,8 @@ def lift_to_teal(db: str) -> str:
             break
         except InternalError as e:
             m = re.search(r"[Uu]ndefined register: ([^#\s]+)#(\d+)", str(e))
-            if not (m and to_puya_ir._define_named_orphan([main, *subs], m.group(1), int(m.group(2)))):
+            if not (m and to_puya_ir._define_named_orphan(
+                    [main, *subs], m.group(1), int(m.group(2)))):
                 raise
     else:
         raise RuntimeError("backend lowering did not converge")
@@ -93,11 +94,11 @@ def main(argv):
             r = algod.compile(teal)
             nbytes = len(base64.b64decode(r["result"]))
             ok += 1
-            print(f"  OK        {name:34s} {len(teal.splitlines()):4d} teal lines -> {nbytes} bytes", flush=True)
+            print(f"  OK        {name:34s} {len(teal.splitlines()):4d} lines -> {nbytes}b", flush=True)
         except Exception as e:
             compile_fail += 1
             print(f"  ASM-FAIL  {name:34s} {str(e)[:50]}", flush=True)
-    print(f"\n=== {ok} recompiled+assembled, {lift_fail} lift-fail, {compile_fail} assemble-fail ===")
+    print(f"\n=== {ok} recompiled+assembled, {lift_fail} lift-fail, {compile_fail} asm-fail ===")
 
 
 if __name__ == "__main__":
