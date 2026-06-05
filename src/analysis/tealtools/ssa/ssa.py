@@ -83,21 +83,26 @@ class PyVar:
     is the opcode's topmost output.
     """
 
-    __slots__ = ("file", "line", "idx")
+    __slots__ = ("file", "line", "idx", "_hash")
 
     def __init__(self, file: str, line: int, idx: int):
         self.file = file
         self.line = line
         self.idx = idx
+        # Identity (file, line, idx) is immutable, so cache the hash: the phi-leaf
+        # collapse hashes PyVars tens of millions of times on big proto contracts,
+        # and rebuilding+hashing the key tuple each call dominated SSA construction.
+        self._hash = hash((file, line, idx))
 
     def key(self) -> tuple:
         return (self.file, self.line, self.idx)
 
     def __hash__(self) -> int:
-        return hash(self.key())
+        return self._hash
 
     def __eq__(self, other) -> bool:
-        return isinstance(other, PyVar) and self.key() == other.key()
+        return (isinstance(other, PyVar) and self.idx == other.idx
+                and self.line == other.line and self.file == other.file)
 
     def __repr__(self) -> str:
         return f"V#{self.idx}@L{self.line}"
