@@ -285,6 +285,7 @@ class _Lifter:
         sub_pairs = []                                # (pre_ir.Subroutine, struct.Subroutine)
         for gname, s, gb in groups:
             self.cur_gname = gname
+            self.cur_is_main = s is None
             if s is None:
                 params, nrets = [], 0
             else:
@@ -581,6 +582,12 @@ class _Lifter:
             cont = cs.continuation_bb if cs else None
             if cont is not None and cont in self.bid:
                 return pre_ir.Goto(self.bid[cont])
+            # No continuation: the callee doesn't return here (non-returning). In
+            # a sub, model that as a value-less return; in main there is no caller
+            # to return to, so the post-call flow is an unreachable program exit
+            # (a value-less SubroutineReturn would be invalid for the main program).
+            if self.cur_is_main:
+                return pre_ir.ProgramExit(pre_ir.UInt64Constant(0))
             return pre_ir.SubroutineReturn([])
         if op == "retsub":
             # A retsub returns to its caller. Its raw-CFG successors are the
