@@ -17,18 +17,29 @@ Constants and trivial single-pred phis are inlined; types come from :mod:`optype
 """
 from __future__ import annotations
 
-from . import pre_ir, transforms, type_recovery
 from ..block_args import to_block_args
+from ..opcode_sigs import op_arity
+from ..passes.frame_resolution import resolve_sub
 from ..ssa import (
-    Const, Phi, SSAProgram, SSAVar, _STACK_SHUFFLE_OPS, _TERMINATOR_OPS,
+    _STACK_SHUFFLE_OPS,
+    _TERMINATOR_OPS,
+    Const,
+    Phi,
+    SSAProgram,
+    SSAVar,
     _shuffle_mapping,
 )
 from ..structure import analyze_structure
-from ..passes.frame_resolution import resolve_sub
-from ..opcode_sigs import op_arity
+from . import pre_ir, transforms, type_recovery
 from .optypes import (
-    _BOOL_OPS, _BYTES_OPS, _COND_BRANCH, _NAME_PREFIX, _U64_OPS, _field_type,
-    _imm0, _multi_out_type,
+    _BOOL_OPS,
+    _BYTES_OPS,
+    _COND_BRANCH,
+    _NAME_PREFIX,
+    _U64_OPS,
+    _field_type,
+    _imm0,
+    _multi_out_type,
 )
 from .teal_const import _load_src, _tokenize_operands
 
@@ -846,17 +857,23 @@ class _Lifter:
         for a in bb.assignments:
             if resim and a.op in _STACK_SHUFFLE_OPS:
                 continue                            # re-sim reorders the stack itself
-            if self._is_routed_shuffle(a):
-                continue                            # const shuffle routed to source
             if a.op == "frame_dig":
                 continue                            # a param/local read (no op)
             if a.op == "frame_bury":
+                # PySSA models a frame_bury as a fat-stack-band op, so its band
+                # outputs are often routed shuffles -- but it ALSO *defines* its
+                # slot (l%slot = buried value), which the band routing does not
+                # carry. Handle it before the routed-shuffle skip below, else the
+                # whole op (real definition included) is dropped and the slot's
+                # later frame_dig reads go undefined.
                 slot = _imm0(a)
                 if slot is not None and a.inputs:
                     # versioned local (slot >= 0); k < 0 keeps the single-reg fallback
                     tgt = self.bury_target.get(id(a)) or self._local(slot)
                     ops.append(pre_ir.Assignment([tgt], self.value(a.inputs[0])))
                 continue
+            if self._is_routed_shuffle(a):
+                continue                            # const shuffle routed to source
             if a.op == "callsub":
                 cs = self.callsite.get(bb)
                 target = (cs.target_name if cs and cs.target_name

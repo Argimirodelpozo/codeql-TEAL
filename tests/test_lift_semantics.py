@@ -92,7 +92,7 @@ _DB_PARAMS = [pytest.param(str(d), id=n) for n, d in _all_dbs()] or _NO_FIXTURES
 # those stay TRACKED xfail (non-strict, so they flip to xpass the day the lift
 # stops losing those values, and we notice). OPT-IN via LIFT_SEMANTICS_BACKEND=1
 # so the default suite keeps to the fast Tier-1/2 bar.
-_BACKEND_LOWERS = {"repro-db"}        # confirmed fully backend-clean; rest are xfail
+_BACKEND_LOWERS = {"repro-db", "folks-consensus-v2-db"}   # fully backend-clean; rest are xfail
 _XFAIL_BACKEND = pytest.mark.xfail(
     reason="lift emits used-but-never-defined registers (frame/dynamic-scratch "
            "value-loss) that Puya's destructure_ssa rejects",
