@@ -85,7 +85,7 @@ def compare(algod, db: str, orig_teal: str) -> dict:
             elif ao:                                    # both APPROVE, same logs (real positive match)
                 approve += 1
                 match += 1
-            elif do != dl:    # same outcome (both reject), different fail opcode (benign)
+            elif do != dl:    # both reject, different fail opcode (benign)
                 mech += 1
             else:
                 match += 1
@@ -112,8 +112,8 @@ def main(argv):
         # behaviourally faithful = no APPROVE/reject (outcome) divergence on any input
         flag = "FAITHFUL" if r["diverge"] == 0 else "DIVERGES"
         faithful += r["diverge"] == 0
-        print(f"  {flag} {name:28s} same-outcome={r['match'] + r['mech']:3d} "
-              f"(approve={r['approve']}, {r['mech']} fail-opcode-only)  diverge={r['diverge']}", flush=True)
+        print(f"  {flag} {name:26s} same={r['match'] + r['mech']:3d} "
+              f"(appr={r['approve']}, {r['mech']} fail-op)  diverge={r['diverge']}", flush=True)
         for d in r["diffs"]:
             print(f"        {d}", flush=True)
     print(f"\n=== behaviourally faithful: {faithful} contracts | "
