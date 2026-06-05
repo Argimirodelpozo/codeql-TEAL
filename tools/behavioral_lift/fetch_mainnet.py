@@ -31,8 +31,9 @@ def _get(url, data=None, ctype=None, token=None):
 
 
 def sample_app_ids(n=60):
-    ids = [1002541853, 971350278, 818179346, 605929989,   # Tinyman / Folks / AlgoFi / Pact
-           971368268, 818176933, 354073718, 1284326447]   # + a few more known protocol apps
+    # known protocol apps: Tinyman v2, Folks, AlgoFi, Pact, + a few more
+    ids = [1002541853, 971350278, 818179346, 605929989,
+           971368268, 818176933, 354073718, 1284326447]
     ranges = ("", "1000000", "50000000", "100000000", "300000000", "600000000",
               "900000000", "1200000000", "1400000000", "1700000000", "2000000000", "2500000000")
     for after in ranges:
