@@ -37,7 +37,7 @@ lines -> 5509 bytes). NB: big proto/recursive mainnet contracts are slow to lift
 |--------|------------------------|--------------------------|------------------|
 | explorer (13 that lift) | **13/13** | 315 | **0** |
 | mainnet, first 20       | **20/20** | 380 | **0** |
-| mainnet, 55 more        | found **1 real bug** (fixed, see below) | — | — |
+| mainnet batch, 60       | **58/59** old code → **59/59** fixed | 1180 (127 both-APPROVE) | **1** real bug → 0 |
 
 ### The test found and drove a real fix
 
