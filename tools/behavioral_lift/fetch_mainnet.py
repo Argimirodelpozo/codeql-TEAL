@@ -30,11 +30,14 @@ def _get(url, data=None, ctype=None, token=None):
         return r.read()
 
 
-def sample_app_ids(n=20):
-    ids = [1002541853]                       # Tinyman v2 router (known, large)
-    for after in ("", "1000000", "100000000", "600000000", "1400000000", "2000000000"):
+def sample_app_ids(n=60):
+    ids = [1002541853, 971350278, 818179346, 605929989,   # Tinyman / Folks / AlgoFi / Pact
+           971368268, 818176933, 354073718, 1284326447]   # + a few more known protocol apps
+    ranges = ("", "1000000", "50000000", "100000000", "300000000", "600000000",
+              "900000000", "1200000000", "1400000000", "1700000000", "2000000000", "2500000000")
+    for after in ranges:
         try:
-            q = f"{INDEXER}/v2/applications?limit=6" + (f"&next={after}" if after else "")
+            q = f"{INDEXER}/v2/applications?limit=8" + (f"&next={after}" if after else "")
             d = json.loads(_get(q))
             ids += [a["id"] for a in d.get("applications", []) if not a.get("deleted")]
         except Exception:
