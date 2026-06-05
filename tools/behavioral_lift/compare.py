@@ -82,7 +82,7 @@ def compare(algod, db: str, orig_teal: str) -> dict:
                 diverge += 1
                 if len(diffs) < 4:
                     diffs.append(f"LOGS oc={oc} arg={a}: {do[:30]} != {dl[:30]}")
-            elif ao:                                    # both APPROVE, same logs (real positive match)
+            elif ao:    # both APPROVE, same logs (real positive match)
                 approve += 1
                 match += 1
             elif do != dl:    # both reject, different fail opcode (benign)
