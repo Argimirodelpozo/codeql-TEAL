@@ -89,7 +89,7 @@ interprocedural stack-survivor variant the re-sim-all fix doesn't cover),
 used-but-never-defined register (x3), incompatible-type assignment (x2),
 `explicit condition check removed` (x1), non-uint64 branch condition (x1). The 7
 timeouts are the known super-linear SSA-construction perf on big contracts (180s
-per-contract cap). Takeaway: across **132 real contracts over 4 batches the lift
+per-contract cap). Takeaway: across **155 real contracts over 5 batches the lift
 has produced exactly ONE behavioural divergence (app_1200031257, found+fixed)**;
 the remaining work is lift *coverage/perf* on cutting-edge AVM contracts, not
 faithfulness.
