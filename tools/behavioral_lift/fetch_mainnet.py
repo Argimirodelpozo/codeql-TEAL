@@ -1,0 +1,87 @@
+"""Fetch real deployed mainnet apps, disassemble to TEAL, and build CodeQL DBs
+-- a generalisation corpus of contracts the lift has never seen.
+
+  python -m tools.behavioral_lift.fetch_mainnet <out-dir> [app_id ...]
+
+With no ids, samples a diverse batch from the public mainnet indexer.
+"""
+from __future__ import annotations
+
+import base64
+import json
+import subprocess
+import sys
+import urllib.request
+from pathlib import Path
+
+MAINNET = "https://mainnet-api.algonode.cloud"
+INDEXER = "https://mainnet-idx.algonode.cloud"
+LOCAL = "http://localhost:4001"
+REPO = Path(__file__).resolve().parents[2]
+
+
+def _get(url, data=None, ctype=None, token=None):
+    req = urllib.request.Request(url, data=data)
+    if ctype:
+        req.add_header("Content-Type", ctype)
+    if token:
+        req.add_header("X-Algo-API-Token", token)
+    with urllib.request.urlopen(req, timeout=20) as r:
+        return r.read()
+
+
+def sample_app_ids(n=20):
+    ids = [1002541853]                       # Tinyman v2 router (known, large)
+    for after in ("", "1000000", "100000000", "600000000", "1400000000", "2000000000"):
+        try:
+            q = f"{INDEXER}/v2/applications?limit=6" + (f"&next={after}" if after else "")
+            d = json.loads(_get(q))
+            ids += [a["id"] for a in d.get("applications", []) if not a.get("deleted")]
+        except Exception:
+            pass
+    seen, out = set(), []
+    for i in ids:
+        if i not in seen:
+            seen.add(i)
+            out.append(i)
+    return out[:n]
+
+
+def fetch_teal(app_id):
+    d = json.loads(_get(f"{MAINNET}/v2/applications/{app_id}"))
+    bytecode = base64.b64decode(d["params"]["approval-program"])
+    if not bytecode:
+        raise ValueError("no approval program")
+    resp = _get(f"{LOCAL}/v2/teal/disassemble", data=bytecode,
+                ctype="application/x-binary", token="a" * 64)
+    return json.loads(resp)["result"]       # algod returns {"result": "<teal text>"}
+
+
+def build_db(teal_dir: Path):
+    db = teal_dir / "db"
+    subprocess.run(["codeql", "database", "create", str(db), "--overwrite", "-l", "teal",
+                    "-s", str(teal_dir), "--search-path", str(REPO / ".codeql-extractors")],
+                   check=True, capture_output=True, timeout=180)
+
+
+def main(argv):
+    out = Path(argv[0]) if argv else Path("/tmp/mainnet_contracts")
+    ids = [int(x) for x in argv[1:]] or sample_app_ids()
+    out.mkdir(parents=True, exist_ok=True)
+    ok = 0
+    for app_id in ids:
+        d = out / f"app_{app_id}"
+        d.mkdir(exist_ok=True)
+        teal_path = d / f"app_{app_id}.teal"
+        try:
+            teal_path.write_text(fetch_teal(app_id))
+            build_db(d)
+            ok += 1
+            print(f"  fetched+db app_{app_id} ({len(teal_path.read_text().splitlines())} lines)", flush=True)
+        except Exception as e:
+            print(f"  FAIL app_{app_id}: {type(e).__name__}: {str(e)[:50]}", flush=True)
+    print(f"\n=== {ok}/{len(ids)} fetched + DB-built into {out} ===")
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])
