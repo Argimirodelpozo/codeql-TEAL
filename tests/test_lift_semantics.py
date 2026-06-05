@@ -1,0 +1,282 @@
+"""Semantic tests for the SSA -> Puya-IR lift (``WIP_lift2puyaIR``).
+
+Rather than pin the rendered IR byte-for-byte -- brittle (breaks on cosmetic or
+Puya-version changes) and silent on correctness -- these assert the *properties
+that make the lift correct*, using oracles we already have:
+
+  Tier 1 (validity): the lift lowers to genuine ``puya.ir.models`` and Puya's own
+    optimiser runs to a fixpoint without rejecting it.
+
+  Tier 2 (completeness): walk the pre-IR -- every block terminates, every
+    ``InvokeSubroutine``'s arity matches its callee, and type recovery did not
+    collapse (residual ``"?"`` registers, which lowering would silently default
+    to uint64, stay a small fraction). The checker is exercised always-run on
+    hand-built pre-IR, then applied to each real lift.
+
+  Tier 3 (behavioural): lower the lifted IR through Puya's *real* backend --
+    ``program_ir_to_mir`` (with the strict ``global_stack_allocation``) then
+    ``mir_to_teal`` -- to actual TEAL ops. Far stricter than the IR optimiser:
+    it asks whether our IR realises as a coherent AVM program, not merely that
+    the optimiser tolerates it. This is a *stricter bar than the lift currently
+    meets*: it exposed that the lift, while IR-optimiser-clean, is not yet
+    full-backend-clean on the production contracts (undefined-register f-stack
+    gaps, ``itxn_field`` address mistyping, ``ValueTuple`` reaching codegen). So
+    it is a TRACKED, opt-in harness -- xfail (flips to xpass when the lift is
+    fixed) and OFF by default; set ``LIFT_SEMANTICS_BACKEND=1`` to run it.
+
+Per-DB tests are skip-gated on the (gitignored, locally-built) CodeQL DB
+fixtures + puya. ``LIFT_SEMANTICS_CORPUS=1`` also sweeps the puya corpus through
+Tiers 1-2; ``LIFT_SEMANTICS_BACKEND=1`` runs the Tier-3 backend harness.
+"""
+import contextlib
+import functools
+import logging
+import os
+from pathlib import Path
+
+import pytest
+
+pytest.importorskip("puya")
+
+from tealtools.WIP_lift2puyaIR import pre_ir  # noqa: E402
+
+_ROOT = Path(__file__).resolve().parent
+_REAL_DB_DIR = _ROOT / "dbs"
+_CORPUS_DIR = _ROOT / "experimental_IR_lift" / "puya"
+# A residual-"?" fraction this high means type recovery has collapsed (a coarse
+# net -- the strong guards are terminator/arity/backend). Observed max ~11%.
+_MAX_UNKNOWN_FRACTION = 0.25
+
+
+# --------------------------------------------------------------------------
+# DB discovery (skip-gated: fixtures are gitignored / locally built)
+# --------------------------------------------------------------------------
+
+
+def _has_db(d: Path) -> bool:
+    return (d / "codeql-database.yml").exists()
+
+
+def _real_dbs():
+    names = ("xgov-db", "folks-consensus-v2-db", "folks-consensus-v3-db",
+             "folks-xgov-registry-db", "repro-db")
+    return [(n, _REAL_DB_DIR / n) for n in names if _has_db(_REAL_DB_DIR / n)]
+
+
+def _corpus_dbs():
+    if not _CORPUS_DIR.exists():
+        return []
+    return [(p.name, p / "db") for p in sorted(_CORPUS_DIR.iterdir())
+            if _has_db(p / "db")]
+
+
+def _all_dbs():
+    out = _real_dbs()
+    if os.environ.get("LIFT_SEMANTICS_CORPUS"):
+        out += _corpus_dbs()
+    return out
+
+
+_NO_FIXTURES = [pytest.param(None, id="no-fixtures",
+                             marks=pytest.mark.skip(reason="no lift DB fixtures present"))]
+
+_DB_PARAMS = [pytest.param(str(d), id=n) for n, d in _all_dbs()] or _NO_FIXTURES
+
+# Full-backend lowering (Tier 3) is a stricter bar than the lift currently meets.
+# The lift is IR-optimiser-clean (Tiers 1-2 pass on every real contract) but not
+# yet full-backend-clean: lowering through Puya's MIR stack-allocator + TEAL gen
+# surfaces undefined-register f-stack gaps, itxn_field address mistyping, and
+# ValueTuple reaching codegen (a corpus spot-check lowered only ~13/20). It is a
+# TRACKED behavioural harness -- xfail, non-strict, so the day the lift becomes
+# backend-clean these flip to xpass and we notice. It is also slow (the MIR
+# rebuild + catch-retry on big contracts), so it is OPT-IN: set
+# LIFT_SEMANTICS_BACKEND=1 to run it; otherwise it skips, keeping the default
+# suite to the fast Tier-1/2 bar.
+_XFAIL_BACKEND = pytest.mark.xfail(
+    reason="lift not yet full-backend-clean on production contracts "
+           "(undefined-register f-stack / itxn_field address typing / ValueTuple in codegen)",
+    strict=False, raises=Exception)
+_BACKEND_PARAMS = (
+    [pytest.param(str(d), id=n, marks=(_XFAIL_BACKEND,)) for n, d in _real_dbs()]
+    if os.environ.get("LIFT_SEMANTICS_BACKEND") and _real_dbs()
+    else [pytest.param(None, id="backend-gated",
+                       marks=pytest.mark.skip(reason="set LIFT_SEMANTICS_BACKEND=1"))])
+
+
+# --------------------------------------------------------------------------
+# Lift + lower once per DB, shared across the per-DB tier tests
+# --------------------------------------------------------------------------
+
+
+@contextlib.contextmanager
+def _quiet_puya():
+    log = logging.getLogger("puya")
+    prev = log.level
+    log.setLevel(logging.ERROR)               # the backend logs every MIR op at debug
+    try:
+        yield
+    finally:
+        log.setLevel(prev)
+
+
+def _lower_to_teal(main, subs):
+    """Lower lifted Puya IR through Puya's real backend (MIR stack-allocation +
+    TEAL gen) to a TealProgram. Applies the lift's own undefined-register
+    catch-retry (typed-zero orphan definition) at the MIR boundary, mirroring
+    what ``to_puya_ir.optimize`` does at the IR-optimiser boundary."""
+    import re
+
+    import puya.ir.models as M
+    from puya.context import ArtifactCompileContext, CompiledProgramProvider
+    from puya.errors import InternalError
+    from puya.ir.models import ProgramKind, SlotAllocation, SlotAllocationStrategy
+    from puya.mir.main import program_ir_to_mir
+    from puya.options import PuyaOptions
+    from puya.teal.main import mir_to_teal
+    from tealtools.WIP_lift2puyaIR.to_puya_ir import _define_named_orphan
+
+    try:
+        provider = CompiledProgramProvider()
+    except Exception:
+        provider = object.__new__(CompiledProgramProvider)   # Protocol: bare stub, never called
+    ctx = ArtifactCompileContext(
+        options=PuyaOptions(), compilation_set={}, sources_by_path={},
+        compiled_program_provider=provider, output_path_provider=None)
+    groups = [main, *subs]
+    with _quiet_puya():
+        for _ in range(50):
+            program = M.Program(
+                kind=ProgramKind.approval, main=main, subroutines=list(subs), avm_version=10,
+                slot_allocation=SlotAllocation(reserved=frozenset(),
+                                               strategy=SlotAllocationStrategy.none))
+            try:
+                return mir_to_teal(ctx, program_ir_to_mir(ctx, program))
+            except InternalError as e:
+                m = re.search(r"[Uu]ndefined register: ([^#\s]+)#(\d+)", str(e))
+                if not (m and _define_named_orphan(groups, m.group(1), int(m.group(2)))):
+                    raise
+        raise RuntimeError("backend lowering did not converge")
+
+
+@functools.lru_cache(maxsize=None)
+def _process(db: str):
+    """(pre_ir Program, lowered main Subroutine, [lowered subs]). Lift + Puya's
+    own IR optimiser only -- the Tier-1/2 bar. Raises if the lift/optimise fails
+    (that is itself the Tier-1 signal). The backend (Tier 3) runs lazily so the
+    expected-fail, slower lowering doesn't burden Tiers 1-2."""
+    from tealtools.ssa import SSAProgram
+    from tealtools.WIP_lift2puyaIR import to_puya_ir
+    from tealtools.WIP_lift2puyaIR.lift import lift
+    with _quiet_puya():
+        prog = SSAProgram(db, verbose=False)
+        pre = lift(prog)                                   # pre-IR for Tier 2
+        main, subs = to_puya_ir.to_puya(prog)              # genuine puya.ir.models
+        to_puya_ir.optimize([main, *subs])                # Puya's own IR optimiser
+    return pre, main, list(subs)
+
+
+# --------------------------------------------------------------------------
+# Pre-IR well-formedness checker (shared by always-run units + per-DB tests)
+# --------------------------------------------------------------------------
+
+
+def _violations(pre) -> list:
+    """Structural well-formedness violations of a lifted pre-IR program."""
+    out = []
+    arity = {s.id: len(s.parameters) for s in (pre.main, *pre.subroutines)}
+    for bb in pre_ir.blocks(pre):
+        if bb.terminator is None:
+            out.append(f"block@{bb.id}: no terminator")
+        for op in bb.ops:
+            if isinstance(op, pre_ir.Assignment) and isinstance(op.source, pre_ir.InvokeSubroutine):
+                inv = op.source
+                want = arity.get(inv.target)
+                if want is not None and len(inv.args) != want:
+                    out.append(f"call {inv.target}: {len(inv.args)} args vs {want} params")
+    return out
+
+
+def _unknown_registers(pre):
+    """(unknown, total) register-occurrence counts -- a register left ``"?"`` is
+    a type-recovery gap that lowering silently defaults to uint64."""
+    total = unknown = 0
+    for bb in pre_ir.blocks(pre):
+        regs = [ph.register for ph in bb.phis]
+        for op in bb.ops:
+            if isinstance(op, pre_ir.Assignment):
+                regs += op.targets
+        for node in (*bb.phis, *bb.ops, bb.terminator):
+            regs += [v for v in pre_ir.operands(node) if isinstance(v, pre_ir.Register)]
+        total += len(regs)
+        unknown += sum(1 for r in regs if r.ir_type == "?")
+    return unknown, total
+
+
+# --------------------------------------------------------------------------
+# Tier 2 — the checker itself, always-run on hand-built pre-IR (no DB/puya lift)
+# --------------------------------------------------------------------------
+
+
+def _mk_prog(*, terminated=True, call_args=None):
+    main_blk = pre_ir.BasicBlock(
+        id=0, terminator=pre_ir.ProgramExit(pre_ir.UInt64Constant(1)) if terminated else None)
+    subs = []
+    if call_args is not None:
+        # subroutine 'foo' takes exactly one parameter
+        foo = pre_ir.Subroutine(
+            "foo", [pre_ir.Parameter(pre_ir.Register("p", 0, "uint64"))], [],
+            [pre_ir.BasicBlock(id=1, terminator=pre_ir.SubroutineReturn([]))])
+        subs.append(foo)
+        main_blk.ops.append(pre_ir.Assignment(
+            [pre_ir.Register("r", 0, "uint64")], pre_ir.InvokeSubroutine("foo", list(call_args))))
+    main = pre_ir.Subroutine("main", [], [], [main_blk], is_main=True)
+    return pre_ir.Program(main=main, subroutines=subs)
+
+
+def test_checker_passes_well_formed():
+    assert _violations(_mk_prog()) == []
+
+
+def test_checker_flags_missing_terminator():
+    assert any("no terminator" in v for v in _violations(_mk_prog(terminated=False)))
+
+
+def test_checker_flags_call_arity_mismatch():
+    a = pre_ir.Register("a", 0, "uint64")
+    assert any("args vs" in v for v in _violations(_mk_prog(call_args=[a, a])))   # 2 vs 1
+
+
+def test_checker_passes_matching_call_arity():
+    assert _violations(_mk_prog(call_args=[pre_ir.Register("a", 0, "uint64")])) == []   # 1 vs 1
+
+
+# --------------------------------------------------------------------------
+# Per-DB tier tests (skip-gated; _process cached so each DB lifts once)
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("db", _DB_PARAMS)
+def test_lifts_and_optimises(db):
+    """Tier 1: SSA lifts to genuine Puya IR and Puya's optimiser accepts it."""
+    pre, main, _subs = _process(db)
+    assert pre is not None and main is not None
+
+
+@pytest.mark.parametrize("db", _DB_PARAMS)
+def test_pre_ir_well_formed(db):
+    """Tier 2: completeness invariants on the lifted pre-IR."""
+    pre, _main, _subs = _process(db)
+    assert _violations(pre) == []
+    unknown, total = _unknown_registers(pre)
+    assert unknown <= _MAX_UNKNOWN_FRACTION * total, \
+        f"type recovery collapsed: {unknown}/{total} registers unresolved"
+
+
+@pytest.mark.parametrize("db", _BACKEND_PARAMS)
+def test_lowers_through_puya_backend(db):
+    """Tier 3 (tracked/xfail): the lifted IR lowers through Puya's real MIR
+    stack-allocator + TEAL backend to actual ops. Currently surfaces the lift's
+    not-yet-backend-clean gaps on production contracts; flips to xpass when fixed."""
+    _pre, main, subs = _process(db)
+    teal = _lower_to_teal(main, subs)
+    assert sum(len(b.ops) for b in teal.main.blocks) > 0    # produced real TEAL ops
