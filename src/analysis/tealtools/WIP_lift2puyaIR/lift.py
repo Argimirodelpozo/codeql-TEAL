@@ -206,8 +206,17 @@ class _Lifter:
         # carry that re-simulation into `_build_block`, replacing the fat SSA wiring.
         self._proto_entries = {s.entry_bb for s in struct.subroutines
                                if any(a.op == "proto" for a in s.entry_bb.assignments)}
-        _resim_subs = {s for s in struct.subroutines
-                       if s.entry_bb not in self._proto_entries}
+        # Re-simulate EVERY sub's value stack. A proto sub that calls another can
+        # leave a stack survivor that PySSA's fat [1..STACK_MAX] band conflates and
+        # loses across the interprocedural return edge (it surfaces as a
+        # used-but-never-defined operand that Puya's destructure_ssa rejects);
+        # re-simulation reconstructs the clean stack so the survivor is real. It
+        # has to be all-or-nothing -- re-simulating only some subs mismatches the
+        # shared call interface and corrupts others -- so leaf subs pay it too
+        # (re-sim is ~2-4x slower than the frame model on heavy subs; a targeted /
+        # faster re-sim is a perf follow-up). Frame ops are handled on the clean
+        # stack inside `_resim` (frame_dig pushes its param/local, frame_bury pops).
+        _resim_subs = set(struct.subroutines)
         self.resim_args: dict = {}                # id(assignment) -> [pre-IR operand]
         self.resim_phis: dict = {}                # PyBlock -> [pre_ir.Phi]
         self.resim_exit: dict = {}                # PyBlock -> re-simulated exit stack
@@ -780,6 +789,18 @@ class _Lifter:
                 if phis:
                     self.resim_phis[b] = phis
             for a in b.assignments:
+                # Frame ops first: PySSA models them as fat [1..STACK_MAX] band ops
+                # (also in _STACK_SHUFFLE_OPS), so the generic / shuffle paths below
+                # would pop the whole stack. On the clean stack a `frame_dig` pushes
+                # its resolved param/local (one value) and a `frame_bury` pops one.
+                if a.op == "frame_dig":
+                    out0 = a.outputs[0] if a.outputs else None
+                    stack.append(self.frame_map.get(out0) or pre_ir.Undefined())
+                    continue
+                if a.op == "frame_bury":
+                    if stack:
+                        self.resim_args[id(a)] = [stack.pop()]
+                    continue
                 if a.op in _STACK_SHUFFLE_OPS:
                     m = _shuffle_mapping(a)
                     if m is None or len(stack) < len(a.inputs):
@@ -862,23 +883,25 @@ class _Lifter:
                 phis.append(pre_ir.Phi(self.reg(ph), args, comment=self._range_comment([ph])))
         ops = []
         for a in bb.assignments:
-            if resim and a.op in _STACK_SHUFFLE_OPS:
-                continue                            # re-sim reorders the stack itself
             if a.op == "frame_dig":
                 continue                            # a param/local read (no op)
             if a.op == "frame_bury":
-                # PySSA models a frame_bury as a fat-stack-band op, so its band
-                # outputs are often routed shuffles -- but it ALSO *defines* its
-                # slot (l%slot = buried value), which the band routing does not
-                # carry. Handle it before the routed-shuffle skip below, else the
-                # whole op (real definition included) is dropped and the slot's
-                # later frame_dig reads go undefined.
+                # frame_bury DEFINES its slot (l%slot = buried value). Emit that
+                # before any shuffle / resim skip below: PySSA models the bury as
+                # a fat-band op, so it would otherwise be dropped and the slot's
+                # later frame_dig reads go undefined. On a re-simulated block the
+                # buried value is the clean resim-stack top; else the SSA operand.
                 slot = _imm0(a)
-                if slot is not None and a.inputs:
-                    # versioned local (slot >= 0); k < 0 keeps the single-reg fallback
-                    tgt = self.bury_target.get(id(a)) or self._local(slot)
-                    ops.append(pre_ir.Assignment([tgt], self.value(a.inputs[0])))
+                if slot is not None:
+                    src = (self.resim_args[id(a)][0]
+                           if resim and id(a) in self.resim_args
+                           else self.value(a.inputs[0]) if a.inputs else None)
+                    if src is not None:
+                        tgt = self.bury_target.get(id(a)) or self._local(slot)
+                        ops.append(pre_ir.Assignment([tgt], src))
                 continue
+            if resim and a.op in _STACK_SHUFFLE_OPS:
+                continue                            # re-sim reorders the stack itself
             if self._is_routed_shuffle(a):
                 continue                            # const shuffle routed to source
             if a.op == "callsub":

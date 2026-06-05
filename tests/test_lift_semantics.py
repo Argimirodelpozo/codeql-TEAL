@@ -85,18 +85,15 @@ _NO_FIXTURES = [pytest.param(None, id="no-fixtures",
 _DB_PARAMS = [pytest.param(str(d), id=n) for n, d in _all_dbs()] or _NO_FIXTURES
 
 # Full-backend lowering (Tier 3): lift -> split ValueTuples -> destructure SSA ->
-# MIR -> TEAL, exactly Puya's own pre-MIR sequence. `repro-db` lowers fully (a
-# real assertion -- guards against regressing it). The remaining real-contract
-# gap is the lift emitting registers that are *used but never defined* (the
-# frame / dynamic-scratch value-loss), which Puya's destructure_ssa rejects --
-# those stay TRACKED xfail (non-strict, so they flip to xpass the day the lift
-# stops losing those values, and we notice). OPT-IN via LIFT_SEMANTICS_BACKEND=1
-# so the default suite keeps to the fast Tier-1/2 bar.
-_BACKEND_LOWERS = {"repro-db", "folks-consensus-v2-db",   # fully backend-clean; rest are xfail
-                   "folks-xgov-registry-db"}
+# MIR -> TEAL, exactly Puya's own pre-MIR sequence. ALL 5 real contracts now lower
+# fully (re-simulating every sub recovered the interprocedural stack survivors the
+# fat-frame band lost), so each is a real assertion guarding against regression.
+# Any sub that re-introduces a used-but-never-defined register would fail here.
+# OPT-IN via LIFT_SEMANTICS_BACKEND=1 so the default suite keeps to the Tier-1/2 bar.
+_BACKEND_LOWERS = {"repro-db", "folks-consensus-v2-db", "folks-consensus-v3-db",
+                   "folks-xgov-registry-db", "xgov-db"}    # all 5 real contracts lower
 _XFAIL_BACKEND = pytest.mark.xfail(
-    reason="lift emits used-but-never-defined registers (frame/dynamic-scratch "
-           "value-loss) that Puya's destructure_ssa rejects",
+    reason="lift emits a used-but-never-defined register that destructure_ssa rejects",
     strict=False, raises=Exception)
 _BACKEND_PARAMS = (
     [pytest.param(str(d), id=n, marks=() if n in _BACKEND_LOWERS else (_XFAIL_BACKEND,))
