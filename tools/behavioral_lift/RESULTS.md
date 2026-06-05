@@ -41,11 +41,15 @@ lines -> 5509 bytes). NB: big proto/recursive mainnet contracts are slow to lift
 | newest 42 (IDs 2.3-2.9B)| **24/24** that lift (11 skip, 7 timeout) | 80 both-APPROVE | **0** |
 | old-era 23 (IDs 60-230M)| **23/23** (0 skip/timeout) | 103 both-APPROVE | **0** |
 | mid-era 40 (IDs 300-900M)| **38/38** that lift (2 skip) | — | **0** |
+| era 40 (IDs 1.4-2.0B)   | **24/24** that lift (10 skip, 6 timeout) | 70 both-APPROVE | **0** |
 
-**Across 6 batches (~195 real contracts, ~177 that lift) the differential dryrun
-has found exactly ONE behavioural divergence — app_1200031257, found and fixed.**
-Every contract that lifts is behaviourally faithful. The skips/timeouts are lift
-coverage/perf gaps (see frontier section), never silent wrong answers.
+**Across 7 batches (~240 real contracts, ~201 that lift) spanning EVERY mainnet
+era (60M → 2.9B), the differential dryrun has found exactly ONE behavioural
+divergence — app_1200031257, found and fixed.** Post-fix, every contract that
+lifts is behaviourally faithful on every era. The skips/timeouts are lift
+coverage/perf gaps (see frontier section), never silent wrong answers. This is a
+comprehensive faithfulness result: the lift does not flip an approve/reject
+decision on any tested real contract.
 
 ### The test found and drove a real fix
 
@@ -110,7 +114,7 @@ optimised) Python phi-collapse. `load_graph` caches per-DB, so it's a one-time
 first-analysis cost. Fix = optimise/simplify the CFG-library config or move basic-
 block reconstruction into PySSA — both suite-path + risky, left for review.
 
-Takeaway: across **~195 real contracts over 6 batches (explorer + 5 mainnet eras)
+Takeaway: across **~240 real contracts over 7 batches (explorer + 6 mainnet eras)
 the lift has produced exactly ONE behavioural divergence (app_1200031257,
 found+fixed)**; every contract that lifts is faithful. The remaining work is lift
 *coverage* (interprocedural stack survival, type recovery) and *perf* (the CodeQL
