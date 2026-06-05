@@ -17,13 +17,14 @@ that make the lift correct*, using oracles we already have:
     ``program_ir_to_mir`` (with the strict ``global_stack_allocation``) then
     ``mir_to_teal`` -- to actual TEAL ops. Far stricter than the IR optimiser:
     it asks whether our IR realises as a coherent AVM program, not merely that
-    the optimiser tolerates it. This is a *stricter bar than the lift currently
-    meets*: it exposed that the lift, while IR-optimiser-clean, is not yet
-    full-backend-clean on the production contracts -- remaining gaps are
-    undefined-register f-stack and ``ValueTuple`` reaching codegen (the
-    ``itxn_field`` address-typing gap it first surfaced is now fixed). So it is a
-    TRACKED, opt-in harness -- xfail (flips to xpass when the lift is fully
-    backend-clean) and OFF by default; set ``LIFT_SEMANTICS_BACKEND=1`` to run it.
+    the optimiser tolerates it -- running Puya's own pre-MIR sequence (split
+    ValueTuples -> ``destructure_ssa`` -> MIR -> TEAL). ``repro-db`` lowers fully
+    (a real assertion). The remaining real-contract gap is the lift emitting
+    registers *used but never defined* (the frame / dynamic-scratch value-loss),
+    which ``destructure_ssa`` rejects; those stay TRACKED xfail (flip to xpass
+    when fixed). The earlier ``itxn_field`` address-typing gap is fixed; the
+    ``ValueTuple`` / residual-phi "gaps" were just the harness not running Puya's
+    destructure. OPT-IN, OFF by default; set ``LIFT_SEMANTICS_BACKEND=1`` to run.
 
 Per-DB tests are skip-gated on the (gitignored, locally-built) CodeQL DB
 fixtures + puya. ``LIFT_SEMANTICS_CORPUS=1`` also sweeps the puya corpus through
@@ -83,21 +84,22 @@ _NO_FIXTURES = [pytest.param(None, id="no-fixtures",
 
 _DB_PARAMS = [pytest.param(str(d), id=n) for n, d in _all_dbs()] or _NO_FIXTURES
 
-# Full-backend lowering (Tier 3) is a stricter bar than the lift currently meets.
-# The lift is IR-optimiser-clean (Tiers 1-2 pass on every real contract) but not
-# yet full-backend-clean: lowering through Puya's MIR stack-allocator + TEAL gen
-# surfaces undefined-register f-stack gaps and ValueTuple reaching codegen (a
-# corpus spot-check lowered only ~13/20). It is a TRACKED behavioural harness --
-# xfail, non-strict, so the day the lift becomes backend-clean these flip to
-# xpass and we notice. It is also slow (the MIR rebuild + catch-retry on big
-# contracts), so it is OPT-IN: set LIFT_SEMANTICS_BACKEND=1 to run it; otherwise
-# it skips, keeping the default suite to the fast Tier-1/2 bar.
+# Full-backend lowering (Tier 3): lift -> split ValueTuples -> destructure SSA ->
+# MIR -> TEAL, exactly Puya's own pre-MIR sequence. `repro-db` lowers fully (a
+# real assertion -- guards against regressing it). The remaining real-contract
+# gap is the lift emitting registers that are *used but never defined* (the
+# frame / dynamic-scratch value-loss), which Puya's destructure_ssa rejects --
+# those stay TRACKED xfail (non-strict, so they flip to xpass the day the lift
+# stops losing those values, and we notice). OPT-IN via LIFT_SEMANTICS_BACKEND=1
+# so the default suite keeps to the fast Tier-1/2 bar.
+_BACKEND_LOWERS = {"repro-db"}        # confirmed fully backend-clean; rest are xfail
 _XFAIL_BACKEND = pytest.mark.xfail(
-    reason="lift not yet full-backend-clean on production contracts "
-           "(undefined-register f-stack / ValueTuple in codegen)",
+    reason="lift emits used-but-never-defined registers (frame/dynamic-scratch "
+           "value-loss) that Puya's destructure_ssa rejects",
     strict=False, raises=Exception)
 _BACKEND_PARAMS = (
-    [pytest.param(str(d), id=n, marks=(_XFAIL_BACKEND,)) for n, d in _real_dbs()]
+    [pytest.param(str(d), id=n, marks=() if n in _BACKEND_LOWERS else (_XFAIL_BACKEND,))
+     for n, d in _real_dbs()]
     if os.environ.get("LIFT_SEMANTICS_BACKEND") and _real_dbs()
     else [pytest.param(None, id="backend-gated",
                        marks=pytest.mark.skip(reason="set LIFT_SEMANTICS_BACKEND=1"))])
@@ -120,16 +122,21 @@ def _quiet_puya():
 
 
 def _lower_to_teal(main, subs):
-    """Lower lifted Puya IR through Puya's real backend (MIR stack-allocation +
-    TEAL gen) to a TealProgram. Applies the lift's own undefined-register
-    catch-retry (typed-zero orphan definition) at the MIR boundary, mirroring
-    what ``to_puya_ir.optimize`` does at the IR-optimiser boundary."""
+    """Lower lifted Puya IR through Puya's *real* backend to a TealProgram,
+    replicating Puya's own pre-MIR sequence: split ValueTuples
+    (``_split_parallel_copies``) -> destructure SSA / remove phis
+    (``destructure_ssa``) -> ``program_ir_to_mir`` -> ``mir_to_teal``. The lift's
+    own undefined-register catch-retry (typed-zero orphan definition) is applied
+    at the MIR boundary, mirroring what ``to_puya_ir.optimize`` does at the
+    IR-optimiser boundary."""
     import re
 
     import puya.ir.models as M
     from puya.context import ArtifactCompileContext, CompiledProgramProvider
     from puya.errors import InternalError
+    from puya.ir.destructure.main import destructure_ssa
     from puya.ir.models import ProgramKind, SlotAllocation, SlotAllocationStrategy
+    from puya.ir.optimize.main import _split_parallel_copies
     from puya.mir.main import program_ir_to_mir
     from puya.options import PuyaOptions
     from puya.teal.main import mir_to_teal
@@ -143,12 +150,14 @@ def _lower_to_teal(main, subs):
         options=PuyaOptions(), compilation_set={}, sources_by_path={},
         compiled_program_provider=provider, output_path_provider=None)
     groups = [main, *subs]
+    program = M.Program(
+        kind=ProgramKind.approval, main=main, subroutines=list(subs), avm_version=10,
+        slot_allocation=SlotAllocation(reserved=frozenset(), strategy=SlotAllocationStrategy.none))
     with _quiet_puya():
+        for s in groups:
+            _split_parallel_copies(ctx, s)       # ValueTuple sources -> per-value copies
+        destructure_ssa(ctx, program)            # phis -> predecessor-edge copies (out of SSA)
         for _ in range(50):
-            program = M.Program(
-                kind=ProgramKind.approval, main=main, subroutines=list(subs), avm_version=10,
-                slot_allocation=SlotAllocation(reserved=frozenset(),
-                                               strategy=SlotAllocationStrategy.none))
             try:
                 return mir_to_teal(ctx, program_ir_to_mir(ctx, program))
             except InternalError as e:
