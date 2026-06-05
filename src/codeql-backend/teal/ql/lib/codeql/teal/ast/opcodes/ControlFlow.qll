@@ -88,12 +88,19 @@ class RetsubOpcode extends UnconditionalBranches instanceof TOpcode_retsub {
     //         result = this.(RetsubOpcode).getAffectingProto().getNumberOfInputArgs()
 
     Label getEntrypoint() {
-        exists(int i, Label l | i <= this.getPreviousLine().getParentIndex() and
-            this.getProgram().getChild(i) = l and exists(l.getCallsubToLabel()) and not
-            exists(int h, Label l2 | h < this.getParentIndex() and h > i and
-                this.getProgram().getChild(h) = l2 and exists(l2.getCallsubToLabel())
-            ) | result = l
-        )
+        // The subroutine that physically owns this retsub: the callsub-targeted
+        // entry label from which this retsub is reachable through the subroutine-
+        // local CFG (branches + fall-through + callsub->continuation, never
+        // descending into callees) -- the `subroutineLocallyContains` relation.
+        //
+        // The previous rule was "nearest preceding callsub-targeted label", which
+        // assumes a subroutine's body immediately follows its label. When the
+        // linker interleaves bodies (entry labels packed together, bodies scattered
+        // elsewhere) that picks the wrong subroutine, so the retsub predicts the
+        // wrong return point (or none). That dropped the retsub->continuation CFG
+        // edges and orphaned the post-call code of every multiply-called / non-
+        // contiguous subroutine.
+        result.(Subroutine).subroutineLocallyContains(this)
     }
 
     // predicate isReachableWithoutProto()
