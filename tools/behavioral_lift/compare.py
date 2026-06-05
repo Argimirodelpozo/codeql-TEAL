@@ -12,10 +12,10 @@ import re
 import sys
 from pathlib import Path
 
-from tools.behavioral_lift.recompile import REPO, algod_client, lift_to_teal
-
 from algosdk import account, transaction
 from algosdk.v2client import models
+
+from tools.behavioral_lift.recompile import REPO, algod_client, lift_to_teal
 
 _PC = re.compile(r"(app=\d+, )?pc=\d+")
 _SK, _ADDR = account.generate_account()
@@ -52,8 +52,9 @@ def _dryrun(algod, approval: bytes, clear: bytes, app_args, oc) -> str:
     res = algod.dryrun(models.DryrunRequest(txns=[stxn], apps=[app], accounts=[acct]))
     t = res["txns"][0]
     msg = (t.get("app-call-messages") or ["?"])[-1]
-    logs = ",".join(t.get("logs", []))
-    return _PC.sub("@", msg) + " | logs=" + logs       # normalise pc/app-id-of-dryrun
+    approved = msg == "PASS"                            # APPROVE (1) vs reject/error
+    detail = _PC.sub("@", msg) + "|logs=" + ",".join(t.get("logs", []))
+    return approved, detail                             # (outcome, normalised detail)
 
 
 def compare(algod, db: str, orig_teal: str) -> dict:
@@ -61,29 +62,36 @@ def compare(algod, db: str, orig_teal: str) -> dict:
     orig_b, lifted_b = _compile(algod, orig_teal), _compile(algod, lifted)
     clear = _compile(algod, "#pragma version 10\nint 1")
     inputs = [[]] + [[s] for s in _selectors(lifted)] + [[b"\x01\x02\x03\x04"]]
-    match = diverge = 0
+    match = mech = diverge = 0
     diffs = []
     for args in inputs:
         for oc in _OCS:
             try:
-                ro = _dryrun(algod, orig_b, clear, args, oc)
-                rl = _dryrun(algod, lifted_b, clear, args, oc)
+                ao, do = _dryrun(algod, orig_b, clear, args, oc)
+                al, dl = _dryrun(algod, lifted_b, clear, args, oc)
             except Exception as e:
                 diffs.append(f"dryrun-error oc={oc} args={len(args)}: {str(e)[:40]}")
                 continue
-            if ro == rl:
-                match += 1
-            else:
+            a = base64.b16encode(args[0]).decode() if args else "-"
+            if ao != al:                               # APPROVE vs reject: a REAL behaviour bug
                 diverge += 1
                 if len(diffs) < 4:
-                    a = base64.b16encode(args[0]).decode() if args else "-"
-                    diffs.append(f"oc={oc} arg={a}: orig[{ro[:38]}] != lift[{rl[:38]}]")
-    return {"match": match, "diverge": diverge, "diffs": diffs}
+                    diffs.append(f"OUTCOME oc={oc} arg={a}: orig={'APPROVE' if ao else 'reject'} "
+                                 f"lift={'APPROVE' if al else 'reject'}")
+            elif ao and do != dl:                      # both approve, but logs differ
+                diverge += 1
+                if len(diffs) < 4:
+                    diffs.append(f"LOGS oc={oc} arg={a}: {do[:30]} != {dl[:30]}")
+            elif do != dl:                             # same outcome, different failure opcode (benign)
+                mech += 1
+            else:
+                match += 1
+    return {"match": match, "mech": mech, "diverge": diverge, "diffs": diffs}
 
 
 def main(argv):
     algod = algod_client()
-    tot_m = tot_d = 0
+    tot_m = tot_mech = tot_d = faithful = 0
     for db in sorted({d.parent for a in argv for d in Path(a).rglob("codeql-database.yml")}):
         name = db.parent.name if db.name == "db" else db.name
         teal_files = list(db.parent.glob("*.teal"))
@@ -95,12 +103,18 @@ def main(argv):
             print(f"  SKIP {name:30s} {type(e).__name__}: {str(e)[:42]}", flush=True)
             continue
         tot_m += r["match"]
+        tot_mech += r["mech"]
         tot_d += r["diverge"]
-        flag = "OK " if r["diverge"] == 0 else "DIV"
-        print(f"  {flag} {name:30s} match={r['match']:3d} diverge={r['diverge']:3d}", flush=True)
+        # behaviourally faithful = no APPROVE/reject (outcome) divergence on any input
+        flag = "FAITHFUL" if r["diverge"] == 0 else "DIVERGES"
+        faithful += r["diverge"] == 0
+        print(f"  {flag} {name:28s} same-outcome={r['match'] + r['mech']:3d} "
+              f"({r['mech']} fail-opcode-only)  diverge={r['diverge']}", flush=True)
         for d in r["diffs"]:
             print(f"        {d}", flush=True)
-    print(f"\n=== behavioural: {tot_m} matching inputs, {tot_d} divergent ===")
+    print(f"\n=== behaviourally faithful: {faithful} contracts | "
+          f"{tot_m + tot_mech} same-outcome inputs ({tot_mech} fail-opcode-only), "
+          f"{tot_d} real outcome divergences ===")
 
 
 if __name__ == "__main__":

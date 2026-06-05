@@ -33,7 +33,6 @@ def lift_to_teal(db: str) -> str:
     from puya.options import PuyaOptions
     from puya.teal.main import mir_to_teal
     from puya.teal.output import emit_teal
-
     from tealtools.ssa import SSAProgram
     from tealtools.WIP_lift2puyaIR import to_puya_ir
 
