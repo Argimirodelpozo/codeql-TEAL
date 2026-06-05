@@ -212,10 +212,10 @@ class _Lifter:
         # used-but-never-defined operand that Puya's destructure_ssa rejects);
         # re-simulation reconstructs the clean stack so the survivor is real. It
         # has to be all-or-nothing -- re-simulating only some subs mismatches the
-        # shared call interface and corrupts others -- so leaf subs pay it too
-        # (re-sim is ~2-4x slower than the frame model on heavy subs; a targeted /
-        # faster re-sim is a perf follow-up). Frame ops are handled on the clean
-        # stack inside `_resim` (frame_dig pushes its param/local, frame_bury pops).
+        # shared call interface and corrupts others. The added cost is negligible
+        # (folks-v3 lift+lower ~3s either way; SSA *construction* dominates, ~17-40s).
+        # Frame ops are handled on the clean stack inside `_resim` (frame_dig pushes
+        # its param/local, frame_bury pops).
         _resim_subs = set(struct.subroutines)
         self.resim_args: dict = {}                # id(assignment) -> [pre-IR operand]
         self.resim_phis: dict = {}                # PyBlock -> [pre_ir.Phi]
