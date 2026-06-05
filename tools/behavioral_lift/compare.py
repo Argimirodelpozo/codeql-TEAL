@@ -62,7 +62,7 @@ def compare(algod, db: str, orig_teal: str) -> dict:
     orig_b, lifted_b = _compile(algod, orig_teal), _compile(algod, lifted)
     clear = _compile(algod, "#pragma version 10\nint 1")
     inputs = [[]] + [[s] for s in _selectors(lifted)] + [[b"\x01\x02\x03\x04"]]
-    match = mech = diverge = 0
+    match = mech = diverge = approve = 0
     diffs = []
     for args in inputs:
         for oc in _OCS:
@@ -82,16 +82,19 @@ def compare(algod, db: str, orig_teal: str) -> dict:
                 diverge += 1
                 if len(diffs) < 4:
                     diffs.append(f"LOGS oc={oc} arg={a}: {do[:30]} != {dl[:30]}")
-            elif do != dl:    # same outcome, different fail opcode (benign)
+            elif ao:                                    # both APPROVE, same logs (real positive match)
+                approve += 1
+                match += 1
+            elif do != dl:    # same outcome (both reject), different fail opcode (benign)
                 mech += 1
             else:
                 match += 1
-    return {"match": match, "mech": mech, "diverge": diverge, "diffs": diffs}
+    return {"match": match, "mech": mech, "diverge": diverge, "approve": approve, "diffs": diffs}
 
 
 def main(argv):
     algod = algod_client()
-    tot_m = tot_mech = tot_d = faithful = 0
+    tot_m = tot_mech = tot_d = tot_appr = faithful = 0
     for db in sorted({d.parent for a in argv for d in Path(a).rglob("codeql-database.yml")}):
         name = db.parent.name if db.name == "db" else db.name
         teal_files = list(db.parent.glob("*.teal"))
@@ -105,16 +108,17 @@ def main(argv):
         tot_m += r["match"]
         tot_mech += r["mech"]
         tot_d += r["diverge"]
+        tot_appr += r["approve"]
         # behaviourally faithful = no APPROVE/reject (outcome) divergence on any input
         flag = "FAITHFUL" if r["diverge"] == 0 else "DIVERGES"
         faithful += r["diverge"] == 0
         print(f"  {flag} {name:28s} same-outcome={r['match'] + r['mech']:3d} "
-              f"({r['mech']} fail-opcode-only)  diverge={r['diverge']}", flush=True)
+              f"(approve={r['approve']}, {r['mech']} fail-opcode-only)  diverge={r['diverge']}", flush=True)
         for d in r["diffs"]:
             print(f"        {d}", flush=True)
     print(f"\n=== behaviourally faithful: {faithful} contracts | "
-          f"{tot_m + tot_mech} same-outcome inputs ({tot_mech} fail-opcode-only), "
-          f"{tot_d} real outcome divergences ===")
+          f"{tot_m + tot_mech} same-outcome inputs ({tot_appr} both-APPROVE, "
+          f"{tot_mech} fail-opcode-only), {tot_d} real outcome divergences ===")
 
 
 if __name__ == "__main__":
