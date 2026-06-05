@@ -81,7 +81,8 @@ def main(argv):
             teal_path.write_text(fetch_teal(app_id))
             build_db(d)
             ok += 1
-            print(f"  fetched+db app_{app_id} ({len(teal_path.read_text().splitlines())} lines)", flush=True)
+            nlines = len(teal_path.read_text().splitlines())
+            print(f"  fetched+db app_{app_id} ({nlines} lines)", flush=True)
         except Exception as e:
             print(f"  FAIL app_{app_id}: {type(e).__name__}: {str(e)[:50]}", flush=True)
     print(f"\n=== {ok}/{len(ids)} fetched + DB-built into {out} ===")
