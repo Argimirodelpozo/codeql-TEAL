@@ -96,13 +96,23 @@ seen) was fetched, built, and behaviourally tested on the fixed code:
 Every contract that lifts is faithful (0 divergences across the whole batch), but
 the skip+timeout rate jumps to ~43% vs ~2% on the earlier batches. **The skips
 are lift-COVERAGE gaps, caught cleanly as failures (never silent wrong answers)**,
-clustering into ~5 known classes: `l-stack too small for callsub` (x4 -- an
-interprocedural stack-survivor variant the re-sim-all fix doesn't cover),
+clustering into ~5 known classes: `l-stack too small for callsub` (x4),
 used-but-never-defined register (x3), incompatible-type assignment (x2),
-`explicit condition check removed` (x1), non-uint64 branch condition (x1). The
-l-stack one was root-caused (read-only): NOT an arity error — the callsub's args
-are missing (l-stack empty), an interprocedural stack-survivor/arg-population loss
-on non-proto contracts.
+`explicit condition check removed` (x1), non-uint64 branch condition (x1).
+
+**The `l-stack` class (x4) is now FIXED (commit 2013488a).** It bottomed out not in
+the Python lift but in the CodeQL CFG library: `RetsubOpcode.getEntrypoint()` found
+a retsub's owning subroutine by *nearest preceding callsub-targeted label*, which
+mis-assigns retsubs when the linker interleaves subroutine bodies -> wrong/empty
+`predictRetsubReturn()` -> missing `retsub->continuation` CFG edges -> ~24% of the
+contract's ops orphaned (`bb=None`) -> partial lift + arity over-count -> l-stack.
+Fixed to reachability-based ownership (`Subroutine.subroutineLocallyContains`). All
+4 l-stack contracts now lift fully + behaviourally FAITHFUL; byte-identical on
+contiguous-subroutine Puya DBs; corpus lift-semantics 511/4 (was 510/5, also fixed
+`large_box_operations_NestedItemArrayUInt64`); full QL<->Python parity suite 659/1skip
+unchanged. Re-testing the 11 newest-batch SKIPs: **4 -> FAITHFUL (the l-stack ones),
+7 still SKIP** (the unrelated type-recovery / undefined-register / explicit-check
+classes), 0 new divergences. Those 7 remain real Python-lift coverage gaps.
 
 **The 7 timeouts are CodeQL-side, not Python (diagnosed).** faulthandler sampling
 put 59/59 samples in `graphs.py:load_graph` blocked on the `codeql database
