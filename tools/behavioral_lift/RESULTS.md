@@ -36,14 +36,17 @@ lines (Tinyman v2 router 2842 lines -> 5509 bytes).
 
 **33/33 contracts that lift are behaviourally faithful** — across 695 dryrun
 inputs the recompiled program's approve/reject decision matches the original on
-every one. 175 inputs differ only in the failure opcode (the recompiled program
-uses `assert` where the original used `err`; both reject the transaction — a
-benign decompile->recompile artifact, not a behaviour change).
+every one. Of those, **75 inputs APPROVE in both original and recompiled with
+identical logs** (positive approve-path equivalence, not just reject-consistency
+-- explorer 6, mainnet 69), and 175 differ only in the failure opcode (the
+recompiled program uses `assert` where the original used `err`; both reject the
+transaction -- a benign decompile->recompile artifact, not a behaviour change).
 
-Caveat: dryrun without on-chain state / foreign refs mostly exercises the
-routing + guard paths (most inputs reject); it proves the lift never flips an
-approve<->reject decision on the tested inputs, the safety property that matters
-most. Deeper approval-path coverage needs contract-specific state setup.
+Caveat: empty-state dryrun (no foreign refs) mostly exercises the routing +
+guard paths, so most inputs reject and the 75 approve-path matches are the bare
+NoOp/OptIn/etc. that approve without state. It proves the lift never flips an
+approve<->reject decision on the tested inputs -- the key safety property --
+but deeper state-dependent approval logic needs per-contract state setup.
 
 Reproduce: `python -m tools.behavioral_lift.fetch_mainnet /tmp/m && \
 python -m tools.behavioral_lift.compare /tmp/m` (needs a localnet on :4001).
