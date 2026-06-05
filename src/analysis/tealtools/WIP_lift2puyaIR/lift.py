@@ -625,20 +625,23 @@ class _Lifter:
             return pre_ir.SubroutineReturn(rets)
         succ = [s for s in bb.successors if s in self.bid]
         if not succ:
-            if op == "return":
-                # `return` (arity 0/0) returns the stack top. For a re-simulated
-                # block use its clean local stack; bb.exit_stack is the fat
-                # STACK_MAX garbage and would yield an undefined operand.
-                if resim:
-                    rsx = self.resim_exit.get(bb, [])
-                    v = rsx[-1] if rsx else pre_ir.UInt64Constant(0)
-                else:
-                    v = (self.value(bb.exit_stack[-1]) if bb.exit_stack
-                         else pre_ir.UInt64Constant(0))
-                return pre_ir.ProgramExit(v)
             if op == "err":
                 return pre_ir.Fail()
-            return pre_ir.ProgramExit(pre_ir.UInt64Constant(0))
+            # `return` (arity 0/0) returns the stack top; a block that falls off
+            # the end with NO explicit terminator (op is None -- a bare-expression
+            # program, e.g. a v6 `txn Sender; global CreatorAddress; ==`) returns
+            # its stack top implicitly too. Both ProgramExit the top value (the
+            # approval result), NOT a hardcoded 0 -- else the lift turns an
+            # approve-if-X program into an unconditional reject. For a re-simulated
+            # block use its clean local stack; bb.exit_stack is the fat STACK_MAX
+            # garbage and would yield an undefined operand.
+            if resim:
+                rsx = self.resim_exit.get(bb, [])
+                v = rsx[-1] if rsx else pre_ir.UInt64Constant(0)
+            else:
+                v = (self.value(bb.exit_stack[-1]) if bb.exit_stack
+                     else pre_ir.UInt64Constant(0))
+            return pre_ir.ProgramExit(v)
         if len(succ) == 1:
             return pre_ir.Goto(self.bid[succ[0]])
         if len(succ) == 2 and op in _COND_BRANCH and t is not None:
