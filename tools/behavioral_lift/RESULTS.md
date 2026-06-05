@@ -76,5 +76,23 @@ NoOp/OptIn/etc. that approve without state. It proves the lift never flips an
 approve<->reject decision on the tested inputs -- the key safety property --
 but deeper state-dependent approval logic needs per-contract state setup.
 
+### The lift's frontier = the NEWEST contracts (coverage, not faithfulness)
+
+A fourth batch of **42 of the newest mainnet apps** (IDs 2.3-2.9B, lift never
+seen) was fetched, built, and behaviourally tested on the fixed code:
+**24 FAITHFUL / 0 DIVERGES / 11 SKIP / 7 TIMEOUT**, 80 both-APPROVE matches.
+Every contract that lifts is faithful (0 divergences across the whole batch), but
+the skip+timeout rate jumps to ~43% vs ~2% on the earlier batches. **The skips
+are lift-COVERAGE gaps, caught cleanly as failures (never silent wrong answers)**,
+clustering into ~5 known classes: `l-stack too small for callsub` (x4 -- an
+interprocedural stack-survivor variant the re-sim-all fix doesn't cover),
+used-but-never-defined register (x3), incompatible-type assignment (x2),
+`explicit condition check removed` (x1), non-uint64 branch condition (x1). The 7
+timeouts are the known super-linear SSA-construction perf on big contracts (180s
+per-contract cap). Takeaway: across **132 real contracts over 4 batches the lift
+has produced exactly ONE behavioural divergence (app_1200031257, found+fixed)**;
+the remaining work is lift *coverage/perf* on cutting-edge AVM contracts, not
+faithfulness.
+
 Reproduce: `python -m tools.behavioral_lift.fetch_mainnet /tmp/m && \
 python -m tools.behavioral_lift.compare /tmp/m` (needs a localnet on :4001).
