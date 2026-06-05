@@ -20,12 +20,16 @@ Pipeline (`tools/behavioral_lift/`):
 
 | corpus | recompiled+assembled |
 |--------|----------------------|
-| 15 disassembled-mainnet (explorer, in-repo)      | **13/15** |
+| 15 disassembled-mainnet (explorer, in-repo)       | **13/15** |
 | 20 freshly-fetched mainnet apps (incl. Tinyman v2) | **20/20** |
+| 55 more freshly-fetched mainnet apps (diverse)     | **54/55** |
 
-The 2 explorer fails: a TEAL-optimiser explicit-check edge and a type-recovery
-incompatible-assignment gap. The 20 mainnet apps span 170–2842 recompiled TEAL
-lines (Tinyman v2 router 2842 lines -> 5509 bytes).
+**~87/90 real contracts lift -> recompile -> assemble to valid bytecode.** The
+fails are all rare, distinct lift gaps: a TEAL-optimiser explicit-check edge, a
+type-recovery incompatible-assignment, and a phi-node-argument mismatch (no
+systematic class). Recompiled TEAL spans 6–2842 lines (Tinyman v2 router 2842
+lines -> 5509 bytes). NB: big proto/recursive mainnet contracts are slow to lift
+(the fat-frame SSA-construction cost), not a correctness issue.
 
 ## Behaviour — execution on a live AVM
 
