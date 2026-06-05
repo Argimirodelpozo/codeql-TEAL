@@ -82,7 +82,7 @@ def compare(algod, db: str, orig_teal: str) -> dict:
                 diverge += 1
                 if len(diffs) < 4:
                     diffs.append(f"LOGS oc={oc} arg={a}: {do[:30]} != {dl[:30]}")
-            elif do != dl:                             # same outcome, different fail opcode (benign)
+            elif do != dl:    # same outcome, different fail opcode (benign)
                 mech += 1
             else:
                 match += 1

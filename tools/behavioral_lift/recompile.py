@@ -94,7 +94,7 @@ def main(argv):
             r = algod.compile(teal)
             nbytes = len(base64.b64decode(r["result"]))
             ok += 1
-            print(f"  OK        {name:34s} {len(teal.splitlines()):4d} lines -> {nbytes}b", flush=True)
+            print(f"  OK    {name:30s} {len(teal.splitlines()):4d} lines -> {nbytes}b", flush=True)
         except Exception as e:
             compile_fail += 1
             print(f"  ASM-FAIL  {name:34s} {str(e)[:50]}", flush=True)
