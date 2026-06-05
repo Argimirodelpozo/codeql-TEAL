@@ -19,10 +19,11 @@ that make the lift correct*, using oracles we already have:
     it asks whether our IR realises as a coherent AVM program, not merely that
     the optimiser tolerates it. This is a *stricter bar than the lift currently
     meets*: it exposed that the lift, while IR-optimiser-clean, is not yet
-    full-backend-clean on the production contracts (undefined-register f-stack
-    gaps, ``itxn_field`` address mistyping, ``ValueTuple`` reaching codegen). So
-    it is a TRACKED, opt-in harness -- xfail (flips to xpass when the lift is
-    fixed) and OFF by default; set ``LIFT_SEMANTICS_BACKEND=1`` to run it.
+    full-backend-clean on the production contracts -- remaining gaps are
+    undefined-register f-stack and ``ValueTuple`` reaching codegen (the
+    ``itxn_field`` address-typing gap it first surfaced is now fixed). So it is a
+    TRACKED, opt-in harness -- xfail (flips to xpass when the lift is fully
+    backend-clean) and OFF by default; set ``LIFT_SEMANTICS_BACKEND=1`` to run it.
 
 Per-DB tests are skip-gated on the (gitignored, locally-built) CodeQL DB
 fixtures + puya. ``LIFT_SEMANTICS_CORPUS=1`` also sweeps the puya corpus through
@@ -85,16 +86,15 @@ _DB_PARAMS = [pytest.param(str(d), id=n) for n, d in _all_dbs()] or _NO_FIXTURES
 # Full-backend lowering (Tier 3) is a stricter bar than the lift currently meets.
 # The lift is IR-optimiser-clean (Tiers 1-2 pass on every real contract) but not
 # yet full-backend-clean: lowering through Puya's MIR stack-allocator + TEAL gen
-# surfaces undefined-register f-stack gaps, itxn_field address mistyping, and
-# ValueTuple reaching codegen (a corpus spot-check lowered only ~13/20). It is a
-# TRACKED behavioural harness -- xfail, non-strict, so the day the lift becomes
-# backend-clean these flip to xpass and we notice. It is also slow (the MIR
-# rebuild + catch-retry on big contracts), so it is OPT-IN: set
-# LIFT_SEMANTICS_BACKEND=1 to run it; otherwise it skips, keeping the default
-# suite to the fast Tier-1/2 bar.
+# surfaces undefined-register f-stack gaps and ValueTuple reaching codegen (a
+# corpus spot-check lowered only ~13/20). It is a TRACKED behavioural harness --
+# xfail, non-strict, so the day the lift becomes backend-clean these flip to
+# xpass and we notice. It is also slow (the MIR rebuild + catch-retry on big
+# contracts), so it is OPT-IN: set LIFT_SEMANTICS_BACKEND=1 to run it; otherwise
+# it skips, keeping the default suite to the fast Tier-1/2 bar.
 _XFAIL_BACKEND = pytest.mark.xfail(
     reason="lift not yet full-backend-clean on production contracts "
-           "(undefined-register f-stack / itxn_field address typing / ValueTuple in codegen)",
+           "(undefined-register f-stack / ValueTuple in codegen)",
     strict=False, raises=Exception)
 _BACKEND_PARAMS = (
     [pytest.param(str(d), id=n, marks=(_XFAIL_BACKEND,)) for n, d in _real_dbs()]

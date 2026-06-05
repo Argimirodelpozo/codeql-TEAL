@@ -8,9 +8,8 @@ Both read the lifter's maps via a duck-typed ``lifter`` (never imports lift).
 """
 from __future__ import annotations
 
-
-from . import pre_ir
 from ..ssa import Const, Phi, SSAVar
+from . import pre_ir
 from .optypes import _BYTES_CONSUME, _U64_CONSUME, _imm0, avm
 from .teal_const import _const_bytes
 
@@ -123,10 +122,17 @@ _POS_IN = {
 }
 
 
-def _expected_type(op, idx, args):
+def _expected_type(op, idx, args, imm=None):
     """Expected ``ir_type`` of ``args[idx]`` for ``op``, or ``None``."""
     if op == "__cond__":
         return "uint64"
+    if op == "itxn_field" and idx == 0 and imm:
+        # The single operand of `itxn_field <Field>` must be the field's AVM
+        # type (Sender/Receiver/... -> bytes, Amount/Fee/... -> uint64). Without
+        # this a non-phi value feeding an address field stays `?` and lowering
+        # defaults it to uint64, which Puya's backend then rejects.
+        a = _itxn_field_avm(str(imm[0]).strip())
+        return "bytes" if a == "b" else "uint64" if a == "u" else None
     if op in _U64_IN_ALL:
         return "uint64"
     if op in _BYTES_IN_ALL:
@@ -148,16 +154,17 @@ def _infer_types_from_uses(subs) -> None:
     reg_by_id: dict = {}
     uses: dict = {}
 
-    def use(r, op, idx, args):
+    def use(r, op, idx, args, imm=None):
         if isinstance(r, pre_ir.Register):
             reg_by_id[id(r)] = r
-            uses.setdefault(id(r), []).append((op, idx, args))
+            uses.setdefault(id(r), []).append((op, idx, args, imm))
 
     def note(vp):
         if isinstance(vp, (pre_ir.Intrinsic, pre_ir.InvokeSubroutine)):
             op = vp.op if isinstance(vp, pre_ir.Intrinsic) else None
+            imm = vp.immediates if isinstance(vp, pre_ir.Intrinsic) else None
             for i, a in enumerate(vp.args):
-                use(a, op, i, vp.args)
+                use(a, op, i, vp.args, imm)
 
     for b in pre_ir.blocks(subs):
         for o in b.ops:
@@ -180,8 +187,8 @@ def _infer_types_from_uses(subs) -> None:
         for rid, r in reg_by_id.items():
             if r.ir_type != "?":
                 continue
-            inferred = {et for (op, i, args) in uses.get(rid, [])
-                        if (et := _expected_type(op, i, args)) and et != "?"}
+            inferred = {et for (op, i, args, imm) in uses.get(rid, [])
+                        if (et := _expected_type(op, i, args, imm)) and et != "?"}
             if len(inferred) == 1:        # all uses agree -> safe to set
                 r.ir_type = next(iter(inferred))
                 changed = True
