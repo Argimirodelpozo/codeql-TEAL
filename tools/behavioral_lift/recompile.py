@@ -38,6 +38,20 @@ def lift_to_teal(db: str) -> str:
     from tealtools.WIP_lift2puyaIR import to_puya_ir
 
     prog = SSAProgram(db, verbose=False)
+    # Emit the program's ACTUAL AVM version, not a hardcoded 10: a v11 contract
+    # using e.g. `block BlkFeeSink` must declare `#pragma version 11` or the
+    # assembler rejects the field as introduced-in-a-later-version. Read it off
+    # the source `#pragma version N`, but FLOOR at 10 -- the lift reconstructs
+    # subroutines/stack with `proto`/`dupn`/`frame_*` (v8+) regardless of the
+    # original version, so a contract whose source declared a lower version would
+    # otherwise fail to assemble its own recompiled body.
+    avm_version = 10
+    for _lines in to_puya_ir._load_src(prog.db_path).values():
+        for _ln in _lines[:4]:
+            _m = re.match(r"#pragma version (\d+)", _ln.strip())
+            if _m:
+                avm_version = max(int(_m.group(1)), 10)
+                break
     main, subs = to_puya_ir.to_puya(prog)
     to_puya_ir.optimize([main, *subs])
     try:
@@ -47,7 +61,7 @@ def lift_to_teal(db: str) -> str:
     ctx = ArtifactCompileContext(options=PuyaOptions(), compilation_set={}, sources_by_path={},
                                  compiled_program_provider=provider, output_path_provider=None)
     program = M.Program(
-        kind=ProgramKind.approval, main=main, subroutines=list(subs), avm_version=10,
+        kind=ProgramKind.approval, main=main, subroutines=list(subs), avm_version=avm_version,
         slot_allocation=SlotAllocation(reserved=frozenset(), strategy=SlotAllocationStrategy.none))
     for s in [main, *subs]:
         _split_parallel_copies(ctx, s)
