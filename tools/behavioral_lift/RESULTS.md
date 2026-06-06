@@ -112,7 +112,35 @@ contiguous-subroutine Puya DBs; corpus lift-semantics 511/4 (was 510/5, also fix
 `large_box_operations_NestedItemArrayUInt64`); full QL<->Python parity suite 659/1skip
 unchanged. Re-testing the 11 newest-batch SKIPs: **4 -> FAITHFUL (the l-stack ones),
 7 still SKIP** (the unrelated type-recovery / undefined-register / explicit-check
-classes), 0 new divergences. Those 7 remain real Python-lift coverage gaps.
+classes), 0 new divergences.
+
+**ALL 7 of those remaining SKIPs are now SOLVED (2026-06-06) — each lifts AND is
+behaviourally FAITHFUL (0 divergences).** The enabling realisation: Puya's
+intrinsic argument-type check is **non-fatal** (`models.py::_check_stack_types`
+is `logger.error`, not a raise — a passing corpus contract has 11 such uint64↔
+bytes "mismatches"). Only an **Assignment** avm-type mismatch, a **bytes
+ConditionalBranch condition**, and an **SSA-construction violation** are fatal, so
+type recovery only has to get *those* right (forcing every operand type regresses
+correctly-typed corpus webs). The fix chain (each gated on the live differential):
+1. **uint64 branch conditions** (`type_recovery::_fix_branch_conditions`, c1d5f35f) —
+   a bytes-typed bnz/bz condition is a recovery mislabel; relabel uint64 (the safe
+   direction: a uint64 reaching a bytes op is tolerated).
+2. **buried-param frame versioning** (`frame_resolution`, ab788e40) — `frame_bury -k`
+   (a param slot reused as scratch) was un-versioned, so N writes collapsed to one
+   register → SSA violation; version every bury.
+3. **per-sub destructure + bad-read orphan retry** (`recompile::_destructure_with_orphans`,
+   fe38beaa) — `destructure_ssa` mutates in place and is not idempotent, so the old
+   whole-program orphan retry re-validated already-destructured subs and tripped
+   "<reg> assigned multiple times" on their materialised phis. Run the per-sub
+   pipeline once each, orphan retry at each validation point.
+4. **mir define-in-all-subs** (9ed3ce94) — define a mir-dropped register in every sub
+   that uses the name (first-match fixed the wrong one and never converged).
+5. **AVM-version pragma** (85837767) — emit the source's real `#pragma version N`
+   (floored at 10), not a hardcoded 10, so a v11 `block BlkFeeSink` contract
+   assembles its own recompiled body.
+
+Net: lift coverage on the newest AVM contracts went from a ~5-class SKIP frontier
+to 0 — every formerly-skipped contract now lifts and is behaviourally faithful.
 
 **The 7 timeouts are CodeQL-side, not Python (diagnosed).** faulthandler sampling
 put 59/59 samples in `graphs.py:load_graph` blocked on the `codeql database
