@@ -142,13 +142,13 @@ correctly-typed corpus webs). The fix chain (each gated on the live differential
 Net: lift coverage on the newest AVM contracts went from a ~5-class SKIP frontier
 to 0 — every formerly-skipped contract now lifts and is behaviourally faithful.
 
-**Post-fix generalisation (2026-06-06): ~162 DISTINCT unseen mainnet apps, 0
+**Post-fix generalisation (2026-06-06): 222 DISTINCT unseen mainnet apps, 0
 behavioural divergences.** (Honest accounting: `fetch_mainnet.sample_app_ids`
 paginates from FIXED indexer cursors, so the five "overnight batches" re-fetched
 the SAME 60 apps -- 300 fetches but 60 distinct. A follow-up batch with offset
 cursors, deduped, added 60 GENUINELY-new distinct apps: 57 FAITHFUL / 0 DIVERGES
 / 3 SKIP / 0 TIMEOUT, `/tmp/mainnet_newcov`.) So across 60 + 42 (`mainnet_fresh`)
-+ 60 = ~162 distinct contracts the lift had never seen, the differential dryrun
++ 60 + 60 = 222 distinct contracts the lift had never seen, the differential dryrun
 found **zero** approve/reject divergences -- the fix chain generalises.
 
 The remaining gap is sharper than first thought: the **mixed-type scratch-load
