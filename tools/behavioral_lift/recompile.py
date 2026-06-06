@@ -57,9 +57,15 @@ def lift_to_teal(db: str) -> str:
             teal = mir_to_teal(ctx, program_ir_to_mir(ctx, program))
             break
         except InternalError as e:
+            # mir lowering drops a register defined only in a now-unreachable
+            # block. Define it (typed zero, at entry) in EVERY sub that uses it,
+            # not just the first match -- the same name can recur across subs and
+            # the backend's complaint doesn't say which, so a first-match define
+            # fixes the wrong one and the retry never converges.
             m = re.search(r"[Uu]ndefined register: ([^#\s]+)#(\d+)", str(e))
-            if not (m and to_puya_ir._define_named_orphan(
-                    [main, *subs], m.group(1), int(m.group(2)))):
+            hits = m and [to_puya_ir._define_named_orphan([s], m.group(1), int(m.group(2)))
+                          for s in [main, *subs]]
+            if not (hits and any(hits)):
                 raise
     else:
         raise RuntimeError("backend lowering did not converge")
