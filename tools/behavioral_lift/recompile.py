@@ -10,6 +10,7 @@ Each arg is a CodeQL DB dir (has codeql-database.yml) or a dir of such.
 from __future__ import annotations
 
 import base64
+import copy
 import logging
 import re
 import sys
@@ -50,15 +51,7 @@ def lift_to_teal(db: str) -> str:
         slot_allocation=SlotAllocation(reserved=frozenset(), strategy=SlotAllocationStrategy.none))
     for s in [main, *subs]:
         _split_parallel_copies(ctx, s)
-    for _ in range(50):                       # destructure validates SSA first; a
-        try:                                  # reconstruction-orphaned register
-            destructure_ssa(ctx, program)     # (used but never defined) is defined
-            break                             # as a typed zero and we retry.
-        except InternalError as e:
-            if not to_puya_ir._define_orphans_from_error([main, *subs], str(e)):
-                raise
-    else:
-        raise RuntimeError("destructure did not converge")
+    _destructure_with_orphans(ctx, program)
     for _ in range(50):
         try:
             teal = mir_to_teal(ctx, program_ir_to_mir(ctx, program))
@@ -71,6 +64,68 @@ def lift_to_teal(db: str) -> str:
     else:
         raise RuntimeError("backend lowering did not converge")
     return emit_teal(ctx, teal)
+
+
+def _destructure_with_orphans(ctx, program) -> None:
+    """Puya's ``destructure_ssa``, but per-subroutine with an orphan retry on the
+    FINAL validation only. ``destructure_ssa`` is monolithic and mutates in place:
+    when a late sub trips a reconstruction orphan (a value the lift lost to a
+    frame / dynamic-scratch gap, "used but never defined"), it has already fully
+    destructured the earlier subs, so a naive whole-program retry re-validates
+    those and trips "<reg> is assigned multiple times" on their now-materialised
+    phis. Running each sub's steps exactly once avoids that; a reconstruction
+    orphan only ever surfaces at the closing ``attrs.validate`` (the
+    ``_check_blocks`` body validator, after every transform), where we define it
+    as a typed zero and RE-VALIDATE -- never re-destructuring."""
+    import attrs
+
+    import puya.ir.models as M
+    from tealtools.WIP_lift2puyaIR import to_puya_ir
+    from puya.errors import InternalError
+    from puya.ir.destructure.coalesce_locals import coalesce_locals
+    from puya.ir.destructure.critical_edges import split_critical_edges
+    from puya.ir.destructure.optimize import post_ssa_optimizer
+    from puya.ir.destructure.parcopy import sequentialize_parallel_copies
+    from puya.ir.destructure.remove_phi import convert_to_cssa, destructure_cssa
+    from puya.ir.models import _get_assigned_registers, _get_used_registers
+
+    def _validate(sub, check):
+        # `check` is validate_with_ssa while still in (C)SSA, attrs.validate once
+        # destructured (the IR is then intentionally OUT of SSA -- registers ARE
+        # assigned multiple times -- so the SSA check must NOT run, matching Puya's
+        # own ordering). On a bad read -- a reconstruction orphan, a value the lift
+        # lost to a frame / dynamic-scratch gap -- define it as a typed zero at the
+        # sub entry (the SAME used-minus-defined _check_blocks raises on, robust to
+        # how the error formats names) and re-validate. "assigned multiple times"
+        # is never an orphan, so it is re-raised.
+        for _ in range(64):
+            try:
+                check(sub)
+                return
+            except InternalError as e:
+                if "assigned multiple times" in str(e):
+                    raise
+                bad = set(_get_used_registers(sub.body)) - (
+                    frozenset(sub.parameters) | frozenset(_get_assigned_registers(sub.body)))
+                if not bad:
+                    raise
+                for r in bad:
+                    sub.body[0].ops.insert(0, M.Assignment(
+                        source_location=None, targets=[r],
+                        source=to_puya_ir._puya_zero(r.ir_type)))
+        raise RuntimeError(f"orphan retry did not converge for {sub.id}")
+
+    for sub in program.all_subroutines:
+        if ctx.options.optimization_level > 0:
+            split_critical_edges(sub)
+            _validate(sub, lambda s: s.validate_with_ssa())
+        convert_to_cssa(sub)
+        _validate(sub, lambda s: s.validate_with_ssa())
+        destructure_cssa(sub)
+        coalesce_locals(sub, ctx.options.locals_coalescing_strategy)
+        sequentialize_parallel_copies(sub)
+        post_ssa_optimizer(ctx, sub)
+        _validate(sub, attrs.validate)
 
 
 def algod_client():
