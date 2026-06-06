@@ -50,7 +50,15 @@ def lift_to_teal(db: str) -> str:
         slot_allocation=SlotAllocation(reserved=frozenset(), strategy=SlotAllocationStrategy.none))
     for s in [main, *subs]:
         _split_parallel_copies(ctx, s)
-    destructure_ssa(ctx, program)
+    for _ in range(50):                       # destructure validates SSA first; a
+        try:                                  # reconstruction-orphaned register
+            destructure_ssa(ctx, program)     # (used but never defined) is defined
+            break                             # as a typed zero and we retry.
+        except InternalError as e:
+            if not to_puya_ir._define_orphans_from_error([main, *subs], str(e)):
+                raise
+    else:
+        raise RuntimeError("destructure did not converge")
     for _ in range(50):
         try:
             teal = mir_to_teal(ctx, program_ir_to_mir(ctx, program))

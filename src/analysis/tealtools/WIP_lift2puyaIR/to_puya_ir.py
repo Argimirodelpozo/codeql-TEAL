@@ -404,6 +404,21 @@ def _define_named_orphan(subs, name: str, version: int) -> bool:
     return False
 
 
+def _define_orphans_from_error(subs, err_str: str) -> bool:
+    """Define every ``name#version`` register an SSA/optimiser/backend error names
+    as undefined. Handles both Puya phrasings -- the singular ``Undefined
+    register: x#1`` and the plural ``... used but never defined: l%2#0, l%3#0``
+    (raised by ``Subroutine._check_blocks`` at ``validate_with_ssa``). Returns
+    True if it defined at least one (so the caller can retry); a register the
+    error names but that isn't actually a bad read is left untouched."""
+    import re
+    defined = False
+    for name, ver in re.findall(r"([A-Za-z_][\w%]*)#(\d+)", err_str):
+        if _define_named_orphan(subs, name, int(ver)):
+            defined = True
+    return defined
+
+
 def optimize(subs, *, max_rounds: int = 100) -> int:
     """Run Puya's context-free optimiser passes over ``subs`` to a fixpoint.
     Mutates the subroutines in place; returns the number of rounds taken. Puya's
