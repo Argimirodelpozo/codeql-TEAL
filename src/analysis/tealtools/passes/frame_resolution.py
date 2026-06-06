@@ -60,7 +60,10 @@ def resolve_sub(blocks, nargs: int) -> SubFrames:
                 if k is None:
                     continue
                 out0 = a.outputs[0]
-                if -nargs <= k <= -1:
+                if -nargs <= k <= -1 and k not in cur:
+                    # A param slot, still holding the incoming arg. Once it has
+                    # been `frame_bury`-d (k in cur) it is a mutable local from
+                    # that point on, so fall through to the versioned-local read.
                     res.dig_param[out0] = nargs + k
                 else:
                     v = cur.get(k)
@@ -71,7 +74,11 @@ def resolve_sub(blocks, nargs: int) -> SubFrames:
                         res.passthrough[o] = a.inputs[i - 1]
             elif a.op == "frame_bury" and a.inputs:
                 k = _imm0(a)
-                if k is not None and k >= 0:
+                if k is not None:
+                    # Version EVERY bury, including a param slot (k < 0): writing
+                    # it turns that slot into a mutable local, and each write must
+                    # open a fresh SSA version or the lift emits one register
+                    # assigned many times (Puya rejects it as an SSA violation).
                     res.bury[id(a)] = (k, fresh(k))
                 for i in range(len(a.outputs)):      # bury: out[i] = in[i+1]
                     o = a.outputs[i]
