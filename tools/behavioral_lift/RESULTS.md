@@ -151,31 +151,30 @@ cursors, deduped, added 60 GENUINELY-new distinct apps: 57 FAITHFUL / 0 DIVERGES
 + 60 + 60 = 222 distinct contracts the lift had never seen, the differential dryrun
 found **zero** approve/reject divergences -- the fix chain generalises.
 
-The remaining gap is sharper than first thought: the **mixed-type scratch-load
-phi** is NOT one contract but a **~5%-of-distinct-contracts CLASS** (3 distinct in
-the new-coverage batch alone). Root cause (diagnosed): a scratch `load` that is a
-phi argument is typed uint64 (by load/store reaching-def default) while its
-phi-SIBLING is a `concat` (bytes); the two are versions of the SAME SSA value so
-must share a type, but the load was typed early, before phi-unification could see
-the bytes sibling, and the monotonic passes won't override it.
-`_reconcile_mixed_phis` then correctly SKIPS the web (its evidence tiers --
-consumer > const > non-phi-def -- are genuinely split u/b), and Puya rejects the
-phi. The proper fix is phi-aware / scratch-dataflow typing (defer a phi-arg
-load's type to the web, or let a hard concat sibling override a soft load
-default) -- the same type-recovery frontier where blunt operand-forcing regresses
-correctly-typed corpus webs, so it needs a careful corpus-gated pass. **Clear
-next-priority lift-coverage item; 0 faithfulness risk (it fails loudly, never
-silently wrong).** All 3 SKIPs are the SAME class — a **mixed-type
-scratch-load phi**: `tmp = phi(load A, load B, …)` where the scratch slot holds
-uint64 on some control-flow paths and bytes (concat) on others, so the phi-web
-reconciliation can't pick one AVM type and Puya rejects the phi
-(`_reconcile_mixed_phis` deliberately skips a web "showing both types"). It fails
-identically with the optimiser OFF, so it is a genuine type-recovery limit (the
-untyped-polymorphic-value frontier — same family as a sub return used as both
-uint64 and bytes), not an optimiser artefact. Left as a known ~1.7%-of-batch rare
-gap rather than risk the operand-forcing that regresses correctly-typed corpus
-webs. A 22-contract regression sweep over the older `/tmp/mainnet_fresh` batch was
-22/22 FAITHFUL / 0 DIVERGES, and corpus lift-semantics holds at 511/4.
+**RESOLVED — the mixed-type scratch-load phi class (commits 3ada8b52 → d6136fa0 →
+624250a1).** This was a **~5%-of-distinct-contracts CLASS** (the 7 known cases:
+app_1200031141, _1060031091, _1060036476, _1158003524, _780019724, _915152968,
+_957129398): `tmp = phi(load A, load B, …)` where a scratch slot the source
+register-allocator PACKED two disjoint-live variables into holds uint64 on some
+control-flow paths and bytes (concat) on others, so the phi merges genuinely
+different AVM types and Puya's typed-IR phi check hard-rejects it. Diagnosis showed
+it is a coarse-memory-SSA artifact, not real polymorphism: on any single execution
+only one packed variable is live at the merge. The decisive observation — every
+such mixed phi's OWN store is **dead**: it reaches no load (the slot is overwritten
+before being read back), and the slot it lands in may itself be read as both types,
+so neither slot typing nor a per-store reaching-def can pick a type for it.
+
+So the fix is not to TYPE it but to DELETE it: `remove_dead_scratch_stores`
+(`transforms.py`) is exact dead-store elimination — it drops a `store N <r>` whose
+value reaches no load (absent from the scratch reaching-def's read set), run before
+`prune_dead_phis` so the phi feeding only such stores is pruned with them, before
+ever reaching phi validation. This is exact (a value never read can't affect
+behaviour), carries no dead-arg-coercion assumption, and a misjudged deadness fails
+LOUDLY (broken IR), never silently. **All 7 now lift AND are behaviourally faithful
+(285 same-outcome inputs across them, 0 divergences); corpus 511/4 unchanged.**
+(An earlier slot-typing + dead-arg-coercion attempt, 3ada8b52, was superseded and
+reverted in 624250a1 — DSE subsumes it and removes the only divergence-risk
+mechanism.)
 
 **The 7 timeouts are CodeQL-side, not Python (diagnosed).** faulthandler sampling
 put 59/59 samples in `graphs.py:load_graph` blocked on the `codeql database
