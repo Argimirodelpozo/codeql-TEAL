@@ -66,6 +66,34 @@ def simplify_trivial_phis(program: pre_ir.Program) -> int:
 
 
 
+def remove_dead_scratch_stores(subs, read_regs) -> None:
+    """Dead-store elimination for scratch: drop a ``store N <r>`` whose stored
+    value ``r`` reaches no load (its id is absent from ``read_regs``, built from
+    the scratch reaching-def's read set). The slot is overwritten before it is
+    read back, so the store is dead -- a value never read can't affect behaviour.
+
+    Run BEFORE :func:`prune_dead_phis` so a (often mixed-AVM-type) phi that feeds
+    ONLY such dead stores loses its last use and is pruned with them, instead of
+    surviving to Puya's phi validation which hard-rejects the type mix. This is the
+    coarse-memory-SSA artifact of a slot the source compiler PACKED two disjoint-
+    live variables into: a CFG merge of its reads can land in a slot that is itself
+    read as both types (so slot typing can't pick one), yet that merge's own store
+    is dead. Deleting it is exact, not a guess, and a misjudged deadness fails
+    LOUDLY (a later undefined-register / broken IR), never as a silent divergence.
+    Rests on the reaching-def being a sound MAY over-approximation of the readers;
+    the behavioural sweep is the gate."""
+    for b in pre_ir.blocks(subs):
+        kept = []
+        for op in b.ops:
+            ins = getattr(op, "intrinsic", None) or getattr(op, "source", None)
+            if (isinstance(ins, pre_ir.Intrinsic) and ins.op == "store" and ins.args
+                    and isinstance(ins.args[0], pre_ir.Register)
+                    and id(ins.args[0]) not in read_regs):
+                continue
+            kept.append(op)
+        b.ops = kept
+
+
 def prune_dead_phis(subs) -> None:
     """Drop phis not reachable (through phi args) from a real use — i.e. the
     frame stack-model phis, now that frame ops no longer consume them. Forward
