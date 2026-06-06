@@ -142,6 +142,19 @@ correctly-typed corpus webs). The fix chain (each gated on the live differential
 Net: lift coverage on the newest AVM contracts went from a ~5-class SKIP frontier
 to 0 — every formerly-skipped contract now lifts and is behaviourally faithful.
 
+**Post-fix generalisation sweep (2026-06-06, 60 freshly-fetched unseen mainnet
+apps, `/tmp/mainnet_overnight`): 59 FAITHFUL / 0 DIVERGES / 1 SKIP / 0 TIMEOUT.**
+Zero behavioural divergences — the fix chain generalises cleanly to contracts the
+lift had never seen. The lone SKIP (app_1200031141) is a **mixed-type scratch-load
+phi**: `tmp%990 = phi(load A, load B, …)` where the slots hold uint64 on some
+paths and bytes (concat) on others, so the phi-web reconciliation can't pick one
+AVM type and Puya rejects the phi. It fails identically with the optimiser OFF, so
+it is a genuine type-recovery limit (the same untyped-polymorphic-value frontier),
+not an optimiser artdefact — left as a known rare gap rather than risk the
+operand-forcing that regresses correctly-typed corpus webs. A 22-contract
+regression sweep over the older `/tmp/mainnet_fresh` batch was 22/22 FAITHFUL / 0
+DIVERGES, and corpus lift-semantics holds at 511/4.
+
 **The 7 timeouts are CodeQL-side, not Python (diagnosed).** faulthandler sampling
 put 59/59 samples in `graphs.py:load_graph` blocked on the `codeql database
 run-queries` subprocess; direct timing confirms `run-queries` on these ~3900-line/
