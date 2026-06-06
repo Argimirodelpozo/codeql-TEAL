@@ -142,12 +142,30 @@ correctly-typed corpus webs). The fix chain (each gated on the live differential
 Net: lift coverage on the newest AVM contracts went from a ~5-class SKIP frontier
 to 0 — every formerly-skipped contract now lifts and is behaviourally faithful.
 
-**Post-fix generalisation sweep (2026-06-06, 240 freshly-fetched mainnet apps over
-4 batches of 60, `/tmp/mainnet_overnight{,2,3,4}`): 236 FAITHFUL / 0 DIVERGES / 4
-SKIP / 0 TIMEOUT.** Zero behavioural divergences across all 240 — the fix chain
-generalises cleanly to contracts the lift had never seen. (The random sampler
-re-drew some apps across batches, so the 4 skips are ≤2 distinct contracts — all
-the same class below.) All 3 SKIPs are the SAME class — a **mixed-type
+**Post-fix generalisation (2026-06-06): ~162 DISTINCT unseen mainnet apps, 0
+behavioural divergences.** (Honest accounting: `fetch_mainnet.sample_app_ids`
+paginates from FIXED indexer cursors, so the five "overnight batches" re-fetched
+the SAME 60 apps -- 300 fetches but 60 distinct. A follow-up batch with offset
+cursors, deduped, added 60 GENUINELY-new distinct apps: 57 FAITHFUL / 0 DIVERGES
+/ 3 SKIP / 0 TIMEOUT, `/tmp/mainnet_newcov`.) So across 60 + 42 (`mainnet_fresh`)
++ 60 = ~162 distinct contracts the lift had never seen, the differential dryrun
+found **zero** approve/reject divergences -- the fix chain generalises.
+
+The remaining gap is sharper than first thought: the **mixed-type scratch-load
+phi** is NOT one contract but a **~5%-of-distinct-contracts CLASS** (3 distinct in
+the new-coverage batch alone). Root cause (diagnosed): a scratch `load` that is a
+phi argument is typed uint64 (by load/store reaching-def default) while its
+phi-SIBLING is a `concat` (bytes); the two are versions of the SAME SSA value so
+must share a type, but the load was typed early, before phi-unification could see
+the bytes sibling, and the monotonic passes won't override it.
+`_reconcile_mixed_phis` then correctly SKIPS the web (its evidence tiers --
+consumer > const > non-phi-def -- are genuinely split u/b), and Puya rejects the
+phi. The proper fix is phi-aware / scratch-dataflow typing (defer a phi-arg
+load's type to the web, or let a hard concat sibling override a soft load
+default) -- the same type-recovery frontier where blunt operand-forcing regresses
+correctly-typed corpus webs, so it needs a careful corpus-gated pass. **Clear
+next-priority lift-coverage item; 0 faithfulness risk (it fails loudly, never
+silently wrong).** All 3 SKIPs are the SAME class — a **mixed-type
 scratch-load phi**: `tmp = phi(load A, load B, …)` where the scratch slot holds
 uint64 on some control-flow paths and bytes (concat) on others, so the phi-web
 reconciliation can't pick one AVM type and Puya rejects the phi
