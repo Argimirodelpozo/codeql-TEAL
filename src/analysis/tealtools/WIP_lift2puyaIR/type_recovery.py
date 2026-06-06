@@ -613,10 +613,46 @@ def recover_types(lifter, sub_pairs) -> None:
         _unify_call_returns(lifter)
 
 
+def _reconcile_return_arity(prog) -> None:
+    """A subroutine returns a FIXED number of values, but an early / fail return
+    path can leave the deepest return value off its (re-simulated) exit stack, so
+    the lift builds a SHORT ``SubroutineReturn`` there; ``_infer_returns`` then
+    zip-truncates the signature, yielding a callee whose declared arity is less
+    than the values its call sites consume (Puya: ``source = (uint64), target =
+    (uint64, uint64)``). Reconcile to the widest return site: widen the signature,
+    and front-pad each short site with a typed-zero for the missing (deepest)
+    positions so every site and the signature agree on arity. The padded slot is
+    a fail/early path the caller's result is not expected to read (the real value
+    was never computed there); the behavioural test is the gate on that."""
+    for sub in prog.subroutines:
+        sites = [b.terminator for b in sub.body
+                 if isinstance(b.terminator, pre_ir.SubroutineReturn)]
+        if not sites:
+            continue
+        n = max([len(sub.returns)] + [len(t.result) for t in sites])
+        if n == 0:
+            continue
+        widest = max(sites, key=lambda t: len(t.result)).result
+        types = list(sub.returns)
+        while len(types) < n:                 # widen the signature
+            i = len(types)
+            types.append(getattr(widest[i], "ir_type", "uint64")
+                         if i < len(widest) else "uint64")
+        sub.returns = types
+        for t in sites:                        # front-pad short return sites
+            if len(t.result) < n:
+                pad = [pre_ir.BytesConstant("0x") if types[i] == "bytes"
+                       else pre_ir.UInt64Constant(0)
+                       for i in range(n - len(t.result))]
+                t.result = pad + list(t.result)
+
+
 def finalize_types(prog) -> None:
     """Reconcile and re-align types on the assembled pre_ir.Program (post-fixpoint):
-    re-type placeholder-seeded mixed phi webs, then propagate the result across
-    call-result registers and copies."""
+    re-type placeholder-seeded mixed phi webs, widen varying-arity subroutine
+    returns to one fixed count, then propagate the result across call-result
+    registers and copies."""
     _reconcile_mixed_phis(prog)
+    _reconcile_return_arity(prog)
     _realign_call_returns(prog)
     _propagate_copy_types(prog)
