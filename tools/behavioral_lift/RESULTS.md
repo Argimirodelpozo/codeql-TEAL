@@ -142,10 +142,12 @@ correctly-typed corpus webs). The fix chain (each gated on the live differential
 Net: lift coverage on the newest AVM contracts went from a ~5-class SKIP frontier
 to 0 — every formerly-skipped contract now lifts and is behaviourally faithful.
 
-**Post-fix generalisation sweep (2026-06-06, 180 freshly-fetched unseen mainnet
-apps over 3 batches of 60, `/tmp/mainnet_overnight{,2,3}`): 177 FAITHFUL / 0
-DIVERGES / 3 SKIP / 0 TIMEOUT.** Zero behavioural divergences across all 180 — the
-fix chain generalises cleanly to contracts the lift had never seen. All 3 SKIPs are the SAME class — a **mixed-type
+**Post-fix generalisation sweep (2026-06-06, 240 freshly-fetched mainnet apps over
+4 batches of 60, `/tmp/mainnet_overnight{,2,3,4}`): 236 FAITHFUL / 0 DIVERGES / 4
+SKIP / 0 TIMEOUT.** Zero behavioural divergences across all 240 — the fix chain
+generalises cleanly to contracts the lift had never seen. (The random sampler
+re-drew some apps across batches, so the 4 skips are ≤2 distinct contracts — all
+the same class below.) All 3 SKIPs are the SAME class — a **mixed-type
 scratch-load phi**: `tmp = phi(load A, load B, …)` where the scratch slot holds
 uint64 on some control-flow paths and bytes (concat) on others, so the phi-web
 reconciliation can't pick one AVM type and Puya rejects the phi
