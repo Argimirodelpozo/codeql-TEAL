@@ -256,10 +256,26 @@ class _Translator:
             return M.SubroutineReturn(source_location=None,
                                       result=[self.val(v) for v in t.result])
         if isinstance(t, pre_ir.ProgramExit):
-            return M.ProgramExit(source_location=None, result=self.val(t.result))
+            r = self.val(t.result)
+            # A constant-0 program exit is an unconditional reject. Puya's MIR
+            # rewrites `exit 0` to `err` ("simplifying exit 0 to err") as a *new
+            # explicit* check, which its TEAL optimiser then folds into the
+            # surrounding `assert` -- tripping the "explicit condition check(s)
+            # removed" invariant. Emit the reject as a non-explicit Fail directly
+            # (same on-chain outcome -- both fail the txn) so the fold is allowed.
+            if isinstance(r, M.UInt64Constant) and r.value == 0:
+                return M.Fail(source_location=None, error_message="reject", explicit=False)
+            return M.ProgramExit(source_location=None, result=r)
         if isinstance(t, pre_ir.Fail):
+            # NOT explicit: a reconstructed reject/err path is control flow, not a
+            # user-written check. Puya's TEAL optimiser legitimately folds
+            # ``goto cond ? body : err`` into an equivalent ``assert cond`` (an
+            # err-branch IS an assert) -- behaviourally identical -- but if the Err
+            # were `explicit` that fold would drop it and trip Puya's "explicit
+            # condition check(s) removed" invariant. (Assert above stays explicit so
+            # a genuinely-dropped assert still surfaces rather than silently going.)
             return M.Fail(source_location=None,
-                          error_message=t.error_message or "err", explicit=True)
+                          error_message=t.error_message or "err", explicit=False)
         raise TypeError(f"ctrl: {type(t).__name__}")
 
     def phi(self, p):
