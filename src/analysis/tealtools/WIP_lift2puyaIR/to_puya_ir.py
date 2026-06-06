@@ -412,6 +412,11 @@ def _define_orphans_from_error(subs, err_str: str) -> bool:
     True if it defined at least one (so the caller can retry); a register the
     error names but that isn't actually a bad read is left untouched."""
     import re
+    # ONLY the undefined-register phrasings -- never e.g. "assigned multiple times"
+    # (a different SSA violation; defining the named register there would add yet
+    # another assignment and spin the retry forever).
+    if not re.search(r"[Uu]ndefined register|not defined|never defined", err_str):
+        return False
     defined = False
     for name, ver in re.findall(r"([A-Za-z_][\w%]*)#(\d+)", err_str):
         if _define_named_orphan(subs, name, int(ver)):
