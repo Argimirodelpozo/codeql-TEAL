@@ -647,12 +647,33 @@ def _reconcile_return_arity(prog) -> None:
                 t.result = pad + list(t.result)
 
 
+def _fix_branch_conditions(prog) -> None:
+    """A ``ConditionalBranch`` condition MUST be uint64-backed -- Puya rejects a
+    bytes one outright (``Branch condition can only be uint64 backed value``), a
+    HARD error, unlike the arg-type mismatches on intrinsics which it only *logs*.
+    A branch condition is uint64 at runtime by construction (``bnz``/``bz`` pop a
+    uint64), so a bytes-typed one is a recovery mislabel. Relabel it uint64 --
+    which is the SAFE direction: a uint64 value reaching a bytes op is tolerated,
+    only the reverse is fatal, so the condition's other uses stay valid. Its
+    *definition* must agree, and does whenever the producer is a uint64 op
+    (`+`/`-`/cmp), a schema-flexible read (state / txn field), or a copy/phi of
+    one -- which is every branch condition in practice (you cannot branch on a
+    genuine byte-string). Reactive: only the fatal sites are touched, so a
+    contract that already lifts is left exactly as-is."""
+    for b in pre_ir.blocks(prog):
+        t = b.terminator
+        if isinstance(t, pre_ir.ConditionalBranch) and isinstance(t.condition, pre_ir.Register):
+            if t.condition.ir_type in _BYTES_FAMILY:
+                t.condition.ir_type = "uint64"
+
+
 def finalize_types(prog) -> None:
     """Reconcile and re-align types on the assembled pre_ir.Program (post-fixpoint):
     re-type placeholder-seeded mixed phi webs, widen varying-arity subroutine
-    returns to one fixed count, then propagate the result across call-result
-    registers and copies."""
+    returns to one fixed count, propagate the result across call-result registers
+    and copies, then force branch conditions uint64 (Puya hard-rejects bytes ones)."""
     _reconcile_mixed_phis(prog)
     _reconcile_return_arity(prog)
     _realign_call_returns(prog)
     _propagate_copy_types(prog)
+    _fix_branch_conditions(prog)
