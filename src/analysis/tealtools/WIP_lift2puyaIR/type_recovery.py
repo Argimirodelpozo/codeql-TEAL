@@ -332,19 +332,6 @@ def _reconcile_mixed_phis(prog) -> None:
             if len(ev) == 1:             # unanimous at this tier decides it
                 webtype[root] = "bytes" if "b" in ev else "uint64"
                 break
-    # Fallback for a genuinely mixed web (all tiers split): the phi REGISTER's own
-    # recovered type, when something else pinned it -- a downstream typed use, or
-    # the backward scratch pass tracing a reused-slot value to its live consumer.
-    # The off-AVM-type args are then the slot's OTHER (disjoint-live-range)
-    # variable, dead past this merge, and get rewritten to a placeholder below.
-    phireg: dict = defaultdict(set)
-    for rid in phi_ids:
-        t = avm(obj[rid].ir_type)
-        if t != "?":
-            phireg[find(rid)].add(t)
-    for root in {find(rid) for rid in phi_ids}:
-        if root not in webtype and len(phireg.get(root, set())) == 1:
-            webtype[root] = "bytes" if "b" in phireg[root] else "uint64"
 
     def placeholder(T):
         return _itob_const(0) if T == "bytes" else pre_ir.UInt64Constant(0)
@@ -575,34 +562,6 @@ def _propagate_copy_load_types(lifter):
             if len(tys) == 1:
                 lifter.reg(out).ir_type = next(iter(tys))
                 changed = True
-        # Slot typing (backward through scratch): a value stored to a scratch slot
-        # takes that slot's ESTABLISHED type -- the single type all its loads are
-        # consumed as. This types a store-value whose own store is dead/overwritten
-        # (so a per-store reaching-def can't reach it from a live load) but which
-        # still forms a mixed phi Puya must type -- e.g. a CFG merge of a reused
-        # slot's reads stored on into a single-typed slot. The slot is single-typed,
-        # so the off-AVM-type phi arg is the reused slot's OTHER (disjoint-live)
-        # variable, dead past the merge; the mixed-phi pass coerces it in finalize.
-        # Guarded on len==1, so a genuinely two-typed slot is left alone.
-        slot_ty: dict = {}
-        for bb in pre_ir.blocks(lifter.subs):
-            for op in bb.ops:
-                src = getattr(op, "source", None) or getattr(op, "intrinsic", None)
-                if (isinstance(src, pre_ir.Intrinsic) and src.op == "load"
-                        and getattr(op, "targets", None)):
-                    t = avm(op.targets[0].ir_type)
-                    if t != "?":
-                        slot_ty.setdefault(src.immediates[0], set()).add(t)
-        for bb in pre_ir.blocks(lifter.subs):
-            for op in bb.ops:
-                src = getattr(op, "source", None) or getattr(op, "intrinsic", None)
-                if isinstance(src, pre_ir.Intrinsic) and src.op == "store" and src.args:
-                    v = src.args[0]
-                    tys = slot_ty.get(src.immediates[0], set())
-                    if (isinstance(v, pre_ir.Register) and v.ir_type == "?"
-                            and len(tys) == 1):
-                        v.ir_type = "bytes" if "b" in tys else "uint64"
-                        changed = True
 
 
 def _unify_call_returns(lifter):
