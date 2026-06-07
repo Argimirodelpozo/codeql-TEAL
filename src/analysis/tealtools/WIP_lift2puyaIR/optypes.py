@@ -17,6 +17,7 @@ _U64_PUSH = frozenset({"pushint", "pushints", "intc",
 _BYTES_PUSH = frozenset({"pushbytes", "pushbytess", "bytec",
                          "bytec_0", "bytec_1", "bytec_2", "bytec_3"})
 _U64_OPS = frozenset({"+", "-", "*", "/", "%", "exp", "sqrt", "shl", "shr",
+                      "divw",                       # uint128 / uint64 -> uint64
                       "bitlen", "len", "btoi", "getbyte", "getbit",
                       "extract_uint16", "extract_uint32", "extract_uint64",
                       "box_create", "box_del",     # both return a uint64 flag
