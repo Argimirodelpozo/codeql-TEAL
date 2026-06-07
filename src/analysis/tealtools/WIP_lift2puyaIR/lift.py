@@ -338,12 +338,6 @@ class _Lifter:
         # phis they orphaned.
         while transforms.isolate_cross_group_phis(self.subs):
             pass
-        # Dead-store elimination on scratch (values reaching no load), so a phi
-        # feeding only dead stores -- the reused-slot mixed-AVM artifact -- is then
-        # pruned below rather than surviving to Puya's phi-type validation.
-        read_regs = {id(self.reg(sv)) for vals in self.load_stores.values()
-                     for sv in vals if isinstance(sv, (SSAVar, Phi))}
-        transforms.remove_dead_scratch_stores(self.subs, read_regs)
         transforms.prune_dead_phis(self.subs)
         self.name2sub = {s.id: s for s in self.subs if not s.is_main}
         # Recover the register / return / phi AVM types to a fixpoint (see
