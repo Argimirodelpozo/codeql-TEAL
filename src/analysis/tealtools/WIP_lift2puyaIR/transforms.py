@@ -9,6 +9,147 @@ See each function for details.
 from __future__ import annotations
 
 from . import pre_ir
+from .optypes import avm
+
+
+def _intr(o):
+    """The :class:`pre_ir.Intrinsic` an op wraps (IntrinsicOp.intrinsic or an
+    Assignment whose source is one), else None."""
+    if isinstance(o, pre_ir.IntrinsicOp):
+        return o.intrinsic
+    if isinstance(o, pre_ir.Assignment) and isinstance(o.source, pre_ir.Intrinsic):
+        return o.source
+    return None
+
+
+def _succ_ids(t) -> list:
+    """Successor block ids of a terminator."""
+    if isinstance(t, pre_ir.Goto):
+        return [t.target]
+    if isinstance(t, pre_ir.ConditionalBranch):
+        return [t.non_zero, t.zero]
+    if isinstance(t, pre_ir.Switch):
+        return [b for _, b in t.cases] + [t.default]
+    if isinstance(t, pre_ir.GotoNth):
+        return list(t.blocks) + [t.default]
+    return []
+
+
+def sink_mixed_phi_scratch_stores(subs) -> int:
+    """Eliminate a mixed-AVM-type phi (the reused-slot artifact: a slot the source
+    register-allocator packed two disjoint-live variables into, merged at a CFG
+    join) by SINKING the scratch store it feeds into its predecessors, rather than
+    dropping the store. Scratch is gload-readable across the atomic group, so a
+    store with no in-program load is NOT dead -- a sibling transaction may read it
+    -- and must be preserved; only the typing of the merge value is the problem.
+
+    For a phi ``p = φ(v_i @ P_i)`` whose ONLY uses are scratch ``store N <p>`` ops,
+    replace each with per-predecessor ``store N <v_i>`` appended to P_i (each v_i is
+    the value on that edge, single-typed), then drop the phi. The mixed-type merge
+    never forms. Returns the number of phis sunk.
+
+    Guards (else the phi is left to fail loudly, never silently mis-stored):
+      * every use of p is a scratch store (no copy / op / terminator / phi use);
+      * every predecessor of p's block branches ONLY to it (no critical edge), so
+        appending to the predecessor runs exactly on the edge into the merge;
+      * each store is reachable from the phi block by a UNIQUE single-predecessor
+        chain with no load/store of that slot before it -- so moving the write to
+        the edge changes neither an in-program read nor the slot's final value
+        (the only thing a cross-group gload observes).
+    """
+    blocks = list(pre_ir.blocks(subs))
+    by_id = {b.id: b for b in blocks}
+    preds: dict = {b.id: [] for b in blocks}
+    for b in blocks:
+        for tgt in _succ_ids(b.terminator):
+            preds.setdefault(tgt, []).append(b.id)
+
+    def chain_to(sb_id, b_id):
+        """Block ids [b_id .. sb_id] if a unique single-pred chain links them."""
+        chain = [sb_id]
+        cur = sb_id
+        while cur != b_id:
+            ps = preds.get(cur, [])
+            if len(ps) != 1 or len(chain) > 4096:
+                return None
+            cur = ps[0]
+            chain.append(cur)
+        return chain                          # sb .. b (order doesn't matter here)
+
+    def slot_touched(chain, sb, store_idx, slot):
+        """A static load/store of ``slot``, or ANY dynamic scratch op, on the chain
+        before the store (dynamic loads/stores could touch any slot)."""
+        for bid in chain:
+            b = by_id[bid]
+            ops = b.ops[:store_idx] if b is sb else b.ops
+            for o in ops:
+                s = _intr(o)
+                if not isinstance(s, pre_ir.Intrinsic):
+                    continue
+                if s.op in ("loads", "stores"):
+                    return True               # dynamic slot -- can't prove safe
+                if s.op in ("load", "store") and s.immediates and str(s.immediates[0]) == slot:
+                    return True
+        return False
+
+    n = 0
+    for B in blocks:
+        for ph in list(B.phis):
+            tys = {avm(a.value.ir_type) for a in ph.args
+                   if isinstance(a.value, pre_ir.Register)} - {"?"}
+            if len(tys) < 2:
+                continue                      # not mixed-AVM
+            # collect p's stores; bail on any non-store use
+            stores = []                        # (block, op_index, slot, intrinsic)
+            other = False
+            for bb in blocks:
+                for i, o in enumerate(bb.ops):
+                    s = _intr(o)
+                    if (isinstance(s, pre_ir.Intrinsic) and s.op == "store"
+                            and s.args and s.args[0] is ph.register):
+                        stores.append((bb, i, str(s.immediates[0]), s))
+                    elif s is not None and any(a is ph.register for a in s.args):
+                        other = True
+                    elif isinstance(o, pre_ir.Assignment) and o.source is ph.register:
+                        other = True
+                for ph2 in bb.phis:
+                    if any(a.value is ph.register for a in ph2.args):
+                        other = True
+                for v in pre_ir.operands(bb.terminator):
+                    if v is ph.register:
+                        other = True
+            if other or not stores:
+                continue
+            if not all(set(_succ_ids(by_id[p].terminator)) == {B.id}
+                       for p in preds.get(B.id, [])):
+                continue                      # a predecessor has a critical edge
+            chains = []
+            ok = True
+            for (sb, idx, slot, s) in stores:
+                ch = chain_to(sb.id, B.id)
+                if ch is None or slot_touched(ch, sb, idx, slot):
+                    ok = False
+                    break
+                chains.append(ch)
+            if not ok:
+                continue
+            # SINK: per predecessor, store that edge's value to each slot.
+            arg_of = {a.through: a.value for a in ph.args}
+            for p in preds.get(B.id, []):
+                vi = arg_of.get(p)
+                if vi is None:
+                    ok = False
+                    break
+                for (sb, idx, slot, s) in stores:
+                    by_id[p].ops.append(pre_ir.IntrinsicOp(
+                        pre_ir.Intrinsic("store", [slot], [vi])))
+            if not ok:
+                continue
+            for (sb, idx, slot, s) in stores:
+                sb.ops = [o for o in sb.ops if _intr(o) is not s]
+            B.phis = [x for x in B.phis if x is not ph]
+            n += 1
+    return n
 
 
 def _vkey(v):

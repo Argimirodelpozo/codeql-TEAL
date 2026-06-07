@@ -344,6 +344,12 @@ class _Lifter:
         # :mod:`type_recovery`), then assemble the program and reconcile the
         # placeholder-seeded mixed-type phi webs on its final shape.
         type_recovery.recover_types(self, sub_pairs)
+        # Now that the phi-arg AVM types are known, sink any mixed-type phi that
+        # only feeds scratch stores into per-predecessor stores (the reused-slot
+        # artifact). This PRESERVES the scratch write -- it is gload-readable
+        # across the group, so it must not be dropped -- while removing the merge
+        # Puya would reject. (Runs after recovery so "mixed" is observable.)
+        transforms.sink_mixed_phi_scratch_stores(self.subs)
         main = next(sub for sub in self.subs if sub.is_main)
         prog_ir = pre_ir.Program(main=main, subroutines=[s for s in self.subs if not s.is_main])
         type_recovery.finalize_types(prog_ir)
