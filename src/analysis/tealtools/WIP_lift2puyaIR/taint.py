@@ -153,3 +153,90 @@ def tainted_sinks(lifter, taint=None) -> list:
             if hit:
                 out.append((frozenset(hit), op, imm))
     return out
+
+
+# Sink categories, most-to-least security-relevant, for the report.
+_CATEGORIES = [
+    ("INNER-TRANSACTION FIELDS  (fund flow -- who gets paid, and how much)",
+     frozenset({"itxn_field"})),
+    ("PERSISTENT STATE WRITES",
+     frozenset({"app_global_put", "app_global_del", "app_local_put",
+                "app_local_del", "box_put", "box_del", "box_create", "box_replace"})),
+    ("EMITTED LOGS",
+     frozenset({"log"})),
+    ("ASSERTED CONDITIONS  (user-controlled control flow)",
+     frozenset({"assert"})),
+]
+
+
+def taint_report(lifter, name: str = "<program>") -> str:
+    """A human-readable user-input-taint report for a lifted program: every
+    attacker-controlled value reaching a sensitive sink, grouped by category and
+    annotated with the original TEAL line(s)."""
+    taint = user_input_taint(lifter)
+    present = sorted({s for v in taint.values() for s in v})
+    groups: dict = defaultdict(lambda: {"lines": set(), "sources": set()})
+    cat_of = {op: i for i, (_, ops) in enumerate(_CATEGORIES) for op in ops}
+    nflows = 0
+    for sub in lifter.subs:
+        for b in sub.body:
+            for o in b.ops:
+                s = _intr(o)
+                if s is not None and s.op in _SINKS:
+                    op, fld, line, args = s.op, (str(s.immediates[0]) if s.immediates
+                                                 else ""), getattr(s, "line", 0), s.args
+                elif isinstance(o, pre_ir.Assert):
+                    op, fld, line, args = "assert", "", 0, [o.condition]
+                else:
+                    continue
+                hit = set()
+                for a in args:
+                    if isinstance(a, pre_ir.Register):
+                        hit |= taint.get(id(a), set())
+                if not hit:
+                    continue
+                nflows += 1
+                g = groups[(cat_of.get(op, 99), op, fld)]
+                g["lines"].add(line)
+                g["sources"] |= hit
+
+    out = ["=" * 70,
+           f"  USER-INPUT TAINT REPORT  --  {name}",
+           "=" * 70, "",
+           "Every value flowing from attacker-controlled input to a sensitive sink,",
+           "traced through the lifted IR -- interprocedurally, with scratch flow",
+           "resolved via the low-layer reaching-def. Sources are the inputs an",
+           "attacker chooses at call time; line numbers are the original TEAL.", "",
+           f"  Sources present   : {', '.join(present) or '(none)'}",
+           f"  Tainted IR values : {len(taint)}",
+           f"  Sink flows        : {nflows}", ""]
+    if not nflows:
+        out.append("  No user-controlled value reaches a tracked sink.")
+    for ci, (title, _) in enumerate(_CATEGORIES):
+        keys = sorted((k for k in groups if k[0] == ci), key=lambda k: (k[1], k[2]))
+        if not keys:
+            continue
+        out += ["-" * 70, title, "-" * 70]
+        for key in keys:
+            g = groups[key]
+            label = f"{key[1]} {key[2]}".strip()
+            lines = sorted(x for x in g["lines"] if x)
+            loc = ("TEAL line " + ", ".join(map(str, lines[:10]))
+                   + (" ..." if len(lines) > 10 else "")) if lines \
+                else f"{len(g['lines'])} site(s)"
+            out.append(f"  {label:28s} <- {'+'.join(sorted(g['sources'])):16s}  {loc}")
+        out.append("")
+    return "\n".join(out)
+
+
+if __name__ == "__main__":
+    import sys
+
+    from ..ssa import SSAProgram
+    from .lift import _Lifter
+    for _db in sys.argv[1:]:
+        _lf = _Lifter(SSAProgram(_db, verbose=False))
+        _lf.build()
+        _nm = _db.rstrip("/").rsplit("/", 2)[-2] if _db.rstrip("/").endswith("/db") else _db
+        print(taint_report(_lf, _nm))
+

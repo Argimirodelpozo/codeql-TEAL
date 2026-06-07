@@ -1,0 +1,71 @@
+======================================================================
+  USER-INPUT TAINT REPORT  --  app_915152968
+======================================================================
+
+Every value flowing from attacker-controlled input to a sensitive sink,
+traced through the lifted IR -- interprocedurally, with scratch flow
+resolved via the low-layer reaching-def. Sources are the inputs an
+attacker chooses at call time; line numbers are the original TEAL.
+
+  Sources present   : ApplicationArgs
+  Tainted IR values : 172
+  Sink flows        : 32
+
+----------------------------------------------------------------------
+INNER-TRANSACTION FIELDS  (fund flow -- who gets paid, and how much)
+----------------------------------------------------------------------
+  itxn_field Amount            <- ApplicationArgs   TEAL line 1019, 1029, 1039, 1092
+  itxn_field AssetReceiver     <- ApplicationArgs   TEAL line 1106
+  itxn_field XferAsset         <- ApplicationArgs   TEAL line 875
+
+----------------------------------------------------------------------
+PERSISTENT STATE WRITES
+----------------------------------------------------------------------
+  app_global_put               <- ApplicationArgs   TEAL line 899, 903, 965, 969, 1076, 1080
+
+----------------------------------------------------------------------
+EMITTED LOGS
+----------------------------------------------------------------------
+  log                          <- ApplicationArgs   TEAL line 862
+
+----------------------------------------------------------------------
+ASSERTED CONDITIONS  (user-controlled control flow)
+----------------------------------------------------------------------
+  assert                       <- ApplicationArgs   1 site(s)
+
+======================================================================
+  USER-INPUT TAINT REPORT  --  app_1060036476
+======================================================================
+
+Every value flowing from attacker-controlled input to a sensitive sink,
+traced through the lifted IR -- interprocedurally, with scratch flow
+resolved via the low-layer reaching-def. Sources are the inputs an
+attacker chooses at call time; line numbers are the original TEAL.
+
+  Sources present   : ApplicationArgs
+  Tainted IR values : 968
+  Sink flows        : 91
+
+----------------------------------------------------------------------
+INNER-TRANSACTION FIELDS  (fund flow -- who gets paid, and how much)
+----------------------------------------------------------------------
+  itxn_field Amount            <- ApplicationArgs   TEAL line 1166, 2300
+  itxn_field AssetAmount       <- ApplicationArgs   TEAL line 1195, 2313
+  itxn_field XferAsset         <- ApplicationArgs   TEAL line 1201, 2319, 2791, 2820
+
+----------------------------------------------------------------------
+PERSISTENT STATE WRITES
+----------------------------------------------------------------------
+  app_global_put               <- ApplicationArgs   TEAL line 2910, 2914, 2918, 2981, 2985, 2989
+  app_local_put                <- ApplicationArgs   TEAL line 1221, 1374, 1715, 1994, 2337
+
+----------------------------------------------------------------------
+EMITTED LOGS
+----------------------------------------------------------------------
+  log                          <- ApplicationArgs   TEAL line 1386, 1398, 1409, 1725, 1738, 2004, 2015, 2359, 2369, 2752 ...
+
+----------------------------------------------------------------------
+ASSERTED CONDITIONS  (user-controlled control flow)
+----------------------------------------------------------------------
+  assert                       <- ApplicationArgs   1 site(s)
+
