@@ -151,30 +151,37 @@ cursors, deduped, added 60 GENUINELY-new distinct apps: 57 FAITHFUL / 0 DIVERGES
 + 60 + 60 = 222 distinct contracts the lift had never seen, the differential dryrun
 found **zero** approve/reject divergences -- the fix chain generalises.
 
-**RESOLVED — the mixed-type scratch-load phi class (commits 3ada8b52 → d6136fa0 →
-624250a1).** This was a **~5%-of-distinct-contracts CLASS** (the 7 known cases:
-app_1200031141, _1060031091, _1060036476, _1158003524, _780019724, _915152968,
-_957129398): `tmp = phi(load A, load B, …)` where a scratch slot the source
-register-allocator PACKED two disjoint-live variables into holds uint64 on some
-control-flow paths and bytes (concat) on others, so the phi merges genuinely
-different AVM types and Puya's typed-IR phi check hard-rejects it. Diagnosis showed
-it is a coarse-memory-SSA artifact, not real polymorphism: on any single execution
-only one packed variable is live at the merge. The decisive observation — every
-such mixed phi's OWN store is **dead**: it reaches no load (the slot is overwritten
-before being read back), and the slot it lands in may itself be read as both types,
-so neither slot typing nor a per-store reaching-def can pick a type for it.
+**RESOLVED — the mixed-type scratch-load phi class (final fix: commit 1928118f).**
+A **~5%-of-distinct-contracts CLASS** (the 7 known cases: app_1200031141,
+_1060031091, _1060036476, _1158003524, _780019724, _915152968, _957129398):
+`tmp = phi(load A, load B, …)` where a scratch slot the source register-allocator
+PACKED two disjoint-live variables into holds uint64 on some control-flow paths and
+bytes (concat) on others, so the phi merges genuinely different AVM types and Puya's
+typed-IR phi check hard-rejects it. It is a coarse-memory-SSA artifact, not real
+polymorphism: on any single execution only one packed variable is live at the merge.
 
-So the fix is not to TYPE it but to DELETE it: `remove_dead_scratch_stores`
-(`transforms.py`) is exact dead-store elimination — it drops a `store N <r>` whose
-value reaches no load (absent from the scratch reaching-def's read set), run before
-`prune_dead_phis` so the phi feeding only such stores is pruned with them, before
-ever reaching phi validation. This is exact (a value never read can't affect
-behaviour), carries no dead-arg-coercion assumption, and a misjudged deadness fails
-LOUDLY (broken IR), never silently. **All 7 now lift AND are behaviourally faithful
-(285 same-outcome inputs across them, 0 divergences); corpus 511/4 unchanged.**
-(An earlier slot-typing + dead-arg-coercion attempt, 3ada8b52, was superseded and
-reverted in 624250a1 — DSE subsumes it and removes the only divergence-risk
-mechanism.)
+Fix = **sink the store through the phi**, don't drop it. `sink_mixed_phi_scratch_
+stores` (`transforms.py`) rewrites `p = φ(v_i @ P_i); store N <p>` (where p's only
+uses are scratch stores) into a per-predecessor `store N <v_i>` appended to each
+P_i — each v_i is that edge's value, single-typed, so the mixed merge never forms —
+then drops the phi. Guards keep it exact (all uses of p are scratch stores; no
+critical-edge predecessors; each store reachable from the phi block by a unique
+single-pred chain with no load/store of that slot before it); anything not provably
+safe fails loudly. **All 7 lift AND are behaviourally faithful (285 inputs, 0
+divergences); corpus 511/4; 22-contract regression sweep 0 divergences.**
+
+> ⚠️ **CRITICAL LESSON — do NOT dead-store-eliminate scratch.** The first fix here
+> (`remove_dead_scratch_stores`, commits d6136fa0 etc.) *deleted* a scratch store
+> with no in-program load — and was **UNSOUND** and reverted (08f4d4ba). AVM scratch
+> is readable across the atomic group: a later app call can `gload`/`gloads`/
+> `gloadss` an earlier transaction's scratch. So a locally-dead scratch store may be
+> LIVE for a sibling, and deleting it changes cross-contract behaviour. **The
+> behavioural test could NEVER catch this** — it dryruns each contract IN ISOLATION,
+> with no sibling `gload`, so the "0 divergences" was blind to the cross-group case.
+> Sinking is sound precisely because it PRESERVES the write (cross-group safe by
+> construction) and only moves it within the program, which the isolated dryrun DOES
+> exercise. (An even earlier slot-typing + dead-arg-coercion attempt, 3ada8b52, was
+> also reverted — it likewise rewrote the stored value on a deadness assumption.)
 
 **The 7 timeouts are CodeQL-side, not Python (diagnosed).** faulthandler sampling
 put 59/59 samples in `graphs.py:load_graph` blocked on the `codeql database
