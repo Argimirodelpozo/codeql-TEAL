@@ -595,6 +595,33 @@ def _unify_call_returns(lifter):
                             rv.ir_type = ret
 
 
+def _infer_select_types(subs) -> None:
+    # `select C B A` pushes B or A chosen by the runtime condition C, so its
+    # result shares ONE AVM type with both value operands. The args are
+    # [C (condition, uint64), B, A]; type a `?` result from the value operands
+    # (which agree by construction -- you cannot select between two different AVM
+    # types). Skip arg 0 (the condition); a genuine type clash joins to None and
+    # is left alone. Monotonic (only `?` -> concrete), so it joins the fixpoint.
+    def _vt(v):
+        if isinstance(v, pre_ir.Register):
+            return v.ir_type
+        if isinstance(v, pre_ir.UInt64Constant):
+            return "uint64"
+        if isinstance(v, pre_ir.BytesConstant):
+            return "bytes"
+        return "?"
+    for b in pre_ir.blocks(subs):
+        for o in b.ops:
+            if (isinstance(o, pre_ir.Assignment) and len(o.targets) == 1
+                    and o.targets[0].ir_type == "?"):
+                s = o.source
+                if (isinstance(s, pre_ir.Intrinsic) and s.op == "select"
+                        and len(s.args) == 3):
+                    j = _avm_join(_vt(v) for v in s.args[1:])
+                    if j is not None:
+                        o.targets[0].ir_type = j
+
+
 def recover_types(lifter, sub_pairs) -> None:
     """Run the type passes to a fixpoint -- they feed each other (a typed caller
     arg types a callee param; a typed value types the slots/loads of it; a put
@@ -607,6 +634,7 @@ def recover_types(lifter, sub_pairs) -> None:
         _infer_types_from_uses(subs)
         _infer_params_from_callers(lifter, sub_pairs)
         _unify_phi_types(subs)
+        _infer_select_types(subs)
         _infer_state_types(lifter)
         _propagate_copy_load_types(lifter)
         _infer_returns(subs)
