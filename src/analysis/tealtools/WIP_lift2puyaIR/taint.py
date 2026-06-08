@@ -229,14 +229,64 @@ def taint_report(lifter, name: str = "<program>") -> str:
     return "\n".join(out)
 
 
+def render_with_taint(lifter, name: str = "<program>") -> str:
+    """Render the lifted Puya-shaped IR with user-input taint annotated inline on
+    each line: ``<== SOURCE X`` where an attacker input enters, ``<== tainted X``
+    where a value derives from one, and ``<== SINK X`` where a tainted value
+    reaches a sensitive op. The taint is native to this IR (computed on its own
+    registers), so the annotations line up exactly with the rendered ops."""
+    taint = user_input_taint(lifter)
+
+    def note(o, is_phi=False):
+        marks = []
+        src = None if is_phi else _intr(o)
+        outs = [o.register] if is_phi else (getattr(o, "targets", ()) or [])
+        srclbl = source_label(src) if src is not None else None
+        tt = set()
+        for t in outs:
+            tt |= taint.get(id(t), set())
+        if srclbl:
+            marks.append(f"SOURCE {srclbl}")
+        elif tt:
+            marks.append("tainted " + "+".join(sorted(tt)))
+        sink_args = (src.args if src is not None and src.op in _SINKS
+                     else [o.condition] if isinstance(o, pre_ir.Assert) else None)
+        if sink_args is not None:
+            hit = set()
+            for a in sink_args:
+                if isinstance(a, pre_ir.Register):
+                    hit |= taint.get(id(a), set())
+            if hit:
+                op = src.op if src is not None else "assert"
+                marks.append(f"SINK {op} <- " + "+".join(sorted(hit)))
+        return ("    <== " + " ; ".join(marks)) if marks else ""
+
+    out = [f"; user-input taint on the lifted Puya IR  --  {name}",
+           "; <== SOURCE/tainted/SINK mark attacker-controlled flow", ""]
+    for sub in lifter.subs:
+        kind = "main" if sub.is_main else "subroutine"
+        out.append(f"{kind} {sub.id}:")
+        for b in sub.body:
+            out.append(f"  block@{b.id}:")
+            for ph in b.phis:
+                out.append(f"    {ph.render()}{note(ph, True)}")
+            for o in b.ops:
+                out.append(f"    {o.render()}{note(o)}")
+            if b.terminator is not None:
+                out.append(f"    {b.terminator.render()}")
+        out.append("")
+    return "\n".join(out)
+
+
 if __name__ == "__main__":
     import sys
 
     from ..ssa import SSAProgram
     from .lift import _Lifter
-    for _db in sys.argv[1:]:
+    _render = "--render" in sys.argv
+    for _db in [a for a in sys.argv[1:] if not a.startswith("-")]:
         _lf = _Lifter(SSAProgram(_db, verbose=False))
         _lf.build()
         _nm = _db.rstrip("/").rsplit("/", 2)[-2] if _db.rstrip("/").endswith("/db") else _db
-        print(taint_report(_lf, _nm))
+        print(render_with_taint(_lf, _nm) if _render else taint_report(_lf, _nm))
 
