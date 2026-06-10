@@ -871,7 +871,7 @@ dependencies = [
 [[package]]
 name = "tree-sitter-teal"
 version = "0.1.0"
-source = "git+https://github.com/Argimirodelpozo/tree-sitter-teal.git#e587c096296600781012848084aeff88ea9e53c2"
+source = "git+https://github.com/Argimirodelpozo/tree-sitter-teal.git#4468a5acb379de12efd77ee4ddcb755fa054b24f"
 dependencies = [
  "cc",
  "tree-sitter-language",
