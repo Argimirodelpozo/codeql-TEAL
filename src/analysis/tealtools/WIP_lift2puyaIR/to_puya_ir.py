@@ -24,6 +24,10 @@ from .teal_const import (
 _IRT = {
     "uint64": PT.uint64, "bytes": PT.bytes, "bool": PT.bool,
     "account": PT.account, "asset": PT.uint64, "application": PT.uint64,
+    # Last-resort default for a type recovery could NOT resolve. Recovery aims
+    # to leave none (interprocedural param/return/state/phi unification); any
+    # residual `?` is logged by type_recovery._warn_residual_unknowns so this
+    # silent uint64 fallback can't quietly mistype a bytes value.
     "?": PT.uint64,
 }
 

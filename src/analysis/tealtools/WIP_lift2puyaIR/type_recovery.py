@@ -456,6 +456,56 @@ def _infer_params_from_callers(lifter, pairs):
                 pp.register.ir_type = next(iter(cols[i]))
 
 
+def _arg_avm_type(v) -> str:
+    """Lift type of a pre_ir call argument value (``?`` if not yet known)."""
+    if isinstance(v, pre_ir.Register):
+        return v.ir_type
+    if isinstance(v, pre_ir.UInt64Constant):
+        return "uint64"
+    if isinstance(v, pre_ir.BytesConstant):
+        return "bytes"
+    return "?"
+
+
+def _unify_params_from_call_args(subs) -> None:
+    """Interprocedural param typing from the pre_ir ``InvokeSubroutine`` args.
+
+    A still-``?`` parameter is filled with the AVM type its call sites agree on
+    (``_avm_join`` -> None on a cross-family clash, so a genuine disagreement is
+    left untouched). This is the direct, pre_ir-level counterpart to
+    ``_infer_params_from_callers`` (which traces the SSA exit-stack / frame chain):
+    it catches the case where args reach the call as already-typed pre_ir values
+    but the frame/scratch trace doesn't ground out — e.g. params the lift left
+    ``?`` that, without this, lower via the ``?`` -> uint64 default while their
+    args are bytes (an ill-typed callee, rejected downstream). Monotonic
+    (only ``?`` -> concrete), so it joins the recovery fixpoint."""
+    sub_by_id = {s.id: s for s in subs}
+    cols: dict = {}                       # sub_id -> list[set] per param position
+    for b in pre_ir.blocks(subs):
+        for o in b.ops:
+            # A call with results is an Assignment source; a VOID call is wrapped
+            # in an IntrinsicOp (its `.intrinsic` holds the InvokeSubroutine).
+            src = (o.source if isinstance(o, pre_ir.Assignment)
+                   else o.intrinsic if isinstance(o, pre_ir.IntrinsicOp) else None)
+            if not isinstance(src, pre_ir.InvokeSubroutine):
+                continue
+            callee = sub_by_id.get(src.target)
+            if callee is None or not callee.parameters:
+                continue
+            c = cols.setdefault(src.target, [set() for _ in callee.parameters])
+            for i, a in enumerate(src.args):
+                if i < len(c):
+                    t = _arg_avm_type(a)
+                    if t and t != "?":
+                        c[i].add(t)
+    for sid, cset in cols.items():
+        for i, pp in enumerate(sub_by_id[sid].parameters):
+            if pp.register.ir_type == "?" and i < len(cset):
+                j = _avm_join(cset[i])
+                if j is not None:
+                    pp.register.ir_type = j
+
+
 def _infer_state_types(lifter):
     """Type state read *values* from the contract's own put schema: a value is
     whatever was put to its (constant) key. Reads each put value's *final*
@@ -622,6 +672,32 @@ def _infer_select_types(subs) -> None:
                         o.targets[0].ir_type = j
 
 
+def _warn_residual_unknowns(subs) -> None:
+    """Surface any register type recovery could NOT resolve. Lowering defaults a
+    residual ``?`` to uint64 (``to_puya_ir._IRT``), which silently mistypes a
+    value that is really bytes -- so make the gap visible instead of quiet. Not
+    fatal (a genuinely-uint64 value defaults correctly), but logged so a recovery
+    miss is caught rather than shipped as a wrong type."""
+    res: list[str] = []
+    for sub in subs:
+        for pp in sub.parameters:
+            if pp.register.ir_type == "?":
+                res.append(f"{sub.id}:param {pp.register.name}")
+        res += [f"{sub.id}:return[{i}]" for i, r in enumerate(sub.returns) if r == "?"]
+        for bb in sub.body:
+            res += [f"{sub.id}:phi {ph.register.name}" for ph in bb.phis
+                    if ph.register.ir_type == "?"]
+            for op in bb.ops:
+                if isinstance(op, pre_ir.Assignment):
+                    res += [f"{sub.id}:{t.name}" for t in op.targets if t.ir_type == "?"]
+    if res:
+        import logging
+        logging.getLogger("tealtools.WIP_lift2puyaIR").warning(
+            "type recovery left %d register(s) unresolved (lowering defaults them "
+            "to uint64; a bytes value would be mistyped): %s%s",
+            len(res), ", ".join(res[:12]), " …" if len(res) > 12 else "")
+
+
 def recover_types(lifter, sub_pairs) -> None:
     """Run the type passes to a fixpoint -- they feed each other (a typed caller
     arg types a callee param; a typed value types the slots/loads of it; a put
@@ -633,12 +709,14 @@ def recover_types(lifter, sub_pairs) -> None:
         prev = _untyped(subs)
         _infer_types_from_uses(subs)
         _infer_params_from_callers(lifter, sub_pairs)
+        _unify_params_from_call_args(subs)
         _unify_phi_types(subs)
         _infer_select_types(subs)
         _infer_state_types(lifter)
         _propagate_copy_load_types(lifter)
         _infer_returns(subs)
         _unify_call_returns(lifter)
+    _warn_residual_unknowns(subs)
 
 
 def _reconcile_return_arity(prog) -> None:
