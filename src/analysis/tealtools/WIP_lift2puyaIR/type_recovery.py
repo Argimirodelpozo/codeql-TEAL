@@ -10,7 +10,8 @@ from __future__ import annotations
 
 from ..ssa import Const, Phi, SSAVar
 from . import pre_ir
-from .optypes import _BYTES_CONSUME, _U64_CONSUME, _imm0, avm
+from .optypes import (_BYTES_CONSUME, _BYTES_OPS, _U64_CONSUME, _U64_OPS,
+                      _field_type, _imm0, avm)
 from .teal_const import _const_bytes
 
 
@@ -356,6 +357,75 @@ def _reconcile_mixed_phis(prog) -> None:
                 elif (isinstance(v, pre_ir.Register) and id(v) not in phi_ids
                       and avm(v.ir_type) not in ("?", want)):
                     a.value = placeholder(T)   # cross-type non-phi seed -> dead placeholder
+
+
+def _unify_comparison_operands(prog) -> None:
+    """The two operands of `==` / `!=` must share an AVM family — you cannot
+    compare a uint64 to a byteslice (Algorand Python wouldn't emit it). When they
+    disagree, retype the SOFT operand (a state read / load whose family was only
+    guessed) to the family fixed by HARD evidence on the other side: a constant, a
+    txn/global field, or a typed-op result. This corrects e.g. a global read that
+    defaulted to uint64 but is compared against `txn Sender` (bytes) — the read's
+    slot type was guessed wrong, and the comparison is the ground truth.
+
+    Override only ever moves a SOFT operand; two hard operands that conflict are
+    left for the encoder to flag (a genuine inconsistency). For well-typed
+    contracts the operands already agree, so nothing changes."""
+    producer: dict = {}                  # id(Register) -> defining Intrinsic
+    for bb in pre_ir.blocks(prog):
+        for o in bb.ops:
+            if isinstance(o, pre_ir.Assignment) and isinstance(o.source, pre_ir.Intrinsic):
+                for t in o.targets:
+                    producer[id(t)] = o.source
+
+    _REFINED = ("account", "asset", "application", "biguint")
+
+    def strength(v):
+        """(strength, family) for a comparison operand — higher strength = more
+        trustworthy evidence of the AVM family. HARD (4): a constant, a txn/global
+        field, or a typed-op result. REFINED (3): a specific type (account/asset/
+        application/biguint) — implies a typed source. BASE (2): plain bytes/uint64.
+        BOOL (1): the cheapest default. UNKNOWN (0)."""
+        if isinstance(v, pre_ir.UInt64Constant):
+            return (4, "u")
+        if isinstance(v, pre_ir.BytesConstant):
+            return (4, "b")
+        if not isinstance(v, pre_ir.Register):
+            return (0, "?")
+        src = producer.get(id(v))
+        if src is not None:
+            if src.op in _U64_OPS:
+                return (4, "u")
+            if src.op in _BYTES_OPS:
+                return (4, "b")
+            ft = _field_type(src.op, " ".join(str(i) for i in (src.immediates or [])))
+            if ft == "uint64":
+                return (4, "u")
+            if ft == "bytes":
+                return (4, "b")
+        t = avm(v.ir_type)               # 'b' / 'u' / '?'
+        if t == "?":
+            return (0, "?")
+        s = 3 if v.ir_type in _REFINED else 1 if v.ir_type == "bool" else 2
+        return (s, t)
+
+    for bb in pre_ir.blocks(prog):
+        for o in bb.ops:
+            src = (o.source if isinstance(o, pre_ir.Assignment)
+                   else o.intrinsic if isinstance(o, pre_ir.IntrinsicOp) else o)
+            if not isinstance(src, pre_ir.Intrinsic) or src.op not in ("==", "!=") \
+                    or len(src.args) != 2:
+                continue
+            a0, a1 = src.args
+            (s0, f0), (s1, f1) = strength(a0), strength(a1)
+            if f0 == "?" or f1 == "?" or f0 == f1:
+                continue                 # agree (or unknown) -> nothing to do
+            # cross-family conflict: retype the weaker operand to the stronger's
+            # family (equal strength => genuine, leave for the encoder to flag).
+            if s0 > s1 and isinstance(a1, pre_ir.Register):
+                a1.ir_type = "uint64" if f0 == "u" else "bytes"
+            elif s1 > s0 and isinstance(a0, pre_ir.Register):
+                a0.ir_type = "uint64" if f1 == "u" else "bytes"
 
 
 def _realign_call_returns(prog) -> None:
@@ -814,4 +884,5 @@ def finalize_types(prog) -> None:
     _reconcile_return_arity(prog)
     _realign_call_returns(prog)
     _propagate_copy_types(prog)
+    _unify_comparison_operands(prog)
     _fix_branch_conditions(prog)
