@@ -36,6 +36,7 @@ from .optypes import (
     _BYTES_OPS,
     _COND_BRANCH,
     _NAME_PREFIX,
+    _POLY_FIRST_OPERAND_OPS,
     _U64_OPS,
     _field_type,
     _imm0,
@@ -509,7 +510,13 @@ class _Lifter:
                     # (get_ex / params / box / addw…) type their slots
                     # individually -- type_of can't tell them apart.
                     mt = _multi_out_type(a.op, a.immediates, idx) if nssa > 1 else None
-                    rt = mt or self.type_of(o, a.op, a.immediates)
+                    if a.op in _POLY_FIRST_OPERAND_OPS and a.inputs:
+                        # setbit: result type == its VALUE operand (the deepest
+                        # stack input == last top-first SSA input), uint64 or bytes.
+                        vt = self._ssa_type(a.inputs[-1])
+                        rt = vt if vt != "?" else self.type_of(o, a.op, a.immediates)
+                    else:
+                        rt = mt or self.type_of(o, a.op, a.immediates)
                     if o not in self.regs:
                         self.regs[o] = self._new_reg(pfx, rt)
                     elif self.regs[o].ir_type == "?" and rt != "?":
@@ -978,6 +985,13 @@ class _Lifter:
             return t.kind
         if getattr(o, "range", None) is not None:
             return "uint64"
+        if op in _POLY_FIRST_OPERAND_OPS and a is not None:   # setbit: result == value operand
+            ins = getattr(a, "inputs", None)
+            if ins:                               # SSA inputs are top-first; value is deepest
+                vt = self._ssa_type(ins[-1], depth + 1)
+                if vt != "?":
+                    return vt
+            return "?"
         if op in _U64_OPS:
             return "uint64"
         if op in _BYTES_OPS:

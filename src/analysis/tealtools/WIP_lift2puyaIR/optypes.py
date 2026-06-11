@@ -25,8 +25,13 @@ _U64_OPS = frozenset({"+", "-", "*", "/", "%", "exp", "sqrt", "shl", "shr",
 _BYTES_OPS = frozenset({"itob", "concat", "substring", "substring3", "extract",
                         "extract3", "replace2", "replace3", "sha256",
                         "sha512_256", "keccak256", "sha3_256", "bzero",
-                        "setbyte", "setbit", "b+", "b-", "b*", "b/", "b%",
+                        "setbyte", "b+", "b-", "b*", "b/", "b%",
                         "b|", "b&", "b^", "b~", "bsqrt", "box_extract"}) | _BYTES_PUSH
+# `setbit` is polymorphic: its result type equals its VALUE operand (`setbit A B
+# C` -> type of A, uint64 or bytes), so it is NOT in _BYTES_OPS; lift.type_of /
+# _ssa_type type it from that operand. (`getbit` always returns uint64, so it
+# stays in _U64_OPS; `setbyte` is byte-array only, so it stays in _BYTES_OPS.)
+_POLY_FIRST_OPERAND_OPS = frozenset({"setbit"})
 _NAME_PREFIX = {"len": "len", "==": "eq", "!=": "ne", "<": "lt", ">": "gt",
                 "<=": "le", ">=": "ge", "!": "not", "&&": "and", "||": "or",
                 "btoi": "val", "concat": "concat", "itob": "enc"}
