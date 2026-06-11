@@ -506,6 +506,33 @@ def _unify_params_from_call_args(subs) -> None:
                     pp.register.ir_type = j
 
 
+def _infer_args_from_params(subs) -> None:
+    """Callee -> caller propagation: a still-``?`` call ARGUMENT register inherits
+    the (known) type of the parameter it is passed to. The dual of
+    ``_unify_params_from_call_args`` (caller -> callee). Without this, a value
+    that is only ever forwarded into a typed param (e.g. an address threaded
+    through to an `itxn_field Sender`, or a number into `Amount`) stays ``?`` and
+    lowers via the ``?`` -> uint64 default — so a bytes param fed by it, or a u64
+    param it feeds, ends up mismatched. Monotonic (only ``?`` -> concrete)."""
+    sub_by_id = {s.id: s for s in subs}
+    for b in pre_ir.blocks(subs):
+        for o in b.ops:
+            src = (o.source if isinstance(o, pre_ir.Assignment)
+                   else o.intrinsic if isinstance(o, pre_ir.IntrinsicOp) else None)
+            if not isinstance(src, pre_ir.InvokeSubroutine):
+                continue
+            callee = sub_by_id.get(src.target)
+            if callee is None:
+                continue
+            for i, a in enumerate(src.args):
+                if i >= len(callee.parameters):
+                    break
+                pt = callee.parameters[i].register.ir_type
+                if pt and pt != "?" and isinstance(a, pre_ir.Register) \
+                        and a.ir_type == "?":
+                    a.ir_type = pt
+
+
 def _infer_state_types(lifter):
     """Type state read *values* from the contract's own put schema: a value is
     whatever was put to its (constant) key. Reads each put value's *final*
@@ -708,6 +735,11 @@ def recover_types(lifter, sub_pairs) -> None:
     while prev != _untyped(subs):
         prev = _untyped(subs)
         _infer_types_from_uses(subs)
+        # Propagate typed params back to ?-args BEFORE the SSA-frame trace, so a
+        # value forwarded only into a typed param (e.g. into itxn_field Sender /
+        # Amount) is typed by that param rather than mis-guessed by the trace
+        # (which fills ?-params, so it then skips the now-typed one).
+        _infer_args_from_params(subs)
         _infer_params_from_callers(lifter, sub_pairs)
         _unify_params_from_call_args(subs)
         _unify_phi_types(subs)
