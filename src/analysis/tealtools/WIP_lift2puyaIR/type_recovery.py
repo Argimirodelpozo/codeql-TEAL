@@ -117,9 +117,23 @@ _POS_IN = {
     "extract_uint64": ("uint64", "bytes"),
     "replace3": ("bytes", "uint64", "bytes"),     # A(bytes) B(start) C(bytes)
     "extract": ("bytes",),                        # extract s l A(bytes)
+    "replace2": ("bytes", "bytes"),               # replace2 s A B -> [B, A] both bytes
     "app_global_get": ("bytes",),                 # key
     "app_global_put": (None, "bytes"),            # K(key) V(val) -> [V, K]
+    "app_global_get_ex": ("bytes", "uint64"),     # app key -> [key, app]
     "bzero": ("uint64",), "txnas": ("uint64",), "gtxnas": ("uint64",),
+    # box ops: the NAME is the deepest operand (= last, top-first), always
+    # bytes. Without this a box name reaching box_get only through a stack
+    # frame slot (`bury N; ... frame_dig N; box_get`, the BoxMap `key in map`
+    # membership+read pattern) stays `?` and lowers to uint64 -> mixed-type
+    # encode error. Position-precise, so the u64 start/len/size operands stay
+    # uint64, and the unanimity guard leaves a genuinely-mixed register `?`.
+    "box_get": ("bytes",), "box_len": ("bytes",), "box_del": ("bytes",),
+    "box_create": ("uint64", "bytes"),            # name size -> [size, name]
+    "box_resize": ("uint64", "bytes"),
+    "box_put": ("bytes", "bytes"),                # name value -> [value, name]
+    "box_extract": ("uint64", "uint64", "bytes"), # name start len
+    "box_replace": ("bytes", "uint64", "bytes"),  # name start value
 }
 
 
