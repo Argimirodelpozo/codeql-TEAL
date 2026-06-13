@@ -260,6 +260,10 @@ class _Lifter:
         self.bury_target: dict = {}           # id(frame_bury assignment) -> versioned Register
         self.final_locals: dict = {}          # gname -> {slot: final versioned Register}
         self.shuffle_src: dict = {}           # SSAVar (shuffle output) -> source operand
+        self.frame_passthrough: set = set()   # frame_dig out0 of k>=0 pushed locals
+        #   (frame_resolution.SubFrames.pushed) — the resim path resolves THESE via
+        #   value() (their value lives cross-block), but leaves every other frame_dig
+        #   on the plain frame_map path so negative/param reads don't diverge.
         self.cur_gname = "main"
         self.cur_nret = 0                     # proto return count of the group being built
         # Inter-procedural return wiring. A callsub's continuation receives the
@@ -445,6 +449,7 @@ class _Lifter:
         for aid, (slot, ver) in res.bury.items():
             self.bury_target[aid] = self._local_reg(slot, ver)
         self.shuffle_src.update(res.passthrough)
+        self.frame_passthrough |= res.pushed
         self.final_locals[self.cur_gname] = {
             slot: self._local_reg(slot, ver) for slot, ver in res.final.items()}
 
@@ -668,10 +673,13 @@ class _Lifter:
                 return pre_ir.ConditionalBranch(cond, self.bid[taken], self.bid[other])
             return pre_ir.ConditionalBranch(cond, self.bid[other], self.bid[taken])  # bz
         if op == "match" and t is not None:
-            # `match t0..t_{n-1}`: matched value on top, the n case values below
-            # (deepest = C_0). It's a Switch on a (usually bytes) value against
-            # const keys -- NOT a uint64-indexed GotoNth. The popped operands are
-            # [value, C_{n-1}, …, C_0] top-first, so C_i sits at index n-i.
+            # `match t0..t_{n-1}`: matched value on top, the n case values below.
+            # go-algorand pairs label[i] with the i-th case counting from the
+            # DEEPEST (label[0] <-> C_0, the first-pushed/deepest constant). The
+            # recovered `inputs` are [value, C_0, C_1, …, C_{n-1}] (value first,
+            # then the constants in push/deepest-first order), so C_i is at index
+            # i+1. (Pairing label[i] with ins[n-i] silently SWAPS sibling methods
+            # -- e.g. routes one ABI selector to another's body; oracle-confirmed.)
             labels = (t.immediates or "").split()
             n = len(labels)
             ins = (self.resim_args.get(id(t)) if (resim and id(t) in self.resim_args)
@@ -679,7 +687,7 @@ class _Lifter:
             cases, targets = [], set()
             for i, lbl in enumerate(labels):
                 blk = self.line2block.get(self.label2line.get(lbl))
-                ci = ins[n - i] if (n - i) < len(ins) else None
+                ci = ins[i + 1] if (i + 1) < len(ins) else None
                 if isinstance(ci, pre_ir.BytesConstant):
                     key = ci.value                       # bytes-keyed match
                 elif isinstance(ci, pre_ir.UInt64Constant):
@@ -811,11 +819,38 @@ class _Lifter:
                 # its resolved param/local (one value) and a `frame_bury` pops one.
                 if a.op == "frame_dig":
                     out0 = a.outputs[0] if a.outputs else None
-                    stack.append(self.frame_map.get(out0) or pre_ir.Undefined())
+                    # A k>=0 pushed local read cross-block (frame_resolution routed
+                    # it through shuffle_src): resolve via value() so the value
+                    # carried from the defining block reaches here. Every other
+                    # frame_dig keeps the plain frame_map path — widening value()
+                    # to all of them re-resolves param/negative reads and diverges
+                    # from the IR construction path (a bytes value into a u64 op).
+                    if out0 is not None and out0 in self.frame_passthrough:
+                        stack.append(self.value(out0))
+                    else:
+                        stack.append(self.frame_map.get(out0) or pre_ir.Undefined())
                     continue
                 if a.op == "frame_bury":
                     if stack:
-                        self.resim_args[id(a)] = [stack.pop()]
+                        v = stack.pop()
+                        self.resim_args[id(a)] = [v]
+                        # frame_bury N writes the popped value INTO frame slot N —
+                        # an absolute stack position (len(params)+N on the clean
+                        # proto frame: args at 0..nargs-1, locals above). The pop
+                        # alone modelled only the stack-top removal, not the deep
+                        # write, so a later working-stack read of that slot saw the
+                        # stale frame-init. Concretely a sub that arranges its
+                        # return via `frame_dig k; frame_bury 0; popn …; retsub`
+                        # returned the init "" instead of the computed value. Model
+                        # the deep write so the slot carries the buried value.
+                        toks = (a.immediates or "").split()
+                        if toks:
+                            try:
+                                pos = len(params) + int(toks[0])
+                            except ValueError:
+                                pos = -1
+                            if 0 <= pos < len(stack):
+                                stack[pos] = v
                     continue
                 if a.op in _STACK_SHUFFLE_OPS:
                     m = _shuffle_mapping(a)

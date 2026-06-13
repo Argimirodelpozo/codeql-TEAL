@@ -36,6 +36,9 @@ class SubFrames:
     bury: dict = field(default_factory=dict)         # id(frame_bury) -> (slot, version)
     passthrough: dict = field(default_factory=dict)  # fat-frame out -> source operand
     final: dict = field(default_factory=dict)        # slot -> final version
+    pushed: set = field(default_factory=set)         # frame_dig out0 of a k>=0 pushed
+    #   local resolved to its band target (vs an orphan); the resim path must
+    #   route these through value() too — see lift._setup_frame / _build_block.
 
 
 def resolve_sub(blocks, nargs: int) -> SubFrames:
@@ -67,7 +70,22 @@ def resolve_sub(blocks, nargs: int) -> SubFrames:
                     res.dig_param[out0] = nargs + k
                 else:
                     v = cur.get(k)
-                    res.dig_local[out0] = (k, v if v is not None else fresh(k))
+                    if v is not None:
+                        res.dig_local[out0] = (k, v)          # a `frame_bury`-d local
+                    elif k >= 0 and a.inputs:
+                        # A pushed local (slot ABOVE the frame base) never written
+                        # by `frame_bury`: its value was placed on the frame by a
+                        # *stack* op (`bury`/`dup`/push) this slot/version model
+                        # doesn't track. The dug value is the slot's current stack
+                        # value = the band target (deepest input; _try_expand_frame_op
+                        # lays inputs top-first). Route out0 there instead of an
+                        # l%slot version no write defines (the cross-block orphan).
+                        # k>=0 ONLY: negative below-frame reads keep prior behavior
+                        # (resolving them via value() diverges from the IR path).
+                        res.passthrough[out0] = a.inputs[-1]
+                        res.pushed.add(out0)
+                    else:
+                        res.dig_local[out0] = (k, v if v is not None else fresh(k))
                 for i in range(1, len(a.outputs)):   # dig: out[i] = in[i-1]
                     o = a.outputs[i]
                     if isinstance(o, SSAVar) and i - 1 < len(a.inputs):

@@ -91,3 +91,32 @@ def test_versioning_spans_blocks_in_order():
                       nargs=0)
     assert res.dig_local == {d: (0, 0)}   # reads v0 written in the first block
     assert res.bury[id(b1)] == (0, 1)
+
+
+def test_pushed_local_with_band_routes_to_target_not_orphan():
+    # A k>=0 pushed local never `frame_bury`-d, but its slot value is on the
+    # simulated band (inputs top-first, so inputs[-1] = the deepest = the slot).
+    # This is the `key in BoxMap` box-name pattern: the name is placed by a STACK
+    # `bury`/`dup` (invisible to the frame_bury model) and read cross-block. It
+    # must route out0 -> the band target, NOT mint an l%slot version no write
+    # defines (the orphan that broke destructure / CHC).
+    top, tgt, out0 = _v(1), _v(2), _v(3)
+    dig = _Op("frame_dig", "0", inputs=[top, tgt], outputs=[out0])
+    res = resolve_sub([_Block(dig)], nargs=0)
+    assert res.passthrough[out0] is tgt          # dug value = band target (deepest in)
+    assert out0 in res.pushed                    # flagged for the resim value() path
+    assert out0 not in res.dig_local             # NOT an orphan versioned local
+
+
+def test_negative_below_frame_read_stays_local_not_pushed():
+    # A negative read that is NOT a param (k < -nargs: dig -2 with nargs=1, i.e.
+    # below the frame base) keeps the prior dig_local behavior even with a band
+    # present. The pushed-local routing is k>=0 ONLY: resolving a negative/param
+    # read via its band target diverges from the IR construction path (it can
+    # surface a bytes value into a u64 op -- the consensus_v3 regression).
+    top, tgt, out0 = _v(1), _v(2), _v(3)
+    dig = _Op("frame_dig", "-2", inputs=[top, tgt], outputs=[out0])
+    res = resolve_sub([_Block(dig)], nargs=1)
+    assert out0 not in res.pushed
+    assert out0 not in res.passthrough
+    assert res.dig_local.get(out0) == (-2, 0)    # prior behavior preserved

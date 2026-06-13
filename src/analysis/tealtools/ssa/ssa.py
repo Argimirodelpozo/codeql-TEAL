@@ -409,8 +409,20 @@ class PySSA:
         self._compute_subs_and_protos()
 
         # 6c: per-BB simulator.
+        # A single-pred block places no phis (nothing merges), so its phi-built
+        # entry_stack (6a) is empty — losing the stack flowing in from its sole
+        # pred and hiding any frame slot the pred set up via a stack op (e.g.
+        # `bury`ing a box name) from a cross-block `frame_dig`. Seed such a block
+        # from the pred's already-simulated exit_stack (same sub, not a proto
+        # entry, pred already simulated — so order can't make this unsound).
+        processed: set = set()
         for b in self.blocks:
             local_stack: list = list(b.entry_stack)
+            if len(b.preds) == 1:
+                (p,) = tuple(b.preds)
+                if (p in processed and b not in self._proto_io
+                        and self._bb_to_sub.get(b) is self._bb_to_sub.get(p)):
+                    local_stack = list(p.exit_stack)
             sub = self._bb_to_sub.get(b)
             proto = self._proto_io.get(sub) if sub is not None else None
             for op in b.ops:
@@ -427,6 +439,7 @@ class PySSA:
                 for v in reversed(op.outputs):
                     local_stack.append(v)
             b.exit_stack = local_stack
+            processed.add(b)
 
     # ----- Phase 6 helpers ------------------------------------------------
 
