@@ -264,6 +264,13 @@ class _Lifter:
         #   (frame_resolution.SubFrames.pushed) — the resim path resolves THESE via
         #   value() (their value lives cross-block), but leaves every other frame_dig
         #   on the plain frame_map path so negative/param reads don't diverge.
+        self.frame_local_slot: dict = {}      # frame_dig out0 (a frame_bury-d local)
+        #   -> its slot k. The resim reads the slot's LIVE value off the re-sim stack
+        #   at len(params)+k — which carries the frame_bury deep-writes AND the merge
+        #   phi the resim already builds when a slot is written on >1 path into a join
+        #   — instead of frame_map's version, which frame_resolution picks by a CFG-
+        #   blind block-order walk (the last bury wins) and so loses the merge, leaving
+        #   the post-join read undominated (an entry-orphan).
         self.cur_gname = "main"
         self.cur_nret = 0                     # proto return count of the group being built
         # Inter-procedural return wiring. A callsub's continuation receives the
@@ -446,6 +453,7 @@ class _Lifter:
             self.frame_map[out0] = params[i].register
         for out0, (slot, ver) in res.dig_local.items():
             self.frame_map[out0] = self._local_reg(slot, ver)
+            self.frame_local_slot[out0] = slot
         for aid, (slot, ver) in res.bury.items():
             self.bury_target[aid] = self._local_reg(slot, ver)
         self.shuffle_src.update(res.passthrough)
@@ -821,13 +829,25 @@ class _Lifter:
                     out0 = a.outputs[0] if a.outputs else None
                     # A k>=0 pushed local read cross-block (frame_resolution routed
                     # it through shuffle_src): resolve via value() so the value
-                    # carried from the defining block reaches here. Every other
-                    # frame_dig keeps the plain frame_map path — widening value()
-                    # to all of them re-resolves param/negative reads and diverges
-                    # from the IR construction path (a bytes value into a u64 op).
+                    # carried from the defining block reaches here.
                     if out0 is not None and out0 in self.frame_passthrough:
                         stack.append(self.value(out0))
+                    elif out0 is not None and out0 in self.frame_local_slot:
+                        # A frame_bury-d local: read its live value straight off the
+                        # re-sim stack at the slot position (len(params)+k). That slot
+                        # carries the frame_bury deep-writes and, at a join where the
+                        # slot was written on >1 incoming path, the merge phi the
+                        # resim already built — which frame_map's CFG-blind version
+                        # drops, leaving the read undominated (an entry-orphan).
+                        pos = len(params) + self.frame_local_slot[out0]
+                        if 0 <= pos < len(stack):
+                            stack.append(stack[pos])
+                        else:
+                            stack.append(self.frame_map.get(out0) or pre_ir.Undefined())
                     else:
+                        # param / negative below-frame read: the plain frame_map path
+                        # (widening value() to these re-resolves them and diverges
+                        # from the IR construction path — a bytes value into a u64 op).
                         stack.append(self.frame_map.get(out0) or pre_ir.Undefined())
                     continue
                 if a.op == "frame_bury":
