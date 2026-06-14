@@ -713,7 +713,35 @@ class _Lifter:
             if cases and default is not None:
                 val = ins[0] if ins else pre_ir.Undefined()
                 return pre_ir.Switch(val, cases, self.bid[default])
-        if op in ("switch", "match"):
+        if op == "switch" and t is not None:
+            # AVM `switch L0..L_{n-1}` is POSITIONAL: the popped index i jumps to
+            # L_i, and DUPLICATE labels are significant (an OnCompletion router
+            # sends most indices to the same `err`). Out-of-range falls through to
+            # the next instruction. Building arms from the distinct successor SET
+            # (as the generic GotoNth below does) scrambles the index->target map
+            # and mis-routes — oracle-confirmed on switch_demo and the RugNinja
+            # dispatch (every NoOp method call was routed to `err`). Map by
+            # position; the fall-through is the block on the next source line
+            # (which may COINCIDE with a labeled target, so resolve it by line,
+            # not by set-difference like `match` below).
+            labels = (t.immediates or "").split()
+            arms, ok = [], True
+            for lbl in labels:
+                blk = self.line2block.get(self.label2line.get(lbl))
+                if blk is None or blk not in self.bid:
+                    ok = False
+                    break
+                arms.append(self.bid[blk])
+            sl = t.location.line if getattr(t, "location", None) else None
+            after = [fl for fl in self.line2block if sl is not None and fl > sl]
+            ft = self.line2block[min(after)] if after else None
+            if ok and ft is not None and ft in self.bid:
+                return pre_ir.GotoNth(_cond(), arms, self.bid[ft])
+            if ok and succ:                       # robustness: best-effort default
+                labeled = {self.line2block.get(self.label2line.get(l)) for l in labels}
+                dft = next((s for s in succ if s not in labeled), succ[-1])
+                return pre_ir.GotoNth(_cond(), arms, self.bid[dft])
+        if op == "match":
             return pre_ir.GotoNth(_cond(),
                               [self.bid[s] for s in succ[:-1]], self.bid[succ[-1]])
         return pre_ir.GotoNth(pre_ir.Undefined(),
