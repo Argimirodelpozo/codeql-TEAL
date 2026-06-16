@@ -1,3 +1,60 @@
+# SSA phi-construction perf — plan
+
+> ## ⚠️ MEASURED 2026-06-16 — original trivial-phi hypothesis is WRONG
+>
+> Profiled `SSAProgram(db)` on the python backend (graph-load is now ~ms, so
+> this is pure SSA):
+>
+> | DB | SSA time | raw phis (post-phase4) | final phis | trivial (≤1 leaf) |
+> |----|---------:|-----------------------:|-----------:|------------------:|
+> | xgov | **7.3 s** | 77,023 | 12,002 | 191 (0.2%) |
+> | folks-v3 | **12.1 s** | 159,818 | 36,114 | 635 (0.4%) |
+>
+> **The phi explosion is real, but the phis are 99.6% NON-trivial** (≥2
+> distinct SSAVar leaves). So Braun's headline mechanism — *trivial-phi
+> elimination at creation* — barely applies. Levers A/B below were written
+> against the wrong premise; keep the algorithm refs, but the lever is
+> **demand/liveness**, not triviality.
+>
+> **Where the 12.1 s goes** (folks-v3, cProfile ≈2.3× real):
+> - `_collapse_phi_args_to_leaves` (ssa.py:687) — **12.4 s / 43%** (SCC
+>   condensation over the full ~160k-phi arg-DAG; already micro-optimized)
+> - `_phase4_indirect_propagation` — 4.9 s (creates the explosion)
+> - `_drop_unconsumed_phis` + `_phase8_live_filter` — ~4 s
+>
+> **The actual shape of the waste:** phase 3/4 place a phi at *every stack
+> slot of every block* (the `[1..STACK_MAX]` indirect space). Of ~160k raw
+> phis, only ~36k are *directly* consumed by an op input; the other ~124k are
+> **intermediate nodes in the phi-arg DAG** that `_collapse_phi_args_to_leaves`
+> needs for connectivity and then discards (after collapse flattens args to
+> SSAVar leaves, `_drop_unconsumed_phis`'s transitive walk is a no-op — only
+> the 36k directly-consumed survive). They can't be pruned *before* collapse.
+>
+> **Correct lever = demand/liveness-driven placement.** Only create/propagate
+> a phi for slot `k` at block `b` if slot `k` is actually *read* on some
+> forward path from `b` (a backward liveness over stack slots, computable from
+> the per-block `_consumed`/`_locals` counts already in phase 2 + the CFG).
+> That shrinks the 160k toward ~36k **at creation**, cutting phase 4, the 12.4 s
+> collapse, AND both liveness passes proportionally — plausibly a 3–4× SSA
+> speedup. This is Braun's *on-demand* half (`readVariableRecursive` only fires
+> on a real read), NOT the trivial-removal half. Braun is still the right
+> framework; just the on-demand reading, not the trivial elimination, is what
+> pays here.
+>
+> **Revised sequencing:**
+> 1. Prototype **slot-liveness gating** in phase 3/4 (don't place a phi for a
+>    slot no live path reads). Measure raw-phi count + SSA time on xgov/folks-v3.
+>    Smaller blast radius than a full Braun rewrite, attacks the root.
+> 2. If that lands the win, stop. Else do the full on-demand Braun construction
+>    (below), which subsumes it.
+> 3. Gate everything on `test_lift_semantics` + the new graph-equivalence /
+>    snapshot tests — faithfulness over speed.
+>
+> The original write-up below is kept for the algorithm mechanics; read
+> "trivial-phi" as "unread-slot phi" throughout.
+
+---
+
 # Braun-style SSA construction for PySSA
 
 Plan to replace PySSA's *maximal-SSA-then-prune* phi construction with
