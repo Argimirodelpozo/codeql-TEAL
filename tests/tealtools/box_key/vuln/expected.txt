@@ -1,2 +1,2 @@
-asset_params_get AssetName@prog.teal:7  →  box_create@prog.teal:10  (operand = phi(V#2@L7))
-asset_params_get AssetName@prog.teal:15  →  box_put@prog.teal:18  (operand = phi(V#2@L15))
+asset_params_get AssetName@prog.teal:7  →  box_create@prog.teal:10  (operand = V#2@L7)
+asset_params_get AssetName@prog.teal:15  →  box_put@prog.teal:18  (operand = V#2@L15)

@@ -1,0 +1,334 @@
+"""CFG-edge reconstruction in pure Python (port of ``cfgEdges.ql``).
+
+This reproduces, row-for-row, the relational CFG edges that the kept QL
+query emits: for every CFG node ``pred`` and successor ``succ``, the triple
+``(pred.startLine, succ.startLine, successorType)``. It consumes only the
+``nodes`` fact-set (the AST layer we still get from tree-sitter) plus the
+source text (for opcode operands / label names), so it can stand in for the
+``cfgEdges`` query without running CodeQL.
+
+The semantics are ported from ``cfg/CFG.qll`` (``ProgramTree``/
+``CodeblockTree``), ``cfg/Completion.qll`` and ``ast/opcodes/ControlFlow.qll``.
+
+Only three successor-type strings are ever emitted (confirmed empirically
+across all fixture DBs), because most completions map to ``NormalSuccessor``
+and the exit completions (``return``/``err``/assert-false) have no matching
+successor type and so produce no edge:
+
+* ``NormalSuccessor``        -- linear fall-through, ``b``/``callsub`` jumps,
+                                ``switch``/``match`` arms (incl. fall-through),
+                                ``retsub`` returns.
+* ``BooleanSuccessor(true)``  -- ``bnz``->target, ``bz``->fall-through,
+                                ``assert``->fall-through.
+* ``BooleanSuccessor(false)`` -- ``bnz``->fall-through, ``bz``->target.
+
+Node / edge identity is ``(file, startLine)`` to match the CSV the QL query
+produces (and the rest of the Python layer, which keys on it too).
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Iterable, Sequence
+
+from .ast import Location
+from .graphs import _slice_source
+
+NORMAL = "NormalSuccessor"
+BOOL_TRUE = "BooleanSuccessor(true)"
+BOOL_FALSE = "BooleanSuccessor(false)"
+
+# Control-flow opcode classes (the ``ql_class`` strings emitted by nodes.ql).
+_RETURN = "ReturnOpcode"
+_ERR = "ErrOpcode"
+_ASSERT = "AssertOpcode"
+_B = "BOpcode"
+_CALLSUB = "CallsubOpcode"
+_RETSUB = "RetsubOpcode"
+_BNZ = "BnzOpcode"
+_BZ = "BzOpcode"
+_SWITCH = "SwitchOpcode"
+_MATCH = "MatchOpcode"
+_LABEL = "Label"
+
+_MULTI = frozenset({_SWITCH, _MATCH})
+_EXIT = frozenset({_RETURN, _ERR})
+# Opcodes that terminate the subroutine-local walk (getNextNode_subroutineAux).
+_AUX_STOP = frozenset({_RETURN, _ERR, _RETSUB})
+
+
+@dataclass
+class _Node:
+    """One program child (an AST line) as the CFG sees it."""
+    file: str
+    line: int          # source start line  -> edge identity
+    col: int           # source start column-> child ordering tiebreak
+    cls: str           # ql_class string
+    code: str          # source text of the line (operands, label name)
+
+    def operand(self) -> str:
+        """First whitespace-separated operand (branch/callsub target)."""
+        parts = self.code.split()
+        return parts[1] if len(parts) > 1 else ""
+
+    def operands(self) -> list[str]:
+        """All operands (switch/match target list)."""
+        return self.code.split()[1:]
+
+    def label_name(self) -> str:
+        """Bare label name (identifier before the ``:``)."""
+        return self.code.split(":", 1)[0].strip()
+
+
+def _children(node_rows: Iterable[Sequence[str]], sources) -> dict[str, list[_Node]]:
+    """Group ``nodes``-CSV rows into per-program ordered child lists.
+
+    Rows are ``(file, sl, sc, el, ec, ql_class)``. The ``Source`` root is
+    dropped (it isn't a child); exact-duplicate locations (a node that
+    matches two enumerated leaf classes, e.g. ``==`` -> IntegerEquals +
+    EqualsComparison) collapse to one child. Order is ``(line, col)`` --
+    the program child index in source order, which is what ``getNextLine``
+    walks.
+    """
+    by_file: dict[str, dict[tuple[int, int], _Node]] = {}
+    for row in node_rows:
+        file, sl, sc, el, ec, cls = row[0], int(row[1]), int(row[2]), int(row[3]), int(row[4]), row[5]
+        if cls == "Source":
+            continue
+        loc = Location(file, sl, sc, el, ec)
+        code = _slice_source(sources, loc).strip()
+        slot = by_file.setdefault(file, {})
+        # First class at a location wins; prefer a control-flow class if a
+        # later duplicate carries one (so categorisation stays correct).
+        existing = slot.get((sl, sc))
+        if existing is None:
+            slot[(sl, sc)] = _Node(file, sl, sc, cls, code)
+        elif existing.cls not in _CF_CLASSES and cls in _CF_CLASSES:
+            existing.cls = cls
+    return {
+        f: [slot[k] for k in sorted(slot)]
+        for f, slot in by_file.items()
+    }
+
+
+_CF_CLASSES = frozenset(
+    {_RETURN, _ERR, _ASSERT, _B, _CALLSUB, _RETSUB, _BNZ, _BZ, _SWITCH, _MATCH, _LABEL}
+)
+
+
+def _aux_succ(n: _Node, nxt: _Node | None, labels: dict[str, _Node]) -> list[_Node]:
+    """``getNextNode_subroutineAux``: subroutine-local successors of ``n``.
+
+    Branches follow their target(s); ``callsub`` continues at the next line
+    (never descends into the callee); ``return``/``err``/``retsub`` stop.
+    NB: ``switch``/``match`` fall through the ``else`` branch in the QL aux,
+    so only their fall-through (next line) is followed -- not the arms.
+    """
+    if n.cls in _AUX_STOP:
+        return []
+    if n.cls == _B:
+        tgt = labels.get(n.operand())
+        return [tgt] if tgt else []
+    if n.cls in (_BZ, _BNZ):
+        tgt = labels.get(n.operand())
+        return [x for x in (tgt, nxt) if x is not None]
+    # callsub and everything else (incl. switch/match/assert/normal/label).
+    return [nxt] if nxt is not None else []
+
+
+def build_cfg_edges(
+    node_rows: Iterable[Sequence[str]], sources
+) -> list[tuple[str, int, str, int, str]]:
+    """Reconstruct the ``cfgEdges`` rows from ``nodes`` + source text.
+
+    Returns ``(predFile, predLine, succFile, succLine, successorType)``
+    tuples, the same shape as ``cfgEdges.ql``'s select.
+
+    Like CodeQL's ``CfgImpl``, only nodes reachable from the program entry
+    (``getChild(0)``) appear: candidate edges are built per the completion
+    rules, then pruned to those whose predecessor is reachable. This drops,
+    e.g., the ``retsub`` of a subroutine that is only ever reached through a
+    ``callsub`` to a sibling sub that exits via ``return`` (so control never
+    flows back) -- exactly what QL prunes.
+    """
+    edges: list[tuple[str, int, str, int, str]] = []
+    for file, kids in _children(node_rows, sources).items():
+        if not kids:
+            continue
+        cand, reachable, idx_of = _program_cfg(kids)
+        for p, s, t in cand:
+            if idx_of[id(p)] in reachable:
+                edges.append((file, p.line, file, s.line, t))
+    return edges
+
+
+def _program_cfg(
+    kids: list[_Node],
+) -> tuple[list[tuple[_Node, _Node, str]], set[int], dict[int, int]]:
+    """Build one program's candidate CFG edges + reachable-node set.
+
+    Returns ``(cand, reachable, idx_of)`` where ``cand`` is the list of
+    ``(pred, succ, type)`` candidate edges, ``reachable`` is the set of child
+    indices reachable from the entry (``getChild(0)``), and ``idx_of`` maps
+    node identity to child index. Shared by ``build_cfg_edges`` and
+    ``build_basic_blocks`` so both see exactly the same reachability.
+    """
+    cand: list[tuple[_Node, _Node, str]] = []
+
+    def emit(pred: _Node, succ: _Node, t: str) -> None:
+        cand.append((pred, succ, t))
+
+    nxt_of: dict[int, _Node | None] = {
+        i: (kids[i + 1] if i + 1 < len(kids) else None) for i in range(len(kids))
+    }
+    labels: dict[str, _Node] = {k.label_name(): k for k in kids if k.cls == _LABEL}
+    idx_of = {id(k): i for i, k in enumerate(kids)}
+
+    # --- subroutine-local containment + retsub return prediction -----------
+    # Entries = labels targeted by some callsub. For each, the reflexive-
+    # transitive closure under _aux_succ is its body. A retsub's entrypoint(s)
+    # are the entries whose body contains it; its predicted returns are the
+    # lines after every callsub to those entries.
+    callsubs_to: dict[str, list[_Node]] = {}
+    for k in kids:
+        if k.cls == _CALLSUB and (tgt := labels.get(k.operand())):
+            callsubs_to.setdefault(tgt.label_name(), []).append(k)
+
+    entry_body: dict[str, set[int]] = {}
+    for name in callsubs_to:
+        seen: set[int] = set()
+        stack = [labels[name]]
+        while stack:
+            cur = stack.pop()
+            ci = idx_of[id(cur)]
+            if ci in seen:
+                continue
+            seen.add(ci)
+            stack.extend(_aux_succ(cur, nxt_of[ci], labels))
+        entry_body[name] = seen
+
+    def retsub_returns(rn: _Node) -> list[_Node]:
+        ri = idx_of[id(rn)]
+        outs: list[_Node] = []
+        for name, body in entry_body.items():
+            if ri in body:
+                for c in callsubs_to[name]:
+                    nx = nxt_of[idx_of[id(c)]]
+                    if nx is not None:
+                        outs.append(nx)
+        return outs
+
+    # --- build candidate edges ---------------------------------------------
+    for i, n in enumerate(kids):
+        nxt = nxt_of[i]
+
+        if n.cls in _EXIT:
+            continue  # return/err -> program exit; no matching succ type
+
+        if n.cls == _ASSERT:
+            if nxt is not None:
+                emit(n, nxt, BOOL_TRUE)
+            continue
+
+        if n.cls == _B:
+            if (t := labels.get(n.operand())) is not None:
+                emit(n, t, NORMAL)
+            continue
+
+        if n.cls == _CALLSUB:
+            if (t := labels.get(n.operand())) is not None:
+                emit(n, t, NORMAL)
+            continue
+
+        if n.cls == _BNZ:
+            if (t := labels.get(n.operand())) is not None:
+                emit(n, t, BOOL_TRUE)
+            if nxt is not None:
+                emit(n, nxt, BOOL_FALSE)
+            continue
+
+        if n.cls == _BZ:
+            if (t := labels.get(n.operand())) is not None:
+                emit(n, t, BOOL_FALSE)
+            if nxt is not None:
+                emit(n, nxt, BOOL_TRUE)
+            continue
+
+        if n.cls in _MULTI:
+            if nxt is not None:  # arm 0 = fall-through
+                emit(n, nxt, NORMAL)
+            for name in n.operands():
+                if (t := labels.get(name)) is not None:
+                    emit(n, t, NORMAL)
+            continue
+
+        if n.cls == _RETSUB:
+            for r in retsub_returns(n):
+                emit(n, r, NORMAL)
+            continue
+
+        # Normal flow (ordinary opcode, label, pragma): fall through.
+        if nxt is not None:
+            emit(n, nxt, NORMAL)
+
+    # --- reachability from the entry (getChild(0)) -------------------------
+    adj: dict[int, list[_Node]] = {}
+    for p, s, _t in cand:
+        adj.setdefault(idx_of[id(p)], []).append(s)
+    reachable: set[int] = set()
+    stack2 = [kids[0]]
+    while stack2:
+        cur = stack2.pop()
+        ci = idx_of[id(cur)]
+        if ci in reachable:
+            continue
+        reachable.add(ci)
+        stack2.extend(adj.get(ci, ()))
+
+    return cand, reachable, idx_of
+
+
+# Opcode classes that END a codeblock (Ast.qll ``endsACodeblock``): any
+# branch, any contract-exit, or a node immediately followed by a label.
+_ENDS_CLASSES = frozenset(
+    {_B, _CALLSUB, _RETSUB, _BZ, _BNZ, _SWITCH, _MATCH, _RETURN, _ERR, _ASSERT}
+)
+
+
+def build_basic_blocks(
+    node_rows: Iterable[Sequence[str]], sources
+) -> list[tuple[str, int, int, int]]:
+    """Reconstruct the ``basicBlocks`` rows from ``nodes`` + source text.
+
+    Returns ``(file, nodeLine, bbFirstLine, bbLastLine)`` -- one row per CFG
+    node, the same shape as ``basicBlocks.ql``'s select.
+
+    In TEAL a basic block coincides exactly with a *codeblock* (the maximal
+    straight-line region between labels / branch boundaries): every join,
+    branch successor and boolean-edge target that QL's ``startsBB`` keys on is
+    already a codeblock start (branch targets are labels; bz/bnz/assert/switch
+    fall-throughs and retsub-return targets all follow a block-ender). So the
+    partition is structural; we only intersect it with CFG reachability, since
+    QL emits a row only for nodes that have a basic block (i.e. are reachable).
+    """
+    rows: list[tuple[str, int, int, int]] = []
+    for file, kids in _children(node_rows, sources).items():
+        if not kids:
+            continue
+        _cand, reachable, _idx = _program_cfg(kids)
+
+        def ends_codeblock(i: int) -> bool:
+            if kids[i].cls in _ENDS_CLASSES:
+                return True
+            return i + 1 < len(kids) and kids[i + 1].cls == _LABEL
+
+        # Partition the child sequence into codeblocks [first .. last].
+        start = 0
+        for i in range(len(kids)):
+            if ends_codeblock(i) or i == len(kids) - 1:
+                first_ln, last_ln = kids[start].line, kids[i].line
+                for m in range(start, i + 1):
+                    if m in reachable:
+                        rows.append((file, kids[m].line, first_ln, last_ln))
+                start = i + 1
+    return rows
+

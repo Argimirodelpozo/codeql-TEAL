@@ -21,9 +21,12 @@ from tealtools.opcode_sigs import op_arity
 from tealtools.graphs import (
     QUERIES_DIR,
     _cache_dir_for,
+    _load_source_lines,
     _read_csv,
     _run_csv_query,
 )
+from tealtools.cfg_build import build_cfg_edges, build_basic_blocks
+from tealtools.ast_build import build_nodes
 from tealtools.const_values import compute_const_values, _opname
 
 TESTS_DIR = Path(__file__).resolve().parent
@@ -136,6 +139,68 @@ def _ops(g):
             code = n.code or n.ql_class or ""
             op, _, imms = code.partition(" ")
             yield n.location.file, n.location.start_line, op, imms.strip()
+
+
+@pytest.mark.skipif("CODEQL" not in os.environ, reason="needs codeql")
+@pytest.mark.parametrize("db", _DBS, ids=_IDS)
+def test_cfgedges_parity(db: Path) -> None:
+    """``cfg_build.build_cfg_edges`` must reproduce ``cfgEdges.ql`` exactly.
+
+    Consumes the ``nodes`` fact-set (still tree-sitter / QL) plus source
+    text, and rebuilds every CFG edge in Python -- including the
+    reachability prune that QL's ``CfgImpl`` applies (only nodes reachable
+    from the entry appear). Row-for-row identical, both directions.
+    """
+    ql = set(
+        (r[0], int(r[1]), r[2], int(r[3]), r[4]) for r in _ql_rows(db, "cfgEdges")
+    )
+    nodes = _ql_rows(db, "nodes")
+    py = set(build_cfg_edges(nodes, _load_source_lines(db)))
+    assert ql == py, _fmt_diff(sorted(ql), sorted(py))
+
+
+@pytest.mark.skipif("CODEQL" not in os.environ, reason="needs codeql")
+@pytest.mark.parametrize("db", _DBS, ids=_IDS)
+def test_basicblocks_parity(db: Path) -> None:
+    """``cfg_build.build_basic_blocks`` must reproduce ``basicBlocks.ql``
+    exactly: one ``(file, nodeLine, bbFirstLine, bbLastLine)`` row per
+    reachable CFG node. In TEAL a basic block == a codeblock, so the
+    partition is structural, intersected with CFG reachability."""
+    ql = set(
+        (r[0], int(r[1]), int(r[2]), int(r[3])) for r in _ql_rows(db, "basicBlocks")
+    )
+    nodes = _ql_rows(db, "nodes")
+    py = set(build_basic_blocks(nodes, _load_source_lines(db)))
+    assert ql == py, _fmt_diff(sorted(ql), sorted(py))
+
+
+def _db_sources(db: Path, ql_files: set[str]) -> dict:
+    """Map each QL file label to its raw source bytes from ``db/src.zip``,
+    matched by basename (QL reports relative paths; the zip members may be
+    basenames or subdir'd)."""
+    import zipfile
+    members: dict[str, bytes] = {}
+    with zipfile.ZipFile(db / "src.zip") as zf:
+        for n in zf.namelist():
+            if n.endswith(".teal"):
+                members[Path(n).name] = zf.read(n)
+    return {f: members[Path(f).name] for f in ql_files if Path(f).name in members}
+
+
+@pytest.mark.skipif("CODEQL" not in os.environ, reason="needs codeql")
+@pytest.mark.parametrize("db", _DBS, ids=_IDS)
+def test_nodes_parity(db: Path) -> None:
+    """``ast_build.build_nodes`` must reproduce ``nodes.ql`` exactly: one row
+    per opcode (with its most-specific leaf class), plus ``Label`` rows and
+    the program-root ``Source`` row. Parsed with the same tree-sitter-teal
+    grammar; ``==`` / ``!=`` emit two rows (Integer* + *Comparison)."""
+    ql = set(
+        (r[0], int(r[1]), int(r[2]), int(r[3]), int(r[4]), r[5])
+        for r in _ql_rows(db, "nodes")
+    )
+    sources = _db_sources(db, {r[0] for r in ql})
+    py = set(build_nodes(sources))
+    assert ql == py, _fmt_diff(sorted(ql), sorted(py))
 
 
 @pytest.mark.skipif("CODEQL" not in os.environ, reason="needs codeql")

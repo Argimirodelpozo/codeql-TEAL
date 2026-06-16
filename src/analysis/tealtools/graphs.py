@@ -37,8 +37,11 @@ from .ast import AstNode, Location, ast_node_from_row
 QUERIES_DIR = Path(__file__).resolve().parent / "queries"
 # Root of the teal-all QL library. Queries depend on predicates defined
 # here, so changes to these files must invalidate the cache even when
-# queries/*.ql themselves haven't been touched.
-TEAL_LIB_DIR = Path(__file__).resolve().parent.parent / "teal" / "ql" / "lib" / "codeql" / "teal"
+# queries/*.ql themselves haven't been touched. The library lives under
+# ``src/codeql-backend/teal/...`` (moved there in d0c39f60); ``graphs.py``
+# is ``src/analysis/tealtools/graphs.py``, so walk up to ``src/`` first.
+_SRC_ROOT = Path(__file__).resolve().parents[2]
+TEAL_LIB_DIR = _SRC_ROOT / "codeql-backend" / "teal" / "ql" / "lib" / "codeql" / "teal"
 DEFAULT_CACHE = Path(
     os.environ.get("TEAL_GRAPHS_CACHE", Path.home() / ".cache" / "teal-graphs")
 )
@@ -260,6 +263,26 @@ def _load_source_lines(db: Path) -> dict[str, list[str]]:
     return sources
 
 
+def _load_source_bytes(db: Path) -> dict[str, bytes]:
+    """Map relative file path -> raw source bytes from ``db/src.zip``.
+
+    Keyed by basename to match the relative path CodeQL reports in
+    ``nodes`` (CodeQL strips the source-root prefix, so a file stored in the
+    zip as ``tmp/dbsrc/x.teal`` surfaces as ``x.teal``). Used by the
+    pure-Python ``ast_build`` producer.
+    """
+    src_zip = db / "src.zip"
+    out: dict[str, bytes] = {}
+    if not src_zip.exists():
+        return out
+    with zipfile.ZipFile(src_zip) as zf:
+        for info in zf.infolist():
+            if info.is_dir() or not info.filename.endswith(".teal"):
+                continue
+            out[Path(info.filename).name] = zf.read(info.filename)
+    return out
+
+
 def _slice_source(sources: dict[str, list[str]], loc: Location) -> str:
     """Extract the source text covered by a :class:`Location`.
 
@@ -300,11 +323,15 @@ def load_graph(
     if not db.exists():
         raise FileNotFoundError(db)
 
-    _ensure_pack_installed()
-    cache = _cache_dir_for(db)
-    if refresh:
-        for f in list(cache.glob("*.csv")) + list(cache.glob("*.bqrs")):
-            f.unlink()
+    # Default to the pure-Python producers; only the codeql fallback needs
+    # the QL pack installed and the per-db CSV cache.
+    backend = os.environ.get("TEAL_GRAPHS_BACKEND", "python").lower()
+    if backend == "codeql":
+        _ensure_pack_installed()
+        cache = _cache_dir_for(db)
+        if refresh:
+            for f in list(cache.glob("*.csv")) + list(cache.glob("*.bqrs")):
+                f.unlink()
 
     g = nx.MultiDiGraph()
     g.graph["db_path"] = str(db)
@@ -324,18 +351,29 @@ def load_graph(
             g.add_node(node)
         return node
 
-    # Batch-run any missing queries in a single ``codeql database
-    # run-queries`` invocation — amortises ~7s JVM startup across the
-    # set instead of paying it per query.
-    missing = [QUERIES_DIR / f"{q}.ql"
-               for q in QUERY_NAMES
-               if not (cache / f"{q}.csv").exists()]
-    if missing:
-        _run_queries_batch(db, missing, cache, verbose=verbose)
+    # Produce the three fact-sets. Default to the pure-Python producers
+    # (``ast_build`` + ``cfg_build``) — no codeql / JVM, ~ms. Set
+    # ``TEAL_GRAPHS_BACKEND=codeql`` to fall back to running the kept ``.ql``
+    # queries (cached CSVs) — useful for cross-checking the port.
+    if backend == "codeql":
+        missing = [QUERIES_DIR / f"{q}.ql"
+                   for q in QUERY_NAMES
+                   if not (cache / f"{q}.csv").exists()]
+        if missing:
+            _run_queries_batch(db, missing, cache, verbose=verbose)
+        rows_by_query = {q: _read_csv(cache / f"{q}.csv") for q in QUERY_NAMES}
+    else:
+        from .ast_build import build_nodes
+        from .cfg_build import build_cfg_edges, build_basic_blocks
+        node_rows = build_nodes(_load_source_bytes(db))
+        rows_by_query = {
+            "nodes": node_rows,
+            "cfgEdges": build_cfg_edges(node_rows, sources),
+            "basicBlocks": build_basic_blocks(node_rows, sources),
+        }
 
     for q in QUERY_NAMES:
-        csv_out = cache / f"{q}.csv"
-        rows = _read_csv(csv_out)
+        rows = rows_by_query[q]
 
         if q == "nodes":
             for file, sl, sc, el, ec, ql_class in rows:

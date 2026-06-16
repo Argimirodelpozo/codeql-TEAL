@@ -1,6 +1,6 @@
 blocks      = 3
 assignments = 7
-phis        = 4
+phis        = 2
 vars        = 6
 opcodes:
   -                        1
