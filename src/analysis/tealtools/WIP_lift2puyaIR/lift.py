@@ -860,15 +860,29 @@ class _Lifter:
             elif len(preds) == 1:
                 stack = list(self.resim_exit[preds[0]])
             else:                                           # plain merge: phi/slot
+                # Align predecessors by their STACK TOP (the common top `depth`
+                # values), not the bottom. Consumers (log / return / the next
+                # op) read the top, and a pred that carries extra DEEP values --
+                # e.g. an unconsumed `app_global_get_ex` value the source leaves
+                # UNDER the result and never reads (the branch popped only the
+                # exists flag) -- keeps its live values at the top. Bottom-first
+                # `[slot]` mis-read such a pred at a shared join, passing the
+                # leftover instead of the computed value: app_1100070621's
+                # 12-way "log + approve" join logged the DeleteApplication path's
+                # leftover uint64 instead of its concat bytes -> AVM type error
+                # -> reject. For uniform-depth joins `len-depth+slot == slot`, so
+                # this is a no-op (the common case).
                 depth = min(len(self.resim_exit[p]) for p in preds)
+                tops = {p: self.resim_exit[p][len(self.resim_exit[p]) - depth:]
+                        for p in preds}
                 stack, phis = [], []
                 for slot in range(depth):
-                    vals = [self.resim_exit[p][slot] for p in preds]
+                    vals = [tops[p][slot] for p in preds]
                     if all(v is vals[0] for v in vals):
                         stack.append(vals[0])
                     else:
                         r = self._new_reg("tmp", "?")
-                        phis.append(pre_ir.Phi(r, [pre_ir.PhiArgument(self.resim_exit[p][slot],
+                        phis.append(pre_ir.Phi(r, [pre_ir.PhiArgument(tops[p][slot],
                                                               self.bid[p]) for p in preds]))
                         stack.append(r)
                 if phis:
