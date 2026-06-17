@@ -173,6 +173,9 @@ def _program_cfg(
     ``build_basic_blocks`` so both see exactly the same reachability.
     """
     cand: list[tuple[_Node, _Node, str]] = []
+    # retsub-return candidates, deferred so reachability can gate them on their
+    # callsub being reachable (see the fixpoint at the end of this function).
+    retsub_cand: list[tuple[_Node, _Node, _Node]] = []   # (retsub, cont, callsub)
 
     def emit(pred: _Node, succ: _Node, t: str) -> None:
         cand.append((pred, succ, t))
@@ -206,15 +209,15 @@ def _program_cfg(
             stack.extend(_aux_succ(cur, nxt_of[ci], labels))
         entry_body[name] = seen
 
-    def retsub_returns(rn: _Node) -> list[_Node]:
+    def retsub_returns(rn: _Node) -> list[tuple[_Node, _Node]]:
         ri = idx_of[id(rn)]
-        outs: list[_Node] = []
+        outs: list[tuple[_Node, _Node]] = []
         for name, body in entry_body.items():
             if ri in body:
                 for c in callsubs_to[name]:
                     nx = nxt_of[idx_of[id(c)]]
                     if nx is not None:
-                        outs.append(nx)
+                        outs.append((nx, c))      # (continuation, its callsub)
         return outs
 
     # --- build candidate edges ---------------------------------------------
@@ -262,8 +265,8 @@ def _program_cfg(
             continue
 
         if n.cls == _RETSUB:
-            for r in retsub_returns(n):
-                emit(n, r, NORMAL)
+            for r, c in retsub_returns(n):
+                retsub_cand.append((n, r, c))     # gated on reachability below
             continue
 
         # Normal flow (ordinary opcode, label, pragma): fall through.
@@ -271,18 +274,45 @@ def _program_cfg(
             emit(n, nxt, NORMAL)
 
     # --- reachability from the entry (getChild(0)) -------------------------
-    adj: dict[int, list[_Node]] = {}
-    for p, s, _t in cand:
-        adj.setdefault(idx_of[id(p)], []).append(s)
-    reachable: set[int] = set()
-    stack2 = [kids[0]]
-    while stack2:
-        cur = stack2.pop()
-        ci = idx_of[id(cur)]
-        if ci in reachable:
-            continue
-        reachable.add(ci)
-        stack2.extend(adj.get(ci, ()))
+    # A `retsub` is context-INSENSITIVE: it fans a return edge out to EVERY
+    # caller's continuation. When a callsub is itself unreachable (dead code),
+    # its `callsub -> callee` edge is pruned (unreachable predecessor) but the
+    # matching `retsub -> continuation` edge would survive (the retsub IS
+    # reachable, called from live sites) -- leaving that continuation reachable
+    # only via a return-with-no-reachable-call. That phantom inflates the
+    # callee's return count past its reachable call count and corrupts the lift
+    # (e.g. large_box_StructMultipleArrayUInt64: a dead box_update call chain
+    # whose blocks resim to an empty stack, truncating a sibling callsub's
+    # args). Keep a retsub-return live only while its callsub is reachable, to a
+    # fixpoint: dropping one can make a downstream callsub in a dead call chain
+    # unreachable, cascading until the whole dead region is gone.
+    def _reach(live_retsub: list[tuple[_Node, _Node, _Node]]) -> set[int]:
+        adj: dict[int, list[_Node]] = {}
+        for p, s, _t in cand:
+            adj.setdefault(idx_of[id(p)], []).append(s)
+        for rn, r, _c in live_retsub:
+            adj.setdefault(idx_of[id(rn)], []).append(r)
+        seen: set[int] = set()
+        stack2 = [kids[0]]
+        while stack2:
+            cur = stack2.pop()
+            ci = idx_of[id(cur)]
+            if ci in seen:
+                continue
+            seen.add(ci)
+            stack2.extend(adj.get(ci, ()))
+        return seen
+
+    live = retsub_cand
+    reachable = _reach(live)
+    while True:
+        nxt_live = [(rn, r, c) for (rn, r, c) in live if idx_of[id(c)] in reachable]
+        if len(nxt_live) == len(live):
+            break
+        live = nxt_live
+        reachable = _reach(live)
+    for rn, r, _c in live:
+        emit(rn, r, NORMAL)
 
     return cand, reachable, idx_of
 
