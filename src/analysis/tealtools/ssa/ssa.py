@@ -250,26 +250,26 @@ class PySSA:
         self = cls()
         self._phase1_instantiate(prog)
         self._phase2_arities()
-        # Phi placement. DEFAULT is eager (phase3 direct placement + phase4
-        # indirect propagation). The on-demand "join-only" variant
-        # (TEAL_SSA_JOIN_ONLY=1) creates phis ONLY at join blocks and is 2.5-8.4x
-        # faster on phi-heavy contracts, BUT malforms the IR on ~8 puya-corpus
-        # loop/array contracts (briefly the default; regressed the 248-corpus
-        # 10->24). SHELVED opt-in (2026-06-17). Root cause is NOT here in
-        # construction and NOT the resim alignment: join-only's different SSA var
-        # versions make passes/frame_resolution classify frame_dig/bury
-        # differently, so the lift's _resim builds wrong-DEPTH, wrong-VALUE loop
-        # latch stacks for loop-through-call contracts (eager keeps them clean +
-        # equal-depth). A real fix must reconcile join-only's frame/SSA structure
-        # with eager's -- a fundamental change, not a localized patch. Full
-        # diagnosis: memory project_ssa_join_only_phis. Eager is correct on these.
-        if os.environ.get("TEAL_SSA_BRAUN"):
-            self._phase_braun()
+        # Phi placement. DEFAULT is Braun on-demand construction
+        # (``_phase_braun`` + the forward depth cap ``_compute_entry_depths``):
+        # minimal SSA, ~160-209x faster than eager (xgov 0.95s/77k phis ->
+        # 0.01s/11; folks-v3 3.15s/160k -> 0.02s/25), and behaviourally identical
+        # to eager (puya corpus 513/0, Tier-3 5/5, live-AVM 35-corpus 33/0). The
+        # depth cap fixes the loop spiral at its slot-model root (a net-changing
+        # loop's ``L+k-C`` map climbs to STACK_MAX under ANY construction). See
+        # top-level BRAUN.md + memory project_ssa_join_only_phis.
+        #
+        # ``TEAL_SSA_EAGER=1`` -> the maximal-then-pruned phase3/4 placement (the
+        # A/B oracle; still exact, just slow + ~100k trivial phis).
+        # ``TEAL_SSA_JOIN_ONLY=1`` -> the legacy worklist (spirals without the
+        # depth cap; kept for comparison, subsumed by Braun).
+        if os.environ.get("TEAL_SSA_EAGER"):
+            self._phase3_direct_placement()
+            self._phase4_indirect_propagation()
         elif os.environ.get("TEAL_SSA_JOIN_ONLY"):
             self._phase34_join_only()
         else:
-            self._phase3_direct_placement()
-            self._phase4_indirect_propagation()
+            self._phase_braun()
         self._phase6_sim_blocks()
         self._phase8_live_filter()
         return self

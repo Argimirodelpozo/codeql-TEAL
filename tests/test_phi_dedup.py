@@ -13,11 +13,23 @@ XGOV = Path(__file__).resolve().parent / "dbs/xgov-db"
 def _prog():
     if not XGOV.exists():
         pytest.skip("xgov-db fixture not present")
+    import os
     from tealtools.ssa import SSAProgram
+    # phi_dedup exists to clean up EAGER's constant-stack over-generation
+    # (~21k phis on xgov). The default Braun construction emits minimal SSA
+    # (~11 phis) with nothing to dedup, so build under the eager oracle to
+    # exercise the pass on the over-generated set it targets.
+    old = os.environ.get("TEAL_SSA_EAGER")
+    os.environ["TEAL_SSA_EAGER"] = "1"
     try:
         return SSAProgram(str(XGOV), verbose=False)
     except Exception as e:  # pragma: no cover - environment-dependent
         pytest.skip(f"could not build SSAProgram: {e}")
+    finally:
+        if old is None:
+            os.environ.pop("TEAL_SSA_EAGER", None)
+        else:
+            os.environ["TEAL_SSA_EAGER"] = old
 
 
 class TestArgNormalization:
