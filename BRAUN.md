@@ -10,11 +10,46 @@
 > | xgov | **7.3 s** | 77,023 | 12,002 | 191 (0.2%) |
 > | folks-v3 | **12.1 s** | 159,818 | 36,114 | 635 (0.4%) |
 >
-> **The phi explosion is real, but the phis are 99.6% NON-trivial** (≥2
-> distinct SSAVar leaves). So Braun's headline mechanism — *trivial-phi
-> elimination at creation* — barely applies. Levers A/B below were written
-> against the wrong premise; keep the algorithm refs, but the lever is
-> **demand/liveness**, not triviality.
+> **Correction (the "99.6% non-trivial" was a measurement bug):** that used
+> transitive *leaf* count. Braun's actual trivial test is *distinct-arg*
+> count, and by THAT metric **74% (xgov) / 83% (folks-v3) of phis ARE
+> trivial** — exactly the single-predecessor copy-phis (71–81% of phis sit on
+> single-pred blocks). So trivial-phi elimination very much applies.
+>
+> ## PROTOTYPED 2026-06-16 — on-demand join-only placement WINS
+>
+> Two gated prototypes (both keep the lift faithful — Tier-1/2 AND Tier-3
+> backend-lowering to real TEAL pass on all 5 real contracts):
+>
+> - `TEAL_SSA_TRIVIAL_ELIM` — post-hoc trivial-phi removal after phase 6.
+>   Correct, kills the 12.4 s collapse, but only **1.2×**: you still pay to
+>   *create* all 160k in phase 4 AND to *walk* them in the elim pass.
+> - `TEAL_SSA_JOIN_ONLY` (`_phase34_join_only`) — **the winner.** Replaces
+>   eager phase 3+4: create a phi ONLY at join blocks (≥2 preds), threading
+>   values through single-pred chains (whose entry phase 6 already
+>   reconstructs from the pred's exit stack). Never creates the ~75%
+>   single-pred copies.
+>
+>   | | xgov | folks-v3 |
+>   |--|--|--|
+>   | SSA speedup | **2.5×** | **4.3×** |
+>   | final phis | 12k→6k | 36k→**1027** |
+>   | Tier-3 lift→TEAL | ✅ | ✅ |
+>
+>   Mechanism: a value `X` at `from_b`'s exit slot `eslot` flows to each succ
+>   at the same top-first entry slot; at a JOIN it's an arg of
+>   `phi(s,eslot)` (created on first touch, then propagated by its own
+>   survival); through a SINGLE-pred block it threads to `L+eslot-C` carrying
+>   the original value — no phi. Seed = each block's surviving locals.
+>
+> **DONE (promoted to default).** `_phase34_join_only` is now the default phi
+> placement; eager is behind `TEAL_SSA_EAGER_PHIS` as an A/B oracle; the
+> trivial-elim prototype is retired. Behavioural equivalence to eager verified
+> on **35 real mainnet contracts** (live-localnet dryrun, identical
+> approve/reject on 678 input×OnComplete combos; the one divergence is a
+> pre-existing eager lift gap, not join-only). Only `loop_frame_dig`'s phi-count
+> snapshot changed (1000→0). The original write-up below is the background; the
+> implemented win is join-only.
 >
 > **Where the 12.1 s goes** (folks-v3, cProfile ≈2.3× real):
 > - `_collapse_phi_args_to_leaves` (ssa.py:687) — **12.4 s / 43%** (SCC

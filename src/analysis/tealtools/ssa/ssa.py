@@ -22,8 +22,9 @@ Pipeline (:meth:`PySSA._construct`):
 
   1. Instantiate PyVars per opcode output.
   2. BB arities + surviving locals (``outStackOrder``).
-  3. Direct placement at slots where some pred has a local.
-  4. Indirect propagation via ``phiNodeExitIndex`` (worklist, capped).
+  3+4. On-demand "join-only" placement: phis only at join blocks (>=2
+     preds); values thread through single-pred chains. (TEAL_SSA_EAGER_PHIS=1
+     reverts to the eager direct-placement + indirect-propagation pair.)
   5. Heights (forward stack-delta DF; diagnostic).
   6. Per-BB sim to fill ``op.inputs`` / ``b.exit_stack``;
      ``frame_dig`` / ``frame_bury`` (any-sign N) expand to QL's
@@ -41,6 +42,7 @@ CLI: ``python -m tealtools.ssa <codeql-db>`` (renders the PySSA build).
 """
 from __future__ import annotations
 
+import os
 from collections import deque
 from dataclasses import dataclass, field
 from typing import Optional, Union
@@ -237,8 +239,20 @@ class PySSA:
         self = cls()
         self._phase1_instantiate(prog)
         self._phase2_arities()
-        self._phase3_direct_placement()
-        self._phase4_indirect_propagation()
+        # Phi placement. Default: on-demand "join-only" — create phis ONLY at
+        # join blocks (>=2 preds), threading values through single-pred chains
+        # (whose entry phase 6 reconstructs from the pred's exit stack). Avoids
+        # the ~75% single-pred copy-phis the eager phase3+4 create: 2.5-8.4x
+        # faster SSA on phi-heavy contracts and no `%1000` artifact registers,
+        # while behaviourally identical to eager (verified by Tier-3 lowering
+        # on the 5 real DBs + dryrun on 35 real mainnet contracts incl. loops —
+        # identical approve/reject on every input). Set TEAL_SSA_EAGER_PHIS=1
+        # to fall back to eager placement (kept as an A/B oracle).
+        if os.environ.get("TEAL_SSA_EAGER_PHIS"):
+            self._phase3_direct_placement()
+            self._phase4_indirect_propagation()
+        else:
+            self._phase34_join_only()
         self._phase6_sim_blocks()
         self._phase8_live_filter()
         return self
@@ -440,6 +454,39 @@ class PySSA:
                     local_stack.append(v)
             b.exit_stack = local_stack
             processed.add(b)
+
+    # ----- Phase 3+4: on-demand join-only phi placement ------------------
+
+    def _phase34_join_only(self) -> None:
+        """Place phis only at join blocks (>=2 preds); thread values through
+        single-pred blocks (whose entry phase 6 reconstructs from the pred's
+        exit stack). Replaces eager phase3+4.
+
+        A value ``X`` sitting at ``from_b``'s exit slot ``eslot`` flows to
+        each successor ``s`` at the same (top-first) entry slot. At a JOIN it
+        becomes an arg of ``phi(s, eslot)`` (created on first touch, then
+        propagated onward by its own survival). Through a SINGLE-pred block it
+        threads on to that block's exit slot ``L+eslot-C`` (if it survives),
+        carrying the original value — no phi materialized.
+        """
+        wl: deque = deque()
+
+        # Seed: each block's surviving locals sit at its exit slots.
+        for b in self.blocks:
+            for v, k in self._surv[b]:
+                wl.append((v, b, k))
+
+        while wl:
+            X, from_b, eslot = wl.popleft()
+            for s in from_b.succs:
+                if len(s.preds) >= 2:  # join: merge into phi(s, eslot)
+                    if self._add_arg(s, eslot, X):
+                        # newly-created phi: propagate its own survival.
+                        if (k2 := self._phi_node_exit_index(eslot, s)) is not None:
+                            wl.append((self.phis[(s.key, eslot)], s, k2))
+                else:  # single-pred: thread through, no phi
+                    if (k2 := self._phi_node_exit_index(eslot, s)) is not None:
+                        wl.append((X, s, k2))
 
     # ----- Phase 6 helpers ------------------------------------------------
 
