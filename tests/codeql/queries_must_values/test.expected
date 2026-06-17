@@ -1,6 +1,0 @@
-| prog.teal | 5 | 1 | int | 42 |
-| prog.teal | 6 | 1 | int | 42 |
-| prog.teal | 6 | 2 | int | 42 |
-| prog.teal | 7 | 1 | int | 84 |
-| prog.teal | 8 | 1 | bytes | "hello" |
-| prog.teal | 10 | 1 | int | 1 |

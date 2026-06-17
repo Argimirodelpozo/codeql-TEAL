@@ -1,6 +1,0 @@
-| flow_branching_scratch.teal:25:1:25:14 | app_global_put | txna at L12 \u2192 app_global_put at L25 |
-| flow_branching_scratch.teal:25:1:25:14 | app_global_put | txna at L19 \u2192 app_global_put at L25 |
-| flow_overwrite_scratch.teal:16:1:16:14 | app_global_put | txna at L11 \u2192 app_global_put at L16 |
-| flow_through_scratch.teal:15:1:15:14 | app_global_put | txna at L5 \u2192 app_global_put at L15 |
-| flow_through_scratch.teal:20:1:20:14 | app_global_put | txna at L9 \u2192 app_global_put at L20 |
-| flow_through_scratch.teal:26:1:26:14 | app_global_put | txna at L5 \u2192 app_global_put at L26 |

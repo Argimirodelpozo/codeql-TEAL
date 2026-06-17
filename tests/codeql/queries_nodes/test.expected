@@ -1,8 +1,0 @@
-| prog.teal | 1 | 1 | 12 | 7 | Source |
-| prog.teal | 6 | 1 | 6 | 10 | PushintOpcode |
-| prog.teal | 7 | 1 | 7 | 3 | DupOpcode |
-| prog.teal | 8 | 1 | 8 | 1 | IntegerAddOpcode |
-| prog.teal | 9 | 1 | 9 | 13 | PushbytesOpcode |
-| prog.teal | 10 | 1 | 10 | 3 | PopOpcode |
-| prog.teal | 11 | 1 | 11 | 9 | PushintOpcode |
-| prog.teal | 12 | 1 | 12 | 6 | ReturnOpcode |

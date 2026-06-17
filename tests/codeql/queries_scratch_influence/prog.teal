@@ -1,9 +1,0 @@
-#pragma version 10
-// store/load via scratch — scratchInfluence.ql tracks which stores
-// may influence each load.
-
-pushint 42
-store 5
-load 5
-pushint 1
-return

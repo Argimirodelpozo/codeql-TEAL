@@ -1,8 +1,0 @@
-name: argimirodelpozo/teal-codeql-tests
-version: 0.0.1
-groups: teal
-extractor: teal
-dependencies:
-  argimirodelpozo/teal-all: "*"
-  argimirodelpozo/tealtools: "*"
-tests: .

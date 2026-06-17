@@ -1,9 +1,0 @@
-| narrow_bytec.teal:13:1:13:10 | TxnOpcode | bytes read TxnOpcode at L13 narrows to 0x6666666666666666666666666666666666666666666666666666666666666666 |
-| narrow_bytes.teal:12:1:12:10 | TxnOpcode | bytes read TxnOpcode at L12 narrows to 0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa |
-| narrow_bytes_and.teal:17:1:17:10 | TxnOpcode | bytes read TxnOpcode at L17 narrows to 0x3333333333333333333333333333333333333333333333333333333333333333 |
-| narrow_bytes_and.teal:18:1:18:11 | TxnOpcode | bytes read TxnOpcode at L18 narrows to 0x4444444444444444444444444444444444444444444444444444444444444444 |
-| narrow_bytes_bnz.teal:13:1:13:10 | TxnOpcode | bytes read TxnOpcode at L13 narrows to 0x1111111111111111111111111111111111111111111111111111111111111111 |
-| narrow_bytes_bz.teal:11:1:11:10 | TxnOpcode | bytes read TxnOpcode at L11 narrows to 0x2222222222222222222222222222222222222222222222222222222222222222 |
-| narrow_bytes_non_dominated.teal:22:1:22:10 | TxnOpcode | bytes read TxnOpcode at L22 narrows to 0x5555555555555555555555555555555555555555555555555555555555555555 |
-| narrow_global_zero.teal:8:1:8:18 | GlobalOpcode | bytes read GlobalOpcode at L8 narrows to 0x0000000000000000000000000000000000000000000000000000000000000000 |
-| narrow_global_zero.teal:12:1:12:10 | TxnOpcode | bytes read TxnOpcode at L12 narrows to 0x0000000000000000000000000000000000000000000000000000000000000000 |

@@ -7,8 +7,6 @@ REPO_ROOT = TESTS_DIR.parent
 # The test suite is CodeQL-free: fixture DBs are committed (read via the
 # pure-Python graph backend), and the graph producers are pinned by
 # ``test_graph_golden`` instead of a fresh-CodeQL differential. No `codeql`
-# binary is detected, invoked, or required. (``build_dbs`` remains a manual
-# dev utility for authoring a new fixture DB from raw TEAL — never run
-# automatically.)
+# binary is detected, invoked, or required.
 sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(TESTS_DIR))

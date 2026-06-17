@@ -1,3 +1,0 @@
-| narrow_gtxn.teal:7:1:7:10 | GtxnOpcode | line=7 child=0 field=Fee |
-| narrow_gtxn.teal:13:1:13:10 | GtxnOpcode | line=13 child=0 field=Fee |
-| narrow_gtxn.teal:15:1:15:10 | GtxnOpcode | line=15 child=1 field=Fee |

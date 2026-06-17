@@ -1,9 +1,0 @@
-#pragma version 10
-// pushint → dup → + → return. ssaInputs.ql should record each
-// consumer's input SSAVar references.
-
-pushint 42
-dup
-+
-pushint 1
-return

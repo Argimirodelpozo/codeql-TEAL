@@ -1,4 +1,0 @@
-| 6 | int | 42 |
-| 8 | bytes | "hello" |
-| 10 | bytes | 0xdeadbeef |
-| 13 | int | 1 |

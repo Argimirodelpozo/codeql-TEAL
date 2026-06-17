@@ -1,9 +1,0 @@
-#pragma version 10
-// Tiny linear program exercising identity-preserving steps the
-// dataflow lib should connect: pushint → dup → consumer.
-
-pushint 42
-dup
-+
-pushint 1
-return

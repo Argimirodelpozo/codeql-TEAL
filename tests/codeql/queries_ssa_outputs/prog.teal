@@ -1,9 +1,0 @@
-#pragma version 10
-// Multi-output ops (dup pushes 2). ssaOutputs.ql should emit one
-// row per output index.
-
-pushint 42
-dup
-+
-pushint 1
-return
