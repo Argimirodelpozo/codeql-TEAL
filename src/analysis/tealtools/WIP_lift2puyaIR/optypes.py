@@ -21,6 +21,7 @@ _U64_OPS = frozenset({"+", "-", "*", "/", "%", "exp", "sqrt", "shl", "shr",
                       "bitlen", "len", "btoi", "getbyte", "getbit",
                       "extract_uint16", "extract_uint32", "extract_uint64",
                       "box_create", "box_del",     # both return a uint64 flag
+                      "gaid", "gaids",             # created asset/app id (uint64)
                       "balance", "min_balance", "app_opted_in"}) | _U64_PUSH
 _BYTES_OPS = frozenset({"itob", "concat", "substring", "substring3", "extract",
                         "extract3", "replace2", "replace3", "sha256",

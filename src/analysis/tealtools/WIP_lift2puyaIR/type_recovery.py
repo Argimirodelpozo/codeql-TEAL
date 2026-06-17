@@ -139,7 +139,7 @@ _POS_IN = {
 
 def _expected_type(op, idx, args, imm=None):
     """Expected ``ir_type`` of ``args[idx]`` for ``op``, or ``None``."""
-    if op == "__cond__":
+    if op in ("__cond__", "__exit__"):
         return "uint64"
     if op == "itxn_field" and idx == 0 and imm:
         # The single operand of `itxn_field <Field>` must be the field's AVM
@@ -192,6 +192,13 @@ def _infer_types_from_uses(subs) -> None:
         t = b.terminator
         if isinstance(t, pre_ir.ConditionalBranch):
             use(t.condition, "__cond__", 0, [t.condition])
+        elif isinstance(t, pre_ir.ProgramExit):
+            # `return` (and fall-off-end) pop a uint64 success value, so the
+            # exit operand pins its producer to uint64. This is the only typing
+            # signal for a program whose returned value comes from an otherwise
+            # unconstrained source -- e.g. `gloads`/`gloadss` reading another
+            # group txn's scratch (statically unknowable) feeding `return`.
+            use(t.result, "__exit__", 0, [t.result])
 
     # Monotonic (only `?` -> a concrete type, guarded by `!= "?"`), so loop to
     # the fixpoint: guaranteed to terminate, with no depth cap to truncate a
