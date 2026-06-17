@@ -698,13 +698,29 @@ class _Lifter:
             n = len(labels)
             ins = (self.resim_args.get(id(t)) if (resim and id(t) in self.resim_args)
                    else [self.value(x) for x in t.inputs])
-            case_lines = {getattr(x, "line", None) for x in t.inputs[1:n + 1]}
-            single_push = len(case_lines) == 1 and None not in case_lines
+            # Pair label[i] with the i-th case key in PUSH order (deepest-first),
+            # which AVM `match` requires (label[0] <-> the first-pushed/deepest
+            # key). A key's push position is (source line, output index within
+            # its producing op) ascending -- correct whether the n keys come from
+            # ONE multi-push op (`pushbytess`/`pushints`: same line, indices
+            # 1..n), from separate `intc`/`pushint` pushes (distinct lines), or a
+            # mix. (SSA inputs are TOP-FIRST, so a fixed index `ins[i+1]` is only
+            # right for the single-op case; getting it wrong silently SWAPS
+            # sibling arms -- oracle-confirmed on app_3543081435's no-arg
+            # OnCompletion router, NoOp<->UpdateApplication.)
+            keys = t.inputs[1:n + 1]
+            pos = [(getattr(k, "line", None), getattr(k, "index", None) or 0)
+                   for k in keys]
+            if len(pos) == n and all(ln is not None for ln, _ in pos):
+                order = sorted(range(n), key=lambda j: pos[j])
+            else:                                  # missing source info: fall back
+                order = (list(range(n)) if len({ln for ln, _ in pos}) == 1
+                         else list(range(n))[::-1])
             cases, targets = [], set()
             for i, lbl in enumerate(labels):
                 blk = self.line2block.get(self.label2line.get(lbl))
-                idx = (i + 1) if single_push else (n - i)
-                ci = ins[idx] if 0 <= idx < len(ins) else None
+                ki = 1 + order[i]
+                ci = ins[ki] if 0 <= ki < len(ins) else None
                 if isinstance(ci, pre_ir.BytesConstant):
                     key = ci.value                       # bytes-keyed match
                 elif isinstance(ci, pre_ir.UInt64Constant):
