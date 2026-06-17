@@ -1,3 +1,45 @@
+# Braun on-demand construction — IMPLEMENTED + KEY FINDING (2026-06-17)
+
+`_phase_braun` (ssa.py, behind `TEAL_SSA_BRAUN=1`) implements Braun et al.'s
+filled+sealed `readVariableRecursive` + `tryRemoveTrivialPhi`: `_read_entry(b,k)`
+recurses into preds (memoising the phi BEFORE recursing to break loop cycles),
+`_read_exit(p,slot)` returns the local PyVar or recurses on passthrough, and
+`_try_remove_trivial` collapses + cascades. Phase 6's entry_stack build (6a) was
+forked to consume `self._entry_val` (phi OR collapsed value) in Braun mode.
+
+**Validated correct on non-spiral code:** op.inputs match eager EXACTLY on
+simple_branch / path_predicates / stack_growing_loop, with 0 phis (vs eager's
+explosion) — the core algorithm is right.
+
+**⚠️ KEY FINDING — Braun does NOT fix the loop spiral; the spiral is in the
+SLOT MODEL, not the construction algorithm.** On a net-changing loop the
+`L+k-C` mapping sends a value to an ever-deeper slot each lap (header phi at k →
+read_exit(latch,k) → read_entry(header, k+Δ) → phi at k+Δ → ...). Braun follows
+the same mapping and so spirals identically to `_phase34_join_only` — phis at
+slots 1..STACK_MAX (arc4_conversions: 1000; with_reentrancy: 3003). Without a
+cap it is UNBOUNDED recursion (>2M deep, survives 512MB stack); the `read_exit`
+`slot > STACK_MAX -> None` guard (mirroring `_phi_node_exit_index`) bounds it to
+match eager/join-only. tryRemoveTrivial cannot prevent it — the spiral phis are
+created (deep recursion) before their args resolve.
+
+**So Braun-alone delivers NEITHER the perf win (still creates ~1000 spiral
+phis) NOR the loop fix.** Capped-Braun corpus = 1 fail vs eager 0
+(array_StaticSizeContract — a *distinct* mixed-type phi-placement bug: a uint64
+phi gets a bytes `concat` arg; NOT the spiral). All spiral contracts pass once
+capped (the phis filter out like eager's explosion).
+
+**The real lever is a DEPTH CAP at the TRUE entry stack depth** (a forward
+`entry_depth(b)` fixpoint over `L-C`, interprocedural via call arity), capping
+phi creation at `entry_depth(b)` instead of STACK_MAX. That eliminates the
+spiral at the root — and it applies to BOTH Braun and `_phase34_join_only`
+(same slot model). This is the same "cap at true depth" the join-only
+loop-through-call diagnosis bottomed out in ([[project_ssa_join_only_phis]]):
+the forward depth is the missing piece for either construction to be both fast
+AND spiral-free. Remaining: (1) the depth cap, (2) the array_StaticSize
+mixed-type phi. Eager remains the default; Braun/join-only stay opt-in.
+
+---
+
 # SSA phi-construction perf — plan
 
 > ## ⚠️ MEASURED 2026-06-16 — original trivial-phi hypothesis is WRONG

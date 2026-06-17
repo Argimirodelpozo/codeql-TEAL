@@ -73,6 +73,10 @@ from ..opcode_sigs import op_arity
 
 STACK_MAX = 1000
 
+# Sentinel for "entry slot not yet resolved" (``None`` is a valid resolved
+# value — an entry slot with no incoming definition).
+_MISSING = object()
+
 
 # A reconstructed-SSA operand. ``None`` marks a slot the builder could
 # not resolve (a depth mismatch surfaced rather than hidden).
@@ -209,6 +213,12 @@ class PySSA:
     # Subroutine metadata.
     _bb_to_sub: dict = field(default_factory=dict)
     _proto_io: dict = field(default_factory=dict)
+    # Braun on-demand construction state (TEAL_SSA_BRAUN).
+    _surv_by_slot: dict = field(default_factory=dict)   # block -> {slot: PyVar}
+    _entry_val: dict = field(default_factory=dict)       # (bb_key, slot) -> value
+    _replaced: dict = field(default_factory=dict)        # id(PyPhi) -> replacement
+    _phi_users: dict = field(default_factory=dict)       # id(PyPhi) -> set[PyPhi]
+    _max_entry: dict = field(default_factory=dict)       # bb_key -> max entry slot read
 
     @classmethod
     def build(cls, prog: SSAProgram) -> SSAProgram:
@@ -253,7 +263,9 @@ class PySSA:
         # equal-depth). A real fix must reconcile join-only's frame/SSA structure
         # with eager's -- a fundamental change, not a localized patch. Full
         # diagnosis: memory project_ssa_join_only_phis. Eager is correct on these.
-        if os.environ.get("TEAL_SSA_JOIN_ONLY"):
+        if os.environ.get("TEAL_SSA_BRAUN"):
+            self._phase_braun()
+        elif os.environ.get("TEAL_SSA_JOIN_ONLY"):
             self._phase34_join_only()
         else:
             self._phase3_direct_placement()
@@ -411,17 +423,29 @@ class PySSA:
         # rescanned every phi for every block — O(blocks x phis), which is
         # tens of millions of iterations once a contract hits the
         # [1..STACK_MAX] indirect-phi space (phis number 100k+).
-        max_slot_by_bb: dict = {}
-        for (bb_key, s) in self.phis:
-            if s > max_slot_by_bb.get(bb_key, 0):
-                max_slot_by_bb[bb_key] = s
-        for b in self.blocks:
-            max_slot = max_slot_by_bb.get(b.key, 0)
-            entry = [None] * max_slot
-            for k in range(1, max_slot + 1):
-                phi = self.phis.get((b.key, k))
-                entry[max_slot - k] = phi
-            b.entry_stack = entry
+        if self._entry_val:
+            # Braun mode: entry_stack carries the on-demand resolved value at
+            # each read slot -- phi OR a collapsed (trivial-phi) value, which
+            # has no entry in ``self.phis`` -- to its top-first depth.
+            for b in self.blocks:
+                depth = self._max_entry.get(b.key, 0)
+                entry = [None] * depth
+                for k in range(1, depth + 1):
+                    entry[depth - k] = self._resolve(
+                        self._entry_val.get((b.key, k)))
+                b.entry_stack = entry
+        else:
+            max_slot_by_bb: dict = {}
+            for (bb_key, s) in self.phis:
+                if s > max_slot_by_bb.get(bb_key, 0):
+                    max_slot_by_bb[bb_key] = s
+            for b in self.blocks:
+                max_slot = max_slot_by_bb.get(b.key, 0)
+                entry = [None] * max_slot
+                for k in range(1, max_slot + 1):
+                    phi = self.phis.get((b.key, k))
+                    entry[max_slot - k] = phi
+                b.entry_stack = entry
 
         # 6b: bb_to_sub / proto_io setup — used to look up the
         # routine's arg count + entry stack for each fat expansion.
@@ -492,6 +516,120 @@ class PySSA:
                 else:  # single-pred: thread through, no phi
                     if (k2 := self._phi_node_exit_index(eslot, s)) is not None:
                         wl.append((X, s, k2))
+
+    # ----- Braun on-demand phi placement (TEAL_SSA_BRAUN) ----------------
+
+    def _phase_braun(self) -> None:
+        """Braun et al. (2013) on-demand SSA, filled+sealed case. Place a phi at
+        an entry slot only when it is READ (by an op here, or transitively by a
+        successor), recursing into predecessors and collapsing trivial phis at
+        creation. Memoising the phi BEFORE recursing breaks loop back-edge
+        cycles without the join-only worklist's growing-slot spiral, and the
+        trivial-phi cascade folds the constant-stack-loop chains to a single
+        value rather than churning slots 1..STACK_MAX.
+
+        Produces ``self.phis`` plus ``self._entry_val[(bb_key, slot)]`` — the
+        value (phi / PyVar / collapsed) reaching each read entry slot. Phase 6
+        reads the latter to build entry_stacks: a collapsed slot has no phi, so
+        the entry_stack can't be rebuilt from ``self.phis`` alone."""
+        import sys as _sys
+        # Recursion is bounded by STACK_MAX (the read_exit slot cap) times the
+        # loop body length; lift the default 1000 frame limit to cover it.
+        _sys.setrecursionlimit(max(_sys.getrecursionlimit(), 20_000))
+        self._surv_by_slot = {b: {k: v for v, k in self._surv[b]}
+                              for b in self.blocks}
+        # Demand: every entry slot an op consumes (top-first 1..C) per block.
+        # The recursion pulls in the passthrough slots successors read.
+        for b in self.blocks:
+            for k in range(1, self._consumed[b] + 1):
+                self._read_entry(b, k)
+        # Re-point any entry value / phi arg left at a since-removed phi.
+        for key in list(self._entry_val):
+            self._entry_val[key] = self._resolve(self._entry_val[key])
+        for P in self.phis.values():
+            P.args = [self._resolve(a) for a in P.args]
+
+    def _resolve(self, v):
+        """Follow the trivial-phi replacement chain to the surviving value."""
+        n = 0
+        while isinstance(v, PyPhi) and id(v) in self._replaced:
+            v = self._replaced[id(v)]
+            n += 1
+            if n > STACK_MAX:        # paranoia — replacement chains are acyclic
+                break
+        return v
+
+    def _read_exit(self, p: PyBlock, slot: int):
+        """Value at predecessor ``p``'s EXIT slot ``slot`` (top-first): a slot
+        within ``p``'s own locals (``slot <= L``) is the producing PyVar; a
+        deeper slot is an entry value passing through, mapped back to ``p``'s
+        entry slot ``slot - L + C`` (the inverse of ``L + k - C``)."""
+        L = self._locals[p]
+        if slot <= L:
+            return self._surv_by_slot[p].get(slot)
+        if slot > STACK_MAX:
+            # Same guard as ``_phi_node_exit_index``: a net-changing loop maps
+            # the value to an ever-deeper slot each lap (the slot-model spiral);
+            # cap it so the recursion terminates instead of growing unbounded.
+            return None
+        return self._read_entry(p, slot - L + self._consumed[p])
+
+    def _read_entry(self, b: PyBlock, k: int):
+        """Value at ``b``'s ENTRY slot ``k`` (top-first), creating phis on
+        demand (Braun ``readVariableRecursive`` — sealed-block path)."""
+        key = (b.key, k)
+        memo = self._entry_val.get(key, _MISSING)
+        if memo is not _MISSING:
+            return memo
+        if k > self._max_entry.get(b.key, 0):
+            self._max_entry[b.key] = k
+        preds = b.preds
+        if not preds:
+            self._entry_val[key] = None          # routine entry / no incoming def
+            return None
+        if len(preds) == 1:
+            v = self._read_exit(preds[0], k)
+            self._entry_val[key] = v
+            return v
+        # Join: create the phi, memoise it (breaks back-edge cycles), fill args.
+        P = PyPhi(b.key, k)
+        self.phis[key] = P
+        b.entry_phis.append(P)
+        self._entry_val[key] = P
+        for p in preds:
+            a = self._read_exit(p, k)
+            P.args.append(a)
+            if isinstance(a, PyPhi):
+                self._phi_users.setdefault(id(a), set()).add(P)
+        v = self._try_remove_trivial(P)
+        self._entry_val[key] = v
+        return v
+
+    def _try_remove_trivial(self, P: PyPhi):
+        """Braun ``tryRemoveTrivialPhi``: if ``P``'s args (ignoring self-refs)
+        are a single distinct value ``v``, replace ``P`` with ``v`` and re-check
+        every phi that referenced ``P`` (cascade)."""
+        distinct: list = []
+        for a in P.args:
+            a = self._resolve(a)
+            if a is P:
+                continue                          # self-reference
+            if not any(a is d for d in distinct):
+                distinct.append(a)
+        if len(distinct) > 1:
+            return P                              # a genuine merge — keep it
+        same = distinct[0] if distinct else None  # 0 distinct -> undefined slot
+        self._replaced[id(P)] = same
+        self.phis.pop((P.bb_key, P.slot), None)
+        b = self._bb_by_key.get(P.bb_key)
+        if b is not None:
+            b.entry_phis = [ph for ph in b.entry_phis if ph is not P]
+        for u in list(self._phi_users.pop(id(P), ())):
+            u.args = [same if a is P else a for a in u.args]
+            if isinstance(same, PyPhi):
+                self._phi_users.setdefault(id(same), set()).add(u)
+            self._try_remove_trivial(u)
+        return same
 
     # ----- Phase 6 helpers ------------------------------------------------
 
