@@ -243,15 +243,16 @@ class PySSA:
         # Phi placement. DEFAULT is eager (phase3 direct placement + phase4
         # indirect propagation). The on-demand "join-only" variant
         # (TEAL_SSA_JOIN_ONLY=1) creates phis ONLY at join blocks and is 2.5-8.4x
-        # faster on phi-heavy contracts, BUT has a known correctness gap on loops
-        # whose body changes stack depth: the loop-carried value returns to the
-        # back-edge at a different slot than it entered, so the header phi's
-        # back-edge arg is dropped (args < preds) -> an undefined `bytes[0]` into
-        # a uint64 slot. That malforms the IR on ~8 puya-corpus loop/array
-        # contracts (it was briefly the default and regressed the 248-corpus
-        # 10->24). Kept behind the flag until the loop arg-delivery is fixed
-        # (derive phi args from predecessors' exit-stacks, not the slot-threading
-        # worklist). Eager is correct on these.
+        # faster on phi-heavy contracts, BUT malforms the IR on ~8 puya-corpus
+        # loop/array contracts (briefly the default; regressed the 248-corpus
+        # 10->24). SHELVED opt-in (2026-06-17). Root cause is NOT here in
+        # construction and NOT the resim alignment: join-only's different SSA var
+        # versions make passes/frame_resolution classify frame_dig/bury
+        # differently, so the lift's _resim builds wrong-DEPTH, wrong-VALUE loop
+        # latch stacks for loop-through-call contracts (eager keeps them clean +
+        # equal-depth). A real fix must reconcile join-only's frame/SSA structure
+        # with eager's -- a fundamental change, not a localized patch. Full
+        # diagnosis: memory project_ssa_join_only_phis. Eager is correct on these.
         if os.environ.get("TEAL_SSA_JOIN_ONLY"):
             self._phase34_join_only()
         else:
