@@ -1,7 +1,7 @@
 blocks      = 5
 assignments = 10
-phis        = 0
-vars        = 5
+phis        = 1000
+vars        = 1005
 opcodes:
   bnz                      1
   btoi                     1

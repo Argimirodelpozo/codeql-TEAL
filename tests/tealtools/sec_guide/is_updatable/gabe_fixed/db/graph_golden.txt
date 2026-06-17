@@ -1,0 +1,393 @@
+## nodes
+prog.teal	1	1	240	11	Source
+prog.teal	6	1	6	5	Label
+prog.teal	7	5	7	17	IntcblockOpcode
+prog.teal	8	5	8	48	BytecblockOpcode
+prog.teal	11	5	11	24	PushbytesOpcode
+prog.teal	12	5	12	26	TxnaOpcode
+prog.teal	13	5	13	40	MatchOpcode
+prog.teal	15	1	15	24	Label
+prog.teal	18	5	18	20	TxnOpcode
+prog.teal	19	5	19	5	NotOpcode
+prog.teal	20	5	20	10	AssertOpcode
+prog.teal	21	5	21	21	TxnOpcode
+prog.teal	22	5	22	26	BzOpcode
+prog.teal	23	5	23	58	PushbytessOpcode
+prog.teal	24	5	24	26	TxnaOpcode
+prog.teal	25	5	25	69	MatchOpcode
+prog.teal	26	5	26	7	ErrOpcode
+prog.teal	28	1	28	20	Label
+prog.teal	31	5	31	24	PushbytesOpcode
+prog.teal	32	5	32	26	TxnaOpcode
+prog.teal	33	5	33	27	MatchOpcode
+prog.teal	34	5	34	7	ErrOpcode
+prog.teal	36	1	36	31	Label
+prog.teal	39	5	39	20	TxnOpcode
+prog.teal	40	5	40	13	PushintOpcode
+prog.teal	41	5	41	6	EqualsComparisonOpcode
+prog.teal	41	5	41	6	IntegerEqualsOpcode
+prog.teal	42	5	42	21	TxnOpcode
+prog.teal	43	5	43	6	AndOpcode
+prog.teal	44	5	44	10	AssertOpcode
+prog.teal	45	5	45	23	BOpcode
+prog.teal	49	1	49	18	Label
+prog.teal	52	5	52	11	Bytec0Opcode
+prog.teal	55	5	55	10	Intc0Opcode
+prog.teal	56	5	56	18	AppGlobalPutOpcode
+prog.teal	59	5	59	11	Bytec1Opcode
+prog.teal	62	5	62	10	Intc0Opcode
+prog.teal	63	5	63	18	AppGlobalPutOpcode
+prog.teal	66	5	66	11	Bytec2Opcode
+prog.teal	69	5	69	10	Intc1Opcode
+prog.teal	70	5	70	18	AppGlobalPutOpcode
+prog.teal	73	5	73	10	Intc1Opcode
+prog.teal	74	5	74	10	ReturnOpcode
+prog.teal	78	1	78	16	Label
+prog.teal	81	5	81	26	TxnaOpcode
+prog.teal	82	5	82	7	DupOpcode
+prog.teal	83	5	83	10	Intc0Opcode
+prog.teal	84	5	84	18	ExtractUint16Opcode
+prog.teal	85	5	85	13	PushintOpcode
+prog.teal	86	5	86	5	IntegerAddOpcode
+prog.teal	87	5	87	9	DigOpcode
+prog.teal	88	5	88	7	LenOpcode
+prog.teal	89	5	89	6	EqualsComparisonOpcode
+prog.teal	89	5	89	6	IntegerEqualsOpcode
+prog.teal	90	5	90	10	AssertOpcode
+prog.teal	91	5	91	15	ExtractOpcode
+prog.teal	94	5	94	14	TxnOpcode
+prog.teal	95	5	95	25	GlobalOpcode
+prog.teal	96	5	96	6	EqualsComparisonOpcode
+prog.teal	96	5	96	6	IntegerEqualsOpcode
+prog.teal	97	5	97	10	AssertOpcode
+prog.teal	100	5	100	21	PushbytesOpcode
+prog.teal	103	5	103	8	SwapOpcode
+prog.teal	104	5	104	18	AppGlobalPutOpcode
+prog.teal	107	5	107	11	Bytec1Opcode
+prog.teal	110	5	110	26	GlobalOpcode
+prog.teal	111	5	111	18	AppGlobalPutOpcode
+prog.teal	114	5	114	11	Bytec0Opcode
+prog.teal	117	5	117	10	Intc1Opcode
+prog.teal	118	5	118	18	AppGlobalPutOpcode
+prog.teal	121	5	121	10	Intc1Opcode
+prog.teal	122	5	122	10	ReturnOpcode
+prog.teal	126	1	126	18	Label
+prog.teal	129	5	129	14	TxnOpcode
+prog.teal	130	5	130	25	GlobalOpcode
+prog.teal	131	5	131	6	EqualsComparisonOpcode
+prog.teal	131	5	131	6	IntegerEqualsOpcode
+prog.teal	132	5	132	10	AssertOpcode
+prog.teal	135	5	135	10	Intc0Opcode
+prog.teal	138	5	138	11	Bytec0Opcode
+prog.teal	141	5	141	21	AppGlobalGetExOpcode
+prog.teal	142	5	142	10	AssertOpcode
+prog.teal	143	5	143	10	Intc1Opcode
+prog.teal	144	5	144	6	EqualsComparisonOpcode
+prog.teal	144	5	144	6	IntegerEqualsOpcode
+prog.teal	145	5	145	10	AssertOpcode
+prog.teal	148	5	148	26	GlobalOpcode
+prog.teal	149	5	149	10	Intc0Opcode
+prog.teal	152	5	152	11	Bytec1Opcode
+prog.teal	155	5	155	21	AppGlobalGetExOpcode
+prog.teal	156	5	156	10	AssertOpcode
+prog.teal	157	5	157	5	SubOpcode
+prog.teal	160	5	160	17	PushintOpcode
+prog.teal	161	5	161	6	IntegerGteOpcode
+prog.teal	162	5	162	10	AssertOpcode
+prog.teal	165	5	165	11	Bytec0Opcode
+prog.teal	168	5	168	10	Intc0Opcode
+prog.teal	169	5	169	18	AppGlobalPutOpcode
+prog.teal	172	5	172	10	Intc1Opcode
+prog.teal	173	5	173	10	ReturnOpcode
+prog.teal	177	1	177	14	Label
+prog.teal	180	5	180	14	TxnOpcode
+prog.teal	181	5	181	25	GlobalOpcode
+prog.teal	182	5	182	6	EqualsComparisonOpcode
+prog.teal	182	5	182	6	IntegerEqualsOpcode
+prog.teal	183	5	183	10	AssertOpcode
+prog.teal	186	5	186	11	Bytec0Opcode
+prog.teal	189	5	189	10	Intc0Opcode
+prog.teal	190	5	190	18	AppGlobalPutOpcode
+prog.teal	193	5	193	10	Intc1Opcode
+prog.teal	194	5	194	10	ReturnOpcode
+prog.teal	198	1	198	11	Label
+prog.teal	201	5	201	10	Intc0Opcode
+prog.teal	204	5	204	11	Bytec2Opcode
+prog.teal	207	5	207	21	AppGlobalGetExOpcode
+prog.teal	208	5	208	10	AssertOpcode
+prog.teal	211	5	211	8	ItobOpcode
+prog.teal	212	5	212	11	Bytec3Opcode
+prog.teal	213	5	213	8	SwapOpcode
+prog.teal	214	5	214	10	ConcatOpcode
+prog.teal	215	5	215	7	LogOpcode
+prog.teal	216	5	216	10	Intc1Opcode
+prog.teal	217	5	217	10	ReturnOpcode
+prog.teal	221	1	221	19	Label
+prog.teal	224	5	224	10	Intc0Opcode
+prog.teal	227	5	227	11	Bytec0Opcode
+prog.teal	230	5	230	21	AppGlobalGetExOpcode
+prog.teal	231	5	231	10	AssertOpcode
+prog.teal	234	5	234	8	ItobOpcode
+prog.teal	235	5	235	11	Bytec3Opcode
+prog.teal	236	5	236	8	SwapOpcode
+prog.teal	237	5	237	10	ConcatOpcode
+prog.teal	238	5	238	7	LogOpcode
+prog.teal	239	5	239	10	Intc1Opcode
+prog.teal	240	5	240	10	ReturnOpcode
+## cfgEdges
+prog.teal	6	prog.teal	7	NormalSuccessor
+prog.teal	7	prog.teal	8	NormalSuccessor
+prog.teal	8	prog.teal	11	NormalSuccessor
+prog.teal	11	prog.teal	12	NormalSuccessor
+prog.teal	12	prog.teal	13	NormalSuccessor
+prog.teal	13	prog.teal	15	NormalSuccessor
+prog.teal	13	prog.teal	36	NormalSuccessor
+prog.teal	15	prog.teal	18	NormalSuccessor
+prog.teal	18	prog.teal	19	NormalSuccessor
+prog.teal	19	prog.teal	20	NormalSuccessor
+prog.teal	20	prog.teal	21	BooleanSuccessor(true)
+prog.teal	21	prog.teal	22	NormalSuccessor
+prog.teal	22	prog.teal	23	BooleanSuccessor(true)
+prog.teal	22	prog.teal	28	BooleanSuccessor(false)
+prog.teal	23	prog.teal	24	NormalSuccessor
+prog.teal	24	prog.teal	25	NormalSuccessor
+prog.teal	25	prog.teal	26	NormalSuccessor
+prog.teal	25	prog.teal	78	NormalSuccessor
+prog.teal	25	prog.teal	177	NormalSuccessor
+prog.teal	25	prog.teal	198	NormalSuccessor
+prog.teal	25	prog.teal	221	NormalSuccessor
+prog.teal	28	prog.teal	31	NormalSuccessor
+prog.teal	31	prog.teal	32	NormalSuccessor
+prog.teal	32	prog.teal	33	NormalSuccessor
+prog.teal	33	prog.teal	34	NormalSuccessor
+prog.teal	33	prog.teal	49	NormalSuccessor
+prog.teal	36	prog.teal	39	NormalSuccessor
+prog.teal	39	prog.teal	40	NormalSuccessor
+prog.teal	40	prog.teal	41	NormalSuccessor
+prog.teal	41	prog.teal	42	NormalSuccessor
+prog.teal	42	prog.teal	43	NormalSuccessor
+prog.teal	43	prog.teal	44	NormalSuccessor
+prog.teal	44	prog.teal	45	BooleanSuccessor(true)
+prog.teal	45	prog.teal	126	NormalSuccessor
+prog.teal	49	prog.teal	52	NormalSuccessor
+prog.teal	52	prog.teal	55	NormalSuccessor
+prog.teal	55	prog.teal	56	NormalSuccessor
+prog.teal	56	prog.teal	59	NormalSuccessor
+prog.teal	59	prog.teal	62	NormalSuccessor
+prog.teal	62	prog.teal	63	NormalSuccessor
+prog.teal	63	prog.teal	66	NormalSuccessor
+prog.teal	66	prog.teal	69	NormalSuccessor
+prog.teal	69	prog.teal	70	NormalSuccessor
+prog.teal	70	prog.teal	73	NormalSuccessor
+prog.teal	73	prog.teal	74	NormalSuccessor
+prog.teal	78	prog.teal	81	NormalSuccessor
+prog.teal	81	prog.teal	82	NormalSuccessor
+prog.teal	82	prog.teal	83	NormalSuccessor
+prog.teal	83	prog.teal	84	NormalSuccessor
+prog.teal	84	prog.teal	85	NormalSuccessor
+prog.teal	85	prog.teal	86	NormalSuccessor
+prog.teal	86	prog.teal	87	NormalSuccessor
+prog.teal	87	prog.teal	88	NormalSuccessor
+prog.teal	88	prog.teal	89	NormalSuccessor
+prog.teal	89	prog.teal	90	NormalSuccessor
+prog.teal	90	prog.teal	91	BooleanSuccessor(true)
+prog.teal	91	prog.teal	94	NormalSuccessor
+prog.teal	94	prog.teal	95	NormalSuccessor
+prog.teal	95	prog.teal	96	NormalSuccessor
+prog.teal	96	prog.teal	97	NormalSuccessor
+prog.teal	97	prog.teal	100	BooleanSuccessor(true)
+prog.teal	100	prog.teal	103	NormalSuccessor
+prog.teal	103	prog.teal	104	NormalSuccessor
+prog.teal	104	prog.teal	107	NormalSuccessor
+prog.teal	107	prog.teal	110	NormalSuccessor
+prog.teal	110	prog.teal	111	NormalSuccessor
+prog.teal	111	prog.teal	114	NormalSuccessor
+prog.teal	114	prog.teal	117	NormalSuccessor
+prog.teal	117	prog.teal	118	NormalSuccessor
+prog.teal	118	prog.teal	121	NormalSuccessor
+prog.teal	121	prog.teal	122	NormalSuccessor
+prog.teal	126	prog.teal	129	NormalSuccessor
+prog.teal	129	prog.teal	130	NormalSuccessor
+prog.teal	130	prog.teal	131	NormalSuccessor
+prog.teal	131	prog.teal	132	NormalSuccessor
+prog.teal	132	prog.teal	135	BooleanSuccessor(true)
+prog.teal	135	prog.teal	138	NormalSuccessor
+prog.teal	138	prog.teal	141	NormalSuccessor
+prog.teal	141	prog.teal	142	NormalSuccessor
+prog.teal	142	prog.teal	143	BooleanSuccessor(true)
+prog.teal	143	prog.teal	144	NormalSuccessor
+prog.teal	144	prog.teal	145	NormalSuccessor
+prog.teal	145	prog.teal	148	BooleanSuccessor(true)
+prog.teal	148	prog.teal	149	NormalSuccessor
+prog.teal	149	prog.teal	152	NormalSuccessor
+prog.teal	152	prog.teal	155	NormalSuccessor
+prog.teal	155	prog.teal	156	NormalSuccessor
+prog.teal	156	prog.teal	157	BooleanSuccessor(true)
+prog.teal	157	prog.teal	160	NormalSuccessor
+prog.teal	160	prog.teal	161	NormalSuccessor
+prog.teal	161	prog.teal	162	NormalSuccessor
+prog.teal	162	prog.teal	165	BooleanSuccessor(true)
+prog.teal	165	prog.teal	168	NormalSuccessor
+prog.teal	168	prog.teal	169	NormalSuccessor
+prog.teal	169	prog.teal	172	NormalSuccessor
+prog.teal	172	prog.teal	173	NormalSuccessor
+prog.teal	177	prog.teal	180	NormalSuccessor
+prog.teal	180	prog.teal	181	NormalSuccessor
+prog.teal	181	prog.teal	182	NormalSuccessor
+prog.teal	182	prog.teal	183	NormalSuccessor
+prog.teal	183	prog.teal	186	BooleanSuccessor(true)
+prog.teal	186	prog.teal	189	NormalSuccessor
+prog.teal	189	prog.teal	190	NormalSuccessor
+prog.teal	190	prog.teal	193	NormalSuccessor
+prog.teal	193	prog.teal	194	NormalSuccessor
+prog.teal	198	prog.teal	201	NormalSuccessor
+prog.teal	201	prog.teal	204	NormalSuccessor
+prog.teal	204	prog.teal	207	NormalSuccessor
+prog.teal	207	prog.teal	208	NormalSuccessor
+prog.teal	208	prog.teal	211	BooleanSuccessor(true)
+prog.teal	211	prog.teal	212	NormalSuccessor
+prog.teal	212	prog.teal	213	NormalSuccessor
+prog.teal	213	prog.teal	214	NormalSuccessor
+prog.teal	214	prog.teal	215	NormalSuccessor
+prog.teal	215	prog.teal	216	NormalSuccessor
+prog.teal	216	prog.teal	217	NormalSuccessor
+prog.teal	221	prog.teal	224	NormalSuccessor
+prog.teal	224	prog.teal	227	NormalSuccessor
+prog.teal	227	prog.teal	230	NormalSuccessor
+prog.teal	230	prog.teal	231	NormalSuccessor
+prog.teal	231	prog.teal	234	BooleanSuccessor(true)
+prog.teal	234	prog.teal	235	NormalSuccessor
+prog.teal	235	prog.teal	236	NormalSuccessor
+prog.teal	236	prog.teal	237	NormalSuccessor
+prog.teal	237	prog.teal	238	NormalSuccessor
+prog.teal	238	prog.teal	239	NormalSuccessor
+prog.teal	239	prog.teal	240	NormalSuccessor
+## basicBlocks
+prog.teal	6	6	13
+prog.teal	7	6	13
+prog.teal	8	6	13
+prog.teal	11	6	13
+prog.teal	12	6	13
+prog.teal	13	6	13
+prog.teal	15	15	20
+prog.teal	18	15	20
+prog.teal	19	15	20
+prog.teal	20	15	20
+prog.teal	21	21	22
+prog.teal	22	21	22
+prog.teal	23	23	25
+prog.teal	24	23	25
+prog.teal	25	23	25
+prog.teal	26	26	26
+prog.teal	28	28	33
+prog.teal	31	28	33
+prog.teal	32	28	33
+prog.teal	33	28	33
+prog.teal	34	34	34
+prog.teal	36	36	44
+prog.teal	39	36	44
+prog.teal	40	36	44
+prog.teal	41	36	44
+prog.teal	42	36	44
+prog.teal	43	36	44
+prog.teal	44	36	44
+prog.teal	45	45	45
+prog.teal	49	49	74
+prog.teal	52	49	74
+prog.teal	55	49	74
+prog.teal	56	49	74
+prog.teal	59	49	74
+prog.teal	62	49	74
+prog.teal	63	49	74
+prog.teal	66	49	74
+prog.teal	69	49	74
+prog.teal	70	49	74
+prog.teal	73	49	74
+prog.teal	74	49	74
+prog.teal	78	78	90
+prog.teal	81	78	90
+prog.teal	82	78	90
+prog.teal	83	78	90
+prog.teal	84	78	90
+prog.teal	85	78	90
+prog.teal	86	78	90
+prog.teal	87	78	90
+prog.teal	88	78	90
+prog.teal	89	78	90
+prog.teal	90	78	90
+prog.teal	91	91	97
+prog.teal	94	91	97
+prog.teal	95	91	97
+prog.teal	96	91	97
+prog.teal	97	91	97
+prog.teal	100	100	122
+prog.teal	103	100	122
+prog.teal	104	100	122
+prog.teal	107	100	122
+prog.teal	110	100	122
+prog.teal	111	100	122
+prog.teal	114	100	122
+prog.teal	117	100	122
+prog.teal	118	100	122
+prog.teal	121	100	122
+prog.teal	122	100	122
+prog.teal	126	126	132
+prog.teal	129	126	132
+prog.teal	130	126	132
+prog.teal	131	126	132
+prog.teal	132	126	132
+prog.teal	135	135	142
+prog.teal	138	135	142
+prog.teal	141	135	142
+prog.teal	142	135	142
+prog.teal	143	143	145
+prog.teal	144	143	145
+prog.teal	145	143	145
+prog.teal	148	148	156
+prog.teal	149	148	156
+prog.teal	152	148	156
+prog.teal	155	148	156
+prog.teal	156	148	156
+prog.teal	157	157	162
+prog.teal	160	157	162
+prog.teal	161	157	162
+prog.teal	162	157	162
+prog.teal	165	165	173
+prog.teal	168	165	173
+prog.teal	169	165	173
+prog.teal	172	165	173
+prog.teal	173	165	173
+prog.teal	177	177	183
+prog.teal	180	177	183
+prog.teal	181	177	183
+prog.teal	182	177	183
+prog.teal	183	177	183
+prog.teal	186	186	194
+prog.teal	189	186	194
+prog.teal	190	186	194
+prog.teal	193	186	194
+prog.teal	194	186	194
+prog.teal	198	198	208
+prog.teal	201	198	208
+prog.teal	204	198	208
+prog.teal	207	198	208
+prog.teal	208	198	208
+prog.teal	211	211	217
+prog.teal	212	211	217
+prog.teal	213	211	217
+prog.teal	214	211	217
+prog.teal	215	211	217
+prog.teal	216	211	217
+prog.teal	217	211	217
+prog.teal	221	221	231
+prog.teal	224	221	231
+prog.teal	227	221	231
+prog.teal	230	221	231
+prog.teal	231	221	231
+prog.teal	234	234	240
+prog.teal	235	234	240
+prog.teal	236	234	240
+prog.teal	237	234	240
+prog.teal	238	234	240
+prog.teal	239	234	240
+prog.teal	240	234	240

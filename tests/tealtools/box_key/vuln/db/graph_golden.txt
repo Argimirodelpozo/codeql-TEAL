@@ -1,0 +1,48 @@
+## nodes
+prog.teal	1	1	21	7	Source
+prog.teal	5	1	5	22	TxnaOpcode
+prog.teal	6	1	6	4	BtoiOpcode
+prog.teal	7	1	7	26	AssetParamsGetOpcode
+prog.teal	8	1	8	6	AssertOpcode
+prog.teal	9	1	9	10	PushintOpcode
+prog.teal	10	1	10	10	BoxCreateOpcode
+prog.teal	11	1	11	3	PopOpcode
+prog.teal	13	1	13	22	TxnaOpcode
+prog.teal	14	1	14	4	BtoiOpcode
+prog.teal	15	1	15	26	AssetParamsGetOpcode
+prog.teal	16	1	16	6	AssertOpcode
+prog.teal	17	1	17	22	TxnaOpcode
+prog.teal	18	1	18	7	BoxPutOpcode
+prog.teal	20	1	20	9	PushintOpcode
+prog.teal	21	1	21	6	ReturnOpcode
+## cfgEdges
+prog.teal	5	prog.teal	6	NormalSuccessor
+prog.teal	6	prog.teal	7	NormalSuccessor
+prog.teal	7	prog.teal	8	NormalSuccessor
+prog.teal	8	prog.teal	9	BooleanSuccessor(true)
+prog.teal	9	prog.teal	10	NormalSuccessor
+prog.teal	10	prog.teal	11	NormalSuccessor
+prog.teal	11	prog.teal	13	NormalSuccessor
+prog.teal	13	prog.teal	14	NormalSuccessor
+prog.teal	14	prog.teal	15	NormalSuccessor
+prog.teal	15	prog.teal	16	NormalSuccessor
+prog.teal	16	prog.teal	17	BooleanSuccessor(true)
+prog.teal	17	prog.teal	18	NormalSuccessor
+prog.teal	18	prog.teal	20	NormalSuccessor
+prog.teal	20	prog.teal	21	NormalSuccessor
+## basicBlocks
+prog.teal	5	5	8
+prog.teal	6	5	8
+prog.teal	7	5	8
+prog.teal	8	5	8
+prog.teal	9	9	16
+prog.teal	10	9	16
+prog.teal	11	9	16
+prog.teal	13	9	16
+prog.teal	14	9	16
+prog.teal	15	9	16
+prog.teal	16	9	16
+prog.teal	17	17	21
+prog.teal	18	17	21
+prog.teal	20	17	21
+prog.teal	21	17	21

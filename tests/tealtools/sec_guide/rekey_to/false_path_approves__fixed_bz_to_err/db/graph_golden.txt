@@ -1,0 +1,28 @@
+## nodes
+prog.teal	1	1	15	4	Source
+prog.teal	7	1	7	11	TxnOpcode
+prog.teal	8	1	8	18	GlobalOpcode
+prog.teal	9	1	9	2	EqualsComparisonOpcode
+prog.teal	9	1	9	2	IntegerEqualsOpcode
+prog.teal	10	1	10	9	BzOpcode
+prog.teal	11	1	11	5	SingleNumericArgumentOpcode
+prog.teal	12	1	12	6	ReturnOpcode
+prog.teal	14	1	14	7	Label
+prog.teal	15	1	15	3	ErrOpcode
+## cfgEdges
+prog.teal	7	prog.teal	8	NormalSuccessor
+prog.teal	8	prog.teal	9	NormalSuccessor
+prog.teal	9	prog.teal	10	NormalSuccessor
+prog.teal	10	prog.teal	11	BooleanSuccessor(true)
+prog.teal	10	prog.teal	14	BooleanSuccessor(false)
+prog.teal	11	prog.teal	12	NormalSuccessor
+prog.teal	14	prog.teal	15	NormalSuccessor
+## basicBlocks
+prog.teal	7	7	10
+prog.teal	8	7	10
+prog.teal	9	7	10
+prog.teal	10	7	10
+prog.teal	11	11	12
+prog.teal	12	11	12
+prog.teal	14	14	15
+prog.teal	15	14	15

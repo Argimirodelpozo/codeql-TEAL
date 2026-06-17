@@ -18,7 +18,6 @@ contracts) is recorded as ``slow``, never hanging pytest.
 """
 from __future__ import annotations
 
-import os
 import subprocess
 import sys
 from collections import Counter
@@ -33,15 +32,18 @@ PER_CONTRACT_TIMEOUT = 90          # seconds; subprocess hard-killed past this
 
 _CONTRACTS = sorted(EXPLORER.glob("app_*/")) if EXPLORER.exists() else []
 
-# Lift one DB to real Puya IR (lower + Puya optimise) in a clean subprocess.
+# Lift one raw ``.teal`` to real Puya IR (lower + Puya optimise) in a clean
+# subprocess. ``SSAProgram`` reconstructs straight from the TEAL source via the
+# pure-Python graph backend -- no codeql DB, no codeql binary.
 _LIFT = """
-import sys, io, contextlib
+import os, sys, io, contextlib
+os.environ["TEAL_GRAPHS_BACKEND"] = "python"
 sys.path.insert(0, {src!r})
 from puya.log import configure_logging, LogLevel
 configure_logging(min_log_level=LogLevel.critical)
 from tealtools.ssa import SSAProgram
 from tealtools.WIP_lift2puyaIR import to_puya_ir
-p = SSAProgram({db!r}, verbose=False)
+p = SSAProgram({teal!r}, verbose=False)
 p.propagate_constants()
 with contextlib.redirect_stdout(io.StringIO()):
     text = to_puya_ir.render(p, optimize_ir=True)
@@ -49,15 +51,11 @@ print("LIFTED", len(text.splitlines()))
 """
 
 
-def _codeql() -> str | None:
-    return os.environ.get("CODEQL") or __import__("shutil").which("codeql")
-
-
-def _lift(db: Path) -> tuple[str, str]:
+def _lift(teal: Path) -> tuple[str, str]:
     """Return (status, detail). status in {ok, failed, slow, crash}."""
     try:
         r = subprocess.run(
-            [sys.executable, "-c", _LIFT.format(src=str(SRC), db=str(db))],
+            [sys.executable, "-c", _LIFT.format(src=str(SRC), teal=str(teal))],
             capture_output=True, text=True, timeout=PER_CONTRACT_TIMEOUT,
         )
     except subprocess.TimeoutExpired:
@@ -72,16 +70,12 @@ def _lift(db: Path) -> tuple[str, str]:
     return "crash", last[:200]
 
 
-@pytest.mark.skipif(_codeql() is None, reason="codeql binary not available")
 @pytest.mark.skipif(not _CONTRACTS, reason="no explorer contracts checked in")
 def test_real_contracts_lift():
-    from build_dbs import build_db
-
     results: dict[str, tuple[str, str]] = {}
     for d in _CONTRACTS:
         teal = next(d.glob("*.teal"))
-        build_db(teal)                              # cached; builds if missing
-        results[d.name] = _lift(d / "db")
+        results[d.name] = _lift(teal)               # lift raw TEAL directly
 
     counts = Counter(s for s, _ in results.values())
     print(f"\n=== explorer lift: {len(results)} real mainnet contracts ===")

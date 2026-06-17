@@ -1,0 +1,18 @@
+## nodes
+prog.teal	1	1	9	7	Source
+prog.teal	4	1	4	13	PushbytesOpcode
+prog.teal	5	1	5	22	TxnaOpcode
+prog.teal	6	1	6	7	BoxPutOpcode
+prog.teal	8	1	8	9	PushintOpcode
+prog.teal	9	1	9	6	ReturnOpcode
+## cfgEdges
+prog.teal	4	prog.teal	5	NormalSuccessor
+prog.teal	5	prog.teal	6	NormalSuccessor
+prog.teal	6	prog.teal	8	NormalSuccessor
+prog.teal	8	prog.teal	9	NormalSuccessor
+## basicBlocks
+prog.teal	4	4	9
+prog.teal	5	4	9
+prog.teal	6	4	9
+prog.teal	8	4	9
+prog.teal	9	4	9

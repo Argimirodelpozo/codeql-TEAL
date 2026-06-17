@@ -2,12 +2,11 @@
 ``cfg_build`` producers and the Python-backend ``load_graph`` WITHOUT
 codeql.
 
-These complement ``test_ql_python_parity`` (which needs codeql to compare
-against the kept ``.ql`` ground truth). Here we assert the producers are
-self-consistent and that the loaded graph is well-formed — so the pipeline
-keeps working in environments with no codeql / JVM at all.
+These complement ``test_graph_golden`` (which pins the producers' exact output
+to committed golden fixtures). Here we assert the producers are self-consistent
+and that the loaded graph is well-formed — so the pipeline keeps working in
+environments with no codeql / JVM at all.
 """
-import os
 from pathlib import Path
 
 import pytest
@@ -132,33 +131,3 @@ def test_raw_teal_no_codeql(db: Path, monkeypatch, tmp_path) -> None:
 
     from tealtools.ssa import SSAProgram
     assert SSAProgram(str(raw)).blocks, "SSA from raw TEAL produced no blocks"
-
-
-@pytest.mark.skipif("CODEQL" not in os.environ, reason="needs codeql")
-@pytest.mark.parametrize("db", _REAL, ids=_REAL_IDS)
-def test_python_vs_codeql_backend_equivalent(db: Path, monkeypatch) -> None:
-    """The Python and codeql backends build the same graph: identical node
-    locations, CFG edges (by location + successor), and BB annotations. The
-    only allowed node-class difference is the ``==`` / ``!=`` dual-class
-    dedup winner (behaviourally irrelevant — nothing references those leaf
-    classes), so node identity is compared by location, not class."""
-    def summarize(g):
-        node_locs = {(n.location.file, n.location.start_line) for n in g.nodes}
-        cfg = {
-            (u.location.file, u.location.start_line,
-             v.location.file, v.location.start_line, d.get("successor"))
-            for u, v, d in g.edges(data=True) if d.get("kind") == "cfg"
-        }
-        bb = {
-            (n.location.file, n.location.start_line, g.nodes[n]["bb"])
-            for n in g.nodes if g.nodes[n].get("bb") is not None
-        }
-        return node_locs, cfg, bb
-
-    monkeypatch.setenv("TEAL_GRAPHS_BACKEND", "python")
-    py = summarize(load_graph(db, verbose=False))
-    monkeypatch.setenv("TEAL_GRAPHS_BACKEND", "codeql")
-    ql = summarize(load_graph(db, verbose=False, refresh=True))
-    assert py[0] == ql[0], "node-location set differs"
-    assert py[1] == ql[1], "cfg-edge set differs"
-    assert py[2] == ql[2], "basic-block annotation set differs"

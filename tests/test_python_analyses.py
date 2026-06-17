@@ -254,9 +254,6 @@ def _render(analysis: str, case_dir: Path, *, scan_cache: Path = None) -> str:
 
 @pytest.mark.parametrize("analysis,case_dir", list(_discover()))
 def test_snapshot(analysis: str, case_dir: Path, scan_cache: Path) -> None:
-    if "CODEQL" not in os.environ:
-        pytest.skip("CODEQL env var not set")
-
     actual = _render(analysis, case_dir, scan_cache=scan_cache)
     expected_path = case_dir / "expected.txt"
 

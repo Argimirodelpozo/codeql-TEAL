@@ -1,0 +1,55 @@
+## nodes
+prog.teal	1	1	28	7	Source
+prog.teal	6	1	6	10	InnerTransactionBegin
+prog.teal	7	1	7	9	PushintOpcode
+prog.teal	8	1	8	19	InnerTransactionField
+prog.teal	9	1	9	10	TxnOpcode
+prog.teal	10	1	10	19	InnerTransactionField
+prog.teal	12	1	12	22	TxnaOpcode
+prog.teal	13	1	13	4	BtoiOpcode
+prog.teal	14	1	14	10	BnzOpcode
+prog.teal	16	1	16	11	PushintOpcode
+prog.teal	17	1	17	14	BOpcode
+prog.teal	19	1	19	7	Label
+prog.teal	20	1	20	11	PushintOpcode
+prog.teal	22	1	22	13	Label
+prog.teal	23	1	23	17	InnerTransactionField
+prog.teal	25	1	25	11	InnerTransactionSubmit
+prog.teal	27	1	27	9	PushintOpcode
+prog.teal	28	1	28	6	ReturnOpcode
+## cfgEdges
+prog.teal	6	prog.teal	7	NormalSuccessor
+prog.teal	7	prog.teal	8	NormalSuccessor
+prog.teal	8	prog.teal	9	NormalSuccessor
+prog.teal	9	prog.teal	10	NormalSuccessor
+prog.teal	10	prog.teal	12	NormalSuccessor
+prog.teal	12	prog.teal	13	NormalSuccessor
+prog.teal	13	prog.teal	14	NormalSuccessor
+prog.teal	14	prog.teal	16	BooleanSuccessor(false)
+prog.teal	14	prog.teal	19	BooleanSuccessor(true)
+prog.teal	16	prog.teal	17	NormalSuccessor
+prog.teal	17	prog.teal	22	NormalSuccessor
+prog.teal	19	prog.teal	20	NormalSuccessor
+prog.teal	20	prog.teal	22	NormalSuccessor
+prog.teal	22	prog.teal	23	NormalSuccessor
+prog.teal	23	prog.teal	25	NormalSuccessor
+prog.teal	25	prog.teal	27	NormalSuccessor
+prog.teal	27	prog.teal	28	NormalSuccessor
+## basicBlocks
+prog.teal	6	6	14
+prog.teal	7	6	14
+prog.teal	8	6	14
+prog.teal	9	6	14
+prog.teal	10	6	14
+prog.teal	12	6	14
+prog.teal	13	6	14
+prog.teal	14	6	14
+prog.teal	16	16	17
+prog.teal	17	16	17
+prog.teal	19	19	20
+prog.teal	20	19	20
+prog.teal	22	22	28
+prog.teal	23	22	28
+prog.teal	25	22	28
+prog.teal	27	22	28
+prog.teal	28	22	28

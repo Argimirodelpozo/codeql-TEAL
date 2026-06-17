@@ -1,0 +1,57 @@
+## nodes
+prog.teal	1	1	30	7	Source
+prog.teal	5	1	5	22	TxnaOpcode
+prog.teal	6	1	6	4	BtoiOpcode
+prog.teal	7	1	7	25	SwitchOpcode
+prog.teal	8	1	8	11	BOpcode
+prog.teal	10	1	10	7	Label
+prog.teal	12	1	12	11	PushintOpcode
+prog.teal	13	1	13	8	BOpcode
+prog.teal	15	1	15	6	Label
+prog.teal	17	1	17	11	PushintOpcode
+prog.teal	18	1	18	8	BOpcode
+prog.teal	20	1	20	6	Label
+prog.teal	22	1	22	11	PushintOpcode
+prog.teal	23	1	23	8	BOpcode
+prog.teal	25	1	25	10	Label
+prog.teal	27	1	27	9	PushintOpcode
+prog.teal	29	1	29	7	Label
+prog.teal	30	1	30	6	ReturnOpcode
+## cfgEdges
+prog.teal	5	prog.teal	6	NormalSuccessor
+prog.teal	6	prog.teal	7	NormalSuccessor
+prog.teal	7	prog.teal	8	NormalSuccessor
+prog.teal	7	prog.teal	10	NormalSuccessor
+prog.teal	7	prog.teal	15	NormalSuccessor
+prog.teal	7	prog.teal	20	NormalSuccessor
+prog.teal	8	prog.teal	25	NormalSuccessor
+prog.teal	10	prog.teal	12	NormalSuccessor
+prog.teal	12	prog.teal	13	NormalSuccessor
+prog.teal	13	prog.teal	29	NormalSuccessor
+prog.teal	15	prog.teal	17	NormalSuccessor
+prog.teal	17	prog.teal	18	NormalSuccessor
+prog.teal	18	prog.teal	29	NormalSuccessor
+prog.teal	20	prog.teal	22	NormalSuccessor
+prog.teal	22	prog.teal	23	NormalSuccessor
+prog.teal	23	prog.teal	29	NormalSuccessor
+prog.teal	25	prog.teal	27	NormalSuccessor
+prog.teal	27	prog.teal	29	NormalSuccessor
+prog.teal	29	prog.teal	30	NormalSuccessor
+## basicBlocks
+prog.teal	5	5	7
+prog.teal	6	5	7
+prog.teal	7	5	7
+prog.teal	8	8	8
+prog.teal	10	10	13
+prog.teal	12	10	13
+prog.teal	13	10	13
+prog.teal	15	15	18
+prog.teal	17	15	18
+prog.teal	18	15	18
+prog.teal	20	20	23
+prog.teal	22	20	23
+prog.teal	23	20	23
+prog.teal	25	25	27
+prog.teal	27	25	27
+prog.teal	29	29	30
+prog.teal	30	29	30

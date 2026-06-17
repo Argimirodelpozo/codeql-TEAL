@@ -1,0 +1,74 @@
+## nodes
+prog.teal	1	1	70	11	Source
+prog.teal	7	1	7	5	Label
+prog.teal	10	5	10	16	TxnOpcode
+prog.teal	11	5	11	13	PushintOpcode
+prog.teal	12	5	12	6	EqualsComparisonOpcode
+prog.teal	12	5	12	6	IntegerEqualsOpcode
+prog.teal	16	5	16	24	BzOpcode
+prog.teal	19	5	19	14	TxnOpcode
+prog.teal	20	5	20	18	PushintOpcode
+prog.teal	21	5	21	6	IntegerLteOpcode
+prog.teal	25	5	25	24	BzOpcode
+prog.teal	28	5	28	11	TxnOpcode
+prog.teal	29	5	29	20	GlobalOpcode
+prog.teal	30	5	30	6	IntegerLteOpcode
+prog.teal	35	5	35	24	BzOpcode
+prog.teal	39	5	39	24	TxnOpcode
+prog.teal	40	5	40	22	GlobalOpcode
+prog.teal	41	5	41	6	EqualsComparisonOpcode
+prog.teal	41	5	41	6	IntegerEqualsOpcode
+prog.teal	48	5	48	24	BzOpcode
+prog.teal	49	5	49	13	PushintOpcode
+prog.teal	58	5	58	10	ReturnOpcode
+prog.teal	60	1	60	18	Label
+prog.teal	61	5	61	13	PushintOpcode
+prog.teal	70	5	70	10	ReturnOpcode
+## cfgEdges
+prog.teal	7	prog.teal	10	NormalSuccessor
+prog.teal	10	prog.teal	11	NormalSuccessor
+prog.teal	11	prog.teal	12	NormalSuccessor
+prog.teal	12	prog.teal	16	NormalSuccessor
+prog.teal	16	prog.teal	19	BooleanSuccessor(true)
+prog.teal	16	prog.teal	60	BooleanSuccessor(false)
+prog.teal	19	prog.teal	20	NormalSuccessor
+prog.teal	20	prog.teal	21	NormalSuccessor
+prog.teal	21	prog.teal	25	NormalSuccessor
+prog.teal	25	prog.teal	28	BooleanSuccessor(true)
+prog.teal	25	prog.teal	60	BooleanSuccessor(false)
+prog.teal	28	prog.teal	29	NormalSuccessor
+prog.teal	29	prog.teal	30	NormalSuccessor
+prog.teal	30	prog.teal	35	NormalSuccessor
+prog.teal	35	prog.teal	39	BooleanSuccessor(true)
+prog.teal	35	prog.teal	60	BooleanSuccessor(false)
+prog.teal	39	prog.teal	40	NormalSuccessor
+prog.teal	40	prog.teal	41	NormalSuccessor
+prog.teal	41	prog.teal	48	NormalSuccessor
+prog.teal	48	prog.teal	49	BooleanSuccessor(true)
+prog.teal	48	prog.teal	60	BooleanSuccessor(false)
+prog.teal	49	prog.teal	58	NormalSuccessor
+prog.teal	60	prog.teal	61	NormalSuccessor
+prog.teal	61	prog.teal	70	NormalSuccessor
+## basicBlocks
+prog.teal	7	7	16
+prog.teal	10	7	16
+prog.teal	11	7	16
+prog.teal	12	7	16
+prog.teal	16	7	16
+prog.teal	19	19	25
+prog.teal	20	19	25
+prog.teal	21	19	25
+prog.teal	25	19	25
+prog.teal	28	28	35
+prog.teal	29	28	35
+prog.teal	30	28	35
+prog.teal	35	28	35
+prog.teal	39	39	48
+prog.teal	40	39	48
+prog.teal	41	39	48
+prog.teal	48	39	48
+prog.teal	49	49	58
+prog.teal	58	49	58
+prog.teal	60	60	70
+prog.teal	61	60	70
+prog.teal	70	60	70

@@ -1,0 +1,82 @@
+## nodes
+prog.teal	1	1	28	7	Source
+prog.teal	3	1	3	16	TxnOpcode
+prog.teal	4	1	4	5	SingleNumericArgumentOpcode
+prog.teal	5	1	5	2	EqualsComparisonOpcode
+prog.teal	5	1	5	2	IntegerEqualsOpcode
+prog.teal	6	1	6	6	AssertOpcode
+prog.teal	7	1	7	32	GlobalOpcode
+prog.teal	8	1	8	7	BalanceOpcode
+prog.teal	9	1	9	32	GlobalOpcode
+prog.teal	10	1	10	11	MinBalanceOpcode
+prog.teal	11	1	11	1	SubOpcode
+prog.teal	12	1	12	7	StoreOpcode
+prog.teal	13	1	13	6	LoadOpcode
+prog.teal	14	1	14	5	SingleNumericArgumentOpcode
+prog.teal	15	1	15	1	IntegerGreaterThanOpcode
+prog.teal	16	1	16	6	AssertOpcode
+prog.teal	17	1	17	10	InnerTransactionBegin
+prog.teal	18	1	18	5	SingleNumericArgumentOpcode
+prog.teal	19	1	19	19	InnerTransactionField
+prog.teal	20	1	20	10	TxnOpcode
+prog.teal	21	1	21	19	InnerTransactionField
+prog.teal	22	1	22	6	LoadOpcode
+prog.teal	23	1	23	17	InnerTransactionField
+prog.teal	24	1	24	5	SingleNumericArgumentOpcode
+prog.teal	25	1	25	14	InnerTransactionField
+prog.teal	26	1	26	11	InnerTransactionSubmit
+prog.teal	27	1	27	5	SingleNumericArgumentOpcode
+prog.teal	28	1	28	6	ReturnOpcode
+## cfgEdges
+prog.teal	3	prog.teal	4	NormalSuccessor
+prog.teal	4	prog.teal	5	NormalSuccessor
+prog.teal	5	prog.teal	6	NormalSuccessor
+prog.teal	6	prog.teal	7	BooleanSuccessor(true)
+prog.teal	7	prog.teal	8	NormalSuccessor
+prog.teal	8	prog.teal	9	NormalSuccessor
+prog.teal	9	prog.teal	10	NormalSuccessor
+prog.teal	10	prog.teal	11	NormalSuccessor
+prog.teal	11	prog.teal	12	NormalSuccessor
+prog.teal	12	prog.teal	13	NormalSuccessor
+prog.teal	13	prog.teal	14	NormalSuccessor
+prog.teal	14	prog.teal	15	NormalSuccessor
+prog.teal	15	prog.teal	16	NormalSuccessor
+prog.teal	16	prog.teal	17	BooleanSuccessor(true)
+prog.teal	17	prog.teal	18	NormalSuccessor
+prog.teal	18	prog.teal	19	NormalSuccessor
+prog.teal	19	prog.teal	20	NormalSuccessor
+prog.teal	20	prog.teal	21	NormalSuccessor
+prog.teal	21	prog.teal	22	NormalSuccessor
+prog.teal	22	prog.teal	23	NormalSuccessor
+prog.teal	23	prog.teal	24	NormalSuccessor
+prog.teal	24	prog.teal	25	NormalSuccessor
+prog.teal	25	prog.teal	26	NormalSuccessor
+prog.teal	26	prog.teal	27	NormalSuccessor
+prog.teal	27	prog.teal	28	NormalSuccessor
+## basicBlocks
+prog.teal	3	3	6
+prog.teal	4	3	6
+prog.teal	5	3	6
+prog.teal	6	3	6
+prog.teal	7	7	16
+prog.teal	8	7	16
+prog.teal	9	7	16
+prog.teal	10	7	16
+prog.teal	11	7	16
+prog.teal	12	7	16
+prog.teal	13	7	16
+prog.teal	14	7	16
+prog.teal	15	7	16
+prog.teal	16	7	16
+prog.teal	17	17	28
+prog.teal	18	17	28
+prog.teal	19	17	28
+prog.teal	20	17	28
+prog.teal	21	17	28
+prog.teal	22	17	28
+prog.teal	23	17	28
+prog.teal	24	17	28
+prog.teal	25	17	28
+prog.teal	26	17	28
+prog.teal	27	17	28
+prog.teal	28	17	28

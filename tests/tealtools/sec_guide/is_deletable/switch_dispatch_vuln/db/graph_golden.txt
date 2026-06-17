@@ -1,0 +1,66 @@
+## nodes
+prog.teal	1	1	32	9	Source
+prog.teal	5	1	5	16	TxnOpcode
+prog.teal	6	1	6	88	SwitchOpcode
+prog.teal	7	1	7	3	ErrOpcode
+prog.teal	9	1	9	12	Label
+prog.teal	10	3	10	7	SingleNumericArgumentOpcode
+prog.teal	11	3	11	8	ReturnOpcode
+prog.teal	13	1	13	13	Label
+prog.teal	14	3	14	7	SingleNumericArgumentOpcode
+prog.teal	15	3	15	8	ReturnOpcode
+prog.teal	17	1	17	16	Label
+prog.teal	18	3	18	7	SingleNumericArgumentOpcode
+prog.teal	19	3	19	8	ReturnOpcode
+prog.teal	21	1	21	13	Label
+prog.teal	22	3	22	7	SingleNumericArgumentOpcode
+prog.teal	23	3	23	8	ReturnOpcode
+prog.teal	25	1	25	14	Label
+prog.teal	26	3	26	7	SingleNumericArgumentOpcode
+prog.teal	27	3	27	8	ReturnOpcode
+prog.teal	29	1	29	14	Label
+prog.teal	31	3	31	7	SingleNumericArgumentOpcode
+prog.teal	32	3	32	8	ReturnOpcode
+## cfgEdges
+prog.teal	5	prog.teal	6	NormalSuccessor
+prog.teal	6	prog.teal	7	NormalSuccessor
+prog.teal	6	prog.teal	9	NormalSuccessor
+prog.teal	6	prog.teal	13	NormalSuccessor
+prog.teal	6	prog.teal	17	NormalSuccessor
+prog.teal	6	prog.teal	21	NormalSuccessor
+prog.teal	6	prog.teal	25	NormalSuccessor
+prog.teal	6	prog.teal	29	NormalSuccessor
+prog.teal	9	prog.teal	10	NormalSuccessor
+prog.teal	10	prog.teal	11	NormalSuccessor
+prog.teal	13	prog.teal	14	NormalSuccessor
+prog.teal	14	prog.teal	15	NormalSuccessor
+prog.teal	17	prog.teal	18	NormalSuccessor
+prog.teal	18	prog.teal	19	NormalSuccessor
+prog.teal	21	prog.teal	22	NormalSuccessor
+prog.teal	22	prog.teal	23	NormalSuccessor
+prog.teal	25	prog.teal	26	NormalSuccessor
+prog.teal	26	prog.teal	27	NormalSuccessor
+prog.teal	29	prog.teal	31	NormalSuccessor
+prog.teal	31	prog.teal	32	NormalSuccessor
+## basicBlocks
+prog.teal	5	5	6
+prog.teal	6	5	6
+prog.teal	7	7	7
+prog.teal	9	9	11
+prog.teal	10	9	11
+prog.teal	11	9	11
+prog.teal	13	13	15
+prog.teal	14	13	15
+prog.teal	15	13	15
+prog.teal	17	17	19
+prog.teal	18	17	19
+prog.teal	19	17	19
+prog.teal	21	21	23
+prog.teal	22	21	23
+prog.teal	23	21	23
+prog.teal	25	25	27
+prog.teal	26	25	27
+prog.teal	27	25	27
+prog.teal	29	29	32
+prog.teal	31	29	32
+prog.teal	32	29	32
