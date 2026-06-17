@@ -682,20 +682,29 @@ class _Lifter:
             return pre_ir.ConditionalBranch(cond, self.bid[other], self.bid[taken])  # bz
         if op == "match" and t is not None:
             # `match t0..t_{n-1}`: matched value on top, the n case values below.
-            # go-algorand pairs label[i] with the i-th case counting from the
-            # DEEPEST (label[0] <-> C_0, the first-pushed/deepest constant). The
-            # recovered `inputs` are [value, C_0, C_1, …, C_{n-1}] (value first,
-            # then the constants in push/deepest-first order), so C_i is at index
-            # i+1. (Pairing label[i] with ins[n-i] silently SWAPS sibling methods
-            # -- e.g. routes one ABI selector to another's body; oracle-confirmed.)
+            # AVM pairs label[i] with the i-th case counting from the DEEPEST
+            # (first-pushed) constant -- label[0] <-> C_0. SSA inputs are
+            # TOP-FIRST, so the case constants normally arrive deepest-LAST and
+            # label[i] is `ins[n-i]`. BUT a single multi-push op
+            # (`pushbytess`/`pushints`) emits its N outputs in push order, so
+            # when all n case operands come from ONE op they arrive deepest-
+            # FIRST and label[i] is `ins[i+1]`. Discriminate by whether the n
+            # case operands share a source line (one op) or not (n separate
+            # `intc`/`pushint` pushes). Getting this wrong silently SWAPS sibling
+            # arms -- e.g. an OnCompletion/ABI selector routed to the wrong body
+            # (oracle-confirmed on app_3543081435's no-arg OnCompletion router:
+            # NoOp<->UpdateApplication were swapped).
             labels = (t.immediates or "").split()
             n = len(labels)
             ins = (self.resim_args.get(id(t)) if (resim and id(t) in self.resim_args)
                    else [self.value(x) for x in t.inputs])
+            case_lines = {getattr(x, "line", None) for x in t.inputs[1:n + 1]}
+            single_push = len(case_lines) == 1 and None not in case_lines
             cases, targets = [], set()
             for i, lbl in enumerate(labels):
                 blk = self.line2block.get(self.label2line.get(lbl))
-                ci = ins[i + 1] if (i + 1) < len(ins) else None
+                idx = (i + 1) if single_push else (n - i)
+                ci = ins[idx] if 0 <= idx < len(ins) else None
                 if isinstance(ci, pre_ir.BytesConstant):
                     key = ci.value                       # bytes-keyed match
                 elif isinstance(ci, pre_ir.UInt64Constant):

@@ -45,6 +45,7 @@ from tealtools.WIP_lift2puyaIR import pre_ir  # noqa: E402
 _ROOT = Path(__file__).resolve().parent
 _REAL_DB_DIR = _ROOT / "dbs"
 _CORPUS_DIR = _ROOT / "experimental_IR_lift" / "puya"
+_EXPLORER_DIR = _ROOT / "experimental_IR_lift" / "explorer"
 # A residual-"?" fraction this high means type recovery has collapsed (a coarse
 # net -- the strong guards are terminator/arity/backend). Observed max ~11%.
 _MAX_UNKNOWN_FRACTION = 0.25
@@ -287,3 +288,48 @@ def test_lowers_through_puya_backend(db):
     _pre, main, subs = _process(db)
     teal = _lower_to_teal(main, subs)
     assert sum(len(b.ops) for b in teal.main.blocks) > 0    # produced real TEAL ops
+
+
+# --------------------------------------------------------------------------
+# Regression: `match` arm pairing (single multi-push vs individual pushes)
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.skipif(
+    not (_EXPLORER_DIR / "app_3543081435" / "db" / "src.zip").exists(),
+    reason="app_3543081435 explorer fixture not present",
+)
+def test_match_arm_pairing_individual_pushes():
+    """A `match` whose case keys come from SEPARATE `intc` pushes must pair
+    label[i] with the deepest-first key (SSA inputs are top-first, so the keys
+    arrive reversed -- the fix uses ins[n-i], not ins[i+1] which is only right
+    for a single multi-push `pushbytess`/`pushints`).
+
+    app_3543081435's no-arg OnCompletion router is
+    ``intc 0; intc 4; txn OnCompletion; match label9 label10`` where
+    0->label9 (`txn ApplicationID; !; return`, NoOp) and 4->label10 (creator
+    assert, UpdateApplication). Getting it wrong swaps the two and flips the
+    approve/reject outcome (behaviourally confirmed). Assert the routing:
+    case "0" goes to the block with the `!`/Not op; case "4" does not."""
+    from tealtools.ssa import SSAProgram
+    from tealtools.WIP_lift2puyaIR.lift import lift
+
+    prog = SSAProgram(
+        str(_EXPLORER_DIR / "app_3543081435" / "db"), verbose=False)
+    pre = lift(prog)
+    blocks = {b.id: b for b in pre_ir.blocks(pre)}
+
+    sw = next(
+        (b.terminator for b in blocks.values()
+         if isinstance(b.terminator, pre_ir.Switch)
+         and {str(k) for k, _ in b.terminator.cases} == {"0", "4"}),
+        None,
+    )
+    assert sw is not None, "no-arg OnCompletion match Switch not found"
+    cases = {str(k): bid for k, bid in sw.cases}
+
+    def has_not(bid):
+        return any("op='!'" in str(o) for o in blocks[bid].ops)
+
+    assert has_not(cases["0"]), "case 0 (NoOp) must route to the `!`/AppID block"
+    assert not has_not(cases["4"]), "case 4 (Update) must NOT route to the NoOp block"
