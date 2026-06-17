@@ -43,13 +43,11 @@ import fnmatch
 import json
 import logging
 import os
-import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Optional
 
 from ..ssa import SSAProgram
-from ..targets import build_db_for_dir
 from . import DETECTORS
 from .config import DetectionConfig
 
@@ -206,12 +204,15 @@ def scan(
                 sum(len(v) for v in by_dir.values()), len(by_dir), root)
     findings: list[ScanFinding] = []
     for dir_path, teal_files in sorted(by_dir.items()):
+        # Reconstruct straight from the raw .teal directory (pure-Python graph
+        # backend) -- no codeql DB build. `SSAProgram` over a directory loads
+        # every .teal in it, keyed by basename, which is the same `file=`
+        # filter the detectors use below.
         try:
-            db = build_db_for_dir(teal_files, cache_root=cache_root)
-        except subprocess.CalledProcessError as e:
-            logger.warning("codeql build failed for %s: %s", dir_path, e)
+            prog = SSAProgram(str(dir_path))
+        except Exception as e:                       # pragma: no cover
+            logger.warning("could not reconstruct SSA for %s: %s", dir_path, e)
             continue
-        prog = SSAProgram(str(db))
         for teal in teal_files:
             rel = teal.relative_to(root)
             names = config.detectors_for(str(rel))
