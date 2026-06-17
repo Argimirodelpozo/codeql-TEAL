@@ -1,33 +1,26 @@
-"""Python view of the QL-computed coarse taint-flow graph.
+"""Coarse taint-flow graph, computed from the PySSA def-use relation.
 
-Loads rows from ``taintFlowEdges.ql`` (cached in the per-DB
-``~/.cache/teal-graphs/`` directory) into a :class:`networkx.DiGraph`
-and exposes refinement-friendly queries on top.
+A :class:`networkx.DiGraph` over ``(file, line, ql_class)`` nodes with
+refinement-friendly queries on top. The edges come from :func:`_flow_rows_for`,
+a pure-Python port of the former ``taintFlowEdges.ql`` (CodeQL is no longer a
+dependency): every operand's defining op flows to the op that consumes it, each
+phi argument flows into its phi, and a scratch ``store`` reaches its ``load``.
+PySSA already folds cross-block, cross-subroutine (frame) and stack-shuffle flow
+into direct def-use, so the lenient reachability the refiners rely on survives
+without the QL dataflow library.
 
-The QL side is intentionally *lenient* — it unions
-:func:`LocalFlow::localFlowStep` (narrow) +
-:func:`LocalFlow::localSsaFlowStep` (full SSA def-use, phi) +
-:func:`SubroutineFlow::simpleLocalFlowStep` (cross-subroutine) +
-a generic "every consumed input → every produced output" step +
-explicit phi-arg edges, so the graph captures arithmetic / bytemath /
-hash / slice / cross-BB phi chains the narrower predicates miss.
+Each edge carries a ``kinds`` set so refiners can filter:
 
-Multiple QL channels can fire for the same ``(src, dst)`` pair —
-those collapse into a single edge whose ``kinds`` set names every
-contributing channel:
-
-- ``callsub`` — caller→callee args, callee→caller returns.
-- ``scratch`` — ``store N`` → ``load N`` (across BBs).
-- ``identity`` — value-identity step (SSA def-use / shuffle / phi).
-- ``subroutine`` — extra step from :mod:`SubroutineFlow`.
-- ``broad`` — ``LocalFlow::localFlowStep`` (narrow).
-- ``generic`` — the lenient consumes-produces step.
+- ``ssa-step`` — an ordinary def-use step (a consumed value).
+- ``identity`` — a value-identity step (a phi argument).
+- ``scratch`` — ``store N`` → ``load N``.
+- ``subroutine`` / ``broad`` / ``generic`` — extra labels kept for parity with
+  the old channel set; cosmetic (graph colours), not consulted by any refiner.
 
 Refinement passes (see :mod:`tealtools.dataflow.refiners`) chain via
-:meth:`TaintGraph.prune` / :meth:`TaintGraph.annotate` to fold in
-Python-side knowledge: const folding via ``mustValues``, range
-narrowing via ``extract`` immediates, predicate-based suppression,
-etc.
+:meth:`TaintGraph.prune` / :meth:`TaintGraph.annotate` to fold in Python-side
+knowledge: const folding, range narrowing via ``extract`` immediates,
+predicate-based suppression, etc.
 """
 from __future__ import annotations
 
@@ -438,19 +431,85 @@ class TaintGraph:
         return "\n".join(out)
 
 
+# SSA-step flavours emitted for an ordinary def-use edge (a value consumed by
+# an op). The QL emitted up to six channel labels per edge (broad / generic /
+# ssa-step / subroutine / ...); only ``ssa-step`` (and ``identity`` on
+# value-preserving steps) drive any refiner — the rest are cosmetic (graph
+# colours). We emit the lenient superset so every consumer behaves as before.
+_DEFUSE_KINDS = ("ssa-step", "subroutine", "generic", "broad")
+# A phi argument flows into the phi unchanged: an identity step.
+_PHIARG_KINDS = ("phi-arg", "identity", "ssa-step", "subroutine")
+# A scratch store's value reaches the matching load unchanged.
+_SCRATCH_KINDS = ("scratch", "ssa-step", "subroutine")
+
+
 def _flow_rows_for(prog: SSAProgram) -> list[tuple]:
-    """Read ``taintFlowEdges.csv`` from the per-DB cache. Falls back
-    to running the query if the cache file is missing.
+    """Coarse taint-flow rows, computed purely from the PySSA def-use graph
+    (CodeQL-free port of ``taintFlowEdges.ql``).
 
-    Returns the rows as a list of tuples; empty list if the query
-    produced no edges.
+    Each row is ``(srcFile, srcLine, srcClass, sinkFile, sinkLine, sinkClass,
+    kind)`` — identical shape to the old query output, so :meth:`TaintGraph.build`
+    is unchanged. The edges are the SSA def-use relation: every operand's
+    defining op flows to the op that consumes it (``ssa-step``); each phi
+    argument flows into its phi (``identity``); and a scratch ``store`` reaches
+    its ``load`` (``scratch``). PySSA already resolves cross-block,
+    cross-subroutine (frame) and stack-shuffle flow into direct def-use, so the
+    coarse reachability the refiners rely on is preserved without the QL
+    dataflow library.
     """
-    from ..graphs import _cache_dir_for, _read_csv, QUERIES_DIR, _run_csv_query
+    from ..ssa.models import Const, MatPhiVar, Phi, SSAVar
 
-    db = Path(prog.db_path)
-    cache = _cache_dir_for(db)
-    csv_path = cache / "taintFlowEdges.csv"
-    if not csv_path.exists():
-        _run_csv_query(db, QUERIES_DIR / "taintFlowEdges.ql", cache)
-    rows = _read_csv(csv_path)
-    return [tuple(r) for r in rows]
+    g = getattr(prog, "_graph", None)
+    cls_at: dict[tuple[str, int], str] = {}
+    if g is not None:
+        for n in g.nodes:
+            loc = n.location
+            cls_at[(loc.file, loc.start_line)] = n.ql_class
+
+    rows: list[tuple] = []
+
+    def _node(operand):
+        """``(file, line, class)`` for an SSA operand that has a definition, or
+        ``None`` for a constant / literal (a natural taint stopper)."""
+        if isinstance(operand, Phi):
+            return operand.file, operand.line, "Phi"
+        if isinstance(operand, (SSAVar, MatPhiVar)):
+            f, ln = operand.file, operand.line
+            return f, ln, cls_at.get((f, ln), operand.__class__.__name__)
+        return None  # Const / unresolved
+
+    def _emit(src, df: str, dl: int, dc: str, kinds) -> None:
+        if src is None:
+            return
+        for k in kinds:
+            rows.append((src[0], src[1], src[2], df, dl, dc, k))
+
+    # def-use: each op consumes its inputs; the input's def flows to this op.
+    for a in prog.assignments:
+        df, dl = a.location.file, a.location.line
+        dc = cls_at.get((df, dl), a.op)
+        for inp in a.inputs:
+            _emit(_node(inp), df, dl, dc, _DEFUSE_KINDS)
+
+    # phi-arg: every incoming def flows into the phi (value-identity step).
+    for ph in getattr(prog, "phis", ()) or ():
+        df, dl = ph.file, ph.line
+        for arg in getattr(ph, "args", ()):
+            _emit(_node(arg), df, dl, "Phi", _PHIARG_KINDS)
+
+    # scratch bridge: a `store N`-d value reaches each `load N` of that slot.
+    # PySSA exposes the reaching stores per load on the graph node (the same
+    # ``scratch_stores`` the lifter consumes); resolve each to its producing op.
+    if g is not None:
+        for n in g.nodes:
+            stores = g.nodes[n].get("scratch_stores")
+            if not stores:
+                continue
+            loc = n.location
+            dc = cls_at.get((loc.file, loc.start_line), "?")
+            for sk in stores:
+                sf, sl = sk[0], sk[1]
+                _emit((sf, sl, cls_at.get((sf, sl), "?")),
+                      loc.file, loc.start_line, dc, _SCRATCH_KINDS)
+
+    return rows
