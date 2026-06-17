@@ -533,11 +533,13 @@ class PySSA:
         reads the latter to build entry_stacks: a collapsed slot has no phi, so
         the entry_stack can't be rebuilt from ``self.phis`` alone."""
         import sys as _sys
-        # Recursion is bounded by STACK_MAX (the read_exit slot cap) times the
-        # loop body length; lift the default 1000 frame limit to cover it.
-        _sys.setrecursionlimit(max(_sys.getrecursionlimit(), 20_000))
+        # The depth cap bounds recursion to the true stack depth x passthrough
+        # chain length (~35 on folks-v3, never the STACK_MAX spiral); a modest
+        # raise covers huge real contracts without the spiral's unbounded climb.
+        _sys.setrecursionlimit(max(_sys.getrecursionlimit(), 10_000))
         self._surv_by_slot = {b: {k: v for v, k in self._surv[b]}
                               for b in self.blocks}
+        self._depth = self._compute_entry_depths()
         # Demand: every entry slot an op consumes (top-first 1..C) per block.
         # The recursion pulls in the passthrough slots successors read.
         for b in self.blocks:
@@ -548,6 +550,36 @@ class PySSA:
             self._entry_val[key] = self._resolve(self._entry_val[key])
         for P in self.phis.values():
             P.args = [self._resolve(a) for a in P.args]
+
+    def _compute_entry_depths(self) -> dict:
+        """``bb_key -> entry stack depth`` (top-first slot count) via a forward
+        BFS from the no-pred entry block(s), ``exit = entry + L - C`` along each
+        edge. On disagreement KEEP the first (forward) value: a loop header is
+        reached from its preheader before its latch, so it keeps the true
+        loop-invariant depth ``D``; the latch's differing proposal is the
+        slot-model net artifact that drives the spiral and is ignored. The cap
+        ``read_entry(b, k>D) -> None`` then never creates the spurious deep phis.
+
+        (Interprocedural callsub/retsub edges can pollute depths *inside* a
+        callee or a continuation, but the targeted loop header in the caller
+        still gets its forward depth, which is what bounds the spiral.)"""
+        from collections import deque
+        depth: dict = {}
+        wl: deque = deque()
+        for b in self.blocks:
+            if not b.preds:
+                depth[b.key] = 0
+                wl.append(b)
+        while wl:
+            b = wl.popleft()
+            ex = depth[b.key] + self._locals[b] - self._consumed[b]
+            if ex < 0:
+                ex = 0
+            for s in b.succs:
+                if s.key not in depth:          # first (forward) reach wins
+                    depth[s.key] = ex
+                    wl.append(s)
+        return depth
 
     def _resolve(self, v):
         """Follow the trivial-phi replacement chain to the surviving value."""
@@ -581,6 +613,12 @@ class PySSA:
         memo = self._entry_val.get(key, _MISSING)
         if memo is not _MISSING:
             return memo
+        if k > self._depth.get(b.key, STACK_MAX):
+            # Beyond the block's true entry stack depth -> a spurious slot the
+            # net-changing-loop spiral would otherwise climb to. No such value
+            # exists at runtime; stop here so no deep phi chain is created.
+            self._entry_val[key] = None
+            return None
         if k > self._max_entry.get(b.key, 0):
             self._max_entry[b.key] = k
         preds = b.preds

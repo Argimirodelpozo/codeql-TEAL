@@ -1,3 +1,38 @@
+# ✅ SOLVED 2026-06-17 — depth cap eliminates the spiral; Braun WINS 160-209x
+
+The missing piece (per the finding below) was the **forward depth cap**, now
+implemented: `_compute_entry_depths()` BFS's from the no-pred entry over
+`exit = entry + L - C`, keeping the FIRST (forward / preheader) depth on
+disagreement so a loop header gets its true loop-invariant depth `D` (the
+latch's net-changed proposal — the spiral driver — is ignored). `_read_entry(b,
+k>D)` then returns None: the spiral's growing slots exceed `D` and are never
+created.
+
+**Result — depth-capped Braun (TEAL_SSA_BRAUN=1):**
+
+| | xgov | folks-v3 |
+|--|--|--|
+| eager SSA build | 0.95s (77,023 phis) | 3.15s (159,818 phis) |
+| **Braun SSA build** | **0.01s (11 phis)** | **0.02s (25 phis)** |
+| **speedup** | **160x** | **209x** |
+
+Recursion is bounded to ~35 deep (the true depth x passthrough length), not the
+STACK_MAX climb. **Fully validated, behaviourally identical to eager:** puya
+corpus 513 passed / 0 failed; 5 real DBs Tier-1/2 (17) AND Tier-3 backend
+lowering to real TEAL (5/5); live-localnet behavioural 35-corpus = 33 faithful,
+0 real divergences (same as eager); detections 130/130 (the only diff is the
+eager-specific `loop_frame_dig` SSA-digest snapshot: Braun's 0 phis vs eager's
+1000 — Braun is minimal SSA). The depth cap also fixed the lone non-spiral
+corpus bug (array_StaticSize mixed-type phi) for free.
+
+**The spiral was a slot-model artifact for BOTH constructions; the depth cap is
+the real fix.** Braun's on-demand + trivial-phi removal then make the placement
+minimal and the build ~constant-time. Eager stays default; Braun is opt-in and
+ready to promote pending a full downstream-suite sweep. The same depth cap would
+also rescue `_phase34_join_only`, but Braun subsumes it (cleaner, minimal SSA).
+
+---
+
 # Braun on-demand construction — IMPLEMENTED + KEY FINDING (2026-06-17)
 
 `_phase_braun` (ssa.py, behind `TEAL_SSA_BRAUN=1`) implements Braun et al.'s
