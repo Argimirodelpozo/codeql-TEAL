@@ -333,3 +333,62 @@ def test_match_arm_pairing_individual_pushes():
 
     assert has_not(cases["0"]), "case 0 (NoOp) must route to the `!`/AppID block"
     assert not has_not(cases["4"]), "case 4 (Update) must NOT route to the NoOp block"
+
+
+# --------------------------------------------------------------------------
+# Regression: `frame_bury` of a `callsub` return value
+# --------------------------------------------------------------------------
+
+
+_FRAME_BURY_CALLSUB_RETURN_TEAL = """#pragma version 8
+intcblock 0 1
+txn ApplicationID
+bz main_create
+callsub outer
+intc_1
+return
+main_create:
+intc_1
+return
+outer:
+proto 0 0
+intc_0
+callsub inner
+frame_bury 0
+pushbytes 0x151f7c75
+frame_dig 0
+itob
+concat
+log
+retsub
+inner:
+proto 0 1
+intc_1
+retsub
+"""
+
+
+def test_frame_bury_of_callsub_return(tmp_path):
+    """A `frame_bury` of a `callsub` RETURN must version the slot so a later
+    `frame_dig` reads the return. `callsub` has 0 SSA outputs (the resim threads
+    the return), so the bury's base-SSA inputs are empty; frame_resolution used
+    to skip it (`and a.inputs`), leaving the slot unversioned, so the `frame_dig`
+    was misclassified as a *pushed* local and routed to the stack-band value --
+    here `itob` on the bytes `0x151f7c75` (AVM type error -> reject). Confirmed
+    on mainnet app_3000142226 et al. (UpdateApplication flipped to reject).
+
+    Assert no `itob` in the lifted program operates on a bytes constant."""
+    import os
+    os.environ["TEAL_GRAPHS_BACKEND"] = "python"
+    from tealtools.ssa import SSAProgram
+    from tealtools.WIP_lift2puyaIR.lift import lift
+
+    p = tmp_path / "frame_bury_callsub_return.teal"
+    p.write_text(_FRAME_BURY_CALLSUB_RETURN_TEAL)
+    pre = lift(SSAProgram(str(p), verbose=False))
+    itobs = [op for bb in pre_ir.blocks(pre) for op in bb.ops if "op='itob'" in str(op)]
+    assert itobs, "synthetic did not produce an itob (test no longer exercises the path)"
+    for op in itobs:
+        assert "BytesConstant" not in str(op), (
+            "itob on a bytes constant — frame_bury-of-callsub-return regression "
+            f"(frame_dig misrouted): {op}")

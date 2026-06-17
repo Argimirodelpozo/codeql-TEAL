@@ -90,13 +90,24 @@ def resolve_sub(blocks, nargs: int) -> SubFrames:
                     o = a.outputs[i]
                     if isinstance(o, SSAVar) and i - 1 < len(a.inputs):
                         res.passthrough[o] = a.inputs[i - 1]
-            elif a.op == "frame_bury" and a.inputs:
+            elif a.op == "frame_bury":
                 k = _imm0(a)
                 if k is not None:
                     # Version EVERY bury, including a param slot (k < 0): writing
                     # it turns that slot into a mutable local, and each write must
                     # open a fresh SSA version or the lift emits one register
                     # assigned many times (Puya rejects it as an SSA violation).
+                    #
+                    # Open the version EVEN with no SSA inputs: a `frame_bury` of
+                    # a value the base SSA doesn't carry on the stack -- e.g. a
+                    # `callsub` return (callsub has 0 SSA outputs; the resim
+                    # threads the return) -- still writes the slot. The old
+                    # `and a.inputs` guard skipped it, leaving the slot
+                    # unversioned, so a later `frame_dig` of that slot was
+                    # MISCLASSIFIED as a *pushed* local (cur.get(k) is None) and
+                    # routed to the stack-band value (the wrong register) instead
+                    # of `dig_local`. The resim writes the threaded value into the
+                    # slot, so versioning the bury makes the dig read it.
                     res.bury[id(a)] = (k, fresh(k))
                 for i in range(len(a.outputs)):      # bury: out[i] = in[i+1]
                     o = a.outputs[i]
