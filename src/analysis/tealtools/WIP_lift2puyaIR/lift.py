@@ -496,7 +496,12 @@ class _Lifter:
         return bool(outs) and all(o in self.shuffle_src for o in outs)
 
     def _name_group(self, gb):
-        self.ctr.clear()
+        # feat/verifier-stuff: do NOT clear the counter per group, so generated register
+        # names (tmp%n, v%n, cr%n, not%n, ...) are GLOBALLY UNIQUE. The verifier's range
+        # cross-check (experiment_3/chc_encoder/sast.py) bridges SSAVar ranges to encoder
+        # registers by (name, version), which must be INJECTIVE — per-group reuse of tmp%0
+        # collapsed 765 SSAVars to ~186 names. self.ctr only feeds naming (no logic), so a
+        # global counter is behaviour-preserving for the IR, only the temp numbers change.
         for bb in gb:
             if len(bb.predecessors) > 1:
                 for ph in sorted(bb.phis, key=lambda p: p.stack_index):
