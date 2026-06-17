@@ -109,6 +109,31 @@ def test_python_backend_builds_ssa(db: Path, monkeypatch) -> None:
     assert prog.blocks, "SSA produced no basic blocks"
 
 
+@pytest.mark.parametrize("db", _REAL, ids=_REAL_IDS)
+def test_raw_teal_no_codeql(db: Path, monkeypatch, tmp_path) -> None:
+    """The whole pipeline runs on a raw ``.teal`` file/dir (no codeql DB):
+    ``load_graph`` builds the same graph whether handed the DB or the extracted
+    source, and ``SSAProgram`` builds from raw TEAL. Proves codeql is gone from
+    the runtime path."""
+    import zipfile
+    monkeypatch.setenv("TEAL_GRAPHS_BACKEND", "python")
+    with zipfile.ZipFile(db / "src.zip") as zf:
+        members = [n for n in zf.namelist() if n.endswith(".teal")]
+        if not members:
+            pytest.skip("no teal in db")
+        raw = tmp_path / Path(members[0]).name
+        raw.write_bytes(zf.read(members[0]))
+
+    g_db = load_graph(db, verbose=False)
+    g_file = load_graph(raw, verbose=False)              # raw .teal file
+    g_dir = load_graph(tmp_path, verbose=False)          # dir of .teal
+    assert g_db.number_of_nodes() == g_file.number_of_nodes() == g_dir.number_of_nodes()
+    assert g_db.number_of_edges() == g_file.number_of_edges() == g_dir.number_of_edges()
+
+    from tealtools.ssa import SSAProgram
+    assert SSAProgram(str(raw)).blocks, "SSA from raw TEAL produced no blocks"
+
+
 @pytest.mark.skipif("CODEQL" not in os.environ, reason="needs codeql")
 @pytest.mark.parametrize("db", _REAL, ids=_REAL_IDS)
 def test_python_vs_codeql_backend_equivalent(db: Path, monkeypatch) -> None:

@@ -242,45 +242,56 @@ def _read_csv(path: Path) -> list[list[str]]:
         return list(reader)
 
 
-def _load_source_lines(db: Path) -> dict[str, list[str]]:
-    """Map relative file path -> 1-indexed list of lines from ``db/src.zip``."""
+def _resolve_source_files(db: Path):
+    """Yield ``(relpath, bytes)`` for each ``.teal`` source under ``db``.
+
+    ``db`` may be a CodeQL database directory (read its ``src.zip``), a single
+    ``.teal`` file, or a directory containing ``.teal`` files. The first form
+    keeps the existing codeql-DB behaviour; the latter two let the whole
+    pipeline (graph -> SSA -> lift -> analysis) run on raw TEAL with no codeql
+    at all — there is nothing codeql-specific left in the runtime path.
+    """
+    db = Path(db)
     src_zip = db / "src.zip"
-    if not src_zip.exists():
-        return {}
-    sources: dict[str, list[str]] = {}
-    with zipfile.ZipFile(src_zip) as zf:
-        for info in zf.infolist():
-            if info.is_dir():
-                continue
-            with zf.open(info) as f:
-                try:
-                    text = f.read().decode("utf-8")
-                except UnicodeDecodeError:
+    if src_zip.exists():
+        with zipfile.ZipFile(src_zip) as zf:
+            for info in zf.infolist():
+                if info.is_dir() or not info.filename.endswith(".teal"):
                     continue
-            lines = text.splitlines()
-            sources[info.filename] = lines
-            sources[Path(info.filename).name] = lines
+                yield info.filename, zf.read(info.filename)
+        return
+    if db.is_file() and db.suffix == ".teal":
+        yield db.name, db.read_bytes()
+        return
+    if db.is_dir():
+        for f in sorted(db.glob("*.teal")):
+            yield f.name, f.read_bytes()
+
+
+def _load_source_lines(db: Path) -> dict[str, list[str]]:
+    """Map relative path (and basename) -> 1-indexed source lines, from a
+    codeql DB's ``src.zip`` or raw ``.teal`` file/dir."""
+    sources: dict[str, list[str]] = {}
+    for rel, data in _resolve_source_files(db):
+        try:
+            lines = data.decode("utf-8").splitlines()
+        except UnicodeDecodeError:
+            continue
+        sources[rel] = lines
+        sources[Path(rel).name] = lines
     return sources
 
 
 def _load_source_bytes(db: Path) -> dict[str, bytes]:
-    """Map relative file path -> raw source bytes from ``db/src.zip``.
+    """Map basename -> raw source bytes, from a codeql DB's ``src.zip`` or raw
+    ``.teal`` file/dir.
 
-    Keyed by basename to match the relative path CodeQL reports in
-    ``nodes`` (CodeQL strips the source-root prefix, so a file stored in the
-    zip as ``tmp/dbsrc/x.teal`` surfaces as ``x.teal``). Used by the
-    pure-Python ``ast_build`` producer.
+    Keyed by basename to match the relative path CodeQL reports in ``nodes``
+    (CodeQL strips the source-root prefix, so a file stored in the zip as
+    ``tmp/dbsrc/x.teal`` surfaces as ``x.teal``). Used by the pure-Python
+    ``ast_build`` producer.
     """
-    src_zip = db / "src.zip"
-    out: dict[str, bytes] = {}
-    if not src_zip.exists():
-        return out
-    with zipfile.ZipFile(src_zip) as zf:
-        for info in zf.infolist():
-            if info.is_dir() or not info.filename.endswith(".teal"):
-                continue
-            out[Path(info.filename).name] = zf.read(info.filename)
-    return out
+    return {Path(rel).name: data for rel, data in _resolve_source_files(db)}
 
 
 def _slice_source(sources: dict[str, list[str]], loc: Location) -> str:
@@ -307,15 +318,18 @@ def load_graph(
     refresh: bool = False,
     verbose: bool = True,
 ) -> nx.MultiDiGraph:
-    """Build a MultiDiGraph from a TEAL CodeQL database.
+    """Build a MultiDiGraph from a TEAL source.
 
     Parameters
     ----------
     db_path:
-        Path to a CodeQL database directory (the one containing ``db-teal/``
-        and ``codeql-database.yml``).
+        A CodeQL database directory (containing ``src.zip``), **or** a raw
+        ``.teal`` file, **or** a directory of ``.teal`` files. The default
+        Python backend needs only the source — no codeql. The ``codeql``
+        backend (``TEAL_GRAPHS_BACKEND=codeql``) requires a real database.
     refresh:
-        If True, re-run all queries even if cached results exist.
+        If True, re-run all queries even if cached results exist (codeql
+        backend only).
     verbose:
         Print one-line progress to stderr.
     """
@@ -327,6 +341,11 @@ def load_graph(
     # the QL pack installed and the per-db CSV cache.
     backend = os.environ.get("TEAL_GRAPHS_BACKEND", "python").lower()
     if backend == "codeql":
+        if not (db / "src.zip").exists():
+            raise ValueError(
+                f"TEAL_GRAPHS_BACKEND=codeql needs a CodeQL database (src.zip) "
+                f"but {db} is raw TEAL — use the default python backend."
+            )
         _ensure_pack_installed()
         cache = _cache_dir_for(db)
         if refresh:
