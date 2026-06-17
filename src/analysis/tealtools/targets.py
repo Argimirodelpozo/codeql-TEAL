@@ -18,103 +18,19 @@ needed in a fresh checkout.
 """
 from __future__ import annotations
 
-import hashlib
 import logging
 import os
-import shutil
-import subprocess
 from pathlib import Path
-from typing import Optional
 
 logger = logging.getLogger("tealtools.targets")
 
+# Legacy default location for a per-target DB cache. No CodeQL DB is built any
+# more — the pipeline reconstructs straight from raw ``.teal`` — but the CLI
+# still surfaces a ``--db-cache`` flag / ``debug cache`` subcommand against this
+# path, so the constant is kept.
 DEFAULT_CACHE = Path(
-    os.environ.get("TEALQL_DB_CACHE",
-                   Path.home() / ".cache" / "tealql" / "dbs")
+    os.environ.get("TEALQL_DB_CACHE", Path.home() / ".cache" / "tealql" / "dbs")
 )
-
-
-# ---------------------------------------------------------------------------
-# CodeQL invocation helpers
-# ---------------------------------------------------------------------------
-
-
-def _codeql() -> str:
-    cmd = os.environ.get("CODEQL") or shutil.which("codeql")
-    if cmd is None:
-        raise RuntimeError(
-            "codeql binary not found (set $CODEQL or add to PATH)"
-        )
-    return cmd
-
-
-def _search_path() -> Optional[str]:
-    """Locate the bundled ``.codeql-extractors`` dir by walking parents
-    of this file. Returns ``None`` if not found (caller falls back to
-    CodeQL's own search path)."""
-    here = Path(__file__).resolve()
-    for parent in here.parents:
-        candidate = parent / ".codeql-extractors"
-        if candidate.exists():
-            return str(candidate)
-    return None
-
-
-def _dir_signature(teal_files: list[Path]) -> str:
-    """Stable hash of ``(basename, content)`` for every .teal file.
-    Survives moves of the parent dir as long as basenames and bytes
-    don't change."""
-    h = hashlib.sha256()
-    for f in sorted(teal_files, key=lambda p: p.name):
-        h.update(f.name.encode())
-        h.update(b"\0")
-        h.update(f.read_bytes())
-        h.update(b"\0")
-    return h.hexdigest()[:16]
-
-
-def build_db_for_dir(
-    teal_files: list[Path],
-    *,
-    cache_root: Path = DEFAULT_CACHE,
-    force_rebuild: bool = False,
-) -> Path:
-    """Build (or re-use) a CodeQL DB from ``teal_files``. The files
-    must all live in the same logical group; the cache key hashes
-    basenames and contents.
-
-    The build stages each .teal under a per-cache-entry ``src/`` dir
-    (codeql's extractor doesn't follow symlinks), then runs
-    ``codeql database create``. With a warm cache this is a no-op.
-
-    Progress is reported through the ``tealtools`` logger — run the
-    CLI with ``-v`` to see it.
-    """
-    if not teal_files:
-        raise ValueError("teal_files is empty")
-    sig = _dir_signature(teal_files)
-    cache_dir = cache_root / sig
-    db = cache_dir / "db"
-    if not force_rebuild and (db / "codeql-database.yml").exists():
-        logger.info("reusing cached CodeQL DB: %s", db)
-        return db
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    src = cache_dir / "src"
-    if src.exists():
-        shutil.rmtree(src)
-    src.mkdir()
-    for f in teal_files:
-        shutil.copy2(f, src / f.name)
-    cmd = [_codeql(), "database", "create", str(db),
-           "--overwrite", "-l", "teal", "-s", str(src)]
-    sp = _search_path()
-    if sp is not None:
-        cmd.append(f"--search-path={sp}")
-    logger.info("building CodeQL DB: %d .teal file(s) → %s",
-                len(teal_files), db)
-    subprocess.run(cmd, check=True, capture_output=True)
-    logger.info("CodeQL DB ready: %s", db)
-    return db
 
 
 # ---------------------------------------------------------------------------
@@ -144,33 +60,27 @@ def _discover_teal_files(path: Path) -> list[Path]:
 def resolve_target(
     target: str | Path,
     *,
-    cache_root: Path = DEFAULT_CACHE,
+    cache_root: Path | None = None,
     force_rebuild: bool = False,
 ) -> Path:
-    """Resolve a user-supplied path to a CodeQL DB.
+    """Resolve a user-supplied path to something the pipeline can read.
 
-    If ``target`` already points at a DB, it's returned as-is.
-    Otherwise ``.teal`` files are discovered under ``target`` (which
-    may be a single file or a directory tree) and a DB is built or
-    reused from the cache. Progress goes through the ``tealtools``
-    logger (CLI ``-v``).
+    A pre-built CodeQL database directory is returned as-is (its ``src.zip`` is
+    read by the pure-Python graph backend); a raw ``.teal`` file or a directory
+    of ``.teal`` files is likewise returned as-is — ``SSAProgram`` / ``load_graph``
+    reconstruct straight from the source, so there is no DB to build. Raises if
+    the target doesn't exist, or is a directory / file with no ``.teal``.
+
+    ``cache_root`` / ``force_rebuild`` are accepted for CLI backward
+    compatibility and ignored (nothing is built or cached).
     """
     path = Path(target).resolve()
     if not path.exists():
         raise FileNotFoundError(f"target does not exist: {target}")
     logger.info("resolving target: %s", path)
     if is_codeql_db(path):
-        if force_rebuild:
-            logger.warning(
-                "--force-rebuild ignored: %s is a pre-built DB, "
-                "not a source tree", path,
-            )
         logger.info("target is a pre-built CodeQL DB: %s", path)
         return path
-    teal_files = _discover_teal_files(path)
-    logger.info("discovered %d .teal file(s) under target", len(teal_files))
-    return build_db_for_dir(
-        teal_files,
-        cache_root=cache_root,
-        force_rebuild=force_rebuild,
-    )
+    teal_files = _discover_teal_files(path)   # validates: raises if none / non-teal
+    logger.info("target is %d .teal file(s): %s", len(teal_files), path)
+    return path

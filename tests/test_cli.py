@@ -1,19 +1,13 @@
-"""Unit tests for the ``tealql`` CLI surface.
+"""Unit tests for the ``tealql`` CLI surface — CodeQL-free.
 
-Two layers:
-
-* Pure-Python tests for the parts that don't shell out to ``codeql``
-  (target resolution, dir signatures, debug-cache subcommands,
-  ``finding_to_dict`` fallback). These always run.
-* End-to-end tests for the analyses that do need a real CodeQL DB.
-  Each is gated on ``CODEQL`` being on the environment / PATH and
-  points at the existing snapshot fixtures so we don't build
-  ad-hoc DBs.
+* Target resolution + the ``debug``/``finding_to_dict`` helpers.
+* End-to-end analysis commands (``auth`` / ``group-shape`` / ``cost`` /
+  ``itxn-report`` / ``path-predicates`` / ``cfg`` / ``all``) run against the
+  committed fixture DBs via the pure-Python backend — no codeql binary.
 """
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 
 import pytest
@@ -26,15 +20,6 @@ from tealtools.serialize import finding_to_dict
 TESTS_ROOT = Path(__file__).resolve().parent
 VULN_DB = TESTS_ROOT / "tealtools" / "auth_domination" / "vuln" / "db"
 SAFE_DB = TESTS_ROOT / "tealtools" / "auth_domination" / "safe" / "db"
-
-
-def _has_codeql() -> bool:
-    return "CODEQL" in os.environ
-
-
-requires_codeql = pytest.mark.skipif(
-    not _has_codeql(), reason="CODEQL env var not set"
-)
 
 
 # ---------------------------------------------------------------------------
@@ -84,46 +69,6 @@ def test_resolve_target_nonteal_file_raises(tmp_path):
     f.write_text("")
     with pytest.raises(ValueError):
         targets.resolve_target(f)
-
-
-def test_dir_signature_stable_under_reread(tmp_path):
-    f = tmp_path / "a.teal"
-    f.write_text("int 0\nreturn\n")
-    assert targets._dir_signature([f]) == targets._dir_signature([f])
-
-
-def test_dir_signature_changes_on_content_edit(tmp_path):
-    f = tmp_path / "a.teal"
-    f.write_text("int 0\nreturn\n")
-    h1 = targets._dir_signature([f])
-    f.write_text("int 1\nreturn\n")
-    h2 = targets._dir_signature([f])
-    assert h1 != h2
-
-
-def test_dir_signature_changes_on_basename(tmp_path):
-    f1 = tmp_path / "a.teal"
-    f1.write_text("int 0\nreturn\n")
-    h1 = targets._dir_signature([f1])
-    f2 = tmp_path / "b.teal"
-    f1.rename(f2)
-    h2 = targets._dir_signature([f2])
-    assert h1 != h2
-
-
-def test_dir_signature_order_independent(tmp_path):
-    (tmp_path / "a.teal").write_text("a\n")
-    (tmp_path / "b.teal").write_text("b\n")
-    f1, f2 = tmp_path / "a.teal", tmp_path / "b.teal"
-    assert targets._dir_signature([f1, f2]) == targets._dir_signature([f2, f1])
-
-
-def test_search_path_locates_repo_extractors():
-    # The repo ships ``.codeql-extractors/`` alongside this checkout;
-    # walking parents from ``targets.py`` must find it.
-    sp = targets._search_path()
-    assert sp is not None
-    assert Path(sp).name == ".codeql-extractors"
 
 
 # ---------------------------------------------------------------------------
@@ -229,14 +174,12 @@ def test_cli_debug_cache_clear(tmp_path, capsys):
 # ---------------------------------------------------------------------------
 
 
-@requires_codeql
 def test_cli_exit_zero_on_clean(capsys):
     rc = main(["auth", str(SAFE_DB)])
     assert rc == 0
     assert "no violations" in capsys.readouterr().out
 
 
-@requires_codeql
 def test_cli_exit_one_on_findings(capsys):
     rc = main(["auth", str(VULN_DB)])
     assert rc == 1
@@ -245,7 +188,6 @@ def test_cli_exit_one_on_findings(capsys):
     assert "prog.teal" in out
 
 
-@requires_codeql
 def test_cli_json_auth_shape(capsys):
     main(["auth", str(VULN_DB), "--json"])
     data = json.loads(capsys.readouterr().out)
@@ -258,7 +200,6 @@ def test_cli_json_auth_shape(capsys):
     assert isinstance(v["sink"]["line"], int)
 
 
-@requires_codeql
 def test_cli_json_group_shape_keys(capsys):
     main(["group-shape", str(VULN_DB), "--json"])
     data = json.loads(capsys.readouterr().out)
@@ -266,7 +207,6 @@ def test_cli_json_group_shape_keys(capsys):
     assert isinstance(data["constraints"], list)
 
 
-@requires_codeql
 def test_cli_json_cost_keys(capsys):
     main(["cost", str(VULN_DB), "--json"])
     data = json.loads(capsys.readouterr().out)
@@ -277,7 +217,6 @@ def test_cli_json_cost_keys(capsys):
         assert isinstance(e["op_cost"], int)
 
 
-@requires_codeql
 def test_cli_json_itxn_report_keys(capsys):
     main(["itxn-report", str(VULN_DB), "--json"])
     data = json.loads(capsys.readouterr().out)
@@ -285,7 +224,6 @@ def test_cli_json_itxn_report_keys(capsys):
     assert isinstance(data["groups"], list)
 
 
-@requires_codeql
 def test_cli_json_path_predicates_keys(capsys):
     main(["path-predicates", str(VULN_DB), "--json"])
     data = json.loads(capsys.readouterr().out)
@@ -294,7 +232,6 @@ def test_cli_json_path_predicates_keys(capsys):
         assert {"file", "first_line", "last_line", "predicates"} <= bb.keys()
 
 
-@requires_codeql
 def test_cli_json_cfg_wraps_dot(capsys):
     main(["cfg", str(VULN_DB), "--json"])
     data = json.loads(capsys.readouterr().out)
@@ -302,7 +239,6 @@ def test_cli_json_cfg_wraps_dot(capsys):
     assert data["dot"].startswith("digraph")
 
 
-@requires_codeql
 def test_cli_json_all_aggregator(capsys):
     main(["all", str(VULN_DB), "--json"])
     data = json.loads(capsys.readouterr().out)
