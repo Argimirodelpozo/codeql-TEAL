@@ -22,9 +22,10 @@ Pipeline (:meth:`PySSA._construct`):
 
   1. Instantiate PyVars per opcode output.
   2. BB arities + surviving locals (``outStackOrder``).
-  3+4. On-demand "join-only" placement: phis only at join blocks (>=2
-     preds); values thread through single-pred chains. (TEAL_SSA_EAGER_PHIS=1
-     reverts to the eager direct-placement + indirect-propagation pair.)
+  3+4. Eager direct placement + indirect propagation (default). The
+     on-demand "join-only" variant (TEAL_SSA_JOIN_ONLY=1) places phis only at
+     join blocks -- faster, but has a known loop-arg-delivery gap (see
+     ``_construct``), so it is opt-in until fixed.
   5. Heights (forward stack-delta DF; diagnostic).
   6. Per-BB sim to fill ``op.inputs`` / ``b.exit_stack``;
      ``frame_dig`` / ``frame_bury`` (any-sign N) expand to QL's
@@ -239,20 +240,23 @@ class PySSA:
         self = cls()
         self._phase1_instantiate(prog)
         self._phase2_arities()
-        # Phi placement. Default: on-demand "join-only" — create phis ONLY at
-        # join blocks (>=2 preds), threading values through single-pred chains
-        # (whose entry phase 6 reconstructs from the pred's exit stack). Avoids
-        # the ~75% single-pred copy-phis the eager phase3+4 create: 2.5-8.4x
-        # faster SSA on phi-heavy contracts and no `%1000` artifact registers,
-        # while behaviourally identical to eager (verified by Tier-3 lowering
-        # on the 5 real DBs + dryrun on 35 real mainnet contracts incl. loops —
-        # identical approve/reject on every input). Set TEAL_SSA_EAGER_PHIS=1
-        # to fall back to eager placement (kept as an A/B oracle).
-        if os.environ.get("TEAL_SSA_EAGER_PHIS"):
+        # Phi placement. DEFAULT is eager (phase3 direct placement + phase4
+        # indirect propagation). The on-demand "join-only" variant
+        # (TEAL_SSA_JOIN_ONLY=1) creates phis ONLY at join blocks and is 2.5-8.4x
+        # faster on phi-heavy contracts, BUT has a known correctness gap on loops
+        # whose body changes stack depth: the loop-carried value returns to the
+        # back-edge at a different slot than it entered, so the header phi's
+        # back-edge arg is dropped (args < preds) -> an undefined `bytes[0]` into
+        # a uint64 slot. That malforms the IR on ~8 puya-corpus loop/array
+        # contracts (it was briefly the default and regressed the 248-corpus
+        # 10->24). Kept behind the flag until the loop arg-delivery is fixed
+        # (derive phi args from predecessors' exit-stacks, not the slot-threading
+        # worklist). Eager is correct on these.
+        if os.environ.get("TEAL_SSA_JOIN_ONLY"):
+            self._phase34_join_only()
+        else:
             self._phase3_direct_placement()
             self._phase4_indirect_propagation()
-        else:
-            self._phase34_join_only()
         self._phase6_sim_blocks()
         self._phase8_live_filter()
         return self
