@@ -33,11 +33,11 @@ from ..dot import render
 class SSAProgram:
     """Typed SSA-form representation of a TEAL program."""
 
-    def __init__(self, db_path: str | Path, *, refresh: bool = False, verbose: bool = False):
+    def __init__(self, db_path: str | Path, *, verbose: bool = False):
         from .. import graphs as tg
         from ..ast import Opcode, Label
 
-        g = tg.load_graph(db_path, refresh=refresh, verbose=verbose)
+        g = tg.load_graph(db_path, verbose=verbose)
         self._graph = g
         self.db_path = Path(db_path).resolve()
 

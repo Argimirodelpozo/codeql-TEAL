@@ -492,7 +492,9 @@ def _flow_rows_for(prog: SSAProgram) -> list[tuple]:
             _emit(_node(inp), df, dl, dc, _DEFUSE_KINDS)
 
     # phi-arg: every incoming def flows into the phi (value-identity step).
-    for ph in getattr(prog, "phis", ()) or ():
+    # ``prog.phis`` is a ``{key: Phi}`` map — iterate the Phi values.
+    phis = getattr(prog, "phis", None)
+    for ph in (phis.values() if isinstance(phis, dict) else (phis or ())):
         df, dl = ph.file, ph.line
         for arg in getattr(ph, "args", ()):
             _emit(_node(arg), df, dl, "Phi", _PHIARG_KINDS)
