@@ -392,3 +392,47 @@ def test_frame_bury_of_callsub_return(tmp_path):
         assert "BytesConstant" not in str(op), (
             "itob on a bytes constant — frame_bury-of-callsub-return regression "
             f"(frame_dig misrouted): {op}")
+
+
+_FRAME_BURY_RETURN_TEAL = """#pragma version 10
+    pushint 5
+    callsub make
+    len
+    pushint 5
+    ==
+    return
+make:
+    proto 1 1
+    pushbytes 0x
+    pushint 7
+    frame_dig -1
+    bzero
+    frame_bury 0
+    retsub
+"""
+
+
+def test_frame_bury_return_slot(tmp_path):
+    """A `proto A R` retsub returns frame slots 0..R-1 (the first R locals), NOT
+    the top R of the stack. `make` buries its bytes return in slot 0 while a
+    uint64 working local (`pushint 7`) sits ABOVE it on the stack, so the old
+    resim path's `rsx[-R:]` returned that uint64 instead of the slot-0 bytes --
+    the caller's `len` then sees uint64. Verified on a live localnet:
+    `len(make(5)) == 5` PASSES only when slot-0 bytes is returned (diverge=0);
+    `make(5)` typed uint64 fails `cannot compare []byte to uint64`.
+
+    Assert the lifted `make` returns bytes, not uint64."""
+    import os
+    os.environ["TEAL_GRAPHS_BACKEND"] = "python"
+    from tealtools.ssa import SSAProgram
+    from tealtools.WIP_lift2puyaIR.lift import lift
+
+    p = tmp_path / "frame_bury_return.teal"
+    p.write_text(_FRAME_BURY_RETURN_TEAL)
+    pre = lift(SSAProgram(str(p), verbose=False))
+    subs = [s for s in pre.subroutines if not s.is_main]
+    assert subs, "synthetic produced no subroutine"
+    make = subs[0]
+    assert make.returns == ["bytes"], (
+        "proto retsub returned the wrong frame slot — expected the slot-0 bytes "
+        f"(bzero result), got returns={make.returns} (the uint64 stack top)")

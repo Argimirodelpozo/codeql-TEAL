@@ -324,6 +324,7 @@ class _Lifter:
                             self.frame_map[ph] = params[nargs - ph.stack_index].register
                             self._param_phis.add(ph)
             self.cur_nret = nrets
+            self.cur_nargs = len(params)
             self._setup_frame(gb, params)
             self._setup_shuffles(gb)
             self._name_group(gb)
@@ -639,7 +640,23 @@ class _Lifter:
             # returns that were left on the stack.
             if resim:                                      # clean re-simulated stack
                 rsx = self.resim_exit.get(bb, [])
-                return pre_ir.SubroutineReturn(rsx[-self.cur_nret:] if self.cur_nret else [])
+                if not self.cur_nret:
+                    return pre_ir.SubroutineReturn([])
+                # A `proto A R` retsub returns frame slots 0..R-1 -- the FIRST R
+                # locals (just above the A args), NOT the top R of the stack.
+                # When a sub keeps extra working locals past its returns (e.g. a
+                # loop counter buried in slot 1 while the bytes accumulator it
+                # returns lives in slot 0), the stack top is that counter, so the
+                # old `rsx[-R:]` returned the wrong value (a uint64 counter where
+                # the caller reads a bytes array). The frame slots sit at
+                # rsx[nargs+0 .. nargs+R-1] (resim seeds the stack with the params,
+                # then frame_bury deep-writes each slot there). Verified on a live
+                # localnet: `len(repeat(3))==3` PASSES (slot-0 bytes returned),
+                # `repeat(3)==3` fails to compare []byte to uint64.
+                np = self.cur_nargs
+                rets = [rsx[np + j] if np + j < len(rsx) else pre_ir.Undefined()
+                        for j in range(self.cur_nret)]
+                return pre_ir.SubroutineReturn(rets)
             slots = self.final_locals.get(self.cur_gname, {})
             es = bb.exit_stack or []
             rets = []
