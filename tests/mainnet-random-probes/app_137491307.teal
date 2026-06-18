@@ -1,0 +1,136 @@
+#pragma version 2
+intcblock 0 1 3 6 2 4
+bytecblock 0x52616e646f6d69634d616a657374794f66416c676f72616e64 0x53696c76696f 0x56657269666961626c654d616a657374794f66416c676f72616e64 0x43726f776e4f66456e74726f7079446f6e6174696f6e 0x536365707472654f6650726f6f66446f6e6174696f6e 0x416c676f5265616c6d4c6177 0x43726f776e 0x53636570747265
+txn ApplicationID
+intc_0 // 0
+==
+bnz label1
+txn OnCompletion
+intc_0 // 0
+==
+bnz label2
+intc_0 // 0
+return
+label1:
+bytec_0 // "RandomicMajestyOfAlgorand"
+bytec_1 // "Silvio"
+app_global_put
+bytec_2 // "VerifiableMajestyOfAlgorand"
+bytec_1 // "Silvio"
+app_global_put
+bytec_3 // "CrownOfEntropyDonation"
+intc_0 // 0
+app_global_put
+bytec 4 // "SceptreOfProofDonation"
+intc_0 // 0
+app_global_put
+intc_1 // 1
+return
+b label3
+label2:
+global GroupSize
+intc_1 // 1
+==
+bnz label4
+global GroupSize
+intc_2 // 3
+==
+bnz label5
+intc_0 // 0
+return
+b label3
+label4:
+intc_0 // 0
+bytec 5 // "AlgoRealmLaw"
+app_global_get_ex
+store 0
+store 1
+load 0
+bnz label6
+bytec 5 // "AlgoRealmLaw"
+txna ApplicationArgs 0
+app_global_put
+b label7
+label6:
+intc_0 // 0
+return
+b label3
+label7:
+intc_1 // 1
+return
+b label3
+label5:
+gtxn 0 TypeEnum
+intc_3 // 6
+==
+gtxn 0 NumAppArgs
+intc 4 // 2
+==
+&&
+gtxn 1 TypeEnum
+intc_1 // 1
+==
+&&
+gtxn 2 TypeEnum
+intc 5 // 4
+==
+&&
+gtxn 2 Sender
+bytec 5 // "AlgoRealmLaw"
+app_global_get
+==
+&&
+bnz label8
+intc_0 // 0
+return
+b label3
+label8:
+gtxna 0 ApplicationArgs 0
+bytec 6 // "Crown"
+==
+bnz label9
+gtxna 0 ApplicationArgs 0
+bytec 7 // "Sceptre"
+==
+bnz label10
+intc_0 // 0
+return
+b label3
+label9:
+gtxn 1 Amount
+bytec_3 // "CrownOfEntropyDonation"
+app_global_get
+>
+bnz label11
+intc_0 // 0
+return
+b label3
+label11:
+bytec_0 // "RandomicMajestyOfAlgorand"
+gtxna 0 ApplicationArgs 1
+app_global_put
+bytec_3 // "CrownOfEntropyDonation"
+gtxn 1 Amount
+app_global_put
+intc_1 // 1
+return
+b label3
+label10:
+gtxn 1 Amount
+bytec 4 // "SceptreOfProofDonation"
+app_global_get
+>
+bnz label12
+intc_0 // 0
+return
+b label3
+label12:
+bytec_2 // "VerifiableMajestyOfAlgorand"
+gtxna 0 ApplicationArgs 1
+app_global_put
+bytec 4 // "SceptreOfProofDonation"
+gtxn 1 Amount
+app_global_put
+intc_1 // 1
+return
+label3:

@@ -1,0 +1,162 @@
+#pragma version 3
+intcblock 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50
+bytecblock 0x202031 0x202032 0x202033 0x202034 0x202035 0x202036 0x202037 0x202038 0x202039 0x203130 0x203131 0x203132 0x203133 0x203134 0x203135 0x203136 0x203137 0x203138 0x203139 0x203230 0x203231 0x203232 0x203233 0x203234 0x203235 0x203236 0x203237 0x203238 0x203239 0x203330 0x203331 0x203332 0x203333 0x203334 0x203335 0x203336 0x203337 0x203338 0x203339 0x203430 0x203431 0x203432 0x203433 0x203434 0x203435 0x203436 0x203437 0x203438 0x203439 0x203530
+intc_0 // 0
+txn ApplicationID
+==
+bz label1
+bytec_0 // "  1"
+intc_1 // 1
+app_global_put
+bytec_1 // "  2"
+intc_2 // 2
+app_global_put
+bytec_2 // "  3"
+intc_3 // 3
+app_global_put
+bytec_3 // "  4"
+intc 4 // 4
+app_global_put
+bytec 4 // "  5"
+intc 5 // 5
+app_global_put
+bytec 5 // "  6"
+intc 6 // 6
+app_global_put
+bytec 6 // "  7"
+intc 7 // 7
+app_global_put
+bytec 7 // "  8"
+intc 8 // 8
+app_global_put
+bytec 8 // "  9"
+intc 9 // 9
+app_global_put
+bytec 9 // " 10"
+intc 10 // 10
+app_global_put
+bytec 10 // " 11"
+intc 11 // 11
+app_global_put
+bytec 11 // " 12"
+intc 12 // 12
+app_global_put
+bytec 12 // " 13"
+intc 13 // 13
+app_global_put
+bytec 13 // " 14"
+intc 14 // 14
+app_global_put
+bytec 14 // " 15"
+intc 15 // 15
+app_global_put
+bytec 15 // " 16"
+intc 16 // 16
+app_global_put
+bytec 16 // " 17"
+intc 17 // 17
+app_global_put
+bytec 17 // " 18"
+intc 18 // 18
+app_global_put
+bytec 18 // " 19"
+intc 19 // 19
+app_global_put
+bytec 19 // " 20"
+intc 20 // 20
+app_global_put
+bytec 20 // " 21"
+intc 21 // 21
+app_global_put
+bytec 21 // " 22"
+intc 22 // 22
+app_global_put
+bytec 22 // " 23"
+intc 23 // 23
+app_global_put
+bytec 23 // " 24"
+intc 24 // 24
+app_global_put
+bytec 24 // " 25"
+intc 25 // 25
+app_global_put
+bytec 25 // " 26"
+intc 26 // 26
+app_global_put
+bytec 26 // " 27"
+intc 27 // 27
+app_global_put
+bytec 27 // " 28"
+intc 28 // 28
+app_global_put
+bytec 28 // " 29"
+intc 29 // 29
+app_global_put
+bytec 29 // " 30"
+intc 30 // 30
+app_global_put
+bytec 30 // " 31"
+intc 31 // 31
+app_global_put
+bytec 31 // " 32"
+intc 32 // 32
+app_global_put
+bytec 32 // " 33"
+intc 33 // 33
+app_global_put
+bytec 33 // " 34"
+intc 34 // 34
+app_global_put
+bytec 34 // " 35"
+intc 35 // 35
+app_global_put
+bytec 35 // " 36"
+intc 36 // 36
+app_global_put
+bytec 36 // " 37"
+intc 37 // 37
+app_global_put
+bytec 37 // " 38"
+intc 38 // 38
+app_global_put
+bytec 38 // " 39"
+intc 39 // 39
+app_global_put
+bytec 39 // " 40"
+intc 40 // 40
+app_global_put
+bytec 40 // " 41"
+intc 41 // 41
+app_global_put
+bytec 41 // " 42"
+intc 42 // 42
+app_global_put
+bytec 42 // " 43"
+intc 43 // 43
+app_global_put
+bytec 43 // " 44"
+intc 44 // 44
+app_global_put
+bytec 44 // " 45"
+intc 45 // 45
+app_global_put
+bytec 45 // " 46"
+intc 46 // 46
+app_global_put
+bytec 46 // " 47"
+intc 47 // 47
+app_global_put
+bytec 47 // " 48"
+intc 48 // 48
+app_global_put
+bytec 48 // " 49"
+intc 49 // 49
+app_global_put
+bytec 49 // " 50"
+intc 50 // 50
+app_global_put
+intc_1 // 1
+return
+label1:
+intc_0 // 0
+return
