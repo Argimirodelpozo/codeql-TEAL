@@ -1,0 +1,112 @@
+#pragma version 2
+intcblock 0 1 5 4 2 3
+bytecblock 0x43726561746f72 0x457363726f77
+intc_0 // 0
+txn ApplicationID
+==
+bnz label1
+intc_1 // 1
+txn OnCompletion
+==
+bnz label2
+intc_0 // 0
+txn OnCompletion
+==
+bnz label3
+intc_2 // 5
+txn OnCompletion
+==
+bnz label4
+intc_3 // 4
+txn OnCompletion
+==
+bnz label5
+intc 4 // 2
+txn OnCompletion
+==
+intc 5 // 3
+txn OnCompletion
+==
+||
+bnz label6
+b label7
+label1:
+bytec_0 // "Creator"
+txn Sender
+app_global_put
+bytec_1 // "Escrow"
+txna ApplicationArgs 0
+app_global_put
+b label6
+label3:
+txn NumAppArgs
+intc_0 // 0
+==
+bnz label8
+txn NumAppArgs
+intc_1 // 1
+==
+bnz label9
+b label7
+label2:
+b label6
+label4:
+bytec_0 // "Creator"
+app_global_get
+txn Sender
+==
+bz label7
+b label6
+label5:
+bytec_0 // "Creator"
+app_global_get
+txn Sender
+==
+bz label7
+bytec_1 // "Escrow"
+txna ApplicationArgs 0
+app_global_put
+b label6
+label7:
+intc_0 // 0
+return
+label6:
+intc_1 // 1
+return
+label8:
+global GroupSize
+intc 4 // 2
+==
+gtxn 1 TypeEnum
+intc_1 // 1
+==
+&&
+gtxn 1 Amount
+intc_1 // 1
+>=
+gtxn 1 Receiver
+bytec_1 // "Escrow"
+app_global_get
+==
+&&
+&&
+return
+label9:
+global GroupSize
+intc 4 // 2
+==
+gtxn 1 TypeEnum
+intc_1 // 1
+==
+&&
+gtxn 1 Sender
+bytec_1 // "Escrow"
+app_global_get
+==
+gtxn 0 Sender
+bytec_0 // "Creator"
+app_global_get
+==
+&&
+&&
+return

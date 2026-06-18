@@ -1,0 +1,525 @@
+#pragma version 2
+intcblock 0 5 4 2 1 15 8
+bytecblock 0x7061757365 0x6772616e74526f6c6573 0x7365745472616e7366657252756c65 0x736574416464726573735065726d697373696f6e73 0x6d696e74 0x6275726e 0x7472616e73666572 0x646574656374 0x746f74616c537570706c79 0x636170 0x72657365727665 0x706175736564 0x646563696d616c73 0x73796d626f6c 0x6e616d65 0x7472616e7366657247726f7570 0x62616c616e6365 0x726f6c6573 0x6d617842616c616e6365 0x6c6f636b556e74696c 0x72756c65 0x66726f7a656e
+txn ApplicationID
+intc_0 // 0
+==
+bnz label1
+txn OnCompletion
+intc_1 // 5
+==
+bnz label2
+txn OnCompletion
+intc_2 // 4
+==
+bnz label3
+txn OnCompletion
+intc_3 // 2
+==
+bnz label4
+txn OnCompletion
+intc 4 // 1
+==
+bnz label5
+txna ApplicationArgs 0
+bytec_0 // "pause"
+==
+bnz label6
+txna ApplicationArgs 0
+bytec_1 // "grantRoles"
+==
+bnz label7
+txna ApplicationArgs 0
+bytec_2 // "setTransferRule"
+==
+bnz label8
+txna ApplicationArgs 0
+bytec_3 // "setAddressPermissions"
+==
+bnz label9
+txna ApplicationArgs 0
+bytec 4 // "mint"
+==
+bnz label10
+txna ApplicationArgs 0
+bytec 5 // "burn"
+==
+bnz label11
+txna ApplicationArgs 0
+bytec 6 // "transfer"
+==
+bnz label12
+txna ApplicationArgs 0
+bytec 7 // "detect"
+==
+bnz label13
+err
+label1:
+bytec 8 // "totalSupply"
+intc_0 // 0
+app_global_put
+bytec 9 // "cap"
+txna ApplicationArgs 0
+btoi
+app_global_put
+bytec 10 // "reserve"
+txna ApplicationArgs 0
+btoi
+app_global_put
+bytec 11 // "paused"
+intc_0 // 0
+app_global_put
+bytec 12 // "decimals"
+txna ApplicationArgs 1
+btoi
+app_global_put
+bytec 13 // "symbol"
+txna ApplicationArgs 2
+app_global_put
+bytec 14 // "name"
+txna ApplicationArgs 3
+app_global_put
+intc_0 // 0
+bytec 15 // "transferGroup"
+intc 4 // 1
+app_local_put
+intc_0 // 0
+bytec 16 // "balance"
+intc_0 // 0
+app_local_put
+intc_0 // 0
+bytec 17 // "roles"
+intc 5 // 15
+app_local_put
+intc 4 // 1
+return
+b label14
+label2:
+intc_0 // 0
+return
+b label14
+label3:
+intc_0 // 0
+bytec 17 // "roles"
+app_local_get
+intc 6 // 8
+&
+return
+b label14
+label4:
+intc_0 // 0
+return
+b label14
+label5:
+intc_0 // 0
+bytec 16 // "balance"
+intc_0 // 0
+app_local_put
+intc_0 // 0
+bytec 18 // "maxBalance"
+intc_0 // 0
+app_local_put
+intc_0 // 0
+bytec 19 // "lockUntil"
+intc_0 // 0
+app_local_put
+intc_0 // 0
+bytec 15 // "transferGroup"
+intc 4 // 1
+app_local_put
+intc 4 // 1
+return
+b label14
+label6:
+bytec 11 // "paused"
+txna ApplicationArgs 1
+btoi
+app_global_put
+intc_0 // 0
+bytec 17 // "roles"
+app_local_get
+intc 6 // 8
+&
+return
+b label14
+label7:
+intc_0 // 0
+bytec 17 // "roles"
+app_local_get
+intc 6 // 8
+&
+txna ApplicationArgs 1
+btoi
+intc 5 // 15
+<=
+&&
+bnz label15
+err
+label15:
+txn Sender
+txna Accounts 1
+==
+bz label16
+txna ApplicationArgs 1
+btoi
+intc 6 // 8
+&
+bnz label16
+err
+label16:
+intc 4 // 1
+bytec 17 // "roles"
+txna ApplicationArgs 1
+btoi
+app_local_put
+intc 4 // 1
+return
+b label14
+label8:
+intc_0 // 0
+bytec 17 // "roles"
+app_local_get
+intc_3 // 2
+&
+bnz label17
+err
+label17:
+bytec 20 // "rule"
+txna ApplicationArgs 1
+btoi
+itob
+concat
+txna ApplicationArgs 2
+btoi
+itob
+concat
+txna ApplicationArgs 3
+btoi
+app_global_put
+intc 4 // 1
+return
+b label14
+label9:
+intc_0 // 0
+bytec 17 // "roles"
+app_local_get
+intc 4 // 1
+&
+txn NumAccounts
+intc 4 // 1
+==
+&&
+bnz label18
+err
+label18:
+intc 4 // 1
+bytec 21 // "frozen"
+txna ApplicationArgs 1
+btoi
+app_local_put
+intc 4 // 1
+bytec 18 // "maxBalance"
+txna ApplicationArgs 2
+btoi
+app_local_put
+intc 4 // 1
+bytec 19 // "lockUntil"
+txna ApplicationArgs 3
+btoi
+app_local_put
+intc 4 // 1
+bytec 15 // "transferGroup"
+txna ApplicationArgs 4
+btoi
+app_local_put
+intc 4 // 1
+return
+b label14
+label10:
+intc_0 // 0
+bytec 17 // "roles"
+app_local_get
+intc_2 // 4
+&
+txn NumAccounts
+intc 4 // 1
+==
+&&
+txna ApplicationArgs 1
+btoi
+bytec 10 // "reserve"
+app_global_get
+<=
+&&
+bnz label19
+err
+label19:
+intc 4 // 1
+bytec 18 // "maxBalance"
+app_local_get
+intc_0 // 0
+==
+intc 4 // 1
+bytec 18 // "maxBalance"
+app_local_get
+intc 4 // 1
+bytec 16 // "balance"
+app_local_get
+txna ApplicationArgs 1
+btoi
++
+>=
+||
+bnz label20
+err
+label20:
+bytec 10 // "reserve"
+bytec 10 // "reserve"
+app_global_get
+txna ApplicationArgs 1
+btoi
+-
+app_global_put
+intc 4 // 1
+bytec 16 // "balance"
+intc 4 // 1
+bytec 16 // "balance"
+app_local_get
+txna ApplicationArgs 1
+btoi
++
+app_local_put
+bytec 8 // "totalSupply"
+bytec 9 // "cap"
+app_global_get
+bytec 10 // "reserve"
+app_global_get
+-
+app_global_put
+intc 4 // 1
+return
+b label14
+label11:
+intc_0 // 0
+bytec 17 // "roles"
+app_local_get
+intc_2 // 4
+&
+txn NumAccounts
+intc 4 // 1
+==
+&&
+txna ApplicationArgs 1
+btoi
+intc 4 // 1
+bytec 16 // "balance"
+app_local_get
+<=
+&&
+bnz label21
+err
+label21:
+bytec 10 // "reserve"
+bytec 10 // "reserve"
+app_global_get
+txna ApplicationArgs 1
+btoi
++
+app_global_put
+intc 4 // 1
+bytec 16 // "balance"
+intc 4 // 1
+bytec 16 // "balance"
+app_local_get
+txna ApplicationArgs 1
+btoi
+-
+app_local_put
+bytec 8 // "totalSupply"
+bytec 9 // "cap"
+app_global_get
+bytec 10 // "reserve"
+app_global_get
+-
+app_global_put
+intc 4 // 1
+return
+b label14
+label12:
+txn NumAccounts
+intc 4 // 1
+==
+intc_0 // 0
+bytec 16 // "balance"
+app_local_get
+txna ApplicationArgs 1
+btoi
+<
+bytec 11 // "paused"
+app_global_get
+||
+intc_0 // 0
+bytec 21 // "frozen"
+app_local_get
+||
+intc 4 // 1
+bytec 21 // "frozen"
+app_local_get
+||
+intc_0 // 0
+bytec 19 // "lockUntil"
+app_local_get
+global LatestTimestamp
+>=
+||
+bytec 20 // "rule"
+intc_0 // 0
+bytec 15 // "transferGroup"
+app_local_get
+itob
+concat
+intc 4 // 1
+bytec 15 // "transferGroup"
+app_local_get
+itob
+concat
+app_global_get
+intc 4 // 1
+<
+||
+bytec 20 // "rule"
+intc_0 // 0
+bytec 15 // "transferGroup"
+app_local_get
+itob
+concat
+intc 4 // 1
+bytec 15 // "transferGroup"
+app_local_get
+itob
+concat
+app_global_get
+global LatestTimestamp
+>=
+||
+intc 4 // 1
+bytec 18 // "maxBalance"
+app_local_get
+intc_0 // 0
+>
+intc 4 // 1
+bytec 18 // "maxBalance"
+app_local_get
+intc 4 // 1
+bytec 16 // "balance"
+app_local_get
+txna ApplicationArgs 1
+btoi
++
+<
+&&
+||
+!
+&&
+bnz label22
+err
+label22:
+intc_0 // 0
+bytec 16 // "balance"
+intc_0 // 0
+bytec 16 // "balance"
+app_local_get
+txna ApplicationArgs 1
+btoi
+-
+app_local_put
+intc 4 // 1
+bytec 16 // "balance"
+intc 4 // 1
+bytec 16 // "balance"
+app_local_get
+txna ApplicationArgs 1
+btoi
++
+app_local_put
+intc 4 // 1
+return
+b label14
+label13:
+intc 4 // 1
+bytec 16 // "balance"
+app_local_get
+txna ApplicationArgs 1
+btoi
+<
+bytec 11 // "paused"
+app_global_get
+||
+intc 4 // 1
+bytec 21 // "frozen"
+app_local_get
+||
+intc_3 // 2
+bytec 21 // "frozen"
+app_local_get
+||
+intc 4 // 1
+bytec 19 // "lockUntil"
+app_local_get
+global LatestTimestamp
+>=
+||
+bytec 20 // "rule"
+intc 4 // 1
+bytec 15 // "transferGroup"
+app_local_get
+itob
+concat
+intc_3 // 2
+bytec 15 // "transferGroup"
+app_local_get
+itob
+concat
+app_global_get
+intc 4 // 1
+<
+||
+bytec 20 // "rule"
+intc 4 // 1
+bytec 15 // "transferGroup"
+app_local_get
+itob
+concat
+intc_3 // 2
+bytec 15 // "transferGroup"
+app_local_get
+itob
+concat
+app_global_get
+global LatestTimestamp
+>=
+||
+intc 4 // 1
+bytec 18 // "maxBalance"
+app_local_get
+intc_0 // 0
+>
+intc_3 // 2
+bytec 18 // "maxBalance"
+app_local_get
+intc_3 // 2
+bytec 16 // "balance"
+app_local_get
+txna ApplicationArgs 1
+btoi
++
+<
+&&
+||
+!
+bnz label23
+err
+label23:
+intc 4 // 1
+return
+label14:
