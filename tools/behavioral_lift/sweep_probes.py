@@ -37,13 +37,16 @@ CURSORS = (
 
 
 def sample(per_cursor: int = 8, pages: int = 1, skip: set | None = None) -> list:
-    """App ids sampled from each cursor. ``pages`` follows the indexer's
-    ``next-token`` that many pages deep per cursor (so repeat sweeps reach
-    genuinely new apps past the first page); ``skip`` drops ids already known."""
+    """App ids sampled from each cursor, INTERLEAVED round-robin across cursors so
+    the result spans the whole id space evenly (a caller fetching a prefix gets a
+    mix of old/new apps -> diverse AVM versions, not all the oldest first).
+    ``pages`` follows the indexer's ``next-token`` that deep per cursor (so repeat
+    sweeps reach genuinely new apps); ``skip`` drops ids already known."""
     skip = skip or set()
-    ids, seen = [], set()
+    seen: set = set()
+    per: list = []                                # one id-list per cursor
     for after in CURSORS:
-        token = after
+        token, lst = after, []
         for _ in range(pages):
             try:
                 q = (f"{INDEXER}/v2/applications?limit={per_cursor}"
@@ -56,11 +59,17 @@ def sample(per_cursor: int = 8, pages: int = 1, skip: set | None = None) -> list
                 i = a["id"]
                 if not a.get("deleted") and i not in seen and i not in skip:
                     seen.add(i)
-                    ids.append(i)
+                    lst.append(i)
             token = d.get("next-token")
             if not token:
                 break
-    return ids
+        per.append(lst)
+    out = []                                      # round-robin merge
+    for col in range(max((len(x) for x in per), default=0)):
+        for lst in per:
+            if col < len(lst):
+                out.append(lst[col])
+    return out
 
 
 class _Timeout(Exception):
