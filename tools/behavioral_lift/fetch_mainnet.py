@@ -51,14 +51,22 @@ def sample_app_ids(n=60):
     return out[:n]
 
 
-def fetch_teal(app_id):
+def fetch_approval(app_id):
+    """``(teal_text, deployed_bytecode)`` for an app's approval program. The
+    bytecode is the on-chain program; keep it so the behavioural compare can
+    dryrun it DIRECTLY (some valid contracts don't survive a disassemble ->
+    reassemble round-trip through the strict assembler -- see compare.compare)."""
     d = json.loads(_get(f"{MAINNET}/v2/applications/{app_id}"))
     bytecode = base64.b64decode(d["params"]["approval-program"])
     if not bytecode:
         raise ValueError("no approval program")
     resp = _get(f"{LOCAL}/v2/teal/disassemble", data=bytecode,
                 ctype="application/x-binary", token="a" * 64)
-    return json.loads(resp)["result"]       # algod returns {"result": "<teal text>"}
+    return json.loads(resp)["result"], bytecode   # algod returns {"result": "<teal>"}
+
+
+def fetch_teal(app_id):
+    return fetch_approval(app_id)[0]
 
 
 def build_db(teal_dir: Path):
@@ -78,7 +86,9 @@ def main(argv):
         d.mkdir(exist_ok=True)
         teal_path = d / f"app_{app_id}.teal"
         try:
-            teal_path.write_text(fetch_teal(app_id))
+            teal, bytecode = fetch_approval(app_id)
+            teal_path.write_text(teal)
+            (d / f"app_{app_id}.bin").write_bytes(bytecode)   # deployed program
             build_db(d)
             ok += 1
             nlines = len(teal_path.read_text().splitlines())
