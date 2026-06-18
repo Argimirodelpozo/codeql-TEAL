@@ -24,9 +24,16 @@ from . import compare as C
 from .fetch_mainnet import INDEXER, fetch_approval
 
 PROBES = Path(__file__).resolve().parents[2] / "tests" / "mainnet-random-probes"
-# diverse cursors across the whole id space (early -> newest)
-CURSORS = ("", "1000000", "20000000", "120000000", "400000000", "700000000",
-           "1050000000", "1600000000", "2200000000", "2800000000", "3300000000")
+# diverse cursors across the whole id space (early -> newest); dense so a sweep
+# pulls a broad, varied sample. The indexer paginates from each cursor, so more
+# cursors => more distinct apps per run.
+CURSORS = (
+    "", "100000", "1000000", "10000000", "31000000", "60000000", "90000000",
+    "120000000", "160000000", "250000000", "400000000", "550000000",
+    "700000000", "850000000", "1050000000", "1300000000", "1600000000",
+    "1900000000", "2200000000", "2500000000", "2800000000", "3100000000",
+    "3300000000", "3450000000",
+)
 
 
 def sample(per_cursor: int = 8) -> list:
