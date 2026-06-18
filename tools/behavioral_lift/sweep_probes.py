@@ -32,7 +32,7 @@ CURSORS = (
     "120000000", "160000000", "250000000", "400000000", "550000000",
     "700000000", "850000000", "1050000000", "1300000000", "1600000000",
     "1900000000", "2200000000", "2500000000", "2800000000", "3100000000",
-    "3300000000", "3450000000",
+    "3300000000", "3450000000", "3500000000", "3550000000", "3600000000",
 )
 
 
@@ -67,79 +67,140 @@ class _Timeout(Exception):
     pass
 
 
-def main(argv) -> int:
-    PROBES.mkdir(parents=True, exist_ok=True)
-    count = int(argv[0]) if argv else 60
-    az = C.algod_client()
-    clear = C._compile(az, "#pragma version 10\nint 1")
-    signal.signal(signal.SIGALRM, lambda *_: (_ for _ in ()).throw(_Timeout()))
+def _pragma_version(teal: str) -> str:
+    first = teal.lstrip().splitlines()[0] if teal.strip() else ""
+    return first.split("version")[-1].strip() if "version" in first else "?"
 
-    # Skip ids already in the corpus and paginate deep enough to fill `count`
-    # with genuinely NEW contracts (the first page per cursor is mostly known).
-    have = {int(p.stem.split("_")[1]) for p in PROBES.glob("app_*.teal")}
-    pages = 1
-    ids: list = []
-    while len(ids) < count and pages <= 12:
-        ids = sample(pages=pages, skip=have)
-        pages += 1
-    ids = ids[:count]
-    print(f"sampled {len(ids)} NEW ids ({len(have)} already in corpus) -> {PROBES}", flush=True)
-    faith = div = liftfail = compfail = skip = 0
+
+def _validate(az, clear, aid, teal, bc, tally: dict) -> None:
+    """Lift -> recompile -> dryrun vs deployed bytecode; record into ``tally``
+    (keys faithful/diverge/liftfail/compfail). The probe teal is already saved."""
+    nl = teal.count("\n")
+    try:
+        lifted = C.lift_to_teal(str(PROBES / f"app_{aid}.teal"))
+    except Exception as e:
+        signal.alarm(0)
+        tally["liftfail"] += 1
+        print(f"LIFTFAIL {aid} ({nl}L): {type(e).__name__}: {str(e)[:60]}", flush=True)
+        return
+    try:
+        lb = C._compile(az, lifted)
+    except Exception as e:
+        signal.alarm(0)
+        tally["compfail"] += 1
+        print(f"COMPFAIL {aid} ({nl}L): {str(e)[:60]}", flush=True)
+        return
+    inputs = [[]] + [[s] for s in C._selectors(lifted)] + [[b"\x01\x02\x03\x04"]]
+    m = d = 0
+    diffs = []
+    for args in inputs:
+        for oc in C._OCS:
+            try:
+                ao, do = C._dryrun(az, bc, clear, args, oc)
+                al, dl = C._dryrun(az, lb, clear, args, oc)
+            except Exception as e:
+                diffs.append(f"dryerr {str(e)[:20]}")
+                continue
+            if ao != al or (ao and do != dl):
+                d += 1
+                diffs.append(f"oc={oc} a={len(args)} o={ao} l={al}")
+            else:
+                m += 1
+    signal.alarm(0)
+    if d:
+        tally["diverge"] += 1
+        print(f"DIVERGE {aid} ({nl}L) m={m} d={d} {diffs[:3]}", flush=True)
+    else:
+        tally["faithful"] += 1
+        print(f"FAITHFUL {aid} (v{_pragma_version(teal)}, {nl}L) m={m}", flush=True)
+
+
+def _run(az, clear, ids: list, tally: dict) -> None:
     for aid in ids:
         signal.alarm(220)
         try:
             teal, bc = fetch_approval(aid)
             (PROBES / f"app_{aid}.teal").write_text(teal)      # PERSIST the probe
-            nl = teal.count("\n")
-            try:
-                lifted = C.lift_to_teal(str(PROBES / f"app_{aid}.teal"))
-            except Exception as e:
-                signal.alarm(0)
-                liftfail += 1
-                print(f"LIFTFAIL {aid} ({nl}L): {type(e).__name__}: {str(e)[:60]}", flush=True)
-                continue
-            try:
-                lb = C._compile(az, lifted)
-            except Exception as e:
-                signal.alarm(0)
-                compfail += 1
-                print(f"COMPFAIL {aid} ({nl}L): {str(e)[:60]}", flush=True)
-                continue
-            inputs = [[]] + [[s] for s in C._selectors(lifted)] + [[b"\x01\x02\x03\x04"]]
-            m = d = 0
-            diffs = []
-            for args in inputs:
-                for oc in C._OCS:
-                    try:
-                        ao, do = C._dryrun(az, bc, clear, args, oc)
-                        al, dl = C._dryrun(az, lb, clear, args, oc)
-                    except Exception as e:
-                        diffs.append(f"dryerr {str(e)[:20]}")
-                        continue
-                    if ao != al or (ao and do != dl):
-                        d += 1
-                        diffs.append(f"oc={oc} a={len(args)} o={ao} l={al}")
-                    else:
-                        m += 1
-            signal.alarm(0)
-            if d:
-                div += 1
-                print(f"DIVERGE {aid} ({nl}L) m={m} d={d} {diffs[:3]}", flush=True)
-            else:
-                faith += 1
-                print(f"FAITHFUL {aid} ({nl}L) m={m}", flush=True)
+            _validate(az, clear, aid, teal, bc, tally)
         except _Timeout:
-            skip += 1
+            tally["skip"] += 1
             print(f"TIMEOUT {aid}", flush=True)
         except Exception as e:
             signal.alarm(0)
-            skip += 1
+            tally["skip"] += 1
             print(f"SKIP {aid}: {type(e).__name__}: {str(e)[:45]}", flush=True)
+
+
+def _corpus_versions() -> dict:
+    from collections import Counter
+    c = Counter()
+    for p in PROBES.glob("app_*.teal"):
+        try:
+            c[_pragma_version(p.read_text())] += 1
+        except Exception:
+            pass
+    return dict(c)
+
+
+def main(argv) -> int:
+    PROBES.mkdir(parents=True, exist_ok=True)
+    az = C.algod_client()
+    clear = C._compile(az, "#pragma version 10\nint 1")
+    signal.signal(signal.SIGALRM, lambda *_: (_ for _ in ()).throw(_Timeout()))
+    have = {int(p.stem.split("_")[1]) for p in PROBES.glob("app_*.teal")}
+    tally = dict(faithful=0, diverge=0, liftfail=0, compfail=0, skip=0)
+
+    if argv and argv[0] == "byver":
+        # Fetch broadly, keeping a contract only while its AVM version is still
+        # under `target`; balances the corpus across versions. `max_fetch` caps
+        # disassembles spent hunting rare (old/newest) versions.
+        target = int(argv[1]) if len(argv) > 1 else 8
+        max_fetch = int(argv[2]) if len(argv) > 2 else 300
+        per_ver = _corpus_versions()
+        print(f"corpus versions: {dict(sorted(per_ver.items()))} ; target {target}/ver", flush=True)
+        cand = sample(pages=12, skip=have)
+        print(f"{len(cand)} candidate new ids; fetching to balance versions", flush=True)
+        fetched = 0
+        for aid in cand:
+            if fetched >= max_fetch:
+                break
+            if all(per_ver.get(str(v), 0) >= target for v in range(2, 12)):
+                break                       # every v2..v11 satisfied
+            signal.alarm(220)
+            try:
+                teal, bc = fetch_approval(aid)
+                fetched += 1
+                ver = _pragma_version(teal)
+                if per_ver.get(ver, 0) >= target:
+                    signal.alarm(0)
+                    continue                # this version already has enough
+                (PROBES / f"app_{aid}.teal").write_text(teal)
+                _validate(az, clear, aid, teal, bc, tally)
+                per_ver[ver] = per_ver.get(ver, 0) + 1
+            except _Timeout:
+                tally["skip"] += 1
+                print(f"TIMEOUT {aid}", flush=True)
+            except Exception as e:
+                signal.alarm(0)
+                tally["skip"] += 1
+                print(f"SKIP {aid}: {type(e).__name__}: {str(e)[:45]}", flush=True)
+        print(f"\nfetched {fetched} ; final versions: {dict(sorted(_corpus_versions().items()))}",
+              flush=True)
+    else:
+        count = int(argv[0]) if argv else 60
+        pages, ids = 1, []
+        while len(ids) < count and pages <= 12:
+            ids = sample(pages=pages, skip=have)
+            pages += 1
+        ids = ids[:count]
+        print(f"sampled {len(ids)} NEW ids ({len(have)} already in corpus) -> {PROBES}", flush=True)
+        _run(az, clear, ids, tally)
+
     kept = len(list(PROBES.glob("*.teal")))
-    print(f"\n=== faithful={faith} diverge={div} liftfail={liftfail} "
-          f"compfail={compfail} skip={skip} of {len(ids)} | corpus now {kept} probes ===",
-          flush=True)
-    return 1 if div else 0
+    print(f"\n=== faithful={tally['faithful']} diverge={tally['diverge']} "
+          f"liftfail={tally['liftfail']} compfail={tally['compfail']} skip={tally['skip']} "
+          f"| corpus now {kept} probes ===", flush=True)
+    return 1 if tally["diverge"] else 0
 
 
 if __name__ == "__main__":
