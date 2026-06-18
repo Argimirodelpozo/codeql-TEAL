@@ -611,3 +611,41 @@ def _shuffle_mapping(a: "Assignment") -> Optional[list[int]]:
     return None
 
 
+def _canon_shuffle(op: str, immediates: str):
+    """``(n_in, mapping)`` for a FIXED-arity stack shuffle from its CANONICAL
+    arity, independent of a possibly fat-band-clamped ``Assignment.inputs``.
+
+    The resim re-simulates the stack on a clean depth, but :func:`_shuffle_mapping`
+    keys off ``len(a.inputs)`` -- which the SSA's fat-band sim can UNDER-count when
+    its model stack was shallow at the op (e.g. ``dup2`` recorded with 1 input, so
+    ``_shuffle_mapping`` defensively returns ``None`` and the resim drops the op,
+    losing stack depth that then starves a downstream callsub's args). Computing the
+    effect from the op's true arity fixes that. Excludes ``frame_dig`` /
+    ``frame_bury`` (genuinely band-dependent, handled separately). Returns
+    ``(None, None)`` when ``op`` isn't a fixed-arity shuffle."""
+    if op == "swap":
+        return (2, [1, 0])
+    if op == "dup":
+        return (1, [0, 0])
+    if op == "dup2":
+        return (2, [0, 1, 0, 1])
+    toks = immediates.split() if immediates else []
+    if not toks:
+        return (None, None)
+    try:
+        n = int(toks[0])
+    except ValueError:
+        return (None, None)
+    if op == "dupn":
+        return (1, [0] * (n + 1))
+    if op == "cover":
+        return (n + 1, list(range(1, n + 1)) + [0])
+    if op == "uncover":
+        return (n + 1, [n] + list(range(n)))
+    if op == "dig":
+        return (n + 1, [n] + list(range(n + 1)))
+    if op == "bury":
+        return (n + 1, list(range(1, n)) + [0])
+    return (None, None)
+
+

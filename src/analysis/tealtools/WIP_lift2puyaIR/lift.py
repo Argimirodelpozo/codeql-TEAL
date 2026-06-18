@@ -27,6 +27,7 @@ from ..ssa import (
     Phi,
     SSAProgram,
     SSAVar,
+    _canon_shuffle,
     _shuffle_mapping,
 )
 from ..structure import analyze_structure
@@ -972,10 +973,16 @@ class _Lifter:
                                 stack[pos] = v
                     continue
                 if a.op in _STACK_SHUFFLE_OPS:
-                    m = _shuffle_mapping(a)
-                    if m is None or len(stack) < len(a.inputs):
+                    # Use the op's CANONICAL arity, not a.inputs: the SSA's fat-band
+                    # sim can under-count a shuffle's inputs on a shallow model stack
+                    # (e.g. dup2 with 1 input), which makes _shuffle_mapping bail and
+                    # the resim drop the op -- starving a downstream callsub's args.
+                    n_in, m = _canon_shuffle(a.op, a.immediates)
+                    if m is None:                       # frame_* / unrecognised
+                        m, n_in = _shuffle_mapping(a), len(a.inputs)
+                    if m is None or len(stack) < n_in:
                         continue
-                    ins = [stack.pop() for _ in range(len(a.inputs))]   # top-first
+                    ins = [stack.pop() for _ in range(n_in)]            # top-first
                     for v in reversed([ins[k] for k in m]):
                         stack.append(v)
                     continue

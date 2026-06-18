@@ -582,3 +582,49 @@ def test_materialize_phi_const_coerces_cross_family():
     assert isinstance(src, pre_ir.UInt64Constant), (
         f"cross-family placeholder not coerced: {type(src).__name__} into uint64 target")
     assert mat[0].targets[0].ir_type == "uint64"
+
+
+def test_canon_shuffle_arity():
+    """`_canon_shuffle` gives a shuffle's TRUE arity + mapping from the opcode,
+    independent of a (possibly fat-band-clamped) Assignment.inputs. The resim
+    relies on this: the SSA's fat-band sim can under-count a shuffle's inputs on a
+    shallow model stack (e.g. dup2 recorded with 1 input), which made the resim
+    drop the op and lose stack depth -- starving a downstream callsub's args
+    (app_3550180073's l-stack). Assert the canonical shapes."""
+    from tealtools.ssa import _canon_shuffle
+    assert _canon_shuffle("dup2", "") == (2, [0, 1, 0, 1])
+    assert _canon_shuffle("swap", "") == (2, [1, 0])
+    assert _canon_shuffle("dup", "") == (1, [0, 0])
+    assert _canon_shuffle("dupn", "6") == (1, [0] * 7)
+    assert _canon_shuffle("dig", "2") == (3, [2, 0, 1, 2])
+    assert _canon_shuffle("cover", "2") == (3, [1, 2, 0])
+    assert _canon_shuffle("uncover", "2") == (3, [2, 0, 1])
+    assert _canon_shuffle("frame_dig", "0")[1] is None       # band-dependent: opt out
+
+
+def test_resim_shuffle_canonical_lifts_v11(tmp_path):
+    """End-to-end: a v11 contract whose resim under-counted a `dup2` (1 input)
+    starved a `callsub` of its arg -> "l-stack too small". The canonical-arity
+    resim fixes the depth so the callsub args reconstruct. app_3550180073 lifts +
+    lowers + is behaviourally faithful once the resim uses the true shuffle arity."""
+    import os
+    probe = (Path(__file__).resolve().parent / "mainnet-random-probes"
+             / "app_3550180073.teal")
+    if not probe.exists():
+        import pytest
+        pytest.skip("probe not present")
+    from tealtools.ssa import SSAProgram
+    from tealtools.WIP_lift2puyaIR.lift import lift
+    from tealtools.WIP_lift2puyaIR import pre_ir
+    ir = lift(SSAProgram(str(probe), verbose=False))
+    # every callsub to a 1-param sub must carry exactly 1 arg (no starved 0-arg call)
+    for s in ir.subroutines:
+        if len(s.parameters) != 1:
+            continue
+        for b in pre_ir.blocks(ir):
+            for o in b.ops:
+                inv = (o.intrinsic if isinstance(o, pre_ir.IntrinsicOp)
+                       and isinstance(o.intrinsic, pre_ir.InvokeSubroutine) else
+                       getattr(o, "source", None))
+                if isinstance(inv, pre_ir.InvokeSubroutine) and inv.target == s.id:
+                    assert len(inv.args) == 1, f"callsub {s.id} starved: {len(inv.args)} args"

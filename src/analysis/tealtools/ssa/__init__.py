@@ -43,6 +43,7 @@ from .models import (
     _STACK_SHUFFLE_OPS,
     _TERMINATOR_OPS,
     _shuffle_mapping,
+    _canon_shuffle,
 )
 
 # The SSAProgram class from .program
@@ -76,6 +77,7 @@ __all__ = [
     "_STACK_SHUFFLE_OPS",
     "_TERMINATOR_OPS",
     "_shuffle_mapping",
+    "_canon_shuffle",
     # SSAProgram + PySSA builder
     "SSAProgram",
     "PySSA",
