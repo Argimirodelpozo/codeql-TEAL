@@ -1,0 +1,132 @@
+#pragma version 4
+intcblock 1 0 2 4
+bytecblock 0x7374617465
+intc_0 // 1
+txn OnCompletion
+==
+bnz label1
+txn OnCompletion
+intc_1 // 0
+==
+bnz label2
+txn OnCompletion
+intc_2 // 2
+==
+bnz label1
+txn OnCompletion
+intc_3 // 4
+==
+bz label2
+err
+txn OnCompletion
+pushint 5
+==
+bnz label2
+callsub label3
+intc_0 // 1
+return
+label2:
+txna ApplicationArgs 0
+btoi
+intc_0 // 1
+==
+bnz label4
+txna ApplicationArgs 0
+btoi
+intc_2 // 2
+==
+bnz label5
+txna ApplicationArgs 0
+btoi
+pushint 3
+==
+bnz label6
+txna ApplicationArgs 0
+btoi
+intc_3 // 4
+==
+bnz label7
+bytec_0 // "state"
+txna ApplicationArgs 1
+app_global_put
+pushbytes 0x6e5472616e736974696f6e73 // "nTransitions"
+txna ApplicationArgs 2
+btoi
+app_global_put
+b label1
+label4:
+callsub label3
+intc_0 // 1
+bytec_0 // "state"
+txna ApplicationArgs 1
+app_local_put
+b label1
+label5:
+callsub label8
+callsub label9
+callsub label10
+bytec_0 // "state"
+txna ApplicationArgs 1
+app_global_put
+b label1
+label6:
+callsub label3
+intc_0 // 1
+txna ApplicationArgs 1
+intc_0 // 1
+app_local_put
+b label1
+label7:
+callsub label3
+intc_0 // 1
+txna ApplicationArgs 1
+intc_0 // 1
+app_local_put
+b label1
+label8:
+txn Sender
+bytec_0 // "state"
+app_global_get
+callsub label11
+assert
+retsub
+label9:
+intc_0 // 1
+bytec_0 // "state"
+callsub label11
+bytec_0 // "state"
+app_global_get
+==
+assert
+retsub
+label10:
+intc_0 // 1
+txna ApplicationArgs 1
+callsub label11
+assert
+retsub
+label3:
+global CreatorAddress
+txn Sender
+==
+assert
+retsub
+label1:
+intc_0 // 1
+return
+intc_1 // 0
+return
+label11:
+txn NumApplications
+bnz label12
+dig 1
+dig 1
+app_local_get
+retsub
+label12:
+dig 1
+intc_0 // 1
+dig 2
+app_local_get_ex
+assert
+retsub
