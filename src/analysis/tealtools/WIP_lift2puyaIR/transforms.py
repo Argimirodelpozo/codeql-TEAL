@@ -210,15 +210,31 @@ def simplify_trivial_phis(program: pre_ir.Program) -> int:
 def prune_dead_phis(subs) -> None:
     """Drop phis not reachable (through phi args) from a real use — i.e. the
     frame stack-model phis, now that frame ops no longer consume them. Forward
-    liveness: seed from ops / control / returns (NOT phi args), then propagate
-    backward through phi arguments; keep only live phis."""
+    liveness: seed from ops / control / returns (NOT phi args, and NOT ``pop`` /
+    ``popn`` operands), then propagate backward through phi arguments; keep only
+    live phis.
+
+    ``pop`` / ``popn`` are stack-discipline drops — in value-based IR a discard is
+    not a real use, so a phi feeding ONLY a ``popn`` is dead (the value is thrown
+    away). Counting the discard as a use keeps such phis artificially live; for a
+    frame's dead locals (``popn``-d before ``retsub``) that revives a genuinely
+    mixed-AVM-type merge Puya's typed IR then rejects. Operands a pruned phi left
+    dangling in a ``pop`` / ``popn`` are trimmed so no operand references a removed
+    register (the discard itself is dropped at lowering)."""
     live: set = set()
     phi_by_reg: dict = {}
     for b in pre_ir.blocks(subs):
         for phi in b.phis:
             phi_by_reg[id(phi.register)] = phi
+
+    def is_discard(node):
+        intr = _intr(node)
+        return isinstance(intr, pre_ir.Intrinsic) and intr.op in ("pop", "popn")
+
     for b in pre_ir.blocks(subs):            # seed from ops / terminator, NOT phis
         for node in (*b.ops, b.terminator):
+            if is_discard(node):
+                continue                     # a discard is not a real use
             for v in pre_ir.operands(node):
                 if isinstance(v, pre_ir.Register):
                     live.add(id(v))
@@ -231,8 +247,14 @@ def prune_dead_phis(subs) -> None:
             if isinstance(pa.value, pre_ir.Register) and id(pa.value) not in live:
                 live.add(id(pa.value))
                 work.append(id(pa.value))
+    removed = {rid for rid in phi_by_reg if rid not in live}
     for b in pre_ir.blocks(subs):
         b.phis = [phi for phi in b.phis if id(phi.register) in live]
+        for node in b.ops:                   # trim pruned regs out of pop / popn
+            intr = _intr(node) if is_discard(node) else None
+            if intr is not None:
+                intr.args = [a for a in intr.args
+                             if not (isinstance(a, pre_ir.Register) and id(a) in removed)]
 
 
 def _subst_value(v, m: dict):
