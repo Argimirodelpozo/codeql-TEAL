@@ -18,6 +18,7 @@ prog.teal	17	1	17	2	EqualsComparisonOpcode
 prog.teal	17	1	17	2	IntegerEqualsOpcode
 prog.teal	18	1	18	2	AndOpcode
 prog.teal	19	1	19	12	TxnOpcode
+prog.teal	20	1	20	76	PushbytesOpcode
 prog.teal	21	1	21	2	EqualsComparisonOpcode
 prog.teal	21	1	21	2	IntegerEqualsOpcode
 prog.teal	22	1	22	2	AndOpcode
@@ -40,7 +41,8 @@ prog.teal	15	prog.teal	16	NormalSuccessor
 prog.teal	16	prog.teal	17	NormalSuccessor
 prog.teal	17	prog.teal	18	NormalSuccessor
 prog.teal	18	prog.teal	19	NormalSuccessor
-prog.teal	19	prog.teal	21	NormalSuccessor
+prog.teal	19	prog.teal	20	NormalSuccessor
+prog.teal	20	prog.teal	21	NormalSuccessor
 prog.teal	21	prog.teal	22	NormalSuccessor
 prog.teal	22	prog.teal	23	NormalSuccessor
 prog.teal	23	prog.teal	24	BooleanSuccessor(true)
@@ -62,6 +64,7 @@ prog.teal	16	4	23
 prog.teal	17	4	23
 prog.teal	18	4	23
 prog.teal	19	4	23
+prog.teal	20	4	23
 prog.teal	21	4	23
 prog.teal	22	4	23
 prog.teal	23	4	23

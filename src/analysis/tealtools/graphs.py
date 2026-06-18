@@ -44,8 +44,107 @@ QUERY_NAMES = (
 # ssaInputs/ssaOutputs/constValues/mustValues/phi* queries) are gone.
 
 
+import base64
+import hashlib
+
+# TEAL assembler pseudo-ops the tree-sitter grammar doesn't know (`byte` / `method`
+# / `addr` parse as ERROR nodes and get dropped, starving their consumers). Rewrite
+# them line-for-line to the canonical push the assembler itself emits, so the whole
+# pipeline sees real opcodes. `int` IS in the grammar (single_numeric_argument) and
+# already const-resolves, so it's left untouched. Canonical (disassembled) sources
+# have none of these -> unchanged.
+
+
+def _teal_str_bytes(s: str) -> bytes:
+    """Decode a TEAL ``"..."`` string body (\\\\ \\" \\n \\r \\t \\xNN)."""
+    out = bytearray()
+    i = 0
+    while i < len(s):
+        c = s[i]
+        if c == "\\" and i + 1 < len(s):
+            n = s[i + 1]
+            if n == "x" and i + 3 < len(s) + 1:
+                out.append(int(s[i + 2:i + 4], 16)); i += 4; continue
+            out.append({"n": 10, "r": 13, "t": 9, "\\": 92, '"': 34}.get(n, ord(n)))
+            i += 2; continue
+        out.append(ord(c)); i += 1
+    return bytes(out)
+
+
+def _byte_literal(v: str):
+    """Raw bytes for a TEAL byte literal (``0x`` / ``"str"`` / ``b64``/``base64(..)``
+    / ``b32``/``base32(..)``), or None if unrecognised."""
+    v = v.strip()
+    try:
+        if v.startswith("0x"):
+            return bytes.fromhex(v[2:])
+        if v.startswith('"') and v.endswith('"'):
+            return _teal_str_bytes(v[1:-1])
+        if v.startswith(("b64 ", "base64 ")):
+            b = v.split(None, 1)[1].strip()
+            return base64.b64decode(b + "=" * (-len(b) % 4))
+        if v.startswith("base64(") and v.endswith(")"):
+            b = v[7:-1]
+            return base64.b64decode(b + "=" * (-len(b) % 4))
+        if v.startswith(("b32 ", "base32 ")):
+            b = v.split(None, 1)[1].strip()
+            return base64.b32decode(b + "=" * (-len(b) % 8))
+        if v.startswith("base32(") and v.endswith(")"):
+            b = v[7:-1]
+            return base64.b32decode(b + "=" * (-len(b) % 8))
+    except Exception:
+        return None
+    return None
+
+
+def _strip_inline_comment(code: str) -> str:
+    """Drop a ``//`` inline comment that sits OUTSIDE a quoted string."""
+    q = False
+    for i in range(len(code) - 1):
+        if code[i] == '"' and (i == 0 or code[i - 1] != "\\"):
+            q = not q
+        elif not q and code[i:i + 2] == "//":
+            return code[:i]
+    return code
+
+
+def _normalize_pseudo_ops(data: bytes) -> bytes:
+    text = data.decode("utf-8", "replace")
+    if not any(k in text for k in ("byte ", "method ", "addr ")):
+        return data                                # fast path: nothing to rewrite
+    out = []
+    for line in text.split("\n"):
+        body = line.strip()
+        if not body or body.startswith("//") or body.endswith(":"):
+            out.append(line); continue
+        indent = line[:len(line) - len(line.lstrip())]
+        parts = _strip_inline_comment(body).split(None, 1)
+        op = parts[0]
+        operand = parts[1].strip() if len(parts) > 1 else ""
+        new = None
+        if op == "byte":
+            b = _byte_literal(operand)
+            new = f"pushbytes 0x{b.hex()}" if b is not None else None
+        elif op == "addr":
+            try:                                   # 58-char base32 = 32B pubkey + 4B csum
+                raw = base64.b32decode(operand.strip() + "=" * (-len(operand.strip()) % 8))
+                new = f"pushbytes 0x{raw[:32].hex()}"
+            except Exception:
+                new = None
+        elif op == "method":
+            sig = operand.strip()
+            if sig.startswith('"') and sig.endswith('"'):
+                sig = sig[1:-1]
+            sel = hashlib.new("sha512_256", sig.encode()).digest()[:4]
+            new = f"pushbytes 0x{sel.hex()}"
+        out.append(f"{indent}{new}" if new is not None else line)
+    return "\n".join(out).encode("utf-8")
+
+
 def _resolve_source_files(db: Path):
-    """Yield ``(relpath, bytes)`` for each ``.teal`` source under ``db``.
+    """Yield ``(relpath, bytes)`` for each ``.teal`` source under ``db``. Source is
+    pseudo-op-normalized (see :func:`_normalize_pseudo_ops`) so the extractor sees
+    only canonical opcodes.
 
     ``db`` may be a CodeQL database directory (read its ``src.zip``), a single
     ``.teal`` file, or a directory containing ``.teal`` files. The first form
@@ -60,14 +159,14 @@ def _resolve_source_files(db: Path):
             for info in zf.infolist():
                 if info.is_dir() or not info.filename.endswith(".teal"):
                     continue
-                yield info.filename, zf.read(info.filename)
+                yield info.filename, _normalize_pseudo_ops(zf.read(info.filename))
         return
     if db.is_file() and db.suffix == ".teal":
-        yield db.name, db.read_bytes()
+        yield db.name, _normalize_pseudo_ops(db.read_bytes())
         return
     if db.is_dir():
         for f in sorted(db.glob("*.teal")):
-            yield f.name, f.read_bytes()
+            yield f.name, _normalize_pseudo_ops(f.read_bytes())
 
 
 def _load_source_lines(db: Path) -> dict[str, list[str]]:

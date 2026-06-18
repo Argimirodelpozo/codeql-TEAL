@@ -628,3 +628,26 @@ def test_resim_shuffle_canonical_lifts_v11(tmp_path):
                        getattr(o, "source", None))
                 if isinstance(inv, pre_ir.InvokeSubroutine) and inv.target == s.id:
                     assert len(inv.args) == 1, f"callsub {s.id} starved: {len(inv.args)} args"
+
+
+def test_pseudo_ops_normalized_and_recovered(tmp_path):
+    """The tree-sitter grammar parses `byte`/`method`/`addr` as ERROR nodes and
+    drops them (starving consumers -- the old folks ABI-dispatch gap). The source
+    chokepoint normalizes them to the canonical push the assembler emits, so they
+    survive as real opcodes with const values. Assert the rewrite is exact and the
+    lift recovers the constants."""
+    from tealtools.graphs import _normalize_pseudo_ops
+    n = _normalize_pseudo_ops(
+        b'#pragma version 8\nbyte 0x4142\nmethod "transfer(uint64)void"\nint 1\n').decode()
+    assert "pushbytes 0x4142" in n                 # byte literal -> pushbytes
+    assert "pushbytes 0x25e350cf" in n             # method selector sha512_256[:4]
+    assert "\nint 1\n" in n                        # int is grammar-native, untouched
+
+    from tealtools.ssa import SSAProgram
+    p = tmp_path / "pseudo.teal"
+    p.write_text('#pragma version 8\nmethod "foo()void"\ntxna ApplicationArgs 0\n==\nreturn\n')
+    prog = SSAProgram(str(p), verbose=False)
+    consts = [getattr(o, "const_value", None) for a in prog.assignments
+              if a.op == "pushbytes" for o in a.outputs]
+    assert any(getattr(c, "value", None) == "0x84467aff" for c in consts if c), (
+        "method selector not recovered as a pushbytes constant")

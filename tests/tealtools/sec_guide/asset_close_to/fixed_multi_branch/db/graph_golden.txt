@@ -45,6 +45,7 @@ prog.teal	51	3	51	10	SingleNumericArgumentOpcode
 prog.teal	52	3	52	4	IntegerLteOpcode
 prog.teal	53	3	53	8	AssertOpcode
 prog.teal	54	3	54	19	TxnOpcode
+prog.teal	55	3	55	78	PushbytesOpcode
 prog.teal	56	3	56	4	EqualsComparisonOpcode
 prog.teal	56	3	56	4	IntegerEqualsOpcode
 prog.teal	57	3	57	8	AssertOpcode
@@ -95,7 +96,8 @@ prog.teal	50	prog.teal	51	NormalSuccessor
 prog.teal	51	prog.teal	52	NormalSuccessor
 prog.teal	52	prog.teal	53	NormalSuccessor
 prog.teal	53	prog.teal	54	BooleanSuccessor(true)
-prog.teal	54	prog.teal	56	NormalSuccessor
+prog.teal	54	prog.teal	55	NormalSuccessor
+prog.teal	55	prog.teal	56	NormalSuccessor
 prog.teal	56	prog.teal	57	NormalSuccessor
 prog.teal	57	prog.teal	58	BooleanSuccessor(true)
 prog.teal	58	prog.teal	34	NormalSuccessor
@@ -147,6 +149,7 @@ prog.teal	51	49	53
 prog.teal	52	49	53
 prog.teal	53	49	53
 prog.teal	54	54	57
+prog.teal	55	54	57
 prog.teal	56	54	57
 prog.teal	57	54	57
 prog.teal	58	58	58
