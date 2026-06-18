@@ -550,3 +550,35 @@ def test_switch_arm_retsub_continuation(tmp_path):
     cont_line = callsub_line + 1                    # `pushint 1` — the continuation
     assert any(b.first_line <= cont_line <= b.last_line for b in prog.blocks.values()), (
         "callsub continuation was pruned — switch-arm retsubs not attributed to the sub")
+
+
+def test_materialize_phi_const_coerces_cross_family():
+    """A phi merging a constant on some edge gets that constant materialized as
+    `let pc: <phi-type> = <const>`. When the const's AVM family disagrees with the
+    phi type (a dead coarse-SSA placeholder -- e.g. empty `""` on a uint64 phi
+    edge), it must be COERCED, else Puya rejects `let pc: uint64 = <bytes>`.
+    (Surfaced by a v11 mainnet probe, app_3550180073.)"""
+    from tealtools.WIP_lift2puyaIR import transforms
+
+    R = pre_ir.Register
+    reg = R("tmp%9", 0, "uint64")                  # phi resolves uint64
+    ph = pre_ir.Phi(register=reg, args=[
+        pre_ir.PhiArgument(R("v", 0, "uint64"), 1),
+        pre_ir.PhiArgument(pre_ir.BytesConstant(""), 2),   # empty-bytes placeholder
+    ])
+    b1 = pre_ir.BasicBlock(id=1, phis=[], ops=[], terminator=pre_ir.Goto(3))
+    b2 = pre_ir.BasicBlock(id=2, phis=[], ops=[], terminator=pre_ir.Goto(3))
+    b3 = pre_ir.BasicBlock(id=3, phis=[ph], ops=[],
+                           terminator=pre_ir.SubroutineReturn(result=[]))
+    main = pre_ir.Subroutine(id="main", parameters=[], returns=[], is_main=True,
+                             body=[b1, b2, b3])
+    prog = pre_ir.Program(main=main, subroutines=[])
+
+    transforms.materialize_phi_consts(prog)
+    # the materialized op on b2 must assign a uint64 const, not the bytes one
+    mat = [o for o in b2.ops if isinstance(o, pre_ir.Assignment)]
+    assert mat, "empty-bytes phi arg was not materialized"
+    src = mat[0].source
+    assert isinstance(src, pre_ir.UInt64Constant), (
+        f"cross-family placeholder not coerced: {type(src).__name__} into uint64 target")
+    assert mat[0].targets[0].ir_type == "uint64"

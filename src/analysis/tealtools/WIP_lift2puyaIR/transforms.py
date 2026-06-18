@@ -324,7 +324,14 @@ def materialize_phi_consts(prog) -> None:
     on some edge (a path-dependent literal) needs that constant materialized: a
     ``let r = <const>`` at the end of the through block, with the phi arg pointing
     at ``r``. (Without this the translator silently drops the const arg, leaving
-    the phi short an operand vs its predecessors.)"""
+    the phi short an operand vs its predecessors.)
+
+    The materialized register takes the phi's AVM type, so a const whose family
+    DISAGREES with it (a dead coarse-SSA placeholder -- e.g. an empty ``""`` on an
+    edge of a uint64-resolved phi) is coerced to that type first; otherwise
+    ``let pc: uint64 = <bytes>`` fails Puya's assignment check (same cross-family
+    fix `_reconcile_mixed_phis` applies to phi-arg registers)."""
+    from .type_recovery import _itob_const, _to_u64_const
     block_by_id: dict = {}
     for bb in pre_ir.blocks(prog):
         block_by_id[bb.id] = bb
@@ -341,9 +348,14 @@ def materialize_phi_consts(prog) -> None:
                 if ty == "?":
                     ty = ("uint64" if isinstance(arg.value, pre_ir.UInt64Constant)
                           else "bytes")
+                val = arg.value
+                if avm(ty) == "u" and isinstance(val, pre_ir.BytesConstant):
+                    val = _to_u64_const(val)
+                elif avm(ty) == "b" and isinstance(val, pre_ir.UInt64Constant):
+                    val = _itob_const(val.value)
                 r = pre_ir.Register(f"pc%{n}", 0, ty)
                 n += 1
-                through.ops.append(pre_ir.Assignment([r], arg.value))
+                through.ops.append(pre_ir.Assignment([r], val))
                 arg.value = r
 
 

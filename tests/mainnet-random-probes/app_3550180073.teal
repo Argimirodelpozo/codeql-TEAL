@@ -1,0 +1,4758 @@
+#pragma version 11
+intcblock 0 1 8 6 18446744073709551615 10000 20000 4294967296
+bytecblock 0x6162 0x6161 0x 0x74 0x7461 0x7861 0x7862 0x7462 0x6d 0x5f746c 0x7473 0x72 0x7274 0x67 0x4133 0x4132 0x4131 0x4130 0x4233 0x4232 0x4231 0x4230 0x7531 0x7530 0x7631 0x7630 0x6861 0x5f6c70 0x5f7261 0x5f7262 0x303132333470 0x5f6c61 0x00000000000000000000000000000000
+bytec_2 // ""
+txn ApplicationID
+bnz label1
+bytec 13 // "g"
+txn Sender
+app_global_put
+bytec_1 // "aa"
+intc_0 // 0
+app_global_put
+bytec_0 // "ab"
+intc_0 // 0
+app_global_put
+bytec 4 // "ta"
+intc_0 // 0
+app_global_put
+bytec 7 // "tb"
+intc_0 // 0
+app_global_put
+bytec 14 // "A3"
+intc_0 // 0
+app_global_put
+bytec 15 // "A2"
+intc_0 // 0
+app_global_put
+bytec 16 // "A1"
+intc_0 // 0
+app_global_put
+bytec 17 // "A0"
+intc_0 // 0
+app_global_put
+bytec 18 // "B3"
+intc_0 // 0
+app_global_put
+bytec 19 // "B2"
+intc_0 // 0
+app_global_put
+bytec 20 // "B1"
+intc_0 // 0
+app_global_put
+bytec 21 // "B0"
+intc_0 // 0
+app_global_put
+bytec 10 // "ts"
+intc_0 // 0
+app_global_put
+bytec 22 // "u1"
+intc_0 // 0
+app_global_put
+bytec 23 // "u0"
+intc_0 // 0
+app_global_put
+bytec 24 // "v1"
+intc_0 // 0
+app_global_put
+bytec 25 // "v0"
+intc_0 // 0
+app_global_put
+bytec 5 // "xa"
+intc_0 // 0
+app_global_put
+bytec 6 // "xb"
+intc_0 // 0
+app_global_put
+bytec 8 // "m"
+intc_0 // 0
+app_global_put
+bytec 11 // "r"
+intc_0 // 0
+app_global_put
+pushbytes 0x76 // "v"
+intc_1 // 1
+app_global_put
+bytec 26 // "ha"
+intc_0 // 0
+app_global_put
+label1:
+txn NumAppArgs
+bz label2
+txn OnCompletion
+!
+assert
+txn ApplicationID
+assert
+pushbytess 0xd5e842ef 0x2028d5d9 0x50506c50 0x180e1590 0x8bef050e 0x9e803cf7 0x1960e30c 0x287d47b0 0x4c6ea2d7 0x92927b10 0x90c59a40 0xb7f1975d 0x81bf0079 0x0d6e83a4 0xb63246e7
+txna ApplicationArgs 0
+match label3 label4 label5 label6 label7 label8 label9 label10 label11 label12 label13 label14 label15 label16 label17
+label19:
+err
+label2:
+txn OnCompletion
+switch label18 label19 label19 label19 label20 label20
+err
+label20:
+txn ApplicationID
+assert
+callsub label21
+bytec 5 // "xa"
+app_global_get
+!
+assert
+bytec 6 // "xb"
+app_global_get
+!
+assert
+bytec 4 // "ta"
+app_global_get
+!
+assert
+bytec 7 // "tb"
+app_global_get
+!
+assert
+intc_0 // 0
+bury 1
+label24:
+dup
+intc_3 // 6
+<
+bz label22
+bytec_3 // "t"
+dig 1
+dup
+cover 3
+bytec 9 // "_tl"
+callsub label23
+app_global_get
+!
+assert
+intc_1 // 1
++
+bury 1
+b label24
+label22:
+intc_1 // 1
+return
+label18:
+txn ApplicationID
+!
+return
+label23:
+proto 3 1
+frame_dig -2
+intc_1 // 1
++
+bytec 30 // "01234p"
+frame_dig -2
+uncover 2
+substring3
+frame_dig -3
+swap
+concat
+frame_dig -1
+concat
+retsub
+label85:
+proto 1 1
+bytec_3 // "t"
+frame_dig -1
+bytec 27 // "_lp"
+callsub label23
+app_global_get
+retsub
+label32:
+proto 1 3
+frame_dig -1
+intc_1 // 1
++
+bytec 30 // "01234p"
+frame_dig -1
+uncover 2
+substring3
+bytec_3 // "t"
+swap
+concat
+dup
+bytec 28 // "_ra"
+concat
+app_global_get
+swap
+dup
+bytec 29 // "_rb"
+concat
+app_global_get
+swap
+bytec 27 // "_lp"
+concat
+app_global_get
+retsub
+label229:
+proto 4 1
+frame_dig -4
+frame_dig -2
+<
+bz label25
+intc_1 // 1
+retsub
+label25:
+frame_dig -4
+frame_dig -2
+==
+bz label26
+frame_dig -3
+frame_dig -1
+<
+retsub
+label26:
+intc_0 // 0
+retsub
+label38:
+proto 1 1
+frame_dig -1
+bnz label27
+pushint 3
+retsub
+label27:
+frame_dig -1
+intc_1 // 1
+==
+bz label28
+pushint 10
+retsub
+label28:
+frame_dig -1
+pushint 2
+==
+bz label29
+pushint 30
+retsub
+label29:
+frame_dig -1
+pushint 3
+==
+bz label30
+pushint 100
+retsub
+label30:
+frame_dig -1
+pushint 4
+==
+bz label31
+pushint 300
+retsub
+label31:
+intc_1 // 1
+retsub
+label86:
+proto 1 1
+bytec_3 // "t"
+frame_dig -1
+bytec 31 // "_la"
+callsub label23
+app_global_get
+retsub
+label42:
+proto 1 0
+bytec_2 // ""
+frame_dig -1
+callsub label32
+pop
+swap
+dup
+intc_1 // 1
+<=
+bnz label33
+frame_dig 1
+intc_1 // 1
+<=
+bz label34
+label33:
+bytec 32 // 0x00000000000000000000000000000000
+label37:
+frame_dig -1
+pushint 16
+*
+bytec 12 // "rt"
+swap
+uncover 2
+box_replace
+retsub
+label34:
+bytec 5 // "xa"
+app_global_get
+bytec 6 // "xb"
+app_global_get
+frame_bury 0
+pushint 1000
+/
+frame_dig 2
+>
+bnz label35
+frame_dig 0
+pushint 1000
+/
+frame_dig 1
+>
+bz label36
+label35:
+bytec 32 // 0x00000000000000000000000000000000
+b label37
+label36:
+frame_dig -1
+callsub label38
+intc 5 // 10000
+swap
+-
+frame_dig 1
+dup
+cover 2
+dig 1
+frame_dig 2
+dup
+cover 3
+callsub label39
+swap
+uncover 2
+uncover 3
+callsub label39
+swap
+itob
+swap
+itob
+concat
+b label37
+label101:
+proto 1 0
+intc_0 // 0
+label43:
+frame_dig 0
+intc_3 // 6
+<
+bz label40
+intc_1 // 1
+frame_dig 0
+shl
+frame_dig -1
+&
+bz label41
+frame_dig 0
+callsub label42
+label41:
+frame_dig 0
+intc_1 // 1
++
+frame_bury 0
+b label43
+label40:
+retsub
+label95:
+proto 1 1
+bytec 8 // "m"
+app_global_get
+intc_1 // 1
+frame_dig -1
+shl
+&
+retsub
+label92:
+proto 3 0
+intc_1 // 1
+frame_dig -3
+shl
+frame_dig -2
+bz label44
+frame_dig -1
+|
+frame_bury -1
+label45:
+bytec 8 // "m"
+frame_dig -1
+app_global_put
+retsub
+label44:
+intc 4 // 18446744073709551615
+^
+frame_dig -1
+&
+frame_bury -1
+b label45
+label47:
+proto 7 0
+frame_dig -1
+bz label46
+bytec 5 // "xa"
+app_global_get
+bytec 6 // "xb"
+app_global_get
+dig 1
+frame_dig -3
+>=
+assert
+dup
+frame_dig -2
+>=
+assert
+swap
+frame_dig -3
+-
+frame_dig -6
++
+bytec 5 // "xa"
+swap
+app_global_put
+frame_dig -2
+-
+frame_dig -5
++
+bytec 6 // "xb"
+swap
+app_global_put
+label46:
+bytec_3 // "t"
+frame_dig -7
+bytec 28 // "_ra"
+callsub label23
+frame_dig -6
+app_global_put
+bytec_3 // "t"
+frame_dig -7
+bytec 29 // "_rb"
+callsub label23
+frame_dig -5
+app_global_put
+bytec_3 // "t"
+frame_dig -7
+bytec 27 // "_lp"
+callsub label23
+frame_dig -4
+app_global_put
+retsub
+label91:
+proto 1 0
+frame_dig -1
+intc_1 // 1
+dupn 2
+intc_0 // 0
+dupn 2
+callsub label47
+retsub
+label68:
+proto 2 2
+bytec_2 // ""
+frame_dig -1
+pushint 5
+==
+bz label48
+frame_dig -2
+intc_0 // 0
+uncover 2
+retsub
+label48:
+frame_dig -2
+pushints 80 100
+callsub label39
+dup
+frame_bury 0
+bnz label49
+intc_1 // 1
+frame_bury 0
+label49:
+frame_dig -2
+frame_dig 0
+dup
+cover 2
+-
+uncover 2
+retsub
+label105:
+proto 5 1
+bytec_2 // ""
+dupn 2
+frame_dig -5
+pushint 5
+==
+dup
+bz label50
+intc_0 // 0
+frame_bury 1
+frame_dig -2
+frame_bury 0
+label54:
+frame_dig -3
+frame_dig -1
+frame_dig 0
+callsub label39
+frame_dig -4
+mulw
+callsub label51
+dup
+frame_bury 2
+frame_dig -4
+<=
+bz label52
+intc_0 // 0
+frame_bury 0
+retsub
+label52:
+frame_dig 2
+frame_dig -4
+-
+frame_dig 3
+bz label53
+frame_bury 0
+retsub
+label53:
+intc 6 // 20000
+frame_dig 1
+-
+intc 6 // 20000
+swap
+callsub label39
+frame_bury 0
+retsub
+label50:
+frame_dig -5
+callsub label38
+dup
+frame_bury 1
+pushint 2
+/
+intc 5 // 10000
+swap
+-
+frame_dig -2
+swap
+intc 5 // 10000
+callsub label39
+dup
+frame_bury 0
+bnz label54
+intc_1 // 1
+frame_bury 0
+b label54
+label99:
+proto 4 1
+frame_dig -4
+frame_dig -3
+mulw
+swap
+dup
+frame_dig -2
+frame_dig -1
+mulw
+cover 2
+dup
+cover 2
+>
+bz label55
+intc_1 // 1
+frame_bury 0
+retsub
+label55:
+frame_dig 1
+frame_dig 3
+==
+bz label56
+frame_dig 0
+frame_dig 2
+>
+frame_bury 0
+retsub
+label56:
+intc_0 // 0
+frame_bury 0
+retsub
+label39:
+proto 3 1
+frame_dig -3
+frame_dig -2
+mulw
+intc_0 // 0
+frame_dig -1
+divmodw
+popn 2
+swap
+!
+assert
+retsub
+label160:
+proto 3 1
+frame_dig -3
+frame_dig -2
+mulw
+intc_0 // 0
+frame_dig -1
+divmodw
+cover 3
+pop
+cover 2
+!
+assert
+bz label57
+intc_1 // 1
++
+retsub
+label57:
+retsub
+label51:
+proto 2 1
+bytec_2 // ""
+dupn 6
+frame_dig -2
+bnz label58
+frame_dig -1
+sqrt
+frame_bury 0
+retsub
+label58:
+frame_dig -2
+sqrt
+intc 7 // 4294967296
+*
+frame_bury 1
+intc_0 // 0
+frame_bury 0
+label60:
+frame_dig 0
+intc_3 // 6
+<
+bz label59
+frame_dig -2
+frame_dig -1
+intc_0 // 0
+frame_dig 1
+dup
+cover 4
+divmodw
+popn 2
+bury 1
+addw
+intc_1 // 1
+shr
+swap
+pushint 63
+shl
+|
+frame_bury 1
+frame_dig 0
+intc_1 // 1
++
+frame_bury 0
+b label60
+label59:
+frame_dig 1
+dup
+mulw
+frame_bury 6
+dup
+frame_bury 5
+frame_dig -2
+>
+bnz label61
+frame_dig 5
+frame_dig -2
+==
+bz label62
+frame_dig 6
+frame_dig -1
+>
+bz label62
+label61:
+frame_dig 1
+intc_1 // 1
+-
+frame_bury 1
+label64:
+frame_dig 1
+frame_bury 0
+retsub
+label62:
+frame_dig 1
+intc_1 // 1
++
+dup
+frame_bury 2
+dup
+mulw
+frame_bury 4
+dup
+frame_bury 3
+frame_dig -2
+<
+bnz label63
+frame_dig 3
+frame_dig -2
+==
+bz label64
+frame_dig 4
+frame_dig -1
+<=
+bz label64
+label63:
+frame_dig 2
+frame_bury 1
+b label64
+label73:
+proto 4 5
+bytec_2 // ""
+dupn 7
+frame_dig -1
+pushint 5
+==
+bz label65
+frame_dig -2
+pushint 1000000
+/
+intc_1 // 1
+dig 1
+uncover 2
+select
+frame_bury 7
+label71:
+frame_dig 7
+bnz label66
+frame_dig -4
+frame_dig -2
++
+frame_dig -3
+intc_0 // 0
+dupn 2
+frame_bury 4
+frame_bury 3
+frame_bury 2
+frame_bury 1
+frame_bury 0
+retsub
+label66:
+frame_dig 7
+dup
+pushint 2
+/
+dup
+frame_bury 4
+swap
+dig 1
+-
+frame_bury 6
+bnz label67
+intc_1 // 1
+frame_bury 4
+label67:
+frame_dig 4
+dup
+frame_dig -1
+callsub label68
+frame_bury 2
+frame_bury 3
+frame_dig -2
+swap
+-
+frame_dig -3
+dig 1
+mulw
+frame_dig -4
+uncover 3
++
+dup
+frame_bury 0
+cover 2
+intc_0 // 0
+uncover 3
+divmodw
+popn 2
+dup
+cover 2
+frame_bury 1
+!
+assert
+bnz label69
+frame_dig 0
+frame_dig 3
++
+frame_dig -3
+intc_0 // 0
+frame_dig 2
+intc_0 // 0
+frame_bury 4
+frame_bury 3
+frame_bury 2
+frame_bury 1
+frame_bury 0
+retsub
+label69:
+frame_dig 1
+frame_dig 6
+frame_dig -2
+callsub label39
+dup
+frame_bury 5
+bnz label70
+frame_dig 1
+bz label70
+intc_1 // 1
+frame_bury 5
+label70:
+frame_dig 5
+dup
+frame_dig -1
+callsub label68
+frame_dig 1
+dup
+cover 2
+uncover 4
+-
+frame_dig 0
+frame_dig 3
++
+frame_dig -3
+uncover 4
+-
+uncover 4
++
+uncover 2
+frame_dig 2
+uncover 4
+frame_bury 4
+frame_bury 3
+frame_bury 2
+frame_bury 1
+frame_bury 0
+retsub
+label65:
+frame_dig -1
+callsub label38
+frame_dig -2
+swap
+intc 5 // 10000
+callsub label39
+frame_bury 7
+b label71
+label98:
+proto 5 5
+frame_dig -1
+bz label72
+frame_dig -5
+frame_dig -4
+frame_dig -3
+frame_dig -2
+callsub label73
+dig 3
+assert
+retsub
+label72:
+frame_dig -4
+frame_dig -5
+frame_dig -3
+frame_dig -2
+callsub label73
+dig 4
+assert
+uncover 3
+uncover 4
+uncover 4
+uncover 3
+uncover 4
+retsub
+label93:
+proto 3 0
+frame_dig -2
+bnz label74
+global CurrentApplicationAddress
+balance
+global CurrentApplicationAddress
+min_balance
+dup2
+>=
+assert
+-
+frame_dig -1
+>=
+assert
+itxn_begin
+frame_dig -1
+itxn_field Amount
+frame_dig -3
+itxn_field Receiver
+intc_1 // 1
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+retsub
+label74:
+itxn_begin
+frame_dig -3
+itxn_field AssetReceiver
+frame_dig -1
+itxn_field AssetAmount
+frame_dig -2
+itxn_field XferAsset
+pushint 4
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+retsub
+label89:
+proto 2 1
+frame_dig -2
+gtxns Sender
+txn Sender
+==
+assert
+frame_dig -2
+gtxns RekeyTo
+global ZeroAddress
+==
+assert
+frame_dig -1
+bnz label75
+frame_dig -2
+gtxns TypeEnum
+intc_1 // 1
+==
+assert
+frame_dig -2
+gtxns CloseRemainderTo
+global ZeroAddress
+==
+assert
+frame_dig -2
+gtxns Receiver
+global CurrentApplicationAddress
+==
+assert
+frame_dig -2
+gtxns Amount
+retsub
+label75:
+frame_dig -2
+gtxns TypeEnum
+pushint 4
+==
+assert
+frame_dig -2
+gtxns AssetCloseTo
+global ZeroAddress
+==
+assert
+frame_dig -2
+gtxns XferAsset
+frame_dig -1
+==
+assert
+frame_dig -2
+gtxns AssetReceiver
+global CurrentApplicationAddress
+==
+assert
+frame_dig -2
+gtxns AssetAmount
+retsub
+label96:
+proto 3 2
+bytec_2 // ""
+dup
+frame_dig -3
+gtxns Sender
+txn Sender
+==
+assert
+frame_dig -3
+gtxns RekeyTo
+global ZeroAddress
+==
+assert
+frame_dig -2
+bnz label76
+frame_dig -3
+gtxns TypeEnum
+dup
+frame_bury 1
+intc_1 // 1
+==
+bz label77
+frame_dig -3
+gtxns Receiver
+global CurrentApplicationAddress
+==
+assert
+frame_dig -3
+gtxns CloseRemainderTo
+global ZeroAddress
+==
+assert
+frame_dig -3
+gtxns Amount
+intc_1 // 1
+uncover 3
+uncover 3
+retsub
+label77:
+frame_dig 1
+pushint 4
+==
+assert
+frame_dig -3
+gtxns AssetReceiver
+global CurrentApplicationAddress
+==
+assert
+frame_dig -3
+gtxns AssetCloseTo
+global ZeroAddress
+==
+assert
+frame_dig -3
+gtxns XferAsset
+frame_dig -1
+==
+assert
+frame_dig -3
+gtxns AssetAmount
+intc_0 // 0
+uncover 3
+uncover 3
+retsub
+label76:
+frame_dig -3
+gtxns TypeEnum
+pushint 4
+==
+assert
+frame_dig -3
+gtxns AssetReceiver
+global CurrentApplicationAddress
+==
+assert
+frame_dig -3
+gtxns AssetCloseTo
+global ZeroAddress
+==
+assert
+frame_dig -3
+gtxns XferAsset
+dup
+frame_bury 0
+frame_dig -2
+==
+bz label78
+frame_dig -3
+gtxns AssetAmount
+intc_1 // 1
+uncover 3
+uncover 3
+retsub
+label78:
+frame_dig 0
+frame_dig -1
+==
+assert
+frame_dig -3
+gtxns AssetAmount
+intc_0 // 0
+uncover 3
+uncover 3
+retsub
+label3:
+callsub label21
+bytec 11 // "r"
+intc_1 // 1
+app_global_put
+intc_1 // 1
+return
+label4:
+txna ApplicationArgs 1
+callsub label79
+callsub label21
+btoi
+bytec 26 // "ha"
+swap
+app_global_put
+intc_1 // 1
+return
+label5:
+txna ApplicationArgs 1
+dup
+len
+pushint 32
+==
+assert
+callsub label21
+dup
+global ZeroAddress
+!=
+assert
+bytec 13 // "g"
+swap
+app_global_put
+intc_1 // 1
+return
+label6:
+txna ApplicationArgs 1
+dup
+intc_0 // 0
+extract_uint16
+pushint 2
++
+dig 1
+len
+==
+assert
+callsub label21
+dup
+extract 2 0
+dup
+len
+pushint 152
+==
+assert
+itxn_begin
+dig 1
+extract 2 32
+dig 2
+extract 34 32
+uncover 3
+extract 66 64
+dig 3
+pushint 128
+extract_uint64
+dig 4
+pushint 136
+extract_uint64
+uncover 5
+pushint 144
+extract_uint64
+itxn_field VoteKeyDilution
+itxn_field VoteLast
+itxn_field VoteFirst
+itxn_field StateProofPK
+itxn_field SelectionPK
+itxn_field VotePK
+pushint 2
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+intc_1 // 1
+return
+label7:
+txna ApplicationArgs 1
+callsub label80
+dup
+txna ApplicationArgs 2
+callsub label80
+dup
+cover 2
+callsub label21
+bytec_0 // "ab"
+app_global_get
+!
+assert
+dup2
+<
+assert
+bytec_1 // "aa"
+dig 2
+app_global_put
+bytec_0 // "ab"
+swap
+app_global_put
+bz label81
+dig 1
+callsub label82
+label81:
+dup
+callsub label82
+intc_0 // 0
+callsub label83
+intc_1 // 1
+callsub label83
+pushint 2
+callsub label83
+pushint 3
+callsub label83
+pushint 4
+callsub label83
+pushint 5
+callsub label83
+intc_1 // 1
+return
+label8:
+bytec_2 // ""
+dup
+txn GroupIndex
+pushint 2
+-
+txn GroupIndex
+intc_1 // 1
+-
+txna ApplicationArgs 1
+callsub label80
+txna ApplicationArgs 2
+callsub label80
+txna ApplicationArgs 3
+callsub label80
+dup
+cover 2
+cover 3
+txna ApplicationArgs 4
+callsub label79
+txna ApplicationArgs 5
+dup
+cover 5
+len
+intc_2 // 8
+==
+assert
+uncover 3
+uncover 2
+callsub label84
+bytec 11 // "r"
+app_global_get
+assert
+intc_1 // 1
+callsub label85
+!
+assert
+btoi
+dup
+cover 2
+dup
+callsub label86
+uncover 2
+==
+assert
+intc_1 // 1
+==
+bnz label87
+dup
+pushint 2
+==
+bnz label87
+dup
+pushint 3
+==
+bz label88
+label87:
+intc_1 // 1
+label94:
+assert
+bytec_1 // "aa"
+app_global_get
+dig 5
+swap
+callsub label89
+dup
+bury 8
+bytec_0 // "ab"
+app_global_get
+dig 5
+swap
+callsub label89
+dup
+bury 8
+swap
+pushint 4
+>
+assert
+pushint 4
+>
+assert
+bytec 12 // "rt"
+box_len
+pop
+bnz label90
+bytec 12 // "rt"
+pushint 96
+box_create
+pop
+label90:
+pushint 5
+callsub label91
+intc_1 // 1
+callsub label91
+pushint 2
+callsub label91
+pushint 3
+callsub label91
+dig 6
+pushint 4
+-
+dig 6
+pushint 4
+-
+dup2
+mulw
+callsub label51
+dup
+assert
+dig 4
+btoi
+dig 1
+<=
+assert
+intc_1 // 1
+uncover 3
++
+intc_1 // 1
+uncover 3
++
+intc_1 // 1
+dig 3
++
+dig 4
+dup
+cover 4
+dig 3
+dig 3
+uncover 3
+intc_1 // 1
+dup
+intc_0 // 0
+callsub label47
+bytec 5 // "xa"
+app_global_get
+uncover 2
++
+bytec 5 // "xa"
+swap
+app_global_put
+bytec 6 // "xb"
+app_global_get
++
+bytec 6 // "xb"
+swap
+app_global_put
+bytec 8 // "m"
+app_global_get
+dig 1
+intc_1 // 1
+uncover 2
+callsub label92
+callsub label42
+txn Sender
+dig 4
+uncover 2
+callsub label93
+intc_1 // 1
+return
+label88:
+intc_0 // 0
+b label94
+label9:
+txn GroupIndex
+pushint 2
+-
+txn GroupIndex
+intc_1 // 1
+-
+txna ApplicationArgs 1
+callsub label80
+txna ApplicationArgs 2
+callsub label80
+txna ApplicationArgs 3
+callsub label79
+bytec_0 // "ab"
+app_global_get
+assert
+txn RekeyTo
+global ZeroAddress
+==
+assert
+intc_1 // 1
+callsub label85
+assert
+btoi
+dup
+intc_3 // 6
+<
+assert
+dup
+callsub label85
+!
+assert
+dup
+callsub label86
+assert
+bytec_1 // "aa"
+app_global_get
+uncover 3
+dig 1
+==
+assert
+bytec_0 // "ab"
+app_global_get
+uncover 3
+==
+assert
+uncover 3
+swap
+callsub label89
+intc_1 // 1
+==
+assert
+bytec_0 // "ab"
+app_global_get
+uncover 2
+swap
+callsub label89
+intc_1 // 1
+==
+assert
+callsub label91
+intc_1 // 1
+return
+label10:
+txn GroupIndex
+intc_1 // 1
+-
+txna ApplicationArgs 1
+callsub label80
+txna ApplicationArgs 2
+callsub label80
+txna ApplicationArgs 3
+callsub label79
+txna ApplicationArgs 4
+callsub label79
+uncover 3
+uncover 3
+callsub label84
+swap
+btoi
+dup
+intc_3 // 6
+<
+assert
+dup
+callsub label95
+assert
+bytec_1 // "aa"
+app_global_get
+bytec_0 // "ab"
+app_global_get
+uncover 4
+cover 2
+callsub label96
+dig 1
+assert
+dup2
+*
+dig 2
+dig 1
+-
+callsub label97
+dig 2
+callsub label32
+dig 2
+dig 2
+dig 6
+dig 8
+dig 7
+callsub label98
+dig 2
+assert
+uncover 11
+btoi
+dig 3
+<=
+assert
+dig 4
+dig 4
+dig 9
+dig 9
+callsub label99
+assert
+dig 10
+uncover 5
+uncover 5
+uncover 6
+uncover 8
+uncover 8
+intc_1 // 1
+callsub label47
+callsub label100
+intc_1 // 1
+uncover 5
+shl
+|
+callsub label101
+swap
+cover 2
+callsub label102
+callsub label103
+intc_1 // 1
+return
+label11:
+bytec_2 // ""
+dupn 5
+txn GroupIndex
+intc_1 // 1
+-
+txna ApplicationArgs 1
+callsub label80
+txna ApplicationArgs 2
+callsub label80
+txna ApplicationArgs 3
+callsub label79
+txna ApplicationArgs 4
+callsub label79
+txna ApplicationArgs 5
+callsub label79
+txna ApplicationArgs 6
+dup
+cover 7
+len
+intc_2 // 8
+==
+assert
+uncover 4
+uncover 4
+callsub label84
+uncover 2
+btoi
+dup
+cover 4
+dup
+intc_3 // 6
+<
+assert
+dup
+callsub label95
+assert
+bytec_1 // "aa"
+app_global_get
+bytec_0 // "ab"
+app_global_get
+uncover 5
+cover 2
+callsub label96
+dup
+cover 2
+cover 5
+dup
+cover 5
+dup
+assert
+dup
+dig 2
+*
+swap
+dig 1
+-
+callsub label97
+swap
+callsub label32
+cover 5
+cover 4
+cover 3
+uncover 2
+btoi
+dup
+cover 3
+uncover 2
+btoi
+dup
+cover 3
+swap
+assert
+assert
+bz label104
+dig 7
+dig 3
+dig 5
+dig 4
+dig 4
+callsub label105
+label111:
+dup
+assert
+dig 6
+dup
+cover 2
+dig 1
+<=
+dig 2
+swap
+select
+dup
+uncover 2
+dig 1
+-
+bury 12
+dig 4
+dig 6
+uncover 2
+dig 11
+dig 11
+dup
+cover 5
+callsub label98
+bury 17
+bury 17
+dup
+cover 3
+bury 20
+bury 17
+bury 17
+dup
+assert
+dig 11
+btoi
+>=
+assert
+bz label106
+dig 15
+callsub label107
+label110:
+dig 13
+dup
+dig 14
+dup
+cover 3
+dig 6
+dup
+cover 5
+dig 9
+dup
+cover 7
+callsub label99
+assert
+dig 11
+dup
+cover 5
+swap
+uncover 2
+dig 10
+uncover 4
+uncover 5
+intc_1 // 1
+callsub label47
+dig 12
+dig 12
+callsub label100
+intc_1 // 1
+uncover 2
+shl
+|
+callsub label101
+dig 6
+bz label108
+txn Sender
+bytec_0 // "ab"
+app_global_get
+dig 16
+callsub label93
+dig 9
+bz label109
+txn Sender
+bytec_1 // "aa"
+app_global_get
+dig 11
+callsub label93
+label109:
+callsub label103
+intc_1 // 1
+return
+label108:
+txn Sender
+bytec_1 // "aa"
+app_global_get
+dig 16
+callsub label93
+dig 9
+bz label109
+txn Sender
+bytec_0 // "ab"
+app_global_get
+dig 11
+callsub label93
+b label109
+label106:
+dig 15
+swap
+callsub label107
+b label110
+label104:
+dig 7
+dig 4
+dig 4
+dig 4
+dig 4
+callsub label105
+b label111
+label12:
+bytec_2 // ""
+dupn 26
+txn GroupIndex
+intc_1 // 1
+-
+txna ApplicationArgs 1
+callsub label80
+txna ApplicationArgs 2
+callsub label80
+txna ApplicationArgs 3
+dup
+cover 4
+len
+intc_2 // 8
+==
+assert
+callsub label84
+bytec_1 // "aa"
+app_global_get
+bytec_0 // "ab"
+app_global_get
+callsub label96
+dup
+uncover 2
+dup
+cover 2
+dup
+assert
+dup
+uncover 2
+*
+swap
+dig 1
+-
+callsub label97
+bytec 12 // "rt"
+intc_0 // 0
+pushint 96
+box_extract
+intc_3 // 6
+intc_0 // 0
+dup2
+intc_3 // 6
+intc_0 // 0
+dup
+label115:
+dup
+intc_3 // 6
+<
+bz label112
+dup
+pushint 16
+*
+dig 10
+bz label113
+dig 8
+swap
+extract_uint64
+bury 22
+label118:
+dig 21
+dig 6
+>
+bz label114
+dig 4
+bury 3
+dig 6
+bury 5
+dup
+bury 7
+dig 3
+bury 2
+dig 5
+bury 4
+dig 21
+bury 6
+label117:
+dup
+intc_1 // 1
++
+bury 1
+b label115
+label114:
+dig 21
+dig 4
+>
+bz label116
+dig 4
+bury 3
+dup
+bury 5
+dig 3
+bury 2
+dig 21
+bury 4
+b label117
+label116:
+dig 21
+dig 2
+>
+bz label117
+dup
+bury 3
+dig 21
+bury 2
+b label117
+label113:
+intc_2 // 8
++
+dig 8
+swap
+extract_uint64
+bury 22
+b label118
+label112:
+dig 6
+dup
+intc_3 // 6
+<
+assert
+dig 6
+assert
+callsub label32
+bury 36
+bury 36
+bury 36
+intc_0 // 0
+bury 38
+intc_0 // 0
+bury 37
+intc_0 // 0
+bury 21
+intc_0 // 0
+bury 20
+intc_0 // 0
+bury 19
+intc_0 // 0
+bury 18
+intc_0 // 0
+bury 17
+intc_0 // 0
+bury 16
+dig 4
+intc_3 // 6
+<
+bnz label119
+dig 8
+label130:
+dig 36
+dup
+dig 37
+dup
+cover 3
+uncover 4
+dig 11
+dup
+cover 6
+dig 16
+callsub label98
+cover 7
+bury 34
+bury 34
+swap
+dup
+dig 2
+dig 4
+dig 6
+callsub label99
+assert
+uncover 4
+swap
+uncover 2
+dig 39
+uncover 4
+uncover 5
+intc_1 // 1
+callsub label47
+dig 38
+bnz label120
+bury 13
+dig 26
+bury 14
+dig 27
+bury 15
+label124:
+dig 36
+bz label121
+dig 17
+dup
+dig 18
+dup
+cover 3
+dig 40
+dig 7
+dup
+cover 6
+dig 16
+callsub label98
+dig 22
+uncover 3
++
+bury 22
+dig 3
+dig 3
+dig 6
+dig 8
+callsub label99
+assert
+dig 20
+uncover 2
++
+bury 20
+dig 18
++
+bury 18
+uncover 4
+cover 2
+dig 20
+uncover 4
+uncover 5
+intc_1 // 1
+callsub label47
+label121:
+dig 14
+dup
+assert
+dig 11
+btoi
+>=
+assert
+intc_1 // 1
+dig 7
+shl
+bury 12
+dig 37
+bz label122
+intc_1 // 1
+dig 5
+shl
+dig 12
+|
+bury 12
+label122:
+dig 36
+bz label123
+intc_1 // 1
+dig 3
+shl
+dig 12
+|
+bury 12
+label123:
+dig 13
+dig 13
+callsub label100
+dig 12
+|
+callsub label101
+dig 9
+dig 9
+dig 16
+callsub label102
+callsub label103
+intc_1 // 1
+return
+label120:
+dig 21
+dup
+dig 22
+dup
+cover 3
+dig 42
+dig 10
+dup
+cover 6
+dig 17
+callsub label98
+dig 36
+uncover 3
++
+bury 23
+dig 3
+dig 3
+dig 6
+dig 8
+callsub label99
+assert
+dig 34
+uncover 2
++
+bury 21
+uncover 6
++
+bury 18
+uncover 4
+cover 2
+dig 23
+uncover 4
+uncover 5
+intc_1 // 1
+callsub label47
+b label124
+label119:
+dig 4
+callsub label32
+bury 21
+bury 21
+bury 21
+dig 9
+bz label125
+dig 20
+bury 25
+dig 35
+bury 26
+label137:
+dig 35
+dig 4
+dig 7
+callsub label39
+dig 35
+mulw
+callsub label51
+dup
+bury 31
+dig 26
+>
+bz label126
+dig 29
+dig 26
+-
+bury 33
+label136:
+intc_0 // 0
+bury 32
+intc_0 // 0
+bury 31
+intc_0 // 0
+bury 24
+dig 2
+intc_3 // 6
+<
+bz label127
+dig 2
+callsub label32
+bury 18
+bury 18
+bury 18
+dig 9
+bz label128
+dig 17
+bury 24
+label135:
+dig 20
+dig 2
+dig 5
+callsub label39
+dig 20
+mulw
+callsub label51
+dup
+bury 32
+dig 25
+>
+bz label127
+dig 30
+dig 25
+-
+bury 32
+label127:
+dig 32
+dig 9
+<
+bnz label129
+dig 8
+b label130
+label129:
+dig 8
+dig 33
+-
+bury 23
+dig 31
+bz label131
+dig 22
+dig 32
+<=
+bz label132
+label131:
+dig 6
+callsub label38
+intc 5 // 10000
+swap
+-
+dig 5
+callsub label38
+intc 5 // 10000
+swap
+-
+dig 26
+swap
+uncover 2
+callsub label39
+dig 30
++
+dup
+bury 30
+bz label133
+dig 22
+dig 30
+dig 30
+callsub label39
+label134:
+dig 33
+dig 1
++
+swap
+dig 24
+swap
+-
+bury 39
+b label130
+label133:
+dig 22
+b label134
+label132:
+dig 22
+dig 32
+dup
+cover 2
+-
+dig 31
+dup
+cover 2
+dig 34
+dup
+cover 4
++
+dig 28
++
+dup
+assert
+dig 1
+uncover 3
+dig 2
+callsub label39
+dig 2
+uncover 4
+uncover 3
+callsub label39
+uncover 2
+dig 2
+-
+dig 1
+-
+dig 36
+uncover 3
++
+cover 3
+cover 2
++
+bury 40
+bury 38
+b label130
+label128:
+dig 16
+bury 24
+b label135
+label126:
+intc_0 // 0
+bury 33
+b label136
+label125:
+dig 19
+bury 25
+dig 34
+bury 26
+b label137
+label13:
+intc_0 // 0
+bytec_2 // ""
+dupn 15
+txn GroupIndex
+intc_1 // 1
+-
+txna ApplicationArgs 1
+callsub label80
+txna ApplicationArgs 2
+callsub label80
+txna ApplicationArgs 3
+dup
+cover 4
+dup
+intc_0 // 0
+extract_uint16
+pushint 2
++
+swap
+len
+==
+assert
+txna ApplicationArgs 4
+callsub label79
+txna ApplicationArgs 5
+callsub label79
+txna ApplicationArgs 6
+dup
+cover 6
+len
+intc_2 // 8
+==
+assert
+uncover 3
+uncover 3
+callsub label84
+bytec_1 // "aa"
+app_global_get
+bytec_0 // "ab"
+app_global_get
+uncover 4
+cover 2
+callsub label96
+dup
+cover 2
+cover 4
+dup
+cover 4
+dup
+uncover 2
+*
+swap
+dig 1
+-
+callsub label97
+swap
+btoi
+dup
+uncover 2
+btoi
+swap
+bz label138
+dup
+assert
+label138:
+dig 5
+extract 2 0
+dup
+bury 24
+len
+dup
+pushint 9
+>=
+assert
+dup
+pushint 54
+<=
+assert
+dup
+pushint 9
+%
+!
+assert
+pushint 9
+/
+bury 18
+intc_0 // 0
+bury 8
+intc_0 // 0
+bury 12
+intc_0 // 0
+bury 11
+intc_0 // 0
+bury 10
+intc_0 // 0
+bury 7
+bytec 8 // "m"
+app_global_get
+bury 22
+intc_0 // 0
+bury 19
+label143:
+dig 18
+intc_3 // 6
+<
+bz label139
+dig 18
+dig 18
+<
+bz label140
+dig 18
+pushint 9
+*
+dig 23
+dup
+cover 2
+dig 1
+getbyte
+dup
+cover 3
+bury 18
+intc_1 // 1
++
+extract_uint64
+dup
+bury 23
+dig 1
+intc_3 // 6
+<
+assert
+assert
+intc_1 // 1
+dig 1
+shl
+dup
+bury 15
+dig 23
+dig 1
+&
+assert
+dig 8
+&
+!
+assert
+callsub label32
+bury 16
+bury 17
+bury 17
+dig 1
+bz label141
+dig 3
+bz label142
+dig 14
+dig 17
+dig 17
+dig 4
+dig 4
+callsub label105
+bury 20
+label144:
+dig 19
+dig 21
+<
+bz label141
+dig 19
+bury 21
+label141:
+dig 20
+bz label140
+dig 16
+dup
+dig 17
+dup
+cover 3
+dig 24
+dup
+cover 5
+dig 20
+dup
+cover 6
+dig 11
+callsub label98
+dig 4
+dig 4
+dig 7
+dig 9
+callsub label99
+assert
+uncover 7
+uncover 5
+uncover 5
+dig 22
+uncover 7
+uncover 8
+intc_1 // 1
+callsub label47
+dig 11
+uncover 4
++
+bury 11
+dig 14
+uncover 3
++
+bury 14
+dig 12
+uncover 2
++
+bury 12
+dig 10
++
+bury 10
+dig 6
+dig 13
+|
+bury 7
+label140:
+dig 18
+intc_1 // 1
++
+bury 19
+b label143
+label142:
+dig 14
+dig 16
+dig 18
+dig 4
+dig 4
+callsub label105
+bury 20
+b label144
+label139:
+dig 1
+bnz label145
+dig 7
+dig 3
+==
+assert
+label145:
+dig 11
+dup
+assert
+dig 5
+btoi
+dig 1
+<=
+assert
+dig 11
+dig 11
+callsub label100
+dig 8
+|
+callsub label101
+dig 4
+dig 9
+dup
+cover 2
+uncover 3
+callsub label102
+dig 3
+swap
+-
+dup
+bury 10
+bz label146
+dig 3
+bz label147
+txn Sender
+bytec_1 // "aa"
+app_global_get
+dig 10
+callsub label93
+label146:
+callsub label103
+intc_1 // 1
+return
+label147:
+txn Sender
+bytec_0 // "ab"
+app_global_get
+dig 10
+callsub label93
+b label146
+label14:
+bytec_2 // ""
+dupn 27
+txn GroupIndex
+pushint 2
+-
+txn GroupIndex
+intc_1 // 1
+-
+txna ApplicationArgs 1
+callsub label80
+dup
+txna ApplicationArgs 2
+callsub label80
+dup
+cover 2
+txna ApplicationArgs 3
+callsub label80
+cover 2
+txna ApplicationArgs 4
+callsub label79
+txna ApplicationArgs 5
+dup
+cover 4
+len
+intc_2 // 8
+==
+assert
+cover 2
+callsub label84
+btoi
+dupn 2
+intc_3 // 6
+<
+assert
+pushint 5
+==
+bz label148
+callsub label21
+label148:
+dup
+callsub label86
+dig 3
+==
+assert
+bytec_1 // "aa"
+app_global_get
+dig 7
+swap
+callsub label89
+dup
+bury 34
+bytec_0 // "ab"
+app_global_get
+dig 7
+swap
+callsub label89
+bury 33
+bnz label149
+dig 31
+bz label150
+label149:
+intc_1 // 1
+label166:
+assert
+dig 32
+dig 32
+callsub label97
+dup
+callsub label32
+dup
+cover 3
+bury 14
+bury 19
+bury 19
+dup
+assert
+intc_0 // 0
+bury 22
+intc_0 // 0
+bury 21
+intc_1 // 1
+<=
+bz label151
+dig 32
+dup
+assert
+dig 32
+dup
+assert
+dup2
+mulw
+callsub label51
+dup
+bury 33
+dup
+assert
+dig 20
+uncover 3
++
+bury 31
+dig 18
+uncover 2
++
+bury 29
+dig 11
++
+bury 27
+label162:
+dig 1
+btoi
+dig 30
+dup
+uncover 2
+>=
+assert
+bytec 8 // "m"
+app_global_get
+intc_1 // 1
+dig 3
+dup
+cover 3
+shl
+dup2
+&
+dig 3
+dig 34
+dup
+cover 4
+dig 35
+dup
+cover 6
+dig 36
+dup
+cover 4
+dig 29
+dig 29
+dig 7
+callsub label47
+uncover 6
+swap
+uncover 2
+uncover 4
+uncover 5
+uncover 6
+callsub label152
+dig 22
+dig 22
+callsub label100
+|
+callsub label101
+txn Sender
+dig 4
+uncover 2
+callsub label93
+callsub label103
+intc_1 // 1
+return
+label151:
+dig 32
+dig 11
+dup
+cover 2
+dig 20
+callsub label39
+dig 33
+uncover 2
+dig 19
+callsub label39
+>
+dup
+bury 13
+bz label153
+dig 32
+bury 35
+dig 31
+bury 34
+dig 16
+bury 26
+dig 17
+bury 31
+label165:
+dig 33
+dig 26
+dup
+cover 2
++
+dig 32
+dup
+cover 3
+cover 2
+callsub label39
+dig 36
+dig 2
++
+mulw
+callsub label51
+dup
+bury 16
+<
+bz label154
+dig 13
+dig 31
+-
+dig 1
+callsub label38
+intc 6 // 20000
+swap
+-
+intc 6 // 20000
+callsub label39
+dup
+bury 14
+dig 35
+>
+bz label155
+dig 34
+bury 13
+label155:
+dig 12
+bnz label156
+intc_1 // 1
+bury 13
+label156:
+dig 12
+bz label157
+dig 30
+dig 26
+dig 14
+dig 3
+callsub label73
+cover 4
+bury 23
+cover 3
+bury 27
+bury 27
+dig 13
+bz label158
+dig 34
+dig 15
+-
+bury 11
+dig 33
+uncover 2
++
+bury 9
+bury 20
+dig 18
+bury 21
+dig 23
+bury 22
+dig 24
+bury 23
+label164:
+dig 8
+dig 11
+dup
+cover 2
+dig 25
+callsub label39
+dig 9
+uncover 2
+dig 24
+callsub label39
+dup2
+<
+swap
+uncover 2
+dig 2
+select
+bury 31
+bz label159
+dig 29
+dig 22
+dig 12
+callsub label160
+dup
+dig 9
+dup
+cover 2
+<=
+swap
+cover 2
+select
+dig 9
+bury 11
+label163:
+dig 30
+dup
+assert
+dig 24
+dig 12
+dup
+cover 3
++
+bury 32
+dig 24
+dig 3
++
+bury 31
+dig 13
++
+bury 29
+dig 10
+swap
+-
+dup
+bury 18
+dig 9
+uncover 2
+-
+bury 16
+bz label161
+txn Sender
+dig 5
+dig 17
+callsub label93
+label161:
+dig 14
+bz label162
+txn Sender
+dig 4
+dig 16
+callsub label93
+b label162
+label159:
+dig 29
+dig 23
+dig 12
+callsub label160
+dup
+dig 10
+dup
+cover 2
+<=
+swap
+cover 2
+select
+bury 10
+dig 7
+b label163
+label158:
+dig 34
+uncover 2
++
+bury 10
+dig 32
+dig 14
+-
+bury 9
+dig 19
+bury 21
+bury 21
+dig 24
+bury 22
+dig 23
+bury 23
+b label164
+label157:
+dig 16
+bury 22
+dig 17
+bury 23
+dig 31
+bury 8
+dig 32
+bury 9
+b label164
+label154:
+intc_0 // 0
+bury 13
+b label156
+label153:
+dig 31
+bury 35
+dig 32
+bury 34
+dig 17
+bury 26
+dig 16
+bury 31
+b label165
+label150:
+intc_0 // 0
+b label166
+label15:
+bytec_2 // ""
+dupn 6
+txn GroupIndex
+intc_1 // 1
+-
+dup
+gtxns TypeEnum
+pushint 4
+==
+assert
+txna ApplicationArgs 1
+callsub label80
+dup
+cover 2
+txna ApplicationArgs 2
+callsub label80
+txna ApplicationArgs 3
+callsub label80
+txna ApplicationArgs 4
+callsub label79
+txna ApplicationArgs 5
+dup
+cover 6
+len
+intc_2 // 8
+==
+assert
+txna ApplicationArgs 6
+dup
+cover 6
+len
+intc_2 // 8
+==
+assert
+txna ApplicationArgs 7
+callsub label80
+dup
+cover 6
+cover 6
+cover 2
+callsub label84
+btoi
+dup
+cover 4
+dup
+intc_3 // 6
+<
+assert
+intc_0 // 0
+dup
+callsub label97
+dup
+callsub label32
+cover 3
+dup
+cover 4
+cover 7
+dup
+cover 3
+cover 7
+dup
+callsub label86
+dig 5
+==
+assert
+dig 5
+gtxns Sender
+txn Sender
+==
+assert
+dig 5
+gtxns RekeyTo
+global ZeroAddress
+==
+assert
+dig 5
+gtxns AssetReceiver
+global CurrentApplicationAddress
+==
+assert
+dig 5
+gtxns AssetCloseTo
+global ZeroAddress
+==
+assert
+dig 5
+gtxns XferAsset
+uncover 5
+==
+assert
+uncover 4
+gtxns AssetAmount
+dup
+assert
+dig 2
+assert
+dup
+dig 3
+<=
+assert
+bytec 8 // "m"
+app_global_get
+dup
+cover 7
+intc_1 // 1
+uncover 3
+shl
+dup
+cover 7
+&
+cover 5
+dup
+uncover 3
+dig 3
+callsub label39
+cover 4
+dup
+uncover 3
+dig 3
+callsub label39
+cover 3
+-
+swap
+bytec_1 // "aa"
+app_global_get
+dig 1
+==
+dup
+uncover 2
+bytec_0 // "ab"
+app_global_get
+==
+swap
+bnz label167
+dup
+bnz label167
+dig 11
+dig 15
+==
+bz label168
+label167:
+intc_1 // 1
+label195:
+assert
+dig 1
+bnz label169
+dup
+bz label170
+label169:
+dig 8
+bz label171
+dig 9
+bnz label172
+label171:
+dig 1
+bz label173
+dig 8
+assert
+dig 13
+btoi
+dig 5
+dup
+uncover 2
+>=
+assert
+bury 16
+label179:
+dig 8
+dig 5
+-
+bury 22
+dig 9
+dig 4
+-
+bury 21
+dig 2
+intc_1 // 1
+==
+bz label174
+dig 10
+dig 22
+dig 22
+dig 5
+dig 12
+dig 14
+dig 11
+dig 14
+callsub label175
+label178:
+dig 10
+callsub label42
+dig 1
+bz label176
+txn Sender
+bytec_1 // "aa"
+app_global_get
+dig 17
+callsub label93
+label177:
+callsub label103
+intc_1 // 1
+return
+label176:
+txn Sender
+bytec_0 // "ab"
+app_global_get
+dig 17
+callsub label93
+b label177
+label174:
+dig 10
+dig 22
+dig 22
+dig 5
+dig 12
+dig 14
+dig 11
+callsub label47
+b label178
+label173:
+dig 9
+assert
+dig 12
+btoi
+dig 4
+dup
+uncover 2
+>=
+assert
+bury 16
+b label179
+label172:
+dig 4
+dup
+assert
+dig 4
+dup
+cover 2
+assert
+dig 10
+swap
+-
+dup
+bury 22
+dig 11
+uncover 2
+-
+dup
+bury 21
+swap
+assert
+assert
+dig 1
+bz label180
+dig 18
+dig 20
+dig 5
+dig 13
+callsub label73
+bury 22
+bury 20
+cover 2
+bury 22
+bury 20
+dig 5
++
+bury 16
+label186:
+dig 1
+bz label181
+dig 13
+btoi
+dig 16
+<=
+assert
+label185:
+dig 2
+intc_1 // 1
+==
+bz label182
+dig 10
+dig 20
+dig 20
+dig 5
+dig 12
+dig 14
+dig 11
+dig 14
+callsub label175
+label184:
+dig 17
+dig 17
+callsub label100
+dig 7
+|
+callsub label101
+dig 1
+bz label183
+txn Sender
+bytec_1 // "aa"
+app_global_get
+dig 17
+callsub label93
+b label177
+label183:
+txn Sender
+bytec_0 // "ab"
+app_global_get
+dig 17
+callsub label93
+b label177
+label182:
+dig 10
+dig 20
+dig 20
+dig 5
+dig 12
+dig 14
+dig 11
+callsub label47
+b label184
+label181:
+dig 12
+btoi
+dig 16
+<=
+assert
+b label185
+label180:
+dig 19
+dig 19
+dig 6
+dig 13
+callsub label73
+bury 21
+bury 21
+cover 2
+bury 21
+bury 21
+dig 4
++
+bury 16
+b label186
+label170:
+dig 8
+dup
+dig 6
+dup
+cover 2
+-
+bury 24
+dig 11
+dig 6
+dup
+cover 3
+-
+bury 24
+dig 16
+btoi
+>=
+assert
+dig 14
+btoi
+>=
+assert
+bz label187
+dig 21
+assert
+label187:
+dig 9
+bz label188
+dig 20
+assert
+label188:
+dig 2
+intc_1 // 1
+==
+bz label189
+dig 10
+dig 22
+dig 22
+dig 5
+dig 12
+dig 14
+dig 11
+dig 14
+callsub label175
+label193:
+dig 10
+callsub label42
+dig 4
+bz label190
+txn Sender
+bytec_1 // "aa"
+app_global_get
+dig 6
+callsub label93
+label190:
+dig 3
+bz label177
+txn Sender
+bytec_0 // "ab"
+app_global_get
+dig 5
+callsub label93
+b label177
+label189:
+dig 4
+bnz label191
+dig 3
+bz label192
+label191:
+intc_1 // 1
+label194:
+assert
+dig 10
+dig 22
+dig 22
+dig 5
+dig 12
+dig 14
+dig 11
+callsub label47
+b label193
+label192:
+intc_0 // 0
+b label194
+label168:
+intc_0 // 0
+b label195
+label16:
+txna ApplicationArgs 1
+callsub label79
+txna ApplicationArgs 2
+callsub label79
+txna ApplicationArgs 3
+dup
+len
+pushint 32
+==
+assert
+txna ApplicationArgs 4
+callsub label80
+callsub label21
+uncover 3
+btoi
+dup
+intc_3 // 6
+<
+assert
+uncover 3
+btoi
+dup
+assert
+bytec_3 // "t"
+dig 2
+bytec 9 // "_tl"
+callsub label23
+app_global_get
+dup2
+<=
+assert
+dig 2
+callsub label86
+dig 4
+==
+assert
+dig 4
+dig 4
+asset_holding_get AssetBalance
+bury 1
+assert
+dig 1
+-
+bytec_3 // "t"
+uncover 3
+bytec 9 // "_tl"
+callsub label23
+swap
+app_global_put
+callsub label93
+intc_1 // 1
+return
+label17:
+txna ApplicationArgs 1
+callsub label80
+txna ApplicationArgs 2
+callsub label80
+txna ApplicationArgs 3
+callsub label79
+txna ApplicationArgs 4
+callsub label79
+txna ApplicationArgs 5
+dup
+cover 3
+len
+pushint 32
+==
+assert
+callsub label21
+intc_0 // 0
+dup
+callsub label97
+swap
+btoi
+dup
+uncover 2
+btoi
+swap
+bnz label196
+dup
+bz label197
+label196:
+intc_1 // 1
+label202:
+assert
+bytec_1 // "aa"
+app_global_get
+dig 5
+==
+assert
+bytec_0 // "ab"
+app_global_get
+dig 4
+==
+assert
+dig 1
+bz label198
+bytec 4 // "ta"
+app_global_get
+dig 2
+>=
+assert
+bytec_1 // "aa"
+app_global_get
+bnz label199
+global CurrentApplicationAddress
+balance
+global CurrentApplicationAddress
+min_balance
+-
+label201:
+dig 2
+dup
+cover 2
+>=
+assert
+bytec 4 // "ta"
+app_global_get
+dig 1
+-
+bytec 4 // "ta"
+swap
+app_global_put
+dig 3
+dig 6
+uncover 2
+callsub label93
+label198:
+dup
+bz label200
+bytec 7 // "tb"
+app_global_get
+dig 1
+dup
+cover 2
+dig 1
+<=
+assert
+global CurrentApplicationAddress
+bytec_0 // "ab"
+app_global_get
+asset_holding_get AssetBalance
+pop
+dig 2
+>=
+assert
+dig 1
+-
+bytec 7 // "tb"
+swap
+app_global_put
+dig 3
+dig 5
+uncover 2
+callsub label93
+label200:
+callsub label103
+intc_1 // 1
+return
+label199:
+global CurrentApplicationAddress
+bytec_1 // "aa"
+app_global_get
+asset_holding_get AssetBalance
+pop
+b label201
+label197:
+intc_0 // 0
+b label202
+label21:
+txn Sender
+bytec 13 // "g"
+app_global_get
+==
+assert
+txn RekeyTo
+global ZeroAddress
+==
+assert
+retsub
+label103:
+proto 0 0
+global CurrentApplicationID
+bytec 26 // "ha"
+app_global_get_ex
+bz label203
+frame_dig 0
+bz label203
+itxn_begin
+pushbytes 0x75 // "u"
+itxn_field ApplicationArgs
+frame_dig 0
+itxn_field ApplicationID
+intc_3 // 6
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+label203:
+retsub
+label84:
+proto 2 0
+bytec_2 // ""
+dupn 2
+bytec_0 // "ab"
+app_global_get
+assert
+txn RekeyTo
+global ZeroAddress
+==
+assert
+bytec 10 // "ts"
+app_global_get
+dup
+global LatestTimestamp
+dup
+cover 2
+>=
+bnz label204
+frame_dig 3
+bnz label205
+bytec 10 // "ts"
+frame_dig 4
+app_global_put
+label204:
+bytec_1 // "aa"
+app_global_get
+frame_dig -2
+==
+assert
+bytec_0 // "ab"
+app_global_get
+frame_dig -1
+==
+assert
+retsub
+label205:
+frame_dig 4
+frame_dig 3
+-
+frame_bury 0
+bytec 5 // "xa"
+app_global_get
+dup
+frame_bury 1
+bytec 6 // "xb"
+app_global_get
+frame_bury 2
+bz label206
+frame_dig 2
+bnz label207
+label206:
+bytec 10 // "ts"
+frame_dig 4
+app_global_put
+b label204
+label207:
+frame_dig 2
+dup
+intc 7 // 4294967296
+mulw
+intc_0 // 0
+frame_dig 1
+dup
+cover 4
+divmodw
+popn 2
+frame_dig 0
+dup
+cover 2
+mulw
+uncover 3
+dig 3
+mulw
+uncover 3
+addw
+cover 2
++
+uncover 4
+intc 7 // 4294967296
+mulw
+intc_0 // 0
+uncover 7
+divmodw
+popn 2
+dig 5
+mulw
+uncover 2
+uncover 6
+mulw
+uncover 3
+addw
+cover 2
++
+bytec 17 // "A0"
+app_global_get
+uncover 6
+addw
+bytec 16 // "A1"
+app_global_get
+uncover 7
+addw
+uncover 3
+addw
+cover 2
++
+bytec 15 // "A2"
+app_global_get
+uncover 7
+addw
+uncover 2
+addw
+cover 2
++
+bytec 14 // "A3"
+app_global_get
+addw
+bury 1
+bytec 21 // "B0"
+app_global_get
+uncover 7
+addw
+bytec 20 // "B1"
+app_global_get
+uncover 8
+addw
+uncover 3
+addw
+cover 2
++
+bytec 19 // "B2"
+app_global_get
+uncover 8
+addw
+uncover 2
+addw
+cover 2
++
+bytec 18 // "B3"
+app_global_get
+addw
+bury 1
+bytec 14 // "A3"
+uncover 5
+app_global_put
+bytec 15 // "A2"
+uncover 5
+app_global_put
+bytec 16 // "A1"
+uncover 5
+app_global_put
+bytec 17 // "A0"
+uncover 5
+app_global_put
+bytec 18 // "B3"
+swap
+app_global_put
+bytec 19 // "B2"
+swap
+app_global_put
+bytec 20 // "B1"
+swap
+app_global_put
+bytec 21 // "B0"
+swap
+app_global_put
+bytec 10 // "ts"
+frame_dig 4
+app_global_put
+b label204
+label107:
+proto 2 0
+frame_dig -2
+bz label208
+bytec 23 // "u0"
+app_global_get
+frame_dig -2
+addw
+bytec 23 // "u0"
+swap
+app_global_put
+bytec 22 // "u1"
+app_global_get
+addw
+bury 1
+bytec 22 // "u1"
+swap
+app_global_put
+label208:
+frame_dig -1
+bz label209
+bytec 25 // "v0"
+app_global_get
+frame_dig -1
+addw
+bytec 25 // "v0"
+swap
+app_global_put
+bytec 24 // "v1"
+app_global_get
+addw
+bury 1
+bytec 24 // "v1"
+swap
+app_global_put
+label209:
+retsub
+label102:
+proto 3 0
+frame_dig -3
+bz label210
+txn Sender
+bytec_0 // "ab"
+app_global_get
+frame_dig -1
+callsub label93
+frame_dig -2
+frame_dig -1
+callsub label107
+retsub
+label210:
+txn Sender
+bytec_1 // "aa"
+app_global_get
+frame_dig -1
+callsub label93
+frame_dig -1
+frame_dig -2
+callsub label107
+retsub
+label97:
+proto 2 0
+bytec_2 // ""
+dupn 10
+bytec 11 // "r"
+app_global_get
+intc_1 // 1
+==
+assert
+bytec_1 // "aa"
+app_global_get
+bnz label211
+global CurrentApplicationAddress
+balance
+global CurrentApplicationAddress
+min_balance
+-
+frame_dig -2
+-
+frame_bury 4
+label221:
+global CurrentApplicationAddress
+bytec_0 // "ab"
+app_global_get
+asset_holding_get AssetBalance
+pop
+frame_dig -1
+-
+frame_bury 5
+bytec 4 // "ta"
+app_global_get
+frame_bury 6
+bytec 7 // "tb"
+app_global_get
+frame_bury 7
+intc_0 // 0
+frame_bury 8
+label213:
+frame_dig 8
+intc_3 // 6
+<
+bz label212
+frame_dig 8
+dup
+callsub label32
+pop
+swap
+frame_dig 6
++
+frame_bury 6
+frame_dig 7
++
+frame_bury 7
+intc_1 // 1
++
+frame_bury 8
+b label213
+label212:
+frame_dig 6
+bz label214
+frame_dig 7
+bnz label215
+label214:
+retsub
+label215:
+frame_dig 4
+frame_dig 6
+==
+bz label216
+frame_dig 5
+frame_dig 7
+==
+bz label216
+retsub
+label216:
+bytec 8 // "m"
+app_global_get
+frame_bury 9
+intc_0 // 0
+frame_bury 0
+intc_0 // 0
+frame_bury 1
+intc_0 // 0
+frame_bury 8
+label220:
+frame_dig 8
+intc_3 // 6
+<
+bz label217
+frame_dig 8
+dup
+callsub label32
+pop
+swap
+frame_dig 4
+frame_dig 6
+callsub label39
+dup
+cover 2
+frame_bury 2
+frame_dig 5
+frame_dig 7
+callsub label39
+dup
+cover 2
+frame_bury 3
+bytec_3 // "t"
+dig 3
+bytec 28 // "_ra"
+callsub label23
+swap
+app_global_put
+bytec_3 // "t"
+dig 2
+bytec 29 // "_rb"
+callsub label23
+swap
+app_global_put
+intc_1 // 1
+swap
+shl
+dup
+frame_bury 10
+frame_dig 9
+&
+bz label218
+frame_dig 2
+bz label219
+frame_dig 3
+bz label219
+frame_dig 0
+frame_dig 2
++
+frame_bury 0
+frame_dig 1
+frame_dig 3
++
+frame_bury 1
+label218:
+frame_dig 8
+intc_1 // 1
++
+frame_bury 8
+b label220
+label219:
+frame_dig 8
+intc_0 // 0
+frame_dig 9
+dup
+cover 3
+callsub label92
+intc 4 // 18446744073709551615
+frame_dig 10
+^
+&
+frame_bury 9
+b label218
+label217:
+bytec 5 // "xa"
+frame_dig 0
+app_global_put
+bytec 6 // "xb"
+frame_dig 1
+app_global_put
+bytec 4 // "ta"
+app_global_get
+frame_dig 4
+frame_dig 6
+callsub label39
+bytec 4 // "ta"
+swap
+app_global_put
+bytec 7 // "tb"
+app_global_get
+frame_dig 5
+frame_dig 7
+callsub label39
+bytec 7 // "tb"
+swap
+app_global_put
+pushint 63
+callsub label101
+retsub
+label211:
+global CurrentApplicationAddress
+bytec_1 // "aa"
+app_global_get
+asset_holding_get AssetBalance
+pop
+frame_dig -2
+-
+frame_bury 4
+b label221
+label100:
+proto 2 1
+bytec_2 // ""
+dupn 25
+frame_dig -2
+bnz label222
+frame_dig -1
+bnz label222
+intc_0 // 0
+frame_bury 0
+retsub
+label222:
+bytec 8 // "m"
+app_global_get
+frame_bury 12
+pushint 5
+frame_bury 9
+intc 4 // 18446744073709551615
+frame_bury 10
+intc 4 // 18446744073709551615
+frame_bury 11
+pushint 5
+frame_bury 15
+intc 4 // 18446744073709551615
+frame_bury 16
+intc 4 // 18446744073709551615
+frame_bury 17
+intc_0 // 0
+frame_bury 18
+label233:
+frame_dig 18
+intc_3 // 6
+<
+bz label223
+frame_dig 18
+pushint 5
+!=
+bz label224
+intc_1 // 1
+frame_dig 18
+shl
+frame_dig 12
+&
+bnz label225
+frame_dig 18
+callsub label86
+bz label224
+label225:
+frame_dig 18
+callsub label32
+pop
+frame_bury 14
+dup
+frame_bury 13
+bz label226
+frame_dig 14
+bnz label227
+label226:
+intc_0 // 0
+dup
+frame_bury 5
+frame_bury 4
+label238:
+frame_dig 4
+bnz label228
+frame_dig 5
+bz label224
+label228:
+frame_dig 4
+dup
+frame_dig 5
+frame_dig 10
+dup
+cover 3
+frame_dig 11
+callsub label229
+frame_bury 2
+==
+bz label230
+frame_dig 5
+frame_dig 11
+==
+bz label230
+intc_1 // 1
+frame_bury 0
+label237:
+frame_dig 2
+bnz label231
+frame_dig 0
+bz label232
+frame_dig 18
+frame_dig 9
+>
+bz label232
+label231:
+frame_dig 9
+frame_bury 15
+frame_dig 18
+frame_bury 9
+frame_dig 11
+frame_bury 17
+frame_dig 5
+frame_bury 11
+frame_dig 10
+frame_bury 16
+frame_dig 4
+frame_bury 10
+label224:
+frame_dig 18
+intc_1 // 1
++
+frame_bury 18
+b label233
+label232:
+frame_dig 4
+dup
+frame_dig 5
+frame_dig 16
+dup
+cover 3
+frame_dig 17
+callsub label229
+frame_bury 3
+==
+bz label234
+frame_dig 5
+frame_dig 17
+==
+bz label234
+intc_1 // 1
+frame_bury 1
+label236:
+frame_dig 3
+bnz label235
+frame_dig 1
+bz label224
+frame_dig 18
+frame_dig 15
+>
+bz label224
+label235:
+frame_dig 18
+frame_bury 15
+frame_dig 5
+frame_bury 17
+frame_dig 4
+frame_bury 16
+b label224
+label234:
+intc_0 // 0
+frame_bury 1
+b label236
+label230:
+intc_0 // 0
+frame_bury 0
+b label237
+label227:
+frame_dig 13
+frame_dig 14
+mulw
+frame_bury 5
+frame_bury 4
+b label238
+label223:
+frame_dig -2
+pushint 10
+*
+pushint 100
+/
+dup
+frame_bury 24
+frame_dig -1
+pushint 10
+*
+pushint 100
+/
+dup
+cover 2
+frame_bury 25
+frame_dig -2
+pushint 55
+*
+pushint 100
+/
+dup
+frame_bury 19
+frame_dig -1
+pushint 55
+*
+pushint 100
+/
+dup
+cover 2
+frame_bury 20
+frame_dig -2
+uncover 3
+-
+swap
+-
+frame_bury 21
+frame_dig -1
+uncover 2
+-
+swap
+-
+frame_bury 22
+intc_0 // 0
+frame_bury 6
+intc_0 // 0
+frame_bury 7
+intc_0 // 0
+frame_bury 23
+frame_dig 9
+pushint 5
+==
+bz label239
+frame_dig 19
+frame_dig 21
++
+frame_bury 6
+frame_dig 20
+frame_dig 22
++
+frame_bury 7
+intc_0 // 0
+frame_bury 19
+intc_0 // 0
+frame_bury 20
+intc_0 // 0
+frame_bury 21
+intc_0 // 0
+frame_bury 22
+label249:
+pushint 5
+frame_dig 24
+dup
+cover 2
+frame_dig 25
+callsub label240
+dup
+cover 2
+frame_bury 8
+frame_dig 6
+dig 1
++
+frame_bury 6
+frame_dig 7
+uncover 2
++
+frame_bury 7
+>
+bnz label241
+frame_dig 8
+frame_dig 25
+<
+bz label242
+label241:
+pushint 32
+frame_bury 23
+label242:
+frame_dig 9
+frame_dig 19
+dup
+cover 2
+frame_dig 20
+callsub label240
+dup
+cover 2
+frame_bury 8
+frame_dig 6
+dig 1
++
+frame_bury 6
+frame_dig 7
+uncover 2
++
+frame_bury 7
+>
+bnz label243
+frame_dig 8
+frame_dig 20
+<
+bz label244
+label243:
+intc_1 // 1
+frame_dig 9
+shl
+frame_dig 23
+|
+frame_bury 23
+label244:
+frame_dig 15
+frame_dig 21
+dup
+cover 2
+frame_dig 22
+callsub label240
+dup
+cover 2
+frame_bury 8
+frame_dig 6
+dig 1
++
+frame_bury 6
+frame_dig 7
+uncover 2
++
+frame_bury 7
+>
+bnz label245
+frame_dig 8
+frame_dig 22
+<
+bz label246
+label245:
+intc_1 // 1
+frame_dig 15
+shl
+frame_dig 23
+|
+frame_bury 23
+label246:
+frame_dig 6
+bnz label247
+frame_dig 7
+bz label248
+label247:
+bytec 4 // "ta"
+app_global_get
+frame_dig 6
++
+bytec 4 // "ta"
+swap
+app_global_put
+bytec 7 // "tb"
+app_global_get
+frame_dig 7
++
+bytec 7 // "tb"
+swap
+app_global_put
+label248:
+frame_dig 23
+frame_bury 0
+retsub
+label239:
+frame_dig 15
+pushint 5
+==
+bz label249
+frame_dig 19
+frame_dig 21
++
+frame_bury 19
+frame_dig 20
+frame_dig 22
++
+frame_bury 20
+intc_0 // 0
+frame_bury 21
+intc_0 // 0
+frame_bury 22
+b label249
+label82:
+proto 1 0
+itxn_begin
+global CurrentApplicationAddress
+itxn_field AssetReceiver
+intc_0 // 0
+itxn_field AssetAmount
+frame_dig -1
+itxn_field XferAsset
+pushint 4
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+retsub
+label83:
+proto 1 0
+frame_dig -1
+callsub label86
+!
+assert
+frame_dig -1
+intc_1 // 1
++
+pushbytes 0x303132333450 // "01234P"
+frame_dig -1
+uncover 2
+substring3
+bytec_1 // "aa"
+app_global_get
+bnz label250
+pushbytes 0x414c474f // "ALGO"
+label251:
+bytec_0 // "ab"
+app_global_get
+asset_params_get AssetUnitName
+pop
+swap
+pushbytes 0x2f // "/"
+concat
+swap
+concat
+pushbytes 0x2d4c482d4c502d54 // "-LH-LP-T"
+concat
+frame_dig 0
+dup
+cover 2
+concat
+pushbytes 0x484c54 // "HLT"
+uncover 2
+concat
+pushbytes 0x763031 // "v01"
+concat
+itxn_begin
+global CurrentApplicationAddress
+dup
+itxn_field ConfigAssetReserve
+itxn_field ConfigAssetManager
+intc_3 // 6
+itxn_field ConfigAssetDecimals
+intc 4 // 18446744073709551615
+itxn_field ConfigAssetTotal
+itxn_field ConfigAssetUnitName
+itxn_field ConfigAssetName
+pushint 3
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+itxn CreatedAssetID
+dup
+callsub label82
+bytec_3 // "t"
+frame_dig -1
+bytec 31 // "_la"
+callsub label23
+swap
+app_global_put
+retsub
+label250:
+bytec_1 // "aa"
+app_global_get
+asset_params_get AssetUnitName
+pop
+b label251
+label152:
+proto 6 0
+frame_dig -4
+bnz label252
+frame_dig -5
+intc_1 // 1
+>
+bz label252
+bytec 5 // "xa"
+app_global_get
+frame_dig -3
++
+bytec 5 // "xa"
+swap
+app_global_put
+bytec 6 // "xb"
+app_global_get
+frame_dig -2
++
+bytec 6 // "xb"
+swap
+app_global_put
+frame_dig -6
+intc_1 // 1
+frame_dig -1
+callsub label92
+label252:
+retsub
+label175:
+proto 8 0
+bytec_2 // ""
+dup
+frame_dig -7
+bz label253
+frame_dig -6
+bz label253
+frame_dig -7
+intc_1 // 1
+-
+dup
+frame_bury 0
+frame_dig -6
+intc_1 // 1
+-
+frame_bury 1
+bz label254
+bytec 4 // "ta"
+app_global_get
+frame_dig 0
++
+bytec 4 // "ta"
+swap
+app_global_put
+label254:
+frame_dig 1
+bz label255
+bytec 7 // "tb"
+app_global_get
+frame_dig 1
++
+bytec 7 // "tb"
+swap
+app_global_put
+label255:
+frame_dig -8
+intc_1 // 1
+dup
+frame_dig -5
+frame_dig -4
+frame_dig -3
+frame_dig -2
+callsub label47
+frame_dig -2
+bz label256
+bytec 5 // "xa"
+app_global_get
+intc_1 // 1
+-
+bytec 5 // "xa"
+swap
+app_global_put
+bytec 6 // "xb"
+app_global_get
+intc_1 // 1
+-
+bytec 6 // "xb"
+swap
+app_global_put
+frame_dig -8
+intc_0 // 0
+frame_dig -1
+callsub label92
+label256:
+retsub
+label253:
+frame_dig -7
+bz label257
+bytec 4 // "ta"
+app_global_get
+frame_dig -7
++
+bytec 4 // "ta"
+swap
+app_global_put
+label257:
+frame_dig -6
+bz label258
+bytec 7 // "tb"
+app_global_get
+frame_dig -6
++
+bytec 7 // "tb"
+swap
+app_global_put
+label258:
+frame_dig -8
+intc_0 // 0
+dup
+frame_dig -5
+frame_dig -4
+frame_dig -3
+frame_dig -2
+callsub label47
+frame_dig -2
+bz label256
+frame_dig -8
+intc_0 // 0
+frame_dig -1
+callsub label92
+retsub
+label240:
+proto 3 2
+bytec_2 // ""
+dupn 13
+frame_dig -2
+bnz label259
+frame_dig -1
+bnz label259
+intc_0 // 0
+dup
+frame_bury 1
+frame_bury 0
+retsub
+label259:
+intc_0 // 0
+frame_bury 12
+intc_0 // 0
+frame_bury 13
+frame_dig -3
+callsub label32
+dup
+cover 3
+frame_bury 10
+frame_bury 9
+frame_bury 8
+intc_1 // 1
+==
+bz label260
+frame_dig 8
+frame_dig 9
++
+bz label260
+frame_dig 8
+intc_1 // 1
+<=
+bz label260
+frame_dig 9
+intc_1 // 1
+<=
+bz label260
+bytec 5 // "xa"
+app_global_get
+dup
+frame_bury 1
+bytec 6 // "xb"
+app_global_get
+frame_bury 2
+bz label261
+frame_dig 2
+bnz label262
+label261:
+intc_0 // 0
+dup
+frame_bury 13
+frame_bury 12
+label266:
+frame_dig -2
+frame_dig 12
+-
+frame_dig -1
+frame_dig 13
+-
+frame_bury 1
+frame_bury 0
+retsub
+label262:
+frame_dig -1
+frame_dig 1
+frame_dig 2
+callsub label39
+dup
+frame_bury 0
+frame_dig -2
+<=
+bz label263
+frame_dig -1
+frame_bury 13
+frame_dig 0
+frame_bury 12
+label267:
+frame_dig 12
+bz label264
+frame_dig 13
+bnz label265
+label264:
+intc_0 // 0
+dup
+frame_bury 13
+frame_bury 12
+b label266
+label265:
+frame_dig -3
+callsub label32
+dig 2
+frame_dig 12
++
+dig 2
+frame_dig 13
++
+dup2
+mulw
+callsub label51
+intc_1 // 1
+-
+uncover 3
+dig 1
++
+frame_dig -3
+dig 4
+dig 4
+dig 3
+uncover 9
+uncover 9
+intc_0 // 0
+callsub label47
+bytec_3 // "t"
+frame_dig -3
+bytec 9 // "_tl"
+callsub label23
+app_global_get
+uncover 2
++
+bytec_3 // "t"
+frame_dig -3
+bytec 9 // "_tl"
+callsub label23
+swap
+app_global_put
+bytec 8 // "m"
+app_global_get
+frame_dig -3
+uncover 2
+intc_0 // 0
+uncover 5
+uncover 5
+uncover 5
+callsub label152
+b label266
+label263:
+frame_dig -2
+frame_dig 2
+frame_dig 1
+callsub label39
+frame_bury 13
+frame_dig -2
+frame_bury 12
+b label267
+label260:
+frame_dig 10
+bz label266
+frame_dig 8
+bz label268
+frame_dig 9
+bnz label269
+label268:
+intc_0 // 0
+label274:
+bz label266
+bytec 8 // "m"
+app_global_get
+intc_1 // 1
+frame_dig -3
+shl
+&
+frame_bury 11
+frame_dig -2
+bz label270
+frame_dig -1
+bnz label271
+label270:
+intc_0 // 0
+dup
+frame_bury 13
+frame_bury 12
+b label266
+label271:
+frame_dig -2
+frame_dig 10
+dup
+cover 2
+frame_dig 8
+callsub label39
+frame_dig -1
+uncover 2
+frame_dig 9
+callsub label39
+dup2
+<
+swap
+cover 2
+select
+dup
+frame_bury 4
+bnz label272
+intc_0 // 0
+dup
+frame_bury 13
+frame_bury 12
+b label266
+label272:
+frame_dig 4
+dup
+frame_dig 8
+dup
+cover 3
+frame_dig 10
+dup
+cover 4
+callsub label39
+dup
+cover 3
+frame_bury 12
+dup
+frame_dig 9
+dup
+cover 4
+dig 3
+callsub label39
+dup
+frame_bury 13
+dig 5
+uncover 5
++
+dup
+cover 3
+frame_bury 5
+dig 4
++
+dup
+frame_bury 6
+uncover 3
+dig 2
++
+dup
+frame_bury 7
+frame_dig -3
+uncover 4
+uncover 3
+uncover 3
+uncover 6
+uncover 6
+frame_dig 11
+dup
+cover 8
+callsub label47
+bytec_3 // "t"
+frame_dig -3
+bytec 9 // "_tl"
+callsub label23
+app_global_get
++
+bytec_3 // "t"
+frame_dig -3
+bytec 9 // "_tl"
+callsub label23
+swap
+app_global_put
+bnz label266
+bytec 8 // "m"
+app_global_get
+frame_dig -3
+frame_dig 7
+intc_0 // 0
+frame_dig 5
+frame_dig 6
+uncover 5
+callsub label152
+b label266
+label269:
+frame_dig 8
+frame_dig 9
+mulw
+frame_bury 3
+bz label273
+intc 4 // 18446744073709551615
+b label274
+label273:
+frame_dig 3
+b label274
+label80:
+dup
+len
+intc_2 // 8
+==
+assert
+btoi
+retsub
+label79:
+dup
+len
+intc_2 // 8
+==
+assert
+retsub

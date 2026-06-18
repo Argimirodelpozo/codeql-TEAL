@@ -1,0 +1,1310 @@
+#pragma version 7
+intcblock 0 1 2 4 18446744073709551615 8 3 100000 3349480694 3481155163 3011598199 40 80 104 112 32 16 10000
+bytecblock 0x01 0x00 0x
+intc_0 // 0
+store 0
+txn ApplicationID
+bz label1
+bytec_2 // ""
+app_global_get
+dup
+intc_0 // 0
+extract_uint64
+store 1
+intc 5 // 8
+extract_uint64
+store 2
+txna ApplicationArgs 0
+btoi
+dup
+bz label2
+intc_0 // 0
+store 4
+intc_1 // 1
+store 6
+dup
+intc 8 // 3349480694
+<
+bnz label3
+dup
+intc 9 // 3481155163
+<
+bnz label4
+intc 9 // 3481155163
+==
+assert
+bytec_2 // ""
+store 255
+pushbytes 0x02 // 0x02
+load 255
+concat
+b label5
+label4:
+intc 8 // 3349480694
+==
+assert
+load 1
+intc_3 // 4
+==
+assert
+bytec_1 // 0x00
+app_global_get
+bytec_0 // 0x01
+app_global_get
+concat
+dup
+store 3
+extract 120 1
+load 3
+extract 112 8
+concat
+load 3
+extract 96 8
+concat
+load 3
+extract 104 8
+concat
+load 3
+extract 121 8
+concat
+load 3
+extract 161 8
+concat
+load 3
+extract 129 8
+concat
+load 3
+extract 220 8
+concat
+store 7
+b label6
+label3:
+dup
+intc 10 // 3011598199
+<
+bnz label7
+intc 10 // 3011598199
+==
+assert
+bytec_2 // ""
+store 255
+bytec_0 // 0x01
+load 255
+concat
+b label5
+label7:
+pushint 2337622750
+==
+assert
+bytec_2 // ""
+store 255
+bytec_1 // 0x00
+load 255
+concat
+b label5
+label2:
+txna ApplicationArgs 2
+btoi
+store 4
+txna ApplicationArgs 3
+txna ApplicationArgs 1
+btoi
+dup
+intc_1 // 1
+<
+bnz label8
+dup
+intc 6 // 3
+<
+bnz label9
+intc 6 // 3
+==
+assert
+label5:
+intc_3 // 4
+load 1
+==
+assert
+load 4
+dup
+intc_0 // 0
+==
+swap
+load 2
+==
+||
+assert
+bytec_1 // 0x00
+app_global_get
+bytec_0 // 0x01
+app_global_get
+concat
+dup
+store 3
+dup
+dup2
+dup2
+dup2
+dup2
+dup2
+dup2
+dup2
+dup2
+intc_0 // 0
+extract_uint64
+store 255
+extract 8 32
+store 254
+intc 11 // 40
+extract_uint64
+store 253
+extract 48 32
+store 252
+intc 12 // 80
+extract_uint64
+store 251
+pushint 88
+extract_uint64
+store 250
+pushint 96
+extract_uint64
+store 249
+intc 13 // 104
+extract_uint64
+store 248
+intc 14 // 112
+extract_uint64
+store 247
+extract 120 1
+btoi
+store 246
+pushint 121
+extract_uint64
+store 245
+pushint 129
+extract_uint64
+store 244
+pushint 137
+extract_uint64
+store 243
+pushint 145
+extract_uint64
+store 242
+pushint 153
+extract_uint64
+store 241
+extract 169 34
+store 240
+extract 203 17
+store 239
+pushint 220
+extract_uint64
+store 238
+dup
+store 5
+store 237
+pushbytes 0x2e45c601 // 0x2e45c601
+load 237
+concat
+log
+load 237
+intc_0 // 0
+getbyte
+dup
+intc_1 // 1
+<
+bnz label10
+dup
+intc_2 // 2
+<
+bnz label11
+intc_2 // 2
+==
+assert
+load 238
+load 248
+>=
+load 244
+intc_1 // 1
+>
+&&
+txn Sender
+load 254
+==
+&&
+assert
+global LatestTimestamp
+load 245
+>=
+assert
+load 238
+load 248
+-
+dup
+store 236
+intc_0 // 0
+>=
+assert
+itxn_begin
+intc_0 // 0
+itxn_field Fee
+load 248
+itxn_field AssetAmount
+intc_3 // 4
+itxn_field TypeEnum
+load 254
+itxn_field AssetReceiver
+load 255
+itxn_field XferAsset
+itxn_submit
+pushbytes 0x000000000000140801 // 0x000000000000140801
+log
+bytec_0 // 0x01
+store 7
+load 244
+intc_1 // 1
+-
+dup
+store 235
+intc_1 // 1
+>
+store 233
+load 242
+intc_2 // 2
+==
+load 233
+&&
+bz label12
+load 248
+intc_2 // 2
+/
+store 234
+b label13
+label12:
+load 242
+intc_1 // 1
+==
+load 233
+&&
+bz label14
+load 248
+store 234
+b label13
+label14:
+load 247
+load 249
+-
+store 234
+label13:
+load 255
+load 254
+load 253
+load 252
+load 251
+load 250
+load 249
+load 248
++
+load 234
+load 247
+load 246
+load 245
+load 243
++
+load 235
+load 243
+load 242
+global Round
+global LatestTimestamp
+load 241
+load 240
+load 239
+load 236
+itob
+replace2 0
+replace2 0
+b label15
+label11:
+pop
+load 247
+load 249
+-
+store 236
+load 238
+load 236
+==
+load 244
+intc_1 // 1
+==
+&&
+txn Sender
+load 254
+==
+&&
+assert
+global LatestTimestamp
+load 245
+>=
+assert
+load 238
+load 236
+-
+dup
+store 235
+intc_0 // 0
+>=
+assert
+itxn_begin
+intc_0 // 0
+itxn_field Fee
+load 236
+itxn_field AssetAmount
+intc_3 // 4
+itxn_field TypeEnum
+load 254
+itxn_field AssetReceiver
+load 255
+itxn_field XferAsset
+itxn_submit
+pushbytes 0x000000000000136601 // 0x000000000000136601
+log
+bytec_0 // 0x01
+store 7
+load 255
+load 254
+load 253
+load 252
+load 251
+load 250
+load 249
+load 236
++
+intc_0 // 0
+load 247
+intc_1 // 1
+load 245
+load 243
++
+load 244
+intc_1 // 1
+-
+load 243
+load 242
+global Round
+global LatestTimestamp
+load 241
+load 240
+load 239
+load 235
+itob
+replace2 0
+replace2 0
+b label15
+label10:
+pop
+txn Sender
+load 252
+==
+load 238
+load 251
+>=
+&&
+load 240
+extract 17 17
+intc_0 // 0
+extract_uint64
+load 250
+>=
+&&
+assert
+load 238
+load 251
+-
+dup
+store 236
+intc_0 // 0
+>=
+assert
+load 240
+load 239
+load 236
+itob
+replace2 0
+replace2 0
+store 235
+itxn_begin
+intc_0 // 0
+itxn_field Fee
+load 251
+itxn_field AssetAmount
+intc_3 // 4
+itxn_field TypeEnum
+txn Sender
+itxn_field AssetReceiver
+load 255
+itxn_field XferAsset
+itxn_submit
+load 235
+extract 17 17
+dup
+store 234
+intc_0 // 0
+extract_uint64
+load 250
+-
+dup
+store 233
+intc_0 // 0
+>=
+assert
+itxn_begin
+intc_0 // 0
+itxn_field Fee
+load 250
+itxn_field AssetAmount
+intc_3 // 4
+itxn_field TypeEnum
+txn Sender
+itxn_field AssetReceiver
+load 253
+itxn_field XferAsset
+itxn_submit
+pushbytes 0x00000000000012c601 // 0x00000000000012c601
+log
+bytec_0 // 0x01
+store 7
+load 255
+load 254
+load 253
+load 252
+intc_0 // 0
+intc_0 // 0
+load 249
+load 248
+load 247
+load 246
+load 245
+load 244
+load 243
+load 242
+global Round
+global LatestTimestamp
+load 241
+load 235
+load 234
+load 233
+itob
+replace2 0
+replace2 17
+b label15
+label9:
+intc_1 // 1
+==
+assert
+intc_1 // 1
+load 1
+==
+assert
+load 4
+dup
+intc_0 // 0
+==
+swap
+load 2
+==
+||
+assert
+bytec_1 // 0x00
+app_global_get
+bytec_0 // 0x01
+app_global_get
+concat
+dup
+store 3
+dup
+dup2
+dup2
+dup
+intc 15 // 32
+extract_uint64
+store 255
+intc 11 // 40
+extract_uint64
+store 254
+pushint 56
+extract_uint64
+store 253
+intc 13 // 104
+extract_uint64
+store 252
+extract 120 34
+store 251
+pushint 157
+extract_uint64
+store 250
+pushint 197
+extract_uint64
+store 249
+pushbytes 0x9a8b9174 // 0x9a8b9174
+log
+load 254
+load 249
++
+store 248
+load 251
+extract 0 17
+dup
+store 247
+intc_0 // 0
+extract_uint64
+load 248
++
+dup
+store 246
+intc 4 // 18446744073709551615
+<=
+assert
+load 251
+load 247
+load 246
+itob
+replace2 0
+replace2 0
+store 245
+load 248
+load 255
+callsub label16
+load 245
+extract 17 17
+dup
+store 244
+intc_0 // 0
+extract_uint64
+load 250
++
+dup
+store 243
+intc 4 // 18446744073709551615
+<=
+assert
+load 250
+load 252
+callsub label16
+load 3
+extract 0 32
+txn Sender
+==
+assert
+load 3
+extract 154 1
+btoi
+bz label17
+load 254
+store 242
+b label18
+label17:
+load 3
+extract 155 1
+btoi
+bz label19
+load 254
+load 253
+/
+store 242
+b label18
+label19:
+load 3
+extract 156 1
+btoi
+bz label20
+load 254
+intc_2 // 2
+/
+store 242
+b label18
+label20:
+intc_0 // 0
+store 242
+label18:
+load 255
+load 3
+extract 72 32
+load 252
+load 3
+extract 165 32
+load 249
+load 250
+intc_0 // 0
+load 242
+load 254
+intc_0 // 0
+load 3
+pushint 205
+extract_uint64
+load 253
+load 3
+pushint 64
+extract_uint64
+load 3
+pushint 48
+extract_uint64
+global Round
+global LatestTimestamp
+load 3
+intc 14 // 112
+extract_uint64
+load 245
+load 244
+load 243
+itob
+replace2 0
+replace2 17
+b label15
+label8:
+pop
+intc 7 // 100000
+callsub label21
+intc_0 // 0
+load 1
+==
+assert
+load 4
+dup
+intc_0 // 0
+==
+swap
+load 2
+==
+||
+assert
+dup
+store 5
+dup
+dup2
+dup2
+dup2
+intc_0 // 0
+extract_uint64
+store 255
+intc 5 // 8
+extract_uint64
+store 254
+intc 16 // 16
+extract_uint64
+store 253
+pushint 24
+extract_uint64
+store 252
+intc 15 // 32
+extract_uint64
+store 251
+extract 40 32
+store 250
+pushint 72
+extract_uint64
+store 249
+intc 12 // 80
+extract_uint64
+store 248
+pushbytes 0xab3e8053 // 0xab3e8053
+load 255
+itob
+concat
+load 254
+itob
+concat
+load 253
+itob
+concat
+load 252
+itob
+concat
+load 251
+itob
+concat
+load 250
+concat
+load 249
+itob
+concat
+load 248
+itob
+concat
+log
+pushint 17
+bzero
+dup
+store 247
+dup
+concat
+dup
+store 246
+dup
+extract 0 17
+intc 5 // 8
+bzero
+replace2 0
+replace2 0
+dup
+store 245
+dup
+extract 17 17
+intc 5 // 8
+bzero
+replace2 0
+replace2 17
+store 244
+load 248
+load 255
+!=
+assert
+intc 7 // 100000
+callsub label21
+itxn_begin
+intc_0 // 0
+itxn_field Fee
+intc_0 // 0
+itxn_field AssetAmount
+intc_3 // 4
+itxn_field TypeEnum
+global CurrentApplicationAddress
+itxn_field AssetReceiver
+load 255
+itxn_field XferAsset
+itxn_submit
+intc 7 // 100000
+callsub label21
+itxn_begin
+intc_0 // 0
+itxn_field Fee
+intc_0 // 0
+itxn_field AssetAmount
+intc_3 // 4
+itxn_field TypeEnum
+global CurrentApplicationAddress
+itxn_field AssetReceiver
+load 248
+itxn_field XferAsset
+itxn_submit
+load 254
+intc_0 // 0
+>
+assert
+load 251
+intc_0 // 0
+>
+assert
+load 252
+intc_0 // 0
+>
+assert
+load 253
+intc_2 // 2
+<=
+assert
+load 253
+intc_0 // 0
+==
+dup
+store 243
+bz label22
+load 252
+intc_1 // 1
+==
+assert
+b label22
+label22:
+load 253
+intc_1 // 1
+==
+dup
+store 242
+bz label23
+load 254
+load 252
+/
+intc_0 // 0
+>
+assert
+b label23
+label23:
+load 253
+intc_2 // 2
+==
+dup
+store 241
+bz label24
+load 252
+pushint 63
+<=
+assert
+load 252
+intc_1 // 1
+-
+store 240
+intc_1 // 1
+intc_2 // 2
+load 240
+intc_2 // 2
+%
+intc_1 // 1
+==
+select
+store 239
+load 240
+intc_2 // 2
+/
+store 238
+load 239
+dup
+intc_3 // 4
+*
+load 238
+intc_2 // 2
+%
+intc_1 // 1
+==
+select
+store 237
+load 238
+intc_2 // 2
+/
+store 236
+load 237
+dup
+intc 16 // 16
+*
+load 236
+intc_2 // 2
+%
+intc_1 // 1
+==
+select
+store 235
+load 236
+intc_2 // 2
+/
+store 234
+load 235
+dup
+pushint 256
+*
+load 234
+intc_2 // 2
+%
+intc_1 // 1
+==
+select
+store 233
+load 234
+intc_2 // 2
+/
+store 232
+load 233
+dup
+pushint 65536
+*
+load 232
+intc_2 // 2
+%
+intc_1 // 1
+==
+select
+dup
+store 231
+dup
+pushint 4294967296
+*
+load 232
+intc_2 // 2
+/
+intc_2 // 2
+%
+intc_1 // 1
+==
+select
+dup
+store 230
+intc 4 // 18446744073709551615
+<
+assert
+load 254
+load 230
+/
+dup
+store 229
+intc_0 // 0
+>
+assert
+load 229
+intc 4 // 18446744073709551615
+<=
+assert
+b label24
+label24:
+pushbytes 0x6170704944 // "appID"
+load 249
+itob
+concat
+sha512_256
+store 239
+global CurrentApplicationAddress
+min_balance
+store 238
+global CurrentApplicationAddress
+balance
+load 238
+-
+itob
+store 237
+itxn_begin
+intc_0 // 0
+itxn_field Fee
+pushint 6
+itxn_field TypeEnum
+load 249
+itxn_field ApplicationID
+pushbytes 0x7e35d945 // 0x7e35d945
+itxn_field ApplicationArgs
+itxn_submit
+global CurrentApplicationAddress
+balance
+load 238
+-
+load 237
+btoi
+-
+itob
+gitxn 0 LastLog
+extract 4 0
+concat
+store 240
+pushbytes 0x00000000000011ef // 0x00000000000011ef
+load 240
+concat
+log
+load 240
+dup
+store 239
+intc_0 // 0
+extract_uint64
+store 238
+load 239
+extract 8 56
+dup
+store 237
+intc_0 // 0
+extract_uint64
+store 236
+load 237
+intc 5 // 8
+extract_uint64
+store 235
+load 237
+extract 24 32
+store 234
+load 238
+intc 4 // 18446744073709551615
+<=
+assert
+intc_0 // 0
+load 238
+==
+assert
+load 236
+intc 17 // 10000
+<=
+assert
+load 254
+load 236
+mulw
+intc 17 // 10000
+divw
+store 233
+load 254
+intc 4 // 18446744073709551615
+load 233
+-
+<=
+assert
+global LatestTimestamp
+load 251
++
+store 232
+txn Sender
+load 255
+itob
+concat
+load 254
+itob
+concat
+load 253
+itob
+concat
+load 252
+itob
+concat
+load 251
+itob
+concat
+load 250
+concat
+load 248
+itob
+concat
+global LatestTimestamp
+itob
+concat
+load 244
+concat
+load 243
+itob
+substring 7 8
+concat
+load 242
+itob
+substring 7 8
+concat
+load 241
+itob
+substring 7 8
+concat
+load 235
+itob
+concat
+load 234
+concat
+load 233
+itob
+concat
+load 232
+itob
+concat
+bytec_1 // 0x00
+dig 1
+extract 0 127
+app_global_put
+bytec_0 // 0x01
+dig 1
+extract 127 86
+app_global_put
+pop
+intc_1 // 1
+store 1
+global Round
+store 2
+b label25
+label15:
+store 255
+store 254
+store 253
+store 252
+store 251
+store 250
+store 249
+store 248
+store 247
+store 246
+store 245
+store 244
+store 243
+store 242
+store 241
+store 240
+store 239
+store 238
+load 255
+extract 0 17
+dup
+store 237
+intc_0 // 0
+extract_uint64
+store 236
+load 238
+itob
+load 239
+concat
+load 240
+itob
+concat
+load 241
+concat
+load 242
+itob
+concat
+load 243
+itob
+concat
+load 244
+itob
+concat
+load 245
+itob
+concat
+load 246
+itob
+concat
+load 247
+itob
+substring 7 8
+concat
+load 248
+itob
+concat
+load 249
+itob
+concat
+load 250
+itob
+concat
+load 251
+itob
+concat
+load 253
+itob
+concat
+load 254
+itob
+concat
+load 255
+concat
+load 237
+concat
+load 236
+itob
+concat
+bytec_1 // 0x00
+dig 1
+extract 0 127
+app_global_put
+bytec_0 // 0x01
+dig 1
+extract 127 101
+app_global_put
+pop
+intc_3 // 4
+store 1
+global Round
+store 2
+b label25
+txn OnCompletion
+pushint 5
+==
+assert
+itxn_begin
+intc_0 // 0
+itxn_field Fee
+intc_0 // 0
+itxn_field Amount
+intc_1 // 1
+itxn_field TypeEnum
+global CreatorAddress
+itxn_field CloseRemainderTo
+global CurrentApplicationAddress
+itxn_field Receiver
+itxn_submit
+b label26
+label25:
+txn OnCompletion
+intc_0 // 0
+==
+assert
+label26:
+bytec_2 // ""
+load 1
+itob
+load 2
+itob
+concat
+app_global_put
+load 6
+bz label27
+label28:
+pushbytes 0x151f7c75 // 0x151f7c75
+load 7
+concat
+log
+label27:
+load 0
+dup
+intc_1 // 1
++
+global GroupSize
+==
+assert
+txn GroupIndex
+==
+assert
+intc_1 // 1
+return
+label6:
+txn OnCompletion
+intc_0 // 0
+==
+assert
+b label28
+label1:
+intc_0 // 0
+txn GlobalNumUint
+==
+assert
+intc 6 // 3
+txn GlobalNumByteSlice
+==
+assert
+intc_0 // 0
+txn LocalNumUint
+==
+assert
+intc_0 // 0
+txn LocalNumByteSlice
+==
+assert
+intc_0 // 0
+store 1
+intc_0 // 0
+store 2
+b label25
+label21:
+load 0
+dup
+dup2
+intc_1 // 1
++
+store 0
+gtxns Receiver
+global CurrentApplicationAddress
+==
+assert
+gtxns TypeEnum
+intc_1 // 1
+==
+assert
+gtxns Amount
+==
+assert
+retsub
+label16:
+load 0
+dup
+dup2
+dup
+intc_1 // 1
++
+store 0
+gtxns AssetReceiver
+global CurrentApplicationAddress
+==
+assert
+gtxns TypeEnum
+intc_3 // 4
+==
+assert
+gtxns XferAsset
+uncover 2
+==
+assert
+gtxns AssetAmount
+==
+assert
+retsub
