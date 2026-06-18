@@ -1,0 +1,170 @@
+#pragma version 8
+intcblock 0 1 4 6
+bytecblock 0x4d61737465724170704944 0x01 0x00
+global CreatorAddress
+txn Sender
+==
+assert
+txn OnCompletion
+bnz label1
+txn ApplicationID
+bnz label2
+txna ApplicationArgs 0
+pushbytes 0x38881a71 // 0x38881a71
+==
+assert
+bytec_0 // "MasterAppID"
+txna ApplicationArgs 1
+btoi
+txnas Applications
+app_global_put
+itxn_begin
+intc_3 // 6
+itxn_field TypeEnum
+txna ApplicationArgs 2
+btoi
+txnas Applications
+itxn_field ApplicationID
+pushbytes 0xb7355fd1 // 0xb7355fd1
+itxn_field ApplicationArgs
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+itxn_begin
+intc_2 // 4
+itxn_field TypeEnum
+global CurrentApplicationAddress
+itxn_field AssetReceiver
+intc_0 // 0
+itxn_field AssetAmount
+txna ApplicationArgs 3
+btoi
+txnas Assets
+itxn_field XferAsset
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+b label3
+label2:
+txna ApplicationArgs 0
+pushbytes 0x78822cf0 // 0x78822cf0
+==
+bnz label4
+txna ApplicationArgs 0
+pushbytes 0xb758d8d1 // 0xb758d8d1
+==
+bnz label5
+txna ApplicationArgs 0
+pushbytes 0x9be4281b // 0x9be4281b
+==
+bnz label6
+err
+label6:
+itxn_begin
+intc_1 // 1
+itxn_field TypeEnum
+txna ApplicationArgs 1
+btoi
+txnas Accounts
+itxn_field Receiver
+intc_0 // 0
+itxn_field Fee
+txna ApplicationArgs 2
+extract 2 0
+itxn_field Note
+itxn_submit
+b label3
+label5:
+itxn_begin
+intc_1 // 1
+itxn_field TypeEnum
+global CreatorAddress
+itxn_field Receiver
+global CurrentApplicationAddress
+balance
+global CurrentApplicationAddress
+min_balance
+-
+itxn_field Amount
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+b label3
+label4:
+itxn_begin
+intc_2 // 4
+itxn_field TypeEnum
+global CreatorAddress
+itxn_field AssetReceiver
+txna ApplicationArgs 2
+btoi
+itxn_field AssetAmount
+txna ApplicationArgs 1
+btoi
+txnas Assets
+itxn_field XferAsset
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+itxn_begin
+intc_3 // 6
+itxn_field TypeEnum
+bytec_0 // "MasterAppID"
+app_global_get
+itxn_field ApplicationID
+pushbytes 0xc3140ae7 // 0xc3140ae7
+itxn_field ApplicationArgs
+bytec_1 // 0x01
+itxn_field ApplicationArgs
+bytec_2 // 0x00
+itxn_field ApplicationArgs
+bytec_1 // 0x01
+itxn_field ApplicationArgs
+bytec_2 // 0x00
+itxn_field ApplicationArgs
+global CreatorAddress
+itxn_field Accounts
+global CurrentApplicationID
+itxn_field Applications
+txna ApplicationArgs 1
+btoi
+txnas Assets
+itxn_field Assets
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+b label3
+label1:
+txn OnCompletion
+pushint 5
+==
+bnz label7
+err
+label7:
+global CreatorAddress
+bytec_0 // "MasterAppID"
+app_global_get
+app_opted_in
+!
+assert
+itxn_begin
+intc_2 // 4
+itxn_field TypeEnum
+txna Assets 0
+itxn_field XferAsset
+global CreatorAddress
+itxn_field AssetCloseTo
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+itxn_begin
+intc_1 // 1
+itxn_field TypeEnum
+global CreatorAddress
+itxn_field CloseRemainderTo
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+label3:
+intc_1 // 1
+return
