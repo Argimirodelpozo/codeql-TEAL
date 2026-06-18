@@ -366,6 +366,11 @@ class _Lifter:
         main = next(sub for sub in self.subs if sub.is_main)
         prog_ir = pre_ir.Program(main=main, subroutines=[s for s in self.subs if not s.is_main])
         type_recovery.finalize_types(prog_ir)
+        # A generic accessor sub called with conflicting result AVM types (a state
+        # reader returning uint64 for some keys, a bytes address for others) can't
+        # have one Puya return type; clone it per return type and re-route the
+        # clashing callsites (runs after finalize so caller result types settled).
+        transforms.specialize_polymorphic_returns(prog_ir)
         transforms.materialize_phi_consts(prog_ir)
         return prog_ir
 

@@ -436,3 +436,41 @@ def test_frame_bury_return_slot(tmp_path):
     assert make.returns == ["bytes"], (
         "proto retsub returned the wrong frame slot — expected the slot-0 bytes "
         f"(bzero result), got returns={make.returns} (the uint64 stack top)")
+
+
+def test_specialize_polymorphic_return_clone():
+    """A generic accessor sub called with conflicting result AVM types is cloned
+    per return type. Mirrors a hand-written `get(app, key)` state reader called
+    for a uint64 key and a bytes (address) key: one Puya return type can't be
+    both, so the bytes callsite must route to a bytes-returning CLONE while the
+    uint64 callsite keeps the original. (Real cases: app_3400287920 /
+    app_3000142939 -- `incompatible types on assignment: source = (uint64),
+    target = (bytes)` before specialization.)"""
+    from tealtools.WIP_lift2puyaIR import transforms
+
+    R = pre_ir.Register
+    rv = R("rv", 0, "uint64")                       # callee's returned value
+    acc = pre_ir.Subroutine(
+        id="acc", parameters=[pre_ir.Parameter(R("p", 0, "bytes"))],
+        returns=["uint64"],
+        body=[pre_ir.BasicBlock(id=10, phis=[], ops=[],
+                                terminator=pre_ir.SubroutineReturn(result=[rv]))])
+    u, b = R("cu", 0, "uint64"), R("cb", 0, "bytes")
+    inv_u = pre_ir.Assignment([u], pre_ir.InvokeSubroutine("acc", [pre_ir.BytesConstant("0x01")]))
+    inv_b = pre_ir.Assignment([b], pre_ir.InvokeSubroutine("acc", [pre_ir.BytesConstant("0x02")]))
+    main = pre_ir.Subroutine(
+        id="main", parameters=[], returns=[], is_main=True,
+        body=[pre_ir.BasicBlock(id=1, phis=[], ops=[inv_u, inv_b],
+                                terminator=pre_ir.SubroutineReturn(result=[]))])
+    prog = pre_ir.Program(main=main, subroutines=[acc])
+
+    made = transforms.specialize_polymorphic_returns(prog)
+    assert made == 1, "expected exactly one clone for the bytes callsite"
+    assert inv_u.source.target == "acc", "uint64 callsite must keep the original"
+    assert inv_b.source.target != "acc", "bytes callsite must reroute to the clone"
+    clone = next(s for s in prog.subroutines if s.id == inv_b.source.target)
+    assert clone.returns == ["bytes"]
+    assert clone.body[0].id != 10, "clone must get a fresh (global-unique) block id"
+    ret = clone.body[0].terminator.result[0]
+    assert ret.ir_type == "bytes" and ret is not rv, "clone return reg retyped + fresh"
+    assert acc.returns == ["uint64"] and rv.ir_type == "uint64", "original untouched"

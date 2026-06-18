@@ -1,0 +1,6 @@
+/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tests/codeql/puya-benchmarks/nested-tests/flow_nested_subroutines.teal
+/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tests/codeql/puya-benchmarks/scratch-tests/flow_branching_scratch.teal
+/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tests/codeql/puya-benchmarks/scratch-tests/flow_dig6_test.teal
+/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tests/codeql/puya-benchmarks/scratch-tests/flow_overwrite_scratch.teal
+/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tests/codeql/puya-benchmarks/scratch-tests/flow_through_scratch.teal
+/home/argi/AlgorandFoundation/SideProjects/codeql-TEAL/tests/codeql/puya-benchmarks/voting_approval.teal

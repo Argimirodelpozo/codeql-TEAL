@@ -1,0 +1,12 @@
+#pragma version 8
+bytecblock "k"
+
+pushint 10
+pushint 20
+pushint 30
+pushint 40
+pushint 50
+pushint 60
+pushint 70
+dig 6
+return

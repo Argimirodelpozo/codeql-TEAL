@@ -8,6 +8,8 @@ See each function for details.
 """
 from __future__ import annotations
 
+import copy as _copy
+
 from . import pre_ir
 from .optypes import avm
 
@@ -343,3 +345,102 @@ def materialize_phi_consts(prog) -> None:
                 n += 1
                 through.ops.append(pre_ir.Assignment([r], arg.value))
                 arg.value = r
+
+
+def _remap_succ_ids(t, idmap: dict) -> None:
+    """Rewrite a terminator's successor block ids in place via ``idmap``."""
+    if isinstance(t, pre_ir.Goto):
+        t.target = idmap.get(t.target, t.target)
+    elif isinstance(t, pre_ir.ConditionalBranch):
+        t.non_zero = idmap.get(t.non_zero, t.non_zero)
+        t.zero = idmap.get(t.zero, t.zero)
+    elif isinstance(t, pre_ir.Switch):
+        t.cases = [(k, idmap.get(b, b)) for k, b in t.cases]
+        t.default = idmap.get(t.default, t.default)
+    elif isinstance(t, pre_ir.GotoNth):
+        t.blocks = [idmap.get(b, b) for b in t.blocks]
+        t.default = idmap.get(t.default, t.default)
+
+
+def _clone_subroutine(callee, new_id: str, rets: list, base_bid: int):
+    """Deep-copy ``callee`` as a new subroutine ``new_id`` returning ``rets``.
+
+    Body block ids are renumbered from ``base_bid`` (global-unique, like the
+    lift's own ids) and every terminator / phi-arg predecessor reference is
+    remapped; the return value registers are retyped and the retype propagated
+    over the clone's copies / phis. The clone's registers are FRESH (deep copy),
+    so the original subroutine is untouched."""
+    body = _copy.deepcopy(callee.body)
+    params = _copy.deepcopy(callee.parameters)
+    idmap = {bb.id: base_bid + i for i, bb in enumerate(body)}
+    for bb in body:
+        bb.id = idmap[bb.id]
+        _remap_succ_ids(bb.terminator, idmap)
+        for ph in bb.phis:
+            for a in ph.args:
+                a.through = idmap.get(a.through, a.through)
+    for bb in body:
+        t = bb.terminator
+        if isinstance(t, pre_ir.SubroutineReturn):
+            for i, v in enumerate(t.result):
+                if (i < len(rets) and isinstance(v, pre_ir.Register)
+                        and avm(rets[i]) in ("u", "b")):
+                    v.ir_type = rets[i]
+    clone = pre_ir.Subroutine(id=new_id, parameters=params,
+                              returns=list(rets), body=body)
+    from . import type_recovery               # settle the retype within the clone
+    type_recovery._propagate_copy_types([clone])
+    type_recovery._unify_phi_types([clone])
+    return clone
+
+
+def specialize_polymorphic_returns(prog) -> int:
+    """Clone a subroutine called with conflicting result AVM types.
+
+    Hand-written / non-Puya contracts often have ONE generic state accessor --
+    ``get(app, key) = app_global_get_ex; …; retsub`` -- called for keys of
+    different types: ``position`` / ``side`` hold uint64, ``escrow_cancel_address``
+    holds a bytes address. The sub passes the raw (untyped) state value through,
+    so its single Puya return type can't be both: ``_unify_call_returns`` pins one
+    and the other callsite's ``cr = invoke(...)`` fails Puya's assignment type
+    check (uint64 source into a bytes target). Specialize -- for each callsite
+    whose result type clashes (a concrete uint64/bytes family disagreement) with
+    the callee's declared return, route it to a per-return-type CLONE of the
+    callee. Behaviour-preserving: a pass-through value lowers identically whether
+    the register is typed bytes or uint64; only the type annotation differs.
+    Returns the number of clones created."""
+    sub_by_id = {s.id: s for s in prog.subroutines}
+    next_bid = max((b.id for b in pre_ir.blocks(prog)), default=0) + 1
+    clones: dict = {}                          # (callee_id, want-tuple) -> clone_id
+    made = 0
+    for bb in pre_ir.blocks(prog):
+        for o in bb.ops:
+            if not (isinstance(o, pre_ir.Assignment)
+                    and isinstance(o.source, pre_ir.InvokeSubroutine)):
+                continue
+            callee = sub_by_id.get(o.source.target)
+            if callee is None or len(o.targets) != len(callee.returns):
+                continue
+            want = tuple(t.ir_type for t in o.targets)
+            clash = any(avm(w) in ("u", "b") and avm(h) in ("u", "b")
+                        and avm(w) != avm(h)
+                        for w, h in zip(want, callee.returns))
+            if not clash:
+                continue
+            key = (callee.id, want)
+            cid = clones.get(key)
+            if cid is None:
+                rets = [w if avm(w) in ("u", "b") else h
+                        for w, h in zip(want, callee.returns)]
+                sig = "".join(avm(r) if avm(r) in ("u", "b") else "x" for r in rets)
+                cid = f"{callee.id}__{sig}"
+                while cid in sub_by_id:        # avoid an id collision
+                    cid += "_"
+                clone = _clone_subroutine(callee, cid, rets, next_bid)
+                next_bid += len(callee.body)
+                prog.subroutines.append(clone)
+                sub_by_id[cid] = clone
+                clones[key] = cid
+                made += 1
+            o.source.target = cid
+    return made
