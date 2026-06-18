@@ -508,3 +508,45 @@ def test_duplicate_cross_subroutine_shared_tail():
     assert any(b.id == 50 for b in subA.body), "owner keeps the original block"
     assert b0.terminator.target != 50, "consumer edge redirected to its private clone"
     assert sub_of[b0.terminator.target] == "B"
+
+
+_SWITCH_ARM_RETSUB_TEAL = """#pragma version 8
+pushint 0
+store 0
+callsub dispatch
+pushint 1
+return
+dispatch:
+load 0
+switch arm0 arm1
+err
+arm0:
+pushint 0
+store 0
+retsub
+arm1:
+pushint 1
+store 0
+retsub
+"""
+
+
+def test_switch_arm_retsub_continuation(tmp_path):
+    """A subroutine that dispatches `load N; switch a b` to arms that each
+    `retsub` must still have those arm-retsubs attributed to it, so `callsub
+    dispatch`'s continuation (the line after the call) stays reachable. The
+    aux closure used to follow only the switch fall-through, orphaning the
+    arm-retsubs -> the continuation got pruned and the lift mis-routed it
+    (app_3100133227's nested-call reachability cascade). Assert the line after
+    the callsub is reachable as a block."""
+    import os
+    os.environ["TEAL_GRAPHS_BACKEND"] = "python"
+    from tealtools.ssa import SSAProgram
+
+    p = tmp_path / "switch_arm_retsub.teal"
+    p.write_text(_SWITCH_ARM_RETSUB_TEAL)
+    prog = SSAProgram(str(p), verbose=False)
+    callsub_line = _SWITCH_ARM_RETSUB_TEAL.splitlines().index("callsub dispatch") + 1
+    cont_line = callsub_line + 1                    # `pushint 1` — the continuation
+    assert any(b.first_line <= cont_line <= b.last_line for b in prog.blocks.values()), (
+        "callsub continuation was pruned — switch-arm retsubs not attributed to the sub")

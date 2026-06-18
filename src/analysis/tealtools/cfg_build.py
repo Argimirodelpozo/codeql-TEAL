@@ -120,8 +120,13 @@ def _aux_succ(n: _Node, nxt: _Node | None, labels: dict[str, _Node]) -> list[_No
 
     Branches follow their target(s); ``callsub`` continues at the next line
     (never descends into the callee); ``return``/``err``/``retsub`` stop.
-    NB: ``switch``/``match`` fall through the ``else`` branch in the QL aux,
-    so only their fall-through (next line) is followed -- not the arms.
+    ``switch``/``match`` follow BOTH their arms and the fall-through -- the arms
+    are sub-local dispatch targets, so a ``retsub`` reached only through a switch
+    arm (a sub that dispatches `load N; switch a b c` to arms that each `retsub`)
+    still belongs to the sub's body. (The QL aux followed only the fall-through,
+    which orphaned such arm-retsubs from their entry: their return edge to the
+    caller's continuation was never predicted, and the whole nested-call
+    reachability chain unravelled -- e.g. app_3100133227's interleaved subs.)
     """
     if n.cls in _AUX_STOP:
         return []
@@ -131,7 +136,10 @@ def _aux_succ(n: _Node, nxt: _Node | None, labels: dict[str, _Node]) -> list[_No
     if n.cls in (_BZ, _BNZ):
         tgt = labels.get(n.operand())
         return [x for x in (tgt, nxt) if x is not None]
-    # callsub and everything else (incl. switch/match/assert/normal/label).
+    if n.cls in _MULTI:                       # switch/match: arms + fall-through
+        arms = (labels.get(name) for name in n.operands())
+        return [x for x in (*arms, nxt) if x is not None]
+    # callsub and everything else (assert/normal/label).
     return [nxt] if nxt is not None else []
 
 
