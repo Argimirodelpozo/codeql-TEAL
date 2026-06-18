@@ -36,19 +36,30 @@ CURSORS = (
 )
 
 
-def sample(per_cursor: int = 8) -> list:
+def sample(per_cursor: int = 8, pages: int = 1, skip: set | None = None) -> list:
+    """App ids sampled from each cursor. ``pages`` follows the indexer's
+    ``next-token`` that many pages deep per cursor (so repeat sweeps reach
+    genuinely new apps past the first page); ``skip`` drops ids already known."""
+    skip = skip or set()
     ids, seen = [], set()
     for after in CURSORS:
-        try:
-            q = f"{INDEXER}/v2/applications?limit={per_cursor}" + (f"&next={after}" if after else "")
-            d = json.loads(urllib.request.urlopen(q, timeout=25).read())
+        token = after
+        for _ in range(pages):
+            try:
+                q = (f"{INDEXER}/v2/applications?limit={per_cursor}"
+                     + (f"&next={token}" if token else ""))
+                d = json.loads(urllib.request.urlopen(q, timeout=25).read())
+            except Exception as e:  # pragma: no cover - network
+                print(f"  cursor {after!r} err: {str(e)[:40]}", flush=True)
+                break
             for a in d.get("applications", []):
                 i = a["id"]
-                if not a.get("deleted") and i not in seen:
+                if not a.get("deleted") and i not in seen and i not in skip:
                     seen.add(i)
                     ids.append(i)
-        except Exception as e:  # pragma: no cover - network
-            print(f"  cursor {after!r} err: {str(e)[:40]}", flush=True)
+            token = d.get("next-token")
+            if not token:
+                break
     return ids
 
 
@@ -63,8 +74,16 @@ def main(argv) -> int:
     clear = C._compile(az, "#pragma version 10\nint 1")
     signal.signal(signal.SIGALRM, lambda *_: (_ for _ in ()).throw(_Timeout()))
 
-    ids = sample()[:count]
-    print(f"sampled {len(ids)} ids -> {PROBES}", flush=True)
+    # Skip ids already in the corpus and paginate deep enough to fill `count`
+    # with genuinely NEW contracts (the first page per cursor is mostly known).
+    have = {int(p.stem.split("_")[1]) for p in PROBES.glob("app_*.teal")}
+    pages = 1
+    ids: list = []
+    while len(ids) < count and pages <= 12:
+        ids = sample(pages=pages, skip=have)
+        pages += 1
+    ids = ids[:count]
+    print(f"sampled {len(ids)} NEW ids ({len(have)} already in corpus) -> {PROBES}", flush=True)
     faith = div = liftfail = compfail = skip = 0
     for aid in ids:
         signal.alarm(220)
