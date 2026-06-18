@@ -354,6 +354,17 @@ def _reconcile_mixed_phis(prog) -> None:
             if len(ev) == 1:             # unanimous at this tier decides it
                 webtype[root] = "bytes" if "b" in ev else "uint64"
                 break
+        else:
+            # No real evidence at ANY tier -> a DEAD-placeholder web: every const
+            # arg is a zero / empty `""` coarse-SSA seed (real consts/defs are what
+            # the tiers count, and all were excluded) and no op consumes it as a
+            # type. Such a web merges differently-typed dead seeds (e.g. uint64 0
+            # with empty bytes) and Puya rejects the cross-type phi -- but the value
+            # is never used, so collapse it to one family. uint64 = the lowering
+            # default; the bytes seeds then coerce to uint64 0 below. (A web with
+            # any REAL evidence is left for the encoder to flag as a true conflict.)
+            if not (consumer.get(root) or constev.get(root) or defev.get(root)):
+                webtype[root] = "uint64"
 
     def placeholder(T):
         return _itob_const(0) if T == "bytes" else pre_ir.UInt64Constant(0)
