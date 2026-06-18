@@ -1,0 +1,1971 @@
+#pragma version 10
+pushbytes 0x6372656174655f6170706c69636174696f6e // "create_application"
+pushbytes 0x7570646174655f6170706c69636174696f6e // "update_application"
+pushbytes 0x706f73745f757064617465 // "post_update"
+pushbytes 0x61737365745f6f70745f696e // "asset_opt_in"
+pushbytes 0x7075745f747269676765725f6f72646572 // "put_trigger_order"
+pushbytes 0x63616e63656c5f747269676765725f6f72646572 // "cancel_trigger_order"
+pushbytes 0x73746172745f657865637574655f747269676765725f6f72646572 // "start_execute_trigger_order"
+pushbytes 0x656e645f657865637574655f747269676765725f6f72646572 // "end_execute_trigger_order"
+pushbytes 0x7075745f726563757272696e675f6f72646572 // "put_recurring_order"
+pushbytes 0x63616e63656c5f726563757272696e675f6f72646572 // "cancel_recurring_order"
+pushbytes 0x657865637574655f726563757272696e675f6f72646572 // "execute_recurring_order"
+pushbytes 0x636f6c6c656374 // "collect"
+txna ApplicationArgs 0
+match label1 label2 label3 label4 label5 label6 label7 label8 label9 label10 label11 label12
+err
+label1:
+txn ApplicationID
+pushint 0
+==
+assert
+txna ApplicationArgs 1
+btoi
+callsub label13
+pushint 1
+return
+label2:
+txn OnCompletion
+pushint 4
+==
+assert
+txna ApplicationArgs 1
+btoi
+callsub label14
+pushint 1
+return
+label3:
+txn OnCompletion
+pushint 0
+==
+assert
+callsub label15
+pushint 1
+return
+label4:
+txn OnCompletion
+pushint 0
+==
+assert
+txna ApplicationArgs 1
+dup
+len
+pushint 64
+==
+assert
+callsub label16
+pushint 1
+return
+label5:
+txn OnCompletion
+pushint 0
+==
+assert
+txna ApplicationArgs 1
+btoi
+txna ApplicationArgs 2
+btoi
+txna ApplicationArgs 3
+btoi
+txna ApplicationArgs 4
+btoi
+txna ApplicationArgs 5
+btoi
+txna ApplicationArgs 6
+btoi
+callsub label17
+pushint 1
+return
+label6:
+txn OnCompletion
+pushint 0
+==
+assert
+txna ApplicationArgs 1
+btoi
+callsub label18
+pushint 1
+return
+label7:
+txn OnCompletion
+pushint 0
+==
+assert
+txna ApplicationArgs 1
+btoi
+txna ApplicationArgs 2
+btoi
+txna ApplicationArgs 3
+btoi
+callsub label19
+pushint 1
+return
+label8:
+txn OnCompletion
+pushint 0
+==
+assert
+txna ApplicationArgs 1
+btoi
+txna ApplicationArgs 2
+btoi
+txna ApplicationArgs 3
+btoi
+callsub label20
+pushint 1
+return
+label9:
+txn OnCompletion
+pushint 0
+==
+assert
+txna ApplicationArgs 1
+btoi
+txna ApplicationArgs 2
+btoi
+txna ApplicationArgs 3
+btoi
+txna ApplicationArgs 4
+btoi
+txna ApplicationArgs 5
+btoi
+txna ApplicationArgs 6
+btoi
+txna ApplicationArgs 7
+btoi
+callsub label21
+pushint 1
+return
+label10:
+txn OnCompletion
+pushint 0
+==
+assert
+txna ApplicationArgs 1
+btoi
+callsub label22
+pushint 1
+return
+label11:
+txn OnCompletion
+pushint 0
+==
+assert
+txna ApplicationArgs 1
+btoi
+txna ApplicationArgs 2
+dup
+len
+pushint 64
+==
+assert
+txna ApplicationArgs 3
+dup
+len
+pushint 256
+==
+assert
+txna ApplicationArgs 4
+btoi
+callsub label23
+pushint 1
+return
+label12:
+txn OnCompletion
+pushint 0
+==
+assert
+txna ApplicationArgs 1
+btoi
+txna ApplicationArgs 2
+dup
+len
+pushint 1
+==
+assert
+callsub label24
+pushint 1
+return
+label13:
+store 1
+pushbytes 0x757365725f61646472657373 // "user_address"
+txn Sender
+app_global_put
+pushbytes 0x72656769737472795f6170705f6964 // "registry_app_id"
+load 1
+app_global_put
+load 1
+app_params_get AppAddress
+pop
+store 2
+pushbytes 0x72656769737472795f6170705f6163636f756e745f61646472657373 // "registry_app_account_address"
+load 2
+app_global_put
+load 1
+pushbytes 0x7661756c745f6170705f6964 // "vault_app_id"
+app_global_get_ex
+pop
+store 3
+pushbytes 0x7661756c745f6170705f6964 // "vault_app_id"
+load 3
+app_global_put
+load 1
+pushbytes 0x726f757465725f6170705f6964 // "router_app_id"
+app_global_get_ex
+pop
+store 4
+pushbytes 0x726f757465725f6170705f6964 // "router_app_id"
+load 4
+app_global_put
+pushbytes 0x76657273696f6e // "version"
+pushint 3
+app_global_put
+pushbytes 0x0f3e0d34 // 0x0f3e0d34
+txn Sender
+load 1
+itob
+load 3
+itob
+concat
+concat
+concat
+log
+retsub
+label14:
+store 5
+pushbytes 0x757365725f61646472657373 // "user_address"
+app_global_get
+store 6
+txn Sender
+load 6
+==
+assert
+txn GroupIndex
+pushint 1
++
+gtxns ApplicationID
+pushbytes 0x72656769737472795f6170705f6964 // "registry_app_id"
+app_global_get
+==
+assert
+txn GroupIndex
+pushint 1
++
+gtxnsa ApplicationArgs 0
+pushbytes 0x7665726966795f757064617465 // "verify_update"
+==
+assert
+txn GroupIndex
+pushint 1
++
+gtxnsa ApplicationArgs 1
+load 5
+itob
+==
+assert
+txn GroupIndex
+pushint 2
++
+gtxns ApplicationID
+global CurrentApplicationID
+==
+assert
+txn GroupIndex
+pushint 2
++
+gtxnsa ApplicationArgs 0
+pushbytes 0x706f73745f757064617465 // "post_update"
+==
+assert
+pushbytes 0x4674ef59 // 0x4674ef59
+txn Sender
+load 5
+itob
+concat
+concat
+log
+retsub
+label15:
+pushbytes 0x757365725f61646472657373 // "user_address"
+app_global_get
+store 7
+txn Sender
+load 7
+==
+assert
+pushint 3
+pushbytes 0x76657273696f6e // "version"
+app_global_get
+>
+assert
+pushbytes 0x72656769737472795f6170705f6964 // "registry_app_id"
+app_global_get
+store 8
+load 8
+pushbytes 0x7661756c745f6170705f6964 // "vault_app_id"
+app_global_get_ex
+pop
+store 9
+pushbytes 0x7661756c745f6170705f6964 // "vault_app_id"
+load 9
+app_global_put
+load 8
+pushbytes 0x726f757465725f6170705f6964 // "router_app_id"
+app_global_get_ex
+pop
+store 10
+pushbytes 0x726f757465725f6170705f6964 // "router_app_id"
+load 10
+app_global_put
+pushbytes 0x76657273696f6e // "version"
+pushint 3
+app_global_put
+pushbytes 0xfca63cfe // 0xfca63cfe
+pushint 3
+itob
+concat
+log
+retsub
+label16:
+store 11
+pushbytes 0x757365725f61646472657373 // "user_address"
+app_global_get
+store 12
+txn Sender
+load 12
+==
+assert
+pushint 0
+store 13
+label27:
+load 13
+pushint 8
+==
+bnz label25
+load 11
+pushint 8
+load 13
+*
+pushint 8
+extract3
+btoi
+callsub label26
+load 13
+pushint 1
++
+store 13
+b label27
+label25:
+retsub
+label17:
+store 14
+store 15
+store 16
+store 17
+store 18
+store 19
+pushbytes 0x757365725f61646472657373 // "user_address"
+app_global_get
+store 20
+txn Sender
+load 20
+==
+assert
+pushbytes 0x6f726465725f636f756e74 // "order_count"
+app_global_get
+store 21
+pushbytes 0x6f // "o"
+load 21
+itob
+concat
+dup
+pushint 80
+box_create
+assert
+store 22
+load 18
+pushint 0
+>
+assert
+load 16
+pushint 0
+>
+assert
+load 19
+load 17
+!=
+assert
+load 14
+!
+bz label28
+pushint 18446744073709551615
+store 23
+b label29
+label28:
+global LatestTimestamp
+load 14
++
+store 23
+label29:
+load 17
+bz label30
+global CurrentApplicationAddress
+load 17
+asset_holding_get AssetBalance
+store 24
+pop
+load 24
+assert
+label30:
+txn GroupIndex
+pushint 1
+-
+global CurrentApplicationAddress
+load 19
+load 18
+callsub label31
+callsub label32
+store 25
+load 19
+itob
+load 22
+pushint 0
+uncover 2
+box_replace
+load 18
+itob
+load 22
+pushint 8
+uncover 2
+box_replace
+load 17
+itob
+load 22
+pushint 16
+uncover 2
+box_replace
+load 16
+itob
+load 22
+pushint 24
+uncover 2
+box_replace
+pushint 0
+itob
+load 22
+pushint 32
+uncover 2
+box_replace
+pushint 0
+itob
+load 22
+pushint 40
+uncover 2
+box_replace
+load 15
+itob
+load 22
+pushint 48
+uncover 2
+box_replace
+load 25
+itob
+load 22
+pushint 56
+uncover 2
+box_replace
+global LatestTimestamp
+itob
+load 22
+pushint 64
+uncover 2
+box_replace
+load 23
+itob
+load 22
+pushint 72
+uncover 2
+box_replace
+pushbytes 0x6f726465725f636f756e74 // "order_count"
+load 21
+pushint 1
++
+app_global_put
+load 22
+box_get
+pop
+store 26
+pushbytes 0x7075745f747269676765725f6f72646572 // "put_trigger_order"
+load 20
+load 21
+itob
+load 26
+concat
+callsub label33
+pushbytes 0x137a03c3 // 0x137a03c3
+load 20
+load 21
+itob
+load 26
+concat
+concat
+concat
+log
+pushbytes 0xa08f3163 // 0xa08f3163
+load 21
+itob
+concat
+log
+retsub
+label18:
+store 27
+pushbytes 0x757365725f61646472657373 // "user_address"
+app_global_get
+store 28
+txn Sender
+load 28
+==
+assert
+pushbytes 0x6f // "o"
+load 27
+itob
+concat
+dup
+box_len
+assert
+pushint 80
+==
+assert
+store 29
+load 29
+pushint 8
+pushint 8
+box_extract
+btoi
+store 30
+load 29
+pushint 48
+pushint 8
+box_extract
+btoi
+bz label34
+load 30
+load 29
+pushint 32
+pushint 8
+box_extract
+btoi
+-
+store 30
+label34:
+load 29
+pushint 40
+pushint 8
+box_extract
+btoi
+!
+assert
+load 29
+pushint 0
+pushint 8
+box_extract
+btoi
+load 30
+global CurrentApplicationAddress
+load 28
+callsub label35
+load 29
+box_get
+pop
+store 31
+pushbytes 0x63616e63656c5f747269676765725f6f72646572 // "cancel_trigger_order"
+load 28
+load 27
+itob
+callsub label33
+pushbytes 0x137a03c3 // 0x137a03c3
+load 28
+load 27
+itob
+load 31
+concat
+concat
+concat
+log
+pushbytes 0xd9a5bf70 // 0xd9a5bf70
+load 27
+itob
+concat
+log
+load 29
+box_del
+pop
+retsub
+label38:
+store 32
+store 33
+store 34
+store 35
+store 36
+load 36
+gtxns Sender
+txn Sender
+==
+assert
+load 36
+gtxns TypeEnum
+pushint 6
+==
+assert
+load 36
+gtxns OnCompletion
+pushint 0
+==
+assert
+load 36
+gtxns ApplicationID
+global CurrentApplicationID
+==
+assert
+load 36
+gtxnsa ApplicationArgs 0
+load 35
+==
+assert
+load 36
+gtxnsa ApplicationArgs 1
+load 34
+itob
+==
+assert
+load 36
+gtxnsa ApplicationArgs 2
+load 33
+itob
+==
+assert
+load 36
+gtxnsa ApplicationArgs 3
+load 32
+itob
+==
+assert
+retsub
+label19:
+store 37
+store 38
+store 39
+pushbytes 0x6f // "o"
+load 39
+itob
+concat
+dup
+box_len
+assert
+pushint 80
+==
+assert
+store 40
+load 37
+pushint 2
+>=
+assert
+load 40
+pushint 8
+pushint 8
+box_extract
+btoi
+store 41
+load 40
+pushint 48
+pushint 8
+box_extract
+btoi
+bz label36
+load 41
+load 40
+pushint 32
+pushint 8
+box_extract
+btoi
+-
+store 41
+load 38
+load 41
+<=
+assert
+b label37
+label36:
+load 38
+load 41
+==
+assert
+label37:
+global LatestTimestamp
+load 40
+pushint 72
+pushint 8
+box_extract
+btoi
+<=
+assert
+txn GroupIndex
+load 37
++
+store 42
+load 42
+pushbytes 0x656e645f657865637574655f747269676765725f6f72646572 // "end_execute_trigger_order"
+load 39
+load 38
+load 37
+callsub label38
+load 40
+pushint 0
+pushint 8
+box_extract
+btoi
+load 38
+global CurrentApplicationAddress
+txn Sender
+callsub label35
+pushbytes 0x6d78419b // 0x6d78419b
+pushbytes 0x757365725f61646472657373 // "user_address"
+app_global_get
+load 39
+itob
+txn Sender
+concat
+concat
+concat
+log
+retsub
+label20:
+store 43
+store 44
+store 45
+pushbytes 0x757365725f61646472657373 // "user_address"
+app_global_get
+store 46
+pushbytes 0x6f // "o"
+load 45
+itob
+concat
+dup
+box_len
+assert
+pushint 80
+==
+assert
+store 47
+txn GroupIndex
+load 43
+-
+store 48
+load 48
+pushbytes 0x73746172745f657865637574655f747269676765725f6f72646572 // "start_execute_trigger_order"
+load 45
+load 44
+load 43
+callsub label38
+load 47
+pushint 48
+pushint 8
+box_extract
+btoi
+!
+bz label39
+load 47
+pushint 24
+pushint 8
+box_extract
+btoi
+store 49
+b label40
+label39:
+load 47
+pushint 8
+pushint 8
+box_extract
+btoi
+load 47
+pushint 24
+pushint 8
+box_extract
+btoi
+load 44
+callsub label41
+store 49
+label40:
+txn GroupIndex
+pushint 1
+-
+global CurrentApplicationAddress
+load 47
+pushint 16
+pushint 8
+box_extract
+btoi
+load 49
+callsub label42
+store 50
+load 47
+pushint 32
+pushint 8
+box_extract
+btoi
+load 44
++
+itob
+load 47
+pushint 32
+uncover 2
+box_replace
+load 50
+load 47
+pushint 56
+pushint 8
+box_extract
+btoi
+callsub label43
+store 51
+load 51
+assert
+load 47
+pushint 40
+pushint 8
+box_extract
+btoi
+load 50
+load 51
+-
++
+itob
+load 47
+pushint 40
+uncover 2
+box_replace
+load 47
+box_get
+pop
+store 52
+pushbytes 0x7570646174655f747269676765725f6f72646572 // "update_trigger_order"
+load 46
+load 45
+itob
+load 52
+concat
+callsub label33
+pushbytes 0x137a03c3 // 0x137a03c3
+load 46
+load 45
+itob
+load 52
+concat
+concat
+concat
+log
+pushbytes 0xae0a7e52 // 0xae0a7e52
+pushbytes 0x757365725f61646472657373 // "user_address"
+app_global_get
+load 45
+itob
+txn Sender
+load 44
+itob
+load 50
+itob
+concat
+concat
+concat
+concat
+concat
+log
+load 47
+pushint 16
+pushint 8
+box_extract
+btoi
+load 51
+global CurrentApplicationAddress
+pushbytes 0x72656769737472795f6170705f6163636f756e745f61646472657373 // "registry_app_account_address"
+app_global_get
+callsub label35
+pushint 1
+store 53
+load 47
+pushint 16
+pushint 8
+box_extract
+btoi
+bz label44
+load 46
+load 47
+pushint 16
+pushint 8
+box_extract
+btoi
+asset_holding_get AssetBalance
+store 53
+pop
+label44:
+load 47
+pushint 8
+pushint 8
+box_extract
+btoi
+load 47
+pushint 32
+pushint 8
+box_extract
+btoi
+==
+load 53
+&&
+bz label45
+load 47
+pushint 16
+pushint 8
+box_extract
+btoi
+load 47
+pushint 40
+pushint 8
+box_extract
+btoi
+global CurrentApplicationAddress
+load 46
+callsub label35
+load 47
+box_del
+pop
+label45:
+retsub
+label24:
+store 54
+store 55
+pushbytes 0x757365725f61646472657373 // "user_address"
+app_global_get
+store 56
+txn Sender
+load 56
+==
+assert
+load 54
+pushbytes 0x6f // "o"
+==
+bz label46
+pushbytes 0x6f // "o"
+load 55
+itob
+concat
+dup
+box_len
+assert
+pushint 80
+==
+assert
+store 59
+load 59
+pushint 16
+pushint 8
+box_extract
+btoi
+store 57
+load 59
+pushint 40
+pushint 8
+box_extract
+btoi
+store 58
+pushint 0
+itob
+load 59
+pushint 40
+uncover 2
+box_replace
+load 59
+box_get
+pop
+store 60
+pushbytes 0x137a03c3 // 0x137a03c3
+load 56
+load 55
+itob
+load 60
+concat
+concat
+concat
+log
+b label47
+label46:
+load 54
+pushbytes 0x72 // "r"
+==
+bz label48
+pushbytes 0x72 // "r"
+load 55
+itob
+concat
+dup
+box_len
+assert
+pushint 88
+==
+assert
+store 61
+load 61
+pushint 16
+pushint 8
+box_extract
+btoi
+store 57
+load 61
+pushint 24
+pushint 8
+box_extract
+btoi
+store 58
+pushint 0
+itob
+load 61
+pushint 24
+uncover 2
+box_replace
+load 61
+box_get
+pop
+store 62
+pushbytes 0x6f8bfc9f // 0x6f8bfc9f
+load 56
+load 55
+itob
+load 62
+concat
+concat
+concat
+log
+b label47
+label48:
+pushint 1
+return
+label47:
+load 58
+assert
+load 57
+load 58
+global CurrentApplicationAddress
+load 56
+callsub label35
+pushbytes 0x2a061e2b // 0x2a061e2b
+load 55
+itob
+load 58
+itob
+concat
+concat
+log
+retsub
+label21:
+store 63
+store 64
+store 65
+store 66
+store 67
+store 68
+store 69
+pushbytes 0x757365725f61646472657373 // "user_address"
+app_global_get
+store 70
+txn Sender
+load 70
+==
+assert
+pushbytes 0x6f726465725f636f756e74 // "order_count"
+app_global_get
+store 71
+pushbytes 0x72 // "r"
+load 71
+itob
+concat
+dup
+pushint 88
+box_create
+assert
+store 72
+load 68
+pushint 0
+>
+assert
+load 69
+load 67
+!=
+assert
+load 64
+pushint 0
+>
+assert
+load 63
+pushint 60
+>=
+assert
+load 63
+pushint 60
+%
+!
+assert
+load 65
+!
+bz label49
+pushint 18446744073709551615
+store 65
+label49:
+load 66
+load 65
+<=
+assert
+load 67
+bz label50
+global CurrentApplicationAddress
+load 67
+asset_holding_get AssetBalance
+store 73
+pop
+load 73
+assert
+label50:
+txn GroupIndex
+pushint 1
+-
+global CurrentApplicationAddress
+load 69
+load 68
+load 64
+*
+callsub label31
+callsub label32
+store 74
+load 69
+itob
+load 72
+pushint 0
+uncover 2
+box_replace
+load 68
+itob
+load 72
+pushint 8
+uncover 2
+box_replace
+load 67
+itob
+load 72
+pushint 16
+uncover 2
+box_replace
+pushint 0
+itob
+load 72
+pushint 24
+uncover 2
+box_replace
+load 66
+itob
+load 72
+pushint 32
+uncover 2
+box_replace
+load 65
+itob
+load 72
+pushint 40
+uncover 2
+box_replace
+load 64
+itob
+load 72
+pushint 48
+uncover 2
+box_replace
+load 63
+itob
+load 72
+pushint 56
+uncover 2
+box_replace
+load 74
+itob
+load 72
+pushint 64
+uncover 2
+box_replace
+pushint 0
+itob
+load 72
+pushint 72
+uncover 2
+box_replace
+global LatestTimestamp
+itob
+load 72
+pushint 80
+uncover 2
+box_replace
+pushbytes 0x6f726465725f636f756e74 // "order_count"
+load 71
+pushint 1
++
+app_global_put
+load 72
+box_get
+pop
+store 75
+pushbytes 0x7075745f726563757272696e675f6f72646572 // "put_recurring_order"
+load 70
+load 71
+itob
+load 75
+concat
+callsub label33
+pushbytes 0x6f8bfc9f // 0x6f8bfc9f
+load 70
+load 71
+itob
+load 75
+concat
+concat
+concat
+log
+pushbytes 0x87e86a4b // 0x87e86a4b
+load 71
+itob
+concat
+log
+retsub
+label22:
+store 76
+pushbytes 0x757365725f61646472657373 // "user_address"
+app_global_get
+store 77
+txn Sender
+load 77
+==
+assert
+pushbytes 0x72 // "r"
+load 76
+itob
+concat
+dup
+box_len
+assert
+pushint 88
+==
+assert
+store 78
+load 78
+pushint 24
+pushint 8
+box_extract
+btoi
+!
+assert
+load 78
+pushint 8
+pushint 8
+box_extract
+btoi
+load 78
+pushint 48
+pushint 8
+box_extract
+btoi
+*
+store 79
+load 78
+pushint 0
+pushint 8
+box_extract
+btoi
+load 79
+global CurrentApplicationAddress
+load 77
+callsub label35
+load 78
+box_get
+pop
+store 80
+pushbytes 0x63616e63656c5f726563757272696e675f6f72646572 // "cancel_recurring_order"
+load 77
+load 76
+itob
+callsub label33
+pushbytes 0x6f8bfc9f // 0x6f8bfc9f
+load 77
+load 76
+itob
+load 80
+concat
+concat
+concat
+log
+pushbytes 0x3e7b0c66 // 0x3e7b0c66
+load 76
+itob
+concat
+log
+load 78
+box_del
+pop
+retsub
+label23:
+store 81
+store 82
+store 83
+store 84
+pushbytes 0x72 // "r"
+load 84
+itob
+concat
+dup
+box_len
+assert
+pushint 88
+==
+assert
+store 85
+pushbytes 0x757365725f61646472657373 // "user_address"
+app_global_get
+store 86
+txn GroupIndex
+pushint 0
+==
+assert
+global CallerApplicationID
+pushint 0
+==
+assert
+txn Sender
+callsub label51
+global LatestTimestamp
+load 85
+pushint 72
+pushint 8
+box_extract
+btoi
+load 85
+pushint 56
+pushint 8
+box_extract
+btoi
++
+>=
+assert
+load 83
+pushint 8
+pushint 0
+*
+pushint 8
+extract3
+btoi
+load 85
+pushint 0
+pushint 8
+box_extract
+btoi
+==
+assert
+load 83
+pushint 8
+load 81
+*
+pushint 8
+extract3
+btoi
+load 85
+pushint 16
+pushint 8
+box_extract
+btoi
+==
+assert
+load 85
+pushint 8
+pushint 8
+box_extract
+btoi
+load 85
+pushint 32
+pushint 8
+box_extract
+btoi
+load 83
+load 82
+load 81
+callsub label52
+store 87
+load 87
+load 85
+pushint 32
+pushint 8
+box_extract
+btoi
+>=
+load 87
+load 85
+pushint 40
+pushint 8
+box_extract
+btoi
+<=
+&&
+assert
+load 87
+load 85
+pushint 64
+pushint 8
+box_extract
+btoi
+callsub label43
+store 88
+load 88
+assert
+load 85
+pushint 48
+pushint 8
+box_extract
+btoi
+pushint 1
+-
+itob
+load 85
+pushint 48
+uncover 2
+box_replace
+global LatestTimestamp
+itob
+load 85
+pushint 72
+uncover 2
+box_replace
+load 85
+pushint 24
+pushint 8
+box_extract
+btoi
+load 87
+load 88
+-
++
+itob
+load 85
+pushint 24
+uncover 2
+box_replace
+load 85
+box_get
+pop
+store 89
+pushbytes 0x7570646174655f726563757272696e675f6f72646572 // "update_recurring_order"
+load 86
+load 84
+itob
+load 89
+concat
+callsub label33
+pushbytes 0x6f8bfc9f // 0x6f8bfc9f
+load 86
+load 84
+itob
+load 89
+concat
+concat
+concat
+log
+pushbytes 0xa0f72495 // 0xa0f72495
+load 86
+load 84
+itob
+txn Sender
+load 85
+pushint 8
+pushint 8
+box_extract
+btoi
+itob
+load 87
+itob
+concat
+concat
+concat
+concat
+concat
+log
+load 85
+pushint 16
+pushint 8
+box_extract
+btoi
+load 88
+global CurrentApplicationAddress
+pushbytes 0x72656769737472795f6170705f6163636f756e745f61646472657373 // "registry_app_account_address"
+app_global_get
+callsub label35
+pushint 1
+store 90
+load 85
+pushint 16
+pushint 8
+box_extract
+btoi
+bz label53
+load 86
+load 85
+pushint 16
+pushint 8
+box_extract
+btoi
+asset_holding_get AssetBalance
+store 90
+pop
+label53:
+load 85
+pushint 48
+pushint 8
+box_extract
+btoi
+!
+load 90
+&&
+bz label54
+load 85
+pushint 16
+pushint 8
+box_extract
+btoi
+load 85
+pushint 24
+pushint 8
+box_extract
+btoi
+global CurrentApplicationAddress
+load 86
+callsub label35
+load 85
+box_del
+pop
+label54:
+retsub
+label52:
+store 91
+store 92
+store 93
+store 94
+store 95
+pushbytes 0x726f757465725f6170705f6964 // "router_app_id"
+app_global_get
+app_params_get AppAddress
+pop
+store 96
+load 93
+pushint 8
+load 91
+*
+pushint 8
+extract3
+btoi
+store 97
+global CurrentApplicationAddress
+load 97
+callsub label55
+store 98
+callsub label56
+load 93
+pushint 8
+pushint 0
+*
+pushint 8
+extract3
+btoi
+load 95
+global CurrentApplicationAddress
+load 96
+callsub label35
+callsub label57
+pushint 6
+itxn_field TypeEnum
+pushint 0
+itxn_field Fee
+pushbytes 0x726f757465725f6170705f6964 // "router_app_id"
+app_global_get
+itxn_field ApplicationID
+pushbytes 0x73776170 // "swap"
+itxn_field ApplicationArgs
+load 95
+itob
+itxn_field ApplicationArgs
+load 94
+itob
+itxn_field ApplicationArgs
+load 93
+itxn_field ApplicationArgs
+load 92
+itxn_field ApplicationArgs
+load 91
+itob
+itxn_field ApplicationArgs
+callsub label58
+callsub label59
+global CurrentApplicationAddress
+load 97
+callsub label55
+load 98
+-
+store 99
+load 99
+retsub
+label51:
+store 100
+load 100
+pushbytes 0x72656769737472795f6170705f6964 // "registry_app_id"
+app_global_get
+pushbytes 0x69735f656e646f72736564 // "is_endorsed"
+app_local_get_ex
+pop
+store 101
+load 101
+assert
+retsub
+label41:
+store 102
+store 103
+store 104
+load 103
+itob
+pushint 18446744073709551615
+itob
+b*
+load 104
+itob
+b/
+store 105
+load 102
+itob
+load 105
+b*
+pushint 18446744073709551615
+itob
+b/
+btoi
+store 106
+load 106
+retsub
+label43:
+store 107
+store 108
+load 108
+itob
+load 107
+itob
+b*
+pushint 10000
+itob
+b/
+btoi
+store 109
+load 109
+retsub
+label32:
+pushbytes 0x757365725f61646472657373 // "user_address"
+app_global_get
+callsub label60
+store 113
+pushbytes 0x72656769737472795f6170705f6964 // "registry_app_id"
+app_global_get
+pushbytes 0x676f7665726e6f725f6665655f726174655f706f7765725f7468726573686f6c64 // "governor_fee_rate_power_threshold"
+app_global_get_ex
+pop
+store 110
+load 110
+store 114
+load 113
+load 114
+>
+bz label61
+pushbytes 0x72656769737472795f6170705f6964 // "registry_app_id"
+app_global_get
+pushbytes 0x676f7665726e6f725f6f726465725f6665655f72617465 // "governor_order_fee_rate"
+app_global_get_ex
+pop
+store 111
+b label62
+label61:
+pushbytes 0x72656769737472795f6170705f6964 // "registry_app_id"
+app_global_get
+pushbytes 0x6f726465725f6665655f72617465 // "order_fee_rate"
+app_global_get_ex
+pop
+store 111
+label62:
+load 111
+store 112
+load 112
+retsub
+label60:
+store 115
+callsub label57
+pushint 6
+itxn_field TypeEnum
+pushbytes 0x7661756c745f6170705f6964 // "vault_app_id"
+app_global_get
+itxn_field ApplicationID
+pushbytes 0x6765745f74696e795f706f7765725f6f66 // "get_tiny_power_of"
+itxn_field ApplicationArgs
+load 115
+itxn_field ApplicationArgs
+pushint 0
+itxn_field Fee
+callsub label58
+itxn LastLog
+pushint 4
+extract_uint64
+store 116
+load 116
+retsub
+label26:
+store 117
+load 117
+bz label63
+global CurrentApplicationAddress
+load 117
+asset_holding_get AssetBalance
+store 118
+pop
+load 118
+pushint 0
+==
+bz label63
+load 117
+pushint 0
+global CurrentApplicationAddress
+global CurrentApplicationAddress
+callsub label35
+label63:
+retsub
+label31:
+store 119
+store 120
+store 121
+store 122
+load 120
+!
+bz label64
+load 122
+gtxns TypeEnum
+pushint 1
+==
+assert
+load 122
+gtxns Receiver
+load 121
+==
+assert
+load 122
+gtxns Amount
+load 119
+==
+assert
+b label65
+label64:
+load 122
+gtxns TypeEnum
+pushint 4
+==
+assert
+load 122
+gtxns AssetReceiver
+load 121
+==
+assert
+load 122
+gtxns XferAsset
+load 120
+==
+assert
+load 122
+gtxns AssetAmount
+load 119
+==
+assert
+label65:
+retsub
+label42:
+store 123
+store 124
+store 125
+store 126
+load 124
+!
+bz label66
+load 126
+gtxns TypeEnum
+pushint 1
+==
+assert
+load 126
+gtxns Receiver
+load 125
+==
+assert
+load 126
+gtxns Amount
+load 123
+>=
+assert
+load 126
+gtxns Amount
+store 127
+b label67
+label66:
+load 126
+gtxns TypeEnum
+pushint 4
+==
+assert
+load 126
+gtxns AssetReceiver
+load 125
+==
+assert
+load 126
+gtxns XferAsset
+load 124
+==
+assert
+load 126
+gtxns AssetAmount
+load 123
+>=
+assert
+load 126
+gtxns AssetAmount
+store 127
+label67:
+load 127
+retsub
+label35:
+store 128
+store 129
+store 130
+store 131
+load 131
+!
+bz label68
+callsub label57
+pushint 1
+itxn_field TypeEnum
+load 129
+itxn_field Sender
+load 128
+itxn_field Receiver
+load 130
+itxn_field Amount
+pushint 0
+itxn_field Fee
+callsub label58
+b label69
+label68:
+callsub label57
+pushint 4
+itxn_field TypeEnum
+load 129
+itxn_field Sender
+load 128
+itxn_field AssetReceiver
+load 130
+itxn_field AssetAmount
+load 131
+itxn_field XferAsset
+pushint 0
+itxn_field Fee
+callsub label58
+label69:
+retsub
+label33:
+store 132
+store 133
+store 134
+callsub label57
+pushint 6
+itxn_field TypeEnum
+pushint 0
+itxn_field Fee
+pushbytes 0x72656769737472795f6170705f6964 // "registry_app_id"
+app_global_get
+itxn_field ApplicationID
+pushbytes 0x656d69745f6576656e74 // "emit_event"
+itxn_field ApplicationArgs
+load 134
+itxn_field ApplicationArgs
+load 133
+itxn_field ApplicationArgs
+load 132
+itxn_field ApplicationArgs
+callsub label58
+retsub
+label55:
+store 135
+store 136
+pushint 0
+store 137
+load 135
+!
+bz label70
+load 136
+balance
+load 136
+min_balance
+-
+store 137
+b label71
+label70:
+load 136
+load 135
+asset_holding_get AssetBalance
+pop
+store 137
+label71:
+load 137
+retsub
+label56:
+load 138
+!
+assert
+pushint 1
+store 138
+retsub
+label57:
+load 138
+switch label72 label73 label74
+err
+label72:
+itxn_begin
+retsub
+label73:
+itxn_begin
+pushint 2
+store 138
+retsub
+label74:
+itxn_next
+retsub
+label58:
+load 138
+bz label75
+retsub
+label75:
+itxn_submit
+retsub
+label59:
+itxn_submit
+pushint 0
+store 138
+retsub

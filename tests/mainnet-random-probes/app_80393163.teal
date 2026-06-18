@@ -1,0 +1,307 @@
+#pragma version 2
+intcblock 0 5 4 2 1 10 10000 100
+bytecblock 0x626964 0x43726561746f72 0x457363726f77 0x57696e6e6572 0x506f74 0x42696473 0x526f756e64426567696e 0x526f756e64456e64 0x5072696365 0x4d756c7469706c696572 0x54696d6572 0x54696d65724669727374 0x54696d65725365636f6e64 0x466565734669727374 0x466565735365636f6e64 0x4469766964656e64 0x426964 0x46656573
+txn ApplicationID
+intc_0 // 0
+==
+bnz label1
+txn OnCompletion
+intc_1 // 5
+==
+bnz label2
+txn OnCompletion
+intc_2 // 4
+==
+bnz label3
+txn OnCompletion
+intc_3 // 2
+==
+bnz label4
+txn OnCompletion
+intc 4 // 1
+==
+bnz label5
+bytec_0 // "bid"
+txna ApplicationArgs 0
+==
+bnz label6
+err
+label1:
+txn NumAppArgs
+intc 5 // 10
+==
+bnz label7
+err
+label7:
+bytec_1 // "Creator"
+txn Sender
+app_global_put
+bytec_2 // "Escrow"
+txna ApplicationArgs 0
+app_global_put
+bytec_3 // "Winner"
+txn Sender
+app_global_put
+bytec 4 // "Pot"
+intc_0 // 0
+app_global_put
+bytec 5 // "Bids"
+intc_0 // 0
+app_global_put
+bytec 6 // "RoundBegin"
+global LatestTimestamp
+app_global_put
+bytec 7 // "RoundEnd"
+global LatestTimestamp
+txna ApplicationArgs 1
+btoi
++
+app_global_put
+bytec 8 // "Price"
+txna ApplicationArgs 2
+btoi
+app_global_put
+bytec 9 // "Multiplier"
+txna ApplicationArgs 3
+btoi
+app_global_put
+bytec 10 // "Timer"
+txna ApplicationArgs 4
+btoi
+app_global_put
+bytec 11 // "TimerFirst"
+txna ApplicationArgs 5
+btoi
+app_global_put
+bytec 12 // "TimerSecond"
+txna ApplicationArgs 6
+btoi
+app_global_put
+bytec 13 // "FeesFirst"
+txna ApplicationArgs 7
+btoi
+app_global_put
+bytec 14 // "FeesSecond"
+txna ApplicationArgs 8
+btoi
+app_global_put
+bytec 15 // "Dividend"
+txna ApplicationArgs 9
+btoi
+app_global_put
+intc 4 // 1
+return
+b label8
+label2:
+txn Sender
+bytec_1 // "Creator"
+app_global_get
+==
+bnz label9
+err
+label9:
+bytec 4 // "Pot"
+app_global_get
+intc_0 // 0
+==
+bnz label10
+err
+label10:
+intc 4 // 1
+return
+b label8
+label3:
+txn Sender
+bytec_1 // "Creator"
+app_global_get
+==
+bnz label11
+err
+label11:
+intc 4 // 1
+return
+b label8
+label4:
+intc_0 // 0
+return
+b label8
+label5:
+global LatestTimestamp
+bytec 6 // "RoundBegin"
+app_global_get
+>=
+global LatestTimestamp
+bytec 7 // "RoundEnd"
+app_global_get
+<=
+&&
+bnz label12
+err
+label12:
+intc_0 // 0
+bytec 16 // "Bid"
+intc_0 // 0
+app_local_put
+intc_0 // 0
+bytec 17 // "Fees"
+intc_0 // 0
+app_local_put
+intc 4 // 1
+return
+b label8
+label6:
+global GroupSize
+intc_3 // 2
+==
+gtxn 1 Amount
+bytec 8 // "Price"
+app_global_get
+==
+gtxn 1 Amount
+bytec 8 // "Price"
+app_global_get
+bytec 13 // "FeesFirst"
+app_global_get
++
+==
+||
+gtxn 1 Amount
+bytec 8 // "Price"
+app_global_get
+bytec 14 // "FeesSecond"
+app_global_get
++
+==
+||
+&&
+gtxn 0 Sender
+bytec_1 // "Creator"
+app_global_get
+==
+&&
+gtxn 1 Receiver
+bytec_2 // "Escrow"
+app_global_get
+==
+&&
+gtxn 1 TypeEnum
+intc 4 // 1
+==
+&&
+bnz label13
+err
+label13:
+bytec 4 // "Pot"
+bytec 4 // "Pot"
+app_global_get
+bytec 8 // "Price"
+app_global_get
++
+bytec 4 // "Pot"
+app_global_get
+bytec 8 // "Price"
+app_global_get
++
+bytec 15 // "Dividend"
+app_global_get
+*
+intc 6 // 10000
+/
+-
+app_global_put
+bytec_3 // "Winner"
+gtxn 1 Sender
+app_global_put
+bytec 8 // "Price"
+bytec 8 // "Price"
+app_global_get
+bytec 8 // "Price"
+app_global_get
+bytec 9 // "Multiplier"
+app_global_get
+*
+intc 7 // 100
+/
++
+app_global_put
+intc 4 // 1
+bytec 16 // "Bid"
+intc 4 // 1
+bytec 16 // "Bid"
+app_local_get
+bytec 8 // "Price"
+app_global_get
++
+app_local_put
+gtxn 1 Amount
+bytec 8 // "Price"
+app_global_get
+==
+bz label14
+bytec 7 // "RoundEnd"
+bytec 7 // "RoundEnd"
+app_global_get
+bytec 10 // "Timer"
+app_global_get
++
+app_global_put
+label14:
+gtxn 1 Amount
+bytec 8 // "Price"
+app_global_get
+bytec 13 // "FeesFirst"
+app_global_get
++
+==
+bz label15
+intc 4 // 1
+bytec 17 // "Fees"
+intc 4 // 1
+bytec 17 // "Fees"
+app_local_get
+bytec 13 // "FeesFirst"
+app_global_get
++
+app_local_put
+bytec 7 // "RoundEnd"
+bytec 7 // "RoundEnd"
+app_global_get
+bytec 11 // "TimerFirst"
+app_global_get
++
+app_global_put
+label15:
+gtxn 1 Amount
+bytec 8 // "Price"
+app_global_get
+bytec 14 // "FeesSecond"
+app_global_get
++
+==
+bz label16
+intc 4 // 1
+bytec 17 // "Fees"
+intc 4 // 1
+bytec 17 // "Fees"
+app_local_get
+bytec 14 // "FeesSecond"
+app_global_get
++
+app_local_put
+bytec 7 // "RoundEnd"
+bytec 7 // "RoundEnd"
+app_global_get
+bytec 12 // "TimerSecond"
+app_global_get
++
+app_global_put
+label16:
+bytec 5 // "Bids"
+bytec 5 // "Bids"
+app_global_get
+intc 4 // 1
++
+app_global_put
+intc 4 // 1
+return
+label8:

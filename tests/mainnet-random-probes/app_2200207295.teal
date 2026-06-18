@@ -1,0 +1,472 @@
+#pragma version 8
+intcblock 0 1 2 4 1000 5 3
+bytecblock 0x6e66745f696e646578 0x756e69745f7072696365 0x73656c6c65725f7368617265 0x726f79616c74795f7368617265 0x6d616e616765725f7368617265 0x73656c6c65725f7061796f75745f61646472657373 0x726f79616c74795f7061796f75745f61646472657373 0x6d616e616765725f7061796f75745f61646472657373
+txn ApplicationID
+intc_0 // 0
+==
+bnz label1
+txn OnCompletion
+intc_0 // 0
+==
+callsub label2
+callsub label3
+bnz label4
+txn OnCompletion
+intc_1 // 1
+==
+callsub label2
+callsub label3
+bnz label5
+txn OnCompletion
+intc_2 // 2
+==
+callsub label2
+callsub label3
+bnz label6
+txn OnCompletion
+intc_3 // 4
+==
+callsub label2
+callsub label3
+bnz label7
+txn OnCompletion
+intc 5 // 5
+==
+callsub label2
+callsub label3
+bnz label8
+err
+label1:
+txn NumAppArgs
+intc_3 // 4
+==
+txn NumAccounts
+intc 6 // 3
+==
+&&
+txn NumAssets
+intc_1 // 1
+==
+&&
+txna ApplicationArgs 0
+btoi
+intc_0 // 0
+>
+&&
+txna ApplicationArgs 0
+btoi
+callsub label9
+&&
+txna ApplicationArgs 1
+btoi
+txna ApplicationArgs 2
+btoi
++
+txna ApplicationArgs 3
+btoi
++
+intc 4 // 1000
+==
+&&
+bnz label10
+err
+label10:
+bytec_1 // "unit_price"
+txna ApplicationArgs 0
+btoi
+app_global_put
+bytec_0 // "nft_index"
+txna Assets 0
+app_global_put
+bytec 5 // "seller_payout_address"
+txna Accounts 1
+app_global_put
+bytec 6 // "royalty_payout_address"
+txna Accounts 2
+app_global_put
+bytec 7 // "manager_payout_address"
+txna Accounts 3
+app_global_put
+bytec_2 // "seller_share"
+txna ApplicationArgs 1
+btoi
+app_global_put
+bytec_3 // "royalty_share"
+txna ApplicationArgs 2
+btoi
+app_global_put
+bytec 4 // "manager_share"
+txna ApplicationArgs 3
+btoi
+app_global_put
+intc_1 // 1
+return
+label4:
+pushbytes 0x1b2fb4f5 // 0x1b2fb4f5
+pushbytes 0x46ee50ff // 0x46ee50ff
+pushbytes 0x3a85e512 // 0x3a85e512
+pushbytes 0xa5781818 // 0xa5781818
+txna ApplicationArgs 0
+match label11 label12 label13 label14
+err
+label11:
+txn TypeEnum
+pushint 6
+==
+txn Fee
+global MinTxnFee
+intc_2 // 2
+*
+==
+&&
+txn Sender
+global CreatorAddress
+==
+&&
+bnz label15
+err
+label15:
+itxn_begin
+intc_3 // 4
+itxn_field TypeEnum
+bytec_0 // "nft_index"
+app_global_get
+itxn_field XferAsset
+global CurrentApplicationAddress
+itxn_field AssetReceiver
+intc_0 // 0
+itxn_field AssetAmount
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+intc_1 // 1
+return
+label12:
+callsub label16
+gtxns TypeEnum
+intc_1 // 1
+==
+callsub label16
+gtxns Receiver
+global CurrentApplicationAddress
+==
+&&
+bytec_1 // "unit_price"
+app_global_get
+txna ApplicationArgs 1
+btoi
+*
+callsub label16
+gtxns Amount
+==
+&&
+txn Fee
+global MinTxnFee
+intc 5 // 5
+*
+<=
+&&
+txn NumAppArgs
+intc_2 // 2
+==
+&&
+txna ApplicationArgs 1
+btoi
+intc_0 // 0
+>
+&&
+global CurrentApplicationAddress
+callsub label17
+&&
+txna ApplicationArgs 1
+btoi
+global CurrentApplicationAddress
+bytec_0 // "nft_index"
+app_global_get
+callsub label18
+<=
+&&
+bnz label19
+err
+label19:
+itxn_begin
+callsub label20
+callsub label21
+callsub label22
+intc_3 // 4
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+bytec_0 // "nft_index"
+app_global_get
+itxn_field XferAsset
+txna ApplicationArgs 1
+btoi
+itxn_field AssetAmount
+callsub label16
+gtxns Sender
+itxn_field AssetReceiver
+itxn_submit
+intc_1 // 1
+return
+label13:
+global CreatorAddress
+txn Sender
+==
+txn Fee
+global MinTxnFee
+intc_2 // 2
+*
+<=
+&&
+txn NumAppArgs
+intc_2 // 2
+==
+&&
+txna ApplicationArgs 1
+btoi
+intc_0 // 0
+>
+&&
+global CurrentApplicationAddress
+callsub label17
+&&
+txna ApplicationArgs 1
+btoi
+global CurrentApplicationAddress
+bytec_0 // "nft_index"
+app_global_get
+callsub label18
+<=
+&&
+bnz label23
+err
+label23:
+itxn_begin
+intc_3 // 4
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+bytec_0 // "nft_index"
+app_global_get
+itxn_field XferAsset
+txna ApplicationArgs 1
+btoi
+itxn_field AssetAmount
+global CreatorAddress
+itxn_field AssetReceiver
+itxn_submit
+intc_1 // 1
+return
+label14:
+global CreatorAddress
+txn Sender
+==
+txn Fee
+global MinTxnFee
+==
+&&
+txn NumAppArgs
+intc_2 // 2
+==
+&&
+txna ApplicationArgs 1
+btoi
+intc_0 // 0
+>
+&&
+txna ApplicationArgs 1
+btoi
+callsub label9
+&&
+bnz label24
+err
+label24:
+bytec_1 // "unit_price"
+txna ApplicationArgs 1
+btoi
+app_global_put
+intc_1 // 1
+return
+label5:
+intc_0 // 0
+return
+label6:
+intc_0 // 0
+return
+label7:
+intc_0 // 0
+return
+label8:
+global CreatorAddress
+txn Sender
+==
+txn Fee
+global MinTxnFee
+intc 6 // 3
+*
+<=
+&&
+bnz label25
+err
+label25:
+global CurrentApplicationAddress
+callsub label17
+bnz label26
+intc_1 // 1
+bnz label27
+err
+label27:
+itxn_begin
+callsub label28
+itxn_submit
+intc_1 // 1
+return
+label26:
+itxn_begin
+callsub label29
+itxn_next
+callsub label28
+itxn_submit
+intc_1 // 1
+return
+label29:
+intc_3 // 4
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+bytec_0 // "nft_index"
+app_global_get
+itxn_field XferAsset
+global CreatorAddress
+itxn_field AssetReceiver
+global CreatorAddress
+itxn_field AssetCloseTo
+retsub
+label28:
+intc_1 // 1
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+global CreatorAddress
+itxn_field Receiver
+intc_0 // 0
+itxn_field Amount
+global CreatorAddress
+itxn_field CloseRemainderTo
+retsub
+label3:
+txn AssetCloseTo
+global ZeroAddress
+==
+&&
+txn CloseRemainderTo
+global ZeroAddress
+==
+&&
+retsub
+label2:
+txn RekeyTo
+global ZeroAddress
+==
+&&
+retsub
+label9:
+intc 4 // 1000
+%
+intc_0 // 0
+==
+retsub
+label17:
+bytec_0 // "nft_index"
+app_global_get
+asset_holding_get AssetBalance
+swap
+pop
+retsub
+label18:
+asset_holding_get AssetBalance
+pop
+retsub
+label16:
+txn GroupIndex
+intc_1 // 1
+-
+retsub
+label22:
+bytec 4 // "manager_share"
+app_global_get
+intc_0 // 0
+>
+switch label30 label31
+retsub
+label31:
+intc_1 // 1
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+bytec 7 // "manager_payout_address"
+app_global_get
+itxn_field Receiver
+callsub label16
+gtxns Amount
+intc 4 // 1000
+/
+bytec 4 // "manager_share"
+app_global_get
+*
+itxn_field Amount
+itxn_next
+retsub
+label21:
+bytec_3 // "royalty_share"
+app_global_get
+intc_0 // 0
+>
+switch label30 label32
+retsub
+label32:
+intc_1 // 1
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+bytec 6 // "royalty_payout_address"
+app_global_get
+itxn_field Receiver
+callsub label16
+gtxns Amount
+intc 4 // 1000
+/
+bytec_3 // "royalty_share"
+app_global_get
+*
+itxn_field Amount
+itxn_next
+retsub
+label20:
+bytec_2 // "seller_share"
+app_global_get
+intc_0 // 0
+>
+switch label30 label33
+retsub
+label33:
+intc_1 // 1
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+bytec 5 // "seller_payout_address"
+app_global_get
+itxn_field Receiver
+callsub label16
+gtxns Amount
+intc 4 // 1000
+/
+bytec_2 // "seller_share"
+app_global_get
+*
+itxn_field Amount
+itxn_next
+retsub
+label30:
+retsub
