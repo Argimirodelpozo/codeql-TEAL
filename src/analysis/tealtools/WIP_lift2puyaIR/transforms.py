@@ -444,3 +444,149 @@ def specialize_polymorphic_returns(prog) -> int:
                 made += 1
             o.source.target = cid
     return made
+
+
+def _block_registers(b):
+    """Every Register that appears anywhere in a block (phi reg / args, op
+    targets / operands, terminator operands)."""
+    for ph in b.phis:
+        yield ph.register
+        for a in ph.args:
+            if isinstance(a.value, pre_ir.Register):
+                yield a.value
+    for o in b.ops:
+        for t in getattr(o, "targets", None) or []:
+            yield t
+        for v in pre_ir.operands(o):
+            if isinstance(v, pre_ir.Register):
+                yield v
+    for v in pre_ir.operands(b.terminator):
+        if isinstance(v, pre_ir.Register):
+            yield v
+
+
+def _region_defined(region_blocks) -> set:
+    """ids of registers DEFINED inside a region (op targets + phi registers)."""
+    defs: set = set()
+    for b in region_blocks:
+        for ph in b.phis:
+            defs.add(id(ph.register))
+        for o in b.ops:
+            for t in getattr(o, "targets", None) or []:
+                defs.add(id(t))
+    return defs
+
+
+def _fix_phi_predecessors(groups) -> None:
+    """Drop phi args whose ``through`` is no longer an actual CFG predecessor of
+    the block (after edges were redirected by duplication)."""
+    preds: dict = {}
+    for g in groups:
+        for b in g.body:
+            for t in _succ_ids(b.terminator):
+                preds.setdefault(t, set()).add(b.id)
+    for g in groups:
+        for b in g.body:
+            pp = preds.get(b.id, set())
+            for ph in b.phis:
+                kept = [a for a in ph.args if a.through in pp]
+                if kept:
+                    ph.args = kept
+
+
+def duplicate_cross_subroutine_blocks(prog, _max_rounds: int = 12) -> int:
+    """Give every subroutine a PRIVATE, self-contained body by cloning blocks it
+    shares with another subroutine.
+
+    The structure partition can leave a block reachable from / present in more
+    than one subroutine -- a hand-written contract ``b``-ing into a shared
+    epilogue (`retsub`) from several subs, or two subs whose bodies OVERLAP a
+    common region (the same block object in both ``.body`` lists). Puya requires
+    each block to belong to exactly one subroutine with all its predecessors
+    there ("block@N of subroutine X has predecessor block(s) outside of list";
+    and a shared object collides in ``to_puya``'s id-keyed block map). For each
+    subroutine S, the blocks reachable from its entry that are OWNED by another
+    sub (first sub, in [main, …] order, whose reachable set contains the block)
+    are cloned PRIVATELY into S: fresh global-unique block ids (edges + phi
+    predecessors remapped), and region-DEFINED registers get fresh, uniquely
+    renamed copies while registers defined OUTSIDE the region stay shared (a
+    deepcopy ``memo`` pre-seeded with them). S's own blocks then have their edges
+    redirected to the clones and their USES of region-defined registers remapped
+    to the renamed copies. Re-run to a fixpoint. Returns the region copies made."""
+    made = 0
+    renames = [0]                                  # global rename counter for clones
+    for _ in range(_max_rounds):
+        groups = [prog.main] + prog.subroutines
+        bid2blk = {b.id: b for g in groups for b in g.body}
+
+        def succ(bid):
+            return [t for t in _succ_ids(bid2blk[bid].terminator) if t in bid2blk]
+
+        reach: dict = {}
+        for g in groups:
+            seen, stack = set(), ([g.body[0].id] if g.body else [])
+            while stack:
+                x = stack.pop()
+                if x in seen:
+                    continue
+                seen.add(x)
+                stack += succ(x)
+            reach[g.id] = seen
+        owner: dict = {}                          # block id -> first sub whose BODY holds it
+        for g in groups:                          # (physical membership, NOT mere reach, so
+            for b in g.body:                      #  the kept original always physically exists)
+                owner.setdefault(b.id, g.id)
+
+        next_bid = max(bid2blk) + 1
+        changed = False
+        for g in groups:
+            # main as a CONSUMER (it `b`s into a subroutine's body) is a different,
+            # rarer pattern: the shared region ends in `retsub`, which is invalid in
+            # main (it exits via ProgramExit, and a void retsub has no exit value to
+            # synthesize). Don't clone into main -- leave it a clean lift-failure
+            # rather than emit an invalid main. (main as an OWNER is fine: subs that
+            # share main's blocks still clone them privately.)
+            if g is prog.main:
+                continue
+            foreign = sorted(bid for bid in reach[g.id] if owner[bid] != g.id)
+            if not foreign:
+                continue
+            changed = True
+            region_blocks = [bid2blk[f] for f in foreign]
+            defined = _region_defined(region_blocks)
+            memo: dict = {}                       # share registers defined OUTSIDE the region
+            for b in region_blocks:
+                for r in _block_registers(b):
+                    if id(r) not in defined:
+                        memo[id(r)] = r           # external reg -> itself (not copied)
+            clones = _copy.deepcopy(region_blocks, memo)
+            # original region-defined reg -> its fresh clone; rename each uniquely
+            # (the owner's names may already be used by S -> SSA "assigned multiple
+            # times"). Object identity carries the rename through the clone.
+            regmap = {rid: memo[rid] for rid in defined if rid in memo}
+            for r in regmap.values():
+                renames[0] += 1
+                r.name = f"{r.name}~d{renames[0]}"
+            idmap = {old: next_bid + i for i, old in enumerate(foreign)}
+            next_bid += len(foreign)
+            for nb, old in zip(clones, foreign):
+                nb.id = idmap[old]
+                _remap_succ_ids(nb.terminator, idmap)
+                for ph in nb.phis:
+                    for a in ph.args:
+                        a.through = idmap.get(a.through, a.through)
+            owned = [b for b in g.body if b.id not in idmap]   # drop shared originals
+            g.body = owned + clones
+
+            def _rm(v):
+                return regmap.get(id(v), v) if isinstance(v, pre_ir.Register) else v
+
+            for b in owned:                       # redirect edges + remap foreign reg uses
+                _remap_succ_ids(b.terminator, idmap)
+                for node in (*b.phis, *b.ops, b.terminator):
+                    pre_ir.map_operands(node, _rm)
+            made += 1
+        if not changed:
+            break
+        _fix_phi_predecessors([prog.main] + prog.subroutines)
+    return made

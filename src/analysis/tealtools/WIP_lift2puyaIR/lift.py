@@ -372,6 +372,11 @@ class _Lifter:
         # clashing callsites (runs after finalize so caller result types settled).
         transforms.specialize_polymorphic_returns(prog_ir)
         transforms.materialize_phi_consts(prog_ir)
+        # A block reached from more than one subroutine (a shared `retsub` / tail
+        # `b`-ed into from several subs) breaks Puya's per-sub block ownership;
+        # clone the shared region into each consuming sub so every block's
+        # predecessors live in its own subroutine.
+        transforms.duplicate_cross_subroutine_blocks(prog_ir)
         return prog_ir
 
     def _sub_io(self, entry_bb):

@@ -474,3 +474,37 @@ def test_specialize_polymorphic_return_clone():
     ret = clone.body[0].terminator.result[0]
     assert ret.ir_type == "bytes" and ret is not rv, "clone return reg retyped + fresh"
     assert acc.returns == ["uint64"] and rv.ir_type == "uint64", "original untouched"
+
+
+def test_duplicate_cross_subroutine_shared_tail():
+    """A block reached from two subroutines (a shared `retsub` tail one sub owns
+    and another `b`-es into) is privatized: the consuming sub gets its own clone
+    with a fresh block id, the cross-subroutine edge is gone, and the owner keeps
+    the original. (Real case: app_2200207295 -- a shared retsub branched into from
+    sibling subroutines -> Puya "predecessor block(s) outside of list".)"""
+    from tealtools.WIP_lift2puyaIR import transforms
+    from tealtools.WIP_lift2puyaIR.transforms import _succ_ids
+
+    B = pre_ir.BasicBlock
+    shared = B(id=50, phis=[], ops=[], terminator=pre_ir.SubroutineReturn(result=[]))
+    subA = pre_ir.Subroutine(
+        id="A", parameters=[], returns=[],
+        body=[B(id=40, phis=[], ops=[], terminator=pre_ir.Goto(50)), shared])
+    b0 = B(id=60, phis=[], ops=[], terminator=pre_ir.Goto(50))   # cross-edge into A
+    subB = pre_ir.Subroutine(id="B", parameters=[], returns=[], body=[b0])
+    main = pre_ir.Subroutine(
+        id="main", parameters=[], returns=[], is_main=True,
+        body=[B(id=1, phis=[], ops=[],
+                terminator=pre_ir.ProgramExit(pre_ir.UInt64Constant(1)))])
+    prog = pre_ir.Program(main=main, subroutines=[subA, subB])
+
+    made = transforms.duplicate_cross_subroutine_blocks(prog)
+    assert made >= 1
+    sub_of = {b.id: s.id for s in [prog.main, *prog.subroutines] for b in s.body}
+    for s in [prog.main, *prog.subroutines]:           # no cross-subroutine edges remain
+        for b in s.body:
+            for t in _succ_ids(b.terminator):
+                assert sub_of.get(t) == s.id, f"{s.id} blk{b.id} -> blk{t}({sub_of.get(t)})"
+    assert any(b.id == 50 for b in subA.body), "owner keeps the original block"
+    assert b0.terminator.target != 50, "consumer edge redirected to its private clone"
+    assert sub_of[b0.terminator.target] == "B"
