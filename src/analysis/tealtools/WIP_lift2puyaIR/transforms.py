@@ -37,6 +37,64 @@ def _succ_ids(t) -> list:
     return []
 
 
+def _phi_only_scratch_stores(blocks, ph):
+    """If every use of phi-register `ph.register` is a scratch ``store N`` op,
+    return the list of `(block, op_index, slot, intrinsic)` stores; otherwise
+    `None` (some copy / op / terminator / phi use makes sinking unsafe -- the value
+    must keep flowing through the phi)."""
+    stores = []                            # (block, op_index, slot, intrinsic)
+    for bb in blocks:
+        for i, o in enumerate(bb.ops):
+            s = _intr(o)
+            if (isinstance(s, pre_ir.Intrinsic) and s.op == "store"
+                    and s.args and s.args[0] is ph.register):
+                stores.append((bb, i, str(s.immediates[0]), s))
+            elif s is not None and any(a is ph.register for a in s.args):
+                return None
+            elif isinstance(o, pre_ir.Assignment) and o.source is ph.register:
+                return None
+        for ph2 in bb.phis:
+            if any(a.value is ph.register for a in ph2.args):
+                return None
+        for v in pre_ir.operands(bb.terminator):
+            if v is ph.register:
+                return None
+    return stores or None
+
+
+def _stores_sinkable(stores, B, by_id, preds, chain_to, slot_touched) -> bool:
+    """The sink guards: every predecessor of merge block `B` branches ONLY to it
+    (no critical edge), and each store is reachable from `B` by a unique
+    single-predecessor chain with no intervening touch of its slot."""
+    if not all(set(_succ_ids(by_id[p].terminator)) == {B.id}
+               for p in preds.get(B.id, [])):
+        return False                      # a predecessor has a critical edge
+    for (sb, idx, slot, s) in stores:
+        ch = chain_to(sb.id, B.id)
+        if ch is None or slot_touched(ch, sb, idx, slot):
+            return False
+    return True
+
+
+def _apply_phi_sink(stores, B, ph, by_id, preds) -> bool:
+    """Per predecessor of merge block `B`, append a ``store slot <edge-value>`` for
+    each sunk store; then remove the original stores and drop the phi. Returns True
+    on success, or False if a predecessor edge has no phi arg (leaving any
+    already-appended stores in place, matching the pre-extraction bail path)."""
+    arg_of = {a.through: a.value for a in ph.args}
+    for p in preds.get(B.id, []):
+        vi = arg_of.get(p)
+        if vi is None:
+            return False
+        for (sb, idx, slot, s) in stores:
+            by_id[p].ops.append(pre_ir.IntrinsicOp(
+                pre_ir.Intrinsic("store", [slot], [vi])))
+    for (sb, idx, slot, s) in stores:
+        sb.ops = [o for o in sb.ops if _intr(o) is not s]
+    B.phis = [x for x in B.phis if x is not ph]
+    return True
+
+
 def sink_mixed_phi_scratch_stores(subs) -> int:
     """Eliminate a mixed-AVM-type phi (the reused-slot artifact: a slot the source
     register-allocator packed two disjoint-live variables into, merged at a CFG
@@ -101,56 +159,13 @@ def sink_mixed_phi_scratch_stores(subs) -> int:
                    if isinstance(a.value, pre_ir.Register)} - {"?"}
             if len(tys) < 2:
                 continue                      # not mixed-AVM
-            # collect p's stores; bail on any non-store use
-            stores = []                        # (block, op_index, slot, intrinsic)
-            other = False
-            for bb in blocks:
-                for i, o in enumerate(bb.ops):
-                    s = _intr(o)
-                    if (isinstance(s, pre_ir.Intrinsic) and s.op == "store"
-                            and s.args and s.args[0] is ph.register):
-                        stores.append((bb, i, str(s.immediates[0]), s))
-                    elif s is not None and any(a is ph.register for a in s.args):
-                        other = True
-                    elif isinstance(o, pre_ir.Assignment) and o.source is ph.register:
-                        other = True
-                for ph2 in bb.phis:
-                    if any(a.value is ph.register for a in ph2.args):
-                        other = True
-                for v in pre_ir.operands(bb.terminator):
-                    if v is ph.register:
-                        other = True
-            if other or not stores:
+            stores = _phi_only_scratch_stores(blocks, ph)
+            if stores is None:
                 continue
-            if not all(set(_succ_ids(by_id[p].terminator)) == {B.id}
-                       for p in preds.get(B.id, [])):
-                continue                      # a predecessor has a critical edge
-            chains = []
-            ok = True
-            for (sb, idx, slot, s) in stores:
-                ch = chain_to(sb.id, B.id)
-                if ch is None or slot_touched(ch, sb, idx, slot):
-                    ok = False
-                    break
-                chains.append(ch)
-            if not ok:
+            if not _stores_sinkable(stores, B, by_id, preds, chain_to, slot_touched):
                 continue
-            # SINK: per predecessor, store that edge's value to each slot.
-            arg_of = {a.through: a.value for a in ph.args}
-            for p in preds.get(B.id, []):
-                vi = arg_of.get(p)
-                if vi is None:
-                    ok = False
-                    break
-                for (sb, idx, slot, s) in stores:
-                    by_id[p].ops.append(pre_ir.IntrinsicOp(
-                        pre_ir.Intrinsic("store", [slot], [vi])))
-            if not ok:
-                continue
-            for (sb, idx, slot, s) in stores:
-                sb.ops = [o for o in sb.ops if _intr(o) is not s]
-            B.phis = [x for x in B.phis if x is not ph]
-            n += 1
+            if _apply_phi_sink(stores, B, ph, by_id, preds):
+                n += 1
     return n
 
 

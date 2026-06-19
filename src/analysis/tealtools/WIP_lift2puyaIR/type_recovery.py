@@ -264,6 +264,114 @@ def _unify_phi_types(subs) -> None:
                             changed = True
 
 
+def _reg_args(x):
+    """Every Register reachable through an operand's `args` / `values`."""
+    out = []
+    if isinstance(x, pre_ir.Register):
+        out.append(x)
+    for a in (getattr(x, "args", None) or []) + (getattr(x, "values", None) or []):
+        out += _reg_args(a)
+    return out
+
+
+def _collect_phi_evidence(blocks, find, phi_ids, parent):
+    """Aggregate per-web type evidence in priority tiers. A phi-web's type is
+    decided by, in order: how its values are *consumed* (strongest -- the seed of
+    a wrong type is dead and can't be consumed as that type anyway), then a
+    non-placeholder constant arg, then a non-phi member's own def type. Returns
+    `(consumer, constev, defev)`, each `web-root -> {"u"|"b"}`."""
+    from collections import defaultdict
+    consumer: dict = defaultdict(set)
+    constev: dict = defaultdict(set)
+    defev: dict = defaultdict(set)
+    for bb in blocks:
+        for ph in bb.phis:
+            root = find(id(ph.register))
+            for a in ph.args:            # non-placeholder consts are real data
+                v = a.value              # (empty bytes / uint64 0 are dead seeds)
+                if isinstance(v, pre_ir.UInt64Constant) and v.value != 0:
+                    constev[root].add("u")
+                elif isinstance(v, pre_ir.BytesConstant) and not _empty_bytes(v):
+                    constev[root].add("b")
+        for o in bb.ops:
+            if isinstance(o, pre_ir.Assignment) and not isinstance(o.source, pre_ir.Phi):
+                for t in o.targets:
+                    if id(t) in parent and id(t) not in phi_ids and avm(t.ir_type) != "?":
+                        defev[find(id(t))].add(avm(t.ir_type))
+            # Consumer evidence counts only *phi* registers (the accumulator
+            # values): a seed register's own uses elsewhere (e.g. NumAppArgs in
+            # routing) say nothing about the accumulator phi it merely seeds.
+            src = getattr(o, "source", None) or getattr(o, "intrinsic", None)
+            if isinstance(src, pre_ir.Intrinsic):
+                k = ("u" if src.op in _U64_CONSUME
+                     else "b" if src.op in _BYTES_CONSUME else None)
+                if k is None and src.op == "itxn_field" and src.immediates:
+                    k = _itxn_field_avm(str(src.immediates[0]).strip())
+                if k:
+                    for r in _reg_args(src):
+                        if id(r) in phi_ids:
+                            consumer[find(id(r))].add(k)
+            if isinstance(o, pre_ir.Assert):
+                for r in _reg_args(o.condition):
+                    if id(r) in phi_ids:
+                        consumer[find(id(r))].add("u")
+    return consumer, constev, defev
+
+
+def _decide_webtypes(phi_ids, find, consumer, constev, defev) -> dict:
+    """Pick each web's type (`'bytes'`/`'uint64'`) from the first tier with a
+    unanimous vote; a web with no real evidence at any tier is a dead-placeholder
+    web -> collapse to uint64."""
+    webtype: dict = {}                   # web root -> 'bytes' / 'uint64'
+    for root in {find(rid) for rid in phi_ids}:
+        for tier in (consumer, constev, defev):
+            ev = tier.get(root, set())
+            if len(ev) == 1:             # unanimous at this tier decides it
+                webtype[root] = "bytes" if "b" in ev else "uint64"
+                break
+        else:
+            # No real evidence at ANY tier -> a DEAD-placeholder web: every const
+            # arg is a zero / empty `""` coarse-SSA seed (real consts/defs are what
+            # the tiers count, and all were excluded) and no op consumes it as a
+            # type. Such a web merges differently-typed dead seeds (e.g. uint64 0
+            # with empty bytes) and Puya rejects the cross-type phi -- but the value
+            # is never used, so collapse it to one family. uint64 = the lowering
+            # default; the bytes seeds then coerce to uint64 0 below. (A web with
+            # any REAL evidence is left for the encoder to flag as a true conflict.)
+            if not (consumer.get(root) or constev.get(root) or defev.get(root)):
+                webtype[root] = "uint64"
+    return webtype
+
+
+def _apply_webtypes(blocks, find, phi_ids, webtype) -> None:
+    """Retype every phi-register web member to its decided type and coerce
+    wrong-AVM-type args (const -> the other family's const; a cross-type non-phi
+    seed register -> a dead placeholder)."""
+    def placeholder(T):
+        return _itob_const(0) if T == "bytes" else pre_ir.UInt64Constant(0)
+
+    for bb in blocks:                    # retype every phi-register member
+        for ph in bb.phis:
+            T = webtype.get(find(id(ph.register)))
+            if T:
+                ph.register.ir_type = T
+    for bb in blocks:                    # coerce args of the wrong AVM type
+        for ph in bb.phis:
+            T = webtype.get(find(id(ph.register)))
+            if not T:
+                continue
+            want = "b" if T == "bytes" else "u"
+            for a in ph.args:
+                v = a.value
+                if isinstance(v, pre_ir.UInt64Constant) and T == "bytes":
+                    a.value = _itob_const(v.value)
+                elif isinstance(v, pre_ir.BytesConstant) and T == "uint64":
+                    a.value = _to_u64_const(v)
+                elif (isinstance(v, pre_ir.Register) and id(v) not in phi_ids
+                      and avm(v.ir_type) not in ("?", want)):
+                    a.value = placeholder(T)   # cross-type non-phi seed -> dead placeholder
+
+
 def _reconcile_mixed_phis(prog) -> None:
     """Re-type a phi-web left holding a wrong-AVM-type constant: a `bytes`
     accumulator slot is seeded with the cheaper `intc_0 0` (uint64 slots with
@@ -298,97 +406,9 @@ def _reconcile_mixed_phis(prog) -> None:
                 if isinstance(a.value, pre_ir.Register):
                     parent[find(note(ph.register))] = find(note(a.value))
 
-    def reg_args(x):
-        out = []
-        if isinstance(x, pre_ir.Register):
-            out.append(x)
-        for a in (getattr(x, "args", None) or []) + (getattr(x, "values", None) or []):
-            out += reg_args(a)
-        return out
-
-    # Evidence in priority tiers, aggregated per web root. A phi-web's type is
-    # decided by, in order: how its values are *consumed* (strongest -- the seed
-    # of a wrong type is dead and can't be consumed as that type anyway), then a
-    # non-placeholder constant arg, then a non-phi member's own def type.
-    from collections import defaultdict
-    consumer: dict = defaultdict(set)
-    constev: dict = defaultdict(set)
-    defev: dict = defaultdict(set)
-
-    for bb in blocks:
-        for ph in bb.phis:
-            root = find(id(ph.register))
-            for a in ph.args:            # non-placeholder consts are real data
-                v = a.value              # (empty bytes / uint64 0 are dead seeds)
-                if isinstance(v, pre_ir.UInt64Constant) and v.value != 0:
-                    constev[root].add("u")
-                elif isinstance(v, pre_ir.BytesConstant) and not _empty_bytes(v):
-                    constev[root].add("b")
-        for o in bb.ops:
-            if isinstance(o, pre_ir.Assignment) and not isinstance(o.source, pre_ir.Phi):
-                for t in o.targets:
-                    if id(t) in parent and id(t) not in phi_ids and avm(t.ir_type) != "?":
-                        defev[find(id(t))].add(avm(t.ir_type))
-            # Consumer evidence counts only *phi* registers (the accumulator
-            # values): a seed register's own uses elsewhere (e.g. NumAppArgs in
-            # routing) say nothing about the accumulator phi it merely seeds.
-            src = getattr(o, "source", None) or getattr(o, "intrinsic", None)
-            if isinstance(src, pre_ir.Intrinsic):
-                k = ("u" if src.op in _U64_CONSUME
-                     else "b" if src.op in _BYTES_CONSUME else None)
-                if k is None and src.op == "itxn_field" and src.immediates:
-                    k = _itxn_field_avm(str(src.immediates[0]).strip())
-                if k:
-                    for r in reg_args(src):
-                        if id(r) in phi_ids:
-                            consumer[find(id(r))].add(k)
-            if isinstance(o, pre_ir.Assert):
-                for r in reg_args(o.condition):
-                    if id(r) in phi_ids:
-                        consumer[find(id(r))].add("u")
-
-    webtype: dict = {}                   # web root -> 'bytes' / 'uint64'
-    for root in {find(rid) for rid in phi_ids}:
-        for tier in (consumer, constev, defev):
-            ev = tier.get(root, set())
-            if len(ev) == 1:             # unanimous at this tier decides it
-                webtype[root] = "bytes" if "b" in ev else "uint64"
-                break
-        else:
-            # No real evidence at ANY tier -> a DEAD-placeholder web: every const
-            # arg is a zero / empty `""` coarse-SSA seed (real consts/defs are what
-            # the tiers count, and all were excluded) and no op consumes it as a
-            # type. Such a web merges differently-typed dead seeds (e.g. uint64 0
-            # with empty bytes) and Puya rejects the cross-type phi -- but the value
-            # is never used, so collapse it to one family. uint64 = the lowering
-            # default; the bytes seeds then coerce to uint64 0 below. (A web with
-            # any REAL evidence is left for the encoder to flag as a true conflict.)
-            if not (consumer.get(root) or constev.get(root) or defev.get(root)):
-                webtype[root] = "uint64"
-
-    def placeholder(T):
-        return _itob_const(0) if T == "bytes" else pre_ir.UInt64Constant(0)
-
-    for bb in blocks:                    # retype every phi-register member
-        for ph in bb.phis:
-            T = webtype.get(find(id(ph.register)))
-            if T:
-                ph.register.ir_type = T
-    for bb in blocks:                    # coerce args of the wrong AVM type
-        for ph in bb.phis:
-            T = webtype.get(find(id(ph.register)))
-            if not T:
-                continue
-            want = "b" if T == "bytes" else "u"
-            for a in ph.args:
-                v = a.value
-                if isinstance(v, pre_ir.UInt64Constant) and T == "bytes":
-                    a.value = _itob_const(v.value)
-                elif isinstance(v, pre_ir.BytesConstant) and T == "uint64":
-                    a.value = _to_u64_const(v)
-                elif (isinstance(v, pre_ir.Register) and id(v) not in phi_ids
-                      and avm(v.ir_type) not in ("?", want)):
-                    a.value = placeholder(T)   # cross-type non-phi seed -> dead placeholder
+    consumer, constev, defev = _collect_phi_evidence(blocks, find, phi_ids, parent)
+    webtype = _decide_webtypes(phi_ids, find, consumer, constev, defev)
+    _apply_webtypes(blocks, find, phi_ids, webtype)
 
 
 def _unify_comparison_operands(prog) -> None:
