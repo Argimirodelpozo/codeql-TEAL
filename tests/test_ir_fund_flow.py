@@ -118,6 +118,64 @@ def test_branch_guard_same_input_slot(tmp_path):
     assert any(g.checks_input and g.kind == "branch" for g in rec[0].guards)
 
 
+# The value is checked in the CALLER, then passed into the callee that does the
+# itxn -- intra-procedural dominance can't see the guard; interprocedural must.
+_CALLER_GUARDED = """#pragma version 10
+    txn ApplicationArgs 0
+    btoi
+    dup
+    int 100
+    <=
+    assert
+    callsub pay
+    int 1
+    return
+pay:
+    proto 1 0
+    itxn_begin
+    frame_dig -1
+    itxn_field Amount
+    itxn_submit
+    retsub
+"""
+
+# Same shape but the caller does NOT check the value: genuinely unguarded, and the
+# detector must say so (not hide behind "param-derived").
+_CALLER_UNGUARDED = """#pragma version 10
+    txn ApplicationArgs 0
+    btoi
+    callsub pay
+    int 1
+    return
+pay:
+    proto 1 0
+    itxn_begin
+    frame_dig -1
+    itxn_field Amount
+    itxn_submit
+    retsub
+"""
+
+
+def test_interprocedural_caller_guard_resolves_param(tmp_path):
+    flows = _flows(_CALLER_GUARDED, tmp_path)
+    amt = [f for f in flows if f.field == "Amount"]
+    assert len(amt) == 1
+    f = amt[0]
+    assert f.guarded, "the caller's amount<=100 check must count"
+    assert not f.param_derived, "interprocedural guard resolves the param"
+    assert any(g.kind == "caller" and g.checks_input for g in f.guards)
+
+
+def test_interprocedural_unguarded_is_not_param_derived(tmp_path):
+    flows = _flows(_CALLER_UNGUARDED, tmp_path)
+    amt = [f for f in flows if f.field == "Amount"]
+    assert len(amt) == 1
+    f = amt[0]
+    assert not f.guarded, "no caller check exists"
+    assert not f.param_derived, "the sub IS called, so we resolved it: genuinely unguarded"
+
+
 def test_no_false_flag_on_untainted_constant(tmp_path):
     # A constant Receiver (not user input) must NOT be flagged at all.
     teal = ("#pragma version 10\n"

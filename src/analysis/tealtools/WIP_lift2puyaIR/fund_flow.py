@@ -16,18 +16,21 @@ checks the input or who's calling) stands out from one already gated by a check;
 the guard list is reported either way so a human triages, à la the SSA-layer
 ``auth_domination`` detector.
 
-Built on :func:`taint.user_input_taint` (precise interprocedural IR taint) plus an
-intra-subroutine dominator computation over the lifted IR CFG. Caveat: dominance is
-intra-procedural, so when the sink value derives from a subroutine PARAMETER the
-guard may live in a caller -- such findings are flagged ``param-derived`` rather
-than asserted unguarded.
+Built on :func:`taint.user_input_taint` (precise interprocedural IR taint) plus a
+dominator computation over the lifted IR CFG. Guards are recognised both
+intra-procedurally AND across call boundaries: a value passed into a parameter that
+the caller already checked counts as guarded (:func:`_entry_guards`, a monotone
+fixpoint that ANDs the guard over every tainted-passing call site, with
+transitivity through the caller's own params). ``param-derived`` now means only the
+residual UNRESOLVED case -- a param feeds the sink, nothing guards it, and the sub
+has no call sites to inspect (e.g. dead / externally-entered).
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 
 from . import pre_ir
-from .taint import _intr, source_label, user_input_taint
+from .taint import _intr, _invoke, source_label, user_input_taint
 
 # Inner-txn fields where attacker control = fund redirection / theft, by severity.
 _FUND_FIELDS = {
@@ -252,17 +255,83 @@ class FundFlowFinding:
         }
 
 
+def _entry_guards(lifter, def_of, dom_by_sub, taint):
+    """Interprocedural guard summary ``{sub.id: {param_idx: (checks_input,
+    checks_sender)}}`` plus the set of subs that are called somewhere.
+
+    Param ``i`` of sub ``S`` is entry-guarded iff at EVERY call site that passes a
+    TAINTED value for arg ``i`` the caller dominates that call with a guard testing
+    that value (input) or the sender. Transitive: if the caller's arg is itself one
+    of the caller's params, it inherits that param's entry guard. Monotone fixpoint
+    (guards only grow), AND-across-sites (sound: must hold on every path in). An
+    untainted-passing site can't expose the sink, so it doesn't constrain the
+    summary."""
+    subs = {s.id: s for s in lifter.subs}
+    # Precompute each call-site arg's STATIC facts once (only the transitive part
+    # changes across iterations): (caller_id, tainted, intra_input, intra_sender,
+    # [caller param indices the arg flows from]).
+    recs: dict = {sid: [] for sid in subs}
+    for s in lifter.subs:
+        dom, by_id = dom_by_sub[s.id], {b.id: b for b in s.body}
+        cpidx = {id(p.register): i for i, p in enumerate(s.parameters)}
+        for b in s.body:
+            for idx, o in enumerate(b.ops):
+                inv = _invoke(o)
+                if inv is None or inv.target not in subs:
+                    continue
+                facts = []
+                for arg in inv.args:
+                    walked = list(_walk(arg, def_of))
+                    aregs = {id(r) for r, _ in walked}
+                    akeys = {k for _, oo in walked
+                             if (k := _input_key(_intr(oo) if oo is not None else None)) is not None}
+                    guards = _dominating_guards(by_id, dom, b.id, idx, def_of, aregs, akeys)
+                    facts.append((s.id, any(r in taint for r in aregs),
+                                  any(g.checks_input for g in guards),
+                                  any(g.checks_sender for g in guards),
+                                  [cpidx[r] for r in aregs if r in cpidx]))
+                recs[inv.target].append(facts)
+    eg = {sid: {i: (False, False) for i in range(len(subs[sid].parameters))} for sid in subs}
+    called = {tid for tid, sites in recs.items() if sites}
+    changed = True
+    while changed:
+        changed = False
+        for tid, sites in recs.items():
+            for i in range(len(subs[tid].parameters)):
+                all_ci = all_cs = True
+                seen = False
+                for facts in sites:
+                    if i >= len(facts):
+                        all_ci = all_cs = False
+                        break
+                    cid, tainted, ci0, cs0, ks = facts[i]
+                    if not tainted:
+                        continue                  # safe site: doesn't constrain
+                    seen = True
+                    all_ci &= ci0 or any(eg[cid][k][0] for k in ks)
+                    all_cs &= cs0 or any(eg[cid][k][1] for k in ks)
+                new = (seen and all_ci, seen and all_cs)
+                if new != eg[tid][i]:
+                    eg[tid][i] = new
+                    changed = True
+    return eg, called
+
+
 def tainted_fund_flows(lifter, taint=None) -> list:
     """Findings for every user-input-tainted value reaching a fund-flow itxn field,
-    sorted UNGUARDED-first then by severity."""
+    sorted UNGUARDED-first then by severity. Guards are recognised both
+    intra-procedurally and across call boundaries (caller-side checks on a value
+    passed into a parameter)."""
     if taint is None:
         taint = user_input_taint(lifter)
     def_of = _def_map(lifter)
+    dom_by_sub = {s.id: _dominators(s) for s in lifter.subs}
+    entry_guards, called = _entry_guards(lifter, def_of, dom_by_sub, taint)
     findings: list = []
     for sub in lifter.subs:
-        dom = _dominators(sub)
+        dom = dom_by_sub[sub.id]
         by_id = {b.id: b for b in sub.body}
-        param_ids = {id(p.register) for p in sub.parameters}
+        pidx = {id(p.register): i for i, p in enumerate(sub.parameters)}
         for b in sub.body:
             for idx, o in enumerate(b.ops):
                 s = _intr(o)
@@ -289,7 +358,18 @@ def tainted_fund_flows(lifter, taint=None) -> list:
                 else:
                     sink_regs, sink_keys = set(), set()
                 guards = _dominating_guards(by_id, dom, b.id, idx, def_of, sink_regs, sink_keys)
-                param_derived = bool(param_ids and sink_regs & param_ids)
+                # Interprocedural: the tainted value may flow from a parameter that
+                # the caller(s) already checked -- fold that in as a "caller" guard.
+                feeding = {pidx[r] for r in sink_regs if r in pidx}
+                egp = entry_guards.get(sub.id, {})
+                if any(egp.get(i, (False, False))[0] for i in feeding):
+                    guards.append(Guard("caller", None, True, False))
+                if any(egp.get(i, (False, False))[1] for i in feeding):
+                    guards.append(Guard("caller", None, False, True))
+                guarded = any(g.checks_input or g.checks_sender for g in guards)
+                # param-derived now means UNRESOLVED: a param feeds it, nothing
+                # guards it, and the sub has no call sites we could inspect.
+                param_derived = bool(feeding) and not guarded and sub.id not in called
                 findings.append(FundFlowFinding(
                     field, _FUND_FIELDS[field], frozenset(sources),
                     sub.id, s.line, guards, param_derived))
