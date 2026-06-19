@@ -1,0 +1,144 @@
+"""IR-layer attacker-controlled fund-flow detector (``WIP_lift2puyaIR.fund_flow``).
+
+Flags user-input-tainted values reaching fund-flow inner-txn fields and gates each
+on the dominating guards (asserts / forced branches) that check the SAME value (by
+shared register or same input slot) or the transaction Sender.
+"""
+from pathlib import Path
+
+import pytest
+
+from tealtools.ssa import SSAProgram
+from tealtools.WIP_lift2puyaIR.lift import _Lifter
+from tealtools.WIP_lift2puyaIR.fund_flow import tainted_fund_flows
+
+TESTS_DIR = Path(__file__).resolve().parent
+
+
+def _flows(teal: str, tmp_path: Path):
+    p = tmp_path / "prog.teal"
+    p.write_text(teal)
+    lifter = _Lifter(SSAProgram(str(p), verbose=False))
+    lifter.build()
+    return tainted_fund_flows(lifter)
+
+
+_UNGUARDED = """#pragma version 10
+    itxn_begin
+    txn ApplicationArgs 0
+    itxn_field Receiver
+    int 1000
+    itxn_field Amount
+    itxn_submit
+    int 1
+    return
+"""
+
+_SENDER = """#pragma version 10
+    txn Sender
+    global CreatorAddress
+    ==
+    assert
+    itxn_begin
+    txn ApplicationArgs 0
+    btoi
+    itxn_field Amount
+    itxn_submit
+    int 1
+    return
+"""
+
+_INPUTCHECK = """#pragma version 10
+    txn ApplicationArgs 0
+    btoi
+    dup
+    int 100
+    <=
+    assert
+    itxn_begin
+    itxn_field Amount
+    itxn_submit
+    int 1
+    return
+"""
+
+# The attacker value is read twice -- once for the `> 5` check, once for Receiver.
+# Slot-level matching must still recognize the guard.
+_BRANCH = """#pragma version 10
+    txn ApplicationArgs 0
+    btoi
+    int 5
+    >
+    bz reject
+    itxn_begin
+    txn ApplicationArgs 0
+    itxn_field Receiver
+    itxn_submit
+    int 1
+    return
+reject:
+    int 0
+    return
+"""
+
+
+def test_unguarded_fund_flow(tmp_path):
+    flows = _flows(_UNGUARDED, tmp_path)
+    rec = [f for f in flows if f.field == "Receiver"]
+    assert len(rec) == 1
+    f = rec[0]
+    assert f.severity == "HIGH"
+    assert "ApplicationArgs" in f.sources
+    assert not f.guarded and not f.param_derived, "must be flagged UNGUARDED"
+
+
+def test_sender_guarded(tmp_path):
+    flows = _flows(_SENDER, tmp_path)
+    amt = [f for f in flows if f.field == "Amount"]
+    assert len(amt) == 1
+    assert amt[0].guarded
+    assert any(g.checks_sender for g in amt[0].guards), "the txn Sender check guards it"
+
+
+def test_input_value_guarded(tmp_path):
+    flows = _flows(_INPUTCHECK, tmp_path)
+    amt = [f for f in flows if f.field == "Amount"]
+    assert len(amt) == 1
+    assert amt[0].guarded
+    assert any(g.checks_input for g in amt[0].guards), "the amount<=100 assert guards it"
+
+
+def test_branch_guard_same_input_slot(tmp_path):
+    # The check and the use each read ApplicationArgs[0] separately (distinct
+    # registers); slot-level matching must still recognize the branch guard.
+    flows = _flows(_BRANCH, tmp_path)
+    rec = [f for f in flows if f.field == "Receiver"]
+    assert len(rec) == 1
+    assert rec[0].guarded, "the bz on arg0>5 forces the path; same slot used"
+    assert any(g.checks_input and g.kind == "branch" for g in rec[0].guards)
+
+
+def test_no_false_flag_on_untainted_constant(tmp_path):
+    # A constant Receiver (not user input) must NOT be flagged at all.
+    teal = ("#pragma version 10\n"
+            "    itxn_begin\n"
+            "    global CurrentApplicationAddress\n"
+            "    itxn_field Receiver\n"
+            "    int 1\n    itxn_field Amount\n    itxn_submit\n"
+            "    int 1\n    return\n")
+    assert _flows(teal, tmp_path) == []
+
+
+def test_robust_on_real_probes():
+    """The detector runs without error across a sample of real mainnet probes."""
+    probes = sorted((TESTS_DIR / "mainnet-random-probes").glob("app_*.teal"))[:12]
+    if not probes:
+        pytest.skip("no probe corpus present")
+    for p in probes:
+        lifter = _Lifter(SSAProgram(str(p), verbose=False))
+        lifter.build()
+        flows = tainted_fund_flows(lifter)
+        for f in flows:                       # well-formed findings
+            assert f.field
+            assert f.severity in ("CRITICAL", "HIGH", "MEDIUM")
+            assert isinstance(f.to_dict(), dict)
