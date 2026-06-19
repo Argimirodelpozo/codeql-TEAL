@@ -55,22 +55,22 @@ class CrossSecGuideFinding:
 
     def render(
         self,
-        callee_db: Optional[Path] = None,
+        callee_source: Optional[Path] = None,
         *,
         relative_to: Optional[Path] = None,
     ) -> str:
-        if callee_db is None:
-            db_str = ""
+        if callee_source is None:
+            src_str = ""
         else:
-            db = callee_db
+            src = callee_source
             if relative_to is not None:
                 try:
-                    db = db.relative_to(relative_to)
+                    src = src.relative_to(relative_to)
                 except ValueError:
                     pass
-            db_str = f"{db}  "
+            src_str = f"{src}  "
         return (
-            f"app{self.app_id}  {self.detector_name}  {db_str}"
+            f"app{self.app_id}  {self.detector_name}  {src_str}"
             f"{self.violation.pretty()}"  # type: ignore[attr-defined]
         )
 
@@ -143,7 +143,7 @@ def render_findings(
         by_app.setdefault(f.app_id, []).append(f)
     lines: list[str] = []
     for app_id in sorted(by_app):
-        callee_db = graph.callee_dbs.get(app_id)
+        callee_source = graph.callee_sources.get(app_id)
         for f in by_app[app_id]:
-            lines.append(f.render(callee_db, relative_to=relative_to))
+            lines.append(f.render(callee_source, relative_to=relative_to))
     return "\n".join(lines)

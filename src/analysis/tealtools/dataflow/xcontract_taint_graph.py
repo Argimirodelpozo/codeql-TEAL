@@ -68,7 +68,7 @@ class XContractTaintGraph:
         registry: dict[int, str] | str | Path,
     ) -> "XContractTaintGraph":
         """Build the unified graph. ``registry`` may be a pre-loaded
-        ``{app_id: db_path}`` dict, or a yaml path that
+        ``{app_id: teal_path}`` dict, or a yaml path that
         :func:`tealtools.xcontract.load_registry` accepts."""
         if not isinstance(registry, dict):
             registry = load_registry(registry)
@@ -78,7 +78,7 @@ class XContractTaintGraph:
         for site in sites:
             if site.app_id in callees:
                 continue
-            callee_prog = SSAProgram(str(site.callee_db))
+            callee_prog = SSAProgram(str(site.callee_source))
             callees[site.app_id] = TaintGraph.of(callee_prog)
         big = cls._merge(caller_tg, callees, sites)
         return cls(g=big, caller=caller_tg, callees=callees, sites=sites)

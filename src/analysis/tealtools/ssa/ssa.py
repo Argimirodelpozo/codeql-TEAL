@@ -39,7 +39,7 @@ is collapsed; chain structure is preserved on the args graph (which
 can be cyclic at constant-stack CFG loops; traversal must use
 ``seen`` sets).
 
-CLI: ``python -m tealtools.ssa <codeql-db>`` (renders the PySSA build).
+CLI: ``python -m tealtools.ssa <teal-source>`` (renders the PySSA build).
 """
 from __future__ import annotations
 
@@ -1203,7 +1203,7 @@ def _apply_pyssa_to(
     src_vars_snapshot = dict(getattr(src, "vars", {}))
     src_labels_snapshot = list(getattr(src, "labels", []))
     src_graph_snapshot = getattr(src, "_graph", None)
-    src_db_path_snapshot = getattr(src, "db_path", None)
+    src_source_path_snapshot = getattr(src, "source_path", None)
 
     prog.vars = {}
     prog.phis = {}
@@ -1212,7 +1212,7 @@ def _apply_pyssa_to(
     prog.labels = src_labels_snapshot
     prog.mat_phis = []
     prog._graph = src_graph_snapshot
-    prog.db_path = src_db_path_snapshot
+    prog.source_path = src_source_path_snapshot
     # Match the exact state flags ``SSAProgram.__init__`` sets, so every
     # pass that gates on one of them finds it.
     prog._materialized = False
@@ -1351,15 +1351,15 @@ def _apply_pyssa_to(
     return prog
 
 
-def _demo(db_path: str) -> None:
-    """Render the PySSA-built SSA for a database. Uses the internal
+def _demo(source: str) -> None:
+    """Render the PySSA-built SSA for a TEAL source. Uses the internal
     :meth:`PySSA._construct` to get the builder instance directly so
     we can call :meth:`PySSA.render` for the diagnostic dump — every
     other caller should use :meth:`PySSA.build` which returns the
     wrapped ``SSAProgram``."""
     import time
     t0 = time.perf_counter()
-    prog = SSAProgram(db_path, verbose=False)
+    prog = SSAProgram(source, verbose=False)
     t_ql = time.perf_counter() - t0
     t0 = time.perf_counter()
     py = PySSA._construct(prog)
@@ -1377,7 +1377,7 @@ def _demo(db_path: str) -> None:
 if __name__ == "__main__":
     import sys
     if len(sys.argv) != 2:
-        print("usage: python -m tealtools.ssa <codeql-db-path>",
+        print("usage: python -m tealtools.ssa <teal-source>",
               file=sys.stderr)
         raise SystemExit(2)
     _demo(sys.argv[1])

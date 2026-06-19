@@ -39,7 +39,7 @@ class AppcallSite:
     file: str
     submit_line: int
     app_id: int
-    callee_db: Path
+    callee_source: Path
     # Constant ApplicationArgs by index. Non-constant args are absent;
     # consumers can still walk the underlying ``InnerTxn`` for
     # full operand info.
@@ -53,15 +53,15 @@ class AppcallSite:
             )
         else:
             args = "(no constant args)"
-        db = self.callee_db
+        src = self.callee_source
         if relative_to is not None:
             try:
-                db = db.relative_to(relative_to)
+                src = src.relative_to(relative_to)
             except ValueError:
                 pass
         return (
             f"{self.file}:L{self.submit_line}  "
-            f"appl→{self.app_id}  ({db})  {args}"
+            f"appl→{self.app_id}  ({src})  {args}"
         )
 
     def to_dict(self) -> dict:
@@ -69,13 +69,13 @@ class AppcallSite:
             "file": self.file,
             "submit_line": self.submit_line,
             "app_id": self.app_id,
-            "callee_db": str(self.callee_db),
+            "callee_source": str(self.callee_source),
             "const_args": {str(i): v for i, v in sorted(self.const_args.items())},
         }
 
 
 def load_registry(path: str | Path) -> Registry:
-    """Load an AppID → DB-path mapping from a yaml file.
+    """Load an AppID → ``.teal``-path mapping from a yaml file.
 
     Paths in the yaml are resolved relative to the yaml's parent dir
     so fixtures can carry self-contained registries.
@@ -84,8 +84,8 @@ def load_registry(path: str | Path) -> Registry:
     raw = yaml.safe_load(p.read_text()) or {}
     base = p.parent
     out: Registry = {}
-    for app_id, db in raw.items():
-        out[int(app_id)] = str((base / db).resolve())
+    for app_id, src in raw.items():
+        out[int(app_id)] = str((base / src).resolve())
     return out
 
 
@@ -180,7 +180,7 @@ def find_appcall_sites(prog: SSAProgram, registry: Registry) -> list[AppcallSite
                     file=group.file,
                     submit_line=group.submit_line,
                     app_id=app_id,
-                    callee_db=Path(registry[app_id]),
+                    callee_source=Path(registry[app_id]),
                     const_args=_const_args(txn),
                 )
             )
@@ -298,25 +298,25 @@ class XContractGraph:
     caller: SSAProgram
     sites: list[AppcallSite]
     callees: dict[int, SSAProgram]
-    callee_dbs: dict[int, Path]
+    callee_sources: dict[int, Path]
     analyses: dict[int, CalleeAnalysis]
 
     @classmethod
     def build(cls, caller: SSAProgram, registry: Registry) -> "XContractGraph":
         sites = find_appcall_sites(caller, registry)
         callees: dict[int, SSAProgram] = {}
-        callee_dbs: dict[int, Path] = {}
+        callee_sources: dict[int, Path] = {}
         analyses: dict[int, CalleeAnalysis] = {}
         for site in sites:
             if site.app_id in callees:
                 continue
-            callee = SSAProgram(str(site.callee_db))
+            callee = SSAProgram(str(site.callee_source))
             callees[site.app_id] = callee
-            callee_dbs[site.app_id] = site.callee_db
+            callee_sources[site.app_id] = site.callee_source
             analyses[site.app_id] = analyze_callee(callee, site)
         return cls(
             caller=caller, sites=sites, callees=callees,
-            callee_dbs=callee_dbs, analyses=analyses,
+            callee_sources=callee_sources, analyses=analyses,
         )
 
 
@@ -329,22 +329,22 @@ class CrossAuthFinding:
     app_id: int
     violation: "object"  # AuthViolation; avoid heavy import at module load
 
-    def render(self, callee_db: Path, relative_to: Optional[Path] = None) -> str:
-        db = callee_db
+    def render(self, callee_source: Path, relative_to: Optional[Path] = None) -> str:
+        src = callee_source
         if relative_to is not None:
             try:
-                db = db.relative_to(relative_to)
+                src = src.relative_to(relative_to)
             except ValueError:
                 pass
-        return f"{db}  {self.violation.pretty()}"  # type: ignore[attr-defined]
+        return f"{src}  {self.violation.pretty()}"  # type: ignore[attr-defined]
 
-    def to_dict(self, callee_db: Optional[Path] = None) -> dict:
+    def to_dict(self, callee_source: Optional[Path] = None) -> dict:
         out: dict = {
             "app_id": self.app_id,
             "violation": self.violation.to_dict(),  # type: ignore[attr-defined]
         }
-        if callee_db is not None:
-            out["callee_db"] = str(callee_db)
+        if callee_source is not None:
+            out["callee_source"] = str(callee_source)
         return out
 
 
@@ -466,6 +466,6 @@ def render_findings(
     if not findings:
         return "(no cross-contract auth-domination findings)"
     return "\n".join(
-        f.render(graph.callee_dbs[f.app_id], relative_to=relative_to)
+        f.render(graph.callee_sources[f.app_id], relative_to=relative_to)
         for f in findings
     )

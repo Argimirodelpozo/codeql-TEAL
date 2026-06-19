@@ -1,6 +1,6 @@
 """Typed SSA-assignment representation of a TEAL program.
 
-Built on top of :mod:`tealtools.graphs` (which runs the CodeQL queries). Where
+Built on top of :mod:`tealtools.graphs`. Where
 ``tealtools.graphs`` exposes a low-level ``MultiDiGraph`` keyed by AST nodes,
 this module presents the same information as a first-class *program*
 object: a sequence of :class:`Assignment`\\ s grouped into
@@ -8,7 +8,7 @@ object: a sequence of :class:`Assignment`\\ s grouped into
 and :class:`Const` literals.
 
     from tealtools.ssa import SSAProgram
-    p = SSAProgram("tests/dbs/xgov-db")
+    p = SSAProgram("approval.teal")
     print(p.functional(file="approval.teal", line_range=(225, 260)))
 
 Model
@@ -43,9 +43,9 @@ Model
 Phi materialization is lazy: only phis referenced (directly or
 transitively via ``IndirectPhi`` parents) by some assignment are
 materialized. This keeps the object count tractable on programs where
-the underlying QL model emits many unreferenced phi identities.
+the underlying model emits many unreferenced phi identities.
 
-The module does not re-run CodeQL queries itself — it calls
+The module performs no extraction itself — it calls
 :func:`tealtools.graphs.load_graph` and reads the populated node attributes.
 """
 from __future__ import annotations

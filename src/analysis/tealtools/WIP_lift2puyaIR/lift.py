@@ -597,7 +597,7 @@ class _Lifter:
         them (a `pushbytess base32(..) ..` whose operands it stripped, leaving a
         phantom 0-output push). The keys are the push's operands, in label order;
         stored as their source literal (`teal_const._const_bytes` parses them)."""
-        src = _load_src(getattr(self.prog, "db_path", ""))
+        src = _load_src(getattr(self.prog, "source_path", ""))
         if len(src) != 1:
             return None, set()
         lines = next(iter(src.values()))

@@ -327,7 +327,7 @@ def to_puya(prog):
     # register replaced by itself), but our reconstruction can emit them.
     from .transforms import simplify_trivial_phis
     simplify_trivial_phis(lifted)
-    t = _Translator(_load_src(getattr(prog, "db_path", "")))
+    t = _Translator(_load_src(getattr(prog, "source_path", "")))
     groups = [lifted.main, *lifted.subroutines]
 
     # Pass 1: shells (empty body validates trivially), so control ops and

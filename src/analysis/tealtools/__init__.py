@@ -1,4 +1,4 @@
-"""TEAL static-analysis toolkit built on the CodeQL substrate.
+"""TEAL static-analysis toolkit (pure-Python: source → graph → SSA → analysis).
 
 Each submodule is loadable directly (``from tealtools.ssa import
 SSAProgram``); the most-used names are re-exported here for

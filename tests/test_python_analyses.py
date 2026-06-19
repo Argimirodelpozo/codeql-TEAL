@@ -1,12 +1,9 @@
 """Snapshot harness for the tealtools detectors.
 
 Discovers fixtures under ``tests/tealtools/<analysis>/[<case>/]db/``
-and runs the matching analysis against each. Output is compared to a
-checked-in ``expected.txt`` next to the fixture; mismatches fail the
-test with a unified diff.
-
-Missing CodeQL DBs are built on demand by a session-scoped fixture in
-``conftest.py`` — no separate build step needed.
+(each carries a ``.teal`` source) and runs the matching analysis against
+each. Output is compared to a checked-in ``expected.txt`` next to the
+fixture; mismatches fail the test with a unified diff.
 
 Regenerate snapshots with::
 
@@ -51,18 +48,18 @@ def _discover():
                 "xcontract_sec_guide", case,
                 id=f"xcontract_sec_guide/{case.name}",
             )
-    # sec_guide_scan cases hand a directory of raw .teal files (no
-    # pre-built DB) to the recursive scanner. The DB build happens
-    # inside scan() against a tmp cache, not via the standard
-    # case_dir/db convention.
+    # sec_guide_scan cases hand a directory of raw .teal files to the
+    # recursive scanner, which reconstructs each dir's SSA directly.
     if SGS_ROOT.exists():
         for case in sorted(p for p in SGS_ROOT.iterdir() if p.is_dir()):
             yield pytest.param(
                 "sec_guide_scan", case,
                 id=f"sec_guide_scan/{case.name}",
             )
-    for db_yml in sorted(PY_TESTS.rglob("codeql-database.yml")):
-        case_dir = db_yml.parent.parent
+    # Every other fixture is a ``<case>/db/`` holding a ``.teal`` source
+    # plus its committed ``graph_golden.txt`` — discover by the golden.
+    for golden in sorted(PY_TESTS.rglob("graph_golden.txt")):
+        case_dir = golden.parent.parent
         if XC_ROOT in case_dir.parents or case_dir == XC_ROOT:
             continue  # already collected as a single xcontract case
         if XC_SG_ROOT in case_dir.parents or case_dir == XC_SG_ROOT:
@@ -74,14 +71,6 @@ def _discover():
         rel = case_dir.relative_to(PY_TESTS)
         analysis = rel.parts[0]
         yield pytest.param(analysis, case_dir, id=str(rel))
-
-
-@pytest.fixture(scope="session")
-def scan_cache(tmp_path_factory):
-    """Session-scoped cache root for ``sec_guide_scan`` fixtures.
-    Lives under pytest's tmp tree so it survives within a run (DBs
-    are reused across cases) but doesn't pollute ``~/.cache/``."""
-    return tmp_path_factory.mktemp("tealql_sec_guide_scan_cache")
 
 
 def _ssa_summary(prog) -> str:
@@ -102,7 +91,7 @@ def _ssa_summary(prog) -> str:
     return "\n".join(lines) + "\n"
 
 
-def _render(analysis: str, case_dir: Path, *, scan_cache: Path = None) -> str:
+def _render(analysis: str, case_dir: Path) -> str:
     from tealtools.ssa import SSAProgram
 
     if analysis == "sec_guide_scan":
@@ -110,11 +99,7 @@ def _render(analysis: str, case_dir: Path, *, scan_cache: Path = None) -> str:
 
         rules = case_dir / "rules.yml"
         config = ScanConfig.from_path(rules) if rules.exists() else ScanConfig.empty()
-        findings = scan(
-            case_dir / "src",
-            config=config,
-            cache_root=scan_cache if scan_cache is not None else case_dir / ".cache",
-        )
+        findings = scan(case_dir / "src", config=config)
         return render_text(findings) + "\n"
 
     if analysis == "xcontract":
@@ -253,8 +238,8 @@ def _render(analysis: str, case_dir: Path, *, scan_cache: Path = None) -> str:
 
 
 @pytest.mark.parametrize("analysis,case_dir", list(_discover()))
-def test_snapshot(analysis: str, case_dir: Path, scan_cache: Path) -> None:
-    actual = _render(analysis, case_dir, scan_cache=scan_cache)
+def test_snapshot(analysis: str, case_dir: Path) -> None:
+    actual = _render(analysis, case_dir)
     expected_path = case_dir / "expected.txt"
 
     if UPDATE or not expected_path.exists():

@@ -15,18 +15,18 @@ from puya.ir.types_ import AVMBytesEncoding
 _SRC_CACHE: dict = {}
 
 
-def _load_src(db_path: str) -> dict:
-    """Map ``basename -> source lines`` from a codeql DB's ``src.zip`` OR a raw
-    ``.teal`` file/dir (cached). Delegates to the shared graph-layer resolver
-    so the lift runs codeql-free on raw TEAL just like the graph build."""
-    if db_path in _SRC_CACHE:
-        return _SRC_CACHE[db_path]
+def _load_src(source: str) -> dict:
+    """Map ``basename -> source lines`` from a ``.teal`` file/dir (cached).
+    Delegates to the shared graph-layer resolver so the lift reads the same
+    source the graph build does."""
+    if source in _SRC_CACHE:
+        return _SRC_CACHE[source]
     from ..graphs import _load_source_bytes
     m = {
         bn: data.decode("utf-8", "replace").splitlines()
-        for bn, data in _load_source_bytes(db_path).items()
+        for bn, data in _load_source_bytes(source).items()
     }
-    _SRC_CACHE[db_path] = m
+    _SRC_CACHE[source] = m
     return m
 
 

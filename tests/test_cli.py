@@ -1,9 +1,9 @@
-"""Unit tests for the ``tealql`` CLI surface — CodeQL-free.
+"""Unit tests for the ``tealql`` CLI surface.
 
-* Target resolution + the ``debug``/``finding_to_dict`` helpers.
+* Target resolution + the ``finding_to_dict`` helper.
 * End-to-end analysis commands (``auth`` / ``group-shape`` / ``cost`` /
   ``itxn-report`` / ``path-predicates`` / ``cfg`` / ``all``) run against the
-  committed fixture DBs via the pure-Python backend — no codeql binary.
+  committed ``.teal`` fixtures via the pure-Python backend.
 """
 from __future__ import annotations
 
@@ -27,31 +27,15 @@ SAFE_DB = TESTS_ROOT / "tealtools" / "auth_domination" / "safe" / "db"
 # ---------------------------------------------------------------------------
 
 
-def _make_stub_db(path: Path) -> Path:
-    """Minimal directory that satisfies :func:`targets.is_codeql_db`."""
-    path.mkdir(parents=True, exist_ok=True)
-    (path / "codeql-database.yml").write_text("# stub\n")
-    return path
+def test_resolve_target_teal_file(tmp_path):
+    f = tmp_path / "prog.teal"
+    f.write_text("#pragma version 8\nint 1\n")
+    assert targets.resolve_target(f) == f.resolve()
 
 
-def test_is_codeql_db_true(tmp_path):
-    db = _make_stub_db(tmp_path / "db")
-    assert targets.is_codeql_db(db)
-
-
-def test_is_codeql_db_false_for_empty_dir(tmp_path):
-    assert not targets.is_codeql_db(tmp_path)
-
-
-def test_is_codeql_db_false_for_file(tmp_path):
-    f = tmp_path / "x.txt"
-    f.write_text("")
-    assert not targets.is_codeql_db(f)
-
-
-def test_resolve_target_passes_existing_db_through(tmp_path):
-    db = _make_stub_db(tmp_path / "db")
-    assert targets.resolve_target(db) == db.resolve()
+def test_resolve_target_teal_dir(tmp_path):
+    (tmp_path / "a.teal").write_text("#pragma version 8\nint 1\n")
+    assert targets.resolve_target(tmp_path) == tmp_path.resolve()
 
 
 def test_resolve_target_missing_raises(tmp_path):
@@ -107,7 +91,7 @@ def test_finding_to_dict_last_resort_str():
 
 
 # ---------------------------------------------------------------------------
-# CLI plumbing: argv parsing + debug subcommands (no codeql)
+# CLI plumbing: argv parsing
 # ---------------------------------------------------------------------------
 
 
@@ -118,59 +102,8 @@ def test_cli_exit_code_bad_target(capsys):
     assert "does not exist" in err
 
 
-def test_cli_debug_db_passthrough(tmp_path, capsys):
-    db = _make_stub_db(tmp_path / "stub-db")
-    rc = main(["debug", "db", str(db)])
-    assert rc == 0
-    assert capsys.readouterr().out.strip() == str(db.resolve())
-
-
-def test_cli_debug_db_json(tmp_path, capsys):
-    db = _make_stub_db(tmp_path / "stub-db")
-    rc = main(["debug", "db", str(db), "--json"])
-    assert rc == 0
-    payload = json.loads(capsys.readouterr().out)
-    assert payload == {"db": str(db.resolve())}
-
-
-def test_cli_debug_cache_info_empty(tmp_path, capsys):
-    rc = main([
-        "debug", "cache", "info",
-        "--db-cache", str(tmp_path / "empty-cache"),
-        "--json",
-    ])
-    assert rc == 0
-    payload = json.loads(capsys.readouterr().out)
-    assert payload["exists"] is False
-    assert payload["entries"] == 0
-
-
-def test_cli_debug_cache_info_populated(tmp_path, capsys):
-    cache = tmp_path / "cache"
-    (cache / "abc123").mkdir(parents=True)
-    (cache / "def456").mkdir(parents=True)
-    rc = main([
-        "debug", "cache", "info",
-        "--db-cache", str(cache),
-        "--json",
-    ])
-    assert rc == 0
-    payload = json.loads(capsys.readouterr().out)
-    assert payload["exists"] is True
-    assert payload["entries"] == 2
-    assert sorted(payload["ids"]) == ["abc123", "def456"]
-
-
-def test_cli_debug_cache_clear(tmp_path, capsys):
-    cache = tmp_path / "cache"
-    (cache / "xyz").mkdir(parents=True)
-    rc = main(["debug", "cache", "clear", "--db-cache", str(cache)])
-    assert rc == 0
-    assert not cache.exists()
-
-
 # ---------------------------------------------------------------------------
-# End-to-end: exit codes + JSON shape (need codeql)
+# End-to-end: exit codes + JSON shape (pure-Python backend)
 # ---------------------------------------------------------------------------
 
 

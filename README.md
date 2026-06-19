@@ -1,80 +1,28 @@
 # TealQL
 
-TealQL is an SAST powered by GitHub Advanced Security's CodeQL, bringing the latest in Static Analysis tooling to the Algorand Virtual Machine's native language.
+TealQL is a static-analysis toolkit for [TEAL](https://developer.algorand.org/docs/get-details/dapps/avm/teal/), the Algorand Virtual Machine's native language. It reconstructs typed SSA from raw TEAL source and runs detectors, reports, and a Puya-IR lift on top of it.
 
-## Quick Start (macOS)
+It began life on GitHub CodeQL; the analysis layer is now **pure Python** — there is no CodeQL CLI, extractor, or database to build. You point it at `.teal` source and it does the rest.
 
-### 1. Clone the Repository
+## Quick Start
+
+### Clone & install
 
 ```bash
 git clone https://github.com/Argimirodelpozo/codeql-TEAL.git
 cd codeql-TEAL
+pip install -e .
 ```
 
-### 2. Build the TEAL Extractor
+That puts a `tealql` binary on `$PATH`. `python -m cli` works as a fallback.
 
-The script handles dependency linking and permissions automatically:
+### Run an analysis
+
+Every subcommand takes a single `<target>` — a `.teal` file, or a directory of `.teal` files. The pipeline (source → graph → SSA → analysis) reconstructs everything straight from that source; there is nothing to build or cache.
 
 ```bash
-cd src/codeql-backend/teal/scripts
-./create-extractor-pack.sh
-cd ../..
+tealql auth tests/tealtools/auth_domination/vuln/prog.teal
 ```
-
-### 3. Register Extractor for CodeQL
-
-```bash
-rm -rf .codeql-extractors
-mkdir -p .codeql-extractors/teal
-cp -R src/codeql-backend/teal/extractor-pack/* .codeql-extractors/teal/
-```
-
-### 4. Create a CodeQL Database
-
-Pick any directory containing TEAL source as the snapshot input. The example below uses one of the bundled fixtures:
-
-```bash
-codeql database create /tmp/my-db --overwrite -l teal -s tests/tealtools/auth_domination/vuln --search-path "$(pwd)/.codeql-extractors"
-```
-
-### 5. Run a Query
-
-**CLI:**
-```bash
-codeql query run src/codeql-backend/teal/ql/lib/codeql/missingTxnFeeValidation.ql --database /tmp/my-db
-```
-
-**Or use the CodeQL VS Code extension** for an interactive UI experience.
-
----
-
-## Running Tests
-
-All tests require the extractor to be built and registered first (steps 2-3 above).
-
-### CodeQL Backend Tests
-
-Native CodeQL tests covering the QL libraries (`src/codeql-backend/teal/ql/lib/codeql/...`) and the tealtools queries (`src/analysis/tealtools/queries/...`). Each test is a directory with a `prog.teal` (or other `.teal`) source plus a `test.ql` (focused unit test) or `test.qlref` (invokes a production query) and a checked-in `*.expected` output. The runner builds a DB from the source, runs the query, and diffs against expected. Wrapped in pytest so it shares the same workflow as the tealtools tests.
-
-```bash
-# Verify every backend test
-pytest tests/test_codeql_backend.py -v
-
-# Regenerate every .expected (use after intentional QL behaviour change)
-UPDATE_SNAPSHOTS=1 pytest tests/test_codeql_backend.py
-```
-
-Discovery walks `tests/codeql/`, picking up any `.ql` / `.qlref` whose sibling `.expected` exists. The test pack at `tests/codeql/qlpack.yml` declares dependencies on `argimirodelpozo/teal-all` and `argimirodelpozo/tealtools` so `.qlref`s pointing at production queries resolve. First cold run after a QL change takes ~25 min (cache invalidates globally); subsequent runs are fast.
-
-### Running Individual Queries
-
-You can run any `.ql` query file against a database:
-
-```bash
-codeql query run src/codeql-backend/teal/ql/lib/codeql/<query>.ql --database <path/to/db>
-```
-
-To export results to JSON, use `codeql bqrs decode --format=json`.
 
 ---
 
@@ -82,19 +30,9 @@ To export results to JSON, use `codeql bqrs decode --format=json`.
 
 > ⚠️ **Work in progress.** APIs, module names, snapshot formats, and detector defaults are all subject to change. Use as a research surface, not a stable interface.
 
-`src/analysis/tealtools/` is a Python package (installed as `tealtools`) over the CodeQL substrate. Each submodule loads a CodeQL database via `tealtools.SSAProgram(db_path)` and exposes either an SSA-level helper or a specific detector. Analyses run from regular Python — no QL eval each time once the per-DB cache (`~/.cache/teal-graphs/`) is warm.
-
-### Install
-
-```bash
-pip install -e .
-```
-
-That puts a `tealql` binary on `$PATH`. `python -m cli` works as a fallback.
+`src/analysis/tealtools/` is a Python package (installed as `tealtools`). Each submodule loads a program via `tealtools.SSAProgram(<source>)` and exposes either an SSA-level helper or a specific detector. `<source>` is a `.teal` file or a directory of them; the graph and SSA are rebuilt in-process (pure Python, milliseconds).
 
 ### CLI
-
-Every analysis subcommand takes a single `<target>` — a `.teal` file, a directory of `.teal` files, or an existing CodeQL DB. When the target is raw source, a DB is built on the fly and cached under `~/.cache/tealql/dbs/` (override via `$TEALQL_DB_CACHE`).
 
 ```bash
 tealql --help
@@ -108,6 +46,7 @@ tealql detections-scan  <root>   [--config rules.yml] [--mode-config modes.yml]
 # Reports
 tealql itxn-report     <target>
 tealql group-shape     <target>
+tealql group-layout    <target>
 tealql cost            <target>
 tealql path-predicates <target>
 tealql cfg             <target> [--file F] [--skeleton]
@@ -125,17 +64,7 @@ Common flags accepted by every analysis subcommand:
 | Flag | Effect |
 | --- | --- |
 | `--json` | emit JSON instead of text |
-| `--db-cache DIR` | override the auto-built-DB cache root |
-| `--force-rebuild` | rebuild the DB even if a cached one exists |
-| `-v` / `-vv` | progress logging to stderr — `-v` for INFO milestones (target resolution, DB build, pass pipeline, per-detection counts), `-vv` adds DEBUG per-pass timings |
-
-For raw CodeQL operations there is a `debug` namespace:
-
-```bash
-tealql debug query <ql-file> <target>     # codeql query run, with target resolution
-tealql debug db    <target>                # resolve + print the DB path
-tealql debug cache {info|clear}            # inspect or clear the DB cache
-```
+| `-v` / `-vv` | progress logging to stderr — `-v` for INFO milestones (target resolution, SSA build, pass pipeline, per-detection counts), `-vv` adds DEBUG per-pass timings |
 
 ### Pipeline
 
@@ -162,7 +91,7 @@ fully-annotated result.
 Each pass is idempotent — running `run_all_passes` twice is a
 no-op the second time. The per-pass implementations live in
 `src/analysis/tealtools/passes/<name>.py`; the substrate
-(`src/analysis/tealtools/ssa.py`) carries only a thin lazy-import bridge
+(`src/analysis/tealtools/ssa/`) carries only a thin lazy-import bridge
 method per pass (`SSAProgram.propagate_*` / `cleanup_*`) so
 analysis semantics stay out of the substrate.
 
@@ -179,7 +108,7 @@ Inline annotations rendered by `tealql functional`:
 
 | Module | Purpose |
 | --- | --- |
-| `tealtools.ssa.SSAProgram` | SSA representation of a built CodeQL DB. The foundation everything else consumes. |
+| `tealtools.ssa.SSAProgram` | SSA representation reconstructed from TEAL source. The foundation everything else consumes. |
 | `tealtools.path_predicates.PathPredicateAnalysis` | Per-BB path predicates from branch / assert outcomes. Supports `entry_seeds` and `bb_seeds` for cross-contract injection. |
 | `tealtools.stacksim` | Per-line concrete stack simulation. |
 | `tealtools.ast`, `tealtools.graphs` | AST and CFG / dataflow graph helpers. |
@@ -192,17 +121,17 @@ Inline annotations rendered by `tealql functional`:
 | `tealtools.detections.NonUniqueBoxKeyDetector` | Non-unique external fields (e.g. `AssetName`) flowing into a box key. Registered as the `box-key` detection — run via `tealql detections --detector box-key`. |
 | `tealtools.inner_txn_report.InnerTxnReport` | Per-`itxn_submit` group dump: each txn's fields and possible operand values. |
 | `tealtools.group_reasoning.analyze` | Group shape the contract forces on every approving exit (`Global.GroupSize == 2`, `gtxn[0].Receiver == ...`, etc.). |
-| `tealtools.box_dataflow` | Box dataflow in three flavours: `detect_into_box_flows` (external → box write), `detect_out_of_box_flows` (box read → sensitive sink), `detect_correlated_flows` (end-to-end chain via syntactic key matching). |
+| `tealtools.dataflow.box` | Box dataflow in three flavours: `detect_into_box_flows` (external → box write), `detect_out_of_box_flows` (box read → sensitive sink), `detect_correlated_flows` (end-to-end chain via syntactic key matching). |
 | `tealtools.xcontract.XContractGraph` | Cross-contract analysis: identifies appcall itxns with a constant `ApplicationID` resolvable in a registry, runs path predicates on each callee with seeded args, computes approving-exit summaries, feeds them back into the caller's BB. Includes `cross_auth_findings` for auth-domination across the boundary. |
 | `tealtools.cost_analysis` | Per-line opcode-budget cost with worst-case path accumulation; loops report `unbounded`. |
-| `tealtools.predicate_aware.filter_validated` | Wraps a taint detector — suppresses violations whose sink operand is constrained by a dominating path predicate. |
+| `tealtools.dataflow.predicate_aware.filter_validated` | Wraps a taint detector — suppresses violations whose sink operand is constrained by a dominating path predicate. |
 
 ### Example: run a detector
 
 ```python
 from tealtools import SSAProgram, AuthDominationDetector
 
-prog = SSAProgram("tests/dbs/xgov-db")
+prog = SSAProgram("tests/tealtools/auth_domination/vuln/prog.teal")
 for v in AuthDominationDetector(prog).detect():
     print(v.pretty())
 ```
@@ -212,8 +141,8 @@ for v in AuthDominationDetector(prog).detect():
 ```python
 from tealtools import SSAProgram, XContractGraph, cross_auth_findings, load_registry
 
-registry = load_registry("path/to/registry.yml")  # AppID → DB path
-caller = SSAProgram("path/to/caller-db")
+registry = load_registry("path/to/registry.yml")  # AppID → .teal path
+caller = SSAProgram("path/to/caller.teal")
 graph = XContractGraph.build(caller, registry)
 for f in cross_auth_findings(graph):
     print(f.violation.pretty())
@@ -221,51 +150,51 @@ for f in cross_auth_findings(graph):
 
 The notebooks under `src/analysis/tealtools/interactive-examples/` (`example.ipynb`, `example_xgov.ipynb`, `example_inner_txn_report.ipynb`, `example_box_key_detection.ipynb`, `example_path_predicates.ipynb`) walk through the same modules interactively.
 
-### Snapshot test harness
+### Puya-IR lift
 
-`tests/test_python_analyses.py` runs every analysis against fixtures under `tests/tealtools/<analysis>/[<case>/]db/` and diffs output against checked-in `expected.txt`. The dispatch routes by the top-level analysis directory name; `xcontract/` and `box_df/` use case-name prefixes for sub-flavours.
-
-Missing fixture DBs are built automatically by a session-start hook in `tests/conftest.py` — no separate build step. Manual control:
+`tealtools.WIP_lift2puyaIR` lifts the reconstructed SSA into genuine [Puya](https://github.com/algorandfoundation/puya) IR (`puya.ir.models`), validating and optimising it with Puya's own passes:
 
 ```bash
-# Verify all snapshots (auto-builds any missing DB first)
+python -m tealtools.WIP_lift2puyaIR <teal-source> [--optimize]
+```
+
+---
+
+## Running Tests
+
+```bash
+pip install -e .
+pytest tests/ -q
+```
+
+The suite is pure Python — no CodeQL, JVM, or network needed for the core tests.
+
+### Snapshot harness
+
+`tests/test_python_analyses.py` runs every analysis against fixtures under `tests/tealtools/<analysis>/[<case>/]db/` (each holds a `.teal` source plus a committed `graph_golden.txt`) and diffs output against checked-in `expected.txt`. The dispatch routes by the top-level analysis directory name; `xcontract/` and `box_df/` use case-name prefixes for sub-flavours.
+
+```bash
+# Verify all snapshots
 pytest tests/test_python_analyses.py -v
 
 # Regenerate baselines after an intended behaviour change
 UPDATE_SNAPSHOTS=1 pytest tests/test_python_analyses.py -v
-
-# Force-rebuild every DB (mostly for debugging extractor changes)
-python tests/build_dbs.py --force
 ```
 
-First run on a cold cache evaluates the underlying CodeQL queries per fixture (~25min for the full suite); subsequent runs are fast (seconds).
+### Graph golden fixtures
+
+`tests/test_graph_golden.py` pins the pure-Python graph producers (`nodes` / `cfgEdges` / `basicBlocks`) to a committed `graph_golden.txt` per fixture. Regenerate after an intentional change to the producers:
+
+```bash
+python -m tests.gen_graph_golden
+```
 
 ---
 
 ## Prerequisites
 
-- [CodeQL CLI](https://github.com/github/codeql-cli-binaries) (`codeql` on PATH)
-- Rust toolchain (for building the extractor)
-- Python 3 with `pytest` (for running tests)
-
-## Features Coming Soon
-
-## How to Contribute
-
-## Rebuilding Extractors
-
-When encountering parsing errors, a grammar update is probably needed.
-
-1. Fix the appropriate rule in the grammar
-2. Commit and push to main
-3. Rebuild:
-
-```bash
-cd src/codeql-backend/teal/scripts
-./create-extractor-pack.sh
-```
-
-This will rebuild the Rust extractor, regenerate `teal.dbscheme` and `TreeSitter.qll`, and move them into the correct folders.
+- Python 3 with the package installed (`pip install -e .` pulls in the runtime deps).
+- `pytest` for the test suite.
 
 ---
 

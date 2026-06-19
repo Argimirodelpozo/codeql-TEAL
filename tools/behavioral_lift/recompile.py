@@ -46,7 +46,7 @@ def lift_to_teal(db: str) -> str:
     # original version, so a contract whose source declared a lower version would
     # otherwise fail to assemble its own recompiled body.
     avm_version = 10
-    for _lines in to_puya_ir._load_src(prog.db_path).values():
+    for _lines in to_puya_ir._load_src(prog.source_path).values():
         for _ln in _lines[:4]:
             _m = re.match(r"#pragma version (\d+)", _ln.strip())
             if _m:

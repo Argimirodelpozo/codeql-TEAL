@@ -3,40 +3,28 @@
 Each subcommand takes a single ``<target>`` and runs one analysis or
 report against it. A target is one of:
 
-* an existing CodeQL DB directory (contains ``codeql-database.yml``),
 * a ``.teal`` file, or
 * a directory tree containing one or more ``.teal`` files.
 
-When the target is raw source, a DB is built on the fly and cached
-under ``~/.cache/tealql/dbs/`` (override via ``$TEALQL_DB_CACHE``).
-Subsequent runs on the same inputs are no-ops in the DB layer.
+The pipeline reconstructs everything (graph → SSA → analysis) straight
+from that source — there is nothing to build, cache, or read.
 
 Common flags accepted by every analysis subcommand:
 
   ``--json``           emit JSON instead of text
-  ``--db-cache DIR``   alternative cache root for auto-built DBs
-  ``--force-rebuild``  rebuild the DB even if a cached one exists
   ``-v`` / ``-vv``     progress logging to stderr (``-v`` = INFO
                        milestones, ``-vv`` = DEBUG per-pass timings)
-
-A ``debug`` namespace exposes raw CodeQL operations (``debug query``,
-``debug db``, ``debug cache``) for power-user troubleshooting and for
-running custom QL packs against the same target abstraction.
 """
 from __future__ import annotations
 
 import argparse
 import json as _json
 import logging
-import shutil
-import subprocess
 import sys
 from pathlib import Path
 from typing import Callable, Iterable
 
-from tealtools.targets import (
-    DEFAULT_CACHE, resolve_target,
-)
+from tealtools.targets import resolve_target
 
 logger = logging.getLogger("tealtools.cli")
 
@@ -69,39 +57,27 @@ def _add_target_args(sp: argparse.ArgumentParser, *, dest: str = "target") -> No
     """Add the universal ``<target>`` positional and common flags."""
     sp.add_argument(
         dest,
-        help="path to a .teal file, a directory of .teal files, "
-             "or an existing CodeQL DB",
+        help="path to a .teal file or a directory of .teal files",
     )
     sp.add_argument("--json", action="store_true",
                     dest="json_out",
                     help="emit JSON instead of text")
-    sp.add_argument("--db-cache", default=None,
-                    help=f"DB cache root (default: {DEFAULT_CACHE})")
-    sp.add_argument("--force-rebuild", action="store_true",
-                    help="rebuild the DB even if already cached")
     sp.add_argument("-v", "--verbose", action="count", default=0,
                     help="progress logging to stderr; repeat (-vv) for "
                          "per-pass timings")
 
 
 def _resolve(args) -> Path:
-    """Run :func:`resolve_target` with the args namespace's flags."""
-    return resolve_target(
-        args.target,
-        cache_root=Path(args.db_cache) if args.db_cache else DEFAULT_CACHE,
-        force_rebuild=args.force_rebuild,
-    )
+    """Validate the target path (raises if it isn't TEAL source)."""
+    return resolve_target(args.target)
 
 
 def _load(args):
-    """Resolve target → DB → :class:`SSAProgram`."""
+    """Resolve target → :class:`SSAProgram`."""
     from tealtools.ssa import SSAProgram
-    db = _resolve(args)
-    # INFO (not DEBUG): building the SSA program populates the graph
-    # cache on a cold DB, which runs CodeQL queries and can pause for
-    # a while — worth a signpost before the silence.
-    logger.info("building SSA program from %s", db)
-    prog = SSAProgram(str(db))
+    source = _resolve(args)
+    logger.info("building SSA program from %s", source)
+    prog = SSAProgram(str(source))
     logger.info("SSA program ready (%d assignments)", len(prog.assignments))
     return prog
 
@@ -336,7 +312,6 @@ def _cmd_detections(args) -> int:
 
 def _cmd_detections_scan(args) -> int:
     from tealtools.detections.scan import (
-        DEFAULT_CACHE as SCAN_CACHE,
         ScanConfig, render_json, render_text, scan,
     )
     from tealtools.detections.config import DetectionConfig
@@ -346,11 +321,9 @@ def _cmd_detections_scan(args) -> int:
         DetectionConfig.from_path(Path(args.mode_config))
         if args.mode_config else None
     )
-    cache = Path(args.cache) if args.cache else SCAN_CACHE
     findings = scan(
         Path(args.root),
         config=config,
-        cache_root=cache,
         detection_config=detection_config,
     )
     print(render_json(findings) if args.json_out else render_text(findings))
@@ -368,72 +341,6 @@ def _cmd_all(args) -> int:
 
 
 # ---------------------------------------------------------------------------
-# debug namespace (CodeQL passthrough + cache inspection)
-# ---------------------------------------------------------------------------
-
-
-def _cmd_debug_query(args) -> int:
-    """Run a ``.ql`` file against the resolved target using the local
-    ``codeql`` binary. Output goes to stdout; pass ``--output`` to
-    persist the BQRS. Equivalent to ``codeql query run <ql>
-    --database <db>`` plus optional decode."""
-    db = _resolve(args)
-    codeql = shutil.which("codeql")
-    if codeql is None:
-        print("error: codeql binary not found on PATH", file=sys.stderr)
-        return 2
-    cmd = [codeql, "query", "run", str(Path(args.ql).resolve()),
-           "--database", str(db)]
-    if args.output:
-        cmd += ["--output", args.output]
-    cmd += list(args.extra)
-    return subprocess.run(cmd).returncode
-
-
-def _cmd_debug_db(args) -> int:
-    """Resolve target → DB path. Useful for plumbing a DB into other
-    tools without going through any analysis."""
-    db = _resolve(args)
-    if args.json_out:
-        print(_json.dumps({"db": str(db)}, indent=2))
-    else:
-        print(db)
-    return 0
-
-
-def _cmd_debug_cache(args) -> int:
-    """Inspect or clear the auto-built-DB cache."""
-    cache = Path(args.db_cache) if args.db_cache else DEFAULT_CACHE
-    if args.action == "info":
-        if not cache.exists():
-            payload = {"path": str(cache), "exists": False, "entries": 0}
-        else:
-            entries = [p for p in cache.iterdir() if p.is_dir()]
-            payload = {
-                "path": str(cache), "exists": True,
-                "entries": len(entries),
-                "ids": sorted(p.name for p in entries),
-            }
-        if args.json_out:
-            print(_json.dumps(payload, indent=2))
-        else:
-            print(f"cache: {payload['path']}")
-            if not payload["exists"]:
-                print("  (empty, will be created on first build)")
-            else:
-                print(f"  {payload['entries']} cached DB(s)")
-        return 0
-    if args.action == "clear":
-        if cache.exists():
-            shutil.rmtree(cache)
-            print(f"removed {cache}")
-        else:
-            print(f"(nothing to remove at {cache})")
-        return 0
-    raise AssertionError(f"unknown action {args.action!r}")
-
-
-# ---------------------------------------------------------------------------
 # Parser construction
 # ---------------------------------------------------------------------------
 
@@ -443,7 +350,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="tealql",
         description="TEAL static-analysis toolkit. Each subcommand "
                     "runs one analysis or report against a target "
-                    "(.teal file/dir or a pre-built CodeQL DB).",
+                    "(.teal file or directory of .teal files).",
     )
     sub = p.add_subparsers(dest="cmd", required=True, metavar="<command>")
 
@@ -493,7 +400,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     xc = add("xcontract", "cross-contract appcall analysis", _cmd_xcontract)
     xc.add_argument("--registry", required=True,
-                    help="yaml mapping AppID → callee DB path")
+                    help="yaml mapping AppID → callee .teal path")
 
     from tealtools.detections import DETECTORS as _DETECTORS
     det = sub.add_parser(
@@ -504,15 +411,11 @@ def build_parser() -> argparse.ArgumentParser:
     # Target is optional here because ``--list`` doesn't need one.
     det.add_argument(
         "target", nargs="?", default=None,
-        help="path to a .teal file, a directory of .teal files, "
-             "or an existing CodeQL DB (omit when using --list)",
+        help="path to a .teal file or a directory of .teal files "
+             "(omit when using --list)",
     )
     det.add_argument("--json", action="store_true", dest="json_out",
                      help="emit JSON instead of text")
-    det.add_argument("--db-cache", default=None,
-                     help=f"DB cache root (default: {DEFAULT_CACHE})")
-    det.add_argument("--force-rebuild", action="store_true",
-                     help="rebuild the DB even if already cached")
     det.add_argument("-v", "--verbose", action="count", default=0,
                      help="progress logging to stderr; repeat (-vv) for "
                           "per-pass timings")
@@ -533,13 +436,12 @@ def build_parser() -> argparse.ArgumentParser:
                        help="list available detector short names and exit")
 
     # detections-scan is structurally different: it walks a directory of
-    # .teal files and builds one DB per parent dir, so it bypasses
-    # ``resolve_target``. Keep its flag shape intact, but route --json /
-    # --verbose through the same shared flags.
+    # .teal files and reconstructs each parent dir's SSA, so it bypasses
+    # ``resolve_target``. Route --json / --verbose through the same flags.
     sgs = sub.add_parser(
         "detections-scan",
-        help="recursively scan a directory of .teal files; build "
-             "per-dir DBs and run detections on each program",
+        help="recursively scan a directory of .teal files; reconstruct "
+             "each dir and run detections on every program",
     )
     sgs.add_argument("root", help="directory to walk for .teal files")
     sgs.add_argument("--config", default=None,
@@ -548,8 +450,6 @@ def build_parser() -> argparse.ArgumentParser:
                      help="yaml/json with `modes:` declaring each file's "
                           "app/logicsig mode; detectors that don't apply to "
                           "a file's mode are skipped")
-    sgs.add_argument("--cache", default=None,
-                     help="DB cache root (default: ~/.cache/tealql/sec-guide-scan/)")
     sgs.add_argument("--json", action="store_true", dest="json_out",
                      help="emit JSON findings instead of text")
     sgs.add_argument("-v", "--verbose", action="count", default=0,
@@ -557,49 +457,18 @@ def build_parser() -> argparse.ArgumentParser:
                           "per-pass timings")
     sgs.set_defaults(handler=_cmd_detections_scan)
 
-    # --- debug namespace ---------------------------------------------
-    dbg = sub.add_parser(
-        "debug",
-        help="CodeQL passthrough + cache inspection (power-user)",
-    )
-    dbg_sub = dbg.add_subparsers(dest="debug_cmd", required=True, metavar="<subcommand>")
-
-    q = dbg_sub.add_parser("query", help="run a .ql file against a target")
-    q.add_argument("ql", help="path to a .ql query file")
-    _add_target_args(q)
-    q.add_argument("--output", default=None,
-                   help="optional .bqrs output path (passed through to codeql)")
-    q.add_argument("extra", nargs=argparse.REMAINDER,
-                   help="extra args forwarded to `codeql query run` "
-                        "(prefix with --)")
-    q.set_defaults(handler=_cmd_debug_query)
-
-    d = dbg_sub.add_parser("db", help="resolve target → DB path (build if needed)")
-    _add_target_args(d)
-    d.set_defaults(handler=_cmd_debug_db)
-
-    c = dbg_sub.add_parser("cache", help="inspect or clear the DB cache")
-    c.add_argument("action", choices=["info", "clear"])
-    c.add_argument("--db-cache", default=None, help="alternative cache root")
-    c.add_argument("--json", action="store_true", dest="json_out")
-    c.set_defaults(handler=_cmd_debug_cache)
-
     return p
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    # ``debug cache`` doesn't take ``-v``; default to quiet for it.
     _configure_logging(getattr(args, "verbose", 0))
     try:
         return args.handler(args)
     except FileNotFoundError as e:
         print(f"error: {e}", file=sys.stderr)
         return 2
-    except subprocess.CalledProcessError as e:
-        print(f"error: codeql exited with code {e.returncode}", file=sys.stderr)
-        return e.returncode
 
 
 if __name__ == "__main__":

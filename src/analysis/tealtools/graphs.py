@@ -8,15 +8,13 @@ label. The extractor floor (``nodes`` / ``cfgEdges`` / ``basicBlocks``, see
 :mod:`tealtools.cfg_build`; SSA / phis / const values / taint are reconstructed
 in Python downstream (``tealtools.ssa``). CodeQL is not a dependency.
 
-The source may be a CodeQL database directory (its ``src.zip`` is read), a
-single ``.teal`` file, or a directory of ``.teal`` files — all run the same
-pure-Python pipeline.
+The source may be a single ``.teal`` file or a directory of ``.teal`` files.
 
 Quick start
 -----------
     >>> from tealtools.graphs import load_graph
     >>> from .ast import Opcode, IntegerAddOpcode
-    >>> g = load_graph("tests/dbs/xgov-db")     # or a raw .teal file / dir
+    >>> g = load_graph("contract.teal")         # a .teal file or a dir of them
     >>> [n for n in g if isinstance(n, IntegerAddOpcode)]
 
 Graphviz rendering of the loaded graph lives in :mod:`tealtools.viz`
@@ -25,7 +23,6 @@ Graphviz rendering of the loaded graph lives in :mod:`tealtools.viz`
 from __future__ import annotations
 
 import os
-import zipfile
 from pathlib import Path
 
 import networkx as nx
@@ -141,39 +138,28 @@ def _normalize_pseudo_ops(data: bytes) -> bytes:
     return "\n".join(out).encode("utf-8")
 
 
-def _resolve_source_files(db: Path):
-    """Yield ``(relpath, bytes)`` for each ``.teal`` source under ``db``. Source is
-    pseudo-op-normalized (see :func:`_normalize_pseudo_ops`) so the extractor sees
-    only canonical opcodes.
+def _resolve_source_files(source: Path):
+    """Yield ``(relpath, bytes)`` for each ``.teal`` under ``source``, pseudo-op-
+    normalized (see :func:`_normalize_pseudo_ops`) so the extractor sees only
+    canonical opcodes.
 
-    ``db`` may be a CodeQL database directory (read its ``src.zip``), a single
-    ``.teal`` file, or a directory containing ``.teal`` files. The first form
-    keeps the existing codeql-DB behaviour; the latter two let the whole
-    pipeline (graph -> SSA -> lift -> analysis) run on raw TEAL with no codeql
-    at all — there is nothing codeql-specific left in the runtime path.
+    ``source`` is a single ``.teal`` file or a directory containing ``.teal``
+    files; the whole pipeline (graph -> SSA -> lift -> analysis) reconstructs from
+    that source.
     """
-    db = Path(db)
-    src_zip = db / "src.zip"
-    if src_zip.exists():
-        with zipfile.ZipFile(src_zip) as zf:
-            for info in zf.infolist():
-                if info.is_dir() or not info.filename.endswith(".teal"):
-                    continue
-                yield info.filename, _normalize_pseudo_ops(zf.read(info.filename))
+    source = Path(source)
+    if source.is_file() and source.suffix == ".teal":
+        yield source.name, _normalize_pseudo_ops(source.read_bytes())
         return
-    if db.is_file() and db.suffix == ".teal":
-        yield db.name, _normalize_pseudo_ops(db.read_bytes())
-        return
-    if db.is_dir():
-        for f in sorted(db.glob("*.teal")):
+    if source.is_dir():
+        for f in sorted(source.glob("*.teal")):
             yield f.name, _normalize_pseudo_ops(f.read_bytes())
 
 
-def _load_source_lines(db: Path) -> dict[str, list[str]]:
-    """Map relative path (and basename) -> 1-indexed source lines, from a
-    codeql DB's ``src.zip`` or raw ``.teal`` file/dir."""
+def _load_source_lines(source: Path) -> dict[str, list[str]]:
+    """Map relative path (and basename) -> 1-indexed source lines."""
     sources: dict[str, list[str]] = {}
-    for rel, data in _resolve_source_files(db):
+    for rel, data in _resolve_source_files(source):
         try:
             lines = data.decode("utf-8").splitlines()
         except UnicodeDecodeError:
@@ -183,25 +169,18 @@ def _load_source_lines(db: Path) -> dict[str, list[str]]:
     return sources
 
 
-def _load_source_bytes(db: Path) -> dict[str, bytes]:
-    """Map basename -> raw source bytes, from a codeql DB's ``src.zip`` or raw
-    ``.teal`` file/dir.
-
-    Keyed by basename to match the relative path CodeQL reports in ``nodes``
-    (CodeQL strips the source-root prefix, so a file stored in the zip as
-    ``tmp/dbsrc/x.teal`` surfaces as ``x.teal``). Used by the pure-Python
-    ``ast_build`` producer.
-    """
-    return {Path(rel).name: data for rel, data in _resolve_source_files(db)}
+def _load_source_bytes(source: Path) -> dict[str, bytes]:
+    """Map basename -> raw source bytes (keyed by basename, the relative path the
+    ``ast_build`` producer reports in ``nodes``)."""
+    return {Path(rel).name: data for rel, data in _resolve_source_files(source)}
 
 
 def _slice_source(sources: dict[str, list[str]], loc: Location) -> str:
     """Extract the source text covered by a :class:`Location`.
 
-    CodeQL columns are 1-based, inclusive at both ends. TEAL opcodes are
-    always single-line; for multi-line spans (e.g. the program-root
-    ``Source`` node) we return ``""`` since the covered region isn't a
-    single statement.
+    Columns are 1-based, inclusive at both ends. TEAL opcodes are always
+    single-line; for multi-line spans (e.g. the program-root ``Source`` node)
+    we return ``""`` since the covered region isn't a single statement.
     """
     lines = sources.get(loc.file) or sources.get(Path(loc.file).name)
     if lines is None:
@@ -214,7 +193,7 @@ def _slice_source(sources: dict[str, list[str]], loc: Location) -> str:
 
 
 def load_graph(
-    db_path: str | Path,
+    source: str | Path,
     *,
     verbose: bool = True,
 ) -> nx.MultiDiGraph:
@@ -222,21 +201,20 @@ def load_graph(
 
     Parameters
     ----------
-    db_path:
-        A CodeQL database directory (its ``src.zip`` is read), **or** a raw
-        ``.teal`` file, **or** a directory of ``.teal`` files. All run the same
-        pure-Python pipeline — no codeql.
+    source:
+        A raw ``.teal`` file, **or** a directory of ``.teal`` files. Both run the
+        same pure-Python pipeline.
     verbose:
         Accepted for backward compatibility; the pure-Python build is ~ms and
         prints nothing.
     """
-    db = Path(db_path).resolve()
-    if not db.exists():
-        raise FileNotFoundError(db)
+    source = Path(source).resolve()
+    if not source.exists():
+        raise FileNotFoundError(source)
 
     g = nx.MultiDiGraph()
-    g.graph["db_path"] = str(db)
-    sources = _load_source_lines(db)
+    g.graph["source"] = str(source)
+    sources = _load_source_lines(source)
 
     # (file, start_line) -> AstNode instance, for edge-endpoint lookup.
     by_loc: dict[tuple[str, int], AstNode] = {}
@@ -255,7 +233,7 @@ def load_graph(
     # The three fact-sets, produced in pure Python (``ast_build`` + ``cfg_build``).
     from .ast_build import build_nodes
     from .cfg_build import build_cfg_edges, build_basic_blocks
-    node_rows = build_nodes(_load_source_bytes(db))
+    node_rows = build_nodes(_load_source_bytes(source))
     rows_by_query = {
         "nodes": node_rows,
         "cfgEdges": build_cfg_edges(node_rows, sources),

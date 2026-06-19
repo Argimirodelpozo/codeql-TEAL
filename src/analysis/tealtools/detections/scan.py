@@ -1,12 +1,9 @@
 """Recursive sec-guide scan over a TEAL codebase.
 
 Walks a root directory for ``.teal`` files, groups them by parent dir,
-builds (or re-uses) one CodeQL DB per dir, then runs each registered
-sec-guide detector against each ``.teal`` independently using the
-``file=`` filter on the detector. The DB cache lives at
-``~/.cache/teal-sec-guide-scan/<sha-of-dir-contents>/`` and is keyed
-by the contents of every ``.teal`` in the dir, so re-running on the
-same tree is fast and a single edit only invalidates one dir's DB.
+reconstructs the SSA for each dir straight from its raw ``.teal`` source,
+then runs each registered sec-guide detector against each ``.teal``
+independently using the ``file=`` filter on the detector.
 
 Per-file detector selection is driven by an optional yaml/json config:
 
@@ -35,14 +32,13 @@ Library use::
         print(f.format())
 
 CLI: ``python -m tealtools sec-guide-scan <root> [--config rules.yml]
-[--cache <dir>] [--json]``.
+[--json]``.
 """
 from __future__ import annotations
 
 import fnmatch
 import json
 import logging
-import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Optional
@@ -52,18 +48,6 @@ from . import DETECTORS
 from .config import DetectionConfig
 
 logger = logging.getLogger("tealtools.detections.scan")
-
-# Content-addressed cache for per-dir DBs built by ``scan``. Override
-# with ``TEALQL_SEC_GUIDE_SCAN_CACHE`` (or the legacy
-# ``TEAL_SEC_GUIDE_SCAN_CACHE``). Distinct from the generic
-# ``~/.cache/tealql/dbs/`` because scan groups files by source dir, not
-# by the CLI's notion of a "target".
-DEFAULT_CACHE = Path(
-    os.environ.get("TEALQL_SEC_GUIDE_SCAN_CACHE",
-                   os.environ.get("TEAL_SEC_GUIDE_SCAN_CACHE",
-                                  Path.home() / ".cache" / "tealql"
-                                  / "sec-guide-scan"))
-)
 
 
 # ---------------------------------------------------------------------------
@@ -184,10 +168,9 @@ def scan(
     root: Path,
     config: ScanConfig = ScanConfig.empty(),
     *,
-    cache_root: Path = DEFAULT_CACHE,
     detection_config: "Optional[DetectionConfig]" = None,
 ) -> list[ScanFinding]:
-    """Discover, build, and detect. Returns a flat list of findings
+    """Discover, reconstruct, and detect. Returns a flat list of findings
     sorted by ``(rel_path, detector_name)``.
 
     ``config`` selects *which* detectors run per file (glob → only /
@@ -230,9 +213,8 @@ def scan(
                     )
                     if mode not in applies:
                         continue
-                # The DB stores files by basename (since we copied them
-                # into the per-DB ``src/``); pass that as the file
-                # filter so detectors see exactly this program.
+                # ``SSAProgram`` keys files by basename; pass that as the
+                # file filter so detectors see exactly this program.
                 det = cls(prog, file=teal.name)
                 for v in det.detect():
                     findings.append(ScanFinding(
