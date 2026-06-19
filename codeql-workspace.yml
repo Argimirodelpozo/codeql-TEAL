@@ -1,5 +1,0 @@
-paths:
-  - src/codeql-backend/shared
-  - src/codeql-backend/teal/ql
-  - src/analysis/tealtools/queries
-  - tests/codeql

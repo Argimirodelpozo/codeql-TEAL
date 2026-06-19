@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import base64
 import json
-import subprocess
 import sys
 import urllib.request
 from pathlib import Path
@@ -17,7 +16,6 @@ from pathlib import Path
 MAINNET = "https://mainnet-api.algonode.cloud"
 INDEXER = "https://mainnet-idx.algonode.cloud"
 LOCAL = "http://localhost:4001"
-REPO = Path(__file__).resolve().parents[2]
 
 
 def _get(url, data=None, ctype=None, token=None):
@@ -69,13 +67,6 @@ def fetch_teal(app_id):
     return fetch_approval(app_id)[0]
 
 
-def build_db(teal_dir: Path):
-    db = teal_dir / "db"
-    subprocess.run(["codeql", "database", "create", str(db), "--overwrite", "-l", "teal",
-                    "-s", str(teal_dir), "--search-path", str(REPO / ".codeql-extractors")],
-                   check=True, capture_output=True, timeout=180)
-
-
 def main(argv):
     out = Path(argv[0]) if argv else Path("/tmp/mainnet_contracts")
     ids = [int(x) for x in argv[1:]] or sample_app_ids()
@@ -89,13 +80,12 @@ def main(argv):
             teal, bytecode = fetch_approval(app_id)
             teal_path.write_text(teal)
             (d / f"app_{app_id}.bin").write_bytes(bytecode)   # deployed program
-            build_db(d)
             ok += 1
             nlines = len(teal_path.read_text().splitlines())
-            print(f"  fetched+db app_{app_id} ({nlines} lines)", flush=True)
+            print(f"  fetched app_{app_id} ({nlines} lines)", flush=True)
         except Exception as e:
             print(f"  FAIL app_{app_id}: {type(e).__name__}: {str(e)[:50]}", flush=True)
-    print(f"\n=== {ok}/{len(ids)} fetched + DB-built into {out} ===")
+    print(f"\n=== {ok}/{len(ids)} fetched into {out} (lift from raw .teal; no DB) ===")
 
 
 if __name__ == "__main__":
