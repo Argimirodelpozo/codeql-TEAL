@@ -72,6 +72,7 @@ _DETECTION_SPECS: tuple[tuple[str, str, str, "Optional[str]"], ...] = (
     ("lease-validation",      "lease_validation",      "LeaseValidationDetector",     "LeaseValidationViolation"),
     ("rekey-to",              "rekey_to",              "RekeyToDetector",             "RekeyToViolation"),
     ("timelock-upgrade",      "timelock_upgrade",      "TimelockUpgradeDetector",     "TimelockUpgradeViolation"),
+    ("tainted-fund-flow",     "tainted_fund_flow",     "TaintedFundFlowDetector",     "TaintedFundFlowViolation"),
     ("tx-type-check",         "tx_type_check",         "TxTypeCheckDetector",         "TxTypeCheckViolation"),
     ("unprotected-deletable", "unprotected_deletable", "UnprotectedDeletableDetector", "UnprotectedDeletableViolation"),
     ("unprotected-updatable", "unprotected_updatable", "UnprotectedUpdatableDetector", "UnprotectedUpdatableViolation"),
