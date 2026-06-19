@@ -1,5 +1,14 @@
 """Attacker-controlled inner-transaction FUND-FLOW detector (IR layer).
 
+Sibling of the SSA-layer ``security/detections/tainted-fund-flow`` detector; the
+two split the work deliberately (the layering is genuinely split, not redundant):
+this IR detector has INTERPROCEDURAL taint -- the lift resolves ``proto`` frames
+into explicit params, a connection the SSA def-use does not carry -- but only
+intra-procedural guard dominance. The SSA detector is the inverse: interprocedural
+guard dominance + cross-contract (``path_predicates``), but intra-procedural taint.
+Use this one when frame-passed param flow matters; use the SSA one for guard/
+cross-contract reasoning and a first-class ``tealql detections`` entry.
+
 Every user-input-tainted value reaching a *fund-flow* inner-transaction field is a
 finding: the attacker can influence WHO gets paid, HOW MUCH, or WHO controls the
 account.
