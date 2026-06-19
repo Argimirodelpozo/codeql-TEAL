@@ -1,0 +1,15 @@
+#pragma version 8
+// FIXED: counterpart to vuln-inverted-bz.teal. The `==` result controls a
+// `bnz rekey_ok` — when the cmp is true we continue to the approval
+// exit, and when the cmp is false we fall through to `err` / reject.
+// This is the branch-based equivalent of `cmp; assert`.
+
+txn RekeyTo
+global ZeroAddress
+==
+bnz rekey_ok
+err
+
+rekey_ok:
+int 1
+return

@@ -1,0 +1,36 @@
+#pragma version 8
+// VULNERABLE: CloseRemainderTo checked on the "withdraw" path but not
+// on the "deposit" path — attacker uses deposit path to drain
+
+txn Amount
+int 0
+>
+bnz deposit_path
+
+// Withdraw path — has CloseRemainderTo check
+txn CloseRemainderTo
+global ZeroAddress
+==
+assert
+txn Fee
+global MinTxnFee
+<=
+assert
+b approve
+
+deposit_path:
+// Deposit path — developer assumed "deposits are safe" but attacker
+// can still set CloseRemainderTo to drain remaining balance
+txn Amount
+int 1000000
+<=
+assert
+txn Fee
+global MinTxnFee
+<=
+assert
+// Missing: txn CloseRemainderTo == global ZeroAddress
+
+approve:
+int 1
+return

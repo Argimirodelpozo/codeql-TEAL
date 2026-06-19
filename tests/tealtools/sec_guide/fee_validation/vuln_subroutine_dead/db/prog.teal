@@ -1,0 +1,35 @@
+#pragma version 8
+// VULNERABLE: Fee check subroutine exists but is never called
+// The developer wrote the subroutine but forgot to wire it in
+
+txn TypeEnum
+int 1
+==
+bnz is_payment
+
+// Application call path
+txn OnCompletion
+int 0
+==
+assert
+b approve
+
+is_payment:
+// Payment path
+txn Amount
+int 500000
+<=
+assert
+
+approve:
+// Fee check subroutine is defined below but never called!
+int 1
+return
+
+// Dead code — never reached
+validate_fee:
+  txn Fee
+  global MinTxnFee
+  <=
+  assert
+  retsub

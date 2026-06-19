@@ -1,0 +1,17 @@
+#pragma version 8
+// VULNERABLE: DeleteApplication allowed without checking if funds remain
+txn OnCompletion
+int 5
+==
+bnz delete_handler
+int 1
+return
+delete_handler:
+txn Sender
+global CreatorAddress
+==
+assert
+// Missing: balance == min_balance check
+// Funds locked permanently if not drained first
+int 1
+return

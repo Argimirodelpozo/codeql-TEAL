@@ -1,0 +1,16 @@
+#pragma version 10
+// Callee: dispatches by ApplicationArgs[0]. The "process" handler
+// approves with no RekeyTo check — the rekey-to detector flags this
+// approval exit when run cross-contract.
+
+txna ApplicationArgs 0
+pushbytes "process"
+==
+bnz process
+
+err
+
+process:
+  // No `txn RekeyTo == global ZeroAddress; assert` here.
+  pushint 1
+  return

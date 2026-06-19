@@ -1,0 +1,43 @@
+#pragma version 10
+// itxn exercising every array-valued itxn field. Each itxn_field op
+// APPENDS one element, so the report renders these as ordered
+// [e0, e1, …] (see _ARRAY_ITXN_FIELDS in inner_txn_report.py).
+// wormhole_token_bridge covers ApplicationArgs/Accounts from a real
+// contract; this is the minimal all-six-fields regression case.
+
+itxn_begin
+pushint 6                       // appl
+itxn_field TypeEnum
+
+pushbytes 0xaa01                // ApplicationArgs[0]
+itxn_field ApplicationArgs
+pushbytes 0xaa02                // ApplicationArgs[1]
+itxn_field ApplicationArgs
+
+txn Sender                      // Accounts[0]
+itxn_field Accounts
+global CurrentApplicationAddress // Accounts[1]
+itxn_field Accounts
+
+pushint 100                     // Assets[0]
+itxn_field Assets
+pushint 200                     // Assets[1]
+itxn_field Assets
+
+pushint 300                     // Applications[0]
+itxn_field Applications
+pushint 400                     // Applications[1]
+itxn_field Applications
+
+pushbytes 0xbb01                // ApprovalProgramPages[0]
+itxn_field ApprovalProgramPages
+pushbytes 0xbb02                // ApprovalProgramPages[1]
+itxn_field ApprovalProgramPages
+
+pushbytes 0xcc01                // ClearStateProgramPages[0]
+itxn_field ClearStateProgramPages
+
+itxn_submit
+
+pushint 1
+return

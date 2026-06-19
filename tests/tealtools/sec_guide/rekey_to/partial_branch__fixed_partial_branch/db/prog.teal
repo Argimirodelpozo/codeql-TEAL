@@ -1,0 +1,41 @@
+#pragma version 8
+// FIXED: RekeyTo validated on BOTH branches. Even though the comparison
+// lives inside each branch (not before the split), every path from entry
+// to the approval exit passes through *some* RekeyTo == ZeroAddress
+// check — so the dominance test correctly sees each approval exit as
+// protected.
+
+txn TypeEnum
+int 1
+==
+bnz payment_path
+
+// Asset transfer path
+txn RekeyTo
+global ZeroAddress
+==
+assert
+txn XferAsset
+int 12345
+==
+assert
+b approve
+
+payment_path:
+// Payment path — also checks RekeyTo
+txn RekeyTo
+global ZeroAddress
+==
+assert
+txn Amount
+int 500000
+<=
+assert
+txn Fee
+global MinTxnFee
+<=
+assert
+
+approve:
+int 1
+return

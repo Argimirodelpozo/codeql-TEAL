@@ -1,0 +1,25 @@
+#pragma version 8
+// FIXED: Use deterministic checks instead of args for authorization
+// All security-relevant values are baked into the bytecode
+txn Amount
+int 500000
+<=
+txn Fee
+global MinTxnFee
+<=
+&&
+txn RekeyTo
+global ZeroAddress
+==
+&&
+txn CloseRemainderTo
+global ZeroAddress
+==
+&&
+txn Receiver
+addr AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ
+==
+&&
+assert
+int 1
+return

@@ -25,12 +25,13 @@ _SUCC_TYPES = {"NormalSuccessor", "BooleanSuccessor(true)", "BooleanSuccessor(fa
 
 
 def _all_dbs() -> list[Path]:
+    # Fixtures carry a committed golden; source is a `.teal` file (slimmed) or a
+    # legacy codeql `src.zip` -- discover by the golden, not codeql-database.yml.
     dbs: list[Path] = []
     for root in (TESTS_DIR / "tealtools", TESTS_DIR / "dbs"):
         if root.exists():
-            for yml in sorted(root.rglob("codeql-database.yml")):
-                if (yml.parent / "src.zip").exists():
-                    dbs.append(yml.parent)
+            for golden in sorted(root.rglob("graph_golden.txt")):
+                dbs.append(golden.parent)
     return dbs
 
 
@@ -114,20 +115,28 @@ def test_raw_teal_no_codeql(db: Path, monkeypatch, tmp_path) -> None:
     ``load_graph`` builds the same graph whether handed the DB or the extracted
     source, and ``SSAProgram`` builds from raw TEAL. Proves codeql is gone from
     the runtime path."""
-    import zipfile
     monkeypatch.setenv("TEAL_GRAPHS_BACKEND", "python")
-    with zipfile.ZipFile(db / "src.zip") as zf:
-        members = [n for n in zf.namelist() if n.endswith(".teal")]
-        if not members:
-            pytest.skip("no teal in db")
-        raw = tmp_path / Path(members[0]).name
-        raw.write_bytes(zf.read(members[0]))
+    teal_files = sorted(db.glob("*.teal"))
+    if teal_files:                                       # slimmed fixture: .teal source
+        srcs = {t.name: t.read_bytes() for t in teal_files}
+    else:                                                # legacy codeql DB: from src.zip
+        import zipfile
+        with zipfile.ZipFile(db / "src.zip") as zf:
+            srcs = {Path(n).name: zf.read(n) for n in zf.namelist() if n.endswith(".teal")}
+    if not srcs:
+        pytest.skip("no teal in db")
+    for name, data in srcs.items():
+        (tmp_path / name).write_bytes(data)
+    raw = tmp_path / next(iter(srcs))                    # one extracted .teal
 
     g_db = load_graph(db, verbose=False)
-    g_file = load_graph(raw, verbose=False)              # raw .teal file
-    g_dir = load_graph(tmp_path, verbose=False)          # dir of .teal
-    assert g_db.number_of_nodes() == g_file.number_of_nodes() == g_dir.number_of_nodes()
-    assert g_db.number_of_edges() == g_file.number_of_edges() == g_dir.number_of_edges()
+    g_dir = load_graph(tmp_path, verbose=False)          # dir of extracted .teal
+    assert g_db.number_of_nodes() == g_dir.number_of_nodes()
+    assert g_db.number_of_edges() == g_dir.number_of_edges()
+    if len(srcs) == 1:                                   # single-source: file form too
+        g_file = load_graph(tmp_path / next(iter(srcs)), verbose=False)
+        assert g_db.number_of_nodes() == g_file.number_of_nodes()
+        assert g_db.number_of_edges() == g_file.number_of_edges()
 
     from tealtools.ssa import SSAProgram
     assert SSAProgram(str(raw)).blocks, "SSA from raw TEAL produced no blocks"

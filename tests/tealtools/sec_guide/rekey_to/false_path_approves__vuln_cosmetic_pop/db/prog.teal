@@ -1,0 +1,13 @@
+#pragma version 8
+// VULNERABLE: The `txn RekeyTo == global ZeroAddress` comparison is
+// performed but its result is immediately discarded with `pop` — no
+// assert, no branch. The cmp never enforces rejection, so every approval
+// path reaches `int 1; return` regardless of the RekeyTo value.
+
+txn RekeyTo
+global ZeroAddress
+==
+pop
+
+int 1
+return

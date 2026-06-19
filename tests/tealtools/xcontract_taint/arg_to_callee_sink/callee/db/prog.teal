@@ -1,0 +1,17 @@
+#pragma version 10
+// Callee: reads the caller-forwarded ApplicationArgs[0], checks the
+// caller's Sender (the caller app addr, via the sender bridge), logs
+// the value back (the return channel), and routes it -- unvalidated --
+// into an inner payment Receiver (the sensitive sink).
+txna ApplicationArgs 0
+txn Sender
+pop
+dup
+log
+itxn_begin
+pushint 1
+itxn_field TypeEnum
+itxn_field Receiver
+itxn_submit
+pushint 1
+return

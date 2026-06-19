@@ -1,0 +1,42 @@
+#pragma version 8
+// VULNERABLE: Inner txn fee set dynamically via subroutine but
+// resolves to non-zero (MinTxnFee)
+
+txn OnCompletion
+int 0
+==
+assert
+
+// Determine fee based on some condition
+txn NumAppArgs
+int 2
+>=
+bnz use_custom_fee
+
+// Default: use MinTxnFee (still non-zero = still drainable)
+global MinTxnFee
+store 0
+b do_itxn
+
+use_custom_fee:
+  txn ApplicationArgs 1
+  btoi
+  store 0
+
+do_itxn:
+  callsub emit_inner_txn
+  int 1
+  return
+
+emit_inner_txn:
+  itxn_begin
+  int 1
+  itxn_field TypeEnum
+  txn Sender
+  itxn_field Receiver
+  int 100000
+  itxn_field Amount
+  load 0
+  itxn_field Fee          // Non-zero fee from scratch space
+  itxn_submit
+  retsub

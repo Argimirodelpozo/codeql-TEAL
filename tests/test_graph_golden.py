@@ -27,12 +27,14 @@ TESTS_DIR = Path(__file__).resolve().parent
 
 
 def _all_dbs() -> list[Path]:
+    # A fixture is a dir carrying its committed golden; its source is a `.teal`
+    # file (slimmed fixtures) or a legacy codeql `src.zip` -- the graph backend
+    # reads either, so discover by the golden, not codeql-database.yml/src.zip.
     dbs: list[Path] = []
     for root in (TESTS_DIR / "tealtools", TESTS_DIR / "dbs"):
         if root.exists():
-            for yml in sorted(root.rglob("codeql-database.yml")):
-                if (yml.parent / "src.zip").exists():
-                    dbs.append(yml.parent)
+            for golden in sorted(root.rglob(GOLDEN_NAME)):
+                dbs.append(golden.parent)
     return dbs
 
 

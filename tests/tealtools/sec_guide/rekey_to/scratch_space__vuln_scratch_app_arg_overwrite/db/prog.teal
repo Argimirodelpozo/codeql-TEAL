@@ -1,0 +1,41 @@
+#pragma version 8
+// VULNERABLE: RekeyTo is stored into slot 0, but before the assertion
+// the slot is OVERWRITTEN with `ApplicationArgs[0]` — attacker-controlled
+// call data. The subsequent `load 0 ; global ZeroAddress ; == ; assert`
+// therefore asserts `ApplicationArgs[0] == ZeroAddress`, not RekeyTo.
+// An attacker sets ApplicationArgs[0] to the zero address and then sets
+// any RekeyTo they want; the "check" trivially passes.
+
+txn RekeyTo
+store 0
+
+txna ApplicationArgs 0
+store 0
+
+// This looks like a RekeyTo scratch-space check but by this point slot 0
+// holds ApplicationArgs[0], not RekeyTo.
+load 0
+global ZeroAddress
+==
+assert
+
+txn TypeEnum
+int 1
+==
+bnz payment_path
+
+txn OnCompletion
+int 0
+==
+assert
+b approve
+
+payment_path:
+txn Amount
+int 500000
+<=
+assert
+
+approve:
+int 1
+return

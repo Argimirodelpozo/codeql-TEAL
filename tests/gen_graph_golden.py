@@ -18,18 +18,20 @@ os.environ.setdefault("TEAL_GRAPHS_BACKEND", "python")
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from graph_golden import compute_golden, golden_path  # noqa: E402
+from graph_golden import GOLDEN_NAME, compute_golden, golden_path  # noqa: E402
 
 TESTS_DIR = Path(__file__).resolve().parent
 
 
 def _all_dbs() -> list[Path]:
+    # Regenerate the golden for every fixture that already carries one; its source
+    # is a `.teal` file (slimmed) or a legacy codeql `src.zip` (both read by the
+    # graph backend).
     dbs: list[Path] = []
     for root in (TESTS_DIR / "tealtools", TESTS_DIR / "dbs"):
         if root.exists():
-            for yml in sorted(root.rglob("codeql-database.yml")):
-                if (yml.parent / "src.zip").exists():
-                    dbs.append(yml.parent)
+            for golden in sorted(root.rglob(GOLDEN_NAME)):
+                dbs.append(golden.parent)
     return dbs
 
 

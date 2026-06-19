@@ -1,0 +1,34 @@
+#pragma version 10
+// Like phi_amount/, but with an extra empty intermediate BB between
+// the join and the itxn_field consumer. The slot-1 phi at the
+// intermediate BB has no local consumer, so its exit at slot 1
+// propagates as an IndirectPhi at the target BB — that's the
+// operand the itxn_field actually consumes.
+//
+// The report should still render Amount as {100 | 200}, with
+// _phi_possible_values recursing through the IndirectPhi.args[0]
+// (the DirectPhi at the intermediate) into the originating SSAVars.
+
+itxn_begin
+pushint 1
+itxn_field TypeEnum
+
+txna ApplicationArgs 0
+btoi
+bnz l_high
+
+pushint 100
+b l_intermediate
+
+l_high:
+pushint 200
+
+l_intermediate:                 // empty BB except for the branch
+b l_set_amount
+
+l_set_amount:
+itxn_field Amount
+
+itxn_submit
+pushint 1
+return

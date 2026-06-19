@@ -1,0 +1,13 @@
+#pragma version 10
+// Two-way branch fixture for the cfg dumper. Produces three BBs:
+// the entry (up through the bnz), the fall-through (err), and
+// the labelled target (pushint 1; return).
+
+txna ApplicationArgs 0
+btoi
+bnz allow
+err
+
+allow:
+pushint 1
+return

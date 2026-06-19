@@ -1,0 +1,17 @@
+#pragma version 10
+// External arg passes through btoi + arithmetic before reaching the
+// box write. The default flow rules BLOCK taint at btoi, so no flow
+// is flagged. (Realistic? Sometimes — a clamped numeric is harder to
+// abuse than raw bytes. The detector is taint-only and treats this
+// transformation as sanitising.)
+
+pushbytes "k"
+txna ApplicationArgs 1
+btoi
+pushint 1000
+%
+itob
+box_put
+
+pushint 1
+return

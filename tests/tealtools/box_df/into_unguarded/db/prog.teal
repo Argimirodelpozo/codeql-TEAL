@@ -1,0 +1,9 @@
+#pragma version 10
+// External arg flows directly into a box's value — unsanitised write.
+
+pushbytes "k"
+txna ApplicationArgs 1
+box_put
+
+pushint 1
+return

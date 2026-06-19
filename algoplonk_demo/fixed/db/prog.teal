@@ -1,0 +1,2112 @@
+#pragma version 11
+#pragma typetrack false
+
+// BasicVerifier.verify() -> uint64:
+main:
+    intcblock 32 0 2 1 1056
+    bytecblock 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001 0x01 0x 0x345766f603fa66e78c0625cd70d77ce2b38b21c28713b7007228fd3397743f7a 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfefffffffeffffffff
+    intc_1 // 0
+    dupn 11
+    bytec_2 // ""
+    dupn 3
+    // /tmp/algoplonk_fixed/BasicVerifier.py:42-43
+    // # prevent the verifier account from being rekeyed by this transaction
+    // assert py.Txn.rekey_to == py.Global.zero_address
+    txn RekeyTo
+    global ZeroAddress
+    ==
+    assert
+    // /tmp/algoplonk_fixed/BasicVerifier.py:45-49
+    // # read proof and public inputs
+    // # they are passed in to an arc4 contract as DyanmicArray[Bytes32]
+    // # where Bytes32 is a 32 bytes StaticArray; so we skip the first 2 bytes which encode
+    // # the length of the array (we also skip the first app arg which is the method name)
+    // proof = py.Txn.application_args(1)[2:]
+    txna ApplicationArgs 1
+    dup
+    len
+    intc_2 // 2
+    dig 1
+    >=
+    intc_2 // 2
+    dig 2
+    uncover 2
+    select
+    swap
+    substring3
+    // /tmp/algoplonk_fixed/BasicVerifier.py:50
+    // public_inputs = py.Txn.application_args(2)[2:]
+    txna ApplicationArgs 2
+    dup
+    len
+    intc_2 // 2
+    dig 1
+    >=
+    intc_2 // 2
+    dig 2
+    uncover 2
+    select
+    swap
+    substring3
+    dup
+    cover 2
+    // /tmp/algoplonk_fixed/BasicVerifier.py:52-53
+    // # check proof and public inputs lengths
+    // assert proof.length == 33 * 32
+    dig 1
+    len
+    dup
+    intc 4 // 1056
+    ==
+    assert
+    // /tmp/algoplonk_fixed/BasicVerifier.py:54
+    // assert public_inputs.length == 2 * 32
+    swap
+    len
+    dup
+    cover 3
+    pushint 64
+    ==
+    assert
+    // /tmp/algoplonk_fixed/BasicVerifier.py:88-90
+    // # Read proof #
+    // # wires commitments
+    // L_COM = proof[0:96]
+    intc_1 // 0
+    dig 1
+    >=
+    intc_1 // 0
+    dig 2
+    uncover 2
+    select
+    pushint 96
+    dig 2
+    >=
+    pushint 96
+    dig 3
+    uncover 2
+    select
+    dig 3
+    uncover 2
+    dig 2
+    substring3
+    cover 3
+    // /tmp/algoplonk_fixed/BasicVerifier.py:91
+    // R_COM = proof[96:192]
+    pushint 192
+    dig 2
+    >=
+    pushint 192
+    dig 3
+    uncover 2
+    select
+    dig 3
+    uncover 2
+    dig 2
+    substring3
+    cover 3
+    // /tmp/algoplonk_fixed/BasicVerifier.py:92
+    // O_COM = proof[192:288]
+    pushint 288
+    dig 2
+    >=
+    pushint 288
+    dig 3
+    uncover 2
+    select
+    dig 3
+    uncover 2
+    dig 2
+    substring3
+    cover 3
+    // /tmp/algoplonk_fixed/BasicVerifier.py:94-95
+    // # h = h_0 + x^{n+2}h_1 + x^{2(n+2)}h_2
+    // H_0 = proof[288:384]
+    pushint 384
+    dig 2
+    >=
+    pushint 384
+    dig 3
+    uncover 2
+    select
+    dig 3
+    uncover 2
+    dig 2
+    substring3
+    cover 3
+    // /tmp/algoplonk_fixed/BasicVerifier.py:96
+    // H_1 = proof[384:480]
+    pushint 480
+    dig 2
+    >=
+    pushint 480
+    dig 3
+    uncover 2
+    select
+    dig 3
+    uncover 2
+    dig 2
+    substring3
+    cover 3
+    // /tmp/algoplonk_fixed/BasicVerifier.py:97
+    // H_2 = proof[480:576]
+    pushint 576
+    dig 2
+    >=
+    pushint 576
+    dig 3
+    uncover 2
+    select
+    dig 3
+    uncover 2
+    dig 2
+    substring3
+    cover 3
+    // /tmp/algoplonk_fixed/BasicVerifier.py:100-101
+    // # wire values at zeta
+    // L_AT_Z = proof[576:608]
+    pushint 608
+    dig 2
+    >=
+    pushint 608
+    dig 3
+    uncover 2
+    select
+    dig 3
+    uncover 2
+    dig 2
+    substring3
+    dup
+    cover 4
+    cover 4
+    // /tmp/algoplonk_fixed/BasicVerifier.py:102
+    // R_AT_Z = proof[608:640]
+    pushint 640
+    dig 2
+    >=
+    pushint 640
+    dig 3
+    uncover 2
+    select
+    dig 3
+    uncover 2
+    dig 2
+    substring3
+    cover 4
+    // /tmp/algoplonk_fixed/BasicVerifier.py:103
+    // O_AT_Z = proof[640:672]
+    pushint 672
+    dig 2
+    >=
+    pushint 672
+    dig 3
+    uncover 2
+    select
+    dig 3
+    uncover 2
+    dig 2
+    substring3
+    cover 4
+    // /tmp/algoplonk_fixed/BasicVerifier.py:105
+    // S1_AT_Z = proof[672:704]  					# s1(zeta)
+    pushint 704
+    dig 2
+    >=
+    pushint 704
+    dig 3
+    uncover 2
+    select
+    dig 3
+    uncover 2
+    dig 2
+    substring3
+    cover 4
+    // /tmp/algoplonk_fixed/BasicVerifier.py:106
+    // S2_AT_Z = proof[704:736]  					# s2(zeta))
+    pushint 736
+    dig 2
+    >=
+    pushint 736
+    dig 3
+    uncover 2
+    select
+    dig 3
+    uncover 2
+    dig 2
+    substring3
+    cover 4
+    // /tmp/algoplonk_fixed/BasicVerifier.py:107
+    // GRAND_PRODUCT = proof[736:832]				# z(x)
+    pushint 832
+    dig 2
+    >=
+    pushint 832
+    dig 3
+    uncover 2
+    select
+    dig 3
+    uncover 2
+    dig 2
+    substring3
+    cover 4
+    // /tmp/algoplonk_fixed/BasicVerifier.py:108
+    // GRAND_PRODUCT_AT_Z_OMEGA = proof[832:864]   # z(w*zeta)
+    pushint 864
+    dig 2
+    >=
+    pushint 864
+    dig 3
+    uncover 2
+    select
+    dig 3
+    uncover 2
+    dig 2
+    substring3
+    cover 4
+    // /tmp/algoplonk_fixed/BasicVerifier.py:110-111
+    // # folded proof for opening of linear poly, l, r, o, s1, s2
+    // BATCH_OPENING_AT_Z = proof[864:960]
+    pushint 960
+    dig 2
+    >=
+    pushint 960
+    dig 3
+    uncover 2
+    select
+    dig 3
+    uncover 2
+    dig 2
+    substring3
+    cover 4
+    // /tmp/algoplonk_fixed/BasicVerifier.py:113-114
+    // # opening at zeta * omega
+    // OPENING_AT_Z_OMEGA = proof[960:1056]
+    intc 4 // 1056
+    dig 2
+    >=
+    intc 4 // 1056
+    uncover 3
+    uncover 2
+    select
+    substring3
+    swap
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:116-117
+    // ### check proof public inputs are well-formed ###
+    // if (BigUInt.from_bytes(L_AT_Z) >= q
+    b>=
+    // /tmp/algoplonk_fixed/BasicVerifier.py:116-122
+    // ### check proof public inputs are well-formed ###
+    // if (BigUInt.from_bytes(L_AT_Z) >= q
+    // 		or BigUInt.from_bytes(R_AT_Z) >= q
+    // 		or BigUInt.from_bytes(O_AT_Z) >= q
+    // 		or BigUInt.from_bytes(S1_AT_Z) >= q
+    // 		or BigUInt.from_bytes(S2_AT_Z) >= q
+    // 		or BigUInt.from_bytes(GRAND_PRODUCT_AT_Z_OMEGA) >= q
+    bnz main_if_body@6
+    // /tmp/algoplonk_fixed/BasicVerifier.py:118
+    // or BigUInt.from_bytes(R_AT_Z) >= q
+    dig 7
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:118
+    // or BigUInt.from_bytes(R_AT_Z) >= q
+    b>=
+    // /tmp/algoplonk_fixed/BasicVerifier.py:116-122
+    // ### check proof public inputs are well-formed ###
+    // if (BigUInt.from_bytes(L_AT_Z) >= q
+    // 		or BigUInt.from_bytes(R_AT_Z) >= q
+    // 		or BigUInt.from_bytes(O_AT_Z) >= q
+    // 		or BigUInt.from_bytes(S1_AT_Z) >= q
+    // 		or BigUInt.from_bytes(S2_AT_Z) >= q
+    // 		or BigUInt.from_bytes(GRAND_PRODUCT_AT_Z_OMEGA) >= q
+    bnz main_if_body@6
+    // /tmp/algoplonk_fixed/BasicVerifier.py:119
+    // or BigUInt.from_bytes(O_AT_Z) >= q
+    dig 6
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:119
+    // or BigUInt.from_bytes(O_AT_Z) >= q
+    b>=
+    // /tmp/algoplonk_fixed/BasicVerifier.py:116-122
+    // ### check proof public inputs are well-formed ###
+    // if (BigUInt.from_bytes(L_AT_Z) >= q
+    // 		or BigUInt.from_bytes(R_AT_Z) >= q
+    // 		or BigUInt.from_bytes(O_AT_Z) >= q
+    // 		or BigUInt.from_bytes(S1_AT_Z) >= q
+    // 		or BigUInt.from_bytes(S2_AT_Z) >= q
+    // 		or BigUInt.from_bytes(GRAND_PRODUCT_AT_Z_OMEGA) >= q
+    bnz main_if_body@6
+    // /tmp/algoplonk_fixed/BasicVerifier.py:120
+    // or BigUInt.from_bytes(S1_AT_Z) >= q
+    dig 5
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:120
+    // or BigUInt.from_bytes(S1_AT_Z) >= q
+    b>=
+    // /tmp/algoplonk_fixed/BasicVerifier.py:116-122
+    // ### check proof public inputs are well-formed ###
+    // if (BigUInt.from_bytes(L_AT_Z) >= q
+    // 		or BigUInt.from_bytes(R_AT_Z) >= q
+    // 		or BigUInt.from_bytes(O_AT_Z) >= q
+    // 		or BigUInt.from_bytes(S1_AT_Z) >= q
+    // 		or BigUInt.from_bytes(S2_AT_Z) >= q
+    // 		or BigUInt.from_bytes(GRAND_PRODUCT_AT_Z_OMEGA) >= q
+    bnz main_if_body@6
+    // /tmp/algoplonk_fixed/BasicVerifier.py:121
+    // or BigUInt.from_bytes(S2_AT_Z) >= q
+    dig 4
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:121
+    // or BigUInt.from_bytes(S2_AT_Z) >= q
+    b>=
+    // /tmp/algoplonk_fixed/BasicVerifier.py:116-122
+    // ### check proof public inputs are well-formed ###
+    // if (BigUInt.from_bytes(L_AT_Z) >= q
+    // 		or BigUInt.from_bytes(R_AT_Z) >= q
+    // 		or BigUInt.from_bytes(O_AT_Z) >= q
+    // 		or BigUInt.from_bytes(S1_AT_Z) >= q
+    // 		or BigUInt.from_bytes(S2_AT_Z) >= q
+    // 		or BigUInt.from_bytes(GRAND_PRODUCT_AT_Z_OMEGA) >= q
+    bnz main_if_body@6
+    // /tmp/algoplonk_fixed/BasicVerifier.py:122
+    // or BigUInt.from_bytes(GRAND_PRODUCT_AT_Z_OMEGA) >= q
+    dig 2
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:122
+    // or BigUInt.from_bytes(GRAND_PRODUCT_AT_Z_OMEGA) >= q
+    b>=
+    // /tmp/algoplonk_fixed/BasicVerifier.py:116-122
+    // ### check proof public inputs are well-formed ###
+    // if (BigUInt.from_bytes(L_AT_Z) >= q
+    // 		or BigUInt.from_bytes(R_AT_Z) >= q
+    // 		or BigUInt.from_bytes(O_AT_Z) >= q
+    // 		or BigUInt.from_bytes(S1_AT_Z) >= q
+    // 		or BigUInt.from_bytes(S2_AT_Z) >= q
+    // 		or BigUInt.from_bytes(GRAND_PRODUCT_AT_Z_OMEGA) >= q
+    bz main_after_if_else@7
+
+main_if_body@6:
+    // /tmp/algoplonk_fixed/BasicVerifier.py:124
+    // return False
+    err
+
+main_after_if_else@7:
+    // /tmp/algoplonk_fixed/BasicVerifier.py:126
+    // for i in urange(VK_NB_PUBLIC_INPUTS):
+    intc_1 // 0
+    bury 20
+
+main_for_header@8:
+    // /tmp/algoplonk_fixed/BasicVerifier.py:126
+    // for i in urange(VK_NB_PUBLIC_INPUTS):
+    dig 19
+    // /tmp/algoplonk_fixed/BasicVerifier.py:56-57
+    // ### Read verifying key ###
+    // VK_NB_PUBLIC_INPUTS = UInt64(2)
+    intc_2 // 2
+    // /tmp/algoplonk_fixed/BasicVerifier.py:126
+    // for i in urange(VK_NB_PUBLIC_INPUTS):
+    <
+    bz main_after_for@13
+    // /tmp/algoplonk_fixed/BasicVerifier.py:127
+    // if BigUInt.from_bytes(public_inputs[i*32:(i+1)*32]) >= q:
+    dig 19
+    dup
+    intc_0 // 32
+    *
+    dup
+    dig 18
+    dup
+    cover 3
+    >=
+    dig 2
+    swap
+    select
+    uncover 2
+    intc_3 // 1
+    +
+    dup
+    bury 21
+    intc_0 // 32
+    *
+    dup
+    dig 3
+    >=
+    swap
+    uncover 3
+    uncover 2
+    select
+    dup
+    dig 2
+    <
+    dig 2
+    swap
+    select
+    dig 18
+    cover 2
+    substring3
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:127
+    // if BigUInt.from_bytes(public_inputs[i*32:(i+1)*32]) >= q:
+    b>=
+    bz main_after_if_else@11
+    // /tmp/algoplonk_fixed/BasicVerifier.py:128
+    // return False
+    err
+
+main_after_if_else@11:
+    dig 17
+    bury 20
+    b main_for_header@8
+
+main_after_for@13:
+    // /tmp/algoplonk_fixed/BasicVerifier.py:134-135
+    // gamma_pre = sha256(b'gamma' + VK_S1_fs + VK_S2_fs + VK_S3_fs + VK_QL_fs
+    // 				+ VK_QR_fs + VK_QM_fs + VK_QO_fs + VK_QK_fs + public_inputs
+    pushbytes 0x67616d6d6102d13aee87876961457d1d35e934e4dd50b359859bac54ecf654ab13d7c8cb73f7ee16b7b6dfd8587309d195ba4bf0a40f60cc8e01b9159dc9c64438fda713714895ee5f4499f54197bed47d1628188cd3bf403702220458d7a439f9f7f6d30700762ebe9fadbdef3c4be5f2b09c968e4880cc3b3f865948b8699b4ba22f53f3cbaf781f64df7daaa3bd72b50b4c860e0b6142cc073969ddde5afa08d07197083a5f4a24c0291c7930e403afb9fc01300851f256a79a719de14148638ad90d1d0217e277d392d10946691d51143883cfa0552ac351898f52d159c6c1efb21e733aaf4afd437deb8d99ef6462c6ac9db018b7480ca8a96c49c273f0d8e6c633a8f9bad57c55f9d9433e4465670e231b44601cff9466d0bbbb1e856c8cd2d3f2cc0f4dc4f6a3c2f38b5a0d57995ca2b422c9b772ed630e84280405953a3ef835bfc06fbf403adc531524acfa5b91cf56bd071749df4c3436c74ec8bcb6cb32f7d5583da31ad664a043af5d85a3844009add356cbbf6816c29d69beb22dc0cd541004e247e860248c69f9edc8b3a7bc85689bf9fc8fd29a85871900aec78181b83527c425440ee11752c8b08d6c232ae3ee17ee9b5f0090271051be4e7818d707d77427b77c055aea802e2162bc5a442e363dbeafd36b79549eacf85bd20b283cee0b38005f645c709626003c521bd0c5921d6e0bc7d22632499468d603472dc0de4cc28e7961a869caae93eaea6b00de9a0e287de527c44a1bebbe308c7bd51f7e8e2e8a6a15b52252691cc9cfa730e36360cc8398aa97d644758337f5d89e237800f770f4599678c0ae8082f97ca59d0efb3d1d8b74a18447bb132b5318c4ec470ae4f7138ca9ff4bb5d13e96623625270b38ba79b98bb09decc8ff5772c2d8b4c55b33cc14cb0456551484d1dd8ec19cd2b5f1a838963599d2714a2f9d2906f8400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+    dig 17
+    concat
+    // /tmp/algoplonk_fixed/BasicVerifier.py:136
+    // + fs(L_COM) + fs(R_COM) + fs(O_COM))
+    dig 15
+    callsub fs
+    // /tmp/algoplonk_fixed/BasicVerifier.py:134-136
+    // gamma_pre = sha256(b'gamma' + VK_S1_fs + VK_S2_fs + VK_S3_fs + VK_QL_fs
+    // 				+ VK_QR_fs + VK_QM_fs + VK_QO_fs + VK_QK_fs + public_inputs
+    // 				+ fs(L_COM) + fs(R_COM) + fs(O_COM))
+    concat
+    // /tmp/algoplonk_fixed/BasicVerifier.py:136
+    // + fs(L_COM) + fs(R_COM) + fs(O_COM))
+    dig 14
+    callsub fs
+    // /tmp/algoplonk_fixed/BasicVerifier.py:134-136
+    // gamma_pre = sha256(b'gamma' + VK_S1_fs + VK_S2_fs + VK_S3_fs + VK_QL_fs
+    // 				+ VK_QR_fs + VK_QM_fs + VK_QO_fs + VK_QK_fs + public_inputs
+    // 				+ fs(L_COM) + fs(R_COM) + fs(O_COM))
+    concat
+    // /tmp/algoplonk_fixed/BasicVerifier.py:136
+    // + fs(L_COM) + fs(R_COM) + fs(O_COM))
+    dig 13
+    callsub fs
+    // /tmp/algoplonk_fixed/BasicVerifier.py:134-136
+    // gamma_pre = sha256(b'gamma' + VK_S1_fs + VK_S2_fs + VK_S3_fs + VK_QL_fs
+    // 				+ VK_QR_fs + VK_QM_fs + VK_QO_fs + VK_QK_fs + public_inputs
+    // 				+ fs(L_COM) + fs(R_COM) + fs(O_COM))
+    concat
+    sha256
+    // /tmp/algoplonk_fixed/BasicVerifier.py:137
+    // beta_pre = sha256(b'beta' + gamma_pre)
+    pushbytes 0x62657461
+    dig 1
+    concat
+    sha256
+    // /tmp/algoplonk_fixed/BasicVerifier.py:138
+    // alpha_pre = sha256(b'alpha' + beta_pre + fs(GRAND_PRODUCT))
+    pushbytes 0x616c706861
+    dig 1
+    concat
+    dig 6
+    callsub fs
+    concat
+    sha256
+    // /tmp/algoplonk_fixed/BasicVerifier.py:139
+    // zeta_pre = sha256(b'zeta' + alpha_pre + fs(H_0) + fs(H_1) + fs(H_2))
+    pushbytes 0x7a657461
+    dig 1
+    concat
+    dig 15
+    callsub fs
+    concat
+    dig 14
+    callsub fs
+    concat
+    dig 13
+    callsub fs
+    concat
+    sha256
+    // /tmp/algoplonk_fixed/BasicVerifier.py:364
+    // return BigUInt.from_bytes(x) % BigUInt(R_MOD)
+    uncover 3
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    b%
+    bury 31
+    uncover 2
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    b%
+    bury 31
+    swap
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    b%
+    bury 32
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    b%
+    dup
+    bury 24
+    // /tmp/algoplonk_fixed/BasicVerifier.py:58
+    // VK_DOMAIN_SIZE = BigUInt(8)
+    pushbytes 0x08
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:146-147
+    // # Zz is eval of Xⁿ-1 at zeta
+    // Zz = (expmod(zeta, VK_DOMAIN_SIZE, q) + q - BigUInt(1)) % q
+    callsub expmod
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:146-147
+    // # Zz is eval of Xⁿ-1 at zeta
+    // Zz = (expmod(zeta, VK_DOMAIN_SIZE, q) + q - BigUInt(1)) % q
+    b+
+    bytec_1 // 0x01
+    b-
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:146-147
+    // # Zz is eval of Xⁿ-1 at zeta
+    // Zz = (expmod(zeta, VK_DOMAIN_SIZE, q) + q - BigUInt(1)) % q
+    b%
+    // /tmp/algoplonk_fixed/BasicVerifier.py:59
+    // VK_INV_DOMAIN_SIZE = BigUInt(45881390778235416669516772944662720107979233437961683094778201362446258536449)
+    pushbytes 0x656ff268c469cd9f2cd29d07086d9d04a945ef829ffe907f1fffffff20000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:149-150
+    // # zn is Zz * 1/n
+    // zn = (Zz * VK_INV_DOMAIN_SIZE) % q
+    b*
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:149-150
+    // # zn is Zz * 1/n
+    // zn = (Zz * VK_INV_DOMAIN_SIZE) % q
+    b%
+    bury 22
+    // /tmp/algoplonk_fixed/BasicVerifier.py:152-153
+    // # Let's prepare to interpolate the public inputs
+    // w_ = BigUInt(1)
+    bytec_1 // 0x01
+    bury 24
+    // /tmp/algoplonk_fixed/BasicVerifier.py:154
+    // batch = DynamicArray[UInt256]()
+    pushbytes 0x0000
+    bury 30
+    // /tmp/algoplonk_fixed/BasicVerifier.py:155
+    // for i in urange(VK_NB_PUBLIC_INPUTS):
+    intc_1 // 0
+    bury 20
+
+main_for_header@14:
+    // /tmp/algoplonk_fixed/BasicVerifier.py:155
+    // for i in urange(VK_NB_PUBLIC_INPUTS):
+    dig 19
+    // /tmp/algoplonk_fixed/BasicVerifier.py:56-57
+    // ### Read verifying key ###
+    // VK_NB_PUBLIC_INPUTS = UInt64(2)
+    intc_2 // 2
+    // /tmp/algoplonk_fixed/BasicVerifier.py:155
+    // for i in urange(VK_NB_PUBLIC_INPUTS):
+    <
+    bz main_after_for@17
+    // /tmp/algoplonk_fixed/BasicVerifier.py:156
+    // x = (zeta + q - w_) % q
+    dig 22
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:156
+    // x = (zeta + q - w_) % q
+    b+
+    dig 24
+    dup
+    cover 2
+    b-
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:156
+    // x = (zeta + q - w_) % q
+    b%
+    // /tmp/algoplonk_fixed/BasicVerifier.py:157
+    // batch.append(UInt256(x))
+    dup
+    len
+    intc_0 // 32
+    <=
+    assert // overflow
+    intc_0 // 32
+    bzero
+    b|
+    dig 31
+    dup
+    uncover 2
+    concat // on error: max array length exceeded
+    swap
+    intc_1 // 0
+    extract_uint16
+    intc_3 // 1
+    +
+    itob
+    extract 6 2
+    replace2 0
+    bury 31
+    // /tmp/algoplonk_fixed/BasicVerifier.py:60
+    // VK_OMEGA = BigUInt(23674694431658770659612952115660802947967373701506253797663184111817857449850)
+    bytec_3 // 0x345766f603fa66e78c0625cd70d77ce2b38b21c28713b7007228fd3397743f7a
+    // /tmp/algoplonk_fixed/BasicVerifier.py:158
+    // w_ = (w_ * VK_OMEGA) % q
+    b*
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:158
+    // w_ = (w_ * VK_OMEGA) % q
+    b%
+    bury 24
+    // /tmp/algoplonk_fixed/BasicVerifier.py:155
+    // for i in urange(VK_NB_PUBLIC_INPUTS):
+    dig 19
+    intc_3 // 1
+    +
+    bury 20
+    b main_for_header@14
+
+main_after_for@17:
+    // /tmp/algoplonk_fixed/BasicVerifier.py:162
+    // prev = BigUInt(1)
+    bytec_1 // 0x01
+    bury 26
+    // /tmp/algoplonk_fixed/BasicVerifier.py:163
+    // temp.append(UInt256(prev))
+    intc_0 // 32
+    bzero
+    bury 32
+    pushbytes 0x00010000000000000000000000000000000000000000000000000000000000000001
+    bury 25
+    // /tmp/algoplonk_fixed/BasicVerifier.py:164
+    // for x256 in batch:
+    dig 29
+    intc_1 // 0
+    extract_uint16 // on error: invalid array length header
+    bury 21
+    intc_1 // 0
+    bury 19
+
+main_for_header@18:
+    // /tmp/algoplonk_fixed/BasicVerifier.py:164
+    // for x256 in batch:
+    dig 18
+    dig 21
+    <
+    bz main_after_for@21
+    dig 29
+    extract 2 0
+    dig 19
+    dup
+    cover 2
+    intc_0 // 32
+    *
+    intc_0 // 32
+    extract3 // on error: index access is out of bounds
+    // /tmp/algoplonk_fixed/BasicVerifier.py:166
+    // y = (x * prev) % q
+    dig 27
+    b*
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:166
+    // y = (x * prev) % q
+    b%
+    // /tmp/algoplonk_fixed/BasicVerifier.py:167
+    // temp.append(UInt256(y))
+    dup
+    len
+    intc_0 // 32
+    <=
+    assert // overflow
+    dup
+    dig 34
+    b|
+    dig 27
+    dup
+    uncover 2
+    concat // on error: max array length exceeded
+    swap
+    intc_1 // 0
+    extract_uint16
+    intc_3 // 1
+    +
+    itob
+    extract 6 2
+    replace2 0
+    bury 27
+    swap
+    intc_3 // 1
+    +
+    bury 20
+    bury 26
+    b main_for_header@18
+
+main_after_for@21:
+    // /tmp/algoplonk_fixed/BasicVerifier.py:169
+    // inv = expmod(prev, q - BigUInt(2), q)
+    dig 25
+    bytec 4 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfefffffffeffffffff
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:169
+    // inv = expmod(prev, q - BigUInt(2), q)
+    callsub expmod
+    bury 27
+    // /tmp/algoplonk_fixed/BasicVerifier.py:56-57
+    // ### Read verifying key ###
+    // VK_NB_PUBLIC_INPUTS = UInt64(2)
+    intc_2 // 2
+    // /tmp/algoplonk_fixed/BasicVerifier.py:170
+    // i = VK_NB_PUBLIC_INPUTS
+    bury 20
+
+main_while_top@22:
+    // /tmp/algoplonk_fixed/BasicVerifier.py:171
+    // while i > 0:
+    dig 19
+    bz main_after_while@24
+    // /tmp/algoplonk_fixed/BasicVerifier.py:172
+    // tmp = BigUInt.from_bytes(batch[i-1].bytes)
+    dig 19
+    intc_3 // 1
+    -
+    dup
+    bury 21
+    dig 30
+    dup
+    cover 2
+    extract 2 0
+    swap
+    intc_0 // 32
+    *
+    swap
+    dig 1
+    intc_0 // 32
+    extract3 // on error: index access is out of bounds
+    // /tmp/algoplonk_fixed/BasicVerifier.py:173
+    // cur = (inv * BigUInt.from_bytes(temp[i-1].bytes)) % q
+    dig 27
+    extract 2 0
+    dig 2
+    intc_0 // 32
+    extract3 // on error: index access is out of bounds
+    dig 30
+    dup
+    cover 3
+    b*
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:173
+    // cur = (inv * BigUInt.from_bytes(temp[i-1].bytes)) % q
+    b%
+    // /tmp/algoplonk_fixed/BasicVerifier.py:174
+    // batch[i-1] = UInt256(cur)
+    dup
+    len
+    intc_0 // 32
+    <=
+    assert // overflow
+    dig 36
+    b|
+    uncover 3
+    intc_2 // 2
+    +
+    uncover 4
+    swap
+    uncover 2
+    replace3 // on error: index access is out of bounds
+    bury 32
+    // /tmp/algoplonk_fixed/BasicVerifier.py:175
+    // inv = (inv * tmp) % q
+    b*
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:175
+    // inv = (inv * tmp) % q
+    b%
+    bury 27
+    b main_while_top@22
+
+main_after_while@24:
+    // /tmp/algoplonk_fixed/BasicVerifier.py:178-179
+    // # We can now interpolate the public inputs (PI)
+    // w_ = BigUInt(1)
+    bytec_1 // 0x01
+    bury 24
+    // /tmp/algoplonk_fixed/BasicVerifier.py:180
+    // for i in urange(VK_NB_PUBLIC_INPUTS):
+    intc_1 // 0
+    bury 20
+
+main_for_header@25:
+    // /tmp/algoplonk_fixed/BasicVerifier.py:180
+    // for i in urange(VK_NB_PUBLIC_INPUTS):
+    dig 19
+    // /tmp/algoplonk_fixed/BasicVerifier.py:56-57
+    // ### Read verifying key ###
+    // VK_NB_PUBLIC_INPUTS = UInt64(2)
+    intc_2 // 2
+    // /tmp/algoplonk_fixed/BasicVerifier.py:180
+    // for i in urange(VK_NB_PUBLIC_INPUTS):
+    <
+    bz main_after_for@28
+    // /tmp/algoplonk_fixed/BasicVerifier.py:181
+    // batch[i] = UInt256((w_ * ((BigUInt.from_bytes(batch[i].bytes) * zn)
+    dig 29
+    dup
+    extract 2 0
+    dig 21
+    dup
+    cover 3
+    intc_0 // 32
+    *
+    swap
+    dig 1
+    intc_0 // 32
+    extract3 // on error: index access is out of bounds
+    dig 25
+    b*
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:181-182
+    // batch[i] = UInt256((w_ * ((BigUInt.from_bytes(batch[i].bytes) * zn)
+    // 					% q)) % q)
+    b%
+    dig 27
+    dup
+    uncover 2
+    b*
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:181-182
+    // batch[i] = UInt256((w_ * ((BigUInt.from_bytes(batch[i].bytes) * zn)
+    // 					% q)) % q)
+    b%
+    dup
+    len
+    intc_0 // 32
+    <=
+    assert // overflow
+    dig 36
+    b|
+    uncover 2
+    intc_2 // 2
+    +
+    uncover 3
+    swap
+    uncover 2
+    replace3 // on error: index access is out of bounds
+    bury 32
+    // /tmp/algoplonk_fixed/BasicVerifier.py:60
+    // VK_OMEGA = BigUInt(23674694431658770659612952115660802947967373701506253797663184111817857449850)
+    bytec_3 // 0x345766f603fa66e78c0625cd70d77ce2b38b21c28713b7007228fd3397743f7a
+    // /tmp/algoplonk_fixed/BasicVerifier.py:183
+    // w_ = (w_ * VK_OMEGA) % q
+    b*
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:183
+    // w_ = (w_ * VK_OMEGA) % q
+    b%
+    bury 25
+    // /tmp/algoplonk_fixed/BasicVerifier.py:180
+    // for i in urange(VK_NB_PUBLIC_INPUTS):
+    intc_3 // 1
+    +
+    bury 20
+    b main_for_header@25
+
+main_after_for@28:
+    // /tmp/algoplonk_fixed/BasicVerifier.py:186
+    // PI = BigUInt(0)
+    bytec_2 // 0x
+    bury 33
+    // /tmp/algoplonk_fixed/BasicVerifier.py:187
+    // for i in urange(VK_NB_PUBLIC_INPUTS):
+    intc_1 // 0
+    bury 20
+
+main_for_header@29:
+    // /tmp/algoplonk_fixed/BasicVerifier.py:187
+    // for i in urange(VK_NB_PUBLIC_INPUTS):
+    dig 19
+    // /tmp/algoplonk_fixed/BasicVerifier.py:56-57
+    // ### Read verifying key ###
+    // VK_NB_PUBLIC_INPUTS = UInt64(2)
+    intc_2 // 2
+    // /tmp/algoplonk_fixed/BasicVerifier.py:187
+    // for i in urange(VK_NB_PUBLIC_INPUTS):
+    <
+    bz main_after_for@32
+    // /tmp/algoplonk_fixed/BasicVerifier.py:188
+    // tmp = (BigUInt.from_bytes(batch[i].bytes)
+    dig 29
+    extract 2 0
+    dig 20
+    dup
+    cover 2
+    intc_0 // 32
+    *
+    swap
+    dig 1
+    intc_0 // 32
+    extract3 // on error: index access is out of bounds
+    // /tmp/algoplonk_fixed/BasicVerifier.py:189
+    // * BigUInt.from_bytes(public_inputs[i*32:(i+1)*32])) % q
+    dig 1
+    dig 19
+    dup
+    cover 3
+    >=
+    uncover 3
+    dig 3
+    uncover 2
+    select
+    uncover 3
+    intc_3 // 1
+    +
+    dup
+    intc_0 // 32
+    *
+    dup
+    dig 5
+    >=
+    swap
+    uncover 5
+    uncover 2
+    select
+    dup
+    dig 3
+    <
+    dig 3
+    swap
+    select
+    dig 20
+    uncover 3
+    uncover 2
+    substring3
+    // /tmp/algoplonk_fixed/BasicVerifier.py:188-189
+    // tmp = (BigUInt.from_bytes(batch[i].bytes)
+    // 		* BigUInt.from_bytes(public_inputs[i*32:(i+1)*32])) % q
+    uncover 2
+    b*
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:188-189
+    // tmp = (BigUInt.from_bytes(batch[i].bytes)
+    // 		* BigUInt.from_bytes(public_inputs[i*32:(i+1)*32])) % q
+    b%
+    // /tmp/algoplonk_fixed/BasicVerifier.py:190
+    // PI = (PI + tmp) % q
+    dig 34
+    b+
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:190
+    // PI = (PI + tmp) % q
+    b%
+    bury 34
+    bury 20
+    b main_for_header@29
+
+main_after_for@32:
+    // /tmp/algoplonk_fixed/BasicVerifier.py:192-193
+    // # compute alpha2Lagrange: alpha**2 * (z**n - 1) / (z - 1)
+    // res = (zeta + q - BigUInt(1)) % q
+    dig 22
+    dup
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:192-193
+    // # compute alpha2Lagrange: alpha**2 * (z**n - 1) / (z - 1)
+    // res = (zeta + q - BigUInt(1)) % q
+    b+
+    bytec_1 // 0x01
+    b-
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:192-193
+    // # compute alpha2Lagrange: alpha**2 * (z**n - 1) / (z - 1)
+    // res = (zeta + q - BigUInt(1)) % q
+    b%
+    // /tmp/algoplonk_fixed/BasicVerifier.py:194
+    // res = expmod(res, q - BigUInt(2), q)
+    bytec 4 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfefffffffeffffffff
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:194
+    // res = expmod(res, q - BigUInt(2), q)
+    callsub expmod
+    // /tmp/algoplonk_fixed/BasicVerifier.py:195
+    // res = (res * zn) % q
+    dig 23
+    b*
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:195
+    // res = (res * zn) % q
+    b%
+    // /tmp/algoplonk_fixed/BasicVerifier.py:196
+    // res = (res * alpha) % q
+    dig 32
+    dup
+    cover 2
+    b*
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:196
+    // res = (res * alpha) % q
+    b%
+    // /tmp/algoplonk_fixed/BasicVerifier.py:197
+    // res = (res * alpha) % q
+    dig 1
+    b*
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:197
+    // res = (res * alpha) % q
+    b%
+    // /tmp/algoplonk_fixed/BasicVerifier.py:200-201
+    // # verify opening linearization polynomial
+    // s1 = (BigUInt.from_bytes(S1_AT_Z) * beta) % q
+    dig 8
+    dup
+    cover 4
+    dig 33
+    dup
+    cover 2
+    b*
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:200-201
+    // # verify opening linearization polynomial
+    // s1 = (BigUInt.from_bytes(S1_AT_Z) * beta) % q
+    b%
+    // /tmp/algoplonk_fixed/BasicVerifier.py:202
+    // s1 = (s1 + gamma + BigUInt.from_bytes(L_AT_Z)) % q
+    dup
+    dig 34
+    dup
+    cover 3
+    b+
+    dig 16
+    dup
+    cover 7
+    b+
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:202
+    // s1 = (s1 + gamma + BigUInt.from_bytes(L_AT_Z)) % q
+    b%
+    // /tmp/algoplonk_fixed/BasicVerifier.py:204
+    // s2 = (BigUInt.from_bytes(S2_AT_Z) * beta) % q
+    dig 13
+    dup
+    cover 9
+    dig 4
+    b*
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:204
+    // s2 = (BigUInt.from_bytes(S2_AT_Z) * beta) % q
+    b%
+    // /tmp/algoplonk_fixed/BasicVerifier.py:205
+    // s2 = (s2 + gamma + BigUInt.from_bytes(R_AT_Z)) % q
+    dup
+    dig 4
+    b+
+    dig 19
+    dup
+    cover 7
+    b+
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:205
+    // s2 = (s2 + gamma + BigUInt.from_bytes(R_AT_Z)) % q
+    b%
+    // /tmp/algoplonk_fixed/BasicVerifier.py:207
+    // o = (BigUInt.from_bytes(O_AT_Z) + gamma) % q
+    dig 19
+    dup
+    cover 12
+    dig 5
+    b+
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:207
+    // o = (BigUInt.from_bytes(O_AT_Z) + gamma) % q
+    b%
+    // /tmp/algoplonk_fixed/BasicVerifier.py:209
+    // s1 = (s1 * s2) % q
+    uncover 3
+    uncover 2
+    b*
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:209
+    // s1 = (s1 * s2) % q
+    b%
+    // /tmp/algoplonk_fixed/BasicVerifier.py:210
+    // s1 = (s1 * o) % q
+    b*
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:210
+    // s1 = (s1 * o) % q
+    b%
+    // /tmp/algoplonk_fixed/BasicVerifier.py:211
+    // s1 = (s1 * alpha) % q
+    dig 7
+    b*
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:211
+    // s1 = (s1 * alpha) % q
+    b%
+    // /tmp/algoplonk_fixed/BasicVerifier.py:212
+    // s1 = (s1 * BigUInt.from_bytes(GRAND_PRODUCT_AT_Z_OMEGA)) % q
+    dig 15
+    dup
+    cover 2
+    b*
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:212
+    // s1 = (s1 * BigUInt.from_bytes(GRAND_PRODUCT_AT_Z_OMEGA)) % q
+    b%
+    // /tmp/algoplonk_fixed/BasicVerifier.py:214
+    // s1 = (s1 + PI + q - alpha2Lagrange)  % q
+    dig 46
+    b+
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:214
+    // s1 = (s1 + PI + q - alpha2Lagrange)  % q
+    b+
+    dig 7
+    b-
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:214
+    // s1 = (s1 + PI + q - alpha2Lagrange)  % q
+    b%
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:215
+    // linearized_poly_at_z = (q - s1)
+    swap
+    b-
+    // /tmp/algoplonk_fixed/BasicVerifier.py:219
+    // zn2 = expmod(zeta, n2, q)
+    dig 10
+    // /tmp/algoplonk_fixed/BasicVerifier.py:217-218
+    // # compute the folded commitment to H
+    // n2 = VK_DOMAIN_SIZE + BigUInt(2)
+    pushbytes 0x0a
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:219
+    // zn2 = expmod(zeta, n2, q)
+    callsub expmod
+    // /tmp/algoplonk_fixed/BasicVerifier.py:220
+    // folded_h = ec.scalar_mul(EC.BLS12_381g1, H_2, zn2.bytes)
+    dig 24
+    dig 1
+    ec_scalar_mul BLS12_381g1
+    // /tmp/algoplonk_fixed/BasicVerifier.py:221
+    // folded_h = ec.add(EC.BLS12_381g1, folded_h, H_1)
+    dig 26
+    ec_add BLS12_381g1
+    // /tmp/algoplonk_fixed/BasicVerifier.py:222
+    // folded_h = ec.scalar_mul(EC.BLS12_381g1, folded_h, zn2.bytes)
+    swap
+    ec_scalar_mul BLS12_381g1
+    // /tmp/algoplonk_fixed/BasicVerifier.py:223
+    // folded_h = ec.add(EC.BLS12_381g1, folded_h, H_0)
+    dig 26
+    ec_add BLS12_381g1
+    // /tmp/algoplonk_fixed/BasicVerifier.py:224
+    // znminus1 = (expmod(zeta, VK_DOMAIN_SIZE, q) + q - BigUInt(1)) % q
+    dig 11
+    // /tmp/algoplonk_fixed/BasicVerifier.py:58
+    // VK_DOMAIN_SIZE = BigUInt(8)
+    pushbytes 0x08
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:224
+    // znminus1 = (expmod(zeta, VK_DOMAIN_SIZE, q) + q - BigUInt(1)) % q
+    callsub expmod
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:224
+    // znminus1 = (expmod(zeta, VK_DOMAIN_SIZE, q) + q - BigUInt(1)) % q
+    b+
+    bytec_1 // 0x01
+    b-
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:224
+    // znminus1 = (expmod(zeta, VK_DOMAIN_SIZE, q) + q - BigUInt(1)) % q
+    b%
+    // /tmp/algoplonk_fixed/BasicVerifier.py:225
+    // folded_h = ec.scalar_mul(EC.BLS12_381g1, folded_h, znminus1.bytes)
+    ec_scalar_mul BLS12_381g1
+    // /tmp/algoplonk_fixed/BasicVerifier.py:226
+    // folded_h = invert(folded_h)
+    callsub invert
+    // /tmp/algoplonk_fixed/BasicVerifier.py:228-229
+    // # compute commitment to linearization polynomial
+    // u = (BigUInt.from_bytes(GRAND_PRODUCT_AT_Z_OMEGA) * beta) % q
+    dig 2
+    dig 7
+    b*
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:228-229
+    // # compute commitment to linearization polynomial
+    // u = (BigUInt.from_bytes(GRAND_PRODUCT_AT_Z_OMEGA) * beta) % q
+    b%
+    // /tmp/algoplonk_fixed/BasicVerifier.py:231
+    // v = (v + BigUInt.from_bytes(L_AT_Z) + gamma) % q
+    uncover 5
+    dig 11
+    b+
+    dig 6
+    b+
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:231
+    // v = (v + BigUInt.from_bytes(L_AT_Z) + gamma) % q
+    b%
+    // /tmp/algoplonk_fixed/BasicVerifier.py:233
+    // w = (w + BigUInt.from_bytes(R_AT_Z) + gamma) % q
+    uncover 5
+    dig 8
+    b+
+    dig 6
+    b+
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:233
+    // w = (w + BigUInt.from_bytes(R_AT_Z) + gamma) % q
+    b%
+    // /tmp/algoplonk_fixed/BasicVerifier.py:235
+    // s1 = (u * v) % q
+    cover 2
+    b*
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:235
+    // s1 = (u * v) % q
+    b%
+    // /tmp/algoplonk_fixed/BasicVerifier.py:236
+    // s1 = (s1 * w) % q
+    b*
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:236
+    // s1 = (s1 * w) % q
+    b%
+    // /tmp/algoplonk_fixed/BasicVerifier.py:237
+    // s1 = (s1 * alpha) % q
+    dig 8
+    b*
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:237
+    // s1 = (s1 * alpha) % q
+    b%
+    // /tmp/algoplonk_fixed/BasicVerifier.py:240
+    // betazeta = (beta * zeta) % q
+    uncover 5
+    dig 10
+    b*
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:240
+    // betazeta = (beta * zeta) % q
+    b%
+    // /tmp/algoplonk_fixed/BasicVerifier.py:241
+    // u = (betazeta + BigUInt.from_bytes(L_AT_Z) + gamma) % q
+    dup
+    dig 10
+    b+
+    dig 6
+    b+
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:241
+    // u = (betazeta + BigUInt.from_bytes(L_AT_Z) + gamma) % q
+    b%
+    // /tmp/algoplonk_fixed/BasicVerifier.py:243
+    // v = (betazeta * VK_COSET_SHIFT) % q
+    dig 1
+    // /tmp/algoplonk_fixed/BasicVerifier.py:72
+    // VK_COSET_SHIFT = BigUInt(7)
+    pushbytes 0x07
+    // /tmp/algoplonk_fixed/BasicVerifier.py:243
+    // v = (betazeta * VK_COSET_SHIFT) % q
+    b*
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:243
+    // v = (betazeta * VK_COSET_SHIFT) % q
+    b%
+    // /tmp/algoplonk_fixed/BasicVerifier.py:244
+    // v = (v + BigUInt.from_bytes(R_AT_Z) + gamma) % q
+    dig 8
+    b+
+    dig 7
+    b+
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:244
+    // v = (v + BigUInt.from_bytes(R_AT_Z) + gamma) % q
+    b%
+    // /tmp/algoplonk_fixed/BasicVerifier.py:246
+    // w = (betazeta * coset_square) % q
+    uncover 2
+    // /tmp/algoplonk_fixed/BasicVerifier.py:239
+    // coset_square = (VK_COSET_SHIFT * VK_COSET_SHIFT) % q
+    pushbytes 0x31
+    // /tmp/algoplonk_fixed/BasicVerifier.py:246
+    // w = (betazeta * coset_square) % q
+    b*
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:246
+    // w = (betazeta * coset_square) % q
+    b%
+    // /tmp/algoplonk_fixed/BasicVerifier.py:247
+    // w = (w + BigUInt.from_bytes(O_AT_Z) + gamma) % q
+    dig 13
+    b+
+    uncover 7
+    b+
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:247
+    // w = (w + BigUInt.from_bytes(O_AT_Z) + gamma) % q
+    b%
+    // /tmp/algoplonk_fixed/BasicVerifier.py:249
+    // s2 = (u * v) % q
+    cover 2
+    b*
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:249
+    // s2 = (u * v) % q
+    b%
+    // /tmp/algoplonk_fixed/BasicVerifier.py:250
+    // s2 = q - ((s2 * w) % q)
+    b*
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:250
+    // s2 = q - ((s2 * w) % q)
+    b%
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:250
+    // s2 = q - ((s2 * w) % q)
+    swap
+    b-
+    // /tmp/algoplonk_fixed/BasicVerifier.py:251
+    // s2 = (s2 * alpha + alpha2Lagrange) % q
+    uncover 7
+    b*
+    uncover 6
+    b+
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:251
+    // s2 = (s2 * alpha + alpha2Lagrange) % q
+    b%
+    // /tmp/algoplonk_fixed/BasicVerifier.py:62
+    // VK_QL = Bytes.from_hex("0f4dc4f6a3c2f38b5a0d57995ca2b422c9b772ed630e84280405953a3ef835bfc06fbf403adc531524acfa5b91cf56bd071749df4c3436c74ec8bcb6cb32f7d5583da31ad664a043af5d85a3844009add356cbbf6816c29d69beb22dc0cd5410")
+    pushbytes 0x0f4dc4f6a3c2f38b5a0d57995ca2b422c9b772ed630e84280405953a3ef835bfc06fbf403adc531524acfa5b91cf56bd071749df4c3436c74ec8bcb6cb32f7d5583da31ad664a043af5d85a3844009add356cbbf6816c29d69beb22dc0cd5410
+    // /tmp/algoplonk_fixed/BasicVerifier.py:253
+    // lin_poly_com = ec.scalar_mul(EC.BLS12_381g1, VK_QL, L_AT_Z)
+    dig 7
+    ec_scalar_mul BLS12_381g1
+    // /tmp/algoplonk_fixed/BasicVerifier.py:63
+    // VK_QR = Bytes.from_hex("04e247e860248c69f9edc8b3a7bc85689bf9fc8fd29a85871900aec78181b83527c425440ee11752c8b08d6c232ae3ee17ee9b5f0090271051be4e7818d707d77427b77c055aea802e2162bc5a442e363dbeafd36b79549eacf85bd20b283cee")
+    pushbytes 0x04e247e860248c69f9edc8b3a7bc85689bf9fc8fd29a85871900aec78181b83527c425440ee11752c8b08d6c232ae3ee17ee9b5f0090271051be4e7818d707d77427b77c055aea802e2162bc5a442e363dbeafd36b79549eacf85bd20b283cee
+    // /tmp/algoplonk_fixed/BasicVerifier.py:255
+    // add_term = ec.scalar_mul(EC.BLS12_381g1, VK_QR, R_AT_Z)
+    dig 7
+    ec_scalar_mul BLS12_381g1
+    // /tmp/algoplonk_fixed/BasicVerifier.py:256
+    // lin_poly_com = ec.add(EC.BLS12_381g1, lin_poly_com, add_term)
+    ec_add BLS12_381g1
+    // /tmp/algoplonk_fixed/BasicVerifier.py:64
+    // VK_QO = Bytes.from_hex("00f770f4599678c0ae8082f97ca59d0efb3d1d8b74a18447bb132b5318c4ec470ae4f7138ca9ff4bb5d13e96623625270b38ba79b98bb09decc8ff5772c2d8b4c55b33cc14cb0456551484d1dd8ec19cd2b5f1a838963599d2714a2f9d2906f8")
+    pushbytes 0x00f770f4599678c0ae8082f97ca59d0efb3d1d8b74a18447bb132b5318c4ec470ae4f7138ca9ff4bb5d13e96623625270b38ba79b98bb09decc8ff5772c2d8b4c55b33cc14cb0456551484d1dd8ec19cd2b5f1a838963599d2714a2f9d2906f8
+    // /tmp/algoplonk_fixed/BasicVerifier.py:258
+    // add_term = ec.scalar_mul(EC.BLS12_381g1, VK_QO, O_AT_Z)
+    dig 10
+    ec_scalar_mul BLS12_381g1
+    // /tmp/algoplonk_fixed/BasicVerifier.py:259
+    // lin_poly_com = ec.add(EC.BLS12_381g1, lin_poly_com, add_term)
+    ec_add BLS12_381g1
+    // /tmp/algoplonk_fixed/BasicVerifier.py:261
+    // ab = (BigUInt.from_bytes(L_AT_Z) * BigUInt.from_bytes(R_AT_Z)) % q
+    dig 7
+    dig 7
+    b*
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:261
+    // ab = (BigUInt.from_bytes(L_AT_Z) * BigUInt.from_bytes(R_AT_Z)) % q
+    b%
+    // /tmp/algoplonk_fixed/BasicVerifier.py:65
+    // VK_QM = Bytes.from_hex("0b38005f645c709626003c521bd0c5921d6e0bc7d22632499468d603472dc0de4cc28e7961a869caae93eaea6b00de9a0e287de527c44a1bebbe308c7bd51f7e8e2e8a6a15b52252691cc9cfa730e36360cc8398aa97d644758337f5d89e2378")
+    pushbytes 0x0b38005f645c709626003c521bd0c5921d6e0bc7d22632499468d603472dc0de4cc28e7961a869caae93eaea6b00de9a0e287de527c44a1bebbe308c7bd51f7e8e2e8a6a15b52252691cc9cfa730e36360cc8398aa97d644758337f5d89e2378
+    // /tmp/algoplonk_fixed/BasicVerifier.py:262
+    // add_term = ec.scalar_mul(EC.BLS12_381g1, VK_QM, ab.bytes)
+    swap
+    ec_scalar_mul BLS12_381g1
+    // /tmp/algoplonk_fixed/BasicVerifier.py:263
+    // lin_poly_com = ec.add(EC.BLS12_381g1, lin_poly_com, add_term)
+    ec_add BLS12_381g1
+    // /tmp/algoplonk_fixed/BasicVerifier.py:66
+    // VK_QK = Bytes.from_hex("000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000")
+    pushbytes 0x000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+    // /tmp/algoplonk_fixed/BasicVerifier.py:264
+    // lin_poly_com = ec.add(EC.BLS12_381g1, lin_poly_com, VK_QK)
+    ec_add BLS12_381g1
+    // /tmp/algoplonk_fixed/BasicVerifier.py:70
+    // VK_S3 = Bytes.from_hex("0217e277d392d10946691d51143883cfa0552ac351898f52d159c6c1efb21e733aaf4afd437deb8d99ef6462c6ac9db018b7480ca8a96c49c273f0d8e6c633a8f9bad57c55f9d9433e4465670e231b44601cff9466d0bbbb1e856c8cd2d3f2cc")
+    pushbytes 0x0217e277d392d10946691d51143883cfa0552ac351898f52d159c6c1efb21e733aaf4afd437deb8d99ef6462c6ac9db018b7480ca8a96c49c273f0d8e6c633a8f9bad57c55f9d9433e4465670e231b44601cff9466d0bbbb1e856c8cd2d3f2cc
+    // /tmp/algoplonk_fixed/BasicVerifier.py:266
+    // add_term = ec.scalar_mul(EC.BLS12_381g1, VK_S3, s1.bytes)
+    uncover 3
+    ec_scalar_mul BLS12_381g1
+    // /tmp/algoplonk_fixed/BasicVerifier.py:267
+    // lin_poly_com = ec.add(EC.BLS12_381g1, lin_poly_com, add_term)
+    ec_add BLS12_381g1
+    // /tmp/algoplonk_fixed/BasicVerifier.py:269
+    // add_term = ec.scalar_mul(EC.BLS12_381g1, GRAND_PRODUCT, s2.bytes)
+    dig 14
+    dup
+    cover 8
+    uncover 2
+    ec_scalar_mul BLS12_381g1
+    // /tmp/algoplonk_fixed/BasicVerifier.py:270
+    // lin_poly_com = ec.add(EC.BLS12_381g1, lin_poly_com, add_term)
+    ec_add BLS12_381g1
+    // /tmp/algoplonk_fixed/BasicVerifier.py:272
+    // lin_poly_com = ec.add(EC.BLS12_381g1, lin_poly_com, folded_h)
+    swap
+    ec_add BLS12_381g1
+    // /tmp/algoplonk_fixed/BasicVerifier.py:274-275
+    // # generate challenge to fold the opening proofs
+    // linearized_poly_at_z_bytes = bzero(32) | linearized_poly_at_z.bytes
+    dig 41
+    dup
+    dig 3
+    b|
+    // /tmp/algoplonk_fixed/BasicVerifier.py:276
+    // r_pre = sha256(b'gamma' + UInt256(zeta).bytes + lin_poly_com
+    dig 8
+    len
+    intc_0 // 32
+    <=
+    assert // overflow
+    dig 8
+    dig 2
+    b|
+    pushbytes 0x67616d6d61
+    dig 1
+    concat
+    dig 4
+    concat
+    // /tmp/algoplonk_fixed/BasicVerifier.py:277
+    // + fs(L_COM) + fs(R_COM) + fs(O_COM) + VK_S1_fs + VK_S2_fs
+    dig 28
+    dup
+    cover 3
+    callsub fs
+    // /tmp/algoplonk_fixed/BasicVerifier.py:276-277
+    // r_pre = sha256(b'gamma' + UInt256(zeta).bytes + lin_poly_com
+    // 	 + fs(L_COM) + fs(R_COM) + fs(O_COM) + VK_S1_fs + VK_S2_fs
+    concat
+    // /tmp/algoplonk_fixed/BasicVerifier.py:277
+    // + fs(L_COM) + fs(R_COM) + fs(O_COM) + VK_S1_fs + VK_S2_fs
+    dig 28
+    dup
+    cover 5
+    callsub fs
+    // /tmp/algoplonk_fixed/BasicVerifier.py:276-277
+    // r_pre = sha256(b'gamma' + UInt256(zeta).bytes + lin_poly_com
+    // 	 + fs(L_COM) + fs(R_COM) + fs(O_COM) + VK_S1_fs + VK_S2_fs
+    concat
+    // /tmp/algoplonk_fixed/BasicVerifier.py:277
+    // + fs(L_COM) + fs(R_COM) + fs(O_COM) + VK_S1_fs + VK_S2_fs
+    dig 28
+    dup
+    cover 9
+    callsub fs
+    // /tmp/algoplonk_fixed/BasicVerifier.py:276-277
+    // r_pre = sha256(b'gamma' + UInt256(zeta).bytes + lin_poly_com
+    // 	 + fs(L_COM) + fs(R_COM) + fs(O_COM) + VK_S1_fs + VK_S2_fs
+    concat
+    pushbytes 0x02d13aee87876961457d1d35e934e4dd50b359859bac54ecf654ab13d7c8cb73f7ee16b7b6dfd8587309d195ba4bf0a40f60cc8e01b9159dc9c64438fda713714895ee5f4499f54197bed47d1628188cd3bf403702220458d7a439f9f7f6d30700762ebe9fadbdef3c4be5f2b09c968e4880cc3b3f865948b8699b4ba22f53f3cbaf781f64df7daaa3bd72b50b4c860e0b6142cc073969ddde5afa08d07197083a5f4a24c0291c7930e403afb9fc01300851f256a79a719de14148638ad90d1d
+    concat
+    // /tmp/algoplonk_fixed/BasicVerifier.py:276-278
+    // r_pre = sha256(b'gamma' + UInt256(zeta).bytes + lin_poly_com
+    // 	 + fs(L_COM) + fs(R_COM) + fs(O_COM) + VK_S1_fs + VK_S2_fs
+    // 	 + linearized_poly_at_z_bytes + L_AT_Z + R_AT_Z
+    uncover 3
+    concat
+    dig 10
+    concat
+    dig 9
+    concat
+    // /tmp/algoplonk_fixed/BasicVerifier.py:276-279
+    // r_pre = sha256(b'gamma' + UInt256(zeta).bytes + lin_poly_com
+    // 	 + fs(L_COM) + fs(R_COM) + fs(O_COM) + VK_S1_fs + VK_S2_fs
+    // 	 + linearized_poly_at_z_bytes + L_AT_Z + R_AT_Z
+    // 	 + O_AT_Z + S1_AT_Z + S2_AT_Z
+    dig 13
+    concat
+    dig 15
+    concat
+    dig 14
+    concat
+    // /tmp/algoplonk_fixed/BasicVerifier.py:276-280
+    // r_pre = sha256(b'gamma' + UInt256(zeta).bytes + lin_poly_com
+    // 	 + fs(L_COM) + fs(R_COM) + fs(O_COM) + VK_S1_fs + VK_S2_fs
+    // 	 + linearized_poly_at_z_bytes + L_AT_Z + R_AT_Z
+    // 	 + O_AT_Z + S1_AT_Z + S2_AT_Z
+    // 	 + GRAND_PRODUCT_AT_Z_OMEGA)
+    dig 8
+    concat
+    sha256
+    // /tmp/algoplonk_fixed/BasicVerifier.py:364
+    // return BigUInt.from_bytes(x) % BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    b%
+    // /tmp/algoplonk_fixed/BasicVerifier.py:288
+    // add_term = ec.scalar_mul(EC.BLS12_381g1, L_COM, r_acc.bytes)
+    uncover 2
+    dig 1
+    ec_scalar_mul BLS12_381g1
+    // /tmp/algoplonk_fixed/BasicVerifier.py:289
+    // digest = ec.add(EC.BLS12_381g1, digest, add_term)
+    uncover 5
+    swap
+    ec_add BLS12_381g1
+    // /tmp/algoplonk_fixed/BasicVerifier.py:290
+    // claims = (claims + (BigUInt.from_bytes(L_AT_Z) * r_acc)) % q
+    uncover 9
+    dig 2
+    b*
+    uncover 6
+    b+
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:290
+    // claims = (claims + (BigUInt.from_bytes(L_AT_Z) * r_acc)) % q
+    b%
+    // /tmp/algoplonk_fixed/BasicVerifier.py:292
+    // r_acc = (r_acc * r) % q
+    dig 2
+    dig 3
+    b*
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:292
+    // r_acc = (r_acc * r) % q
+    b%
+    // /tmp/algoplonk_fixed/BasicVerifier.py:293
+    // add_term = ec.scalar_mul(EC.BLS12_381g1, R_COM, r_acc.bytes)
+    uncover 5
+    dig 1
+    ec_scalar_mul BLS12_381g1
+    // /tmp/algoplonk_fixed/BasicVerifier.py:294
+    // digest = ec.add(EC.BLS12_381g1, digest, add_term)
+    uncover 3
+    swap
+    ec_add BLS12_381g1
+    // /tmp/algoplonk_fixed/BasicVerifier.py:295
+    // claims = (claims + (BigUInt.from_bytes(R_AT_Z) * r_acc)) % q
+    uncover 8
+    dig 2
+    b*
+    uncover 3
+    b+
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:295
+    // claims = (claims + (BigUInt.from_bytes(R_AT_Z) * r_acc)) % q
+    b%
+    // /tmp/algoplonk_fixed/BasicVerifier.py:297
+    // r_acc = (r_acc * r) % q
+    uncover 2
+    dig 3
+    b*
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:297
+    // r_acc = (r_acc * r) % q
+    b%
+    // /tmp/algoplonk_fixed/BasicVerifier.py:298
+    // add_term = ec.scalar_mul(EC.BLS12_381g1, O_COM, r_acc.bytes)
+    uncover 6
+    dig 1
+    ec_scalar_mul BLS12_381g1
+    // /tmp/algoplonk_fixed/BasicVerifier.py:299
+    // digest = ec.add(EC.BLS12_381g1, digest, add_term)
+    uncover 3
+    swap
+    ec_add BLS12_381g1
+    // /tmp/algoplonk_fixed/BasicVerifier.py:300
+    // claims = (claims + (BigUInt.from_bytes(O_AT_Z) * r_acc)) % q
+    uncover 9
+    dig 2
+    b*
+    uncover 3
+    b+
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:300
+    // claims = (claims + (BigUInt.from_bytes(O_AT_Z) * r_acc)) % q
+    b%
+    // /tmp/algoplonk_fixed/BasicVerifier.py:302
+    // r_acc = (r_acc * r) % q
+    uncover 2
+    dig 3
+    b*
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:302
+    // r_acc = (r_acc * r) % q
+    b%
+    // /tmp/algoplonk_fixed/BasicVerifier.py:68
+    // VK_S1 = Bytes.from_hex("02d13aee87876961457d1d35e934e4dd50b359859bac54ecf654ab13d7c8cb73f7ee16b7b6dfd8587309d195ba4bf0a40f60cc8e01b9159dc9c64438fda713714895ee5f4499f54197bed47d1628188cd3bf403702220458d7a439f9f7f6d307")
+    pushbytes 0x02d13aee87876961457d1d35e934e4dd50b359859bac54ecf654ab13d7c8cb73f7ee16b7b6dfd8587309d195ba4bf0a40f60cc8e01b9159dc9c64438fda713714895ee5f4499f54197bed47d1628188cd3bf403702220458d7a439f9f7f6d307
+    // /tmp/algoplonk_fixed/BasicVerifier.py:303
+    // add_term = ec.scalar_mul(EC.BLS12_381g1, VK_S1, r_acc.bytes)
+    dig 1
+    ec_scalar_mul BLS12_381g1
+    // /tmp/algoplonk_fixed/BasicVerifier.py:304
+    // digest = ec.add(EC.BLS12_381g1, digest, add_term)
+    uncover 3
+    swap
+    ec_add BLS12_381g1
+    // /tmp/algoplonk_fixed/BasicVerifier.py:305
+    // claims = (claims + (BigUInt.from_bytes(S1_AT_Z) * r_acc)) % q
+    uncover 10
+    dig 2
+    b*
+    uncover 3
+    b+
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:305
+    // claims = (claims + (BigUInt.from_bytes(S1_AT_Z) * r_acc)) % q
+    b%
+    // /tmp/algoplonk_fixed/BasicVerifier.py:307
+    // r_acc = (r_acc * r) % q
+    uncover 2
+    dig 3
+    b*
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:307
+    // r_acc = (r_acc * r) % q
+    b%
+    // /tmp/algoplonk_fixed/BasicVerifier.py:69
+    // VK_S2 = Bytes.from_hex("00762ebe9fadbdef3c4be5f2b09c968e4880cc3b3f865948b8699b4ba22f53f3cbaf781f64df7daaa3bd72b50b4c860e0b6142cc073969ddde5afa08d07197083a5f4a24c0291c7930e403afb9fc01300851f256a79a719de14148638ad90d1d")
+    pushbytes 0x00762ebe9fadbdef3c4be5f2b09c968e4880cc3b3f865948b8699b4ba22f53f3cbaf781f64df7daaa3bd72b50b4c860e0b6142cc073969ddde5afa08d07197083a5f4a24c0291c7930e403afb9fc01300851f256a79a719de14148638ad90d1d
+    // /tmp/algoplonk_fixed/BasicVerifier.py:308
+    // add_term = ec.scalar_mul(EC.BLS12_381g1, VK_S2, r_acc.bytes)
+    dig 1
+    ec_scalar_mul BLS12_381g1
+    // /tmp/algoplonk_fixed/BasicVerifier.py:309
+    // digest = ec.add(EC.BLS12_381g1, digest, add_term)
+    uncover 3
+    swap
+    ec_add BLS12_381g1
+    // /tmp/algoplonk_fixed/BasicVerifier.py:310
+    // claims = (claims + (BigUInt.from_bytes(S2_AT_Z) * r_acc)) % q
+    uncover 9
+    uncover 2
+    b*
+    uncover 2
+    b+
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:310
+    // claims = (claims + (BigUInt.from_bytes(S2_AT_Z) * r_acc)) % q
+    b%
+    // /tmp/algoplonk_fixed/BasicVerifier.py:312-313
+    // # verify the folded proof
+    // r_pre = sha256(digest + BATCH_OPENING_AT_Z + fs(GRAND_PRODUCT)
+    dig 1
+    dig 10
+    dup
+    cover 3
+    concat
+    dig 8
+    callsub fs
+    concat
+    // /tmp/algoplonk_fixed/BasicVerifier.py:312-314
+    // # verify the folded proof
+    // r_pre = sha256(digest + BATCH_OPENING_AT_Z + fs(GRAND_PRODUCT)
+    // 		+ OPENING_AT_Z_OMEGA + UInt256(zeta).bytes + UInt256(r).bytes)
+    dig 10
+    dup
+    cover 2
+    concat
+    uncover 6
+    concat
+    // /tmp/algoplonk_fixed/BasicVerifier.py:314
+    // + OPENING_AT_Z_OMEGA + UInt256(zeta).bytes + UInt256(r).bytes)
+    dig 5
+    len
+    intc_0 // 32
+    <=
+    assert // overflow
+    uncover 5
+    uncover 6
+    b|
+    // /tmp/algoplonk_fixed/BasicVerifier.py:312-314
+    // # verify the folded proof
+    // r_pre = sha256(digest + BATCH_OPENING_AT_Z + fs(GRAND_PRODUCT)
+    // 		+ OPENING_AT_Z_OMEGA + UInt256(zeta).bytes + UInt256(r).bytes)
+    concat
+    sha256
+    // /tmp/algoplonk_fixed/BasicVerifier.py:364
+    // return BigUInt.from_bytes(x) % BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    b%
+    // /tmp/algoplonk_fixed/BasicVerifier.py:318
+    // add_term = ec.scalar_mul(EC.BLS12_381g1, OPENING_AT_Z_OMEGA, r.bytes)
+    dup2
+    ec_scalar_mul BLS12_381g1
+    // /tmp/algoplonk_fixed/BasicVerifier.py:319
+    // quotient = ec.add(EC.BLS12_381g1, quotient, add_term)
+    dig 4
+    swap
+    ec_add BLS12_381g1
+    // /tmp/algoplonk_fixed/BasicVerifier.py:321
+    // add_term = ec.scalar_mul(EC.BLS12_381g1, GRAND_PRODUCT, r.bytes)
+    uncover 7
+    dig 2
+    ec_scalar_mul BLS12_381g1
+    // /tmp/algoplonk_fixed/BasicVerifier.py:322
+    // digest = ec.add(EC.BLS12_381g1, digest, add_term)
+    uncover 6
+    swap
+    ec_add BLS12_381g1
+    // /tmp/algoplonk_fixed/BasicVerifier.py:324-325
+    // claims = (claims + (BigUInt.from_bytes(GRAND_PRODUCT_AT_Z_OMEGA)
+    // 		  * r)) % q
+    uncover 6
+    dig 3
+    b*
+    uncover 5
+    b+
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:324-325
+    // claims = (claims + (BigUInt.from_bytes(GRAND_PRODUCT_AT_Z_OMEGA)
+    // 		  * r)) % q
+    b%
+    // /tmp/algoplonk_fixed/BasicVerifier.py:326
+    // G1_SRS = (bzero(48) | BigUInt(G1_SRS_X).bytes) + (bzero(48) | BigUInt(G1_SRS_Y).bytes)
+    pushbytes 0x17f1d3a73197d7942695638c4fa9ac0fc3688c4f9774b905a14e3a3f171bac586c55e83ff97a1aeffb3af00adb22c6bb08b3f481e3aaa0f1a09e30ed741d8ae4fcf5e095d5d00af600db18cb2c04b3edd03cc744a2888ae40caa232946c5e7e1
+    // /tmp/algoplonk_fixed/BasicVerifier.py:327
+    // claims_com = ec.scalar_mul(EC.BLS12_381g1, G1_SRS, claims.bytes)
+    swap
+    ec_scalar_mul BLS12_381g1
+    // /tmp/algoplonk_fixed/BasicVerifier.py:329
+    // digest = ec.add(EC.BLS12_381g1, digest, invert(claims_com))
+    callsub invert
+    ec_add BLS12_381g1
+    // /tmp/algoplonk_fixed/BasicVerifier.py:331
+    // points_quotient = ec.scalar_mul(EC.BLS12_381g1, BATCH_OPENING_AT_Z, zeta.bytes)
+    uncover 4
+    dig 5
+    ec_scalar_mul BLS12_381g1
+    // /tmp/algoplonk_fixed/BasicVerifier.py:333
+    // zeta_omega = (zeta * VK_OMEGA) % q
+    uncover 5
+    // /tmp/algoplonk_fixed/BasicVerifier.py:60
+    // VK_OMEGA = BigUInt(23674694431658770659612952115660802947967373701506253797663184111817857449850)
+    bytec_3 // 0x345766f603fa66e78c0625cd70d77ce2b38b21c28713b7007228fd3397743f7a
+    // /tmp/algoplonk_fixed/BasicVerifier.py:333
+    // zeta_omega = (zeta * VK_OMEGA) % q
+    b*
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:333
+    // zeta_omega = (zeta * VK_OMEGA) % q
+    b%
+    // /tmp/algoplonk_fixed/BasicVerifier.py:334
+    // r = (r * zeta_omega) % q
+    uncover 4
+    b*
+    // /tmp/algoplonk_fixed/BasicVerifier.py:40
+    // q = BigUInt(R_MOD)
+    bytec_0 // 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+    // /tmp/algoplonk_fixed/BasicVerifier.py:334
+    // r = (r * zeta_omega) % q
+    b%
+    // /tmp/algoplonk_fixed/BasicVerifier.py:335
+    // add_term = ec.scalar_mul(EC.BLS12_381g1, OPENING_AT_Z_OMEGA, r.bytes)
+    uncover 4
+    swap
+    ec_scalar_mul BLS12_381g1
+    // /tmp/algoplonk_fixed/BasicVerifier.py:336
+    // points_quotient = ec.add(EC.BLS12_381g1, points_quotient, add_term)
+    ec_add BLS12_381g1
+    // /tmp/algoplonk_fixed/BasicVerifier.py:338
+    // digest = ec.add(EC.BLS12_381g1, digest, points_quotient)
+    ec_add BLS12_381g1
+    // /tmp/algoplonk_fixed/BasicVerifier.py:339
+    // quotient = invert(quotient)
+    swap
+    callsub invert
+    // /tmp/algoplonk_fixed/BasicVerifier.py:346
+    // check = ec.pairing_check(EC.BLS12_381g1, digest + quotient, g2)
+    concat
+    // /tmp/algoplonk_fixed/BasicVerifier.py:341-344
+    // g2 = ((bzero(48) | BigUInt(G2_SRS_0_X_1).bytes) + (bzero(48) | BigUInt(G2_SRS_0_X_0).bytes)
+    // + (bzero(48) | BigUInt(G2_SRS_0_Y_1).bytes) + (bzero(48) | BigUInt(G2_SRS_0_Y_0).bytes)
+    // + (bzero(48) | BigUInt(G2_SRS_1_X_1).bytes) + (bzero(48) | BigUInt(G2_SRS_1_X_0).bytes)
+    // + (bzero(48) | BigUInt(G2_SRS_1_Y_1).bytes) + (bzero(48) | BigUInt(G2_SRS_1_Y_0).bytes))
+    pushbytes 0x024aa2b2f08f0a91260805272dc51051c6e47ad4fa403b02b4510b647ae3d1770bac0326a805bbefd48056c8c121bdb813e02b6052719f607dacd3a088274f65596bd0d09920b61ab5da61bbdc7f5049334cf11213945d57e5ac7d055d042b7e0ce5d527727d6e118cc9cdc6da2e351aadfd9baa8cbdd3a76d429a695160d12c923ac9cc3baca289e193548608b828010606c4a02ea734cc32acd2b02bc28b99cb3e287e85a763af267492ab572e99ab3f370d275cec1da1aaa9075ff05f79be0fabe7238383b48bd61f25125a0d093306ef5511550312e2c1a9fb985e21ce1bf71b1fb0565c3b54836463eb1f043d480fd840491fe66a0cc60f45930d88a9b562136137f78260648ce6a4bf5d31849f18de090e2644780d2bf6b42e20842276089b02712231fd052052b19b0c3d43f4253e9da98dc7f87b92a30fe7ffcf99def411281d34d0012d53138037faa47c8d0919fb2e5e4c5d9898e2cdbdc6d8bbc35bcf5050c7b2b84753c38be37e85d2c1911e24fd81066480525c980c7871883b
+    // /tmp/algoplonk_fixed/BasicVerifier.py:346
+    // check = ec.pairing_check(EC.BLS12_381g1, digest + quotient, g2)
+    ec_pairing_check BLS12_381g1
+    // /tmp/algoplonk_fixed/BasicVerifier.py:347
+    // return check
+    return
+
+
+// BasicVerifier.expmod(base: bytes, exponent: bytes, modulus: bytes) -> bytes:
+expmod:
+    // /tmp/algoplonk_fixed/BasicVerifier.py:350-351
+    // @subroutine
+    // def expmod(base: BigUInt, exponent: BigUInt, modulus: BigUInt) -> BigUInt:
+    proto 3 1
+    // /tmp/algoplonk_fixed/BasicVerifier.py:353
+    // result = BigUInt(1)
+    bytec_1 // 0x01
+
+expmod_while_top@1:
+    // /tmp/algoplonk_fixed/BasicVerifier.py:354
+    // while exponent > 0:
+    frame_dig -2
+    bytec_2 // 0x
+    b>
+    bz expmod_after_while@5
+    // /tmp/algoplonk_fixed/BasicVerifier.py:355
+    // if exponent % 2 == 1:
+    frame_dig -2
+    pushbytes 0x02
+    b%
+    bytec_1 // 0x01
+    b==
+    bz expmod_after_if_else@4
+    // /tmp/algoplonk_fixed/BasicVerifier.py:356
+    // result = (result * base) % modulus
+    frame_dig 0
+    frame_dig -3
+    b*
+    frame_dig -1
+    b%
+    frame_bury 0
+
+expmod_after_if_else@4:
+    // /tmp/algoplonk_fixed/BasicVerifier.py:357
+    // exponent = exponent // 2
+    frame_dig -2
+    pushbytes 0x02
+    b/
+    frame_bury -2
+    // /tmp/algoplonk_fixed/BasicVerifier.py:358
+    // base = (base * base) % modulus
+    frame_dig -3
+    dup
+    b*
+    frame_dig -1
+    b%
+    frame_bury -3
+    b expmod_while_top@1
+
+expmod_after_while@5:
+    // /tmp/algoplonk_fixed/BasicVerifier.py:359
+    // return result
+    frame_dig 0
+    swap
+    retsub
+
+
+// BasicVerifier.invert(p: bytes) -> bytes:
+invert:
+    // /tmp/algoplonk_fixed/BasicVerifier.py:366-367
+    // @subroutine
+    // def invert(p : Bytes) -> Bytes:
+    proto 1 1
+    // /tmp/algoplonk_fixed/BasicVerifier.py:369
+    // x = BigUInt.from_bytes(p[:48])
+    frame_dig -1
+    len
+    pushint 48
+    dig 1
+    >=
+    pushint 48
+    dig 2
+    uncover 2
+    select
+    frame_dig -1
+    intc_1 // 0
+    dig 2
+    substring3
+    cover 2
+    // /tmp/algoplonk_fixed/BasicVerifier.py:370
+    // y = BigUInt.from_bytes(p[48:])
+    frame_dig -1
+    swap
+    uncover 2
+    substring3
+    dup
+    // /tmp/algoplonk_fixed/BasicVerifier.py:371
+    // if y == BigUInt(0):
+    bytec_2 // 0x
+    b==
+    bz invert_after_if_else@2
+    // /tmp/algoplonk_fixed/BasicVerifier.py:372
+    // return p
+    frame_dig -1
+    frame_bury 0
+    retsub
+
+invert_after_if_else@2:
+    // /tmp/algoplonk_fixed/BasicVerifier.py:373
+    // neg_y = BigUInt(P_MOD) - y
+    pushbytes 0x1a0111ea397fe69a4b1ba7b6434bacd764774b84f38512bf6730d2a0f6b0f6241eabfffeb153ffffb9feffffffffaaab
+    frame_dig 1
+    b-
+    // /tmp/algoplonk_fixed/BasicVerifier.py:374
+    // return x.bytes + (bzero(48) | (neg_y).bytes)
+    pushint 48
+    bzero
+    b|
+    frame_dig 0
+    swap
+    concat
+    frame_bury 0
+    retsub
+
+
+// BasicVerifier.fs(p: bytes) -> bytes:
+fs:
+    // /tmp/algoplonk_fixed/BasicVerifier.py:376-377
+    // @subroutine
+    // def fs(p: Bytes) -> Bytes:
+    proto 1 1
+    // /tmp/algoplonk_fixed/BasicVerifier.py:380
+    // if p == bzero(96):
+    pushint 96
+    bzero
+    frame_dig -1
+    ==
+    bz fs_after_if_else@2
+    // /tmp/algoplonk_fixed/BasicVerifier.py:381
+    // return setbit_bytes(p, 0, True)
+    frame_dig -1
+    intc_1 // 0
+    intc_3 // 1
+    setbit
+    retsub
+
+fs_after_if_else@2:
+    // /tmp/algoplonk_fixed/BasicVerifier.py:382
+    // return p
+    frame_dig -1
+    retsub

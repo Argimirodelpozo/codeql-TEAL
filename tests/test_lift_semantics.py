@@ -57,7 +57,8 @@ _MAX_UNKNOWN_FRACTION = 0.25
 
 
 def _has_db(d: Path) -> bool:
-    return (d / "codeql-database.yml").exists()
+    # source-bearing fixture dir: a slimmed `.teal` or a legacy codeql `src.zip`
+    return bool(list(d.glob("*.teal"))) or (d / "src.zip").exists()
 
 
 def _real_dbs():
@@ -296,7 +297,7 @@ def test_lowers_through_puya_backend(db):
 
 
 @pytest.mark.skipif(
-    not (_EXPLORER_DIR / "app_3543081435" / "db" / "src.zip").exists(),
+    not _has_db(_EXPLORER_DIR / "app_3543081435" / "db"),
     reason="app_3543081435 explorer fixture not present",
 )
 def test_match_arm_pairing_individual_pushes():

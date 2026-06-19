@@ -1,0 +1,27 @@
+#pragma version 8
+// FIXED: match-on-OnCompletion against {0,1,2,3} only. OC in {4,5}
+// falls through to err — app is NOT deletable.
+
+int 0       // candidate for target handle_noop
+int 1       // candidate for target handle_optin
+int 2       // candidate for target handle_closeout
+int 3       // candidate for target handle_clear
+txn OnCompletion
+match handle_noop handle_optin handle_closeout handle_clear
+err
+
+handle_noop:
+  int 1
+  return
+
+handle_optin:
+  int 1
+  return
+
+handle_closeout:
+  int 1
+  return
+
+handle_clear:
+  int 1
+  return

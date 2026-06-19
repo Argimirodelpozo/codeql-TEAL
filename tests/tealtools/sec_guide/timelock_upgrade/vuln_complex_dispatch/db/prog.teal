@@ -1,0 +1,96 @@
+#pragma version 8
+// VULNERABLE: Complex app with creator-gated update but no timelock
+// Realistic dispatch: create, NoOp (with method routing), Update, Delete
+
+txn ApplicationID
+int 0
+==
+bnz handle_create
+
+txn OnCompletion
+int 0
+==
+bnz handle_noop
+
+txn OnCompletion
+int 4
+==
+bnz handle_update
+
+txn OnCompletion
+int 5
+==
+bnz handle_delete
+
+err
+
+handle_create:
+  callsub init_globals
+  int 1
+  return
+
+handle_noop:
+  // Method routing by first app arg
+  txn ApplicationArgs 0
+  pushbytes "deposit"
+  ==
+  bnz method_deposit
+
+  txn ApplicationArgs 0
+  pushbytes "withdraw"
+  ==
+  bnz method_withdraw
+
+  err
+
+handle_update:
+  // Creator-only but NO timelock — users can't review before upgrade
+  callsub require_creator
+  int 1
+  return
+
+handle_delete:
+  callsub require_creator
+  callsub check_drained
+  int 1
+  return
+
+method_deposit:
+  callsub do_deposit
+  int 1
+  return
+
+method_withdraw:
+  callsub do_withdraw
+  int 1
+  return
+
+require_creator:
+  txn Sender
+  global CreatorAddress
+  ==
+  assert
+  retsub
+
+init_globals:
+  pushbytes "total_deposited"
+  int 0
+  app_global_put
+  retsub
+
+do_deposit:
+  // ... deposit logic ...
+  retsub
+
+do_withdraw:
+  // ... withdraw logic ...
+  retsub
+
+check_drained:
+  global CurrentApplicationAddress
+  balance
+  global CurrentApplicationAddress
+  min_balance
+  ==
+  assert
+  retsub
