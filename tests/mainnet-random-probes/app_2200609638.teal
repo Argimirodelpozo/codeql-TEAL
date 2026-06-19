@@ -1,0 +1,735 @@
+#pragma version 9
+pushbytes 0x6372656174655f6170706c69636174696f6e // "create_application"
+pushbytes 0x7570646174655f6170706c69636174696f6e // "update_application"
+pushbytes 0x696e6372656173655f627564676574 // "increase_budget"
+pushbytes 0x636173745f766f7465 // "cast_vote"
+pushbytes 0x6372656174655f70726f706f73616c // "create_proposal"
+pushbytes 0x63616e63656c5f70726f706f73616c // "cancel_proposal"
+pushbytes 0x6765745f626f78 // "get_box"
+pushbytes 0x7365745f6d616e61676572 // "set_manager"
+pushbytes 0x7365745f70726f706f73616c5f6d616e61676572 // "set_proposal_manager"
+pushbytes 0x7365745f766f74696e675f64656c6179 // "set_voting_delay"
+pushbytes 0x7365745f766f74696e675f6475726174696f6e // "set_voting_duration"
+txna ApplicationArgs 0
+match label1 label2 label3 label4 label5 label6 label7 label8 label9 label10 label11
+err
+label1:
+txn ApplicationID
+pushint 0
+==
+assert
+txna ApplicationArgs 1
+btoi
+callsub label12
+pushint 1
+return
+label2:
+txn OnCompletion
+pushint 4
+==
+assert
+callsub label13
+pushint 1
+return
+label3:
+txn OnCompletion
+pushint 0
+==
+assert
+txna ApplicationArgs 1
+btoi
+callsub label14
+pushint 1
+return
+label4:
+txn OnCompletion
+pushint 0
+==
+assert
+txna ApplicationArgs 1
+dup
+len
+pushint 59
+==
+assert
+txna ApplicationArgs 2
+txna ApplicationArgs 3
+txna ApplicationArgs 4
+callsub label15
+pushint 1
+return
+label5:
+txn OnCompletion
+pushint 0
+==
+assert
+txna ApplicationArgs 1
+dup
+len
+pushint 59
+==
+assert
+callsub label16
+pushint 1
+return
+label6:
+txn OnCompletion
+pushint 0
+==
+assert
+txna ApplicationArgs 1
+dup
+len
+pushint 59
+==
+assert
+callsub label17
+pushint 1
+return
+label7:
+txn OnCompletion
+pushint 0
+==
+assert
+txna ApplicationArgs 1
+callsub label18
+uncover 1
+concat
+pushbytes 0x151f7c75 // 0x151f7c75
+swap
+concat
+log
+pushint 1
+return
+label8:
+txn OnCompletion
+pushint 0
+==
+assert
+txna ApplicationArgs 1
+dup
+len
+pushint 32
+==
+assert
+callsub label19
+pushint 1
+return
+label9:
+txn OnCompletion
+pushint 0
+==
+assert
+txna ApplicationArgs 1
+dup
+len
+pushint 32
+==
+assert
+callsub label20
+pushint 1
+return
+label10:
+txn OnCompletion
+pushint 0
+==
+assert
+txna ApplicationArgs 1
+btoi
+callsub label21
+pushint 1
+return
+label11:
+txn OnCompletion
+pushint 0
+==
+assert
+txna ApplicationArgs 1
+btoi
+callsub label22
+pushint 1
+return
+label12:
+store 1
+pushbytes 0x7661756c745f6170705f6964 // "vault_app_id"
+load 1
+app_global_put
+pushbytes 0x70726f706f73616c5f696e6465785f636f756e746572 // "proposal_index_counter"
+pushint 0
+app_global_put
+pushbytes 0x766f74696e675f64656c6179 // "voting_delay"
+pushint 2
+app_global_put
+pushbytes 0x766f74696e675f6475726174696f6e // "voting_duration"
+pushint 7
+app_global_put
+pushbytes 0x6d616e61676572 // "manager"
+txn Sender
+app_global_put
+pushbytes 0x70726f706f73616c5f6d616e61676572 // "proposal_manager"
+txn Sender
+app_global_put
+retsub
+label13:
+txn Sender
+store 2
+load 2
+pushbytes 0x6d616e61676572 // "manager"
+app_global_get
+==
+assert
+retsub
+label16:
+store 3
+txn Sender
+store 4
+load 4
+pushbytes 0x70726f706f73616c5f6d616e61676572 // "proposal_manager"
+app_global_get
+==
+assert
+pushbytes 0x70 // "p"
+load 3
+concat
+store 5
+callsub label23
+store 6
+load 6
+pushbytes 0x766f74696e675f6475726174696f6e // "voting_duration"
+app_global_get
+pushint 86400
+*
++
+store 7
+load 5
+dup
+pushint 49
+box_create
+assert
+store 8
+pushbytes 0x70726f706f73616c5f696e6465785f636f756e746572 // "proposal_index_counter"
+app_global_get
+itob
+load 8
+pushint 0
+uncover 2
+box_replace
+global LatestTimestamp
+itob
+load 8
+pushint 8
+uncover 2
+box_replace
+load 6
+itob
+load 8
+pushint 16
+uncover 2
+box_replace
+load 7
+itob
+load 8
+pushint 24
+uncover 2
+box_replace
+pushbytes 0x70726f706f73616c5f696e6465785f636f756e746572 // "proposal_index_counter"
+pushbytes 0x70726f706f73616c5f696e6465785f636f756e746572 // "proposal_index_counter"
+app_global_get
+pushint 1
++
+app_global_put
+load 5
+box_get
+pop
+store 9
+pushbytes 0xd5c00bd9 // 0xd5c00bd9
+load 3
+load 9
+concat
+concat
+log
+pushbytes 0x15c912e1 // 0x15c912e1
+load 4
+load 3
+concat
+concat
+log
+retsub
+label17:
+store 10
+txn Sender
+store 11
+load 11
+pushbytes 0x70726f706f73616c5f6d616e61676572 // "proposal_manager"
+app_global_get
+==
+assert
+pushbytes 0x70 // "p"
+load 10
+concat
+store 12
+load 12
+dup
+box_len
+assert
+pushint 49
+==
+assert
+store 13
+global LatestTimestamp
+load 13
+pushint 24
+pushint 8
+box_extract
+btoi
+<
+assert
+load 13
+pushint 48
+pushint 1
+box_extract
+pushbytes 0x00 // 0x00
+==
+assert
+pushbytes 0x80 // 0x80
+load 13
+pushint 48
+uncover 2
+box_replace
+load 12
+box_get
+pop
+store 14
+pushbytes 0xd5c00bd9 // 0xd5c00bd9
+load 10
+load 14
+concat
+concat
+log
+pushbytes 0xd84382ee // 0xd84382ee
+load 11
+load 10
+concat
+concat
+log
+retsub
+label15:
+store 15
+store 16
+store 17
+store 18
+txn Sender
+store 19
+pushbytes 0x70 // "p"
+load 18
+concat
+store 20
+load 20
+dup
+box_len
+assert
+pushint 49
+==
+assert
+store 21
+load 21
+pushint 16
+pushint 8
+box_extract
+btoi
+global LatestTimestamp
+<=
+assert
+global LatestTimestamp
+load 21
+pushint 24
+pushint 8
+box_extract
+btoi
+<
+assert
+load 21
+pushint 48
+pushint 1
+box_extract
+pushbytes 0x00 // 0x00
+==
+assert
+load 17
+len
+assert
+load 16
+len
+load 17
+len
+==
+assert
+load 17
+len
+pushint 8
+%
+!
+assert
+load 17
+len
+pushint 8
+/
+store 22
+load 22
+pushint 16
+<=
+assert
+load 21
+pushint 0
+pushint 8
+box_extract
+btoi
+store 23
+load 19
+load 23
+callsub label24
+load 19
+load 21
+pushint 8
+pushint 8
+box_extract
+btoi
+load 15
+callsub label25
+store 24
+load 24
+assert
+load 21
+pushint 40
+pushint 8
+box_extract
+btoi
+pushint 1
++
+itob
+load 21
+pushint 40
+uncover 2
+box_replace
+load 21
+pushint 32
+pushint 8
+box_extract
+btoi
+load 24
++
+itob
+load 21
+pushint 32
+uncover 2
+box_replace
+pushint 0
+store 27
+pushint 0
+store 30
+label28:
+load 30
+load 22
+==
+bnz label26
+load 30
+pushint 8
+*
+store 28
+load 17
+load 28
+extract_uint64
+store 29
+load 29
+assert
+load 27
+load 29
++
+store 27
+load 27
+pushint 100
+<=
+assert
+load 29
+load 24
+*
+pushint 100
+/
+store 25
+load 16
+load 28
+extract_uint64
+store 26
+load 23
+load 26
+load 25
+callsub label27
+pushbytes 0xb85c5b89 // 0xb85c5b89
+load 26
+itob
+load 25
+itob
+load 29
+itob
+concat
+concat
+concat
+log
+load 30
+pushint 1
++
+store 30
+b label28
+label26:
+load 27
+pushint 100
+==
+assert
+load 20
+box_get
+pop
+store 31
+pushbytes 0xd5c00bd9 // 0xd5c00bd9
+load 18
+load 31
+concat
+concat
+log
+pushbytes 0xccaa38c0 // 0xccaa38c0
+load 19
+load 18
+load 24
+itob
+concat
+concat
+concat
+log
+retsub
+label14:
+store 32
+pushint 0
+dup
+label30:
+load 32
+==
+bnz label29
+itxn_begin
+pushint 6
+itxn_field TypeEnum
+pushbytes 0x7661756c745f6170705f6964 // "vault_app_id"
+app_global_get
+itxn_field ApplicationID
+pushbytes 0x696e6372656173655f627564676574 // "increase_budget"
+itxn_field ApplicationArgs
+pushint 0
+itxn_field Fee
+itxn_submit
+pushint 1
++
+dup
+b label30
+pop
+label29:
+retsub
+label21:
+store 33
+txn Sender
+store 34
+load 34
+pushbytes 0x70726f706f73616c5f6d616e61676572 // "proposal_manager"
+app_global_get
+==
+assert
+pushbytes 0x766f74696e675f64656c6179 // "voting_delay"
+load 33
+app_global_put
+pushbytes 0xb7aa1b9e // 0xb7aa1b9e
+load 33
+itob
+concat
+log
+retsub
+label22:
+store 35
+txn Sender
+store 36
+load 36
+pushbytes 0x70726f706f73616c5f6d616e61676572 // "proposal_manager"
+app_global_get
+==
+assert
+load 35
+assert
+pushbytes 0x766f74696e675f6475726174696f6e // "voting_duration"
+load 35
+app_global_put
+pushbytes 0x69897033 // 0x69897033
+load 35
+itob
+concat
+log
+retsub
+label19:
+store 37
+txn Sender
+store 38
+load 38
+pushbytes 0x6d616e61676572 // "manager"
+app_global_get
+==
+assert
+pushbytes 0x6d616e61676572 // "manager"
+load 37
+app_global_put
+pushbytes 0xba87e7f4 // 0xba87e7f4
+load 37
+concat
+log
+retsub
+label20:
+store 39
+txn Sender
+store 40
+load 40
+pushbytes 0x6d616e61676572 // "manager"
+app_global_get
+==
+assert
+pushbytes 0x70726f706f73616c5f6d616e61676572 // "proposal_manager"
+load 39
+app_global_put
+pushbytes 0x2d9960b3 // 0x2d9960b3
+load 39
+concat
+log
+retsub
+label18:
+store 41
+load 41
+box_get
+pop
+store 42
+load 42
+len
+itob
+extract 6 2
+store 43
+load 42
+load 43
+retsub
+label24:
+store 44
+store 45
+load 44
+pushint 24
+pushint 8
+*
+/
+store 46
+load 44
+pushint 24
+pushint 8
+*
+%
+store 47
+pushbytes 0x61 // "a"
+load 45
+load 46
+itob
+concat
+concat
+store 48
+load 48
+pushint 24
+box_create
+pop
+load 48
+box_get
+pop
+store 49
+load 49
+load 47
+getbit
+!
+assert
+load 49
+load 47
+pushint 1
+setbit
+store 49
+load 48
+load 49
+box_put
+retsub
+label27:
+store 50
+store 51
+store 52
+pushbytes 0x76 // "v"
+load 52
+itob
+load 51
+itob
+concat
+concat
+store 53
+load 53
+pushint 8
+box_create
+pop
+load 53
+box_get
+pop
+store 54
+load 53
+load 54
+btoi
+load 50
++
+itob
+box_put
+retsub
+label23:
+global LatestTimestamp
+pushint 86400
+/
+pushint 86400
+*
+pushint 86400
++
+store 55
+load 55
+pushbytes 0x766f74696e675f64656c6179 // "voting_delay"
+app_global_get
+pushint 86400
+*
++
+retsub
+label25:
+store 56
+store 57
+store 58
+itxn_begin
+pushint 6
+itxn_field TypeEnum
+pushbytes 0x7661756c745f6170705f6964 // "vault_app_id"
+app_global_get
+itxn_field ApplicationID
+pushbytes 0x6765745f74696e795f706f7765725f6f665f6174 // "get_tiny_power_of_at"
+itxn_field ApplicationArgs
+load 58
+itxn_field ApplicationArgs
+load 57
+itob
+itxn_field ApplicationArgs
+load 56
+itxn_field ApplicationArgs
+pushint 0
+itxn_field Fee
+itxn_submit
+itxn LastLog
+pushint 4
+extract_uint64
+store 59
+load 59
+retsub

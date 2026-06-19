@@ -1,0 +1,1345 @@
+#pragma version 9
+pushbytes 0x6372656174655f6170706c69636174696f6e // "create_application"
+pushbytes 0x7570646174655f6170706c69636174696f6e // "update_application"
+pushbytes 0x636173745f766f7465 // "cast_vote"
+pushbytes 0x6372656174655f70726f706f73616c // "create_proposal"
+pushbytes 0x696e6372656173655f627564676574 // "increase_budget"
+pushbytes 0x6765745f70726f706f73616c // "get_proposal"
+pushbytes 0x6861735f766f746564 // "has_voted"
+pushbytes 0x617070726f76655f70726f706f73616c // "approve_proposal"
+pushbytes 0x63616e63656c5f70726f706f73616c // "cancel_proposal"
+pushbytes 0x657865637574655f70726f706f73616c // "execute_proposal"
+pushbytes 0x6765745f626f78 // "get_box"
+pushbytes 0x7365745f6d616e61676572 // "set_manager"
+pushbytes 0x7365745f70726f706f73616c5f6d616e61676572 // "set_proposal_manager"
+pushbytes 0x7365745f766f74696e675f64656c6179 // "set_voting_delay"
+pushbytes 0x7365745f766f74696e675f6475726174696f6e // "set_voting_duration"
+pushbytes 0x7365745f70726f706f73616c5f7468726573686f6c64 // "set_proposal_threshold"
+pushbytes 0x7365745f70726f706f73616c5f7468726573686f6c645f6e756d657261746f72 // addr ONSXIX3QOJXXA33TMFWF65DIOJSXG2DPNRSF63TVNVSXEYLUN5ZIDUAVSI
+pushbytes 0x7365745f71756f72756d5f7468726573686f6c64 // "set_quorum_threshold"
+pushbytes 0x64697361626c655f617070726f76616c5f726571756972656d656e74 // "disable_approval_requirement"
+txna ApplicationArgs 0
+match label1 label2 label3 label4 label5 label6 label7 label8 label9 label10 label11 label12 label13 label14 label15 label16 label17 label18 label19
+err
+label1:
+txn ApplicationID
+pushint 0
+==
+assert
+txna ApplicationArgs 1
+btoi
+callsub label20
+pushint 1
+return
+label2:
+txn OnCompletion
+pushint 4
+==
+assert
+callsub label21
+pushint 1
+return
+label3:
+txn OnCompletion
+pushint 0
+==
+assert
+txna ApplicationArgs 1
+dup
+len
+pushint 59
+==
+assert
+txna ApplicationArgs 2
+btoi
+txna ApplicationArgs 3
+callsub label22
+pushint 1
+return
+label4:
+txn OnCompletion
+pushint 0
+==
+assert
+txna ApplicationArgs 1
+dup
+len
+pushint 59
+==
+assert
+txna ApplicationArgs 2
+dup
+len
+pushint 34
+==
+assert
+txna ApplicationArgs 3
+dup
+len
+pushint 32
+==
+assert
+callsub label23
+pushint 1
+return
+label5:
+txn OnCompletion
+pushint 0
+==
+assert
+txna ApplicationArgs 1
+btoi
+callsub label24
+pushint 1
+return
+label6:
+txn OnCompletion
+pushint 0
+==
+assert
+txna ApplicationArgs 1
+dup
+len
+pushint 59
+==
+assert
+callsub label25
+uncover 1
+itob
+concat
+pushbytes 0x151f7c75 // 0x151f7c75
+swap
+concat
+log
+pushint 1
+return
+label7:
+txn OnCompletion
+pushint 0
+==
+assert
+txna ApplicationArgs 1
+dup
+len
+pushint 59
+==
+assert
+txna ApplicationArgs 2
+dup
+len
+pushint 32
+==
+assert
+callsub label26
+pushbytes 0x151f7c75 // 0x151f7c75
+swap
+concat
+log
+pushint 1
+return
+label8:
+txn OnCompletion
+pushint 0
+==
+assert
+txna ApplicationArgs 1
+dup
+len
+pushint 59
+==
+assert
+callsub label27
+pushint 1
+return
+label9:
+txn OnCompletion
+pushint 0
+==
+assert
+txna ApplicationArgs 1
+dup
+len
+pushint 59
+==
+assert
+callsub label28
+pushint 1
+return
+label10:
+txn OnCompletion
+pushint 0
+==
+assert
+txna ApplicationArgs 1
+dup
+len
+pushint 59
+==
+assert
+callsub label29
+pushint 1
+return
+label11:
+txn OnCompletion
+pushint 0
+==
+assert
+txna ApplicationArgs 1
+callsub label30
+uncover 1
+concat
+pushbytes 0x151f7c75 // 0x151f7c75
+swap
+concat
+log
+pushint 1
+return
+label12:
+txn OnCompletion
+pushint 0
+==
+assert
+txna ApplicationArgs 1
+dup
+len
+pushint 32
+==
+assert
+callsub label31
+pushint 1
+return
+label13:
+txn OnCompletion
+pushint 0
+==
+assert
+txna ApplicationArgs 1
+dup
+len
+pushint 32
+==
+assert
+callsub label32
+pushint 1
+return
+label14:
+txn OnCompletion
+pushint 0
+==
+assert
+txna ApplicationArgs 1
+btoi
+callsub label33
+pushint 1
+return
+label15:
+txn OnCompletion
+pushint 0
+==
+assert
+txna ApplicationArgs 1
+btoi
+callsub label34
+pushint 1
+return
+label16:
+txn OnCompletion
+pushint 0
+==
+assert
+txna ApplicationArgs 1
+btoi
+callsub label35
+pushint 1
+return
+label17:
+txn OnCompletion
+pushint 0
+==
+assert
+txna ApplicationArgs 1
+btoi
+callsub label36
+pushint 1
+return
+label18:
+txn OnCompletion
+pushint 0
+==
+assert
+txna ApplicationArgs 1
+btoi
+callsub label37
+pushint 1
+return
+label19:
+txn OnCompletion
+pushint 0
+==
+assert
+callsub label38
+pushint 1
+return
+label20:
+store 1
+pushbytes 0x7661756c745f6170705f6964 // "vault_app_id"
+load 1
+app_global_put
+pushbytes 0x70726f706f73616c5f696e6465785f636f756e746572 // "proposal_index_counter"
+pushint 0
+app_global_put
+pushbytes 0x766f74696e675f64656c6179 // "voting_delay"
+pushint 2
+app_global_put
+pushbytes 0x766f74696e675f6475726174696f6e // "voting_duration"
+pushint 7
+app_global_put
+pushbytes 0x70726f706f73616c5f7468726573686f6c64 // "proposal_threshold"
+pushint 450000000000
+app_global_put
+pushbytes 0x70726f706f73616c5f7468726573686f6c645f6e756d657261746f72 // "proposal_threshold_numerator"
+pushint 0
+app_global_put
+pushbytes 0x71756f72756d5f7468726573686f6c64 // "quorum_threshold"
+pushint 2250000000000
+app_global_put
+pushbytes 0x617070726f76616c5f726571756972656d656e74 // "approval_requirement"
+pushint 1
+app_global_put
+pushbytes 0x6d616e61676572 // "manager"
+txn Sender
+app_global_put
+pushbytes 0x70726f706f73616c5f6d616e61676572 // "proposal_manager"
+txn Sender
+app_global_put
+retsub
+label21:
+txn Sender
+store 2
+load 2
+pushbytes 0x6d616e61676572 // "manager"
+app_global_get
+==
+assert
+retsub
+label24:
+store 3
+pushint 0
+dup
+label40:
+load 3
+==
+bnz label39
+itxn_begin
+pushint 6
+itxn_field TypeEnum
+pushbytes 0x7661756c745f6170705f6964 // "vault_app_id"
+app_global_get
+itxn_field ApplicationID
+pushbytes 0x696e6372656173655f627564676574 // "increase_budget"
+itxn_field ApplicationArgs
+pushint 0
+itxn_field Fee
+itxn_submit
+pushint 1
++
+dup
+b label40
+pop
+label39:
+retsub
+label31:
+store 4
+txn Sender
+store 5
+load 5
+pushbytes 0x6d616e61676572 // "manager"
+app_global_get
+==
+assert
+pushbytes 0x6d616e61676572 // "manager"
+load 4
+app_global_put
+pushbytes 0xba87e7f4 // 0xba87e7f4
+load 4
+concat
+log
+retsub
+label32:
+store 6
+txn Sender
+store 7
+load 7
+pushbytes 0x6d616e61676572 // "manager"
+app_global_get
+==
+assert
+pushbytes 0x70726f706f73616c5f6d616e61676572 // "proposal_manager"
+load 6
+app_global_put
+pushbytes 0x2d9960b3 // 0x2d9960b3
+load 6
+concat
+log
+retsub
+label27:
+store 8
+txn Sender
+store 9
+load 9
+pushbytes 0x70726f706f73616c5f6d616e61676572 // "proposal_manager"
+app_global_get
+==
+assert
+pushbytes 0x70 // "p"
+load 8
+concat
+store 10
+load 10
+dup
+box_len
+assert
+pushint 182
+==
+assert
+store 11
+load 11
+pushint 80
+pushint 1
+box_extract
+pushbytes 0x00 // 0x00
+==
+assert
+load 11
+pushint 16
+pushint 8
+box_extract
+btoi
+!
+assert
+load 11
+pushint 81
+pushint 1
+box_extract
+pushbytes 0x00 // 0x00
+==
+assert
+callsub label41
+store 12
+load 12
+pushbytes 0x766f74696e675f6475726174696f6e // "voting_duration"
+app_global_get
+pushint 86400
+*
++
+store 13
+pushbytes 0x80 // 0x80
+load 11
+pushint 80
+uncover 2
+box_replace
+load 12
+itob
+load 11
+pushint 16
+uncover 2
+box_replace
+load 13
+itob
+load 11
+pushint 24
+uncover 2
+box_replace
+load 10
+box_get
+pop
+store 14
+pushbytes 0xb937892b // 0xb937892b
+load 8
+load 14
+concat
+concat
+log
+pushbytes 0x9fdea5e7 // 0x9fdea5e7
+load 9
+load 8
+concat
+concat
+log
+retsub
+label28:
+store 15
+txn Sender
+store 16
+load 16
+pushbytes 0x70726f706f73616c5f6d616e61676572 // "proposal_manager"
+app_global_get
+==
+assert
+pushbytes 0x70 // "p"
+load 15
+concat
+store 17
+load 17
+dup
+box_len
+assert
+pushint 182
+==
+assert
+store 18
+load 18
+pushint 81
+pushint 1
+box_extract
+pushbytes 0x00 // 0x00
+==
+assert
+load 18
+pushint 82
+pushint 1
+box_extract
+pushbytes 0x00 // 0x00
+==
+assert
+global LatestTimestamp
+load 18
+pushint 24
+pushint 8
+box_extract
+btoi
+<
+load 18
+pushint 24
+pushint 8
+box_extract
+btoi
+!
+||
+assert
+pushbytes 0x80 // 0x80
+load 18
+pushint 81
+uncover 2
+box_replace
+load 17
+box_get
+pop
+store 19
+pushbytes 0xb937892b // 0xb937892b
+load 15
+load 19
+concat
+concat
+log
+pushbytes 0xd84382ee // 0xd84382ee
+load 16
+load 15
+concat
+concat
+log
+retsub
+label29:
+store 20
+txn Sender
+store 21
+pushbytes 0x70 // "p"
+load 20
+concat
+store 22
+load 22
+dup
+box_len
+assert
+pushint 182
+==
+assert
+store 23
+load 23
+pushint 24
+pushint 8
+box_extract
+btoi
+assert
+load 23
+pushint 24
+pushint 8
+box_extract
+btoi
+global LatestTimestamp
+<
+assert
+load 23
+pushint 81
+pushint 1
+box_extract
+pushbytes 0x00 // 0x00
+==
+assert
+load 23
+pushint 82
+pushint 1
+box_extract
+pushbytes 0x00 // 0x00
+==
+assert
+load 23
+pushint 83
+pushint 1
+box_extract
+pushbytes 0x80 // 0x80
+==
+assert
+load 23
+pushint 64
+pushint 8
+box_extract
+btoi
+load 23
+pushint 56
+pushint 8
+box_extract
+btoi
+>
+assert
+load 23
+pushint 150
+pushint 32
+box_extract
+load 21
+==
+assert
+pushbytes 0x80 // 0x80
+load 23
+pushint 82
+uncover 2
+box_replace
+load 22
+box_get
+pop
+store 24
+pushbytes 0xb937892b // 0xb937892b
+load 20
+load 24
+concat
+concat
+log
+pushbytes 0x5c8f51f0 // 0x5c8f51f0
+load 21
+load 20
+concat
+concat
+log
+retsub
+label23:
+store 25
+store 26
+store 27
+txn Sender
+store 28
+load 28
+callsub label42
+store 29
+callsub label43
+store 30
+load 29
+pushbytes 0x70726f706f73616c5f7468726573686f6c64 // "proposal_threshold"
+app_global_get
+>=
+assert
+load 29
+itob
+pushint 100
+itob
+b*
+load 30
+itob
+pushbytes 0x70726f706f73616c5f7468726573686f6c645f6e756d657261746f72 // "proposal_threshold_numerator"
+app_global_get
+itob
+b*
+b>=
+assert
+pushbytes 0x70 // "p"
+load 27
+concat
+store 31
+load 31
+dup
+pushint 182
+box_create
+assert
+store 32
+pushbytes 0x70726f706f73616c5f696e6465785f636f756e746572 // "proposal_index_counter"
+app_global_get
+itob
+load 32
+pushint 0
+uncover 2
+box_replace
+global LatestTimestamp
+itob
+load 32
+pushint 8
+uncover 2
+box_replace
+load 30
+itob
+load 32
+pushint 32
+uncover 2
+box_replace
+load 28
+load 32
+pushint 84
+uncover 2
+box_replace
+pushbytes 0x71756f72756d5f7468726573686f6c64 // "quorum_threshold"
+app_global_get
+itob
+load 32
+pushint 48
+uncover 2
+box_replace
+load 26
+load 32
+pushint 116
+uncover 2
+box_replace
+load 25
+load 32
+pushint 150
+uncover 2
+box_replace
+pushbytes 0x617070726f76616c5f726571756972656d656e74 // "approval_requirement"
+app_global_get
+!
+bz label44
+callsub label41
+store 33
+load 33
+pushbytes 0x766f74696e675f6475726174696f6e // "voting_duration"
+app_global_get
+pushint 86400
+*
++
+store 34
+load 33
+itob
+load 32
+pushint 16
+uncover 2
+box_replace
+load 34
+itob
+load 32
+pushint 24
+uncover 2
+box_replace
+label44:
+pushbytes 0x70726f706f73616c5f696e6465785f636f756e746572 // "proposal_index_counter"
+pushbytes 0x70726f706f73616c5f696e6465785f636f756e746572 // "proposal_index_counter"
+app_global_get
+pushint 1
++
+app_global_put
+load 31
+box_get
+pop
+store 35
+pushbytes 0xb937892b // 0xb937892b
+load 27
+load 35
+concat
+concat
+log
+pushbytes 0x15c912e1 // 0x15c912e1
+load 28
+load 27
+concat
+concat
+log
+retsub
+label22:
+store 36
+store 37
+store 38
+txn Sender
+store 39
+pushbytes 0x70 // "p"
+load 38
+concat
+store 40
+load 40
+dup
+box_len
+assert
+pushint 182
+==
+assert
+store 41
+load 41
+pushint 81
+pushint 1
+box_extract
+pushbytes 0x00 // 0x00
+==
+assert
+load 41
+pushint 16
+pushint 8
+box_extract
+btoi
+assert
+load 41
+pushint 16
+pushint 8
+box_extract
+btoi
+global LatestTimestamp
+<=
+assert
+global LatestTimestamp
+load 41
+pushint 24
+pushint 8
+box_extract
+btoi
+<
+assert
+load 39
+load 41
+pushint 0
+pushint 8
+box_extract
+btoi
+callsub label45
+load 39
+load 41
+pushint 8
+pushint 8
+box_extract
+btoi
+load 36
+callsub label46
+store 42
+load 42
+assert
+load 37
+pushint 0
+==
+bz label47
+load 41
+pushint 56
+pushint 8
+box_extract
+btoi
+load 42
++
+itob
+load 41
+pushint 56
+uncover 2
+box_replace
+b label48
+label47:
+load 37
+pushint 1
+==
+bz label49
+load 41
+pushint 64
+pushint 8
+box_extract
+btoi
+load 42
++
+itob
+load 41
+pushint 64
+uncover 2
+box_replace
+b label48
+label49:
+load 37
+pushint 2
+==
+bz label50
+load 41
+pushint 72
+pushint 8
+box_extract
+btoi
+load 42
++
+itob
+load 41
+pushint 72
+uncover 2
+box_replace
+b label48
+label50:
+err
+label48:
+load 41
+pushint 48
+pushint 8
+box_extract
+btoi
+load 41
+pushint 64
+pushint 8
+box_extract
+btoi
+load 41
+pushint 72
+pushint 8
+box_extract
+btoi
++
+<=
+bz label51
+pushbytes 0x80 // 0x80
+load 41
+pushint 83
+uncover 2
+box_replace
+label51:
+load 41
+pushint 40
+pushint 8
+box_extract
+btoi
+pushint 1
++
+itob
+load 41
+pushint 40
+uncover 2
+box_replace
+load 40
+box_get
+pop
+store 43
+pushbytes 0xb937892b // 0xb937892b
+load 38
+load 43
+concat
+concat
+log
+pushbytes 0x22696940 // "\"ii@"
+load 39
+load 38
+load 37
+itob
+load 42
+itob
+concat
+concat
+concat
+concat
+log
+retsub
+label33:
+store 44
+txn Sender
+store 45
+load 45
+pushbytes 0x70726f706f73616c5f6d616e61676572 // "proposal_manager"
+app_global_get
+==
+assert
+pushbytes 0x766f74696e675f64656c6179 // "voting_delay"
+load 44
+app_global_put
+pushbytes 0xb7aa1b9e // 0xb7aa1b9e
+load 44
+itob
+concat
+log
+retsub
+label34:
+store 46
+txn Sender
+store 47
+load 47
+pushbytes 0x70726f706f73616c5f6d616e61676572 // "proposal_manager"
+app_global_get
+==
+assert
+load 46
+assert
+pushbytes 0x766f74696e675f6475726174696f6e // "voting_duration"
+load 46
+app_global_put
+pushbytes 0x69897033 // 0x69897033
+load 46
+itob
+concat
+log
+retsub
+label35:
+store 48
+txn Sender
+store 49
+load 49
+pushbytes 0x70726f706f73616c5f6d616e61676572 // "proposal_manager"
+app_global_get
+==
+assert
+pushbytes 0x70726f706f73616c5f7468726573686f6c64 // "proposal_threshold"
+load 48
+app_global_put
+pushbytes 0x93d29193 // 0x93d29193
+load 48
+itob
+concat
+log
+retsub
+label36:
+store 50
+txn Sender
+store 51
+load 51
+pushbytes 0x70726f706f73616c5f6d616e61676572 // "proposal_manager"
+app_global_get
+==
+assert
+load 50
+pushint 100
+<=
+assert
+pushbytes 0x70726f706f73616c5f7468726573686f6c645f6e756d657261746f72 // "proposal_threshold_numerator"
+load 50
+app_global_put
+pushbytes 0x1510c336 // 0x1510c336
+load 50
+itob
+concat
+log
+retsub
+label37:
+store 52
+txn Sender
+store 53
+load 53
+pushbytes 0x70726f706f73616c5f6d616e61676572 // "proposal_manager"
+app_global_get
+==
+assert
+pushbytes 0x71756f72756d5f7468726573686f6c64 // "quorum_threshold"
+load 52
+app_global_put
+pushbytes 0x2f2cbf2d // 0x2f2cbf2d
+load 52
+itob
+concat
+log
+retsub
+label38:
+txn Sender
+store 54
+load 54
+pushbytes 0x70726f706f73616c5f6d616e61676572 // "proposal_manager"
+app_global_get
+==
+assert
+pushbytes 0x617070726f76616c5f726571756972656d656e74 // "approval_requirement"
+app_global_get
+assert
+pushbytes 0x617070726f76616c5f726571756972656d656e74 // "approval_requirement"
+pushint 0
+app_global_put
+pushbytes 0xe17902b5 // 0xe17902b5
+log
+retsub
+label25:
+store 55
+pushbytes 0x70 // "p"
+load 55
+concat
+store 56
+load 56
+box_get
+store 57
+store 58
+load 57
+assert
+load 58
+dup
+len
+pushint 182
+==
+assert
+store 59
+load 59
+extract 81 1
+pushbytes 0x80 // 0x80
+==
+bz label52
+pushint 1
+store 60
+b label53
+label52:
+load 59
+extract 82 1
+pushbytes 0x80 // 0x80
+==
+bz label54
+pushint 6
+store 60
+b label53
+label54:
+load 59
+extract 16 8
+btoi
+!
+bz label55
+pushint 0
+store 60
+b label53
+label55:
+global LatestTimestamp
+load 59
+extract 16 8
+btoi
+<
+bz label56
+pushint 2
+store 60
+b label53
+label56:
+global LatestTimestamp
+load 59
+extract 24 8
+btoi
+<
+bz label57
+pushint 3
+store 60
+b label53
+label57:
+load 59
+extract 83 1
+pushbytes 0x00 // 0x00
+==
+load 59
+extract 64 8
+btoi
+load 59
+extract 56 8
+btoi
+<=
+||
+bz label58
+pushint 4
+store 60
+b label53
+label58:
+pushint 5
+store 60
+label53:
+load 60
+load 58
+retsub
+label26:
+store 61
+store 62
+pushbytes 0x70 // "p"
+load 62
+concat
+store 63
+load 63
+dup
+box_len
+assert
+pushint 182
+==
+assert
+store 64
+load 64
+pushint 0
+pushint 8
+box_extract
+btoi
+store 65
+load 65
+pushint 24
+pushint 8
+*
+/
+store 66
+load 65
+pushint 24
+pushint 8
+*
+%
+store 67
+pushbytes 0x61 // "a"
+load 61
+load 66
+itob
+concat
+concat
+store 68
+load 68
+box_len
+store 69
+pop
+pushbytes 0x00 // 0x00
+store 70
+load 69
+bz label59
+load 68
+pushint 0
+pushint 24
+box_extract
+load 67
+getbit
+bz label59
+pushbytes 0x80 // 0x80
+store 70
+label59:
+load 70
+retsub
+label30:
+store 71
+load 71
+box_get
+pop
+store 72
+load 72
+len
+itob
+extract 6 2
+store 73
+load 72
+load 73
+retsub
+label45:
+store 74
+store 75
+load 74
+pushint 24
+pushint 8
+*
+/
+store 76
+load 74
+pushint 24
+pushint 8
+*
+%
+store 77
+pushbytes 0x61 // "a"
+load 75
+load 76
+itob
+concat
+concat
+store 78
+load 78
+pushint 24
+box_create
+pop
+load 78
+box_get
+pop
+store 79
+load 79
+load 77
+getbit
+!
+assert
+load 79
+load 77
+pushint 1
+setbit
+store 79
+load 78
+load 79
+box_put
+retsub
+label41:
+global LatestTimestamp
+pushint 86400
+/
+pushint 86400
+*
+pushint 86400
++
+store 80
+load 80
+pushbytes 0x766f74696e675f64656c6179 // "voting_delay"
+app_global_get
+pushint 86400
+*
++
+retsub
+label42:
+store 81
+itxn_begin
+pushint 6
+itxn_field TypeEnum
+pushbytes 0x7661756c745f6170705f6964 // "vault_app_id"
+app_global_get
+itxn_field ApplicationID
+pushbytes 0x6765745f74696e795f706f7765725f6f66 // "get_tiny_power_of"
+itxn_field ApplicationArgs
+load 81
+itxn_field ApplicationArgs
+pushint 0
+itxn_field Fee
+itxn_submit
+itxn LastLog
+pushint 4
+extract_uint64
+store 82
+load 82
+retsub
+label46:
+store 83
+store 84
+store 85
+itxn_begin
+pushint 6
+itxn_field TypeEnum
+pushbytes 0x7661756c745f6170705f6964 // "vault_app_id"
+app_global_get
+itxn_field ApplicationID
+pushbytes 0x6765745f74696e795f706f7765725f6f665f6174 // "get_tiny_power_of_at"
+itxn_field ApplicationArgs
+load 85
+itxn_field ApplicationArgs
+load 84
+itob
+itxn_field ApplicationArgs
+load 83
+itxn_field ApplicationArgs
+pushint 0
+itxn_field Fee
+itxn_submit
+itxn LastLog
+pushint 4
+extract_uint64
+store 86
+load 86
+retsub
+label43:
+itxn_begin
+pushint 6
+itxn_field TypeEnum
+pushbytes 0x7661756c745f6170705f6964 // "vault_app_id"
+app_global_get
+itxn_field ApplicationID
+pushbytes 0x6765745f746f74616c5f74696e795f706f776572 // "get_total_tiny_power"
+itxn_field ApplicationArgs
+pushint 0
+itxn_field Fee
+itxn_submit
+itxn LastLog
+pushint 4
+extract_uint64
+store 87
+load 87
+retsub

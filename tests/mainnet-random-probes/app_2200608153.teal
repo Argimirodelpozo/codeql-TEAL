@@ -1,0 +1,818 @@
+#pragma version 9
+pushbytes 0x6372656174655f6170706c69636174696f6e // "create_application"
+pushbytes 0x7570646174655f6170706c69636174696f6e // "update_application"
+pushbytes 0x636c61696d5f72657761726473 // "claim_rewards"
+pushbytes 0x696e6372656173655f627564676574 // "increase_budget"
+pushbytes 0x6372656174655f7265776172645f706572696f64 // "create_reward_period"
+pushbytes 0x7365745f7265776172645f616d6f756e74 // "set_reward_amount"
+pushbytes 0x6765745f626f78 // "get_box"
+pushbytes 0x7365745f6d616e61676572 // "set_manager"
+pushbytes 0x7365745f726577617264735f6d616e61676572 // "set_rewards_manager"
+pushbytes 0x696e6974 // "init"
+txna ApplicationArgs 0
+match label1 label2 label3 label4 label5 label6 label7 label8 label9 label10
+err
+label1:
+txn ApplicationID
+pushint 0
+==
+assert
+txna ApplicationArgs 1
+btoi
+txna ApplicationArgs 2
+btoi
+callsub label11
+pushint 1
+return
+label2:
+txn OnCompletion
+pushint 4
+==
+assert
+callsub label12
+pushint 1
+return
+label3:
+txn OnCompletion
+pushint 0
+==
+assert
+txna ApplicationArgs 1
+btoi
+txna ApplicationArgs 2
+btoi
+txna ApplicationArgs 3
+callsub label13
+pushint 1
+return
+label4:
+txn OnCompletion
+pushint 0
+==
+assert
+txna ApplicationArgs 1
+btoi
+callsub label14
+pushint 1
+return
+label5:
+txn OnCompletion
+pushint 0
+==
+assert
+txna ApplicationArgs 1
+txna ApplicationArgs 2
+txna ApplicationArgs 3
+btoi
+callsub label15
+pushint 1
+return
+label6:
+txn OnCompletion
+pushint 0
+==
+assert
+txna ApplicationArgs 1
+btoi
+callsub label16
+pushint 1
+return
+label7:
+txn OnCompletion
+pushint 0
+==
+assert
+txna ApplicationArgs 1
+callsub label17
+uncover 1
+concat
+pushbytes 0x151f7c75 // 0x151f7c75
+swap
+concat
+log
+pushint 1
+return
+label8:
+txn OnCompletion
+pushint 0
+==
+assert
+txna ApplicationArgs 1
+dup
+len
+pushint 32
+==
+assert
+callsub label18
+pushint 1
+return
+label9:
+txn OnCompletion
+pushint 0
+==
+assert
+txna ApplicationArgs 1
+dup
+len
+pushint 32
+==
+assert
+callsub label19
+pushint 1
+return
+label10:
+txn OnCompletion
+pushint 0
+==
+assert
+txna ApplicationArgs 1
+btoi
+callsub label20
+pushint 1
+return
+label11:
+store 1
+store 2
+pushbytes 0x74696e795f61737365745f6964 // "tiny_asset_id"
+load 2
+app_global_put
+pushbytes 0x7661756c745f6170705f6964 // "vault_app_id"
+load 1
+app_global_put
+pushbytes 0x7265776172645f706572696f645f636f756e74 // "reward_period_count"
+pushint 0
+app_global_put
+pushbytes 0x7265776172645f686973746f72795f636f756e74 // "reward_history_count"
+pushint 0
+app_global_put
+pushbytes 0x66697273745f706572696f645f74696d657374616d70 // "first_period_timestamp"
+pushint 0
+app_global_put
+pushbytes 0x6d616e61676572 // "manager"
+txn Sender
+app_global_put
+pushbytes 0x726577617264735f6d616e61676572 // "rewards_manager"
+txn Sender
+app_global_put
+retsub
+label12:
+txn Sender
+store 3
+load 3
+pushbytes 0x6d616e61676572 // "manager"
+app_global_get
+==
+assert
+retsub
+label14:
+store 4
+pushint 0
+dup
+label22:
+load 4
+==
+bnz label21
+itxn_begin
+pushint 6
+itxn_field TypeEnum
+pushbytes 0x7661756c745f6170705f6964 // "vault_app_id"
+app_global_get
+itxn_field ApplicationID
+pushbytes 0x696e6372656173655f627564676574 // "increase_budget"
+itxn_field ApplicationArgs
+pushint 0
+itxn_field Fee
+itxn_submit
+pushint 1
++
+dup
+b label22
+pop
+label21:
+retsub
+label15:
+store 5
+store 6
+store 7
+pushbytes 0x7265776172645f706572696f645f636f756e74 // "reward_period_count"
+app_global_get
+store 8
+load 8
+callsub label23
+store 9
+load 9
+pushint 604800
++
+store 10
+load 10
+global LatestTimestamp
+<=
+assert
+load 9
+load 10
+load 7
+load 6
+callsub label24
+store 11
+load 9
+load 5
+callsub label25
+store 12
+load 12
+load 11
+callsub label26
+store 13
+load 13
+callsub label27
+pushbytes 0x81a7c323 // 0x81a7c323
+load 8
+itob
+load 12
+itob
+load 11
+concat
+concat
+concat
+log
+retsub
+label13:
+store 14
+store 15
+store 16
+txn Sender
+store 17
+load 15
+assert
+load 16
+callsub label23
+store 18
+pushint 0
+store 19
+pushbytes 0x // ""
+store 20
+pushint 0
+store 28
+label32:
+load 28
+load 15
+==
+bnz label28
+load 16
+load 28
++
+store 21
+load 17
+load 21
+callsub label29
+load 18
+load 28
+pushint 604800
+*
++
+store 22
+load 22
+pushint 604800
++
+store 23
+load 14
+load 28
+pushint 8
+*
+pushint 8
+extract3
+store 24
+load 14
+load 28
+pushint 1
++
+pushint 8
+*
+pushint 8
+extract3
+store 25
+load 17
+load 22
+load 23
+load 24
+load 25
+callsub label30
+store 27
+load 21
+callsub label31
+store 29
+load 29
+extract 0 8
+btoi
+itob
+load 27
+b*
+load 29
+extract 8 16
+b/
+btoi
+store 26
+load 20
+load 26
+itob
+concat
+store 20
+load 19
+load 26
++
+store 19
+load 28
+pushint 1
++
+store 28
+b label32
+label28:
+load 19
+global CurrentApplicationAddress
+load 17
+callsub label33
+pushbytes 0x4fe91013 // 0x4fe91013
+load 17
+load 19
+itob
+load 16
+itob
+load 15
+itob
+load 15
+itob
+extract 6 2
+load 20
+concat
+concat
+concat
+concat
+concat
+concat
+log
+retsub
+label20:
+store 30
+txn Sender
+store 31
+load 31
+pushbytes 0x726577617264735f6d616e61676572 // "rewards_manager"
+app_global_get
+==
+assert
+pushbytes 0x7265776172645f686973746f72795f636f756e74 // "reward_history_count"
+app_global_get
+!
+assert
+global LatestTimestamp
+pushint 604800
+/
+pushint 604800
+*
+pushint 604800
++
+store 32
+pushbytes 0x66697273745f706572696f645f74696d657374616d70 // "first_period_timestamp"
+load 32
+app_global_put
+load 32
+load 30
+callsub label34
+store 33
+load 33
+callsub label35
+pushint 0
+global CurrentApplicationAddress
+global CurrentApplicationAddress
+callsub label33
+pushbytes 0xd0265394 // 0xd0265394
+load 32
+itob
+load 30
+itob
+concat
+concat
+log
+retsub
+label16:
+store 34
+txn Sender
+store 35
+load 35
+pushbytes 0x726577617264735f6d616e61676572 // "rewards_manager"
+app_global_get
+==
+assert
+pushbytes 0x7265776172645f686973746f72795f636f756e74 // "reward_history_count"
+app_global_get
+assert
+global LatestTimestamp
+load 34
+callsub label34
+store 36
+load 36
+callsub label35
+pushbytes 0x8650117a // 0x8650117a
+global LatestTimestamp
+itob
+load 34
+itob
+concat
+concat
+log
+retsub
+label18:
+store 37
+txn Sender
+store 38
+load 38
+pushbytes 0x6d616e61676572 // "manager"
+app_global_get
+==
+assert
+pushbytes 0x6d616e61676572 // "manager"
+load 37
+app_global_put
+pushbytes 0xba87e7f4 // 0xba87e7f4
+load 37
+concat
+log
+retsub
+label19:
+store 39
+txn Sender
+store 40
+load 40
+pushbytes 0x6d616e61676572 // "manager"
+app_global_get
+==
+assert
+pushbytes 0x726577617264735f6d616e61676572 // "rewards_manager"
+load 39
+app_global_put
+pushbytes 0x7dca08e7 // 0x7dca08e7
+load 39
+concat
+log
+retsub
+label17:
+store 41
+load 41
+box_get
+pop
+store 42
+load 42
+len
+itob
+extract 6 2
+store 43
+load 42
+load 43
+retsub
+label26:
+store 44
+store 45
+load 45
+itob
+pushint 16
+bzero
+load 44
+b|
+concat
+dup
+len
+pushint 24
+==
+assert
+retsub
+label27:
+store 46
+pushbytes 0x7265776172645f706572696f645f636f756e74 // "reward_period_count"
+app_global_get
+store 47
+load 47
+pushint 42
+/
+store 48
+load 47
+pushint 42
+%
+store 49
+pushbytes 0x7270 // "rp"
+load 48
+itob
+concat
+store 50
+load 50
+pushint 1008
+box_create
+pop
+load 50
+load 49
+pushint 24
+*
+load 46
+box_replace
+pushbytes 0x87570c4c // 0x87570c4c
+load 47
+itob
+load 46
+concat
+concat
+log
+pushbytes 0x7265776172645f706572696f645f636f756e74 // "reward_period_count"
+load 47
+pushint 1
++
+app_global_put
+retsub
+label31:
+store 51
+load 51
+pushint 42
+/
+store 52
+load 51
+pushint 42
+%
+store 53
+pushbytes 0x7270 // "rp"
+load 52
+itob
+concat
+store 54
+load 54
+load 53
+pushint 24
+*
+pushint 24
+box_extract
+dup
+len
+pushint 24
+==
+assert
+retsub
+label34:
+store 55
+store 56
+load 56
+itob
+load 55
+itob
+concat
+dup
+len
+pushint 16
+==
+assert
+retsub
+label35:
+store 57
+pushbytes 0x7265776172645f686973746f72795f636f756e74 // "reward_history_count"
+app_global_get
+store 58
+load 58
+pushint 16
+/
+store 59
+load 58
+pushint 16
+%
+store 60
+pushbytes 0x7268 // "rh"
+load 59
+itob
+concat
+store 61
+load 61
+pushint 256
+box_create
+pop
+load 61
+load 60
+pushint 16
+*
+load 57
+box_replace
+pushbytes 0xa1f897be // 0xa1f897be
+load 58
+itob
+load 57
+concat
+concat
+log
+pushbytes 0x7265776172645f686973746f72795f636f756e74 // "reward_history_count"
+load 58
+pushint 1
++
+app_global_put
+retsub
+label36:
+store 62
+load 62
+pushint 16
+/
+store 63
+load 62
+pushint 16
+%
+store 64
+pushbytes 0x7268 // "rh"
+load 63
+itob
+concat
+store 65
+load 65
+load 64
+pushint 16
+*
+pushint 16
+box_extract
+dup
+len
+pushint 16
+==
+assert
+retsub
+label25:
+store 66
+store 67
+load 66
+pushbytes 0x7265776172645f686973746f72795f636f756e74 // "reward_history_count"
+app_global_get
+<
+assert
+load 67
+global LatestTimestamp
+<=
+assert
+load 66
+callsub label36
+store 68
+load 68
+extract 0 8
+btoi
+load 67
+<=
+assert
+load 66
+pushint 1
++
+pushbytes 0x7265776172645f686973746f72795f636f756e74 // "reward_history_count"
+app_global_get
+<
+bz label37
+load 66
+pushint 1
++
+callsub label36
+store 69
+load 67
+load 69
+extract 0 8
+btoi
+<
+assert
+label37:
+load 68
+extract 8 8
+btoi
+retsub
+label29:
+store 70
+store 71
+load 70
+pushint 1012
+pushint 8
+*
+/
+store 72
+load 70
+pushint 1012
+pushint 8
+*
+%
+store 73
+pushbytes 0x63 // "c"
+load 71
+load 72
+itob
+concat
+concat
+store 74
+load 74
+pushint 1012
+box_create
+pop
+load 74
+box_get
+pop
+store 75
+load 75
+load 73
+getbit
+!
+assert
+load 75
+load 73
+pushint 1
+setbit
+store 75
+load 74
+load 75
+box_put
+retsub
+label23:
+store 76
+pushbytes 0x66697273745f706572696f645f74696d657374616d70 // "first_period_timestamp"
+app_global_get
+load 76
+pushint 604800
+*
++
+retsub
+label30:
+store 77
+store 78
+store 79
+store 80
+store 81
+itxn_begin
+pushint 6
+itxn_field TypeEnum
+pushbytes 0x7661756c745f6170705f6964 // "vault_app_id"
+app_global_get
+itxn_field ApplicationID
+pushbytes 0x6765745f6163636f756e745f63756d756c61746976655f706f7765725f64656c7461 // "get_account_cumulative_power_delta"
+itxn_field ApplicationArgs
+load 81
+itxn_field ApplicationArgs
+load 80
+itob
+itxn_field ApplicationArgs
+load 79
+itob
+itxn_field ApplicationArgs
+load 78
+itxn_field ApplicationArgs
+load 77
+itxn_field ApplicationArgs
+pushint 0
+itxn_field Fee
+itxn_submit
+itxn LastLog
+extract 4 16
+store 82
+load 82
+retsub
+label24:
+store 83
+store 84
+store 85
+store 86
+itxn_begin
+pushint 6
+itxn_field TypeEnum
+pushbytes 0x7661756c745f6170705f6964 // "vault_app_id"
+app_global_get
+itxn_field ApplicationID
+pushbytes 0x6765745f746f74616c5f63756d756c61746976655f706f7765725f64656c7461 // addr M5SXIX3UN52GC3C7MN2W25LMMF2GS5TFL5YG653FOJPWIZLMORQYBQCGUU
+itxn_field ApplicationArgs
+load 86
+itob
+itxn_field ApplicationArgs
+load 85
+itob
+itxn_field ApplicationArgs
+load 84
+itxn_field ApplicationArgs
+load 83
+itxn_field ApplicationArgs
+pushint 0
+itxn_field Fee
+itxn_submit
+itxn LastLog
+extract 4 16
+store 87
+load 87
+retsub
+label33:
+store 88
+store 89
+store 90
+itxn_begin
+pushint 4
+itxn_field TypeEnum
+load 89
+itxn_field Sender
+load 88
+itxn_field AssetReceiver
+load 90
+itxn_field AssetAmount
+pushbytes 0x74696e795f61737365745f6964 // "tiny_asset_id"
+app_global_get
+itxn_field XferAsset
+pushint 0
+itxn_field Fee
+itxn_submit
+retsub
