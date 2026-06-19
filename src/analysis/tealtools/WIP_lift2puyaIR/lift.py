@@ -624,11 +624,6 @@ class _Lifter:
         op = t.op if t is not None else None
         resim = bb in self.resim_blocks
 
-        def _cond():                          # branch/switch selector value
-            if resim and t is not None and self.resim_args.get(id(t)):
-                return self.resim_args[id(t)][0]
-            return self.value(t.inputs[0]) if (t and t.inputs) else pre_ir.Undefined()
-
         if op == "callsub":
             cs = self.callsite.get(bb)
             cont = cs.continuation_bb if cs else None
@@ -642,46 +637,7 @@ class _Lifter:
                 return pre_ir.ProgramExit(pre_ir.UInt64Constant(0))
             return pre_ir.SubroutineReturn([])
         if op == "retsub":
-            # A retsub returns to its caller. Its raw-CFG successors are the
-            # callers' continuations (interprocedural return edges), but each
-            # caller already reaches its own continuation via its callsub ->
-            # Goto(continuation). So model retsub as a value return, NOT a
-            # goto / goto_nth into the callers — the latter, with >1 caller,
-            # had no selector and rendered as `goto_nth undefined`.
-            #
-            # The N returns are frame slots 0..N-1. A sub that *buries* its
-            # return into the slot (frame_bury 0) leaves the slot's current
-            # value there, not on the exit stack — so prefer the final slot
-            # local; only fall back to the (bottom-first) exit-stack slice for
-            # returns that were left on the stack.
-            if resim:                                      # clean re-simulated stack
-                rsx = self.resim_exit.get(bb, [])
-                if not self.cur_nret:
-                    return pre_ir.SubroutineReturn([])
-                # A `proto A R` retsub returns frame slots 0..R-1 -- the FIRST R
-                # locals (just above the A args), NOT the top R of the stack.
-                # When a sub keeps extra working locals past its returns (e.g. a
-                # loop counter buried in slot 1 while the bytes accumulator it
-                # returns lives in slot 0), the stack top is that counter, so the
-                # old `rsx[-R:]` returned the wrong value (a uint64 counter where
-                # the caller reads a bytes array). The frame slots sit at
-                # rsx[nargs+0 .. nargs+R-1] (resim seeds the stack with the params,
-                # then frame_bury deep-writes each slot there). Verified on a live
-                # localnet: `len(repeat(3))==3` PASSES (slot-0 bytes returned),
-                # `repeat(3)==3` fails to compare []byte to uint64.
-                np = self.cur_nargs
-                rets = [rsx[np + j] if np + j < len(rsx) else pre_ir.Undefined()
-                        for j in range(self.cur_nret)]
-                return pre_ir.SubroutineReturn(rets)
-            slots = self.final_locals.get(self.cur_gname, {})
-            es = bb.exit_stack or []
-            rets = []
-            for j in range(self.cur_nret):
-                if j in slots:
-                    rets.append(slots[j])                  # buried into the slot
-                elif len(es) >= self.cur_nret - j:
-                    rets.append(self.value(es[-self.cur_nret + j]))  # left on the stack
-            return pre_ir.SubroutineReturn(rets)
+            return self._control_retsub(bb, resim)
         succ = [s for s in bb.successors if s in self.bid]
         if not succ:
             if op == "err":
@@ -704,7 +660,7 @@ class _Lifter:
         if len(succ) == 1:
             return pre_ir.Goto(self.bid[succ[0]])
         if len(succ) == 2 and op in _COND_BRANCH and t is not None:
-            cond = _cond()
+            cond = self._sel_value(t, resim)
             taken = self.line2block.get(self.label2line.get((t.immediates or "").strip()))
             if taken in succ:
                 other = succ[0] if succ[1] is taken else succ[1]
@@ -714,96 +670,163 @@ class _Lifter:
                 return pre_ir.ConditionalBranch(cond, self.bid[taken], self.bid[other])
             return pre_ir.ConditionalBranch(cond, self.bid[other], self.bid[taken])  # bz
         if op == "match" and t is not None:
-            # `match t0..t_{n-1}`: matched value on top, the n case values below.
-            # AVM pairs label[i] with the i-th case counting from the DEEPEST
-            # (first-pushed) constant -- label[0] <-> C_0. SSA inputs are
-            # TOP-FIRST, so the case constants normally arrive deepest-LAST and
-            # label[i] is `ins[n-i]`. BUT a single multi-push op
-            # (`pushbytess`/`pushints`) emits its N outputs in push order, so
-            # when all n case operands come from ONE op they arrive deepest-
-            # FIRST and label[i] is `ins[i+1]`. Discriminate by whether the n
-            # case operands share a source line (one op) or not (n separate
-            # `intc`/`pushint` pushes). Getting this wrong silently SWAPS sibling
-            # arms -- e.g. an OnCompletion/ABI selector routed to the wrong body
-            # (oracle-confirmed on app_3543081435's no-arg OnCompletion router:
-            # NoOp<->UpdateApplication were swapped).
-            labels = (t.immediates or "").split()
-            n = len(labels)
-            ins = (self.resim_args.get(id(t)) if (resim and id(t) in self.resim_args)
-                   else [self.value(x) for x in t.inputs])
-            # Pair label[i] with the i-th case key in PUSH order (deepest-first),
-            # which AVM `match` requires (label[0] <-> the first-pushed/deepest
-            # key). A key's push position is (source line, output index within
-            # its producing op) ascending -- correct whether the n keys come from
-            # ONE multi-push op (`pushbytess`/`pushints`: same line, indices
-            # 1..n), from separate `intc`/`pushint` pushes (distinct lines), or a
-            # mix. (SSA inputs are TOP-FIRST, so a fixed index `ins[i+1]` is only
-            # right for the single-op case; getting it wrong silently SWAPS
-            # sibling arms -- oracle-confirmed on app_3543081435's no-arg
-            # OnCompletion router, NoOp<->UpdateApplication.)
-            keys = t.inputs[1:n + 1]
-            pos = [(getattr(k, "line", None), getattr(k, "index", None) or 0)
-                   for k in keys]
-            if len(pos) == n and all(ln is not None for ln, _ in pos):
-                order = sorted(range(n), key=lambda j: pos[j])
-            else:                                  # missing source info: fall back
-                order = (list(range(n)) if len({ln for ln, _ in pos}) == 1
-                         else list(range(n))[::-1])
-            cases, targets = [], set()
-            for i, lbl in enumerate(labels):
-                blk = self.line2block.get(self.label2line.get(lbl))
-                ki = 1 + order[i]
-                ci = ins[ki] if 0 <= ki < len(ins) else None
-                if isinstance(ci, pre_ir.BytesConstant):
-                    key = ci.value                       # bytes-keyed match
-                elif isinstance(ci, pre_ir.UInt64Constant):
-                    key = str(ci.value)                  # uint64-keyed match
-                else:
-                    key = None
-                if blk is None or blk not in self.bid or key is None:
-                    cases = None
-                    break
-                cases.append((key, self.bid[blk]))
-                targets.add(blk)
-            if cases is None:                 # extractor dropped the case keys
-                cases, targets = self._recover_match_keys(bb, labels)  # (from source)
-            default = next((s for s in succ if s not in targets), None)
-            if cases and default is not None:
-                val = ins[0] if ins else pre_ir.Undefined()
-                return pre_ir.Switch(val, cases, self.bid[default])
+            term = self._control_match(bb, t, succ, resim)
+            if term is not None:
+                return term
         if op == "switch" and t is not None:
-            # AVM `switch L0..L_{n-1}` is POSITIONAL: the popped index i jumps to
-            # L_i, and DUPLICATE labels are significant (an OnCompletion router
-            # sends most indices to the same `err`). Out-of-range falls through to
-            # the next instruction. Building arms from the distinct successor SET
-            # (as the generic GotoNth below does) scrambles the index->target map
-            # and mis-routes — oracle-confirmed on switch_demo and the RugNinja
-            # dispatch (every NoOp method call was routed to `err`). Map by
-            # position; the fall-through is the block on the next source line
-            # (which may COINCIDE with a labeled target, so resolve it by line,
-            # not by set-difference like `match` below).
-            labels = (t.immediates or "").split()
-            arms, ok = [], True
-            for lbl in labels:
-                blk = self.line2block.get(self.label2line.get(lbl))
-                if blk is None or blk not in self.bid:
-                    ok = False
-                    break
-                arms.append(self.bid[blk])
-            sl = t.location.line if getattr(t, "location", None) else None
-            after = [fl for fl in self.line2block if sl is not None and fl > sl]
-            ft = self.line2block[min(after)] if after else None
-            if ok and ft is not None and ft in self.bid:
-                return pre_ir.GotoNth(_cond(), arms, self.bid[ft])
-            if ok and succ:                       # robustness: best-effort default
-                labeled = {self.line2block.get(self.label2line.get(l)) for l in labels}
-                dft = next((s for s in succ if s not in labeled), succ[-1])
-                return pre_ir.GotoNth(_cond(), arms, self.bid[dft])
+            term = self._control_switch(t, succ, resim)
+            if term is not None:
+                return term
         if op == "match":
-            return pre_ir.GotoNth(_cond(),
+            return pre_ir.GotoNth(self._sel_value(t, resim),
                               [self.bid[s] for s in succ[:-1]], self.bid[succ[-1]])
         return pre_ir.GotoNth(pre_ir.Undefined(),
                               [self.bid[s] for s in succ[:-1]], self.bid[succ[-1]])
+
+    def _sel_value(self, t, resim):           # branch/switch selector value
+        if resim and t is not None and self.resim_args.get(id(t)):
+            return self.resim_args[id(t)][0]
+        return self.value(t.inputs[0]) if (t and t.inputs) else pre_ir.Undefined()
+
+    def _control_retsub(self, bb, resim):
+        """Build the `SubroutineReturn` for a `retsub` block.
+
+        A retsub returns to its caller. Its raw-CFG successors are the callers'
+        continuations (interprocedural return edges), but each caller already
+        reaches its own continuation via its callsub -> Goto(continuation). So
+        model retsub as a value return, NOT a goto / goto_nth into the callers —
+        the latter, with >1 caller, had no selector and rendered as
+        `goto_nth undefined`.
+
+        The N returns are frame slots 0..N-1. A sub that *buries* its return into
+        the slot (frame_bury 0) leaves the slot's current value there, not on the
+        exit stack — so prefer the final slot local; only fall back to the
+        (bottom-first) exit-stack slice for returns left on the stack.
+        """
+        if resim:                                      # clean re-simulated stack
+            rsx = self.resim_exit.get(bb, [])
+            if not self.cur_nret:
+                return pre_ir.SubroutineReturn([])
+            # A `proto A R` retsub returns frame slots 0..R-1 -- the FIRST R
+            # locals (just above the A args), NOT the top R of the stack.
+            # When a sub keeps extra working locals past its returns (e.g. a
+            # loop counter buried in slot 1 while the bytes accumulator it
+            # returns lives in slot 0), the stack top is that counter, so the
+            # old `rsx[-R:]` returned the wrong value (a uint64 counter where
+            # the caller reads a bytes array). The frame slots sit at
+            # rsx[nargs+0 .. nargs+R-1] (resim seeds the stack with the params,
+            # then frame_bury deep-writes each slot there). Verified on a live
+            # localnet: `len(repeat(3))==3` PASSES (slot-0 bytes returned),
+            # `repeat(3)==3` fails to compare []byte to uint64.
+            np = self.cur_nargs
+            rets = [rsx[np + j] if np + j < len(rsx) else pre_ir.Undefined()
+                    for j in range(self.cur_nret)]
+            return pre_ir.SubroutineReturn(rets)
+        slots = self.final_locals.get(self.cur_gname, {})
+        es = bb.exit_stack or []
+        rets = []
+        for j in range(self.cur_nret):
+            if j in slots:
+                rets.append(slots[j])                  # buried into the slot
+            elif len(es) >= self.cur_nret - j:
+                rets.append(self.value(es[-self.cur_nret + j]))  # left on the stack
+        return pre_ir.SubroutineReturn(rets)
+
+    def _control_match(self, bb, t, succ, resim):
+        """Build a keyed `Switch` for a `match` block, or `None` to fall through
+        to the generic positional GotoNth.
+
+        `match t0..t_{n-1}`: matched value on top, the n case values below. AVM
+        pairs label[i] with the i-th case counting from the DEEPEST (first-pushed)
+        constant -- label[0] <-> C_0. SSA inputs are TOP-FIRST, so the case
+        constants normally arrive deepest-LAST and label[i] is `ins[n-i]`. BUT a
+        single multi-push op (`pushbytess`/`pushints`) emits its N outputs in push
+        order, so when all n case operands come from ONE op they arrive deepest-
+        FIRST and label[i] is `ins[i+1]`. Discriminate by whether the n case
+        operands share a source line (one op) or not (n separate `intc`/`pushint`
+        pushes). Getting this wrong silently SWAPS sibling arms -- e.g. an
+        OnCompletion/ABI selector routed to the wrong body (oracle-confirmed on
+        app_3543081435's no-arg OnCompletion router: NoOp<->UpdateApplication were
+        swapped).
+        """
+        labels = (t.immediates or "").split()
+        n = len(labels)
+        ins = (self.resim_args.get(id(t)) if (resim and id(t) in self.resim_args)
+               else [self.value(x) for x in t.inputs])
+        # Pair label[i] with the i-th case key in PUSH order (deepest-first),
+        # which AVM `match` requires (label[0] <-> the first-pushed/deepest
+        # key). A key's push position is (source line, output index within
+        # its producing op) ascending -- correct whether the n keys come from
+        # ONE multi-push op (`pushbytess`/`pushints`: same line, indices
+        # 1..n), from separate `intc`/`pushint` pushes (distinct lines), or a
+        # mix. (SSA inputs are TOP-FIRST, so a fixed index `ins[i+1]` is only
+        # right for the single-op case; getting it wrong silently SWAPS
+        # sibling arms -- oracle-confirmed on app_3543081435's no-arg
+        # OnCompletion router, NoOp<->UpdateApplication.)
+        keys = t.inputs[1:n + 1]
+        pos = [(getattr(k, "line", None), getattr(k, "index", None) or 0)
+               for k in keys]
+        if len(pos) == n and all(ln is not None for ln, _ in pos):
+            order = sorted(range(n), key=lambda j: pos[j])
+        else:                                  # missing source info: fall back
+            order = (list(range(n)) if len({ln for ln, _ in pos}) == 1
+                     else list(range(n))[::-1])
+        cases, targets = [], set()
+        for i, lbl in enumerate(labels):
+            blk = self.line2block.get(self.label2line.get(lbl))
+            ki = 1 + order[i]
+            ci = ins[ki] if 0 <= ki < len(ins) else None
+            if isinstance(ci, pre_ir.BytesConstant):
+                key = ci.value                       # bytes-keyed match
+            elif isinstance(ci, pre_ir.UInt64Constant):
+                key = str(ci.value)                  # uint64-keyed match
+            else:
+                key = None
+            if blk is None or blk not in self.bid or key is None:
+                cases = None
+                break
+            cases.append((key, self.bid[blk]))
+            targets.add(blk)
+        if cases is None:                 # extractor dropped the case keys
+            cases, targets = self._recover_match_keys(bb, labels)  # (from source)
+        default = next((s for s in succ if s not in targets), None)
+        if cases and default is not None:
+            val = ins[0] if ins else pre_ir.Undefined()
+            return pre_ir.Switch(val, cases, self.bid[default])
+        return None
+
+    def _control_switch(self, t, succ, resim):
+        """Build the POSITIONAL `GotoNth` for a `switch` block, or `None` to fall
+        through to the generic GotoNth.
+
+        AVM `switch L0..L_{n-1}` is POSITIONAL: the popped index i jumps to L_i,
+        and DUPLICATE labels are significant (an OnCompletion router sends most
+        indices to the same `err`). Out-of-range falls through to the next
+        instruction. Building arms from the distinct successor SET (as the generic
+        GotoNth does) scrambles the index->target map and mis-routes — oracle-
+        confirmed on switch_demo and the RugNinja dispatch (every NoOp method call
+        was routed to `err`). Map by position; the fall-through is the block on the
+        next source line (which may COINCIDE with a labeled target, so resolve it
+        by line, not by set-difference like `match`).
+        """
+        labels = (t.immediates or "").split()
+        arms, ok = [], True
+        for lbl in labels:
+            blk = self.line2block.get(self.label2line.get(lbl))
+            if blk is None or blk not in self.bid:
+                ok = False
+                break
+            arms.append(self.bid[blk])
+        sl = t.location.line if getattr(t, "location", None) else None
+        after = [fl for fl in self.line2block if sl is not None and fl > sl]
+        ft = self.line2block[min(after)] if after else None
+        if ok and ft is not None and ft in self.bid:
+            return pre_ir.GotoNth(self._sel_value(t, resim), arms, self.bid[ft])
+        if ok and succ:                       # robustness: best-effort default
+            labeled = {self.line2block.get(self.label2line.get(lbl)) for lbl in labels}
+            dft = next((s for s in succ if s not in labeled), succ[-1])
+            return pre_ir.GotoNth(self._sel_value(t, resim), arms, self.bid[dft])
+        return None
 
     def _resim(self, body_list, entry_bb, params):
         """Re-simulate a non-proto sub's value-stack with correct callsub arities.
@@ -863,265 +886,295 @@ class _Lifter:
         order += [b for b in body_list if b not in seen]   # cover any block the
         #            forward DAG missed, so every op still gets clean resim_args
 
-        def rv(o):                            # SSA operand -> pre-IR value
-            cv = getattr(o, "const_value", None)
-            if cv is not None:
-                return _const(cv)
-            if isinstance(o, Const):
-                return _const(o)
-            if isinstance(o, SSAVar):
-                return self.reg(o)
-            return self.value(o)
-
         pending: list = []                    # (phi, slot, back-pred) to close
         for b in order:
             preds = [p for p in fpred[b] if p in self.resim_exit]
-            if b is entry_bb or not preds:
-                stack = [pp.register for pp in params]      # entry: the args
-            elif b in back_targets:                         # loop header
-                depth = min(len(self.resim_exit[p]) for p in preds)
-                stack, phis = [], []
-                for slot in range(depth):
-                    r = self._new_reg("tmp", "?")
-                    ph = pre_ir.Phi(r, [pre_ir.PhiArgument(self.resim_exit[p][slot], self.bid[p])
-                                    for p in preds])
-                    phis.append(ph)
-                    stack.append(r)
-                    for bp in bpred[b]:
-                        pending.append((ph, slot, bp))
-                self.resim_phis[b] = phis
-            elif len(preds) == 1:
-                stack = list(self.resim_exit[preds[0]])
-            else:                                           # plain merge: phi/slot
-                # Align predecessors by their STACK TOP (the common top `depth`
-                # values), not the bottom. Consumers (log / return / the next
-                # op) read the top, and a pred that carries extra DEEP values --
-                # e.g. an unconsumed `app_global_get_ex` value the source leaves
-                # UNDER the result and never reads (the branch popped only the
-                # exists flag) -- keeps its live values at the top. Bottom-first
-                # `[slot]` mis-read such a pred at a shared join, passing the
-                # leftover instead of the computed value: app_1100070621's
-                # 12-way "log + approve" join logged the DeleteApplication path's
-                # leftover uint64 instead of its concat bytes -> AVM type error
-                # -> reject. For uniform-depth joins `len-depth+slot == slot`, so
-                # this is a no-op (the common case).
-                depth = min(len(self.resim_exit[p]) for p in preds)
-                tops = {p: self.resim_exit[p][len(self.resim_exit[p]) - depth:]
-                        for p in preds}
-                stack, phis = [], []
-                for slot in range(depth):
-                    vals = [tops[p][slot] for p in preds]
-                    if all(v is vals[0] for v in vals):
-                        stack.append(vals[0])
-                    else:
-                        r = self._new_reg("tmp", "?")
-                        phis.append(pre_ir.Phi(r, [pre_ir.PhiArgument(tops[p][slot],
-                                                              self.bid[p]) for p in preds]))
-                        stack.append(r)
-                if phis:
-                    self.resim_phis[b] = phis
+            stack = self._resim_entry_stack(b, entry_bb, params, preds,
+                                            back_targets, bpred[b], pending)
             for a in b.assignments:
-                # Frame ops first: PySSA models them as fat [1..STACK_MAX] band ops
-                # (also in _STACK_SHUFFLE_OPS), so the generic / shuffle paths below
-                # would pop the whole stack. On the clean stack a `frame_dig` pushes
-                # its resolved param/local (one value) and a `frame_bury` pops one.
-                if a.op == "frame_dig":
-                    out0 = a.outputs[0] if a.outputs else None
-                    # A k>=0 pushed local read cross-block (frame_resolution routed
-                    # it through shuffle_src): resolve via value() so the value
-                    # carried from the defining block reaches here.
-                    if out0 is not None and out0 in self.frame_passthrough:
-                        stack.append(self.value(out0))
-                    elif out0 is not None and out0 in self.frame_local_slot:
-                        # A frame_bury-d local: read its live value straight off the
-                        # re-sim stack at the slot position (len(params)+k). That slot
-                        # carries the frame_bury deep-writes and, at a join where the
-                        # slot was written on >1 incoming path, the merge phi the
-                        # resim already built — which frame_map's CFG-blind version
-                        # drops, leaving the read undominated (an entry-orphan).
-                        pos = len(params) + self.frame_local_slot[out0]
-                        if 0 <= pos < len(stack):
-                            stack.append(stack[pos])
-                        else:
-                            stack.append(self.frame_map.get(out0) or pre_ir.Undefined())
-                    else:
-                        # param / negative below-frame read: the plain frame_map path
-                        # (widening value() to these re-resolves them and diverges
-                        # from the IR construction path — a bytes value into a u64 op).
-                        stack.append(self.frame_map.get(out0) or pre_ir.Undefined())
-                    continue
-                if a.op == "frame_bury":
-                    if stack:
-                        v = stack.pop()
-                        self.resim_args[id(a)] = [v]
-                        # frame_bury N writes the popped value INTO frame slot N —
-                        # an absolute stack position (len(params)+N on the clean
-                        # proto frame: args at 0..nargs-1, locals above). The pop
-                        # alone modelled only the stack-top removal, not the deep
-                        # write, so a later working-stack read of that slot saw the
-                        # stale frame-init. Concretely a sub that arranges its
-                        # return via `frame_dig k; frame_bury 0; popn …; retsub`
-                        # returned the init "" instead of the computed value. Model
-                        # the deep write so the slot carries the buried value.
-                        toks = (a.immediates or "").split()
-                        if toks:
-                            try:
-                                pos = len(params) + int(toks[0])
-                            except ValueError:
-                                pos = -1
-                            if 0 <= pos < len(stack):
-                                stack[pos] = v
-                    continue
-                if a.op in _STACK_SHUFFLE_OPS:
-                    # Use the op's CANONICAL arity, not a.inputs: the SSA's fat-band
-                    # sim can under-count a shuffle's inputs on a shallow model stack
-                    # (e.g. dup2 with 1 input), which makes _shuffle_mapping bail and
-                    # the resim drop the op -- starving a downstream callsub's args.
-                    n_in, m = _canon_shuffle(a.op, a.immediates)
-                    if m is None:                       # frame_* / unrecognised
-                        m, n_in = _shuffle_mapping(a), len(a.inputs)
-                    if m is None or len(stack) < n_in:
-                        continue
-                    ins = [stack.pop() for _ in range(n_in)]            # top-first
-                    for v in reversed([ins[k] for k in m]):
-                        stack.append(v)
-                    continue
-                if a.op == "callsub":
-                    cs = self.callsite.get(b)
-                    nargs = self._sub_io(cs.target_entry)[0] if (cs and cs.target_entry) else 0
-                    nargs = min(nargs, len(stack))
-                    self.resim_args[id(a)] = stack[len(stack) - nargs:]      # param order
-                    if nargs:
-                        del stack[len(stack) - nargs:]
-                    for r in self.call_results.get(b, []):
-                        stack.append(r)
-                    continue
-                if (not a.inputs and a.outputs and all(           # const push(es)
-                        getattr(o, "const_value", None) is not None for o in a.outputs)):
-                    for o in reversed(a.outputs):                 # pushints/pushbytess
-                        stack.append(_const(o.const_value))
-                    continue
-                if a.op in ("intcblock", "bytecblock", "proto"):
-                    continue
-                ni, _ = op_arity(a.op, a.immediates)
-                ni = min(ni, len(stack))
-                self.resim_args[id(a)] = [stack.pop() for _ in range(ni)]    # top-first
-                if a.op not in _TERMINATOR_OPS:
-                    for o in reversed([o for o in a.outputs if isinstance(o, SSAVar)]):
-                        stack.append(rv(o))
+                self._resim_exec_op(a, b, stack, params)
             self.resim_exit[b] = stack
         for ph, slot, bp in pending:          # close loop back-edges
             if bp in self.resim_exit and slot < len(self.resim_exit[bp]):
                 ph.args.append(pre_ir.PhiArgument(self.resim_exit[bp][slot], self.bid[bp]))
 
+    def _resim_value(self, o):                # SSA operand -> pre-IR value
+        cv = getattr(o, "const_value", None)
+        if cv is not None:
+            return _const(cv)
+        if isinstance(o, Const):
+            return _const(o)
+        if isinstance(o, SSAVar):
+            return self.reg(o)
+        return self.value(o)
+
+    def _resim_entry_stack(self, b, entry_bb, params, preds,
+                           back_targets, bpred_b, pending):
+        """Compute block `b`'s entry value-stack for the re-sim: the sub's args at
+        entry, a loop-header phi set (back-edge args deferred into `pending`), a copy
+        of the single predecessor's exit, or a slot-wise merge that builds
+        `resim_phis`."""
+        if b is entry_bb or not preds:
+            return [pp.register for pp in params]          # entry: the args
+        if b in back_targets:                              # loop header
+            depth = min(len(self.resim_exit[p]) for p in preds)
+            stack, phis = [], []
+            for slot in range(depth):
+                r = self._new_reg("tmp", "?")
+                ph = pre_ir.Phi(r, [pre_ir.PhiArgument(self.resim_exit[p][slot], self.bid[p])
+                                for p in preds])
+                phis.append(ph)
+                stack.append(r)
+                for bp in bpred_b:
+                    pending.append((ph, slot, bp))
+            self.resim_phis[b] = phis
+            return stack
+        if len(preds) == 1:
+            return list(self.resim_exit[preds[0]])
+        # plain merge: phi/slot.
+        # Align predecessors by their STACK TOP (the common top `depth`
+        # values), not the bottom. Consumers (log / return / the next
+        # op) read the top, and a pred that carries extra DEEP values --
+        # e.g. an unconsumed `app_global_get_ex` value the source leaves
+        # UNDER the result and never reads (the branch popped only the
+        # exists flag) -- keeps its live values at the top. Bottom-first
+        # `[slot]` mis-read such a pred at a shared join, passing the
+        # leftover instead of the computed value: app_1100070621's
+        # 12-way "log + approve" join logged the DeleteApplication path's
+        # leftover uint64 instead of its concat bytes -> AVM type error
+        # -> reject. For uniform-depth joins `len-depth+slot == slot`, so
+        # this is a no-op (the common case).
+        depth = min(len(self.resim_exit[p]) for p in preds)
+        tops = {p: self.resim_exit[p][len(self.resim_exit[p]) - depth:]
+                for p in preds}
+        stack, phis = [], []
+        for slot in range(depth):
+            vals = [tops[p][slot] for p in preds]
+            if all(v is vals[0] for v in vals):
+                stack.append(vals[0])
+            else:
+                r = self._new_reg("tmp", "?")
+                phis.append(pre_ir.Phi(r, [pre_ir.PhiArgument(tops[p][slot],
+                                                      self.bid[p]) for p in preds]))
+                stack.append(r)
+        if phis:
+            self.resim_phis[b] = phis
+        return stack
+
+    def _resim_exec_op(self, a, b, stack, params):
+        """Simulate one assignment `a` of block `b` against the clean re-sim `stack`
+        (mutated in place), recording per-op operands into `resim_args`."""
+        # Frame ops first: PySSA models them as fat [1..STACK_MAX] band ops
+        # (also in _STACK_SHUFFLE_OPS), so the generic / shuffle paths below
+        # would pop the whole stack. On the clean stack a `frame_dig` pushes
+        # its resolved param/local (one value) and a `frame_bury` pops one.
+        if a.op == "frame_dig":
+            out0 = a.outputs[0] if a.outputs else None
+            # A k>=0 pushed local read cross-block (frame_resolution routed
+            # it through shuffle_src): resolve via value() so the value
+            # carried from the defining block reaches here.
+            if out0 is not None and out0 in self.frame_passthrough:
+                stack.append(self.value(out0))
+            elif out0 is not None and out0 in self.frame_local_slot:
+                # A frame_bury-d local: read its live value straight off the
+                # re-sim stack at the slot position (len(params)+k). That slot
+                # carries the frame_bury deep-writes and, at a join where the
+                # slot was written on >1 incoming path, the merge phi the
+                # resim already built — which frame_map's CFG-blind version
+                # drops, leaving the read undominated (an entry-orphan).
+                pos = len(params) + self.frame_local_slot[out0]
+                if 0 <= pos < len(stack):
+                    stack.append(stack[pos])
+                else:
+                    stack.append(self.frame_map.get(out0) or pre_ir.Undefined())
+            else:
+                # param / negative below-frame read: the plain frame_map path
+                # (widening value() to these re-resolves them and diverges
+                # from the IR construction path — a bytes value into a u64 op).
+                stack.append(self.frame_map.get(out0) or pre_ir.Undefined())
+            return
+        if a.op == "frame_bury":
+            if stack:
+                v = stack.pop()
+                self.resim_args[id(a)] = [v]
+                # frame_bury N writes the popped value INTO frame slot N —
+                # an absolute stack position (len(params)+N on the clean
+                # proto frame: args at 0..nargs-1, locals above). The pop
+                # alone modelled only the stack-top removal, not the deep
+                # write, so a later working-stack read of that slot saw the
+                # stale frame-init. Concretely a sub that arranges its
+                # return via `frame_dig k; frame_bury 0; popn …; retsub`
+                # returned the init "" instead of the computed value. Model
+                # the deep write so the slot carries the buried value.
+                toks = (a.immediates or "").split()
+                if toks:
+                    try:
+                        pos = len(params) + int(toks[0])
+                    except ValueError:
+                        pos = -1
+                    if 0 <= pos < len(stack):
+                        stack[pos] = v
+            return
+        if a.op in _STACK_SHUFFLE_OPS:
+            # Use the op's CANONICAL arity, not a.inputs: the SSA's fat-band
+            # sim can under-count a shuffle's inputs on a shallow model stack
+            # (e.g. dup2 with 1 input), which makes _shuffle_mapping bail and
+            # the resim drop the op -- starving a downstream callsub's args.
+            n_in, m = _canon_shuffle(a.op, a.immediates)
+            if m is None:                       # frame_* / unrecognised
+                m, n_in = _shuffle_mapping(a), len(a.inputs)
+            if m is None or len(stack) < n_in:
+                return
+            ins = [stack.pop() for _ in range(n_in)]            # top-first
+            for v in reversed([ins[k] for k in m]):
+                stack.append(v)
+            return
+        if a.op == "callsub":
+            cs = self.callsite.get(b)
+            nargs = self._sub_io(cs.target_entry)[0] if (cs and cs.target_entry) else 0
+            nargs = min(nargs, len(stack))
+            self.resim_args[id(a)] = stack[len(stack) - nargs:]      # param order
+            if nargs:
+                del stack[len(stack) - nargs:]
+            for r in self.call_results.get(b, []):
+                stack.append(r)
+            return
+        if (not a.inputs and a.outputs and all(           # const push(es)
+                getattr(o, "const_value", None) is not None for o in a.outputs)):
+            for o in reversed(a.outputs):                 # pushints/pushbytess
+                stack.append(_const(o.const_value))
+            return
+        if a.op in ("intcblock", "bytecblock", "proto"):
+            return
+        ni, _ = op_arity(a.op, a.immediates)
+        ni = min(ni, len(stack))
+        self.resim_args[id(a)] = [stack.pop() for _ in range(ni)]    # top-first
+        if a.op not in _TERMINATOR_OPS:
+            for o in reversed([o for o in a.outputs if isinstance(o, SSAVar)]):
+                stack.append(self._resim_value(o))
+
     def _build_block(self, bb):
         resim = bb in self.resim_blocks               # re-simulated (non-proto / main)
-        phis = []
-        if resim:
-            phis = self.resim_phis.get(bb, [])
-        elif len(bb.predecessors) > 1:
-            params = list(self.form.params.get(bb, []))
-            cs = self.cont_site.get(bb)
-            callee_sub = self.sub_of.get(cs.target_entry) if cs else None
-            for ph in sorted(bb.phis, key=lambda p: p.stack_index):
-                if ph in self._param_phis:
-                    continue                        # non-proto arg -> param
-                i = params.index(ph) if ph in params else None
-                args = []
-                for pred in bb.predecessors:
-                    if pred not in self.bid:
-                        continue
-                    # A continuation's predecessor that lies *inside the callee*
-                    # is the interprocedural return edge: in the pre-IR, bb is
-                    # reached from the callsub block (Goto), carrying the invoke
-                    # result, not from the callee. Relabel the arg to the callsub
-                    # block and supply the result (or, for a value below the
-                    # returns, the caller's own surviving stack value).
-                    if callee_sub is not None and self.sub_of.get(pred) is callee_sub \
-                            and cs.callsub_bb in self.bid:
-                        res = self.call_results.get(cs.callsub_bb, [])
-                        nret = len(res)
-                        si = ph.stack_index
-                        if 1 <= si <= nret:
-                            args.append(pre_ir.PhiArgument(res[nret - si],
-                                                       self.bid[cs.callsub_bb]))
-                            continue
-                        es = cs.callsub_bb.exit_stack or []
-                        nargs = self._sub_io(cs.target_entry)[0]
-                        depth = nargs + (si - nret)
-                        if depth <= len(es):
-                            args.append(pre_ir.PhiArgument(self.value(es[-depth]),
-                                                       self.bid[cs.callsub_bb]))
-                            continue
-                    e = self.form.edge(pred, bb)
-                    val = (e.args[i] if (e is not None and i is not None
-                                         and i < len(e.args)) else None)
-                    args.append(pre_ir.PhiArgument(self.value(val), self.bid[pred]))
-                phis.append(pre_ir.Phi(self.reg(ph), args, comment=self._range_comment([ph])))
+        phis = self._block_phis(bb, resim)
         ops = []
         for a in bb.assignments:
-            if a.op == "frame_dig":
-                continue                            # a param/local read (no op)
-            if a.op == "frame_bury":
-                # frame_bury DEFINES its slot (l%slot = buried value). Emit that
-                # before any shuffle / resim skip below: PySSA models the bury as
-                # a fat-band op, so it would otherwise be dropped and the slot's
-                # later frame_dig reads go undefined. On a re-simulated block the
-                # buried value is the clean resim-stack top; else the SSA operand.
-                slot = _imm0(a)
-                if slot is not None:
-                    src = (self.resim_args[id(a)][0]
-                           if resim and id(a) in self.resim_args
-                           else self.value(a.inputs[0]) if a.inputs else None)
-                    if src is not None:
-                        tgt = self.bury_target.get(id(a)) or self._local(slot)
-                        ops.append(pre_ir.Assignment([tgt], src))
-                continue
-            if resim and a.op in _STACK_SHUFFLE_OPS:
-                continue                            # re-sim reorders the stack itself
-            if self._is_routed_shuffle(a):
-                continue                            # const shuffle routed to source
-            if a.op == "callsub":
-                cs = self.callsite.get(bb)
-                target = (cs.target_name if cs and cs.target_name
-                          else (a.immediates or "?"))
-                # Args are passed via scratch, not callsub operands, so take the
-                # caller's exit_stack top nargs in param order (es[-nargs+i]).
-                nargs = self._sub_io(cs.target_entry)[0] if (cs and cs.target_entry) else 0
-                es = bb.exit_stack
-                if resim:
-                    call_args = self.resim_args.get(id(a), [])
-                elif nargs and len(es) >= nargs:
-                    call_args = [self.value(es[-nargs + i]) for i in range(nargs)]
-                else:
-                    call_args = [self.value(i) for i in a.inputs]
-                invoke = pre_ir.InvokeSubroutine(target, call_args)
-                outs = self.call_results.get(bb)      # caller-local return registers
-                if outs:
-                    ops.append(pre_ir.Assignment(list(outs), invoke))
-                else:
-                    ops.append(pre_ir.IntrinsicOp(invoke))
-                continue
-            if a.op in _TERMINATOR_OPS or a.op in ("intcblock", "bytecblock",
-                                                   "proto"):
-                continue
-            if (not a.inputs and a.outputs and all(       # const push(es): inlined
-                    getattr(o, "const_value", None) is not None for o in a.outputs)):
-                continue
-            args = self.resim_args[id(a)] if resim and id(a) in self.resim_args \
-                else [self.value(i) for i in a.inputs]
-            intr = pre_ir.Intrinsic(a.op, a.immediates.split() if a.immediates else [],
-                                args, line=a.location.line)
-            shown = [o for o in a.outputs if isinstance(o, SSAVar)]
-            if a.op == "assert" and not shown:
-                ops.append(pre_ir.Assert(args[0] if args else pre_ir.Undefined()))
-            elif shown:
-                ops.append(pre_ir.Assignment([self.reg(o) for o in shown], intr,
-                                         comment=self._range_comment(shown)))
-            else:
-                ops.append(pre_ir.IntrinsicOp(intr))
+            self._block_emit_op(a, bb, resim, ops)
         return pre_ir.BasicBlock(id=self.bid[bb], phis=phis, ops=ops,
                              terminator=self.control(bb), comment=f"L{bb.first_line}")
+
+    def _block_phis(self, bb, resim):
+        """Entry phis for block `bb`: the re-sim's own merge phis, or — for a
+        non-proto join — phis reconciled across predecessors, relabelling the
+        interprocedural return edge (a predecessor inside the callee) to the
+        callsub block carrying the invoke result."""
+        if resim:
+            return self.resim_phis.get(bb, [])
+        if len(bb.predecessors) <= 1:
+            return []
+        phis = []
+        params = list(self.form.params.get(bb, []))
+        cs = self.cont_site.get(bb)
+        callee_sub = self.sub_of.get(cs.target_entry) if cs else None
+        for ph in sorted(bb.phis, key=lambda p: p.stack_index):
+            if ph in self._param_phis:
+                continue                        # non-proto arg -> param
+            i = params.index(ph) if ph in params else None
+            args = []
+            for pred in bb.predecessors:
+                if pred not in self.bid:
+                    continue
+                # A continuation's predecessor that lies *inside the callee*
+                # is the interprocedural return edge: in the pre-IR, bb is
+                # reached from the callsub block (Goto), carrying the invoke
+                # result, not from the callee. Relabel the arg to the callsub
+                # block and supply the result (or, for a value below the
+                # returns, the caller's own surviving stack value).
+                if callee_sub is not None and self.sub_of.get(pred) is callee_sub \
+                        and cs.callsub_bb in self.bid:
+                    res = self.call_results.get(cs.callsub_bb, [])
+                    nret = len(res)
+                    si = ph.stack_index
+                    if 1 <= si <= nret:
+                        args.append(pre_ir.PhiArgument(res[nret - si],
+                                                   self.bid[cs.callsub_bb]))
+                        continue
+                    es = cs.callsub_bb.exit_stack or []
+                    nargs = self._sub_io(cs.target_entry)[0]
+                    depth = nargs + (si - nret)
+                    if depth <= len(es):
+                        args.append(pre_ir.PhiArgument(self.value(es[-depth]),
+                                                   self.bid[cs.callsub_bb]))
+                        continue
+                e = self.form.edge(pred, bb)
+                val = (e.args[i] if (e is not None and i is not None
+                                     and i < len(e.args)) else None)
+                args.append(pre_ir.PhiArgument(self.value(val), self.bid[pred]))
+            phis.append(pre_ir.Phi(self.reg(ph), args, comment=self._range_comment([ph])))
+        return phis
+
+    def _block_emit_op(self, a, bb, resim, ops):
+        """Lower one assignment `a` of block `bb` into pre-IR, appending to `ops`
+        (frame reads / re-sim shuffles / inlined consts emit nothing)."""
+        if a.op == "frame_dig":
+            return                              # a param/local read (no op)
+        if a.op == "frame_bury":
+            # frame_bury DEFINES its slot (l%slot = buried value). Emit that
+            # before any shuffle / resim skip below: PySSA models the bury as
+            # a fat-band op, so it would otherwise be dropped and the slot's
+            # later frame_dig reads go undefined. On a re-simulated block the
+            # buried value is the clean resim-stack top; else the SSA operand.
+            slot = _imm0(a)
+            if slot is not None:
+                src = (self.resim_args[id(a)][0]
+                       if resim and id(a) in self.resim_args
+                       else self.value(a.inputs[0]) if a.inputs else None)
+                if src is not None:
+                    tgt = self.bury_target.get(id(a)) or self._local(slot)
+                    ops.append(pre_ir.Assignment([tgt], src))
+            return
+        if resim and a.op in _STACK_SHUFFLE_OPS:
+            return                              # re-sim reorders the stack itself
+        if self._is_routed_shuffle(a):
+            return                              # const shuffle routed to source
+        if a.op == "callsub":
+            cs = self.callsite.get(bb)
+            target = (cs.target_name if cs and cs.target_name
+                      else (a.immediates or "?"))
+            # Args are passed via scratch, not callsub operands, so take the
+            # caller's exit_stack top nargs in param order (es[-nargs+i]).
+            nargs = self._sub_io(cs.target_entry)[0] if (cs and cs.target_entry) else 0
+            es = bb.exit_stack
+            if resim:
+                call_args = self.resim_args.get(id(a), [])
+            elif nargs and len(es) >= nargs:
+                call_args = [self.value(es[-nargs + i]) for i in range(nargs)]
+            else:
+                call_args = [self.value(i) for i in a.inputs]
+            invoke = pre_ir.InvokeSubroutine(target, call_args)
+            outs = self.call_results.get(bb)      # caller-local return registers
+            if outs:
+                ops.append(pre_ir.Assignment(list(outs), invoke))
+            else:
+                ops.append(pre_ir.IntrinsicOp(invoke))
+            return
+        if a.op in _TERMINATOR_OPS or a.op in ("intcblock", "bytecblock",
+                                               "proto"):
+            return
+        if (not a.inputs and a.outputs and all(       # const push(es): inlined
+                getattr(o, "const_value", None) is not None for o in a.outputs)):
+            return
+        args = self.resim_args[id(a)] if resim and id(a) in self.resim_args \
+            else [self.value(i) for i in a.inputs]
+        intr = pre_ir.Intrinsic(a.op, a.immediates.split() if a.immediates else [],
+                            args, line=a.location.line)
+        shown = [o for o in a.outputs if isinstance(o, SSAVar)]
+        if a.op == "assert" and not shown:
+            ops.append(pre_ir.Assert(args[0] if args else pre_ir.Undefined()))
+        elif shown:
+            ops.append(pre_ir.Assignment([self.reg(o) for o in shown], intr,
+                                     comment=self._range_comment(shown)))
+        else:
+            ops.append(pre_ir.IntrinsicOp(intr))
 
     def _ssa_type(self, o, depth=0):
         """Type an SSA operand by its producing op, tracing scratch loads

@@ -1,14 +1,11 @@
 """TEAL source / literal parsing — pure text helpers, no IR dependency (so both
 `lift` and `to_puya_ir` import it without a cycle).
 
-Load a DB's `.teal` (`_load_src`), recover a dropped template-var name
+Load the `.teal` source (`_load_src`), recover a dropped template-var name
 (`_tmpl_name`), parse byte literals (`_const_bytes`: 0x / "str" / base64 / base32)
 and operand lists (`_tokenize_operands`).
 """
 from __future__ import annotations
-
-import os
-import zipfile
 
 from puya.ir.types_ import AVMBytesEncoding
 
