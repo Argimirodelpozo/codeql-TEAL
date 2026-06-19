@@ -62,11 +62,96 @@ def _invoke(o):
     return None
 
 
+def _return_summary(lifter) -> dict:
+    """Per-subroutine taint summary ``{sub.id: (srcs, params)}`` for a SOUND +
+    PRECISE interprocedural rule at call sites:
+
+      * ``srcs``  -- source labels that reach a RETURNED value from a source INSIDE
+        the sub (or a nested call), independent of the caller's args; and
+      * ``params`` -- the set of parameter INDICES whose value reaches a returned
+        value (the "passthrough" params).
+
+    A call's result is then tainted by ``srcs`` (always) plus ``reg_t(arg[i])`` for
+    each passthrough ``i`` -- never by an arg that doesn't flow through (the old
+    "result <- any arg" rule both OVER-tainted on a non-passthrough arg and
+    UNDER-tainted by ignoring internal-source returns entirely). Marker-based
+    monotone fixpoint: each param register seeds a namespaced marker ``("p", id, i)``,
+    each source seeds its label, nested calls resolve through the summary as it is
+    built (so mutual recursion converges)."""
+    ssa_of = {id(r): sv for sv, r in lifter.regs.items()}
+    subs = [s for s in lifter.subs if not s.is_main]
+    taint: dict = defaultdict(set)
+    for s in subs:                                  # seed each param with its marker
+        for i, p in enumerate(s.parameters):
+            taint[id(p.register)].add(("p", s.id, i))
+    summary: dict = {s.id: [set(), set()] for s in subs}   # mutable accumulators
+
+    def reg_t(v):
+        return taint.get(id(v), set()) if isinstance(v, pre_ir.Register) else set()
+
+    changed = True
+    while changed:
+        changed = False
+        for s in subs:
+            for b in s.body:
+                for ph in b.phis:
+                    new = set()
+                    for a in ph.args:
+                        new |= reg_t(a.value)
+                    if new - taint[id(ph.register)]:
+                        taint[id(ph.register)] |= new
+                        changed = True
+                for o in b.ops:
+                    ins = set()
+                    src = _intr(o)
+                    if src is not None:
+                        lbl = source_label(src)
+                        if lbl:
+                            ins.add(lbl)
+                        for a in src.args:
+                            ins |= reg_t(a)
+                        if src.op in ("load", "loads"):     # scratch reaching-def
+                            out = o.targets[0] if getattr(o, "targets", None) else None
+                            lv = ssa_of.get(id(out)) if out is not None else None
+                            for sv in (lifter.load_stores.get(lv, ()) if lv is not None else ()):
+                                if isinstance(sv, (SSAVar, Phi)):
+                                    ins |= reg_t(lifter.reg(sv))
+                    if isinstance(o, pre_ir.Assignment) and isinstance(o.source, pre_ir.Register):
+                        ins |= reg_t(o.source)              # copy
+                    inv = _invoke(o)
+                    if inv is not None:
+                        callee = lifter.name2sub.get(inv.target)
+                        if callee is not None:              # resolve via the summary
+                            csrcs, cparams = summary[callee.id]
+                            ins |= csrcs
+                            for i in cparams:
+                                if i < len(inv.args):
+                                    ins |= reg_t(inv.args[i])
+                    for t in getattr(o, "targets", ()) or ():
+                        if ins - taint[id(t)]:
+                            taint[id(t)] |= ins
+                            changed = True
+            srcs, params = summary[s.id]                    # refine s's own summary
+            for b in s.body:
+                if isinstance(b.terminator, pre_ir.SubroutineReturn):
+                    for rv in b.terminator.result:
+                        for m in reg_t(rv):
+                            if isinstance(m, tuple):
+                                if m[1] == s.id and m[2] not in params:
+                                    params.add(m[2])
+                                    changed = True
+                            elif m not in srcs:
+                                srcs.add(m)
+                                changed = True
+    return {sid: (frozenset(sv[0]), frozenset(sv[1])) for sid, sv in summary.items()}
+
+
 def user_input_taint(lifter) -> dict:
     """Forward taint from the user-input sources to a fixpoint over ``lifter``'s
     lifted IR. Returns ``{id(Register): frozenset(sources)}`` for tainted registers."""
     # register -> its SSA var, to consult the scratch reaching-def on a `load`.
     ssa_of = {id(r): sv for sv, r in lifter.regs.items()}
+    summary = _return_summary(lifter)         # interprocedural param->return summary
     taint: dict = defaultdict(set)
 
     def reg_t(v):
@@ -102,16 +187,25 @@ def user_input_taint(lifter) -> dict:
                     ins |= reg_t(o.source)          # copy
                 inv = _invoke(o)
                 if inv is not None:
-                    for a in inv.args:              # conservative: result <- any arg
-                        ins |= reg_t(a)
                     callee = lifter.name2sub.get(inv.target)
-                    if callee is not None:          # interprocedural: arg -> callee param
-                        for i, p in enumerate(callee.parameters):
+                    if callee is not None:
+                        # result <- the callee's return summary: internal-source
+                        # returns (which the old "any arg" rule MISSED) + only the
+                        # params that actually flow through (not every tainted arg).
+                        csrcs, cparams = summary.get(callee.id, (frozenset(), frozenset()))
+                        ins |= csrcs
+                        for i in cparams:
+                            if i < len(inv.args):
+                                ins |= reg_t(inv.args[i])
+                        for i, p in enumerate(callee.parameters):   # arg -> callee param
                             if i < len(inv.args):
                                 pt = reg_t(inv.args[i])
                                 if pt - taint[id(p.register)]:
                                     taint[id(p.register)] |= pt
                                     changed = True
+                    else:                           # unknown callee: stay conservative
+                        for a in inv.args:
+                            ins |= reg_t(a)
                 for t in getattr(o, "targets", ()) or ():
                     if ins - taint[id(t)]:
                         taint[id(t)] |= ins
