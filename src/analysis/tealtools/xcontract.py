@@ -261,6 +261,70 @@ def find_appcall_sites(prog: SSAProgram, registry: Registry) -> list[AppcallSite
     return sites
 
 
+# --- auto-discovery: build the registry by fetching callees from chain --------
+
+
+def candidate_app_ids(prog: SSAProgram) -> list[int]:
+    """Every appcall callee AppID resolvable from ``prog`` -- inline constant or
+    state-backed (see :func:`_resolve_state_app_id`) -- regardless of any registry.
+    The set :func:`discover_registry` would fetch. Deterministic order, deduped."""
+    report = InnerTxnReport(prog)
+    ids: list[int] = []
+    seen: set[int] = set()
+    for group in report.groups:
+        for txn in group.txns:
+            if not _is_appcall(txn):
+                continue
+            aid = _const_app_id(txn, prog)
+            if aid is not None and aid not in seen:
+                seen.add(aid)
+                ids.append(aid)
+    return ids
+
+
+_DEFAULT_CALLEE_CACHE = Path.home() / ".cache" / "tealql" / "xcontract-callees"
+
+
+def _default_chain_fetch(app_id: int):
+    """Default fetcher: pull a deployed approval program off chain. Imported lazily
+    so the analysis library doesn't hard-depend on the (network-touching) tool."""
+    from tools.behavioral_lift.fetch_mainnet import fetch_approval
+    return fetch_approval(app_id)
+
+
+def discover_registry(
+    prog: SSAProgram,
+    *,
+    cache_dir: "str | Path | None" = None,
+    fetch=None,
+    app_ids: Optional[list[int]] = None,
+) -> Registry:
+    """Build an xcontract registry by FETCHING each resolvable callee's deployed
+    approval program from chain into ``cache_dir`` -- no hand-written yaml.
+
+    ``fetch(app_id) -> (teal_text, bytecode)`` defaults to
+    :func:`_default_chain_fetch` (mainnet indexer + localnet disassemble); inject a
+    stub to run offline. CACHED: an existing ``app_<id>.teal`` in ``cache_dir`` is
+    reused, so re-runs never re-fetch. AppIDs that don't fetch (not found / network
+    error) are skipped. Returns ``{app_id: teal_path}``."""
+    cache = Path(cache_dir) if cache_dir is not None else _DEFAULT_CALLEE_CACHE
+    cache.mkdir(parents=True, exist_ok=True)
+    if fetch is None:
+        fetch = _default_chain_fetch
+    ids = app_ids if app_ids is not None else candidate_app_ids(prog)
+    registry: Registry = {}
+    for aid in ids:
+        teal_path = cache / f"app_{aid}.teal"
+        if not teal_path.exists():
+            try:
+                teal, _bytecode = fetch(aid)
+            except Exception:
+                continue                       # unfetchable -> skip, no invented callee
+            teal_path.write_text(teal)
+        registry[aid] = str(teal_path)
+    return registry
+
+
 def render(sites: list[AppcallSite], relative_to: Optional[Path] = None) -> str:
     if not sites:
         return "(no cross-contract appcall sites)"
@@ -394,6 +458,12 @@ class XContractGraph:
             caller=caller, sites=sites, callees=callees,
             callee_sources=callee_sources, analyses=analyses,
         )
+
+    @classmethod
+    def from_chain(cls, caller: SSAProgram, *, cache_dir=None, fetch=None) -> "XContractGraph":
+        """Like :meth:`build`, but auto-discovers the registry by fetching each
+        resolvable callee from chain (:func:`discover_registry`). No yaml."""
+        return cls.build(caller, discover_registry(caller, cache_dir=cache_dir, fetch=fetch))
 
 
 @dataclass(frozen=True)
