@@ -139,7 +139,8 @@ class TaintedFundFlowDetector:
     applies_to: ClassVar[frozenset] = frozenset({"app"})
     violation_cls: ClassVar[type] = TaintedFundFlowViolation
 
-    def __init__(self, prog: SSAProgram, *, file: Optional[str] = None):
+    def __init__(self, prog: SSAProgram, *, file: Optional[str] = None,
+                 path_predicates: "Optional[PathPredicateAnalysis]" = None):
         if getattr(prog, "_materialized", False):
             raise ValueError(
                 "TaintedFundFlowDetector requires the pre-materialized SSA "
@@ -151,7 +152,11 @@ class TaintedFundFlowDetector:
             )
         self.prog = prog
         self.file = file
-        self.pp = PathPredicateAnalysis(prog)
+        # Accept a pre-built (e.g. caller-SEEDED) PathPredicateAnalysis so the
+        # cross-contract runner (detections.xcontract._construct_detector) can feed
+        # the callee's seeded predicates -- a caller that pins an ApplicationArgs
+        # slot to a constant then guards the fund field fed by that slot.
+        self.pp = path_predicates or PathPredicateAnalysis(prog)
 
     def detect(self) -> list:
         taint = _user_input_taint(self.prog, self.file)

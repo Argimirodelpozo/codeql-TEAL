@@ -285,7 +285,10 @@ def seeds_for_callee(
         return frozenset()
     seeds: set[BranchCondition] = set()
     for a in callee.assignments:
-        if a.op != "txna" or not a.outputs:
+        # The current txn's args, indexed — both `txna ApplicationArgs N` (canonical)
+        # and the `txn ApplicationArgs N` form. NOT `gtxn*`, which reads a group
+        # sibling's args, not the ones this appcall passed.
+        if a.op not in ("txn", "txna") or not a.outputs:
             continue
         parts = a.immediates.split()
         if len(parts) != 2 or parts[0] != "ApplicationArgs":
