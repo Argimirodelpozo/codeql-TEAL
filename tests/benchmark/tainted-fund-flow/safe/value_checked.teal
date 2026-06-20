@@ -1,0 +1,13 @@
+#pragma version 10
+    txn ApplicationArgs 0
+    btoi
+    int 100
+    <=
+    assert
+    itxn_begin
+    txn ApplicationArgs 0
+    btoi
+    itxn_field Amount
+    itxn_submit
+    int 1
+    return

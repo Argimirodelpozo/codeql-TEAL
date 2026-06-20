@@ -1,0 +1,11 @@
+#pragma version 10
+    txn NumAppArgs
+    int 0
+    >
+    bz done
+    byte "k"
+    byte "v"
+    app_global_put
+done:
+    int 1
+    return
