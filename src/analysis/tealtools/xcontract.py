@@ -119,22 +119,95 @@ def _is_appcall(txn: InnerTxn) -> bool:
     return True
 
 
-def _const_app_id(txn: InnerTxn) -> Optional[int]:
+def _const_int(op) -> Optional[int]:
+    cv = op if isinstance(op, Const) else getattr(op, "const_value", None)
+    if isinstance(cv, Const) and cv.kind == "int":
+        try:
+            return int(cv.value)
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
+def _const_bytes(op) -> Optional[str]:
+    cv = op if isinstance(op, Const) else getattr(op, "const_value", None)
+    if isinstance(cv, Const) and cv.kind == "bytes":
+        return cv.value
+    return None
+
+
+def _state_key(inputs) -> Optional[str]:
+    """The constant bytes key among a state op's operands (the other being the
+    app index for ``*_get_ex`` / the value for ``*_put``)."""
+    for inp in inputs:
+        kb = _const_bytes(inp)
+        if kb is not None:
+            return kb
+    return None
+
+
+def _put_key_value(inputs):
+    """``(key_bytes, value_operand)`` for an ``app_global_put`` — the bytes-const
+    operand is the key, the other is the value."""
+    if len(inputs) != 2:
+        return None, None
+    for i, other in ((0, 1), (1, 0)):
+        kb = _const_bytes(inputs[i])
+        if kb is not None:
+            return kb, inputs[other]
+    return None, None
+
+
+def _resolve_state_app_id(prog: SSAProgram, operand) -> Optional[int]:
+    """Resolve an ApplicationID read from THIS app's GLOBAL state: if ``operand``
+    is ``app_global_get KEY`` (or ``app_global_get_ex`` on app 0) and EVERY
+    ``app_global_put KEY, <v>`` in the program writes the SAME int constant, that
+    constant is the callee. Sound-ish: a single non-constant or disagreeing write
+    to the slot leaves it unresolved (no invented target). Covers the common
+    router/factory pattern that stores its target app id in state."""
+    a = getattr(operand, "defined_by", None)
+    if a is None:
+        return None
+    if a.op == "app_global_get":
+        key = _state_key(a.inputs)
+    elif a.op == "app_global_get_ex" and any(_const_int(i) == 0 for i in a.inputs):
+        key = _state_key(a.inputs)
+    else:
+        return None
+    if key is None:
+        return None
+    vals: set[int] = set()
+    for w in prog.assignments:
+        if w.op != "app_global_put":
+            continue
+        wk, wv = _put_key_value(w.inputs)
+        if wk is None or wk != key:
+            continue
+        iv = _const_int(wv)
+        if iv is None:
+            return None                       # non-constant write: can't prove it
+        vals.add(iv)
+    return next(iter(vals)) if len(vals) == 1 else None
+
+
+def _const_app_id(txn: InnerTxn, prog: Optional[SSAProgram] = None) -> Optional[int]:
     fields = txn.fields_by_name().get("ApplicationID") or []
     if not fields:
         return None
-    seen: set[str] = set()
+    seen: set[int] = set()
     for f in fields:
         v = _const_only(f.possible_values())
-        if v is None:
-            return None
-        seen.add(v)
-    if len(seen) != 1:
-        return None
-    try:
-        return int(next(iter(seen)))
-    except ValueError:
-        return None
+        if v is not None:                     # inline / propagated literal
+            try:
+                seen.add(int(v))
+            except ValueError:
+                return None
+        else:                                 # dynamic: trace through global state
+            rid = _resolve_state_app_id(prog, f.operand) if prog is not None else None
+            if rid is None:
+                return None
+            seen.add(rid)
+    return next(iter(seen)) if len(seen) == 1 else None
 
 
 def _const_args(txn: InnerTxn) -> dict[int, str]:
@@ -172,7 +245,7 @@ def find_appcall_sites(prog: SSAProgram, registry: Registry) -> list[AppcallSite
         for txn in group.txns:
             if not _is_appcall(txn):
                 continue
-            app_id = _const_app_id(txn)
+            app_id = _const_app_id(txn, prog)
             if app_id is None or app_id not in registry:
                 continue
             sites.append(
