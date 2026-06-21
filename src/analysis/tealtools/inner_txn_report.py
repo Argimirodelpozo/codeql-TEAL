@@ -29,7 +29,7 @@ without removing anything).
   point joins are no longer visible as a single phi-args expansion.
 - :meth:`SSAProgram.eliminate_dead_constants` drops every SSAVar
   whose ``const_value`` was inlined at every consumer. This breaks
-  per-field operand resolution: the QL query reports the consumed
+  per-field operand resolution: the field rows report the consumed
   value's ``(file, line, idx)`` identity, and after elimination
   ``prog.var(...)`` returns ``None`` for those — so a literal-pusher
   field (``pushint 100 / itxn_field Amount``) renders as
@@ -40,9 +40,8 @@ a fresh :class:`SSAProgram` if you've already run those passes for
 some other downstream use.
 
 The boundary structure (which ``itxn_field`` belongs to which txn
-within which submit-group) is computed in QL by
-``InnerTransactionField.contributesToItxn`` — exposed to Python via
-``innerTxnFields.ql``. The python side groups the QL rows into
+within which submit-group) is computed by the inner-transaction-field
+pass. The python side groups the resulting field rows into
 :class:`InnerTxnGroup` objects and resolves each consumed operand by
 :meth:`SSAProgram.var` / :meth:`SSAProgram.phi`.
 
@@ -281,10 +280,10 @@ class InnerTxnGroup:
 
 
 class InnerTxnReport:
-    """Aggregates ``innerTxnFields.ql`` rows into per-submit groups.
+    """Aggregates inner-transaction-field rows into per-submit groups.
 
     Construction is cheap — it only walks the cached graph annotation,
-    no QL re-evaluation. Re-running ``SSAProgram`` propagation passes
+    no re-evaluation. Re-running ``SSAProgram`` propagation passes
     after construction is fine: the operands stored on
     :class:`InnerTxnField` carry references to the SSA layer's typed
     objects, so any subsequently-set ``const_value`` is reflected on
@@ -304,7 +303,7 @@ class InnerTxnReport:
                 "InnerTxnReport requires the pre-dead-elimination SSA representation; "
                 "`eliminate_dead_constants()` drops SSAVars whose const_value was "
                 "inlined into every consumer, which breaks per-field operand "
-                "resolution (the consumed SSAVar referenced by the CodeQL row is no "
+                "resolution (the consumed SSAVar referenced by the graph node is no "
                 "longer in prog.vars). Build a fresh SSAProgram or run this analysis "
                 "before dead elimination."
             )
@@ -397,10 +396,10 @@ class InnerTxnReport:
         return groups
 
     def _resolve_operand(self, row: dict) -> Optional[Operand]:
-        """Map a CodeQL row's ``(def_kind, def_file, def_line, def_idx)``
+        """Map a field row's ``(def_kind, def_file, def_line, def_idx)``
         back to the corresponding SSAProgram object.
 
-        Phis emitted by ``innerTxnFields.ql`` may not have been
+        Phis referenced by the field rows may not have been
         materialised by ``SSAProgram.__init__`` (lazy materialisation
         only creates phis referenced in some ``Assignment.inputs``).
         Every itxn_field IS such an assignment, so the consumed phi

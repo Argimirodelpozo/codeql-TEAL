@@ -67,9 +67,8 @@ class Location:
 class SSAVar:
     """A stack variable produced by one opcode.
 
-    Identity is ``(file, line, index)`` — matching CodeQL's ``SSAVar``
-    newtype ``MkSSAVar(idx, node)``. The textual form
-    ``V#{index}@L{line}`` matches ``SSAVar.getIdentifier()`` in QL.
+    Identity is ``(file, line, index)``; the textual form is
+    ``V#{index}@L{line}``.
     """
 
     __slots__ = (
@@ -428,9 +427,9 @@ _CONST_BLOCK_REF_NAMES = frozenset({
     # constblock references
     "Intc0Opcode", "Intc1Opcode", "Intc2Opcode", "Intc3Opcode", "IntcOpcode",
     "Bytec0Opcode", "Bytec1Opcode", "Bytec2Opcode", "Bytec3Opcode", "BytecOpcode",
-    # inline-literal pushers (carry their literal in immediates; constValues.ql
-    # already emits values for them via the IntegerConstant/BytesConstant
-    # superclasses, so propagation reads through naturally).
+    # inline-literal pushers (carry their literal in immediates; the
+    # resolved-constant table already emits values for them, so
+    # propagation reads through naturally).
     "IntOpcode", "PushintOpcode", "PushbytesOpcode",
 })
 
@@ -656,12 +655,10 @@ def _shuffle_mapping(a: "Assignment") -> Optional[list[int]]:
     should not silently get its consumers redirected).
 
     Stack convention: **top-first**. ``inputs[0]`` and ``outputs[0]``
-    are the topmost stack value (ord 1 in QL terms); the deepest
-    consumed/produced value sits at index ``n - 1``. This matches the
-    QL doc on ``getStackInputByOrder`` (`AST.qll`) — *"ord is a 1-based
-    stack position (1 = top consumed)"* — and the SSAVar identity
-    convention where ``output_index 1`` ranks first by
-    ``outStackOrder`` (i.e. is the topmost output).
+    are the topmost stack value (a 1-based stack position where 1 = top
+    consumed); the deepest consumed/produced value sits at index
+    ``n - 1``. The SSAVar identity convention agrees: ``output_index 1``
+    ranks first by stack order (i.e. is the topmost output).
     """
     op = a.op
     n_in = len(a.inputs)

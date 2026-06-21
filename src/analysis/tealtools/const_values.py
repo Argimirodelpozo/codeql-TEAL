@@ -1,13 +1,13 @@
-"""Pure-Python port of ``constValues.ql`` — resolved literal constants
-per SSAVar output, for the constant-pushing opcodes.
+"""Resolved literal constants per SSAVar output, for the
+constant-pushing opcodes.
 
 Emits one ``(file, line, out_idx, kind, value)`` row per produced
-constant, matching ``constValues.ql`` exactly:
+constant:
 
   - ``int`` / ``pushint``     → out_idx=1, kind="int", decimal value.
-    Named constants (``int pay``) yield NO row, mirroring QL's
-    ``.toInt()`` which has no result on non-numeric / non-decimal text
-    (so ``int 0x10`` is also dropped).
+    Named constants (``int pay``) yield NO row: decimal-only parsing
+    has no result on non-numeric / non-decimal text (so ``int 0x10``
+    is also dropped).
   - ``intc`` / ``intc_0..3``  → out_idx=1, kind="int", value from the
     single ``intcblock`` at the given index.
   - ``pushbytes``             → out_idx=1, kind="bytes", raw literal text.
@@ -16,13 +16,12 @@ constant, matching ``constValues.ql`` exactly:
   - ``pushints``              → out_idx=1..N, kind="int".
   - ``pushbytess``            → out_idx=1..N, kind="bytes", raw literal text.
 
-Value forms match QL: ints are decimal strings; bytes are the raw source
-token text (``0xdeadbeef``, ``"hello"``, ``b64 AAAA``) — NOT decoded bytes.
+Value forms: ints are decimal strings; bytes are the raw source token
+text (``0xdeadbeef``, ``"hello"``, ``b64 AAAA``) — NOT decoded bytes.
 
-QL's ``intc``/``bytec`` resolution uses a dominance predicate but its own
-source notes "assume there's only one block"; we implement the single-block
-case and rely on the differential parity test to flag any multi-block
-fixture that would need real dominance.
+``intc``/``bytec`` resolution assumes there's only one block; we
+implement the single-block case and rely on the differential parity
+test to flag any multi-block fixture that would need real dominance.
 """
 from __future__ import annotations
 
@@ -45,8 +44,7 @@ def _imms(n) -> str:
 
 
 def _to_int(tok: str) -> Optional[int]:
-    """Decimal-only int parse, matching QL ``String.toInt()`` (no ``0x``,
-    no named constants)."""
+    """Decimal-only int parse (no ``0x``, no named constants)."""
     try:
         return int(tok)
     except (ValueError, TypeError):
@@ -105,7 +103,7 @@ def _split_byte_literals(imms: str) -> list[str]:
 
 
 def compute_const_values(g) -> list[tuple]:
-    """Return ``constValues.ql`` rows as ``(file, line, out_idx, kind,
+    """Return resolved-constant rows as ``(file, line, out_idx, kind,
     value)`` tuples, computed from the loaded graph's AST nodes."""
     opcodes = [n for n in g.nodes if isinstance(n, Opcode)]
 

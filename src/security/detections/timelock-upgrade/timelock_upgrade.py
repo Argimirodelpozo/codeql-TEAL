@@ -1,6 +1,6 @@
 """sec-guide/timelock-upgrade: updatable + creator-guarded but no timelock.
 
-Mirrors ``timelockUpgrade.ql``. Flags an approval exit that:
+Flags an approval exit that:
   - is reachable with ``OnCompletion == UpdateApplication``,
   - has a dominating ``txn Sender == global CreatorAddress`` guard
     (so the creator-only upgrade is intentional),

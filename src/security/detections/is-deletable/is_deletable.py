@@ -1,10 +1,9 @@
 """sec-guide/is-deletable: app can reach approval with OnCompletion=DeleteApplication.
 
-Mirrors ``isDeletable.ql``. One finding per approval exit not guarded
-against ``OnCompletion == 5``. Matches QL's over-conservative shape:
-guards expressed via ``match`` / ``switch`` dispatch tables aren't
-recognised; explicit ``OnCompletion == K`` (or ``!=``) checks that
-control the path to the exit are.
+One finding per approval exit not guarded against ``OnCompletion == 5``.
+Deliberately over-conservative: guards expressed via ``match`` / ``switch``
+dispatch tables aren't recognised; explicit ``OnCompletion == K`` (or
+``!=``) checks that control the path to the exit are.
 """
 from __future__ import annotations
 

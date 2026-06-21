@@ -1,6 +1,6 @@
 """sec-guide/close-remainder-to: missing CloseRemainderTo validation.
 
-Mirrors ``closeRemainderTo.ql``. Strict-dominance form.
+Strict-dominance form.
 """
 from __future__ import annotations
 

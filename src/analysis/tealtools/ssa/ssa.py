@@ -28,7 +28,7 @@ Pipeline (:meth:`PySSA._construct`):
      ``_construct``), so it is opt-in until fixed.
   5. Heights (forward stack-delta DF; diagnostic).
   6. Per-BB sim to fill ``op.inputs`` / ``b.exit_stack``;
-     ``frame_dig`` / ``frame_bury`` (any-sign N) expand to QL's
+     ``frame_dig`` / ``frame_bury`` (any-sign N) expand under the
      fat-stack convention (consume the band from current top down to
      the target slot, emit fresh outputs covering the post-stack).
   8. Liveness filter (drop phis not transitively consumed by any op).
@@ -120,7 +120,7 @@ class PyPhi:
 
     Identity is ``(bb_key, slot)`` — ``bb_key`` is ``(file, first_line,
     last_line)``; ``slot`` is 1-based top-first (top of the entry
-    stack is slot 1) to match QL's ``stack_index`` convention.
+    stack is slot 1, the stack-index convention).
 
     ``args`` is the merged-in incoming values from preds — each entry
     is a :class:`PyVar` (op-defined) or a :class:`PyPhi` (chain
@@ -153,7 +153,7 @@ class PyPhi:
 class PyOp:
     """An opcode in SSA form: ``outputs = op immediates (inputs)``.
 
-    ``n_in`` / ``n_out`` are arities from the QL graph (overridden for
+    ``n_in`` / ``n_out`` are arities from the loaded graph (overridden for
     ``frame_dig`` / ``frame_bury`` / ``callsub`` / ``retsub`` to the
     TEAL-spec values; see :meth:`PySSA._phase1_instantiate`).
     ``inputs`` / ``outputs`` are filled by the per-BB simulator.
@@ -222,7 +222,7 @@ class PySSA:
 
     @classmethod
     def build(cls, prog: SSAProgram) -> SSAProgram:
-        """End-to-end: construct SSA from a QL-loaded ``SSAProgram``
+        """End-to-end: construct SSA from a graph-loaded ``SSAProgram``
         and return a fresh ``SSAProgram`` shell wired up with the
         PySSA-built structures. Internal builder state is attached
         to the result as ``prog._pyssa`` for the chain helpers
@@ -281,9 +281,9 @@ class PySSA:
         for qbb in prog.blocks.values():
             b = PyBlock((qbb.file, qbb.first_line, qbb.last_line))
             for a in qbb.assignments:
-                # Arities from the opcode signature table (replaces QL's
-                # ssaInputs/ssaOutputs row-counts). op_arity returns the
-                # simple phase-1 counts for frame_dig/frame_bury/callsub/
+                # Arities from the opcode signature table. op_arity
+                # returns the simple phase-1 counts for
+                # frame_dig/frame_bury/callsub/
                 # retsub; their fat forms are rebuilt by later phases.
                 n_in, n_out = op_arity(a.op, a.immediates)
                 op = PyOp(
@@ -406,12 +406,12 @@ class PySSA:
         ``b.exit_stack``.
 
         Negative-N ``frame_dig`` / ``frame_bury`` are modelled with
-        QL's fat-stack convention: each op consumes the entire stack
+        the fat-stack convention: each op consumes the entire stack
         band from the current top down to (and including) the target
         frame slot, and emits a fresh set of outputs covering the
         post-stack. For ``frame_dig`` n_out == n_in + 1 (band + dug
         copy on top); for ``frame_bury`` n_out == n_in - 1 (band minus
-        popped top, target replaced). This matches QL's
+        popped top, target replaced). This agrees with
         :func:`_shuffle_mapping` so taint / constant / range
         propagation can carry passthrough values through long
         frame-access chains."""
@@ -743,7 +743,7 @@ class PySSA:
         self, op: PyOp, local_stack: list, sub: PyBlock, proto: tuple,
     ) -> bool:
         """Rewrite ``frame_dig N`` / ``frame_bury N`` (either sign of
-        ``N``) to QL's fat-stack convention. Returns ``True`` on
+        ``N``) to the fat-stack convention. Returns ``True`` on
         rewrite; ``False`` to fall back to the narrow path.
 
         The target slot lives at bottom-first stack index
@@ -915,7 +915,7 @@ def _to_ssaprogram(py: PySSA, source: SSAProgram) -> SSAProgram:
 def _collapse_phi_args_to_leaves(py: PySSA, phi_map: dict, var_map: dict) -> None:
     """Collapse each ``Phi``'s args to the transitive ``SSAVar`` leaves
     reachable through PySSA's ``PyPhi.args`` graph (SCC condensation,
-    O(N+E) memoized per SCC). Matches QL's ``phiArgs.ql`` projection."""
+    O(N+E) memoized per SCC). This is the phi-args projection."""
     import networkx as nx
     # Graph nodes are integer indices, not the PyPhi objects: PyPhi.__hash__
     # rebuilds + hashes the ``(bb_key, slot)`` tuple, and using phis as nodes
@@ -1012,8 +1012,7 @@ def _build_assignments(prog: SSAProgram, py: PySSA, var_map: dict,
             for v in outputs:
                 v.defined_by = a
                 # Inline seed for spec-fixed AVM ops whose value is a known
-                # compile-time literal (e.g. ``global ZeroAddress``) —
-                # replaces what ``mustValues.ql`` emitted for these ops.
+                # compile-time literal (e.g. ``global ZeroAddress``).
                 if v.const_value is None:
                     fold = _fold_spec_fixed(a)
                     if fold is not None:
@@ -1030,7 +1029,7 @@ def _build_assignments(prog: SSAProgram, py: PySSA, var_map: dict,
 def _seed_consts_and_identity_steps(prog: SSAProgram, scratch_stores: dict) -> None:
     """Seed ``const_value`` through value-identity edges (shuffle pass-
     through + scratch reads, to a fixed point) and build the identity-flow
-    step relation. Replaces ``mustValues.ql`` / ``valueIdentitySteps.ql``;
+    step relation (the constant / value-identity step relation);
     stashes the relation on ``prog._graph.graph["identity_steps"]``.
 
     Pre-filters the candidate ops once so the fixpoint only scans ops that
@@ -1194,7 +1193,7 @@ def _apply_pyssa_to(
     """
     # ``source`` defaults to ``prog`` for the in-place case. We read
     # const_value / range / type from source.vars (already populated
-    # by the QL pre-pass) and reuse source._graph + source.labels.
+    # by the graph-loading pre-pass) and reuse source._graph + source.labels.
     # Snapshot anything we'll re-read from ``src`` *before* wiping
     # ``prog`` — in the in-place case (``source is None``) ``src.vars``
     # IS ``prog.vars``, so the wipe would otherwise clobber the data
@@ -1224,7 +1223,7 @@ def _apply_pyssa_to(
     prog._inputs_propagated = False
 
     # 1) SSAVars. Seed const_value / range / type from the source
-    # prog's already-populated var table (QL pre-pass wired these from
+    # prog's already-populated var table (the pre-pass wired these from
     # ``const_outputs`` / ``must_outputs`` graph annotations).
     var_map: dict = {}  # PyVar -> SSAVar
     for key, py_v in py.vars.items():
@@ -1240,11 +1239,11 @@ def _apply_pyssa_to(
             if src_v.type is not None:
                 v.type = src_v.type
 
-    # 2) Phis. PySSA has one phi per (bb_key, slot); the QL
+    # 2) Phis. PySSA has one phi per (bb_key, slot); the
     # Direct/Indirect distinction is collapsed in PySSA's unified
     # model. Register under DirectPhi only. Lookups via
     # :meth:`SSAProgram.phi` are kind-agnostic so consumers that
-    # receive a kind from a QL row (e.g.
+    # receive a kind from a field row (e.g.
     # ``inner_txn_report._resolve_operand``) still find the phi
     # whether they ask for ``DirectPhi`` or ``IndirectPhi``.
     phi_map: dict = {}  # PyPhi -> Phi
@@ -1298,7 +1297,7 @@ def _apply_pyssa_to(
 
     # 6.4) Inner-transaction field grouping. For each ``itxn_field``
     # op, find the immediately-enclosing ``(start, end)`` pair via CFG
-    # reach. Replaces ``innerTxnFields.ql``. The result lives at
+    # reach. The result lives at
     # ``prog._graph.graph["inner_txn_fields"]`` — same shape
     # :class:`tealtools.inner_txn_report.InnerTxnReport` expects.
     if prog._graph is not None and hasattr(prog._graph, "graph"):
@@ -1307,11 +1306,10 @@ def _apply_pyssa_to(
     # 6.45) Scratch-slot reaching-definitions. Computes, for every
     # ``load N`` opcode, the set of ``store N`` value-SSAVars that may
     # reach it via the CFG (with kill analysis: a later ``store N``
-    # supersedes an earlier one on the same path). Replaces
-    # ``scratchInfluence.ql`` so we can drop that query from the load
-    # path. Populates the graph annotation
-    # ``prog._graph.nodes[load_node]["scratch_stores"]`` in the same
-    # shape the QL loader used, so every existing consumer
+    # supersedes an earlier one on the same path). Populates the graph
+    # annotation
+    # ``prog._graph.nodes[load_node]["scratch_stores"]`` in the
+    # shape every existing consumer
     # (``propagate_scratch_constants``, taint engine step 2c,
     # ``detections.common._scratch_stores_for``, …) keeps working.
     _scratch_stores = _compute_scratch_influence(prog)
@@ -1329,8 +1327,8 @@ def _apply_pyssa_to(
 
     # 6.5/6.6) Seed const_value through value-identity edges (shuffle
     # pass-through + scratch reads, to a fixed point) and build the
-    # identity-flow step relation — both replacing what ``mustValues.ql``
-    # / ``valueIdentitySteps.ql`` provided. Stashes the relation on
+    # identity-flow step relation (the constant / value-identity step
+    # relation). Stashes the relation on
     # ``prog._graph.graph["identity_steps"]`` for ``propagate_constants``.
     _seed_consts_and_identity_steps(prog, _scratch_stores)
 
@@ -1360,7 +1358,7 @@ def _demo(source: str) -> None:
     import time
     t0 = time.perf_counter()
     prog = SSAProgram(source, verbose=False)
-    t_ql = time.perf_counter() - t0
+    t_graph = time.perf_counter() - t0
     t0 = time.perf_counter()
     py = PySSA._construct(prog)
     t_py = time.perf_counter() - t0
@@ -1369,7 +1367,7 @@ def _demo(source: str) -> None:
     else:
         print(f"({len(py.blocks)} blocks — full render suppressed)")
     print(
-        f"[ssa] QL load: {t_ql:.2f}s  build: {t_py * 1000:.1f}ms  "
+        f"[ssa] graph load: {t_graph:.2f}s  build: {t_py * 1000:.1f}ms  "
         f"blocks={len(py.blocks)}  vars={len(py.vars)}  phis={len(py.phis)}"
     )
 

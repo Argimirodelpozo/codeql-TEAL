@@ -1,7 +1,7 @@
 """sec-guide/asset-close-to: missing AssetCloseTo validation.
 
-Mirrors ``assetCloseTo.ql``. Strict-dominance form: a single comparison
-must dominate every approval exit.
+Strict-dominance form: a single comparison must dominate every approval
+exit.
 """
 from __future__ import annotations
 

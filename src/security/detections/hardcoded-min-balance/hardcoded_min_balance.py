@@ -1,6 +1,6 @@
 """sec-guide/hardcoded-min-balance: balance op subtracted from a hardcoded const.
 
-Mirrors ``hardcodedMinBalance.ql``. Flags ``balance`` outputs flowing
+Flags ``balance`` outputs flowing
 into a ``-`` (sub) op where the other operand resolves to a known
 integer constant — and the program never uses ``min_balance``. The
 hardcoded assumption breaks when the contract opts into assets, creates
@@ -43,9 +43,8 @@ class HardcodedMinBalanceDetector:
         self.file = file
 
     def detect(self) -> list[HardcodedMinBalanceViolation]:
-        # Skip silently when the program already uses min_balance — the
-        # QL form treats that as evidence the developer is aware of the
-        # right primitive.
+        # Skip silently when the program already uses min_balance — treat
+        # that as evidence the developer is aware of the right primitive.
         if any(
             a.op == "min_balance" for a in self.prog.assignments
             if common.file_match(a.location.file, self.file)

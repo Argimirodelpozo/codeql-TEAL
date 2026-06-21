@@ -1,9 +1,9 @@
 """Algorand-security-guide detection ports — registry.
 
-The actual detector classes live next to their CodeQL counterparts at
+The actual detector classes live at
 ``security/detections/<kebab-case-name>/<snake_case_name>.py`` so each
-detection directory is fully self-contained: ``.ql`` query, ``.py``
-port, ``.teal`` test fixtures, and ``.expected`` output sit together.
+detection directory is fully self-contained: the ``.py`` detector,
+``.teal`` test fixtures, and ``.expected`` output sit together.
 
 This package keeps the shared infrastructure here in
 ``analysis/tealtools/detections/`` because it's library code that both
@@ -24,10 +24,10 @@ The :data:`DETECTORS` map below is populated by importlib-loading each
 a new detection is a matter of dropping a file into the right directory
 with a known-named exported class.
 
-The ports preserve QL semantics — including the over-conservative
-shapes (e.g. ``is-deletable`` flagging ``fixed-complex-dispatch.teal``,
-the strict-dominance form of ``txnFieldValidatedOnAllPaths``). Tighter
-detectors are deliberate follow-ups, not changes to these ports.
+The detectors keep some over-conservative shapes (e.g. ``is-deletable``
+flagging ``fixed-complex-dispatch.teal``, the strict-dominance form of
+``txnFieldValidatedOnAllPaths``). Tighter detectors are deliberate
+follow-ups, not changes to these.
 """
 from __future__ import annotations
 
@@ -43,8 +43,8 @@ from . import _field_validated, common  # noqa: F401
 
 
 # Source root: this file is at <repo>/src/analysis/tealtools/detections/__init__.py,
-# so parents[3] is <repo>/src — the detection .py files sit beside their
-# CodeQL counterparts under src/security/detections/.
+# so parents[3] is <repo>/src — the detection .py files live under
+# src/security/detections/.
 _SRC_ROOT = Path(__file__).resolve().parents[3]
 _DETECTIONS_ROOT = _SRC_ROOT / "security" / "detections"
 

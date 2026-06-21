@@ -1,6 +1,6 @@
 """sec-guide/unsafe-lsig-args: arg* opcode used in equality comparison.
 
-Mirrors ``unsafeLsigArgs.ql``. LogicSig arguments aren't covered by
+LogicSig arguments aren't covered by
 delegation signatures and can be changed per-transaction by the caller,
 so using them as equality keys for access control provides no security.
 Per-arg-read finding when its SSAVar is consumed by an ``==``.

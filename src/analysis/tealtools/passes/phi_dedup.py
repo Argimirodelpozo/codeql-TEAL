@@ -35,7 +35,7 @@ Verified value-preserving: const / range resolution is byte-identical
 before vs after dedup on xgov (57k SSAVars, 0 differences).
 
 Neither ``kind`` nor ``basic_block`` is in the key. ``kind`` is constant
-(PySSA's ``_apply_pyssa_to`` collapses the QL Direct/Indirect
+(PySSA's ``_apply_pyssa_to`` collapses the Direct/Indirect
 distinction and registers every phi as ``DirectPhi``). ``basic_block``
 is omitted because no consumer distinguishes phis by merge point: every
 analysis uses a phi's args as a may-set, and materialisation places its

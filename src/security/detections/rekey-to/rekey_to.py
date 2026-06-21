@@ -1,7 +1,6 @@
 """sec-guide/rekey-to: path-aware missing-RekeyTo detector.
 
-Mirrors ``rekeyTo.ql`` + the ``approvalExitProtectedForField`` / ``isProtectedBB``
-chain in ``SecGuideCommon.qll``. For each approval exit, checks that
+For each approval exit, checks that
 every CFG path from any program entry to the exit crosses at least one
 BB containing a comparison receiving flow from ``txn RekeyTo`` whose
 result reaches enforcement (``assert`` / ``bnz`` to ``err`` / ``bz`` to

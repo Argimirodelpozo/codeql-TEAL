@@ -1,21 +1,15 @@
-"""TEAL opcode stack-arity signatures, derived from the TEAL
-opcode classes (``getNumberOfConsumedArgs`` / ``getNumberOfOutputArgs`` in
-``codeql/teal/ast/opcodes/*.qll``).
+"""TEAL opcode stack-arity signatures — the number of stack args each
+opcode consumes and produces.
 
 ``op_arity(op, immediates) -> (n_in, n_out)`` gives the per-op stack
-pop/push counts that drive PySSA's reconstruction, replacing the row-counts
-PySSA used to read from QL's ``ssaInputs`` / ``ssaOutputs`` queries.
+pop/push counts that drive PySSA's reconstruction.
 
 ``frame_dig`` / ``frame_bury`` / ``callsub`` / ``retsub`` return the simple
 counts PySSA's ``_phase1_instantiate`` expects; their height-dependent
 "fat" forms are reconstructed by later PySSA phases (``_try_expand_frame_op``
 + subroutine/proto analysis), so phase 1 must NOT use the fat counts here.
 
-The table is authoritative for ``n_out`` (validated row-for-row against
-``ssaOutputs.ql`` by ``tests/test_ql_python_parity.py``). For ``n_in`` it is
-the *true* arity, which is sometimes higher than QL's ``ssaInputs`` emitted
-(QL drops inputs it can't resolve at a basic-block boundary) — a deliberate
-precision gain, validated by the full suite rather than strict QL parity.
+For ``n_in`` the table gives the *true* arity, validated by the full suite.
 """
 from __future__ import annotations
 

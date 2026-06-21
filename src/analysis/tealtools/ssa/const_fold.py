@@ -335,12 +335,11 @@ def _fold_global_field(immediates: str) -> Optional[Const]:
     The other ``Global FIELD``s are either runtime (``LatestTimestamp``,
     ``Round``, ``GroupSize``, ``GroupID``, ``CallerApplicationID``,
     ``OpcodeBudget``, …) or protocol-config-dependent (``MinTxnFee``,
-    ``MinBalance``, ``MaxTxnLife``, ``LogicSigVersion``) which the QL
-    libs don't fold to a literal either."""
+    ``MinBalance``, ``MaxTxnLife``, ``LogicSigVersion``) — neither folds
+    to a literal."""
     field = immediates.strip()
     if field == "ZeroAddress":
-        # 32 zero bytes — AVM's canonical zero address. Matches
-        # ``BytesPropagation.qll::zeroAddressHex()``.
+        # 32 zero bytes — AVM's canonical zero address.
         return Const("bytes", "0x" + "00" * 32)
     return None
 
@@ -394,12 +393,9 @@ def try_fold_assignment(a: Assignment) -> Optional[Const]:
     if not a.outputs or len(a.outputs) != 1:
         return None
     # ``global FIELD`` and ``txn FIELD`` have no stack inputs; resolve
-    # them from the immediate alone. Mirrors what
-    # ``BytesPropagation.qll`` / ``ConstantPropagation.qll`` do via
-    # ``tryAsBytesDef`` / ``tryAsIntDef``. Without this, dropping
-    # ``mustValues.ql`` from the load path loses field-constant
-    # resolution and breaks downstream rendering (e.g.
-    # ``Global ZeroAddress`` comparisons).
+    # them from the immediate alone (bytes / int constant propagation).
+    # Without this, field-constant resolution is lost and downstream
+    # rendering breaks (e.g. ``Global ZeroAddress`` comparisons).
     if op == "global":
         return _fold_global_field(a.immediates)
     inputs: list[Const] = []

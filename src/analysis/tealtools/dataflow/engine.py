@@ -55,7 +55,7 @@ class Source:
     ``tainted_outputs(a)`` returns the 1-based output indices on that
     assignment that carry the tainted value (output 1 = topmost after
     the op runs; matches :class:`tealtools.ssa.SSAVar`'s
-    ``output_index`` and CodeQL's ``getInternalOutputIndex``).
+    ``output_index``).
     """
 
     name: str
@@ -207,8 +207,8 @@ class TaintAnalysis:
     or downstream analyses that want their own sink semantics).
 
     Doesn't mutate ``prog``. Reads the structural SSA layer + the
-    cached ``scratch_stores`` annotation populated by
-    ``scratchInfluence.ql``. Re-running SSA passes between calls is
+    cached ``scratch_stores`` annotation from the scratch-influence
+    pass. Re-running SSA passes between calls is
     safe; the next ``detect()`` will see the updated state.
 
     ``file`` scopes the analysis to a single source file: source

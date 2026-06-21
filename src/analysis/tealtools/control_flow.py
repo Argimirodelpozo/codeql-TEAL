@@ -17,8 +17,8 @@ successor type and so produce no edge:
                                 ``assert``->fall-through.
 * ``BooleanSuccessor(false)`` -- ``bnz``->fall-through, ``bz``->target.
 
-Node / edge identity is ``(file, startLine)`` to match the CSV the QL query
-produces (and the rest of the Python layer, which keys on it too).
+Node / edge identity is ``(file, startLine)`` (the key the rest of the
+Python layer uses too).
 """
 from __future__ import annotations
 
@@ -110,8 +110,8 @@ def _aux_succ(n: _Node, nxt: _Node | None, labels: dict[str, _Node]) -> list[_No
     ``switch``/``match`` follow BOTH their arms and the fall-through -- the arms
     are sub-local dispatch targets, so a ``retsub`` reached only through a switch
     arm (a sub that dispatches `load N; switch a b c` to arms that each `retsub`)
-    still belongs to the sub's body. (The QL aux followed only the fall-through,
-    which orphaned such arm-retsubs from their entry: their return edge to the
+    still belongs to the sub's body. (Following only the fall-through would
+    orphan such arm-retsubs from their entry: their return edge to the
     caller's continuation was never predicted, and the whole nested-call
     reachability chain unravelled -- e.g. app_3100133227's interleaved subs.)
     """
@@ -306,7 +306,7 @@ def _program_cfg(
     return cand, reachable, idx_of
 
 
-# Opcode classes that END a codeblock (Ast.qll ``endsACodeblock``): any
+# Opcode classes that END a codeblock: any
 # branch, any contract-exit, or a node immediately followed by a label.
 _ENDS_CLASSES = frozenset(
     {_B, _CALLSUB, _RETSUB, _BZ, _BNZ, _SWITCH, _MATCH, _RETURN, _ERR, _ASSERT}

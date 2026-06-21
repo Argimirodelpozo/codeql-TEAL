@@ -1,8 +1,8 @@
 """sec-guide/inner-txn-fee: itxn explicitly sets non-zero Fee.
 
-Mirrors ``innerTxnFee.ql``. Per-assignment finding for any ``itxn_field
-Fee`` whose value resolves to a known non-zero integer constant.
-Dynamic (non-constant) fees aren't flagged — same as the QL form.
+Per-assignment finding for any ``itxn_field Fee`` whose value resolves to
+a known non-zero integer constant. Dynamic (non-constant) fees aren't
+flagged.
 """
 from __future__ import annotations
 
@@ -34,7 +34,7 @@ class InnerTxnFeeDetector:
 
     def __init__(self, prog: SSAProgram, *, file: Optional[str] = None):
         # Constant propagation must have run so the value SSAVar carries
-        # its const_value (matches QL's `tryAsInt`).
+        # its const_value (parsed as an integer when possible).
         prog.propagate_constants()
         self.prog = prog
         self.file = file

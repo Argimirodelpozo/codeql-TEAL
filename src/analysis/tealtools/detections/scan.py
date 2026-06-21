@@ -188,7 +188,7 @@ def scan(
     findings: list[ScanFinding] = []
     for dir_path, teal_files in sorted(by_dir.items()):
         # Reconstruct straight from the raw .teal directory (pure-Python graph
-        # backend) -- no codeql DB build. `SSAProgram` over a directory loads
+        # backend) -- no DB build. `SSAProgram` over a directory loads
         # every .teal in it, keyed by basename, which is the same `file=`
         # filter the detectors use below.
         try:

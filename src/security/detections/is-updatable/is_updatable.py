@@ -1,7 +1,6 @@
 """sec-guide/is-updatable: app can reach approval with OnCompletion=UpdateApplication.
 
-Mirrors ``isUpdatable.ql``. One finding per approval exit not guarded
-against ``OnCompletion == 4``.
+One finding per approval exit not guarded against ``OnCompletion == 4``.
 """
 from __future__ import annotations
 

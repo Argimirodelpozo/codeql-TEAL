@@ -17,7 +17,7 @@ nodes qualified by AppID. Bridge edges connect:
 - **Backward (return)** — the callee's ``log`` ops → the caller's
   ``itxn``/``itxna``/``itxnas`` reads of the ``Logs`` field after the
   submit. Edge kind: ``"appcall-return"``. ``log`` has no SSA output
-  but is still a graph node (the QL def-use step puts an edge into it
+  but is still a graph node (the def-use step puts an edge into it
   from the logged value's producer), so it can serve as the bridge
   source directly.
 

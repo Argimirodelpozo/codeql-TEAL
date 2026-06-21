@@ -1,21 +1,21 @@
-"""Shared helpers for sec-guide detector ports.
+"""Shared helpers for the sec-guide detectors.
 
-Mirrors the QL helper layer (``SecGuideCommon.qll`` + ``OnCompletionGuards.qll``
-+ ``FeeValidationGuards.qll``) on top of the :class:`SSAProgram` substrate
-and :class:`PathPredicateAnalysis`. Each detector module imports the
+The common helper layer (OnCompletion guards, fee-validation guards, …)
+on top of the :class:`SSAProgram` substrate and
+:class:`PathPredicateAnalysis`. Each detector module imports the
 predicates it needs from here rather than rebuilding them.
 
 Where possible, we lean on :meth:`PathPredicateAnalysis.predicates_at` for
 "must hold on every path" reasoning — it's already a sound, cached
 abstraction over branch / assert outcomes. Hand-rolled CFG reachability
-only shows up in :func:`approval_exit_protected_for_field` (where the QL
-form is strictly stronger than what path predicates alone can express).
+only shows up in :func:`approval_exit_protected_for_field` (which is
+strictly stronger than what path predicates alone can express).
 
-The QL detector outputs are intentionally over-conservative on several
+The detector outputs are intentionally over-conservative on several
 fixtures (e.g. ``is-deletable`` flags ``fixed-complex-dispatch.teal``
-because the OnCompletion==5 reject sits *after* the dispatch). We mirror
-that semantics rather than improve on it — the goal of this port is
-parity, not strictly tighter detection. Improvements live in follow-ups.
+because the OnCompletion==5 reject sits *after* the dispatch). This is a
+deliberate choice — the goal is soundness, not strictly tighter
+detection. Improvements live in follow-ups.
 """
 from __future__ import annotations
 
@@ -66,8 +66,8 @@ def _return_likely_zero(bb: BasicBlock) -> bool:
 
     Conservative: when in doubt, return False (so the BB stays
     classified as a potential approval and downstream analyses see it).
-    Matches QL's ``approvalExit``, which includes returns whose value
-    isn't statically resolvable."""
+    An approval exit includes returns whose value isn't statically
+    resolvable."""
     if len(bb.assignments) < 2:
         return False
     if bb.assignments[-1].op != "return":
@@ -80,14 +80,14 @@ def _return_likely_zero(bb: BasicBlock) -> bool:
 
 
 def is_approval_exit(bb: BasicBlock) -> bool:
-    """Mirrors QL ``approvalExit``: BB ends in ``return`` and the
-    return value is non-zero or its constness is unknown.
+    """An approval exit: BB ends in ``return`` and the return value is
+    non-zero or its constness is unknown.
 
     The SSA model in :mod:`tealtools.ssa` represents ``return`` with
     an empty stack-input list (``last.inputs == []``); we recover the
     likely return value via :func:`_return_likely_zero`. A BB whose
     ``int 0; return`` shape we can prove is excluded; everything else
-    counts as approval-or-unknown — same as QL."""
+    counts as approval-or-unknown."""
     if not bb.assignments:
         return False
     if bb.assignments[-1].op != "return":
@@ -96,7 +96,7 @@ def is_approval_exit(bb: BasicBlock) -> bool:
 
 
 def is_rejection_exit(bb: BasicBlock) -> bool:
-    """Mirrors QL ``rejectionExit``: BB ends in ``err`` or ``return 0``."""
+    """A rejection exit: BB ends in ``err`` or ``return 0``."""
     if not bb.assignments:
         return False
     last = bb.assignments[-1]
@@ -126,11 +126,11 @@ def file_match(loc_file: str, want: Optional[str]) -> bool:
 def approving_exits(
     prog: SSAProgram, *, file: Optional[str] = None,
 ) -> list[BasicBlock]:
-    """Every BB that is an approval exit (QL ``approvalExit`` semantics).
+    """Every BB that is an approval exit.
 
     Stricter than :meth:`PathPredicateAnalysis.approving_exits` — that
     method includes every ``return`` regardless of operand constness;
-    here we exclude provably-zero returns to match the QL detector.
+    here we exclude provably-zero returns.
 
     ``file``: restrict to BBs in this source file (basename); if None,
     every BB across the loaded program."""
@@ -143,9 +143,9 @@ def approving_exits(
 def txn_field_reads(
     prog: SSAProgram, field: str, *, file: Optional[str] = None,
 ) -> list[Assignment]:
-    """Every ``txn FIELD`` assignment in ``prog`` (matches QL
-    ``TxnOpcode.getField()``). Includes the bare ``txn`` op only —
-    ``gtxn``, ``itxn``, etc. are separate predicates."""
+    """Every ``txn FIELD`` assignment in ``prog``. Includes the bare
+    ``txn`` op only — ``gtxn``, ``itxn``, etc. are separate
+    predicates."""
     return [
         a for a in prog.assignments
         if a.op == "txn" and a.immediates.strip() == field
@@ -164,7 +164,7 @@ def gtxn_field_reads(
     - ``gtxns FIELD`` / ``gtxnsa FIELD I`` / ``gtxnsas FIELD``
       — group index popped off the stack, field in the first immediate.
 
-    The mapping mirrors QL's ``GtxnOpcode``/``GtxnsOpcode`` families."""
+    The mapping covers the ``gtxn``/``gtxns`` opcode families."""
     out: list[Assignment] = []
     for a in prog.assignments:
         if not file_match(a.location.file, file):
@@ -254,7 +254,7 @@ def _bb_strict_dominators(
 def field_validated_on_all_paths(
     prog: SSAProgram, field: str, *, file: Optional[str] = None,
 ) -> bool:
-    """QL ``txnFieldValidatedOnAllPaths(field)``: there is a single
+    """The field is validated on all paths: there is a single
     comparison whose BB dominates every approval exit, and one operand
     of the comparison reads from ``txn FIELD``.
 
@@ -289,9 +289,9 @@ def field_validated_on_all_paths(
 
 
 # ---------------------------------------------------------------------------
-# Path-aware "approval exit protected for field" (QL form)
+# Path-aware "approval exit protected for field"
 #
-# Here we DO need to mirror the QL formulation: every path from any
+# This path formulation requires that every path from any
 # program entry to the exit crosses a BB containing a comparison that
 # (a) consumes a txn FIELD read transitively (via a few sub / scratch
 # bridges) and (b) whose result reaches an enforcement sink (assert /
@@ -329,7 +329,7 @@ def def_forward_reaches_enforcement(
     label_lines: Optional[dict[tuple[str, str], int]] = None,
     seen: Optional[set[SSAVar]] = None,
 ) -> bool:
-    """Mirrors QL ``defForwardReachesAssert``: the SSA chain rooted at
+    """The def-forward reaches an enforcement: the SSA chain rooted at
     ``var`` terminates in some opcode that enforces rejection when the
     original value is false.
 
@@ -594,11 +594,10 @@ def approval_exit_protected_for_field(
     prog: SSAProgram, exit_bb: BasicBlock, field: str,
     *, file: Optional[str] = None,
 ) -> bool:
-    """QL ``approvalExitProtectedForField``: every CFG path from any
+    """Approval exit protected for a field: every CFG path from any
     program entry to ``exit_bb`` crosses at least one BB protected
     for ``field``. Equivalently, ``exit_bb`` is *not* reachable from
-    any entry along a path of unprotected BBs. Mirrors QL
-    ``not reachableWithoutProtection``."""
+    any entry along a path of unprotected BBs."""
     if file is None:
         file = exit_bb.file
     return _approval_exit_protected_for_seeds(
@@ -753,7 +752,8 @@ def approval_exit_guarded_for_action(
     """Every approving path to ``exit_bb`` proves ``OnCompletion !=
     action_int``.
 
-    Recognised guard shapes (broader than QL's ``onCompletionEqualityGuard``):
+    Recognised guard shapes (broader than a plain OnCompletion equality
+    guard):
 
     1. **Direct equality / inequality** with the action under test:
        - ``V = OC == action_int``, on a path where V is false → guarded.
@@ -785,11 +785,10 @@ def approval_exit_guarded_for_action(
          Guarded when any candidate resolves to ``action`` (the action
          would have matched but didn't, so OC isn't action).
 
-    QL's ``onCompletionEqualityGuard`` only models case 1; everything
+    A plain OnCompletion equality guard only models case 1; everything
     else is a deliberate enhancement (real Algorand routers / Puya
-    output use ``match`` dispatch on OC). Tighter than QL — fixtures
-    that QL flags as deletable / updatable but actually route OC=K to
-    err can no longer be flagged here."""
+    output use ``match`` dispatch on OC). This is deliberately tight —
+    contracts that actually route OC=K to err are not flagged here."""
     for cond in pp.predicates_at(exit_bb.file, exit_bb.first_line):
         v = cond.value
 
@@ -847,7 +846,7 @@ def approval_exit_unguarded_for_action(
 @dataclass(frozen=True)
 class InnerTxnFieldSet:
     """One ``itxn_field FIELD`` assignment, with the SSA value being
-    written. Shape mirrors the QL ``InnerTransactionField`` class."""
+    written."""
 
     assignment: Assignment
     field: str
@@ -882,8 +881,8 @@ def inner_txn_field_assigns(
 
 def inner_txn_sets_nonzero_fee(field_set: InnerTxnFieldSet) -> bool:
     """``itxn_field Fee`` whose value resolves to a non-zero integer
-    constant (matches QL ``innerTxnSetsNonZeroFee``: a *known* non-zero
-    int — dynamic values aren't flagged)."""
+    constant (a *known* non-zero int — dynamic values aren't
+    flagged)."""
     if field_set.field != "Fee":
         return False
     cv = field_set.value_const

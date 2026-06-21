@@ -1,7 +1,8 @@
 """The :class:`SSAProgram` class — the canonical program type every
 analysis consumes.
 
-``SSAProgram(db)`` runs a QL pre-pass via :mod:`tealtools.graph`
+``SSAProgram(db)`` runs a graph-loading pre-pass via
+:mod:`tealtools.graph`
 (CFG / AST / arity / constant annotations, populating the data
 classes from :mod:`tealtools.ssa.models`), then routes SSA
 construction through :class:`PySSA` (:mod:`tealtools.ssa.ssa`) which
@@ -121,8 +122,8 @@ class SSAProgram:
             bb_id = g.nodes[n].get("bb")
             bb = _bb_from_tuple(bb_id) if bb_id is not None else None
 
-            # Output SSAVars from the opcode signature table (replaces QL's
-            # ssaOutputs query). Inputs are left empty here — PySSA
+            # Output SSAVars from the opcode signature table. Inputs are
+            # left empty here — PySSA
             # reconstructs the operand wiring in _apply_pyssa_to. The output
             # vars exist so the const_value/const_outputs seeding below
             # (carried into the PySSA-built vars by key) has somewhere to land.
@@ -149,8 +150,8 @@ class SSAProgram:
             self.assignments.append(a)
             for v in outs:
                 v.defined_by = a
-            # Pre-attach per-output constant literals from the constValues
-            # Python port: g.nodes[n]["const_outputs"] = {out_idx: (kind, value)}.
+            # Pre-attach per-output constant literals from the resolved-
+            # constant pass: g.nodes[n]["const_outputs"] = {out_idx: (kind, value)}.
             const_outputs = g.nodes[n].get("const_outputs") or {}
             for v in outs:
                 co = const_outputs.get(v.index)
@@ -246,7 +247,7 @@ class SSAProgram:
     def phi(self, file: str, line: int, kind: str, stack_index: int) -> Optional[Phi]:
         # PySSA-built progs unify the Direct/Indirect distinction
         # under ``DirectPhi``. Fall back to the other kind so callers
-        # that get a ``kind`` from QL-row data (e.g.
+        # that get a ``kind`` from field-row data (e.g.
         # ``inner_txn_report._resolve_operand``) still resolve.
         p = self.phis.get((file, line, kind, stack_index))
         if p is not None:
@@ -285,7 +286,7 @@ class SSAProgram:
     # need *chain structure*: which intermediate phis sit between a phi
     # and its leaves (loop detection, chain-root coalescing, etc.).
     #
-    # QL-loaded programs carry chain structure in ``IndirectPhi.args``
+    # Graph-loaded programs carry chain structure in ``IndirectPhi.args``
     # (single-element list pointing at the chain root). PySSA-built
     # programs (via :meth:`tealtools.ssa.PySSA.build`) collapse args to
     # SSAVar leaves for fast iteration but keep an auxiliary
@@ -297,7 +298,7 @@ class SSAProgram:
     def chain_predecessors(self, phi: "Phi") -> list["Phi"]:
         """Phis whose values flow into ``phi`` via propagation. Empty
         for chain roots (whose args are all :class:`SSAVar`)."""
-        # QL-backed: read IndirectPhi.args directly.
+        # IndirectPhi-backed: read IndirectPhi.args directly.
         if isinstance(phi, Phi) and phi.kind == "IndirectPhi":
             return [a for a in phi.args if isinstance(a, Phi)]
         # PySSA-wrapped: walk via the PyPhi graph if present.
@@ -441,7 +442,7 @@ class SSAProgram:
         time literals to arbitrary SSA values.
 
         For each ``load N`` opcode whose may-influencing stores
-        (provided by the CodeQL ``scratch_stores`` annotation) all
+        (provided by the ``scratch_stores`` annotation) all
         write the *same* :class:`SSAVar` ``V``, rewire every consumer
         of the load's output to reference ``V`` directly. The load's
         ``Assignment`` stays in the IR with empty ``uses`` until a
@@ -482,7 +483,7 @@ class SSAProgram:
 
         A separate pass from :meth:`propagate_constants` so the scratch
         analysis can be reasoned about (and toggled) independently of
-        stack-based propagation. The QL ``scratchInfluence.ql`` query
+        stack-based propagation. The scratch-influence analysis
         provides the may-influence relation and the SSAVar key of each
         store's consumed value; this pass aggregates them in Python.
         Must-semantics: any load whose stores include even one non-
@@ -654,7 +655,7 @@ class SSAProgram:
             3. Consumers reading ``p`` now read ``mat_phi_k``.
 
         **IndirectPhi ``ip``** — ``args`` is a list of :class:`Phi`
-        (DirectPhi roots from the QL ``getGenerator()`` walk):
+        (DirectPhi roots from the generator walk):
 
             - Single root ``[root]``: ``ip`` re-uses ``root``'s
               ``mat_phi_k``. No extra allocation or copies.

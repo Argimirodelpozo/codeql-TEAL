@@ -14,15 +14,15 @@ Key conventions:
 * **Coordinates** — 1-based lines (``line = ts.row + 1``), tree-sitter's native
   0-based half-open columns (``start_col = ts.start_col``,
   ``end_col = ts.end_col``). Lines are 1-based because that's how editors /
-  reports number TEAL; columns stay native (no QL-style off-by-one).
+  reports number TEAL; columns stay native (no off-by-one).
 * **Type is keyed by the mnemonic** (the opcode's first child token), not
   the tree-sitter node type: generic buckets like ``zero_argument_opcode``
   cover ``==`` / ``+`` / ``return`` / ``dup`` … so the mnemonic decides.
 * **One node per opcode.** Each opcode emits exactly one node of its most
-  specific class. (Earlier this reproduced a CodeQL artifact where ``==`` /
-  ``!=`` each emitted two nodes — the typed and the generic comparison class
-  — but the two collapse to one graph node by ``(file, line)`` and nothing
-  downstream read the second, so it was dropped.)
+  specific class. (Earlier ``==`` / ``!=`` each emitted two nodes — the
+  typed and the generic comparison class — but the two collapse to one graph
+  node by ``(file, line)`` and nothing downstream read the second, so it was
+  dropped.)
 * **`Source`** — the program root; emitted once, spanning ``(1,1)`` to the
   end of the last real (non-trivia) child (tree-sitter's root span includes
   the trailing newline, which the legacy extractor trimmed).
@@ -48,7 +48,7 @@ _PARSER = _ts.Parser(_LANG)
 
 # Tree-sitter child types that are not program statements / not emitted.
 # Any ``pragma*`` node (``pragma_version`` / ``pragma_typetrack`` / ...) is
-# also dropped — QL emits no pragma rows.
+# also dropped — pragmas produce no rows.
 _TRIVIA = frozenset({"comment", "ERROR"})
 
 

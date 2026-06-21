@@ -1,6 +1,6 @@
 """sec-guide/unprotected-deletable: deletable AND no sender==creator guard.
 
-Mirrors ``unprotectedDeletable.ql``. Approval exit reachable with
+Approval exit reachable with
 ``OnCompletion == DeleteApplication`` AND no dominating ``txn Sender ==
 global CreatorAddress`` check — anyone can delete the application.
 """

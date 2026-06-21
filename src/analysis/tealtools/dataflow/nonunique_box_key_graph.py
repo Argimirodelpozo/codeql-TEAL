@@ -1,17 +1,17 @@
 """Graph-based reimplementation of the non-unique-box-key detector.
 
-Sits on the same QL flow substrate as :class:`TaintGraph` and uses
+Sits on the same flow substrate as :class:`TaintGraph` and uses
 the same :class:`Violation` shape as the existing
 :class:`NonUniqueBoxKeyDetector`, so callers can A/B test the two
 on the same fixtures. The key difference: this version uses the
-QL-resolved flow graph (with cross-subroutine + scratch + phi
+resolved flow graph (with cross-subroutine + scratch + phi
 bridges built in) rather than the Python ``TaintAnalysis`` fixpoint.
 
 What this detector says: an ``asset_params_get AssetName``'s value
 output reaches the key position of a ``box_put`` / ``box_create``
 through identity-preserving steps, where "identity" includes:
 
-- The QL ``identity`` channel (``valueIdentityFlowStep``).
+- The ``identity`` channel (the value-identity step relation).
 - ``ssa-step`` edges landing on a no-output consumer (``box_put``,
   ``app_global_put``, etc.) — value passes through unchanged.
 - Hash and slice ops — output is deterministic in the input, so
@@ -49,7 +49,7 @@ _NO_OUTPUT_CONSUMERS = frozenset({
 
 
 def _nonunique_identity(graph: TaintGraph, u: Node, v: Node, data: dict) -> bool:
-    """Identity-promotion rule for this detector. The QL ``identity``
+    """Identity-promotion rule for this detector. The ``identity``
     channel is already covered by :meth:`TaintGraph.identity_subgraph`'s
     default — this hook adds the extras."""
     kinds = data.get("kinds", set())
@@ -95,7 +95,7 @@ def _sink_name(graph: TaintGraph, n: Node) -> str:
 
 
 def detect(prog: SSAProgram) -> list[Violation]:
-    """Find non-unique field flows into box keys via the QL TaintGraph.
+    """Find non-unique field flows into box keys via the TaintGraph.
 
     Returns the same :class:`Violation` shape as the existing
     Python detector for direct comparability.

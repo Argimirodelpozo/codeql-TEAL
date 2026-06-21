@@ -2,12 +2,11 @@
 
 A :class:`networkx.DiGraph` over ``(file, line, node_class)`` nodes with
 refinement-friendly queries on top. The edges come from :func:`_flow_rows_for`,
-a pure-Python port of the former ``taintFlowEdges.ql`` (CodeQL is no longer a
-dependency): every operand's defining op flows to the op that consumes it, each
-phi argument flows into its phi, and a scratch ``store`` reaches its ``load``.
-PySSA already folds cross-block, cross-subroutine (frame) and stack-shuffle flow
-into direct def-use, so the lenient reachability the refiners rely on survives
-without the QL dataflow library.
+which computes the coarse taint-flow edges: every operand's defining op flows to
+the op that consumes it, each phi argument flows into its phi, and a scratch
+``store`` reaches its ``load``. PySSA already folds cross-block, cross-subroutine
+(frame) and stack-shuffle flow into direct def-use, so the lenient reachability
+the refiners rely on survives.
 
 Each edge carries a ``kinds`` set so refiners can filter:
 
@@ -54,7 +53,7 @@ class Node:
 class TaintGraph:
     """Graph wrapper with refinement API.
 
-    One edge per ``(src, dst)`` pair; the QL flow channels
+    One edge per ``(src, dst)`` pair; the flow channels
     (``callsub`` / ``scratch`` / ``identity`` / ``subroutine`` /
     ``broad`` / ``generic``) collapse into a ``kinds`` set on the
     edge data so refinements can filter (``"callsub" in
@@ -66,14 +65,14 @@ class TaintGraph:
 
     @classmethod
     def of(cls, prog: SSAProgram) -> "TaintGraph":
-        """Build the graph from ``prog``'s cached QL rows. Annotates
+        """Build the graph from ``prog``'s cached def-use rows. Annotates
         each node with the underlying TEAL opcode (looked up from
         ``prog.assignments`` by ``(file, line)``) — useful for
         ``find(op="box_create")``-style queries since the ``node_class``
         name is sometimes a parent class (e.g. ``ZeroArgumentOpcode``
         for ``box_create``).
 
-        Multiple QL channels firing for the same ``(src, dst)`` pair
+        Multiple channels firing for the same ``(src, dst)`` pair
         collapse into a single edge whose ``kinds`` set lists every
         channel that contributed.
         """
@@ -346,11 +345,11 @@ class TaintGraph:
         value at ``u`` after propagation.
 
         Default: edges whose ``kinds`` contains ``"identity"`` (the
-        QL ``valueIdentityFlowStep`` channel).
+        value-identity step channel).
 
         ``also_identity(graph, u, v, edge_data) -> bool`` is an
         optional Python hook that *promotes* extra edges to identity.
-        The QL flow can't see things like ``concat("", x) == x``;
+        The base flow can't see things like ``concat("", x) == x``;
         write a small Python rule to recognise them. The hook is
         consulted only for edges that aren't already identity, so
         returning ``False`` is the no-op default.
@@ -430,7 +429,7 @@ class TaintGraph:
 
 
 # SSA-step flavours emitted for an ordinary def-use edge (a value consumed by
-# an op). The QL emitted up to six channel labels per edge (broad / generic /
+# an op). Up to six channel labels are emitted per edge (broad / generic /
 # ssa-step / subroutine / ...); only ``ssa-step`` (and ``identity`` on
 # value-preserving steps) drive any refiner — the rest are cosmetic (graph
 # colours). We emit the lenient superset so every consumer behaves as before.
@@ -442,18 +441,15 @@ _SCRATCH_KINDS = ("scratch", "ssa-step", "subroutine")
 
 
 def _flow_rows_for(prog: SSAProgram) -> list[tuple]:
-    """Coarse taint-flow rows, computed purely from the PySSA def-use graph
-    (CodeQL-free port of ``taintFlowEdges.ql``).
+    """Coarse taint-flow rows, computed purely from the PySSA def-use graph.
 
     Each row is ``(srcFile, srcLine, srcClass, sinkFile, sinkLine, sinkClass,
-    kind)`` — identical shape to the old query output, so :meth:`TaintGraph.build`
-    is unchanged. The edges are the SSA def-use relation: every operand's
+    kind)``. The edges are the SSA def-use relation: every operand's
     defining op flows to the op that consumes it (``ssa-step``); each phi
     argument flows into its phi (``identity``); and a scratch ``store`` reaches
     its ``load`` (``scratch``). PySSA already resolves cross-block,
     cross-subroutine (frame) and stack-shuffle flow into direct def-use, so the
-    coarse reachability the refiners rely on is preserved without the QL
-    dataflow library.
+    coarse reachability the refiners rely on is preserved.
     """
     from ..ssa.models import MatPhiVar, Phi, SSAVar
 

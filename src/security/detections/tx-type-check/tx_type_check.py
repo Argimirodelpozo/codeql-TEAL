@@ -2,9 +2,8 @@
 
 Per-approval-exit: each exit must be reachable only along CFG paths
 that cross a BB where *either* ``txn TypeEnum`` or ``txn Type`` flows
-into a comparison whose result reaches enforcement. The disjunction
-matches QL's ``txTypeCheck``: validating either field counts as
-restricting the transaction type.
+into a comparison whose result reaches enforcement. The disjunction means
+validating either field counts as restricting the transaction type.
 
 Was: dominance-based shared base (``_FieldValidatedDetector``), which
 required a *single* comparison BB to dominate every approval exit —

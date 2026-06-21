@@ -1,11 +1,11 @@
 """sec-guide/delete-funds-check: DeleteApplication without balance==min_balance check.
 
-Mirrors ``deleteFundsCheck.ql``. Flags an approval exit reachable with
-``OnCompletion == DeleteApplication`` when the program also lacks any
-use of both ``balance`` and ``min_balance`` opcodes — a balance vs.
-min-balance comparison is the canonical "are funds drained?" check
-before a delete. The QL form doesn't actually verify the comparison
-ties them together; the bare presence of both opcodes is the proxy.
+Flags an approval exit reachable with ``OnCompletion == DeleteApplication``
+when the program also lacks any use of both ``balance`` and ``min_balance``
+opcodes — a balance vs. min-balance comparison is the canonical "are funds
+drained?" check before a delete. This doesn't actually verify the
+comparison ties them together; the bare presence of both opcodes is the
+proxy.
 """
 from __future__ import annotations
 

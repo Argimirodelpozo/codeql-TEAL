@@ -1,6 +1,6 @@
 """sec-guide/inner-txn-close-rekey: itxn sets CloseRemainderTo / RekeyTo / AssetCloseTo.
 
-Mirrors ``innerTxnCloseRekey.ql``. Per-assignment finding for any
+Per-assignment finding for any
 ``itxn_field`` writing one of the dangerous fields — these should
 typically default to the zero address, not be set explicitly.
 """

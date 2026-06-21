@@ -17,7 +17,7 @@ Layout:
   ``_TERMINATOR_OPS``, ``_OP_RANGE_SEEDS``, ``_CONST_BLOCK_REF_NAMES``,
   ``_STACK_SHUFFLE_OPS``).
 - :mod:`tealtools.ssa.program`  — the :class:`SSAProgram` class. Its
-  ``__init__`` does a QL pre-pass (CFG / AST / arity) then routes SSA
+  ``__init__`` does a structural pre-pass (CFG / AST / arity) then routes SSA
   construction through :class:`PySSA`; carries the constant-folding /
   range / liveness / materialize passes consumed by every analysis.
 - :mod:`tealtools.ssa.ssa`      — the pure-Python :class:`PySSA`

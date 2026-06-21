@@ -2,8 +2,8 @@
 
 Per ``load N`` opcode, the set of stored-value SSAVar keys that may
 reach it via the CFG (classical reaching-definitions over scratch
-slots). Replaces the ``scratchInfluence.ql`` query; the result is
-exposed through the ``scratch_stores`` graph annotation consumed by the
+slots). The result is exposed through the ``scratch_stores`` graph
+annotation consumed by the
 detectors (:func:`tealtools.detections.common._scratch_stores_for`),
 the taint engine, and the ``SSAProgram`` scratch-bridge passes.
 
@@ -32,17 +32,15 @@ def compute_scratch_influence(prog: SSAProgram) -> dict:
                      in the BB killing earlier ones).
 
     Returns ``{(load_file, load_line): [(val_file, val_line, val_idx), …]}``.
-    Replaces the ``scratchInfluence.ql`` query so we can drop that
-    from the load path.
 
     Only handles the immediate forms (``store N`` / ``load N``); the
     dynamic forms (``stores`` / ``loads``) pop the slot off the stack
-    and aren't covered, mirroring the QL query.
+    and aren't covered.
     """
     # Per-BB walk to collect store/load events in order. Each event
     # is a tuple ``(kind, slot, val_key_or_None)``; ``kind`` is
     # ``"store"`` or ``"load"``. Value keys are
-    # ``(file, line, index)`` matching the QL emission shape.
+    # ``(file, line, index)``.
     bb_events: dict = {}
     bb_loads: dict = {}  # bb -> list of (load_op, slot, op_index)
     for b in prog.blocks.values():

@@ -1,6 +1,6 @@
 """sec-guide/unprotected-updatable: updatable AND no sender==creator guard.
 
-Mirrors ``unprotectedUpdatable.ql``. Approval exit reachable with
+Approval exit reachable with
 ``OnCompletion == UpdateApplication`` AND no dominating ``txn Sender ==
 global CreatorAddress`` check — anyone can update the contract code.
 """

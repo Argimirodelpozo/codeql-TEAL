@@ -2,8 +2,7 @@
 
 For every ``itxn_field`` opcode, identify the immediately-enclosing
 inner-transaction ``(start, end)`` pair via CFG reachability and emit
-one row per consumed-value definition. Replaces the ``innerTxnFields.ql``
-query; the result is consumed by
+one row per consumed-value definition; the result is consumed by
 :class:`tealtools.inner_txn_report.InnerTxnReport`.
 
 A construction-time substrate helper: it lives in the ``ssa`` package
@@ -22,8 +21,7 @@ from .program import SSAProgram
 def compute_inner_txn_fields(prog: SSAProgram) -> list:
     """For every ``itxn_field`` opcode, identify the immediately-
     enclosing inner-transaction ``(start, end)`` pair via CFG reach
-    and emit one row per consumed-value definition. Replaces
-    ``innerTxnFields.ql``.
+    and emit one row per consumed-value definition.
 
     A ``start`` is ``itxn_begin`` or ``itxn_next``; an ``end`` is
     ``itxn_submit`` or ``itxn_next``. "Immediately enclosing" means:
@@ -85,7 +83,7 @@ def compute_inner_txn_fields(prog: SSAProgram) -> list:
         return dst_bb in bb_forward[src_bb]
 
     def _resolve_def_key(op_input):
-        """Map an :class:`SSAVar` / :class:`Phi` to the QL row's
+        """Map an :class:`SSAVar` / :class:`Phi` to the row's
         ``(kind, file, line, idx)`` tuple. Returns ``None`` for
         anything else (e.g. ``Const``, unresolved operand)."""
         if isinstance(op_input, SSAVar):
@@ -124,7 +122,7 @@ def compute_inner_txn_fields(prog: SSAProgram) -> list:
 
         if not field_op.inputs:
             continue
-        # ``itxn_field`` consumes exactly one operand. The QL row's
+        # ``itxn_field`` consumes exactly one operand. The row's
         # ``def`` IS that operand (an SSAVar or a Phi) — NOT the phi's
         # args. ``inner_txn_report._resolve_operand`` resolves the phi
         # itself and expands it to ``{100 | 200}`` etc. Fanning out per
