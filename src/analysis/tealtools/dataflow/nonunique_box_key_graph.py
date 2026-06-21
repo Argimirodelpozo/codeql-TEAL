@@ -84,13 +84,13 @@ def _nonunique_identity(graph: TaintGraph, u: Node, v: Node, data: dict) -> bool
 
 def _source_name(graph: TaintGraph, n: Node) -> str:
     """Render a source's name, e.g. ``"asset_params_get AssetName"``."""
-    op = graph.op_of(n) or n.ql_class
+    op = graph.op_of(n) or n.node_class
     im = graph.immediates_of(n)
     return f"{op} {im}".strip() if im else op
 
 
 def _sink_name(graph: TaintGraph, n: Node) -> str:
-    op = graph.op_of(n) or n.ql_class
+    op = graph.op_of(n) or n.node_class
     return op
 
 

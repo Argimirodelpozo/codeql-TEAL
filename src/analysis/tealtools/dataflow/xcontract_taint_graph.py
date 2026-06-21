@@ -122,7 +122,7 @@ class XContractTaintGraph:
         app_id: Optional[int] = "any",  # type: ignore[assignment]
         op: Optional[str] = None,
         immediates: Optional[str] = None,
-        ql_class: Optional[str] = None,
+        node_class: Optional[str] = None,
         file: Optional[str] = None,
         line: Optional[int] = None,
     ) -> list[XContractNode]:
@@ -139,7 +139,7 @@ class XContractTaintGraph:
                 continue
             if immediates is not None and attrs.get("immediates") != immediates:
                 continue
-            if ql_class is not None and n.ql_class != ql_class:
+            if node_class is not None and n.node_class != node_class:
                 continue
             if file is not None and n.file != file:
                 continue
@@ -234,7 +234,7 @@ def _add_arg_bridges(
 
 # Sentinel source standing in for "the caller's application address",
 # which is the Sender of every inner transaction the caller submits.
-_CALLER_APP_ADDR = Node(file="<caller-app-addr>", line=0, ql_class="CallerAppAddr")
+_CALLER_APP_ADDR = Node(file="<caller-app-addr>", line=0, node_class="CallerAppAddr")
 
 
 def _add_sender_bridge(

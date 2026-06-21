@@ -47,7 +47,7 @@ def compute_golden(db: Path) -> str | None:
         ll = n.location
         return (ll.file, ll.start_line, ll.start_column, ll.end_line, ll.end_column)
 
-    node_rows = [(*loc(n), n.ql_class) for n in nodes]
+    node_rows = [(*loc(n), n.node_class) for n in nodes]
     edge_rows = [(u.location.file, u.location.start_line,
                   v.location.file, v.location.start_line, t) for (u, v, t) in edges]
     bb_rows = [(n.location.file, n.location.start_line, first, last)

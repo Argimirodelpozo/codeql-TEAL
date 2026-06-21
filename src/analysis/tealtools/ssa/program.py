@@ -111,7 +111,7 @@ class SSAProgram:
         for n in g.nodes:
             if not isinstance(n, Opcode):
                 continue
-            code = n.code or n.ql_class
+            code = n.code or n.node_class
             op_name, _, imms = code.partition(" ")
             cv = g.nodes[n].get("const_value")
             const: Optional[Const] = None

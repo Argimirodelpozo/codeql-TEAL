@@ -27,7 +27,7 @@ NORMAL = "NormalSuccessor"
 BOOL_TRUE = "BooleanSuccessor(true)"
 BOOL_FALSE = "BooleanSuccessor(false)"
 
-# Control-flow opcode classes (the ``ql_class`` strings emitted by nodes.ql).
+# Control-flow opcode classes (by their ``node_class`` name).
 _RETURN = "ReturnOpcode"
 _ERR = "ErrOpcode"
 _ASSERT = "AssertOpcode"
@@ -80,7 +80,7 @@ def _children(nodes) -> dict[str, list[_Node]]:
     """
     by_file: dict[str, dict[tuple[int, int], _Node]] = {}
     for node in nodes:
-        cls = node.ql_class
+        cls = node.node_class
         if cls == "Source":
             continue
         loc = node.location

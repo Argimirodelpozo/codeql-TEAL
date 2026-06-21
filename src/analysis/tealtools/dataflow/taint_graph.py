@@ -1,6 +1,6 @@
 """Coarse taint-flow graph, computed from the PySSA def-use relation.
 
-A :class:`networkx.DiGraph` over ``(file, line, ql_class)`` nodes with
+A :class:`networkx.DiGraph` over ``(file, line, node_class)`` nodes with
 refinement-friendly queries on top. The edges come from :func:`_flow_rows_for`,
 a pure-Python port of the former ``taintFlowEdges.ql`` (CodeQL is no longer a
 dependency): every operand's defining op flows to the op that consumes it, each
@@ -37,18 +37,17 @@ from ..ssa import SSAProgram
 class Node:
     """A node in the coarse taint graph.
 
-    ``(file, line, ql_class)`` uniquely identifies a Dataflow::Node
-    for our purposes. ``ql_class`` is the AST class name from
-    ``getAPrimaryQlClass()`` (e.g. ``"TxnaOpcode"``,
-    ``"BoxPutOpcode"``, ``"PhiNode"``).
+    ``(file, line, node_class)`` uniquely identifies a dataflow node for
+    our purposes. ``node_class`` is the AST node-class name (e.g.
+    ``"TxnaOpcode"``, ``"BoxPutOpcode"``, ``"PhiNode"``).
     """
 
     file: str
     line: int
-    ql_class: str
+    node_class: str
 
     def __repr__(self) -> str:
-        return f"{self.ql_class}@{self.file}:L{self.line}"
+        return f"{self.node_class}@{self.file}:L{self.line}"
 
 
 @dataclass
@@ -70,9 +69,9 @@ class TaintGraph:
         """Build the graph from ``prog``'s cached QL rows. Annotates
         each node with the underlying TEAL opcode (looked up from
         ``prog.assignments`` by ``(file, line)``) — useful for
-        ``find(op="box_create")``-style queries since the QL class
-        name from ``getAPrimaryQlClass()`` is sometimes a parent
-        class (e.g. ``ZeroArgumentOpcode`` for ``box_create``).
+        ``find(op="box_create")``-style queries since the ``node_class``
+        name is sometimes a parent class (e.g. ``ZeroArgumentOpcode``
+        for ``box_create``).
 
         Multiple QL channels firing for the same ``(src, dst)`` pair
         collapse into a single edge whose ``kinds`` set lists every
@@ -111,8 +110,8 @@ class TaintGraph:
 
         for row in rows:
             (sf, sl, sc, df, dl, dc, kind) = row
-            src = Node(file=sf, line=int(sl), ql_class=sc)
-            dst = Node(file=df, line=int(dl), ql_class=dc)
+            src = Node(file=sf, line=int(sl), node_class=sc)
+            dst = Node(file=df, line=int(dl), node_class=dc)
             _add(src)
             _add(dst)
             if g.has_edge(src, dst):
@@ -239,7 +238,7 @@ class TaintGraph:
         *,
         op: Optional[str] = None,
         immediates: Optional[str] = None,
-        ql_class: Optional[str] = None,
+        node_class: Optional[str] = None,
         file: Optional[str] = None,
         line: Optional[int] = None,
     ) -> list[Node]:
@@ -249,7 +248,7 @@ class TaintGraph:
         - ``immediates`` — the immediates string (e.g.
           ``"ApplicationArgs 1"``, ``"AssetName"``). Lets you pin a
           specific source like *every* read of ``ApplicationArgs 1``.
-        - ``ql_class`` — QL class name (e.g. ``"TxnaOpcode"``).
+        - ``node_class`` — AST node-class name (e.g. ``"TxnaOpcode"``).
         - ``file``, ``line``.
 
         All-None returns every node.
@@ -257,7 +256,7 @@ class TaintGraph:
         out: list[Node] = []
         for n in self.g.nodes:
             attrs = self.g.nodes[n]
-            if ql_class is not None and n.ql_class != ql_class:
+            if node_class is not None and n.node_class != node_class:
                 continue
             if file is not None and n.file != file:
                 continue
@@ -463,7 +462,7 @@ def _flow_rows_for(prog: SSAProgram) -> list[tuple]:
     if g is not None:
         for n in g.nodes:
             loc = n.location
-            cls_at[(loc.file, loc.start_line)] = n.ql_class
+            cls_at[(loc.file, loc.start_line)] = n.node_class
 
     rows: list[tuple] = []
 

@@ -34,7 +34,7 @@ _BYTE_ENC_KW = frozenset({"b64", "base64", "b32", "base32"})
 
 
 def _opname(n) -> str:
-    code = n.code or n.ql_class or ""
+    code = n.code or n.node_class or ""
     return code.split(None, 1)[0] if code else ""
 
 

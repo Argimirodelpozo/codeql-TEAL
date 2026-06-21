@@ -48,10 +48,10 @@ def test_python_producers_selfconsistent(db: Path) -> None:
         return (n.location.file, n.location.start_line)
 
     files = {n.location.file for n in nodes}
-    source_nodes = [n for n in nodes if n.ql_class == "Source"]
+    source_nodes = [n for n in nodes if n.node_class == "Source"]
     assert len(source_nodes) == len(files), "exactly one Source node per file"
 
-    node_lines = {fl(n) for n in nodes if n.ql_class != "Source"}
+    node_lines = {fl(n) for n in nodes if n.node_class != "Source"}
 
     edges = build_cfg_edges(nodes)
     bbs = build_basic_blocks(nodes)

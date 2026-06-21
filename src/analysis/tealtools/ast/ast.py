@@ -16,11 +16,10 @@ Each node carries two fields:
 - ``code``: the opcode with its immediates, as written in the source
   (e.g. ``"int 1"``, ``"load 2"``, ``"txna ApplicationArgs 0"``).
 
-The hierarchy groups opcodes by the same families the original CodeQL TEAL
-grammar used (``teal/ast/opcodes/``, since removed). Family classes
-(``ArithmeticOpcode``, ``CryptoOpcode``, ...) are pure Python groupings —
-they do not correspond to CodeQL ``qlClass`` strings and are never
-instantiated directly by :func:`ast_node_from_row`.
+The hierarchy groups opcodes into families (``ArithmeticOpcode``,
+``CryptoOpcode``, ...). Family classes are pure Python groupings — they are
+not ``node_class`` names and are never instantiated directly by
+:func:`ast_node_for_class`; only the concrete leaf classes are.
 """
 from __future__ import annotations
 
@@ -58,18 +57,19 @@ class AstNode:
     up the matching node instance directly.
     """
 
-    #: Registry of ``qlClass`` name -> concrete ``AstNode`` subclass.
+    #: Registry of ``node_class`` name -> concrete ``AstNode`` subclass.
     _registry: ClassVar[dict[str, type["AstNode"]]] = {}
 
-    #: The ``getAPrimaryQlClass()`` string this class corresponds to.
-    #: Subclasses inherit the class name unless they set this explicitly.
-    ql_class: ClassVar[str] = "AstNode"
+    #: The node-class name string this class corresponds to (used as the
+    #: node-type identifier throughout the graph). Subclasses inherit their
+    #: own class name unless they set this explicitly.
+    node_class: ClassVar[str] = "AstNode"
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
-        if "ql_class" not in cls.__dict__:
-            cls.ql_class = cls.__name__
-        AstNode._registry.setdefault(cls.ql_class, cls)
+        if "node_class" not in cls.__dict__:
+            cls.node_class = cls.__name__
+        AstNode._registry.setdefault(cls.node_class, cls)
 
     def __init__(self, location: Location, code: str):
         self.location = location
@@ -90,16 +90,18 @@ class AstNode:
         return f"{type(self).__name__}({self.location.file}:{self.location.start_line})"
 
 
-def ast_node_from_row(location: Location, code: str, ql_class: str) -> AstNode:
-    """Construct the right :class:`AstNode` subclass for a CodeQL row.
+def ast_node_for_class(location: Location, code: str, node_class: str) -> AstNode:
+    """Instantiate the concrete :class:`AstNode` subclass named by
+    ``node_class`` (looked up in the registry), at ``location`` with source
+    ``code``.
 
-    Falls back to a plain :class:`AstNode` when ``ql_class`` is unknown
+    Falls back to a plain :class:`AstNode` when ``node_class`` is unknown
     (new opcode, abstract class, grammar-only category, etc.).
     """
-    cls = AstNode._registry.get(ql_class, AstNode)
+    cls = AstNode._registry.get(node_class, AstNode)
     node = cls(location=location, code=code)
     if cls is AstNode:
-        node.ql_class = ql_class
+        node.node_class = node_class
     return node
 
 
@@ -138,7 +140,7 @@ class ItxnFieldName(NonOpcodeNode): pass
 
 # ---------------------------------------------------------------------------
 # Argument-shape categories (tree-sitter buckets that some opcodes report as
-# their primary ql class when they don't override ``getAPrimaryQlClass``)
+# their node_class when they have no more specific leaf class)
 # ---------------------------------------------------------------------------
 
 class ZeroArgumentOpcode(Opcode): pass
@@ -494,6 +496,6 @@ class BlockOpcode(MiscOpcode): pass
 # Convenience
 # ---------------------------------------------------------------------------
 
-def registered_ql_classes() -> list[str]:
-    """Return every ``qlClass`` name handled by a dedicated subclass."""
+def registered_node_classes() -> list[str]:
+    """Return every ``node_class`` name handled by a dedicated subclass."""
     return sorted(AstNode._registry)

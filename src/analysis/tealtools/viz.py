@@ -113,7 +113,7 @@ def to_dot(
         '  edge [fontname="Monospace", fontsize=9];',
     ]
     for n in sorted(nodes, key=lambda x: (x.location.file, x.location.start_line)):
-        body = n.code or n.ql_class
+        body = n.code or n.node_class
         label = f"{n.location.start_line}: {body}"
         lines.append(f'  {_dot_id(n)} [label="{escape(label)}"];')
 
@@ -199,7 +199,7 @@ def cfg_bb_graph(g: nx.MultiDiGraph) -> nx.MultiDiGraph:
 def _bb_label(bb: BasicBlockNode, *, max_lines: int = 20) -> str:
     header = f"BB L{bb.first_line}-L{bb.last_line}"
     body_lines = [
-        f"{n.location.start_line}: {n.code or n.ql_class}"
+        f"{n.location.start_line}: {n.code or n.node_class}"
         for n in bb.ast_nodes
     ]
     if len(body_lines) > max_lines:

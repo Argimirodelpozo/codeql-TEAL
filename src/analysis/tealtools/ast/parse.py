@@ -36,7 +36,7 @@ import tree_sitter as _ts
 import tree_sitter_teal as _tsteal
 
 from ..control_flow import _children, _program_cfg
-from .ast import Location, ast_node_from_row
+from .ast import Location, ast_node_for_class
 
 _LANG = _ts.Language(_tsteal.language())
 _PARSER = _ts.Parser(_LANG)
@@ -293,7 +293,7 @@ def parse_nodes(sources: dict[str, bytes | str]) -> list:
 
         def _node(sl, sc, el, ec, cls):
             loc = Location(file, sl, sc, el, ec)
-            return ast_node_from_row(loc, _slice_source(slines, loc).strip(), cls)
+            return ast_node_for_class(loc, _slice_source(slines, loc).strip(), cls)
 
         # All opcode nodes are emitted; label nodes are reachability-gated below.
         op_nodes: list = []
