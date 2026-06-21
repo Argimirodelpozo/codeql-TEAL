@@ -26,7 +26,6 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Callable, Iterable, Iterator, Optional
 
 import networkx as nx
@@ -457,7 +456,7 @@ def _flow_rows_for(prog: SSAProgram) -> list[tuple]:
     coarse reachability the refiners rely on is preserved without the QL
     dataflow library.
     """
-    from ..ssa.models import Const, MatPhiVar, Phi, SSAVar
+    from ..ssa.models import MatPhiVar, Phi, SSAVar
 
     g = getattr(prog, "_graph", None)
     cls_at: dict[tuple[str, int], str] = {}

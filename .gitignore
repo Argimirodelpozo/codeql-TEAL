@@ -46,10 +46,6 @@ algoplonk_demo/**/db/db-teal/*/cache/
 tests/**/db/results/
 algoplonk_demo/**/db/results/
 
-# Sentinel file written by tealtools.graphs._ensure_pack_installed to
-# avoid re-running 'codeql pack install' on every load (~5s JVM cost).
-src/analysis/tealtools/queries/.pack_installed_sig
-
 # Local lift dumps — scratch output from the IR/SSA/structure CLIs at top level
 /*.puya.ir
 /*.puya.opt.ir
