@@ -101,3 +101,53 @@ class TestForwardPropagation:
         p, r = _taint(teal)
         out = _by_op(p, "concat")[0].outputs[0]
         assert r.tainted_bytes(out) == Intervals.whole()
+
+
+# assert(extract 0 8 X == const) then read the arg.
+_VALIDATE = (
+    "#pragma version 8\n"
+    "txna ApplicationArgs 0\nextract 0 8\nbyte 0x0011223344556677\n==\nassert\n"
+    "txna ApplicationArgs 0\nint {i}\ngetbyte\nreturn\n"
+)
+
+
+class TestValidationNarrowing:
+    def _read(self, teal):
+        p = SSAProgram.from_text(teal, name="t")
+        r = byte_taint(p, validate=True)
+        gb = [a for a in p.assignments if a.op == "getbyte"][-1]
+        arg = [a for a in p.assignments if a.op == "txna"][0].outputs[0]
+        return r, gb.outputs[0], arg
+
+    def test_checked_prefix_clears_taint(self):
+        # bytes 0..7 pinned to a const -> read of byte 3 is NOT tainted, and
+        # the canonical arg's taint narrows to [8, INF).
+        r, read, arg = self._read(_VALIDATE.format(i=3))
+        assert not r.is_scalar_tainted(read)
+        assert r.tainted_bytes(arg) == Intervals([(8, INF)])
+
+    def test_read_outside_checked_range_stays_tainted(self):
+        r, read, _ = self._read(_VALIDATE.format(i=20))
+        assert r.is_scalar_tainted(read)
+
+    def test_forward_only_does_not_clear(self):
+        # without validate=True the checked prefix is NOT cleared.
+        p = SSAProgram.from_text(_VALIDATE.format(i=3), name="t")
+        r = byte_taint(p)  # validate defaults False
+        gb = [a for a in p.assignments if a.op == "getbyte"][-1]
+        assert r.is_scalar_tainted(gb.outputs[0])
+
+    def test_bypassing_use_is_sound(self):
+        # the validating assert is on ONE branch; a read at the merge is
+        # reachable WITHOUT it, so taint must NOT be cleared (no false negative).
+        teal = (
+            "#pragma version 8\n"
+            "txna ApplicationArgs 0\nint 5\ngetbyte\nbnz skip\n"
+            "txna ApplicationArgs 0\nextract 0 8\nbyte 0x0011223344556677\n==\nassert\n"
+            "skip:\n"
+            "txna ApplicationArgs 0\nint 3\ngetbyte\nreturn\n"
+        )
+        p = SSAProgram.from_text(teal, name="t")
+        r = byte_taint(p, validate=True)
+        merge = [a for a in p.assignments if a.op == "getbyte" and a.location.line >= 12][0]
+        assert r.is_scalar_tainted(merge.outputs[0])

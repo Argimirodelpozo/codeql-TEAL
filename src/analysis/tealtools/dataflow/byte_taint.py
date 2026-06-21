@@ -37,7 +37,7 @@ from __future__ import annotations
 
 from typing import Callable, Optional
 
-from ..ssa import Const, SSAProgram, const_int
+from ..ssa import Const, SSAProgram, SSAVar, const_int, operand_const
 from ..ssa.models import _shuffle_mapping, _txn_field_name
 
 INF = float("inf")  # open right end: "to the end of a (possibly unknown) value"
@@ -111,6 +111,14 @@ class Intervals:
         """Translate every interval by ``d`` (``INF`` stays ``INF``)."""
         return Intervals((lo + d, hi + d) for lo, hi in self.parts)
 
+    def minus(self, other: "Intervals") -> "Intervals":
+        """Set difference: ``self`` with every interval of ``other`` removed
+        (used by the validation pass to clear checked sub-ranges)."""
+        result = self
+        for lo, hi in other.parts:
+            result = result.subtract(lo, hi)
+        return result
+
     def overlaps(self, lo: float, hi: float) -> bool:
         """Does any interval intersect ``[lo, hi)``?"""
         return any(p0 < hi and lo < p1 for p0, p1 in self.parts)
@@ -154,6 +162,100 @@ _HASH_OPS = frozenset({"sha256", "sha512_256", "keccak256", "sha3_256"})
 _EXTRACT_UINT = {"extract_uint16": 2, "extract_uint32": 4, "extract_uint64": 8}
 
 
+def _slice_of(v) -> Optional[tuple]:
+    """If SSAVar ``v`` is a *static* byte-slice read of some value ``X`` —
+    ``extract`` / ``substring`` (immediate or stack-const), ``getbyte``,
+    ``extract_uint16/32/64`` — return ``(X, lo, hi)``: the byte window of X
+    it reads. ``None`` when the offsets aren't statically known."""
+    d = getattr(v, "defined_by", None)
+    if d is None:
+        return None
+    op = d.op
+    if op == "extract" and d.immediates and d.inputs:
+        toks = d.immediates.split()
+        if len(toks) == 2:
+            A, B = int(toks[0]), int(toks[1])
+            X = d.inputs[0]
+            return (X, A, (_byte_length(X) or INF) if B == 0 else A + B)
+    if op == "substring" and d.immediates and d.inputs:
+        toks = d.immediates.split()
+        if len(toks) == 2:
+            return (d.inputs[0], int(toks[0]), int(toks[1]))
+    if op in ("extract3", "substring3") and len(d.inputs) == 3:
+        A, B = const_int(d.inputs[1]), const_int(d.inputs[0])
+        if A is not None and B is not None:
+            return (d.inputs[2], A, A + B if op == "extract3" else B)
+    if op == "getbyte" and len(d.inputs) == 2:
+        i = const_int(d.inputs[0])
+        if i is not None:
+            return (d.inputs[1], i, i + 1)
+    if op in _EXTRACT_UINT and len(d.inputs) == 2:
+        i = const_int(d.inputs[0])
+        if i is not None:
+            return (d.inputs[1], i, i + _EXTRACT_UINT[op])
+    return None
+
+
+def _validated_intervals(prog: SSAProgram) -> dict:
+    """``value -> Intervals`` proven NOT attacker-controlled by
+    ``assert(slice(X) == const)`` guards, flow-sensitively.
+
+    A guard pinning a static slice of X to a compile-time constant means
+    those bytes can't be attacker-chosen past the assert (the txn fails
+    otherwise). We clear them from X's taint **globally** only when every
+    *other* use of X is dominated by the assert — the same soundness
+    contract as :mod:`tealtools.passes.range_assert` (a use reachable
+    without passing the guard would otherwise lose taint unsoundly).
+    Dominance is approximated by reachability-without-the-assert-block on
+    the raw interprocedural CFG (over-approximates → conservative)."""
+    from ..passes.range_assert import _all_blocks, _reachable_avoiding
+
+    entries = [b for b in _all_blocks(prog) if not b.predecessors]
+    if not entries:
+        return {}
+    dom_cache: dict = {}
+
+    def dominates(block_a, use, line: int) -> bool:
+        ub = use.basic_block
+        if ub is None:
+            return False
+        if ub is block_a:
+            return use.location.line > line
+        reach = dom_cache.get(block_a)
+        if reach is None:
+            reach = dom_cache[block_a] = _reachable_avoiding(entries, block_a)
+        return ub not in reach
+
+    out: dict = {}
+    for a in prog.assignments:
+        if a.op != "assert" or not a.inputs:
+            continue
+        block_a = a.basic_block
+        if block_a is None:
+            continue
+        d = getattr(a.inputs[0], "defined_by", None)
+        if d is None or d.op != "==" or len(d.inputs) != 2:
+            continue
+        lhs, rhs = d.inputs[1], d.inputs[0]
+        slc = win = None
+        for s, other in ((lhs, rhs), (rhs, lhs)):
+            if operand_const(other) is not None and isinstance(s, SSAVar):
+                info = _slice_of(s)
+                if info is not None:
+                    slc, win = s, info
+                    break
+        if win is None:
+            continue
+        x, lo, hi = win
+        if not isinstance(x, SSAVar):
+            continue
+        test = {getattr(slc, "defined_by", None)}
+        if all(dominates(block_a, u, a.location.line)
+               for u in x.uses if u not in test):
+            out.setdefault(x, []).append((lo, hi))
+    return {v: Intervals(parts) for v, parts in out.items()}
+
+
 class ByteTaintResult:
     """The fixpoint result: per-value tainted byte intervals + the set of
     tainted scalar (uint64) values produced by the byte→scalar bridges."""
@@ -186,16 +288,30 @@ def byte_taint(
     prog: SSAProgram,
     *,
     sources: Optional[Callable] = None,
+    validate: bool = False,
 ) -> ByteTaintResult:
     """Forward byte-interval taint to a fixed point.
 
     ``sources(assignment) -> Optional[Intervals]`` seeds an output value's
     initial taint (default: ``ApplicationArgs`` reads, fully tainted). Trips
     :meth:`propagate_constants` + :meth:`propagate_byte_lengths` first so the
-    slice offsets and concat lengths the rules read are in place."""
+    slice offsets and concat lengths the rules read are in place.
+
+    ``validate=True`` adds the flow-sensitive **validation-narrowing** layer:
+    a sub-range of a value pinned to a constant by an ``assert(slice == const)``
+    guard is cleared from its taint (so e.g. a checked ABI selector / magic
+    prefix stops a downstream read of those bytes from being flagged). It
+    first runs :meth:`propagate_inputs` + :meth:`propagate_stack_shuffles` so
+    the validated value and its downstream reads share one canonical SSAVar
+    (in a stack machine they otherwise diverge across dups / re-reads). See
+    :func:`_validated_intervals` for the soundness contract."""
     prog.propagate_constants()
+    if validate:
+        prog.propagate_inputs()
+        prog.propagate_stack_shuffles()
     prog.propagate_byte_lengths()
     seed = sources or _default_sources
+    validated = _validated_intervals(prog) if validate else {}
 
     bt: dict = {}     # value -> Intervals (tainted byte ranges)
     st: set = set()   # scalar (uint64) values that are tainted
@@ -210,6 +326,9 @@ def byte_taint(
         return any(bool(bget(i)) or sget(i) for i in a.inputs)
 
     def set_bytes(out, iv: Intervals) -> bool:
+        v = validated.get(out)
+        if v is not None:
+            iv = iv.minus(v)        # clear validated (checked) byte ranges
         if not iv:
             return False
         old = bt.get(out)
