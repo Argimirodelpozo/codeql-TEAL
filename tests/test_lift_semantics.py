@@ -379,8 +379,6 @@ def test_frame_bury_of_callsub_return(tmp_path):
     on mainnet app_3000142226 et al. (UpdateApplication flipped to reject).
 
     Assert no `itob` in the lifted program operates on a bytes constant."""
-    import os
-    os.environ["TEAL_GRAPHS_BACKEND"] = "python"
     from tealtools.ssa import SSAProgram
     from tealtools.WIP_lift2puyaIR.lift import lift
 
@@ -423,8 +421,6 @@ def test_frame_bury_return_slot(tmp_path):
     `make(5)` typed uint64 fails `cannot compare []byte to uint64`.
 
     Assert the lifted `make` returns bytes, not uint64."""
-    import os
-    os.environ["TEAL_GRAPHS_BACKEND"] = "python"
     from tealtools.ssa import SSAProgram
     from tealtools.WIP_lift2puyaIR.lift import lift
 
@@ -540,8 +536,6 @@ def test_switch_arm_retsub_continuation(tmp_path):
     arm-retsubs -> the continuation got pruned and the lift mis-routed it
     (app_3100133227's nested-call reachability cascade). Assert the line after
     the callsub is reachable as a block."""
-    import os
-    os.environ["TEAL_GRAPHS_BACKEND"] = "python"
     from tealtools.ssa import SSAProgram
 
     p = tmp_path / "switch_arm_retsub.teal"
@@ -608,7 +602,6 @@ def test_resim_shuffle_canonical_lifts_v11(tmp_path):
     starved a `callsub` of its arg -> "l-stack too small". The canonical-arity
     resim fixes the depth so the callsub args reconstruct. app_3550180073 lifts +
     lowers + is behaviourally faithful once the resim uses the true shuffle arity."""
-    import os
     probe = (Path(__file__).resolve().parent / "mainnet-random-probes"
              / "app_3550180073.teal")
     if not probe.exists():

@@ -34,10 +34,9 @@ _CONTRACTS = sorted(EXPLORER.glob("app_*/")) if EXPLORER.exists() else []
 
 # Lift one raw ``.teal`` to real Puya IR (lower + Puya optimise) in a clean
 # subprocess. ``SSAProgram`` reconstructs straight from the TEAL source via the
-# pure-Python graph backend -- no codeql DB, no codeql binary.
+# Runs the lift in a subprocess so puya's global logging config can't leak.
 _LIFT = """
-import os, sys, io, contextlib
-os.environ["TEAL_GRAPHS_BACKEND"] = "python"
+import sys, io, contextlib
 sys.path.insert(0, {src!r})
 from puya.log import configure_logging, LogLevel
 configure_logging(min_log_level=LogLevel.critical)

@@ -14,12 +14,10 @@ the downstream consumers that execute this output: SSA construction
 behavioural suite. A wrong edge / block surfaces there as a malformed lift or a
 behavioural divergence, not just a snapshot drift.
 """
-import os
 from pathlib import Path
 
 import pytest
 
-os.environ.setdefault("TEAL_GRAPHS_BACKEND", "python")
 
 from graph_golden import GOLDEN_NAME, compute_golden, golden_path
 

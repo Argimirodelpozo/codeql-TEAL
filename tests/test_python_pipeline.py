@@ -70,11 +70,9 @@ def test_python_producers_selfconsistent(db: Path) -> None:
 
 
 @pytest.mark.parametrize("db", _DBS, ids=_IDS)
-def test_python_load_graph_wellformed(db: Path, monkeypatch) -> None:
-    """``load_graph`` on the Python backend builds a well-formed graph with
-    no codeql: nodes present, every CFG edge endpoint is a graph node, every
-    ``bb`` annotation is a 3-tuple. No codeql."""
-    monkeypatch.setenv("TEAL_GRAPHS_BACKEND", "python")
+def test_python_load_graph_wellformed(db: Path) -> None:
+    """``load_graph`` builds a well-formed graph: nodes present, every CFG
+    edge endpoint is a graph node, every ``bb`` annotation is a 3-tuple."""
     g = load_graph(db, verbose=False)
     assert g.number_of_nodes() > 0
 
@@ -95,10 +93,9 @@ _REAL_IDS = [str(d.relative_to(TESTS_DIR)) for d in _REAL]
 
 
 @pytest.mark.parametrize("db", _REAL, ids=_REAL_IDS)
-def test_python_backend_builds_ssa(db: Path, monkeypatch) -> None:
-    """The Python-backend graph drives SSA construction end to end (no
-    codeql): ``SSAProgram(db)`` builds and yields at least one block."""
-    monkeypatch.setenv("TEAL_GRAPHS_BACKEND", "python")
+def test_python_backend_builds_ssa(db: Path) -> None:
+    """The graph drives SSA construction end to end: ``SSAProgram(db)``
+    builds and yields at least one block."""
     from tealtools.ssa import SSAProgram
 
     prog = SSAProgram(str(db))
@@ -106,12 +103,10 @@ def test_python_backend_builds_ssa(db: Path, monkeypatch) -> None:
 
 
 @pytest.mark.parametrize("db", _REAL, ids=_REAL_IDS)
-def test_raw_teal_no_codeql(db: Path, monkeypatch, tmp_path) -> None:
-    """The whole pipeline runs on a raw ``.teal`` file/dir (no codeql DB):
-    ``load_graph`` builds the same graph whether handed the DB or the extracted
-    source, and ``SSAProgram`` builds from raw TEAL. Proves codeql is gone from
-    the runtime path."""
-    monkeypatch.setenv("TEAL_GRAPHS_BACKEND", "python")
+def test_raw_teal_runs_end_to_end(db: Path, tmp_path) -> None:
+    """The whole pipeline runs on a raw ``.teal`` file/dir: ``load_graph``
+    builds the same graph whether handed the dir or the extracted source, and
+    ``SSAProgram`` builds from raw TEAL."""
     teal_files = sorted(db.glob("*.teal"))
     if teal_files:                                       # slimmed fixture: .teal source
         srcs = {t.name: t.read_bytes() for t in teal_files}
