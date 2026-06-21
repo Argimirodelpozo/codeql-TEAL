@@ -24,7 +24,7 @@ not ``node_class`` names and are never instantiated directly by
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import ClassVar
+from typing import ClassVar, Optional
 
 
 # ---------------------------------------------------------------------------
@@ -60,16 +60,28 @@ class AstNode:
     #: Registry of ``node_class`` name -> concrete ``AstNode`` subclass.
     _registry: ClassVar[dict[str, type["AstNode"]]] = {}
 
+    #: Registry of opcode mnemonic -> the subclass that parses it (e.g.
+    #: ``"+"`` -> ``IntegerAddOpcode``). Each concrete opcode class declares
+    #: its own :attr:`mnemonic`; the parser builds nodes off this map, so the
+    #: classes are the single source of truth (no separate string table).
+    _by_mnemonic: ClassVar[dict[str, type["AstNode"]]] = {}
+
     #: The node-class name string this class corresponds to (used as the
     #: node-type identifier throughout the graph). Subclasses inherit their
     #: own class name unless they set this explicitly.
     node_class: ClassVar[str] = "AstNode"
+
+    #: The opcode mnemonic this class parses, or ``None`` for non-opcode /
+    #: abstract / family classes that no source token maps to directly.
+    mnemonic: ClassVar[Optional[str]] = None
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
         if "node_class" not in cls.__dict__:
             cls.node_class = cls.__name__
         AstNode._registry.setdefault(cls.node_class, cls)
+        if "mnemonic" in cls.__dict__ and cls.mnemonic is not None:
+            AstNode._by_mnemonic.setdefault(cls.mnemonic, cls)
 
     def __init__(self, location: Location, code: str):
         self.location = location
@@ -103,6 +115,14 @@ def ast_node_for_class(location: Location, code: str, node_class: str) -> AstNod
     if cls is AstNode:
         node.node_class = node_class
     return node
+
+
+def node_class_for_mnemonic(mnemonic: str) -> Optional[type["AstNode"]]:
+    """The concrete :class:`AstNode` subclass that parses opcode mnemonic
+    ``mnemonic`` (e.g. ``"+"`` -> :class:`IntegerAddOpcode`,
+    ``"txn"`` -> :class:`TxnOpcode`), or ``None`` when no class claims it
+    (the parser then falls back to the tree-sitter node type)."""
+    return AstNode._by_mnemonic.get(mnemonic)
 
 
 # ---------------------------------------------------------------------------
@@ -154,20 +174,20 @@ class DoubleNumericArgumentOpcode(Opcode): pass
 
 class ArithmeticOpcode(Opcode): pass
 
-class IntegerAddOpcode(ArithmeticOpcode): pass
-class SubOpcode(ArithmeticOpcode): pass
-class MulOpcode(ArithmeticOpcode): pass
-class DivOpcode(ArithmeticOpcode): pass
-class ModOpcode(ArithmeticOpcode): pass
-class AddwOpcode(ArithmeticOpcode): pass
-class MulwOpcode(ArithmeticOpcode): pass
-class DivmodwOpcode(ArithmeticOpcode): pass
-class ExpOpcode(ArithmeticOpcode): pass
-class ExpwOpcode(ArithmeticOpcode): pass
-class DivwOpcode(ArithmeticOpcode): pass
-class SqrtOpcode(ArithmeticOpcode): pass
-class ShlOpcode(ArithmeticOpcode): pass
-class ShrOpcode(ArithmeticOpcode): pass
+class IntegerAddOpcode(ArithmeticOpcode): mnemonic = "+"
+class SubOpcode(ArithmeticOpcode): mnemonic = "-"
+class MulOpcode(ArithmeticOpcode): mnemonic = "*"
+class DivOpcode(ArithmeticOpcode): mnemonic = "/"
+class ModOpcode(ArithmeticOpcode): mnemonic = "%"
+class AddwOpcode(ArithmeticOpcode): mnemonic = "addw"
+class MulwOpcode(ArithmeticOpcode): mnemonic = "mulw"
+class DivmodwOpcode(ArithmeticOpcode): mnemonic = "divmodw"
+class ExpOpcode(ArithmeticOpcode): mnemonic = "exp"
+class ExpwOpcode(ArithmeticOpcode): mnemonic = "expw"
+class DivwOpcode(ArithmeticOpcode): mnemonic = "divw"
+class SqrtOpcode(ArithmeticOpcode): mnemonic = "sqrt"
+class ShlOpcode(ArithmeticOpcode): mnemonic = "shl"
+class ShrOpcode(ArithmeticOpcode): mnemonic = "shr"
 
 
 # ---------------------------------------------------------------------------
@@ -176,12 +196,12 @@ class ShrOpcode(ArithmeticOpcode): pass
 
 class ByteArithmeticOpcode(Opcode): pass
 
-class BaddOpcode(ByteArithmeticOpcode): pass
-class BsubOpcode(ByteArithmeticOpcode): pass
-class BdivOpcode(ByteArithmeticOpcode): pass
-class BmulOpcode(ByteArithmeticOpcode): pass
-class BmodOpcode(ByteArithmeticOpcode): pass
-class BsqrtOpcode(ByteArithmeticOpcode): pass
+class BaddOpcode(ByteArithmeticOpcode): mnemonic = "b+"
+class BsubOpcode(ByteArithmeticOpcode): mnemonic = "b-"
+class BdivOpcode(ByteArithmeticOpcode): mnemonic = "b/"
+class BmulOpcode(ByteArithmeticOpcode): mnemonic = "b*"
+class BmodOpcode(ByteArithmeticOpcode): mnemonic = "b%"
+class BsqrtOpcode(ByteArithmeticOpcode): mnemonic = "bsqrt"
 
 
 # ---------------------------------------------------------------------------
@@ -191,15 +211,15 @@ class BsqrtOpcode(ByteArithmeticOpcode): pass
 class ComparisonOpcode(Opcode): pass
 class LogicalComparisonOp(ComparisonOpcode): pass
 
-class EqualsComparisonOpcode(LogicalComparisonOp): pass
+class EqualsComparisonOpcode(LogicalComparisonOp): mnemonic = "=="
 class NotEqualsComparisonOpcode(LogicalComparisonOp): pass
-class NotOpcode(ComparisonOpcode): pass
-class IntegerLessThanOpcode(ComparisonOpcode): pass
-class IntegerLteOpcode(ComparisonOpcode): pass
-class IntegerGreaterThanOpcode(ComparisonOpcode): pass
-class IntegerGteOpcode(ComparisonOpcode): pass
+class NotOpcode(ComparisonOpcode): mnemonic = "!"
+class IntegerLessThanOpcode(ComparisonOpcode): mnemonic = "<"
+class IntegerLteOpcode(ComparisonOpcode): mnemonic = "<="
+class IntegerGreaterThanOpcode(ComparisonOpcode): mnemonic = ">"
+class IntegerGteOpcode(ComparisonOpcode): mnemonic = ">="
 class IntegerEqualsOpcode(ComparisonOpcode): pass
-class IntegerNotEqualsOpcode(ComparisonOpcode): pass
+class IntegerNotEqualsOpcode(ComparisonOpcode): mnemonic = "!="
 
 
 # ---------------------------------------------------------------------------
@@ -208,12 +228,12 @@ class IntegerNotEqualsOpcode(ComparisonOpcode): pass
 
 class ByteComparisonOpcode(Opcode): pass
 
-class BltOpcode(ByteComparisonOpcode): pass
-class BgtOpcode(ByteComparisonOpcode): pass
-class BlteOpcode(ByteComparisonOpcode): pass
-class BgteOpcode(ByteComparisonOpcode): pass
-class BeqOpcode(ByteComparisonOpcode): pass
-class BneqOpcode(ByteComparisonOpcode): pass
+class BltOpcode(ByteComparisonOpcode): mnemonic = "b<"
+class BgtOpcode(ByteComparisonOpcode): mnemonic = "b>"
+class BlteOpcode(ByteComparisonOpcode): mnemonic = "b<="
+class BgteOpcode(ByteComparisonOpcode): mnemonic = "b>="
+class BeqOpcode(ByteComparisonOpcode): mnemonic = "b=="
+class BneqOpcode(ByteComparisonOpcode): mnemonic = "b!="
 
 
 # ---------------------------------------------------------------------------
@@ -222,15 +242,15 @@ class BneqOpcode(ByteComparisonOpcode): pass
 
 class LogicOpcode(Opcode): pass
 
-class AndOpcode(LogicOpcode): pass
-class OrOpcode(LogicOpcode): pass
-class BitandOpcode(LogicOpcode): pass
-class BitorOpcode(LogicOpcode): pass
-class BitxorOpcode(LogicOpcode): pass
-class BitnotOpcode(LogicOpcode): pass
-class BorOpcode(LogicOpcode): pass
-class BandOpcode(LogicOpcode): pass
-class BxorOpcode(LogicOpcode): pass
+class AndOpcode(LogicOpcode): mnemonic = "&&"
+class OrOpcode(LogicOpcode): mnemonic = "||"
+class BitandOpcode(LogicOpcode): mnemonic = "&"
+class BitorOpcode(LogicOpcode): mnemonic = "|"
+class BitxorOpcode(LogicOpcode): mnemonic = "^"
+class BitnotOpcode(LogicOpcode): mnemonic = "~"
+class BorOpcode(LogicOpcode): mnemonic = "b|"
+class BandOpcode(LogicOpcode): mnemonic = "b&"
+class BxorOpcode(LogicOpcode): mnemonic = "b^"
 class BnotOpcode(LogicOpcode): pass
 
 
@@ -240,26 +260,26 @@ class BnotOpcode(LogicOpcode): pass
 
 class ByteOpsOpcode(Opcode): pass
 
-class ConcatOpcode(ByteOpsOpcode): pass
-class SubstringOpcode(ByteOpsOpcode): pass
-class Substring3Opcode(ByteOpsOpcode): pass
-class ExtractOpcode(ByteOpsOpcode): pass
-class Extract3Opcode(ByteOpsOpcode): pass
-class ExtractUint16Opcode(ByteOpsOpcode): pass
-class ExtractUint32Opcode(ByteOpsOpcode): pass
-class ExtractUint64Opcode(ByteOpsOpcode): pass
-class Replace2Opcode(ByteOpsOpcode): pass
-class Replace3Opcode(ByteOpsOpcode): pass
-class LenOpcode(ByteOpsOpcode): pass
-class BitlenOpcode(ByteOpsOpcode): pass
-class GetbitOpcode(ByteOpsOpcode): pass
-class SetbitOpcode(ByteOpsOpcode): pass
-class GetbyteOpcode(ByteOpsOpcode): pass
-class SetbyteOpcode(ByteOpsOpcode): pass
-class ItobOpcode(ByteOpsOpcode): pass
-class BtoiOpcode(ByteOpsOpcode): pass
-class Base64DecodeOpcode(ByteOpsOpcode): pass
-class JsonRefOpcode(ByteOpsOpcode): pass
+class ConcatOpcode(ByteOpsOpcode): mnemonic = "concat"
+class SubstringOpcode(ByteOpsOpcode): mnemonic = "substring"
+class Substring3Opcode(ByteOpsOpcode): mnemonic = "substring3"
+class ExtractOpcode(ByteOpsOpcode): mnemonic = "extract"
+class Extract3Opcode(ByteOpsOpcode): mnemonic = "extract3"
+class ExtractUint16Opcode(ByteOpsOpcode): mnemonic = "extract_uint16"
+class ExtractUint32Opcode(ByteOpsOpcode): mnemonic = "extract_uint32"
+class ExtractUint64Opcode(ByteOpsOpcode): mnemonic = "extract_uint64"
+class Replace2Opcode(ByteOpsOpcode): mnemonic = "replace2"
+class Replace3Opcode(ByteOpsOpcode): mnemonic = "replace3"
+class LenOpcode(ByteOpsOpcode): mnemonic = "len"
+class BitlenOpcode(ByteOpsOpcode): mnemonic = "bitlen"
+class GetbitOpcode(ByteOpsOpcode): mnemonic = "getbit"
+class SetbitOpcode(ByteOpsOpcode): mnemonic = "setbit"
+class GetbyteOpcode(ByteOpsOpcode): mnemonic = "getbyte"
+class SetbyteOpcode(ByteOpsOpcode): mnemonic = "setbyte"
+class ItobOpcode(ByteOpsOpcode): mnemonic = "itob"
+class BtoiOpcode(ByteOpsOpcode): mnemonic = "btoi"
+class Base64DecodeOpcode(ByteOpsOpcode): mnemonic = "base64_decode"
+class JsonRefOpcode(ByteOpsOpcode): mnemonic = "json_ref"
 
 
 # ---------------------------------------------------------------------------
@@ -269,23 +289,23 @@ class JsonRefOpcode(ByteOpsOpcode): pass
 class ConstantOpcode(Opcode): pass
 
 class IntOpcode(ConstantOpcode): pass
-class IntcblockOpcode(ConstantOpcode): pass
-class IntcOpcode(ConstantOpcode): pass
-class Intc0Opcode(ConstantOpcode): pass
-class Intc1Opcode(ConstantOpcode): pass
-class Intc2Opcode(ConstantOpcode): pass
-class Intc3Opcode(ConstantOpcode): pass
-class PushintOpcode(ConstantOpcode): pass
-class PushintsOpcode(ConstantOpcode): pass
-class BytecblockOpcode(ConstantOpcode): pass
-class BytecOpcode(ConstantOpcode): pass
-class Bytec0Opcode(ConstantOpcode): pass
-class Bytec1Opcode(ConstantOpcode): pass
-class Bytec2Opcode(ConstantOpcode): pass
-class Bytec3Opcode(ConstantOpcode): pass
-class PushbytesOpcode(ConstantOpcode): pass
-class PushbytessOpcode(ConstantOpcode): pass
-class BzeroOpcode(ConstantOpcode): pass
+class IntcblockOpcode(ConstantOpcode): mnemonic = "intcblock"
+class IntcOpcode(ConstantOpcode): mnemonic = "intc"
+class Intc0Opcode(ConstantOpcode): mnemonic = "intc_0"
+class Intc1Opcode(ConstantOpcode): mnemonic = "intc_1"
+class Intc2Opcode(ConstantOpcode): mnemonic = "intc_2"
+class Intc3Opcode(ConstantOpcode): mnemonic = "intc_3"
+class PushintOpcode(ConstantOpcode): mnemonic = "pushint"
+class PushintsOpcode(ConstantOpcode): mnemonic = "pushints"
+class BytecblockOpcode(ConstantOpcode): mnemonic = "bytecblock"
+class BytecOpcode(ConstantOpcode): mnemonic = "bytec"
+class Bytec0Opcode(ConstantOpcode): mnemonic = "bytec_0"
+class Bytec1Opcode(ConstantOpcode): mnemonic = "bytec_1"
+class Bytec2Opcode(ConstantOpcode): mnemonic = "bytec_2"
+class Bytec3Opcode(ConstantOpcode): mnemonic = "bytec_3"
+class PushbytesOpcode(ConstantOpcode): mnemonic = "pushbytes"
+class PushbytessOpcode(ConstantOpcode): mnemonic = "pushbytess"
+class BzeroOpcode(ConstantOpcode): mnemonic = "bzero"
 
 
 # ---------------------------------------------------------------------------
@@ -296,16 +316,16 @@ class ControlFlowOpcode(Opcode): pass
 class BranchOpcode(ControlFlowOpcode): pass
 
 class ContractExitOpcode(ControlFlowOpcode): pass
-class ReturnOpcode(ControlFlowOpcode): pass
-class ErrOpcode(ControlFlowOpcode): pass
-class AssertOpcode(ControlFlowOpcode): pass
-class BOpcode(BranchOpcode): pass
-class CallsubOpcode(BranchOpcode): pass
-class RetsubOpcode(ControlFlowOpcode): pass
-class BnzOpcode(BranchOpcode): pass
-class BzOpcode(BranchOpcode): pass
-class SwitchOpcode(BranchOpcode): pass
-class MatchOpcode(BranchOpcode): pass
+class ReturnOpcode(ControlFlowOpcode): mnemonic = "return"
+class ErrOpcode(ControlFlowOpcode): mnemonic = "err"
+class AssertOpcode(ControlFlowOpcode): mnemonic = "assert"
+class BOpcode(BranchOpcode): mnemonic = "b"
+class CallsubOpcode(BranchOpcode): mnemonic = "callsub"
+class RetsubOpcode(ControlFlowOpcode): mnemonic = "retsub"
+class BnzOpcode(BranchOpcode): mnemonic = "bnz"
+class BzOpcode(BranchOpcode): mnemonic = "bz"
+class SwitchOpcode(BranchOpcode): mnemonic = "switch"
+class MatchOpcode(BranchOpcode): mnemonic = "match"
 
 
 # ---------------------------------------------------------------------------
@@ -314,12 +334,12 @@ class MatchOpcode(BranchOpcode): pass
 
 class CryptoOpcode(Opcode): pass
 
-class Ed25519verifyOpcode(CryptoOpcode): pass
-class Ed25519verifyBareOpcode(CryptoOpcode): pass
-class EcdsaVerifyOpcode(CryptoOpcode): pass
-class EcdsaPkDecompressOpcode(CryptoOpcode): pass
-class EcdsaPkRecoverOpcode(CryptoOpcode): pass
-class VrfVerifyOpcode(CryptoOpcode): pass
+class Ed25519verifyOpcode(CryptoOpcode): mnemonic = "ed25519verify"
+class Ed25519verifyBareOpcode(CryptoOpcode): mnemonic = "ed25519verify_bare"
+class EcdsaVerifyOpcode(CryptoOpcode): mnemonic = "ecdsa_verify"
+class EcdsaPkDecompressOpcode(CryptoOpcode): mnemonic = "ecdsa_pk_decompress"
+class EcdsaPkRecoverOpcode(CryptoOpcode): mnemonic = "ecdsa_pk_recover"
+class VrfVerifyOpcode(CryptoOpcode): mnemonic = "vrf_verify"
 
 
 # ---------------------------------------------------------------------------
@@ -342,11 +362,11 @@ class EcMapToOpcode(EllipticCurveOpcode): pass
 
 class HashingOpcode(Opcode): pass
 
-class Sha256Opcode(HashingOpcode): pass
-class Sha512_256Opcode(HashingOpcode): pass
-class Keccak256Opcode(HashingOpcode): pass
-class Sha3_256Opcode(HashingOpcode): pass
-class MimcOpcode(HashingOpcode): pass
+class Sha256Opcode(HashingOpcode): mnemonic = "sha256"
+class Sha512_256Opcode(HashingOpcode): mnemonic = "sha512_256"
+class Keccak256Opcode(HashingOpcode): mnemonic = "keccak256"
+class Sha3_256Opcode(HashingOpcode): mnemonic = "sha3_256"
+class MimcOpcode(HashingOpcode): mnemonic = "mimc"
 
 
 # ---------------------------------------------------------------------------
@@ -355,24 +375,24 @@ class MimcOpcode(HashingOpcode): pass
 
 class GlobalStateOpcode(Opcode): pass
 
-class GlobalOpcode(GlobalStateOpcode): pass
-class AppOptedInOpcode(GlobalStateOpcode): pass
-class AppLocalGetOpcode(GlobalStateOpcode): pass
-class AppLocalGetExOpcode(GlobalStateOpcode): pass
-class AppGlobalGetOpcode(GlobalStateOpcode): pass
-class AppGlobalGetExOpcode(GlobalStateOpcode): pass
-class AppLocalPutOpcode(GlobalStateOpcode): pass
-class AppGlobalPutOpcode(GlobalStateOpcode): pass
-class AppLocalDelOpcode(GlobalStateOpcode): pass
-class AppGlobalDelOpcode(GlobalStateOpcode): pass
-class AppParamsGetOpcode(GlobalStateOpcode): pass
-class AssetHoldingGetOpcode(GlobalStateOpcode): pass
-class AssetParamsGetOpcode(GlobalStateOpcode): pass
-class AcctParamsGetOpcode(GlobalStateOpcode): pass
-class BalanceOpcode(GlobalStateOpcode): pass
-class MinBalanceOpcode(GlobalStateOpcode): pass
-class OnlineStakeOpcode(GlobalStateOpcode): pass
-class VoterParamsGetOpcode(GlobalStateOpcode): pass
+class GlobalOpcode(GlobalStateOpcode): mnemonic = "global"
+class AppOptedInOpcode(GlobalStateOpcode): mnemonic = "app_opted_in"
+class AppLocalGetOpcode(GlobalStateOpcode): mnemonic = "app_local_get"
+class AppLocalGetExOpcode(GlobalStateOpcode): mnemonic = "app_local_get_ex"
+class AppGlobalGetOpcode(GlobalStateOpcode): mnemonic = "app_global_get"
+class AppGlobalGetExOpcode(GlobalStateOpcode): mnemonic = "app_global_get_ex"
+class AppLocalPutOpcode(GlobalStateOpcode): mnemonic = "app_local_put"
+class AppGlobalPutOpcode(GlobalStateOpcode): mnemonic = "app_global_put"
+class AppLocalDelOpcode(GlobalStateOpcode): mnemonic = "app_local_del"
+class AppGlobalDelOpcode(GlobalStateOpcode): mnemonic = "app_global_del"
+class AppParamsGetOpcode(GlobalStateOpcode): mnemonic = "app_params_get"
+class AssetHoldingGetOpcode(GlobalStateOpcode): mnemonic = "asset_holding_get"
+class AssetParamsGetOpcode(GlobalStateOpcode): mnemonic = "asset_params_get"
+class AcctParamsGetOpcode(GlobalStateOpcode): mnemonic = "acct_params_get"
+class BalanceOpcode(GlobalStateOpcode): mnemonic = "balance"
+class MinBalanceOpcode(GlobalStateOpcode): mnemonic = "min_balance"
+class OnlineStakeOpcode(GlobalStateOpcode): mnemonic = "online_stake"
+class VoterParamsGetOpcode(GlobalStateOpcode): mnemonic = "voter_params_get"
 
 
 # ---------------------------------------------------------------------------
@@ -381,15 +401,15 @@ class VoterParamsGetOpcode(GlobalStateOpcode): pass
 
 class BoxStorageOpcode(Opcode): pass
 
-class BoxCreateOpcode(BoxStorageOpcode): pass
-class BoxExtractOpcode(BoxStorageOpcode): pass
-class BoxReplaceOpcode(BoxStorageOpcode): pass
-class BoxDelOpcode(BoxStorageOpcode): pass
-class BoxLenOpcode(BoxStorageOpcode): pass
-class BoxGetOpcode(BoxStorageOpcode): pass
-class BoxPutOpcode(BoxStorageOpcode): pass
-class BoxSpliceOpcode(BoxStorageOpcode): pass
-class BoxResizeOpcode(BoxStorageOpcode): pass
+class BoxCreateOpcode(BoxStorageOpcode): mnemonic = "box_create"
+class BoxExtractOpcode(BoxStorageOpcode): mnemonic = "box_extract"
+class BoxReplaceOpcode(BoxStorageOpcode): mnemonic = "box_replace"
+class BoxDelOpcode(BoxStorageOpcode): mnemonic = "box_del"
+class BoxLenOpcode(BoxStorageOpcode): mnemonic = "box_len"
+class BoxGetOpcode(BoxStorageOpcode): mnemonic = "box_get"
+class BoxPutOpcode(BoxStorageOpcode): mnemonic = "box_put"
+class BoxSpliceOpcode(BoxStorageOpcode): mnemonic = "box_splice"
+class BoxResizeOpcode(BoxStorageOpcode): mnemonic = "box_resize"
 
 
 # ---------------------------------------------------------------------------
@@ -398,18 +418,18 @@ class BoxResizeOpcode(BoxStorageOpcode): pass
 
 class TransactionOpcode(Opcode): pass
 
-class TxnOpcode(TransactionOpcode): pass
-class TxnaOpcode(TransactionOpcode): pass
-class TxnasOpcode(TransactionOpcode): pass
-class GtxnOpcode(TransactionOpcode): pass
-class GtxnaOpcode(TransactionOpcode): pass
-class GtxnasOpcode(TransactionOpcode): pass
-class GtxnsOpcode(TransactionOpcode): pass
-class GtxnsaOpcode(TransactionOpcode): pass
-class GtxnsasOpcode(TransactionOpcode): pass
-class GitxnOpcode(TransactionOpcode): pass
-class GitxnaOpcode(TransactionOpcode): pass
-class GitxnasOpcode(TransactionOpcode): pass
+class TxnOpcode(TransactionOpcode): mnemonic = "txn"
+class TxnaOpcode(TransactionOpcode): mnemonic = "txna"
+class TxnasOpcode(TransactionOpcode): mnemonic = "txnas"
+class GtxnOpcode(TransactionOpcode): mnemonic = "gtxn"
+class GtxnaOpcode(TransactionOpcode): mnemonic = "gtxna"
+class GtxnasOpcode(TransactionOpcode): mnemonic = "gtxnas"
+class GtxnsOpcode(TransactionOpcode): mnemonic = "gtxns"
+class GtxnsaOpcode(TransactionOpcode): mnemonic = "gtxnsa"
+class GtxnsasOpcode(TransactionOpcode): mnemonic = "gtxnsas"
+class GitxnOpcode(TransactionOpcode): mnemonic = "gitxn"
+class GitxnaOpcode(TransactionOpcode): mnemonic = "gitxna"
+class GitxnasOpcode(TransactionOpcode): mnemonic = "gitxnas"
 
 
 # ---------------------------------------------------------------------------
@@ -420,13 +440,13 @@ class InnerTransactionOpcode(Opcode): pass
 class InnerTransactionStart(InnerTransactionOpcode): pass  # begin | next
 class InnerTransactionEnd(InnerTransactionOpcode): pass    # next  | submit
 
-class ItxnOpcode(InnerTransactionOpcode): pass
-class ItxnaOpcode(InnerTransactionOpcode): pass
-class ItxnasOpcode(InnerTransactionOpcode): pass
-class InnerTransactionField(InnerTransactionOpcode): pass
-class InnerTransactionBegin(InnerTransactionStart): pass
-class InnerTransactionNext(InnerTransactionStart, InnerTransactionEnd): pass
-class InnerTransactionSubmit(InnerTransactionEnd): pass
+class ItxnOpcode(InnerTransactionOpcode): mnemonic = "itxn"
+class ItxnaOpcode(InnerTransactionOpcode): mnemonic = "itxna"
+class ItxnasOpcode(InnerTransactionOpcode): mnemonic = "itxnas"
+class InnerTransactionField(InnerTransactionOpcode): mnemonic = "itxn_field"
+class InnerTransactionBegin(InnerTransactionStart): mnemonic = "itxn_begin"
+class InnerTransactionNext(InnerTransactionStart, InnerTransactionEnd): mnemonic = "itxn_next"
+class InnerTransactionSubmit(InnerTransactionEnd): mnemonic = "itxn_submit"
 
 
 # ---------------------------------------------------------------------------
@@ -435,7 +455,7 @@ class InnerTransactionSubmit(InnerTransactionEnd): pass
 
 class LoggingOpcode(Opcode): pass
 
-class LogOpcode(LoggingOpcode): pass
+class LogOpcode(LoggingOpcode): mnemonic = "log"
 
 
 # ---------------------------------------------------------------------------
@@ -444,15 +464,15 @@ class LogOpcode(LoggingOpcode): pass
 
 class ScratchSpaceOpcode(Opcode): pass
 
-class LoadOpcode(ScratchSpaceOpcode): pass
-class StoreOpcode(ScratchSpaceOpcode): pass
-class LoadsOpcode(ScratchSpaceOpcode): pass
-class StoresOpcode(ScratchSpaceOpcode): pass
-class GloadOpcode(ScratchSpaceOpcode): pass
-class GloadsOpcode(ScratchSpaceOpcode): pass
-class GloadssOpcode(ScratchSpaceOpcode): pass
-class GaidOpcode(ScratchSpaceOpcode): pass
-class GaidsOpcode(ScratchSpaceOpcode): pass
+class LoadOpcode(ScratchSpaceOpcode): mnemonic = "load"
+class StoreOpcode(ScratchSpaceOpcode): mnemonic = "store"
+class LoadsOpcode(ScratchSpaceOpcode): mnemonic = "loads"
+class StoresOpcode(ScratchSpaceOpcode): mnemonic = "stores"
+class GloadOpcode(ScratchSpaceOpcode): mnemonic = "gload"
+class GloadsOpcode(ScratchSpaceOpcode): mnemonic = "gloads"
+class GloadssOpcode(ScratchSpaceOpcode): mnemonic = "gloadss"
+class GaidOpcode(ScratchSpaceOpcode): mnemonic = "gaid"
+class GaidsOpcode(ScratchSpaceOpcode): mnemonic = "gaids"
 
 
 # ---------------------------------------------------------------------------
@@ -461,20 +481,20 @@ class GaidsOpcode(ScratchSpaceOpcode): pass
 
 class StackManipulationOpcode(Opcode): pass
 
-class DigOpcode(StackManipulationOpcode): pass
-class ProtoOpcode(StackManipulationOpcode): pass
-class PopOpcode(StackManipulationOpcode): pass
-class PopnOpcode(StackManipulationOpcode): pass
-class DupOpcode(StackManipulationOpcode): pass
-class Dup2Opcode(StackManipulationOpcode): pass
-class DupnOpcode(StackManipulationOpcode): pass
-class SwapOpcode(StackManipulationOpcode): pass
-class BuryOpcode(StackManipulationOpcode): pass
-class CoverOpcode(StackManipulationOpcode): pass
-class UncoverOpcode(StackManipulationOpcode): pass
-class FrameDigOpcode(StackManipulationOpcode): pass
-class FrameBuryOpcode(StackManipulationOpcode): pass
-class SelectOpcode(StackManipulationOpcode): pass
+class DigOpcode(StackManipulationOpcode): mnemonic = "dig"
+class ProtoOpcode(StackManipulationOpcode): mnemonic = "proto"
+class PopOpcode(StackManipulationOpcode): mnemonic = "pop"
+class PopnOpcode(StackManipulationOpcode): mnemonic = "popn"
+class DupOpcode(StackManipulationOpcode): mnemonic = "dup"
+class Dup2Opcode(StackManipulationOpcode): mnemonic = "dup2"
+class DupnOpcode(StackManipulationOpcode): mnemonic = "dupn"
+class SwapOpcode(StackManipulationOpcode): mnemonic = "swap"
+class BuryOpcode(StackManipulationOpcode): mnemonic = "bury"
+class CoverOpcode(StackManipulationOpcode): mnemonic = "cover"
+class UncoverOpcode(StackManipulationOpcode): mnemonic = "uncover"
+class FrameDigOpcode(StackManipulationOpcode): mnemonic = "frame_dig"
+class FrameBuryOpcode(StackManipulationOpcode): mnemonic = "frame_bury"
+class SelectOpcode(StackManipulationOpcode): mnemonic = "select"
 
 
 # ---------------------------------------------------------------------------
@@ -483,13 +503,13 @@ class SelectOpcode(StackManipulationOpcode): pass
 
 class MiscOpcode(Opcode): pass
 
-class ArgOpcode(MiscOpcode): pass
-class Arg0Opcode(MiscOpcode): pass
-class Arg1Opcode(MiscOpcode): pass
-class Arg2Opcode(MiscOpcode): pass
-class Arg3Opcode(MiscOpcode): pass
-class ArgsOpcode(MiscOpcode): pass
-class BlockOpcode(MiscOpcode): pass
+class ArgOpcode(MiscOpcode): mnemonic = "arg"
+class Arg0Opcode(MiscOpcode): mnemonic = "arg_0"
+class Arg1Opcode(MiscOpcode): mnemonic = "arg_1"
+class Arg2Opcode(MiscOpcode): mnemonic = "arg_2"
+class Arg3Opcode(MiscOpcode): mnemonic = "arg_3"
+class ArgsOpcode(MiscOpcode): mnemonic = "args"
+class BlockOpcode(MiscOpcode): mnemonic = "block"
 
 
 # ---------------------------------------------------------------------------
