@@ -6,13 +6,17 @@ one row per consumed-value definition. Replaces the ``innerTxnFields.ql``
 query; the result is consumed by
 :class:`tealtools.inner_txn_report.InnerTxnReport`.
 
-Kept as a separate module so the ssa.py substrate stays focused on SSA
-construction; this is TEAL-semantics analysis layered on top of those
-types (see the const_fold / input_prop / range_arith passes).
+A construction-time substrate helper: it lives in the ``ssa`` package
+but is split out of ``ssa.py`` (which calls it eagerly while building a
+program) so the builder stays focused on SSA construction. It is *not*
+an optional ``passes/`` analysis — those layer on a finished program;
+this one runs as part of producing it (cf. the sibling
+:mod:`const_fold` / :mod:`scratch_influence` helpers).
 """
 from __future__ import annotations
 
-from ..ssa import Phi, SSAProgram, SSAVar
+from .models import Phi, SSAVar
+from .program import SSAProgram
 
 
 def compute_inner_txn_fields(prog: SSAProgram) -> list:

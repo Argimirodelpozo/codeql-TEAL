@@ -12,7 +12,7 @@ guard + state flag).
 from __future__ import annotations
 
 from ..ssa import Const, Phi, SSAProgram, SSAVar
-from .const_fold import try_fold_assignment
+from ..ssa.const_fold import try_fold_assignment
 
 
 def propagate_constants(prog: SSAProgram) -> None:

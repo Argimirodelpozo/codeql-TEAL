@@ -2,7 +2,7 @@
 
 Both consume the ``scratch_stores`` graph annotation (per ``load N``, the
 may-influencing ``store N`` value-SSAVar keys produced by
-:func:`tealtools.passes.scratch_influence.compute_scratch_influence`):
+:func:`tealtools.ssa.scratch_influence.compute_scratch_influence`):
 
 - :func:`propagate_scratch_constants` — resolve a load to a literal when every
   influencing store wrote the same compile-time constant (must-semantics).

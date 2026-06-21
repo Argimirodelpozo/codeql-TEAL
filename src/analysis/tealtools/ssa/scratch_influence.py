@@ -7,13 +7,17 @@ exposed through the ``scratch_stores`` graph annotation consumed by the
 detectors (:func:`tealtools.detections.common._scratch_stores_for`),
 the taint engine, and the ``SSAProgram`` scratch-bridge passes.
 
-Kept as a separate module so the ssa.py substrate stays focused on SSA
-construction; this is TEAL-semantics analysis layered on top of those
-types (see the const_fold / input_prop / inner_txn_fields passes).
+A construction-time substrate helper: it lives in the ``ssa`` package
+but is split out of ``ssa.py`` (which calls it eagerly while building a
+program) so the builder stays focused on SSA construction. It is *not*
+an optional ``passes/`` analysis — those layer on a finished program;
+this one runs as part of producing it (cf. the sibling
+:mod:`const_fold` / :mod:`inner_txn_fields` helpers).
 """
 from __future__ import annotations
 
-from ..ssa import SSAProgram, SSAVar
+from .models import SSAVar
+from .program import SSAProgram
 
 
 def compute_scratch_influence(prog: SSAProgram) -> dict:

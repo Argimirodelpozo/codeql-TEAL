@@ -1,4 +1,4 @@
-"""Unit tests for the constant folder (``tealtools.passes.const_fold``).
+"""Unit tests for the constant folder (``tealtools.ssa.const_fold``).
 
 Pure-function tests — no CodeQL DB required. Focused on the uint64
 bitwise / shift folds added on top of the arithmetic ones, where the
@@ -7,7 +7,7 @@ AVM semantics have sharp edges (``<<`` wraps mod 2^64; shift counts
 sign-flipping ``~``).
 """
 from tealtools.ssa import Assignment, Const, Location, SSAVar
-from tealtools.passes.const_fold import (
+from tealtools.ssa.const_fold import (
     _fold_bitwise,
     _fold_bitwise_not,
     try_fold_assignment,

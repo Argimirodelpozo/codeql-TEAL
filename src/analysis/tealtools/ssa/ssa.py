@@ -877,27 +877,27 @@ class PySSA:
 
 def _fold_spec_fixed(a):
     """Lazy import wrapper around :func:`const_fold.fold_spec_fixed`.
-    Kept module-private to avoid pulling the passes layer into
-    ``ssa.py``'s top-level imports."""
-    from ..passes.const_fold import fold_spec_fixed
+    Kept module-private (and function-local) so ``ssa.py`` stays free
+    of even sibling-module imports at load time."""
+    from .const_fold import fold_spec_fixed
     return fold_spec_fixed(a)
 
 
 def _compute_inner_txn_fields(prog: SSAProgram) -> list:
     """Lazy import wrapper around
-    :func:`..passes.inner_txn_fields.compute_inner_txn_fields`.
-    Kept module-private to avoid pulling the passes layer into
-    ``ssa.py``'s top-level imports."""
-    from ..passes.inner_txn_fields import compute_inner_txn_fields
+    :func:`.inner_txn_fields.compute_inner_txn_fields`.
+    Kept module-private (and function-local) so ``ssa.py`` stays free
+    of even sibling-module imports at load time."""
+    from .inner_txn_fields import compute_inner_txn_fields
     return compute_inner_txn_fields(prog)
 
 
 def _compute_scratch_influence(prog: SSAProgram) -> dict:
     """Lazy import wrapper around
-    :func:`..passes.scratch_influence.compute_scratch_influence`.
-    Kept module-private to avoid pulling the passes layer into
-    ``ssa.py``'s top-level imports."""
-    from ..passes.scratch_influence import compute_scratch_influence
+    :func:`.scratch_influence.compute_scratch_influence`.
+    Kept module-private (and function-local) so ``ssa.py`` stays free
+    of even sibling-module imports at load time."""
+    from .scratch_influence import compute_scratch_influence
     return compute_scratch_influence(prog)
 
 
