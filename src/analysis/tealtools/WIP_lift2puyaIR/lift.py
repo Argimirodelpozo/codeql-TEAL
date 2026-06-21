@@ -593,7 +593,7 @@ class _Lifter:
         return last
 
     def _recover_match_keys(self, bb, labels):
-        """Recover a `match`'s case keys from source when the extractor dropped
+        """Recover a `match`'s case keys from source when the parser dropped
         them (a `pushbytess base32(..) ..` whose operands it stripped, leaving a
         phantom 0-output push). The keys are the push's operands, in label order;
         stored as their source literal (`teal_const._const_bytes` parses them)."""
@@ -787,7 +787,7 @@ class _Lifter:
                 break
             cases.append((key, self.bid[blk]))
             targets.add(blk)
-        if cases is None:                 # extractor dropped the case keys
+        if cases is None:                 # parser dropped the case keys
             cases, targets = self._recover_match_keys(bb, labels)  # (from source)
         default = next((s for s in succ if s not in targets), None)
         if cases and default is not None:

@@ -466,7 +466,7 @@ def _scratch_stores_for(prog: SSAProgram, load_var: SSAVar) -> Optional[list]:
     """``g.nodes[load_node]["scratch_stores"]`` for the ``load`` opcode
     that produced ``load_var``. Returns the raw list of
     ``(file, line, output_idx)`` tuples that
-    :func:`tealtools.graphs.load_graph` populated, or ``None`` when the
+    :func:`tealtools.graph.load_graph` populated, or ``None`` when the
     load isn't covered (dynamic-slot ``loads`` op, or the scratch
     influence query found no stores)."""
     if load_var.defined_by is None or load_var.defined_by.op != "load":

@@ -637,7 +637,7 @@ def test_pseudo_ops_normalized_and_recovered(tmp_path):
     chokepoint normalizes them to the canonical push the assembler emits, so they
     survive as real opcodes with const values. Assert the rewrite is exact and the
     lift recovers the constants."""
-    from tealtools.graphs import _normalize_pseudo_ops
+    from tealtools.graph import _normalize_pseudo_ops
     n = _normalize_pseudo_ops(
         b'#pragma version 8\nbyte 0x4142\nmethod "transfer(uint64)void"\nint 1\n').decode()
     assert "pushbytes 0x4142" in n                 # byte literal -> pushbytes

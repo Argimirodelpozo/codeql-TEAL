@@ -1,23 +1,21 @@
-"""Pure-Python graph-pipeline tests — exercise the ``ast_build`` +
-``cfg_build`` producers and the Python-backend ``load_graph`` WITHOUT
-codeql.
+"""Graph-pipeline tests — exercise the ``ast.parse`` + ``control_flow`` passes
+and ``load_graph``.
 
-These complement ``test_graph_golden`` (which pins the producers' exact output
-to committed golden fixtures). Here we assert the producers are self-consistent
-and that the loaded graph is well-formed — so the pipeline keeps working in
-environments with no codeql / JVM at all.
+These complement ``test_graph_golden`` (which pins the passes' exact output to
+committed golden fixtures). Here we assert the passes are self-consistent and that
+the loaded graph is well-formed.
 """
 from pathlib import Path
 
 import pytest
 
-from tealtools.graphs import (
+from tealtools.graph import (
     load_graph,
     _load_source_bytes,
     _load_source_lines,
 )
-from tealtools.ast_build import build_nodes
-from tealtools.cfg_build import build_cfg_edges, build_basic_blocks
+from tealtools.ast.parse import build_nodes
+from tealtools.control_flow import build_cfg_edges, build_basic_blocks
 
 TESTS_DIR = Path(__file__).resolve().parent
 

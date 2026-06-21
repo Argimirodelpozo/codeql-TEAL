@@ -10,7 +10,7 @@ from __future__ import annotations
 _BOOL_OPS = frozenset({"==", "!=", "<", ">", "<=", ">=", "!", "&&", "||",
                        "b==", "b!=", "b<", "b>", "b<=", "b>="})
 # Const-push / const-load ops are normally typed by their folded const value;
-# they fall back to these sets only when the extractor dropped the operand
+# they fall back to these sets only when the parser dropped the operand
 # (`pushbytes base64(..)`, `bytec N`) so there is no value to type them from.
 _U64_PUSH = frozenset({"pushint", "pushints", "intc",
                        "intc_0", "intc_1", "intc_2", "intc_3"})

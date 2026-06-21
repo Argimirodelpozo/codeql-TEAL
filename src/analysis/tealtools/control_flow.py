@@ -1,17 +1,12 @@
-"""CFG-edge reconstruction in pure Python (port of ``cfgEdges.ql``).
+"""Derive the control-flow graph -- edges and basic blocks -- from the AST.
 
-This reproduces, row-for-row, the relational CFG edges that the kept QL
-query emits: for every CFG node ``pred`` and successor ``succ``, the triple
-``(pred.startLine, succ.startLine, successorType)``. It consumes only the
-``nodes`` fact-set (the AST layer we still get from tree-sitter) plus the
-source text (for opcode operands / label names), so it can stand in for the
-``cfgEdges`` query without running CodeQL.
-
-The semantics are ported from ``cfg/CFG.qll`` (``ProgramTree``/
-``CodeblockTree``), ``cfg/Completion.qll`` and ``ast/opcodes/ControlFlow.qll``.
+For every CFG node ``pred`` and successor ``succ``, emits the triple
+``(pred.startLine, succ.startLine, successorType)``; and, separately, the
+basic-block ranges. Consumes the AST nodes (:mod:`tealtools.ast.parse`) plus the
+source text (for opcode operands / label names) -- nothing else.
 
 Only three successor-type strings are ever emitted (confirmed empirically
-across all fixture DBs), because most completions map to ``NormalSuccessor``
+across every contract tested), because most completions map to ``NormalSuccessor``
 and the exit completions (``return``/``err``/assert-false) have no matching
 successor type and so produce no edge:
 
@@ -31,7 +26,7 @@ from dataclasses import dataclass
 from typing import Iterable, Sequence
 
 from .ast import Location
-from .graphs import _slice_source
+from .graph import _slice_source
 
 NORMAL = "NormalSuccessor"
 BOOL_TRUE = "BooleanSuccessor(true)"

@@ -1,4 +1,4 @@
-"""TEAL opcode stack-arity signatures, ported from the CodeQL extractor's
+"""TEAL opcode stack-arity signatures, derived from the TEAL
 opcode classes (``getNumberOfConsumedArgs`` / ``getNumberOfOutputArgs`` in
 ``codeql/teal/ast/opcodes/*.qll``).
 

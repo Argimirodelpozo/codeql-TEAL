@@ -1,18 +1,18 @@
-"""TEAL graph layer.
+"""TEAL program graph.
 
-Build a NetworkX MultiDiGraph from TEAL source: typed
-:class:`tealtools.ast.AstNode` nodes (one per opcode, hashed by
-``(file, line)``) connected by ``kind="cfg"`` edges carrying a ``successor``
-label. The extractor floor (``nodes`` / ``cfgEdges`` / ``basicBlocks``, see
-``QUERY_NAMES``) is produced in pure Python by :mod:`tealtools.ast_build` +
-:mod:`tealtools.cfg_build`; SSA / phis / const values / taint are reconstructed
-in Python downstream (``tealtools.ssa``). CodeQL is not a dependency.
+Build a NetworkX MultiDiGraph from TEAL source in two passes: parse the source
+into typed :class:`tealtools.ast.AstNode` nodes (one per opcode, hashed by
+``(file, line)``) via :mod:`tealtools.ast.parse`, then derive the control flow --
+``kind="cfg"`` edges carrying a ``successor`` label, plus basic blocks -- from
+those nodes via :mod:`tealtools.control_flow`. SSA / phis / const values / taint
+are reconstructed downstream (``tealtools.ssa``).
 
-The source may be a single ``.teal`` file or a directory of ``.teal`` files.
+The source may be a single ``.teal`` file, a directory of ``.teal`` files, or an
+in-memory ``{name: text}`` mapping.
 
 Quick start
 -----------
-    >>> from tealtools.graphs import load_graph
+    >>> from tealtools.graph import load_graph
     >>> from .ast import Opcode, IntegerAddOpcode
     >>> g = load_graph("contract.teal")         # a .teal file or a dir of them
     >>> [n for n in g if isinstance(n, IntegerAddOpcode)]
@@ -29,16 +29,15 @@ import networkx as nx
 
 from .ast import AstNode, Location, ast_node_from_row
 
-QUERY_NAMES = (
+# The three layers the graph is assembled from, in order: the AST nodes
+# (``ast.parse``), then the control-flow edges and basic blocks derived from them
+# (``control_flow``). SSA / phis / const values / taint are reconstructed by the
+# ``tealtools.ssa`` layer on top.
+_GRAPH_LAYERS = (
     "nodes",
     "cfgEdges",
     "basicBlocks",
 )
-# These three fact-sets — the extractor floor — are produced in pure Python by
-# ``ast_build`` (nodes) and ``cfg_build`` (cfgEdges / basicBlocks). Everything
-# above them (SSA, phis, const values, taint flow) is reconstructed in Python
-# downstream. The former CodeQL queries that produced these (and the dropped
-# ssaInputs/ssaOutputs/constValues/mustValues/phi* queries) are gone.
 
 
 import base64
@@ -140,7 +139,7 @@ def _normalize_pseudo_ops(data: bytes) -> bytes:
 
 def _resolve_source_files(source):
     """Yield ``(relpath, bytes)`` for each ``.teal`` under ``source``, pseudo-op-
-    normalized (see :func:`_normalize_pseudo_ops`) so the extractor sees only
+    normalized (see :func:`_normalize_pseudo_ops`) so the parser sees only
     canonical opcodes.
 
     ``source`` is one of: a single ``.teal`` file, a directory containing ``.teal``
@@ -177,7 +176,7 @@ def _load_source_lines(source: Path) -> dict[str, list[str]]:
 
 def _load_source_bytes(source: Path) -> dict[str, bytes]:
     """Map basename -> raw source bytes (keyed by basename, the relative path the
-    ``ast_build`` producer reports in ``nodes``)."""
+    ``ast.parse`` pass reports for each node)."""
     return {Path(rel).name: data for rel, data in _resolve_source_files(source)}
 
 
@@ -241,32 +240,33 @@ def load_graph(
             g.add_node(node)
         return node
 
-    # The three fact-sets, produced in pure Python (``ast_build`` + ``cfg_build``).
-    from .ast_build import build_nodes
-    from .cfg_build import build_cfg_edges, build_basic_blocks
+    # Pass 1: parse the AST nodes; pass 2: derive control-flow edges + basic
+    # blocks from them. Both are pure-Python passes.
+    from .ast.parse import build_nodes
+    from .control_flow import build_cfg_edges, build_basic_blocks
     node_rows = build_nodes(_load_source_bytes(source))
-    rows_by_query = {
+    layers = {
         "nodes": node_rows,
         "cfgEdges": build_cfg_edges(node_rows, sources),
         "basicBlocks": build_basic_blocks(node_rows, sources),
     }
 
-    for q in QUERY_NAMES:
-        rows = rows_by_query[q]
+    for layer in _GRAPH_LAYERS:
+        rows = layers[layer]
 
-        if q == "nodes":
-            for file, sl, sc, el, ec, ql_class in rows:
+        if layer == "nodes":
+            for file, sl, sc, el, ec, node_type in rows:
                 loc = Location(file, int(sl), int(sc), int(el), int(ec))
                 code = _slice_source(sources, loc).strip()
-                node = ast_node_from_row(loc, code, ql_class)
+                node = ast_node_from_row(loc, code, node_type)
                 by_loc[(file, loc.start_line)] = node
                 g.add_node(node)
-        elif q == "cfgEdges":
+        elif layer == "cfgEdges":
             for sf, sl, df, dl, t in rows:
                 u = _resolve(sf, int(sl))
                 v = _resolve(df, int(dl))
                 g.add_edge(u, v, kind="cfg", successor=t)
-        elif q == "basicBlocks":
+        elif layer == "basicBlocks":
             # Annotate each AstNode with its BB id = (file, firstLine, lastLine).
             for ast_file, ast_line, bb_first, bb_last in rows:
                 node = by_loc.get((ast_file, int(ast_line)))
@@ -274,10 +274,8 @@ def load_graph(
                     continue
                 g.nodes[node]["bb"] = (ast_file, int(bb_first), int(bb_last))
 
-    # constValues port: resolved literal constants per output, computed in
-    # Python (replaces ``constValues.ql``). Populates ``const_outputs``
-    # ``{out_idx: (kind, value)}`` and the single-output back-compat scalar
-    # ``const_value`` — the same shape the QL handler produced.
+    # Resolved literal constants per output: populates ``const_outputs``
+    # ``{out_idx: (kind, value)}`` and the single-output scalar ``const_value``.
     from .const_values import compute_const_values
     for cf, cl, coi, ckind, cval in compute_const_values(g):
         node = by_loc.get((cf, int(cl)))

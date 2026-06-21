@@ -1,25 +1,20 @@
-"""AST `nodes` reconstruction in pure Python (port of ``nodes.ql``).
+"""Parse TEAL source into AST nodes.
 
-Parses TEAL source with the same ``tree-sitter-teal`` grammar the CodeQL
-extractor uses (via the ``tree_sitter`` + ``tree_sitter_teal`` Python
-packages), and emits the ``nodes`` fact-set row-for-row: one row per opcode
-(plus ``Label`` rows and the program-root ``Source`` row), each with its
-*most specific* QL leaf-class name and CodeQL location.
+Uses the ``tree-sitter-teal`` grammar (via the ``tree_sitter`` +
+``tree_sitter_teal`` Python packages) to parse TEAL -- the grammar handles
+semicolons, byte/string literals, labels, pragmas -- and emits one node per opcode
+(plus ``Label`` nodes and the program-root ``Source`` node), each tagged with its
+*most specific* :mod:`tealtools.ast` node type and source location.
 
-This keeps tree-sitter (the grammar handles semicolons, byte/string
-literals, labels, pragmas) but drops the CodeQL extractor + ``nodes.ql``
-from the pipeline.
+Output shape per node:
+``(file, startLine, startCol, endLine, endCol, node_type)``.
 
-Row shape matches ``nodes.ql``'s select:
-``(file, startLine, startCol, endLine, endCol, qlClass)``.
+Key conventions:
 
-Key conventions (verified against real cached ``nodes.csv``):
-
-* **Columns** — tree-sitter points are 0-based half-open ``[start, end)``;
-  CodeQL is 1-based closed ``[start, end]``. So
-  ``QL_start_col = ts.start_col + 1``, ``QL_end_col = ts.end_col``,
-  ``QL_line = ts.row + 1``.
-* **Class is keyed by the mnemonic** (the opcode's first child token), not
+* **Columns** — tree-sitter points are 0-based half-open ``[start, end)``; we emit
+  1-based closed ``[start, end]``: ``start_col = ts.start_col + 1``,
+  ``end_col = ts.end_col``, ``line = ts.row + 1``.
+* **Type is keyed by the mnemonic** (the opcode's first child token), not
   the tree-sitter node type: generic buckets like ``zero_argument_opcode``
   cover ``==`` / ``+`` / ``return`` / ``dup`` … so the mnemonic decides.
 * **Dual-class quirk** — ``==`` and ``!=`` each emit TWO rows (the typed
@@ -42,7 +37,7 @@ from typing import Iterable
 import tree_sitter as _ts
 import tree_sitter_teal as _tsteal
 
-from .cfg_build import _children, _program_cfg
+from ..control_flow import _children, _program_cfg
 
 _LANG = _ts.Language(_tsteal.language())
 _PARSER = _ts.Parser(_LANG)

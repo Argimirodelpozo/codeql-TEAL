@@ -1,7 +1,7 @@
 """The :class:`SSAProgram` class — the canonical program type every
 analysis consumes.
 
-``SSAProgram(db)`` runs a QL pre-pass via :mod:`tealtools.graphs`
+``SSAProgram(db)`` runs a QL pre-pass via :mod:`tealtools.graph`
 (CFG / AST / arity / constant annotations, populating the data
 classes from :mod:`tealtools.ssa.models`), then routes SSA
 construction through :class:`PySSA` (:mod:`tealtools.ssa.ssa`) which
@@ -39,7 +39,7 @@ class SSAProgram:
         when you want the parse stage explicit, or :meth:`from_graph` to build SSA
         from an already-loaded graph (no parsing). ``SSAProgram(source)`` stays as
         the one-liner."""
-        from .. import graphs as tg
+        from .. import graph as tg
         self._build_from_graph(tg.load_graph(source, verbose=verbose))
 
     @classmethod
@@ -48,7 +48,7 @@ class SSAProgram:
         ``graphs.load_graph(source)`` (parse / extract → graph) then
         :meth:`from_graph` (SSA reconstruction). Same result as ``cls(source)`` --
         named so the parse stage is visible at the call site."""
-        from .. import graphs as tg
+        from .. import graph as tg
         return cls.from_graph(tg.load_graph(source, verbose=verbose))
 
     @classmethod
@@ -69,7 +69,7 @@ class SSAProgram:
         ``{name: text}`` mapping straight to :func:`graphs.load_graph`. (The lift's
         source-text recovery -- template names, dropped consts -- still needs a real
         path; all SSA + detector analysis works in-memory.)"""
-        from .. import graphs as tg
+        from .. import graph as tg
         return cls.from_graph(tg.load_graph({name: teal}, verbose=verbose))
 
     def _build_from_graph(self, g) -> None:
@@ -183,10 +183,9 @@ class SSAProgram:
                 continue
             # Intra-BB CFG edges must represent a back-edge from a
             # branch at the BB's tail to its head — i.e. ``u.line >
-            # v.line``. Equal-line intra-BB edges arise from the
-            # CodeQL extractor modeling template markers
-            # (``pushint TMPL_FOO`` → ``Label@TMPL_FOO``) as
-            # same-line CFG edges that aren't real control flow;
+            # v.line``. Equal-line intra-BB edges arise from template
+            # markers (``pushint TMPL_FOO`` → ``Label@TMPL_FOO``) modelled
+            # as same-line CFG edges that aren't real control flow;
             # including them creates spurious BB-self-loops that
             # ``find_loops`` then misclassifies as actual loops.
             if (
@@ -226,15 +225,10 @@ class SSAProgram:
             bb.assignments.sort(key=lambda a: a.location.line)
             bb.phis.sort(key=lambda p: (p.kind, p.stack_index))
 
-        # Replace the QL-loaded SSA layer (phis + assignment inputs +
-        # block back-refs) with a PySSA-built one. The QL pre-pass
-        # above only needs to populate ``self._graph`` /
-        # ``self.vars`` (for const/range/type seeding) /
-        # ``self.blocks`` / ``self.assignments`` (for arity); PySSA
-        # then computes phi placement + chain collapse and overwrites
-        # in place. This is what unblocks dropping the slow
-        # ``phiArgs.ql`` / ``phiNodes.ql`` / ``phiEdges.ql`` queries
-        # from the load path (see ``graphs.QUERY_NAMES``).
+        # The pre-pass above only populates ``self._graph`` / ``self.vars`` (for
+        # const/range/type seeding) / ``self.blocks`` / ``self.assignments`` (for
+        # arity). PySSA then computes phi placement + chain collapse from the
+        # graph's nodes + CFG edges + basic blocks, and overwrites in place.
         from .ssa import PySSA, _apply_pyssa_to
         _apply_pyssa_to(self, PySSA._construct(self))
 

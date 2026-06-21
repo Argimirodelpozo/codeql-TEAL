@@ -1,6 +1,6 @@
 """Graphviz rendering for the loaded CFG graph.
 
-Operates on the ``networkx`` graph returned by :func:`tealtools.graphs.load_graph`
+Operates on the ``networkx`` graph returned by :func:`tealtools.graph.load_graph`
 (AST nodes + ``kind="cfg"`` edges + per-node ``bb`` annotations). Two views:
 
 - op-level: :func:`to_dot` / :func:`draw_cfg` — one node per opcode.

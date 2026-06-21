@@ -2,7 +2,7 @@
 
 A *target* is whatever the user points at on the command line: a single ``.teal``
 file, or a directory containing one or more ``.teal`` files. The pipeline
-(:class:`~tealtools.ssa.SSAProgram` / :func:`~tealtools.graphs.load_graph`)
+(:class:`~tealtools.ssa.SSAProgram` / :func:`~tealtools.graph.load_graph`)
 reconstructs everything straight from that source -- there is no database to
 build, cache, or read.
 """

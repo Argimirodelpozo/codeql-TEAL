@@ -18,7 +18,7 @@ def _load_src(source: str) -> dict:
     source the graph build does."""
     if source in _SRC_CACHE:
         return _SRC_CACHE[source]
-    from ..graphs import _load_source_bytes
+    from ..graph import _load_source_bytes
     m = {
         bn: data.decode("utf-8", "replace").splitlines()
         for bn, data in _load_source_bytes(source).items()

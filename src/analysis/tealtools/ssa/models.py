@@ -1,7 +1,7 @@
 """Typed SSA-assignment representation of a TEAL program.
 
-Built on top of :mod:`tealtools.graphs`. Where
-``tealtools.graphs`` exposes a low-level ``MultiDiGraph`` keyed by AST nodes,
+Built on top of :mod:`tealtools.graph`. Where
+``tealtools.graph`` exposes a low-level ``MultiDiGraph`` keyed by AST nodes,
 this module presents the same information as a first-class *program*
 object: a sequence of :class:`Assignment`\\ s grouped into
 :class:`BasicBlock`\\ s, referring to :class:`SSAVar`\\ s, :class:`Phi`\\ s,
@@ -46,7 +46,7 @@ materialized. This keeps the object count tractable on programs where
 the underlying model emits many unreferenced phi identities.
 
 The module performs no extraction itself — it calls
-:func:`tealtools.graphs.load_graph` and reads the populated node attributes.
+:func:`tealtools.graph.load_graph` and reads the populated node attributes.
 """
 from __future__ import annotations
 

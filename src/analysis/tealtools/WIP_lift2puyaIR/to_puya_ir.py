@@ -32,7 +32,7 @@ _IRT = {
 }
 
 # Const-push pseudo-ops that survive the lift only when their immediate was a
-# deploy-time template variable (`pushint TMPL_X`) -- the extractor strips the
+# deploy-time template variable (`pushint TMPL_X`) -- the parser strips the
 # operand, leaving an arg-less, immediate-less push. Puya models these as
 # TemplateVar (a non-foldable constant), so the optimiser won't fold them away.
 _PUSH_U64 = {"pushint", "intc", "intc_0", "intc_1", "intc_2", "intc_3"}
@@ -119,7 +119,7 @@ class _Translator:
     def _const_block(self, kind: str, line: int) -> list:
         """The ``intcblock`` / ``bytecblock`` operand list in scope at ``line``
         (the latest definition at or before it), recovered from source. The
-        extractor truncates these blocks (drops ``TMPL_*`` / encoded entries),
+        parser truncates these blocks (drops ``TMPL_*`` / encoded entries),
         so the SSA can't resolve ``bytec N`` into a dropped slot -- source can."""
         key = (kind, line)
         if key in self._block_cache:
@@ -135,7 +135,7 @@ class _Translator:
 
     def _block_value(self, op_name: str, idx: int, line: int):
         """Resolve an ``intc_N`` / ``bytec_N`` / ``intc N`` / ``bytec N`` load
-        whose const-block slot the extractor dropped, from the source block."""
+        whose const-block slot the parser dropped, from the source block."""
         kind = "intc" if op_name.startswith("intc") else "bytec"
         entries = self._const_block(kind, line)
         if 0 <= idx < len(entries):
@@ -145,7 +145,7 @@ class _Translator:
     def vp(self, s, result_types=None):
         if isinstance(s, pre_ir.Intrinsic):
             # const-load by index (intc_N / bytec_N / `intc N` / `bytec N`)
-            # whose const-block slot the extractor dropped -> recover from source.
+            # whose const-block slot the parser dropped -> recover from source.
             idx = None
             if s.op in ("bytec", "intc") and len(s.immediates) == 1 and not s.args:
                 idx = int(self._imm(s.immediates[0]))
@@ -155,7 +155,7 @@ class _Translator:
                 v = self._block_value(s.op, idx, s.line)
                 if v is not None:
                     return v
-            # const-push whose inline operand the extractor dropped (e.g.
+            # const-push whose inline operand the parser dropped (e.g.
             # `pushbytes base64(..)`): recover the literal, else a template var.
             if (s.op in _PUSH_U64 or s.op in _PUSH_BYTES) and not s.args \
                     and not s.immediates:
@@ -187,7 +187,7 @@ class _Translator:
     def op(self, o):
         if isinstance(o, pre_ir.Assignment):
             # Multi-const push (`pushbytess` / `pushints`) whose inline operands
-            # the extractor dropped: Puya has no such op, so split into one
+            # the parser dropped: Puya has no such op, so split into one
             # `let target_i = <const_i>` per value (targets reversed to source
             # order). Recovered from source; only when counts line up.
             src = o.source
@@ -214,7 +214,7 @@ class _Translator:
             if isinstance(o.intrinsic, pre_ir.Intrinsic) and o.intrinsic.op in (
                     "pop", "popn", "pushbytess", "pushints"):
                 # pop/popn discard; a 0-output pushbytess/pushints is a phantom
-                # push (operands dropped by the extractor) whose values, if used,
+                # push (operands dropped by the parser) whose values, if used,
                 # are recovered elsewhere (e.g. match keys from source) -- no-op.
                 return None
             return self.vp(o.intrinsic)          # side-effecting intrinsic = an Op

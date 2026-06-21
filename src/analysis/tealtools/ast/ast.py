@@ -1,12 +1,12 @@
-"""Python class hierarchy mirroring TEAL AST node types.
+"""TEAL AST node types.
 
-Every class here corresponds to a CodeQL ``qlClass`` that can appear as a
-node in the graphs produced by :mod:`tealtools.graphs`. Instances of these
-classes are what :mod:`tealtools.graphs` stores as the NetworkX node objects,
-so you get typed node inspection for free:
+Every class here is a TEAL AST node type that can appear as a node in the graph
+produced by :mod:`tealtools.graph`. Instances of these classes are what
+:mod:`tealtools.graph` stores as the NetworkX node objects, so you get typed
+node inspection for free:
 
     >>> from tealtools.ast import IntegerAddOpcode, Opcode, ArithmeticOpcode
-    >>> g = load_graph("tests/dbs/xgov-db")
+    >>> g = load_graph("contract.teal")
     >>> [n for n in g if isinstance(n, IntegerAddOpcode)]
     >>> [n for n in g if isinstance(n, ArithmeticOpcode)]
 
