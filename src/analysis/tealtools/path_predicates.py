@@ -54,6 +54,7 @@ from .ssa import (
     Phi,
     SSAProgram,
     SSAVar,
+    is_const,
 )
 
 
@@ -150,15 +151,6 @@ _KIND_FLIP: dict[str, str] = {
 }
 
 
-def _is_const_like(op: Operand) -> bool:
-    """``True`` when ``op`` resolves to a known constant — either a
-    bare :class:`Const`, or an SSAVar / Phi whose ``const_value`` was
-    set by :meth:`SSAProgram.propagate_constants`."""
-    if isinstance(op, Const):
-        return True
-    return getattr(op, "const_value", None) is not None
-
-
 def _canonical_binary_pred(
     left: Operand, kind: str, right: Operand,
 ) -> BranchCondition:
@@ -170,7 +162,7 @@ def _canonical_binary_pred(
     once instead of also handling the reversed form. Const-resolved
     SSAVars (e.g. an ``intc_0`` output that ``propagate_constants``
     pinned to 0) count as "constant" for this swap."""
-    if _is_const_like(left) and not _is_const_like(right):
+    if is_const(left) and not is_const(right):
         return BranchCondition(value=right, kind=_KIND_FLIP[kind], args=(left,))
     return BranchCondition(value=left, kind=kind, args=(right,))
 

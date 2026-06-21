@@ -23,7 +23,7 @@ import yaml
 
 from .inner_txn_report import InnerTxn, InnerTxnReport
 from .path_predicates import BranchCondition, PathPredicateAnalysis
-from .ssa import Const, SSAProgram
+from .ssa import Const, SSAProgram, const_int
 
 # TEAL TypeEnum integer for application calls. The assembler folds
 # `int appl` and `byte "appl"` into the integer literal 6 before SSA.
@@ -119,16 +119,6 @@ def _is_appcall(txn: InnerTxn) -> bool:
     return True
 
 
-def _const_int(op) -> Optional[int]:
-    cv = op if isinstance(op, Const) else getattr(op, "const_value", None)
-    if isinstance(cv, Const) and cv.kind == "int":
-        try:
-            return int(cv.value)
-        except (TypeError, ValueError):
-            return None
-    return None
-
-
 def _const_bytes(op) -> Optional[str]:
     cv = op if isinstance(op, Const) else getattr(op, "const_value", None)
     if isinstance(cv, Const) and cv.kind == "bytes":
@@ -170,7 +160,7 @@ def _resolve_state_app_id(prog: SSAProgram, operand) -> Optional[int]:
         return None
     if a.op == "app_global_get":
         key = _state_key(a.inputs)
-    elif a.op == "app_global_get_ex" and any(_const_int(i) == 0 for i in a.inputs):
+    elif a.op == "app_global_get_ex" and any(const_int(i) == 0 for i in a.inputs):
         key = _state_key(a.inputs)
     else:
         return None
@@ -183,7 +173,7 @@ def _resolve_state_app_id(prog: SSAProgram, operand) -> Optional[int]:
         wk, wv = _put_key_value(w.inputs)
         if wk is None or wk != key:
             continue
-        iv = _const_int(wv)
+        iv = const_int(wv)
         if iv is None:
             return None                       # non-constant write: can't prove it
         vals.add(iv)

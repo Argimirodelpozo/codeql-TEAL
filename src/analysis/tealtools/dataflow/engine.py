@@ -34,6 +34,7 @@ from ..ssa import (
     SSAProgram,
     SSAVar,
     _shuffle_mapping,
+    is_const,
 )
 
 
@@ -123,12 +124,6 @@ SLICE_PROPAGATION_RULE = FlowRule(
 )
 
 
-def _operand_is_constant(op) -> bool:
-    if isinstance(op, Const):
-        return True
-    return getattr(op, "const_value", None) is not None
-
-
 def _concat_flows(a: Assignment, tainted_in: list[int]) -> Optional[list[int]]:
     """``concat A B`` propagates taint to its output iff every
     non-tainted input is statically constant (a constant prefix /
@@ -138,7 +133,7 @@ def _concat_flows(a: Assignment, tainted_in: list[int]) -> Optional[list[int]]:
     for i, inp in enumerate(a.inputs):
         if (i + 1) in tainted_in:
             continue
-        if not _operand_is_constant(inp):
+        if not is_const(inp):
             return []
     return [1]
 

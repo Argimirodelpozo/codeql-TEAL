@@ -43,7 +43,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-from tealtools.ssa import IntRange, Location, SSAProgram
+from tealtools.ssa import IntRange, Location, SSAProgram, is_const
 from tealtools.passes.range_arith import _operand_range
 
 # uint64 comparison ops, in the top-first ``inputs[1] OP inputs[0]`` form.
@@ -149,14 +149,14 @@ class ConstantConditionDetector:
         d = getattr(cond, "defined_by", None)
         if d is not None and d.op in _CMP and len(d.inputs) == 2:
             lhs, rhs = d.inputs[1], d.inputs[0]
-            if _is_const(lhs) and _is_const(rhs):
+            if is_const(lhs) and is_const(rhs):
                 return None
             lr = _operand_range(lhs)
             rr = _operand_range(rhs)
             if lr is not None and rr is not None:
                 return _eval_cmp(d.op, lr, rr)
             return None
-        if _is_const(cond):
+        if is_const(cond):
             return None
         r = _operand_range(cond)
         if r is not None:
@@ -195,15 +195,6 @@ class ConstantConditionDetector:
                         "constant-branch", a.location, a.op, c,
                         self._describe(a.inputs[0])))
         return out
-
-
-def _is_const(operand) -> bool:
-    """True when ``operand`` is a compile-time literal (a :class:`Const` or
-    an SSAVar / Phi already resolved to a ``const_value``)."""
-    from tealtools.ssa import Const
-    if isinstance(operand, Const):
-        return True
-    return getattr(operand, "const_value", None) is not None
 
 
 def _label(operand) -> str:

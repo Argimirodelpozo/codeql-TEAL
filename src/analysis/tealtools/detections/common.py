@@ -30,6 +30,7 @@ from ..ssa import (
     Phi,
     SSAProgram,
     SSAVar,
+    const_int,
 )
 
 
@@ -52,8 +53,7 @@ ONC_DELETE_APPLICATION = 5
 
 
 def _is_const_zero(operand) -> bool:
-    cv = getattr(operand, "const_value", None) if not isinstance(operand, Const) else operand
-    return isinstance(cv, Const) and cv.kind == "int" and cv.value == "0"
+    return const_int(operand) == 0
 
 
 def _return_likely_zero(bb: BasicBlock) -> bool:
@@ -729,24 +729,6 @@ def _is_oncompletion_var(var) -> bool:
     return _is_txn_field_var(var, "OnCompletion")
 
 
-def _const_int_value(operand) -> Optional[int]:
-    """Return the integer value if ``operand`` resolves to a known int
-    const, else ``None``. Accepts a bare :class:`Const`, an SSAVar with
-    ``const_value`` set by :meth:`SSAProgram.propagate_constants`, or a
-    Phi whose every arg agrees on a literal."""
-    cv: Optional[Const]
-    if isinstance(operand, Const):
-        cv = operand
-    else:
-        cv = getattr(operand, "const_value", None)
-    if not isinstance(cv, Const) or cv.kind != "int":
-        return None
-    try:
-        return int(cv.value)
-    except (TypeError, ValueError):
-        return None
-
-
 def _oncompletion_eq_const_value(cmp: Assignment) -> Optional[int]:
     """If ``cmp`` is ``txn OnCompletion (==/!=) <const_K>`` (operands in
     either order), return ``K``. Otherwise ``None``. Used by the
@@ -756,9 +738,9 @@ def _oncompletion_eq_const_value(cmp: Assignment) -> Optional[int]:
         return None
     a0, a1 = cmp.inputs
     if _is_oncompletion_var(a0):
-        return _const_int_value(a1)
+        return const_int(a1)
     if _is_oncompletion_var(a1):
-        return _const_int_value(a0)
+        return const_int(a0)
     return None
 
 
@@ -814,7 +796,7 @@ def approval_exit_guarded_for_action(
         # Case 3 + 4: switch / match edge predicates against an
         # OnCompletion-typed key.
         if cond.kind == "eq" and _is_oncompletion_var(v) and cond.args:
-            k = _const_int_value(cond.args[0])
+            k = const_int(cond.args[0])
             if k is not None and k != action_int:
                 return True
         if cond.kind == "not_in_range" and _is_oncompletion_var(v):
@@ -823,7 +805,7 @@ def approval_exit_guarded_for_action(
                 return True
         if cond.kind == "neq_all" and _is_oncompletion_var(v):
             for cand in cond.args:
-                if _const_int_value(cand) == action_int:
+                if const_int(cand) == action_int:
                     return True
 
         # Cases 1 + 2: SSA-level recognition of ``V = OC ==/!= K``

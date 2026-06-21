@@ -77,7 +77,9 @@ import logging
 from collections import deque
 from typing import Optional
 
-from ..ssa import Assignment, Const, IntRange, SSAProgram, SSAVar, TealType
+from ..ssa import (
+    Assignment, Const, IntRange, SSAProgram, SSAVar, TealType, operand_const,
+)
 
 logger = logging.getLogger("tealtools.passes.bytemath")
 
@@ -113,12 +115,6 @@ def _const_bigint(c: Optional[Const]) -> Optional[int]:
     return _bytes_to_int(c.value)
 
 
-def _operand_const(operand) -> Optional[Const]:
-    if isinstance(operand, Const):
-        return operand
-    return getattr(operand, "const_value", None)
-
-
 def _operand_bigint_range(operand) -> Optional[IntRange]:
     """Best-known bigint range for an operand. Looks at (a) its
     :attr:`TealType.int_value_range`, (b) its ``const_value``
@@ -127,7 +123,7 @@ def _operand_bigint_range(operand) -> Optional[IntRange]:
     t = getattr(operand, "type", None)
     if t is not None and t.kind == "bytes" and t.int_value_range is not None:
         return t.int_value_range
-    n = _const_bigint(_operand_const(operand))
+    n = _const_bigint(operand_const(operand))
     if n is not None:
         return IntRange(n, n)
     return None

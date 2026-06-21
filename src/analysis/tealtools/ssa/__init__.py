@@ -46,6 +46,9 @@ from .models import (
     _canon_shuffle,
 )
 
+# Operand -> constant resolution helpers from .operands
+from .operands import const_int, is_const, operand_const
+
 # The SSAProgram class from .program
 from .program import SSAProgram
 
@@ -78,6 +81,10 @@ __all__ = [
     "_TERMINATOR_OPS",
     "_shuffle_mapping",
     "_canon_shuffle",
+    # Operand -> constant resolution
+    "const_int",
+    "is_const",
+    "operand_const",
     # SSAProgram + PySSA builder
     "SSAProgram",
     "PySSA",

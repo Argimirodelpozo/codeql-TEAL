@@ -88,7 +88,10 @@ import functools
 from collections import deque
 from typing import Optional
 
-from ..ssa import Assignment, Const, IntRange, Phi, SSAProgram, SSAVar, TealType
+from ..ssa import (
+    Assignment, Const, IntRange, Phi, SSAProgram, SSAVar, TealType,
+    const_int, operand_const,
+)
 from ..ssa.models import (
     _GLOBAL_FIELD_BYTELEN,
     _OP_OUTPUT_BYTELEN,
@@ -127,25 +130,6 @@ def _const_bytes_length(c: Optional[Const]) -> Optional[int]:
     return _hex_byte_length(c.value)
 
 
-def _const_int_value(c: Optional[Const]) -> Optional[int]:
-    if c is None or c.kind != "int":
-        return None
-    try:
-        return int(c.value)
-    except (TypeError, ValueError):
-        return None
-
-
-def _operand_const(operand) -> Optional[Const]:
-    """Resolve an Assignment input operand to a :class:`Const`, either
-    directly (the literal is on the operand itself) or transitively
-    via :attr:`SSAVar.const_value` / :attr:`Phi.const_value` set by
-    :meth:`SSAProgram.propagate_constants`."""
-    if isinstance(operand, Const):
-        return operand
-    return getattr(operand, "const_value", None)
-
-
 def _operand_byte_length(operand) -> Optional[int]:
     """Known byte_length of an input operand, looking at (a) its
     TealType if set by a prior pass / iteration, then (b) its
@@ -154,7 +138,7 @@ def _operand_byte_length(operand) -> Optional[int]:
     t = getattr(operand, "type", None)
     if t is not None and t.kind == "bytes" and t.byte_length is not None:
         return t.byte_length
-    return _const_bytes_length(_operand_const(operand))
+    return _const_bytes_length(operand_const(operand))
 
 
 def _op_byte_length(a: Assignment) -> Optional[int]:
@@ -175,7 +159,7 @@ def _op_byte_length(a: Assignment) -> Optional[int]:
     if op == "bzero":
         if len(a.inputs) != 1:
             return None
-        n = _const_int_value(_operand_const(a.inputs[0]))
+        n = const_int(operand_const(a.inputs[0]))
         if n is None or n < 0:
             return None
         return n
@@ -230,7 +214,7 @@ def _op_byte_length(a: Assignment) -> Optional[int]:
         # when the count is a const int.
         if len(a.inputs) != 3:
             return None
-        n = _const_int_value(_operand_const(a.inputs[2]))
+        n = const_int(operand_const(a.inputs[2]))
         if n is None or n < 0:
             return None
         return n
@@ -240,8 +224,8 @@ def _op_byte_length(a: Assignment) -> Optional[int]:
         # const to know the length.
         if len(a.inputs) != 3:
             return None
-        start = _const_int_value(_operand_const(a.inputs[1]))
-        end = _const_int_value(_operand_const(a.inputs[2]))
+        start = const_int(operand_const(a.inputs[1]))
+        end = const_int(operand_const(a.inputs[2]))
         if start is None or end is None or end < start:
             return None
         return end - start
@@ -360,7 +344,7 @@ def _input_min_length(a: Assignment) -> Optional[tuple[int, int, Optional[int]]]
     if op == "getbyte":
         if len(a.inputs) != 2:
             return None
-        idx = _const_int_value(_operand_const(a.inputs[1]))
+        idx = const_int(operand_const(a.inputs[1]))
         if idx is None or idx < 0:
             return None
         return (0, idx + 1, None)
@@ -369,7 +353,7 @@ def _input_min_length(a: Assignment) -> Optional[tuple[int, int, Optional[int]]]
     if op in ("extract_uint16", "extract_uint32", "extract_uint64"):
         if len(a.inputs) != 2:
             return None
-        idx = _const_int_value(_operand_const(a.inputs[1]))
+        idx = const_int(operand_const(a.inputs[1]))
         if idx is None or idx < 0:
             return None
         width = {"extract_uint16": 2, "extract_uint32": 4, "extract_uint64": 8}[op]
@@ -410,8 +394,8 @@ def _input_min_length(a: Assignment) -> Optional[tuple[int, int, Optional[int]]]
     if op == "extract3":
         if len(a.inputs) != 3:
             return None
-        start = _const_int_value(_operand_const(a.inputs[1]))
-        length = _const_int_value(_operand_const(a.inputs[2]))
+        start = const_int(operand_const(a.inputs[1]))
+        length = const_int(operand_const(a.inputs[2]))
         if start is None or length is None or start < 0 or length < 0:
             return None
         return (0, start + length, None)
@@ -420,7 +404,7 @@ def _input_min_length(a: Assignment) -> Optional[tuple[int, int, Optional[int]]]
     if op == "substring3":
         if len(a.inputs) != 3:
             return None
-        end = _const_int_value(_operand_const(a.inputs[2]))
+        end = const_int(operand_const(a.inputs[2]))
         if end is None or end < 0:
             return None
         return (0, end, None)
@@ -429,7 +413,7 @@ def _input_min_length(a: Assignment) -> Optional[tuple[int, int, Optional[int]]]
     if op == "setbyte":
         if len(a.inputs) != 3:
             return None
-        idx = _const_int_value(_operand_const(a.inputs[1]))
+        idx = const_int(operand_const(a.inputs[1]))
         if idx is None or idx < 0:
             return None
         return (0, idx + 1, None)

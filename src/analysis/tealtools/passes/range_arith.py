@@ -38,20 +38,11 @@ from __future__ import annotations
 
 from typing import Optional
 
-from ..ssa import Const, IntRange, SSAProgram, SSAVar, TealType
+from ..ssa import Const, IntRange, SSAProgram, SSAVar, TealType, const_int
 
 
 _UINT64_MAX = (1 << 64) - 1
 _UINT64 = TealType("uint64")
-
-
-def _const_int(c: Optional[Const]) -> Optional[int]:
-    if c is None or c.kind != "int":
-        return None
-    try:
-        return int(c.value)
-    except (TypeError, ValueError):
-        return None
 
 
 def _operand_range(operand) -> Optional[IntRange]:
@@ -59,7 +50,7 @@ def _operand_range(operand) -> Optional[IntRange]:
     from ``operand.range`` if set; otherwise lifts a singleton range
     from ``const_value`` (or the literal value of a ``Const``)."""
     if isinstance(operand, Const):
-        n = _const_int(operand)
+        n = const_int(operand)
         if n is not None and 0 <= n <= _UINT64_MAX:
             return IntRange(n, n)
         return None
@@ -68,7 +59,7 @@ def _operand_range(operand) -> Optional[IntRange]:
         return r
     cv = getattr(operand, "const_value", None)
     if cv is not None:
-        n = _const_int(cv)
+        n = const_int(cv)
         if n is not None and 0 <= n <= _UINT64_MAX:
             return IntRange(n, n)
     return None
@@ -205,7 +196,7 @@ def propagate_range_arithmetic(prog: SSAProgram) -> int:
     # saw ``None``.) Bytes constants stay unranged: ``_const_int`` rejects them.
     def _seed_const(obj) -> None:
         if obj.range is None:
-            n = _const_int(getattr(obj, "const_value", None))
+            n = const_int(getattr(obj, "const_value", None))
             if n is not None and 0 <= n <= _UINT64_MAX and _set_range(obj, n, n):
                 nonlocal changed_overall
                 changed_overall += 1

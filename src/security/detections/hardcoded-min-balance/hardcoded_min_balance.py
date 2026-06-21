@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-from tealtools.ssa import Assignment, Const, SSAProgram, SSAVar
+from tealtools.ssa import Assignment, SSAProgram, SSAVar, const_int
 from tealtools.detections import common
 
 
@@ -29,15 +29,6 @@ class HardcodedMinBalanceViolation:
 
     def __repr__(self) -> str:
         return f"HardcodedMinBalanceViolation({self.pretty()})"
-
-
-def _operand_const_int(operand) -> Const | None:
-    if isinstance(operand, Const):
-        return operand if operand.kind == "int" else None
-    cv = getattr(operand, "const_value", None)
-    if isinstance(cv, Const) and cv.kind == "int":
-        return cv
-    return None
 
 
 class HardcodedMinBalanceDetector:
@@ -75,7 +66,7 @@ class HardcodedMinBalanceDetector:
                     continue
                 if bal.defined_by.op != "balance":
                     continue
-                if _operand_const_int(cnst) is None:
+                if const_int(cnst) is None:
                     continue
                 out.append(HardcodedMinBalanceViolation(
                     sub_op=sub, balance_op=bal.defined_by,
