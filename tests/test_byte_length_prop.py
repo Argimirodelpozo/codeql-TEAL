@@ -255,3 +255,49 @@ def test_propagate_inverse_constraint_seeds_input_range():
     propagate_byte_lengths(_prog([_asn("btoi", inputs=[v1], outputs=[v2])]))
     assert v1.type.byte_length is None
     assert v1.type.byte_length_range == IntRange(1, 8)
+
+
+# --------------------------------------------------------------------------
+# Fixed-width bytes FIELDS (32-byte addresses / keys, 64-byte StateProofPK)
+# --------------------------------------------------------------------------
+
+
+def test_op_byte_length_address_fields():
+    assert _op_byte_length(_asn("txn", imm="Sender")) == 32
+    assert _op_byte_length(_asn("txn", imm="RekeyTo")) == 32
+    assert _op_byte_length(_asn("txn", imm="ConfigAssetClawback")) == 32
+    assert _op_byte_length(_asn("txn", imm="StateProofPK")) == 64
+    # gtxn carries the field as the SECOND immediate (after the group index).
+    assert _op_byte_length(_asn("gtxn", imm="0 Receiver")) == 32
+    assert _op_byte_length(_asn("global", imm="ZeroAddress")) == 32
+    assert _op_byte_length(_asn("global", imm="CurrentApplicationAddress")) == 32
+    # A non-fixed-width field stays unknown (e.g. Note is variable length).
+    assert _op_byte_length(_asn("txn", imm="Note")) is None
+
+
+# --------------------------------------------------------------------------
+# Multi-output crypto ops — positional fixed lengths (_OP_OUTPUT_BYTELEN)
+# --------------------------------------------------------------------------
+
+
+def test_ecdsa_pk_decompress_both_outputs_32():
+    x, y = _var(10, 0), _var(10, 1)
+    propagate_byte_lengths(
+        _prog([_asn("ecdsa_pk_decompress", imm="Secp256k1",
+                    inputs=[_bytes_operand(3)], outputs=[x, y])])
+    )
+    assert x.type.byte_length == 32
+    assert y.type.byte_length == 32
+
+
+def test_vrf_verify_output_is_64_bytes():
+    # outputs[0] is the 0/1 verified flag (a uint64, no byte length);
+    # outputs[1] is the 64-byte VRF output.
+    flag, out = _var(10, 0), _var(10, 1)
+    propagate_byte_lengths(
+        _prog([_asn("vrf_verify", imm="VrfAlgorand",
+                    inputs=[_bytes_operand(3)], outputs=[flag, out])])
+    )
+    assert out.type.byte_length == 64
+    # the flag output isn't tagged with a bytes length
+    assert getattr(flag.type, "byte_length", None) is None

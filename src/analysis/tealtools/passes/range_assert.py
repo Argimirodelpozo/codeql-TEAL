@@ -25,10 +25,12 @@ A use in the assert's own block counts as dominated only when it is strictly
 after the assert in source (== execution) order. (Operands are top-first,
 ``inputs[1] op inputs[0]`` — see ``reference_ssa_inputs_top_first``.)
 
-Opt-in (not in :func:`tealtools.passes.run_all_passes`). Lazily trips
-:func:`propagate_range_arithmetic` (hence ``propagate_ranges``) so const /
-arithmetic bounds exist before the guards refine them. Iterates to a fixed
-point so chained guards (``assert(a < b); assert(b < 100)``) compose.
+Runs in :func:`tealtools.passes.run_all_passes` as Phase B step 7, right
+after :func:`propagate_range_arithmetic` so const / arithmetic bounds exist
+before the guards refine them (it lazily trips that pass — hence
+``propagate_ranges`` — when called standalone). Iterates to a fixed point so
+chained guards (``assert(a < b); assert(b < 100)``) compose. Re-running finds
+no further tightening (``_apply`` only ever narrows), so it is idempotent.
 """
 from __future__ import annotations
 

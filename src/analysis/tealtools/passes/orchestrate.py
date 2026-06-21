@@ -31,11 +31,16 @@ as-bigint.
      fields, …) plus phi union.
   6. :meth:`SSAProgram.propagate_range_arithmetic` — composes (5)
      through ``+`` / ``-`` / ``*`` / ``/`` / ``%`` with phi re-union.
-  7. :meth:`SSAProgram.propagate_byte_lengths` — exact byte_length
+  7. :meth:`SSAProgram.propagate_assert_ranges` — tightens (5)/(6)
+     from the contract's own ``assert`` guards, flow-sensitively (a
+     guard only constrains the SSAVars whose every non-test use it
+     dominates, so the single per-var range stays sound on bypassing
+     paths). Runs after arithmetic so composed bounds exist to refine.
+  8. :meth:`SSAProgram.propagate_byte_lengths` — exact byte_length
      on bytes producers (``itob``, ``concat``, ``sha256``, …) plus
      inverse range constraints from ``btoi`` / ``getbyte`` /
      ``extract_uint*`` / etc. on their bytes inputs.
-  8. :meth:`SSAProgram.propagate_bytemath_ranges` — bigint value
+  9. :meth:`SSAProgram.propagate_bytemath_ranges` — bigint value
      range via Python ints on bytemath ops (``b+``, ``b-``, ``b*``,
      ``b/``, ``b%``) plus the ``itob`` / ``btoi`` bridge between
      uint64 and bytes-bigint value spaces.
@@ -47,34 +52,34 @@ inline literal constants, de-duplicate the over-generated phis, and
 finally materialise phis (which clears ``prog.phis`` — any pass that
 iterates it must have already run).
 
-  9. :meth:`SSAProgram.propagate_stack_shuffles` — copy-propagate
-     pure shuffles (``dup``, ``swap``, ``frame_dig``, …) into every
-     consumer; the shuffle Assignments stay in the IR with
-     ``shuffled=True`` so they render as ``// …`` comments.
-  10. :meth:`SSAProgram.propagate_stable_expressions` — CSE over the
+  10. :meth:`SSAProgram.propagate_stack_shuffles` — copy-propagate
+      pure shuffles (``dup``, ``swap``, ``frame_dig``, …) into every
+      consumer; the shuffle Assignments stay in the IR with
+      ``shuffled=True`` so they render as ``// …`` comments.
+  11. :meth:`SSAProgram.propagate_stable_expressions` — CSE over the
       execution-stable sub-DAG: a pure op of stable inputs is itself
       stable, so syntactically-equal stable expressions (e.g. two
       ``sha256(txn Sender)``) unify to one canonical value. Runs here,
       after shuffles, so compute ops reach their stable operands
       directly.
-  11. :meth:`SSAProgram.cleanup_unused_ssavars` — drop side-effect-
+  12. :meth:`SSAProgram.cleanup_unused_ssavars` — drop side-effect-
       free Assignments whose every output is now dead (the duplicate
       readers from step 3, the forwarded loads from step 4, and the
-      CSE'd duplicates from step 10 are the typical victims).
-  12. :meth:`SSAProgram.eliminate_dead_constants` — inline literal
+      CSE'd duplicates from step 11 are the typical victims).
+  13. :meth:`SSAProgram.eliminate_dead_constants` — inline literal
       constants into consumers and drop the now-orphan SSAVars /
       Phis / Assignments.
-  13. :meth:`SSAProgram.dedup_phis` — collapse value-equal phis (same
+  14. :meth:`SSAProgram.dedup_phis` — collapse value-equal phis (same
       value-normalised args, merge-point-agnostic) to one, to a
       fixpoint. PySSA's constant-stack unroll over-generates phi objects
       (xgov: ~21k → ~109); running this right before materialisation
       keeps the ``mat_phi`` count bounded instead of one copy per
       redundant phi.
-  14. :meth:`SSAProgram.materialize_phis` — out-of-SSA lowering;
+  15. :meth:`SSAProgram.materialize_phis` — out-of-SSA lowering;
       each live phi becomes a synthetic ``mat_phi_k`` with a copy
       assignment at every contributing leaf's def site.
 
-After all fourteen run, :meth:`SSAProgram.functional` (and
+After all fifteen run, :meth:`SSAProgram.functional` (and
 ``functional_by_block``, plus :func:`functional_dump` here) give
 the most-annotated flat dump the substrate can produce. Every
 pass is idempotent — running ``run_all_passes`` twice is a no-op
@@ -107,6 +112,7 @@ def run_all_passes(prog: SSAProgram) -> SSAProgram:
         # Phase B — analytical annotation.
         ("propagate_ranges",            prog.propagate_ranges),
         ("propagate_range_arithmetic",  prog.propagate_range_arithmetic),
+        ("propagate_assert_ranges",     prog.propagate_assert_ranges),
         ("propagate_byte_lengths",      prog.propagate_byte_lengths),
         ("propagate_bytemath_ranges",   prog.propagate_bytemath_ranges),
         # Phase C — structural lowering.

@@ -32,6 +32,13 @@ Op semantics covered (forward, single-output bytes producers):
   - ``sha256`` / ``sha512_256``
     / ``keccak256`` / ``sha3_256``  → 32 bytes (AVM hash digests have
                                   fixed output width).
+  - ``txn``/``gtxn``/``gtxns``/``itxn`` reads of a fixed-width bytes
+    field (32-byte addresses + ``Lease`` / ``VotePK`` / ``SelectionPK``,
+    64-byte ``StateProofPK``) via ``_TXN_FIELD_BYTELEN``; ``global``
+    address fields via ``_GLOBAL_FIELD_BYTELEN``.
+  - ``ecdsa_pk_decompress`` / ``ecdsa_pk_recover`` (both outputs 32) and
+    ``vrf_verify`` (64-byte output) — *multi*-output ops, seeded
+    positionally from ``_OP_OUTPUT_BYTELEN``.
   - Any output already resolved to a ``Const("bytes", "0x..")`` via
     :meth:`propagate_constants` has its length lifted directly from
     the hex literal.
@@ -77,6 +84,11 @@ from collections import deque
 from typing import Optional
 
 from ..ssa import Assignment, Const, IntRange, Phi, SSAProgram, SSAVar, TealType
+from ..ssa.models import (
+    _GLOBAL_FIELD_BYTELEN,
+    _OP_OUTPUT_BYTELEN,
+    _TXN_FIELD_BYTELEN,
+)
 
 
 _BYTES_STACK_CAP = 4096  # AVM bytes-stack values are capped at 4096 bytes.
@@ -235,6 +247,24 @@ def _op_byte_length(a: Assignment) -> Optional[int]:
     # Fixed-width hash digests.
     if op in ("sha256", "sha512_256", "keccak256", "sha3_256"):
         return 32
+
+    # Fixed-width bytes fields (32-byte addresses / keys, 64-byte
+    # StateProofPK) read off the txn-family or global field tables.
+    if a.immediates:
+        toks = a.immediates.split()
+        field: Optional[str] = None
+        if op in ("txn", "gtxns", "itxn") and toks:
+            field = toks[0]
+        elif op in ("gtxn", "gtxna", "gtxnas") and len(toks) >= 2:
+            field = toks[1]
+        if field is not None:
+            n = _TXN_FIELD_BYTELEN.get(field)
+            if n is not None:
+                return n
+        if op == "global" and toks:
+            n = _GLOBAL_FIELD_BYTELEN.get(toks[0])
+            if n is not None:
+                return n
 
     return None
 
@@ -450,6 +480,18 @@ def propagate_byte_lengths(prog: SSAProgram) -> int:
     # (1) Forward exact-length rule for one bytes-producing op.
     def do_assignment(a) -> None:
         nonlocal tagged
+        # Multi-output ops with fixed-width bytes outputs (ecdsa pubkey
+        # words, vrf_verify's output) — positional, top-first.
+        out_lens = _OP_OUTPUT_BYTELEN.get(a.op)
+        if out_lens is not None:
+            for idx, n in out_lens:
+                if idx < len(a.outputs):
+                    out = a.outputs[idx]
+                    if isinstance(out, SSAVar) and _set_byte_length(out, n):
+                        tagged += 1
+                        fan_out(out)
+            return
+
         if len(a.outputs) != 1:
             return
         out = a.outputs[0]

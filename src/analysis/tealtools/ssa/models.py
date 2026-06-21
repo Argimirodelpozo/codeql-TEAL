@@ -475,6 +475,8 @@ def _build_op_range_seeds():
         "getbyte":        ("uint64", 0, 0xFF),
         "extract_uint16": ("uint64", 0, 0xFFFF),
         "extract_uint32": ("uint64", 0, 0xFFFFFFFF),
+        # isqrt of any uint64 never exceeds 2^32 - 1, regardless of input.
+        "sqrt":   ("uint64", 0, 0xFFFFFFFF),
         # length ops bounded by AVM stack-bytes cap (4096 bytes)
         "len":    ("uint64", 0, 4096),
         "bitlen": ("uint64", 0, 4096 * 8),
@@ -482,16 +484,98 @@ def _build_op_range_seeds():
 
 _OP_RANGE_SEEDS = _build_op_range_seeds()
 
-# Bounded enum fields for txn-family / global field reads. Values track
-# the AVM spec: OnCompletion in {0..5}, TypeEnum in {0..6} (unknown..appl),
-# GroupIndex 0-based with max group size 16, GroupSize ≥ 1.
+# Bounded enum / count fields for txn-family / global field reads. Values
+# track the AVM consensus spec: OnCompletion in {0..5}, TypeEnum in {0..6}
+# (unknown..appl), GroupIndex 0-based with max group size 16, GroupSize ≥ 1.
+# The Num* fields are array lengths capped by the per-txn reference limits
+# (MaxAppArgs 16, accounts 4, foreign assets/apps 8, logs 32); the schema
+# counts by MaxGlobalSchemaEntries 64 / MaxLocalSchemaEntries 16; asset
+# decimals at 19; extra program pages at 3. Each bound is the *sound* upper
+# limit for the field read in isolation (a too-tight cap would be unsound).
 _TXN_FIELD_RANGES: dict = {
-    "OnCompletion": (0, 5),
-    "TypeEnum":     (0, 6),
-    "GroupIndex":   (0, 15),
+    "OnCompletion":        (0, 5),
+    "TypeEnum":            (0, 6),
+    "GroupIndex":          (0, 15),
+    # Reference-array lengths.
+    "NumAppArgs":          (0, 16),
+    "NumAccounts":         (0, 4),
+    "NumAssets":           (0, 8),
+    "NumApplications":     (0, 8),
+    "NumLogs":             (0, 32),
+    # State-schema entry counts.
+    "GlobalNumUint":       (0, 64),
+    "GlobalNumByteSlice":  (0, 64),
+    "LocalNumUint":        (0, 16),
+    "LocalNumByteSlice":   (0, 16),
+    # Other spec-capped scalars.
+    "ExtraProgramPages":   (0, 3),
+    "ConfigAssetDecimals": (0, 19),
 }
 _GLOBAL_FIELD_RANGES: dict = {
     "GroupSize": (1, 16),
+}
+
+# Positional output range seeds for multi-output ops, top-first:
+# ``op -> [(output_index, lo, hi), …]``. The ``*_get`` / ``*_ex`` family
+# pushes a 0/1 "exists / found" flag as its top output (``outputs[0]``) —
+# the value most often fed to ``assert`` / ``bz`` / ``bnz`` — which the
+# single-output ``_OP_RANGE_SEEDS`` path can't reach. ``box_len`` also
+# bounds its length output (``outputs[1]``) by the 32768-byte max box size.
+# ``addw`` pushes ``(high, low)`` with low on top, so its high word
+# (``outputs[1]``) is the carry of a 64+64-bit add — always 0 or 1.
+# ``vrf_verify`` pushes ``(output, verified)`` with the 0/1 verified flag
+# on top (its 64-byte output length is seeded in ``_OP_OUTPUT_BYTELEN``).
+_OP_OUTPUT_SEEDS: dict = {
+    "asset_params_get":  [(0, 0, 1)],
+    "app_params_get":    [(0, 0, 1)],
+    "acct_params_get":   [(0, 0, 1)],
+    "app_global_get_ex": [(0, 0, 1)],
+    "app_local_get_ex":  [(0, 0, 1)],
+    "box_get":           [(0, 0, 1)],
+    "box_len":           [(0, 0, 1), (1, 0, 32768)],
+    "addw":              [(1, 0, 1)],
+    "vrf_verify":        [(0, 0, 1)],
+}
+
+# Static byte_length seeds, consumed by ``passes/byte_length_prop``.
+#
+# ``_TXN_FIELD_BYTELEN`` / ``_GLOBAL_FIELD_BYTELEN`` — txn-family / global
+# field reads whose output is a fixed-width bytes value: 32-byte addresses
+# and the participation keys (StateProofPK is 64). ``_OP_OUTPUT_BYTELEN``
+# — positional fixed lengths on multi-output crypto ops, top-first
+# (``op -> [(output_index, byte_length), …]``).
+_TXN_FIELD_BYTELEN: dict = {
+    # 32-byte addresses.
+    "Sender":              32,
+    "Receiver":            32,
+    "CloseRemainderTo":    32,
+    "RekeyTo":             32,
+    "AssetSender":         32,
+    "AssetReceiver":       32,
+    "AssetCloseTo":        32,
+    "FreezeAssetAccount":  32,
+    "ConfigAssetManager":  32,
+    "ConfigAssetReserve":  32,
+    "ConfigAssetFreeze":   32,
+    "ConfigAssetClawback": 32,
+    # Fixed-width keys / lease.
+    "Lease":               32,
+    "VotePK":              32,
+    "SelectionPK":         32,
+    "StateProofPK":        64,
+}
+_GLOBAL_FIELD_BYTELEN: dict = {
+    "ZeroAddress":              32,
+    "CreatorAddress":           32,
+    "CurrentApplicationAddress": 32,
+    "CallerApplicationAddress": 32,
+}
+_OP_OUTPUT_BYTELEN: dict = {
+    # ecdsa pubkey ops push two 32-byte words (X, Y).
+    "ecdsa_pk_decompress": [(0, 32), (1, 32)],
+    "ecdsa_pk_recover":    [(0, 32), (1, 32)],
+    # vrf_verify's non-flag output (outputs[1]) is the 64-byte VRF output.
+    "vrf_verify":          [(1, 64)],
 }
 
 
