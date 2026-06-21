@@ -61,6 +61,17 @@ class SSAProgram:
         self._build_from_graph(graph)
         return self
 
+    @classmethod
+    def from_text(cls, teal: str, *, name: str = "contract.teal",
+                  verbose: bool = False) -> "SSAProgram":
+        """Build SSA from in-memory TEAL source TEXT -- no filesystem. ``name`` is
+        the logical file name the SSA / findings report. For several files pass a
+        ``{name: text}`` mapping straight to :func:`graphs.load_graph`. (The lift's
+        source-text recovery -- template names, dropped consts -- still needs a real
+        path; all SSA + detector analysis works in-memory.)"""
+        from .. import graphs as tg
+        return cls.from_graph(tg.load_graph({name: teal}, verbose=verbose))
+
     def _build_from_graph(self, g) -> None:
         """Reconstruct the SSA program from a loaded graph ``g`` (no parsing)."""
         from ..ast import Opcode, Label

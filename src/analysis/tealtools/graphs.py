@@ -22,7 +22,7 @@ Graphviz rendering of the loaded graph lives in :mod:`tealtools.viz`
 """
 from __future__ import annotations
 
-import os
+from collections.abc import Mapping
 from pathlib import Path
 
 import networkx as nx
@@ -138,15 +138,21 @@ def _normalize_pseudo_ops(data: bytes) -> bytes:
     return "\n".join(out).encode("utf-8")
 
 
-def _resolve_source_files(source: Path):
+def _resolve_source_files(source):
     """Yield ``(relpath, bytes)`` for each ``.teal`` under ``source``, pseudo-op-
     normalized (see :func:`_normalize_pseudo_ops`) so the extractor sees only
     canonical opcodes.
 
-    ``source`` is a single ``.teal`` file or a directory containing ``.teal``
-    files; the whole pipeline (graph -> SSA -> lift -> analysis) reconstructs from
-    that source.
+    ``source`` is one of: a single ``.teal`` file, a directory containing ``.teal``
+    files, **or an in-memory mapping** ``{name: str | bytes}`` of TEAL source -- the
+    last form lets the whole pipeline (graph -> SSA -> lift -> analysis) run with no
+    filesystem at all (editor integrations, fuzzing, tests without temp files).
     """
+    if isinstance(source, Mapping):
+        for name, text in source.items():
+            data = text.encode("utf-8") if isinstance(text, str) else text
+            yield name, _normalize_pseudo_ops(data)
+        return
     source = Path(source)
     if source.is_file() and source.suffix == ".teal":
         yield source.name, _normalize_pseudo_ops(source.read_bytes())
@@ -193,7 +199,7 @@ def _slice_source(sources: dict[str, list[str]], loc: Location) -> str:
 
 
 def load_graph(
-    source: str | Path,
+    source,
     *,
     verbose: bool = True,
 ) -> nx.MultiDiGraph:
@@ -202,18 +208,23 @@ def load_graph(
     Parameters
     ----------
     source:
-        A raw ``.teal`` file, **or** a directory of ``.teal`` files. Both run the
+        A raw ``.teal`` file, a directory of ``.teal`` files, **or** an in-memory
+        mapping ``{name: str | bytes}`` of TEAL source (no filesystem). All run the
         same pure-Python pipeline.
     verbose:
         Accepted for backward compatibility; the pure-Python build is ~ms and
         prints nothing.
     """
-    source = Path(source).resolve()
-    if not source.exists():
-        raise FileNotFoundError(source)
+    if isinstance(source, Mapping):
+        g_source = "<memory>"
+    else:
+        source = Path(source).resolve()
+        if not source.exists():
+            raise FileNotFoundError(source)
+        g_source = str(source)
 
     g = nx.MultiDiGraph()
-    g.graph["source"] = str(source)
+    g.graph["source"] = g_source
     sources = _load_source_lines(source)
 
     # (file, start_line) -> AstNode instance, for edge-endpoint lookup.
