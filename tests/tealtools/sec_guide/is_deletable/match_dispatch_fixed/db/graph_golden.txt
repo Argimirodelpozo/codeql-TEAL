@@ -1,24 +1,24 @@
 ## nodes
-prog.teal	1	1	27	9	Source
-prog.teal	5	1	5	5	SingleNumericArgumentOpcode
-prog.teal	6	1	6	5	SingleNumericArgumentOpcode
-prog.teal	7	1	7	5	SingleNumericArgumentOpcode
-prog.teal	8	1	8	5	SingleNumericArgumentOpcode
-prog.teal	9	1	9	16	TxnOpcode
-prog.teal	10	1	10	59	MatchOpcode
-prog.teal	11	1	11	3	ErrOpcode
-prog.teal	13	1	13	12	Label
-prog.teal	14	3	14	7	SingleNumericArgumentOpcode
-prog.teal	15	3	15	8	ReturnOpcode
-prog.teal	17	1	17	13	Label
-prog.teal	18	3	18	7	SingleNumericArgumentOpcode
-prog.teal	19	3	19	8	ReturnOpcode
-prog.teal	21	1	21	16	Label
-prog.teal	22	3	22	7	SingleNumericArgumentOpcode
-prog.teal	23	3	23	8	ReturnOpcode
-prog.teal	25	1	25	13	Label
-prog.teal	26	3	26	7	SingleNumericArgumentOpcode
-prog.teal	27	3	27	8	ReturnOpcode
+prog.teal	1	0	27	8	Source
+prog.teal	5	0	5	5	SingleNumericArgumentOpcode
+prog.teal	6	0	6	5	SingleNumericArgumentOpcode
+prog.teal	7	0	7	5	SingleNumericArgumentOpcode
+prog.teal	8	0	8	5	SingleNumericArgumentOpcode
+prog.teal	9	0	9	16	TxnOpcode
+prog.teal	10	0	10	59	MatchOpcode
+prog.teal	11	0	11	3	ErrOpcode
+prog.teal	13	0	13	12	Label
+prog.teal	14	2	14	7	SingleNumericArgumentOpcode
+prog.teal	15	2	15	8	ReturnOpcode
+prog.teal	17	0	17	13	Label
+prog.teal	18	2	18	7	SingleNumericArgumentOpcode
+prog.teal	19	2	19	8	ReturnOpcode
+prog.teal	21	0	21	16	Label
+prog.teal	22	2	22	7	SingleNumericArgumentOpcode
+prog.teal	23	2	23	8	ReturnOpcode
+prog.teal	25	0	25	13	Label
+prog.teal	26	2	26	7	SingleNumericArgumentOpcode
+prog.teal	27	2	27	8	ReturnOpcode
 ## cfgEdges
 prog.teal	5	prog.teal	6	NormalSuccessor
 prog.teal	6	prog.teal	7	NormalSuccessor

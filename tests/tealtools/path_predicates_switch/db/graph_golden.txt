@@ -1,22 +1,22 @@
 ## nodes
-prog.teal	1	1	30	7	Source
-prog.teal	5	1	5	22	TxnaOpcode
-prog.teal	6	1	6	4	BtoiOpcode
-prog.teal	7	1	7	25	SwitchOpcode
-prog.teal	8	1	8	11	BOpcode
-prog.teal	10	1	10	7	Label
-prog.teal	12	1	12	11	PushintOpcode
-prog.teal	13	1	13	8	BOpcode
-prog.teal	15	1	15	6	Label
-prog.teal	17	1	17	11	PushintOpcode
-prog.teal	18	1	18	8	BOpcode
-prog.teal	20	1	20	6	Label
-prog.teal	22	1	22	11	PushintOpcode
-prog.teal	23	1	23	8	BOpcode
-prog.teal	25	1	25	10	Label
-prog.teal	27	1	27	9	PushintOpcode
-prog.teal	29	1	29	7	Label
-prog.teal	30	1	30	6	ReturnOpcode
+prog.teal	1	0	30	6	Source
+prog.teal	5	0	5	22	TxnaOpcode
+prog.teal	6	0	6	4	BtoiOpcode
+prog.teal	7	0	7	25	SwitchOpcode
+prog.teal	8	0	8	11	BOpcode
+prog.teal	10	0	10	7	Label
+prog.teal	12	0	12	11	PushintOpcode
+prog.teal	13	0	13	8	BOpcode
+prog.teal	15	0	15	6	Label
+prog.teal	17	0	17	11	PushintOpcode
+prog.teal	18	0	18	8	BOpcode
+prog.teal	20	0	20	6	Label
+prog.teal	22	0	22	11	PushintOpcode
+prog.teal	23	0	23	8	BOpcode
+prog.teal	25	0	25	10	Label
+prog.teal	27	0	27	9	PushintOpcode
+prog.teal	29	0	29	7	Label
+prog.teal	30	0	30	6	ReturnOpcode
 ## cfgEdges
 prog.teal	5	prog.teal	6	NormalSuccessor
 prog.teal	6	prog.teal	7	NormalSuccessor

@@ -12,7 +12,7 @@ node inspection for free:
 
 Each node carries two fields:
 
-- ``location``: a :class:`Location` from CodeQL (file + full start/end span)
+- ``location``: a :class:`Location` (file + full start/end span)
 - ``code``: the opcode with its immediates, as written in the source
   (e.g. ``"int 1"``, ``"load 2"``, ``"txna ApplicationArgs 0"``).
 
@@ -33,7 +33,8 @@ from typing import ClassVar, Optional
 
 @dataclass(frozen=True)
 class Location:
-    """A CodeQL source-range location."""
+    """A source-range location: 1-based lines, native 0-based half-open
+    columns (``[start_column, end_column)``)."""
     file: str
     start_line: int
     start_column: int
@@ -53,7 +54,7 @@ class AstNode:
 
     Hashing/equality are keyed by ``(file, start_line)`` — TEAL is
     one-instruction-per-line, so this uniquely identifies each node and
-    lets edge endpoints (which CodeQL reports by ``(file, line)``) look
+    lets edge endpoints (reported by ``(file, line)``) look
     up the matching node instance directly.
     """
 

@@ -1,7 +1,7 @@
 ## nodes
-prog.teal	1	1	5	7	Source
-prog.teal	4	1	4	9	PushintOpcode
-prog.teal	5	1	5	6	ReturnOpcode
+prog.teal	1	0	5	6	Source
+prog.teal	4	0	4	9	PushintOpcode
+prog.teal	5	0	5	6	ReturnOpcode
 ## cfgEdges
 prog.teal	4	prog.teal	5	NormalSuccessor
 ## basicBlocks

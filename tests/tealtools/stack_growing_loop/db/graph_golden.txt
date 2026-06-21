@@ -1,13 +1,13 @@
 ## nodes
-prog.teal	1	1	24	7	Source
-prog.teal	15	1	15	9	PushintOpcode
-prog.teal	17	1	17	7	Label
-prog.teal	18	1	18	9	PushintOpcode
-prog.teal	19	1	19	22	TxnaOpcode
-prog.teal	20	1	20	4	BtoiOpcode
-prog.teal	21	1	21	10	BnzOpcode
-prog.teal	23	1	23	9	PushintOpcode
-prog.teal	24	1	24	6	ReturnOpcode
+prog.teal	1	0	24	6	Source
+prog.teal	15	0	15	9	PushintOpcode
+prog.teal	17	0	17	7	Label
+prog.teal	18	0	18	9	PushintOpcode
+prog.teal	19	0	19	22	TxnaOpcode
+prog.teal	20	0	20	4	BtoiOpcode
+prog.teal	21	0	21	10	BnzOpcode
+prog.teal	23	0	23	9	PushintOpcode
+prog.teal	24	0	24	6	ReturnOpcode
 ## cfgEdges
 prog.teal	15	prog.teal	17	NormalSuccessor
 prog.teal	17	prog.teal	18	NormalSuccessor

@@ -1,27 +1,27 @@
 ## nodes
-prog.teal	1	1	25	7	Source
-prog.teal	4	1	4	10	TxnOpcode
-prog.teal	5	1	5	10	SingleNumericArgumentOpcode
-prog.teal	6	1	6	2	IntegerLteOpcode
-prog.teal	7	1	7	7	TxnOpcode
-prog.teal	8	1	8	16	GlobalOpcode
-prog.teal	9	1	9	2	IntegerLteOpcode
-prog.teal	10	1	10	2	AndOpcode
-prog.teal	11	1	11	11	TxnOpcode
-prog.teal	12	1	12	18	GlobalOpcode
-prog.teal	13	1	13	2	EqualsComparisonOpcode
-prog.teal	14	1	14	2	AndOpcode
-prog.teal	15	1	15	20	TxnOpcode
-prog.teal	16	1	16	18	GlobalOpcode
-prog.teal	17	1	17	2	EqualsComparisonOpcode
-prog.teal	18	1	18	2	AndOpcode
-prog.teal	19	1	19	12	TxnOpcode
-prog.teal	20	1	20	76	PushbytesOpcode
-prog.teal	21	1	21	2	EqualsComparisonOpcode
-prog.teal	22	1	22	2	AndOpcode
-prog.teal	23	1	23	6	AssertOpcode
-prog.teal	24	1	24	5	SingleNumericArgumentOpcode
-prog.teal	25	1	25	6	ReturnOpcode
+prog.teal	1	0	25	6	Source
+prog.teal	4	0	4	10	TxnOpcode
+prog.teal	5	0	5	10	SingleNumericArgumentOpcode
+prog.teal	6	0	6	2	IntegerLteOpcode
+prog.teal	7	0	7	7	TxnOpcode
+prog.teal	8	0	8	16	GlobalOpcode
+prog.teal	9	0	9	2	IntegerLteOpcode
+prog.teal	10	0	10	2	AndOpcode
+prog.teal	11	0	11	11	TxnOpcode
+prog.teal	12	0	12	18	GlobalOpcode
+prog.teal	13	0	13	2	EqualsComparisonOpcode
+prog.teal	14	0	14	2	AndOpcode
+prog.teal	15	0	15	20	TxnOpcode
+prog.teal	16	0	16	18	GlobalOpcode
+prog.teal	17	0	17	2	EqualsComparisonOpcode
+prog.teal	18	0	18	2	AndOpcode
+prog.teal	19	0	19	12	TxnOpcode
+prog.teal	20	0	20	76	PushbytesOpcode
+prog.teal	21	0	21	2	EqualsComparisonOpcode
+prog.teal	22	0	22	2	AndOpcode
+prog.teal	23	0	23	6	AssertOpcode
+prog.teal	24	0	24	5	SingleNumericArgumentOpcode
+prog.teal	25	0	25	6	ReturnOpcode
 ## cfgEdges
 prog.teal	4	prog.teal	5	NormalSuccessor
 prog.teal	5	prog.teal	6	NormalSuccessor

@@ -1,21 +1,21 @@
 ## nodes
-prog.teal	1	1	18	7	Source
-prog.teal	3	1	3	16	TxnOpcode
-prog.teal	4	1	4	5	SingleNumericArgumentOpcode
-prog.teal	5	1	5	2	EqualsComparisonOpcode
-prog.teal	6	1	6	6	AssertOpcode
-prog.teal	7	1	7	10	InnerTransactionBegin
-prog.teal	8	1	8	5	SingleNumericArgumentOpcode
-prog.teal	9	1	9	19	InnerTransactionField
-prog.teal	10	1	10	10	TxnOpcode
-prog.teal	11	1	11	19	InnerTransactionField
-prog.teal	12	1	12	5	SingleNumericArgumentOpcode
-prog.teal	13	1	13	14	InnerTransactionField
-prog.teal	14	1	14	10	SingleNumericArgumentOpcode
-prog.teal	15	1	15	17	InnerTransactionField
-prog.teal	16	1	16	11	InnerTransactionSubmit
-prog.teal	17	1	17	5	SingleNumericArgumentOpcode
-prog.teal	18	1	18	6	ReturnOpcode
+prog.teal	1	0	18	6	Source
+prog.teal	3	0	3	16	TxnOpcode
+prog.teal	4	0	4	5	SingleNumericArgumentOpcode
+prog.teal	5	0	5	2	EqualsComparisonOpcode
+prog.teal	6	0	6	6	AssertOpcode
+prog.teal	7	0	7	10	InnerTransactionBegin
+prog.teal	8	0	8	5	SingleNumericArgumentOpcode
+prog.teal	9	0	9	19	InnerTransactionField
+prog.teal	10	0	10	10	TxnOpcode
+prog.teal	11	0	11	19	InnerTransactionField
+prog.teal	12	0	12	5	SingleNumericArgumentOpcode
+prog.teal	13	0	13	14	InnerTransactionField
+prog.teal	14	0	14	10	SingleNumericArgumentOpcode
+prog.teal	15	0	15	17	InnerTransactionField
+prog.teal	16	0	16	11	InnerTransactionSubmit
+prog.teal	17	0	17	5	SingleNumericArgumentOpcode
+prog.teal	18	0	18	6	ReturnOpcode
 ## cfgEdges
 prog.teal	3	prog.teal	4	NormalSuccessor
 prog.teal	4	prog.teal	5	NormalSuccessor

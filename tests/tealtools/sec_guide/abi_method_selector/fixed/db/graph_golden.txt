@@ -1,11 +1,11 @@
 ## nodes
-prog.teal	1	1	9	7	Source
-prog.teal	4	1	4	22	TxnaOpcode
-prog.teal	5	1	5	20	PushbytesOpcode
-prog.teal	6	1	6	2	EqualsComparisonOpcode
-prog.teal	7	1	7	6	AssertOpcode
-prog.teal	8	1	8	5	SingleNumericArgumentOpcode
-prog.teal	9	1	9	6	ReturnOpcode
+prog.teal	1	0	9	6	Source
+prog.teal	4	0	4	22	TxnaOpcode
+prog.teal	5	0	5	20	PushbytesOpcode
+prog.teal	6	0	6	2	EqualsComparisonOpcode
+prog.teal	7	0	7	6	AssertOpcode
+prog.teal	8	0	8	5	SingleNumericArgumentOpcode
+prog.teal	9	0	9	6	ReturnOpcode
 ## cfgEdges
 prog.teal	4	prog.teal	5	NormalSuccessor
 prog.teal	5	prog.teal	6	NormalSuccessor

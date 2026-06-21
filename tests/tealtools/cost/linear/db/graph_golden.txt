@@ -1,11 +1,11 @@
 ## nodes
-prog.teal	1	1	10	7	Source
-prog.teal	5	1	5	17	PushbytesOpcode
-prog.teal	6	1	6	6	Sha256Opcode
-prog.teal	7	1	7	10	PushintOpcode
-prog.teal	8	1	8	1	IntegerAddOpcode
-prog.teal	9	1	9	9	PushintOpcode
-prog.teal	10	1	10	6	ReturnOpcode
+prog.teal	1	0	10	6	Source
+prog.teal	5	0	5	17	PushbytesOpcode
+prog.teal	6	0	6	6	Sha256Opcode
+prog.teal	7	0	7	10	PushintOpcode
+prog.teal	8	0	8	1	IntegerAddOpcode
+prog.teal	9	0	9	9	PushintOpcode
+prog.teal	10	0	10	6	ReturnOpcode
 ## cfgEdges
 prog.teal	5	prog.teal	6	NormalSuccessor
 prog.teal	6	prog.teal	7	NormalSuccessor

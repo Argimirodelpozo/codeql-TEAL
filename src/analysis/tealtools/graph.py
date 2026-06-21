@@ -173,9 +173,10 @@ def _load_source_bytes(source: Path) -> dict[str, bytes]:
 def _slice_source(sources: dict[str, list[str]], loc: Location) -> str:
     """Extract the source text covered by a :class:`Location`.
 
-    Columns are 1-based, inclusive at both ends. TEAL opcodes are always
-    single-line; for multi-line spans (e.g. the program-root ``Source`` node)
-    we return ``""`` since the covered region isn't a single statement.
+    Lines are 1-based; columns are native 0-based half-open ``[start, end)``.
+    TEAL opcodes are always single-line; for multi-line spans (e.g. the
+    program-root ``Source`` node) we return ``""`` since the covered region
+    isn't a single statement.
     """
     lines = sources.get(loc.file) or sources.get(Path(loc.file).name)
     if lines is None:
@@ -184,7 +185,7 @@ def _slice_source(sources: dict[str, list[str]], loc: Location) -> str:
         return ""
     if loc.start_line < 1 or loc.start_line > len(lines):
         return ""
-    return lines[loc.start_line - 1][loc.start_column - 1 : loc.end_column]
+    return lines[loc.start_line - 1][loc.start_column : loc.end_column]
 
 
 def load_graph(

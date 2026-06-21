@@ -1,22 +1,22 @@
 ## nodes
-prog.teal	1	1	30	7	Source
-prog.teal	6	1	6	22	TxnaOpcode
-prog.teal	7	1	7	4	BtoiOpcode
-prog.teal	8	1	8	11	BnzOpcode
-prog.teal	12	1	12	10	TxnOpcode
-prog.teal	13	1	13	18	GlobalOpcode
-prog.teal	14	1	14	2	EqualsComparisonOpcode
-prog.teal	15	1	15	6	AssertOpcode
-prog.teal	17	1	17	9	PushintOpcode
-prog.teal	18	1	18	6	ReturnOpcode
-prog.teal	20	1	20	8	Label
-prog.teal	23	1	23	22	TxnaOpcode
-prog.teal	24	1	24	4	BtoiOpcode
-prog.teal	25	1	25	9	PushintOpcode
-prog.teal	26	1	26	2	EqualsComparisonOpcode
-prog.teal	27	1	27	6	AssertOpcode
-prog.teal	29	1	29	9	PushintOpcode
-prog.teal	30	1	30	6	ReturnOpcode
+prog.teal	1	0	30	6	Source
+prog.teal	6	0	6	22	TxnaOpcode
+prog.teal	7	0	7	4	BtoiOpcode
+prog.teal	8	0	8	11	BnzOpcode
+prog.teal	12	0	12	10	TxnOpcode
+prog.teal	13	0	13	18	GlobalOpcode
+prog.teal	14	0	14	2	EqualsComparisonOpcode
+prog.teal	15	0	15	6	AssertOpcode
+prog.teal	17	0	17	9	PushintOpcode
+prog.teal	18	0	18	6	ReturnOpcode
+prog.teal	20	0	20	8	Label
+prog.teal	23	0	23	22	TxnaOpcode
+prog.teal	24	0	24	4	BtoiOpcode
+prog.teal	25	0	25	9	PushintOpcode
+prog.teal	26	0	26	2	EqualsComparisonOpcode
+prog.teal	27	0	27	6	AssertOpcode
+prog.teal	29	0	29	9	PushintOpcode
+prog.teal	30	0	30	6	ReturnOpcode
 ## cfgEdges
 prog.teal	6	prog.teal	7	NormalSuccessor
 prog.teal	7	prog.teal	8	NormalSuccessor

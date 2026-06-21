@@ -1,15 +1,15 @@
 ## nodes
-prog.teal	1	1	17	7	Source
-prog.teal	7	1	7	10	InnerTransactionBegin
-prog.teal	8	1	8	9	PushintOpcode
-prog.teal	9	1	9	19	InnerTransactionField
-prog.teal	10	1	10	15	PushintOpcode
-prog.teal	11	1	11	24	InnerTransactionField
-prog.teal	12	1	12	20	PushbytesOpcode
-prog.teal	13	1	13	26	InnerTransactionField
-prog.teal	14	1	14	11	InnerTransactionSubmit
-prog.teal	16	1	16	9	PushintOpcode
-prog.teal	17	1	17	6	ReturnOpcode
+prog.teal	1	0	17	6	Source
+prog.teal	7	0	7	10	InnerTransactionBegin
+prog.teal	8	0	8	9	PushintOpcode
+prog.teal	9	0	9	19	InnerTransactionField
+prog.teal	10	0	10	15	PushintOpcode
+prog.teal	11	0	11	24	InnerTransactionField
+prog.teal	12	0	12	20	PushbytesOpcode
+prog.teal	13	0	13	26	InnerTransactionField
+prog.teal	14	0	14	11	InnerTransactionSubmit
+prog.teal	16	0	16	9	PushintOpcode
+prog.teal	17	0	17	6	ReturnOpcode
 ## cfgEdges
 prog.teal	7	prog.teal	8	NormalSuccessor
 prog.teal	8	prog.teal	9	NormalSuccessor

@@ -11,9 +11,10 @@ Output shape per node:
 
 Key conventions:
 
-* **Columns** — tree-sitter points are 0-based half-open ``[start, end)``; we emit
-  1-based closed ``[start, end]``: ``start_col = ts.start_col + 1``,
-  ``end_col = ts.end_col``, ``line = ts.row + 1``.
+* **Coordinates** — 1-based lines (``line = ts.row + 1``), tree-sitter's native
+  0-based half-open columns (``start_col = ts.start_col``,
+  ``end_col = ts.end_col``). Lines are 1-based because that's how editors /
+  reports number TEAL; columns stay native (no QL-style off-by-one).
 * **Type is keyed by the mnemonic** (the opcode's first child token), not
   the tree-sitter node type: generic buckets like ``zero_argument_opcode``
   cover ``==`` / ``+`` / ``return`` / ``dup`` … so the mnemonic decides.
@@ -80,10 +81,11 @@ def _class_for(child) -> tuple[type, "str | None"]:
 
 
 def _loc(node) -> tuple[int, int, int, int]:
-    """tree-sitter span -> CodeQL (startLine, startCol, endLine, endCol)."""
+    """tree-sitter span -> ``(start_line, start_col, end_line, end_col)``:
+    1-based lines, native 0-based half-open columns."""
     return (
         node.start_point[0] + 1,
-        node.start_point[1] + 1,
+        node.start_point[1],
         node.end_point[0] + 1,
         node.end_point[1],
     )
@@ -136,14 +138,10 @@ def parse_nodes(sources: dict[str, bytes | str]) -> list:
             _cand, reachable, _idx = _program_cfg(kids)
             reach_lines = {kids[i].line for i in reachable}
 
-        # Source node: (1,1) .. end of the last real child, extended one column to
-        # the line terminator IF the file's last content line ends with a newline
-        # (the program spans through that terminator). No trailing newline (e.g.
-        # xgov) -> ends exactly at the last token; one (the folks contracts) -> one
-        # column past it.
+        # Source node: the whole program, (line 1, col 0) .. the end of the
+        # last real child (native half-open columns).
         last = real[-1]
-        end_col = last.end_point[1] + (1 if b"\n" in src[last.end_byte:] else 0)
-        out.append(_node(1, 1, last.end_point[0] + 1, end_col, Source))
+        out.append(_node(1, 0, last.end_point[0] + 1, last.end_point[1], Source))
         out.extend(op_nodes)
         out.extend(n for n in label_nodes if n.location.start_line in reach_lines)
     return out

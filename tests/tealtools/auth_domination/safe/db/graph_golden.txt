@@ -1,14 +1,14 @@
 ## nodes
-prog.teal	1	1	16	7	Source
-prog.teal	6	1	6	10	TxnOpcode
-prog.teal	7	1	7	76	PushbytesOpcode
-prog.teal	8	1	8	2	EqualsComparisonOpcode
-prog.teal	9	1	9	6	AssertOpcode
-prog.teal	11	1	11	22	TxnaOpcode
-prog.teal	12	1	12	22	TxnaOpcode
-prog.teal	13	1	13	14	AppGlobalPutOpcode
-prog.teal	15	1	15	9	PushintOpcode
-prog.teal	16	1	16	6	ReturnOpcode
+prog.teal	1	0	16	6	Source
+prog.teal	6	0	6	10	TxnOpcode
+prog.teal	7	0	7	76	PushbytesOpcode
+prog.teal	8	0	8	2	EqualsComparisonOpcode
+prog.teal	9	0	9	6	AssertOpcode
+prog.teal	11	0	11	22	TxnaOpcode
+prog.teal	12	0	12	22	TxnaOpcode
+prog.teal	13	0	13	14	AppGlobalPutOpcode
+prog.teal	15	0	15	9	PushintOpcode
+prog.teal	16	0	16	6	ReturnOpcode
 ## cfgEdges
 prog.teal	6	prog.teal	7	NormalSuccessor
 prog.teal	7	prog.teal	8	NormalSuccessor

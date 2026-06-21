@@ -1,9 +1,9 @@
 ## nodes
-prog.teal	1	1	8	7	Source
-prog.teal	5	1	5	22	TxnaOpcode
-prog.teal	6	1	6	3	PopOpcode
-prog.teal	7	1	7	5	SingleNumericArgumentOpcode
-prog.teal	8	1	8	6	ReturnOpcode
+prog.teal	1	0	8	6	Source
+prog.teal	5	0	5	22	TxnaOpcode
+prog.teal	6	0	6	3	PopOpcode
+prog.teal	7	0	7	5	SingleNumericArgumentOpcode
+prog.teal	8	0	8	6	ReturnOpcode
 ## cfgEdges
 prog.teal	5	prog.teal	6	NormalSuccessor
 prog.teal	6	prog.teal	7	NormalSuccessor
