@@ -1,0 +1,10 @@
+#pragma version 8
+// A real bound on an attacker-controlled value: the arg is unconstrained,
+// so `>= 1000000` genuinely partitions inputs (not statically constant).
+txn ApplicationArgs 0
+btoi
+int 1000000
+>=
+assert
+int 1
+return

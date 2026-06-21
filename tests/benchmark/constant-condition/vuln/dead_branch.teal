@@ -1,0 +1,12 @@
+#pragma version 8
+// NumAssets is structurally in [0, 8]; `< 100` is always true, so the
+// branch is unconditional and the reject arm is dead code.
+txn NumAssets
+int 100
+<
+bnz approve
+int 0
+return
+approve:
+int 1
+return

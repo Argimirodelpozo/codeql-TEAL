@@ -1,0 +1,8 @@
+#pragma version 8
+// GroupIndex is structurally in [0, 15]; `< 16` is always true.
+txn GroupIndex
+int 16
+<
+assert
+int 1
+return

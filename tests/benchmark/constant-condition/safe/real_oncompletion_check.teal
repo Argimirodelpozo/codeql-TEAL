@@ -1,0 +1,9 @@
+#pragma version 8
+// A genuine OnCompletion restriction: == NoOp is satisfiable AND
+// falsifiable (OnCompletion can be 0..5), so it constrains real behaviour.
+txn OnCompletion
+int 0
+==
+assert
+int 1
+return

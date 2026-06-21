@@ -1,0 +1,9 @@
+#pragma version 8
+// GroupSize is in [1, 16]; `== 2` overlaps that range without fixing it,
+// so the check is a real (satisfiable and falsifiable) constraint.
+global GroupSize
+int 2
+==
+assert
+int 1
+return

@@ -61,6 +61,7 @@ _DETECTION_SPECS: tuple[tuple[str, str, str, "Optional[str]"], ...] = (
     ("asset-id-validation",   "asset_id_validation",   "AssetIdValidationDetector",   "AssetIdValidationViolation"),
     ("box-key",               "box_key",               "NonUniqueBoxKeyDetector",     None),
     ("close-remainder-to",    "close_remainder_to",    "CloseRemainderToDetector",    "CloseRemainderToViolation"),
+    ("constant-condition",    "constant_condition",    "ConstantConditionDetector",   "ConstantConditionViolation"),
     ("delete-funds-check",    "delete_funds_check",    "DeleteFundsCheckDetector",    "DeleteFundsCheckViolation"),
     ("fee-validation",        "fee_validation",        "FeeValidationDetector",       "FeeValidationViolation"),
     ("group-size-check",      "group_size_check",      "GroupSizeCheckDetector",      "GroupSizeCheckViolation"),

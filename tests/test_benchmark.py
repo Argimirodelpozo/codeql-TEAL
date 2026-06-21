@@ -92,6 +92,7 @@ def _table(scores: dict[str, Score]) -> str:
 # vulnerability the SSA detector cannot see (the proto-frame param flow lives only
 # in the IR lift). The benchmark records it rather than hiding it.
 _BASELINE: dict[str, tuple[int, int, int, int]] = {
+    "constant-condition": (3, 0, 0, 3),
     "fee-validation": (1, 0, 0, 1),
     "rekey-to": (2, 0, 0, 1),
     "tainted-fund-flow": (2, 0, 1, 4),
