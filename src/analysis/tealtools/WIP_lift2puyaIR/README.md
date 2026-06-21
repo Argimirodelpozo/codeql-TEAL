@@ -15,7 +15,7 @@ CodeQL TEAL DB
             └─ to_puya(prog)     → real puya.ir.models  (main, subroutines)
                  ├─ optimize()   Puya's own optimiser passes
                  ├─ render()     → Puya IR text
-                 └─ → MIR → TEAL  (tools/behavioral_lift/recompile.lift_to_teal)
+                 └─ → MIR → TEAL  (tests/behavioral_lift/recompile.lift_to_teal)
 ```
 
 > All commands assume the repo root and `PYTHONPATH=src/analysis` (the `tealtools`
@@ -62,7 +62,7 @@ to_puya_ir.optimize([main, *subs])           # Puya's optimiser passes
 Recompile all the way **back to TEAL** (used by the behavioural test):
 
 ```python
-from tools.behavioral_lift.recompile import lift_to_teal
+from tests.behavioral_lift.recompile import lift_to_teal
 teal = lift_to_teal("path/to/db")            # TEAL text, re-assemblable
 ```
 
@@ -89,7 +89,7 @@ print(taint_report(lf, "name"))     # grouped, human-readable, with TEAL lines
 print(render_with_taint(lf, "name"))# the IR with <== SOURCE/tainted/SINK inline
 ```
 
-See `tools/behavioral_lift/taint_example.txt` for a sample report. Two honest
+See `tests/behavioral_lift/taint_example.txt` for a sample report. Two honest
 approximations: subroutine *result* taint is conservative (any tainted arg taints
 the result), and the source set is the three families above.
 
@@ -111,7 +111,7 @@ the result), and the source set is the three families above.
 
 Work-in-progress, but validated against reality:
 
-- **Behaviour:** `tools/behavioral_lift/` lifts real mainnet TEAL → recompiles →
+- **Behaviour:** `tests/behavioral_lift/` lifts real mainnet TEAL → recompiles →
   dryruns original vs recompiled on a localnet. ~240 contracts across mainnet eras;
   every contract that lifts is behaviourally faithful.
 - **Structure:** `tests/test_lift_semantics.py` (corpus = the Puya repo's compiled

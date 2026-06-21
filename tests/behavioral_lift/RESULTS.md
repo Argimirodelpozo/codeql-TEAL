@@ -5,7 +5,7 @@ the lift has never seen, lift it to Puya IR, recompile to TEAL, and check the
 recompiled program behaves like the original by **executing both on a live
 Algorand localnet** (algod dryrun) across a matrix of inputs.
 
-Pipeline (`tools/behavioral_lift/`):
+Pipeline (`tests/behavioral_lift/`):
 - `recompile.py` — `SSAProgram(db)` -> Puya IR -> split/destructure -> MIR ->
   TEAL text (`emit_teal`); assemble via localnet algod.
 - `fetch_mainnet.py` — pull deployed approval programs from the public mainnet
@@ -199,5 +199,5 @@ found+fixed)**; every contract that lifts is faithful. The remaining work is lif
 *coverage* (interprocedural stack survival, type recovery) and *perf* (the CodeQL
 CFG query) on a minority of cutting-edge AVM contracts — not faithfulness.
 
-Reproduce: `python -m tools.behavioral_lift.fetch_mainnet /tmp/m && \
-python -m tools.behavioral_lift.compare /tmp/m` (needs a localnet on :4001).
+Reproduce: `python -m tests.behavioral_lift.fetch_mainnet /tmp/m && \
+python -m tests.behavioral_lift.compare /tmp/m` (needs a localnet on :4001).

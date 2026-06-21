@@ -3,14 +3,13 @@ original vs recompiled program's BEHAVIOUR on a live Algorand localnet via
 algod dryrun. A real-world generalisation test for WIP_lift2puyaIR: does the
 lift reconstruct an equivalent program for contracts it has never seen?
 
-  python -m tools.behavioral_lift.recompile <db-or-dir> ...
+  python -m tests.behavioral_lift.recompile <db-or-dir> ...
 
 Each arg is a CodeQL DB dir (has codeql-database.yml) or a dir of such.
 """
 from __future__ import annotations
 
 import base64
-import copy
 import logging
 import re
 import sys
@@ -27,7 +26,6 @@ def lift_to_teal(db: str) -> str:
     import puya.ir.models as M
     from puya.context import ArtifactCompileContext, CompiledProgramProvider
     from puya.errors import InternalError
-    from puya.ir.destructure.main import destructure_ssa
     from puya.ir.models import ProgramKind, SlotAllocation, SlotAllocationStrategy
     from puya.ir.optimize.main import _split_parallel_copies
     from puya.mir.main import program_ir_to_mir

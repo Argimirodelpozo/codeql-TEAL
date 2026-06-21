@@ -1,17 +1,19 @@
-"""Fetch real deployed mainnet apps, disassemble to TEAL, and build CodeQL DBs
--- a generalisation corpus of contracts the lift has never seen.
+"""Fetch deployed Algorand programs from chain.
 
-  python -m tools.behavioral_lift.fetch_mainnet <out-dir> [app_id ...]
+:func:`fetch_approval` pulls an app's on-chain approval program (the public mainnet
+API/indexer) and disassembles its bytecode to TEAL via a local algod. Used by the
+cross-contract :func:`tealtools.xcontract.discover_registry` (auto-build a callee
+registry, no hand-written yaml) and by the behavioural-validation tooling.
 
-With no ids, samples a diverse batch from the public mainnet indexer.
+Network: the public mainnet API/indexer for the program bytes, and localnet
+(:4001) for disassembly. This is the only network-touching module in the library;
+everything else runs offline.
 """
 from __future__ import annotations
 
 import base64
 import json
-import sys
 import urllib.request
-from pathlib import Path
 
 MAINNET = "https://mainnet-api.algonode.cloud"
 INDEXER = "https://mainnet-idx.algonode.cloud"
@@ -29,7 +31,7 @@ def _get(url, data=None, ctype=None, token=None):
 
 
 def sample_app_ids(n=60):
-    # known protocol apps: Tinyman v2, Folks, AlgoFi, Pact, + a few more
+    """A diverse batch of mainnet app ids (a few known protocols + indexer pages)."""
     ids = [1002541853, 971350278, 818179346, 605929989,
            971368268, 818176933, 354073718, 1284326447]
     ranges = ("", "1000000", "50000000", "100000000", "300000000", "600000000",
@@ -51,9 +53,9 @@ def sample_app_ids(n=60):
 
 def fetch_approval(app_id):
     """``(teal_text, deployed_bytecode)`` for an app's approval program. The
-    bytecode is the on-chain program; keep it so the behavioural compare can
-    dryrun it DIRECTLY (some valid contracts don't survive a disassemble ->
-    reassemble round-trip through the strict assembler -- see compare.compare)."""
+    bytecode is the on-chain program; keep it so a behavioural compare can dryrun
+    it DIRECTLY (some valid contracts don't survive a disassemble -> reassemble
+    round-trip through the strict assembler)."""
     d = json.loads(_get(f"{MAINNET}/v2/applications/{app_id}"))
     bytecode = base64.b64decode(d["params"]["approval-program"])
     if not bytecode:
@@ -65,28 +67,3 @@ def fetch_approval(app_id):
 
 def fetch_teal(app_id):
     return fetch_approval(app_id)[0]
-
-
-def main(argv):
-    out = Path(argv[0]) if argv else Path("/tmp/mainnet_contracts")
-    ids = [int(x) for x in argv[1:]] or sample_app_ids()
-    out.mkdir(parents=True, exist_ok=True)
-    ok = 0
-    for app_id in ids:
-        d = out / f"app_{app_id}"
-        d.mkdir(exist_ok=True)
-        teal_path = d / f"app_{app_id}.teal"
-        try:
-            teal, bytecode = fetch_approval(app_id)
-            teal_path.write_text(teal)
-            (d / f"app_{app_id}.bin").write_bytes(bytecode)   # deployed program
-            ok += 1
-            nlines = len(teal_path.read_text().splitlines())
-            print(f"  fetched app_{app_id} ({nlines} lines)", flush=True)
-        except Exception as e:
-            print(f"  FAIL app_{app_id}: {type(e).__name__}: {str(e)[:50]}", flush=True)
-    print(f"\n=== {ok}/{len(ids)} fetched into {out} (lift from raw .teal; no DB) ===")
-
-
-if __name__ == "__main__":
-    main(sys.argv[1:])

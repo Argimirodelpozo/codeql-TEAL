@@ -3,7 +3,7 @@ TEAL on a live localnet algod across a matrix of app-call inputs, and report any
 divergence. A faithful lift -> original and recompiled error/approve identically
 on every input (modulo program-counter layout, which is normalised out).
 
-  python -m tools.behavioral_lift.compare <explorer-dir-or-contract-dir> ...
+  python -m tests.behavioral_lift.compare <explorer-dir-or-contract-dir> ...
 """
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from pathlib import Path
 from algosdk import account, transaction
 from algosdk.v2client import models
 
-from tools.behavioral_lift.recompile import REPO, algod_client, lift_to_teal
+from .recompile import REPO, algod_client, lift_to_teal
 
 _PC = re.compile(r"(app=\d+, )?pc=\d+")
 _SK, _ADDR = account.generate_account()

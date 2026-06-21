@@ -7,7 +7,7 @@ lifts -> recompiles -> dryruns the lift against the contract's DEPLOYED bytecode
 assembler round-trip; see :func:`compare.compare`). Reports faithful / divergent /
 lift-fail per contract.
 
-    python -m tools.behavioral_lift.sweep_probes [count]
+    python -m tests.behavioral_lift.sweep_probes [count]
 
 Probes are kept (teal only) so a contract that surfaced a bug becomes a permanent
 test case. Re-runs skip ids already on disk for the dryrun but never re-delete.
@@ -21,7 +21,7 @@ import urllib.request
 from pathlib import Path
 
 from . import compare as C
-from .fetch_mainnet import INDEXER, fetch_approval
+from tealtools.chain import INDEXER, fetch_approval
 
 PROBES = Path(__file__).resolve().parents[2] / "tests" / "mainnet-random-probes"
 # diverse cursors across the whole id space (early -> newest); dense so a sweep
