@@ -275,6 +275,16 @@ def test_op_byte_length_address_fields():
     assert _op_byte_length(_asn("txn", imm="Note")) is None
 
 
+def test_op_byte_length_field_form_completeness():
+    # Array-element address read via txna / gtxnsa (field is first immediate).
+    assert _op_byte_length(_asn("txna", imm="Accounts 0")) == 32
+    assert _op_byte_length(_asn("gtxnsa", imm="Accounts 0")) == 32
+    # Inner-txn array + group-indexed forms.
+    assert _op_byte_length(_asn("itxna", imm="Accounts 0")) == 32
+    assert _op_byte_length(_asn("gitxn", imm="0 Sender")) == 32
+    assert _op_byte_length(_asn("gitxna", imm="0 Accounts 1")) == 32
+
+
 # --------------------------------------------------------------------------
 # Multi-output crypto ops — positional fixed lengths (_OP_OUTPUT_BYTELEN)
 # --------------------------------------------------------------------------
@@ -301,3 +311,34 @@ def test_vrf_verify_output_is_64_bytes():
     assert out.type.byte_length == 64
     # the flag output isn't tagged with a bytes length
     assert getattr(flag.type, "byte_length", None) is None
+
+
+# --------------------------------------------------------------------------
+# *_params_get value output (outputs[1]) — field-keyed addresses
+# --------------------------------------------------------------------------
+
+
+def test_params_get_value_address_lengths():
+    for op, field in (("app_params_get", "AppAddress"),
+                      ("app_params_get", "AppCreator"),
+                      ("asset_params_get", "AssetManager"),
+                      ("asset_params_get", "AssetMetadataHash"),
+                      ("acct_params_get", "AcctAuthAddr")):
+        exists, value = _var(10, 0), _var(10, 1)
+        propagate_byte_lengths(
+            _prog([_asn(op, imm=field, inputs=[_int(0)],
+                        outputs=[exists, value])])
+        )
+        assert value.type.byte_length == 32, (op, field)
+        # the exists flag isn't a bytes value
+        assert getattr(exists.type, "byte_length", None) is None, (op, field)
+
+
+def test_params_get_unbounded_value_field_left_alone():
+    # AssetTotal's value is a uint64 amount, not a fixed-width bytes field.
+    exists, value = _var(10, 0), _var(10, 1)
+    propagate_byte_lengths(
+        _prog([_asn("asset_params_get", imm="AssetTotal", inputs=[_int(0)],
+                    outputs=[exists, value])])
+    )
+    assert getattr(value.type, "byte_length", None) is None

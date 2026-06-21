@@ -1,11 +1,14 @@
 """Static integer-range + type seeding for SSAProgram.
 
-Tags SSAVars / Phis with an :class:`IntRange` + uint64 type from four seed
+Tags SSAVars / Phis with an :class:`IntRange` + uint64 type from the seed
 tables — ``_OP_RANGE_SEEDS`` (op alone bounds the single output, e.g.
-bool-shaped comparisons / ``getbyte`` / ``len``), ``_OP_OUTPUT_SEEDS``
-(positional bounds on a *multi*-output op: the 0/1 exists-flag the
-``*_get`` / ``*_ex`` family pushes, plus ``box_len``'s length),
-``_TXN_FIELD_RANGES`` (enum / count-valued txn/gtxn/itxn fields) and
+bool-shaped comparisons / ``getbyte`` / ``sqrt`` / ``len``),
+``_OP_OUTPUT_SEEDS`` (positional bounds on a *multi*-output op: the 0/1
+exists-flag the ``*_get`` / ``*_ex`` family pushes, ``box_len``'s length,
+``addw``'s carry), ``_PARAMS_VALUE_RANGES`` (the bounded *value* output of
+``*_params_get`` keyed by its field immediate), ``_TXN_FIELD_RANGES`` (enum
+/ count-valued txn-family fields, via :func:`_txn_field_name` so every
+``txn`` / ``gtxn*`` / ``itxn*`` / ``gitxn*`` form is covered) and
 ``_GLOBAL_FIELD_RANGES`` (``global FIELD``) — then unions arg ranges
 through phis to a fixed point.
 
@@ -14,13 +17,14 @@ guard + state flag).
 """
 from __future__ import annotations
 
-from typing import Optional
-
 from ..ssa import IntRange, SSAProgram, SSAVar, TealType, _OP_RANGE_SEEDS
 from ..ssa.models import (
     _GLOBAL_FIELD_RANGES,
     _OP_OUTPUT_SEEDS,
+    _PARAMS_OPS,
+    _PARAMS_VALUE_RANGES,
     _TXN_FIELD_RANGES,
+    _txn_field_name,
 )
 
 
@@ -42,6 +46,12 @@ def propagate_ranges(prog: SSAProgram) -> None:
             for idx, lo, hi in out_seeds:
                 if idx < len(a.outputs):
                     _seed(a.outputs[idx], lo, hi)
+            # *_params_get: the value output (outputs[1]) carries a
+            # field-keyed range for bounded scalar / boolean fields.
+            if a.op in _PARAMS_OPS and a.immediates and len(a.outputs) > 1:
+                rng = _PARAMS_VALUE_RANGES.get(a.immediates.split()[0])
+                if rng is not None:
+                    _seed(a.outputs[1], *rng)
             continue
 
         # The remaining rules each yield exactly one stack output.
@@ -60,11 +70,7 @@ def propagate_ranges(prog: SSAProgram) -> None:
         toks = a.immediates.split()
 
         # txn-family field reads where the field carries the range.
-        field: Optional[str] = None
-        if a.op in ("txn", "gtxns", "itxn") and toks:
-            field = toks[0]
-        elif a.op in ("gtxn", "gtxna", "gtxnas") and len(toks) >= 2:
-            field = toks[1]
+        field = _txn_field_name(a.op, toks)
         if field is not None:
             rng = _TXN_FIELD_RANGES.get(field)
             if rng is not None:

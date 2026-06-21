@@ -563,6 +563,8 @@ _TXN_FIELD_BYTELEN: dict = {
     "VotePK":              32,
     "SelectionPK":         32,
     "StateProofPK":        64,
+    # Array-element address (read via ``txna``/``gtxnsa``/… ``Accounts i``).
+    "Accounts":            32,
 }
 _GLOBAL_FIELD_BYTELEN: dict = {
     "ZeroAddress":              32,
@@ -577,6 +579,61 @@ _OP_OUTPUT_BYTELEN: dict = {
     # vrf_verify's non-flag output (outputs[1]) is the 64-byte VRF output.
     "vrf_verify":          [(1, 64)],
 }
+
+# ``asset_params_get`` / ``app_params_get`` / ``acct_params_get`` push
+# ``(value, exists)`` — the 0/1 exists flag (``outputs[0]``) is seeded by
+# ``_OP_OUTPUT_SEEDS``; the *value* (``outputs[1]``) is keyed by the field
+# immediate here. Field names are globally unique (Asset*/App*/Acct*), so a
+# single flat table per kind is unambiguous. Range fields are bounded scalars
+# / booleans; byte-length fields are 32-byte addresses + the metadata hash.
+_PARAMS_OPS: frozenset = frozenset({
+    "asset_params_get", "app_params_get", "acct_params_get",
+})
+_PARAMS_VALUE_RANGES: dict = {
+    "AssetDecimals":        (0, 19),
+    "AssetDefaultFrozen":   (0, 1),
+    "AppExtraProgramPages": (0, 3),
+    "AppGlobalNumUint":      (0, 64),
+    "AppGlobalNumByteSlice": (0, 64),
+    "AppLocalNumUint":       (0, 16),
+    "AppLocalNumByteSlice":  (0, 16),
+    "AcctIncentiveEligible": (0, 1),
+}
+_PARAMS_VALUE_BYTELEN: dict = {
+    "AssetManager":      32,
+    "AssetReserve":      32,
+    "AssetFreeze":       32,
+    "AssetClawback":     32,
+    "AssetCreator":      32,
+    "AssetMetadataHash": 32,
+    "AppCreator":        32,
+    "AppAddress":        32,
+    "AcctAuthAddr":      32,
+}
+
+# Field-immediate position for every txn-family field-reading op. The field
+# name is the *first* immediate for current-txn / stack-group forms, and the
+# *second* (after the immediate group index) for the ``gtxn``/``gitxn``
+# group-indexed forms. One helper unifies field extraction across the range,
+# byte-length and any future field-keyed seeding (so the inner-txn ``itxna`` /
+# ``gitxn*`` and stack-group ``gtxnsa`` / ``gtxnsas`` forms are covered too).
+_FIELD_OPS_POS0: frozenset = frozenset({
+    "txn", "txna", "gtxns", "gtxnsa", "gtxnsas", "itxn", "itxna",
+})
+_FIELD_OPS_POS1: frozenset = frozenset({
+    "gtxn", "gtxna", "gtxnas", "gitxn", "gitxna", "gitxnas",
+})
+
+
+def _txn_field_name(op: str, toks: list) -> Optional[str]:
+    """The field-name immediate of a txn-family field read, or ``None``
+    when ``op`` doesn't read a named field (or its immediates are absent).
+    ``toks`` is ``immediates.split()``."""
+    if op in _FIELD_OPS_POS0 and toks:
+        return toks[0]
+    if op in _FIELD_OPS_POS1 and len(toks) >= 2:
+        return toks[1]
+    return None
 
 
 # Pure stack-shuffle opcodes — they don't compute, they only permute /

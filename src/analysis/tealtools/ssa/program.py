@@ -502,14 +502,16 @@ class SSAProgram:
     def propagate_ranges(self) -> None:
         """Tag SSAVars / Phis with a static integer range and type.
 
-        Independent, idempotent. Seeds come from four tables:
+        Independent, idempotent. Seeds come from the tables:
         :data:`_OP_RANGE_SEEDS` (op alone determines a single output's
-        bound, e.g. bool-shaped comparisons, ``getbyte``, ``len``),
-        :data:`_OP_OUTPUT_SEEDS` (positional bounds on a multi-output
-        op — the 0/1 exists-flag the ``*_get`` / ``*_ex`` family pushes,
-        plus ``box_len``'s length), :data:`_TXN_FIELD_RANGES`
-        (``txn``/``gtxn``/``gtxns``/``itxn`` with an enum- or
-        count-valued field name as immediate), and
+        bound, e.g. bool-shaped comparisons, ``getbyte``, ``sqrt``,
+        ``len``), :data:`_OP_OUTPUT_SEEDS` (positional bounds on a
+        multi-output op — the 0/1 exists-flag the ``*_get`` / ``*_ex``
+        family pushes, ``box_len``'s length, ``addw``'s carry),
+        :data:`_PARAMS_VALUE_RANGES` (the bounded value output of
+        ``*_params_get`` by field immediate), :data:`_TXN_FIELD_RANGES`
+        (any ``txn`` / ``gtxn*`` / ``itxn*`` / ``gitxn*`` form with an
+        enum- or count-valued field name), and
         :data:`_GLOBAL_FIELD_RANGES` (``global FIELD``). A second pass
         unions arg ranges through phis to fixed point.
         """

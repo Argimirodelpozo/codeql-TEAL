@@ -114,3 +114,45 @@ class TestTxnCountFieldSeeds:
         for field, (lo, hi) in cases.items():
             assert seen[field] is not None, field
             assert (seen[field].lo, seen[field].hi) == (lo, hi), field
+
+    def test_group_indexed_inner_txn_form(self):
+        # gitxn t F reads field F of inner txn t — field is the SECOND
+        # immediate. Previously uncovered (only txn/gtxn*/gtxns/itxn were).
+        r = _ranges_by_op(
+            "#pragma version 8\nitxn_begin\ngitxn 0 NumAppArgs\n"
+            "pop\nint 1\nreturn\n"
+        )
+        (_, outs), = r["gitxn"]
+        assert (outs[0][1].lo, outs[0][1].hi) == (0, 16)
+
+
+class TestParamsValueRangeSeeds:
+    def test_params_value_output_bounded_fields(self):
+        # outputs[1] (the value, not the exists flag) is bounded for some
+        # *_params_get fields.
+        cases = {
+            "asset_params_get": [("AssetDecimals", (0, 19)),
+                                 ("AssetDefaultFrozen", (0, 1))],
+            "app_params_get":   [("AppExtraProgramPages", (0, 3)),
+                                 ("AppGlobalNumUint", (0, 64)),
+                                 ("AppLocalNumByteSlice", (0, 16))],
+            "acct_params_get":  [("AcctIncentiveEligible", (0, 1))],
+        }
+        for op, fields in cases.items():
+            for field, (lo, hi) in fields:
+                teal = (f"#pragma version 8\nint 0\n{op} {field}\n"
+                        f"pop\npop\nint 1\nreturn\n")
+                r = _ranges_by_op(teal)
+                (_, outs), = r[op]
+                val = outs[1][1]
+                assert val is not None, (op, field)
+                assert (val.lo, val.hi) == (lo, hi), (op, field)
+
+    def test_unbounded_params_field_value_left_alone(self):
+        # AssetTotal has no static bound — value output stays unranged.
+        r = _ranges_by_op(
+            "#pragma version 8\nint 0\nasset_params_get AssetTotal\n"
+            "pop\npop\nint 1\nreturn\n"
+        )
+        (_, outs), = r["asset_params_get"]
+        assert outs[1][1] is None

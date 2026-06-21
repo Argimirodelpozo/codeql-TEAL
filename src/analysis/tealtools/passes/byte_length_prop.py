@@ -32,10 +32,15 @@ Op semantics covered (forward, single-output bytes producers):
   - ``sha256`` / ``sha512_256``
     / ``keccak256`` / ``sha3_256``  → 32 bytes (AVM hash digests have
                                   fixed output width).
-  - ``txn``/``gtxn``/``gtxns``/``itxn`` reads of a fixed-width bytes
-    field (32-byte addresses + ``Lease`` / ``VotePK`` / ``SelectionPK``,
-    64-byte ``StateProofPK``) via ``_TXN_FIELD_BYTELEN``; ``global``
-    address fields via ``_GLOBAL_FIELD_BYTELEN``.
+  - Any ``txn`` / ``gtxn*`` / ``itxn*`` / ``gitxn*`` form (via
+    :func:`_txn_field_name`) reading a fixed-width bytes field — 32-byte
+    addresses incl. the ``Accounts`` array element + ``Lease`` / ``VotePK``
+    / ``SelectionPK``, 64-byte ``StateProofPK`` — from
+    ``_TXN_FIELD_BYTELEN``; ``global`` address fields from
+    ``_GLOBAL_FIELD_BYTELEN``.
+  - ``*_params_get`` value output (``outputs[1]``) for address / hash
+    fields (``AppAddress``, ``AssetManager``, ``AcctAuthAddr``, …) from
+    the field-keyed ``_PARAMS_VALUE_BYTELEN``.
   - ``ecdsa_pk_decompress`` / ``ecdsa_pk_recover`` (both outputs 32) and
     ``vrf_verify`` (64-byte output) — *multi*-output ops, seeded
     positionally from ``_OP_OUTPUT_BYTELEN``.
@@ -87,7 +92,10 @@ from ..ssa import Assignment, Const, IntRange, Phi, SSAProgram, SSAVar, TealType
 from ..ssa.models import (
     _GLOBAL_FIELD_BYTELEN,
     _OP_OUTPUT_BYTELEN,
+    _PARAMS_OPS,
+    _PARAMS_VALUE_BYTELEN,
     _TXN_FIELD_BYTELEN,
+    _txn_field_name,
 )
 
 
@@ -252,11 +260,7 @@ def _op_byte_length(a: Assignment) -> Optional[int]:
     # StateProofPK) read off the txn-family or global field tables.
     if a.immediates:
         toks = a.immediates.split()
-        field: Optional[str] = None
-        if op in ("txn", "gtxns", "itxn") and toks:
-            field = toks[0]
-        elif op in ("gtxn", "gtxna", "gtxnas") and len(toks) >= 2:
-            field = toks[1]
+        field = _txn_field_name(op, toks)
         if field is not None:
             n = _TXN_FIELD_BYTELEN.get(field)
             if n is not None:
@@ -490,6 +494,18 @@ def propagate_byte_lengths(prog: SSAProgram) -> int:
                     if isinstance(out, SSAVar) and _set_byte_length(out, n):
                         tagged += 1
                         fan_out(out)
+            return
+
+        # *_params_get: the value output (outputs[1]) is a fixed-width
+        # bytes value (address / metadata hash) for some fields.
+        if a.op in _PARAMS_OPS:
+            if a.immediates and len(a.outputs) > 1:
+                n = _PARAMS_VALUE_BYTELEN.get(a.immediates.split()[0])
+                out = a.outputs[1]
+                if n is not None and isinstance(out, SSAVar) \
+                        and _set_byte_length(out, n):
+                    tagged += 1
+                    fan_out(out)
             return
 
         if len(a.outputs) != 1:
