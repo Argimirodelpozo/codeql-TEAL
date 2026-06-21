@@ -34,12 +34,40 @@ class SSAProgram:
     """Typed SSA-form representation of a TEAL program."""
 
     def __init__(self, source: str | Path, *, verbose: bool = False):
+        """Convenience constructor: parse a ``.teal`` file/dir into a graph, then
+        reconstruct SSA. The two stages are separable -- prefer :meth:`from_source`
+        when you want the parse stage explicit, or :meth:`from_graph` to build SSA
+        from an already-loaded graph (no parsing). ``SSAProgram(source)`` stays as
+        the one-liner."""
         from .. import graphs as tg
+        self._build_from_graph(tg.load_graph(source, verbose=verbose))
+
+    @classmethod
+    def from_source(cls, source: str | Path, *, verbose: bool = False) -> "SSAProgram":
+        """Build SSA from TEAL source as an EXPLICIT two-stage pipeline:
+        ``graphs.load_graph(source)`` (parse / extract → graph) then
+        :meth:`from_graph` (SSA reconstruction). Same result as ``cls(source)`` --
+        named so the parse stage is visible at the call site."""
+        from .. import graphs as tg
+        return cls.from_graph(tg.load_graph(source, verbose=verbose))
+
+    @classmethod
+    def from_graph(cls, graph) -> "SSAProgram":
+        """Reconstruct SSA from an ALREADY-LOADED graph (the output of
+        :func:`graphs.load_graph`). This is the SSA stage with parsing DECOUPLED --
+        ``__init__`` is just this plus a ``load_graph`` call. Lets a caller load /
+        cache / transform the graph once and build SSA without re-parsing."""
+        self = cls.__new__(cls)
+        self._build_from_graph(graph)
+        return self
+
+    def _build_from_graph(self, g) -> None:
+        """Reconstruct the SSA program from a loaded graph ``g`` (no parsing)."""
         from ..ast import Opcode, Label
 
-        g = tg.load_graph(source, verbose=verbose)
         self._graph = g
-        self.source_path = Path(source).resolve()
+        src = g.graph.get("source", "")
+        self.source_path = Path(src).resolve() if src else Path("")
 
         self.vars: dict[tuple, SSAVar] = {}
         self.phis: dict[tuple, Phi] = {}
