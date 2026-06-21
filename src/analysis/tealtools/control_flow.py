@@ -23,11 +23,6 @@ produces (and the rest of the Python layer, which keys on it too).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable, Sequence
-
-from .ast import Location
-from .graph import _slice_source
-
 NORMAL = "NormalSuccessor"
 BOOL_TRUE = "BooleanSuccessor(true)"
 BOOL_FALSE = "BooleanSuccessor(false)"
@@ -53,12 +48,14 @@ _AUX_STOP = frozenset({_RETURN, _ERR, _RETSUB})
 
 @dataclass
 class _Node:
-    """One program child (an AST line) as the CFG sees it."""
+    """One program child (an AST line) as the CFG sees it -- a thin internal
+    working type wrapping an :class:`tealtools.ast.AstNode`."""
     file: str
     line: int          # source start line  -> edge identity
     col: int           # source start column-> child ordering tiebreak
-    cls: str           # ql_class string
+    cls: str           # node-type string
     code: str          # source text of the line (operands, label name)
+    ast: object = None  # the AstNode this wraps, so edges/blocks come back as objects
 
     def operand(self) -> str:
         """First whitespace-separated operand (branch/callsub target)."""
@@ -74,31 +71,26 @@ class _Node:
         return self.code.split(":", 1)[0].strip()
 
 
-def _children(node_rows: Iterable[Sequence[str]], sources) -> dict[str, list[_Node]]:
-    """Group ``nodes``-CSV rows into per-program ordered child lists.
-
-    Rows are ``(file, sl, sc, el, ec, ql_class)``. The ``Source`` root is
-    dropped (it isn't a child); exact-duplicate locations (a node that
-    matches two enumerated leaf classes, e.g. ``==`` -> IntegerEquals +
-    EqualsComparison) collapse to one child. Order is ``(line, col)`` --
-    the program child index in source order, which is what ``getNextLine``
-    walks.
+def _children(nodes) -> dict[str, list[_Node]]:
+    """Group :class:`tealtools.ast.AstNode` objects into per-program ordered child
+    lists. The ``Source`` root is dropped (it isn't a child); exact-duplicate
+    locations (a node matching two leaf types, e.g. ``==`` -> IntegerEquals +
+    EqualsComparison) collapse to one child, keeping the first object but
+    preferring a control-flow type. Order is ``(line, col)`` -- source order.
     """
     by_file: dict[str, dict[tuple[int, int], _Node]] = {}
-    for row in node_rows:
-        file, sl, sc, el, ec, cls = row[0], int(row[1]), int(row[2]), int(row[3]), int(row[4]), row[5]
+    for node in nodes:
+        cls = node.ql_class
         if cls == "Source":
             continue
-        loc = Location(file, sl, sc, el, ec)
-        code = _slice_source(sources, loc).strip()
-        slot = by_file.setdefault(file, {})
-        # First class at a location wins; prefer a control-flow class if a
-        # later duplicate carries one (so categorisation stays correct).
+        loc = node.location
+        sl, sc = loc.start_line, loc.start_column
+        slot = by_file.setdefault(loc.file, {})
         existing = slot.get((sl, sc))
         if existing is None:
-            slot[(sl, sc)] = _Node(file, sl, sc, cls, code)
+            slot[(sl, sc)] = _Node(loc.file, sl, sc, cls, node.code, node)
         elif existing.cls not in _CF_CLASSES and cls in _CF_CLASSES:
-            existing.cls = cls
+            existing.cls = cls          # keep existing.ast (the first object)
     return {
         f: [slot[k] for k in sorted(slot)]
         for f, slot in by_file.items()
@@ -138,29 +130,23 @@ def _aux_succ(n: _Node, nxt: _Node | None, labels: dict[str, _Node]) -> list[_No
     return [nxt] if nxt is not None else []
 
 
-def build_cfg_edges(
-    node_rows: Iterable[Sequence[str]], sources
-) -> list[tuple[str, int, str, int, str]]:
-    """Reconstruct the ``cfgEdges`` rows from ``nodes`` + source text.
+def build_cfg_edges(nodes) -> list:
+    """The CFG edges as ``(pred_AstNode, succ_AstNode, successorType)``.
 
-    Returns ``(predFile, predLine, succFile, succLine, successorType)``
-    tuples, the same shape as ``cfgEdges.ql``'s select.
-
-    Like CodeQL's ``CfgImpl``, only nodes reachable from the program entry
-    (``getChild(0)``) appear: candidate edges are built per the completion
-    rules, then pruned to those whose predecessor is reachable. This drops,
-    e.g., the ``retsub`` of a subroutine that is only ever reached through a
-    ``callsub`` to a sibling sub that exits via ``return`` (so control never
-    flows back) -- exactly what QL prunes.
+    Only nodes reachable from the program entry appear: candidate edges are built
+    per the completion rules, then pruned to those whose predecessor is reachable.
+    This drops, e.g., the ``retsub`` of a subroutine only ever reached through a
+    ``callsub`` to a sibling sub that exits via ``return`` (control never flows
+    back).
     """
-    edges: list[tuple[str, int, str, int, str]] = []
-    for file, kids in _children(node_rows, sources).items():
+    edges: list = []
+    for _file, kids in _children(nodes).items():
         if not kids:
             continue
         cand, reachable, idx_of = _program_cfg(kids)
         for p, s, t in cand:
             if idx_of[id(p)] in reachable:
-                edges.append((file, p.line, file, s.line, t))
+                edges.append((p.ast, s.ast, t))
     return edges
 
 
@@ -327,24 +313,19 @@ _ENDS_CLASSES = frozenset(
 )
 
 
-def build_basic_blocks(
-    node_rows: Iterable[Sequence[str]], sources
-) -> list[tuple[str, int, int, int]]:
-    """Reconstruct the ``basicBlocks`` rows from ``nodes`` + source text.
-
-    Returns ``(file, nodeLine, bbFirstLine, bbLastLine)`` -- one row per CFG
-    node, the same shape as ``basicBlocks.ql``'s select.
+def build_basic_blocks(nodes) -> list:
+    """Basic blocks as ``(AstNode, bbFirstLine, bbLastLine)`` -- one per reachable
+    CFG node.
 
     In TEAL a basic block coincides exactly with a *codeblock* (the maximal
-    straight-line region between labels / branch boundaries): every join,
-    branch successor and boolean-edge target that QL's ``startsBB`` keys on is
-    already a codeblock start (branch targets are labels; bz/bnz/assert/switch
-    fall-throughs and retsub-return targets all follow a block-ender). So the
-    partition is structural; we only intersect it with CFG reachability, since
-    QL emits a row only for nodes that have a basic block (i.e. are reachable).
+    straight-line region between labels / branch boundaries): every join, branch
+    successor and boolean-edge target is already a codeblock start (branch targets
+    are labels; bz/bnz/assert/switch fall-throughs and retsub-return targets all
+    follow a block-ender). So the partition is structural; we only intersect it
+    with CFG reachability (a node has a basic block only if reachable).
     """
-    rows: list[tuple[str, int, int, int]] = []
-    for file, kids in _children(node_rows, sources).items():
+    rows: list = []
+    for _file, kids in _children(nodes).items():
         if not kids:
             continue
         _cand, reachable, _idx = _program_cfg(kids)
@@ -361,7 +342,7 @@ def build_basic_blocks(
                 first_ln, last_ln = kids[start].line, kids[i].line
                 for m in range(start, i + 1):
                     if m in reachable:
-                        rows.append((file, kids[m].line, first_ln, last_ln))
+                        rows.append((kids[m].ast, first_ln, last_ln))
                 start = i + 1
     return rows
 

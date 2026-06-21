@@ -19,9 +19,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from tealtools.ast.parse import build_nodes
+from tealtools.ast.parse import parse_nodes
 from tealtools.control_flow import build_basic_blocks, build_cfg_edges
-from tealtools.graph import _load_source_bytes, _load_source_lines
+from tealtools.graph import _load_source_bytes
 
 GOLDEN_NAME = "graph_golden.txt"
 
@@ -32,23 +32,34 @@ def golden_path(db: Path) -> Path:
 
 def compute_golden(db: Path) -> str | None:
     """Deterministic golden text (``nodes`` / ``cfgEdges`` / ``basicBlocks``
-    sections, each sorted) for ``db``, or ``None`` if the DB has no source."""
+    sections, each sorted) for ``db``, or ``None`` if the DB has no source.
+
+    The producers now return AstNode objects; flatten each back to its
+    ``(file, line, …)`` tuple so the golden text pins the same data."""
     src_bytes = _load_source_bytes(db)
     if not src_bytes:
         return None
-    nodes = build_nodes(src_bytes)
-    lines = _load_source_lines(db)
-    edges = build_cfg_edges(nodes, lines)
-    bbs = build_basic_blocks(nodes, lines)
+    nodes = parse_nodes(src_bytes)
+    edges = build_cfg_edges(nodes)
+    bbs = build_basic_blocks(nodes)
+
+    def loc(n):
+        ll = n.location
+        return (ll.file, ll.start_line, ll.start_column, ll.end_line, ll.end_column)
+
+    node_rows = [(*loc(n), n.ql_class) for n in nodes]
+    edge_rows = [(u.location.file, u.location.start_line,
+                  v.location.file, v.location.start_line, t) for (u, v, t) in edges]
+    bb_rows = [(n.location.file, n.location.start_line, first, last)
+               for (n, first, last) in bbs]
 
     out: list[str] = []
 
     def section(name: str, rows) -> None:
         out.append(f"## {name}")
-        out.extend("\t".join(str(c) for c in r)
-                   for r in sorted(tuple(row) for row in rows))
+        out.extend("\t".join(str(c) for c in r) for r in sorted(rows))
 
-    section("nodes", nodes)
-    section("cfgEdges", edges)
-    section("basicBlocks", bbs)
+    section("nodes", node_rows)
+    section("cfgEdges", edge_rows)
+    section("basicBlocks", bb_rows)
     return "\n".join(out) + "\n"

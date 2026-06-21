@@ -27,17 +27,7 @@ from pathlib import Path
 
 import networkx as nx
 
-from .ast import AstNode, Location, ast_node_from_row
-
-# The three layers the graph is assembled from, in order: the AST nodes
-# (``ast.parse``), then the control-flow edges and basic blocks derived from them
-# (``control_flow``). SSA / phis / const values / taint are reconstructed by the
-# ``tealtools.ssa`` layer on top.
-_GRAPH_LAYERS = (
-    "nodes",
-    "cfgEdges",
-    "basicBlocks",
-)
+from .ast import AstNode, Location
 
 
 import base64
@@ -224,55 +214,23 @@ def load_graph(
 
     g = nx.MultiDiGraph()
     g.graph["source"] = g_source
-    sources = _load_source_lines(source)
 
-    # (file, start_line) -> AstNode instance, for edge-endpoint lookup.
+    # (file, start_line) -> AstNode, for the const-value mapping below.
     by_loc: dict[tuple[str, int], AstNode] = {}
 
-    def _resolve(file: str, line: int) -> AstNode:
-        key = (file, line)
-        node = by_loc.get(key)
-        if node is None:
-            # Edge endpoint not reported by nodes — stash a bare AstNode
-            # so the edge still lands in the graph.
-            node = ast_node_from_row(Location(file, line, 0, line, 0), "", "AstNode")
-            by_loc[key] = node
-            g.add_node(node)
-        return node
-
-    # Pass 1: parse the AST nodes; pass 2: derive control-flow edges + basic
-    # blocks from them. Both are pure-Python passes.
-    from .ast.parse import build_nodes
+    # Pass 1: parse the source into AstNode objects. Pass 2: derive the
+    # control-flow edges + basic blocks from them. No relational intermediate --
+    # the same objects flow through both passes and into the graph.
+    from .ast.parse import parse_nodes
     from .control_flow import build_cfg_edges, build_basic_blocks
-    node_rows = build_nodes(_load_source_bytes(source))
-    layers = {
-        "nodes": node_rows,
-        "cfgEdges": build_cfg_edges(node_rows, sources),
-        "basicBlocks": build_basic_blocks(node_rows, sources),
-    }
-
-    for layer in _GRAPH_LAYERS:
-        rows = layers[layer]
-
-        if layer == "nodes":
-            for file, sl, sc, el, ec, node_type in rows:
-                loc = Location(file, int(sl), int(sc), int(el), int(ec))
-                code = _slice_source(sources, loc).strip()
-                node = ast_node_from_row(loc, code, node_type)
-                by_loc[(file, loc.start_line)] = node
-                g.add_node(node)
-        elif layer == "cfgEdges":
-            for sf, sl, df, dl, t in rows:
-                u = _resolve(sf, int(sl))
-                v = _resolve(df, int(dl))
-                g.add_edge(u, v, kind="cfg", successor=t)
-        elif layer == "basicBlocks":
-            # Annotate each AstNode with its BB id = (file, firstLine, lastLine).
-            for ast_file, ast_line, bb_first, bb_last in rows:
-                node = by_loc.get((ast_file, int(ast_line)))
-                if node is None:
-                    continue
-                g.nodes[node]["bb"] = (ast_file, int(bb_first), int(bb_last))
+    nodes = parse_nodes(_load_source_bytes(source))
+    for node in nodes:
+        by_loc[(node.location.file, node.location.start_line)] = node
+        g.add_node(node)
+    for u, v, t in build_cfg_edges(nodes):
+        g.add_edge(u, v, kind="cfg", successor=t)
+    for node, bb_first, bb_last in build_basic_blocks(nodes):
+        g.nodes[node]["bb"] = (node.location.file, bb_first, bb_last)
 
     # Resolved literal constants per output: populates ``const_outputs``
     # ``{out_idx: (kind, value)}`` and the single-output scalar ``const_value``.

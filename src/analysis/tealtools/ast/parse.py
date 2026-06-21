@@ -32,12 +32,11 @@ mnemonics, matching the QL hierarchy.
 """
 from __future__ import annotations
 
-from typing import Iterable
-
 import tree_sitter as _ts
 import tree_sitter_teal as _tsteal
 
 from ..control_flow import _children, _program_cfg
+from .ast import Location, ast_node_from_row
 
 _LANG = _ts.Language(_tsteal.language())
 _PARSER = _ts.Parser(_LANG)
@@ -270,16 +269,17 @@ def _loc(node) -> tuple[int, int, int, int]:
     )
 
 
-def build_nodes(
-    sources: dict[str, bytes | str]
-) -> list[tuple[str, int, int, int, int, str]]:
-    """Reconstruct the ``nodes`` rows from ``{file: source}``.
+def parse_nodes(sources: dict[str, bytes | str]) -> list:
+    """Parse ``{file: source}`` into :class:`tealtools.ast.AstNode` objects.
 
-    Returns ``(file, startLine, startCol, endLine, endCol, qlClass)`` tuples
-    — the same shape as ``nodes.ql``'s select. ``==`` / ``!=`` yield two rows
-    (one per matched leaf class).
+    One node per opcode (plus ``Label`` nodes and the program-root ``Source``
+    node), each with its source location and the source text of its line.
+    ``==`` / ``!=`` yield two nodes (one per matched leaf type); a ``Label`` is
+    emitted only when it is a reachable CFG node (dead-subroutine entry labels are
+    dropped) -- gated by the control-flow reachability over the opcode+label set.
     """
-    rows: list[tuple[str, int, int, int, int, str]] = []
+    from ..graph import _slice_source        # lazy: graph imports this module
+    out: list = []
     for file, src in sources.items():
         if isinstance(src, str):
             src = src.encode("utf-8")
@@ -289,38 +289,37 @@ def build_nodes(
         if not real:
             continue
 
-        # Collect opcode rows (all emitted) and candidate label rows
-        # separately; labels are reachability-gated below.
-        op_rows: list[tuple[str, int, int, int, int, str]] = []
-        label_rows: list[tuple[str, int, int, int, int, str]] = []
+        slines = {file: src.decode("utf-8", "replace").splitlines()}
+
+        def _node(sl, sc, el, ec, cls):
+            loc = Location(file, sl, sc, el, ec)
+            return ast_node_from_row(loc, _slice_source(slines, loc).strip(), cls)
+
+        # All opcode nodes are emitted; label nodes are reachability-gated below.
+        op_nodes: list = []
+        label_nodes: list = []
         for ch in real:
             sl, sc, el, ec = _loc(ch)
             if ch.type == "label":
-                label_rows.append((file, sl, sc, el, ec, "Label"))
+                label_nodes.append(_node(sl, sc, el, ec, "Label"))
             else:
                 for cls in _classes_for(ch):
-                    op_rows.append((file, sl, sc, el, ec, cls))
+                    op_nodes.append(_node(sl, sc, el, ec, cls))
 
-        # QL emits a ``Label`` row only when the label is a reachable CFG
-        # node (dead-subroutine entry labels never reached from the program
-        # entry are dropped). Reuse the CFG port's reachability over the
-        # opcode+label node set to gate them. Opcodes are always emitted.
         reach_lines: set[int] = set()
-        node_rows = op_rows + label_rows
-        slines = {file: src.decode("utf-8", "replace").splitlines()}
-        kids = _children(node_rows, slines).get(file, [])
+        kids = _children(op_nodes + label_nodes).get(file, [])
         if kids:
             _cand, reachable, _idx = _program_cfg(kids)
             reach_lines = {kids[i].line for i in reachable}
 
-        # Source row: (1,1) .. end of the last real child, extended by one
-        # column to the line terminator IF the file's last content line ends
-        # with a newline (QL's Program spans through that terminator). Files
-        # with no trailing newline (e.g. xgov) end exactly at the last token;
-        # files with one (the folks contracts) end one column past it.
+        # Source node: (1,1) .. end of the last real child, extended one column to
+        # the line terminator IF the file's last content line ends with a newline
+        # (the program spans through that terminator). No trailing newline (e.g.
+        # xgov) -> ends exactly at the last token; one (the folks contracts) -> one
+        # column past it.
         last = real[-1]
         end_col = last.end_point[1] + (1 if b"\n" in src[last.end_byte:] else 0)
-        rows.append((file, 1, 1, last.end_point[0] + 1, end_col, "Source"))
-        rows.extend(op_rows)
-        rows.extend(r for r in label_rows if r[1] in reach_lines)
-    return rows
+        out.append(_node(1, 1, last.end_point[0] + 1, end_col, "Source"))
+        out.extend(op_nodes)
+        out.extend(n for n in label_nodes if n.location.start_line in reach_lines)
+    return out
