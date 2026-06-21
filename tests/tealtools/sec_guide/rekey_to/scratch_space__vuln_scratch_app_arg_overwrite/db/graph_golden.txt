@@ -7,17 +7,14 @@ prog.teal	13	1	13	7	StoreOpcode
 prog.teal	17	1	17	6	LoadOpcode
 prog.teal	18	1	18	18	GlobalOpcode
 prog.teal	19	1	19	2	EqualsComparisonOpcode
-prog.teal	19	1	19	2	IntegerEqualsOpcode
 prog.teal	20	1	20	6	AssertOpcode
 prog.teal	22	1	22	12	TxnOpcode
 prog.teal	23	1	23	5	SingleNumericArgumentOpcode
 prog.teal	24	1	24	2	EqualsComparisonOpcode
-prog.teal	24	1	24	2	IntegerEqualsOpcode
 prog.teal	25	1	25	16	BnzOpcode
 prog.teal	27	1	27	16	TxnOpcode
 prog.teal	28	1	28	5	SingleNumericArgumentOpcode
 prog.teal	29	1	29	2	EqualsComparisonOpcode
-prog.teal	29	1	29	2	IntegerEqualsOpcode
 prog.teal	30	1	30	6	AssertOpcode
 prog.teal	31	1	31	9	BOpcode
 prog.teal	33	1	33	13	Label

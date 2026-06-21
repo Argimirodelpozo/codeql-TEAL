@@ -11,14 +11,12 @@ prog.teal	14	1	14	19	Label
 prog.teal	15	3	15	18	GlobalOpcode
 prog.teal	16	3	16	7	SingleNumericArgumentOpcode
 prog.teal	17	3	17	4	EqualsComparisonOpcode
-prog.teal	17	3	17	4	IntegerEqualsOpcode
 prog.teal	18	3	18	8	AssertOpcode
 prog.teal	19	3	19	8	RetsubOpcode
 prog.teal	21	1	21	17	Label
 prog.teal	22	3	22	17	GtxnOpcode
 prog.teal	23	3	23	7	SingleNumericArgumentOpcode
 prog.teal	24	3	24	4	EqualsComparisonOpcode
-prog.teal	24	3	24	4	IntegerEqualsOpcode
 prog.teal	25	3	25	15	GtxnOpcode
 prog.teal	26	3	26	13	SingleNumericArgumentOpcode
 prog.teal	27	3	27	4	IntegerGteOpcode
@@ -26,14 +24,12 @@ prog.teal	28	3	28	4	AndOpcode
 prog.teal	29	3	29	17	GtxnOpcode
 prog.teal	30	3	30	34	GlobalOpcode
 prog.teal	31	3	31	4	EqualsComparisonOpcode
-prog.teal	31	3	31	4	IntegerEqualsOpcode
 prog.teal	32	3	32	4	AndOpcode
 prog.teal	33	3	33	8	RetsubOpcode
 prog.teal	35	1	35	18	Label
 prog.teal	36	3	36	17	GtxnOpcode
 prog.teal	37	3	37	7	SingleNumericArgumentOpcode
 prog.teal	38	3	38	4	EqualsComparisonOpcode
-prog.teal	38	3	38	4	IntegerEqualsOpcode
 prog.teal	39	3	39	8	RetsubOpcode
 ## cfgEdges
 prog.teal	5	prog.teal	14	NormalSuccessor

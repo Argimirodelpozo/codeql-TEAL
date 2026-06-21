@@ -5,12 +5,10 @@ prog.teal	9	1	9	27	CallsubOpcode
 prog.teal	11	1	11	12	TxnOpcode
 prog.teal	12	1	12	5	SingleNumericArgumentOpcode
 prog.teal	13	1	13	2	EqualsComparisonOpcode
-prog.teal	13	1	13	2	IntegerEqualsOpcode
 prog.teal	14	1	14	16	BnzOpcode
 prog.teal	16	1	16	16	TxnOpcode
 prog.teal	17	1	17	5	SingleNumericArgumentOpcode
 prog.teal	18	1	18	2	EqualsComparisonOpcode
-prog.teal	18	1	18	2	IntegerEqualsOpcode
 prog.teal	19	1	19	6	AssertOpcode
 prog.teal	20	1	20	9	BOpcode
 prog.teal	22	1	22	13	Label
@@ -26,7 +24,6 @@ prog.teal	33	3	33	11	ProtoOpcode
 prog.teal	34	3	34	14	FrameDigOpcode
 prog.teal	35	3	35	20	GlobalOpcode
 prog.teal	36	3	36	4	EqualsComparisonOpcode
-prog.teal	36	3	36	4	IntegerEqualsOpcode
 prog.teal	37	3	37	8	AssertOpcode
 prog.teal	38	3	38	8	RetsubOpcode
 ## cfgEdges

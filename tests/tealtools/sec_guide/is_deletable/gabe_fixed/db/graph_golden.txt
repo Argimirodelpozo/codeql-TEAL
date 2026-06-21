@@ -19,7 +19,6 @@ prog.teal	27	1	27	31	Label
 prog.teal	30	5	30	20	TxnOpcode
 prog.teal	31	5	31	13	PushintOpcode
 prog.teal	32	5	32	6	EqualsComparisonOpcode
-prog.teal	32	5	32	6	IntegerEqualsOpcode
 prog.teal	33	5	33	21	TxnOpcode
 prog.teal	34	5	34	6	AndOpcode
 prog.teal	35	5	35	10	AssertOpcode
@@ -37,7 +36,6 @@ prog.teal	52	1	52	18	Label
 prog.teal	55	5	55	14	TxnOpcode
 prog.teal	56	5	56	25	GlobalOpcode
 prog.teal	57	5	57	6	EqualsComparisonOpcode
-prog.teal	57	5	57	6	IntegerEqualsOpcode
 prog.teal	58	5	58	10	AssertOpcode
 prog.teal	61	5	61	36	GlobalOpcode
 prog.teal	62	5	62	31	AcctParamsGetOpcode
@@ -46,7 +44,6 @@ prog.teal	64	5	64	36	GlobalOpcode
 prog.teal	65	5	65	34	AcctParamsGetOpcode
 prog.teal	66	5	66	10	AssertOpcode
 prog.teal	67	5	67	6	EqualsComparisonOpcode
-prog.teal	67	5	67	6	IntegerEqualsOpcode
 prog.teal	73	5	73	10	AssertOpcode
 prog.teal	76	5	76	13	PushintOpcode
 prog.teal	77	5	77	10	ReturnOpcode

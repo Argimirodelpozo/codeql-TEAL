@@ -3,7 +3,6 @@ prog.teal	1	1	12	7	Source
 prog.teal	6	1	6	11	TxnOpcode
 prog.teal	7	1	7	18	GlobalOpcode
 prog.teal	8	1	8	2	EqualsComparisonOpcode
-prog.teal	8	1	8	2	IntegerEqualsOpcode
 prog.teal	9	1	9	6	AssertOpcode
 prog.teal	11	1	11	5	SingleNumericArgumentOpcode
 prog.teal	12	1	12	6	ReturnOpcode

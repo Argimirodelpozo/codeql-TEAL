@@ -5,7 +5,6 @@ prog.teal	6	1	6	7	StoreOpcode
 prog.teal	9	1	9	5	Arg1Opcode
 prog.teal	10	1	10	5	SingleNumericArgumentOpcode
 prog.teal	11	1	11	2	EqualsComparisonOpcode
-prog.teal	11	1	11	2	IntegerEqualsOpcode
 prog.teal	12	1	12	20	BnzOpcode
 prog.teal	15	1	15	6	LoadOpcode
 prog.teal	16	1	16	24	PushbytesOpcode
@@ -30,7 +29,6 @@ prog.teal	37	1	37	5	SingleNumericArgumentOpcode
 prog.teal	38	1	38	6	ReturnOpcode
 prog.teal	41	1	41	15	Label
 prog.teal	42	3	42	4	EqualsComparisonOpcode
-prog.teal	42	3	42	4	IntegerEqualsOpcode
 prog.teal	43	3	43	8	RetsubOpcode
 ## cfgEdges
 prog.teal	5	prog.teal	6	NormalSuccessor

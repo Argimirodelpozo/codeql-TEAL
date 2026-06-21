@@ -20,7 +20,6 @@ prog.teal	26	1	26	17	Label
 prog.teal	27	3	27	8	Sha256Opcode
 prog.teal	28	3	28	78	PushbytesOpcode
 prog.teal	29	3	29	4	EqualsComparisonOpcode
-prog.teal	29	3	29	4	IntegerEqualsOpcode
 prog.teal	30	3	30	8	RetsubOpcode
 ## cfgEdges
 prog.teal	5	prog.teal	6	NormalSuccessor

@@ -4,7 +4,6 @@ prog.teal	7	1	7	5	Label
 prog.teal	10	5	10	16	TxnOpcode
 prog.teal	11	5	11	13	PushintOpcode
 prog.teal	12	5	12	6	EqualsComparisonOpcode
-prog.teal	12	5	12	6	IntegerEqualsOpcode
 prog.teal	16	5	16	24	BzOpcode
 prog.teal	19	5	19	14	TxnOpcode
 prog.teal	20	5	20	18	PushintOpcode
@@ -17,7 +16,6 @@ prog.teal	35	5	35	24	BzOpcode
 prog.teal	39	5	39	24	TxnOpcode
 prog.teal	40	5	40	22	GlobalOpcode
 prog.teal	41	5	41	6	EqualsComparisonOpcode
-prog.teal	41	5	41	6	IntegerEqualsOpcode
 prog.teal	48	5	48	24	BzOpcode
 prog.teal	49	5	49	13	PushintOpcode
 prog.teal	58	5	58	10	ReturnOpcode

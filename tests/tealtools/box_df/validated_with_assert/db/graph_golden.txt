@@ -4,7 +4,6 @@ prog.teal	11	1	11	22	TxnaOpcode
 prog.teal	12	1	12	3	DupOpcode
 prog.teal	13	1	13	19	PushbytesOpcode
 prog.teal	14	1	14	2	EqualsComparisonOpcode
-prog.teal	14	1	14	2	IntegerEqualsOpcode
 prog.teal	15	1	15	6	AssertOpcode
 prog.teal	18	1	18	13	PushbytesOpcode
 prog.teal	19	1	19	4	SwapOpcode

@@ -28,13 +28,11 @@ prog.teal	48	5	48	10	Intc0Opcode
 prog.teal	49	5	49	18	GtxnsOpcode
 prog.teal	50	5	50	10	Intc1Opcode
 prog.teal	51	5	51	6	EqualsComparisonOpcode
-prog.teal	51	5	51	6	IntegerEqualsOpcode
 prog.teal	52	5	52	10	AssertOpcode
 prog.teal	53	5	53	10	Intc0Opcode
 prog.teal	56	5	56	18	GtxnsOpcode
 prog.teal	57	5	57	36	GlobalOpcode
 prog.teal	58	5	58	6	EqualsComparisonOpcode
-prog.teal	58	5	58	6	IntegerEqualsOpcode
 prog.teal	64	5	64	10	AssertOpcode
 prog.teal	67	5	67	10	Intc0Opcode
 prog.teal	70	5	70	11	Bytec0Opcode

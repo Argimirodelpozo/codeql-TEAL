@@ -3,22 +3,18 @@ prog.teal	1	1	120	9	Source
 prog.teal	4	1	4	17	TxnOpcode
 prog.teal	5	1	5	5	SingleNumericArgumentOpcode
 prog.teal	6	1	6	2	EqualsComparisonOpcode
-prog.teal	6	1	6	2	IntegerEqualsOpcode
 prog.teal	7	1	7	17	BnzOpcode
 prog.teal	9	1	9	16	TxnOpcode
 prog.teal	10	1	10	5	SingleNumericArgumentOpcode
 prog.teal	11	1	11	2	EqualsComparisonOpcode
-prog.teal	11	1	11	2	IntegerEqualsOpcode
 prog.teal	12	1	12	15	BnzOpcode
 prog.teal	14	1	14	16	TxnOpcode
 prog.teal	15	1	15	5	SingleNumericArgumentOpcode
 prog.teal	16	1	16	2	EqualsComparisonOpcode
-prog.teal	16	1	16	2	IntegerEqualsOpcode
 prog.teal	17	1	17	17	BnzOpcode
 prog.teal	19	1	19	16	TxnOpcode
 prog.teal	20	1	20	5	SingleNumericArgumentOpcode
 prog.teal	21	1	21	2	EqualsComparisonOpcode
-prog.teal	21	1	21	2	IntegerEqualsOpcode
 prog.teal	22	1	22	17	BnzOpcode
 prog.teal	24	1	24	3	ErrOpcode
 prog.teal	26	1	26	14	Label
@@ -29,17 +25,14 @@ prog.teal	31	1	31	12	Label
 prog.teal	32	3	32	23	TxnOpcode
 prog.teal	33	3	33	21	PushbytesOpcode
 prog.teal	34	3	34	4	EqualsComparisonOpcode
-prog.teal	34	3	34	4	IntegerEqualsOpcode
 prog.teal	35	3	35	20	BnzOpcode
 prog.teal	37	3	37	23	TxnOpcode
 prog.teal	38	3	38	22	PushbytesOpcode
 prog.teal	39	3	39	4	EqualsComparisonOpcode
-prog.teal	39	3	39	4	IntegerEqualsOpcode
 prog.teal	40	3	40	21	BnzOpcode
 prog.teal	42	3	42	23	TxnOpcode
 prog.teal	43	3	43	30	PushbytesOpcode
 prog.teal	44	3	44	4	EqualsComparisonOpcode
-prog.teal	44	3	44	4	IntegerEqualsOpcode
 prog.teal	45	3	45	29	BnzOpcode
 prog.teal	47	3	47	5	ErrOpcode
 prog.teal	49	1	49	14	Label
@@ -73,7 +66,6 @@ prog.teal	83	1	83	16	Label
 prog.teal	84	3	84	12	TxnOpcode
 prog.teal	85	3	85	23	GlobalOpcode
 prog.teal	86	3	86	4	EqualsComparisonOpcode
-prog.teal	86	3	86	4	IntegerEqualsOpcode
 prog.teal	87	3	87	8	AssertOpcode
 prog.teal	88	3	88	8	RetsubOpcode
 prog.teal	90	1	90	17	Label
@@ -100,7 +92,6 @@ prog.teal	115	3	115	9	BalanceOpcode
 prog.teal	116	3	116	34	GlobalOpcode
 prog.teal	117	3	117	13	MinBalanceOpcode
 prog.teal	118	3	118	4	EqualsComparisonOpcode
-prog.teal	118	3	118	4	IntegerEqualsOpcode
 prog.teal	119	3	119	8	AssertOpcode
 prog.teal	120	3	120	8	RetsubOpcode
 ## cfgEdges

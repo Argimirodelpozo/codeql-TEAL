@@ -7,19 +7,16 @@ prog.teal	8	1	8	19	BnzOpcode
 prog.teal	11	1	11	5	Arg0Opcode
 prog.teal	12	1	12	23	PushbytesOpcode
 prog.teal	13	1	13	2	EqualsComparisonOpcode
-prog.teal	13	1	13	2	IntegerEqualsOpcode
 prog.teal	14	1	14	6	AssertOpcode
 prog.teal	15	1	15	15	BOpcode
 prog.teal	17	1	17	16	Label
 prog.teal	19	1	19	5	Arg1Opcode
 prog.teal	20	1	20	21	PushbytesOpcode
 prog.teal	21	1	21	2	EqualsComparisonOpcode
-prog.teal	21	1	21	2	IntegerEqualsOpcode
 prog.teal	22	1	22	6	AssertOpcode
 prog.teal	24	1	24	5	Arg2Opcode
 prog.teal	25	1	25	21	PushbytesOpcode
 prog.teal	26	1	26	2	EqualsComparisonOpcode
-prog.teal	26	1	26	2	IntegerEqualsOpcode
 prog.teal	27	1	27	6	AssertOpcode
 prog.teal	29	1	29	14	Label
 prog.teal	30	1	30	7	TxnOpcode
@@ -29,7 +26,6 @@ prog.teal	33	1	33	6	AssertOpcode
 prog.teal	34	1	34	11	TxnOpcode
 prog.teal	35	1	35	18	GlobalOpcode
 prog.teal	36	1	36	2	EqualsComparisonOpcode
-prog.teal	36	1	36	2	IntegerEqualsOpcode
 prog.teal	37	1	37	6	AssertOpcode
 prog.teal	38	1	38	5	SingleNumericArgumentOpcode
 prog.teal	39	1	39	6	ReturnOpcode

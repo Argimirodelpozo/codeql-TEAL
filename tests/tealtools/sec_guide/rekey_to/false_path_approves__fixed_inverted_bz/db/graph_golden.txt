@@ -3,7 +3,6 @@ prog.teal	1	1	15	7	Source
 prog.teal	7	1	7	11	TxnOpcode
 prog.teal	8	1	8	18	GlobalOpcode
 prog.teal	9	1	9	2	EqualsComparisonOpcode
-prog.teal	9	1	9	2	IntegerEqualsOpcode
 prog.teal	10	1	10	12	BnzOpcode
 prog.teal	11	1	11	3	ErrOpcode
 prog.teal	13	1	13	9	Label

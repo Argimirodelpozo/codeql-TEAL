@@ -4,7 +4,6 @@ prog.teal	4	1	4	22	TxnaOpcode
 prog.teal	5	1	5	4	BtoiOpcode
 prog.teal	6	1	6	6	Intc0Opcode
 prog.teal	7	1	7	2	EqualsComparisonOpcode
-prog.teal	7	1	7	2	IntegerEqualsOpcode
 prog.teal	8	1	8	10	BnzOpcode
 prog.teal	10	1	10	10	InnerTransactionBegin
 prog.teal	11	1	11	9	PushintOpcode

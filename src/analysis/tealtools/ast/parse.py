@@ -17,18 +17,19 @@ Key conventions:
 * **Type is keyed by the mnemonic** (the opcode's first child token), not
   the tree-sitter node type: generic buckets like ``zero_argument_opcode``
   cover ``==`` / ``+`` / ``return`` / ``dup`` … so the mnemonic decides.
-* **Dual-class quirk** — ``==`` and ``!=`` each emit TWO rows (the typed
-  ``Integer*`` class *and* the generic ``*Comparison`` class), because the
-  node matches two enumerated leaf classes in ``nodes.ql``.
+* **One node per opcode.** Each opcode emits exactly one node of its most
+  specific class. (Earlier this reproduced a CodeQL artifact where ``==`` /
+  ``!=`` each emitted two nodes — the typed and the generic comparison class
+  — but the two collapse to one graph node by ``(file, line)`` and nothing
+  downstream read the second, so it was dropped.)
 * **`Source`** — the program root; emitted once, spanning ``(1,1)`` to the
   end of the last real (non-trivia) child (tree-sitter's root span includes
-  the trailing newline, which QL trims).
-* **Skipped** — ``comment`` and ``pragma_*`` nodes (QL emits neither).
+  the trailing newline, which the legacy extractor trimmed).
+* **Skipped** — ``comment`` and ``pragma_*`` nodes (neither is emitted).
 
 The mnemonic→class table was derived by aligning tree-sitter parses against
-cached ``nodes.csv`` across 216 fixture contracts (single-opcode lines only,
-to avoid cross-node pollution); ``==`` / ``!=`` are the only multi-class
-mnemonics, matching the QL hierarchy.
+the legacy node facts across 216 fixture contracts (single-opcode lines
+only, to avoid cross-node pollution).
 """
 from __future__ import annotations
 
@@ -54,7 +55,7 @@ def _is_trivia(node_type: str) -> bool:
 # hierarchy; ``==`` / ``!=`` are the only dual-class mnemonics.
 MNEMONIC_CLASSES: dict[str, list[str]] = {
     '!': ['NotOpcode'],
-    '!=': ['IntegerNotEqualsOpcode', 'NotEqualsComparisonOpcode'],
+    '!=': ['IntegerNotEqualsOpcode'],
     '%': ['ModOpcode'],
     '&&': ['AndOpcode'],
     '*': ['MulOpcode'],
@@ -63,7 +64,7 @@ MNEMONIC_CLASSES: dict[str, list[str]] = {
     '/': ['DivOpcode'],
     '<': ['IntegerLessThanOpcode'],
     '<=': ['IntegerLteOpcode'],
-    '==': ['EqualsComparisonOpcode', 'IntegerEqualsOpcode'],
+    '==': ['EqualsComparisonOpcode'],
     '>': ['IntegerGreaterThanOpcode'],
     '>=': ['IntegerGteOpcode'],
     'acct_params_get': ['AcctParamsGetOpcode'],

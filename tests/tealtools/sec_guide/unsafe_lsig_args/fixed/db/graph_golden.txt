@@ -10,17 +10,14 @@ prog.teal	10	1	10	2	AndOpcode
 prog.teal	11	1	11	11	TxnOpcode
 prog.teal	12	1	12	18	GlobalOpcode
 prog.teal	13	1	13	2	EqualsComparisonOpcode
-prog.teal	13	1	13	2	IntegerEqualsOpcode
 prog.teal	14	1	14	2	AndOpcode
 prog.teal	15	1	15	20	TxnOpcode
 prog.teal	16	1	16	18	GlobalOpcode
 prog.teal	17	1	17	2	EqualsComparisonOpcode
-prog.teal	17	1	17	2	IntegerEqualsOpcode
 prog.teal	18	1	18	2	AndOpcode
 prog.teal	19	1	19	12	TxnOpcode
 prog.teal	20	1	20	76	PushbytesOpcode
 prog.teal	21	1	21	2	EqualsComparisonOpcode
-prog.teal	21	1	21	2	IntegerEqualsOpcode
 prog.teal	22	1	22	2	AndOpcode
 prog.teal	23	1	23	6	AssertOpcode
 prog.teal	24	1	24	5	SingleNumericArgumentOpcode

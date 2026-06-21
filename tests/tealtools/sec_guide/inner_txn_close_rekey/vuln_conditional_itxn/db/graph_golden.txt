@@ -3,12 +3,10 @@ prog.teal	1	1	50	9	Source
 prog.teal	5	1	5	16	TxnOpcode
 prog.teal	6	1	6	5	SingleNumericArgumentOpcode
 prog.teal	7	1	7	2	EqualsComparisonOpcode
-prog.teal	7	1	7	2	IntegerEqualsOpcode
 prog.teal	8	1	8	6	AssertOpcode
 prog.teal	10	1	10	10	TxnOpcode
 prog.teal	11	1	11	21	GlobalOpcode
 prog.teal	12	1	12	2	EqualsComparisonOpcode
-prog.teal	12	1	12	2	IntegerEqualsOpcode
 prog.teal	13	1	13	20	BnzOpcode
 prog.teal	16	1	16	20	CallsubOpcode
 prog.teal	17	1	17	5	SingleNumericArgumentOpcode
