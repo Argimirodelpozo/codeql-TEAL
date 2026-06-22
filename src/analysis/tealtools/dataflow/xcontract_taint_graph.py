@@ -115,10 +115,6 @@ class XContractTaintGraph:
     # --- construction --------------------------------------------------
 
     @staticmethod
-    def _wrap(app_id: Optional[int], n: Node) -> XContractNode:
-        return XContractNode(app_id=app_id, inner=n)
-
-    @staticmethod
     def _merge(
         tg_by_id: dict,
         callees: dict[int, TaintGraph],

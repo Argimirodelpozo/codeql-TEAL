@@ -63,7 +63,3 @@ def fetch_approval(app_id):
     resp = _get(f"{LOCAL}/v2/teal/disassemble", data=bytecode,
                 ctype="application/x-binary", token="a" * 64)
     return json.loads(resp)["result"], bytecode   # algod returns {"result": "<teal>"}
-
-
-def fetch_teal(app_id):
-    return fetch_approval(app_id)[0]

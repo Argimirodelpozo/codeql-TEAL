@@ -55,10 +55,7 @@ Python-side shared helpers live in `analysis/tealtools/detections/`:
   resolves the callee in a registry, propagates seeded path predicates).
 - `scan.py` — directory walker that builds per-dir DBs and runs detections.
 
-This directory holds only the Python detectors. CodeQL qltests for the
-analysis substrate live under `tests/codeql/` (the
-`argimirodelpozo/teal-codeql-tests` pack), which is the path the
-`test_codeql_backend.py` runner walks.
+This directory holds only the Python detectors.
 
 ## Running
 

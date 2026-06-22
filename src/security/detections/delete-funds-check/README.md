@@ -70,6 +70,5 @@ return
 
 - `delete_funds_check.py` — the detector.
 
-Test fixtures — `vuln` / `fixed` `.teal` programs, their built
-CodeQL DBs, and the expected detector output — live under
+Test fixtures — `vuln` / `fixed` `.teal` programs and the expected detector output — live under
 `tests/tealtools/sec_guide/delete_funds_check/`, one directory per case.

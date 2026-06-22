@@ -57,6 +57,5 @@ return
 
 - `asset_close_to.py` — the detector.
 
-Test fixtures — `vuln` / `fixed` `.teal` programs, their built
-CodeQL DBs, and the expected detector output — live under
+Test fixtures — `vuln` / `fixed` `.teal` programs and the expected detector output — live under
 `tests/tealtools/sec_guide/asset_close_to/`, one directory per case.

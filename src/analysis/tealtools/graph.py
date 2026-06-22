@@ -151,19 +151,6 @@ def _resolve_source_files(source):
             yield f.name, _normalize_pseudo_ops(f.read_bytes())
 
 
-def _load_source_lines(source: Path) -> dict[str, list[str]]:
-    """Map relative path (and basename) -> 1-indexed source lines."""
-    sources: dict[str, list[str]] = {}
-    for rel, data in _resolve_source_files(source):
-        try:
-            lines = data.decode("utf-8").splitlines()
-        except UnicodeDecodeError:
-            continue
-        sources[rel] = lines
-        sources[Path(rel).name] = lines
-    return sources
-
-
 def _load_source_bytes(source: Path) -> dict[str, bytes]:
     """Map basename -> raw source bytes (keyed by basename, the relative path the
     ``ast.parse`` pass reports for each node)."""
