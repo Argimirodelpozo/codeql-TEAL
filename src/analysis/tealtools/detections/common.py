@@ -31,6 +31,7 @@ from ..ssa import (
     SSAProgram,
     SSAVar,
     const_int,
+    is_field_var,
 )
 
 
@@ -672,17 +673,11 @@ def approval_exit_protected_for_arg_reads(
 
 
 def _is_txn_field_var(var, field: str) -> bool:
-    if not isinstance(var, SSAVar) or var.defined_by is None:
-        return False
-    a = var.defined_by
-    return a.op == "txn" and a.immediates.strip() == field
+    return is_field_var(var, "txn", field)
 
 
 def _is_global_field_var(var, field: str) -> bool:
-    if not isinstance(var, SSAVar) or var.defined_by is None:
-        return False
-    a = var.defined_by
-    return a.op == "global" and a.immediates.strip() == field
+    return is_field_var(var, "global", field)
 
 
 def _is_sender_eq_creator(cmp: Assignment) -> bool:

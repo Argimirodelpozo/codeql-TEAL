@@ -46,6 +46,17 @@ def const_int(op) -> Optional[int]:
         return None
 
 
+def const_bytes(op) -> Optional[str]:
+    """The bytes value ``op`` resolves to (the TEAL literal form, e.g. an
+    ``0x``-hex or ``base64(..)`` string), or ``None`` when it isn't a
+    statically-known bytes-kind literal. The bytes analogue of
+    :func:`const_int`."""
+    c = operand_const(op)
+    if c is None or c.kind != "bytes":
+        return None
+    return c.value
+
+
 def is_const(op) -> bool:
     """``True`` when ``op`` resolves to any compile-time constant."""
     return operand_const(op) is not None

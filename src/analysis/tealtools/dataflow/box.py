@@ -269,15 +269,11 @@ class CorrelatedViolation:
     sink_operand: TaintedOperand
 
     def pretty(self) -> str:
-        i = self.initial_source.location
-        w = self.box_write.location
-        r = self.box_read.location
-        s = self.sink.location
         return (
-            f"{self.initial_source_name}@{i.file}:{i.line}  →  "
-            f"{self.box_write.op}@{w.file}:{w.line}  →  "
-            f"{self.box_read.op}@{r.file}:{r.line}  →  "
-            f"{self.sink_name}@{s.file}:{s.line}  "
+            f"{self.initial_source_name}@{self.initial_source.location}  →  "
+            f"{self.box_write.op}@{self.box_write.location}  →  "
+            f"{self.box_read.op}@{self.box_read.location}  →  "
+            f"{self.sink_name}@{self.sink.location}  "
             f"(sink_value = {self.sink_operand!r})"
         )
 

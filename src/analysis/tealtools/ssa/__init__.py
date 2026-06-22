@@ -47,7 +47,8 @@ from .models import (
 )
 
 # Operand -> constant resolution helpers from .operands
-from .operands import const_int, is_const, operand_const
+from .operands import const_bytes, const_int, is_const, operand_const
+from .producers import is_field_var, producing_op
 
 # The SSAProgram class from .program
 from .program import SSAProgram
@@ -82,9 +83,13 @@ __all__ = [
     "_shuffle_mapping",
     "_canon_shuffle",
     # Operand -> constant resolution
+    "const_bytes",
     "const_int",
     "is_const",
     "operand_const",
+    # Operand -> producing assignment
+    "is_field_var",
+    "producing_op",
     # SSAProgram + PySSA builder
     "SSAProgram",
     "PySSA",

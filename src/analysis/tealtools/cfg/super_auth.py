@@ -42,7 +42,7 @@ from typing import Iterable, Optional
 from ..auth_domination import AuthMatcher, DEFAULT_MATCHERS
 from ..opsets import STATE_MUTATING_OPS
 from ..path_predicates import BranchCondition, PathPredicateAnalysis
-from ..ssa import Assignment, SSAVar
+from ..ssa import Assignment, SSAVar, is_field_var
 from .supercfg import SuperBlock, SuperCFG
 
 
@@ -60,12 +60,11 @@ class CallerGuardBypassFinding:
     guard_predicates: tuple[BranchCondition, ...]  # the auth preds holding there
 
     def pretty(self) -> str:
-        loc = self.sink.location
         g = "root" if self.guard_app_id is None else f"app{self.guard_app_id}"
         gf, gl = self.guard_site
         preds = ", ".join(repr(p) for p in self.guard_predicates)
         return (
-            f"app{self.app_id}: {self.sink.op}@{loc.file}:{loc.line} ({self.sink_class}) "
+            f"app{self.app_id}: {self.sink.op}@{self.sink.location} ({self.sink_class}) "
             f"is gated only by {g}'s guard at the call site {gf}:{gl} [{preds}] — callee "
             f"does not check CallerApplicationID, so the guard is bypassable by a direct call"
         )
@@ -102,12 +101,7 @@ _SINKS: dict[str, str] = {op: _SINK_LABELS.get(op, op) for op in STATE_MUTATING_
 
 
 def _is_caller_app_id(op: object) -> bool:
-    return (
-        isinstance(op, SSAVar)
-        and op.defined_by is not None
-        and op.defined_by.op == "global"
-        and op.defined_by.immediates.strip() == "CallerApplicationID"
-    )
+    return is_field_var(op, "global", "CallerApplicationID")
 
 
 def _pred_pins_caller(p: BranchCondition) -> bool:

@@ -23,7 +23,7 @@ import yaml
 
 from .inner_txn_report import InnerTxn, InnerTxnReport
 from .path_predicates import BranchCondition, PathPredicateAnalysis
-from .ssa import Const, SSAProgram, const_int
+from .ssa import Const, SSAProgram, const_bytes as _const_bytes, const_int
 
 # TEAL TypeEnum integer for application calls. The assembler folds
 # `int appl` and `byte "appl"` into the integer literal 6 before SSA.
@@ -117,13 +117,6 @@ def _is_appcall(txn: InnerTxn) -> bool:
         if _const_only(f.possible_values()) != TYPEENUM_APPL:
             return False
     return True
-
-
-def _const_bytes(op) -> Optional[str]:
-    cv = op if isinstance(op, Const) else getattr(op, "const_value", None)
-    if isinstance(cv, Const) and cv.kind == "bytes":
-        return cv.value
-    return None
 
 
 def _state_key(inputs) -> Optional[str]:

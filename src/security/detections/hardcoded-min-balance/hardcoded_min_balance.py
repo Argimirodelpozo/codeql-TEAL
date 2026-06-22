@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-from tealtools.ssa import Assignment, SSAProgram, SSAVar, const_int
+from tealtools.ssa import Assignment, SSAProgram, const_int, is_field_var
 from tealtools.detections import common
 
 
@@ -61,9 +61,7 @@ class HardcodedMinBalanceDetector:
             for bal_idx, const_idx in ((0, 1), (1, 0)):
                 bal = sub.inputs[bal_idx]
                 cnst = sub.inputs[const_idx]
-                if not isinstance(bal, SSAVar) or bal.defined_by is None:
-                    continue
-                if bal.defined_by.op != "balance":
+                if not is_field_var(bal, "balance"):
                     continue
                 if const_int(cnst) is None:
                     continue

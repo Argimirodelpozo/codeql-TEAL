@@ -96,7 +96,7 @@ class ConstantConditionViolation:
     detail: str          # the proven sub-expression, e.g. "OnCompletion <= 6"
 
     def pretty(self) -> str:
-        where = f"{self.location.file}:{self.location.line}"
+        where = str(self.location)
         if self.kind == "vacuous-assert":
             return (
                 f"Vacuous assert at {where}: `{self.detail}` is always true "

@@ -172,11 +172,9 @@ class Violation:
     sink_operand: TaintedOperand
 
     def pretty(self) -> str:
-        sf = self.source.location
-        kf = self.sink.location
         return (
-            f"{self.source_name}@{sf.file}:{sf.line}  "
-            f"→  {self.sink_name}@{kf.file}:{kf.line}  "
+            f"{self.source_name}@{self.source.location}  "
+            f"→  {self.sink_name}@{self.sink.location}  "
             f"(operand = {self.sink_operand!r})"
         )
 

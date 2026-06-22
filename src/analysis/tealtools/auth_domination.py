@@ -47,9 +47,10 @@ from typing import Callable, Iterable, Optional
 
 from .ssa import (
     Assignment,
-    Const,
     SSAProgram,
     SSAVar,
+    const_bytes,
+    is_field_var,
 )
 from .path_predicates import (
     BranchCondition,
@@ -111,24 +112,16 @@ DEFAULT_SINKS: list[AuthSink] = [STATE_MUTATION_SINK]
 
 def _is_txn_sender(op) -> bool:
     """True if ``op`` is the SSAVar produced by ``txn Sender``."""
-    if not isinstance(op, SSAVar) or op.defined_by is None:
-        return False
-    src = op.defined_by
-    return src.op == "txn" and src.immediates.strip() == "Sender"
+    return is_field_var(op, "txn", "Sender")
 
 
 def _is_addr_const(op) -> bool:
-    """True if ``op`` is a 32-byte address-shaped constant. We don't
-    require the value itself to look like an Algorand address — any
-    statically-resolved bytes operand is enough for a guard pattern
-    (a 32-byte ``addr`` or ``pushbytes`` literal). Range/format
-    refinement can be added later without breaking matchers."""
-    if isinstance(op, Const):
-        return op.kind == "bytes"
-    cv = getattr(op, "const_value", None)
-    if cv is not None:
-        return cv.kind == "bytes"
-    return False
+    """True if ``op`` is an address-shaped constant. We don't require the value
+    itself to look like an Algorand address — any statically-resolved bytes
+    operand is enough for a guard pattern (a 32-byte ``addr`` or ``pushbytes``
+    literal). Range/format refinement can be added later without breaking
+    matchers."""
+    return const_bytes(op) is not None
 
 
 def _matches_sender_eq_const(cond: BranchCondition, prog: SSAProgram) -> bool:
@@ -189,9 +182,8 @@ class AuthViolation:
     dominating_predicates: list[BranchCondition]
 
     def pretty(self) -> str:
-        loc = self.sink.location
         body = ", ".join(repr(p) for p in self.dominating_predicates) or "<no guard>"
-        return f"{self.sink.op}@{loc.file}:{loc.line}  ({self.sink_class})  preds: {body}"
+        return f"{self.sink.op}@{self.sink.location}  ({self.sink_class})  preds: {body}"
 
     def to_dict(self) -> dict:
         from ._utils.serialize import assignment_ref
