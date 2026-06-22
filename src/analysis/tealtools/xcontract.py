@@ -288,30 +288,64 @@ def discover_registry(
     cache_dir: "str | Path | None" = None,
     fetch=None,
     app_ids: Optional[list[int]] = None,
+    max_depth: int = 4,
 ) -> Registry:
-    """Build an xcontract registry by FETCHING each resolvable callee's deployed
+    """Build an xcontract registry by FETCHING each reachable callee's deployed
     approval program from chain into ``cache_dir`` -- no hand-written yaml.
 
-    ``fetch(app_id) -> (teal_text, bytecode)`` defaults to
-    :func:`_default_chain_fetch` (mainnet indexer + localnet disassemble); inject a
-    stub to run offline. CACHED: an existing ``app_<id>.teal`` in ``cache_dir`` is
-    reused, so re-runs never re-fetch. AppIDs that don't fetch (not found / network
-    error) are skipped. Returns ``{app_id: teal_path}``."""
+    Discovery is TRANSITIVE: ``prog``'s callees are fetched, then parsed to find
+    THEIR callees, and so on up to ``max_depth`` hops -- so an A->B->C chain
+    pulls B and C. ``fetch(app_id) -> (teal_text, bytecode)`` defaults to
+    :func:`_default_chain_fetch`; inject a stub to run offline. CACHED: an
+    existing ``app_<id>.teal`` in ``cache_dir`` is reused. AppIDs that don't
+    fetch (not found / network error) are skipped. Passing an explicit
+    ``app_ids`` fetches exactly those (one level, no transitive walk). Returns
+    ``{app_id: teal_path}``."""
     cache = Path(cache_dir) if cache_dir is not None else _DEFAULT_CALLEE_CACHE
     cache.mkdir(parents=True, exist_ok=True)
     if fetch is None:
         fetch = _default_chain_fetch
-    ids = app_ids if app_ids is not None else candidate_app_ids(prog)
     registry: Registry = {}
-    for aid in ids:
+
+    def _fetch_one(aid: int) -> "Path | None":
         teal_path = cache / f"app_{aid}.teal"
         if not teal_path.exists():
             try:
                 teal, _bytecode = fetch(aid)
             except Exception:
-                continue                       # unfetchable -> skip, no invented callee
+                return None                # unfetchable -> skip, no invented callee
             teal_path.write_text(teal)
         registry[aid] = str(teal_path)
+        return teal_path
+
+    if app_ids is not None:
+        for aid in app_ids:
+            _fetch_one(aid)
+        return registry
+
+    # Transitive BFS over the call graph: fetch each program's callees, parse
+    # them, recurse into THEIR callees, deduped by AppID, bounded by max_depth.
+    from collections import deque
+
+    seen: set[int] = set()
+    frontier: deque = deque([(prog, 0)])
+    while frontier:
+        p, depth = frontier.popleft()
+        if depth >= max_depth:
+            continue
+        for aid in candidate_app_ids(p):
+            if aid in seen:
+                continue
+            seen.add(aid)
+            teal_path = _fetch_one(aid)
+            if teal_path is None:
+                continue
+            try:
+                callee = SSAProgram(str(teal_path))
+                callee.propagate_constants()
+            except Exception:
+                continue                   # unparseable callee -> registered, not walked
+            frontier.append((callee, depth + 1))
     return registry
 
 
@@ -415,14 +449,35 @@ def render_xcontract(
 # --- slice 3: graph orchestrator + first cross-contract detector ------
 
 
+@dataclass(frozen=True)
+class AppcallEdge:
+    """One appcall in the transitive graph: ``caller_app_id`` (``None`` =
+    the root caller) makes ``site``, reaching callee ``site.app_id`` at
+    ``depth`` hops from the root."""
+
+    caller_app_id: Optional[int]
+    site: AppcallSite
+    depth: int
+
+    def render(self) -> str:
+        src = "root" if self.caller_app_id is None else f"app{self.caller_app_id}"
+        return (f"{src} -> app{self.site.app_id} "
+                f"@ {self.site.file}:{self.site.submit_line} (hop {self.depth + 1})")
+
+
 @dataclass
 class XContractGraph:
-    """Caller + every reachable callee, keyed by AppID, with their
-    seeded path-predicate analyses precomputed.
+    """Caller + every TRANSITIVELY reachable callee (A->B->C->...), keyed by
+    AppID, with each callee's seeded path-predicate analysis precomputed.
 
-    Owns no analysis logic itself — detectors are external functions
-    (see ``cross_auth_findings``) that consume this graph. This keeps
-    detector composition explicit and avoids accreting features here.
+    ``callees`` / ``callee_sources`` / ``analyses`` span ALL hops, so a
+    detector that iterates them (``cross_auth_findings``,
+    ``cross_detection_findings``) gets multi-hop coverage for free.
+    ``sites`` is just the ROOT caller's appcall sites (backward-compatible);
+    ``edges`` is the full call graph (one :class:`AppcallEdge` per appcall).
+
+    Owns no analysis logic itself — detectors are external functions that
+    consume this graph, keeping detector composition explicit.
     """
 
     caller: SSAProgram
@@ -430,30 +485,78 @@ class XContractGraph:
     callees: dict[int, SSAProgram]
     callee_sources: dict[int, Path]
     analyses: dict[int, CalleeAnalysis]
+    edges: list[AppcallEdge] = field(default_factory=list)
 
     @classmethod
-    def build(cls, caller: SSAProgram, registry: Registry) -> "XContractGraph":
-        sites = find_appcall_sites(caller, registry)
+    def build(
+        cls, caller: SSAProgram, registry: Registry, *, max_depth: int = 4,
+    ) -> "XContractGraph":
+        """Transitively walk appcall sites from ``caller`` through the
+        ``registry``, up to ``max_depth`` hops. Each callee is loaded and
+        seeded-analysed exactly once (keyed by AppID); a callee already in the
+        graph (a shared callee or a cycle) still records an :class:`AppcallEdge`
+        but is not re-analysed, so the walk always terminates."""
+        from collections import deque
+
+        root_sites = find_appcall_sites(caller, registry)
         callees: dict[int, SSAProgram] = {}
         callee_sources: dict[int, Path] = {}
         analyses: dict[int, CalleeAnalysis] = {}
-        for site in sites:
-            if site.app_id in callees:
+        edges: list[AppcallEdge] = []
+        # frontier item: (program, its AppID or None for the root, depth)
+        frontier: deque = deque([(caller, None, 0)])
+        while frontier:
+            prog, prog_id, depth = frontier.popleft()
+            if depth >= max_depth:
                 continue
-            callee = SSAProgram(str(site.callee_source))
-            callees[site.app_id] = callee
-            callee_sources[site.app_id] = site.callee_source
-            analyses[site.app_id] = analyze_callee(callee, site)
+            sites = (root_sites if prog is caller
+                     else find_appcall_sites(prog, registry))
+            for site in sites:
+                edges.append(AppcallEdge(prog_id, site, depth))
+                if site.app_id in callees:
+                    continue            # already analysed (dedup + cycle guard)
+                callee = SSAProgram(str(site.callee_source))
+                callees[site.app_id] = callee
+                callee_sources[site.app_id] = site.callee_source
+                analyses[site.app_id] = analyze_callee(callee, site)
+                frontier.append((callee, site.app_id, depth + 1))
         return cls(
-            caller=caller, sites=sites, callees=callees,
-            callee_sources=callee_sources, analyses=analyses,
+            caller=caller, sites=root_sites, callees=callees,
+            callee_sources=callee_sources, analyses=analyses, edges=edges,
         )
 
     @classmethod
-    def from_chain(cls, caller: SSAProgram, *, cache_dir=None, fetch=None) -> "XContractGraph":
-        """Like :meth:`build`, but auto-discovers the registry by fetching each
-        resolvable callee from chain (:func:`discover_registry`). No yaml."""
-        return cls.build(caller, discover_registry(caller, cache_dir=cache_dir, fetch=fetch))
+    def from_chain(
+        cls, caller: SSAProgram, *, cache_dir=None, fetch=None, max_depth: int = 4,
+    ) -> "XContractGraph":
+        """Like :meth:`build`, but auto-discovers the registry transitively by
+        fetching each reachable callee from chain (:func:`discover_registry`)."""
+        registry = discover_registry(
+            caller, cache_dir=cache_dir, fetch=fetch, max_depth=max_depth)
+        return cls.build(caller, registry, max_depth=max_depth)
+
+    def chains(self) -> list[list[int]]:
+        """Every root -> ... -> leaf call path as a list of AppIDs, derived
+        from :attr:`edges`. A cycle is cut at its first repeat."""
+        by_caller: dict = {}
+        for e in self.edges:
+            by_caller.setdefault(e.caller_app_id, []).append(e.site.app_id)
+        out: list[list[int]] = []
+
+        def walk(node, path, seen):
+            kids = by_caller.get(node)
+            if not kids:
+                if path:
+                    out.append(path)
+                return
+            for k in kids:
+                if k in seen:
+                    out.append(path + [k])      # cycle: record + stop
+                    continue
+                walk(k, path + [k], seen | {k})
+
+        walk(None, [], set())
+        return out
 
 
 @dataclass(frozen=True)

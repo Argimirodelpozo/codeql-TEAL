@@ -60,6 +60,7 @@ from .dataflow.state import detect_out_of_state_flows
 from .xcontract import (
     XContractGraph,
     AppcallSite,
+    AppcallEdge,
     cross_auth_findings,
     load_registry,
 )
@@ -97,7 +98,7 @@ __all__ = [
     "detect_into_box_flows", "detect_out_of_box_flows",
     "detect_correlated_flows", "CorrelatedViolation",
     "detect_out_of_state_flows",
-    "XContractGraph", "AppcallSite", "cross_auth_findings", "load_registry",
+    "XContractGraph", "AppcallSite", "AppcallEdge", "cross_auth_findings", "load_registry",
     "ProgramStructure", "Subroutine", "CallSite", "analyze_structure",
     "detections",
 ]
