@@ -21,7 +21,7 @@ import urllib.request
 from pathlib import Path
 
 from . import compare as C
-from tealtools.chain import INDEXER, fetch_approval
+from tealtools.utils.chain import INDEXER, fetch_approval
 
 PROBES = Path(__file__).resolve().parents[2] / "tests" / "mainnet-random-probes"
 # diverse cursors across the whole id space (early -> newest); dense so a sweep
