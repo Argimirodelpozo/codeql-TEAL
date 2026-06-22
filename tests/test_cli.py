@@ -14,7 +14,7 @@ import pytest
 
 from tealtools import targets
 from cli.main import main
-from tealtools.serialize import finding_to_dict
+from tealtools._utils.serialize import finding_to_dict
 
 
 TESTS_ROOT = Path(__file__).resolve().parent

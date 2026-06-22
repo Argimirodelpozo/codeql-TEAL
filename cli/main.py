@@ -90,7 +90,7 @@ def _emit_findings(findings: Iterable, *, json_out: bool) -> int:
     """
     findings = list(findings)
     if json_out:
-        from tealtools.serialize import finding_to_dict
+        from tealtools._utils.serialize import finding_to_dict
         print(_json.dumps([finding_to_dict(f) for f in findings], indent=2))
     else:
         if not findings:
@@ -227,7 +227,7 @@ def _cmd_xcontract(args) -> int:
     graph = XContractGraph.build(caller, registry)
     findings = cross_auth_findings(graph)
     if args.json_out:
-        from tealtools.serialize import finding_to_dict
+        from tealtools._utils.serialize import finding_to_dict
         payload = {
             "sites": [s.to_dict() for s in graph.sites],
             "cross_auth_findings": [finding_to_dict(f) for f in findings],
@@ -278,7 +278,7 @@ def _cmd_detections(args) -> int:
     logger.info("running %d detection(s) (mode=%s)",
                 len(names), mode or "unfiltered")
     if args.json_out:
-        from tealtools.serialize import finding_to_dict
+        from tealtools._utils.serialize import finding_to_dict
         out: dict[str, list] = {}
         for name in names:
             cls = DETECTORS[name]
