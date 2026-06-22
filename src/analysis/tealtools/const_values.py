@@ -28,8 +28,7 @@ from __future__ import annotations
 from typing import Optional
 
 from .ast import Opcode
-
-_BYTE_ENC_KW = frozenset({"b64", "base64", "b32", "base32"})
+from .ast.literals import tokenize_operands
 
 
 def _opname(n) -> str:
@@ -56,50 +55,10 @@ def _split_int_tokens(imms: str) -> list[str]:
 
 
 def _split_byte_literals(imms: str) -> list[str]:
-    """Split a whitespace-separated list of TEAL byte literals into one
-    string per literal, preserving the raw source text of each.
-
-    Handles: ``0x..`` / ``base64(..)`` (single token), ``"..."`` quoted
-    strings (may contain spaces / ``\\"`` escapes), and the two-token
-    ``b64 <data>`` / ``base64 <data>`` / ``b32 <data>`` / ``base32 <data>``
-    forms (joined into one literal).
-    """
-    out: list[str] = []
-    i, n = 0, len(imms)
-    while i < n:
-        c = imms[i]
-        if c.isspace():
-            i += 1
-            continue
-        if c == '"':
-            j = i + 1
-            while j < n and imms[j] != '"':
-                if imms[j] == "\\":
-                    j += 1
-                j += 1
-            out.append(imms[i:min(j + 1, n)])
-            i = j + 1
-            continue
-        # bare token
-        j = i
-        while j < n and not imms[j].isspace():
-            j += 1
-        tok = imms[i:j]
-        i = j
-        # ``b64 <data>`` style: keyword followed by its data token.
-        if tok in _BYTE_ENC_KW:
-            k = i
-            while k < n and imms[k].isspace():
-                k += 1
-            m = k
-            while m < n and not imms[m].isspace():
-                m += 1
-            if m > k:
-                out.append(tok + " " + imms[k:m])
-                i = m
-                continue
-        out.append(tok)
-    return out
+    """Split a ``bytecblock``/``pushbytess`` literal list into one raw-text
+    token per literal (``b64 <data>`` folded into one). Thin alias over the
+    canonical :func:`tealtools.ast.literals.tokenize_operands`."""
+    return tokenize_operands(imms, fold_byte_keywords=True)
 
 
 def compute_const_values(g) -> list[tuple]:

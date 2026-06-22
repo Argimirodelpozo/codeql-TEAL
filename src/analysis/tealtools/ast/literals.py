@@ -74,11 +74,21 @@ def decode_byte_literal(v: str) -> tuple[bytes, str]:
         return v.encode("utf-8"), "utf8"
 
 
-def tokenize_operands(text: str) -> list:
-    """Split a TEAL operand list (the text after the opcode) into operand
-    tokens, honoring ``"quoted strings"`` and parenthesised ``base64(..)`` /
+# byte-encoding keywords that take a following data token (``b64 AAAA``).
+_BYTE_ENC_KW = frozenset({"b64", "base64", "b32", "base32"})
+
+
+def tokenize_operands(text: str, *, fold_byte_keywords: bool = False) -> list:
+    """Split a TEAL operand list (the text after the opcode) into tokens,
+    honoring ``"quoted strings"`` and parenthesised ``base64(..)`` /
     ``base32(..)`` groups (which can contain spaces and ``/``). Stops at an
-    inline ``//`` comment that sits between tokens (depth 0, outside quotes)."""
+    inline ``//`` comment that sits between tokens (depth 0, outside quotes).
+
+    ``fold_byte_keywords=True`` additionally folds the two-token
+    ``b64 <data>`` / ``base64 <data>`` / ``b32 <data>`` / ``base32 <data>``
+    form into ONE token (``"b64 AAAA"``) — the shape a ``bytecblock`` /
+    ``intcblock`` literal list uses, where each such pair is a single
+    literal. (Without it the keyword and its data are separate tokens.)"""
     toks: list = []
     i, n = 0, len(text)
     while i < n:
@@ -102,6 +112,18 @@ def tokenize_operands(text: str) -> list:
             elif text[j] == ")":
                 depth -= 1
             j += 1
-        toks.append(text[i:j])
+        tok = text[i:j]
         i = j
+        if fold_byte_keywords and tok in _BYTE_ENC_KW:
+            k = i
+            while k < n and text[k].isspace():
+                k += 1
+            m = k
+            while m < n and not text[m].isspace():
+                m += 1
+            if m > k:
+                toks.append(tok + " " + text[k:m])
+                i = m
+                continue
+        toks.append(tok)
     return toks

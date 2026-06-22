@@ -49,3 +49,29 @@ class TestTokenizeOperands:
     def test_empty(self):
         assert tokenize_operands("") == []
         assert tokenize_operands("   ") == []
+
+
+class TestFoldByteKeywords:
+    # bytecblock-literal mode: `b64 <data>` etc. fold into one token.
+    def test_keyword_data_folds(self):
+        assert tokenize_operands("b64 AAAA", fold_byte_keywords=True) == ["b64 AAAA"]
+        assert tokenize_operands(
+            "0x01 base64 aGk= \"x\" b32 NBSW", fold_byte_keywords=True
+        ) == ["0x01", "base64 aGk=", '"x"', "b32 NBSW"]
+
+    def test_without_fold_keyword_and_data_are_separate(self):
+        assert tokenize_operands("b64 AAAA") == ["b64", "AAAA"]
+
+    def test_base64_parens_still_one_token(self):
+        assert tokenize_operands(
+            "base64(aGk=) 0x02", fold_byte_keywords=True
+        ) == ["base64(aGk=)", "0x02"]
+
+    def test_matches_legacy_split_byte_literals(self):
+        # the const_values alias must produce identical tokens for the
+        # bytecblock forms it was written for.
+        from tealtools.const_values import _split_byte_literals
+        for imms in ['0x01 0x02', 'b64 aGk= "hi"', 'base64(AAAA==) 0x00',
+                     'b32 NBSWY3DP base32(NBSW)', '5 6 7']:
+            assert _split_byte_literals(imms) == tokenize_operands(
+                imms, fold_byte_keywords=True), imms
