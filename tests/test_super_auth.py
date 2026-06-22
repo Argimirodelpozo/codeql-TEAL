@@ -1,0 +1,115 @@
+"""Caller-guard-bypass detector over the super-CFG
+(:func:`tealtools.cfg.super_auth.caller_guard_bypass_findings`).
+
+Demonstrates a sound use of interprocedural super-dominance: a caller guards an
+appcall with `txn Sender == ADMIN; assert`, so in the modelled call graph the
+guard super-dominates the callee's sink. But the callee is independently
+callable — an attacker invokes it DIRECTLY, bypassing the caller — UNLESS the
+callee pins its caller via `global CallerApplicationID`. So:
+
+  - vulnerable callee (no CallerApplicationID check) -> flagged.
+  - safe callee (asserts CallerApplicationID) -> not flagged.
+"""
+from pathlib import Path
+
+from tealtools.ssa import SSAProgram
+from tealtools.cfg import SuperCFG
+from tealtools.cfg.super_auth import caller_guard_bypass_findings
+
+
+# Caller: admin-gates the appcall, then calls app 100.
+_CALLER = """#pragma version 10
+txn Sender
+addr AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+==
+assert
+itxn_begin
+int 6
+itxn_field TypeEnum
+int 100
+itxn_field ApplicationID
+itxn_submit
+int 1
+return
+"""
+
+# Vulnerable callee: drains via an inner txn, no CallerApplicationID check.
+_CALLEE_VULN = """#pragma version 10
+itxn_begin
+int 1
+itxn_field TypeEnum
+addr BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
+itxn_field Receiver
+int 1000000
+itxn_field Amount
+itxn_submit
+int 1
+return
+"""
+
+# Safe callee: pins its caller before the same drain.
+_CALLEE_SAFE = """#pragma version 10
+global CallerApplicationID
+int 555
+==
+assert
+itxn_begin
+int 1
+itxn_field TypeEnum
+addr BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
+itxn_field Receiver
+int 1000000
+itxn_field Amount
+itxn_submit
+int 1
+return
+"""
+
+
+def _build(tmp_path, callee_src):
+    (tmp_path / "caller.teal").write_text(_CALLER)
+    (tmp_path / "callee.teal").write_text(callee_src)
+    caller = SSAProgram(str(tmp_path / "caller.teal"), verbose=False)
+    caller.propagate_constants()
+    registry = {100: str(tmp_path / "callee.teal")}
+    return SuperCFG.build(caller, registry)
+
+
+def test_vulnerable_callee_is_flagged(tmp_path):
+    sc = _build(tmp_path, _CALLEE_VULN)
+    findings = caller_guard_bypass_findings(sc)
+    assert len(findings) == 1, [f.pretty() for f in findings]
+    f = findings[0]
+    assert f.app_id == 100                       # sink is in the callee
+    assert f.sink.op == "itxn_submit"
+    assert f.guard_app_id is None                # the caller (root) holds the guard
+    # the guard the detector points at is the caller's Sender==const assert.
+    assert f.guard.op == "assert"
+
+
+def test_safe_callee_is_not_flagged(tmp_path):
+    sc = _build(tmp_path, _CALLEE_SAFE)
+    findings = caller_guard_bypass_findings(sc)
+    assert findings == [], [f.pretty() for f in findings]
+
+
+def test_no_caller_guard_means_out_of_scope(tmp_path):
+    # Caller WITHOUT the admin gate: the sink isn't relying on a cross-contract
+    # guard, so this particular detector says nothing (a different detector
+    # would flag the openly-callable drain on its own merits).
+    open_caller = """#pragma version 10
+itxn_begin
+int 6
+itxn_field TypeEnum
+int 100
+itxn_field ApplicationID
+itxn_submit
+int 1
+return
+"""
+    (tmp_path / "caller.teal").write_text(open_caller)
+    (tmp_path / "callee.teal").write_text(_CALLEE_VULN)
+    caller = SSAProgram(str(tmp_path / "caller.teal"), verbose=False)
+    caller.propagate_constants()
+    sc = SuperCFG.build(caller, {100: str(tmp_path / "callee.teal")})
+    assert caller_guard_bypass_findings(sc) == []
