@@ -75,6 +75,27 @@ def _build(tmp_path, callee_src):
     return SuperCFG.build(caller, registry)
 
 
+# Caller that gates the appcall with a BRANCH (bnz to an admin block), not an
+# assert — must be recognised exactly like the assert form.
+_CALLER_BNZ = """#pragma version 10
+txn Sender
+addr AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+==
+bnz admin
+int 0
+return
+admin:
+itxn_begin
+int 6
+itxn_field TypeEnum
+int 100
+itxn_field ApplicationID
+itxn_submit
+int 1
+return
+"""
+
+
 def test_vulnerable_callee_is_flagged(tmp_path):
     sc = _build(tmp_path, _CALLEE_VULN)
     findings = caller_guard_bypass_findings(sc)
@@ -83,8 +104,19 @@ def test_vulnerable_callee_is_flagged(tmp_path):
     assert f.app_id == 100                       # sink is in the callee
     assert f.sink.op == "itxn_submit"
     assert f.guard_app_id is None                # the caller (root) holds the guard
-    # the guard the detector points at is the caller's Sender==const assert.
-    assert f.guard.op == "assert"
+    assert f.guard_predicates                    # the gating auth predicate(s)
+
+
+def test_bnz_form_caller_guard_is_recognised(tmp_path):
+    # A branch-form (bnz) guard gates the appcall exactly like the assert form.
+    (tmp_path / "caller.teal").write_text(_CALLER_BNZ)
+    (tmp_path / "callee.teal").write_text(_CALLEE_VULN)
+    caller = SSAProgram(str(tmp_path / "caller.teal"), verbose=False)
+    caller.propagate_constants()
+    sc = SuperCFG.build(caller, {100: str(tmp_path / "callee.teal")})
+    findings = caller_guard_bypass_findings(sc)
+    assert len(findings) == 1, [f.pretty() for f in findings]
+    assert findings[0].app_id == 100 and findings[0].sink.op == "itxn_submit"
 
 
 def test_safe_callee_is_not_flagged(tmp_path):

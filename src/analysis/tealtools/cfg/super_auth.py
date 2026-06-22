@@ -26,17 +26,22 @@ app). So the finding is:
 This is exactly where the super-CFG earns its keep: the "caller guard dominates
 the callee sink" half is interprocedural super-dominance across the appcall
 boundary; the "callee pins its caller" half is ordinary intra-program dominance.
-Recognises ``assert``-form guards (the dominant pattern); branch-form guards are
-a straightforward extension via :class:`PathPredicateAnalysis`.
+
+Both halves read guards out of :class:`PathPredicateAnalysis`, so ``assert``-
+*and* branch-form (``bnz`` / ``bz``) guards are recognised uniformly (the same
+machinery the single-program :class:`AuthDominationDetector` uses) — the
+super-CFG only contributes the cross-contract dominance. Context-insensitive,
+inheriting the super-CFG's call/return-mismatch over-approximation (documented
+on :class:`SuperCFG`) — sound for this "is it guarded on every path" question.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable, Iterator, Optional
+from typing import Iterable, Optional
 
 from ..auth_domination import AuthMatcher, DEFAULT_MATCHERS
-from ..path_predicates import BranchCondition
-from ..ssa import Assignment, BasicBlock, SSAProgram, SSAVar
+from ..path_predicates import BranchCondition, PathPredicateAnalysis
+from ..ssa import Assignment, SSAVar
 from .supercfg import SuperBlock, SuperCFG
 
 
@@ -46,20 +51,22 @@ class CallerGuardBypassFinding:
     callee does not protect with a ``CallerApplicationID`` check — so the guard
     is bypassable by invoking the callee directly."""
 
-    app_id: int                 # the callee the sink lives in
+    app_id: int                       # the callee the sink lives in
     sink: Assignment
     sink_class: str
-    guard_app_id: Optional[int]  # contract whose guard (falsely) appears to gate it
-    guard: Assignment            # the caller-side auth assert
+    guard_app_id: Optional[int]       # contract whose guard (falsely) appears to gate it
+    guard_site: tuple[str, int]       # (file, line) of the gating call site
+    guard_predicates: tuple[BranchCondition, ...]  # the auth preds holding there
 
     def pretty(self) -> str:
         loc = self.sink.location
         g = "root" if self.guard_app_id is None else f"app{self.guard_app_id}"
-        gloc = self.guard.location
+        gf, gl = self.guard_site
+        preds = ", ".join(repr(p) for p in self.guard_predicates)
         return (
             f"app{self.app_id}: {self.sink.op}@{loc.file}:{loc.line} ({self.sink_class}) "
-            f"is gated only by {g}'s guard @{gloc.file}:{gloc.line} — callee does not "
-            f"check CallerApplicationID, so the guard is bypassable by a direct call"
+            f"is gated only by {g}'s guard at the call site {gf}:{gl} [{preds}] — callee "
+            f"does not check CallerApplicationID, so the guard is bypassable by a direct call"
         )
 
     def to_dict(self) -> dict:
@@ -68,13 +75,12 @@ class CallerGuardBypassFinding:
             "app_id": self.app_id,
             "sink": {"class": self.sink_class, **assignment_ref(self.sink)},
             "guard_app_id": self.guard_app_id,
-            "guard": assignment_ref(self.guard),
+            "guard_site": {"file": self.guard_site[0], "line": self.guard_site[1]},
+            "guard_predicates": [repr(p) for p in self.guard_predicates],
         }
 
 
-# Sensitive callee sinks worth protecting (value movement / state). Reuses the
-# spirit of auth_domination's sinks but narrowed to what a bypass actually buys
-# an attacker in a callee.
+# Sensitive callee sinks worth protecting (value movement / state).
 _SINKS: dict[str, str] = {
     "itxn_submit": "inner transaction",
     "app_global_put": "global-state write",
@@ -87,26 +93,6 @@ _SINKS: dict[str, str] = {
 }
 
 
-def _asserted_conditions(bb: BasicBlock) -> Iterator[object]:
-    """The condition operand of each ``assert`` in ``bb`` (assert ends a BB, so
-    such a guard dominates the block's whole successor region)."""
-    for a in bb.assignments:
-        if a.op == "assert" and a.inputs:
-            yield a.inputs[0]
-
-
-def _guard_assert(bb: BasicBlock, prog: SSAProgram, matchers: list[AuthMatcher]) -> Optional[Assignment]:
-    """The ``assert`` assignment in ``bb`` whose condition matches an auth
-    matcher (``txn Sender == <const>``), or ``None``."""
-    for a in bb.assignments:
-        if a.op != "assert" or not a.inputs:
-            continue
-        cond = BranchCondition(value=a.inputs[0], kind="nonzero", args=())
-        if any(m.matches(cond, prog) for m in matchers):
-            return a
-    return None
-
-
 def _is_caller_app_id(op: object) -> bool:
     return (
         isinstance(op, SSAVar)
@@ -116,21 +102,18 @@ def _is_caller_app_id(op: object) -> bool:
     )
 
 
-def _pins_caller(cond: object) -> bool:
-    """True if asserting ``cond`` constrains ``global CallerApplicationID`` —
-    either ``assert(CallerApplicationID)`` (called by *some* app, != 0) or
-    ``CallerApplicationID ==/!= x``."""
-    if _is_caller_app_id(cond):
+def _pred_pins_caller(p: BranchCondition) -> bool:
+    """True if predicate ``p`` constrains ``global CallerApplicationID`` —
+    e.g. ``assert(CallerApplicationID)`` (bare ``nonzero`` over the global) or
+    a decomposed ``CallerApplicationID ==/!= x``. Works for assert- and
+    branch-form pins alike, since both surface as such a predicate."""
+    if _is_caller_app_id(p.value):
         return True
-    if isinstance(cond, SSAVar) and cond.defined_by is not None:
-        a = cond.defined_by
+    if isinstance(p.value, SSAVar) and p.value.defined_by is not None:
+        a = p.value.defined_by
         if a.op in ("==", "!=") and len(a.inputs) == 2:
             return any(_is_caller_app_id(i) for i in a.inputs)
     return False
-
-
-def _bb_pins_caller(bb: BasicBlock) -> bool:
-    return any(_pins_caller(c) for c in _asserted_conditions(bb))
 
 
 def caller_guard_bypass_findings(
@@ -143,22 +126,35 @@ def caller_guard_bypass_findings(
     call. ``matchers`` default to :data:`auth_domination.DEFAULT_MATCHERS`."""
     match_list = list(matchers) if matchers is not None else list(DEFAULT_MATCHERS)
 
-    # Auth-guard super-blocks (txn Sender == const asserts) keyed for lookup,
-    # plus caller-pin (CallerApplicationID) super-blocks, across every contract.
-    guard_assert: dict[SuperBlock, Assignment] = {}
-    pin_blocks: set[SuperBlock] = set()
-    for app_id, cfg in sc.cfgs.items():
-        for bb in cfg.blocks:
-            ga = _guard_assert(bb, cfg.prog, match_list)
-            if ga is not None:
-                guard_assert[SuperBlock(app_id, bb)] = ga
-            if _bb_pins_caller(bb):
-                pin_blocks.add(SuperBlock(app_id, bb))
+    _ppa: dict[Optional[int], PathPredicateAnalysis] = {}
 
+    def ppa(app_id: Optional[int]) -> PathPredicateAnalysis:
+        if app_id not in _ppa:
+            _ppa[app_id] = PathPredicateAnalysis(sc.cfgs[app_id].prog)
+        return _ppa[app_id]
+
+    # 1. Guard super-blocks: a call site (submit BB) whose appcall is auth-gated
+    #    in its caller — an auth predicate holds at the submit line. Recognises
+    #    assert- and bnz-form guards uniformly (predicates come from PPA).
+    guard_blocks: dict[SuperBlock, tuple[BranchCondition, ...]] = {}
+    for e in sc.inter_edges:
+        if e.kind != "call":
+            continue
+        caller_id = e.src.app_id
+        prog = sc.cfgs[caller_id].prog
+        preds = ppa(caller_id).predicates_at(e.site.file, e.site.submit_line)
+        matched = tuple(p for p in preds if any(m.matches(p, prog) for m in match_list))
+        if matched:
+            guard_blocks[e.src] = matched
+
+    # 2. Each sensitive callee sink: cross-guarded iff a guard super-block in
+    #    ANOTHER contract super-dominates it; flagged unless the callee pins its
+    #    caller (a CallerApplicationID predicate holds at the sink).
     findings: list[CallerGuardBypassFinding] = []
     for app_id, cfg in sc.cfgs.items():
         if app_id is None:
             continue  # only callees can be invoked directly to bypass a caller
+        callee_ppa = ppa(app_id)
         for a in cfg.prog.assignments:
             cls = _SINKS.get(a.op)
             if cls is None:
@@ -168,23 +164,24 @@ def caller_guard_bypass_findings(
                 continue
             sb = SuperBlock(app_id, bb)
             doms = sc.dominators(sb)
-            # A guard in ANOTHER contract that super-dominates this sink = the
-            # caller's intended gate.
-            cross_guard = next(
-                ((g.app_id, guard_assert[g]) for g in doms
-                 if g in guard_assert and g.app_id != app_id),
+            cross = next(
+                ((g, guard_blocks[g]) for g in doms
+                 if g in guard_blocks and g.app_id != app_id),
                 None,
             )
-            if cross_guard is None:
+            if cross is None:
                 continue  # not relying on a cross-contract guard; out of scope
-            # Sound iff the callee pins its caller (CallerApplicationID) on every
-            # path to the sink — i.e. a pin super-block (same contract) dominates.
-            if any(p.app_id == app_id and p in doms for p in pin_blocks):
+            # Pinned? A CallerApplicationID predicate holds on every path to the
+            # sink inside the callee (assert- or branch-form).
+            sink_preds = callee_ppa.predicates_at(a.location.file, a.location.line)
+            if any(_pred_pins_caller(p) for p in sink_preds):
                 continue
-            guard_app_id, guard = cross_guard
+            guard_sb, guard_preds = cross
             findings.append(CallerGuardBypassFinding(
                 app_id=app_id, sink=a, sink_class=cls,
-                guard_app_id=guard_app_id, guard=guard,
+                guard_app_id=guard_sb.app_id,
+                guard_site=(guard_sb.bb.file, guard_sb.bb.last_line),
+                guard_predicates=guard_preds,
             ))
     findings.sort(key=lambda f: (f.app_id, f.sink.location.file, f.sink.location.line))
     return findings
