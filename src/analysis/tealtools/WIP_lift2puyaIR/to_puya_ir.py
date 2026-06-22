@@ -17,9 +17,8 @@ from puya.parse import SourceLocation
 
 from . import pre_ir
 from .lift import lift
-from .teal_const import (
-    _const_bytes, _load_src, _tmpl_name, _tokenize_operands,
-)
+from .teal_const import _const_bytes, _load_src, _tmpl_name
+from ..ast.literals import tokenize_operands as _tokenize_operands
 
 _IRT = {
     "uint64": PT.uint64, "bytes": PT.bytes, "bool": PT.bool,

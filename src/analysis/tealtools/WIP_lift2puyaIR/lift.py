@@ -43,7 +43,8 @@ from .optypes import (
     _imm0,
     _multi_out_type,
 )
-from .teal_const import _load_src, _tokenize_operands
+from .teal_const import _load_src
+from ..ast.literals import tokenize_operands as _tokenize_operands
 
 _FRAME_OPS = frozenset({"frame_dig", "frame_bury"})
 
