@@ -28,7 +28,7 @@ from .models import (
     _CONST_BLOCK_REF_NAMES,
 )
 from ..opcode_sigs import op_arity
-from ..dot import render
+from .._utils.dot import render
 
 
 class SSAProgram:
@@ -727,7 +727,7 @@ class SSAProgram:
         max_lines_per_bb: int = 80,
     ):
         """Render :meth:`to_dot` via Graphviz; returns a Jupyter-renderable
-        SVG (same ``SvgResult`` type :mod:`tealtools.dot` uses)."""
+        SVG (same ``SvgResult`` type :mod:`tealtools._utils.dot` uses)."""
         return render(
             self.to_dot(
                 file=file,

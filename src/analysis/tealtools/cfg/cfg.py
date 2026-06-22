@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from ..ssa import BasicBlock, SSAProgram
-from ..dot import escape
+from .._utils.dot import escape
 
 
 @dataclass

@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Optional
 
 import networkx as nx
 
-from ..dot import escape
+from .._utils.dot import escape
 from .models import BasicBlock, Const
 
 if TYPE_CHECKING:

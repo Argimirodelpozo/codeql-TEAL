@@ -18,7 +18,7 @@ from typing import Iterable
 import networkx as nx
 
 from .ast import AstNode, Location
-from .dot import escape, render
+from ._utils.dot import escape, render
 from .control_tree import (
     Region, BlockR, SequenceR, IfR, IfElseR, GuardR,
     SwitchR, LoopR, ImproperR, ProgramR,

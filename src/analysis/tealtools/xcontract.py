@@ -278,7 +278,7 @@ _DEFAULT_CALLEE_CACHE = Path.home() / ".cache" / "tealql" / "xcontract-callees"
 def _default_chain_fetch(app_id: int):
     """Default fetcher: pull a deployed approval program off chain. Imported lazily
     so the analysis library doesn't hard-depend on the (network-touching) tool."""
-    from .utils.chain import fetch_approval
+    from ._utils.chain import fetch_approval
     return fetch_approval(app_id)
 
 

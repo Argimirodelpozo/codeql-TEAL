@@ -4,14 +4,14 @@ contracts the lift has never seen).
   python -m tests.behavioral_lift.fetch_mainnet <out-dir> [app_id ...]
 
 With no ids, samples a diverse batch from the public mainnet indexer. The chain
-helpers themselves live in :mod:`tealtools.utils.chain`.
+helpers themselves live in :mod:`tealtools._utils.chain`.
 """
 from __future__ import annotations
 
 import sys
 from pathlib import Path
 
-from tealtools.utils.chain import fetch_approval, sample_app_ids  # noqa: F401 (re-export)
+from tealtools._utils.chain import fetch_approval, sample_app_ids  # noqa: F401 (re-export)
 
 
 def main(argv):
