@@ -66,22 +66,45 @@ class XContractTaintGraph:
         cls,
         caller_prog: SSAProgram,
         registry: dict[int, str] | str | Path,
+        *,
+        max_depth: int = 4,
     ) -> "XContractTaintGraph":
-        """Build the unified graph. ``registry`` may be a pre-loaded
+        """Build the unified graph TRANSITIVELY (A->B->C->...): a TaintGraph
+        per reachable contract, plus appcall bridge edges at every hop, so a
+        value flows across the whole chain. ``registry`` may be a pre-loaded
         ``{app_id: teal_path}`` dict, or a yaml path that
         :func:`tealtools.xcontract.load_registry` accepts."""
+        from collections import deque
+
         if not isinstance(registry, dict):
             registry = load_registry(registry)
         caller_tg = TaintGraph.of(caller_prog)
-        sites = find_appcall_sites(caller_prog, registry)
+        root_sites = find_appcall_sites(caller_prog, registry)
         callees: dict[int, TaintGraph] = {}
-        for site in sites:
-            if site.app_id in callees:
+        # AppID of the calling contract (None == root) -> its TaintGraph.
+        tg_by_id: dict = {None: caller_tg}
+        # (caller_app_id, site) for every appcall edge in the transitive graph.
+        edges: list = []
+        # BFS over the call graph; each contract loaded + graphed once.
+        frontier: deque = deque([(caller_prog, None, 0)])
+        while frontier:
+            prog, prog_id, depth = frontier.popleft()
+            if depth >= max_depth:
                 continue
-            callee_prog = SSAProgram(str(site.callee_source))
-            callees[site.app_id] = TaintGraph.of(callee_prog)
-        big = cls._merge(caller_tg, callees, sites)
-        return cls(g=big, caller=caller_tg, callees=callees, sites=sites)
+            sites = (root_sites if prog is caller_prog
+                     else find_appcall_sites(prog, registry))
+            for site in sites:
+                edges.append((prog_id, site))
+                if site.app_id in callees:
+                    continue            # already graphed (dedup + cycle guard)
+                cp = SSAProgram(str(site.callee_source))
+                cp.propagate_constants()
+                tg = TaintGraph.of(cp)
+                callees[site.app_id] = tg
+                tg_by_id[site.app_id] = tg
+                frontier.append((cp, site.app_id, depth + 1))
+        big = cls._merge(tg_by_id, callees, edges)
+        return cls(g=big, caller=caller_tg, callees=callees, sites=root_sites)
 
     # --- construction --------------------------------------------------
 
@@ -91,24 +114,23 @@ class XContractTaintGraph:
 
     @staticmethod
     def _merge(
-        caller_tg: TaintGraph,
+        tg_by_id: dict,
         callees: dict[int, TaintGraph],
-        sites: list[AppcallSite],
+        edges: list,
     ) -> nx.DiGraph:
         big: nx.DiGraph = nx.DiGraph()
-        # Caller nodes + edges
-        _copy_into(big, caller_tg, app_id=None)
-        # Callee nodes + edges, qualified by AppID
-        for app_id, tg in callees.items():
+        # Every contract's nodes/edges, qualified by AppID (None = root).
+        for app_id, tg in tg_by_id.items():
             _copy_into(big, tg, app_id=app_id)
-        # Bridge edges per appcall site
-        for site in sites:
-            if site.app_id not in callees:
+        # Bridge edges per appcall edge: caller_app_id -> site.app_id (callee).
+        for caller_app_id, site in edges:
+            callee_tg = callees.get(site.app_id)
+            caller_tg = tg_by_id.get(caller_app_id)
+            if callee_tg is None or caller_tg is None:
                 continue
-            callee_tg = callees[site.app_id]
-            _add_arg_bridges(big, caller_tg, callee_tg, site)
-            _add_sender_bridge(big, caller_tg, callee_tg, site)
-            _add_return_bridges(big, caller_tg, callee_tg, site)
+            _add_arg_bridges(big, caller_tg, caller_app_id, callee_tg, site)
+            _add_sender_bridge(big, caller_tg, caller_app_id, callee_tg, site)
+            _add_return_bridges(big, caller_tg, caller_app_id, callee_tg, site)
         return big
 
     # --- queries (mirror TaintGraph) ----------------------------------
@@ -217,16 +239,18 @@ def _copy_into(big: nx.DiGraph, tg: TaintGraph, *, app_id: Optional[int]) -> Non
 def _add_arg_bridges(
     big: nx.DiGraph,
     caller_tg: TaintGraph,
+    caller_app_id: Optional[int],
     callee_tg: TaintGraph,
     site: AppcallSite,
 ) -> None:
     """For each ``itxn_field ApplicationArgs`` at the caller's site,
-    bridge to every ``txna ApplicationArgs i`` read in the callee."""
+    bridge to every ``txna ApplicationArgs i`` read in the callee.
+    ``caller_app_id`` (``None`` = root) scopes the caller-side node."""
     for index, caller_node in _caller_arg_field_nodes(caller_tg, site):
         callee_reads = callee_tg.find(op="txna", immediates=f"ApplicationArgs {index}")
         for cn in callee_reads:
             big.add_edge(
-                XContractNode(app_id=None, inner=caller_node),
+                XContractNode(app_id=caller_app_id, inner=caller_node),
                 XContractNode(app_id=site.app_id, inner=cn),
                 kinds={"appcall-arg"},
             )
@@ -240,17 +264,18 @@ _CALLER_APP_ADDR = Node(file="<caller-app-addr>", line=0, node_class="CallerAppA
 def _add_sender_bridge(
     big: nx.DiGraph,
     caller_tg: TaintGraph,
+    caller_app_id: Optional[int],
     callee_tg: TaintGraph,
     site: AppcallSite,
 ) -> None:
-    """The callee's ``txn Sender`` reads resolve to the caller's app
-    address (the inner-txn sender). Seed a single sentinel source node
-    and connect it to every ``txn Sender`` read in the callee, so a
-    callee that trusts ``Sender`` is reachable from caller context."""
+    """The callee's ``txn Sender`` reads resolve to the CALLER's app
+    address (the inner-txn sender). Seed a per-caller sentinel source node
+    and connect it to every ``txn Sender`` read in the callee, so a callee
+    that trusts ``Sender`` is reachable from its caller's context."""
     sender_reads = callee_tg.find(op="txn", immediates="Sender")
     if not sender_reads:
         return
-    sentinel = XContractNode(app_id=None, inner=_CALLER_APP_ADDR)
+    sentinel = XContractNode(app_id=caller_app_id, inner=_CALLER_APP_ADDR)
     if sentinel not in big:
         big.add_node(sentinel, op="caller-app-addr", immediates=None, const_values=())
     for cn in sender_reads:
@@ -264,13 +289,14 @@ def _add_sender_bridge(
 def _add_return_bridges(
     big: nx.DiGraph,
     caller_tg: TaintGraph,
+    caller_app_id: Optional[int],
     callee_tg: TaintGraph,
     site: AppcallSite,
 ) -> None:
     """The callee's ``log`` ops feed the caller's reads of the inner
     txn's ``Logs`` field after the submit. Bridge every callee ``log``
     node to every caller ``itxn``/``itxna``/``itxnas Logs`` read that
-    sits after this site's submit line."""
+    sits after this site's submit line (``caller_app_id`` scopes them)."""
     callee_logs = callee_tg.find(op="log")
     if not callee_logs:
         return
@@ -287,7 +313,7 @@ def _add_return_bridges(
         for rn in caller_log_reads:
             big.add_edge(
                 XContractNode(app_id=site.app_id, inner=ln),
-                XContractNode(app_id=None, inner=rn),
+                XContractNode(app_id=caller_app_id, inner=rn),
                 kinds={"appcall-return"},
             )
 
