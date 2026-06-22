@@ -40,17 +40,10 @@ from dataclasses import dataclass
 
 from . import pre_ir
 from .taint import _intr, _invoke, source_label, user_input_taint
+from ..opsets import FUND_FIELDS as _FUND_FIELDS
 
-# Inner-txn fields where attacker control = fund redirection / theft, by severity.
-_FUND_FIELDS = {
-    "RekeyTo": "CRITICAL",
-    "CloseRemainderTo": "CRITICAL",
-    "AssetCloseTo": "CRITICAL",
-    "Receiver": "HIGH",
-    "AssetReceiver": "HIGH",
-    "Amount": "MEDIUM",
-    "AssetAmount": "MEDIUM",
-}
+# Inner-txn fields where attacker control = fund redirection / theft, by severity
+# (canonical FUND_FIELDS in tealtools.opsets).
 _SEV_ORDER = {"CRITICAL": 3, "HIGH": 2, "MEDIUM": 1}
 
 _TXN_SENDER_FAM = frozenset({"txn", "txna", "gtxn", "gtxna", "gtxns", "gtxnsa"})

@@ -39,6 +39,7 @@ from typing import Iterable, Iterator, Optional
 import networkx as nx
 
 from ..ssa import SSAProgram
+from ..opsets import SENSITIVE_ITXN_FIELDS, STATE_WRITE_OPS
 from ..xcontract import AppcallSite, find_appcall_sites, load_registry
 from .taint_graph import Node, TaintGraph
 
@@ -393,14 +394,12 @@ def _caller_field_nodes(
 # --- cross-contract taint reachability detector -------------------
 
 
-# Sinks whose operand governs value movement or control transfer; a
-# tainted value reaching one of these is the thing worth reporting.
-_SENSITIVE_ITXN_FIELDS = frozenset({
-    "Receiver", "Amount", "AssetReceiver", "AssetAmount",
-    "ApplicationID", "RekeyTo", "CloseRemainderTo", "AssetCloseTo",
-    "ApprovalProgram", "ClearStateProgram",
-})
-_STATE_WRITE_OPS = frozenset({"app_global_put", "app_local_put"})
+# Sinks whose operand governs value movement or control transfer; a tainted
+# value reaching one of these is the thing worth reporting. Canonical sets in
+# tealtools.opsets (STATE_WRITE_OPS is the full box/app put/del family, broader
+# than the former local-here {app_global_put, app_local_put}).
+_SENSITIVE_ITXN_FIELDS = SENSITIVE_ITXN_FIELDS
+_STATE_WRITE_OPS = STATE_WRITE_OPS
 
 
 @dataclass(frozen=True)

@@ -40,6 +40,7 @@ from dataclasses import dataclass
 from typing import Iterable, Optional
 
 from ..auth_domination import AuthMatcher, DEFAULT_MATCHERS
+from ..opsets import STATE_MUTATING_OPS
 from ..path_predicates import BranchCondition, PathPredicateAnalysis
 from ..ssa import Assignment, SSAVar
 from .supercfg import SuperBlock, SuperCFG
@@ -80,8 +81,11 @@ class CallerGuardBypassFinding:
         }
 
 
-# Sensitive callee sinks worth protecting (value movement / state).
-_SINKS: dict[str, str] = {
+# Sensitive callee sinks worth protecting (value movement / state). The SET is
+# the canonical STATE_MUTATING_OPS (so we don't silently drop box_replace /
+# box_splice / box_resize as a hand-rolled list once did); the values are just
+# display labels, with the op name as a fallback.
+_SINK_LABELS: dict[str, str] = {
     "itxn_submit": "inner transaction",
     "app_global_put": "global-state write",
     "app_global_del": "global-state delete",
@@ -89,8 +93,12 @@ _SINKS: dict[str, str] = {
     "app_local_del": "local-state delete",
     "box_put": "box write",
     "box_create": "box write",
+    "box_replace": "box write",
+    "box_splice": "box write",
+    "box_resize": "box write",
     "box_del": "box delete",
 }
+_SINKS: dict[str, str] = {op: _SINK_LABELS.get(op, op) for op in STATE_MUTATING_OPS}
 
 
 def _is_caller_app_id(op: object) -> bool:

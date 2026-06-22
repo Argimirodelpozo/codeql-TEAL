@@ -20,9 +20,7 @@ from typing import Optional
 
 from tealtools.ssa import BasicBlock, SSAProgram
 from tealtools.detections import common
-
-
-_ASSET_TRANSFER_FIELDS = ("AssetAmount", "AssetReceiver", "AssetSender")
+from tealtools.opsets import ASSET_TRANSFER_FIELDS as _ASSET_TRANSFER_FIELDS
 
 
 def _handles_asset_transfer(

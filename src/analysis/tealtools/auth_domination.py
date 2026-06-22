@@ -55,6 +55,7 @@ from .path_predicates import (
     BranchCondition,
     PathPredicateAnalysis,
 )
+from .opsets import STATE_MUTATING_OPS as _STATE_MUTATING_OPS
 
 
 # ---------------------------------------------------------------------------
@@ -90,18 +91,10 @@ class AuthMatcher:
 # ---------------------------------------------------------------------------
 
 
-# State-mutating opcodes that should typically only run on a
-# guard-dominated path. The list is intentionally narrow — adding to
-# it is appending to a detector-construction list, not editing here.
-_STATE_MUTATING_OPS = frozenset({
-    "box_create", "box_put", "box_replace", "box_del", "box_splice",
-    "box_resize",
-    "app_global_put", "app_global_del",
-    "app_local_put", "app_local_del",
-    "itxn_submit",
-})
-
-
+# State-mutating opcodes that should typically only run on a guard-dominated
+# path — the canonical set (``tealtools.opsets.STATE_MUTATING_OPS``, imported
+# above). Restrict a detector by passing a narrower ``sinks`` list, not by
+# editing the shared set.
 STATE_MUTATION_SINK = AuthSink(
     name="state-mutating op",
     matches=lambda a: a.op in _STATE_MUTATING_OPS,

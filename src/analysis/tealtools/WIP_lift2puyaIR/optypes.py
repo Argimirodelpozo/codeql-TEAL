@@ -7,6 +7,8 @@ coarse `avm()` lattice ('b'/'u'/'?'), and `_imm0`.
 """
 from __future__ import annotations
 
+from ..opsets import TXN_SOURCE_OPS, ITXN_SOURCE_OPS
+
 _BOOL_OPS = frozenset({"==", "!=", "<", ">", "<=", ">=", "!", "&&", "||",
                        "b==", "b!=", "b<", "b>", "b<=", "b>="})
 # Const-push / const-load ops are normally typed by their folded const value;
@@ -40,10 +42,9 @@ _COND_BRANCH = frozenset({"bnz", "bz"})
 
 # Transaction-field accessors (txn/txna/gtxn/itxn families). The field name is
 # one of the immediate tokens (position varies: gtxn has a group index first),
-# so _field_type scans all tokens against the table.
-_TXN_OPS = frozenset({"txn", "txna", "txnas", "gtxn", "gtxna", "gtxnas",
-                      "gtxns", "gtxnsa", "gtxnsas", "itxn", "itxna", "itxnas",
-                      "gitxn", "gitxna", "gitxnas"})
+# so _field_type scans all tokens against the table. Canonical families in
+# tealtools.opsets.
+_TXN_OPS = TXN_SOURCE_OPS | ITXN_SOURCE_OPS
 _TXN_FIELD_TYPE = {
     # uint64
     "Fee": "uint64", "FirstValid": "uint64", "FirstValidTime": "uint64",

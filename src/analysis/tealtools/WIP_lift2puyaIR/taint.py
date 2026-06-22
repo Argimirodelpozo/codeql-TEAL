@@ -24,12 +24,13 @@ from __future__ import annotations
 from collections import defaultdict
 
 from ..ssa import Phi, SSAVar
+from ..opsets import (
+    TXN_SOURCE_OPS as _TXN_FAM,
+    ITXN_SOURCE_OPS as _ITXN_FAM,
+    LSIG_ARG_OPS as _ARG_FAM,
+    STATE_WRITE_OPS,
+)
 from . import pre_ir
-
-_TXN_FAM = frozenset({"txn", "txna", "txnas", "gtxn", "gtxna", "gtxnas",
-                      "gtxns", "gtxnsa", "gtxnsas"})
-_ITXN_FAM = frozenset({"itxn", "itxna", "itxnas", "gitxn", "gitxna", "gitxnas"})
-_ARG_FAM = frozenset({"arg", "args", "arg_0", "arg_1", "arg_2", "arg_3"})
 
 
 def source_label(intr) -> str | None:
@@ -214,12 +215,10 @@ def user_input_taint(lifter) -> dict:
 
 
 # Sensitive sinks: where a user-controlled value reaching them is worth flagging --
-# persistent-state writes, inner-transaction fields (who gets paid / how much),
-# emitted logs, and asserted conditions (user-controlled control flow).
-_SINKS = frozenset({
-    "app_global_put", "app_global_del", "app_local_put", "app_local_del",
-    "box_put", "box_del", "box_create", "box_replace", "log", "itxn_field",
-})
+# the canonical persistent-state writes (STATE_WRITE_OPS), plus inner-transaction
+# fields (who gets paid / how much), emitted logs, and -- via _CATEGORIES below --
+# asserted conditions (user-controlled control flow).
+_SINKS = STATE_WRITE_OPS | {"log", "itxn_field"}
 
 
 def tainted_sinks(lifter, taint=None) -> list:
@@ -253,9 +252,7 @@ def tainted_sinks(lifter, taint=None) -> list:
 _CATEGORIES = [
     ("INNER-TRANSACTION FIELDS  (fund flow -- who gets paid, and how much)",
      frozenset({"itxn_field"})),
-    ("PERSISTENT STATE WRITES",
-     frozenset({"app_global_put", "app_global_del", "app_local_put",
-                "app_local_del", "box_put", "box_del", "box_create", "box_replace"})),
+    ("PERSISTENT STATE WRITES", STATE_WRITE_OPS),
     ("EMITTED LOGS",
      frozenset({"log"})),
     ("ASSERTED CONDITIONS  (user-controlled control flow)",

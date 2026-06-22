@@ -34,18 +34,15 @@ from typing import ClassVar, Optional
 from tealtools.detections import common
 from tealtools.path_predicates import PathPredicateAnalysis
 from tealtools.ssa import SSAProgram, SSAVar
+from tealtools.opsets import (
+    PAYMENT_FUND_FIELDS, TXN_SOURCE_OPS, ITXN_SOURCE_OPS, LSIG_ARG_OPS,
+)
 
 # Payment fields where attacker control = redirected / oversized fund movement.
-_FUND_FIELDS = {
-    "Receiver": "HIGH",
-    "AssetReceiver": "HIGH",
-    "Amount": "MEDIUM",
-    "AssetAmount": "MEDIUM",
-}
-_APPARGS_OPS = frozenset({"txn", "txna", "gtxn", "gtxna", "gtxns",
-                          "gtxnsa", "gtxnas", "gtxnsas"})
-_LSIG_ARG_OPS = frozenset({"arg", "args", "arg_0", "arg_1", "arg_2", "arg_3"})
-_ITXN_LOG_OPS = frozenset({"itxn", "itxna", "gitxn", "gitxna"})
+_FUND_FIELDS = PAYMENT_FUND_FIELDS
+_APPARGS_OPS = TXN_SOURCE_OPS
+_LSIG_ARG_OPS = LSIG_ARG_OPS
+_ITXN_LOG_OPS = ITXN_SOURCE_OPS
 _CMP_OPS = frozenset({"==", "!="})
 
 

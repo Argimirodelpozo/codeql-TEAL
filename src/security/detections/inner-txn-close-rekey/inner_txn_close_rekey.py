@@ -11,9 +11,7 @@ from typing import Optional
 
 from tealtools.ssa import Assignment, SSAProgram
 from tealtools.detections import common
-
-
-_DANGEROUS_FIELDS = ("CloseRemainderTo", "RekeyTo", "AssetCloseTo")
+from tealtools.opsets import CLOSE_REKEY_FIELDS as _DANGEROUS_FIELDS
 
 
 @dataclass
