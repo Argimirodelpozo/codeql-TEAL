@@ -292,7 +292,7 @@ class CorrelatedViolation:
         )
 
     def to_dict(self) -> dict:
-        from ..serialize import assignment_ref, operand_repr
+        from .._utils.serialize import assignment_ref, operand_repr
         return {
             "initial_source": {"name": self.initial_source_name,
                                **assignment_ref(self.initial_source)},

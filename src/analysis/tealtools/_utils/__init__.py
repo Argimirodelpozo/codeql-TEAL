@@ -5,4 +5,6 @@
     auto-discovery and the behavioural-lift corpus).
   - :mod:`tealtools._utils.dot` — Graphviz primitives (``escape`` / ``render``)
     shared by the CFG / SSA / structure renderers.
+  - :mod:`tealtools._utils.serialize` — JSON-serialisation helpers shared
+    across detectors and reports (runtime-decoupled from the SSA substrate).
 """

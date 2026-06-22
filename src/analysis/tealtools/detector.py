@@ -198,7 +198,7 @@ def run_all_dict(prog: SSAProgram) -> dict:
     suitable for JSON. Detector findings use each finding's
     ``to_dict()`` if available, falling back to ``{"message": ...}``.
     """
-    from .serialize import finding_to_dict
+    from ._utils.serialize import finding_to_dict
     from .inner_txn_report import InnerTxnReport
     from .group_reasoning import analyze, analyze_layout
     from .cost_analysis import to_dict as cost_to_dict

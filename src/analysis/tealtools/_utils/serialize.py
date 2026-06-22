@@ -22,7 +22,7 @@ from typing import Any
 # Imported for typing only; we don't enforce the types at runtime so
 # this module can stay decoupled from the SSA substrate.
 try:
-    from .ssa import Assignment, Location
+    from ..ssa import Assignment, Location
 except Exception:  # pragma: no cover — defensive for partial imports
     Assignment = Location = object  # type: ignore[assignment,misc]
 

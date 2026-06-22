@@ -201,7 +201,7 @@ class AuthViolation:
         return f"{self.sink.op}@{loc.file}:{loc.line}  ({self.sink_class})  preds: {body}"
 
     def to_dict(self) -> dict:
-        from .serialize import assignment_ref
+        from ._utils.serialize import assignment_ref
         return {
             "sink": {"class": self.sink_class, **assignment_ref(self.sink)},
             "dominating_predicates": [repr(p) for p in self.dominating_predicates],

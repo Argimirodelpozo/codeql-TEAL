@@ -181,7 +181,7 @@ class Violation:
         )
 
     def to_dict(self) -> dict:
-        from ..serialize import assignment_ref, operand_repr
+        from .._utils.serialize import assignment_ref, operand_repr
         return {
             "source": {"name": self.source_name, **assignment_ref(self.source)},
             "sink": {"name": self.sink_name, **assignment_ref(self.sink)},
