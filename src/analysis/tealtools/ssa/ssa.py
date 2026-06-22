@@ -256,8 +256,7 @@ class PySSA:
         # 0.01s/11; folks-v3 3.15s/160k -> 0.02s/25), and behaviourally identical
         # to eager (puya corpus 513/0, Tier-3 5/5, live-AVM 35-corpus 33/0). The
         # depth cap fixes the loop spiral at its slot-model root (a net-changing
-        # loop's ``L+k-C`` map climbs to STACK_MAX under ANY construction). See
-        # top-level BRAUN.md + memory project_ssa_join_only_phis.
+        # loop's ``L+k-C`` map climbs to STACK_MAX under ANY construction).
         #
         # ``TEAL_SSA_EAGER=1`` -> the maximal-then-pruned phase3/4 placement (the
         # A/B oracle; still exact, just slow + ~100k trivial phis).
