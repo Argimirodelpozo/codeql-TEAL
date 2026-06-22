@@ -38,6 +38,10 @@ _BNZ = "BnzOpcode"
 _BZ = "BzOpcode"
 _SWITCH = "SwitchOpcode"
 _MATCH = "MatchOpcode"
+# itxn_submit ends a basic block (it's the cross-contract call site, the clean
+# boundary the xcontract supergraph splices call/return edges at) but does NOT
+# end control flow — it keeps its NormalSuccessor continuation edge, like assert.
+_ITXN_SUBMIT = "InnerTransactionSubmit"
 _LABEL = "Label"
 
 _MULTI = frozenset({_SWITCH, _MATCH})
@@ -309,7 +313,8 @@ def _program_cfg(
 # Opcode classes that END a codeblock: any
 # branch, any contract-exit, or a node immediately followed by a label.
 _ENDS_CLASSES = frozenset(
-    {_B, _CALLSUB, _RETSUB, _BZ, _BNZ, _SWITCH, _MATCH, _RETURN, _ERR, _ASSERT}
+    {_B, _CALLSUB, _RETSUB, _BZ, _BNZ, _SWITCH, _MATCH, _RETURN, _ERR, _ASSERT,
+     _ITXN_SUBMIT}
 )
 
 

@@ -25,15 +25,15 @@ prog.teal	12	prog.teal	13	NormalSuccessor
 prog.teal	13	prog.teal	15	NormalSuccessor
 prog.teal	15	prog.teal	16	NormalSuccessor
 ## basicBlocks
-prog.teal	4	4	16
-prog.teal	5	4	16
-prog.teal	6	4	16
-prog.teal	7	4	16
-prog.teal	8	4	16
-prog.teal	9	4	16
-prog.teal	10	4	16
-prog.teal	11	4	16
-prog.teal	12	4	16
-prog.teal	13	4	16
-prog.teal	15	4	16
-prog.teal	16	4	16
+prog.teal	4	4	13
+prog.teal	5	4	13
+prog.teal	6	4	13
+prog.teal	7	4	13
+prog.teal	8	4	13
+prog.teal	9	4	13
+prog.teal	10	4	13
+prog.teal	11	4	13
+prog.teal	12	4	13
+prog.teal	13	4	13
+prog.teal	15	15	16
+prog.teal	16	15	16

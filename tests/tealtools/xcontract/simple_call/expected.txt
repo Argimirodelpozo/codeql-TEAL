@@ -6,4 +6,4 @@ cross-contract auth-domination findings:
 callee/db  app_global_put@prog.teal:19  (state-mutating op)  preds: (V#1@L4 == "do_thing"), (V#1@L4 == "do_thing"), (V#1@L9 == "do_thing"), (V#1@L6 != 0)
 
 caller predicates with callee-summary feedback:
-caller prog.teal:L4-L14  (app1234567:V#1@L4 == "do_thing"), (app1234567:V#1@L9 == "do_thing")
+caller prog.teal:L4-L11  (app1234567:V#1@L4 == "do_thing"), (app1234567:V#1@L9 == "do_thing")

@@ -48,8 +48,8 @@ prog.teal	16	16	17
 prog.teal	17	16	17
 prog.teal	19	19	20
 prog.teal	20	19	20
-prog.teal	22	22	28
-prog.teal	23	22	28
-prog.teal	25	22	28
-prog.teal	27	22	28
-prog.teal	28	22	28
+prog.teal	22	22	25
+prog.teal	23	22	25
+prog.teal	25	22	25
+prog.teal	27	27	28
+prog.teal	28	27	28

@@ -39,22 +39,22 @@ prog.teal	20	prog.teal	22	NormalSuccessor
 prog.teal	22	prog.teal	24	NormalSuccessor
 prog.teal	24	prog.teal	25	NormalSuccessor
 ## basicBlocks
-prog.teal	4	4	25
-prog.teal	5	4	25
-prog.teal	6	4	25
-prog.teal	7	4	25
-prog.teal	8	4	25
-prog.teal	9	4	25
-prog.teal	10	4	25
-prog.teal	12	4	25
-prog.teal	13	4	25
-prog.teal	14	4	25
-prog.teal	15	4	25
-prog.teal	16	4	25
-prog.teal	17	4	25
-prog.teal	18	4	25
-prog.teal	19	4	25
-prog.teal	20	4	25
-prog.teal	22	4	25
-prog.teal	24	4	25
-prog.teal	25	4	25
+prog.teal	4	4	22
+prog.teal	5	4	22
+prog.teal	6	4	22
+prog.teal	7	4	22
+prog.teal	8	4	22
+prog.teal	9	4	22
+prog.teal	10	4	22
+prog.teal	12	4	22
+prog.teal	13	4	22
+prog.teal	14	4	22
+prog.teal	15	4	22
+prog.teal	16	4	22
+prog.teal	17	4	22
+prog.teal	18	4	22
+prog.teal	19	4	22
+prog.teal	20	4	22
+prog.teal	22	4	22
+prog.teal	24	24	25
+prog.teal	25	24	25

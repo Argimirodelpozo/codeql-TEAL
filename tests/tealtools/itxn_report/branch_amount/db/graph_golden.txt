@@ -73,7 +73,7 @@ prog.teal	23	19	26
 prog.teal	24	19	26
 prog.teal	25	19	26
 prog.teal	26	19	26
-prog.teal	28	28	31
-prog.teal	29	28	31
-prog.teal	30	28	31
-prog.teal	31	28	31
+prog.teal	28	28	29
+prog.teal	29	28	29
+prog.teal	30	30	31
+prog.teal	31	30	31
