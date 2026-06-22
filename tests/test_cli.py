@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from tealtools import targets
+from tealtools._utils import targets
 from cli.main import main
 from tealtools._utils.serialize import finding_to_dict
 

@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-logger = logging.getLogger("tealtools.targets")
+logger = logging.getLogger("tealtools._utils.targets")
 
 
 def _discover_teal_files(path: Path) -> list[Path]:

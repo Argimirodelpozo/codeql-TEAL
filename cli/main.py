@@ -24,7 +24,7 @@ import sys
 from pathlib import Path
 from typing import Callable, Iterable
 
-from tealtools.targets import resolve_target
+from tealtools._utils.targets import resolve_target
 
 logger = logging.getLogger("tealtools.cli")
 

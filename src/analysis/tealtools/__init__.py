@@ -10,7 +10,7 @@ The CLI front-end lives in the separate ``cli`` package — run it with
 the ``tealql`` console script or ``python -m cli``.
 
 Progress logging: library modules emit through the ``tealtools``
-logger hierarchy (``tealtools.passes``, ``tealtools.targets``, …).
+logger hierarchy (``tealtools.passes``, ``tealtools._utils.targets``, …).
 As a library we attach only a :class:`logging.NullHandler` so nothing
 is printed unless the embedding application configures a handler; the
 CLI does that from its ``-v`` / ``-vv`` flags.
