@@ -33,6 +33,7 @@ from ..ssa import (
     const_int,
     is_field_var,
 )
+from ..cfg.dominance import iterative_dominators
 
 
 # ---------------------------------------------------------------------------
@@ -225,31 +226,14 @@ def _bb_strict_dominators(
     blocks = [
         bb for bb in prog.blocks.values() if file_match(bb.file, file)
     ]
-    all_blocks = set(blocks)
-    dom: dict[BasicBlock, set[BasicBlock]] = {}
-    for bb in blocks:
-        if not bb.predecessors:
-            dom[bb] = {bb}
-        else:
-            dom[bb] = set(all_blocks)
-    changed = True
-    while changed:
-        changed = False
-        for bb in blocks:
-            if not bb.predecessors:
-                continue
-            new = set(all_blocks)
-            for pred in bb.predecessors:
-                # Predecessors should be in the same file by construction;
-                # defensively skip cross-file edges if any ever appear.
-                if not file_match(pred.file, file):
-                    continue
-                new &= dom[pred]
-            new.add(bb)
-            if new != dom[bb]:
-                dom[bb] = new
-                changed = True
-    return dom
+    # Entries = BBs with no predecessors at all; preds are file-filtered so a
+    # block whose only edges are cross-file stays saturated (defensive — BB CFG
+    # edges don't cross files in tealtools' model).
+    entries = [bb for bb in blocks if not bb.predecessors]
+    return iterative_dominators(
+        blocks, entries,
+        lambda bb: [p for p in bb.predecessors if file_match(p.file, file)],
+    )
 
 
 def field_validated_on_all_paths(

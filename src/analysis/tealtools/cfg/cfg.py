@@ -19,6 +19,7 @@ from typing import Optional
 
 from ..ssa import BasicBlock, SSAProgram
 from .._utils.dot import escape
+from .dominance import iterative_dominators
 
 
 @dataclass
@@ -201,26 +202,9 @@ class CFG:
         cached = getattr(self, "_dom_cache", None)
         if cached is not None:
             return cached
-        all_blocks = set(self.blocks)
-        entries = set(self.entries)
-        dom: dict[BasicBlock, set[BasicBlock]] = {
-            bb: ({bb} if bb in entries else set(all_blocks))
-            for bb in self.blocks
-        }
-        changed = True
-        while changed:
-            changed = False
-            for bb in self.blocks:
-                if bb in entries:
-                    continue
-                if not bb.predecessors:
-                    continue  # unreachable; leave as-is
-                new = {bb} | set.intersection(
-                    *(dom[p] for p in bb.predecessors)
-                )
-                if new != dom[bb]:
-                    dom[bb] = new
-                    changed = True
+        dom = iterative_dominators(
+            self.blocks, self.entries, lambda b: b.predecessors,
+        )
         self._dom_cache = dom  # type: ignore[attr-defined]
         return dom
 
@@ -228,26 +212,11 @@ class CFG:
         cached = getattr(self, "_pdom_cache", None)
         if cached is not None:
             return cached
-        all_blocks = set(self.blocks)
-        exits = set(self.exits)
-        post: dict[BasicBlock, set[BasicBlock]] = {
-            bb: ({bb} if bb in exits else set(all_blocks))
-            for bb in self.blocks
-        }
-        changed = True
-        while changed:
-            changed = False
-            for bb in self.blocks:
-                if bb in exits:
-                    continue
-                if not bb.successors:
-                    continue
-                new = {bb} | set.intersection(
-                    *(post[s] for s in bb.successors)
-                )
-                if new != post[bb]:
-                    post[bb] = new
-                    changed = True
+        # Post-dominance is dominance on the reversed CFG: exits become entries,
+        # successors become predecessors.
+        post = iterative_dominators(
+            self.blocks, self.exits, lambda b: b.successors,
+        )
         self._pdom_cache = post  # type: ignore[attr-defined]
         return post
 

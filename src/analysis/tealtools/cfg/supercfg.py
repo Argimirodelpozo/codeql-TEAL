@@ -43,6 +43,7 @@ from ..ssa import BasicBlock, SSAProgram
 from ..xcontract import AppcallSite, Registry, XContractGraph
 from .._utils.dot import escape
 from .cfg import CFG
+from .dominance import iterative_dominators
 
 
 @dataclass(frozen=True)
@@ -265,24 +266,9 @@ class SuperCFG:
         cached = getattr(self, "_dom_cache", None)
         if cached is not None:
             return cached
-        all_blocks = set(self._succ.keys())
-        entries = set(self.entries)
-        dom: dict[SuperBlock, set[SuperBlock]] = {
-            sb: ({sb} if sb in entries else set(all_blocks)) for sb in all_blocks
-        }
-        changed = True
-        while changed:
-            changed = False
-            for sb in all_blocks:
-                if sb in entries:
-                    continue
-                preds = self._pred.get(sb)
-                if not preds:
-                    continue  # unreachable; leave saturated
-                new = {sb} | set.intersection(*(dom[p] for p in preds))
-                if new != dom[sb]:
-                    dom[sb] = new
-                    changed = True
+        dom = iterative_dominators(
+            self._succ.keys(), self.entries, lambda sb: self._pred.get(sb, ()),
+        )
         self._dom_cache = dom  # type: ignore[attr-defined]
         return dom
 

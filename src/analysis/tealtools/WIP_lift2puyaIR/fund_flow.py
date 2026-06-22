@@ -41,6 +41,7 @@ from dataclasses import dataclass
 from . import pre_ir
 from .taint import _intr, _invoke, source_label, user_input_taint
 from ..opsets import FUND_FIELDS as _FUND_FIELDS
+from ..cfg.dominance import iterative_dominators
 
 # Inner-txn fields where attacker control = fund redirection / theft, by severity
 # (canonical FUND_FIELDS in tealtools.opsets).
@@ -67,32 +68,18 @@ def _succs(term) -> list:
 
 
 def _dominators(sub) -> dict:
-    """``{block_id: set(block_ids that dominate it)}`` for one subroutine."""
+    """``{block_id: set(block_ids that dominate it)}`` for one subroutine.
+    The IR sub has a single entry (``ids[0]``) and all blocks reachable."""
     ids = [b.id for b in sub.body]
     if not ids:
         return {}
-    idset = set(ids)
     succ = {b.id: _succs(b.terminator) for b in sub.body}
     preds: dict = {i: [] for i in ids}
     for i in ids:
         for s in succ[i]:
             if s in preds:
                 preds[s].append(i)
-    entry = ids[0]
-    dom = {i: ({entry} if i == entry else set(idset)) for i in ids}
-    changed = True
-    while changed:
-        changed = False
-        for i in ids:
-            if i == entry:
-                continue
-            ps = preds[i]
-            inter = set.intersection(*(dom[p] for p in ps)) if ps else set()
-            new = {i} | inter
-            if new != dom[i]:
-                dom[i] = new
-                changed = True
-    return dom
+    return iterative_dominators(ids, [ids[0]], lambda i: preds[i])
 
 
 # --------------------------------------------------------------------------
