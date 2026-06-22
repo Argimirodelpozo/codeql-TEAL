@@ -148,7 +148,7 @@ for f in cross_auth_findings(graph):
     print(f.violation.pretty())
 ```
 
-The notebooks under `src/analysis/tealtools/interactive-examples/` (`example.ipynb`, `example_xgov.ipynb`, `example_inner_txn_report.ipynb`, `example_box_key_detection.ipynb`, `example_path_predicates.ipynb`) walk through the same modules interactively.
+The notebooks under `playground/interactive-examples/` (`example.ipynb`, `example_xgov.ipynb`, `example_inner_txn_report.ipynb`, `example_box_key_detection.ipynb`, `example_path_predicates.ipynb`) walk through the same modules interactively.
 
 ### Puya-IR lift
 
