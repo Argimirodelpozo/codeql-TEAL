@@ -8,8 +8,13 @@ is built and merged into one big :class:`networkx.DiGraph` with
 nodes qualified by AppID. Bridge edges connect:
 
 - **Forward (args)** — caller's ``itxn_field ApplicationArgs`` (per
-  index ``i``) → every ``txna ApplicationArgs i`` read in the callee.
-  Edge kind: ``"appcall-arg"``.
+  index ``i``) → every ``txna ApplicationArgs i`` / ``txn ApplicationArgs i``
+  read in the callee. Edge kind: ``"appcall-arg"``.
+- **Forward (foreign arrays)** — the caller's ``itxn_field
+  {Accounts,Assets,Applications}`` entries → the callee's positional
+  ``txn``/``txna`` reads of the same array, offset by the AVM implicit
+  entry (callee ``Accounts 0`` is the Sender, ``Applications 0`` is the
+  current app — see :data:`_FORWARD_ARRAYS`). Edge kind: ``"appcall-foreign"``.
 - **Forward (Sender)** — the callee's ``txn Sender`` reads resolve to
   the caller's app address. Modelled as a single sentinel source node
   (:data:`_CALLER_APP_ADDR`, scope ``None``) with edges to every
@@ -128,7 +133,7 @@ class XContractTaintGraph:
             caller_tg = tg_by_id.get(caller_app_id)
             if callee_tg is None or caller_tg is None:
                 continue
-            _add_arg_bridges(big, caller_tg, caller_app_id, callee_tg, site)
+            _add_array_bridges(big, caller_tg, caller_app_id, callee_tg, site)
             _add_sender_bridge(big, caller_tg, caller_app_id, callee_tg, site)
             _add_return_bridges(big, caller_tg, caller_app_id, callee_tg, site)
         return big
@@ -236,24 +241,57 @@ def _copy_into(big: nx.DiGraph, tg: TaintGraph, *, app_id: Optional[int]) -> Non
 # --- appcall bridges ----------------------------------------------
 
 
-def _add_arg_bridges(
+# The array fields an appcall forwards into the callee, mapped to the AVM
+# implicit-entry offset: the callee reads each array at an index whose 0 slot
+# is reserved for an implicit value on some arrays, so the caller's i-th pushed
+# entry is read by the callee at index ``i + offset``.
+#   ApplicationArgs — no implicit entry          (callee read i  <- push i)
+#   Accounts        — callee read 0 == Sender    (callee read i+1 <- push i)
+#   Applications    — callee read 0 == current app (callee read i+1 <- push i)
+#   Assets          — no implicit entry          (callee read i  <- push i)
+_FORWARD_ARRAYS: dict[str, int] = {
+    "ApplicationArgs": 0,
+    "Accounts": 1,
+    "Applications": 1,
+    "Assets": 0,
+}
+
+
+def _add_array_bridges(
     big: nx.DiGraph,
     caller_tg: TaintGraph,
     caller_app_id: Optional[int],
     callee_tg: TaintGraph,
     site: AppcallSite,
 ) -> None:
-    """For each ``itxn_field ApplicationArgs`` at the caller's site,
-    bridge to every ``txna ApplicationArgs i`` read in the callee.
-    ``caller_app_id`` (``None`` = root) scopes the caller-side node."""
-    for index, caller_node in _caller_arg_field_nodes(caller_tg, site):
-        callee_reads = callee_tg.find(op="txna", immediates=f"ApplicationArgs {index}")
-        for cn in callee_reads:
-            big.add_edge(
-                XContractNode(app_id=caller_app_id, inner=caller_node),
-                XContractNode(app_id=site.app_id, inner=cn),
-                kinds={"appcall-arg"},
-            )
+    """Forward every array the caller sets on the inner appcall txn
+    (``itxn_field {ApplicationArgs,Accounts,Assets,Applications}``) to the
+    matching positional read in the callee, accounting for the AVM
+    implicit-entry offset (:data:`_FORWARD_ARRAYS`). The callee read may be
+    either ``txna FIELD i`` or the equally-valid ``txn FIELD i`` form (both are
+    current-txn array reads — the ``txn`` form was previously missed, the same
+    gap fixed for ``seeds_for_callee``). ``caller_app_id`` (``None`` = root)
+    scopes the caller-side node; ``ApplicationArgs`` keeps the ``appcall-arg``
+    kind, the foreign arrays use ``appcall-foreign``."""
+    for field, offset in _FORWARD_ARRAYS.items():
+        kind = "appcall-arg" if field == "ApplicationArgs" else "appcall-foreign"
+        for push_i, caller_node in _caller_field_nodes(caller_tg, site, field):
+            for cn in _callee_array_reads(callee_tg, field, push_i + offset):
+                big.add_edge(
+                    XContractNode(app_id=caller_app_id, inner=caller_node),
+                    XContractNode(app_id=site.app_id, inner=cn),
+                    kinds={kind},
+                )
+
+
+def _callee_array_reads(callee_tg: TaintGraph, field: str, index: int) -> list[Node]:
+    """Callee nodes reading ``field`` at the literal ``index`` via either the
+    ``txna`` or the ``txn`` form. The dynamic-index reads (``txnas`` /
+    ``gtxnas``, index popped from the stack) aren't pinned to a position, so
+    they're conservatively left unbridged for a follow-up."""
+    imm = f"{field} {index}"
+    return (callee_tg.find(op="txna", immediates=imm)
+            + callee_tg.find(op="txn", immediates=imm))
 
 
 # Sentinel source standing in for "the caller's application address",
@@ -318,37 +356,38 @@ def _add_return_bridges(
             )
 
 
-def _caller_arg_field_nodes(
+def _caller_field_nodes(
     caller_tg: TaintGraph,
     site: AppcallSite,
+    field: str,
 ) -> Iterator[tuple[int, Node]]:
-    """Yield ``(arg_index, node)`` for each ``itxn_field ApplicationArgs``
-    op contributing to ``site``'s submit. The arg index is the
-    push-order position within this submit's itxn block."""
-    # Walk the caller's assignments in source order, finding the
-    # itxn block this submit belongs to and counting ApplicationArgs
-    # field-set ops as we go.
+    """Yield ``(push_index, node)`` for each ``itxn_field <field>`` op
+    contributing to ``site``'s submit. The push index is the position of
+    this field-set within the inner txn (reset at ``itxn_begin``/``itxn_next``,
+    so it counts the array of the inner txn this submit finalises)."""
+    # Walk the caller's assignments in source order, finding the itxn block
+    # this submit belongs to and counting <field> field-set ops as we go.
     prog = caller_tg.prog
     in_block = False
-    arg_index = 0
+    push_index = 0
     for a in prog.assignments:
         if a.location.file != site.file:
             continue
         if a.op in ("itxn_begin", "itxn_next"):
             in_block = True
-            arg_index = 0
+            push_index = 0
             continue
         if not in_block:
             continue
         if a.op == "itxn_submit" and a.location.line == site.submit_line:
             return  # done with this submit
-        if a.op == "itxn_field" and a.immediates.strip() == "ApplicationArgs":
+        if a.op == "itxn_field" and a.immediates.strip() == field:
             # Find the matching graph node by (file, line)
             for n in caller_tg.nodes():
                 if n.file == site.file and n.line == a.location.line:
-                    yield arg_index, n
+                    yield push_index, n
                     break
-            arg_index += 1
+            push_index += 1
 
 
 # --- cross-contract taint reachability detector -------------------
