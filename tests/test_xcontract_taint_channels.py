@@ -10,9 +10,7 @@ forward channel these tests pin two refinements:
      ``Applications 0`` is the current app, so the caller's first pushed entry
      is read by the callee at index 1, NOT 0.
 """
-from pathlib import Path
-
-from tealtools.ssa import SSAProgram
+from helpers import make_xcontract
 from tealtools.dataflow.xcontract_taint_graph import (
     XContractTaintGraph, cross_taint_findings,
 )
@@ -27,11 +25,7 @@ def _bridge_edges(xtg, kind):
 
 
 def _build(tmp_path, caller_src, callee_src, *, app=100):
-    (tmp_path / "caller.teal").write_text(caller_src)
-    (tmp_path / "callee.teal").write_text(callee_src)
-    caller = SSAProgram(str(tmp_path / "caller.teal"), verbose=False)
-    caller.propagate_constants()
-    registry = {app: str(tmp_path / "callee.teal")}
+    caller, registry = make_xcontract(tmp_path, caller_src, {app: callee_src})
     return XContractTaintGraph.build(caller, registry)
 
 

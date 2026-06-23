@@ -3,9 +3,7 @@ bridges transitively (A -> B -> C), so an attacker arg in A reaching a sink in
 C *two hops deep* surfaces — it flows over the chained appcall-arg bridges, no
 special-case forwarding.
 """
-from pathlib import Path
-
-from tealtools.ssa import SSAProgram
+from helpers import make_xcontract
 from tealtools.dataflow.xcontract_taint_graph import (
     XContractTaintGraph, cross_taint_findings,
 )
@@ -36,13 +34,10 @@ return
 """
 
 
-def _build(tmp_path: Path, **kw):
-    (tmp_path / "a.teal").write_text(_FWD.format(app=100))
-    (tmp_path / "b.teal").write_text(_FWD.format(app=200))
-    (tmp_path / "c.teal").write_text(_SINK)
-    caller = SSAProgram(str(tmp_path / "a.teal"), verbose=False)
-    caller.propagate_constants()
-    registry = {100: str(tmp_path / "b.teal"), 200: str(tmp_path / "c.teal")}
+def _build(tmp_path, **kw):
+    caller, registry = make_xcontract(
+        tmp_path, _FWD.format(app=100),
+        {100: _FWD.format(app=200), 200: _SINK})
     return XContractTaintGraph.build(caller, registry, **kw)
 
 

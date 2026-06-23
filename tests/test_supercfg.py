@@ -5,10 +5,8 @@ callees, so reachability / dominance / paths cross the contract boundary.
 Built on the foundation that ``itxn_submit`` ends a basic block, so the submit
 BB is a clean boundary and the continuation BB is its intra successor.
 """
-from pathlib import Path
-
-from tealtools.ssa import SSAProgram
-from tealtools.cfg import SuperCFG, SuperBlock
+from tealtools.cfg import SuperCFG
+from helpers import make_xcontract
 
 
 # A (root) calls B (app 100); B calls C (app 200). Each forwards arg 0.
@@ -43,12 +41,9 @@ return
 
 
 def _build(tmp_path, **kw):
-    (tmp_path / "a.teal").write_text(_FWD.format(app=100))
-    (tmp_path / "b.teal").write_text(_FWD.format(app=200))
-    (tmp_path / "c.teal").write_text(_LEAF)
-    caller = SSAProgram(str(tmp_path / "a.teal"), verbose=False)
-    caller.propagate_constants()
-    registry = {100: str(tmp_path / "b.teal"), 200: str(tmp_path / "c.teal")}
+    caller, registry = make_xcontract(
+        tmp_path, _FWD.format(app=100),
+        {100: _FWD.format(app=200), 200: _LEAF})
     return SuperCFG.build(caller, registry, **kw)
 
 

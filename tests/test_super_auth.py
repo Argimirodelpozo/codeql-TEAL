@@ -10,11 +10,9 @@ callee pins its caller via `global CallerApplicationID`. So:
   - vulnerable callee (no CallerApplicationID check) -> flagged.
   - safe callee (asserts CallerApplicationID) -> not flagged.
 """
-from pathlib import Path
-
-from tealtools.ssa import SSAProgram
 from tealtools.cfg import SuperCFG
 from tealtools.cfg.super_auth import caller_guard_bypass_findings
+from helpers import make_xcontract
 
 
 # Caller: admin-gates the appcall, then calls app 100.
@@ -67,11 +65,7 @@ return
 
 
 def _build(tmp_path, callee_src):
-    (tmp_path / "caller.teal").write_text(_CALLER)
-    (tmp_path / "callee.teal").write_text(callee_src)
-    caller = SSAProgram(str(tmp_path / "caller.teal"), verbose=False)
-    caller.propagate_constants()
-    registry = {100: str(tmp_path / "callee.teal")}
+    caller, registry = make_xcontract(tmp_path, _CALLER, {100: callee_src})
     return SuperCFG.build(caller, registry)
 
 
@@ -109,11 +103,8 @@ def test_vulnerable_callee_is_flagged(tmp_path):
 
 def test_bnz_form_caller_guard_is_recognised(tmp_path):
     # A branch-form (bnz) guard gates the appcall exactly like the assert form.
-    (tmp_path / "caller.teal").write_text(_CALLER_BNZ)
-    (tmp_path / "callee.teal").write_text(_CALLEE_VULN)
-    caller = SSAProgram(str(tmp_path / "caller.teal"), verbose=False)
-    caller.propagate_constants()
-    sc = SuperCFG.build(caller, {100: str(tmp_path / "callee.teal")})
+    caller, registry = make_xcontract(tmp_path, _CALLER_BNZ, {100: _CALLEE_VULN})
+    sc = SuperCFG.build(caller, registry)
     findings = caller_guard_bypass_findings(sc)
     assert len(findings) == 1, [f.pretty() for f in findings]
     assert findings[0].app_id == 100 and findings[0].sink.op == "itxn_submit"
@@ -139,9 +130,6 @@ itxn_submit
 int 1
 return
 """
-    (tmp_path / "caller.teal").write_text(open_caller)
-    (tmp_path / "callee.teal").write_text(_CALLEE_VULN)
-    caller = SSAProgram(str(tmp_path / "caller.teal"), verbose=False)
-    caller.propagate_constants()
-    sc = SuperCFG.build(caller, {100: str(tmp_path / "callee.teal")})
+    caller, registry = make_xcontract(tmp_path, open_caller, {100: _CALLEE_VULN})
+    sc = SuperCFG.build(caller, registry)
     assert caller_guard_bypass_findings(sc) == []

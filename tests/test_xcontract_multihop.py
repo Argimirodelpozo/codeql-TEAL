@@ -6,11 +6,9 @@ CHAIN of appcalls still surfaces, because ``callees`` / ``analyses`` span every
 hop. Also covers the call-graph structure (``edges`` / ``chains``), the depth
 cap, and cycle safety.
 """
-from pathlib import Path
-
-from tealtools.ssa import SSAProgram
 from tealtools.xcontract import XContractGraph
 from tealtools.detections.xcontract import cross_detection_findings
+from helpers import make_xcontract
 
 # A -> appcall app 100 (B); B -> appcall app 200 (C); C pays an
 # attacker-controlled Receiver with no guard (tainted-fund-flow fires).
@@ -46,21 +44,14 @@ return
 """
 
 
-def _chain(tmp_path: Path, *, c_calls_back: bool = False):
-    a = tmp_path / "a.teal"
-    b = tmp_path / "b.teal"
-    c = tmp_path / "c.teal"
-    a.write_text(_A)
-    b.write_text(_B)
+def _chain(tmp_path, *, c_calls_back: bool = False):
     # optional cycle: C calls back to app 100 (B)
-    c.write_text(_C if not c_calls_back else _C.replace(
+    c_src = _C if not c_calls_back else _C.replace(
         "itxn_submit\nint 1\nreturn",
         "itxn_submit\nitxn_begin\nint 6\nitxn_field TypeEnum\n"
         "int 100\nitxn_field ApplicationID\nitxn_submit\nint 1\nreturn",
-    ))
-    caller = SSAProgram(str(a), verbose=False)
-    caller.propagate_constants()
-    return caller, {100: str(b), 200: str(c)}
+    )
+    return make_xcontract(tmp_path, _A, {100: _B, 200: c_src})
 
 
 def test_callees_span_all_hops(tmp_path):

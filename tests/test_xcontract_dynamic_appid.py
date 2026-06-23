@@ -6,22 +6,16 @@ app's GLOBAL state (the common router/factory pattern) is resolved by tracing
 only when every write to the slot agrees on one constant (sound: no invented
 target).
 """
-from pathlib import Path
 
-from tealtools.ssa import SSAProgram
 from tealtools.xcontract import find_appcall_sites
+from helpers import make_xcontract
 
 _CALLEE = "#pragma version 10\n    int 1\n    return\n"
 
 
-def _sites(caller_teal: str, tmp_path: Path):
-    callee = tmp_path / "callee.teal"
-    callee.write_text(_CALLEE)
-    caller = tmp_path / "caller.teal"
-    caller.write_text(caller_teal)
-    prog = SSAProgram(str(caller), verbose=False)
-    prog.propagate_constants()
-    return find_appcall_sites(prog, {555: str(callee), 777: str(callee)})
+def _sites(caller_teal, tmp_path):
+    prog, registry = make_xcontract(tmp_path, caller_teal, {555: _CALLEE, 777: _CALLEE})
+    return find_appcall_sites(prog, registry)
 
 
 _LITERAL = """#pragma version 10

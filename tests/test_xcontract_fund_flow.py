@@ -7,11 +7,10 @@ arg to a constant suppresses it (the callee's guard-by-pin is recognised via the
 seed). Reuses detections.xcontract.cross_detection_findings + the seeded
 PathPredicateAnalysis -- no new engine.
 """
-from pathlib import Path
 
-from tealtools.ssa import SSAProgram
 from tealtools.xcontract import XContractGraph
 from tealtools.detections.xcontract import cross_detection_findings
+from helpers import make_xcontract
 
 # callee pays an attacker-controlled Receiver (the arg the caller passes).
 _CALLEE = """#pragma version 10
@@ -52,14 +51,9 @@ _CALLER_PINNED = """#pragma version 10
 """
 
 
-def _cross(caller_teal: str, tmp_path: Path):
-    callee = tmp_path / "callee.teal"
-    callee.write_text(_CALLEE)
-    caller_p = tmp_path / "caller.teal"
-    caller_p.write_text(caller_teal)
-    caller = SSAProgram(str(caller_p), verbose=False)
-    caller.propagate_constants()
-    graph = XContractGraph.build(caller, {555: str(callee)})
+def _cross(caller_teal, tmp_path):
+    caller, registry = make_xcontract(tmp_path, caller_teal, {555: _CALLEE})
+    graph = XContractGraph.build(caller, registry)
     return graph, cross_detection_findings(graph, detector_names=["tainted-fund-flow"])
 
 

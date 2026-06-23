@@ -6,10 +6,10 @@ only in real use.
 """
 from pathlib import Path
 
-import pytest
 
 from tealtools.ssa import SSAProgram
 from tealtools import xcontract as XC
+from helpers import make_xcontract
 
 # Calls app 555 (inline constant) and app 777 (read from global state set to 777).
 _CALLER = """#pragma version 10
@@ -34,11 +34,8 @@ _CALLER = """#pragma version 10
 """
 
 
-def _caller(tmp_path: Path) -> SSAProgram:
-    p = tmp_path / "caller.teal"
-    p.write_text(_CALLER)
-    prog = SSAProgram(str(p), verbose=False)
-    prog.propagate_constants()
+def _caller(tmp_path) -> SSAProgram:
+    prog, _ = make_xcontract(tmp_path, _CALLER)
     return prog
 
 
