@@ -37,11 +37,11 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Iterable, Optional
+from typing import Optional
 
 from ..ssa import BasicBlock, SSAProgram
 from ..xcontract import AppcallSite, Registry, XContractGraph
-from .._utils.dot import escape
+from .._utils.dot import bb_label, header, sanitize_id
 from .cfg import CFG
 from .dominance import iterative_dominators
 
@@ -277,8 +277,7 @@ class SuperCFG:
     def to_dot(self, *, with_assignments: bool = False) -> str:
         """Render the whole super-CFG: one Graphviz cluster per contract, intra
         edges solid, call edges blue / return edges red (dashed)."""
-        out: list[str] = ["digraph SuperCFG {", "  rankdir=TB;",
-                          '  node [shape=box, fontname="monospace"];']
+        out: list[str] = header("SuperCFG")
         for app_id, cfg in self.cfgs.items():
             scope = "root" if app_id is None else f"app{app_id}"
             out.append(f'  subgraph cluster_{scope} {{')
@@ -315,15 +314,12 @@ def _program_entry(cfg: CFG) -> Optional[BasicBlock]:
 
 def _sb_id(sb: SuperBlock) -> str:
     scope = "root" if sb.app_id is None else f"app{sb.app_id}"
-    safe = sb.bb.file.replace("/", "_").replace(".", "_").replace("-", "_")
-    return f"n_{scope}_{safe}_{sb.bb.first_line}_{sb.bb.last_line}"
+    return f"n_{scope}_{sanitize_id(sb.bb.file)}_{sb.bb.first_line}_{sb.bb.last_line}"
 
 
 def _sb_label(sb: SuperBlock, with_assignments: bool) -> str:
-    head = f"{sb!r}"
-    if not with_assignments or not sb.bb.assignments:
-        return escape(head)
-    lines = [head]
-    for a in sb.bb.assignments:
-        lines.append(f"L{a.location.line}: {a.op} {a.immediates.strip()}".rstrip())
-    return escape("\\l".join(lines)) + "\\l"
+    lines = []
+    if with_assignments:
+        for a in sb.bb.assignments:
+            lines.append(f"L{a.location.line}: {a.op} {a.immediates.strip()}".rstrip())
+    return bb_label(f"{sb!r}", lines)

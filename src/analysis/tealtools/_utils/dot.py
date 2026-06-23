@@ -17,6 +17,29 @@ def escape(s: str) -> str:
     return s.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
 
 
+def sanitize_id(s: str) -> str:
+    """Turn a source path into a DOT-safe node-id fragment (``/``, ``.``, ``-``
+    -> ``_``). The shared core of every emitter's BB-id builder."""
+    return s.replace("/", "_").replace(".", "_").replace("-", "_")
+
+
+def header(name: str, *, rankdir: str = "TB",
+           node_attrs: str = 'shape=box, fontname="monospace"') -> list[str]:
+    """The standard DOT preamble lines for a node-box digraph: ``digraph
+    <name> {``, the ``rankdir``, and the default ``node [...]`` attributes."""
+    return [f"digraph {name} {{", f"  rankdir={rankdir};",
+            f"  node [{node_attrs}];"]
+
+
+def bb_label(head: str, lines: list[str]) -> str:
+    """A basic-block DOT label: just ``head`` (escaped) when there are no body
+    ``lines``, else ``head`` followed by each line, ``\\l``-joined (DOT's
+    left-align) and escaped with a trailing ``\\l``."""
+    if not lines:
+        return escape(head)
+    return escape("\\l".join([head, *lines])) + "\\l"
+
+
 class SvgResult:
     """Graphviz SVG output: renders inline in Jupyter, savable to a file."""
 

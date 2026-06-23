@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from ..ssa import BasicBlock, SSAProgram
-from .._utils.dot import escape
+from .._utils.dot import bb_label, header, sanitize_id
 from .dominance import iterative_dominators
 
 
@@ -256,9 +256,7 @@ class CFG:
             self.blocks if file is None
             else [b for b in self.blocks if b.file == file]
         )
-        out: list[str] = ["digraph CFG {"]
-        out.append(f"  rankdir={rankdir};")
-        out.append('  node [shape=box, fontname="monospace"];')
+        out: list[str] = header("CFG", rankdir=rankdir)
         for bb in blocks:
             nid = _bb_id(bb)
             label = _bb_label(bb, with_assignments=with_assignments)
@@ -280,19 +278,14 @@ class CFG:
 
 
 def _bb_id(bb: BasicBlock) -> str:
-    safe = bb.file.replace("/", "_").replace(".", "_").replace("-", "_")
-    return f"bb_{safe}_{bb.first_line}_{bb.last_line}"
+    return f"bb_{sanitize_id(bb.file)}_{bb.first_line}_{bb.last_line}"
 
 
 def _bb_label(bb: BasicBlock, *, with_assignments: bool) -> str:
     head = f"BB L{bb.first_line}-L{bb.last_line}"
-    if not with_assignments or not bb.assignments:
-        return escape(head)
-    lines = [head]
-    for a in bb.assignments:
-        op = a.op
-        im = a.immediates.strip()
-        body = f"{op} {im}".strip()
-        lines.append(f"L{a.location.line}: {body}")
-    # `\\l` left-aligns each line in DOT.
-    return escape("\\l".join(lines)) + "\\l"
+    lines = []
+    if with_assignments:
+        for a in bb.assignments:
+            body = f"{a.op} {a.immediates.strip()}".strip()
+            lines.append(f"L{a.location.line}: {body}")
+    return bb_label(head, lines)

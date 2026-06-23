@@ -39,7 +39,7 @@ from typing import Any, Optional
 # Shared modules are imported eagerly so detector .py files can resolve
 # ``from tealtools.detections.common import ...`` etc. when importlib
 # pulls them in below.
-from . import _field_validated, common  # noqa: F401
+from . import _approval_exit, _field_validated, common  # noqa: F401
 
 
 # Source root: this file is at <repo>/src/analysis/tealtools/detections/__init__.py,

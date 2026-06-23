@@ -10,10 +10,9 @@ alert per unprotected exit.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 
-from tealtools.ssa import BasicBlock, SSAProgram
-from tealtools.detections import common
+from tealtools.ssa import BasicBlock
+from tealtools.detections._approval_exit import _ApprovalExitProtectedDetector
 
 
 @dataclass
@@ -31,21 +30,7 @@ class RekeyToViolation:
         return f"RekeyToViolation({self.pretty()})"
 
 
-class RekeyToDetector:
+class RekeyToDetector(_ApprovalExitProtectedDetector):
     name = "sec-guide/rekey-to"
-
-    def __init__(self, prog: SSAProgram, *, file: Optional[str] = None):
-        self.prog = prog
-        self.file = file
-
-    def detect(self) -> list[RekeyToViolation]:
-        out: list[RekeyToViolation] = []
-        for exit_bb in sorted(
-            common.approving_exits(self.prog, file=self.file),
-            key=lambda b: (b.file, b.first_line),
-        ):
-            if not common.approval_exit_protected_for_field(
-                self.prog, exit_bb, "RekeyTo", file=self.file,
-            ):
-                out.append(RekeyToViolation(exit_bb))
-        return out
+    field = "RekeyTo"
+    violation_cls = RekeyToViolation

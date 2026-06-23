@@ -13,10 +13,9 @@ called on every path (``vuln_subroutine_dead``).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 
-from tealtools.ssa import BasicBlock, SSAProgram
-from tealtools.detections import common
+from tealtools.ssa import BasicBlock
+from tealtools.detections._approval_exit import _ApprovalExitProtectedDetector
 
 
 @dataclass
@@ -34,21 +33,7 @@ class FeeValidationViolation:
         return f"FeeValidationViolation({self.pretty()})"
 
 
-class FeeValidationDetector:
+class FeeValidationDetector(_ApprovalExitProtectedDetector):
     name = "sec-guide/fee-validation"
-
-    def __init__(self, prog: SSAProgram, *, file: Optional[str] = None):
-        self.prog = prog
-        self.file = file
-
-    def detect(self) -> list[FeeValidationViolation]:
-        out: list[FeeValidationViolation] = []
-        for exit_bb in sorted(
-            common.approving_exits(self.prog, file=self.file),
-            key=lambda b: (b.file, b.first_line),
-        ):
-            if not common.approval_exit_protected_for_field(
-                self.prog, exit_bb, "Fee", file=self.file,
-            ):
-                out.append(FeeValidationViolation(exit_bb))
-        return out
+    field = "Fee"
+    violation_cls = FeeValidationViolation

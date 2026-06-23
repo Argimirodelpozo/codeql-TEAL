@@ -26,10 +26,9 @@ nonce in an app) is out of scope by the logicsig gating, not a target.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 
-from tealtools.ssa import BasicBlock, SSAProgram
-from tealtools.detections import common
+from tealtools.ssa import BasicBlock
+from tealtools.detections._approval_exit import _ApprovalExitProtectedDetector
 
 
 @dataclass
@@ -48,22 +47,8 @@ class LeaseValidationViolation:
         return f"LeaseValidationViolation({self.pretty()})"
 
 
-class LeaseValidationDetector:
+class LeaseValidationDetector(_ApprovalExitProtectedDetector):
     name = "sec-guide/lease-validation"
     applies_to = frozenset({"logicsig"})  # apps have state-based replay protection
-
-    def __init__(self, prog: SSAProgram, *, file: Optional[str] = None):
-        self.prog = prog
-        self.file = file
-
-    def detect(self) -> list[LeaseValidationViolation]:
-        out: list[LeaseValidationViolation] = []
-        for exit_bb in sorted(
-            common.approving_exits(self.prog, file=self.file),
-            key=lambda b: (b.file, b.first_line),
-        ):
-            if not common.approval_exit_protected_for_field(
-                self.prog, exit_bb, "Lease", file=self.file,
-            ):
-                out.append(LeaseValidationViolation(exit_bb))
-        return out
+    field = "Lease"
+    violation_cls = LeaseValidationViolation
