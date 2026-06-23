@@ -47,7 +47,7 @@ from .models import (
 )
 
 # Operand -> constant resolution helpers from .operands
-from .operands import const_bytes, const_int, is_const, operand_const
+from .operands import const_bytes, const_byte_length, const_int, is_const, operand_const
 from .producers import is_field_var, producing_op
 
 # The SSAProgram class from .program
@@ -84,6 +84,7 @@ __all__ = [
     "_canon_shuffle",
     # Operand -> constant resolution
     "const_bytes",
+    "const_byte_length",
     "const_int",
     "is_const",
     "operand_const",

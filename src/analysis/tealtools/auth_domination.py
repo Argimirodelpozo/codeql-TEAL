@@ -49,7 +49,7 @@ from .ssa import (
     Assignment,
     SSAProgram,
     SSAVar,
-    const_bytes,
+    const_byte_length,
     is_field_var,
 )
 from .path_predicates import (
@@ -116,12 +116,11 @@ def _is_txn_sender(op) -> bool:
 
 
 def _is_addr_const(op) -> bool:
-    """True if ``op`` is an address-shaped constant. We don't require the value
-    itself to look like an Algorand address — any statically-resolved bytes
-    operand is enough for a guard pattern (a 32-byte ``addr`` or ``pushbytes``
-    literal). Range/format refinement can be added later without breaking
-    matchers."""
-    return const_bytes(op) is not None
+    """True if ``op`` is a 32-byte address-shaped constant. An Algorand address
+    is exactly 32 bytes, so a sender check against a shorter/longer bytes literal
+    (e.g. ``txn Sender == "admin"``) can never hold and is NOT a real guard —
+    requiring 32 bytes rejects those vacuous comparisons."""
+    return const_byte_length(op) == 32
 
 
 def _matches_sender_eq_const(cond: BranchCondition, prog: SSAProgram) -> bool:

@@ -47,14 +47,26 @@ def const_int(op) -> Optional[int]:
 
 
 def const_bytes(op) -> Optional[str]:
-    """The bytes value ``op`` resolves to (the TEAL literal form, e.g. an
-    ``0x``-hex or ``base64(..)`` string), or ``None`` when it isn't a
+    """The bytes value ``op`` resolves to, or ``None`` when it isn't a
     statically-known bytes-kind literal. The bytes analogue of
-    :func:`const_int`."""
+    :func:`const_int`. The value is the SSA-normalised ``0x``-hex form (every
+    bytes literal — ``addr`` / ``byte "s"`` / ``byte b64 ..`` — is folded to
+    ``0x``+hex by const propagation)."""
     c = operand_const(op)
     if c is None or c.kind != "bytes":
         return None
     return c.value
+
+
+def const_byte_length(op) -> Optional[int]:
+    """The length, in bytes, of the bytes constant ``op`` resolves to, or
+    ``None`` when it isn't a statically-known bytes literal. Reads it off the
+    normalised ``0x``-hex form (so e.g. a 32-byte address is 64 hex digits ->
+    32). Useful for shape checks like "is this a 32-byte address constant?"."""
+    v = const_bytes(op)
+    if v is None or not v.startswith("0x"):
+        return None
+    return (len(v) - 2) // 2
 
 
 def is_const(op) -> bool:
