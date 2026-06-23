@@ -16,15 +16,16 @@ slot, so the value-check is just a taint-slot overlap; the sender-check reuses
 :func:`common._operand_flows_from_field_var` (Sender is a direct read).
 
 GUARD dominance is interprocedural for free (``PathPredicateAnalysis`` propagates
-caller predicates across ``callsub`` edges). The TAINT precondition, however, is
-INTRA-PROCEDURAL: the SSA def-use relation does not carry the ``proto``-frame
-param-passing connection (a ``frame_dig`` has no def-use input; the caller->param
-flow is reconstructed only by the lift), so a tainted value passed INTO a
-subroutine as a parameter is not seen as tainted at a sink inside that callee. The
-common inline pattern (the itxn is built in the same routine that reads the user
-input) is fully covered; the param-fed minority is a known false-negative -- the
-IR-layer ``WIP_lift2puyaIR.fund_flow`` keeps interprocedural taint (the lift
-resolves frames into explicit params).
+caller predicates across ``callsub`` edges). The SSA TAINT precondition is
+INTRA-PROCEDURAL — the def-use relation doesn't carry the ``proto``-frame
+param-passing edge (a ``frame_dig`` has no def-use input) — so a value fed INTO a
+subroutine parameter and paid out inside the callee is invisible to the SSA pass.
+That gap is now RESCUED: when the program has a ``callsub``, ``detect()`` also
+runs the IR lift's interprocedural fund-flow (``WIP_lift2puyaIR.fund_flow``, which
+resolves frames into explicit params) and adds its UNGUARDED findings at lines the
+SSA pass didn't already report (``_ir_supplement``). Best-effort — a contract that
+fails to lift falls back to the SSA result. So the common inline pattern is caught
+by the SSA pass, and the param-fed pattern by the IR supplement.
 """
 from __future__ import annotations
 
@@ -156,11 +157,27 @@ class TaintedFundFlowDetector:
         self.pp = path_predicates or PathPredicateAnalysis(prog)
 
     def detect(self) -> list:
+        violations, flagged_lines = self._ssa_detect()
+        # Interprocedural rescue: a value fed into a subroutine parameter and
+        # paid out inside the callee is invisible to the SSA def-use relation (a
+        # `frame_dig` has no input edge). The IR lift resolves `proto` frames into
+        # explicit params, so its interprocedural fund-flow sees these. Run it
+        # ONLY when there's a `callsub` to cross (otherwise SSA is already
+        # complete), and best-effort — silently skip a contract that doesn't lift.
+        if any(a.op == "callsub" for a in self.prog.assignments):
+            violations += self._ir_supplement(flagged_lines)
+        return violations
+
+    def _ssa_detect(self) -> tuple:
+        """The intra-procedural SSA-layer pass. Returns ``(violations,
+        flagged_lines)`` — the lines it reported, so the IR supplement can dedup
+        the inline flows both layers catch."""
         taint = _user_input_taint(self.prog, self.file)
         if not taint:
-            return []
+            return [], set()
         sender_vars = self._sender_vars()
-        violations = []
+        violations: list = []
+        flagged: set = set()
         for fs in common.inner_txn_field_assigns(self.prog, file=self.file):
             if fs.field not in _FUND_FIELDS:
                 continue
@@ -179,7 +196,35 @@ class TaintedFundFlowDetector:
                    f"value or txn Sender")
             violations.append(TaintedFundFlowViolation(
                 self.prog, fs.field, sev, sources, loc, msg))
-        return violations
+            flagged.add(a.location.line)
+        return violations, flagged
+
+    def _ir_supplement(self, flagged_lines: set) -> list:
+        """Interprocedural fund-flows from the IR lift — the sub-param-fed cases
+        the SSA def-use can't carry. Only the IR's UNGUARDED findings (its guard
+        analysis correctly clears sender/value checks) at lines the SSA pass
+        didn't already report. Best-effort: a contract that fails to lift yields
+        nothing, falling back to the SSA result alone."""
+        try:
+            from tealtools.WIP_lift2puyaIR.lift import _Lifter
+            from tealtools.WIP_lift2puyaIR.fund_flow import tainted_fund_flows
+            lifter = _Lifter(self.prog)
+            lifter.build()
+            flows = tainted_fund_flows(lifter)
+        except Exception:
+            return []
+        out: list = []
+        for fl in flows:
+            if fl.guarded or fl.line in flagged_lines:
+                continue
+            src = tuple(sorted(fl.sources))
+            loc = f"{fl.sub_id} line {fl.line}"
+            msg = (f"[{fl.severity}] attacker-controlled itxn {fl.field} <- "
+                   f"{'+'.join(src)} ({loc}); flows through a subroutine parameter "
+                   f"(interprocedural), no dominating check")
+            out.append(TaintedFundFlowViolation(
+                self.prog, fl.field, fl.severity, src, loc, msg))
+        return out
 
     # -- internals ------------------------------------------------------
 

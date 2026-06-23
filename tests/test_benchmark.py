@@ -88,14 +88,14 @@ def _table(scores: dict[str, Score]) -> str:
 # regression (a new FP, a lost TP) fails the test. Update DELIBERATELY when the
 # corpus grows or a detector intentionally changes -- and say why.
 #
-# Note recall < 1.0 on tainted-fund-flow is HONEST: param_fed_callee.teal is a real
-# vulnerability the SSA detector cannot see (the proto-frame param flow lives only
-# in the IR lift). The benchmark records it rather than hiding it.
+# tainted-fund-flow now scores recall 1.0: param_fed_callee.teal (the proto-frame
+# param flow the SSA def-use can't see) is rescued by the IR lift's
+# interprocedural fund-flow, wired into the detector as a callsub-gated supplement.
 _BASELINE: dict[str, tuple[int, int, int, int]] = {
     "constant-condition": (3, 0, 0, 3),
     "fee-validation": (1, 0, 0, 1),
     "rekey-to": (2, 0, 0, 1),
-    "tainted-fund-flow": (2, 0, 1, 4),
+    "tainted-fund-flow": (3, 0, 0, 4),
 }
 
 
