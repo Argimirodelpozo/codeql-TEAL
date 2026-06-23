@@ -8,43 +8,23 @@ tests with real ``IntRange`` / ``Const`` / ``TealType`` — no SSA fixpoint, DB,
 or puya. Ranges are arbitrary-precision (no uint64 cap): a long ``b*`` chain can
 legitimately exceed 2**64.
 """
-from types import SimpleNamespace
-
 from tealtools.passes.bytemath import (
     _bytemath_result,
     _bytes_to_int,
     _operand_bigint_range,
     propagate_bytemath_ranges,
 )
-from tealtools.ssa import Assignment, Const, IntRange, Location, Phi, SSAVar, TealType
+from tealtools.ssa import Const, IntRange, Phi, SSAVar, TealType
+from ssa_builders import mk_asn as _asn, mk_var as _var, mk_prog
 
 
 def _R(lo, hi):
     return IntRange(lo, hi)
 
 
-def _asn(op, *, inputs=(), outputs=(), const=None):
-    a = Assignment(outputs=list(outputs), op=op, immediates="", inputs=list(inputs),
-                   location=Location("t.teal", 1), ast_code="", const=const)
-    for o in outputs:
-        if isinstance(o, SSAVar):
-            o.defined_by = a
-    return a
-
-
-def _var(line=10, index=0):
-    return SSAVar("t.teal", line, index)
-
-
 def _prog(assignments, phis=()):
-    """Minimal SSAProgram stand-in: a flat assignment list, a phi dict, and the
-    consts/ranges-already-done flags so the pass skips the upstream passes."""
-    return SimpleNamespace(
-        assignments=list(assignments),
-        phis={i: p for i, p in enumerate(phis)},
-        _consts_propagated=True,
-        _ranges_propagated=True,
-    )
+    # bytemath also needs ranges-already-done so the pass skips range seeding.
+    return mk_prog(assignments, phis, _ranges_propagated=True)
 
 
 # -- _bytes_to_int: the lru_cache'd literal-value helper added this session --

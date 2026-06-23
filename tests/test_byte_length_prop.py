@@ -9,39 +9,14 @@ duck-types operands (``getattr(operand, "type"/"const_value", …)``), so it run
 as plain unit tests over hand-built ``Assignment``s with real ``Const`` /
 ``TealType`` operands — no SSA fixpoint, DB, or puya.
 """
-from types import SimpleNamespace
-
 from tealtools.passes.byte_length_prop import (
     _hex_byte_length,
     _input_min_length,
     _op_byte_length,
     propagate_byte_lengths,
 )
-from tealtools.ssa import Assignment, Const, IntRange, Location, Phi, SSAVar, TealType
-
-
-def _asn(op, *, imm="", inputs=(), outputs=(), const=None):
-    a = Assignment(outputs=list(outputs), op=op, immediates=imm, inputs=list(inputs),
-                   location=Location("t.teal", 1), ast_code="", const=const)
-    for o in outputs:
-        if isinstance(o, SSAVar):
-            o.defined_by = a
-    return a
-
-
-def _var(line=10, index=0):
-    return SSAVar("t.teal", line, index)
-
-
-def _prog(assignments, phis=()):
-    """A minimal stand-in for the SSAProgram surface propagate_byte_lengths
-    reads: a flat assignment list, a phi dict, and the consts-already-done flag
-    so it skips propagate_constants()."""
-    return SimpleNamespace(
-        assignments=list(assignments),
-        phis={i: p for i, p in enumerate(phis)},
-        _consts_propagated=True,
-    )
+from tealtools.ssa import Const, IntRange, Phi, SSAVar, TealType
+from ssa_builders import mk_asn as _asn, mk_var as _var, mk_prog as _prog
 
 
 def _bytes_operand(byte_length):
