@@ -340,6 +340,20 @@ def _cmd_all(args) -> int:
     return 0
 
 
+def _cmd_dump(args) -> int:
+    import sys as _sys
+    from tealtools.viz import dump_all
+    source = str(_resolve(args))
+    text = dump_all(source, args.out_dir, svg=not args.no_svg)
+    if args.out_dir:
+        _sys.stderr.write(
+            f"wrote full dump to {args.out_dir}/ "
+            f"(contract.txt + graph/cfg/ssa/control_tree)\n")
+    else:
+        print(text, end="")
+    return 0
+
+
 # ---------------------------------------------------------------------------
 # Parser construction
 # ---------------------------------------------------------------------------
@@ -374,6 +388,13 @@ def build_parser() -> argparse.ArgumentParser:
     add("cost", "per-line opcode cost", _cmd_cost)
     add("path-predicates", "per-BB path predicates", _cmd_path_predicates)
     add("all", "run every detector + report", _cmd_all)
+
+    dump_p = add("dump", "dump EVERY representation of a contract (debug)", _cmd_dump)
+    dump_p.add_argument("-o", "--out-dir", default=None,
+                        help="also write contract.txt + graph/cfg/ssa/control_tree "
+                             ".svg files into this dir (else text to stdout)")
+    dump_p.add_argument("--no-svg", action="store_true",
+                        help="write .dot instead of rendering .svg (no Graphviz needed)")
 
     func_p = add(
         "functional",
