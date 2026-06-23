@@ -40,7 +40,7 @@ from __future__ import annotations
 import tree_sitter as _ts
 import tree_sitter_teal as _tsteal
 
-from ..control_flow import _children, _program_cfg
+from ..cfg_build import _children, _program_cfg
 from .ast import AstNode, Label, Location, Source, node_class_for_mnemonic
 
 _LANG = _ts.Language(_tsteal.language())

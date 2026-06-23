@@ -4,7 +4,7 @@ Build a NetworkX MultiDiGraph from TEAL source in two passes: parse the source
 into typed :class:`tealtools.ast.AstNode` nodes (one per opcode, hashed by
 ``(file, line)``) via :mod:`tealtools.ast.parse`, then derive the control flow --
 ``kind="cfg"`` edges carrying a ``successor`` label, plus basic blocks -- from
-those nodes via :mod:`tealtools.control_flow`. SSA / phis / const values / taint
+those nodes via :mod:`tealtools.cfg_build`. SSA / phis / const values / taint
 are reconstructed downstream (``tealtools.ssa``).
 
 The source may be a single ``.teal`` file, a directory of ``.teal`` files, or an
@@ -210,7 +210,7 @@ def load_graph(
     # control-flow edges + basic blocks from them. No relational intermediate --
     # the same objects flow through both passes and into the graph.
     from .ast.parse import parse_nodes
-    from .control_flow import build_cfg_edges, build_basic_blocks
+    from .cfg_build import build_cfg_edges, build_basic_blocks
     nodes = parse_nodes(_load_source_bytes(source))
     for node in nodes:
         by_loc[(node.location.file, node.location.start_line)] = node

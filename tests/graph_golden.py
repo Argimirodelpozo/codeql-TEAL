@@ -20,7 +20,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from tealtools.ast.parse import parse_nodes
-from tealtools.control_flow import build_basic_blocks, build_cfg_edges
+from tealtools.cfg_build import build_basic_blocks, build_cfg_edges
 from tealtools.graph import _load_source_bytes
 
 GOLDEN_NAME = "graph_golden.txt"

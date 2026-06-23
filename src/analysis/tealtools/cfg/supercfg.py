@@ -8,7 +8,7 @@ overlays the appcall boundary WITHOUT mutating any per-program CFG (the user's
 contract they live in (:class:`SuperBlock`, ``app_id=None`` = the root caller,
 an ``int`` = a callee AppID), and two kinds of inter-program edge are spliced in
 at each ``itxn_submit`` appcall site — which, because ``itxn_submit`` now ENDS a
-basic block (see :mod:`tealtools.control_flow`), is a clean BB boundary:
+basic block (see :mod:`tealtools.cfg_build`), is a clean BB boundary:
 
 - **call edge** — the caller's submit BB -> the callee's program-entry BB. The
   values it carries are exactly the typed forward channels modelled by

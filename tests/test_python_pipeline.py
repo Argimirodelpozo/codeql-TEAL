@@ -1,4 +1,4 @@
-"""Graph-pipeline tests — exercise the ``ast.parse`` + ``control_flow`` passes
+"""Graph-pipeline tests — exercise the ``ast.parse`` + ``cfg_build`` passes
 and ``load_graph``.
 
 These complement ``test_graph_golden`` (which pins the passes' exact output to
@@ -11,7 +11,7 @@ import pytest
 
 from tealtools.graph import load_graph, _load_source_bytes
 from tealtools.ast.parse import parse_nodes
-from tealtools.control_flow import build_cfg_edges, build_basic_blocks
+from tealtools.cfg_build import build_cfg_edges, build_basic_blocks
 
 TESTS_DIR = Path(__file__).resolve().parent
 
