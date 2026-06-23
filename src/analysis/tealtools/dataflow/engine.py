@@ -36,6 +36,7 @@ from ..ssa import (
     _shuffle_mapping,
     is_const,
 )
+from ..passes.frame_flow import frame_param_sources
 
 
 Operand = Union[SSAVar, Phi, Const]
@@ -313,6 +314,11 @@ class TaintAnalysis:
                         tainted.add(v)
                         source_for[v] = (a, src.name)
 
+        # Interprocedural frame edges (callee param <- the caller args bound to
+        # it), so taint crosses the callsub/proto boundary natively — the base
+        # def-use leaves frame_dig disconnected. See passes.frame_flow.
+        frame_src = frame_param_sources(self.prog)
+
         # Step 2: fixpoint propagation.
         changed = True
         while changed:
@@ -366,6 +372,16 @@ class TaintAnalysis:
                     if src_var is not None and src_var in tainted:
                         tainted.add(load_var)
                         source_for[load_var] = source_for[src_var]
+                        changed = True
+                        break
+            # 2d. Through frame params (callee param <- caller args).
+            for dig_out, args in frame_src.items():
+                if dig_out in tainted:
+                    continue
+                for arg in args:
+                    if not isinstance(arg, Const) and arg in tainted:
+                        tainted.add(dig_out)
+                        source_for[dig_out] = source_for[arg]
                         changed = True
                         break
         return tainted, source_for

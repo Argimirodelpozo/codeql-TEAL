@@ -123,10 +123,9 @@ def test_constant_receiver_not_flagged(tmp_path):
     assert _detect(_CONSTANT, tmp_path) == []
 
 
-# A tainted value passed INTO a subroutine as a parameter and paid out inside
-# the callee. The SSA def-use can't carry the proto-frame param edge, so the
-# detector now rescues this via the IR lift's interprocedural fund-flow (gated on
-# the prog having a `callsub`).
+# A tainted value passed INTO a subroutine as a parameter and paid out inside the
+# callee. The base SSA def-use leaves frame_dig disconnected, but the taint now
+# crosses it natively via the frame_flow caller-arg -> callee-param edges.
 _PARAM_FED = """#pragma version 10
     txn ApplicationArgs 0
     btoi
@@ -143,9 +142,10 @@ pay:
 """
 
 
-def test_param_fed_caught_via_ir_supplement(tmp_path):
-    # The formerly-known FN: the frame-param taint is now caught by the
-    # interprocedural IR supplement. One MEDIUM Amount finding.
+def test_param_fed_caught_interprocedurally(tmp_path):
+    # The formerly-known FN: the value fed into the `pay` sub's param is now
+    # tainted at the in-callee sink natively, via the frame_flow caller-arg ->
+    # callee-param edges (no IR lift). One MEDIUM Amount finding.
     findings = _detect(_PARAM_FED, tmp_path)
     assert len(findings) == 1, [f.pretty() for f in findings]
     assert findings[0].field == "Amount"
