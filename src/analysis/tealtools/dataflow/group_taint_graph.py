@@ -19,11 +19,18 @@ sequence, connected only by dataflow — and its composition is EXTERNAL (the us
 assembles the group), so :meth:`GroupTaintGraph.build` takes an ORDERED list of
 member programs (index = group position), not an AppID registry.
 
-Conservative: only the static ``gload i N`` form is bridged. The dynamic-slot /
-dynamic-index ops (``stores``, ``gloads``, ``gloadss``) don't carry the slot or
-sibling index as a static immediate, so they're left unbridged — a follow-up.
-The AVM rule ``i < k`` (a member may only ``gload`` an EARLIER, already-executed
-sibling) is enforced.
+Two member-to-member channels are bridged (both enforcing the AVM ``i < k``
+rule — a member may only read an EARLIER, already-executed sibling):
+
+- **scratch** — ``store N`` (member i) -> ``gload i N`` / ``gloads N`` (member k).
+  ``gload`` pins the sibling index statically; ``gloads`` pops it from the stack
+  so we conservatively bridge every earlier member's ``store N``.
+- **log** — ``log`` (member i) -> ``gtxn i LastLog`` / ``gtxna i Logs`` (member k):
+  a sibling reads what an earlier member logged (the group analog of xcontract's
+  appcall-return channel).
+
+Still conservative: ``stores`` / ``gloadss`` (dynamic SLOT) are left unbridged —
+the slot isn't a static immediate — a follow-up.
 """
 from __future__ import annotations
 
@@ -64,7 +71,8 @@ class GroupTaintGraph:
         big: nx.DiGraph = nx.DiGraph()
         for idx, tg in enumerate(members):
             _copy_into(big, tg, index=idx)
-        _add_gload_bridges(big, members)
+        _add_scratch_bridges(big, members)
+        _add_log_bridges(big, members)
         return cls(g=big, members=members)
 
     # --- queries -------------------------------------------------------
@@ -110,16 +118,20 @@ def _copy_into(big: nx.DiGraph, tg: TaintGraph, *, index: int) -> None:
         )
 
 
-def _add_gload_bridges(big: nx.DiGraph, members: list[TaintGraph]) -> None:
-    """For each static ``gload i N`` in member ``k``, connect every ``store N``
-    in the earlier member ``i`` (``i < k``) to it. The stored value is whatever
-    flows INTO the store, so taint reaching the store reaches the ``gload`` read
-    in the sibling."""
+def _add_scratch_bridges(big: nx.DiGraph, members: list[TaintGraph]) -> None:
+    """Scratch sharing — taint reaching a ``store N`` reaches a sibling that
+    reads that slot. Two read forms (both enforce the AVM ``i < k`` rule):
+
+    - ``gload i N`` — static sibling index + slot: bridge member ``i``'s
+      ``store N`` to it precisely.
+    - ``gloads N`` — static slot, sibling index popped from the stack: the index
+      isn't known statically, so conservatively bridge EVERY earlier member's
+      ``store N``. (``gloadss`` has a dynamic slot too -> left unbridged.)"""
     for k, tg_k in enumerate(members):
         for gnode in tg_k.find(op="gload"):
             parts = (tg_k.immediates_of(gnode) or "").split()
             if len(parts) != 2:
-                continue                      # dynamic / malformed
+                continue
             try:
                 i, slot = int(parts[0]), int(parts[1])
             except ValueError:
@@ -127,8 +139,35 @@ def _add_gload_bridges(big: nx.DiGraph, members: list[TaintGraph]) -> None:
             if not 0 <= i < k:                # AVM: only an earlier sibling
                 continue
             for store in members[i].find(op="store", immediates=str(slot)):
-                big.add_edge(GroupNode(i, store), GroupNode(k, gnode),
-                             kinds={"gload"})
+                big.add_edge(GroupNode(i, store), GroupNode(k, gnode), kinds={"gload"})
+        for gnode in tg_k.find(op="gloads"):  # dynamic index -> any earlier member
+            slot = (tg_k.immediates_of(gnode) or "").strip()
+            if not slot:
+                continue
+            for i in range(k):
+                for store in members[i].find(op="store", immediates=slot):
+                    big.add_edge(GroupNode(i, store), GroupNode(k, gnode), kinds={"gload"})
+
+
+def _add_log_bridges(big: nx.DiGraph, members: list[TaintGraph]) -> None:
+    """Log channel — a sibling reads what an earlier member logged. For each
+    ``gtxn i LastLog`` / ``gtxna i Logs j`` in member ``k`` (``i < k``), bridge
+    every ``log`` in member ``i`` to it (the group analog of xcontract's
+    appcall-return ``log -> Logs`` bridge)."""
+    for k, tg_k in enumerate(members):
+        for op in ("gtxn", "gtxna"):
+            for rnode in tg_k.find(op=op):
+                parts = (tg_k.immediates_of(rnode) or "").split()
+                if len(parts) < 2:
+                    continue
+                try:
+                    i = int(parts[0])
+                except ValueError:
+                    continue
+                if parts[1] not in ("LastLog", "Logs") or not 0 <= i < k:
+                    continue
+                for lognode in members[i].find(op="log"):
+                    big.add_edge(GroupNode(i, lognode), GroupNode(k, rnode), kinds={"log"})
 
 
 # --- cross-member taint detector ---------------------------------------
@@ -170,13 +209,14 @@ def _sensitive_sinks(gtg: GroupTaintGraph) -> list[tuple[GroupNode, str]]:
 
 
 def _attacker_sources(gtg: GroupTaintGraph) -> list[GroupNode]:
-    """User-controlled current-txn arg reads in any member — the whole group is
-    attacker-assembled, so each member's own ``ApplicationArgs`` are in scope."""
+    """User-controlled arg reads in any member — the whole group is attacker-
+    assembled, so a member's own ``ApplicationArgs`` (``txn``/``txna``) AND a
+    sibling's args read via ``gtxn i ApplicationArgs`` / ``gtxna`` are in scope."""
     out: list[GroupNode] = []
     for idx, tg in enumerate(gtg.members):
-        for op in ("txna", "txn"):
+        for op in ("txna", "txn", "gtxn", "gtxna"):
             for n in tg.find(op=op):
-                if (tg.immediates_of(n) or "").startswith("ApplicationArgs"):
+                if "ApplicationArgs" in (tg.immediates_of(n) or ""):
                     out.append(GroupNode(idx, n))
     return out
 

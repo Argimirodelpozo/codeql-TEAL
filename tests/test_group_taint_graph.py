@@ -92,6 +92,53 @@ return
     assert group_taint_findings(gtg) == []
 
 
+def test_log_channel_cross_group(tmp_path):
+    # member 0 logs the attacker arg; member 1 reads `gtxn 0 LastLog` and pays it.
+    log_member = """#pragma version 8
+txna ApplicationArgs 0
+log
+int 1
+return
+"""
+    read_log = """#pragma version 8
+gtxn 0 LastLog
+itxn_begin
+itxn_field Receiver
+int 1000
+itxn_field Amount
+itxn_submit
+int 1
+return
+"""
+    gtg = _build(tmp_path, [log_member, read_log])
+    kinds = {kk for _, _, d in gtg.g.edges(data=True) for kk in d.get("kinds", ())}
+    assert "log" in kinds, "no log->gtxn bridge"
+    findings = group_taint_findings(gtg)
+    assert any(f.source.index == 0 and f.sink.index == 1
+               and f.sink_name == "itxn_field Receiver" for f in findings), \
+        [f.pretty() for f in findings]
+
+
+def test_dynamic_gloads_conservatively_bridged(tmp_path):
+    # member 1 uses `gloads 3` (sibling index from the stack) — we can't pin the
+    # index, so member 0's `store 3` is conservatively bridged and taint flows.
+    drain_gloads = """#pragma version 8
+int 0
+gloads 3
+itxn_begin
+itxn_field Receiver
+int 1000
+itxn_field Amount
+itxn_submit
+int 1
+return
+"""
+    gtg = _build(tmp_path, [_STASH, drain_gloads])
+    findings = group_taint_findings(gtg)
+    assert any(f.source.index == 0 and f.sink.index == 1 for f in findings), \
+        [f.pretty() for f in findings]
+
+
 def test_no_gload_means_no_cross_member_flow(tmp_path):
     # two members that DON'T share scratch — no cross-group finding.
     standalone = """#pragma version 8
