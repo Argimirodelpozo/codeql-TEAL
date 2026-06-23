@@ -438,6 +438,8 @@ _DEFUSE_KINDS = ("ssa-step", "subroutine", "generic", "broad")
 _PHIARG_KINDS = ("phi-arg", "identity", "ssa-step", "subroutine")
 # A scratch store's value reaches the matching load unchanged.
 _SCRATCH_KINDS = ("scratch", "ssa-step", "subroutine")
+# A caller arg reaches the callee's frame_dig param read (interprocedural).
+_FRAME_KINDS = ("frame", "ssa-step", "subroutine")
 
 
 def _flow_rows_for(prog: SSAProgram) -> list[tuple]:
@@ -446,10 +448,12 @@ def _flow_rows_for(prog: SSAProgram) -> list[tuple]:
     Each row is ``(srcFile, srcLine, srcClass, sinkFile, sinkLine, sinkClass,
     kind)``. The edges are the SSA def-use relation: every operand's
     defining op flows to the op that consumes it (``ssa-step``); each phi
-    argument flows into its phi (``identity``); and a scratch ``store`` reaches
-    its ``load`` (``scratch``). PySSA already resolves cross-block,
-    cross-subroutine (frame) and stack-shuffle flow into direct def-use, so the
-    coarse reachability the refiners rely on is preserved.
+    argument flows into its phi (``identity``); a scratch ``store`` reaches its
+    ``load`` (``scratch``); and a caller arg reaches the callee's ``frame_dig``
+    param read (``frame``) — the interprocedural edge the base def-use leaves
+    out (see :mod:`tealtools.passes.frame_flow`). PySSA resolves cross-block and
+    stack-shuffle flow into direct def-use; the frame rows add the cross-sub
+    (proto-param) flow it doesn't.
     """
     from ..ssa.models import MatPhiVar, Phi, SSAVar
 
@@ -507,5 +511,15 @@ def _flow_rows_for(prog: SSAProgram) -> list[tuple]:
                 sf, sl = sk[0], sk[1]
                 _emit((sf, sl, cls_at.get((sf, sl), "?")),
                       loc.file, loc.start_line, dc, _SCRATCH_KINDS)
+
+    # frame params: each caller arg flows into the callee's `frame_dig` param
+    # read — the interprocedural edge the base def-use omits.
+    from ..passes.frame_flow import frame_param_sources
+    for dig_out, args in frame_param_sources(prog).items():
+        dst = _node(dig_out)
+        if dst is None:
+            continue
+        for arg in args:
+            _emit(_node(arg), dst[0], dst[1], dst[2], _FRAME_KINDS)
 
     return rows
