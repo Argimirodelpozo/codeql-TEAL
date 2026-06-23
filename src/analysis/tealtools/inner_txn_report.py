@@ -75,6 +75,7 @@ from .ssa import (
     SSAProgram,
     SSAVar,
 )
+from .passes.frame_flow import frame_param_sources
 
 
 # Pre-materialized SSA only: ``MatPhiVar`` cannot appear here.
@@ -108,6 +109,9 @@ class InnerTxnField:
     file: str
     line: int
     operand: Optional[Operand]
+    # ``{frame_dig output -> {caller args}}`` so a param-fed value resolves to
+    # the caller args instead of a symbolic frame_dig. Set by InnerTxnReport.
+    frame_src: Optional[dict] = None
 
     def possible_values(self) -> list[str]:
         """Flatten ``operand`` to a list of value descriptions.
@@ -127,9 +131,10 @@ class InnerTxnField:
           single producer. The ``?`` prefix flags "trace this in the
           SSA graph yourself".
 
-        Phis expand to one entry per arg, deduplicated.
+        Phis expand to one entry per arg, deduplicated. A ``frame_dig`` param
+        read expands the same way over its caller args (``frame_src``).
         """
-        return _operand_possible_values(self.operand)
+        return _operand_possible_values(self.operand, frame_src=self.frame_src)
 
     def value_str(self) -> str:
         vals = self.possible_values()
@@ -147,10 +152,11 @@ class InnerTxnField:
 
 
 def _operand_possible_values(
-    op: Optional[Operand], _seen: Optional[set] = None
+    op: Optional[Operand], _seen: Optional[set] = None,
+    frame_src: Optional[dict] = None,
 ) -> list[str]:
-    """Shared resolver for :class:`InnerTxnField` and recursive phi
-    expansion. ``_seen`` breaks phi cycles (legitimate around
+    """Shared resolver for :class:`InnerTxnField` and recursive phi /
+    frame-param expansion. ``_seen`` breaks cycles (legitimate around
     recursive subroutines)."""
     if op is None:
         return ["?<unresolved>"]
@@ -160,9 +166,26 @@ def _operand_possible_values(
     if cv is not None:
         return [cv.value]
     if isinstance(op, Phi):
-        return _phi_possible_values(op, _seen)
-    # SSAVar with a defining assignment → describe by the producing op.
+        return _phi_possible_values(op, _seen, frame_src)
     if isinstance(op, SSAVar):
+        # A `frame_dig` param read: expand to the caller args bound to it across
+        # all call sites (interprocedural, like a phi over the call-site values),
+        # so a param-fed value resolves instead of showing a symbolic frame_dig.
+        if frame_src and op in frame_src:
+            seen = _seen or set()
+            if op in seen:
+                return [f"?{op!r}"]
+            seen = seen | {op}
+            out: list[str] = []
+            seen_strs: set[str] = set()
+            for arg in sorted(frame_src[op], key=repr):
+                for v in _operand_possible_values(arg, seen, frame_src):
+                    if v not in seen_strs:
+                        seen_strs.add(v)
+                        out.append(v)
+            if out:
+                return out
+        # SSAVar with a defining assignment → describe by the producing op.
         a = getattr(op, "defined_by", None)
         if a is not None:
             return [_describe_assignment(a)]
@@ -192,7 +215,9 @@ def _describe_assignment(a) -> str:
     return head
 
 
-def _phi_possible_values(phi: Phi, _seen: Optional[set] = None) -> list[str]:
+def _phi_possible_values(
+    phi: Phi, _seen: Optional[set] = None, frame_src: Optional[dict] = None,
+) -> list[str]:
     """Expand a phi's args to their value descriptions.
 
     Deduplicated so two paths that push the same value don't show up
@@ -207,7 +232,7 @@ def _phi_possible_values(phi: Phi, _seen: Optional[set] = None) -> list[str]:
     out: list[str] = []
     seen_strs: set[str] = set()
     for arg in phi.args:
-        for v in _operand_possible_values(arg, _seen):
+        for v in _operand_possible_values(arg, _seen, frame_src):
             if v not in seen_strs:
                 seen_strs.add(v)
                 out.append(v)
@@ -314,6 +339,13 @@ class InnerTxnReport:
 
     def _build(self) -> list[InnerTxnGroup]:
         rows = self.prog._graph.graph.get("inner_txn_fields") or []
+        # Interprocedural frame edges so a param-fed field value (e.g. a
+        # forwarded ApplicationID) resolves to its caller args, not a symbolic
+        # frame_dig. Best-effort — empty for a program with no proto subs.
+        try:
+            frame_src = frame_param_sources(self.prog)
+        except Exception:
+            frame_src = {}
 
         # Bucket every (start, end) pair to its (start_line, end_line,
         # start_kind, end_kind) key. The (file, start, end) triple is
@@ -342,6 +374,7 @@ class InnerTxnReport:
                 file=file,
                 line=r["field_line"],
                 operand=self._resolve_operand(r),
+                frame_src=frame_src,
             ))
 
         # Order each txn's fields by source line for stable rendering.
