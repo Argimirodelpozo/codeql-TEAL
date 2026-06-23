@@ -14,7 +14,7 @@ from typing import Optional
 
 from tealtools.path_predicates import PathPredicateAnalysis
 from tealtools.ssa import BasicBlock, SSAProgram
-from tealtools.detections import common
+from security import common
 
 
 @dataclass

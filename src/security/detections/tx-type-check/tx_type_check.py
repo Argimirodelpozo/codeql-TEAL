@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from tealtools.ssa import BasicBlock, SSAProgram
-from tealtools.detections import common
+from security import common
 
 
 @dataclass

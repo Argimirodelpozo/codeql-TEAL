@@ -5,7 +5,7 @@ exit.
 """
 from __future__ import annotations
 
-from tealtools.detections._field_validated import _FieldValidatedDetector, _FieldValidatedViolation
+from security._field_validated import _FieldValidatedDetector, _FieldValidatedViolation
 
 
 class AssetCloseToViolation(_FieldValidatedViolation):

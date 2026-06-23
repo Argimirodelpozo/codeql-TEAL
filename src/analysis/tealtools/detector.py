@@ -122,45 +122,16 @@ def _path_preds(prog: SSAProgram) -> str:
     return PathPredicateAnalysis(prog).render()
 
 
-def _detection_factory(short_name):
-    """Build a one-off ``Detector`` adapter that instantiates the
-    detector class registered under ``short_name``. The detector
-    class is looked up lazily so importing this module stays cheap."""
-    def _run(prog: SSAProgram):
-        from .detections import DETECTORS
-        return DETECTORS[short_name](prog).detect()
-    return _FnDetector(f"detections/{short_name}", _run)
-
-
-_DETECTION_NAMES = (
-    "asset-close-to",
-    "asset-id-validation",
-    "box-key",
-    "close-remainder-to",
-    "delete-funds-check",
-    "fee-validation",
-    "group-size-check",
-    "hardcoded-min-balance",
-    "inner-txn-close-rekey",
-    "inner-txn-fee",
-    "is-deletable",
-    "is-updatable",
-    "rekey-to",
-    "timelock-upgrade",
-    "tx-type-check",
-    "unprotected-deletable",
-    "unprotected-updatable",
-    "unsafe-lsig-args",
-)
-
-
+# Only the analysis-layer detectors live here — this module is pure tealtools
+# and knows nothing about the security/ detector registry. The sec-guide
+# detectors are injected as ``extra_detectors`` by ``security.run`` (which the
+# CLI uses for ``tealql all``), keeping the dependency one-directional.
 ALL_DETECTORS: list[Detector] = [
     _FnDetector("auth-domination", _auth),
     _FnDetector("box-df-into", _box_into),
     _FnDetector("box-df-out", _box_out),
     _FnDetector("box-df-correlated", _box_corr),
     _FnDetector("state-df-out", _state_out),
-    *(_detection_factory(n) for n in _DETECTION_NAMES),
 ]
 
 
@@ -173,12 +144,13 @@ ALL_REPORTS: list[Report] = [
 ]
 
 
-def run_all(prog: SSAProgram) -> str:
-    """Run every detector + report against ``prog`` and return one
-    big text block, sectioned by analysis name. Convenient for
-    ``tealql all <target>``."""
+def run_all(prog: SSAProgram, *, extra_detectors: Iterable[Detector] = ()) -> str:
+    """Run every core detector (+ any ``extra_detectors``) + report against
+    ``prog`` and return one big text block, sectioned by analysis name.
+    ``extra_detectors`` lets ``security.run`` inject the sec-guide detectors
+    without this module importing the registry."""
     out: list[str] = []
-    for det in ALL_DETECTORS:
+    for det in [*ALL_DETECTORS, *extra_detectors]:
         out.append(f"=== {det.name} ===")
         findings = list(det.run(prog))
         if findings:
@@ -193,7 +165,7 @@ def run_all(prog: SSAProgram) -> str:
     return "\n".join(out).rstrip() + "\n"
 
 
-def run_all_dict(prog: SSAProgram) -> dict:
+def run_all_dict(prog: SSAProgram, *, extra_detectors: Iterable[Detector] = ()) -> dict:
     """Same coverage as :func:`run_all` but returns a structured dict
     suitable for JSON. Detector findings use each finding's
     ``to_dict()`` if available, falling back to ``{"message": ...}``.
@@ -205,7 +177,7 @@ def run_all_dict(prog: SSAProgram) -> dict:
     from .path_predicates import PathPredicateAnalysis
 
     detectors: dict[str, list[dict]] = {}
-    for det in ALL_DETECTORS:
+    for det in [*ALL_DETECTORS, *extra_detectors]:
         findings = list(det.run(prog))
         detectors[det.name] = [finding_to_dict(f) for f in findings]
     reports = {

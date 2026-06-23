@@ -19,8 +19,8 @@ from dataclasses import dataclass
 from typing import Optional
 
 from tealtools.ssa import BasicBlock, SSAProgram
-from tealtools.detections import common
-from tealtools.detections._approval_exit import _ApprovalExitProtectedDetector
+from security import common
+from security._approval_exit import _ApprovalExitProtectedDetector
 from tealtools.opsets import ASSET_TRANSFER_FIELDS as _ASSET_TRANSFER_FIELDS
 
 

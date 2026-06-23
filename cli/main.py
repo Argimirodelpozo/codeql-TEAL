@@ -250,14 +250,14 @@ def _resolve_mode(args) -> "str | None":
     if args.mode:
         return args.mode
     if args.config:
-        from tealtools.detections.config import DetectionConfig
+        from security.config import DetectionConfig
         cfg = DetectionConfig.from_path(Path(args.config))
         return cfg.mode_for(str(args.target))
     return None
 
 
 def _cmd_detections(args) -> int:
-    from tealtools.detections import DETECTORS
+    from security import DETECTORS
 
     if args.list:
         for name in sorted(DETECTORS):
@@ -311,10 +311,10 @@ def _cmd_detections(args) -> int:
 
 
 def _cmd_detections_scan(args) -> int:
-    from tealtools.detections.scan import (
+    from security.scan import (
         ScanConfig, render_json, render_text, scan,
     )
-    from tealtools.detections.config import DetectionConfig
+    from security.config import DetectionConfig
 
     config = ScanConfig.from_path(Path(args.config)) if args.config else ScanConfig.empty()
     detection_config = (
@@ -331,7 +331,7 @@ def _cmd_detections_scan(args) -> int:
 
 
 def _cmd_all(args) -> int:
-    from tealtools.detector import run_all, run_all_dict
+    from security.run import run_all, run_all_dict
     prog = _load(args)
     if args.json_out:
         print(_json.dumps(run_all_dict(prog), indent=2))
@@ -402,7 +402,7 @@ def build_parser() -> argparse.ArgumentParser:
     xc.add_argument("--registry", required=True,
                     help="yaml mapping AppID → callee .teal path")
 
-    from tealtools.detections import DETECTORS as _DETECTORS
+    from security import DETECTORS as _DETECTORS
     det = sub.add_parser(
         "detections",
         help="run one (or every) Algorand-security-guide detection",

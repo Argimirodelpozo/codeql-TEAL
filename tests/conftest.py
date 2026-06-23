@@ -9,4 +9,5 @@ REPO_ROOT = TESTS_DIR.parent
 # ``test_graph_golden`` instead of a fresh-CodeQL differential. No `codeql`
 # binary is detected, invoked, or required.
 sys.path.insert(0, str(REPO_ROOT))
+sys.path.insert(0, str(REPO_ROOT / "src"))   # the `security` package lives at src/security/
 sys.path.insert(0, str(TESTS_DIR))

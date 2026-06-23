@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from tealtools.ssa import Assignment, SSAProgram, const_int, is_field_var
-from tealtools.detections import common
+from security import common
 
 
 @dataclass

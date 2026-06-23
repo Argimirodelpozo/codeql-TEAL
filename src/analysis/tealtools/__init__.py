@@ -73,13 +73,9 @@ from .structure import (
     analyze_structure,
 )
 
-# Detections subpackage (Algorand-security-guide ports + helpers).
-# Importing the package here exposes ``tealtools.detections`` for
-# ``from tealtools import detections``; individual detectors stay one
-# import deeper to avoid 18 names at the top level. ``NonUniqueBoxKeyDetector``
-# is surfaced at the top level for backwards compatibility.
-from . import detections
-from .detections import NonUniqueBoxKeyDetector
+# The security detectors (Algorand-security-guide ports) live in the separate
+# top-level ``security`` package, which depends on tealtools — not the reverse.
+# tealtools is the pure analysis library and surfaces no detector registry.
 
 __all__ = [
     "SSAProgram", "BasicBlock", "Const", "Phi", "SSAVar", "Assignment",
@@ -89,7 +85,6 @@ __all__ = [
     "ALL_DETECTORS", "ALL_REPORTS", "run_all",
     "TaintAnalysis", "Source", "Sink", "FlowRule", "Violation", "TaintedOperand",
     "AuthDominationDetector", "AuthViolation",
-    "NonUniqueBoxKeyDetector",
     "InnerTxnReport",
     "analyze_group_shape", "GroupShape",
     "per_line_costs", "per_line_cost_paths", "render_cost",
@@ -100,5 +95,4 @@ __all__ = [
     "detect_out_of_state_flows",
     "XContractGraph", "AppcallSite", "AppcallEdge", "cross_auth_findings", "load_registry",
     "ProgramStructure", "Subroutine", "CallSite", "analyze_structure",
-    "detections",
 ]

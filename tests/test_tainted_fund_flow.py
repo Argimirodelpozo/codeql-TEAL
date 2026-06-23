@@ -8,7 +8,7 @@ taint/flow helpers.
 from pathlib import Path
 
 from tealtools.ssa import SSAProgram
-from tealtools.detections import DETECTORS
+from security import DETECTORS
 
 _DET = DETECTORS["tainted-fund-flow"]
 

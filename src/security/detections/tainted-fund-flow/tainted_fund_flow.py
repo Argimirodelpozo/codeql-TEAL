@@ -31,7 +31,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import ClassVar, Optional
 
-from tealtools.detections import common
+from security import common
 from tealtools.path_predicates import PathPredicateAnalysis
 from tealtools.ssa import SSAProgram, SSAVar
 from tealtools.opsets import (

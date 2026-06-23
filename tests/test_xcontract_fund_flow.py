@@ -9,7 +9,7 @@ PathPredicateAnalysis -- no new engine.
 """
 
 from tealtools.xcontract import XContractGraph
-from tealtools.detections.xcontract import cross_detection_findings
+from security.xcontract import cross_detection_findings
 from helpers import make_xcontract
 
 # callee pays an attacker-controlled Receiver (the arg the caller passes).

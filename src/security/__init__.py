@@ -6,7 +6,7 @@ detection directory is fully self-contained: the ``.py`` detector,
 ``.teal`` test fixtures, and ``.expected`` output sit together.
 
 This package keeps the shared infrastructure here in
-``analysis/tealtools/detections/`` because it's library code that both
+``security/`` because it's library code that both
 ports and external callers consume:
 
   - :mod:`.common`             — approval-exit detection, OnCompletion
@@ -37,21 +37,19 @@ from pathlib import Path
 from typing import Any, Optional
 
 # Shared modules are imported eagerly so detector .py files can resolve
-# ``from tealtools.detections.common import ...`` etc. when importlib
+# ``from security.common import ...`` etc. when importlib
 # pulls them in below.
 from . import _approval_exit, _field_validated, common  # noqa: F401
 
 
-# Source root: this file is at <repo>/src/analysis/tealtools/detections/__init__.py,
-# so parents[3] is <repo>/src — the detection .py files live under
-# src/security/detections/.
-_SRC_ROOT = Path(__file__).resolve().parents[3]
-_DETECTIONS_ROOT = _SRC_ROOT / "security" / "detections"
+# This file is <repo>/src/security/__init__.py; the detector .py bodies live in
+# the sibling ``detections/`` dir, one per kebab-case subdir.
+_DETECTIONS_ROOT = Path(__file__).resolve().parent / "detections"
 
 
 # Stable map ``"<kebab-case-short-name>" -> (snake_case_module_name,
 # DetectorClassName, ViolationClassName)``. The CLI (``python -m
-# tealtools detections --detector <name>``) and the test dispatch
+# tealql detections --detector <name>``) and the test dispatch
 # look up by the kebab-case key. The fourth field is the paired
 # Violation class name, or ``None`` for detectors built on the taint
 # framework (which emit the generic ``dataflow.Violation``).
@@ -83,8 +81,8 @@ _DETECTION_SPECS: tuple[tuple[str, str, str, "Optional[str]"], ...] = (
 
 def _load_detector_module(kebab: str, snake: str) -> Any:
     """Importlib-load ``security/detections/<kebab>/<snake>.py`` under the
-    canonical module name ``tealtools.detections.<snake>`` so a
-    ``from tealtools.detections.<snake> import ...`` line elsewhere
+    canonical module name ``security.detections.<snake>`` so a
+    ``from security.detections.<snake> import ...`` line elsewhere
     in the codebase resolves through the standard import system."""
     path = _DETECTIONS_ROOT / kebab / f"{snake}.py"
     if not path.exists():
@@ -92,7 +90,7 @@ def _load_detector_module(kebab: str, snake: str) -> Any:
             f"detection module missing: {path} "
             f"(every entry in _DETECTION_SPECS must have a matching .py file)"
         )
-    qualified_name = f"tealtools.detections.{snake}"
+    qualified_name = f"security.detections.{snake}"
     if qualified_name in sys.modules:
         return sys.modules[qualified_name]
     spec = importlib.util.spec_from_file_location(qualified_name, path)
@@ -108,7 +106,7 @@ for _kebab, _snake, _det_cls_name, _viol_cls_name in _DETECTION_SPECS:
     _module = _load_detector_module(_kebab, _snake)
     _det_cls = getattr(_module, _det_cls_name)
     DETECTORS[_kebab] = _det_cls
-    # Re-export each class at package level so ``from tealtools.detections
+    # Re-export each class at package level so ``from security
     # import AssetCloseToDetector`` keeps working.
     globals()[_det_cls_name] = _det_cls
     if _viol_cls_name is not None:

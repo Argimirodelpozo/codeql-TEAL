@@ -7,11 +7,11 @@ field-bound enrichment (OnCompletion / GroupIndex / Num* ranges) and stays
 silent on genuinely satisfiable guards.
 """
 from tealtools.ssa import IntRange, SSAProgram
-from tealtools.detections import DETECTORS
+from security import DETECTORS
 
 from importlib import import_module
 
-_mod = import_module("tealtools.detections.constant_condition")
+_mod = import_module("security.detections.constant_condition")
 _eval_cmp = _mod._eval_cmp
 Detector = DETECTORS["constant-condition"]
 

@@ -28,7 +28,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from tealtools.ssa import BasicBlock
-from tealtools.detections._approval_exit import _ApprovalExitProtectedDetector
+from security._approval_exit import _ApprovalExitProtectedDetector
 
 
 @dataclass

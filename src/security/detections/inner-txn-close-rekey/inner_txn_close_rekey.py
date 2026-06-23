@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from tealtools.ssa import Assignment, SSAProgram
-from tealtools.detections import common
+from security import common
 from tealtools.opsets import CLOSE_REKEY_FIELDS as _DANGEROUS_FIELDS
 
 

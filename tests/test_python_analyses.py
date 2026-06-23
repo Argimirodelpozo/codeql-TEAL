@@ -95,7 +95,7 @@ def _render(analysis: str, case_dir: Path) -> str:
     from tealtools.ssa import SSAProgram
 
     if analysis == "sec_guide_scan":
-        from tealtools.detections.scan import ScanConfig, render_text, scan
+        from security.scan import ScanConfig, render_text, scan
 
         rules = case_dir / "rules.yml"
         config = ScanConfig.from_path(rules) if rules.exists() else ScanConfig.empty()
@@ -125,7 +125,7 @@ def _render(analysis: str, case_dir: Path) -> str:
 
     if analysis == "xcontract_sec_guide":
         from tealtools.xcontract import XContractGraph, load_registry, render_xcontract
-        from tealtools.detections.xcontract import (
+        from security.xcontract import (
             cross_detection_findings,
             render_findings as render_sg_findings,
         )
@@ -149,7 +149,7 @@ def _render(analysis: str, case_dir: Path) -> str:
         return body + "\n"
 
     if analysis == "box_key":
-        from tealtools.detections import NonUniqueBoxKeyDetector
+        from security import NonUniqueBoxKeyDetector
 
         violations = NonUniqueBoxKeyDetector(prog).detect()
         body = "\n".join(v.pretty() for v in violations) or "(no violations)"
@@ -219,7 +219,7 @@ def _render(analysis: str, case_dir: Path) -> str:
         # map back to the kebab-case keys in `detections.DETECTORS`.
         # Each fixture dir is named for the detection it exercises, so
         # the detector runs directly — no program-mode gating here.
-        from tealtools.detections import DETECTORS
+        from security import DETECTORS
 
         detection = case_dir.parent.name.replace("_", "-")
         if detection not in DETECTORS:

@@ -11,7 +11,7 @@ Layout:
 
 The non-unique-box-key detector built on this framework is a
 first-class detection — it lives at ``src/security/detections/box-key/``
-and is reached via :data:`tealtools.detections.DETECTORS`.
+and is reached via :data:`security.DETECTORS`.
 - :mod:`tealtools.dataflow.predicate_aware` — post-filter on any
   ``Violation`` list using path-predicate constraints.
 

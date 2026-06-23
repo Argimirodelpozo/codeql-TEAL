@@ -23,7 +23,7 @@ Example::
 
     from tealtools.ssa import SSAProgram
     from tealtools.xcontract import XContractGraph, load_registry
-    from tealtools.detections.xcontract import (
+    from security.xcontract import (
         cross_detection_findings, render_findings,
     )
 
@@ -39,7 +39,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Optional
 
-from ..xcontract import XContractGraph
+from tealtools.xcontract import XContractGraph
 from . import DETECTORS
 
 
@@ -93,7 +93,7 @@ def cross_detection_findings(
     """Run sec-guide detectors against every callee in ``graph``.
 
     ``detector_names``: kebab-case short names (the keys of
-    :data:`tealtools.detections.DETECTORS`). If omitted, every
+    :data:`security.DETECTORS`). If omitted, every
     registered sec-guide detector runs.
 
     OnCompletion-guard family detectors (and any other detector that

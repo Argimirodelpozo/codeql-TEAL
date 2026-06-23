@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from tealtools.ssa import SSAProgram
-from tealtools.detections import DETECTORS
+from security import DETECTORS
 
 BENCH = Path(__file__).resolve().parent / "benchmark"
 

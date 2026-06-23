@@ -4,7 +4,7 @@ Per ``load N`` opcode, the set of stored-value SSAVar keys that may
 reach it via the CFG (classical reaching-definitions over scratch
 slots). The result is exposed through the ``scratch_stores`` graph
 annotation consumed by the
-detectors (:func:`tealtools.detections.common._scratch_stores_for`),
+detectors (:func:`security.common._scratch_stores_for`),
 the taint engine, and the ``SSAProgram`` scratch-bridge passes.
 
 A construction-time substrate helper: it lives in the ``ssa`` package

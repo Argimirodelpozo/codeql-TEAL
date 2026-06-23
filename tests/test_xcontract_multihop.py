@@ -7,7 +7,7 @@ hop. Also covers the call-graph structure (``edges`` / ``chains``), the depth
 cap, and cycle safety.
 """
 from tealtools.xcontract import XContractGraph
-from tealtools.detections.xcontract import cross_detection_findings
+from security.xcontract import cross_detection_findings
 from helpers import make_xcontract
 
 # A -> appcall app 100 (B); B -> appcall app 200 (C); C pays an

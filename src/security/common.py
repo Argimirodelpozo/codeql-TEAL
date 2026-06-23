@@ -22,8 +22,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-from ..path_predicates import PathPredicateAnalysis
-from ..ssa import (
+from tealtools.path_predicates import PathPredicateAnalysis
+from tealtools.ssa import (
     Assignment,
     BasicBlock,
     Const,
@@ -33,7 +33,7 @@ from ..ssa import (
     const_int,
     is_field_var,
 )
-from ..cfg.dominance import iterative_dominators
+from tealtools.cfg.dominance import iterative_dominators
 
 
 # ---------------------------------------------------------------------------

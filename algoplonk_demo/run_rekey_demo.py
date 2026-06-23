@@ -34,7 +34,7 @@ sys.path.insert(0, str(REPO / "src" / "analysis"))
 
 from tealtools.ssa import SSAProgram, PySSA
 from tealtools.passes.orchestrate import run_all_passes
-from tealtools.detections import RekeyToDetector
+from security import RekeyToDetector
 
 
 def run_one(kind: str) -> int:

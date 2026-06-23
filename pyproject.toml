@@ -30,8 +30,8 @@ Repository = "https://github.com/Argimirodelpozo/codeql-TEAL"
 tealql = "cli.main:main"
 
 [tool.hatch.build.targets.wheel]
-# Two packages: the ``tealtools`` analysis library (at
-# ``src/analysis/tealtools/``) and the ``cli`` command-line front-end
-# (at the top-level ``cli/`` directory). Everything runs in pure Python
-# from TEAL source — no external backend.
-packages = ["src/analysis/tealtools", "cli"]
+# Three packages: the ``tealtools`` analysis library (``src/analysis/tealtools/``),
+# the ``security`` detection layer (framework + importlib-loaded detector bodies,
+# ``src/security/``), and the ``cli`` command-line front-end (top-level ``cli/``).
+# Everything runs in pure Python from TEAL source — no external backend.
+packages = ["src/analysis/tealtools", "src/security", "cli"]

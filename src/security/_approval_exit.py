@@ -8,14 +8,14 @@ Each flags every approving exit reachable without a check of a given txn field
 asset-id-validation does — it only runs on programs that handle asset transfers).
 
 The per-detector ``Violation`` dataclass stays in its own module: the registry
-(:data:`tealtools.detections._DETECTION_SPECS`) resolves it by name, and each
+(:data:`security._DETECTION_SPECS`) resolves it by name, and each
 carries a bespoke message.
 """
 from __future__ import annotations
 
 from typing import ClassVar, Optional
 
-from ..ssa import SSAProgram
+from tealtools.ssa import SSAProgram
 from . import common
 
 

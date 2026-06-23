@@ -26,7 +26,7 @@ JSON works the same way; the loader picks based on file extension.
 
 Library use::
 
-    from tealtools.detections.scan import scan, ScanConfig
+    from security.scan import scan, ScanConfig
     findings = scan(Path("contracts/"), ScanConfig.from_path(Path("rules.yml")))
     for f in findings:
         print(f.format())
@@ -43,11 +43,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Optional
 
-from ..ssa import SSAProgram
+from tealtools.ssa import SSAProgram
 from . import DETECTORS
 from .config import DetectionConfig
 
-logger = logging.getLogger("tealtools.detections.scan")
+logger = logging.getLogger("security.scan")
 
 
 # ---------------------------------------------------------------------------
