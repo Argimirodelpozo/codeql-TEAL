@@ -116,10 +116,12 @@ def _cfg_text(prog: SSAProgram) -> str:
 
 
 def _ir_text(source) -> str:
-    from ..WIP_lift2puyaIR.lift import _Lifter
-    lifter = _Lifter(SSAProgram(source, verbose=False))   # fresh prog (lift mutates)
-    lifter.build()
-    return "\n\n".join(s.render() for s in lifter.subs)
+    """The genuine ``puya.ir`` (via Puya's own text emitter), un-optimised so
+    every register shows with its recovered type -- incl. the langspec
+    refinements (``bool`` / ``biguint`` / ``account`` / ``bytes[N]``) that only
+    exist in the real Puya IR, not the lift's pre-IR intermediate."""
+    from ..WIP_lift2puyaIR import to_puya_ir
+    return to_puya_ir.render(SSAProgram(source, verbose=False), optimize_ir=False)
 
 
 def _ssa_overlay(prog: SSAProgram) -> str:
