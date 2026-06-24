@@ -554,11 +554,16 @@ def _is_bool_encoding(enc) -> bool:
     return isinstance(enc, (Bool8Encoding, BoolEncoding))
 
 
-def _encoded_type_for(intrinsic: "M.Intrinsic", reg_def: dict):
+def _confident_encoding_for(intrinsic: "M.Intrinsic", reg_def: dict):
     """The ARC4 / ABI ``EncodedType`` a producing op's *result wire-encodes*, or
-    ``None``. Deliberately conservative -- only idioms whose byte layout IS the ABI
-    encoding, so the recovered structured type is faithful to the bytes (regardless
-    of the source's intent).
+    ``None`` -- the **CONFIDENT** tier: only idioms whose byte layout unambiguously
+    IS the ABI encoding (the "byte layout == the type" standard), so the recovered
+    structured type is faithful to the bytes regardless of the source's intent.
+    These are applied to ``ir_type`` by :func:`_recover_encoded_types` and are proven
+    TEAL-neutral. The *speculative* counterpart -- idioms that need a length/offset
+    proof or a confidence score (dynamic arrays / strings / dynamic tuples) -- lives
+    entirely separately in :func:`_guess_encoding_for` / :func:`_guess_encoded_types`
+    and never touches ``ir_type``; do NOT add a non-wire-provable idiom here.
 
     Recognised so far:
       - ``itob X`` -> ``arc4.UInt64`` (``UIntEncoding(64)``): ``itob`` emits exactly
@@ -575,7 +580,8 @@ def _encoded_type_for(intrinsic: "M.Intrinsic", reg_def: dict):
         ``concat(bool8, bool8)`` is NOT the tuple form) -- a single bool adjacent to
         a non-bool is fine (one byte, which IS how a lone tuple bool encodes).
 
-    Richer idioms (dynamic arrays / strings / dynamic tuples) layer on here next."""
+    Speculative idioms (dynamic arrays / strings / dynamic tuples) do NOT go here --
+    see :func:`_guess_encoding_for`."""
     from puya.ir.encodings import Bool8Encoding, TupleEncoding, UIntEncoding
     from puya.ir.types_ import EncodedType
     op = intrinsic.op
@@ -594,18 +600,74 @@ def _encoded_type_for(intrinsic: "M.Intrinsic", reg_def: dict):
     return None
 
 
+def _guess_encoding_for(intrinsic: "M.Intrinsic", reg_def: dict):
+    """The ARC4 / ABI ``EncodedType`` a producing op's result is *most likely* but
+    NOT provably encoded as, or ``None`` -- the **SPECULATIVE** tier, kept
+    deliberately separate from :func:`_confident_encoding_for`.
+
+    These are the idioms whose byte layout is *not* self-evidently one ABI type and
+    so require either a proof we don't always have or a confidence judgement, e.g.:
+      - ``concat(<2-byte value>, data)`` -> ``arc4.String`` / dynamic ``Array`` only
+        when the 2-byte prefix can be shown to equal ``len(data)`` (a uint16 length
+        header) -- otherwise the prefix could be an unrelated uint16 field;
+      - a head/tail buffer with a uint16 offset table -> a *dynamic* ``arc4.Tuple``;
+      - ``bytes[N]`` reinterpreted as ``arc4.StaticArray<Byte, N>`` / ``arc4.Address``
+        (a 32-byte value), which the bytes alone don't disambiguate from a hash.
+
+    Currently EMPTY -- this is the scaffold. Anything added here is best-effort: it
+    is collected into a SIDE-CHANNEL by :func:`_guess_encoded_types` and never
+    written to a register's ``ir_type``, so a wrong guess can neither change codegen
+    nor weaken the confident, TEAL-neutral IR. (Consumers that tolerate imprecision
+    -- e.g. structure-aware fuzzing -- read the side-channel; a verifier would treat
+    a guess as a proposed-and-discharged obligation.)"""
+    return None
+
+
+def _guess_encoded_types(main, subs) -> dict:
+    """SPECULATIVE encoded-type recovery (:func:`_guess_encoding_for`), returned as a
+    SIDE-CHANNEL ``{id(M.Register): EncodedType}`` map -- it does NOT mutate any
+    ``ir_type``, so it is fully decoupled from the confident, proven-neutral IR and
+    cannot affect lowering. Not wired into :func:`to_puya`'s default path; a consumer
+    that wants best-effort ABI structure calls it explicitly. Empty until idioms are
+    added to :func:`_guess_encoding_for`."""
+    reg_def: dict = {}
+    for s in (main, *subs):
+        for bb in s.body:
+            for o in bb.ops:
+                if isinstance(o, M.Assignment):
+                    for t in o.targets:
+                        reg_def[id(t)] = o
+    guesses: dict = {}
+    for s in (main, *subs):
+        for bb in s.body:
+            for o in bb.ops:
+                if not (isinstance(o, M.Assignment)
+                        and isinstance(o.source, M.Intrinsic)):
+                    continue
+                et = _guess_encoding_for(o.source, reg_def)
+                if et is None:
+                    continue
+                for tgt in o.targets:
+                    if tgt.ir_type.avm_type == et.avm_type:
+                        guesses[id(tgt)] = et
+    return guesses
+
+
 def _recover_encoded_types(main, subs) -> int:
-    """Refine a result register to the ARC4 ``EncodedType`` its producing op
-    wire-encodes (:func:`_encoded_type_for`). Like the rest of the recovery it only
-    moves a register whose ``avm_type`` already matches (an ``EncodedType``'s
-    ``avm_type`` is ``bytes`` for the byte-backed encodings, so it sits over the same
-    ``bytes``/``bytes[N]`` the sized-bytes pass left), and rebuilds the intrinsic's
-    ``types`` to match.
+    """**CONFIDENT** encoded-type recovery: refine a result register to the ARC4
+    ``EncodedType`` its producing op provably wire-encodes
+    (:func:`_confident_encoding_for`). Only moves a register whose ``avm_type``
+    already matches (an ``EncodedType``'s ``avm_type`` is ``bytes`` for the
+    byte-backed encodings, so it sits over the same ``bytes``/``bytes[N]`` the
+    sized-bytes pass left), and rebuilds the intrinsic's ``types`` to match. This is
+    the only encoded-type pass wired into :func:`to_puya`'s default IR.
 
     NOTE: unlike the scalar refinements, an ``EncodedType`` is *layout-bearing*, so
     this is the first recovery that is NOT guaranteed a free annotation by
     construction -- its TEAL-neutrality is established by the gate, not by the
-    avm_type argument alone. Returns the count refined."""
+    avm_type argument alone (measured 247/0). The SPECULATIVE tier
+    (:func:`_guess_encoded_types`) is kept strictly separate and side-channelled so
+    it can never reach this IR. Returns the count refined."""
     reg_def: dict = {}
     for s in (main, *subs):
         for bb in s.body:
@@ -627,7 +689,7 @@ def _recover_encoded_types(main, subs) -> int:
                     if not (isinstance(o, M.Assignment)
                             and isinstance(o.source, M.Intrinsic)):
                         continue
-                    et = _encoded_type_for(o.source, reg_def)
+                    et = _confident_encoding_for(o.source, reg_def)
                     if et is None:
                         continue
                     touched = False
