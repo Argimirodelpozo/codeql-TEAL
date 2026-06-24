@@ -891,6 +891,38 @@ def inner_txn_field_assigns(
     return out
 
 
+def _zero_address_seeds(
+    prog: SSAProgram, *, file: Optional[str] = None,
+) -> set:
+    """SSAVars that read ``global ZeroAddress`` — the canonical 32-zero-byte
+    address source. Seeds for :func:`value_is_zero_address`."""
+    return {
+        out for a in global_field_reads(prog, "ZeroAddress", file=file)
+        for out in a.outputs if isinstance(out, SSAVar)
+    }
+
+
+def value_is_zero_address(
+    prog: SSAProgram, value, *, file: Optional[str] = None,
+) -> bool:
+    """``value`` provably resolves to the zero address: either a 32-byte all-zero
+    bytes constant, or a value flowing (through phi / scratch / proto-frame, via
+    :func:`_operand_flows_from_field_var`) from ``global ZeroAddress``.
+
+    Used to suppress *safe* dangerous-field writes — setting ``itxn_field
+    RekeyTo`` / ``CloseRemainderTo`` to the zero address is a defensive no-op
+    (the field's default), not the drain/rekey antipattern."""
+    cv = value if isinstance(value, Const) else getattr(value, "const_value", None)
+    if isinstance(cv, Const) and cv.kind == "bytes":
+        hexpart = cv.value[2:] if cv.value.startswith("0x") else cv.value
+        if len(hexpart) == 64 and set(hexpart) <= {"0"}:   # 32 zero bytes
+            return True
+    seeds = _zero_address_seeds(prog, file=file)
+    if seeds and _operand_flows_from_field_var(prog, value, seeds):
+        return True
+    return False
+
+
 def inner_txn_sets_nonzero_fee(field_set: InnerTxnFieldSet) -> bool:
     """``itxn_field Fee`` whose value resolves to a non-zero integer
     constant (a *known* non-zero int — dynamic values aren't
