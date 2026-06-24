@@ -382,6 +382,7 @@ def to_puya(prog):
     except Exception:
         bytelen = {}
     _recover_ir_types(main, subs, byte_lengths=bytelen)
+    _recover_encoded_types(main, subs)
     return main, subs
 
 
@@ -502,6 +503,62 @@ def _recover_ir_types(main, subs, allow=_is_refinable, byte_lengths=None) -> int
                     if tgt.ir_type is PT.bytes and id(tgt) in byte_lengths:
                         object.__setattr__(
                             tgt, "ir_type", SizedBytesType(byte_lengths[id(tgt)]))
+                        changed = True
+                        n += 1
+                if changed:
+                    try:
+                        object.__setattr__(
+                            o.source, "types", tuple(t.ir_type for t in o.targets))
+                    except Exception:
+                        pass
+    return n
+
+
+def _encoded_type_for(intrinsic: "M.Intrinsic"):
+    """The ARC4 / ABI ``EncodedType`` a producing op's *result wire-encodes*, or
+    ``None``. Deliberately conservative -- only idioms whose byte layout IS the ABI
+    encoding, so the recovered structured type is faithful to the bytes (regardless
+    of the source's intent).
+
+    Recognised so far (the simplest, unambiguous scalar case):
+      - ``itob X`` -> ``arc4.UInt64`` (``EncodedType(UIntEncoding(64))``): ``itob``
+        emits exactly the big-endian 8-byte encoding, which IS the ABI ``uint64``
+        wire format.
+
+    This is the seed of the encoded-type recovery; richer idioms (arc4 bool / static
+    & dynamic arrays / tuples) layer on here as their byte patterns are matched."""
+    from puya.ir.encodings import UIntEncoding
+    from puya.ir.types_ import EncodedType
+    if intrinsic.op is AVMOp.itob:
+        return EncodedType(UIntEncoding(64))
+    return None
+
+
+def _recover_encoded_types(main, subs) -> int:
+    """Refine a result register to the ARC4 ``EncodedType`` its producing op
+    wire-encodes (:func:`_encoded_type_for`). Like the rest of the recovery it only
+    moves a register whose ``avm_type`` already matches (an ``EncodedType``'s
+    ``avm_type`` is ``bytes``, so it sits over the same ``bytes``/``bytes[N]`` the
+    sized-bytes pass left), and rebuilds the intrinsic's ``types`` to match.
+
+    NOTE: unlike the scalar refinements, an ``EncodedType`` is *layout-bearing*, so
+    this is the first recovery that is NOT guaranteed a free annotation by
+    construction -- its TEAL-neutrality is established by the gate, not by the
+    avm_type argument alone. Returns the count refined."""
+    n = 0
+    for s in (main, *subs):
+        for bb in s.body:
+            for o in bb.ops:
+                if not (isinstance(o, M.Assignment)
+                        and isinstance(o.source, M.Intrinsic)):
+                    continue
+                et = _encoded_type_for(o.source)
+                if et is None:
+                    continue
+                changed = False
+                for tgt in o.targets:
+                    if tgt.ir_type.avm_type == et.avm_type:
+                        object.__setattr__(tgt, "ir_type", et)
                         changed = True
                         n += 1
                 if changed:
