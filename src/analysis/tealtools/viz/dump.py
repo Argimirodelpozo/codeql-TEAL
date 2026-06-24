@@ -59,8 +59,8 @@ def dump_all(source, out_dir: Optional[str] = None, *, svg: bool = True,
     add("SOURCE (normalized TEAL)", lambda: _source_text(source))
     add("GRAPH (AST nodes + edges)", lambda: _graph_text(source))
     add("CFG (basic blocks)", lambda: _cfg_text(prog))
-    add("SSA (functional + IntRange overlay)",
-        lambda: _ssa_render.functional_by_block(prog, show_ranges=True))
+    add("SSA (functional + IntRange/byte-length overlay)",
+        lambda: _ssa_overlay(prog))
     add("USER-INPUT TAINT (sources -> sensitive sinks)", lambda: _taint_text(prog))
     add("STRUCTURE (subs / routing / handlers)", lambda: analyze_structure(prog).render())
     add("CONTROL TREE (region tree)", lambda: _ct_pretty(build_control_tree(prog)))
@@ -120,6 +120,19 @@ def _ir_text(source) -> str:
     lifter = _Lifter(SSAProgram(source, verbose=False))   # fresh prog (lift mutates)
     lifter.build()
     return "\n\n".join(s.render() for s in lifter.subs)
+
+
+def _ssa_overlay(prog: SSAProgram) -> str:
+    """SSA functional dump with BOTH overlays: ``/*[V<=hi]*/`` IntRange (the
+    substrate renderer) and ``/*len=N*/`` / ``/*val=…*/`` byte-length/value
+    (a post-pass over the text, since the renderer only does IntRange)."""
+    out = _ssa_render.functional_by_block(prog, show_ranges=True)
+    try:
+        from ..render_annotated import annotate_bytes_inline
+        out = annotate_bytes_inline(prog, out)
+    except Exception:
+        pass
+    return out
 
 
 def _taint_text(prog: SSAProgram) -> str:
