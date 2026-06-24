@@ -3,7 +3,6 @@ call site: prog.teal:L14  appl→7000001  (callee/db)  args[0]="do_thing"
   summary: (V#1@L12 == "do_thing"), (V#1@L7 == "do_thing")
 
 cross-contract sec-guide findings:
-app7000001  sec-guide/abi-method-selector  callee/db  Approval exit at prog.teal:23 is reachable without validating the ABI method selector (txna ApplicationArgs 0) — unrecognised methods are not rejected.
 app7000001  sec-guide/asset-close-to  callee/db  Contract does not validate txn AssetCloseTo — all asset units can be drained from the account.
 app7000001  sec-guide/close-remainder-to  callee/db  Approval exit at prog.teal:23 is reachable without a CloseRemainderTo check — the account's entire ALGO balance can be drained.
 app7000001  sec-guide/close-remainder-to  callee/db  Approval exit at prog.teal:27 is reachable without a CloseRemainderTo check — the account's entire ALGO balance can be drained.

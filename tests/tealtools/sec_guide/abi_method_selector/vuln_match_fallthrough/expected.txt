@@ -1,0 +1,1 @@
+Approval exit at prog.teal:15 is reachable without validating the ABI method selector (txna ApplicationArgs 0) — unrecognised methods are not rejected.
