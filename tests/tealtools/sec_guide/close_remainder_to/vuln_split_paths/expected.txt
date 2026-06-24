@@ -1,1 +1,1 @@
-Contract does not validate txn CloseRemainderTo — the account's entire ALGO balance can be drained.
+Approval exit at prog.teal:36 is reachable without a CloseRemainderTo check — the account's entire ALGO balance can be drained.

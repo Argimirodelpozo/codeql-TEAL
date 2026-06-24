@@ -1,0 +1,22 @@
+#pragma version 8
+// FIXED via REPLICATED per-branch checks: there is no SINGLE CloseRemainderTo
+// comparison that dominates every approval exit, but every path validates it on
+// its own branch. Strict dominance reports a false positive here; the per-path
+// walk correctly accepts it.
+txn NumAppArgs
+int 0
+==
+bnz branch_a
+txn CloseRemainderTo
+global ZeroAddress
+==
+assert
+int 1
+return
+branch_a:
+txn CloseRemainderTo
+global ZeroAddress
+==
+assert
+int 1
+return

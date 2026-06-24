@@ -1,21 +1,37 @@
 """sec-guide/close-remainder-to: missing CloseRemainderTo validation.
 
-Strict-dominance form.
+Path-aware form (migrated off the old strict-dominance base): for each approval
+exit, every CFG path from a program entry to it must cross a comparison receiving
+flow from ``txn CloseRemainderTo`` whose result reaches enforcement. Accepts
+per-branch / replicated checks and, via the shared ``common`` field-flow bridge,
+follows the field through phi / scratch / proto-frame (interprocedural). Per-exit
+alerts.
 """
 from __future__ import annotations
 
-from security._field_validated import _FieldValidatedDetector, _FieldValidatedViolation
+from dataclasses import dataclass
+
+from tealtools.ssa import BasicBlock
+from security._approval_exit import _ApprovalExitProtectedDetector
 
 
-class CloseRemainderToViolation(_FieldValidatedViolation):
-    pass
+@dataclass
+class CloseRemainderToViolation:
+    exit_bb: BasicBlock
+
+    def pretty(self) -> str:
+        line = self.exit_bb.last_line
+        return (
+            f"Approval exit at {self.exit_bb.file}:{line} "
+            "is reachable without a CloseRemainderTo check "
+            "— the account's entire ALGO balance can be drained."
+        )
+
+    def __repr__(self) -> str:
+        return f"CloseRemainderToViolation({self.pretty()})"
 
 
-class CloseRemainderToDetector(_FieldValidatedDetector):
+class CloseRemainderToDetector(_ApprovalExitProtectedDetector):
     name = "sec-guide/close-remainder-to"
-    field = ("CloseRemainderTo",)
-    message = (
-        "Contract does not validate txn CloseRemainderTo "
-        "— the account's entire ALGO balance can be drained."
-    )
+    field = "CloseRemainderTo"
     violation_cls = CloseRemainderToViolation

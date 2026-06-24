@@ -1,0 +1,54 @@
+## nodes
+prog.teal	1	0	22	6	Source
+prog.teal	6	0	6	14	TxnOpcode
+prog.teal	7	0	7	5	SingleNumericArgumentOpcode
+prog.teal	8	0	8	2	EqualsComparisonOpcode
+prog.teal	9	0	9	12	BnzOpcode
+prog.teal	10	0	10	20	TxnOpcode
+prog.teal	11	0	11	18	GlobalOpcode
+prog.teal	12	0	12	2	EqualsComparisonOpcode
+prog.teal	13	0	13	6	AssertOpcode
+prog.teal	14	0	14	5	SingleNumericArgumentOpcode
+prog.teal	15	0	15	6	ReturnOpcode
+prog.teal	16	0	16	9	Label
+prog.teal	17	0	17	20	TxnOpcode
+prog.teal	18	0	18	18	GlobalOpcode
+prog.teal	19	0	19	2	EqualsComparisonOpcode
+prog.teal	20	0	20	6	AssertOpcode
+prog.teal	21	0	21	5	SingleNumericArgumentOpcode
+prog.teal	22	0	22	6	ReturnOpcode
+## cfgEdges
+prog.teal	6	prog.teal	7	NormalSuccessor
+prog.teal	7	prog.teal	8	NormalSuccessor
+prog.teal	8	prog.teal	9	NormalSuccessor
+prog.teal	9	prog.teal	10	BooleanSuccessor(false)
+prog.teal	9	prog.teal	16	BooleanSuccessor(true)
+prog.teal	10	prog.teal	11	NormalSuccessor
+prog.teal	11	prog.teal	12	NormalSuccessor
+prog.teal	12	prog.teal	13	NormalSuccessor
+prog.teal	13	prog.teal	14	BooleanSuccessor(true)
+prog.teal	14	prog.teal	15	NormalSuccessor
+prog.teal	16	prog.teal	17	NormalSuccessor
+prog.teal	17	prog.teal	18	NormalSuccessor
+prog.teal	18	prog.teal	19	NormalSuccessor
+prog.teal	19	prog.teal	20	NormalSuccessor
+prog.teal	20	prog.teal	21	BooleanSuccessor(true)
+prog.teal	21	prog.teal	22	NormalSuccessor
+## basicBlocks
+prog.teal	6	6	9
+prog.teal	7	6	9
+prog.teal	8	6	9
+prog.teal	9	6	9
+prog.teal	10	10	13
+prog.teal	11	10	13
+prog.teal	12	10	13
+prog.teal	13	10	13
+prog.teal	14	14	15
+prog.teal	15	14	15
+prog.teal	16	16	20
+prog.teal	17	16	20
+prog.teal	18	16	20
+prog.teal	19	16	20
+prog.teal	20	16	20
+prog.teal	21	21	22
+prog.teal	22	21	22
