@@ -29,7 +29,16 @@ _BYTES_OPS = frozenset({"itob", "concat", "substring", "substring3", "extract",
                         "extract3", "replace2", "replace3", "sha256",
                         "sha512_256", "keccak256", "sha3_256", "bzero",
                         "setbyte", "b+", "b-", "b*", "b/", "b%",
-                        "b|", "b&", "b^", "b~", "bsqrt", "box_extract"}) | _BYTES_PUSH
+                        "b|", "b&", "b^", "b~", "bsqrt", "box_extract",
+                        # further single-`bytes`-return ops (per Puya's langspec)
+                        # the table previously missed -- so e.g. `mimc` and the
+                        # crypto / lsig-arg producers no longer default to uint64
+                        # and cross the AVM divide (the residual recovery bug).
+                        "mimc", "sumhash512", "base64_decode",
+                        "ec_add", "ec_map_to", "ec_scalar_mul",
+                        "ec_multi_scalar_mul",
+                        "arg", "arg_0", "arg_1", "arg_2", "arg_3", "args",
+                        }) | _BYTES_PUSH
 # `setbit` is polymorphic: its result type equals its VALUE operand (`setbit A B
 # C` -> type of A, uint64 or bytes), so it is NOT in _BYTES_OPS; lift.type_of /
 # _ssa_type type it from that operand. (`getbit` always returns uint64, so it
@@ -74,6 +83,7 @@ _TXN_FIELD_TYPE = {
     "CreatedApplicationID": "application",
     # bytes
     "Note": "bytes", "Lease": "bytes", "Type": "bytes", "GroupID": "bytes",
+    "TxID": "bytes",                  # 32-byte transaction hash (was defaulting u64)
     "ApplicationArgs": "bytes", "Logs": "bytes", "LastLog": "bytes",
     "ApprovalProgram": "bytes", "ClearStateProgram": "bytes",
     "ApprovalProgramPages": "bytes", "ClearStateProgramPages": "bytes",
