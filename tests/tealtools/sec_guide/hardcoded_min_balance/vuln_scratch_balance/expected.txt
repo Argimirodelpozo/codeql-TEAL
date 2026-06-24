@@ -1,0 +1,1 @@
+-@prog.teal:14  Balance minus hardcoded constant — use the min_balance opcode instead to dynamically account for boxes, opt-ins, and local state.

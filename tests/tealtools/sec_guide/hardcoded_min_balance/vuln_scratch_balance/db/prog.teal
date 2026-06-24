@@ -1,0 +1,21 @@
+#pragma version 8
+// VULNERABLE: balance is stashed in scratch, then loaded and subtracted from a
+// hardcoded constant. The subtraction operand is `load 1`, not the direct
+// balance op, so a direct-operand scan misses it — the flow bridge catches it.
+txn OnCompletion
+int 0
+==
+assert
+global CurrentApplicationAddress
+balance
+store 1
+load 1
+int 100000
+-
+store 0
+load 0
+int 0
+>
+assert
+int 1
+return
