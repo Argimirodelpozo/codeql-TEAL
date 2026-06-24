@@ -534,19 +534,33 @@ def _static_byte_len(value, reg_def: dict):
 
 def _static_encoding_elements(value):
     """The element ``Encoding`` list of ``value`` IF it is a *static* (fixed-size)
-    ``EncodedType`` -- flattening a tuple into its elements so nested binary concats
-    build one flat N-tuple -- else ``None``. Dynamic encodings (``num_bytes is
-    None``) are excluded: a dynamic element in an ABI tuple uses the head/tail offset
-    layout, not a plain concat."""
-    from puya.ir.encodings import TupleEncoding
+    ABI element -- so a ``concat`` of statics can be recognised as a static tuple --
+    else ``None``. Flattens a tuple operand into its elements so nested binary
+    concats build one flat N-tuple. Confident element sources only:
+
+      - a static ``EncodedType`` register (``num_bytes`` known; a dynamic encoding
+        uses the head/tail offset layout, not a plain concat, so it's excluded);
+      - an ``account`` register -> ``arc4.Address`` (``StaticArray<Byte, 32>``):
+        ``account`` is unambiguously a 32-byte address and arc4.Address IS that
+        static byte array, wire-identical. (The account register itself stays
+        ``account`` -- only its tuple-element encoding is taken here.)
+
+    NOT included (would be guesses, belong in the speculative tier): a plain
+    ``bytes[N]`` / a bytes constant reinterpreted as ``StaticArray<Byte, N>`` -- the
+    raw bytes don't disambiguate a byte array from a uint128 / hash / selector."""
+    from puya.ir.encodings import ArrayEncoding, TupleEncoding, UIntEncoding
     from puya.ir.types_ import EncodedType
-    if not (isinstance(value, M.Register) and isinstance(value.ir_type, EncodedType)):
+    if not isinstance(value, M.Register):
         return None
-    et = value.ir_type
-    if et.num_bytes is None:
-        return None
-    enc = et.encoding
-    return list(enc.elements) if isinstance(enc, TupleEncoding) else [enc]
+    t = value.ir_type
+    if isinstance(t, EncodedType):
+        if t.num_bytes is None:
+            return None
+        enc = t.encoding
+        return list(enc.elements) if isinstance(enc, TupleEncoding) else [enc]
+    if t is PT.account:
+        return [ArrayEncoding(element=UIntEncoding(8), size=32, length_header=False)]
+    return None
 
 
 def _is_bool_encoding(enc) -> bool:
