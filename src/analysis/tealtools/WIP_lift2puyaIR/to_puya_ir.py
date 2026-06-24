@@ -16,7 +16,7 @@ from puya.ir.types_ import AVMBytesEncoding, PrimitiveIRType as PT
 from puya.parse import SourceLocation
 
 from . import pre_ir
-from .lift import lift
+from .lift import _Lifter, lift
 from .teal_const import _const_bytes, _load_src, _tmpl_name
 from ..ast.literals import tokenize_operands as _tokenize_operands
 
@@ -320,7 +320,10 @@ def _term_targets(term):
 
 def to_puya(prog):
     """SSAProgram -> (main, subroutines) as real puya.ir.models objects."""
-    lifted = lift(prog)
+    # Build via the lifter directly (not `lift()`) so we keep its SSAVar->Register
+    # map for the byte-length sized-bytes bridge below.
+    lifter = _Lifter(prog)
+    lifted = lifter.build()
     # Collapse trivial / self-referential phis (`r = phi(r)`) before lowering:
     # Puya's own copy_propagation asserts on these (it can't represent a
     # register replaced by itself), but our reconstruction can emit them.
@@ -371,8 +374,45 @@ def to_puya(prog):
     main = M.Subroutine(id=lifted.main.id, short_name="main", source_location=None,
                         parameters=[], returns=[], body=main_body, inline=None)
     subs = [t.subs[s.id] for s in lifted.subroutines]
-    _recover_ir_types(main, subs)
+    # Run byte-length propagation AFTER the lift (so it can't perturb the lift's
+    # own coarse typing) and bridge the exact lengths into the recovery.
+    try:
+        prog.propagate_byte_lengths()
+        bytelen = _byte_length_map(lifter, t)
+    except Exception:
+        bytelen = {}
+    _recover_ir_types(main, subs, byte_lengths=bytelen)
     return main, subs
+
+
+def _byte_length_map(lifter, t) -> dict:
+    """``{id(M.Register): exact_byte_length}`` composed from the lift's
+    ``SSAVar -> pre_ir.Register`` maps and the translator's
+    ``id(pre_ir.Register) -> M.Register`` map, for every SSA value the byte-length
+    pass gave a known *exact* length. A register fed by SSA values of disagreeing
+    exact lengths is dropped (ambiguous -> stays plain ``bytes``)."""
+    out: dict = {}
+    conflict: set = set()
+    src: dict = {}
+    src.update(lifter.regs)
+    src.update(lifter.frame_map)
+    for o, pre in src.items():
+        ty = getattr(o, "type", None)
+        bl = getattr(ty, "byte_length", None) if ty is not None else None
+        if bl is None or getattr(ty, "kind", None) != "bytes":
+            continue
+        m = t.regs.get(id(pre))
+        if m is None:
+            continue
+        key = id(m)
+        if key in conflict:
+            continue
+        if key in out and out[key] != bl:
+            del out[key]
+            conflict.add(key)
+        else:
+            out[key] = bl
+    return out
 
 
 # Refined IR types we restore from Puya's langspec when the recovery flattened
@@ -424,13 +464,21 @@ def _langspec_returns(intrinsic: "M.Intrinsic"):
     return None
 
 
-def _recover_ir_types(main, subs, allow=_is_refinable) -> int:
+def _recover_ir_types(main, subs, allow=_is_refinable, byte_lengths=None) -> int:
     """Refine each intrinsic result register from the coarse AVM type the recovery
     left (``uint64``/``bytes``) to the finer IR type Puya's langspec declares for
     that op -- but only the interchangeable ones ``allow`` accepts (see
     :func:`_is_refinable`), and only when the finer type shares the current one's
-    ``avm_type`` (so a refinement never crosses the AVM divide). The intrinsic's
-    ``types`` tuple is rebuilt to match. Returns the count refined."""
+    ``avm_type`` (so a refinement never crosses the AVM divide).
+
+    ``byte_lengths`` (``{id(M.Register): N}``) additionally refines a still-plain
+    ``bytes`` result to ``SizedBytesType(N)`` when the byte-length pass proved its
+    exact length (``concat`` / ``extract`` / ``bzero`` / ``replace`` / a fixed-width
+    field, etc.) -- the same ``avm_type``-preserving annotation as the langspec
+    sized-bytes, just sourced from length analysis instead of the op's own return.
+    The intrinsic's ``types`` tuple is rebuilt to match. Returns the count refined."""
+    from puya.ir.types_ import SizedBytesType
+    byte_lengths = byte_lengths or {}
     n = 0
     for s in (main, *subs):
         for bb in s.body:
@@ -438,15 +486,22 @@ def _recover_ir_types(main, subs, allow=_is_refinable) -> int:
                 if not (isinstance(o, M.Assignment)
                         and isinstance(o.source, M.Intrinsic)):
                     continue
-                rets = _langspec_returns(o.source)
-                if rets is None:
-                    continue
                 changed = False
-                for tgt, rt in zip(o.targets, rets):
-                    cur = tgt.ir_type
-                    if (allow(rt) and cur in _COARSE_BASE
-                            and rt.avm_type == cur.avm_type):
-                        object.__setattr__(tgt, "ir_type", rt)
+                rets = _langspec_returns(o.source)
+                if rets is not None:
+                    for tgt, rt in zip(o.targets, rets):
+                        cur = tgt.ir_type
+                        if (allow(rt) and cur in _COARSE_BASE
+                                and rt.avm_type == cur.avm_type):
+                            object.__setattr__(tgt, "ir_type", rt)
+                            changed = True
+                            n += 1
+                # Byte-length sized-bytes: refine a target the langspec left as
+                # plain `bytes` when its exact length is known.
+                for tgt in o.targets:
+                    if tgt.ir_type is PT.bytes and id(tgt) in byte_lengths:
+                        object.__setattr__(
+                            tgt, "ir_type", SizedBytesType(byte_lengths[id(tgt)]))
                         changed = True
                         n += 1
                 if changed:
