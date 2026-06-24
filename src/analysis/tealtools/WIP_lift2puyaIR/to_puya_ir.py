@@ -654,13 +654,53 @@ def _guess_encoding_for(intrinsic: "M.Intrinsic", reg_def: dict):
     return None
 
 
+def _guess_const_encoding(raw: bytes):
+    """A bytes CONSTANT that is a self-describing ``arc4.String`` literal, or
+    ``None``. STRICT-PROOF, all checkable from the constant alone (no data-flow):
+
+      - a 2-byte big-endian length prefix that provably equals the remaining length
+        (``uint16(raw[:2]) == len(raw) - 2``) -- the arc4.String / dynamic-array wire
+        shape;
+      - a non-empty payload that decodes as UTF-8;
+      - NO embedded null byte; and the decoded text is PRINTABLE.
+
+    The no-null + printable rules are what make it strict: a length-consistent
+    constant whose payload parses as UTF-8 only because it is full of ``0x00`` (a
+    zero buffer), contains its own inner length prefix (a NESTED structure, e.g.
+    ``<13><0x000b "Hello World">``), or is control-byte binary (``0x010204``) is
+    rejected -- a real flat text string is printable and almost never carries
+    embedded nulls. Combined with the ~1/65536 odds of a random prefix matching, a
+    survivor is very likely a genuine ``arc4.String``.
+
+    Still a guess (a constant *could* coincidentally be a self-describing UTF-8 blob),
+    so it lives only in the speculative side-channel, never in ``ir_type``."""
+    from puya.ir.encodings import UTF8Encoding
+    from puya.ir.types_ import EncodedType
+    if len(raw) < 3 or int.from_bytes(raw[:2], "big") != len(raw) - 2:
+        return None
+    payload = raw[2:]
+    if b"\x00" in payload:
+        return None
+    try:
+        text = payload.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+    if not text.isprintable():        # reject control-byte binary (e.g. 0x010204)
+        return None
+    return EncodedType(UTF8Encoding())
+
+
 def _guess_encoded_types(main, subs) -> dict:
-    """SPECULATIVE encoded-type recovery (:func:`_guess_encoding_for`), returned as a
-    SIDE-CHANNEL ``{id(M.Register): EncodedType}`` map -- it does NOT mutate any
-    ``ir_type``, so it is fully decoupled from the confident, proven-neutral IR and
-    cannot affect lowering. Not wired into :func:`to_puya`'s default path; a consumer
-    that wants best-effort ABI structure calls it explicitly. Empty until idioms are
-    added to :func:`_guess_encoding_for`."""
+    """SPECULATIVE encoded-type recovery, returned as a SIDE-CHANNEL
+    ``{id(M.Register): EncodedType}`` map -- it does NOT mutate any ``ir_type``, so
+    it is fully decoupled from the confident, proven-neutral IR and cannot affect
+    lowering. Not wired into :func:`to_puya`'s default path; a consumer that wants
+    best-effort ABI structure calls it explicitly.
+
+    Sources of guesses:
+      - intrinsic results, via :func:`_guess_encoding_for` (currently none);
+      - bytes CONSTANTS that are self-describing uint16-length-prefixed sequences,
+        via :func:`_guess_const_encoding` -> ``arc4.String`` / dynamic byte array."""
     reg_def: dict = {}
     for s in (main, *subs):
         for bb in s.body:
@@ -672,10 +712,15 @@ def _guess_encoded_types(main, subs) -> dict:
     for s in (main, *subs):
         for bb in s.body:
             for o in bb.ops:
-                if not (isinstance(o, M.Assignment)
-                        and isinstance(o.source, M.Intrinsic)):
+                if not isinstance(o, M.Assignment):
                     continue
-                et = _guess_encoding_for(o.source, reg_def)
+                src = o.source
+                if isinstance(src, M.Intrinsic):
+                    et = _guess_encoding_for(src, reg_def)
+                elif isinstance(src, M.BytesConstant):
+                    et = _guess_const_encoding(src.value)
+                else:
+                    et = None
                 if et is None:
                     continue
                 for tgt in o.targets:
