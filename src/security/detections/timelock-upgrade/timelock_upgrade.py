@@ -4,9 +4,15 @@ Flags an approval exit that:
   - is reachable with ``OnCompletion == UpdateApplication``,
   - has a dominating ``txn Sender == global CreatorAddress`` guard
     (so the creator-only upgrade is intentional),
-  - and the program does not read ``global LatestTimestamp``
-    (no timelock pattern). Users can't review code before the upgrade
-    takes effect.
+  - and the program has no genuine timelock check — a ``global
+    LatestTimestamp`` value flowing into a *comparison* (against a stored
+    deadline). Users can't review code before the upgrade takes effect.
+
+The timelock recognition requires the timestamp to reach a comparison, not merely
+that the ``LatestTimestamp`` opcode appears: a contract that only *records* the
+current time (``global LatestTimestamp; app_global_put``) without ever comparing
+it has no enforced delay, but the old opcode-presence proxy treated that read as a
+timelock and suppressed the finding — a false negative.
 """
 from __future__ import annotations
 
@@ -14,8 +20,14 @@ from dataclasses import dataclass
 from typing import Optional
 
 from tealtools.path_predicates import PathPredicateAnalysis
-from tealtools.ssa import BasicBlock, SSAProgram
+from tealtools.ssa import BasicBlock, SSAProgram, SSAVar
 from security import common
+
+
+_CMP_OPS = frozenset({
+    "==", "!=", "<", ">", "<=", ">=",
+    "b==", "b!=", "b<", "b>", "b<=", "b>=",
+})
 
 
 @dataclass
@@ -36,7 +48,22 @@ class TimelockUpgradeViolation:
 def _has_timestamp_check(
     prog: SSAProgram, file: Optional[str] = None,
 ) -> bool:
-    return bool(common.global_field_reads(prog, "LatestTimestamp", file=file))
+    """A genuine timelock: a ``global LatestTimestamp`` value flows (through the
+    phi / scratch / proto-frame bridge) into a comparison — not merely that the
+    opcode is read. A timestamp that is only stored/logged enforces no delay."""
+    seeds = {
+        o for a in common.global_field_reads(prog, "LatestTimestamp", file=file)
+        for o in a.outputs if isinstance(o, SSAVar)
+    }
+    if not seeds:
+        return False
+    for op in prog.assignments:
+        if op.op not in _CMP_OPS or not common.file_match(op.location.file, file):
+            continue
+        if any(common._operand_flows_from_field_var(prog, v, seeds)
+               for v in op.inputs):
+            return True
+    return False
 
 
 class TimelockUpgradeDetector:

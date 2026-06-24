@@ -1,0 +1,22 @@
+#pragma version 8
+// VULNERABLE: creator-guarded UpdateApplication that READS global LatestTimestamp
+// but only RECORDS it (app_global_put) — it never compares the timestamp against
+// a stored deadline, so there is no enforced delay. The old opcode-presence proxy
+// saw the LatestTimestamp read and wrongly suppressed the finding (false negative).
+txn OnCompletion
+int 4
+==
+bnz update_handler
+int 1
+return
+update_handler:
+txn Sender
+global CreatorAddress
+==
+assert
+// records the time of the upgrade, but enforces no delay (no comparison)
+pushbytes "last_upgrade"
+global LatestTimestamp
+app_global_put
+int 1
+return
