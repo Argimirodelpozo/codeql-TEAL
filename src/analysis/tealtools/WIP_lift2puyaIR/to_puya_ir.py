@@ -371,39 +371,77 @@ def to_puya(prog):
     main = M.Subroutine(id=lifted.main.id, short_name="main", source_location=None,
                         parameters=[], returns=[], body=main_body, inline=None)
     subs = [t.subs[s.id] for s in lifted.subroutines]
-    _recover_biguint(main, subs)
+    _recover_ir_types(main, subs)
     return main, subs
 
 
-# AVM ops whose bytes operands/result are a big-endian arbitrary-precision int.
-_BIGUINT_ARITH = frozenset(
-    o for o in ("add_bytes", "sub_bytes", "mul_bytes", "div_bytes", "mod_bytes")
-    if hasattr(AVMOp, o)
-)
+# Refined IR types we restore from Puya's langspec when the recovery flattened
+# them to the coarse AVM divide. Each is INTERCHANGEABLE with its AVM base (same
+# `avm_type`, no reinterpret cast in Puya's IR), so retyping is a pure precision
+# refinement Puya's intrinsic validator (which checks `avm_type`) accepts:
+#   bool     <- uint64  (a 0/1 result: cmp / verify / opted-in / getbit / ...)
+#   biguint  <- bytes   (big-endian unbounded int: b+ b- b* b/ b% bsqrt)
+#   account  <- bytes   (32-byte address: txn Sender, global ZeroAddress, ...)
+# Sized-byte types (bytes[8] from itob, bytes[32] from hashes) are NOT here:
+# they're SizedBytesType, and folding a hash/itob result into the generic `bytes`
+# webs it flows through (concat/log/phi) trips Puya's exact-IRType assignment
+# check downstream -- the AVM-divide `bytes` is the faithful lowering type.
+_REFINED_IR_TYPES = frozenset({PT.bool, PT.biguint, PT.account})
+
+# The coarse base types the recovery leaves; only these get refined (never an
+# already-specific type, and never `any`, which is strictly less specific).
+_COARSE_BASE = frozenset({PT.uint64, PT.bytes})
 
 
-def _recover_biguint(main, subs) -> int:
-    """Refine the IR type of each bytemath-arithmetic result (``b+`` / ``b-`` /
-    ``b*`` / ``b/`` / ``b%``) from ``bytes`` to ``biguint`` — the AVM bytes value
-    IS a big-endian unbounded integer, which is what Puya's own front-end emits.
-    ``bytes``/``biguint`` are interchangeable IR types (no reinterpret needed), so
-    this is a pure precision refinement; the type recovery flattens to the AVM
-    ``bytes`` divide and this restores the finer type the SSA layer knows from the
-    op. Returns the count refined."""
-    ops = {getattr(AVMOp, o) for o in _BIGUINT_ARITH}
+def _langspec_returns(intrinsic: "M.Intrinsic"):
+    """Authoritative return IRTypes (bottom-first, matching Puya's target order)
+    for an Intrinsic, from Puya's own ``AVMOpData`` signature -- resolving a
+    field-keyed dynamic op (``global``/``txn``/...) by its immediate. ``None`` if
+    the op has no static signature (or the immediate doesn't select a variant)."""
+    from puya.ir.avm_ops_models import DynamicVariants, Variant
+    v = getattr(intrinsic.op, "_variants", None)
+    if isinstance(v, Variant):
+        return v.signature.returns
+    if isinstance(v, DynamicVariants):
+        imms = intrinsic.immediates
+        if imms and v.immediate_index < len(imms):
+            var = v.variant_map.get(str(imms[v.immediate_index]))
+            if var is not None:
+                return var.signature.returns
+    return None
+
+
+def _recover_ir_types(main, subs, allow=_REFINED_IR_TYPES) -> int:
+    """Refine each intrinsic result register from the coarse AVM type the recovery
+    left (``uint64``/``bytes``) to the finer IR type Puya's langspec declares for
+    that op -- but only the interchangeable ones in ``allow`` (see
+    :data:`_REFINED_IR_TYPES`), and only when the finer type shares the current
+    one's ``avm_type`` (so a refinement never crosses the AVM divide). The
+    intrinsic's ``types`` tuple is rebuilt to match. Returns the count refined."""
     n = 0
     for s in (main, *subs):
         for bb in s.body:
             for o in bb.ops:
-                if (isinstance(o, M.Assignment) and isinstance(o.source, M.Intrinsic)
-                        and o.source.op in ops):
+                if not (isinstance(o, M.Assignment)
+                        and isinstance(o.source, M.Intrinsic)):
+                    continue
+                rets = _langspec_returns(o.source)
+                if rets is None:
+                    continue
+                changed = False
+                for tgt, rt in zip(o.targets, rets):
+                    cur = tgt.ir_type
+                    if (rt in allow and cur in _COARSE_BASE
+                            and rt.avm_type == cur.avm_type):
+                        object.__setattr__(tgt, "ir_type", rt)
+                        changed = True
+                        n += 1
+                if changed:
                     try:
-                        object.__setattr__(o.source, "types", (PT.biguint,))
+                        object.__setattr__(
+                            o.source, "types", tuple(t.ir_type for t in o.targets))
                     except Exception:
                         pass
-                    for t in o.targets:
-                        object.__setattr__(t, "ir_type", PT.biguint)
-                        n += 1
     return n
 
 
