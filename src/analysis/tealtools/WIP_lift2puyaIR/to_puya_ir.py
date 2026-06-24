@@ -532,6 +532,28 @@ def _static_byte_len(value, reg_def: dict):
     return None
 
 
+def _static_encoding_elements(value):
+    """The element ``Encoding`` list of ``value`` IF it is a *static* (fixed-size)
+    ``EncodedType`` -- flattening a tuple into its elements so nested binary concats
+    build one flat N-tuple -- else ``None``. Dynamic encodings (``num_bytes is
+    None``) are excluded: a dynamic element in an ABI tuple uses the head/tail offset
+    layout, not a plain concat."""
+    from puya.ir.encodings import TupleEncoding
+    from puya.ir.types_ import EncodedType
+    if not (isinstance(value, M.Register) and isinstance(value.ir_type, EncodedType)):
+        return None
+    et = value.ir_type
+    if et.num_bytes is None:
+        return None
+    enc = et.encoding
+    return list(enc.elements) if isinstance(enc, TupleEncoding) else [enc]
+
+
+def _is_bool_encoding(enc) -> bool:
+    from puya.ir.encodings import Bool8Encoding, BoolEncoding
+    return isinstance(enc, (Bool8Encoding, BoolEncoding))
+
+
 def _encoded_type_for(intrinsic: "M.Intrinsic", reg_def: dict):
     """The ARC4 / ABI ``EncodedType`` a producing op's *result wire-encodes*, or
     ``None``. Deliberately conservative -- only idioms whose byte layout IS the ABI
@@ -543,13 +565,18 @@ def _encoded_type_for(intrinsic: "M.Intrinsic", reg_def: dict):
         the big-endian 8-byte encoding, which IS the ABI ``uint64`` wire format.
       - ``setbit base 0 b`` where ``base`` is a single byte (``bzero 1`` / a 1-byte
         ``0x00`` constant) -> ``arc4.Bool`` (``Bool8Encoding``): this writes the bool
-        into the high bit of a lone byte, which IS the standalone ABI ``bool`` wire
-        form (``0x00`` / ``0x80``). A multi-byte base is the *packed* bool case (a
-        bit inside a tuple/array) and is left for the aggregate recovery.
+        into the high bit of a lone byte, the standalone ABI ``bool`` form.
+      - ``concat A B`` where A and B are BOTH already-recovered *static* encoded
+        types -> a static ``arc4.Tuple`` (``TupleEncoding``): a static ABI tuple's
+        wire format IS exactly the concatenation of its element encodings (no length
+        prefix, no head/tail offset table -- those appear only for *dynamic*
+        elements). Nested binary concats flatten into one N-tuple. EXCLUDED: a
+        bool|bool boundary (the ABI packs runs of bools into shared bits, so
+        ``concat(bool8, bool8)`` is NOT the tuple form) -- a single bool adjacent to
+        a non-bool is fine (one byte, which IS how a lone tuple bool encodes).
 
-    Richer idioms (arc4 static & dynamic arrays / tuples) layer on here as their byte
-    patterns are matched."""
-    from puya.ir.encodings import Bool8Encoding, UIntEncoding
+    Richer idioms (dynamic arrays / strings / dynamic tuples) layer on here next."""
+    from puya.ir.encodings import Bool8Encoding, TupleEncoding, UIntEncoding
     from puya.ir.types_ import EncodedType
     op = intrinsic.op
     if op is AVMOp.itob:
@@ -559,6 +586,11 @@ def _encoded_type_for(intrinsic: "M.Intrinsic", reg_def: dict):
         if (isinstance(index, M.UInt64Constant) and index.value == 0
                 and _static_byte_len(base, reg_def) == 1):
             return EncodedType(Bool8Encoding())
+    if op is AVMOp.concat and len(intrinsic.args) == 2:
+        le = _static_encoding_elements(intrinsic.args[0])
+        re = _static_encoding_elements(intrinsic.args[1])
+        if le and re and not (_is_bool_encoding(le[-1]) and _is_bool_encoding(re[0])):
+            return EncodedType(TupleEncoding([*le, *re]))
     return None
 
 
@@ -581,28 +613,36 @@ def _recover_encoded_types(main, subs) -> int:
                 if isinstance(o, M.Assignment):
                     for t in o.targets:
                         reg_def[id(t)] = o
+    # Iterate to a fixpoint: `concat` reads its operands' recovered types, so a
+    # nested `concat(concat(a, b), c)` resolves over successive rounds. Monotonic
+    # (a register only ever moves from a coarse/smaller encoding to a richer one of
+    # the same avm_type), so it terminates.
     n = 0
-    for s in (main, *subs):
-        for bb in s.body:
-            for o in bb.ops:
-                if not (isinstance(o, M.Assignment)
-                        and isinstance(o.source, M.Intrinsic)):
-                    continue
-                et = _encoded_type_for(o.source, reg_def)
-                if et is None:
-                    continue
-                changed = False
-                for tgt in o.targets:
-                    if tgt.ir_type.avm_type == et.avm_type:
-                        object.__setattr__(tgt, "ir_type", et)
-                        changed = True
-                        n += 1
-                if changed:
-                    try:
-                        object.__setattr__(
-                            o.source, "types", tuple(t.ir_type for t in o.targets))
-                    except Exception:
-                        pass
+    changed = True
+    while changed:
+        changed = False
+        for s in (main, *subs):
+            for bb in s.body:
+                for o in bb.ops:
+                    if not (isinstance(o, M.Assignment)
+                            and isinstance(o.source, M.Intrinsic)):
+                        continue
+                    et = _encoded_type_for(o.source, reg_def)
+                    if et is None:
+                        continue
+                    touched = False
+                    for tgt in o.targets:
+                        if tgt.ir_type.avm_type == et.avm_type and tgt.ir_type != et:
+                            object.__setattr__(tgt, "ir_type", et)
+                            touched = changed = True
+                            n += 1
+                    if touched:
+                        try:
+                            object.__setattr__(
+                                o.source, "types",
+                                tuple(t.ir_type for t in o.targets))
+                        except Exception:
+                            pass
     return n
 
 
