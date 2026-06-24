@@ -150,7 +150,7 @@ def _guessed_encodings_text(source) -> str:
                         name_of[id(t)] = f"{t.name}#{t.version}"
                         if isinstance(o.source, M.BytesConstant):
                             const_of[id(t)] = o.source.value
-    lines = [f"{len(guesses)} guess(es) — strict-proof, side-channel only "
+    lines = [f"{len(guesses)} guess(es) — best-effort, side-channel only "
              "(never in the IR's ir_type):"]
     for rid, et in sorted(guesses.items(), key=lambda kv: name_of.get(kv[0], "")):
         extra = ""

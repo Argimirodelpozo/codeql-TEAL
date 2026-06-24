@@ -777,6 +777,95 @@ def _guess_decoded_dynamic(main, subs) -> dict:
     return out
 
 
+def _guess_struct_encodings(main, subs, dynamic_guesses) -> dict:
+    """Reconstruct a dynamic struct / dynamic *tuple* type from its decode, as
+    ``{id(Register): EncodedType(TupleEncoding(...))}``.
+
+    A value ``X`` is a struct (fixed-shape aggregate with >=1 dynamic field) when its
+    head is read at MULTIPLE FIXED positions whose uint16 results are used as slice
+    STARTS -- the offset table of a fixed shape (a dynamic ARRAY uses a count + a
+    COMPUTED offset in a loop instead, so it's excluded here). Reconstruction:
+      - ``extract_uint16(X, p_const)`` whose result is a slice start -> a DYNAMIC
+        field at head position ``p`` (2-byte offset slot); its type is the bracket
+        ``substring3(X, off_p, off_q)`` slice, taken from ``dynamic_guesses`` (a
+        nested String / DynamicArray) or defaulted to dynamic bytes;
+      - ``extract_uintN(X, p_const)`` (used as a value) -> a static ``UIntN`` field;
+      - fields ordered by head position, with any UNREAD head gap modeled as a
+        ``uint8[gap]`` byte BLOB (we know the byte count from the positions, just not
+        the type -- partial reconstruction, still useful).
+
+    PARTIAL by nature (only decoded fields are seen; the tail beyond the last read is
+    omitted), so speculative side-channel only -- never ``ir_type``."""
+    from puya.ir.encodings import ArrayEncoding, TupleEncoding, UIntEncoding
+    from puya.ir.types_ import EncodedType
+    slots: dict = {}             # id(X) -> {pos: (kind, head_size, info)}
+    u16res: dict = {}            # id(result) -> (id(base), const pos or None)
+    field_of: dict = {}          # id(offset result) -> field slice register
+    slice_starts: set = set()
+    for s in (main, *subs):
+        for bb in s.body:
+            for o in bb.ops:
+                if not (isinstance(o, M.Assignment)
+                        and isinstance(o.source, M.Intrinsic)):
+                    continue
+                src = o.source
+                a = src.args
+                if src.op is AVMOp.extract_uint16 and len(a) == 2 \
+                        and isinstance(a[0], M.Register) and o.targets:
+                    pos = a[1].value if isinstance(a[1], M.UInt64Constant) else None
+                    u16res[id(o.targets[0])] = (id(a[0]), pos)
+                elif src.op is AVMOp.extract_uint64 and len(a) >= 2 \
+                        and isinstance(a[0], M.Register) \
+                        and isinstance(a[1], M.UInt64Constant):
+                    slots.setdefault(id(a[0]), {}).setdefault(
+                        a[1].value, ("static", 8, UIntEncoding(64)))
+                elif src.op is AVMOp.extract_uint32 and len(a) >= 2 \
+                        and isinstance(a[0], M.Register) \
+                        and isinstance(a[1], M.UInt64Constant):
+                    slots.setdefault(id(a[0]), {}).setdefault(
+                        a[1].value, ("static", 4, UIntEncoding(32)))
+                if src.op is AVMOp.substring3 and len(a) >= 2 \
+                        and isinstance(a[1], M.Register):
+                    slice_starts.add(id(a[1]))
+                    if o.targets:
+                        field_of[id(a[1])] = o.targets[0]
+    for rid, (base, pos) in u16res.items():
+        if pos is None:
+            continue
+        d = slots.setdefault(base, {})
+        if rid in slice_starts:                      # offset slot -> dynamic field
+            d[pos] = ("dyn", 2, rid)
+        else:                                        # inlined uint16 value -> static field
+            d.setdefault(pos, ("static", 2, UIntEncoding(16)))
+    dyn_byte = ArrayEncoding(element=UIntEncoding(8), size=None, length_header=True)
+    out: dict = {}
+    for base, sl in slots.items():
+        if not any(k == "dyn" for (k, _, _) in sl.values()) or len(sl) < 2:
+            continue                                 # a struct: >=1 dynamic field, >=2 fields
+        fields = []
+        expected = 0
+        consistent = True
+        for pos in sorted(sl):
+            kind, size, info = sl[pos]
+            if pos > expected:                       # unread head bytes -> byte blob
+                fields.append(ArrayEncoding(
+                    element=UIntEncoding(8), size=pos - expected, length_header=False))
+            elif pos < expected:                     # overlapping reads -> inconsistent
+                consistent = False
+                break
+            if kind == "static":
+                fields.append(info)
+            else:                                    # dynamic field
+                fld = field_of.get(info)
+                enc = (dynamic_guesses[id(fld)].encoding
+                       if fld is not None and id(fld) in dynamic_guesses else None)
+                fields.append(enc if enc is not None else dyn_byte)
+            expected = pos + size
+        if consistent and fields:
+            out[base] = EncodedType(TupleEncoding(fields))
+    return out
+
+
 def _guess_encoded_types(main, subs) -> dict:
     """SPECULATIVE encoded-type recovery, returned as a SIDE-CHANNEL
     ``{id(M.Register): EncodedType}`` map -- it does NOT mutate any ``ir_type``, so
@@ -784,12 +873,14 @@ def _guess_encoded_types(main, subs) -> dict:
     lowering. Not wired into :func:`to_puya`'s default path; a consumer that wants
     best-effort ABI structure calls it explicitly.
 
-    Sources of guesses (producer-side guesses win over the coarser decode-side one):
+    Sources of guesses (more-specific guesses win over coarser ones in the merge):
+      - values DECODED as length-prefixed dynamic arrays/strings (incl. method args),
+        via :func:`_guess_decoded_dynamic` (coarsest);
+      - dynamic STRUCTS / tuples reconstructed from their offset-table decode, via
+        :func:`_guess_struct_encodings` (overrides the array guess for that value);
       - bytes CONSTANTS that are self-describing uint16-length-prefixed sequences,
         via :func:`_guess_const_encoding` -> ``arc4.String``;
-      - intrinsic results, via :func:`_guess_encoding_for` (currently none);
-      - values DECODED as length-prefixed dynamic arrays/strings (incl. method args),
-        via :func:`_guess_decoded_dynamic`."""
+      - intrinsic results, via :func:`_guess_encoding_for` (currently none)."""
     reg_def: dict = {}
     for s in (main, *subs):
         for bb in s.body:
@@ -798,6 +889,7 @@ def _guess_encoded_types(main, subs) -> dict:
                     for t in o.targets:
                         reg_def[id(t)] = o
     guesses: dict = _guess_decoded_dynamic(main, subs)
+    guesses.update(_guess_struct_encodings(main, subs, guesses))
     for s in (main, *subs):
         for bb in s.body:
             for o in bb.ops:
