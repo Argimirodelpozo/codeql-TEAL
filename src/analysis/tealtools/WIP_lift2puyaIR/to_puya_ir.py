@@ -704,21 +704,28 @@ def _guess_decoded_dynamic(main, subs) -> dict:
     fixed-length slice from offset 2 would be a struct field, not a dynamic array),
     so this is much tighter than a bare ``slice-from-2`` co-occurrence.
 
-    ELEMENT type (#1): inferred from how the payload (the ``extract X 2 0`` result)
-    is then chunked -- ``extract_uint64`` -> ``DynamicArray<UInt64>``,
-    ``extract_uint32`` -> ``<UInt32>`` -- giving a structure-aware fuzzer the element
-    STRIDE, not just "it's dynamic". Default ``Byte`` (a string / dynamic bytes);
-    ``extract_uint16`` access is deliberately NOT used (it's ambiguous with a dynamic
-    element's offset table).
+    ELEMENT type (#1/#2): inferred from how the payload (the ``extract X 2 0``
+    result -- or ``X`` itself, for the offset table) is then accessed:
+      - ``extract_uint64`` -> ``DynamicArray<UInt64>``, ``extract_uint32`` -> ``<UInt32>``;
+      - ``extract_uint16`` whose result is used as a slice START (an OFFSET into
+        the head/tail layout) -> the elements are DYNAMIC: ``DynamicArray<DynamicBytes>``
+        (the offset-table signature -- a dynamic tuple/array-of-dynamics; the exact
+        element types are #3's full reconstruction, this is the approximation);
+      - ``extract_uint16`` whose result is used as a VALUE -> ``DynamicArray<UInt16>``;
+      - else ``Byte`` (a string / dynamic bytes).
+    The uint16 value-vs-offset split (#2) is what resolves the ambiguity that left
+    every uint16-accessed payload as ``Byte`` before.
 
     Uniquely valuable because it types INPUTS the producer-side recovery can't reach
     (``txna ApplicationArgs N`` / sub params). Best-effort (a struct whose first
     field is a uint16 and rest is a tail could still match), so side-channel only."""
     from puya.ir.encodings import ArrayEncoding, UIntEncoding
     from puya.ir.types_ import EncodedType
-    len_read: set = set()        # id(X): extract_uint16(X, 0)
+    len_read: set = set()        # id(X): extract_uint16(X, 0)  -- the count/length
     payload_of: dict = {}        # id(X): the `extract X 2 0` (to-end) result register
-    elem_bits: dict = {}         # id(payload reg): element width in bits, from chunking
+    elem_bits: dict = {}         # id(base): 64/32 from extract_uint64/32 chunking
+    u16_elem: dict = {}          # id(base): [result id] for extract_uint16 at offset != 0
+    slice_starts: set = set()    # id(reg) used as a slice START of extract3/substring3
     for s in (main, *subs):
         for bb in s.body:
             for o in bb.ops:
@@ -727,10 +734,12 @@ def _guess_decoded_dynamic(main, subs) -> dict:
                     continue
                 src = o.source
                 a = src.args
-                if (src.op is AVMOp.extract_uint16 and len(a) == 2
-                        and isinstance(a[0], M.Register)
-                        and isinstance(a[1], M.UInt64Constant) and a[1].value == 0):
-                    len_read.add(id(a[0]))
+                if src.op is AVMOp.extract_uint16 and len(a) == 2 \
+                        and isinstance(a[0], M.Register):
+                    if isinstance(a[1], M.UInt64Constant) and a[1].value == 0:
+                        len_read.add(id(a[0]))             # the count / length prefix
+                    elif o.targets:                        # an element / offset read
+                        u16_elem.setdefault(id(a[0]), []).append(id(o.targets[0]))
                 elif (src.op is AVMOp.extract and a and isinstance(a[0], M.Register)
                         and len(src.immediates) >= 2 and src.immediates[0] == 2
                         and src.immediates[1] == 0 and o.targets):
@@ -741,14 +750,30 @@ def _guess_decoded_dynamic(main, subs) -> dict:
                 elif (src.op is AVMOp.extract_uint32 and a
                         and isinstance(a[0], M.Register)):
                     elem_bits.setdefault(id(a[0]), 32)
+                if src.op in (AVMOp.extract3, AVMOp.substring3) and len(a) >= 2 \
+                        and isinstance(a[1], M.Register):
+                    slice_starts.add(id(a[1]))
+    def _dyn(element):
+        return EncodedType(
+            ArrayEncoding(element=element, size=None, length_header=True))
+    dyn_byte = UIntEncoding(8)
     out: dict = {}
     for rid in len_read:
         pay = payload_of.get(rid)
         if pay is None:
             continue
-        bits = elem_bits.get(id(pay), 8)       # default Byte (uint8) = string/bytes
-        out[rid] = EncodedType(ArrayEncoding(
-            element=UIntEncoding(bits), size=None, length_header=True))
+        bases = (rid, id(pay))
+        u16 = [r for b in bases for r in u16_elem.get(b, [])]
+        bits = elem_bits.get(id(pay)) or elem_bits.get(rid)
+        if any(r in slice_starts for r in u16):       # offset table -> dynamic elements
+            out[rid] = _dyn(ArrayEncoding(
+                element=dyn_byte, size=None, length_header=True))
+        elif bits:                                    # static wide chunks
+            out[rid] = _dyn(UIntEncoding(bits))
+        elif u16:                                     # uint16 values -> UInt16 elements
+            out[rid] = _dyn(UIntEncoding(16))
+        else:                                         # string / dynamic bytes
+            out[rid] = _dyn(dyn_byte)
     return out
 
 
