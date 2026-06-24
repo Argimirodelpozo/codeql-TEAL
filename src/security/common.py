@@ -385,6 +385,21 @@ def _fall_through_bb(prog: SSAProgram, bb: BasicBlock) -> Optional[BasicBlock]:
     return candidates[0]
 
 
+def _frame_param_sources_cached(prog: SSAProgram) -> dict:
+    """``frame_param_sources(prog)`` (the interprocedural ``frame_dig`` output ->
+    caller-arg map), memoised on the program so the per-BB path walk doesn't
+    rebuild it. Cheap to compute, but called once per comparison operand."""
+    cache = getattr(prog, "_sec_frame_param_sources", None)
+    if cache is None:
+        from tealtools.passes.frame_flow import frame_param_sources
+        cache = frame_param_sources(prog)
+        try:
+            prog._sec_frame_param_sources = cache
+        except Exception:
+            pass
+    return cache
+
+
 def _operand_flows_from_field_var(
     prog: SSAProgram,
     operand,
@@ -400,6 +415,13 @@ def _operand_flows_from_field_var(
       - scratch: operand is a ``load N`` output whose every may-influencing
         store wrote a field-flowing SSAVar (MUST semantics, mirrors
         :meth:`SSAProgram.propagate_scratch_constants`).
+      - frame (interprocedural): operand is a ``frame_dig`` param read whose
+        every caller-bound argument flows from a field var (MUST). This is what
+        lets a guard living *inside a proto subroutine* (``frame_dig -1; global
+        ZeroAddress; ==; assert``, the field read happening in the caller and
+        passed as a proto arg) count as protecting the field — without it the
+        whole approval-exit family is blind across the callsub boundary and
+        reports a cross-sub guard as absent (a false positive).
 
     Termination is bounded by ``seen``: each SSAVar / Phi in the finite
     def-use graph is visited at most once, and a repeat visit returns
@@ -432,6 +454,17 @@ def _operand_flows_from_field_var(
                     prog, prog.var(*s), field_vars, seen=seen,
                 )
                 for s in stores
+            )
+        # Frame bridge: a `frame_dig` param read flows from the field iff every
+        # caller argument bound to that param does (MUST). The fat-frame SSA has
+        # no def-use edge across the proto boundary; `frame_param_sources` is the
+        # precise interprocedural layer that supplies the caller-arg set.
+        frame_src = _frame_param_sources_cached(prog)
+        args = frame_src.get(operand)
+        if args:
+            return all(
+                _operand_flows_from_field_var(prog, a, field_vars, seen=seen)
+                for a in args
             )
         return False
     if isinstance(operand, Phi):
