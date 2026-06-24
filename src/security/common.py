@@ -804,6 +804,20 @@ def approval_exit_guarded_for_action(
     for cond in pp.predicates_at(exit_bb.file, exit_bb.first_line):
         v = cond.value
 
+        # Case 0: a DIRECT truth constraint on the OnCompletion field var itself.
+        # `txn OnCompletion; !; assert` (the NoOp-only idiom Puya emits, often
+        # folded into `(OC == 0) && …`) leaves `(OC, "zero")` — OC == 0 — at the
+        # guarded exit; `txn OnCompletion; assert` leaves `(OC, "nonzero")`.
+        #   OC == 0  ⇒ guarded against any non-zero action (DeleteApplication=5,
+        #              UpdateApplication=4, …).
+        #   OC != 0  ⇒ guarded against the NoOp action (0) only (it could still be
+        #              any of 1..5, so it does NOT guard Delete/Update).
+        if _is_oncompletion_var(v):
+            if cond.kind == "zero" and action_int != 0:
+                return True
+            if cond.kind == "nonzero" and action_int == 0:
+                return True
+
         # Case 3 + 4: switch / match edge predicates against an
         # OnCompletion-typed key.
         if cond.kind == "eq" and _is_oncompletion_var(v) and cond.args:

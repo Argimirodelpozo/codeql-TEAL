@@ -1,6 +1,1 @@
-Application is updatable at exit prog.teal:74: OnCompletion == UpdateApplication can reach approval without a guard.
-Application is updatable at exit prog.teal:122: OnCompletion == UpdateApplication can reach approval without a guard.
 Application is updatable at exit prog.teal:173: OnCompletion == UpdateApplication can reach approval without a guard.
-Application is updatable at exit prog.teal:194: OnCompletion == UpdateApplication can reach approval without a guard.
-Application is updatable at exit prog.teal:217: OnCompletion == UpdateApplication can reach approval without a guard.
-Application is updatable at exit prog.teal:240: OnCompletion == UpdateApplication can reach approval without a guard.
