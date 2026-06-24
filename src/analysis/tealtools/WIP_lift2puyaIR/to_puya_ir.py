@@ -692,24 +692,33 @@ def _guess_const_encoding(raw: bytes):
 
 def _guess_decoded_dynamic(main, subs) -> dict:
     """Recognise a value being DECODED as a uint16-length-prefixed dynamic
-    array/string and map it to ``arc4.DynamicArray<Byte>``: ``{id(Register):
+    array/string and map it to the right ``arc4.DynamicArray<T>``: ``{id(Register):
     EncodedType}``.
 
-    A value ``X`` is decoded that way when it is BOTH read at offset 0 as a uint16
-    -- the length, via ``extract_uint16 X 0`` -- AND sliced from offset 2 -- the
-    payload, via ``extract``/``substring`` with start ``2``. That consumption
-    pattern IS the ABI decode of a length-prefixed dynamic value.
+    PROVABLE decode shape (#3): a value ``X`` is decoded that way when it is BOTH
+      - read at offset 0 as a uint16 -- the length prefix, ``extract_uint16 X 0`` --
+        AND
+      - has its payload taken with ``extract X 2 0`` (start 2, length 0 = TO-END):
+        strip the 2-byte length prefix, take the rest.
+    The to-end payload extract is what makes it the canonical dynamic decode (a
+    fixed-length slice from offset 2 would be a struct field, not a dynamic array),
+    so this is much tighter than a bare ``slice-from-2`` co-occurrence.
+
+    ELEMENT type (#1): inferred from how the payload (the ``extract X 2 0`` result)
+    is then chunked -- ``extract_uint64`` -> ``DynamicArray<UInt64>``,
+    ``extract_uint32`` -> ``<UInt32>`` -- giving a structure-aware fuzzer the element
+    STRIDE, not just "it's dynamic". Default ``Byte`` (a string / dynamic bytes);
+    ``extract_uint16`` access is deliberately NOT used (it's ambiguous with a dynamic
+    element's offset table).
 
     Uniquely valuable because it types INPUTS the producer-side recovery can't reach
-    -- a ``txna ApplicationArgs N`` / a subroutine param decoded this way is the ABI
-    method-arg grammar a structure-aware fuzzer needs. Best-effort (a struct whose
-    first field is a uint16 could also match), so side-channel only. The element type
-    is left as ``Byte`` (the proven part is the uint16-length-prefixed *structure*;
-    refining the element size from the payload's chunking is a follow-up)."""
+    (``txna ApplicationArgs N`` / sub params). Best-effort (a struct whose first
+    field is a uint16 and rest is a tail could still match), so side-channel only."""
     from puya.ir.encodings import ArrayEncoding, UIntEncoding
     from puya.ir.types_ import EncodedType
-    len_read: set = set()
-    pay_slice: set = set()
+    len_read: set = set()        # id(X): extract_uint16(X, 0)
+    payload_of: dict = {}        # id(X): the `extract X 2 0` (to-end) result register
+    elem_bits: dict = {}         # id(payload reg): element width in bits, from chunking
     for s in (main, *subs):
         for bb in s.body:
             for o in bb.ops:
@@ -722,14 +731,25 @@ def _guess_decoded_dynamic(main, subs) -> dict:
                         and isinstance(a[0], M.Register)
                         and isinstance(a[1], M.UInt64Constant) and a[1].value == 0):
                     len_read.add(id(a[0]))
-                elif (src.op in (AVMOp.extract, AVMOp.substring) and src.immediates
-                        and isinstance(src.immediates[0], int)
-                        and src.immediates[0] == 2
-                        and a and isinstance(a[0], M.Register)):
-                    pay_slice.add(id(a[0]))
-    dyn = EncodedType(
-        ArrayEncoding(element=UIntEncoding(8), size=None, length_header=True))
-    return {rid: dyn for rid in (len_read & pay_slice)}
+                elif (src.op is AVMOp.extract and a and isinstance(a[0], M.Register)
+                        and len(src.immediates) >= 2 and src.immediates[0] == 2
+                        and src.immediates[1] == 0 and o.targets):
+                    payload_of[id(a[0])] = o.targets[0]
+                elif (src.op is AVMOp.extract_uint64 and a
+                        and isinstance(a[0], M.Register)):
+                    elem_bits[id(a[0])] = 64
+                elif (src.op is AVMOp.extract_uint32 and a
+                        and isinstance(a[0], M.Register)):
+                    elem_bits.setdefault(id(a[0]), 32)
+    out: dict = {}
+    for rid in len_read:
+        pay = payload_of.get(rid)
+        if pay is None:
+            continue
+        bits = elem_bits.get(id(pay), 8)       # default Byte (uint8) = string/bytes
+        out[rid] = EncodedType(ArrayEncoding(
+            element=UIntEncoding(bits), size=None, length_header=True))
+    return out
 
 
 def _guess_encoded_types(main, subs) -> dict:
