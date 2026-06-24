@@ -370,7 +370,41 @@ def to_puya(prog):
 
     main = M.Subroutine(id=lifted.main.id, short_name="main", source_location=None,
                         parameters=[], returns=[], body=main_body, inline=None)
-    return main, [t.subs[s.id] for s in lifted.subroutines]
+    subs = [t.subs[s.id] for s in lifted.subroutines]
+    _recover_biguint(main, subs)
+    return main, subs
+
+
+# AVM ops whose bytes operands/result are a big-endian arbitrary-precision int.
+_BIGUINT_ARITH = frozenset(
+    o for o in ("add_bytes", "sub_bytes", "mul_bytes", "div_bytes", "mod_bytes")
+    if hasattr(AVMOp, o)
+)
+
+
+def _recover_biguint(main, subs) -> int:
+    """Refine the IR type of each bytemath-arithmetic result (``b+`` / ``b-`` /
+    ``b*`` / ``b/`` / ``b%``) from ``bytes`` to ``biguint`` — the AVM bytes value
+    IS a big-endian unbounded integer, which is what Puya's own front-end emits.
+    ``bytes``/``biguint`` are interchangeable IR types (no reinterpret needed), so
+    this is a pure precision refinement; the type recovery flattens to the AVM
+    ``bytes`` divide and this restores the finer type the SSA layer knows from the
+    op. Returns the count refined."""
+    ops = {getattr(AVMOp, o) for o in _BIGUINT_ARITH}
+    n = 0
+    for s in (main, *subs):
+        for bb in s.body:
+            for o in bb.ops:
+                if (isinstance(o, M.Assignment) and isinstance(o.source, M.Intrinsic)
+                        and o.source.op in ops):
+                    try:
+                        object.__setattr__(o.source, "types", (PT.biguint,))
+                    except Exception:
+                        pass
+                    for t in o.targets:
+                        object.__setattr__(t, "ir_type", PT.biguint)
+                        n += 1
+    return n
 
 
 def _opt_passes():
