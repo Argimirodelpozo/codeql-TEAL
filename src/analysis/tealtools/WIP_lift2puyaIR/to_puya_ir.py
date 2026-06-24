@@ -690,6 +690,48 @@ def _guess_const_encoding(raw: bytes):
     return EncodedType(UTF8Encoding())
 
 
+def _guess_decoded_dynamic(main, subs) -> dict:
+    """Recognise a value being DECODED as a uint16-length-prefixed dynamic
+    array/string and map it to ``arc4.DynamicArray<Byte>``: ``{id(Register):
+    EncodedType}``.
+
+    A value ``X`` is decoded that way when it is BOTH read at offset 0 as a uint16
+    -- the length, via ``extract_uint16 X 0`` -- AND sliced from offset 2 -- the
+    payload, via ``extract``/``substring`` with start ``2``. That consumption
+    pattern IS the ABI decode of a length-prefixed dynamic value.
+
+    Uniquely valuable because it types INPUTS the producer-side recovery can't reach
+    -- a ``txna ApplicationArgs N`` / a subroutine param decoded this way is the ABI
+    method-arg grammar a structure-aware fuzzer needs. Best-effort (a struct whose
+    first field is a uint16 could also match), so side-channel only. The element type
+    is left as ``Byte`` (the proven part is the uint16-length-prefixed *structure*;
+    refining the element size from the payload's chunking is a follow-up)."""
+    from puya.ir.encodings import ArrayEncoding, UIntEncoding
+    from puya.ir.types_ import EncodedType
+    len_read: set = set()
+    pay_slice: set = set()
+    for s in (main, *subs):
+        for bb in s.body:
+            for o in bb.ops:
+                if not (isinstance(o, M.Assignment)
+                        and isinstance(o.source, M.Intrinsic)):
+                    continue
+                src = o.source
+                a = src.args
+                if (src.op is AVMOp.extract_uint16 and len(a) == 2
+                        and isinstance(a[0], M.Register)
+                        and isinstance(a[1], M.UInt64Constant) and a[1].value == 0):
+                    len_read.add(id(a[0]))
+                elif (src.op in (AVMOp.extract, AVMOp.substring) and src.immediates
+                        and isinstance(src.immediates[0], int)
+                        and src.immediates[0] == 2
+                        and a and isinstance(a[0], M.Register)):
+                    pay_slice.add(id(a[0]))
+    dyn = EncodedType(
+        ArrayEncoding(element=UIntEncoding(8), size=None, length_header=True))
+    return {rid: dyn for rid in (len_read & pay_slice)}
+
+
 def _guess_encoded_types(main, subs) -> dict:
     """SPECULATIVE encoded-type recovery, returned as a SIDE-CHANNEL
     ``{id(M.Register): EncodedType}`` map -- it does NOT mutate any ``ir_type``, so
@@ -697,10 +739,12 @@ def _guess_encoded_types(main, subs) -> dict:
     lowering. Not wired into :func:`to_puya`'s default path; a consumer that wants
     best-effort ABI structure calls it explicitly.
 
-    Sources of guesses:
-      - intrinsic results, via :func:`_guess_encoding_for` (currently none);
+    Sources of guesses (producer-side guesses win over the coarser decode-side one):
       - bytes CONSTANTS that are self-describing uint16-length-prefixed sequences,
-        via :func:`_guess_const_encoding` -> ``arc4.String`` / dynamic byte array."""
+        via :func:`_guess_const_encoding` -> ``arc4.String``;
+      - intrinsic results, via :func:`_guess_encoding_for` (currently none);
+      - values DECODED as length-prefixed dynamic arrays/strings (incl. method args),
+        via :func:`_guess_decoded_dynamic`."""
     reg_def: dict = {}
     for s in (main, *subs):
         for bb in s.body:
@@ -708,7 +752,7 @@ def _guess_encoded_types(main, subs) -> dict:
                 if isinstance(o, M.Assignment):
                     for t in o.targets:
                         reg_def[id(t)] = o
-    guesses: dict = {}
+    guesses: dict = _guess_decoded_dynamic(main, subs)
     for s in (main, *subs):
         for bb in s.body:
             for o in bb.ops:
@@ -725,7 +769,7 @@ def _guess_encoded_types(main, subs) -> dict:
                     continue
                 for tgt in o.targets:
                     if tgt.ir_type.avm_type == et.avm_type:
-                        guesses[id(tgt)] = et
+                        guesses[id(tgt)] = et   # producer-side wins over decode-side
     return guesses
 
 
