@@ -379,18 +379,31 @@ def to_puya(prog):
 # them to the coarse AVM divide. Each is INTERCHANGEABLE with its AVM base (same
 # `avm_type`, no reinterpret cast in Puya's IR), so retyping is a pure precision
 # refinement Puya's intrinsic validator (which checks `avm_type`) accepts:
-#   bool     <- uint64  (a 0/1 result: cmp / verify / opted-in / getbit / ...)
-#   biguint  <- bytes   (big-endian unbounded int: b+ b- b* b/ b% bsqrt)
-#   account  <- bytes   (32-byte address: txn Sender, global ZeroAddress, ...)
-# Sized-byte types (bytes[8] from itob, bytes[32] from hashes) are NOT here:
-# they're SizedBytesType, and folding a hash/itob result into the generic `bytes`
-# webs it flows through (concat/log/phi) trips Puya's exact-IRType assignment
-# check downstream -- the AVM-divide `bytes` is the faithful lowering type.
+#   bool      <- uint64  (a 0/1 result: cmp / verify / opted-in / getbit / ...)
+#   biguint   <- bytes   (big-endian unbounded int: b+ b- b* b/ b% bsqrt)
+#   account   <- bytes   (32-byte address: txn Sender, global ZeroAddress, ...)
+#   bytes[N]  <- bytes   (a SizedBytesType: itob -> bytes[8], hashes -> bytes[32],
+#                         sumhash/vrf -> bytes[64], txn TxID -> bytes[32], ...)
+# Sized bytes were initially assumed unsafe (a hash/itob result folding into the
+# generic `bytes` webs it flows through). Measured instead: with them on, the
+# corpus + backend gate stays green AND the lowered TEAL is byte-identical (they
+# share `avm_type=bytes`, so it's a pure annotation -- proven by diffing the
+# backend output), and it matches Puya's own genuine IR more closely. So they're
+# included; the guard below keeps any refinement on the same side of the AVM
+# divide, so a langspec `bytes[32]` is only ever applied over a `bytes` (never a
+# uint64 the recovery may have mislabelled -- that stays for the encoder to flag).
 _REFINED_IR_TYPES = frozenset({PT.bool, PT.biguint, PT.account})
 
 # The coarse base types the recovery leaves; only these get refined (never an
 # already-specific type, and never `any`, which is strictly less specific).
 _COARSE_BASE = frozenset({PT.uint64, PT.bytes})
+
+
+def _is_refinable(rt) -> bool:
+    """A langspec return type worth restoring: one of the interchangeable refined
+    primitives, or any fixed-width ``SizedBytesType`` (all bytes-backed)."""
+    from puya.ir.types_ import SizedBytesType
+    return rt in _REFINED_IR_TYPES or isinstance(rt, SizedBytesType)
 
 
 def _langspec_returns(intrinsic: "M.Intrinsic"):
@@ -411,13 +424,13 @@ def _langspec_returns(intrinsic: "M.Intrinsic"):
     return None
 
 
-def _recover_ir_types(main, subs, allow=_REFINED_IR_TYPES) -> int:
+def _recover_ir_types(main, subs, allow=_is_refinable) -> int:
     """Refine each intrinsic result register from the coarse AVM type the recovery
     left (``uint64``/``bytes``) to the finer IR type Puya's langspec declares for
-    that op -- but only the interchangeable ones in ``allow`` (see
-    :data:`_REFINED_IR_TYPES`), and only when the finer type shares the current
-    one's ``avm_type`` (so a refinement never crosses the AVM divide). The
-    intrinsic's ``types`` tuple is rebuilt to match. Returns the count refined."""
+    that op -- but only the interchangeable ones ``allow`` accepts (see
+    :func:`_is_refinable`), and only when the finer type shares the current one's
+    ``avm_type`` (so a refinement never crosses the AVM divide). The intrinsic's
+    ``types`` tuple is rebuilt to match. Returns the count refined."""
     n = 0
     for s in (main, *subs):
         for bb in s.body:
@@ -431,7 +444,7 @@ def _recover_ir_types(main, subs, allow=_REFINED_IR_TYPES) -> int:
                 changed = False
                 for tgt, rt in zip(o.targets, rets):
                     cur = tgt.ir_type
-                    if (rt in allow and cur in _COARSE_BASE
+                    if (allow(rt) and cur in _COARSE_BASE
                             and rt.avm_type == cur.avm_type):
                         object.__setattr__(tgt, "ir_type", rt)
                         changed = True
