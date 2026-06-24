@@ -27,13 +27,25 @@ from .._utils.dot import render as _dot_render
 from . import render as _viz
 
 
-def dump_all(source, out_dir: Optional[str] = None, *, svg: bool = True) -> str:
+def dump_all(source, out_dir: Optional[str] = None, *, svg: bool = True,
+             registry=None) -> str:
     """Return a labeled text dump of every representation of ``source`` (a
     ``.teal`` file, a directory of them, or an in-memory ``{name: text}`` map).
     When ``out_dir`` is given, also write ``contract.txt`` + the graph-shaped
-    layers as ``.svg``/``.dot`` there."""
+    layers as ``.svg``/``.dot`` there. ``registry`` (an ``{app_id: path}`` dict
+    or a yaml path) adds the cross-contract super-CFG when the contract makes
+    resolvable appcalls."""
     prog = SSAProgram(source, verbose=False)
     prog.propagate_constants()
+    # Additive analytical passes (no materialize/DCE), so the SSA section can
+    # show IntRange overlays while the pre-materialized sections still work.
+    for _p in ("propagate_ranges", "propagate_range_arithmetic",
+               "propagate_assert_ranges", "propagate_byte_lengths",
+               "propagate_bytemath_ranges"):
+        try:
+            getattr(prog, _p)()
+        except Exception:
+            pass
 
     parts: list[str] = []
 
@@ -47,19 +59,23 @@ def dump_all(source, out_dir: Optional[str] = None, *, svg: bool = True) -> str:
     add("SOURCE (normalized TEAL)", lambda: _source_text(source))
     add("GRAPH (AST nodes + edges)", lambda: _graph_text(source))
     add("CFG (basic blocks)", lambda: _cfg_text(prog))
-    add("SSA (functional, by block)", lambda: _ssa_render.functional_by_block(prog))
+    add("SSA (functional + IntRange overlay)",
+        lambda: _ssa_render.functional_by_block(prog, show_ranges=True))
+    add("USER-INPUT TAINT (sources -> sensitive sinks)", lambda: _taint_text(prog))
     add("STRUCTURE (subs / routing / handlers)", lambda: analyze_structure(prog).render())
     add("CONTROL TREE (region tree)", lambda: _ct_pretty(build_control_tree(prog)))
     add("PATH PREDICATES", lambda: PathPredicateAnalysis(prog).render())
     add("INNER-TXN REPORT", lambda: InnerTxnReport(prog).render())
     add("PUYA IR (lift)", lambda: _ir_text(source))
+    if registry is not None:
+        add("SUPER-CFG (cross-contract)", lambda: _supercfg_text(prog, registry))
 
     text = "\n\n".join(parts) + "\n"
     if out_dir is not None:
         out = Path(out_dir)
         out.mkdir(parents=True, exist_ok=True)
         (out / "contract.txt").write_text(text)
-        _write_graphs(out, prog, source, svg=svg)
+        _write_graphs(out, prog, source, registry=registry, svg=svg)
     return text
 
 
@@ -106,10 +122,68 @@ def _ir_text(source) -> str:
     return "\n\n".join(s.render() for s in lifter.subs)
 
 
+def _taint_text(prog: SSAProgram) -> str:
+    """User-input → sensitive-sink reachability over the TaintGraph (which now
+    carries the interprocedural frame edges, so param-fed flows are seen)."""
+    import networkx as nx
+    from ..dataflow.taint_graph import TaintGraph
+    from ..opsets import (
+        SENSITIVE_ITXN_FIELDS, STATE_WRITE_OPS, TXN_SOURCE_OPS, LSIG_ARG_OPS,
+    )
+    tg = TaintGraph.of(prog)
+    sources = [
+        n for n in tg.nodes()
+        if (tg.op_of(n) in TXN_SOURCE_OPS and "ApplicationArgs" in (tg.immediates_of(n) or ""))
+        or tg.op_of(n) in LSIG_ARG_OPS
+    ]
+    sinks: list[tuple] = []
+    for n in tg.nodes():
+        op, imm = tg.op_of(n), tg.immediates_of(n)
+        if op == "itxn_field" and imm in SENSITIVE_ITXN_FIELDS:
+            sinks.append((n, f"itxn_field {imm}"))
+        elif op in STATE_WRITE_OPS:
+            sinks.append((n, op))
+    flows = []
+    for s in sources:
+        reach = set(nx.descendants(tg.g, s)) | {s}
+        for sink, name in sinks:
+            if sink in reach:
+                flows.append(f"  {s!r}  ->  {name}@{sink!r}")
+    head = f"{len(sources)} user-input source(s), {len(sinks)} sensitive sink(s)\n"
+    return head + ("\n".join(sorted(flows)) if flows
+                   else "(no user-input -> sensitive-sink flow)")
+
+
+def _supercfg(prog: SSAProgram, registry):
+    """Build the SuperCFG for ``prog`` + ``registry`` (dict or yaml path), or
+    ``None`` if there are no resolvable appcall sites."""
+    from ..cfg import SuperCFG
+    from ..xcontract import find_appcall_sites, load_registry
+    reg = registry if isinstance(registry, dict) else load_registry(registry)
+    if not find_appcall_sites(prog, reg):
+        return None
+    return SuperCFG.build(prog, reg)
+
+
+def _supercfg_text(prog: SSAProgram, registry) -> str:
+    sc = _supercfg(prog, registry)
+    if sc is None:
+        return "(no resolvable appcall sites — nothing to splice)"
+    contracts = sorted({sb.app_id for sb in sc.blocks()},
+                       key=lambda x: (x is not None, x))
+    scope = ["root" if c is None else f"app{c}" for c in contracts]
+    lines = [f"{len(contracts)} contracts: {scope}",
+             f"{len(sc.inter_edges)} inter-contract edge(s):"]
+    for e in sc.inter_edges:
+        lines.append(f"  {e.kind:6}  {e.src!r}  ->  {e.dst!r}")
+    return "\n".join(lines)
+
+
 # --- graphviz files -----------------------------------------------------
 
 
-def _write_graphs(out: Path, prog: SSAProgram, source, *, svg: bool) -> None:
+def _write_graphs(out: Path, prog: SSAProgram, source, *, registry=None,
+                  svg: bool) -> None:
     def emit(name: str, dot: str) -> None:
         if svg:
             try:
@@ -119,12 +193,21 @@ def _write_graphs(out: Path, prog: SSAProgram, source, *, svg: bool) -> None:
                 pass                              # no `dot` on PATH -> .dot fallback
         (out / f"{name}.dot").write_text(dot)
 
-    for name, build in (
+    builders = [
         ("graph", lambda: _viz.to_dot(load_graph(source, verbose=False))),
         ("cfg", lambda: CFG.of(prog).to_dot()),
         ("ssa", lambda: _ssa_render.to_dot(prog)),
         ("control_tree", lambda: _viz.region_to_dot(build_control_tree(prog))),
-    ):
+    ]
+    if registry is not None:
+        def _sc_dot():
+            sc = _supercfg(prog, registry)
+            if sc is None:
+                raise ValueError("no appcall sites")
+            return sc.to_dot()
+        builders.append(("supercfg", _sc_dot))
+
+    for name, build in builders:
         try:
             emit(name, build())
         except Exception:

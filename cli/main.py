@@ -344,7 +344,7 @@ def _cmd_dump(args) -> int:
     import sys as _sys
     from tealtools.viz import dump_all
     source = str(_resolve(args))
-    text = dump_all(source, args.out_dir, svg=not args.no_svg)
+    text = dump_all(source, args.out_dir, svg=not args.no_svg, registry=args.registry)
     if args.out_dir:
         _sys.stderr.write(
             f"wrote full dump to {args.out_dir}/ "
@@ -395,6 +395,8 @@ def build_parser() -> argparse.ArgumentParser:
                              ".svg files into this dir (else text to stdout)")
     dump_p.add_argument("--no-svg", action="store_true",
                         help="write .dot instead of rendering .svg (no Graphviz needed)")
+    dump_p.add_argument("--registry", default=None,
+                        help="yaml AppID->.teal registry; adds the cross-contract super-CFG")
 
     func_p = add(
         "functional",
