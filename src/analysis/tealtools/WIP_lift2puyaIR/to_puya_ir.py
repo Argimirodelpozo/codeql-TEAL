@@ -514,23 +514,51 @@ def _recover_ir_types(main, subs, allow=_is_refinable, byte_lengths=None) -> int
     return n
 
 
-def _encoded_type_for(intrinsic: "M.Intrinsic"):
+def _static_byte_len(value, reg_def: dict):
+    """The statically-known byte length of an IR value, or ``None``: a bytes
+    constant's literal length, a ``SizedBytesType`` register's width, or a register
+    defined by ``bzero N`` with a constant ``N``."""
+    from puya.ir.types_ import SizedBytesType
+    if isinstance(value, M.BytesConstant):
+        return len(value.value)
+    if isinstance(value, M.Register):
+        if isinstance(value.ir_type, SizedBytesType):
+            return value.ir_type.num_bytes
+        d = reg_def.get(id(value))
+        if (d is not None and isinstance(d.source, M.Intrinsic)
+                and d.source.op is AVMOp.bzero and d.source.args
+                and isinstance(d.source.args[0], M.UInt64Constant)):
+            return d.source.args[0].value
+    return None
+
+
+def _encoded_type_for(intrinsic: "M.Intrinsic", reg_def: dict):
     """The ARC4 / ABI ``EncodedType`` a producing op's *result wire-encodes*, or
     ``None``. Deliberately conservative -- only idioms whose byte layout IS the ABI
     encoding, so the recovered structured type is faithful to the bytes (regardless
     of the source's intent).
 
-    Recognised so far (the simplest, unambiguous scalar case):
-      - ``itob X`` -> ``arc4.UInt64`` (``EncodedType(UIntEncoding(64))``): ``itob``
-        emits exactly the big-endian 8-byte encoding, which IS the ABI ``uint64``
-        wire format.
+    Recognised so far:
+      - ``itob X`` -> ``arc4.UInt64`` (``UIntEncoding(64)``): ``itob`` emits exactly
+        the big-endian 8-byte encoding, which IS the ABI ``uint64`` wire format.
+      - ``setbit base 0 b`` where ``base`` is a single byte (``bzero 1`` / a 1-byte
+        ``0x00`` constant) -> ``arc4.Bool`` (``Bool8Encoding``): this writes the bool
+        into the high bit of a lone byte, which IS the standalone ABI ``bool`` wire
+        form (``0x00`` / ``0x80``). A multi-byte base is the *packed* bool case (a
+        bit inside a tuple/array) and is left for the aggregate recovery.
 
-    This is the seed of the encoded-type recovery; richer idioms (arc4 bool / static
-    & dynamic arrays / tuples) layer on here as their byte patterns are matched."""
-    from puya.ir.encodings import UIntEncoding
+    Richer idioms (arc4 static & dynamic arrays / tuples) layer on here as their byte
+    patterns are matched."""
+    from puya.ir.encodings import Bool8Encoding, UIntEncoding
     from puya.ir.types_ import EncodedType
-    if intrinsic.op is AVMOp.itob:
+    op = intrinsic.op
+    if op is AVMOp.itob:
         return EncodedType(UIntEncoding(64))
+    if op is AVMOp.setbit and len(intrinsic.args) == 3:
+        base, index, _value = intrinsic.args
+        if (isinstance(index, M.UInt64Constant) and index.value == 0
+                and _static_byte_len(base, reg_def) == 1):
+            return EncodedType(Bool8Encoding())
     return None
 
 
@@ -538,13 +566,21 @@ def _recover_encoded_types(main, subs) -> int:
     """Refine a result register to the ARC4 ``EncodedType`` its producing op
     wire-encodes (:func:`_encoded_type_for`). Like the rest of the recovery it only
     moves a register whose ``avm_type`` already matches (an ``EncodedType``'s
-    ``avm_type`` is ``bytes``, so it sits over the same ``bytes``/``bytes[N]`` the
-    sized-bytes pass left), and rebuilds the intrinsic's ``types`` to match.
+    ``avm_type`` is ``bytes`` for the byte-backed encodings, so it sits over the same
+    ``bytes``/``bytes[N]`` the sized-bytes pass left), and rebuilds the intrinsic's
+    ``types`` to match.
 
     NOTE: unlike the scalar refinements, an ``EncodedType`` is *layout-bearing*, so
     this is the first recovery that is NOT guaranteed a free annotation by
     construction -- its TEAL-neutrality is established by the gate, not by the
     avm_type argument alone. Returns the count refined."""
+    reg_def: dict = {}
+    for s in (main, *subs):
+        for bb in s.body:
+            for o in bb.ops:
+                if isinstance(o, M.Assignment):
+                    for t in o.targets:
+                        reg_def[id(t)] = o
     n = 0
     for s in (main, *subs):
         for bb in s.body:
@@ -552,7 +588,7 @@ def _recover_encoded_types(main, subs) -> int:
                 if not (isinstance(o, M.Assignment)
                         and isinstance(o.source, M.Intrinsic)):
                     continue
-                et = _encoded_type_for(o.source)
+                et = _encoded_type_for(o.source, reg_def)
                 if et is None:
                     continue
                 changed = False
