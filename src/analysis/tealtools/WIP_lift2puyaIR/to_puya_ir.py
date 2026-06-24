@@ -611,6 +611,23 @@ def _confident_encoding_for(intrinsic: "M.Intrinsic", reg_def: dict):
         re = _static_encoding_elements(intrinsic.args[1])
         if le and re and not (_is_bool_encoding(le[-1]) and _is_bool_encoding(re[0])):
             return EncodedType(TupleEncoding([*le, *re]))
+    if op is AVMOp.extract and len(intrinsic.args) == 1 \
+            and len(intrinsic.immediates) == 2:
+        # `extract START LEN <uintN encoding>` taking the LOW K bytes (the extract
+        # reaches the end: START + K == width) -> the narrower arc4.UInt(K*8): a
+        # big-endian UIntK's wire form IS the trailing K bytes of the wider uint.
+        # (`itob x` -> Encoded(uint64), then `extract 6 2` -> arc4.UInt16, etc.)
+        start, length = intrinsic.immediates
+        base = intrinsic.args[0]
+        if (isinstance(start, int) and isinstance(length, int)
+                and isinstance(base, M.Register)
+                and isinstance(base.ir_type, EncodedType)
+                and isinstance(base.ir_type.encoding, UIntEncoding)
+                and base.ir_type.num_bytes is not None):
+            total = base.ir_type.num_bytes
+            k = length if length > 0 else total - start
+            if 0 < k < total and start + k == total:
+                return EncodedType(UIntEncoding(k * 8))
     return None
 
 
