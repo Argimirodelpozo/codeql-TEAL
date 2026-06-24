@@ -67,6 +67,8 @@ def dump_all(source, out_dir: Optional[str] = None, *, svg: bool = True,
     add("PATH PREDICATES", lambda: PathPredicateAnalysis(prog).render())
     add("INNER-TXN REPORT", lambda: InnerTxnReport(prog).render())
     add("PUYA IR (lift)", lambda: _ir_text(source))
+    add("GUESSED ABI ENCODINGS (speculative side-channel)",
+        lambda: _guessed_encodings_text(source))
     if registry is not None:
         add("SUPER-CFG (cross-contract)", lambda: _supercfg_text(prog, registry))
 
@@ -118,10 +120,47 @@ def _cfg_text(prog: SSAProgram) -> str:
 def _ir_text(source) -> str:
     """The genuine ``puya.ir`` (via Puya's own text emitter), un-optimised so
     every register shows with its recovered type -- incl. the langspec
-    refinements (``bool`` / ``biguint`` / ``account`` / ``bytes[N]``) that only
-    exist in the real Puya IR, not the lift's pre-IR intermediate."""
+    refinements (``bool`` / ``biguint`` / ``account`` / ``bytes[N]``) and the
+    CONFIDENT ARC4 encoded types (``arc4.UInt64`` / ``arc4.Bool`` / static
+    ``arc4.Tuple`` / ...) that only exist in the real Puya IR, not the lift's
+    pre-IR intermediate."""
     from ..WIP_lift2puyaIR import to_puya_ir
     return to_puya_ir.render(SSAProgram(source, verbose=False), optimize_ir=False)
+
+
+def _guessed_encodings_text(source) -> str:
+    """The SPECULATIVE ARC4 encoded-type recovery side-channel
+    (:func:`to_puya_ir._guess_encoded_types`) -- best-effort guesses (currently
+    strict-proof ``arc4.String`` literals) that are deliberately NOT in the IR's
+    ``ir_type``, so a wrong guess can't affect lowering. Shown here so a consumer
+    (e.g. structure-aware fuzzing) can see what's available; for a string guess the
+    decoded text is included."""
+    import puya.ir.models as M
+    from ..WIP_lift2puyaIR import to_puya_ir
+    main, subs = to_puya_ir.to_puya(SSAProgram(source, verbose=False))
+    guesses = to_puya_ir._guess_encoded_types(main, subs)
+    if not guesses:
+        return "(no speculative ABI-structure guesses)"
+    name_of, const_of = {}, {}
+    for sub in [main, *subs]:
+        for bb in sub.body:
+            for o in bb.ops:
+                if isinstance(o, M.Assignment):
+                    for t in o.targets:
+                        name_of[id(t)] = f"{t.name}#{t.version}"
+                        if isinstance(o.source, M.BytesConstant):
+                            const_of[id(t)] = o.source.value
+    lines = [f"{len(guesses)} guess(es) — strict-proof, side-channel only "
+             "(never in the IR's ir_type):"]
+    for rid, et in sorted(guesses.items(), key=lambda kv: name_of.get(kv[0], "")):
+        extra = ""
+        if rid in const_of and "utf8" in str(et):
+            try:
+                extra = f"  = {const_of[rid][2:].decode('utf-8')!r}"
+            except (UnicodeDecodeError, IndexError):
+                pass
+        lines.append(f"  {name_of.get(rid, '?')}: {et}{extra}")
+    return "\n".join(lines)
 
 
 def _ssa_overlay(prog: SSAProgram) -> str:
