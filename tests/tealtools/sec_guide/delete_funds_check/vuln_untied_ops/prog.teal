@@ -1,0 +1,29 @@
+#pragma version 8
+// VULNERABLE: both `balance` and `min_balance` opcodes appear, but they are
+// NEVER compared to each other — balance gates an unrelated amount check and
+// min_balance is logged. The old "both opcodes present" proxy wrongly treated
+// this as a funds check and suppressed the finding (a false negative). The
+// delete path performs no balance-vs-min-balance check.
+txn OnCompletion
+int 5
+==
+bnz delete_handler
+// non-delete path uses balance and min_balance, but never tied together
+global CurrentApplicationAddress
+balance
+int 1000000
+>
+assert
+global CurrentApplicationAddress
+min_balance
+itob
+log
+int 1
+return
+delete_handler:
+txn Sender
+global CreatorAddress
+==
+assert
+int 1
+return
