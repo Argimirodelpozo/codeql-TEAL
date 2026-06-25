@@ -787,8 +787,9 @@ def _guess_struct_encodings(main, subs, dynamic_guesses) -> dict:
     COMPUTED offset in a loop instead, so it's excluded here). Reconstruction:
       - ``extract_uint16(X, p_const)`` whose result is a slice start -> a DYNAMIC
         field at head position ``p`` (2-byte offset slot); its type is the bracket
-        ``substring3(X, off_p, off_q)`` slice, taken from ``dynamic_guesses`` (a
-        nested String / DynamicArray) or defaulted to dynamic bytes;
+        ``substring3(X, off_p, off_q)`` slice -- a NESTED struct (the bracket itself
+        decoded as a struct) recurses, else a ``dynamic_guesses`` String/DynamicArray,
+        else dynamic bytes;
       - ``extract_uintN(X, p_const)`` (used as a value) -> a static ``UIntN`` field;
       - fields ordered by head position, with any UNREAD head gap modeled as a
         ``uint8[gap]`` byte BLOB (we know the byte count from the positions, just not
@@ -838,31 +839,53 @@ def _guess_struct_encodings(main, subs, dynamic_guesses) -> dict:
         else:                                        # inlined uint16 value -> static field
             d.setdefault(pos, ("static", 2, UIntEncoding(16)))
     dyn_byte = ArrayEncoding(element=UIntEncoding(8), size=None, length_header=True)
-    out: dict = {}
-    for base, sl in slots.items():
-        if not any(k == "dyn" for (k, _, _) in sl.values()) or len(sl) < 2:
-            continue                                 # a struct: >=1 dynamic field, >=2 fields
+    struct_bases = {
+        b for b, sl in slots.items()
+        if any(k == "dyn" for (k, _, _) in sl.values()) and len(sl) >= 2
+    }
+    memo: dict = {}                                  # id(base) -> TupleEncoding | None
+
+    def _struct_enc(base, building):
+        """The ``TupleEncoding`` reconstructed for a struct base, recursing on
+        nested-struct fields (a dynamic field whose sliced-out value is itself
+        decoded as a struct). ``None`` if the head reads are inconsistent."""
+        if base in memo:
+            return memo[base]
+        if base in building:                         # cyclic (shouldn't happen) -> bail
+            return None
+        building = building | {base}
         fields = []
         expected = 0
-        consistent = True
-        for pos in sorted(sl):
-            kind, size, info = sl[pos]
+        for pos in sorted(slots[base]):
+            kind, size, info = slots[base][pos]
             if pos > expected:                       # unread head bytes -> byte blob
                 fields.append(ArrayEncoding(
                     element=UIntEncoding(8), size=pos - expected, length_header=False))
             elif pos < expected:                     # overlapping reads -> inconsistent
-                consistent = False
-                break
+                memo[base] = None
+                return None
             if kind == "static":
                 fields.append(info)
             else:                                    # dynamic field
                 fld = field_of.get(info)
-                enc = (dynamic_guesses[id(fld)].encoding
-                       if fld is not None and id(fld) in dynamic_guesses else None)
-                fields.append(enc if enc is not None else dyn_byte)
+                nested = (_struct_enc(id(fld), building)
+                          if fld is not None and id(fld) in struct_bases else None)
+                if nested is not None:               # a NESTED struct field
+                    fields.append(nested)
+                elif fld is not None and id(fld) in dynamic_guesses:
+                    fields.append(dynamic_guesses[id(fld)].encoding)
+                else:
+                    fields.append(dyn_byte)
             expected = pos + size
-        if consistent and fields:
-            out[base] = EncodedType(TupleEncoding(fields))
+        enc = TupleEncoding(fields) if fields else None
+        memo[base] = enc
+        return enc
+
+    out: dict = {}
+    for base in struct_bases:
+        enc = _struct_enc(base, set())
+        if enc is not None:
+            out[base] = EncodedType(enc)
     return out
 
 
