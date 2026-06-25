@@ -27,6 +27,9 @@ class _ApprovalExitProtectedDetector:
     name: ClassVar[str]
     field: ClassVar[str]
     violation_cls: ClassVar[type]
+    # Detectors whose field is checked on a SIBLING group txn (asset-id-validation)
+    # set this so a `gtxn N FIELD` guard counts; default keeps app-call scope.
+    seed_gtxn: ClassVar[bool] = False
 
     def __init__(self, prog: SSAProgram, *, file: Optional[str] = None):
         self.prog = prog
@@ -47,6 +50,7 @@ class _ApprovalExitProtectedDetector:
         ):
             if not common.approval_exit_protected_for_field(
                 self.prog, exit_bb, self.field, file=self.file,
+                include_gtxn=self.seed_gtxn,
             ):
                 out.append(self.violation_cls(exit_bb))
         return out

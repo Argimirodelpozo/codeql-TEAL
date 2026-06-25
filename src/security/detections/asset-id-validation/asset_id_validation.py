@@ -55,6 +55,9 @@ class AssetIdValidationDetector(_ApprovalExitProtectedDetector):
     name = "sec-guide/asset-id-validation"
     field = "XferAsset"
     violation_cls = AssetIdValidationViolation
+    # The asset transfer is usually a SIBLING axfer, so the XferAsset pin lives on
+    # `gtxn N XferAsset`, not `txn XferAsset` — seed both.
+    seed_gtxn = True
 
     def applies(self) -> bool:
         # Only programs that actually move assets need an XferAsset check.

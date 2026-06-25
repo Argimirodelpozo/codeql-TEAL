@@ -246,7 +246,10 @@ def field_validated_on_all_paths(
     Phi-aware on the operand check (cross-BB cmps are common when the
     field read sits in one BB and the comparison in a successor)."""
     field_vars = {
-        out for a in txn_field_reads(prog, field, file=file) for out in a.outputs
+        out
+        for a in (txn_field_reads(prog, field, file=file)
+                  + gtxn_field_reads(prog, field, file=file))
+        for out in a.outputs
         if isinstance(out, SSAVar)
     }
     if not field_vars:
@@ -601,10 +604,17 @@ def _approval_exit_protected_for_seeds(
 
 def _txn_field_seeds(
     prog: SSAProgram, field: str, *, file: Optional[str] = None,
+    include_gtxn: bool = False,
 ) -> set[SSAVar]:
+    reads = txn_field_reads(prog, field, file=file)
+    if include_gtxn:
+        # Some fields are validated on a SIBLING transaction in the group, not the
+        # app call itself — e.g. AssetCloseTo / XferAsset on the deposit axfer.
+        # Opt-in (asset-close-to, asset-id-validation) so the txn-only detectors
+        # (rekey-to, fee, …) keep their app-call-scoped semantics.
+        reads = reads + gtxn_field_reads(prog, field, file=file)
     return {
-        out for a in txn_field_reads(prog, field, file=file) for out in a.outputs
-        if isinstance(out, SSAVar)
+        out for a in reads for out in a.outputs if isinstance(out, SSAVar)
     }
 
 
@@ -619,16 +629,21 @@ def _global_field_seeds(
 
 def approval_exit_protected_for_field(
     prog: SSAProgram, exit_bb: BasicBlock, field: str,
-    *, file: Optional[str] = None,
+    *, file: Optional[str] = None, include_gtxn: bool = False,
 ) -> bool:
     """Approval exit protected for a field: every CFG path from any
     program entry to ``exit_bb`` crosses at least one BB protected
     for ``field``. Equivalently, ``exit_bb`` is *not* reachable from
-    any entry along a path of unprotected BBs."""
+    any entry along a path of unprotected BBs.
+
+    ``include_gtxn`` also seeds ``gtxn``/``gtxns`` reads of the field — for
+    detectors whose field is validated on a sibling group transaction."""
     if file is None:
         file = exit_bb.file
     return _approval_exit_protected_for_seeds(
-        prog, exit_bb, _txn_field_seeds(prog, field, file=file), file=file,
+        prog, exit_bb,
+        _txn_field_seeds(prog, field, file=file, include_gtxn=include_gtxn),
+        file=file,
     )
 
 

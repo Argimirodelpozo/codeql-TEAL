@@ -1,0 +1,11 @@
+#pragma version 10
+gtxn 1 XferAsset
+int 31566704
+==
+assert
+gtxn 1 AssetAmount
+int 5
+>=
+assert
+int 1
+return
