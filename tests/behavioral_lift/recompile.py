@@ -21,8 +21,11 @@ REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "src/analysis"))
 
 
-def lift_to_teal(db: str) -> str:
-    """SSAProgram(db) -> Puya IR -> split/destructure -> MIR -> TEAL text."""
+def lift_to_teal(db: str, *, aggressive: bool = False) -> str:
+    """SSAProgram(db) -> Puya IR -> split/destructure -> MIR -> TEAL text. With
+    ``aggressive`` the codegen-changing optimiser passes run (intrinsic folding +
+    ARC4 encode/decode elimination) -- behaviour should be unchanged, which is what
+    the differential dryrun in :mod:`compare` verifies."""
     import puya.ir.models as M
     from puya.context import ArtifactCompileContext, CompiledProgramProvider
     from puya.errors import InternalError
@@ -51,7 +54,7 @@ def lift_to_teal(db: str) -> str:
                 avm_version = max(int(_m.group(1)), 10)
                 break
     main, subs = to_puya_ir.to_puya(prog)
-    to_puya_ir.optimize([main, *subs])
+    to_puya_ir.optimize([main, *subs], aggressive=aggressive)
     try:
         provider = CompiledProgramProvider()
     except Exception:

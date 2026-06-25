@@ -989,10 +989,13 @@ def _recover_encoded_types(main, subs) -> int:
 
 
 def _opt_passes():
-    """Puya optimiser passes that take no (or an unused) compile context, so they
-    run directly on our translated subroutines -- order roughly follows Puya's own
-    pipeline. (slot_elimination/intrinsic_simplifier need a real context and act on
-    Puya's Slot abstraction / high-level ops we don't emit, so they're omitted.)"""
+    """Puya optimiser passes that take no (or an unused) compile context AND are pure
+    cleanups (do not alter the lowered TEAL beyond removing dead/duplicate work), so
+    they run directly on our translated subroutines -- order roughly follows Puya's
+    own pipeline. The CODEGEN-CHANGING simplifications (intrinsic_simplifier,
+    encode_decode_pair_elimination) are opt-in via :func:`_aggressive_passes`;
+    slot_elimination / inlining / box / itxn-field passes need a real context or the
+    Slot abstraction we don't emit, so they stay omitted."""
     from puya.ir.optimize.assignments import copy_propagation
     from puya.ir.optimize.collapse_blocks import merge_blocks, remove_linear_jumps
     from puya.ir.optimize.constant_propagation import constant_replacer
@@ -1008,6 +1011,28 @@ def _opt_passes():
             repeated_expression_elimination, simplify_control_ops,
             remove_unreachable_blocks, merge_blocks, remove_linear_jumps,
             remove_unused_variables]
+
+
+def _aggressive_passes():
+    """Extra Puya passes that genuinely SIMPLIFY the lowered TEAL (not pure
+    annotations): ``intrinsic_simplifier`` (constant folding, strength reduction, and
+    -- using our recovered sized-byte / account types -- ``len`` + comparison folding)
+    and ``encode_decode_pair_elimination`` (redundant ARC4 encode∘decode round-trips).
+
+    Opt-in (``optimize(aggressive=True)``) because they CHANGE codegen, so they are
+    gated behaviourally (the lift behaves identically), NOT by byte-identity. Neither
+    needs a real compile context: ``encode_decode_pair_elimination`` ignores its
+    ``_context``, and ``intrinsic_simplifier`` reads only ``expand_all_bytes`` (a bool,
+    supplied via a tiny shim) -- so the old "needs a real context" exclusion was
+    overstated. ``intrinsic_simplifier`` is wrapped to take the uniform ``(ctx, sub)``
+    shape so :func:`optimize` can call it like the rest."""
+    import types
+
+    from puya.ir.optimize.assignments import encode_decode_pair_elimination
+    from puya.ir.optimize.intrinsic_simplification import intrinsic_simplifier
+    shim = types.SimpleNamespace(expand_all_bytes=False)
+    return [lambda _ctx, s: intrinsic_simplifier(shim, s),
+            encode_decode_pair_elimination]
 
 
 _BYTES_IRT = frozenset({PT.bytes, PT.account})
@@ -1038,16 +1063,21 @@ def _define_named_orphan(subs, name: str, version: int) -> bool:
     return False
 
 
-def optimize(subs, *, max_rounds: int = 100) -> int:
+def optimize(subs, *, max_rounds: int = 100, aggressive: bool = False) -> int:
     """Run Puya's context-free optimiser passes over ``subs`` to a fixpoint.
     Mutates the subroutines in place; returns the number of rounds taken. Puya's
     pass logging is silenced for the duration. If a pass rejects a register the
     reconstruction left undefined, define it (typed zero) and retry -- bounded,
-    and only ever engaged by a contract that fails to optimise."""
+    and only ever engaged by a contract that fails to optimise.
+
+    ``aggressive`` adds the CODEGEN-CHANGING simplifications (:func:`_aggressive_passes`
+    -- intrinsic folding + ARC4 encode/decode elimination). Default off, so the lift
+    stays faithful / byte-identical for analysis; turn it on for a maximally-optimised
+    lowering (gated behaviourally, since it alters the TEAL)."""
     import logging
     import re
     from puya.errors import InternalError
-    passes = _opt_passes()
+    passes = _opt_passes() + (_aggressive_passes() if aggressive else [])
     log = logging.getLogger("puya")
     prev = log.level
     log.setLevel(logging.WARNING)
