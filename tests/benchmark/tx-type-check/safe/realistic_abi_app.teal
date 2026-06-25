@@ -1,0 +1,23 @@
+#pragma version 8
+txn ApplicationID
+bz bare
+txn OnCompletion
+int 0
+==
+assert
+txna ApplicationArgs 0
+byte 0x12345678
+==
+assert
+byte "count"
+app_global_get
+int 1
++
+byte "count"
+swap
+app_global_put
+int 1
+return
+bare:
+int 1
+return

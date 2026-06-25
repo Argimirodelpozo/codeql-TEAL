@@ -1,4 +1,6 @@
 #pragma version 10
+    txn ApplicationID
+    assert
     gtxn 0 Amount
     int 1000
     >

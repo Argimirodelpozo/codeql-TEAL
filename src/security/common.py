@@ -1110,6 +1110,74 @@ def itxn_value_guarded(
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# Contract-kind classification (application vs logic signature)
+#
+# Several detectors validate fields of the SIGNED/authorizing transaction
+# (RekeyTo / CloseRemainderTo / Fee / Lease / TypeEnum). A LOGIC SIGNATURE
+# authorizes the txn it is attached to, so it must validate those fields; an
+# APPLICATION does not — the caller authorizes the outer txn — so those checks
+# are meaningless on the app's own call and firing them is a false positive.
+# `applies_to` declares each detector's scope; this classifies the program so a
+# runner can honor it without the user declaring a mode.
+# ---------------------------------------------------------------------------
+
+
+# Opcodes valid only in Application mode (the AVM rejects them in Signature
+# mode), so their presence proves the program is an application.
+_APP_ONLY_OPS = frozenset({
+    "app_global_get", "app_global_put", "app_global_del", "app_global_get_ex",
+    "app_local_get", "app_local_put", "app_local_del", "app_local_get_ex",
+    "app_opted_in", "app_params_get", "asset_params_get", "asset_holding_get",
+    "acct_params_get",
+    "itxn_begin", "itxn_field", "itxn_submit", "itxn_next",
+    "itxn", "itxna", "itxnas", "gitxn", "gitxna", "gitxnas",
+    "box_create", "box_put", "box_get", "box_del", "box_replace",
+    "box_extract", "box_len", "box_resize", "box_splice",
+    "log", "gload", "gloads", "gloadss",
+})
+
+# Txn fields that exist only for application calls — reading one proves an app.
+_APP_ONLY_FIELDS = frozenset({
+    "OnCompletion", "ApplicationID", "NumAppArgs", "ApplicationArgs",
+    "Applications", "NumApplications", "CreatedApplicationID", "LastLog",
+    "NumLogs", "Logs", "GlobalNumUint", "GlobalNumByteSlice",
+    "LocalNumUint", "LocalNumByteSlice", "ApprovalProgram", "ClearStateProgram",
+})
+
+_TXN_READ_OPS = frozenset({
+    "txn", "txna", "txnas", "gtxn", "gtxna", "gtxnas",
+    "gtxns", "gtxnsa", "gtxnsas",
+})
+
+
+def classify_program(prog: SSAProgram, *, file: Optional[str] = None) -> str:
+    """``"app"`` if the program uses any application-only opcode or txn field,
+    else ``"logicsig"``. Sound for the real corpus (every app routes on
+    ``ApplicationArgs`` / ``OnCompletion`` or touches state); a stateless program
+    with none of these is, by definition, a logic signature."""
+    for a in prog.assignments:
+        if not file_match(a.location.file, file):
+            continue
+        if a.op in _APP_ONLY_OPS:
+            return "app"
+        if a.op in _TXN_READ_OPS:
+            toks = a.immediates.split()
+            # `txn FIELD` -> toks[0]; `gtxn N FIELD` -> toks[1].
+            for t in toks[:2]:
+                if t in _APP_ONLY_FIELDS:
+                    return "app"
+    return "logicsig"
+
+
+def program_applies_to(prog: SSAProgram, detector_cls, *,
+                       file: Optional[str] = None) -> bool:
+    """Whether ``detector_cls`` (by its ``applies_to``) is in scope for this
+    program's classified kind. A detector with no ``applies_to`` runs on both."""
+    applies = getattr(detector_cls, "applies_to", frozenset({"app", "logicsig"}))
+    return classify_program(prog, file=file) in applies
+
+
 def loc(a) -> str:
     """``file:line`` formatter — the canonical location format used by
     every existing detector's ``pretty()`` output."""

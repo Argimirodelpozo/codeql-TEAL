@@ -18,8 +18,6 @@ app7000001  sec-guide/is-updatable  callee/db  Application is updatable at exit 
 app7000001  sec-guide/is-updatable  callee/db  Application is updatable at exit prog.teal:27: OnCompletion == UpdateApplication can reach approval without a guard.
 app7000001  sec-guide/rekey-to  callee/db  Approval exit at prog.teal:23 is reachable without a RekeyTo check — an attacker can rekey the account.
 app7000001  sec-guide/rekey-to  callee/db  Approval exit at prog.teal:27 is reachable without a RekeyTo check — an attacker can rekey the account.
-app7000001  sec-guide/tx-type-check  callee/db  Approval exit at prog.teal:23 is reachable without a txn Type / TypeEnum check — any transaction type is accepted.
-app7000001  sec-guide/tx-type-check  callee/db  Approval exit at prog.teal:27 is reachable without a txn Type / TypeEnum check — any transaction type is accepted.
 app7000001  sec-guide/unprotected-deletable  callee/db  Application is deletable by anyone at exit prog.teal:23: no sender == creator check guards the approval path for DeleteApplication.
 app7000001  sec-guide/unprotected-deletable  callee/db  Application is deletable by anyone at exit prog.teal:27: no sender == creator check guards the approval path for DeleteApplication.
 app7000001  sec-guide/unprotected-updatable  callee/db  Application is updatable by anyone at exit prog.teal:23: no sender == creator check guards the approval path for UpdateApplication.

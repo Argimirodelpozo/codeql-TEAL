@@ -37,6 +37,11 @@ class TxTypeCheckViolation:
 
 class TxTypeCheckDetector:
     name = "sec-guide/tx-type-check"
+    # A logic signature must restrict which transaction TYPES it authorizes; an
+    # application is *always* invoked as an `appl` txn, so checking its own
+    # TypeEnum is redundant — flagging the absence on an app is a false positive.
+    # (Validating a SIBLING's type is the unvalidated-group-sibling concern.)
+    applies_to = frozenset({"logicsig"})
 
     def __init__(self, prog: SSAProgram, *, file: Optional[str] = None):
         self.prog = prog
