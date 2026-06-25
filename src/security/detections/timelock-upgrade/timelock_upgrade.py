@@ -60,8 +60,15 @@ def _has_timestamp_check(
     for op in prog.assignments:
         if op.op not in _CMP_OPS or not common.file_match(op.location.file, file):
             continue
-        if any(common._operand_flows_from_field_var(prog, v, seeds)
-               for v in op.inputs):
+        if not any(common._operand_flows_from_field_var(prog, v, seeds)
+                   for v in op.inputs):
+            continue
+        # The comparison must be ENFORCED — a `LatestTimestamp > deadline` whose
+        # result is dropped (or sits on an unrelated branch and is never asserted)
+        # enforces no delay. Without this, an attacker silences the detector with
+        # one dead timestamp comparison while leaving the upgrade un-timelocked.
+        if op.outputs and isinstance(op.outputs[0], SSAVar) and \
+                common.def_forward_reaches_enforcement(prog, op.outputs[0]):
             return True
     return False
 

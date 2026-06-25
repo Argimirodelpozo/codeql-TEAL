@@ -16,8 +16,34 @@ this one runs as part of producing it (cf. the sibling
 """
 from __future__ import annotations
 
-from .models import SSAVar
+from .models import Phi, SSAVar
 from .program import SSAProgram
+
+
+def _leaf_value_keys(v, seen=None) -> set:
+    """The ``(file, line, index)`` keys of the SSAVar leaves of a stored value.
+
+    A plain ``SSAVar`` is its own leaf. A ``Phi`` has no ``(file, line, index)``
+    key of its own and is not an ``SSAVar``, so a ``store`` of a phi value used to
+    be dropped entirely (the load saw no reaching def) — a real reaching-def gap
+    that silently lost scratch flow for the common "merge two values, spill to a
+    slot" codegen pattern. We flatten the phi to its SSAVar arg leaves instead:
+    the stored value IS one of those args, so for MAY consumers (taint) every leaf
+    may reach the load, and for MUST consumers (const-prop) the leaves must all
+    agree — both correct."""
+    if isinstance(v, SSAVar):
+        return {(v.file, v.line, v.index)}
+    if isinstance(v, Phi):
+        if seen is None:
+            seen = set()
+        if id(v) in seen:
+            return set()
+        seen.add(id(v))
+        out: set = set()
+        for arg in v.args:
+            out |= _leaf_value_keys(arg, seen)
+        return out
+    return set()
 
 
 def compute_scratch_influence(prog: SSAProgram) -> dict:
@@ -53,11 +79,9 @@ def compute_scratch_influence(prog: SSAProgram) -> dict:
                 continue
             if a.op == "store":
                 if a.inputs:
-                    v = a.inputs[0]
-                    if isinstance(v, SSAVar):
-                        events.append((
-                            i, "store", slot, (v.file, v.line, v.index)
-                        ))
+                    keys = _leaf_value_keys(a.inputs[0])
+                    if keys:
+                        events.append((i, "store", slot, keys))
             elif a.op == "load":
                 events.append((i, "load", slot, None))
                 loads_here.append((a, slot, i))
@@ -69,9 +93,9 @@ def compute_scratch_influence(prog: SSAProgram) -> dict:
     gen: dict = {b: {} for b in prog.blocks.values()}
     kill: dict = {b: set() for b in prog.blocks.values()}
     for b, events in bb_events.items():
-        for _, kind, slot, val_key in events:
+        for _, kind, slot, val_keys in events:
             if kind == "store":
-                gen[b][slot] = val_key
+                gen[b][slot] = set(val_keys)
                 kill[b].add(slot)
 
     # Fixed-point reaching-definitions at BB granularity.
@@ -94,8 +118,8 @@ def compute_scratch_influence(prog: SSAProgram) -> dict:
             for slot, srcs in new_in.items():
                 if slot not in kill[b]:
                     new_out[slot] = set(srcs)
-            for slot, val_key in gen[b].items():
-                new_out[slot] = {val_key}
+            for slot, val_keys in gen[b].items():
+                new_out[slot] = set(val_keys)
             if new_in != in_set[b] or new_out != out_set[b]:
                 changed = True
                 in_set[b] = new_in
@@ -109,9 +133,9 @@ def compute_scratch_influence(prog: SSAProgram) -> dict:
         local = {
             slot: set(srcs) for slot, srcs in in_set[b].items()
         }
-        for ev_i, kind, slot, val_key in bb_events[b]:
+        for ev_i, kind, slot, val_keys in bb_events[b]:
             if kind == "store":
-                local[slot] = {val_key}
+                local[slot] = set(val_keys)
             elif kind == "load":
                 srcs = local.get(slot)
                 if srcs:

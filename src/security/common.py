@@ -268,7 +268,16 @@ def field_validated_on_all_paths(
         cmp_bb = cmp.basic_block
         if cmp_bb is None:
             continue
-        if all(cmp_bb in dom[exit] for exit in exits):
+        if not all(cmp_bb in dom[exit] for exit in exits):
+            continue
+        # The comparison must actually be ENFORCED — a `field == X` whose result
+        # is dropped (`pop`) or otherwise never reaches an assert / branch-to-reject
+        # is not a guard. Without this, `txn AssetCloseTo; global ZeroAddress; ==;
+        # pop` (the result discarded) was accepted as validation — a false negative
+        # that approves the txn regardless of the field.
+        if not cmp.outputs or not isinstance(cmp.outputs[0], SSAVar):
+            continue
+        if def_forward_reaches_enforcement(prog, cmp.outputs[0]):
             return True
     return False
 

@@ -67,10 +67,21 @@ def _has_balance_minbalance_check(
         if not common.file_match(op.location.file, file):
             continue
         x, y = op.inputs
-        if (common._operand_flows_from_field_var(prog, x, bal)
-                and common._operand_flows_from_field_var(prog, y, mb)) or \
-           (common._operand_flows_from_field_var(prog, y, bal)
-                and common._operand_flows_from_field_var(prog, x, mb)):
+        tied = (
+            (common._operand_flows_from_field_var(prog, x, bal)
+                and common._operand_flows_from_field_var(prog, y, mb))
+            or
+            (common._operand_flows_from_field_var(prog, y, bal)
+                and common._operand_flows_from_field_var(prog, x, mb))
+        )
+        if not tied:
+            continue
+        # The tie must be ENFORCED — a `balance == min_balance` (or
+        # `balance - min_balance`) whose result is dropped (`pop`) or sits on an
+        # unrelated branch is no funds check. Without this an attacker silences the
+        # detector with one dead comparison while leaving Delete unprotected.
+        if op.outputs and isinstance(op.outputs[0], SSAVar) and \
+                common.def_forward_reaches_enforcement(prog, op.outputs[0]):
             return True
     return False
 
