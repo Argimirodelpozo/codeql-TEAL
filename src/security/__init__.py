@@ -77,6 +77,7 @@ _DETECTION_SPECS: tuple[tuple[str, str, str, "Optional[str]"], ...] = (
     ("tx-type-check",         "tx_type_check",         "TxTypeCheckDetector",         "TxTypeCheckViolation"),
     ("unprotected-deletable", "unprotected_deletable", "UnprotectedDeletableDetector", "UnprotectedDeletableViolation"),
     ("unprotected-updatable", "unprotected_updatable", "UnprotectedUpdatableDetector", "UnprotectedUpdatableViolation"),
+    ("unvalidated-group-sibling", "unvalidated_group_sibling", "UnvalidatedGroupSiblingDetector", "UnvalidatedGroupSiblingViolation"),
     ("unsafe-division-order", "unsafe_division_order", "UnsafeDivisionOrderDetector", "UnsafeDivisionOrderViolation"),
     ("unsafe-lsig-args",      "unsafe_lsig_args",      "UnsafeLsigArgsDetector",      "UnsafeLsigArgsViolation"),
 )

@@ -1,0 +1,9 @@
+#pragma version 10
+    // stake(): trusts an asset transfer (gtxn 1 AssetAmount) but never checks
+    // gtxn 1 AssetReceiver == this app.
+    gtxn 1 AssetAmount
+    int 5
+    >=
+    assert
+    int 1
+    return

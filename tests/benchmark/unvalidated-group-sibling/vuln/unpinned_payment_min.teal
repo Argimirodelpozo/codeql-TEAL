@@ -1,0 +1,7 @@
+#pragma version 10
+    gtxn 0 Amount
+    int 1000
+    >
+    assert
+    int 1
+    return

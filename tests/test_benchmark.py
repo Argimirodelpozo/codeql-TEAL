@@ -99,6 +99,7 @@ _BASELINE: dict[str, tuple[int, int, int, int]] = {
     "rekey-to": (3, 0, 0, 2),
     "tainted-fund-flow": (3, 0, 0, 4),
     "unsafe-division-order": (3, 0, 0, 3),
+    "unvalidated-group-sibling": (3, 0, 0, 4),
 }
 
 
