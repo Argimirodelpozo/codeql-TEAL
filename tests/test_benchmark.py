@@ -95,6 +95,7 @@ _BASELINE: dict[str, tuple[int, int, int, int]] = {
     "arbitrary-inner-appcall": (2, 0, 0, 4),
     "constant-condition": (3, 0, 0, 3),
     "fee-validation": (1, 0, 0, 1),
+    "partial-tainted-fund-flow": (2, 0, 0, 3),
     "rekey-to": (2, 0, 0, 1),
     "tainted-fund-flow": (3, 0, 0, 4),
 }

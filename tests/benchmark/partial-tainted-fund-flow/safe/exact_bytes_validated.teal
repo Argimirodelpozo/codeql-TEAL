@@ -1,0 +1,17 @@
+#pragma version 10
+    txna ApplicationArgs 0
+    extract 2 32
+    addr AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA5HFFY
+    ==
+    assert
+    itxn_begin
+    int pay
+    itxn_field TypeEnum
+    txna ApplicationArgs 0
+    extract 2 32
+    itxn_field Receiver
+    int 1000
+    itxn_field Amount
+    itxn_submit
+    int 1
+    return
