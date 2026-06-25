@@ -90,7 +90,7 @@ class PartialTaintedFundFlowDetector:
             )
         self.prog = prog
         self.file = file
-        self.pp = path_predicates or PathPredicateAnalysis(prog)
+        self.pp = path_predicates or common.cached_path_predicates(prog)
 
     def detect(self) -> list:
         # Net-new only: subtract what the boolean detector already flags so we

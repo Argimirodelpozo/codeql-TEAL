@@ -99,7 +99,7 @@ class DeleteFundsCheckDetector:
     ):
         self.prog = prog
         self.file = file
-        self.pp = path_predicates or PathPredicateAnalysis(prog)
+        self.pp = path_predicates or common.cached_path_predicates(prog)
 
     def detect(self) -> list[DeleteFundsCheckViolation]:
         if _has_balance_minbalance_check(self.prog, self.file):

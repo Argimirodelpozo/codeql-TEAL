@@ -397,6 +397,26 @@ def _fall_through_bb(prog: SSAProgram, bb: BasicBlock) -> Optional[BasicBlock]:
     return candidates[0]
 
 
+def cached_path_predicates(prog: SSAProgram) -> PathPredicateAnalysis:
+    """One :class:`PathPredicateAnalysis` per program, memoised on ``prog``.
+
+    The OnCompletion / field-guard family (is-deletable, is-updatable,
+    unprotected-*, delete-funds-check, timelock-upgrade, rekey-to, …) each need
+    path predicates; building them once and sharing avoids re-running the whole
+    branch/assert analysis per detector — the bulk of a scan's per-contract cost.
+    Detectors that accept a caller-SEEDED ``path_predicates`` (the cross-contract
+    runner) still pass their own; only the default is cached. Sound because the
+    analysis is a pure read of ``prog``'s CFG, unaffected by additive passes."""
+    pp = getattr(prog, "_sec_path_predicates", None)
+    if pp is None:
+        pp = PathPredicateAnalysis(prog)
+        try:
+            prog._sec_path_predicates = pp
+        except Exception:
+            pass
+    return pp
+
+
 def _frame_param_sources_cached(prog: SSAProgram) -> dict:
     """``frame_param_sources(prog)`` (the interprocedural ``frame_dig`` output ->
     caller-arg map), memoised on the program so the per-BB path walk doesn't
@@ -1014,14 +1034,33 @@ def user_input_taint(prog: SSAProgram, file: Optional[str] = None) -> dict:
     Interprocedural: each ``frame_dig`` param read inherits the taint of the
     caller args bound to it (:func:`frame_param_sources`), so a value fed INTO a
     subroutine parameter and consumed inside the callee is caught natively — no
-    IR lift, no per-detector supplement."""
-    from tealtools.passes.frame_flow import frame_param_sources
+    IR lift, no per-detector supplement.
+
+    Memoised per ``(prog, file)``: the whole tainted-fund-flow family
+    (tainted-fund-flow / partial / arbitrary-inner-appcall / -asset) shares one
+    fixpoint instead of recomputing it per detector. Sound because the detectors
+    only READ ``prog`` (no mutation between runs in a scan)."""
+    cache = getattr(prog, "_sec_user_input_taint", None)
+    if cache is None:
+        cache = {}
+        try:
+            prog._sec_user_input_taint = cache
+        except Exception:
+            pass
+    if file in cache:
+        return cache[file]
+    result = _compute_user_input_taint(prog, file)
+    cache[file] = result
+    return result
+
+
+def _compute_user_input_taint(prog: SSAProgram, file: Optional[str] = None) -> dict:
     taint: dict = {}
 
     def t(o):
         return taint.get(o, frozenset())
 
-    frame_src = frame_param_sources(prog)
+    frame_src = _frame_param_sources_cached(prog)
 
     for a in prog.assignments:                       # seed
         if not file_match(a.location.file, file):

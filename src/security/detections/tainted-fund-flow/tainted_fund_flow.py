@@ -84,7 +84,7 @@ class TaintedFundFlowDetector:
         # cross-contract runner (detections.xcontract._construct_detector) can feed
         # the callee's seeded predicates -- a caller that pins an ApplicationArgs
         # slot to a constant then guards the fund field fed by that slot.
-        self.pp = path_predicates or PathPredicateAnalysis(prog)
+        self.pp = path_predicates or common.cached_path_predicates(prog)
 
     def detect(self) -> list:
         taint = common.user_input_taint(self.prog, self.file)

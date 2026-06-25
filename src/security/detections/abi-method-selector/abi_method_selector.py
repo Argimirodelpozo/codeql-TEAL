@@ -77,7 +77,7 @@ class AbiMethodSelectorDetector:
     @property
     def pp(self) -> PathPredicateAnalysis:
         if self._pp is None:
-            self._pp = PathPredicateAnalysis(self.prog)
+            self._pp = common.cached_path_predicates(self.prog)
         return self._pp
 
     def _selector_matched_at_exit(self, exit_bb: BasicBlock) -> bool:

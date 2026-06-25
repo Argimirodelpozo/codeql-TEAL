@@ -47,7 +47,7 @@ class IsDeletableDetector:
     ):
         self.prog = prog
         self.file = file
-        self.pp = path_predicates or PathPredicateAnalysis(prog)
+        self.pp = path_predicates or common.cached_path_predicates(prog)
 
     def detect(self) -> list[IsDeletableViolation]:
         out: list[IsDeletableViolation] = []
