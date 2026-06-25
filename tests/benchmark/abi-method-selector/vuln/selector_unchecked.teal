@@ -1,0 +1,5 @@
+#pragma version 10
+txna ApplicationArgs 0
+pop
+int 1
+return

@@ -1,0 +1,6 @@
+#pragma version 10
+arg 0
+len
+int 32
+<
+return

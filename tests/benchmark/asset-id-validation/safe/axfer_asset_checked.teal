@@ -1,0 +1,9 @@
+#pragma version 10
+txn XferAsset
+int 31566704
+==
+assert
+txn AssetReceiver
+pop
+int 1
+return

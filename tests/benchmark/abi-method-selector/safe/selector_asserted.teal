@@ -1,0 +1,7 @@
+#pragma version 10
+txna ApplicationArgs 0
+byte 0x12345678
+==
+assert
+int 1
+return

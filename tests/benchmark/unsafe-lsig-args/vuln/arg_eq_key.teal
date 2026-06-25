@@ -1,0 +1,5 @@
+#pragma version 10
+arg 0
+byte 0xdeadbeef
+==
+return

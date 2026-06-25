@@ -1,0 +1,6 @@
+#pragma version 10
+byte "fixed_box_key"
+int 42
+box_put
+int 1
+return

@@ -92,14 +92,18 @@ def _table(scores: dict[str, Score]) -> str:
 # param flow the SSA def-use can't see) is rescued by the IR lift's
 # interprocedural fund-flow, wired into the detector as a callsub-gated supplement.
 _BASELINE: dict[str, tuple[int, int, int, int]] = {
+    "abi-method-selector": (1, 0, 0, 1),
     "arbitrary-inner-appcall": (4, 0, 0, 4),
     "arbitrary-inner-asset": (2, 0, 0, 3),
     "asset-close-to": (2, 0, 0, 2),
+    "asset-id-validation": (1, 0, 0, 1),
+    "box-key": (1, 0, 0, 1),
     "close-remainder-to": (2, 0, 0, 1),
     "constant-condition": (3, 0, 0, 3),
     "delete-funds-check": (2, 0, 0, 1),
     "fee-validation": (1, 0, 0, 1),
     "group-size-check": (1, 0, 0, 1),
+    "hardcoded-min-balance": (1, 0, 0, 1),
     "inner-txn-close-rekey": (1, 0, 0, 1),
     "inner-txn-fee": (1, 0, 0, 1),
     "is-deletable": (1, 0, 0, 1),
@@ -113,6 +117,7 @@ _BASELINE: dict[str, tuple[int, int, int, int]] = {
     "unprotected-deletable": (1, 0, 0, 1),
     "unprotected-updatable": (1, 0, 0, 1),
     "unsafe-division-order": (3, 0, 0, 3),
+    "unsafe-lsig-args": (1, 0, 0, 1),
     "unvalidated-group-sibling": (3, 0, 0, 4),
 }
 

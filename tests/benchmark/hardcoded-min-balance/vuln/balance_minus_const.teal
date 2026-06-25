@@ -1,0 +1,7 @@
+#pragma version 10
+txn Sender
+balance
+int 100000
+-
+int 1
+return

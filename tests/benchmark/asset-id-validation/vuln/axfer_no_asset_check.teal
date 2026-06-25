@@ -1,0 +1,7 @@
+#pragma version 10
+txn AssetReceiver
+global CurrentApplicationAddress
+==
+assert
+int 1
+return
