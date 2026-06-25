@@ -1,0 +1,12 @@
+#pragma version 8
+txn Assets 0
+dup
+asset_params_get AssetName
+pop
+swap
+itob
+concat
+int 42
+box_put
+int 1
+return

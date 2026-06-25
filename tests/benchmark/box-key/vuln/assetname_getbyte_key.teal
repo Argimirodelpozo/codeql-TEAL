@@ -1,0 +1,11 @@
+#pragma version 8
+int 100
+asset_params_get AssetName
+pop
+int 0
+getbyte
+itob
+int 42
+box_put
+int 1
+return

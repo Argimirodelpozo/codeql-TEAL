@@ -115,4 +115,7 @@ class NonUniqueBoxKeyDetector(TaintAnalysis):
             rules=rules,
             default_rules=default_rules,
             file=file,
+            # A non-unique value laundered through app-global state before keying
+            # a box still collides — follow the state roundtrip.
+            cross_state=True,
         )

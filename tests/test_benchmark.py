@@ -97,7 +97,7 @@ _BASELINE: dict[str, tuple[int, int, int, int]] = {
     "arbitrary-inner-asset": (2, 0, 0, 3),
     "asset-close-to": (2, 0, 0, 3),
     "asset-id-validation": (1, 0, 0, 2),
-    "box-key": (1, 0, 0, 1),
+    "box-key": (3, 0, 0, 2),
     "close-remainder-to": (2, 0, 0, 1),
     "constant-condition": (3, 0, 0, 3),
     "delete-funds-check": (2, 0, 0, 1),

@@ -116,12 +116,28 @@ _SLICE_OPS = frozenset({
     "extract", "extract3",
     "extract_uint16", "extract_uint32", "extract_uint64",
     "substring", "substring3",
+    # getbyte reads a byte out of the value (bytes -> scalar); the byte it
+    # returns is part of the tainted value, so taint flows. Same operand shape
+    # as the extract family: the value is the bottom (highest-index) input.
+    "getbyte",
 })
 
 SLICE_PROPAGATION_RULE = FlowRule(
     name="slice-of-tainted",
     matches=lambda a: a.op in _SLICE_OPS,
     flows=lambda a, ti: [1] if len(a.inputs) in ti else [],
+)
+
+
+# itob / btoi re-encode the SAME value between uint64 and bytes — taint passes
+# straight through (a tainted scalar `itob`'d into a box key is still attacker-
+# influenced). Single input, single output.
+_TRANSCODE_OPS = frozenset({"itob", "btoi"})
+
+TRANSCODE_PROPAGATION_RULE = FlowRule(
+    name="transcode-of-tainted",
+    matches=lambda a: a.op in _TRANSCODE_OPS,
+    flows=lambda a, ti: [1] if 1 in ti else [],
 )
 
 
@@ -149,6 +165,7 @@ CONCAT_PROPAGATION_RULE = FlowRule(
 DEFAULT_RULES: list[FlowRule] = [
     HASH_PROPAGATION_RULE,
     SLICE_PROPAGATION_RULE,
+    TRANSCODE_PROPAGATION_RULE,
     CONCAT_PROPAGATION_RULE,
 ]
 
@@ -226,6 +243,7 @@ class TaintAnalysis:
         rules: Optional[Iterable[FlowRule]] = None,
         default_rules: Optional[Iterable[FlowRule]] = None,
         file: Optional[str] = None,
+        cross_state: bool = False,
     ):
         if getattr(prog, "_materialized", False):
             raise ValueError(
@@ -246,6 +264,12 @@ class TaintAnalysis:
         self.default_rules: list[FlowRule] = (
             list(default_rules) if default_rules is not None else list(DEFAULT_RULES)
         )
+        # Opt-in: also carry taint through an application-global-state roundtrip
+        # (`app_global_put` value -> `app_global_get` of the same key). Off by
+        # default (most detectors don't want state to be a taint conduit); the
+        # box-key detector enables it to catch a non-unique value laundered
+        # through state before becoming a box key.
+        self.cross_state = cross_state
 
     # -- public ---------------------------------------------------------
 
@@ -384,7 +408,44 @@ class TaintAnalysis:
                         source_for[dig_out] = source_for[arg]
                         changed = True
                         break
+            # 2e. Through application-global state (opt-in): a value written by
+            # `app_global_put` re-emerges tainted from `app_global_get` of the
+            # same key. Key-aware where both keys are static constants; otherwise
+            # conservative (any tainted put may reach the get). A realistic
+            # laundering path the def-use relation can't see.
+            if self.cross_state:
+                changed = self._propagate_state(tainted, source_for) or changed
         return tainted, source_for
+
+    def _propagate_state(self, tainted: set, source_for: dict) -> bool:
+        """One round of the app-global-state taint bridge. Returns whether any
+        new value became tainted."""
+        from ..ssa import operand_const
+        puts: list = []   # (key_const_or_None, value_var)
+        for a in self.prog.assignments:
+            if a.op == "app_global_put" and len(a.inputs) >= 2 and self._in_scope(a):
+                val = a.inputs[0]
+                if not isinstance(val, Const) and val in tainted:
+                    puts.append((operand_const(a.inputs[1]), val))
+        if not puts:
+            return False
+        changed = False
+        for a in self.prog.assignments:
+            if a.op != "app_global_get" or not a.outputs or not self._in_scope(a):
+                continue
+            out = a.outputs[0]
+            if isinstance(out, Const) or out in tainted:
+                continue
+            get_key = operand_const(a.inputs[0]) if a.inputs else None
+            for put_key, put_val in puts:
+                # connect on a matching const key, or conservatively when either
+                # side's key isn't statically known.
+                if put_key is None or get_key is None or put_key == get_key:
+                    tainted.add(out)
+                    source_for[out] = source_for[put_val]
+                    changed = True
+                    break
+        return changed
 
     def _decide_flow(
         self, a: Assignment, tainted_input_indices: list[int]
