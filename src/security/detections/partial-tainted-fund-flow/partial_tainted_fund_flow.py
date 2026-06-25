@@ -48,6 +48,22 @@ def _byte_sources(a):
     return None
 
 
+def _cached_byte_taint(prog: SSAProgram):
+    """The byte-interval taint fixpoint, memoised on ``prog``. ``byte_taint`` is
+    program-wide (no file scope) and this detector always runs it with the same
+    ``_byte_sources`` / ``validate=True`` config, so one result serves every file
+    in a multi-file program — without the cache the scanner re-ran the whole
+    fixpoint over the entire directory once per file."""
+    bt = getattr(prog, "_sec_partial_byte_taint", None)
+    if bt is None:
+        bt = byte_taint(prog, sources=_byte_sources, validate=True)
+        try:
+            prog._sec_partial_byte_taint = bt
+        except Exception:
+            pass
+    return bt
+
+
 @dataclass
 class PartialTaintedFundFlowViolation:
     prog: SSAProgram
@@ -100,7 +116,7 @@ class PartialTaintedFundFlowDetector:
             for v in TaintedFundFlowDetector(
                 self.prog, file=self.file, path_predicates=self.pp).detect()
         }
-        bt = byte_taint(self.prog, sources=_byte_sources, validate=True)
+        bt = _cached_byte_taint(self.prog)
         sender_vars = common.sender_creator_vars(self.prog, file=self.file)
         violations: list = []
         for fs in common.inner_txn_field_assigns(self.prog, file=self.file):
