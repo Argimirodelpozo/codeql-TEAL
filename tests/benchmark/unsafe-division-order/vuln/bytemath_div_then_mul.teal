@@ -1,0 +1,14 @@
+#pragma version 10
+    txna ApplicationArgs 0
+    txna ApplicationArgs 1
+    b/
+    txna ApplicationArgs 2
+    b*
+    btoi
+    itxn_begin
+    int pay
+    itxn_field TypeEnum
+    itxn_field Amount
+    itxn_submit
+    int 1
+    return

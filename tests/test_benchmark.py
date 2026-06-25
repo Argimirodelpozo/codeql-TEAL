@@ -98,6 +98,7 @@ _BASELINE: dict[str, tuple[int, int, int, int]] = {
     "partial-tainted-fund-flow": (2, 0, 0, 3),
     "rekey-to": (2, 0, 0, 1),
     "tainted-fund-flow": (3, 0, 0, 4),
+    "unsafe-division-order": (2, 0, 0, 3),
 }
 
 
