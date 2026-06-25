@@ -33,6 +33,10 @@ class IsDeletableViolation:
 class IsDeletableDetector:
     name = "sec-guide/is-deletable"
     applies_to = frozenset({"app"})  # OnCompletion / app lifecycle
+    # A PROPERTY, not a vulnerability: a deletable app is usually deletable on
+    # purpose (the creator can tear it down). Whether *anyone* can delete it
+    # without authorization is the real bug — that's unprotected-deletable.
+    severity = "informational"
 
     def __init__(
         self,

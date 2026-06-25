@@ -123,10 +123,31 @@ for _kebab, _snake, _det_cls_name, _viol_cls_name in _DETECTION_SPECS:
 from . import xcontract  # noqa: E402
 
 
+# --- detector severity ------------------------------------------------------
+#
+# An ``"informational"`` detector reports a PROPERTY (e.g. "this app is
+# deletable") rather than a vulnerability — usually intentional, surfaced for
+# awareness, not as a finding to fix. Everything else defaults to a real finding.
+# A detector declares its level with a ``severity`` class attribute.
+SEVERITY_LEVELS = ("high", "medium", "low", "informational")
+DEFAULT_SEVERITY = "medium"
+
+
+def severity_of(detector_name: str) -> str:
+    """The severity level of a detector by its kebab-case name (default
+    ``"medium"``). ``"informational"`` marks property-style findings (the
+    ``is-deletable`` / ``is-updatable`` family) that are not vulnerabilities."""
+    cls = DETECTORS.get(detector_name)
+    return getattr(cls, "severity", DEFAULT_SEVERITY) if cls is not None else DEFAULT_SEVERITY
+
+
 __all__ = [
     "DETECTORS",
     "common",
     "xcontract",
+    "SEVERITY_LEVELS",
+    "DEFAULT_SEVERITY",
+    "severity_of",
     *(det for _, _, det, _ in _DETECTION_SPECS),
     *(viol for _, _, _, viol in _DETECTION_SPECS if viol is not None),
 ]

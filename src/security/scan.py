@@ -152,14 +152,24 @@ class ScanFinding:
     detector_name: str
     violation: object  # has .pretty()
 
+    @property
+    def severity(self) -> str:
+        """The detector's severity (``"informational"`` for property-style
+        findings like ``is-deletable``; ``"medium"`` by default)."""
+        from . import severity_of
+        return severity_of(self.detector_name)
+
     def format(self) -> str:
-        """One-line greppable form: ``<rel_path>: sec-guide/<name>  <message>``."""
-        return f"{self.rel_path}: sec-guide/{self.detector_name}  {self.violation.pretty()}"  # type: ignore[attr-defined]
+        """One-line greppable form:
+        ``[SEVERITY] <rel_path>: sec-guide/<name>  <message>``."""
+        return (f"[{self.severity.upper()}] {self.rel_path}: "
+                f"sec-guide/{self.detector_name}  {self.violation.pretty()}")  # type: ignore[attr-defined]
 
     def to_dict(self) -> dict:
         return {
             "file": str(self.rel_path),
             "detector": f"sec-guide/{self.detector_name}",
+            "severity": self.severity,
             "message": self.violation.pretty(),  # type: ignore[attr-defined]
         }
 

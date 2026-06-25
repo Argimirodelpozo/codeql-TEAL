@@ -1,1 +1,1 @@
-a/no_fee_check.teal: sec-guide/fee-validation  Approval exit at no_fee_check.teal:4 is reachable without a txn Fee check — an attacker can drain the account.
+[MEDIUM] a/no_fee_check.teal: sec-guide/fee-validation  Approval exit at no_fee_check.teal:4 is reachable without a txn Fee check — an attacker can drain the account.

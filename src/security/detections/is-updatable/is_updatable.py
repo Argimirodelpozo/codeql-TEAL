@@ -30,6 +30,10 @@ class IsUpdatableViolation:
 class IsUpdatableDetector:
     name = "sec-guide/is-updatable"
     applies_to = frozenset({"app"})  # OnCompletion / app lifecycle
+    # A PROPERTY, not a vulnerability: an upgradeable app is usually upgradeable
+    # on purpose. Whether *anyone* can update it without authorization is the
+    # real bug — that's unprotected-updatable.
+    severity = "informational"
 
     def __init__(
         self,
