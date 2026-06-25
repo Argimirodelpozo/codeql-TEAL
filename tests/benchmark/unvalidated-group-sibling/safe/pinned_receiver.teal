@@ -1,6 +1,4 @@
 #pragma version 10
-    txn ApplicationID
-    assert
     gtxn 0 Receiver
     global CurrentApplicationAddress
     ==

@@ -43,16 +43,11 @@ _SECGUIDE_NAMES = (
 
 def _secguide_detector(short_name: str) -> Detector:
     """A ``Detector`` adapter that instantiates and runs the registered
-    detector class for ``short_name`` — but only when the detector's
-    ``applies_to`` matches the program's classified kind (app vs logicsig), so a
-    logicsig-only detector doesn't fire on an application (and vice versa)."""
-    from . import common
-
+    detector class for ``short_name``. Scope filtering (app vs logicsig) is a
+    DECLARED concern — see :class:`security.config.DetectionOptions` and the
+    scanner — not inferred here, so ``tealql all`` runs every detector."""
     def _run(prog: SSAProgram):
-        cls = DETECTORS[short_name]
-        if not common.program_applies_to(prog, cls):
-            return []
-        return cls(prog).detect()
+        return DETECTORS[short_name](prog).detect()
     return _FnDetector(f"detections/{short_name}", _run)
 
 

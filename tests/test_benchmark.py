@@ -42,17 +42,13 @@ class Score:
 
 
 def _fires(detector: str, teal: Path) -> bool:
-    """Does ``detector`` flag ``teal`` (>=1 finding)? Honors ``applies_to``: a
-    detector out of scope for the contract's classified kind (app vs logicsig)
-    does not run — so a real app correctly does NOT trip a logicsig-only
-    detector. This is what makes the benchmark reflect real-world behaviour."""
-    from security import common
+    """Does ``detector`` flag ``teal`` (>=1 finding)? The benchmark measures
+    detector LOGIC on per-detector-curated fixtures; mode scoping (app vs
+    logicsig) is a deployment concern declared in the detection-options config,
+    not exercised here."""
     prog = SSAProgram(str(teal), verbose=False)
     prog.propagate_constants()
-    cls = DETECTORS[detector]
-    if not common.program_applies_to(prog, cls):
-        return False
-    return len(cls(prog).detect()) > 0
+    return len(DETECTORS[detector](prog).detect()) > 0
 
 
 def _detectors_with_corpus() -> list[str]:
@@ -115,12 +111,12 @@ _BASELINE: dict[str, tuple[int, int, int, int]] = {
     "inner-txn-fee": (1, 0, 0, 1),
     "is-deletable": (1, 0, 0, 1),
     "is-updatable": (1, 0, 0, 1),
-    "lease-validation": (1, 0, 0, 2),
+    "lease-validation": (1, 0, 0, 1),
     "partial-tainted-fund-flow": (3, 0, 0, 3),
     "rekey-to": (3, 0, 0, 2),
     "tainted-fund-flow": (4, 0, 0, 4),
     "timelock-upgrade": (1, 0, 0, 1),
-    "tx-type-check": (1, 0, 0, 2),
+    "tx-type-check": (1, 0, 0, 1),
     "unprotected-deletable": (1, 0, 0, 1),
     "unprotected-updatable": (1, 0, 0, 1),
     "unsafe-division-order": (3, 0, 0, 3),

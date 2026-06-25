@@ -126,6 +126,98 @@ class ScanConfig:
 
 
 # ---------------------------------------------------------------------------
+# Unified detection options (one YAML)
+# ---------------------------------------------------------------------------
+
+
+# Ascending severity. "informational" findings (e.g. is-deletable) are reported
+# but, by default, do not constitute a failure — see DetectionOptions.fail_on.
+SEVERITY_ORDER = ("informational", "low", "medium", "high")
+
+
+@dataclass(frozen=True)
+class DetectionOptions:
+    """Declarative detection options from ONE YAML/JSON file — no inference.
+
+    .. code-block:: yaml
+
+        modes:                       # per-glob mode; scopes detectors by applies_to
+          - match: "**/*.approval.teal"
+            mode: app
+          - match: "**/*Verifier.teal"
+            mode: logicsig
+        detectors:                   # per-glob detector selection (only | exclude)
+          - match: "**/*.teal"
+            exclude: [unsafe-lsig-args]
+        severity:                    # per-detector severity override
+          rekey-to: high
+          is-deletable: informational
+        fail_on: medium              # findings at/above this level are FAILURES;
+                                     # informational (and anything below) never fails
+        auto_mode: false             # opt-in: classify undeclared files by opcode
+
+    A file matching no ``modes`` rule is unfiltered (every selected detector
+    runs) unless ``auto_mode`` is set, which then classifies it by opcode."""
+
+    modes: DetectionConfig = DetectionConfig.empty()
+    selection: ScanConfig = ScanConfig.empty()
+    severity: tuple[tuple[str, str], ...] = ()   # (detector, level) pairs
+    fail_on: str = "low"
+    auto_mode: bool = False
+
+    @classmethod
+    def from_path(cls, path: Path) -> "DetectionOptions":
+        text = Path(path).read_text()
+        if str(path).endswith((".yml", ".yaml")):
+            import yaml
+            data = yaml.safe_load(text) or {}
+        else:
+            data = json.loads(text)
+        return cls.from_dict(data)
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "DetectionOptions":
+        fail_on = data.get("fail_on", "low")
+        if fail_on not in SEVERITY_ORDER:
+            raise ValueError(
+                f"fail_on {fail_on!r} invalid (expected one of {SEVERITY_ORDER})")
+        sev = data.get("severity") or {}
+        for det, lvl in sev.items():
+            if lvl not in SEVERITY_ORDER:
+                raise ValueError(
+                    f"severity[{det!r}] = {lvl!r} invalid "
+                    f"(expected one of {SEVERITY_ORDER})")
+        return cls(
+            modes=DetectionConfig.from_dict(data),
+            selection=ScanConfig.from_dict({"rules": data.get("detectors", [])}),
+            severity=tuple(sorted(sev.items())),
+            fail_on=fail_on,
+            auto_mode=bool(data.get("auto_mode", False)),
+        )
+
+    def mode_for(self, rel_path: str, prog=None, file=None) -> Optional[str]:
+        """Declared mode for ``rel_path``; if none and ``auto_mode`` is set,
+        classify ``prog`` by opcode (opt-in inference). Else ``None``."""
+        m = self.modes.mode_for(rel_path)
+        if m is None and self.auto_mode and prog is not None:
+            from .common import classify_program
+            return classify_program(prog, file=file)
+        return m
+
+    def detectors_for(self, rel_path: str) -> list[str]:
+        return self.selection.detectors_for(rel_path)
+
+    def severity_for(self, detector_name: str) -> str:
+        from . import severity_of
+        return dict(self.severity).get(detector_name, severity_of(detector_name))
+
+    def is_failure(self, severity: str) -> bool:
+        """A finding of this severity is a FAILURE (something is wrong) iff it is
+        at or above ``fail_on``. Informational findings never fail by default."""
+        return SEVERITY_ORDER.index(severity) >= SEVERITY_ORDER.index(self.fail_on)
+
+
+# ---------------------------------------------------------------------------
 # Discovery + scanning
 # ---------------------------------------------------------------------------
 
@@ -151,11 +243,16 @@ class ScanFinding:
     rel_path: Path
     detector_name: str
     violation: object  # has .pretty()
+    severity_override: Optional[str] = None  # set by scan from DetectionOptions
 
     @property
     def severity(self) -> str:
-        """The detector's severity (``"informational"`` for property-style
-        findings like ``is-deletable``; ``"medium"`` by default)."""
+        """The finding's severity — a per-detector override from the detection
+        options if given, else the detector's declared ``severity``
+        (``"informational"`` for property-style findings like ``is-deletable``;
+        ``"medium"`` by default)."""
+        if self.severity_override is not None:
+            return self.severity_override
         from . import severity_of
         return severity_of(self.detector_name)
 
@@ -179,18 +276,22 @@ def scan(
     config: ScanConfig = ScanConfig.empty(),
     *,
     detection_config: "Optional[DetectionConfig]" = None,
+    options: "Optional[DetectionOptions]" = None,
 ) -> list[ScanFinding]:
     """Discover, reconstruct, and detect. Returns a flat list of findings
     sorted by ``(rel_path, detector_name)``.
 
-    ``config`` selects *which* detectors run per file (glob → only /
-    exclude). ``detection_config`` declares each file's *mode* (app /
-    logicsig); a detector whose ``applies_to`` excludes the declared
-    mode is skipped. A file the ``detection_config`` doesn't match (or
-    no ``detection_config`` at all) is left unfiltered — every selected
-    detector runs. No opcode inference happens.
+    Pass a single unified ``options`` (:class:`DetectionOptions` from one YAML)
+    for detector selection + mode scoping + per-detector severity (and it carries
+    the ``fail_on`` threshold for :func:`failures`). The legacy ``config`` /
+    ``detection_config`` pair still works and is used when ``options`` is None.
 
-    Progress is reported through the ``tealtools`` logger (CLI ``-v``)."""
+    A detector whose ``applies_to`` excludes a file's declared mode is skipped.
+    A file with no declared mode is unfiltered (every selected detector runs)
+    unless ``options.auto_mode`` is set, which classifies it by opcode."""
+    if options is not None:
+        config = options.selection
+        detection_config = options.modes
     root = Path(root).resolve()
     by_dir = discover_teal_files(root)
     logger.info("scan: %d .teal file(s) across %d director(ies) under %s",
@@ -209,8 +310,11 @@ def scan(
         for teal in teal_files:
             rel = teal.relative_to(root)
             names = config.detectors_for(str(rel))
-            mode = (detection_config.mode_for(str(rel))
-                    if detection_config is not None else None)
+            if options is not None:
+                mode = options.mode_for(str(rel), prog=prog, file=teal.name)
+            else:
+                mode = (detection_config.mode_for(str(rel))
+                        if detection_config is not None else None)
             logger.info("scanning %s (mode=%s): %d detection(s)",
                         rel, mode or "unfiltered", len(names))
             for name in names:
@@ -226,12 +330,25 @@ def scan(
                 # ``SSAProgram`` keys files by basename; pass that as the
                 # file filter so detectors see exactly this program.
                 det = cls(prog, file=teal.name)
+                sev = options.severity_for(name) if options is not None else None
                 for v in det.detect():
                     findings.append(ScanFinding(
                         rel_path=rel, detector_name=name, violation=v,
+                        severity_override=sev,
                     ))
     findings.sort(key=lambda f: (str(f.rel_path), f.detector_name))
     return findings
+
+
+def failures(
+    findings: list[ScanFinding], options: "Optional[DetectionOptions]" = None,
+) -> list[ScanFinding]:
+    """The subset of ``findings`` that are FAILURES — at or above the
+    ``options.fail_on`` threshold (default ``"low"``, so informational findings
+    are reported but never fail). With no options, every finding counts."""
+    if options is None:
+        return list(findings)
+    return [f for f in findings if options.is_failure(f.severity)]
 
 
 def render_text(findings: list[ScanFinding]) -> str:

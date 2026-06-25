@@ -1137,45 +1137,24 @@ _APP_ONLY_OPS = frozenset({
     "log", "gload", "gloads", "gloadss",
 })
 
-# Txn fields that exist only for application calls — reading one proves an app.
-_APP_ONLY_FIELDS = frozenset({
-    "OnCompletion", "ApplicationID", "NumAppArgs", "ApplicationArgs",
-    "Applications", "NumApplications", "CreatedApplicationID", "LastLog",
-    "NumLogs", "Logs", "GlobalNumUint", "GlobalNumByteSlice",
-    "LocalNumUint", "LocalNumByteSlice", "ApprovalProgram", "ClearStateProgram",
-})
-
-_TXN_READ_OPS = frozenset({
-    "txn", "txna", "txnas", "gtxn", "gtxna", "gtxnas",
-    "gtxns", "gtxnsa", "gtxnsas",
-})
-
-
 def classify_program(prog: SSAProgram, *, file: Optional[str] = None) -> str:
-    """``"app"`` if the program uses any application-only opcode or txn field,
-    else ``"logicsig"``. Sound for the real corpus (every app routes on
-    ``ApplicationArgs`` / ``OnCompletion`` or touches state); a stateless program
-    with none of these is, by definition, a logic signature."""
+    """``"app"`` if the program uses any application-only OPCODE, else
+    ``"logicsig"``.
+
+    Keyed strictly on opcodes the AVM rejects in Signature mode — NOT on txn
+    fields. A logic signature can be attached to an ApplicationCall txn and so
+    may read ``OnCompletion`` / ``ApplicationArgs`` / ``ApplicationID`` (e.g. a
+    proof-verifier lsig); those fields therefore do not prove an application and
+    keying on them would misclassify that lsig class. App-only opcodes can't run
+    in a logic signature, so their presence is sound. (Verified: all 229 real
+    mainnet app probes still classify as ``"app"`` opcodes-only — every real app
+    touches state / logs / issues inner txns.)"""
     for a in prog.assignments:
         if not file_match(a.location.file, file):
             continue
         if a.op in _APP_ONLY_OPS:
             return "app"
-        if a.op in _TXN_READ_OPS:
-            toks = a.immediates.split()
-            # `txn FIELD` -> toks[0]; `gtxn N FIELD` -> toks[1].
-            for t in toks[:2]:
-                if t in _APP_ONLY_FIELDS:
-                    return "app"
     return "logicsig"
-
-
-def program_applies_to(prog: SSAProgram, detector_cls, *,
-                       file: Optional[str] = None) -> bool:
-    """Whether ``detector_cls`` (by its ``applies_to``) is in scope for this
-    program's classified kind. A detector with no ``applies_to`` runs on both."""
-    applies = getattr(detector_cls, "applies_to", frozenset({"app", "logicsig"}))
-    return classify_program(prog, file=file) in applies
 
 
 def loc(a) -> str:

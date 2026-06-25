@@ -1,6 +1,4 @@
 #pragma version 10
-    txn ApplicationID
-    assert
     // reads only the sibling's Sender (no Amount/AssetAmount) -> no transfer is
     // trusted, nothing to pin.
     gtxn 0 Sender
