@@ -1,0 +1,7 @@
+#pragma version 10
+txn CloseRemainderTo
+global ZeroAddress
+==
+pop
+int 1
+return

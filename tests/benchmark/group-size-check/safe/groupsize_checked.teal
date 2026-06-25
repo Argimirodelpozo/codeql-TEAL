@@ -1,0 +1,7 @@
+#pragma version 10
+global GroupSize
+int 2
+==
+assert
+int 1
+return

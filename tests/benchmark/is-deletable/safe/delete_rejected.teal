@@ -1,0 +1,9 @@
+#pragma version 10
+txn OnCompletion
+int 5
+==
+bz ok
+err
+ok:
+int 1
+return

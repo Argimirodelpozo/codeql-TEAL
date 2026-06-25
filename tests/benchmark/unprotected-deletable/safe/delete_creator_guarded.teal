@@ -1,0 +1,7 @@
+#pragma version 10
+txn Sender
+global CreatorAddress
+==
+assert
+int 1
+return

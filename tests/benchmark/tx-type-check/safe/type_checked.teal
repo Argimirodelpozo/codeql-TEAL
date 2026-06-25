@@ -1,0 +1,7 @@
+#pragma version 10
+txn TypeEnum
+int 1
+==
+assert
+int 1
+return

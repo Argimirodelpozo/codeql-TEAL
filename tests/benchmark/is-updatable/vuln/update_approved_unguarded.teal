@@ -1,0 +1,10 @@
+#pragma version 10
+txn OnCompletion
+int 4
+==
+bnz u
+int 1
+return
+u:
+int 1
+return
