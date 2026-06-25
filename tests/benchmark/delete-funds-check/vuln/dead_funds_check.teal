@@ -1,0 +1,19 @@
+#pragma version 10
+txn ApplicationID
+bz cont
+txn Sender
+balance
+txn Sender
+min_balance
+==
+pop
+cont:
+txn OnCompletion
+int 5
+==
+bz approve
+int 1
+return
+approve:
+int 1
+return

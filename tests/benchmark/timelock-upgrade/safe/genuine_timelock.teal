@@ -1,0 +1,18 @@
+#pragma version 10
+global LatestTimestamp
+int 100
+>
+assert
+txn Sender
+global CreatorAddress
+==
+assert
+txn OnCompletion
+int 4
+==
+bz cont
+int 1
+return
+cont:
+int 1
+return

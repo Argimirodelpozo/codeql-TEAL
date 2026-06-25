@@ -1,0 +1,21 @@
+#pragma version 10
+txn ApplicationID
+bz init
+global LatestTimestamp
+int 100
+>
+pop
+init:
+txn Sender
+global CreatorAddress
+==
+assert
+txn OnCompletion
+int 4
+==
+bz cont
+int 1
+return
+cont:
+int 1
+return

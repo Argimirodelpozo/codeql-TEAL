@@ -1,0 +1,16 @@
+#pragma version 10
+txn Sender
+balance
+txn Sender
+min_balance
+==
+assert
+txn OnCompletion
+int 5
+==
+bz approve
+int 1
+return
+approve:
+int 1
+return

@@ -1,0 +1,9 @@
+#pragma version 10
+txn AssetCloseTo
+global ZeroAddress
+==
+bz fail
+int 1
+return
+fail:
+err

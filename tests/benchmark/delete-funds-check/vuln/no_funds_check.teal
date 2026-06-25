@@ -1,0 +1,10 @@
+#pragma version 10
+txn OnCompletion
+int 5
+==
+bz approve
+int 1
+return
+approve:
+int 1
+return
