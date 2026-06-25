@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from typing import ClassVar, Optional
 
 from security import common
-from tealtools.ssa import Assignment, SSAProgram, SSAVar, const_int
+from tealtools.ssa import Assignment, Phi, SSAProgram, SSAVar, const_int
 
 _DIV_OPS = frozenset({"/", "b/", "divw"})
 _MUL_OPS = frozenset({"*", "b*"})
@@ -77,21 +77,45 @@ class UnsafeDivisionOrderDetector:
             if not common.file_match(a.location.file, self.file):
                 continue
             for inp in a.inputs:
-                div = _div_def(inp)
+                div = self._div_def(inp)
                 if div is not None and not _divides_by_one(div):
                     out.append(UnsafeDivisionOrderViolation(mul=a, div=div))
                     break          # one finding per multiply
         return out
 
-
-def _div_def(operand) -> Optional[Assignment]:
-    """The divide ``Assignment`` that produced ``operand`` directly, or None."""
-    if not isinstance(operand, SSAVar):
+    def _div_def(self, operand, seen=None) -> Optional[Assignment]:
+        """The divide ``Assignment`` whose result reaches ``operand`` through
+        value-preserving copies, or None. Follows the direct def, the scratch
+        store→load bridge (``store N`` / ``load N`` — how Puya/PyTeal hold an
+        intermediate), and phi joins — but NOT through other arithmetic, since a
+        value that has been combined further is no longer "the divided value
+        being scaled". MAY semantics (any reaching div counts): this is a
+        precision smell and recall matters."""
+        if seen is None:
+            seen = set()
+        if operand in seen:
+            return None
+        if isinstance(operand, Phi):                  # phi join (any arg counts)
+            seen.add(operand)
+            for arg in operand.args:
+                found = self._div_def(arg, seen)
+                if found is not None:
+                    return found
+            return None
+        if not isinstance(operand, SSAVar):
+            return None
+        seen.add(operand)
+        d = operand.defined_by
+        if d is None:
+            return None
+        if d.op in _DIV_OPS:
+            return d
+        if d.op == "load":                            # scratch reaching-def
+            for s in (common._scratch_stores_for(self.prog, operand) or ()):
+                found = self._div_def(self.prog.var(*s), seen)
+                if found is not None:
+                    return found
         return None
-    d = operand.defined_by
-    if d is not None and d.op in _DIV_OPS:
-        return d
-    return None
 
 
 def _divides_by_one(div: Assignment) -> bool:

@@ -1,0 +1,16 @@
+#pragma version 10
+    // Same delegated logic-sig, but RekeyTo is pinned to the zero address.
+    txn TypeEnum
+    int pay
+    ==
+    assert
+    txn Amount
+    int 1000000
+    <=
+    assert
+    txn RekeyTo
+    global ZeroAddress
+    ==
+    assert
+    int 1
+    return

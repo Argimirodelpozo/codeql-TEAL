@@ -1,0 +1,18 @@
+#pragma version 10
+    // Delegated logic-sig: authorises spends up to a cap on the signer's behalf.
+    // Real ANS-class bug (Coinspect): RekeyTo is never pinned to the zero address,
+    // so the same approved txn can rekey the account to the attacker.
+    txn TypeEnum
+    int pay
+    ==
+    assert
+    txn Amount
+    int 1000000
+    <=
+    assert
+    txn Receiver
+    addr AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA5HFFY
+    ==
+    assert
+    int 1
+    return

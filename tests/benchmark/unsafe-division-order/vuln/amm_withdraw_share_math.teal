@@ -1,0 +1,36 @@
+#pragma version 10
+    txn ApplicationID
+    int 0
+    ==
+    bnz create
+    txna ApplicationArgs 0
+    byte 0x4c5c61ba
+    ==
+    assert
+    // withdraw(shares, totalShares, poolBalance): pay out shares of the pool.
+    // BUG (real DeFi rounding class): amount = shares / totalShares * poolBalance
+    // divides first, truncating the ratio before scaling -> systematic underpay.
+    txna ApplicationArgs 1
+    btoi
+    txna ApplicationArgs 2
+    btoi
+    /
+    store 0
+    load 0
+    txna ApplicationArgs 3
+    btoi
+    *
+    store 1
+    itxn_begin
+    int axfer
+    itxn_field TypeEnum
+    load 1
+    itxn_field AssetAmount
+    txn Sender
+    itxn_field AssetReceiver
+    itxn_submit
+    int 1
+    return
+create:
+    int 1
+    return

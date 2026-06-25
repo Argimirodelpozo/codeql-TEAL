@@ -1,0 +1,25 @@
+#pragma version 10
+    txna ApplicationArgs 0
+    byte 0x7e1f2a08
+    ==
+    assert
+    // pay((uint64 amount, address recipient)): arg1 = [amount:8][recipient:32].
+    // The method validates the amount (a fixed-price action) but the recipient
+    // address bytes [8:40] are never checked -> attacker redirects the payment.
+    txna ApplicationArgs 1
+    int 0
+    extract_uint64
+    int 1000000
+    ==
+    assert
+    itxn_begin
+    int pay
+    itxn_field TypeEnum
+    txna ApplicationArgs 1
+    extract 8 32
+    itxn_field Receiver
+    int 1000000
+    itxn_field Amount
+    itxn_submit
+    int 1
+    return

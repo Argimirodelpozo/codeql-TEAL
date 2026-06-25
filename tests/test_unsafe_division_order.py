@@ -90,3 +90,41 @@ def test_bytemath_divide_before_multiply_flagged(tmp_path):
     assert len(vs) == 1
     assert vs[0].div.op == "b/"
     assert vs[0].mul.op == "b*"
+
+
+# Real DeFi shape: the divide result is held in a scratch slot between the
+# divide and the multiply (how Puya/PyTeal compile an intermediate). The match
+# must follow the store->load copy or it is a false negative on real contracts.
+_DIV_VIA_SCRATCH = """    txna ApplicationArgs 1
+    btoi
+    txna ApplicationArgs 2
+    btoi
+    /
+    store 0
+    load 0
+    txna ApplicationArgs 3
+    btoi
+    *"""
+
+
+def test_divide_through_scratch_flagged(tmp_path):
+    vs = _detect(_DIV_VIA_SCRATCH, tmp_path)
+    assert len(vs) == 1
+    assert vs[0].div.op == "/"
+
+
+# The same scratch indirection in the SAFE order (multiply first) must stay clean.
+_MUL_VIA_SCRATCH = """    txna ApplicationArgs 1
+    btoi
+    txna ApplicationArgs 3
+    btoi
+    *
+    store 0
+    load 0
+    txna ApplicationArgs 2
+    btoi
+    /"""
+
+
+def test_multiply_through_scratch_clean(tmp_path):
+    assert _detect(_MUL_VIA_SCRATCH, tmp_path) == []
