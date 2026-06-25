@@ -41,7 +41,10 @@ import tree_sitter as _ts
 import tree_sitter_teal as _tsteal
 
 from ..cfg_build import _children, _program_cfg
-from .ast import AstNode, Label, Location, Source, node_class_for_mnemonic
+from .ast import (
+    AstNode, Label, Location, SingleNumericArgumentOpcode, Source,
+    node_class_for_mnemonic,
+)
 
 _LANG = _ts.Language(_tsteal.language())
 _PARSER = _ts.Parser(_LANG)
@@ -54,6 +57,22 @@ _TRIVIA = frozenset({"comment", "ERROR"})
 
 def _is_trivia(node_type: str) -> bool:
     return node_type in _TRIVIA or node_type.startswith("pragma")
+
+
+def _named_int_error(c) -> bool:
+    """A tree-sitter ERROR that is really the ``int <NamedConstant>`` pseudo-op
+    (``int DeleteApplication`` / ``int pay`` / …). The grammar's ``int`` rule
+    only accepts a numeric argument, so the named OnCompletion / TxnType form
+    parses as an ERROR and would be dropped as trivia — silently losing the
+    pushed constant, so the comparison that consumes it loses an operand (the
+    root cause of the named-constant guard blind spot). We recover it as an
+    ``int`` opcode node; :mod:`const_values` resolves the name to its value."""
+    return (
+        c.type == "ERROR"
+        and len(c.children) >= 2
+        and c.children[0].type == "int"
+        and c.children[1].type == "label_identifier"
+    )
 
 def _ts_to_pascal(node_type: str) -> str:
     """Fallback node-class for an opcode whose mnemonic no class claims:
@@ -108,7 +127,8 @@ def parse_nodes(sources: dict[str, bytes | str]) -> list:
             src = src.encode("utf-8")
         root = _PARSER.parse(src).root_node
 
-        real = [c for c in root.children if not _is_trivia(c.type)]
+        real = [c for c in root.children
+                if not _is_trivia(c.type) or _named_int_error(c)]
         if not real:
             continue
 
@@ -125,6 +145,16 @@ def parse_nodes(sources: dict[str, bytes | str]) -> list:
         op_nodes: list = []
         label_nodes: list = []
         for ch in real:
+            if _named_int_error(ch):
+                # Recovered `int <name>`: span the `int` token through the named
+                # identifier (tight, robust to greedy ERROR recovery), emit as
+                # the same opcode class a numeric `int N` gets.
+                a, b = ch.children[0], ch.children[1]
+                op_nodes.append(_node(
+                    a.start_point[0] + 1, a.start_point[1],
+                    b.end_point[0] + 1, b.end_point[1],
+                    SingleNumericArgumentOpcode))
+                continue
             sl, sc, el, ec = _loc(ch)
             if ch.type == "label":
                 label_nodes.append(_node(sl, sc, el, ec, Label))

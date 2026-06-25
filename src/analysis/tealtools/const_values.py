@@ -28,7 +28,7 @@ from __future__ import annotations
 from typing import Optional
 
 from .ast import Opcode
-from .ast.literals import tokenize_operands
+from .ast.literals import NAMED_INT_CONSTANTS, tokenize_operands
 
 
 def _opname(n) -> str:
@@ -48,6 +48,16 @@ def _to_int(tok: str) -> Optional[int]:
         return int(tok)
     except (ValueError, TypeError):
         return None
+
+
+def _resolve_int_immediate(tok: str) -> Optional[int]:
+    """An ``int`` immediate: a decimal literal OR a named AVM constant
+    (``DeleteApplication`` -> 5, ``pay`` -> 1). Hex / template variables still
+    yield ``None`` (no statically-known value)."""
+    v = _to_int(tok)
+    if v is not None:
+        return v
+    return NAMED_INT_CONSTANTS.get(tok.strip())
 
 
 def _split_int_tokens(imms: str) -> list[str]:
@@ -84,7 +94,7 @@ def compute_const_values(g) -> list[tuple]:
         ln = n.location.start_line
 
         if op in ("int", "pushint"):
-            v = _to_int(_imms(n))
+            v = _resolve_int_immediate(_imms(n))
             if v is not None:
                 rows.append((f, ln, 1, "int", str(v)))
 

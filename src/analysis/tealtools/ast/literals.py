@@ -19,6 +19,21 @@ today only the lift consumes them (it would otherwise re-parse the raw text).
 from __future__ import annotations
 
 
+# TEAL `int` pseudo-op named constants -- the OnCompletion and TxnType (TypeEnum)
+# enums the assembler resolves to fixed uint64 values. The tree-sitter grammar's
+# `int` rule only accepts a numeric argument, so the named form (`int
+# DeleteApplication`) parses as an ERROR; parse.py recovers the node and this
+# table gives const_values the value. (AVM langspec named constants.)
+NAMED_INT_CONSTANTS: dict[str, int] = {
+    # OnCompletion
+    "NoOp": 0, "OptIn": 1, "CloseOut": 2, "ClearState": 3,
+    "UpdateApplication": 4, "DeleteApplication": 5,
+    # TxnType / TypeEnum
+    "unknown": 0, "pay": 1, "keyreg": 2, "acfg": 3, "axfer": 4, "afrz": 5,
+    "appl": 6,
+}
+
+
 def _teal_str_bytes(s: str) -> bytes:
     r"""Decode a TEAL ``byte "..."`` string body (handles \\ \" \n \r \t \xNN)."""
     out = bytearray()
