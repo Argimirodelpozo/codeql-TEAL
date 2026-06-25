@@ -320,6 +320,19 @@ def _term_targets(term):
 
 def to_puya(prog):
     """SSAProgram -> (main, subroutines) as real puya.ir.models objects."""
+    # Pre-lift scratch simplification: forward compile-time-constant scratch loads to
+    # their literal so the lift emits the constant directly. propagate_scratch_constants
+    # only rewires the LOAD's consumers -- it KEEPS the store, which stays
+    # gload-readable cross-group, so this is behaviour-preserving even for grouped
+    # contracts (verified by the behavioural dryrun, incl. the gload contracts). This
+    # reaches scratch (slot) redundancy Puya's context-free optimiser can't: its
+    # slot_elimination is omitted because scratch isn't a sound local -- a `gload i N`
+    # in a SIBLING program can read a slot this program never reads locally.
+    try:
+        prog.propagate_constants()
+        prog.propagate_scratch_constants()
+    except Exception:
+        pass
     # Build via the lifter directly (not `lift()`) so we keep its SSAVar->Register
     # map for the byte-length sized-bytes bridge below.
     lifter = _Lifter(prog)
