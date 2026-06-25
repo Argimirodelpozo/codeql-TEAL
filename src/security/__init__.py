@@ -55,6 +55,7 @@ _DETECTIONS_ROOT = Path(__file__).resolve().parent / "detections"
 # framework (which emit the generic ``dataflow.Violation``).
 _DETECTION_SPECS: tuple[tuple[str, str, str, "Optional[str]"], ...] = (
     ("abi-method-selector",   "abi_method_selector",   "AbiMethodSelectorDetector",   "AbiMethodSelectorViolation"),
+    ("arbitrary-inner-appcall", "arbitrary_inner_appcall", "ArbitraryInnerAppcallDetector", "ArbitraryInnerAppcallViolation"),
     ("asset-close-to",        "asset_close_to",        "AssetCloseToDetector",        "AssetCloseToViolation"),
     ("asset-id-validation",   "asset_id_validation",   "AssetIdValidationDetector",   "AssetIdValidationViolation"),
     ("box-key",               "box_key",               "NonUniqueBoxKeyDetector",     None),

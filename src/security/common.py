@@ -953,6 +953,135 @@ def inner_txn_sets_nonzero_fee(field_set: InnerTxnFieldSet) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# User-input taint + itxn-field guard
+#
+# Shared by every detector that asks "does an attacker-controlled value reach
+# a sensitive inner-transaction field without a dominating check?" — the
+# tainted-fund-flow family (payment fields) and arbitrary-inner-appcall (the
+# call target). The taint is a forward propagation over the PySSA
+# def-use / phi / scratch relation, interprocedural via the frame-flow bridge
+# (a value fed into a proto param is tainted from the caller args bound to it).
+# ---------------------------------------------------------------------------
+
+
+_CMP_OPS = frozenset({"==", "!="})
+
+
+def source_label(op: str, imm: str) -> Optional[str]:
+    """The user-input source family ``op`` (with immediates ``imm``) reads, or
+    ``None``. ``ApplicationArgs`` (txn/gtxn array reads), LogicSig ``arg``s, and
+    the ``itxn ... LastLog`` of a just-called sub-app are all attacker-steerable."""
+    from tealtools.opsets import TXN_SOURCE_OPS, ITXN_SOURCE_OPS, LSIG_ARG_OPS
+    if op in TXN_SOURCE_OPS and "ApplicationArgs" in imm:
+        return "ApplicationArgs"
+    if op in LSIG_ARG_OPS:
+        return "LogicSigArgs"
+    if op in ITXN_SOURCE_OPS and "LastLog" in imm:
+        return "ItxnLastLog"
+    return None
+
+
+def user_input_taint(prog: SSAProgram, file: Optional[str] = None) -> dict:
+    """``{SSAVar|Phi: frozenset[(label, slot)]}`` — forward taint from the
+    user-input sources over the SSA def-use / phi / scratch relation, where
+    ``slot`` = ``(op, immediates)`` so two reads of the SAME input slot match
+    (and ``ApplicationArgs[0]`` vs ``[1]`` don't).
+
+    Interprocedural: each ``frame_dig`` param read inherits the taint of the
+    caller args bound to it (:func:`frame_param_sources`), so a value fed INTO a
+    subroutine parameter and consumed inside the callee is caught natively — no
+    IR lift, no per-detector supplement."""
+    from tealtools.passes.frame_flow import frame_param_sources
+    taint: dict = {}
+
+    def t(o):
+        return taint.get(o, frozenset())
+
+    frame_src = frame_param_sources(prog)
+
+    for a in prog.assignments:                       # seed
+        if not file_match(a.location.file, file):
+            continue
+        lbl = source_label(a.op, a.immediates.strip())
+        if lbl:
+            key = (lbl, (a.op, a.immediates.strip()))
+            for o in a.outputs:
+                if isinstance(o, SSAVar):
+                    taint[o] = t(o) | {key}
+
+    changed = True
+    while changed:
+        changed = False
+        for ph in prog.phis.values():                # phi: union of args
+            new = set()
+            for arg in ph.args:
+                new |= t(arg)
+            if new - t(ph):
+                taint[ph] = t(ph) | new
+                changed = True
+        for dig_out, args in frame_src.items():      # callee param <- caller args
+            new = set()
+            for arg in args:
+                new |= t(arg)
+            if new - t(dig_out):
+                taint[dig_out] = t(dig_out) | new
+                changed = True
+        for a in prog.assignments:
+            if not file_match(a.location.file, file):
+                continue
+            ins = set()
+            for inp in a.inputs:
+                ins |= t(inp)
+            if a.op == "load":                       # scratch reaching-def
+                for o in a.outputs:
+                    for s in (_scratch_stores_for(prog, o) or ()):
+                        ins |= t(prog.var(*s))
+            if not ins:
+                continue
+            for o in a.outputs:
+                if isinstance(o, SSAVar) and (ins - t(o)):
+                    taint[o] = t(o) | ins
+                    changed = True
+    return {k: frozenset(v) for k, v in taint.items() if v}
+
+
+def sender_creator_vars(prog: SSAProgram, *, file: Optional[str] = None) -> set:
+    """SSAVars reading ``txn Sender`` or ``global CreatorAddress`` — the seeds
+    for the "this access is gated on who sent it" suppression."""
+    sv: set = set()
+    for a in txn_field_reads(prog, "Sender", file=file):
+        sv |= {o for o in a.outputs if isinstance(o, SSAVar)}
+    for a in global_field_reads(prog, "CreatorAddress", file=file):
+        sv |= {o for o in a.outputs if isinstance(o, SSAVar)}
+    return sv
+
+
+def itxn_value_guarded(
+    prog: SSAProgram,
+    pp: PathPredicateAnalysis,
+    assignment: Assignment,
+    sink_slots: frozenset,
+    taint: dict,
+    sender_vars: set,
+) -> bool:
+    """The inner-txn field write at ``assignment`` is dominated by a check of
+    either the tainted value itself (a predicate derived from the SAME input
+    slot — taint propagates through the comparison, so ``arg < N`` carries
+    ``arg``'s slot) or of ``txn Sender`` (a sender/creator equality)."""
+    preds = pp.predicates_at(file=assignment.location.file, line=assignment.location.line)
+    for cond in preds:
+        v = cond.value
+        if taint.get(v, frozenset()) & sink_slots:        # value-check
+            return True
+        d = getattr(v, "defined_by", None)
+        if d is not None and d.op in _CMP_OPS and any(    # sender-check
+                _operand_flows_from_field_var(prog, op, sender_vars)
+                for op in d.inputs):
+            return True
+    return False
+
+
+# ---------------------------------------------------------------------------
 # Tiny presentation helper used by every detector module
 # ---------------------------------------------------------------------------
 
