@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import puya.ir.models as M
 from puya.ir.avm_ops import AVMOp
+from puya.avm import AVMType
 from puya.ir.types_ import AVMBytesEncoding, PrimitiveIRType as PT
 from puya.parse import SourceLocation
 
@@ -1055,6 +1056,16 @@ def _puya_zero(ir_type):
     if ir_type in _BYTES_IRT:
         return M.BytesConstant(source_location=None, value=b"",
                                encoding=AVMBytesEncoding.utf8)
+    # A bytes-backed type that is NOT plain bytes/account -- e.g. an ARC4
+    # ``EncodedType`` (uint64-tuple, address, fixed array). A uint64 zero is the
+    # wrong AVM type for it, so emit a bytes zero of the type's fixed width and
+    # type the constant AS the target so the orphan-default assignment type-checks
+    # exactly (Puya rejects ``source=(uint64) target=(Encoded(...))`` otherwise).
+    if getattr(ir_type, "avm_type", None) == AVMType.bytes:
+        nb = getattr(ir_type, "num_bytes", None)
+        n = nb if isinstance(nb, int) else 0
+        return M.BytesConstant(source_location=None, value=b"\x00" * n,
+                               encoding=AVMBytesEncoding.base16, ir_type=ir_type)
     return M.UInt64Constant(source_location=None, value=0)
 
 
