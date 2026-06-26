@@ -130,22 +130,21 @@ Our sec-guide detectors vs [crytic/tealer], compared per shared vulnerability cl
 
 | class | agree | we-only | tealer-only |
 |---|---:|---:|---:|
-| deletable | 149 | 20 | 0 |
-| updatable | 84 | 85 | 0 |
+| deletable | 151 | 18 | 0 |
+| updatable | 89 | 80 | 0 |
 | rekey | 162 | 7 | 0 |
 | close-account | 5 | 164 | 0 |
 | close-asset | 2 | 167 | 0 |
 | fee | 162 | 7 | 0 |
 | group-size | 67 | 102 | 0 |
 
-<details><summary>552 class disagreements</summary>
+<details><summary>545 class disagreements</summary>
 
 | label | contract | class | who flags |
 |---|---|---|---|
 |  | app_1050021565.teal | close-account | we-flag/tealer-clean |
 |  | app_1050021565.teal | close-asset | we-flag/tealer-clean |
 |  | app_1050021565.teal | group-size | we-flag/tealer-clean |
-|  | app_1050030771.teal | updatable | we-flag/tealer-clean |
 |  | app_1050030771.teal | close-asset | we-flag/tealer-clean |
 |  | app_1050030771.teal | group-size | we-flag/tealer-clean |
 |  | app_1050051256.teal | updatable | we-flag/tealer-clean |
@@ -291,7 +290,6 @@ Our sec-guide detectors vs [crytic/tealer], compared per shared vulnerability cl
 |  | app_182833351.teal | close-account | we-flag/tealer-clean |
 |  | app_182833351.teal | close-asset | we-flag/tealer-clean |
 |  | app_182833351.teal | group-size | we-flag/tealer-clean |
-|  | app_1900079716.teal | updatable | we-flag/tealer-clean |
 |  | app_1900079716.teal | close-asset | we-flag/tealer-clean |
 |  | app_1900079716.teal | group-size | we-flag/tealer-clean |
 |  | app_1900092936.teal | deletable | we-flag/tealer-clean |
@@ -332,13 +330,9 @@ Our sec-guide detectors vs [crytic/tealer], compared per shared vulnerability cl
 |  | app_2200042961.teal | close-account | we-flag/tealer-clean |
 |  | app_2200042961.teal | close-asset | we-flag/tealer-clean |
 |  | app_2200042961.teal | group-size | we-flag/tealer-clean |
-|  | app_2200060952.teal | deletable | we-flag/tealer-clean |
-|  | app_2200060952.teal | updatable | we-flag/tealer-clean |
 |  | app_2200060952.teal | close-account | we-flag/tealer-clean |
 |  | app_2200060952.teal | close-asset | we-flag/tealer-clean |
 |  | app_2200060952.teal | group-size | we-flag/tealer-clean |
-|  | app_2200131883.teal | deletable | we-flag/tealer-clean |
-|  | app_2200131883.teal | updatable | we-flag/tealer-clean |
 |  | app_2200131883.teal | close-account | we-flag/tealer-clean |
 |  | app_2200131883.teal | close-asset | we-flag/tealer-clean |
 |  | app_2200131883.teal | group-size | we-flag/tealer-clean |
@@ -396,7 +390,6 @@ Our sec-guide detectors vs [crytic/tealer], compared per shared vulnerability cl
 |  | app_2500447406.teal | close-account | we-flag/tealer-clean |
 |  | app_2500447406.teal | close-asset | we-flag/tealer-clean |
 |  | app_2500447406.teal | group-size | we-flag/tealer-clean |
-|  | app_2500705413.teal | updatable | we-flag/tealer-clean |
 |  | app_2500705413.teal | close-asset | we-flag/tealer-clean |
 |  | app_2500705413.teal | group-size | we-flag/tealer-clean |
 |  | app_2501001820.teal | deletable | we-flag/tealer-clean |
