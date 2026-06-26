@@ -10,6 +10,8 @@ plus the types the lift adds that TEAL lacks (polymorphic ``load`` /
 """
 from __future__ import annotations
 
+import copy
+
 import puya.ir.models as M
 from puya.ir.avm_ops import AVMOp
 from puya.avm import AVMType
@@ -319,6 +321,79 @@ def _term_targets(term):
     return []
 
 
+def _retarget_terminator(term, old: int, new: int) -> None:
+    """Rewrite every ``old`` block-id target in ``term`` to ``new`` (in place)."""
+    if isinstance(term, pre_ir.Goto):
+        if term.target == old:
+            term.target = new
+    elif isinstance(term, pre_ir.ConditionalBranch):
+        if term.non_zero == old:
+            term.non_zero = new
+        if term.zero == old:
+            term.zero = new
+    elif isinstance(term, pre_ir.GotoNth):
+        term.blocks = [new if b == old else b for b in term.blocks]
+        if term.default == old:
+            term.default = new
+    elif isinstance(term, pre_ir.Switch):
+        term.cases = [(lbl, new if b == old else b) for lbl, b in term.cases]
+        if term.default == old:
+            term.default = new
+
+
+def _duplicate_shared_epilogues(lifted):
+    """Tail-duplicate a shared "epilogue" block reached by direct branches from
+    more than one routine. Puya requires each block to belong to exactly one
+    subroutine, but a compiler-shared exit block (e.g. a common ``exit 0`` reject
+    that many handlers AND a subroutine's body jump to) is branched to from
+    several routines -- so Puya's Subroutine validator rejects it ("predecessor
+    block(s) outside of list").
+
+    Only a PURE CONTROL SINK is duplicated: no phis, no ops, a terminal
+    terminator (no successor blocks), and no register operands -- so there is
+    nothing to merge or thread across the routine boundary and each consuming
+    routine can get its own independent, identical copy. The shared original is
+    removed and replaced by one fresh-id clone per caller routine, with that
+    routine's edges retargeted to its clone. A block carrying any value is left
+    untouched (it needs real tail-duplication with phi splitting, not done here).
+    No-op for the overwhelmingly common case of no cross-routine-shared sink."""
+    groups = [lifted.main, *lifted.subroutines]
+    block_by_id = {bb.id: bb for g in groups for bb in g.body}
+    if not block_by_id:
+        return
+    next_id = max(block_by_id) + 1
+
+    def is_pure_sink(bb) -> bool:
+        return (not bb.phis and not bb.ops
+                and not _term_targets(bb.terminator)            # terminal
+                and not any(isinstance(o, pre_ir.Register)
+                            for o in pre_ir.operands(bb.terminator)))
+
+    callers: dict = {}                       # block id -> caller groups (ordered, distinct)
+    for g in groups:
+        for bb in g.body:
+            for succ in _term_targets(bb.terminator):
+                lst = callers.setdefault(succ, [])
+                if not any(cg is g for cg in lst):
+                    lst.append(g)
+
+    for bid, caller_groups in list(callers.items()):
+        bb = block_by_id.get(bid)
+        if bb is None or len(caller_groups) <= 1 or not is_pure_sink(bb):
+            continue
+        for g in groups:                     # drop the shared original
+            if bb in g.body:
+                g.body.remove(bb)
+        for g in caller_groups:              # one private clone per caller routine
+            clone = pre_ir.BasicBlock(id=next_id, phis=[], ops=[],
+                                      terminator=copy.copy(bb.terminator),
+                                      comment=bb.comment)
+            next_id += 1
+            g.body.append(clone)
+            for src in g.body:
+                _retarget_terminator(src.terminator, bid, clone.id)
+
+
 def to_puya(prog):
     """SSAProgram -> (main, subroutines) as real puya.ir.models objects."""
     # Pre-lift scratch simplification: forward compile-time-constant scratch loads to
@@ -343,6 +418,7 @@ def to_puya(prog):
     # register replaced by itself), but our reconstruction can emit them.
     from .transforms import simplify_trivial_phis
     simplify_trivial_phis(lifted)
+    _duplicate_shared_epilogues(lifted)
     t = _Translator(_load_src(getattr(prog, "source_path", "")))
     groups = [lifted.main, *lifted.subroutines]
 
