@@ -15,8 +15,10 @@ the attacker submits a group whose transaction 0 pays *someone else* (or themsel
 validates the COUNT of transactions; this validates that a sibling the app draws
 VALUE from actually pays the app.
 
-Detection (immediate-index group reads only — a dynamic ``gtxns`` index is skipped,
-soundly): for each sibling index that the program reads a value field from
+Detection (group reads at a STATICALLY KNOWN sibling index — immediate-index
+``gtxn``/``gtxna``/``gtxnas`` plus ``gtxns`` with a const-resolved index, e.g.
+``int 0; gtxns Amount``; a genuinely dynamic ``gtxns`` index is skipped soundly):
+for each sibling index that the program reads a value field from
 (``Amount`` → a payment, ``AssetAmount`` → an asset transfer), require a matching
 receiver pin — an equality comparing that sibling's ``Receiver`` / ``AssetReceiver``
 against ``global CurrentApplicationAddress`` whose result reaches enforcement
@@ -30,7 +32,7 @@ from dataclasses import dataclass
 from typing import ClassVar, Optional
 
 from security import common
-from tealtools.ssa import Assignment, SSAProgram, SSAVar
+from tealtools.ssa import Assignment, SSAProgram, SSAVar, const_int
 
 # Value field -> the receiver field that must be pinned for that transfer kind.
 _VALUE_TO_RECEIVER = {
@@ -95,20 +97,37 @@ class UnvalidatedGroupSiblingDetector:
     # -- internals ------------------------------------------------------
 
     def _gtxn_index_reads(self) -> dict:
-        """``(index, field) -> [assignments]`` for the immediate-index group
-        opcodes (``gtxn`` / ``gtxna`` / ``gtxnas`` — index in the first
-        immediate). The stack-index ``gtxns*`` family is skipped (the sibling
-        index isn't statically known)."""
+        """``(index, field) -> [assignments]`` for every group read with a
+        STATICALLY KNOWN sibling index:
+
+        * the immediate-index opcodes ``gtxn`` / ``gtxna`` / ``gtxnas`` (index in
+          the first immediate), and
+        * the stack-index ``gtxns`` when its popped index operand is a
+          compile-time constant — e.g. ``int 0; gtxns Amount``, the usual
+          compiler output for ``gtxn.PaymentTxn(0)``.
+
+        A genuinely DYNAMIC ``gtxns`` index (one not const-resolvable) is still
+        skipped: the sibling it reads isn't statically known, so there is no fixed
+        index to demand a receiver pin for."""
         out: dict = {}
         for a in self.prog.assignments:
             if not common.file_match(a.location.file, self.file):
                 continue
-            if a.op not in ("gtxn", "gtxna", "gtxnas"):
-                continue
-            toks = a.immediates.split()
-            if len(toks) < 2 or not toks[0].lstrip("-").isdigit():
-                continue
-            out.setdefault((int(toks[0]), toks[1]), []).append(a)
+            if a.op in ("gtxn", "gtxna", "gtxnas"):
+                toks = a.immediates.split()
+                if len(toks) < 2 or not toks[0].lstrip("-").isdigit():
+                    continue
+                out.setdefault((int(toks[0]), toks[1]), []).append(a)
+            elif a.op == "gtxns":
+                # field is the only immediate; the sibling index is the popped
+                # stack operand, usable only when it is a compile-time constant.
+                toks = a.immediates.split()
+                if not toks or not a.inputs:
+                    continue
+                idx = const_int(a.inputs[0])
+                if idx is None:
+                    continue
+                out.setdefault((idx, toks[0]), []).append(a)
         return out
 
     def _global_seeds(self, gfield: str) -> set:

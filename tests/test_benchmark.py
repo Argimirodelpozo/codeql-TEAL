@@ -126,7 +126,7 @@ _BASELINE: dict[str, tuple[int, int, int, int]] = {
     "unprotected-updatable": (1, 0, 0, 1),
     "unsafe-division-order": (3, 0, 0, 3),
     "unsafe-lsig-args": (1, 0, 0, 1),
-    "unvalidated-group-sibling": (3, 0, 0, 4),
+    "unvalidated-group-sibling": (4, 0, 0, 5),
 }
 
 

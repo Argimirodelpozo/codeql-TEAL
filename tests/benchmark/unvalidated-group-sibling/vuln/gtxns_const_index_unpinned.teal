@@ -1,0 +1,16 @@
+#pragma version 10
+    // deposit() reading the sibling payment via gtxns at a CONSTANT index 0
+    // (the usual compiler lowering of gtxn.PaymentTxn(0)).
+    // BUG: trusts gtxns 0 Amount without pinning gtxns 0 Receiver to this app,
+    // so the attacker's group pays someone else and is still credited.
+    int 0
+    gtxns Amount
+    int 1000000
+    >=
+    assert
+    txn Sender
+    int 0
+    gtxns Amount
+    app_global_put
+    int 1
+    return

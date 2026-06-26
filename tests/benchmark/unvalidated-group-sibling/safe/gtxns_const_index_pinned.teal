@@ -1,0 +1,16 @@
+#pragma version 10
+    // Same gtxns-const-index deposit, but WITH the receiver pin:
+    // gtxns 0 Receiver == Global.CurrentApplicationAddress is asserted, so the
+    // sibling provably pays THIS app.
+    int 0
+    gtxns Receiver
+    global CurrentApplicationAddress
+    ==
+    assert
+    int 0
+    gtxns Amount
+    int 1000000
+    >=
+    assert
+    int 1
+    return
