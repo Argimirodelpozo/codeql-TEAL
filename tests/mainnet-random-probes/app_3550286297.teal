@@ -1,0 +1,1852 @@
+#pragma version 11
+intcblock 0 1 4 16
+bytecblock 0x47 0x7374617465 0x64656c5f6d616e61676572 0x726f756e645f656e64 0x151f7c75 0x726f756e645f7374617274 0x05 0x64656c5f62656e6566696369617279 0x726f756e645f656e646564 0x726f756e645f636c61696d5f6c617374 0x6665655f6f7065726174696f6e616c 0x6665655f6f7065726174696f6e616c5f706172746e6572 0x42 0x636e745f6272656163685f64656c 0x03 0x04 0x726f756e645f6272656163685f6c617374 0x6e6f74696365626f6172645f6170705f6964 0x76616c696461746f725f61645f6170705f6964 0x00 0x726f756e645f6578706972795f736f6f6e5f6c617374 0x10 0x766f74655f6b65795f64696c7574696f6e 0x73656c5f6b6579 0x766f74655f6b6579 0x73746174655f70726f6f665f6b6579 0x74635f736861323536
+txn ApplicationID
+bnz label1
+callsub label2
+label1:
+callsub label3
+return
+label2:
+proto 0 0
+bytec 17 // "noticeboard_app_id"
+intc_0 // 0
+app_global_put
+bytec 18 // "validator_ad_app_id"
+intc_0 // 0
+app_global_put
+pushint 96
+bzero
+bytec_0 // "G"
+swap
+app_global_put
+bytec 10 // "fee_operational"
+intc_0 // 0
+app_global_put
+bytec 11 // "fee_operational_partner"
+intc_0 // 0
+app_global_put
+pushint 56
+bzero
+bytec 12 // "B"
+swap
+app_global_put
+bytec_2 // "del_manager"
+global ZeroAddress
+app_global_put
+bytec 7 // "del_beneficiary"
+global ZeroAddress
+app_global_put
+bytec 5 // "round_start"
+intc_0 // 0
+app_global_put
+bytec_3 // "round_end"
+intc_0 // 0
+app_global_put
+bytec 8 // "round_ended"
+intc_0 // 0
+app_global_put
+bytec 22 // "vote_key_dilution"
+intc_0 // 0
+app_global_put
+pushint 32
+bzero
+bytec 23 // "sel_key"
+dig 1
+app_global_put
+bytec 24 // "vote_key"
+dig 1
+app_global_put
+pushint 64
+bzero
+bytec 25 // "state_proof_key"
+swap
+app_global_put
+bytec_1 // "state"
+bytec 19 // 0x00
+app_global_put
+bytec 26 // "tc_sha256"
+swap
+app_global_put
+bytec 13 // "cnt_breach_del"
+intc_0 // 0
+app_global_put
+bytec 16 // "round_breach_last"
+intc_0 // 0
+app_global_put
+bytec 9 // "round_claim_last"
+intc_0 // 0
+app_global_put
+bytec 20 // "round_expiry_soon_last"
+intc_0 // 0
+app_global_put
+retsub
+label3:
+proto 0 1
+txn NumAppArgs
+bz label4
+pushbytess 0xd1beccce 0x7d3db474 0xb47ef9eb 0xcaeb1a7b 0x261bd199 0xfe811ae7 0x1f3399a8 0xc1773ee0 0x9516245e 0x9044e21f 0x26f59a46 0xb88322bb 0xf53b95cd 0xf2e67934 0xeafa1e15
+txna ApplicationArgs 0
+match label5 label6 label7 label8 label9 label10 label11 label12 label13 label14 label15 label16 label17 label18 label19
+intc_0 // 0
+retsub
+label5:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+!
+assert
+txna ApplicationArgs 1
+txna ApplicationArgs 2
+txna ApplicationArgs 3
+btoi
+callsub label20
+bytec 4 // 0x151f7c75
+swap
+concat
+log
+intc_1 // 1
+retsub
+label6:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+assert
+txna ApplicationArgs 1
+txna ApplicationArgs 2
+txna ApplicationArgs 3
+txna ApplicationArgs 4
+btoi
+callsub label21
+intc_1 // 1
+retsub
+label7:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+assert
+txn GroupIndex
+intc_1 // 1
+-
+callsub label22
+intc_1 // 1
+retsub
+label8:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+assert
+txna ApplicationArgs 1
+callsub label23
+intc_1 // 1
+retsub
+label9:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+assert
+callsub label24
+bytec 4 // 0x151f7c75
+swap
+concat
+log
+intc_1 // 1
+retsub
+label10:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+assert
+callsub label25
+bytec 4 // 0x151f7c75
+swap
+concat
+log
+intc_1 // 1
+retsub
+label11:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+assert
+txna ApplicationArgs 1
+callsub label26
+bytec 4 // 0x151f7c75
+swap
+concat
+log
+intc_1 // 1
+retsub
+label12:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+assert
+callsub label27
+bytec 4 // 0x151f7c75
+swap
+concat
+log
+intc_1 // 1
+retsub
+label13:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+assert
+callsub label28
+bytec 4 // 0x151f7c75
+swap
+concat
+log
+intc_1 // 1
+retsub
+label14:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+assert
+callsub label29
+bytec 4 // 0x151f7c75
+swap
+concat
+log
+intc_1 // 1
+retsub
+label15:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+assert
+callsub label30
+bytec 4 // 0x151f7c75
+swap
+concat
+log
+intc_1 // 1
+retsub
+label16:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+assert
+callsub label31
+bytec 4 // 0x151f7c75
+swap
+concat
+log
+intc_1 // 1
+retsub
+label17:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+assert
+txna ApplicationArgs 1
+callsub label32
+bytec 4 // 0x151f7c75
+swap
+concat
+log
+intc_1 // 1
+retsub
+label18:
+txn OnCompletion
+pushint 5
+==
+assert
+txn ApplicationID
+assert
+txna ApplicationArgs 1
+callsub label33
+bytec 4 // 0x151f7c75
+swap
+concat
+log
+intc_1 // 1
+retsub
+label19:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+assert
+txna ApplicationArgs 1
+btoi
+txna ApplicationArgs 2
+btoi
+callsub label34
+bytec 4 // 0x151f7c75
+swap
+concat
+log
+intc_1 // 1
+retsub
+label4:
+intc_0 // 0
+retsub
+label20:
+proto 3 1
+bytec 17 // "noticeboard_app_id"
+frame_dig -1
+app_global_put
+bytec 18 // "validator_ad_app_id"
+global CallerApplicationID
+app_global_put
+bytec_2 // "del_manager"
+frame_dig -3
+app_global_put
+bytec 7 // "del_beneficiary"
+frame_dig -2
+app_global_put
+bytec_1 // "state"
+pushbytes 0x01 // 0x01
+app_global_put
+global CurrentApplicationID
+itob
+retsub
+label21:
+proto 4 0
+txn Sender
+global CreatorAddress
+==
+assert
+intc_0 // 0
+bytec_1 // "state"
+app_global_get_ex
+assert
+pushbytes 0x01 // 0x01
+==
+assert
+bytec 26 // "tc_sha256"
+frame_dig -4
+app_global_put
+bytec_0 // "G"
+frame_dig -3
+app_global_put
+bytec 12 // "B"
+frame_dig -2
+app_global_put
+bytec 5 // "round_start"
+global Round
+app_global_put
+intc_0 // 0
+bytec 5 // "round_start"
+app_global_get_ex
+assert
+frame_dig -1
++
+bytec_3 // "round_end"
+swap
+app_global_put
+intc_0 // 0
+bytec 5 // "round_start"
+app_global_get_ex
+assert
+bytec 9 // "round_claim_last"
+swap
+app_global_put
+intc_0 // 0
+bytec_0 // "G"
+app_global_get_ex
+assert
+extract 8 8
+btoi
+intc_0 // 0
+bytec_3 // "round_end"
+app_global_get_ex
+assert
+intc_0 // 0
+bytec 5 // "round_start"
+app_global_get_ex
+assert
+callsub label35
+bytec 10 // "fee_operational"
+swap
+app_global_put
+intc_0 // 0
+bytec_0 // "G"
+app_global_get_ex
+assert
+extract 64 8
+btoi
+intc_0 // 0
+bytec_3 // "round_end"
+app_global_get_ex
+assert
+intc_0 // 0
+bytec 5 // "round_start"
+app_global_get_ex
+assert
+callsub label35
+bytec 11 // "fee_operational_partner"
+swap
+app_global_put
+frame_dig -3
+extract 24 8
+dup
+intc_0 // 0
+itob
+b!=
+bz label36
+itxn_begin
+frame_dig 0
+btoi
+global CurrentApplicationAddress
+intc_0 // 0
+itxn_field AssetAmount
+itxn_field AssetReceiver
+itxn_field XferAsset
+intc_2 // 4
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+label36:
+bytec_1 // "state"
+pushbytes 0x02 // 0x02
+app_global_put
+retsub
+label35:
+proto 3 1
+frame_dig -2
+frame_dig -1
+-
+frame_dig -3
+*
+pushint 1000
+/
+retsub
+label22:
+proto 1 0
+txn Sender
+global CreatorAddress
+==
+assert
+intc_0 // 0
+bytec_1 // "state"
+app_global_get_ex
+assert
+pushbytes 0x02 // 0x02
+==
+assert
+intc_0 // 0
+bytec_0 // "G"
+app_global_get_ex
+assert
+extract 16 8
+btoi
+intc_0 // 0
+bytec 10 // "fee_operational"
+app_global_get_ex
+assert
++
+intc_0 // 0
+bytec_0 // "G"
+app_global_get_ex
+assert
+extract 72 8
+btoi
+intc_0 // 0
+bytec 11 // "fee_operational_partner"
+app_global_get_ex
+assert
++
++
+frame_dig -1
+gtxns TypeEnum
+dup
+cover 2
+intc_1 // 1
+==
+bz label37
+frame_dig -1
+gtxns Receiver
+global CurrentApplicationAddress
+==
+assert
+intc_0 // 0
+bytec_0 // "G"
+app_global_get_ex
+assert
+extract 24 8
+intc_0 // 0
+itob
+b==
+assert
+frame_dig -1
+gtxns Amount
+==
+assert
+b label38
+label37:
+frame_dig 0
+intc_2 // 4
+==
+assert
+frame_dig -1
+gtxns AssetReceiver
+global CurrentApplicationAddress
+==
+assert
+intc_0 // 0
+bytec_0 // "G"
+app_global_get_ex
+assert
+extract 24 8
+frame_dig -1
+gtxns XferAsset
+itob
+b==
+assert
+frame_dig -1
+gtxns AssetAmount
+==
+assert
+label38:
+callsub label39
+intc_0 // 0
+getbit
+assert
+bytec_1 // "state"
+bytec 14 // 0x03
+app_global_put
+retsub
+label39:
+proto 0 1
+intc_0 // 0
+dup
+pushbytes 0x // ""
+dupn 4
+intc_0 // 0
+bytec 7 // "del_beneficiary"
+app_global_get_ex
+assert
+acct_params_get AcctBalance
+assert
+intc_0 // 0
+bytec 12 // "B"
+app_global_get_ex
+assert
+extract 0 8
+swap
+itob
+b>=
+bz label40
+intc_1 // 1
+frame_bury 5
+b label41
+label40:
+intc_0 // 0
+frame_bury 5
+label41:
+intc_0 // 0
+bytec 12 // "B"
+app_global_get_ex
+assert
+extract 24 32
+frame_bury 0
+intc_0 // 0
+frame_bury 4
+label48:
+frame_dig 4
+pushint 2
+<
+bz label42
+frame_dig 4
+intc_3 // 16
+*
+frame_dig 0
+swap
+intc_3 // 16
+extract3
+dup
+frame_bury 1
+extract 0 8
+btoi
+dup
+frame_bury 3
+frame_dig 5
+frame_bury 6
+bz label43
+intc_0 // 0
+bytec 7 // "del_beneficiary"
+app_global_get_ex
+assert
+frame_dig 3
+asset_holding_get AssetBalance
+bury 1
+bz label44
+intc_0 // 0
+bytec 7 // "del_beneficiary"
+app_global_get_ex
+assert
+frame_dig 3
+asset_holding_get AssetBalance
+swap
+frame_bury 2
+assert
+b label45
+label44:
+intc_0 // 0
+frame_bury 2
+label45:
+frame_dig 5
+bz label46
+frame_dig 1
+extract 8 8
+btoi
+frame_dig 2
+<=
+bz label46
+intc_1 // 1
+frame_bury 5
+b label47
+label46:
+intc_0 // 0
+frame_bury 5
+label47:
+frame_dig 5
+frame_bury 6
+label43:
+frame_dig 6
+frame_bury 5
+frame_dig 4
+intc_1 // 1
++
+frame_bury 4
+b label48
+label42:
+bytec 19 // 0x00
+intc_0 // 0
+frame_dig 5
+setbit
+frame_bury 0
+retsub
+label23:
+proto 1 0
+txn Sender
+global CreatorAddress
+==
+assert
+intc_0 // 0
+bytec_1 // "state"
+app_global_get_ex
+assert
+bytec 15 // 0x04
+==
+assert
+intc_0 // 0
+bytec_2 // "del_manager"
+app_global_get_ex
+assert
+frame_dig -1
+==
+assert
+global Round
+intc_0 // 0
+bytec 5 // "round_start"
+app_global_get_ex
+assert
+intc_0 // 0
+bytec_0 // "G"
+app_global_get_ex
+assert
+extract 80 8
+btoi
++
+intc_0 // 0
+bytec_0 // "G"
+app_global_get_ex
+assert
+extract 88 8
+btoi
++
+<=
+assert
+intc_0 // 0
+bytec 7 // "del_beneficiary"
+app_global_get_ex
+assert
+acct_params_get AcctIncentiveEligible
+pop
+assert
+bytec 16 // "round_breach_last"
+global Round
+app_global_put
+bytec 13 // "cnt_breach_del"
+intc_0 // 0
+app_global_put
+bytec_1 // "state"
+bytec 6 // 0x05
+app_global_put
+retsub
+label24:
+proto 0 1
+txn Sender
+global CreatorAddress
+==
+assert
+intc_0 // 0
+bytec_1 // "state"
+app_global_get_ex
+assert
+bytec 15 // 0x04
+==
+assert
+global Round
+intc_0 // 0
+bytec 5 // "round_start"
+app_global_get_ex
+assert
+intc_0 // 0
+bytec_0 // "G"
+app_global_get_ex
+assert
+extract 80 8
+btoi
++
+intc_0 // 0
+bytec_0 // "G"
+app_global_get_ex
+assert
+extract 88 8
+btoi
++
+>
+assert
+intc_0 // 0
+bytec_0 // "G"
+app_global_get_ex
+assert
+extract 24 8
+btoi
+intc_0 // 0
+bytec 10 // "fee_operational"
+app_global_get_ex
+assert
+intc_0 // 0
+bytec 11 // "fee_operational_partner"
+app_global_get_ex
+assert
++
+callsub label49
+bytec_1 // "state"
+pushbytes 0x11 // 0x11
+app_global_put
+bytec 8 // "round_ended"
+global Round
+app_global_put
+intc_0 // 0
+bytec_2 // "del_manager"
+app_global_get_ex
+assert
+pushbytes 0x4d6573736167652066726f6d2056616c61723a20596f752068617665206e6f7420636f6e6669726d656420746865206e6f646520746861742077617320707265706172656420666f7220796f752e20202020202020202020202020202020202020202020 // "Message from Valar: You have not confirmed the node that was prepared for you.                      "
+concat
+retsub
+label49:
+proto 2 0
+frame_dig -2
+bz label50
+intc_0 // 0
+bytec_2 // "del_manager"
+app_global_get_ex
+assert
+frame_dig -2
+asset_holding_get AssetBalance
+bury 1
+bz label51
+intc_0 // 0
+bytec_2 // "del_manager"
+app_global_get_ex
+assert
+frame_dig -2
+asset_holding_get AssetFrozen
+assert
+bnz label51
+intc_0 // 0
+bytec_2 // "del_manager"
+app_global_get_ex
+assert
+frame_dig -2
+asset_holding_get AssetBalance
+assert
+frame_dig -1
+>=
+bz label51
+itxn_begin
+intc_0 // 0
+bytec_2 // "del_manager"
+app_global_get_ex
+assert
+frame_dig -1
+itxn_field AssetAmount
+itxn_field AssetReceiver
+frame_dig -2
+itxn_field XferAsset
+intc_2 // 4
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+b label51
+label50:
+intc_0 // 0
+bytec_2 // "del_manager"
+app_global_get_ex
+assert
+balance
+global MinBalance
+>=
+bz label51
+itxn_begin
+intc_0 // 0
+bytec_2 // "del_manager"
+app_global_get_ex
+assert
+frame_dig -1
+itxn_field Amount
+itxn_field Receiver
+intc_1 // 1
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+label51:
+retsub
+label25:
+proto 0 1
+txn Sender
+global CreatorAddress
+==
+assert
+intc_0 // 0
+bytec_1 // "state"
+app_global_get_ex
+assert
+bytec 14 // 0x03
+==
+assert
+global Round
+intc_0 // 0
+bytec 5 // "round_start"
+app_global_get_ex
+assert
+intc_0 // 0
+bytec_0 // "G"
+app_global_get_ex
+assert
+extract 80 8
+btoi
++
+>
+assert
+intc_0 // 0
+bytec_0 // "G"
+app_global_get_ex
+assert
+extract 24 8
+btoi
+intc_0 // 0
+bytec_0 // "G"
+app_global_get_ex
+assert
+extract 16 8
+btoi
+intc_0 // 0
+bytec 10 // "fee_operational"
+app_global_get_ex
+assert
++
+intc_0 // 0
+bytec_0 // "G"
+app_global_get_ex
+assert
+extract 72 8
+btoi
+intc_0 // 0
+bytec 11 // "fee_operational_partner"
+app_global_get_ex
+assert
++
++
+callsub label49
+bytec_1 // "state"
+bytec 21 // 0x10
+app_global_put
+bytec 8 // "round_ended"
+global Round
+app_global_put
+intc_0 // 0
+bytec_2 // "del_manager"
+app_global_get_ex
+assert
+pushbytes 0x4d6573736167652066726f6d2056616c61723a204e6f64652072756e6e65722068617320756e666f7274756e6174656c79206e6f742070726570617265642061206e6f646520666f7220796f752e20202020202020202020202020202020202020202020 // "Message from Valar: Node runner has unfortunately not prepared a node for you.                      "
+concat
+retsub
+label26:
+proto 1 1
+txn Sender
+global CreatorAddress
+==
+assert
+intc_0 // 0
+bytec_1 // "state"
+app_global_get_ex
+assert
+bytec 14 // 0x03
+==
+assert
+frame_dig -1
+extract 152 32
+intc_0 // 0
+bytec 7 // "del_beneficiary"
+app_global_get_ex
+assert
+==
+assert
+frame_dig -1
+extract 0 8
+intc_0 // 0
+bytec 5 // "round_start"
+app_global_get_ex
+assert
+itob
+b==
+assert
+frame_dig -1
+extract 8 8
+intc_0 // 0
+bytec_3 // "round_end"
+app_global_get_ex
+assert
+itob
+b==
+assert
+frame_dig -1
+extract 16 8
+btoi
+bytec 22 // "vote_key_dilution"
+swap
+app_global_put
+frame_dig -1
+extract 24 32
+bytec 24 // "vote_key"
+swap
+app_global_put
+frame_dig -1
+extract 56 32
+bytec 23 // "sel_key"
+swap
+app_global_put
+frame_dig -1
+extract 88 64
+bytec 25 // "state_proof_key"
+swap
+app_global_put
+global Round
+intc_0 // 0
+bytec 5 // "round_start"
+app_global_get_ex
+assert
+intc_0 // 0
+bytec_0 // "G"
+app_global_get_ex
+assert
+extract 80 8
+btoi
++
+<=
+assert
+intc_0 // 0
+bytec_0 // "G"
+app_global_get_ex
+assert
+extract 16 8
+btoi
+intc_0 // 0
+bytec_0 // "G"
+app_global_get_ex
+assert
+extract 72 8
+btoi
+callsub label52
+bytec_1 // "state"
+bytec 15 // 0x04
+app_global_put
+intc_0 // 0
+bytec_2 // "del_manager"
+app_global_get_ex
+assert
+concat
+pushbytes 0x4d6573736167652066726f6d2056616c61723a204e6f646520686173206265656e20707265706172656420666f7220796f7520746f207374616b652e20202020202020202020202020202020202020202020202020202020202020202020202020202020 // "Message from Valar: Node has been prepared for you to stake.                                        "
+concat
+retsub
+label52:
+proto 2 1
+intc_0 // 0
+bytec_0 // "G"
+app_global_get_ex
+assert
+extract 24 8
+btoi
+dup
+intc_0 // 0
+bytec 18 // "validator_ad_app_id"
+app_global_get_ex
+swap
+cover 2
+assert
+intc_0 // 0
+bytec 17 // "noticeboard_app_id"
+app_global_get_ex
+swap
+cover 2
+assert
+intc_0 // 0
+bytec_0 // "G"
+app_global_get_ex
+assert
+extract 32 32
+swap
+intc_0 // 0
+bytec_0 // "G"
+app_global_get_ex
+assert
+extract 0 8
+btoi
+frame_dig -2
+swap
+dig 2
+callsub label53
+swap
+bz label54
+global CurrentApplicationAddress
+frame_dig 0
+dup
+cover 2
+asset_holding_get AssetBalance
+assert
+frame_dig -2
+frame_dig -1
++
+>=
+assert
+global CurrentApplicationAddress
+dig 1
+asset_holding_get AssetFrozen
+assert
+!
+assert
+frame_dig 1
+app_params_get AppAddress
+assert
+swap
+asset_holding_get AssetBalance
+bury 1
+bz label55
+frame_dig 1
+app_params_get AppAddress
+assert
+frame_dig 0
+asset_holding_get AssetFrozen
+assert
+bnz label55
+itxn_begin
+frame_dig 1
+app_params_get AppAddress
+assert
+frame_dig 4
+extract 0 8
+btoi
+itxn_field AssetAmount
+itxn_field AssetReceiver
+frame_dig 0
+itxn_field XferAsset
+intc_2 // 4
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+label55:
+frame_dig 2
+app_params_get AppAddress
+assert
+frame_dig 0
+asset_holding_get AssetBalance
+bury 1
+bz label56
+frame_dig 2
+app_params_get AppAddress
+assert
+frame_dig 0
+asset_holding_get AssetFrozen
+assert
+bnz label56
+itxn_begin
+frame_dig 2
+app_params_get AppAddress
+assert
+frame_dig 4
+extract 8 8
+btoi
+itxn_field AssetAmount
+itxn_field AssetReceiver
+frame_dig 0
+itxn_field XferAsset
+intc_2 // 4
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+label56:
+frame_dig 3
+global ZeroAddress
+!=
+bz label57
+frame_dig 3
+frame_dig 0
+asset_holding_get AssetBalance
+bury 1
+bz label57
+frame_dig 3
+frame_dig 0
+asset_holding_get AssetFrozen
+assert
+bnz label57
+itxn_begin
+frame_dig -1
+itxn_field AssetAmount
+frame_dig 3
+itxn_field AssetReceiver
+frame_dig 0
+itxn_field XferAsset
+intc_2 // 4
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+b label57
+label54:
+global CurrentApplicationAddress
+acct_params_get AcctBalance
+assert
+global CurrentApplicationAddress
+acct_params_get AcctMinBalance
+assert
+-
+frame_dig -2
+frame_dig -1
++
+>=
+assert
+itxn_begin
+frame_dig 1
+app_params_get AppAddress
+assert
+frame_dig 4
+dup
+cover 2
+extract 0 8
+btoi
+itxn_field Amount
+itxn_field Receiver
+intc_1 // 1
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+itxn_begin
+frame_dig 2
+app_params_get AppAddress
+assert
+swap
+extract 8 8
+btoi
+itxn_field Amount
+itxn_field Receiver
+intc_1 // 1
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+frame_dig 3
+global ZeroAddress
+!=
+bz label57
+frame_dig 3
+balance
+global MinBalance
+>=
+bz label57
+itxn_begin
+frame_dig -1
+itxn_field Amount
+frame_dig 3
+itxn_field Receiver
+intc_1 // 1
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+label57:
+frame_dig 4
+frame_bury 0
+retsub
+label53:
+proto 3 1
+frame_dig -3
+frame_dig -2
+mulw
+pushint 1000000
+divw
+frame_dig -3
+dig 1
+-
+itob
+swap
+itob
+frame_dig -1
+itob
+cover 2
+concat
+swap
+concat
+retsub
+label27:
+proto 0 1
+txn Sender
+global CreatorAddress
+==
+assert
+intc_0 // 0
+bytec_1 // "state"
+app_global_get_ex
+assert
+bytec 6 // 0x05
+==
+assert
+intc_0 // 0
+bytec_3 // "round_end"
+app_global_get_ex
+assert
+global Round
+>
+assert
+intc_0 // 0
+bytec 16 // "round_breach_last"
+app_global_get_ex
+assert
+intc_0 // 0
+bytec 12 // "B"
+app_global_get_ex
+assert
+extract 16 8
+btoi
++
+global Round
+<
+assert
+callsub label39
+intc_0 // 0
+getbit
+!
+assert
+intc_0 // 0
+bytec 13 // "cnt_breach_del"
+app_global_get_ex
+assert
+intc_1 // 1
++
+bytec 13 // "cnt_breach_del"
+swap
+app_global_put
+bytec 16 // "round_breach_last"
+global Round
+app_global_put
+callsub label30
+intc_0 // 0
+pushbytes 0x4d6573736167652066726f6d2056616c61723a20596f75722062616c616e6365206973206f75747369646520746865206c696d69747320616772656564207769746820746865206e6f64652072756e6e65722e20436f7272656374206974212020202020 // "Message from Valar: Your balance is outside the limits agreed with the node runner. Correct it!     "
+intc_0 // 0
+bytec 12 // "B"
+app_global_get_ex
+assert
+extract 8 8
+intc_0 // 0
+bytec 13 // "cnt_breach_del"
+app_global_get_ex
+assert
+itob
+b<=
+bz label58
+bytec_1 // "state"
+pushbytes 0x12 // 0x12
+app_global_put
+bytec 8 // "round_ended"
+global Round
+app_global_put
+intc_1 // 1
+frame_bury 1
+pushbytes 0x4d6573736167652066726f6d2056616c61723a20596f757220636f6e74726163742068617320656e646564206265636175736520796f7520627265616368656420746865207465726d7320746f6f206d616e792074696d65732e20202020202020202020 // "Message from Valar: Your contract has ended because you breached the terms too many times.          "
+frame_bury 2
+label58:
+bytec 19 // 0x00
+intc_0 // 0
+frame_dig 1
+setbit
+intc_0 // 0
+bytec_2 // "del_manager"
+app_global_get_ex
+assert
+swap
+frame_dig 0
+concat
+swap
+concat
+frame_dig 2
+concat
+frame_bury 0
+retsub
+label30:
+proto 0 1
+txn Sender
+global CreatorAddress
+==
+assert
+intc_0 // 0
+bytec_1 // "state"
+app_global_get_ex
+assert
+bytec 6 // 0x05
+==
+assert
+intc_0 // 0
+bytec 9 // "round_claim_last"
+app_global_get_ex
+assert
+global Round
+<
+assert
+global Round
+intc_0 // 0
+bytec_3 // "round_end"
+app_global_get_ex
+assert
+>
+bz label59
+intc_0 // 0
+bytec_3 // "round_end"
+app_global_get_ex
+assert
+b label60
+label59:
+global Round
+label60:
+intc_0 // 0
+bytec_0 // "G"
+app_global_get_ex
+assert
+extract 8 8
+btoi
+intc_0 // 0
+bytec 9 // "round_claim_last"
+app_global_get_ex
+assert
+dig 2
+swap
+callsub label35
+intc_0 // 0
+bytec_0 // "G"
+app_global_get_ex
+assert
+extract 64 8
+btoi
+intc_0 // 0
+bytec 9 // "round_claim_last"
+app_global_get_ex
+assert
+dig 3
+swap
+callsub label35
+callsub label52
+bytec 9 // "round_claim_last"
+uncover 2
+app_global_put
+retsub
+label28:
+proto 0 1
+pushbytes 0x // ""
+dupn 4
+txn Sender
+global CreatorAddress
+==
+assert
+intc_0 // 0
+bytec_1 // "state"
+app_global_get_ex
+assert
+bytec 6 // 0x05
+==
+bnz label61
+intc_0 // 0
+bytec_1 // "state"
+app_global_get_ex
+assert
+bytec 15 // 0x04
+==
+bnz label61
+intc_0 // 0
+bytec_1 // "state"
+app_global_get_ex
+assert
+bytec 14 // 0x03
+==
+bz label62
+label61:
+intc_1 // 1
+b label63
+label62:
+intc_0 // 0
+label63:
+assert
+intc_0 // 0
+bytec_0 // "G"
+app_global_get_ex
+assert
+extract 24 8
+intc_0 // 0
+itob
+b!=
+assert
+intc_0 // 0
+bytec_0 // "G"
+app_global_get_ex
+assert
+extract 8 8
+btoi
+frame_bury 1
+intc_0 // 0
+bytec_0 // "G"
+app_global_get_ex
+assert
+extract 64 8
+btoi
+frame_bury 2
+intc_0 // 0
+bytec_0 // "G"
+app_global_get_ex
+assert
+extract 16 8
+btoi
+frame_bury 3
+intc_0 // 0
+bytec_0 // "G"
+app_global_get_ex
+assert
+extract 72 8
+btoi
+frame_bury 4
+intc_0 // 0
+bytec_0 // "G"
+app_global_get_ex
+assert
+extract 24 8
+btoi
+dup
+frame_bury 0
+global CurrentApplicationAddress
+swap
+asset_holding_get AssetFrozen
+assert
+bnz label64
+intc_0 // 0
+bytec_1 // "state"
+app_global_get_ex
+assert
+bytec 14 // 0x03
+==
+bz label65
+intc_0 // 0
+bytec 10 // "fee_operational"
+app_global_get_ex
+assert
+frame_dig 3
++
+intc_0 // 0
+bytec 11 // "fee_operational_partner"
+app_global_get_ex
+assert
+frame_dig 4
++
++
+global CurrentApplicationAddress
+frame_dig 0
+asset_holding_get AssetBalance
+assert
+>
+assert
+b label64
+label65:
+intc_0 // 0
+bytec_1 // "state"
+app_global_get_ex
+assert
+bytec 15 // 0x04
+==
+bz label66
+intc_0 // 0
+bytec 10 // "fee_operational"
+app_global_get_ex
+assert
+intc_0 // 0
+bytec 11 // "fee_operational_partner"
+app_global_get_ex
+assert
++
+global CurrentApplicationAddress
+frame_dig 0
+asset_holding_get AssetBalance
+assert
+>
+assert
+b label64
+label66:
+intc_0 // 0
+bytec_1 // "state"
+app_global_get_ex
+assert
+bytec 6 // 0x05
+==
+bz label64
+global Round
+intc_0 // 0
+bytec_3 // "round_end"
+app_global_get_ex
+assert
+<
+bz label67
+global Round
+b label68
+label67:
+intc_0 // 0
+bytec_3 // "round_end"
+app_global_get_ex
+assert
+label68:
+intc_0 // 0
+bytec 9 // "round_claim_last"
+app_global_get_ex
+assert
+frame_dig 1
+dig 2
+uncover 2
+callsub label35
+intc_0 // 0
+bytec 9 // "round_claim_last"
+app_global_get_ex
+assert
+frame_dig 2
+uncover 3
+uncover 2
+callsub label35
++
+global CurrentApplicationAddress
+frame_dig 0
+asset_holding_get AssetBalance
+assert
+>
+assert
+label64:
+bytec_1 // "state"
+pushbytes 0x16 // 0x16
+app_global_put
+bytec 8 // "round_ended"
+global Round
+app_global_put
+intc_0 // 0
+bytec_2 // "del_manager"
+app_global_get_ex
+assert
+pushbytes 0x4d6573736167652066726f6d2056616c61723a20546865726520697320616e206973737565207769746820796f7572207061796d656e7420746f20746865206e6f64652072756e6e65722e20596f7520646f6e2774207374616b6520616e796d6f72652e // "Message from Valar: There is an issue with your payment to the node runner. You don't stake anymore."
+concat
+frame_bury 0
+retsub
+label29:
+proto 0 1
+txn Sender
+global CreatorAddress
+==
+assert
+intc_0 // 0
+bytec_1 // "state"
+app_global_get_ex
+assert
+bytec 6 // 0x05
+==
+assert
+intc_0 // 0
+bytec_3 // "round_end"
+app_global_get_ex
+assert
+global Round
+>
+assert
+intc_0 // 0
+bytec 7 // "del_beneficiary"
+app_global_get_ex
+assert
+acct_params_get AcctIncentiveEligible
+pop
+!
+assert
+callsub label30
+bytec_1 // "state"
+pushbytes 0x15 // 0x15
+app_global_put
+bytec 8 // "round_ended"
+global Round
+app_global_put
+intc_0 // 0
+bytec_2 // "del_manager"
+app_global_get_ex
+assert
+concat
+pushbytes 0x4d6573736167652066726f6d2056616c61723a20546865206e6574776f726b206861732073757370656e64656420796f7572206163636f756e742066726f6d207374616b696e672e20596f7520646f6e2774207374616b6520616e796d6f72652e202020 // "Message from Valar: The network has suspended your account from staking. You don't stake anymore.   "
+concat
+retsub
+label31:
+proto 0 1
+txn Sender
+global CreatorAddress
+==
+assert
+intc_0 // 0
+bytec_1 // "state"
+app_global_get_ex
+assert
+bytec 6 // 0x05
+==
+assert
+intc_0 // 0
+bytec_3 // "round_end"
+app_global_get_ex
+assert
+global Round
+<=
+assert
+callsub label30
+bytec_1 // "state"
+pushbytes 0x14 // 0x14
+app_global_put
+bytec 8 // "round_ended"
+global Round
+app_global_put
+intc_0 // 0
+bytec_2 // "del_manager"
+app_global_get_ex
+assert
+concat
+pushbytes 0x4d6573736167652066726f6d2056616c61723a20596f757220636f6e747261637420746f207374616b6520776974682061206e6f64652072756e6e65722068617320656e6465642e20202020202020202020202020202020202020202020202020202020 // "Message from Valar: Your contract to stake with a node runner has ended.                            "
+concat
+retsub
+label32:
+proto 1 1
+txn Sender
+global CreatorAddress
+==
+assert
+intc_0 // 0
+bytec_1 // "state"
+app_global_get_ex
+assert
+bytec 6 // 0x05
+==
+assert
+intc_0 // 0
+bytec_2 // "del_manager"
+app_global_get_ex
+assert
+frame_dig -1
+==
+assert
+intc_0 // 0
+bytec_3 // "round_end"
+app_global_get_ex
+assert
+global Round
+>
+assert
+callsub label30
+bytec_1 // "state"
+pushbytes 0x13 // 0x13
+app_global_put
+bytec 8 // "round_ended"
+global Round
+app_global_put
+retsub
+label33:
+proto 1 1
+txn Sender
+global CreatorAddress
+==
+assert
+intc_0 // 0
+bytec_1 // "state"
+app_global_get_ex
+assert
+bytec 21 // 0x10
+b&
+bytec 21 // 0x10
+==
+assert
+intc_0 // 0
+bytec_2 // "del_manager"
+app_global_get_ex
+assert
+frame_dig -1
+==
+assert
+intc_0 // 0
+bytec_0 // "G"
+app_global_get_ex
+assert
+extract 24 8
+btoi
+dup
+bnz label69
+global CurrentApplicationAddress
+acct_params_get AcctBalance
+assert
+global CurrentApplicationAddress
+acct_params_get AcctMinBalance
+assert
+-
+dup
+itxn_begin
+intc_0 // 0
+bytec_2 // "del_manager"
+app_global_get_ex
+assert
+itxn_field Receiver
+itxn_field Amount
+intc_1 // 1
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+b label70
+label69:
+global CurrentApplicationAddress
+frame_dig 0
+dup
+cover 2
+asset_holding_get AssetBalance
+swap
+dup
+cover 2
+cover 3
+assert
+itxn_begin
+intc_0 // 0
+bytec_2 // "del_manager"
+app_global_get_ex
+assert
+intc_0 // 0
+bytec_2 // "del_manager"
+app_global_get_ex
+assert
+itxn_field AssetCloseTo
+itxn_field AssetReceiver
+itxn_field AssetAmount
+itxn_field XferAsset
+intc_2 // 4
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+label70:
+itxn_begin
+intc_0 // 0
+bytec_2 // "del_manager"
+app_global_get_ex
+assert
+intc_0 // 0
+bytec_2 // "del_manager"
+app_global_get_ex
+assert
+itxn_field CloseRemainderTo
+intc_0 // 0
+itxn_field Amount
+itxn_field Receiver
+intc_1 // 1
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+itob
+frame_dig 0
+itob
+concat
+swap
+retsub
+label34:
+proto 2 1
+txn Sender
+global CreatorAddress
+==
+assert
+intc_0 // 0
+bytec_1 // "state"
+app_global_get_ex
+assert
+bytec 6 // 0x05
+==
+assert
+global Round
+frame_dig -2
++
+intc_0 // 0
+bytec_3 // "round_end"
+app_global_get_ex
+assert
+>=
+assert
+intc_0 // 0
+bytec_3 // "round_end"
+app_global_get_ex
+assert
+global Round
+>
+assert
+global Round
+intc_0 // 0
+bytec 20 // "round_expiry_soon_last"
+app_global_get_ex
+assert
+frame_dig -1
++
+>=
+assert
+bytec 20 // "round_expiry_soon_last"
+global Round
+app_global_put
+intc_0 // 0
+bytec_2 // "del_manager"
+app_global_get_ex
+assert
+pushbytes 0x4d6573736167652066726f6d2056616c61723a20596f757220636f6e747261637420746f207374616b6520776974682061206e6f64652072756e6e6572206973206578706972696e672e20436f6e736964657220657874656e64696e6720697421202020 // "Message from Valar: Your contract to stake with a node runner is expiring. Consider extending it!   "
+concat
+retsub

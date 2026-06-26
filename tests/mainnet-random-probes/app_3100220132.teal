@@ -1,0 +1,1704 @@
+#pragma version 8
+intcblock 0 1 1000000 4 256
+bytecblock 0x706f736974696f6e 0x6d61726b65745f6170705f6964 0x73696465 0x7072696365 0x736c697070616765 0x6f776e6572 0x6665655f74696d65725f7374617274 0x7175616e746974795f66696c6c6564 0x636f6c6c61746572616c5f61737365745f6964 0x7965735f61737365745f6964 0x6e6f5f61737365745f6964 0x151f7c75 0x7175616e74697479 0x6665655f626173655f70657263656e74 0x00 0x6665655f61646472657373 0x954e7d72 0x32ce281e 0xdb922fc2 0x61737365745f6c6973746564 0x 0xba1deef5
+txn NumAppArgs
+intc_0 // 0
+==
+bnz label1
+txna ApplicationArgs 0
+pushbytes 0x43db62a1 // 0x43db62a1
+==
+bnz label2
+txna ApplicationArgs 0
+bytec 16 // 0x954e7d72
+==
+bnz label3
+txna ApplicationArgs 0
+bytec 17 // 0x32ce281e
+==
+bnz label4
+txna ApplicationArgs 0
+bytec 18 // 0xdb922fc2
+==
+bnz label5
+txna ApplicationArgs 0
+pushbytes 0x119e3c4b // 0x119e3c4b
+==
+bnz label6
+txna ApplicationArgs 0
+pushbytes 0x24c3d234 // 0x24c3d234
+==
+bnz label7
+err
+label7:
+txn OnCompletion
+intc_3 // 4
+==
+txn ApplicationID
+intc_0 // 0
+!=
+&&
+assert
+callsub label8
+intc_1 // 1
+return
+label6:
+txn OnCompletion
+pushint 5
+==
+txn ApplicationID
+intc_0 // 0
+!=
+&&
+assert
+callsub label9
+intc_1 // 1
+return
+label5:
+txn OnCompletion
+intc_0 // 0
+==
+txn ApplicationID
+intc_0 // 0
+!=
+&&
+assert
+callsub label10
+intc_1 // 1
+return
+label4:
+txn OnCompletion
+intc_0 // 0
+==
+txn ApplicationID
+intc_0 // 0
+!=
+&&
+assert
+callsub label11
+intc_1 // 1
+return
+label3:
+txn OnCompletion
+intc_0 // 0
+==
+txn ApplicationID
+intc_0 // 0
+!=
+&&
+assert
+callsub label12
+intc_1 // 1
+return
+label2:
+txn OnCompletion
+intc_0 // 0
+==
+txn ApplicationID
+intc_0 // 0
+==
+&&
+assert
+callsub label13
+intc_1 // 1
+return
+label1:
+txn OnCompletion
+intc_0 // 0
+==
+bnz label14
+err
+label14:
+txn ApplicationID
+intc_0 // 0
+==
+assert
+callsub label15
+intc_1 // 1
+return
+label27:
+proto 2 1
+frame_dig -2
+frame_dig -1
+/
+store 9
+frame_dig -2
+frame_dig -1
+%
+pushint 500
+>
+bnz label16
+load 9
+retsub
+label16:
+load 9
+intc_1 // 1
++
+retsub
+label21:
+proto 3 1
+frame_dig -3
+itob
+store 2
+frame_dig -2
+itob
+store 3
+intc_2 // 1000000
+frame_dig -2
+-
+itob
+store 4
+load 2
+load 3
+b*
+store 2
+load 2
+load 4
+b*
+store 2
+load 2
+frame_dig -1
+itob
+b*
+store 2
+load 2
+pushint 1000000000000000000
+itob
+b/
+btoi
+retsub
+label20:
+proto 2 1
+frame_dig -2
+frame_dig -1
+app_global_get_ex
+store 1
+store 0
+load 1
+assert
+load 0
+retsub
+label22:
+proto 1 1
+frame_dig -1
+app_params_get AppAddress
+store 6
+store 5
+load 6
+assert
+load 5
+retsub
+label18:
+proto 4 0
+itxn_begin
+intc_3 // 4
+itxn_field TypeEnum
+frame_dig -4
+itxn_field Sender
+frame_dig -3
+itxn_field AssetAmount
+frame_dig -2
+itxn_field XferAsset
+frame_dig -1
+itxn_field AssetReceiver
+itxn_submit
+retsub
+label23:
+proto 4 0
+frame_dig -4
+frame_dig -2
+asset_holding_get AssetBalance
+store 8
+store 7
+load 8
+bnz label17
+global CurrentApplicationAddress
+frame_dig -1
+frame_dig -2
+frame_dig -3
+callsub label18
+b label19
+label17:
+global CurrentApplicationAddress
+frame_dig -1
+frame_dig -2
+frame_dig -4
+callsub label18
+label19:
+retsub
+label15:
+proto 0 0
+bytec 19 // "asset_listed"
+intc_0 // 0
+app_global_put
+bytec 6 // "fee_timer_start"
+intc_0 // 0
+app_global_put
+bytec_1 // "market_app_id"
+intc_0 // 0
+app_global_put
+bytec 5 // "owner"
+bytec 20 // ""
+app_global_put
+bytec_0 // "position"
+intc_0 // 0
+app_global_put
+bytec_3 // "price"
+intc_0 // 0
+app_global_put
+bytec 12 // "quantity"
+intc_0 // 0
+app_global_put
+bytec 7 // "quantity_filled"
+intc_0 // 0
+app_global_put
+bytec_2 // "side"
+intc_0 // 0
+app_global_put
+bytec 4 // "slippage"
+intc_0 // 0
+app_global_put
+retsub
+label64:
+proto 0 1
+intc_0 // 0
+intc_1 // 1
+frame_bury 0
+frame_dig 0
+intc 4 // 256
+<
+assert
+retsub
+label65:
+proto 5 1
+intc_0 // 0
+txn Sender
+global CreatorAddress
+==
+assert
+txn TypeEnum
+pushint 6
+==
+assert
+txna ApplicationArgs 0
+bytec 16 // 0x954e7d72
+==
+assert
+frame_dig -5
+extract 2 0
+btoi
+intc_0 // 0
+==
+frame_dig -5
+extract 2 0
+btoi
+intc_1 // 1
+==
+||
+assert
+frame_dig -3
+extract 2 0
+btoi
+intc_0 // 0
+==
+frame_dig -3
+extract 2 0
+btoi
+intc_1 // 1
+==
+||
+assert
+frame_dig -4
+extract 2 0
+btoi
+intc_0 // 0
+>
+assert
+frame_dig -4
+extract 2 0
+btoi
+intc_2 // 1000000
+<
+assert
+frame_dig -2
+extract 2 0
+btoi
+intc_0 // 0
+>
+assert
+bytec 19 // "asset_listed"
+intc_0 // 0
+txnas Assets
+app_global_put
+bytec_1 // "market_app_id"
+global CallerApplicationID
+app_global_put
+bytec_0 // "position"
+frame_dig -5
+extract 2 0
+btoi
+app_global_put
+bytec_2 // "side"
+frame_dig -3
+extract 2 0
+btoi
+app_global_put
+bytec 12 // "quantity"
+frame_dig -2
+extract 2 0
+btoi
+app_global_put
+bytec 7 // "quantity_filled"
+intc_0 // 0
+app_global_put
+bytec_3 // "price"
+frame_dig -4
+extract 2 0
+btoi
+app_global_put
+bytec 5 // "owner"
+intc_1 // 1
+txnas Accounts
+app_global_put
+bytec 4 // "slippage"
+frame_dig -1
+extract 2 0
+btoi
+app_global_put
+global CurrentApplicationAddress
+intc_0 // 0
+bytec_1 // "market_app_id"
+app_global_get
+bytec 8 // "collateral_asset_id"
+callsub label20
+global CurrentApplicationAddress
+callsub label18
+global CurrentApplicationAddress
+intc_0 // 0
+bytec_1 // "market_app_id"
+app_global_get
+bytec 9 // "yes_asset_id"
+callsub label20
+global CurrentApplicationAddress
+callsub label18
+global CurrentApplicationAddress
+intc_0 // 0
+bytec_1 // "market_app_id"
+app_global_get
+bytec 10 // "no_asset_id"
+callsub label20
+global CurrentApplicationAddress
+callsub label18
+bytec 6 // "fee_timer_start"
+global LatestTimestamp
+app_global_put
+intc_1 // 1
+frame_bury 0
+frame_dig 0
+intc 4 // 256
+<
+assert
+retsub
+label30:
+proto 1 0
+txn GroupIndex
+intc_1 // 1
++
+gtxns TypeEnum
+pushint 6
+==
+assert
+txn GroupIndex
+intc_1 // 1
++
+gtxnsa ApplicationArgs 0
+bytec 18 // 0xdb922fc2
+==
+assert
+txn GroupIndex
+intc_1 // 1
++
+gtxns ApplicationID
+frame_dig -1
+txnas Applications
+==
+assert
+txn GroupIndex
+pushint 2
++
+gtxns TypeEnum
+pushint 6
+==
+assert
+txn GroupIndex
+pushint 2
++
+gtxnsa ApplicationArgs 0
+bytec 21 // 0xba1deef5
+==
+assert
+txn GroupIndex
+pushint 2
++
+gtxns ApplicationID
+bytec_1 // "market_app_id"
+app_global_get
+==
+assert
+txn GroupIndex
+intc_1 // 1
++
+gtxns OnCompletion
+intc_0 // 0
+==
+assert
+txn GroupIndex
+pushint 2
++
+gtxns OnCompletion
+intc_0 // 0
+==
+assert
+retsub
+label24:
+proto 5 0
+frame_dig -5
+frame_dig -4
+frame_dig -3
+frame_dig -2
+callsub label21
+bytec_1 // "market_app_id"
+app_global_get
+bytec 8 // "collateral_asset_id"
+callsub label20
+frame_dig -1
+callsub label18
+retsub
+label40:
+proto 2 0
+bytec_3 // "price"
+app_global_get
+frame_dig -2
+bytec_3 // "price"
+callsub label20
+frame_dig -2
+bytec 4 // "slippage"
+callsub label20
+-
+>=
+assert
+frame_dig -2
+bytec 5 // "owner"
+callsub label20
+frame_dig -2
+callsub label22
+bytec_1 // "market_app_id"
+app_global_get
+bytec 8 // "collateral_asset_id"
+callsub label20
+frame_dig -1
+bytec_3 // "price"
+app_global_get
+*
+intc_2 // 1000000
+/
+frame_dig -1
+bytec_3 // "price"
+app_global_get
+bytec_1 // "market_app_id"
+app_global_get
+bytec 13 // "fee_base_percent"
+callsub label20
+callsub label21
+-
+callsub label23
+global CurrentApplicationAddress
+frame_dig -1
+bytec_3 // "price"
+app_global_get
+bytec_1 // "market_app_id"
+app_global_get
+bytec 13 // "fee_base_percent"
+callsub label20
+bytec_1 // "market_app_id"
+app_global_get
+bytec 15 // "fee_address"
+callsub label20
+callsub label24
+retsub
+label39:
+proto 2 0
+bytec_3 // "price"
+app_global_get
+frame_dig -2
+bytec_3 // "price"
+callsub label20
+frame_dig -2
+bytec 4 // "slippage"
+callsub label20
++
+<=
+assert
+frame_dig -2
+bytec 5 // "owner"
+callsub label20
+frame_dig -2
+callsub label22
+bytec_0 // "position"
+app_global_get
+intc_0 // 0
+==
+bnz label25
+bytec_1 // "market_app_id"
+app_global_get
+bytec 9 // "yes_asset_id"
+callsub label20
+b label26
+label25:
+bytec_1 // "market_app_id"
+app_global_get
+bytec 10 // "no_asset_id"
+callsub label20
+label26:
+frame_dig -1
+callsub label23
+retsub
+label38:
+proto 2 0
+bytec_3 // "price"
+app_global_get
+frame_dig -2
+bytec_3 // "price"
+callsub label20
++
+frame_dig -2
+bytec 4 // "slippage"
+callsub label20
++
+intc_2 // 1000000
+>=
+assert
+global CurrentApplicationAddress
+frame_dig -1
+bytec_3 // "price"
+app_global_get
+*
+intc_2 // 1000000
+callsub label27
+bytec_1 // "market_app_id"
+app_global_get
+bytec 8 // "collateral_asset_id"
+callsub label20
+bytec_1 // "market_app_id"
+app_global_get
+callsub label22
+callsub label18
+retsub
+label37:
+proto 2 0
+bytec_3 // "price"
+app_global_get
+frame_dig -2
+bytec_3 // "price"
+callsub label20
+frame_dig -2
+bytec 4 // "slippage"
+callsub label20
+-
++
+intc_2 // 1000000
+<=
+assert
+global CurrentApplicationAddress
+frame_dig -1
+bytec_0 // "position"
+app_global_get
+intc_0 // 0
+==
+bnz label28
+bytec_1 // "market_app_id"
+app_global_get
+bytec 9 // "yes_asset_id"
+callsub label20
+b label29
+label28:
+bytec_1 // "market_app_id"
+app_global_get
+bytec 10 // "no_asset_id"
+callsub label20
+label29:
+bytec_1 // "market_app_id"
+app_global_get
+callsub label22
+callsub label18
+retsub
+label66:
+proto 2 1
+intc_0 // 0
+frame_dig -2
+callsub label30
+frame_dig -1
+bytec 12 // "quantity"
+app_global_get
+bytec 7 // "quantity_filled"
+app_global_get
+-
+<=
+assert
+bytec 4 // "slippage"
+app_global_get
+intc_0 // 0
+>
+bnz label31
+label42:
+bytec 4 // "slippage"
+app_global_get
+intc_0 // 0
+>
+bnz label32
+label41:
+bytec_0 // "position"
+app_global_get
+intc_0 // 0
+==
+bytec_2 // "side"
+app_global_get
+intc_1 // 1
+==
+&&
+frame_dig -2
+txnas Applications
+bytec_0 // "position"
+callsub label20
+intc_0 // 0
+==
+&&
+frame_dig -2
+txnas Applications
+bytec_2 // "side"
+callsub label20
+intc_0 // 0
+==
+&&
+bytec_0 // "position"
+app_global_get
+intc_1 // 1
+==
+bytec_2 // "side"
+app_global_get
+intc_1 // 1
+==
+&&
+frame_dig -2
+txnas Applications
+bytec_0 // "position"
+callsub label20
+intc_1 // 1
+==
+&&
+frame_dig -2
+txnas Applications
+bytec_2 // "side"
+callsub label20
+intc_0 // 0
+==
+&&
+||
+bnz label33
+bytec_0 // "position"
+app_global_get
+intc_0 // 0
+==
+bytec_2 // "side"
+app_global_get
+intc_0 // 0
+==
+&&
+frame_dig -2
+txnas Applications
+bytec_0 // "position"
+callsub label20
+intc_0 // 0
+==
+&&
+frame_dig -2
+txnas Applications
+bytec_2 // "side"
+callsub label20
+intc_1 // 1
+==
+&&
+bytec_0 // "position"
+app_global_get
+intc_1 // 1
+==
+bytec_2 // "side"
+app_global_get
+intc_0 // 0
+==
+&&
+frame_dig -2
+txnas Applications
+bytec_0 // "position"
+callsub label20
+intc_1 // 1
+==
+&&
+frame_dig -2
+txnas Applications
+bytec_2 // "side"
+callsub label20
+intc_1 // 1
+==
+&&
+||
+bnz label34
+bytec_0 // "position"
+app_global_get
+intc_0 // 0
+==
+bytec_2 // "side"
+app_global_get
+intc_1 // 1
+==
+&&
+frame_dig -2
+txnas Applications
+bytec_0 // "position"
+callsub label20
+intc_1 // 1
+==
+&&
+frame_dig -2
+txnas Applications
+bytec_2 // "side"
+callsub label20
+intc_1 // 1
+==
+&&
+bytec_0 // "position"
+app_global_get
+intc_1 // 1
+==
+bytec_2 // "side"
+app_global_get
+intc_1 // 1
+==
+&&
+frame_dig -2
+txnas Applications
+bytec_0 // "position"
+callsub label20
+intc_0 // 0
+==
+&&
+frame_dig -2
+txnas Applications
+bytec_2 // "side"
+callsub label20
+intc_1 // 1
+==
+&&
+||
+bnz label35
+bytec_0 // "position"
+app_global_get
+intc_0 // 0
+==
+bytec_2 // "side"
+app_global_get
+intc_0 // 0
+==
+&&
+frame_dig -2
+txnas Applications
+bytec_0 // "position"
+callsub label20
+intc_1 // 1
+==
+&&
+frame_dig -2
+txnas Applications
+bytec_2 // "side"
+callsub label20
+intc_0 // 0
+==
+&&
+bytec_0 // "position"
+app_global_get
+intc_1 // 1
+==
+bytec_2 // "side"
+app_global_get
+intc_0 // 0
+==
+&&
+frame_dig -2
+txnas Applications
+bytec_0 // "position"
+callsub label20
+intc_0 // 0
+==
+&&
+frame_dig -2
+txnas Applications
+bytec_2 // "side"
+callsub label20
+intc_0 // 0
+==
+&&
+||
+bz label36
+frame_dig -2
+txnas Applications
+frame_dig -1
+callsub label37
+b label36
+label35:
+frame_dig -2
+txnas Applications
+frame_dig -1
+callsub label38
+b label36
+label34:
+frame_dig -2
+txnas Applications
+frame_dig -1
+callsub label39
+b label36
+label33:
+frame_dig -2
+txnas Applications
+frame_dig -1
+callsub label40
+b label36
+label32:
+global LatestTimestamp
+bytec 6 // "fee_timer_start"
+app_global_get
+pushint 120
++
+<
+assert
+b label41
+label31:
+frame_dig -2
+txnas Applications
+bytec 4 // "slippage"
+callsub label20
+intc_0 // 0
+>
+bytec 6 // "fee_timer_start"
+app_global_get
+frame_dig -2
+txnas Applications
+bytec 6 // "fee_timer_start"
+callsub label20
+<=
+&&
+assert
+b label42
+label36:
+bytec 7 // "quantity_filled"
+bytec 7 // "quantity_filled"
+app_global_get
+frame_dig -1
++
+app_global_put
+intc_1 // 1
+frame_bury 0
+frame_dig 0
+intc 4 // 256
+<
+assert
+retsub
+label51:
+proto 1 0
+txn GroupIndex
+intc_1 // 1
+-
+gtxns TypeEnum
+pushint 6
+==
+assert
+txn GroupIndex
+intc_1 // 1
+-
+gtxnsa ApplicationArgs 0
+bytec 17 // 0x32ce281e
+==
+assert
+txn GroupIndex
+intc_1 // 1
+-
+gtxns ApplicationID
+frame_dig -1
+==
+assert
+txn GroupIndex
+intc_1 // 1
++
+gtxns TypeEnum
+pushint 6
+==
+assert
+txn GroupIndex
+intc_1 // 1
++
+gtxnsa ApplicationArgs 0
+bytec 21 // 0xba1deef5
+==
+assert
+txn GroupIndex
+intc_1 // 1
++
+gtxns ApplicationID
+bytec_1 // "market_app_id"
+app_global_get
+==
+assert
+txn GroupIndex
+intc_1 // 1
+-
+gtxnsa ApplicationArgs 2
+btoi
+bytec 12 // "quantity"
+app_global_get
+bytec 7 // "quantity_filled"
+app_global_get
+-
+<=
+assert
+txn GroupIndex
+intc_1 // 1
+-
+gtxns OnCompletion
+intc_0 // 0
+==
+assert
+txn GroupIndex
+intc_1 // 1
++
+gtxns OnCompletion
+intc_0 // 0
+==
+assert
+retsub
+label61:
+proto 2 0
+bytec_3 // "price"
+app_global_get
+bytec 4 // "slippage"
+app_global_get
++
+frame_dig -2
+bytec_3 // "price"
+callsub label20
+>=
+assert
+frame_dig -2
+bytec 5 // "owner"
+callsub label20
+frame_dig -2
+callsub label22
+bytec_1 // "market_app_id"
+app_global_get
+bytec 8 // "collateral_asset_id"
+callsub label20
+frame_dig -1
+frame_dig -2
+bytec_3 // "price"
+callsub label20
+*
+intc_2 // 1000000
+/
+callsub label23
+global CurrentApplicationAddress
+frame_dig -1
+frame_dig -2
+bytec_3 // "price"
+callsub label20
+bytec_1 // "market_app_id"
+app_global_get
+bytec 13 // "fee_base_percent"
+callsub label20
+bytec_1 // "market_app_id"
+app_global_get
+bytec 15 // "fee_address"
+callsub label20
+callsub label24
+retsub
+label60:
+proto 2 0
+bytec_3 // "price"
+app_global_get
+bytec 4 // "slippage"
+app_global_get
+-
+frame_dig -2
+bytec_3 // "price"
+callsub label20
+<=
+assert
+frame_dig -2
+bytec 5 // "owner"
+callsub label20
+frame_dig -2
+callsub label22
+bytec_0 // "position"
+app_global_get
+intc_0 // 0
+==
+bnz label43
+bytec_1 // "market_app_id"
+app_global_get
+bytec 9 // "yes_asset_id"
+callsub label20
+b label44
+label43:
+bytec_1 // "market_app_id"
+app_global_get
+bytec 10 // "no_asset_id"
+callsub label20
+label44:
+frame_dig -1
+callsub label23
+retsub
+label59:
+proto 2 0
+bytec_3 // "price"
+app_global_get
+frame_dig -2
+bytec_3 // "price"
+callsub label20
++
+bytec 4 // "slippage"
+app_global_get
++
+intc_2 // 1000000
+>=
+assert
+bytec_3 // "price"
+app_global_get
+bytec 4 // "slippage"
+app_global_get
++
+intc_2 // 1000000
+frame_dig -2
+bytec_3 // "price"
+callsub label20
+-
+>
+bnz label45
+bytec_3 // "price"
+app_global_get
+bytec 4 // "slippage"
+app_global_get
++
+store 10
+b label46
+label45:
+intc_2 // 1000000
+frame_dig -2
+bytec_3 // "price"
+callsub label20
+-
+store 10
+label46:
+global CurrentApplicationAddress
+frame_dig -1
+load 10
+*
+intc_2 // 1000000
+callsub label27
+bytec_1 // "market_app_id"
+app_global_get
+bytec 8 // "collateral_asset_id"
+callsub label20
+bytec_1 // "market_app_id"
+app_global_get
+callsub label22
+callsub label18
+global CurrentApplicationAddress
+frame_dig -1
+load 10
+bytec_1 // "market_app_id"
+app_global_get
+bytec 13 // "fee_base_percent"
+callsub label20
+bytec_1 // "market_app_id"
+app_global_get
+bytec 15 // "fee_address"
+callsub label20
+callsub label24
+retsub
+label58:
+proto 2 0
+bytec_3 // "price"
+app_global_get
+frame_dig -2
+bytec_3 // "price"
+callsub label20
++
+bytec 4 // "slippage"
+app_global_get
+-
+intc_2 // 1000000
+<=
+assert
+bytec_3 // "price"
+app_global_get
+bytec 4 // "slippage"
+app_global_get
+-
+intc_2 // 1000000
+frame_dig -2
+bytec_3 // "price"
+callsub label20
+-
+<
+bnz label47
+intc_2 // 1000000
+frame_dig -2
+bytec_3 // "price"
+callsub label20
+-
+store 11
+label50:
+global CurrentApplicationAddress
+frame_dig -1
+bytec_0 // "position"
+app_global_get
+intc_0 // 0
+==
+bnz label48
+bytec_1 // "market_app_id"
+app_global_get
+bytec 9 // "yes_asset_id"
+callsub label20
+b label49
+label48:
+bytec_1 // "market_app_id"
+app_global_get
+bytec 10 // "no_asset_id"
+callsub label20
+b label49
+label47:
+bytec_3 // "price"
+app_global_get
+bytec 4 // "slippage"
+app_global_get
+-
+store 11
+b label50
+label49:
+bytec_1 // "market_app_id"
+app_global_get
+callsub label22
+callsub label18
+retsub
+label67:
+proto 1 1
+intc_0 // 0
+frame_dig -1
+txnas Applications
+callsub label51
+frame_dig -1
+txnas Applications
+bytec 4 // "slippage"
+callsub label20
+intc_0 // 0
+>
+bnz label52
+label63:
+bytec 4 // "slippage"
+app_global_get
+intc_0 // 0
+>
+bnz label53
+label62:
+bytec_0 // "position"
+app_global_get
+intc_0 // 0
+==
+bytec_2 // "side"
+app_global_get
+intc_1 // 1
+==
+&&
+frame_dig -1
+txnas Applications
+bytec_0 // "position"
+callsub label20
+intc_0 // 0
+==
+&&
+frame_dig -1
+txnas Applications
+bytec_2 // "side"
+callsub label20
+intc_0 // 0
+==
+&&
+bytec_0 // "position"
+app_global_get
+intc_1 // 1
+==
+bytec_2 // "side"
+app_global_get
+intc_1 // 1
+==
+&&
+frame_dig -1
+txnas Applications
+bytec_0 // "position"
+callsub label20
+intc_1 // 1
+==
+&&
+frame_dig -1
+txnas Applications
+bytec_2 // "side"
+callsub label20
+intc_0 // 0
+==
+&&
+||
+bnz label54
+bytec_0 // "position"
+app_global_get
+intc_0 // 0
+==
+bytec_2 // "side"
+app_global_get
+intc_0 // 0
+==
+&&
+frame_dig -1
+txnas Applications
+bytec_0 // "position"
+callsub label20
+intc_0 // 0
+==
+&&
+frame_dig -1
+txnas Applications
+bytec_2 // "side"
+callsub label20
+intc_1 // 1
+==
+&&
+bytec_0 // "position"
+app_global_get
+intc_1 // 1
+==
+bytec_2 // "side"
+app_global_get
+intc_0 // 0
+==
+&&
+frame_dig -1
+txnas Applications
+bytec_0 // "position"
+callsub label20
+intc_1 // 1
+==
+&&
+frame_dig -1
+txnas Applications
+bytec_2 // "side"
+callsub label20
+intc_1 // 1
+==
+&&
+||
+bnz label55
+bytec_0 // "position"
+app_global_get
+intc_0 // 0
+==
+bytec_2 // "side"
+app_global_get
+intc_1 // 1
+==
+&&
+frame_dig -1
+txnas Applications
+bytec_0 // "position"
+callsub label20
+intc_1 // 1
+==
+&&
+frame_dig -1
+txnas Applications
+bytec_2 // "side"
+callsub label20
+intc_1 // 1
+==
+&&
+bytec_0 // "position"
+app_global_get
+intc_1 // 1
+==
+bytec_2 // "side"
+app_global_get
+intc_1 // 1
+==
+&&
+frame_dig -1
+txnas Applications
+bytec_0 // "position"
+callsub label20
+intc_0 // 0
+==
+&&
+frame_dig -1
+txnas Applications
+bytec_2 // "side"
+callsub label20
+intc_1 // 1
+==
+&&
+||
+bnz label56
+bytec_0 // "position"
+app_global_get
+intc_0 // 0
+==
+bytec_2 // "side"
+app_global_get
+intc_0 // 0
+==
+&&
+frame_dig -1
+txnas Applications
+bytec_0 // "position"
+callsub label20
+intc_1 // 1
+==
+&&
+frame_dig -1
+txnas Applications
+bytec_2 // "side"
+callsub label20
+intc_0 // 0
+==
+&&
+bytec_0 // "position"
+app_global_get
+intc_1 // 1
+==
+bytec_2 // "side"
+app_global_get
+intc_0 // 0
+==
+&&
+frame_dig -1
+txnas Applications
+bytec_0 // "position"
+callsub label20
+intc_0 // 0
+==
+&&
+frame_dig -1
+txnas Applications
+bytec_2 // "side"
+callsub label20
+intc_0 // 0
+==
+&&
+||
+bz label57
+frame_dig -1
+txnas Applications
+txn GroupIndex
+intc_1 // 1
+-
+gtxnsa ApplicationArgs 2
+btoi
+callsub label58
+b label57
+label56:
+frame_dig -1
+txnas Applications
+txn GroupIndex
+intc_1 // 1
+-
+gtxnsa ApplicationArgs 2
+btoi
+callsub label59
+b label57
+label55:
+frame_dig -1
+txnas Applications
+txn GroupIndex
+intc_1 // 1
+-
+gtxnsa ApplicationArgs 2
+btoi
+callsub label60
+b label57
+label54:
+frame_dig -1
+txnas Applications
+txn GroupIndex
+intc_1 // 1
+-
+gtxnsa ApplicationArgs 2
+btoi
+callsub label61
+b label57
+label53:
+global LatestTimestamp
+bytec 6 // "fee_timer_start"
+app_global_get
+pushint 120
++
+<
+assert
+b label62
+label52:
+bytec 4 // "slippage"
+app_global_get
+intc_0 // 0
+>
+frame_dig -1
+txnas Applications
+bytec 6 // "fee_timer_start"
+callsub label20
+bytec 6 // "fee_timer_start"
+app_global_get
+<=
+&&
+assert
+b label63
+label57:
+bytec 7 // "quantity_filled"
+bytec 7 // "quantity_filled"
+app_global_get
+txn GroupIndex
+intc_1 // 1
+-
+gtxnsa ApplicationArgs 2
+btoi
++
+app_global_put
+intc_1 // 1
+frame_bury 0
+retsub
+label68:
+proto 0 1
+intc_0 // 0
+txn Sender
+global CreatorAddress
+==
+txn Sender
+bytec_1 // "market_app_id"
+app_global_get
+pushbytes 0x657363726f775f63616e63656c5f61646472657373 // "escrow_cancel_address"
+callsub label20
+==
+||
+assert
+itxn_begin
+intc_3 // 4
+itxn_field TypeEnum
+bytec_1 // "market_app_id"
+app_global_get
+bytec 8 // "collateral_asset_id"
+callsub label20
+itxn_field XferAsset
+bytec 5 // "owner"
+app_global_get
+itxn_field AssetReceiver
+intc_0 // 0
+itxn_field Fee
+intc_0 // 0
+itxn_field AssetAmount
+bytec 5 // "owner"
+app_global_get
+itxn_field AssetCloseTo
+itxn_submit
+itxn_begin
+intc_3 // 4
+itxn_field TypeEnum
+bytec_1 // "market_app_id"
+app_global_get
+bytec 9 // "yes_asset_id"
+callsub label20
+itxn_field XferAsset
+bytec 5 // "owner"
+app_global_get
+itxn_field AssetReceiver
+intc_0 // 0
+itxn_field Fee
+intc_0 // 0
+itxn_field AssetAmount
+bytec 5 // "owner"
+app_global_get
+itxn_field AssetCloseTo
+itxn_submit
+itxn_begin
+intc_3 // 4
+itxn_field TypeEnum
+bytec_1 // "market_app_id"
+app_global_get
+bytec 10 // "no_asset_id"
+callsub label20
+itxn_field XferAsset
+bytec 5 // "owner"
+app_global_get
+itxn_field AssetReceiver
+intc_0 // 0
+itxn_field Fee
+intc_0 // 0
+itxn_field AssetAmount
+bytec 5 // "owner"
+app_global_get
+itxn_field AssetCloseTo
+itxn_submit
+itxn_begin
+intc_1 // 1
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Amount
+bytec 5 // "owner"
+app_global_get
+itxn_field Receiver
+intc_0 // 0
+itxn_field Fee
+bytec 5 // "owner"
+app_global_get
+itxn_field CloseRemainderTo
+itxn_submit
+intc_1 // 1
+frame_bury 0
+frame_dig 0
+intc 4 // 256
+<
+assert
+retsub
+label69:
+proto 0 1
+intc_0 // 0
+txn Sender
+bytec_1 // "market_app_id"
+app_global_get
+pushbytes 0x6d61726b65745f667269656e645f61646472 // "market_friend_addr"
+callsub label20
+==
+global GroupSize
+intc_1 // 1
+==
+&&
+assert
+intc_1 // 1
+frame_bury 0
+retsub
+label13:
+proto 0 0
+intc_0 // 0
+callsub label64
+frame_bury 0
+bytec 11 // 0x151f7c75
+bytec 14 // 0x00
+intc_0 // 0
+frame_dig 0
+setbyte
+concat
+log
+retsub
+label12:
+proto 0 0
+intc_0 // 0
+bytec 20 // ""
+dupn 4
+txna ApplicationArgs 1
+frame_bury 1
+txna ApplicationArgs 2
+frame_bury 2
+txna ApplicationArgs 3
+frame_bury 3
+txna ApplicationArgs 4
+frame_bury 4
+txna ApplicationArgs 5
+frame_bury 5
+frame_dig 1
+frame_dig 2
+frame_dig 3
+frame_dig 4
+frame_dig 5
+callsub label65
+frame_bury 0
+bytec 11 // 0x151f7c75
+bytec 14 // 0x00
+intc_0 // 0
+frame_dig 0
+setbyte
+concat
+log
+retsub
+label11:
+proto 0 0
+intc_0 // 0
+dupn 2
+txna ApplicationArgs 1
+intc_0 // 0
+getbyte
+frame_bury 1
+txna ApplicationArgs 2
+btoi
+frame_bury 2
+frame_dig 1
+frame_dig 2
+callsub label66
+frame_bury 0
+bytec 11 // 0x151f7c75
+bytec 14 // 0x00
+intc_0 // 0
+frame_dig 0
+setbyte
+concat
+log
+retsub
+label10:
+proto 0 0
+intc_0 // 0
+dup
+txna ApplicationArgs 1
+intc_0 // 0
+getbyte
+frame_bury 1
+frame_dig 1
+callsub label67
+frame_bury 0
+bytec 11 // 0x151f7c75
+frame_dig 0
+itob
+concat
+log
+retsub
+label9:
+proto 0 0
+intc_0 // 0
+callsub label68
+frame_bury 0
+bytec 11 // 0x151f7c75
+bytec 14 // 0x00
+intc_0 // 0
+frame_dig 0
+setbyte
+concat
+log
+retsub
+label8:
+proto 0 0
+intc_0 // 0
+callsub label69
+frame_bury 0
+bytec 11 // 0x151f7c75
+frame_dig 0
+itob
+concat
+log
+retsub

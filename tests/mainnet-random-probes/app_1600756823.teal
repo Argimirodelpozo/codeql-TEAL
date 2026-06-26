@@ -1,0 +1,932 @@
+#pragma version 5
+intcblock 0 1 2 4 3 10000 7 6
+bytecblock 0x5354 0x4649 0x4e4f41 0x4749 0x4741 0x494e4954 0x534c 0x46554e44 0x53544d 0x465241 0x465250 0x434f53545f48454c504552 0x4259 0x45544d 0x53414c54 0x4641
+intc_2 // 2
+store 100
+pushint 199
+store 101
+pushbytes 0x388efe293b46c5786413cdb07a269372a1cc263145758e74b3254d55f5c986d7 // addr HCHP4KJ3I3CXQZATZWYHUJUTOKQ4YJRRIV2Y45FTEVGVL5OJQ3L35VFDZQ
+store 102
+pushint 829144306
+store 105
+b label1
+label3:
+store 51
+store 50
+load 50
+gtxns TypeEnum
+intc_3 // 4
+==
+load 50
+gtxns Sender
+load 51
+==
+&&
+load 50
+gtxns AssetReceiver
+load 51
+==
+&&
+load 50
+gtxns AssetAmount
+intc_0 // 0
+==
+&&
+load 50
+gtxns AssetCloseTo
+global ZeroAddress
+==
+&&
+load 50
+gtxns RekeyTo
+global ZeroAddress
+==
+&&
+retsub
+label33:
+store 57
+store 56
+store 55
+global GroupSize
+load 55
+<=
+bnz label2
+load 56
+label5:
+store 10
+load 10
+txn Sender
+callsub label3
+bz label4
+load 10
+intc_1 // 1
++
+dup
+load 57
+!=
+bnz label5
+pop
+label2:
+intc_1 // 1
+retsub
+label4:
+intc_0 // 0
+retsub
+label44:
+global LatestTimestamp
+bytec 8 // "STM"
+app_global_get
+>=
+retsub
+label45:
+txn Sender
+cover 3
+callsub label6
+retsub
+label6:
+store 64
+store 63
+store 62
+store 61
+store 60
+load 61
+load 60
+gtxns Sender
+==
+intc_1 // 1
+intc_3 // 4
+load 63
+select
+load 60
+gtxns TypeEnum
+==
+&&
+load 62
+load 60
+gtxns Receiver
+load 60
+gtxns AssetReceiver
+load 63
+select
+==
+&&
+load 64
+load 60
+gtxns Amount
+load 60
+gtxns AssetAmount
+load 63
+select
+==
+&&
+load 63
+bz label7
+load 63
+load 60
+gtxns XferAsset
+==
+&&
+label7:
+load 60
+gtxns RekeyTo
+global ZeroAddress
+==
+&&
+load 60
+gtxns CloseRemainderTo
+load 60
+gtxns AssetCloseTo
+load 63
+select
+global ZeroAddress
+==
+&&
+retsub
+label14:
+store 74
+store 73
+store 72
+store 71
+store 70
+load 70
+load 71
+==
+load 40
+||
+bnz label8
+load 71
+load 72
+global ZeroAddress
+callsub label9
+assert
+store 71
+label8:
+itxn_begin
+intc_1 // 1
+intc_3 // 4
+load 72
+select
+itxn_field TypeEnum
+load 70
+itxn_field Sender
+load 72
+bnz label10
+load 71
+itxn_field Receiver
+load 73
+itxn_field Amount
+b label11
+label10:
+load 71
+itxn_field AssetReceiver
+load 72
+itxn_field XferAsset
+load 73
+itxn_field AssetAmount
+label11:
+global ZeroAddress
+load 74
+==
+bnz label12
+load 72
+bnz label13
+load 74
+itxn_field CloseRemainderTo
+b label12
+label13:
+load 74
+itxn_field AssetCloseTo
+label12:
+itxn_submit
+retsub
+label17:
+global ZeroAddress
+callsub label14
+retsub
+label42:
+store 80
+bytec 9 // "FRA"
+app_global_get
+store 41
+bytec 10 // "FRP"
+app_global_get
+store 42
+load 7
+label19:
+intc_1 // 1
+-
+store 10
+load 10
+itob
+store 13
+bytec_3 // "GI"
+load 13
+concat
+store 15
+bytec 4 // "GA"
+load 13
+concat
+store 16
+load 15
+app_global_get
+store 24
+load 16
+app_global_get
+store 39
+intc_0 // 0
+store 32
+load 80
+load 0
+==
+bnz label15
+load 41
+global ZeroAddress
+!=
+load 42
+&&
+bz label16
+load 39
+load 42
+mulw
+intc_0 // 0
+intc 5 // 10000
+divmodw
+pop
+pop
+swap
+!
+assert
+store 32
+global CurrentApplicationAddress
+load 41
+load 24
+load 32
+callsub label17
+label16:
+load 39
+load 101
+mulw
+intc_0 // 0
+intc 5 // 10000
+divmodw
+pop
+pop
+swap
+!
+assert
+store 25
+global CurrentApplicationAddress
+load 102
+load 24
+load 25
+callsub label17
+b label18
+label15:
+intc_0 // 0
+store 32
+intc_0 // 0
+store 25
+label18:
+global CurrentApplicationAddress
+load 80
+load 24
+load 39
+load 32
+-
+load 25
+-
+global ZeroAddress
+load 0
+load 24
+select
+callsub label14
+load 10
+dup
+bnz label19
+pop
+retsub
+label43:
+global CurrentApplicationAddress
+load 0
+intc_0 // 0
+intc_0 // 0
+load 0
+callsub label14
+retsub
+label9:
+store 97
+store 96
+store 95
+load 96
+bnz label20
+load 95
+intc_0 // 0
+b label21
+label20:
+load 95
+dup
+load 96
+asset_holding_get AssetBalance
+bnz label21
+pop
+pop
+load 102
+dup
+load 96
+asset_holding_get AssetBalance
+bnz label21
+pop
+pop
+load 97
+global ZeroAddress
+==
+bnz label22
+load 97
+dup
+load 96
+asset_holding_get AssetBalance
+bnz label21
+pop
+pop
+label22:
+intc_0 // 0
+retsub
+label21:
+pop
+intc_1 // 1
+retsub
+label47:
+store 87
+global CurrentApplicationAddress
+load 0
+load 5
+load 33
+global ZeroAddress
+load 0
+load 5
+load 87
+&&
+select
+callsub label14
+retsub
+label35:
+store 82
+load 82
+gtxns TypeEnum
+intc 7 // 6
+==
+load 82
+gtxns ApplicationID
+txn ApplicationID
+==
+&&
+load 82
+gtxns NumAppArgs
+intc_1 // 1
+==
+&&
+load 82
+gtxnsa ApplicationArgs 0
+bytec 11 // "COST_HELPER"
+==
+&&
+retsub
+label1:
+txn OnCompletion
+intc_0 // 0
+==
+bnz label23
+txn OnCompletion
+pushint 5
+==
+bnz label24
+b label25
+label23:
+txn ApplicationID
+bz label26
+txn NumAppArgs
+intc_1 // 1
+==
+bz label27
+txna ApplicationArgs 0
+bytec 11 // "COST_HELPER"
+==
+bnz label28
+label27:
+bytec_0 // "ST"
+app_global_get
+bytec 5 // "INIT"
+==
+bnz label29
+b label25
+label26:
+txn GroupIndex
+intc_0 // 0
+==
+assert
+txn NumAppArgs
+intc 6 // 7
+>=
+assert
+txn Sender
+store 0
+txna ApplicationArgs 0
+store 1
+txna ApplicationArgs 1
+btoi
+store 2
+txna ApplicationArgs 2
+btoi
+store 3
+txna ApplicationArgs 3
+btoi
+store 4
+txna ApplicationArgs 4
+btoi
+store 5
+txna ApplicationArgs 5
+btoi
+store 6
+txna ApplicationArgs 6
+btoi
+store 7
+load 3
+!
+load 2
+load 3
+<
+||
+assert
+load 7
+intc_1 // 1
+==
+assert
+load 4
+!
+assert
+txn NumAppArgs
+intc 6 // 7
+load 7
++
+==
+assert
+bytec 6 // "SL"
+load 0
+app_global_put
+bytec 12 // "BY"
+load 1
+app_global_put
+bytec 8 // "STM"
+load 2
+app_global_put
+bytec 13 // "ETM"
+load 3
+app_global_put
+bytec 14 // "SALT"
+load 4
+app_global_put
+bytec_1 // "FI"
+load 5
+app_global_put
+bytec 15 // "FA"
+load 6
+app_global_put
+global ZeroAddress
+store 30
+intc_0 // 0
+store 31
+load 5
+bz label30
+load 5
+asset_params_get AssetCreator
+bz label31
+dup
+load 105
+app_opted_in
+bz label30
+dup
+load 105
+pushbytes 0x726f79616c746965735f616d6f756e74 // "royalties_amount"
+app_local_get_ex
+bz label31
+store 31
+store 30
+b label30
+label31:
+pop
+label30:
+load 31
+load 101
++
+intc 5 // 10000
+<
+assert
+bytec 9 // "FRA"
+load 30
+app_global_put
+bytec 10 // "FRP"
+load 31
+app_global_put
+bytec_2 // "NOA"
+load 7
+app_global_put
+bytec_0 // "ST"
+bytec 5 // "INIT"
+app_global_put
+pushbytes 0x564552 // "VER"
+load 100
+app_global_put
+pushbytes 0x504650 // "PFP"
+load 101
+app_global_put
+pushbytes 0x504641 // "PFA"
+load 102
+app_global_put
+pushbytes 0x524d4149 // "RMAI"
+load 105
+app_global_put
+pushbytes 0x74797065 // "type"
+pushbytes 0x6f666665725f6261736b6574 // "offer_basket"
+app_global_put
+load 7
+label32:
+intc_1 // 1
+-
+store 10
+load 10
+itob
+store 13
+load 10
+intc 6 // 7
++
+store 27
+bytec_3 // "GI"
+load 13
+concat
+store 15
+bytec 4 // "GA"
+load 13
+concat
+store 16
+pushbytes 0x475241 // "GRA"
+load 13
+concat
+store 28
+pushbytes 0x475250 // "GRP"
+load 13
+concat
+store 29
+load 27
+txnas ApplicationArgs
+pushint 8
+extract_uint64
+store 39
+load 39
+intc_0 // 0
+>
+assert
+load 27
+txnas ApplicationArgs
+intc_0 // 0
+extract_uint64
+store 24
+load 24
+load 5
+!=
+assert
+load 15
+load 24
+app_global_put
+load 16
+load 39
+app_global_put
+load 28
+global ZeroAddress
+app_global_put
+load 29
+intc_0 // 0
+app_global_put
+load 10
+dup
+bnz label32
+pop
+intc_1 // 1
+intc_1 // 1
+global GroupSize
+callsub label33
+assert
+b label34
+label28:
+txn NumAppArgs
+intc_1 // 1
+==
+assert
+global GroupSize
+intc_2 // 2
+>=
+assert
+txn GroupIndex
+intc_1 // 1
++
+dup
+gtxns TypeEnum
+intc 7 // 6
+==
+swap
+gtxns ApplicationID
+txn ApplicationID
+==
+&&
+assert
+b label34
+label29:
+txn GroupIndex
+intc_2 // 2
+==
+assert
+bytec 6 // "SL"
+app_global_get
+store 0
+bytec 14 // "SALT"
+app_global_get
+store 4
+bytec_1 // "FI"
+app_global_get
+store 5
+bytec_2 // "NOA"
+app_global_get
+store 7
+load 0
+txn Sender
+==
+assert
+intc 4 // 3
+load 7
++
+global GroupSize
+==
+assert
+intc_0 // 0
+txn NumAppArgs
+==
+assert
+load 5
+!
+!
+store 19
+intc_0 // 0
+load 0
+global CurrentApplicationAddress
+intc_0 // 0
+pushint 103000
+load 7
+intc_1 // 1
++
+load 19
++
+*
+callsub label6
+assert
+intc_1 // 1
+callsub label35
+assert
+load 7
+label37:
+intc_1 // 1
+-
+store 10
+load 10
+itob
+store 13
+load 10
+intc 4 // 3
++
+store 14
+bytec_3 // "GI"
+load 13
+concat
+store 15
+bytec 4 // "GA"
+load 13
+concat
+store 16
+load 14
+gtxns TypeEnum
+store 17
+load 17
+intc_3 // 4
+==
+store 18
+load 14
+gtxns Amount
+load 14
+gtxns AssetAmount
+load 18
+select
+store 39
+load 39
+load 16
+app_global_get
+==
+assert
+load 17
+intc_1 // 1
+==
+load 18
+||
+assert
+load 0
+load 14
+gtxns Sender
+==
+assert
+global CurrentApplicationAddress
+load 14
+gtxns Receiver
+load 14
+gtxns AssetReceiver
+load 18
+select
+==
+assert
+load 14
+gtxns RekeyTo
+global ZeroAddress
+==
+assert
+load 14
+gtxns CloseRemainderTo
+load 14
+gtxns AssetCloseTo
+load 18
+select
+global ZeroAddress
+==
+assert
+intc_0 // 0
+load 14
+gtxns XferAsset
+load 18
+select
+load 15
+app_global_get
+==
+assert
+load 18
+bz label36
+global CurrentApplicationAddress
+dup
+load 15
+app_global_get
+intc_0 // 0
+callsub label17
+label36:
+load 10
+dup
+bnz label37
+pop
+load 19
+bz label38
+global CurrentApplicationAddress
+dup
+load 5
+intc_0 // 0
+callsub label17
+label38:
+bytec_0 // "ST"
+bytec 7 // "FUND"
+app_global_put
+b label34
+label24:
+bytec 6 // "SL"
+app_global_get
+store 0
+bytec 12 // "BY"
+app_global_get
+store 1
+txn Sender
+load 0
+==
+bnz label39
+bytec_0 // "ST"
+app_global_get
+bytec 7 // "FUND"
+==
+assert
+global ZeroAddress
+load 1
+==
+txn Sender
+load 1
+==
+||
+bnz label40
+b label25
+label39:
+global GroupSize
+intc_1 // 1
+==
+assert
+bytec_0 // "ST"
+app_global_get
+dup
+bytec 5 // "INIT"
+==
+bnz label34
+bytec 7 // "FUND"
+==
+assert
+bytec_1 // "FI"
+app_global_get
+store 5
+bytec_2 // "NOA"
+app_global_get
+store 7
+load 0
+store 38
+load 5
+bz label41
+global CurrentApplicationAddress
+load 38
+load 5
+intc_0 // 0
+load 0
+callsub label14
+label41:
+load 38
+callsub label42
+callsub label43
+b label34
+label40:
+callsub label44
+assert
+bytec 13 // "ETM"
+app_global_get
+store 3
+bytec_1 // "FI"
+app_global_get
+store 5
+bytec 15 // "FA"
+app_global_get
+store 6
+bytec_2 // "NOA"
+app_global_get
+store 7
+intc_0 // 0
+store 40
+load 6
+store 33
+global GroupSize
+intc 4 // 3
+>=
+assert
+txn GroupIndex
+global GroupSize
+intc_1 // 1
+-
+==
+assert
+load 3
+intc_0 // 0
+==
+load 3
+global LatestTimestamp
+>=
+||
+assert
+txn GroupIndex
+intc_2 // 2
+-
+global CurrentApplicationAddress
+load 5
+load 33
+callsub label45
+assert
+txn GroupIndex
+intc_1 // 1
+-
+callsub label35
+assert
+intc 4 // 3
+intc_0 // 0
+txn GroupIndex
+intc_2 // 2
+-
+callsub label33
+assert
+intc_1 // 1
+store 40
+b label46
+label46:
+intc_1 // 1
+callsub label47
+txn Sender
+callsub label42
+callsub label43
+b label34
+label34:
+intc_1 // 1
+return
+label25:
+intc_0 // 0
+return

@@ -1,0 +1,3076 @@
+#pragma version 8
+intcblock 1 0 3 2 32 10 760937186 5 4 1000000 400 10000 1009583905 8 100000 6 1000 500 760936964
+bytecblock 0x692e74696d654368616e676564 0x692e6f776e65722e61 0x692e6d696e74696e674b69636b6f6666416d6f756e74 0x30 0x692e72657365727665644f776e65722e61 0x692e6d696e74696e67 0x692e6d696e74696e674b69636b6f666643726561746f722e61 0x31 0x32 0x692e73656c6c616d74 0x 0x692e6173616964 0x692e7661756c744f7074496e4c6f636b6564 0x692e7365676d656e744c6f636b6564 0x692e6e616d65 0x692e7365676d656e744167656e742e61 0x692e636f6d6d697373696f6e31 0x692e73656c6c65722e61 0x692e636f6d6d697373696f6e314167656e742e61 0x692e636f6d6d697373696f6e324167656e742e61 0x692e636f6e74726163744c6f636b6564 0x692e7365676d656e745072696365557364 0x2e 0x692e7365676d656e74436f756e74 0x692e636f6d6d697373696f6e32 0x692e766572 0x7570646174655f6669656c64 0x762e6361 0x2e6173 0x692e73616c6554797065 0x692e68696768657374536f6c64416d74 0x762e6361416c676f
+txn RekeyTo
+global ZeroAddress
+!=
+txn CloseRemainderTo
+global ZeroAddress
+!=
+||
+txn AssetCloseTo
+global ZeroAddress
+!=
+||
+bnz label1
+txn ApplicationID
+intc_1 // 0
+==
+bnz label2
+txn OnCompletion
+intc_1 // 0
+==
+bnz label3
+txn OnCompletion
+intc 7 // 5
+==
+bnz label4
+txn OnCompletion
+intc 8 // 4
+==
+bnz label5
+txn OnCompletion
+intc_2 // 3
+==
+bnz label6
+txn OnCompletion
+intc_3 // 2
+==
+bnz label7
+txn OnCompletion
+intc_0 // 1
+==
+bnz label8
+err
+label8:
+intc_1 // 0
+return
+label7:
+intc_1 // 0
+return
+label6:
+intc_1 // 0
+return
+label5:
+bytec 20 // "i.contractLocked"
+app_global_get
+bytec 7 // "1"
+==
+bnz label9
+callsub label10
+!
+bnz label11
+txn NumAppArgs
+intc_3 // 2
+>=
+assert
+txna ApplicationArgs 0
+pushbytes 0x75706772616465 // "upgrade"
+==
+assert
+bytec 25 // "i.ver"
+txna ApplicationArgs 1
+app_global_put
+bytec_0 // "i.timeChanged"
+global LatestTimestamp
+itob
+app_global_put
+intc_0 // 1
+return
+label11:
+intc_1 // 0
+return
+label9:
+intc_1 // 0
+return
+label4:
+intc_1 // 0
+return
+label3:
+txna ApplicationArgs 0
+pushbytes 0x6d696e74 // "mint"
+==
+txn NumAppArgs
+intc_2 // 3
+==
+&&
+bnz label12
+bytec 5 // "i.minting"
+callsub label13
+bytec 7 // "1"
+==
+bnz label14
+txna ApplicationArgs 0
+pushbytes 0x6f666665725f666f725f73616c65 // "offer_for_sale"
+==
+txn NumAppArgs
+intc_3 // 2
+==
+txn NumAppArgs
+intc_2 // 3
+==
+||
+&&
+bnz label15
+txna ApplicationArgs 0
+pushbytes 0x72657363696e645f6f66666572 // "rescind_offer"
+==
+txn NumAppArgs
+intc_0 // 1
+==
+&&
+bnz label16
+txna ApplicationArgs 0
+pushbytes 0x6d616b655f6f66666572 // "make_offer"
+==
+txn NumAppArgs
+intc_3 // 2
+==
+txn NumAppArgs
+intc_2 // 3
+==
+||
+&&
+bnz label17
+txna ApplicationArgs 0
+pushbytes 0x657363726f775f6f66666572 // "escrow_offer"
+==
+txn NumAppArgs
+intc_3 // 2
+==
+&&
+txn GroupIndex
+intc_1 // 0
+>
+&&
+bnz label18
+txna ApplicationArgs 0
+pushbytes 0x64656c6574655f6669656c64 // "delete_field"
+==
+txn NumAppArgs
+intc_0 // 1
+>=
+&&
+bnz label19
+txna ApplicationArgs 0
+pushbytes 0x7661756c745f6f7074696e // "vault_optin"
+==
+txn NumAppArgs
+intc_3 // 2
+>=
+&&
+bnz label20
+bytec 5 // "i.minting"
+callsub label13
+bytec 8 // "2"
+==
+bnz label21
+txna ApplicationArgs 0
+pushbytes 0x7570646174655f7365676d656e745f636f756e74 // "update_segment_count"
+==
+txn NumAppArgs
+intc_2 // 3
+==
+&&
+bnz label22
+txna ApplicationArgs 0
+bytec 26 // "update_field"
+==
+txn NumAppArgs
+intc_2 // 3
+>=
+&&
+bnz label23
+txna ApplicationArgs 0
+pushbytes 0x7570646174655f68617368 // "update_hash"
+==
+txn NumAppArgs
+intc_3 // 2
+==
+&&
+bnz label24
+txna ApplicationArgs 0
+pushbytes 0x636f6e74726163745f6c6f636b // "contract_lock"
+==
+txn NumAppArgs
+intc_3 // 2
+==
+&&
+bnz label25
+txn Sender
+bytec_1 // "i.owner.a"
+app_global_get
+==
+txna ApplicationArgs 0
+pushbytes 0x7365676d656e745f6c6f636b // "segment_lock"
+==
+&&
+txn NumAppArgs
+intc_2 // 3
+==
+&&
+bnz label26
+txna ApplicationArgs 0
+pushbytes 0x706f73745f6f66666572 // "post_offer"
+==
+txn NumAppArgs
+intc_2 // 3
+==
+&&
+bnz label27
+txna ApplicationArgs 0
+pushbytes 0x7661756c745f6f7074696e5f6c6f636b // "vault_optin_lock"
+==
+txn NumAppArgs
+intc_3 // 2
+==
+&&
+bnz label28
+txna ApplicationArgs 0
+pushbytes 0x7661756c745f73656e64 // "vault_send"
+==
+txn NumAppArgs
+intc 7 // 5
+>=
+&&
+bnz label29
+txna ApplicationArgs 0
+pushbytes 0x6d6967726174655f6669656c64 // "migrate_field"
+==
+txn NumAppArgs
+intc_3 // 2
+>=
+&&
+bnz label30
+txna ApplicationArgs 0
+pushbytes 0x6d6967726174655f6669656c645f636f6d62696e6564 // "migrate_field_combined"
+==
+txn NumAppArgs
+intc_2 // 3
+>=
+&&
+bnz label31
+txna ApplicationArgs 0
+pushbytes 0x7365745f7072696d6172795f61646472657373 // "set_primary_address"
+==
+txn NumAppArgs
+intc_2 // 3
+==
+&&
+bnz label32
+txna ApplicationArgs 0
+pushbytes 0x7265675f6164645f76657269666965645f61646472657373 // "reg_add_verified_address"
+==
+txn NumAppArgs
+intc_2 // 3
+==
+&&
+bnz label33
+txna ApplicationArgs 0
+pushbytes 0x7265675f72656d6f76655f76657269666965645f61646472657373 // "reg_remove_verified_address"
+==
+txn NumAppArgs
+intc_2 // 3
+==
+&&
+bnz label34
+txna ApplicationArgs 0
+pushbytes 0x69735f616464726573735f696e5f6669656c64 // "is_address_in_field"
+==
+txn NumAppArgs
+intc_2 // 3
+==
+&&
+bnz label35
+txna ApplicationArgs 0
+pushbytes 0x726561645f70726f7065727479 // "read_property"
+==
+txn NumAppArgs
+intc_3 // 2
+==
+&&
+bnz label36
+err
+label36:
+txna ApplicationArgs 1
+store 54
+load 54
+extract 0 2
+store 59
+load 59
+callsub label37
+bnz label38
+load 59
+callsub label39
+load 59
+callsub label40
+||
+assert
+load 54
+box_get
+store 56
+store 55
+load 56
+bnz label41
+load 54
+pushbytes 0x5f3030 // "_00"
+concat
+store 54
+load 54
+box_get
+store 56
+store 55
+load 56
+!
+bnz label42
+load 55
+store 53
+txna ApplicationArgs 1
+pushbytes 0x5f30 // "_0"
+concat
+store 58
+intc_0 // 1
+store 57
+label46:
+load 57
+intc 5 // 10
+<
+bnz label43
+label45:
+load 53
+log
+intc_0 // 1
+label48:
+return
+label43:
+load 58
+load 57
+callsub label44
+concat
+store 54
+load 54
+box_get
+store 56
+store 55
+load 56
+!
+bnz label45
+load 53
+load 55
+concat
+store 53
+load 57
+intc_0 // 1
++
+store 57
+b label46
+label42:
+bytec 10 // ""
+log
+intc_1 // 0
+return
+label41:
+load 55
+log
+intc_0 // 1
+return
+label38:
+load 54
+callsub label13
+store 53
+load 53
+log
+load 53
+len
+intc_1 // 0
+>
+return
+label35:
+txna ApplicationArgs 1
+txna ApplicationArgs 2
+callsub label47
+itob
+log
+intc_0 // 1
+b label48
+label34:
+global CallerApplicationID
+intc 6 // 760937186
+==
+assert
+callsub label49
+!
+assert
+txna ApplicationArgs 1
+extract 0 4
+bytec 27 // "v.ca"
+==
+assert
+txna ApplicationArgs 1
+txna ApplicationArgs 1
+len
+intc_2 // 3
+-
+intc_2 // 3
+extract3
+bytec 28 // ".as"
+==
+assert
+bytec_0 // "i.timeChanged"
+global LatestTimestamp
+itob
+app_global_put
+txna ApplicationArgs 1
+txna ApplicationArgs 2
+callsub label50
+store 52
+load 52
+itob
+log
+load 52
+b label48
+label33:
+global CallerApplicationID
+intc 6 // 760937186
+==
+assert
+callsub label49
+!
+assert
+txna ApplicationArgs 1
+extract 0 6
+pushbytes 0x752e6361762e // "u.cav."
+==
+assert
+txna ApplicationArgs 2
+extract 0 4
+bytec 27 // "v.ca"
+==
+assert
+txna ApplicationArgs 2
+txna ApplicationArgs 2
+len
+intc_2 // 3
+-
+intc_2 // 3
+extract3
+bytec 28 // ".as"
+==
+assert
+txna ApplicationArgs 1
+box_get
+store 51
+store 50
+load 51
+assert
+bytec_0 // "i.timeChanged"
+global LatestTimestamp
+itob
+app_global_put
+txna ApplicationArgs 1
+box_del
+pop
+txna ApplicationArgs 2
+load 50
+callsub label51
+store 49
+load 49
+itob
+log
+load 49
+b label48
+label32:
+txn Sender
+bytec_1 // "i.owner.a"
+app_global_get
+==
+assert
+callsub label49
+!
+assert
+bytec_0 // "i.timeChanged"
+global LatestTimestamp
+itob
+app_global_put
+txna ApplicationArgs 1
+txna ApplicationArgs 2
+callsub label52
+b label48
+label31:
+bytec 10 // ""
+store 46
+txn Sender
+bytec_1 // "i.owner.a"
+app_global_get
+==
+assert
+txna ApplicationArgs 1
+callsub label37
+!
+assert
+bytec_0 // "i.timeChanged"
+global LatestTimestamp
+itob
+app_global_put
+intc_3 // 2
+store 47
+label56:
+load 47
+txn NumAppArgs
+<
+bnz label53
+load 46
+len
+intc_1 // 0
+>
+bnz label54
+label55:
+intc_0 // 1
+b label48
+label54:
+txna ApplicationArgs 1
+load 46
+len
+box_create
+assert
+txna ApplicationArgs 1
+load 46
+box_put
+b label55
+label53:
+load 47
+txnas ApplicationArgs
+store 48
+load 46
+load 48
+app_global_get
+concat
+store 46
+load 48
+app_global_del
+load 47
+intc_0 // 1
++
+store 47
+b label56
+label30:
+txn Sender
+bytec_1 // "i.owner.a"
+app_global_get
+==
+assert
+bytec_0 // "i.timeChanged"
+global LatestTimestamp
+itob
+app_global_put
+intc_0 // 1
+store 43
+label59:
+load 43
+txn NumAppArgs
+<
+bnz label57
+intc_0 // 1
+b label48
+label57:
+load 43
+txnas ApplicationArgs
+store 44
+load 44
+extract 0 2
+callsub label37
+!
+assert
+load 44
+callsub label13
+store 45
+load 45
+len
+intc_1 // 0
+>
+bnz label58
+label60:
+load 43
+intc_0 // 1
++
+store 43
+b label59
+label58:
+load 44
+app_global_del
+load 44
+load 45
+box_put
+b label60
+label29:
+txn Sender
+bytec_1 // "i.owner.a"
+app_global_get
+==
+assert
+callsub label49
+!
+assert
+txna ApplicationArgs 2
+global ZeroAddress
+!=
+assert
+txna ApplicationArgs 1
+btoi
+store 38
+txn NumAppArgs
+store 39
+txna ApplicationArgs 4
+btoi
+intc_1 // 0
+==
+bnz label61
+load 38
+intc_1 // 0
+==
+bnz label62
+load 39
+intc 7 // 5
+==
+assert
+label67:
+intc 8 // 4
+store 40
+label65:
+load 40
+load 39
+<
+bnz label63
+intc_0 // 1
+b label48
+label63:
+load 40
+txnas ApplicationArgs
+btoi
+bytec 11 // "i.asaid"
+app_global_get
+btoi
+!=
+assert
+global CurrentApplicationAddress
+load 40
+txnas ApplicationArgs
+btoi
+asset_holding_get AssetBalance
+store 42
+store 41
+itxn_begin
+intc 8 // 4
+itxn_field TypeEnum
+global CurrentApplicationAddress
+itxn_field Sender
+load 40
+txnas ApplicationArgs
+btoi
+itxn_field XferAsset
+load 38
+itxn_field AssetAmount
+txna ApplicationArgs 2
+itxn_field AssetReceiver
+intc_1 // 0
+itxn_field Fee
+load 41
+load 38
+==
+load 38
+intc_1 // 0
+==
+||
+bnz label64
+label66:
+itxn_submit
+load 40
+intc_0 // 1
++
+store 40
+b label65
+label64:
+txna ApplicationArgs 2
+itxn_field AssetCloseTo
+b label66
+label62:
+load 39
+intc 7 // 5
+>
+assert
+b label67
+label61:
+load 39
+intc 7 // 5
+==
+assert
+load 38
+intc_1 // 0
+>
+assert
+global CurrentApplicationAddress
+min_balance
+bytec_2 // "i.mintingKickoffAmount"
+callsub label68
++
+store 37
+global CurrentApplicationAddress
+balance
+load 38
+-
+load 37
+>=
+assert
+itxn_begin
+intc_0 // 1
+itxn_field TypeEnum
+global CurrentApplicationAddress
+itxn_field Sender
+load 38
+itxn_field Amount
+txna ApplicationArgs 2
+itxn_field Receiver
+intc_1 // 0
+itxn_field Fee
+txna ApplicationArgs 3
+len
+intc_1 // 0
+>
+bnz label69
+label70:
+itxn_submit
+intc_0 // 1
+return
+label69:
+txna ApplicationArgs 3
+itxn_field Note
+b label70
+label28:
+callsub label71
+assert
+txna ApplicationArgs 1
+len
+intc_0 // 1
+==
+bnz label72
+txna ApplicationArgs 1
+len
+intc 13 // 8
+==
+bnz label73
+intc_1 // 0
+assert
+label74:
+bytec_0 // "i.timeChanged"
+global LatestTimestamp
+itob
+app_global_put
+bytec 12 // "i.vaultOptInLocked"
+txna ApplicationArgs 1
+app_global_put
+intc_0 // 1
+b label48
+label73:
+txna ApplicationArgs 1
+btoi
+global LatestTimestamp
+>
+assert
+b label74
+label72:
+txna ApplicationArgs 1
+bytec_3 // "0"
+==
+txna ApplicationArgs 1
+bytec 7 // "1"
+==
+||
+assert
+b label74
+label27:
+txna ApplicationArgs 1
+btoi
+intc_1 // 0
+>
+assert
+intc_0 // 1
+b label48
+label26:
+txna ApplicationArgs 1
+bytec_3 // "0"
+==
+txna ApplicationArgs 1
+bytec 7 // "1"
+==
+||
+assert
+callsub label49
+!
+assert
+bytec_0 // "i.timeChanged"
+global LatestTimestamp
+itob
+app_global_put
+bytec 13 // "i.segmentLocked"
+txna ApplicationArgs 1
+app_global_put
+txna ApplicationArgs 1
+bytec 7 // "1"
+==
+bnz label75
+txna ApplicationArgs 2
+btoi
+intc 10 // 400
+>=
+assert
+bytec 21 // "i.segmentPriceUsd"
+txna ApplicationArgs 2
+app_global_put
+label76:
+intc_0 // 1
+b label48
+label75:
+bytec 21 // "i.segmentPriceUsd"
+app_global_del
+b label76
+label25:
+txna ApplicationArgs 1
+bytec_3 // "0"
+==
+txna ApplicationArgs 1
+bytec 7 // "1"
+==
+||
+assert
+callsub label71
+assert
+callsub label49
+!
+assert
+bytec_0 // "i.timeChanged"
+global LatestTimestamp
+itob
+app_global_put
+bytec 20 // "i.contractLocked"
+txna ApplicationArgs 1
+app_global_put
+intc_0 // 1
+b label48
+label24:
+txna ApplicationArgs 1
+len
+intc 4 // 32
+==
+assert
+txna ApplicationArgs 1
+global ZeroAddress
+!=
+assert
+callsub label71
+txn GroupIndex
+callsub label77
+||
+assert
+itxn_begin
+intc_2 // 3
+itxn_field TypeEnum
+global CurrentApplicationAddress
+itxn_field Sender
+bytec 11 // "i.asaid"
+app_global_get
+btoi
+itxn_field ConfigAsset
+global CurrentApplicationAddress
+itxn_field ConfigAssetManager
+txna ApplicationArgs 1
+itxn_field ConfigAssetReserve
+global CurrentApplicationAddress
+itxn_field ConfigAssetClawback
+intc_1 // 0
+itxn_field Fee
+itxn_submit
+intc_0 // 1
+b label48
+label23:
+txn GroupIndex
+callsub label77
+store 35
+bytec_0 // "i.timeChanged"
+global LatestTimestamp
+itob
+app_global_put
+intc_0 // 1
+store 36
+label82:
+load 36
+txn NumAppArgs
+<
+bnz label78
+intc_0 // 1
+b label48
+label78:
+load 36
+txnas ApplicationArgs
+load 35
+load 36
+callsub label79
+intc_1 // 0
+==
+bnz label80
+load 36
+intc_0 // 1
++
+txnas ApplicationArgs
+len
+intc_1 // 0
+==
+bnz label81
+load 36
+txnas ApplicationArgs
+box_del
+pop
+load 36
+txnas ApplicationArgs
+load 36
+intc_0 // 1
++
+txnas ApplicationArgs
+box_put
+label83:
+load 36
+intc_3 // 2
++
+store 36
+b label82
+label81:
+load 36
+txnas ApplicationArgs
+box_del
+pop
+b label83
+label80:
+intc_1 // 0
+return
+label22:
+callsub label49
+!
+assert
+bytec 14 // "i.name"
+app_global_get
+store 31
+txna ApplicationArgs 1
+store 33
+txna ApplicationArgs 2
+btoi
+store 32
+global CallerApplicationID
+intc 6 // 760937186
+==
+assert
+load 32
+bytec 5 // "i.minting"
+callsub label84
+bytec 8 // "2"
+==
+assert
+load 32
+bytec 14 // "i.name"
+callsub label84
+load 33
+==
+assert
+load 33
+len
+load 31
+len
+-
+intc_0 // 1
+-
+store 34
+load 33
+load 34
+load 31
+len
+intc_0 // 1
++
+extract3
+bytec 22 // "."
+load 31
+concat
+==
+assert
+load 33
+load 34
+callsub label85
+assert
+bytec 23 // "i.segmentCount"
+bytec 23 // "i.segmentCount"
+callsub label68
+intc_0 // 1
++
+itob
+app_global_put
+bytec_0 // "i.timeChanged"
+global LatestTimestamp
+itob
+app_global_put
+intc_0 // 1
+b label48
+label21:
+txna ApplicationArgs 0
+bytec 26 // "update_field"
+==
+txn NumAppArgs
+intc_2 // 3
+>=
+&&
+intc_0 // 1
+!=
+bnz label86
+txn GroupIndex
+callsub label77
+!
+bnz label87
+txn GroupIndex
+callsub label77
+store 29
+bytec_0 // "i.timeChanged"
+global LatestTimestamp
+itob
+app_global_put
+intc_0 // 1
+store 30
+label91:
+load 30
+txn NumAppArgs
+<
+bnz label88
+intc_0 // 1
+b label48
+label88:
+load 30
+txnas ApplicationArgs
+load 29
+load 30
+callsub label79
+intc_1 // 0
+==
+bnz label89
+load 30
+intc_0 // 1
++
+txnas ApplicationArgs
+len
+intc_1 // 0
+==
+bnz label90
+load 30
+txnas ApplicationArgs
+box_del
+pop
+load 30
+txnas ApplicationArgs
+load 30
+intc_0 // 1
++
+txnas ApplicationArgs
+box_put
+label92:
+load 30
+intc_3 // 2
++
+store 30
+b label91
+label90:
+load 30
+txnas ApplicationArgs
+box_del
+pop
+b label92
+label89:
+intc_1 // 0
+return
+label87:
+intc_1 // 0
+return
+label86:
+intc_1 // 0
+return
+label20:
+callsub label93
+bnz label94
+label101:
+txna ApplicationArgs 1
+btoi
+intc_1 // 0
+==
+txn NumAppArgs
+intc_3 // 2
+==
+&&
+txn GroupIndex
+intc_3 // 2
+>=
+&&
+txna ApplicationArgs 1
+btoi
+intc_0 // 1
+>
+||
+assert
+txn GroupIndex
+intc_1 // 0
+>
+assert
+txn GroupIndex
+intc_0 // 1
+-
+gtxns TypeEnum
+intc_0 // 1
+==
+assert
+txn GroupIndex
+intc_0 // 1
+-
+gtxns Receiver
+global CurrentApplicationAddress
+==
+assert
+txn GroupIndex
+intc_0 // 1
+-
+gtxns Amount
+intc 14 // 100000
+txn NumAppArgs
+intc_0 // 1
+-
+*
+==
+assert
+txn NumAppArgs
+store 27
+intc_0 // 1
+store 28
+label98:
+load 28
+load 27
+<
+bnz label95
+intc_0 // 1
+b label48
+label95:
+load 28
+txnas ApplicationArgs
+btoi
+intc_1 // 0
+==
+bnz label96
+load 28
+txnas ApplicationArgs
+btoi
+store 24
+label100:
+global CurrentApplicationAddress
+load 24
+asset_holding_get AssetBalance
+store 26
+store 25
+load 26
+!
+bnz label97
+label99:
+load 28
+intc_0 // 1
++
+store 28
+b label98
+label97:
+itxn_begin
+intc 8 // 4
+itxn_field TypeEnum
+global CurrentApplicationAddress
+itxn_field Sender
+global CurrentApplicationAddress
+itxn_field AssetReceiver
+load 24
+itxn_field XferAsset
+intc_1 // 0
+itxn_field AssetAmount
+intc_1 // 0
+itxn_field Fee
+itxn_submit
+b label99
+label96:
+load 28
+intc_0 // 1
+==
+assert
+txn GroupIndex
+intc_3 // 2
+>=
+assert
+txn GroupIndex
+intc_3 // 2
+-
+gtxns CreatedAssetID
+store 24
+load 24
+intc_1 // 0
+>
+assert
+b label100
+label94:
+callsub label71
+assert
+b label101
+label19:
+txn GroupIndex
+callsub label77
+store 22
+bytec_0 // "i.timeChanged"
+global LatestTimestamp
+itob
+app_global_put
+intc_0 // 1
+store 23
+label105:
+load 23
+txn NumAppArgs
+<
+bnz label102
+intc_0 // 1
+b label48
+label102:
+load 23
+txnas ApplicationArgs
+load 22
+callsub label103
+intc_1 // 0
+==
+bnz label104
+load 23
+txnas ApplicationArgs
+box_del
+pop
+load 23
+intc_0 // 1
++
+store 23
+b label105
+label104:
+intc_1 // 0
+return
+label18:
+bytec 9 // "i.sellamt"
+callsub label68
+intc_1 // 0
+>
+assert
+bytec 4 // "i.reservedOwner.a"
+callsub label13
+len
+intc_1 // 0
+==
+assert
+bytec 29 // "i.saleType"
+app_global_get
+pushbytes 0x61756374696f6e // "auction"
+==
+assert
+bytec 5 // "i.minting"
+callsub label13
+bytec 8 // "2"
+==
+assert
+txna ApplicationArgs 1
+btoi
+store 20
+txn GroupIndex
+intc_0 // 1
+-
+gtxns TypeEnum
+intc_0 // 1
+==
+assert
+txn GroupIndex
+intc_0 // 1
+-
+gtxns Amount
+load 20
+==
+assert
+txn GroupIndex
+intc_0 // 1
+-
+gtxns Sender
+txn Sender
+==
+assert
+txn GroupIndex
+intc_0 // 1
+-
+gtxns Receiver
+global CurrentApplicationAddress
+==
+assert
+bytec_2 // "i.mintingKickoffAmount"
+callsub label68
+store 21
+bytec 6 // "i.mintingKickoffCreator.a"
+callsub label13
+len
+intc_1 // 0
+!=
+bnz label106
+label108:
+bytec 6 // "i.mintingKickoffCreator.a"
+txn GroupIndex
+intc_0 // 1
+-
+gtxns Sender
+app_global_put
+bytec_2 // "i.mintingKickoffAmount"
+txn GroupIndex
+intc_0 // 1
+-
+gtxns Amount
+itob
+app_global_put
+bytec_0 // "i.timeChanged"
+global LatestTimestamp
+itob
+app_global_put
+intc_0 // 1
+b label48
+label106:
+load 21
+pushint 10000000
++
+load 20
+>
+bnz label107
+itxn_begin
+intc_0 // 1
+itxn_field TypeEnum
+load 21
+itxn_field Amount
+global CurrentApplicationAddress
+itxn_field Sender
+bytec 6 // "i.mintingKickoffCreator.a"
+app_global_get
+itxn_field Receiver
+intc_1 // 0
+itxn_field Fee
+itxn_submit
+b label108
+label107:
+intc_1 // 0
+return
+label17:
+bytec 9 // "i.sellamt"
+callsub label68
+store 8
+intc_0 // 1
+store 15
+txn NumAppArgs
+intc_2 // 3
+==
+bnz label109
+label137:
+global GroupSize
+intc_3 // 2
+>=
+assert
+txn GroupIndex
+intc_0 // 1
+>=
+assert
+txn Fee
+global MinTxnFee
+intc 15 // 6
+*
+>=
+assert
+load 8
+intc_1 // 0
+>
+assert
+bytec 4 // "i.reservedOwner.a"
+callsub label13
+len
+intc_1 // 0
+!=
+bytec 4 // "i.reservedOwner.a"
+callsub label13
+txn Sender
+!=
+&&
+bnz label110
+txna ApplicationArgs 1
+btoi
+store 9
+load 9
+store 10
+bytec 6 // "i.mintingKickoffCreator.a"
+callsub label13
+txn GroupIndex
+intc_0 // 1
+-
+gtxns Sender
+==
+bnz label111
+label136:
+load 9
+intc 9 // 1000000
+<
+load 9
+load 8
+<
+||
+bnz label112
+load 9
+load 8
+-
+store 11
+load 9
+load 11
+-
+store 9
+txn GroupIndex
+intc_0 // 1
+-
+gtxns TypeEnum
+intc_0 // 1
+==
+assert
+txn GroupIndex
+intc_0 // 1
+-
+gtxns Amount
+load 10
+==
+assert
+txn GroupIndex
+intc_0 // 1
+-
+gtxns Sender
+txn Sender
+==
+assert
+txn GroupIndex
+intc_0 // 1
+-
+gtxns Receiver
+global CurrentApplicationAddress
+==
+assert
+load 9
+store 12
+bytec 15 // "i.segmentAgent.a"
+callsub label13
+len
+intc_1 // 0
+!=
+bnz label113
+intc_1 // 0
+store 14
+label133:
+bytec 16 // "i.commission1"
+callsub label68
+intc_1 // 0
+>
+assert
+load 12
+bytec 16 // "i.commission1"
+callsub label68
+*
+intc 16 // 1000
+/
+store 13
+txna Assets 0
+bytec 11 // "i.asaid"
+app_global_get
+btoi
+!=
+bnz label114
+load 11
+intc_1 // 0
+>
+bnz label115
+label129:
+itxn_begin
+intc_0 // 1
+itxn_field TypeEnum
+load 12
+load 13
+-
+itxn_field Amount
+global CurrentApplicationAddress
+itxn_field Sender
+bytec 17 // "i.seller.a"
+app_global_get
+itxn_field Receiver
+pushbytes 0x73656c6c6572 // "seller"
+itxn_field Note
+intc_1 // 0
+itxn_field Fee
+itxn_submit
+bytec 18 // "i.commission1Agent.a"
+callsub label13
+len
+intc_1 // 0
+!=
+bnz label116
+label128:
+load 14
+intc_1 // 0
+!=
+bnz label117
+label127:
+bytec 6 // "i.mintingKickoffCreator.a"
+callsub label13
+len
+intc_1 // 0
+!=
+bnz label118
+label126:
+bytec_1 // "i.owner.a"
+app_global_get
+txna Assets 0
+asset_holding_get AssetBalance
+store 17
+intc_0 // 1
+==
+bnz label119
+load 15
+intc_1 // 0
+==
+bnz label120
+global CurrentApplicationAddress
+store 18
+label125:
+load 15
+intc_1 // 0
+==
+bnz label121
+txn Sender
+store 19
+label124:
+itxn_begin
+intc 8 // 4
+itxn_field TypeEnum
+txna Assets 0
+itxn_field XferAsset
+intc_0 // 1
+itxn_field AssetAmount
+global CurrentApplicationAddress
+itxn_field Sender
+load 18
+itxn_field AssetSender
+load 19
+itxn_field AssetReceiver
+intc_1 // 0
+itxn_field Fee
+itxn_submit
+intc_0 // 1
+pop
+bytec_1 // "i.owner.a"
+txn Sender
+app_global_put
+bytec 17 // "i.seller.a"
+txn Sender
+app_global_put
+load 9
+bytec 30 // "i.highestSoldAmt"
+callsub label68
+>
+bnz label122
+label123:
+bytec_0 // "i.timeChanged"
+global LatestTimestamp
+itob
+app_global_put
+pushbytes 0x692e74696d65507572636861736564 // "i.timePurchased"
+global LatestTimestamp
+itob
+app_global_put
+bytec 5 // "i.minting"
+app_global_del
+bytec 4 // "i.reservedOwner.a"
+app_global_del
+bytec 9 // "i.sellamt"
+app_global_del
+bytec 6 // "i.mintingKickoffCreator.a"
+app_global_del
+bytec_2 // "i.mintingKickoffAmount"
+app_global_del
+bytec 15 // "i.segmentAgent.a"
+app_global_del
+bytec 12 // "i.vaultOptInLocked"
+bytec_3 // "0"
+app_global_put
+load 9
+itob
+log
+intc_0 // 1
+b label48
+label122:
+bytec 30 // "i.highestSoldAmt"
+load 9
+itob
+app_global_put
+b label123
+label121:
+global CurrentApplicationAddress
+store 19
+b label124
+label120:
+intc_0 // 1
+return
+label119:
+bytec_1 // "i.owner.a"
+app_global_get
+store 18
+b label125
+label118:
+bytec 6 // "i.mintingKickoffCreator.a"
+app_global_get
+txn Sender
+!=
+bz label126
+itxn_begin
+intc_0 // 1
+itxn_field TypeEnum
+bytec_2 // "i.mintingKickoffAmount"
+app_global_get
+btoi
+itxn_field Amount
+global CurrentApplicationAddress
+itxn_field Sender
+bytec 6 // "i.mintingKickoffCreator.a"
+app_global_get
+itxn_field Receiver
+pushbytes 0x657363726f77526566756e64 // "escrowRefund"
+itxn_field Note
+intc_1 // 0
+itxn_field Fee
+itxn_submit
+b label126
+label117:
+itxn_begin
+intc_0 // 1
+itxn_field TypeEnum
+load 14
+itxn_field Amount
+global CurrentApplicationAddress
+itxn_field Sender
+bytec 15 // "i.segmentAgent.a"
+app_global_get
+itxn_field Receiver
+pushbytes 0x7365676d656e74 // "segment"
+itxn_field Note
+intc_1 // 0
+itxn_field Fee
+itxn_submit
+b label127
+label116:
+itxn_begin
+intc_0 // 1
+itxn_field TypeEnum
+load 13
+itxn_field Amount
+global CurrentApplicationAddress
+itxn_field Sender
+bytec 18 // "i.commission1Agent.a"
+app_global_get
+itxn_field Receiver
+pushbytes 0x636f6d6d697373696f6e // "commission"
+itxn_field Note
+intc_1 // 0
+itxn_field Fee
+itxn_submit
+bytec 19 // "i.commission2Agent.a"
+callsub label13
+len
+intc_1 // 0
+!=
+bz label128
+bytec 18 // "i.commission1Agent.a"
+bytec 19 // "i.commission2Agent.a"
+app_global_get
+app_global_put
+bytec 16 // "i.commission1"
+bytec 24 // "i.commission2"
+app_global_get
+app_global_put
+bytec 19 // "i.commission2Agent.a"
+app_global_del
+bytec 24 // "i.commission2"
+app_global_del
+b label128
+label115:
+itxn_begin
+intc_0 // 1
+itxn_field TypeEnum
+load 11
+itxn_field Amount
+global CurrentApplicationAddress
+itxn_field Sender
+txn GroupIndex
+intc_0 // 1
+-
+gtxns Sender
+itxn_field Receiver
+pushbytes 0x6f7665727061796d656e74526566756e64 // "overpaymentRefund"
+itxn_field Note
+intc_1 // 0
+itxn_field Fee
+itxn_submit
+b label129
+label114:
+intc_1 // 0
+return
+label113:
+bytec 5 // "i.minting"
+callsub label13
+bytec 8 // "2"
+==
+assert
+intc 10 // 400
+callsub label130
+store 16
+load 9
+pushint 250
+*
+intc 16 // 1000
+/
+store 12
+load 12
+load 16
+<
+bnz label131
+label135:
+load 12
+load 9
+>
+bnz label132
+label134:
+load 9
+load 12
+-
+store 14
+b label133
+label132:
+load 9
+store 12
+b label134
+label131:
+load 16
+store 12
+b label135
+label112:
+intc_1 // 0
+return
+label111:
+load 9
+bytec_2 // "i.mintingKickoffAmount"
+callsub label68
++
+store 9
+b label136
+label110:
+intc_1 // 0
+return
+label109:
+txna ApplicationArgs 2
+bytec_3 // "0"
+==
+bz label137
+intc_1 // 0
+store 15
+b label137
+label16:
+callsub label71
+!
+bnz label138
+callsub label49
+assert
+bytec 9 // "i.sellamt"
+app_global_del
+bytec 4 // "i.reservedOwner.a"
+app_global_del
+bytec_0 // "i.timeChanged"
+global LatestTimestamp
+itob
+app_global_put
+intc_0 // 1
+b label48
+label138:
+intc_1 // 0
+return
+label15:
+txna ApplicationArgs 1
+btoi
+store 6
+global CallerApplicationID
+intc 6 // 760937186
+!=
+callsub label71
+!
+&&
+bnz label139
+bytec 5 // "i.minting"
+callsub label13
+bytec 8 // "2"
+==
+txn GroupIndex
+callsub label77
+&&
+!
+bnz label140
+label145:
+load 6
+intc 9 // 1000000
+<
+bnz label141
+bytec_0 // "i.timeChanged"
+global LatestTimestamp
+itob
+app_global_put
+bytec 13 // "i.segmentLocked"
+bytec 7 // "1"
+app_global_put
+bytec 9 // "i.sellamt"
+txna ApplicationArgs 1
+app_global_put
+txn NumAppArgs
+intc_2 // 3
+==
+bnz label142
+bytec_2 // "i.mintingKickoffAmount"
+callsub label68
+intc_1 // 0
+>
+load 6
+bytec_2 // "i.mintingKickoffAmount"
+callsub label68
+<=
+&&
+bnz label143
+bytec 4 // "i.reservedOwner.a"
+app_global_del
+label144:
+intc_0 // 1
+b label48
+label143:
+bytec 4 // "i.reservedOwner.a"
+bytec 6 // "i.mintingKickoffCreator.a"
+app_global_get
+app_global_put
+b label144
+label142:
+txna ApplicationArgs 2
+global ZeroAddress
+!=
+txna ApplicationArgs 2
+bytec_1 // "i.owner.a"
+callsub label13
+!=
+&&
+bz label144
+bytec 4 // "i.reservedOwner.a"
+txna ApplicationArgs 2
+app_global_put
+b label144
+label141:
+intc_1 // 0
+return
+label140:
+global CallerApplicationID
+intc 6 // 760937186
+!=
+bz label145
+global CurrentApplicationAddress
+acct_params_get AcctTotalBoxes
+store 7
+intc_1 // 0
+==
+assert
+b label145
+label139:
+intc_1 // 0
+return
+label14:
+intc_1 // 0
+b label48
+label12:
+global CallerApplicationID
+intc 6 // 760937186
+!=
+bnz label146
+bytec_2 // "i.mintingKickoffAmount"
+callsub label68
+intc_1 // 0
+>
+bnz label147
+label148:
+itxn_begin
+intc_2 // 3
+itxn_field TypeEnum
+pushbytes 0x4e4644 // "NFD"
+itxn_field ConfigAssetUnitName
+txna ApplicationArgs 1
+itxn_field ConfigAssetName
+intc_0 // 1
+itxn_field ConfigAssetTotal
+intc_1 // 0
+itxn_field ConfigAssetDecimals
+intc_0 // 1
+itxn_field ConfigAssetDefaultFrozen
+txna ApplicationArgs 2
+itxn_field ConfigAssetURL
+global CurrentApplicationAddress
+itxn_field ConfigAssetManager
+global CurrentApplicationAddress
+itxn_field ConfigAssetReserve
+global CurrentApplicationAddress
+itxn_field ConfigAssetClawback
+intc_1 // 0
+itxn_field Fee
+itxn_submit
+bytec 11 // "i.asaid"
+itxn CreatedAssetID
+itob
+app_global_put
+bytec 5 // "i.minting"
+bytec 8 // "2"
+app_global_put
+bytec_1 // "i.owner.a"
+global CurrentApplicationAddress
+app_global_put
+itxn CreatedAssetID
+itob
+log
+intc_0 // 1
+b label48
+label147:
+global CurrentApplicationAddress
+balance
+pushint 200000
+-
+bytec_2 // "i.mintingKickoffAmount"
+app_global_get
+btoi
+<
+bz label148
+intc_1 // 0
+return
+label146:
+intc_1 // 0
+return
+label2:
+txna ApplicationArgs 0
+pushbytes 0x637265617465 // "create"
+==
+txn NumAppArgs
+pushint 14
+==
+&&
+bnz label149
+intc_1 // 0
+label156:
+return
+label149:
+txna ApplicationArgs 7
+btoi
+intc_0 // 1
+>=
+assert
+txna ApplicationArgs 7
+btoi
+intc 17 // 500
+<=
+assert
+txna ApplicationArgs 9
+btoi
+intc_0 // 1
+>=
+assert
+txna ApplicationArgs 9
+btoi
+intc 17 // 500
+<=
+assert
+intc_1 // 0
+store 0
+intc_1 // 0
+store 1
+txn GroupIndex
+intc_2 // 3
+==
+bnz label150
+label170:
+txn GroupIndex
+intc_3 // 2
+>=
+bnz label151
+label169:
+bytec 20 // "i.contractLocked"
+bytec_3 // "0"
+app_global_put
+bytec 25 // "i.ver"
+pushbytes 0x322e3132 // "2.12"
+app_global_put
+bytec 5 // "i.minting"
+bytec 7 // "1"
+app_global_put
+pushbytes 0x692e74696d6543726561746564 // "i.timeCreated"
+global LatestTimestamp
+itob
+app_global_put
+bytec_0 // "i.timeChanged"
+global LatestTimestamp
+itob
+app_global_put
+bytec 14 // "i.name"
+txna ApplicationArgs 1
+app_global_put
+bytec 17 // "i.seller.a"
+txna ApplicationArgs 2
+app_global_put
+txna ApplicationArgs 3
+global ZeroAddress
+!=
+bnz label152
+label168:
+txna ApplicationArgs 4
+global ZeroAddress
+!=
+bnz label153
+label167:
+txna ApplicationArgs 5
+btoi
+intc_1 // 0
+!=
+bnz label154
+label166:
+bytec 18 // "i.commission1Agent.a"
+txna ApplicationArgs 6
+app_global_put
+bytec 16 // "i.commission1"
+txna ApplicationArgs 7
+app_global_put
+bytec 19 // "i.commission2Agent.a"
+txna ApplicationArgs 8
+app_global_put
+bytec 24 // "i.commission2"
+txna ApplicationArgs 9
+app_global_put
+pushbytes 0x692e63617465676f7279 // "i.category"
+txna ApplicationArgs 10
+app_global_put
+bytec 29 // "i.saleType"
+txna ApplicationArgs 11
+app_global_put
+bytec 12 // "i.vaultOptInLocked"
+bytec_3 // "0"
+app_global_put
+txna ApplicationArgs 12
+btoi
+intc_1 // 0
+!=
+bnz label155
+label163:
+intc_0 // 1
+b label156
+label155:
+pushbytes 0x692e706172656e744170704944 // "i.parentAppID"
+txna ApplicationArgs 12
+app_global_put
+txna ApplicationArgs 12
+btoi
+store 3
+load 3
+bytec 14 // "i.name"
+callsub label84
+store 2
+txna ApplicationArgs 1
+txna ApplicationArgs 1
+len
+load 2
+len
+-
+intc_0 // 1
+-
+load 2
+len
+intc_0 // 1
++
+extract3
+bytec 22 // "."
+load 2
+concat
+==
+assert
+load 2
+load 3
+callsub label157
+intc_0 // 1
+==
+assert
+load 3
+bytec 13 // "i.segmentLocked"
+callsub label84
+bytec_3 // "0"
+==
+bnz label158
+intc 10 // 400
+store 4
+label165:
+load 4
+intc 10 // 400
+>=
+assert
+load 3
+bytec 23 // "i.segmentCount"
+callsub label159
+intc_0 // 1
++
+callsub label160
+store 5
+load 5
+pushint 70100
+<
+assert
+load 5
+intc_1 // 0
+>
+bnz label161
+label164:
+txna ApplicationArgs 5
+btoi
+load 0
++
+load 4
+callsub label130
+>=
+assert
+load 3
+bytec 13 // "i.segmentLocked"
+callsub label84
+bytec_3 // "0"
+==
+bnz label162
+bytec 4 // "i.reservedOwner.a"
+app_global_get
+global ZeroAddress
+!=
+assert
+bytec 4 // "i.reservedOwner.a"
+app_global_get
+load 3
+bytec_1 // "i.owner.a"
+callsub label84
+==
+assert
+b label163
+label162:
+txna ApplicationArgs 13
+global ZeroAddress
+!=
+assert
+load 3
+bytec 17 // "i.seller.a"
+callsub label84
+txna ApplicationArgs 13
+==
+assert
+bytec 15 // "i.segmentAgent.a"
+txna ApplicationArgs 13
+app_global_put
+b label163
+label161:
+load 4
+load 4
+load 5
+*
+intc 14 // 100000
+/
+-
+store 4
+b label164
+label158:
+load 3
+bytec 21 // "i.segmentPriceUsd"
+callsub label159
+store 4
+b label165
+label154:
+bytec_2 // "i.mintingKickoffAmount"
+txna ApplicationArgs 5
+app_global_put
+b label166
+label153:
+bytec 6 // "i.mintingKickoffCreator.a"
+txna ApplicationArgs 4
+app_global_put
+b label167
+label152:
+bytec 4 // "i.reservedOwner.a"
+txna ApplicationArgs 3
+app_global_put
+b label168
+label151:
+txn GroupIndex
+intc_3 // 2
+-
+gtxns TypeEnum
+intc_0 // 1
+==
+assert
+txn GroupIndex
+intc_3 // 2
+-
+gtxns Sender
+txn GroupIndex
+intc_0 // 1
++
+gtxns Sender
+==
+assert
+txn GroupIndex
+intc_3 // 2
+-
+gtxns Amount
+store 1
+b label169
+label150:
+txn GroupIndex
+intc_2 // 3
+-
+gtxns TypeEnum
+intc_0 // 1
+==
+assert
+txn GroupIndex
+intc_2 // 3
+-
+gtxns Sender
+txn GroupIndex
+intc_0 // 1
++
+gtxns Sender
+==
+assert
+txn GroupIndex
+intc_2 // 3
+-
+gtxns Amount
+store 0
+b label170
+label1:
+intc_1 // 0
+return
+label204:
+proto 1 1
+intc 5 // 10
+frame_dig -1
+exp
+retsub
+label173:
+proto 1 1
+pushbytes 0x30313233343536373839 // "0123456789"
+frame_dig -1
+intc_0 // 1
+extract3
+retsub
+label44:
+proto 1 1
+frame_dig -1
+intc_1 // 0
+==
+bnz label171
+frame_dig -1
+intc 5 // 10
+/
+intc_1 // 0
+>
+bnz label172
+bytec 10 // ""
+label175:
+frame_dig -1
+intc 5 // 10
+%
+callsub label173
+concat
+b label174
+label172:
+frame_dig -1
+intc 5 // 10
+/
+callsub label44
+b label175
+label171:
+bytec_3 // "0"
+label174:
+retsub
+label77:
+proto 1 1
+frame_dig -1
+gtxns Sender
+intc 18 // 760936964
+asset_holding_get AssetBalance
+store 60
+intc_0 // 1
+==
+frame_dig -1
+gtxns CloseRemainderTo
+global ZeroAddress
+==
+&&
+frame_dig -1
+gtxns RekeyTo
+global ZeroAddress
+==
+&&
+retsub
+label10:
+proto 0 1
+txn Sender
+intc 18 // 760936964
+asset_holding_get AssetBalance
+store 61
+intc_0 // 1
+==
+retsub
+label13:
+proto 1 1
+intc_1 // 0
+frame_dig -1
+app_global_get_ex
+store 63
+store 62
+load 63
+bnz label176
+bytec 10 // ""
+b label177
+label176:
+load 62
+label177:
+retsub
+label84:
+proto 2 1
+frame_dig -2
+frame_dig -1
+app_global_get_ex
+store 65
+store 64
+load 65
+bnz label178
+bytec 10 // ""
+b label179
+label178:
+load 64
+label179:
+retsub
+label68:
+proto 1 1
+intc_1 // 0
+frame_dig -1
+app_global_get_ex
+store 67
+store 66
+load 67
+bnz label180
+intc_1 // 0
+b label181
+label180:
+load 66
+btoi
+label181:
+retsub
+label159:
+proto 2 1
+frame_dig -2
+frame_dig -1
+app_global_get_ex
+store 69
+store 68
+load 69
+bnz label182
+intc_1 // 0
+b label183
+label182:
+load 68
+btoi
+label183:
+retsub
+label51:
+proto 2 1
+frame_dig -1
+len
+store 71
+load 71
+bzero
+store 72
+frame_dig -2
+box_get
+store 77
+store 76
+load 77
+intc_1 // 0
+==
+bnz label184
+load 76
+store 70
+load 70
+len
+load 71
+%
+intc_1 // 0
+==
+assert
+load 70
+len
+load 71
+/
+store 74
+intc_1 // 0
+store 73
+label189:
+load 73
+load 74
+<
+bnz label185
+load 70
+len
+pushint 1010
+<
+bnz label186
+intc_1 // 0
+retsub
+label186:
+frame_dig -2
+box_del
+pop
+frame_dig -2
+load 70
+frame_dig -1
+concat
+box_put
+intc_0 // 1
+retsub
+label185:
+load 70
+load 73
+load 71
+*
+load 71
+extract3
+store 75
+load 75
+load 72
+==
+bnz label187
+load 75
+frame_dig -1
+==
+bnz label188
+load 73
+intc_0 // 1
++
+store 73
+b label189
+label188:
+intc_0 // 1
+retsub
+label187:
+frame_dig -2
+load 70
+load 73
+load 71
+*
+frame_dig -1
+replace3
+box_put
+intc_0 // 1
+retsub
+label184:
+frame_dig -2
+frame_dig -1
+box_put
+intc_0 // 1
+retsub
+intc_0 // 1
+retsub
+label47:
+proto 2 1
+frame_dig -1
+len
+intc 4 // 32
+==
+assert
+frame_dig -1
+global ZeroAddress
+!=
+assert
+frame_dig -2
+box_get
+store 81
+store 78
+load 78
+len
+intc 4 // 32
+/
+store 80
+intc_1 // 0
+store 79
+label192:
+load 79
+load 80
+<
+bz label190
+load 78
+load 79
+intc 4 // 32
+*
+intc 4 // 32
+extract3
+frame_dig -1
+==
+bnz label191
+load 79
+intc_0 // 1
++
+store 79
+b label192
+label191:
+intc_0 // 1
+retsub
+label190:
+intc_1 // 0
+retsub
+label50:
+proto 2 1
+frame_dig -2
+box_get
+store 85
+store 82
+load 82
+len
+intc 4 // 32
+/
+store 84
+intc_1 // 0
+store 83
+label195:
+load 83
+load 84
+<
+bz label193
+load 82
+load 83
+intc 4 // 32
+*
+intc 4 // 32
+extract3
+frame_dig -1
+==
+bnz label194
+load 83
+intc_0 // 1
++
+store 83
+b label195
+label194:
+frame_dig -2
+box_del
+pop
+load 83
+load 84
+intc_0 // 1
+-
+==
+bnz label196
+frame_dig -2
+load 82
+load 83
+intc 4 // 32
+*
+global ZeroAddress
+replace3
+box_put
+intc_0 // 1
+retsub
+label196:
+load 83
+intc_1 // 0
+>
+bnz label197
+label198:
+intc_0 // 1
+retsub
+label197:
+frame_dig -2
+load 82
+intc_1 // 0
+load 83
+intc 4 // 32
+*
+extract3
+box_put
+b label198
+label193:
+intc_1 // 0
+retsub
+label52:
+proto 2 1
+frame_dig -1
+len
+intc 4 // 32
+==
+assert
+frame_dig -1
+global ZeroAddress
+!=
+assert
+frame_dig -2
+box_get
+store 92
+store 91
+load 91
+len
+pushint 64
+>=
+assert
+intc_1 // 0
+store 89
+load 91
+store 86
+load 86
+extract 0 32
+frame_dig -1
+==
+bnz label199
+load 86
+len
+intc 4 // 32
+/
+store 88
+intc_1 // 0
+store 87
+label202:
+load 87
+load 88
+<
+bz label200
+load 86
+load 87
+intc 4 // 32
+*
+intc 4 // 32
+extract3
+frame_dig -1
+==
+bnz label201
+load 87
+intc_0 // 1
++
+store 87
+b label202
+label201:
+load 87
+store 89
+b label200
+label199:
+intc_0 // 1
+retsub
+label200:
+load 89
+intc_1 // 0
+!=
+assert
+load 86
+extract 0 32
+store 90
+load 86
+frame_dig -1
+replace2 0
+store 86
+frame_dig -2
+load 86
+load 89
+intc 4 // 32
+*
+load 90
+replace3
+box_put
+intc_0 // 1
+retsub
+label130:
+proto 1 1
+intc 12 // 1009583905
+pushbytes 0x7473 // "ts"
+app_global_get_ex
+store 98
+store 97
+intc 12 // 1009583905
+pushbytes 0x646563696d616c73 // "decimals"
+app_global_get_ex
+store 100
+store 99
+intc 12 // 1009583905
+pushbytes 0x7072696365 // "price"
+app_global_get_ex
+store 102
+store 101
+load 97
+store 93
+load 99
+store 94
+load 101
+store 95
+global LatestTimestamp
+load 93
+-
+pushint 86400
+>
+bnz label203
+label206:
+frame_dig -1
+intc 11 // 10000
+*
+load 94
+callsub label204
+*
+load 95
+/
+intc 11 // 10000
+/
+intc 11 // 10000
+*
+store 96
+load 96
+intc 9 // 1000000
+<
+bz label205
+intc 9 // 1000000
+retsub
+label203:
+intc_3 // 2
+store 94
+pushint 33
+store 95
+b label206
+label205:
+load 96
+retsub
+label160:
+proto 1 1
+frame_dig -1
+intc 5 // 10
+<
+bnz label207
+intc 5 // 10
+store 103
+pushint 20000
+store 104
+label209:
+frame_dig -1
+load 103
+>
+load 103
+intc 9 // 1000000
+<
+&&
+bz label208
+load 103
+intc 5 // 10
+*
+store 103
+load 103
+frame_dig -1
+<=
+bz label209
+load 104
+intc 11 // 10000
++
+store 104
+b label209
+label207:
+intc_1 // 0
+retsub
+label208:
+load 104
+retsub
+label85:
+proto 2 1
+intc_1 // 0
+store 105
+label212:
+load 105
+frame_dig -1
+<
+bz label210
+frame_dig -2
+load 105
+intc_0 // 1
+extract3
+bytec 22 // "."
+==
+bnz label211
+load 105
+intc_0 // 1
++
+store 105
+b label212
+label211:
+intc_1 // 0
+retsub
+label210:
+intc_0 // 1
+retsub
+label157:
+proto 2 1
+itxn_begin
+intc 15 // 6
+itxn_field TypeEnum
+intc_1 // 0
+itxn_field OnCompletion
+intc 6 // 760937186
+itxn_field ApplicationID
+frame_dig -1
+itxn_field Applications
+pushbytes 0x69735f76616c69645f6e66645f6170706964 // "is_valid_nfd_appid"
+itxn_field ApplicationArgs
+frame_dig -2
+itxn_field ApplicationArgs
+frame_dig -1
+itob
+itxn_field ApplicationArgs
+intc_1 // 0
+itxn_field Fee
+itxn_submit
+itxn LastLog
+btoi
+retsub
+label71:
+proto 0 1
+bytec_1 // "i.owner.a"
+callsub label13
+store 106
+bytec 5 // "i.minting"
+callsub label13
+bytec 8 // "2"
+==
+bnz label213
+label215:
+txn Sender
+load 106
+==
+load 106
+global CurrentApplicationAddress
+!=
+&&
+bz label214
+intc_0 // 1
+retsub
+label213:
+txn GroupIndex
+callsub label77
+bz label215
+intc_0 // 1
+retsub
+label214:
+intc_1 // 0
+retsub
+label49:
+proto 0 1
+bytec 9 // "i.sellamt"
+callsub label68
+intc_1 // 0
+!=
+retsub
+label103:
+proto 2 1
+frame_dig -2
+extract 0 2
+store 107
+load 107
+callsub label37
+bnz label216
+frame_dig -1
+intc_0 // 1
+==
+bnz label217
+bytec_1 // "i.owner.a"
+callsub label13
+len
+intc 4 // 32
+==
+assert
+callsub label49
+!
+assert
+txn Sender
+bytec_1 // "i.owner.a"
+app_global_get
+==
+assert
+load 107
+callsub label39
+bnz label218
+load 107
+callsub label40
+frame_dig -2
+extract 0 8
+bytec 31 // "v.caAlgo"
+==
+!
+&&
+bz label219
+intc_0 // 1
+retsub
+label218:
+intc_0 // 1
+retsub
+label217:
+intc_0 // 1
+retsub
+label216:
+intc_1 // 0
+return
+label219:
+intc_1 // 0
+retsub
+label79:
+proto 3 1
+frame_dig -3
+extract 0 2
+store 108
+load 108
+callsub label37
+bnz label220
+load 108
+callsub label39
+store 109
+load 108
+callsub label40
+store 110
+frame_dig -2
+intc_0 // 1
+==
+load 110
+load 109
+frame_dig -1
+intc_0 // 1
++
+txnas ApplicationArgs
+len
+intc_1 // 0
+==
+&&
+||
+&&
+bnz label221
+bytec_1 // "i.owner.a"
+callsub label13
+len
+intc 4 // 32
+==
+assert
+callsub label49
+!
+assert
+txn Sender
+bytec_1 // "i.owner.a"
+app_global_get
+==
+assert
+load 109
+bnz label222
+frame_dig -3
+len
+intc 13 // 8
+>
+bnz label223
+label225:
+load 110
+frame_dig -1
+intc_0 // 1
++
+txnas ApplicationArgs
+len
+intc_1 // 0
+==
+&&
+bz label224
+intc_0 // 1
+retsub
+label223:
+frame_dig -3
+extract 0 8
+bytec 31 // "v.caAlgo"
+==
+bz label225
+intc_1 // 0
+return
+label222:
+intc_0 // 1
+retsub
+label221:
+intc_0 // 1
+retsub
+label220:
+intc_1 // 0
+return
+label224:
+intc_1 // 0
+retsub
+label37:
+proto 1 1
+frame_dig -1
+pushbytes 0x692e // "i."
+==
+retsub
+label39:
+proto 1 1
+frame_dig -1
+pushbytes 0x752e // "u."
+==
+retsub
+label40:
+proto 1 1
+frame_dig -1
+pushbytes 0x762e // "v."
+==
+retsub
+label93:
+proto 0 1
+bytec 12 // "i.vaultOptInLocked"
+callsub label13
+store 111
+load 111
+bytec 7 // "1"
+==
+bnz label226
+load 111
+bytec_3 // "0"
+==
+load 111
+len
+intc_1 // 0
+==
+||
+bz label227
+intc_1 // 0
+retsub
+label226:
+intc_0 // 1
+retsub
+label227:
+global LatestTimestamp
+load 111
+btoi
+>=
+retsub
