@@ -52,7 +52,12 @@ def _fires(detector: str, teal: Path) -> bool:
 
 
 def _detectors_with_corpus() -> list[str]:
-    return sorted(d.name for d in BENCH.iterdir() if d.is_dir())
+    # A detector corpus dir has a vuln/ and/or safe/ subdir; skip anything else
+    # under tests/benchmark/ (e.g. __pycache__ from the Tealer-differential tool).
+    return sorted(
+        d.name for d in BENCH.iterdir()
+        if d.is_dir() and ((d / "vuln").is_dir() or (d / "safe").is_dir())
+    )
 
 
 def run_benchmark() -> dict[str, Score]:

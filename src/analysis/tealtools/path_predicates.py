@@ -167,6 +167,53 @@ def _canonical_binary_pred(
     return BranchCondition(value=left, kind=kind, args=(right,))
 
 
+# Opcodes that read an IMMUTABLE transaction / global field. A subroutine cannot
+# change what `txn OnCompletion` (or `global CreatorAddress`, …) reads — these are
+# properties of the transaction / group, re-derived by opcode, not stack or
+# scratch values. So a predicate rooted ONLY in these survives a `callsub` return
+# even though the callee may clobber the caller's stack or scratch (a `dig` /
+# `bury` beyond its frame, a `store`). Predicates touching anything else
+# (load / dig / frame_dig / app_global_get / a sub parameter / …) are NOT carried.
+_TXN_FIELD_READ_OPS = frozenset({
+    "txn", "txna", "txnas", "gtxn", "gtxna", "gtxnas",
+    "gtxns", "gtxnsa", "gtxnsas", "global",
+})
+
+# Pure boolean / comparison combinators: immutable-in ⇒ immutable-out.
+_PURE_COMBINATOR_OPS = frozenset({
+    "==", "!=", "<", ">", "<=", ">=",
+    "b==", "b!=", "b<", "b>", "b<=", "b>=",
+    "&&", "||", "!",
+})
+
+
+def _rooted_in_immutable_fields(v, seen: Optional[set] = None) -> bool:
+    """True if every leaf of ``v`` is an immutable transaction/global field read
+    or a constant, combined only through pure comparison/boolean ops. Such a
+    value cannot be altered by a ``callsub`` (the callee can touch stack/scratch,
+    never the txn fields), so a predicate on it is preserved across the return."""
+    if is_const(v):
+        return True
+    if seen is None:
+        seen = set()
+    if isinstance(v, (SSAVar, Phi)):
+        if v in seen:
+            return True
+        seen.add(v)
+        if isinstance(v, Phi):
+            return bool(v.args) and all(
+                _rooted_in_immutable_fields(a, seen) for a in v.args)
+        d = v.defined_by
+        if d is None:
+            return False                     # param / frame_dig / unknown
+        if d.op in _TXN_FIELD_READ_OPS:
+            return True
+        if d.op in _PURE_COMBINATOR_OPS:
+            return all(_rooted_in_immutable_fields(i, seen) for i in d.inputs)
+        return False                         # load / app_global_get / arith / …
+    return False
+
+
 def _disp(op) -> str:
     """Compact rendering for an :class:`Operand`. Resolves
     ``const_value`` to a literal so a candidate SSAVar reads as
@@ -337,6 +384,19 @@ class PathPredicateAnalysis:
 
     def _compute(self) -> None:
         prog = self.prog
+        # Interprocedural return precision: PathPredicateAnalysis is context-
+        # INSENSITIVE — a subroutine reached from N call sites merges (intersects)
+        # all callers' facts at its entry, so a caller-specific predicate (e.g.
+        # `OnCompletion == 5` asserted before the call) is lost by the time the
+        # callee's `retsub` returns. But each return TARGET is reached only via
+        # its own call (the return address), so the caller's IMMUTABLE-field
+        # predicates do still hold there. Recover them: at a return target, union
+        # in the calling block's predicates restricted to the txn/global-rooted
+        # subset (sound — the callee can't change those). ``caller_of`` maps a
+        # return-target BB -> its calling (callsub) BB; ``return_target_of`` is
+        # the reverse, so a change to a caller re-queues its return target.
+        caller_of, return_target_of = self._callsub_return_maps()
+
         # Initial: TOP everywhere; ``∅`` for BBs with no predecessors
         # (program entry, plus any unreachable BBs — both default to
         # "no constraints" which is the right zero element).
@@ -365,18 +425,60 @@ class PathPredicateAnalysis:
             extra = self.bb_seeds.get(bb)
             if extra:
                 new_preds |= extra
+            # Carry the calling block's immutable-field predicates across the
+            # return into this return target (see comment above).
+            caller = caller_of.get(bb)
+            if caller is not None:
+                caller_preds = bb_preds[caller]
+                if caller_preds is not _TOP:
+                    new_preds |= {
+                        c for c in caller_preds  # type: ignore[union-attr]
+                        if _rooted_in_immutable_fields(c.value)
+                        and all(_rooted_in_immutable_fields(a) for a in c.args
+                                if isinstance(a, (SSAVar, Phi)))
+                    }
             new_frozen = frozenset(new_preds)
             old = bb_preds[bb]
             if old is _TOP or old != new_frozen:
                 bb_preds[bb] = new_frozen
                 for succ in bb.successors:
                     worklist.append(succ)
+                # a callsub block's predicates feed its return target's injection
+                rt = return_target_of.get(bb)
+                if rt is not None:
+                    worklist.append(rt)
         # Replace any surviving TOP (unreachable) with ∅ for downstream
         # consumers that expect a frozenset.
         for bb in list(bb_preds.keys()):
             if bb_preds[bb] is _TOP:
                 bb_preds[bb] = frozenset()
         self.bb_preds = bb_preds  # type: ignore[assignment]
+
+    def _callsub_return_maps(self):
+        """``(caller_of, return_target_of)``: for each ``callsub`` block C, the
+        block B that execution returns to (the next block in source order, whose
+        predecessors are ALL ``retsub`` blocks — i.e. B is reached ONLY via the
+        return, making it sound to carry C's caller-specific facts there). B with
+        any non-return predecessor is skipped (the facts wouldn't hold on the
+        other path)."""
+        prog = self.prog
+        caller_of: dict[BasicBlock, BasicBlock] = {}
+        return_target_of: dict[BasicBlock, BasicBlock] = {}
+        for c in prog.blocks.values():
+            if not c.assignments or c.assignments[-1].op != "callsub":
+                continue
+            after = [b for b in prog.blocks.values()
+                     if b.file == c.file and b.first_line > c.last_line]
+            if not after:
+                continue
+            b = min(after, key=lambda x: x.first_line)
+            if b.predecessors and all(
+                p.assignments and p.assignments[-1].op == "retsub"
+                for p in b.predecessors
+            ):
+                caller_of[b] = c
+                return_target_of[c] = b
+        return caller_of, return_target_of
 
     def _edge_predicates(
         self, pred: BasicBlock, succ: BasicBlock
