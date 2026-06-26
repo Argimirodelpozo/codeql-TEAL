@@ -1,0 +1,68 @@
+#pragma version 10
+intcblock 1
+pushbytes 0x3af0fa55 // 0x3af0fa55
+pushbytes 0xf66809c1 // 0xf66809c1
+pushbytes 0x93370cd2 // 0x93370cd2
+txna ApplicationArgs 0
+match label1 label2 label3
+err
+label1:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+!
+assert
+txna ApplicationArgs 1
+extract 2 0
+txna ApplicationArgs 2
+extract 2 0
+callsub label4
+intc_0 // 1
+return
+label2:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+assert
+txna ApplicationArgs 1
+btoi
+txna ApplicationArgs 2
+extract 2 0
+callsub label5
+intc_0 // 1
+return
+label3:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+assert
+txna ApplicationArgs 1
+extract 2 0
+callsub label6
+intc_0 // 1
+return
+label4:
+proto 2 0
+pushbytes 0x746f706963 // "topic"
+frame_dig -2
+app_global_put
+pushbytes 0x61646472657373 // "address"
+frame_dig -1
+app_global_put
+retsub
+label5:
+proto 2 0
+retsub
+label6:
+proto 1 0
+txn Sender
+global CreatorAddress
+==
+assert
+pushbytes 0x77696e6e6572 // "winner"
+frame_dig -1
+app_global_put
+retsub

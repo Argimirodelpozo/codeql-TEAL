@@ -1,0 +1,845 @@
+#pragma version 6
+intcblock 1 0 2 6 4 200000 3
+bytecblock 0x676c6f62616c5f6c656e645f737461747573 0x676c6f62616c5f6c656e645f6173736574 0x676c6f62616c5f6c656e645f70616964 0x676c6f62616c5f6c656e645f7061796261636b 0x676c6f62616c5f6c656e645f74696d65 0x6c656e74 0x676c6f62616c5f6c656e645f64617465 0x70616964 0x646562745f636c61696d6564 0x66756e646564 0x676c6f62616c5f6c656e645f61646472657373 0x676c6f62616c5f6c656e645f616d6f756e74
+txn ApplicationID
+intc_1 // 0
+==
+bnz label1
+txn OnCompletion
+pushint 5
+==
+bnz label2
+txn OnCompletion
+intc 4 // 4
+==
+bnz label3
+txn OnCompletion
+intc_0 // 1
+==
+bnz label4
+txn OnCompletion
+intc_2 // 2
+==
+bnz label5
+txn OnCompletion
+intc_1 // 0
+==
+bnz label6
+err
+label6:
+txna ApplicationArgs 0
+pushbytes 0x7365747570 // "setup"
+==
+bnz label7
+txna ApplicationArgs 0
+pushbytes 0x6c656e64 // "lend"
+==
+bnz label8
+txna ApplicationArgs 0
+pushbytes 0x706179 // "pay"
+==
+bnz label9
+txna ApplicationArgs 0
+pushbytes 0x7061727469616c5f706179 // "partial_pay"
+==
+bnz label10
+txna ApplicationArgs 0
+pushbytes 0x636c61696d5f64656274 // "claim_debt"
+==
+bnz label11
+txna ApplicationArgs 0
+pushbytes 0x636c61696d5f66756e646564 // "claim_funded"
+==
+bnz label12
+txna ApplicationArgs 0
+pushbytes 0x636c61696d5f6e6674 // "claim_nft"
+==
+bnz label13
+err
+label13:
+callsub label14
+label16:
+intc_1 // 0
+return
+label12:
+callsub label15
+b label16
+label11:
+callsub label17
+b label16
+label10:
+callsub label18
+b label16
+label9:
+callsub label19
+b label16
+label8:
+callsub label20
+b label16
+label7:
+callsub label21
+b label16
+label5:
+intc_1 // 0
+return
+label4:
+intc_1 // 0
+return
+label3:
+callsub label22
+intc_1 // 0
+return
+label2:
+callsub label23
+intc_1 // 0
+return
+label1:
+callsub label24
+intc_1 // 0
+return
+label25:
+store 0
+itxn_begin
+intc 4 // 4
+itxn_field TypeEnum
+load 0
+itxn_field XferAsset
+intc_1 // 0
+itxn_field Fee
+global CurrentApplicationAddress
+itxn_field AssetReceiver
+itxn_submit
+retsub
+label29:
+store 11
+store 10
+store 9
+itxn_begin
+intc 4 // 4
+itxn_field TypeEnum
+load 9
+itxn_field XferAsset
+load 10
+itxn_field AssetReceiver
+intc_1 // 0
+itxn_field Fee
+load 11
+itxn_field AssetAmount
+itxn_submit
+retsub
+label26:
+store 6
+store 5
+itxn_begin
+intc_0 // 1
+itxn_field TypeEnum
+load 5
+itxn_field Receiver
+intc_1 // 0
+itxn_field Fee
+load 6
+itxn_field Amount
+itxn_submit
+retsub
+label24:
+global GroupSize
+intc_0 // 1
+==
+txn GroupIndex
+intc_1 // 0
+==
+&&
+assert
+gtxn 0 RekeyTo
+global ZeroAddress
+==
+assert
+gtxn 0 TypeEnum
+intc_3 // 6
+==
+gtxn 0 Fee
+global MinTxnFee
+==
+&&
+assert
+intc_0 // 1
+return
+label22:
+global GroupSize
+intc_0 // 1
+==
+txn GroupIndex
+intc_1 // 0
+==
+&&
+assert
+gtxn 0 RekeyTo
+global ZeroAddress
+==
+assert
+gtxn 0 TypeEnum
+intc_3 // 6
+==
+gtxn 0 ApplicationID
+global CurrentApplicationID
+==
+&&
+gtxn 0 Fee
+global MinTxnFee
+==
+&&
+gtxn 0 Sender
+global CreatorAddress
+==
+&&
+assert
+intc_0 // 1
+return
+label23:
+global GroupSize
+intc_0 // 1
+==
+txn GroupIndex
+intc_1 // 0
+==
+&&
+assert
+gtxn 0 RekeyTo
+global ZeroAddress
+==
+assert
+gtxn 0 TypeEnum
+intc_3 // 6
+==
+gtxn 0 ApplicationID
+global CurrentApplicationID
+==
+&&
+gtxn 0 Fee
+global MinTxnFee
+==
+&&
+gtxn 0 Sender
+global CreatorAddress
+==
+&&
+bytec_0 // "global_lend_status"
+app_global_get
+bytec 7 // "paid"
+==
+bytec_0 // "global_lend_status"
+app_global_get
+bytec 8 // "debt_claimed"
+==
+||
+&&
+assert
+intc_0 // 1
+return
+label21:
+global GroupSize
+intc_2 // 2
+==
+txn GroupIndex
+intc_0 // 1
+==
+&&
+assert
+gtxn 0 RekeyTo
+global ZeroAddress
+==
+gtxn 1 RekeyTo
+global ZeroAddress
+==
+&&
+assert
+bytec_0 // "global_lend_status"
+app_global_get
+intc_1 // 0
+==
+gtxn 0 TypeEnum
+intc_0 // 1
+==
+&&
+gtxn 0 Fee
+global MinTxnFee
+==
+&&
+gtxn 0 Receiver
+global CurrentApplicationAddress
+==
+&&
+gtxn 0 Amount
+intc 5 // 200000
+>
+&&
+gtxn 1 TypeEnum
+intc_3 // 6
+==
+&&
+gtxn 1 ApplicationID
+global CurrentApplicationID
+==
+&&
+gtxn 1 Sender
+global CreatorAddress
+==
+&&
+gtxn 1 Fee
+global MinTxnFee
+intc_2 // 2
+*
+==
+&&
+gtxna 1 ApplicationArgs 1
+btoi
+gtxn 0 Amount
+intc 5 // 200000
+-
+>
+&&
+gtxna 1 ApplicationArgs 2
+btoi
+intc_1 // 0
+>
+&&
+assert
+gtxna 1 Assets 0
+callsub label25
+bytec_1 // "global_lend_asset"
+gtxna 1 Assets 0
+app_global_put
+bytec 11 // "global_lend_amount"
+gtxn 0 Amount
+intc 5 // 200000
+-
+app_global_put
+bytec_2 // "global_lend_paid"
+intc_1 // 0
+app_global_put
+bytec_0 // "global_lend_status"
+bytec 9 // "funded"
+app_global_put
+bytec_3 // "global_lend_payback"
+gtxna 1 ApplicationArgs 1
+btoi
+app_global_put
+bytec 4 // "global_lend_time"
+gtxna 1 ApplicationArgs 2
+btoi
+app_global_put
+intc_0 // 1
+return
+label20:
+gtxna 0 Assets 0
+asset_params_get AssetFreeze
+store 2
+store 1
+gtxna 0 Assets 0
+asset_params_get AssetClawback
+store 4
+store 3
+global GroupSize
+intc_2 // 2
+==
+txn GroupIndex
+intc_1 // 0
+==
+&&
+assert
+gtxn 0 RekeyTo
+global ZeroAddress
+==
+gtxn 1 RekeyTo
+global ZeroAddress
+==
+&&
+assert
+bytec_0 // "global_lend_status"
+app_global_get
+bytec 9 // "funded"
+==
+load 1
+global ZeroAddress
+==
+&&
+load 3
+global ZeroAddress
+==
+&&
+gtxn 0 TypeEnum
+intc_3 // 6
+==
+&&
+gtxn 0 ApplicationID
+global CurrentApplicationID
+==
+&&
+gtxn 0 Fee
+global MinTxnFee
+intc_2 // 2
+*
+==
+&&
+gtxna 0 Assets 0
+gtxn 1 XferAsset
+==
+&&
+gtxn 1 TypeEnum
+intc 4 // 4
+==
+&&
+gtxn 1 Fee
+global MinTxnFee
+==
+&&
+gtxn 1 AssetReceiver
+global CurrentApplicationAddress
+==
+&&
+gtxn 1 XferAsset
+bytec_1 // "global_lend_asset"
+app_global_get
+==
+&&
+gtxn 1 AssetAmount
+intc_0 // 1
+==
+&&
+assert
+gtxn 1 Sender
+bytec 11 // "global_lend_amount"
+app_global_get
+callsub label26
+bytec_0 // "global_lend_status"
+bytec 5 // "lent"
+app_global_put
+bytec 10 // "global_lend_address"
+gtxn 1 Sender
+app_global_put
+bytec 6 // "global_lend_date"
+global LatestTimestamp
+app_global_put
+intc_0 // 1
+return
+label15:
+global GroupSize
+intc_0 // 1
+==
+txn GroupIndex
+intc_1 // 0
+==
+&&
+assert
+gtxn 0 RekeyTo
+global ZeroAddress
+==
+assert
+global CurrentApplicationAddress
+bytec_1 // "global_lend_asset"
+app_global_get
+asset_holding_get AssetBalance
+store 8
+store 7
+bytec_0 // "global_lend_status"
+app_global_get
+bytec 9 // "funded"
+==
+gtxn 0 TypeEnum
+intc_3 // 6
+==
+&&
+gtxn 0 ApplicationID
+global CurrentApplicationID
+==
+&&
+gtxn 0 Sender
+global CreatorAddress
+==
+&&
+gtxn 0 Fee
+global MinTxnFee
+intc_2 // 2
+*
+==
+&&
+global CurrentApplicationAddress
+balance
+intc 5 // 200000
+>
+&&
+bytec_1 // "global_lend_asset"
+app_global_get
+intc_0 // 1
+>
+&&
+load 7
+intc_1 // 0
+==
+&&
+assert
+global CreatorAddress
+global CurrentApplicationAddress
+balance
+global CurrentApplicationAddress
+min_balance
+-
+callsub label26
+bytec_0 // "global_lend_status"
+bytec 8 // "debt_claimed"
+app_global_put
+intc_0 // 1
+return
+label19:
+global GroupSize
+intc 6 // 3
+==
+txn GroupIndex
+intc_0 // 1
+==
+&&
+assert
+gtxn 0 RekeyTo
+global ZeroAddress
+==
+gtxn 1 RekeyTo
+global ZeroAddress
+==
+&&
+gtxn 2 RekeyTo
+global ZeroAddress
+==
+&&
+assert
+global LatestTimestamp
+bytec 6 // "global_lend_date"
+app_global_get
+bytec 4 // "global_lend_time"
+app_global_get
++
+<
+bnz label27
+gtxn 2 Amount
+bytec_3 // "global_lend_payback"
+app_global_get
+==
+gtxn 1 Fee
+global MinTxnFee
+intc 4 // 4
+*
+==
+&&
+assert
+b label28
+label27:
+gtxn 2 Sender
+bytec 10 // "global_lend_address"
+app_global_get
+==
+gtxn 2 Amount
+bytec_3 // "global_lend_payback"
+app_global_get
+bytec_2 // "global_lend_paid"
+app_global_get
+-
+==
+&&
+gtxn 1 Fee
+global MinTxnFee
+intc 6 // 3
+*
+==
+&&
+assert
+label28:
+bytec_0 // "global_lend_status"
+app_global_get
+bytec 5 // "lent"
+==
+gtxn 0 TypeEnum
+intc 4 // 4
+==
+&&
+gtxn 0 Fee
+global MinTxnFee
+==
+&&
+gtxn 0 Sender
+gtxn 0 AssetReceiver
+==
+&&
+gtxn 0 XferAsset
+bytec_1 // "global_lend_asset"
+app_global_get
+==
+&&
+gtxn 0 AssetAmount
+intc_1 // 0
+==
+&&
+gtxn 0 AssetCloseTo
+global ZeroAddress
+==
+&&
+gtxn 1 TypeEnum
+intc_3 // 6
+==
+&&
+gtxn 1 ApplicationID
+global CurrentApplicationID
+==
+&&
+gtxna 1 Assets 0
+bytec_1 // "global_lend_asset"
+app_global_get
+==
+&&
+gtxn 2 TypeEnum
+intc_0 // 1
+==
+&&
+gtxn 2 Fee
+global MinTxnFee
+==
+&&
+gtxn 2 Receiver
+global CurrentApplicationAddress
+==
+&&
+assert
+bytec_1 // "global_lend_asset"
+app_global_get
+gtxn 2 Sender
+intc_0 // 1
+callsub label29
+bytec_2 // "global_lend_paid"
+bytec_3 // "global_lend_payback"
+app_global_get
+app_global_put
+bytec_0 // "global_lend_status"
+bytec 7 // "paid"
+app_global_put
+intc_0 // 1
+return
+label18:
+global GroupSize
+intc_2 // 2
+==
+txn GroupIndex
+intc_1 // 0
+==
+&&
+assert
+gtxn 0 RekeyTo
+global ZeroAddress
+==
+gtxn 1 RekeyTo
+global ZeroAddress
+==
+&&
+assert
+bytec_0 // "global_lend_status"
+app_global_get
+bytec 5 // "lent"
+==
+global LatestTimestamp
+bytec 6 // "global_lend_date"
+app_global_get
+bytec 4 // "global_lend_time"
+app_global_get
++
+<
+&&
+gtxn 0 TypeEnum
+intc_3 // 6
+==
+&&
+gtxn 0 ApplicationID
+global CurrentApplicationID
+==
+&&
+gtxn 0 Fee
+global MinTxnFee
+intc_2 // 2
+*
+==
+&&
+gtxna 0 Assets 0
+bytec_1 // "global_lend_asset"
+app_global_get
+==
+&&
+gtxn 1 TypeEnum
+intc_0 // 1
+==
+&&
+gtxn 1 Fee
+global MinTxnFee
+==
+&&
+gtxn 1 Sender
+bytec 10 // "global_lend_address"
+app_global_get
+==
+&&
+gtxn 1 Receiver
+global CurrentApplicationAddress
+==
+&&
+gtxn 1 Amount
+bytec_3 // "global_lend_payback"
+app_global_get
+bytec_2 // "global_lend_paid"
+app_global_get
+-
+<
+&&
+assert
+bytec_2 // "global_lend_paid"
+bytec_2 // "global_lend_paid"
+app_global_get
+gtxn 1 Amount
++
+app_global_put
+intc_0 // 1
+return
+label17:
+global GroupSize
+intc_0 // 1
+==
+txn GroupIndex
+intc_1 // 0
+==
+&&
+assert
+gtxn 0 RekeyTo
+global ZeroAddress
+==
+assert
+bytec_0 // "global_lend_status"
+app_global_get
+bytec 7 // "paid"
+==
+gtxn 0 TypeEnum
+intc_3 // 6
+==
+&&
+gtxn 0 ApplicationID
+global CurrentApplicationID
+==
+&&
+gtxn 0 Sender
+global CreatorAddress
+==
+&&
+gtxn 0 Fee
+global MinTxnFee
+intc_2 // 2
+*
+==
+&&
+assert
+global CreatorAddress
+global CurrentApplicationAddress
+balance
+global CurrentApplicationAddress
+min_balance
+-
+callsub label26
+bytec_0 // "global_lend_status"
+bytec 8 // "debt_claimed"
+app_global_put
+intc_0 // 1
+return
+label14:
+global GroupSize
+intc_2 // 2
+==
+txn GroupIndex
+intc_0 // 1
+==
+&&
+assert
+gtxn 0 RekeyTo
+global ZeroAddress
+==
+gtxn 1 RekeyTo
+global ZeroAddress
+==
+&&
+assert
+bytec_0 // "global_lend_status"
+app_global_get
+bytec 5 // "lent"
+==
+global LatestTimestamp
+bytec 6 // "global_lend_date"
+app_global_get
+bytec 4 // "global_lend_time"
+app_global_get
++
+>
+&&
+gtxn 0 TypeEnum
+intc 4 // 4
+==
+&&
+gtxn 0 Fee
+global MinTxnFee
+==
+&&
+gtxn 0 Sender
+global CreatorAddress
+==
+&&
+gtxn 0 AssetReceiver
+global CreatorAddress
+==
+&&
+gtxn 0 XferAsset
+bytec_1 // "global_lend_asset"
+app_global_get
+==
+&&
+gtxn 0 AssetAmount
+intc_1 // 0
+==
+&&
+gtxn 0 AssetCloseTo
+global ZeroAddress
+==
+&&
+gtxn 1 TypeEnum
+intc_3 // 6
+==
+&&
+gtxn 1 ApplicationID
+global CurrentApplicationID
+==
+&&
+gtxn 1 Sender
+global CreatorAddress
+==
+&&
+gtxn 1 Fee
+global MinTxnFee
+intc_2 // 2
+*
+==
+&&
+gtxna 1 Assets 0
+bytec_1 // "global_lend_asset"
+app_global_get
+==
+&&
+assert
+bytec_1 // "global_lend_asset"
+app_global_get
+global CreatorAddress
+intc_0 // 1
+callsub label29
+bytec_0 // "global_lend_status"
+pushbytes 0x6e66745f636c61696d6564 // "nft_claimed"
+app_global_put
+intc_0 // 1
+return

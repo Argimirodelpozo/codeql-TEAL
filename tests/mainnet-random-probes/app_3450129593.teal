@@ -1,0 +1,57 @@
+#pragma version 5
+intcblock 1
+bytecblock 0x6668
+txna ApplicationArgs 0
+pushbytes 0x6c6f67 // "log"
+==
+bnz label1
+txna ApplicationArgs 0
+pushbytes 0x756668 // "ufh"
+==
+bnz label2
+txna ApplicationArgs 0
+pushbytes 0x766668 // "vfh"
+==
+bnz label3
+err
+label3:
+txn Sender
+global CreatorAddress
+==
+assert
+bytec_0 // "fh"
+app_global_get
+txna ApplicationArgs 2
+==
+bnz label4
+pushint 0
+return
+label4:
+txna ApplicationArgs 1
+log
+intc_0 // 1
+return
+label2:
+txn Sender
+global CreatorAddress
+==
+assert
+bytec_0 // "fh"
+txna ApplicationArgs 2
+app_global_put
+pushbytes 0x6d68 // "mh"
+txna ApplicationArgs 3
+app_global_put
+txna ApplicationArgs 1
+log
+intc_0 // 1
+return
+label1:
+txn Sender
+global CreatorAddress
+==
+assert
+txna ApplicationArgs 1
+log
+intc_0 // 1
+return

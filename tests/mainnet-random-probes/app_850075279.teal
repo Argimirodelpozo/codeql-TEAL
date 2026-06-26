@@ -1,0 +1,311 @@
+#pragma version 5
+intcblock 1 0 2 4
+bytecblock 0x6173 0x616964 0x6170
+txn ApplicationID
+intc_1 // 0
+==
+bnz label1
+txn OnCompletion
+intc_1 // 0
+==
+bnz label2
+txn OnCompletion
+intc_0 // 1
+==
+bnz label3
+txn OnCompletion
+intc_2 // 2
+==
+bnz label4
+txn OnCompletion
+intc_3 // 4
+==
+bnz label5
+txn OnCompletion
+pushint 5
+==
+bnz label6
+err
+label6:
+bytec_0 // "as"
+app_global_get
+intc_2 // 2
+==
+txn Sender
+global CreatorAddress
+==
+&&
+bytec_0 // "as"
+app_global_get
+intc_2 // 2
+!=
+||
+assert
+bytec_1 // "aid"
+app_global_get
+global CreatorAddress
+callsub label7
+global CreatorAddress
+callsub label8
+intc_0 // 1
+return
+label5:
+intc_1 // 0
+return
+label4:
+intc_1 // 0
+return
+label3:
+intc_1 // 0
+return
+label2:
+txna ApplicationArgs 0
+pushbytes 0x6f6e5f7365747570 // "on_setup"
+==
+bnz label9
+txna ApplicationArgs 0
+pushbytes 0x6f6e5f627579 // "on_buy"
+==
+bnz label10
+err
+label10:
+global CurrentApplicationAddress
+bytec_1 // "aid"
+app_global_get
+asset_holding_get AssetBalance
+store 1
+store 0
+txn Sender
+bytec_1 // "aid"
+app_global_get
+asset_holding_get AssetBalance
+store 3
+store 2
+load 1
+load 0
+txna ApplicationArgs 1
+btoi
+>=
+&&
+bytec_0 // "as"
+app_global_get
+intc_2 // 2
+==
+&&
+load 3
+&&
+txn GroupIndex
+intc_0 // 1
+-
+gtxns TypeEnum
+intc_0 // 1
+==
+txn GroupIndex
+intc_0 // 1
+-
+gtxns Sender
+txn Sender
+==
+&&
+txn GroupIndex
+intc_0 // 1
+-
+gtxns Receiver
+global CurrentApplicationAddress
+==
+&&
+txn GroupIndex
+intc_0 // 1
+-
+gtxns Amount
+bytec_2 // "ap"
+app_global_get
+txna ApplicationArgs 1
+btoi
+*
+==
+&&
+&&
+assert
+bytec_0 // "as"
+intc_0 // 1
+app_global_put
+bytec_1 // "aid"
+app_global_get
+txn GroupIndex
+intc_0 // 1
+-
+gtxns Sender
+txna ApplicationArgs 1
+btoi
+callsub label11
+intc_0 // 1
+return
+label9:
+global GroupSize
+pushint 3
+==
+bytec_0 // "as"
+app_global_get
+intc_2 // 2
+!=
+&&
+txn GroupIndex
+intc_0 // 1
+-
+gtxns TypeEnum
+intc_0 // 1
+==
+&&
+txn GroupIndex
+intc_0 // 1
+-
+gtxns Sender
+global CreatorAddress
+==
+&&
+txn GroupIndex
+intc_0 // 1
+-
+gtxns Receiver
+global CurrentApplicationAddress
+==
+&&
+txn GroupIndex
+intc_0 // 1
+-
+gtxns Amount
+pushint 204000
+==
+&&
+txn GroupIndex
+intc_0 // 1
++
+gtxns TypeEnum
+intc_3 // 4
+==
+&&
+txn GroupIndex
+intc_0 // 1
++
+gtxns Sender
+global CreatorAddress
+==
+&&
+txn GroupIndex
+intc_0 // 1
++
+gtxns AssetReceiver
+global CurrentApplicationAddress
+==
+&&
+txn GroupIndex
+intc_0 // 1
++
+gtxns AssetAmount
+intc_0 // 1
+>=
+&&
+txn GroupIndex
+intc_0 // 1
++
+gtxns XferAsset
+bytec_1 // "aid"
+app_global_get
+==
+&&
+assert
+bytec_2 // "ap"
+txna ApplicationArgs 1
+btoi
+app_global_put
+bytec_0 // "as"
+intc_2 // 2
+app_global_put
+itxn_begin
+intc_3 // 4
+itxn_field TypeEnum
+bytec_1 // "aid"
+app_global_get
+itxn_field XferAsset
+global CurrentApplicationAddress
+itxn_field AssetReceiver
+itxn_submit
+intc_0 // 1
+return
+label1:
+txn NumAppArgs
+intc_0 // 1
+==
+assert
+bytec_0 // "as"
+intc_1 // 0
+app_global_put
+bytec_1 // "aid"
+txna ApplicationArgs 0
+btoi
+app_global_put
+intc_0 // 1
+return
+label11:
+store 6
+store 5
+store 4
+global CurrentApplicationAddress
+load 4
+asset_holding_get AssetBalance
+store 8
+store 7
+load 8
+load 7
+load 6
+>=
+&&
+bz label12
+itxn_begin
+intc_3 // 4
+itxn_field TypeEnum
+load 4
+itxn_field XferAsset
+load 5
+itxn_field AssetReceiver
+load 6
+itxn_field AssetAmount
+itxn_submit
+label12:
+retsub
+label7:
+store 10
+store 9
+global CurrentApplicationAddress
+load 9
+asset_holding_get AssetBalance
+store 12
+store 11
+load 12
+bz label13
+itxn_begin
+intc_3 // 4
+itxn_field TypeEnum
+load 9
+itxn_field XferAsset
+load 10
+itxn_field AssetCloseTo
+itxn_submit
+label13:
+retsub
+label8:
+store 13
+global CurrentApplicationAddress
+balance
+intc_1 // 0
+!=
+bz label14
+itxn_begin
+intc_0 // 1
+itxn_field TypeEnum
+load 13
+itxn_field CloseRemainderTo
+itxn_submit
+label14:
+retsub

@@ -1,0 +1,1232 @@
+#pragma version 8
+bytecblock 0xc3140ae7 0x4aaea3f2
+txn ApplicationID
+pushint 0
+==
+bz label1
+pushbytes 0x5241 // "RA"
+txna Accounts 1
+app_global_put
+pushbytes 0x41 // "A"
+txna Assets 0
+app_global_put
+pushbytes 0x42 // "B"
+txna Assets 1
+app_global_put
+pushbytes 0x4c50 // "LP"
+txna Assets 2
+app_global_put
+pushbytes 0x524557415244 // "REWARD"
+txna Assets 3
+app_global_put
+pushbytes 0x4641524d5f4944 // "FARM_ID"
+txna Applications 1
+app_global_put
+pushbytes 0x504f4f4c5f4944 // "POOL_ID"
+txna Applications 2
+app_global_put
+pushbytes 0x504f4f4c5f41444452 // "POOL_ADDR"
+txna Accounts 2
+app_global_put
+pushint 1
+return
+label1:
+txn OnCompletion
+pushint 0
+==
+bnz label2
+txn OnCompletion
+pushint 1
+==
+bnz label3
+txn OnCompletion
+pushint 2
+==
+bnz label4
+txn OnCompletion
+pushint 4
+==
+bnz label5
+txn OnCompletion
+pushint 5
+==
+bnz label6
+err
+label3:
+pushint 0
+return
+label4:
+pushint 0
+return
+label5:
+txn Sender
+global CreatorAddress
+==
+return
+label6:
+txn Sender
+global CreatorAddress
+==
+return
+label2:
+txn Sender
+store 0
+txna ApplicationArgs 0
+pushbytes 0x636f6e74726163745f696e6974 // "contract_init"
+==
+bnz label7
+txna ApplicationArgs 0
+pushbytes 0x6372656174655f657363726f775f636f6e7472616374 // "create_escrow_contract"
+==
+bnz label8
+txna ApplicationArgs 0
+pushbytes 0x7374616b655f6c70 // "stake_lp"
+==
+bnz label9
+txna ApplicationArgs 0
+pushbytes 0x7374616b655f6c705f636f6d706f756e646572 // "stake_lp_compounder"
+==
+bnz label10
+txna ApplicationArgs 0
+pushbytes 0x756e7374616b655f6c70 // "unstake_lp"
+==
+bnz label11
+txna ApplicationArgs 0
+pushbytes 0x757365725f636c61696d5f72657761726473 // "user_claim_rewards"
+==
+bnz label12
+txna ApplicationArgs 0
+pushbytes 0x636f6d706f756e645f72657761726473 // "compound_rewards"
+==
+bnz label13
+txna ApplicationArgs 0
+pushbytes 0x77697468647261775f616c676f73 // "withdraw_algos"
+==
+bnz label14
+txna ApplicationArgs 0
+pushbytes 0x77697468647261775f617361 // "withdraw_asa"
+==
+bnz label15
+txna ApplicationArgs 0
+pushbytes 0x636c6561725f636f6e74726163745f62616c616e63655f7031 // "clear_contract_balance_p1"
+==
+bnz label16
+txna ApplicationArgs 0
+pushbytes 0x636c6561725f636f6e74726163745f62616c616e63655f7032 // "clear_contract_balance_p2"
+==
+bnz label17
+txna ApplicationArgs 0
+pushbytes 0x7570646174655f636f6d706f756e64696e675f706572696f64 // "update_compounding_period"
+==
+bnz label18
+txna ApplicationArgs 0
+pushbytes 0x73656e645f6d657373616765 // "send_message"
+==
+bnz label19
+txna ApplicationArgs 0
+pushbytes 0x6f70745f617361 // "opt_asa"
+==
+bnz label20
+err
+label7:
+load 0
+global CreatorAddress
+==
+assert
+pushbytes 0x455343524f575f41444452 // "ESCROW_ADDR"
+txna Accounts 1
+app_global_put
+pushbytes 0x455343524f575f4944 // "ESCROW_ID"
+txna Applications 1
+app_global_put
+pushbytes 0x434f4d504f554e44494e475f504552494f44 // "COMPOUNDING_PERIOD"
+txna ApplicationArgs 1
+app_global_put
+itxn_begin
+pushint 4
+itxn_field TypeEnum
+global CurrentApplicationAddress
+itxn_field AssetReceiver
+pushint 0
+itxn_field AssetAmount
+txna Assets 0
+itxn_field XferAsset
+itxn_next
+pushint 4
+itxn_field TypeEnum
+global CurrentApplicationAddress
+itxn_field AssetReceiver
+pushint 0
+itxn_field AssetAmount
+txna Assets 1
+itxn_field XferAsset
+itxn_next
+pushint 4
+itxn_field TypeEnum
+global CurrentApplicationAddress
+itxn_field AssetReceiver
+pushint 0
+itxn_field AssetAmount
+txna Assets 2
+itxn_field XferAsset
+itxn_next
+pushint 4
+itxn_field TypeEnum
+global CurrentApplicationAddress
+itxn_field AssetReceiver
+pushint 0
+itxn_field AssetAmount
+txna Assets 3
+itxn_field XferAsset
+itxn_next
+pushint 4
+itxn_field TypeEnum
+global CurrentApplicationAddress
+itxn_field AssetReceiver
+pushint 0
+itxn_field AssetAmount
+txna Assets 4
+itxn_field XferAsset
+itxn_submit
+pushint 1
+return
+label8:
+load 0
+global CreatorAddress
+==
+assert
+pushint 1
+itob
+store 1
+pushint 2
+itob
+store 2
+pushint 0
+itob
+store 3
+txna Assets 0
+store 4
+txna Applications 1
+store 5
+txna Applications 2
+store 6
+txna ApplicationArgs 1
+store 7
+txna ApplicationArgs 2
+store 8
+itxn_begin
+pushint 1
+itxn_field TypeEnum
+txna Accounts 1
+itxn_field Receiver
+pushint 200000
+itxn_field Amount
+itxn_next
+pushint 6
+itxn_field TypeEnum
+load 7
+itxn_field ApprovalProgram
+load 8
+itxn_field ClearStateProgram
+load 4
+itxn_field Assets
+pushint 0
+itxn_field OnCompletion
+load 5
+itxn_field Applications
+load 6
+itxn_field Applications
+pushint 1
+itxn_field GlobalNumUint
+pushbytes 0x38881a71 // 0x38881a71
+itxn_field ApplicationArgs
+load 1
+itxn_field ApplicationArgs
+load 2
+itxn_field ApplicationArgs
+load 3
+itxn_field ApplicationArgs
+pushint 10000
+itxn_field Fee
+itxn_next
+pushint 6
+itxn_field TypeEnum
+pushint 1
+itxn_field OnCompletion
+load 5
+itxn_field ApplicationID
+itxn_submit
+pushint 1
+return
+label9:
+txn GroupIndex
+pushint 1
+-
+store 1
+txn GroupIndex
+store 2
+load 1
+callsub label21
+load 2
+gtxnsa Accounts 1
+pushbytes 0x455343524f575f41444452 // "ESCROW_ADDR"
+app_global_get
+==
+assert
+load 2
+gtxnsa Applications 1
+pushbytes 0x4641524d5f4944 // "FARM_ID"
+app_global_get
+==
+assert
+load 2
+gtxnsa Applications 2
+pushbytes 0x455343524f575f4944 // "ESCROW_ID"
+app_global_get
+==
+assert
+load 2
+gtxnsa Assets 0
+pushbytes 0x4c50 // "LP"
+app_global_get
+==
+assert
+load 1
+gtxns AssetAmount
+store 3
+load 2
+load 3
+callsub label22
+pushint 1
+return
+label10:
+txn GroupIndex
+pushint 2
+-
+store 1
+txn GroupIndex
+pushint 1
+-
+store 2
+txn GroupIndex
+store 3
+load 1
+load 2
+load 3
+callsub label23
+load 3
+gtxnsa Accounts 1
+pushbytes 0x504f4f4c5f41444452 // "POOL_ADDR"
+app_global_get
+==
+assert
+load 3
+gtxnsa Accounts 2
+pushbytes 0x455343524f575f41444452 // "ESCROW_ADDR"
+app_global_get
+==
+assert
+load 3
+gtxnsa Applications 1
+pushbytes 0x504f4f4c5f4944 // "POOL_ID"
+app_global_get
+==
+assert
+load 3
+gtxnsa Applications 2
+pushbytes 0x4641524d5f4944 // "FARM_ID"
+app_global_get
+==
+assert
+load 3
+gtxnsa Applications 3
+pushbytes 0x455343524f575f4944 // "ESCROW_ID"
+app_global_get
+==
+assert
+load 3
+gtxnsa Assets 0
+pushbytes 0x41 // "A"
+app_global_get
+==
+assert
+load 3
+gtxnsa Assets 1
+pushbytes 0x42 // "B"
+app_global_get
+==
+assert
+load 3
+gtxnsa Assets 2
+pushbytes 0x4c50 // "LP"
+app_global_get
+==
+assert
+load 1
+load 2
+load 3
+callsub label24
+pushint 0
+store 4
+global CurrentApplicationAddress
+load 3
+gtxnsa Assets 2
+asset_holding_get AssetBalance
+pop
+store 4
+load 3
+load 4
+callsub label25
+pushint 1
+return
+label11:
+load 0
+global CreatorAddress
+==
+assert
+txna Accounts 1
+pushbytes 0x455343524f575f41444452 // "ESCROW_ADDR"
+app_global_get
+==
+assert
+txna Applications 1
+pushbytes 0x4641524d5f4944 // "FARM_ID"
+app_global_get
+==
+assert
+txna Applications 2
+pushbytes 0x455343524f575f4944 // "ESCROW_ID"
+app_global_get
+==
+assert
+txna Assets 0
+pushbytes 0x4c50 // "LP"
+app_global_get
+==
+assert
+txna ApplicationArgs 1
+btoi
+store 1
+load 1
+callsub label26
+pushint 0
+store 2
+global CurrentApplicationAddress
+txna Assets 0
+asset_holding_get AssetBalance
+pop
+store 2
+itxn_begin
+pushint 4
+itxn_field TypeEnum
+load 0
+itxn_field AssetReceiver
+load 2
+itxn_field AssetAmount
+txna Assets 0
+itxn_field XferAsset
+itxn_submit
+pushint 1
+return
+label12:
+load 0
+global CreatorAddress
+==
+assert
+txna Assets 0
+store 1
+txna Assets 1
+store 2
+txna Assets 2
+store 3
+txna Applications 1
+store 4
+txna Applications 2
+store 5
+pushint 200000
+store 6
+global CurrentApplicationAddress
+balance
+store 7
+pushint 0
+store 8
+load 3
+pushint 0
+==
+bz label27
+pushint 0
+store 8
+b label28
+label27:
+global CurrentApplicationAddress
+txna Assets 2
+asset_holding_get AssetBalance
+pop
+store 8
+label28:
+pushbytes 0x01 // 0x01
+store 9
+pushbytes 0x00 // 0x00
+store 10
+itxn_begin
+pushint 6
+itxn_field TypeEnum
+load 4
+itxn_field ApplicationID
+pushint 0
+itxn_field OnCompletion
+bytec_0 // 0xc3140ae7
+itxn_field ApplicationArgs
+load 9
+itxn_field ApplicationArgs
+load 9
+itxn_field ApplicationArgs
+load 10
+itxn_field ApplicationArgs
+load 10
+itxn_field ApplicationArgs
+load 1
+itxn_field Assets
+txna Accounts 1
+itxn_field Accounts
+load 5
+itxn_field Applications
+pushint 3000
+itxn_field Fee
+itxn_next
+pushint 6
+itxn_field TypeEnum
+load 4
+itxn_field ApplicationID
+pushint 0
+itxn_field OnCompletion
+bytec_1 // 0x4aaea3f2
+itxn_field ApplicationArgs
+load 10
+itxn_field ApplicationArgs
+txna ApplicationArgs 1
+itxn_field ApplicationArgs
+load 2
+itxn_field Assets
+load 3
+itxn_field Assets
+global CurrentApplicationAddress
+itxn_field Accounts
+load 5
+itxn_field Applications
+pushint 3000
+itxn_field Fee
+itxn_submit
+global CurrentApplicationAddress
+balance
+load 7
+-
+store 11
+pushint 0
+store 12
+load 3
+pushint 0
+==
+bz label29
+pushint 0
+store 13
+b label30
+label29:
+global CurrentApplicationAddress
+txna Assets 2
+asset_holding_get AssetBalance
+pop
+store 12
+load 12
+load 8
+-
+store 13
+label30:
+load 3
+pushint 0
+==
+bz label31
+itxn_begin
+pushint 1
+itxn_field TypeEnum
+load 0
+itxn_field Receiver
+load 11
+itxn_field Amount
+itxn_submit
+b label32
+label31:
+itxn_begin
+pushint 1
+itxn_field TypeEnum
+load 0
+itxn_field Receiver
+load 11
+itxn_field Amount
+itxn_next
+pushint 4
+itxn_field TypeEnum
+load 0
+itxn_field AssetReceiver
+load 13
+itxn_field AssetAmount
+txna Assets 2
+itxn_field XferAsset
+itxn_submit
+label32:
+pushint 1
+return
+label13:
+load 0
+pushbytes 0x5241 // "RA"
+app_global_get
+==
+assert
+txna Assets 0
+store 1
+txna Assets 1
+store 2
+txna Assets 2
+store 3
+txna Applications 1
+store 4
+txna Applications 2
+store 5
+pushint 2000000
+store 6
+pushint 0
+store 7
+pushbytes 0x01 // 0x01
+store 8
+pushbytes 0x00 // 0x00
+store 9
+global CurrentApplicationAddress
+balance
+store 10
+load 10
+load 6
+>=
+assert
+pushint 0
+store 11
+load 3
+pushint 0
+==
+bz label33
+pushint 0
+store 11
+b label34
+label33:
+global CurrentApplicationAddress
+txna Assets 2
+asset_holding_get AssetBalance
+pop
+store 11
+label34:
+itxn_begin
+pushint 6
+itxn_field TypeEnum
+load 4
+itxn_field ApplicationID
+pushint 0
+itxn_field OnCompletion
+bytec_0 // 0xc3140ae7
+itxn_field ApplicationArgs
+load 8
+itxn_field ApplicationArgs
+load 8
+itxn_field ApplicationArgs
+load 9
+itxn_field ApplicationArgs
+load 9
+itxn_field ApplicationArgs
+load 1
+itxn_field Assets
+txna Accounts 1
+itxn_field Accounts
+load 5
+itxn_field Applications
+pushint 3000
+itxn_field Fee
+itxn_next
+pushint 6
+itxn_field TypeEnum
+load 4
+itxn_field ApplicationID
+pushint 0
+itxn_field OnCompletion
+bytec_1 // 0x4aaea3f2
+itxn_field ApplicationArgs
+load 9
+itxn_field ApplicationArgs
+txna ApplicationArgs 1
+itxn_field ApplicationArgs
+load 2
+itxn_field Assets
+load 3
+itxn_field Assets
+global CurrentApplicationAddress
+itxn_field Accounts
+pushint 3000
+itxn_field Fee
+itxn_submit
+pushint 0
+store 12
+load 3
+pushint 0
+==
+bz label35
+pushint 0
+store 13
+b label36
+label35:
+global CurrentApplicationAddress
+txna Assets 2
+asset_holding_get AssetBalance
+pop
+store 12
+load 12
+load 11
+-
+store 13
+label36:
+load 13
+pushint 0
+!=
+bz label37
+pushint 170000
+store 7
+b label38
+label37:
+pushint 85000
+store 7
+label38:
+global CurrentApplicationAddress
+balance
+pushint 6000
++
+load 10
+-
+load 7
++
+store 14
+load 3
+pushint 0
+==
+bz label39
+itxn_begin
+pushint 1
+itxn_field TypeEnum
+load 0
+itxn_field Receiver
+load 14
+itxn_field Amount
+itxn_submit
+b label40
+label39:
+itxn_begin
+pushint 1
+itxn_field TypeEnum
+load 0
+itxn_field Receiver
+load 14
+itxn_field Amount
+itxn_next
+pushint 4
+itxn_field TypeEnum
+load 0
+itxn_field AssetReceiver
+load 13
+itxn_field AssetAmount
+txna Assets 2
+itxn_field XferAsset
+itxn_submit
+label40:
+pushint 1
+return
+label16:
+load 0
+global CreatorAddress
+==
+assert
+txna Accounts 1
+txna Assets 0
+asset_holding_get AssetBalance
+pop
+store 1
+load 1
+pushint 0
+==
+assert
+txna Accounts 2
+store 2
+itxn_begin
+pushint 4
+itxn_field TypeEnum
+global CurrentApplicationAddress
+itxn_field AssetReceiver
+pushint 0
+itxn_field AssetAmount
+txna Assets 1
+itxn_field XferAsset
+load 2
+itxn_field AssetCloseTo
+itxn_submit
+pushint 1
+return
+label17:
+load 0
+global CreatorAddress
+==
+assert
+txna Accounts 1
+txna Assets 0
+asset_holding_get AssetBalance
+pop
+store 1
+load 1
+pushint 0
+==
+assert
+txna Accounts 2
+store 2
+txna Accounts 3
+store 3
+txna Accounts 4
+store 4
+pushint 585500
+store 5
+txna Assets 1
+pushint 0
+==
+bz label41
+itxn_begin
+pushint 4
+itxn_field TypeEnum
+global CurrentApplicationAddress
+itxn_field AssetReceiver
+pushint 0
+itxn_field AssetAmount
+txna Assets 0
+itxn_field XferAsset
+load 3
+itxn_field AssetCloseTo
+itxn_next
+pushint 4
+itxn_field TypeEnum
+global CurrentApplicationAddress
+itxn_field AssetReceiver
+pushint 0
+itxn_field AssetAmount
+txna Assets 2
+itxn_field XferAsset
+load 4
+itxn_field AssetCloseTo
+itxn_submit
+b label42
+label41:
+itxn_begin
+pushint 4
+itxn_field TypeEnum
+global CurrentApplicationAddress
+itxn_field AssetReceiver
+pushint 0
+itxn_field AssetAmount
+txna Assets 0
+itxn_field XferAsset
+load 4
+itxn_field AssetCloseTo
+itxn_next
+pushint 4
+itxn_field TypeEnum
+global CurrentApplicationAddress
+itxn_field AssetReceiver
+pushint 0
+itxn_field AssetAmount
+txna Assets 1
+itxn_field XferAsset
+load 2
+itxn_field AssetCloseTo
+itxn_next
+pushint 4
+itxn_field TypeEnum
+global CurrentApplicationAddress
+itxn_field AssetReceiver
+pushint 0
+itxn_field AssetAmount
+txna Assets 2
+itxn_field XferAsset
+load 3
+itxn_field AssetCloseTo
+itxn_submit
+label42:
+global CurrentApplicationAddress
+balance
+load 5
+-
+store 6
+load 6
+pushint 0
+>
+assert
+itxn_begin
+pushint 1
+itxn_field TypeEnum
+load 0
+itxn_field Receiver
+load 6
+itxn_field Amount
+itxn_submit
+pushint 1
+return
+label14:
+txna ApplicationArgs 1
+btoi
+store 1
+load 0
+global CreatorAddress
+==
+assert
+itxn_begin
+pushint 1
+itxn_field TypeEnum
+load 0
+itxn_field Receiver
+load 1
+itxn_field Amount
+itxn_submit
+pushint 1
+return
+label15:
+txna ApplicationArgs 1
+btoi
+store 1
+load 0
+global CreatorAddress
+==
+assert
+itxn_begin
+pushint 4
+itxn_field TypeEnum
+load 0
+itxn_field AssetReceiver
+load 1
+itxn_field AssetAmount
+txna Assets 0
+itxn_field XferAsset
+itxn_submit
+pushint 1
+return
+label20:
+load 0
+global CreatorAddress
+==
+assert
+itxn_begin
+pushint 4
+itxn_field TypeEnum
+global CurrentApplicationAddress
+itxn_field AssetReceiver
+pushint 0
+itxn_field AssetAmount
+txna Assets 0
+itxn_field XferAsset
+itxn_submit
+pushint 1
+return
+label18:
+load 0
+global CreatorAddress
+==
+assert
+pushbytes 0x434f4d504f554e44494e475f504552494f44 // "COMPOUNDING_PERIOD"
+txna ApplicationArgs 1
+app_global_put
+pushint 1
+return
+label19:
+load 0
+global CreatorAddress
+==
+assert
+txna Applications 1
+pushbytes 0x455343524f575f4944 // "ESCROW_ID"
+app_global_get
+==
+assert
+itxn_begin
+pushint 6
+itxn_field TypeEnum
+txna Applications 1
+itxn_field ApplicationID
+pushint 0
+itxn_field OnCompletion
+pushbytes 0x9be4281b // 0x9be4281b
+itxn_field ApplicationArgs
+txna ApplicationArgs 1
+itxn_field ApplicationArgs
+txna ApplicationArgs 2
+itxn_field ApplicationArgs
+txna Accounts 1
+itxn_field Accounts
+pushint 3000
+itxn_field Fee
+itxn_submit
+pushint 1
+return
+label23:
+store 15
+store 16
+store 17
+load 17
+gtxns TypeEnum
+pushint 4
+==
+assert
+load 17
+gtxns AssetReceiver
+global CurrentApplicationAddress
+==
+assert
+load 17
+gtxns RekeyTo
+global ZeroAddress
+==
+assert
+load 17
+gtxns AssetCloseTo
+global ZeroAddress
+==
+assert
+load 16
+gtxns TypeEnum
+pushint 4
+==
+assert
+load 16
+gtxns AssetReceiver
+global CurrentApplicationAddress
+==
+assert
+load 16
+gtxns RekeyTo
+global ZeroAddress
+==
+assert
+load 16
+gtxns AssetCloseTo
+global ZeroAddress
+==
+assert
+retsub
+label21:
+store 18
+load 18
+gtxns TypeEnum
+pushint 4
+==
+assert
+load 18
+gtxns AssetReceiver
+global CurrentApplicationAddress
+==
+assert
+load 18
+gtxns RekeyTo
+global ZeroAddress
+==
+assert
+load 18
+gtxns AssetCloseTo
+global ZeroAddress
+==
+assert
+retsub
+label24:
+store 19
+store 20
+store 21
+pushbytes 0x4144444c4951 // "ADDLIQ"
+store 22
+pushint 0
+itob
+store 23
+itxn_begin
+pushint 4
+itxn_field TypeEnum
+load 19
+gtxnsa Accounts 1
+itxn_field AssetReceiver
+load 21
+gtxns AssetAmount
+itxn_field AssetAmount
+load 19
+gtxnsa Assets 0
+itxn_field XferAsset
+itxn_next
+pushint 4
+itxn_field TypeEnum
+load 19
+gtxnsa Accounts 1
+itxn_field AssetReceiver
+load 20
+gtxns AssetAmount
+itxn_field AssetAmount
+load 19
+gtxnsa Assets 1
+itxn_field XferAsset
+itxn_next
+pushint 6
+itxn_field TypeEnum
+load 19
+gtxnsa Applications 1
+itxn_field ApplicationID
+pushint 0
+itxn_field OnCompletion
+load 22
+itxn_field ApplicationArgs
+load 23
+itxn_field ApplicationArgs
+load 19
+gtxnsa Assets 0
+itxn_field Assets
+load 19
+gtxnsa Assets 1
+itxn_field Assets
+load 19
+gtxnsa Assets 2
+itxn_field Assets
+pushint 10000
+itxn_field Fee
+itxn_submit
+retsub
+label25:
+store 24
+store 25
+pushbytes 0x01 // 0x01
+store 26
+pushbytes 0x00 // 0x00
+store 27
+itxn_begin
+pushint 4
+itxn_field TypeEnum
+load 25
+gtxnsa Accounts 2
+itxn_field AssetReceiver
+load 24
+itxn_field AssetAmount
+load 25
+gtxnsa Assets 2
+itxn_field XferAsset
+itxn_next
+pushint 6
+itxn_field TypeEnum
+load 25
+gtxnsa Applications 2
+itxn_field ApplicationID
+pushint 0
+itxn_field OnCompletion
+bytec_0 // 0xc3140ae7
+itxn_field ApplicationArgs
+load 26
+itxn_field ApplicationArgs
+load 26
+itxn_field ApplicationArgs
+load 27
+itxn_field ApplicationArgs
+load 27
+itxn_field ApplicationArgs
+load 25
+gtxnsa Applications 3
+itxn_field Applications
+load 25
+gtxnsa Assets 2
+itxn_field Assets
+load 25
+gtxnsa Accounts 2
+itxn_field Accounts
+pushint 3000
+itxn_field Fee
+itxn_submit
+retsub
+label22:
+store 28
+store 29
+pushbytes 0x01 // 0x01
+store 30
+pushbytes 0x00 // 0x00
+store 31
+itxn_begin
+pushint 4
+itxn_field TypeEnum
+load 29
+gtxnsa Accounts 1
+itxn_field AssetReceiver
+load 28
+itxn_field AssetAmount
+load 29
+gtxnsa Assets 0
+itxn_field XferAsset
+itxn_next
+pushint 6
+itxn_field TypeEnum
+load 29
+gtxnsa Applications 1
+itxn_field ApplicationID
+pushint 0
+itxn_field OnCompletion
+bytec_0 // 0xc3140ae7
+itxn_field ApplicationArgs
+load 30
+itxn_field ApplicationArgs
+load 30
+itxn_field ApplicationArgs
+load 31
+itxn_field ApplicationArgs
+load 31
+itxn_field ApplicationArgs
+load 29
+gtxnsa Applications 2
+itxn_field Applications
+load 29
+gtxnsa Assets 0
+itxn_field Assets
+load 29
+gtxnsa Accounts 1
+itxn_field Accounts
+pushint 3000
+itxn_field Fee
+itxn_submit
+retsub
+label26:
+store 32
+pushbytes 0x01 // 0x01
+store 33
+load 32
+itob
+store 34
+pushbytes 0x00 // 0x00
+store 35
+itxn_begin
+pushint 6
+itxn_field TypeEnum
+txna Applications 2
+itxn_field ApplicationID
+pushint 0
+itxn_field OnCompletion
+pushbytes 0x78822cf0 // 0x78822cf0
+itxn_field ApplicationArgs
+load 35
+itxn_field ApplicationArgs
+load 34
+itxn_field ApplicationArgs
+load 33
+itxn_field ApplicationArgs
+txna Assets 0
+itxn_field Assets
+txna Applications 1
+itxn_field Applications
+pushint 3000
+itxn_field Fee
+itxn_submit
+retsub

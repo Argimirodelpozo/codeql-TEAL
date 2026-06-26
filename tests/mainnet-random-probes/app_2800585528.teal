@@ -1,0 +1,2182 @@
+#pragma version 11
+intcblock 0 1 6 1000000 4096
+bytecblock 0x151f7c75 0x7374617465 0x76616c5f6f776e6572 0x64 0x636e745f64656c 0x64656c5f6170705f6c697374 0x54 0x50 0x636e745f617361 0x53 0x57 0x76616c5f6d616e61676572 0x02 0x6173615f 0x6e6f74696365626f6172645f6170705f6964 0x74635f736861323536 0x47 0x636e745f64656c5f6d6178 0x746f74616c5f616c676f5f6561726e6564 0x746f74616c5f616c676f5f666565735f67656e657261746564 0x01 0x03 0x06 0x05 0x0000000000000000
+txn ApplicationID
+bnz label1
+callsub label2
+label1:
+callsub label3
+return
+label2:
+proto 0 0
+bytec 14 // "noticeboard_app_id"
+intc_0 // 0
+app_global_put
+pushint 32
+bzero
+bytec 15 // "tc_sha256"
+dig 1
+app_global_put
+pushint 40
+bzero
+bytec 6 // "T"
+dig 1
+app_global_put
+bytec 7 // "P"
+swap
+app_global_put
+pushint 16
+bzero
+bytec 9 // "S"
+dig 1
+app_global_put
+bytec 16 // "G"
+uncover 2
+app_global_put
+bytec 10 // "W"
+swap
+app_global_put
+bytec_2 // "val_owner"
+global ZeroAddress
+app_global_put
+bytec 11 // "val_manager"
+global ZeroAddress
+app_global_put
+pushint 120
+bzero
+pushbytes 0x56 // "V"
+swap
+app_global_put
+bytec_1 // "state"
+pushbytes 0x00 // 0x00
+app_global_put
+bytec 4 // "cnt_del"
+intc_0 // 0
+app_global_put
+bytec 17 // "cnt_del_max"
+intc_0 // 0
+app_global_put
+pushint 112
+bzero
+bytec 5 // "del_app_list"
+swap
+app_global_put
+bytec 18 // "total_algo_earned"
+intc_0 // 0
+app_global_put
+bytec 19 // "total_algo_fees_generated"
+intc_0 // 0
+app_global_put
+bytec 8 // "cnt_asa"
+intc_0 // 0
+app_global_put
+retsub
+label3:
+proto 0 1
+txn NumAppArgs
+bz label4
+pushbytess 0x734ecd77 0x93f04fe6 0x8039e324 0xa693de02 0xef423551 0xad036de5 0x8bb07b5f 0x30a38659 0xe0a4b723 0x9d64c6e9 0xdbe1605f 0xc47f3b93 0x800fd2a1 0xe03402ed 0x4dd09b26 0x39908de9 0x49dfee1a 0xf9b68e32 0xf811fcb7 0xace03631 0x458ccb0c 0xc68d2db5 0x0bf7d855 0x169361b9 0x3172ca9d 0x22680863
+txna ApplicationArgs 0
+match label5 label6 label7 label8 label9 label10 label11 label12 label13 label14 label15 label16 label17 label18 label19 label20 label21 label22 label23 label24 label25 label26 label27 label28 label29 label30
+intc_0 // 0
+retsub
+label5:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+!
+assert
+txna ApplicationArgs 1
+callsub label31
+bytec_0 // 0x151f7c75
+swap
+concat
+log
+intc_1 // 1
+retsub
+label6:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+assert
+txna ApplicationArgs 1
+txna ApplicationArgs 2
+txna ApplicationArgs 3
+txna ApplicationArgs 4
+btoi
+callsub label32
+intc_1 // 1
+retsub
+label7:
+txn OnCompletion
+pushint 5
+==
+assert
+txn ApplicationID
+assert
+txna ApplicationArgs 1
+callsub label33
+intc_1 // 1
+retsub
+label8:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+assert
+txna ApplicationArgs 1
+txna ApplicationArgs 2
+callsub label34
+intc_1 // 1
+retsub
+label9:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+assert
+txna ApplicationArgs 1
+txna ApplicationArgs 2
+callsub label35
+intc_1 // 1
+retsub
+label10:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+assert
+txna ApplicationArgs 1
+txna ApplicationArgs 2
+txna ApplicationArgs 3
+txna ApplicationArgs 4
+txna ApplicationArgs 5
+txna ApplicationArgs 6
+txna ApplicationArgs 7
+txn GroupIndex
+intc_1 // 1
+-
+dup
+gtxns TypeEnum
+intc_1 // 1
+==
+assert
+callsub label36
+intc_1 // 1
+retsub
+label11:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+assert
+txna ApplicationArgs 1
+txna ApplicationArgs 2
+btoi
+callsub label37
+bytec_0 // 0x151f7c75
+swap
+concat
+log
+intc_1 // 1
+retsub
+label12:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+assert
+txna ApplicationArgs 1
+txna ApplicationArgs 2
+btoi
+callsub label38
+intc_1 // 1
+retsub
+label13:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+assert
+txna ApplicationArgs 1
+txna ApplicationArgs 2
+btoi
+txn GroupIndex
+intc_1 // 1
+-
+dup
+gtxns TypeEnum
+intc_1 // 1
+==
+assert
+callsub label39
+intc_1 // 1
+retsub
+label14:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+assert
+txna ApplicationArgs 1
+txna ApplicationArgs 2
+btoi
+txna ApplicationArgs 3
+extract 2 0
+callsub label40
+intc_1 // 1
+retsub
+label15:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+assert
+txna ApplicationArgs 1
+callsub label41
+intc_1 // 1
+retsub
+label16:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+assert
+txna ApplicationArgs 1
+txna ApplicationArgs 2
+txna ApplicationArgs 3
+btoi
+txna ApplicationArgs 4
+btoi
+txna ApplicationArgs 5
+txna ApplicationArgs 6
+txn GroupIndex
+pushint 2
+-
+dup
+gtxns TypeEnum
+intc_1 // 1
+==
+assert
+txn GroupIndex
+intc_1 // 1
+-
+callsub label42
+bytec_0 // 0x151f7c75
+swap
+concat
+log
+intc_1 // 1
+retsub
+label17:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+assert
+txna ApplicationArgs 1
+txna ApplicationArgs 2
+btoi
+txnas Applications
+callsub label43
+intc_1 // 1
+retsub
+label18:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+assert
+txna ApplicationArgs 1
+btoi
+txnas Applications
+callsub label44
+bytec_0 // 0x151f7c75
+swap
+concat
+log
+intc_1 // 1
+retsub
+label19:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+assert
+txna ApplicationArgs 1
+btoi
+txnas Applications
+callsub label45
+bytec_0 // 0x151f7c75
+swap
+concat
+log
+intc_1 // 1
+retsub
+label20:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+assert
+txna ApplicationArgs 1
+txna ApplicationArgs 2
+btoi
+txnas Applications
+txna ApplicationArgs 3
+callsub label46
+bytec_0 // 0x151f7c75
+swap
+concat
+log
+intc_1 // 1
+retsub
+label21:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+assert
+txna ApplicationArgs 1
+btoi
+txnas Applications
+callsub label47
+bytec_0 // 0x151f7c75
+swap
+concat
+log
+intc_1 // 1
+retsub
+label22:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+assert
+txna ApplicationArgs 1
+btoi
+txnas Applications
+callsub label48
+bytec_0 // 0x151f7c75
+swap
+concat
+log
+intc_1 // 1
+retsub
+label23:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+assert
+txna ApplicationArgs 1
+btoi
+txnas Applications
+callsub label49
+bytec_0 // 0x151f7c75
+swap
+concat
+log
+intc_1 // 1
+retsub
+label24:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+assert
+txna ApplicationArgs 1
+btoi
+txnas Applications
+callsub label50
+bytec_0 // 0x151f7c75
+swap
+concat
+log
+intc_1 // 1
+retsub
+label25:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+assert
+txna ApplicationArgs 1
+btoi
+txnas Applications
+callsub label51
+bytec_0 // 0x151f7c75
+swap
+concat
+log
+intc_1 // 1
+retsub
+label26:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+assert
+txna ApplicationArgs 1
+txna ApplicationArgs 2
+btoi
+txnas Applications
+callsub label52
+intc_1 // 1
+retsub
+label27:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+assert
+txna ApplicationArgs 1
+txna ApplicationArgs 2
+btoi
+txnas Applications
+callsub label53
+bytec_0 // 0x151f7c75
+swap
+concat
+log
+intc_1 // 1
+retsub
+label28:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+assert
+txna ApplicationArgs 1
+btoi
+txna ApplicationArgs 2
+btoi
+txna ApplicationArgs 3
+btoi
+txnas Applications
+callsub label54
+bytec_0 // 0x151f7c75
+swap
+concat
+log
+intc_1 // 1
+retsub
+label29:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+assert
+intc_1 // 1
+retsub
+label30:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+assert
+txna ApplicationArgs 1
+btoi
+callsub label55
+bytec_0 // 0x151f7c75
+swap
+concat
+log
+intc_1 // 1
+retsub
+label4:
+intc_0 // 0
+retsub
+label31:
+proto 1 1
+bytec 14 // "noticeboard_app_id"
+global CallerApplicationID
+app_global_put
+bytec_2 // "val_owner"
+frame_dig -1
+app_global_put
+bytec_1 // "state"
+bytec 20 // 0x01
+app_global_put
+global CurrentApplicationID
+itob
+retsub
+label32:
+proto 4 0
+txn Sender
+global CreatorAddress
+==
+assert
+intc_0 // 0
+bytec_1 // "state"
+app_global_get_ex
+assert
+bytec 20 // 0x01
+!=
+bz label56
+intc_0 // 0
+bytec_1 // "state"
+app_global_get_ex
+assert
+bytec 12 // 0x02
+!=
+bz label56
+intc_0 // 0
+bytec_1 // "state"
+app_global_get_ex
+assert
+bytec 21 // 0x03
+!=
+bz label56
+intc_1 // 1
+b label57
+label56:
+intc_0 // 0
+label57:
+assert
+intc_0 // 0
+bytec_2 // "val_owner"
+app_global_get_ex
+assert
+frame_dig -4
+==
+assert
+bytec 11 // "val_manager"
+frame_dig -3
+app_global_put
+frame_dig -1
+pushint 14
+<=
+assert
+bytec 17 // "cnt_del_max"
+frame_dig -1
+app_global_put
+frame_dig -2
+intc_0 // 0
+getbit
+bz label58
+bytec_1 // "state"
+bytec 22 // 0x06
+app_global_put
+b label59
+label58:
+bytec_1 // "state"
+pushbytes 0x07 // 0x07
+app_global_put
+label59:
+retsub
+label33:
+proto 1 0
+txn Sender
+global CreatorAddress
+==
+assert
+intc_0 // 0
+bytec_2 // "val_owner"
+app_global_get_ex
+assert
+frame_dig -1
+==
+assert
+intc_0 // 0
+bytec 4 // "cnt_del"
+app_global_get_ex
+assert
+!
+assert
+intc_0 // 0
+bytec 8 // "cnt_asa"
+app_global_get_ex
+assert
+!
+assert
+global CurrentApplicationAddress
+acct_params_get AcctBalance
+assert
+global CurrentApplicationAddress
+acct_params_get AcctMinBalance
+assert
+-
+!
+assert
+bytec_3 // "d"
+box_del
+assert
+intc_0 // 0
+bytec_2 // "val_owner"
+app_global_get_ex
+assert
+itxn_begin
+dup
+itxn_field CloseRemainderTo
+intc_0 // 0
+itxn_field Amount
+itxn_field Receiver
+intc_1 // 1
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+retsub
+label34:
+proto 2 0
+txn Sender
+global CreatorAddress
+==
+assert
+intc_0 // 0
+bytec_1 // "state"
+app_global_get_ex
+assert
+bytec 23 // 0x05
+==
+bnz label60
+intc_0 // 0
+bytec_1 // "state"
+app_global_get_ex
+assert
+bytec 22 // 0x06
+==
+bz label61
+label60:
+intc_1 // 1
+b label62
+label61:
+intc_0 // 0
+label62:
+assert
+intc_0 // 0
+bytec 11 // "val_manager"
+app_global_get_ex
+assert
+frame_dig -2
+==
+assert
+frame_dig -1
+intc_0 // 0
+getbit
+bz label63
+bytec_1 // "state"
+bytec 23 // 0x05
+app_global_put
+b label64
+label63:
+bytec_1 // "state"
+bytec 22 // 0x06
+app_global_put
+label64:
+retsub
+label35:
+proto 2 0
+txn Sender
+global CreatorAddress
+==
+assert
+intc_0 // 0
+bytec_2 // "val_owner"
+app_global_get_ex
+assert
+frame_dig -2
+==
+assert
+pushbytes 0x56 // "V"
+frame_dig -1
+app_global_put
+retsub
+label36:
+proto 8 0
+intc_0 // 0
+txn Sender
+global CreatorAddress
+==
+assert
+intc_0 // 0
+bytec_2 // "val_owner"
+app_global_get_ex
+assert
+frame_dig -8
+==
+assert
+global CurrentApplicationAddress
+acct_params_get AcctMinBalance
+assert
+frame_dig -6
+extract 16 8
+frame_dig -6
+extract 0 8
+btoi
+frame_dig -6
+extract 8 8
+btoi
++
+itob
+dig 1
+b<
+assert
+frame_dig -6
+extract 24 8
+b<=
+assert
+frame_dig -4
+extract 8 8
+intc_3 // 1000000
+itob
+b<=
+assert
+frame_dig -6
+extract 32 8
+global Round
+itob
+b>
+assert
+bytec 15 // "tc_sha256"
+frame_dig -7
+app_global_put
+bytec 6 // "T"
+frame_dig -6
+app_global_put
+bytec 7 // "P"
+frame_dig -5
+app_global_put
+bytec 9 // "S"
+frame_dig -4
+app_global_put
+bytec 16 // "G"
+frame_dig -3
+app_global_put
+bytec 10 // "W"
+frame_dig -2
+app_global_put
+frame_dig -5
+extract 32 8
+btoi
+dup
+bz label65
+frame_dig 2
+itob
+bytec 13 // "asa_"
+swap
+concat
+dup
+frame_bury 0
+box_len
+bury 1
+bnz label65
+itxn_begin
+global CurrentApplicationAddress
+intc_0 // 0
+itxn_field AssetAmount
+itxn_field AssetReceiver
+frame_dig 2
+itxn_field XferAsset
+pushint 4
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+frame_dig 0
+pushbytes 0x00000000000000000000000000000000 // 0x00000000000000000000000000000000
+box_put
+intc_0 // 0
+bytec 8 // "cnt_asa"
+app_global_get_ex
+assert
+intc_1 // 1
++
+bytec 8 // "cnt_asa"
+swap
+app_global_put
+label65:
+frame_dig -1
+gtxns Receiver
+global CurrentApplicationAddress
+==
+assert
+global CurrentApplicationAddress
+acct_params_get AcctMinBalance
+assert
+frame_dig 1
+-
+frame_dig -1
+gtxns Amount
+==
+assert
+intc_0 // 0
+bytec_1 // "state"
+app_global_get_ex
+assert
+bytec 21 // 0x03
+==
+bz label66
+bytec_1 // "state"
+pushbytes 0x04 // 0x04
+app_global_put
+label66:
+retsub
+label37:
+proto 2 1
+txn Sender
+global CreatorAddress
+==
+assert
+intc_0 // 0
+bytec_2 // "val_owner"
+app_global_get_ex
+assert
+frame_dig -2
+==
+assert
+frame_dig -1
+bz label67
+global CurrentApplicationAddress
+frame_dig -1
+asset_holding_get AssetBalance
+swap
+dup
+uncover 2
+assert
+itxn_begin
+itxn_field AssetAmount
+frame_dig -2
+itxn_field AssetReceiver
+frame_dig -1
+itxn_field XferAsset
+pushint 4
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+b label68
+label67:
+global CurrentApplicationAddress
+acct_params_get AcctBalance
+assert
+global CurrentApplicationAddress
+acct_params_get AcctMinBalance
+assert
+-
+dup
+itxn_begin
+itxn_field Amount
+frame_dig -2
+itxn_field Receiver
+intc_1 // 1
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+label68:
+itob
+retsub
+label38:
+proto 2 0
+txn Sender
+global CreatorAddress
+==
+assert
+intc_0 // 0
+bytec_2 // "val_owner"
+app_global_get_ex
+assert
+frame_dig -2
+==
+assert
+intc_0 // 0
+bytec 4 // "cnt_del"
+app_global_get_ex
+assert
+!
+assert
+frame_dig -1
+itob
+bytec 13 // "asa_"
+swap
+concat
+dup
+box_len
+bury 1
+assert
+box_del
+assert
+intc_0 // 0
+bytec 8 // "cnt_asa"
+app_global_get_ex
+assert
+intc_1 // 1
+-
+bytec 8 // "cnt_asa"
+swap
+app_global_put
+itxn_begin
+frame_dig -2
+itxn_field AssetCloseTo
+intc_0 // 0
+itxn_field AssetAmount
+frame_dig -2
+itxn_field AssetReceiver
+frame_dig -1
+itxn_field XferAsset
+pushint 4
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+retsub
+label39:
+proto 3 0
+txn Sender
+global CreatorAddress
+==
+assert
+intc_0 // 0
+bytec_2 // "val_owner"
+app_global_get_ex
+assert
+frame_dig -3
+==
+assert
+global CurrentApplicationAddress
+acct_params_get AcctMinBalance
+assert
+intc_0 // 0
+bytec_1 // "state"
+app_global_get_ex
+assert
+bytec 20 // 0x01
+==
+assert
+bytec_3 // "d"
+frame_dig -2
+box_create
+assert
+bytec_1 // "state"
+bytec 12 // 0x02
+app_global_put
+global CurrentApplicationAddress
+acct_params_get AcctMinBalance
+assert
+swap
+-
+frame_dig -1
+gtxns Receiver
+global CurrentApplicationAddress
+==
+assert
+frame_dig -1
+gtxns Amount
+==
+assert
+retsub
+label40:
+proto 3 0
+txn Sender
+global CreatorAddress
+==
+assert
+intc_0 // 0
+bytec_2 // "val_owner"
+app_global_get_ex
+assert
+frame_dig -3
+==
+assert
+intc_0 // 0
+bytec_1 // "state"
+app_global_get_ex
+assert
+bytec 12 // 0x02
+==
+assert
+bytec_3 // "d"
+frame_dig -2
+frame_dig -1
+box_replace
+retsub
+label41:
+proto 1 0
+txn Sender
+global CreatorAddress
+==
+assert
+intc_0 // 0
+bytec_2 // "val_owner"
+app_global_get_ex
+assert
+frame_dig -1
+==
+assert
+intc_0 // 0
+bytec_1 // "state"
+app_global_get_ex
+assert
+bytec 12 // 0x02
+==
+assert
+bytec_1 // "state"
+bytec 21 // 0x03
+app_global_put
+retsub
+label42:
+proto 8 1
+intc_0 // 0
+dupn 4
+pushbytes 0x // ""
+dupn 15
+txn Sender
+global CreatorAddress
+==
+assert
+intc_0 // 0
+bytec_1 // "state"
+app_global_get_ex
+assert
+bytec 23 // 0x05
+==
+assert
+global CurrentApplicationAddress
+acct_params_get AcctMinBalance
+assert
+bytec_3 // "d"
+box_len
+assert
+intc 4 // 4096
+>
+bz label69
+bytec_3 // "d"
+intc_0 // 0
+intc 4 // 4096
+box_extract
+frame_bury 0
+bytec_3 // "d"
+box_len
+assert
+intc 4 // 4096
+-
+bytec_3 // "d"
+intc 4 // 4096
+uncover 2
+box_extract
+b label70
+label69:
+bytec_3 // "d"
+box_len
+assert
+bytec_3 // "d"
+intc_0 // 0
+uncover 2
+box_extract
+frame_bury 0
+pushbytes 0x // ""
+label70:
+itxn_begin
+intc_0 // 0
+bytec 14 // "noticeboard_app_id"
+app_global_get_ex
+assert
+itob
+intc_1 // 1
+itxn_field ExtraProgramPages
+pushint 9
+itxn_field GlobalNumByteSlice
+pushint 12
+itxn_field GlobalNumUint
+pushbytes 0x0b810143 // 0x0b810143
+itxn_field ClearStateProgramPages
+frame_dig 0
+itxn_field ApprovalProgramPages
+swap
+itxn_field ApprovalProgramPages
+pushbytes 0xd1beccce // 0xd1beccce
+itxn_field ApplicationArgs
+frame_dig -8
+itxn_field ApplicationArgs
+frame_dig -7
+itxn_field ApplicationArgs
+itxn_field ApplicationArgs
+intc_2 // 6
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+itxn LastLog
+dup
+extract 4 0
+swap
+extract 0 4
+bytec_0 // 0x151f7c75
+==
+assert
+btoi
+dup
+frame_bury 5
+global MinBalance
+global AssetOptInMinBalance
++
+dup
+frame_bury 6
+itxn_begin
+swap
+app_params_get AppAddress
+assert
+itxn_field Receiver
+itxn_field Amount
+intc_1 // 1
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+intc_0 // 0
+bytec 6 // "T"
+app_global_get_ex
+assert
+extract 16 8
+frame_dig -6
+itob
+dup
+frame_bury 2
+swap
+dig 1
+b<=
+assert
+intc_0 // 0
+bytec 6 // "T"
+app_global_get_ex
+assert
+extract 24 8
+b<=
+assert
+intc_0 // 0
+bytec 6 // "T"
+app_global_get_ex
+assert
+extract 32 8
+global Round
+frame_dig -6
++
+itob
+b>=
+assert
+frame_dig -5
+intc_3 // 1000000
+/
+intc_0 // 0
+bytec 7 // "P"
+app_global_get_ex
+assert
+extract 16 8
+btoi
+mulw
+intc_3 // 1000000
+divw
+intc_0 // 0
+bytec 7 // "P"
+app_global_get_ex
+assert
+extract 8 8
+btoi
+swap
+callsub label71
+frame_bury 7
+intc_0 // 0
+bytec 7 // "P"
+app_global_get_ex
+assert
+extract 24 8
+btoi
+frame_bury 9
+frame_dig -4
+global ZeroAddress
+!=
+bz label72
+frame_dig -3
+extract 8 8
+btoi
+frame_dig 7
+mulw
+intc_3 // 1000000
+divw
+frame_bury 8
+frame_dig -3
+extract 0 8
+btoi
+frame_dig 9
+mulw
+intc_3 // 1000000
+divw
+b label73
+label72:
+intc_0 // 0
+frame_bury 8
+intc_0 // 0
+label73:
+intc_0 // 0
+bytec 7 // "P"
+app_global_get_ex
+assert
+extract 0 8
+frame_dig 7
+itob
+frame_dig 9
+itob
+intc_0 // 0
+bytec 7 // "P"
+app_global_get_ex
+assert
+extract 32 8
+frame_dig 8
+itob
+uncover 5
+itob
+intc_0 // 0
+bytec 6 // "T"
+app_global_get_ex
+assert
+extract 0 8
+intc_0 // 0
+bytec 6 // "T"
+app_global_get_ex
+assert
+extract 8 8
+uncover 7
+uncover 7
+concat
+uncover 6
+concat
+uncover 5
+concat
+frame_dig -4
+concat
+uncover 4
+concat
+uncover 3
+concat
+uncover 2
+concat
+swap
+concat
+frame_bury 1
+intc_0 // 0
+bytec 9 // "S"
+app_global_get_ex
+assert
+extract 0 8
+btoi
+dup
+frame_bury 10
+frame_dig -5
+dig 1
+<=
+assert
+intc_0 // 0
+bytec 9 // "S"
+app_global_get_ex
+assert
+extract 8 8
+btoi
+frame_dig -5
+mulw
+intc_3 // 1000000
+divw
+frame_dig -5
++
+dup
+frame_bury 11
+>
+bz label74
+frame_dig 11
+b label75
+label74:
+frame_dig 10
+label75:
+itob
+intc_0 // 0
+bytec 10 // "W"
+app_global_get_ex
+assert
+extract 0 8
+intc_0 // 0
+bytec 10 // "W"
+app_global_get_ex
+assert
+extract 8 8
+intc_0 // 0
+bytec 16 // "G"
+app_global_get_ex
+assert
+extract 0 32
+uncover 3
+uncover 3
+concat
+uncover 2
+concat
+swap
+concat
+itxn_begin
+intc_0 // 0
+bytec 15 // "tc_sha256"
+app_global_get_ex
+assert
+frame_dig 5
+itxn_field ApplicationID
+pushbytes 0x7d3db474 // 0x7d3db474
+itxn_field ApplicationArgs
+itxn_field ApplicationArgs
+frame_dig 1
+itxn_field ApplicationArgs
+itxn_field ApplicationArgs
+frame_dig 2
+itxn_field ApplicationArgs
+intc_2 // 6
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+frame_dig -1
+gtxns TypeEnum
+dup
+frame_bury 12
+intc_1 // 1
+==
+bz label76
+frame_dig -1
+gtxns Receiver
+global CurrentApplicationAddress
+==
+assert
+intc_1 // 1
+frame_bury 19
+frame_dig 5
+app_params_get AppAddress
+assert
+intc_1 // 1
+frame_bury 15
+frame_dig -1
+gtxns Amount
+frame_bury 17
+intc_1 // 1
+frame_bury 13
+intc_0 // 0
+frame_bury 16
+intc_0 // 0
+frame_bury 14
+intc_0 // 0
+swap
+frame_bury 4
+b label77
+label76:
+frame_dig 12
+pushint 4
+==
+assert
+frame_dig -1
+gtxns AssetReceiver
+global CurrentApplicationAddress
+==
+assert
+pushint 4
+frame_bury 19
+frame_dig -1
+gtxns XferAsset
+frame_bury 20
+intc_1 // 1
+frame_bury 16
+frame_dig 5
+app_params_get AppAddress
+assert
+intc_1 // 1
+swap
+frame_dig -1
+gtxns AssetAmount
+frame_bury 18
+intc_1 // 1
+frame_bury 14
+intc_0 // 0
+frame_bury 15
+intc_0 // 0
+frame_bury 13
+frame_bury 3
+label77:
+itxn_begin
+intc_1 // 1
+>=
+bz label78
+frame_dig 3
+itxn_field AssetReceiver
+label78:
+frame_dig 14
+intc_1 // 1
+>=
+bz label79
+frame_dig 18
+itxn_field AssetAmount
+label79:
+frame_dig 16
+intc_1 // 1
+>=
+bz label80
+frame_dig 20
+itxn_field XferAsset
+label80:
+frame_dig 13
+intc_1 // 1
+>=
+bz label81
+frame_dig 17
+itxn_field Amount
+label81:
+frame_dig 15
+intc_1 // 1
+>=
+bz label82
+frame_dig 4
+itxn_field Receiver
+label82:
+frame_dig 19
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_next
+frame_dig 5
+dup
+itxn_field ApplicationID
+pushbytes 0xb47ef9eb // 0xb47ef9eb
+itxn_field ApplicationArgs
+intc_2 // 6
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+dup
+callsub label83
+assert
+intc_0 // 0
+bytec 4 // "cnt_del"
+app_global_get_ex
+assert
+intc_0 // 0
+bytec 17 // "cnt_del_max"
+app_global_get_ex
+assert
+<=
+assert
+global CurrentApplicationAddress
+acct_params_get AcctMinBalance
+assert
+frame_dig 21
+-
+frame_dig 6
++
+frame_dig -2
+gtxns Receiver
+global CurrentApplicationAddress
+==
+assert
+frame_dig -2
+gtxns Amount
+==
+assert
+itob
+frame_bury 0
+retsub
+label71:
+proto 2 1
+frame_dig -2
+frame_dig -1
+<
+bz label84
+frame_dig -1
+b label85
+label84:
+frame_dig -2
+label85:
+retsub
+label83:
+proto 1 1
+pushbytes 0x // ""
+dupn 2
+intc_0 // 0
+dup
+label88:
+frame_dig 4
+pushint 14
+<
+dup
+frame_bury 0
+frame_dig 3
+frame_bury 1
+bz label86
+intc_0 // 0
+bytec 5 // "del_app_list"
+app_global_get_ex
+assert
+frame_dig 4
+pushint 8
+*
+dup
+frame_bury 2
+pushint 8
+extract3
+bytec 24 // 0x0000000000000000
+b==
+bz label87
+frame_dig -1
+itob
+intc_0 // 0
+bytec 5 // "del_app_list"
+app_global_get_ex
+assert
+frame_dig 0
+assert
+frame_dig 2
+uncover 2
+replace3
+bytec 5 // "del_app_list"
+swap
+app_global_put
+intc_1 // 1
+intc_0 // 0
+bytec 4 // "cnt_del"
+app_global_get_ex
+assert
+intc_1 // 1
++
+bytec 4 // "cnt_del"
+swap
+app_global_put
+frame_bury 1
+b label86
+label87:
+frame_dig 4
+intc_1 // 1
++
+frame_bury 4
+b label88
+label86:
+frame_dig 1
+frame_bury 0
+retsub
+label43:
+proto 2 0
+txn Sender
+global CreatorAddress
+==
+assert
+frame_dig -1
+callsub label89
+assert
+itxn_begin
+frame_dig -1
+itxn_field ApplicationID
+pushbytes 0xcaeb1a7b // 0xcaeb1a7b
+itxn_field ApplicationArgs
+frame_dig -2
+itxn_field ApplicationArgs
+intc_2 // 6
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+retsub
+label89:
+proto 1 1
+pushbytes 0x // ""
+intc_0 // 0
+dup
+label92:
+frame_dig 2
+pushint 14
+<
+frame_dig 1
+frame_bury 0
+bz label90
+intc_0 // 0
+bytec 5 // "del_app_list"
+app_global_get_ex
+assert
+frame_dig 2
+pushint 8
+*
+pushint 8
+extract3
+frame_dig -1
+itob
+b==
+bz label91
+intc_1 // 1
+frame_bury 0
+b label90
+label91:
+frame_dig 2
+intc_1 // 1
++
+frame_bury 2
+b label92
+label90:
+retsub
+label44:
+proto 1 1
+txn Sender
+global CreatorAddress
+==
+assert
+frame_dig -1
+callsub label89
+assert
+itxn_begin
+frame_dig -1
+itxn_field ApplicationID
+pushbytes 0x261bd199 // 0x261bd199
+itxn_field ApplicationArgs
+intc_2 // 6
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+itxn LastLog
+dup
+extract 4 0
+swap
+extract 0 4
+bytec_0 // 0x151f7c75
+==
+assert
+frame_dig -1
+callsub label93
+assert
+dup
+extract 0 32
+swap
+extract 32 100
+concat
+retsub
+label93:
+proto 1 1
+pushbytes 0x // ""
+dupn 2
+intc_0 // 0
+dup
+label96:
+frame_dig 4
+pushint 14
+<
+dup
+frame_bury 0
+frame_dig 3
+frame_bury 1
+bz label94
+intc_0 // 0
+bytec 5 // "del_app_list"
+app_global_get_ex
+assert
+frame_dig 4
+pushint 8
+*
+dup
+frame_bury 2
+pushint 8
+extract3
+frame_dig -1
+itob
+b==
+bz label95
+intc_0 // 0
+bytec 5 // "del_app_list"
+app_global_get_ex
+assert
+frame_dig 0
+assert
+frame_dig 2
+bytec 24 // 0x0000000000000000
+replace3
+bytec 5 // "del_app_list"
+swap
+app_global_put
+intc_1 // 1
+intc_0 // 0
+bytec 4 // "cnt_del"
+app_global_get_ex
+assert
+intc_1 // 1
+-
+bytec 4 // "cnt_del"
+swap
+app_global_put
+frame_bury 1
+b label94
+label95:
+frame_dig 4
+intc_1 // 1
++
+frame_bury 4
+b label96
+label94:
+frame_dig 1
+frame_bury 0
+retsub
+label45:
+proto 1 1
+txn Sender
+global CreatorAddress
+==
+assert
+frame_dig -1
+callsub label89
+assert
+itxn_begin
+frame_dig -1
+itxn_field ApplicationID
+pushbytes 0xfe811ae7 // 0xfe811ae7
+itxn_field ApplicationArgs
+intc_2 // 6
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+itxn LastLog
+dup
+extract 4 0
+swap
+extract 0 4
+bytec_0 // 0x151f7c75
+==
+assert
+frame_dig -1
+callsub label93
+assert
+dup
+extract 0 32
+swap
+extract 32 100
+concat
+retsub
+label46:
+proto 3 1
+txn Sender
+global CreatorAddress
+==
+assert
+frame_dig -2
+callsub label89
+assert
+intc_0 // 0
+bytec 11 // "val_manager"
+app_global_get_ex
+assert
+frame_dig -3
+==
+assert
+itxn_begin
+frame_dig -2
+itxn_field ApplicationID
+pushbytes 0x1f3399a8 // 0x1f3399a8
+itxn_field ApplicationArgs
+frame_dig -1
+itxn_field ApplicationArgs
+intc_2 // 6
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+itxn LastLog
+dup
+extract 4 0
+swap
+extract 0 4
+bytec_0 // 0x151f7c75
+==
+assert
+dup
+extract 0 24
+callsub label97
+pop
+dup
+extract 24 32
+swap
+extract 56 100
+concat
+retsub
+label97:
+proto 1 1
+frame_dig -1
+extract 16 8
+btoi
+dup
+bz label98
+frame_dig 0
+itob
+bytec 13 // "asa_"
+swap
+concat
+dup
+box_get
+assert
+extract 0 8
+btoi
+frame_dig -1
+extract 0 8
+btoi
++
+itob
+dig 1
+box_get
+assert
+swap
+replace2 0
+dig 1
+swap
+box_put
+dup
+box_get
+assert
+extract 8 8
+btoi
+frame_dig -1
+extract 8 8
+btoi
++
+itob
+dig 1
+box_get
+assert
+swap
+replace2 8
+box_put
+b label99
+label98:
+intc_0 // 0
+bytec 18 // "total_algo_earned"
+app_global_get_ex
+assert
+frame_dig -1
+extract 0 8
+btoi
++
+bytec 18 // "total_algo_earned"
+swap
+app_global_put
+intc_0 // 0
+bytec 19 // "total_algo_fees_generated"
+app_global_get_ex
+assert
+frame_dig -1
+extract 8 8
+btoi
++
+bytec 19 // "total_algo_fees_generated"
+swap
+app_global_put
+label99:
+frame_dig -1
+swap
+retsub
+label47:
+proto 1 1
+txn Sender
+global CreatorAddress
+==
+assert
+frame_dig -1
+callsub label89
+assert
+itxn_begin
+frame_dig -1
+itxn_field ApplicationID
+pushbytes 0xc1773ee0 // 0xc1773ee0
+itxn_field ApplicationArgs
+intc_2 // 6
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+itxn LastLog
+dup
+extract 4 0
+dup
+uncover 2
+extract 0 4
+bytec_0 // 0x151f7c75
+==
+assert
+dup
+extract 1 24
+callsub label97
+pop
+intc_0 // 0
+getbit
+pushbytes 0x00 // 0x00
+intc_0 // 0
+uncover 2
+setbit
+intc_0 // 0
+getbit
+bz label100
+frame_dig -1
+callsub label93
+assert
+label100:
+frame_dig 0
+swap
+retsub
+label48:
+proto 1 1
+txn Sender
+global CreatorAddress
+==
+assert
+frame_dig -1
+callsub label89
+assert
+itxn_begin
+frame_dig -1
+itxn_field ApplicationID
+pushbytes 0x9516245e // 0x9516245e
+itxn_field ApplicationArgs
+intc_2 // 6
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+itxn LastLog
+dup
+extract 4 0
+swap
+extract 0 4
+bytec_0 // 0x151f7c75
+==
+assert
+frame_dig -1
+callsub label93
+assert
+retsub
+label49:
+proto 1 1
+txn Sender
+global CreatorAddress
+==
+assert
+frame_dig -1
+callsub label89
+assert
+itxn_begin
+frame_dig -1
+itxn_field ApplicationID
+pushbytes 0x9044e21f // 0x9044e21f
+itxn_field ApplicationArgs
+intc_2 // 6
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+itxn LastLog
+dup
+extract 4 0
+swap
+extract 0 4
+bytec_0 // 0x151f7c75
+==
+assert
+dup
+extract 0 24
+callsub label97
+pop
+frame_dig -1
+callsub label93
+assert
+retsub
+label50:
+proto 1 1
+txn Sender
+global CreatorAddress
+==
+assert
+frame_dig -1
+callsub label89
+assert
+itxn_begin
+frame_dig -1
+itxn_field ApplicationID
+pushbytes 0x26f59a46 // 0x26f59a46
+itxn_field ApplicationArgs
+intc_2 // 6
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+itxn LastLog
+dup
+extract 4 0
+swap
+extract 0 4
+bytec_0 // 0x151f7c75
+==
+assert
+dup
+callsub label97
+pop
+retsub
+label51:
+proto 1 1
+txn Sender
+global CreatorAddress
+==
+assert
+frame_dig -1
+callsub label89
+assert
+itxn_begin
+frame_dig -1
+itxn_field ApplicationID
+pushbytes 0xb88322bb // 0xb88322bb
+itxn_field ApplicationArgs
+intc_2 // 6
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+itxn LastLog
+dup
+extract 4 0
+swap
+extract 0 4
+bytec_0 // 0x151f7c75
+==
+assert
+dup
+extract 0 24
+callsub label97
+pop
+frame_dig -1
+callsub label93
+assert
+dup
+extract 24 32
+swap
+extract 56 100
+concat
+retsub
+label52:
+proto 2 0
+txn Sender
+global CreatorAddress
+==
+assert
+frame_dig -1
+callsub label89
+assert
+itxn_begin
+frame_dig -1
+itxn_field ApplicationID
+pushbytes 0xf53b95cd // 0xf53b95cd
+itxn_field ApplicationArgs
+frame_dig -2
+itxn_field ApplicationArgs
+intc_2 // 6
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+itxn LastLog
+dup
+extract 4 0
+swap
+extract 0 4
+bytec_0 // 0x151f7c75
+==
+assert
+callsub label97
+pop
+frame_dig -1
+callsub label93
+assert
+retsub
+label53:
+proto 2 1
+txn Sender
+global CreatorAddress
+==
+assert
+global CurrentApplicationAddress
+acct_params_get AcctMinBalance
+assert
+itxn_begin
+pushint 5
+itxn_field OnCompletion
+frame_dig -1
+itxn_field ApplicationID
+pushbytes 0xf2e67934 // 0xf2e67934
+itxn_field ApplicationArgs
+frame_dig -2
+itxn_field ApplicationArgs
+intc_2 // 6
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+itxn LastLog
+dup
+extract 4 0
+swap
+extract 0 4
+bytec_0 // 0x151f7c75
+==
+assert
+global CurrentApplicationAddress
+acct_params_get AcctMinBalance
+assert
+uncover 2
+swap
+-
+itxn_begin
+itxn_field Amount
+frame_dig -2
+itxn_field Receiver
+intc_1 // 1
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+retsub
+label54:
+proto 3 1
+txn Sender
+global CreatorAddress
+==
+assert
+itxn_begin
+frame_dig -3
+itob
+frame_dig -2
+itob
+frame_dig -1
+itxn_field ApplicationID
+pushbytes 0xeafa1e15 // 0xeafa1e15
+itxn_field ApplicationArgs
+swap
+itxn_field ApplicationArgs
+itxn_field ApplicationArgs
+intc_2 // 6
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+itxn LastLog
+dup
+extract 4 0
+swap
+extract 0 4
+bytec_0 // 0x151f7c75
+==
+assert
+retsub
+label55:
+proto 1 1
+frame_dig -1
+itob
+bytec 13 // "asa_"
+swap
+concat
+box_get
+assert
+retsub

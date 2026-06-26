@@ -1,0 +1,251 @@
+#pragma version 2
+intcblock 0 1 2 4 5
+bytecblock 0x43726561746f72 0x426f6f6b696e67 0x5769746864726177616c 0x4173736574457363726f77 0x5769746864726177616c50726f63657373696e67526f756e6473 0x41737365744944 0x5769746864726177616c426f6f6b61626c65416d6f756e74 0x5769746864726177616c426f6f6b696e67526f756e64 0x5769746864726177616c426f6f6b6564416d6f756e74
+txn ApplicationID
+intc_0 // 0
+==
+bnz label1
+txn OnCompletion
+intc_1 // 1
+==
+bnz label2
+txn OnCompletion
+intc_2 // 2
+==
+bnz label3
+txn OnCompletion
+intc_3 // 4
+==
+bnz label4
+txn OnCompletion
+intc 4 // 5
+==
+bnz label5
+txn OnCompletion
+intc_0 // 0
+==
+bnz label6
+intc_0 // 0
+return
+label1:
+bytec_0 // "Creator"
+txn Sender
+app_global_put
+intc_1 // 1
+return
+b label7
+label2:
+intc_1 // 1
+return
+b label7
+label3:
+intc_1 // 1
+return
+b label7
+label4:
+intc_0 // 0
+return
+b label7
+label5:
+bytec_0 // "Creator"
+app_global_get
+txn Sender
+==
+bnz label8
+intc_0 // 0
+return
+b label7
+label8:
+intc_1 // 1
+return
+b label7
+label6:
+global GroupSize
+intc_2 // 2
+==
+bytec_0 // "Creator"
+app_global_get
+gtxn 0 Sender
+==
+&&
+bnz label9
+global GroupSize
+intc_2 // 2
+==
+gtxna 0 ApplicationArgs 0
+bytec_1 // "Booking"
+==
+&&
+bnz label10
+global GroupSize
+intc_2 // 2
+==
+gtxna 0 ApplicationArgs 0
+bytec_2 // "Withdrawal"
+==
+&&
+bnz label11
+intc_0 // 0
+return
+label9:
+gtxn 0 NumAppArgs
+intc_2 // 2
+==
+gtxn 1 TypeEnum
+intc_3 // 4
+==
+&&
+gtxn 1 AssetReceiver
+gtxna 0 ApplicationArgs 0
+==
+&&
+gtxn 1 AssetAmount
+intc_0 // 0
+>
+&&
+bnz label12
+intc_0 // 0
+return
+b label7
+label12:
+bytec_3 // "AssetEscrow"
+gtxna 0 ApplicationArgs 0
+app_global_put
+bytec 4 // "WithdrawalProcessingRounds"
+gtxna 0 ApplicationArgs 1
+btoi
+app_global_put
+bytec 5 // "AssetID"
+gtxn 1 XferAsset
+app_global_put
+bytec 6 // "WithdrawalBookableAmount"
+gtxn 1 AssetAmount
+app_global_put
+intc_1 // 1
+return
+label10:
+intc_0 // 0
+gtxn 0 ApplicationID
+bytec 7 // "WithdrawalBookingRound"
+app_local_get_ex
+store 0
+store 1
+load 0
+load 1
+intc_0 // 0
+>
+&&
+bnz label13
+gtxn 1 TypeEnum
+intc_3 // 4
+==
+gtxn 1 XferAsset
+bytec 5 // "AssetID"
+app_global_get
+==
+&&
+gtxn 1 Sender
+gtxn 0 Sender
+==
+&&
+gtxn 1 AssetReceiver
+bytec_3 // "AssetEscrow"
+app_global_get
+==
+&&
+gtxn 1 AssetAmount
+bytec 6 // "WithdrawalBookableAmount"
+app_global_get
+<=
+&&
+bnz label14
+intc_0 // 0
+return
+label14:
+intc_0 // 0
+bytec 7 // "WithdrawalBookingRound"
+global Round
+app_local_put
+intc_0 // 0
+bytec 8 // "WithdrawalBookedAmount"
+gtxn 1 AssetAmount
+app_local_put
+bytec 6 // "WithdrawalBookableAmount"
+bytec 6 // "WithdrawalBookableAmount"
+app_global_get
+gtxn 1 AssetAmount
+-
+app_global_put
+intc_1 // 1
+return
+b label15
+label13:
+intc_0 // 0
+return
+label15:
+intc_1 // 1
+return
+label11:
+intc_0 // 0
+gtxn 0 ApplicationID
+bytec 7 // "WithdrawalBookingRound"
+app_local_get_ex
+store 0
+store 1
+intc_0 // 0
+gtxn 0 ApplicationID
+bytec 8 // "WithdrawalBookedAmount"
+app_local_get_ex
+store 2
+store 3
+intc_0 // 0
+gtxn 0 ApplicationID
+app_opted_in
+load 1
+intc_0 // 0
+>
+&&
+load 3
+intc_0 // 0
+>
+&&
+global Round
+intc_0 // 0
+bytec 7 // "WithdrawalBookingRound"
+app_local_get
+bytec 4 // "WithdrawalProcessingRounds"
+app_global_get
++
+>=
+&&
+gtxn 1 XferAsset
+bytec 5 // "AssetID"
+app_global_get
+==
+&&
+gtxn 1 Sender
+bytec_3 // "AssetEscrow"
+app_global_get
+==
+&&
+gtxn 1 AssetAmount
+load 3
+intc_2 // 2
+*
+==
+&&
+bnz label16
+intc_0 // 0
+return
+label16:
+intc_0 // 0
+bytec 7 // "WithdrawalBookingRound"
+intc_0 // 0
+app_local_put
+intc_0 // 0
+bytec 8 // "WithdrawalBookedAmount"
+intc_0 // 0
+app_local_put
+intc_1 // 1
+return
+label7:
