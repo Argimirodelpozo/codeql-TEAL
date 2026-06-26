@@ -110,7 +110,7 @@ _BASELINE: dict[str, tuple[int, int, int, int]] = {
     "constant-condition": (3, 0, 0, 3),
     "delete-funds-check": (2, 0, 0, 1),
     "fee-validation": (1, 0, 0, 1),
-    "group-size-check": (1, 0, 0, 1),
+    "group-size-check": (1, 0, 0, 2),
     "hardcoded-min-balance": (1, 0, 0, 1),
     "inner-txn-close-rekey": (1, 0, 0, 1),
     "inner-txn-fee": (1, 0, 0, 1),

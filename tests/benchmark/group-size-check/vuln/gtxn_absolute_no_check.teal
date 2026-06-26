@@ -1,0 +1,7 @@
+#pragma version 10
+gtxn 1 Amount
+int 100
+<=
+assert
+int 1
+return

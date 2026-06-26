@@ -6,6 +6,16 @@ whose result reaches enforcement. Uses the same machinery as
 :mod:`security.rekey_to`, but seeded from ``global FIELD``
 reads instead of ``txn FIELD``.
 
+GATED on the program actually using an **absolute** group index
+(``gtxn`` / ``gtxna`` / ``gtxnas`` — index in the first immediate). The
+GroupSize concern is "the contract reads ``gtxn N`` assuming a sibling at
+index N exists" — without an absolute index there is no such assumption, so
+flagging the absence of a GroupSize check is a false positive. (A dynamic
+``gtxns`` index is popped off the stack and is bounds-checked by the AVM, so it
+doesn't trigger this either.) This matches the reference linter (Tealer), which
+fires only on absolute-index usage; without the gate we flagged essentially
+every contract.
+
 Replaces the old heuristic (``compared anywhere?`` + per-``gtxn``
 finding gated on whole-program presence) which produced false
 negatives whenever the validation was on one branch only, or in a
@@ -18,6 +28,19 @@ from typing import Optional
 
 from tealtools.ssa import BasicBlock, SSAProgram
 from security import common
+
+
+# Absolute-index group-txn reads (index in the first immediate). The dynamic
+# ``gtxns*`` family pops the index off the stack and is AVM-bounds-checked, so it
+# does not create the "assumes a sibling at index N" hazard this detector covers.
+_ABS_GROUP_INDEX_OPS = frozenset({"gtxn", "gtxna", "gtxnas"})
+
+
+def _uses_absolute_group_index(prog: SSAProgram, file: Optional[str]) -> bool:
+    return any(
+        a.op in _ABS_GROUP_INDEX_OPS and common.file_match(a.location.file, file)
+        for a in prog.assignments
+    )
 
 
 @dataclass
@@ -44,6 +67,9 @@ class GroupSizeCheckDetector:
         self.file = file
 
     def detect(self) -> list[GroupSizeCheckViolation]:
+        # No absolute group index => no "assumes sibling at index N" hazard.
+        if not _uses_absolute_group_index(self.prog, self.file):
+            return []
         out: list[GroupSizeCheckViolation] = []
         for exit_bb in sorted(
             common.approving_exits(self.prog, file=self.file),
