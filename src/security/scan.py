@@ -298,17 +298,20 @@ def scan(
                 sum(len(v) for v in by_dir.values()), len(by_dir), root)
     findings: list[ScanFinding] = []
     for dir_path, teal_files in sorted(by_dir.items()):
-        # Reconstruct straight from the raw .teal directory (pure-Python graph
-        # backend) -- no DB build. `SSAProgram` over a directory loads
-        # every .teal in it, keyed by basename, which is the same `file=`
-        # filter the detectors use below.
-        try:
-            prog = SSAProgram(str(dir_path))
-        except Exception as e:                       # pragma: no cover
-            logger.warning("could not reconstruct SSA for %s: %s", dir_path, e)
-            continue
         for teal in teal_files:
             rel = teal.relative_to(root)
+            # ONE SSAProgram PER FILE. Each .teal is an independent program (the
+            # AVM runs approval / clear-state programs separately), and a per-file
+            # program keeps a per-file detector's cost from scaling with the whole
+            # directory -- loading a directory of N contracts into one program made
+            # the per-file detectors roughly O(N^2). Genuine cross-contract
+            # analysis builds its own multi-program setup in `security.xcontract`;
+            # it does not go through this single-contract scanner.
+            try:
+                prog = SSAProgram(str(teal))
+            except Exception as e:                   # pragma: no cover
+                logger.warning("could not reconstruct SSA for %s: %s", rel, e)
+                continue
             names = config.detectors_for(str(rel))
             if options is not None:
                 mode = options.mode_for(str(rel), prog=prog, file=teal.name)
@@ -327,8 +330,8 @@ def scan(
                     )
                     if mode not in applies:
                         continue
-                # ``SSAProgram`` keys files by basename; pass that as the
-                # file filter so detectors see exactly this program.
+                # The program holds exactly this file (keyed by basename); pass
+                # it as the file filter so the detector scopes to it.
                 det = cls(prog, file=teal.name)
                 sev = options.severity_for(name) if options is not None else None
                 for v in det.detect():
