@@ -1,0 +1,154 @@
+#pragma version 6
+intcblock 1 0 2
+bytecblock 0x737570706c79 0x62616c616e6365
+intc_0 // 1
+txn OnCompletion
+==
+bnz label1
+txn OnCompletion
+intc_1 // 0
+==
+bnz label2
+txn OnCompletion
+intc_2 // 2
+==
+bnz label1
+txn OnCompletion
+pushint 4
+==
+bnz label1
+txn OnCompletion
+pushint 5
+==
+bz label2
+callsub label3
+intc_0 // 1
+return
+label2:
+txna ApplicationArgs 0
+btoi
+intc_1 // 0
+==
+bnz label4
+txna ApplicationArgs 0
+btoi
+intc_0 // 1
+==
+bnz label5
+txna ApplicationArgs 0
+btoi
+intc_2 // 2
+==
+bnz label6
+txna ApplicationArgs 0
+btoi
+pushint 3
+==
+bnz label7
+label4:
+bytec_0 // "supply"
+intc_1 // 0
+app_global_put
+b label8
+label5:
+callsub label3
+callsub label9
+dup
+callsub label10
+callsub label11
++
+callsub label12
+callsub label11
+callsub label13
+b label14
+label6:
+callsub label3
+callsub label9
+dup
+callsub label10
+callsub label11
+-
+callsub label12
+callsub label11
+callsub label15
+b label14
+label7:
+callsub label16
+callsub label10
+callsub label11
+<
+bnz label17
+callsub label16
+dup
+callsub label10
+callsub label11
+-
+callsub label12
+callsub label9
+dup
+callsub label10
+callsub label11
++
+callsub label12
+b label14
+label9:
+intc_0 // 1
+retsub
+label16:
+txn Sender
+retsub
+label11:
+txna ApplicationArgs 1
+btoi
+retsub
+label10:
+bytec_1 // "balance"
+app_local_get
+retsub
+label12:
+dig 1
+bytec_1 // "balance"
+dig 2
+app_local_put
+retsub
+label13:
+bytec_0 // "supply"
+app_global_get
++
+bytec_0 // "supply"
+dig 1
+app_global_put
+retsub
+label15:
+bytec_0 // "supply"
+app_global_get
+dig 1
+-
+bytec_0 // "supply"
+dig 1
+app_global_put
+retsub
+label3:
+global CreatorAddress
+txn Sender
+==
+assert
+retsub
+label14:
+itxn_begin
+intc_0 // 1
+itxn_field TypeEnum
+pushint 1000
+itxn_field Amount
+txn Sender
+itxn_field Receiver
+itxn_submit
+label1:
+intc_0 // 1
+return
+label8:
+intc_0 // 1
+return
+label17:
+intc_1 // 0
+return
