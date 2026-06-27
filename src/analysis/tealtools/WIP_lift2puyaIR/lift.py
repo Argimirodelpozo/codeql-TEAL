@@ -182,6 +182,49 @@ def lift(prog: SSAProgram) -> pre_ir.Program:
     return _Lifter(prog).build()
 
 
+def _prune_dead_assert_edges(prog: SSAProgram) -> None:
+    """Drop the dead fall-through edges of always-failing ``assert`` blocks before
+    block-args lowering.
+
+    A straight-line block that asserts a compile-time ZERO (``int 0; assert`` --
+    the usual ``bz fail; … ; fail: assert 0`` reject idiom) ALWAYS aborts, so
+    every edge OUT of it is dead: it never reaches a successor at runtime. The AVM
+    tolerates that (runtime-dead) edge, but it still makes the always-failing
+    block a STRUCTURAL predecessor of whatever physically follows it. At a JOIN
+    that pollutes the entry phi -- e.g. with a value of a DIFFERENT AVM type than
+    the live predecessors carry -- which the typed lift cannot reconcile (it drops
+    the phi, losing the live survivor, and emits an operand-less intrinsic the MIR
+    backend rejects; see project_lift_assert_false_survivor).
+
+    Remove the dead edge into any MULTI-predecessor join and rebuild that join's
+    phis from the SURVIVING predecessors' exit stacks, so the join is the clean
+    merge it actually is at runtime. The always-failing block -- now with no (or
+    fewer) successors -- lifts to a ``ProgramExit``/``Fail`` it can never reach. A
+    single-predecessor successor is skipped: it has no phi to pollute, and it is
+    the block's only edge, so dropping it would orphan still-live code rather than
+    de-pollute a join."""
+    from ..ssa import const_int
+
+    dead = [b for b in prog.blocks.values()
+            if any(a.op == "assert" and a.inputs and const_int(a.inputs[0]) == 0
+                   for a in b.assignments)]
+    for b in dead:
+        for s in list(b.successors):
+            if len(s.predecessors) <= 1:
+                continue                       # not a join -> no phi to de-pollute
+            b.successors.remove(s)
+            if b in s.predecessors:
+                s.predecessors.remove(b)
+            for phi in s.phis:                 # rebuild from surviving preds
+                if phi.kind != "DirectPhi":
+                    continue
+                k = phi.stack_index
+                newargs = [p.exit_stack[-k] for p in s.predecessors
+                           if len(p.exit_stack) >= k and p.exit_stack[-k] is not None]
+                if newargs:
+                    phi.args = newargs
+
+
 class _Lifter:
     """Stateful builder behind :func:`lift` (one instance per program). ``build``
     drives the pipeline; the methods share working state -- register maps, the
@@ -191,6 +234,7 @@ class _Lifter:
         self.prog = prog
 
     def build(self) -> pre_ir.Program:
+        _prune_dead_assert_edges(self.prog)
         self.form = to_block_args(self.prog)
         self.label2line = {code.rstrip(":").strip(): ln for (_f, ln, code) in self.prog.labels}
         struct = analyze_structure(self.prog)
@@ -593,6 +637,16 @@ class _Lifter:
                 last = a
         return last
 
+    def _asserts_false(self, bb) -> bool:
+        """``bb`` contains an always-failing ``assert <const-0>`` -- it aborts
+        unconditionally, so (like ``err``) it lifts to a ``Fail`` terminator, NOT
+        a ``ProgramExit`` of its stack top (which may be a non-uint64 value). Its
+        dead fall-through edge was already removed by ``_prune_dead_assert_edges``;
+        this gives the now-terminal block the right terminator."""
+        from ..ssa import const_int
+        return any(a.op == "assert" and a.inputs and const_int(a.inputs[0]) == 0
+                   for a in bb.assignments)
+
     def _recover_match_keys(self, bb, labels):
         """Recover a `match`'s case keys from source when the parser dropped
         them (a `pushbytess base32(..) ..` whose operands it stripped, leaving a
@@ -641,7 +695,7 @@ class _Lifter:
             return self._control_retsub(bb, resim)
         succ = [s for s in bb.successors if s in self.bid]
         if not succ:
-            if op == "err":
+            if op == "err" or self._asserts_false(bb):
                 return pre_ir.Fail()
             # `return` (arity 0/0) returns the stack top; a block that falls off
             # the end with NO explicit terminator (op is None -- a bare-expression
