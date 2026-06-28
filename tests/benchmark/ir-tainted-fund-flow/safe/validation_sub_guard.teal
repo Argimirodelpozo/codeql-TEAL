@@ -1,0 +1,25 @@
+#pragma version 10
+// Owner guard via a VALIDATION SUBROUTINE: check_owner() returns (Sender==owner),
+// asserted before the fund flow. The check lives INSIDE the callee, reached by
+// callsub. The sink is owner-gated -> SAFE.
+    txn ApplicationArgs 0
+    store 0                 // tainted receiver
+    callsub check_owner
+    assert                  // dominates the sink; owner-only
+    itxn_begin
+    int pay
+    itxn_field TypeEnum
+    load 0
+    itxn_field Receiver
+    int 100
+    itxn_field Amount
+    itxn_submit
+    int 1
+    return
+check_owner:
+    proto 0 1
+    txn Sender
+    byte "owner"
+    app_global_get
+    ==
+    retsub

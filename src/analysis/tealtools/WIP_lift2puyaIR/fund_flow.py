@@ -36,6 +36,7 @@ has no call sites to inspect (e.g. dead / externally-entered).
 """
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass
 
 from . import pre_ir
@@ -87,9 +88,43 @@ def _dominators(sub) -> dict:
 # --------------------------------------------------------------------------
 
 
-def _walk(value, def_of, depth=0, seen=None):
+def _invoke_returns(lifter) -> dict:
+    """``{id(call_result_register): [callee return-value registers]}``.
+
+    Lets a guard walk descend into a VALIDATION SUBROUTINE: an
+    ``assert (callsub check ...)`` where the actual ``txn Sender == owner`` (or
+    value) check lives inside the callee's body and flows out through its
+    ``SubroutineReturn``. Maps the i-th result of each ``InvokeSubroutine`` to the
+    i-th returned register of every ``SubroutineReturn`` in the callee."""
+    name2sub = {s.id: s for s in lifter.subs}
+    out: dict = {}
+    for b in pre_ir.blocks(lifter.subs):
+        for o in b.ops:
+            inv = _invoke(o)
+            if inv is None:
+                continue
+            callee = name2sub.get(inv.target)
+            if callee is None:
+                continue
+            rets_by_pos: dict = defaultdict(list)
+            for cb in callee.body:
+                t = cb.terminator
+                if isinstance(t, pre_ir.SubroutineReturn):
+                    for i, v in enumerate(t.result):
+                        if isinstance(v, pre_ir.Register):
+                            rets_by_pos[i].append(v)
+            for i, tgt in enumerate(getattr(o, "targets", ()) or ()):
+                if isinstance(tgt, pre_ir.Register):
+                    out[id(tgt)] = rets_by_pos.get(i, [])
+    return out
+
+
+def _walk(value, def_of, depth=0, seen=None, inv_ret=None):
     """Yield ``(register, defining_op_or_None)`` for every register in the
-    def-expression tree behind ``value`` (bounded)."""
+    def-expression tree behind ``value`` (bounded). With ``inv_ret`` (from
+    :func:`_invoke_returns`), descend through a call result into the callee's
+    returned values -- so a check inside an asserted validation subroutine is
+    seen as part of the guard condition."""
     if seen is None:
         seen = set()
     if not isinstance(value, pre_ir.Register) or depth > 8 or id(value) in seen:
@@ -97,17 +132,19 @@ def _walk(value, def_of, depth=0, seen=None):
     seen.add(id(value))
     o = def_of.get(id(value))
     yield value, o
-    if o is None:
-        return
-    src = _intr(o)
-    if src is not None:
-        for a in src.args:
-            yield from _walk(a, def_of, depth + 1, seen)
-    elif isinstance(o, pre_ir.Assignment) and isinstance(o.source, pre_ir.Register):
-        yield from _walk(o.source, def_of, depth + 1, seen)
-    elif isinstance(o, pre_ir.Phi):
-        for pa in o.args:
-            yield from _walk(pa.value, def_of, depth + 1, seen)
+    if o is not None:
+        src = _intr(o)
+        if src is not None:
+            for a in src.args:
+                yield from _walk(a, def_of, depth + 1, seen, inv_ret)
+        elif isinstance(o, pre_ir.Assignment) and isinstance(o.source, pre_ir.Register):
+            yield from _walk(o.source, def_of, depth + 1, seen, inv_ret)
+        elif isinstance(o, pre_ir.Phi):
+            for pa in o.args:
+                yield from _walk(pa.value, def_of, depth + 1, seen, inv_ret)
+    if inv_ret:                       # descend into an asserted validation sub
+        for rv in inv_ret.get(id(value), ()):
+            yield from _walk(rv, def_of, depth + 1, seen, inv_ret)
 
 
 def _is_sender_op(src) -> bool:
@@ -161,7 +198,7 @@ def _input_key(src):
     return (src.op, tuple(str(i) for i in (src.immediates or [])))
 
 
-def _classify(kind, polarity, cond, def_of, sink_regs, sink_keys) -> Guard:
+def _classify(kind, polarity, cond, def_of, sink_regs, sink_keys, inv_ret=None) -> Guard:
     # checks_input is VALUE-level, not source-FAMILY-level: the guard must test the
     # SAME value the sink uses -- a shared register in their def-trees, OR a read of
     # the same specific input slot (reconnecting the common "check and use each read
@@ -169,7 +206,7 @@ def _classify(kind, polarity, cond, def_of, sink_regs, sink_keys) -> Guard:
     # ApplicationArgs read) would mark "the contract validates SOME input" as
     # "validates THIS value" and hide real findings.
     ci = cs = False
-    for r, o in _walk(cond, def_of):
+    for r, o in _walk(cond, def_of, inv_ret=inv_ret):
         if id(r) in sink_regs:
             ci = True
         src = _intr(o) if o is not None else None
@@ -181,7 +218,8 @@ def _classify(kind, polarity, cond, def_of, sink_regs, sink_keys) -> Guard:
     return Guard(kind, polarity, ci, cs)
 
 
-def _dominating_guards(by_id, dom, sink_bid, sink_idx, def_of, sink_regs, sink_keys) -> list:
+def _dominating_guards(by_id, dom, sink_bid, sink_idx, def_of, sink_regs, sink_keys,
+                       inv_ret=None) -> list:
     doms = dom.get(sink_bid, {sink_bid})
     guards = []
     for d in doms:
@@ -194,7 +232,7 @@ def _dominating_guards(by_id, dom, sink_bid, sink_idx, def_of, sink_regs, sink_k
         for o in ops:
             if isinstance(o, pre_ir.Assert):
                 guards.append(_classify("assert", None, o.condition, def_of,
-                                        sink_regs, sink_keys))
+                                        sink_regs, sink_keys, inv_ret))
         # A conditional branch in a strictly-dominating block whose outcome is
         # forced: exactly one successor dominates the sink => that edge is taken
         # on every path to the sink, so its condition guards it.
@@ -203,7 +241,8 @@ def _dominating_guards(by_id, dom, sink_bid, sink_idx, def_of, sink_regs, sink_k
             nz, z = t.non_zero in doms, t.zero in doms
             if nz != z:
                 guards.append(_classify("branch", "true" if nz else "false",
-                                        t.condition, def_of, sink_regs, sink_keys))
+                                        t.condition, def_of, sink_regs, sink_keys,
+                                        inv_ret))
     return guards
 
 
@@ -244,7 +283,7 @@ class FundFlowFinding:
         }
 
 
-def _entry_guards(lifter, def_of, dom_by_sub, taint):
+def _entry_guards(lifter, def_of, dom_by_sub, taint, inv_ret=None):
     """Interprocedural guard summary ``{sub.id: {param_idx: (checks_input,
     checks_sender)}}`` plus the set of subs that are called somewhere.
 
@@ -274,7 +313,8 @@ def _entry_guards(lifter, def_of, dom_by_sub, taint):
                     aregs = {id(r) for r, _ in walked}
                     akeys = {k for _, oo in walked
                              if (k := _input_key(_intr(oo) if oo is not None else None)) is not None}
-                    guards = _dominating_guards(by_id, dom, b.id, idx, def_of, aregs, akeys)
+                    guards = _dominating_guards(by_id, dom, b.id, idx, def_of, aregs,
+                                                akeys, inv_ret)
                     facts.append((s.id, any(r in taint for r in aregs),
                                   any(g.checks_input for g in guards),
                                   any(g.checks_sender for g in guards),
@@ -314,8 +354,9 @@ def tainted_fund_flows(lifter, taint=None) -> list:
     if taint is None:
         taint = user_input_taint(lifter)
     def_of = _def_map(lifter)
+    inv_ret = _invoke_returns(lifter)
     dom_by_sub = {s.id: _dominators(s) for s in lifter.subs}
-    entry_guards, called = _entry_guards(lifter, def_of, dom_by_sub, taint)
+    entry_guards, called = _entry_guards(lifter, def_of, dom_by_sub, taint, inv_ret)
     findings: list = []
     for sub in lifter.subs:
         dom = dom_by_sub[sub.id]
@@ -346,7 +387,8 @@ def tainted_fund_flows(lifter, taint=None) -> list:
                                  if (k := _input_key(_intr(o) if o is not None else None)) is not None}
                 else:
                     sink_regs, sink_keys = set(), set()
-                guards = _dominating_guards(by_id, dom, b.id, idx, def_of, sink_regs, sink_keys)
+                guards = _dominating_guards(by_id, dom, b.id, idx, def_of, sink_regs,
+                                            sink_keys, inv_ret)
                 # Interprocedural: the tainted value may flow from a parameter that
                 # the caller(s) already checked -- fold that in as a "caller" guard.
                 feeding = {pidx[r] for r in sink_regs if r in pidx}
