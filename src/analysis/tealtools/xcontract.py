@@ -193,22 +193,48 @@ def _const_app_id(txn: InnerTxn, prog: Optional[SSAProgram] = None) -> Optional[
     return next(iter(seen)) if len(seen) == 1 else None
 
 
-def _const_args(txn: InnerTxn) -> dict[int, str]:
+def _forwarded_apparg_index(operand) -> Optional[int]:
+    """If ``operand`` is a direct ``txn`` / ``txna ApplicationArgs N`` read -- the
+    program forwarding one of ITS OWN appcall args onward to a deeper callee --
+    return ``N``. Lets a pin a caller placed on that arg propagate THROUGH this
+    forwarding hop (transitive cross-contract suppression). Else ``None``."""
+    d = getattr(operand, "defined_by", None)
+    if d is None or d.op not in ("txn", "txna"):
+        return None
+    parts = (d.immediates or "").split()
+    if len(parts) == 2 and parts[0] == "ApplicationArgs":
+        try:
+            return int(parts[1])
+        except ValueError:
+            return None
+    return None
+
+
+def _const_args(txn: InnerTxn, incoming_pins: Optional[dict] = None) -> dict[int, str]:
     """Index the constant ApplicationArgs by their stack-set order.
 
-    Each ``itxn_field ApplicationArgs`` op pushes one element onto
-    the array; ``InnerTxnReport`` lists them in source order.
-    """
+    Each ``itxn_field ApplicationArgs`` op pushes one element onto the array;
+    ``InnerTxnReport`` lists them in source order. ``incoming_pins`` are the
+    constants a caller pinned on THIS program's own args (``{arg_index: const}``):
+    an arg the program FORWARDS verbatim (a ``txna ApplicationArgs N`` read) is
+    pinned to ``incoming_pins[N]`` if present, so a root-pinned value stays pinned
+    across a proxy/forwarder hop."""
+    incoming_pins = incoming_pins or {}
     fields = txn.fields_by_name().get("ApplicationArgs") or []
     out: dict[int, str] = {}
     for i, f in enumerate(fields):
         v = _const_only(f.possible_values())
         if v is not None:
             out[i] = v
+            continue
+        j = _forwarded_apparg_index(f.operand)
+        if j is not None and j in incoming_pins:
+            out[i] = incoming_pins[j]
     return out
 
 
-def find_appcall_sites(prog: SSAProgram, registry: Registry) -> list[AppcallSite]:
+def find_appcall_sites(prog: SSAProgram, registry: Registry,
+                       incoming_pins: Optional[dict] = None) -> list[AppcallSite]:
     """Find every appcall itxn submit in ``prog`` whose ApplicationID
     is a constant present in ``registry``.
 
@@ -237,7 +263,7 @@ def find_appcall_sites(prog: SSAProgram, registry: Registry) -> list[AppcallSite
                     submit_line=group.submit_line,
                     app_id=app_id,
                     callee_source=Path(registry[app_id]),
-                    const_args=_const_args(txn),
+                    const_args=_const_args(txn, incoming_pins),
                 )
             )
     sites.sort(key=lambda s: (s.file, s.submit_line))
@@ -496,14 +522,16 @@ class XContractGraph:
         callee_sources: dict[int, Path] = {}
         analyses: dict[int, CalleeAnalysis] = {}
         edges: list[AppcallEdge] = []
-        # frontier item: (program, its AppID or None for the root, depth)
-        frontier: deque = deque([(caller, None, 0)])
+        # frontier item: (program, its AppID or None for the root, depth, the
+        # pins a caller placed on THIS program's args -- so a forwarded arg keeps
+        # the pin one hop deeper).
+        frontier: deque = deque([(caller, None, 0, {})])
         while frontier:
-            prog, prog_id, depth = frontier.popleft()
+            prog, prog_id, depth, incoming_pins = frontier.popleft()
             if depth >= max_depth:
                 continue
             sites = (root_sites if prog is caller
-                     else find_appcall_sites(prog, registry))
+                     else find_appcall_sites(prog, registry, incoming_pins))
             for site in sites:
                 edges.append(AppcallEdge(prog_id, site, depth))
                 if site.app_id in callees:
@@ -512,7 +540,7 @@ class XContractGraph:
                 callees[site.app_id] = callee
                 callee_sources[site.app_id] = site.callee_source
                 analyses[site.app_id] = analyze_callee(callee, site)
-                frontier.append((callee, site.app_id, depth + 1))
+                frontier.append((callee, site.app_id, depth + 1, dict(site.const_args)))
         return cls(
             caller=caller, sites=root_sites, callees=callees,
             callee_sources=callee_sources, analyses=analyses, edges=edges,
