@@ -1,0 +1,22 @@
+#pragma version 8
+txna ApplicationArgs 1
+btoi
+int 0
+==
+bz e
+txna ApplicationArgs 2
+btoi
+b m
+e:
+txna ApplicationArgs 3
+btoi
+m:
+store 7
+itxn_begin
+int 6
+itxn_field TypeEnum
+load 7
+itxn_field ApplicationID
+itxn_submit
+int 1
+return

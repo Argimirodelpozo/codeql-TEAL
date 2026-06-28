@@ -346,15 +346,21 @@ def _entry_guards(lifter, def_of, dom_by_sub, taint, inv_ret=None):
     return eg, called
 
 
-def tainted_fund_flows(lifter, taint=None, trusted_args=frozenset()) -> list:
-    """Findings for every user-input-tainted value reaching a fund-flow itxn field,
-    sorted UNGUARDED-first then by severity. Guards are recognised both
-    intra-procedurally and across call boundaries (caller-side checks on a value
-    passed into a parameter).
+def tainted_itxn_flows(lifter, fields, taint=None, trusted_args=frozenset()) -> list:
+    """Findings for every user-input-tainted value reaching one of the inner-txn
+    ``fields`` (a ``{field_name: severity}`` map), sorted UNGUARDED-first then by
+    severity. Guards are recognised both intra-procedurally and across call
+    boundaries (caller-side checks on a value passed into a parameter), and a
+    guard inside an asserted validation subroutine is descended into.
+
+    Parameterised by ``fields`` so the same engine powers fund-flow
+    (Receiver/Amount/Close/Rekey), arbitrary-inner-appcall (ApplicationID),
+    arbitrary-inner-asset (XferAsset), etc. -- each gets the IR layer's
+    across-callsub dominance + cross-contract suppression for free.
 
     ``trusted_args`` -- ApplicationArgs indices a caller pinned to constants
-    (cross-contract); those reads don't seed taint, so a callee payment fixed by
-    its caller is not reported as attacker-controlled on that edge."""
+    (cross-contract); those reads don't seed taint, so a sink fixed by its caller
+    is not reported as attacker-controlled on that edge."""
     if taint is None:
         taint = user_input_taint(lifter, trusted_args)
     def_of = _def_map(lifter)
@@ -372,7 +378,7 @@ def tainted_fund_flows(lifter, taint=None, trusted_args=frozenset()) -> list:
                 if s is None or s.op != "itxn_field" or not s.immediates:
                     continue
                 field = str(s.immediates[0]).strip()
-                if field not in _FUND_FIELDS:
+                if field not in fields:
                     continue
                 sources: set = set()
                 valreg = None
@@ -406,11 +412,17 @@ def tainted_fund_flows(lifter, taint=None, trusted_args=frozenset()) -> list:
                 # guards it, and the sub has no call sites we could inspect.
                 param_derived = bool(feeding) and not guarded and sub.id not in called
                 findings.append(FundFlowFinding(
-                    field, _FUND_FIELDS[field], frozenset(sources),
+                    field, fields[field], frozenset(sources),
                     sub.id, s.line, guards, param_derived))
     findings.sort(key=lambda f: (f.guarded, f.param_derived,
                                  -_SEV_ORDER[f.severity], f.sub_id, f.line))
     return findings
+
+
+def tainted_fund_flows(lifter, taint=None, trusted_args=frozenset()) -> list:
+    """Fund-flow specialisation of :func:`tainted_itxn_flows` -- tainted values
+    reaching Receiver / Amount / CloseRemainderTo / RekeyTo (+ asset variants)."""
+    return tainted_itxn_flows(lifter, _FUND_FIELDS, taint, trusted_args)
 
 
 def fund_flow_report(lifter, name: str = "<program>") -> str:

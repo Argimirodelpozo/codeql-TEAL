@@ -56,6 +56,7 @@ _DETECTIONS_ROOT = Path(__file__).resolve().parent / "detections"
 _DETECTION_SPECS: tuple[tuple[str, str, str, "Optional[str]"], ...] = (
     ("abi-method-selector",   "abi_method_selector",   "AbiMethodSelectorDetector",   "AbiMethodSelectorViolation"),
     ("arbitrary-inner-appcall", "arbitrary_inner_appcall", "ArbitraryInnerAppcallDetector", "ArbitraryInnerAppcallViolation"),
+    ("ir-arbitrary-inner-appcall", "ir_arbitrary_inner_appcall", "IrArbitraryInnerAppcallDetector", "IrArbitraryInnerAppcallViolation"),
     ("arbitrary-inner-asset",  "arbitrary_inner_asset",  "ArbitraryInnerAssetDetector", "ArbitraryInnerAssetViolation"),
     ("asset-close-to",        "asset_close_to",        "AssetCloseToDetector",        "AssetCloseToViolation"),
     ("asset-id-validation",   "asset_id_validation",   "AssetIdValidationDetector",   "AssetIdValidationViolation"),

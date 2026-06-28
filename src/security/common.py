@@ -1092,6 +1092,24 @@ def ir_lifter(prog: SSAProgram, file: Optional[str] = None):
     return lifter
 
 
+def ir_unguarded_itxn_flows(prog: SSAProgram, file, fields, trusted_args=frozenset()):
+    """Shared body of the IR taint-to-itxn-field detectors. Lifts ``prog`` (via
+    :func:`ir_lifter`) and runs the interprocedural, guard-aware fund-flow engine
+    over ``fields`` (a ``{field_name: severity}`` map), returning
+    ``(lifted, findings)``: ``findings`` is the list of UNGUARDED, call-resolved
+    findings, or ``(False, [])`` when the contract doesn't lift -- the caller then
+    falls back to the SSA-layer sibling so coverage stays complete."""
+    lifter = ir_lifter(prog, file)
+    if lifter is None:
+        return False, []
+    from tealtools.WIP_lift2puyaIR import fund_flow as _ff
+    findings = [
+        f for f in _ff.tainted_itxn_flows(lifter, fields, trusted_args=trusted_args)
+        if not f.guarded and not f.param_derived
+    ]
+    return True, findings
+
+
 def _compute_user_input_taint(prog: SSAProgram, file: Optional[str] = None) -> dict:
     taint: dict = {}
 

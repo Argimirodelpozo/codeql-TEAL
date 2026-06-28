@@ -69,6 +69,11 @@ class ArbitraryInnerAppcallDetector:
     name: ClassVar[str] = "sec-guide/arbitrary-inner-appcall"
     applies_to: ClassVar[frozenset] = frozenset({"app"})  # itxn_* is app-only
     violation_cls: ClassVar[type] = ArbitraryInnerAppcallViolation
+    # Superseded by ir-arbitrary-inner-appcall (IR layer: across-callsub dominance,
+    # validation-sub guards, typed, cross-contract), which falls back to this one
+    # when the lift fails. Kept registered (benchmark + fallback + by-name use);
+    # skipped in default scans. See scan._drop_superseded.
+    superseded_by: ClassVar[str] = "ir-arbitrary-inner-appcall"
 
     def __init__(self, prog: SSAProgram, *, file: Optional[str] = None,
                  path_predicates: "Optional[PathPredicateAnalysis]" = None):
