@@ -17,11 +17,16 @@ path to the sink is lost at the multi-caller return merge, and the flow is
 reported UNGUARDED: a false positive the IR layer avoids (the SSA over-reported a
 whole owner-gated handler template ~29x on one corpus sample; the IR cleared it).
 
-This is a COMPLEMENTARY sibling, not a strict replacement: the SSA detector keeps
-its own strengths (cross-contract guard reasoning via ``path_predicates``; the
-``guard = same-taint-slot overlap`` value check), and the two layers can disagree
-the other way on intricate intra-procedural guards (a bypassable validation
-helper). Run both; treat the IR layer as the across-``callsub`` guard authority.
+This is now the PRIMARY fund-flow detector: it matches or beats the SSA
+``tainted-fund-flow`` on every analysis axis (across-``callsub`` dominance,
+validation-subroutine guards, typed reasoning, AND cross-contract caller-pinned
+suppression), so that detector is marked ``superseded_by`` this one and skipped in
+default scans. When the lift fails (~0.1% of real mainnet) this detector falls
+back to the SSA one, so it gives complete coverage from a single entry point. The
+one corpus case where the two ever diverged (app_1050027991) is not an IR false
+positive: its close/asset-close findings are corroborated by the SSA's dedicated
+``close-remainder-to`` / ``asset-close-to`` detectors, and its amount finding is a
+defensible higher-recall flag on a user-influenced payout.
 
 Emits only the UNGUARDED, call-resolved flows as violations; the underlying
 analysis also lists guarded flows, but those are for human triage, not findings.
