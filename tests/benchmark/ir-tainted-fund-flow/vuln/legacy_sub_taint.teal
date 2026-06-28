@@ -1,0 +1,21 @@
+#pragma version 10
+// A legacy (non-proto) subroutine `send` receives its argument on the stack and
+// builds an UNGUARDED inner payment whose Receiver is the attacker-controlled
+// ApplicationArgs value the caller passed. The IR re-simulates the legacy sub's
+// stack into an explicit param and taints it interprocedurally; the sink is not
+// dominated by any check of the value or the sender. VULN.
+    txn ApplicationArgs 0      // attacker-controlled receiver
+    callsub send
+    int 1
+    return
+send:
+    store 0                    // legacy arg arrives on the stack (no proto)
+    itxn_begin
+    int pay
+    itxn_field TypeEnum
+    load 0
+    itxn_field Receiver        // attacker-controlled, UNGUARDED
+    int 1000000
+    itxn_field Amount
+    itxn_submit
+    retsub

@@ -1,0 +1,9 @@
+#pragma version 10
+    itxn_begin
+    txn ApplicationArgs 0
+    itxn_field Receiver
+    int 1000
+    itxn_field Amount
+    itxn_submit
+    int 1
+    return

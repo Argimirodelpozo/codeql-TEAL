@@ -1,0 +1,36 @@
+#pragma version 10
+// An owner-only fund flow where a `callsub` sits BETWEEN the owner guard and the
+// itxn sink. The SSA path-predicates lose the owner guard across the callsub
+// (the shared sub has two callers, so the context-insensitive merge at its
+// return drops the caller-specific "Sender == owner" predicate) and report it
+// unguarded -- a FALSE POSITIVE. The IR detector computes dominance within the
+// routine, where the InvokeSubroutine doesn't break the assert->sink dominance,
+// and correctly clears it. SAFE.
+    txn NumAppArgs
+    int 2
+    ==
+    bnz owner_path
+    callsub shared           // other caller of `shared` (no owner guard, no sink)
+    int 1
+    return
+owner_path:
+    txn Sender
+    byte "owner"
+    app_global_get
+    ==
+    assert                   // OWNER-ONLY guard, dominates the sink below
+    callsub shared           // <- callsub between the guard and the sink
+    itxn_begin
+    int pay
+    itxn_field TypeEnum
+    txn ApplicationArgs 0
+    btoi
+    itxn_field Amount        // attacker-controlled value, but owner-gated -> SAFE
+    txn ApplicationArgs 1
+    itxn_field Receiver
+    itxn_submit
+    int 1
+    return
+shared:
+    proto 0 0
+    retsub

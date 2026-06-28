@@ -1054,6 +1054,44 @@ def user_input_taint(prog: SSAProgram, file: Optional[str] = None) -> dict:
     return result
 
 
+def ir_lifter(prog: SSAProgram, file: Optional[str] = None):
+    """Build + cache the IR lifter for ``prog`` -- the lifted, Puya-shaped IR the
+    interprocedural detectors (e.g. ``ir-tainted-fund-flow``) run on.
+
+    Built from a FRESH ``SSAProgram`` off ``prog.source_path`` rather than ``prog``
+    itself: the lift mutates its input CFG (``_prune_dead_assert_edges`` drops dead
+    edges + rebuilds join phis), and the SSA-layer detectors read the SAME
+    ``prog`` -- so lifting a copy keeps their substrate pristine. Returns the
+    ``_Lifter`` instance (post-``build``, carrying ``.subs``/``.regs``/``.reg`` the
+    taint + fund-flow analyses consume), or ``None`` when the contract doesn't lift
+    (rare; the lift is ~99.9% robust on real mainnet). Cached per ``prog`` -- one
+    lift shared by every IR detector in a scan.
+
+    ``file`` is accepted for signature parity with the SSA analyses but unused: the
+    lift is whole-program, and SSAPrograms are per-file (xcontract aside)."""
+    sentinel = object()
+    cached = getattr(prog, "_sec_ir_lifter", sentinel)
+    if cached is not sentinel:
+        return cached
+    lifter = None
+    try:
+        from tealtools.WIP_lift2puyaIR.lift import _Lifter
+        src = str(getattr(prog, "source_path", "") or "")
+        if src:
+            fresh = SSAProgram(src, verbose=False)
+            fresh.propagate_constants()
+            lf = _Lifter(fresh)
+            lf.build()
+            lifter = lf
+    except Exception:
+        lifter = None
+    try:
+        prog._sec_ir_lifter = lifter
+    except Exception:
+        pass
+    return lifter
+
+
 def _compute_user_input_taint(prog: SSAProgram, file: Optional[str] = None) -> dict:
     taint: dict = {}
 
