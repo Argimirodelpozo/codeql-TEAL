@@ -346,13 +346,17 @@ def _entry_guards(lifter, def_of, dom_by_sub, taint, inv_ret=None):
     return eg, called
 
 
-def tainted_fund_flows(lifter, taint=None) -> list:
+def tainted_fund_flows(lifter, taint=None, trusted_args=frozenset()) -> list:
     """Findings for every user-input-tainted value reaching a fund-flow itxn field,
     sorted UNGUARDED-first then by severity. Guards are recognised both
     intra-procedurally and across call boundaries (caller-side checks on a value
-    passed into a parameter)."""
+    passed into a parameter).
+
+    ``trusted_args`` -- ApplicationArgs indices a caller pinned to constants
+    (cross-contract); those reads don't seed taint, so a callee payment fixed by
+    its caller is not reported as attacker-controlled on that edge."""
     if taint is None:
-        taint = user_input_taint(lifter)
+        taint = user_input_taint(lifter, trusted_args)
     def_of = _def_map(lifter)
     inv_ret = _invoke_returns(lifter)
     dom_by_sub = {s.id: _dominators(s) for s in lifter.subs}

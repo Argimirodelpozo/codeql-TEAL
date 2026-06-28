@@ -76,13 +76,19 @@ class CrossSecGuideFinding:
 
 
 def _construct_detector(cls, callee, callee_analysis):
-    """Instantiate a detector, wiring the callee's seeded
-    PathPredicateAnalysis when the detector accepts one. Detectors
-    that don't take the kwarg get the bare ``cls(callee)`` form."""
+    """Instantiate a detector, wiring caller-side context when the detector accepts
+    it: the callee's seeded ``PathPredicateAnalysis`` (``path_predicates`` -- the
+    OnCompletion-guard family) and/or the call site's pinned ApplicationArgs
+    indices (``trusted_args`` -- the IR fund-flow detector treats a caller-pinned
+    arg as not attacker-controlled). Detectors that take neither get the bare
+    ``cls(callee)`` form."""
     sig = inspect.signature(cls.__init__)
+    kwargs: dict = {}
     if "path_predicates" in sig.parameters:
-        return cls(callee, path_predicates=callee_analysis.analysis)
-    return cls(callee)
+        kwargs["path_predicates"] = callee_analysis.analysis
+    if "trusted_args" in sig.parameters:
+        kwargs["trusted_args"] = frozenset(callee_analysis.site.const_args)
+    return cls(callee, **kwargs)
 
 
 def cross_detection_findings(

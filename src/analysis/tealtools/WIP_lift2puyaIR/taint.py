@@ -47,6 +47,25 @@ def source_label(intr) -> str | None:
     return None
 
 
+def _trusted_apparg(src, trusted_args) -> bool:
+    """True if ``src`` reads a CURRENT-txn ``ApplicationArgs[i]`` whose index ``i``
+    a CALLER pinned to a constant (cross-contract). Such an arg is fixed by the
+    caller on this call edge, so it is NOT attacker-controlled and must not seed
+    taint. Only the current txn's args (``txn``/``txna``) -- ``gtxn*`` reads a group
+    sibling's args, which this appcall did not pass."""
+    if not trusted_args or not isinstance(src, pre_ir.Intrinsic):
+        return False
+    if src.op not in ("txn", "txna"):
+        return False
+    imm = [str(i) for i in (src.immediates or [])]
+    if len(imm) != 2 or imm[0] != "ApplicationArgs":
+        return False
+    try:
+        return int(imm[1]) in trusted_args
+    except ValueError:
+        return False
+
+
 def _intr(o):
     if isinstance(o, pre_ir.IntrinsicOp) and isinstance(o.intrinsic, pre_ir.Intrinsic):
         return o.intrinsic
@@ -147,9 +166,14 @@ def _return_summary(lifter) -> dict:
     return {sid: (frozenset(sv[0]), frozenset(sv[1])) for sid, sv in summary.items()}
 
 
-def user_input_taint(lifter) -> dict:
+def user_input_taint(lifter, trusted_args=frozenset()) -> dict:
     """Forward taint from the user-input sources to a fixpoint over ``lifter``'s
-    lifted IR. Returns ``{id(Register): frozenset(sources)}`` for tainted registers."""
+    lifted IR. Returns ``{id(Register): frozenset(sources)}`` for tainted registers.
+
+    ``trusted_args`` -- ApplicationArgs indices a CALLER pinned to constants
+    (cross-contract): those current-txn ``ApplicationArgs[i]`` reads are NOT seeded
+    as user input, so a callee whose payment is fixed by its caller doesn't
+    surface as attacker-controlled on that edge."""
     # register -> its SSA var, to consult the scratch reaching-def on a `load`.
     ssa_of = {id(r): sv for sv, r in lifter.regs.items()}
     summary = _return_summary(lifter)         # interprocedural param->return summary
@@ -174,7 +198,7 @@ def user_input_taint(lifter) -> dict:
                 src = _intr(o)
                 if src is not None:
                     lbl = source_label(src)
-                    if lbl:
+                    if lbl and not _trusted_apparg(src, trusted_args):
                         ins.add(lbl)                # seed
                     for a in src.args:
                         ins |= reg_t(a)

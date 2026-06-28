@@ -63,9 +63,13 @@ class IrTaintedFundFlowDetector:
     applies_to: ClassVar[frozenset] = frozenset({"app"})  # inner txns are app-only
     violation_cls: ClassVar[type] = IrTaintedFundFlowViolation
 
-    def __init__(self, prog, *, file: Optional[str] = None):
+    def __init__(self, prog, *, file: Optional[str] = None, trusted_args=frozenset()):
         self.prog = prog
         self.file = file
+        # ApplicationArgs indices a CALLER pinned to constants (cross-contract):
+        # the cross-contract runner passes the call site's const_args, so a callee
+        # payment fixed by its caller isn't reported attacker-controlled here.
+        self.trusted_args = frozenset(trusted_args)
 
     def detect(self) -> list:
         lifter = common.ir_lifter(self.prog, self.file)
@@ -76,7 +80,7 @@ class IrTaintedFundFlowDetector:
         src = getattr(self.prog, "source_path", None)
         fname = src.name if src is not None and getattr(src, "name", "") else "<program>"
         out: list = []
-        for f in FF.tainted_fund_flows(lifter):
+        for f in FF.tainted_fund_flows(lifter, trusted_args=self.trusted_args):
             # Guarded flows are reported by the analysis for triage; only an
             # UNGUARDED, call-RESOLVED flow is a violation. ``param_derived`` means
             # a param feeds it but the sub has no call site to resolve the guard
