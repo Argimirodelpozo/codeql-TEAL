@@ -58,6 +58,7 @@ _DETECTION_SPECS: tuple[tuple[str, str, str, "Optional[str]"], ...] = (
     ("arbitrary-inner-appcall", "arbitrary_inner_appcall", "ArbitraryInnerAppcallDetector", "ArbitraryInnerAppcallViolation"),
     ("ir-arbitrary-inner-appcall", "ir_arbitrary_inner_appcall", "IrArbitraryInnerAppcallDetector", "IrArbitraryInnerAppcallViolation"),
     ("arbitrary-inner-asset",  "arbitrary_inner_asset",  "ArbitraryInnerAssetDetector", "ArbitraryInnerAssetViolation"),
+    ("ir-arbitrary-inner-asset", "ir_arbitrary_inner_asset", "IrArbitraryInnerAssetDetector", "IrArbitraryInnerAssetViolation"),
     ("asset-close-to",        "asset_close_to",        "AssetCloseToDetector",        "AssetCloseToViolation"),
     ("asset-id-validation",   "asset_id_validation",   "AssetIdValidationDetector",   "AssetIdValidationViolation"),
     ("box-key",               "box_key",               "NonUniqueBoxKeyDetector",     None),

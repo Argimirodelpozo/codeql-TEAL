@@ -68,6 +68,10 @@ class ArbitraryInnerAssetDetector:
     name: ClassVar[str] = "sec-guide/arbitrary-inner-asset"
     applies_to: ClassVar[frozenset] = frozenset({"app"})  # itxn_* is app-only
     violation_cls: ClassVar[type] = ArbitraryInnerAssetViolation
+    # Superseded by ir-arbitrary-inner-asset (IR taint/guards + the same receiver-
+    # context suppression), which falls back to this one on lift failure. Kept
+    # registered; skipped in default scans. See scan._drop_superseded.
+    superseded_by: ClassVar[str] = "ir-arbitrary-inner-asset"
 
     def __init__(self, prog: SSAProgram, *, file: Optional[str] = None,
                  path_predicates: "Optional[PathPredicateAnalysis]" = None):
