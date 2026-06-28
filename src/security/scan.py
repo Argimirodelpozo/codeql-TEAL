@@ -50,6 +50,21 @@ from .config import DetectionConfig
 logger = logging.getLogger("security.scan")
 
 
+def _drop_superseded(detectors: Iterable[str]) -> list[str]:
+    """Drop any detector marked ``superseded_by`` another REGISTERED detector --
+    the superseder covers it (and falls back to it internally), so a default scan
+    runs only the superseder and avoids duplicate findings. An explicit ``only``
+    list bypasses this (you can still request a superseded detector by name)."""
+    out: list[str] = []
+    for d in detectors:
+        cls = DETECTORS.get(d)
+        sup = getattr(cls, "superseded_by", None)
+        if sup and sup in DETECTORS:
+            continue
+        out.append(d)
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
@@ -72,11 +87,12 @@ class ScanRule:
 
     def select(self, all_detectors: Iterable[str]) -> list[str]:
         if self.only is not None:
+            # explicit list overrides supersession -- ask for any detector by name
             return [d for d in self.only if d in DETECTORS]
         if self.exclude is not None:
             excl = set(self.exclude)
-            return [d for d in all_detectors if d not in excl]
-        return list(all_detectors)
+            return _drop_superseded(d for d in all_detectors if d not in excl)
+        return _drop_superseded(all_detectors)
 
 
 @dataclass(frozen=True)
@@ -122,7 +138,7 @@ class ScanConfig:
         for rule in self.rules:
             if rule.matches(rel_path):
                 return rule.select(DETECTORS)
-        return list(DETECTORS)
+        return _drop_superseded(DETECTORS)
 
 
 # ---------------------------------------------------------------------------

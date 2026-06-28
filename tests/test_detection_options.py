@@ -15,6 +15,21 @@ def _opts(d: dict) -> DetectionOptions:
     return DetectionOptions.from_dict(d)
 
 
+def test_superseded_detector_skipped_by_default():
+    # tainted-fund-flow is superseded_by ir-tainted-fund-flow (which falls back to
+    # it internally), so a default scan runs only the IR one -- no duplicate
+    # findings. partial-tainted-fund-flow is a different detector, untouched.
+    dets = _opts({}).detectors_for("a.teal")
+    assert "ir-tainted-fund-flow" in dets
+    assert "tainted-fund-flow" not in dets
+    assert "partial-tainted-fund-flow" in dets
+
+
+def test_superseded_overridable_by_explicit_only():
+    o = _opts({"detectors": [{"match": "*.teal", "only": ["tainted-fund-flow"]}]})
+    assert o.detectors_for("a.teal") == ["tainted-fund-flow"]
+
+
 def test_parse_and_lookups():
     o = _opts({
         "modes": [{"match": "**/*.approval.teal", "mode": "app"}],

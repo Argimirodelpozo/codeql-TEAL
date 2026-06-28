@@ -42,3 +42,23 @@ def test_ssa_falsepositives_on_owner_guard_across_callsub():
     # sibling; if a future change teaches the SSA detector this guard, update this
     # test (the FP going away is a WIN, not a regression).
     assert _fires("tainted-fund-flow") > 0
+
+
+_VULN = (Path(__file__).resolve().parent / "benchmark" / "ir-tainted-fund-flow"
+         / "vuln" / "unguarded_receiver.teal")
+
+
+def test_ir_detector_falls_back_to_ssa_when_lift_fails(monkeypatch):
+    # when the lift fails (ir_lifter -> None), the IR detector defers to the SSA
+    # tainted-fund-flow detector so coverage stays complete (IR-primary, SSA-
+    # fallback). Force a lift failure and confirm it matches the SSA's findings.
+    from security import DETECTORS, common
+    monkeypatch.setattr(common, "ir_lifter", lambda prog, file=None: None)
+
+    def _n(det):
+        p = SSAProgram(str(_VULN), verbose=False)
+        p.propagate_constants()
+        with contextlib.redirect_stdout(io.StringIO()):
+            return len(DETECTORS[det](p).detect())
+
+    assert _n("ir-tainted-fund-flow") == _n("tainted-fund-flow") > 0

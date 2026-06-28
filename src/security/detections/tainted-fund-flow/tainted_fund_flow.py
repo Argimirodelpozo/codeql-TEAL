@@ -66,6 +66,13 @@ class TaintedFundFlowDetector:
     name: ClassVar[str] = "sec-guide/tainted-fund-flow"
     applies_to: ClassVar[frozenset] = frozenset({"app"})
     violation_cls: ClassVar[type] = TaintedFundFlowViolation
+    # Superseded by the IR-layer ir-tainted-fund-flow, which matches or beats this
+    # detector on every analysis axis (across-callsub dominance, validation-sub
+    # guards, typed reasoning, cross-contract) and falls back to THIS detector when
+    # the lift fails. Kept registered (benchmark + that fallback + standalone use),
+    # but skipped in default scans so the IR detector is the single fund-flow entry
+    # point. Ask for it explicitly (``only: [tainted-fund-flow]``) to override.
+    superseded_by: ClassVar[str] = "ir-tainted-fund-flow"
 
     def __init__(self, prog: SSAProgram, *, file: Optional[str] = None,
                  path_predicates: "Optional[PathPredicateAnalysis]" = None):

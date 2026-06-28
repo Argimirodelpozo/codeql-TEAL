@@ -63,18 +63,28 @@ class IrTaintedFundFlowDetector:
     applies_to: ClassVar[frozenset] = frozenset({"app"})  # inner txns are app-only
     violation_cls: ClassVar[type] = IrTaintedFundFlowViolation
 
-    def __init__(self, prog, *, file: Optional[str] = None, trusted_args=frozenset()):
+    def __init__(self, prog, *, file: Optional[str] = None, trusted_args=frozenset(),
+                 path_predicates=None):
         self.prog = prog
         self.file = file
         # ApplicationArgs indices a CALLER pinned to constants (cross-contract):
         # the cross-contract runner passes the call site's const_args, so a callee
         # payment fixed by its caller isn't reported attacker-controlled here.
         self.trusted_args = frozenset(trusted_args)
+        # Forwarded to the SSA fallback (below) so it keeps cross-contract guard
+        # seeding when the lift fails.
+        self.path_predicates = path_predicates
 
     def detect(self) -> list:
         lifter = common.ir_lifter(self.prog, self.file)
-        if lifter is None:                       # contract didn't lift (rare)
-            return []
+        if lifter is None:
+            # The contract didn't lift (~0.1% of real mainnet). Fall back to the
+            # SSA tainted-fund-flow detector (which needs no lift) so this detector
+            # gives COMPLETE coverage and can be the single fund-flow entry point.
+            from security import DETECTORS
+            return DETECTORS["tainted-fund-flow"](
+                self.prog, file=self.file, path_predicates=self.path_predicates,
+            ).detect()
         from tealtools.WIP_lift2puyaIR import fund_flow as FF
 
         src = getattr(self.prog, "source_path", None)
