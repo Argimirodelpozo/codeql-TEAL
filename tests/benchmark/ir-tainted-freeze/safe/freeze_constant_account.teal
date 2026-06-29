@@ -1,0 +1,13 @@
+#pragma version 10
+    itxn_begin
+    int afrz
+    itxn_field TypeEnum
+    int 100
+    itxn_field FreezeAsset
+    global CreatorAddress
+    itxn_field FreezeAssetAccount
+    int 1
+    itxn_field FreezeAssetFrozen
+    itxn_submit
+    int 1
+    return

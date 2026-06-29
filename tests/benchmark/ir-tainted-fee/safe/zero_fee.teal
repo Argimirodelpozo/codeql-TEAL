@@ -1,0 +1,13 @@
+#pragma version 10
+    itxn_begin
+    int pay
+    itxn_field TypeEnum
+    global CurrentApplicationAddress
+    itxn_field Receiver
+    int 0
+    itxn_field Amount
+    int 0
+    itxn_field Fee
+    itxn_submit
+    int 1
+    return

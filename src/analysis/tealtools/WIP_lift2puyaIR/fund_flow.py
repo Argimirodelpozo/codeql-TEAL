@@ -46,7 +46,7 @@ from ..cfg.dominance import iterative_dominators
 
 # Inner-txn fields where attacker control = fund redirection / theft, by severity
 # (canonical FUND_FIELDS in tealtools.opsets).
-_SEV_ORDER = {"CRITICAL": 3, "HIGH": 2, "MEDIUM": 1}
+_SEV_ORDER = {"CRITICAL": 3, "HIGH": 2, "MEDIUM": 1, "LOW": 0}
 
 _TXN_SENDER_FAM = frozenset({"txn", "txna", "gtxn", "gtxna", "gtxns", "gtxnsa"})
 
@@ -461,6 +461,21 @@ def tainted_state_writes(lifter, taint=None, trusted_args=frozenset()) -> list:
     ``txn Sender`` -- the ubiquitous per-caller ``box[Sender]`` pattern -- is NOT a
     taint source, so it never surfaces; a key checked == Sender is guard-cleared.)"""
     return _tainted_sink_flows(lifter, _state_write_sink_of, taint, trusted_args)
+
+
+def _log_sink_of(s):
+    if s.op != "log" or not s.args:
+        return ()
+    return (("log", "LOW", s.args),)
+
+
+def tainted_logs(lifter, taint=None, trusted_args=frozenset()) -> list:
+    """User-input-tainted values emitted via ``log``. A contract that logs
+    attacker-controlled data feeds FORGED data to anything that trusts its logs:
+    a CALLER reading its ``LastLog`` (itself a taint source -- a spoofed ARC-4
+    return / event), or an off-chain indexer. Output-integrity, hence LOW
+    severity; the guard machinery clears a logged value that was validated first."""
+    return _tainted_sink_flows(lifter, _log_sink_of, taint, trusted_args)
 
 
 def tainted_fund_flows(lifter, taint=None, trusted_args=frozenset()) -> list:

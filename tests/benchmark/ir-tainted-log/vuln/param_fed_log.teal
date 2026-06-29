@@ -1,0 +1,11 @@
+#pragma version 10
+// Attacker data forwarded into a helper that logs it (interprocedural). VULN.
+    txna ApplicationArgs 0
+    callsub emit
+    int 1
+    return
+emit:
+    proto 1 0
+    frame_dig -1
+    log
+    retsub

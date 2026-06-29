@@ -1,0 +1,6 @@
+#pragma version 10
+// Logs a fixed constant -> nothing attacker-controlled. SAFE.
+    byte 0x151f7c7500000000
+    log
+    int 1
+    return

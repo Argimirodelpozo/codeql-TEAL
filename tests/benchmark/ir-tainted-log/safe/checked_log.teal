@@ -1,0 +1,10 @@
+#pragma version 10
+// The logged value is validated against a known constant first. SAFE.
+    txna ApplicationArgs 0
+    byte 0x6f6b
+    ==
+    assert
+    txna ApplicationArgs 0
+    log
+    int 1
+    return

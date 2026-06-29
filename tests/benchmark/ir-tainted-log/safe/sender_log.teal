@@ -1,0 +1,6 @@
+#pragma version 10
+// Logs txn Sender (the caller's identity, not attacker-chosen input). SAFE.
+    txn Sender
+    log
+    int 1
+    return

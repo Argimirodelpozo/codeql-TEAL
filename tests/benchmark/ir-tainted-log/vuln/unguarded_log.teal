@@ -1,0 +1,7 @@
+#pragma version 10
+// Logs attacker-controlled data verbatim -> a caller reading LastLog (or an
+// off-chain indexer) can be fed forged data. No check. VULN (low).
+    txna ApplicationArgs 0
+    log
+    int 1
+    return
