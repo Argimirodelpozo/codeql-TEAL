@@ -120,3 +120,71 @@ def test_negative_below_frame_read_stays_local_not_pushed():
     assert out0 not in res.pushed
     assert out0 not in res.passthrough
     assert res.dig_local.get(out0) == (-2, 0)    # prior behavior preserved
+
+
+# --------------------------------------------------------------------------
+# End-to-end regression: deep loop-invariant frame slot threading (commit
+# ef1433e9). A frame slot kept at the working-stack BOTTOM across a loop and
+# read only via `frame_dig N` (e.g. an address dug into `itxn_field Receiver`
+# each lap) was silently lost to a zero constant -- the braun phi placement
+# never demanded the deep slot's read, so phase 6a rebuilt a too-shallow
+# entry_stack. Mainnet witness was app 3606534408 (itxn AssetReceiver/Sender
+# -> 0). This is the minimal faithful repro: the lifted TEAL MUST carry the
+# real 0x1111... address into the itxn field, never a zero.
+_DEEP_FRAME_LOOP_REPRO = """#pragma version 10
+  int 1
+  int 2
+  callsub helper
+  pop
+  int 1
+  return
+helper:
+  proto 2 1
+  byte 0x1111111111111111111111111111111111111111111111111111111111111111
+  int 0
+  b loop
+loop:
+  frame_dig 1
+  int 2
+  <
+  bz done
+  itxn_begin
+  frame_dig 0
+  dup
+  itxn_field AssetReceiver
+  itxn_field Sender
+  int 1
+  itxn_field TypeEnum
+  int 0
+  itxn_field Fee
+  itxn_submit
+  frame_dig 1
+  int 1
+  +
+  frame_bury 1
+  b loop
+done:
+  frame_dig -1
+  frame_bury 0
+  retsub
+"""
+
+
+def test_deep_loop_invariant_frame_slot_not_zeroed(tmp_path):
+    import re
+    from tests.behavioral_lift.compare import lift_to_teal
+
+    src = tmp_path / "deep_frame_loop.teal"
+    src.write_text(_DEEP_FRAME_LOOP_REPRO)
+    lifted = lift_to_teal(str(src))
+
+    # The address must survive into the inner-txn fields.
+    assert "0x1111111111111111111111111111111111111111111111111111111111111111" in lifted, \
+        "deep loop-invariant frame slot (the address) was dropped from the lift"
+    # No itxn address field may be fed a zero constant.
+    lines = lifted.splitlines()
+    for i, ln in enumerate(lines):
+        if re.search(r"itxn_field (AssetReceiver|Sender|Receiver)\b", ln):
+            prev = lines[i - 1].strip()
+            assert not re.match(r"(intc_0\b|int 0\b|pushint 0\b|bytec_0 // 0x0000)", prev), \
+                f"itxn address field fed a zero constant ({prev!r}) -- frame slot lost"
