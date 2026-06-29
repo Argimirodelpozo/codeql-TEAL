@@ -125,6 +125,13 @@ _POS_IN = {
     "app_global_get": ("bytes",),                 # key
     "app_global_put": (None, "bytes"),            # K(key) V(val) -> [V, K]
     "app_global_get_ex": ("bytes", "uint64"),     # app key -> [key, app]
+    # local-state ops mirror the global ones plus the DEEPEST account operand.
+    # Without these the key (and account) positions stay `?` and lower to uint64
+    # -> app_local_get(uint64,uint64) mixed-type encode error. Source order is
+    # (account, [app,] key[, value]); SSA is top-first (reversed), key shallowest.
+    "app_local_get": ("bytes", None),            # acct key -> [key, acct]
+    "app_local_put": (None, "bytes", None),      # acct key val -> [val, key, acct]
+    "app_local_get_ex": ("bytes", "uint64", None),  # acct app key -> [key, app, acct]
     "bzero": ("uint64",), "txnas": ("uint64",), "gtxnas": ("uint64",),
     # box ops: the NAME is the deepest operand (= last, top-first), always
     # bytes. Without this a box name reaching box_get only through a stack

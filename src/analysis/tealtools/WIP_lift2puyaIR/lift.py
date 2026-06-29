@@ -371,6 +371,10 @@ class _Lifter:
                             self._param_phis.add(ph)
             self.cur_nret = nrets
             self.cur_nargs = len(params)
+            # proto subs read args/returns off a frame; legacy non-proto subs leave
+            # their returns on the value stack. _control_retsub needs this to pick the
+            # right return-slot rule (a non-proto sub has no frame slots).
+            self.cur_is_proto = (s is not None and s.entry_bb in self._proto_entries)
             self._setup_frame(gb, params)
             self._setup_shuffles(gb)
             self._name_group(gb)
@@ -774,8 +778,19 @@ class _Lifter:
             # localnet: `len(repeat(3))==3` PASSES (slot-0 bytes returned),
             # `repeat(3)==3` fails to compare []byte to uint64.
             np = self.cur_nargs
-            rets = [rsx[np + j] if np + j < len(rsx) else pre_ir.Undefined()
-                    for j in range(self.cur_nret)]
+            if self.cur_is_proto:
+                # `proto A R`: returns are frame slots A..A+R-1 (resim seeds the params,
+                # then frame_bury deep-writes each slot at rsx[A+j]).
+                rets = [rsx[np + j] if np + j < len(rsx) else pre_ir.Undefined()
+                        for j in range(self.cur_nret)]
+            else:
+                # Legacy non-proto sub: no frame slots -- the R returns are the TOP R of
+                # the clean re-simulated stack (same as the non-resim exit-stack branch).
+                # The proto rsx[A+j] rule reads PAST a short non-proto stack and yields
+                # Undefined, which DCEs the whole body (the wormhole-core regression).
+                base = len(rsx) - self.cur_nret
+                rets = [rsx[base + j] if 0 <= base + j < len(rsx) else pre_ir.Undefined()
+                        for j in range(self.cur_nret)]
             return pre_ir.SubroutineReturn(rets)
         slots = self.final_locals.get(self.cur_gname, {})
         es = bb.exit_stack or []
