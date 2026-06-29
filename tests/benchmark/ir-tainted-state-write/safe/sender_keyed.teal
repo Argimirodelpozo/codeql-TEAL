@@ -1,0 +1,7 @@
+#pragma version 10
+// Per-caller slot: key is txn Sender (not attacker-chosen / not a taint source). SAFE.
+    txn Sender
+    txna ApplicationArgs 0
+    app_global_put
+    int 1
+    return

@@ -118,6 +118,7 @@ _BASELINE: dict[str, tuple[int, int, int, int]] = {
     "ir-arbitrary-inner-asset": (2, 0, 0, 3),
     "ir-tainted-asset-admin": (2, 0, 0, 3),
     "ir-tainted-fund-flow": (5, 0, 0, 6),
+    "ir-tainted-state-write": (2, 0, 0, 3),
     "is-deletable": (1, 0, 0, 1),
     "is-updatable": (1, 0, 0, 1),
     "lease-validation": (1, 0, 0, 1),

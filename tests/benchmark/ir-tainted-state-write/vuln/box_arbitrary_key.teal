@@ -1,0 +1,7 @@
+#pragma version 10
+// Attacker chooses the BOX key to write -> collide with a sensitive box. VULN.
+    txna ApplicationArgs 0
+    txna ApplicationArgs 1
+    box_put
+    int 1
+    return

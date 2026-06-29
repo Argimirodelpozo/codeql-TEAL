@@ -1,0 +1,7 @@
+#pragma version 10
+// Fixed key, user value -> storing user data under a fixed slot is normal. SAFE.
+    byte "balance"
+    txna ApplicationArgs 0
+    app_global_put
+    int 1
+    return

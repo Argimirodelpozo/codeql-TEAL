@@ -1,0 +1,8 @@
+#pragma version 10
+// Attacker chooses the GLOBAL state key to write -> can overwrite any slot
+// (owner/admin). No check. VULN (critical).
+    txna ApplicationArgs 0
+    txna ApplicationArgs 1
+    app_global_put
+    int 1
+    return

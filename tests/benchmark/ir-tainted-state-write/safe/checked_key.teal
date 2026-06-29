@@ -1,0 +1,12 @@
+#pragma version 10
+// The key is validated against allowed state before use. SAFE.
+    txna ApplicationArgs 0
+    byte "allowed_key"
+    app_global_get
+    ==
+    assert
+    txna ApplicationArgs 0
+    txna ApplicationArgs 1
+    app_global_put
+    int 1
+    return

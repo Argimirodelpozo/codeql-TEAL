@@ -346,21 +346,15 @@ def _entry_guards(lifter, def_of, dom_by_sub, taint, inv_ret=None):
     return eg, called
 
 
-def tainted_itxn_flows(lifter, fields, taint=None, trusted_args=frozenset()) -> list:
-    """Findings for every user-input-tainted value reaching one of the inner-txn
-    ``fields`` (a ``{field_name: severity}`` map), sorted UNGUARDED-first then by
-    severity. Guards are recognised both intra-procedurally and across call
-    boundaries (caller-side checks on a value passed into a parameter), and a
-    guard inside an asserted validation subroutine is descended into.
-
-    Parameterised by ``fields`` so the same engine powers fund-flow
-    (Receiver/Amount/Close/Rekey), arbitrary-inner-appcall (ApplicationID),
-    arbitrary-inner-asset (XferAsset), etc. -- each gets the IR layer's
-    across-callsub dominance + cross-contract suppression for free.
-
-    ``trusted_args`` -- ApplicationArgs indices a caller pinned to constants
-    (cross-contract); those reads don't seed taint, so a sink fixed by its caller
-    is not reported as attacker-controlled on that edge."""
+def _tainted_sink_flows(lifter, sink_of, taint=None, trusted_args=frozenset()) -> list:
+    """Core taint-to-sink engine. ``sink_of(intrinsic)`` yields
+    ``(label, severity, value_args)`` for each sink the op represents -- where
+    ``value_args`` is the operand(s) whose taint makes it a finding. Returns
+    UNGUARDED-first findings with the full guard machinery: intra- AND inter-
+    procedural dominance, validation-subroutine descent, caller entry-guards, and
+    cross-contract ``trusted_args``. Parameterising the sink lets one engine power
+    inner-txn fields (fund-flow / appcall / asset / asset-admin) AND persistent
+    state writes."""
     if taint is None:
         taint = user_input_taint(lifter, trusted_args)
     def_of = _def_map(lifter)
@@ -375,48 +369,98 @@ def tainted_itxn_flows(lifter, fields, taint=None, trusted_args=frozenset()) -> 
         for b in sub.body:
             for idx, o in enumerate(b.ops):
                 s = _intr(o)
-                if s is None or s.op != "itxn_field" or not s.immediates:
+                if s is None:
                     continue
-                field = str(s.immediates[0]).strip()
-                if field not in fields:
-                    continue
-                sources: set = set()
-                valreg = None
-                for a in s.args:
-                    if isinstance(a, pre_ir.Register):
-                        tt = taint.get(id(a), set())
-                        if tt:
-                            sources |= tt
-                            valreg = a
-                if not sources:
-                    continue
-                if valreg is not None:
-                    walked = list(_walk(valreg, def_of))
-                    sink_regs = {id(r) for r, _ in walked}
-                    sink_keys = {k for _, o in walked
-                                 if (k := _input_key(_intr(o) if o is not None else None)) is not None}
-                else:
-                    sink_regs, sink_keys = set(), set()
-                guards = _dominating_guards(by_id, dom, b.id, idx, def_of, sink_regs,
-                                            sink_keys, inv_ret)
-                # Interprocedural: the tainted value may flow from a parameter that
-                # the caller(s) already checked -- fold that in as a "caller" guard.
-                feeding = {pidx[r] for r in sink_regs if r in pidx}
-                egp = entry_guards.get(sub.id, {})
-                if any(egp.get(i, (False, False))[0] for i in feeding):
-                    guards.append(Guard("caller", None, True, False))
-                if any(egp.get(i, (False, False))[1] for i in feeding):
-                    guards.append(Guard("caller", None, False, True))
-                guarded = any(g.checks_input or g.checks_sender for g in guards)
-                # param-derived now means UNRESOLVED: a param feeds it, nothing
-                # guards it, and the sub has no call sites we could inspect.
-                param_derived = bool(feeding) and not guarded and sub.id not in called
-                findings.append(FundFlowFinding(
-                    field, fields[field], frozenset(sources),
-                    sub.id, s.line, guards, param_derived))
+                for label, severity, value_args in sink_of(s):
+                    sources: set = set()
+                    valreg = None
+                    for a in value_args:
+                        if isinstance(a, pre_ir.Register):
+                            tt = taint.get(id(a), set())
+                            if tt:
+                                sources |= tt
+                                valreg = a
+                    if not sources:
+                        continue
+                    if valreg is not None:
+                        walked = list(_walk(valreg, def_of))
+                        sink_regs = {id(r) for r, _ in walked}
+                        sink_keys = {k for _, oo in walked
+                                     if (k := _input_key(_intr(oo) if oo is not None else None)) is not None}
+                    else:
+                        sink_regs, sink_keys = set(), set()
+                    guards = _dominating_guards(by_id, dom, b.id, idx, def_of, sink_regs,
+                                                sink_keys, inv_ret)
+                    # Interprocedural: a value flowing from a caller-checked param.
+                    feeding = {pidx[r] for r in sink_regs if r in pidx}
+                    egp = entry_guards.get(sub.id, {})
+                    if any(egp.get(i, (False, False))[0] for i in feeding):
+                        guards.append(Guard("caller", None, True, False))
+                    if any(egp.get(i, (False, False))[1] for i in feeding):
+                        guards.append(Guard("caller", None, False, True))
+                    guarded = any(g.checks_input or g.checks_sender for g in guards)
+                    param_derived = bool(feeding) and not guarded and sub.id not in called
+                    findings.append(FundFlowFinding(
+                        label, severity, frozenset(sources),
+                        sub.id, s.line, guards, param_derived))
     findings.sort(key=lambda f: (f.guarded, f.param_derived,
                                  -_SEV_ORDER[f.severity], f.sub_id, f.line))
     return findings
+
+
+def _itxn_sink_of(fields):
+    def sink_of(s):
+        if s.op != "itxn_field" or not s.immediates:
+            return ()
+        field = str(s.immediates[0]).strip()
+        if field not in fields:
+            return ()
+        return ((field, fields[field], s.args),)
+    return sink_of
+
+
+def tainted_itxn_flows(lifter, fields, taint=None, trusted_args=frozenset()) -> list:
+    """User-input-tainted values reaching one of the inner-txn ``fields`` (a
+    ``{field_name: severity}`` map). Powers fund-flow (Receiver/Amount/Close/Rekey),
+    arbitrary-inner-appcall (ApplicationID), -asset (XferAsset), -asset-admin (acfg
+    roles) -- each gets the IR layer's across-callsub dominance + cross-contract
+    suppression for free."""
+    return _tainted_sink_flows(lifter, _itxn_sink_of(fields), taint, trusted_args)
+
+
+# Persistent-state-write ops -> the index of their KEY operand in the lifted
+# Intrinsic's args (TOP-FIRST: arg[0] is the last value pushed). Verified
+# empirically. The KEY is the destination slot a tainted value lets the attacker
+# choose; the VALUE is not flagged (storing user data is normal).
+_STATE_WRITE_KEY_IDX = {
+    "app_global_put": 1,    # args: value, KEY
+    "app_local_put": 1,     # args: value, KEY, account
+    "box_put": 1,           # args: value, KEY
+    "box_create": 1,        # args: size, KEY
+    "box_replace": 2,       # args: bytes, start, KEY
+}
+_STATE_WRITE_SEV = {
+    "app_global_put": "CRITICAL",   # overwrite ANY global slot (owner/admin state)
+    "app_local_put": "HIGH",
+    "box_put": "HIGH", "box_replace": "HIGH", "box_create": "MEDIUM",
+}
+
+
+def _state_write_sink_of(s):
+    ki = _STATE_WRITE_KEY_IDX.get(s.op)
+    if ki is None or ki >= len(s.args):
+        return ()
+    return ((s.op, _STATE_WRITE_SEV.get(s.op, "HIGH"), [s.args[ki]]),)
+
+
+def tainted_state_writes(lifter, taint=None, trusted_args=frozenset()) -> list:
+    """Tainted-KEY persistent state writes: a user-input value reaching the KEY of
+    ``app_global_put`` / ``app_local_put`` / ``box_put`` / ``box_create`` /
+    ``box_replace`` lets the attacker write to an arbitrary slot -- overwrite
+    owner/admin global state, collide with a sensitive box. (A key derived from
+    ``txn Sender`` -- the ubiquitous per-caller ``box[Sender]`` pattern -- is NOT a
+    taint source, so it never surfaces; a key checked == Sender is guard-cleared.)"""
+    return _tainted_sink_flows(lifter, _state_write_sink_of, taint, trusted_args)
 
 
 def tainted_fund_flows(lifter, taint=None, trusted_args=frozenset()) -> list:
