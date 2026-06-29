@@ -734,7 +734,14 @@ class PySSA:
         b = self._bb_by_key.get(P.bb_key)
         if b is not None:
             b.entry_phis = [ph for ph in b.entry_phis if ph is not P]
-        for u in list(self._phi_users.pop(id(P), ())):
+        # Sort users by their STABLE identity (bb_key, slot) -- `_phi_users` is a
+        # set, and the trivial-phi cascade is order-sensitive (processing user u1
+        # before u2 can change u2's triviality), so an id()-ordered iteration made
+        # the whole SSA construction NONDETERMINISTIC: a join's phi count varied
+        # run-to-run, which downstream surfaced as an order-dependent mixed-type
+        # phi (a contract lifting only some runs). id() is not seed-stable; the
+        # (bb_key, slot) key is.
+        for u in sorted(self._phi_users.pop(id(P), ()), key=lambda u: u.key()):
             u.args = [same if a is P else a for a in u.args]
             if isinstance(same, PyPhi):
                 self._phi_users.setdefault(id(same), set()).add(u)
