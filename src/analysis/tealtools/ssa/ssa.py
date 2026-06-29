@@ -78,6 +78,14 @@ STACK_MAX = 1000
 _MISSING = object()
 
 
+def _frame_imm(op):
+    """The N of a frame_dig/frame_bury, or None."""
+    try:
+        return int(op.immediates.strip().split()[0])
+    except (ValueError, IndexError, AttributeError):
+        return None
+
+
 # A reconstructed-SSA operand. ``None`` marks a slot the builder could
 # not resolve (a depth mismatch surfaced rather than hidden).
 Operand = Union["PyVar", "PyPhi"]
@@ -544,11 +552,76 @@ class PySSA:
         for b in self.blocks:
             for k in range(1, self._consumed[b] + 1):
                 self._read_entry(b, k)
+        # Reconcile braun phi-placement with the phase-6c frame expander: a
+        # `frame_dig N` (N>=0) reads ABSOLUTE frame position `nargs+N`, whose
+        # top-first ENTRY slot is `entry_depth(b) - (nargs+N)`. That depth is only
+        # realised in 6c, so without demanding the read here no join phi is placed
+        # for a deep loop-invariant slot and it is dropped (silent 0). Compute the
+        # per-block entry depth the SAME way 6c will (sub entry = nargs, frame_dig
+        # +1 / frame_bury -1, every other op n_out-n_in), then demand EXACTLY each
+        # frame_dig's slot. Exact (not 1..D): an over-broad demand deepens other
+        # blocks and threads wrong values. Bounded by the forward cap in _read_entry.
+        self._compute_subs_and_protos()
+        edepth = self._frame_entry_depths()
+        for b in self.blocks:
+            sub = self._bb_to_sub.get(b)
+            if sub is None or sub not in self._proto_io:
+                continue
+            nargs = self._proto_io[sub][0]
+            d = edepth.get(b.key)
+            if d is None:
+                continue
+            for o in b.ops:
+                n = _frame_imm(o)
+                if o.op == "frame_dig" and n is not None and n >= 0:
+                    k = d - (nargs + n)
+                    if 1 <= k <= self._depth.get(b.key, 0):
+                        self._read_entry(b, k)
         # Re-point any entry value / phi arg left at a since-removed phi.
         for key in list(self._entry_val):
             self._entry_val[key] = self._resolve(self._entry_val[key])
         for P in self.phis.values():
             P.args = [self._resolve(a) for a in P.args]
+
+    def _frame_entry_depths(self) -> dict:
+        """`bb_key -> entry stack depth INCLUDING the sub's args`, simulated the
+        way phase 6c builds local_stack: each sub entry starts at `nargs`, then
+        every op applies its net (`frame_dig` +1, `frame_bury` -1, else
+        n_out-n_in). Forward BFS within each sub; first (forward) reach wins, so a
+        loop header keeps its preheader depth (same rule as _compute_entry_depths).
+        Used only to locate each frame_dig's read slot for phi demand."""
+        from collections import deque
+        def net(op):
+            if op.op == "frame_dig":
+                return 1
+            if op.op == "frame_bury":
+                return -1
+            return op.n_out - op.n_in
+        ed = {}
+        # sub entry blocks (proto subs) start at nargs; main-routine roots at 0.
+        roots = {}
+        for b in self.blocks:
+            sub = self._bb_to_sub.get(b)
+            if sub is b:                       # b is its own routine entry
+                roots[b] = self._proto_io.get(sub, (0, 0))[0]
+        wl = deque()
+        for b, d0 in roots.items():
+            ed[b.key] = d0
+            wl.append(b)
+        while wl:
+            b = wl.popleft()
+            d = ed[b.key]
+            for o in b.ops:
+                d += net(o)
+            if d < 0:
+                d = 0
+            for s in b.succs:
+                # stay within the routine (don't cross callsub/retsub edges)
+                if (self._bb_to_sub.get(s) is self._bb_to_sub.get(b)
+                        and s.key not in ed):
+                    ed[s.key] = d
+                    wl.append(s)
+        return ed
 
     def _compute_entry_depths(self) -> dict:
         """``bb_key -> entry stack depth`` (top-first slot count) via a forward
