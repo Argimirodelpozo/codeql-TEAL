@@ -1,0 +1,18 @@
+#pragma version 10
+// The clawback value is pinned: ApplicationArgs[0] must equal the stored admin
+// before it is used. SAFE.
+    txna ApplicationArgs 0
+    byte "admin"
+    app_global_get
+    ==
+    assert
+    itxn_begin
+    int acfg
+    itxn_field TypeEnum
+    int 100
+    itxn_field ConfigAsset
+    txna ApplicationArgs 0
+    itxn_field ConfigAssetClawback
+    itxn_submit
+    int 1
+    return

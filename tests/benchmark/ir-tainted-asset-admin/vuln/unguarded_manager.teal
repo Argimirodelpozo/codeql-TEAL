@@ -1,0 +1,12 @@
+#pragma version 10
+// Attacker sets the asset MANAGER (can reconfigure/destroy). No check. VULN.
+    itxn_begin
+    int acfg
+    itxn_field TypeEnum
+    int 100
+    itxn_field ConfigAsset
+    txna ApplicationArgs 1
+    itxn_field ConfigAssetManager
+    itxn_submit
+    int 1
+    return

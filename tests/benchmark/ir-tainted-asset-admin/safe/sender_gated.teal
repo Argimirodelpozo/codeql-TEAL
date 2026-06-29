@@ -1,0 +1,18 @@
+#pragma version 10
+// Owner-only: only the stored owner can reach the acfg, so the attacker-named
+// clawback isn't attacker-reachable. SAFE.
+    txn Sender
+    byte "owner"
+    app_global_get
+    ==
+    assert
+    itxn_begin
+    int acfg
+    itxn_field TypeEnum
+    int 100
+    itxn_field ConfigAsset
+    txna ApplicationArgs 0
+    itxn_field ConfigAssetClawback
+    itxn_submit
+    int 1
+    return

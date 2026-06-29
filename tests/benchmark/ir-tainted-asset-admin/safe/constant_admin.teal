@@ -1,0 +1,12 @@
+#pragma version 10
+// Clawback set to the app itself (a constant) -> not attacker-controlled. SAFE.
+    itxn_begin
+    int acfg
+    itxn_field TypeEnum
+    int 100
+    itxn_field ConfigAsset
+    global CurrentApplicationAddress
+    itxn_field ConfigAssetClawback
+    itxn_submit
+    int 1
+    return

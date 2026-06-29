@@ -1,0 +1,13 @@
+#pragma version 10
+// Attacker sets the asset's CLAWBACK address to a value they control -> they can
+// claw the asset out of every holder. No check. VULN (critical).
+    itxn_begin
+    int acfg
+    itxn_field TypeEnum
+    int 100
+    itxn_field ConfigAsset
+    txna ApplicationArgs 0
+    itxn_field ConfigAssetClawback
+    itxn_submit
+    int 1
+    return
