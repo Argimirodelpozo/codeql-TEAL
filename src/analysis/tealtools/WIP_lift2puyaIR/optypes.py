@@ -37,6 +37,13 @@ _BYTES_OPS = frozenset({"itob", "concat", "substring", "substring3", "extract",
                         "mimc", "sumhash512", "base64_decode",
                         "ec_add", "ec_map_to", "ec_scalar_mul",
                         "ec_multi_scalar_mul",
+                        # ecdsa pubkey ops return TWO byteslices (the X, Y coords
+                        # of the recovered / decompressed point) -- both bytes, so
+                        # type_of (called per output) types each correctly. Without
+                        # this the outputs default to uint64 and Puya rejects the
+                        # bytes assignment downstream (`source=(uint64) target=
+                        # (bytes)`). `ecdsa_verify` returns a uint64 flag -> NOT here.
+                        "ecdsa_pk_recover", "ecdsa_pk_decompress",
                         "arg", "arg_0", "arg_1", "arg_2", "arg_3", "args",
                         }) | _BYTES_PUSH
 # `setbit` is polymorphic: its result type equals its VALUE operand (`setbit A B
