@@ -24,9 +24,17 @@ SENSITIVE_ITXN_FIELDS: frozenset[str] = frozenset({
 })
 
 #: Payment fields where attacker control = redirected / oversized fund movement,
-#: tagged by severity (the account-draining close/rekey fields rank CRITICAL).
+#: tagged by severity (the account-draining close fields rank CRITICAL).
+#:
+#: ``RekeyTo`` is deliberately NOT here. A rekey check is a LOGICSIG concern: an
+#: lsig that authorises a spend must validate the outer txn's ``RekeyTo`` or an
+#: attacker rekeys the lsig account away. For an APP there is nothing to validate
+#: — an app-call's ``txn RekeyTo`` rekeys the *user's own* account (their
+#: business, not the app's), and an ``itxn_field RekeyTo`` rekeys the *app's own*
+#: account, a self-inflicted, vanishingly-rare operation rather than a tainted-
+#: field vuln. So rekey lives in the lsig-scoped detectors, not the app fund-flow
+#: sink set. See :data:`CLOSE_REKEY_FIELDS` for the field-name catalog.
 FUND_FIELDS: dict[str, str] = {
-    "RekeyTo": "CRITICAL",
     "CloseRemainderTo": "CRITICAL",
     "AssetCloseTo": "CRITICAL",
     "Receiver": "HIGH",
