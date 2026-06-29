@@ -132,6 +132,10 @@ _POS_IN = {
     "app_local_get": ("bytes", None),            # acct key -> [key, acct]
     "app_local_put": (None, "bytes", None),      # acct key val -> [val, key, acct]
     "app_local_get_ex": ("bytes", "uint64", None),  # acct app key -> [key, app, acct]
+    # the `del` siblings carry a bytes key too — same gap, same byteslice-key
+    # lowering error if the key reaches them only through an untyped frame/phi.
+    "app_global_del": ("bytes",),                # key
+    "app_local_del": ("bytes", None),            # acct key -> [key, acct]
     "bzero": ("uint64",), "txnas": ("uint64",), "gtxnas": ("uint64",),
     # box ops: the NAME is the deepest operand (= last, top-first), always
     # bytes. Without this a box name reaching box_get only through a stack
@@ -145,6 +149,7 @@ _POS_IN = {
     "box_put": ("bytes", "bytes"),                # name value -> [value, name]
     "box_extract": ("uint64", "uint64", "bytes"), # name start len
     "box_replace": ("bytes", "uint64", "bytes"),  # name start value
+    "box_splice": ("bytes", "uint64", "uint64", "bytes"),  # name start len value
 }
 
 
