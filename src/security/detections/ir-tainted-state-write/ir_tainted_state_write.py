@@ -4,26 +4,14 @@ A user-input-tainted value reaching the KEY (the destination slot) of a persiste
 state write -- ``app_global_put`` / ``app_local_put`` / ``box_put`` /
 ``box_create`` / ``box_replace`` -- lets the attacker write to a slot they choose:
 overwrite the contract's own owner / admin / accounting GLOBAL state, or collide
-with a sensitive box. The VALUE written is NOT flagged (storing user data is
-normal); only the attacker-chosen KEY.
-
-A NEW sink CATEGORY (no SSA-layer sibling): the first detector built on the IR
-engine generalised past inner-txn fields to arbitrary sink ops
-(:func:`fund_flow.tainted_state_writes`). It inherits the IR layer's across-
-``callsub`` guard dominance, validation-subroutine guards, typed reasoning, and
-cross-contract caller-pin suppression. Low false-positive by construction: a key
-derived from ``txn Sender`` (the ubiquitous per-caller ``box[Sender]`` pattern) is
-NOT a taint source so never surfaces, and a key checked ``== Sender`` / against
-stored state is guard-cleared.
-
-Lift-only (no SSA fallback). Emits only the UNGUARDED, call-resolved writes.
+with a sensitive box. Only the KEY is flagged, not the VALUE (storing user data is
+normal). A new sink CATEGORY (the first IR detector on a non-itxn sink); lift-only.
+Low-FP by construction: a key from ``txn Sender`` (the ``box[Sender]`` per-caller
+pattern) is not a taint source, and a key checked against state is guard-cleared.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import ClassVar, Optional
-
-from security import common
+from security._ir_taint_sink import _IrTaintSinkDetector, _IrTaintSinkViolation
 
 _STATE = {
     "app_global_put": "global", "app_local_put": "local",
@@ -31,64 +19,22 @@ _STATE = {
 }
 
 
-@dataclass
-class IrTaintedStateWriteViolation:
-    field: str = ""
-    severity: str = ""
-    sources: tuple = ()
-    location: str = ""
-    message: str = ""
-
-    def pretty(self) -> str:
-        return self.message
-
-    def to_dict(self) -> dict:
-        return {
-            "op": self.field,
-            "severity": self.severity,
-            "sources": list(self.sources),
-            "location": self.location,
-            "message": self.message,
-        }
-
-    def __repr__(self) -> str:
-        return f"IrTaintedStateWriteViolation({self.message})"
+class IrTaintedStateWriteViolation(_IrTaintSinkViolation):
+    pass
 
 
-class IrTaintedStateWriteDetector:
-    name: ClassVar[str] = "sec-guide/ir-tainted-state-write"
-    applies_to: ClassVar[frozenset] = frozenset({"app"})  # state writes are app-only
-    violation_cls: ClassVar[type] = IrTaintedStateWriteViolation
+class IrTaintedStateWriteDetector(_IrTaintSinkDetector):
+    name = "sec-guide/ir-tainted-state-write"
+    violation_cls = IrTaintedStateWriteViolation
 
-    def __init__(self, prog, *, file: Optional[str] = None, trusted_args=frozenset(),
-                 path_predicates=None):
-        self.prog = prog
-        self.file = file
-        self.trusted_args = frozenset(trusted_args)
-        self.path_predicates = path_predicates           # (unused; no SSA sibling)
-
-    def detect(self) -> list:
-        lifter = common.ir_lifter(self.prog, self.file)
-        if lifter is None:                               # didn't lift; no SSA sibling
-            return []
+    def _raw_findings(self, lifter):
         from tealtools.WIP_lift2puyaIR import fund_flow as FF
-        findings = [
-            f for f in FF.tainted_state_writes(lifter, trusted_args=self.trusted_args)
-            if not f.guarded and not f.param_derived
-        ]
-        src = getattr(self.prog, "source_path", None)
-        fname = src.name if src is not None and getattr(src, "name", "") else "<program>"
-        out: list = []
-        for f in findings:
-            location = f"{fname}:{f.line}"
-            sources = tuple(sorted(f.sources))
-            kind = _STATE.get(f.field, "state")
-            message = (
-                f"[{f.severity}] attacker-controlled {kind}-state write KEY in "
-                f"{f.field} <- {'+'.join(sources)} ({location}, {f.sub_id}); the "
-                f"attacker chooses the destination slot — can overwrite owner/admin "
-                f"{kind} state — with no dominating check of the key or txn Sender "
-                f"(IR interprocedural)")
-            out.append(IrTaintedStateWriteViolation(
-                f.field, f.severity, sources, location, message))
-        return out
+        return FF.tainted_state_writes(lifter, trusted_args=self.trusted_args)
+
+    def _message(self, f, location):
+        src = "+".join(sorted(f.sources))
+        kind = _STATE.get(f.field, "state")
+        return (f"[{f.severity}] attacker-controlled {kind}-state write KEY in "
+                f"{f.field} <- {src} ({location}, {f.sub_id}); the attacker chooses "
+                f"the destination slot — can overwrite owner/admin {kind} state — "
+                f"with no dominating check of the key or txn Sender (IR interprocedural)")
