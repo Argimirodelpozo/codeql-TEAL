@@ -108,7 +108,11 @@ _BYTES_IN_ALL = frozenset({
 # ``None`` = leave the value unknown.
 _POS_IN = {
     "getbyte": ("uint64", "bytes"),               # A(bytes) B(idx) -> [B, A]
-    "getbit": ("uint64", "bytes"),
+    # getbit is POLYMORPHIC (value operand A is uint64 OR a byteslice) -- forcing `bytes`
+    # mis-types a uint64 BITMAP (a u64 slot read by getbit), conflicts with the u64 store of the
+    # same scratch slot -> spurious `poly` slot -> byteslice-mode getbit -> vacuous path. Leave A
+    # unknown so the VALUE FLOW types it (u64 source -> u64; digest -> bytes); index B is uint64.
+    "getbit": ("uint64", None),
     "setbyte": ("uint64", "uint64", "bytes"),     # A(bytes) B(idx) C(val)
     "extract3": ("uint64", "uint64", "bytes"),    # A(bytes) B(start) C(len)
     "substring3": ("uint64", "uint64", "bytes"),
