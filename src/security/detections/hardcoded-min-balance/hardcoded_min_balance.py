@@ -16,7 +16,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-from tealtools.ssa import Assignment, SSAProgram, SSAVar, const_int, is_field_var
+from tealtools.ssa import Assignment, SSAProgram, const_int, is_field_var
 from security import common
 
 
@@ -61,7 +61,7 @@ class HardcodedMinBalanceDetector:
             a for a in self.prog.assignments
             if a.op == "balance" and common.file_match(a.location.file, self.file)
         ]
-        bal_seeds = {o for a in bal_ops for o in a.outputs if isinstance(o, SSAVar)}
+        bal_seeds = common.ssavar_outputs(bal_ops)
         if not bal_seeds:
             return []
         a_bal_op = bal_ops[0]                  # representative, for the finding

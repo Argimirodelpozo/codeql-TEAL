@@ -34,6 +34,7 @@ from tealtools.ssa import (
     is_field_var,
 )
 from tealtools.cfg.dominance import iterative_dominators
+from tealtools.opsets import CMP_OPS
 
 
 # ---------------------------------------------------------------------------
@@ -190,20 +191,31 @@ def global_field_reads(
     ]
 
 
+def ssavar_outputs(assignments) -> set:
+    """The set of :class:`SSAVar` outputs across a collection of assignments —
+    the canonical "seed set" builder for the value-flow bridge."""
+    return {o for a in assignments for o in a.outputs if isinstance(o, SSAVar)}
+
+
+def op_output_seeds(
+    prog: SSAProgram, op: str, *, file: Optional[str] = None,
+) -> set:
+    """SSAVar outputs of every ``op`` assignment (file-matched) — a seed set the
+    flow bridge follows through scratch / phi / proto-frame."""
+    return ssavar_outputs(
+        a for a in prog.assignments
+        if a.op == op and file_match(a.location.file, file)
+    )
+
+
 # ---------------------------------------------------------------------------
 # Comparison-operand wiring
 # ---------------------------------------------------------------------------
 
 
-_LOGICAL_COMPARISON_OPS = frozenset({
-    "==", "!=", "<", ">", "<=", ">=",
-    "b==", "b!=", "b<", "b>", "b<=", "b>=",
-})
-
-
 def is_comparison(a: Assignment) -> bool:
     """An ``Assignment`` whose op compares two stack values."""
-    return a.op in _LOGICAL_COMPARISON_OPS
+    return a.op in CMP_OPS
 
 
 def _bb_strict_dominators(
@@ -633,18 +645,13 @@ def _txn_field_seeds(
         # Opt-in (asset-close-to, asset-id-validation) so the txn-only detectors
         # (rekey-to, fee, …) keep their app-call-scoped semantics.
         reads = reads + gtxn_field_reads(prog, field, file=file)
-    return {
-        out for a in reads for out in a.outputs if isinstance(out, SSAVar)
-    }
+    return ssavar_outputs(reads)
 
 
 def _global_field_seeds(
     prog: SSAProgram, gfield: str, *, file: Optional[str] = None,
 ) -> set[SSAVar]:
-    return {
-        out for a in global_field_reads(prog, gfield, file=file) for out in a.outputs
-        if isinstance(out, SSAVar)
-    }
+    return ssavar_outputs(global_field_reads(prog, gfield, file=file))
 
 
 def approval_exit_protected_for_field(
@@ -1149,12 +1156,10 @@ def _compute_user_input_taint(prog: SSAProgram, file: Optional[str] = None) -> d
 def sender_creator_vars(prog: SSAProgram, *, file: Optional[str] = None) -> set:
     """SSAVars reading ``txn Sender`` or ``global CreatorAddress`` — the seeds
     for the "this access is gated on who sent it" suppression."""
-    sv: set = set()
-    for a in txn_field_reads(prog, "Sender", file=file):
-        sv |= {o for o in a.outputs if isinstance(o, SSAVar)}
-    for a in global_field_reads(prog, "CreatorAddress", file=file):
-        sv |= {o for o in a.outputs if isinstance(o, SSAVar)}
-    return sv
+    return (
+        ssavar_outputs(txn_field_reads(prog, "Sender", file=file))
+        | ssavar_outputs(global_field_reads(prog, "CreatorAddress", file=file))
+    )
 
 
 def itxn_value_guarded(

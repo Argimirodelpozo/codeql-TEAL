@@ -19,17 +19,12 @@ from __future__ import annotations
 from typing import Optional
 
 from tealtools.ssa import SSAProgram, SSAVar
+from tealtools.opsets import CMP_OPS
 from security import common
 from security._approval_action_guard import (
     _ApprovalActionGuardDetector,
     _ExitBBViolation,
 )
-
-
-_CMP_OPS = frozenset({
-    "==", "!=", "<", ">", "<=", ">=",
-    "b==", "b!=", "b<", "b>", "b<=", "b>=",
-})
 
 
 class TimelockUpgradeViolation(_ExitBBViolation):
@@ -44,14 +39,13 @@ def _has_timestamp_check(
     """A genuine timelock: a ``global LatestTimestamp`` value flows (through the
     phi / scratch / proto-frame bridge) into a comparison — not merely that the
     opcode is read. A timestamp that is only stored/logged enforces no delay."""
-    seeds = {
-        o for a in common.global_field_reads(prog, "LatestTimestamp", file=file)
-        for o in a.outputs if isinstance(o, SSAVar)
-    }
+    seeds = common.ssavar_outputs(
+        common.global_field_reads(prog, "LatestTimestamp", file=file)
+    )
     if not seeds:
         return False
     for op in prog.assignments:
-        if op.op not in _CMP_OPS or not common.file_match(op.location.file, file):
+        if op.op not in CMP_OPS or not common.file_match(op.location.file, file):
             continue
         if not any(common._operand_flows_from_field_var(prog, v, seeds)
                    for v in op.inputs):

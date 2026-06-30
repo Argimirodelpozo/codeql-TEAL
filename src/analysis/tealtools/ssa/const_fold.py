@@ -22,6 +22,7 @@ from __future__ import annotations
 from typing import Optional
 
 from .models import Assignment, Const
+from ..opsets import CMP_OPS
 
 
 # ---------------------------------------------------------------------------
@@ -448,10 +449,7 @@ def try_fold_assignment(a: Assignment) -> Optional[Const]:
         return _fold_bitwise(op, inputs)
     if op == "~":
         return _fold_bitwise_not(inputs)
-    if op in (
-        "==", "!=", "<", "<=", ">", ">=",
-        "b==", "b!=", "b<", "b<=", "b>", "b>=",
-    ):
+    if op in CMP_OPS:
         return _fold_cmp(op, inputs)
     if op in ("!", "&&", "||"):
         return _fold_logical(op, inputs)

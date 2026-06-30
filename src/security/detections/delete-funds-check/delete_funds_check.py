@@ -36,22 +36,14 @@ class DeleteFundsCheckViolation(_ExitBBViolation):
     detail = "funds may be locked permanently on deletion."
 
 
-def _seeds(prog: SSAProgram, op: str, file: Optional[str]) -> set:
-    return {
-        o for a in prog.assignments
-        if a.op == op and common.file_match(a.location.file, file)
-        for o in a.outputs if isinstance(o, SSAVar)
-    }
-
-
 def _has_balance_minbalance_check(
     prog: SSAProgram, file: Optional[str] = None,
 ) -> bool:
     """A genuine funds check: a ``balance`` value and a ``min_balance`` value flow
     into the same comparison / subtraction (one on each side). Stronger than the
     old "both opcodes appear somewhere" presence proxy."""
-    bal = _seeds(prog, "balance", file)
-    mb = _seeds(prog, "min_balance", file)
+    bal = common.op_output_seeds(prog, "balance", file=file)
+    mb = common.op_output_seeds(prog, "min_balance", file=file)
     if not bal or not mb:
         return False
     for op in prog.assignments:

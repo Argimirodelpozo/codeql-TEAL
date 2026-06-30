@@ -37,6 +37,7 @@ from __future__ import annotations
 from typing import Optional
 
 from ..ssa import IntRange, SSAProgram, SSAVar
+from ..opsets import U64_CMP_OPS
 from .range_arith import (
     _UINT64_MAX,
     _operand_range,
@@ -47,7 +48,7 @@ from .range_arith import (
 # uint64 comparison ops. ``<`` ``<=`` ``>`` ``>=`` are uint64-only in the AVM
 # (bytes use the ``b``-prefixed forms), so they need no type guard; ``==`` /
 # ``!=`` are polymorphic and are guarded against bytes operands below.
-_CMP = {"<", "<=", ">", ">=", "==", "!="}
+_CMP = U64_CMP_OPS
 # Relation as seen with the *other* operand on the left (X is the right
 # operand): rewrite ``Y op X`` as ``X op' Y``.
 _SWAP = {"<": ">", ">": "<", "<=": ">=", ">=": "<=", "==": "==", "!=": "!="}

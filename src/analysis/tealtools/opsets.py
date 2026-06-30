@@ -95,3 +95,18 @@ ITXN_SOURCE_OPS: frozenset[str] = frozenset({
 LSIG_ARG_OPS: frozenset[str] = frozenset({
     "arg", "args", "arg_0", "arg_1", "arg_2", "arg_3",
 })
+
+# --- comparison / boolean-combinator opcodes ------------------------------
+
+#: uint64 comparison ops.
+U64_CMP_OPS: frozenset[str] = frozenset({"==", "!=", "<", ">", "<=", ">="})
+
+#: byteslice (``b``-prefixed) comparison ops.
+BYTE_CMP_OPS: frozenset[str] = frozenset({"b==", "b!=", "b<", "b>", "b<=", "b>="})
+
+#: All comparison ops (uint64 + byteslice).
+CMP_OPS: frozenset[str] = U64_CMP_OPS | BYTE_CMP_OPS
+
+#: Pure boolean combinators (logical and / or / not). Union with
+#: :data:`CMP_OPS` for the "pure boolean/comparison combinator" view.
+LOGICAL_OPS: frozenset[str] = frozenset({"&&", "||", "!"})

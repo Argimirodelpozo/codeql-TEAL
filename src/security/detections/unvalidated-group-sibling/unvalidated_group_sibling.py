@@ -32,7 +32,7 @@ from dataclasses import dataclass
 from typing import ClassVar, Optional
 
 from security import common
-from tealtools.ssa import Assignment, SSAProgram, SSAVar, const_int
+from tealtools.ssa import SSAProgram, SSAVar, const_int
 
 # Value field -> the receiver field that must be pinned for that transfer kind.
 _VALUE_TO_RECEIVER = {
@@ -131,10 +131,9 @@ class UnvalidatedGroupSiblingDetector:
         return out
 
     def _global_seeds(self, gfield: str) -> set:
-        return {
-            o for a in common.global_field_reads(self.prog, gfield, file=self.file)
-            for o in a.outputs if isinstance(o, SSAVar)
-        }
+        return common.ssavar_outputs(
+            common.global_field_reads(self.prog, gfield, file=self.file)
+        )
 
     def _receiver_pinned(self, index: int, recv_field: str, reads: dict,
                          app_seeds: set) -> bool:

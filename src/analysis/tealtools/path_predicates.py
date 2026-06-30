@@ -56,6 +56,7 @@ from .ssa import (
     SSAVar,
     is_const,
 )
+from .opsets import CMP_OPS, LOGICAL_OPS
 
 
 Operand = Union[SSAVar, Phi, Const]
@@ -180,11 +181,7 @@ _TXN_FIELD_READ_OPS = frozenset({
 })
 
 # Pure boolean / comparison combinators: immutable-in ⇒ immutable-out.
-_PURE_COMBINATOR_OPS = frozenset({
-    "==", "!=", "<", ">", "<=", ">=",
-    "b==", "b!=", "b<", "b>", "b<=", "b>=",
-    "&&", "||", "!",
-})
+_PURE_COMBINATOR_OPS = CMP_OPS | LOGICAL_OPS
 
 
 def _rooted_in_immutable_fields(v, seen: Optional[set] = None) -> bool:

@@ -7,10 +7,9 @@ coarse `avm()` lattice ('b'/'u'/'?'), and `_imm0`.
 """
 from __future__ import annotations
 
-from ..opsets import TXN_SOURCE_OPS, ITXN_SOURCE_OPS
+from ..opsets import TXN_SOURCE_OPS, ITXN_SOURCE_OPS, CMP_OPS, LOGICAL_OPS
 
-_BOOL_OPS = frozenset({"==", "!=", "<", ">", "<=", ">=", "!", "&&", "||",
-                       "b==", "b!=", "b<", "b>", "b<=", "b>="})
+_BOOL_OPS = CMP_OPS | LOGICAL_OPS
 # Const-push / const-load ops are normally typed by their folded const value;
 # they fall back to these sets only when the parser dropped the operand
 # (`pushbytes base64(..)`, `bytec N`) so there is no value to type them from.
