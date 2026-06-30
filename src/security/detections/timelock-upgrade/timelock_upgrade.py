@@ -16,12 +16,14 @@ timelock and suppressed the finding — a false negative.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Optional
 
-from tealtools.path_predicates import PathPredicateAnalysis
-from tealtools.ssa import BasicBlock, SSAProgram, SSAVar
+from tealtools.ssa import SSAProgram, SSAVar
 from security import common
+from security._approval_action_guard import (
+    _ApprovalActionGuardDetector,
+    _ExitBBViolation,
+)
 
 
 _CMP_OPS = frozenset({
@@ -30,19 +32,10 @@ _CMP_OPS = frozenset({
 })
 
 
-@dataclass
-class TimelockUpgradeViolation:
-    exit_bb: BasicBlock
-
-    def pretty(self) -> str:
-        return (
-            f"Application allows creator updates at exit {self.exit_bb.file}:"
-            f"{self.exit_bb.last_line} without a timelock delay "
-            "— users cannot review code changes before they take effect."
-        )
-
-    def __repr__(self) -> str:
-        return f"TimelockUpgradeViolation({self.pretty()})"
+class TimelockUpgradeViolation(_ExitBBViolation):
+    headline = "Application allows creator updates"
+    joiner = " without a timelock delay — "
+    detail = "users cannot review code changes before they take effect."
 
 
 def _has_timestamp_check(
@@ -73,34 +66,11 @@ def _has_timestamp_check(
     return False
 
 
-class TimelockUpgradeDetector:
+class TimelockUpgradeDetector(_ApprovalActionGuardDetector):
     name = "sec-guide/timelock-upgrade"
-    applies_to = frozenset({"app"})  # UpdateApplication / app lifecycle
+    action = common.ONC_UPDATE_APPLICATION
+    creator_guard = "require_present"  # only a creator-only upgrade is in scope
+    violation_cls = TimelockUpgradeViolation
 
-    def __init__(
-        self,
-        prog: SSAProgram,
-        *,
-        path_predicates: Optional[PathPredicateAnalysis] = None,
-        file: Optional[str] = None,
-    ):
-        self.prog = prog
-        self.file = file
-        self.pp = path_predicates or common.cached_path_predicates(prog)
-
-    def detect(self) -> list[TimelockUpgradeViolation]:
-        if _has_timestamp_check(self.prog, self.file):
-            return []
-        out: list[TimelockUpgradeViolation] = []
-        for exit_bb in sorted(
-            common.approving_exits(self.prog, file=self.file),
-            key=lambda b: (b.file, b.first_line),
-        ):
-            if not common.approval_exit_unguarded_for_action(
-                self.prog, self.pp, exit_bb, common.ONC_UPDATE_APPLICATION,
-            ):
-                continue
-            if not common.sender_creator_guard_dominates(self.prog, self.pp, exit_bb):
-                continue
-            out.append(TimelockUpgradeViolation(exit_bb))
-        return out
+    def applies(self) -> bool:
+        return not _has_timestamp_check(self.prog, self.file)

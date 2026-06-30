@@ -14,33 +14,26 @@ silently suppressed the finding — a false negative.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Optional
 
-from tealtools.path_predicates import PathPredicateAnalysis
-from tealtools.ssa import BasicBlock, SSAProgram, SSAVar
+from tealtools.ssa import SSAProgram, SSAVar
 from security import common
-
-
-@dataclass
-class DeleteFundsCheckViolation:
-    exit_bb: BasicBlock
-
-    def pretty(self) -> str:
-        return (
-            f"Application handles DeleteApplication at exit {self.exit_bb.file}:"
-            f"{self.exit_bb.last_line} without checking balance == min_balance "
-            "— funds may be locked permanently on deletion."
-        )
-
-    def __repr__(self) -> str:
-        return f"DeleteFundsCheckViolation({self.pretty()})"
+from security._approval_action_guard import (
+    _ApprovalActionGuardDetector,
+    _ExitBBViolation,
+)
 
 
 _TIE_OPS = frozenset({
     "==", "!=", "<", ">", "<=", ">=", "-",
     "b==", "b!=", "b<", "b>", "b<=", "b>=", "b-",
 })
+
+
+class DeleteFundsCheckViolation(_ExitBBViolation):
+    headline = "Application handles DeleteApplication"
+    joiner = " without checking balance == min_balance — "
+    detail = "funds may be locked permanently on deletion."
 
 
 def _seeds(prog: SSAProgram, op: str, file: Optional[str]) -> set:
@@ -86,31 +79,10 @@ def _has_balance_minbalance_check(
     return False
 
 
-class DeleteFundsCheckDetector:
+class DeleteFundsCheckDetector(_ApprovalActionGuardDetector):
     name = "sec-guide/delete-funds-check"
-    applies_to = frozenset({"app"})  # DeleteApplication / balance / min_balance
+    action = common.ONC_DELETE_APPLICATION
+    violation_cls = DeleteFundsCheckViolation
 
-    def __init__(
-        self,
-        prog: SSAProgram,
-        *,
-        path_predicates: Optional[PathPredicateAnalysis] = None,
-        file: Optional[str] = None,
-    ):
-        self.prog = prog
-        self.file = file
-        self.pp = path_predicates or common.cached_path_predicates(prog)
-
-    def detect(self) -> list[DeleteFundsCheckViolation]:
-        if _has_balance_minbalance_check(self.prog, self.file):
-            return []
-        out: list[DeleteFundsCheckViolation] = []
-        for exit_bb in sorted(
-            common.approving_exits(self.prog, file=self.file),
-            key=lambda b: (b.file, b.first_line),
-        ):
-            if common.approval_exit_unguarded_for_action(
-                self.prog, self.pp, exit_bb, common.ONC_DELETE_APPLICATION,
-            ):
-                out.append(DeleteFundsCheckViolation(exit_bb))
-        return out
+    def applies(self) -> bool:
+        return not _has_balance_minbalance_check(self.prog, self.file)
