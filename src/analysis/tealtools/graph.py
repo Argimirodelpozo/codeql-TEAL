@@ -49,7 +49,7 @@ def _teal_str_bytes(s: str) -> bytes:
         c = s[i]
         if c == "\\" and i + 1 < len(s):
             n = s[i + 1]
-            if n == "x" and i + 3 < len(s) + 1:
+            if n == "x" and i + 4 <= len(s):
                 out.append(int(s[i + 2:i + 4], 16)); i += 4; continue
             out.append({"n": 10, "r": 13, "t": 9, "\\": 92, '"': 34}.get(n, ord(n)))
             i += 2; continue

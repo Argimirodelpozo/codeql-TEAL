@@ -199,6 +199,12 @@ def _input_key(src):
     don't. ``None`` if ``src`` isn't a user-input source op."""
     if src is None or source_label(src) is None:
         return None
+    # Dynamic-index reads (txnas/gtxnas/gtxnsas/gloadss) carry the array INDEX on
+    # the stack, not in immediates -- so two DIFFERENT-index reads share the same
+    # (op, immediates) and would wrongly collapse to one key. Fall back to
+    # register-identity matching for them (None = no cross-read key).
+    if src.op in ("txnas", "gtxnas", "gtxnsas", "gloadss"):
+        return None
     return (src.op, tuple(str(i) for i in (src.immediates or [])))
 
 

@@ -597,11 +597,16 @@ class PathPredicateAnalysis:
             self._label_lines.get((pred.file, n)) for n in target_names
         ]
         # Identify which target ``succ`` corresponds to (or fall-through).
-        target_index: Optional[int] = None
-        for k, ln in enumerate(target_lines):
-            if ln is not None and succ.first_line == ln:
-                target_index = k
-                break
+        matches = [k for k, ln in enumerate(target_lines)
+                   if ln is not None and succ.first_line == ln]
+        # A label that appears at MORE THAN ONE switch/match position is reached
+        # under a DISJUNCTION of keys (e.g. ``switch a a b`` -> a on key==0 OR
+        # key==1). A single ``key == target_index`` predicate would be over-strong
+        # (unsound: it claims only one key reaches the edge), so emit no edge
+        # predicate rather than a false guard a detector might trust.
+        if len(matches) > 1:
+            return None
+        target_index: Optional[int] = matches[0] if matches else None
         key = last.inputs[0]
         if target_index is not None:
             if last.op == _SWITCH:

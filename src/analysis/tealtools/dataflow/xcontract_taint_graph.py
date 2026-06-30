@@ -444,7 +444,8 @@ def cross_taint_findings(xtg: "XContractTaintGraph") -> list[CrossTaintFinding]:
     here we report exactly the flows that cross an appcall, which is the
     capability the bridges add."""
     sources = [
-        xn for xn in xtg.find(app_id=None, op="txna")
+        xn for xn in (xtg.find(app_id=None, op="txna")
+                      + xtg.find(app_id=None, op="txn"))
         if (xtg.immediates_of(xn) or "").startswith("ApplicationArgs")
     ]
     sinks = _sensitive_sinks(xtg)

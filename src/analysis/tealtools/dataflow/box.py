@@ -321,7 +321,9 @@ def detect_correlated_flows(
     pass1 = TaintAnalysis(
         prog, sources=init_sources, sinks=DEFAULT_INTO_BOX_SINKS
     )
-    tainted_ops = pass1.tainted_operands()
+    # Compute the taint fixpoint ONCE (it also yields the source-of map); the
+    # per-write loop below used to re-run the full fixpoint on every iteration.
+    tainted_ops, source_for = pass1._compute_taint()
     # cluster_sig → list of (write_assignment, originating_source_assignment, source_name)
     cluster_writes: dict[str, list[tuple[Assignment, Assignment, str]]] = {}
     for write in prog.assignments:
@@ -337,8 +339,7 @@ def detect_correlated_flows(
         if key is None:
             continue
         sig = _key_signature(key)
-        # Originating source: walk pass1's source_for to find it.
-        _, source_for = pass1._compute_taint()
+        # Originating source from the precomputed source-of map (hoisted above).
         src_a, src_name = source_for[value_op]
         cluster_writes.setdefault(sig, []).append((write, src_a, src_name))
     if not cluster_writes:

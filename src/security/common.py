@@ -1183,11 +1183,6 @@ def itxn_value_guarded(
 
 
 # ---------------------------------------------------------------------------
-# Tiny presentation helper used by every detector module
-# ---------------------------------------------------------------------------
-
-
-# ---------------------------------------------------------------------------
 # Contract-kind classification (application vs logic signature)
 #
 # Several detectors validate fields of the SIGNED/authorizing transaction

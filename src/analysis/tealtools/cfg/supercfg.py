@@ -223,7 +223,7 @@ class SuperCFG:
     ) -> list[list[SuperBlock]]:
         """All simple (cycle-free) paths ``src`` -> ``dst`` across the boundary,
         shortest first. Caps mirror :meth:`CFG.paths`."""
-        if src is dst:
+        if src == dst:
             return [[src]]
         out: list[list[SuperBlock]] = []
 
@@ -236,7 +236,7 @@ class SuperCFG:
                 if s in visited:
                     continue
                 new_path = path + [s]
-                if s is dst:
+                if s == dst:
                     out.append(new_path)
                     if len(out) >= max_paths:
                         return
