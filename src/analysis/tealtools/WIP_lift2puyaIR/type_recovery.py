@@ -696,6 +696,27 @@ def _infer_state_types(lifter):
             if vt and vt != "?":
                 key_types.setdefault(key, set()).add(vt)
 
+    # Also seed from READ value types. A key never PUT with a determinate type in
+    # THIS contract still needs unifying if it is read with CONFLICTING types
+    # (e.g. an address read bytes by use vs a uint64-default sibling read); else a
+    # state-forwarding optimiser pass substitutes one access's value into another's
+    # wrong-typed register and rejects the cross-type assignment.
+    for a in lifter.prog.assignments:
+        if a.op in ("app_global_get", "app_local_get"):
+            rv = a.outputs[0] if a.outputs else None
+        elif a.op in ("app_global_get_ex", "app_local_get_ex"):
+            rv = a.outputs[1] if len(a.outputs) > 1 else None
+        else:
+            continue
+        if not isinstance(rv, (SSAVar, Phi)):
+            continue
+        rk = _const_key(a.inputs[0]) if a.inputs else None
+        if rk is None:
+            continue
+        fam = avm(lifter.reg(rv).ir_type)
+        if fam in ("b", "u"):
+            key_types.setdefault(rk, set()).add("bytes" if fam == "b" else "uint64")
+
     def _resolve(types: set):
         # One put type -> that type. On a conflict, a `bytes` put is
         # authoritative: a Puya-typed key never mixes types, so a bytes/
@@ -714,13 +735,19 @@ def _infer_state_types(lifter):
     for a in lifter.prog.assignments:
         if a.op in ("app_global_get", "app_local_get"):
             val = a.outputs[0] if a.outputs else None
+            k = _const_key(a.inputs[0]) if a.inputs else None
         elif a.op in ("app_global_get_ex", "app_local_get_ex"):
             val = a.outputs[1] if len(a.outputs) > 1 else None
+            k = _const_key(a.inputs[0]) if a.inputs else None
+        elif a.op in ("app_global_put", "app_local_put") and len(a.inputs) >= 2:
+            # The forwarding pass copies a put VALUE straight into a later read of
+            # the key, so the put value must carry the key's decided type too.
+            val = a.inputs[0]
+            k = _const_key(a.inputs[1])
         else:
             continue
         if not isinstance(val, (SSAVar, Phi)):
             continue
-        k = _const_key(a.inputs[0]) if a.inputs else None
         if k not in key_types:
             continue
         # The put is authoritative: a read of a key with one consistent put
