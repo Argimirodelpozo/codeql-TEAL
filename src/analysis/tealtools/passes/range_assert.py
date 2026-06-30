@@ -152,6 +152,13 @@ def propagate_assert_ranges(prog: SSAProgram) -> int:
     if not guards:
         return 0
 
+    # Values that flow into a phi. The dominance soundness check below only sees
+    # ``x.uses`` (op uses), NOT phi consumers -- and a phi arg comes from a
+    # SPECIFIC predecessor edge that may bypass the assert, so tightening such a
+    # value globally is unsound. Be conservative: never tighten a phi-fed value.
+    phi_fed = {id(arg) for ph in prog.phis.values() for arg in ph.args
+               if isinstance(arg, SSAVar)}
+
     dom_cache: dict = {}  # assert-block -> reachable-without-it (static CFG)
 
     def _dominates(block_a, use, assert_line: int) -> bool:
@@ -196,6 +203,8 @@ def propagate_assert_ranges(prog: SSAProgram) -> int:
             for x, rel, yb, test in cons:
                 if rel in ("==", "!=") and getattr(x.type, "kind", None) == "bytes":
                     continue
+                if id(x) in phi_fed:
+                    continue                       # phi-fed: dominance is edge-specific
                 xr = _start_range(x)
                 if xr is None:
                     continue
