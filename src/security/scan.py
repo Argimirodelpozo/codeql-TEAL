@@ -31,8 +31,7 @@ Library use::
     for f in findings:
         print(f.format())
 
-CLI: ``python -m tealtools sec-guide-scan <root> [--config rules.yml]
-[--json]``.
+CLI: ``python -m tealtools sec-guide-scan <root> [--config rules.yml]``.
 """
 from __future__ import annotations
 
@@ -380,7 +379,3 @@ def render_text(findings: list[ScanFinding]) -> str:
     if not findings:
         return "(no findings)"
     return "\n".join(f.format() for f in findings)
-
-
-def render_json(findings: list[ScanFinding]) -> str:
-    return json.dumps([f.to_dict() for f in findings], indent=2)

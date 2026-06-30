@@ -190,22 +190,6 @@ class ProgramR(Region):
         return list(self.programs) + list(self.subroutines.values())
 
 
-@dataclass(eq=False)
-class SubroutineR(Region):
-    """A lifted subroutine — single entry, body region, and a
-    static ``(cost, submits)`` summary for use at every ``callsub``
-    site."""
-
-    entry_bb: BasicBlock
-    body: Region
-    cost: int
-    submits: int
-    kind: str = field(init=False, default="subroutine")
-
-    def children(self) -> list[Region]:
-        return [self.body]
-
-
 # ---------------------------------------------------------------------------
 # Builder
 # ---------------------------------------------------------------------------
@@ -235,8 +219,8 @@ def build_control_tree(prog: SSAProgram) -> Region:
     """Lift ``prog``'s CFG into a control tree. The root region
     represents the entire DB.
 
-    Subroutines (``callsub``-reachable BBs) are detected and lifted
-    into their own :class:`SubroutineR` regions, then the main flow's
+    Subroutines (``callsub``-reachable BBs) are detected and reduced
+    into their own regions (keyed in ``subroutines``), then the main flow's
     CFG has each ``callsub → entry`` and ``retsub → caller`` edge
     cut and replaced with a synthetic ``callsub → continuation`` edge
     so the main program's flow is connected without the per-call-site

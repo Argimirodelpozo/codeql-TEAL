@@ -27,11 +27,6 @@ except Exception:  # pragma: no cover — defensive for partial imports
     Assignment = Location = object  # type: ignore[assignment,misc]
 
 
-def loc_dict(loc) -> dict[str, Any]:
-    """Serialise a :class:`tealtools.ssa.Location`."""
-    return {"file": loc.file, "line": loc.line}
-
-
 def assignment_ref(a) -> dict[str, Any]:
     """Compact reference to an SSA assignment: opcode + location.
 

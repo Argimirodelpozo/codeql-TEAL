@@ -18,8 +18,8 @@ Each node carries two fields:
 
 The hierarchy groups opcodes into families (``ArithmeticOpcode``,
 ``CryptoOpcode``, ...). Family classes are pure Python groupings — they are
-not ``node_class`` names and are never instantiated directly by
-:func:`ast_node_for_class`; only the concrete leaf classes are.
+not ``node_class`` names and are never instantiated directly;
+only the concrete leaf classes are.
 """
 from __future__ import annotations
 
@@ -101,21 +101,6 @@ class AstNode:
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self.location.file}:{self.location.start_line})"
-
-
-def ast_node_for_class(location: Location, code: str, node_class: str) -> AstNode:
-    """Instantiate the concrete :class:`AstNode` subclass named by
-    ``node_class`` (looked up in the registry), at ``location`` with source
-    ``code``.
-
-    Falls back to a plain :class:`AstNode` when ``node_class`` is unknown
-    (new opcode, abstract class, grammar-only category, etc.).
-    """
-    cls = AstNode._registry.get(node_class, AstNode)
-    node = cls(location=location, code=code)
-    if cls is AstNode:
-        node.node_class = node_class
-    return node
 
 
 def node_class_for_mnemonic(mnemonic: str) -> Optional[type["AstNode"]]:
@@ -512,11 +497,3 @@ class Arg3Opcode(MiscOpcode): mnemonic = "arg_3"
 class ArgsOpcode(MiscOpcode): mnemonic = "args"
 class BlockOpcode(MiscOpcode): mnemonic = "block"
 
-
-# ---------------------------------------------------------------------------
-# Convenience
-# ---------------------------------------------------------------------------
-
-def registered_node_classes() -> list[str]:
-    """Return every ``node_class`` name handled by a dedicated subclass."""
-    return sorted(AstNode._registry)

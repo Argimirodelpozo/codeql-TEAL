@@ -187,9 +187,3 @@ def caller_guard_bypass_findings(
             ))
     findings.sort(key=lambda f: (f.app_id, f.sink.location.file, f.sink.location.line))
     return findings
-
-
-def render_caller_guard_bypass(findings: list[CallerGuardBypassFinding]) -> str:
-    if not findings:
-        return "(no caller-guard-bypass findings)"
-    return "\n".join(f.pretty() for f in findings)
