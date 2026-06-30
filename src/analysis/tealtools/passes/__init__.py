@@ -1,31 +1,15 @@
 """SSA functional-pass package.
 
-Houses every optional analysis / cleanup pass that layers on top of
-the :mod:`tealtools.ssa` substrate. Two kinds of code live here:
+Houses the optional analysis / cleanup passes that layer on top of
+the :mod:`tealtools.ssa` substrate — one module per pass: the actual
+semantics of constant propagation, input unification, range
+propagation / assert-refinement, byte_length inference, bytemath, and
+dead-code cleanup. The substrate exposes a thin lazy-import bridge
+method (e.g. :meth:`SSAProgram.propagate_byte_lengths`) that delegates
+here; that is the supported way to run a pass.
 
-  - **Per-pass helpers** (one module per pass): the actual
-    semantics of constant propagation, input unification, range
-    propagation / assert-refinement, byte_length inference,
-    bytemath, dead-code cleanup. The substrate exposes a thin
-    lazy-import bridge method (e.g.
-    :meth:`SSAProgram.propagate_byte_lengths`) that delegates here.
-    (Construction-time helpers the *builder* needs — ``const_fold``,
-    ``inner_txn_fields``, ``scratch_influence`` — live in the
-    :mod:`tealtools.ssa` package instead; they run while a program
-    is being built, not as optional passes over a finished one.)
-
-  - **Orchestration** (:mod:`tealtools.passes.orchestrate`): a
-    canonical-order ``run_all_passes`` driver plus
-    ``functional_dump``, the one-stop renderer that runs every
-    pass and produces the most-annotated flat dump.
-
-Importing this package gives you the orchestration entry points
-directly. The per-pass modules are best invoked via the
-``SSAProgram.propagate_*`` / ``SSAProgram.cleanup_*`` methods on
-the substrate; calling them as plain functions is supported but
-mostly useful when writing a new pass that consumes another's
-output (or when wiring a custom pipeline).
+(Construction-time helpers the *builder* needs — ``const_fold``,
+``inner_txn_fields``, ``scratch_influence`` — live in the
+:mod:`tealtools.ssa` package instead; they run while a program is being
+built, not as optional passes over a finished one.)
 """
-from .orchestrate import functional_dump, run_all_passes
-
-__all__ = ["functional_dump", "run_all_passes"]

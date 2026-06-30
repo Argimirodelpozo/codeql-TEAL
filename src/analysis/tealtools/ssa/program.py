@@ -97,8 +97,6 @@ class SSAProgram:
         self._ranges_propagated: bool = False
         self._shuffles_propagated: bool = False
         self._inputs_propagated: bool = False
-        self._stable_propagated: bool = False
-        self._phis_deduped: bool = False
 
         def _bb_from_tuple(bb_id: tuple) -> BasicBlock:
             bb = self.blocks.get(bb_id)
@@ -405,38 +403,6 @@ class SSAProgram:
         _impl(self)
         self._inputs_propagated = True
 
-    def propagate_stable_expressions(self) -> None:
-        """Transitive extension of :meth:`propagate_inputs`: a pure op
-        whose inputs are all execution-stable is itself stable, so
-        syntactically-equal stable expressions (e.g. two ``sha256(txn
-        Sender)``) unify to one canonical SSAVar via CSE. Logic lives in
-        :mod:`tealtools.passes.stable_prop`; idempotent. Best run after
-        ``propagate_inputs`` (leaves unified) and
-        ``propagate_stack_shuffles`` (operands reach compute ops
-        directly)."""
-        if getattr(self, "_stable_propagated", False):
-            return
-        from ..passes.stable_prop import propagate_stable_expressions as _impl
-        _impl(self)
-        self._stable_propagated = True
-
-    def dedup_phis(self) -> int:
-        """Collapse value-equal phi nodes — those with identical
-        (value-normalised) args, merge-point-agnostic — to one
-        canonical, to a fixpoint. PySSA's constant-stack unroll
-        over-generates phis
-        (xgov: ~21k phis, ~667 distinct); running this just before
-        :meth:`materialize_phis` keeps its ``mat_phi`` output bounded,
-        and it makes every phi-iterating analysis cheaper. Logic lives
-        in :mod:`tealtools.passes.phi_dedup`; idempotent. Returns the
-        number of phi objects removed."""
-        if getattr(self, "_phis_deduped", False):
-            return 0
-        from ..passes.phi_dedup import dedup_phis as _impl
-        n = _impl(self)
-        self._phis_deduped = True
-        return n
-
     def propagate_scratch_values(self) -> int:
         """Generalises :meth:`propagate_scratch_constants` from compile-
         time literals to arbitrary SSA values.
@@ -614,65 +580,6 @@ class SSAProgram:
         from ..passes.stack_shuffle import propagate_stack_shuffles as _impl
         _impl(self)
         self._shuffles_propagated = True
-
-    def eliminate_dead_constants(self) -> None:
-        """Inline constant literals into every consumer's input list, then
-        drop the now-orphan SSAVars / Phis and any Assignment whose
-        outputs are *all* dead.
-
-        Conservative: only touches SSAVars/Phis with ``const_value`` set
-        (i.e. things whose literal was resolved by
-        :meth:`propagate_constants`). Non-constant producers — ``txn``
-        reads, ``load N``, function-call results — are kept even if they
-        end up unreferenced after the inlining, because their AST node
-        carries side-effect / source-meaning information we want to
-        preserve in the trace.
-
-        Effect on the functional dump: trivial constant pushes
-        (``L 5: V#1@L5 = 0``) disappear, and consumers that previously
-        showed ``(V#1@L5, …)`` already render as ``(0, …)``.
-
-        Idempotent. Implicitly runs :meth:`propagate_constants` first if
-        that hasn't been done.
-        """
-        if self._dead_eliminated:
-            return
-        if not self._consts_propagated:
-            self.propagate_constants()
-
-        from ..passes.dead_const import eliminate_dead_constants as _impl
-        _impl(self)
-        self._dead_eliminated = True
-
-    def materialize_phis(self) -> None:
-        """Out-of-SSA lowering: replace each live :class:`Phi` with a
-        synthetic :class:`MatPhiVar`, inserting copy assignments
-        ``mat_phi_k = leaf_ssavar`` at each reachable leaf's def site.
-
-        **DirectPhi ``p`` with args ``(v1, …, vN)``** — all SSAVars:
-            1. Allocate a fresh ``mat_phi_k``.
-            2. Insert one copy per ``v_i`` at ``v_i``'s def site.
-            3. Consumers reading ``p`` now read ``mat_phi_k``.
-
-        **IndirectPhi ``ip``** — ``args`` is a list of :class:`Phi`
-        (DirectPhi roots from the generator walk):
-
-            - Single root ``[root]``: ``ip`` re-uses ``root``'s
-              ``mat_phi_k``. No extra allocation or copies.
-            - Multiple roots ``[r1, r2, …]``: ``ip`` represents a meet
-              across *all* rs. Allocate a fresh ``mat_phi_k`` for
-              ``ip`` and insert copies at every originating SSAVar leaf
-              transitively reachable from any ``r_i`` (so every
-              incoming edge in the meet gets represented, none dropped).
-
-        Idempotent — calling twice is a no-op.
-        """
-        if self._materialized:
-            return
-
-        from ..passes.materialize import materialize_phis as _impl
-        _impl(self)
-        self._materialized = True
 
     # -- rendering ----------------------------------------------------------
 

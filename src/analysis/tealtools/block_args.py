@@ -21,10 +21,9 @@ The per-edge value of a join's slot ``k`` is the predecessor's
 the real data movement (a ``swap``'s fresh output vars, not their copy-
 propagated sources) regardless of which value-flow passes have run.
 
-Run it on the **pre-materialisation** IR — phis must still exist. It is an
-*alternative* to :func:`tealtools.passes.materialize_phis` (which is the last
-``run_all_passes`` step and clears the phis), not something to run after it;
-on a fully-passed program it finds no joins. Value-flow passes (constants,
+Run it while phis still exist — it is the out-of-SSA lowering used by the
+lift, consuming phis into per-edge block arguments rather than rewriting them
+into copy assignments in place. Value-flow passes (constants,
 ranges, shuffles, …) may run first — ``exit_stack`` is fixed at construction,
 so the view is stable across them.
 
