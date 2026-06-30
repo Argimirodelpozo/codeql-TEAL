@@ -886,7 +886,7 @@ def _warn_residual_unknowns(subs) -> None:
                     res += [f"{sub.id}:{t.name}" for t in op.targets if t.ir_type == "?"]
     if res:
         import logging
-        logging.getLogger("tealtools.WIP_lift2puyaIR").warning(
+        logging.getLogger("tealtools.lift").warning(
             "type recovery left %d register(s) unresolved (lowering defaults them "
             "to uint64; a bytes value would be mistyped): %s%s",
             len(res), ", ".join(res[:12]), " …" if len(res) > 12 else "")

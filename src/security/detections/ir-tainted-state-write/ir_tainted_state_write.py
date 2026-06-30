@@ -28,7 +28,7 @@ class IrTaintedStateWriteDetector(_IrTaintSinkDetector):
     violation_cls = IrTaintedStateWriteViolation
 
     def _raw_findings(self, lifter):
-        from tealtools.WIP_lift2puyaIR import fund_flow as FF
+        from tealtools.lift import fund_flow as FF
         return FF.tainted_state_writes(lifter, trusted_args=self.trusted_args)
 
     def _message(self, f, location):

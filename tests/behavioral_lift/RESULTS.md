@@ -1,6 +1,6 @@
 # Behavioural lift verification — results
 
-Real-world generalisation + behavioural test for `WIP_lift2puyaIR`: take TEAL
+Real-world generalisation + behavioural test for `lift`: take TEAL
 the lift has never seen, lift it to Puya IR, recompile to TEAL, and check the
 recompiled program behaves like the original by **executing both on a live
 Algorand localnet** (algod dryrun) across a matrix of inputs.

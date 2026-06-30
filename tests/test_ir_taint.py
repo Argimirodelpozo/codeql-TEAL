@@ -1,4 +1,4 @@
-"""IR-layer user-input taint (``WIP_lift2puyaIR.taint``).
+"""IR-layer user-input taint (``lift.taint``).
 
 Focus: the interprocedural ``_return_summary`` that replaced the old
 "call result <- any tainted arg" rule. That rule was simultaneously
@@ -17,9 +17,9 @@ from pathlib import Path
 import pytest
 
 from tealtools.ssa import SSAProgram
-from tealtools.WIP_lift2puyaIR import pre_ir
-from tealtools.WIP_lift2puyaIR.lift import _Lifter
-from tealtools.WIP_lift2puyaIR.taint import user_input_taint, _return_summary
+from tealtools.lift import pre_ir
+from tealtools.lift.lift import _Lifter
+from tealtools.lift.taint import user_input_taint, _return_summary
 
 TESTS_DIR = Path(__file__).resolve().parent
 

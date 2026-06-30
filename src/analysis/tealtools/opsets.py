@@ -2,7 +2,7 @@
 the lift, and the security detectors.
 
 A **pure leaf** module — it imports nothing from ``tealtools`` — so every layer
-(``dataflow/``, ``WIP_lift2puyaIR/``, ``cfg/``, and the importlib-loaded security
+(``dataflow/``, ``lift/``, ``cfg/``, and the importlib-loaded security
 detectors) can consume one source of truth instead of re-listing these sets.
 Before this module they had drifted: e.g. ``cfg/super_auth`` silently dropped
 ``box_replace``/``box_splice``/``box_resize`` that ``auth_domination`` flagged,

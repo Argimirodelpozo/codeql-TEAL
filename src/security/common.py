@@ -1075,7 +1075,7 @@ def ir_lifter(prog: SSAProgram, file: Optional[str] = None):
         return cached
     lifter = None
     try:
-        from tealtools.WIP_lift2puyaIR.lift import _Lifter
+        from tealtools.lift.lift import _Lifter
         src = str(getattr(prog, "source_path", "") or "")
         if src:
             fresh = SSAProgram(src, verbose=False)

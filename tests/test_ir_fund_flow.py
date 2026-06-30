@@ -1,4 +1,4 @@
-"""IR-layer attacker-controlled fund-flow detector (``WIP_lift2puyaIR.fund_flow``).
+"""IR-layer attacker-controlled fund-flow detector (``lift.fund_flow``).
 
 Flags user-input-tainted values reaching fund-flow inner-txn fields and gates each
 on the dominating guards (asserts / forced branches) that check the SAME value (by
@@ -9,8 +9,8 @@ from pathlib import Path
 import pytest
 
 from tealtools.ssa import SSAProgram
-from tealtools.WIP_lift2puyaIR.lift import _Lifter
-from tealtools.WIP_lift2puyaIR.fund_flow import tainted_fund_flows
+from tealtools.lift.lift import _Lifter
+from tealtools.lift.fund_flow import tainted_fund_flows
 
 TESTS_DIR = Path(__file__).resolve().parent
 

@@ -1,6 +1,6 @@
 """Render TEAL source as real Puya IR.
 
-    python -m tealtools.WIP_lift2puyaIR <teal-source> [--optimize]
+    python -m tealtools.lift <teal-source> [--optimize]
 """
 import sys
 
@@ -12,7 +12,7 @@ def main(argv=None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     paths = [a for a in argv if not a.startswith("-")]
     if not paths:
-        print("usage: python -m tealtools.WIP_lift2puyaIR <teal-source> [--optimize]")
+        print("usage: python -m tealtools.lift <teal-source> [--optimize]")
         return 2
     prog = SSAProgram(paths[0], verbose=False)
     prog.propagate_constants()

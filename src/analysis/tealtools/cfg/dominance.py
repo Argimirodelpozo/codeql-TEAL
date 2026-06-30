@@ -3,7 +3,7 @@
 The standard worklist fixpoint ``dom(entry) = {entry}``;
 ``dom(n) = {n} ∪ ⋂_p dom(p)`` was hand-rolled four times over four node types
 (``CFG`` BasicBlocks, ``SuperCFG`` SuperBlocks, ``detections.common`` BBs with a
-file filter, and the lifted-IR block ids in ``WIP_lift2puyaIR.fund_flow``). This
+file filter, and the lifted-IR block ids in ``lift.fund_flow``). This
 generic version is parameterised by accessor callables so all four call it.
 
 Pure — no ``tealtools`` imports — so every layer can use it without a cycle.

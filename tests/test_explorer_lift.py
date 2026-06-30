@@ -41,7 +41,7 @@ sys.path.insert(0, {src!r})
 from puya.log import configure_logging, LogLevel
 configure_logging(min_log_level=LogLevel.critical)
 from tealtools.ssa import SSAProgram
-from tealtools.WIP_lift2puyaIR import to_puya_ir
+from tealtools.lift import to_puya_ir
 p = SSAProgram({teal!r}, verbose=False)
 p.propagate_constants()
 with contextlib.redirect_stdout(io.StringIO()):

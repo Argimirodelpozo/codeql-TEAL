@@ -1,6 +1,6 @@
 """Lift real TEAL -> Puya IR -> recompile to TEAL, and (optionally) compare the
 original vs recompiled program's BEHAVIOUR on a live Algorand localnet via
-algod dryrun. A real-world generalisation test for WIP_lift2puyaIR: does the
+algod dryrun. A real-world generalisation test for lift: does the
 lift reconstruct an equivalent program for contracts it has never seen?
 
   python -m tests.behavioral_lift.recompile <db-or-dir> ...
@@ -36,7 +36,7 @@ def lift_to_teal(db: str, *, aggressive: bool = False) -> str:
     from puya.teal.main import mir_to_teal
     from puya.teal.output import emit_teal
     from tealtools.ssa import SSAProgram
-    from tealtools.WIP_lift2puyaIR import to_puya_ir
+    from tealtools.lift import to_puya_ir
 
     prog = SSAProgram(db, verbose=False)
     # Emit the program's ACTUAL AVM version, not a hardcoded 10: a v11 contract
@@ -101,7 +101,7 @@ def _destructure_with_orphans(ctx, program) -> None:
     import attrs
 
     import puya.ir.models as M
-    from tealtools.WIP_lift2puyaIR import to_puya_ir
+    from tealtools.lift import to_puya_ir
     from puya.errors import InternalError
     from puya.ir.destructure.coalesce_locals import coalesce_locals
     from puya.ir.destructure.critical_edges import split_critical_edges

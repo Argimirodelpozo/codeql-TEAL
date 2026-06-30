@@ -124,7 +124,7 @@ def _ir_text(source) -> str:
     CONFIDENT ARC4 encoded types (``arc4.UInt64`` / ``arc4.Bool`` / static
     ``arc4.Tuple`` / ...) that only exist in the real Puya IR, not the lift's
     pre-IR intermediate."""
-    from ..WIP_lift2puyaIR import to_puya_ir
+    from ..lift import to_puya_ir
     return to_puya_ir.render(SSAProgram(source, verbose=False), optimize_ir=False)
 
 
@@ -136,7 +136,7 @@ def _guessed_encodings_text(source) -> str:
     (e.g. structure-aware fuzzing) can see what's available; for a string guess the
     decoded text is included."""
     import puya.ir.models as M
-    from ..WIP_lift2puyaIR import to_puya_ir
+    from ..lift import to_puya_ir
     main, subs = to_puya_ir.to_puya(SSAProgram(source, verbose=False))
     guesses = to_puya_ir._guess_encoded_types(main, subs)
     if not guesses:

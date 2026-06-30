@@ -64,7 +64,7 @@ class _IrTaintSinkDetector:
         """The taint-to-sink findings (before the unguarded-filter). Default:
         tainted values reaching the inner-txn ``fields``; override for a non-itxn
         sink (state write / log)."""
-        from tealtools.WIP_lift2puyaIR import fund_flow as FF
+        from tealtools.lift import fund_flow as FF
         return FF.tainted_itxn_flows(lifter, self.fields, trusted_args=self.trusted_args)
 
     def _suppress(self, lifter, findings) -> list:

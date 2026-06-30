@@ -152,10 +152,10 @@ The notebooks under `playground/interactive-examples/` (`example.ipynb`, `exampl
 
 ### Puya-IR lift
 
-`tealtools.WIP_lift2puyaIR` lifts the reconstructed SSA into genuine [Puya](https://github.com/algorandfoundation/puya) IR (`puya.ir.models`), validating and optimising it with Puya's own passes:
+`tealtools.lift` lifts the reconstructed SSA into genuine [Puya](https://github.com/algorandfoundation/puya) IR (`puya.ir.models`), validating and optimising it with Puya's own passes:
 
 ```bash
-python -m tealtools.WIP_lift2puyaIR <teal-source> [--optimize]
+python -m tealtools.lift <teal-source> [--optimize]
 ```
 
 ---

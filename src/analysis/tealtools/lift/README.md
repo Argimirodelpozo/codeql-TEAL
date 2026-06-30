@@ -1,4 +1,4 @@
-# WIP_lift2puyaIR — lift CodeQL TEAL back into Puya IR
+# lift — lift CodeQL TEAL back into Puya IR
 
 A **decompiler**: it takes a compiled Algorand program (a CodeQL TEAL database),
 reconstructs structure the assembler threw away — subroutines, a typed value graph,
@@ -25,13 +25,13 @@ CodeQL TEAL DB
 
 ```bash
 # Render a DB as real Puya IR (add --optimize to run Puya's optimiser first)
-PYTHONPATH=src/analysis python -m tealtools.WIP_lift2puyaIR <db-path> [--optimize]
+PYTHONPATH=src/analysis python -m tealtools.lift <db-path> [--optimize]
 
 # User-input taint report (which attacker-controlled values reach sensitive sinks)
-PYTHONPATH=src/analysis python -m tealtools.WIP_lift2puyaIR.taint <db-path>
+PYTHONPATH=src/analysis python -m tealtools.lift.taint <db-path>
 
 # …the same, annotated inline on the rendered IR
-PYTHONPATH=src/analysis python -m tealtools.WIP_lift2puyaIR.taint --render <db-path>
+PYTHONPATH=src/analysis python -m tealtools.lift.taint --render <db-path>
 ```
 
 A `<db-path>` is a CodeQL database directory (the dir containing
@@ -41,7 +41,7 @@ A `<db-path>` is a CodeQL database directory (the dir containing
 
 ```python
 from tealtools.ssa import SSAProgram
-from tealtools.WIP_lift2puyaIR import lift, render
+from tealtools.lift import lift, render
 
 prog = SSAProgram("path/to/db", verbose=False)
 
@@ -53,7 +53,7 @@ text = render(prog, optimize_ir=True)  # …after Puya's optimiser
 Lower to **real** `puya.ir.models` and optimise:
 
 ```python
-from tealtools.WIP_lift2puyaIR import to_puya_ir
+from tealtools.lift import to_puya_ir
 
 main, subs = to_puya_ir.to_puya(prog)        # genuine puya.ir.models
 to_puya_ir.optimize([main, *subs])           # Puya's optimiser passes
@@ -77,8 +77,8 @@ reach it).
 
 ```python
 from tealtools.ssa import SSAProgram
-from tealtools.WIP_lift2puyaIR.lift import _Lifter
-from tealtools.WIP_lift2puyaIR.taint import (
+from tealtools.lift.lift import _Lifter
+from tealtools.lift.taint import (
     user_input_taint, tainted_sinks, taint_report, render_with_taint)
 
 lf = _Lifter(SSAProgram("path/to/db", verbose=False)); lf.build()  # need the lifter,

@@ -31,7 +31,7 @@ analysis — which is also the opportunity.
   *TCS 1996*. "Precise interprocedural dataflow via graph reachability."
   *The* framework for the **taint-layer-split problem** — the principled version
   of the hand-rolled `_return_summary`, and the way to unify the IR-vs-SSA
-  interprocedural taint gap. *Tie-in:* `WIP_lift2puyaIR/taint.py`,
+  interprocedural taint gap. *Tie-in:* `lift/taint.py`,
   `tainted-fund-flow` (param-fed false-negative).
 
 - **Abstract interpretation** — Cousot & Cousot, *POPL 1977*. Foundational;
@@ -49,13 +49,13 @@ analysis — which is also the opportunity.
 - **Gigahorse** — Grech et al., *ICSE 2019*; and **Elipmoc** — Grech et al.,
   *OOPSLA 2022*. Declarative, **context-sensitive** decompilation of EVM
   bytecode to a structured IR. Our problem in another VM; the context-sensitivity
-  is the path from one-hop to **multi-hop xcontract**. *Tie-in:* `WIP_lift2puyaIR/`,
+  is the path from one-hop to **multi-hop xcontract**. *Tie-in:* `lift/`,
   `xcontract`.
 
 - **Retypd** — Noonan, Loginov, Cok, *PLDI 2016*. Constraint-based
   **type inference for decompilation** (sub-typing constraints). The gold-standard
   treatment of what `type_recovery.py` does heuristically — would make AVM-type
-  recovery *sound* rather than evidence-tiered. *Tie-in:* `WIP_lift2puyaIR/type_recovery.py`.
+  recovery *sound* rather than evidence-tiered. *Tie-in:* `lift/type_recovery.py`.
 
 - **MadMax** — Grech et al., *OOPSLA 2018*. Vulnerability detection (gas /
   overflow) *on top of* a decompiled IR. The model for "detect on the optimised
