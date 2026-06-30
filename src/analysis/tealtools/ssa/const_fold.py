@@ -91,7 +91,7 @@ def _fold_extract_imm(
     except ValueError:
         return None
     end = start + length if length != 0 else len(src)
-    if start < 0 or end > len(src):
+    if start < 0 or start > len(src) or end > len(src):
         return None
     return _bytes_const(src[start:end])
 

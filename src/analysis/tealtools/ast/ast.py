@@ -349,12 +349,12 @@ class VrfVerifyOpcode(CryptoOpcode): mnemonic = "vrf_verify"
 
 class EllipticCurveOpcode(Opcode): pass
 
-class EcAddOpcode(EllipticCurveOpcode): pass
-class EcMulOpcode(EllipticCurveOpcode): pass
-class EcPairingCheckOpcode(EllipticCurveOpcode): pass
-class EcMultiScalarMulOpcode(EllipticCurveOpcode): pass
-class EcSubgroupCheckOpcode(EllipticCurveOpcode): pass
-class EcMapToOpcode(EllipticCurveOpcode): pass
+class EcAddOpcode(EllipticCurveOpcode): mnemonic = "ec_add"
+class EcMulOpcode(EllipticCurveOpcode): mnemonic = "ec_scalar_mul"
+class EcPairingCheckOpcode(EllipticCurveOpcode): mnemonic = "ec_pairing_check"
+class EcMultiScalarMulOpcode(EllipticCurveOpcode): mnemonic = "ec_multi_scalar_mul"
+class EcSubgroupCheckOpcode(EllipticCurveOpcode): mnemonic = "ec_subgroup_check"
+class EcMapToOpcode(EllipticCurveOpcode): mnemonic = "ec_map_to"
 
 
 # ---------------------------------------------------------------------------

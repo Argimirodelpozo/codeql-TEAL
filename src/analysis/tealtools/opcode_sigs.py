@@ -39,7 +39,8 @@ SIG: dict[str, tuple[int, int]] = {
     "ed25519verify": (3, 1), "ed25519verify_bare": (3, 1), "ecdsa_verify": (5, 1),
     "ecdsa_pk_decompress": (1, 2), "ecdsa_pk_recover": (4, 2), "vrf_verify": (3, 2),
     # Elliptic curve
-    "ec_add": (2, 1), "ec_pairing_check": (2, 1), "ec_multi_scalar_mul": (2, 1),
+    "ec_add": (2, 1), "ec_scalar_mul": (2, 1), "ec_pairing_check": (2, 1),
+    "ec_multi_scalar_mul": (2, 1),
     "ec_subgroup_check": (1, 1), "ec_map_to": (1, 1),
     # Byte ops
     "concat": (2, 1), "substring": (1, 1), "substring3": (3, 1),

@@ -19,7 +19,7 @@ from puya.ir.types_ import AVMBytesEncoding, PrimitiveIRType as PT
 from puya.parse import SourceLocation
 
 from . import pre_ir
-from .lift import _Lifter, lift
+from .lift import _Lifter
 from .teal_const import _const_bytes, _load_src, _tmpl_name
 from ..ast.literals import tokenize_operands as _tokenize_operands
 

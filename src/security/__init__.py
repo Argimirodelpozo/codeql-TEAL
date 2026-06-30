@@ -125,6 +125,18 @@ for _kebab, _snake, _det_cls_name, _viol_cls_name in _DETECTION_SPECS:
     if _viol_cls_name is not None:
         globals()[_viol_cls_name] = getattr(_module, _viol_cls_name)
 
+# Fail fast on a detector that declares an unknown contract-kind mode: the
+# scanner filters by `mode not in applies_to`, so a typo (e.g. "lsig" for the
+# real "logicsig") silently disables the detector on that kind with no error.
+from .config import VALID_MODES as _VALID_MODES  # noqa: E402
+for _kebab, _det_cls in DETECTORS.items():
+    _applies = getattr(_det_cls, "applies_to", None)
+    if _applies is not None and not set(_applies) <= set(_VALID_MODES):
+        raise ValueError(
+            f"detector {_kebab!r} declares applies_to={set(_applies)} with "
+            f"mode(s) outside VALID_MODES={_VALID_MODES}"
+        )
+
 
 # xcontract is imported last because it depends on individual detector
 # classes being loaded into this package's namespace already.

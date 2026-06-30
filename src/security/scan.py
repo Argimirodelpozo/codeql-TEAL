@@ -51,15 +51,21 @@ logger = logging.getLogger("security.scan")
 
 
 def _drop_superseded(detectors: Iterable[str]) -> list[str]:
-    """Drop any detector marked ``superseded_by`` another REGISTERED detector --
-    the superseder covers it (and falls back to it internally), so a default scan
-    runs only the superseder and avoids duplicate findings. An explicit ``only``
-    list bypasses this (you can still request a superseded detector by name)."""
+    """Drop any detector marked ``superseded_by`` a superseder that is actually
+    going to run -- the superseder covers it (and falls back to it internally),
+    so a default scan runs only the superseder and avoids duplicate findings.
+
+    A detector is dropped only when its superseder is BOTH registered AND present
+    in this very set: if the superseder was filtered out (e.g. ``exclude``-d), the
+    superseded detector is KEPT so its analysis still runs as the fallback. An
+    explicit ``only`` list bypasses this entirely (request a detector by name)."""
+    survivors = list(detectors)
+    present = set(survivors)
     out: list[str] = []
-    for d in detectors:
+    for d in survivors:
         cls = DETECTORS.get(d)
         sup = getattr(cls, "superseded_by", None)
-        if sup and sup in DETECTORS:
+        if sup and sup in DETECTORS and sup in present:
             continue
         out.append(d)
     return out

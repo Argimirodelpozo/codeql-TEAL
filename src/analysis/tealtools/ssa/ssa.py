@@ -22,11 +22,14 @@ Pipeline (:meth:`PySSA._construct`):
 
   1. Instantiate PyVars per opcode output.
   2. BB arities + surviving locals (``outStackOrder``).
-  3+4. Eager direct placement + indirect propagation (default). The
-     on-demand "join-only" variant (TEAL_SSA_JOIN_ONLY=1) places phis only at
-     join blocks -- faster, but has a known loop-arg-delivery gap (see
-     ``_construct``), so it is opt-in until fixed.
-  5. Heights (forward stack-delta DF; diagnostic).
+  3. Phi placement. DEFAULT is Braun on-demand construction
+     (``_phase_braun`` + the forward depth cap ``_compute_entry_depths``):
+     minimal SSA, ~160-209x faster than eager. Two env-gated alternatives:
+     ``TEAL_SSA_EAGER=1`` -> maximal-then-pruned direct placement + indirect
+     propagation (the slow exact oracle); ``TEAL_SSA_JOIN_ONLY=1`` -> the
+     legacy join-only worklist (subsumed by Braun). See ``_construct``.
+  (The former phase 5 "heights" forward stack-delta DF was REMOVED -- its
+     result was never read and it blew up on recursive subroutines.)
   6. Per-BB sim to fill ``op.inputs`` / ``b.exit_stack``;
      ``frame_dig`` / ``frame_bury`` (any-sign N) expand under the
      fat-stack convention (consume the band from current top down to
@@ -543,7 +546,11 @@ class PySSA:
         # The depth cap bounds recursion to the true stack depth x passthrough
         # chain length (~35 on folks-v3, never the STACK_MAX spiral); a modest
         # raise covers huge real contracts without the spiral's unbounded climb.
-        _sys.setrecursionlimit(max(_sys.getrecursionlimit(), 10_000))
+        # Restore the prior limit afterwards so this construction-local need does
+        # not leak process-wide (the rare construction-exception path aborts the
+        # whole build, so leaving it raised there is harmless).
+        _prev_reclimit = _sys.getrecursionlimit()
+        _sys.setrecursionlimit(max(_prev_reclimit, 10_000))
         self._surv_by_slot = {b: {k: v for v, k in self._surv[b]}
                               for b in self.blocks}
         self._depth = self._compute_entry_depths()
@@ -582,6 +589,7 @@ class PySSA:
             self._entry_val[key] = self._resolve(self._entry_val[key])
         for P in self.phis.values():
             P.args = [self._resolve(a) for a in P.args]
+        _sys.setrecursionlimit(_prev_reclimit)
 
     def _frame_entry_depths(self) -> dict:
         """`bb_key -> entry stack depth INCLUDING the sub's args`, simulated the

@@ -360,8 +360,8 @@ def propagate_bytemath_ranges(prog: SSAProgram) -> int:
             do_phi(item)
     if pops >= cap:
         logger.warning(
-            "propagate_bytemath_ranges hit iteration cap (%d); ranges may "
-            "not have converged. This usually means a bytemath loop needs "
-            "proper widening.", _PASS_ITER_CAP,
+            "propagate_bytemath_ranges hit iteration cap (%d) after %d pops; "
+            "ranges may not have converged. This usually means a bytemath "
+            "loop needs proper widening.", cap, pops,
         )
     return tagged

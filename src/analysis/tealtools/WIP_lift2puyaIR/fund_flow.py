@@ -13,9 +13,13 @@ Every user-input-tainted value reaching a *fund-flow* inner-transaction field is
 finding: the attacker can influence WHO gets paid, HOW MUCH, or WHO controls the
 account.
 
-    RekeyTo / CloseRemainderTo / AssetCloseTo   -- hand over / sweep the account
+    CloseRemainderTo / AssetCloseTo              -- sweep the account
     Receiver / AssetReceiver                     -- redirect a payment
     Amount / AssetAmount                         -- control how much moves
+
+    (RekeyTo is intentionally NOT a fund field here -- an app/itxn RekeyTo is
+    self-inflicted, not a tainted-field vuln; rekey is an lsig-only check. See
+    ``opsets.FUND_FIELDS`` and the lsig ``rekey-to`` detector.)
 
 Each finding records the *dominating guards* on the path to the sink -- asserts,
 and conditional branches whose outcome is forced on every path that reaches the
@@ -480,7 +484,7 @@ def tainted_logs(lifter, taint=None, trusted_args=frozenset()) -> list:
 
 def tainted_fund_flows(lifter, taint=None, trusted_args=frozenset()) -> list:
     """Fund-flow specialisation of :func:`tainted_itxn_flows` -- tainted values
-    reaching Receiver / Amount / CloseRemainderTo / RekeyTo (+ asset variants)."""
+    reaching Receiver / Amount / CloseRemainderTo (+ asset variants)."""
     return tainted_itxn_flows(lifter, _FUND_FIELDS, taint, trusted_args)
 
 

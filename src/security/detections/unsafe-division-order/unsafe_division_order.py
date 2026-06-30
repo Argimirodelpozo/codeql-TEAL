@@ -62,7 +62,7 @@ class UnsafeDivisionOrderViolation:
 class UnsafeDivisionOrderDetector:
     name: ClassVar[str] = "sec-guide/unsafe-division-order"
     # Arithmetic precision is contract-kind-agnostic (apps and lsigs both do math).
-    applies_to: ClassVar[frozenset] = frozenset({"app", "lsig"})
+    applies_to: ClassVar[frozenset] = frozenset({"app", "logicsig"})
     violation_cls: ClassVar[type] = UnsafeDivisionOrderViolation
 
     def __init__(self, prog: SSAProgram, *, file: Optional[str] = None):
