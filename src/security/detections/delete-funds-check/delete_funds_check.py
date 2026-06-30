@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from tealtools.ssa import SSAProgram, SSAVar
+from tealtools.ssa import SSAProgram
 from security import common
 from security._approval_action_guard import (
     _ApprovalActionGuardDetector,
@@ -46,29 +46,25 @@ def _has_balance_minbalance_check(
     mb = common.op_output_seeds(prog, "min_balance", file=file)
     if not bal or not mb:
         return False
-    for op in prog.assignments:
-        if op.op not in _TIE_OPS or len(op.inputs) != 2:
-            continue
-        if not common.file_match(op.location.file, file):
-            continue
+
+    def _tied(op) -> bool:
+        # balance on one side, min_balance on the other (either order).
+        if len(op.inputs) != 2:
+            return False
         x, y = op.inputs
-        tied = (
+        return (
             (common._operand_flows_from_field_var(prog, x, bal)
                 and common._operand_flows_from_field_var(prog, y, mb))
             or
             (common._operand_flows_from_field_var(prog, y, bal)
                 and common._operand_flows_from_field_var(prog, x, mb))
         )
-        if not tied:
-            continue
-        # The tie must be ENFORCED — a `balance == min_balance` (or
-        # `balance - min_balance`) whose result is dropped (`pop`) or sits on an
-        # unrelated branch is no funds check. Without this an attacker silences the
-        # detector with one dead comparison while leaving Delete unprotected.
-        if op.outputs and isinstance(op.outputs[0], SSAVar) and \
-                common.def_forward_reaches_enforcement(prog, op.outputs[0]):
-            return True
-    return False
+
+    # The tie must be ENFORCED — a `balance == min_balance` (or
+    # `balance - min_balance`) whose result is dropped (`pop`) or sits on an
+    # unrelated branch is no funds check. Without this an attacker silences the
+    # detector with one dead comparison while leaving Delete unprotected.
+    return common.enforced_op_exists(prog, _TIE_OPS, _tied, file=file)
 
 
 class DeleteFundsCheckDetector(_ApprovalActionGuardDetector):

@@ -409,6 +409,28 @@ def _fall_through_bb(prog: SSAProgram, bb: BasicBlock) -> Optional[BasicBlock]:
     return candidates[0]
 
 
+def enforced_op_exists(prog: SSAProgram, ops, flows, *, file: Optional[str] = None) -> bool:
+    """True if some assignment whose op is in ``ops`` (file-matched) and whose
+    operands satisfy ``flows(op)`` has its result reach enforcement
+    (:func:`def_forward_reaches_enforcement`).
+
+    The shared shape of the "is there a genuine, *enforced* check of form X?"
+    recognisers (timelock timestamp comparison, balance==min_balance tie): a
+    check whose result is dropped or sits on an unrelated branch enforces
+    nothing. Each caller supplies its own ``flows`` predicate (one-sided vs
+    two-sided tie), so the differing flow logic stays explicit at the call
+    site while the loop + enforcement test are shared."""
+    for op in prog.assignments:
+        if op.op not in ops or not file_match(op.location.file, file):
+            continue
+        if not flows(op):
+            continue
+        if op.outputs and isinstance(op.outputs[0], SSAVar) and \
+                def_forward_reaches_enforcement(prog, op.outputs[0]):
+            return True
+    return False
+
+
 def cached_path_predicates(prog: SSAProgram) -> PathPredicateAnalysis:
     """One :class:`PathPredicateAnalysis` per program, memoised on ``prog``.
 
