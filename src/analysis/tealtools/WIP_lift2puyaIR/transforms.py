@@ -79,13 +79,15 @@ def _stores_sinkable(stores, B, by_id, preds, chain_to, slot_touched) -> bool:
 def _apply_phi_sink(stores, B, ph, by_id, preds) -> bool:
     """Per predecessor of merge block `B`, append a ``store slot <edge-value>`` for
     each sunk store; then remove the original stores and drop the phi. Returns True
-    on success, or False if a predecessor edge has no phi arg (leaving any
-    already-appended stores in place, matching the pre-extraction bail path)."""
+    on success, or False with NO mutation if any predecessor edge lacks a phi arg
+    (incomplete coverage -> leave the phi untouched so it fails loudly downstream,
+    rather than half-sinking and double-storing the slot on the covered edges)."""
     arg_of = {a.through: a.value for a in ph.args}
-    for p in preds.get(B.id, []):
-        vi = arg_of.get(p)
-        if vi is None:
-            return False
+    edge_preds = preds.get(B.id, [])
+    if any(arg_of.get(p) is None for p in edge_preds):
+        return False                      # incomplete coverage -> atomic no-op
+    for p in edge_preds:
+        vi = arg_of[p]
         for (sb, idx, slot, s) in stores:
             by_id[p].ops.append(pre_ir.IntrinsicOp(
                 pre_ir.Intrinsic("store", [slot], [vi])))

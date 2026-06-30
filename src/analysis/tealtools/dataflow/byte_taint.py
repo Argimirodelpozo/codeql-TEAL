@@ -160,6 +160,14 @@ def _default_sources(a) -> Optional[Intervals]:
 
 _HASH_OPS = frozenset({"sha256", "sha512_256", "keccak256", "sha3_256"})
 _EXTRACT_UINT = {"extract_uint16": 2, "extract_uint32": 4, "extract_uint64": 8}
+# Bytes-PRODUCING ops with no precise byte-interval rule: the conservative
+# fallback must record byte taint, not scalar (json_ref is excluded -- it is
+# polymorphic on its immediate, e.g. JSONUint64 -> uint64).
+_BYTES_OUT_FALLBACK = frozenset({
+    "b+", "b-", "b*", "b/", "b%", "bsqrt",      # bigint arithmetic
+    "b|", "b&", "b^", "b~", "bzero",            # bytewise
+    "base64_decode",
+})
 
 
 def _slice_of(v) -> Optional[tuple]:
@@ -442,6 +450,13 @@ def byte_taint(
             # len / bitlen derive metadata, not content — don't propagate.
             if op in ("len", "bitlen"):
                 return False
+            # Bytes-PRODUCING ops with no precise interval rule must record
+            # BYTE taint (not scalar): a tainted byte result later read by
+            # extract / getbyte / extract_uintN would otherwise find an empty
+            # byte map and propagate nothing -- a false negative, which violates
+            # the module's "never a false negative" soundness contract.
+            if op in _BYTES_OUT_FALLBACK:
+                return set_bytes(out, Intervals.whole(_byte_length(out)))
             return set_scalar(out)
         return False
 

@@ -7,8 +7,27 @@
     AssetReceiver = txna Accounts 1  (set@L307)
     Fee           = 0  (set@L309)
 
-=== Inner-txn group  prog.teal  submit@L520  (1 txn) ===
-  Txn 1  (itxn_next@L1951 → itxn_submit@L520)
+=== Inner-txn group  prog.teal  submit@L520  (2 txn) ===
+  Txn 1  (itxn_begin@L500 → itxn_next@L1951)
+    TypeEnum = 1  (set@L1943)
+    Receiver = app_global_get(V#1@L1944)  (set@L1946)
+    Amount   = load 23  (set@L1948)
+    Fee      = 0  (set@L1950)
+  Txn 2  (itxn_next@L1951 → itxn_submit@L520)
+    TypeEnum        = 6  (set@L503)
+    ApplicationID   = app_global_get(V#1@L504)  (set@L506)
+    ApplicationArgs = [0x7075626c6973684d657373616765, load 54, itob(V#1@L511)]  (set@L508, L510, L513)
+    Accounts        = [txna Accounts 1]  (set@L515)
+    Note            = 0x7075626c6973684d657373616765  (set@L517)
+    Fee             = 0  (set@L519)
+
+=== Inner-txn group  prog.teal  submit@L520  (2 txn) ===
+  Txn 1  (itxn_begin@L1110 → itxn_next@L1951)
+    TypeEnum = 1  (set@L1943)
+    Receiver = app_global_get(V#1@L1944)  (set@L1946)
+    Amount   = load 23  (set@L1948)
+    Fee      = 0  (set@L1950)
+  Txn 2  (itxn_next@L1951 → itxn_submit@L520)
     TypeEnum        = 6  (set@L503)
     ApplicationID   = app_global_get(V#1@L504)  (set@L506)
     ApplicationArgs = [0x7075626c6973684d657373616765, load 54, itob(V#1@L511)]  (set@L508, L510, L513)

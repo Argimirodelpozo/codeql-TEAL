@@ -446,7 +446,7 @@ def _unify_comparison_operands(prog) -> None:
                 for t in o.targets:
                     producer[id(t)] = o.source
 
-    _REFINED = ("account", "asset", "application", "biguint")
+    _REFINED = ("account", "asset", "application")  # biguint handled explicitly above
 
     def strength(v):
         """(strength, family) for a comparison operand — higher strength = more
@@ -471,6 +471,8 @@ def _unify_comparison_operands(prog) -> None:
                 return (4, "u")
             if ft == "bytes":
                 return (4, "b")
+        if v.ir_type == "biguint":       # Puya BigUInt is byteslice-backed; avm()
+            return (3, "b")              # doesn't map it, so handle it explicitly
         t = avm(v.ir_type)               # 'b' / 'u' / '?'
         if t == "?":
             return (0, "?")
@@ -935,12 +937,24 @@ def _reconcile_return_arity(prog) -> None:
         n = max([len(sub.returns)] + [len(t.result) for t in sites])
         if n == 0:
             continue
+        # Re-derive EVERY position from the authoritative widest (arity-complete,
+        # deepest-first) site, not just the appended tail: _infer_returns may have
+        # zip-truncated sub.returns down to a SHORT site whose positions are
+        # logically SHALLOWER than the widest site's, so trusting the existing
+        # prefix (append-only widening) leaves position 0 mis-typed (e.g. a bytes
+        # deepest return recorded as uint64). Keep an existing value only where the
+        # widest slot is still `?` (don't clobber a good caller-derived type).
         widest = max(sites, key=lambda t: len(t.result)).result
-        types = list(sub.returns)
-        while len(types) < n:                 # widen the signature
-            i = len(types)
-            types.append(getattr(widest[i], "ir_type", "uint64")
-                         if i < len(widest) else "uint64")
+        old = list(sub.returns)
+        types = []
+        for i in range(n):
+            wt = getattr(widest[i], "ir_type", "?") if i < len(widest) else "?"
+            if wt not in ("?", None):
+                types.append(wt)
+            elif i < len(old) and old[i] != "?":
+                types.append(old[i])
+            else:
+                types.append("uint64")        # lowering default
         sub.returns = types
         for t in sites:                        # front-pad short return sites
             if len(t.result) < n:

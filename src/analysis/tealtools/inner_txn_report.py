@@ -388,29 +388,36 @@ class InnerTxnReport:
         # Index pairs by their end-line to find the txn that closes
         # at a given itxn_next/submit, and by their start-line to walk
         # forward.
-        by_start: dict[tuple[str, int], InnerTxn] = {
-            (k[0], v.begin_line): v for k, v in per_pair.items()
-        }
-        # Some txns close at itxn_next and a *different* txn starts at
-        # the same line — the same line can be both end of txn_k and
-        # start of txn_{k+1}. Use the (file, start_line) lookup to
-        # follow chains forward.
+        # (file, begin_line) -> ALL txns starting there. The same boundary line
+        # is both end-of-txn_k and start-of-txn_{k+1}; on DIVERGENT control paths
+        # one boundary opcode can start more than one successor txn (e.g. an
+        # itxn_next followed by either another itxn_next or an itxn_submit
+        # depending on the branch). A single-value index would silently keep only
+        # the last, mis-building one chain and dropping the other.
+        by_start: dict[tuple[str, int], list[InnerTxn]] = {}
+        for k, v in per_pair.items():
+            by_start.setdefault((k[0], v.begin_line), []).append(v)
+
         groups: list[InnerTxnGroup] = []
+
+        def _walk(file: str, chain: list) -> None:
+            cur = chain[-1]
+            succs = ([t for t in by_start.get((file, cur.end_line), [])
+                      if t is not cur]
+                     if cur.end_kind == "itxn_next" else [])
+            if not succs:                  # closed at a submit (or dead-ends)
+                groups.append(InnerTxnGroup(
+                    file=file, submit_line=cur.end_line, txns=list(chain)))
+                return
+            for s in succs:                # fork: one continuation per successor
+                _walk(file, chain + [s])
+
         for (file, start_line, end_line), txn in sorted(
             per_pair.items(), key=lambda kv: (kv[0][0], kv[0][1])
         ):
             if txn.begin_kind != "itxn_begin":
                 continue  # follows from a chain head only.
-            chain = [txn]
-            while chain[-1].end_kind == "itxn_next":
-                next_txn = by_start.get((file, chain[-1].end_line))
-                if next_txn is None or next_txn is chain[-1]:
-                    break
-                chain.append(next_txn)
-            submit_line = chain[-1].end_line
-            groups.append(InnerTxnGroup(
-                file=file, submit_line=submit_line, txns=chain,
-            ))
+            _walk(file, [txn])
 
         # Also surface single-pair "lonely" groups even when their
         # begin isn't an itxn_begin — defensively (well-formed TEAL
