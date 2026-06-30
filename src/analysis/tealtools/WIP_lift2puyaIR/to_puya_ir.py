@@ -596,11 +596,11 @@ def _recover_ir_types(main, subs, allow=_is_refinable, byte_lengths=None) -> int
                         changed = True
                         n += 1
                 if changed:
-                    try:
-                        object.__setattr__(
-                            o.source, "types", tuple(t.ir_type for t in o.targets))
-                    except Exception:
-                        pass
+                    # Keep the intrinsic's declared result types in sync with the
+                    # refined targets. `types` is a read-only property; the attrs
+                    # backing field is `_types` (writing "types" silently failed).
+                    object.__setattr__(
+                        o.source, "_types", tuple(t.ir_type for t in o.targets))
     return n
 
 
@@ -1069,12 +1069,11 @@ def _recover_encoded_types(main, subs) -> int:
                             touched = changed = True
                             n += 1
                     if touched:
-                        try:
-                            object.__setattr__(
-                                o.source, "types",
-                                tuple(t.ir_type for t in o.targets))
-                        except Exception:
-                            pass
+                        # See _recover_ir_types: write the `_types` backing field,
+                        # not the read-only `types` property.
+                        object.__setattr__(
+                            o.source, "_types",
+                            tuple(t.ir_type for t in o.targets))
     return n
 
 
