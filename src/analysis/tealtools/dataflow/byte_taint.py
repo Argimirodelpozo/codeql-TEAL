@@ -321,6 +321,7 @@ def _validated_intervals(prog: SSAProgram) -> dict:
         return ub not in reach
 
     out: dict = {}
+    prov: dict = {}       # value -> [(lo, hi, kind, line)] : which op validated
     for a in prog.assignments:
         if a.op != "assert" or not a.inputs:
             continue
@@ -347,6 +348,7 @@ def _validated_intervals(prog: SSAProgram) -> dict:
         if all(dominates(block_a, u, a.location.line)
                for u in x.uses if u not in test):
             out.setdefault(x, []).append((lo, hi))
+            prov.setdefault(x, []).append((lo, hi, "assert", a.location.line))
 
     # Branch-to-reject validation: a `slice(X) == clean` that drives a `bz` /
     # `bnz` to a rejection -- OR a `match` / `switch` arm -- pins those bytes on
@@ -380,19 +382,77 @@ def _validated_intervals(prog: SSAProgram) -> dict:
         uses = [u for u in x.uses if u is not getattr(slc, "defined_by", None)]
         if uses and all(_eq_clean_at(slc, u) for u in uses):
             out.setdefault(x, []).append((lo, hi))
-    return {v: Intervals(parts) for v, parts in out.items()}
+            prov.setdefault(x, []).append((lo, hi, "branch/match", getattr(slc, "line", 0)))
+    return {v: Intervals(parts) for v, parts in out.items()}, prov
+
+
+def _op_desc(d) -> str:
+    """One-line label for an assignment: ``op imm @Lline``."""
+    if d is None:
+        return "?"
+    imm = f" {d.immediates}".rstrip() if getattr(d, "immediates", "") else ""
+    ln = getattr(getattr(d, "location", None), "line", None)
+    return f"{d.op}{imm}" + (f" @L{ln}" if ln else "")
+
+
+def taint_chain(value, result: "ByteTaintResult", *, max_hops: int = 32) -> list:
+    """The op chain SOURCE → ``value``: walk backward from ``value``, at each hop
+    following the input that carries the taint reaching it, until a source (an op
+    with no tainted input, e.g. ``txna ApplicationArgs 0``). Returns the defining
+    assignments source-first -- the provenance of *why* the value is tainted."""
+    chain: list = []
+    seen: set = set()
+    cur = value
+    while cur is not None and id(cur) not in seen and len(chain) < max_hops:
+        seen.add(id(cur))
+        d = getattr(cur, "defined_by", None)
+        if d is None:
+            break
+        chain.append(d)
+        nxt = None
+        for i in getattr(d, "inputs", ()):
+            if not isinstance(i, Const) and (result.tainted_bytes(i) or
+                                             result.is_scalar_tainted(i)):
+                nxt = i
+                break
+        # Interprocedural: a `frame_dig` param has no local input -- follow the
+        # frame bridge back to a tainted caller arg, so the chain crosses callsub
+        # (the IR-level advantage) instead of dead-ending at the param read.
+        if nxt is None:
+            for arg in result.frame_src.get(cur, ()):
+                if result.tainted_bytes(arg) or result.is_scalar_tainted(arg):
+                    nxt = arg
+                    break
+        cur = nxt
+    chain.reverse()
+    return chain
 
 
 class ByteTaintResult:
     """The fixpoint result: per-value tainted byte intervals + the set of
-    tainted scalar (uint64) values produced by the byte→scalar bridges."""
+    tainted scalar (uint64) values produced by the byte→scalar bridges, plus the
+    validation provenance (which op cleared which range)."""
 
-    def __init__(self, bytes_taint: dict, scalar_taint: set):
+    def __init__(self, bytes_taint: dict, scalar_taint: set,
+                 validated_by: Optional[dict] = None, frame_src: Optional[dict] = None):
         self.bytes_taint = bytes_taint
         self.scalar_taint = scalar_taint
+        self.validated_by = validated_by or {}   # value -> [(lo, hi, kind, line)]
+        self.frame_src = frame_src or {}         # frame_dig out -> caller args (interproc)
 
     def tainted_bytes(self, value) -> Intervals:
         return self.bytes_taint.get(value, Intervals.empty())
+
+    def provenance(self, value) -> str:
+        """A witness for ``value``: the chain of ops that TAINT it (source → sink)
+        and the ops that VALIDATE (clear) its byte ranges."""
+        lines = [f"{value}: {self.tainted_bytes(value) or '(scalar)'}"]
+        chain = taint_chain(value, self)
+        if chain:
+            lines.append("  tainted by:  " + "  →  ".join(_op_desc(d) for d in chain))
+        for lo, hi, kind, ln in self.validated_by.get(value, []):
+            lines.append(f"  validated:   bytes [{lo}:{hi}) by {kind} @L{ln}")
+        return "\n".join(lines)
 
     def is_scalar_tainted(self, value) -> bool:
         return value in self.scalar_taint
@@ -434,6 +494,14 @@ class ByteTaintResult:
             lines.append(f"  + {len(self.scalar_taint)} scalar-tainted (uint64) value(s)")
         return "\n".join(lines)
 
+    def render_provenance(self) -> str:
+        """Full witness per tainted value: the chain of ops that TAINT it (source
+        → value, crossing callsub) + the ops that VALIDATE its byte ranges."""
+        blocks = [self.provenance(v)
+                  for v in sorted(self.bytes_taint, key=lambda x: getattr(x, "line", 0))
+                  if self.bytes_taint[v]]
+        return "\n".join(blocks) if blocks else "(no tainted values)"
+
 
 def _byte_strip(iv: Intervals, bound: Optional[int], width: int = 32) -> str:
     """Intervals -> a byte bar: one cell per byte (``█`` tainted, ``·`` clean).
@@ -474,7 +542,7 @@ def byte_taint(
         prog.propagate_stack_shuffles()
     prog.propagate_byte_lengths()
     seed = sources or _default_sources
-    validated = _validated_intervals(prog) if validate else {}
+    validated, validated_by = _validated_intervals(prog) if validate else ({}, {})
 
     # Interprocedural bridge: a `frame_dig` param read has no def-use input in
     # PySSA, so caller taint would stop at the call boundary. `frame_param_sources`
@@ -648,7 +716,7 @@ def byte_taint(
         for dig_out, args in frame_src.items():
             changed = _join(dig_out, args) or changed
 
-    return ByteTaintResult(bt, st)
+    return ByteTaintResult(bt, st, validated_by, frame_src)
 
 
 class IrByteTaint:
@@ -728,7 +796,10 @@ def byte_taint_view(
 def _main(argv) -> int:
     """CLI: byte-strip taint view for a contract.
 
-        python -m tealtools.dataflow.byte_taint <db|file.teal> [--no-validate]
+        python -m tealtools.dataflow.byte_taint <db|file.teal> [--no-validate] [--why]
+
+    ``--why`` prints the provenance witness (taint chain source→value, crossing
+    callsub, + the validating ops) instead of the strip view.
     """
     args = [a for a in argv if not a.startswith("-")]
     if not args:
@@ -736,7 +807,8 @@ def _main(argv) -> int:
         return 1
     validate = "--no-validate" not in argv
     prog = SSAProgram(args[0], verbose=False)
-    print(byte_taint(prog, validate=validate).render())
+    result = byte_taint(prog, validate=validate)
+    print(result.render_provenance() if "--why" in argv else result.render())
     return 0
 
 

@@ -365,3 +365,31 @@ class TestByteStripViz:
         assert "byte-interval taint" in out
         assert "concat" in out                 # producing op labelled
         assert "········█" in out               # the clean-prefix partition is visible
+
+
+class TestProvenance:
+    def test_taint_chain_source_to_value(self):
+        p = SSAProgram.from_text("#pragma version 8\n" + _PREFIX + "extract 8 8\nlog\nint 1\nreturn\n", name="t")
+        r = byte_taint(p)
+        v = [a for a in p.assignments if a.op == "extract" and a.immediates == "8 8"][0].outputs[0]
+        from tealtools.dataflow.byte_taint import taint_chain
+        ops = [d.op for d in taint_chain(v, r)]
+        assert ops[0] == "txna" and ops[-1] == "extract"        # source-first, ends at value
+
+    def test_validation_chain_recorded(self):
+        p = SSAProgram.from_text(_VALIDATE.format(i=3), name="t")
+        r = byte_taint(p, validate=True)
+        arg = [a for a in p.assignments if a.op == "txna"][0].outputs[0]
+        prov = r.provenance(arg)
+        assert "tainted by:" in prov and "txna" in prov
+        assert "validated:" in prov and "assert" in prov       # the assert cleared [0,8)
+
+    def test_chain_crosses_callsub(self):
+        teal = ("#pragma version 8\n"
+                "txna ApplicationArgs 0\ncallsub emit\nint 1\nreturn\n"
+                "emit:\nproto 1 0\nframe_dig -1\nextract 4 8\nlog\nretsub\n")
+        p = SSAProgram.from_text(teal, name="t")
+        r = byte_taint(p)
+        v = [a for a in p.assignments if a.op == "log"][0].inputs[0]
+        ops = [d.op for d in __import__("tealtools.dataflow.byte_taint", fromlist=["taint_chain"]).taint_chain(v, r)]
+        assert "txna" in ops and "frame_dig" in ops             # crossed the call boundary
