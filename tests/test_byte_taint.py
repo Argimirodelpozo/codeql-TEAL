@@ -137,6 +137,38 @@ class TestValidationNarrowing:
         gb = [a for a in p.assignments if a.op == "getbyte"][-1]
         assert r.is_scalar_tainted(gb.outputs[0])
 
+    def test_slice_eq_clean_derived_value_clears(self):
+        # assert(extract 0 8 arg == itob(global LatestTimestamp)) — the RHS is
+        # attacker-INDEPENDENT (a global through a pure op), so bytes 0..7 are
+        # pinned to a value outside attacker control and clear, exactly as a
+        # compile-time const would.
+        teal = (
+            "#pragma version 8\n"
+            "txna ApplicationArgs 0\nextract 0 8\nglobal LatestTimestamp\nitob\n==\nassert\n"
+            "txna ApplicationArgs 0\nint 3\ngetbyte\nreturn\n"
+        )
+        p = SSAProgram.from_text(teal, name="t")
+        r = byte_taint(p, validate=True)
+        read = [a for a in p.assignments if a.op == "getbyte"][-1].outputs[0]
+        arg = [a for a in p.assignments if a.op == "txna"][0].outputs[0]
+        assert not r.is_scalar_tainted(read)
+        assert r.tainted_bytes(arg) == Intervals([(8, INF)])
+
+    def test_slice_eq_attacker_slice_does_not_clear(self):
+        # assert(extract 0 8 arg0 == extract 0 8 arg1) — BOTH sides are
+        # attacker-controlled, so neither is clean and nothing clears (the
+        # attacker just sets both args equal). Read of arg0 byte 3 stays tainted.
+        teal = (
+            "#pragma version 8\n"
+            "txna ApplicationArgs 0\nextract 0 8\n"
+            "txna ApplicationArgs 1\nextract 0 8\n==\nassert\n"
+            "txna ApplicationArgs 0\nint 3\ngetbyte\nreturn\n"
+        )
+        p = SSAProgram.from_text(teal, name="t")
+        r = byte_taint(p, validate=True)
+        read = [a for a in p.assignments if a.op == "getbyte"][-1].outputs[0]
+        assert r.is_scalar_tainted(read)
+
     def test_bypassing_use_is_sound(self):
         # the validating assert is on ONE branch; a read at the merge is
         # reachable WITHOUT it, so taint must NOT be cleared (no false negative).

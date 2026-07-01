@@ -37,7 +37,7 @@ from __future__ import annotations
 
 from typing import Callable, Optional
 
-from ..ssa import Const, SSAProgram, SSAVar, const_int, operand_const
+from ..ssa import Const, Phi, SSAProgram, SSAVar, const_int, operand_const
 from ..ssa.models import _shuffle_mapping, _txn_field_name
 
 INF = float("inf")  # open right end: "to the end of a (possibly unknown) value"
@@ -170,6 +170,59 @@ _BYTES_OUT_FALLBACK = frozenset({
 })
 
 
+# Pure combinators: their output is a deterministic function of their stack
+# inputs, with no external read. Used by :func:`_is_clean` — a value built only
+# from constants / ``global`` reads through these ops is attacker-independent.
+# Deliberately an ALLOWLIST: any op NOT here (``txn`` / ``arg`` / ``frame_dig``
+# / ``load`` / ``app_global_get`` / a source, …) breaks cleanliness, so a
+# missing entry costs precision, never soundness.
+_PURE_COMBINATORS = frozenset({
+    "+", "-", "*", "/", "%", "exp", "sqrt", "shl", "shr", "<<", ">>",
+    "b+", "b-", "b*", "b/", "b%", "bsqrt",
+    "&", "|", "^", "~", "b&", "b|", "b^", "b~", "bzero",
+    "==", "!=", "<", ">", "<=", ">=", "!", "&&", "||",
+    "b==", "b!=", "b<", "b>", "b<=", "b>=",
+    "concat", "extract", "extract3", "substring", "substring3",
+    "len", "bitlen", "getbyte", "setbyte", "getbit", "setbit",
+    "replace2", "replace3", "itob", "btoi",
+    "sha256", "sha512_256", "keccak256", "sha3_256",
+})
+
+
+def _is_clean(v, seen: Optional[set] = None) -> bool:
+    """True if operand ``v`` is attacker-INDEPENDENT — its value cannot be
+    steered by attacker input, so an ``assert(slice(X) == v)`` guard genuinely
+    pins those bytes of X to a value outside attacker control.
+
+    Sound over-approximation via an allowlist: a value is clean iff every leaf
+    of its def-tree is a constant or a ``global`` read, combined only through
+    :data:`_PURE_COMBINATORS`. Everything else — ``txn``/``arg`` reads, a
+    ``frame_dig`` param (interprocedurally attacker-controlled), scratch/state
+    reads, unknown ops — is treated as NOT clean. Note we do NOT define clean as
+    "currently untainted": byte_taint is intra-procedural, so a param can look
+    untainted here yet carry taint from the caller; clearing against it would be
+    a false negative."""
+    if operand_const(v) is not None:
+        return True
+    if seen is None:
+        seen = set()
+    if v in seen:
+        return True                       # cycle edge introduces no new source
+    seen.add(v)
+    if isinstance(v, Phi):
+        return all(_is_clean(arg, seen) for arg in v.args)
+    if not isinstance(v, SSAVar):
+        return False
+    d = getattr(v, "defined_by", None)
+    if d is None:
+        return False                      # unknown origin (param / frame read)
+    if d.op == "global":
+        return True                       # chain / app metadata, attacker-independent
+    if d.op in _PURE_COMBINATORS and d.inputs:
+        return all(_is_clean(i, seen) for i in d.inputs)
+    return False
+
+
 def _slice_of(v) -> Optional[tuple]:
     """If SSAVar ``v`` is a *static* byte-slice read of some value ``X`` —
     ``extract`` / ``substring`` (immediate or stack-const), ``getbyte``,
@@ -206,16 +259,23 @@ def _slice_of(v) -> Optional[tuple]:
 
 def _validated_intervals(prog: SSAProgram) -> dict:
     """``value -> Intervals`` proven NOT attacker-controlled by
-    ``assert(slice(X) == const)`` guards, flow-sensitively.
+    ``assert(slice(X) == clean)`` guards, flow-sensitively.
 
-    A guard pinning a static slice of X to a compile-time constant means
+    A guard pinning a static slice of X to an attacker-INDEPENDENT value means
     those bytes can't be attacker-chosen past the assert (the txn fails
-    otherwise). We clear them from X's taint **globally** only when every
-    *other* use of X is dominated by the assert — the same soundness
-    contract as :mod:`tealtools.passes.range_assert` (a use reachable
-    without passing the guard would otherwise lose taint unsoundly).
-    Dominance is approximated by reachability-without-the-assert-block on
-    the raw interprocedural CFG (over-approximates → conservative)."""
+    otherwise). ``clean`` is a compile-time constant OR any value that
+    :func:`_is_clean` proves attacker-independent (a ``global`` read, or pure
+    computation over constants / globals — e.g. ``extract(X,0,32) == global
+    CurrentApplicationAddress`` or ``== itob(global Round)``). Comparing two
+    attacker slices (``slice(X) == slice(Y)``) clears nothing — neither side is
+    clean.
+
+    We clear the range from X's taint **globally** only when every *other* use
+    of X is dominated by the assert — the same soundness contract as
+    :mod:`tealtools.passes.range_assert` (a use reachable without passing the
+    guard would otherwise lose taint unsoundly). Dominance is approximated by
+    reachability-without-the-assert-block on the raw interprocedural CFG
+    (over-approximates → conservative)."""
     from ..passes.range_assert import _all_blocks, _reachable_avoiding
 
     entries = [b for b in _all_blocks(prog) if not b.predecessors]
@@ -247,7 +307,7 @@ def _validated_intervals(prog: SSAProgram) -> dict:
         lhs, rhs = d.inputs[1], d.inputs[0]
         slc = win = None
         for s, other in ((lhs, rhs), (rhs, lhs)):
-            if operand_const(other) is not None and isinstance(s, SSAVar):
+            if isinstance(s, SSAVar) and _is_clean(other):
                 info = _slice_of(s)
                 if info is not None:
                     slc, win = s, info
