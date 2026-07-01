@@ -1,0 +1,29 @@
+#pragma version 10
+    // partial validation: check only the 2-byte selector prefix of arg 0
+    txna ApplicationArgs 0
+    int 0
+    extract_uint16
+    int 1
+    ==
+    assert
+    // OWNER GATE in the caller: only the creator may trigger the payment
+    txn Sender
+    global CreatorAddress
+    ==
+    assert
+    txna ApplicationArgs 0
+    callsub pay
+    int 1
+    return
+pay:
+    proto 1 0
+    itxn_begin
+    int pay
+    itxn_field TypeEnum
+    frame_dig -1
+    extract 2 32              // the UNCHECKED embedded address
+    itxn_field Receiver
+    int 1000
+    itxn_field Amount
+    itxn_submit
+    retsub

@@ -1,0 +1,23 @@
+#pragma version 10
+    txna ApplicationArgs 0
+    int 0
+    extract_uint16
+    int 1
+    ==
+    assert
+    txna ApplicationArgs 0
+    callsub pay
+    int 1
+    return
+pay:
+    proto 1 0
+    itxn_begin
+    int pay
+    itxn_field TypeEnum
+    frame_dig -1
+    extract 2 32
+    itxn_field Receiver
+    int 1000
+    itxn_field Amount
+    itxn_submit
+    retsub
