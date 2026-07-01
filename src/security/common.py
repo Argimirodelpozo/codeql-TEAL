@@ -1098,9 +1098,10 @@ def user_input_taint(prog: SSAProgram, file: Optional[str] = None) -> dict:
     return result
 
 
-# Warn only once per process when the whole IR layer is off (puya missing);
-# per-contract lift failures warn individually in ir_lifter.
-_PUYA_UNAVAILABLE_WARNED = False
+# Warn only once per process if the lift package itself fails to import
+# (a real breakage — the pre-IR path is puya-free, so missing puya alone does
+# NOT trip this); per-contract lift failures warn individually in ir_lifter.
+_LIFT_IMPORT_WARNED = False
 
 
 def ir_lifter(prog: SSAProgram, file: Optional[str] = None):
@@ -1119,12 +1120,12 @@ def ir_lifter(prog: SSAProgram, file: Optional[str] = None):
     ``file`` is accepted for signature parity with the SSA analyses but unused: the
     lift is whole-program, and SSAPrograms are per-file (xcontract aside).
 
-    Failure is NEVER silent: puya being uninstalled warns once per process
-    (the entire IR layer is off), and a per-contract lift failure warns with
-    the reason — either way the ir-* detectors degrade (SSA-sibling fallback
-    or no findings), and the user must be able to see that a scan ran at
-    reduced precision."""
-    global _PUYA_UNAVAILABLE_WARNED
+    Failure is NEVER silent: a per-contract lift failure warns with the
+    reason, and a lift-package import failure (which should NOT happen just
+    because puya is missing — the pre-IR taint path is puya-free) warns once.
+    Either way the ir-* detectors degrade (SSA-sibling fallback or no
+    findings), and the user must be able to see the reduced precision."""
+    global _LIFT_IMPORT_WARNED
     sentinel = object()
     cached = getattr(prog, "_sec_ir_lifter", sentinel)
     if cached is not sentinel:
@@ -1133,13 +1134,14 @@ def ir_lifter(prog: SSAProgram, file: Optional[str] = None):
     try:
         from tealtools.lift.lift import _Lifter
     except ImportError as e:
-        if not _PUYA_UNAVAILABLE_WARNED:
-            _PUYA_UNAVAILABLE_WARNED = True
+        # The detector-facing lift is deliberately puya-free, so this is a
+        # genuine breakage (not merely puya-not-installed), hence once-only.
+        if not _LIFT_IMPORT_WARNED:
+            _LIFT_IMPORT_WARNED = True
             logger.warning(
-                "IR detections DISABLED — the Puya-IR lift is unavailable "
+                "IR detections DISABLED — the lift package failed to import "
                 "(%s). ir-* detectors with an SSA sibling fall back to it; "
-                "the rest report nothing. Install puyapy to enable the IR "
-                "layer.", e)
+                "the rest report nothing.", e)
     else:
         src = str(getattr(prog, "source_path", "") or "")
         if not src:

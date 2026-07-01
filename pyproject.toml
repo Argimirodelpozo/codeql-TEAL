@@ -23,6 +23,14 @@ dependencies = [
     "networkx>=3",
 ]
 
+[project.optional-dependencies]
+# Decompilation to real Puya IR (``tealql`` lift / ``python -m tealtools.lift``).
+# The analysis + detection layers — including the interprocedural ir-* detectors,
+# whose taint runs on the puya-free pre-IR — do NOT need this; only lowering to
+# genuine ``puya.ir.models`` does. Pinned to the tested minor: the lift touches
+# puya compiler internals with no stability guarantee across releases.
+lift = ["puyapy>=5.7,<5.8"]
+
 [project.urls]
 Repository = "https://github.com/Argimirodelpozo/codeql-TEAL"
 

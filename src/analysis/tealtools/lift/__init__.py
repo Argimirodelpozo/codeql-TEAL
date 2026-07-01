@@ -8,9 +8,25 @@
 (:mod:`to_puya_ir`) lowers it to real Puya IR. Metadata in :mod:`optypes`,
 literal parsing in :mod:`teal_const`. ``python -m tealtools.lift <db>``
 renders a DB.
+
+``render`` / ``to_puya`` are exported LAZILY (PEP 562 ``__getattr__``):
+they live in :mod:`to_puya_ir`, the only module on this path that imports
+the ``puya`` package. The detector-facing side — ``lift`` / ``_Lifter``
+and the pre-IR taint layer — is puya-free, so ``import tealtools.lift``
+(which the security ``ir_lifter`` bridge triggers via
+``from tealtools.lift.lift import _Lifter``) must not pull in puya. Only
+touching ``render`` / ``to_puya`` does.
 """
 from . import pre_ir
 from .lift import lift
-from .to_puya_ir import render
 
 __all__ = ["render", "lift", "pre_ir"]
+
+
+def __getattr__(name: str):
+    # Deferred so the package imports without puya installed; only the
+    # decompilation entry points need it.
+    if name in ("render", "to_puya"):
+        from . import to_puya_ir
+        return getattr(to_puya_ir, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

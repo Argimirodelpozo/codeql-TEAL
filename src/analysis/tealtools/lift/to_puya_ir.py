@@ -26,6 +26,25 @@ from ..ast.literals import tokenize_operands as _tokenize_operands
 
 logger = logging.getLogger("tealtools.lift")
 
+# Neutral encoding-kind string (from teal_const, puya-free) -> puya's enum.
+# The mapping lives HERE, not in teal_const, so the detector-facing lift path
+# stays importable without puya (see teal_const's module docstring).
+_AVM_ENCODING = {
+    "base16": AVMBytesEncoding.base16,
+    "utf8": AVMBytesEncoding.utf8,
+    "base64": AVMBytesEncoding.base64,
+    "base32": AVMBytesEncoding.base32,
+}
+
+
+def _bytes_const(literal: str) -> "M.BytesConstant":
+    """A puya ``BytesConstant`` from a TEAL byte literal — decodes via the
+    puya-free ``_const_bytes`` and maps its neutral kind to the puya enum."""
+    raw, kind = _const_bytes(literal)
+    return M.BytesConstant(source_location=None, value=raw,
+                           encoding=_AVM_ENCODING[kind])
+
+
 _IRT = {
     "uint64": PT.uint64, "bytes": PT.bytes, "bool": PT.bool,
     "account": PT.account, "asset": PT.uint64, "application": PT.uint64,
@@ -56,8 +75,7 @@ def _make_const(operand: str, is_u64: bool):
             return M.UInt64Constant(source_location=None, value=int(operand, 0))
         except ValueError:
             return None
-    raw, enc = _const_bytes(operand)
-    return M.BytesConstant(source_location=None, value=raw, encoding=enc)
+    return _bytes_const(operand)
 
 
 #: ``intc_N`` / ``bytec_N`` -> the const-block index N they load.
@@ -98,8 +116,7 @@ class _Translator:
         if isinstance(v, pre_ir.UInt64Constant):
             return M.UInt64Constant(source_location=None, value=v.value)
         if isinstance(v, pre_ir.BytesConstant):
-            raw, enc = _const_bytes(v.value or "0x")
-            return M.BytesConstant(source_location=None, value=raw, encoding=enc)
+            return _bytes_const(v.value or "0x")
         if isinstance(v, pre_ir.Undefined):
             return M.Undefined(source_location=None, ir_type=PT.uint64)
         raise TypeError(f"val: {type(v).__name__}")
@@ -256,8 +273,7 @@ class _Translator:
                 if is_u64:                       # uint64-keyed match (e.g. OnCompletion)
                     key = M.UInt64Constant(source_location=None, value=int(str(lbl), 0))
                 else:
-                    raw, enc = _const_bytes(str(lbl))
-                    key = M.BytesConstant(source_location=None, value=raw, encoding=enc)
+                    key = _bytes_const(str(lbl))
                 cases[key] = B[blk]
             return M.Switch(source_location=None, value=val,
                             cases=cases, default=B[t.default])

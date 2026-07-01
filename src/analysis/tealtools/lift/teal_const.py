@@ -3,24 +3,19 @@
 The pure TEAL-literal / operand parsing this module used to do now lives in
 :mod:`tealtools.ast.literals` (puya-free). What remains is lift-specific: the
 cached source loader (``_load_src``), dropped-template-name recovery
-(``_tmpl_name``), and a thin ``_const_bytes`` wrapper that tags the decoded
-bytes with puya's ``AVMBytesEncoding``.
+(``_tmpl_name``), and a thin ``_const_bytes`` wrapper over the literal decoder.
+
+This module is deliberately **puya-free** — it sits on the detector-facing
+``_Lifter.build()`` path, so importing it must not drag in the puya package
+(only the final ``to_puya_ir`` lowering needs puya). ``_const_bytes`` returns
+a neutral encoding-kind string; ``to_puya_ir`` maps it to puya's
+``AVMBytesEncoding`` enum where the IR is actually built.
 """
 from __future__ import annotations
-
-from puya.ir.types_ import AVMBytesEncoding
 
 from ..ast.literals import decode_byte_literal
 
 _SRC_CACHE: dict = {}
-
-# Neutral encoding-kind name (from ast.literals) -> puya's enum.
-_AVM_ENCODING = {
-    "base16": AVMBytesEncoding.base16,
-    "utf8": AVMBytesEncoding.utf8,
-    "base64": AVMBytesEncoding.base64,
-    "base32": AVMBytesEncoding.base32,
-}
 
 
 def _load_src(source: str) -> dict:
@@ -50,8 +45,9 @@ def _tmpl_name(src_map: dict, line: int) -> str:
 
 
 def _const_bytes(v: str):
-    """Parse a TEAL byte literal -> ``(raw bytes, AVMBytesEncoding)``. Thin
-    wrapper over :func:`tealtools.ast.literals.decode_byte_literal` that tags
-    the result with puya's encoding enum."""
-    raw, kind = decode_byte_literal(v)
-    return raw, _AVM_ENCODING[kind]
+    """Parse a TEAL byte literal -> ``(raw bytes, kind)`` where ``kind`` is a
+    neutral encoding-kind string (``"base16"`` / ``"utf8"`` / ``"base64"`` /
+    ``"base32"``). Kept puya-free (see the module docstring); ``to_puya_ir``
+    maps ``kind`` to puya's ``AVMBytesEncoding``. Thin wrapper over
+    :func:`tealtools.ast.literals.decode_byte_literal`."""
+    return decode_byte_literal(v)
