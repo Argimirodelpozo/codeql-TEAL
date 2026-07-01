@@ -457,6 +457,9 @@ def _flow_rows_for(prog: SSAProgram) -> list[tuple]:
     """
     from ..ssa.models import Phi, SSAVar
 
+    # The scratch-bridge rows read the ``scratch_stores`` annotation (lazy —
+    # see ``SSAProgram._ensure_scratch_influence``); trigger it up front.
+    prog._ensure_scratch_influence()
     g = getattr(prog, "_graph", None)
     cls_at: dict[tuple[str, int], str] = {}
     if g is not None:

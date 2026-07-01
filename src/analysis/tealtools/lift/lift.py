@@ -287,6 +287,7 @@ class _Lifter:
         self.producer = {o: a for a in self.prog.assignments
                          for o in a.outputs if isinstance(o, SSAVar)}
         self.load_stores: dict = {}
+        self.prog._ensure_scratch_influence()
         g = getattr(self.prog, "_graph", None)
         if g is not None:
             for n in g.nodes:

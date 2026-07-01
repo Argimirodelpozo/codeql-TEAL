@@ -308,6 +308,15 @@ class TaintAnalysis:
     def _compute_taint(
         self,
     ) -> tuple[set[TaintedOperand], dict[TaintedOperand, tuple[Assignment, str]]]:
+        # This engine reads ``const_value`` (concat-with-const / cross-state
+        # rules via ``is_const`` / ``operand_const``) and the ``scratch_stores``
+        # annotation WITHOUT running ``propagate_constants`` — it relies on the
+        # const seeds SSA construction used to set eagerly (now lazy). Trigger
+        # ``_ensure_identity_steps`` (which also ensures scratch influence): it
+        # restores EXACTLY those shuffle-passthrough + scratch const seeds and
+        # nothing more, so the taint result is unchanged. (``propagate_constants``
+        # would seed additional phi/fold consts and change behaviour.)
+        self.prog._ensure_identity_steps()
         tainted: set[TaintedOperand] = set()
         source_for: dict[TaintedOperand, tuple[Assignment, str]] = {}
 

@@ -1369,42 +1369,23 @@ def _apply_pyssa_to(
     # 6) Build Assignments (+ bb back-refs, def/use links, spec-fixed seeds).
     _build_assignments(prog, py, var_map, phi_map, bb_map)
 
-    # 6.4) Inner-transaction field grouping. For each ``itxn_field``
-    # op, find the immediately-enclosing ``(start, end)`` pair via CFG
-    # reach. The result lives at
-    # ``prog._graph.graph["inner_txn_fields"]`` — same shape
-    # :class:`tealtools.inner_txn_report.InnerTxnReport` expects.
-    if prog._graph is not None and hasattr(prog._graph, "graph"):
-        prog._graph.graph["inner_txn_fields"] = _compute_inner_txn_fields(prog)
-
-    # 6.45) Scratch-slot reaching-definitions. Computes, for every
-    # ``load N`` opcode, the set of ``store N`` value-SSAVars that may
-    # reach it via the CFG (with kill analysis: a later ``store N``
-    # supersedes an earlier one on the same path). Populates the graph
-    # annotation
-    # ``prog._graph.nodes[load_node]["scratch_stores"]`` in the
-    # shape every existing consumer
-    # (``propagate_scratch_constants``, taint engine step 2c,
-    # ``detections.common._scratch_stores_for``, …) keeps working.
-    _scratch_stores = _compute_scratch_influence(prog)
-    if prog._graph is not None:
-        _nodes_by_loc: dict = {}
-        for _n in prog._graph.nodes:
-            _loc = getattr(_n, "location", None)
-            if _loc is not None:
-                _nodes_by_loc.setdefault(
-                    (_loc.file, _loc.start_line), []
-                ).append(_n)
-        for _load_key, _val_keys in _scratch_stores.items():
-            for _node in _nodes_by_loc.get(_load_key, []):
-                prog._graph.nodes[_node]["scratch_stores"] = list(_val_keys)
-
-    # 6.5/6.6) Seed const_value through value-identity edges (shuffle
-    # pass-through + scratch reads, to a fixed point) and build the
-    # identity-flow step relation (the constant / value-identity step
-    # relation). Stashes the relation on
-    # ``prog._graph.graph["identity_steps"]`` for ``propagate_constants``.
-    _seed_consts_and_identity_steps(prog, _scratch_stores)
+    # 6.4/6.45/6.6) Three consumer-specific analyses — inner-txn field
+    # grouping, scratch-slot reaching-definitions, and const_value seeding
+    # + the value-identity step relation — used to run EAGERLY here on
+    # EVERY build (~58% of build time on a mid-size contract), even for
+    # callers that never read their output. They are now computed-and-
+    # cached pay-for-what-you-use, mirroring ``frame_resolution``:
+    #   * ``inner_txn_fields``  -> ``SSAProgram._ensure_inner_txn_fields``
+    #     (consumed by ``inner_txn_report.InnerTxnReport``);
+    #   * ``scratch_stores``    -> ``SSAProgram._ensure_scratch_influence``
+    #     (consumed by the lift, taint engine/graph, scratch_prop passes,
+    #     ``security.common._scratch_stores_for``);
+    #   * const_value seeding + ``identity_steps`` ->
+    #     ``SSAProgram._ensure_identity_steps`` (triggered by
+    #     ``propagate_constants``, which every ``const_value`` reader runs
+    #     first). Each ``_ensure_*`` reproduces byte-for-byte what the eager
+    #     block produced; the deferral is observationally neutral (see the
+    #     methods in ``program.py``).
 
     # 7) Drop phis not transitively consumed by any op input.
     _drop_unconsumed_phis(prog)

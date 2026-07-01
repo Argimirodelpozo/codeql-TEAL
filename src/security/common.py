@@ -570,6 +570,7 @@ def _scratch_stores_for(prog: SSAProgram, load_var: SSAVar) -> Optional[list]:
     influence query found no stores)."""
     if load_var.defined_by is None or load_var.defined_by.op != "load":
         return None
+    prog._ensure_scratch_influence()
     for n in prog._graph.nodes:
         loc = getattr(n, "location", None)
         if loc is None:

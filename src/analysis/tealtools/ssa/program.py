@@ -385,6 +385,11 @@ class SSAProgram:
         if self._consts_propagated:
             return
 
+        # Const_value seeding + the ``identity_steps`` relation the impl reads
+        # are now computed lazily (formerly eager at construction). Trigger
+        # them here so every ``const_value`` reader — which runs this first —
+        # sees the identical post-build state.
+        self._ensure_identity_steps()
         from ..passes.const_prop import propagate_constants as _impl
         _impl(self)
         self._consts_propagated = True
@@ -431,6 +436,7 @@ class SSAProgram:
         the SSAVar-identity change can surprise analyses that expect a
         1:1 mapping between load assignments and their downstream uses.
         """
+        self._ensure_scratch_influence()
         from ..passes.scratch_prop import propagate_scratch_values as _impl
         return _impl(self)
 
@@ -468,6 +474,7 @@ class SSAProgram:
         if not self._consts_propagated:
             self.propagate_constants()
 
+        self._ensure_scratch_influence()
         from ..passes.scratch_prop import propagate_scratch_constants as _impl
         _impl(self)
         self._scratch_propagated = True
@@ -619,6 +626,72 @@ class SSAProgram:
             from ..passes.frame_resolution import resolve
             cache = self._frame_resolution_cache = resolve(self)
         return cache
+
+    # -- lazy consumer-specific analyses (pay-for-what-you-use) ------------
+    #
+    # These three analyses used to run EAGERLY at the end of SSA
+    # construction (``ssa._apply_pyssa_to``), even for callers that never
+    # read their output (~58% of build time on a mid-size contract). They
+    # are now computed-and-cached on first demand, mirroring
+    # :meth:`frame_resolution`. Each ``_ensure_*`` is idempotent and moves
+    # the eager block verbatim, so the deferral is observationally neutral:
+    # every ``scratch_stores`` / ``inner_txn_fields`` reader now calls the
+    # matching ``_ensure_*`` at its entry, and ``identity_steps`` +
+    # ``const_value`` seeding are triggered by :meth:`propagate_constants`
+    # (which every ``const_value`` reader runs first — see ``operands.py``).
+
+    def _ensure_inner_txn_fields(self) -> None:
+        """Group each ``itxn_field`` op under its immediately-enclosing
+        ``(start, end)`` pair via CFG reach; stash on
+        ``self._graph.graph["inner_txn_fields"]`` (the shape
+        :class:`tealtools.inner_txn_report.InnerTxnReport` expects).
+        Lazy + cached; formerly eager in ``_apply_pyssa_to``."""
+        if getattr(self, "_inner_txn_fields_done", False):
+            return
+        from .ssa import _compute_inner_txn_fields
+        if self._graph is not None and hasattr(self._graph, "graph"):
+            self._graph.graph["inner_txn_fields"] = _compute_inner_txn_fields(self)
+        self._inner_txn_fields_done = True
+
+    def _ensure_scratch_influence(self) -> None:
+        """Scratch-slot reaching-definitions: for every ``load N`` op, the
+        set of ``store N`` value-SSAVars that may reach it via the CFG (with
+        kill analysis). Populates the per-node annotation
+        ``self._graph.nodes[load_node]["scratch_stores"]`` every consumer
+        reads, and caches the raw dict on ``self._scratch_influence`` for
+        :meth:`_ensure_identity_steps`. Lazy + cached; formerly eager in
+        ``_apply_pyssa_to``."""
+        if getattr(self, "_scratch_influence_done", False):
+            return
+        from .ssa import _compute_scratch_influence
+        _scratch_stores = _compute_scratch_influence(self)
+        self._scratch_influence = _scratch_stores
+        if self._graph is not None:
+            _nodes_by_loc: dict = {}
+            for _n in self._graph.nodes:
+                _loc = getattr(_n, "location", None)
+                if _loc is not None:
+                    _nodes_by_loc.setdefault(
+                        (_loc.file, _loc.start_line), []
+                    ).append(_n)
+            for _load_key, _val_keys in _scratch_stores.items():
+                for _node in _nodes_by_loc.get(_load_key, []):
+                    self._graph.nodes[_node]["scratch_stores"] = list(_val_keys)
+        self._scratch_influence_done = True
+
+    def _ensure_identity_steps(self) -> None:
+        """Seed ``const_value`` through value-identity edges (shuffle pass-
+        through + scratch reads, to a fixed point) and build the identity-
+        flow step relation on ``self._graph.graph["identity_steps"]``
+        (consumed by :meth:`propagate_constants`). Depends on scratch
+        influence, so ensures it first. Lazy + cached; formerly eager in
+        ``_apply_pyssa_to``."""
+        if getattr(self, "_identity_steps_done", False):
+            return
+        self._ensure_scratch_influence()
+        from .ssa import _seed_consts_and_identity_steps
+        _seed_consts_and_identity_steps(self, self._scratch_influence)
+        self._identity_steps_done = True
 
     # -- graphviz rendering ------------------------------------------------
 

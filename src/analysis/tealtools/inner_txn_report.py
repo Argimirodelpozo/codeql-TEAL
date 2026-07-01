@@ -307,6 +307,7 @@ class InnerTxnReport:
     # -- construction -----------------------------------------------
 
     def _build(self) -> list[InnerTxnGroup]:
+        self.prog._ensure_inner_txn_fields()
         rows = self.prog._graph.graph.get("inner_txn_fields") or []
         # Interprocedural frame edges so a param-fed field value (e.g. a
         # forwarded ApplicationID) resolves to its caller args, not a symbolic
