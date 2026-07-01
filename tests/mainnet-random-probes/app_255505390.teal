@@ -1,0 +1,570 @@
+#pragma version 2
+intcblock 0 1 4 5 2 95 100 3
+bytecblock 0x4e 0x4f 0x43 0x45 0x41 0x42 0x53 0x424e 0x534e 0x640c279db46696e00b3bec76731944501e0b3a44308ea81fae7b8fe0769ab407 0x514ce8beb58cac1f6bdc701538bad94ea0a4ac0699fe27eb1ae73efee4ad454a
+txn ApplicationID
+intc_0 // 0
+==
+bz label1
+bytec_0 // "N"
+txna ApplicationArgs 0
+btoi
+app_global_put
+bytec_1 // "O"
+global ZeroAddress
+app_global_put
+bytec_2 // "C"
+txna Accounts 1
+app_global_put
+bytec_3 // "E"
+global ZeroAddress
+app_global_put
+bytec 4 // "A"
+intc_0 // 0
+app_global_put
+bytec 5 // "B"
+intc_0 // 0
+app_global_put
+intc_1 // 1
+return
+label1:
+txn CloseRemainderTo
+global ZeroAddress
+==
+txn RekeyTo
+global ZeroAddress
+==
+&&
+bnz label2
+err
+label2:
+txn OnCompletion
+intc_1 // 1
+==
+bnz label3
+txn OnCompletion
+intc_2 // 4
+intc_3 // 5
+||
+==
+bnz label4
+txn OnCompletion
+intc 4 // 2
+==
+bnz label5
+txna ApplicationArgs 0
+bytec 5 // "B"
+==
+bnz label6
+txna ApplicationArgs 0
+bytec 6 // "S"
+==
+bnz label7
+txna ApplicationArgs 0
+bytec 7 // "BN"
+==
+bnz label8
+txna ApplicationArgs 0
+bytec 8 // "SN"
+==
+bnz label9
+txna ApplicationArgs 0
+bytec_2 // "C"
+==
+bnz label10
+err
+label10:
+txn Sender
+bytec_2 // "C"
+app_global_get
+==
+bytec_3 // "E"
+app_global_get
+global ZeroAddress
+==
+&&
+bnz label11
+err
+label11:
+bytec_3 // "E"
+txna Accounts 1
+app_global_put
+intc_1 // 1
+return
+label9:
+intc_1 // 1
+bytec 5 // "B"
+app_local_get
+intc_0 // 0
+!=
+gtxn 2 Amount
+intc_1 // 1
+bytec 5 // "B"
+app_local_get
+intc 5 // 95
+*
+intc 6 // 100
+/
+==
+&&
+gtxn 2 Sender
+bytec_3 // "E"
+app_global_get
+==
+&&
+gtxn 1 Receiver
+bytec_3 // "E"
+app_global_get
+==
+&&
+gtxn 4 Receiver
+bytec 9 // addr MQGCPHNUM2LOACZ35R3HGGKEKAPAWOSEGCHKQH5OPOH6A5U2WQD5SYKRTA
+==
+&&
+gtxn 4 Amount
+intc_1 // 1
+bytec 5 // "B"
+app_local_get
+intc_3 // 5
+*
+intc 6 // 100
+/
+intc 4 // 2
+/
+==
+&&
+gtxn 5 Receiver
+bytec 10 // addr KFGORPVVRSWB6264OAKTROWZJ2QKJLAGTH7CP2Y2447P5ZFNIVFEKY3TPY
+==
+&&
+gtxn 5 Amount
+intc_1 // 1
+bytec 5 // "B"
+app_local_get
+intc_3 // 5
+*
+intc 6 // 100
+/
+intc 4 // 2
+/
+==
+&&
+bnz label12
+err
+label12:
+intc_1 // 1
+bytec 5 // "B"
+intc_0 // 0
+app_local_put
+bytec 5 // "B"
+bytec 5 // "B"
+app_global_get
+intc_1 // 1
+-
+app_global_put
+gtxn 3 AssetReceiver
+txna Accounts 1
+==
+bnz label13
+err
+label13:
+bytec_1 // "O"
+app_global_get
+global ZeroAddress
+==
+bz label14
+gtxn 3 Sender
+txn Sender
+==
+bnz label15
+err
+label15:
+intc_1 // 1
+return
+label14:
+bytec_1 // "O"
+app_global_get
+txn Sender
+==
+bz label4
+gtxn 3 Sender
+bytec_3 // "E"
+app_global_get
+==
+bnz label16
+err
+label16:
+bytec 4 // "A"
+intc_0 // 0
+app_global_put
+bytec_1 // "O"
+global ZeroAddress
+app_global_put
+intc_1 // 1
+return
+label4:
+intc_0 // 0
+return
+label8:
+bytec 4 // "A"
+app_global_get
+intc_0 // 0
+!=
+bytec_1 // "O"
+app_global_get
+global ZeroAddress
+!=
+&&
+bnz label17
+err
+label17:
+intc_0 // 0
+bytec 5 // "B"
+app_local_get
+intc_0 // 0
+!=
+bz label18
+bytec 5 // "B"
+bytec 5 // "B"
+app_global_get
+intc_1 // 1
+-
+app_global_put
+label18:
+gtxn 2 Receiver
+bytec_3 // "E"
+app_global_get
+==
+bz label19
+intc_0 // 0
+bytec 5 // "B"
+intc_0 // 0
+bytec 5 // "B"
+app_local_get
+gtxn 2 Amount
++
+app_local_put
+label19:
+gtxn 2 Sender
+bytec_3 // "E"
+app_global_get
+==
+bz label20
+intc_0 // 0
+bytec 5 // "B"
+intc_0 // 0
+bytec 5 // "B"
+app_local_get
+gtxn 2 Amount
+-
+app_local_put
+label20:
+intc_0 // 0
+bytec 5 // "B"
+app_local_get
+bytec 4 // "A"
+app_global_get
+==
+gtxn 1 Receiver
+bytec_3 // "E"
+app_global_get
+==
+&&
+gtxn 3 Sender
+bytec_3 // "E"
+app_global_get
+==
+&&
+gtxn 4 Receiver
+bytec_1 // "O"
+app_global_get
+==
+&&
+gtxn 4 Sender
+bytec_3 // "E"
+app_global_get
+==
+&&
+gtxn 4 Amount
+bytec 4 // "A"
+app_global_get
+intc 5 // 95
+*
+intc 6 // 100
+/
+==
+&&
+gtxn 5 Receiver
+bytec 9 // addr MQGCPHNUM2LOACZ35R3HGGKEKAPAWOSEGCHKQH5OPOH6A5U2WQD5SYKRTA
+==
+&&
+gtxn 5 Sender
+bytec_3 // "E"
+app_global_get
+==
+&&
+gtxn 5 Amount
+bytec 4 // "A"
+app_global_get
+intc_3 // 5
+*
+intc 6 // 100
+/
+intc 4 // 2
+/
+==
+&&
+gtxn 6 Receiver
+bytec 10 // addr KFGORPVVRSWB6264OAKTROWZJ2QKJLAGTH7CP2Y2447P5ZFNIVFEKY3TPY
+==
+&&
+gtxn 6 Sender
+bytec_3 // "E"
+app_global_get
+==
+&&
+gtxn 6 Amount
+bytec 4 // "A"
+app_global_get
+intc_3 // 5
+*
+intc 6 // 100
+/
+intc 4 // 2
+/
+==
+&&
+bnz label21
+err
+label21:
+bytec 4 // "A"
+intc_0 // 0
+app_global_put
+bytec_1 // "O"
+global ZeroAddress
+app_global_put
+intc_0 // 0
+bytec 5 // "B"
+intc_0 // 0
+app_local_put
+intc_1 // 1
+return
+label7:
+global GroupSize
+intc 4 // 2
+==
+bz label22
+bytec_1 // "O"
+app_global_get
+global ZeroAddress
+==
+bytec 4 // "A"
+app_global_get
+intc_0 // 0
+==
+&&
+gtxn 1 AssetReceiver
+bytec_3 // "E"
+app_global_get
+==
+&&
+gtxn 1 TypeEnum
+intc_2 // 4
+==
+&&
+gtxn 1 XferAsset
+bytec_0 // "N"
+app_global_get
+==
+&&
+gtxn 1 AssetAmount
+intc_1 // 1
+==
+&&
+gtxn 1 Sender
+gtxn 0 Sender
+==
+&&
+bnz label23
+err
+label23:
+bytec_1 // "O"
+txn Sender
+app_global_put
+label22:
+txna ApplicationArgs 1
+btoi
+bytec 4 // "A"
+app_global_get
+!=
+bytec_1 // "O"
+app_global_get
+txn Sender
+==
+&&
+bnz label24
+err
+label24:
+bytec 4 // "A"
+txna ApplicationArgs 1
+btoi
+app_global_put
+global GroupSize
+intc 7 // 3
+==
+bz label25
+gtxn 2 Sender
+bytec_3 // "E"
+app_global_get
+==
+bnz label26
+err
+label26:
+bytec_1 // "O"
+global ZeroAddress
+app_global_put
+intc_1 // 1
+return
+label25:
+bytec 4 // "A"
+app_global_get
+intc_0 // 0
+!=
+bnz label27
+err
+label27:
+intc_1 // 1
+return
+label6:
+intc_0 // 0
+bytec 5 // "B"
+app_local_get
+store 1
+global GroupSize
+intc 4 // 2
+==
+bnz label28
+global GroupSize
+intc 7 // 3
+==
+bnz label29
+intc_0 // 0
+store 0
+b label30
+label29:
+gtxn 2 Sender
+bytec_3 // "E"
+app_global_get
+==
+gtxn 1 Receiver
+bytec_3 // "E"
+app_global_get
+==
+&&
+gtxn 2 Amount
+intc_0 // 0
+!=
+&&
+bnz label31
+err
+label31:
+intc_0 // 0
+bytec 5 // "B"
+intc_0 // 0
+bytec 5 // "B"
+app_local_get
+gtxn 2 Amount
+-
+app_local_put
+intc_1 // 1
+store 0
+label30:
+b label32
+label28:
+gtxn 1 Receiver
+bytec_3 // "E"
+app_global_get
+==
+gtxn 1 Sender
+gtxn 0 Sender
+==
+&&
+gtxn 1 TypeEnum
+intc_1 // 1
+==
+&&
+bnz label33
+err
+label33:
+intc_0 // 0
+bytec 5 // "B"
+intc_0 // 0
+bytec 5 // "B"
+app_local_get
+gtxn 1 Amount
++
+app_local_put
+intc_1 // 1
+store 0
+label32:
+load 0
+intc_1 // 1
+==
+bnz label34
+err
+label34:
+intc_0 // 0
+bytec 5 // "B"
+app_local_get
+intc_0 // 0
+!=
+load 1
+intc_0 // 0
+==
+&&
+bz label35
+bytec 5 // "B"
+bytec 5 // "B"
+app_global_get
+intc_1 // 1
++
+app_global_put
+label35:
+intc_0 // 0
+bytec 5 // "B"
+app_local_get
+intc_0 // 0
+==
+load 1
+intc_0 // 0
+!=
+&&
+bz label36
+bytec 5 // "B"
+bytec 5 // "B"
+app_global_get
+intc_1 // 1
+-
+app_global_put
+label36:
+intc_1 // 1
+return
+label5:
+intc_0 // 0
+bytec 5 // "B"
+app_local_get
+intc_0 // 0
+==
+bnz label37
+err
+label37:
+intc_1 // 1
+return
+intc_0 // 0
+return
+label3:
+intc_0 // 0
+bytec 5 // "B"
+intc_0 // 0
+app_local_put
+intc_1 // 1
+return

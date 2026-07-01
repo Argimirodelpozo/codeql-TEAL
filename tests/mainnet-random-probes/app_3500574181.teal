@@ -1,0 +1,416 @@
+#pragma version 10
+intcblock 0 1 4
+bytecblock 0x62656e6566696369617279 0x6173614964 0x6465706f7369746564 0x616d6f756e74 0x676f7665726e6f72 0x657870697279
+txn ApplicationID
+bnz label1
+bytec 4 // "governor"
+txn Sender
+app_global_put
+bytec_2 // "deposited"
+intc_0 // 0
+app_global_put
+label1:
+txn NumAppArgs
+bz label2
+pushbytess 0x7d46edf4 0x9b4b8234 0x076bbd4d 0xcc213578 0x31f26a9b 0xf862abc9
+txna ApplicationArgs 0
+match label3 label4 label5 label6 label7 label8
+label17:
+intc_0 // 0
+return
+label8:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+assert
+txna ApplicationArgs 1
+btoi
+callsub label9
+intc_1 // 1
+return
+label7:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+assert
+callsub label10
+intc_1 // 1
+return
+label6:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+assert
+callsub label11
+intc_1 // 1
+return
+label5:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+assert
+callsub label12
+intc_1 // 1
+return
+label4:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+assert
+txn GroupIndex
+intc_1 // 1
+-
+dup
+gtxns TypeEnum
+intc_2 // 4
+==
+assert
+txna ApplicationArgs 1
+btoi
+callsub label13
+intc_1 // 1
+return
+label3:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+assert
+txna ApplicationArgs 1
+btoi
+txnas Accounts
+txna ApplicationArgs 2
+btoi
+txnas Assets
+callsub label14
+intc_1 // 1
+return
+label2:
+intc_2 // 4
+intc_0 // 0
+txn OnCompletion
+match label15 label16
+b label17
+label16:
+txn ApplicationID
+!
+assert
+intc_1 // 1
+return
+label15:
+txn ApplicationID
+assert
+callsub label18
+intc_1 // 1
+return
+label18:
+callsub label19
+retsub
+label14:
+proto 2 0
+callsub label19
+bytec_0 // "beneficiary"
+frame_dig -2
+app_global_put
+bytec_1 // "asaId"
+frame_dig -1
+app_global_put
+itxn_begin
+global CurrentApplicationAddress
+itxn_field AssetReceiver
+intc_0 // 0
+itxn_field AssetAmount
+frame_dig -1
+itxn_field XferAsset
+intc_2 // 4
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+retsub
+label13:
+proto 2 0
+intc_0 // 0
+bytec_2 // "deposited"
+app_global_get_ex
+assert
+!
+assert
+frame_dig -2
+gtxns Sender
+intc_0 // 0
+bytec_0 // "beneficiary"
+app_global_get_ex
+assert
+==
+assert
+frame_dig -2
+gtxns XferAsset
+intc_0 // 0
+bytec_1 // "asaId"
+app_global_get_ex
+assert
+==
+assert
+frame_dig -2
+gtxns AssetReceiver
+global CurrentApplicationAddress
+==
+assert
+frame_dig -2
+gtxns AssetAmount
+dup
+assert
+frame_dig -1
+global LatestTimestamp
+>
+assert
+bytec_3 // "amount"
+swap
+app_global_put
+bytec 5 // "expiry"
+frame_dig -1
+app_global_put
+bytec_2 // "deposited"
+intc_1 // 1
+app_global_put
+retsub
+label12:
+intc_0 // 0
+bytec_2 // "deposited"
+app_global_get_ex
+assert
+intc_1 // 1
+==
+assert
+global LatestTimestamp
+intc_0 // 0
+bytec 5 // "expiry"
+app_global_get_ex
+assert
+>=
+assert
+global CurrentApplicationAddress
+intc_0 // 0
+bytec_1 // "asaId"
+app_global_get_ex
+assert
+asset_holding_get AssetBalance
+assert
+intc_0 // 0
+bytec_3 // "amount"
+app_global_get_ex
+assert
+==
+assert
+itxn_begin
+intc_0 // 0
+bytec_1 // "asaId"
+app_global_get_ex
+assert
+intc_0 // 0
+bytec_3 // "amount"
+app_global_get_ex
+assert
+intc_0 // 0
+bytec_0 // "beneficiary"
+app_global_get_ex
+assert
+intc_0 // 0
+bytec_0 // "beneficiary"
+app_global_get_ex
+assert
+itxn_field AssetCloseTo
+itxn_field AssetReceiver
+itxn_field AssetAmount
+itxn_field XferAsset
+intc_2 // 4
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+itxn_begin
+intc_0 // 0
+bytec_0 // "beneficiary"
+app_global_get_ex
+assert
+intc_0 // 0
+bytec_0 // "beneficiary"
+app_global_get_ex
+assert
+itxn_field CloseRemainderTo
+intc_0 // 0
+itxn_field Amount
+itxn_field Receiver
+intc_1 // 1
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+retsub
+label11:
+callsub label19
+intc_0 // 0
+bytec_2 // "deposited"
+app_global_get_ex
+assert
+intc_1 // 1
+==
+assert
+global CurrentApplicationAddress
+intc_0 // 0
+bytec_1 // "asaId"
+app_global_get_ex
+assert
+asset_holding_get AssetBalance
+assert
+intc_0 // 0
+bytec_3 // "amount"
+app_global_get_ex
+assert
+==
+assert
+itxn_begin
+intc_0 // 0
+bytec_1 // "asaId"
+app_global_get_ex
+assert
+intc_0 // 0
+bytec_3 // "amount"
+app_global_get_ex
+assert
+intc_0 // 0
+bytec 4 // "governor"
+app_global_get_ex
+assert
+intc_0 // 0
+bytec 4 // "governor"
+app_global_get_ex
+assert
+itxn_field AssetCloseTo
+itxn_field AssetReceiver
+itxn_field AssetAmount
+itxn_field XferAsset
+intc_2 // 4
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+itxn_begin
+intc_0 // 0
+bytec 4 // "governor"
+app_global_get_ex
+assert
+intc_0 // 0
+bytec 4 // "governor"
+app_global_get_ex
+assert
+itxn_field CloseRemainderTo
+intc_0 // 0
+itxn_field Amount
+itxn_field Receiver
+intc_1 // 1
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+retsub
+label10:
+callsub label19
+intc_0 // 0
+bytec_2 // "deposited"
+app_global_get_ex
+assert
+intc_1 // 1
+==
+assert
+global CurrentApplicationAddress
+intc_0 // 0
+bytec_1 // "asaId"
+app_global_get_ex
+assert
+asset_holding_get AssetBalance
+assert
+intc_0 // 0
+bytec_3 // "amount"
+app_global_get_ex
+assert
+==
+assert
+itxn_begin
+intc_0 // 0
+bytec_1 // "asaId"
+app_global_get_ex
+assert
+intc_0 // 0
+bytec_3 // "amount"
+app_global_get_ex
+assert
+intc_0 // 0
+bytec_0 // "beneficiary"
+app_global_get_ex
+assert
+intc_0 // 0
+bytec_0 // "beneficiary"
+app_global_get_ex
+assert
+itxn_field AssetCloseTo
+itxn_field AssetReceiver
+itxn_field AssetAmount
+itxn_field XferAsset
+intc_2 // 4
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+itxn_begin
+intc_0 // 0
+bytec_0 // "beneficiary"
+app_global_get_ex
+assert
+intc_0 // 0
+bytec_0 // "beneficiary"
+app_global_get_ex
+assert
+itxn_field CloseRemainderTo
+intc_0 // 0
+itxn_field Amount
+itxn_field Receiver
+intc_1 // 1
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+retsub
+label9:
+proto 1 0
+callsub label19
+intc_0 // 0
+bytec_2 // "deposited"
+app_global_get_ex
+assert
+intc_1 // 1
+==
+assert
+frame_dig -1
+global LatestTimestamp
+>
+assert
+bytec 5 // "expiry"
+frame_dig -1
+app_global_put
+retsub
+label19:
+txn Sender
+intc_0 // 0
+bytec 4 // "governor"
+app_global_get_ex
+assert
+==
+assert
+retsub

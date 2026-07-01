@@ -1,0 +1,360 @@
+#pragma version 6
+intcblock 0 1 871415872 4 2 3
+bytecblock 0x697343616e63656c6c6564 0x61737365744964 0x77616c6c6574 0x737461747573 0x6578706972654174 0x737761705f6170705f6964 0x6173736574436f6d6d6974746564
+txn ApplicationID
+intc_0 // 0
+==
+bnz label1
+txn OnCompletion
+intc_1 // 1
+==
+bnz label2
+txn OnCompletion
+intc 4 // 2
+==
+bnz label3
+txn OnCompletion
+intc 5 // 3
+==
+bnz label4
+txn OnCompletion
+intc_3 // 4
+==
+bnz label5
+txn OnCompletion
+pushint 5
+==
+bnz label6
+txn OnCompletion
+intc_0 // 0
+==
+bnz label7
+err
+label7:
+txna ApplicationArgs 0
+pushbytes 0x436f6d6d6974 // "Commit"
+==
+bnz label8
+txna ApplicationArgs 0
+pushbytes 0x53776170 // "Swap"
+==
+bnz label9
+err
+label9:
+txna Applications 1
+intc_2 // 871415872
+==
+assert
+intc_2 // 871415872
+bytec_3 // "status"
+callsub label10
+intc_1 // 1
+==
+assert
+bytec_0 // "isCancelled"
+app_global_get
+intc_0 // 0
+==
+assert
+global LatestTimestamp
+bytec 4 // "expireAt"
+app_global_get
+<
+assert
+global GroupSize
+intc_3 // 4
+==
+assert
+txn GroupIndex
+intc 4 // 2
+intc_1 // 1
+-
+==
+assert
+txna Applications 1
+intc_2 // 871415872
+==
+assert
+gtxn 2 ApplicationID
+intc_2 // 871415872
+bytec 5 // "swap_app_id"
+callsub label10
+==
+assert
+intc_2 // 871415872
+bytec 5 // "swap_app_id"
+callsub label10
+intc_0 // 0
+>
+assert
+txna ApplicationArgs 1
+btoi
+intc_0 // 0
+>
+txna ApplicationArgs 1
+btoi
+bytec_1 // "assetId"
+app_global_get
+global CurrentApplicationAddress
+callsub label11
+<=
+&&
+assert
+gtxna 0 ApplicationArgs 1
+btoi
+txna ApplicationArgs 1
+btoi
+==
+assert
+itxn_begin
+intc_3 // 4
+itxn_field TypeEnum
+txna Assets 0
+itxn_field XferAsset
+txna ApplicationArgs 1
+btoi
+itxn_field AssetAmount
+gtxn 0 ApplicationID
+bytec_2 // "wallet"
+callsub label10
+itxn_field AssetReceiver
+global CurrentApplicationAddress
+itxn_field Sender
+itxn_submit
+intc_1 // 1
+return
+label8:
+txna Applications 1
+intc_2 // 871415872
+==
+assert
+intc_2 // 871415872
+bytec_3 // "status"
+callsub label10
+intc_1 // 1
+==
+assert
+bytec_0 // "isCancelled"
+app_global_get
+intc_0 // 0
+==
+assert
+global GroupSize
+intc 4 // 2
+==
+assert
+txn GroupIndex
+intc_0 // 0
+==
+assert
+bytec_1 // "assetId"
+app_global_get
+bytec 6 // "assetCommitted"
+app_global_get
+callsub label12
+assert
+itxn_begin
+intc_3 // 4
+itxn_field TypeEnum
+gtxn 1 XferAsset
+itxn_field XferAsset
+intc_0 // 0
+itxn_field AssetAmount
+global CurrentApplicationAddress
+itxn_field AssetReceiver
+global CurrentApplicationAddress
+itxn_field Sender
+itxn_submit
+intc_1 // 1
+return
+label6:
+global CreatorAddress
+txn Sender
+==
+assert
+bytec_0 // "isCancelled"
+app_global_get
+intc_0 // 0
+==
+assert
+itxn_begin
+intc_1 // 1
+itxn_field TypeEnum
+global CurrentApplicationAddress
+itxn_field Sender
+pushint 200000
+itxn_field Amount
+txna Accounts 1
+itxn_field Receiver
+itxn_submit
+itxn_begin
+intc_3 // 4
+itxn_field TypeEnum
+global CurrentApplicationAddress
+itxn_field Sender
+intc_0 // 0
+itxn_field Amount
+bytec_1 // "assetId"
+app_global_get
+itxn_field XferAsset
+global CurrentApplicationAddress
+itxn_field AssetReceiver
+bytec_2 // "wallet"
+app_global_get
+itxn_field AssetCloseTo
+itxn_submit
+itxn_begin
+intc_1 // 1
+itxn_field TypeEnum
+global CurrentApplicationAddress
+itxn_field Sender
+intc_0 // 0
+itxn_field Amount
+txn Sender
+itxn_field Receiver
+bytec_2 // "wallet"
+app_global_get
+itxn_field CloseRemainderTo
+itxn_submit
+bytec_0 // "isCancelled"
+intc_1 // 1
+app_global_put
+intc_1 // 1
+return
+label5:
+global GroupSize
+intc_1 // 1
+==
+assert
+global CreatorAddress
+txn Sender
+==
+assert
+intc_1 // 1
+return
+label4:
+intc_0 // 0
+return
+label3:
+intc_0 // 0
+return
+label2:
+intc_0 // 0
+return
+label1:
+txna Applications 1
+intc_2 // 871415872
+==
+assert
+intc_2 // 871415872
+bytec_3 // "status"
+callsub label10
+intc_1 // 1
+==
+assert
+txn NumAppArgs
+intc 5 // 3
+==
+assert
+global GroupSize
+intc_1 // 1
+==
+assert
+txna Assets 0
+pushbytes 0x2701e2d507bcb3b2fe17889d3c0c685d618204a7ef8f81a118bf255bcb50bf4d // addr E4A6FVIHXSZ3F7QXRCOTYDDILVQYEBFH56HYDIIYX4SVXS2QX5GUTBVZHY
+callsub label13
+assert
+txna Assets 1
+pushbytes 0x5b8b3c451316e14bfa75804d3d8411558191903a9cd36c4187f6113534ff4399 // addr LOFTYRITC3QUX6TVQBGT3BARKWAZDEB2TTJWYQMH6YITKNH7IOMWRLC7SA
+callsub label13
+assert
+pushbytes 0x74797065 // "type"
+intc 4 // 2
+app_global_put
+bytec_2 // "wallet"
+txna Accounts 3
+app_global_put
+pushbytes 0x6b7963436c61696d // "kycClaim"
+txna Assets 0
+app_global_put
+bytec_1 // "assetId"
+txna Assets 1
+app_global_put
+bytec 6 // "assetCommitted"
+txna ApplicationArgs 0
+btoi
+app_global_put
+pushbytes 0x73616c655072696365 // "salePrice"
+txna ApplicationArgs 1
+btoi
+app_global_put
+bytec 4 // "expireAt"
+txna ApplicationArgs 2
+btoi
+app_global_put
+bytec_0 // "isCancelled"
+intc_0 // 0
+app_global_put
+intc_1 // 1
+return
+label10:
+store 1
+store 0
+load 0
+load 1
+app_global_get_ex
+store 3
+store 2
+load 3
+assert
+load 2
+retsub
+label11:
+store 5
+store 4
+load 5
+load 4
+asset_holding_get AssetBalance
+store 7
+store 6
+load 7
+assert
+load 6
+retsub
+label13:
+store 9
+store 8
+load 8
+asset_params_get AssetCreator
+store 11
+store 10
+load 11
+assert
+load 10
+load 9
+==
+retsub
+label12:
+store 13
+store 12
+gtxn 1 TypeEnum
+intc_3 // 4
+==
+gtxn 1 AssetAmount
+load 13
+>=
+&&
+gtxn 1 XferAsset
+load 12
+==
+&&
+gtxn 1 AssetReceiver
+global CurrentApplicationAddress
+==
+&&
+bz label14
+intc_1 // 1
+retsub
+label14:
+intc_0 // 0
+retsub
