@@ -181,6 +181,23 @@ class TestValidationNarrowing:
         assert not r.is_scalar_tainted(read)                  # bytes 0..7 validated
         assert r.tainted_bytes(arg) == Intervals([(8, INF)])
 
+    def test_match_router_validates_selector(self):
+        # ABI router: `extract 0 4; match m_add m_sub` pins the selector to each
+        # arm's method const, so bytes 0..3 clear (validated) while a non-selector
+        # byte stays tainted -- validation via match, not assert or ==.
+        teal = ("#pragma version 8\n"
+                "method \"add()void\"\nmethod \"sub()void\"\n"
+                "txna ApplicationArgs 0\nextract 0 4\nmatch m_add m_sub\nint 0\nreturn\n"
+                "m_add:\ntxna ApplicationArgs 0\nint 2\ngetbyte\nreturn\n"
+                "m_sub:\ntxna ApplicationArgs 0\nint 6\ngetbyte\nreturn\n")
+        p = SSAProgram.from_text(teal, name="t")
+        r = byte_taint(p, validate=True)
+        gbs = [a for a in p.assignments if a.op == "getbyte"]
+        arg = [a for a in p.assignments if a.op == "txna"][0].outputs[0]
+        assert r.tainted_bytes(arg) == Intervals([(4, INF)])   # selector [0,4) cleared
+        assert not r.is_scalar_tainted(gbs[0].outputs[0])      # selector byte: clean
+        assert r.is_scalar_tainted(gbs[1].outputs[0])          # byte 6: tainted
+
     def test_forward_only_does_not_clear(self):
         # without validate=True the checked prefix is NOT cleared.
         p = SSAProgram.from_text(_VALIDATE.format(i=3), name="t")

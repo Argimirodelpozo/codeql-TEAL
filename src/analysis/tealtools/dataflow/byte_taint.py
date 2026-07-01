@@ -328,12 +328,14 @@ def _validated_intervals(prog: SSAProgram) -> dict:
             out.setdefault(x, []).append((lo, hi))
 
     # Branch-to-reject validation: a `slice(X) == clean` that drives a `bz` /
-    # `bnz` to a rejection pins those bytes on the approval path exactly as an
-    # `assert` does -- but the loop above only sees a literal `assert`.
-    # PathPredicateAnalysis derives the same `slice == clean` fact from the branch
-    # (polarity + rejection + cross-BB dominance handled) as an "eq" predicate
-    # holding at every BB past the check. Clear X's range when that predicate
-    # holds at every OTHER use of X -- the same global-soundness contract.
+    # `bnz` to a rejection -- OR a `match` / `switch` arm -- pins those bytes on
+    # the reachable path exactly as an `assert` does, but the loop above only sees
+    # a literal `assert`. PathPredicateAnalysis derives the same `slice == clean`
+    # fact from a guarded `==`, a branch, AND a match/switch arm (an ABI router
+    # pins the selector to that arm's method const) -- all as an "eq" predicate on
+    # the slice value. Clear X's range when such a predicate holds at every OTHER
+    # use of X -- the same global-soundness contract (different arms may pin to
+    # different clean consts; each still validates the same slice bytes).
     from ..path_predicates import PathPredicateAnalysis
     pp = PathPredicateAnalysis(prog)
 
@@ -343,21 +345,17 @@ def _validated_intervals(prog: SSAProgram) -> dict:
             for bc in pp.predicates_at(use.location.file, use.location.line)
         )
 
-    for a in prog.assignments:
-        if a.op != "==" or len(a.inputs) != 2:
-            continue
-        slc = win = None
-        for s, other in ((a.inputs[1], a.inputs[0]), (a.inputs[0], a.inputs[1])):
-            if isinstance(s, SSAVar) and _is_clean(other):
-                info = _slice_of(s)
-                if info is not None:
-                    slc, win = s, info
-                    break
-        if win is None:
-            continue
-        x, lo, hi = win
-        if not isinstance(x, SSAVar):
-            continue
+    # Candidate slice values pinned to a clean value on some path (== branch or
+    # match/switch arm), gathered straight from the predicate facts.
+    slice_cands: dict = {}
+    for preds in pp.bb_preds.values():
+        for bc in preds:
+            if (bc.kind == "eq" and bc.args and isinstance(bc.value, SSAVar)
+                    and _is_clean(bc.args[0])):
+                info = _slice_of(bc.value)
+                if info is not None and isinstance(info[0], SSAVar):
+                    slice_cands[bc.value] = info
+    for slc, (x, lo, hi) in slice_cands.items():
         uses = [u for u in x.uses if u is not getattr(slc, "defined_by", None)]
         if uses and all(_eq_clean_at(slc, u) for u in uses):
             out.setdefault(x, []).append((lo, hi))
