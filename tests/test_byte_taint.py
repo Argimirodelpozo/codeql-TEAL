@@ -10,7 +10,7 @@ separately, including the byte-range -> scalar bridge (``getbyte`` /
 """
 from tealtools.ssa import SSAProgram, SSAVar, Phi
 from tealtools.dataflow.byte_taint import (
-    Intervals, byte_taint, byte_taint_view, _byte_strip, INF,
+    Intervals, byte_taint, byte_taint_view, _byte_strip, INF, AVM_MAX_BYTES,
 )
 from tealtools.lift.lift import _Lifter
 from tealtools.lift import pre_ir
@@ -37,16 +37,20 @@ class TestIntervals:
         assert a.shift(8).parts == ((8, 24),)
 
     def test_overlaps(self):
-        a = Intervals([(8, INF)])
+        a = Intervals([(8, AVM_MAX_BYTES)])
         assert not a.overlaps(0, 8)      # [8,inf) does NOT touch [0,8)
         assert a.overlaps(0, 9)
         assert a.overlaps(20, 21)
 
     def test_open_end(self):
-        w = Intervals.whole()            # [0, INF)
+        w = Intervals([(0, INF)])        # the algebra still tolerates an INF end
         assert w.overlaps(1000, 1001)
         assert w.clip(0, 8).parts == ((0, 8),)
         assert w.shift(8).parts == ((8, INF),)
+
+    def test_whole_is_capped_at_avm_max(self):
+        assert Intervals.whole().parts == ((0, AVM_MAX_BYTES),)   # no true ∞
+        assert Intervals.whole(32).parts == ((0, 32),)
 
 
 def _taint(teal):
@@ -70,7 +74,7 @@ class TestForwardPropagation:
     def test_concat_partitions_clean_prefix_from_tainted_suffix(self):
         p, r = _taint("#pragma version 8\n" + _PREFIX + "pop\nint 1\nreturn\n")
         out = _by_op(p, "concat")[0].outputs[0]
-        assert r.tainted_bytes(out) == Intervals([(8, INF)])  # bytes 0..7 clean
+        assert r.tainted_bytes(out) == Intervals([(8, AVM_MAX_BYTES)])  # bytes 0..7 clean
 
     def test_extract_clean_prefix_is_untainted(self):
         p, r = _taint("#pragma version 8\n" + _PREFIX + "extract 0 8\npop\nint 1\nreturn\n")
@@ -163,7 +167,7 @@ class TestValidationNarrowing:
         # the canonical arg's taint narrows to [8, INF).
         r, read, arg = self._read(_VALIDATE.format(i=3))
         assert not r.is_scalar_tainted(read)
-        assert r.tainted_bytes(arg) == Intervals([(8, INF)])
+        assert r.tainted_bytes(arg) == Intervals([(8, AVM_MAX_BYTES)])
 
     def test_read_outside_checked_range_stays_tainted(self):
         r, read, _ = self._read(_VALIDATE.format(i=20))
@@ -181,7 +185,7 @@ class TestValidationNarrowing:
         read = [a for a in p.assignments if a.op == "getbyte"][-1].outputs[0]
         arg = [a for a in p.assignments if a.op == "txna"][0].outputs[0]
         assert not r.is_scalar_tainted(read)                  # bytes 0..7 validated
-        assert r.tainted_bytes(arg) == Intervals([(8, INF)])
+        assert r.tainted_bytes(arg) == Intervals([(8, AVM_MAX_BYTES)])
 
     def test_match_router_validates_selector(self):
         # ABI router: `extract 0 4; match m_add m_sub` pins the selector to each
@@ -196,7 +200,7 @@ class TestValidationNarrowing:
         r = byte_taint(p, validate=True)
         gbs = [a for a in p.assignments if a.op == "getbyte"]
         arg = [a for a in p.assignments if a.op == "txna"][0].outputs[0]
-        assert r.tainted_bytes(arg) == Intervals([(4, INF)])   # selector [0,4) cleared
+        assert r.tainted_bytes(arg) == Intervals([(4, AVM_MAX_BYTES)])   # selector [0,4) cleared
         assert not r.is_scalar_tainted(gbs[0].outputs[0])      # selector byte: clean
         assert r.is_scalar_tainted(gbs[1].outputs[0])          # byte 6: tainted
 
@@ -222,7 +226,7 @@ class TestValidationNarrowing:
         read = [a for a in p.assignments if a.op == "getbyte"][-1].outputs[0]
         arg = [a for a in p.assignments if a.op == "txna"][0].outputs[0]
         assert not r.is_scalar_tainted(read)
-        assert r.tainted_bytes(arg) == Intervals([(8, INF)])
+        assert r.tainted_bytes(arg) == Intervals([(8, AVM_MAX_BYTES)])
 
     def test_slice_eq_attacker_slice_does_not_clear(self):
         # assert(extract 0 8 arg0 == extract 0 8 arg1) — BOTH sides are
@@ -308,7 +312,7 @@ class TestIrCarryUp:
         view = byte_taint_view(lf)
         reg = _log_arg_reg(lf)
         assert reg is not None
-        assert view.tainted_bytes(reg) == Intervals([(8, INF)])
+        assert view.tainted_bytes(reg) == Intervals([(8, AVM_MAX_BYTES)])
 
     def test_interprocedural_param_sink_is_soundly_flagged(self):
         # arg passed INTO a sub and logged there. The IR log reads the sub's
@@ -342,7 +346,7 @@ class TestIrCarryUp:
 class TestByteStripViz:
     def test_byte_strip_clean_prefix_tainted_tail(self):
         # [8, INF) over an open value -> 8 clean cells, then tainted, then arrow.
-        assert _byte_strip(Intervals([(8, INF)]), None, width=16) == "········████████→"
+        assert _byte_strip(Intervals([(8, AVM_MAX_BYTES)]), None, width=16) == "········████████→"
 
     def test_byte_strip_bounded_length_no_arrow(self):
         assert _byte_strip(Intervals([(0, 4)]), 4) == "████"

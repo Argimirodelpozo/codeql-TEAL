@@ -45,7 +45,9 @@ from typing import Callable, Optional
 from ..ssa import Const, Phi, SSAProgram, SSAVar, const_int, operand_const
 from ..ssa.models import _shuffle_mapping, _txn_field_name
 
-INF = float("inf")  # open right end: "to the end of a (possibly unknown) value"
+INF = float("inf")  # sentinel the Intervals algebra tolerates as an open right end
+#: AVM byteslice stack values are capped at 4096 bytes -- there is no true ∞ end.
+AVM_MAX_BYTES = 4096
 
 
 def _normalize(parts) -> tuple:
@@ -74,8 +76,9 @@ class Intervals:
 
     @classmethod
     def whole(cls, length: Optional[float] = None) -> "Intervals":
-        """``[0, length)`` — or ``[0, INF)`` when the length is unknown."""
-        return cls([(0, INF if length is None else length)])
+        """``[0, length)`` — or ``[0, AVM_MAX_BYTES)`` when the length is unknown
+        (a byteslice value can't exceed the AVM's 4096-byte cap)."""
+        return cls([(0, AVM_MAX_BYTES if length is None else length)])
 
     def __bool__(self) -> bool:
         return bool(self.parts)
@@ -152,14 +155,32 @@ def _byte_length(op) -> Optional[int]:
     return None
 
 
+def _len_bound(op) -> int:
+    """UPPER bound on a value's byte length — the honest open-end for a taint
+    interval (there is no true ∞; the AVM caps a byteslice at 4096 bytes).
+    Reuses :func:`propagate_byte_lengths`' annotations (byte_taint runs the pass):
+    the exact ``byte_length``, else the ``byte_length_range`` hi (e.g. ``btoi(X)``
+    ⇒ ``len(X) ≤ 8``), else :data:`AVM_MAX_BYTES`."""
+    exact = _byte_length(op)
+    if exact is not None:
+        return min(exact, AVM_MAX_BYTES)
+    t = getattr(op, "type", None)
+    r = getattr(t, "byte_length_range", None) if t is not None else None
+    hi = getattr(r, "hi", None) if r is not None else None
+    if hi is not None:
+        return min(int(hi), AVM_MAX_BYTES)
+    return AVM_MAX_BYTES
+
+
 def _default_sources(a) -> Optional[Intervals]:
     """Default attacker-input seed: every ``ApplicationArgs`` read is fully
-    tainted (its length is usually dynamic, so ``[0, INF)``)."""
+    tainted (its length is usually dynamic, so ``[0, len-bound)`` — the exact /
+    range-bounded length when known, else the 4096-byte AVM cap)."""
     if not a.immediates:
         return None
     if _txn_field_name(a.op, a.immediates.split()) == "ApplicationArgs":
         out = a.outputs[0] if a.outputs else None
-        return Intervals.whole(_byte_length(out) if out is not None else None)
+        return Intervals.whole(_len_bound(out) if out is not None else None)
     return None
 
 
@@ -242,7 +263,7 @@ def _slice_of(v) -> Optional[tuple]:
         if len(toks) == 2:
             A, B = int(toks[0]), int(toks[1])
             X = d.inputs[0]
-            return (X, A, (_byte_length(X) or INF) if B == 0 else A + B)
+            return (X, A, (_byte_length(X) or _len_bound(X)) if B == 0 else A + B)
     if op == "substring" and d.immediates and d.inputs:
         toks = d.immediates.split()
         if len(toks) == 2:
@@ -406,7 +427,7 @@ class ByteTaintResult:
             line = getattr(v, "line", 0)
             d = getattr(v, "defined_by", None)
             op = (f"{d.op} {d.immediates}".strip() if d is not None else str(v))
-            rows.append((line, op, _byte_strip(iv, _byte_length(v), width), str(iv)))
+            rows.append((line, op, _byte_strip(iv, _len_bound(v), width), str(iv)))
         for line, op, strip, rng in sorted(rows, key=lambda r: (r[0], r[1])):
             lines.append(f"  L{line:<4} {op:24.24} {strip}  {rng}")
         if self.scalar_taint:
@@ -414,12 +435,15 @@ class ByteTaintResult:
         return "\n".join(lines)
 
 
-def _byte_strip(iv: Intervals, length: Optional[int], width: int = 32) -> str:
+def _byte_strip(iv: Intervals, bound: Optional[int], width: int = 32) -> str:
     """Intervals -> a byte bar: one cell per byte (``█`` tainted, ``·`` clean).
-    An unknown / open (``∞``) length renders ``width`` cells + ``→``."""
-    open_end = length is None or any(hi == INF for _, hi in iv.parts)
-    n = width if length is None else min(int(length), width)
+    ``bound`` is the value's max byte length (see :func:`_len_bound`); the bar is
+    truncated at ``width`` cells and suffixed ``→`` when the value extends past
+    what's shown (``bound`` unknown, or > the cells drawn, or an ``INF`` end)."""
+    n = width if bound is None else min(int(bound), width)
     cells = "".join("█" if iv.overlaps(i, i + 1) else "·" for i in range(n))
+    max_hi = max((hi for _, hi in iv.parts), default=0)
+    open_end = bound is None or bound > n or max_hi > n
     return cells + ("→" if open_end else "")
 
 
@@ -473,6 +497,7 @@ def byte_taint(
         return any(bool(bget(i)) or sget(i) for i in a.inputs)
 
     def set_bytes(out, iv: Intervals) -> bool:
+        iv = iv.clip(0, _len_bound(out))    # no byte past the value's length bound
         v = validated.get(out)
         if v is not None:
             iv = iv.minus(v)        # clear validated (checked) byte ranges
@@ -519,7 +544,7 @@ def byte_taint(
             toks = a.immediates.split()
             if len(toks) == 2 and a.inputs:
                 A, B = int(toks[0]), int(toks[1])
-                hi = INF if B == 0 else A + B
+                hi = _len_bound(a.inputs[0]) if B == 0 else A + B
                 return set_bytes(out, bget(a.inputs[0]).clip(A, hi).shift(-A))
         if op == "substring" and a.immediates:                     # substring A B X
             toks = a.immediates.split()
@@ -533,12 +558,12 @@ def byte_taint(
             if A is not None and B is not None:
                 hi = A + B if op == "extract3" else B
                 return set_bytes(out, bget(x).clip(A, hi).shift(-A))
-            return set_bytes(out, Intervals.whole()) if bget(x) else False
+            return set_bytes(out, Intervals.whole(_len_bound(out))) if bget(x) else False
         if op == "concat" and len(a.inputs) == 2:                  # concat A B -> A||B
             pre, suf = a.inputs[1], a.inputs[0]
             lp = _byte_length(pre)
             if lp is None:
-                return (set_bytes(out, Intervals.whole())
+                return (set_bytes(out, Intervals.whole(_len_bound(out)))
                         if (bget(pre) or bget(suf)) else False)
             return set_bytes(out, bget(pre).union(bget(suf).shift(lp)))
         if op == "setbyte" and len(a.inputs) == 3:                 # setbyte X i b
@@ -549,7 +574,7 @@ def byte_taint(
                 if sget(b):
                     iv = iv.union(Intervals([(i, i + 1)]))
                 return set_bytes(out, iv)
-            return set_bytes(out, Intervals.whole()) if any_tainted(a) else False
+            return set_bytes(out, Intervals.whole(_len_bound(out))) if any_tainted(a) else False
         if op in ("replace2", "replace3"):                         # splice V into X at A
             if op == "replace2" and a.immediates and len(a.inputs) == 2:
                 x, v, A = a.inputs[1], a.inputs[0], int(a.immediates.split()[0])
@@ -561,7 +586,7 @@ def byte_taint(
             if A is not None and lv is not None:
                 iv = bget(x).subtract(A, A + lv).union(bget(v).shift(A))
                 return set_bytes(out, iv)
-            return set_bytes(out, Intervals.whole()) if any_tainted(a) else False
+            return set_bytes(out, Intervals.whole(_len_bound(out))) if any_tainted(a) else False
         if op in _HASH_OPS and a.inputs:                           # digest of tainted -> tainted
             return set_bytes(out, Intervals.whole(32)) if bget(a.inputs[0]) else False
 
@@ -595,7 +620,7 @@ def byte_taint(
             # byte map and propagate nothing -- a false negative, which violates
             # the module's "never a false negative" soundness contract.
             if op in _BYTES_OUT_FALLBACK:
-                return set_bytes(out, Intervals.whole(_byte_length(out)))
+                return set_bytes(out, Intervals.whole(_len_bound(out)))
             return set_scalar(out)
         return False
 
