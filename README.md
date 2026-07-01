@@ -81,12 +81,13 @@ fully-annotated result.
 | | `propagate_scratch_values` | forward a `load N` to its single may-store source SSAVar when every may-influencing store agrees |
 | **B. Analytical annotation** | `propagate_ranges` | uint64 `IntRange` from op tables (boolean comparisons, `getbyte`, txn enum fields, …) + phi union |
 | | `propagate_range_arithmetic` | composes ranges through `+` / `-` / `*` / `/` / `%` with phi re-union |
+| | `propagate_assert_ranges` | tightens ranges from the contract's own `assert` guards (flow-sensitive, dominance-checked) |
 | | `propagate_byte_lengths` | exact `TealType.byte_length` on bytes producers (`itob` → 8, `concat` → sum, `sha256` → 32, …) plus inverse `byte_length_range` constraints from `btoi` / `getbyte` / `extract_uint*` / etc. on their bytes inputs |
 | | `propagate_bytemath_ranges` | bigint `TealType.int_value_range` (Python arbitrary-precision ints) over `b+` / `b-` / `b*` / `b/` / `b%` with the `itob` / `btoi` bridge between uint64 and bytes-bigint value spaces |
-| **C. Structural lowering** | `propagate_stack_shuffles` | copy-propagate pure shuffles (`dup`, `swap`, `frame_dig`, …); mark them `shuffled=True` so they render as `// …` comments |
+| **C. Structural cleanup** | `propagate_stack_shuffles` | copy-propagate pure shuffles (`dup`, `swap`, `frame_dig`, …); mark them `shuffled=True` so they render as `// …` comments |
 | | `cleanup_unused_ssavars` | drop side-effect-free Assignments whose every output is dead (typical victims: duplicate reader Assignments from phase A) |
-| | `eliminate_dead_constants` | inline literal constants into consumers; drop now-orphan SSAVars / Phis / Assignments |
-| | `materialize_phis` | out-of-SSA lowering — each live phi becomes a `mat_phi_k` with a copy assignment at every contributing leaf's def site |
+
+(Out-of-SSA lowering is no longer part of this pipeline — the Puya-IR lift does its own via `tealtools.block_args`; the functional dump renders live phis in phi form.)
 
 Each pass is idempotent — running `run_all_passes` twice is a
 no-op the second time. The per-pass implementations live in
@@ -200,4 +201,4 @@ python -m tests.gen_graph_golden
 
 Made with love.
 
-If you're into this kind of stuff, check out [TEALFuzz]() — a custom fuzzer for TEAL programs that uses TealQL to aid in fuzzing campaign setup.
+If you're into this kind of stuff, check out [TEALFuzz](https://github.com/Argimirodelpozo/TEALFuzz) — a custom fuzzer for TEAL programs that uses TealQL to aid in fuzzing campaign setup.

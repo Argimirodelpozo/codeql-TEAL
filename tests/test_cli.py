@@ -187,6 +187,20 @@ def test_cli_json_all_aggregator(capsys):
     assert {"itxn-report", "group-shape", "cost", "path-predicates"} <= data["reports"].keys()
 
 
+def test_cli_functional_smoke(capsys):
+    # `tealql functional` crashed with ImportError after passes/orchestrate.py
+    # was deleted as dead code (86f3730d) — the CLI handler was its live caller.
+    rc = main(["functional", str(VULN_DB), "--show-ranges", "--show-bytes"])
+    assert rc == 0
+    assert capsys.readouterr().out.strip()
+
+
+def test_cli_functional_by_block(capsys):
+    rc = main(["functional", str(VULN_DB), "--by-block"])
+    assert rc == 0
+    assert "# BB(" in capsys.readouterr().out
+
+
 # ---------------------------------------------------------------------------
 # End-to-end: security subcommands (detections / detections-scan)
 # ---------------------------------------------------------------------------

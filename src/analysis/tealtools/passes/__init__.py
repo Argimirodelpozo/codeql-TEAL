@@ -12,4 +12,11 @@ here; that is the supported way to run a pass.
 ``inner_txn_fields``, ``scratch_influence`` — live in the
 :mod:`tealtools.ssa` package instead; they run while a program is being
 built, not as optional passes over a finished one.)
+
+:mod:`.orchestrate` chains every pass in the canonical order:
+``run_all_passes`` for the pipeline, ``functional_dump`` for the
+pipeline + annotated rendering (what ``tealql functional`` prints).
 """
+from .orchestrate import functional_dump, run_all_passes
+
+__all__ = ["functional_dump", "run_all_passes"]
