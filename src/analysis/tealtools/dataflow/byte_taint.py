@@ -283,9 +283,10 @@ def _slice_of(v) -> Optional[tuple]:
     return None
 
 
-def _validated_intervals(prog: SSAProgram) -> dict:
-    """``value -> Intervals`` proven NOT attacker-controlled by
-    ``assert(slice(X) == clean)`` guards, flow-sensitively.
+def _validated_intervals(prog: SSAProgram) -> tuple[dict, dict]:
+    """``(value -> Intervals, value -> provenance)`` proven NOT
+    attacker-controlled by ``assert(slice(X) == clean)`` guards,
+    flow-sensitively.
 
     A guard pinning a static slice of X to an attacker-INDEPENDENT value means
     those bytes can't be attacker-chosen past the assert (the txn fails
@@ -306,7 +307,9 @@ def _validated_intervals(prog: SSAProgram) -> dict:
 
     entries = [b for b in _all_blocks(prog) if not b.predecessors]
     if not entries:
-        return {}
+        # Same (validated, provenance) shape as the normal return — an empty
+        # program (or one with no entry block) validates nothing.
+        return {}, {}
     dom_cache: dict = {}
 
     def dominates(block_a, use, line: int) -> bool:
