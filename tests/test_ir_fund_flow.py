@@ -200,3 +200,23 @@ def test_robust_on_real_probes():
             assert f.field
             assert f.severity in ("CRITICAL", "HIGH", "MEDIUM")
             assert isinstance(f.to_dict(), dict)
+
+
+def test_ir_taint_chain_crosses_callsub_in_ir_ops():
+    # the taint road for a sink fed through a callsub: IR ops, source-first,
+    # crossing the call boundary natively (no frame_dig hop like the SSA chain).
+    from tealtools.dataflow.byte_taint import byte_taint_view
+    from tealtools.lift import fund_flow as FF, pre_ir
+    from tealtools.lift.taint import _intr
+    teal = ("#pragma version 8\n"
+            "byte 0x0011223344556677\ntxna ApplicationArgs 0\nconcat\ncallsub emit\nint 1\nreturn\n"
+            "emit:\nproto 1 0\nframe_dig -1\nextract 8 32\nlog\nretsub\n")
+    p = SSAProgram.from_text(teal, name="t")
+    lf = _Lifter(p); lf.build()
+    view = byte_taint_view(lf)
+    reg = [s.args[0] for b in pre_ir.blocks(lf.subs) for o in b.ops
+           if (s := _intr(o)) and s.op == "log"][0]
+    chain = [FF._ir_op_str(o) for o in FF.ir_taint_chain(lf, reg, view)]
+    ops = [c.split()[0] for c in chain]
+    assert ops[0] == "txna" and "concat" in ops and ops[-1] == "extract"   # source -> sink
+    assert "frame_dig" not in ops                                          # IR abstracts the param hop

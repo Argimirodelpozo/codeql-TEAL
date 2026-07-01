@@ -171,6 +171,86 @@ def _def_map(lifter) -> dict:
     return d
 
 
+def _ir_op_str(o) -> str:
+    """One-line label for a lifted-IR op: ``op imm @Lline`` / ``callsub NAME`` / ``φ``."""
+    s = _intr(o)
+    if s is not None:
+        imm = " ".join(str(i) for i in (s.immediates or []))
+        ln = getattr(s, "line", 0)
+        return f"{s.op}{(' ' + imm) if imm else ''}" + (f" @L{ln}" if ln else "")
+    inv = _invoke(o)
+    if inv is not None:
+        return f"callsub {inv.target}"
+    if isinstance(o, pre_ir.Phi):
+        return "φ"
+    return "copy" if isinstance(o, pre_ir.Assignment) else str(o)
+
+
+def ir_taint_chain(lifter, register, view, *, max_hops: int = 40) -> list:
+    """The taint road in LIFTED-IR ops: walk backward from ``register`` following
+    the tainted arg (per ``view`` -- a :class:`byte_taint.IrByteTaint`) to the
+    source op, SOURCE-first. Natively interprocedural: at a subroutine PARAMETER
+    (no defining op in a block) it crosses to the caller's bound arg at each
+    ``InvokeSubroutine`` site -- the IR represents the callsub arg-passing
+    directly, so no ``frame_dig`` hop like the SSA chain."""
+    def_of = _def_map(lifter)
+    param_args: dict = {}          # id(param register) -> [caller arg values]
+    for b in pre_ir.blocks(lifter.subs):
+        for o in b.ops:
+            inv = _invoke(o)
+            if inv is None:
+                continue
+            callee = lifter.name2sub.get(inv.target)
+            if callee is None:
+                continue
+            for i, p in enumerate(callee.parameters):
+                if i < len(inv.args):
+                    param_args.setdefault(id(p.register), []).append(inv.args[i])
+
+    def _tainted(v):
+        return isinstance(v, pre_ir.Register) and (
+            bool(view.tainted_bytes(v)) or view.is_scalar_tainted(v))
+
+    def _pick(values):
+        """Follow a covered-tainted operand if there is one; else fall back to an
+        UNCOVERED register -- byte_taint_view only covers ~90% of registers (a
+        lift-synthesized param / block-arg is uncovered), so the taint road runs
+        through those coverage gaps rather than dead-ending at them."""
+        values = list(values)
+        return (next((v for v in values if _tainted(v)), None)
+                or next((v for v in values
+                         if isinstance(v, pre_ir.Register) and not view.is_covered(v)), None))
+
+    chain: list = []
+    seen: set = set()
+    cur = register
+    while cur is not None and id(cur) not in seen and len(chain) < max_hops:
+        seen.add(id(cur))
+        o = def_of.get(id(cur))
+        nxt = None
+        if o is not None:
+            chain.append(o)
+            src = _intr(o)
+            if src is not None:
+                nxt = _pick(src.args)
+            elif isinstance(o, pre_ir.Assignment) and isinstance(o.source, pre_ir.Register):
+                nxt = _pick([o.source])
+            elif isinstance(o, pre_ir.Phi):
+                nxt = _pick([pa.value for pa in o.args])
+        if nxt is None:               # a parameter -> cross callsub to the caller arg
+            nxt = _pick(param_args.get(id(cur), ()))
+        cur = nxt
+    chain.reverse()
+    return chain
+
+
+def ir_taint_road(lifter, register, view, *, sep: str = "  →  ") -> str:
+    """The taint road for ``register`` as a one-line string of lifted-IR ops,
+    source → sink (see :func:`ir_taint_chain`). ``(no tainted road)`` if none."""
+    ops = ir_taint_chain(lifter, register, view)
+    return sep.join(_ir_op_str(o) for o in ops) if ops else "(no tainted road)"
+
+
 # --------------------------------------------------------------------------
 # Guards + findings
 # --------------------------------------------------------------------------
