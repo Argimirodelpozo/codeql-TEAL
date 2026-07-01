@@ -14,11 +14,9 @@ the commit that adds the rekey guard (``1939a589``,
 
 CLI:
 
-    # From the repo root:
-    PYTHONPATH=src/analysis python algoplonk_demo/run_rekey_demo.py
-
-    # Or from inside this directory:
-    PYTHONPATH=../src/analysis python run_rekey_demo.py
+    # From the repo root (works installed or not — the script adds the
+    # source roots to sys.path itself):
+    python examples/algoplonk/run_rekey_demo.py
 
 Paths resolve relative to this script's location, so the CWD doesn't
 matter.
@@ -29,8 +27,9 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-REPO = HERE.parent
-sys.path.insert(0, str(REPO / "src" / "analysis"))
+REPO = HERE.parent.parent
+sys.path.insert(0, str(REPO / "src"))            # -> security
+sys.path.insert(0, str(REPO / "src" / "analysis"))  # -> tealtools
 
 from tealtools.ssa import SSAProgram, PySSA
 from tealtools.passes.orchestrate import run_all_passes

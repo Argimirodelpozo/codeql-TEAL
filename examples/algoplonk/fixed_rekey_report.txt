@@ -1,0 +1,4 @@
+# RekeyToDetector report — fixed (DB: examples/algoplonk/fixed/db)
+# Violations: 0
+
+(no rekey-to violations detected)
