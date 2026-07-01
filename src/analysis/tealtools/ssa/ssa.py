@@ -1,12 +1,10 @@
-"""Canonical SSA module.
+"""Canonical SSA module — the pure-Python SSA builder.
 
-Re-exports the data classes from :mod:`tealtools.ssa.models`
-(``SSAVar``, ``Phi``, ``Assignment``, ``BasicBlock``, ``Const``,
-``Location``, ``TealType``, ``IntRange``) and the
-``SSAProgram`` class from :mod:`tealtools.ssa.program`, and provides
-:meth:`PySSA.build` — the pure-Python SSA builder that returns an
-``SSAProgram`` directly, ready for every existing analysis (constant
-propagation, taint, detectors, reports).
+Provides :meth:`PySSA.build`, which returns an :class:`SSAProgram` (from
+:mod:`tealtools.ssa.program`) directly, ready for every existing analysis
+(constant propagation, taint, detectors, reports). The data classes it works
+over live in :mod:`tealtools.ssa.models`; external consumers import them (and
+``SSAProgram``) from the package ``__init__``, which is the re-export surface.
 
 Canonical idiom:
 
@@ -51,25 +49,18 @@ from collections import deque
 from dataclasses import dataclass, field
 from typing import Optional, Union
 
-# Data classes live in .models; the SSAProgram class lives in
-# .program. External consumers go through the package __init__ which
-# re-exports both.
-from .models import (  # noqa: F401
+# Data classes the builder works over; the re-export surface for external
+# consumers is the package __init__, not this module.
+from .models import (
     Assignment,
     BasicBlock,
     Const,
-    IntRange,
     Location,
-    Operand as QLOperand,
     Phi,
     SSAVar,
-    TealType,
-    _CONST_BLOCK_REF_NAMES,
-    _OP_RANGE_SEEDS,
-    _TERMINATOR_OPS,
     _shuffle_mapping,
 )
-from .program import SSAProgram  # noqa: F401
+from .program import SSAProgram
 from ..opcode_sigs import op_arity
 
 
