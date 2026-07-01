@@ -36,6 +36,7 @@ class TxTypeCheckViolation:
 
 
 class TxTypeCheckDetector:
+    severity = "high"
     name = "sec-guide/tx-type-check"
     # A logic signature must restrict which transaction TYPES it authorizes; an
     # application is *always* invoked as an `appl` txn, so checking its own

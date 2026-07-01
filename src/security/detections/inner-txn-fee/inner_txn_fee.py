@@ -29,6 +29,7 @@ class InnerTxnFeeViolation:
 
 
 class InnerTxnFeeDetector:
+    severity = "high"
     name = "sec-guide/inner-txn-fee"
     applies_to = frozenset({"app"})  # itxn_* is app-only
 

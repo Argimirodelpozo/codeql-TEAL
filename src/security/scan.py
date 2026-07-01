@@ -35,7 +35,6 @@ CLI: ``tealql detections-scan <root> [--config rules.yml] [--json]``.
 """
 from __future__ import annotations
 
-import fnmatch
 import json
 import logging
 from dataclasses import dataclass
@@ -45,7 +44,7 @@ from typing import Iterable, Optional
 from tealtools.errors import TealParseError, TealQLError
 from tealtools.ssa import SSAProgram
 from . import DETECTORS
-from .config import DetectionConfig
+from .config import ConfigError, DetectionConfig, glob_match
 
 logger = logging.getLogger("security.scan")
 
@@ -89,16 +88,17 @@ def default_detection_names(names: Optional[Iterable[str]] = None) -> list[str]:
 class ScanRule:
     """One config rule. ``match`` is one or more glob patterns
     (``fnmatch`` semantics — ``*`` matches anything including ``/``,
-    so ``*lsig*`` matches at any depth). ``only`` and ``exclude`` are
-    mutually exclusive on the same rule. The relative-path-from-root
-    is what gets matched."""
+    so ``*lsig*`` matches at any depth; a ``**/`` prefix also matches
+    files at the scan root). ``only`` and ``exclude`` are mutually
+    exclusive on the same rule. The relative-path-from-root is what
+    gets matched."""
 
     match: tuple[str, ...]
     only: Optional[tuple[str, ...]] = None
     exclude: Optional[tuple[str, ...]] = None
 
     def matches(self, rel_path: str) -> bool:
-        return any(fnmatch.fnmatch(rel_path, pat) for pat in self.match)
+        return any(glob_match(rel_path, pat) for pat in self.match)
 
     def select(self, all_detectors: Iterable[str]) -> list[str]:
         if self.only is not None:
@@ -129,17 +129,43 @@ class ScanConfig:
             data = yaml.safe_load(text) or {}
         else:
             data = json.loads(text)
+        unknown = set(data) - {"rules"}
+        if unknown:
+            raise ConfigError(
+                f"{path}: unknown top-level key(s) {sorted(unknown)} "
+                f"(a selection config holds only 'rules:')")
         return cls.from_dict(data)
 
     @classmethod
     def from_dict(cls, data: dict) -> "ScanConfig":
+        """Build + VALIDATE. Every mistake that would silently change scan
+        coverage is a :class:`ConfigError` at load time instead: an unknown
+        detector name (typo), a rule with both ``only`` and ``exclude``, a
+        rule that can never match (missing/empty ``match``), an unknown
+        rule key."""
         rules: list[ScanRule] = []
         for raw in data.get("rules", []):
+            unknown = set(raw) - {"match", "only", "exclude"}
+            if unknown:
+                raise ConfigError(
+                    f"rule has unknown key(s) {sorted(unknown)}: {raw!r}")
             match = raw.get("match")
             if isinstance(match, str):
                 match_tuple = (match,)
             else:
                 match_tuple = tuple(match or ())
+            if not match_tuple:
+                raise ConfigError(f"rule missing 'match': {raw!r}")
+            if "only" in raw and "exclude" in raw:
+                raise ConfigError(
+                    f"rule has BOTH 'only' and 'exclude' (mutually "
+                    f"exclusive): {raw!r}")
+            for key in ("only", "exclude"):
+                bad = [d for d in (raw.get(key) or ()) if d not in DETECTORS]
+                if bad:
+                    raise ConfigError(
+                        f"rule {key!r} names unknown detector(s) {bad} "
+                        f"(run `tealql detections --list` for the registry)")
             rules.append(ScanRule(
                 match=match_tuple,
                 only=tuple(raw["only"]) if "only" in raw else None,
@@ -163,7 +189,7 @@ class ScanConfig:
 
 # Ascending severity. "informational" findings (e.g. is-deletable) are reported
 # but, by default, do not constitute a failure — see DetectionOptions.fail_on.
-SEVERITY_ORDER = ("informational", "low", "medium", "high")
+SEVERITY_ORDER = ("informational", "low", "medium", "high", "critical")
 
 
 @dataclass(frozen=True)
@@ -208,14 +234,24 @@ class DetectionOptions:
 
     @classmethod
     def from_dict(cls, data: dict) -> "DetectionOptions":
+        unknown = set(data) - {"modes", "detectors", "severity", "fail_on",
+                               "auto_mode"}
+        if unknown:
+            raise ConfigError(
+                f"unknown top-level option key(s) {sorted(unknown)} "
+                f"(expected: modes, detectors, severity, fail_on, auto_mode)")
         fail_on = data.get("fail_on", "low")
         if fail_on not in SEVERITY_ORDER:
-            raise ValueError(
+            raise ConfigError(
                 f"fail_on {fail_on!r} invalid (expected one of {SEVERITY_ORDER})")
         sev = data.get("severity") or {}
         for det, lvl in sev.items():
+            if det not in DETECTORS:
+                raise ConfigError(
+                    f"severity override names unknown detector {det!r} "
+                    f"(run `tealql detections --list` for the registry)")
             if lvl not in SEVERITY_ORDER:
-                raise ValueError(
+                raise ConfigError(
                     f"severity[{det!r}] = {lvl!r} invalid "
                     f"(expected one of {SEVERITY_ORDER})")
         return cls(
@@ -278,13 +314,19 @@ class ScanFinding:
 
     @property
     def severity(self) -> str:
-        """The finding's severity — a per-detector override from the detection
-        options if given, else the detector's declared ``severity``
-        (``"informational"`` for property-style findings like ``is-deletable``;
-        ``"medium"`` by default)."""
+        """The finding's severity. Precedence: a per-detector override from
+        the detection options; else the VIOLATION's own ``severity`` when it
+        carries a valid one (the IR taint family grades per sink field —
+        ``critical`` for CloseRemainderTo, ``medium`` for Amount); else the
+        detector's declared class ``severity`` (``"informational"`` for
+        property-style findings like ``is-deletable``; ``"medium"`` by
+        default)."""
         if self.severity_override is not None:
             return self.severity_override
-        from . import severity_of
+        from . import SEVERITY_LEVELS, severity_of
+        v = getattr(self.violation, "severity", None)
+        if isinstance(v, str) and v.lower() in SEVERITY_LEVELS:
+            return v.lower()
         return severity_of(self.detector_name)
 
     def format(self) -> str:

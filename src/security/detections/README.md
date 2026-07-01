@@ -26,8 +26,8 @@ deliberate follow-up, not a silent change.
 | [`hardcoded-min-balance`](hardcoded-min-balance/) | medium | opcode pattern | subtracting a literal from `balance` (instead of using `min_balance`) |
 | [`inner-txn-close-rekey`](inner-txn-close-rekey/) | high | per-itxn-field | inner tx sets `CloseRemainderTo` / `RekeyTo` / `AssetCloseTo` |
 | [`inner-txn-fee`](inner-txn-fee/) | high | per-itxn-field | inner tx sets non-zero constant `Fee` |
-| [`is-deletable`](is-deletable/) | high | OnCompletion-guard | DeleteApplication reachable on any approval exit |
-| [`is-updatable`](is-updatable/) | high | OnCompletion-guard | UpdateApplication reachable on any approval exit |
+| [`is-deletable`](is-deletable/) | informational | OnCompletion-guard | DeleteApplication reachable on any approval exit |
+| [`is-updatable`](is-updatable/) | informational | OnCompletion-guard | UpdateApplication reachable on any approval exit |
 | [`rekey-to`](rekey-to/) | high | per-exit path-aware | unprotected approval exit allows `RekeyTo` |
 | [`timelock-upgrade`](timelock-upgrade/) | medium | OnCompletion-guard + global | UpdateApplication with creator guard but no timestamp check |
 | [`tx-type-check`](tx-type-check/) | high | strict-dominance txn-field | neither `TypeEnum` nor `Type` validated |

@@ -37,6 +37,7 @@ class HardcodedMinBalanceViolation:
 
 
 class HardcodedMinBalanceDetector:
+    severity = "medium"
     name = "sec-guide/hardcoded-min-balance"
     applies_to = frozenset({"app"})  # min_balance is an app idiom
 

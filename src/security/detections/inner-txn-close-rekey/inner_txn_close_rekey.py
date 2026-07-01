@@ -37,6 +37,7 @@ class InnerTxnCloseRekeyViolation:
 
 
 class InnerTxnCloseRekeyDetector:
+    severity = "high"
     name = "sec-guide/inner-txn-close-rekey"
     applies_to = frozenset({"app"})  # itxn_* is app-only
 

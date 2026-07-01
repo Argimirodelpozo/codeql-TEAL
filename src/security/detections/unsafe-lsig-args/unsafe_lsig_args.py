@@ -44,6 +44,7 @@ class UnsafeLsigArgsViolation:
 
 
 class UnsafeLsigArgsDetector:
+    severity = "high"
     name = "sec-guide/unsafe-lsig-args"
     applies_to = frozenset({"logicsig"})  # arg* opcodes are logicsig-only
 

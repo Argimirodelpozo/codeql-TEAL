@@ -57,6 +57,7 @@ def _has_timestamp_check(
 
 
 class TimelockUpgradeDetector(_ApprovalActionGuardDetector):
+    severity = "medium"
     name = "sec-guide/timelock-upgrade"
     action = common.ONC_UPDATE_APPLICATION
     creator_guard = "require_present"  # only a creator-only upgrade is in scope

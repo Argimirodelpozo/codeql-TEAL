@@ -52,8 +52,12 @@ class AssetIdValidationViolation:
 
 
 class AssetIdValidationDetector(_ApprovalExitProtectedDetector):
+    severity = "high"
     name = "sec-guide/asset-id-validation"
     field = "XferAsset"
+    # Signed-txn-field check: an unpinned XferAsset lets the axfer the
+    # logicsig approves move the WRONG asset — delegated-logicsig concern.
+    applies_to = frozenset({"logicsig"})
     violation_cls = AssetIdValidationViolation
     # The asset transfer is usually a SIBLING axfer, so the XferAsset pin lives on
     # `gtxn N XferAsset`, not `txn XferAsset` — seed both.

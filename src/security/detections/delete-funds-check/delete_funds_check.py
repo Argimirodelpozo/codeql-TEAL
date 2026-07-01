@@ -68,6 +68,7 @@ def _has_balance_minbalance_check(
 
 
 class DeleteFundsCheckDetector(_ApprovalActionGuardDetector):
+    severity = "high"
     name = "sec-guide/delete-funds-check"
     action = common.ONC_DELETE_APPLICATION
     violation_cls = DeleteFundsCheckViolation

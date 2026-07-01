@@ -31,6 +31,12 @@ class RekeyToViolation:
 
 
 class RekeyToDetector(_ApprovalExitProtectedDetector):
+    severity = "high"
     name = "sec-guide/rekey-to"
     field = "RekeyTo"
+    # Signed-txn-field check: RekeyTo on the outer txn rekeys the SIGNER's
+    # account — a delegated-logicsig concern; on an app it is the caller's
+    # own signed txn (see common.py doctrine; rekey was removed from the
+    # app fund-flow fields for the same reason).
+    applies_to = frozenset({"logicsig"})
     violation_cls = RekeyToViolation

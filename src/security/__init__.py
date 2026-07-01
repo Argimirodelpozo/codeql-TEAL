@@ -149,8 +149,11 @@ from . import xcontract  # noqa: E402
 # An ``"informational"`` detector reports a PROPERTY (e.g. "this app is
 # deletable") rather than a vulnerability — usually intentional, surfaced for
 # awareness, not as a finding to fix. Everything else defaults to a real finding.
-# A detector declares its level with a ``severity`` class attribute.
-SEVERITY_LEVELS = ("high", "medium", "low", "informational")
+# A detector declares its level with a ``severity`` class attribute; a
+# VIOLATION may also carry its own ``severity`` (the IR taint family grades
+# per sink field — CloseRemainderTo drain is ``critical``, Amount tampering
+# ``medium``), which takes precedence over the detector's class level.
+SEVERITY_LEVELS = ("critical", "high", "medium", "low", "informational")
 DEFAULT_SEVERITY = "medium"
 
 

@@ -60,6 +60,7 @@ class GroupSizeCheckViolation:
 
 
 class GroupSizeCheckDetector:
+    severity = "high"
     name = "sec-guide/group-size-check"
 
     def __init__(self, prog: SSAProgram, *, file: Optional[str] = None):

@@ -85,6 +85,7 @@ DEFAULT_SINKS: list[Sink] = [BOX_CREATE_SINK, BOX_PUT_SINK]
 
 
 class NonUniqueBoxKeyDetector(TaintAnalysis):
+    severity = "high"
     """Configured :class:`TaintAnalysis` with this analysis's defaults.
 
         det = NonUniqueBoxKeyDetector(prog)

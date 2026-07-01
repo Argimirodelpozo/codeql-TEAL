@@ -13,8 +13,12 @@ class AssetCloseToViolation(_FieldValidatedViolation):
 
 
 class AssetCloseToDetector(_FieldValidatedDetector):
+    severity = "high"
     name = "sec-guide/asset-close-to"
     field = ("AssetCloseTo",)
+    # Signed-txn-field check: AssetCloseTo drains the SIGNER's asset holding
+    # on an axfer — delegated-logicsig concern.
+    applies_to = frozenset({"logicsig"})
     message = (
         "Contract does not validate txn AssetCloseTo "
         "— all asset units can be drained from the account."

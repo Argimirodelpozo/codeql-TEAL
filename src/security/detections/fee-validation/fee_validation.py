@@ -34,6 +34,10 @@ class FeeValidationViolation:
 
 
 class FeeValidationDetector(_ApprovalExitProtectedDetector):
+    severity = "high"
     name = "sec-guide/fee-validation"
     field = "Fee"
+    # Signed-txn-field check: an unpinned Fee drains the SIGNER via a huge
+    # fee — only a delegated logicsig approves someone else's constructed txn.
+    applies_to = frozenset({"logicsig"})
     violation_cls = FeeValidationViolation

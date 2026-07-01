@@ -19,6 +19,7 @@ class UnprotectedDeletableViolation(_ExitBBViolation):
 
 
 class UnprotectedDeletableDetector(_ApprovalActionGuardDetector):
+    severity = "high"
     name = "sec-guide/unprotected-deletable"
     action = common.ONC_DELETE_APPLICATION
     creator_guard = "require_absent"

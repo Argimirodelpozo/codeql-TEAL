@@ -117,6 +117,29 @@ def _load(args):
     return prog
 
 
+def _load_programs(args) -> "list[tuple]":
+    """Resolve target → ``[(SSAProgram, file_filter), …]``, ONE program per
+    ``.teal`` file. A directory of N contracts becomes N single-contract
+    programs — not one merged program — because the AVM runs each program
+    independently and strict-dominance / path-predicate detectors give wrong
+    answers when several programs' entries and exits are pooled into one
+    (the same reason ``security.scan`` builds per-file). ``file_filter`` is
+    the basename for a multi-file target (so detectors scope to it) or
+    ``None`` for a single file."""
+    from tealtools._utils.targets import _discover_teal_files
+    from tealtools.ssa import SSAProgram
+    source = _resolve(args)
+    teal_files = _discover_teal_files(Path(source))
+    single = len(teal_files) == 1
+    progs: list[tuple] = []
+    for teal in teal_files:
+        logger.info("building SSA program from %s", teal)
+        prog = SSAProgram(str(teal))
+        _check_parse_health(prog, args)
+        progs.append((prog, None if single else teal.name))
+    return progs
+
+
 def _emit_findings(findings: Iterable, *, json_out: bool) -> int:
     """Standard renderer for finding-style output (auth, box-key, etc.).
 
@@ -300,7 +323,7 @@ def _cmd_detections(args) -> int:
         return 0
 
     mode = _resolve_mode(args)
-    prog = _load(args)
+    programs = _load_programs(args)
     names = list(DETECTORS) if args.all else [args.detector]
     # Mode filtering applies to --all only; an explicit --detector is an
     # explicit request and runs regardless of declared mode.
@@ -317,26 +340,28 @@ def _cmd_detections(args) -> int:
         # explicit --detector request always runs as asked.
         from security.scan import default_detection_names
         names = default_detection_names(names)
-    logger.info("running %d detection(s) (mode=%s)",
-                len(names), mode or "unfiltered")
+    logger.info("running %d detection(s) on %d program(s) (mode=%s)",
+                len(names), len(programs), mode or "unfiltered")
+
+    def _run(name):
+        # A detector's findings across every per-file program (one entry
+        # unless the target was a multi-file directory).
+        cls = DETECTORS[name]
+        found = []
+        for prog, file in programs:
+            found.extend(cls(prog, file=file).detect())
+        logger.info("  %s: %d finding(s)", name, len(found))
+        return found
+
     if args.json_out:
         from tealtools._utils.serialize import finding_to_dict
-        out: dict[str, list] = {}
-        for name in names:
-            cls = DETECTORS[name]
-            logger.info("running detection: %s", name)
-            findings = cls(prog).detect()
-            logger.info("  %s: %d finding(s)", name, len(findings))
-            out[name] = [finding_to_dict(v) for v in findings]
+        out = {name: [finding_to_dict(v) for v in _run(name)] for name in names}
         print(_json.dumps(out, indent=2))
         any_findings = any(v for v in out.values())
     else:
         any_findings = False
         for name in names:
-            cls = DETECTORS[name]
-            logger.info("running detection: %s", name)
-            violations = cls(prog).detect()
-            logger.info("  %s: %d finding(s)", name, len(violations))
+            violations = _run(name)
             if args.all:
                 print(f"=== sec-guide/{name} ===")
             if violations:
@@ -354,10 +379,17 @@ def _cmd_detections(args) -> int:
 
 def _cmd_detections_scan(args) -> int:
     from security.scan import (
-        ScanConfig, render_json, render_text, scan,
+        DetectionOptions, ScanConfig, failures, render_json, render_text, scan,
     )
-    from security.config import DetectionConfig
+    from security.config import ConfigError, DetectionConfig
 
+    options = None
+    if args.options:
+        if args.config or args.mode_config:
+            raise ConfigError(
+                "--options is the unified config (selection + modes + "
+                "severity + fail_on); pass it INSTEAD of --config/--mode-config")
+        options = DetectionOptions.from_path(Path(args.options))
     config = ScanConfig.from_path(Path(args.config)) if args.config else ScanConfig.empty()
     detection_config = (
         DetectionConfig.from_path(Path(args.mode_config))
@@ -367,10 +399,13 @@ def _cmd_detections_scan(args) -> int:
         Path(args.root),
         config=config,
         detection_config=detection_config,
+        options=options,
         strict=getattr(args, "strict", False),
     )
     print(render_json(findings) if args.json_out else render_text(findings))
-    return 1 if findings else 0
+    # Exit 1 only on FAILURES: with --options, findings below fail_on
+    # (informational is-deletable style) are reported but don't fail CI.
+    return 1 if failures(findings, options) else 0
 
 
 def _cmd_all(args) -> int:
@@ -517,6 +552,12 @@ def build_parser() -> argparse.ArgumentParser:
              "each dir and run detections on every program",
     )
     sgs.add_argument("root", help="directory to walk for .teal files")
+    sgs.add_argument("--options", default=None,
+                     help="ONE yaml/json with everything: `detectors:` "
+                          "selection rules, `modes:` app/logicsig scoping, "
+                          "per-detector `severity:` overrides, `fail_on:` "
+                          "exit-code threshold, `auto_mode:`. Replaces "
+                          "--config/--mode-config")
     sgs.add_argument("--config", default=None,
                      help="yaml/json with `rules:` for per-file detector selection")
     sgs.add_argument("--mode-config", default=None,

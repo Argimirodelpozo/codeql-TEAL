@@ -32,6 +32,10 @@ class CloseRemainderToViolation:
 
 
 class CloseRemainderToDetector(_ApprovalExitProtectedDetector):
+    severity = "high"
     name = "sec-guide/close-remainder-to"
     field = "CloseRemainderTo"
+    # Signed-txn-field check: CloseRemainderTo empties the SIGNER's account
+    # on a payment txn — delegated-logicsig concern (an appl txn has none).
+    applies_to = frozenset({"logicsig"})
     violation_cls = CloseRemainderToViolation

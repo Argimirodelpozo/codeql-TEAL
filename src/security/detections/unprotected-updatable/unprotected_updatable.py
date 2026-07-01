@@ -19,6 +19,7 @@ class UnprotectedUpdatableViolation(_ExitBBViolation):
 
 
 class UnprotectedUpdatableDetector(_ApprovalActionGuardDetector):
+    severity = "high"
     name = "sec-guide/unprotected-updatable"
     action = common.ONC_UPDATE_APPLICATION
     creator_guard = "require_absent"
