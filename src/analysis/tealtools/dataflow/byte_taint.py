@@ -558,3 +558,68 @@ def byte_taint(
             changed = _join(dig_out, args) or changed
 
     return ByteTaintResult(bt, st)
+
+
+class IrByteTaint:
+    """SSA byte-taint carried UP onto the lifted IR's registers.
+
+    The precise, interprocedural byte-interval taint is computed once on the SSA
+    substrate (:func:`byte_taint`) and mapped onto IR ``Register`` objects via the
+    lifter's ``SSAVar -> Register`` bridge — the same rail ``const_value`` /
+    ``range`` / ``type`` ride up. IR-layer detectors then get byte-granular taint
+    without re-deriving it on the IR (a re-derivation gains nothing: the SSA
+    computation is already interprocedural via the frame bridge).
+
+    ``tainted_bytes(reg)`` / ``is_scalar_tainted(reg)`` answer for any register.
+    ``is_covered(reg)`` reports whether the carry-up reached the register at all:
+    a register with NO source SSAVar (lift-synthesized — a block-arg / phi-copy)
+    is *uncovered*, and a caller MUST treat an uncovered sink operand
+    conservatively (whole-value tainted), exactly as the boolean IR taint does
+    today. So the view is purely additive: byte precision where covered, no
+    regression where not."""
+
+    def __init__(self, bytes_view: dict, scalar_view: set, covered: set):
+        self._b = bytes_view      # {id(Register): Intervals}
+        self._s = scalar_view     # {id(Register)} scalar-tainted
+        self._covered = covered   # {id(Register)} reached by the carry-up
+
+    def tainted_bytes(self, reg) -> Intervals:
+        return self._b.get(id(reg), Intervals.empty())
+
+    def is_scalar_tainted(self, reg) -> bool:
+        return id(reg) in self._s
+
+    def is_covered(self, reg) -> bool:
+        return id(reg) in self._covered
+
+    def sink_tainted(self, reg) -> bool:
+        """Conservative sink verdict: an uncovered operand is treated as tainted
+        (whole-value), a covered one iff it actually carries byte or scalar taint."""
+        return (not self.is_covered(reg)) or bool(self.tainted_bytes(reg)) or self.is_scalar_tainted(reg)
+
+
+def byte_taint_view(lifter, *, result: Optional[ByteTaintResult] = None) -> IrByteTaint:
+    """Carry the SSA byte-taint of ``lifter.prog`` up onto its IR registers.
+
+    Runs :func:`byte_taint` on the lifter's own program (``validate=False`` — the
+    validation-narrowing layer rewrites SSAVar identities via ``propagate_inputs``,
+    which would desync the ``lifter.regs`` bridge; validated-range carry-up is a
+    later increment) and maps each ``SSAVar/Phi`` result onto its ``Register`` by
+    object identity. Pass a precomputed ``result`` to share one fixpoint.
+
+    Returns an :class:`IrByteTaint`. A register is *covered* iff its SSAVar is in
+    ``lifter.regs``; lift-synthesized registers are absent and callers fall back
+    conservatively (see :meth:`IrByteTaint.sink_tainted`)."""
+    if result is None:
+        result = byte_taint(lifter.prog)
+    bytes_view: dict = {}
+    scalar_view: set = set()
+    covered: set = set()
+    for sv, reg in lifter.regs.items():
+        covered.add(id(reg))
+        iv = result.tainted_bytes(sv)
+        if iv:
+            bytes_view[id(reg)] = iv
+        if result.is_scalar_tainted(sv):
+            scalar_view.add(id(reg))
+    return IrByteTaint(bytes_view, scalar_view, covered)

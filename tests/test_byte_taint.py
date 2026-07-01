@@ -8,8 +8,11 @@ and attacker-controlled halves of a packed byte array are tracked
 separately, including the byte-range -> scalar bridge (``getbyte`` /
 ``extract_uint*`` of a clean offset is NOT tainted).
 """
-from tealtools.ssa import SSAProgram
-from tealtools.dataflow.byte_taint import Intervals, byte_taint, INF
+from tealtools.ssa import SSAProgram, SSAVar, Phi
+from tealtools.dataflow.byte_taint import Intervals, byte_taint, byte_taint_view, INF
+from tealtools.lift.lift import _Lifter
+from tealtools.lift import pre_ir
+from tealtools.lift.taint import _intr
 
 
 class TestIntervals:
@@ -217,3 +220,73 @@ class TestValidationNarrowing:
         r = byte_taint(p, validate=True)
         merge = [a for a in p.assignments if a.op == "getbyte" and a.location.line >= 12][0]
         assert r.is_scalar_tainted(merge.outputs[0])
+
+
+def _log_arg_reg(lf):
+    """The register operand of the (single) ``log`` op in the lifted IR."""
+    for b in pre_ir.blocks(lf.subs):
+        for o in b.ops:
+            s = _intr(o)
+            if s is not None and s.op == "log" and s.args:
+                return s.args[0]
+    return None
+
+
+class TestIrCarryUp:
+    """SSA byte-taint carried onto the lifted IR via ``byte_taint_view`` — the
+    'compute low, consume high' bridge (``lifter.regs``)."""
+
+    def test_carryup_faithful_to_ssa_for_covered_registers(self):
+        # every covered register reports exactly the SSA byte-taint of its SSAVar.
+        teal = ("#pragma version 8\n"
+                "byte 0x0011223344556677\ntxna ApplicationArgs 0\nconcat\nlog\n"
+                "int 1\nreturn\n")
+        p = SSAProgram.from_text(teal, name="t")
+        lf = _Lifter(p); lf.build()
+        view = byte_taint_view(lf)
+        ssa = byte_taint(lf.prog)
+        for sv, reg in lf.regs.items():
+            if isinstance(sv, (SSAVar, Phi)):
+                assert view.tainted_bytes(reg) == ssa.tainted_bytes(sv)
+                assert view.is_covered(reg)
+
+    def test_clean_prefix_partition_survives_to_ir(self):
+        # concat(clean8, arg) logged: at the IR the log operand still carries the
+        # [8, INF) partition -- byte granularity reached the sink.
+        teal = ("#pragma version 8\n"
+                "byte 0x0011223344556677\ntxna ApplicationArgs 0\nconcat\nlog\n"
+                "int 1\nreturn\n")
+        p = SSAProgram.from_text(teal, name="t")
+        lf = _Lifter(p); lf.build()
+        view = byte_taint_view(lf)
+        reg = _log_arg_reg(lf)
+        assert reg is not None
+        assert view.tainted_bytes(reg) == Intervals([(8, INF)])
+
+    def test_interprocedural_param_sink_is_soundly_flagged(self):
+        # arg passed INTO a sub and logged there. The IR log reads the sub's
+        # PARAM register, which the lift synthesizes fresh (no source SSAVar), so
+        # it is UNCOVERED by the carry-up -> caught by the conservative fallback
+        # (sink_tainted True), sound but not byte-granular. Closing this to
+        # byte-granularity (map param regs to caller args) is the v2 increment.
+        teal = ("#pragma version 8\n"
+                "txna ApplicationArgs 0\ncallsub emit\nint 1\nreturn\n"
+                "emit:\nproto 1 0\nframe_dig -1\nlog\nretsub\n")
+        p = SSAProgram.from_text(teal, name="t")
+        lf = _Lifter(p); lf.build()
+        view = byte_taint_view(lf)
+        reg = _log_arg_reg(lf)
+        assert reg is not None
+        assert not view.is_covered(reg)         # lift-synthesized param register
+        assert view.sink_tainted(reg)           # still flagged, conservatively
+
+    def test_uncovered_operand_is_conservatively_tainted(self):
+        # a lift-synthesized register (not in lifter.regs) is uncovered, and the
+        # conservative sink verdict treats it as tainted -- no silent FN.
+        teal = "#pragma version 8\ntxna ApplicationArgs 0\nlog\nint 1\nreturn\n"
+        p = SSAProgram.from_text(teal, name="t")
+        lf = _Lifter(p); lf.build()
+        view = byte_taint_view(lf)
+        phantom = object()                      # stands in for a synthesized reg
+        assert not view.is_covered(phantom)
+        assert view.sink_tainted(phantom)       # conservative: treated as tainted
