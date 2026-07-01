@@ -275,6 +275,13 @@ def _cmd_detections(args) -> int:
             if mode in getattr(DETECTORS[n], "applies_to",
                                frozenset({"app", "logicsig"}))
         ]
+    if args.all:
+        # Supersession dedup, AFTER mode filtering: a superseded detector is
+        # skipped only when its superseder survived the filter and will run
+        # (the superseder falls back to it internally on lift failure); an
+        # explicit --detector request always runs as asked.
+        from security.scan import default_detection_names
+        names = default_detection_names(names)
     logger.info("running %d detection(s) (mode=%s)",
                 len(names), mode or "unfiltered")
     if args.json_out:
@@ -454,7 +461,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="detector short name (e.g. fee-validation)",
     )
     group.add_argument("--all", action="store_true",
-                       help="run every detection")
+                       help="run every detection (skipping ones superseded "
+                            "by a successor that also runs)")
     group.add_argument("--list", action="store_true",
                        help="list available detector short names and exit")
 

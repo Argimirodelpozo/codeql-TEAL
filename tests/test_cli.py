@@ -224,6 +224,28 @@ def test_cli_detections_scan_json_shape(capsys):
     assert any(f["detector"] == "sec-guide/rekey-to" for f in data)
 
 
+def test_cli_detections_all_drops_superseded(capsys):
+    main(["detections", str(SAFE_DB), "--all"])
+    out = capsys.readouterr().out
+    # --all prints a `=== sec-guide/<name> ===` header per detector run: the
+    # IR successor must run, its superseded SSA sibling must not.
+    assert "=== sec-guide/ir-tainted-fund-flow ===" in out
+    assert "=== sec-guide/tainted-fund-flow ===" not in out
+
+
+def test_cli_all_runs_ir_family_not_superseded(capsys):
+    # `tealql all` derives its detector set from the registry: the ir-*
+    # family (the primary detectors) must be present, superseded SSA
+    # siblings and on-demand-only detections must not.
+    main(["all", str(VULN_DB), "--json"])
+    detectors = json.loads(capsys.readouterr().out)["detectors"]
+    assert "detections/ir-tainted-fund-flow" in detectors
+    assert "detections/ir-arbitrary-inner-appcall" in detectors
+    assert "detections/tainted-fund-flow" not in detectors
+    assert "detections/abi-method-selector" not in detectors
+    assert "detections/constant-condition" not in detectors
+
+
 def test_cli_detections_scan_config_empty_only_exit_zero(tmp_path, capsys):
     # A bare approve-everything program fires a dozen detectors by design,
     # so exercise the clean-exit path by scoping the scan to zero detectors

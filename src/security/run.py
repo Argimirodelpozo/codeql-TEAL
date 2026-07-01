@@ -15,29 +15,24 @@ from tealtools.detector import (
     run_all_dict as _core_run_all_dict,
 )
 from . import DETECTORS
+from .scan import default_detection_names
 
-# The sec-guide detectors surfaced in ``tealql all`` (a curated subset — some
-# registry entries, e.g. abi-method-selector / constant-condition /
-# tainted-fund-flow, are run on demand only).
-_SECGUIDE_NAMES = (
-    "asset-close-to",
-    "asset-id-validation",
-    "box-key",
-    "close-remainder-to",
-    "delete-funds-check",
-    "fee-validation",
-    "group-size-check",
-    "hardcoded-min-balance",
-    "inner-txn-close-rekey",
-    "inner-txn-fee",
-    "is-deletable",
-    "is-updatable",
-    "rekey-to",
-    "timelock-upgrade",
-    "tx-type-check",
-    "unprotected-deletable",
-    "unprotected-updatable",
-    "unsafe-lsig-args",
+# Deliberately kept OUT of the ``tealql all`` overview — run on demand via
+# ``tealql detections --detector NAME`` (report-style / lint-noise on typical
+# contracts, per the original curation).
+_ON_DEMAND_ONLY = frozenset({
+    "abi-method-selector",
+    "constant-condition",
+})
+
+# Everything else registered in security.DETECTORS runs, with superseded
+# detectors dropped (their successors subsume them and fall back to them
+# internally when the IR lift fails). Derived, not enumerated: a hand-written
+# inclusion list lived here before and silently excluded every detector
+# registered after it was written — the whole ir-* family never ran in
+# ``tealql all``.
+_SECGUIDE_NAMES = tuple(
+    n for n in default_detection_names() if n not in _ON_DEMAND_ONLY
 )
 
 

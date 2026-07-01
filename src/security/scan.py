@@ -70,6 +70,15 @@ def _drop_superseded(detectors: Iterable[str]) -> list[str]:
     return out
 
 
+def default_detection_names(names: Optional[Iterable[str]] = None) -> list[str]:
+    """``names`` (default: the whole registry, registration order) minus any
+    detector superseded by another detector present in the same set — the
+    default selection for "run everything" surfaces (``tealql detections
+    --all``, the ``tealql all`` aggregate). Explicitly requesting a superseded
+    detector (``--detector``, an ``only:`` rule) still runs it."""
+    return _drop_superseded(DETECTORS if names is None else names)
+
+
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
