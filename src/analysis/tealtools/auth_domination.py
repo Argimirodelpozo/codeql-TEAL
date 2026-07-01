@@ -34,11 +34,10 @@ or guard patterns is a matter of appending to ``sinks`` /
 Preconditions
 -------------
 
-Operates on the **pre-materialized, pre-dead-elimination** SSA
-representation, same as :class:`tealtools.inner_txn_report.InnerTxnReport`
-— path predicates trace back through ``defined_by`` chains, which
-``materialize_phis`` and ``eliminate_dead_constants`` mutate or
-remove.
+Path predicates trace back through ``defined_by`` chains, so this needs the
+standard (phi-preserving, def-use-intact) SSA representation that
+:class:`tealtools.ssa.SSAProgram` produces by default — the same as
+:class:`tealtools.inner_txn_report.InnerTxnReport`.
 """
 from __future__ import annotations
 
@@ -212,19 +211,6 @@ class AuthDominationDetector:
         matchers: Optional[Iterable[AuthMatcher]] = None,
         path_predicates: Optional[PathPredicateAnalysis] = None,
     ):
-        if getattr(prog, "_materialized", False):
-            raise ValueError(
-                "AuthDominationDetector requires the pre-materialized SSA "
-                "representation; this SSAProgram has had `materialize_phis()` "
-                "called on it."
-            )
-        if getattr(prog, "_dead_eliminated", False):
-            raise ValueError(
-                "AuthDominationDetector requires the pre-dead-elimination "
-                "SSA representation; defined-by traversal needs the "
-                "original SSAVar references that `eliminate_dead_constants` "
-                "drops."
-            )
         self.prog = prog
         self.sinks: list[AuthSink] = (
             list(sinks) if sinks is not None else list(DEFAULT_SINKS)

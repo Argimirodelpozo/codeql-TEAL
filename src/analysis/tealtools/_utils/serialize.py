@@ -39,7 +39,7 @@ def assignment_ref(a) -> dict[str, Any]:
 
 
 def operand_repr(op) -> dict[str, Any]:
-    """Serialise a tainted operand (SSAVar / Phi / MatPhiVar / Const).
+    """Serialise a tainted operand (SSAVar / Phi / Const).
 
     Uses ``repr`` because it is the canonical identity string the SSA
     layer prints, and matches what the ``.pretty()`` renderers show.

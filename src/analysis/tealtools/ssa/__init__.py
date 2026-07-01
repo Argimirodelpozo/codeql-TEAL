@@ -12,7 +12,7 @@ prog    = PySSA.build(prog_ql)
 
 Layout:
 - :mod:`tealtools.ssa.models`  — pure data classes (SSAVar, Phi,
-  Assignment, BasicBlock, Const, IntRange, Location, MatPhiVar,
+  Assignment, BasicBlock, Const, IntRange, Location,
   TealType) plus op-classification helpers (``_shuffle_mapping``,
   ``_TERMINATOR_OPS``, ``_OP_RANGE_SEEDS``, ``_CONST_BLOCK_REF_NAMES``,
   ``_STACK_SHUFFLE_OPS``).
@@ -33,7 +33,6 @@ from .models import (
     Const,
     IntRange,
     Location,
-    MatPhiVar,
     Operand,
     Phi,
     SSAVar,
@@ -70,7 +69,6 @@ __all__ = [
     "Const",
     "IntRange",
     "Location",
-    "MatPhiVar",
     "Operand",
     "Phi",
     "SSAVar",

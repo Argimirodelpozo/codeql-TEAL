@@ -76,15 +76,6 @@ class TaintedFundFlowDetector:
 
     def __init__(self, prog: SSAProgram, *, file: Optional[str] = None,
                  path_predicates: "Optional[PathPredicateAnalysis]" = None):
-        if getattr(prog, "_materialized", False):
-            raise ValueError(
-                "TaintedFundFlowDetector requires the pre-materialized SSA "
-                "representation (path predicates + def-use traversal)."
-            )
-        if getattr(prog, "_dead_eliminated", False):
-            raise ValueError(
-                "TaintedFundFlowDetector requires the pre-dead-elimination SSA."
-            )
         self.prog = prog
         self.file = file
         # Accept a pre-built (e.g. caller-SEEDED) PathPredicateAnalysis so the

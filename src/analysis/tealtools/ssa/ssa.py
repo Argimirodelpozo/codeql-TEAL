@@ -2,7 +2,7 @@
 
 Re-exports the data classes from :mod:`tealtools.ssa.models`
 (``SSAVar``, ``Phi``, ``Assignment``, ``BasicBlock``, ``Const``,
-``Location``, ``MatPhiVar``, ``TealType``, ``IntRange``) and the
+``Location``, ``TealType``, ``IntRange``) and the
 ``SSAProgram`` class from :mod:`tealtools.ssa.program`, and provides
 :meth:`PySSA.build` — the pure-Python SSA builder that returns an
 ``SSAProgram`` directly, ready for every existing analysis (constant
@@ -60,7 +60,6 @@ from .models import (  # noqa: F401
     Const,
     IntRange,
     Location,
-    MatPhiVar,
     Operand as QLOperand,
     Phi,
     SSAVar,
@@ -1296,14 +1295,11 @@ def _apply_pyssa_to(
     prog.assignments = []
     prog.blocks = {}
     prog.labels = src_labels_snapshot
-    prog.mat_phis = []
     prog._graph = src_graph_snapshot
     prog.source_path = src_source_path_snapshot
     # Match the exact state flags ``SSAProgram.__init__`` sets, so every
     # pass that gates on one of them finds it.
-    prog._materialized = False
     prog._consts_propagated = False
-    prog._dead_eliminated = False
     prog._scratch_propagated = False
     prog._ranges_propagated = False
     prog._shuffles_propagated = False

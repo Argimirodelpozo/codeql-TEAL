@@ -455,7 +455,7 @@ def _flow_rows_for(prog: SSAProgram) -> list[tuple]:
     stack-shuffle flow into direct def-use; the frame rows add the cross-sub
     (proto-param) flow it doesn't.
     """
-    from ..ssa.models import MatPhiVar, Phi, SSAVar
+    from ..ssa.models import Phi, SSAVar
 
     g = getattr(prog, "_graph", None)
     cls_at: dict[tuple[str, int], str] = {}
@@ -471,7 +471,7 @@ def _flow_rows_for(prog: SSAProgram) -> list[tuple]:
         ``None`` for a constant / literal (a natural taint stopper)."""
         if isinstance(operand, Phi):
             return operand.file, operand.line, "Phi"
-        if isinstance(operand, (SSAVar, MatPhiVar)):
+        if isinstance(operand, SSAVar):
             f, ln = operand.file, operand.line
             return f, ln, cls_at.get((f, ln), operand.__class__.__name__)
         return None  # Const / unresolved

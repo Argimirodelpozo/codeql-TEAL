@@ -18,26 +18,12 @@ operand and (when statically known) its literal value.
 Preconditions
 -------------
 
-Operates on the **pre-materialized, pre-dead-elimination** SSA
-representation — the state :class:`tealtools.ssa.SSAProgram` is in by
-default, optionally after :meth:`propagate_constants` /
-:meth:`propagate_scratch_constants` (those only *add* ``const_value``
-without removing anything).
-
-- :meth:`SSAProgram.materialize_phis` destroys the phi structure
-  (replaces phis with :class:`MatPhiVar` copy assignments), at which
-  point joins are no longer visible as a single phi-args expansion.
-- :meth:`SSAProgram.eliminate_dead_constants` drops every SSAVar
-  whose ``const_value`` was inlined at every consumer. This breaks
-  per-field operand resolution: the field rows report the consumed
-  value's ``(file, line, idx)`` identity, and after elimination
-  ``prog.var(...)`` returns ``None`` for those — so a literal-pusher
-  field (``pushint 100 / itxn_field Amount``) renders as
-  ``?<unresolved>`` instead of ``100``.
-
-The constructor checks both flags and raises if either is set. Build
-a fresh :class:`SSAProgram` if you've already run those passes for
-some other downstream use.
+Operates on the standard SSA representation — the state
+:class:`tealtools.ssa.SSAProgram` is in by default, optionally after
+:meth:`propagate_constants` / :meth:`propagate_scratch_constants` (those
+only *add* ``const_value`` without removing anything). Per-field operand
+resolution follows the consumed value's ``(file, line, idx)`` identity, so
+it needs the phis and original SSAVars intact.
 
 The boundary structure (which ``itxn_field`` belongs to which txn
 within which submit-group) is computed by the inner-transaction-field
@@ -49,7 +35,7 @@ Field values
 ------------
 
 Each :class:`InnerTxnField` keeps a typed reference to the consumed
-operand (``SSAVar`` / ``Phi`` / ``MatPhiVar``). :meth:`possible_values`
+operand (``SSAVar`` / ``Phi``). :meth:`possible_values`
 flattens this into a list of literal-or-symbolic strings:
 
 - An :class:`SSAVar` / :class:`Phi` whose ``const_value`` is set →
@@ -78,7 +64,7 @@ from .ssa import (
 from .passes.frame_flow import frame_param_sources
 
 
-# Pre-materialized SSA only: ``MatPhiVar`` cannot appear here.
+# Inner-txn field operands: a produced value, a join, or a const literal.
 Operand = Union[SSAVar, Phi, Const]
 
 
@@ -126,10 +112,9 @@ class InnerTxnField:
           opcode. Often *this* is the most useful answer — for
           ``txn Sender`` and friends the value isn't a static literal
           but it has a meaningful semantic name.
-        - **Symbolic** — ``"?V#3@L42"`` or ``"?phi_…"``: the operand is
-          a :class:`MatPhiVar` or otherwise can't be described by a
-          single producer. The ``?`` prefix flags "trace this in the
-          SSA graph yourself".
+        - **Symbolic** — ``"?V#3@L42"`` or ``"?phi_…"``: the operand
+          can't be described by a single producer. The ``?`` prefix
+          flags "trace this in the SSA graph yourself".
 
         Phis expand to one entry per arg, deduplicated. A ``frame_dig`` param
         read expands the same way over its caller args (``frame_src``).
@@ -316,22 +301,6 @@ class InnerTxnReport:
     """
 
     def __init__(self, prog: SSAProgram):
-        if getattr(prog, "_materialized", False):
-            raise ValueError(
-                "InnerTxnReport requires the pre-materialized SSA representation; "
-                "this SSAProgram has had `materialize_phis()` called on it, which "
-                "replaces Phi nodes with MatPhiVar copy assignments. Build a fresh "
-                "SSAProgram or run this analysis before materialization."
-            )
-        if getattr(prog, "_dead_eliminated", False):
-            raise ValueError(
-                "InnerTxnReport requires the pre-dead-elimination SSA representation; "
-                "`eliminate_dead_constants()` drops SSAVars whose const_value was "
-                "inlined into every consumer, which breaks per-field operand "
-                "resolution (the consumed SSAVar referenced by the graph node is no "
-                "longer in prog.vars). Build a fresh SSAProgram or run this analysis "
-                "before dead elimination."
-            )
         self.prog = prog
         self.groups: list[InnerTxnGroup] = self._build()
 

@@ -615,10 +615,9 @@ class ForeignVar:
     SSAVars print as ``V#1@L4`` and collide visually with caller-side
     vars (both source files are typically named ``prog.teal``).
 
-    ``inner`` is the original :class:`SSAVar` / :class:`Phi` /
-    :class:`MatPhiVar` from the callee; ``app_id`` is the AppID of
-    the callee. Consts are not wrapped — they're literals with no
-    provenance ambiguity.
+    ``inner`` is the original :class:`SSAVar` / :class:`Phi` from the
+    callee; ``app_id`` is the AppID of the callee. Consts are not
+    wrapped — they're literals with no provenance ambiguity.
     """
 
     inner: object

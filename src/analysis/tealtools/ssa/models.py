@@ -191,35 +191,6 @@ class Phi:
                 parts.append(repr(arg))
 
 
-class MatPhiVar:
-    """A materialised-phi variable produced by :meth:`SSAProgram.materialize_phis`.
-
-    Identity: ``index`` (monotonic, globally unique per program). Unlike
-    :class:`SSAVar`, a ``MatPhiVar`` has *multiple* definitions — one per
-    DirectPhi argument — which is a legitimate post-SSA-lowering state
-    where each copy assignment targets the same variable. Strict SSA is
-    intentionally broken; see the "out-of-SSA" literature.
-    """
-
-    __slots__ = ("index",)
-
-    def __init__(self, index: int):
-        self.index = index
-
-    @property
-    def identifier(self) -> str:
-        return f"mat_phi_{self.index}"
-
-    def __hash__(self) -> int:
-        return hash(("MatPhi", self.index))
-
-    def __eq__(self, other) -> bool:
-        return isinstance(other, MatPhiVar) and self.index == other.index
-
-    def __repr__(self) -> str:
-        return self.identifier
-
-
 @dataclass(frozen=True)
 class Const:
     """A resolved compile-time literal. ``kind`` ∈ ``{"int", "bytes"}``."""
@@ -286,20 +257,14 @@ class TealType:
     int_value_range: Optional["IntRange"] = None
 
 
-Operand = Union[SSAVar, Phi, Const, MatPhiVar]
+Operand = Union[SSAVar, Phi, Const]
 
 
 @dataclass(eq=False)
 class Assignment:
-    """``outputs = op immediates (inputs)`` — one TEAL opcode's SSA form.
+    """``outputs = op immediates (inputs)`` — one TEAL opcode's SSA form."""
 
-    After :meth:`SSAProgram.materialize_phis`, outputs may include
-    :class:`MatPhiVar` instances (for synthetic ``mat_phi_k = arg``
-    copies inserted at the original phi-argument def sites), and inputs
-    may reference :class:`MatPhiVar` where phis used to be.
-    """
-
-    outputs: list[Union[SSAVar, MatPhiVar]]
+    outputs: list[SSAVar]
     op: str
     immediates: str
     inputs: list[Operand]

@@ -184,7 +184,7 @@ class Violation:
     sink: Assignment
     sink_name: str
     # The exact tainted operand consumed at the sink. May be an
-    # SSAVar (locally produced) or a Phi/MatPhiVar (carried across
+    # SSAVar (locally produced) or a Phi (carried across
     # BB joins). Trace ``defined_by`` / ``args`` from here to
     # reconstruct the path the value took.
     sink_operand: TaintedOperand
@@ -245,13 +245,6 @@ class TaintAnalysis:
         file: Optional[str] = None,
         cross_state: bool = False,
     ):
-        if getattr(prog, "_materialized", False):
-            raise ValueError(
-                "TaintAnalysis requires the pre-materialized SSA "
-                "representation; this SSAProgram has had `materialize_phis()` "
-                "called on it. Build a fresh SSAProgram or run this analysis "
-                "before materialization."
-            )
         self.prog = prog
         self.file = file
         self.sources: list[Source] = list(sources)

@@ -75,12 +75,6 @@ class ArbitraryInnerAssetDetector:
 
     def __init__(self, prog: SSAProgram, *, file: Optional[str] = None,
                  path_predicates: "Optional[PathPredicateAnalysis]" = None):
-        if getattr(prog, "_materialized", False):
-            raise ValueError(
-                "ArbitraryInnerAssetDetector requires the pre-materialized SSA.")
-        if getattr(prog, "_dead_eliminated", False):
-            raise ValueError(
-                "ArbitraryInnerAssetDetector requires the pre-dead-elimination SSA.")
         self.prog = prog
         self.file = file
         self.pp = path_predicates or common.cached_path_predicates(prog)

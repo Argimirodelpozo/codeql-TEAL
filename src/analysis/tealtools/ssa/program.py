@@ -7,7 +7,7 @@ analysis consumes.
 classes from :mod:`tealtools.ssa.models`), then routes SSA
 construction through :class:`PySSA` (:mod:`tealtools.ssa.ssa`) which
 overwrites the phi layer in place. The constant-folding / range /
-liveness / materialize passes live here as methods consumed by the
+liveness passes live here as methods consumed by the
 detectors and reports.
 """
 from __future__ import annotations
@@ -22,7 +22,6 @@ from .models import (
     BasicBlock,
     Const,
     Location,
-    MatPhiVar,
     Phi,
     SSAVar,
     _CONST_BLOCK_REF_NAMES,
@@ -85,14 +84,11 @@ class SSAProgram:
         self.phis: dict[tuple, Phi] = {}
         self.assignments: list[Assignment] = []
         self.blocks: dict[tuple, BasicBlock] = {}
-        self.mat_phis: list[MatPhiVar] = []
         # Sorted (file, line, label_text) — purely for rendering. Labels
         # have no SSA effect, but interleaving them with assignments in
         # ``functional()`` keeps the dump anchored to the source layout.
         self.labels: list[tuple[str, int, str]] = []
-        self._materialized: bool = False
         self._consts_propagated: bool = False
-        self._dead_eliminated: bool = False
         self._scratch_propagated: bool = False
         self._ranges_propagated: bool = False
         self._shuffles_propagated: bool = False
@@ -569,10 +565,7 @@ class SSAProgram:
         of shuffles are flattened in one pass via :func:`_resolve` so a
         single rewrite of consumers suffices.
 
-        Should run before :meth:`materialize_phis` — phi args are
-        list[SSAVar | Phi] until materialisation; rewriting them after
-        materialisation could inject :class:`MatPhiVar` and break that
-        invariant. Idempotent.
+        Idempotent.
         """
         if self._shuffles_propagated:
             return
