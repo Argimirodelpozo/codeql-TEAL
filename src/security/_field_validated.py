@@ -42,6 +42,10 @@ class _FieldValidatedDetector:
         self.file = file
 
     def detect(self) -> list[_FieldValidatedViolation]:
+        # Absence-style check: an empty / fully-unparsed program trivially
+        # "lacks" the validation — that is unanalyzable input, not a finding.
+        if not common.has_instructions(self.prog, file=self.file):
+            return []
         for f in self.field:
             if common.field_validated_on_all_paths(self.prog, f, file=self.file):
                 return []

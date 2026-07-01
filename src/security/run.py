@@ -13,6 +13,7 @@ from tealtools.detector import (
     Detector, _FnDetector,
     run_all as _core_run_all,
     run_all_dict as _core_run_all_dict,
+    run_all_findings as _core_run_all_findings,
 )
 from . import DETECTORS
 from .scan import default_detection_names
@@ -52,6 +53,11 @@ SECGUIDE_DETECTORS: list[Detector] = [_secguide_detector(n) for n in _SECGUIDE_N
 def run_all(prog: SSAProgram) -> str:
     """tealtools core detectors + reports + the sec-guide detectors, as text."""
     return _core_run_all(prog, extra_detectors=SECGUIDE_DETECTORS)
+
+
+def run_all_findings(prog: SSAProgram) -> tuple[str, int]:
+    """:func:`run_all` text plus the total finding count (for exit codes)."""
+    return _core_run_all_findings(prog, extra_detectors=SECGUIDE_DETECTORS)
 
 
 def run_all_dict(prog: SSAProgram) -> dict:

@@ -211,7 +211,12 @@ def load_graph(
     # the same objects flow through both passes and into the graph.
     from .ast.parse import parse_nodes
     from .cfg_build import build_cfg_edges, build_basic_blocks
-    nodes = parse_nodes(_load_source_bytes(source))
+    parse_diags: list = []
+    nodes = parse_nodes(_load_source_bytes(source), diagnostics=parse_diags)
+    # Unparseable spans the grammar dropped. Non-empty => the graph (and
+    # everything built on it) covers only PART of the source; consumers
+    # surface this via SSAProgram.parse_diagnostics.
+    g.graph["parse_diagnostics"] = tuple(parse_diags)
     for node in nodes:
         by_loc[(node.location.file, node.location.start_line)] = node
         g.add_node(node)

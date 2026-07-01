@@ -42,6 +42,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Optional
 
+from tealtools.errors import TealParseError, TealQLError
 from tealtools.ssa import SSAProgram
 from . import DETECTORS
 from .config import DetectionConfig
@@ -307,6 +308,7 @@ def scan(
     *,
     detection_config: "Optional[DetectionConfig]" = None,
     options: "Optional[DetectionOptions]" = None,
+    strict: bool = False,
 ) -> list[ScanFinding]:
     """Discover, reconstruct, and detect. Returns a flat list of findings
     sorted by ``(rel_path, detector_name)``.
@@ -318,7 +320,14 @@ def scan(
 
     A detector whose ``applies_to`` excludes a file's declared mode is skipped.
     A file with no declared mode is unfiltered (every selected detector runs)
-    unless ``options.auto_mode`` is set, which classifies it by opcode."""
+    unless ``options.auto_mode`` is set, which classifies it by opcode.
+
+    A file the grammar cannot fully parse is analyzed PARTIALLY with a
+    warning (the unparsed spans are excluded — the scan may miss findings
+    there); a file whose SSA cannot be reconstructed at all is skipped with
+    a warning. ``strict=True`` turns both into a raised
+    :class:`tealtools.errors.TealQLError` instead, so a CI scan can refuse
+    to hand out a clean bill for input it could not actually analyze."""
     if options is not None:
         config = options.selection
         detection_config = options.modes
@@ -340,8 +349,19 @@ def scan(
             try:
                 prog = SSAProgram(str(teal))
             except Exception as e:                   # pragma: no cover
+                if strict:
+                    raise TealQLError(
+                        f"could not reconstruct SSA for {rel}: {e}") from e
                 logger.warning("could not reconstruct SSA for %s: %s", rel, e)
                 continue
+            diags = getattr(prog, "parse_diagnostics", ())
+            if diags:
+                if strict:
+                    raise TealParseError(diags)
+                logger.warning(
+                    "%s: %d TEAL span(s) failed to parse and were EXCLUDED "
+                    "from analysis — findings for this file may be "
+                    "incomplete (first: %s)", rel, len(diags), diags[0])
             names = config.detectors_for(str(rel))
             if options is not None:
                 mode = options.mode_for(str(rel), prog=prog, file=teal.name)
@@ -364,7 +384,20 @@ def scan(
                 # it as the file filter so the detector scopes to it.
                 det = cls(prog, file=teal.name)
                 sev = options.severity_for(name) if options is not None else None
-                for v in det.detect():
+                try:
+                    violations = list(det.detect())
+                except Exception as e:
+                    # One detector crashing on one weird file must not kill
+                    # a whole corpus scan — record it loudly and move on
+                    # (strict mode refuses instead). The ERROR log keeps the
+                    # crash visible so real bugs still get reported.
+                    if strict:
+                        raise TealQLError(
+                            f"detector {name} crashed on {rel}: {e}") from e
+                    logger.error(
+                        "detector %s crashed on %s (skipped): %s", name, rel, e)
+                    continue
+                for v in violations:
                     findings.append(ScanFinding(
                         rel_path=rel, detector_name=name, violation=v,
                         severity_override=sev,

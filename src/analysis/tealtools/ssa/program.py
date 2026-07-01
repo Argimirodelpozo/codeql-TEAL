@@ -72,6 +72,16 @@ class SSAProgram:
         from .. import graph as tg
         return cls.from_graph(tg.load_graph({name: teal}, verbose=verbose))
 
+    @property
+    def parse_diagnostics(self) -> tuple:
+        """Spans of TEAL source the grammar could not parse — recorded by
+        :func:`tealtools.graph.load_graph` and DROPPED from analysis. A
+        non-empty tuple means this program is PARTIAL: every downstream
+        result (detectors included) may be incomplete, so surface it —
+        never report a partially-parsed contract as clean. Each entry is a
+        :class:`tealtools.errors.ParseDiagnostic`."""
+        return self._graph.graph.get("parse_diagnostics", ())
+
     def _build_from_graph(self, g) -> None:
         """Reconstruct the SSA program from a loaded graph ``g`` (no parsing)."""
         from ..ast import Opcode, Label

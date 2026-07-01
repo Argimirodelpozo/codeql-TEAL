@@ -19,6 +19,7 @@ detection. Improvements live in follow-ups.
 """
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Optional
 
@@ -35,6 +36,8 @@ from tealtools.ssa import (
 )
 from tealtools.cfg.dominance import iterative_dominators
 from tealtools.opsets import CMP_OPS
+
+logger = logging.getLogger("security.common")
 
 
 # ---------------------------------------------------------------------------
@@ -124,6 +127,18 @@ def is_rejection_exit(bb: BasicBlock) -> bool:
 
 def file_match(loc_file: str, want: Optional[str]) -> bool:
     return want is None or loc_file == want
+
+
+def has_instructions(prog: SSAProgram, *, file: Optional[str] = None) -> bool:
+    """True when the program (scoped to ``file`` if given) parsed to at
+    least one instruction. ABSENCE-style detectors ("no X validation
+    anywhere → finding") must check this first: a degenerate program —
+    empty, or fully dropped by parse diagnostics — trivially "lacks"
+    every validation, and reporting a contract-shaped finding about it
+    would dress up *we could not analyze this* as *this is vulnerable*."""
+    return any(
+        file_match(a.location.file, file) for a in prog.assignments
+    )
 
 
 def approving_exits(
@@ -1083,6 +1098,11 @@ def user_input_taint(prog: SSAProgram, file: Optional[str] = None) -> dict:
     return result
 
 
+# Warn only once per process when the whole IR layer is off (puya missing);
+# per-contract lift failures warn individually in ir_lifter.
+_PUYA_UNAVAILABLE_WARNED = False
+
+
 def ir_lifter(prog: SSAProgram, file: Optional[str] = None):
     """Build + cache the IR lifter for ``prog`` -- the lifted, Puya-shaped IR the
     interprocedural detectors (e.g. ``ir-tainted-fund-flow``) run on.
@@ -1097,7 +1117,14 @@ def ir_lifter(prog: SSAProgram, file: Optional[str] = None):
     lift shared by every IR detector in a scan.
 
     ``file`` is accepted for signature parity with the SSA analyses but unused: the
-    lift is whole-program, and SSAPrograms are per-file (xcontract aside)."""
+    lift is whole-program, and SSAPrograms are per-file (xcontract aside).
+
+    Failure is NEVER silent: puya being uninstalled warns once per process
+    (the entire IR layer is off), and a per-contract lift failure warns with
+    the reason — either way the ir-* detectors degrade (SSA-sibling fallback
+    or no findings), and the user must be able to see that a scan ran at
+    reduced precision."""
+    global _PUYA_UNAVAILABLE_WARNED
     sentinel = object()
     cached = getattr(prog, "_sec_ir_lifter", sentinel)
     if cached is not sentinel:
@@ -1105,15 +1132,33 @@ def ir_lifter(prog: SSAProgram, file: Optional[str] = None):
     lifter = None
     try:
         from tealtools.lift.lift import _Lifter
+    except ImportError as e:
+        if not _PUYA_UNAVAILABLE_WARNED:
+            _PUYA_UNAVAILABLE_WARNED = True
+            logger.warning(
+                "IR detections DISABLED — the Puya-IR lift is unavailable "
+                "(%s). ir-* detectors with an SSA sibling fall back to it; "
+                "the rest report nothing. Install puyapy to enable the IR "
+                "layer.", e)
+    else:
         src = str(getattr(prog, "source_path", "") or "")
-        if src:
-            fresh = SSAProgram(src, verbose=False)
-            fresh.propagate_constants()
-            lf = _Lifter(fresh)
-            lf.build()
-            lifter = lf
-    except Exception:
-        lifter = None
+        if not src:
+            logger.debug(
+                "ir_lifter: program has no source path (in-memory build?) — "
+                "IR layer skipped")
+        else:
+            try:
+                fresh = SSAProgram(src, verbose=False)
+                fresh.propagate_constants()
+                lf = _Lifter(fresh)
+                lf.build()
+                lifter = lf
+            except Exception as e:
+                logger.warning(
+                    "Puya-IR lift failed for %s (%s: %s) — ir-* detections "
+                    "fall back to their SSA siblings where available and "
+                    "report nothing otherwise; results may be less precise.",
+                    src, type(e).__name__, e)
     try:
         prog._sec_ir_lifter = lifter
     except Exception:

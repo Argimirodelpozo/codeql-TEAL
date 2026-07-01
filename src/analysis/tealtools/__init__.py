@@ -21,6 +21,10 @@ import logging as _logging
 _logging.getLogger("tealtools").addHandler(_logging.NullHandler())
 
 # Substrate
+from .errors import (
+    ParseDiagnostic, TargetError, TargetNotFoundError,
+    TealParseError, TealQLError,
+)
 from .ssa import SSAProgram, BasicBlock, Const, Phi, SSAVar, Assignment
 from .path_predicates import PathPredicateAnalysis, BranchCondition
 from .cfg import CFG
@@ -78,6 +82,8 @@ from .structure import (
 # tealtools is the pure analysis library and surfaces no detector registry.
 
 __all__ = [
+    "TealQLError", "TealParseError", "TargetError", "TargetNotFoundError",
+    "ParseDiagnostic",
     "SSAProgram", "BasicBlock", "Const", "Phi", "SSAVar", "Assignment",
     "PathPredicateAnalysis", "BranchCondition",
     "CFG",

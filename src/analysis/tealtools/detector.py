@@ -144,16 +144,19 @@ ALL_REPORTS: list[Report] = [
 ]
 
 
-def run_all(prog: SSAProgram, *, extra_detectors: Iterable[Detector] = ()) -> str:
-    """Run every core detector (+ any ``extra_detectors``) + report against
-    ``prog`` and return one big text block, sectioned by analysis name.
-    ``extra_detectors`` lets ``security.run`` inject the sec-guide detectors
-    without this module importing the registry."""
+def run_all_findings(
+    prog: SSAProgram, *, extra_detectors: Iterable[Detector] = (),
+) -> tuple[str, int]:
+    """Like :func:`run_all` but also returns the total detector-finding
+    count, so callers (the CLI's ``all``) can set a findings exit code
+    without re-running every detector."""
     out: list[str] = []
+    n_findings = 0
     for det in [*ALL_DETECTORS, *extra_detectors]:
         out.append(f"=== {det.name} ===")
         findings = list(det.run(prog))
         if findings:
+            n_findings += len(findings)
             out.extend(f.pretty() for f in findings)
         else:
             out.append("(no findings)")
@@ -162,7 +165,15 @@ def run_all(prog: SSAProgram, *, extra_detectors: Iterable[Detector] = ()) -> st
         out.append(f"=== {rep.name} ===")
         out.append(rep.run(prog))
         out.append("")
-    return "\n".join(out).rstrip() + "\n"
+    return "\n".join(out).rstrip() + "\n", n_findings
+
+
+def run_all(prog: SSAProgram, *, extra_detectors: Iterable[Detector] = ()) -> str:
+    """Run every core detector (+ any ``extra_detectors``) + report against
+    ``prog`` and return one big text block, sectioned by analysis name.
+    ``extra_detectors`` lets ``security.run`` inject the sec-guide detectors
+    without this module importing the registry."""
+    return run_all_findings(prog, extra_detectors=extra_detectors)[0]
 
 
 def run_all_dict(prog: SSAProgram, *, extra_detectors: Iterable[Detector] = ()) -> dict:

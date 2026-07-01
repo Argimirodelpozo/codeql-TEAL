@@ -11,6 +11,8 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+from ..errors import TargetError, TargetNotFoundError
+
 logger = logging.getLogger("tealtools._utils.targets")
 
 
@@ -20,22 +22,24 @@ def _discover_teal_files(path: Path) -> list[Path]:
     ``.teal`` or the directory holds none."""
     if path.is_file():
         if path.suffix != ".teal":
-            raise ValueError(f"{path}: not a .teal file")
+            raise TargetError(f"{path}: not a .teal file")
         return [path.resolve()]
     teal = sorted(p.resolve() for p in path.rglob("*.teal"))
     if not teal:
-        raise FileNotFoundError(f"no .teal files found under {path}")
+        raise TargetNotFoundError(f"no .teal files found under {path}")
     return teal
 
 
 def resolve_target(target: str | Path) -> Path:
     """Validate a user-supplied target and return its path. The pipeline reads
     the ``.teal`` source directly, so this just checks the target exists and
-    contains TEAL. Raises if it doesn't exist, or is a directory / file with no
-    ``.teal``."""
+    contains TEAL. Raises :class:`tealtools.errors.TargetError` /
+    :class:`~tealtools.errors.TargetNotFoundError` (which are also
+    ``ValueError`` / ``FileNotFoundError``) if it doesn't exist, or is a
+    directory / file with no ``.teal``."""
     path = Path(target).resolve()
     if not path.exists():
-        raise FileNotFoundError(f"target does not exist: {target}")
+        raise TargetNotFoundError(f"target does not exist: {target}")
     logger.info("resolving target: %s", path)
     teal_files = _discover_teal_files(path)   # validates: raises if none / non-teal
     logger.info("target is %d .teal file(s): %s", len(teal_files), path)

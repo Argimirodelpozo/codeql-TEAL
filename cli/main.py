@@ -14,6 +14,15 @@ Common flags accepted by every analysis subcommand:
   ``--json``           emit JSON instead of text
   ``-v`` / ``-vv``     progress logging to stderr (``-v`` = INFO
                        milestones, ``-vv`` = DEBUG per-pass timings)
+  ``--strict``         refuse to analyze a partially-parsed program
+                       (unparseable TEAL spans normally WARN and continue)
+
+Exit codes (uniform across subcommands):
+
+  ``0``  clean — analysis ran, no findings
+  ``1``  findings — at least one detector reported something
+  ``2``  error — bad target, unparseable source under ``--strict``,
+         or any other expected failure (clean message on stderr)
 """
 from __future__ import annotations
 
@@ -25,16 +34,20 @@ from pathlib import Path
 from typing import Callable, Iterable
 
 from tealtools._utils.targets import resolve_target
+from tealtools.errors import TealParseError, TealQLError
 
 logger = logging.getLogger("tealtools.cli")
 
 
 def _configure_logging(verbosity: int) -> None:
-    """Wire the ``tealtools`` logger hierarchy to stderr at a level
-    set by the ``-v`` count: 0 → warnings only (quiet), 1 (``-v``) →
-    INFO progress milestones, 2+ (``-vv``) → DEBUG (per-pass timings,
-    finer detail). Library modules emit through this hierarchy; the
-    CLI is the only place a handler gets attached."""
+    """Wire the ``tealtools`` AND ``security`` logger hierarchies to stderr
+    at a level set by the ``-v`` count: 0 → warnings only (quiet), 1
+    (``-v``) → INFO progress milestones, 2+ (``-vv``) → DEBUG (per-pass
+    timings, finer detail). Library modules emit through these hierarchies;
+    the CLI is the only place a handler gets attached. (The ``security``
+    package logs under its own root — e.g. ``security.scan`` progress —
+    so both hierarchies need the handler or ``-v`` shows only half the
+    pipeline.)"""
     if verbosity >= 2:
         level = logging.DEBUG
     elif verbosity == 1:
@@ -43,9 +56,10 @@ def _configure_logging(verbosity: int) -> None:
         level = logging.WARNING
     handler = logging.StreamHandler(sys.stderr)
     handler.setFormatter(logging.Formatter("%(levelname)-7s %(message)s"))
-    root = logging.getLogger("tealtools")
-    root.setLevel(level)
-    root.addHandler(handler)
+    for hierarchy in ("tealtools", "security"):
+        root = logging.getLogger(hierarchy)
+        root.setLevel(level)
+        root.addHandler(handler)
 
 
 # ---------------------------------------------------------------------------
@@ -65,11 +79,31 @@ def _add_target_args(sp: argparse.ArgumentParser, *, dest: str = "target") -> No
     sp.add_argument("-v", "--verbose", action="count", default=0,
                     help="progress logging to stderr; repeat (-vv) for "
                          "per-pass timings")
+    sp.add_argument("--strict", action="store_true",
+                    help="exit 2 if any TEAL failed to parse instead of "
+                         "analyzing the partial program with a warning")
 
 
 def _resolve(args) -> Path:
     """Validate the target path (raises if it isn't TEAL source)."""
     return resolve_target(args.target)
+
+
+def _check_parse_health(prog, args) -> None:
+    """Surface unparseable-TEAL spans: the parser DROPS them, so analysis
+    covers only part of the source. Default: loud warning (a partially-
+    parsed contract must never read as silently clean). ``--strict``:
+    raise, which the top level turns into exit code 2."""
+    diags = getattr(prog, "parse_diagnostics", ())
+    if not diags:
+        return
+    if getattr(args, "strict", False):
+        raise TealParseError(diags)
+    logger.warning(
+        "%d TEAL span(s) failed to parse and were EXCLUDED from analysis — "
+        "results may be incomplete (first: %s). Use --strict to make this "
+        "fatal.", len(diags), diags[0],
+    )
 
 
 def _load(args):
@@ -79,6 +113,7 @@ def _load(args):
     logger.info("building SSA program from %s", source)
     prog = SSAProgram(str(source))
     logger.info("SSA program ready (%d assignments)", len(prog.assignments))
+    _check_parse_health(prog, args)
     return prog
 
 
@@ -332,19 +367,23 @@ def _cmd_detections_scan(args) -> int:
         Path(args.root),
         config=config,
         detection_config=detection_config,
+        strict=getattr(args, "strict", False),
     )
     print(render_json(findings) if args.json_out else render_text(findings))
     return 1 if findings else 0
 
 
 def _cmd_all(args) -> int:
-    from security.run import run_all, run_all_dict
+    from security.run import run_all_dict, run_all_findings
     prog = _load(args)
     if args.json_out:
-        print(_json.dumps(run_all_dict(prog), indent=2))
+        payload = run_all_dict(prog)
+        print(_json.dumps(payload, indent=2))
+        n_findings = sum(len(v) for v in payload["detectors"].values())
     else:
-        print(run_all(prog), end="")
-    return 0
+        text, n_findings = run_all_findings(prog)
+        print(text, end="")
+    return 1 if n_findings else 0
 
 
 def _cmd_dump(args) -> int:
@@ -449,6 +488,9 @@ def build_parser() -> argparse.ArgumentParser:
     det.add_argument("-v", "--verbose", action="count", default=0,
                      help="progress logging to stderr; repeat (-vv) for "
                           "per-pass timings")
+    det.add_argument("--strict", action="store_true",
+                     help="exit 2 if any TEAL failed to parse instead of "
+                          "analyzing the partial program with a warning")
     det.add_argument("--mode", choices=["app", "logicsig"], default=None,
                      help="declare the target's mode; with --all, skips "
                           "detectors that don't apply to that mode")
@@ -486,6 +528,9 @@ def build_parser() -> argparse.ArgumentParser:
     sgs.add_argument("-v", "--verbose", action="count", default=0,
                      help="progress logging to stderr; repeat (-vv) for "
                           "per-pass timings")
+    sgs.add_argument("--strict", action="store_true",
+                     help="exit 2 if any scanned file fails to parse or "
+                          "reconstruct instead of skipping it with a warning")
     sgs.set_defaults(handler=_cmd_detections_scan)
 
     return p
@@ -497,7 +542,9 @@ def main(argv: list[str] | None = None) -> int:
     _configure_logging(getattr(args, "verbose", 0))
     try:
         return args.handler(args)
-    except FileNotFoundError as e:
+    except (TealQLError, FileNotFoundError) as e:
+        # Every EXPECTED failure (bad target, --strict parse refusal, …)
+        # exits 2 with a clean message; genuine bugs still traceback.
         print(f"error: {e}", file=sys.stderr)
         return 2
 

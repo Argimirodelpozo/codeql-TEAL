@@ -51,8 +51,12 @@ _PARSER = _ts.Parser(_LANG)
 
 # Tree-sitter child types that are not program statements / not emitted.
 # Any ``pragma*`` node (``pragma_version`` / ``pragma_typetrack`` / ...) is
-# also dropped — pragmas produce no rows.
-_TRIVIA = frozenset({"comment", "ERROR"})
+# also dropped — pragmas produce no rows. ``ERROR`` nodes are NOT trivia:
+# they are unparseable source and are handled explicitly in
+# :func:`parse_nodes` so the drop is *recorded* as a ParseDiagnostic
+# instead of silently shrinking the program (a security scan of a
+# partially-parsed contract must not read as "clean").
+_TRIVIA = frozenset({"comment"})
 
 
 def _is_trivia(node_type: str) -> bool:
@@ -110,7 +114,11 @@ def _loc(node) -> tuple[int, int, int, int]:
     )
 
 
-def parse_nodes(sources: dict[str, bytes | str]) -> list:
+def parse_nodes(
+    sources: dict[str, bytes | str],
+    *,
+    diagnostics: "list | None" = None,
+) -> list:
     """Parse ``{file: source}`` into :class:`tealtools.ast.AstNode` objects.
 
     One node per opcode (plus ``Label`` nodes and the program-root ``Source``
@@ -119,7 +127,15 @@ def parse_nodes(sources: dict[str, bytes | str]) -> list:
     A ``Label`` is emitted only when it is a reachable CFG node (dead-subroutine
     entry labels are dropped) -- gated by the control-flow reachability over the
     opcode+label set.
+
+    ``diagnostics``: optional accumulator. Every top-level tree-sitter
+    ``ERROR`` span (unparseable source, other than the recovered
+    ``int <NamedConstant>`` form) is DROPPED from the node stream; when an
+    accumulator is passed, each drop appends a
+    :class:`tealtools.errors.ParseDiagnostic` so callers can tell a fully-
+    parsed program from a partial one.
     """
+    from ..errors import ParseDiagnostic
     from ..graph import _slice_source        # lazy: graph imports this module
     out: list = []
     for file, src in sources.items():
@@ -127,8 +143,22 @@ def parse_nodes(sources: dict[str, bytes | str]) -> list:
             src = src.encode("utf-8")
         root = _PARSER.parse(src).root_node
 
-        real = [c for c in root.children
-                if not _is_trivia(c.type) or _named_int_error(c)]
+        real: list = []
+        for c in root.children:
+            if _named_int_error(c):
+                real.append(c)
+            elif c.type == "ERROR":
+                if diagnostics is not None:
+                    text = src[c.start_byte:c.end_byte].decode("utf-8", "replace")
+                    snippet = text.splitlines()[0].strip()[:80] if text.strip() else ""
+                    diagnostics.append(ParseDiagnostic(
+                        file=file,
+                        start_line=c.start_point[0] + 1,
+                        end_line=c.end_point[0] + 1,
+                        snippet=snippet,
+                    ))
+            elif not _is_trivia(c.type):
+                real.append(c)
         if not real:
             continue
 
