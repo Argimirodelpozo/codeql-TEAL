@@ -326,6 +326,41 @@ def _validated_intervals(prog: SSAProgram) -> dict:
         if all(dominates(block_a, u, a.location.line)
                for u in x.uses if u not in test):
             out.setdefault(x, []).append((lo, hi))
+
+    # Branch-to-reject validation: a `slice(X) == clean` that drives a `bz` /
+    # `bnz` to a rejection pins those bytes on the approval path exactly as an
+    # `assert` does -- but the loop above only sees a literal `assert`.
+    # PathPredicateAnalysis derives the same `slice == clean` fact from the branch
+    # (polarity + rejection + cross-BB dominance handled) as an "eq" predicate
+    # holding at every BB past the check. Clear X's range when that predicate
+    # holds at every OTHER use of X -- the same global-soundness contract.
+    from ..path_predicates import PathPredicateAnalysis
+    pp = PathPredicateAnalysis(prog)
+
+    def _eq_clean_at(value, use) -> bool:
+        return any(
+            bc.kind == "eq" and bc.value is value and bc.args and _is_clean(bc.args[0])
+            for bc in pp.predicates_at(use.location.file, use.location.line)
+        )
+
+    for a in prog.assignments:
+        if a.op != "==" or len(a.inputs) != 2:
+            continue
+        slc = win = None
+        for s, other in ((a.inputs[1], a.inputs[0]), (a.inputs[0], a.inputs[1])):
+            if isinstance(s, SSAVar) and _is_clean(other):
+                info = _slice_of(s)
+                if info is not None:
+                    slc, win = s, info
+                    break
+        if win is None:
+            continue
+        x, lo, hi = win
+        if not isinstance(x, SSAVar):
+            continue
+        uses = [u for u in x.uses if u is not getattr(slc, "defined_by", None)]
+        if uses and all(_eq_clean_at(slc, u) for u in uses):
+            out.setdefault(x, []).append((lo, hi))
     return {v: Intervals(parts) for v, parts in out.items()}
 
 

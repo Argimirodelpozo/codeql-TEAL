@@ -167,6 +167,20 @@ class TestValidationNarrowing:
         r, read, _ = self._read(_VALIDATE.format(i=20))
         assert r.is_scalar_tainted(read)
 
+    def test_branch_to_reject_validates_like_assert(self):
+        # `slice == const; bz reject` pins the bytes on the approval path just as
+        # `assert` does -- recognised via path predicates, not only literal assert.
+        teal = ("#pragma version 8\n"
+                "txna ApplicationArgs 0\nextract 0 8\nbyte 0x0011223344556677\n==\nbz reject\n"
+                "txna ApplicationArgs 0\nint 3\ngetbyte\nreturn\n"
+                "reject:\nint 0\nreturn\n")
+        p = SSAProgram.from_text(teal, name="t")
+        r = byte_taint(p, validate=True)
+        read = [a for a in p.assignments if a.op == "getbyte"][-1].outputs[0]
+        arg = [a for a in p.assignments if a.op == "txna"][0].outputs[0]
+        assert not r.is_scalar_tainted(read)                  # bytes 0..7 validated
+        assert r.tainted_bytes(arg) == Intervals([(8, INF)])
+
     def test_forward_only_does_not_clear(self):
         # without validate=True the checked prefix is NOT cleared.
         p = SSAProgram.from_text(_VALIDATE.format(i=3), name="t")
