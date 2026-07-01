@@ -356,7 +356,8 @@ def _entry_guards(lifter, def_of, dom_by_sub, taint, inv_ret=None):
     return eg, called
 
 
-def _tainted_sink_flows(lifter, sink_of, taint=None, trusted_args=frozenset()) -> list:
+def _tainted_sink_flows(lifter, sink_of, taint=None, trusted_args=frozenset(),
+                        sender_only=False) -> list:
     """Core taint-to-sink engine. ``sink_of(intrinsic)`` yields
     ``(label, severity, value_args)`` for each sink the op represents -- where
     ``value_args`` is the operand(s) whose taint makes it a finding. Returns
@@ -364,7 +365,14 @@ def _tainted_sink_flows(lifter, sink_of, taint=None, trusted_args=frozenset()) -
     procedural dominance, validation-subroutine descent, caller entry-guards, and
     cross-contract ``trusted_args``. Parameterising the sink lets one engine power
     inner-txn fields (fund-flow / appcall / asset / asset-admin) AND persistent
-    state writes."""
+    state writes.
+
+    ``sender_only``: count ONLY sender/creator guards toward ``guarded``, not
+    input-value checks. The byte-precise partial-fund-flow detector sets this --
+    it drives the engine with a byte-interval taint map that has ALREADY cleared
+    validated byte ranges, so an input-slot guard would double-count (and, worse,
+    reproduce the slot-granular blind spot: a check of one sub-field spuriously
+    guarding a different, unchecked sub-field of the same arg)."""
     if taint is None:
         taint = user_input_taint(lifter, trusted_args)
     def_of = _def_map(lifter)
@@ -408,6 +416,12 @@ def _tainted_sink_flows(lifter, sink_of, taint=None, trusted_args=frozenset()) -
                         guards.append(Guard("caller", None, True, False))
                     if any(egp.get(i, (False, False))[1] for i in feeding):
                         guards.append(Guard("caller", None, False, True))
+                    if sender_only:
+                        # Byte-taint owns input-validation (byte-precise); drop
+                        # input-slot guards so only sender/creator checks suppress
+                        # (and FundFlowFinding.guarded, a property over `guards`,
+                        # reflects it).
+                        guards = [g for g in guards if g.checks_sender]
                     guarded = any(g.checks_input or g.checks_sender for g in guards)
                     param_derived = bool(feeding) and not guarded and sub.id not in called
                     findings.append(FundFlowFinding(
@@ -429,13 +443,15 @@ def _itxn_sink_of(fields):
     return sink_of
 
 
-def tainted_itxn_flows(lifter, fields, taint=None, trusted_args=frozenset()) -> list:
+def tainted_itxn_flows(lifter, fields, taint=None, trusted_args=frozenset(),
+                       sender_only=False) -> list:
     """User-input-tainted values reaching one of the inner-txn ``fields`` (a
     ``{field_name: severity}`` map). Powers fund-flow (Receiver/Amount/Close/Rekey),
     arbitrary-inner-appcall (ApplicationID), -asset (XferAsset), -asset-admin (acfg
     roles) -- each gets the IR layer's across-callsub dominance + cross-contract
     suppression for free."""
-    return _tainted_sink_flows(lifter, _itxn_sink_of(fields), taint, trusted_args)
+    return _tainted_sink_flows(lifter, _itxn_sink_of(fields), taint, trusted_args,
+                               sender_only)
 
 
 # Persistent-state-write ops -> the index of their KEY operand in the lifted
@@ -488,10 +504,11 @@ def tainted_logs(lifter, taint=None, trusted_args=frozenset()) -> list:
     return _tainted_sink_flows(lifter, _log_sink_of, taint, trusted_args)
 
 
-def tainted_fund_flows(lifter, taint=None, trusted_args=frozenset()) -> list:
+def tainted_fund_flows(lifter, taint=None, trusted_args=frozenset(),
+                       sender_only=False) -> list:
     """Fund-flow specialisation of :func:`tainted_itxn_flows` -- tainted values
     reaching Receiver / Amount / CloseRemainderTo (+ asset variants)."""
-    return tainted_itxn_flows(lifter, _FUND_FIELDS, taint, trusted_args)
+    return tainted_itxn_flows(lifter, _FUND_FIELDS, taint, trusted_args, sender_only)
 
 
 def fund_flow_report(lifter, name: str = "<program>") -> str:

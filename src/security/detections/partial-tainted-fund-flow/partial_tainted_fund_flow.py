@@ -93,6 +93,10 @@ class PartialTaintedFundFlowDetector:
     name: ClassVar[str] = "sec-guide/partial-tainted-fund-flow"
     applies_to: ClassVar[frozenset] = frozenset({"app"})
     violation_cls: ClassVar[type] = PartialTaintedFundFlowViolation
+    # The IR sibling computes byte-taint on the same substrate but adds
+    # across-callsub guard dominance + interprocedural frame-resolved taint; it
+    # falls back to THIS detector when the contract doesn't lift.
+    superseded_by: ClassVar[str] = "ir-partial-tainted-fund-flow"
 
     def __init__(self, prog: SSAProgram, *, file: Optional[str] = None,
                  path_predicates: "Optional[PathPredicateAnalysis]" = None):

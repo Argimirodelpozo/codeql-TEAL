@@ -122,6 +122,7 @@ _BASELINE: dict[str, tuple[int, int, int, int]] = {
     "ir-tainted-fund-flow": (5, 0, 0, 6),
     "ir-tainted-log": (2, 0, 0, 3),
     "ir-tainted-state-write": (2, 0, 0, 3),
+    "ir-partial-tainted-fund-flow": (3, 0, 0, 3),
     "is-deletable": (1, 0, 0, 1),
     "is-updatable": (1, 0, 0, 1),
     "lease-validation": (1, 0, 0, 1),

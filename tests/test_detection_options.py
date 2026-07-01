@@ -16,13 +16,14 @@ def _opts(d: dict) -> DetectionOptions:
 
 
 def test_superseded_detector_skipped_by_default():
-    # tainted-fund-flow is superseded_by ir-tainted-fund-flow (which falls back to
-    # it internally), so a default scan runs only the IR one -- no duplicate
-    # findings. partial-tainted-fund-flow is a different detector, untouched.
+    # Both SSA fund-flow detectors are superseded by their IR siblings (which fall
+    # back to them internally), so a default scan runs only the IR ones -- no
+    # duplicate findings.
     dets = _opts({}).detectors_for("a.teal")
     assert "ir-tainted-fund-flow" in dets
     assert "tainted-fund-flow" not in dets
-    assert "partial-tainted-fund-flow" in dets
+    assert "ir-partial-tainted-fund-flow" in dets
+    assert "partial-tainted-fund-flow" not in dets
 
 
 def test_superseded_overridable_by_explicit_only():
