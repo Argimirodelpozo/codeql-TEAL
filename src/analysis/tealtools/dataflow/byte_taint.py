@@ -389,6 +389,39 @@ class ByteTaintResult:
             lines.append(f"  tainted scalars: {len(self.scalar_taint)}")
         return "\n".join(lines)
 
+    def render(self, *, width: int = 32) -> str:
+        """A byte-STRIP debug view: each tainted value's byte layout as a bar
+        (``█`` attacker-tainted, ``·`` clean/validated), anchored to its source
+        line + producing opcode. Byte granularity at a glance -- e.g. a checked
+        selector shows a clean ``·`` head and a tainted ``█`` tail, and a
+        ``validate=True`` clearing is visible as ``·`` where taint used to be.
+
+        ``width``: cells shown for an open-ended (``∞``) or over-wide value,
+        suffixed ``→``."""
+        lines = ["byte-interval taint  (█ attacker-tainted   · clean/validated)"]
+        rows = []
+        for v, iv in self.bytes_taint.items():
+            if not iv:
+                continue
+            line = getattr(v, "line", 0)
+            d = getattr(v, "defined_by", None)
+            op = (f"{d.op} {d.immediates}".strip() if d is not None else str(v))
+            rows.append((line, op, _byte_strip(iv, _byte_length(v), width), str(iv)))
+        for line, op, strip, rng in sorted(rows, key=lambda r: (r[0], r[1])):
+            lines.append(f"  L{line:<4} {op:24.24} {strip}  {rng}")
+        if self.scalar_taint:
+            lines.append(f"  + {len(self.scalar_taint)} scalar-tainted (uint64) value(s)")
+        return "\n".join(lines)
+
+
+def _byte_strip(iv: Intervals, length: Optional[int], width: int = 32) -> str:
+    """Intervals -> a byte bar: one cell per byte (``█`` tainted, ``·`` clean).
+    An unknown / open (``∞``) length renders ``width`` cells + ``→``."""
+    open_end = length is None or any(hi == INF for _, hi in iv.parts)
+    n = width if length is None else min(int(length), width)
+    cells = "".join("█" if iv.overlaps(i, i + 1) else "·" for i in range(n))
+    return cells + ("→" if open_end else "")
+
 
 def byte_taint(
     prog: SSAProgram,
@@ -665,3 +698,23 @@ def byte_taint_view(
         if result.is_scalar_tainted(sv):
             scalar_view.add(id(reg))
     return IrByteTaint(bytes_view, scalar_view, covered)
+
+
+def _main(argv) -> int:
+    """CLI: byte-strip taint view for a contract.
+
+        python -m tealtools.dataflow.byte_taint <db|file.teal> [--no-validate]
+    """
+    args = [a for a in argv if not a.startswith("-")]
+    if not args:
+        print(_main.__doc__.strip())
+        return 1
+    validate = "--no-validate" not in argv
+    prog = SSAProgram(args[0], verbose=False)
+    print(byte_taint(prog, validate=validate).render())
+    return 0
+
+
+if __name__ == "__main__":
+    import sys
+    raise SystemExit(_main(sys.argv[1:]))

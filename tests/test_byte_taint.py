@@ -9,7 +9,9 @@ separately, including the byte-range -> scalar bridge (``getbyte`` /
 ``extract_uint*`` of a clean offset is NOT tainted).
 """
 from tealtools.ssa import SSAProgram, SSAVar, Phi
-from tealtools.dataflow.byte_taint import Intervals, byte_taint, byte_taint_view, INF
+from tealtools.dataflow.byte_taint import (
+    Intervals, byte_taint, byte_taint_view, _byte_strip, INF,
+)
 from tealtools.lift.lift import _Lifter
 from tealtools.lift import pre_ir
 from tealtools.lift.taint import _intr
@@ -335,3 +337,27 @@ class TestIrCarryUp:
         phantom = object()                      # stands in for a synthesized reg
         assert not view.is_covered(phantom)
         assert view.sink_tainted(phantom)       # conservative: treated as tainted
+
+
+class TestByteStripViz:
+    def test_byte_strip_clean_prefix_tainted_tail(self):
+        # [8, INF) over an open value -> 8 clean cells, then tainted, then arrow.
+        assert _byte_strip(Intervals([(8, INF)]), None, width=16) == "········████████→"
+
+    def test_byte_strip_bounded_length_no_arrow(self):
+        assert _byte_strip(Intervals([(0, 4)]), 4) == "████"
+        assert _byte_strip(Intervals.empty(), 4) == "····"
+
+    def test_byte_strip_interior_window(self):
+        # a tainted [2,6) window inside an 8-byte value
+        assert _byte_strip(Intervals([(2, 6)]), 8) == "··████··"
+
+    def test_render_anchors_to_source_and_shows_partition(self):
+        teal = ("#pragma version 8\n"
+                "byte 0x0011223344556677\ntxna ApplicationArgs 0\nconcat\n"
+                "pop\nint 1\nreturn\n")
+        p = SSAProgram.from_text(teal, name="t")
+        out = byte_taint(p).render()
+        assert "byte-interval taint" in out
+        assert "concat" in out                 # producing op labelled
+        assert "········█" in out               # the clean-prefix partition is visible
