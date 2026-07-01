@@ -244,11 +244,25 @@ class TestIrCarryUp:
         p = SSAProgram.from_text(teal, name="t")
         lf = _Lifter(p); lf.build()
         view = byte_taint_view(lf)
-        ssa = byte_taint(lf.prog)
+        ssa = byte_taint(lf.prog, validate=True)     # same setting the view uses
         for sv, reg in lf.regs.items():
             if isinstance(sv, (SSAVar, Phi)):
                 assert view.tainted_bytes(reg) == ssa.tainted_bytes(sv)
                 assert view.is_covered(reg)
+
+    def test_validated_range_clears_at_ir_sink(self):
+        # assert(extract 0 8 arg == const) validates bytes 0..7; the VALIDATED
+        # bytes then feed a sink. validate=True carry-up clears them at the IR
+        # (the partial-taint precision); validate=False leaves them tainted.
+        teal = ("#pragma version 8\n"
+                "txna ApplicationArgs 0\nextract 0 8\nbyte 0x0011223344556677\n==\nassert\n"
+                "txna ApplicationArgs 0\nextract 0 8\nlog\nint 1\nreturn\n")
+        p = SSAProgram.from_text(teal, name="t")
+        lf = _Lifter(p); lf.build()
+        reg = _log_arg_reg(lf)
+        assert reg is not None
+        assert byte_taint_view(lf, validate=False).tainted_bytes(reg) == Intervals([(0, 8)])
+        assert byte_taint_view(lf, validate=True).tainted_bytes(reg) == Intervals.empty()
 
     def test_clean_prefix_partition_survives_to_ir(self):
         # concat(clean8, arg) logged: at the IR the log operand still carries the
