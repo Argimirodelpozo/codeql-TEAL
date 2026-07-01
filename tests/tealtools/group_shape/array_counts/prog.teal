@@ -1,0 +1,40 @@
+#pragma version 6
+// Fixture for group_reasoning.array_counts / relative_slot.
+// Reads a preceding sibling (GroupIndex-1), a following sibling (GroupIndex+1),
+// and its own array fields -- exercising relative-index resolution + per-slot
+// array-count minima. Mirrors the wormhole completeTransfer group idiom.
+
+// --- preceding sibling (this-1): an appl reading ApplicationArgs 1 + Accounts 2
+txn GroupIndex
+int 1
+-
+gtxns TypeEnum
+int 6            // appl
+==
+assert
+txn GroupIndex
+int 1
+-
+gtxnsa ApplicationArgs 1   // => this-1 NumAppArgs >= 2
+pop
+txn GroupIndex
+int 1
+-
+gtxnsa Accounts 2          // => this-1 NumAccounts >= 2 (Sender implicit)
+pop
+
+// --- following sibling (this+1): read one arg
+txn GroupIndex
+int 1
++
+gtxnsa ApplicationArgs 0   // => this+1 NumAppArgs >= 1
+pop
+
+// --- own txn reads
+txna Accounts 3            // => this NumAccounts >= 3
+pop
+txna ApplicationArgs 2     // => this NumAppArgs >= 3
+pop
+
+int 1
+return

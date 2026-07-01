@@ -84,6 +84,136 @@ def classify(operand: object) -> Optional[GroupRef]:
     return None
 
 
+# ---------------------------------------------------------------------------
+# Relative-index group members + per-member array sizing
+#
+# A contract that reads a sibling at a *relative* position -- ``gtxns F`` where
+# the popped index is ``Txn.GroupIndex - 1`` (a preceding txn) or ``+ 1`` (a
+# following one) -- forces a member at that offset on every approving run. And
+# ``gtxnsa F i`` / ``txna F i`` / ``gtxna N F i`` force the addressed member to
+# carry at least enough ``F`` elements, or the read panics. Both facts are pure
+# static reads of the bytecode; :func:`classify` (v1) punts on the stack-index
+# ``gtxns`` and emits no array sizing. The two helpers below recover them, kept
+# ADDITIVE (separate from ``classify``/``analyze`` so existing snapshots are
+# untouched) and consumed by the verifier's harness group setup.
+# ---------------------------------------------------------------------------
+
+
+def _const_int(operand: object) -> Optional[int]:
+    """``operand`` as a Python int if it's a compile-time integer literal
+    (a :class:`Const` or a const-propagated :class:`SSAVar`/:class:`Phi`)."""
+    if isinstance(operand, Const):
+        cv = operand
+    else:
+        cv = getattr(operand, "const_value", None)
+    if isinstance(cv, Const) and cv.kind == "int":
+        try:
+            return int(cv.value)
+        except (ValueError, TypeError):
+            return None
+    return None
+
+
+def _is_group_index(operand: object) -> bool:
+    """True when ``operand`` is produced directly by ``txn GroupIndex``."""
+    a = getattr(operand, "defined_by", None)
+    return a is not None and a.op == "txn" and a.immediates.strip() == "GroupIndex"
+
+
+def relative_slot(idx_operand: object) -> Optional[str]:
+    """The group slot a ``gtxns``/``gtxnsa`` stack index addresses, as a slot
+    string: ``"this"`` (``Txn.GroupIndex``), ``"this-k"``/``"this+k"`` (a
+    ``GroupIndex -/+ k`` sibling), or ``"gtxn[N]"`` (a constant index). ``None``
+    when the index isn't a statically-recognised group position.
+
+    Relies on the SSA convention (confirmed on the substrate): a binary op's
+    ``inputs`` are ``[top_of_stack, deeper]`` and the value is ``deeper OP top``
+    -- so ``txn GroupIndex; intc_1; -`` has ``inputs=[1, GroupIndex]`` and means
+    ``GroupIndex - 1``. Run ``propagate_scratch_values()`` first so a ``load N``
+    of a stored ``GroupIndex-1`` forwards to the arithmetic.
+    """
+    k = _const_int(idx_operand)
+    if k is not None:
+        return f"gtxn[{k}]"
+    if _is_group_index(idx_operand):
+        return "this"
+    a = getattr(idx_operand, "defined_by", None)
+    if a is None or a.op not in ("+", "-") or len(a.inputs) != 2:
+        return None
+    top, deeper = a.inputs[0], a.inputs[1]
+    # value = deeper OP top; a group-relative index is GroupIndex +/- const.
+    if _is_group_index(deeper):
+        kc = _const_int(top)
+        if kc is not None:
+            if kc == 0:
+                return "this"
+            return f"this+{kc}" if a.op == "+" else f"this-{kc}"
+    if a.op == "+" and _is_group_index(top):        # commute: const + GroupIndex
+        kc = _const_int(deeper)
+        if kc is not None:
+            return "this" if kc == 0 else f"this+{kc}"
+    return None
+
+
+# gtxnsa/txna array field -> (Num-field, the +1 the encoder's panic bound needs).
+# ApplicationArgs/Assets are 0-based on their count (panic i >= NumX  => need
+# NumX >= i+1); Accounts/Applications include an implicit element 0 = Sender /
+# current app (panic i > NumX => need NumX >= i). Mirrors the encoder's
+# elem_panic (chc_encoder/ops.py) so the recovered minimum unblocks exactly the
+# reads the contract makes.
+_ARRAY_FIELD_NUM = {
+    "ApplicationArgs": ("NumAppArgs", 1),
+    "Assets": ("NumAssets", 1),
+    "Accounts": ("NumAccounts", 0),
+    "Applications": ("NumApplications", 0),
+}
+
+
+def array_counts(prog: SSAProgram) -> dict[str, dict[str, int]]:
+    """The minimum array-element counts a contract's ``gtxnsa``/``gtxna``/``txna``
+    reads force on each group slot: ``{slot: {NumField: min_count}}``.
+
+    A member addressed by ``F i`` must carry at least ``min_count`` ``F`` elements
+    or the read panics (so the accepting path is unreachable -- exactly the
+    completeTransfer vacuity: the harness pins siblings to ``NumAppArgs=0`` while
+    the core call is read at ``ApplicationArgs 1``). Slots are ``relative_slot``
+    strings (``"this"``, ``"this-1"``, ``"gtxn[0]"``, …). Run
+    ``propagate_scratch_values()`` on ``prog`` first for relative indices.
+    """
+    out: dict[str, dict[str, int]] = {}
+    for a in prog:
+        if a.op == "txna":
+            slot, imm = "this", a.immediates
+        elif a.op == "gtxna":
+            parts = a.immediates.split()          # "N F i"
+            if len(parts) < 3:
+                continue
+            slot, imm = f"gtxn[{parts[0]}]", f"{parts[1]} {parts[2]}"
+        elif a.op == "gtxnsa":
+            slot = relative_slot(a.inputs[0]) if a.inputs else None
+            imm = a.immediates                    # "F i"
+        else:
+            continue
+        if slot is None:
+            continue
+        toks = imm.split()
+        if len(toks) < 2:
+            continue
+        field = toks[0]
+        try:
+            idx = int(toks[1])
+        except ValueError:
+            continue
+        num = _ARRAY_FIELD_NUM.get(field)
+        if num is None:
+            continue
+        num_field, bump = num
+        need = idx + bump
+        slot_m = out.setdefault(slot, {})
+        slot_m[num_field] = max(slot_m.get(num_field, 0), need)
+    return out
+
+
 @dataclass(frozen=True)
 class GroupConstraint:
     """One semantic constraint a contract forces on the group.
