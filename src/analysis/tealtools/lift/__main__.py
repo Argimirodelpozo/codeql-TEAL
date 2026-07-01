@@ -20,4 +20,5 @@ def main(argv=None) -> int:
     return 0
 
 
-raise SystemExit(main())
+if __name__ == "__main__":
+    raise SystemExit(main())

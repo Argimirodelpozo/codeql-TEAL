@@ -11,6 +11,7 @@ plus the types the lift adds that TEAL lacks (polymorphic ``load`` /
 from __future__ import annotations
 
 import copy
+import logging
 
 import puya.ir.models as M
 from puya.ir.avm_ops import AVMOp
@@ -22,6 +23,8 @@ from . import pre_ir
 from .lift import _Lifter
 from .teal_const import _const_bytes, _load_src, _tmpl_name
 from ..ast.literals import tokenize_operands as _tokenize_operands
+
+logger = logging.getLogger("tealtools.lift")
 
 _IRT = {
     "uint64": PT.uint64, "bytes": PT.bytes, "bool": PT.bool,
@@ -407,8 +410,8 @@ def to_puya(prog):
     try:
         prog.propagate_constants()
         prog.propagate_scratch_constants()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("pre-lift scratch const-propagation skipped: %s", e)
     # Build via the lifter directly (not `lift()`) so we keep its SSAVar->Register
     # map for the byte-length sized-bytes bridge below.
     lifter = _Lifter(prog)
@@ -469,7 +472,8 @@ def to_puya(prog):
     try:
         prog.propagate_byte_lengths()
         bytelen = _byte_length_map(lifter, t)
-    except Exception:
+    except Exception as e:
+        logger.debug("byte-length sized-bytes bridge skipped: %s", e)
         bytelen = {}
     _recover_ir_types(main, subs, byte_lengths=bytelen)
     _recover_encoded_types(main, subs)

@@ -8,11 +8,15 @@ Both read the lifter's maps via a duck-typed ``lifter`` (never imports lift).
 """
 from __future__ import annotations
 
+import logging
+
 from ..ssa import Const, Phi, SSAVar
 from . import pre_ir
 from .optypes import (_BYTES_CONSUME, _BYTES_OPS, _U64_CONSUME, _U64_OPS,
                       _field_type, _imm0, avm)
 from .teal_const import _const_bytes
+
+logger = logging.getLogger("tealtools.lift")
 
 
 def _empty_bytes(b) -> bool:
@@ -28,7 +32,10 @@ def _itxn_field_avm(field: str):
     try:
         from puya.awst.txn_fields import TxnField
         w = str(getattr(TxnField[field], "wtype", "")).lower()
-    except Exception:
+    except (ImportError, AttributeError, KeyError) as e:
+        # ImportError: puya moved the registry; KeyError: unknown field name
+        # (the documented None case); AttributeError: enum-member API change.
+        logger.debug("itxn-field typing unavailable for %r: %s", field, e)
         return None
     if "byte" in w or "account" in w or "string" in w:
         return "b"

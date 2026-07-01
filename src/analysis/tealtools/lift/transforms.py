@@ -593,7 +593,10 @@ def duplicate_cross_subroutine_blocks(prog, _max_rounds: int = 12) -> int:
             # (the owner's names may already be used by S -> SSA "assigned multiple
             # times"). Object identity carries the rename through the clone.
             regmap = {rid: memo[rid] for rid in defined if rid in memo}
-            for r in regmap.values():
+            # Deterministic suffix assignment: `defined` is a set of id()s whose
+            # iteration order varies run-to-run, so sort the clones by their
+            # stable SSA identity before numbering (keeps rendered IR diffable).
+            for r in sorted(regmap.values(), key=lambda r: (r.name, r.version)):
                 renames[0] += 1
                 r.name = f"{r.name}~d{renames[0]}"
             idmap = {old: next_bid + i for i, old in enumerate(foreign)}

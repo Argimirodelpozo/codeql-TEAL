@@ -2,7 +2,7 @@
 (``lift(prog) -> pre_ir.Program``) — the decompiler direction: stack-machine TEAL
 SSA (frame slots, scratch, shuffles) becomes value-based, typed, subroutine IR.
 
-Two structural rewrites (both contained, no substrate change):
+Two structural rewrites (both contained in the lifted IR):
 
 - **Subroutine partitioning** (via :func:`tealtools.structure.analyze_structure`):
   routing/handler BBs become ``main``; each ``callsub``-reachable routine becomes
@@ -12,6 +12,13 @@ Two structural rewrites (both contained, no substrate change):
   unroll. Here ``frame_dig -k`` reads param ``nargs-k`` and other slots read/write
   a local (single values), the fat frame ops drop, and the now-dead stack-model
   phis are pruned by liveness. Heuristic, but removes essentially all the noise.
+
+.. warning:: The lift is NOT free of substrate change: before lowering,
+   :func:`_prune_dead_assert_edges` MUTATES the input :class:`SSAProgram` (it
+   removes always-failing blocks' dead CFG edges and rebuilds the affected join
+   phis). Callers that share the SSAProgram with SSA-level analyses should lift
+   a FRESH program built from the same source, as ``security.common.ir_lifter``
+   does.
 
 Constants and trivial single-pred phis are inlined; types come from :mod:`optypes`.
 """
@@ -178,7 +185,13 @@ def _val_note(local_id: str, t, cap: int = 40) -> str | None:
 
 
 def lift(prog: SSAProgram) -> pre_ir.Program:
-    """Lift ``prog`` into the Puya-shaped IR model (see module docstring)."""
+    """Lift ``prog`` into the Puya-shaped IR model (see module docstring).
+
+    Warning: MUTATES ``prog`` -- :func:`_prune_dead_assert_edges` drops dead
+    CFG edges and rebuilds the affected join phis on the input SSAProgram.
+    Callers sharing ``prog`` with SSA-level analyses should lift a fresh
+    program built from the same source (as ``security.common.ir_lifter``
+    does)."""
     return _Lifter(prog).build()
 
 
@@ -263,7 +276,6 @@ class _Lifter:
         # (folks-v3 lift+lower ~3s either way; SSA *construction* dominates, ~17-40s).
         # Frame ops are handled on the clean stack inside `_resim` (frame_dig pushes
         # its param/local, frame_bury pops).
-        _resim_subs = set(struct.subroutines)
         self.resim_args: dict = {}                # id(assignment) -> [pre-IR operand]
         self.resim_phis: dict = {}                # PyBlock -> [pre_ir.Phi]
         self.resim_exit: dict = {}                # PyBlock -> re-simulated exit stack
@@ -378,13 +390,12 @@ class _Lifter:
             self._setup_frame(gb, params)
             self._setup_shuffles(gb)
             self._name_group(gb)
-            # `main` and every non-proto sub thread the whole-program stack (which
-            # PySSA fattens), so re-simulate their value-stacks for clean operands.
-            if s is None or s in _resim_subs:
-                entry = (s.entry_bb if s is not None
-                         else next((b for b in gb if not b.predecessors), gb[0]))
-                self._resim(gb, entry, params)
-                self.resim_blocks.update(gb)
+            # Re-simulate EVERY group's value-stack -- main and all subs alike,
+            # all-or-nothing (see the rationale above the resim_* maps).
+            entry = (s.entry_bb if s is not None
+                     else next((b for b in gb if not b.predecessors), gb[0]))
+            self._resim(gb, entry, params)
+            self.resim_blocks.update(gb)
             body = [self._build_block(bb) for bb in gb]
             if s is None:
                 file = all_blocks[0].file.split("/")[-1] if all_blocks else "program"
@@ -899,11 +910,14 @@ class _Lifter:
         return None
 
     def _resim(self, body_list, entry_bb, params):
-        """Re-simulate a non-proto sub's value-stack with correct callsub arities.
-        PySSA caps such a sub's stack at STACK_MAX, so its post-call survivors come
-        back as fat-phi garbage; here operands come from a clean local stack
-        instead. Fills `resim_args` (per-op operands), `resim_phis` (merge phis),
-        `resim_exit` (per-block stacks)."""
+        """Re-simulate a routine's value-stack with correct callsub arities. Runs
+        on main and EVERY sub, all-or-nothing: re-simulating only some subs would
+        mismatch the shared call interface and corrupt the others (see the
+        rationale in `build`). PySSA caps a non-proto sub's stack at STACK_MAX so
+        its post-call survivors come back as fat-phi garbage, and even a proto sub
+        can lose a cross-call stack survivor; here operands come from a clean
+        local stack instead. Fills `resim_args` (per-op operands), `resim_phis`
+        (merge phis), `resim_exit` (per-block stacks)."""
         body = set(body_list)
 
         def isucc(b):
