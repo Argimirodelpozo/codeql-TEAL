@@ -111,6 +111,40 @@ _VALIDATE = (
 )
 
 
+class TestInterproceduralFrameBridge:
+    """Taint fed INTO a subroutine as an argument crosses the ``callsub`` /
+    ``proto`` / ``frame_dig`` boundary via ``frame_param_sources`` — byte
+    granularity preserved, no IR lift needed."""
+
+    def test_param_read_inherits_caller_arg_taint(self):
+        teal = (
+            "#pragma version 8\n"
+            "txna ApplicationArgs 0\ncallsub checker\nint 1\nreturn\n"
+            "checker:\nproto 1 0\nframe_dig -1\nint 3\ngetbyte\npop\nretsub\n"
+        )
+        p = SSAProgram.from_text(teal, name="t")
+        r = byte_taint(p)
+        gb = [a for a in p.assignments if a.op == "getbyte"][0]
+        assert r.is_scalar_tainted(gb.outputs[0])   # crossed the call boundary
+
+    def test_interval_granularity_preserved_across_frame(self):
+        # caller passes (8 clean bytes ++ arg); inside the sub, byte 3 is clean
+        # and byte 12 is tainted — the partition survives the frame crossing.
+        teal = (
+            "#pragma version 8\n"
+            "byte 0x0011223344556677\ntxna ApplicationArgs 0\nconcat\n"
+            "callsub checker\nint 1\nreturn\n"
+            "checker:\nproto 1 0\n"
+            "frame_dig -1\nint 3\ngetbyte\npop\n"
+            "frame_dig -1\nint 12\ngetbyte\npop\nretsub\n"
+        )
+        p = SSAProgram.from_text(teal, name="t")
+        r = byte_taint(p)
+        gbs = [a for a in p.assignments if a.op == "getbyte"]
+        assert not r.is_scalar_tainted(gbs[0].outputs[0])   # byte 3: clean prefix
+        assert r.is_scalar_tainted(gbs[1].outputs[0])       # byte 12: tainted suffix
+
+
 class TestValidationNarrowing:
     def _read(self, teal):
         p = SSAProgram.from_text(teal, name="t")

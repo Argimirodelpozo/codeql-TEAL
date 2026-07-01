@@ -26,9 +26,14 @@ Soundness over precision: when an offset or length isn't statically known
 (``extract3`` with a runtime count, an unknown-length ``concat`` prefix),
 the rule falls back to whole-value taint — never a false negative, just a
 lost partition. Any op without a precise rule is handled conservatively
-(output tainted if any input is). This is the **forward** half; a
-``range_assert``-style flow-sensitive pass that *clears* a validated
-sub-range is the planned second layer.
+(output tainted if any input is).
+
+Three layers, all live: (1) the **forward** interval propagation; (2)
+**validation-narrowing** (``validate=True``) that *clears* a sub-range pinned
+by an ``assert(slice(X) == clean)`` guard (see :func:`_validated_intervals`);
+and (3) an **interprocedural** bridge — a ``frame_dig`` param inherits the
+byte-intervals of its caller args via :func:`frame_param_sources`, so taint fed
+INTO a subroutine is tracked through it at byte granularity without an IR lift.
 
 Entry point: :func:`byte_taint`. Standalone — it does not touch the live
 engine.
@@ -381,6 +386,14 @@ def byte_taint(
     seed = sources or _default_sources
     validated = _validated_intervals(prog) if validate else {}
 
+    # Interprocedural bridge: a `frame_dig` param read has no def-use input in
+    # PySSA, so caller taint would stop at the call boundary. `frame_param_sources`
+    # supplies {frame_dig output -> caller-arg operands}; the fixpoint unions each
+    # param's byte-intervals from its callers' args -> a value fed INTO a sub is
+    # tracked through it, at byte granularity, with no IR lift.
+    from ..passes.frame_flow import frame_param_sources
+    frame_src = frame_param_sources(prog)
+
     bt: dict = {}     # value -> Intervals (tainted byte ranges)
     st: set = set()   # scalar (uint64) values that are tainted
 
@@ -520,15 +533,18 @@ def byte_taint(
             return set_scalar(out)
         return False
 
-    def flow_phi(ph) -> bool:
+    def _join(target, operands) -> bool:
+        """Union the byte-intervals + scalar taint of ``operands`` into
+        ``target`` — the meet for a phi (its args) and a frame param (its
+        caller args)."""
         iv = Intervals.empty()
         sc = False
-        for arg in ph.args:
-            iv = iv.union(bget(arg))
-            sc = sc or sget(arg)
-        changed = set_bytes(ph, iv)
+        for o in operands:
+            iv = iv.union(bget(o))
+            sc = sc or sget(o)
+        changed = set_bytes(target, iv)
         if sc:
-            changed = set_scalar(ph) or changed
+            changed = set_scalar(target) or changed
         return changed
 
     changed = True
@@ -537,6 +553,8 @@ def byte_taint(
         for a in prog.assignments:
             changed = flow(a) or changed
         for ph in prog.phis.values():
-            changed = flow_phi(ph) or changed
+            changed = _join(ph, ph.args) or changed
+        for dig_out, args in frame_src.items():
+            changed = _join(dig_out, args) or changed
 
     return ByteTaintResult(bt, st)
