@@ -44,6 +44,26 @@ class _IrTaintSinkViolation:
         return f"{type(self).__name__}({self.message})"
 
 
+class _BoolTaintView:
+    """Adapts a boolean IR taint map ``{id(register): sources}`` to the tiny
+    view interface :func:`fund_flow.ir_taint_chain` needs (``tainted_bytes`` /
+    ``is_scalar_tainted`` / ``is_covered``), so the road witness works for the
+    boolean detectors too. Boolean taint covers every register, so
+    ``is_covered`` is always True (no uncovered fallback)."""
+
+    def __init__(self, taint: dict):
+        self._t = taint
+
+    def tainted_bytes(self, reg):
+        return bool(id(reg) in self._t)
+
+    def is_scalar_tainted(self, reg) -> bool:
+        return id(reg) in self._t
+
+    def is_covered(self, reg) -> bool:
+        return True
+
+
 class _IrTaintSinkDetector:
     name: ClassVar[str]
     applies_to: ClassVar[frozenset] = frozenset({"app"})  # itxn / log / state are app-only
@@ -74,6 +94,26 @@ class _IrTaintSinkDetector:
     def _message(self, f, location: str) -> str:
         raise NotImplementedError
 
+    def _taint_view(self, lifter):
+        """The taint oracle for the road WITNESS -- boolean user-input taint by
+        default (matches the boolean ``_raw_findings``); the byte-precise detector
+        overrides with ``byte_taint_view``."""
+        from tealtools.lift.taint import user_input_taint
+        return _BoolTaintView(user_input_taint(lifter, self.trusted_args))
+
+    def _road(self, lifter, f, view) -> str:
+        """The lifted-IR taint road for finding ``f`` -- ``source → … → sink``, as
+        a witness appended to the message. Empty when unavailable."""
+        reg = getattr(f, "sink_reg", None)
+        if reg is None:
+            return ""
+        from tealtools.lift.fund_flow import ir_taint_road
+        try:
+            road = ir_taint_road(lifter, reg, view)
+        except Exception:
+            return ""
+        return "" if road.startswith("(no ") else road
+
     # -- driver ---------------------------------------------------------------
 
     def detect(self) -> list:
@@ -90,10 +130,14 @@ class _IrTaintSinkDetector:
         findings = self._suppress(lifter, findings)
         src = getattr(self.prog, "source_path", None)
         fname = src.name if src is not None and getattr(src, "name", "") else "<program>"
+        view = self._taint_view(lifter) if findings else None
         out: list = []
         for f in findings:
             location = f"{fname}:{f.line}"
+            msg = self._message(f, location)
+            road = self._road(lifter, f, view) if view is not None else ""
+            if road:
+                msg = f"{msg}  via: {road}"
             out.append(self.violation_cls(
-                f.field, f.severity, tuple(sorted(f.sources)), location,
-                self._message(f, location)))
+                f.field, f.severity, tuple(sorted(f.sources)), location, msg))
         return out

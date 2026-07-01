@@ -36,6 +36,11 @@ class IrPartialTaintedFundFlowDetector(_IrTaintSinkDetector):
     fields = PAYMENT_FUND_FIELDS               # destination/amount fields (no close/rekey)
     fallback = "partial-tainted-fund-flow"     # SSA sibling when the contract doesn't lift
 
+    def _taint_view(self, lifter):
+        # The road witness uses the SAME byte-precise view the findings do.
+        from tealtools.dataflow.byte_taint import byte_taint_view
+        return byte_taint_view(lifter)
+
     def _byte_taint_map(self, lifter) -> dict:
         """Synthetic boolean taint for the guard engine: a register is tainted iff
         the carried-up byte-taint (validate=True) leaves it with UN-validated

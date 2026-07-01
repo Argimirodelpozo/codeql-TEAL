@@ -220,3 +220,19 @@ def test_ir_taint_chain_crosses_callsub_in_ir_ops():
     ops = [c.split()[0] for c in chain]
     assert ops[0] == "txna" and "concat" in ops and ops[-1] == "extract"   # source -> sink
     assert "frame_dig" not in ops                                          # IR abstracts the param hop
+
+
+def test_finding_message_carries_ir_taint_road(tmp_path):
+    # a flagged fund-flow finding includes the lifted-IR taint road as a witness.
+    # Needs a file-backed prog so common.ir_lifter (source_path) takes the IR path.
+    from security import DETECTORS
+    teal = ("#pragma version 8\n"
+            "txna ApplicationArgs 0\nbtoi\nitxn_begin\nint pay\nitxn_field TypeEnum\n"
+            "itxn_field Amount\nitxn_submit\nint 1\nreturn\n")
+    f = tmp_path / "prog.teal"
+    f.write_text(teal)
+    p = SSAProgram(str(f), verbose=False)
+    vs = DETECTORS["ir-tainted-fund-flow"](p).detect()
+    assert vs, "expected an unguarded tainted Amount finding"
+    assert "via:" in vs[0].message and "ApplicationArgs" in vs[0].message
+    assert "→" in vs[0].message                    # a road with >=1 hop

@@ -345,6 +345,7 @@ class FundFlowFinding:
     line: int
     guards: list             # list[Guard]
     param_derived: bool      # sink value flows from a sub param (guard may be upstream)
+    sink_reg: object = None  # the tainted operand register -> ir_taint_road witness
 
     @property
     def guarded(self) -> bool:
@@ -506,7 +507,7 @@ def _tainted_sink_flows(lifter, sink_of, taint=None, trusted_args=frozenset(),
                     param_derived = bool(feeding) and not guarded and sub.id not in called
                     findings.append(FundFlowFinding(
                         label, severity, frozenset(sources),
-                        sub.id, s.line, guards, param_derived))
+                        sub.id, s.line, guards, param_derived, valreg))
     findings.sort(key=lambda f: (f.guarded, f.param_derived,
                                  -_SEV_ORDER[f.severity], f.sub_id, f.line))
     return findings
