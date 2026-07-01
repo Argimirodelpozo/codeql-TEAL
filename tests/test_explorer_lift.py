@@ -25,6 +25,11 @@ from pathlib import Path
 
 import pytest
 
+# The per-contract subprocess imports the Puya-backed lift; without puya the
+# ImportError would be counted as a "crash" and FAIL the threshold instead of
+# skipping like every other lift test file.
+pytest.importorskip("puya")
+
 REPO = Path(__file__).resolve().parents[1]
 EXPLORER = REPO / "tests" / "experimental_IR_lift" / "explorer"
 SRC = REPO / "src" / "analysis"
