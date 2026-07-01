@@ -4,6 +4,9 @@
 * End-to-end analysis commands (``auth`` / ``group-shape`` / ``cost`` /
   ``itxn-report`` / ``path-predicates`` / ``cfg`` / ``all``) run against the
   committed ``.teal`` fixtures via the pure-Python backend.
+* Security subcommands (``detections`` / ``detections-scan``) — smoke +
+  exit-code + JSON-shape coverage (the ``render_json`` regression that broke
+  ``detections-scan`` was invisible without these).
 """
 from __future__ import annotations
 
@@ -20,6 +23,7 @@ from tealtools._utils.serialize import finding_to_dict
 TESTS_ROOT = Path(__file__).resolve().parent
 VULN_DB = TESTS_ROOT / "tealtools" / "auth_domination" / "vuln" / "db"
 SAFE_DB = TESTS_ROOT / "tealtools" / "auth_domination" / "safe" / "db"
+REKEY_VULN_DIR = TESTS_ROOT / "benchmark" / "rekey-to" / "vuln"
 
 
 # ---------------------------------------------------------------------------
@@ -181,3 +185,54 @@ def test_cli_json_all_aggregator(capsys):
         assert isinstance(findings, list), name
     # Every report key has a structured payload.
     assert {"itxn-report", "group-shape", "cost", "path-predicates"} <= data["reports"].keys()
+
+
+# ---------------------------------------------------------------------------
+# End-to-end: security subcommands (detections / detections-scan)
+# ---------------------------------------------------------------------------
+
+
+def test_cli_detections_single_detector_findings(capsys):
+    rc = main(["detections", str(REKEY_VULN_DIR / "no_check.teal"),
+               "--detector", "rekey-to"])
+    assert rc == 1
+    assert capsys.readouterr().out.strip()
+
+
+def test_cli_detections_list(capsys):
+    rc = main(["detections", "--list"])
+    assert rc == 0
+    names = capsys.readouterr().out.split()
+    assert "rekey-to" in names
+    assert "ir-tainted-fund-flow" in names
+
+
+def test_cli_detections_scan_text_exit_one_on_findings(capsys):
+    rc = main(["detections-scan", str(REKEY_VULN_DIR)])
+    assert rc == 1
+    out = capsys.readouterr().out
+    assert "sec-guide/rekey-to" in out
+
+
+def test_cli_detections_scan_json_shape(capsys):
+    rc = main(["detections-scan", str(REKEY_VULN_DIR), "--json"])
+    assert rc == 1
+    data = json.loads(capsys.readouterr().out)
+    assert isinstance(data, list) and data
+    for f in data:
+        assert {"file", "detector", "severity", "message"} <= f.keys()
+    assert any(f["detector"] == "sec-guide/rekey-to" for f in data)
+
+
+def test_cli_detections_scan_config_empty_only_exit_zero(tmp_path, capsys):
+    # A bare approve-everything program fires a dozen detectors by design,
+    # so exercise the clean-exit path by scoping the scan to zero detectors
+    # via a --config rule (which also covers the config-loading path).
+    # NB: "*.teal" not "**/*.teal" — fnmatch's `*` crosses `/`, but a literal
+    # `**/` prefix requires a slash in the rel path, which root-level files
+    # don't have (the scan.py docstring example has this trap).
+    rules = tmp_path / "rules.yml"
+    rules.write_text('rules:\n  - match: "*.teal"\n    only: []\n')
+    rc = main(["detections-scan", str(REKEY_VULN_DIR), "--config", str(rules)])
+    assert rc == 0
+    assert "(no findings)" in capsys.readouterr().out
