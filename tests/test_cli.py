@@ -232,10 +232,31 @@ def test_cli_detections_scan_json_shape(capsys):
     rc = main(["detections-scan", str(REKEY_VULN_DIR), "--json"])
     assert rc == 1
     data = json.loads(capsys.readouterr().out)
-    assert isinstance(data, list) and data
-    for f in data:
-        assert {"file", "detector", "severity", "message"} <= f.keys()
-    assert any(f["detector"] == "sec-guide/rekey-to" for f in data)
+    # Versioned envelope, not a bare list.
+    assert data["schema_version"] >= 1 and data["tool"] == "tealql"
+    findings = data["findings"]
+    assert isinstance(findings, list) and findings
+    for f in findings:
+        assert {"rule_id", "file", "line", "severity", "confidence",
+                "message"} <= f.keys()
+    rk = [f for f in findings if f["rule_id"] == "rekey-to"]
+    assert rk and rk[0]["detector"] == "sec-guide/rekey-to"
+    # At least some findings carry a real 1-based line (not just prose).
+    assert any(isinstance(f["line"], int) for f in findings)
+
+
+def test_cli_detections_scan_sarif(capsys):
+    rc = main(["detections-scan", str(REKEY_VULN_DIR), "--format", "sarif"])
+    assert rc == 1
+    doc = json.loads(capsys.readouterr().out)
+    assert doc["version"] == "2.1.0"
+    run = doc["runs"][0]
+    assert run["tool"]["driver"]["name"] == "tealql"
+    assert run["tool"]["driver"]["rules"]
+    res = run["results"]
+    assert res and all("ruleId" in r and r["locations"] for r in res)
+    # SARIF level maps from severity; high → error.
+    assert any(r["level"] == "error" for r in res)
 
 
 def test_cli_detections_all_drops_superseded(capsys):

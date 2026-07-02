@@ -165,6 +165,24 @@ def severity_of(detector_name: str) -> str:
     return getattr(cls, "severity", DEFAULT_SEVERITY) if cls is not None else DEFAULT_SEVERITY
 
 
+# --- detector confidence ----------------------------------------------------
+#
+# How sure a finding is a TRUE positive, independent of how bad it is if real
+# (that's severity). A detector declares it with a ``confidence`` class
+# attribute; default ``"high"`` — the ported detectors are dominance/flow-proven
+# and low-FP by construction. Lower it on the heuristic ones (e.g. syntactic
+# key-matching, speculative recovery) so triage can sort by trust.
+CONFIDENCE_LEVELS = ("high", "medium", "low")
+DEFAULT_CONFIDENCE = "high"
+
+
+def confidence_of(detector_name: str) -> str:
+    """The confidence level of a detector by its kebab-case name (default
+    ``"high"``)."""
+    cls = DETECTORS.get(detector_name)
+    return getattr(cls, "confidence", DEFAULT_CONFIDENCE) if cls is not None else DEFAULT_CONFIDENCE
+
+
 __all__ = [
     "DETECTORS",
     "common",
@@ -172,6 +190,9 @@ __all__ = [
     "SEVERITY_LEVELS",
     "DEFAULT_SEVERITY",
     "severity_of",
+    "CONFIDENCE_LEVELS",
+    "DEFAULT_CONFIDENCE",
+    "confidence_of",
     *(det for _, _, det, _ in _DETECTION_SPECS),
     *(viol for _, _, _, viol in _DETECTION_SPECS if viol is not None),
 ]

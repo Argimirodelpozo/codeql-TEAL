@@ -329,19 +329,37 @@ class ScanFinding:
             return v.lower()
         return severity_of(self.detector_name)
 
+    @property
+    def confidence(self) -> str:
+        """How likely this finding is a true positive (see
+        :func:`security.confidence_of`)."""
+        from . import confidence_of
+        return confidence_of(self.detector_name)
+
     def format(self) -> str:
         """One-line greppable form:
         ``[SEVERITY] <rel_path>: sec-guide/<name>  <message>``."""
         return (f"[{self.severity.upper()}] {self.rel_path}: "
                 f"sec-guide/{self.detector_name}  {self.violation.pretty()}")  # type: ignore[attr-defined]
 
+    def to_finding(self):
+        """Normalize to the structured :class:`security.findings.Finding` (the
+        stable, versioned record every machine-readable output is built from —
+        carries file + LINE + confidence + witness, not just prose)."""
+        from .findings import normalize
+        return normalize(
+            self.violation, rule_id=self.detector_name,
+            rel_path=self.rel_path, severity=self.severity,
+            confidence=self.confidence,
+        )
+
     def to_dict(self) -> dict:
-        return {
-            "file": str(self.rel_path),
-            "detector": f"sec-guide/{self.detector_name}",
-            "severity": self.severity,
-            "message": self.violation.pretty(),  # type: ignore[attr-defined]
-        }
+        """The stable versioned finding record (schema in
+        :mod:`security.findings`). ``rule_id`` is the kebab detector name;
+        ``detector`` keeps the ``sec-guide/`` display form for back-compat."""
+        d = self.to_finding().to_dict()
+        d["detector"] = f"sec-guide/{self.detector_name}"
+        return d
 
 
 def scan(
@@ -466,4 +484,89 @@ def render_text(findings: list[ScanFinding]) -> str:
 
 
 def render_json(findings: list[ScanFinding]) -> str:
-    return json.dumps([f.to_dict() for f in findings], indent=2)
+    """Versioned JSON envelope: ``{schema_version, tool, findings: [...]}`` where
+    each finding is the stable :class:`security.findings.Finding` record (real
+    ``file`` + ``line``, severity, confidence, structured witness)."""
+    from .findings import SCHEMA_VERSION
+    return json.dumps({
+        "schema_version": SCHEMA_VERSION,
+        "tool": "tealql",
+        "findings": [f.to_dict() for f in findings],
+    }, indent=2)
+
+
+def render_sarif(findings: list[ScanFinding]) -> str:
+    """SARIF 2.1.0 — the format GitHub code scanning / most CI dashboards ingest.
+
+    rules[] are the detectors that fired (id ``sec-guide/<name>``, level from
+    severity, help text from the per-detector README when present); results[]
+    carry a physicalLocation (file + 1-based region) and, when the IR taint road
+    is available, a codeFlows entry from the finding's witness sources."""
+    from . import DETECTORS, severity_of
+    from .findings import SCHEMA_VERSION
+
+    # SARIF level is a 3-value scale; map our 5 onto it.
+    _LEVEL = {"critical": "error", "high": "error", "medium": "warning",
+              "low": "note", "informational": "note"}
+
+    detections_root = Path(__file__).resolve().parent / "detections"
+
+    def _readme(name: str) -> str:
+        # detections/<kebab>/README.md sits beside the detector module.
+        p = detections_root / name / "README.md"
+        try:
+            return p.read_text().strip() if p.exists() else name
+        except Exception:
+            return name
+
+    rules: dict[str, dict] = {}
+    results: list[dict] = []
+    for f in findings:
+        rid = f"sec-guide/{f.detector_name}"
+        if rid not in rules:
+            rules[rid] = {
+                "id": rid,
+                "name": f.detector_name,
+                "shortDescription": {"text": f.detector_name},
+                "fullDescription": {"text": _readme(f.detector_name).split("\n\n")[0][:1000]},
+                "defaultConfiguration": {"level": _LEVEL.get(severity_of(f.detector_name), "warning")},
+            }
+        fnd = f.to_finding()
+        region = {"startLine": fnd.line} if fnd.line else {"startLine": 1}
+        result = {
+            "ruleId": rid,
+            "level": _LEVEL.get(f.severity, "warning"),
+            "message": {"text": fnd.message},
+            "locations": [{
+                "physicalLocation": {
+                    "artifactLocation": {"uri": fnd.file or str(f.rel_path)},
+                    "region": region,
+                }
+            }],
+            "properties": {"confidence": f.confidence, "severity": f.severity},
+        }
+        if fnd.witness and fnd.witness.get("sources"):
+            result["codeFlows"] = [{
+                "threadFlows": [{
+                    "locations": [
+                        {"location": {"message": {"text": f"source: {s}"}}}
+                        for s in fnd.witness["sources"]
+                    ]
+                }]
+            }]
+        results.append(result)
+
+    doc = {
+        "version": "2.1.0",
+        "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+        "runs": [{
+            "tool": {"driver": {
+                "name": "tealql",
+                "informationUri": "https://github.com/Argimirodelpozo/codeql-TEAL",
+                "rules": list(rules.values()),
+            }},
+            "results": results,
+            "properties": {"tealqlSchemaVersion": SCHEMA_VERSION},
+        }],
+    }
+    return json.dumps(doc, indent=2)

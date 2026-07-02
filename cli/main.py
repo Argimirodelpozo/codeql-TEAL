@@ -379,7 +379,8 @@ def _cmd_detections(args) -> int:
 
 def _cmd_detections_scan(args) -> int:
     from security.scan import (
-        DetectionOptions, ScanConfig, failures, render_json, render_text, scan,
+        DetectionOptions, ScanConfig, failures,
+        render_json, render_sarif, render_text, scan,
     )
     from security.config import ConfigError, DetectionConfig
 
@@ -402,7 +403,10 @@ def _cmd_detections_scan(args) -> int:
         options=options,
         strict=getattr(args, "strict", False),
     )
-    print(render_json(findings) if args.json_out else render_text(findings))
+    # --format wins; --json is the back-compat alias for --format json.
+    fmt = args.format or ("json" if args.json_out else "text")
+    renderer = {"text": render_text, "json": render_json, "sarif": render_sarif}[fmt]
+    print(renderer(findings))
     # Exit 1 only on FAILURES: with --options, findings below fail_on
     # (informational is-deletable style) are reported but don't fail CI.
     return 1 if failures(findings, options) else 0
@@ -564,8 +568,12 @@ def build_parser() -> argparse.ArgumentParser:
                      help="yaml/json with `modes:` declaring each file's "
                           "app/logicsig mode; detectors that don't apply to "
                           "a file's mode are skipped")
+    sgs.add_argument("--format", choices=["text", "json", "sarif"], default=None,
+                     help="output format: text (default), json (versioned "
+                          "finding schema), or sarif (SARIF 2.1.0 for GitHub "
+                          "code scanning / CI dashboards)")
     sgs.add_argument("--json", action="store_true", dest="json_out",
-                     help="emit JSON findings instead of text")
+                     help="alias for --format json")
     sgs.add_argument("-v", "--verbose", action="count", default=0,
                      help="progress logging to stderr; repeat (-vv) for "
                           "per-pass timings")
