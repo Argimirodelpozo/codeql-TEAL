@@ -10,8 +10,27 @@ and the txn-source families disagreed on the ``*as`` (stack-index) variants.
 
 Consumers that genuinely need a narrower or wider view should derive it from
 these (filter / union) with a comment, rather than hand-rolling a fresh literal.
+
+AVM metadata map — where each kind of opcode/field table lives (they are NOT
+yet physically consolidated; this is the "start here" index for an AVM version
+bump). Correctness of the op-result-type tables is guarded by
+``tests/test_avm_metadata_drift.py`` against puya's langspec:
+
+  * opcode ARITIES (n_in, n_out) .......... :mod:`tealtools.opcode_sigs`
+  * opcode GROUPS (cmp/logical/txn-source/…) this module
+  * op RESULT TYPES + field types ......... :mod:`tealtools.lift.optypes`
+  * field RANGES / byte-lengths / shuffles  :mod:`tealtools.ssa.models`
+
+:data:`AVM_LANGSPEC_VERSION` records the TEAL/AVM version these tables target;
+bump it (and re-run the drift test) when adding a new AVM version's opcodes.
 """
 from __future__ import annotations
+
+#: The AVM/TEAL langspec version the metadata across the modules listed in the
+#: module docstring is written against. Informational: the drift test pins the
+#: result-type tables to whatever puya (``puyapy``) is installed, so a mismatch
+#: surfaces there; keep this in sync when widening the tables for a new version.
+AVM_LANGSPEC_VERSION = 11
 
 # --- inner-transaction fields ---------------------------------------------
 
