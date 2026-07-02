@@ -43,3 +43,18 @@ tealql = "cli.main:main"
 # ``src/security/``), and the ``cli`` command-line front-end (top-level ``cli/``).
 # Everything runs in pure Python from TEAL source — no external backend.
 packages = ["src/analysis/tealtools", "src/security", "cli"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# pytest-timeout: a generous per-test ceiling so a genuine hang fails loudly
+# instead of blocking CI; every real test is far under this (big-DB corpus
+# tests included).
+timeout = 300
+# Registered markers (so `--strict-markers` stays clean and the gated layers
+# are documented/selectable). Most gates are env-driven today (LIFT_SEMANTICS_*,
+# importorskip("puya")); these are for tests that opt in explicitly.
+markers = [
+    "slow: long-running (big real-DB) test",
+    "puya: requires the puya/puyapy package (the lift backend)",
+]
+filterwarnings = ["ignore::DeprecationWarning"]
