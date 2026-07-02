@@ -12,7 +12,7 @@ FIX = Path(__file__).resolve().parent / "tealtools/group_shape"
 
 
 def _prog(case: str):
-    db = FIX / case / "db"
+    db = FIX / case
     if not db.exists():
         pytest.skip(f"fixture DB not present: {db}")
     from tealtools.ssa import SSAProgram
@@ -57,7 +57,7 @@ class TestCli:
         import json
         from cli.main import main
 
-        db = FIX / "forced" / "db"
+        db = FIX / "forced"
         if not db.exists():
             pytest.skip("fixture DB not present")
         rc = main(["group-layout", str(db), "--json"])

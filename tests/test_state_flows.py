@@ -59,7 +59,7 @@ def updatable_prog():
     from tealtools.ssa import SSAProgram
 
     db = (Path(__file__).resolve().parent
-          / "tealtools/sec_guide/is_updatable/gabe_vuln/db")
+          / "tealtools/sec_guide/is_updatable/gabe_vuln")
     if not db.exists():
         pytest.skip(f"fixture DB not present: {db}")
     try:

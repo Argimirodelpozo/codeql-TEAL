@@ -193,9 +193,9 @@ class TestFlowSensitivity:
 
 
 def _xgov():
-    db = Path(__file__).parent / "dbs" / "xgov-db"
+    db = Path(__file__).parent / "contracts" / "xgov"
     if not db.exists():
-        pytest.skip("xgov-db fixture not present")
+        pytest.skip("xgov fixture not present")
     from tealtools.ssa import SSAProgram
 
     try:

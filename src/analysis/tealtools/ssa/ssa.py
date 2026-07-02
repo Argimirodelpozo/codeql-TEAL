@@ -11,8 +11,7 @@ Canonical idiom:
 ```python
 from tealtools.ssa import SSAProgram, PySSA
 
-prog_ql = SSAProgram(db)
-prog    = PySSA.build(prog_ql)
+prog = SSAProgram("contract.teal")   # a .teal file or a dir of them
 # every existing analysis runs on prog.
 ```
 
@@ -1252,7 +1251,7 @@ def _apply_pyssa_to(
 
     Used by:
 
-    - :meth:`PySSA.build` (with ``source`` == a separate ``prog_ql``).
+    - :meth:`PySSA.build` (with ``source`` == a separately-loaded program).
     - :meth:`SSAProgram.__init__` (with ``source is None`` — reads
       directly from ``prog`` for graph + var const/range/type
       annotations). This lets ``SSAProgram(db)`` route SSA

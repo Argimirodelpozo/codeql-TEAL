@@ -1,10 +1,10 @@
-call site: prog.teal:L13  appl→7000002  (callee/db)  args[0]="process"
+call site: prog.teal:L13  appl→7000002  (callee)  args[0]="process"
   seeds:   (V#1@L6 == "process")
   summary: (V#1@L6 == "process"), (V#1@L6 == "process"), (V#1@L8 != 0)
 
 cross-contract sec-guide findings:
-app7000002  sec-guide/delete-funds-check  callee/db  Application handles DeleteApplication at exit prog.teal:16 without checking balance == min_balance — funds may be locked permanently on deletion.
-app7000002  sec-guide/is-deletable  callee/db  Application is deletable at exit prog.teal:16: OnCompletion == DeleteApplication can reach approval without a guard.
-app7000002  sec-guide/is-updatable  callee/db  Application is updatable at exit prog.teal:16: OnCompletion == UpdateApplication can reach approval without a guard.
-app7000002  sec-guide/unprotected-deletable  callee/db  Application is deletable by anyone at exit prog.teal:16: no sender == creator check guards the approval path for DeleteApplication.
-app7000002  sec-guide/unprotected-updatable  callee/db  Application is updatable by anyone at exit prog.teal:16: no sender == creator check guards the approval path for UpdateApplication.
+app7000002  sec-guide/delete-funds-check  callee  Application handles DeleteApplication at exit prog.teal:16 without checking balance == min_balance — funds may be locked permanently on deletion.
+app7000002  sec-guide/is-deletable  callee  Application is deletable at exit prog.teal:16: OnCompletion == DeleteApplication can reach approval without a guard.
+app7000002  sec-guide/is-updatable  callee  Application is updatable at exit prog.teal:16: OnCompletion == UpdateApplication can reach approval without a guard.
+app7000002  sec-guide/unprotected-deletable  callee  Application is deletable by anyone at exit prog.teal:16: no sender == creator check guards the approval path for DeleteApplication.
+app7000002  sec-guide/unprotected-updatable  callee  Application is updatable by anyone at exit prog.teal:16: no sender == creator check guards the approval path for UpdateApplication.

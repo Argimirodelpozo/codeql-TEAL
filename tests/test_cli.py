@@ -21,8 +21,8 @@ from tealtools._utils.serialize import finding_to_dict
 
 
 TESTS_ROOT = Path(__file__).resolve().parent
-VULN_DB = TESTS_ROOT / "tealtools" / "auth_domination" / "vuln" / "db"
-SAFE_DB = TESTS_ROOT / "tealtools" / "auth_domination" / "safe" / "db"
+VULN_DB = TESTS_ROOT / "tealtools" / "auth_domination" / "vuln"
+SAFE_DB = TESTS_ROOT / "tealtools" / "auth_domination" / "safe"
 REKEY_VULN_DIR = TESTS_ROOT / "benchmark" / "rekey-to" / "vuln"
 
 

@@ -21,7 +21,7 @@ FIXTURE = (
 
 @pytest.fixture(scope="module")
 def xtg():
-    if not (FIXTURE / "caller/db").exists() or not (FIXTURE / "callee/db").exists():
+    if not (FIXTURE / "caller").exists() or not (FIXTURE / "callee").exists():
         pytest.skip("fixture DBs not present (CodeQL unavailable?)")
     from tealtools.ssa import SSAProgram
     from tealtools.dataflow.xcontract_taint_graph import XContractTaintGraph
@@ -29,7 +29,7 @@ def xtg():
 
     reg = load_registry(FIXTURE / "registry.yml")
     try:
-        caller = SSAProgram(str(FIXTURE / "caller/db"))
+        caller = SSAProgram(str(FIXTURE / "caller"))
     except Exception as e:  # pragma: no cover - environment-dependent
         pytest.skip(f"could not build SSAProgram: {e}")
     return XContractTaintGraph.build(caller, reg)

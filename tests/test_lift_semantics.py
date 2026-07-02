@@ -18,7 +18,7 @@ that make the lift correct*, using oracles we already have:
     ``mir_to_teal`` -- to actual TEAL ops. Far stricter than the IR optimiser:
     it asks whether our IR realises as a coherent AVM program, not merely that
     the optimiser tolerates it -- running Puya's own pre-MIR sequence (split
-    ValueTuples -> ``destructure_ssa`` -> MIR -> TEAL). ``repro-db`` lowers fully
+    ValueTuples -> ``destructure_ssa`` -> MIR -> TEAL). ``repro`` lowers fully
     (a real assertion). The remaining real-contract gap is the lift emitting
     registers *used but never defined* (the frame / dynamic-scratch value-loss),
     which ``destructure_ssa`` rejects; those stay TRACKED xfail (flip to xpass
@@ -43,7 +43,7 @@ pytest.importorskip("puya")
 from tealtools.lift import pre_ir  # noqa: E402
 
 _ROOT = Path(__file__).resolve().parent
-_REAL_DB_DIR = _ROOT / "dbs"
+_REAL_DB_DIR = _ROOT / "contracts"
 _CORPUS_DIR = _ROOT / "experimental_IR_lift" / "puya"
 _EXPLORER_DIR = _ROOT / "experimental_IR_lift" / "explorer"
 # A residual-"?" fraction this high means type recovery has collapsed (a coarse
@@ -62,16 +62,16 @@ def _has_db(d: Path) -> bool:
 
 
 def _real_dbs():
-    names = ("xgov-db", "folks-consensus-v2-db", "folks-consensus-v3-db",
-             "folks-xgov-registry-db", "repro-db")
+    names = ("xgov", "folks-consensus-v2", "folks-consensus-v3",
+             "folks-xgov-registry", "repro")
     return [(n, _REAL_DB_DIR / n) for n in names if _has_db(_REAL_DB_DIR / n)]
 
 
 def _corpus_dbs():
     if not _CORPUS_DIR.exists():
         return []
-    return [(p.name, p / "db") for p in sorted(_CORPUS_DIR.iterdir())
-            if _has_db(p / "db")]
+    return [(p.name, p / "src") for p in sorted(_CORPUS_DIR.iterdir())
+            if _has_db(p / "src")]
 
 
 def _all_dbs():
@@ -92,8 +92,8 @@ _DB_PARAMS = [pytest.param(str(d), id=n) for n, d in _all_dbs()] or _NO_FIXTURES
 # fat-frame band lost), so each is a real assertion guarding against regression.
 # Any sub that re-introduces a used-but-never-defined register would fail here.
 # OPT-IN via LIFT_SEMANTICS_BACKEND=1 so the default suite keeps to the Tier-1/2 bar.
-_BACKEND_LOWERS = {"repro-db", "folks-consensus-v2-db", "folks-consensus-v3-db",
-                   "folks-xgov-registry-db", "xgov-db"}    # all 5 real contracts lower
+_BACKEND_LOWERS = {"repro", "folks-consensus-v2", "folks-consensus-v3",
+                   "folks-xgov-registry", "xgov"}    # all 5 real contracts lower
 _XFAIL_BACKEND = pytest.mark.xfail(
     reason="lift emits a used-but-never-defined register that destructure_ssa rejects",
     strict=False, raises=Exception)
@@ -297,7 +297,7 @@ def test_lowers_through_puya_backend(db):
 
 
 @pytest.mark.skipif(
-    not _has_db(_EXPLORER_DIR / "app_3543081435" / "db"),
+    not _has_db(_EXPLORER_DIR / "app_3543081435"),
     reason="app_3543081435 explorer fixture not present",
 )
 def test_match_arm_pairing_individual_pushes():
@@ -316,7 +316,7 @@ def test_match_arm_pairing_individual_pushes():
     from tealtools.lift.lift import lift
 
     prog = SSAProgram(
-        str(_EXPLORER_DIR / "app_3543081435" / "db"))
+        str(_EXPLORER_DIR / "app_3543081435"))
     pre = lift(prog)
     blocks = {b.id: b for b in pre_ir.blocks(pre)}
 

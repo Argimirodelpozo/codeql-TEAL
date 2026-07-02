@@ -1,9 +1,9 @@
-call site: prog.teal:L11  appl→1234567  (callee/db)  args[0]="do_thing"
+call site: prog.teal:L11  appl→1234567  (callee)  args[0]="do_thing"
   seeds:   (V#1@L4 == "do_thing"), (V#1@L9 == "do_thing")
   summary: (V#1@L4 == "do_thing"), (V#1@L9 == "do_thing")
 
 cross-contract auth-domination findings:
-callee/db  app_global_put@prog.teal:19  (state-mutating op)  preds: (V#1@L4 == "do_thing"), (V#1@L4 == "do_thing"), (V#1@L9 == "do_thing"), (V#1@L6 != 0)
+callee  app_global_put@prog.teal:19  (state-mutating op)  preds: (V#1@L4 == "do_thing"), (V#1@L4 == "do_thing"), (V#1@L9 == "do_thing"), (V#1@L6 != 0)
 
 caller predicates with callee-summary feedback:
 caller prog.teal:L4-L11  (app1234567:V#1@L4 == "do_thing"), (app1234567:V#1@L9 == "do_thing")

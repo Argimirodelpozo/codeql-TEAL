@@ -10,7 +10,7 @@ FIX = Path(__file__).resolve().parent / "tealtools/sec_guide"
 
 
 def _struct(rel: str):
-    db = FIX / rel / "db"
+    db = FIX / rel
     if not db.exists():
         pytest.skip(f"fixture DB not present: {db}")
     from tealtools.ssa import SSAProgram
@@ -114,10 +114,10 @@ class TestRender:
     def test_arc4_router_labelled_arc4(self):
         # A real ABI contract dispatches on txna ApplicationArgs 0.
         from pathlib import Path
-        db = Path(__file__).resolve().parent / "dbs/xgov-db"
+        db = Path(__file__).resolve().parent / "contracts/xgov"
         if not db.exists():
             import pytest
-            pytest.skip("xgov-db fixture not present")
+            pytest.skip("xgov fixture not present")
         from tealtools.ssa import SSAProgram
         from tealtools.structure import analyze_structure
         s = analyze_structure(SSAProgram(str(db)))

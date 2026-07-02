@@ -11,7 +11,7 @@ which execute the producers' output on a real AVM.
 
 The golden lives next to its DB (``<db>/graph_golden.txt``): committed for the
 in-repo ``tests/tealtools`` fixtures, local-only (gitignored) for the heavy
-``tests/dbs`` contracts. Regenerate after an intentional producer change::
+``tests/contracts`` real contracts. Regenerate after an intentional producer change::
 
     python -m tests.gen_graph_golden
 """

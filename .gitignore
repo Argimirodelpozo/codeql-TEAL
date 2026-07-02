@@ -1,10 +1,8 @@
-# Local test-fixture contract dirs: heavy, kept out of git. The .teal
-# sources (and any compiled output) live locally and are regenerated on
-# demand; the small curated fixtures tracked elsewhere are not affected.
-*-db/
-tests/dbs/
-# Experimental IR-lift corpus: keep the .teal sources, ignore the heavy DBs
-tests/experimental_IR_lift/**/db/
+# Heavy real-mainnet contract fixtures: kept out of git (the small curated
+# fixtures under tests/tealtools + the puya corpus are tracked; these giants
+# are local-only, regenerated on demand). Renamed from tests/dbs (CodeQL-era
+# "database" naming) — there is no database, just .teal source.
+tests/contracts/
 
 # Editor / IDE / agent state
 .claude/

@@ -1,7 +1,7 @@
 """Regenerate the graph-fact golden fixtures (see ``graph_golden``).
 
 Writes ``<db>/graph_golden.txt`` for every fixture DB under ``tests/tealtools``
-and ``tests/dbs`` that carries source. Run after an intentional change to the
+and ``tests/contracts`` that carries source. Run after an intentional change to the
 ``nodes`` / ``cfgEdges`` / ``basicBlocks`` producers::
 
     python -m tests.gen_graph_golden          # all DBs

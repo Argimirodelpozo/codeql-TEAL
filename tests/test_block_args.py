@@ -15,7 +15,7 @@ FIX = Path(__file__).resolve().parent / "tealtools/conditional_swap"
 
 
 def _prog():
-    db = FIX / "db"
+    db = FIX
     if not db.exists():
         pytest.skip(f"fixture DB not present: {db}")
     from tealtools.ssa import SSAProgram

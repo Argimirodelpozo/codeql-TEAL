@@ -13,12 +13,12 @@ from pathlib import Path
 
 import pytest
 
-XGOV = Path(__file__).resolve().parent / "dbs/xgov-db"
+XGOV = Path(__file__).resolve().parent / "contracts/xgov"
 
 
 def _prog():
     if not XGOV.exists():
-        pytest.skip("xgov-db fixture not present")
+        pytest.skip("xgov fixture not present")
     from tealtools.ssa import SSAProgram
     try:
         return SSAProgram(str(XGOV))

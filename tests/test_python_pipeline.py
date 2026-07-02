@@ -22,7 +22,7 @@ def _all_dbs() -> list[Path]:
     # Fixtures carry a committed golden; source is a `.teal` file (slimmed) or a
     # legacy codeql `src.zip` -- discover by the golden, not codeql-database.yml.
     dbs: list[Path] = []
-    for root in (TESTS_DIR / "tealtools", TESTS_DIR / "dbs"):
+    for root in (TESTS_DIR / "tealtools", TESTS_DIR / "contracts"):
         if root.exists():
             for golden in sorted(root.rglob("graph_golden.txt")):
                 dbs.append(golden.parent)
@@ -88,7 +88,7 @@ def test_python_load_graph_wellformed(db: Path) -> None:
 
 
 # A handful of representative real contracts for the heavier SSA check.
-_REAL = [d for d in _DBS if d.parent.name == "dbs" or d.name.endswith("-db")]
+_REAL = [d for d in _DBS if d.parent.name == "contracts"]
 _REAL_IDS = [str(d.relative_to(TESTS_DIR)) for d in _REAL]
 
 

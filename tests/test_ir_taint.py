@@ -119,7 +119,7 @@ def test_no_undertaint_of_internal_source_return(tmp_path):
 def test_summary_wellformed_on_real_contract():
     """On a real multi-subroutine contract the summary is self-consistent: every
     passthrough index is a valid param position, and it runs without error."""
-    teals = sorted((TESTS_DIR / "dbs" / "xgov-db").rglob("*.teal"))
+    teals = sorted((TESTS_DIR / "contracts" / "xgov").rglob("*.teal"))
     if not teals:
         pytest.skip("xgov fixture not present (gitignored real DB)")
     prog = SSAProgram(str(teals[0]))

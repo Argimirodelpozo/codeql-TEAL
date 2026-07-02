@@ -56,10 +56,10 @@ def _discover():
                 "sec_guide_scan", case,
                 id=f"sec_guide_scan/{case.name}",
             )
-    # Every other fixture is a ``<case>/db/`` holding a ``.teal`` source
+    # Every other fixture is a ``<case>/`` holding a ``.teal`` source
     # plus its committed ``graph_golden.txt`` — discover by the golden.
     for golden in sorted(PY_TESTS.rglob("graph_golden.txt")):
-        case_dir = golden.parent.parent
+        case_dir = golden.parent
         if XC_ROOT in case_dir.parents or case_dir == XC_ROOT:
             continue  # already collected as a single xcontract case
         if XC_SG_ROOT in case_dir.parents or case_dir == XC_SG_ROOT:
@@ -113,7 +113,7 @@ def _render(analysis: str, case_dir: Path) -> str:
         )
 
         registry = load_registry(case_dir / "registry.yml")
-        caller_prog = SSAProgram(str(case_dir / "caller" / "db"))
+        caller_prog = SSAProgram(str(case_dir / "caller"))
         graph = XContractGraph.build(caller_prog, registry)
         findings = cross_auth_findings(graph)
         body = render_xcontract(graph.sites, graph.analyses, relative_to=case_dir)
@@ -131,7 +131,7 @@ def _render(analysis: str, case_dir: Path) -> str:
         )
 
         registry = load_registry(case_dir / "registry.yml")
-        caller_prog = SSAProgram(str(case_dir / "caller" / "db"))
+        caller_prog = SSAProgram(str(case_dir / "caller"))
         graph = XContractGraph.build(caller_prog, registry)
         findings = cross_detection_findings(graph)
         body = render_xcontract(graph.sites, graph.analyses, relative_to=case_dir)
@@ -139,7 +139,7 @@ def _render(analysis: str, case_dir: Path) -> str:
         body += render_sg_findings(graph, findings, relative_to=case_dir)
         return body + "\n"
 
-    prog = SSAProgram(str(case_dir / "db"))
+    prog = SSAProgram(str(case_dir))
 
     if analysis == "auth_domination":
         from tealtools.auth_domination import AuthDominationDetector

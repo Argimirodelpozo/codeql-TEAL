@@ -402,6 +402,6 @@ if __name__ == "__main__":
     for _db in [a for a in sys.argv[1:] if not a.startswith("-")]:
         _lf = _Lifter(SSAProgram(_db))
         _lf.build()
-        _nm = _db.rstrip("/").rsplit("/", 2)[-2] if _db.rstrip("/").endswith("/db") else _db
+        _nm = _db.rstrip("/").rsplit("/", 1)[-1]
         print(render_with_taint(_lf, _nm) if _render else taint_report(_lf, _nm))
 

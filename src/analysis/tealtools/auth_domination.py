@@ -12,7 +12,7 @@ flagged.
         DEFAULT_SINKS, DEFAULT_MATCHERS,
     )
 
-    prog = SSAProgram("path/to/db")
+    prog = SSAProgram("path/to/contract.teal")
     prog.propagate_constants()
     for v in AuthDominationDetector(prog).detect():
         print(v.pretty())

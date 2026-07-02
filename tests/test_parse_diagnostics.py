@@ -25,7 +25,7 @@ from tealtools import (
 )
 
 TESTS_ROOT = Path(__file__).resolve().parent
-VULN_DB = TESTS_ROOT / "tealtools" / "auth_domination" / "vuln" / "db"
+VULN_DB = TESTS_ROOT / "tealtools" / "auth_domination" / "vuln"
 REKEY_VULN_DIR = TESTS_ROOT / "benchmark" / "rekey-to" / "vuln"
 
 GARBAGE = "complete garbage\nnothing parses here $$$\n"

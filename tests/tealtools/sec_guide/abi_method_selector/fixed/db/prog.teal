@@ -1,9 +1,0 @@
-#pragma version 10
-// ABI-shaped app that asserts the method selector before approving, so
-// every approval is gated by a recognised selector. Not flagged.
-txna ApplicationArgs 0
-byte 0x12345678
-==
-assert
-int 1
-return

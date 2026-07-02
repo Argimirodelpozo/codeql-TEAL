@@ -26,10 +26,10 @@ from .recompile import algod_client
 from .compare import compare
 
 REAL_DBS = [
-    "tests/dbs/folks-consensus-v3-db",
-    "tests/dbs/folks-consensus-v2-db",
-    "tests/dbs/xgov-db",
-    "tests/dbs/folks-xgov-registry-db",
+    "tests/contracts/folks-consensus-v3",
+    "tests/contracts/folks-consensus-v2",
+    "tests/contracts/xgov",
+    "tests/contracts/folks-xgov-registry",
 ]
 N_PROBES = 8
 

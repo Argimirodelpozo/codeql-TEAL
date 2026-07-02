@@ -1,9 +1,0 @@
-#pragma version 10
-// VULN: app_global_put with no admin check on the path.
-
-txna ApplicationArgs 0
-txna ApplicationArgs 1
-app_global_put                  // <-- VIOLATION
-
-pushint 1
-return

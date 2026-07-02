@@ -1,8 +1,0 @@
-#pragma version 10
-// ABI-shaped app: it reads the method selector (so it looks like an ABI
-// router) but approves unconditionally without ever comparing it — an
-// unrecognised method reaches the bare approval. Flagged.
-txna ApplicationArgs 0
-pop
-int 1
-return

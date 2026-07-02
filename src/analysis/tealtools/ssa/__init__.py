@@ -5,8 +5,7 @@ Public API (call site idiom):
 ```python
 from tealtools.ssa import SSAProgram, PySSA
 
-prog_ql = SSAProgram(db)
-prog    = PySSA.build(prog_ql)
+prog = SSAProgram("contract.teal")   # a .teal file or a dir of them
 # every existing analysis runs on prog.
 ```
 

@@ -1,15 +1,15 @@
-call site: prog.teal:L14  appl→7000001  (callee/db)  args[0]="do_thing"
+call site: prog.teal:L14  appl→7000001  (callee)  args[0]="do_thing"
   seeds:   (V#1@L12 == "do_thing"), (V#1@L7 == "do_thing")
   summary: (V#1@L12 == "do_thing"), (V#1@L7 == "do_thing")
 
 cross-contract sec-guide findings:
-app7000001  sec-guide/delete-funds-check  callee/db  Application handles DeleteApplication at exit prog.teal:23 without checking balance == min_balance — funds may be locked permanently on deletion.
-app7000001  sec-guide/delete-funds-check  callee/db  Application handles DeleteApplication at exit prog.teal:27 without checking balance == min_balance — funds may be locked permanently on deletion.
-app7000001  sec-guide/is-deletable  callee/db  Application is deletable at exit prog.teal:23: OnCompletion == DeleteApplication can reach approval without a guard.
-app7000001  sec-guide/is-deletable  callee/db  Application is deletable at exit prog.teal:27: OnCompletion == DeleteApplication can reach approval without a guard.
-app7000001  sec-guide/is-updatable  callee/db  Application is updatable at exit prog.teal:23: OnCompletion == UpdateApplication can reach approval without a guard.
-app7000001  sec-guide/is-updatable  callee/db  Application is updatable at exit prog.teal:27: OnCompletion == UpdateApplication can reach approval without a guard.
-app7000001  sec-guide/unprotected-deletable  callee/db  Application is deletable by anyone at exit prog.teal:23: no sender == creator check guards the approval path for DeleteApplication.
-app7000001  sec-guide/unprotected-deletable  callee/db  Application is deletable by anyone at exit prog.teal:27: no sender == creator check guards the approval path for DeleteApplication.
-app7000001  sec-guide/unprotected-updatable  callee/db  Application is updatable by anyone at exit prog.teal:23: no sender == creator check guards the approval path for UpdateApplication.
-app7000001  sec-guide/unprotected-updatable  callee/db  Application is updatable by anyone at exit prog.teal:27: no sender == creator check guards the approval path for UpdateApplication.
+app7000001  sec-guide/delete-funds-check  callee  Application handles DeleteApplication at exit prog.teal:23 without checking balance == min_balance — funds may be locked permanently on deletion.
+app7000001  sec-guide/delete-funds-check  callee  Application handles DeleteApplication at exit prog.teal:27 without checking balance == min_balance — funds may be locked permanently on deletion.
+app7000001  sec-guide/is-deletable  callee  Application is deletable at exit prog.teal:23: OnCompletion == DeleteApplication can reach approval without a guard.
+app7000001  sec-guide/is-deletable  callee  Application is deletable at exit prog.teal:27: OnCompletion == DeleteApplication can reach approval without a guard.
+app7000001  sec-guide/is-updatable  callee  Application is updatable at exit prog.teal:23: OnCompletion == UpdateApplication can reach approval without a guard.
+app7000001  sec-guide/is-updatable  callee  Application is updatable at exit prog.teal:27: OnCompletion == UpdateApplication can reach approval without a guard.
+app7000001  sec-guide/unprotected-deletable  callee  Application is deletable by anyone at exit prog.teal:23: no sender == creator check guards the approval path for DeleteApplication.
+app7000001  sec-guide/unprotected-deletable  callee  Application is deletable by anyone at exit prog.teal:27: no sender == creator check guards the approval path for DeleteApplication.
+app7000001  sec-guide/unprotected-updatable  callee  Application is updatable by anyone at exit prog.teal:23: no sender == creator check guards the approval path for UpdateApplication.
+app7000001  sec-guide/unprotected-updatable  callee  Application is updatable by anyone at exit prog.teal:27: no sender == creator check guards the approval path for UpdateApplication.

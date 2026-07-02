@@ -1,11 +1,11 @@
-call site: prog.teal:L13  appl→7000003  (callee/db)  args[0]="trigger"
+call site: prog.teal:L13  appl→7000003  (callee)  args[0]="trigger"
   seeds:   (V#1@L7 == "trigger")
   summary: (V#1@L7 == "trigger"), (V#1@L7 == "trigger"), (V#1@L9 != 0)
 
 cross-contract sec-guide findings:
-app7000003  sec-guide/delete-funds-check  callee/db  Application handles DeleteApplication at exit prog.teal:27 without checking balance == min_balance — funds may be locked permanently on deletion.
-app7000003  sec-guide/inner-txn-fee  callee/db  itxn_field Fee@prog.teal:23  Inner transaction sets a non-zero fee — repeated calls can drain the application account. Use fee 0 and rely on caller fee pooling.
-app7000003  sec-guide/is-deletable  callee/db  Application is deletable at exit prog.teal:27: OnCompletion == DeleteApplication can reach approval without a guard.
-app7000003  sec-guide/is-updatable  callee/db  Application is updatable at exit prog.teal:27: OnCompletion == UpdateApplication can reach approval without a guard.
-app7000003  sec-guide/unprotected-deletable  callee/db  Application is deletable by anyone at exit prog.teal:27: no sender == creator check guards the approval path for DeleteApplication.
-app7000003  sec-guide/unprotected-updatable  callee/db  Application is updatable by anyone at exit prog.teal:27: no sender == creator check guards the approval path for UpdateApplication.
+app7000003  sec-guide/delete-funds-check  callee  Application handles DeleteApplication at exit prog.teal:27 without checking balance == min_balance — funds may be locked permanently on deletion.
+app7000003  sec-guide/inner-txn-fee  callee  itxn_field Fee@prog.teal:23  Inner transaction sets a non-zero fee — repeated calls can drain the application account. Use fee 0 and rely on caller fee pooling.
+app7000003  sec-guide/is-deletable  callee  Application is deletable at exit prog.teal:27: OnCompletion == DeleteApplication can reach approval without a guard.
+app7000003  sec-guide/is-updatable  callee  Application is updatable at exit prog.teal:27: OnCompletion == UpdateApplication can reach approval without a guard.
+app7000003  sec-guide/unprotected-deletable  callee  Application is deletable by anyone at exit prog.teal:27: no sender == creator check guards the approval path for DeleteApplication.
+app7000003  sec-guide/unprotected-updatable  callee  Application is updatable by anyone at exit prog.teal:27: no sender == creator check guards the approval path for UpdateApplication.

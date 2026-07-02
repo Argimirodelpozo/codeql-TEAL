@@ -27,7 +27,7 @@ Example::
         cross_detection_findings, render_findings,
     )
 
-    caller = SSAProgram("caller-db")
+    caller = SSAProgram("caller.teal")
     graph = XContractGraph.build(caller, load_registry("registry.yml"))
     for f in cross_detection_findings(graph):
         print(f.render(relative_to=...))
