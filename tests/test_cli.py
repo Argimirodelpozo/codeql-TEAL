@@ -314,6 +314,90 @@ def test_cli_xcontract_detector_scoped_json(capsys):
     assert rc == 1
 
 
+# Caller with an inline appcall to app 555 — resolvable without a registry, so
+# --from-chain discovers 555 and fetches its (stubbed) approval program.
+_FROM_CHAIN_CALLER = """#pragma version 10
+itxn_begin
+int 6
+itxn_field TypeEnum
+int 555
+itxn_field ApplicationID
+itxn_submit
+int 1
+return
+"""
+
+
+def test_cli_xcontract_from_chain(tmp_path, capsys, monkeypatch):
+    caller = tmp_path / "caller.teal"
+    caller.write_text(_FROM_CHAIN_CALLER)
+
+    def _stub_fetch(app_id):
+        return (f"#pragma version 10\n// app {app_id}\nint 1\nreturn\n", b"")
+
+    # discover_registry's default fetcher imports fetch_approval lazily, so
+    # patching the module attribute redirects it with no network.
+    monkeypatch.setattr("tealtools._utils.chain.fetch_approval", _stub_fetch)
+
+    rc = main(["xcontract", str(caller), "--from-chain",
+               "--cache-dir", str(tmp_path / "cache")])
+    out = capsys.readouterr().out
+    assert "appl→555" in out                       # the discovered call site
+    assert (tmp_path / "cache" / "app_555.teal").exists()   # fetched + cached
+    assert rc == 0                                  # stub callee is clean
+
+
+def test_cli_xcontract_requires_a_source(capsys):
+    # --registry and --from-chain are a required mutually-exclusive group:
+    # supplying neither is an argparse error (exit 2).
+    with pytest.raises(SystemExit):
+        main(["xcontract", str(XC_FIX / "caller")])
+
+
+# member 0 stashes attacker arg 0 into scratch slot 3; member 1 gloads txn 0's
+# slot 3 and pays it out — a cross-member flow via shared scratch.
+_GT_STASH = """#pragma version 8
+txna ApplicationArgs 0
+store 3
+int 1
+return
+"""
+_GT_DRAIN = """#pragma version 8
+gload 0 3
+itxn_begin
+itxn_field Receiver
+int 1000
+itxn_field Amount
+itxn_submit
+int 1
+return
+"""
+
+
+def test_cli_group_taint_flags_cross_member_flow(tmp_path, capsys):
+    m0 = tmp_path / "m0.teal"; m0.write_text(_GT_STASH)
+    m1 = tmp_path / "m1.teal"; m1.write_text(_GT_DRAIN)
+    rc = main(["group-taint", str(m0), str(m1)])
+    out = capsys.readouterr().out
+    assert "itxn_field Receiver" in out             # the cross-member sink
+    assert rc == 1
+
+
+def test_cli_group_taint_json_clean_when_no_sharing(tmp_path, capsys):
+    # member 1 doesn't read member 0's scratch -> no cross-member finding, exit 0.
+    m0 = tmp_path / "m0.teal"; m0.write_text(_GT_STASH)
+    standalone = tmp_path / "m1.teal"
+    standalone.write_text(
+        "#pragma version 8\ntxna ApplicationArgs 0\nitxn_begin\n"
+        "itxn_field Receiver\nint 1000\nitxn_field Amount\nitxn_submit\n"
+        "int 1\nreturn\n"
+    )
+    rc = main(["group-taint", str(m0), str(standalone), "--json"])
+    data = json.loads(capsys.readouterr().out)
+    assert data["findings"] == []
+    assert rc == 0
+
+
 def test_cli_detections_scan_config_empty_only_exit_zero(tmp_path, capsys):
     # A bare approve-everything program fires a dozen detectors by design,
     # so exercise the clean-exit path by scoping the scan to zero detectors

@@ -67,12 +67,8 @@ def _configure_logging(verbosity: int) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _add_target_args(sp: argparse.ArgumentParser, *, dest: str = "target") -> None:
-    """Add the universal ``<target>`` positional and common flags."""
-    sp.add_argument(
-        dest,
-        help="path to a .teal file or a directory of .teal files",
-    )
+def _add_common_flags(sp: argparse.ArgumentParser) -> None:
+    """The non-positional flags every subcommand shares (output + parse health)."""
     sp.add_argument("--json", action="store_true",
                     dest="json_out",
                     help="emit JSON instead of text")
@@ -82,6 +78,15 @@ def _add_target_args(sp: argparse.ArgumentParser, *, dest: str = "target") -> No
     sp.add_argument("--strict", action="store_true",
                     help="exit 2 if any TEAL failed to parse instead of "
                          "analyzing the partial program with a warning")
+
+
+def _add_target_args(sp: argparse.ArgumentParser, *, dest: str = "target") -> None:
+    """Add the universal ``<target>`` positional and common flags."""
+    sp.add_argument(
+        dest,
+        help="path to a .teal file or a directory of .teal files",
+    )
+    _add_common_flags(sp)
 
 
 def _resolve(args) -> Path:
@@ -280,9 +285,14 @@ def _cmd_xcontract(args) -> int:
         render_xcontract,
         render_findings,
     )
-    registry = load_registry(args.registry)
     caller = _load(args)
-    graph = XContractGraph.build(caller, registry)
+    if args.from_chain:
+        # Auto-discover the registry by fetching each reachable callee from chain
+        # (transitive BFS, cached). A fetch outage / unregistered callee is logged
+        # and skipped inside discover_registry — never invented.
+        graph = XContractGraph.from_chain(caller, cache_dir=args.cache_dir)
+    else:
+        graph = XContractGraph.build(caller, load_registry(args.registry))
     auth = cross_auth_findings(graph)
 
     # --detections (or --detector) additionally runs the security detector
@@ -324,6 +334,30 @@ def _cmd_xcontract(args) -> int:
             print("\ncross-contract security findings:")
             print(render_sg(graph, sg_findings, relative_to=Path.cwd()))
     return 1 if (auth or sg_findings) else 0
+
+
+def _cmd_group_taint(args) -> int:
+    """Cross-member taint over ONE atomic group: an attacker-controlled input in
+    an earlier member reaching a sensitive sink in a later one via shared scratch
+    (``store`` -> ``gload``) or the log channel. Takes the member .teal files in
+    GROUP ORDER (``members[i]`` is group txn ``i``); the AVM ``i < k`` rule (a
+    member reads only an earlier sibling) is enforced by the graph."""
+    from tealtools.ssa import SSAProgram
+    from tealtools.dataflow.group_taint_graph import (
+        GroupTaintGraph, group_taint_findings, render_group_taint,
+    )
+    progs = []
+    for member in args.members:
+        prog = SSAProgram(str(member))
+        prog.propagate_constants()
+        _check_parse_health(prog, args)
+        progs.append(prog)
+    findings = group_taint_findings(GroupTaintGraph.build(progs))
+    if args.json_out:
+        print(_json.dumps({"findings": [f.to_dict() for f in findings]}, indent=2))
+    else:
+        print(render_group_taint(findings))
+    return 1 if findings else 0
 
 
 def _resolve_mode(args) -> "str | None":
@@ -552,8 +586,17 @@ def build_parser() -> argparse.ArgumentParser:
                        help="omit assignments; show only BB labels + edges")
 
     xc = add("xcontract", "cross-contract appcall analysis", _cmd_xcontract)
-    xc.add_argument("--registry", required=True,
-                    help="yaml mapping AppID → callee .teal path")
+    xc_src = xc.add_mutually_exclusive_group(required=True)
+    xc_src.add_argument("--registry",
+                        help="yaml mapping AppID → callee .teal path")
+    xc_src.add_argument("--from-chain", action="store_true",
+                        help="auto-discover the registry by fetching each "
+                             "reachable callee's deployed approval program from "
+                             "chain (transitive, cached) — no hand-written "
+                             "--registry needed")
+    xc.add_argument("--cache-dir", default=None,
+                    help="directory --from-chain caches fetched callee .teal in "
+                         "(default: ~/.cache/tealql/xcontract-callees)")
     xc.add_argument("--detections", action="store_true",
                     help="also run the security detector suite against each "
                          "callee across the appcall boundary (caller-pinned "
@@ -563,6 +606,16 @@ def build_parser() -> argparse.ArgumentParser:
     xc.add_argument("--detector", choices=sorted(_DETS), default=None,
                     help="scope the cross-contract detections to one detector "
                          "(implies --detections)")
+
+    gt = sub.add_parser(
+        "group-taint",
+        help="cross-member taint over an atomic group (shared scratch / logs)",
+    )
+    gt.add_argument("members", nargs="+", metavar="member.teal",
+                    help="the group's member .teal files IN GROUP ORDER "
+                         "(members[i] is group txn i)")
+    _add_common_flags(gt)
+    gt.set_defaults(handler=_cmd_group_taint)
 
     from security import DETECTORS as _DETECTORS
     det = sub.add_parser(

@@ -42,6 +42,7 @@ tealql auth             <target>
 tealql box-df           <target> --flavour {into|out|correlated}
 tealql detections       <target> {--detector NAME | --all | --list} [--mode app|logicsig]
 tealql detections-scan  <root>   [--config rules.yml] [--mode-config modes.yml]
+tealql group-taint      <member.teal>...   # cross-member taint over an atomic group (in group order)
 
 # Reports
 tealql itxn-report     <target>
@@ -50,7 +51,7 @@ tealql group-layout    <target>
 tealql cost            <target>
 tealql path-predicates <target>
 tealql cfg             <target> [--file F] [--skeleton]
-tealql xcontract       <target> --registry <yml> [--detections | --detector NAME]
+tealql xcontract       <target> {--registry <yml> | --from-chain [--cache-dir D]} [--detections | --detector NAME]
 
 # Annotated SSA dump (runs every pass and prints functional form)
 tealql functional      <target> [--show-ranges] [--show-bytes] [--by-block]

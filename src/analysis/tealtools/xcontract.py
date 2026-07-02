@@ -132,44 +132,113 @@ def _state_key(inputs) -> Optional[str]:
     return None
 
 
-def _put_key_value(inputs):
-    """``(key_bytes, value_operand)`` for an ``app_global_put`` — the bytes-const
-    operand is the key, the other is the value."""
-    if len(inputs) != 2:
-        return None, None
-    for i, other in ((0, 1), (1, 0)):
-        kb = _const_bytes(inputs[i])
-        if kb is not None:
-            return kb, inputs[other]
-    return None, None
+# State scope -> the write op that stores into it. An ApplicationID stashed in any
+# of the three persistent stores and read back to drive an inner appcall resolves
+# the same way: prove EVERY write of the key agrees on one int constant.
+_PUT_OP = {"global": "app_global_put", "local": "app_local_put", "box": "box_put"}
 
 
-def _resolve_state_app_id(prog: SSAProgram, operand) -> Optional[int]:
-    """Resolve an ApplicationID read from THIS app's GLOBAL state: if ``operand``
-    is ``app_global_get KEY`` (or ``app_global_get_ex`` on app 0) and EVERY
-    ``app_global_put KEY, <v>`` in the program writes the SAME int constant, that
-    constant is the callee. Sound-ish: a single non-constant or disagreeing write
-    to the slot leaves it unresolved (no invented target). Covers the common
-    router/factory pattern that stores its target app id in state."""
+def _state_read(operand) -> Optional[tuple[str, str]]:
+    """If ``operand`` reads a value out of THIS app's own persistent state under a
+    constant key, return ``(scope, key)`` with ``scope`` in ``{"global", "local",
+    "box"}``; else ``None``. Only reads that unambiguously target the running
+    application's own state qualify:
+
+    - ``app_global_get KEY`` / ``app_global_get_ex 0 KEY`` (foreign-app index 0 = self)
+    - ``app_local_get ACCT KEY`` / ``app_local_get_ex ACCT 0 KEY``
+    - ``btoi (box_get KEY)`` — box values are bytes, so an AppID read from a box is
+      de-serialised with ``btoi``; only the whole-value ``box_get`` read is matched
+      (a ``box_extract`` sub-slice can't be matched against a whole ``box_put``).
+
+    The key is always the top-of-stack operand for a read, so ``_state_key``
+    (first bytes const) picks it even when the account is itself an address const.
+    """
     a = getattr(operand, "defined_by", None)
     if a is None:
         return None
-    if a.op == "app_global_get":
+    op = a.op
+    if op == "app_global_get":
         key = _state_key(a.inputs)
-    elif a.op == "app_global_get_ex" and any(const_int(i) == 0 for i in a.inputs):
+        return ("global", key) if key is not None else None
+    if op == "app_local_get":
         key = _state_key(a.inputs)
-    else:
+        return ("local", key) if key is not None else None
+    # *_get_ex takes a foreign-apps index; index 0 is the running app's own state.
+    if op in ("app_global_get_ex", "app_local_get_ex") and any(
+        const_int(i) == 0 for i in a.inputs
+    ):
+        scope = "global" if op == "app_global_get_ex" else "local"
+        key = _state_key(a.inputs)
+        return (scope, key) if key is not None else None
+    if op == "btoi" and len(a.inputs) == 1:
+        src = getattr(a.inputs[0], "defined_by", None)
+        if src is not None and src.op == "box_get":
+            key = _state_key(src.inputs)
+            return ("box", key) if key is not None else None
+    return None
+
+
+def _bytes_const_to_int(operand) -> Optional[int]:
+    """Interpret a bytes-constant ``operand`` as the big-endian uint64 a ``btoi``
+    would read from it — the value a ``box_put KEY, <=8-byte const`` stored. Only a
+    <=8-byte constant is a valid ``btoi`` input; anything wider is rejected."""
+    vb = _const_bytes(operand)
+    if vb is None or not vb.startswith("0x"):
         return None
-    if key is None:
+    if (len(vb) - 2) // 2 > 8:                # btoi panics on >8 bytes
         return None
+    try:
+        return int(vb, 16)                    # 0x-hex is big-endian, like btoi
+    except ValueError:
+        return None
+
+
+def _itob_int(operand) -> Optional[int]:
+    """The int a ``box_put KEY, (itob X)`` stores — ``X`` when it's a constant."""
+    d = getattr(operand, "defined_by", None)
+    if d is not None and d.op == "itob" and len(d.inputs) == 1:
+        return const_int(d.inputs[0])
+    return None
+
+
+def _put_int_value(scope: str, inputs, key: str) -> Optional[int]:
+    """The int constant a write op stores under ``key``, or ``None`` if the value
+    isn't a statically-known int. A ``box`` value is bytes — a raw <=8-byte
+    constant (decoded big-endian) or an ``itob`` of a constant. A ``global`` /
+    ``local`` value is a uint64 pushed last, so it is the top-of-stack operand
+    (``inputs[0]``, SSA inputs being top-first); the key (and, for local, the
+    account) are lower operands."""
+    if scope == "box":
+        for inp in inputs:
+            if _const_bytes(inp) == key:
+                continue                      # the key operand, not the value
+            iv = _bytes_const_to_int(inp)
+            if iv is None:
+                iv = _itob_int(inp)
+            if iv is not None:
+                return iv
+        return None
+    return const_int(inputs[0]) if inputs else None
+
+
+def _resolve_state_app_id(prog: SSAProgram, operand) -> Optional[int]:
+    """Resolve an ApplicationID read from THIS app's own persistent state —
+    global, local, or box — when EVERY write of the key stores the SAME int
+    constant. Sound-ish: a single non-constant or disagreeing write leaves it
+    unresolved (no invented target). Covers the common router/factory pattern that
+    stashes its target app id in state and reads it back to make the call."""
+    read = _state_read(operand)
+    if read is None:
+        return None
+    scope, key = read
+    put_op = _PUT_OP[scope]
     vals: set[int] = set()
     for w in prog.assignments:
-        if w.op != "app_global_put":
+        if w.op != put_op:
             continue
-        wk, wv = _put_key_value(w.inputs)
-        if wk is None or wk != key:
-            continue
-        iv = const_int(wv)
+        if all(_const_bytes(inp) != key for inp in w.inputs):
+            continue                          # writes a different (or dynamic) key
+        iv = _put_int_value(scope, w.inputs, key)
         if iv is None:
             return None                       # non-constant write: can't prove it
         vals.add(iv)
@@ -188,7 +257,7 @@ def _const_app_id(txn: InnerTxn, prog: Optional[SSAProgram] = None) -> Optional[
                 seen.add(int(v))
             except ValueError:
                 return None
-        else:                                 # dynamic: trace through global state
+        else:                                 # dynamic: trace through persistent state
             rid = _resolve_state_app_id(prog, f.operand) if prog is not None else None
             if rid is None:
                 return None
