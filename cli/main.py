@@ -396,13 +396,31 @@ def _cmd_detections_scan(args) -> int:
         DetectionConfig.from_path(Path(args.mode_config))
         if args.mode_config else None
     )
+    root = Path(args.root)
     findings = scan(
-        Path(args.root),
+        root,
         config=config,
         detection_config=detection_config,
         options=options,
         strict=getattr(args, "strict", False),
     )
+
+    # --update-baseline: record the CURRENT findings' fingerprints and exit 0.
+    if args.update_baseline:
+        from security.suppress import write_baseline
+        n = write_baseline(args.update_baseline, findings)
+        print(f"wrote {n} fingerprint(s) to {args.update_baseline}", file=sys.stderr)
+        return 0
+
+    # Suppressions: inline `// tealql-ignore` comments (always) + a baseline
+    # file of accepted fingerprints (--baseline). Suppressed findings are
+    # dropped from output and the exit code.
+    from security.suppress import partition, load_baseline
+    baseline = load_baseline(args.baseline) if args.baseline else set()
+    findings, suppressed = partition(findings, root=root, baseline=baseline)
+    if suppressed:
+        logger.info("%d finding(s) suppressed (inline / baseline)", len(suppressed))
+
     # --format wins; --json is the back-compat alias for --format json.
     fmt = args.format or ("json" if args.json_out else "text")
     renderer = {"text": render_text, "json": render_json, "sarif": render_sarif}[fmt]
@@ -580,6 +598,12 @@ def build_parser() -> argparse.ArgumentParser:
     sgs.add_argument("--strict", action="store_true",
                      help="exit 2 if any scanned file fails to parse or "
                           "reconstruct instead of skipping it with a warning")
+    sgs.add_argument("--baseline", default=None,
+                     help="JSON baseline of accepted finding fingerprints; "
+                          "findings in it are suppressed (fail only on NEW ones)")
+    sgs.add_argument("--update-baseline", default=None, metavar="PATH",
+                     help="write the current findings' fingerprints to PATH and "
+                          "exit 0 (accept the current state as the baseline)")
     sgs.set_defaults(handler=_cmd_detections_scan)
 
     return p
