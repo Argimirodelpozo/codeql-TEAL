@@ -50,7 +50,7 @@ tealql group-layout    <target>
 tealql cost            <target>
 tealql path-predicates <target>
 tealql cfg             <target> [--file F] [--skeleton]
-tealql xcontract       <target> --registry <yml>
+tealql xcontract       <target> --registry <yml> [--detections | --detector NAME]
 
 # Annotated SSA dump (runs every pass and prints functional form)
 tealql functional      <target> [--show-ranges] [--show-bytes] [--by-block]

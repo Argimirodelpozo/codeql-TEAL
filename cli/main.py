@@ -283,20 +283,47 @@ def _cmd_xcontract(args) -> int:
     registry = load_registry(args.registry)
     caller = _load(args)
     graph = XContractGraph.build(caller, registry)
-    findings = cross_auth_findings(graph)
+    auth = cross_auth_findings(graph)
+
+    # --detections (or --detector) additionally runs the security detector
+    # suite against each callee across the boundary, with caller context
+    # (trusted_args pins + seeded predicates). Supersession-dedup by default;
+    # an explicit --detector requests exactly that one.
+    sg_findings = []
+    if args.detections or args.detector:
+        from security.xcontract import (
+            cross_detection_findings,
+            render_findings as render_sg,
+        )
+        if args.detector:
+            names = [args.detector]
+        else:
+            from security.scan import default_detection_names
+            names = default_detection_names()
+        sg_findings = cross_detection_findings(graph, detector_names=names)
+
     if args.json_out:
         from tealtools._utils.serialize import finding_to_dict
         payload = {
             "sites": [s.to_dict() for s in graph.sites],
-            "cross_auth_findings": [finding_to_dict(f) for f in findings],
+            "cross_auth_findings": [finding_to_dict(f) for f in auth],
         }
+        if args.detections or args.detector:
+            payload["cross_detection_findings"] = [
+                {"app_id": f.app_id, "detector": f.detector_name,
+                 "message": f.violation.pretty()}
+                for f in sg_findings
+            ]
         print(_json.dumps(payload, indent=2))
     else:
         print(render_xcontract(graph.sites, graph.analyses))
-        if findings:
+        if auth:
             print("\ncross-contract auth-domination findings:")
-            print(render_findings(graph, findings))
-    return 1 if findings else 0
+            print(render_findings(graph, auth))
+        if args.detections or args.detector:
+            print("\ncross-contract security findings:")
+            print(render_sg(graph, sg_findings, relative_to=Path.cwd()))
+    return 1 if (auth or sg_findings) else 0
 
 
 def _resolve_mode(args) -> "str | None":
@@ -527,6 +554,15 @@ def build_parser() -> argparse.ArgumentParser:
     xc = add("xcontract", "cross-contract appcall analysis", _cmd_xcontract)
     xc.add_argument("--registry", required=True,
                     help="yaml mapping AppID → callee .teal path")
+    xc.add_argument("--detections", action="store_true",
+                    help="also run the security detector suite against each "
+                         "callee across the appcall boundary (caller-pinned "
+                         "ApplicationArgs are treated as trusted; seeded "
+                         "path-predicates propagate)")
+    from security import DETECTORS as _DETS
+    xc.add_argument("--detector", choices=sorted(_DETS), default=None,
+                    help="scope the cross-contract detections to one detector "
+                         "(implies --detections)")
 
     from security import DETECTORS as _DETECTORS
     det = sub.add_parser(

@@ -281,6 +281,39 @@ def test_cli_all_runs_ir_family_not_superseded(capsys):
     assert "detections/constant-condition" not in detectors
 
 
+XC_FIX = TESTS_ROOT / "tealtools" / "xcontract_sec_guide" / "deletable_callee"
+
+
+def test_cli_xcontract_default_no_detections(capsys):
+    # Without --detections, xcontract runs only cross-contract auth-domination
+    # (no "cross-contract security findings" section).
+    main(["xcontract", str(XC_FIX / "caller"),
+          "--registry", str(XC_FIX / "registry.yml")])
+    assert "cross-contract security findings" not in capsys.readouterr().out
+
+
+def test_cli_xcontract_detections(capsys):
+    rc = main(["xcontract", str(XC_FIX / "caller"),
+               "--registry", str(XC_FIX / "registry.yml"), "--detections"])
+    out = capsys.readouterr().out
+    assert "cross-contract security findings" in out
+    # The deletable callee is flagged across the boundary.
+    assert "sec-guide/is-deletable" in out
+    assert rc == 1
+
+
+def test_cli_xcontract_detector_scoped_json(capsys):
+    rc = main(["xcontract", str(XC_FIX / "caller"),
+               "--registry", str(XC_FIX / "registry.yml"),
+               "--detector", "is-deletable", "--json"])
+    data = json.loads(capsys.readouterr().out)
+    findings = data["cross_detection_findings"]
+    assert findings and all(f["detector"] == "sec-guide/is-deletable"
+                            for f in findings)
+    assert all({"app_id", "detector", "message"} <= f.keys() for f in findings)
+    assert rc == 1
+
+
 def test_cli_detections_scan_config_empty_only_exit_zero(tmp_path, capsys):
     # A bare approve-everything program fires a dozen detectors by design,
     # so exercise the clean-exit path by scoping the scan to zero detectors
