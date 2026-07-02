@@ -1,0 +1,9 @@
+#pragma version 10
+    txn Fee
+    global MinTxnFee
+    <=
+    bz reject
+    int 1
+    return
+reject:
+    err

@@ -164,11 +164,23 @@ python -m tealtools.lift <teal-source> [--optimize]
 ## Running Tests
 
 ```bash
-pip install -e .
+pip install -e '.[dev]'    # pytest + xdist + timeout + coverage
 pytest tests/ -q
+pytest tests/ --cov        # with coverage (config + regression floor in pyproject)
 ```
 
 The suite is pure Python — no CodeQL, JVM, or network needed for the core tests.
+
+### Detector precision / recall
+
+Detector quality is a measured number, not an anecdote:
+`tests/test_benchmark.py` scores every detector against a ground-truth corpus
+(`tests/benchmark/<detector>/{vuln,safe}/`) and pins the confusion matrix.
+The published table lives in [`docs/PRECISION.md`](docs/PRECISION.md)
+(regenerate with `python -m tests.gen_precision`); see
+[`tests/benchmark/README.md`](tests/benchmark/README.md) to add cases. Note the
+caveat there — perfect scores on a curated corpus are a *specification*, not a
+field false-positive rate.
 
 ### Snapshot harness
 

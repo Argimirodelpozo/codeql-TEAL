@@ -1,0 +1,10 @@
+#pragma version 10
+    // CloseRemainderTo pinned to zero via control flow (bz to err), not assert.
+    txn CloseRemainderTo
+    global ZeroAddress
+    ==
+    bz reject
+    int 1
+    return
+reject:
+    err

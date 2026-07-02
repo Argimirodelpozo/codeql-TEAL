@@ -1,0 +1,10 @@
+#pragma version 10
+    // RekeyTo pinned to zero via control flow (bz to an err block), not assert.
+    txn RekeyTo
+    global ZeroAddress
+    ==
+    bz reject
+    int 1
+    return
+reject:
+    err

@@ -1,0 +1,8 @@
+#pragma version 10
+    // Looks guarded, but it validates CloseRemainderTo, NOT RekeyTo.
+    txn CloseRemainderTo
+    global ZeroAddress
+    ==
+    assert
+    int 1
+    return
