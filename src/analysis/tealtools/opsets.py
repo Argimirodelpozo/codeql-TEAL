@@ -32,6 +32,29 @@ from __future__ import annotations
 #: surfaces there; keep this in sync when widening the tables for a new version.
 AVM_LANGSPEC_VERSION = 11
 
+# --- address (32-byte account) fields -------------------------------------
+
+#: Txn-family fields that read a 32-byte account address. SINGLE SOURCE of the
+#: address-field universe: a field being an address determines BOTH its AVM type
+#: (``"account"``, in :mod:`tealtools.lift.optypes`) AND its byte length (32, in
+#: :mod:`tealtools.ssa.models`). Both derive from this set instead of each
+#: re-listing the fields, so a new address field is added in ONE place.
+ADDRESS_TXN_FIELDS: frozenset[str] = frozenset({
+    "Sender", "Receiver", "CloseRemainderTo", "RekeyTo",
+    "AssetSender", "AssetReceiver", "AssetCloseTo", "FreezeAssetAccount",
+    "ConfigAssetManager", "ConfigAssetReserve", "ConfigAssetFreeze",
+    "ConfigAssetClawback",
+    "Accounts",                         # array element (txna Accounts i)
+})
+
+#: ``global`` fields that read a 32-byte account address (same single-source
+#: role as :data:`ADDRESS_TXN_FIELDS`).
+ADDRESS_GLOBAL_FIELDS: frozenset[str] = frozenset({
+    "ZeroAddress", "CreatorAddress",
+    "CurrentApplicationAddress", "CallerApplicationAddress",
+})
+
+
 # --- inner-transaction fields ---------------------------------------------
 
 #: Inner-txn fields whose operand governs value movement or control transfer —

@@ -508,34 +508,20 @@ _OP_OUTPUT_SEEDS: dict = {
 # and the participation keys (StateProofPK is 64). ``_OP_OUTPUT_BYTELEN``
 # — positional fixed lengths on multi-output crypto ops, top-first
 # (``op -> [(output_index, byte_length), …]``).
+# 32-byte address fields come from the single source in opsets (shared with the
+# ``"account"`` type table in lift.optypes) — derived, not re-listed — plus the
+# non-address fixed-width fields (participation keys, lease) enumerated here.
+from ..opsets import ADDRESS_TXN_FIELDS as _ADDR_TXN, ADDRESS_GLOBAL_FIELDS as _ADDR_GLOBAL
+
 _TXN_FIELD_BYTELEN: dict = {
-    # 32-byte addresses.
-    "Sender":              32,
-    "Receiver":            32,
-    "CloseRemainderTo":    32,
-    "RekeyTo":             32,
-    "AssetSender":         32,
-    "AssetReceiver":       32,
-    "AssetCloseTo":        32,
-    "FreezeAssetAccount":  32,
-    "ConfigAssetManager":  32,
-    "ConfigAssetReserve":  32,
-    "ConfigAssetFreeze":   32,
-    "ConfigAssetClawback": 32,
-    # Fixed-width keys / lease.
-    "Lease":               32,
-    "VotePK":              32,
-    "SelectionPK":         32,
-    "StateProofPK":        64,
-    # Array-element address (read via ``txna``/``gtxnsa``/… ``Accounts i``).
-    "Accounts":            32,
+    **{f: 32 for f in _ADDR_TXN},
+    # Fixed-width participation keys / lease (NOT addresses).
+    "Lease":        32,
+    "VotePK":       32,
+    "SelectionPK":  32,
+    "StateProofPK": 64,
 }
-_GLOBAL_FIELD_BYTELEN: dict = {
-    "ZeroAddress":              32,
-    "CreatorAddress":           32,
-    "CurrentApplicationAddress": 32,
-    "CallerApplicationAddress": 32,
-}
+_GLOBAL_FIELD_BYTELEN: dict = {f: 32 for f in _ADDR_GLOBAL}
 _OP_OUTPUT_BYTELEN: dict = {
     # ecdsa pubkey ops push two 32-byte words (X, Y).
     "ecdsa_pk_decompress": [(0, 32), (1, 32)],

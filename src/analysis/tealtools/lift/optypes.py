@@ -7,7 +7,8 @@ coarse `avm()` lattice ('b'/'u'/'?'), and `_imm0`.
 """
 from __future__ import annotations
 
-from ..opsets import TXN_SOURCE_OPS, ITXN_SOURCE_OPS, CMP_OPS, LOGICAL_OPS
+from ..opsets import (TXN_SOURCE_OPS, ITXN_SOURCE_OPS, CMP_OPS, LOGICAL_OPS,
+                      ADDRESS_TXN_FIELDS, ADDRESS_GLOBAL_FIELDS)
 
 _BOOL_OPS = CMP_OPS | LOGICAL_OPS
 # Const-push / const-load ops are normally typed by their folded const value;
@@ -76,12 +77,8 @@ _TXN_FIELD_TYPE = {
     # bool
     "ConfigAssetDefaultFrozen": "bool", "FreezeAssetFrozen": "bool",
     "Nonparticipation": "bool",
-    # account (addresses)
-    "Sender": "account", "Receiver": "account", "CloseRemainderTo": "account",
-    "AssetSender": "account", "AssetReceiver": "account", "Accounts": "account",
-    "AssetCloseTo": "account", "RekeyTo": "account", "FreezeAssetAccount": "account",
-    "ConfigAssetManager": "account", "ConfigAssetReserve": "account",
-    "ConfigAssetFreeze": "account", "ConfigAssetClawback": "account",
+    # account (addresses) — derived from opsets.ADDRESS_TXN_FIELDS (single source
+    # shared with the 32-byte length table in ssa.models); see the merge below.
     # asset / application ids
     "XferAsset": "asset", "ConfigAsset": "asset", "FreezeAsset": "asset",
     "CreatedAssetID": "asset", "Assets": "asset",
@@ -97,6 +94,10 @@ _TXN_FIELD_TYPE = {
     "ConfigAssetName": "bytes", "ConfigAssetUnitName": "bytes",
     "ConfigAssetURL": "bytes", "ConfigAssetMetadataHash": "bytes",
 }
+# Merge in the account (address) fields from the single source in opsets, so the
+# address-field universe isn't hand-listed both here and in the length table.
+_TXN_FIELD_TYPE.update({f: "account" for f in ADDRESS_TXN_FIELDS})
+
 _GLOBAL_FIELD_TYPE = {
     "MinTxnFee": "uint64", "MinBalance": "uint64", "MaxTxnLife": "uint64",
     "GroupSize": "uint64", "LogicSigVersion": "uint64", "Round": "uint64",
@@ -105,11 +106,10 @@ _GLOBAL_FIELD_TYPE = {
     "PayoutsGoOnlineFee": "uint64", "PayoutsPercent": "uint64",
     "PayoutsMinBalance": "uint64", "PayoutsMaxBalance": "uint64",
     "PayoutsEnabled": "bool",
-    "ZeroAddress": "account", "CreatorAddress": "account",
-    "CurrentApplicationAddress": "account", "CallerApplicationAddress": "account",
     "CurrentApplicationID": "application", "CallerApplicationID": "application",
     "GenesisHash": "bytes",
 }
+_GLOBAL_FIELD_TYPE.update({f: "account" for f in ADDRESS_GLOBAL_FIELDS})
 
 
 def _field_type(op, immediates):

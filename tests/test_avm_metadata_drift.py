@@ -98,6 +98,32 @@ def test_drift_coverage_floor():
         "— did puya rename an AVMOp member, dropping coverage?")
 
 
+def test_address_fields_single_source_consistency():
+    # The address-field universe is defined ONCE in opsets and drives BOTH the
+    # "account" type table (optypes) and the 32-byte length table (models).
+    # This locks the two derived views against that single source so they can't
+    # drift: every address field is account-typed AND 32 bytes, and nothing else
+    # claims to be an account.
+    from tealtools.opsets import ADDRESS_TXN_FIELDS, ADDRESS_GLOBAL_FIELDS
+    from tealtools.lift import optypes as O
+    from tealtools.ssa import models as M
+
+    for f in ADDRESS_TXN_FIELDS:
+        assert O._TXN_FIELD_TYPE.get(f) == "account", f
+        assert M._TXN_FIELD_BYTELEN.get(f) == 32, f
+    for f in ADDRESS_GLOBAL_FIELDS:
+        assert O._GLOBAL_FIELD_TYPE.get(f) == "account", f
+        assert M._GLOBAL_FIELD_BYTELEN.get(f) == 32, f
+    # No account-typed field is missing from the address source (the derivation
+    # is the ONLY producer of "account" entries).
+    assert {f for f, t in O._TXN_FIELD_TYPE.items() if t == "account"} == set(ADDRESS_TXN_FIELDS)
+    assert {f for f, t in O._GLOBAL_FIELD_TYPE.items() if t == "account"} == set(ADDRESS_GLOBAL_FIELDS)
+    # Every global 32-byte field is an address; txn 32-byte fields are addresses
+    # plus exactly the enumerated non-address fixed-width fields.
+    assert {f for f, n in M._GLOBAL_FIELD_BYTELEN.items() if n == 32} == set(ADDRESS_GLOBAL_FIELDS)
+    assert set(ADDRESS_TXN_FIELDS) <= {f for f, n in M._TXN_FIELD_BYTELEN.items() if n == 32}
+
+
 def test_known_crypto_producers_are_bytes_typed():
     # The exact regression that motivated this: crypto / hashing / EC ops that
     # return byteslices must be in _BYTES_OPS (not defaulting to uint64).
