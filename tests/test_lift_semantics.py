@@ -177,7 +177,7 @@ def _process(db: str):
     from tealtools.lift import to_puya_ir
     from tealtools.lift.lift import lift
     with _quiet_puya():
-        prog = SSAProgram(db, verbose=False)
+        prog = SSAProgram(db)
         pre = lift(prog)                                   # pre-IR for Tier 2
         main, subs = to_puya_ir.to_puya(prog)              # genuine puya.ir.models
         to_puya_ir.optimize([main, *subs])                # Puya's own IR optimiser
@@ -316,7 +316,7 @@ def test_match_arm_pairing_individual_pushes():
     from tealtools.lift.lift import lift
 
     prog = SSAProgram(
-        str(_EXPLORER_DIR / "app_3543081435" / "db"), verbose=False)
+        str(_EXPLORER_DIR / "app_3543081435" / "db"))
     pre = lift(prog)
     blocks = {b.id: b for b in pre_ir.blocks(pre)}
 
@@ -384,7 +384,7 @@ def test_frame_bury_of_callsub_return(tmp_path):
 
     p = tmp_path / "frame_bury_callsub_return.teal"
     p.write_text(_FRAME_BURY_CALLSUB_RETURN_TEAL)
-    pre = lift(SSAProgram(str(p), verbose=False))
+    pre = lift(SSAProgram(str(p)))
     itobs = [op for bb in pre_ir.blocks(pre) for op in bb.ops if "op='itob'" in str(op)]
     assert itobs, "synthetic did not produce an itob (test no longer exercises the path)"
     for op in itobs:
@@ -426,7 +426,7 @@ def test_frame_bury_return_slot(tmp_path):
 
     p = tmp_path / "frame_bury_return.teal"
     p.write_text(_FRAME_BURY_RETURN_TEAL)
-    pre = lift(SSAProgram(str(p), verbose=False))
+    pre = lift(SSAProgram(str(p)))
     subs = [s for s in pre.subroutines if not s.is_main]
     assert subs, "synthetic produced no subroutine"
     make = subs[0]
@@ -540,7 +540,7 @@ def test_switch_arm_retsub_continuation(tmp_path):
 
     p = tmp_path / "switch_arm_retsub.teal"
     p.write_text(_SWITCH_ARM_RETSUB_TEAL)
-    prog = SSAProgram(str(p), verbose=False)
+    prog = SSAProgram(str(p))
     callsub_line = _SWITCH_ARM_RETSUB_TEAL.splitlines().index("callsub dispatch") + 1
     cont_line = callsub_line + 1                    # `pushint 1` — the continuation
     assert any(b.first_line <= cont_line <= b.last_line for b in prog.blocks.values()), (
@@ -610,7 +610,7 @@ def test_resim_shuffle_canonical_lifts_v11(tmp_path):
     from tealtools.ssa import SSAProgram
     from tealtools.lift.lift import lift
     from tealtools.lift import pre_ir
-    ir = lift(SSAProgram(str(probe), verbose=False))
+    ir = lift(SSAProgram(str(probe)))
     # every callsub to a 1-param sub must carry exactly 1 arg (no starved 0-arg call)
     for s in ir.subroutines:
         if len(s.parameters) != 1:
@@ -640,7 +640,7 @@ def test_pseudo_ops_normalized_and_recovered(tmp_path):
     from tealtools.ssa import SSAProgram
     p = tmp_path / "pseudo.teal"
     p.write_text('#pragma version 8\nmethod "foo()void"\ntxna ApplicationArgs 0\n==\nreturn\n')
-    prog = SSAProgram(str(p), verbose=False)
+    prog = SSAProgram(str(p))
     consts = [getattr(o, "const_value", None) for a in prog.assignments
               if a.op == "pushbytes" for o in a.outputs]
     assert any(getattr(c, "value", None) == "0x84467aff" for c in consts if c), (

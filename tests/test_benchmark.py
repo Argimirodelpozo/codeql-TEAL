@@ -46,7 +46,7 @@ def _fires(detector: str, teal: Path) -> bool:
     detector LOGIC on per-detector-curated fixtures; mode scoping (app vs
     logicsig) is a deployment concern declared in the detection-options config,
     not exercised here."""
-    prog = SSAProgram(str(teal), verbose=False)
+    prog = SSAProgram(str(teal))
     prog.propagate_constants()
     return len(DETECTORS[detector](prog).detect()) > 0
 

@@ -25,7 +25,7 @@ _TAIL = """
 def _detect(expr: str, tmp_path: Path):
     p = tmp_path / "prog.teal"
     p.write_text("#pragma version 10\n" + expr + _TAIL)
-    return _DET(SSAProgram(str(p), verbose=False)).detect()
+    return _DET(SSAProgram(str(p))).detect()
 
 
 def test_registered():

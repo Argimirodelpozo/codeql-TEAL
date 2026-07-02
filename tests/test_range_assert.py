@@ -199,7 +199,7 @@ def _xgov():
     from tealtools.ssa import SSAProgram
 
     try:
-        return SSAProgram(str(db), verbose=False)
+        return SSAProgram(str(db))
     except Exception as e:  # pragma: no cover
         pytest.skip(f"could not build SSAProgram: {e}")
 

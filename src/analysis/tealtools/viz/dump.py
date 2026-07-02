@@ -35,7 +35,7 @@ def dump_all(source, out_dir: Optional[str] = None, *, svg: bool = True,
     layers as ``.svg``/``.dot`` there. ``registry`` (an ``{app_id: path}`` dict
     or a yaml path) adds the cross-contract super-CFG when the contract makes
     resolvable appcalls."""
-    prog = SSAProgram(source, verbose=False)
+    prog = SSAProgram(source)
     prog.propagate_constants()
     # Additive analytical passes (no materialize/DCE), so the SSA section can
     # show IntRange overlays while the pre-materialized sections still work.
@@ -102,7 +102,7 @@ def _source_text(source) -> str:
 
 
 def _graph_text(source) -> str:
-    g = load_graph(source, verbose=False)
+    g = load_graph(source)
     nodes = sorted(g.nodes, key=lambda n: (getattr(n, "file", ""), getattr(n, "line", 0)))
     head = f"{g.number_of_nodes()} nodes, {g.number_of_edges()} edges\n"
     return head + "\n".join(repr(n) for n in nodes)
@@ -125,7 +125,7 @@ def _ir_text(source) -> str:
     ``arc4.Tuple`` / ...) that only exist in the real Puya IR, not the lift's
     pre-IR intermediate."""
     from ..lift import to_puya_ir
-    return to_puya_ir.render(SSAProgram(source, verbose=False), optimize_ir=False)
+    return to_puya_ir.render(SSAProgram(source), optimize_ir=False)
 
 
 def _guessed_encodings_text(source) -> str:
@@ -137,7 +137,7 @@ def _guessed_encodings_text(source) -> str:
     decoded text is included."""
     import puya.ir.models as M
     from ..lift import to_puya_ir
-    main, subs = to_puya_ir.to_puya(SSAProgram(source, verbose=False))
+    main, subs = to_puya_ir.to_puya(SSAProgram(source))
     guesses = to_puya_ir._guess_encoded_types(main, subs)
     if not guesses:
         return "(no speculative ABI-structure guesses)"
@@ -248,7 +248,7 @@ def _write_graphs(out: Path, prog: SSAProgram, source, *, registry=None,
         (out / f"{name}.dot").write_text(dot)
 
     builders = [
-        ("graph", lambda: _viz.to_dot(load_graph(source, verbose=False))),
+        ("graph", lambda: _viz.to_dot(load_graph(source))),
         ("cfg", lambda: CFG.of(prog).to_dot()),
         ("ssa", lambda: _ssa_render.to_dot(prog)),
         ("control_tree", lambda: _viz.region_to_dot(build_control_tree(prog))),

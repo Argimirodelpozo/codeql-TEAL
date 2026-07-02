@@ -29,7 +29,7 @@ return
 def _flagged(tmp_path, const_literal):
     p = tmp_path / "t.teal"
     p.write_text(_PROG.format(const=const_literal))
-    prog = SSAProgram(str(p), verbose=False)
+    prog = SSAProgram(str(p))
     prog.propagate_constants()
     violations = AuthDominationDetector(prog).detect()
     return any(v.sink.op == "app_global_put" for v in violations)

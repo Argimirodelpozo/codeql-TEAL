@@ -47,7 +47,20 @@ from .ast import (
 )
 
 _LANG = _ts.Language(_tsteal.language())
-_PARSER = _ts.Parser(_LANG)
+
+# tree-sitter Parser objects are NOT thread-safe (a shared one corrupts
+# concurrent parses), and parallel corpus scans are a natural usage. Keep one
+# Parser PER THREAD instead of a module-global; construction is cheap.
+import threading as _threading
+
+_PARSER_TLS = _threading.local()
+
+
+def _parser() -> "_ts.Parser":
+    p = getattr(_PARSER_TLS, "parser", None)
+    if p is None:
+        p = _PARSER_TLS.parser = _ts.Parser(_LANG)
+    return p
 
 # Tree-sitter child types that are not program statements / not emitted.
 # Any ``pragma*`` node (``pragma_version`` / ``pragma_typetrack`` / ...) is
@@ -141,7 +154,7 @@ def parse_nodes(
     for file, src in sources.items():
         if isinstance(src, str):
             src = src.encode("utf-8")
-        root = _PARSER.parse(src).root_node
+        root = _parser().parse(src).root_node
 
         real: list = []
         for c in root.children:

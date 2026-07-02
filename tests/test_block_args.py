@@ -20,7 +20,7 @@ def _prog():
         pytest.skip(f"fixture DB not present: {db}")
     from tealtools.ssa import SSAProgram
     try:
-        return SSAProgram(str(db), verbose=False)
+        return SSAProgram(str(db))
     except Exception as e:  # pragma: no cover - environment-dependent
         pytest.skip(f"could not build SSAProgram: {e}")
 

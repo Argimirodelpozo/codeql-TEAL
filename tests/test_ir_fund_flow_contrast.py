@@ -26,7 +26,7 @@ CASE = (Path(__file__).resolve().parent / "benchmark" / "ir-tainted-fund-flow"
 
 
 def _fires(detector: str) -> int:
-    prog = SSAProgram(str(CASE), verbose=False)
+    prog = SSAProgram(str(CASE))
     prog.propagate_constants()
     with contextlib.redirect_stdout(io.StringIO()):       # silence puya logging
         return len(DETECTORS[detector](prog).detect())
@@ -56,7 +56,7 @@ def test_ir_detector_falls_back_to_ssa_when_lift_fails(monkeypatch):
     monkeypatch.setattr(common, "ir_lifter", lambda prog, file=None: None)
 
     def _n(det):
-        p = SSAProgram(str(_VULN), verbose=False)
+        p = SSAProgram(str(_VULN))
         p.propagate_constants()
         with contextlib.redirect_stdout(io.StringIO()):
             return len(DETECTORS[det](p).detect())

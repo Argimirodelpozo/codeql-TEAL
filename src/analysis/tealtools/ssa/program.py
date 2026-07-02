@@ -33,23 +33,23 @@ from .._utils.dot import render
 class SSAProgram:
     """Typed SSA-form representation of a TEAL program."""
 
-    def __init__(self, source: str | Path, *, verbose: bool = False):
+    def __init__(self, source: str | Path):
         """Convenience constructor: parse a ``.teal`` file/dir into a graph, then
         reconstruct SSA. The two stages are separable -- prefer :meth:`from_source`
         when you want the parse stage explicit, or :meth:`from_graph` to build SSA
         from an already-loaded graph (no parsing). ``SSAProgram(source)`` stays as
         the one-liner."""
         from .. import graph as tg
-        self._build_from_graph(tg.load_graph(source, verbose=verbose))
+        self._build_from_graph(tg.load_graph(source))
 
     @classmethod
-    def from_source(cls, source: str | Path, *, verbose: bool = False) -> "SSAProgram":
+    def from_source(cls, source: str | Path) -> "SSAProgram":
         """Build SSA from TEAL source as an EXPLICIT two-stage pipeline:
         ``graphs.load_graph(source)`` (parse / extract → graph) then
         :meth:`from_graph` (SSA reconstruction). Same result as ``cls(source)`` --
         named so the parse stage is visible at the call site."""
         from .. import graph as tg
-        return cls.from_graph(tg.load_graph(source, verbose=verbose))
+        return cls.from_graph(tg.load_graph(source))
 
     @classmethod
     def from_graph(cls, graph) -> "SSAProgram":
@@ -62,15 +62,14 @@ class SSAProgram:
         return self
 
     @classmethod
-    def from_text(cls, teal: str, *, name: str = "contract.teal",
-                  verbose: bool = False) -> "SSAProgram":
+    def from_text(cls, teal: str, *, name: str = "contract.teal") -> "SSAProgram":
         """Build SSA from in-memory TEAL source TEXT -- no filesystem. ``name`` is
         the logical file name the SSA / findings report. For several files pass a
         ``{name: text}`` mapping straight to :func:`graphs.load_graph`. (The lift's
         source-text recovery -- template names, dropped consts -- still needs a real
         path; all SSA + detector analysis works in-memory.)"""
         from .. import graph as tg
-        return cls.from_graph(tg.load_graph({name: teal}, verbose=verbose))
+        return cls.from_graph(tg.load_graph({name: teal}))
 
     @property
     def parse_diagnostics(self) -> tuple:

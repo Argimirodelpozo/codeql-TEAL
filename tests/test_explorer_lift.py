@@ -47,7 +47,7 @@ from puya.log import configure_logging, LogLevel
 configure_logging(min_log_level=LogLevel.critical)
 from tealtools.ssa import SSAProgram
 from tealtools.lift import to_puya_ir
-p = SSAProgram({teal!r}, verbose=False)
+p = SSAProgram({teal!r})
 p.propagate_constants()
 with contextlib.redirect_stdout(io.StringIO()):
     text = to_puya_ir.render(p, optimize_ir=True)

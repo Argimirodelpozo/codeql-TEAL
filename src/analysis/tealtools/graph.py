@@ -177,8 +177,6 @@ def _slice_source(sources: dict[str, list[str]], loc: Location) -> str:
 
 def load_graph(
     source,
-    *,
-    verbose: bool = True,
 ) -> nx.MultiDiGraph:
     """Build a MultiDiGraph from a TEAL source.
 
@@ -188,9 +186,6 @@ def load_graph(
         A raw ``.teal`` file, a directory of ``.teal`` files, **or** an in-memory
         mapping ``{name: str | bytes}`` of TEAL source (no filesystem). All run the
         same pure-Python pipeline.
-    verbose:
-        Accepted for backward compatibility; the pure-Python build is ~ms and
-        prints nothing.
     """
     if isinstance(source, Mapping):
         g_source = "<memory>"

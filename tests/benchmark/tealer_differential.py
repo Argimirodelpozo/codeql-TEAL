@@ -94,7 +94,7 @@ def run_ours(teal: Path) -> "set[str] | None":
     from tealtools.ssa import SSAProgram
     from security import DETECTORS, common
     try:
-        prog = SSAProgram(str(teal), verbose=False)
+        prog = SSAProgram(str(teal))
         prog.propagate_constants()
         kind = common.classify_program(prog)
     except Exception:

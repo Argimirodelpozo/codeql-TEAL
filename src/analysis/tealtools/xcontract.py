@@ -15,11 +15,14 @@ consumes ``SSAProgram`` and ``InnerTxnReport``.
 """
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
 import yaml
+
+logger = logging.getLogger("tealtools.xcontract")
 
 from .inner_txn_report import InnerTxn, InnerTxnReport
 from .path_predicates import BranchCondition, PathPredicateAnalysis
@@ -331,8 +334,13 @@ def discover_registry(
         if not teal_path.exists():
             try:
                 teal, _bytecode = fetch(aid)
-            except Exception:
-                return None                # unfetchable -> skip, no invented callee
+            except Exception as e:
+                # Unfetchable (not found / network / no local algod) -> skip, no
+                # invented callee. Logged so an empty registry from a fetch
+                # outage is distinguishable from "no cross-contract calls".
+                logger.warning("could not fetch callee app %s: %s — skipped "
+                               "(cross-contract coverage reduced)", aid, e)
+                return None
             teal_path.write_text(teal)
         registry[aid] = str(teal_path)
         return teal_path

@@ -16,7 +16,7 @@ _DET = DETECTORS["arbitrary-inner-asset"]
 def _detect(teal: str, tmp_path: Path):
     p = tmp_path / "prog.teal"
     p.write_text(teal)
-    return _DET(SSAProgram(str(p), verbose=False)).detect()
+    return _DET(SSAProgram(str(p))).detect()
 
 
 def test_registered():

@@ -18,7 +18,7 @@ _TFF = DETECTORS["tainted-fund-flow"]
 def _detect(det, teal: str, tmp_path: Path):
     p = tmp_path / "prog.teal"
     p.write_text(teal)
-    return det(SSAProgram(str(p), verbose=False)).detect()
+    return det(SSAProgram(str(p))).detect()
 
 
 def test_registered():

@@ -14,7 +14,7 @@ def main(argv=None) -> int:
     if not paths:
         print("usage: python -m tealtools.lift <teal-source> [--optimize]")
         return 2
-    prog = SSAProgram(paths[0], verbose=False)
+    prog = SSAProgram(paths[0])
     prog.propagate_constants()
     print(render(prog, optimize_ir="--optimize" in argv))
     return 0

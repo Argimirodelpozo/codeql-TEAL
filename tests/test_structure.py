@@ -16,7 +16,7 @@ def _struct(rel: str):
     from tealtools.ssa import SSAProgram
     from tealtools.structure import analyze_structure
     try:
-        prog = SSAProgram(str(db), verbose=False)
+        prog = SSAProgram(str(db))
     except Exception as e:  # pragma: no cover - environment-dependent
         pytest.skip(f"could not build SSAProgram: {e}")
     return prog, analyze_structure(prog)
@@ -120,5 +120,5 @@ class TestRender:
             pytest.skip("xgov-db fixture not present")
         from tealtools.ssa import SSAProgram
         from tealtools.structure import analyze_structure
-        s = analyze_structure(SSAProgram(str(db), verbose=False))
+        s = analyze_structure(SSAProgram(str(db)))
         assert s.render().startswith("arc4_routing:")

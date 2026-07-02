@@ -615,7 +615,7 @@ if __name__ == "__main__":
     from ..ssa import SSAProgram
     from .lift import _Lifter
     for _src in [a for a in sys.argv[1:] if not a.startswith("-")]:
-        _lf = _Lifter(SSAProgram(_src, verbose=False))
+        _lf = _Lifter(SSAProgram(_src))
         _lf.build()
         _nm = _src.rstrip("/").rsplit("/", 1)[-1]
         print(fund_flow_report(_lf, _nm))

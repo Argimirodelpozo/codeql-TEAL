@@ -18,7 +18,7 @@ TESTS_DIR = Path(__file__).resolve().parent
 def _flows(teal: str, tmp_path: Path):
     p = tmp_path / "prog.teal"
     p.write_text(teal)
-    lifter = _Lifter(SSAProgram(str(p), verbose=False))
+    lifter = _Lifter(SSAProgram(str(p)))
     lifter.build()
     return tainted_fund_flows(lifter)
 
@@ -193,7 +193,7 @@ def test_robust_on_real_probes():
     if not probes:
         pytest.skip("no probe corpus present")
     for p in probes:
-        lifter = _Lifter(SSAProgram(str(p), verbose=False))
+        lifter = _Lifter(SSAProgram(str(p)))
         lifter.build()
         flows = tainted_fund_flows(lifter)
         for f in flows:                       # well-formed findings
@@ -231,7 +231,7 @@ def test_finding_message_carries_ir_taint_road(tmp_path):
             "itxn_field Amount\nitxn_submit\nint 1\nreturn\n")
     f = tmp_path / "prog.teal"
     f.write_text(teal)
-    p = SSAProgram(str(f), verbose=False)
+    p = SSAProgram(str(f))
     vs = DETECTORS["ir-tainted-fund-flow"](p).detect()
     assert vs, "expected an unguarded tainted Amount finding"
     assert "via:" in vs[0].message and "ApplicationArgs" in vs[0].message

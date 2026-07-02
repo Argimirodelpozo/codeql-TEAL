@@ -809,7 +809,7 @@ def _main(argv) -> int:
         print(_main.__doc__.strip())
         return 1
     validate = "--no-validate" not in argv
-    prog = SSAProgram(args[0], verbose=False)
+    prog = SSAProgram(args[0])
     result = byte_taint(prog, validate=validate)
     print(result.render_provenance() if "--why" in argv else result.render())
     return 0

@@ -42,7 +42,7 @@ def lift_to_teal(source, *, aggressive: bool = False) -> str:
     from ..ssa import SSAProgram
     from . import to_puya_ir
 
-    prog = SSAProgram(str(source), verbose=False)
+    prog = SSAProgram(str(source))
     # Emit the program's ACTUAL AVM version, not a hardcoded 10: a v11 contract
     # using e.g. `block BlkFeeSink` must declare `#pragma version 11` or the
     # assembler rejects the field as introduced-in-a-later-version. Read it off

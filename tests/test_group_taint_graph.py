@@ -37,7 +37,7 @@ def _build(tmp_path, srcs):
     for i, src in enumerate(srcs):
         p = tmp_path / f"m{i}.teal"
         p.write_text(src)
-        prog = SSAProgram(str(p), verbose=False)
+        prog = SSAProgram(str(p))
         prog.propagate_constants()
         progs.append(prog)
     return GroupTaintGraph.build(progs)

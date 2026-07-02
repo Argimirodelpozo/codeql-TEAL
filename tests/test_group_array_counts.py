@@ -20,7 +20,7 @@ def _prog(case: str):
         pytest.skip(f"fixture not present: {teal}")
     from tealtools.ssa import SSAProgram
     try:
-        prog = SSAProgram(str(teal), verbose=False)
+        prog = SSAProgram(str(teal))
     except Exception as e:  # pragma: no cover - environment-dependent
         pytest.skip(f"could not build SSAProgram: {e}")
     prog.propagate_constants()

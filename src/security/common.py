@@ -1152,7 +1152,7 @@ def ir_lifter(prog: SSAProgram, file: Optional[str] = None):
         else:
             from tealtools.errors import LiftError
             try:
-                fresh = SSAProgram(src, verbose=False)
+                fresh = SSAProgram(src)
                 fresh.propagate_constants()
                 lf = _Lifter(fresh)
                 lf.build()

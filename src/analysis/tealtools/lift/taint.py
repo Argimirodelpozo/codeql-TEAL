@@ -400,7 +400,7 @@ if __name__ == "__main__":
     from .lift import _Lifter
     _render = "--render" in sys.argv
     for _db in [a for a in sys.argv[1:] if not a.startswith("-")]:
-        _lf = _Lifter(SSAProgram(_db, verbose=False))
+        _lf = _Lifter(SSAProgram(_db))
         _lf.build()
         _nm = _db.rstrip("/").rsplit("/", 2)[-2] if _db.rstrip("/").endswith("/db") else _db
         print(render_with_taint(_lf, _nm) if _render else taint_report(_lf, _nm))

@@ -29,7 +29,7 @@ def make_xcontract(
     maps each callee AppID to its written ``.teal`` path."""
     caller_path = tmp_path / f"{caller_name}.teal"
     caller_path.write_text(caller_src)
-    caller = SSAProgram(str(caller_path), verbose=False)
+    caller = SSAProgram(str(caller_path))
     if propagate:
         caller.propagate_constants()
     registry: dict[int, str] = {}

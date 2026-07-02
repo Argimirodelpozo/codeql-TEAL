@@ -29,7 +29,7 @@ def xtg():
 
     reg = load_registry(FIXTURE / "registry.yml")
     try:
-        caller = SSAProgram(str(FIXTURE / "caller/db"), verbose=False)
+        caller = SSAProgram(str(FIXTURE / "caller/db"))
     except Exception as e:  # pragma: no cover - environment-dependent
         pytest.skip(f"could not build SSAProgram: {e}")
     return XContractTaintGraph.build(caller, reg)

@@ -11,7 +11,7 @@ Canonical idiom:
 ```python
 from tealtools.ssa import SSAProgram, PySSA
 
-prog_ql = SSAProgram(db, verbose=False)
+prog_ql = SSAProgram(db)
 prog    = PySSA.build(prog_ql)
 # every existing analysis runs on prog.
 ```
@@ -214,7 +214,8 @@ class PySSA:
     # Subroutine metadata.
     _bb_to_sub: dict = field(default_factory=dict)
     _proto_io: dict = field(default_factory=dict)
-    # Braun on-demand construction state (TEAL_SSA_BRAUN).
+    # Braun on-demand construction state (the default; TEAL_SSA_EAGER /
+    # TEAL_SSA_JOIN_ONLY select the superseded alternates).
     _surv_by_slot: dict = field(default_factory=dict)   # block -> {slot: PyVar}
     _entry_val: dict = field(default_factory=dict)       # (bb_key, slot) -> value
     _replaced: dict = field(default_factory=dict)        # id(PyPhi) -> replacement
@@ -517,7 +518,7 @@ class PySSA:
                     if (k2 := self._phi_node_exit_index(eslot, s)) is not None:
                         wl.append((X, s, k2))
 
-    # ----- Braun on-demand phi placement (TEAL_SSA_BRAUN) ----------------
+    # ----- Braun on-demand phi placement (the default construction) ------
 
     def _phase_braun(self) -> None:
         """Braun et al. (2013) on-demand SSA, filled+sealed case. Place a phi at
@@ -536,50 +537,53 @@ class PySSA:
         # The depth cap bounds recursion to the true stack depth x passthrough
         # chain length (~35 on folks-v3, never the STACK_MAX spiral); a modest
         # raise covers huge real contracts without the spiral's unbounded climb.
-        # Restore the prior limit afterwards so this construction-local need does
-        # not leak process-wide (the rare construction-exception path aborts the
-        # whole build, so leaving it raised there is harmless).
+        # try/finally restores the prior limit so this construction-local need
+        # never leaks process-wide -- including on the exception path, which now
+        # matters: a build failure is caught (LiftError) rather than aborting the
+        # process, so an un-restored limit WOULD leak into later work.
         _prev_reclimit = _sys.getrecursionlimit()
         _sys.setrecursionlimit(max(_prev_reclimit, 10_000))
-        self._surv_by_slot = {b: {k: v for v, k in self._surv[b]}
-                              for b in self.blocks}
-        self._depth = self._compute_entry_depths()
-        # Demand: every entry slot an op consumes (top-first 1..C) per block.
-        # The recursion pulls in the passthrough slots successors read.
-        for b in self.blocks:
-            for k in range(1, self._consumed[b] + 1):
-                self._read_entry(b, k)
-        # Reconcile braun phi-placement with the phase-6c frame expander: a
-        # `frame_dig N` (N>=0) reads ABSOLUTE frame position `nargs+N`, whose
-        # top-first ENTRY slot is `entry_depth(b) - (nargs+N)`. That depth is only
-        # realised in 6c, so without demanding the read here no join phi is placed
-        # for a deep loop-invariant slot and it is dropped (silent 0). Compute the
-        # per-block entry depth the SAME way 6c will (sub entry = nargs, frame_dig
-        # +1 / frame_bury -1, every other op n_out-n_in), then demand EXACTLY each
-        # frame_dig's slot. Exact (not 1..D): an over-broad demand deepens other
-        # blocks and threads wrong values. Bounded by the forward cap in _read_entry.
-        self._compute_subs_and_protos()
-        edepth = self._frame_entry_depths()
-        for b in self.blocks:
-            sub = self._bb_to_sub.get(b)
-            if sub is None or sub not in self._proto_io:
-                continue
-            nargs = self._proto_io[sub][0]
-            d = edepth.get(b.key)
-            if d is None:
-                continue
-            for o in b.ops:
-                n = _frame_imm(o)
-                if o.op == "frame_dig" and n is not None and n >= 0:
-                    k = d - (nargs + n)
-                    if 1 <= k <= self._depth.get(b.key, 0):
-                        self._read_entry(b, k)
-        # Re-point any entry value / phi arg left at a since-removed phi.
-        for key in list(self._entry_val):
-            self._entry_val[key] = self._resolve(self._entry_val[key])
-        for P in self.phis.values():
-            P.args = [self._resolve(a) for a in P.args]
-        _sys.setrecursionlimit(_prev_reclimit)
+        try:
+            self._surv_by_slot = {b: {k: v for v, k in self._surv[b]}
+                                  for b in self.blocks}
+            self._depth = self._compute_entry_depths()
+            # Demand: every entry slot an op consumes (top-first 1..C) per block.
+            # The recursion pulls in the passthrough slots successors read.
+            for b in self.blocks:
+                for k in range(1, self._consumed[b] + 1):
+                    self._read_entry(b, k)
+            # Reconcile braun phi-placement with the phase-6c frame expander: a
+            # `frame_dig N` (N>=0) reads ABSOLUTE frame position `nargs+N`, whose
+            # top-first ENTRY slot is `entry_depth(b) - (nargs+N)`. That depth is only
+            # realised in 6c, so without demanding the read here no join phi is placed
+            # for a deep loop-invariant slot and it is dropped (silent 0). Compute the
+            # per-block entry depth the SAME way 6c will (sub entry = nargs, frame_dig
+            # +1 / frame_bury -1, every other op n_out-n_in), then demand EXACTLY each
+            # frame_dig's slot. Exact (not 1..D): an over-broad demand deepens other
+            # blocks and threads wrong values. Bounded by the forward cap in _read_entry.
+            self._compute_subs_and_protos()
+            edepth = self._frame_entry_depths()
+            for b in self.blocks:
+                sub = self._bb_to_sub.get(b)
+                if sub is None or sub not in self._proto_io:
+                    continue
+                nargs = self._proto_io[sub][0]
+                d = edepth.get(b.key)
+                if d is None:
+                    continue
+                for o in b.ops:
+                    n = _frame_imm(o)
+                    if o.op == "frame_dig" and n is not None and n >= 0:
+                        k = d - (nargs + n)
+                        if 1 <= k <= self._depth.get(b.key, 0):
+                            self._read_entry(b, k)
+            # Re-point any entry value / phi arg left at a since-removed phi.
+            for key in list(self._entry_val):
+                self._entry_val[key] = self._resolve(self._entry_val[key])
+            for P in self.phis.values():
+                P.args = [self._resolve(a) for a in P.args]
+        finally:
+            _sys.setrecursionlimit(_prev_reclimit)
 
     def _frame_entry_depths(self) -> dict:
         """`bb_key -> entry stack depth INCLUDING the sub's args`, simulated the
@@ -1412,7 +1416,7 @@ def _demo(source: str) -> None:
     wrapped ``SSAProgram``."""
     import time
     t0 = time.perf_counter()
-    prog = SSAProgram(source, verbose=False)
+    prog = SSAProgram(source)
     t_graph = time.perf_counter() - t0
     t0 = time.perf_counter()
     py = PySSA._construct(prog)

@@ -73,7 +73,7 @@ def test_python_producers_selfconsistent(db: Path) -> None:
 def test_python_load_graph_wellformed(db: Path) -> None:
     """``load_graph`` builds a well-formed graph: nodes present, every CFG
     edge endpoint is a graph node, every ``bb`` annotation is a 3-tuple."""
-    g = load_graph(db, verbose=False)
+    g = load_graph(db)
     assert g.number_of_nodes() > 0
 
     for u, v, d in g.edges(data=True):
@@ -120,12 +120,12 @@ def test_raw_teal_runs_end_to_end(db: Path, tmp_path) -> None:
         (tmp_path / name).write_bytes(data)
     raw = tmp_path / next(iter(srcs))                    # one extracted .teal
 
-    g_db = load_graph(db, verbose=False)
-    g_dir = load_graph(tmp_path, verbose=False)          # dir of extracted .teal
+    g_db = load_graph(db)
+    g_dir = load_graph(tmp_path)          # dir of extracted .teal
     assert g_db.number_of_nodes() == g_dir.number_of_nodes()
     assert g_db.number_of_edges() == g_dir.number_of_edges()
     if len(srcs) == 1:                                   # single-source: file form too
-        g_file = load_graph(tmp_path / next(iter(srcs)), verbose=False)
+        g_file = load_graph(tmp_path / next(iter(srcs)))
         assert g_db.number_of_nodes() == g_file.number_of_nodes()
         assert g_db.number_of_edges() == g_file.number_of_edges()
 

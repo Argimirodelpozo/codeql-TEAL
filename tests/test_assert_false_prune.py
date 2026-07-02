@@ -43,7 +43,7 @@ def _intrinsic(op):
 
 
 def test_assert_false_join_lifts_without_orphan_extract():
-    prog = SSAProgram(str(CONTRACT), verbose=False)
+    prog = SSAProgram(str(CONTRACT))
     prog.propagate_constants()
     lifted = _Lifter(prog).build()                      # must not raise
 

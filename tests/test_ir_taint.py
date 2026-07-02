@@ -27,7 +27,7 @@ TESTS_DIR = Path(__file__).resolve().parent
 def _lifter(teal: str, tmp_path: Path) -> _Lifter:
     p = tmp_path / "prog.teal"
     p.write_text(teal)
-    prog = SSAProgram(str(p), verbose=False)
+    prog = SSAProgram(str(p))
     prog.propagate_constants()
     lifter = _Lifter(prog)
     lifter.build()
@@ -122,7 +122,7 @@ def test_summary_wellformed_on_real_contract():
     teals = sorted((TESTS_DIR / "dbs" / "xgov-db").rglob("*.teal"))
     if not teals:
         pytest.skip("xgov fixture not present (gitignored real DB)")
-    prog = SSAProgram(str(teals[0]), verbose=False)
+    prog = SSAProgram(str(teals[0]))
     prog.propagate_constants()
     lifter = _Lifter(prog)
     lifter.build()

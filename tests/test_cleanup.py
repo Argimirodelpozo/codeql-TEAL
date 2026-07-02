@@ -21,7 +21,7 @@ def _prog():
         pytest.skip("xgov-db fixture not present")
     from tealtools.ssa import SSAProgram
     try:
-        return SSAProgram(str(XGOV), verbose=False)
+        return SSAProgram(str(XGOV))
     except Exception as e:  # pragma: no cover - environment-dependent
         pytest.skip(f"could not build SSAProgram: {e}")
 
