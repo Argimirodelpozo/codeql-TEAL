@@ -20,7 +20,7 @@ touching ``render`` / ``to_puya`` does.
 from . import pre_ir
 from .lift import lift
 
-__all__ = ["render", "lift", "pre_ir"]
+__all__ = ["render", "to_puya", "lift", "lift_to_teal", "pre_ir"]
 
 
 def __getattr__(name: str):
@@ -29,4 +29,7 @@ def __getattr__(name: str):
     if name in ("render", "to_puya"):
         from . import to_puya_ir
         return getattr(to_puya_ir, name)
+    if name == "lift_to_teal":
+        from . import backend
+        return backend.lift_to_teal
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

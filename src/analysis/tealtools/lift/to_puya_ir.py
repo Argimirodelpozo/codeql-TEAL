@@ -20,6 +20,7 @@ from puya.ir.types_ import AVMBytesEncoding, PrimitiveIRType as PT
 from puya.parse import SourceLocation
 
 from . import pre_ir
+from . import _puya_compat as _compat
 from .lift import _Lifter
 from .teal_const import _const_bytes, _load_src, _tmpl_name
 from ..ast.literals import tokenize_operands as _tokenize_operands
@@ -414,7 +415,22 @@ def _duplicate_shared_epilogues(lifted):
 
 
 def to_puya(prog):
-    """SSAProgram -> (main, subroutines) as real puya.ir.models objects."""
+    """SSAProgram -> (main, subroutines) as real puya.ir.models objects.
+
+    Wraps :func:`_to_puya_impl` so a lowering failure surfaces as a typed
+    :class:`tealtools.errors.LiftError` (stage ``"lower"``) with the cause
+    chained. A ``LiftError`` from the inner build stage passes through with its
+    original stage intact."""
+    from ..errors import LiftError
+    try:
+        return _to_puya_impl(prog)
+    except LiftError:
+        raise
+    except Exception as e:
+        raise LiftError(f"{type(e).__name__}: {e}", stage="lower") from e
+
+
+def _to_puya_impl(prog):
     # Pre-lift scratch simplification: forward compile-time-constant scratch loads to
     # their literal so the lift emits the constant directly. propagate_scratch_constants
     # only rewires the LOAD's consumers -- it KEEPS the store, which stays
@@ -563,7 +579,7 @@ def _langspec_returns(intrinsic: "M.Intrinsic"):
     field-keyed dynamic op (``global``/``txn``/...) by its immediate. ``None`` if
     the op has no static signature (or the immediate doesn't select a variant)."""
     from puya.ir.avm_ops_models import DynamicVariants, Variant
-    v = getattr(intrinsic.op, "_variants", None)
+    v = _compat.langspec_variants(intrinsic.op)
     if isinstance(v, Variant):
         return v.signature.returns
     if isinstance(v, DynamicVariants):
@@ -604,23 +620,21 @@ def _recover_ir_types(main, subs, allow=_is_refinable, byte_lengths=None) -> int
                         cur = tgt.ir_type
                         if (allow(rt) and cur in _COARSE_BASE
                                 and rt.avm_type == cur.avm_type):
-                            object.__setattr__(tgt, "ir_type", rt)
+                            _compat.set_ir_type(tgt, rt)
                             changed = True
                             n += 1
                 # Byte-length sized-bytes: refine a target the langspec left as
                 # plain `bytes` when its exact length is known.
                 for tgt in o.targets:
                     if tgt.ir_type is PT.bytes and id(tgt) in byte_lengths:
-                        object.__setattr__(
-                            tgt, "ir_type", SizedBytesType(byte_lengths[id(tgt)]))
+                        _compat.set_ir_type(tgt, SizedBytesType(byte_lengths[id(tgt)]))
                         changed = True
                         n += 1
                 if changed:
                     # Keep the intrinsic's declared result types in sync with the
-                    # refined targets. `types` is a read-only property; the attrs
-                    # backing field is `_types` (writing "types" silently failed).
-                    object.__setattr__(
-                        o.source, "_types", tuple(t.ir_type for t in o.targets))
+                    # refined targets (see _puya_compat.set_intrinsic_types).
+                    _compat.set_intrinsic_types(
+                        o.source, (t.ir_type for t in o.targets))
     return n
 
 
@@ -1085,15 +1099,12 @@ def _recover_encoded_types(main, subs) -> int:
                     touched = False
                     for tgt in o.targets:
                         if tgt.ir_type.avm_type == et.avm_type and tgt.ir_type != et:
-                            object.__setattr__(tgt, "ir_type", et)
+                            _compat.set_ir_type(tgt, et)
                             touched = changed = True
                             n += 1
                     if touched:
-                        # See _recover_ir_types: write the `_types` backing field,
-                        # not the read-only `types` property.
-                        object.__setattr__(
-                            o.source, "_types",
-                            tuple(t.ir_type for t in o.targets))
+                        _compat.set_intrinsic_types(
+                            o.source, (t.ir_type for t in o.targets))
     return n
 
 
@@ -1169,11 +1180,10 @@ def _define_named_orphan(subs, name: str, version: int) -> bool:
     reconstruction lost to a frame / dynamic-scratch gap) as a typed zero at its
     subroutine's entry. Precise: only the exact register Puya names is touched,
     so a contract that optimises cleanly never reaches this."""
-    from puya.ir.models import _get_used_registers
     for sub in subs:
         if not sub.body:
             continue
-        match = next((r for r in _get_used_registers(sub.body)
+        match = next((r for r in _compat.get_used_registers(sub.body)
                       if r.name == name and r.version == version), None)
         if match is not None:
             sub.body[0].ops.insert(0, M.Assignment(
@@ -1192,9 +1202,22 @@ def optimize(subs, *, max_rounds: int = 100, aggressive: bool = False) -> int:
     ``aggressive`` adds the CODEGEN-CHANGING simplifications (:func:`_aggressive_passes`
     -- intrinsic folding + ARC4 encode/decode elimination). Default off, so the lift
     stays faithful / byte-identical for analysis; turn it on for a maximally-optimised
-    lowering (gated behaviourally, since it alters the TEAL)."""
+    lowering (gated behaviourally, since it alters the TEAL).
+
+    Wraps :func:`_optimize_impl` so a failure the internal typed-zero retry can't
+    resolve surfaces as a typed :class:`tealtools.errors.LiftError` (stage
+    ``"optimize"``), cause chained."""
+    from ..errors import LiftError
+    try:
+        return _optimize_impl(subs, max_rounds=max_rounds, aggressive=aggressive)
+    except LiftError:
+        raise
+    except Exception as e:
+        raise LiftError(f"{type(e).__name__}: {e}", stage="optimize") from e
+
+
+def _optimize_impl(subs, *, max_rounds: int = 100, aggressive: bool = False) -> int:
     import logging
-    import re
     from puya.errors import InternalError
     passes = _opt_passes() + (_aggressive_passes() if aggressive else [])
     log = logging.getLogger("puya")
@@ -1208,7 +1231,7 @@ def optimize(subs, *, max_rounds: int = 100, aggressive: bool = False) -> int:
                         return rnd
                 return max_rounds
             except InternalError as e:
-                m = re.search(r"not defined: ([^#\s]+)#(\d+)", str(e))
+                m = _compat.NOT_DEFINED_RE.search(str(e))
                 if not (m and _define_named_orphan(subs, m.group(1), int(m.group(2)))):
                     raise
         return max_rounds
@@ -1219,7 +1242,7 @@ def optimize(subs, *, max_rounds: int = 100, aggressive: bool = False) -> int:
 def render(prog, *, optimize_ir: bool = False) -> str:
     """Render an SSAProgram as real Puya IR text, using Puya's own emitter. With
     ``optimize_ir`` set, Puya's optimiser passes run on the IR first."""
-    from puya.ir.to_text_visitor import TextEmitter, _render_body
+    TextEmitter, _render_body = _compat.text_emitter_and_render()
 
     main, subs = to_puya(prog)
     if optimize_ir:

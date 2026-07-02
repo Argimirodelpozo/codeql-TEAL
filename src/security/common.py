@@ -1150,17 +1150,26 @@ def ir_lifter(prog: SSAProgram, file: Optional[str] = None):
                 "ir_lifter: program has no source path (in-memory build?) — "
                 "IR layer skipped")
         else:
+            from tealtools.errors import LiftError
             try:
                 fresh = SSAProgram(src, verbose=False)
                 fresh.propagate_constants()
                 lf = _Lifter(fresh)
                 lf.build()
                 lifter = lf
+            except LiftError as e:
+                # EXPECTED coverage gap: a contract the lift can't reconstruct
+                # (~0.1% of real mainnet). Info, not warning — the ir-* fallback
+                # is the designed behaviour, not an anomaly.
+                logger.info(
+                    "Puya-IR lift did not cover %s (%s) — ir-* detections use "
+                    "their SSA fallback; results may be less precise.", src, e)
             except Exception as e:
+                # UNEXPECTED: the lift raised something other than a LiftError,
+                # which points at a bug rather than a coverage limit. Louder.
                 logger.warning(
-                    "Puya-IR lift failed for %s (%s: %s) — ir-* detections "
-                    "fall back to their SSA siblings where available and "
-                    "report nothing otherwise; results may be less precise.",
+                    "Puya-IR lift crashed UNEXPECTEDLY for %s (%s: %s) — this "
+                    "is likely a bug; ir-* detections fall back. Please report.",
                     src, type(e).__name__, e)
     try:
         prog._sec_ir_lifter = lifter

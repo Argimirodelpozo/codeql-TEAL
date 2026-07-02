@@ -69,3 +69,21 @@ class TealParseError(TealQLError):
             f"{n} unparsed TEAL span(s) — refusing to analyze a partial "
             f"program in strict mode{first}"
         )
+
+
+class LiftError(TealQLError):
+    """The Puya-IR lift failed on this program. ``stage`` names where
+    (``"build"`` = SSA→pre-IR, ``"lower"`` = pre-IR→puya.ir, ``"optimize"``,
+    ``"backend"`` = destructure→MIR→TEAL). The underlying cause is chained
+    (``raise LiftError(...) from e``), so the original puya ``InternalError`` /
+    ``TypeError`` / ``KeyError`` is preserved on ``__cause__``.
+
+    This gives callers ONE type to catch — the lift has known reconstruction
+    limits (~0.1% of real mainnet contracts don't lift), so a caller
+    (``security.common.ir_lifter``) can treat a ``LiftError`` as an expected
+    coverage gap and fall back, while a NON-``LiftError`` escaping the lift is
+    a genuine bug that should not be swallowed."""
+
+    def __init__(self, message: str, *, stage: str = "lift"):
+        self.stage = stage
+        super().__init__(f"[{stage}] {message}")

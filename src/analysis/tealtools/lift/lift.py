@@ -247,6 +247,21 @@ class _Lifter:
         self.prog = prog
 
     def build(self) -> pre_ir.Program:
+        """Lift to the pre-IR. Wraps :meth:`_build_impl` so any lift failure —
+        a reconstruction limit the ~0.1% of non-lifting mainnet contracts hit,
+        or a bug — surfaces as a typed :class:`tealtools.errors.LiftError`
+        (stage ``"build"``) with the original exception chained, instead of a
+        bare ``TypeError`` / ``KeyError``. A ``LiftError`` already raised deeper
+        is passed through unchanged."""
+        from ..errors import LiftError
+        try:
+            return self._build_impl()
+        except LiftError:
+            raise
+        except Exception as e:
+            raise LiftError(f"{type(e).__name__}: {e}", stage="build") from e
+
+    def _build_impl(self) -> pre_ir.Program:
         _prune_dead_assert_edges(self.prog)
         self.form = to_block_args(self.prog)
         self.label2line = {code.rstrip(":").strip(): ln for (_f, ln, code) in self.prog.labels}
