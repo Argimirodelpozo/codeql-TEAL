@@ -30,6 +30,16 @@ dependencies = [
 # genuine ``puya.ir.models`` does. Pinned to the tested minor: the lift touches
 # puya compiler internals with no stability guarantee across releases.
 lift = ["puyapy>=5.7,<5.8"]
+# Test / development toolchain (already assumed by the suite: xdist for
+# parallelism, timeout to fail hangs, cov for coverage). Install with
+# ``pip install -e '.[dev]'``.
+dev = [
+    "pytest>=8",
+    "pytest-xdist",
+    "pytest-timeout",
+    "pytest-cov",
+    "coverage",
+]
 
 [project.urls]
 Repository = "https://github.com/Argimirodelpozo/codeql-TEAL"
@@ -58,3 +68,31 @@ markers = [
     "puya: requires the puya/puyapy package (the lift backend)",
 ]
 filterwarnings = ["ignore::DeprecationWarning"]
+
+# Coverage is opt-in (CI runs `pytest --cov`); it is NOT in addopts so a plain
+# `pytest` works without pytest-cov installed. See the [tool.coverage.*] config.
+[tool.coverage.run]
+branch = true
+source = ["src/analysis/tealtools", "src/security", "cli"]
+omit = [
+    "*/viz/*",          # Graphviz DOT/SVG debug rendering — not the analysis product
+    "*/__main__.py",    # module CLI entry points
+    "*/_utils/dot.py",  # Graphviz helpers
+]
+
+[tool.coverage.report]
+skip_covered = true
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "\\.\\.\\.",
+]
+# Conservative REGRESSION floor, not a target. The hermetic suite covers ~79%
+# (higher with LIFT_SEMANTICS_CORPUS/BACKEND); a fresh clone WITHOUT the
+# gitignored tests/dbs/ fixtures skips ~45 substrate tests and drops lower, so
+# the floor is set to survive that and catch only a real regression. Ratchet it
+# up once the real-DB fixtures ship in CI.
+fail_under = 68
