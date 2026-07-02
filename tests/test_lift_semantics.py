@@ -43,7 +43,7 @@ pytest.importorskip("puya")
 from tealtools.lift import pre_ir  # noqa: E402
 
 _ROOT = Path(__file__).resolve().parent
-_REAL_DB_DIR = _ROOT / "contracts"
+_REAL_CONTRACT_DIR = _ROOT / "contracts"
 _CORPUS_DIR = _ROOT / "experimental_IR_lift" / "puya"
 _EXPLORER_DIR = _ROOT / "experimental_IR_lift" / "explorer"
 # A residual-"?" fraction this high means type recovery has collapsed (a coarse
@@ -52,39 +52,39 @@ _MAX_UNKNOWN_FRACTION = 0.25
 
 
 # --------------------------------------------------------------------------
-# DB discovery (skip-gated: fixtures are gitignored / locally built)
+# contract discovery (skip-gated: fixtures are gitignored / locally built)
 # --------------------------------------------------------------------------
 
 
-def _has_db(d: Path) -> bool:
-    # source-bearing fixture dir: a slimmed `.teal` or a legacy codeql `src.zip`
+def _has_source(d: Path) -> bool:
+    # source-bearing fixture dir: holds a slimmed `.teal` source
     return bool(list(d.glob("*.teal"))) or (d / "src.zip").exists()
 
 
-def _real_dbs():
+def _real_contracts():
     names = ("xgov", "folks-consensus-v2", "folks-consensus-v3",
              "folks-xgov-registry", "repro")
-    return [(n, _REAL_DB_DIR / n) for n in names if _has_db(_REAL_DB_DIR / n)]
+    return [(n, _REAL_CONTRACT_DIR / n) for n in names if _has_source(_REAL_CONTRACT_DIR / n)]
 
 
-def _corpus_dbs():
+def _corpus_contracts():
     if not _CORPUS_DIR.exists():
         return []
     return [(p.name, p / "src") for p in sorted(_CORPUS_DIR.iterdir())
-            if _has_db(p / "src")]
+            if _has_source(p / "src")]
 
 
-def _all_dbs():
-    out = _real_dbs()
+def _all_contracts():
+    out = _real_contracts()
     if os.environ.get("LIFT_SEMANTICS_CORPUS"):
-        out += _corpus_dbs()
+        out += _corpus_contracts()
     return out
 
 
 _NO_FIXTURES = [pytest.param(None, id="no-fixtures",
-                             marks=pytest.mark.skip(reason="no lift DB fixtures present"))]
+                             marks=pytest.mark.skip(reason="no lift fixtures present"))]
 
-_DB_PARAMS = [pytest.param(str(d), id=n) for n, d in _all_dbs()] or _NO_FIXTURES
+_CONTRACT_PARAMS = [pytest.param(str(d), id=n) for n, d in _all_contracts()] or _NO_FIXTURES
 
 # Full-backend lowering (Tier 3): lift -> split ValueTuples -> destructure SSA ->
 # MIR -> TEAL, exactly Puya's own pre-MIR sequence. ALL 5 real contracts now lower
@@ -99,14 +99,14 @@ _XFAIL_BACKEND = pytest.mark.xfail(
     strict=False, raises=Exception)
 _BACKEND_PARAMS = (
     [pytest.param(str(d), id=n, marks=() if n in _BACKEND_LOWERS else (_XFAIL_BACKEND,))
-     for n, d in _real_dbs()]
-    if os.environ.get("LIFT_SEMANTICS_BACKEND") and _real_dbs()
+     for n, d in _real_contracts()]
+    if os.environ.get("LIFT_SEMANTICS_BACKEND") and _real_contracts()
     else [pytest.param(None, id="backend-gated",
                        marks=pytest.mark.skip(reason="set LIFT_SEMANTICS_BACKEND=1"))])
 
 
 # --------------------------------------------------------------------------
-# Lift + lower once per DB, shared across the per-DB tier tests
+# Lift + lower once per contract, shared across the per-contract tier tests
 # --------------------------------------------------------------------------
 
 
@@ -168,7 +168,7 @@ def _lower_to_teal(main, subs):
 
 
 @functools.lru_cache(maxsize=None)
-def _process(db: str):
+def _process(contract: str):
     """(pre_ir Program, lowered main Subroutine, [lowered subs]). Lift + Puya's
     own IR optimiser only -- the Tier-1/2 bar. Raises if the lift/optimise fails
     (that is itself the Tier-1 signal). The backend (Tier 3) runs lazily so the
@@ -177,7 +177,7 @@ def _process(db: str):
     from tealtools.lift import to_puya_ir
     from tealtools.lift.lift import lift
     with _quiet_puya():
-        prog = SSAProgram(db)
+        prog = SSAProgram(contract)
         pre = lift(prog)                                   # pre-IR for Tier 2
         main, subs = to_puya_ir.to_puya(prog)              # genuine puya.ir.models
         to_puya_ir.optimize([main, *subs])                # Puya's own IR optimiser
@@ -185,7 +185,7 @@ def _process(db: str):
 
 
 # --------------------------------------------------------------------------
-# Pre-IR well-formedness checker (shared by always-run units + per-DB tests)
+# Pre-IR well-formedness checker (shared by always-run units + per-contract tests)
 # --------------------------------------------------------------------------
 
 
@@ -222,7 +222,7 @@ def _unknown_registers(pre):
 
 
 # --------------------------------------------------------------------------
-# Tier 2 — the checker itself, always-run on hand-built pre-IR (no DB/puya lift)
+# Tier 2 — the checker itself, always-run on hand-built pre-IR (no fixture/puya lift)
 # --------------------------------------------------------------------------
 
 
@@ -260,33 +260,33 @@ def test_checker_passes_matching_call_arity():
 
 
 # --------------------------------------------------------------------------
-# Per-DB tier tests (skip-gated; _process cached so each DB lifts once)
+# Per-contract tier tests (skip-gated; _process cached so each contract lifts once)
 # --------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("db", _DB_PARAMS)
-def test_lifts_and_optimises(db):
+@pytest.mark.parametrize("contract", _CONTRACT_PARAMS)
+def test_lifts_and_optimises(contract):
     """Tier 1: SSA lifts to genuine Puya IR and Puya's optimiser accepts it."""
-    pre, main, _subs = _process(db)
+    pre, main, _subs = _process(contract)
     assert pre is not None and main is not None
 
 
-@pytest.mark.parametrize("db", _DB_PARAMS)
-def test_pre_ir_well_formed(db):
+@pytest.mark.parametrize("contract", _CONTRACT_PARAMS)
+def test_pre_ir_well_formed(contract):
     """Tier 2: completeness invariants on the lifted pre-IR."""
-    pre, _main, _subs = _process(db)
+    pre, _main, _subs = _process(contract)
     assert _violations(pre) == []
     unknown, total = _unknown_registers(pre)
     assert unknown <= _MAX_UNKNOWN_FRACTION * total, \
         f"type recovery collapsed: {unknown}/{total} registers unresolved"
 
 
-@pytest.mark.parametrize("db", _BACKEND_PARAMS)
-def test_lowers_through_puya_backend(db):
+@pytest.mark.parametrize("contract", _BACKEND_PARAMS)
+def test_lowers_through_puya_backend(contract):
     """Tier 3 (tracked/xfail): the lifted IR lowers through Puya's real MIR
     stack-allocator + TEAL backend to actual ops. Currently surfaces the lift's
     not-yet-backend-clean gaps on production contracts; flips to xpass when fixed."""
-    _pre, main, subs = _process(db)
+    _pre, main, subs = _process(contract)
     teal = _lower_to_teal(main, subs)
     assert sum(len(b.ops) for b in teal.main.blocks) > 0    # produced real TEAL ops
 
@@ -297,7 +297,7 @@ def test_lowers_through_puya_backend(db):
 
 
 @pytest.mark.skipif(
-    not _has_db(_EXPLORER_DIR / "app_3543081435"),
+    not _has_source(_EXPLORER_DIR / "app_3543081435"),
     reason="app_3543081435 explorer fixture not present",
 )
 def test_match_arm_pairing_individual_pushes():

@@ -231,7 +231,7 @@ class TaintAnalysis:
     seeding and sink reporting only consider assignments in that
     file. Since each ``.teal`` is an independent program (no SSAVars
     shared across files), this isolates one program inside a
-    multi-file DB — the shape ``scan`` relies on.
+    multi-file program — the shape ``scan`` relies on.
     """
 
     def __init__(
@@ -321,7 +321,7 @@ class TaintAnalysis:
         source_for: dict[TaintedOperand, tuple[Assignment, str]] = {}
 
         # Step 1: seed from sources. Scoped to ``self.file`` so a
-        # multi-file DB only seeds the program under analysis; taint
+        # multi-file program only seeds the program under analysis; taint
         # then can't reach another file because SSAVars aren't shared
         # across programs.
         for a in self.prog.assignments:

@@ -799,7 +799,7 @@ def byte_taint_view(
 def _main(argv) -> int:
     """CLI: byte-strip taint view for a contract.
 
-        python -m tealtools.dataflow.byte_taint <db|file.teal> [--no-validate] [--why]
+        python -m tealtools.dataflow.byte_taint <contract.teal> [--no-validate] [--why]
 
     ``--why`` prints the provenance witness (taint chain source→value, crossing
     callsub, + the validating ops) instead of the strip view.

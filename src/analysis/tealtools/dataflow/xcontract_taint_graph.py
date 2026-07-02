@@ -59,7 +59,7 @@ class XContractNode:
 
 @dataclass
 class XContractTaintGraph:
-    """Cross-contract taint graph stitched from per-DB ``TaintGraph``
+    """Cross-contract taint graph stitched from per-contract ``TaintGraph``
     instances plus appcall bridge edges."""
 
     g: nx.DiGraph
@@ -227,7 +227,7 @@ def _copy_into(big: nx.DiGraph, tg: TaintGraph, *, app_id: Optional[int]) -> Non
         big.add_node(XContractNode(app_id=app_id, inner=n), **attrs)
     for u, v, data in tg.g.edges(data=True):
         # Copy with a shallow new kinds set so prunes on big don't
-        # mutate the per-DB tg.
+        # mutate the per-contract tg.
         big.add_edge(
             XContractNode(app_id=app_id, inner=u),
             XContractNode(app_id=app_id, inner=v),

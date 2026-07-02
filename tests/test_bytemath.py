@@ -4,7 +4,7 @@ arithmetic that bounds a bytemath op's result (``b+``/``b-``/``b*``/``b/``/
 
 ``_bytemath_result`` is a pure function of ``(op, IntRange, IntRange)`` and
 ``_operand_bigint_range`` duck-types its operand, so both run as plain unit
-tests with real ``IntRange`` / ``Const`` / ``TealType`` — no SSA fixpoint, DB,
+tests with real ``IntRange`` / ``Const`` / ``TealType`` — no SSA fixpoint, fixture,
 or puya. Ranges are arbitrary-precision (no uint64 cap): a long ``b*`` chain can
 legitimately exceed 2**64.
 """

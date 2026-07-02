@@ -1,8 +1,8 @@
 """Tests for the group size + layout report
 (``tealtools.group_reasoning.analyze_layout`` / GroupLayout).
 
-Reuses the existing group_shape fixtures (no new DB). Skips cleanly if
-the fixture DB isn't available.
+Reuses the existing group_shape fixtures (no new fixture). Skips cleanly if
+the fixture isn't available.
 """
 from pathlib import Path
 
@@ -12,12 +12,12 @@ FIX = Path(__file__).resolve().parent / "tealtools/group_shape"
 
 
 def _prog(case: str):
-    db = FIX / case
-    if not db.exists():
-        pytest.skip(f"fixture DB not present: {db}")
+    contract = FIX / case
+    if not contract.exists():
+        pytest.skip(f"fixture not present: {contract}")
     from tealtools.ssa import SSAProgram
     try:
-        return SSAProgram(str(db))
+        return SSAProgram(str(contract))
     except Exception as e:  # pragma: no cover - environment-dependent
         pytest.skip(f"could not build SSAProgram: {e}")
 
@@ -57,10 +57,10 @@ class TestCli:
         import json
         from cli.main import main
 
-        db = FIX / "forced"
-        if not db.exists():
-            pytest.skip("fixture DB not present")
-        rc = main(["group-layout", str(db), "--json"])
+        contract = FIX / "forced"
+        if not contract.exists():
+            pytest.skip("fixture not present")
+        rc = main(["group-layout", str(contract), "--json"])
         assert rc == 0
         data = json.loads(capsys.readouterr().out)
         assert data["group_size"] == ["== 2"]

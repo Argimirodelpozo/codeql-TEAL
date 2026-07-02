@@ -3,9 +3,9 @@ original vs recompiled program's BEHAVIOUR on a live Algorand localnet via
 algod dryrun. A real-world generalisation test for lift: does the
 lift reconstruct an equivalent program for contracts it has never seen?
 
-  python -m tests.behavioral_lift.recompile <db-or-dir> ...
+  python -m tests.behavioral_lift.recompile <contract-dir> ...
 
-Each arg is a CodeQL DB dir (has codeql-database.yml) or a dir of such.
+Each arg is a contract dir (holds a .teal) or a dir of such.
 """
 from __future__ import annotations
 
@@ -31,22 +31,25 @@ def algod_client():
     return algod.AlgodClient("a" * 64, "http://localhost:4001")
 
 
-def _dbs(args):
+def _contract_dirs(args):
+    """Yield each contract directory (a dir holding a ``.teal``) named on the
+    command line — the arg itself if it contains ``.teal``, else every such dir
+    beneath it."""
     for a in args:
         p = Path(a)
-        if (p / "codeql-database.yml").exists():
+        if list(p.glob("*.teal")):
             yield p
         else:
-            yield from sorted(d.parent for d in p.rglob("codeql-database.yml"))
+            yield from sorted({t.parent for t in p.rglob("*.teal")})
 
 
 def main(argv):
     algod = algod_client()
     ok = lift_fail = compile_fail = 0
-    for db in _dbs(argv):
-        name = db.parent.name if db.name == "db" else db.name
+    for contract in _contract_dirs(argv):
+        name = contract.name
         try:
-            teal = lift_to_teal(str(db))
+            teal = lift_to_teal(str(contract))
         except Exception as e:
             lift_fail += 1
             print(f"  LIFT-FAIL {name:34s} {type(e).__name__}: {str(e)[:45]}", flush=True)

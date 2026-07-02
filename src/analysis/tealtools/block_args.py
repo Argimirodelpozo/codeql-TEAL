@@ -34,7 +34,7 @@ interference) is a separate backend step and is intentionally not done here.
 
     >>> from tealtools.ssa import SSAProgram
     >>> from tealtools.block_args import to_block_args
-    >>> form = to_block_args(SSAProgram(db))
+    >>> form = to_block_args(SSAProgram("contract.teal"))
     >>> print(form.render())
 """
 from __future__ import annotations

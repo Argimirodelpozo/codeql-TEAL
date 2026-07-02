@@ -164,13 +164,13 @@ class ImproperR(Region):
 
 @dataclass(eq=False)
 class ProgramR(Region):
-    """Multi-program root — a TEAL DB can hold several independent
+    """Multi-program root — a TEAL source can hold several independent
     programs (e.g., approval + clear-state .teal files). Each
     program's CFG is its own connected component; they don't call
     each other, so analyses should treat them independently.
 
     ``programs`` lists each program's region in source-order by entry
-    file/line. For single-program DBs the builder returns that
+    file/line. For single-program sources the builder returns that
     program's region directly rather than wrapping it here.
 
     ``subroutines`` (when non-empty) maps each subroutine entry BB to
@@ -217,7 +217,7 @@ def _terminator_op(bb: BasicBlock) -> Optional[str]:
 
 def build_control_tree(prog: SSAProgram) -> Region:
     """Lift ``prog``'s CFG into a control tree. The root region
-    represents the entire DB.
+    represents the entire program.
 
     Subroutines (``callsub``-reachable BBs) are detected and reduced
     into their own regions (keyed in ``subroutines``), then the main flow's
@@ -229,9 +229,9 @@ def build_control_tree(prog: SSAProgram) -> Region:
     graph) are stored on the returned :class:`ProgramR` for cost
     analyses to charge at each ``callsub`` site.
 
-    Multi-program DBs (e.g. approval + clear-state .teal files in one
-    DB) likewise produce one program per weakly-connected component
-    of the post-cut graph; single-program DBs without subroutines get
+    Multi-program sources (e.g. approval + clear-state .teal files in one
+    source) likewise produce one program per weakly-connected component
+    of the post-cut graph; single-program sources without subroutines get
     a bare region back."""
     cfg = CFG.of(prog)
 

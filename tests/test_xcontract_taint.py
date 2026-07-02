@@ -6,7 +6,7 @@ and checks that (a) all three appcall bridges are created and (b) the
 reachability detector follows an attacker arg from the caller, across
 the forward-arg bridge, to a sensitive payment sink in the callee.
 
-Requires the fixture DBs (built on demand by conftest); skips cleanly
+Requires the fixtures (built on demand by conftest); skips cleanly
 if CodeQL isn't available in this environment.
 """
 from pathlib import Path

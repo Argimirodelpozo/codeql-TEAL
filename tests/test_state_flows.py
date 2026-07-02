@@ -6,7 +6,7 @@ Two layers:
     the easy thing to get wrong (the ``_ex`` variants leave did_exist on
     top, so the *value* is the deeper output 2).
   - fixture-based: end-to-end seeding against a real program that reads
-    app state; skipped if the fixture DB can't be built.
+    app state; skipped if the fixture can't be built.
 """
 import pytest
 
@@ -53,17 +53,17 @@ class TestSourceConventions:
 
 @pytest.fixture(scope="module")
 def updatable_prog():
-    """SSAProgram for a fixture that reads app state. Skips if the DB
+    """SSAProgram for a fixture that reads app state. Skips if the fixture
     isn't available in this environment."""
     from pathlib import Path
     from tealtools.ssa import SSAProgram
 
-    db = (Path(__file__).resolve().parent
+    contract = (Path(__file__).resolve().parent
           / "tealtools/sec_guide/is_updatable/gabe_vuln")
-    if not db.exists():
-        pytest.skip(f"fixture DB not present: {db}")
+    if not contract.exists():
+        pytest.skip(f"fixture not present: {contract}")
     try:
-        return SSAProgram(str(db))
+        return SSAProgram(str(contract))
     except Exception as e:  # pragma: no cover - environment-dependent
         pytest.skip(f"could not build SSAProgram: {e}")
 

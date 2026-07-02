@@ -193,13 +193,13 @@ class TestFlowSensitivity:
 
 
 def _xgov():
-    db = Path(__file__).parent / "contracts" / "xgov"
-    if not db.exists():
+    contract = Path(__file__).parent / "contracts" / "xgov"
+    if not contract.exists():
         pytest.skip("xgov fixture not present")
     from tealtools.ssa import SSAProgram
 
     try:
-        return SSAProgram(str(db))
+        return SSAProgram(str(contract))
     except Exception as e:  # pragma: no cover
         pytest.skip(f"could not build SSAProgram: {e}")
 

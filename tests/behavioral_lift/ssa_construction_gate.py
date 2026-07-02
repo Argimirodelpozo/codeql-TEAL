@@ -25,7 +25,7 @@ from pathlib import Path
 from .recompile import algod_client
 from .compare import compare
 
-REAL_DBS = [
+REAL_CONTRACTS = [
     "tests/contracts/folks-consensus-v3",
     "tests/contracts/folks-consensus-v2",
     "tests/contracts/xgov",
@@ -34,8 +34,8 @@ REAL_DBS = [
 N_PROBES = 8
 
 
-def _teal_of(db_path: str) -> str:
-    p = Path(db_path)
+def _teal_of(path: str) -> str:
+    p = Path(path)
     if p.is_file():
         return p.read_text()
     tf = list(p.glob("*.teal"))
@@ -45,14 +45,14 @@ def _teal_of(db_path: str) -> str:
 def main() -> int:
     algod = algod_client()
     probes = sorted(Path("tests/mainnet-random-probes").glob("*.teal"))[:N_PROBES]
-    targets = [(d, d) for d in REAL_DBS] + [(str(p), str(p)) for p in probes]
+    targets = [(d, d) for d in REAL_CONTRACTS] + [(str(p), str(p)) for p in probes]
     faithful = diverged = skipped = 0
-    for name, db in targets:
-        orig = _teal_of(db)
+    for name, contract in targets:
+        orig = _teal_of(contract)
         if not orig:
             print(f"  SKIP {Path(name).name:34s} no teal"); skipped += 1; continue
         try:
-            r = compare(algod, db, orig)
+            r = compare(algod, contract, orig)
         except Exception as e:
             print(f"  SKIP {Path(name).name:34s} {type(e).__name__}: {str(e)[:44]}")
             skipped += 1

@@ -1,7 +1,7 @@
 """The :class:`SSAProgram` class — the canonical program type every
 analysis consumes.
 
-``SSAProgram(db)`` runs a graph-loading pre-pass via
+``SSAProgram(source)`` runs a graph-loading pre-pass via
 :mod:`tealtools.graph`
 (CFG / AST / arity / constant annotations, populating the data
 classes from :mod:`tealtools.ssa.models`), then routes SSA

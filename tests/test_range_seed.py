@@ -10,7 +10,7 @@ reach on its own:
   - the count-valued ``_TXN_FIELD_RANGES`` additions (reference-array
     lengths, schema entry counts, spec-capped scalars).
 
-Built from in-memory TEAL so no DB is needed.
+Built from in-memory TEAL so no fixture is needed.
 """
 from tealtools.ssa import SSAProgram
 

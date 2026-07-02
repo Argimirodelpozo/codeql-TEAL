@@ -5,7 +5,7 @@ the Op/ControlOp/Phi dispatch.
 
 These build real ``pre_ir`` nodes (no CodeQL DB), but importing the pre-IR
 package eagerly pulls in the lift, which needs ``puya`` — so the module
-skip-gates on puya being importable, matching the DB-skip pattern elsewhere.
+skip-gates on puya being importable, matching the fixture-skip pattern elsewhere.
 
 The load-bearing case is ``map_operands``'s ``copy_source`` flag: a bare-Value
 copy source must be rewritten under substitution but left alone under

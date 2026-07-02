@@ -119,7 +119,7 @@ def is_rejection_exit(bb: BasicBlock) -> bool:
 # Most helpers below accept an optional ``file: Optional[str] = None``
 # kwarg. When set, the iteration is restricted to ops/blocks whose
 # ``location.file == file``. This is what lets a single
-# :class:`SSAProgram` built from a multi-program directory (one DB per
+# :class:`SSAProgram` built from a multi-program directory (one program per
 # dir, several .teal files inside) be analysed program-by-program by
 # threading the filename through every iteration.
 # ---------------------------------------------------------------------------
@@ -246,10 +246,10 @@ def _bb_strict_dominators(
     predecessors. Standard worklist algorithm.
 
     With ``file`` set, only blocks in that file participate — useful
-    when one DB carries multiple programs and dominance must stay
+    when one source carries multiple programs and dominance must stay
     intra-program. (BB CFG edges don't cross files in tealtools'
     model, so the result is structurally the same as building a
-    program-only DB.)"""
+    single-program source.)"""
     blocks = [
         bb for bb in prog.blocks.values() if file_match(bb.file, file)
     ]

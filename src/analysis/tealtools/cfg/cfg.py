@@ -247,7 +247,7 @@ class CFG:
     ) -> str:
         """Render the CFG as a Graphviz DOT string.
 
-        ``file``: restrict to BBs in this source file (e.g. when a DB
+        ``file``: restrict to BBs in this source file (e.g. when a program
         spans multiple ``.teal`` sources).
         ``with_assignments``: include each BB's opcode list in the
         node label. Set ``False`` for a tiny, structural-only graph.

@@ -1,11 +1,11 @@
 """Regenerate the graph-fact golden fixtures (see ``graph_golden``).
 
-Writes ``<db>/graph_golden.txt`` for every fixture DB under ``tests/tealtools``
+Writes ``<contract>/graph_golden.txt`` for every fixture under ``tests/tealtools``
 and ``tests/contracts`` that carries source. Run after an intentional change to the
 ``nodes`` / ``cfgEdges`` / ``basicBlocks`` producers::
 
-    python -m tests.gen_graph_golden          # all DBs
-    python -m tests.gen_graph_golden <db>...  # specific DBs
+    python -m tests.gen_graph_golden          # all contracts
+    python -m tests.gen_graph_golden <contract>...  # specific contracts
 """
 from __future__ import annotations
 
@@ -21,27 +21,27 @@ from graph_golden import GOLDEN_NAME, compute_golden, golden_path  # noqa: E402
 TESTS_DIR = Path(__file__).resolve().parent
 
 
-def _all_dbs() -> list[Path]:
+def _all_contracts() -> list[Path]:
     # Regenerate the golden for every fixture that already carries one; its source
-    # is a `.teal` file (slimmed) or a legacy codeql `src.zip` (both read by the
+    # is a `.teal` file (slimmed) or (both read by the graph backend) (both read by the
     # graph backend).
-    dbs: list[Path] = []
-    for root in (TESTS_DIR / "tealtools", TESTS_DIR / "dbs"):
+    contracts: list[Path] = []
+    for root in (TESTS_DIR / "tealtools", TESTS_DIR / "contracts"):
         if root.exists():
             for golden in sorted(root.rglob(GOLDEN_NAME)):
-                dbs.append(golden.parent)
-    return dbs
+                contracts.append(golden.parent)
+    return contracts
 
 
 def main(argv: list[str]) -> int:
-    dbs = [Path(a) for a in argv] if argv else _all_dbs()
+    contracts = [Path(a) for a in argv] if argv else _all_contracts()
     written = skipped = 0
-    for db in dbs:
-        text = compute_golden(db)
+    for contract in contracts:
+        text = compute_golden(contract)
         if text is None:
             skipped += 1
             continue
-        golden_path(db).write_text(text)
+        golden_path(contract).write_text(text)
         written += 1
     print(f"wrote {written} golden(s), skipped {skipped} (no source)")
     return 0

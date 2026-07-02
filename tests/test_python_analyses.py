@@ -1,6 +1,6 @@
 """Snapshot harness for the tealtools detectors.
 
-Discovers fixtures under ``tests/tealtools/<analysis>/[<case>/]db/``
+Discovers fixtures under ``tests/tealtools/<analysis>/[<case>/]``
 (each carries a ``.teal`` source) and runs the matching analysis against
 each. Output is compared to a checked-in ``expected.txt`` next to the
 fixture; mismatches fail the test with a unified diff.
@@ -30,15 +30,15 @@ SSA_SMOKE = {
 XC_ROOT = PY_TESTS / "xcontract"
 XC_SG_ROOT = PY_TESTS / "xcontract_sec_guide"
 SGS_ROOT = PY_TESTS / "sec_guide_scan"
-# Cross-contract taint fixtures own a multi-DB caller/callee layout and
+# Cross-contract taint fixtures own a multi-program caller/callee layout and
 # are covered by the dedicated tests/test_xcontract_taint.py integration
 # test, not the snapshot harness.
 XC_TAINT_ROOT = PY_TESTS / "xcontract_taint"
 
 
 def _discover():
-    # xcontract cases own a multi-DB layout (caller/db, callee/db); the
-    # case_dir is the parent of those, not the parent of any one db/.
+    # xcontract cases own a multi-program layout (caller/, callee/); the
+    # case_dir is the parent of those.
     if XC_ROOT.exists():
         for case in sorted(p for p in XC_ROOT.iterdir() if p.is_dir()):
             yield pytest.param("xcontract", case, id=f"xcontract/{case.name}")

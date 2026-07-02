@@ -57,7 +57,7 @@ def _dryrun(algod, approval: bytes, clear: bytes, app_args, oc) -> str:
     return approved, detail                             # (outcome, normalised detail)
 
 
-def compare(algod, db: str, orig_teal: str, orig_bytecode: bytes | None = None) -> dict:
+def compare(algod, contract: str, orig_teal: str, orig_bytecode: bytes | None = None) -> dict:
     """Differential dryrun of the lifted program against the original.
 
     The baseline is the original's *deployed* program. Pass ``orig_bytecode``
@@ -70,7 +70,7 @@ def compare(algod, db: str, orig_teal: str, orig_bytecode: bytes | None = None) 
     compared at all, even though BOTH the on-chain original and our lift are
     valid. Using the deployed bytecode sidesteps the round-trip entirely; we
     fall back to assembling ``orig_teal`` only when no bytecode is given."""
-    lifted = lift_to_teal(str(db))
+    lifted = lift_to_teal(str(contract))
     orig_b = orig_bytecode if orig_bytecode is not None else _compile(algod, orig_teal)
     lifted_b = _compile(algod, lifted)
     clear = _compile(algod, "#pragma version 10\nint 1")
@@ -108,18 +108,18 @@ def compare(algod, db: str, orig_teal: str, orig_bytecode: bytes | None = None) 
 def main(argv):
     algod = algod_client()
     tot_m = tot_mech = tot_d = tot_appr = faithful = 0
-    for db in sorted({d.parent for a in argv for d in Path(a).rglob("codeql-database.yml")}):
-        name = db.parent.name if db.name == "db" else db.name
-        teal_files = list(db.parent.glob("*.teal"))
+    for contract in sorted({d.parent for a in argv for d in Path(a).rglob("codeql-database.yml")}):
+        name = contract.parent.name if contract.name == "contract" else contract.name
+        teal_files = list(contract.parent.glob("*.teal"))
         if not teal_files:
             continue
         # Prefer the deployed bytecode (app_<id>.bin from fetch_mainnet) as the
         # baseline -- a contract whose disassembly won't reassemble (strict
         # frame-height check) is still comparable against its on-chain program.
-        bin_files = list(db.parent.glob("*.bin"))
+        bin_files = list(contract.parent.glob("*.bin"))
         orig_bytecode = bin_files[0].read_bytes() if bin_files else None
         try:
-            r = compare(algod, str(db), teal_files[0].read_text(), orig_bytecode)
+            r = compare(algod, str(contract), teal_files[0].read_text(), orig_bytecode)
         except Exception as e:
             print(f"  SKIP {name:30s} {type(e).__name__}: {str(e)[:42]}", flush=True)
             continue

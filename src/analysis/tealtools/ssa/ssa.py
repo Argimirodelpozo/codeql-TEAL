@@ -232,7 +232,7 @@ class PySSA:
 
         Note: :meth:`SSAProgram.__init__` already routes through
         :func:`_apply_pyssa_to` internally, so calling ``PySSA.build``
-        on a prog produced by ``SSAProgram(db)`` is idempotent — it
+        on a prog produced by ``SSAProgram(source)`` is idempotent — it
         re-runs the same PySSA construction and returns an
         equivalently-built fresh prog."""
         py = cls._construct(prog)
@@ -1254,7 +1254,7 @@ def _apply_pyssa_to(
     - :meth:`PySSA.build` (with ``source`` == a separately-loaded program).
     - :meth:`SSAProgram.__init__` (with ``source is None`` — reads
       directly from ``prog`` for graph + var const/range/type
-      annotations). This lets ``SSAProgram(db)`` route SSA
+      annotations). This lets ``SSAProgram(source)`` route SSA
       construction through PySSA without an external bridge step.
 
     Steps:

@@ -121,7 +121,7 @@ def test_summary_wellformed_on_real_contract():
     passthrough index is a valid param position, and it runs without error."""
     teals = sorted((TESTS_DIR / "contracts" / "xgov").rglob("*.teal"))
     if not teals:
-        pytest.skip("xgov fixture not present (gitignored real DB)")
+        pytest.skip("xgov fixture not present (gitignored real contract)")
     prog = SSAProgram(str(teals[0]))
     prog.propagate_constants()
     lifter = _Lifter(prog)

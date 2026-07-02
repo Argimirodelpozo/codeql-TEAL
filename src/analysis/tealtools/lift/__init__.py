@@ -2,12 +2,12 @@
 
     from tealtools.ssa import SSAProgram
     from tealtools.lift import render
-    print(render(SSAProgram(db), optimize_ir=True))
+    print(render(SSAProgram("contract.teal"), optimize_ir=True))
 
 ``lift`` (:mod:`lift`) builds the pre-IR (:mod:`pre_ir`); ``render``
 (:mod:`to_puya_ir`) lowers it to real Puya IR. Metadata in :mod:`optypes`,
-literal parsing in :mod:`teal_const`. ``python -m tealtools.lift <db>``
-renders a DB.
+literal parsing in :mod:`teal_const`. ``python -m tealtools.lift <contract>``
+renders a contract.
 
 ``render`` / ``to_puya`` are exported LAZILY (PEP 562 ``__getattr__``):
 they live in :mod:`to_puya_ir`, the only module on this path that imports

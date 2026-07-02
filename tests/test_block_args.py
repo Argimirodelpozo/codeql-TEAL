@@ -5,7 +5,7 @@ Uses the ``conditional_swap`` fixture — a conditional ``swap`` before a merge,
 whose two stack slots are *anti-correlated* (same value-set {a, b}, opposite
 per path). This is the case where phi-materialisation collapses (last-writer-
 wins at the co-defined leaves) but block-args must keep the per-edge values
-distinct. Skips if the DB isn't available.
+distinct. Skips if the fixture isn't available.
 """
 from pathlib import Path
 
@@ -15,12 +15,12 @@ FIX = Path(__file__).resolve().parent / "tealtools/conditional_swap"
 
 
 def _prog():
-    db = FIX
-    if not db.exists():
-        pytest.skip(f"fixture DB not present: {db}")
+    contract = FIX
+    if not contract.exists():
+        pytest.skip(f"fixture not present: {contract}")
     from tealtools.ssa import SSAProgram
     try:
-        return SSAProgram(str(db))
+        return SSAProgram(str(contract))
     except Exception as e:  # pragma: no cover - environment-dependent
         pytest.skip(f"could not build SSAProgram: {e}")
 

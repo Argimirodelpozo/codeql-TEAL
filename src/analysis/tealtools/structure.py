@@ -25,7 +25,7 @@ with the control tree on what the subroutines are.
     from tealtools.ssa import SSAProgram
     from tealtools.structure import analyze_structure
 
-    s = analyze_structure(SSAProgram(db))
+    s = analyze_structure(SSAProgram("contract.teal"))
     for sub in s.subroutines:
         print(sub.name, len(sub.body), "called from", [c.line for c in sub.callers])
     routing_code = s.assignments_in(s.routing)   # feed a detector, etc.

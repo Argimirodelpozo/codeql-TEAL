@@ -7,7 +7,7 @@ table that derives an output's byte length from one TEAL op plus its operands
 it reads only ``a.const`` / ``a.op`` / ``a.immediates`` / ``a.inputs`` and
 duck-types operands (``getattr(operand, "type"/"const_value", …)``), so it runs
 as plain unit tests over hand-built ``Assignment``s with real ``Const`` /
-``TealType`` operands — no SSA fixpoint, DB, or puya.
+``TealType`` operands — no SSA fixpoint, fixture, or puya.
 """
 from tealtools.passes.byte_length_prop import (
     _hex_byte_length,

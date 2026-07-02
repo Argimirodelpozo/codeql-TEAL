@@ -17,7 +17,7 @@ ports and external callers consume:
                                  txn-field validation detectors.
   - :mod:`.xcontract`          — cross-contract findings driver.
   - :mod:`.scan`               — directory-walking scanner that builds
-                                 per-dir DBs and runs detections on each.
+                                 per-dir programs and runs detections on each.
 
 The :data:`DETECTORS` map below is populated by importlib-loading each
 ``security/detections/<kebab>/<snake>.py`` module listed in
