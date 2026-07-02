@@ -20,9 +20,18 @@ ports and external callers consume:
                                  per-dir DBs and runs detections on each.
 
 The :data:`DETECTORS` map below is populated by importlib-loading each
-``security/detections/<kebab>/<snake>.py`` file at import time, so adding
-a new detection is a matter of dropping a file into the right directory
-with a known-named exported class.
+``security/detections/<kebab>/<snake>.py`` module listed in
+:data:`_DETECTION_SPECS`. Adding a detector today is TWO steps: write the
+``<kebab>/<snake>.py`` module (exporting ``<Name>Detector`` and, unless it
+uses the generic taint framework, ``<Name>Violation``), AND add its
+4-tuple row to ``_DETECTION_SPECS`` below. The tuple pins the load order
+(which is the default scan / ``all`` order) and the exact class names
+re-exported at package level (``from security import RekeyToDetector``).
+
+(A future improvement is auto-discovery — scan the ``detections/*/`` dirs
+and register by convention so the module is the single source — but that
+must preserve the deterministic order and the package-level class
+re-exports the tuple currently guarantees.)
 
 The detectors keep some over-conservative shapes (e.g. ``is-deletable``
 flagging ``fixed-complex-dispatch.teal``, the strict-dominance form of
