@@ -8,6 +8,8 @@ lift depends on: ``frame_dig -k`` -> param, other frame ops -> versioned local
 (each ``frame_bury`` opens a version, each read takes the reaching one), plus
 the fat-frame band passthrough.
 """
+import pytest
+
 from tealql.tealtools.ssa import SSAVar
 from tealql.tealtools.passes.frame_resolution import resolve_sub
 
@@ -172,7 +174,12 @@ done:
 
 def test_deep_loop_invariant_frame_slot_not_zeroed(tmp_path):
     import re
-    from tests.behavioral_lift.compare import lift_to_teal
+
+    pytest.importorskip("puya")
+    # The SHIPPED backend — not tests.behavioral_lift.compare, whose module-level
+    # `from algosdk import ...` needs a dep only the live-localnet harness has
+    # (it re-exports this exact function). Keeps the test hermetic in CI.
+    from tealql.tealtools.lift.backend import lift_to_teal
 
     src = tmp_path / "deep_frame_loop.teal"
     src.write_text(_DEEP_FRAME_LOOP_REPRO)
