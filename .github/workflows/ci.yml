@@ -1,0 +1,50 @@
+# CI: full hermetic suite (incl. the 248-case Puya lift corpus and the real-
+# contract fixtures under tests/contracts/) + a non-editable wheel-install
+# smoke job. The wheel job exists because an editable install masks broken
+# wheel layouts (learned the hard way: the pre-src-layout wheel shipped an
+# unimportable package for months while `pip install -e .` worked fine).
+#
+# Not run here: the behavioural lift gate (needs a live algod localnet) and
+# LIFT_SEMANTICS_BACKEND (opt-in, slow) — both stay developer-side.
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install (core + lift + dev)
+        run: pip install -e '.[lift,dev]'
+      - name: Test — full suite + lift corpus + coverage floor
+        env:
+          LIFT_SEMANTICS_CORPUS: "1"
+        run: pytest tests/ -q -n auto --cov
+
+  wheel-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Non-editable install (the real wheel path)
+        run: pip install .
+      - name: Import + CLI run from site-packages only
+        run: |
+          cd /tmp
+          python -c "import tealql.tealtools, tealql.security, tealql.cli"
+          # `tealql all` exits 1 on findings (this fixture has some) — only
+          # exit 2 (crash / usage error) fails the job.
+          tealql all "$GITHUB_WORKSPACE/tests/contracts/repro/approval.teal" && rc=0 || rc=$?
+          test "$rc" -le 1
