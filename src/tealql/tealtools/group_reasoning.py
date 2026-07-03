@@ -28,7 +28,7 @@ from typing import Optional
 
 from .path_predicates import BranchCondition, PathPredicateAnalysis
 from .ssa import Const, SSAProgram, SSAVar
-from .opsets import U64_CMP_OPS
+from .avm import U64_CMP_OPS
 
 
 # Comparison ops in TEAL whose result is the boolean we typically

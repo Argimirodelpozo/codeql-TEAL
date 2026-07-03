@@ -33,7 +33,7 @@ from tealql.security.detections.tainted_fund_flow import TaintedFundFlowDetector
 from tealql.tealtools.dataflow.byte_taint import Intervals, byte_taint
 from tealql.tealtools.path_predicates import PathPredicateAnalysis
 from tealql.tealtools.ssa import SSAProgram
-from tealql.tealtools.opsets import PAYMENT_FUND_FIELDS
+from tealql.tealtools.avm import PAYMENT_FUND_FIELDS
 
 _FUND_FIELDS = PAYMENT_FUND_FIELDS
 

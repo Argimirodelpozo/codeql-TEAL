@@ -20,16 +20,14 @@ Two structural rewrites (both contained in the lifted IR):
    a FRESH program built from the same source, as ``tealql.security.common.ir_lifter``
    does.
 
-Constants and trivial single-pred phis are inlined; types come from :mod:`optypes`.
+Constants and trivial single-pred phis are inlined; types come from :mod:`tealql.tealtools.avm`.
 """
 from __future__ import annotations
 
 from ..block_args import to_block_args
-from ..opcode_sigs import op_arity
+from ..avm import _STACK_SHUFFLE_OPS, _TERMINATOR_OPS, op_arity
 from ..passes.frame_resolution import resolve_sub
 from ..ssa import (
-    _STACK_SHUFFLE_OPS,
-    _TERMINATOR_OPS,
     Const,
     Phi,
     SSAProgram,
@@ -39,7 +37,7 @@ from ..ssa import (
 )
 from ..structure import analyze_structure
 from . import pre_ir, transforms, type_recovery
-from .optypes import (
+from ..avm import (
     _BOOL_OPS,
     _BYTES_OPS,
     _COND_BRANCH,

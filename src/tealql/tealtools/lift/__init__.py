@@ -5,7 +5,7 @@
     print(render(SSAProgram("contract.teal"), optimize_ir=True))
 
 ``lift`` (:mod:`lift`) builds the pre-IR (:mod:`pre_ir`); ``render``
-(:mod:`to_puya_ir`) lowers it to real Puya IR. Metadata in :mod:`optypes`,
+(:mod:`to_puya_ir`) lowers it to real Puya IR. Metadata in :mod:`tealql.tealtools.avm`,
 literal parsing in :mod:`teal_const`. ``python -m tealql.tealtools.lift <contract>``
 renders a contract.
 

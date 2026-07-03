@@ -24,9 +24,8 @@ from .models import (
     Location,
     Phi,
     SSAVar,
-    _CONST_BLOCK_REF_NAMES,
 )
-from ..opcode_sigs import op_arity
+from ..avm import _CONST_BLOCK_REF_NAMES, op_arity
 from .._utils.dot import render
 
 

@@ -12,7 +12,7 @@ import logging
 
 from ..ssa import Const, Phi, SSAVar
 from . import pre_ir
-from .optypes import (_BYTES_CONSUME, _BYTES_OPS, _U64_CONSUME, _U64_OPS,
+from ..avm import (_BYTES_CONSUME, _BYTES_OPS, _U64_CONSUME, _U64_OPS,
                       _field_type, _imm0, avm)
 from .teal_const import _const_bytes
 

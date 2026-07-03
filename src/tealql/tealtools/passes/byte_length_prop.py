@@ -92,7 +92,7 @@ from ..ssa import (
     Assignment, Const, IntRange, Phi, SSAProgram, SSAVar, TealType,
     const_int, operand_const,
 )
-from ..ssa.models import (
+from ..avm import (
     _GLOBAL_FIELD_BYTELEN,
     _OP_OUTPUT_BYTELEN,
     _PARAMS_OPS,

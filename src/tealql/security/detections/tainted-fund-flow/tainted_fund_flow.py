@@ -31,7 +31,7 @@ from typing import ClassVar, Optional
 from tealql.security import common
 from tealql.tealtools.path_predicates import PathPredicateAnalysis
 from tealql.tealtools.ssa import SSAProgram
-from tealql.tealtools.opsets import PAYMENT_FUND_FIELDS
+from tealql.tealtools.avm import PAYMENT_FUND_FIELDS
 
 # Payment fields where attacker control = redirected / oversized fund movement.
 _FUND_FIELDS = PAYMENT_FUND_FIELDS

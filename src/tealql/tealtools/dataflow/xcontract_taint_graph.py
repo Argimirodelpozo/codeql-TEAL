@@ -39,7 +39,7 @@ from typing import Iterable, Iterator, Optional
 import networkx as nx
 
 from ..ssa import SSAProgram
-from ..opsets import SENSITIVE_ITXN_FIELDS, STATE_WRITE_OPS
+from ..avm import SENSITIVE_ITXN_FIELDS, STATE_WRITE_OPS
 from ..xcontract import AppcallSite, find_appcall_sites, load_registry
 from .taint_graph import Node, TaintGraph
 
@@ -392,7 +392,7 @@ def _caller_field_nodes(
 
 # Sinks whose operand governs value movement or control transfer; a tainted
 # value reaching one of these is the thing worth reporting. Canonical sets in
-# tealql.tealtools.opsets (STATE_WRITE_OPS is the full box/app put/del family, broader
+# tealql.tealtools.avm (STATE_WRITE_OPS is the full box/app put/del family, broader
 # than the former local-here {app_global_put, app_local_put}).
 _SENSITIVE_ITXN_FIELDS = SENSITIVE_ITXN_FIELDS
 _STATE_WRITE_OPS = STATE_WRITE_OPS

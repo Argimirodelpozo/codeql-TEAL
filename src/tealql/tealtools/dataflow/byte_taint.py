@@ -43,7 +43,8 @@ from __future__ import annotations
 from typing import Callable, Optional
 
 from ..ssa import Const, Phi, SSAProgram, SSAVar, const_int, operand_const
-from ..ssa.models import _shuffle_mapping, _txn_field_name
+from ..avm import _txn_field_name
+from ..ssa.models import _shuffle_mapping
 
 INF = float("inf")  # sentinel the Intervals algebra tolerates as an open right end
 #: AVM byteslice stack values are capped at 4096 bytes -- there is no true ∞ end.

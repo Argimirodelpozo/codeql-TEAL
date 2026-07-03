@@ -56,7 +56,7 @@ from .ssa import (
     SSAVar,
     is_const,
 )
-from .opsets import CMP_OPS, LOGICAL_OPS
+from .avm import CMP_OPS, LOGICAL_OPS
 
 
 Operand = Union[SSAVar, Phi, Const]

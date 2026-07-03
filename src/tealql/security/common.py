@@ -35,7 +35,7 @@ from tealql.tealtools.ssa import (
     is_field_var,
 )
 from tealql.tealtools.cfg.dominance import iterative_dominators
-from tealql.tealtools.opsets import CMP_OPS
+from tealql.tealtools.avm import CMP_OPS
 
 logger = logging.getLogger("tealql.security.common")
 
@@ -1060,7 +1060,7 @@ def source_label(op: str, imm: str) -> Optional[str]:
     """The user-input source family ``op`` (with immediates ``imm``) reads, or
     ``None``. ``ApplicationArgs`` (txn/gtxn array reads), LogicSig ``arg``s, and
     the ``itxn ... LastLog`` of a just-called sub-app are all attacker-steerable."""
-    from tealql.tealtools.opsets import TXN_SOURCE_OPS, ITXN_SOURCE_OPS, LSIG_ARG_OPS
+    from tealql.tealtools.avm import TXN_SOURCE_OPS, ITXN_SOURCE_OPS, LSIG_ARG_OPS
     if op in TXN_SOURCE_OPS and "ApplicationArgs" in imm:
         return "ApplicationArgs"
     if op in LSIG_ARG_OPS:

@@ -1,6 +1,6 @@
-"""Guard optypes' hand-maintained op-result-type tables against puya's langspec.
+"""Guard avm.py's hand-maintained op-result-type tables against puya's langspec.
 
-``lift/optypes.py`` carries ``_U64_OPS`` / ``_BYTES_OPS`` — the set of opcodes
+``avm.py`` carries ``_U64_OPS`` / ``_BYTES_OPS`` — the set of opcodes
 whose single result is uint64- vs bytes-backed. It is a SECOND source of truth
 beside puya's own ``AVMOpData`` signatures (which ``to_puya_ir._langspec_returns``
 already reads), and it has drifted before: crypto producers like ``mimc`` were
@@ -8,7 +8,7 @@ missing from ``_BYTES_OPS`` and defaulted to uint64, crossing the AVM divide and
 corrupting the lift (the "residual recovery bug").
 
 This test derives the expected coarse AVM type for every op that puya models
-under the same mnemonic, and fails if optypes disagrees — so a new AVM version
+under the same mnemonic, and fails if the table disagrees — so a new AVM version
 (a retyped op, a new bytes-returning crypto op added to _U64_OPS by mistake)
 fails CI here instead of silently mistyping a register. It also pins a coverage
 floor: if puya renames a member so an op drops out of the comparison, the count
@@ -26,9 +26,9 @@ from puya.avm import AVMType
 from puya.ir.avm_ops import AVMOp
 from puya.ir.avm_ops_models import DynamicVariants, Variant
 
-from tealql.tealtools.lift import optypes
+from tealql.tealtools import avm
 
-# Ops in optypes' result tables that puya does NOT model under the same
+# Ops in avm.py's result tables that puya does NOT model under the same
 # mnemonic: TEAL uses symbols (`+`) where puya uses identifiers (`add`), and
 # the const-push pseudo-ops (`intc*` / `pushint*` / …) are typed from their
 # folded const value, not a langspec return. These are deliberately outside
@@ -38,7 +38,7 @@ from tealql.tealtools.lift import optypes
 _SYMBOL_OR_PUSH = (
     set("+ - * / %".split())
     | {f"b{s}" for s in "+ - * / % | & ^ ~".split()}
-    | optypes._U64_PUSH | optypes._BYTES_PUSH
+    | avm._U64_PUSH | avm._BYTES_PUSH
     | {"len"}  # puya models len via a differently-named member
 )
 
@@ -68,7 +68,7 @@ def _puya_return_avm_kinds(op_name: str):
 
 
 def _covered_ops():
-    for op in sorted(optypes._U64_OPS | optypes._BYTES_OPS):
+    for op in sorted(avm._U64_OPS | avm._BYTES_OPS):
         if op in _SYMBOL_OR_PUSH:
             continue
         kinds = _puya_return_avm_kinds(op)
@@ -77,11 +77,11 @@ def _covered_ops():
 
 
 def test_optypes_result_tables_match_puya_langspec():
-    want = {op: "u" for op in optypes._U64_OPS}
-    want.update({op: "b" for op in optypes._BYTES_OPS})
+    want = {op: "u" for op in avm._U64_OPS}
+    want.update({op: "b" for op in avm._BYTES_OPS})
     mismatches = []
     for op, kinds in _covered_ops():
-        # Every return slot of a single-result-typed op must share optypes'
+        # Every return slot of a single-result-typed op must share avm.py's
         # coarse classification (multi-return byte ops like ecdsa_pk_recover
         # return all-bytes, so every slot must be 'b').
         if any(k != want[op] for k in kinds):
@@ -99,14 +99,14 @@ def test_drift_coverage_floor():
 
 
 def test_address_fields_single_source_consistency():
-    # The address-field universe is defined ONCE in opsets and drives BOTH the
-    # "account" type table (optypes) and the 32-byte length table (models).
-    # This locks the two derived views against that single source so they can't
+    # The address-field universe is defined ONCE (ADDRESS_*_FIELDS in avm) and
+    # drives BOTH the "account" type table and the 32-byte length table. This
+    # locks the two derived views against that single source so they can't
     # drift: every address field is account-typed AND 32 bytes, and nothing else
     # claims to be an account.
-    from tealql.tealtools.opsets import ADDRESS_TXN_FIELDS, ADDRESS_GLOBAL_FIELDS
-    from tealql.tealtools.lift import optypes as O
-    from tealql.tealtools.ssa import models as M
+    from tealql.tealtools.avm import ADDRESS_TXN_FIELDS, ADDRESS_GLOBAL_FIELDS
+    from tealql.tealtools import avm as O
+    M = O
 
     for f in ADDRESS_TXN_FIELDS:
         assert O._TXN_FIELD_TYPE.get(f) == "account", f
@@ -130,7 +130,7 @@ def test_known_crypto_producers_are_bytes_typed():
     for op in ("mimc", "sha256", "sha512_256", "keccak256", "sha3_256",
                "ec_add", "ec_scalar_mul", "ecdsa_pk_recover",
                "ecdsa_pk_decompress"):
-        assert op in optypes._BYTES_OPS, op
+        assert op in avm._BYTES_OPS, op
         kinds = _puya_return_avm_kinds(op)
         if kinds:  # puya confirms all-bytes returns
             assert all(k == "b" for k in kinds), (op, kinds)

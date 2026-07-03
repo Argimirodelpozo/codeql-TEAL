@@ -11,7 +11,7 @@ from __future__ import annotations
 import copy as _copy
 
 from . import pre_ir
-from .optypes import avm
+from ..avm import avm
 
 
 def _intr(o):

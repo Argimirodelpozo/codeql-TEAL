@@ -31,7 +31,7 @@ from ..ssa import SSAProgram
 # --- app-state read sources ------------------------------------------
 #
 # Output-index conventions (1-based, top-first after the op runs; the
-# arities live in tealql.tealtools.opcode_sigs):
+# arities live in tealql.tealtools.avm):
 #   app_global_get     (1 -> 1): pushes [value]            -> value = 1
 #   app_local_get      (2 -> 1): pushes [value]            -> value = 1
 #   app_global_get_ex  (2 -> 2): pushes [value, did_exist] -> value = 2

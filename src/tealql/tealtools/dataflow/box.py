@@ -39,7 +39,7 @@ from .engine import (
     TaintedOperand,
     Violation,
 )
-from ..opsets import SENSITIVE_ITXN_FIELDS as _SENSITIVE_ITXN_FIELDS
+from ..avm import SENSITIVE_ITXN_FIELDS as _SENSITIVE_ITXN_FIELDS
 from ..ssa import Assignment, Const, Phi, SSAProgram
 
 
@@ -144,7 +144,7 @@ APP_LOCAL_PUT_VALUE_SINK = Sink(
 
 
 # Sensitive itxn_field sinks (flowing arbitrary bytes into these governs payment
-# routing or app control transfer) — canonical set in tealql.tealtools.opsets, imported
+# routing or app control transfer) — canonical set in tealql.tealtools.avm, imported
 # at the top of this module.
 
 

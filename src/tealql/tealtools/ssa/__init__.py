@@ -25,7 +25,16 @@ Layout:
 """
 from __future__ import annotations
 
-# Data classes + op-classification helpers from .models
+# AVM metadata (single home tealql.tealtools.avm) — re-exported here because
+# the ssa layer is where most callers already look for them.
+from ..avm import (
+    _CONST_BLOCK_REF_NAMES,
+    _OP_RANGE_SEEDS,
+    _STACK_SHUFFLE_OPS,
+    _TERMINATOR_OPS,
+)
+
+# Data classes + model-convention helpers from .models
 from .models import (
     Assignment,
     BasicBlock,
@@ -36,10 +45,6 @@ from .models import (
     Phi,
     SSAVar,
     TealType,
-    _CONST_BLOCK_REF_NAMES,
-    _OP_RANGE_SEEDS,
-    _STACK_SHUFFLE_OPS,
-    _TERMINATOR_OPS,
     _shuffle_mapping,
     _canon_shuffle,
 )

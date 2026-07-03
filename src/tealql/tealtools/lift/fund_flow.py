@@ -20,7 +20,7 @@ account.
 
     (RekeyTo is intentionally NOT a fund field here -- an app/itxn RekeyTo is
     self-inflicted, not a tainted-field vuln; rekey is an lsig-only check. See
-    ``opsets.FUND_FIELDS`` and the lsig ``rekey-to`` detector.)
+    ``avm.FUND_FIELDS`` and the lsig ``rekey-to`` detector.)
 
 Each finding records the *dominating guards* on the path to the sink -- asserts,
 and conditional branches whose outcome is forced on every path that reaches the
@@ -46,11 +46,11 @@ from dataclasses import dataclass
 
 from . import pre_ir
 from .taint import _intr, _invoke, source_label, user_input_taint
-from ..opsets import FUND_FIELDS as _FUND_FIELDS
+from ..avm import FUND_FIELDS as _FUND_FIELDS
 from ..cfg.dominance import iterative_dominators
 
 # Inner-txn fields where attacker control = fund redirection / theft, by severity
-# (canonical FUND_FIELDS in tealql.tealtools.opsets).
+# (canonical FUND_FIELDS in tealql.tealtools.avm).
 _SEV_ORDER = {"CRITICAL": 3, "HIGH": 2, "MEDIUM": 1, "LOW": 0}
 
 _TXN_SENDER_FAM = frozenset({"txn", "txna", "gtxn", "gtxna", "gtxns", "gtxnsa"})

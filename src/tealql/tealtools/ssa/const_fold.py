@@ -22,7 +22,7 @@ from __future__ import annotations
 from typing import Optional
 
 from .models import Assignment, Const
-from ..opsets import CMP_OPS
+from ..avm import CMP_OPS
 
 
 # ---------------------------------------------------------------------------

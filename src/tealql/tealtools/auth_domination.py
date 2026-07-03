@@ -55,7 +55,7 @@ from .path_predicates import (
     BranchCondition,
     PathPredicateAnalysis,
 )
-from .opsets import STATE_MUTATING_OPS as _STATE_MUTATING_OPS
+from .avm import STATE_MUTATING_OPS as _STATE_MUTATING_OPS
 
 
 # ---------------------------------------------------------------------------
@@ -92,7 +92,7 @@ class AuthMatcher:
 
 
 # State-mutating opcodes that should typically only run on a guard-dominated
-# path — the canonical set (``tealql.tealtools.opsets.STATE_MUTATING_OPS``, imported
+# path — the canonical set (``tealql.tealtools.avm.STATE_MUTATING_OPS``, imported
 # above). Restrict a detector by passing a narrower ``sinks`` list, not by
 # editing the shared set.
 STATE_MUTATION_SINK = AuthSink(

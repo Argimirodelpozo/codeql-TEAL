@@ -40,7 +40,7 @@ from typing import Iterable, Optional
 import networkx as nx
 
 from ..ssa import SSAProgram
-from ..opsets import SENSITIVE_ITXN_FIELDS, STATE_WRITE_OPS
+from ..avm import SENSITIVE_ITXN_FIELDS, STATE_WRITE_OPS
 from .taint_graph import Node, TaintGraph
 
 

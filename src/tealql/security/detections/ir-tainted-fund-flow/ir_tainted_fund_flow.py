@@ -17,7 +17,7 @@ Emits only the UNGUARDED, call-resolved flows.
 """
 from __future__ import annotations
 
-from tealql.tealtools.opsets import FUND_FIELDS
+from tealql.tealtools.avm import FUND_FIELDS
 
 from tealql.security._ir_taint_sink import _IrTaintSinkDetector, _IrTaintSinkViolation
 

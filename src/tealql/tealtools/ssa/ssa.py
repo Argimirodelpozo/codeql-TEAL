@@ -60,7 +60,7 @@ from .models import (
     _shuffle_mapping,
 )
 from .program import SSAProgram
-from ..opcode_sigs import op_arity
+from ..avm import op_arity
 
 
 STACK_MAX = 1000

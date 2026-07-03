@@ -40,7 +40,7 @@ from dataclasses import dataclass
 from typing import Iterable, Optional
 
 from ..auth_domination import AuthMatcher, DEFAULT_MATCHERS
-from ..opsets import STATE_MUTATING_OPS
+from ..avm import STATE_MUTATING_OPS
 from ..path_predicates import BranchCondition, PathPredicateAnalysis
 from ..ssa import Assignment, SSAVar, is_field_var
 from .supercfg import SuperBlock, SuperCFG

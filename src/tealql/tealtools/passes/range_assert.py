@@ -37,7 +37,7 @@ from __future__ import annotations
 from typing import Optional
 
 from ..ssa import IntRange, SSAProgram, SSAVar
-from ..opsets import U64_CMP_OPS
+from ..avm import U64_CMP_OPS
 from .range_arith import (
     _UINT64_MAX,
     _operand_range,

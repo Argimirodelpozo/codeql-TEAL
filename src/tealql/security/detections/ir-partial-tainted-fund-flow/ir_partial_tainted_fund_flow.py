@@ -21,7 +21,7 @@ only the NET-NEW findings the boolean ``ir-tainted-fund-flow`` misses.
 """
 from __future__ import annotations
 
-from tealql.tealtools.opsets import PAYMENT_FUND_FIELDS
+from tealql.tealtools.avm import PAYMENT_FUND_FIELDS
 
 from tealql.security._ir_taint_sink import _IrTaintSinkDetector, _IrTaintSinkViolation
 

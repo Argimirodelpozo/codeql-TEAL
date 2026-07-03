@@ -24,7 +24,7 @@ from __future__ import annotations
 from collections import defaultdict
 
 from ..ssa import Phi, SSAVar
-from ..opsets import (
+from ..avm import (
     TXN_SOURCE_OPS as _TXN_FAM,
     ITXN_SOURCE_OPS as _ITXN_FAM,
     LSIG_ARG_OPS as _ARG_FAM,

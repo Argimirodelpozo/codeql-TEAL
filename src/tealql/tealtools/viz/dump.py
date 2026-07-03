@@ -181,7 +181,7 @@ def _taint_text(prog: SSAProgram) -> str:
     carries the interprocedural frame edges, so param-fed flows are seen)."""
     import networkx as nx
     from ..dataflow.taint_graph import TaintGraph
-    from ..opsets import (
+    from ..avm import (
         SENSITIVE_ITXN_FIELDS, STATE_WRITE_OPS, TXN_SOURCE_OPS, LSIG_ARG_OPS,
     )
     tg = TaintGraph.of(prog)
