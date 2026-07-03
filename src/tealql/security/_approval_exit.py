@@ -8,7 +8,7 @@ Each flags every approving exit reachable without a check of a given txn field
 asset-id-validation does — it only runs on programs that handle asset transfers).
 
 The per-detector ``Violation`` dataclass stays in its own module: the registry
-(:data:`tealql.security._DETECTION_SPECS`) resolves it by name, and each
+(:data:`tealql.security._DETECTION_ORDER`) resolves it by name, and each
 carries a bespoke message.
 """
 from __future__ import annotations

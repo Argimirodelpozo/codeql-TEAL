@@ -19,7 +19,7 @@ subclass sets:
     timelock / funds check).
 
 Per-detector ``Violation`` classes stay in their own module — the registry
-(:data:`tealql.security._DETECTION_SPECS`) resolves both detector and violation by
+(:data:`tealql.security._DETECTION_ORDER`) resolves both detector and violation by
 name — and subclass :class:`_ExitBBViolation` for the shared rendering.
 """
 from __future__ import annotations
