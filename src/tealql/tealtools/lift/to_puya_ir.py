@@ -755,26 +755,96 @@ def _confident_encoding_for(intrinsic: "M.Intrinsic", reg_def: dict):
     return None
 
 
+def _same_register(a, b) -> bool:
+    """SSA-value identity for two IR operands: the same ``Register`` object, or
+    two ``Register`` instances naming the same ``name#version`` (frozen-attrs
+    rebuilds can produce distinct objects for one SSA value)."""
+    return (a is b) or (
+        isinstance(a, M.Register) and isinstance(b, M.Register)
+        and (a.name, a.version) == (b.name, b.version)
+    )
+
+
+def _def_intrinsic(value, reg_def: dict, op) -> "M.Intrinsic | None":
+    """``value``'s defining :class:`M.Intrinsic` when it is a register produced
+    by ``op``, else ``None`` -- the one-step def-walk the guess idioms chain."""
+    if not isinstance(value, M.Register):
+        return None
+    d = reg_def.get(id(value))
+    if d is not None and isinstance(d.source, M.Intrinsic) and d.source.op is op:
+        return d.source
+    return None
+
+
+def _is_uint16_of_len(prefix, data, reg_def: dict) -> bool:
+    """PROOF that ``prefix`` is the big-endian uint16 of ``len(data)`` -- the ABI
+    dynamic length header. Recognised prefix chains (all ending in
+    ``itob(len(data))``, whose low two bytes ARE ``uint16(len(data))``):
+
+      - ``extract 6 2 (itob (len data))``   (immediate form)
+      - ``extract3 (itob (len data)) 6 2``  (stack form, constant 6/2)
+      - ``substring 6 8 (itob (len data))`` (pre-v5 spelling)
+    """
+    itob_arg = None
+    ex = _def_intrinsic(prefix, reg_def, AVMOp.extract)
+    if ex is not None and list(ex.immediates) == [6, 2] and ex.args:
+        itob_arg = ex.args[0]
+    if itob_arg is None:
+        ex3 = _def_intrinsic(prefix, reg_def, AVMOp.extract3)
+        if (ex3 is not None and len(ex3.args) == 3
+                and isinstance(ex3.args[1], M.UInt64Constant)
+                and isinstance(ex3.args[2], M.UInt64Constant)
+                and ex3.args[1].value == 6 and ex3.args[2].value == 2):
+            itob_arg = ex3.args[0]
+    if itob_arg is None:
+        ss = _def_intrinsic(prefix, reg_def, AVMOp.substring)
+        if ss is not None and list(ss.immediates) == [6, 8] and ss.args:
+            itob_arg = ss.args[0]
+    if itob_arg is None:
+        return False
+    itob = _def_intrinsic(itob_arg, reg_def, AVMOp.itob)
+    if itob is None or not itob.args:
+        return False
+    ln = _def_intrinsic(itob.args[0], reg_def, AVMOp.len_)
+    return ln is not None and bool(ln.args) and _same_register(ln.args[0], data)
+
+
 def _guess_encoding_for(intrinsic: "M.Intrinsic", reg_def: dict):
     """The ARC4 / ABI ``EncodedType`` a producing op's result is *most likely* but
-    NOT provably encoded as, or ``None`` -- the **SPECULATIVE** tier, kept
-    deliberately separate from :func:`_confident_encoding_for`.
+    NOT provably encoded as, or ``None`` -- the **SPECULATIVE** producer-side tier,
+    kept deliberately separate from :func:`_confident_encoding_for`.
 
-    These are the idioms whose byte layout is *not* self-evidently one ABI type and
-    so require either a proof we don't always have or a confidence judgement, e.g.:
-      - ``concat(<2-byte value>, data)`` -> ``arc4.String`` / dynamic ``Array`` only
-        when the 2-byte prefix can be shown to equal ``len(data)`` (a uint16 length
-        header) -- otherwise the prefix could be an unrelated uint16 field;
-      - a head/tail buffer with a uint16 offset table -> a *dynamic* ``arc4.Tuple``;
-      - ``bytes[N]`` reinterpreted as ``arc4.StaticArray<Byte, N>`` / ``arc4.Address``
-        (a 32-byte value), which the bytes alone don't disambiguate from a hash.
+    The bar here: a guess needs a NAMED idiom with a discharged local proof, but
+    the byte layout still isn't *self-evidently* one ABI type (a program could
+    hand-roll the same shape for a non-ABI format), so it stays out of ``ir_type``.
 
-    Currently EMPTY -- this is the scaffold. Anything added here is best-effort: it
-    is collected into a SIDE-CHANNEL by :func:`_guess_encoded_types` and never
-    written to a register's ``ir_type``, so a wrong guess can neither change codegen
-    nor weaken the confident, TEAL-neutral IR. (Consumers that tolerate imprecision
-    -- e.g. structure-aware fuzzing -- read the side-channel; a verifier would treat
-    a guess as a proposed-and-discharged obligation.)"""
+    Recognised:
+      - ``concat(P, D)`` where ``P`` is PROVEN to be ``uint16(len(D))``
+        (:func:`_is_uint16_of_len` -- the ``extract 6 2 (itob (len D))`` chain and
+        its spellings) -> the ARC4 dynamic-sequence ENCODE idiom:
+        ``ArrayEncoding(byte, length_header=True)`` (``arc4.DynamicBytes``-shaped).
+        ``arc4.String`` is this plus a UTF-8 claim the dataflow can't make -- the
+        constant tier (:func:`_guess_const_encoding`) handles the provable-text
+        case.
+
+    Still to mine (documented, not implemented): ``bytes[N]`` reinterpreted as
+    ``arc4.StaticArray<Byte, N>`` / ``arc4.Address`` -- 32 bytes don't
+    disambiguate an address from a hash, so that needs usage evidence, not a
+    producer idiom.
+
+    Anything added here is best-effort: it is collected into a SIDE-CHANNEL by
+    :func:`_guess_encoded_types` and never written to a register's ``ir_type``, so
+    a wrong guess can neither change codegen nor weaken the confident, TEAL-neutral
+    IR. (Consumers that tolerate imprecision -- e.g. structure-aware fuzzing --
+    read the side-channel; a verifier would treat a guess as a
+    proposed-and-discharged obligation.)"""
+    from puya.ir.encodings import ArrayEncoding, UIntEncoding
+    from puya.ir.types_ import EncodedType
+    if intrinsic.op is AVMOp.concat and len(intrinsic.args) == 2:
+        prefix, data = intrinsic.args
+        if _is_uint16_of_len(prefix, data, reg_def):
+            return EncodedType(ArrayEncoding(
+                element=UIntEncoding(8), size=None, length_header=True))
     return None
 
 
@@ -1026,8 +1096,12 @@ def _guess_encoded_types(main, subs) -> dict:
       - dynamic STRUCTS / tuples reconstructed from their offset-table decode, via
         :func:`_guess_struct_encodings` (overrides the array guess for that value);
       - bytes CONSTANTS that are self-describing uint16-length-prefixed sequences,
-        via :func:`_guess_const_encoding` -> ``arc4.String``;
-      - intrinsic results, via :func:`_guess_encoding_for` (currently none)."""
+        via :func:`_guess_const_encoding` -> ``arc4.String`` -- checked BOTH as
+        assignment sources and INLINE in intrinsic args (the lift const-inlines
+        aggressively, so args are where constants actually live; those entries are
+        keyed by ``id(BytesConstant)``);
+      - intrinsic results, via :func:`_guess_encoding_for` (the length-proven
+        dynamic-sequence ENCODE idiom)."""
     reg_def: dict = {}
     for s in (main, *subs):
         for bb in s.body:
@@ -1054,6 +1128,20 @@ def _guess_encoded_types(main, subs) -> dict:
                 for tgt in o.targets:
                     if tgt.ir_type.avm_type == et.avm_type:
                         guesses[id(tgt)] = et   # producer-side wins over decode-side
+    # Inline constants: the lift const-inlines aggressively, so a literal usually
+    # appears as an INTRINSIC ARG, never as an assignment source. Same strict
+    # constant proof, keyed by the constant object itself.
+    for s_ in (main, *subs):
+        for bb in s_.body:
+            for o in bb.ops:
+                src = o.source if isinstance(o, M.Assignment) else o
+                if not isinstance(src, M.Intrinsic):
+                    continue
+                for a in src.args:
+                    if isinstance(a, M.BytesConstant) and id(a) not in guesses:
+                        et = _guess_const_encoding(a.value)
+                        if et is not None:
+                            guesses[id(a)] = et
     return guesses
 
 

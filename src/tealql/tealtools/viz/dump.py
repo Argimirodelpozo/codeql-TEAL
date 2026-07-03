@@ -130,8 +130,9 @@ def _ir_text(source) -> str:
 
 def _guessed_encodings_text(source) -> str:
     """The SPECULATIVE ARC4 encoded-type recovery side-channel
-    (:func:`to_puya_ir._guess_encoded_types`) -- best-effort guesses (currently
-    strict-proof ``arc4.String`` literals) that are deliberately NOT in the IR's
+    (:func:`to_puya_ir._guess_encoded_types`) -- best-effort guesses (decode-side
+    dynamic arrays/structs, strict-proof ``arc4.String`` literals, and the
+    length-proven dynamic-sequence encode idiom) that are deliberately NOT in the IR's
     ``ir_type``, so a wrong guess can't affect lowering. Shown here so a consumer
     (e.g. structure-aware fuzzing) can see what's available; for a string guess the
     decoded text is included."""
@@ -145,6 +146,14 @@ def _guessed_encodings_text(source) -> str:
     for sub in [main, *subs]:
         for bb in sub.body:
             for o in bb.ops:
+                src = o.source if isinstance(o, M.Assignment) else o
+                if isinstance(src, M.Intrinsic):
+                    # Inline constant args carry their own guess entries.
+                    for a in src.args:
+                        if isinstance(a, M.BytesConstant):
+                            name_of[id(a)] = f"const[{a.value[:16].hex()}…]" \
+                                if len(a.value) > 16 else f"const[{a.value.hex()}]"
+                            const_of[id(a)] = a.value
                 if isinstance(o, M.Assignment):
                     for t in o.targets:
                         name_of[id(t)] = f"{t.name}#{t.version}"
