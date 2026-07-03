@@ -7,7 +7,9 @@ name = "tealql"
 version = "0.1.0"
 description = "Pure-Python static analysis for TEAL (Algorand Virtual Machine)"
 readme = "README.md"
-requires-python = ">=3.10"
+# 3.12 is the tested floor, and the optional lift extra (puyapy) requires it
+# anyway — a lower declared floor would promise untested interpreters.
+requires-python = ">=3.12"
 license = "MIT"
 authors = [{ name = "Argimirodelpozo" }]
 keywords = ["teal", "algorand", "static-analysis", "avm"]
@@ -21,6 +23,13 @@ classifiers = [
 dependencies = [
     "PyYAML>=6",
     "networkx>=3",
+    # The parse floor: py-tree-sitter binding + the TEAL grammar. The grammar
+    # is a direct git dependency (pinned commit) — that installs fine from a
+    # clone or a git URL, but PyPI rejects distributions with direct-URL
+    # dependencies, so publishing tealql to PyPI requires first publishing
+    # tree-sitter-teal there and swapping this line for a version constraint.
+    "tree-sitter>=0.25,<0.26",
+    "tree-sitter-teal @ git+https://github.com/Argimirodelpozo/tree-sitter-teal.git@4468a5acb379de12efd77ee4ddcb755fa054b24f",
 ]
 
 [project.optional-dependencies]
@@ -46,6 +55,12 @@ Repository = "https://github.com/Argimirodelpozo/codeql-TEAL"
 
 [project.scripts]
 tealql = "cli.main:main"
+
+# Required for the tree-sitter-teal git dependency above (hatchling refuses
+# direct references by default, precisely because PyPI would reject them —
+# acceptable here: install is from a clone / git URL, not PyPI, for now).
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 # Three packages: the ``tealtools`` analysis library (``src/analysis/tealtools/``),

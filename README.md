@@ -11,10 +11,15 @@ It began life on GitHub CodeQL; the analysis layer is now **pure Python** — th
 ```bash
 git clone https://github.com/Argimirodelpozo/codeql-TEAL.git
 cd codeql-TEAL
-pip install -e .
+pip install -e .                # core: parse + SSA + detectors (Python >= 3.12)
+pip install -e '.[lift]'        # + puyapy, for decompilation to real Puya IR / TEAL
 ```
 
 That puts a `tealql` binary on `$PATH`. `python -m cli` works as a fallback.
+The core install pulls everything the analysis needs, including the
+[tree-sitter-teal](https://github.com/Argimirodelpozo/tree-sitter-teal) grammar
+(a pinned git dependency). The `lift` extra is only needed to lower programs to
+genuine `puya.ir` — every detector, including the `ir-*` family, runs without it.
 
 ### Run an analysis
 
@@ -185,7 +190,7 @@ field false-positive rate.
 
 ### Snapshot harness
 
-`tests/test_python_analyses.py` runs every analysis against fixtures under `tests/tealtools/<analysis>/[<case>/]db/` (each holds a `.teal` source plus a committed `graph_golden.txt`) and diffs output against checked-in `expected.txt`. The dispatch routes by the top-level analysis directory name; `xcontract/` and `box_df/` use case-name prefixes for sub-flavours.
+`tests/test_python_analyses.py` runs every analysis against fixtures under `tests/tealtools/<analysis>/[<case>/]` (each holds a `.teal` source plus a committed `graph_golden.txt`) and diffs output against checked-in `expected.txt`. The dispatch routes by the top-level analysis directory name; `xcontract/` and `box_df/` use case-name prefixes for sub-flavours.
 
 ```bash
 # Verify all snapshots
@@ -207,8 +212,8 @@ python -m tests.gen_graph_golden
 
 ## Prerequisites
 
-- Python 3 with the package installed (`pip install -e .` pulls in the runtime deps).
-- `pytest` for the test suite.
+- Python 3.12+ with the package installed (`pip install -e .` pulls in the runtime deps, including the pinned tree-sitter TEAL grammar).
+- `pytest` for the test suite (`pip install -e '.[dev]'`).
 
 ---
 
