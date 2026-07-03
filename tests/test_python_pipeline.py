@@ -9,9 +9,9 @@ from pathlib import Path
 
 import pytest
 
-from tealtools.graph import load_graph, _load_source_bytes
-from tealtools.ast.parse import parse_nodes
-from tealtools.cfg_build import build_cfg_edges, build_basic_blocks
+from tealql.tealtools.graph import load_graph, _load_source_bytes
+from tealql.tealtools.ast.parse import parse_nodes
+from tealql.tealtools.cfg_build import build_cfg_edges, build_basic_blocks
 
 TESTS_DIR = Path(__file__).resolve().parent
 
@@ -96,7 +96,7 @@ _REAL_IDS = [str(d.relative_to(TESTS_DIR)) for d in _REAL]
 def test_python_backend_builds_ssa(contract: Path) -> None:
     """The graph drives SSA construction end to end: ``SSAProgram(contract)``
     builds and yields at least one block."""
-    from tealtools.ssa import SSAProgram
+    from tealql.tealtools.ssa import SSAProgram
 
     prog = SSAProgram(str(contract))
     assert prog.blocks, "SSA produced no basic blocks"
@@ -129,5 +129,5 @@ def test_raw_teal_runs_end_to_end(contract: Path, tmp_path) -> None:
         assert g.number_of_nodes() == g_file.number_of_nodes()
         assert g.number_of_edges() == g_file.number_of_edges()
 
-    from tealtools.ssa import SSAProgram
+    from tealql.tealtools.ssa import SSAProgram
     assert SSAProgram(str(raw)).blocks, "SSA from raw TEAL produced no blocks"

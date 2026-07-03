@@ -1,4 +1,4 @@
-"""Tests for the block-argument out-of-SSA view (``tealtools.block_args``)
+"""Tests for the block-argument out-of-SSA view (``tealql.tealtools.block_args``)
 and the ``BasicBlock.exit_stack`` surfacing it relies on.
 
 Uses the ``conditional_swap`` fixture — a conditional ``swap`` before a merge,
@@ -18,7 +18,7 @@ def _prog():
     contract = FIX
     if not contract.exists():
         pytest.skip(f"fixture not present: {contract}")
-    from tealtools.ssa import SSAProgram
+    from tealql.tealtools.ssa import SSAProgram
     try:
         return SSAProgram(str(contract))
     except Exception as e:  # pragma: no cover - environment-dependent
@@ -45,7 +45,7 @@ class TestExitStackSurfaced:
 
 class TestBlockArgsSwap:
     def _form(self):
-        from tealtools.block_args import to_block_args
+        from tealql.tealtools.block_args import to_block_args
         prog = _prog()
         return prog, to_block_args(prog)
 

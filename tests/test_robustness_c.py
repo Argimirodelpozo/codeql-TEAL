@@ -4,7 +4,7 @@ from __future__ import annotations
 import concurrent.futures
 from pathlib import Path
 
-from tealtools.ssa import SSAProgram
+from tealql.tealtools.ssa import SSAProgram
 
 TESTS_ROOT = Path(__file__).resolve().parent
 SAMPLE = TESTS_ROOT / "benchmark" / "rekey-to" / "vuln" / "no_check.teal"
@@ -14,7 +14,7 @@ SAMPLE = TESTS_ROOT / "benchmark" / "rekey-to" / "vuln" / "no_check.teal"
 
 
 def test_chain_endpoints_env_overridable(monkeypatch):
-    from tealtools._utils import chain
+    from tealql.tealtools._utils import chain
     # Defaults hold with no env.
     monkeypatch.delenv("TEAL_ALGOD_LOCAL", raising=False)
     monkeypatch.delenv("TEAL_ALGOD_TOKEN", raising=False)
@@ -33,7 +33,7 @@ def test_chain_endpoints_env_overridable(monkeypatch):
 
 
 def test_parse_nodes_thread_safe():
-    from tealtools.ast.parse import parse_nodes
+    from tealql.tealtools.ast.parse import parse_nodes
     srcs = {f"c{i}.teal": SAMPLE.read_text() for i in range(4)}
     # Baseline: node count parsing each single-threaded.
     baseline = {name: len(parse_nodes({name: text})) for name, text in srcs.items()}

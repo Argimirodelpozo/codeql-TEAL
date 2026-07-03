@@ -11,7 +11,7 @@ forward channel these tests pin two refinements:
      is read by the callee at index 1, NOT 0.
 """
 from helpers import make_xcontract
-from tealtools.dataflow.xcontract_taint_graph import (
+from tealql.tealtools.dataflow.xcontract_taint_graph import (
     XContractTaintGraph, cross_taint_findings,
 )
 

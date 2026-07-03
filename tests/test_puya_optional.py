@@ -42,8 +42,8 @@ def _run_without_puya(body: str) -> subprocess.CompletedProcess:
 
 def test_lift_package_imports_without_puya():
     r = _run_without_puya("""
-        from tealtools.lift.lift import _Lifter
-        import tealtools.lift
+        from tealql.tealtools.lift.lift import _Lifter
+        import tealql.tealtools.lift
         print("OK")
     """)
     assert r.returncode == 0, r.stderr
@@ -52,8 +52,8 @@ def test_lift_package_imports_without_puya():
 
 def test_ir_detectors_run_without_puya():
     r = _run_without_puya("""
-        from tealtools.ssa import SSAProgram
-        from security import DETECTORS
+        from tealql.tealtools.ssa import SSAProgram
+        from tealql.security import DETECTORS
         prog = SSAProgram("tests/benchmark/tainted-fund-flow/vuln/unguarded_receiver.teal")
         n = len(DETECTORS["ir-tainted-fund-flow"](prog).detect())
         print("FINDINGS", n)
@@ -68,7 +68,7 @@ def test_render_requires_puya_cleanly():
     # must be a clean ImportError (raised at attribute access), not a crash.
     r = _run_without_puya("""
         try:
-            from tealtools.lift import render
+            from tealql.tealtools.lift import render
             print("NO-ERROR")
         except ImportError:
             print("CLEAN-IMPORTERROR")
@@ -79,8 +79,8 @@ def test_render_requires_puya_cleanly():
 
 def test_ir_findings_identical_with_and_without_puya():
     probe = """
-        from tealtools.ssa import SSAProgram
-        from security import DETECTORS
+        from tealql.tealtools.ssa import SSAProgram
+        from tealql.security import DETECTORS
         import glob
         for f in sorted(glob.glob("tests/benchmark/tainted-fund-flow/vuln/*.teal")):
             prog = SSAProgram(f)

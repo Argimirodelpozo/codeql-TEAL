@@ -10,7 +10,7 @@ Box values are bytes, so an AppID lands in a box either as ``itob(N)`` or as a r
 <=8-byte constant, and is read back with ``btoi(box_get KEY)``.
 """
 
-from tealtools.xcontract import find_appcall_sites
+from tealql.tealtools.xcontract import find_appcall_sites
 from helpers import make_xcontract
 
 _CALLEE = "#pragma version 10\n    int 1\n    return\n"

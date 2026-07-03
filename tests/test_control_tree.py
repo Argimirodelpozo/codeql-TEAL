@@ -10,7 +10,7 @@ added this session for real contracts: reentrant entries resolved from the
 continuation, and a continuation mis-picked inside the callee's own body being
 dropped and refilled from the real retsub target.
 """
-from tealtools.control_tree import identify_subroutines
+from tealql.tealtools.control_tree import identify_subroutines
 
 
 class _Loc:

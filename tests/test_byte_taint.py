@@ -1,5 +1,5 @@
 """Unit tests for byte-interval ("partial") taint — the standalone prototype
-in ``tealtools.dataflow.byte_taint``.
+in ``tealql.tealtools.dataflow.byte_taint``.
 
 Two layers: the pure :class:`Intervals` algebra (union / intersect / clip /
 subtract / shift / overlaps / normalization), and the forward propagation
@@ -8,13 +8,13 @@ and attacker-controlled halves of a packed byte array are tracked
 separately, including the byte-range -> scalar bridge (``getbyte`` /
 ``extract_uint*`` of a clean offset is NOT tainted).
 """
-from tealtools.ssa import SSAProgram, SSAVar, Phi
-from tealtools.dataflow.byte_taint import (
+from tealql.tealtools.ssa import SSAProgram, SSAVar, Phi
+from tealql.tealtools.dataflow.byte_taint import (
     Intervals, byte_taint, byte_taint_view, _byte_strip, INF, AVM_MAX_BYTES,
 )
-from tealtools.lift.lift import _Lifter
-from tealtools.lift import pre_ir
-from tealtools.lift.taint import _intr
+from tealql.tealtools.lift.lift import _Lifter
+from tealql.tealtools.lift import pre_ir
+from tealql.tealtools.lift.taint import _intr
 
 
 class TestIntervals:
@@ -372,7 +372,7 @@ class TestProvenance:
         p = SSAProgram.from_text("#pragma version 8\n" + _PREFIX + "extract 8 8\nlog\nint 1\nreturn\n", name="t")
         r = byte_taint(p)
         v = [a for a in p.assignments if a.op == "extract" and a.immediates == "8 8"][0].outputs[0]
-        from tealtools.dataflow.byte_taint import taint_chain
+        from tealql.tealtools.dataflow.byte_taint import taint_chain
         ops = [d.op for d in taint_chain(v, r)]
         assert ops[0] == "txna" and ops[-1] == "extract"        # source-first, ends at value
 
@@ -391,5 +391,5 @@ class TestProvenance:
         p = SSAProgram.from_text(teal, name="t")
         r = byte_taint(p)
         v = [a for a in p.assignments if a.op == "log"][0].inputs[0]
-        ops = [d.op for d in __import__("tealtools.dataflow.byte_taint", fromlist=["taint_chain"]).taint_chain(v, r)]
+        ops = [d.op for d in __import__("tealql.tealtools.dataflow.byte_taint", fromlist=["taint_chain"]).taint_chain(v, r)]
         assert "txna" in ops and "frame_dig" in ops             # crossed the call boundary

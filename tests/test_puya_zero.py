@@ -19,7 +19,7 @@ from puya.avm import AVMType  # noqa: E402
 from puya.ir.encodings import TupleEncoding, UIntEncoding  # noqa: E402
 from puya.ir.types_ import EncodedType, PrimitiveIRType as PT  # noqa: E402
 
-from tealtools.lift.to_puya_ir import _puya_zero  # noqa: E402
+from tealql.tealtools.lift.to_puya_ir import _puya_zero  # noqa: E402
 
 
 def _encoded_uint64_tuple(n: int) -> EncodedType:

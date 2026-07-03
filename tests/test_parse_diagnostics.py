@@ -18,8 +18,8 @@ from pathlib import Path
 
 import pytest
 
-from cli.main import main
-from tealtools import (
+from tealql.cli.main import main
+from tealql.tealtools import (
     ParseDiagnostic, SSAProgram, TargetError, TargetNotFoundError,
     TealParseError, TealQLError,
 )
@@ -157,15 +157,15 @@ def test_cli_detections_scan_garbage_warns_and_reports_nothing(tmp_path, capsys)
 
 
 def test_scan_strict_raises_parse_error(tmp_path):
-    from security.scan import scan
+    from tealql.security.scan import scan
     (tmp_path / "prog.teal").write_text(GARBAGE)
     with pytest.raises(TealParseError):
         scan(tmp_path, strict=True)
 
 
 def test_scan_survives_a_crashing_detector(monkeypatch, caplog):
-    import security
-    from security.scan import scan
+    from tealql import security
+    from tealql.security.scan import scan
 
     class _Boom:
         def __init__(self, prog, *, file=None):
@@ -175,7 +175,7 @@ def test_scan_survives_a_crashing_detector(monkeypatch, caplog):
             raise RuntimeError("boom")
 
     monkeypatch.setitem(security.DETECTORS, "boom-test", _Boom)
-    with caplog.at_level(logging.ERROR, logger="security.scan"):
+    with caplog.at_level(logging.ERROR, logger="tealql.security.scan"):
         findings = scan(REKEY_VULN_DIR)
     # The crash was recorded, the rest of the scan still produced findings.
     assert any("boom-test" in r.message for r in caplog.records)
@@ -183,8 +183,8 @@ def test_scan_survives_a_crashing_detector(monkeypatch, caplog):
 
 
 def test_scan_strict_propagates_detector_crash(monkeypatch):
-    import security
-    from security.scan import scan
+    from tealql import security
+    from tealql.security.scan import scan
 
     class _Boom:
         def __init__(self, prog, *, file=None):
@@ -204,7 +204,7 @@ def test_scan_strict_propagates_detector_crash(monkeypatch):
 
 
 def test_absence_detectors_silent_on_empty_program():
-    from security import DETECTORS
+    from tealql.security import DETECTORS
     prog = SSAProgram.from_text("// only a comment\n", name="prog.teal")
     assert not prog.assignments
     # The strict-dominance "field never validated" family must not report a
@@ -216,7 +216,7 @@ def test_absence_detectors_silent_on_empty_program():
 def test_byte_taint_empty_program_no_crash():
     # Regression: _validated_intervals returned a bare {} (instead of a
     # 2-tuple) for a program with no entry blocks → ValueError at unpack.
-    from tealtools.dataflow.byte_taint import byte_taint
+    from tealql.tealtools.dataflow.byte_taint import byte_taint
     prog = SSAProgram.from_text("// nothing here\n", name="prog.teal")
     result = byte_taint(prog, validate=True)
     assert result is not None

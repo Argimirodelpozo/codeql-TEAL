@@ -8,13 +8,13 @@ tests with real ``IntRange`` / ``Const`` / ``TealType`` — no SSA fixpoint, fix
 or puya. Ranges are arbitrary-precision (no uint64 cap): a long ``b*`` chain can
 legitimately exceed 2**64.
 """
-from tealtools.passes.bytemath import (
+from tealql.tealtools.passes.bytemath import (
     _bytemath_result,
     _bytes_to_int,
     _operand_bigint_range,
     propagate_bytemath_ranges,
 )
-from tealtools.ssa import Const, IntRange, Phi, SSAVar, TealType
+from tealql.tealtools.ssa import Const, IntRange, Phi, SSAVar, TealType
 from ssa_builders import mk_asn as _asn, mk_var as _var, mk_prog
 
 

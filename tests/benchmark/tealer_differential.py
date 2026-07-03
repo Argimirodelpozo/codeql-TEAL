@@ -30,7 +30,6 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(REPO / "src/analysis"))
 sys.path.insert(0, str(REPO / "src"))
 
 
@@ -91,8 +90,8 @@ def run_ours(teal: Path) -> "set[str] | None":
     loss, symmetric to a Tealer crash). Scoped by our (opcode-sound) app-vs-
     logicsig classifier so the comparison is apples-to-apples with Tealer's
     auto stateful/stateless scoping."""
-    from tealtools.ssa import SSAProgram
-    from security import DETECTORS, common
+    from tealql.tealtools.ssa import SSAProgram
+    from tealql.security import DETECTORS, common
     try:
         prog = SSAProgram(str(teal))
         prog.propagate_constants()

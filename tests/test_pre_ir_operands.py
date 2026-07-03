@@ -18,7 +18,7 @@ import pytest
 
 pytest.importorskip("puya")  # pre_ir package __init__ eagerly imports the lift
 
-from tealtools.lift.pre_ir import (  # noqa: E402
+from tealql.tealtools.lift.pre_ir import (  # noqa: E402
     Assert,
     Assignment,
     BasicBlock,

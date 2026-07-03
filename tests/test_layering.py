@@ -1,8 +1,8 @@
 """Architectural guard: the substrate must not import the analysis layer.
 
-The per-program CFG + dominance in :mod:`tealtools.cfg` are substrate.
+The per-program CFG + dominance in :mod:`tealql.tealtools.cfg` are substrate.
 :class:`SuperCFG` / :mod:`super_auth` are cross-contract ANALYSES that
-import :mod:`tealtools.xcontract` (which pulls auth_domination,
+import :mod:`tealql.tealtools.xcontract` (which pulls auth_domination,
 inner_txn_report). They live in the cfg/ folder but are re-exported
 lazily, so importing the substrate CFG package must NOT drag the analysis
 layer in. This test pins that — reintroducing an eager
@@ -25,11 +25,11 @@ def _fresh_import_probe(body: str) -> str:
 def test_substrate_cfg_does_not_pull_supercfg():
     out = _fresh_import_probe("""
         import sys
-        import tealtools.cfg          # substrate package
-        from tealtools.cfg import CFG
-        from tealtools.cfg.dominance import iterative_dominators
+        import tealql.tealtools.cfg   # substrate package
+        from tealql.tealtools.cfg import CFG
+        from tealql.tealtools.cfg.dominance import iterative_dominators
         pulled = [m for m in (
-            "tealtools.cfg.supercfg", "tealtools.cfg.super_auth")
+            "tealql.tealtools.cfg.supercfg", "tealql.tealtools.cfg.super_auth")
             if m in sys.modules]
         print(",".join(pulled) or "CLEAN")
     """)
@@ -38,7 +38,7 @@ def test_substrate_cfg_does_not_pull_supercfg():
 
 def test_supercfg_still_importable_lazily():
     out = _fresh_import_probe("""
-        from tealtools.cfg import SuperCFG, SuperBlock, SuperEdge
+        from tealql.tealtools.cfg import SuperCFG, SuperBlock, SuperEdge
         print(SuperCFG.__name__)
     """)
     assert out.strip() == "SuperCFG"

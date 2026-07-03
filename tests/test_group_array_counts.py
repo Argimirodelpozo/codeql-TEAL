@@ -18,7 +18,7 @@ def _prog(case: str):
     teal = FIX / case / "prog.teal"
     if not teal.exists():
         pytest.skip(f"fixture not present: {teal}")
-    from tealtools.ssa import SSAProgram
+    from tealql.tealtools.ssa import SSAProgram
     try:
         prog = SSAProgram(str(teal))
     except Exception as e:  # pragma: no cover - environment-dependent
@@ -31,8 +31,8 @@ def _prog(case: str):
 
 class TestRelativeSlot:
     def test_group_index_plus_minus_and_const(self):
-        from tealtools.group_reasoning import relative_slot
-        from tealtools.ssa.models import Const, SSAVar
+        from tealql.tealtools.group_reasoning import relative_slot
+        from tealql.tealtools.ssa.models import Const, SSAVar
 
         # A bare GroupIndex-producing var resolves to "this"; a constant to gtxn[N].
         # (relative arithmetic is covered end-to-end by array_counts below, which
@@ -62,7 +62,7 @@ class TestRelativeSlot:
 
 class TestArrayCounts:
     def test_recovers_relative_members_and_minima(self):
-        from tealtools.group_reasoning import array_counts
+        from tealql.tealtools.group_reasoning import array_counts
         ac = array_counts(_prog("array_counts"))
         # preceding sibling: ApplicationArgs 1 => NumAppArgs>=2; Accounts 2 => NumAccounts>=2
         assert ac.get("this-1") == {"NumAppArgs": 2, "NumAccounts": 2}

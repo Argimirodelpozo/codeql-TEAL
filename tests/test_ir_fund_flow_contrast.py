@@ -18,8 +18,8 @@ import pytest
 
 pytest.importorskip("puya")
 
-from tealtools.ssa import SSAProgram  # noqa: E402
-from security import DETECTORS  # noqa: E402
+from tealql.tealtools.ssa import SSAProgram  # noqa: E402
+from tealql.security import DETECTORS  # noqa: E402
 
 CASE = (Path(__file__).resolve().parent / "benchmark" / "ir-tainted-fund-flow"
         / "safe" / "owner_guard_across_callsub.teal")
@@ -52,7 +52,7 @@ def test_ir_detector_falls_back_to_ssa_when_lift_fails(monkeypatch):
     # when the lift fails (ir_lifter -> None), the IR detector defers to the SSA
     # tainted-fund-flow detector so coverage stays complete (IR-primary, SSA-
     # fallback). Force a lift failure and confirm it matches the SSA's findings.
-    from security import DETECTORS, common
+    from tealql.security import DETECTORS, common
     monkeypatch.setattr(common, "ir_lifter", lambda prog, file=None: None)
 
     def _n(det):

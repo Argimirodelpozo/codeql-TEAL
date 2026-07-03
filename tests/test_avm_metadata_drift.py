@@ -26,7 +26,7 @@ from puya.avm import AVMType
 from puya.ir.avm_ops import AVMOp
 from puya.ir.avm_ops_models import DynamicVariants, Variant
 
-from tealtools.lift import optypes
+from tealql.tealtools.lift import optypes
 
 # Ops in optypes' result tables that puya does NOT model under the same
 # mnemonic: TEAL uses symbols (`+`) where puya uses identifiers (`add`), and
@@ -104,9 +104,9 @@ def test_address_fields_single_source_consistency():
     # This locks the two derived views against that single source so they can't
     # drift: every address field is account-typed AND 32 bytes, and nothing else
     # claims to be an account.
-    from tealtools.opsets import ADDRESS_TXN_FIELDS, ADDRESS_GLOBAL_FIELDS
-    from tealtools.lift import optypes as O
-    from tealtools.ssa import models as M
+    from tealql.tealtools.opsets import ADDRESS_TXN_FIELDS, ADDRESS_GLOBAL_FIELDS
+    from tealql.tealtools.lift import optypes as O
+    from tealql.tealtools.ssa import models as M
 
     for f in ADDRESS_TXN_FIELDS:
         assert O._TXN_FIELD_TYPE.get(f) == "account", f

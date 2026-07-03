@@ -6,8 +6,8 @@ multiply whose operand is produced directly by a divide.
 """
 from pathlib import Path
 
-from tealtools.ssa import SSAProgram
-from security import DETECTORS
+from tealql.tealtools.ssa import SSAProgram
+from tealql.security import DETECTORS
 
 _DET = DETECTORS["unsafe-division-order"]
 

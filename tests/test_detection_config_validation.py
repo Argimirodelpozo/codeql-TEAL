@@ -13,10 +13,10 @@ from pathlib import Path
 
 import pytest
 
-from cli.main import main
-from security import DETECTORS, severity_of
-from security.config import ConfigError, DetectionConfig, glob_match
-from security.scan import DetectionOptions, ScanConfig, ScanFinding
+from tealql.cli.main import main
+from tealql.security import DETECTORS, severity_of
+from tealql.security.config import ConfigError, DetectionConfig, glob_match
+from tealql.security.scan import DetectionOptions, ScanConfig, ScanFinding
 
 TESTS_ROOT = Path(__file__).resolve().parent
 REKEY_VULN_DIR = TESTS_ROOT / "benchmark" / "rekey-to" / "vuln"

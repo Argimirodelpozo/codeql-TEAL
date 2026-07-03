@@ -5,8 +5,8 @@ the call site's const_args -> trusted_args -> IR taint).
 """
 import pytest
 
-from tealtools.xcontract import XContractGraph
-from security.xcontract import cross_detection_findings
+from tealql.tealtools.xcontract import XContractGraph
+from tealql.security.xcontract import cross_detection_findings
 from helpers import make_xcontract
 
 # callee: the attacker picks the inner-appcall target (ApplicationID).

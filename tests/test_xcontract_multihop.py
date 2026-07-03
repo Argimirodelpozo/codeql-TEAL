@@ -6,8 +6,8 @@ CHAIN of appcalls still surfaces, because ``callees`` / ``analyses`` span every
 hop. Also covers the call-graph structure (``edges`` / ``chains``), the depth
 cap, and cycle safety.
 """
-from tealtools.xcontract import XContractGraph
-from security.xcontract import cross_detection_findings
+from tealql.tealtools.xcontract import XContractGraph
+from tealql.security.xcontract import cross_detection_findings
 from helpers import make_xcontract
 
 # A -> appcall app 100 (B); B -> appcall app 200 (C); C pays an

@@ -1,11 +1,11 @@
-"""The cross-contract super-CFG (:class:`tealtools.cfg.SuperCFG`) splices typed
+"""The cross-contract super-CFG (:class:`tealql.tealtools.cfg.SuperCFG`) splices typed
 appcall call/return edges into one BB graph spanning a caller and its transitive
 callees, so reachability / dominance / paths cross the contract boundary.
 
 Built on the foundation that ``itxn_submit`` ends a basic block, so the submit
 BB is a clean boundary and the continuation BB is its intra successor.
 """
-from tealtools.cfg import SuperCFG
+from tealql.tealtools.cfg import SuperCFG
 from helpers import make_xcontract
 
 

@@ -7,8 +7,8 @@ only in real use.
 from pathlib import Path
 
 
-from tealtools.ssa import SSAProgram
-from tealtools import xcontract as XC
+from tealql.tealtools.ssa import SSAProgram
+from tealql.tealtools import xcontract as XC
 from helpers import make_xcontract
 
 # Calls app 555 (inline constant) and app 777 (read from global state set to 777).

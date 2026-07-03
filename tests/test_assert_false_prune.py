@@ -21,9 +21,9 @@ import pytest
 
 pytest.importorskip("puya")
 
-from tealtools.ssa import SSAProgram  # noqa: E402
-from tealtools.lift import pre_ir as P  # noqa: E402
-from tealtools.lift.lift import _Lifter  # noqa: E402
+from tealql.tealtools.ssa import SSAProgram  # noqa: E402
+from tealql.tealtools.lift import pre_ir as P  # noqa: E402
+from tealql.tealtools.lift.lift import _Lifter  # noqa: E402
 
 CONTRACT = (Path(__file__).resolve().parent / "experimental_IR_lift" / "explorer"
             / "app_531558171" / "app_531558171.teal")

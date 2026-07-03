@@ -19,8 +19,8 @@ from pathlib import Path
 
 import pytest
 
-from tealtools.ssa import SSAProgram
-from tealtools.passes import run_all_passes
+from tealql.tealtools.ssa import SSAProgram
+from tealql.tealtools.passes import run_all_passes
 
 TESTS_ROOT = Path(__file__).resolve().parent
 CORPUS = sorted((TESTS_ROOT / "benchmark").rglob("*.teal"))
@@ -66,7 +66,7 @@ _DET_NAMES = ["rekey-to", "fee-validation", "tainted-fund-flow",
 
 @pytest.mark.parametrize("teal", CORPUS, ids=_IDS)
 def test_detectors_deterministic(teal):
-    from security import DETECTORS
+    from tealql.security import DETECTORS
 
     def run(name):
         cls = DETECTORS.get(name)
@@ -85,7 +85,7 @@ def test_lift_deterministic(teal):
     # The clone-suffix (~dN) nondeterminism fixed this session must stay fixed:
     # rendering the same contract twice gives byte-identical Puya IR text.
     pytest.importorskip("puya")
-    from tealtools.lift import render
+    from tealql.tealtools.lift import render
     try:
         a = render(SSAProgram(str(teal)))
     except Exception:

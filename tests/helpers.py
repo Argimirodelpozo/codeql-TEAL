@@ -12,7 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
-from tealtools.ssa import SSAProgram
+from tealql.tealtools.ssa import SSAProgram
 
 
 def make_xcontract(

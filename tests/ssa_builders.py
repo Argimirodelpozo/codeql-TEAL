@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from tealtools.ssa import Assignment, Location, SSAVar
+from tealql.tealtools.ssa import Assignment, Location, SSAVar
 
 
 def mk_var(line: int = 10, index: int = 0) -> SSAVar:

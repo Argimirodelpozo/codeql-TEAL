@@ -15,7 +15,7 @@ pip install -e .                # core: parse + SSA + detectors (Python >= 3.12)
 pip install -e '.[lift]'        # + puyapy, for decompilation to real Puya IR / TEAL
 ```
 
-That puts a `tealql` binary on `$PATH`. `python -m cli` works as a fallback.
+That puts a `tealql` binary on `$PATH`. `python -m tealql.cli` works as a fallback.
 The core install pulls everything the analysis needs, including the
 [tree-sitter-teal](https://github.com/Argimirodelpozo/tree-sitter-teal) grammar
 (a pinned git dependency). The `lift` extra is only needed to lower programs to
@@ -35,7 +35,7 @@ tealql auth tests/tealtools/auth_domination/vuln/prog.teal
 
 > ⚠️ **Work in progress.** APIs, module names, snapshot formats, and detector defaults are all subject to change. Use as a research surface, not a stable interface.
 
-`src/analysis/tealtools/` is a Python package (installed as `tealtools`). Each submodule loads a program via `tealtools.SSAProgram(<source>)` and exposes either an SSA-level helper or a specific detector. `<source>` is a `.teal` file or a directory of them; the graph and SSA are rebuilt in-process (pure Python, milliseconds).
+`src/tealql/tealtools/` is a Python package (installed as `tealql.tealtools`). Each submodule loads a program via `tealql.tealtools.SSAProgram(<source>)` and exposes either an SSA-level helper or a specific detector. `<source>` is a `.teal` file or a directory of them; the graph and SSA are rebuilt in-process (pure Python, milliseconds).
 
 ### CLI
 
@@ -75,7 +75,7 @@ Common flags accepted by every analysis subcommand:
 ### Pipeline
 
 Every analysis builds on a canonical pass pipeline orchestrated by
-`tealtools.passes.run_all_passes`. Three phases run in order;
+`tealql.tealtools.passes.run_all_passes`. Three phases run in order;
 `tealql functional` is the most convenient way to see the
 fully-annotated result.
 
@@ -93,12 +93,12 @@ fully-annotated result.
 | **C. Structural cleanup** | `propagate_stack_shuffles` | copy-propagate pure shuffles (`dup`, `swap`, `frame_dig`, …); mark them `shuffled=True` so they render as `// …` comments |
 | | `cleanup_unused_ssavars` | drop side-effect-free Assignments whose every output is dead (typical victims: duplicate reader Assignments from phase A) |
 
-(Out-of-SSA lowering is no longer part of this pipeline — the Puya-IR lift does its own via `tealtools.block_args`; the functional dump renders live phis in phi form.)
+(Out-of-SSA lowering is no longer part of this pipeline — the Puya-IR lift does its own via `tealql.tealtools.block_args`; the functional dump renders live phis in phi form.)
 
 Each pass is idempotent — running `run_all_passes` twice is a
 no-op the second time. The per-pass implementations live in
-`src/analysis/tealtools/passes/<name>.py`; the substrate
-(`src/analysis/tealtools/ssa/`) carries only a thin lazy-import bridge
+`src/tealql/tealtools/passes/<name>.py`; the substrate
+(`src/tealql/tealtools/ssa/`) carries only a thin lazy-import bridge
 method per pass (`SSAProgram.propagate_*` / `cleanup_*`) so
 analysis semantics stay out of the substrate.
 
@@ -115,28 +115,28 @@ Inline annotations rendered by `tealql functional`:
 
 | Module | Purpose |
 | --- | --- |
-| `tealtools.ssa.SSAProgram` | SSA representation reconstructed from TEAL source. The foundation everything else consumes. |
-| `tealtools.path_predicates.PathPredicateAnalysis` | Per-BB path predicates from branch / assert outcomes. Supports `entry_seeds` and `bb_seeds` for cross-contract injection. |
-| `tealtools.stacksim` | Per-line concrete stack simulation. |
-| `tealtools.ast`, `tealtools.graphs` | AST and CFG / dataflow graph helpers. |
+| `tealql.tealtools.ssa.SSAProgram` | SSA representation reconstructed from TEAL source. The foundation everything else consumes. |
+| `tealql.tealtools.path_predicates.PathPredicateAnalysis` | Per-BB path predicates from branch / assert outcomes. Supports `entry_seeds` and `bb_seeds` for cross-contract injection. |
+| `tealql.tealtools.stacksim` | Per-line concrete stack simulation. |
+| `tealql.tealtools.ast`, `tealql.tealtools.graphs` | AST and CFG / dataflow graph helpers. |
 
 **Detectors and reports.**
 
 | Module | What it finds |
 | --- | --- |
-| `tealtools.auth_domination.AuthDominationDetector` | State-mutating ops not dominated by a recognised sender check. |
-| `security.NonUniqueBoxKeyDetector` | Non-unique external fields (e.g. `AssetName`) flowing into a box key. Registered as the `box-key` detection — run via `tealql detections --detector box-key`. |
-| `tealtools.inner_txn_report.InnerTxnReport` | Per-`itxn_submit` group dump: each txn's fields and possible operand values. |
-| `tealtools.group_reasoning.analyze` | Group shape the contract forces on every approving exit (`Global.GroupSize == 2`, `gtxn[0].Receiver == ...`, etc.). |
-| `tealtools.dataflow.box` | Box dataflow in three flavours: `detect_into_box_flows` (external → box write), `detect_out_of_box_flows` (box read → sensitive sink), `detect_correlated_flows` (end-to-end chain via syntactic key matching). |
-| `tealtools.xcontract.XContractGraph` | Cross-contract analysis: identifies appcall itxns with a constant `ApplicationID` resolvable in a registry, runs path predicates on each callee with seeded args, computes approving-exit summaries, feeds them back into the caller's BB. Includes `cross_auth_findings` for auth-domination across the boundary. |
-| `tealtools.cost_analysis` | Per-line opcode-budget cost with worst-case path accumulation; loops report `unbounded`. |
-| `tealtools.dataflow.predicate_aware.filter_validated` | Wraps a taint detector — suppresses violations whose sink operand is constrained by a dominating path predicate. |
+| `tealql.tealtools.auth_domination.AuthDominationDetector` | State-mutating ops not dominated by a recognised sender check. |
+| `tealql.security.NonUniqueBoxKeyDetector` | Non-unique external fields (e.g. `AssetName`) flowing into a box key. Registered as the `box-key` detection — run via `tealql detections --detector box-key`. |
+| `tealql.tealtools.inner_txn_report.InnerTxnReport` | Per-`itxn_submit` group dump: each txn's fields and possible operand values. |
+| `tealql.tealtools.group_reasoning.analyze` | Group shape the contract forces on every approving exit (`Global.GroupSize == 2`, `gtxn[0].Receiver == ...`, etc.). |
+| `tealql.tealtools.dataflow.box` | Box dataflow in three flavours: `detect_into_box_flows` (external → box write), `detect_out_of_box_flows` (box read → sensitive sink), `detect_correlated_flows` (end-to-end chain via syntactic key matching). |
+| `tealql.tealtools.xcontract.XContractGraph` | Cross-contract analysis: identifies appcall itxns with a constant `ApplicationID` resolvable in a registry, runs path predicates on each callee with seeded args, computes approving-exit summaries, feeds them back into the caller's BB. Includes `cross_auth_findings` for auth-domination across the boundary. |
+| `tealql.tealtools.cost_analysis` | Per-line opcode-budget cost with worst-case path accumulation; loops report `unbounded`. |
+| `tealql.tealtools.dataflow.predicate_aware.filter_validated` | Wraps a taint detector — suppresses violations whose sink operand is constrained by a dominating path predicate. |
 
 ### Example: run a detector
 
 ```python
-from tealtools import SSAProgram, AuthDominationDetector
+from tealql.tealtools import SSAProgram, AuthDominationDetector
 
 prog = SSAProgram("tests/tealtools/auth_domination/vuln/prog.teal")
 for v in AuthDominationDetector(prog).detect():
@@ -146,7 +146,7 @@ for v in AuthDominationDetector(prog).detect():
 ### Example: cross-contract auth domination
 
 ```python
-from tealtools import SSAProgram, XContractGraph, cross_auth_findings, load_registry
+from tealql.tealtools import SSAProgram, XContractGraph, cross_auth_findings, load_registry
 
 registry = load_registry("path/to/registry.yml")  # AppID → .teal path
 caller = SSAProgram("path/to/caller.teal")
@@ -159,10 +159,10 @@ The notebooks under `playground/interactive-examples/` (`example.ipynb`, `exampl
 
 ### Puya-IR lift
 
-`tealtools.lift` lifts the reconstructed SSA into genuine [Puya](https://github.com/algorandfoundation/puya) IR (`puya.ir.models`), validating and optimising it with Puya's own passes:
+`tealql.tealtools.lift` lifts the reconstructed SSA into genuine [Puya](https://github.com/algorandfoundation/puya) IR (`puya.ir.models`), validating and optimising it with Puya's own passes:
 
 ```bash
-python -m tealtools.lift <teal-source> [--optimize]
+python -m tealql.tealtools.lift <teal-source> [--optimize]
 ```
 
 ---

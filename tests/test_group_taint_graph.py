@@ -1,5 +1,5 @@
 """Atomic-group cross-program taint via shared scratch
-(:mod:`tealtools.dataflow.group_taint_graph`).
+(:mod:`tealql.tealtools.dataflow.group_taint_graph`).
 
 A value an earlier group member stashes in scratch (``store N``) flows into a
 later member that reads it (``gload i N``), crossing the trust boundary WITHIN
@@ -7,8 +7,8 @@ one atomic group. The AVM rule ``i < k`` (only an earlier sibling) is enforced.
 """
 from pathlib import Path
 
-from tealtools.ssa import SSAProgram
-from tealtools.dataflow.group_taint_graph import (
+from tealql.tealtools.ssa import SSAProgram
+from tealql.tealtools.dataflow.group_taint_graph import (
     GroupTaintGraph, GroupNode, group_taint_findings,
 )
 

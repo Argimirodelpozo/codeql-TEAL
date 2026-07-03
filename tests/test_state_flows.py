@@ -1,5 +1,5 @@
 """Tests for the app-state taint sources / out-of-state flow
-(``tealtools.dataflow.state``).
+(``tealql.tealtools.dataflow.state``).
 
 Two layers:
   - pure (no CodeQL DB): the Source output-index conventions, which are
@@ -10,8 +10,8 @@ Two layers:
 """
 import pytest
 
-from tealtools.ssa import Assignment, Location, SSAVar
-from tealtools.dataflow.state import (
+from tealql.tealtools.ssa import Assignment, Location, SSAVar
+from tealql.tealtools.dataflow.state import (
     APP_GLOBAL_GET_SOURCE,
     APP_GLOBAL_GET_EX_SOURCE,
     APP_LOCAL_GET_SOURCE,
@@ -19,7 +19,7 @@ from tealtools.dataflow.state import (
     DEFAULT_OUT_OF_STATE_SOURCES,
     detect_out_of_state_flows,
 )
-from tealtools.dataflow.engine import Sink, TaintAnalysis
+from tealql.tealtools.dataflow.engine import Sink, TaintAnalysis
 
 
 def _assign(op: str, n_out: int) -> Assignment:
@@ -56,7 +56,7 @@ def updatable_prog():
     """SSAProgram for a fixture that reads app state. Skips if the fixture
     isn't available in this environment."""
     from pathlib import Path
-    from tealtools.ssa import SSAProgram
+    from tealql.tealtools.ssa import SSAProgram
 
     contract = (Path(__file__).resolve().parent
           / "tealtools/sec_guide/is_updatable/gabe_vuln")

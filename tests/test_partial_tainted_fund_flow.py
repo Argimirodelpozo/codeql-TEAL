@@ -8,8 +8,8 @@ only the net-new findings the boolean detector misses.
 """
 from pathlib import Path
 
-from tealtools.ssa import SSAProgram
-from security import DETECTORS
+from tealql.tealtools.ssa import SSAProgram
+from tealql.security import DETECTORS
 
 _PARTIAL = DETECTORS["partial-tainted-fund-flow"]
 _TFF = DETECTORS["tainted-fund-flow"]

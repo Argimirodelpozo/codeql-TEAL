@@ -1,4 +1,4 @@
-"""Unit tests for ``tealtools.passes.frame_resolution.resolve_sub`` — the precise
+"""Unit tests for ``tealql.tealtools.passes.frame_resolution.resolve_sub`` — the precise
 frame-slot model the lift (and any opt-in consumer) reads instead of PySSA's
 conservative fat-frame substrate.
 
@@ -8,8 +8,8 @@ lift depends on: ``frame_dig -k`` -> param, other frame ops -> versioned local
 (each ``frame_bury`` opens a version, each read takes the reaching one), plus
 the fat-frame band passthrough.
 """
-from tealtools.ssa import SSAVar
-from tealtools.passes.frame_resolution import resolve_sub
+from tealql.tealtools.ssa import SSAVar
+from tealql.tealtools.passes.frame_resolution import resolve_sub
 
 
 def _v(line: int, idx: int = 1) -> SSAVar:

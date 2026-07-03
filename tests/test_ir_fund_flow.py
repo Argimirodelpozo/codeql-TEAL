@@ -8,9 +8,9 @@ from pathlib import Path
 
 import pytest
 
-from tealtools.ssa import SSAProgram
-from tealtools.lift.lift import _Lifter
-from tealtools.lift.fund_flow import tainted_fund_flows
+from tealql.tealtools.ssa import SSAProgram
+from tealql.tealtools.lift.lift import _Lifter
+from tealql.tealtools.lift.fund_flow import tainted_fund_flows
 
 TESTS_DIR = Path(__file__).resolve().parent
 
@@ -205,9 +205,9 @@ def test_robust_on_real_probes():
 def test_ir_taint_chain_crosses_callsub_in_ir_ops():
     # the taint road for a sink fed through a callsub: IR ops, source-first,
     # crossing the call boundary natively (no frame_dig hop like the SSA chain).
-    from tealtools.dataflow.byte_taint import byte_taint_view
-    from tealtools.lift import fund_flow as FF, pre_ir
-    from tealtools.lift.taint import _intr
+    from tealql.tealtools.dataflow.byte_taint import byte_taint_view
+    from tealql.tealtools.lift import fund_flow as FF, pre_ir
+    from tealql.tealtools.lift.taint import _intr
     teal = ("#pragma version 8\n"
             "byte 0x0011223344556677\ntxna ApplicationArgs 0\nconcat\ncallsub emit\nint 1\nreturn\n"
             "emit:\nproto 1 0\nframe_dig -1\nextract 8 32\nlog\nretsub\n")
@@ -225,7 +225,7 @@ def test_ir_taint_chain_crosses_callsub_in_ir_ops():
 def test_finding_message_carries_ir_taint_road(tmp_path):
     # a flagged fund-flow finding includes the lifted-IR taint road as a witness.
     # Needs a file-backed prog so common.ir_lifter (source_path) takes the IR path.
-    from security import DETECTORS
+    from tealql.security import DETECTORS
     teal = ("#pragma version 8\n"
             "txna ApplicationArgs 0\nbtoi\nitxn_begin\nint pay\nitxn_field TypeEnum\n"
             "itxn_field Amount\nitxn_submit\nint 1\nreturn\n")

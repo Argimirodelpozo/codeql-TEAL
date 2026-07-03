@@ -32,7 +32,7 @@ pytest.importorskip("puya")
 
 REPO = Path(__file__).resolve().parents[1]
 EXPLORER = REPO / "tests" / "experimental_IR_lift" / "explorer"
-SRC = REPO / "src" / "analysis"
+SRC = REPO / "src"
 PER_CONTRACT_TIMEOUT = 90          # seconds; subprocess hard-killed past this
 
 _CONTRACTS = sorted(EXPLORER.glob("app_*/")) if EXPLORER.exists() else []
@@ -45,8 +45,8 @@ import sys, io, contextlib
 sys.path.insert(0, {src!r})
 from puya.log import configure_logging, LogLevel
 configure_logging(min_log_level=LogLevel.critical)
-from tealtools.ssa import SSAProgram
-from tealtools.lift import to_puya_ir
+from tealql.tealtools.ssa import SSAProgram
+from tealql.tealtools.lift import to_puya_ir
 p = SSAProgram({teal!r})
 p.propagate_constants()
 with contextlib.redirect_stdout(io.StringIO()):

@@ -1,5 +1,5 @@
 """Unit tests for assert-based range refinement
-(``tealtools.passes.range_assert``).
+(``tealql.tealtools.passes.range_assert``).
 
 The refinement math (``_apply``) is a pure function; the soundness-critical
 part is the *flow sensitivity* — a guard may tighten a var globally only when
@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from tealtools.ssa import (
+from tealql.tealtools.ssa import (
     Assignment,
     BasicBlock,
     Const,
@@ -20,7 +20,7 @@ from tealtools.ssa import (
     SSAVar,
     TealType,
 )
-from tealtools.passes.range_assert import _apply, propagate_assert_ranges
+from tealql.tealtools.passes.range_assert import _apply, propagate_assert_ranges
 
 UMAX = (1 << 64) - 1
 U64 = TealType("uint64")
@@ -196,7 +196,7 @@ def _xgov():
     contract = Path(__file__).parent / "contracts" / "xgov"
     if not contract.exists():
         pytest.skip("xgov fixture not present")
-    from tealtools.ssa import SSAProgram
+    from tealql.tealtools.ssa import SSAProgram
 
     try:
         return SSAProgram(str(contract))

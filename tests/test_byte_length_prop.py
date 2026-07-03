@@ -9,13 +9,13 @@ duck-types operands (``getattr(operand, "type"/"const_value", …)``), so it run
 as plain unit tests over hand-built ``Assignment``s with real ``Const`` /
 ``TealType`` operands — no SSA fixpoint, fixture, or puya.
 """
-from tealtools.passes.byte_length_prop import (
+from tealql.tealtools.passes.byte_length_prop import (
     _hex_byte_length,
     _input_min_length,
     _op_byte_length,
     propagate_byte_lengths,
 )
-from tealtools.ssa import Const, IntRange, Phi, SSAVar, TealType
+from tealql.tealtools.ssa import Const, IntRange, Phi, SSAVar, TealType
 from ssa_builders import mk_asn as _asn, mk_var as _var, mk_prog as _prog
 
 

@@ -12,8 +12,8 @@ See the table:   pytest tests/test_benchmark.py -s
 from dataclasses import dataclass
 from pathlib import Path
 
-from tealtools.ssa import SSAProgram
-from security import DETECTORS
+from tealql.tealtools.ssa import SSAProgram
+from tealql.security import DETECTORS
 
 BENCH = Path(__file__).resolve().parent / "benchmark"
 

@@ -4,9 +4,9 @@
 ``SSAProgram.from_text`` wraps it -- so editor integrations, fuzzing, and tests
 can run the whole pipeline without writing temp files.
 """
-from tealtools.ssa import SSAProgram
-from tealtools.graph import load_graph
-from security import DETECTORS
+from tealql.tealtools.ssa import SSAProgram
+from tealql.tealtools.graph import load_graph
+from tealql.security import DETECTORS
 
 _TEAL = """#pragma version 10
     itxn_begin

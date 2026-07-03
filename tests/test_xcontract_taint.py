@@ -1,5 +1,5 @@
 """Integration test for the cross-contract taint graph
-(``tealtools.dataflow.xcontract_taint_graph``).
+(``tealql.tealtools.dataflow.xcontract_taint_graph``).
 
 Builds the ``arg_to_callee_sink`` fixture's merged caller+callee graph
 and checks that (a) all three appcall bridges are created and (b) the
@@ -23,9 +23,9 @@ FIXTURE = (
 def xtg():
     if not (FIXTURE / "caller").exists() or not (FIXTURE / "callee").exists():
         pytest.skip("fixture DBs not present (CodeQL unavailable?)")
-    from tealtools.ssa import SSAProgram
-    from tealtools.dataflow.xcontract_taint_graph import XContractTaintGraph
-    from tealtools.xcontract import load_registry
+    from tealql.tealtools.ssa import SSAProgram
+    from tealql.tealtools.dataflow.xcontract_taint_graph import XContractTaintGraph
+    from tealql.tealtools.xcontract import load_registry
 
     reg = load_registry(FIXTURE / "registry.yml")
     try:
@@ -76,7 +76,7 @@ class TestBridges:
 
 class TestDetector:
     def test_attacker_arg_reaches_callee_payment_sink(self, xtg):
-        from tealtools.dataflow.xcontract_taint_graph import cross_taint_findings
+        from tealql.tealtools.dataflow.xcontract_taint_graph import cross_taint_findings
 
         findings = cross_taint_findings(xtg)
         assert findings, "expected a cross-contract taint finding"

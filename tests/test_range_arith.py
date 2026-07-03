@@ -1,4 +1,4 @@
-"""Unit tests for forward range arithmetic (``tealtools.passes.range_arith``),
+"""Unit tests for forward range arithmetic (``tealql.tealtools.passes.range_arith``),
 focused on the two behaviours added on top of the stdlib seeds: const→range
 seeding and the top-first operand order of the non-commutative ops.
 
@@ -6,8 +6,8 @@ These build tiny ``Assignment`` lists directly and short-circuit the
 ``propagate_ranges`` lazy-trip (``_ranges_propagated = True``), so no CodeQL DB
 is needed.
 """
-from tealtools.ssa import Assignment, Const, Location, SSAVar
-from tealtools.passes.range_arith import propagate_range_arithmetic
+from tealql.tealtools.ssa import Assignment, Const, Location, SSAVar
+from tealql.tealtools.passes.range_arith import propagate_range_arithmetic
 
 
 class _FakeProg:

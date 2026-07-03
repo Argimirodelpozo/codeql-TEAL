@@ -1,6 +1,6 @@
 """CI canary for the fragile puya-internal surface the lift depends on.
 
-``tealtools.lift._puya_compat`` concentrates every private puya name + shape
+``tealql.tealtools.lift._puya_compat`` concentrates every private puya name + shape
 assumption the lift uses (see its docstring). This probes each one so a puya
 version bump breaks HERE with a clear message, instead of surfacing as an opaque
 lift failure deep in a scan.
@@ -13,7 +13,7 @@ import pytest
 
 pytest.importorskip("puya")
 
-from tealtools.lift import _puya_compat as compat
+from tealql.tealtools.lift import _puya_compat as compat
 
 
 def test_check_compat_resolves_every_fragile_name():

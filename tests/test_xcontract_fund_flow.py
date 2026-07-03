@@ -8,8 +8,8 @@ seed). Reuses detections.xcontract.cross_detection_findings + the seeded
 PathPredicateAnalysis -- no new engine.
 """
 
-from tealtools.xcontract import XContractGraph
-from security.xcontract import cross_detection_findings
+from tealql.tealtools.xcontract import XContractGraph
+from tealql.security.xcontract import cross_detection_findings
 from helpers import make_xcontract
 
 # callee pays an attacker-controlled Receiver (the arg the caller passes).

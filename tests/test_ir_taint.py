@@ -16,10 +16,10 @@ from pathlib import Path
 
 import pytest
 
-from tealtools.ssa import SSAProgram
-from tealtools.lift import pre_ir
-from tealtools.lift.lift import _Lifter
-from tealtools.lift.taint import user_input_taint, _return_summary
+from tealql.tealtools.ssa import SSAProgram
+from tealql.tealtools.lift import pre_ir
+from tealql.tealtools.lift.lift import _Lifter
+from tealql.tealtools.lift.taint import user_input_taint, _return_summary
 
 TESTS_DIR = Path(__file__).resolve().parent
 

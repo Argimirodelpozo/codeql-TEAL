@@ -4,7 +4,7 @@ C *two hops deep* surfaces — it flows over the chained appcall-arg bridges, no
 special-case forwarding.
 """
 from helpers import make_xcontract
-from tealtools.dataflow.xcontract_taint_graph import (
+from tealql.tealtools.dataflow.xcontract_taint_graph import (
     XContractTaintGraph, cross_taint_findings,
 )
 

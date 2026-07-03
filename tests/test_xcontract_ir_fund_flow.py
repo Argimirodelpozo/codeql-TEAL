@@ -9,8 +9,8 @@ strength. The mechanism: detections.xcontract._construct_detector passes the cal
 site's const_args as ``trusted_args``, which the IR taint excludes from its
 user-input source set.
 """
-from tealtools.xcontract import XContractGraph
-from security.xcontract import cross_detection_findings
+from tealql.tealtools.xcontract import XContractGraph
+from tealql.security.xcontract import cross_detection_findings
 from helpers import make_xcontract
 
 # callee pays an attacker-controlled Receiver (the arg the caller passes).

@@ -4,9 +4,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from cli.main import main
-from security.scan import scan
-from security.suppress import (fingerprint, load_baseline, partition,
+from tealql.cli.main import main
+from tealql.security.scan import scan
+from tealql.security.suppress import (fingerprint, load_baseline, partition,
                                write_baseline)
 
 TESTS_ROOT = Path(__file__).resolve().parent

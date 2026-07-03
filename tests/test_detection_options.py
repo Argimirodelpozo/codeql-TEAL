@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from security.scan import DetectionOptions, scan, failures
+from tealql.security.scan import DetectionOptions, scan, failures
 
 
 def _opts(d: dict) -> DetectionOptions:

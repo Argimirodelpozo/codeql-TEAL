@@ -40,7 +40,7 @@ import pytest
 
 pytest.importorskip("puya")
 
-from tealtools.lift import pre_ir  # noqa: E402
+from tealql.tealtools.lift import pre_ir  # noqa: E402
 
 _ROOT = Path(__file__).resolve().parent
 _REAL_CONTRACT_DIR = _ROOT / "contracts"
@@ -140,7 +140,7 @@ def _lower_to_teal(main, subs):
     from puya.mir.main import program_ir_to_mir
     from puya.options import PuyaOptions
     from puya.teal.main import mir_to_teal
-    from tealtools.lift.to_puya_ir import _define_named_orphan
+    from tealql.tealtools.lift.to_puya_ir import _define_named_orphan
 
     try:
         provider = CompiledProgramProvider()
@@ -173,9 +173,9 @@ def _process(contract: str):
     own IR optimiser only -- the Tier-1/2 bar. Raises if the lift/optimise fails
     (that is itself the Tier-1 signal). The backend (Tier 3) runs lazily so the
     expected-fail, slower lowering doesn't burden Tiers 1-2."""
-    from tealtools.ssa import SSAProgram
-    from tealtools.lift import to_puya_ir
-    from tealtools.lift.lift import lift
+    from tealql.tealtools.ssa import SSAProgram
+    from tealql.tealtools.lift import to_puya_ir
+    from tealql.tealtools.lift.lift import lift
     with _quiet_puya():
         prog = SSAProgram(contract)
         pre = lift(prog)                                   # pre-IR for Tier 2
@@ -312,8 +312,8 @@ def test_match_arm_pairing_individual_pushes():
     assert, UpdateApplication). Getting it wrong swaps the two and flips the
     approve/reject outcome (behaviourally confirmed). Assert the routing:
     case "0" goes to the block with the `!`/Not op; case "4" does not."""
-    from tealtools.ssa import SSAProgram
-    from tealtools.lift.lift import lift
+    from tealql.tealtools.ssa import SSAProgram
+    from tealql.tealtools.lift.lift import lift
 
     prog = SSAProgram(
         str(_EXPLORER_DIR / "app_3543081435"))
@@ -379,8 +379,8 @@ def test_frame_bury_of_callsub_return(tmp_path):
     on mainnet app_3000142226 et al. (UpdateApplication flipped to reject).
 
     Assert no `itob` in the lifted program operates on a bytes constant."""
-    from tealtools.ssa import SSAProgram
-    from tealtools.lift.lift import lift
+    from tealql.tealtools.ssa import SSAProgram
+    from tealql.tealtools.lift.lift import lift
 
     p = tmp_path / "frame_bury_callsub_return.teal"
     p.write_text(_FRAME_BURY_CALLSUB_RETURN_TEAL)
@@ -421,8 +421,8 @@ def test_frame_bury_return_slot(tmp_path):
     `make(5)` typed uint64 fails `cannot compare []byte to uint64`.
 
     Assert the lifted `make` returns bytes, not uint64."""
-    from tealtools.ssa import SSAProgram
-    from tealtools.lift.lift import lift
+    from tealql.tealtools.ssa import SSAProgram
+    from tealql.tealtools.lift.lift import lift
 
     p = tmp_path / "frame_bury_return.teal"
     p.write_text(_FRAME_BURY_RETURN_TEAL)
@@ -443,7 +443,7 @@ def test_specialize_polymorphic_return_clone():
     uint64 callsite keeps the original. (Real cases: app_3400287920 /
     app_3000142939 -- `incompatible types on assignment: source = (uint64),
     target = (bytes)` before specialization.)"""
-    from tealtools.lift import transforms
+    from tealql.tealtools.lift import transforms
 
     R = pre_ir.Register
     rv = R("rv", 0, "uint64")                       # callee's returned value
@@ -479,8 +479,8 @@ def test_duplicate_cross_subroutine_shared_tail():
     with a fresh block id, the cross-subroutine edge is gone, and the owner keeps
     the original. (Real case: app_2200207295 -- a shared retsub branched into from
     sibling subroutines -> Puya "predecessor block(s) outside of list".)"""
-    from tealtools.lift import transforms
-    from tealtools.lift.transforms import _succ_ids
+    from tealql.tealtools.lift import transforms
+    from tealql.tealtools.lift.transforms import _succ_ids
 
     B = pre_ir.BasicBlock
     shared = B(id=50, phis=[], ops=[], terminator=pre_ir.SubroutineReturn(result=[]))
@@ -536,7 +536,7 @@ def test_switch_arm_retsub_continuation(tmp_path):
     arm-retsubs -> the continuation got pruned and the lift mis-routed it
     (app_3100133227's nested-call reachability cascade). Assert the line after
     the callsub is reachable as a block."""
-    from tealtools.ssa import SSAProgram
+    from tealql.tealtools.ssa import SSAProgram
 
     p = tmp_path / "switch_arm_retsub.teal"
     p.write_text(_SWITCH_ARM_RETSUB_TEAL)
@@ -553,7 +553,7 @@ def test_materialize_phi_const_coerces_cross_family():
     phi type (a dead coarse-SSA placeholder -- e.g. empty `""` on a uint64 phi
     edge), it must be COERCED, else Puya rejects `let pc: uint64 = <bytes>`.
     (Surfaced by a v11 mainnet probe, app_3550180073.)"""
-    from tealtools.lift import transforms
+    from tealql.tealtools.lift import transforms
 
     R = pre_ir.Register
     reg = R("tmp%9", 0, "uint64")                  # phi resolves uint64
@@ -586,7 +586,7 @@ def test_canon_shuffle_arity():
     shallow model stack (e.g. dup2 recorded with 1 input), which made the resim
     drop the op and lose stack depth -- starving a downstream callsub's args
     (app_3550180073's l-stack). Assert the canonical shapes."""
-    from tealtools.ssa import _canon_shuffle
+    from tealql.tealtools.ssa import _canon_shuffle
     assert _canon_shuffle("dup2", "") == (2, [0, 1, 0, 1])
     assert _canon_shuffle("swap", "") == (2, [1, 0])
     assert _canon_shuffle("dup", "") == (1, [0, 0])
@@ -607,9 +607,9 @@ def test_resim_shuffle_canonical_lifts_v11(tmp_path):
     if not probe.exists():
         import pytest
         pytest.skip("probe not present")
-    from tealtools.ssa import SSAProgram
-    from tealtools.lift.lift import lift
-    from tealtools.lift import pre_ir
+    from tealql.tealtools.ssa import SSAProgram
+    from tealql.tealtools.lift.lift import lift
+    from tealql.tealtools.lift import pre_ir
     ir = lift(SSAProgram(str(probe)))
     # every callsub to a 1-param sub must carry exactly 1 arg (no starved 0-arg call)
     for s in ir.subroutines:
@@ -630,14 +630,14 @@ def test_pseudo_ops_normalized_and_recovered(tmp_path):
     chokepoint normalizes them to the canonical push the assembler emits, so they
     survive as real opcodes with const values. Assert the rewrite is exact and the
     lift recovers the constants."""
-    from tealtools.graph import _normalize_pseudo_ops
+    from tealql.tealtools.graph import _normalize_pseudo_ops
     n = _normalize_pseudo_ops(
         b'#pragma version 8\nbyte 0x4142\nmethod "transfer(uint64)void"\nint 1\n').decode()
     assert "pushbytes 0x4142" in n                 # byte literal -> pushbytes
     assert "pushbytes 0x25e350cf" in n             # method selector sha512_256[:4]
     assert "\nint 1\n" in n                        # int is grammar-native, untouched
 
-    from tealtools.ssa import SSAProgram
+    from tealql.tealtools.ssa import SSAProgram
     p = tmp_path / "pseudo.teal"
     p.write_text('#pragma version 8\nmethod "foo()void"\ntxna ApplicationArgs 0\n==\nreturn\n')
     prog = SSAProgram(str(p))

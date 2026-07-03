@@ -17,11 +17,11 @@ OUT = REPO / "docs" / "PRECISION.md"
 
 # Runnable as `python -m tests.gen_precision` (no pytest/conftest): put the
 # source packages + this dir on the path the way conftest does under pytest.
-for _p in (REPO / "src", REPO / "src" / "analysis", Path(__file__).resolve().parent):
+for _p in (REPO / "src", Path(__file__).resolve().parent):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 
-from security import confidence_of, severity_of  # noqa: E402
+from tealql.security import confidence_of, severity_of  # noqa: E402
 from test_benchmark import Score, run_benchmark   # noqa: E402
 
 _CAVEAT = """\

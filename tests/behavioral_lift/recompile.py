@@ -17,13 +17,13 @@ from pathlib import Path
 logging.getLogger("puya").setLevel(logging.CRITICAL)
 
 REPO = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(REPO / "src/analysis"))
+sys.path.insert(0, str(REPO / "src"))
 
 # The backend (lift -> destructure -> MIR -> TEAL) is now a SHIPPED module,
-# tealtools.lift.backend, so a pip-installed user can recompile too. Re-export
+# tealql.tealtools.lift.backend, so a pip-installed user can recompile too. Re-export
 # here so this harness (and compare.py) keep importing `lift_to_teal` /
 # `_destructure_with_orphans` from `recompile` unchanged.
-from tealtools.lift.backend import lift_to_teal, _destructure_with_orphans  # noqa: F401,E402
+from tealql.tealtools.lift.backend import lift_to_teal, _destructure_with_orphans  # noqa: F401,E402
 
 
 def algod_client():

@@ -6,12 +6,12 @@ detector end-to-end over in-memory TEAL, exercising that it consumes the
 field-bound enrichment (OnCompletion / GroupIndex / Num* ranges) and stays
 silent on genuinely satisfiable guards.
 """
-from tealtools.ssa import IntRange, SSAProgram
-from security import DETECTORS
+from tealql.tealtools.ssa import IntRange, SSAProgram
+from tealql.security import DETECTORS
 
 from importlib import import_module
 
-_mod = import_module("security.detections.constant_condition")
+_mod = import_module("tealql.security.detections.constant_condition")
 _eval_cmp = _mod._eval_cmp
 Detector = DETECTORS["constant-condition"]
 

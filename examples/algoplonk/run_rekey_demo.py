@@ -28,12 +28,11 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent.parent
-sys.path.insert(0, str(REPO / "src"))            # -> security
-sys.path.insert(0, str(REPO / "src" / "analysis"))  # -> tealtools
+sys.path.insert(0, str(REPO / "src"))            # -> the tealql package
 
-from tealtools.ssa import SSAProgram, PySSA
-from tealtools.passes.orchestrate import run_all_passes
-from security import RekeyToDetector
+from tealql.tealtools.ssa import SSAProgram, PySSA
+from tealql.tealtools.passes.orchestrate import run_all_passes
+from tealql.security import RekeyToDetector
 
 
 def run_one(kind: str) -> int:

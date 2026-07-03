@@ -1,4 +1,4 @@
-"""Unit tests for static range *seeding* (``tealtools.passes.range_seed``).
+"""Unit tests for static range *seeding* (``tealql.tealtools.passes.range_seed``).
 
 Focused on the two enrichment sources the op-alone single-output path can't
 reach on its own:
@@ -12,7 +12,7 @@ reach on its own:
 
 Built from in-memory TEAL so no fixture is needed.
 """
-from tealtools.ssa import SSAProgram
+from tealql.tealtools.ssa import SSAProgram
 
 
 def _ranges_by_op(teal):

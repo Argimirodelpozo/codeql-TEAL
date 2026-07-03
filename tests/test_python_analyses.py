@@ -92,10 +92,10 @@ def _ssa_summary(prog) -> str:
 
 
 def _render(analysis: str, case_dir: Path) -> str:
-    from tealtools.ssa import SSAProgram
+    from tealql.tealtools.ssa import SSAProgram
 
     if analysis == "sec_guide_scan":
-        from security.scan import ScanConfig, render_text, scan
+        from tealql.security.scan import ScanConfig, render_text, scan
 
         rules = case_dir / "rules.yml"
         config = ScanConfig.from_path(rules) if rules.exists() else ScanConfig.empty()
@@ -103,7 +103,7 @@ def _render(analysis: str, case_dir: Path) -> str:
         return render_text(findings) + "\n"
 
     if analysis == "xcontract":
-        from tealtools.xcontract import (
+        from tealql.tealtools.xcontract import (
             XContractGraph,
             cross_auth_findings,
             load_registry,
@@ -124,8 +124,8 @@ def _render(analysis: str, case_dir: Path) -> str:
         return body + "\n"
 
     if analysis == "xcontract_sec_guide":
-        from tealtools.xcontract import XContractGraph, load_registry, render_xcontract
-        from security.xcontract import (
+        from tealql.tealtools.xcontract import XContractGraph, load_registry, render_xcontract
+        from tealql.security.xcontract import (
             cross_detection_findings,
             render_findings as render_sg_findings,
         )
@@ -142,26 +142,26 @@ def _render(analysis: str, case_dir: Path) -> str:
     prog = SSAProgram(str(case_dir))
 
     if analysis == "auth_domination":
-        from tealtools.auth_domination import AuthDominationDetector
+        from tealql.tealtools.auth_domination import AuthDominationDetector
 
         violations = AuthDominationDetector(prog).detect()
         body = "\n".join(v.pretty() for v in violations) or "(no violations)"
         return body + "\n"
 
     if analysis == "box_key":
-        from security import NonUniqueBoxKeyDetector
+        from tealql.security import NonUniqueBoxKeyDetector
 
         violations = NonUniqueBoxKeyDetector(prog).detect()
         body = "\n".join(v.pretty() for v in violations) or "(no violations)"
         return body + "\n"
 
     if analysis == "box_df":
-        from tealtools.dataflow.box import (
+        from tealql.tealtools.dataflow.box import (
             detect_correlated_flows,
             detect_into_box_flows,
             detect_out_of_box_flows,
         )
-        from tealtools.dataflow.predicate_aware import filter_validated
+        from tealql.tealtools.dataflow.predicate_aware import filter_validated
 
         case_name = case_dir.name
         if case_name.startswith("key_correlated"):
@@ -188,27 +188,27 @@ def _render(analysis: str, case_dir: Path) -> str:
         return "\n".join(parts) + "\n"
 
     if analysis == "itxn_report":
-        from tealtools.inner_txn_report import InnerTxnReport
+        from tealql.tealtools.inner_txn_report import InnerTxnReport
 
         return InnerTxnReport(prog).render() + "\n"
 
     if analysis.startswith("path_predicates"):
-        from tealtools.path_predicates import PathPredicateAnalysis
+        from tealql.tealtools.path_predicates import PathPredicateAnalysis
 
         return PathPredicateAnalysis(prog).render() + "\n"
 
     if analysis == "group_shape":
-        from tealtools.group_reasoning import analyze
+        from tealql.tealtools.group_reasoning import analyze
 
         return analyze(prog).render() + "\n"
 
     if analysis == "cost":
-        from tealtools.cost_analysis import render
+        from tealql.tealtools.cost_analysis import render
 
         return render(prog) + "\n"
 
     if analysis == "cfg":
-        from tealtools.cfg import CFG
+        from tealql.tealtools.cfg import CFG
 
         # Skeleton form: structural BB labels + edges only. Stable
         # under cosmetic opcode-label changes.
@@ -219,7 +219,7 @@ def _render(analysis: str, case_dir: Path) -> str:
         # map back to the kebab-case keys in `detections.DETECTORS`.
         # Each fixture dir is named for the detection it exercises, so
         # the detector runs directly — no program-mode gating here.
-        from security import DETECTORS
+        from tealql.security import DETECTORS
 
         detection = case_dir.parent.name.replace("_", "-")
         if detection not in DETECTORS:

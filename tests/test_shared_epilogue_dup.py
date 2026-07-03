@@ -14,8 +14,8 @@ import pytest
 
 pytest.importorskip("puya")
 
-from tealtools.lift import pre_ir as P  # noqa: E402
-from tealtools.lift.to_puya_ir import (  # noqa: E402
+from tealql.tealtools.lift import pre_ir as P  # noqa: E402
+from tealql.tealtools.lift.to_puya_ir import (  # noqa: E402
     _duplicate_shared_epilogues,
     _term_targets,
 )

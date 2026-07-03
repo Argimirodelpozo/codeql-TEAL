@@ -33,7 +33,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Decompilation to real Puya IR (``tealql`` lift / ``python -m tealtools.lift``).
+# Decompilation to real Puya IR (``tealql`` lift / ``python -m tealql.tealtools.lift``).
 # The analysis + detection layers — including the interprocedural ir-* detectors,
 # whose taint runs on the puya-free pre-IR — do NOT need this; only lowering to
 # genuine ``puya.ir.models`` does. Pinned to the tested minor: the lift touches
@@ -54,7 +54,7 @@ dev = [
 Repository = "https://github.com/Argimirodelpozo/codeql-TEAL"
 
 [project.scripts]
-tealql = "cli.main:main"
+tealql = "tealql.cli.main:main"
 
 # Required for the tree-sitter-teal git dependency above (hatchling refuses
 # direct references by default, precisely because PyPI would reject them —
@@ -63,11 +63,14 @@ tealql = "cli.main:main"
 allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
-# Three packages: the ``tealtools`` analysis library (``src/analysis/tealtools/``),
-# the ``security`` detection layer (framework + importlib-loaded detector bodies,
-# ``src/security/``), and the ``cli`` command-line front-end (top-level ``cli/``).
-# Everything runs in pure Python from TEAL source — no external backend.
-packages = ["src/analysis/tealtools", "src/security", "cli"]
+# ONE top-level package, standard src layout: ``tealql.tealtools`` (analysis
+# substrate), ``tealql.security`` (detection layer, importlib-loaded detector
+# bodies), ``tealql.cli`` (the console entry point). Everything runs in pure
+# Python from TEAL source — no external backend. (The previous three-package
+# layout produced a broken wheel: hatch shipped ``analysis/`` instead of
+# mapping ``src/analysis/tealtools`` to top-level ``tealtools`` — only the
+# editable-install path finder masked it.)
+packages = ["src/tealql"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -88,7 +91,7 @@ filterwarnings = ["ignore::DeprecationWarning"]
 # `pytest` works without pytest-cov installed. See the [tool.coverage.*] config.
 [tool.coverage.run]
 branch = true
-source = ["src/analysis/tealtools", "src/security", "cli"]
+source = ["src/tealql"]
 omit = [
     "*/viz/*",          # Graphviz DOT/SVG debug rendering — not the analysis product
     "*/__main__.py",    # module CLI entry points

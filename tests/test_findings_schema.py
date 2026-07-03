@@ -1,7 +1,7 @@
 """The normalized Finding schema + location extraction (B-core / C3)."""
 from __future__ import annotations
 
-from security.findings import Finding, SCHEMA_VERSION, normalize
+from tealql.security.findings import Finding, SCHEMA_VERSION, normalize
 
 
 class _MsgOnly:

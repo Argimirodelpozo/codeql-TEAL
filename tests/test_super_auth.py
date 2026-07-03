@@ -1,5 +1,5 @@
 """Caller-guard-bypass detector over the super-CFG
-(:func:`tealtools.cfg.super_auth.caller_guard_bypass_findings`).
+(:func:`tealql.tealtools.cfg.super_auth.caller_guard_bypass_findings`).
 
 Demonstrates a sound use of interprocedural super-dominance: a caller guards an
 appcall with `txn Sender == ADMIN; assert`, so in the modelled call graph the
@@ -10,8 +10,8 @@ callee pins its caller via `global CallerApplicationID`. So:
   - vulnerable callee (no CallerApplicationID check) -> flagged.
   - safe callee (asserts CallerApplicationID) -> not flagged.
 """
-from tealtools.cfg import SuperCFG
-from tealtools.cfg.super_auth import caller_guard_bypass_findings
+from tealql.tealtools.cfg import SuperCFG
+from tealql.tealtools.cfg.super_auth import caller_guard_bypass_findings
 from helpers import make_xcontract
 
 

@@ -1,4 +1,4 @@
-"""Regression tests for SSA cleanup (``tealtools.passes.cleanup``).
+"""Regression tests for SSA cleanup (``tealql.tealtools.passes.cleanup``).
 
 Guards the phi-leaf liveness bug: a var consumed only as a phi argument
 has an empty ``uses`` list (``uses`` tracks assignment consumers, not
@@ -19,7 +19,7 @@ XGOV = Path(__file__).resolve().parent / "contracts/xgov"
 def _prog():
     if not XGOV.exists():
         pytest.skip("xgov fixture not present")
-    from tealtools.ssa import SSAProgram
+    from tealql.tealtools.ssa import SSAProgram
     try:
         return SSAProgram(str(XGOV))
     except Exception as e:  # pragma: no cover - environment-dependent
@@ -27,7 +27,7 @@ def _prog():
 
 
 def _ssavar_defs(prog):
-    from tealtools.ssa import SSAVar
+    from tealql.tealtools.ssa import SSAVar
     return {
         (o.file, o.line, o.index)
         for a in prog.assignments for o in a.outputs
@@ -37,7 +37,7 @@ def _ssavar_defs(prog):
 
 class TestCleanupPhiLeaf:
     def test_cleanup_keeps_phi_referenced_producers(self):
-        from tealtools.ssa import SSAVar
+        from tealql.tealtools.ssa import SSAVar
         p = _prog()
         p.propagate_constants()
         p.propagate_stack_shuffles()

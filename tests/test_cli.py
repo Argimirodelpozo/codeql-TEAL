@@ -15,9 +15,9 @@ from pathlib import Path
 
 import pytest
 
-from tealtools._utils import targets
-from cli.main import main
-from tealtools._utils.serialize import finding_to_dict
+from tealql.tealtools._utils import targets
+from tealql.cli.main import main
+from tealql.tealtools._utils.serialize import finding_to_dict
 
 
 TESTS_ROOT = Path(__file__).resolve().parent
@@ -337,7 +337,7 @@ def test_cli_xcontract_from_chain(tmp_path, capsys, monkeypatch):
 
     # discover_registry's default fetcher imports fetch_approval lazily, so
     # patching the module attribute redirects it with no network.
-    monkeypatch.setattr("tealtools._utils.chain.fetch_approval", _stub_fetch)
+    monkeypatch.setattr("tealql.tealtools._utils.chain.fetch_approval", _stub_fetch)
 
     rc = main(["xcontract", str(caller), "--from-chain",
                "--cache-dir", str(tmp_path / "cache")])

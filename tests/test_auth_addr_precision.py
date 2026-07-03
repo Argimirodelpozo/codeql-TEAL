@@ -5,8 +5,8 @@ can never hold — it's a vacuous check, not a real admin guard. The detector mu
 therefore still FLAG a sensitive sink "guarded" by such a comparison, while a
 genuine 32-byte address guard suppresses it.
 """
-from tealtools.ssa import SSAProgram
-from tealtools.auth_domination import AuthDominationDetector
+from tealql.tealtools.ssa import SSAProgram
+from tealql.tealtools.auth_domination import AuthDominationDetector
 
 # A 32-byte (64 hex) bytes literal — address-shaped.
 _ADDR32 = "0x" + "11" * 32
