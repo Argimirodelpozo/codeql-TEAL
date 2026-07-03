@@ -14,7 +14,7 @@ can't creep back in:
   * the naive construction continuation and the corrected continuation
     genuinely DIVERGE (353/24,965 callsubs measured) — pinned here on a real
     contract so nobody "fixes" one policy into the other without noticing
-    (that is a semantic change; gate it with the c2 differential harness,
+    (that is a semantic change; gate it with tests/subroutines_differential.py,
     the lift corpus, and the behavioural gate).
 """
 from __future__ import annotations
