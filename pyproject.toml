@@ -106,8 +106,8 @@ exclude_lines = [
     "\\.\\.\\.",
 ]
 # Conservative REGRESSION floor, not a target. The hermetic suite covers ~79%
-# (higher with LIFT_SEMANTICS_CORPUS/BACKEND); a fresh clone WITHOUT the
-# gitignored tests/dbs/ fixtures skips ~45 substrate tests and drops lower, so
-# the floor is set to survive that and catch only a real regression. Ratchet it
-# up once the real-DB fixtures ship in CI.
+# (higher with LIFT_SEMANTICS_CORPUS/BACKEND). The real-contract fixtures
+# under tests/contracts/ are tracked now, so a fresh clone runs the full
+# hermetic suite; the floor stays below the measured value to catch only a
+# real regression. Ratchet upward as CI pins the number.
 fail_under = 68

@@ -1,0 +1,314 @@
+#pragma version 10
+txn NumAppArgs
+pushint 0 // [pseudo-op-patch] was: int 0
+==
+bnz main_l8
+txna ApplicationArgs 0
+pushbytes 0xcfe58d05 // [pseudo-op-patch] was: method "create(address,address,address,uint64,uint64,uint64)void"
+==
+bnz main_l7
+txna ApplicationArgs 0
+pushbytes 0xaf3da81d // [pseudo-op-patch] was: method "initialise(account)void"
+==
+bnz main_l6
+txna ApplicationArgs 0
+pushbytes 0xb5678e7e // [pseudo-op-patch] was: method "mint(pay)void"
+==
+bnz main_l5
+err
+main_l5:
+txn OnCompletion
+pushint 0 // [pseudo-op-patch] was: int NoOp
+==
+txn ApplicationID
+pushint 0 // [pseudo-op-patch] was: int 0
+!=
+&&
+assert
+callsub mintcaster_8
+pushint 1 // [pseudo-op-patch] was: int 1
+return
+main_l6:
+txn OnCompletion
+pushint 0 // [pseudo-op-patch] was: int NoOp
+==
+txn ApplicationID
+pushint 0 // [pseudo-op-patch] was: int 0
+!=
+&&
+assert
+callsub initialisecaster_7
+pushint 1 // [pseudo-op-patch] was: int 1
+return
+main_l7:
+txn OnCompletion
+pushint 0 // [pseudo-op-patch] was: int NoOp
+==
+txn ApplicationID
+pushint 0 // [pseudo-op-patch] was: int 0
+==
+&&
+assert
+callsub createcaster_6
+pushint 1 // [pseudo-op-patch] was: int 1
+return
+main_l8:
+txn OnCompletion
+pushint 4 // [pseudo-op-patch] was: int UpdateApplication
+==
+bnz main_l10
+err
+main_l10:
+txn ApplicationID
+pushint 0 // [pseudo-op-patch] was: int 0
+!=
+assert
+pushbytes 0x696e6974 // [pseudo-op-patch] was: byte "init"
+pushint 0 // [pseudo-op-patch] was: int 0
+app_global_put
+pushint 1 // [pseudo-op-patch] was: int 1
+return
+
+// get_transfer_inner_txn
+gettransferinnertxn_0:
+proto 4 0
+frame_dig -4
+itxn_field Sender
+pushint 0 // [pseudo-op-patch] was: int 0
+itxn_field Fee
+frame_dig -1
+bnz gettransferinnertxn_0_l2
+pushint 1 // [pseudo-op-patch] was: int pay
+itxn_field TypeEnum
+frame_dig -2
+itxn_field Amount
+frame_dig -3
+itxn_field Receiver
+b gettransferinnertxn_0_l3
+gettransferinnertxn_0_l2:
+pushint 4 // [pseudo-op-patch] was: int axfer
+itxn_field TypeEnum
+frame_dig -1
+itxn_field XferAsset
+frame_dig -2
+itxn_field AssetAmount
+frame_dig -3
+itxn_field AssetReceiver
+gettransferinnertxn_0_l3:
+retsub
+
+// get_proposer
+getproposer_1:
+proto 1 1
+frame_dig -1
+pushbytes 0x6e756d5f70726f706f73657273 // [pseudo-op-patch] was: byte "num_proposers"
+app_global_get
+<
+assert
+pushbytes 0x7072 // [pseudo-op-patch] was: byte "pr"
+frame_dig -1
+pushint 32 // [pseudo-op-patch] was: int 32
+*
+pushint 32 // [pseudo-op-patch] was: int 32
+box_extract
+retsub
+
+// mint_x_algo
+mintxalgo_2:
+proto 2 0
+itxn_begin
+global CurrentApplicationAddress
+frame_dig -1
+frame_dig -2
+pushbytes 0x785f616c676f5f6964 // [pseudo-op-patch] was: byte "x_algo_id"
+app_global_get
+callsub gettransferinnertxn_0
+itxn_submit
+retsub
+
+// create
+create_3:
+proto 6 0
+pushbytes 0x696e6974 // [pseudo-op-patch] was: byte "init"
+pushint 1 // [pseudo-op-patch] was: int 1
+app_global_put
+pushbytes 0x61646d696e // [pseudo-op-patch] was: byte "admin"
+frame_dig -6
+app_global_put
+pushbytes 0x72656769737465725f61646d696e // [pseudo-op-patch] was: byte "register_admin"
+frame_dig -5
+app_global_put
+pushbytes 0x78676f765f61646d696e // [pseudo-op-patch] was: byte "xgov_admin"
+frame_dig -4
+app_global_put
+pushbytes 0x74696d655f64656c6179 // [pseudo-op-patch] was: byte "time_delay"
+pushint 86400 // [pseudo-op-patch] was: int 86400
+app_global_put
+pushbytes 0x6e756d5f70726f706f73657273 // [pseudo-op-patch] was: byte "num_proposers"
+pushint 0 // [pseudo-op-patch] was: int 0
+app_global_put
+pushbytes 0x6d61785f70726f706f7365725f62616c616e6365 // [pseudo-op-patch] was: byte "max_proposer_balance"
+frame_dig -3
+app_global_put
+pushbytes 0x666565 // [pseudo-op-patch] was: byte "fee"
+frame_dig -1
+app_global_put
+pushbytes 0x7072656d69756d // [pseudo-op-patch] was: byte "premium"
+frame_dig -2
+app_global_put
+pushbytes 0x6c6173745f70726f706f736572735f6163746976655f62616c616e6365 // [pseudo-op-patch] was: byte "last_proposers_active_balance"
+pushint 0 // [pseudo-op-patch] was: int 0
+app_global_put
+pushbytes 0x746f74616c5f70656e64696e675f7374616b65 // [pseudo-op-patch] was: byte "total_pending_stake"
+pushint 0 // [pseudo-op-patch] was: int 0
+app_global_put
+pushbytes 0x746f74616c5f756e636c61696d65645f66656573 // [pseudo-op-patch] was: byte "total_unclaimed_fees"
+pushint 0 // [pseudo-op-patch] was: int 0
+app_global_put
+pushbytes 0x746f74616c5f756e636c61696d65645f66656573 // [pseudo-op-patch] was: byte "total_unclaimed_fees"
+pushint 0 // [pseudo-op-patch] was: int 0
+app_global_put
+pushbytes 0x63616e5f696d6d6564696174655f6d696e74 // [pseudo-op-patch] was: byte "can_immediate_mint"
+pushint 1 // [pseudo-op-patch] was: int 1
+app_global_put
+pushbytes 0x63616e5f64656c61795f6d696e74 // [pseudo-op-patch] was: byte "can_delay_mint"
+pushint 0 // [pseudo-op-patch] was: int 0
+app_global_put
+retsub
+
+// initialise
+initialise_4:
+proto 1 0
+itxn_begin
+pushint 3 // [pseudo-op-patch] was: int acfg
+itxn_field TypeEnum
+pushbytes 0x476f7665726e616e63652078416c676f // [pseudo-op-patch] was: byte "Governance xAlgo"
+itxn_field ConfigAssetName
+pushbytes 0x78414c474f // [pseudo-op-patch] was: byte "xALGO"
+itxn_field ConfigAssetUnitName
+pushint 10000000000000000 // [pseudo-op-patch] was: int 10000000000000000
+itxn_field ConfigAssetTotal
+pushint 6 // [pseudo-op-patch] was: int 6
+itxn_field ConfigAssetDecimals
+global CurrentApplicationAddress
+itxn_field ConfigAssetReserve
+pushint 0 // [pseudo-op-patch] was: int 0
+itxn_field Fee
+itxn_submit
+pushbytes 0x785f616c676f5f6964 // [pseudo-op-patch] was: byte "x_algo_id"
+itxn CreatedAssetID
+app_global_put
+frame_dig -1
+acct_params_get AcctAuthAddr
+store 1
+store 0
+load 1
+assert
+load 0
+global CurrentApplicationAddress
+==
+assert
+pushbytes 0x6e756d5f70726f706f73657273 // [pseudo-op-patch] was: byte "num_proposers"
+pushint 1 // [pseudo-op-patch] was: int 1
+app_global_put
+pushbytes 0x7072 // [pseudo-op-patch] was: byte "pr"
+pushint 32 // [pseudo-op-patch] was: int 32
+pushint 30 // [pseudo-op-patch] was: int 30
+*
+box_create
+assert
+pushbytes 0x7072 // [pseudo-op-patch] was: byte "pr"
+pushint 0 // [pseudo-op-patch] was: int 0
+frame_dig -1
+txnas Accounts
+box_replace
+pushbytes 0x6170 // [pseudo-op-patch] was: byte "ap"
+frame_dig -1
+txnas Accounts
+concat
+pushint 0 // [pseudo-op-patch] was: int 0
+box_create
+assert
+retsub
+
+// mint
+mint_5:
+proto 1 0
+frame_dig -1
+gtxns Receiver
+pushint 0 // [pseudo-op-patch] was: int 0
+callsub getproposer_1
+==
+assert
+frame_dig -1
+gtxns Amount
+txn Sender
+callsub mintxalgo_2
+pushbytes 0x6c6173745f70726f706f736572735f6163746976655f62616c616e6365 // [pseudo-op-patch] was: byte "last_proposers_active_balance"
+pushbytes 0x6c6173745f70726f706f736572735f6163746976655f62616c616e6365 // [pseudo-op-patch] was: byte "last_proposers_active_balance"
+app_global_get
+frame_dig -1
+gtxns Amount
++
+app_global_put
+retsub
+
+// create_caster
+createcaster_6:
+proto 0 0
+pushbytes 0x // [pseudo-op-patch] was: byte ""
+dupn 2
+pushint 0 // [pseudo-op-patch] was: int 0
+dupn 2
+txna ApplicationArgs 1
+frame_bury 0
+txna ApplicationArgs 2
+frame_bury 1
+txna ApplicationArgs 3
+frame_bury 2
+txna ApplicationArgs 4
+btoi
+frame_bury 3
+txna ApplicationArgs 5
+btoi
+frame_bury 4
+txna ApplicationArgs 6
+btoi
+frame_bury 5
+frame_dig 0
+frame_dig 1
+frame_dig 2
+frame_dig 3
+frame_dig 4
+frame_dig 5
+callsub create_3
+retsub
+
+// initialise_caster
+initialisecaster_7:
+proto 0 0
+pushint 0 // [pseudo-op-patch] was: int 0
+txna ApplicationArgs 1
+pushint 0 // [pseudo-op-patch] was: int 0
+getbyte
+frame_bury 0
+frame_dig 0
+callsub initialise_4
+retsub
+
+// mint_caster
+mintcaster_8:
+proto 0 0
+pushint 0 // [pseudo-op-patch] was: int 0
+txn GroupIndex
+pushint 1 // [pseudo-op-patch] was: int 1
+-
+frame_bury 0
+frame_dig 0
+gtxns TypeEnum
+pushint 1 // [pseudo-op-patch] was: int pay
+==
+assert
+frame_dig 0
+callsub mint_5
+retsub

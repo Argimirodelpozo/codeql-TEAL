@@ -1,0 +1,255 @@
+## nodes
+xgov_registry_approval_program.teal	1	0	97	6	Source
+xgov_registry_approval_program.teal	2	0	2	14	TxnOpcode
+xgov_registry_approval_program.teal	3	0	3	9	PushintOpcode
+xgov_registry_approval_program.teal	4	0	4	2	EqualsComparisonOpcode
+xgov_registry_approval_program.teal	5	0	5	11	BnzOpcode
+xgov_registry_approval_program.teal	6	0	6	22	TxnaOpcode
+xgov_registry_approval_program.teal	7	0	7	20	PushbytesOpcode
+xgov_registry_approval_program.teal	8	0	8	2	EqualsComparisonOpcode
+xgov_registry_approval_program.teal	9	0	9	11	BnzOpcode
+xgov_registry_approval_program.teal	10	0	10	22	TxnaOpcode
+xgov_registry_approval_program.teal	11	0	11	20	PushbytesOpcode
+xgov_registry_approval_program.teal	12	0	12	2	EqualsComparisonOpcode
+xgov_registry_approval_program.teal	13	0	13	11	BnzOpcode
+xgov_registry_approval_program.teal	14	0	14	3	ErrOpcode
+xgov_registry_approval_program.teal	15	0	15	8	Label
+xgov_registry_approval_program.teal	16	0	16	16	TxnOpcode
+xgov_registry_approval_program.teal	17	0	17	9	PushintOpcode
+xgov_registry_approval_program.teal	18	0	18	2	EqualsComparisonOpcode
+xgov_registry_approval_program.teal	19	0	19	17	TxnOpcode
+xgov_registry_approval_program.teal	20	0	20	9	PushintOpcode
+xgov_registry_approval_program.teal	21	0	21	2	IntegerNotEqualsOpcode
+xgov_registry_approval_program.teal	22	0	22	2	AndOpcode
+xgov_registry_approval_program.teal	23	0	23	6	AssertOpcode
+xgov_registry_approval_program.teal	24	0	24	31	CallsubOpcode
+xgov_registry_approval_program.teal	25	0	25	9	PushintOpcode
+xgov_registry_approval_program.teal	26	0	26	6	ReturnOpcode
+xgov_registry_approval_program.teal	27	0	27	8	Label
+xgov_registry_approval_program.teal	28	0	28	16	TxnOpcode
+xgov_registry_approval_program.teal	29	0	29	9	PushintOpcode
+xgov_registry_approval_program.teal	30	0	30	2	EqualsComparisonOpcode
+xgov_registry_approval_program.teal	31	0	31	17	TxnOpcode
+xgov_registry_approval_program.teal	32	0	32	9	PushintOpcode
+xgov_registry_approval_program.teal	33	0	33	2	IntegerNotEqualsOpcode
+xgov_registry_approval_program.teal	34	0	34	2	AndOpcode
+xgov_registry_approval_program.teal	35	0	35	6	AssertOpcode
+xgov_registry_approval_program.teal	36	0	36	29	CallsubOpcode
+xgov_registry_approval_program.teal	37	0	37	9	PushintOpcode
+xgov_registry_approval_program.teal	38	0	38	6	ReturnOpcode
+xgov_registry_approval_program.teal	39	0	39	8	Label
+xgov_registry_approval_program.teal	40	0	40	16	TxnOpcode
+xgov_registry_approval_program.teal	41	0	41	9	PushintOpcode
+xgov_registry_approval_program.teal	42	0	42	2	EqualsComparisonOpcode
+xgov_registry_approval_program.teal	43	0	43	11	BnzOpcode
+xgov_registry_approval_program.teal	44	0	44	3	ErrOpcode
+xgov_registry_approval_program.teal	45	0	45	8	Label
+xgov_registry_approval_program.teal	46	0	46	17	TxnOpcode
+xgov_registry_approval_program.teal	47	0	47	9	PushintOpcode
+xgov_registry_approval_program.teal	48	0	48	2	EqualsComparisonOpcode
+xgov_registry_approval_program.teal	49	0	49	6	AssertOpcode
+xgov_registry_approval_program.teal	50	0	50	28	PushbytesOpcode
+xgov_registry_approval_program.teal	51	0	51	17	PushintOpcode
+xgov_registry_approval_program.teal	52	0	52	14	AppGlobalPutOpcode
+xgov_registry_approval_program.teal	53	0	53	9	PushintOpcode
+xgov_registry_approval_program.teal	54	0	54	6	ReturnOpcode
+xgov_registry_approval_program.teal	57	0	57	16	Label
+xgov_registry_approval_program.teal	58	0	58	9	ProtoOpcode
+xgov_registry_approval_program.teal	59	0	59	9	PushintOpcode
+xgov_registry_approval_program.teal	60	0	60	6	ReturnOpcode
+xgov_registry_approval_program.teal	63	0	63	18	Label
+xgov_registry_approval_program.teal	64	0	64	9	ProtoOpcode
+xgov_registry_approval_program.teal	65	0	65	9	PushintOpcode
+xgov_registry_approval_program.teal	66	0	66	6	ReturnOpcode
+xgov_registry_approval_program.teal	69	0	69	22	Label
+xgov_registry_approval_program.teal	70	0	70	9	ProtoOpcode
+xgov_registry_approval_program.teal	71	0	71	12	PushbytesOpcode
+xgov_registry_approval_program.teal	72	0	72	9	PushintOpcode
+xgov_registry_approval_program.teal	73	0	73	22	TxnaOpcode
+xgov_registry_approval_program.teal	74	0	74	12	FrameBuryOpcode
+xgov_registry_approval_program.teal	75	0	75	14	TxnOpcode
+xgov_registry_approval_program.teal	76	0	76	9	PushintOpcode
+xgov_registry_approval_program.teal	77	0	77	1	SubOpcode
+xgov_registry_approval_program.teal	78	0	78	12	FrameBuryOpcode
+xgov_registry_approval_program.teal	79	0	79	11	FrameDigOpcode
+xgov_registry_approval_program.teal	80	0	80	14	GtxnsOpcode
+xgov_registry_approval_program.teal	81	0	81	9	PushintOpcode
+xgov_registry_approval_program.teal	82	0	82	2	EqualsComparisonOpcode
+xgov_registry_approval_program.teal	83	0	83	6	AssertOpcode
+xgov_registry_approval_program.teal	84	0	84	11	FrameDigOpcode
+xgov_registry_approval_program.teal	85	0	85	11	FrameDigOpcode
+xgov_registry_approval_program.teal	86	0	86	23	CallsubOpcode
+xgov_registry_approval_program.teal	87	0	87	6	RetsubOpcode
+xgov_registry_approval_program.teal	90	0	90	24	Label
+xgov_registry_approval_program.teal	91	0	91	9	ProtoOpcode
+xgov_registry_approval_program.teal	92	0	92	12	PushbytesOpcode
+xgov_registry_approval_program.teal	93	0	93	22	TxnaOpcode
+xgov_registry_approval_program.teal	94	0	94	12	FrameBuryOpcode
+xgov_registry_approval_program.teal	95	0	95	11	FrameDigOpcode
+xgov_registry_approval_program.teal	96	0	96	25	CallsubOpcode
+xgov_registry_approval_program.teal	97	0	97	6	RetsubOpcode
+## cfgEdges
+xgov_registry_approval_program.teal	2	xgov_registry_approval_program.teal	3	NormalSuccessor
+xgov_registry_approval_program.teal	3	xgov_registry_approval_program.teal	4	NormalSuccessor
+xgov_registry_approval_program.teal	4	xgov_registry_approval_program.teal	5	NormalSuccessor
+xgov_registry_approval_program.teal	5	xgov_registry_approval_program.teal	6	BooleanSuccessor(false)
+xgov_registry_approval_program.teal	5	xgov_registry_approval_program.teal	39	BooleanSuccessor(true)
+xgov_registry_approval_program.teal	6	xgov_registry_approval_program.teal	7	NormalSuccessor
+xgov_registry_approval_program.teal	7	xgov_registry_approval_program.teal	8	NormalSuccessor
+xgov_registry_approval_program.teal	8	xgov_registry_approval_program.teal	9	NormalSuccessor
+xgov_registry_approval_program.teal	9	xgov_registry_approval_program.teal	10	BooleanSuccessor(false)
+xgov_registry_approval_program.teal	9	xgov_registry_approval_program.teal	27	BooleanSuccessor(true)
+xgov_registry_approval_program.teal	10	xgov_registry_approval_program.teal	11	NormalSuccessor
+xgov_registry_approval_program.teal	11	xgov_registry_approval_program.teal	12	NormalSuccessor
+xgov_registry_approval_program.teal	12	xgov_registry_approval_program.teal	13	NormalSuccessor
+xgov_registry_approval_program.teal	13	xgov_registry_approval_program.teal	14	BooleanSuccessor(false)
+xgov_registry_approval_program.teal	13	xgov_registry_approval_program.teal	15	BooleanSuccessor(true)
+xgov_registry_approval_program.teal	15	xgov_registry_approval_program.teal	16	NormalSuccessor
+xgov_registry_approval_program.teal	16	xgov_registry_approval_program.teal	17	NormalSuccessor
+xgov_registry_approval_program.teal	17	xgov_registry_approval_program.teal	18	NormalSuccessor
+xgov_registry_approval_program.teal	18	xgov_registry_approval_program.teal	19	NormalSuccessor
+xgov_registry_approval_program.teal	19	xgov_registry_approval_program.teal	20	NormalSuccessor
+xgov_registry_approval_program.teal	20	xgov_registry_approval_program.teal	21	NormalSuccessor
+xgov_registry_approval_program.teal	21	xgov_registry_approval_program.teal	22	NormalSuccessor
+xgov_registry_approval_program.teal	22	xgov_registry_approval_program.teal	23	NormalSuccessor
+xgov_registry_approval_program.teal	23	xgov_registry_approval_program.teal	24	BooleanSuccessor(true)
+xgov_registry_approval_program.teal	24	xgov_registry_approval_program.teal	90	NormalSuccessor
+xgov_registry_approval_program.teal	27	xgov_registry_approval_program.teal	28	NormalSuccessor
+xgov_registry_approval_program.teal	28	xgov_registry_approval_program.teal	29	NormalSuccessor
+xgov_registry_approval_program.teal	29	xgov_registry_approval_program.teal	30	NormalSuccessor
+xgov_registry_approval_program.teal	30	xgov_registry_approval_program.teal	31	NormalSuccessor
+xgov_registry_approval_program.teal	31	xgov_registry_approval_program.teal	32	NormalSuccessor
+xgov_registry_approval_program.teal	32	xgov_registry_approval_program.teal	33	NormalSuccessor
+xgov_registry_approval_program.teal	33	xgov_registry_approval_program.teal	34	NormalSuccessor
+xgov_registry_approval_program.teal	34	xgov_registry_approval_program.teal	35	NormalSuccessor
+xgov_registry_approval_program.teal	35	xgov_registry_approval_program.teal	36	BooleanSuccessor(true)
+xgov_registry_approval_program.teal	36	xgov_registry_approval_program.teal	69	NormalSuccessor
+xgov_registry_approval_program.teal	39	xgov_registry_approval_program.teal	40	NormalSuccessor
+xgov_registry_approval_program.teal	40	xgov_registry_approval_program.teal	41	NormalSuccessor
+xgov_registry_approval_program.teal	41	xgov_registry_approval_program.teal	42	NormalSuccessor
+xgov_registry_approval_program.teal	42	xgov_registry_approval_program.teal	43	NormalSuccessor
+xgov_registry_approval_program.teal	43	xgov_registry_approval_program.teal	44	BooleanSuccessor(false)
+xgov_registry_approval_program.teal	43	xgov_registry_approval_program.teal	45	BooleanSuccessor(true)
+xgov_registry_approval_program.teal	45	xgov_registry_approval_program.teal	46	NormalSuccessor
+xgov_registry_approval_program.teal	46	xgov_registry_approval_program.teal	47	NormalSuccessor
+xgov_registry_approval_program.teal	47	xgov_registry_approval_program.teal	48	NormalSuccessor
+xgov_registry_approval_program.teal	48	xgov_registry_approval_program.teal	49	NormalSuccessor
+xgov_registry_approval_program.teal	49	xgov_registry_approval_program.teal	50	BooleanSuccessor(true)
+xgov_registry_approval_program.teal	50	xgov_registry_approval_program.teal	51	NormalSuccessor
+xgov_registry_approval_program.teal	51	xgov_registry_approval_program.teal	52	NormalSuccessor
+xgov_registry_approval_program.teal	52	xgov_registry_approval_program.teal	53	NormalSuccessor
+xgov_registry_approval_program.teal	53	xgov_registry_approval_program.teal	54	NormalSuccessor
+xgov_registry_approval_program.teal	57	xgov_registry_approval_program.teal	58	NormalSuccessor
+xgov_registry_approval_program.teal	58	xgov_registry_approval_program.teal	59	NormalSuccessor
+xgov_registry_approval_program.teal	59	xgov_registry_approval_program.teal	60	NormalSuccessor
+xgov_registry_approval_program.teal	63	xgov_registry_approval_program.teal	64	NormalSuccessor
+xgov_registry_approval_program.teal	64	xgov_registry_approval_program.teal	65	NormalSuccessor
+xgov_registry_approval_program.teal	65	xgov_registry_approval_program.teal	66	NormalSuccessor
+xgov_registry_approval_program.teal	69	xgov_registry_approval_program.teal	70	NormalSuccessor
+xgov_registry_approval_program.teal	70	xgov_registry_approval_program.teal	71	NormalSuccessor
+xgov_registry_approval_program.teal	71	xgov_registry_approval_program.teal	72	NormalSuccessor
+xgov_registry_approval_program.teal	72	xgov_registry_approval_program.teal	73	NormalSuccessor
+xgov_registry_approval_program.teal	73	xgov_registry_approval_program.teal	74	NormalSuccessor
+xgov_registry_approval_program.teal	74	xgov_registry_approval_program.teal	75	NormalSuccessor
+xgov_registry_approval_program.teal	75	xgov_registry_approval_program.teal	76	NormalSuccessor
+xgov_registry_approval_program.teal	76	xgov_registry_approval_program.teal	77	NormalSuccessor
+xgov_registry_approval_program.teal	77	xgov_registry_approval_program.teal	78	NormalSuccessor
+xgov_registry_approval_program.teal	78	xgov_registry_approval_program.teal	79	NormalSuccessor
+xgov_registry_approval_program.teal	79	xgov_registry_approval_program.teal	80	NormalSuccessor
+xgov_registry_approval_program.teal	80	xgov_registry_approval_program.teal	81	NormalSuccessor
+xgov_registry_approval_program.teal	81	xgov_registry_approval_program.teal	82	NormalSuccessor
+xgov_registry_approval_program.teal	82	xgov_registry_approval_program.teal	83	NormalSuccessor
+xgov_registry_approval_program.teal	83	xgov_registry_approval_program.teal	84	BooleanSuccessor(true)
+xgov_registry_approval_program.teal	84	xgov_registry_approval_program.teal	85	NormalSuccessor
+xgov_registry_approval_program.teal	85	xgov_registry_approval_program.teal	86	NormalSuccessor
+xgov_registry_approval_program.teal	86	xgov_registry_approval_program.teal	57	NormalSuccessor
+xgov_registry_approval_program.teal	90	xgov_registry_approval_program.teal	91	NormalSuccessor
+xgov_registry_approval_program.teal	91	xgov_registry_approval_program.teal	92	NormalSuccessor
+xgov_registry_approval_program.teal	92	xgov_registry_approval_program.teal	93	NormalSuccessor
+xgov_registry_approval_program.teal	93	xgov_registry_approval_program.teal	94	NormalSuccessor
+xgov_registry_approval_program.teal	94	xgov_registry_approval_program.teal	95	NormalSuccessor
+xgov_registry_approval_program.teal	95	xgov_registry_approval_program.teal	96	NormalSuccessor
+xgov_registry_approval_program.teal	96	xgov_registry_approval_program.teal	63	NormalSuccessor
+## basicBlocks
+xgov_registry_approval_program.teal	2	2	5
+xgov_registry_approval_program.teal	3	2	5
+xgov_registry_approval_program.teal	4	2	5
+xgov_registry_approval_program.teal	5	2	5
+xgov_registry_approval_program.teal	6	6	9
+xgov_registry_approval_program.teal	7	6	9
+xgov_registry_approval_program.teal	8	6	9
+xgov_registry_approval_program.teal	9	6	9
+xgov_registry_approval_program.teal	10	10	13
+xgov_registry_approval_program.teal	11	10	13
+xgov_registry_approval_program.teal	12	10	13
+xgov_registry_approval_program.teal	13	10	13
+xgov_registry_approval_program.teal	14	14	14
+xgov_registry_approval_program.teal	15	15	23
+xgov_registry_approval_program.teal	16	15	23
+xgov_registry_approval_program.teal	17	15	23
+xgov_registry_approval_program.teal	18	15	23
+xgov_registry_approval_program.teal	19	15	23
+xgov_registry_approval_program.teal	20	15	23
+xgov_registry_approval_program.teal	21	15	23
+xgov_registry_approval_program.teal	22	15	23
+xgov_registry_approval_program.teal	23	15	23
+xgov_registry_approval_program.teal	24	24	24
+xgov_registry_approval_program.teal	27	27	35
+xgov_registry_approval_program.teal	28	27	35
+xgov_registry_approval_program.teal	29	27	35
+xgov_registry_approval_program.teal	30	27	35
+xgov_registry_approval_program.teal	31	27	35
+xgov_registry_approval_program.teal	32	27	35
+xgov_registry_approval_program.teal	33	27	35
+xgov_registry_approval_program.teal	34	27	35
+xgov_registry_approval_program.teal	35	27	35
+xgov_registry_approval_program.teal	36	36	36
+xgov_registry_approval_program.teal	39	39	43
+xgov_registry_approval_program.teal	40	39	43
+xgov_registry_approval_program.teal	41	39	43
+xgov_registry_approval_program.teal	42	39	43
+xgov_registry_approval_program.teal	43	39	43
+xgov_registry_approval_program.teal	44	44	44
+xgov_registry_approval_program.teal	45	45	49
+xgov_registry_approval_program.teal	46	45	49
+xgov_registry_approval_program.teal	47	45	49
+xgov_registry_approval_program.teal	48	45	49
+xgov_registry_approval_program.teal	49	45	49
+xgov_registry_approval_program.teal	50	50	54
+xgov_registry_approval_program.teal	51	50	54
+xgov_registry_approval_program.teal	52	50	54
+xgov_registry_approval_program.teal	53	50	54
+xgov_registry_approval_program.teal	54	50	54
+xgov_registry_approval_program.teal	57	57	60
+xgov_registry_approval_program.teal	58	57	60
+xgov_registry_approval_program.teal	59	57	60
+xgov_registry_approval_program.teal	60	57	60
+xgov_registry_approval_program.teal	63	63	66
+xgov_registry_approval_program.teal	64	63	66
+xgov_registry_approval_program.teal	65	63	66
+xgov_registry_approval_program.teal	66	63	66
+xgov_registry_approval_program.teal	69	69	83
+xgov_registry_approval_program.teal	70	69	83
+xgov_registry_approval_program.teal	71	69	83
+xgov_registry_approval_program.teal	72	69	83
+xgov_registry_approval_program.teal	73	69	83
+xgov_registry_approval_program.teal	74	69	83
+xgov_registry_approval_program.teal	75	69	83
+xgov_registry_approval_program.teal	76	69	83
+xgov_registry_approval_program.teal	77	69	83
+xgov_registry_approval_program.teal	78	69	83
+xgov_registry_approval_program.teal	79	69	83
+xgov_registry_approval_program.teal	80	69	83
+xgov_registry_approval_program.teal	81	69	83
+xgov_registry_approval_program.teal	82	69	83
+xgov_registry_approval_program.teal	83	69	83
+xgov_registry_approval_program.teal	84	84	86
+xgov_registry_approval_program.teal	85	84	86
+xgov_registry_approval_program.teal	86	84	86
+xgov_registry_approval_program.teal	90	90	96
+xgov_registry_approval_program.teal	91	90	96
+xgov_registry_approval_program.teal	92	90	96
+xgov_registry_approval_program.teal	93	90	96
+xgov_registry_approval_program.teal	94	90	96
+xgov_registry_approval_program.teal	95	90	96
+xgov_registry_approval_program.teal	96	90	96

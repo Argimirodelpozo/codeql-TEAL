@@ -1,0 +1,3552 @@
+## nodes
+approval.teal	1	0	1226	6	Source
+approval.teal	2	0	2	18	IntcblockOpcode
+approval.teal	3	0	3	435	BytecblockOpcode
+approval.teal	4	0	4	14	TxnOpcode
+approval.teal	5	0	5	6	Intc0Opcode
+approval.teal	6	0	6	2	EqualsComparisonOpcode
+approval.teal	7	0	7	12	BnzOpcode
+approval.teal	8	0	8	22	TxnaOpcode
+approval.teal	9	0	9	20	PushbytesOpcode
+approval.teal	10	0	10	2	EqualsComparisonOpcode
+approval.teal	11	0	11	12	BnzOpcode
+approval.teal	12	0	12	22	TxnaOpcode
+approval.teal	13	0	13	20	PushbytesOpcode
+approval.teal	14	0	14	2	EqualsComparisonOpcode
+approval.teal	15	0	15	12	BnzOpcode
+approval.teal	16	0	16	22	TxnaOpcode
+approval.teal	17	0	17	20	PushbytesOpcode
+approval.teal	18	0	18	2	EqualsComparisonOpcode
+approval.teal	19	0	19	12	BnzOpcode
+approval.teal	20	0	20	22	TxnaOpcode
+approval.teal	21	0	21	20	PushbytesOpcode
+approval.teal	22	0	22	2	EqualsComparisonOpcode
+approval.teal	23	0	23	12	BnzOpcode
+approval.teal	24	0	24	22	TxnaOpcode
+approval.teal	25	0	25	20	PushbytesOpcode
+approval.teal	26	0	26	2	EqualsComparisonOpcode
+approval.teal	27	0	27	11	BnzOpcode
+approval.teal	28	0	28	22	TxnaOpcode
+approval.teal	29	0	29	20	PushbytesOpcode
+approval.teal	30	0	30	2	EqualsComparisonOpcode
+approval.teal	31	0	31	11	BnzOpcode
+approval.teal	32	0	32	3	ErrOpcode
+approval.teal	33	0	33	8	Label
+approval.teal	34	0	34	16	TxnOpcode
+approval.teal	35	0	35	6	Intc0Opcode
+approval.teal	36	0	36	2	EqualsComparisonOpcode
+approval.teal	37	0	37	17	TxnOpcode
+approval.teal	38	0	38	6	Intc0Opcode
+approval.teal	39	0	39	2	IntegerNotEqualsOpcode
+approval.teal	40	0	40	2	AndOpcode
+approval.teal	41	0	41	6	AssertOpcode
+approval.teal	42	0	42	22	TxnaOpcode
+approval.teal	43	0	43	8	StoreOpcode
+approval.teal	44	0	44	22	TxnaOpcode
+approval.teal	45	0	45	4	BtoiOpcode
+approval.teal	46	0	46	8	StoreOpcode
+approval.teal	47	0	47	22	TxnaOpcode
+approval.teal	48	0	48	8	StoreOpcode
+approval.teal	49	0	49	22	TxnaOpcode
+approval.teal	50	0	50	8	StoreOpcode
+approval.teal	51	0	51	22	TxnaOpcode
+approval.teal	52	0	52	6	Intc0Opcode
+approval.teal	53	0	53	7	GetbyteOpcode
+approval.teal	54	0	54	8	StoreOpcode
+approval.teal	55	0	55	14	TxnOpcode
+approval.teal	56	0	56	6	Intc1Opcode
+approval.teal	57	0	57	1	SubOpcode
+approval.teal	58	0	58	8	StoreOpcode
+approval.teal	59	0	59	7	LoadOpcode
+approval.teal	60	0	60	14	GtxnsOpcode
+approval.teal	61	0	61	6	Intc1Opcode
+approval.teal	62	0	62	2	EqualsComparisonOpcode
+approval.teal	63	0	63	6	AssertOpcode
+approval.teal	64	0	64	7	LoadOpcode
+approval.teal	65	0	65	7	LoadOpcode
+approval.teal	66	0	66	7	LoadOpcode
+approval.teal	67	0	67	7	LoadOpcode
+approval.teal	68	0	68	7	LoadOpcode
+approval.teal	69	0	69	7	LoadOpcode
+approval.teal	70	0	70	15	CallsubOpcode
+approval.teal	71	0	71	6	Intc1Opcode
+approval.teal	72	0	72	6	ReturnOpcode
+approval.teal	73	0	73	8	Label
+approval.teal	74	0	74	16	TxnOpcode
+approval.teal	75	0	75	6	Intc0Opcode
+approval.teal	76	0	76	2	EqualsComparisonOpcode
+approval.teal	77	0	77	17	TxnOpcode
+approval.teal	78	0	78	6	Intc0Opcode
+approval.teal	79	0	79	2	IntegerNotEqualsOpcode
+approval.teal	80	0	80	2	AndOpcode
+approval.teal	81	0	81	6	AssertOpcode
+approval.teal	82	0	82	22	TxnaOpcode
+approval.teal	83	0	83	8	StoreOpcode
+approval.teal	84	0	84	22	TxnaOpcode
+approval.teal	85	0	85	4	BtoiOpcode
+approval.teal	86	0	86	8	StoreOpcode
+approval.teal	87	0	87	22	TxnaOpcode
+approval.teal	88	0	88	6	Intc0Opcode
+approval.teal	89	0	89	7	GetbyteOpcode
+approval.teal	90	0	90	8	StoreOpcode
+approval.teal	91	0	91	7	LoadOpcode
+approval.teal	92	0	92	7	LoadOpcode
+approval.teal	93	0	93	7	LoadOpcode
+approval.teal	94	0	94	27	CallsubOpcode
+approval.teal	95	0	95	8	StoreOpcode
+approval.teal	96	0	96	8	BytecOpcode
+approval.teal	97	0	97	7	LoadOpcode
+approval.teal	98	0	98	6	ConcatOpcode
+approval.teal	99	0	99	3	LogOpcode
+approval.teal	100	0	100	6	Intc1Opcode
+approval.teal	101	0	101	6	ReturnOpcode
+approval.teal	102	0	102	9	Label
+approval.teal	103	0	103	16	TxnOpcode
+approval.teal	104	0	104	6	Intc0Opcode
+approval.teal	105	0	105	2	EqualsComparisonOpcode
+approval.teal	106	0	106	17	TxnOpcode
+approval.teal	107	0	107	6	Intc0Opcode
+approval.teal	108	0	108	2	IntegerNotEqualsOpcode
+approval.teal	109	0	109	2	AndOpcode
+approval.teal	110	0	110	6	AssertOpcode
+approval.teal	111	0	111	22	TxnaOpcode
+approval.teal	112	0	112	6	Intc0Opcode
+approval.teal	113	0	113	7	GetbyteOpcode
+approval.teal	114	0	114	15	CallsubOpcode
+approval.teal	115	0	115	6	Intc1Opcode
+approval.teal	116	0	116	6	ReturnOpcode
+approval.teal	117	0	117	9	Label
+approval.teal	118	0	118	16	TxnOpcode
+approval.teal	119	0	119	6	Intc0Opcode
+approval.teal	120	0	120	2	EqualsComparisonOpcode
+approval.teal	121	0	121	17	TxnOpcode
+approval.teal	122	0	122	6	Intc0Opcode
+approval.teal	123	0	123	2	IntegerNotEqualsOpcode
+approval.teal	124	0	124	2	AndOpcode
+approval.teal	125	0	125	6	AssertOpcode
+approval.teal	126	0	126	14	TxnOpcode
+approval.teal	127	0	127	6	Intc1Opcode
+approval.teal	128	0	128	1	SubOpcode
+approval.teal	129	0	129	8	StoreOpcode
+approval.teal	130	0	130	7	LoadOpcode
+approval.teal	131	0	131	14	GtxnsOpcode
+approval.teal	132	0	132	6	Intc1Opcode
+approval.teal	133	0	133	2	EqualsComparisonOpcode
+approval.teal	134	0	134	6	AssertOpcode
+approval.teal	135	0	135	7	LoadOpcode
+approval.teal	136	0	136	19	CallsubOpcode
+approval.teal	137	0	137	6	Intc1Opcode
+approval.teal	138	0	138	6	ReturnOpcode
+approval.teal	139	0	139	9	Label
+approval.teal	140	0	140	16	TxnOpcode
+approval.teal	141	0	141	6	Intc0Opcode
+approval.teal	142	0	142	2	EqualsComparisonOpcode
+approval.teal	143	0	143	17	TxnOpcode
+approval.teal	144	0	144	6	Intc0Opcode
+approval.teal	145	0	145	2	EqualsComparisonOpcode
+approval.teal	146	0	146	2	AndOpcode
+approval.teal	147	0	147	6	AssertOpcode
+approval.teal	148	0	148	22	TxnaOpcode
+approval.teal	149	0	149	7	StoreOpcode
+approval.teal	150	0	150	22	TxnaOpcode
+approval.teal	151	0	151	6	Intc0Opcode
+approval.teal	152	0	152	7	GetbyteOpcode
+approval.teal	153	0	153	7	StoreOpcode
+approval.teal	154	0	154	22	TxnaOpcode
+approval.teal	155	0	155	7	StoreOpcode
+approval.teal	156	0	156	22	TxnaOpcode
+approval.teal	157	0	157	7	StoreOpcode
+approval.teal	158	0	158	22	TxnaOpcode
+approval.teal	159	0	159	4	BtoiOpcode
+approval.teal	160	0	160	7	StoreOpcode
+approval.teal	161	0	161	22	TxnaOpcode
+approval.teal	162	0	162	4	BtoiOpcode
+approval.teal	163	0	163	7	StoreOpcode
+approval.teal	164	0	164	22	TxnaOpcode
+approval.teal	165	0	165	7	StoreOpcode
+approval.teal	166	0	166	22	TxnaOpcode
+approval.teal	167	0	167	4	BtoiOpcode
+approval.teal	168	0	168	7	StoreOpcode
+approval.teal	169	0	169	22	TxnaOpcode
+approval.teal	170	0	170	8	StoreOpcode
+approval.teal	171	0	171	6	LoadOpcode
+approval.teal	172	0	172	6	LoadOpcode
+approval.teal	173	0	173	6	LoadOpcode
+approval.teal	174	0	174	6	LoadOpcode
+approval.teal	175	0	175	6	LoadOpcode
+approval.teal	176	0	176	6	LoadOpcode
+approval.teal	177	0	177	6	LoadOpcode
+approval.teal	178	0	178	6	LoadOpcode
+approval.teal	179	0	179	7	LoadOpcode
+approval.teal	180	0	180	16	CallsubOpcode
+approval.teal	181	0	181	6	Intc1Opcode
+approval.teal	182	0	182	6	ReturnOpcode
+approval.teal	183	0	183	9	Label
+approval.teal	184	0	184	16	TxnOpcode
+approval.teal	185	0	185	6	Intc0Opcode
+approval.teal	186	0	186	2	EqualsComparisonOpcode
+approval.teal	187	0	187	17	TxnOpcode
+approval.teal	188	0	188	6	Intc0Opcode
+approval.teal	189	0	189	2	IntegerNotEqualsOpcode
+approval.teal	190	0	190	2	AndOpcode
+approval.teal	191	0	191	6	AssertOpcode
+approval.teal	192	0	192	14	TxnOpcode
+approval.teal	193	0	193	6	Intc1Opcode
+approval.teal	194	0	194	1	SubOpcode
+approval.teal	195	0	195	7	StoreOpcode
+approval.teal	196	0	196	6	LoadOpcode
+approval.teal	197	0	197	14	GtxnsOpcode
+approval.teal	198	0	198	6	Intc1Opcode
+approval.teal	199	0	199	2	EqualsComparisonOpcode
+approval.teal	200	0	200	6	AssertOpcode
+approval.teal	201	0	201	6	LoadOpcode
+approval.teal	202	0	202	23	CallsubOpcode
+approval.teal	203	0	203	7	StoreOpcode
+approval.teal	204	0	204	8	BytecOpcode
+approval.teal	205	0	205	6	LoadOpcode
+approval.teal	206	0	206	4	ItobOpcode
+approval.teal	207	0	207	6	ConcatOpcode
+approval.teal	208	0	208	3	LogOpcode
+approval.teal	209	0	209	6	Intc1Opcode
+approval.teal	210	0	210	6	ReturnOpcode
+approval.teal	211	0	211	9	Label
+approval.teal	212	0	212	16	TxnOpcode
+approval.teal	213	0	213	9	PushintOpcode
+approval.teal	214	0	214	2	EqualsComparisonOpcode
+approval.teal	215	0	215	12	BnzOpcode
+approval.teal	216	0	216	3	ErrOpcode
+approval.teal	217	0	217	9	Label
+approval.teal	218	0	218	17	TxnOpcode
+approval.teal	219	0	219	6	Intc0Opcode
+approval.teal	220	0	220	2	IntegerNotEqualsOpcode
+approval.teal	221	0	221	6	AssertOpcode
+approval.teal	222	0	222	16	CallsubOpcode
+approval.teal	223	0	223	6	Intc1Opcode
+approval.teal	224	0	224	6	ReturnOpcode
+approval.teal	227	0	227	13	Label
+approval.teal	228	0	228	9	ProtoOpcode
+approval.teal	229	0	229	32	PushbytesOpcode
+approval.teal	230	0	230	12	FrameDigOpcode
+approval.teal	231	0	231	6	Intc1Opcode
+approval.teal	232	0	232	8	Extract3Opcode
+approval.teal	233	0	233	6	RetsubOpcode
+approval.teal	236	0	236	7	Label
+approval.teal	237	0	237	9	ProtoOpcode
+approval.teal	238	0	238	12	FrameDigOpcode
+approval.teal	239	0	239	6	Intc0Opcode
+approval.teal	240	0	240	2	EqualsComparisonOpcode
+approval.teal	241	0	241	13	BnzOpcode
+approval.teal	242	0	242	12	FrameDigOpcode
+approval.teal	243	0	243	6	Intc2Opcode
+approval.teal	244	0	244	1	DivOpcode
+approval.teal	245	0	245	6	Intc0Opcode
+approval.teal	246	0	246	1	IntegerGreaterThanOpcode
+approval.teal	247	0	247	13	BnzOpcode
+approval.teal	248	0	248	7	Bytec1Opcode
+approval.teal	249	0	249	10	Label
+approval.teal	250	0	250	12	FrameDigOpcode
+approval.teal	251	0	251	6	Intc2Opcode
+approval.teal	252	0	252	1	ModOpcode
+approval.teal	253	0	253	20	CallsubOpcode
+approval.teal	254	0	254	6	ConcatOpcode
+approval.teal	255	0	255	11	BOpcode
+approval.teal	256	0	256	10	Label
+approval.teal	257	0	257	12	FrameDigOpcode
+approval.teal	258	0	258	6	Intc2Opcode
+approval.teal	259	0	259	1	DivOpcode
+approval.teal	260	0	260	14	CallsubOpcode
+approval.teal	261	0	261	11	BOpcode
+approval.teal	262	0	262	10	Label
+approval.teal	263	0	263	14	PushbytesOpcode
+approval.teal	264	0	264	10	Label
+approval.teal	265	0	265	6	RetsubOpcode
+approval.teal	268	0	268	9	Label
+approval.teal	269	0	269	9	ProtoOpcode
+approval.teal	270	0	270	10	TxnOpcode
+approval.teal	271	0	271	21	GlobalOpcode
+approval.teal	272	0	272	2	EqualsComparisonOpcode
+approval.teal	274	0	274	6	AssertOpcode
+approval.teal	275	0	275	7	PushintOpcode
+approval.teal	275	8	276	25	Label
+approval.teal	277	0	277	6	AssertOpcode
+approval.teal	278	0	278	6	RetsubOpcode
+approval.teal	281	0	281	16	Label
+approval.teal	282	0	282	9	ProtoOpcode
+approval.teal	283	0	283	6	Intc0Opcode
+approval.teal	284	0	284	12	FrameDigOpcode
+approval.teal	285	0	285	12	GtxnsOpcode
+approval.teal	286	0	286	14	PushintOpcode
+approval.teal	287	0	287	2	IntegerGteOpcode
+approval.teal	288	0	288	6	AssertOpcode
+approval.teal	289	0	289	20	CallsubOpcode
+approval.teal	290	0	290	7	Bytec2Opcode
+approval.teal	291	0	291	14	AppGlobalGetOpcode
+approval.teal	292	0	292	12	FrameBuryOpcode
+approval.teal	293	0	293	6	RetsubOpcode
+approval.teal	296	0	296	13	Label
+approval.teal	297	0	297	9	ProtoOpcode
+approval.teal	298	0	298	10	InnerTransactionBegin
+approval.teal	299	0	299	9	PushintOpcode
+approval.teal	300	0	300	19	InnerTransactionField
+approval.teal	301	0	301	146	PushbytesOpcode
+approval.teal	302	0	302	26	InnerTransactionField
+approval.teal	303	0	303	20	PushbytesOpcode
+approval.teal	304	0	304	28	InnerTransactionField
+approval.teal	305	0	305	6	Intc0Opcode
+approval.teal	306	0	306	14	InnerTransactionField
+approval.teal	307	0	307	11	InnerTransactionSubmit
+approval.teal	308	0	308	6	Intc0Opcode
+approval.teal	309	0	309	7	Bytec2Opcode
+approval.teal	310	0	310	17	AppGlobalGetExOpcode
+approval.teal	311	0	311	8	StoreOpcode
+approval.teal	312	0	312	8	StoreOpcode
+approval.teal	313	0	313	7	LoadOpcode
+approval.teal	314	0	314	1	NotOpcode
+approval.teal	315	0	315	6	AssertOpcode
+approval.teal	316	0	316	7	Bytec2Opcode
+approval.teal	317	0	317	25	ItxnOpcode
+approval.teal	318	0	318	14	AppGlobalPutOpcode
+approval.teal	319	0	319	6	RetsubOpcode
+approval.teal	322	0	322	9	Label
+approval.teal	323	0	323	9	ProtoOpcode
+approval.teal	324	0	324	6	Intc0Opcode
+approval.teal	325	0	325	3	DupOpcode
+approval.teal	326	0	326	7	Bytec1Opcode
+approval.teal	327	0	327	6	Intc0Opcode
+approval.teal	328	0	328	6	DupnOpcode
+approval.teal	329	0	329	12	FrameDigOpcode
+approval.teal	330	0	330	12	FrameDigOpcode
+approval.teal	331	0	331	2	IntegerLteOpcode
+approval.teal	333	0	333	6	AssertOpcode
+approval.teal	334	0	334	12	FrameDigOpcode
+approval.teal	335	0	335	22	GlobalOpcode
+approval.teal	336	0	336	2	IntegerGteOpcode
+approval.teal	338	0	338	6	AssertOpcode
+approval.teal	339	0	339	12	FrameDigOpcode
+approval.teal	340	0	340	6	Intc3Opcode
+approval.teal	341	0	341	2	IntegerLteOpcode
+approval.teal	343	0	343	6	AssertOpcode
+approval.teal	344	0	344	6	Intc0Opcode
+approval.teal	345	0	345	7	Bytec3Opcode
+approval.teal	346	0	346	17	AppGlobalGetExOpcode
+approval.teal	347	0	347	8	StoreOpcode
+approval.teal	348	0	348	8	StoreOpcode
+approval.teal	349	0	349	7	LoadOpcode
+approval.teal	350	0	350	1	NotOpcode
+approval.teal	351	0	351	6	AssertOpcode
+approval.teal	352	0	352	7	Bytec3Opcode
+approval.teal	353	0	353	12	FrameDigOpcode
+approval.teal	354	0	354	11	ExtractOpcode
+approval.teal	355	0	355	14	AppGlobalPutOpcode
+approval.teal	356	0	356	6	Intc0Opcode
+approval.teal	357	0	357	7	Bytec0Opcode
+approval.teal	358	0	358	17	AppGlobalGetExOpcode
+approval.teal	359	0	359	8	StoreOpcode
+approval.teal	360	0	360	8	StoreOpcode
+approval.teal	361	0	361	7	LoadOpcode
+approval.teal	362	0	362	1	NotOpcode
+approval.teal	363	0	363	6	AssertOpcode
+approval.teal	364	0	364	7	Bytec0Opcode
+approval.teal	365	0	365	12	FrameDigOpcode
+approval.teal	366	0	366	14	AppGlobalPutOpcode
+approval.teal	367	0	367	6	Intc0Opcode
+approval.teal	368	0	368	8	BytecOpcode
+approval.teal	369	0	369	17	AppGlobalGetExOpcode
+approval.teal	370	0	370	8	StoreOpcode
+approval.teal	371	0	371	8	StoreOpcode
+approval.teal	372	0	372	7	LoadOpcode
+approval.teal	373	0	373	1	NotOpcode
+approval.teal	374	0	374	6	AssertOpcode
+approval.teal	375	0	375	8	BytecOpcode
+approval.teal	376	0	376	12	FrameDigOpcode
+approval.teal	377	0	377	11	ExtractOpcode
+approval.teal	378	0	378	14	AppGlobalPutOpcode
+approval.teal	379	0	379	6	Intc0Opcode
+approval.teal	380	0	380	8	BytecOpcode
+approval.teal	381	0	381	17	AppGlobalGetExOpcode
+approval.teal	382	0	382	8	StoreOpcode
+approval.teal	383	0	383	8	StoreOpcode
+approval.teal	384	0	384	7	LoadOpcode
+approval.teal	385	0	385	1	NotOpcode
+approval.teal	386	0	386	6	AssertOpcode
+approval.teal	387	0	387	8	BytecOpcode
+approval.teal	388	0	388	12	FrameDigOpcode
+approval.teal	389	0	389	11	ExtractOpcode
+approval.teal	390	0	390	14	AppGlobalPutOpcode
+approval.teal	391	0	391	6	Intc0Opcode
+approval.teal	392	0	392	8	BytecOpcode
+approval.teal	393	0	393	17	AppGlobalGetExOpcode
+approval.teal	394	0	394	8	StoreOpcode
+approval.teal	395	0	395	8	StoreOpcode
+approval.teal	396	0	396	7	LoadOpcode
+approval.teal	397	0	397	1	NotOpcode
+approval.teal	398	0	398	6	AssertOpcode
+approval.teal	399	0	399	8	BytecOpcode
+approval.teal	400	0	400	12	FrameDigOpcode
+approval.teal	401	0	401	14	AppGlobalPutOpcode
+approval.teal	402	0	402	6	Intc0Opcode
+approval.teal	403	0	403	8	BytecOpcode
+approval.teal	404	0	404	17	AppGlobalGetExOpcode
+approval.teal	405	0	405	8	StoreOpcode
+approval.teal	406	0	406	8	StoreOpcode
+approval.teal	407	0	407	7	LoadOpcode
+approval.teal	408	0	408	1	NotOpcode
+approval.teal	409	0	409	6	AssertOpcode
+approval.teal	410	0	410	8	BytecOpcode
+approval.teal	411	0	411	12	FrameDigOpcode
+approval.teal	412	0	412	14	AppGlobalPutOpcode
+approval.teal	413	0	413	6	Intc0Opcode
+approval.teal	414	0	414	8	BytecOpcode
+approval.teal	415	0	415	17	AppGlobalGetExOpcode
+approval.teal	416	0	416	8	StoreOpcode
+approval.teal	417	0	417	8	StoreOpcode
+approval.teal	418	0	418	7	LoadOpcode
+approval.teal	419	0	419	1	NotOpcode
+approval.teal	420	0	420	6	AssertOpcode
+approval.teal	421	0	421	8	BytecOpcode
+approval.teal	422	0	422	12	FrameDigOpcode
+approval.teal	423	0	423	14	AppGlobalPutOpcode
+approval.teal	424	0	424	7	BytecOpcode
+approval.teal	425	0	425	6	Intc0Opcode
+approval.teal	426	0	426	14	AppGlobalPutOpcode
+approval.teal	427	0	427	7	BytecOpcode
+approval.teal	428	0	428	6	Intc0Opcode
+approval.teal	429	0	429	14	AppGlobalPutOpcode
+approval.teal	430	0	430	7	BytecOpcode
+approval.teal	431	0	431	6	Intc0Opcode
+approval.teal	432	0	432	14	AppGlobalPutOpcode
+approval.teal	433	0	433	6	Intc0Opcode
+approval.teal	434	0	434	8	BytecOpcode
+approval.teal	435	0	435	17	AppGlobalGetExOpcode
+approval.teal	436	0	436	8	StoreOpcode
+approval.teal	437	0	437	8	StoreOpcode
+approval.teal	438	0	438	7	LoadOpcode
+approval.teal	439	0	439	1	NotOpcode
+approval.teal	440	0	440	6	AssertOpcode
+approval.teal	441	0	441	8	BytecOpcode
+approval.teal	442	0	442	12	FrameDigOpcode
+approval.teal	443	0	443	11	ExtractOpcode
+approval.teal	444	0	444	14	AppGlobalPutOpcode
+approval.teal	445	0	445	8	BytecOpcode
+approval.teal	446	0	446	6	Intc0Opcode
+approval.teal	447	0	447	14	AppGlobalPutOpcode
+approval.teal	448	0	448	12	FrameDigOpcode
+approval.teal	449	0	449	6	Intc0Opcode
+approval.teal	450	0	450	14	ExtractUint16Opcode
+approval.teal	451	0	451	12	FrameBuryOpcode
+approval.teal	452	0	452	11	FrameDigOpcode
+approval.teal	454	0	454	6	AssertOpcode
+approval.teal	455	0	455	12	FrameDigOpcode
+approval.teal	456	0	456	6	Intc0Opcode
+approval.teal	457	0	457	14	ExtractUint16Opcode
+approval.teal	458	0	458	12	FrameBuryOpcode
+approval.teal	459	0	459	11	FrameDigOpcode
+approval.teal	460	0	460	11	PushintOpcode
+approval.teal	461	0	461	2	IntegerLteOpcode
+approval.teal	463	0	463	6	AssertOpcode
+approval.teal	464	0	464	6	Intc0Opcode
+approval.teal	465	0	465	7	BytecOpcode
+approval.teal	466	0	466	17	AppGlobalGetExOpcode
+approval.teal	467	0	467	8	StoreOpcode
+approval.teal	468	0	468	8	StoreOpcode
+approval.teal	469	0	469	7	LoadOpcode
+approval.teal	470	0	470	1	NotOpcode
+approval.teal	471	0	471	6	AssertOpcode
+approval.teal	472	0	472	7	BytecOpcode
+approval.teal	473	0	473	12	FrameDigOpcode
+approval.teal	474	0	474	14	AppGlobalPutOpcode
+approval.teal	475	0	475	7	BytecOpcode
+approval.teal	476	0	476	14	AppGlobalGetOpcode
+approval.teal	477	0	477	12	FrameBuryOpcode
+approval.teal	478	0	478	6	Intc0Opcode
+approval.teal	479	0	479	8	StoreOpcode
+approval.teal	480	0	480	11	FrameDigOpcode
+approval.teal	481	0	481	6	Intc0Opcode
+approval.teal	482	0	482	14	ExtractUint16Opcode
+approval.teal	483	0	483	12	FrameBuryOpcode
+approval.teal	484	0	484	11	FrameDigOpcode
+approval.teal	485	0	485	8	StoreOpcode
+approval.teal	486	0	486	6	Intc0Opcode
+approval.teal	487	0	487	8	StoreOpcode
+approval.teal	488	0	488	12	Label
+approval.teal	489	0	489	7	LoadOpcode
+approval.teal	490	0	490	7	LoadOpcode
+approval.teal	491	0	491	1	IntegerLessThanOpcode
+approval.teal	492	0	492	14	BzOpcode
+approval.teal	493	0	493	19	GlobalOpcode
+approval.teal	494	0	494	11	PushintOpcode
+approval.teal	495	0	495	1	IntegerLessThanOpcode
+approval.teal	496	0	496	15	BnzOpcode
+approval.teal	497	0	497	12	Label
+approval.teal	498	0	498	11	FrameDigOpcode
+approval.teal	499	0	499	6	Intc1Opcode
+approval.teal	500	0	500	7	LoadOpcode
+approval.teal	501	0	501	1	MulOpcode
+approval.teal	502	0	502	9	PushintOpcode
+approval.teal	503	0	503	1	IntegerAddOpcode
+approval.teal	504	0	504	7	GetbyteOpcode
+approval.teal	505	0	505	12	FrameBuryOpcode
+approval.teal	506	0	506	7	LoadOpcode
+approval.teal	507	0	507	11	FrameDigOpcode
+approval.teal	508	0	508	1	IntegerAddOpcode
+approval.teal	509	0	509	8	StoreOpcode
+approval.teal	510	0	510	7	LoadOpcode
+approval.teal	511	0	511	6	Intc1Opcode
+approval.teal	512	0	512	1	IntegerAddOpcode
+approval.teal	513	0	513	8	StoreOpcode
+approval.teal	514	0	514	13	BOpcode
+approval.teal	515	0	515	12	Label
+approval.teal	516	0	516	11	PushintOpcode
+approval.teal	517	0	517	6	Intc2Opcode
+approval.teal	518	0	518	1	IntegerAddOpcode
+approval.teal	519	0	519	8	StoreOpcode
+approval.teal	520	0	520	12	Label
+approval.teal	521	0	521	7	LoadOpcode
+approval.teal	522	0	522	19	GlobalOpcode
+approval.teal	523	0	523	1	IntegerGreaterThanOpcode
+approval.teal	524	0	524	14	BzOpcode
+approval.teal	525	0	525	10	InnerTransactionBegin
+approval.teal	526	0	526	9	PushintOpcode
+approval.teal	527	0	527	19	InnerTransactionField
+approval.teal	528	0	528	6	Intc0Opcode
+approval.teal	529	0	529	14	InnerTransactionField
+approval.teal	530	0	530	9	PushintOpcode
+approval.teal	531	0	531	23	InnerTransactionField
+approval.teal	532	0	532	8	BytecOpcode
+approval.teal	533	0	533	26	InnerTransactionField
+approval.teal	534	0	534	8	BytecOpcode
+approval.teal	535	0	535	28	InnerTransactionField
+approval.teal	536	0	536	11	InnerTransactionSubmit
+approval.teal	537	0	537	13	BOpcode
+approval.teal	538	0	538	12	Label
+approval.teal	539	0	539	7	LoadOpcode
+approval.teal	540	0	540	8	StoreOpcode
+approval.teal	541	0	541	7	LoadOpcode
+approval.teal	542	0	542	11	PushintOpcode
+approval.teal	543	0	543	2	IntegerLteOpcode
+approval.teal	545	0	545	6	AssertOpcode
+approval.teal	546	0	546	6	Intc0Opcode
+approval.teal	547	0	547	7	BytecOpcode
+approval.teal	548	0	548	17	AppGlobalGetExOpcode
+approval.teal	549	0	549	8	StoreOpcode
+approval.teal	550	0	550	8	StoreOpcode
+approval.teal	551	0	551	7	LoadOpcode
+approval.teal	552	0	552	1	NotOpcode
+approval.teal	553	0	553	6	AssertOpcode
+approval.teal	554	0	554	7	BytecOpcode
+approval.teal	555	0	555	7	LoadOpcode
+approval.teal	556	0	556	14	AppGlobalPutOpcode
+approval.teal	557	0	557	6	RetsubOpcode
+approval.teal	560	0	560	12	Label
+approval.teal	561	0	561	9	ProtoOpcode
+approval.teal	562	0	562	6	Intc0Opcode
+approval.teal	563	0	563	10	TxnOpcode
+approval.teal	564	0	564	21	GlobalOpcode
+approval.teal	565	0	565	2	EqualsComparisonOpcode
+approval.teal	567	0	567	6	AssertOpcode
+approval.teal	568	0	568	7	BytecOpcode
+approval.teal	569	0	569	14	AppGlobalGetOpcode
+approval.teal	570	0	570	1	NotOpcode
+approval.teal	572	0	572	6	AssertOpcode
+approval.teal	573	0	573	7	BytecOpcode
+approval.teal	574	0	574	6	Intc1Opcode
+approval.teal	575	0	575	14	AppGlobalPutOpcode
+approval.teal	576	0	576	14	PushintOpcode
+approval.teal	577	0	577	7	BytecOpcode
+approval.teal	578	0	578	14	AppGlobalGetOpcode
+approval.teal	579	0	579	12	PushintOpcode
+approval.teal	580	0	580	1	MulOpcode
+approval.teal	581	0	581	1	IntegerAddOpcode
+approval.teal	582	0	582	8	StoreOpcode
+approval.teal	583	0	583	12	FrameDigOpcode
+approval.teal	584	0	584	14	GtxnsOpcode
+approval.teal	585	0	585	32	GlobalOpcode
+approval.teal	586	0	586	2	EqualsComparisonOpcode
+approval.teal	588	0	588	6	AssertOpcode
+approval.teal	589	0	589	7	LoadOpcode
+approval.teal	590	0	590	4	ItobOpcode
+approval.teal	591	0	591	3	LogOpcode
+approval.teal	592	0	592	12	FrameDigOpcode
+approval.teal	593	0	593	12	GtxnsOpcode
+approval.teal	594	0	594	7	LoadOpcode
+approval.teal	595	0	595	2	EqualsComparisonOpcode
+approval.teal	597	0	597	6	AssertOpcode
+approval.teal	598	0	598	7	BytecOpcode
+approval.teal	599	0	599	7	BytecOpcode
+approval.teal	600	0	600	14	AppGlobalGetOpcode
+approval.teal	601	0	601	9	PushintOpcode
+approval.teal	602	0	602	1	MulOpcode
+approval.teal	603	0	603	10	BoxCreateOpcode
+approval.teal	604	0	604	3	PopOpcode
+approval.teal	605	0	605	20	CallsubOpcode
+approval.teal	606	0	606	6	RetsubOpcode
+approval.teal	609	0	609	8	Label
+approval.teal	610	0	610	9	ProtoOpcode
+approval.teal	611	0	611	7	Bytec1Opcode
+approval.teal	612	0	612	6	Intc0Opcode
+approval.teal	613	0	613	6	DupnOpcode
+approval.teal	614	0	614	10	TxnOpcode
+approval.teal	615	0	615	21	GlobalOpcode
+approval.teal	616	0	616	2	EqualsComparisonOpcode
+approval.teal	618	0	618	6	AssertOpcode
+approval.teal	619	0	619	12	FrameDigOpcode
+approval.teal	620	0	620	18	TxnasOpcode
+approval.teal	621	0	621	7	Bytec2Opcode
+approval.teal	622	0	622	14	AppGlobalGetOpcode
+approval.teal	623	0	623	2	EqualsComparisonOpcode
+approval.teal	625	0	625	6	AssertOpcode
+approval.teal	626	0	626	13	PushintOpcode
+approval.teal	627	0	627	6	Intc2Opcode
+approval.teal	628	0	628	1	IntegerAddOpcode
+approval.teal	629	0	629	8	StoreOpcode
+approval.teal	630	0	630	11	Label
+approval.teal	631	0	631	7	LoadOpcode
+approval.teal	632	0	632	19	GlobalOpcode
+approval.teal	633	0	633	1	IntegerGreaterThanOpcode
+approval.teal	634	0	634	15	BnzOpcode
+approval.teal	635	0	635	7	BytecOpcode
+approval.teal	636	0	636	14	AppGlobalGetOpcode
+approval.teal	637	0	637	6	Intc0Opcode
+approval.teal	638	0	638	2	EqualsComparisonOpcode
+approval.teal	640	0	640	6	AssertOpcode
+approval.teal	641	0	641	7	BytecOpcode
+approval.teal	642	0	642	22	GlobalOpcode
+approval.teal	643	0	643	14	AppGlobalPutOpcode
+approval.teal	644	0	644	188	PushbytesOpcode
+approval.teal	645	0	645	7	Bytec3Opcode
+approval.teal	646	0	646	14	AppGlobalGetOpcode
+approval.teal	647	0	647	6	ConcatOpcode
+approval.teal	648	0	648	84	PushbytesOpcode
+approval.teal	649	0	649	6	ConcatOpcode
+approval.teal	650	0	650	8	BytecOpcode
+approval.teal	651	0	651	14	AppGlobalGetOpcode
+approval.teal	652	0	652	6	ConcatOpcode
+approval.teal	653	0	653	28	PushbytesOpcode
+approval.teal	654	0	654	6	ConcatOpcode
+approval.teal	655	0	655	7	Bytec3Opcode
+approval.teal	656	0	656	14	AppGlobalGetOpcode
+approval.teal	657	0	657	6	ConcatOpcode
+approval.teal	658	0	658	34	PushbytesOpcode
+approval.teal	659	0	659	6	ConcatOpcode
+approval.teal	660	0	660	8	BytecOpcode
+approval.teal	661	0	661	14	AppGlobalGetOpcode
+approval.teal	662	0	662	14	CallsubOpcode
+approval.teal	663	0	663	6	ConcatOpcode
+approval.teal	664	0	664	40	PushbytesOpcode
+approval.teal	665	0	665	6	ConcatOpcode
+approval.teal	666	0	666	7	BytecOpcode
+approval.teal	667	0	667	14	AppGlobalGetOpcode
+approval.teal	668	0	668	14	CallsubOpcode
+approval.teal	669	0	669	6	ConcatOpcode
+approval.teal	670	0	670	36	PushbytesOpcode
+approval.teal	671	0	671	6	ConcatOpcode
+approval.teal	672	0	672	8	StoreOpcode
+approval.teal	673	0	673	7	BytecOpcode
+approval.teal	674	0	674	14	AppGlobalGetOpcode
+approval.teal	675	0	675	12	FrameBuryOpcode
+approval.teal	676	0	676	11	FrameDigOpcode
+approval.teal	677	0	677	6	Intc0Opcode
+approval.teal	678	0	678	14	ExtractUint16Opcode
+approval.teal	679	0	679	12	FrameBuryOpcode
+approval.teal	680	0	680	11	FrameDigOpcode
+approval.teal	681	0	681	8	StoreOpcode
+approval.teal	682	0	682	6	Intc0Opcode
+approval.teal	683	0	683	8	StoreOpcode
+approval.teal	684	0	684	6	Intc0Opcode
+approval.teal	685	0	685	8	StoreOpcode
+approval.teal	686	0	686	6	Intc0Opcode
+approval.teal	687	0	687	8	StoreOpcode
+approval.teal	688	0	688	11	Label
+approval.teal	689	0	689	7	LoadOpcode
+approval.teal	690	0	690	7	LoadOpcode
+approval.teal	691	0	691	1	IntegerLessThanOpcode
+approval.teal	692	0	692	14	BzOpcode
+approval.teal	693	0	693	11	FrameDigOpcode
+approval.teal	694	0	694	6	Intc1Opcode
+approval.teal	695	0	695	7	LoadOpcode
+approval.teal	696	0	696	1	MulOpcode
+approval.teal	697	0	697	9	PushintOpcode
+approval.teal	698	0	698	1	IntegerAddOpcode
+approval.teal	699	0	699	7	GetbyteOpcode
+approval.teal	700	0	700	12	FrameBuryOpcode
+approval.teal	701	0	701	11	FrameDigOpcode
+approval.teal	702	0	702	8	StoreOpcode
+approval.teal	703	0	703	6	Intc0Opcode
+approval.teal	704	0	704	8	StoreOpcode
+approval.teal	705	0	705	11	Label
+approval.teal	706	0	706	7	LoadOpcode
+approval.teal	707	0	707	7	LoadOpcode
+approval.teal	708	0	708	1	IntegerLessThanOpcode
+approval.teal	709	0	709	14	BnzOpcode
+approval.teal	710	0	710	7	LoadOpcode
+approval.teal	711	0	711	6	Intc1Opcode
+approval.teal	712	0	712	1	IntegerAddOpcode
+approval.teal	713	0	713	8	StoreOpcode
+approval.teal	714	0	714	12	BOpcode
+approval.teal	715	0	715	11	Label
+approval.teal	716	0	716	9	PushintOpcode
+approval.teal	717	0	717	7	LoadOpcode
+approval.teal	718	0	718	1	MulOpcode
+approval.teal	719	0	719	8	StoreOpcode
+approval.teal	720	0	720	7	BytecOpcode
+approval.teal	721	0	721	7	LoadOpcode
+approval.teal	722	0	722	9	PushintOpcode
+approval.teal	723	0	723	11	BoxExtractOpcode
+approval.teal	724	0	724	4	BtoiOpcode
+approval.teal	725	0	725	8	StoreOpcode
+approval.teal	726	0	726	7	LoadOpcode
+approval.teal	727	0	727	7	LoadOpcode
+approval.teal	728	0	728	6	Intc0Opcode
+approval.teal	729	0	729	2	EqualsComparisonOpcode
+approval.teal	730	0	730	15	BnzOpcode
+approval.teal	731	0	731	7	Bytec1Opcode
+approval.teal	732	0	732	11	Label
+approval.teal	733	0	733	6	ConcatOpcode
+approval.teal	734	0	734	7	LoadOpcode
+approval.teal	735	0	735	14	CallsubOpcode
+approval.teal	736	0	736	6	ConcatOpcode
+approval.teal	737	0	737	7	LoadOpcode
+approval.teal	738	0	738	7	LoadOpcode
+approval.teal	739	0	739	6	Intc1Opcode
+approval.teal	740	0	740	1	SubOpcode
+approval.teal	741	0	741	2	EqualsComparisonOpcode
+approval.teal	742	0	742	15	BnzOpcode
+approval.teal	743	0	743	8	BytecOpcode
+approval.teal	744	0	744	12	Label
+approval.teal	745	0	745	6	ConcatOpcode
+approval.teal	746	0	746	8	StoreOpcode
+approval.teal	747	0	747	7	LoadOpcode
+approval.teal	748	0	748	6	Intc1Opcode
+approval.teal	749	0	749	1	IntegerAddOpcode
+approval.teal	750	0	750	8	StoreOpcode
+approval.teal	751	0	751	7	LoadOpcode
+approval.teal	752	0	752	6	Intc1Opcode
+approval.teal	753	0	753	1	IntegerAddOpcode
+approval.teal	754	0	754	8	StoreOpcode
+approval.teal	755	0	755	12	BOpcode
+approval.teal	756	0	756	12	Label
+approval.teal	757	0	757	14	PushbytesOpcode
+approval.teal	758	0	758	7	LoadOpcode
+approval.teal	759	0	759	7	LoadOpcode
+approval.teal	760	0	760	6	Intc1Opcode
+approval.teal	761	0	761	1	SubOpcode
+approval.teal	762	0	762	2	EqualsComparisonOpcode
+approval.teal	763	0	763	15	BnzOpcode
+approval.teal	764	0	764	8	BytecOpcode
+approval.teal	765	0	765	12	Label
+approval.teal	766	0	766	6	ConcatOpcode
+approval.teal	767	0	767	13	BOpcode
+approval.teal	768	0	768	12	Label
+approval.teal	769	0	769	7	Bytec1Opcode
+approval.teal	770	0	770	13	BOpcode
+approval.teal	771	0	771	12	Label
+approval.teal	772	0	772	14	PushbytesOpcode
+approval.teal	773	0	773	12	BOpcode
+approval.teal	774	0	774	12	Label
+approval.teal	775	0	775	10	InnerTransactionBegin
+approval.teal	776	0	776	9	PushintOpcode
+approval.teal	777	0	777	19	InnerTransactionField
+approval.teal	778	0	778	7	Bytec2Opcode
+approval.teal	779	0	779	14	AppGlobalGetOpcode
+approval.teal	780	0	780	24	InnerTransactionField
+approval.teal	781	0	781	8	BytecOpcode
+approval.teal	782	0	782	26	InnerTransactionField
+approval.teal	783	0	783	6	Intc0Opcode
+approval.teal	784	0	784	14	InnerTransactionField
+approval.teal	785	0	785	11	InnerTransactionSubmit
+approval.teal	786	0	786	12	BOpcode
+approval.teal	787	0	787	12	Label
+approval.teal	788	0	788	10	InnerTransactionBegin
+approval.teal	789	0	789	6	Intc3Opcode
+approval.teal	790	0	790	19	InnerTransactionField
+approval.teal	791	0	791	6	Intc1Opcode
+approval.teal	792	0	792	27	InnerTransactionField
+approval.teal	793	0	793	6	Intc0Opcode
+approval.teal	794	0	794	30	InnerTransactionField
+approval.teal	795	0	795	6	Intc0Opcode
+approval.teal	796	0	796	35	InnerTransactionField
+approval.teal	797	0	797	40	PushbytesOpcode
+approval.teal	798	0	798	7	Bytec3Opcode
+approval.teal	799	0	799	14	AppGlobalGetOpcode
+approval.teal	800	0	800	6	ConcatOpcode
+approval.teal	801	0	801	26	InnerTransactionField
+approval.teal	802	0	802	28	PushbytesOpcode
+approval.teal	803	0	803	30	InnerTransactionField
+approval.teal	804	0	804	8	BytecOpcode
+approval.teal	805	0	805	14	AppGlobalGetOpcode
+approval.teal	806	0	806	25	InnerTransactionField
+approval.teal	807	0	807	7	LoadOpcode
+approval.teal	808	0	808	18	PushbytesOpcode
+approval.teal	809	0	809	6	ConcatOpcode
+approval.teal	810	0	810	15	InnerTransactionField
+approval.teal	811	0	811	11	InnerTransactionSubmit
+approval.teal	812	0	812	8	BytecOpcode
+approval.teal	813	0	813	19	ItxnOpcode
+approval.teal	814	0	814	14	AppGlobalPutOpcode
+approval.teal	815	0	815	6	RetsubOpcode
+approval.teal	818	0	818	16	Label
+approval.teal	819	0	819	9	ProtoOpcode
+approval.teal	820	0	820	7	Bytec0Opcode
+approval.teal	821	0	821	14	AppGlobalGetOpcode
+approval.teal	822	0	822	6	Intc0Opcode
+approval.teal	823	0	823	2	EqualsComparisonOpcode
+approval.teal	824	0	824	22	BnzOpcode
+approval.teal	825	0	825	12	FrameDigOpcode
+approval.teal	826	0	826	18	TxnasOpcode
+approval.teal	827	0	827	7	Bytec2Opcode
+approval.teal	828	0	828	14	AppGlobalGetOpcode
+approval.teal	829	0	829	2	EqualsComparisonOpcode
+approval.teal	831	0	831	6	AssertOpcode
+approval.teal	832	0	832	12	PushintOpcode
+approval.teal	833	0	833	6	Intc2Opcode
+approval.teal	834	0	834	1	IntegerAddOpcode
+approval.teal	835	0	835	8	StoreOpcode
+approval.teal	836	0	836	19	Label
+approval.teal	837	0	837	7	LoadOpcode
+approval.teal	838	0	838	19	GlobalOpcode
+approval.teal	839	0	839	1	IntegerGreaterThanOpcode
+approval.teal	840	0	840	22	BnzOpcode
+approval.teal	841	0	841	7	Bytec0Opcode
+approval.teal	842	0	842	14	AppGlobalGetOpcode
+approval.teal	843	0	843	6	Intc1Opcode
+approval.teal	844	0	844	2	EqualsComparisonOpcode
+approval.teal	845	0	845	22	BnzOpcode
+approval.teal	846	0	846	10	TxnOpcode
+approval.teal	847	0	847	12	FrameDigOpcode
+approval.teal	848	0	848	4	ItobOpcode
+approval.teal	849	0	849	6	ConcatOpcode
+approval.teal	850	0	850	19	Label
+approval.teal	851	0	851	12	FrameDigOpcode
+approval.teal	852	0	852	8	BytecOpcode
+approval.teal	853	0	853	14	AppGlobalGetOpcode
+approval.teal	854	0	854	18	Ed25519verifyBareOpcode
+approval.teal	855	0	855	20	BOpcode
+approval.teal	856	0	856	19	Label
+approval.teal	857	0	857	10	TxnOpcode
+approval.teal	858	0	858	20	BOpcode
+approval.teal	859	0	859	19	Label
+approval.teal	860	0	860	10	InnerTransactionBegin
+approval.teal	861	0	861	9	PushintOpcode
+approval.teal	862	0	862	19	InnerTransactionField
+approval.teal	863	0	863	7	Bytec2Opcode
+approval.teal	864	0	864	14	AppGlobalGetOpcode
+approval.teal	865	0	865	24	InnerTransactionField
+approval.teal	866	0	866	8	BytecOpcode
+approval.teal	867	0	867	26	InnerTransactionField
+approval.teal	868	0	868	6	Intc0Opcode
+approval.teal	869	0	869	14	InnerTransactionField
+approval.teal	870	0	870	11	InnerTransactionSubmit
+approval.teal	871	0	871	20	BOpcode
+approval.teal	872	0	872	19	Label
+approval.teal	873	0	873	6	Intc1Opcode
+approval.teal	874	0	874	19	Label
+approval.teal	875	0	875	6	RetsubOpcode
+approval.teal	878	0	878	13	Label
+approval.teal	879	0	879	9	ProtoOpcode
+approval.teal	880	0	880	7	BytecOpcode
+approval.teal	881	0	881	14	AppGlobalGetOpcode
+approval.teal	882	0	882	6	Intc1Opcode
+approval.teal	883	0	883	2	EqualsComparisonOpcode
+approval.teal	884	0	884	7	BytecOpcode
+approval.teal	885	0	885	14	AppGlobalGetOpcode
+approval.teal	886	0	886	6	Intc0Opcode
+approval.teal	887	0	887	2	EqualsComparisonOpcode
+approval.teal	888	0	888	2	AndOpcode
+approval.teal	889	0	889	22	GlobalOpcode
+approval.teal	890	0	890	8	BytecOpcode
+approval.teal	891	0	891	14	AppGlobalGetOpcode
+approval.teal	892	0	892	2	IntegerGteOpcode
+approval.teal	893	0	893	2	AndOpcode
+approval.teal	894	0	894	22	GlobalOpcode
+approval.teal	895	0	895	8	BytecOpcode
+approval.teal	896	0	896	14	AppGlobalGetOpcode
+approval.teal	897	0	897	1	IntegerLessThanOpcode
+approval.teal	898	0	898	2	AndOpcode
+approval.teal	899	0	899	6	RetsubOpcode
+approval.teal	902	0	902	16	Label
+approval.teal	903	0	903	9	ProtoOpcode
+approval.teal	904	0	904	7	Bytec1Opcode
+approval.teal	905	0	905	10	TxnOpcode
+approval.teal	906	0	906	12	FrameBuryOpcode
+approval.teal	907	0	907	11	FrameDigOpcode
+approval.teal	908	0	908	3	LenOpcode
+approval.teal	909	0	909	10	PushintOpcode
+approval.teal	910	0	910	2	EqualsComparisonOpcode
+approval.teal	911	0	911	6	AssertOpcode
+approval.teal	912	0	912	11	FrameDigOpcode
+approval.teal	913	0	913	7	BoxLenOpcode
+approval.teal	914	0	914	8	StoreOpcode
+approval.teal	915	0	915	8	StoreOpcode
+approval.teal	916	0	916	7	LoadOpcode
+approval.teal	917	0	917	12	FrameBuryOpcode
+approval.teal	918	0	918	6	RetsubOpcode
+approval.teal	921	0	921	20	Label
+approval.teal	922	0	922	9	ProtoOpcode
+approval.teal	923	0	923	7	Bytec1Opcode
+approval.teal	924	0	924	6	Intc0Opcode
+approval.teal	925	0	925	6	DupnOpcode
+approval.teal	926	0	926	7	Bytec1Opcode
+approval.teal	927	0	927	3	DupOpcode
+approval.teal	928	0	928	20	CallsubOpcode
+approval.teal	929	0	929	12	FrameBuryOpcode
+approval.teal	930	0	930	12	FrameDigOpcode
+approval.teal	931	0	931	11	ExtractOpcode
+approval.teal	932	0	932	12	FrameDigOpcode
+approval.teal	933	0	933	12	FrameDigOpcode
+approval.teal	934	0	934	23	CallsubOpcode
+approval.teal	935	0	935	12	FrameBuryOpcode
+approval.teal	936	0	936	23	CallsubOpcode
+approval.teal	937	0	937	12	FrameBuryOpcode
+approval.teal	938	0	938	22	GlobalOpcode
+approval.teal	939	0	939	12	FrameBuryOpcode
+approval.teal	940	0	940	11	FrameDigOpcode
+approval.teal	941	0	941	4	ItobOpcode
+approval.teal	942	0	942	11	FrameDigOpcode
+approval.teal	943	0	943	4	ItobOpcode
+approval.teal	944	0	944	6	ConcatOpcode
+approval.teal	945	0	945	11	FrameDigOpcode
+approval.teal	946	0	946	4	ItobOpcode
+approval.teal	947	0	947	6	ConcatOpcode
+approval.teal	948	0	948	11	FrameDigOpcode
+approval.teal	949	0	949	4	ItobOpcode
+approval.teal	950	0	950	6	ConcatOpcode
+approval.teal	951	0	951	12	FrameBuryOpcode
+approval.teal	952	0	952	6	RetsubOpcode
+approval.teal	955	0	955	8	Label
+approval.teal	956	0	956	9	ProtoOpcode
+approval.teal	957	0	957	7	Bytec1Opcode
+approval.teal	958	0	958	6	Intc0Opcode
+approval.teal	959	0	959	7	DupnOpcode
+approval.teal	960	0	960	7	Bytec1Opcode
+approval.teal	961	0	961	12	FrameDigOpcode
+approval.teal	962	0	962	18	TxnasOpcode
+approval.teal	963	0	963	7	Bytec2Opcode
+approval.teal	964	0	964	14	AppGlobalGetOpcode
+approval.teal	965	0	965	2	EqualsComparisonOpcode
+approval.teal	967	0	967	6	AssertOpcode
+approval.teal	968	0	968	12	FrameDigOpcode
+approval.teal	969	0	969	11	ExtractOpcode
+approval.teal	970	0	970	12	FrameDigOpcode
+approval.teal	971	0	971	12	FrameDigOpcode
+approval.teal	972	0	972	23	CallsubOpcode
+approval.teal	974	0	974	6	AssertOpcode
+approval.teal	975	0	975	20	CallsubOpcode
+approval.teal	977	0	977	6	AssertOpcode
+approval.teal	978	0	978	23	CallsubOpcode
+approval.teal	979	0	979	1	NotOpcode
+approval.teal	981	0	981	6	AssertOpcode
+approval.teal	982	0	982	7	BytecOpcode
+approval.teal	983	0	983	14	AppGlobalGetOpcode
+approval.teal	984	0	984	12	FrameBuryOpcode
+approval.teal	985	0	985	11	FrameDigOpcode
+approval.teal	986	0	986	6	Intc0Opcode
+approval.teal	987	0	987	14	ExtractUint16Opcode
+approval.teal	988	0	988	12	FrameBuryOpcode
+approval.teal	989	0	989	11	FrameDigOpcode
+approval.teal	990	0	990	8	StoreOpcode
+approval.teal	991	0	991	12	FrameDigOpcode
+approval.teal	992	0	992	6	Intc0Opcode
+approval.teal	993	0	993	14	ExtractUint16Opcode
+approval.teal	994	0	994	12	FrameBuryOpcode
+approval.teal	995	0	995	11	FrameDigOpcode
+approval.teal	996	0	996	7	LoadOpcode
+approval.teal	997	0	997	2	EqualsComparisonOpcode
+approval.teal	999	0	999	6	AssertOpcode
+approval.teal	1000	0	1000	7	Bytec0Opcode
+approval.teal	1001	0	1001	14	AppGlobalGetOpcode
+approval.teal	1002	0	1002	6	Intc3Opcode
+approval.teal	1003	0	1003	2	EqualsComparisonOpcode
+approval.teal	1004	0	1004	15	BnzOpcode
+approval.teal	1005	0	1005	12	FrameDigOpcode
+approval.teal	1006	0	1006	6	Intc0Opcode
+approval.teal	1007	0	1007	14	ExtractUint16Opcode
+approval.teal	1008	0	1008	12	FrameBuryOpcode
+approval.teal	1009	0	1009	11	FrameDigOpcode
+approval.teal	1010	0	1010	6	Intc0Opcode
+approval.teal	1011	0	1011	2	EqualsComparisonOpcode
+approval.teal	1013	0	1013	6	AssertOpcode
+approval.teal	1014	0	1014	11	Label
+approval.teal	1015	0	1015	12	PushintOpcode
+approval.teal	1016	0	1016	10	PushintOpcode
+approval.teal	1017	0	1017	6	Intc1Opcode
+approval.teal	1018	0	1018	12	FrameDigOpcode
+approval.teal	1019	0	1019	6	Intc0Opcode
+approval.teal	1020	0	1020	14	ExtractUint16Opcode
+approval.teal	1021	0	1021	12	FrameBuryOpcode
+approval.teal	1022	0	1022	11	FrameDigOpcode
+approval.teal	1023	0	1023	1	MulOpcode
+approval.teal	1024	0	1024	1	IntegerAddOpcode
+approval.teal	1025	0	1025	11	PushintOpcode
+approval.teal	1026	0	1026	1	MulOpcode
+approval.teal	1027	0	1027	1	IntegerAddOpcode
+approval.teal	1028	0	1028	8	StoreOpcode
+approval.teal	1029	0	1029	12	FrameDigOpcode
+approval.teal	1030	0	1030	14	GtxnsOpcode
+approval.teal	1031	0	1031	32	GlobalOpcode
+approval.teal	1032	0	1032	2	EqualsComparisonOpcode
+approval.teal	1034	0	1034	6	AssertOpcode
+approval.teal	1035	0	1035	7	LoadOpcode
+approval.teal	1036	0	1036	4	ItobOpcode
+approval.teal	1037	0	1037	3	LogOpcode
+approval.teal	1038	0	1038	12	FrameDigOpcode
+approval.teal	1039	0	1039	12	GtxnsOpcode
+approval.teal	1040	0	1040	7	LoadOpcode
+approval.teal	1041	0	1041	2	EqualsComparisonOpcode
+approval.teal	1043	0	1043	6	AssertOpcode
+approval.teal	1044	0	1044	6	Intc0Opcode
+approval.teal	1045	0	1045	8	StoreOpcode
+approval.teal	1046	0	1046	6	Intc0Opcode
+approval.teal	1047	0	1047	8	StoreOpcode
+approval.teal	1048	0	1048	6	Intc0Opcode
+approval.teal	1049	0	1049	8	StoreOpcode
+approval.teal	1050	0	1050	11	Label
+approval.teal	1051	0	1051	7	LoadOpcode
+approval.teal	1052	0	1052	7	LoadOpcode
+approval.teal	1053	0	1053	1	IntegerLessThanOpcode
+approval.teal	1054	0	1054	14	BnzOpcode
+approval.teal	1055	0	1055	7	Bytec0Opcode
+approval.teal	1056	0	1056	14	AppGlobalGetOpcode
+approval.teal	1057	0	1057	6	Intc3Opcode
+approval.teal	1058	0	1058	2	EqualsComparisonOpcode
+approval.teal	1059	0	1059	14	BzOpcode
+approval.teal	1060	0	1060	7	LoadOpcode
+approval.teal	1061	0	1061	12	FrameDigOpcode
+approval.teal	1062	0	1062	2	EqualsComparisonOpcode
+approval.teal	1064	0	1064	6	AssertOpcode
+approval.teal	1065	0	1065	13	BOpcode
+approval.teal	1066	0	1066	11	Label
+approval.teal	1067	0	1067	19	GlobalOpcode
+approval.teal	1068	0	1068	11	PushintOpcode
+approval.teal	1069	0	1069	1	IntegerLessThanOpcode
+approval.teal	1070	0	1070	15	BnzOpcode
+approval.teal	1071	0	1071	11	Label
+approval.teal	1072	0	1072	12	FrameDigOpcode
+approval.teal	1073	0	1073	6	Intc1Opcode
+approval.teal	1074	0	1074	7	LoadOpcode
+approval.teal	1075	0	1075	1	MulOpcode
+approval.teal	1076	0	1076	9	PushintOpcode
+approval.teal	1077	0	1077	1	IntegerAddOpcode
+approval.teal	1078	0	1078	7	GetbyteOpcode
+approval.teal	1079	0	1079	12	FrameBuryOpcode
+approval.teal	1080	0	1080	6	Intc0Opcode
+approval.teal	1081	0	1081	12	FrameBuryOpcode
+approval.teal	1082	0	1082	7	Bytec0Opcode
+approval.teal	1083	0	1083	14	AppGlobalGetOpcode
+approval.teal	1084	0	1084	6	Intc3Opcode
+approval.teal	1085	0	1085	2	EqualsComparisonOpcode
+approval.teal	1086	0	1086	15	BnzOpcode
+approval.teal	1087	0	1087	11	Label
+approval.teal	1088	0	1088	11	FrameDigOpcode
+approval.teal	1089	0	1089	6	Intc1Opcode
+approval.teal	1090	0	1090	7	LoadOpcode
+approval.teal	1091	0	1091	1	MulOpcode
+approval.teal	1092	0	1092	9	PushintOpcode
+approval.teal	1093	0	1093	1	IntegerAddOpcode
+approval.teal	1094	0	1094	7	GetbyteOpcode
+approval.teal	1095	0	1095	13	FrameBuryOpcode
+approval.teal	1096	0	1096	11	FrameDigOpcode
+approval.teal	1097	0	1097	12	FrameDigOpcode
+approval.teal	1098	0	1098	1	IntegerLessThanOpcode
+approval.teal	1100	0	1100	6	AssertOpcode
+approval.teal	1101	0	1101	9	PushintOpcode
+approval.teal	1102	0	1102	7	LoadOpcode
+approval.teal	1103	0	1103	11	FrameDigOpcode
+approval.teal	1104	0	1104	1	IntegerAddOpcode
+approval.teal	1105	0	1105	1	MulOpcode
+approval.teal	1106	0	1106	8	StoreOpcode
+approval.teal	1107	0	1107	7	BytecOpcode
+approval.teal	1108	0	1108	7	LoadOpcode
+approval.teal	1109	0	1109	9	PushintOpcode
+approval.teal	1110	0	1110	11	BoxExtractOpcode
+approval.teal	1111	0	1111	4	BtoiOpcode
+approval.teal	1112	0	1112	8	StoreOpcode
+approval.teal	1113	0	1113	7	BytecOpcode
+approval.teal	1114	0	1114	7	LoadOpcode
+approval.teal	1115	0	1115	7	LoadOpcode
+approval.teal	1116	0	1116	7	Bytec0Opcode
+approval.teal	1117	0	1117	14	AppGlobalGetOpcode
+approval.teal	1118	0	1118	6	Intc0Opcode
+approval.teal	1119	0	1119	2	EqualsComparisonOpcode
+approval.teal	1120	0	1120	7	Bytec0Opcode
+approval.teal	1121	0	1121	14	AppGlobalGetOpcode
+approval.teal	1122	0	1122	6	Intc1Opcode
+approval.teal	1123	0	1123	2	EqualsComparisonOpcode
+approval.teal	1124	0	1124	2	OrOpcode
+approval.teal	1125	0	1125	15	BnzOpcode
+approval.teal	1126	0	1126	7	Bytec0Opcode
+approval.teal	1127	0	1127	14	AppGlobalGetOpcode
+approval.teal	1128	0	1128	9	PushintOpcode
+approval.teal	1129	0	1129	2	EqualsComparisonOpcode
+approval.teal	1130	0	1130	15	BnzOpcode
+approval.teal	1131	0	1131	11	FrameDigOpcode
+approval.teal	1132	0	1132	12	Label
+approval.teal	1133	0	1133	1	IntegerAddOpcode
+approval.teal	1134	0	1134	4	ItobOpcode
+approval.teal	1135	0	1135	11	BoxReplaceOpcode
+approval.teal	1136	0	1136	7	LoadOpcode
+approval.teal	1137	0	1137	12	FrameDigOpcode
+approval.teal	1138	0	1138	1	IntegerAddOpcode
+approval.teal	1139	0	1139	8	StoreOpcode
+approval.teal	1140	0	1140	7	Bytec0Opcode
+approval.teal	1141	0	1141	14	AppGlobalGetOpcode
+approval.teal	1142	0	1142	6	Intc3Opcode
+approval.teal	1143	0	1143	2	EqualsComparisonOpcode
+approval.teal	1144	0	1144	15	BnzOpcode
+approval.teal	1145	0	1145	12	Label
+approval.teal	1146	0	1146	7	LoadOpcode
+approval.teal	1147	0	1147	6	Intc1Opcode
+approval.teal	1148	0	1148	1	IntegerAddOpcode
+approval.teal	1149	0	1149	8	StoreOpcode
+approval.teal	1150	0	1150	12	BOpcode
+approval.teal	1151	0	1151	12	Label
+approval.teal	1152	0	1152	7	LoadOpcode
+approval.teal	1153	0	1153	11	FrameDigOpcode
+approval.teal	1154	0	1154	1	IntegerAddOpcode
+approval.teal	1155	0	1155	8	StoreOpcode
+approval.teal	1156	0	1156	13	BOpcode
+approval.teal	1157	0	1157	12	Label
+approval.teal	1158	0	1158	12	FrameDigOpcode
+approval.teal	1159	0	1159	13	BOpcode
+approval.teal	1160	0	1160	12	Label
+approval.teal	1161	0	1161	6	Intc1Opcode
+approval.teal	1162	0	1162	13	BOpcode
+approval.teal	1163	0	1163	12	Label
+approval.teal	1164	0	1164	12	FrameDigOpcode
+approval.teal	1165	0	1165	9	PushintOpcode
+approval.teal	1166	0	1166	7	LoadOpcode
+approval.teal	1167	0	1167	1	MulOpcode
+approval.teal	1168	0	1168	9	PushintOpcode
+approval.teal	1169	0	1169	1	IntegerAddOpcode
+approval.teal	1170	0	1170	14	ExtractUint64Opcode
+approval.teal	1171	0	1171	12	FrameBuryOpcode
+approval.teal	1172	0	1172	12	BOpcode
+approval.teal	1173	0	1173	12	Label
+approval.teal	1174	0	1174	11	PushintOpcode
+approval.teal	1175	0	1175	6	Intc2Opcode
+approval.teal	1176	0	1176	1	IntegerAddOpcode
+approval.teal	1177	0	1177	8	StoreOpcode
+approval.teal	1178	0	1178	12	Label
+approval.teal	1179	0	1179	7	LoadOpcode
+approval.teal	1180	0	1180	19	GlobalOpcode
+approval.teal	1181	0	1181	1	IntegerGreaterThanOpcode
+approval.teal	1182	0	1182	13	BzOpcode
+approval.teal	1183	0	1183	10	InnerTransactionBegin
+approval.teal	1184	0	1184	9	PushintOpcode
+approval.teal	1185	0	1185	19	InnerTransactionField
+approval.teal	1186	0	1186	7	Bytec2Opcode
+approval.teal	1187	0	1187	14	AppGlobalGetOpcode
+approval.teal	1188	0	1188	24	InnerTransactionField
+approval.teal	1189	0	1189	8	BytecOpcode
+approval.teal	1190	0	1190	26	InnerTransactionField
+approval.teal	1191	0	1191	6	Intc0Opcode
+approval.teal	1192	0	1192	14	InnerTransactionField
+approval.teal	1193	0	1193	11	InnerTransactionSubmit
+approval.teal	1194	0	1194	13	BOpcode
+approval.teal	1195	0	1195	12	Label
+approval.teal	1196	0	1196	12	FrameDigOpcode
+approval.teal	1197	0	1197	6	Intc0Opcode
+approval.teal	1198	0	1198	14	ExtractUint16Opcode
+approval.teal	1199	0	1199	12	FrameBuryOpcode
+approval.teal	1200	0	1200	11	FrameDigOpcode
+approval.teal	1201	0	1201	7	LoadOpcode
+approval.teal	1202	0	1202	2	EqualsComparisonOpcode
+approval.teal	1204	0	1204	6	AssertOpcode
+approval.teal	1205	0	1205	12	BOpcode
+approval.teal	1206	0	1206	12	Label
+approval.teal	1207	0	1207	10	TxnOpcode
+approval.teal	1208	0	1208	13	FrameBuryOpcode
+approval.teal	1209	0	1209	12	FrameDigOpcode
+approval.teal	1210	0	1210	3	LenOpcode
+approval.teal	1211	0	1211	10	PushintOpcode
+approval.teal	1212	0	1212	2	EqualsComparisonOpcode
+approval.teal	1213	0	1213	6	AssertOpcode
+approval.teal	1214	0	1214	12	FrameDigOpcode
+approval.teal	1215	0	1215	7	BoxDelOpcode
+approval.teal	1216	0	1216	3	PopOpcode
+approval.teal	1217	0	1217	12	FrameDigOpcode
+approval.teal	1218	0	1218	12	FrameDigOpcode
+approval.teal	1219	0	1219	7	BoxPutOpcode
+approval.teal	1220	0	1220	7	BytecOpcode
+approval.teal	1221	0	1221	7	BytecOpcode
+approval.teal	1222	0	1222	14	AppGlobalGetOpcode
+approval.teal	1223	0	1223	6	Intc1Opcode
+approval.teal	1224	0	1224	1	IntegerAddOpcode
+approval.teal	1225	0	1225	14	AppGlobalPutOpcode
+approval.teal	1226	0	1226	6	RetsubOpcode
+## cfgEdges
+approval.teal	2	approval.teal	3	NormalSuccessor
+approval.teal	3	approval.teal	4	NormalSuccessor
+approval.teal	4	approval.teal	5	NormalSuccessor
+approval.teal	5	approval.teal	6	NormalSuccessor
+approval.teal	6	approval.teal	7	NormalSuccessor
+approval.teal	7	approval.teal	8	BooleanSuccessor(false)
+approval.teal	7	approval.teal	211	BooleanSuccessor(true)
+approval.teal	8	approval.teal	9	NormalSuccessor
+approval.teal	9	approval.teal	10	NormalSuccessor
+approval.teal	10	approval.teal	11	NormalSuccessor
+approval.teal	11	approval.teal	12	BooleanSuccessor(false)
+approval.teal	11	approval.teal	183	BooleanSuccessor(true)
+approval.teal	12	approval.teal	13	NormalSuccessor
+approval.teal	13	approval.teal	14	NormalSuccessor
+approval.teal	14	approval.teal	15	NormalSuccessor
+approval.teal	15	approval.teal	16	BooleanSuccessor(false)
+approval.teal	15	approval.teal	139	BooleanSuccessor(true)
+approval.teal	16	approval.teal	17	NormalSuccessor
+approval.teal	17	approval.teal	18	NormalSuccessor
+approval.teal	18	approval.teal	19	NormalSuccessor
+approval.teal	19	approval.teal	20	BooleanSuccessor(false)
+approval.teal	19	approval.teal	117	BooleanSuccessor(true)
+approval.teal	20	approval.teal	21	NormalSuccessor
+approval.teal	21	approval.teal	22	NormalSuccessor
+approval.teal	22	approval.teal	23	NormalSuccessor
+approval.teal	23	approval.teal	24	BooleanSuccessor(false)
+approval.teal	23	approval.teal	102	BooleanSuccessor(true)
+approval.teal	24	approval.teal	25	NormalSuccessor
+approval.teal	25	approval.teal	26	NormalSuccessor
+approval.teal	26	approval.teal	27	NormalSuccessor
+approval.teal	27	approval.teal	28	BooleanSuccessor(false)
+approval.teal	27	approval.teal	73	BooleanSuccessor(true)
+approval.teal	28	approval.teal	29	NormalSuccessor
+approval.teal	29	approval.teal	30	NormalSuccessor
+approval.teal	30	approval.teal	31	NormalSuccessor
+approval.teal	31	approval.teal	32	BooleanSuccessor(false)
+approval.teal	31	approval.teal	33	BooleanSuccessor(true)
+approval.teal	33	approval.teal	34	NormalSuccessor
+approval.teal	34	approval.teal	35	NormalSuccessor
+approval.teal	35	approval.teal	36	NormalSuccessor
+approval.teal	36	approval.teal	37	NormalSuccessor
+approval.teal	37	approval.teal	38	NormalSuccessor
+approval.teal	38	approval.teal	39	NormalSuccessor
+approval.teal	39	approval.teal	40	NormalSuccessor
+approval.teal	40	approval.teal	41	NormalSuccessor
+approval.teal	41	approval.teal	42	BooleanSuccessor(true)
+approval.teal	42	approval.teal	43	NormalSuccessor
+approval.teal	43	approval.teal	44	NormalSuccessor
+approval.teal	44	approval.teal	45	NormalSuccessor
+approval.teal	45	approval.teal	46	NormalSuccessor
+approval.teal	46	approval.teal	47	NormalSuccessor
+approval.teal	47	approval.teal	48	NormalSuccessor
+approval.teal	48	approval.teal	49	NormalSuccessor
+approval.teal	49	approval.teal	50	NormalSuccessor
+approval.teal	50	approval.teal	51	NormalSuccessor
+approval.teal	51	approval.teal	52	NormalSuccessor
+approval.teal	52	approval.teal	53	NormalSuccessor
+approval.teal	53	approval.teal	54	NormalSuccessor
+approval.teal	54	approval.teal	55	NormalSuccessor
+approval.teal	55	approval.teal	56	NormalSuccessor
+approval.teal	56	approval.teal	57	NormalSuccessor
+approval.teal	57	approval.teal	58	NormalSuccessor
+approval.teal	58	approval.teal	59	NormalSuccessor
+approval.teal	59	approval.teal	60	NormalSuccessor
+approval.teal	60	approval.teal	61	NormalSuccessor
+approval.teal	61	approval.teal	62	NormalSuccessor
+approval.teal	62	approval.teal	63	NormalSuccessor
+approval.teal	63	approval.teal	64	BooleanSuccessor(true)
+approval.teal	64	approval.teal	65	NormalSuccessor
+approval.teal	65	approval.teal	66	NormalSuccessor
+approval.teal	66	approval.teal	67	NormalSuccessor
+approval.teal	67	approval.teal	68	NormalSuccessor
+approval.teal	68	approval.teal	69	NormalSuccessor
+approval.teal	69	approval.teal	70	NormalSuccessor
+approval.teal	70	approval.teal	955	NormalSuccessor
+approval.teal	71	approval.teal	72	NormalSuccessor
+approval.teal	73	approval.teal	74	NormalSuccessor
+approval.teal	74	approval.teal	75	NormalSuccessor
+approval.teal	75	approval.teal	76	NormalSuccessor
+approval.teal	76	approval.teal	77	NormalSuccessor
+approval.teal	77	approval.teal	78	NormalSuccessor
+approval.teal	78	approval.teal	79	NormalSuccessor
+approval.teal	79	approval.teal	80	NormalSuccessor
+approval.teal	80	approval.teal	81	NormalSuccessor
+approval.teal	81	approval.teal	82	BooleanSuccessor(true)
+approval.teal	82	approval.teal	83	NormalSuccessor
+approval.teal	83	approval.teal	84	NormalSuccessor
+approval.teal	84	approval.teal	85	NormalSuccessor
+approval.teal	85	approval.teal	86	NormalSuccessor
+approval.teal	86	approval.teal	87	NormalSuccessor
+approval.teal	87	approval.teal	88	NormalSuccessor
+approval.teal	88	approval.teal	89	NormalSuccessor
+approval.teal	89	approval.teal	90	NormalSuccessor
+approval.teal	90	approval.teal	91	NormalSuccessor
+approval.teal	91	approval.teal	92	NormalSuccessor
+approval.teal	92	approval.teal	93	NormalSuccessor
+approval.teal	93	approval.teal	94	NormalSuccessor
+approval.teal	94	approval.teal	921	NormalSuccessor
+approval.teal	95	approval.teal	96	NormalSuccessor
+approval.teal	96	approval.teal	97	NormalSuccessor
+approval.teal	97	approval.teal	98	NormalSuccessor
+approval.teal	98	approval.teal	99	NormalSuccessor
+approval.teal	99	approval.teal	100	NormalSuccessor
+approval.teal	100	approval.teal	101	NormalSuccessor
+approval.teal	102	approval.teal	103	NormalSuccessor
+approval.teal	103	approval.teal	104	NormalSuccessor
+approval.teal	104	approval.teal	105	NormalSuccessor
+approval.teal	105	approval.teal	106	NormalSuccessor
+approval.teal	106	approval.teal	107	NormalSuccessor
+approval.teal	107	approval.teal	108	NormalSuccessor
+approval.teal	108	approval.teal	109	NormalSuccessor
+approval.teal	109	approval.teal	110	NormalSuccessor
+approval.teal	110	approval.teal	111	BooleanSuccessor(true)
+approval.teal	111	approval.teal	112	NormalSuccessor
+approval.teal	112	approval.teal	113	NormalSuccessor
+approval.teal	113	approval.teal	114	NormalSuccessor
+approval.teal	114	approval.teal	609	NormalSuccessor
+approval.teal	115	approval.teal	116	NormalSuccessor
+approval.teal	117	approval.teal	118	NormalSuccessor
+approval.teal	118	approval.teal	119	NormalSuccessor
+approval.teal	119	approval.teal	120	NormalSuccessor
+approval.teal	120	approval.teal	121	NormalSuccessor
+approval.teal	121	approval.teal	122	NormalSuccessor
+approval.teal	122	approval.teal	123	NormalSuccessor
+approval.teal	123	approval.teal	124	NormalSuccessor
+approval.teal	124	approval.teal	125	NormalSuccessor
+approval.teal	125	approval.teal	126	BooleanSuccessor(true)
+approval.teal	126	approval.teal	127	NormalSuccessor
+approval.teal	127	approval.teal	128	NormalSuccessor
+approval.teal	128	approval.teal	129	NormalSuccessor
+approval.teal	129	approval.teal	130	NormalSuccessor
+approval.teal	130	approval.teal	131	NormalSuccessor
+approval.teal	131	approval.teal	132	NormalSuccessor
+approval.teal	132	approval.teal	133	NormalSuccessor
+approval.teal	133	approval.teal	134	NormalSuccessor
+approval.teal	134	approval.teal	135	BooleanSuccessor(true)
+approval.teal	135	approval.teal	136	NormalSuccessor
+approval.teal	136	approval.teal	560	NormalSuccessor
+approval.teal	137	approval.teal	138	NormalSuccessor
+approval.teal	139	approval.teal	140	NormalSuccessor
+approval.teal	140	approval.teal	141	NormalSuccessor
+approval.teal	141	approval.teal	142	NormalSuccessor
+approval.teal	142	approval.teal	143	NormalSuccessor
+approval.teal	143	approval.teal	144	NormalSuccessor
+approval.teal	144	approval.teal	145	NormalSuccessor
+approval.teal	145	approval.teal	146	NormalSuccessor
+approval.teal	146	approval.teal	147	NormalSuccessor
+approval.teal	147	approval.teal	148	BooleanSuccessor(true)
+approval.teal	148	approval.teal	149	NormalSuccessor
+approval.teal	149	approval.teal	150	NormalSuccessor
+approval.teal	150	approval.teal	151	NormalSuccessor
+approval.teal	151	approval.teal	152	NormalSuccessor
+approval.teal	152	approval.teal	153	NormalSuccessor
+approval.teal	153	approval.teal	154	NormalSuccessor
+approval.teal	154	approval.teal	155	NormalSuccessor
+approval.teal	155	approval.teal	156	NormalSuccessor
+approval.teal	156	approval.teal	157	NormalSuccessor
+approval.teal	157	approval.teal	158	NormalSuccessor
+approval.teal	158	approval.teal	159	NormalSuccessor
+approval.teal	159	approval.teal	160	NormalSuccessor
+approval.teal	160	approval.teal	161	NormalSuccessor
+approval.teal	161	approval.teal	162	NormalSuccessor
+approval.teal	162	approval.teal	163	NormalSuccessor
+approval.teal	163	approval.teal	164	NormalSuccessor
+approval.teal	164	approval.teal	165	NormalSuccessor
+approval.teal	165	approval.teal	166	NormalSuccessor
+approval.teal	166	approval.teal	167	NormalSuccessor
+approval.teal	167	approval.teal	168	NormalSuccessor
+approval.teal	168	approval.teal	169	NormalSuccessor
+approval.teal	169	approval.teal	170	NormalSuccessor
+approval.teal	170	approval.teal	171	NormalSuccessor
+approval.teal	171	approval.teal	172	NormalSuccessor
+approval.teal	172	approval.teal	173	NormalSuccessor
+approval.teal	173	approval.teal	174	NormalSuccessor
+approval.teal	174	approval.teal	175	NormalSuccessor
+approval.teal	175	approval.teal	176	NormalSuccessor
+approval.teal	176	approval.teal	177	NormalSuccessor
+approval.teal	177	approval.teal	178	NormalSuccessor
+approval.teal	178	approval.teal	179	NormalSuccessor
+approval.teal	179	approval.teal	180	NormalSuccessor
+approval.teal	180	approval.teal	322	NormalSuccessor
+approval.teal	181	approval.teal	182	NormalSuccessor
+approval.teal	183	approval.teal	184	NormalSuccessor
+approval.teal	184	approval.teal	185	NormalSuccessor
+approval.teal	185	approval.teal	186	NormalSuccessor
+approval.teal	186	approval.teal	187	NormalSuccessor
+approval.teal	187	approval.teal	188	NormalSuccessor
+approval.teal	188	approval.teal	189	NormalSuccessor
+approval.teal	189	approval.teal	190	NormalSuccessor
+approval.teal	190	approval.teal	191	NormalSuccessor
+approval.teal	191	approval.teal	192	BooleanSuccessor(true)
+approval.teal	192	approval.teal	193	NormalSuccessor
+approval.teal	193	approval.teal	194	NormalSuccessor
+approval.teal	194	approval.teal	195	NormalSuccessor
+approval.teal	195	approval.teal	196	NormalSuccessor
+approval.teal	196	approval.teal	197	NormalSuccessor
+approval.teal	197	approval.teal	198	NormalSuccessor
+approval.teal	198	approval.teal	199	NormalSuccessor
+approval.teal	199	approval.teal	200	NormalSuccessor
+approval.teal	200	approval.teal	201	BooleanSuccessor(true)
+approval.teal	201	approval.teal	202	NormalSuccessor
+approval.teal	202	approval.teal	281	NormalSuccessor
+approval.teal	203	approval.teal	204	NormalSuccessor
+approval.teal	204	approval.teal	205	NormalSuccessor
+approval.teal	205	approval.teal	206	NormalSuccessor
+approval.teal	206	approval.teal	207	NormalSuccessor
+approval.teal	207	approval.teal	208	NormalSuccessor
+approval.teal	208	approval.teal	209	NormalSuccessor
+approval.teal	209	approval.teal	210	NormalSuccessor
+approval.teal	211	approval.teal	212	NormalSuccessor
+approval.teal	212	approval.teal	213	NormalSuccessor
+approval.teal	213	approval.teal	214	NormalSuccessor
+approval.teal	214	approval.teal	215	NormalSuccessor
+approval.teal	215	approval.teal	216	BooleanSuccessor(false)
+approval.teal	215	approval.teal	217	BooleanSuccessor(true)
+approval.teal	217	approval.teal	218	NormalSuccessor
+approval.teal	218	approval.teal	219	NormalSuccessor
+approval.teal	219	approval.teal	220	NormalSuccessor
+approval.teal	220	approval.teal	221	NormalSuccessor
+approval.teal	221	approval.teal	222	BooleanSuccessor(true)
+approval.teal	222	approval.teal	268	NormalSuccessor
+approval.teal	223	approval.teal	224	NormalSuccessor
+approval.teal	227	approval.teal	228	NormalSuccessor
+approval.teal	228	approval.teal	229	NormalSuccessor
+approval.teal	229	approval.teal	230	NormalSuccessor
+approval.teal	230	approval.teal	231	NormalSuccessor
+approval.teal	231	approval.teal	232	NormalSuccessor
+approval.teal	232	approval.teal	233	NormalSuccessor
+approval.teal	233	approval.teal	254	NormalSuccessor
+approval.teal	236	approval.teal	237	NormalSuccessor
+approval.teal	237	approval.teal	238	NormalSuccessor
+approval.teal	238	approval.teal	239	NormalSuccessor
+approval.teal	239	approval.teal	240	NormalSuccessor
+approval.teal	240	approval.teal	241	NormalSuccessor
+approval.teal	241	approval.teal	242	BooleanSuccessor(false)
+approval.teal	241	approval.teal	262	BooleanSuccessor(true)
+approval.teal	242	approval.teal	243	NormalSuccessor
+approval.teal	243	approval.teal	244	NormalSuccessor
+approval.teal	244	approval.teal	245	NormalSuccessor
+approval.teal	245	approval.teal	246	NormalSuccessor
+approval.teal	246	approval.teal	247	NormalSuccessor
+approval.teal	247	approval.teal	248	BooleanSuccessor(false)
+approval.teal	247	approval.teal	256	BooleanSuccessor(true)
+approval.teal	248	approval.teal	249	NormalSuccessor
+approval.teal	249	approval.teal	250	NormalSuccessor
+approval.teal	250	approval.teal	251	NormalSuccessor
+approval.teal	251	approval.teal	252	NormalSuccessor
+approval.teal	252	approval.teal	253	NormalSuccessor
+approval.teal	253	approval.teal	227	NormalSuccessor
+approval.teal	254	approval.teal	255	NormalSuccessor
+approval.teal	255	approval.teal	264	NormalSuccessor
+approval.teal	256	approval.teal	257	NormalSuccessor
+approval.teal	257	approval.teal	258	NormalSuccessor
+approval.teal	258	approval.teal	259	NormalSuccessor
+approval.teal	259	approval.teal	260	NormalSuccessor
+approval.teal	260	approval.teal	236	NormalSuccessor
+approval.teal	261	approval.teal	249	NormalSuccessor
+approval.teal	262	approval.teal	263	NormalSuccessor
+approval.teal	263	approval.teal	264	NormalSuccessor
+approval.teal	264	approval.teal	265	NormalSuccessor
+approval.teal	265	approval.teal	261	NormalSuccessor
+approval.teal	265	approval.teal	663	NormalSuccessor
+approval.teal	265	approval.teal	669	NormalSuccessor
+approval.teal	265	approval.teal	736	NormalSuccessor
+approval.teal	268	approval.teal	269	NormalSuccessor
+approval.teal	269	approval.teal	270	NormalSuccessor
+approval.teal	270	approval.teal	271	NormalSuccessor
+approval.teal	271	approval.teal	272	NormalSuccessor
+approval.teal	272	approval.teal	274	NormalSuccessor
+approval.teal	274	approval.teal	275	BooleanSuccessor(true)
+approval.teal	275	approval.teal	275	NormalSuccessor
+approval.teal	275	approval.teal	277	NormalSuccessor
+approval.teal	277	approval.teal	278	BooleanSuccessor(true)
+approval.teal	278	approval.teal	223	NormalSuccessor
+approval.teal	281	approval.teal	282	NormalSuccessor
+approval.teal	282	approval.teal	283	NormalSuccessor
+approval.teal	283	approval.teal	284	NormalSuccessor
+approval.teal	284	approval.teal	285	NormalSuccessor
+approval.teal	285	approval.teal	286	NormalSuccessor
+approval.teal	286	approval.teal	287	NormalSuccessor
+approval.teal	287	approval.teal	288	NormalSuccessor
+approval.teal	288	approval.teal	289	BooleanSuccessor(true)
+approval.teal	289	approval.teal	296	NormalSuccessor
+approval.teal	290	approval.teal	291	NormalSuccessor
+approval.teal	291	approval.teal	292	NormalSuccessor
+approval.teal	292	approval.teal	293	NormalSuccessor
+approval.teal	293	approval.teal	203	NormalSuccessor
+approval.teal	296	approval.teal	297	NormalSuccessor
+approval.teal	297	approval.teal	298	NormalSuccessor
+approval.teal	298	approval.teal	299	NormalSuccessor
+approval.teal	299	approval.teal	300	NormalSuccessor
+approval.teal	300	approval.teal	301	NormalSuccessor
+approval.teal	301	approval.teal	302	NormalSuccessor
+approval.teal	302	approval.teal	303	NormalSuccessor
+approval.teal	303	approval.teal	304	NormalSuccessor
+approval.teal	304	approval.teal	305	NormalSuccessor
+approval.teal	305	approval.teal	306	NormalSuccessor
+approval.teal	306	approval.teal	307	NormalSuccessor
+approval.teal	307	approval.teal	308	NormalSuccessor
+approval.teal	308	approval.teal	309	NormalSuccessor
+approval.teal	309	approval.teal	310	NormalSuccessor
+approval.teal	310	approval.teal	311	NormalSuccessor
+approval.teal	311	approval.teal	312	NormalSuccessor
+approval.teal	312	approval.teal	313	NormalSuccessor
+approval.teal	313	approval.teal	314	NormalSuccessor
+approval.teal	314	approval.teal	315	NormalSuccessor
+approval.teal	315	approval.teal	316	BooleanSuccessor(true)
+approval.teal	316	approval.teal	317	NormalSuccessor
+approval.teal	317	approval.teal	318	NormalSuccessor
+approval.teal	318	approval.teal	319	NormalSuccessor
+approval.teal	319	approval.teal	290	NormalSuccessor
+approval.teal	319	approval.teal	606	NormalSuccessor
+approval.teal	322	approval.teal	323	NormalSuccessor
+approval.teal	323	approval.teal	324	NormalSuccessor
+approval.teal	324	approval.teal	325	NormalSuccessor
+approval.teal	325	approval.teal	326	NormalSuccessor
+approval.teal	326	approval.teal	327	NormalSuccessor
+approval.teal	327	approval.teal	328	NormalSuccessor
+approval.teal	328	approval.teal	329	NormalSuccessor
+approval.teal	329	approval.teal	330	NormalSuccessor
+approval.teal	330	approval.teal	331	NormalSuccessor
+approval.teal	331	approval.teal	333	NormalSuccessor
+approval.teal	333	approval.teal	334	BooleanSuccessor(true)
+approval.teal	334	approval.teal	335	NormalSuccessor
+approval.teal	335	approval.teal	336	NormalSuccessor
+approval.teal	336	approval.teal	338	NormalSuccessor
+approval.teal	338	approval.teal	339	BooleanSuccessor(true)
+approval.teal	339	approval.teal	340	NormalSuccessor
+approval.teal	340	approval.teal	341	NormalSuccessor
+approval.teal	341	approval.teal	343	NormalSuccessor
+approval.teal	343	approval.teal	344	BooleanSuccessor(true)
+approval.teal	344	approval.teal	345	NormalSuccessor
+approval.teal	345	approval.teal	346	NormalSuccessor
+approval.teal	346	approval.teal	347	NormalSuccessor
+approval.teal	347	approval.teal	348	NormalSuccessor
+approval.teal	348	approval.teal	349	NormalSuccessor
+approval.teal	349	approval.teal	350	NormalSuccessor
+approval.teal	350	approval.teal	351	NormalSuccessor
+approval.teal	351	approval.teal	352	BooleanSuccessor(true)
+approval.teal	352	approval.teal	353	NormalSuccessor
+approval.teal	353	approval.teal	354	NormalSuccessor
+approval.teal	354	approval.teal	355	NormalSuccessor
+approval.teal	355	approval.teal	356	NormalSuccessor
+approval.teal	356	approval.teal	357	NormalSuccessor
+approval.teal	357	approval.teal	358	NormalSuccessor
+approval.teal	358	approval.teal	359	NormalSuccessor
+approval.teal	359	approval.teal	360	NormalSuccessor
+approval.teal	360	approval.teal	361	NormalSuccessor
+approval.teal	361	approval.teal	362	NormalSuccessor
+approval.teal	362	approval.teal	363	NormalSuccessor
+approval.teal	363	approval.teal	364	BooleanSuccessor(true)
+approval.teal	364	approval.teal	365	NormalSuccessor
+approval.teal	365	approval.teal	366	NormalSuccessor
+approval.teal	366	approval.teal	367	NormalSuccessor
+approval.teal	367	approval.teal	368	NormalSuccessor
+approval.teal	368	approval.teal	369	NormalSuccessor
+approval.teal	369	approval.teal	370	NormalSuccessor
+approval.teal	370	approval.teal	371	NormalSuccessor
+approval.teal	371	approval.teal	372	NormalSuccessor
+approval.teal	372	approval.teal	373	NormalSuccessor
+approval.teal	373	approval.teal	374	NormalSuccessor
+approval.teal	374	approval.teal	375	BooleanSuccessor(true)
+approval.teal	375	approval.teal	376	NormalSuccessor
+approval.teal	376	approval.teal	377	NormalSuccessor
+approval.teal	377	approval.teal	378	NormalSuccessor
+approval.teal	378	approval.teal	379	NormalSuccessor
+approval.teal	379	approval.teal	380	NormalSuccessor
+approval.teal	380	approval.teal	381	NormalSuccessor
+approval.teal	381	approval.teal	382	NormalSuccessor
+approval.teal	382	approval.teal	383	NormalSuccessor
+approval.teal	383	approval.teal	384	NormalSuccessor
+approval.teal	384	approval.teal	385	NormalSuccessor
+approval.teal	385	approval.teal	386	NormalSuccessor
+approval.teal	386	approval.teal	387	BooleanSuccessor(true)
+approval.teal	387	approval.teal	388	NormalSuccessor
+approval.teal	388	approval.teal	389	NormalSuccessor
+approval.teal	389	approval.teal	390	NormalSuccessor
+approval.teal	390	approval.teal	391	NormalSuccessor
+approval.teal	391	approval.teal	392	NormalSuccessor
+approval.teal	392	approval.teal	393	NormalSuccessor
+approval.teal	393	approval.teal	394	NormalSuccessor
+approval.teal	394	approval.teal	395	NormalSuccessor
+approval.teal	395	approval.teal	396	NormalSuccessor
+approval.teal	396	approval.teal	397	NormalSuccessor
+approval.teal	397	approval.teal	398	NormalSuccessor
+approval.teal	398	approval.teal	399	BooleanSuccessor(true)
+approval.teal	399	approval.teal	400	NormalSuccessor
+approval.teal	400	approval.teal	401	NormalSuccessor
+approval.teal	401	approval.teal	402	NormalSuccessor
+approval.teal	402	approval.teal	403	NormalSuccessor
+approval.teal	403	approval.teal	404	NormalSuccessor
+approval.teal	404	approval.teal	405	NormalSuccessor
+approval.teal	405	approval.teal	406	NormalSuccessor
+approval.teal	406	approval.teal	407	NormalSuccessor
+approval.teal	407	approval.teal	408	NormalSuccessor
+approval.teal	408	approval.teal	409	NormalSuccessor
+approval.teal	409	approval.teal	410	BooleanSuccessor(true)
+approval.teal	410	approval.teal	411	NormalSuccessor
+approval.teal	411	approval.teal	412	NormalSuccessor
+approval.teal	412	approval.teal	413	NormalSuccessor
+approval.teal	413	approval.teal	414	NormalSuccessor
+approval.teal	414	approval.teal	415	NormalSuccessor
+approval.teal	415	approval.teal	416	NormalSuccessor
+approval.teal	416	approval.teal	417	NormalSuccessor
+approval.teal	417	approval.teal	418	NormalSuccessor
+approval.teal	418	approval.teal	419	NormalSuccessor
+approval.teal	419	approval.teal	420	NormalSuccessor
+approval.teal	420	approval.teal	421	BooleanSuccessor(true)
+approval.teal	421	approval.teal	422	NormalSuccessor
+approval.teal	422	approval.teal	423	NormalSuccessor
+approval.teal	423	approval.teal	424	NormalSuccessor
+approval.teal	424	approval.teal	425	NormalSuccessor
+approval.teal	425	approval.teal	426	NormalSuccessor
+approval.teal	426	approval.teal	427	NormalSuccessor
+approval.teal	427	approval.teal	428	NormalSuccessor
+approval.teal	428	approval.teal	429	NormalSuccessor
+approval.teal	429	approval.teal	430	NormalSuccessor
+approval.teal	430	approval.teal	431	NormalSuccessor
+approval.teal	431	approval.teal	432	NormalSuccessor
+approval.teal	432	approval.teal	433	NormalSuccessor
+approval.teal	433	approval.teal	434	NormalSuccessor
+approval.teal	434	approval.teal	435	NormalSuccessor
+approval.teal	435	approval.teal	436	NormalSuccessor
+approval.teal	436	approval.teal	437	NormalSuccessor
+approval.teal	437	approval.teal	438	NormalSuccessor
+approval.teal	438	approval.teal	439	NormalSuccessor
+approval.teal	439	approval.teal	440	NormalSuccessor
+approval.teal	440	approval.teal	441	BooleanSuccessor(true)
+approval.teal	441	approval.teal	442	NormalSuccessor
+approval.teal	442	approval.teal	443	NormalSuccessor
+approval.teal	443	approval.teal	444	NormalSuccessor
+approval.teal	444	approval.teal	445	NormalSuccessor
+approval.teal	445	approval.teal	446	NormalSuccessor
+approval.teal	446	approval.teal	447	NormalSuccessor
+approval.teal	447	approval.teal	448	NormalSuccessor
+approval.teal	448	approval.teal	449	NormalSuccessor
+approval.teal	449	approval.teal	450	NormalSuccessor
+approval.teal	450	approval.teal	451	NormalSuccessor
+approval.teal	451	approval.teal	452	NormalSuccessor
+approval.teal	452	approval.teal	454	NormalSuccessor
+approval.teal	454	approval.teal	455	BooleanSuccessor(true)
+approval.teal	455	approval.teal	456	NormalSuccessor
+approval.teal	456	approval.teal	457	NormalSuccessor
+approval.teal	457	approval.teal	458	NormalSuccessor
+approval.teal	458	approval.teal	459	NormalSuccessor
+approval.teal	459	approval.teal	460	NormalSuccessor
+approval.teal	460	approval.teal	461	NormalSuccessor
+approval.teal	461	approval.teal	463	NormalSuccessor
+approval.teal	463	approval.teal	464	BooleanSuccessor(true)
+approval.teal	464	approval.teal	465	NormalSuccessor
+approval.teal	465	approval.teal	466	NormalSuccessor
+approval.teal	466	approval.teal	467	NormalSuccessor
+approval.teal	467	approval.teal	468	NormalSuccessor
+approval.teal	468	approval.teal	469	NormalSuccessor
+approval.teal	469	approval.teal	470	NormalSuccessor
+approval.teal	470	approval.teal	471	NormalSuccessor
+approval.teal	471	approval.teal	472	BooleanSuccessor(true)
+approval.teal	472	approval.teal	473	NormalSuccessor
+approval.teal	473	approval.teal	474	NormalSuccessor
+approval.teal	474	approval.teal	475	NormalSuccessor
+approval.teal	475	approval.teal	476	NormalSuccessor
+approval.teal	476	approval.teal	477	NormalSuccessor
+approval.teal	477	approval.teal	478	NormalSuccessor
+approval.teal	478	approval.teal	479	NormalSuccessor
+approval.teal	479	approval.teal	480	NormalSuccessor
+approval.teal	480	approval.teal	481	NormalSuccessor
+approval.teal	481	approval.teal	482	NormalSuccessor
+approval.teal	482	approval.teal	483	NormalSuccessor
+approval.teal	483	approval.teal	484	NormalSuccessor
+approval.teal	484	approval.teal	485	NormalSuccessor
+approval.teal	485	approval.teal	486	NormalSuccessor
+approval.teal	486	approval.teal	487	NormalSuccessor
+approval.teal	487	approval.teal	488	NormalSuccessor
+approval.teal	488	approval.teal	489	NormalSuccessor
+approval.teal	489	approval.teal	490	NormalSuccessor
+approval.teal	490	approval.teal	491	NormalSuccessor
+approval.teal	491	approval.teal	492	NormalSuccessor
+approval.teal	492	approval.teal	493	BooleanSuccessor(true)
+approval.teal	492	approval.teal	538	BooleanSuccessor(false)
+approval.teal	493	approval.teal	494	NormalSuccessor
+approval.teal	494	approval.teal	495	NormalSuccessor
+approval.teal	495	approval.teal	496	NormalSuccessor
+approval.teal	496	approval.teal	497	BooleanSuccessor(false)
+approval.teal	496	approval.teal	515	BooleanSuccessor(true)
+approval.teal	497	approval.teal	498	NormalSuccessor
+approval.teal	498	approval.teal	499	NormalSuccessor
+approval.teal	499	approval.teal	500	NormalSuccessor
+approval.teal	500	approval.teal	501	NormalSuccessor
+approval.teal	501	approval.teal	502	NormalSuccessor
+approval.teal	502	approval.teal	503	NormalSuccessor
+approval.teal	503	approval.teal	504	NormalSuccessor
+approval.teal	504	approval.teal	505	NormalSuccessor
+approval.teal	505	approval.teal	506	NormalSuccessor
+approval.teal	506	approval.teal	507	NormalSuccessor
+approval.teal	507	approval.teal	508	NormalSuccessor
+approval.teal	508	approval.teal	509	NormalSuccessor
+approval.teal	509	approval.teal	510	NormalSuccessor
+approval.teal	510	approval.teal	511	NormalSuccessor
+approval.teal	511	approval.teal	512	NormalSuccessor
+approval.teal	512	approval.teal	513	NormalSuccessor
+approval.teal	513	approval.teal	514	NormalSuccessor
+approval.teal	514	approval.teal	488	NormalSuccessor
+approval.teal	515	approval.teal	516	NormalSuccessor
+approval.teal	516	approval.teal	517	NormalSuccessor
+approval.teal	517	approval.teal	518	NormalSuccessor
+approval.teal	518	approval.teal	519	NormalSuccessor
+approval.teal	519	approval.teal	520	NormalSuccessor
+approval.teal	520	approval.teal	521	NormalSuccessor
+approval.teal	521	approval.teal	522	NormalSuccessor
+approval.teal	522	approval.teal	523	NormalSuccessor
+approval.teal	523	approval.teal	524	NormalSuccessor
+approval.teal	524	approval.teal	497	BooleanSuccessor(false)
+approval.teal	524	approval.teal	525	BooleanSuccessor(true)
+approval.teal	525	approval.teal	526	NormalSuccessor
+approval.teal	526	approval.teal	527	NormalSuccessor
+approval.teal	527	approval.teal	528	NormalSuccessor
+approval.teal	528	approval.teal	529	NormalSuccessor
+approval.teal	529	approval.teal	530	NormalSuccessor
+approval.teal	530	approval.teal	531	NormalSuccessor
+approval.teal	531	approval.teal	532	NormalSuccessor
+approval.teal	532	approval.teal	533	NormalSuccessor
+approval.teal	533	approval.teal	534	NormalSuccessor
+approval.teal	534	approval.teal	535	NormalSuccessor
+approval.teal	535	approval.teal	536	NormalSuccessor
+approval.teal	536	approval.teal	537	NormalSuccessor
+approval.teal	537	approval.teal	520	NormalSuccessor
+approval.teal	538	approval.teal	539	NormalSuccessor
+approval.teal	539	approval.teal	540	NormalSuccessor
+approval.teal	540	approval.teal	541	NormalSuccessor
+approval.teal	541	approval.teal	542	NormalSuccessor
+approval.teal	542	approval.teal	543	NormalSuccessor
+approval.teal	543	approval.teal	545	NormalSuccessor
+approval.teal	545	approval.teal	546	BooleanSuccessor(true)
+approval.teal	546	approval.teal	547	NormalSuccessor
+approval.teal	547	approval.teal	548	NormalSuccessor
+approval.teal	548	approval.teal	549	NormalSuccessor
+approval.teal	549	approval.teal	550	NormalSuccessor
+approval.teal	550	approval.teal	551	NormalSuccessor
+approval.teal	551	approval.teal	552	NormalSuccessor
+approval.teal	552	approval.teal	553	NormalSuccessor
+approval.teal	553	approval.teal	554	BooleanSuccessor(true)
+approval.teal	554	approval.teal	555	NormalSuccessor
+approval.teal	555	approval.teal	556	NormalSuccessor
+approval.teal	556	approval.teal	557	NormalSuccessor
+approval.teal	557	approval.teal	181	NormalSuccessor
+approval.teal	560	approval.teal	561	NormalSuccessor
+approval.teal	561	approval.teal	562	NormalSuccessor
+approval.teal	562	approval.teal	563	NormalSuccessor
+approval.teal	563	approval.teal	564	NormalSuccessor
+approval.teal	564	approval.teal	565	NormalSuccessor
+approval.teal	565	approval.teal	567	NormalSuccessor
+approval.teal	567	approval.teal	568	BooleanSuccessor(true)
+approval.teal	568	approval.teal	569	NormalSuccessor
+approval.teal	569	approval.teal	570	NormalSuccessor
+approval.teal	570	approval.teal	572	NormalSuccessor
+approval.teal	572	approval.teal	573	BooleanSuccessor(true)
+approval.teal	573	approval.teal	574	NormalSuccessor
+approval.teal	574	approval.teal	575	NormalSuccessor
+approval.teal	575	approval.teal	576	NormalSuccessor
+approval.teal	576	approval.teal	577	NormalSuccessor
+approval.teal	577	approval.teal	578	NormalSuccessor
+approval.teal	578	approval.teal	579	NormalSuccessor
+approval.teal	579	approval.teal	580	NormalSuccessor
+approval.teal	580	approval.teal	581	NormalSuccessor
+approval.teal	581	approval.teal	582	NormalSuccessor
+approval.teal	582	approval.teal	583	NormalSuccessor
+approval.teal	583	approval.teal	584	NormalSuccessor
+approval.teal	584	approval.teal	585	NormalSuccessor
+approval.teal	585	approval.teal	586	NormalSuccessor
+approval.teal	586	approval.teal	588	NormalSuccessor
+approval.teal	588	approval.teal	589	BooleanSuccessor(true)
+approval.teal	589	approval.teal	590	NormalSuccessor
+approval.teal	590	approval.teal	591	NormalSuccessor
+approval.teal	591	approval.teal	592	NormalSuccessor
+approval.teal	592	approval.teal	593	NormalSuccessor
+approval.teal	593	approval.teal	594	NormalSuccessor
+approval.teal	594	approval.teal	595	NormalSuccessor
+approval.teal	595	approval.teal	597	NormalSuccessor
+approval.teal	597	approval.teal	598	BooleanSuccessor(true)
+approval.teal	598	approval.teal	599	NormalSuccessor
+approval.teal	599	approval.teal	600	NormalSuccessor
+approval.teal	600	approval.teal	601	NormalSuccessor
+approval.teal	601	approval.teal	602	NormalSuccessor
+approval.teal	602	approval.teal	603	NormalSuccessor
+approval.teal	603	approval.teal	604	NormalSuccessor
+approval.teal	604	approval.teal	605	NormalSuccessor
+approval.teal	605	approval.teal	296	NormalSuccessor
+approval.teal	606	approval.teal	137	NormalSuccessor
+approval.teal	609	approval.teal	610	NormalSuccessor
+approval.teal	610	approval.teal	611	NormalSuccessor
+approval.teal	611	approval.teal	612	NormalSuccessor
+approval.teal	612	approval.teal	613	NormalSuccessor
+approval.teal	613	approval.teal	614	NormalSuccessor
+approval.teal	614	approval.teal	615	NormalSuccessor
+approval.teal	615	approval.teal	616	NormalSuccessor
+approval.teal	616	approval.teal	618	NormalSuccessor
+approval.teal	618	approval.teal	619	BooleanSuccessor(true)
+approval.teal	619	approval.teal	620	NormalSuccessor
+approval.teal	620	approval.teal	621	NormalSuccessor
+approval.teal	621	approval.teal	622	NormalSuccessor
+approval.teal	622	approval.teal	623	NormalSuccessor
+approval.teal	623	approval.teal	625	NormalSuccessor
+approval.teal	625	approval.teal	626	BooleanSuccessor(true)
+approval.teal	626	approval.teal	627	NormalSuccessor
+approval.teal	627	approval.teal	628	NormalSuccessor
+approval.teal	628	approval.teal	629	NormalSuccessor
+approval.teal	629	approval.teal	630	NormalSuccessor
+approval.teal	630	approval.teal	631	NormalSuccessor
+approval.teal	631	approval.teal	632	NormalSuccessor
+approval.teal	632	approval.teal	633	NormalSuccessor
+approval.teal	633	approval.teal	634	NormalSuccessor
+approval.teal	634	approval.teal	635	BooleanSuccessor(false)
+approval.teal	634	approval.teal	774	BooleanSuccessor(true)
+approval.teal	635	approval.teal	636	NormalSuccessor
+approval.teal	636	approval.teal	637	NormalSuccessor
+approval.teal	637	approval.teal	638	NormalSuccessor
+approval.teal	638	approval.teal	640	NormalSuccessor
+approval.teal	640	approval.teal	641	BooleanSuccessor(true)
+approval.teal	641	approval.teal	642	NormalSuccessor
+approval.teal	642	approval.teal	643	NormalSuccessor
+approval.teal	643	approval.teal	644	NormalSuccessor
+approval.teal	644	approval.teal	645	NormalSuccessor
+approval.teal	645	approval.teal	646	NormalSuccessor
+approval.teal	646	approval.teal	647	NormalSuccessor
+approval.teal	647	approval.teal	648	NormalSuccessor
+approval.teal	648	approval.teal	649	NormalSuccessor
+approval.teal	649	approval.teal	650	NormalSuccessor
+approval.teal	650	approval.teal	651	NormalSuccessor
+approval.teal	651	approval.teal	652	NormalSuccessor
+approval.teal	652	approval.teal	653	NormalSuccessor
+approval.teal	653	approval.teal	654	NormalSuccessor
+approval.teal	654	approval.teal	655	NormalSuccessor
+approval.teal	655	approval.teal	656	NormalSuccessor
+approval.teal	656	approval.teal	657	NormalSuccessor
+approval.teal	657	approval.teal	658	NormalSuccessor
+approval.teal	658	approval.teal	659	NormalSuccessor
+approval.teal	659	approval.teal	660	NormalSuccessor
+approval.teal	660	approval.teal	661	NormalSuccessor
+approval.teal	661	approval.teal	662	NormalSuccessor
+approval.teal	662	approval.teal	236	NormalSuccessor
+approval.teal	663	approval.teal	664	NormalSuccessor
+approval.teal	664	approval.teal	665	NormalSuccessor
+approval.teal	665	approval.teal	666	NormalSuccessor
+approval.teal	666	approval.teal	667	NormalSuccessor
+approval.teal	667	approval.teal	668	NormalSuccessor
+approval.teal	668	approval.teal	236	NormalSuccessor
+approval.teal	669	approval.teal	670	NormalSuccessor
+approval.teal	670	approval.teal	671	NormalSuccessor
+approval.teal	671	approval.teal	672	NormalSuccessor
+approval.teal	672	approval.teal	673	NormalSuccessor
+approval.teal	673	approval.teal	674	NormalSuccessor
+approval.teal	674	approval.teal	675	NormalSuccessor
+approval.teal	675	approval.teal	676	NormalSuccessor
+approval.teal	676	approval.teal	677	NormalSuccessor
+approval.teal	677	approval.teal	678	NormalSuccessor
+approval.teal	678	approval.teal	679	NormalSuccessor
+approval.teal	679	approval.teal	680	NormalSuccessor
+approval.teal	680	approval.teal	681	NormalSuccessor
+approval.teal	681	approval.teal	682	NormalSuccessor
+approval.teal	682	approval.teal	683	NormalSuccessor
+approval.teal	683	approval.teal	684	NormalSuccessor
+approval.teal	684	approval.teal	685	NormalSuccessor
+approval.teal	685	approval.teal	686	NormalSuccessor
+approval.teal	686	approval.teal	687	NormalSuccessor
+approval.teal	687	approval.teal	688	NormalSuccessor
+approval.teal	688	approval.teal	689	NormalSuccessor
+approval.teal	689	approval.teal	690	NormalSuccessor
+approval.teal	690	approval.teal	691	NormalSuccessor
+approval.teal	691	approval.teal	692	NormalSuccessor
+approval.teal	692	approval.teal	693	BooleanSuccessor(true)
+approval.teal	692	approval.teal	787	BooleanSuccessor(false)
+approval.teal	693	approval.teal	694	NormalSuccessor
+approval.teal	694	approval.teal	695	NormalSuccessor
+approval.teal	695	approval.teal	696	NormalSuccessor
+approval.teal	696	approval.teal	697	NormalSuccessor
+approval.teal	697	approval.teal	698	NormalSuccessor
+approval.teal	698	approval.teal	699	NormalSuccessor
+approval.teal	699	approval.teal	700	NormalSuccessor
+approval.teal	700	approval.teal	701	NormalSuccessor
+approval.teal	701	approval.teal	702	NormalSuccessor
+approval.teal	702	approval.teal	703	NormalSuccessor
+approval.teal	703	approval.teal	704	NormalSuccessor
+approval.teal	704	approval.teal	705	NormalSuccessor
+approval.teal	705	approval.teal	706	NormalSuccessor
+approval.teal	706	approval.teal	707	NormalSuccessor
+approval.teal	707	approval.teal	708	NormalSuccessor
+approval.teal	708	approval.teal	709	NormalSuccessor
+approval.teal	709	approval.teal	710	BooleanSuccessor(false)
+approval.teal	709	approval.teal	715	BooleanSuccessor(true)
+approval.teal	710	approval.teal	711	NormalSuccessor
+approval.teal	711	approval.teal	712	NormalSuccessor
+approval.teal	712	approval.teal	713	NormalSuccessor
+approval.teal	713	approval.teal	714	NormalSuccessor
+approval.teal	714	approval.teal	688	NormalSuccessor
+approval.teal	715	approval.teal	716	NormalSuccessor
+approval.teal	716	approval.teal	717	NormalSuccessor
+approval.teal	717	approval.teal	718	NormalSuccessor
+approval.teal	718	approval.teal	719	NormalSuccessor
+approval.teal	719	approval.teal	720	NormalSuccessor
+approval.teal	720	approval.teal	721	NormalSuccessor
+approval.teal	721	approval.teal	722	NormalSuccessor
+approval.teal	722	approval.teal	723	NormalSuccessor
+approval.teal	723	approval.teal	724	NormalSuccessor
+approval.teal	724	approval.teal	725	NormalSuccessor
+approval.teal	725	approval.teal	726	NormalSuccessor
+approval.teal	726	approval.teal	727	NormalSuccessor
+approval.teal	727	approval.teal	728	NormalSuccessor
+approval.teal	728	approval.teal	729	NormalSuccessor
+approval.teal	729	approval.teal	730	NormalSuccessor
+approval.teal	730	approval.teal	731	BooleanSuccessor(false)
+approval.teal	730	approval.teal	771	BooleanSuccessor(true)
+approval.teal	731	approval.teal	732	NormalSuccessor
+approval.teal	732	approval.teal	733	NormalSuccessor
+approval.teal	733	approval.teal	734	NormalSuccessor
+approval.teal	734	approval.teal	735	NormalSuccessor
+approval.teal	735	approval.teal	236	NormalSuccessor
+approval.teal	736	approval.teal	737	NormalSuccessor
+approval.teal	737	approval.teal	738	NormalSuccessor
+approval.teal	738	approval.teal	739	NormalSuccessor
+approval.teal	739	approval.teal	740	NormalSuccessor
+approval.teal	740	approval.teal	741	NormalSuccessor
+approval.teal	741	approval.teal	742	NormalSuccessor
+approval.teal	742	approval.teal	743	BooleanSuccessor(false)
+approval.teal	742	approval.teal	756	BooleanSuccessor(true)
+approval.teal	743	approval.teal	744	NormalSuccessor
+approval.teal	744	approval.teal	745	NormalSuccessor
+approval.teal	745	approval.teal	746	NormalSuccessor
+approval.teal	746	approval.teal	747	NormalSuccessor
+approval.teal	747	approval.teal	748	NormalSuccessor
+approval.teal	748	approval.teal	749	NormalSuccessor
+approval.teal	749	approval.teal	750	NormalSuccessor
+approval.teal	750	approval.teal	751	NormalSuccessor
+approval.teal	751	approval.teal	752	NormalSuccessor
+approval.teal	752	approval.teal	753	NormalSuccessor
+approval.teal	753	approval.teal	754	NormalSuccessor
+approval.teal	754	approval.teal	755	NormalSuccessor
+approval.teal	755	approval.teal	705	NormalSuccessor
+approval.teal	756	approval.teal	757	NormalSuccessor
+approval.teal	757	approval.teal	758	NormalSuccessor
+approval.teal	758	approval.teal	759	NormalSuccessor
+approval.teal	759	approval.teal	760	NormalSuccessor
+approval.teal	760	approval.teal	761	NormalSuccessor
+approval.teal	761	approval.teal	762	NormalSuccessor
+approval.teal	762	approval.teal	763	NormalSuccessor
+approval.teal	763	approval.teal	764	BooleanSuccessor(false)
+approval.teal	763	approval.teal	768	BooleanSuccessor(true)
+approval.teal	764	approval.teal	765	NormalSuccessor
+approval.teal	765	approval.teal	766	NormalSuccessor
+approval.teal	766	approval.teal	767	NormalSuccessor
+approval.teal	767	approval.teal	744	NormalSuccessor
+approval.teal	768	approval.teal	769	NormalSuccessor
+approval.teal	769	approval.teal	770	NormalSuccessor
+approval.teal	770	approval.teal	765	NormalSuccessor
+approval.teal	771	approval.teal	772	NormalSuccessor
+approval.teal	772	approval.teal	773	NormalSuccessor
+approval.teal	773	approval.teal	732	NormalSuccessor
+approval.teal	774	approval.teal	775	NormalSuccessor
+approval.teal	775	approval.teal	776	NormalSuccessor
+approval.teal	776	approval.teal	777	NormalSuccessor
+approval.teal	777	approval.teal	778	NormalSuccessor
+approval.teal	778	approval.teal	779	NormalSuccessor
+approval.teal	779	approval.teal	780	NormalSuccessor
+approval.teal	780	approval.teal	781	NormalSuccessor
+approval.teal	781	approval.teal	782	NormalSuccessor
+approval.teal	782	approval.teal	783	NormalSuccessor
+approval.teal	783	approval.teal	784	NormalSuccessor
+approval.teal	784	approval.teal	785	NormalSuccessor
+approval.teal	785	approval.teal	786	NormalSuccessor
+approval.teal	786	approval.teal	630	NormalSuccessor
+approval.teal	787	approval.teal	788	NormalSuccessor
+approval.teal	788	approval.teal	789	NormalSuccessor
+approval.teal	789	approval.teal	790	NormalSuccessor
+approval.teal	790	approval.teal	791	NormalSuccessor
+approval.teal	791	approval.teal	792	NormalSuccessor
+approval.teal	792	approval.teal	793	NormalSuccessor
+approval.teal	793	approval.teal	794	NormalSuccessor
+approval.teal	794	approval.teal	795	NormalSuccessor
+approval.teal	795	approval.teal	796	NormalSuccessor
+approval.teal	796	approval.teal	797	NormalSuccessor
+approval.teal	797	approval.teal	798	NormalSuccessor
+approval.teal	798	approval.teal	799	NormalSuccessor
+approval.teal	799	approval.teal	800	NormalSuccessor
+approval.teal	800	approval.teal	801	NormalSuccessor
+approval.teal	801	approval.teal	802	NormalSuccessor
+approval.teal	802	approval.teal	803	NormalSuccessor
+approval.teal	803	approval.teal	804	NormalSuccessor
+approval.teal	804	approval.teal	805	NormalSuccessor
+approval.teal	805	approval.teal	806	NormalSuccessor
+approval.teal	806	approval.teal	807	NormalSuccessor
+approval.teal	807	approval.teal	808	NormalSuccessor
+approval.teal	808	approval.teal	809	NormalSuccessor
+approval.teal	809	approval.teal	810	NormalSuccessor
+approval.teal	810	approval.teal	811	NormalSuccessor
+approval.teal	811	approval.teal	812	NormalSuccessor
+approval.teal	812	approval.teal	813	NormalSuccessor
+approval.teal	813	approval.teal	814	NormalSuccessor
+approval.teal	814	approval.teal	815	NormalSuccessor
+approval.teal	815	approval.teal	115	NormalSuccessor
+approval.teal	818	approval.teal	819	NormalSuccessor
+approval.teal	819	approval.teal	820	NormalSuccessor
+approval.teal	820	approval.teal	821	NormalSuccessor
+approval.teal	821	approval.teal	822	NormalSuccessor
+approval.teal	822	approval.teal	823	NormalSuccessor
+approval.teal	823	approval.teal	824	NormalSuccessor
+approval.teal	824	approval.teal	825	BooleanSuccessor(false)
+approval.teal	824	approval.teal	872	BooleanSuccessor(true)
+approval.teal	825	approval.teal	826	NormalSuccessor
+approval.teal	826	approval.teal	827	NormalSuccessor
+approval.teal	827	approval.teal	828	NormalSuccessor
+approval.teal	828	approval.teal	829	NormalSuccessor
+approval.teal	829	approval.teal	831	NormalSuccessor
+approval.teal	831	approval.teal	832	BooleanSuccessor(true)
+approval.teal	832	approval.teal	833	NormalSuccessor
+approval.teal	833	approval.teal	834	NormalSuccessor
+approval.teal	834	approval.teal	835	NormalSuccessor
+approval.teal	835	approval.teal	836	NormalSuccessor
+approval.teal	836	approval.teal	837	NormalSuccessor
+approval.teal	837	approval.teal	838	NormalSuccessor
+approval.teal	838	approval.teal	839	NormalSuccessor
+approval.teal	839	approval.teal	840	NormalSuccessor
+approval.teal	840	approval.teal	841	BooleanSuccessor(false)
+approval.teal	840	approval.teal	859	BooleanSuccessor(true)
+approval.teal	841	approval.teal	842	NormalSuccessor
+approval.teal	842	approval.teal	843	NormalSuccessor
+approval.teal	843	approval.teal	844	NormalSuccessor
+approval.teal	844	approval.teal	845	NormalSuccessor
+approval.teal	845	approval.teal	846	BooleanSuccessor(false)
+approval.teal	845	approval.teal	856	BooleanSuccessor(true)
+approval.teal	846	approval.teal	847	NormalSuccessor
+approval.teal	847	approval.teal	848	NormalSuccessor
+approval.teal	848	approval.teal	849	NormalSuccessor
+approval.teal	849	approval.teal	850	NormalSuccessor
+approval.teal	850	approval.teal	851	NormalSuccessor
+approval.teal	851	approval.teal	852	NormalSuccessor
+approval.teal	852	approval.teal	853	NormalSuccessor
+approval.teal	853	approval.teal	854	NormalSuccessor
+approval.teal	854	approval.teal	855	NormalSuccessor
+approval.teal	855	approval.teal	874	NormalSuccessor
+approval.teal	856	approval.teal	857	NormalSuccessor
+approval.teal	857	approval.teal	858	NormalSuccessor
+approval.teal	858	approval.teal	850	NormalSuccessor
+approval.teal	859	approval.teal	860	NormalSuccessor
+approval.teal	860	approval.teal	861	NormalSuccessor
+approval.teal	861	approval.teal	862	NormalSuccessor
+approval.teal	862	approval.teal	863	NormalSuccessor
+approval.teal	863	approval.teal	864	NormalSuccessor
+approval.teal	864	approval.teal	865	NormalSuccessor
+approval.teal	865	approval.teal	866	NormalSuccessor
+approval.teal	866	approval.teal	867	NormalSuccessor
+approval.teal	867	approval.teal	868	NormalSuccessor
+approval.teal	868	approval.teal	869	NormalSuccessor
+approval.teal	869	approval.teal	870	NormalSuccessor
+approval.teal	870	approval.teal	871	NormalSuccessor
+approval.teal	871	approval.teal	836	NormalSuccessor
+approval.teal	872	approval.teal	873	NormalSuccessor
+approval.teal	873	approval.teal	874	NormalSuccessor
+approval.teal	874	approval.teal	875	NormalSuccessor
+approval.teal	875	approval.teal	935	NormalSuccessor
+approval.teal	875	approval.teal	974	NormalSuccessor
+approval.teal	878	approval.teal	879	NormalSuccessor
+approval.teal	879	approval.teal	880	NormalSuccessor
+approval.teal	880	approval.teal	881	NormalSuccessor
+approval.teal	881	approval.teal	882	NormalSuccessor
+approval.teal	882	approval.teal	883	NormalSuccessor
+approval.teal	883	approval.teal	884	NormalSuccessor
+approval.teal	884	approval.teal	885	NormalSuccessor
+approval.teal	885	approval.teal	886	NormalSuccessor
+approval.teal	886	approval.teal	887	NormalSuccessor
+approval.teal	887	approval.teal	888	NormalSuccessor
+approval.teal	888	approval.teal	889	NormalSuccessor
+approval.teal	889	approval.teal	890	NormalSuccessor
+approval.teal	890	approval.teal	891	NormalSuccessor
+approval.teal	891	approval.teal	892	NormalSuccessor
+approval.teal	892	approval.teal	893	NormalSuccessor
+approval.teal	893	approval.teal	894	NormalSuccessor
+approval.teal	894	approval.teal	895	NormalSuccessor
+approval.teal	895	approval.teal	896	NormalSuccessor
+approval.teal	896	approval.teal	897	NormalSuccessor
+approval.teal	897	approval.teal	898	NormalSuccessor
+approval.teal	898	approval.teal	899	NormalSuccessor
+approval.teal	899	approval.teal	929	NormalSuccessor
+approval.teal	899	approval.teal	977	NormalSuccessor
+approval.teal	902	approval.teal	903	NormalSuccessor
+approval.teal	903	approval.teal	904	NormalSuccessor
+approval.teal	904	approval.teal	905	NormalSuccessor
+approval.teal	905	approval.teal	906	NormalSuccessor
+approval.teal	906	approval.teal	907	NormalSuccessor
+approval.teal	907	approval.teal	908	NormalSuccessor
+approval.teal	908	approval.teal	909	NormalSuccessor
+approval.teal	909	approval.teal	910	NormalSuccessor
+approval.teal	910	approval.teal	911	NormalSuccessor
+approval.teal	911	approval.teal	912	BooleanSuccessor(true)
+approval.teal	912	approval.teal	913	NormalSuccessor
+approval.teal	913	approval.teal	914	NormalSuccessor
+approval.teal	914	approval.teal	915	NormalSuccessor
+approval.teal	915	approval.teal	916	NormalSuccessor
+approval.teal	916	approval.teal	917	NormalSuccessor
+approval.teal	917	approval.teal	918	NormalSuccessor
+approval.teal	918	approval.teal	937	NormalSuccessor
+approval.teal	918	approval.teal	979	NormalSuccessor
+approval.teal	921	approval.teal	922	NormalSuccessor
+approval.teal	922	approval.teal	923	NormalSuccessor
+approval.teal	923	approval.teal	924	NormalSuccessor
+approval.teal	924	approval.teal	925	NormalSuccessor
+approval.teal	925	approval.teal	926	NormalSuccessor
+approval.teal	926	approval.teal	927	NormalSuccessor
+approval.teal	927	approval.teal	928	NormalSuccessor
+approval.teal	928	approval.teal	878	NormalSuccessor
+approval.teal	929	approval.teal	930	NormalSuccessor
+approval.teal	930	approval.teal	931	NormalSuccessor
+approval.teal	931	approval.teal	932	NormalSuccessor
+approval.teal	932	approval.teal	933	NormalSuccessor
+approval.teal	933	approval.teal	934	NormalSuccessor
+approval.teal	934	approval.teal	818	NormalSuccessor
+approval.teal	935	approval.teal	936	NormalSuccessor
+approval.teal	936	approval.teal	902	NormalSuccessor
+approval.teal	937	approval.teal	938	NormalSuccessor
+approval.teal	938	approval.teal	939	NormalSuccessor
+approval.teal	939	approval.teal	940	NormalSuccessor
+approval.teal	940	approval.teal	941	NormalSuccessor
+approval.teal	941	approval.teal	942	NormalSuccessor
+approval.teal	942	approval.teal	943	NormalSuccessor
+approval.teal	943	approval.teal	944	NormalSuccessor
+approval.teal	944	approval.teal	945	NormalSuccessor
+approval.teal	945	approval.teal	946	NormalSuccessor
+approval.teal	946	approval.teal	947	NormalSuccessor
+approval.teal	947	approval.teal	948	NormalSuccessor
+approval.teal	948	approval.teal	949	NormalSuccessor
+approval.teal	949	approval.teal	950	NormalSuccessor
+approval.teal	950	approval.teal	951	NormalSuccessor
+approval.teal	951	approval.teal	952	NormalSuccessor
+approval.teal	952	approval.teal	95	NormalSuccessor
+approval.teal	955	approval.teal	956	NormalSuccessor
+approval.teal	956	approval.teal	957	NormalSuccessor
+approval.teal	957	approval.teal	958	NormalSuccessor
+approval.teal	958	approval.teal	959	NormalSuccessor
+approval.teal	959	approval.teal	960	NormalSuccessor
+approval.teal	960	approval.teal	961	NormalSuccessor
+approval.teal	961	approval.teal	962	NormalSuccessor
+approval.teal	962	approval.teal	963	NormalSuccessor
+approval.teal	963	approval.teal	964	NormalSuccessor
+approval.teal	964	approval.teal	965	NormalSuccessor
+approval.teal	965	approval.teal	967	NormalSuccessor
+approval.teal	967	approval.teal	968	BooleanSuccessor(true)
+approval.teal	968	approval.teal	969	NormalSuccessor
+approval.teal	969	approval.teal	970	NormalSuccessor
+approval.teal	970	approval.teal	971	NormalSuccessor
+approval.teal	971	approval.teal	972	NormalSuccessor
+approval.teal	972	approval.teal	818	NormalSuccessor
+approval.teal	974	approval.teal	975	BooleanSuccessor(true)
+approval.teal	975	approval.teal	878	NormalSuccessor
+approval.teal	977	approval.teal	978	BooleanSuccessor(true)
+approval.teal	978	approval.teal	902	NormalSuccessor
+approval.teal	979	approval.teal	981	NormalSuccessor
+approval.teal	981	approval.teal	982	BooleanSuccessor(true)
+approval.teal	982	approval.teal	983	NormalSuccessor
+approval.teal	983	approval.teal	984	NormalSuccessor
+approval.teal	984	approval.teal	985	NormalSuccessor
+approval.teal	985	approval.teal	986	NormalSuccessor
+approval.teal	986	approval.teal	987	NormalSuccessor
+approval.teal	987	approval.teal	988	NormalSuccessor
+approval.teal	988	approval.teal	989	NormalSuccessor
+approval.teal	989	approval.teal	990	NormalSuccessor
+approval.teal	990	approval.teal	991	NormalSuccessor
+approval.teal	991	approval.teal	992	NormalSuccessor
+approval.teal	992	approval.teal	993	NormalSuccessor
+approval.teal	993	approval.teal	994	NormalSuccessor
+approval.teal	994	approval.teal	995	NormalSuccessor
+approval.teal	995	approval.teal	996	NormalSuccessor
+approval.teal	996	approval.teal	997	NormalSuccessor
+approval.teal	997	approval.teal	999	NormalSuccessor
+approval.teal	999	approval.teal	1000	BooleanSuccessor(true)
+approval.teal	1000	approval.teal	1001	NormalSuccessor
+approval.teal	1001	approval.teal	1002	NormalSuccessor
+approval.teal	1002	approval.teal	1003	NormalSuccessor
+approval.teal	1003	approval.teal	1004	NormalSuccessor
+approval.teal	1004	approval.teal	1005	BooleanSuccessor(false)
+approval.teal	1004	approval.teal	1195	BooleanSuccessor(true)
+approval.teal	1005	approval.teal	1006	NormalSuccessor
+approval.teal	1006	approval.teal	1007	NormalSuccessor
+approval.teal	1007	approval.teal	1008	NormalSuccessor
+approval.teal	1008	approval.teal	1009	NormalSuccessor
+approval.teal	1009	approval.teal	1010	NormalSuccessor
+approval.teal	1010	approval.teal	1011	NormalSuccessor
+approval.teal	1011	approval.teal	1013	NormalSuccessor
+approval.teal	1013	approval.teal	1014	BooleanSuccessor(true)
+approval.teal	1014	approval.teal	1015	NormalSuccessor
+approval.teal	1015	approval.teal	1016	NormalSuccessor
+approval.teal	1016	approval.teal	1017	NormalSuccessor
+approval.teal	1017	approval.teal	1018	NormalSuccessor
+approval.teal	1018	approval.teal	1019	NormalSuccessor
+approval.teal	1019	approval.teal	1020	NormalSuccessor
+approval.teal	1020	approval.teal	1021	NormalSuccessor
+approval.teal	1021	approval.teal	1022	NormalSuccessor
+approval.teal	1022	approval.teal	1023	NormalSuccessor
+approval.teal	1023	approval.teal	1024	NormalSuccessor
+approval.teal	1024	approval.teal	1025	NormalSuccessor
+approval.teal	1025	approval.teal	1026	NormalSuccessor
+approval.teal	1026	approval.teal	1027	NormalSuccessor
+approval.teal	1027	approval.teal	1028	NormalSuccessor
+approval.teal	1028	approval.teal	1029	NormalSuccessor
+approval.teal	1029	approval.teal	1030	NormalSuccessor
+approval.teal	1030	approval.teal	1031	NormalSuccessor
+approval.teal	1031	approval.teal	1032	NormalSuccessor
+approval.teal	1032	approval.teal	1034	NormalSuccessor
+approval.teal	1034	approval.teal	1035	BooleanSuccessor(true)
+approval.teal	1035	approval.teal	1036	NormalSuccessor
+approval.teal	1036	approval.teal	1037	NormalSuccessor
+approval.teal	1037	approval.teal	1038	NormalSuccessor
+approval.teal	1038	approval.teal	1039	NormalSuccessor
+approval.teal	1039	approval.teal	1040	NormalSuccessor
+approval.teal	1040	approval.teal	1041	NormalSuccessor
+approval.teal	1041	approval.teal	1043	NormalSuccessor
+approval.teal	1043	approval.teal	1044	BooleanSuccessor(true)
+approval.teal	1044	approval.teal	1045	NormalSuccessor
+approval.teal	1045	approval.teal	1046	NormalSuccessor
+approval.teal	1046	approval.teal	1047	NormalSuccessor
+approval.teal	1047	approval.teal	1048	NormalSuccessor
+approval.teal	1048	approval.teal	1049	NormalSuccessor
+approval.teal	1049	approval.teal	1050	NormalSuccessor
+approval.teal	1050	approval.teal	1051	NormalSuccessor
+approval.teal	1051	approval.teal	1052	NormalSuccessor
+approval.teal	1052	approval.teal	1053	NormalSuccessor
+approval.teal	1053	approval.teal	1054	NormalSuccessor
+approval.teal	1054	approval.teal	1055	BooleanSuccessor(false)
+approval.teal	1054	approval.teal	1066	BooleanSuccessor(true)
+approval.teal	1055	approval.teal	1056	NormalSuccessor
+approval.teal	1056	approval.teal	1057	NormalSuccessor
+approval.teal	1057	approval.teal	1058	NormalSuccessor
+approval.teal	1058	approval.teal	1059	NormalSuccessor
+approval.teal	1059	approval.teal	1060	BooleanSuccessor(true)
+approval.teal	1059	approval.teal	1206	BooleanSuccessor(false)
+approval.teal	1060	approval.teal	1061	NormalSuccessor
+approval.teal	1061	approval.teal	1062	NormalSuccessor
+approval.teal	1062	approval.teal	1064	NormalSuccessor
+approval.teal	1064	approval.teal	1065	BooleanSuccessor(true)
+approval.teal	1065	approval.teal	1206	NormalSuccessor
+approval.teal	1066	approval.teal	1067	NormalSuccessor
+approval.teal	1067	approval.teal	1068	NormalSuccessor
+approval.teal	1068	approval.teal	1069	NormalSuccessor
+approval.teal	1069	approval.teal	1070	NormalSuccessor
+approval.teal	1070	approval.teal	1071	BooleanSuccessor(false)
+approval.teal	1070	approval.teal	1173	BooleanSuccessor(true)
+approval.teal	1071	approval.teal	1072	NormalSuccessor
+approval.teal	1072	approval.teal	1073	NormalSuccessor
+approval.teal	1073	approval.teal	1074	NormalSuccessor
+approval.teal	1074	approval.teal	1075	NormalSuccessor
+approval.teal	1075	approval.teal	1076	NormalSuccessor
+approval.teal	1076	approval.teal	1077	NormalSuccessor
+approval.teal	1077	approval.teal	1078	NormalSuccessor
+approval.teal	1078	approval.teal	1079	NormalSuccessor
+approval.teal	1079	approval.teal	1080	NormalSuccessor
+approval.teal	1080	approval.teal	1081	NormalSuccessor
+approval.teal	1081	approval.teal	1082	NormalSuccessor
+approval.teal	1082	approval.teal	1083	NormalSuccessor
+approval.teal	1083	approval.teal	1084	NormalSuccessor
+approval.teal	1084	approval.teal	1085	NormalSuccessor
+approval.teal	1085	approval.teal	1086	NormalSuccessor
+approval.teal	1086	approval.teal	1087	BooleanSuccessor(false)
+approval.teal	1086	approval.teal	1163	BooleanSuccessor(true)
+approval.teal	1087	approval.teal	1088	NormalSuccessor
+approval.teal	1088	approval.teal	1089	NormalSuccessor
+approval.teal	1089	approval.teal	1090	NormalSuccessor
+approval.teal	1090	approval.teal	1091	NormalSuccessor
+approval.teal	1091	approval.teal	1092	NormalSuccessor
+approval.teal	1092	approval.teal	1093	NormalSuccessor
+approval.teal	1093	approval.teal	1094	NormalSuccessor
+approval.teal	1094	approval.teal	1095	NormalSuccessor
+approval.teal	1095	approval.teal	1096	NormalSuccessor
+approval.teal	1096	approval.teal	1097	NormalSuccessor
+approval.teal	1097	approval.teal	1098	NormalSuccessor
+approval.teal	1098	approval.teal	1100	NormalSuccessor
+approval.teal	1100	approval.teal	1101	BooleanSuccessor(true)
+approval.teal	1101	approval.teal	1102	NormalSuccessor
+approval.teal	1102	approval.teal	1103	NormalSuccessor
+approval.teal	1103	approval.teal	1104	NormalSuccessor
+approval.teal	1104	approval.teal	1105	NormalSuccessor
+approval.teal	1105	approval.teal	1106	NormalSuccessor
+approval.teal	1106	approval.teal	1107	NormalSuccessor
+approval.teal	1107	approval.teal	1108	NormalSuccessor
+approval.teal	1108	approval.teal	1109	NormalSuccessor
+approval.teal	1109	approval.teal	1110	NormalSuccessor
+approval.teal	1110	approval.teal	1111	NormalSuccessor
+approval.teal	1111	approval.teal	1112	NormalSuccessor
+approval.teal	1112	approval.teal	1113	NormalSuccessor
+approval.teal	1113	approval.teal	1114	NormalSuccessor
+approval.teal	1114	approval.teal	1115	NormalSuccessor
+approval.teal	1115	approval.teal	1116	NormalSuccessor
+approval.teal	1116	approval.teal	1117	NormalSuccessor
+approval.teal	1117	approval.teal	1118	NormalSuccessor
+approval.teal	1118	approval.teal	1119	NormalSuccessor
+approval.teal	1119	approval.teal	1120	NormalSuccessor
+approval.teal	1120	approval.teal	1121	NormalSuccessor
+approval.teal	1121	approval.teal	1122	NormalSuccessor
+approval.teal	1122	approval.teal	1123	NormalSuccessor
+approval.teal	1123	approval.teal	1124	NormalSuccessor
+approval.teal	1124	approval.teal	1125	NormalSuccessor
+approval.teal	1125	approval.teal	1126	BooleanSuccessor(false)
+approval.teal	1125	approval.teal	1160	BooleanSuccessor(true)
+approval.teal	1126	approval.teal	1127	NormalSuccessor
+approval.teal	1127	approval.teal	1128	NormalSuccessor
+approval.teal	1128	approval.teal	1129	NormalSuccessor
+approval.teal	1129	approval.teal	1130	NormalSuccessor
+approval.teal	1130	approval.teal	1131	BooleanSuccessor(false)
+approval.teal	1130	approval.teal	1157	BooleanSuccessor(true)
+approval.teal	1131	approval.teal	1132	NormalSuccessor
+approval.teal	1132	approval.teal	1133	NormalSuccessor
+approval.teal	1133	approval.teal	1134	NormalSuccessor
+approval.teal	1134	approval.teal	1135	NormalSuccessor
+approval.teal	1135	approval.teal	1136	NormalSuccessor
+approval.teal	1136	approval.teal	1137	NormalSuccessor
+approval.teal	1137	approval.teal	1138	NormalSuccessor
+approval.teal	1138	approval.teal	1139	NormalSuccessor
+approval.teal	1139	approval.teal	1140	NormalSuccessor
+approval.teal	1140	approval.teal	1141	NormalSuccessor
+approval.teal	1141	approval.teal	1142	NormalSuccessor
+approval.teal	1142	approval.teal	1143	NormalSuccessor
+approval.teal	1143	approval.teal	1144	NormalSuccessor
+approval.teal	1144	approval.teal	1145	BooleanSuccessor(false)
+approval.teal	1144	approval.teal	1151	BooleanSuccessor(true)
+approval.teal	1145	approval.teal	1146	NormalSuccessor
+approval.teal	1146	approval.teal	1147	NormalSuccessor
+approval.teal	1147	approval.teal	1148	NormalSuccessor
+approval.teal	1148	approval.teal	1149	NormalSuccessor
+approval.teal	1149	approval.teal	1150	NormalSuccessor
+approval.teal	1150	approval.teal	1050	NormalSuccessor
+approval.teal	1151	approval.teal	1152	NormalSuccessor
+approval.teal	1152	approval.teal	1153	NormalSuccessor
+approval.teal	1153	approval.teal	1154	NormalSuccessor
+approval.teal	1154	approval.teal	1155	NormalSuccessor
+approval.teal	1155	approval.teal	1156	NormalSuccessor
+approval.teal	1156	approval.teal	1145	NormalSuccessor
+approval.teal	1157	approval.teal	1158	NormalSuccessor
+approval.teal	1158	approval.teal	1159	NormalSuccessor
+approval.teal	1159	approval.teal	1132	NormalSuccessor
+approval.teal	1160	approval.teal	1161	NormalSuccessor
+approval.teal	1161	approval.teal	1162	NormalSuccessor
+approval.teal	1162	approval.teal	1132	NormalSuccessor
+approval.teal	1163	approval.teal	1164	NormalSuccessor
+approval.teal	1164	approval.teal	1165	NormalSuccessor
+approval.teal	1165	approval.teal	1166	NormalSuccessor
+approval.teal	1166	approval.teal	1167	NormalSuccessor
+approval.teal	1167	approval.teal	1168	NormalSuccessor
+approval.teal	1168	approval.teal	1169	NormalSuccessor
+approval.teal	1169	approval.teal	1170	NormalSuccessor
+approval.teal	1170	approval.teal	1171	NormalSuccessor
+approval.teal	1171	approval.teal	1172	NormalSuccessor
+approval.teal	1172	approval.teal	1087	NormalSuccessor
+approval.teal	1173	approval.teal	1174	NormalSuccessor
+approval.teal	1174	approval.teal	1175	NormalSuccessor
+approval.teal	1175	approval.teal	1176	NormalSuccessor
+approval.teal	1176	approval.teal	1177	NormalSuccessor
+approval.teal	1177	approval.teal	1178	NormalSuccessor
+approval.teal	1178	approval.teal	1179	NormalSuccessor
+approval.teal	1179	approval.teal	1180	NormalSuccessor
+approval.teal	1180	approval.teal	1181	NormalSuccessor
+approval.teal	1181	approval.teal	1182	NormalSuccessor
+approval.teal	1182	approval.teal	1071	BooleanSuccessor(false)
+approval.teal	1182	approval.teal	1183	BooleanSuccessor(true)
+approval.teal	1183	approval.teal	1184	NormalSuccessor
+approval.teal	1184	approval.teal	1185	NormalSuccessor
+approval.teal	1185	approval.teal	1186	NormalSuccessor
+approval.teal	1186	approval.teal	1187	NormalSuccessor
+approval.teal	1187	approval.teal	1188	NormalSuccessor
+approval.teal	1188	approval.teal	1189	NormalSuccessor
+approval.teal	1189	approval.teal	1190	NormalSuccessor
+approval.teal	1190	approval.teal	1191	NormalSuccessor
+approval.teal	1191	approval.teal	1192	NormalSuccessor
+approval.teal	1192	approval.teal	1193	NormalSuccessor
+approval.teal	1193	approval.teal	1194	NormalSuccessor
+approval.teal	1194	approval.teal	1178	NormalSuccessor
+approval.teal	1195	approval.teal	1196	NormalSuccessor
+approval.teal	1196	approval.teal	1197	NormalSuccessor
+approval.teal	1197	approval.teal	1198	NormalSuccessor
+approval.teal	1198	approval.teal	1199	NormalSuccessor
+approval.teal	1199	approval.teal	1200	NormalSuccessor
+approval.teal	1200	approval.teal	1201	NormalSuccessor
+approval.teal	1201	approval.teal	1202	NormalSuccessor
+approval.teal	1202	approval.teal	1204	NormalSuccessor
+approval.teal	1204	approval.teal	1205	BooleanSuccessor(true)
+approval.teal	1205	approval.teal	1014	NormalSuccessor
+approval.teal	1206	approval.teal	1207	NormalSuccessor
+approval.teal	1207	approval.teal	1208	NormalSuccessor
+approval.teal	1208	approval.teal	1209	NormalSuccessor
+approval.teal	1209	approval.teal	1210	NormalSuccessor
+approval.teal	1210	approval.teal	1211	NormalSuccessor
+approval.teal	1211	approval.teal	1212	NormalSuccessor
+approval.teal	1212	approval.teal	1213	NormalSuccessor
+approval.teal	1213	approval.teal	1214	BooleanSuccessor(true)
+approval.teal	1214	approval.teal	1215	NormalSuccessor
+approval.teal	1215	approval.teal	1216	NormalSuccessor
+approval.teal	1216	approval.teal	1217	NormalSuccessor
+approval.teal	1217	approval.teal	1218	NormalSuccessor
+approval.teal	1218	approval.teal	1219	NormalSuccessor
+approval.teal	1219	approval.teal	1220	NormalSuccessor
+approval.teal	1220	approval.teal	1221	NormalSuccessor
+approval.teal	1221	approval.teal	1222	NormalSuccessor
+approval.teal	1222	approval.teal	1223	NormalSuccessor
+approval.teal	1223	approval.teal	1224	NormalSuccessor
+approval.teal	1224	approval.teal	1225	NormalSuccessor
+approval.teal	1225	approval.teal	1226	NormalSuccessor
+approval.teal	1226	approval.teal	71	NormalSuccessor
+## basicBlocks
+approval.teal	2	2	7
+approval.teal	3	2	7
+approval.teal	4	2	7
+approval.teal	5	2	7
+approval.teal	6	2	7
+approval.teal	7	2	7
+approval.teal	8	8	11
+approval.teal	9	8	11
+approval.teal	10	8	11
+approval.teal	11	8	11
+approval.teal	12	12	15
+approval.teal	13	12	15
+approval.teal	14	12	15
+approval.teal	15	12	15
+approval.teal	16	16	19
+approval.teal	17	16	19
+approval.teal	18	16	19
+approval.teal	19	16	19
+approval.teal	20	20	23
+approval.teal	21	20	23
+approval.teal	22	20	23
+approval.teal	23	20	23
+approval.teal	24	24	27
+approval.teal	25	24	27
+approval.teal	26	24	27
+approval.teal	27	24	27
+approval.teal	28	28	31
+approval.teal	29	28	31
+approval.teal	30	28	31
+approval.teal	31	28	31
+approval.teal	32	32	32
+approval.teal	33	33	41
+approval.teal	34	33	41
+approval.teal	35	33	41
+approval.teal	36	33	41
+approval.teal	37	33	41
+approval.teal	38	33	41
+approval.teal	39	33	41
+approval.teal	40	33	41
+approval.teal	41	33	41
+approval.teal	42	42	63
+approval.teal	43	42	63
+approval.teal	44	42	63
+approval.teal	45	42	63
+approval.teal	46	42	63
+approval.teal	47	42	63
+approval.teal	48	42	63
+approval.teal	49	42	63
+approval.teal	50	42	63
+approval.teal	51	42	63
+approval.teal	52	42	63
+approval.teal	53	42	63
+approval.teal	54	42	63
+approval.teal	55	42	63
+approval.teal	56	42	63
+approval.teal	57	42	63
+approval.teal	58	42	63
+approval.teal	59	42	63
+approval.teal	60	42	63
+approval.teal	61	42	63
+approval.teal	62	42	63
+approval.teal	63	42	63
+approval.teal	64	64	70
+approval.teal	65	64	70
+approval.teal	66	64	70
+approval.teal	67	64	70
+approval.teal	68	64	70
+approval.teal	69	64	70
+approval.teal	70	64	70
+approval.teal	71	71	72
+approval.teal	72	71	72
+approval.teal	73	73	81
+approval.teal	74	73	81
+approval.teal	75	73	81
+approval.teal	76	73	81
+approval.teal	77	73	81
+approval.teal	78	73	81
+approval.teal	79	73	81
+approval.teal	80	73	81
+approval.teal	81	73	81
+approval.teal	82	82	94
+approval.teal	83	82	94
+approval.teal	84	82	94
+approval.teal	85	82	94
+approval.teal	86	82	94
+approval.teal	87	82	94
+approval.teal	88	82	94
+approval.teal	89	82	94
+approval.teal	90	82	94
+approval.teal	91	82	94
+approval.teal	92	82	94
+approval.teal	93	82	94
+approval.teal	94	82	94
+approval.teal	95	95	101
+approval.teal	96	95	101
+approval.teal	97	95	101
+approval.teal	98	95	101
+approval.teal	99	95	101
+approval.teal	100	95	101
+approval.teal	101	95	101
+approval.teal	102	102	110
+approval.teal	103	102	110
+approval.teal	104	102	110
+approval.teal	105	102	110
+approval.teal	106	102	110
+approval.teal	107	102	110
+approval.teal	108	102	110
+approval.teal	109	102	110
+approval.teal	110	102	110
+approval.teal	111	111	114
+approval.teal	112	111	114
+approval.teal	113	111	114
+approval.teal	114	111	114
+approval.teal	115	115	116
+approval.teal	116	115	116
+approval.teal	117	117	125
+approval.teal	118	117	125
+approval.teal	119	117	125
+approval.teal	120	117	125
+approval.teal	121	117	125
+approval.teal	122	117	125
+approval.teal	123	117	125
+approval.teal	124	117	125
+approval.teal	125	117	125
+approval.teal	126	126	134
+approval.teal	127	126	134
+approval.teal	128	126	134
+approval.teal	129	126	134
+approval.teal	130	126	134
+approval.teal	131	126	134
+approval.teal	132	126	134
+approval.teal	133	126	134
+approval.teal	134	126	134
+approval.teal	135	135	136
+approval.teal	136	135	136
+approval.teal	137	137	138
+approval.teal	138	137	138
+approval.teal	139	139	147
+approval.teal	140	139	147
+approval.teal	141	139	147
+approval.teal	142	139	147
+approval.teal	143	139	147
+approval.teal	144	139	147
+approval.teal	145	139	147
+approval.teal	146	139	147
+approval.teal	147	139	147
+approval.teal	148	148	180
+approval.teal	149	148	180
+approval.teal	150	148	180
+approval.teal	151	148	180
+approval.teal	152	148	180
+approval.teal	153	148	180
+approval.teal	154	148	180
+approval.teal	155	148	180
+approval.teal	156	148	180
+approval.teal	157	148	180
+approval.teal	158	148	180
+approval.teal	159	148	180
+approval.teal	160	148	180
+approval.teal	161	148	180
+approval.teal	162	148	180
+approval.teal	163	148	180
+approval.teal	164	148	180
+approval.teal	165	148	180
+approval.teal	166	148	180
+approval.teal	167	148	180
+approval.teal	168	148	180
+approval.teal	169	148	180
+approval.teal	170	148	180
+approval.teal	171	148	180
+approval.teal	172	148	180
+approval.teal	173	148	180
+approval.teal	174	148	180
+approval.teal	175	148	180
+approval.teal	176	148	180
+approval.teal	177	148	180
+approval.teal	178	148	180
+approval.teal	179	148	180
+approval.teal	180	148	180
+approval.teal	181	181	182
+approval.teal	182	181	182
+approval.teal	183	183	191
+approval.teal	184	183	191
+approval.teal	185	183	191
+approval.teal	186	183	191
+approval.teal	187	183	191
+approval.teal	188	183	191
+approval.teal	189	183	191
+approval.teal	190	183	191
+approval.teal	191	183	191
+approval.teal	192	192	200
+approval.teal	193	192	200
+approval.teal	194	192	200
+approval.teal	195	192	200
+approval.teal	196	192	200
+approval.teal	197	192	200
+approval.teal	198	192	200
+approval.teal	199	192	200
+approval.teal	200	192	200
+approval.teal	201	201	202
+approval.teal	202	201	202
+approval.teal	203	203	210
+approval.teal	204	203	210
+approval.teal	205	203	210
+approval.teal	206	203	210
+approval.teal	207	203	210
+approval.teal	208	203	210
+approval.teal	209	203	210
+approval.teal	210	203	210
+approval.teal	211	211	215
+approval.teal	212	211	215
+approval.teal	213	211	215
+approval.teal	214	211	215
+approval.teal	215	211	215
+approval.teal	216	216	216
+approval.teal	217	217	221
+approval.teal	218	217	221
+approval.teal	219	217	221
+approval.teal	220	217	221
+approval.teal	221	217	221
+approval.teal	222	222	222
+approval.teal	223	223	224
+approval.teal	224	223	224
+approval.teal	227	227	233
+approval.teal	228	227	233
+approval.teal	229	227	233
+approval.teal	230	227	233
+approval.teal	231	227	233
+approval.teal	232	227	233
+approval.teal	233	227	233
+approval.teal	236	236	241
+approval.teal	237	236	241
+approval.teal	238	236	241
+approval.teal	239	236	241
+approval.teal	240	236	241
+approval.teal	241	236	241
+approval.teal	242	242	247
+approval.teal	243	242	247
+approval.teal	244	242	247
+approval.teal	245	242	247
+approval.teal	246	242	247
+approval.teal	247	242	247
+approval.teal	248	248	248
+approval.teal	249	249	253
+approval.teal	250	249	253
+approval.teal	251	249	253
+approval.teal	252	249	253
+approval.teal	253	249	253
+approval.teal	254	254	255
+approval.teal	255	254	255
+approval.teal	256	256	260
+approval.teal	257	256	260
+approval.teal	258	256	260
+approval.teal	259	256	260
+approval.teal	260	256	260
+approval.teal	261	261	261
+approval.teal	262	262	263
+approval.teal	263	262	263
+approval.teal	264	264	265
+approval.teal	265	264	265
+approval.teal	268	268	274
+approval.teal	269	268	274
+approval.teal	270	268	274
+approval.teal	271	268	274
+approval.teal	272	268	274
+approval.teal	274	268	274
+approval.teal	275	275	275
+approval.teal	275	275	277
+approval.teal	277	275	277
+approval.teal	278	278	278
+approval.teal	281	281	288
+approval.teal	282	281	288
+approval.teal	283	281	288
+approval.teal	284	281	288
+approval.teal	285	281	288
+approval.teal	286	281	288
+approval.teal	287	281	288
+approval.teal	288	281	288
+approval.teal	289	289	289
+approval.teal	290	290	293
+approval.teal	291	290	293
+approval.teal	292	290	293
+approval.teal	293	290	293
+approval.teal	296	296	307
+approval.teal	297	296	307
+approval.teal	298	296	307
+approval.teal	299	296	307
+approval.teal	300	296	307
+approval.teal	301	296	307
+approval.teal	302	296	307
+approval.teal	303	296	307
+approval.teal	304	296	307
+approval.teal	305	296	307
+approval.teal	306	296	307
+approval.teal	307	296	307
+approval.teal	308	308	315
+approval.teal	309	308	315
+approval.teal	310	308	315
+approval.teal	311	308	315
+approval.teal	312	308	315
+approval.teal	313	308	315
+approval.teal	314	308	315
+approval.teal	315	308	315
+approval.teal	316	316	319
+approval.teal	317	316	319
+approval.teal	318	316	319
+approval.teal	319	316	319
+approval.teal	322	322	333
+approval.teal	323	322	333
+approval.teal	324	322	333
+approval.teal	325	322	333
+approval.teal	326	322	333
+approval.teal	327	322	333
+approval.teal	328	322	333
+approval.teal	329	322	333
+approval.teal	330	322	333
+approval.teal	331	322	333
+approval.teal	333	322	333
+approval.teal	334	334	338
+approval.teal	335	334	338
+approval.teal	336	334	338
+approval.teal	338	334	338
+approval.teal	339	339	343
+approval.teal	340	339	343
+approval.teal	341	339	343
+approval.teal	343	339	343
+approval.teal	344	344	351
+approval.teal	345	344	351
+approval.teal	346	344	351
+approval.teal	347	344	351
+approval.teal	348	344	351
+approval.teal	349	344	351
+approval.teal	350	344	351
+approval.teal	351	344	351
+approval.teal	352	352	363
+approval.teal	353	352	363
+approval.teal	354	352	363
+approval.teal	355	352	363
+approval.teal	356	352	363
+approval.teal	357	352	363
+approval.teal	358	352	363
+approval.teal	359	352	363
+approval.teal	360	352	363
+approval.teal	361	352	363
+approval.teal	362	352	363
+approval.teal	363	352	363
+approval.teal	364	364	374
+approval.teal	365	364	374
+approval.teal	366	364	374
+approval.teal	367	364	374
+approval.teal	368	364	374
+approval.teal	369	364	374
+approval.teal	370	364	374
+approval.teal	371	364	374
+approval.teal	372	364	374
+approval.teal	373	364	374
+approval.teal	374	364	374
+approval.teal	375	375	386
+approval.teal	376	375	386
+approval.teal	377	375	386
+approval.teal	378	375	386
+approval.teal	379	375	386
+approval.teal	380	375	386
+approval.teal	381	375	386
+approval.teal	382	375	386
+approval.teal	383	375	386
+approval.teal	384	375	386
+approval.teal	385	375	386
+approval.teal	386	375	386
+approval.teal	387	387	398
+approval.teal	388	387	398
+approval.teal	389	387	398
+approval.teal	390	387	398
+approval.teal	391	387	398
+approval.teal	392	387	398
+approval.teal	393	387	398
+approval.teal	394	387	398
+approval.teal	395	387	398
+approval.teal	396	387	398
+approval.teal	397	387	398
+approval.teal	398	387	398
+approval.teal	399	399	409
+approval.teal	400	399	409
+approval.teal	401	399	409
+approval.teal	402	399	409
+approval.teal	403	399	409
+approval.teal	404	399	409
+approval.teal	405	399	409
+approval.teal	406	399	409
+approval.teal	407	399	409
+approval.teal	408	399	409
+approval.teal	409	399	409
+approval.teal	410	410	420
+approval.teal	411	410	420
+approval.teal	412	410	420
+approval.teal	413	410	420
+approval.teal	414	410	420
+approval.teal	415	410	420
+approval.teal	416	410	420
+approval.teal	417	410	420
+approval.teal	418	410	420
+approval.teal	419	410	420
+approval.teal	420	410	420
+approval.teal	421	421	440
+approval.teal	422	421	440
+approval.teal	423	421	440
+approval.teal	424	421	440
+approval.teal	425	421	440
+approval.teal	426	421	440
+approval.teal	427	421	440
+approval.teal	428	421	440
+approval.teal	429	421	440
+approval.teal	430	421	440
+approval.teal	431	421	440
+approval.teal	432	421	440
+approval.teal	433	421	440
+approval.teal	434	421	440
+approval.teal	435	421	440
+approval.teal	436	421	440
+approval.teal	437	421	440
+approval.teal	438	421	440
+approval.teal	439	421	440
+approval.teal	440	421	440
+approval.teal	441	441	454
+approval.teal	442	441	454
+approval.teal	443	441	454
+approval.teal	444	441	454
+approval.teal	445	441	454
+approval.teal	446	441	454
+approval.teal	447	441	454
+approval.teal	448	441	454
+approval.teal	449	441	454
+approval.teal	450	441	454
+approval.teal	451	441	454
+approval.teal	452	441	454
+approval.teal	454	441	454
+approval.teal	455	455	463
+approval.teal	456	455	463
+approval.teal	457	455	463
+approval.teal	458	455	463
+approval.teal	459	455	463
+approval.teal	460	455	463
+approval.teal	461	455	463
+approval.teal	463	455	463
+approval.teal	464	464	471
+approval.teal	465	464	471
+approval.teal	466	464	471
+approval.teal	467	464	471
+approval.teal	468	464	471
+approval.teal	469	464	471
+approval.teal	470	464	471
+approval.teal	471	464	471
+approval.teal	472	472	487
+approval.teal	473	472	487
+approval.teal	474	472	487
+approval.teal	475	472	487
+approval.teal	476	472	487
+approval.teal	477	472	487
+approval.teal	478	472	487
+approval.teal	479	472	487
+approval.teal	480	472	487
+approval.teal	481	472	487
+approval.teal	482	472	487
+approval.teal	483	472	487
+approval.teal	484	472	487
+approval.teal	485	472	487
+approval.teal	486	472	487
+approval.teal	487	472	487
+approval.teal	488	488	492
+approval.teal	489	488	492
+approval.teal	490	488	492
+approval.teal	491	488	492
+approval.teal	492	488	492
+approval.teal	493	493	496
+approval.teal	494	493	496
+approval.teal	495	493	496
+approval.teal	496	493	496
+approval.teal	497	497	514
+approval.teal	498	497	514
+approval.teal	499	497	514
+approval.teal	500	497	514
+approval.teal	501	497	514
+approval.teal	502	497	514
+approval.teal	503	497	514
+approval.teal	504	497	514
+approval.teal	505	497	514
+approval.teal	506	497	514
+approval.teal	507	497	514
+approval.teal	508	497	514
+approval.teal	509	497	514
+approval.teal	510	497	514
+approval.teal	511	497	514
+approval.teal	512	497	514
+approval.teal	513	497	514
+approval.teal	514	497	514
+approval.teal	515	515	519
+approval.teal	516	515	519
+approval.teal	517	515	519
+approval.teal	518	515	519
+approval.teal	519	515	519
+approval.teal	520	520	524
+approval.teal	521	520	524
+approval.teal	522	520	524
+approval.teal	523	520	524
+approval.teal	524	520	524
+approval.teal	525	525	536
+approval.teal	526	525	536
+approval.teal	527	525	536
+approval.teal	528	525	536
+approval.teal	529	525	536
+approval.teal	530	525	536
+approval.teal	531	525	536
+approval.teal	532	525	536
+approval.teal	533	525	536
+approval.teal	534	525	536
+approval.teal	535	525	536
+approval.teal	536	525	536
+approval.teal	537	537	537
+approval.teal	538	538	545
+approval.teal	539	538	545
+approval.teal	540	538	545
+approval.teal	541	538	545
+approval.teal	542	538	545
+approval.teal	543	538	545
+approval.teal	545	538	545
+approval.teal	546	546	553
+approval.teal	547	546	553
+approval.teal	548	546	553
+approval.teal	549	546	553
+approval.teal	550	546	553
+approval.teal	551	546	553
+approval.teal	552	546	553
+approval.teal	553	546	553
+approval.teal	554	554	557
+approval.teal	555	554	557
+approval.teal	556	554	557
+approval.teal	557	554	557
+approval.teal	560	560	567
+approval.teal	561	560	567
+approval.teal	562	560	567
+approval.teal	563	560	567
+approval.teal	564	560	567
+approval.teal	565	560	567
+approval.teal	567	560	567
+approval.teal	568	568	572
+approval.teal	569	568	572
+approval.teal	570	568	572
+approval.teal	572	568	572
+approval.teal	573	573	588
+approval.teal	574	573	588
+approval.teal	575	573	588
+approval.teal	576	573	588
+approval.teal	577	573	588
+approval.teal	578	573	588
+approval.teal	579	573	588
+approval.teal	580	573	588
+approval.teal	581	573	588
+approval.teal	582	573	588
+approval.teal	583	573	588
+approval.teal	584	573	588
+approval.teal	585	573	588
+approval.teal	586	573	588
+approval.teal	588	573	588
+approval.teal	589	589	597
+approval.teal	590	589	597
+approval.teal	591	589	597
+approval.teal	592	589	597
+approval.teal	593	589	597
+approval.teal	594	589	597
+approval.teal	595	589	597
+approval.teal	597	589	597
+approval.teal	598	598	605
+approval.teal	599	598	605
+approval.teal	600	598	605
+approval.teal	601	598	605
+approval.teal	602	598	605
+approval.teal	603	598	605
+approval.teal	604	598	605
+approval.teal	605	598	605
+approval.teal	606	606	606
+approval.teal	609	609	618
+approval.teal	610	609	618
+approval.teal	611	609	618
+approval.teal	612	609	618
+approval.teal	613	609	618
+approval.teal	614	609	618
+approval.teal	615	609	618
+approval.teal	616	609	618
+approval.teal	618	609	618
+approval.teal	619	619	625
+approval.teal	620	619	625
+approval.teal	621	619	625
+approval.teal	622	619	625
+approval.teal	623	619	625
+approval.teal	625	619	625
+approval.teal	626	626	629
+approval.teal	627	626	629
+approval.teal	628	626	629
+approval.teal	629	626	629
+approval.teal	630	630	634
+approval.teal	631	630	634
+approval.teal	632	630	634
+approval.teal	633	630	634
+approval.teal	634	630	634
+approval.teal	635	635	640
+approval.teal	636	635	640
+approval.teal	637	635	640
+approval.teal	638	635	640
+approval.teal	640	635	640
+approval.teal	641	641	662
+approval.teal	642	641	662
+approval.teal	643	641	662
+approval.teal	644	641	662
+approval.teal	645	641	662
+approval.teal	646	641	662
+approval.teal	647	641	662
+approval.teal	648	641	662
+approval.teal	649	641	662
+approval.teal	650	641	662
+approval.teal	651	641	662
+approval.teal	652	641	662
+approval.teal	653	641	662
+approval.teal	654	641	662
+approval.teal	655	641	662
+approval.teal	656	641	662
+approval.teal	657	641	662
+approval.teal	658	641	662
+approval.teal	659	641	662
+approval.teal	660	641	662
+approval.teal	661	641	662
+approval.teal	662	641	662
+approval.teal	663	663	668
+approval.teal	664	663	668
+approval.teal	665	663	668
+approval.teal	666	663	668
+approval.teal	667	663	668
+approval.teal	668	663	668
+approval.teal	669	669	687
+approval.teal	670	669	687
+approval.teal	671	669	687
+approval.teal	672	669	687
+approval.teal	673	669	687
+approval.teal	674	669	687
+approval.teal	675	669	687
+approval.teal	676	669	687
+approval.teal	677	669	687
+approval.teal	678	669	687
+approval.teal	679	669	687
+approval.teal	680	669	687
+approval.teal	681	669	687
+approval.teal	682	669	687
+approval.teal	683	669	687
+approval.teal	684	669	687
+approval.teal	685	669	687
+approval.teal	686	669	687
+approval.teal	687	669	687
+approval.teal	688	688	692
+approval.teal	689	688	692
+approval.teal	690	688	692
+approval.teal	691	688	692
+approval.teal	692	688	692
+approval.teal	693	693	704
+approval.teal	694	693	704
+approval.teal	695	693	704
+approval.teal	696	693	704
+approval.teal	697	693	704
+approval.teal	698	693	704
+approval.teal	699	693	704
+approval.teal	700	693	704
+approval.teal	701	693	704
+approval.teal	702	693	704
+approval.teal	703	693	704
+approval.teal	704	693	704
+approval.teal	705	705	709
+approval.teal	706	705	709
+approval.teal	707	705	709
+approval.teal	708	705	709
+approval.teal	709	705	709
+approval.teal	710	710	714
+approval.teal	711	710	714
+approval.teal	712	710	714
+approval.teal	713	710	714
+approval.teal	714	710	714
+approval.teal	715	715	730
+approval.teal	716	715	730
+approval.teal	717	715	730
+approval.teal	718	715	730
+approval.teal	719	715	730
+approval.teal	720	715	730
+approval.teal	721	715	730
+approval.teal	722	715	730
+approval.teal	723	715	730
+approval.teal	724	715	730
+approval.teal	725	715	730
+approval.teal	726	715	730
+approval.teal	727	715	730
+approval.teal	728	715	730
+approval.teal	729	715	730
+approval.teal	730	715	730
+approval.teal	731	731	731
+approval.teal	732	732	735
+approval.teal	733	732	735
+approval.teal	734	732	735
+approval.teal	735	732	735
+approval.teal	736	736	742
+approval.teal	737	736	742
+approval.teal	738	736	742
+approval.teal	739	736	742
+approval.teal	740	736	742
+approval.teal	741	736	742
+approval.teal	742	736	742
+approval.teal	743	743	743
+approval.teal	744	744	755
+approval.teal	745	744	755
+approval.teal	746	744	755
+approval.teal	747	744	755
+approval.teal	748	744	755
+approval.teal	749	744	755
+approval.teal	750	744	755
+approval.teal	751	744	755
+approval.teal	752	744	755
+approval.teal	753	744	755
+approval.teal	754	744	755
+approval.teal	755	744	755
+approval.teal	756	756	763
+approval.teal	757	756	763
+approval.teal	758	756	763
+approval.teal	759	756	763
+approval.teal	760	756	763
+approval.teal	761	756	763
+approval.teal	762	756	763
+approval.teal	763	756	763
+approval.teal	764	764	764
+approval.teal	765	765	767
+approval.teal	766	765	767
+approval.teal	767	765	767
+approval.teal	768	768	770
+approval.teal	769	768	770
+approval.teal	770	768	770
+approval.teal	771	771	773
+approval.teal	772	771	773
+approval.teal	773	771	773
+approval.teal	774	774	785
+approval.teal	775	774	785
+approval.teal	776	774	785
+approval.teal	777	774	785
+approval.teal	778	774	785
+approval.teal	779	774	785
+approval.teal	780	774	785
+approval.teal	781	774	785
+approval.teal	782	774	785
+approval.teal	783	774	785
+approval.teal	784	774	785
+approval.teal	785	774	785
+approval.teal	786	786	786
+approval.teal	787	787	811
+approval.teal	788	787	811
+approval.teal	789	787	811
+approval.teal	790	787	811
+approval.teal	791	787	811
+approval.teal	792	787	811
+approval.teal	793	787	811
+approval.teal	794	787	811
+approval.teal	795	787	811
+approval.teal	796	787	811
+approval.teal	797	787	811
+approval.teal	798	787	811
+approval.teal	799	787	811
+approval.teal	800	787	811
+approval.teal	801	787	811
+approval.teal	802	787	811
+approval.teal	803	787	811
+approval.teal	804	787	811
+approval.teal	805	787	811
+approval.teal	806	787	811
+approval.teal	807	787	811
+approval.teal	808	787	811
+approval.teal	809	787	811
+approval.teal	810	787	811
+approval.teal	811	787	811
+approval.teal	812	812	815
+approval.teal	813	812	815
+approval.teal	814	812	815
+approval.teal	815	812	815
+approval.teal	818	818	824
+approval.teal	819	818	824
+approval.teal	820	818	824
+approval.teal	821	818	824
+approval.teal	822	818	824
+approval.teal	823	818	824
+approval.teal	824	818	824
+approval.teal	825	825	831
+approval.teal	826	825	831
+approval.teal	827	825	831
+approval.teal	828	825	831
+approval.teal	829	825	831
+approval.teal	831	825	831
+approval.teal	832	832	835
+approval.teal	833	832	835
+approval.teal	834	832	835
+approval.teal	835	832	835
+approval.teal	836	836	840
+approval.teal	837	836	840
+approval.teal	838	836	840
+approval.teal	839	836	840
+approval.teal	840	836	840
+approval.teal	841	841	845
+approval.teal	842	841	845
+approval.teal	843	841	845
+approval.teal	844	841	845
+approval.teal	845	841	845
+approval.teal	846	846	849
+approval.teal	847	846	849
+approval.teal	848	846	849
+approval.teal	849	846	849
+approval.teal	850	850	855
+approval.teal	851	850	855
+approval.teal	852	850	855
+approval.teal	853	850	855
+approval.teal	854	850	855
+approval.teal	855	850	855
+approval.teal	856	856	858
+approval.teal	857	856	858
+approval.teal	858	856	858
+approval.teal	859	859	870
+approval.teal	860	859	870
+approval.teal	861	859	870
+approval.teal	862	859	870
+approval.teal	863	859	870
+approval.teal	864	859	870
+approval.teal	865	859	870
+approval.teal	866	859	870
+approval.teal	867	859	870
+approval.teal	868	859	870
+approval.teal	869	859	870
+approval.teal	870	859	870
+approval.teal	871	871	871
+approval.teal	872	872	873
+approval.teal	873	872	873
+approval.teal	874	874	875
+approval.teal	875	874	875
+approval.teal	878	878	899
+approval.teal	879	878	899
+approval.teal	880	878	899
+approval.teal	881	878	899
+approval.teal	882	878	899
+approval.teal	883	878	899
+approval.teal	884	878	899
+approval.teal	885	878	899
+approval.teal	886	878	899
+approval.teal	887	878	899
+approval.teal	888	878	899
+approval.teal	889	878	899
+approval.teal	890	878	899
+approval.teal	891	878	899
+approval.teal	892	878	899
+approval.teal	893	878	899
+approval.teal	894	878	899
+approval.teal	895	878	899
+approval.teal	896	878	899
+approval.teal	897	878	899
+approval.teal	898	878	899
+approval.teal	899	878	899
+approval.teal	902	902	911
+approval.teal	903	902	911
+approval.teal	904	902	911
+approval.teal	905	902	911
+approval.teal	906	902	911
+approval.teal	907	902	911
+approval.teal	908	902	911
+approval.teal	909	902	911
+approval.teal	910	902	911
+approval.teal	911	902	911
+approval.teal	912	912	918
+approval.teal	913	912	918
+approval.teal	914	912	918
+approval.teal	915	912	918
+approval.teal	916	912	918
+approval.teal	917	912	918
+approval.teal	918	912	918
+approval.teal	921	921	928
+approval.teal	922	921	928
+approval.teal	923	921	928
+approval.teal	924	921	928
+approval.teal	925	921	928
+approval.teal	926	921	928
+approval.teal	927	921	928
+approval.teal	928	921	928
+approval.teal	929	929	934
+approval.teal	930	929	934
+approval.teal	931	929	934
+approval.teal	932	929	934
+approval.teal	933	929	934
+approval.teal	934	929	934
+approval.teal	935	935	936
+approval.teal	936	935	936
+approval.teal	937	937	952
+approval.teal	938	937	952
+approval.teal	939	937	952
+approval.teal	940	937	952
+approval.teal	941	937	952
+approval.teal	942	937	952
+approval.teal	943	937	952
+approval.teal	944	937	952
+approval.teal	945	937	952
+approval.teal	946	937	952
+approval.teal	947	937	952
+approval.teal	948	937	952
+approval.teal	949	937	952
+approval.teal	950	937	952
+approval.teal	951	937	952
+approval.teal	952	937	952
+approval.teal	955	955	967
+approval.teal	956	955	967
+approval.teal	957	955	967
+approval.teal	958	955	967
+approval.teal	959	955	967
+approval.teal	960	955	967
+approval.teal	961	955	967
+approval.teal	962	955	967
+approval.teal	963	955	967
+approval.teal	964	955	967
+approval.teal	965	955	967
+approval.teal	967	955	967
+approval.teal	968	968	972
+approval.teal	969	968	972
+approval.teal	970	968	972
+approval.teal	971	968	972
+approval.teal	972	968	972
+approval.teal	974	974	974
+approval.teal	975	975	975
+approval.teal	977	977	977
+approval.teal	978	978	978
+approval.teal	979	979	981
+approval.teal	981	979	981
+approval.teal	982	982	999
+approval.teal	983	982	999
+approval.teal	984	982	999
+approval.teal	985	982	999
+approval.teal	986	982	999
+approval.teal	987	982	999
+approval.teal	988	982	999
+approval.teal	989	982	999
+approval.teal	990	982	999
+approval.teal	991	982	999
+approval.teal	992	982	999
+approval.teal	993	982	999
+approval.teal	994	982	999
+approval.teal	995	982	999
+approval.teal	996	982	999
+approval.teal	997	982	999
+approval.teal	999	982	999
+approval.teal	1000	1000	1004
+approval.teal	1001	1000	1004
+approval.teal	1002	1000	1004
+approval.teal	1003	1000	1004
+approval.teal	1004	1000	1004
+approval.teal	1005	1005	1013
+approval.teal	1006	1005	1013
+approval.teal	1007	1005	1013
+approval.teal	1008	1005	1013
+approval.teal	1009	1005	1013
+approval.teal	1010	1005	1013
+approval.teal	1011	1005	1013
+approval.teal	1013	1005	1013
+approval.teal	1014	1014	1034
+approval.teal	1015	1014	1034
+approval.teal	1016	1014	1034
+approval.teal	1017	1014	1034
+approval.teal	1018	1014	1034
+approval.teal	1019	1014	1034
+approval.teal	1020	1014	1034
+approval.teal	1021	1014	1034
+approval.teal	1022	1014	1034
+approval.teal	1023	1014	1034
+approval.teal	1024	1014	1034
+approval.teal	1025	1014	1034
+approval.teal	1026	1014	1034
+approval.teal	1027	1014	1034
+approval.teal	1028	1014	1034
+approval.teal	1029	1014	1034
+approval.teal	1030	1014	1034
+approval.teal	1031	1014	1034
+approval.teal	1032	1014	1034
+approval.teal	1034	1014	1034
+approval.teal	1035	1035	1043
+approval.teal	1036	1035	1043
+approval.teal	1037	1035	1043
+approval.teal	1038	1035	1043
+approval.teal	1039	1035	1043
+approval.teal	1040	1035	1043
+approval.teal	1041	1035	1043
+approval.teal	1043	1035	1043
+approval.teal	1044	1044	1049
+approval.teal	1045	1044	1049
+approval.teal	1046	1044	1049
+approval.teal	1047	1044	1049
+approval.teal	1048	1044	1049
+approval.teal	1049	1044	1049
+approval.teal	1050	1050	1054
+approval.teal	1051	1050	1054
+approval.teal	1052	1050	1054
+approval.teal	1053	1050	1054
+approval.teal	1054	1050	1054
+approval.teal	1055	1055	1059
+approval.teal	1056	1055	1059
+approval.teal	1057	1055	1059
+approval.teal	1058	1055	1059
+approval.teal	1059	1055	1059
+approval.teal	1060	1060	1064
+approval.teal	1061	1060	1064
+approval.teal	1062	1060	1064
+approval.teal	1064	1060	1064
+approval.teal	1065	1065	1065
+approval.teal	1066	1066	1070
+approval.teal	1067	1066	1070
+approval.teal	1068	1066	1070
+approval.teal	1069	1066	1070
+approval.teal	1070	1066	1070
+approval.teal	1071	1071	1086
+approval.teal	1072	1071	1086
+approval.teal	1073	1071	1086
+approval.teal	1074	1071	1086
+approval.teal	1075	1071	1086
+approval.teal	1076	1071	1086
+approval.teal	1077	1071	1086
+approval.teal	1078	1071	1086
+approval.teal	1079	1071	1086
+approval.teal	1080	1071	1086
+approval.teal	1081	1071	1086
+approval.teal	1082	1071	1086
+approval.teal	1083	1071	1086
+approval.teal	1084	1071	1086
+approval.teal	1085	1071	1086
+approval.teal	1086	1071	1086
+approval.teal	1087	1087	1100
+approval.teal	1088	1087	1100
+approval.teal	1089	1087	1100
+approval.teal	1090	1087	1100
+approval.teal	1091	1087	1100
+approval.teal	1092	1087	1100
+approval.teal	1093	1087	1100
+approval.teal	1094	1087	1100
+approval.teal	1095	1087	1100
+approval.teal	1096	1087	1100
+approval.teal	1097	1087	1100
+approval.teal	1098	1087	1100
+approval.teal	1100	1087	1100
+approval.teal	1101	1101	1125
+approval.teal	1102	1101	1125
+approval.teal	1103	1101	1125
+approval.teal	1104	1101	1125
+approval.teal	1105	1101	1125
+approval.teal	1106	1101	1125
+approval.teal	1107	1101	1125
+approval.teal	1108	1101	1125
+approval.teal	1109	1101	1125
+approval.teal	1110	1101	1125
+approval.teal	1111	1101	1125
+approval.teal	1112	1101	1125
+approval.teal	1113	1101	1125
+approval.teal	1114	1101	1125
+approval.teal	1115	1101	1125
+approval.teal	1116	1101	1125
+approval.teal	1117	1101	1125
+approval.teal	1118	1101	1125
+approval.teal	1119	1101	1125
+approval.teal	1120	1101	1125
+approval.teal	1121	1101	1125
+approval.teal	1122	1101	1125
+approval.teal	1123	1101	1125
+approval.teal	1124	1101	1125
+approval.teal	1125	1101	1125
+approval.teal	1126	1126	1130
+approval.teal	1127	1126	1130
+approval.teal	1128	1126	1130
+approval.teal	1129	1126	1130
+approval.teal	1130	1126	1130
+approval.teal	1131	1131	1131
+approval.teal	1132	1132	1144
+approval.teal	1133	1132	1144
+approval.teal	1134	1132	1144
+approval.teal	1135	1132	1144
+approval.teal	1136	1132	1144
+approval.teal	1137	1132	1144
+approval.teal	1138	1132	1144
+approval.teal	1139	1132	1144
+approval.teal	1140	1132	1144
+approval.teal	1141	1132	1144
+approval.teal	1142	1132	1144
+approval.teal	1143	1132	1144
+approval.teal	1144	1132	1144
+approval.teal	1145	1145	1150
+approval.teal	1146	1145	1150
+approval.teal	1147	1145	1150
+approval.teal	1148	1145	1150
+approval.teal	1149	1145	1150
+approval.teal	1150	1145	1150
+approval.teal	1151	1151	1156
+approval.teal	1152	1151	1156
+approval.teal	1153	1151	1156
+approval.teal	1154	1151	1156
+approval.teal	1155	1151	1156
+approval.teal	1156	1151	1156
+approval.teal	1157	1157	1159
+approval.teal	1158	1157	1159
+approval.teal	1159	1157	1159
+approval.teal	1160	1160	1162
+approval.teal	1161	1160	1162
+approval.teal	1162	1160	1162
+approval.teal	1163	1163	1172
+approval.teal	1164	1163	1172
+approval.teal	1165	1163	1172
+approval.teal	1166	1163	1172
+approval.teal	1167	1163	1172
+approval.teal	1168	1163	1172
+approval.teal	1169	1163	1172
+approval.teal	1170	1163	1172
+approval.teal	1171	1163	1172
+approval.teal	1172	1163	1172
+approval.teal	1173	1173	1177
+approval.teal	1174	1173	1177
+approval.teal	1175	1173	1177
+approval.teal	1176	1173	1177
+approval.teal	1177	1173	1177
+approval.teal	1178	1178	1182
+approval.teal	1179	1178	1182
+approval.teal	1180	1178	1182
+approval.teal	1181	1178	1182
+approval.teal	1182	1178	1182
+approval.teal	1183	1183	1193
+approval.teal	1184	1183	1193
+approval.teal	1185	1183	1193
+approval.teal	1186	1183	1193
+approval.teal	1187	1183	1193
+approval.teal	1188	1183	1193
+approval.teal	1189	1183	1193
+approval.teal	1190	1183	1193
+approval.teal	1191	1183	1193
+approval.teal	1192	1183	1193
+approval.teal	1193	1183	1193
+approval.teal	1194	1194	1194
+approval.teal	1195	1195	1204
+approval.teal	1196	1195	1204
+approval.teal	1197	1195	1204
+approval.teal	1198	1195	1204
+approval.teal	1199	1195	1204
+approval.teal	1200	1195	1204
+approval.teal	1201	1195	1204
+approval.teal	1202	1195	1204
+approval.teal	1204	1195	1204
+approval.teal	1205	1205	1205
+approval.teal	1206	1206	1213
+approval.teal	1207	1206	1213
+approval.teal	1208	1206	1213
+approval.teal	1209	1206	1213
+approval.teal	1210	1206	1213
+approval.teal	1211	1206	1213
+approval.teal	1212	1206	1213
+approval.teal	1213	1206	1213
+approval.teal	1214	1214	1226
+approval.teal	1215	1214	1226
+approval.teal	1216	1214	1226
+approval.teal	1217	1214	1226
+approval.teal	1218	1214	1226
+approval.teal	1219	1214	1226
+approval.teal	1220	1214	1226
+approval.teal	1221	1214	1226
+approval.teal	1222	1214	1226
+approval.teal	1223	1214	1226
+approval.teal	1224	1214	1226
+approval.teal	1225	1214	1226
+approval.teal	1226	1214	1226
