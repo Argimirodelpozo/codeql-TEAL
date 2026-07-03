@@ -117,8 +117,7 @@ Inline annotations rendered by `tealql functional`:
 | --- | --- |
 | `tealql.tealtools.ssa.SSAProgram` | SSA representation reconstructed from TEAL source. The foundation everything else consumes. |
 | `tealql.tealtools.path_predicates.PathPredicateAnalysis` | Per-BB path predicates from branch / assert outcomes. Supports `entry_seeds` and `bb_seeds` for cross-contract injection. |
-| `tealql.tealtools.stacksim` | Per-line concrete stack simulation. |
-| `tealql.tealtools.ast`, `tealql.tealtools.graphs` | AST and CFG / dataflow graph helpers. |
+| `tealql.tealtools.ast`, `tealql.tealtools.graph`, `tealql.tealtools.viz` | AST layer, the source→graph loader, and DOT/SVG rendering. |
 
 **Detectors and reports.**
 
