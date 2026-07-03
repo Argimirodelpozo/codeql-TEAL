@@ -48,6 +48,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional, Union
 
+from .subroutines import sound_return_targets
 from .ssa import (
     BasicBlock,
     Const,
@@ -452,30 +453,10 @@ class PathPredicateAnalysis:
         self.bb_preds = bb_preds  # type: ignore[assignment]
 
     def _callsub_return_maps(self):
-        """``(caller_of, return_target_of)``: for each ``callsub`` block C, the
-        block B that execution returns to (the next block in source order, whose
-        predecessors are ALL ``retsub`` blocks — i.e. B is reached ONLY via the
-        return, making it sound to carry C's caller-specific facts there). B with
-        any non-return predecessor is skipped (the facts wouldn't hold on the
-        other path)."""
-        prog = self.prog
-        caller_of: dict[BasicBlock, BasicBlock] = {}
-        return_target_of: dict[BasicBlock, BasicBlock] = {}
-        for c in prog.blocks.values():
-            if not c.assignments or c.assignments[-1].op != "callsub":
-                continue
-            after = [b for b in prog.blocks.values()
-                     if b.file == c.file and b.first_line > c.last_line]
-            if not after:
-                continue
-            b = min(after, key=lambda x: x.first_line)
-            if b.predecessors and all(
-                p.assignments and p.assignments[-1].op == "retsub"
-                for p in b.predecessors
-            ):
-                caller_of[b] = c
-                return_target_of[c] = b
-        return caller_of, return_target_of
+        """``(caller_of, return_target_of)`` under the SOUND policy — see
+        :func:`tealql.tealtools.subroutines.sound_return_targets` (the
+        implementation moved there; the semantics are unchanged)."""
+        return sound_return_targets(self.prog)
 
     def _edge_predicates(
         self, pred: BasicBlock, succ: BasicBlock

@@ -756,58 +756,17 @@ class PySSA:
         entry BB) and ``self._proto_io`` (sub entry BB → (args, returns)
         from its ``proto`` opcode). Independent of stack sim — only
         depends on CFG shape and proto immediates from phase 1."""
-        import bisect
-        op_lines: list = sorted(
-            (op.file, op.line) for b in self.blocks for op in b.ops
-        )
-        line_to_bb: dict = {}
-        for b in self.blocks:
-            for op in b.ops:
-                line_to_bb[(op.file, op.line)] = b
-
-        def return_point(callsub_bb: PyBlock):
-            last = callsub_bb.ops[-1]
-            i = bisect.bisect_right(op_lines, (last.file, last.line))
-            if i < len(op_lines) and op_lines[i][0] == last.file:
-                return line_to_bb[op_lines[i]]
-            return None
+        # Ownership under the CONSTRUCTION policy — the exact semantics this
+        # depth machinery was validated against live (verbatim) in
+        # tealql.tealtools.subroutines.pyblock_partition.
+        from ..subroutines import pyblock_partition
+        self._bb_to_sub = pyblock_partition(self.blocks)
 
         sub_entries: set = set()
         for b in self.blocks:
             if b.ops and b.ops[-1].op == "callsub":
                 for s in b.succs:
                     sub_entries.add(s)
-
-        loc_succs: dict = {}
-        for b in self.blocks:
-            if not b.ops:
-                loc_succs[b] = list(b.succs)
-                continue
-            last_op = b.ops[-1].op
-            if last_op == "callsub":
-                rp = return_point(b)
-                loc_succs[b] = [rp] if rp is not None else []
-            elif last_op in ("retsub", "return", "err"):
-                loc_succs[b] = []
-            else:
-                loc_succs[b] = list(b.succs)
-
-        mains = [
-            b for b in self.blocks
-            if not b.preds and b not in sub_entries
-        ]
-        bb_to_sub: dict = {}
-        for root in mains + sorted(sub_entries, key=lambda x: x.key):
-            stack = [root]
-            while stack:
-                b = stack.pop()
-                if b in bb_to_sub:
-                    continue
-                bb_to_sub[b] = root
-                for s in loc_succs[b]:
-                    if s is not None and s not in bb_to_sub:
-                        stack.append(s)
-        self._bb_to_sub = bb_to_sub
 
         proto_io: dict = {}
         for se in sub_entries:
