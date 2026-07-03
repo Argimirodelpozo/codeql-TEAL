@@ -179,6 +179,15 @@ class AuthViolation:
     # but X isn't admin"). Empty list when nothing dominates.
     dominating_predicates: list[BranchCondition]
 
+    @property
+    def file(self) -> str:
+        return self.sink.location.file
+
+    @property
+    def line(self) -> int:
+        # Structured anchor for machine output; mirrors the sink in pretty().
+        return self.sink.location.line
+
     def pretty(self) -> str:
         body = ", ".join(repr(p) for p in self.dominating_predicates) or "<no guard>"
         return f"{self.sink.op}@{self.sink.location}  ({self.sink_class})  preds: {body}"

@@ -189,6 +189,15 @@ class Violation:
     # reconstruct the path the value took.
     sink_operand: TaintedOperand
 
+    @property
+    def file(self) -> str:
+        return self.sink.location.file
+
+    @property
+    def line(self) -> int:
+        # Structured anchor for machine output; mirrors the SINK (the violation point; pretty() names source AND sink).
+        return self.sink.location.line
+
     def pretty(self) -> str:
         return (
             f"{self.source_name}@{self.source.location}  "

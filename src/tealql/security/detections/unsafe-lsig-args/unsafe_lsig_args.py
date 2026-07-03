@@ -32,6 +32,15 @@ class UnsafeLsigArgsViolation:
     arg_op: Assignment
     cmp_op: Assignment
 
+    @property
+    def file(self) -> str:
+        return self.arg_op.location.file
+
+    @property
+    def line(self) -> int:
+        # Structured anchor for machine output; mirrors pretty().
+        return self.arg_op.location.line
+
     def pretty(self) -> str:
         return (
             f"{self.arg_op.op}@{common.loc(self.arg_op)}  "

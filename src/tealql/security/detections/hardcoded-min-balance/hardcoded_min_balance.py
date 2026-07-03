@@ -25,6 +25,15 @@ class HardcodedMinBalanceViolation:
     sub_op: Assignment
     balance_op: Assignment
 
+    @property
+    def file(self) -> str:
+        return self.sub_op.location.file
+
+    @property
+    def line(self) -> int:
+        # Structured anchor for machine output; mirrors pretty().
+        return self.sub_op.location.line
+
     def pretty(self) -> str:
         return (
             f"-@{common.loc(self.sub_op)}  "

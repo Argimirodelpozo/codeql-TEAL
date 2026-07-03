@@ -38,6 +38,15 @@ class UnsafeDivisionOrderViolation:
     def location(self) -> str:
         return common.loc(self.mul)
 
+    @property
+    def file(self) -> str:
+        return self.mul.location.file
+
+    @property
+    def line(self) -> int:
+        # Structured anchor for machine output; mirrors the mul anchor in pretty()/location.
+        return self.mul.location.line
+
     def pretty(self) -> str:
         return (
             f"divide-before-multiply at {self.location}: a `{self.div.op}` result "

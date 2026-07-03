@@ -5,7 +5,8 @@ from tealql.security.findings import Finding, SCHEMA_VERSION, normalize
 
 
 class _MsgOnly:
-    """A violation exposing only pretty() with the location in the prose."""
+    """A violation exposing only pretty() — satisfies NO structured-location
+    contract, so it normalizes as whole-program (prose is never parsed)."""
     def pretty(self):
         return "Approval exit at prog.teal:11 is reachable without a RekeyTo check."
 
@@ -27,11 +28,11 @@ class _Structured:
                 "message": self.pretty()}
 
 
-def test_line_parsed_from_message():
+def test_prose_is_not_parsed():
     f = normalize(_MsgOnly(), rule_id="rekey-to", rel_path="prog.teal",
                   severity="high", confidence="high")
     assert f.file == "prog.teal"
-    assert f.line == 11
+    assert f.line is None          # whole-program: prose is never parsed
     assert f.rule_id == "rekey-to"
     assert f.severity == "high"
 

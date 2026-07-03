@@ -19,6 +19,16 @@ from tealql.security._approval_exit import _ApprovalExitProtectedDetector
 class RekeyToViolation:
     exit_bb: BasicBlock
 
+    @property
+    def file(self) -> str:
+        return self.exit_bb.file
+
+    @property
+    def line(self) -> int:
+        # Structured anchor for machine output (JSON/SARIF/suppressions);
+        # mirrors pretty(): the exit's LAST line.
+        return self.exit_bb.last_line
+
     def pretty(self) -> str:
         line = self.exit_bb.last_line
         return (

@@ -17,6 +17,15 @@ from tealql.security import common
 class InnerTxnFeeViolation:
     assignment: Assignment
 
+    @property
+    def file(self) -> str:
+        return self.assignment.location.file
+
+    @property
+    def line(self) -> int:
+        # Structured anchor for machine output; mirrors pretty().
+        return self.assignment.location.line
+
     def pretty(self) -> str:
         return (
             f"itxn_field Fee@{common.loc(self.assignment)}  "

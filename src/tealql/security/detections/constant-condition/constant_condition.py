@@ -95,6 +95,15 @@ class ConstantConditionViolation:
     value: int           # the proven condition value (1 = always true / non-zero)
     detail: str          # the proven sub-expression, e.g. "OnCompletion <= 6"
 
+    @property
+    def file(self) -> str:
+        return self.location.file
+
+    @property
+    def line(self) -> int:
+        # Structured anchor for machine output; mirrors the Location in pretty().
+        return self.location.line
+
     def pretty(self) -> str:
         where = str(self.location)
         if self.kind == "vacuous-assert":

@@ -20,6 +20,11 @@ class _FieldValidatedViolation:
     prog: SSAProgram
     message: str = ""
 
+    # Whole-program finding — the violation is the ABSENCE of a validation, so
+    # there is no single anchor line. Structured location stays None.
+    file = None
+    line = None
+
     def pretty(self) -> str:
         return self.message
 
