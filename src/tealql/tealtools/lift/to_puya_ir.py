@@ -1101,7 +1101,11 @@ def _guess_encoded_types(main, subs) -> dict:
         aggressively, so args are where constants actually live; those entries are
         keyed by ``id(BytesConstant)``);
       - intrinsic results, via :func:`_guess_encoding_for` (the length-proven
-        dynamic-sequence ENCODE idiom)."""
+        dynamic-sequence ENCODE idiom).
+
+    Finally :func:`_propagate_guesses` flows each guess along identity-preserving
+    relations (register copy, agreeing phi, all-writes-agree state put->get) so
+    it reaches the whole value web, not just the producing op."""
     reg_def: dict = {}
     for s in (main, *subs):
         for bb in s.body:
@@ -1142,7 +1146,132 @@ def _guess_encoded_types(main, subs) -> dict:
                         et = _guess_const_encoding(a.value)
                         if et is not None:
                             guesses[id(a)] = et
+    _propagate_guesses(main, subs, guesses)
     return guesses
+
+
+# State-write ops whose (key, value) a get of the same key can inherit an
+# encoding from (all-writes-agree). uint64/box put/del excluded -- box values
+# are handled by the decode-side guesses, and del carries no value.
+_STATE_PUT_OPS = (AVMOp.app_global_put, AVMOp.app_local_put)
+_STATE_GET_OPS = (AVMOp.app_global_get, AVMOp.app_local_get,
+                  AVMOp.app_global_get_ex, AVMOp.app_local_get_ex)
+
+
+def _propagate_guesses(main, subs, guesses: dict) -> None:
+    """Flow the per-register speculative encodings along IDENTITY-preserving
+    relations, so a guess reaches the whole value web it feeds -- not just the
+    one op that produced it. In-place: adds ``id(register) -> EncodedType``
+    entries to ``guesses`` for every register-OBJECT whose SSA value carries a
+    propagated encoding (registers duplicate as distinct objects for one
+    ``name#version``, so propagation is keyed by that logical identity, then
+    stamped onto every object).
+
+    Relations (all preserve the value's bytes, hence its ARC4 encoding):
+      - register COPY (``t = r``): ``t`` inherits ``r``'s encoding;
+      - PHI: the joined register inherits iff every register arg has an
+        encoding and they all AGREE (MUST -- a disagreeing or unknown arm
+        blocks it);
+      - state PUT->GET: a ``app_*_get KEY`` result inherits iff every
+        ``app_*_put`` to that KEY wrote a value with the SAME encoding
+        (all-writes-agree, mirroring the state-resolution soundness elsewhere).
+
+    Speculative + side-channel throughout: never touches ``ir_type``, so a
+    wrong hop cannot affect lowering -- only what a tolerant consumer reads."""
+    def key(r):
+        return (r.name, r.version)
+
+    # Seed: logical-identity -> encoding, from the base register guesses.
+    enc: dict = {}
+    objs: dict = {}                       # (name,version) -> [register objects]
+
+    def note(r):
+        if isinstance(r, M.Register):
+            objs.setdefault(key(r), []).append(r)
+            if id(r) in guesses:
+                enc.setdefault(key(r), guesses[id(r)])
+
+    for s in (main, *subs):
+        for bb in s.body:
+            for ph in bb.phis:
+                note(ph.register)
+                for pa in ph.args:
+                    note(pa.value)
+            for o in bb.ops:
+                src = o.source if isinstance(o, M.Assignment) else o
+                if isinstance(o, M.Assignment):
+                    for t in o.targets:
+                        note(t)
+                if isinstance(src, M.Intrinsic):
+                    for a in src.args:
+                        note(a)
+
+    # State keys: encodings written to each (key-bytes, op-family). A key whose
+    # writes disagree (or any write is unguessed-but-present) is poisoned.
+    def _key_const(args):
+        for x in args:
+            if isinstance(x, M.BytesConstant):
+                return x.value
+        return None
+
+    def _run_state():
+        writes: dict = {}                 # keybytes -> set(encodings) | None(poisoned)
+        for s in (main, *subs):
+            for bb in s.body:
+                for o in bb.ops:
+                    src = o.source if isinstance(o, M.Assignment) else o
+                    if not (isinstance(src, M.Intrinsic) and src.op in _STATE_PUT_OPS):
+                        continue
+                    kb = _key_const(src.args)
+                    if kb is None or writes.get(kb, "unset") is None:
+                        continue                     # unknown key or already poisoned
+                    val = next((a for a in src.args if isinstance(a, M.Register)), None)
+                    e = enc.get(key(val)) if val is not None else None
+                    if e is None:
+                        writes[kb] = None            # an unencoded write poisons the key
+                    else:
+                        writes.setdefault(kb, set()).add(e)
+        return {kb: next(iter(es)) for kb, es in writes.items()
+                if isinstance(es, set) and len(es) == 1}
+
+    changed = True
+    while changed:
+        changed = False
+        state_enc = _run_state()
+        for s in (main, *subs):
+            for bb in s.body:
+                for ph in bb.phis:
+                    k = key(ph.register)
+                    if k in enc:
+                        continue
+                    arm_encs = [enc.get(key(pa.value)) for pa in ph.args
+                                if isinstance(pa.value, M.Register)]
+                    if arm_encs and all(e is not None for e in arm_encs) \
+                            and len(set(arm_encs)) == 1:
+                        enc[k] = arm_encs[0]
+                        changed = True
+                for o in bb.ops:
+                    if not isinstance(o, M.Assignment):
+                        continue
+                    src = o.source
+                    e = None
+                    if isinstance(src, M.Register):
+                        e = enc.get(key(src))
+                    elif isinstance(src, M.Intrinsic) and src.op in _STATE_GET_OPS:
+                        e = state_enc.get(_key_const(src.args))
+                    if e is None:
+                        continue
+                    for t in o.targets:
+                        if isinstance(t, M.Register) and key(t) not in enc \
+                                and t.ir_type.avm_type == e.avm_type:
+                            enc[key(t)] = e
+                            changed = True
+
+    # Stamp every register OBJECT of an encoded SSA value (incl. use-site copies).
+    for k, e in enc.items():
+        for r in objs.get(k, ()):
+            if id(r) not in guesses and r.ir_type.avm_type == e.avm_type:
+                guesses[id(r)] = e
 
 
 def _recover_encoded_types(main, subs) -> int:
