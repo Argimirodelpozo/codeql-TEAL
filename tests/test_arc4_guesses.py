@@ -161,6 +161,85 @@ return
                for _, e in got)
 
 
+def _leads_for(tmp_path, teal: str):
+    from tealql.tealtools.lift import to_puya, to_puya_ir
+    (tmp_path / "prog.teal").write_text(teal)
+    main, subs = to_puya(SSAProgram(str(tmp_path)))
+    return to_puya_ir.abi_address_fund_flows(main, subs)
+
+
+_PAY_PROLOGUE = """#pragma version 10
+itxn_begin
+int pay
+itxn_field TypeEnum
+"""
+_PAY_EPILOGUE = """int 1000
+itxn_field Amount
+itxn_submit
+int 1
+return
+"""
+
+
+def test_abi_address_fund_flow_arbitrary_recipient(tmp_path):
+    """A caller-supplied ABI address paid out with NO validation is the
+    arbitrary-recipient shape: caller_supplied and not guarded. The recovered
+    arc4.Address type is what identifies the operand as a caller-chosen address."""
+    teal = _PAY_PROLOGUE + "txna ApplicationArgs 0\nitxn_field Receiver\n" + _PAY_EPILOGUE
+    leads = _leads_for(tmp_path, teal)
+    assert leads, "an address reaching a fund sink must produce a lead"
+    assert all(x["field"] == "Receiver" for x in leads)
+    assert any(x["caller_supplied"] and not x["guarded"] for x in leads), (
+        "an unvalidated caller-supplied payout must be flagged")
+
+
+def test_abi_address_fund_flow_guarded_not_flagged(tmp_path):
+    """The same payout, but the address is pinned (== a stored admin) before the
+    send -- guarded, so NOT the arbitrary-recipient shape."""
+    teal = (_PAY_PROLOGUE
+            + 'txna ApplicationArgs 0\nbyte "admin"\napp_global_get\n==\nassert\n'
+            + "txna ApplicationArgs 0\nitxn_field Receiver\n" + _PAY_EPILOGUE)
+    leads = _leads_for(tmp_path, teal)
+    assert leads, "the address still reaches the sink"
+    assert all(x["guarded"] for x in leads), (
+        "a validated payout address must be marked guarded")
+    assert not any(x["caller_supplied"] and not x["guarded"] for x in leads)
+
+
+def test_abi_address_fund_flow_survives_decode_chain(tmp_path):
+    """The backward slice must see through the ABI-decode chain: an address
+    EXTRACTED out of the args (not read raw at the sink) is still caller-supplied."""
+    teal = (_PAY_PROLOGUE
+            + "txna ApplicationArgs 0\nextract 2 32\nitxn_field Receiver\n"
+            + _PAY_EPILOGUE)
+    leads = _leads_for(tmp_path, teal)
+    assert any(x["caller_supplied"] and not x["guarded"] for x in leads), (
+        "provenance must survive an extract off the args tuple")
+
+
+def test_no_fund_lead_without_sink(tmp_path):
+    """No fund/asset-transfer sink -> no lead, even for a caller-supplied address
+    that is merely logged (the sink-field filter is part of the trigger)."""
+    teal = """#pragma version 10
+txna ApplicationArgs 0
+log
+int 1
+return
+"""
+    assert _leads_for(tmp_path, teal) == []
+
+
+def test_own_app_address_recipient_not_caller_supplied(tmp_path):
+    """Paying the app's OWN address (global CurrentApplicationAddress) is a
+    recovered-address recipient, so it leads -- but it is NOT caller-supplied,
+    so it is not the arbitrary-recipient shape."""
+    teal = (_PAY_PROLOGUE
+            + "global CurrentApplicationAddress\nitxn_field Receiver\n"
+            + _PAY_EPILOGUE)
+    leads = _leads_for(tmp_path, teal)
+    assert leads and not any(x["caller_supplied"] for x in leads)
+
+
 def _is_address(et) -> bool:
     from puya.ir.encodings import ArrayEncoding
     return (isinstance(et.encoding, ArrayEncoding)

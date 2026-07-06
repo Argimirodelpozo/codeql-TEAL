@@ -69,6 +69,8 @@ def dump_all(source, out_dir: Optional[str] = None, *, svg: bool = True,
     add("PUYA IR (lift)", lambda: _ir_text(source))
     add("GUESSED ABI ENCODINGS (speculative side-channel)",
         lambda: _guessed_encodings_text(source))
+    add("ABI TYPE-DRIVEN SECURITY LEADS (recovered arc4.Address at fund sinks)",
+        lambda: _abi_security_leads_text(source))
     if registry is not None:
         add("SUPER-CFG (cross-contract)", lambda: _supercfg_text(prog, registry))
 
@@ -169,6 +171,29 @@ def _guessed_encodings_text(source) -> str:
             except (UnicodeDecodeError, IndexError):
                 pass
         lines.append(f"  {name_of.get(rid, '?')}: {et}{extra}")
+    return "\n".join(lines)
+
+
+def _abi_security_leads_text(source) -> str:
+    """The first CONSUMER of the ABI type recovery, in a security register:
+    fund/asset-transfer sinks paying out to a value recovered as ``arc4.Address``
+    (:func:`to_puya_ir.abi_address_fund_flows`). Flags the arbitrary-recipient
+    shape -- a CALLER-SUPPLIED ABI address paid out UNGUARDED."""
+    from ..lift import to_puya_ir
+    main, subs = to_puya_ir.to_puya(SSAProgram(source))
+    leads = to_puya_ir.abi_address_fund_flows(main, subs)
+    if not leads:
+        return "(no arc4.Address values reach a fund/asset sink)"
+    danger = [x for x in leads if x["caller_supplied"] and not x["guarded"]]
+    lines = [f"{len(leads)} address→sink flow(s); "
+             f"{len(danger)} caller-supplied & UNGUARDED (arbitrary-recipient):"]
+    for x in sorted(leads, key=lambda d: (not (d["caller_supplied"] and not d["guarded"]),
+                                          d["subroutine"], d["field"])):
+        tag = "  ⚠ CALLER-SUPPLIED, UNGUARDED" if x["caller_supplied"] and not x["guarded"] \
+            else ("  caller-supplied, guarded" if x["caller_supplied"]
+                  else "  (not directly caller-supplied)")
+        lines.append(f"  itxn_field {x['field']} (sub {x['subroutine']}) "
+                     f"<- {x['encoding']}{tag}")
     return "\n".join(lines)
 
 

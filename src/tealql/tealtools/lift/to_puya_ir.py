@@ -1377,6 +1377,149 @@ def _propagate_guesses(main, subs, guesses: dict) -> None:
                 guesses[id(r)] = e
 
 
+# Fund / asset-transfer itxn fields whose operand is an address the CONTRACT
+# pays out to -- a recovered arc4.Address arriving here is a payout recipient.
+_FUND_SINK_FIELDS = frozenset({
+    "Receiver", "AssetReceiver", "CloseRemainderTo", "AssetCloseTo",
+    "AssetSender", "RekeyTo",
+})
+# The transaction-arg reads that expose an ABI method argument (a caller-chosen
+# value). ``txnas`` / ``gtxnas`` take the index off the stack; ``txna`` inlines it.
+_ABI_ARG_OPS = (AVMOp.txna, AVMOp.txnas, AVMOp.gtxna, AVMOp.gtxnas)
+
+
+def is_address_encoding(et) -> bool:
+    """``et`` is the arc4.Address shape: a fixed 32-byte, header-less byte array
+    (``StaticArray<Byte, 32>``)."""
+    from puya.ir.encodings import ArrayEncoding
+    return (isinstance(et.encoding, ArrayEncoding)
+            and et.encoding.size == 32 and not et.encoding.length_header)
+
+
+def abi_address_fund_flows(main, subs, guesses=None) -> list:
+    """TYPE-DRIVEN security leads -- the first CONSUMER of the speculative ABI
+    type side-channel. Reports every fund / asset-transfer sink
+    (:data:`_FUND_SINK_FIELDS`) whose recipient operand is a value RECOVERED as
+    ``arc4.Address``: the type recovery is precisely what tells us a 32-byte
+    operand is a caller-meaningful ADDRESS rather than an opaque blob, which is
+    what turns ``itxn_field Receiver`` into a 'who gets the money' question.
+
+    Each lead is tagged over a BACKWARD SLICE of the recipient value (its def-use
+    predecessors, transitively -- through intrinsic operands, register copies and
+    phis, memoised, cycle-safe), so it survives the ABI-decode chain real
+    compiled contracts interpose (the address is ``extract``-ed out of the args
+    tuple, not read raw at the sink):
+      - ``caller_supplied`` -- the slice roots in an ABI method-argument read
+        (:data:`_ABI_ARG_OPS` on ``ApplicationArgs``): the caller chooses the
+        address;
+      - ``guarded`` -- some value on the slice is an ``eq`` / ``neq`` operand (a
+        'was it pinned/validated' proxy).
+
+    ``caller_supplied and not guarded`` is the arbitrary-recipient shape: the
+    caller passes an ABI address and the contract pays it without checking. The
+    slice is INTRA-procedural -- a value arriving as a subroutine frame parameter
+    breaks the chain (documented gap; taint's interprocedural bridge is the fuller
+    answer). Op-granular (Puya IR carries no source line on this path); returns
+    dicts ``{field, subroutine, encoding, caller_supplied, guarded}``.
+    Side-channel in, report out -- never touches ``ir_type`` or lowering."""
+    if guesses is None:
+        guesses = _guess_encoded_types(main, subs)
+
+    def kv(r):
+        return (r.name, r.version)
+
+    # Backward def-use graph: each identity -> its predecessor identities, plus
+    # the set of identities that ARE a raw ApplicationArgs read, and those used
+    # as an eq/neq operand.
+    preds: dict = {}
+    is_arg: set = set()
+    compared: set = set()
+    origin_of: dict = {}                  # arg-read identity -> 'ApplicationArgs:N'
+
+    def _add_pred(dst, srcs):
+        bucket = preds.setdefault(dst, set())
+        for s_ in srcs:
+            if isinstance(s_, M.Register):
+                bucket.add(kv(s_))
+
+    for s in (main, *subs):
+        for bb in s.body:
+            for ph in bb.phis:
+                _add_pred(kv(ph.register), [pa.value for pa in ph.args])
+            for o in bb.ops:
+                src = o.source if isinstance(o, M.Assignment) else o
+                if isinstance(o, M.Assignment):
+                    ins = ([o.source] if isinstance(o.source, M.Register)
+                           else list(src.args) if isinstance(src, M.Intrinsic) else [])
+                    for t in o.targets:
+                        if isinstance(t, M.Register):
+                            _add_pred(kv(t), ins)
+                            if isinstance(src, M.Intrinsic) and src.op in _ABI_ARG_OPS \
+                                    and src.immediates \
+                                    and "ApplicationArgs" in str(src.immediates[0]):
+                                is_arg.add(kv(t))
+                                idx = (src.immediates[1]
+                                       if len(src.immediates) > 1 else None)
+                                if isinstance(idx, int):
+                                    origin_of[kv(t)] = f"ApplicationArgs:{idx}"
+                if isinstance(src, M.Intrinsic) and src.op in (AVMOp.eq, AVMOp.neq):
+                    for a in src.args:
+                        if isinstance(a, M.Register):
+                            compared.add(kv(a))
+
+    # Arg-origin closure over `compared`: comparing ONE read of ApplicationArgs N
+    # validates the arg, so every (distinct-SSA) read of the same constant-index
+    # arg counts as compared -- catches a `validate arg0` / `pay arg0` pattern
+    # where the two reads are separate registers (uncommon post-CSE, but sound).
+    compared_origins = {origin_of[x] for x in compared if x in origin_of}
+    if compared_origins:
+        for idn, org in origin_of.items():
+            if org in compared_origins:
+                compared.add(idn)
+
+    _slice_cache: dict = {}
+
+    def bslice(start):
+        """The backward slice (set of identities) reachable from ``start``."""
+        if start in _slice_cache:
+            return _slice_cache[start]
+        seen: set = set()
+        stack = [start]
+        while stack:
+            n = stack.pop()
+            if n in seen:
+                continue
+            seen.add(n)
+            stack.extend(preds.get(n, ()))
+        _slice_cache[start] = seen
+        return seen
+
+    leads: list = []
+    for s in (main, *subs):
+        for bb in s.body:
+            for o in bb.ops:
+                src = o.source if isinstance(o, M.Assignment) else o
+                if not (isinstance(src, M.Intrinsic) and src.op is AVMOp.itxn_field
+                        and src.immediates and src.args):
+                    continue
+                field = str(src.immediates[0]).strip()
+                if field not in _FUND_SINK_FIELDS:
+                    continue
+                a = src.args[0]
+                if not (isinstance(a, M.Register) and id(a) in guesses
+                        and is_address_encoding(guesses[id(a)])):
+                    continue
+                sl = bslice(kv(a))
+                leads.append({
+                    "field": field,
+                    "subroutine": s.id,
+                    "encoding": str(guesses[id(a)]),
+                    "caller_supplied": bool(sl & is_arg),
+                    "guarded": bool(sl & compared),
+                })
+    return leads
+
+
 def _recover_encoded_types(main, subs) -> int:
     """**CONFIDENT** encoded-type recovery: refine a result register to the ARC4
     ``EncodedType`` its producing op provably wire-encodes
