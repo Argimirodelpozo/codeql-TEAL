@@ -1083,6 +1083,89 @@ def _guess_struct_encodings(main, subs, dynamic_guesses) -> dict:
     return out
 
 
+def _account_txn_fields() -> frozenset:
+    """The transaction fields whose value IS a 32-byte address, read from puya's
+    own field registry (``wtype`` == account: Receiver / Sender / CloseRemainderTo
+    / RekeyTo / the AssetXxx + ConfigAsset* address fields). Empty if the registry
+    moves -- the usage-side guess then simply produces nothing."""
+    try:
+        from puya.awst.txn_fields import TxnField
+        return frozenset(f.name for f in TxnField
+                         if "account" in str(getattr(f, "wtype", "")).lower())
+    except Exception as e:                               # registry moved / renamed
+        logger.debug("account txn-field registry unavailable: %s", e)
+        return frozenset()
+
+
+_ACCOUNT_TXN_FIELDS = _account_txn_fields()
+
+# Ops whose FIRST operand (``args[0]`` -- verified against the lift's arg order)
+# is an account address: the local-state family + the account-parameter reads.
+_ACCOUNT_OPERAND_OPS = (
+    AVMOp.app_local_get, AVMOp.app_local_get_ex, AVMOp.app_local_put,
+    AVMOp.app_opted_in, AVMOp.balance, AVMOp.min_balance,
+    AVMOp.acct_params_get, AVMOp.asset_holding_get,
+)
+
+
+def _is_zero_address(a) -> bool:
+    """``a`` is the 32-byte zero address constant (``global ZeroAddress``, which
+    the lift const-folds to a ``BytesConstant`` of 32 null bytes)."""
+    return isinstance(a, M.BytesConstant) and a.value == b"\x00" * 32
+
+
+def _guess_address_usage(main, subs) -> dict:
+    """USAGE-side speculative tier: a bytes value CONSUMED at a langspec ADDRESS
+    operand position is guessed ``arc4.Address`` (``StaticArray<Byte, 32>``).
+    Returns ``{id(Register): EncodedType}``.
+
+    The complement of the producer / consumer / constant idioms: instead of
+    reading how a value was BUILT, it reads how a value is USED. The named idioms,
+    each with a discharged local proof (the operand position's langspec type):
+
+      - the single operand of ``itxn_field <F>`` where ``F`` is an account-typed
+        field (:data:`_ACCOUNT_TXN_FIELDS`) -- the AVM requires a 32-byte address
+        there, so the value IS an address;
+      - the account operand (``args[0]``) of a local-state / account-parameter op
+        (:data:`_ACCOUNT_OPERAND_OPS`);
+      - an operand compared for equality (``eq`` / ``neq``) against the zero
+        address (:func:`_is_zero_address`) -- a canonical address presence check.
+
+    Kept SPECULATIVE (not confident) because "it is an address value" is weaker
+    than "it is ABI-encoded as ``arc4.Address``": the value may never be
+    round-tripped through ABI. Side-channel only, and lowest priority in the merge
+    (a producer/decode guess for the same register wins), then
+    :func:`_propagate_guesses` -- including the backward-copy hop -- carries it
+    from the use site back to the value's definition."""
+    from puya.ir.encodings import ArrayEncoding, UIntEncoding
+    from puya.ir.types_ import EncodedType
+    address = EncodedType(ArrayEncoding(
+        element=UIntEncoding(8), size=32, length_header=False))
+    out: dict = {}
+
+    def mark(a):
+        if isinstance(a, M.Register) and a.ir_type.avm_type == address.avm_type:
+            out.setdefault(id(a), address)
+
+    for s in (main, *subs):
+        for bb in s.body:
+            for o in bb.ops:
+                src = o.source if isinstance(o, M.Assignment) else o
+                if not isinstance(src, M.Intrinsic) or not src.args:
+                    continue
+                op = src.op
+                if op is AVMOp.itxn_field and src.immediates:
+                    if str(src.immediates[0]).strip() in _ACCOUNT_TXN_FIELDS:
+                        mark(src.args[0])
+                elif op in _ACCOUNT_OPERAND_OPS:
+                    mark(src.args[0])
+                elif op in (AVMOp.eq, AVMOp.neq) \
+                        and any(_is_zero_address(a) for a in src.args):
+                    for a in src.args:
+                        mark(a)
+    return out
+
+
 def _guess_encoded_types(main, subs) -> dict:
     """SPECULATIVE encoded-type recovery, returned as a SIDE-CHANNEL
     ``{id(M.Register): EncodedType}`` map -- it does NOT mutate any ``ir_type``, so
@@ -1101,7 +1184,10 @@ def _guess_encoded_types(main, subs) -> dict:
         aggressively, so args are where constants actually live; those entries are
         keyed by ``id(BytesConstant)``);
       - intrinsic results, via :func:`_guess_encoding_for` (the length-proven
-        dynamic-sequence ENCODE idiom).
+        dynamic-sequence ENCODE idiom);
+      - bytes values USED at a langspec address position, via
+        :func:`_guess_address_usage` -> ``arc4.Address`` (lowest priority --
+        gap-fill only).
 
     Finally :func:`_propagate_guesses` flows each guess along identity-preserving
     relations (register copy, agreeing phi, all-writes-agree state put->get) so
@@ -1146,6 +1232,10 @@ def _guess_encoded_types(main, subs) -> dict:
                         et = _guess_const_encoding(a.value)
                         if et is not None:
                             guesses[id(a)] = et
+    # Usage-side address evidence -- lowest priority (a producer/decode/struct
+    # guess for the same register wins), filled in only where absent.
+    for rid, et in _guess_address_usage(main, subs).items():
+        guesses.setdefault(rid, et)
     _propagate_guesses(main, subs, guesses)
     return guesses
 
@@ -1260,6 +1350,19 @@ def _propagate_guesses(main, subs, guesses: dict) -> None:
                     elif isinstance(src, M.Intrinsic) and src.op in _STATE_GET_OPS:
                         e = state_enc.get(_key_const(src.args))
                     if e is None:
+                        # BACKWARD copy (``t = r``): if the copy result already
+                        # carries a guess (e.g. a use-site address stamp) but the
+                        # source does not, the source -- the same bytes -- inherits
+                        # it. This is what carries a usage-evidence guess back past
+                        # a rename to the value's real definition.
+                        if isinstance(src, M.Register) and key(src) not in enc:
+                            te = [enc.get(key(t)) for t in o.targets
+                                  if isinstance(t, M.Register)]
+                            if te and all(x is not None for x in te) \
+                                    and len(set(te)) == 1 \
+                                    and src.ir_type.avm_type == te[0].avm_type:
+                                enc[key(src)] = te[0]
+                                changed = True
                         continue
                     for t in o.targets:
                         if isinstance(t, M.Register) and key(t) not in enc \

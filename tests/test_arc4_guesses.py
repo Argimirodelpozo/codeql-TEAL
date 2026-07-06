@@ -161,6 +161,65 @@ return
                for _, e in got)
 
 
+def _is_address(et) -> bool:
+    from puya.ir.encodings import ArrayEncoding
+    return (isinstance(et.encoding, ArrayEncoding)
+            and et.encoding.size == 32 and not et.encoding.length_header)
+
+
+def test_address_from_itxn_field(tmp_path):
+    """A bytes value SENT to an account-typed itxn field (Receiver) is guessed
+    arc4.Address, and propagation carries it back to the value's definition
+    (the txna result), not just the itxn_field operand."""
+    from puya.ir.types_ import EncodedType
+
+    teal = """#pragma version 10
+txna ApplicationArgs 0
+itxn_field Receiver
+int 1
+return
+"""
+    guesses, by_op = _guesses_for(tmp_path, teal)
+    assert any(_is_address(e) for e in guesses.values()), (
+        "value used at itxn_field Receiver must be guessed arc4.Address")
+    # propagation reached the txna producer, and it stayed side-channel.
+    txna = by_op.get("txna", [])
+    assert txna and any(_is_address(e) for _, e in txna)
+    for reg, _ in txna:
+        assert not isinstance(reg.ir_type, EncodedType)
+
+
+def test_address_from_zero_address_compare(tmp_path):
+    """Comparing a value against global ZeroAddress (const-folded to 32 null
+    bytes) marks it an address."""
+    teal = """#pragma version 10
+txna ApplicationArgs 0
+global ZeroAddress
+!=
+assert
+int 1
+return
+"""
+    guesses, _ = _guesses_for(tmp_path, teal)
+    assert any(_is_address(e) for e in guesses.values()), (
+        "value compared to ZeroAddress must be guessed arc4.Address")
+
+
+def test_non_address_bytes_not_guessed_address(tmp_path):
+    """A bytes value only logged / concatenated (never used at an address
+    position) must NOT collect an address guess -- the usage evidence is the
+    whole proof."""
+    teal = """#pragma version 10
+txna ApplicationArgs 0
+log
+int 1
+return
+"""
+    guesses, _ = _guesses_for(tmp_path, teal)
+    assert not any(_is_address(e) for e in guesses.values()), (
+        "a plain logged value has no address usage evidence")
+
+
 def test_guess_propagates_through_copy_merge(tmp_path):
     """A guessed value that reaches a join (phi) from every arm carries its
     encoding to the merged register."""
