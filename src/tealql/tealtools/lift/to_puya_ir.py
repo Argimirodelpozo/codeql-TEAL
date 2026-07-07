@@ -591,6 +591,32 @@ def _langspec_returns(intrinsic: "M.Intrinsic"):
     return None
 
 
+def _address_operand_identities(main, subs) -> set:
+    """The SSA identities ``(name, version)`` of every value FED to an operand the
+    AVM REQUIRES to be a 32-byte address: the operand of ``itxn_field <F>`` for an
+    account-typed field, or the account operand (``args[0]``) of a local-state /
+    account-parameter op. Only ``bytes``-form operands are taken -- the same ops
+    also accept a ``uint64`` account INDEX (0=sender, i=Accounts[i-1]), which is
+    not an address -- so the ``avm_type == bytes`` filter keeps this sound."""
+    out: set = set()
+    for s in (main, *subs):
+        for bb in s.body:
+            for o in bb.ops:
+                src = o.source if isinstance(o, M.Assignment) else o
+                if not isinstance(src, M.Intrinsic) or not src.args:
+                    continue
+                r = None
+                if src.op is AVMOp.itxn_field and src.immediates \
+                        and str(src.immediates[0]).strip() in _ACCOUNT_TXN_FIELDS:
+                    r = src.args[0]
+                elif src.op in _ACCOUNT_OPERAND_OPS:
+                    r = src.args[0]
+                if isinstance(r, M.Register) \
+                        and r.ir_type.avm_type == PT.account.avm_type:
+                    out.add((r.name, r.version))
+    return out
+
+
 def _recover_ir_types(main, subs, allow=_is_refinable, byte_lengths=None) -> int:
     """Refine each intrinsic result register from the coarse AVM type the recovery
     left (``uint64``/``bytes``) to the finer IR type Puya's langspec declares for
@@ -635,6 +661,30 @@ def _recover_ir_types(main, subs, allow=_is_refinable, byte_lengths=None) -> int
                     # refined targets (see _puya_compat.set_intrinsic_types).
                     _compat.set_intrinsic_types(
                         o.source, (t.ir_type for t in o.targets))
+
+    # USAGE-BACKWARD account recovery: the langspec pass above types addresses
+    # FORWARD from producer ops (txn Sender, global ZeroAddress). This types them
+    # from CONSUMPTION -- a value fed to an AVM-forced address operand IS a 32-byte
+    # account, so its plain-`bytes` intrinsic definition refines to `account`. Same
+    # avm_type (bytes), so still a free annotation; the neutrality gate measures it.
+    addr_ids = _address_operand_identities(main, subs)
+    if addr_ids:
+        for s in (main, *subs):
+            for bb in s.body:
+                for o in bb.ops:
+                    if not (isinstance(o, M.Assignment)
+                            and isinstance(o.source, M.Intrinsic)):
+                        continue
+                    hit = False
+                    for tgt in o.targets:
+                        if tgt.ir_type is PT.bytes \
+                                and (tgt.name, tgt.version) in addr_ids:
+                            _compat.set_ir_type(tgt, PT.account)
+                            n += 1
+                            hit = True
+                    if hit:
+                        _compat.set_intrinsic_types(
+                            o.source, (t.ir_type for t in o.targets))
     return n
 
 
