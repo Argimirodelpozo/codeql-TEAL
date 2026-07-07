@@ -141,7 +141,7 @@ def _guessed_encodings_text(source) -> str:
     import puya.ir.models as M
     from ..lift import to_puya_ir
     main, subs = to_puya_ir.to_puya(SSAProgram(source))
-    guesses = to_puya_ir._guess_encoded_types(main, subs)
+    guesses, confident = to_puya_ir.guess_encoded_types_scored(main, subs)
     if not guesses:
         return "(no speculative ABI-structure guesses)"
     name_of, const_of = {}, {}
@@ -161,16 +161,22 @@ def _guessed_encodings_text(source) -> str:
                         name_of[id(t)] = f"{t.name}#{t.version}"
                         if isinstance(o.source, M.BytesConstant):
                             const_of[id(t)] = o.source.value
+    n_sure = sum(1 for v in confident.values() if v)
     lines = [f"{len(guesses)} guess(es) — best-effort, side-channel only "
-             "(never in the IR's ir_type):"]
-    for rid, et in sorted(guesses.items(), key=lambda kv: name_of.get(kv[0], "")):
+             f"(never in the IR's ir_type); {n_sure} fully confident, "
+             f"{len(guesses) - n_sure} somewhat:"]
+    # fully-confident first, then by name, so the reliable ones read at the top.
+    for rid, et in sorted(guesses.items(),
+                          key=lambda kv: (not confident.get(kv[0]),
+                                          name_of.get(kv[0], ""))):
         extra = ""
         if rid in const_of and "utf8" in str(et):
             try:
                 extra = f"  = {const_of[rid][2:].decode('utf-8')!r}"
             except (UnicodeDecodeError, IndexError):
                 pass
-        lines.append(f"  {name_of.get(rid, '?')}: {et}{extra}")
+        tag = "confident" if confident.get(rid) else "somewhat "
+        lines.append(f"  [{tag}] {name_of.get(rid, '?')}: {et}{extra}")
     return "\n".join(lines)
 
 

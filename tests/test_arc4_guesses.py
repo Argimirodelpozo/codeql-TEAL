@@ -349,6 +349,56 @@ def test_own_app_address_recipient_not_caller_supplied(tmp_path):
     assert leads and not any(x["caller_supplied"] for x in leads)
 
 
+def _scored_for(tmp_path, teal: str):
+    from tealql.tealtools.lift import to_puya, to_puya_ir
+    (tmp_path / "prog.teal").write_text(teal)
+    main, subs = to_puya(SSAProgram(str(tmp_path)))
+    return to_puya_ir.guess_encoded_types_scored(main, subs)
+
+
+def test_confidence_is_binary_string_and_address_are_confident(tmp_path):
+    """Only two states. A strict self-describing arc4.String constant and an
+    address the AVM forces (itxn Receiver) are FULLY confident (True)."""
+    teal = ("#pragma version 10\n"
+            "itxn_begin\nint pay\nitxn_field TypeEnum\n"
+            "txna ApplicationArgs 0\nitxn_field Receiver\n"
+            "pushbytes 0x000548656c6c6f\nlog\n"
+            "int 1\nreturn\n")
+    guesses, confident = _scored_for(tmp_path, teal)
+    assert set(confident) == set(guesses)          # every guess is classified
+    assert set(confident.values()) <= {True, False}
+    assert any(v for v in confident.values()), "String + address must be confident"
+
+
+def test_static_array_is_somewhat_confident(tmp_path):
+    """A homogeneous static array is a shape that fits but isn't forced (array vs
+    homogeneous struct) -> SOMEWHAT confident (False), never fully."""
+    from puya.ir.encodings import ArrayEncoding
+
+    teal = """#pragma version 10
+txna ApplicationArgs 0
+btoi
+itob
+txna ApplicationArgs 1
+btoi
+itob
+concat
+txna ApplicationArgs 2
+btoi
+itob
+concat
+log
+int 1
+return
+"""
+    guesses, confident = _scored_for(tmp_path, teal)
+    arr = [rid for rid, e in guesses.items()
+           if isinstance(e.encoding, ArrayEncoding)
+           and not e.encoding.length_header and e.encoding.size == 3]
+    assert arr and all(confident[rid] is False for rid in arr), (
+        "an unforced array-vs-struct guess must be only somewhat confident")
+
+
 def _is_address(et) -> bool:
     from puya.ir.encodings import ArrayEncoding
     return (isinstance(et.encoding, ArrayEncoding)

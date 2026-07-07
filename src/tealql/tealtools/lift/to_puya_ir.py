@@ -1306,36 +1306,41 @@ def _guess_address_usage(main, subs) -> dict:
 
 
 def _guess_encoded_types(main, subs) -> dict:
-    """SPECULATIVE encoded-type recovery, returned as a SIDE-CHANNEL
-    ``{id(M.Register): EncodedType}`` map -- it does NOT mutate any ``ir_type``, so
-    it is fully decoupled from the confident, proven-neutral IR and cannot affect
-    lowering. Not wired into :func:`to_puya`'s default path; a consumer that wants
-    best-effort ABI structure calls it explicitly.
+    """SPECULATIVE encoded-type recovery as a SIDE-CHANNEL ``{id(M.Register):
+    EncodedType}`` map (never mutates ``ir_type``; not on :func:`to_puya`'s default
+    path). The guesses only -- see :func:`guess_encoded_types_scored` for the same
+    map plus, per guess, whether it is fully or only somewhat confident."""
+    return guess_encoded_types_scored(main, subs)[0]
 
-    Sources of guesses (more-specific guesses win over coarser ones in the merge):
-      - values DECODED as length-prefixed dynamic arrays/strings (incl. method args),
-        via :func:`_guess_decoded_dynamic` (coarsest);
-      - dynamic STRUCTS / tuples reconstructed from their offset-table decode, via
-        :func:`_guess_struct_encodings` (overrides the array guess for that value);
-      - values DECODED as fixed-length homogeneous ``arc4.StaticArray<UIntN, K>``
-        (known byte length read as same-width uint chunks), via
-        :func:`_guess_decoded_static_arrays`;
-      - bytes CONSTANTS that are self-describing uint16-length-prefixed sequences,
-        via :func:`_guess_const_encoding` -> ``arc4.String`` -- checked BOTH as
-        assignment sources and INLINE in intrinsic args (the lift const-inlines
-        aggressively, so args are where constants actually live; those entries are
-        keyed by ``id(BytesConstant)``);
-      - intrinsic results, via :func:`_guess_encoding_for` (the length-proven
-        dynamic-sequence ENCODE idiom);
-      - producer-built homogeneous static arrays (``concat`` of N identical static
-        elements), via :func:`_guess_static_arrays` -> ``arc4.StaticArray<T, N>``;
-      - bytes values USED at a langspec address position, via
-        :func:`_guess_address_usage` -> ``arc4.Address`` (lowest priority --
-        gap-fill only).
 
-    Finally :func:`_propagate_guesses` flows each guess along identity-preserving
-    relations (register copy, agreeing phi, all-writes-agree state put->get) so
-    it reaches the whole value web, not just the producing op."""
+def guess_encoded_types_scored(main, subs):
+    """The speculative recovery split into two honest confidence classes: returns
+    ``(guesses, confident)`` where ``guesses`` is ``{id(Register): EncodedType}``
+    and ``confident`` is ``{id(Register): bool}`` -- ``True`` = FULLY confident,
+    ``False`` = SOMEWHAT confident. (Only two states; a finer scale would be
+    invented precision.)
+
+    ``True`` iff the idiom's proof FORCES the exact guessed type -- no other ABI
+    value produces the same observable:
+      - a self-describing ``arc4.String`` CONSTANT (strict: length + UTF-8 +
+        printable + no-null), :func:`_guess_const_encoding`;
+      - a value the AVM REQUIRES to be a 32-byte address at its operand position,
+        :func:`_guess_address_usage` -> ``arc4.Address``.
+
+    ``False`` (a structural shape that FITS but isn't forced -- an alternative ABI
+    type carries the same bytes, so it's a lead, not a guarantee):
+      - decoded length-prefixed dynamic arrays/strings, :func:`_guess_decoded_dynamic`
+        (String vs DynamicBytes vs DynamicArray<T> all share the shape);
+      - offset-table STRUCTS / tuples, :func:`_guess_struct_encodings` (partial);
+      - static arrays, producer + decode (:func:`_guess_static_arrays` /
+        :func:`_guess_decoded_static_arrays`) -- array vs homogeneous struct;
+      - the length-proven ENCODE idiom, :func:`_guess_encoding_for` (element coarse).
+
+    A later, more-specific source overrides the guess AND its class for a register.
+    Then :func:`_propagate_guesses` flows each guess along identity-preserving
+    relations; a derived guess stays confident only if the whole path preserves it
+    (a copy inherits, a phi needs every arm confident, a state round-trip -- an
+    assumption, not a proof -- is never confident)."""
     reg_def: dict = {}
     for s in (main, *subs):
         for bb in s.body:
@@ -1343,9 +1348,24 @@ def _guess_encoded_types(main, subs) -> dict:
                 if isinstance(o, M.Assignment):
                     for t in o.targets:
                         reg_def[id(t)] = o
-    guesses: dict = _guess_decoded_dynamic(main, subs)
-    guesses.update(_guess_struct_encodings(main, subs, guesses))
-    guesses.update(_guess_decoded_static_arrays(main, subs))
+
+    guesses: dict = {}
+    confident: dict = {}
+
+    def bulk(d: dict, sure: bool):
+        for rid, et in d.items():                  # overrides guess + class
+            guesses[rid] = et
+            confident[rid] = sure
+
+    def bulk_default(d: dict, sure: bool):
+        for rid, et in d.items():                  # gap-fill only
+            if rid not in guesses:
+                guesses[rid] = et
+                confident[rid] = sure
+
+    bulk(_guess_decoded_dynamic(main, subs), False)
+    bulk(_guess_struct_encodings(main, subs, guesses), False)
+    bulk(_guess_decoded_static_arrays(main, subs), False)
     for s in (main, *subs):
         for bb in s.body:
             for o in bb.ops:
@@ -1353,19 +1373,19 @@ def _guess_encoded_types(main, subs) -> dict:
                     continue
                 src = o.source
                 if isinstance(src, M.Intrinsic):
-                    et = _guess_encoding_for(src, reg_def)
+                    et, sure = _guess_encoding_for(src, reg_def), False
                 elif isinstance(src, M.BytesConstant):
-                    et = _guess_const_encoding(src.value)
+                    et, sure = _guess_const_encoding(src.value), True
                 else:
                     et = None
                 if et is None:
                     continue
                 for tgt in o.targets:
                     if tgt.ir_type.avm_type == et.avm_type:
-                        guesses[id(tgt)] = et   # producer-side wins over decode-side
+                        guesses[id(tgt)] = et       # producer wins over decode
+                        confident[id(tgt)] = sure
     # Inline constants: the lift const-inlines aggressively, so a literal usually
-    # appears as an INTRINSIC ARG, never as an assignment source. Same strict
-    # constant proof, keyed by the constant object itself.
+    # appears as an INTRINSIC ARG, never as an assignment source.
     for s_ in (main, *subs):
         for bb in s_.body:
             for o in bb.ops:
@@ -1377,15 +1397,16 @@ def _guess_encoded_types(main, subs) -> dict:
                         et = _guess_const_encoding(a.value)
                         if et is not None:
                             guesses[id(a)] = et
-    # Producer-side homogeneous static arrays (exact N) -- a specific structural
-    # guess; wins over the coarser decode-side array for the same register.
-    guesses.update(_guess_static_arrays(main, subs))
-    # Usage-side address evidence -- lowest priority (a producer/decode/struct
-    # guess for the same register wins), filled in only where absent.
-    for rid, et in _guess_address_usage(main, subs).items():
-        guesses.setdefault(rid, et)
-    _propagate_guesses(main, subs, guesses)
-    return guesses
+                            confident[id(a)] = True
+    # Producer-side homogeneous static arrays: shape fits but array-vs-struct is
+    # unforced -> somewhat.
+    bulk(_guess_static_arrays(main, subs), False)
+    # Usage-side address evidence -- the AVM forces a 32-byte address here, so the
+    # 'it is an address' call is FULLY confident. Gap-fill (lowest priority).
+    bulk_default(_guess_address_usage(main, subs), True)
+
+    _propagate_guesses(main, subs, guesses, confident)
+    return guesses, confident
 
 
 # State-write ops whose (key, value) a get of the same key can inherit an
@@ -1396,7 +1417,7 @@ _STATE_GET_OPS = (AVMOp.app_global_get, AVMOp.app_local_get,
                   AVMOp.app_global_get_ex, AVMOp.app_local_get_ex)
 
 
-def _propagate_guesses(main, subs, guesses: dict) -> None:
+def _propagate_guesses(main, subs, guesses: dict, confident: dict = None) -> None:
     """Flow the per-register speculative encodings along IDENTITY-preserving
     relations, so a guess reaches the whole value web it feeds -- not just the
     one op that produced it. In-place: adds ``id(register) -> EncodedType``
@@ -1414,20 +1435,29 @@ def _propagate_guesses(main, subs, guesses: dict) -> None:
         ``app_*_put`` to that KEY wrote a value with the SAME encoding
         (all-writes-agree, mirroring the state-resolution soundness elsewhere).
 
+    ``confident`` (optional ``{id: bool}``) is propagated in lock-step: a copy
+    inherits the source class, a phi is confident only if EVERY agreeing arm is,
+    and a state round-trip is never confident (all-writes-agree is an assumption,
+    not a proof). A derived guess is never more confident than what it came from.
+
     Speculative + side-channel throughout: never touches ``ir_type``, so a
     wrong hop cannot affect lowering -- only what a tolerant consumer reads."""
+    confident = confident if confident is not None else {}
+
     def key(r):
         return (r.name, r.version)
 
-    # Seed: logical-identity -> encoding, from the base register guesses.
+    # Seed: logical-identity -> encoding (+ confident bool), from the base guesses.
     enc: dict = {}
+    enc_conf: dict = {}                   # (name,version) -> bool
     objs: dict = {}                       # (name,version) -> [register objects]
 
     def note(r):
         if isinstance(r, M.Register):
             objs.setdefault(key(r), []).append(r)
-            if id(r) in guesses:
-                enc.setdefault(key(r), guesses[id(r)])
+            if id(r) in guesses and key(r) not in enc:
+                enc[key(r)] = guesses[id(r)]
+                enc_conf[key(r)] = confident.get(id(r), False)
 
     for s in (main, *subs):
         for bb in s.body:
@@ -1469,34 +1499,41 @@ def _propagate_guesses(main, subs, guesses: dict) -> None:
                         writes[kb] = None            # an unencoded write poisons the key
                     else:
                         writes.setdefault(kb, set()).add(e)
-        return {kb: next(iter(es)) for kb, es in writes.items()
-                if isinstance(es, set) and len(es) == 1}
+        se = {kb: next(iter(es)) for kb, es in writes.items()
+              if isinstance(es, set) and len(es) == 1}
+        # A state round-trip is an all-writes-agree ASSUMPTION, not a proof ->
+        # never fully confident.
+        sc = {kb: False for kb in se}
+        return se, sc
 
     changed = True
     while changed:
         changed = False
-        state_enc = _run_state()
+        state_enc, state_conf = _run_state()
         for s in (main, *subs):
             for bb in s.body:
                 for ph in bb.phis:
                     k = key(ph.register)
                     if k in enc:
                         continue
-                    arm_encs = [enc.get(key(pa.value)) for pa in ph.args
-                                if isinstance(pa.value, M.Register)]
+                    arms = [(enc.get(key(pa.value)), enc_conf.get(key(pa.value)))
+                            for pa in ph.args if isinstance(pa.value, M.Register)]
+                    arm_encs = [e for e, _ in arms]
                     if arm_encs and all(e is not None for e in arm_encs) \
                             and len(set(arm_encs)) == 1:
                         enc[k] = arm_encs[0]
+                        enc_conf[k] = all(c for _, c in arms)   # confident iff every arm is
                         changed = True
                 for o in bb.ops:
                     if not isinstance(o, M.Assignment):
                         continue
                     src = o.source
-                    e = None
+                    e = ec = None
                     if isinstance(src, M.Register):
-                        e = enc.get(key(src))
+                        e, ec = enc.get(key(src)), enc_conf.get(key(src))
                     elif isinstance(src, M.Intrinsic) and src.op in _STATE_GET_OPS:
-                        e = state_enc.get(_key_const(src.args))
+                        kb = _key_const(src.args)
+                        e, ec = state_enc.get(kb), state_conf.get(kb)
                     if e is None:
                         # BACKWARD copy (``t = r``): if the copy result already
                         # carries a guess (e.g. a use-site address stamp) but the
@@ -1504,18 +1541,21 @@ def _propagate_guesses(main, subs, guesses: dict) -> None:
                         # it. This is what carries a usage-evidence guess back past
                         # a rename to the value's real definition.
                         if isinstance(src, M.Register) and key(src) not in enc:
-                            te = [enc.get(key(t)) for t in o.targets
-                                  if isinstance(t, M.Register)]
-                            if te and all(x is not None for x in te) \
-                                    and len(set(te)) == 1 \
-                                    and src.ir_type.avm_type == te[0].avm_type:
-                                enc[key(src)] = te[0]
+                            te = [(enc.get(key(t)), enc_conf.get(key(t)))
+                                  for t in o.targets if isinstance(t, M.Register)]
+                            tenc = [x for x, _ in te]
+                            if tenc and all(x is not None for x in tenc) \
+                                    and len(set(tenc)) == 1 \
+                                    and src.ir_type.avm_type == tenc[0].avm_type:
+                                enc[key(src)] = tenc[0]
+                                enc_conf[key(src)] = all(c for _, c in te)
                                 changed = True
                         continue
                     for t in o.targets:
                         if isinstance(t, M.Register) and key(t) not in enc \
                                 and t.ir_type.avm_type == e.avm_type:
                             enc[key(t)] = e
+                            enc_conf[key(t)] = bool(ec)
                             changed = True
 
     # Stamp every register OBJECT of an encoded SSA value (incl. use-site copies).
@@ -1523,6 +1563,7 @@ def _propagate_guesses(main, subs, guesses: dict) -> None:
         for r in objs.get(k, ()):
             if id(r) not in guesses and r.ir_type.avm_type == e.avm_type:
                 guesses[id(r)] = e
+                confident[id(r)] = enc_conf.get(k, False)
 
 
 # Fund / asset-transfer itxn fields whose operand is an address the CONTRACT
@@ -1568,10 +1609,14 @@ def abi_address_fund_flows(main, subs, guesses=None) -> list:
     slice is INTRA-procedural -- a value arriving as a subroutine frame parameter
     breaks the chain (documented gap; taint's interprocedural bridge is the fuller
     answer). Op-granular (Puya IR carries no source line on this path); returns
-    dicts ``{field, subroutine, encoding, caller_supplied, guarded}``.
-    Side-channel in, report out -- never touches ``ir_type`` or lowering."""
+    dicts ``{field, subroutine, encoding, confident, caller_supplied, guarded}``,
+    where ``confident`` (bool) is whether the recovered address type is fully or
+    only somewhat confident (see :func:`guess_encoded_types_scored`). Side-channel
+    in, report out -- never touches ``ir_type``."""
     if guesses is None:
-        guesses = _guess_encoded_types(main, subs)
+        guesses, confident = guess_encoded_types_scored(main, subs)
+    else:
+        confident = {}
 
     def kv(r):
         return (r.name, r.version)
@@ -1662,6 +1707,7 @@ def abi_address_fund_flows(main, subs, guesses=None) -> list:
                     "field": field,
                     "subroutine": s.id,
                     "encoding": str(guesses[id(a)]),
+                    "confident": bool(confident.get(id(a), False)),
                     "caller_supplied": bool(sl & is_arg),
                     "guarded": bool(sl & compared),
                 })

@@ -249,8 +249,9 @@ def _cmd_abi_audit(args) -> int:
             tag = "  caller-supplied, guarded"
         else:
             tag = "  (not directly caller-supplied)"
+        conf = "confident" if x.get("confident") else "somewhat"
         print(f"  {x['file']}: itxn_field {x['field']} (sub {x['subroutine']}) "
-              f"<- {x['encoding']}{tag}")
+              f"<- {x['encoding']} [{conf}]{tag}")
     return 1 if danger else 0
 
 
