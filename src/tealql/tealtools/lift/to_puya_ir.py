@@ -1083,6 +1083,85 @@ def _guess_struct_encodings(main, subs, dynamic_guesses) -> dict:
     return out
 
 
+def _guess_decoded_static_arrays(main, subs) -> dict:
+    """Recognise a value DECODED as an ``arc4.StaticArray<UIntN, K>`` -- the
+    consumer-side counterpart to :func:`_guess_static_arrays`. ``{id(Register):
+    EncodedType}``.
+
+    A value ``X`` is a static array when ALL of:
+      - it is read only via same-width fixed-offset ``extract_uint64`` /
+        ``extract_uint32`` (homogeneous element width ``w`` in {8, 4}) at >= 2
+        distinct constant positions, each a multiple of ``w``;
+      - it has NO ``extract_uint16(X, 0)`` read -- that offset-0 uint16 is the
+        length prefix of a DYNAMIC array or the first offset of a struct table,
+        both of which this must not swallow;
+      - its total byte length ``M`` is STATICALLY KNOWN (:func:`_static_byte_len`
+        -- a ``SizedBytesType`` register or a constant, which a fixed-length ABI
+        static-array arg / ``extract Y a b`` slice is) and divisible by ``w``.
+    Then ``K = M / w`` is EXACT (from the length, not the read count -- so partial
+    element access still gives the true size) and every read lands inside ``[0,
+    M)``.
+
+    ``uint16`` elements are deliberately EXCLUDED: an offset-0 uint16 is
+    indistinguishable from a length prefix / offset-table slot, so admitting it
+    would misread dynamic arrays and structs. Homogeneous-but-actually-a-struct
+    (e.g. ``Tuple<UInt64, UInt64>``) is the inherent speculation, hence
+    side-channel only. Pairs with the struct recogniser, which only fires for a
+    shape with >= 1 DYNAMIC field -- a pure-static homogeneous value is this."""
+    from puya.ir.encodings import ArrayEncoding, UIntEncoding
+    from puya.ir.types_ import EncodedType
+
+    def kv(r):
+        return (r.name, r.version)
+
+    reg_def: dict = {}
+    for s in (main, *subs):
+        for bb in s.body:
+            for o in bb.ops:
+                if isinstance(o, M.Assignment):
+                    for t in o.targets:
+                        reg_def[id(t)] = o
+
+    width = {AVMOp.extract_uint64: 8, AVMOp.extract_uint32: 4}
+    reads: dict = {}                 # (name,version) -> set[(pos, w)]
+    len_prefixed: set = set()        # (name,version) with an offset-0 uint16 read
+    obj: dict = {}                   # (name,version) -> a representative Register
+    for s in (main, *subs):
+        for bb in s.body:
+            for o in bb.ops:
+                src = o.source if isinstance(o, M.Assignment) else o
+                if not isinstance(src, M.Intrinsic):
+                    continue
+                a = src.args
+                if not (len(a) >= 2 and isinstance(a[0], M.Register)
+                        and isinstance(a[1], M.UInt64Constant)):
+                    continue
+                if src.op is AVMOp.extract_uint16 and a[1].value == 0:
+                    len_prefixed.add(kv(a[0]))
+                elif src.op in width:
+                    reads.setdefault(kv(a[0]), set()).add((a[1].value, width[src.op]))
+                    obj.setdefault(kv(a[0]), a[0])
+
+    out: dict = {}
+    for k, rs in reads.items():
+        if k in len_prefixed or len(rs) < 2:
+            continue
+        widths = {w for _, w in rs}
+        if len(widths) != 1:
+            continue
+        w = next(iter(widths))
+        if any(p % w for p, _ in rs):
+            continue
+        m = _static_byte_len(obj[k], reg_def)
+        if m is None or m == 0 or m % w or m // w < 2:
+            continue
+        if any(p >= m for p, _ in rs):
+            continue
+        out[id(obj[k])] = EncodedType(ArrayEncoding(
+            element=UIntEncoding(w * 8), size=m // w, length_header=False))
+    return out
+
+
 def _guess_static_arrays(main, subs) -> dict:
     """Recognise a producer-built ``arc4.StaticArray<T, N>`` -- ``{id(Register):
     EncodedType}``. A ``concat`` that flattens (nested binary concats included) to
@@ -1238,6 +1317,9 @@ def _guess_encoded_types(main, subs) -> dict:
         via :func:`_guess_decoded_dynamic` (coarsest);
       - dynamic STRUCTS / tuples reconstructed from their offset-table decode, via
         :func:`_guess_struct_encodings` (overrides the array guess for that value);
+      - values DECODED as fixed-length homogeneous ``arc4.StaticArray<UIntN, K>``
+        (known byte length read as same-width uint chunks), via
+        :func:`_guess_decoded_static_arrays`;
       - bytes CONSTANTS that are self-describing uint16-length-prefixed sequences,
         via :func:`_guess_const_encoding` -> ``arc4.String`` -- checked BOTH as
         assignment sources and INLINE in intrinsic args (the lift const-inlines
@@ -1263,6 +1345,7 @@ def _guess_encoded_types(main, subs) -> dict:
                         reg_def[id(t)] = o
     guesses: dict = _guess_decoded_dynamic(main, subs)
     guesses.update(_guess_struct_encodings(main, subs, guesses))
+    guesses.update(_guess_decoded_static_arrays(main, subs))
     for s in (main, *subs):
         for bb in s.body:
             for o in bb.ops:

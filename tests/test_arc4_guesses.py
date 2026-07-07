@@ -156,6 +156,59 @@ return
     assert sa, "three concatenated uint64s must be StaticArray<UInt64, 3>"
 
 
+def test_decoded_static_array_from_fixed_length(tmp_path):
+    """A fixed-length value (extract -> SizedBytesType(24)) read as same-width
+    uint64s at 0/8/16 is decoded arc4.StaticArray<UInt64, 3> -- exact N from the
+    byte length."""
+    from puya.ir.encodings import ArrayEncoding
+
+    teal = """#pragma version 10
+txna ApplicationArgs 0
+extract 0 24
+dup
+dup
+int 0
+extract_uint64
+pop
+int 8
+extract_uint64
+pop
+int 16
+extract_uint64
+pop
+pop
+int 1
+return
+"""
+    guesses, _ = _guesses_for(tmp_path, teal)
+    assert any(isinstance(e.encoding, ArrayEncoding) and not e.encoding.length_header
+               and e.encoding.size == 3 for e in guesses.values()), (
+        "24-byte value read as uint64s must be StaticArray<UInt64, 3>")
+
+
+def test_decoded_static_array_needs_known_length(tmp_path):
+    """Without a statically-known byte length, N is unknown -- no static-array
+    guess (a raw ApplicationArgs value read at 0/8 could be any size)."""
+    from puya.ir.encodings import ArrayEncoding
+
+    teal = """#pragma version 10
+txna ApplicationArgs 0
+dup
+int 0
+extract_uint64
+pop
+int 8
+extract_uint64
+pop
+int 1
+return
+"""
+    guesses, _ = _guesses_for(tmp_path, teal)
+    assert not any(isinstance(e.encoding, ArrayEncoding) and not e.encoding.length_header
+                   and (e.encoding.size or 0) >= 2 for e in guesses.values()), (
+        "unknown-length value must not yield a fixed-N static array")
+
+
 def test_heterogeneous_concat_not_static_array(tmp_path):
     """A concat of DIFFERENT static elements is a tuple, NOT a static array:
     no header-less array-of-size guess for it (uint64 + uint32)."""
