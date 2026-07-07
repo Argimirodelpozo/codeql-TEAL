@@ -197,6 +197,63 @@ def _cmd_box_df(args) -> int:
     return _emit_findings(fn(prog), json_out=args.json_out)
 
 
+def _cmd_abi_audit(args) -> int:
+    """ABI type-driven audit: a caller-supplied ``arc4.Address`` paid out to a
+    fund / asset-transfer sink WITHOUT a validating guard (the arbitrary-recipient
+    shape). Powered by the speculative ABI type recovery — the recovered address
+    type is what tells us a 32-byte operand is a caller-chosen recipient. Requires
+    the ``puya`` package (the recovery lives in the real Puya IR); degrades with a
+    clear message when it is missing or a contract does not lift.
+
+    Exit 1 if any arbitrary-recipient flow is found (CI-friendly), else 0."""
+    try:
+        from tealql.tealtools.lift import to_puya, to_puya_ir
+    except ImportError:
+        print("error: abi-audit requires the 'puya' package (pip install puyapy)",
+              file=sys.stderr)
+        return 2
+    # The recovery drives Puya's own IR builder, which emits heavy DEBUG/ERROR
+    # logging (incl. the lift's known tolerated arg-mistypes); keep the audit
+    # output clean.
+    import logging as _logging
+    _logging.getLogger("puya").setLevel(_logging.CRITICAL)
+
+    leads: list = []
+    for prog, name in _load_programs(args):
+        label = name or Path(getattr(prog, "source_path", "") or "<program>").name
+        try:
+            main, subs = to_puya(prog)
+        except Exception as e:                       # coverage gap, not a crash
+            logger.warning("abi-audit: %s did not lift (%s: %s) — skipped",
+                           label, type(e).__name__, e)
+            continue
+        for lead in to_puya_ir.abi_address_fund_flows(main, subs):
+            leads.append({"file": label, **lead})
+
+    danger = [x for x in leads
+              if x["caller_supplied"] and not x["guarded"]]
+    if args.json_out:
+        print(_json.dumps(leads, indent=2))
+        return 1 if danger else 0
+    if not leads:
+        print("(no arc4.Address values reach a fund/asset sink)")
+        return 0
+    print(f"abi-audit: {len(leads)} address→sink flow(s), "
+          f"{len(danger)} arbitrary-recipient (caller-supplied & UNGUARDED)")
+    for x in sorted(leads, key=lambda d: (not (d["caller_supplied"]
+                                               and not d["guarded"]),
+                                          d["file"], d["subroutine"], d["field"])):
+        if x["caller_supplied"] and not x["guarded"]:
+            tag = "  ⚠ CALLER-SUPPLIED, UNGUARDED"
+        elif x["caller_supplied"]:
+            tag = "  caller-supplied, guarded"
+        else:
+            tag = "  (not directly caller-supplied)"
+        print(f"  {x['file']}: itxn_field {x['field']} (sub {x['subroutine']}) "
+              f"<- {x['encoding']}{tag}")
+    return 1 if danger else 0
+
+
 def _cmd_itxn_report(args) -> int:
     from tealql.tealtools.inner_txn_report import InnerTxnReport
     r = InnerTxnReport(_load(args))
@@ -545,6 +602,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     add("itxn-report", "inner-transaction report", _cmd_itxn_report)
+    add("abi-audit",
+        "ABI type-driven audit: caller-supplied arc4.Address paid to a "
+        "fund/asset sink unguarded (needs puya)", _cmd_abi_audit)
     add("group-shape", "forced group shape", _cmd_group_shape)
     add("group-layout", "forced group size + per-position layout", _cmd_group_layout)
     add("cost", "per-line opcode cost", _cmd_cost)

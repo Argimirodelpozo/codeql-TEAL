@@ -410,3 +410,48 @@ def test_cli_detections_scan_config_empty_only_exit_zero(tmp_path, capsys):
     rc = main(["detections-scan", str(REKEY_VULN_DIR), "--config", str(rules)])
     assert rc == 0
     assert "(no findings)" in capsys.readouterr().out
+
+
+# ---------------------------------------------------------------------------
+# abi-audit — the ABI type-driven arbitrary-recipient audit (needs puya)
+# ---------------------------------------------------------------------------
+
+_ARBITRARY_PAY = (
+    "#pragma version 10\n"
+    "itxn_begin\nint pay\nitxn_field TypeEnum\n"
+    "txna ApplicationArgs 0\nitxn_field Receiver\n"
+    "int 1000\nitxn_field Amount\nitxn_submit\n"
+    "int 1\nreturn\n"
+)
+
+
+def test_abi_audit_flags_arbitrary_recipient(tmp_path, capsys):
+    pytest.importorskip("puya")
+    (tmp_path / "vuln.teal").write_text(_ARBITRARY_PAY)
+    rc = main(["abi-audit", str(tmp_path)])
+    out = capsys.readouterr().out
+    assert rc == 1
+    assert "arbitrary-recipient" in out
+    assert "UNGUARDED" in out
+
+
+def test_abi_audit_guarded_exit_zero(tmp_path, capsys):
+    pytest.importorskip("puya")
+    (tmp_path / "guarded.teal").write_text(
+        "#pragma version 10\n"
+        'txna ApplicationArgs 0\nbyte "admin"\napp_global_get\n==\nassert\n'
+        + _ARBITRARY_PAY.split("\n", 1)[1]  # reuse the pay body after #pragma
+    )
+    rc = main(["abi-audit", str(tmp_path)])
+    assert rc == 0
+    assert "0 arbitrary-recipient" in capsys.readouterr().out
+
+
+def test_abi_audit_json_shape(tmp_path, capsys):
+    pytest.importorskip("puya")
+    (tmp_path / "vuln.teal").write_text(_ARBITRARY_PAY)
+    rc = main(["abi-audit", str(tmp_path), "--json"])
+    data = json.loads(capsys.readouterr().out)
+    assert rc == 1
+    assert data and data[0]["field"] == "Receiver"
+    assert data[0]["caller_supplied"] is True and data[0]["guarded"] is False
