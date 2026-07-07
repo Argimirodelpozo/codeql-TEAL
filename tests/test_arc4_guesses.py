@@ -127,6 +127,62 @@ return
                for g in guesses.values()), "decode shape must yield a dynamic guess"
 
 
+def test_static_array_homogeneous_concat(tmp_path):
+    """A concat of N identical static elements is recovered as
+    arc4.StaticArray<T, N> (exact N), side-channel only. Three uint64s ->
+    uint64[3]."""
+    from puya.ir.encodings import ArrayEncoding
+
+    teal = """#pragma version 10
+txna ApplicationArgs 0
+btoi
+itob
+txna ApplicationArgs 1
+btoi
+itob
+concat
+txna ApplicationArgs 2
+btoi
+itob
+concat
+log
+int 1
+return
+"""
+    guesses, _ = _guesses_for(tmp_path, teal)
+    sa = [e.encoding for e in guesses.values()
+          if isinstance(e.encoding, ArrayEncoding)
+          and not e.encoding.length_header and e.encoding.size == 3]
+    assert sa, "three concatenated uint64s must be StaticArray<UInt64, 3>"
+
+
+def test_heterogeneous_concat_not_static_array(tmp_path):
+    """A concat of DIFFERENT static elements is a tuple, NOT a static array:
+    no header-less array-of-size guess for it (uint64 + uint32)."""
+    from puya.ir.encodings import ArrayEncoding
+
+    teal = """#pragma version 10
+txna ApplicationArgs 0
+btoi
+itob
+txna ApplicationArgs 1
+btoi
+itob
+extract 4 4
+concat
+log
+int 1
+return
+"""
+    guesses, _ = _guesses_for(tmp_path, teal)
+    # a size-2 header-less array would be the false positive; the mixed widths
+    # must not be collapsed into one.
+    bad = [e.encoding for e in guesses.values()
+           if isinstance(e.encoding, ArrayEncoding)
+           and not e.encoding.length_header and e.encoding.size == 2]
+    assert not bad, f"heterogeneous concat must not be a static array: {bad}"
+
+
 def test_guess_propagates_through_state(tmp_path):
     """A guessed encoding flows put -> get: the length-proven encode idiom
     result is stored to a global key and read back; the read-back register

@@ -1083,6 +1083,66 @@ def _guess_struct_encodings(main, subs, dynamic_guesses) -> dict:
     return out
 
 
+def _guess_static_arrays(main, subs) -> dict:
+    """Recognise a producer-built ``arc4.StaticArray<T, N>`` -- ``{id(Register):
+    EncodedType}``. A ``concat`` that flattens (nested binary concats included) to
+    N >= 2 elements that are ALL the identical STATIC ABI encoding is, on the wire,
+    exactly a static array of that element: identical layout to the homogeneous
+    static ``Tuple`` the CONFIDENT tier already puts in ``ir_type``.
+
+    Calling it an ARRAY rather than a homogeneous tuple is the SPECULATION (the
+    bytes don't say which the author meant -- a ``Tuple<Address, Address>`` and an
+    ``Address[2]`` are wire-identical), so it lives only in the side-channel. The
+    exact element count N is KNOWN (every element is a visible concat operand); the
+    idiom (``concat`` of identical statics) and its proof (the shared
+    :func:`_static_encoding_elements` encoding) are discharged -- attributed
+    speculation. N == 2 is the ambiguous case (a homogeneous pair is as likely a
+    struct as an array), kept but inherently the weakest.
+
+    Only the OUTERMOST concat is emitted: an inner concat whose result feeds
+    another concat is an intermediate partial array, skipped (matched by SSA
+    ``name#version`` identity, since a register duplicates as distinct objects)."""
+    from puya.ir.encodings import ArrayEncoding
+    from puya.ir.types_ import EncodedType
+
+    def kv(r):
+        return (r.name, r.version)
+
+    fed_to_concat: set = set()
+    for s in (main, *subs):
+        for bb in s.body:
+            for o in bb.ops:
+                src = o.source if isinstance(o, M.Assignment) else o
+                if isinstance(src, M.Intrinsic) and src.op is AVMOp.concat:
+                    for a in src.args:
+                        if isinstance(a, M.Register):
+                            fed_to_concat.add(kv(a))
+
+    out: dict = {}
+    for s in (main, *subs):
+        for bb in s.body:
+            for o in bb.ops:
+                if not (isinstance(o, M.Assignment)
+                        and isinstance(o.source, M.Intrinsic)
+                        and o.source.op is AVMOp.concat
+                        and len(o.source.args) == 2):
+                    continue
+                le = _static_encoding_elements(o.source.args[0])
+                re = _static_encoding_elements(o.source.args[1])
+                if le is None or re is None:
+                    continue
+                elems = le + re
+                if len(elems) < 2 or len({str(e) for e in elems}) != 1:
+                    continue
+                et = EncodedType(ArrayEncoding(
+                    element=elems[0], size=len(elems), length_header=False))
+                for t in o.targets:
+                    if isinstance(t, M.Register) and kv(t) not in fed_to_concat \
+                            and t.ir_type.avm_type == et.avm_type:
+                        out[id(t)] = et
+    return out
+
+
 def _account_txn_fields() -> frozenset:
     """The transaction fields whose value IS a 32-byte address, read from puya's
     own field registry (``wtype`` == account: Receiver / Sender / CloseRemainderTo
@@ -1185,6 +1245,8 @@ def _guess_encoded_types(main, subs) -> dict:
         keyed by ``id(BytesConstant)``);
       - intrinsic results, via :func:`_guess_encoding_for` (the length-proven
         dynamic-sequence ENCODE idiom);
+      - producer-built homogeneous static arrays (``concat`` of N identical static
+        elements), via :func:`_guess_static_arrays` -> ``arc4.StaticArray<T, N>``;
       - bytes values USED at a langspec address position, via
         :func:`_guess_address_usage` -> ``arc4.Address`` (lowest priority --
         gap-fill only).
@@ -1232,6 +1294,9 @@ def _guess_encoded_types(main, subs) -> dict:
                         et = _guess_const_encoding(a.value)
                         if et is not None:
                             guesses[id(a)] = et
+    # Producer-side homogeneous static arrays (exact N) -- a specific structural
+    # guess; wins over the coarser decode-side array for the same register.
+    guesses.update(_guess_static_arrays(main, subs))
     # Usage-side address evidence -- lowest priority (a producer/decode/struct
     # guess for the same register wins), filled in only where absent.
     for rid, et in _guess_address_usage(main, subs).items():
