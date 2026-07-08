@@ -1,6 +1,6 @@
 # TealQL
 
-TealQL is a static-analysis toolkit for [TEAL](https://developer.algorand.org/docs/get-details/dapps/avm/teal/), the Algorand Virtual Machine's native language. It reconstructs typed SSA from raw TEAL source and runs detectors, reports, and a Puya-IR lift on top of it.
+TealQL is a static-analysis **and decompilation** toolkit for [TEAL](https://developer.algorand.org/docs/get-details/dapps/avm/teal/), the Algorand Virtual Machine's native language. It reconstructs typed SSA from raw TEAL source, lifts it to genuine [Puya](https://github.com/algorandfoundation/puya) IR, **recovers the ARC-4 and storage types that compilation erased**, and runs security detectors, reports, and type-driven audits on top.
 
 It began life on GitHub CodeQL; the analysis layer is now **pure Python** — there is no CodeQL CLI, extractor, or database to build. You point it at `.teal` source and it does the rest.
 
@@ -41,6 +41,39 @@ Every subcommand takes a single `<target>` — a `.teal` file, or a directory of
 ```bash
 tealql auth tests/tealtools/auth_domination/vuln/prog.teal
 ```
+
+---
+
+## Architecture
+
+A layered pipeline, every layer pure Python and reconstructed from the layer below — no database, no build step. A whole contract goes source → findings in milliseconds; the lift adds Puya's own optimisation passes on top.
+
+```
+TEAL source
+  │   tree-sitter-teal grammar  →  AST + CFG            (pure-Python extractor, no CodeQL)
+  ▼
+Typed SSA                                               (Braun on-demand construction)
+  │   analysis passes:  constants · int/byte ranges · byte-lengths · bigint math
+  ├─────────────►  Detectors (36)  ──►  findings        (SSA-level + interprocedural `ir-*` family)
+  │
+  ▼   lift  (needs the `lift` extra: puyapy)
+Genuine Puya IR   (puya.ir.models)                      validated + optimised by Puya's own passes
+  │   type recovery  ·  storage-schema recovery
+  ├─────────────►  Type-driven audits  (abi-audit, box-audit)
+  └─────────────►  Decompilation output (recovered ARC-4 types, Box/BoxMap schema)
+```
+
+Subsystems, bottom to top:
+
+- **Extractor & SSA.** A pinned [tree-sitter-teal](https://github.com/Argimirodelpozo/tree-sitter-teal) grammar parses source to an AST; a pure-Python extractor builds the CFG (basic blocks, control-flow + interprocedural `retsub` edges). SSA is reconstructed with **Braun on-demand construction** (minimal phis; a forward depth-cap tames the loop-slot spiral) — the substrate every layer above consumes.
+- **Analysis passes.** An idempotent pass pipeline (`run_all_passes`) annotates the SSA with constant values, uint64 `IntRange`s (seeded from op tables, tightened by the contract's own `assert` guards), exact/ranged byte-lengths, and arbitrary-precision bigint value ranges — kept out of the substrate behind thin lazy-import bridge methods. See [Pipeline](#pipeline).
+- **Detectors.** 36 registered detections (`tealql detections --list`), auto-discovered from `src/tealql/security/detections/`. Beyond the SSA-level detectors there is an interprocedural **`ir-*` family** that runs on the lifted IR, where guard-dominance across `callsub` is precise; each is scored against a ground-truth corpus (see [Detector precision / recall](#detector-precision--recall)).
+- **The lift.** `tealql.tealtools.lift` lowers the SSA into *genuine* `puya.ir.models`, validated and optimised by Puya's own passes — not a re-implementation. It is behaviourally verified: ~900 real mainnet contracts (v2–v11) lift → recompile → dryrun **identically to their deployed bytecode** (`tests/behavioral_lift/`, `tests/mainnet-random-probes/`).
+- **Type recovery** (on the lifted IR — types erased by compilation, recovered from byte idioms). Two tiers, kept separate: a **confident** tier that refines the real `ir_type` (langspec-forward + usage-backward `account`), proven annotation-only / TEAL-neutral by `tests/test_recovery_neutral.py`; and a **speculative** side-channel of ARC-4 `String` / dynamic + static arrays / structs / addresses, each tagged fully-vs-somewhat confident, that never touches codegen.
+- **Storage-schema recovery.** Reconstructs Puya's own `ContractState` model — global / local / box, single keys and maps, with recovered key/value types including **composite tuple keys** (e.g. a per-holder balance box keyed `(address, uint64)`) — resolving keys built in a caller and passed into a helper **interprocedurally**. That ARC-56 schema is not in the deployed bytecode.
+- **Type-driven audits.** `abi-audit` and `box-audit` consume the recovered types to flag caller-controlled funds recipients and cross-user storage access (see [Type recovery & decompilation](#type-recovery--decompilation-needs-the-lift-extra)).
+
+**Verification philosophy.** Nothing is trusted on structural acceptance alone: the lift is gated by real-execution faithfulness (localnet dryruns), type recovery by a snapshot-in-place **neutrality gate** (recovery must be annotation-only), detectors by a **precision/recall benchmark**, and the graph/analysis producers by committed **golden snapshots**.
 
 ---
 
@@ -150,6 +183,19 @@ Inline annotations rendered by `tealql functional`:
 | `tealql.tealtools.cost_analysis` | Per-line opcode-budget cost with worst-case path accumulation; loops report `unbounded`. |
 | `tealql.tealtools.dataflow.predicate_aware.filter_validated` | Wraps a taint detector — suppresses violations whose sink operand is constrained by a dominating path predicate. |
 
+The table above is a curated subset. The full detection suite is 36 registered
+detectors (`tealql detections --list`), auto-discovered from
+`src/tealql/security/detections/` — including the interprocedural `ir-*` family
+that runs on the lifted IR.
+
+**Decompilation & recovery** (need the `lift` extra) — reconstruct what compilation erased.
+
+| Module | What it recovers |
+| --- | --- |
+| `tealql.tealtools.lift.to_puya_ir` | Scalar / ARC-4 type recovery on the lifted Puya IR: a confident tier (refines the real `ir_type`, TEAL-neutral) + a speculative side-channel (`guess_encoded_types_scored` → ARC-4 String / arrays / structs / addresses, each with a confidence flag). |
+| `tealql.tealtools.lift.box_recovery.recover_storage_schema` | Puya `ContractState` schema — global / local / box single keys and maps, with recovered key/value types incl. composite tuple keys; interprocedural key resolution. |
+| `tealql.tealtools.lift.box_recovery.box_access_control` | Cross-user box access: a caller-supplied address-keyed `BoxMap` not bound to `txn Sender` (the `box-audit` detection). |
+
 ### Example: run a detector
 
 ```python
@@ -179,7 +225,7 @@ The notebooks under `playground/interactive-examples/` (`example.ipynb`, `exampl
 `tealql.tealtools.lift` lifts the reconstructed SSA into genuine [Puya](https://github.com/algorandfoundation/puya) IR (`puya.ir.models`), validating and optimising it with Puya's own passes:
 
 ```bash
-python -m tealql.tealtools.lift <teal-source> [--optimize]
+uv run python -m tealql.tealtools.lift <teal-source> [--optimize]
 ```
 
 ### Type recovery & decompilation (needs the `lift` extra)
@@ -209,7 +255,7 @@ Detector quality is a measured number, not an anecdote:
 `tests/test_benchmark.py` scores every detector against a ground-truth corpus
 (`tests/benchmark/<detector>/{vuln,safe}/`) and pins the confusion matrix.
 The published table lives in [`docs/PRECISION.md`](docs/PRECISION.md)
-(regenerate with `python -m tests.gen_precision`); see
+(regenerate with `uv run python -m tests.gen_precision`); see
 [`tests/benchmark/README.md`](tests/benchmark/README.md) to add cases. Note the
 caveat there — perfect scores on a curated corpus are a *specification*, not a
 field false-positive rate.
@@ -220,10 +266,10 @@ field false-positive rate.
 
 ```bash
 # Verify all snapshots
-pytest tests/test_python_analyses.py -v
+uv run pytest tests/test_python_analyses.py -v
 
 # Regenerate baselines after an intended behaviour change
-UPDATE_SNAPSHOTS=1 pytest tests/test_python_analyses.py -v
+UPDATE_SNAPSHOTS=1 uv run pytest tests/test_python_analyses.py -v
 ```
 
 ### Graph golden fixtures
@@ -231,7 +277,7 @@ UPDATE_SNAPSHOTS=1 pytest tests/test_python_analyses.py -v
 `tests/test_graph_golden.py` pins the pure-Python graph producers (`nodes` / `cfgEdges` / `basicBlocks`) to a committed `graph_golden.txt` per fixture. Regenerate after an intentional change to the producers:
 
 ```bash
-python -m tests.gen_graph_golden
+uv run python -m tests.gen_graph_golden
 ```
 
 ---
