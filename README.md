@@ -49,6 +49,10 @@ tealql detections       <target> {--detector NAME | --all | --list} [--mode app|
 tealql detections-scan  <root>   [--config rules.yml] [--mode-config modes.yml]
 tealql group-taint      <member.teal>...   # cross-member taint over an atomic group (in group order)
 
+# Type-recovery-driven audits (need the lift extra — puyapy; exit 1 on any finding)
+tealql abi-audit        <target>   # caller-supplied arc4.Address paid to a fund/asset sink unguarded
+tealql box-audit        <target>   # caller-supplied address-keyed BoxMap not bound to txn Sender (cross-user access)
+
 # Reports
 tealql itxn-report     <target>
 tealql group-shape     <target>
@@ -56,6 +60,7 @@ tealql group-layout    <target>
 tealql cost            <target>
 tealql path-predicates <target>
 tealql cfg             <target> [--file F] [--skeleton]
+tealql storage-schema  <target>   # reconstruct global/local/box keys + maps with recovered key/value types (needs lift)
 tealql xcontract       <target> {--registry <yml> | --from-chain [--cache-dir D]} [--detections | --detector NAME]
 
 # Annotated SSA dump (runs every pass and prints functional form)
@@ -163,6 +168,15 @@ The notebooks under `playground/interactive-examples/` (`example.ipynb`, `exampl
 ```bash
 python -m tealql.tealtools.lift <teal-source> [--optimize]
 ```
+
+### Type recovery & decompilation (needs the `lift` extra)
+
+On the lifted IR, the toolkit recovers types that are **not in the deployed bytecode**:
+
+- **Scalar / ARC-4 types** — a two-tier recovery (a *confident* tier that refines the real `ir_type`, proven TEAL-neutral by `tests/test_recovery_neutral.py`, plus a *speculative* side-channel of `arc4.String` / arrays / structs / addresses with a fully-vs-somewhat confidence flag).
+- **Storage schema** — reconstructs Puya's `ContractState` model (global / local / box keys and maps, with recovered key/value types incl. composite tuple keys) via `tealql storage-schema`.
+
+Two type-driven security audits are built on it: `tealql abi-audit` (caller-supplied `arc4.Address` paid to a fund/asset sink unguarded) and `tealql box-audit` (caller-supplied address-keyed `BoxMap` not bound to `txn Sender` — cross-user box access). Both need `pip install -e '.[lift]'`.
 
 ---
 
