@@ -8,15 +8,28 @@ It began life on GitHub CodeQL; the analysis layer is now **pure Python** — th
 
 ### Clone & install
 
+Managed with [uv](https://docs.astral.sh/uv/) — `uv.lock` pins the exact
+dependency tree (including the pinned tree-sitter-teal grammar commit and the
+puya compiler internals the lift targets), so your environment matches CI:
+
 ```bash
 git clone https://github.com/Argimirodelpozo/codeql-TEAL.git
 cd codeql-TEAL
-pip install -e .                # core: parse + SSA + detectors (Python >= 3.12)
-pip install -e '.[lift]'        # + puyapy, for decompilation to real Puya IR / TEAL
+uv sync                          # core: parse + SSA + detectors (Python >= 3.12)
+uv sync --extra lift             # + puyapy, for decompilation to real Puya IR / TEAL
+uv run tealql --help             # run the CLI in the synced env
 ```
 
-That puts a `tealql` binary on `$PATH`. `python -m tealql.cli` works as a fallback.
-The core install pulls everything the analysis needs, including the
+Prefer pip? It reads the same `pyproject.toml` (hatchling is the build backend):
+
+```bash
+pip install -e .                 # core
+pip install -e '.[lift]'         # + lift extra
+```
+
+Either way you get a `tealql` binary (`uv run tealql …` or, with pip, on `$PATH`);
+`python -m tealql.cli` is a fallback. The core install pulls everything the
+analysis needs, including the
 [tree-sitter-teal](https://github.com/Argimirodelpozo/tree-sitter-teal) grammar
 (a pinned git dependency). The `lift` extra is only needed to lower programs to
 genuine `puya.ir` — every detector, including the `ir-*` family, runs without it.
@@ -183,9 +196,9 @@ Two type-driven security audits are built on it: `tealql abi-audit` (caller-supp
 ## Running Tests
 
 ```bash
-pip install -e '.[dev]'    # pytest + xdist + timeout + coverage
-pytest tests/ -q
-pytest tests/ --cov        # with coverage (config + regression floor in pyproject)
+uv sync --extra dev        # pytest + xdist + timeout + coverage  (or: pip install -e '.[dev]')
+uv run pytest tests/ -q
+uv run pytest tests/ --cov # with coverage (config + regression floor in pyproject)
 ```
 
 The suite is pure Python — no CodeQL, JVM, or network needed for the core tests.
@@ -225,8 +238,8 @@ python -m tests.gen_graph_golden
 
 ## Prerequisites
 
-- Python 3.12+ with the package installed (`pip install -e .` pulls in the runtime deps, including the pinned tree-sitter TEAL grammar).
-- `pytest` for the test suite (`pip install -e '.[dev]'`).
+- Python 3.12+ with the package installed (`uv sync`, or `pip install -e .`, pulls in the runtime deps, including the pinned tree-sitter TEAL grammar). `uv` auto-manages the interpreter.
+- The test suite via `uv sync --extra dev` (or `pip install -e '.[dev]'`), run with `uv run pytest`.
 
 ---
 

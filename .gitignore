@@ -24,3 +24,6 @@ dist/
 .coverage.*
 htmlcov/
 coverage.xml
+
+# uv virtualenv
+.venv/
