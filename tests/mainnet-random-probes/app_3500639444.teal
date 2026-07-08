@@ -1,0 +1,40 @@
+#pragma version 2
+intcblock 0 1
+bytecblock 0x6f6e5f757064617465 0x63726561746f72 0x6269645f7175616e74697479 0x6269645f7072696365 0x6f666665725f7175616e74697479 0x6f666665725f7072696365
+txn ApplicationID
+intc_0 // 0
+==
+bnz label1
+txna ApplicationArgs 0
+bytec_0 // "on_update"
+==
+bnz label2
+err
+label2:
+txn Sender
+bytec_1 // "creator"
+app_global_get
+==
+bnz label3
+err
+label3:
+bytec_2 // "bid_quantity"
+txna ApplicationArgs 1
+app_global_put
+bytec_3 // "bid_price"
+txna ApplicationArgs 2
+app_global_put
+bytec 4 // "offer_quantity"
+txna ApplicationArgs 3
+app_global_put
+bytec 5 // "offer_price"
+txna ApplicationArgs 4
+app_global_put
+intc_1 // 1
+return
+label1:
+bytec_1 // "creator"
+txn Sender
+app_global_put
+intc_1 // 1
+return

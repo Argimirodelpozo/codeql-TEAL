@@ -1,0 +1,354 @@
+#pragma version 10
+intcblock 1 0 32 4 9999 10000 2
+bytecblock 0x73656c6c6572 0x6173736574 0x6d61726b6574706c6163655f616d74 0x63726561746f72 0x6d61726b6574706c616365 0x7072696365 0x63726561746f725f616d74
+txn ApplicationID
+!
+pushint 6
+*
+txn OnCompletion
++
+switch label1 label2 label2 label2 label2 label3 label4 label2 label2 label2 label2 label2
+label2:
+err
+label11:
+txna ApplicationArgs 6
+btoi
+txna ApplicationArgs 5
+dup
+len
+intc_2 // 32
+==
+assert
+txna ApplicationArgs 4
+btoi
+txna ApplicationArgs 3
+btoi
+txna ApplicationArgs 2
+dup
+len
+intc_2 // 32
+==
+assert
+txna ApplicationArgs 1
+btoi
+callsub label5
+intc_0 // 1
+return
+label5:
+proto 6 0
+txn Sender
+global CreatorAddress
+==
+assert
+bytec_1 // "asset"
+frame_dig -1
+app_global_put
+bytec_0 // "seller"
+frame_dig -2
+app_global_put
+bytec_3 // "creator"
+frame_dig -1
+asset_params_get AssetCreator
+pop
+app_global_put
+bytec 4 // "marketplace"
+frame_dig -5
+app_global_put
+bytec 5 // "price"
+frame_dig -3
+app_global_put
+frame_dig -6
+frame_dig -4
+frame_dig -3
+callsub label6
+retsub
+label13:
+txna ApplicationArgs 1
+dup
+len
+intc_2 // 32
+==
+assert
+callsub label7
+intc_0 // 1
+return
+label7:
+proto 1 0
+txn Sender
+global CreatorAddress
+==
+assert
+bytec_0 // "seller"
+app_global_get
+frame_dig -1
+==
+assert
+itxn_begin
+intc_3 // 4
+itxn_field TypeEnum
+bytec_0 // "seller"
+app_global_get
+itxn_field AssetReceiver
+bytec_0 // "seller"
+app_global_get
+itxn_field AssetCloseTo
+global CurrentApplicationAddress
+bytec_1 // "asset"
+app_global_get
+asset_holding_get AssetBalance
+pop
+itxn_field AssetAmount
+bytec_1 // "asset"
+app_global_get
+itxn_field XferAsset
+intc_1 // 0
+itxn_field Fee
+itxn_next
+intc_0 // 1
+itxn_field TypeEnum
+bytec_0 // "seller"
+app_global_get
+itxn_field CloseRemainderTo
+bytec_0 // "seller"
+app_global_get
+itxn_field Receiver
+global CurrentApplicationAddress
+acct_params_get AcctBalance
+pop
+itxn_field Amount
+intc_1 // 0
+itxn_field Fee
+itxn_submit
+retsub
+label14:
+txna ApplicationArgs 2
+dup
+len
+intc_2 // 32
+==
+assert
+txna ApplicationArgs 1
+dup
+len
+intc_2 // 32
+==
+assert
+txn GroupIndex
+intc_0 // 1
+-
+dup
+gtxns TypeEnum
+intc_0 // 1
+==
+assert
+callsub label8
+intc_0 // 1
+return
+label8:
+proto 3 0
+txn Sender
+global CreatorAddress
+==
+assert
+frame_dig -1
+gtxns Sender
+global CreatorAddress
+==
+assert
+frame_dig -1
+gtxns Amount
+bytec 5 // "price"
+app_global_get
+==
+assert
+frame_dig -1
+gtxns Receiver
+global CurrentApplicationAddress
+==
+assert
+frame_dig -1
+gtxns CloseRemainderTo
+global ZeroAddress
+==
+assert
+frame_dig -1
+gtxns RekeyTo
+global ZeroAddress
+==
+assert
+itxn_begin
+intc_3 // 4
+itxn_field TypeEnum
+frame_dig -2
+itxn_field AssetReceiver
+frame_dig -2
+itxn_field AssetCloseTo
+global CurrentApplicationAddress
+bytec_1 // "asset"
+app_global_get
+asset_holding_get AssetBalance
+pop
+itxn_field AssetAmount
+bytec_1 // "asset"
+app_global_get
+itxn_field XferAsset
+intc_1 // 0
+itxn_field Fee
+itxn_next
+intc_0 // 1
+itxn_field TypeEnum
+bytec 6 // "creator_amt"
+app_global_get
+itxn_field Amount
+bytec_3 // "creator"
+app_global_get
+itxn_field Receiver
+intc_1 // 0
+itxn_field Fee
+itxn_next
+intc_0 // 1
+itxn_field TypeEnum
+bytec_2 // "marketplace_amt"
+app_global_get
+itxn_field Amount
+bytec 4 // "marketplace"
+app_global_get
+itxn_field Receiver
+intc_1 // 0
+itxn_field Fee
+itxn_next
+intc_0 // 1
+itxn_field TypeEnum
+bytec_2 // "marketplace_amt"
+app_global_get
+itxn_field Amount
+frame_dig -3
+itxn_field Receiver
+intc_1 // 0
+itxn_field Fee
+itxn_next
+intc_0 // 1
+itxn_field TypeEnum
+bytec_0 // "seller"
+app_global_get
+itxn_field Receiver
+bytec_0 // "seller"
+app_global_get
+itxn_field CloseRemainderTo
+intc_1 // 0
+itxn_field Fee
+itxn_submit
+retsub
+label12:
+txna ApplicationArgs 1
+btoi
+txn GroupIndex
+intc_0 // 1
+-
+dup
+gtxns TypeEnum
+intc_0 // 1
+==
+assert
+callsub label9
+intc_0 // 1
+return
+label9:
+proto 2 0
+txn Sender
+txna Applications 0
+app_params_get AppCreator
+pop
+==
+assert
+frame_dig -1
+gtxns Receiver
+global CurrentApplicationAddress
+==
+assert
+frame_dig -1
+gtxns Amount
+global MinBalance
+global AssetOptInMinBalance
++
+>=
+assert
+itxn_begin
+intc_3 // 4
+itxn_field TypeEnum
+global CurrentApplicationAddress
+itxn_field Sender
+global CurrentApplicationAddress
+itxn_field AssetReceiver
+intc_1 // 0
+itxn_field AssetAmount
+frame_dig -2
+itxn_field XferAsset
+intc_1 // 0
+itxn_field Fee
+itxn_submit
+retsub
+label6:
+proto 3 0
+pushbytes 0x // ""
+dup
+frame_dig -1
+frame_dig -2
+*
+intc 4 // 9999
++
+intc 5 // 10000
+/
+frame_bury 0
+frame_dig -1
+frame_dig -3
+*
+intc 4 // 9999
++
+intc 5 // 10000
+/
+frame_bury 1
+frame_dig 0
+intc 6 // 2
+frame_dig 1
+*
++
+frame_dig -1
+<
+assert
+bytec 6 // "creator_amt"
+frame_dig 0
+app_global_put
+bytec_2 // "marketplace_amt"
+frame_dig 1
+app_global_put
+pushbytes 0x73656c6c65725f616d74 // "seller_amt"
+frame_dig -1
+frame_dig 0
+intc 6 // 2
+frame_dig 1
+*
++
+-
+app_global_put
+retsub
+label10:
+intc_0 // 1
+return
+label4:
+pushbytes 0xb8447b36 // 0xb8447b36
+txna ApplicationArgs 0
+match label10
+err
+label1:
+pushbytes 0x699ad34e // 0x699ad34e
+pushbytes 0x3ea11832 // 0x3ea11832
+txna ApplicationArgs 0
+match label11 label12
+err
+label3:
+pushbytes 0x68e86343 // 0x68e86343
+pushbytes 0x6a16393d // 0x6a16393d
+txna ApplicationArgs 0
+match label13 label14
+err

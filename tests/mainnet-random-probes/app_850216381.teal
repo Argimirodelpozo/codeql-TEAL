@@ -1,0 +1,484 @@
+#pragma version 5
+intcblock 1 0 4 6
+bytecblock 0x6d696e746572 0x6d696e7465724944 0x61646450697261746573 0x72656d6f766550697261746573 0x617070726f76655368697043616c6c 0x504952415445
+txn ApplicationID
+intc_1 // 0
+==
+bnz label1
+txn OnCompletion
+pushint 2
+==
+bnz label2
+txn OnCompletion
+pushint 5
+==
+bnz label3
+txn OnCompletion
+intc_1 // 0
+==
+bnz label4
+txn OnCompletion
+intc_0 // 1
+==
+bnz label5
+txn OnCompletion
+intc_2 // 4
+==
+bnz label6
+err
+label6:
+intc_1 // 0
+return
+label5:
+intc_1 // 0
+return
+label4:
+txna ApplicationArgs 0
+pushbytes 0x6162616e646f6e50697261746573 // "abandonPirates"
+==
+bnz label7
+txna ApplicationArgs 0
+bytec_2 // "addPirates"
+==
+bnz label8
+txna ApplicationArgs 0
+bytec_3 // "removePirates"
+==
+bnz label9
+txna ApplicationArgs 0
+pushbytes 0x7769746864726177416c676f // "withdrawAlgo"
+==
+bnz label10
+err
+label10:
+txn RekeyTo
+global ZeroAddress
+==
+assert
+txn Sender
+global CreatorAddress
+==
+assert
+txn NumAppArgs
+pushint 2
+==
+assert
+txna ApplicationArgs 1
+btoi
+assert
+itxn_begin
+intc_0 // 1
+itxn_field TypeEnum
+intc_1 // 0
+itxn_field Fee
+txna ApplicationArgs 1
+btoi
+itxn_field Amount
+global CreatorAddress
+itxn_field Receiver
+itxn_submit
+intc_0 // 1
+return
+label9:
+txn GroupIndex
+intc_0 // 1
+-
+gtxns TypeEnum
+intc_3 // 6
+==
+assert
+txn GroupIndex
+intc_0 // 1
+-
+gtxns ApplicationID
+bytec_1 // "minterID"
+app_global_get
+==
+assert
+txn GroupIndex
+intc_0 // 1
+-
+gtxns OnCompletion
+intc_1 // 0
+==
+assert
+txn GroupIndex
+intc_0 // 1
+-
+gtxnsa ApplicationArgs 0
+bytec 4 // "approveShipCall"
+==
+assert
+txn RekeyTo
+global ZeroAddress
+==
+assert
+txn Sender
+global CreatorAddress
+==
+assert
+txn TypeEnum
+intc_3 // 6
+==
+assert
+txn ApplicationID
+global CurrentApplicationID
+==
+assert
+txn OnCompletion
+intc_1 // 0
+==
+assert
+txna ApplicationArgs 0
+bytec_3 // "removePirates"
+==
+assert
+intc_1 // 0
+store 11
+label12:
+load 11
+txn NumAssets
+<
+bnz label11
+global MinBalance
+load 11
+*
+assert
+itxn_begin
+intc_0 // 1
+itxn_field TypeEnum
+intc_1 // 0
+itxn_field Fee
+global MinBalance
+load 11
+*
+itxn_field Amount
+global CreatorAddress
+itxn_field Receiver
+itxn_submit
+intc_0 // 1
+return
+label11:
+itxn_begin
+intc_2 // 4
+itxn_field TypeEnum
+intc_1 // 0
+itxn_field Fee
+load 11
+txnas Assets
+itxn_field XferAsset
+intc_0 // 1
+itxn_field AssetAmount
+global CreatorAddress
+itxn_field AssetReceiver
+global CreatorAddress
+itxn_field AssetCloseTo
+itxn_submit
+load 11
+intc_0 // 1
++
+store 11
+b label12
+label8:
+txn GroupIndex
+pushint 2
+-
+store 6
+load 6
+gtxns RekeyTo
+global ZeroAddress
+==
+assert
+load 6
+gtxns Sender
+global CreatorAddress
+==
+assert
+load 6
+gtxns TypeEnum
+intc_0 // 1
+==
+assert
+load 6
+gtxns CloseRemainderTo
+global ZeroAddress
+==
+assert
+load 6
+gtxns Amount
+global MinBalance
+txn NumAssets
+*
+==
+assert
+load 6
+gtxns Receiver
+global CurrentApplicationAddress
+==
+assert
+txn GroupIndex
+intc_0 // 1
+-
+gtxns TypeEnum
+intc_3 // 6
+==
+assert
+txn GroupIndex
+intc_0 // 1
+-
+gtxns ApplicationID
+bytec_1 // "minterID"
+app_global_get
+==
+assert
+txn GroupIndex
+intc_0 // 1
+-
+gtxns OnCompletion
+intc_1 // 0
+==
+assert
+txn GroupIndex
+intc_0 // 1
+-
+gtxnsa ApplicationArgs 0
+bytec 4 // "approveShipCall"
+==
+assert
+txn RekeyTo
+global ZeroAddress
+==
+assert
+txn Sender
+global CreatorAddress
+==
+assert
+txn TypeEnum
+intc_3 // 6
+==
+assert
+txn ApplicationID
+global CurrentApplicationID
+==
+assert
+txn OnCompletion
+intc_1 // 0
+==
+assert
+txna ApplicationArgs 0
+bytec_2 // "addPirates"
+==
+assert
+intc_1 // 0
+store 5
+label14:
+load 5
+txn NumAssets
+<
+bnz label13
+intc_0 // 1
+return
+label13:
+txn GroupIndex
+load 5
++
+intc_0 // 1
++
+store 6
+load 6
+gtxns RekeyTo
+global ZeroAddress
+==
+assert
+load 6
+gtxns Sender
+global CreatorAddress
+==
+assert
+load 5
+txnas Assets
+asset_params_get AssetCreator
+store 8
+store 7
+load 7
+bytec_0 // "minter"
+app_global_get
+==
+assert
+load 5
+txnas Assets
+asset_params_get AssetUnitName
+store 10
+store 9
+load 9
+bytec 5 // "PIRATE"
+==
+assert
+itxn_begin
+intc_2 // 4
+itxn_field TypeEnum
+intc_1 // 0
+itxn_field Fee
+load 5
+txnas Assets
+itxn_field XferAsset
+intc_1 // 0
+itxn_field AssetAmount
+global CurrentApplicationAddress
+itxn_field AssetReceiver
+itxn_submit
+load 6
+gtxns TypeEnum
+intc_2 // 4
+==
+assert
+load 6
+gtxns AssetCloseTo
+global ZeroAddress
+==
+assert
+load 6
+gtxns XferAsset
+load 5
+txnas Assets
+==
+assert
+load 6
+gtxns AssetAmount
+intc_0 // 1
+==
+assert
+load 6
+gtxns AssetReceiver
+global CurrentApplicationAddress
+==
+assert
+load 5
+intc_0 // 1
++
+store 5
+b label14
+label7:
+txn RekeyTo
+global ZeroAddress
+==
+assert
+txn Sender
+global CreatorAddress
+==
+assert
+intc_1 // 0
+store 0
+label16:
+load 0
+txn NumAssets
+<
+bnz label15
+global MinBalance
+load 0
+*
+assert
+itxn_begin
+intc_0 // 1
+itxn_field TypeEnum
+intc_1 // 0
+itxn_field Fee
+global MinBalance
+load 0
+*
+itxn_field Amount
+global CreatorAddress
+itxn_field Receiver
+itxn_submit
+intc_0 // 1
+return
+label15:
+load 0
+txnas Assets
+asset_params_get AssetCreator
+store 2
+store 1
+load 1
+bytec_0 // "minter"
+app_global_get
+==
+assert
+load 0
+txnas Assets
+asset_params_get AssetUnitName
+store 4
+store 3
+load 3
+bytec 5 // "PIRATE"
+==
+assert
+itxn_begin
+intc_2 // 4
+itxn_field TypeEnum
+intc_1 // 0
+itxn_field Fee
+load 0
+txnas Assets
+itxn_field XferAsset
+intc_0 // 1
+itxn_field AssetAmount
+bytec_0 // "minter"
+app_global_get
+itxn_field AssetReceiver
+bytec_0 // "minter"
+app_global_get
+itxn_field AssetCloseTo
+itxn_submit
+load 0
+intc_0 // 1
++
+store 0
+b label16
+label3:
+txn RekeyTo
+global ZeroAddress
+==
+assert
+txn Sender
+global CreatorAddress
+==
+assert
+global CurrentApplicationAddress
+min_balance
+global MinBalance
+==
+assert
+global CurrentApplicationAddress
+balance
+assert
+itxn_begin
+intc_0 // 1
+itxn_field TypeEnum
+intc_1 // 0
+itxn_field Fee
+global CurrentApplicationAddress
+balance
+itxn_field Amount
+global CreatorAddress
+itxn_field Receiver
+global CreatorAddress
+itxn_field CloseRemainderTo
+itxn_submit
+intc_0 // 1
+return
+label2:
+intc_1 // 0
+return
+label1:
+pushbytes 0x6d616e61676572 // "manager"
+txna ApplicationArgs 0
+app_global_put
+bytec_0 // "minter"
+txna ApplicationArgs 1
+app_global_put
+bytec_1 // "minterID"
+txna ApplicationArgs 2
+btoi
+app_global_put
+intc_0 // 1
+return

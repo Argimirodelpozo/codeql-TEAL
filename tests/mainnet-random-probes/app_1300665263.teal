@@ -1,0 +1,1119 @@
+#pragma version 8
+intcblock 0 1 1000000 256
+bytecblock 0x6c705f696e746572666163655f6170705f6964 0x151f7c75 0x62617365 0x 0x71756f7465 0x715f746f74616c5f726577617264735f756e73746f726564 0x625f746f74616c5f726577617264735f756e73746f726564 0x715f757365725f72657761726473 0x625f757365725f72657761726473 0x69735f7365747570 0x715f7265776172645f7065725f746f6b656e 0x625f7265776172645f7065725f746f6b656e 0x715f6c705f746f6b656e735f6f776e6564 0x625f6c705f746f6b656e735f6f776e6564 0x6c705f746f6b656e5f6d616e616765725f6170705f6964 0x6665655f61737365745f6964 0x74726164696e675f6170705f6964 0x71756f74655f706572696f645f666565735f61636372756564 0x626173655f706572696f645f666565735f61636372756564 0x715f757365725f7265776172645f7065725f746f6b656e5f706169645f616d6f756e74 0x625f757365725f7265776172645f7065725f746f6b656e5f706169645f616d6f756e74 0x00
+txna ApplicationArgs 0
+pushbytes 0x906688c8 // 0x906688c8
+==
+bnz label1
+txna ApplicationArgs 0
+pushbytes 0xd34c8997 // 0xd34c8997
+==
+bnz label2
+txna ApplicationArgs 0
+pushbytes 0xfaed94b8 // 0xfaed94b8
+==
+bnz label3
+txna ApplicationArgs 0
+pushbytes 0xf347467d // 0xf347467d
+==
+bnz label4
+txna ApplicationArgs 0
+pushbytes 0xab163ee3 // 0xab163ee3
+==
+bnz label5
+txna ApplicationArgs 0
+pushbytes 0xa7eeb492 // 0xa7eeb492
+==
+bnz label6
+txna ApplicationArgs 0
+pushbytes 0x94d0f381 // 0x94d0f381
+==
+bnz label7
+txna ApplicationArgs 0
+pushbytes 0xc173f740 // 0xc173f740
+==
+bnz label8
+txna ApplicationArgs 0
+pushbytes 0x034d4a5c // 0x034d4a5c
+==
+bnz label9
+txna ApplicationArgs 0
+pushbytes 0xbe8b90b9 // 0xbe8b90b9
+==
+bnz label10
+txna ApplicationArgs 0
+pushbytes 0x8789bcdb // 0x8789bcdb
+==
+bnz label11
+txna ApplicationArgs 0
+pushbytes 0x1f5ce2a9 // 0x1f5ce2a9
+==
+bnz label12
+txna ApplicationArgs 0
+pushbytes 0x34bc95a6 // 0x34bc95a6
+==
+bnz label13
+txna ApplicationArgs 0
+pushbytes 0x49b24c03 // 0x49b24c03
+==
+bnz label14
+txna ApplicationArgs 0
+pushbytes 0x3b4fa54d // 0x3b4fa54d
+==
+bnz label15
+err
+label15:
+txn OnCompletion
+intc_0 // 0
+==
+txn ApplicationID
+intc_0 // 0
+!=
+&&
+assert
+callsub label16
+intc_1 // 1
+return
+label14:
+txn OnCompletion
+intc_0 // 0
+==
+txn ApplicationID
+intc_0 // 0
+!=
+&&
+assert
+callsub label17
+intc_1 // 1
+return
+label13:
+txn OnCompletion
+intc_0 // 0
+==
+txn ApplicationID
+intc_0 // 0
+!=
+&&
+assert
+callsub label18
+intc_1 // 1
+return
+label12:
+txn OnCompletion
+intc_0 // 0
+==
+txn ApplicationID
+intc_0 // 0
+!=
+&&
+assert
+callsub label19
+intc_1 // 1
+return
+label11:
+txn OnCompletion
+intc_1 // 1
+==
+txn ApplicationID
+intc_0 // 0
+!=
+&&
+assert
+callsub label20
+intc_1 // 1
+return
+label10:
+txn OnCompletion
+intc_0 // 0
+==
+txn ApplicationID
+intc_0 // 0
+!=
+&&
+assert
+callsub label21
+intc_1 // 1
+return
+label9:
+txn OnCompletion
+intc_0 // 0
+==
+txn ApplicationID
+intc_0 // 0
+!=
+&&
+assert
+callsub label22
+intc_1 // 1
+return
+label8:
+txn OnCompletion
+intc_0 // 0
+==
+txn ApplicationID
+intc_0 // 0
+!=
+&&
+assert
+callsub label23
+intc_1 // 1
+return
+label7:
+txn OnCompletion
+intc_0 // 0
+==
+txn ApplicationID
+intc_0 // 0
+!=
+&&
+assert
+callsub label24
+intc_1 // 1
+return
+label6:
+txn OnCompletion
+intc_0 // 0
+==
+txn ApplicationID
+intc_0 // 0
+!=
+&&
+assert
+callsub label25
+intc_1 // 1
+return
+label5:
+txn OnCompletion
+intc_0 // 0
+==
+txn ApplicationID
+intc_0 // 0
+!=
+&&
+assert
+callsub label26
+intc_1 // 1
+return
+label4:
+txn OnCompletion
+intc_0 // 0
+==
+txn ApplicationID
+intc_0 // 0
+!=
+&&
+assert
+callsub label27
+intc_1 // 1
+return
+label3:
+txn OnCompletion
+intc_0 // 0
+==
+txn ApplicationID
+intc_0 // 0
+!=
+&&
+assert
+callsub label28
+intc_1 // 1
+return
+label2:
+txn OnCompletion
+intc_0 // 0
+==
+txn ApplicationID
+intc_0 // 0
+!=
+&&
+assert
+callsub label29
+intc_1 // 1
+return
+label1:
+txn OnCompletion
+intc_0 // 0
+==
+txn ApplicationID
+intc_0 // 0
+==
+&&
+assert
+callsub label30
+intc_1 // 1
+return
+label32:
+proto 2 1
+frame_dig -2
+frame_dig -1
+app_global_get_ex
+store 8
+store 7
+load 8
+assert
+load 7
+retsub
+label40:
+proto 4 0
+itxn_begin
+pushint 4
+itxn_field TypeEnum
+frame_dig -4
+itxn_field Sender
+frame_dig -3
+itxn_field AssetAmount
+frame_dig -2
+itxn_field XferAsset
+frame_dig -1
+itxn_field AssetReceiver
+itxn_submit
+retsub
+label42:
+proto 1 1
+frame_dig -1
+app_params_get AppAddress
+store 6
+store 5
+load 6
+assert
+load 5
+retsub
+label41:
+proto 2 1
+frame_dig -2
+app_params_get AppCreator
+store 4
+store 3
+load 4
+assert
+load 3
+frame_dig -1
+==
+retsub
+label36:
+proto 1 1
+frame_dig -1
+bytec_2 // "base"
+==
+frame_dig -1
+bytec 4 // "quote"
+==
+||
+assert
+frame_dig -1
+bytec_2 // "base"
+==
+bnz label31
+bytec_0 // "lp_interface_app_id"
+app_global_get
+bytec 14 // "lp_token_manager_app_id"
+callsub label32
+pushbytes 0x71756f74655f6c705f737570706c79 // "quote_lp_supply"
+callsub label32
+store 0
+load 0
+intc_0 // 0
+==
+bnz label33
+bytec 10 // "q_reward_per_token"
+app_global_get
+itob
+bytec 5 // "q_total_rewards_unstored"
+app_global_get
+itob
+intc_2 // 1000000
+itob
+b*
+load 0
+itob
+b/
+b+
+retsub
+label33:
+intc_0 // 0
+itob
+retsub
+label31:
+bytec_0 // "lp_interface_app_id"
+app_global_get
+bytec 14 // "lp_token_manager_app_id"
+callsub label32
+pushbytes 0x626173655f6c705f737570706c79 // "base_lp_supply"
+callsub label32
+store 0
+load 0
+intc_0 // 0
+==
+bnz label34
+bytec 11 // "b_reward_per_token"
+app_global_get
+itob
+bytec 6 // "b_total_rewards_unstored"
+app_global_get
+itob
+intc_2 // 1000000
+itob
+b*
+load 0
+itob
+b/
+b+
+retsub
+label34:
+intc_0 // 0
+itob
+retsub
+label38:
+proto 2 1
+frame_dig -1
+bytec_2 // "base"
+==
+frame_dig -1
+bytec 4 // "quote"
+==
+||
+assert
+frame_dig -1
+bytec_2 // "base"
+==
+bnz label35
+frame_dig -2
+bytec 12 // "q_lp_tokens_owned"
+app_local_get
+itob
+frame_dig -1
+callsub label36
+frame_dig -2
+bytec 19 // "q_user_reward_per_token_paid_amount"
+app_local_get
+itob
+b-
+b*
+intc_2 // 1000000
+itob
+b/
+btoi
+frame_dig -2
+bytec 7 // "q_user_rewards"
+app_local_get
++
+retsub
+label35:
+frame_dig -2
+bytec 13 // "b_lp_tokens_owned"
+app_local_get
+itob
+frame_dig -1
+callsub label36
+frame_dig -2
+bytec 20 // "b_user_reward_per_token_paid_amount"
+app_local_get
+itob
+b-
+b*
+intc_2 // 1000000
+itob
+b/
+btoi
+frame_dig -2
+bytec 8 // "b_user_rewards"
+app_local_get
++
+retsub
+label43:
+proto 2 0
+frame_dig -1
+bytec_2 // "base"
+==
+frame_dig -1
+bytec 4 // "quote"
+==
+||
+assert
+frame_dig -1
+bytec_2 // "base"
+==
+bnz label37
+bytec 10 // "q_reward_per_token"
+frame_dig -1
+callsub label36
+btoi
+app_global_put
+bytec 5 // "q_total_rewards_unstored"
+intc_0 // 0
+app_global_put
+frame_dig -2
+bytec 7 // "q_user_rewards"
+frame_dig -2
+frame_dig -1
+callsub label38
+app_local_put
+frame_dig -2
+bytec 19 // "q_user_reward_per_token_paid_amount"
+bytec 10 // "q_reward_per_token"
+app_global_get
+app_local_put
+b label39
+label37:
+bytec 11 // "b_reward_per_token"
+frame_dig -1
+callsub label36
+btoi
+app_global_put
+bytec 6 // "b_total_rewards_unstored"
+intc_0 // 0
+app_global_put
+frame_dig -2
+bytec 8 // "b_user_rewards"
+frame_dig -2
+frame_dig -1
+callsub label38
+app_local_put
+frame_dig -2
+bytec 20 // "b_user_reward_per_token_paid_amount"
+bytec 11 // "b_reward_per_token"
+app_global_get
+app_local_put
+label39:
+retsub
+label45:
+proto 1 0
+global CurrentApplicationAddress
+frame_dig -1
+bytec 15 // "fee_asset_id"
+app_global_get
+txna Accounts 1
+callsub label40
+retsub
+label47:
+proto 4 1
+intc_0 // 0
+txna Applications 1
+txn Sender
+callsub label41
+assert
+frame_dig -3
+txnas Applications
+txna Applications 1
+==
+assert
+frame_dig -2
+txnas Applications
+txna Applications 2
+==
+assert
+frame_dig -1
+txnas Applications
+txna Applications 3
+==
+assert
+pushbytes 0x61646d696e5f6170705f6964 // "admin_app_id"
+frame_dig -3
+txnas Applications
+app_global_put
+bytec_0 // "lp_interface_app_id"
+frame_dig -2
+txnas Applications
+app_global_put
+bytec 16 // "trading_app_id"
+frame_dig -1
+txnas Applications
+app_global_put
+bytec 9 // "is_setup"
+intc_0 // 0
+app_global_put
+bytec 15 // "fee_asset_id"
+frame_dig -4
+app_global_put
+intc_1 // 1
+frame_bury 0
+frame_dig 0
+intc_3 // 256
+<
+assert
+retsub
+label48:
+proto 3 1
+intc_0 // 0
+txn Sender
+global CreatorAddress
+==
+assert
+bytec 9 // "is_setup"
+app_global_get
+intc_0 // 0
+==
+frame_dig -3
+txnas Applications
+bytec_0 // "lp_interface_app_id"
+app_global_get
+==
+&&
+frame_dig -2
+txnas Applications
+bytec_0 // "lp_interface_app_id"
+app_global_get
+bytec 14 // "lp_token_manager_app_id"
+callsub label32
+==
+&&
+frame_dig -1
+txnas Assets
+bytec 15 // "fee_asset_id"
+app_global_get
+==
+&&
+assert
+bytec 17 // "quote_period_fees_accrued"
+intc_0 // 0
+app_global_put
+bytec 18 // "base_period_fees_accrued"
+intc_0 // 0
+app_global_put
+bytec 5 // "q_total_rewards_unstored"
+intc_0 // 0
+app_global_put
+bytec 6 // "b_total_rewards_unstored"
+intc_0 // 0
+app_global_put
+bytec 10 // "q_reward_per_token"
+intc_0 // 0
+app_global_put
+bytec 11 // "b_reward_per_token"
+intc_0 // 0
+app_global_put
+global CurrentApplicationAddress
+intc_0 // 0
+frame_dig -1
+txnas Assets
+global CurrentApplicationAddress
+callsub label40
+bytec 9 // "is_setup"
+intc_1 // 1
+app_global_put
+intc_1 // 1
+frame_bury 0
+frame_dig 0
+intc_3 // 256
+<
+assert
+retsub
+label49:
+proto 0 1
+intc_0 // 0
+txn Sender
+bytec_0 // "lp_interface_app_id"
+app_global_get
+callsub label42
+==
+assert
+txna Accounts 1
+bytec 4 // "quote"
+callsub label43
+intc_1 // 1
+frame_bury 0
+retsub
+label50:
+proto 0 1
+intc_0 // 0
+txn Sender
+bytec_0 // "lp_interface_app_id"
+app_global_get
+callsub label42
+==
+assert
+txna Accounts 1
+bytec_2 // "base"
+callsub label43
+intc_1 // 1
+frame_bury 0
+retsub
+label51:
+proto 0 1
+intc_0 // 0
+txn Sender
+bytec_2 // "base"
+callsub label43
+txn Sender
+bytec 8 // "b_user_rewards"
+app_local_get
+intc_0 // 0
+>
+assert
+txn Sender
+bytec 8 // "b_user_rewards"
+app_local_get
+store 1
+txn Sender
+bytec 8 // "b_user_rewards"
+intc_0 // 0
+app_local_put
+load 1
+intc_0 // 0
+>
+bz label44
+load 1
+callsub label45
+label44:
+load 1
+frame_bury 0
+retsub
+label52:
+proto 0 1
+intc_0 // 0
+txn Sender
+bytec 4 // "quote"
+callsub label43
+txn Sender
+bytec 7 // "q_user_rewards"
+app_local_get
+intc_0 // 0
+>
+assert
+txn Sender
+bytec 7 // "q_user_rewards"
+app_local_get
+store 2
+txn Sender
+bytec 7 // "q_user_rewards"
+intc_0 // 0
+app_local_put
+load 2
+intc_0 // 0
+>
+bz label46
+load 2
+callsub label45
+label46:
+load 2
+frame_bury 0
+retsub
+label53:
+proto 0 1
+intc_0 // 0
+txn Sender
+bytec_0 // "lp_interface_app_id"
+app_global_get
+callsub label42
+==
+assert
+txna Accounts 1
+bytec 12 // "q_lp_tokens_owned"
+app_local_del
+intc_1 // 1
+frame_bury 0
+retsub
+label54:
+proto 0 1
+intc_0 // 0
+txn Sender
+bytec_0 // "lp_interface_app_id"
+app_global_get
+callsub label42
+==
+assert
+txna Accounts 1
+bytec 13 // "b_lp_tokens_owned"
+app_local_del
+intc_1 // 1
+frame_bury 0
+retsub
+label55:
+proto 1 1
+intc_0 // 0
+txn Sender
+bytec_0 // "lp_interface_app_id"
+app_global_get
+callsub label42
+==
+assert
+frame_dig -1
+extract 2 0
+btoi
+intc_0 // 0
+>
+assert
+txna Accounts 1
+bytec 12 // "q_lp_tokens_owned"
+frame_dig -1
+extract 2 0
+btoi
+app_local_put
+intc_1 // 1
+frame_bury 0
+retsub
+label56:
+proto 1 1
+intc_0 // 0
+txn Sender
+bytec_0 // "lp_interface_app_id"
+app_global_get
+callsub label42
+==
+assert
+frame_dig -1
+extract 2 0
+btoi
+intc_0 // 0
+>
+assert
+txna Accounts 1
+bytec 13 // "b_lp_tokens_owned"
+frame_dig -1
+extract 2 0
+btoi
+app_local_put
+intc_1 // 1
+frame_bury 0
+retsub
+label57:
+proto 0 1
+intc_0 // 0
+intc_1 // 1
+frame_bury 0
+retsub
+label58:
+proto 1 1
+intc_0 // 0
+txn Sender
+bytec_0 // "lp_interface_app_id"
+app_global_get
+callsub label42
+==
+assert
+txna Accounts 1
+bytec 13 // "b_lp_tokens_owned"
+frame_dig -1
+extract 2 0
+btoi
+app_local_put
+intc_1 // 1
+frame_bury 0
+retsub
+label59:
+proto 1 1
+intc_0 // 0
+txn Sender
+bytec_0 // "lp_interface_app_id"
+app_global_get
+callsub label42
+==
+assert
+txna Accounts 1
+bytec 12 // "q_lp_tokens_owned"
+frame_dig -1
+extract 2 0
+btoi
+app_local_put
+intc_1 // 1
+frame_bury 0
+retsub
+label60:
+proto 1 1
+intc_0 // 0
+dup
+txn Sender
+bytec_0 // "lp_interface_app_id"
+app_global_get
+callsub label42
+==
+txn Sender
+bytec 16 // "trading_app_id"
+app_global_get
+callsub label42
+==
+||
+assert
+frame_dig -1
+extract 2 0
+btoi
+frame_bury 1
+bytec 9 // "is_setup"
+app_global_get
+intc_1 // 1
+==
+assert
+bytec 18 // "base_period_fees_accrued"
+bytec 18 // "base_period_fees_accrued"
+app_global_get
+frame_dig 1
++
+app_global_put
+bytec 6 // "b_total_rewards_unstored"
+bytec 6 // "b_total_rewards_unstored"
+app_global_get
+frame_dig 1
++
+app_global_put
+intc_1 // 1
+frame_bury 0
+retsub
+label61:
+proto 1 1
+intc_0 // 0
+dup
+txn Sender
+bytec_0 // "lp_interface_app_id"
+app_global_get
+callsub label42
+==
+txn Sender
+bytec 16 // "trading_app_id"
+app_global_get
+callsub label42
+==
+||
+assert
+frame_dig -1
+extract 2 0
+btoi
+frame_bury 1
+bytec 9 // "is_setup"
+app_global_get
+intc_1 // 1
+==
+assert
+bytec 17 // "quote_period_fees_accrued"
+bytec 17 // "quote_period_fees_accrued"
+app_global_get
+frame_dig 1
++
+app_global_put
+bytec 5 // "q_total_rewards_unstored"
+bytec 5 // "q_total_rewards_unstored"
+app_global_get
+frame_dig 1
++
+app_global_put
+intc_1 // 1
+frame_bury 0
+retsub
+label30:
+proto 0 0
+intc_0 // 0
+dupn 4
+txna ApplicationArgs 1
+btoi
+frame_bury 1
+txna ApplicationArgs 2
+intc_0 // 0
+getbyte
+frame_bury 2
+txna ApplicationArgs 3
+intc_0 // 0
+getbyte
+frame_bury 3
+txna ApplicationArgs 4
+intc_0 // 0
+getbyte
+frame_bury 4
+frame_dig 1
+frame_dig 2
+frame_dig 3
+frame_dig 4
+callsub label47
+frame_bury 0
+bytec_1 // 0x151f7c75
+bytec 21 // 0x00
+intc_0 // 0
+frame_dig 0
+setbyte
+concat
+log
+retsub
+label29:
+proto 0 0
+intc_0 // 0
+dupn 3
+txna ApplicationArgs 1
+intc_0 // 0
+getbyte
+frame_bury 1
+txna ApplicationArgs 2
+intc_0 // 0
+getbyte
+frame_bury 2
+txna ApplicationArgs 3
+intc_0 // 0
+getbyte
+frame_bury 3
+frame_dig 1
+frame_dig 2
+frame_dig 3
+callsub label48
+frame_bury 0
+bytec_1 // 0x151f7c75
+bytec 21 // 0x00
+intc_0 // 0
+frame_dig 0
+setbyte
+concat
+log
+retsub
+label28:
+proto 0 0
+intc_0 // 0
+callsub label49
+frame_bury 0
+bytec_1 // 0x151f7c75
+frame_dig 0
+itob
+concat
+log
+retsub
+label27:
+proto 0 0
+intc_0 // 0
+callsub label50
+frame_bury 0
+bytec_1 // 0x151f7c75
+frame_dig 0
+itob
+concat
+log
+retsub
+label26:
+proto 0 0
+intc_0 // 0
+callsub label51
+frame_bury 0
+bytec_1 // 0x151f7c75
+frame_dig 0
+itob
+concat
+log
+retsub
+label25:
+proto 0 0
+intc_0 // 0
+callsub label52
+frame_bury 0
+bytec_1 // 0x151f7c75
+frame_dig 0
+itob
+concat
+log
+retsub
+label24:
+proto 0 0
+intc_0 // 0
+callsub label53
+frame_bury 0
+bytec_1 // 0x151f7c75
+frame_dig 0
+itob
+concat
+log
+retsub
+label23:
+proto 0 0
+intc_0 // 0
+callsub label54
+frame_bury 0
+bytec_1 // 0x151f7c75
+frame_dig 0
+itob
+concat
+log
+retsub
+label22:
+proto 0 0
+intc_0 // 0
+bytec_3 // ""
+txna ApplicationArgs 1
+frame_bury 1
+frame_dig 1
+callsub label55
+frame_bury 0
+bytec_1 // 0x151f7c75
+frame_dig 0
+itob
+concat
+log
+retsub
+label21:
+proto 0 0
+intc_0 // 0
+bytec_3 // ""
+txna ApplicationArgs 1
+frame_bury 1
+frame_dig 1
+callsub label56
+frame_bury 0
+bytec_1 // 0x151f7c75
+frame_dig 0
+itob
+concat
+log
+retsub
+label20:
+proto 0 0
+intc_0 // 0
+callsub label57
+frame_bury 0
+bytec_1 // 0x151f7c75
+frame_dig 0
+itob
+concat
+log
+retsub
+label19:
+proto 0 0
+intc_0 // 0
+bytec_3 // ""
+txna ApplicationArgs 1
+frame_bury 1
+frame_dig 1
+callsub label58
+frame_bury 0
+bytec_1 // 0x151f7c75
+frame_dig 0
+itob
+concat
+log
+retsub
+label18:
+proto 0 0
+intc_0 // 0
+bytec_3 // ""
+txna ApplicationArgs 1
+frame_bury 1
+frame_dig 1
+callsub label59
+frame_bury 0
+bytec_1 // 0x151f7c75
+frame_dig 0
+itob
+concat
+log
+retsub
+label17:
+proto 0 0
+intc_0 // 0
+bytec_3 // ""
+txna ApplicationArgs 1
+frame_bury 1
+frame_dig 1
+callsub label60
+frame_bury 0
+bytec_1 // 0x151f7c75
+frame_dig 0
+itob
+concat
+log
+retsub
+label16:
+proto 0 0
+intc_0 // 0
+bytec_3 // ""
+txna ApplicationArgs 1
+frame_bury 1
+frame_dig 1
+callsub label61
+frame_bury 0
+bytec_1 // 0x151f7c75
+frame_dig 0
+itob
+concat
+log
+retsub
