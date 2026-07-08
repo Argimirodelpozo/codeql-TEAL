@@ -89,6 +89,31 @@ return
     assert data and data[0].value_type == "bytes[8]" and data[0].value_confident
 
 
+def test_interprocedural_key_from_caller(tmp_path):
+    """A box op in a HELPER whose key arrives as a subroutine parameter is named
+    by resolving the parameter back to the caller's argument (the whole program
+    is in the IR). main passes const 'counter' into a helper that box_gets it =>
+    a Box named 'counter', NOT a dynamic group."""
+    teal = """#pragma version 10
+byte "counter"
+callsub helper
+int 1
+return
+
+helper:
+proto 1 0
+frame_dig -1
+box_get
+pop
+pop
+retsub
+"""
+    schema = _schema(tmp_path, teal)
+    assert any(s.kind == "Box" and s.name == b"counter" for s in schema)
+    assert not any(s.kind == "dynamic" for s in schema), (
+        "the passed-in key must resolve, not fall to a dynamic group")
+
+
 def test_no_box_storage_is_empty(tmp_path):
     teal = "#pragma version 10\nint 1\nreturn\n"
     assert _schema(tmp_path, teal) == []
