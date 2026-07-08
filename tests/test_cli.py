@@ -455,3 +455,26 @@ def test_abi_audit_json_shape(tmp_path, capsys):
     assert rc == 1
     assert data and data[0]["field"] == "Receiver"
     assert data[0]["caller_supplied"] is True and data[0]["guarded"] is False
+
+
+def test_box_schema_recovers_boxmap(tmp_path, capsys):
+    pytest.importorskip("puya")
+    (tmp_path / "m.teal").write_text(
+        "#pragma version 10\n"
+        'byte "m"\ntxna ApplicationArgs 0\nbtoi\nitob\nconcat\n'
+        "box_get\npop\npop\nint 1\nreturn\n"
+    )
+    rc = main(["box-schema", str(tmp_path)])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "BoxMap" in out and "'m'" in out
+
+
+def test_box_schema_json_shape(tmp_path, capsys):
+    pytest.importorskip("puya")
+    (tmp_path / "b.teal").write_text(
+        '#pragma version 10\nbyte "counter"\nbox_get\npop\npop\nint 1\nreturn\n'
+    )
+    main(["box-schema", str(tmp_path), "--json"])
+    data = json.loads(capsys.readouterr().out)
+    assert any(r["kind"] == "Box" and r["name"] == "counter" for r in data)

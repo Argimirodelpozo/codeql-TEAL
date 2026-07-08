@@ -255,6 +255,49 @@ def _cmd_abi_audit(args) -> int:
     return 1 if danger else 0
 
 
+def _cmd_box_schema(args) -> int:
+    """Reconstruct the box STORAGE SCHEMA -- the Box / BoxMap declarations behind
+    a contract's box opcodes, with recovered key and value types (a box key that
+    is a constant is a Box named by it; ``concat(prefix, encode(k))`` is a
+    BoxMap). Requires puya (the recovery runs on the Puya IR). Exit 0."""
+    try:
+        from tealql.tealtools.lift import to_puya
+        from tealql.tealtools.lift.box_recovery import recover_box_schema
+    except ImportError:
+        print("error: box-schema requires the 'puya' package (pip install puyapy)",
+              file=sys.stderr)
+        return 2
+    import logging as _logging
+    _logging.getLogger("puya").setLevel(_logging.CRITICAL)
+
+    rows: list = []
+    for prog, name in _load_programs(args):
+        label = name or Path(getattr(prog, "source_path", "") or "<program>").name
+        try:
+            main, subs = to_puya(prog)
+        except Exception as e:
+            logger.warning("box-schema: %s did not lift (%s: %s) — skipped",
+                           label, type(e).__name__, e)
+            continue
+        for s in recover_box_schema(main, subs):
+            rows.append((label, s))
+
+    if args.json_out:
+        print(_json.dumps([
+            {"file": lbl, "kind": s.kind,
+             "name": None if s.name is None else s.name.decode("latin-1"),
+             "key_type": s.key_type, "value_type": s.value_type,
+             "value_confident": s.value_confident, "ops": sorted(s.ops)}
+            for lbl, s in rows], indent=2))
+        return 0
+    if not rows:
+        print("(no box storage)")
+        return 0
+    for lbl, s in rows:
+        print(f"  {lbl}: {s.render()}")
+    return 0
+
+
 def _cmd_itxn_report(args) -> int:
     from tealql.tealtools.inner_txn_report import InnerTxnReport
     r = InnerTxnReport(_load(args))
@@ -606,6 +649,9 @@ def build_parser() -> argparse.ArgumentParser:
     add("abi-audit",
         "ABI type-driven audit: caller-supplied arc4.Address paid to a "
         "fund/asset sink unguarded (needs puya)", _cmd_abi_audit)
+    add("box-schema",
+        "reconstruct Box / BoxMap storage schema with recovered key/value "
+        "types (needs puya)", _cmd_box_schema)
     add("group-shape", "forced group shape", _cmd_group_shape)
     add("group-layout", "forced group size + per-position layout", _cmd_group_layout)
     add("cost", "per-line opcode cost", _cmd_cost)
