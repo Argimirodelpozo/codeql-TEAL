@@ -1,0 +1,362 @@
+#pragma version 10
+intcblock 0 1 4 5
+bytecblock 0x617361 0x6275726e5f61646472657373 0x6d61726b6574696e675f61646472657373 0x7265776172645f61646472657373
+txn ApplicationID
+bnz label1
+callsub label2
+label1:
+txn NumAppArgs
+bz label3
+pushbytes 0x76e0f7b9 // 0x76e0f7b9
+pushbytes 0x2e4e50dd // 0x2e4e50dd
+pushbytes 0x19a3b6c1 // 0x19a3b6c1
+pushbytes 0x05df0eaf // 0x05df0eaf
+txna ApplicationArgs 0
+match label4 label5 label6 label7
+err
+label4:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+assert
+txna ApplicationArgs 1
+btoi
+txnas Assets
+txna ApplicationArgs 2
+btoi
+txnas Accounts
+txna ApplicationArgs 3
+btoi
+txnas Accounts
+txna ApplicationArgs 4
+btoi
+txnas Accounts
+callsub label8
+intc_1 // 1
+return
+label5:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+assert
+txna ApplicationArgs 1
+btoi
+txnas Assets
+txna ApplicationArgs 2
+btoi
+txnas Accounts
+txna ApplicationArgs 3
+btoi
+txnas Accounts
+txna ApplicationArgs 4
+btoi
+txnas Accounts
+callsub label9
+intc_1 // 1
+return
+label6:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+assert
+txna ApplicationArgs 1
+btoi
+txnas Assets
+txna ApplicationArgs 2
+btoi
+txnas Accounts
+callsub label10
+intc_1 // 1
+return
+label7:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+assert
+txna ApplicationArgs 1
+btoi
+txnas Assets
+txna ApplicationArgs 2
+btoi
+txnas Accounts
+callsub label11
+intc_1 // 1
+return
+label3:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+!
+assert
+intc_1 // 1
+return
+label8:
+proto 4 0
+callsub label12
+intc_0 // 0
+bytec_0 // "asa"
+app_global_get_ex
+assert
+!
+assert
+bytec_0 // "asa"
+frame_dig -4
+app_global_put
+bytec_1 // "burn_address"
+frame_dig -3
+app_global_put
+bytec_2 // "marketing_address"
+frame_dig -2
+app_global_put
+bytec_3 // "reward_address"
+frame_dig -1
+app_global_put
+itxn_begin
+global CurrentApplicationAddress
+intc_0 // 0
+bytec_0 // "asa"
+app_global_get_ex
+assert
+itxn_field XferAsset
+itxn_field AssetReceiver
+intc_2 // 4
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+retsub
+label12:
+proto 0 0
+txn Sender
+global CreatorAddress
+==
+assert
+retsub
+label9:
+proto 4 0
+intc_0 // 0
+bytec_0 // "asa"
+app_global_get_ex
+assert
+frame_dig -4
+==
+assert
+intc_0 // 0
+bytec_1 // "burn_address"
+app_global_get_ex
+assert
+frame_dig -3
+==
+assert
+intc_0 // 0
+bytec_2 // "marketing_address"
+app_global_get_ex
+assert
+frame_dig -2
+==
+assert
+intc_0 // 0
+bytec_3 // "reward_address"
+app_global_get_ex
+assert
+frame_dig -1
+==
+assert
+txn Sender
+intc_0 // 0
+bytec_0 // "asa"
+app_global_get_ex
+assert
+asset_holding_get AssetBalance
+assert
+pushint 3
+*
+pushint 100
+/
+intc_0 // 0
+bytec_0 // "asa"
+app_global_get_ex
+assert
+intc_0 // 0
+bytec_1 // "burn_address"
+app_global_get_ex
+assert
+txn Sender
+global CurrentApplicationAddress
+intc_0 // 0
+bytec_0 // "asa"
+app_global_get_ex
+swap
+cover 4
+assert
+intc_0 // 0
+bytec_2 // "marketing_address"
+app_global_get_ex
+swap
+cover 3
+assert
+txn Sender
+swap
+global CurrentApplicationAddress
+intc_0 // 0
+bytec_0 // "asa"
+app_global_get_ex
+swap
+cover 7
+assert
+intc_0 // 0
+bytec_3 // "reward_address"
+app_global_get_ex
+swap
+cover 5
+assert
+txn Sender
+cover 2
+global CurrentApplicationAddress
+intc_0 // 0
+bytec_0 // "asa"
+app_global_get_ex
+swap
+cover 10
+assert
+txn Sender
+cover 6
+global CurrentApplicationAddress
+cover 4
+itxn_begin
+pushbytes 0x3325204d4f4f4a206275726e6564206f6e207468652077617920746f20746865204d6f6f6e21 // "3% MOOJ burned on the way to the Moon!"
+itxn_field Note
+uncover 2
+itxn_field Sender
+uncover 5
+itxn_field AssetSender
+dig 13
+itxn_field AssetAmount
+uncover 8
+itxn_field AssetReceiver
+uncover 11
+itxn_field XferAsset
+intc_2 // 4
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_next
+pushbytes 0x3325204d4f4f4a2073656e7420666f72206d61726b6574696e6721 // "3% MOOJ sent for marketing!"
+itxn_field Note
+swap
+itxn_field Sender
+uncover 3
+itxn_field AssetSender
+dig 9
+itxn_field AssetAmount
+uncover 5
+itxn_field AssetReceiver
+uncover 7
+itxn_field XferAsset
+intc_2 // 4
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_next
+pushbytes 0x3325204d4f4f4a2073656e7420666f72207265776172647321 // "3% MOOJ sent for rewards!"
+itxn_field Note
+itxn_field Sender
+itxn_field AssetSender
+uncover 5
+itxn_field AssetAmount
+uncover 2
+itxn_field AssetReceiver
+uncover 3
+itxn_field XferAsset
+intc_2 // 4
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_next
+itxn_field Sender
+intc_0 // 0
+itxn_field FreezeAssetFrozen
+itxn_field FreezeAssetAccount
+itxn_field FreezeAsset
+intc_3 // 5
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+retsub
+label10:
+proto 2 0
+callsub label12
+intc_0 // 0
+bytec_0 // "asa"
+app_global_get_ex
+assert
+frame_dig -2
+==
+assert
+itxn_begin
+intc_0 // 0
+bytec_0 // "asa"
+app_global_get_ex
+assert
+global CurrentApplicationAddress
+itxn_field Sender
+intc_0 // 0
+itxn_field FreezeAssetFrozen
+frame_dig -1
+itxn_field FreezeAssetAccount
+itxn_field FreezeAsset
+intc_3 // 5
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+retsub
+label11:
+proto 2 0
+callsub label12
+intc_0 // 0
+bytec_0 // "asa"
+app_global_get_ex
+assert
+frame_dig -2
+==
+assert
+itxn_begin
+intc_0 // 0
+bytec_0 // "asa"
+app_global_get_ex
+assert
+global CurrentApplicationAddress
+itxn_field Sender
+intc_1 // 1
+itxn_field FreezeAssetFrozen
+frame_dig -1
+itxn_field FreezeAssetAccount
+itxn_field FreezeAsset
+intc_3 // 5
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+retsub
+label2:
+proto 0 0
+bytec_0 // "asa"
+intc_0 // 0
+app_global_put
+bytec_1 // "burn_address"
+global ZeroAddress
+app_global_put
+bytec_2 // "marketing_address"
+global ZeroAddress
+app_global_put
+bytec_3 // "reward_address"
+global ZeroAddress
+app_global_put
+retsub
