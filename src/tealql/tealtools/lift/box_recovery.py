@@ -1,31 +1,38 @@
-"""Box STORAGE-SCHEMA recovery: reconstruct ``Box`` / ``BoxMap`` declarations
-from the box opcodes in the lifted Puya IR.
+"""STORAGE-SCHEMA recovery: reconstruct Puya's ``ContractState`` model -- the
+GLOBAL / LOCAL / BOX storage keys and maps -- from the lifted IR.
 
-Algorand box storage is a flat ``bytes -> bytes`` key space, but Puya's source
-abstractions leave a recoverable fingerprint:
+Puya treats the three storages identically (``ContractMetaData`` holds a
+``dict[str, ContractState]`` for each of ``global_state`` / ``local_state`` /
+``boxes``), and each :class:`ContractState` is either a single key (``is_map =
+False``, ``key_or_prefix`` is the whole key) or a MAP (``is_map = True``,
+``key_or_prefix`` is a constant prefix). That ARC-56 metadata is NOT in the
+deployed bytecode, so recovering it is genuine decompilation. This mirrors it in
+:class:`StorageEntry`.
 
-* a **Box** (a single named box) compiles to box ops keyed by a CONSTANT byte
-  string -- the box name;
-* a **BoxMap[K, V]** compiles to box ops keyed by ``concat(key_prefix, encode(k))``
-  -- a constant prefix followed by the encoded map key. The prefix is the
-  ``BoxMap``'s name; the tail is one encoded ``K``.
+The recoverable fingerprint, uniform across all three storages:
 
-So the schema is: group box ops by their key shape, name each group (the constant
-/ the prefix), and recover the KEY type (the non-prefix tail) and VALUE type by
-running the same ABI type recovery
-(:func:`tealql.tealtools.lift.to_puya_ir.guess_encoded_types_scored`) over the box
-key tail and the box value operand/result. Value operands by op: ``box_put`` arg1,
-``box_replace`` arg2, ``box_splice`` arg3; value RESULTS: ``box_get`` /
-``box_extract`` target0. The key is always arg0.
+* a CONSTANT key => a single stored value (``is_map = False``);
+* a runtime-COMPUTED key => a MAP (``is_map = True``). ``concat(const_prefix,
+  encode(k))`` => a prefixed map named by the constant; a prefixless computed key
+  (``encode(k)`` / ``concat(encode(k1), encode(k2), ...)``) => an unprefixed map
+  whose ``key_or_prefix`` is empty.
 
-A box key built in a caller and passed into a box helper as a PARAMETER is
-resolved INTERPROCEDURALLY -- the whole program is in the IR, so ``deref`` hops a
-parameter back to the caller's argument through the ``InvokeSubroutine`` edges
-(when every call site passes a key that resolves the same way). Only a genuinely
-divergent / unresolved key (different call sites build different boxes) stays a
-``dynamic`` group.
+Crucially, the map PREFIX (always a compile-time constant, possibly empty) and the
+KEY TYPE (scalar OR a tuple / struct) are ORTHOGONAL -- exactly as Puya's
+``StorageMap`` has them (``prefix: str | None`` + ``keyType: ABIType`` which can be
+a tuple). So a per-holder balance key ``concat(Sender, itob(asset))`` is an
+unprefixed map with a ``(address, uint64)`` tuple key -- NOT a special kind. The
+key/value TYPES come straight off the register's already-recovered ``ir_type`` /
+:func:`guess_encoded_types_scored` -- no new inference here.
 
-Side-channel / read-only: never mutates the IR.
+Key operand position by op (:data:`_STORAGE_OPS`): box ops key on ``arg0``;
+``app_global_*`` key on ``arg0`` (``app_global_get_ex`` on ``arg1``, after the
+foreign-app id); ``app_local_*`` key on ``arg1`` (after the account ``arg0`` --
+the implicit per-account axis), ``app_local_get_ex`` on ``arg2``.
+
+A key built in a caller and passed into a helper as a PARAMETER is resolved
+INTERPROCEDURALLY (:meth:`_BoxFlow.deref` hops it back through the
+``InvokeSubroutine`` edges). Side-channel / read-only: never mutates the IR.
 """
 from __future__ import annotations
 
@@ -33,32 +40,87 @@ from dataclasses import dataclass, field
 
 
 @dataclass
-class BoxSchema:
-    kind: str                      # "Box" | "BoxMap" | "dynamic"
-    name: "bytes | None"           # Box: the key; BoxMap: the prefix; dynamic: None
-    key_type: "str | None" = None  # BoxMap: recovered encoded-key type
-    value_type: "str | None" = None
+class StorageEntry:
+    """One recovered storage declaration, mirroring Puya's ``ContractState``.
+    ``kind`` is the storage it lives in; ``is_map`` splits Puya's ``StorageKey``
+    (single) from ``StorageMap``; ``key_or_prefix`` is the whole key (single) or
+    the constant prefix (map, empty bytes if unprefixed); the ARC-56 key / value
+    types are recovered (a key may be a tuple, e.g. ``(address,uint64)``);
+    ``storage_type`` is the value's AVM type (Puya's ``storage_type``)."""
+    kind: str                          # 'global' | 'local' | 'box'
+    is_map: bool
+    key_or_prefix: bytes
+    arc56_key_type: "str | None" = None
+    arc56_value_type: "str | None" = None
+    storage_type: str = "bytes"        # 'uint64' | 'bytes'
     value_confident: bool = False
     ops: set = field(default_factory=set)
 
     def render(self) -> str:
-        who = (repr(self.name.decode("latin-1")) if self.name is not None
-               else "<dynamic key>")
-        val = self.value_type or "bytes (opaque)"
-        conf = "" if self.value_confident or self.value_type is None \
+        kp = repr(self.key_or_prefix.decode("latin-1")) if self.key_or_prefix else "''"
+        val = self.arc56_value_type or self.storage_type
+        conf = "" if self.value_confident or self.arc56_value_type is None \
             else " (speculative)"
-        if self.kind == "BoxMap":
-            return (f"BoxMap prefix={who} key={self.key_type or '?'} "
-                    f"value={val}{conf}  [{','.join(sorted(self.ops))}]")
-        if self.kind == "Box":
-            return f"Box {who} value={val}{conf}  [{','.join(sorted(self.ops))}]"
-        return f"<box via passed-in key> value={val}{conf}  [{','.join(sorted(self.ops))}]"
+        ops = ",".join(sorted(self.ops))
+        if self.is_map:
+            return (f"{self.kind} map prefix={kp} key={self.arc56_key_type or '?'} "
+                    f"value={val}{conf}  [{ops}]")
+        return f"{self.kind} key={kp} value={val}{conf}  [{ops}]"
 
 
-# value-operand argument index by op (the key is always arg0); ops absent here
-# carry their value as a RESULT target instead (box_get / box_extract).
-_VALUE_ARG = {"box_put": 1, "box_replace": 2, "box_splice": 3}
-_VALUE_RESULT = {"box_get", "box_extract"}
+# op -> (kind, key_arg_index, value_arg_index | None, value_is_a_result_target).
+# The key/value operand positions differ per storage; see the module docstring.
+_STORAGE_OPS = {
+    "box_create": ("box", 0, None, False), "box_put": ("box", 0, 1, False),
+    "box_replace": ("box", 0, 2, False), "box_splice": ("box", 0, 3, False),
+    "box_del": ("box", 0, None, False), "box_resize": ("box", 0, None, False),
+    "box_len": ("box", 0, None, False), "box_get": ("box", 0, None, True),
+    "box_extract": ("box", 0, None, True),
+    "app_global_put": ("global", 0, 1, False),
+    "app_global_del": ("global", 0, None, False),
+    "app_global_get": ("global", 0, None, True),
+    "app_global_get_ex": ("global", 1, None, True),
+    "app_local_put": ("local", 1, 2, False),
+    "app_local_del": ("local", 1, None, False),
+    "app_local_get": ("local", 1, None, True),
+    "app_local_get_ex": ("local", 2, None, True),
+}
+
+
+def _arc56_encoding(enc) -> str:
+    """An ARC-56-ish type name for a recovered ABI encoding (recursive): a 32-byte
+    header-less byte array is ``address``; ``uintN``; a static / dynamic array;
+    a tuple; bool; string; else its repr."""
+    from puya.ir.encodings import (ArrayEncoding, Bool8Encoding, BoolEncoding,
+                                   TupleEncoding, UIntEncoding, UTF8Encoding)
+    if isinstance(enc, UIntEncoding):
+        return f"uint{enc.n}"
+    if isinstance(enc, (Bool8Encoding, BoolEncoding)):
+        return "bool"
+    if isinstance(enc, UTF8Encoding):
+        return "string"
+    if isinstance(enc, ArrayEncoding):
+        if (enc.size == 32 and not enc.length_header
+                and isinstance(enc.element, UIntEncoding) and enc.element.n == 8):
+            return "address"
+        el = _arc56_encoding(enc.element)
+        return f"{el}[]" if enc.length_header else f"{el}[{enc.size}]"
+    if isinstance(enc, TupleEncoding):
+        return "(" + ",".join(_arc56_encoding(e) for e in enc.elements) + ")"
+    return str(enc)
+
+
+def _arc56_irtype(t) -> "str | None":
+    """An ARC-56-ish type name for a register ir_type (an EncodedType renders via
+    :func:`_arc56_encoding`; account -> address; SizedBytesType(n) -> byte[n];
+    scalar primitives map through)."""
+    from puya.ir.types_ import EncodedType, PrimitiveIRType as PT, SizedBytesType
+    if isinstance(t, EncodedType):
+        return _arc56_encoding(t.encoding)
+    if isinstance(t, SizedBytesType):
+        return f"byte[{t.num_bytes}]"
+    return {PT.account: "address", PT.uint64: "uint64", PT.bytes: "bytes",
+            PT.biguint: "uint512", PT.bool: "bool"}.get(t, str(t))
 # box ops that MODIFY a box (vs read it) -- a write to an attacker-chosen box is
 # worse than a read.
 _WRITE_OPS = frozenset({"box_put", "box_replace", "box_splice", "box_del",
@@ -188,101 +250,82 @@ class _BoxFlow:
         return False
 
 
-def recover_box_schema(main, subs, guesses=None, confident=None) -> list:
-    """Reconstruct the ``Box`` / ``BoxMap`` schema of a lifted program as a list
-    of :class:`BoxSchema` (one per distinct box name / prefix, plus at most one
-    ``dynamic`` group). ``guesses`` / ``confident`` may be supplied to reuse an
-    existing :func:`guess_encoded_types_scored` run; otherwise it is computed."""
+def recover_storage_schema(main, subs, guesses=None, confident=None) -> list:
+    """Reconstruct the GLOBAL / LOCAL / BOX storage schema of a lifted program as
+    a list of :class:`StorageEntry` (one per distinct storage + key/prefix +
+    key-type), mirroring Puya's ``ContractState`` model. ``guesses`` / ``confident``
+    may be supplied to reuse an existing :func:`guess_encoded_types_scored` run."""
     import puya.ir.models as M
     from puya.ir.avm_ops import AVMOp
+    from puya.ir.types_ import PrimitiveIRType as PT
 
     from . import to_puya_ir
     if guesses is None:
         guesses, confident = to_puya_ir.guess_encoded_types_scored(main, subs)
     confident = confident or {}
-
     flow = _BoxFlow(main, subs)
-    subs_all, reg_def, deref = flow.subs_all, flow.reg_def, flow.deref
 
-    def key_type_str(val):
-        """A short type name for a box KEY tail: the recovered ABI encoding if
-        guessed, else the register's own ir_type (a uint64/bytes[N] encoded key is
-        still informative here), else a byte size."""
-        if isinstance(val, M.Register) and id(val) in guesses:
-            return str(guesses[id(val)].encoding)
-        if isinstance(val, M.Register):
-            return str(val.ir_type)
+    def _type_of(val):
+        """``(arc56_type | None, confident, storage_type)`` for a key tail / value:
+        the recovered ABI encoding (guess or ir_type) rendered ARC-56-style, plus
+        the value's AVM storage type ('uint64' / 'bytes')."""
         if isinstance(val, M.BytesConstant):
-            return f"bytes[{len(val.value)}]"
-        return None
+            return f"byte[{len(val.value)}]", True, "bytes"
+        if not isinstance(val, M.Register):
+            return None, False, "bytes"
+        st = "uint64" if val.ir_type.avm_type == PT.uint64.avm_type else "bytes"
+        e = guesses.get(id(val))
+        if e is not None:
+            return _arc56_encoding(e.encoding), bool(confident.get(id(val))), st
+        return _arc56_irtype(val.ir_type), True, st
 
-    def value_info(val):
-        """``(type_str, confident)`` for a box VALUE operand/result. A recovered
-        ABI encoding carries its speculative/confident bit; a specific IR type
-        (sized bytes, account, biguint, ...) is the REAL type, so confident; plain
-        ``bytes`` / ``uint64`` is uninformative -> ``(None, ...)`` (rendered
-        opaque)."""
-        if isinstance(val, M.Register) and id(val) in guesses:
-            return str(guesses[id(val)].encoding), bool(confident.get(id(val)))
-        if isinstance(val, M.Register):
-            s = str(val.ir_type)
-            return (s, True) if s not in ("bytes", "uint64", "any", "bool") \
-                else (None, False)
-        if isinstance(val, M.BytesConstant):
-            return f"bytes[{len(val.value)}]", True
-        return None, False
+    def _classify_key(key_val, sub):
+        """``(is_map, key_or_prefix, arc56_key_type)`` -- a constant key is a single
+        value; a computed key is a map (prefixed if ``concat(const, tail)``, else
+        unprefixed with its key type read off the register's recovered type)."""
+        kv, ksub = flow.deref(key_val, sub)
+        if isinstance(kv, M.BytesConstant):
+            return False, kv.value, None                      # single stored value
+        kd = (flow.reg_def.get((ksub.id, kv.name, kv.version))
+              if isinstance(kv, M.Register) else None)
+        if isinstance(kd, M.Intrinsic) and kd.op is AVMOp.concat and len(kd.args) == 2:
+            p, _ = flow.deref(kd.args[0], ksub)
+            if isinstance(p, M.BytesConstant):                # prefixed map
+                kt, _, _ = _type_of(kd.args[1])
+                return True, p.value, kt
+        kt, _, _ = _type_of(kv)                               # unprefixed / composite map
+        return True, b"", kt
 
-    # group -> BoxSchema, keyed by ('Box', name) / ('BoxMap', prefix) / ('dynamic',)
     groups: dict = {}
-
-    def group_for(kind, name):
-        gk = (kind, name)
-        if gk not in groups:
-            groups[gk] = BoxSchema(kind=kind, name=name)
-        return groups[gk]
-
-    for s in subs_all:
+    for s in flow.subs_all:
         for bb in s.body:
             for o in bb.ops:
                 src = o.source if isinstance(o, M.Assignment) else o
-                if not (isinstance(src, M.Intrinsic)
-                        and src.op.name.startswith("box_") and src.args):
+                if not isinstance(src, M.Intrinsic):
                     continue
-                op = src.op.name
-                kv, ksub = deref(src.args[0], s)
-                # classify the key shape (interprocedurally resolved)
-                if isinstance(kv, M.BytesConstant):
-                    sch = group_for("Box", kv.value)
-                else:
-                    kd = (reg_def.get((ksub.id, kv.name, kv.version))
-                          if isinstance(kv, M.Register) else None)
-                    if (isinstance(kd, M.Intrinsic) and kd.op is AVMOp.concat
-                            and len(kd.args) == 2):
-                        p, _ = deref(kd.args[0], ksub)
-                    else:
-                        p = None
-                    if isinstance(p, M.BytesConstant):
-                        sch = group_for("BoxMap", p.value)
-                        kt = key_type_str(kd.args[1])
-                        if kt and sch.key_type in (None, kt):
-                            sch.key_type = kt
-                    else:
-                        sch = group_for("dynamic", None)
-                sch.ops.add(op)
-                # recover the value type (also resolving a value passed in as a param)
-                v = None
-                if op in _VALUE_ARG and len(src.args) > _VALUE_ARG[op]:
-                    v = src.args[_VALUE_ARG[op]]
-                elif op in _VALUE_RESULT and isinstance(o, M.Assignment) and o.targets:
-                    v = o.targets[0]
-                if v is not None:
-                    vv, _ = deref(v, s)
-                    vt, vc = value_info(vv)
-                    if vt and sch.value_type in (None, vt):
-                        sch.value_type, sch.value_confident = vt, vc
-
+                meta = _STORAGE_OPS.get(src.op.name)
+                if meta is None or len(src.args) <= meta[1]:
+                    continue
+                kind, kidx, vidx, v_is_result = meta
+                is_map, kp, kt = _classify_key(src.args[kidx], s)
+                gk = (kind, is_map, kp, kt or "")
+                e = groups.get(gk)
+                if e is None:
+                    e = groups[gk] = StorageEntry(
+                        kind=kind, is_map=is_map, key_or_prefix=kp, arc56_key_type=kt)
+                e.ops.add(src.op.name)
+                # recover the value type (resolving a value passed in as a param)
+                vv = None
+                if v_is_result and isinstance(o, M.Assignment) and o.targets:
+                    vv = o.targets[0]
+                elif vidx is not None and len(src.args) > vidx:
+                    vv, _ = flow.deref(src.args[vidx], s)
+                if vv is not None:
+                    vt, vc, st = _type_of(vv)
+                    if vt and e.arc56_value_type in (None, vt):
+                        e.arc56_value_type, e.value_confident, e.storage_type = vt, vc, st
     return sorted(groups.values(),
-                  key=lambda x: (x.kind, x.name or b""))
+                  key=lambda x: (x.kind, x.key_or_prefix, x.arc56_key_type or ""))
 
 
 @dataclass

@@ -297,16 +297,17 @@ def _cmd_box_audit(args) -> int:
     return 1
 
 
-def _cmd_box_schema(args) -> int:
-    """Reconstruct the box STORAGE SCHEMA -- the Box / BoxMap declarations behind
-    a contract's box opcodes, with recovered key and value types (a box key that
-    is a constant is a Box named by it; ``concat(prefix, encode(k))`` is a
-    BoxMap). Requires puya (the recovery runs on the Puya IR). Exit 0."""
+def _cmd_storage_schema(args) -> int:
+    """Reconstruct the STORAGE SCHEMA -- the global / local / box keys and maps
+    behind a contract's storage opcodes, with recovered key and value types
+    (mirroring Puya's ContractState: a constant key is a single stored value;
+    ``concat(prefix, encode(k))`` or a computed key is a map, whose key type may be
+    a tuple). Requires puya (the recovery runs on the Puya IR). Exit 0."""
     try:
         from tealql.tealtools.lift import to_puya
-        from tealql.tealtools.lift.box_recovery import recover_box_schema
+        from tealql.tealtools.lift.box_recovery import recover_storage_schema
     except ImportError:
-        print("error: box-schema requires the 'puya' package (pip install puyapy)",
+        print("error: storage-schema requires the 'puya' package (pip install puyapy)",
               file=sys.stderr)
         return 2
     import logging as _logging
@@ -318,22 +319,24 @@ def _cmd_box_schema(args) -> int:
         try:
             main, subs = to_puya(prog)
         except Exception as e:
-            logger.warning("box-schema: %s did not lift (%s: %s) — skipped",
+            logger.warning("storage-schema: %s did not lift (%s: %s) — skipped",
                            label, type(e).__name__, e)
             continue
-        for s in recover_box_schema(main, subs):
+        for s in recover_storage_schema(main, subs):
             rows.append((label, s))
 
     if args.json_out:
         print(_json.dumps([
-            {"file": lbl, "kind": s.kind,
-             "name": None if s.name is None else s.name.decode("latin-1"),
-             "key_type": s.key_type, "value_type": s.value_type,
+            {"file": lbl, "kind": s.kind, "is_map": s.is_map,
+             "key_or_prefix": s.key_or_prefix.decode("latin-1"),
+             "arc56_key_type": s.arc56_key_type,
+             "arc56_value_type": s.arc56_value_type,
+             "storage_type": s.storage_type,
              "value_confident": s.value_confident, "ops": sorted(s.ops)}
             for lbl, s in rows], indent=2))
         return 0
     if not rows:
-        print("(no box storage)")
+        print("(no app storage)")
         return 0
     for lbl, s in rows:
         print(f"  {lbl}: {s.render()}")
@@ -691,9 +694,9 @@ def build_parser() -> argparse.ArgumentParser:
     add("abi-audit",
         "ABI type-driven audit: caller-supplied arc4.Address paid to a "
         "fund/asset sink unguarded (needs puya)", _cmd_abi_audit)
-    add("box-schema",
-        "reconstruct Box / BoxMap storage schema with recovered key/value "
-        "types (needs puya)", _cmd_box_schema)
+    add("storage-schema",
+        "reconstruct global/local/box storage schema (keys + maps) with "
+        "recovered key/value types (needs puya)", _cmd_storage_schema)
     add("box-audit",
         "box access-control: caller-supplied address-keyed BoxMap not bound to "
         "txn Sender = cross-user access (needs puya)", _cmd_box_audit)

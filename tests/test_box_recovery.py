@@ -1,9 +1,10 @@
-"""Box storage-schema recovery (``recover_box_schema``).
+"""Storage-schema recovery (``recover_storage_schema``), mirroring Puya's
+``ContractState`` model across GLOBAL / LOCAL / BOX storage.
 
-A box op keyed by a CONSTANT is a single ``Box`` named by it; one keyed by
-``concat(prefix, encode(k))`` is a ``BoxMap`` whose prefix names it and whose tail
-is one encoded key. Key and value types are recovered by the shared ABI type
-recovery, so a BoxMap over an address key / a struct key comes back typed.
+A CONSTANT key is a single stored value (``is_map=False``); a computed key is a
+map (``is_map=True``), prefixed if ``concat(const, encode(k))`` else unprefixed.
+Prefix and key TYPE are orthogonal, so a composite ``concat(Sender, itob(id))`` is
+an unprefixed map with a ``(address,uint64)`` tuple key.
 """
 from __future__ import annotations
 
@@ -12,32 +13,25 @@ import pytest
 pytest.importorskip("puya")
 
 from tealql.tealtools.lift import to_puya                # noqa: E402
-from tealql.tealtools.lift.box_recovery import recover_box_schema  # noqa: E402
+from tealql.tealtools.lift.box_recovery import recover_storage_schema  # noqa: E402
 from tealql.tealtools.ssa import SSAProgram              # noqa: E402
 
 
 def _schema(tmp_path, teal: str):
     (tmp_path / "p.teal").write_text(teal)
     main, subs = to_puya(SSAProgram(str(tmp_path)))
-    return recover_box_schema(main, subs)
+    return recover_storage_schema(main, subs)
 
 
 def test_static_box_named_by_const_key(tmp_path):
-    teal = """#pragma version 10
-byte "counter"
-box_get
-pop
-pop
-int 1
-return
-"""
-    schema = _schema(tmp_path, teal)
-    boxes = [s for s in schema if s.kind == "Box"]
-    assert any(s.name == b"counter" for s in boxes)
+    schema = _schema(tmp_path,
+                     '#pragma version 10\nbyte "counter"\nbox_get\npop\npop\nint 1\nreturn\n')
+    assert any(s.kind == "box" and not s.is_map and s.key_or_prefix == b"counter"
+               for s in schema)
 
 
 def test_boxmap_uint64_key(tmp_path):
-    """concat("m", itob(k)) => BoxMap prefix 'm' with a recovered key type."""
+    """concat("m", itob(k)) => a prefixed box map with a recovered key type."""
     teal = """#pragma version 10
 byte "m"
 txna ApplicationArgs 0
@@ -50,28 +44,77 @@ pop
 int 1
 return
 """
-    schema = _schema(tmp_path, teal)
-    maps = [s for s in schema if s.kind == "BoxMap"]
-    assert maps and maps[0].name == b"m"
-    assert maps[0].key_type is not None
+    maps = [s for s in _schema(tmp_path, teal) if s.kind == "box" and s.is_map]
+    assert maps and maps[0].key_or_prefix == b"m"
+    assert maps[0].arc56_key_type == "uint64"
 
 
-def test_boxmap_address_key(tmp_path):
-    """concat("u", txn Sender) => a per-account BoxMap; the key recovers as an
-    account/address (Sender is a 32-byte address)."""
+def test_composite_tuple_key_recovered_not_dynamic(tmp_path):
+    """ACCEPTANCE: a per-holder balance box `box[Sender ++ itob(assetId)]` is an
+    unprefixed map with a recovered (address, uint64) tuple key (width 40) — NOT
+    dropped as an unclassified/dynamic key."""
     teal = """#pragma version 10
-byte "u"
 txn Sender
+txna ApplicationArgs 0
+btoi
+itob
 concat
+dup
 box_get
 pop
 pop
+txna ApplicationArgs 1
+box_put
 int 1
 return
 """
     schema = _schema(tmp_path, teal)
-    maps = [s for s in schema if s.kind == "BoxMap" and s.name == b"u"]
-    assert maps and "account" in (maps[0].key_type or "")
+    comp = [s for s in schema if s.kind == "box" and s.is_map
+            and s.key_or_prefix == b"" and s.arc56_key_type == "(address,uint64)"]
+    assert comp, [s.render() for s in schema]
+
+
+def test_global_map_recovered(tmp_path):
+    """app_global_put(concat("bal", itob(id)), v) => a GLOBAL map keyed by uint64."""
+    teal = """#pragma version 10
+byte "bal"
+txna ApplicationArgs 0
+btoi
+itob
+concat
+int 100
+app_global_put
+int 1
+return
+"""
+    g = [s for s in _schema(tmp_path, teal) if s.kind == "global" and s.is_map]
+    assert g and g[0].key_or_prefix == b"bal" and g[0].arc56_key_type == "uint64"
+
+
+def test_local_map_recovered(tmp_path):
+    """app_local_put(Sender, concat("pos", itob(id)), v) => a LOCAL map (the
+    account is the implicit per-account axis; the map key is arg1)."""
+    teal = """#pragma version 10
+txn Sender
+byte "pos"
+txna ApplicationArgs 0
+btoi
+itob
+concat
+int 5
+app_local_put
+int 1
+return
+"""
+    lo = [s for s in _schema(tmp_path, teal) if s.kind == "local" and s.is_map]
+    assert lo and lo[0].key_or_prefix == b"pos" and lo[0].arc56_key_type == "uint64"
+
+
+def test_global_single_key(tmp_path):
+    """A constant global key is a single value, not a map."""
+    teal = ('#pragma version 10\nbyte "admin"\napp_global_get\npop\nint 1\nreturn\n')
+    g = [s for s in _schema(tmp_path, teal) if s.kind == "global"]
+    assert g and not g[0].is_map and g[0].key_or_prefix == b"admin"
 
 
 def test_box_value_type_recovered(tmp_path):
@@ -84,16 +127,13 @@ box_put
 int 1
 return
 """
-    schema = _schema(tmp_path, teal)
-    data = [s for s in schema if s.name == b"data"]
-    assert data and data[0].value_type == "bytes[8]" and data[0].value_confident
+    data = [s for s in _schema(tmp_path, teal) if s.key_or_prefix == b"data"]
+    assert data and data[0].arc56_value_type == "byte[8]" and data[0].value_confident
 
 
 def test_interprocedural_key_from_caller(tmp_path):
     """A box op in a HELPER whose key arrives as a subroutine parameter is named
-    by resolving the parameter back to the caller's argument (the whole program
-    is in the IR). main passes const 'counter' into a helper that box_gets it =>
-    a Box named 'counter', NOT a dynamic group."""
+    by resolving the parameter back to the caller's argument."""
     teal = """#pragma version 10
 byte "counter"
 callsub helper
@@ -109,14 +149,12 @@ pop
 retsub
 """
     schema = _schema(tmp_path, teal)
-    assert any(s.kind == "Box" and s.name == b"counter" for s in schema)
-    assert not any(s.kind == "dynamic" for s in schema), (
-        "the passed-in key must resolve, not fall to a dynamic group")
+    assert any(s.kind == "box" and not s.is_map and s.key_or_prefix == b"counter"
+               for s in schema)
 
 
-def test_no_box_storage_is_empty(tmp_path):
-    teal = "#pragma version 10\nint 1\nreturn\n"
-    assert _schema(tmp_path, teal) == []
+def test_no_storage_is_empty(tmp_path):
+    assert _schema(tmp_path, "#pragma version 10\nint 1\nreturn\n") == []
 
 
 # --- box access-control detector (cross-user address-keyed BoxMap) ---

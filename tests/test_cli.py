@@ -457,27 +457,28 @@ def test_abi_audit_json_shape(tmp_path, capsys):
     assert data[0]["caller_supplied"] is True and data[0]["guarded"] is False
 
 
-def test_box_schema_recovers_boxmap(tmp_path, capsys):
+def test_storage_schema_recovers_boxmap(tmp_path, capsys):
     pytest.importorskip("puya")
     (tmp_path / "m.teal").write_text(
         "#pragma version 10\n"
         'byte "m"\ntxna ApplicationArgs 0\nbtoi\nitob\nconcat\n'
         "box_get\npop\npop\nint 1\nreturn\n"
     )
-    rc = main(["box-schema", str(tmp_path)])
+    rc = main(["storage-schema", str(tmp_path)])
     out = capsys.readouterr().out
     assert rc == 0
-    assert "BoxMap" in out and "'m'" in out
+    assert "box map" in out and "'m'" in out
 
 
-def test_box_schema_json_shape(tmp_path, capsys):
+def test_storage_schema_json_shape(tmp_path, capsys):
     pytest.importorskip("puya")
     (tmp_path / "b.teal").write_text(
         '#pragma version 10\nbyte "counter"\nbox_get\npop\npop\nint 1\nreturn\n'
     )
-    main(["box-schema", str(tmp_path), "--json"])
+    main(["storage-schema", str(tmp_path), "--json"])
     data = json.loads(capsys.readouterr().out)
-    assert any(r["kind"] == "Box" and r["name"] == "counter" for r in data)
+    assert any(r["kind"] == "box" and not r["is_map"]
+               and r["key_or_prefix"] == "counter" for r in data)
 
 
 def test_box_audit_flags_caller_address(tmp_path, capsys):

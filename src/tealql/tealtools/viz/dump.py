@@ -71,7 +71,7 @@ def dump_all(source, out_dir: Optional[str] = None, *, svg: bool = True,
         lambda: _guessed_encodings_text(source))
     add("ABI TYPE-DRIVEN SECURITY LEADS (recovered arc4.Address at fund sinks)",
         lambda: _abi_security_leads_text(source))
-    add("BOX SCHEMA (recovered Box / BoxMap declarations)",
+    add("STORAGE SCHEMA (recovered global / local / box keys + maps)",
         lambda: _box_schema_text(source))
     if registry is not None:
         add("SUPER-CFG (cross-contract)", lambda: _supercfg_text(prog, registry))
@@ -206,15 +206,16 @@ def _abi_security_leads_text(source) -> str:
 
 
 def _box_schema_text(source) -> str:
-    """Reconstructed box STORAGE SCHEMA -- the ``Box`` / ``BoxMap`` declarations
-    recovered from the box opcodes (:func:`box_recovery.recover_box_schema`),
-    reusing the ABI type recovery for the key and value types."""
+    """Reconstructed STORAGE SCHEMA -- the global / local / box keys and maps
+    recovered from the storage opcodes (:func:`box_recovery.recover_storage_schema`,
+    mirroring Puya's ``ContractState``), reusing the ABI type recovery for the key
+    and value types."""
     from ..lift import to_puya_ir
-    from ..lift.box_recovery import recover_box_schema
+    from ..lift.box_recovery import recover_storage_schema
     main, subs = to_puya_ir.to_puya(SSAProgram(source))
-    schema = recover_box_schema(main, subs)
+    schema = recover_storage_schema(main, subs)
     if not schema:
-        return "(no box storage)"
+        return "(no app storage)"
     return "\n".join("  " + s.render() for s in schema)
 
 
