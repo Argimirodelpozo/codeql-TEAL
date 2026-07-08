@@ -59,6 +59,133 @@ class BoxSchema:
 # carry their value as a RESULT target instead (box_get / box_extract).
 _VALUE_ARG = {"box_put": 1, "box_replace": 2, "box_splice": 3}
 _VALUE_RESULT = {"box_get", "box_extract"}
+# box ops that MODIFY a box (vs read it) -- a write to an attacker-chosen box is
+# worse than a read.
+_WRITE_OPS = frozenset({"box_put", "box_replace", "box_splice", "box_del",
+                        "box_create", "box_resize"})
+
+
+class _BoxFlow:
+    """Shared interprocedural dataflow over a lifted program's box ops: the
+    def-use map, the parameter->call-site-argument edges, and the two walks both
+    the schema recovery and the access-control detector need -- ``deref`` (resolve
+    a value to its source, hopping params to the caller) and ``roots`` (the set of
+    source-op tags a value is built from, e.g. txn Sender / ApplicationArgs)."""
+
+    def __init__(self, main, subs):
+        import puya.ir.models as M
+        from puya.ir.avm_ops import AVMOp
+        self.M, self.AVMOp = M, AVMOp
+        self.subs_all = [main, *subs]
+        self.reg_def: dict = {}      # (sub_id, name, ver) -> defining source
+        self.param_idx: dict = {}    # (sub_id, name, ver) -> parameter position
+        self.callsites: dict = {}    # (callee_id, index) -> [(caller_sub, arg)]
+        for s in self.subs_all:
+            for i, p in enumerate(s.parameters):
+                self.param_idx[(s.id, p.name, p.version)] = i
+            for bb in s.body:
+                for o in bb.ops:
+                    src0 = o.source if isinstance(o, M.Assignment) else o
+                    if isinstance(o, M.Assignment):
+                        for t in o.targets:
+                            self.reg_def[(s.id, t.name, t.version)] = o.source
+                    if isinstance(src0, M.InvokeSubroutine):
+                        for i, a in enumerate(src0.args):
+                            self.callsites.setdefault(
+                                (src0.target.id, i), []).append((s, a))
+
+    def _keysig(self, v, s):
+        M, AVMOp = self.M, self.AVMOp
+        if isinstance(v, M.BytesConstant):
+            return ("c", v.value)
+        if isinstance(v, M.Register):
+            d = self.reg_def.get((s.id, v.name, v.version))
+            if isinstance(d, M.Intrinsic) and d.op is AVMOp.concat and len(d.args) == 2:
+                p, _ = self.deref(d.args[0], s)
+                if isinstance(p, M.BytesConstant):
+                    return ("m", p.value)
+            return ("r", s.id, v.name, v.version)
+        return ("?", id(v))
+
+    def deref(self, val, sub, seen=frozenset()):
+        """Resolve ``val`` (in ``sub``) to its meaningful source, following register
+        copies AND -- INTERPROCEDURALLY -- a subroutine PARAMETER back to the
+        caller's argument through the ``InvokeSubroutine`` edges, when every call
+        site passes a value that resolves the same way. Returns ``(value, sub)``."""
+        M = self.M
+        cur, csub = val, sub
+        while isinstance(cur, M.Register):
+            k = (csub.id, cur.name, cur.version)
+            if k in seen:
+                return cur, csub
+            seen = seen | {k}
+            if k in self.param_idx:
+                ds = [self.deref(a, cs, seen)
+                      for cs, a in self.callsites.get((csub.id, self.param_idx[k]), [])]
+                sigs = {self._keysig(v, s) for v, s in ds}
+                if len(sigs) == 1 and next(iter(sigs))[0] != "?":
+                    cur, csub = ds[0]
+                    continue
+                return cur, csub
+            src = self.reg_def.get(k)
+            if isinstance(src, M.Register):
+                cur = src
+                continue
+            return cur, csub
+        return cur, csub
+
+    def roots(self, val, sub):
+        """The set of SOURCE-OP tags reachable BACKWARD from ``val`` -- the txn
+        fields / arg reads it is built from. Interprocedural (hops params to every
+        caller argument) and full (walks all intrinsic operands). Tags: ``Sender``
+        (``txn Sender``), ``AppArgs`` (``txna ApplicationArgs``)."""
+        M = self.M
+        out: set = set()
+        seen: set = set()
+        stack = [(val, sub)]
+        while stack:
+            v, s = stack.pop()
+            if not isinstance(v, M.Register):
+                continue
+            k = (s.id, v.name, v.version)
+            if k in seen:
+                continue
+            seen.add(k)
+            if k in self.param_idx:
+                for cs, a in self.callsites.get((s.id, self.param_idx[k]), []):
+                    stack.append((a, cs))
+                continue
+            d = self.reg_def.get(k)
+            if isinstance(d, M.Intrinsic):
+                nm = d.op.name
+                imm = " ".join(str(x) for x in d.immediates)
+                if nm in ("txn", "gtxns", "gtxnsas") and "Sender" in imm:
+                    out.add("Sender")
+                if nm in ("txna", "txnas", "gtxna", "gtxnas") and "ApplicationArgs" in imm:
+                    out.add("AppArgs")
+                for a in d.args:
+                    stack.append((a, s))
+            elif isinstance(d, M.Register):
+                stack.append((d, s))
+        return out
+
+    def has_sender_arg_check(self):
+        """Whether the program compares an ApplicationArgs-derived value against a
+        Sender-derived one anywhere (``eq`` / ``neq``) -- evidence it VALIDATES a
+        caller-supplied identity against the real sender, which makes a
+        caller-supplied address key safe. Used to suppress the access-control
+        finding conservatively (favour precision)."""
+        M, AVMOp = self.M, self.AVMOp
+        for s in self.subs_all:
+            for bb in s.body:
+                for o in bb.ops:
+                    src = o.source if isinstance(o, M.Assignment) else o
+                    if isinstance(src, M.Intrinsic) and src.op in (AVMOp.eq, AVMOp.neq) \
+                            and len(src.args) == 2:
+                        r = self.roots(src.args[0], s) | self.roots(src.args[1], s)
+                        if "Sender" in r and "AppArgs" in r:
+                            return True
+        return False
 
 
 def recover_box_schema(main, subs, guesses=None, confident=None) -> list:
@@ -74,67 +201,8 @@ def recover_box_schema(main, subs, guesses=None, confident=None) -> list:
         guesses, confident = to_puya_ir.guess_encoded_types_scored(main, subs)
     confident = confident or {}
 
-    subs_all = [main, *subs]
-    reg_def: dict = {}          # (sub_id, name, ver) -> defining source
-    param_idx: dict = {}        # (sub_id, name, ver) -> parameter position
-    callsites: dict = {}        # (callee_id, index) -> [(caller_sub, arg_value)]
-    for s in subs_all:
-        for i, p in enumerate(s.parameters):
-            param_idx[(s.id, p.name, p.version)] = i
-        for bb in s.body:
-            for o in bb.ops:
-                src0 = o.source if isinstance(o, M.Assignment) else o
-                if isinstance(o, M.Assignment):
-                    for t in o.targets:
-                        reg_def[(s.id, t.name, t.version)] = o.source
-                if isinstance(src0, M.InvokeSubroutine):
-                    for i, a in enumerate(src0.args):
-                        callsites.setdefault((src0.target.id, i), []).append((s, a))
-
-    def _keysig(v, s):
-        """A structural signature used to check that all call sites of a helper
-        pass the SAME box key: a const's bytes, or a concat's constant prefix,
-        else the value's own identity (which won't match across sites)."""
-        if isinstance(v, M.BytesConstant):
-            return ("c", v.value)
-        if isinstance(v, M.Register):
-            d = reg_def.get((s.id, v.name, v.version))
-            if isinstance(d, M.Intrinsic) and d.op is AVMOp.concat and len(d.args) == 2:
-                p, _ = deref(d.args[0], s)
-                if isinstance(p, M.BytesConstant):
-                    return ("m", p.value)
-            return ("r", s.id, v.name, v.version)
-        return ("?", id(v))
-
-    def deref(val, sub, seen=frozenset()):
-        """Resolve ``val`` (living in ``sub``) to its meaningful source, following
-        register copies AND -- INTERPROCEDURALLY -- a subroutine PARAMETER back to
-        the caller's argument through the ``InvokeSubroutine`` edges, when every
-        call site passes a key that resolves the same way (the whole program is in
-        the IR, so a box key built in a caller and passed into a box helper is
-        recoverable). Returns ``(value, sub)`` stopped at a const or a Register
-        whose def is an intrinsic; an unresolved / disagreeing param stays put
-        (=> a dynamic box)."""
-        cur, csub = val, sub
-        while isinstance(cur, M.Register):
-            k = (csub.id, cur.name, cur.version)
-            if k in seen:
-                return cur, csub
-            seen = seen | {k}
-            if k in param_idx:
-                ds = [deref(a, cs, seen)
-                      for cs, a in callsites.get((csub.id, param_idx[k]), [])]
-                sigs = {_keysig(v, s) for v, s in ds}
-                if len(sigs) == 1 and next(iter(sigs))[0] != "?":
-                    cur, csub = ds[0]
-                    continue
-                return cur, csub                 # 0 / disagreeing call sites
-            src = reg_def.get(k)
-            if isinstance(src, M.Register):
-                cur = src
-                continue
-            return cur, csub                     # register defined by intrinsic / const
-        return cur, csub
+    flow = _BoxFlow(main, subs)
+    subs_all, reg_def, deref = flow.subs_all, flow.reg_def, flow.deref
 
     def key_type_str(val):
         """A short type name for a box KEY tail: the recovered ABI encoding if
@@ -215,3 +283,97 @@ def recover_box_schema(main, subs, guesses=None, confident=None) -> list:
 
     return sorted(groups.values(),
                   key=lambda x: (x.kind, x.name or b""))
+
+
+@dataclass
+class BoxAccessFinding:
+    prefix: bytes
+    key_type: str
+    written: bool = False
+    ops: set = field(default_factory=set)
+
+    def render(self) -> str:
+        mode = "WRITE" if self.written else "read-only"
+        return (f"BoxMap prefix={self.prefix.decode('latin-1')!r} "
+                f"key={self.key_type} — CALLER-SUPPLIED address, not sender-bound "
+                f"({mode})  [{','.join(sorted(self.ops))}]")
+
+
+def box_access_control(main, subs, guesses=None, confident=None) -> list:
+    """Access-control leads over box storage: an ADDRESS-keyed ``BoxMap``
+    (``BoxMap[Account, V]`` -- per-user data) whose key is CALLER-SUPPLIED (traces
+    to ``ApplicationArgs``) instead of bound to ``txn Sender``. The caller then
+    chooses WHOSE box to touch, so an attacker can read -- or, worse, overwrite --
+    any account's slot: cross-user box access / impersonation.
+
+    Precise by construction: it keys on the recovered address KEY TYPE (NOT "any
+    caller-supplied key" -- a listing / auction-id map is legitimately
+    caller-chosen), and it is SUPPRESSED when the program validates a caller
+    identity against the sender anywhere (:meth:`_BoxFlow.has_sender_arg_check`).
+    Interprocedural: the key is resolved and its provenance traced through call
+    edges. Read-only. One :class:`BoxAccessFinding` per offending prefix; the
+    ``written`` flag marks a map an attacker can WRITE (not just read)."""
+    import puya.ir.models as M
+    from puya.ir.avm_ops import AVMOp
+
+    from . import to_puya_ir
+    if guesses is None:
+        guesses, confident = to_puya_ir.guess_encoded_types_scored(main, subs)
+
+    flow = _BoxFlow(main, subs)
+    if flow.has_sender_arg_check():
+        return []                        # validates caller vs sender -> safe
+
+    from puya.ir.types_ import SizedBytesType
+
+    def _addr_label(tail):
+        """The address key label if ``tail`` is RECOGNISABLY a 32-byte address,
+        else None -- the whole precision of the detector. Three ways a key tail is
+        known to be an address: the usage-backward ``account`` ir_type (used as an
+        address elsewhere); a provably 32-byte value (``SizedBytesType(32)`` -- a
+        real per-account key decodes/slices to address width, which a numeric id
+        never does); or the speculative arc4.Address guess. A raw untyped
+        caller value of unknown width is NOT flagged -- we genuinely can't tell an
+        address from an opaque id, so we stay silent rather than false-positive."""
+        if not isinstance(tail, M.Register):
+            return None
+        t = tail.ir_type
+        if str(t) == "account":
+            return "account"
+        if isinstance(t, SizedBytesType) and t.num_bytes == 32:
+            return "bytes[32] (address-width)"
+        e = guesses.get(id(tail))
+        if e is not None and to_puya_ir.is_address_encoding(e):
+            return "arc4.Address"
+        return None
+
+    found: dict = {}
+    for s in flow.subs_all:
+        for bb in s.body:
+            for o in bb.ops:
+                src = o.source if isinstance(o, M.Assignment) else o
+                if not (isinstance(src, M.Intrinsic)
+                        and src.op.name.startswith("box_") and src.args):
+                    continue
+                kv, ksub = flow.deref(src.args[0], s)
+                kd = (flow.reg_def.get((ksub.id, kv.name, kv.version))
+                      if isinstance(kv, M.Register) else None)
+                if not (isinstance(kd, M.Intrinsic) and kd.op is AVMOp.concat
+                        and len(kd.args) == 2):
+                    continue
+                p, _ = flow.deref(kd.args[0], ksub)
+                if not isinstance(p, M.BytesConstant):
+                    continue
+                label = _addr_label(kd.args[1])
+                if label is None:
+                    continue
+                rr = flow.roots(kd.args[1], ksub)
+                if not ("AppArgs" in rr and "Sender" not in rr):
+                    continue
+                f = found.get(p.value)
+                if f is None:
+                    f = found[p.value] = BoxAccessFinding(p.value, label)
+                f.ops.add(src.op.name)
+                if src.op.name in _WRITE_OPS:
+                    f.written = True
+    return sorted(found.values(), key=lambda x: x.prefix)

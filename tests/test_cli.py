@@ -478,3 +478,25 @@ def test_box_schema_json_shape(tmp_path, capsys):
     main(["box-schema", str(tmp_path), "--json"])
     data = json.loads(capsys.readouterr().out)
     assert any(r["kind"] == "Box" and r["name"] == "counter" for r in data)
+
+
+def test_box_audit_flags_caller_address(tmp_path, capsys):
+    pytest.importorskip("puya")
+    (tmp_path / "v.teal").write_text(
+        "#pragma version 10\n"
+        'byte "bal"\ntxna ApplicationArgs 0\nextract 0 32\nconcat\n'
+        "txna ApplicationArgs 1\nbox_put\nint 1\nreturn\n"
+    )
+    rc = main(["box-audit", str(tmp_path)])
+    out = capsys.readouterr().out
+    assert rc == 1 and "CALLER-SUPPLIED" in out and "WRITE" in out
+
+
+def test_box_audit_clean_on_sender_key(tmp_path, capsys):
+    pytest.importorskip("puya")
+    (tmp_path / "s.teal").write_text(
+        '#pragma version 10\nbyte "bal"\ntxn Sender\nconcat\n'
+        "txna ApplicationArgs 0\nbox_put\nint 1\nreturn\n"
+    )
+    rc = main(["box-audit", str(tmp_path)])
+    assert rc == 0 and "no cross-user" in capsys.readouterr().out

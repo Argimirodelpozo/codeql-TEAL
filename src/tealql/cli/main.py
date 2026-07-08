@@ -255,6 +255,48 @@ def _cmd_abi_audit(args) -> int:
     return 1 if danger else 0
 
 
+def _cmd_box_audit(args) -> int:
+    """Box access-control audit: an ADDRESS-keyed BoxMap (per-account storage)
+    whose key is CALLER-SUPPLIED rather than bound to txn Sender — the caller
+    picks whose box to read/write, so an attacker can touch any account's slot
+    (cross-user access; a WRITE is worse). Suppressed when the contract validates
+    the caller against the sender. Requires puya. Exit 1 if any finding."""
+    try:
+        from tealql.tealtools.lift import to_puya
+        from tealql.tealtools.lift.box_recovery import box_access_control
+    except ImportError:
+        print("error: box-audit requires the 'puya' package (pip install puyapy)",
+              file=sys.stderr)
+        return 2
+    import logging as _logging
+    _logging.getLogger("puya").setLevel(_logging.CRITICAL)
+
+    rows: list = []
+    for prog, name in _load_programs(args):
+        label = name or Path(getattr(prog, "source_path", "") or "<program>").name
+        try:
+            main, subs = to_puya(prog)
+        except Exception as e:
+            logger.warning("box-audit: %s did not lift (%s: %s) — skipped",
+                           label, type(e).__name__, e)
+            continue
+        for f in box_access_control(main, subs):
+            rows.append((label, f))
+
+    if args.json_out:
+        print(_json.dumps([
+            {"file": lbl, "prefix": f.prefix.decode("latin-1"),
+             "key_type": f.key_type, "written": f.written, "ops": sorted(f.ops)}
+            for lbl, f in rows], indent=2))
+        return 1 if rows else 0
+    if not rows:
+        print("(no cross-user box-access leads)")
+        return 0
+    for lbl, f in rows:
+        print(f"  ⚠ {lbl}: {f.render()}")
+    return 1
+
+
 def _cmd_box_schema(args) -> int:
     """Reconstruct the box STORAGE SCHEMA -- the Box / BoxMap declarations behind
     a contract's box opcodes, with recovered key and value types (a box key that
@@ -652,6 +694,9 @@ def build_parser() -> argparse.ArgumentParser:
     add("box-schema",
         "reconstruct Box / BoxMap storage schema with recovered key/value "
         "types (needs puya)", _cmd_box_schema)
+    add("box-audit",
+        "box access-control: caller-supplied address-keyed BoxMap not bound to "
+        "txn Sender = cross-user access (needs puya)", _cmd_box_audit)
     add("group-shape", "forced group shape", _cmd_group_shape)
     add("group-layout", "forced group size + per-position layout", _cmd_group_layout)
     add("cost", "per-line opcode cost", _cmd_cost)

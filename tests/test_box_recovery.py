@@ -117,3 +117,83 @@ retsub
 def test_no_box_storage_is_empty(tmp_path):
     teal = "#pragma version 10\nint 1\nreturn\n"
     assert _schema(tmp_path, teal) == []
+
+
+# --- box access-control detector (cross-user address-keyed BoxMap) ---
+
+from tealql.tealtools.lift.box_recovery import box_access_control  # noqa: E402
+
+
+def _acl(tmp_path, teal: str):
+    (tmp_path / "p.teal").write_text(teal)
+    main, subs = to_puya(SSAProgram(str(tmp_path)))
+    return box_access_control(main, subs)
+
+
+def test_acl_flags_caller_address_write(tmp_path):
+    """A per-account box keyed by a caller-supplied 32-byte address (not Sender),
+    written -> flagged as a WRITE cross-user access lead."""
+    teal = """#pragma version 10
+byte "bal"
+txna ApplicationArgs 0
+extract 0 32
+concat
+txna ApplicationArgs 1
+box_put
+int 1
+return
+"""
+    f = _acl(tmp_path, teal)
+    assert len(f) == 1 and f[0].prefix == b"bal" and f[0].written
+
+
+def test_acl_sender_key_is_safe(tmp_path):
+    teal = """#pragma version 10
+byte "bal"
+txn Sender
+concat
+txna ApplicationArgs 0
+box_put
+int 1
+return
+"""
+    assert _acl(tmp_path, teal) == []
+
+
+def test_acl_sender_guarded_is_safe(tmp_path):
+    """Caller address validated == txn Sender before use -> suppressed."""
+    teal = """#pragma version 10
+txna ApplicationArgs 0
+extract 0 32
+txn Sender
+==
+assert
+byte "bal"
+txna ApplicationArgs 0
+extract 0 32
+concat
+box_get
+pop
+pop
+int 1
+return
+"""
+    assert _acl(tmp_path, teal) == []
+
+
+def test_acl_numeric_id_map_not_flagged(tmp_path):
+    """A caller-supplied uint64 id key (a legit listing/auction map) is NOT an
+    address, so not a cross-user impersonation lead."""
+    teal = """#pragma version 10
+byte "lst"
+txna ApplicationArgs 0
+btoi
+itob
+concat
+box_get
+pop
+pop
+int 1
+return
+"""
+    assert _acl(tmp_path, teal) == []
