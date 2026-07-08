@@ -1,0 +1,358 @@
+#pragma version 8
+intcblock 0 1 10000
+bytecblock 0x151f7c75 0x71756f74655f6465706f7369745f656e61626c6564 0x626173655f6465706f7369745f656e61626c6564 0x71756f74655f77697468647261775f656e61626c6564 0x626173655f77697468647261775f656e61626c6564 0x6275795f656e61626c6564 0x73656c6c5f656e61626c6564 0x7769746864726177616c5f70656e616c746965735f656e61626c6564
+txna ApplicationArgs 0
+pushbytes 0xdf95173d // 0xdf95173d
+==
+bnz label1
+txna ApplicationArgs 0
+pushbytes 0x2a74d10e // 0x2a74d10e
+==
+bnz label2
+txna ApplicationArgs 0
+pushbytes 0x72d0a7ea // 0x72d0a7ea
+==
+bnz label3
+txna ApplicationArgs 0
+pushbytes 0x6712b0ea // 0x6712b0ea
+==
+bnz label4
+txna ApplicationArgs 0
+pushbytes 0xcb34fb1f // 0xcb34fb1f
+==
+bnz label5
+err
+label5:
+txn OnCompletion
+intc_0 // 0
+==
+txn ApplicationID
+intc_0 // 0
+!=
+&&
+assert
+callsub label6
+intc_1 // 1
+return
+label4:
+txn OnCompletion
+intc_0 // 0
+==
+txn ApplicationID
+intc_0 // 0
+!=
+&&
+assert
+callsub label7
+intc_1 // 1
+return
+label3:
+txn OnCompletion
+intc_0 // 0
+==
+txn ApplicationID
+intc_0 // 0
+!=
+&&
+assert
+callsub label8
+intc_1 // 1
+return
+label2:
+txn OnCompletion
+intc_0 // 0
+==
+txn ApplicationID
+intc_0 // 0
+!=
+&&
+assert
+callsub label9
+intc_1 // 1
+return
+label1:
+txn OnCompletion
+intc_0 // 0
+==
+txn ApplicationID
+intc_0 // 0
+==
+&&
+assert
+callsub label10
+intc_1 // 1
+return
+label11:
+proto 8 1
+intc_0 // 0
+frame_dig -8
+intc_0 // 0
+>
+assert
+frame_dig -8
+intc_2 // 10000
+<=
+assert
+frame_dig -7
+intc_0 // 0
+>
+assert
+frame_dig -7
+intc_2 // 10000
+<=
+assert
+frame_dig -6
+intc_0 // 0
+>
+assert
+frame_dig -6
+intc_2 // 10000
+<=
+assert
+frame_dig -5
+intc_0 // 0
+>
+assert
+frame_dig -5
+pushint 1000000
+<
+assert
+frame_dig -4
+intc_0 // 0
+>
+assert
+frame_dig -3
+intc_0 // 0
+>
+assert
+frame_dig -2
+intc_0 // 0
+>
+assert
+pushbytes 0x6275795f6d745f6665655f72617465 // "buy_mt_fee_rate"
+frame_dig -8
+app_global_put
+pushbytes 0x73656c6c5f6d745f6665655f72617465 // "sell_mt_fee_rate"
+frame_dig -7
+app_global_put
+pushbytes 0x6c705f6665655f72617465 // "lp_fee_rate"
+frame_dig -6
+app_global_put
+pushbytes 0x6b // "k"
+frame_dig -5
+app_global_put
+pushbytes 0x6f7261636c655f7072696365 // "oracle_price"
+frame_dig -4
+app_global_put
+pushbytes 0x6d61696e7461696e6572 // "maintainer"
+txn Sender
+app_global_put
+pushbytes 0x71756f74655f62616c616e63655f6c696d6974 // "quote_balance_limit"
+frame_dig -3
+app_global_put
+pushbytes 0x626173655f62616c616e63655f6c696d6974 // "base_balance_limit"
+frame_dig -2
+app_global_put
+bytec_1 // "quote_deposit_enabled"
+intc_0 // 0
+app_global_put
+bytec_2 // "base_deposit_enabled"
+intc_0 // 0
+app_global_put
+bytec_3 // "quote_withdraw_enabled"
+intc_0 // 0
+app_global_put
+bytec 4 // "base_withdraw_enabled"
+intc_0 // 0
+app_global_put
+bytec 5 // "buy_enabled"
+intc_0 // 0
+app_global_put
+bytec 6 // "sell_enabled"
+intc_0 // 0
+app_global_put
+bytec 7 // "withdrawal_penalties_enabled"
+intc_1 // 1
+app_global_put
+pushbytes 0x6b79635f63726561746f72 // "kyc_creator"
+frame_dig -1
+app_global_put
+intc_1 // 1
+frame_bury 0
+frame_dig 0
+pushint 256
+<
+assert
+retsub
+label12:
+proto 0 1
+intc_0 // 0
+txn Sender
+global CreatorAddress
+==
+assert
+bytec 7 // "withdrawal_penalties_enabled"
+intc_1 // 1
+app_global_put
+intc_1 // 1
+frame_bury 0
+retsub
+label13:
+proto 0 1
+intc_0 // 0
+txn Sender
+global CreatorAddress
+==
+assert
+bytec 7 // "withdrawal_penalties_enabled"
+intc_0 // 0
+app_global_put
+intc_1 // 1
+frame_bury 0
+retsub
+label14:
+proto 0 1
+intc_0 // 0
+txn Sender
+global CreatorAddress
+==
+assert
+bytec_1 // "quote_deposit_enabled"
+intc_1 // 1
+app_global_put
+bytec_2 // "base_deposit_enabled"
+intc_1 // 1
+app_global_put
+bytec_3 // "quote_withdraw_enabled"
+intc_1 // 1
+app_global_put
+bytec 4 // "base_withdraw_enabled"
+intc_1 // 1
+app_global_put
+bytec 5 // "buy_enabled"
+intc_1 // 1
+app_global_put
+bytec 6 // "sell_enabled"
+intc_1 // 1
+app_global_put
+intc_1 // 1
+frame_bury 0
+retsub
+label15:
+proto 0 1
+intc_0 // 0
+txn Sender
+global CreatorAddress
+==
+assert
+bytec_1 // "quote_deposit_enabled"
+intc_0 // 0
+app_global_put
+bytec_2 // "base_deposit_enabled"
+intc_0 // 0
+app_global_put
+bytec_3 // "quote_withdraw_enabled"
+intc_0 // 0
+app_global_put
+bytec 4 // "base_withdraw_enabled"
+intc_0 // 0
+app_global_put
+bytec 5 // "buy_enabled"
+intc_0 // 0
+app_global_put
+bytec 6 // "sell_enabled"
+intc_0 // 0
+app_global_put
+intc_1 // 1
+frame_bury 0
+retsub
+label10:
+proto 0 0
+intc_0 // 0
+dupn 7
+pushbytes 0x // ""
+txna ApplicationArgs 1
+btoi
+frame_bury 1
+txna ApplicationArgs 2
+btoi
+frame_bury 2
+txna ApplicationArgs 3
+btoi
+frame_bury 3
+txna ApplicationArgs 4
+btoi
+frame_bury 4
+txna ApplicationArgs 5
+btoi
+frame_bury 5
+txna ApplicationArgs 6
+btoi
+frame_bury 6
+txna ApplicationArgs 7
+btoi
+frame_bury 7
+txna ApplicationArgs 8
+frame_bury 8
+frame_dig 1
+frame_dig 2
+frame_dig 3
+frame_dig 4
+frame_dig 5
+frame_dig 6
+frame_dig 7
+frame_dig 8
+callsub label11
+frame_bury 0
+bytec_0 // 0x151f7c75
+pushbytes 0x00 // 0x00
+intc_0 // 0
+frame_dig 0
+setbyte
+concat
+log
+retsub
+label9:
+proto 0 0
+intc_0 // 0
+callsub label12
+frame_bury 0
+bytec_0 // 0x151f7c75
+frame_dig 0
+itob
+concat
+log
+retsub
+label8:
+proto 0 0
+intc_0 // 0
+callsub label13
+frame_bury 0
+bytec_0 // 0x151f7c75
+frame_dig 0
+itob
+concat
+log
+retsub
+label7:
+proto 0 0
+intc_0 // 0
+callsub label14
+frame_bury 0
+bytec_0 // 0x151f7c75
+frame_dig 0
+itob
+concat
+log
+retsub
+label6:
+proto 0 0
+intc_0 // 0
+callsub label15
+frame_bury 0
+bytec_0 // 0x151f7c75
+frame_dig 0
+itob
+concat
+log
+retsub

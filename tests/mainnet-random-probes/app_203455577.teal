@@ -1,0 +1,70 @@
+#pragma version 3
+intcblock 6 3 0 5 1
+bytecblock 0x0ca89117870003f00737191f276234de59402604fea6cb50a787b13c7dd4d7f8 0x6c5aa7029d5169a2ecf16e5baab36787479f7fe4224ec8a97d7449a587dc3086 0xd1fa775ad35201c541ac3f018f5959589be8e5ae8c2a6ac76de03c549fee6c01 0x73 0x6c 0x68
+txn TypeEnum
+intc_0 // 6
+==
+assert
+txn RekeyTo
+global ZeroAddress
+==
+assert
+global GroupSize
+intc_1 // 3
+>=
+assert
+txn GroupIndex
+intc_2 // 0
+==
+assert
+intc_2 // 0
+gtxn 2 Sender
+bytec_0 // addr BSUJCF4HAAB7ABZXDEPSOYRU3ZMUAJQE72TMWUFHQ6YTY7OU274F4VJIAU
+==
+||
+gtxn 2 Sender
+bytec_1 // addr NRNKOAU5KFU2F3HRNZN2VM3HQ5DZ677EEJHMRKL5ORE2LB64GCDNJVWLP4
+==
+||
+gtxn 2 Sender
+bytec_2 // addr 2H5HOWWTKIA4KQNMH4AY6WKZLCN6RZNORQVGVR3N4A6FJH7ONQATI3I5F4
+==
+||
+assert
+bytec_3 // "s"
+app_global_get
+gtxna 0 ApplicationArgs 0
+==
+assert
+bytec 4 // "l"
+app_global_get
+gtxna 0 ApplicationArgs 4
+btoi
+==
+assert
+bytec_3 // "s"
+gtxna 0 ApplicationArgs 1
+app_global_put
+bytec 4 // "l"
+global Round
+app_global_put
+bytec 5 // "h"
+gtxna 0 ApplicationArgs 2
+btoi
+app_global_put
+bytec 5 // "h"
+app_global_get
+bnz label1
+txn OnCompletion
+intc_2 // 0
+==
+assert
+b label2
+label1:
+txn OnCompletion
+intc_3 // 5
+==
+assert
+label2:
+intc 4 // 1
+return
