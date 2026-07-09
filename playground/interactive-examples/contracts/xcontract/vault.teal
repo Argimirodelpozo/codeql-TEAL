@@ -1,0 +1,10 @@
+#pragma version 10
+// App 100 — a per-account balance box keyed by the caller.
+byte "bal"
+txn Sender
+concat
+int 8
+box_create
+pop
+int 1
+return

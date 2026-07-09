@@ -1,0 +1,19 @@
+#pragma version 10
+// Root app — dispatches to a vault (app 100) then a payer (app 200)
+// via inner application-call transactions (TypeEnum = appl).
+itxn_begin
+int 6
+itxn_field TypeEnum
+int 100
+itxn_field ApplicationID
+txna ApplicationArgs 0
+itxn_field ApplicationArgs
+itxn_submit
+itxn_begin
+int 6
+itxn_field TypeEnum
+int 200
+itxn_field ApplicationID
+itxn_submit
+int 1
+return

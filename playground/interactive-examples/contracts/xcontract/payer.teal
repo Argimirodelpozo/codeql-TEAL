@@ -1,0 +1,12 @@
+#pragma version 10
+// App 200 — pays a caller-supplied Receiver, unguarded.
+itxn_begin
+int pay
+itxn_field TypeEnum
+txna ApplicationArgs 0
+itxn_field Receiver
+int 1000
+itxn_field Amount
+itxn_submit
+int 1
+return
