@@ -12,13 +12,19 @@ from tealql.tealtools.avm import CMP_OPS
 from tealql.tealtools.cfg.dominance import iterative_dominators
 from tealql.tealtools.ssa import Assignment, BasicBlock, SSAProgram, SSAVar
 
-from ._enforcement import _label_to_bb_first_line, def_forward_reaches_enforcement
+from ._enforcement import (
+    _bb_at,
+    _fall_through_bb,
+    _label_to_bb_first_line,
+    def_forward_reaches_enforcement,
+)
 from ._program_shape import (
     _txna_reads,
     approving_exits,
     file_match,
     global_field_reads,
     gtxn_field_reads,
+    is_rejection_exit,
     ssavar_outputs,
     txn_field_reads,
 )
@@ -70,15 +76,109 @@ def _bb_strict_dominators(
 
 
 
+def _collect_field_enforcement_bbs(
+    prog: SSAProgram, var: SSAVar, label_lines: dict, out: set, seen: set,
+) -> None:
+    """Forward-walk the SSA chain from a field-comparison result and record the
+    BASIC BLOCK of every enforcement site it reaches (``assert`` / ``bnz``
+    fall-through-to-reject / ``bz`` target-reject). Same traversal as
+    :func:`def_forward_reaches_enforcement`, but it RECORDS the enforcing BB
+    instead of returning on the first hit — so the caller can require every
+    approving path to CROSS an enforcement site (a MUST-reach) rather than merely
+    that one exists somewhere (the may-reach that let a field compared in a
+    dominator but asserted on a single branch read as validated-on-all-paths)."""
+    if var in seen:
+        return
+    seen.add(var)
+    for cons in var.uses:
+        if cons.op == "assert":
+            if cons.basic_block is not None:
+                out.add(cons.basic_block)
+        elif cons.op == "bnz":
+            bb = cons.basic_block
+            if bb is not None:
+                ft = _fall_through_bb(prog, bb)
+                if ft is not None and is_rejection_exit(ft):
+                    out.add(bb)
+        elif cons.op == "bz":
+            tgt = label_lines.get((cons.location.file, cons.immediates.strip()))
+            if tgt is not None:
+                tbb = _bb_at(prog, cons.location.file, tgt)
+                if (tbb is not None and is_rejection_exit(tbb)
+                        and cons.basic_block is not None):
+                    out.add(cons.basic_block)
+        for o in cons.outputs:
+            if isinstance(o, SSAVar):
+                _collect_field_enforcement_bbs(prog, o, label_lines, out, seen)
+
+
+def _field_enforcement_bbs(
+    prog: SSAProgram, field_vars: set, *, file: Optional[str],
+) -> set:
+    """The set of BBs that ENFORCE a comparison of the field (an assert /
+    branch-to-reject whose condition SSA-derives from a comparison consuming a
+    field seed). Empty when the field is compared but never enforced, or never
+    compared at all."""
+    out: set = set()
+    label_lines = _label_to_bb_first_line(prog)
+    for cmp in prog.assignments:
+        if not file_match(cmp.location.file, file):
+            continue
+        if not is_comparison(cmp) or not cmp.outputs:
+            continue
+        if not isinstance(cmp.outputs[0], SSAVar):
+            continue
+        if not any(_operand_flows_from_field_var(prog, op, field_vars)
+                   for op in cmp.inputs):
+            continue
+        _collect_field_enforcement_bbs(prog, cmp.outputs[0], label_lines, out, set())
+    return out
+
+
+def _all_entry_paths_cross(exit_bb: BasicBlock, gates: set) -> bool:
+    """Every CFG path from a program entry (a no-predecessor BB) to ``exit_bb``
+    crosses at least one BB in ``gates``. Backward BFS: a predecessor in
+    ``gates`` closes that path; reaching an entry NOT in ``gates`` witnesses an
+    uncrossed path (return False)."""
+    if exit_bb in gates:
+        return True
+    if not exit_bb.predecessors:
+        return False
+    visited: set = {exit_bb}
+    stack: list = [exit_bb]
+    while stack:
+        bb = stack.pop()
+        for pred in bb.predecessors:
+            if pred in visited:
+                continue
+            visited.add(pred)
+            if pred in gates:
+                continue
+            if not pred.predecessors:
+                return False
+            stack.append(pred)
+    return True
+
+
 def field_validated_on_all_paths(
     prog: SSAProgram, field: str, *, file: Optional[str] = None,
 ) -> bool:
-    """The field is validated on all paths: there is a single
-    comparison whose BB dominates every approval exit, and one operand
-    of the comparison reads from ``txn FIELD``.
+    """The field is validated on EVERY approving path: every CFG path from a
+    program entry to each approving exit CROSSES a BB that ENFORCES a comparison
+    of the field (assert / branch-to-reject).
 
-    Phi-aware on the operand check (cross-BB cmps are common when the
-    field read sits in one BB and the comparison in a successor)."""
+    Seeds the every-path check on the ENFORCEMENT SITE, not the comparison — the
+    must-reach that fixes the false negative in the old dominance formulation. The
+    old check accepted "a single comparison dominates all exits AND its result
+    reaches *some* enforcement" — existential, so a field compared in a dominating
+    BB but asserted on only one branch (``dup``'d, asserted on the Delete branch,
+    dropped on an approving NoOp branch) read as validated, letting an attacker set
+    the field on the unenforced approving path. Affected the asset-close-to /
+    close-remainder-to / tx-type-check family. Seeds both ``txn`` and sibling
+    ``gtxn`` reads of the field."""
+    exits = approving_exits(prog, file=file)
+    if not exits:
+        return False
     field_vars = {
         out
         for a in (txn_field_reads(prog, field, file=file)
@@ -88,35 +188,10 @@ def field_validated_on_all_paths(
     }
     if not field_vars:
         return False
-    exits = approving_exits(prog, file=file)
-    if not exits:
+    gates = _field_enforcement_bbs(prog, field_vars, file=file)
+    if not gates:
         return False
-    dom = _bb_strict_dominators(prog, file=file)
-    for cmp in prog.assignments:
-        if not file_match(cmp.location.file, file):
-            continue
-        if not is_comparison(cmp) or len(cmp.inputs) != 2:
-            continue
-        if not any(
-            _operand_flows_from_field_var(prog, op, field_vars)
-            for op in cmp.inputs
-        ):
-            continue
-        cmp_bb = cmp.basic_block
-        if cmp_bb is None:
-            continue
-        if not all(cmp_bb in dom[exit] for exit in exits):
-            continue
-        # The comparison must actually be ENFORCED — a `field == X` whose result
-        # is dropped (`pop`) or otherwise never reaches an assert / branch-to-reject
-        # is not a guard. Without this, `txn AssetCloseTo; global ZeroAddress; ==;
-        # pop` (the result discarded) was accepted as validation — a false negative
-        # that approves the txn regardless of the field.
-        if not cmp.outputs or not isinstance(cmp.outputs[0], SSAVar):
-            continue
-        if def_forward_reaches_enforcement(prog, cmp.outputs[0]):
-            return True
-    return False
+    return all(_all_entry_paths_cross(exit_bb, gates) for exit_bb in exits)
 
 
 

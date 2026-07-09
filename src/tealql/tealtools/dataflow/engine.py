@@ -142,9 +142,18 @@ TRANSCODE_PROPAGATION_RULE = FlowRule(
 
 
 def _concat_flows(a: Assignment, tainted_in: list[int]) -> Optional[list[int]]:
-    """``concat A B`` propagates taint to its output iff every
-    non-tainted input is statically constant (a constant prefix /
-    suffix doesn't break a taint chain — same bytes flow through)."""
+    """``concat A B`` propagates taint to its output iff every non-tainted input
+    is statically constant.
+
+    NB this is the COLLISION model the box-key detector needs, NOT generic
+    attacker-control: a *constant* prefix (``concat("bal", AssetName)``) doesn't
+    distinguish instances, so same-name assets still collide → taint flows → flag;
+    a *dynamic* prefix (``concat(itob(asset_id), AssetName)``) makes the key
+    unique → no collision → taint blocked (see the ``box_key/safe_id_prefix``
+    fixture). An attacker-CONTROL detector (e.g. box_df into-box) wants "taint if
+    ANY input tainted" instead — that needs its OWN concat rule, not a change
+    here, since the two semantics genuinely conflict on ``concat(dynamic, user)``.
+    """
     if a.op != "concat":
         return None
     for i, inp in enumerate(a.inputs):
