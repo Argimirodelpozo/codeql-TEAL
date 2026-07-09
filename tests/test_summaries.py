@@ -135,3 +135,68 @@ def test_taint_fact_equivalent_to_production_summary(contract):
     for sid, (rsrcs, rparams) in ref.items():
         assert mine[sid].internal_sources == rsrcs, sid
         assert mine[sid].passthrough == rparams, sid
+
+
+# --- the summary WIRED into fund-flow: a callee that validates its param
+#     internally guards the caller's value across the callsub ---
+
+_CALLEE_VALIDATES = """#pragma version 10
+txna ApplicationArgs 0
+dup
+callsub validate
+itxn_begin
+int pay
+itxn_field TypeEnum
+itxn_field Receiver
+int 1000
+itxn_field Amount
+itxn_submit
+int 1
+return
+
+validate:
+proto 1 0
+frame_dig -1
+txn Sender
+==
+assert
+retsub
+"""
+
+_CALLEE_NOOP = """#pragma version 10
+txna ApplicationArgs 0
+dup
+callsub noop
+itxn_begin
+int pay
+itxn_field TypeEnum
+itxn_field Receiver
+int 1000
+itxn_field Amount
+itxn_submit
+int 1
+return
+
+noop:
+proto 1 0
+retsub
+"""
+
+
+def _fund_findings(tmp_path, teal):
+    from tealql.security import DETECTORS
+    (tmp_path / "p.teal").write_text(teal)
+    return DETECTORS["ir-tainted-fund-flow"](SSAProgram(str(tmp_path))).detect()
+
+
+def test_callee_internal_validation_guards_across_callsub(tmp_path):
+    """A caller-supplied Receiver passed to a helper that asserts it == Sender is
+    NOT an attacker-controlled fund flow — the callee-param guard summary transfers
+    the guard across the callsub (was a false positive before wiring)."""
+    assert _fund_findings(tmp_path, _CALLEE_VALIDATES) == []
+
+
+def test_callee_without_validation_still_flags(tmp_path):
+    """Control: the same shape but the callee does NOT validate → still flagged
+    (the transfer doesn't over-suppress)."""
+    assert len(_fund_findings(tmp_path, _CALLEE_NOOP)) == 1

@@ -438,6 +438,36 @@ def _entry_guards(lifter, def_of, dom_by_sub, taint, inv_ret=None):
     return eg, called
 
 
+def _callee_param_guards(lifter, def_of, dom_by_sub, inv_ret=None) -> dict:
+    """``{sub.id: {param_idx: (checks_input, checks_sender)}}`` — guards a sub
+    applies to a param INTERNALLY that hold on RETURN (they dominate every
+    ``SubroutineReturn`` block, so any post-call use of the caller's argument is
+    constrained). The CALLEE-side complement of :func:`_entry_guards`: it closes
+    the case a caller-side guard summary and validation-return descent both miss —
+    a helper that ``assert``s its own parameter (``validate(x){ assert x==Sender }``)
+    and returns nothing. Classified with the same :func:`_classify` machinery as
+    every other guard, so it records WHAT the check tests (sender / the value),
+    not a bare "is asserted" — a length/non-content check does not spuriously
+    become a content guard here any more than it does intra-procedurally."""
+    out: dict = {}
+    for s in lifter.subs:
+        dom, by_id = dom_by_sub[s.id], {b.id: b for b in s.body}
+        rets = [b for b in s.body
+                if isinstance(b.terminator, pre_ir.SubroutineReturn)]
+        pg: dict = {}
+        for i, p in enumerate(s.parameters):
+            preg = {id(p.register)}
+            ci = cs = bool(rets)          # AND across returns; no returns -> unknown
+            for rb in rets:
+                gs = _dominating_guards(by_id, dom, rb.id, len(rb.ops), def_of,
+                                        preg, set(), inv_ret)
+                ci = ci and any(g.checks_input for g in gs)
+                cs = cs and any(g.checks_sender for g in gs)
+            pg[i] = (ci, cs)
+        out[s.id] = pg
+    return out
+
+
 def _tainted_sink_flows(lifter, sink_of, taint=None, trusted_args=frozenset(),
                         sender_only=False) -> list:
     """Core taint-to-sink engine. ``sink_of(intrinsic)`` yields
@@ -461,6 +491,7 @@ def _tainted_sink_flows(lifter, sink_of, taint=None, trusted_args=frozenset(),
     inv_ret = _invoke_returns(lifter)
     dom_by_sub = {s.id: _dominators(s) for s in lifter.subs}
     entry_guards, called = _entry_guards(lifter, def_of, dom_by_sub, taint, inv_ret)
+    callee_pg = _callee_param_guards(lifter, def_of, dom_by_sub, inv_ret)
     findings: list = []
     for sub in lifter.subs:
         dom = dom_by_sub[sub.id]
@@ -498,6 +529,35 @@ def _tainted_sink_flows(lifter, sink_of, taint=None, trusted_args=frozenset(),
                         guards.append(Guard("caller", None, True, False))
                     if any(egp.get(i, (False, False))[1] for i in feeding):
                         guards.append(Guard("caller", None, False, True))
+                    # Interprocedural (callee-side): the sink value was passed to a
+                    # helper that validates that parameter internally, on a call
+                    # that dominates the sink (runs before it). Transfer the
+                    # callee's param guard to the caller's value.
+                    for cbid in dom.get(b.id, {b.id}):
+                        cblk = by_id.get(cbid)
+                        if cblk is None:
+                            continue
+                        cops = cblk.ops if cbid != b.id else cblk.ops[:idx]
+                        for co in cops:
+                            inv = _invoke(co)
+                            callee = lifter.name2sub.get(inv.target) if inv else None
+                            if callee is None:
+                                continue
+                            cpg = callee_pg.get(callee.id, {})
+                            for ai, arg in enumerate(inv.args):
+                                ci, cs = cpg.get(ai, (False, False))
+                                if not (ci or cs):
+                                    continue
+                                aw = list(_walk(arg, def_of))
+                                aregs = {id(r) for r, _ in aw}
+                                akeys = {k for _, oo in aw
+                                         if (k := _input_key(_intr(oo) if oo else None))
+                                         is not None}
+                                if (aregs & sink_regs) or (akeys & sink_keys):
+                                    if ci:
+                                        guards.append(Guard("callee", None, True, False))
+                                    if cs:
+                                        guards.append(Guard("callee", None, False, True))
                     if sender_only:
                         # Byte-taint owns input-validation (byte-precise); drop
                         # input-slot guards so only sender/creator checks suppress
