@@ -16,7 +16,6 @@ from ._enforcement import (
     _bb_at,
     _fall_through_bb,
     _label_to_bb_first_line,
-    def_forward_reaches_enforcement,
 )
 from ._program_shape import (
     _txna_reads,
@@ -114,17 +113,23 @@ def _collect_field_enforcement_bbs(
 
 def _field_enforcement_bbs(
     prog: SSAProgram, field_vars: set, *, file: Optional[str],
+    allow_unary_cmp: bool = False,
 ) -> set:
     """The set of BBs that ENFORCE a comparison of the field (an assert /
     branch-to-reject whose condition SSA-derives from a comparison consuming a
     field seed). Empty when the field is compared but never enforced, or never
-    compared at all."""
+    compared at all. ``allow_unary_cmp``: accept a 1-input comparison (the field
+    against an inlined literal, e.g. an ABI selector) as well as the strict
+    2-input form."""
     out: set = set()
     label_lines = _label_to_bb_first_line(prog)
     for cmp in prog.assignments:
         if not file_match(cmp.location.file, file):
             continue
         if not is_comparison(cmp) or not cmp.outputs:
+            continue
+        n_in = len(cmp.inputs)
+        if n_in != 2 and not (allow_unary_cmp and n_in == 1):
             continue
         if not isinstance(cmp.outputs[0], SSAVar):
             continue
@@ -209,41 +214,22 @@ def _is_protected_bb_for_seeds(
     (``txn`` / ``global`` / ``gtxn``) or pass a *union* of seeds for
     disjunction (e.g. ``TypeEnum`` OR ``Type``).
 
-    A BB is protected for ``field_vars`` iff it contains a comparison
-    consuming a value that flows from any seed AND whose result
-    reaches enforcement (``assert`` / ``bnz`` to ``err`` / ``bz`` to
-    ``err``). Empty seeds → not protected (vacuously).
+    A BB is protected for ``field_vars`` iff it is an ENFORCEMENT SITE — it
+    contains an ``assert`` / branch-to-reject whose condition SSA-derives from a
+    comparison consuming a seed. This is the MUST-reach predicate (crossing the BB
+    means the field was enforced), not the old may-reach "a comparison here reaches
+    *some* enforcement" — which let a field compared in a dominator but asserted on
+    a single branch read as protected (a false negative).
 
-    ``allow_unary_cmp``: by default only two-operand comparisons count.
-    When a comparison's other operand is an *inlined literal* (e.g.
-    ``selector == 0x12345678``), the SSA materialises just one input —
-    the seed — so the comparison has arity 1. Field detectors compare
-    against opcode-produced values (``global ZeroAddress`` etc.) and
-    want the strict two-input form; the ABI-selector detector compares
-    against a literal and opts in to the one-input form."""
+    ``allow_unary_cmp``: also accept the field compared against an *inlined literal*
+    (arity-1 comparison, e.g. an ABI selector), not just the strict two-input
+    form. Empty seeds → not protected (vacuously)."""
     if not field_vars:
         return False
     if file is None:
         file = bb.file
-    label_lines = _label_to_bb_first_line(prog)
-    for cmp in bb.assignments:
-        if not is_comparison(cmp):
-            continue
-        n_in = len(cmp.inputs)
-        if n_in != 2 and not (allow_unary_cmp and n_in == 1):
-            continue
-        if not any(
-            _operand_flows_from_field_var(prog, op, field_vars)
-            for op in cmp.inputs
-        ):
-            continue
-        if not cmp.outputs or not isinstance(cmp.outputs[0], SSAVar):
-            continue
-        if def_forward_reaches_enforcement(
-            prog, cmp.outputs[0], label_lines=label_lines,
-        ):
-            return True
-    return False
+    return bb in _field_enforcement_bbs(
+        prog, field_vars, file=file, allow_unary_cmp=allow_unary_cmp)
 
 
 
@@ -256,38 +242,19 @@ def _approval_exit_protected_for_seeds(
     file: Optional[str] = None,
     allow_unary_cmp: bool = False,
 ) -> bool:
-    """Core of :func:`approval_exit_protected_for_field` — same path
-    walk but parameterised on the seed set so we can reuse the
-    machinery for ``global FIELD`` / disjunctions / ``gtxn FIELD``.
-    ``allow_unary_cmp`` is threaded to :func:`_is_protected_bb_for_seeds`."""
+    """Core of :func:`approval_exit_protected_for_field`: every CFG path from a
+    program entry to ``exit_bb`` CROSSES a BB that ENFORCES the field. Seeds the
+    every-path (must-reach) check on the enforcement site — the fix for the
+    may-reach false negative where a field compared in a dominating BB but
+    asserted on only one branch read as protected. Parameterised on the seed set
+    to reuse for ``global FIELD`` / disjunctions / ``gtxn`` / ABI-selector."""
     if file is None:
         file = exit_bb.file
-    if _is_protected_bb_for_seeds(
-        prog, exit_bb, field_vars, file=file, allow_unary_cmp=allow_unary_cmp,
-    ):
-        return True
-    # If the exit_bb itself is an entry (no predecessors), the trivial
-    # zero-length path is from an unprotected entry — exit_bb is *not*
-    # protected. Without this guard the backward BFS below exhausts
-    # with no work to do and returns the wrong answer (True).
-    if not exit_bb.predecessors:
+    if not field_vars:
         return False
-    visited: set[BasicBlock] = {exit_bb}
-    stack: list[BasicBlock] = [exit_bb]
-    while stack:
-        bb = stack.pop()
-        for pred in bb.predecessors:
-            if pred in visited:
-                continue
-            visited.add(pred)
-            if _is_protected_bb_for_seeds(
-                prog, pred, field_vars, file=file, allow_unary_cmp=allow_unary_cmp,
-            ):
-                continue
-            if not pred.predecessors:
-                return False
-            stack.append(pred)
-    return True
+    gates = _field_enforcement_bbs(
+        prog, field_vars, file=file, allow_unary_cmp=allow_unary_cmp)
+    return _all_entry_paths_cross(exit_bb, gates)
 
 
 

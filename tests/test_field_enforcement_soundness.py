@@ -104,3 +104,58 @@ def test_asset_close_to_detector_flags_branch_enforced(tmp_path):
     prog = SSAProgram(str(tmp_path))
     findings = DETECTORS["asset-close-to"](prog).detect()
     assert findings, "branch-enforced AssetCloseTo must be flagged"
+
+
+# --- the SAME must-reach fix now unifies the approval_exit family
+#     (rekey-to / is-deletable / tx-type-check via approval_exit_protected_for_field) ---
+
+def _detector(tmp_path, name, teal):
+    from tealql.security import DETECTORS
+    (tmp_path / "p.teal").write_text(teal)
+    return DETECTORS[name](SSAProgram(str(tmp_path))).detect()
+
+
+_REKEY_BRANCH_ENFORCED = """#pragma version 10
+txn RekeyTo
+global ZeroAddress
+==
+store 0
+txn OnCompletion
+int 5
+==
+bnz do_delete
+int 1
+return
+do_delete:
+load 0
+assert
+int 1
+return
+"""
+
+_REKEY_SAFE = """#pragma version 10
+txn RekeyTo
+global ZeroAddress
+==
+assert
+txn OnCompletion
+int 5
+==
+bnz do_delete
+int 1
+return
+do_delete:
+int 1
+return
+"""
+
+
+def test_rekey_branch_enforced_is_flagged(tmp_path):
+    """RekeyTo compared in a dominator but asserted on only the Delete branch,
+    while the NoOp branch approves without it — must flag (was a may-reach FN)."""
+    assert _detector(tmp_path, "rekey-to", _REKEY_BRANCH_ENFORCED)
+
+
+def test_rekey_asserted_on_all_paths_is_clean(tmp_path):
+    """RekeyTo asserted unconditionally (dominates both exits) — no finding."""
+    assert _detector(tmp_path, "rekey-to", _REKEY_SAFE) == []
