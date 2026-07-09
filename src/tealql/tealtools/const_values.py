@@ -129,13 +129,19 @@ def compute_const_values(g) -> list[tuple]:
                 rows.append((f, ln, 1, "bytes", bytec_vals[idx]))
 
         elif op == "pushints":
-            for i, tok in enumerate(_split_int_tokens(_imms(n))):
+            # A multi-push emits N stack values; the LAST token is pushed last
+            # and so is the TOP output — and the stack convention is that
+            # ``output_index 1`` is the topmost value (see models.py). So number
+            # the tokens back-to-front: token i (0-based) → out_idx ``N - i``.
+            toks = _split_int_tokens(_imms(n))
+            for i, tok in enumerate(toks):
                 v = _to_int(tok)
                 if v is not None:
-                    rows.append((f, ln, i + 1, "int", str(v)))
+                    rows.append((f, ln, len(toks) - i, "int", str(v)))
 
         elif op == "pushbytess":
-            for i, tok in enumerate(_split_byte_literals(_imms(n))):
-                rows.append((f, ln, i + 1, "bytes", tok))
+            toks = _split_byte_literals(_imms(n))
+            for i, tok in enumerate(toks):
+                rows.append((f, ln, len(toks) - i, "bytes", tok))
 
     return rows

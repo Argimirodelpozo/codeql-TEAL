@@ -850,22 +850,17 @@ class _Lifter:
                else [self.value(x) for x in t.inputs])
         # Pair label[i] with the i-th case key in PUSH order (deepest-first),
         # which AVM `match` requires (label[0] <-> the first-pushed/deepest
-        # key). A key's push position is (source line, output index within
-        # its producing op) ascending -- correct whether the n keys come from
-        # ONE multi-push op (`pushbytess`/`pushints`: same line, indices
-        # 1..n), from separate `intc`/`pushint` pushes (distinct lines), or a
-        # mix. (SSA inputs are TOP-FIRST, so a fixed index `ins[i+1]` is only
-        # right for the single-op case; getting it wrong silently SWAPS
-        # sibling arms -- oracle-confirmed on app_3543081435's no-arg
-        # OnCompletion router, NoOp<->UpdateApplication.)
-        keys = t.inputs[1:n + 1]
-        pos = [(getattr(k, "line", None), getattr(k, "index", None) or 0)
-               for k in keys]
-        if len(pos) == n and all(ln is not None for ln, _ in pos):
-            order = sorted(range(n), key=lambda j: pos[j])
-        else:                                  # missing source info: fall back
-            order = (list(range(n)) if len({ln for ln, _ in pos}) == 1
-                     else list(range(n))[::-1])
+        # key). The n keys are pushed C_0..C_{n-1} in source order, so C_0 is
+        # ALWAYS deepest — and SSA inputs are TOP-FIRST, so C_i sits at
+        # ins[n - i]. The mapping is therefore uniformly `order = reversed`
+        # (label[i] -> ins[n - i]), whether the keys come from one multi-push
+        # op or separate `intc`/`pushint` pushes. (This used to special-case
+        # the multi-push op because `const_values` numbered its outputs
+        # front-to-back, scrambling which var held which key; that root bug is
+        # fixed -- output_index 1 is now the top/last-pushed value.
+        # Getting this wrong silently SWAPS sibling arms -- oracle-confirmed on
+        # app_3543081435's no-arg OnCompletion router, NoOp<->UpdateApplication.)
+        order = list(range(n))[::-1]
         cases, targets = [], set()
         for i, lbl in enumerate(labels):
             blk = self.line2block.get(self.label2line.get(lbl))
