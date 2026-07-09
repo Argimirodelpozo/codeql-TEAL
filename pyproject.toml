@@ -48,6 +48,9 @@ dev = [
     "pytest-timeout",
     "pytest-cov",
     "coverage",
+    # property-based testing — soundness membership tests for the abstract
+    # domains (concrete result must lie in the propagated range/length).
+    "hypothesis>=6",
 ]
 
 [project.urls]
