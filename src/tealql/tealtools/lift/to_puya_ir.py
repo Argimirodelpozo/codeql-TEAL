@@ -1494,13 +1494,39 @@ def _propagate_guesses(main, subs, guesses: dict, confident: dict = None) -> Non
     wrong hop cannot affect lowering -- only what a tolerant consumer reads."""
     confident = confident if confident is not None else {}
 
+    # SSA register names are unique only WITHIN a subroutine (params `p%i`, locals
+    # `l%slot` recur across subs), so a propagation identity must include the
+    # owning subroutine — else a guess on sub A's `p%0` stamps onto sub B's `p%0`
+    # (a spurious cross-sub guess that surfaces as a wrong abi-audit/box-audit
+    # finding). Map every register OBJECT to its sub; all copy/phi relations are
+    # intra-sub, and state round-trips key on state-key-bytes, so per-sub keys are
+    # both sufficient and correct.
+    reg_sub: dict = {}
+    for s in (main, *subs):
+        for bb in s.body:
+            for ph in bb.phis:
+                reg_sub[id(ph.register)] = s.id
+                for pa in ph.args:
+                    if isinstance(pa.value, M.Register):
+                        reg_sub[id(pa.value)] = s.id
+            for o in bb.ops:
+                src = o.source if isinstance(o, M.Assignment) else o
+                if isinstance(o, M.Assignment):
+                    for t in o.targets:
+                        if isinstance(t, M.Register):
+                            reg_sub[id(t)] = s.id
+                if isinstance(src, M.Intrinsic):
+                    for a in src.args:
+                        if isinstance(a, M.Register):
+                            reg_sub[id(a)] = s.id
+
     def key(r):
-        return (r.name, r.version)
+        return (reg_sub.get(id(r)), r.name, r.version)
 
     # Seed: logical-identity -> encoding (+ confident bool), from the base guesses.
     enc: dict = {}
-    enc_conf: dict = {}                   # (name,version) -> bool
-    objs: dict = {}                       # (name,version) -> [register objects]
+    enc_conf: dict = {}                   # (sub,name,version) -> bool
+    objs: dict = {}                       # (sub,name,version) -> [register objects]
 
     def note(r):
         if isinstance(r, M.Register):
