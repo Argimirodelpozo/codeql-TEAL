@@ -1,0 +1,67 @@
+#pragma version 10
+// ── Vault: a method-routed ABI app with per-account box balances and an
+//    owner-guarded payout. Deliberately small, but exercises every layer.
+
+txn ApplicationID
+bz on_create
+
+txna ApplicationArgs 0
+method "deposit()void"
+==
+bnz deposit
+txna ApplicationArgs 0
+method "withdraw(address,uint64)void"
+==
+bnz withdraw
+err
+
+on_create:
+byte "name"
+byte 0x000556617563                 // arc4.String "Vault"
+app_global_put
+int 1
+return
+
+// deposit(): credit a per-account balance box keyed by the caller.
+deposit:
+byte "bal"
+txn Sender
+concat                              // box[ "bal" ++ Sender ] : per-account map
+int 8
+box_create
+pop
+int 1
+return
+
+// withdraw(address recipient, uint64 amount): owner-only payout.
+withdraw:
+callsub require_owner
+txna ApplicationArgs 1
+extract 2 32                        // the arc4.address recipient
+txna ApplicationArgs 2
+btoi                                // the uint64 amount
+callsub pay
+int 1
+return
+
+// pay(recipient: bytes[32], amount: uint64)
+pay:
+proto 2 0
+itxn_begin
+int pay
+itxn_field TypeEnum
+frame_dig -2
+itxn_field Receiver
+frame_dig -1
+itxn_field Amount
+itxn_submit
+retsub
+
+// require_owner(): assert the caller is the app creator.
+require_owner:
+proto 0 0
+txn Sender
+global CreatorAddress
+==
+assert
+retsub
