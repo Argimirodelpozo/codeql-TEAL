@@ -227,3 +227,42 @@ class TestXgovIntegration:
         prog = _xgov()
         propagate_assert_ranges(prog)
         assert propagate_assert_ranges(prog) == 0
+
+
+class TestShuffleUsesInvariant:
+    """Regression: `propagate_stack_shuffles` must keep the `.uses` invariant, or
+    a value that is asserted and then `dup`'d/reused fails to tighten — range_assert
+    walks `x.uses` for its dominance check, and a STALE dead-`dup` use (which is
+    not dominated by the assert) would wrongly block the refinement."""
+
+    def _prog(self, teal):
+        from tealql.tealtools.ssa import SSAProgram
+        p = SSAProgram.from_text(teal, name="t")
+        p.propagate_constants()
+        p.propagate_inputs()
+        p.propagate_stack_shuffles()
+        p.propagate_assert_ranges()
+        return p
+
+    def test_asserted_then_dupd_value_tightens(self):
+        # L is asserted `<= 8`, then flows (through a dup) to a second consumer.
+        # After shuffle-prop both readers are L directly; range_assert must tighten.
+        teal = ("#pragma version 8\n"
+                "txna ApplicationArgs 0\nbtoi\ndup\nint 8\n<=\nassert\n"
+                "int 2\n*\npop\nint 1\nreturn\n")
+        p = self._prog(teal)
+        L = [a for a in p.assignments if a.op == "btoi"][0].outputs[0]
+        # .uses reflects LIVE consumers only — the dead `dup` is excluded.
+        assert all(u.op != "dup" for u in L.uses)
+        assert L.range is not None and L.range.hi == 8      # tightened by assert
+
+    def test_uses_are_rebuilt_not_duplicated(self):
+        # A value read once, dup'd: after shuffle-prop its live uses are the real
+        # downstream ops, never the dead dup.
+        teal = ("#pragma version 8\n"
+                "txna ApplicationArgs 0\nbtoi\ndup\nint 1\n+\nswap\nint 2\n+\n"
+                "pop\npop\nint 1\nreturn\n")
+        p = self._prog(teal)
+        L = [a for a in p.assignments if a.op == "btoi"][0].outputs[0]
+        assert all(not u.shuffled for u in L.uses)          # no dead shuffle in uses
+        assert {u.op for u in L.uses} <= {"+"}              # only the live adds
