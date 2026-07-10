@@ -363,6 +363,57 @@ class LengthRelations:
             r = self._sssp_cache[key] = g.shortest(src)
         return r
 
+    def _entails(self, g, ids, a, b, c: int) -> bool:
+        """Is ``a - b <= c`` provable and consistent?"""
+        if a == b:
+            return c >= 0
+        dist, ok = self._sssp(g, ids, a)
+        if not ok:
+            return False
+        v = dist.get(b)
+        return v is not None and v <= c
+
+    def _prove_len_ge(self, buf, na, no: int, g, ids, depth: int = 0) -> bool:
+        """Prove ``len(buf) >= value(na) + no`` (the need ``na + no``). Tries the
+        seeded ``Len(buf)`` facts, then UNFOLDS a slice definition — a sub-slice's
+        length is a symbolic expression of its parent's offsets, which substitutes
+        the 3-variable ``offset+width <= len`` back into a 2-variable difference
+        query (and recurses through nested slices)."""
+        # (1) direct: len(buf) >= na+no  ⇔  na - Len(buf) <= -no
+        if self._entails(g, ids, na, _latom(buf), -no):
+            return True
+        if depth > 4 or not isinstance(buf, SSAVar):
+            return False
+        d = getattr(buf, "defined_by", None)
+        if d is None:
+            return False
+        op, ins = d.op, d.inputs
+        if op == "extract3" and len(ins) == 3:            # len == count(ins[0])
+            t = _term(ins[0])
+            return t is not None and self._entails(g, ids, na, t[0], t[1] - no)
+        if op == "substring3" and len(ins) == 3:          # len == end(0) - start(1)
+            if na != ORIGIN:                               # 3-var: only const-hi
+                return False
+            end, start = _term(ins[0]), _term(ins[1])      # no <= end - start
+            return (end is not None and start is not None
+                    and self._entails(g, ids, start[0], end[0],
+                                      end[1] - start[1] - no))
+        if op == "extract" and len(ins) == 1:             # extract A B (imm)
+            imm = (d.immediates or "").split()
+            A, B = _int_or_none(imm, 0), _int_or_none(imm, 1)
+            if A is None:
+                return False
+            if B == 0:                                     # to end: len==len(X)-A
+                return self._prove_len_ge(ins[0], na, no + A, g, ids, depth + 1)
+            if B is not None:                              # len == B
+                return self._entails(g, ids, na, ORIGIN, B - no)
+        if op == "substring" and len(ins) == 1:           # substring A B (imm)
+            imm = (d.immediates or "").split()
+            A, B = _int_or_none(imm, 0), _int_or_none(imm, 1)
+            if A is not None and B is not None:            # len == B - A
+                return self._entails(g, ids, na, ORIGIN, (B - A) - no)
+        return False
+
     # -- query --------------------------------------------------------------
     def verdict(self, buf, base_operand, extra_c, site_block, site_line):
         """``(in_bounds, proven_oob)`` for an access reading up to byte
@@ -382,12 +433,8 @@ class LengthRelations:
             thresh = extra_c + off
         ids = self._dominating_assert_ids(site_block, site_line)
         g = self._graph_for(ids)
-        # in-bounds: base + thresh <= Len  ⇔  shortest(base_atom -> Len) <= -thresh
-        dist, ok = self._sssp(g, ids, base_atom)
-        if not ok:
-            return (False, False)                # neg cycle ⇒ unreachable, no claim
-        d = dist.get(la)
-        if d is not None and d <= -thresh:
+        # in-bounds: base + thresh <= len(buf) (unfolding slice definitions).
+        if self._prove_len_ge(buf, base_atom, thresh, g, ids):
             return (True, False)
         # proven-OOB: Len < base + thresh. Directly via shortest(Len -> base)
         # <= thresh-1, OR via base >= 0 (uint64) and Len <= shortest(Len ->

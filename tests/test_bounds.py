@@ -151,6 +151,38 @@ def test_slice_length_relation_proves_reread(tmp_path):
     assert not e3[0].in_bounds    # extract3 X 0 W — X's length is unknown
 
 
+# Y = substring3 X A B (dynamic A,B); assert(A+8 <= B); extract 0 8 Y.
+# In-bounds because len(Y) == B-A >= 8 — proved by UNFOLDING the slice length
+# into the 2-variable query `8 <= B - A`, which the assert establishes.
+_SUBSTRING3_UNFOLD = """#pragma version 10
+txna ApplicationArgs 0
+txna ApplicationArgs 1
+btoi
+txna ApplicationArgs 2
+btoi
+dig 1
+int 8
++
+dig 1
+<=
+assert
+substring3
+extract 0 8
+pop
+int 1
+return
+"""
+
+
+def test_substring3_length_unfolds_to_difference_query(tmp_path):
+    """A const-width read of a ``substring3 X A B`` buffer unfolds ``len == B-A``
+    into ``width <= B - A`` — a 2-variable query the assert ``A+8 <= B`` proves.
+    This is the recursive length prover reducing a 3-variable in-bounds check."""
+    s = _sites(tmp_path, _SUBSTRING3_UNFOLD)
+    ex = [x for x in s if x.op == "extract"]
+    assert ex and ex[0].in_bounds
+
+
 def test_dynamic_oob_is_not_proven_only_risk(tmp_path):
     """Reading element `i` of an EMPTY array is OOB for every i>=0, but is
     typically a guarded loop body (unreachable when empty) — must stay
