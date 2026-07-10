@@ -37,6 +37,7 @@ from __future__ import annotations
 from typing import Optional
 
 from ..ssa import IntRange, SSAProgram, SSAVar
+from ..cfg.dominance import all_blocks, reachable_avoiding
 from ..avm import U64_CMP_OPS
 from .range_arith import (
     _UINT64_MAX,
@@ -52,44 +53,6 @@ _CMP = U64_CMP_OPS
 # Relation as seen with the *other* operand on the left (X is the right
 # operand): rewrite ``Y op X`` as ``X op' Y``.
 _SWAP = {"<": ">", ">": "<", "<=": ">=", ">=": "<=", "==": "==", "!=": "!="}
-
-
-def _all_blocks(prog: SSAProgram) -> set:
-    """Every :class:`BasicBlock` reachable through ``predecessors`` /
-    ``successors`` from any block that owns an assignment or phi."""
-    seed = set()
-    for a in prog.assignments:
-        if a.basic_block is not None:
-            seed.add(a.basic_block)
-    for ph in prog.phis.values():
-        bb = getattr(ph, "basic_block", None)
-        if bb is not None:
-            seed.add(bb)
-    allb = set(seed)
-    stack = list(seed)
-    while stack:
-        b = stack.pop()
-        for nb in (*b.predecessors, *b.successors):
-            if nb not in allb:
-                allb.add(nb)
-                stack.append(nb)
-    return allb
-
-
-def _reachable_avoiding(entries: list, avoid) -> set:
-    """Blocks reachable from ``entries`` over CFG ``successors`` *without*
-    passing through ``avoid``. A block ``U`` is dominated by ``avoid`` iff
-    ``U`` is reachable normally but absent from this set."""
-    seen = {e for e in entries if e is not avoid}
-    stack = list(seen)
-    while stack:
-        b = stack.pop()
-        for s in b.successors:
-            if s is avoid or s in seen:
-                continue
-            seen.add(s)
-            stack.append(s)
-    return seen
 
 
 def _start_range(x: SSAVar) -> Optional[IntRange]:
@@ -143,7 +106,7 @@ def propagate_assert_ranges(prog: SSAProgram) -> int:
     if not getattr(prog, "_range_arith_propagated", False):
         propagate_range_arithmetic(prog)
 
-    entries = [b for b in _all_blocks(prog) if not b.predecessors]
+    entries = [b for b in all_blocks(prog) if not b.predecessors]
     if not entries:
         return 0
 
@@ -171,7 +134,7 @@ def propagate_assert_ranges(prog: SSAProgram) -> int:
             return use.location.line > assert_line
         reach = dom_cache.get(block_a)
         if reach is None:
-            reach = dom_cache[block_a] = _reachable_avoiding(entries, block_a)
+            reach = dom_cache[block_a] = reachable_avoiding(entries, block_a)
         return ub not in reach
 
     changed_overall = 0

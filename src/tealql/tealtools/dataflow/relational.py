@@ -45,6 +45,7 @@ from __future__ import annotations
 
 from ..ssa import SSAProgram, SSAVar
 from ..ssa.operands import const_int, const_byte_length
+from ..cfg.dominance import all_blocks, reachable_avoiding
 from ..avm import U64_CMP_OPS
 
 # The DBM origin (the constant 0); constants fold in as ``ORIGIN + n``.
@@ -143,46 +144,12 @@ class DBM:
         return dist, True
 
 
-# ─── flow-insensitive dominance (mirrors passes.range_assert) ────────────────
-
-def _all_blocks(prog: SSAProgram) -> set:
-    seed = set()
-    for a in prog.assignments:
-        if a.basic_block is not None:
-            seed.add(a.basic_block)
-    for ph in prog.phis.values():
-        bb = getattr(ph, "basic_block", None)
-        if bb is not None:
-            seed.add(bb)
-    allb, stack = set(seed), list(seed)
-    while stack:
-        b = stack.pop()
-        for nb in (*b.predecessors, *b.successors):
-            if nb not in allb:
-                allb.add(nb)
-                stack.append(nb)
-    return allb
-
-
-def _reachable_avoiding(entries: list, avoid) -> set:
-    seen = {e for e in entries if e is not avoid}
-    stack = list(seen)
-    while stack:
-        b = stack.pop()
-        for s in b.successors:
-            if s is avoid or s in seen:
-                continue
-            seen.add(s)
-            stack.append(s)
-    return seen
-
-
 class LengthRelations:
     """Builds the structural DBM once, then answers a bounds query at any
     access site with the assert facts that dominate *that* site folded in."""
 
     def __init__(self, prog: SSAProgram):
-        self._entries = [b for b in _all_blocks(prog) if not b.predecessors]
+        self._entries = [b for b in all_blocks(prog) if not b.predecessors]
         self._base = DBM()
         self._seed_structural(prog)
         # (assert-assignment, [(a, b, c), ...]) for every decodable assert.
@@ -346,7 +313,7 @@ class LengthRelations:
                 continue
             reach = self._reach_cache.get(ab)
             if reach is None:
-                reach = self._reach_cache[ab] = _reachable_avoiding(self._entries, ab)
+                reach = self._reach_cache[ab] = reachable_avoiding(self._entries, ab)
             if block not in reach:
                 ids.append(i)
         return frozenset(ids)

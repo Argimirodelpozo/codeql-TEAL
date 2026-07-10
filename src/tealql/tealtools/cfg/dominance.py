@@ -50,3 +50,45 @@ def iterative_dominators(
                 dom[n] = new
                 changed = True
     return dom
+
+
+def all_blocks(prog) -> set:
+    """Every ``BasicBlock`` reachable through ``predecessors`` / ``successors``
+    from any block that owns an assignment or phi (duck-typed on ``prog`` so this
+    stays import-free)."""
+    seed = set()
+    for a in prog.assignments:
+        if a.basic_block is not None:
+            seed.add(a.basic_block)
+    for ph in prog.phis.values():
+        bb = getattr(ph, "basic_block", None)
+        if bb is not None:
+            seed.add(bb)
+    allb = set(seed)
+    stack = list(seed)
+    while stack:
+        b = stack.pop()
+        for nb in (*b.predecessors, *b.successors):
+            if nb not in allb:
+                allb.add(nb)
+                stack.append(nb)
+    return allb
+
+
+def reachable_avoiding(entries: list, avoid) -> set:
+    """Blocks reachable from ``entries`` over CFG ``successors`` *without* passing
+    through ``avoid``. The approximate-dominance primitive the flow-sensitive
+    analyses share: block ``A`` dominates ``U`` iff ``U`` is reachable normally
+    but absent from ``reachable_avoiding(entries, A)``. Over-approximates on the
+    raw interprocedural CFG, so the dominance test is conservative (a fact is at
+    worst skipped, never applied unsoundly)."""
+    seen = {e for e in entries if e is not avoid}
+    stack = list(seen)
+    while stack:
+        b = stack.pop()
+        for s in b.successors:
+            if s is avoid or s in seen:
+                continue
+            seen.add(s)
+            stack.append(s)
+    return seen
