@@ -120,6 +120,50 @@ def test_length_prefix_wellformedness_is_transitively_in_bounds(tmp_path):
     assert e3 and e3[0].in_bounds and not e3[0].oob_risk
 
 
+# Y = extract3 X 0 W (dynamic count W); then extract3 Y 0 W reads W bytes of Y.
+# In-bounds because Len(Y) == W by construction — pure relational, no interval.
+_SLICE_LEN = """#pragma version 10
+txna ApplicationArgs 0
+int 0
+txna ApplicationArgs 1
+btoi
+dup
+cover 3
+extract3
+int 0
+uncover 2
+extract3
+pop
+int 1
+return
+"""
+
+
+def test_slice_length_relation_proves_reread(tmp_path):
+    """A sub-slice's length equals its count operand (``Len(Y) == W``), so a
+    later ``extract3 Y 0 W`` is in-bounds even though W is a runtime value —
+    the biggest sound source of buffer lengths, unprovable by forward
+    byte-length propagation (which needs a CONSTANT count)."""
+    s = _sites(tmp_path, _SLICE_LEN)
+    e3 = [x for x in s if x.op == "extract3"]
+    assert len(e3) == 2
+    assert e3[1].in_bounds        # extract3 Y 0 W — proven via Len(Y)==W
+    assert not e3[0].in_bounds    # extract3 X 0 W — X's length is unknown
+
+
+def test_dynamic_oob_is_not_proven_only_risk(tmp_path):
+    """Reading element `i` of an EMPTY array is OOB for every i>=0, but is
+    typically a guarded loop body (unreachable when empty) — must stay
+    oob_risk, never proven_oob (we have no reachability analysis)."""
+    teal = ("#pragma version 10\n"
+            "pushbytes 0x\n"          # empty array
+            "txna ApplicationArgs 0\nbtoi\n"   # dynamic index
+            "int 1\nextract3\npop\nint 1\nreturn\n")
+    s = _sites(tmp_path, teal)
+    e3 = [x for x in s if x.op == "extract3"]
+    assert e3 and not e3[0].proven_oob and e3[0].oob_risk
+
+
 def test_proven_oob_precision_on_corpus_oob_fixtures():
     """``proven_oob`` must fire on Puya's deliberate out-of-bounds regression
     cases — a sound, precise static over-read finding."""

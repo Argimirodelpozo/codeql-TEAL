@@ -120,8 +120,9 @@ def check_bounds(prog: SSAProgram, *, run_passes: bool = True) -> list:
 
     sites = [(a, acc) for a in prog.assignments if (acc := _access(a)) is not None]
     rel = LengthRelations(prog)
-    for _a, (buf, _b, _c, _dyn) in sites:      # seed ALL buffers before querying
+    for _a, (buf, base, _c, _dyn) in sites:    # seed ALL facts before querying
         rel.seed_buffer(buf)
+        rel.seed_range(base)                   # bridge the offset/count interval
 
     out: list = []
     for a, (buf, base, extra_c, dynamic) in sites:
@@ -130,6 +131,13 @@ def check_bounds(prog: SSAProgram, *, run_passes: bool = True) -> list:
         else:
             in_bounds, proven_oob = rel.verdict(
                 buf, base, extra_c, a.basic_block, a.location.line)
+            # Only an UNCONDITIONAL static over-read is a sound proven-OOB. A
+            # dynamic-index over-read (e.g. reading element `i` of an empty
+            # array) is mathematically OOB for every i>=0 yet is typically a
+            # LOOP BODY guarded by `i < len` — unreachable when empty. Without
+            # reachability we can't tell, so we keep only the index-independent
+            # (constant offset+width) case as proven; the rest stays oob_risk.
+            proven_oob = proven_oob and not dynamic
             if in_bounds:
                 reason = "in-bounds (offset+width <= len)"
             elif proven_oob:

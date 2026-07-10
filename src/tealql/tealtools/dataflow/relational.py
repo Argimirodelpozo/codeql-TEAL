@@ -61,6 +61,13 @@ def _latom(buf):
     return ("L", id(buf))
 
 
+def _int_or_none(imm, i):
+    try:
+        return int(imm[i])
+    except (IndexError, ValueError):
+        return None
+
+
 def _term(operand):
     """``(atom, offset)`` such that ``value(operand) == value(atom) + offset``,
     or ``None`` when the operand isn't a length-relevant term (a phi, a bytes
@@ -74,67 +81,66 @@ def _term(operand):
 
 
 class DBM:
-    """A difference-bound matrix. ``m[(a, b)] = c`` encodes ``a - b <= c``; a
-    missing entry is ``+∞``. Small and sparse — atoms are only the
-    length-relevant terms."""
+    """A system of difference constraints ``a - b <= c`` as a weighted graph
+    (edge ``a -> b`` with weight ``c``). Entailment of ``a - b <= c`` is exactly
+    "shortest path ``a -> b`` has weight ``<= c``". We answer queries by
+    ON-DEMAND single-source shortest path (Bellman–Ford) from the query's source
+    atom, scoped to the nodes reachable from it — NOT all-pairs closure, which
+    is O(n³) and blew up once slice-lengths and interval bridges made ``n``
+    program-wide. Nonnegativity (``ORIGIN -> v`` weight 0 for every ``v``) is
+    applied lazily during the reachable-set walk."""
 
-    __slots__ = ("m",)
+    __slots__ = ("adj",)
 
-    def __init__(self, m=None):
-        self.m = dict(m) if m else {}
+    def __init__(self, adj=None):
+        # adj[a] = {b: c}  (tightest c for each edge a -> b)
+        self.adj = {a: dict(d) for a, d in adj.items()} if adj else {}
 
     def add(self, a, b, c: int) -> None:
-        """Tighten with ``a - b <= c``."""
-        if a == b:
-            if c < self.m.get((a, a), 0):
-                self.m[(a, a)] = c        # negative self-loop ⇒ inconsistent
-            return
-        cur = self.m.get((a, b))
-        if cur is None or c < cur:
-            self.m[(a, b)] = c
+        d = self.adj.setdefault(a, {})
+        if b not in d or c < d[b]:
+            d[b] = c
 
     def copy(self) -> "DBM":
-        return DBM(self.m)
+        return DBM(self.adj)
 
-    def _atoms(self) -> set:
+    def _node_count(self) -> int:
         s = {ORIGIN}
-        for a, b in self.m:
+        for a, d in self.adj.items():
             s.add(a)
-            s.add(b)
-        return s
+            s.update(d)
+        return len(s)
 
-    def close(self) -> None:
-        """All-pairs shortest paths (Floyd–Warshall) + nonnegativity. After
-        this, ``entails`` reads off the tightest derivable bound."""
-        atoms = self._atoms()
-        # Every non-origin term is a uint64 quantity or a length: ``>= 0``.
-        for a in atoms:
-            if a != ORIGIN:
-                self.add(ORIGIN, a, 0)
-        m = self.m
-        for k in atoms:
-            for i in atoms:
-                ik = m.get((i, k))
-                if ik is None:
-                    continue
-                for j in atoms:
-                    kj = m.get((k, j))
-                    if kj is None:
-                        continue
-                    nv = ik + kj
-                    cur = m.get((i, j))
-                    if cur is None or nv < cur:
-                        m[(i, j)] = nv
-
-    def consistent(self) -> bool:
-        return all(self.m.get((a, a), 0) >= 0 for a in self._atoms())
-
-    def entails(self, a, b, c: int) -> bool:
-        """Is ``a - b <= c`` provable? (Assumes :meth:`close` has run.)"""
-        if a == b:
-            return c >= 0
-        v = self.m.get((a, b))
-        return v is not None and v <= c
+    def shortest(self, src) -> "tuple[dict, bool]":
+        """``(dist, ok)`` — shortest path weight from ``src`` to every reachable
+        atom; ``ok`` is False if a negative cycle is reachable (infeasible ⇒ the
+        program point is unreachable, no claim). SPFA (queue-based Bellman–Ford):
+        only nodes whose distance improved are re-examined, near-linear on these
+        sparse constraint graphs — the all-pairs closure it replaces was O(n³)
+        and blew up once ``n`` spanned the whole program. (Uint64 nonnegativity
+        is NOT a graph edge — it would make ORIGIN a hub connected to every atom;
+        it is applied at the OOB query endpoint instead, the only place it pays.)"""
+        from collections import deque
+        limit = self._node_count()
+        dist = {src: 0}
+        inq = {src}
+        relaxed: dict = {}
+        q = deque([src])
+        while q:
+            u = q.popleft()
+            inq.discard(u)
+            du = dist[u]
+            for v, w in self.adj.get(u, {}).items():
+                nv = du + w
+                if v not in dist or nv < dist[v]:
+                    dist[v] = nv
+                    if v not in inq:
+                        inq.add(v)
+                        q.append(v)
+                        relaxed[v] = relaxed.get(v, 0) + 1
+                        if relaxed[v] > limit:
+                            return dist, False    # negative cycle reachable
+        return dist, True
 
 
 # ─── flow-insensitive dominance (mirrors passes.range_assert) ────────────────
@@ -182,7 +188,8 @@ class LengthRelations:
         # (assert-assignment, [(a, b, c), ...]) for every decodable assert.
         self._asserts = self._collect_asserts(prog)
         self._reach_cache: dict = {}   # assert-block -> reachable-without-it
-        self._dbm_cache: dict = {}     # frozenset(assert idx) -> closed DBM
+        self._dbm_cache: dict = {}     # frozenset(assert idx) -> constraint graph
+        self._sssp_cache: dict = {}    # (assert-set, source atom) -> (dist, ok)
 
     # -- structural (global) facts ------------------------------------------
     def _seed_structural(self, prog: SSAProgram) -> None:
@@ -205,6 +212,55 @@ class LengthRelations:
                     sv, mv = _iatom(s), _iatom(minu)
                     base.add(sv, mv, -k)   # s - minu <= -k
                     base.add(mv, sv, k)    # minu - s <= k
+            elif outs:
+                self._seed_slice_len(a, op, ins, outs[0])
+
+    def _eq(self, a_atom, a_off: int, b_atom, b_off: int) -> None:
+        """Assert ``value(a) == value(b)`` where ``value(x) == x_atom + x_off``."""
+        # a_atom + a_off == b_atom + b_off  ⇒  a_atom - b_atom == b_off - a_off
+        self._base.add(a_atom, b_atom, b_off - a_off)
+        self._base.add(b_atom, a_atom, a_off - b_off)
+
+    def _seed_slice_len(self, a, op, ins, out) -> None:
+        """A slice op PRODUCES a bytes value whose length is determined by the
+        slice — the biggest sound source of buffer lengths (``Y = extract3 X A
+        B`` ⇒ ``Len(Y) == B``, exact even when ``B`` is a runtime variable, which
+        is why ``byte_length_prop`` — a forward CONSTANT length — misses it)."""
+        lo = _latom(out)
+        if op == "extract3" and len(ins) == 3:            # Len(Y) == count(ins[0])
+            t = _term(ins[0])
+            if t is not None:
+                self._eq(lo, 0, *t)
+                self.seed_range(ins[0])
+        elif op == "substring3" and len(ins) == 3:        # Len(Y) == end - start
+            end, start = _term(ins[0]), const_int(ins[1])
+            if end is not None and start is not None:      # start const: end - k
+                self._eq(lo, 0, end[0], end[1] - start)
+                self.seed_range(ins[0])
+        elif op == "extract" and len(ins) == 1:           # extract A B (imm)
+            imm = (a.immediates or "").split()
+            A, B = _int_or_none(imm, 0), _int_or_none(imm, 1)
+            if A is None:
+                return
+            if B == 0:                                     # to end: Len(Y)==Len(X)-A
+                self._eq(lo, 0, _latom(ins[0]), -A)
+            elif B is not None:                            # Len(Y) == B
+                self._eq(lo, 0, ORIGIN, B)
+        elif op == "substring" and len(ins) == 1:         # substring A B (imm)
+            imm = (a.immediates or "").split()
+            A, B = _int_or_none(imm, 0), _int_or_none(imm, 1)
+            if A is not None and B is not None:            # Len(Y) == B - A
+                self._eq(lo, 0, ORIGIN, B - A)
+
+    def seed_range(self, var) -> None:
+        """Bridge an SSA var's non-relational :class:`IntRange` INTO the zone
+        domain (``lo <= var <= hi``), so a relation like ``Len(Y) == count`` can
+        borrow the count's interval to prove a fixed-width read in-bounds."""
+        if not isinstance(var, SSAVar) or var.range is None:
+            return
+        a = _iatom(var)
+        self._base.add(a, ORIGIN, var.range.hi)      # var <= hi
+        self._base.add(ORIGIN, a, -var.range.lo)     # var >= lo
 
     @staticmethod
     def _affine(base: DBM, s, x, y, *, sign: int) -> None:
@@ -288,16 +344,24 @@ class LengthRelations:
                 ids.append(i)
         return frozenset(ids)
 
-    def _dbm_for(self, ids: frozenset) -> DBM:
-        dbm = self._dbm_cache.get(ids)
-        if dbm is None:
-            dbm = self._base.copy()
+    def _graph_for(self, ids: frozenset) -> DBM:
+        """Structural base + the dominating asserts' edges (un-closed), cached
+        by the assert-id set."""
+        g = self._dbm_cache.get(ids)
+        if g is None:
+            g = self._base.copy()
             for i in ids:
                 for a, b, c in self._asserts[i][1]:
-                    dbm.add(a, b, c)
-            dbm.close()
-            self._dbm_cache[ids] = dbm
-        return dbm
+                    g.add(a, b, c)
+            self._dbm_cache[ids] = g
+        return g
+
+    def _sssp(self, g: DBM, ids: frozenset, src):
+        key = (ids, src)
+        r = self._sssp_cache.get(key)
+        if r is None:
+            r = self._sssp_cache[key] = g.shortest(src)
+        return r
 
     # -- query --------------------------------------------------------------
     def verdict(self, buf, base_operand, extra_c, site_block, site_line):
@@ -316,10 +380,23 @@ class LengthRelations:
                 return (False, False)
             base_atom, off = t
             thresh = extra_c + off
-        dbm = self._dbm_for(self._dominating_assert_ids(site_block, site_line))
-        if not dbm.consistent():
-            return (False, False)                # unreachable ⇒ no claim
-        in_bounds = dbm.entails(base_atom, la, -thresh)      # base + thresh <= Len
-        proven_oob = (not in_bounds
-                      and dbm.entails(la, base_atom, thresh - 1))  # Len < base + thresh
-        return (in_bounds, proven_oob)
+        ids = self._dominating_assert_ids(site_block, site_line)
+        g = self._graph_for(ids)
+        # in-bounds: base + thresh <= Len  ⇔  shortest(base_atom -> Len) <= -thresh
+        dist, ok = self._sssp(g, ids, base_atom)
+        if not ok:
+            return (False, False)                # neg cycle ⇒ unreachable, no claim
+        d = dist.get(la)
+        if d is not None and d <= -thresh:
+            return (True, False)
+        # proven-OOB: Len < base + thresh. Directly via shortest(Len -> base)
+        # <= thresh-1, OR via base >= 0 (uint64) and Len <= shortest(Len ->
+        # ORIGIN): then Len - base <= Len <= that bound.
+        dist2, ok2 = self._sssp(g, ids, la)
+        if not ok2:
+            return (False, False)
+        db = dist2.get(base_atom)
+        do = dist2.get(ORIGIN)
+        proven_oob = ((db is not None and db <= thresh - 1)
+                      or (do is not None and do <= thresh - 1))
+        return (False, proven_oob)
