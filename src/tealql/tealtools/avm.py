@@ -558,6 +558,11 @@ def _build_op_range_seeds():
         "getbyte":        ("uint64", 0, 0xFF),
         "extract_uint16": ("uint64", 0, 0xFFFF),
         "extract_uint32": ("uint64", 0, 0xFFFFFFFF),
+        # bytes -> full-width uint64: not a tightening in itself, but a non-None
+        # range so downstream arithmetic can bound it (e.g. `btoi(x) % 8 -> [0,7]`;
+        # range_arith needs BOTH operand ranges, and these are the usual dividend).
+        "extract_uint64": ("uint64", 0, 0xFFFFFFFFFFFFFFFF),
+        "btoi":           ("uint64", 0, 0xFFFFFFFFFFFFFFFF),
         # isqrt of any uint64 never exceeds 2^32 - 1, regardless of input.
         "sqrt":   ("uint64", 0, 0xFFFFFFFF),
         # length ops bounded by AVM stack-bytes cap (4096 bytes)

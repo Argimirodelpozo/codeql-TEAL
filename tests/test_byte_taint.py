@@ -99,6 +99,19 @@ class TestForwardPropagation:
         assert not t.overlaps(0, 8)      # clean prefix survives the runtime-count slice
         assert t.overlaps(8, 9)          # tainted suffix still tainted (sound, no FN)
 
+    def test_extract3_const_offset_range_bounded_count_caps_taint(self):
+        # extract3 X 4 L where L = btoi(arg) % 8 has IntRange [0,7]: byte_taint
+        # now trips the range passes, and range_arith tracks `mod` (btoi seeded to
+        # a full uint64 range so the divisor bounds the result). The tainted extent
+        # is capped at 4+7=11 (rebased [4,7)) instead of running to the 4096 length
+        # fallback — ranges tighten the const-offset slice past the length bound.
+        teal = ("#pragma version 8\n" + _PREFIX +
+                "int 4\ntxna ApplicationArgs 1\nbtoi\nint 8\n%\nextract3\n"
+                "pop\nint 1\nreturn\n")
+        p, r = _taint(teal)
+        out = _by_op(p, "extract3")[0].outputs[0]
+        assert r.tainted_bytes(out) == Intervals([(4, 7)])   # capped by L's range hi=7
+
     def test_extract3_const_offset_into_tainted_region_is_tainted(self):
         # Soundness counterpart: a runtime-count read STARTING in the tainted
         # suffix (const offset 8) carries taint, re-based to the slice.

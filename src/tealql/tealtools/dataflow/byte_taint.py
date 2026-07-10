@@ -540,8 +540,9 @@ def byte_taint(
 
     ``sources(assignment) -> Optional[Intervals]`` seeds an output value's
     initial taint (default: ``ApplicationArgs`` reads, fully tainted). Trips
-    :meth:`propagate_constants` + :meth:`propagate_byte_lengths` first so the
-    slice offsets and concat lengths the rules read are in place.
+    :meth:`propagate_constants`, :meth:`propagate_byte_lengths` and
+    :meth:`propagate_assert_ranges` first so the slice offsets, concat lengths and
+    runtime-count bounds the rules read are in place.
 
     ``validate=True`` adds the flow-sensitive **validation-narrowing** layer:
     a sub-range of a value pinned to a constant by an ``assert(slice == const)``
@@ -556,6 +557,12 @@ def byte_taint(
         prog.propagate_inputs()
         prog.propagate_stack_shuffles()
     prog.propagate_byte_lengths()
+    # Integer ranges (seeds -> arithmetic -> assert-refinement, idempotent) so a
+    # const-offset slice with a RUNTIME count can bound the length by the count's
+    # IntRange hi (`_uint_hi`) — e.g. `assert(L <= 32); extract3 X 4 L` taints
+    # only [4, 36) instead of [4, 4096). Only ever narrows a range, so it can
+    # only tighten taint; a no-op when the caller already ran the range passes.
+    prog.propagate_assert_ranges()
     seed = sources or _default_sources
     validated, validated_by = _validated_intervals(prog) if validate else ({}, {})
 
