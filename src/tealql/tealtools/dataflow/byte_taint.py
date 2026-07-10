@@ -173,6 +173,17 @@ def _len_bound(op) -> int:
     return AVM_MAX_BYTES
 
 
+def _uint_hi(op) -> Optional[int]:
+    """UPPER bound on a uint64 operand: its constant value, else its
+    :class:`IntRange` ``hi`` (populated when the range passes have run — byte_taint
+    doesn't trip them, so this is opportunistic), else ``None``."""
+    c = const_int(op)
+    if c is not None:
+        return c
+    r = getattr(op, "range", None)
+    return getattr(r, "hi", None) if r is not None else None
+
+
 def _default_sources(a) -> Optional[Intervals]:
     """Default attacker-input seed: every ``ApplicationArgs`` read is fully
     tainted (its length is usually dynamic, so ``[0, len-bound)`` — the exact /
@@ -630,6 +641,19 @@ def byte_taint(
             if A is not None and B is not None:
                 hi = A + B if op == "extract3" else B
                 return set_bytes(out, bget(x).clip(A, hi).shift(-A))
+            if A is not None:
+                # Const OFFSET, runtime count/end: the byte mapping is still
+                # EXACT (out[j] = X[A+j]); only the length is uncertain. Bound it
+                # by the count/end's range if known, else by X's own length — far
+                # tighter than whole-value: X's taint BEFORE offset A never
+                # reaches the output (so a fixed-offset read of a clean prefix
+                # region stays clean).
+                bh = _uint_hi(a.inputs[0])
+                if op == "extract3":
+                    hi = (A + bh) if bh is not None else _len_bound(x)
+                else:                                  # substring3: inputs[0]=end
+                    hi = bh if bh is not None else _len_bound(x)
+                return set_bytes(out, bget(x).clip(A, hi).shift(-A))
             return set_bytes(out, Intervals.whole(_len_bound(out))) if bget(x) else False
         if op == "concat" and len(a.inputs) == 2:                  # concat A B -> A||B
             pre, suf = a.inputs[1], a.inputs[0]
@@ -657,6 +681,14 @@ def byte_taint(
             lv = _byte_length(v) if v is not None else None
             if A is not None and lv is not None:
                 iv = bget(x).subtract(A, A + lv).union(bget(v).shift(A))
+                return set_bytes(out, iv)
+            if A is not None and x is not None:
+                # Const offset, UNKNOWN value length: we can't subtract the
+                # overwritten region (dropping X taint there would be a false
+                # NEGATIVE), so keep ALL of X's taint and add V's at A — a sound
+                # over-approx that still beats whole-value (the output length is
+                # len(X), and clean regions of X outside V stay clean).
+                iv = bget(x).union(bget(v).shift(A)) if v is not None else bget(x)
                 return set_bytes(out, iv)
             return set_bytes(out, Intervals.whole(_len_bound(out))) if any_tainted(a) else False
         if op in _HASH_OPS and a.inputs:                           # digest of tainted -> tainted

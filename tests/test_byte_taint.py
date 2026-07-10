@@ -86,6 +86,28 @@ class TestForwardPropagation:
         out = _by_op(p, "extract", "8 8")[0].outputs[0]
         assert r.tainted_bytes(out) == Intervals([(0, 8)])    # re-based to the slice
 
+    def test_extract3_const_offset_runtime_count_keeps_clean_prefix(self):
+        # extract3 X 0 L with a RUNTIME count L: the byte mapping is still EXACT
+        # (out[j] = X[j]) because the OFFSET is constant, so the clean 8-byte
+        # prefix stays clean — where the old whole-value fallback (runtime count)
+        # tainted the entire output. Relational/interval leverage over the bailout.
+        teal = ("#pragma version 8\n" + _PREFIX +
+                "int 0\ntxna ApplicationArgs 1\nbtoi\nextract3\npop\nint 1\nreturn\n")
+        p, r = _taint(teal)
+        out = _by_op(p, "extract3")[0].outputs[0]
+        t = r.tainted_bytes(out)
+        assert not t.overlaps(0, 8)      # clean prefix survives the runtime-count slice
+        assert t.overlaps(8, 9)          # tainted suffix still tainted (sound, no FN)
+
+    def test_extract3_const_offset_into_tainted_region_is_tainted(self):
+        # Soundness counterpart: a runtime-count read STARTING in the tainted
+        # suffix (const offset 8) carries taint, re-based to the slice.
+        teal = ("#pragma version 8\n" + _PREFIX +
+                "int 8\ntxna ApplicationArgs 1\nbtoi\nextract3\npop\nint 1\nreturn\n")
+        p, r = _taint(teal)
+        out = _by_op(p, "extract3")[0].outputs[0]
+        assert r.tainted_bytes(out).overlaps(0, 1)   # tainted from byte 0
+
     def test_getbyte_bridge_offset_sensitive(self):
         clean = "#pragma version 8\n" + _PREFIX + "int 3\ngetbyte\npop\nint 1\nreturn\n"
         dirty = "#pragma version 8\n" + _PREFIX + "int 20\ngetbyte\npop\nint 1\nreturn\n"
