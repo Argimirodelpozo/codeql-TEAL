@@ -252,6 +252,13 @@ class LengthRelations:
             if A is not None and B is not None:            # Len(Y) == B - A
                 self._eq(lo, 0, ORIGIN, B - A)
 
+    def seed_length_lb(self, buf, n: int) -> None:
+        """Seed a LOWER bound ``Len(buf) >= n`` (never an upper bound), so it can
+        only ever help an in-bounds proof and can NEVER create a false proven-OOB.
+        Used for SPECULATIVE ARC-4 lengths (an assumption about well-formed input);
+        the sound seeds live in :meth:`seed_buffer`."""
+        self._base.add(ORIGIN, _latom(buf), -n)      # Len >= n
+
     def seed_range(self, var) -> None:
         """Bridge an SSA var's non-relational :class:`IntRange` INTO the zone
         domain (``lo <= var <= hi``), so a relation like ``Len(Y) == count`` can

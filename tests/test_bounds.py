@@ -196,6 +196,33 @@ def test_dynamic_oob_is_not_proven_only_risk(tmp_path):
     assert e3 and not e3[0].proven_oob and e3[0].oob_risk
 
 
+def test_speculative_tier_is_additive_and_sound(tmp_path):
+    """Speculative mode (ARC-4 well-formedness seeds) must NEVER change a sound
+    verdict — it only adds ``in_bounds_speculative`` on sites the sound pass left
+    unproven, and never overlaps ``in_bounds`` or ``proven_oob``. Checked on a real
+    ABI-routed decoder (arc4 args ⇒ recovered dynamic types ⇒ length-prefix reads)."""
+    import pytest
+    src = Path("tests/experimental_IR_lift/puya/abi_routing_Reference/src")
+    if not (src.exists() and list(src.glob("*.teal"))):
+        pytest.skip("abi_routing fixture not present")
+    sound = check_bounds(SSAProgram(str(src)), speculative=False)
+    spec = check_bounds(SSAProgram(str(src)), speculative=True)
+    # sound verdicts byte-for-byte identical
+    assert [(x.in_bounds, x.proven_oob) for x in sound] == \
+           [(x.in_bounds, x.proven_oob) for x in spec]
+    # no site is both sound-in-bounds and speculative (disjoint tiers)
+    assert all(not (x.in_bounds and x.in_bounds_speculative) for x in spec)
+    assert all(not (x.proven_oob and x.in_bounds_speculative) for x in spec)
+    # the speculative tier actually fires here (dynamic ARC-4 length-prefix reads)
+    assert any(x.in_bounds_speculative for x in spec)
+
+
+def test_speculative_off_by_default(tmp_path):
+    """Default mode is sound-only: no speculative verdicts, no lift required."""
+    s = _sites(tmp_path, _LEN_FLOOR)                 # any sound-provable contract
+    assert all(not x.in_bounds_speculative for x in s)
+
+
 def test_proven_oob_precision_on_corpus_oob_fixtures():
     """``proven_oob`` must fire on Puya's deliberate out-of-bounds regression
     cases — a sound, precise static over-read finding."""

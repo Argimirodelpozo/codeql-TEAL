@@ -431,6 +431,15 @@ def to_puya(prog):
 
 
 def _to_puya_impl(prog):
+    main, subs, _lifter, _t = _to_puya_full(prog)
+    return main, subs
+
+
+def _to_puya_full(prog):
+    """The full lower, additionally returning the ``lifter`` (SSAVar -> pre_ir
+    Register maps) and ``t`` translator (id(pre_ir Register) -> M.Register), so a
+    caller can bridge an SSA value to its lowered puya register (see
+    :func:`recovered_fixed_lengths`). :func:`to_puya` returns only ``(main, subs)``."""
     # Pre-lift scratch simplification: forward compile-time-constant scratch loads to
     # their literal so the lift emits the constant directly. propagate_scratch_constants
     # only rewires the LOAD's consumers -- it KEEPS the store, which stays
@@ -509,7 +518,60 @@ def _to_puya_impl(prog):
         bytelen = {}
     _recover_ir_types(main, subs, byte_lengths=bytelen)
     _recover_encoded_types(main, subs)
-    return main, subs
+    return main, subs, lifter, t
+
+
+def recovered_min_lengths(prog) -> dict:
+    """``{ssa_key: (min_bytes, confident)}`` — a LOWER bound on the byte length of
+    every SSA value the SPECULATIVE ARC-4 recovery gives an encoded type: a
+    FIXED-size type (``arc4.Address`` -> 32, ``arc4.Bool`` -> 1, a static
+    struct/array -> its total) contributes ``num_bytes``; a DYNAMIC (length-
+    prefixed / offset-table) type contributes ``2`` — every well-formed dynamic
+    ARC-4 value has at least a 2-byte length/offset head. Bridges the guess —
+    keyed by the lowered ``M.Register`` — back to the SSA value via the lift's
+    ``SSAVar -> pre_ir.Register`` and translator's ``id(pre_ir.Register) ->
+    M.Register`` maps. ``confident`` is the recovery's own confidence (a forced
+    idiom vs a shape that merely fits). This is an ASSUMPTION about well-formed ABI
+    input, not a proof — the consumer (``dataflow.bounds``) reports any bound it
+    enables as a distinct *speculative* verdict.
+
+    Keyed by the SSA value's STABLE identity (``_key()`` = ``(file, line, index)``,
+    not ``id()``) so the result maps onto a caller's own SSAProgram, and lifts a
+    FRESH copy off ``prog.source_path`` (the lift mutates its input CFG) to keep the
+    caller's program pristine. ``{}`` if the contract doesn't lower (puya absent /
+    lift failure) or has no source path; never raises."""
+    from ..ssa import SSAProgram
+    src_path = str(getattr(prog, "source_path", "") or "")
+    if not src_path:
+        return {}
+    try:
+        fresh = SSAProgram(src_path)
+        main, subs, lifter, t = _to_puya_full(fresh)
+        guesses, confident = guess_encoded_types_scored(main, subs)
+    except Exception as e:
+        logger.debug("recovered_fixed_lengths: lower/recover skipped: %s", e)
+        return {}
+    reg_src: dict = {}
+    reg_src.update(getattr(lifter, "regs", {}))
+    reg_src.update(getattr(lifter, "frame_map", {}))
+    out: dict = {}
+    for ssa_val, pre in reg_src.items():
+        key = getattr(ssa_val, "_key", None)
+        if key is None:
+            continue
+        k = key()
+        m = t.regs.get(id(pre))
+        if m is None:
+            continue
+        g = guesses.get(id(m))
+        if g is None:
+            continue
+        nb = getattr(g, "num_bytes", None)
+        nb = 2 if nb is None else nb            # dynamic ⇒ >= 2-byte head
+        prev = out.get(k)
+        if prev is None or nb < prev[0]:        # disagreement: keep the SMALLER
+            out[k] = (nb, bool(confident.get(id(m))))
+    return out
 
 
 def _byte_length_map(lifter, t) -> dict:

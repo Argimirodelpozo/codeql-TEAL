@@ -39,16 +39,23 @@ from .relational import LengthRelations
 class BoundsSite:
     op: str
     line: int
-    in_bounds: bool          # offset+width PROVABLY <= len(buffer) (sound)
+    in_bounds: bool          # offset+width PROVABLY <= len(buffer) (SOUND)
     proven_oob: bool         # offset+width PROVABLY > an EXACT (unambiguous) length
     dynamic: bool            # the index/length is not a compile-time constant
     reason: str              # human-readable verdict
+    # in-bounds ONLY under an ARC-4 well-formedness ASSUMPTION (a recovered
+    # fixed-size type gives the buffer's length) — an attributed guess, not a
+    # proof. Set only in speculative mode; never overlaps a sound ``in_bounds``.
+    in_bounds_speculative: bool = False
+    speculative_confident: bool = False   # the recovery's own confidence in that guess
 
     @property
     def oob_risk(self) -> bool:
         """A crafted-input out-of-bounds risk: a dynamic index we cannot prove
-        in-bounds (the AVM panics on OOB — DoS, or missing validation)."""
-        return self.dynamic and not self.in_bounds
+        in-bounds (the AVM panics on OOB — DoS, or missing validation). A
+        speculative in-bounds (a well-formed-ABI assumption) removes it from the
+        residual risk set."""
+        return self.dynamic and not self.in_bounds and not self.in_bounds_speculative
 
 
 def _fold(base_operand, extra_c: int):
@@ -111,21 +118,53 @@ def _access(a):
     return None
 
 
-def check_bounds(prog: SSAProgram, *, run_passes: bool = True) -> list:
+def _seed_all(rel, sites) -> None:
+    for _a, (buf, base, _c, _dyn) in sites:    # seed ALL facts before querying
+        rel.seed_buffer(buf)
+        rel.seed_range(base)                   # bridge the offset/count interval
+
+
+def check_bounds(prog: SSAProgram, *, run_passes: bool = True,
+                 speculative: bool = False) -> list:
     """Every byte-access site with its in-bounds verdict. Runs the analysis
     pipeline first (idempotent) so ranges, byte-lengths and ``len`` equalities
-    are populated, then asks the relational domain at each site."""
+    are populated, then asks the relational domain at each site.
+
+    ``speculative`` opt-in: buffers whose length isn't soundly known are given a
+    length from the ARC-4 encoded-type recovery (a fixed-size type ⇒ a lower
+    bound) — an ASSUMPTION about well-formed ABI input, reported as the distinct
+    ``in_bounds_speculative`` verdict (never merged into the sound ``in_bounds``,
+    never affecting ``proven_oob``). Needs the lift (puya); degrades to sound-only
+    if the contract doesn't lower."""
     if run_passes:
         run_all_passes(prog)
 
     sites = [(a, acc) for a in prog.assignments if (acc := _access(a)) is not None]
     rel = LengthRelations(prog)
-    for _a, (buf, base, _c, _dyn) in sites:    # seed ALL facts before querying
-        rel.seed_buffer(buf)
-        rel.seed_range(base)                   # bridge the offset/count interval
+    _seed_all(rel, sites)
+
+    # Speculative pass: a SEPARATE relational store seeded with the sound facts
+    # PLUS recovered fixed-size lengths (lower bounds only). Queried for in-bounds
+    # only, on sites the sound pass left unproven.
+    rel_spec = None
+    if speculative:
+        from ..lift import to_puya_ir
+        fixed = to_puya_ir.recovered_min_lengths(prog)
+        if fixed:
+            rel_spec = LengthRelations(prog)
+            _seed_all(rel_spec, sites)
+            for _a, (buf, _base, _c, _dyn) in sites:
+                k = getattr(buf, "_key", None)
+                if k is not None and k() in fixed:
+                    rel_spec.seed_length_lb(buf, fixed[k()][0])
+
+            def _spec_len(buf):
+                k = getattr(buf, "_key", None)
+                return fixed.get(k()) if k is not None else None
 
     out: list = []
     for a, (buf, base, extra_c, dynamic) in sites:
+        spec = spec_conf = False
         if extra_c is None:
             in_bounds, proven_oob, reason = False, False, "offset+width unbounded"
         else:
@@ -142,8 +181,15 @@ def check_bounds(prog: SSAProgram, *, run_passes: bool = True) -> list:
                 reason = "in-bounds (offset+width <= len)"
             elif proven_oob:
                 reason = "OUT OF BOUNDS (offset+width > exact len)"
+            elif rel_spec is not None and (
+                    spec := rel_spec.verdict(
+                        buf, base, extra_c, a.basic_block, a.location.line)[0]):
+                sl = _spec_len(buf)
+                spec_conf = bool(sl and sl[1])
+                reason = "in-bounds ASSUMING well-formed ARC-4 (recovered length)"
             else:
                 reason = "unproven (no relation offset+width <= len)"
         out.append(BoundsSite(a.op, a.location.line, in_bounds, proven_oob,
-                              dynamic, reason))
+                              dynamic, reason, in_bounds_speculative=bool(spec),
+                              speculative_confident=spec_conf))
     return out
