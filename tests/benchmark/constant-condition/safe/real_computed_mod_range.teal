@@ -1,0 +1,12 @@
+#pragma version 10
+// `arg % 4` is in [0, 3]; `<= 2` can genuinely fail (when it is 3), so this is
+// a REAL guard, not a vacuous one — no finding.
+txna ApplicationArgs 0
+btoi
+int 4
+%
+int 2
+<=
+assert
+int 1
+return

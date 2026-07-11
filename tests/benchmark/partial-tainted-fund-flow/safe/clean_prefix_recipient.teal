@@ -1,0 +1,23 @@
+#pragma version 10
+// The recipient is the first 32 bytes of `concat(global CreatorAddress, arg)`,
+// i.e. the CreatorAddress prefix — attacker-independent. Byte-interval taint
+// proves the [0,32) window is clean (the tainted arg lives past byte 32), so
+// this is NOT a tainted fund flow — where the coarse whole-value tainted-fund-flow
+// false-alarms (it sees "recipient derived from arg via concat").
+    txna ApplicationArgs 0
+    byte 0x11223344
+    ==
+    assert
+    global CreatorAddress
+    txna ApplicationArgs 1
+    concat
+    extract 0 32
+    itxn_begin
+    int pay
+    itxn_field TypeEnum
+    itxn_field Receiver
+    int 1000
+    itxn_field Amount
+    itxn_submit
+    int 1
+    return

@@ -1,0 +1,13 @@
+#pragma version 10
+// `arg % 4` is structurally in [0, 3] (range_arith tracks mod off the btoi
+// dividend's uint64 range), so `<= 5` is ALWAYS true: the assert enforces
+// nothing. A COMPUTED-range vacuous guard — provable only once mod is tracked.
+txna ApplicationArgs 0
+btoi
+int 4
+%
+int 5
+<=
+assert
+int 1
+return
