@@ -184,6 +184,22 @@ def _uint_hi(op) -> Optional[int]:
     return getattr(r, "hi", None) if r is not None else None
 
 
+def _index_window(idx_op, width: int) -> tuple:
+    """The ``[lo, hi)`` byte window a ``width``-byte read at ``idx_op`` could
+    touch: exact for a compile-time constant index, else bounded by its
+    :class:`IntRange` (opportunistic — populated when the range passes have run,
+    which byte_taint trips), capped at the AVM byte limit. Falls back to
+    ``(0, AVM_MAX_BYTES)`` (= "any byte", the old any-taint behaviour) when the
+    index is unbounded."""
+    c = const_int(idx_op)
+    if c is not None:
+        return (c, c + width)
+    r = getattr(idx_op, "range", None)
+    if r is not None:
+        return (r.lo, min(r.hi + width, AVM_MAX_BYTES))
+    return (0, AVM_MAX_BYTES)
+
+
 def _default_sources(a) -> Optional[Intervals]:
     """Default attacker-input seed: every ``ApplicationArgs`` read is fully
     tainted (its length is usually dynamic, so ``[0, len-bound)`` — the exact /
@@ -678,11 +694,19 @@ def byte_taint(
             x, i_op, b = a.inputs[2], a.inputs[1], a.inputs[0]
             i = const_int(i_op)
             if i is not None:
-                iv = bget(x).subtract(i, i + 1)
+                iv = bget(x).subtract(i, i + 1)                 # that byte is overwritten
                 if sget(b):
                     iv = iv.union(Intervals([(i, i + 1)]))
                 return set_bytes(out, iv)
-            return set_bytes(out, Intervals.whole(_len_bound(out))) if any_tainted(a) else False
+            # Runtime index: can't subtract (unknown position — dropping X taint
+            # would be a false NEGATIVE); keep ALL of X's taint, and if the written
+            # byte is tainted add it over the index's possible window. Beats
+            # whole-value whenever `b` is clean or the index range is bounded.
+            iv = bget(x)
+            if sget(b):
+                lo, hi = _index_window(i_op, 1)
+                iv = iv.union(Intervals([(lo, hi)]))
+            return set_bytes(out, iv)
         if op in ("replace2", "replace3"):                         # splice V into X at A
             if op == "replace2" and a.immediates and len(a.inputs) == 2:
                 x, v, A = a.inputs[1], a.inputs[0], int(a.immediates.split()[0])
@@ -707,17 +731,15 @@ def byte_taint(
             return set_bytes(out, Intervals.whole(32)) if bget(a.inputs[0]) else False
 
         # ---- bytes -> scalar (the byte-range -> scalar bridge) ----
+        # A non-const index falls back to its IntRange window (not "any taint"),
+        # so a read whose possible byte range misses X's tainted bytes is clean —
+        # e.g. `getbyte X (i%8)` of a buffer tainted only past byte 8.
         if op == "getbyte" and len(a.inputs) == 2:
-            i = const_int(a.inputs[0])
-            x = a.inputs[1]
-            hit = bget(x).overlaps(i, i + 1) if i is not None else bool(bget(x))
-            return set_scalar(out) if hit else False
+            lo, hi = _index_window(a.inputs[0], 1)
+            return set_scalar(out) if bget(a.inputs[1]).overlaps(lo, hi) else False
         if op in _EXTRACT_UINT and len(a.inputs) == 2:
-            n = _EXTRACT_UINT[op]
-            i = const_int(a.inputs[0])
-            x = a.inputs[1]
-            hit = bget(x).overlaps(i, i + n) if i is not None else bool(bget(x))
-            return set_scalar(out) if hit else False
+            lo, hi = _index_window(a.inputs[0], _EXTRACT_UINT[op])
+            return set_scalar(out) if bget(a.inputs[1]).overlaps(lo, hi) else False
         if op == "btoi" and a.inputs:
             return set_scalar(out) if bget(a.inputs[0]).overlaps(0, 8) else False
 

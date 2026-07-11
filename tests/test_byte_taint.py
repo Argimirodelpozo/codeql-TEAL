@@ -129,6 +129,25 @@ class TestForwardPropagation:
         assert not rc.is_scalar_tainted(_by_op(pc, "getbyte")[0].outputs[0])
         assert rd.is_scalar_tainted(_by_op(pd, "getbyte")[0].outputs[0])
 
+    def test_getbyte_ranged_index_uses_window(self):
+        # getbyte X (arg%8): the index is a RUNTIME value bounded to [0,7], so the
+        # read can only touch the clean prefix — scalar result is clean, where the
+        # old non-const fallback ("tainted iff X has any taint") flagged it.
+        teal = ("#pragma version 8\n" + _PREFIX +
+                "txna ApplicationArgs 1\nbtoi\nint 8\n%\ngetbyte\npop\nint 1\nreturn\n")
+        p, r = _taint(teal)
+        g = _by_op(p, "getbyte")[0].outputs[0]
+        assert not r.is_scalar_tainted(g)            # clean prefix proven
+
+    def test_getbyte_ranged_index_into_tainted_is_tainted(self):
+        # Soundness: index in [8,15] reaches the tainted suffix -> tainted.
+        teal = ("#pragma version 8\n" + _PREFIX +
+                "txna ApplicationArgs 1\nbtoi\nint 8\n%\nint 8\n+\ngetbyte\npop\n"
+                "int 1\nreturn\n")
+        p, r = _taint(teal)
+        g = _by_op(p, "getbyte")[0].outputs[0]
+        assert r.is_scalar_tainted(g)
+
     def test_extract_uint64_bridge_offset_sensitive(self):
         clean = "#pragma version 8\n" + _PREFIX + "int 0\nextract_uint64\npop\nint 1\nreturn\n"
         dirty = "#pragma version 8\n" + _PREFIX + "int 8\nextract_uint64\npop\nint 1\nreturn\n"
