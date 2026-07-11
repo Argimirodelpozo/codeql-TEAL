@@ -347,21 +347,26 @@ def _validated_intervals(prog: SSAProgram) -> tuple[dict, dict]:
         if d is None or d.op != "==" or len(d.inputs) != 2:
             continue
         lhs, rhs = d.inputs[1], d.inputs[0]
-        slc = win = None
+        x = lo = hi = test = None
         for s, other in ((lhs, rhs), (rhs, lhs)):
-            if isinstance(s, SSAVar) and _is_clean(other):
-                info = _slice_of(s)
-                if info is not None:
-                    slc, win = s, info
-                    break
-        if win is None:
-            continue
-        x, lo, hi = win
+            if not (isinstance(s, SSAVar) and _is_clean(other)):
+                continue
+            info = _slice_of(s)
+            if info is not None and isinstance(info[0], SSAVar):
+                x, lo, hi = info                 # a static slice of X is pinned
+                test = getattr(s, "defined_by", None)   # the slice read forms the guard
+            else:
+                # Whole-value equality: `s` itself is pinned to a clean value, so
+                # its ENTIRE taint clears past the assert (`arg == global X`, an
+                # input equated to a chain constant, …) — the equality-class case
+                # the per-slice rule missed.
+                x, lo, hi = s, 0, (_byte_length(s) or _len_bound(s))
+                test = d                          # the `==` read forms the guard
+            break
         if not isinstance(x, SSAVar):
             continue
-        test = {getattr(slc, "defined_by", None)}
         if all(dominates(block_a, u, a.location.line)
-               for u in x.uses if u not in test):
+               for u in x.uses if u is not test):
             out.setdefault(x, []).append((lo, hi))
             prov.setdefault(x, []).append((lo, hi, "assert", a.location.line))
 

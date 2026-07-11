@@ -278,6 +278,35 @@ class TestValidationNarrowing:
         read = [a for a in p.assignments if a.op == "getbyte"][-1].outputs[0]
         assert r.is_scalar_tainted(read)
 
+    def test_whole_value_eq_clean_clears_entirely(self):
+        # assert(arg == global ZeroAddress) — the WHOLE arg is pinned to a clean
+        # value (not just a slice of it), so ALL of its taint clears past the
+        # assert. The equality-class case the per-slice rule missed.
+        teal = (
+            "#pragma version 8\n"
+            "txna ApplicationArgs 0\ndup\nglobal ZeroAddress\n==\nassert\n"
+            "int 3\ngetbyte\nreturn\n"
+        )
+        p = SSAProgram.from_text(teal, name="t")
+        r = byte_taint(p, validate=True)
+        arg = [a for a in p.assignments if a.op == "txna"][0].outputs[0]
+        assert not r.tainted_bytes(arg)                    # whole value cleared
+        read = [a for a in p.assignments if a.op == "getbyte"][-1].outputs[0]
+        assert not r.is_scalar_tainted(read)               # downstream read clean
+
+    def test_whole_value_eq_attacker_does_not_clear(self):
+        # assert(arg0 == arg1) — both attacker-controlled, neither clean, so the
+        # whole-value rule clears nothing (the attacker just sets them equal).
+        teal = (
+            "#pragma version 8\n"
+            "txna ApplicationArgs 0\ntxna ApplicationArgs 1\n==\nassert\n"
+            "txna ApplicationArgs 0\nint 3\ngetbyte\nreturn\n"
+        )
+        p = SSAProgram.from_text(teal, name="t")
+        r = byte_taint(p, validate=True)
+        read = [a for a in p.assignments if a.op == "getbyte"][-1].outputs[0]
+        assert r.is_scalar_tainted(read)                   # still tainted (sound)
+
     def test_bypassing_use_is_sound(self):
         # the validating assert is on ONE branch; a read at the merge is
         # reachable WITHOUT it, so taint must NOT be cleared (no false negative).
