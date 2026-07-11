@@ -516,35 +516,46 @@ class PathPredicateAnalysis:
         of them is zero — a disjunction we don't model); ``||`` is
         the mirror image.
         """
-        out: set[BranchCondition] = {
-            BranchCondition(value=cond, kind="nonzero" if taken else "zero"),
-        }
-        if not isinstance(cond, SSAVar):
-            return frozenset(out)
-        producer = cond.defined_by
-        if producer is None:
-            return frozenset(out)
-        op, ins = producer.op, producer.inputs
-        # Binary comparisons.
-        kind = _CMP_OP_TO_KIND_TAKEN.get(op)
-        if kind is not None and len(ins) == 2:
-            actual_kind = kind if taken else _KIND_NEGATION[kind]
-            out.add(_canonical_binary_pred(ins[0], actual_kind, ins[1]))
-            return frozenset(out)
-        # ``!``: invert the truthiness on the single operand.
-        if op == "!" and len(ins) == 1:
-            out |= self._decompose_cond(ins[0], taken=not taken)
-            return frozenset(out)
-        # ``&&``: only the truthy side is fully decomposable.
-        if op == "&&" and len(ins) == 2 and taken:
-            out |= self._decompose_cond(ins[0], taken=True)
-            out |= self._decompose_cond(ins[1], taken=True)
-            return frozenset(out)
-        # ``||``: only the falsy side is fully decomposable.
-        if op == "||" and len(ins) == 2 and not taken:
-            out |= self._decompose_cond(ins[0], taken=False)
-            out |= self._decompose_cond(ins[1], taken=False)
-            return frozenset(out)
+        # Iterative (worklist) rather than recursive: a long `a && b && ...`
+        # chain nests the connective ops thousands deep, and a cyclic SSA value
+        # web (a phi feeding its own guard) is unbounded — either blows the Python
+        # recursion limit. `seen` makes it cycle-safe; the result is the same
+        # set-union the recursive form produced.
+        out: set[BranchCondition] = set()
+        seen: set = set()
+        stack: list = [(cond, taken)]
+        while stack:
+            c, t = stack.pop()
+            key = (id(c), t)
+            if key in seen:
+                continue
+            seen.add(key)
+            out.add(BranchCondition(value=c, kind="nonzero" if t else "zero"))
+            if not isinstance(c, SSAVar):
+                continue
+            producer = c.defined_by
+            if producer is None:
+                continue
+            op, ins = producer.op, producer.inputs
+            # Binary comparisons.
+            kind = _CMP_OP_TO_KIND_TAKEN.get(op)
+            if kind is not None and len(ins) == 2:
+                actual_kind = kind if t else _KIND_NEGATION[kind]
+                out.add(_canonical_binary_pred(ins[0], actual_kind, ins[1]))
+                continue
+            # ``!``: invert the truthiness on the single operand.
+            if op == "!" and len(ins) == 1:
+                stack.append((ins[0], not t))
+                continue
+            # ``&&``: only the truthy side is fully decomposable.
+            if op == "&&" and len(ins) == 2 and t:
+                stack.append((ins[0], True))
+                stack.append((ins[1], True))
+                continue
+            # ``||``: only the falsy side is fully decomposable.
+            if op == "||" and len(ins) == 2 and not t:
+                stack.append((ins[0], False))
+                stack.append((ins[1], False))
         return frozenset(out)
 
     def _switch_or_match_edge(
