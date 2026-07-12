@@ -18,10 +18,28 @@ adding a new detector is one extra entry in :data:`ALL_DETECTORS`.
 """
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Callable, Iterable, Protocol, runtime_checkable
 
 from .ssa import SSAProgram
+
+logger = logging.getLogger("tealql.tealtools")
+
+
+def _safe(label: str, fn: "Callable[[], object]", default, *, strict: bool):
+    """Run ``fn()`` in isolation — a detector or report that crashes on one weird
+    contract must not sink the whole ``tealql all`` output (the same contract the
+    security scanner honours in ``scan.py``). Logs the crash and returns
+    ``default``; ``strict`` re-raises instead. Covers construction too: the
+    sec-guide detector adapters build their underlying detector inside ``run()``."""
+    try:
+        return fn()
+    except Exception as e:
+        if strict:
+            raise
+        logger.error("%s crashed (skipped): %s", label, e)
+        return default
 
 
 @runtime_checkable
@@ -146,15 +164,18 @@ ALL_REPORTS: list[Report] = [
 
 def run_all_findings(
     prog: SSAProgram, *, extra_detectors: Iterable[Detector] = (),
+    strict: bool = False,
 ) -> tuple[str, int]:
     """Like :func:`run_all` but also returns the total detector-finding
     count, so callers (the CLI's ``all``) can set a findings exit code
-    without re-running every detector."""
+    without re-running every detector. Per-detector/report crash-isolated
+    (``strict=True`` re-raises) so one broken analysis can't sink the report."""
     out: list[str] = []
     n_findings = 0
     for det in [*ALL_DETECTORS, *extra_detectors]:
         out.append(f"=== {det.name} ===")
-        findings = list(det.run(prog))
+        findings = _safe(f"detector {det.name}",
+                         lambda d=det: list(d.run(prog)), [], strict=strict)
         if findings:
             n_findings += len(findings)
             out.extend(f.pretty() for f in findings)
@@ -163,20 +184,23 @@ def run_all_findings(
         out.append("")
     for rep in ALL_REPORTS:
         out.append(f"=== {rep.name} ===")
-        out.append(rep.run(prog))
+        out.append(_safe(f"report {rep.name}", lambda r=rep: r.run(prog),
+                         "(report crashed — skipped)", strict=strict))
         out.append("")
     return "\n".join(out).rstrip() + "\n", n_findings
 
 
-def run_all(prog: SSAProgram, *, extra_detectors: Iterable[Detector] = ()) -> str:
+def run_all(prog: SSAProgram, *, extra_detectors: Iterable[Detector] = (),
+            strict: bool = False) -> str:
     """Run every core detector (+ any ``extra_detectors``) + report against
     ``prog`` and return one big text block, sectioned by analysis name.
     ``extra_detectors`` lets ``tealql.security.run`` inject the sec-guide detectors
     without this module importing the registry."""
-    return run_all_findings(prog, extra_detectors=extra_detectors)[0]
+    return run_all_findings(prog, extra_detectors=extra_detectors, strict=strict)[0]
 
 
-def run_all_dict(prog: SSAProgram, *, extra_detectors: Iterable[Detector] = ()) -> dict:
+def run_all_dict(prog: SSAProgram, *, extra_detectors: Iterable[Detector] = (),
+                 strict: bool = False) -> dict:
     """Same coverage as :func:`run_all` but returns a structured dict
     suitable for JSON. Detector findings use each finding's
     ``to_dict()`` if available, falling back to ``{"message": ...}``.
@@ -189,13 +213,19 @@ def run_all_dict(prog: SSAProgram, *, extra_detectors: Iterable[Detector] = ()) 
 
     detectors: dict[str, list[dict]] = {}
     for det in [*ALL_DETECTORS, *extra_detectors]:
-        findings = list(det.run(prog))
+        findings = _safe(f"detector {det.name}",
+                         lambda d=det: list(d.run(prog)), [], strict=strict)
         detectors[det.name] = [finding_to_dict(f) for f in findings]
     reports = {
-        "itxn-report": InnerTxnReport(prog).to_dict(),
-        "group-shape": analyze(prog).to_dict(),
-        "group-layout": analyze_layout(prog).to_dict(),
-        "cost": cost_to_dict(prog),
-        "path-predicates": PathPredicateAnalysis(prog).to_dict(),
+        "itxn-report": _safe("report itxn-report",
+                             lambda: InnerTxnReport(prog).to_dict(), {}, strict=strict),
+        "group-shape": _safe("report group-shape",
+                             lambda: analyze(prog).to_dict(), {}, strict=strict),
+        "group-layout": _safe("report group-layout",
+                              lambda: analyze_layout(prog).to_dict(), {}, strict=strict),
+        "cost": _safe("report cost", lambda: cost_to_dict(prog), {}, strict=strict),
+        "path-predicates": _safe("report path-predicates",
+                                 lambda: PathPredicateAnalysis(prog).to_dict(), {},
+                                 strict=strict),
     }
     return {"detectors": detectors, "reports": reports}
