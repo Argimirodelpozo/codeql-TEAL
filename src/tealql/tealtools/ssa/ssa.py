@@ -719,35 +719,52 @@ class PySSA:
     def _try_remove_trivial(self, P: PyPhi):
         """Braun ``tryRemoveTrivialPhi``: if ``P``'s args (ignoring self-refs)
         are a single distinct value ``v``, replace ``P`` with ``v`` and re-check
-        every phi that referenced ``P`` (cascade)."""
-        distinct: list = []
-        for a in P.args:
-            a = self._resolve(a)
-            if a is P:
-                continue                          # self-reference
-            if not any(a is d for d in distinct):
-                distinct.append(a)
-        if len(distinct) > 1:
-            return P                              # a genuine merge — keep it
-        same = distinct[0] if distinct else None  # 0 distinct -> undefined slot
-        self._replaced[id(P)] = same
-        self.phis.pop((P.bb_key, P.slot), None)
-        b = self._bb_by_key.get(P.bb_key)
-        if b is not None:
-            b.entry_phis = [ph for ph in b.entry_phis if ph is not P]
-        # Sort users by their STABLE identity (bb_key, slot) -- `_phi_users` is a
-        # set, and the trivial-phi cascade is order-sensitive (processing user u1
-        # before u2 can change u2's triviality), so an id()-ordered iteration made
-        # the whole SSA construction NONDETERMINISTIC: a join's phi count varied
-        # run-to-run, which downstream surfaced as an order-dependent mixed-type
-        # phi (a contract lifting only some runs). id() is not seed-stable; the
-        # (bb_key, slot) key is.
-        for u in sorted(self._phi_users.pop(id(P), ()), key=lambda u: u.key()):
-            u.args = [same if a is P else a for a in u.args]
-            if isinstance(same, PyPhi):
-                self._phi_users.setdefault(id(same), set()).add(u)
-            self._try_remove_trivial(u)
-        return same
+        every phi that referenced ``P`` (cascade). Returns ``P``'s replacement.
+
+        ITERATIVE (a depth-first worklist), not recursive: the cascade can chain
+        through a long phi web and a deep chain would overflow the stack. The
+        cascade only ever RETURNS into the very first phi (recursive-call returns
+        were discarded), so only the initial ``P``'s result matters; the rest is
+        side effects. Depth-first + the sorted user order is preserved exactly (a
+        LIFO stack with users pushed in reverse pops them in sorted order and
+        finishes each user's own cascade before the next sibling) — the cascade is
+        order-sensitive (processing u1 before u2 can change u2's triviality; an
+        unstable order made SSA construction NONDETERMINISTIC), so this MUST match
+        the recursion's traversal."""
+        result = None
+        first = True
+        stack: list = [P]
+        while stack:
+            cur = stack.pop()
+            distinct: list = []
+            for a in cur.args:
+                a = self._resolve(a)
+                if a is cur:
+                    continue                      # self-reference
+                if not any(a is d for d in distinct):
+                    distinct.append(a)
+            if len(distinct) > 1:                 # a genuine merge — keep it
+                if first:
+                    result, first = cur, False
+                continue
+            same = distinct[0] if distinct else None  # 0 distinct -> undefined slot
+            if first:
+                result, first = same, False
+            self._replaced[id(cur)] = same
+            self.phis.pop((cur.bb_key, cur.slot), None)
+            b = self._bb_by_key.get(cur.bb_key)
+            if b is not None:
+                b.entry_phis = [ph for ph in b.entry_phis if ph is not cur]
+            # Sort users by their STABLE identity (bb_key, slot) — `_phi_users` is
+            # a set, and id() is not seed-stable; the (bb_key, slot) key is.
+            users = sorted(self._phi_users.pop(id(cur), ()), key=lambda u: u.key())
+            for u in users:
+                u.args = [same if a is cur else a for a in u.args]
+                if isinstance(same, PyPhi):
+                    self._phi_users.setdefault(id(same), set()).add(u)
+            for u in reversed(users):             # LIFO -> pops in sorted order
+                stack.append(u)
+        return result
 
     # ----- Phase 6 helpers ------------------------------------------------
 
