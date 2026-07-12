@@ -198,6 +198,44 @@ def test_scan_strict_propagates_detector_crash(monkeypatch):
         scan(REKEY_VULN_DIR, strict=True)
 
 
+def test_scan_survives_a_detector_crashing_in_init(monkeypatch, caplog):
+    # A detector that does its analysis in __init__ (or just crashes building)
+    # must be isolated exactly like one that crashes in detect() — this is the
+    # gap that let a RecursionError in one contract's path-predicate decomposition
+    # abort a whole 929-contract corpus scan.
+    from tealql import security
+    from tealql.security.scan import scan
+
+    class _BoomInit:
+        def __init__(self, prog, *, file=None):
+            raise RecursionError("boom-init")
+
+        def detect(self):
+            return []
+
+    monkeypatch.setitem(security.DETECTORS, "boom-init-test", _BoomInit)
+    with caplog.at_level(logging.ERROR, logger="tealql.security.scan"):
+        findings = scan(REKEY_VULN_DIR)
+    assert any("boom-init-test" in r.message for r in caplog.records)
+    assert any(f.detector_name == "rekey-to" for f in findings)
+
+
+def test_scan_strict_propagates_init_crash(monkeypatch):
+    from tealql import security
+    from tealql.security.scan import scan
+
+    class _BoomInit:
+        def __init__(self, prog, *, file=None):
+            raise ValueError("boom-init")
+
+        def detect(self):
+            return []
+
+    monkeypatch.setitem(security.DETECTORS, "boom-init-test", _BoomInit)
+    with pytest.raises(TealQLError, match="boom-init-test"):
+        scan(REKEY_VULN_DIR, strict=True)
+
+
 # ---------------------------------------------------------------------------
 # Degenerate programs: absence detectors + byte_taint arity regression
 # ---------------------------------------------------------------------------

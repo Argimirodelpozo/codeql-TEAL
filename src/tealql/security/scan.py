@@ -423,11 +423,20 @@ def scan(
                     "from analysis — findings for this file may be "
                     "incomplete (first: %s)", rel, len(diags), diags[0])
             names = config.detectors_for(str(rel))
-            if options is not None:
-                mode = options.mode_for(str(rel), prog=prog, file=teal.name)
-            else:
-                mode = (detection_config.mode_for(str(rel))
-                        if detection_config is not None else None)
+            try:
+                if options is not None:
+                    mode = options.mode_for(str(rel), prog=prog, file=teal.name)
+                else:
+                    mode = (detection_config.mode_for(str(rel))
+                            if detection_config is not None else None)
+            except Exception as e:                   # auto-mode classifies by opcode
+                if strict:
+                    raise TealQLError(
+                        f"mode classification failed for {rel}: {e}") from e
+                logger.warning(
+                    "mode classification failed for %s (scanning unfiltered): %s",
+                    rel, e)
+                mode = None
             logger.info("scanning %s (mode=%s): %d detection(s)",
                         rel, mode or "unfiltered", len(names))
             for name in names:
@@ -442,15 +451,17 @@ def scan(
                         continue
                 # The program holds exactly this file (keyed by basename); pass
                 # it as the file filter so the detector scopes to it.
-                det = cls(prog, file=teal.name)
                 sev = options.severity_for(name) if options is not None else None
                 try:
+                    # Construction AND detection are both guarded — a detector
+                    # that does its analysis in __init__ (or crashes building)
+                    # must not kill a whole corpus scan any more than one that
+                    # crashes in detect(). Record it loudly and move on (strict
+                    # mode refuses instead); the ERROR log keeps the crash
+                    # visible so real bugs still get reported.
+                    det = cls(prog, file=teal.name)
                     violations = list(det.detect())
                 except Exception as e:
-                    # One detector crashing on one weird file must not kill
-                    # a whole corpus scan — record it loudly and move on
-                    # (strict mode refuses instead). The ERROR log keeps the
-                    # crash visible so real bugs still get reported.
                     if strict:
                         raise TealQLError(
                             f"detector {name} crashed on {rel}: {e}") from e
@@ -502,7 +513,7 @@ def render_sarif(findings: list[ScanFinding]) -> str:
     severity, help text from the per-detector README when present); results[]
     carry a physicalLocation (file + 1-based region) and, when the IR taint road
     is available, a codeFlows entry from the finding's witness sources."""
-    from . import DETECTORS, severity_of
+    from . import severity_of
     from .findings import SCHEMA_VERSION
 
     # SARIF level is a 3-value scale; map our 5 onto it.
