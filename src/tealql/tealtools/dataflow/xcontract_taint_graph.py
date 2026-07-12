@@ -38,6 +38,8 @@ from typing import Iterable, Iterator, Optional
 
 import networkx as nx
 
+from ._nx_view import NxGraphView
+
 from ..ssa import SSAProgram
 from ..avm import SENSITIVE_ITXN_FIELDS, STATE_WRITE_OPS
 from ..xcontract import AppcallSite, find_appcall_sites, load_registry
@@ -58,7 +60,7 @@ class XContractNode:
 
 
 @dataclass
-class XContractTaintGraph:
+class XContractTaintGraph(NxGraphView):
     """Cross-contract taint graph stitched from per-contract ``TaintGraph``
     instances plus appcall bridge edges."""
 
@@ -137,9 +139,6 @@ class XContractTaintGraph:
 
     # --- queries (mirror TaintGraph) ----------------------------------
 
-    def nodes(self) -> Iterable[XContractNode]:
-        return self.g.nodes  # type: ignore[return-value]
-
     def find(
         self,
         *,
@@ -172,11 +171,6 @@ class XContractTaintGraph:
             out.append(xn)
         return out
 
-    def reachable_from(self, src: XContractNode) -> set[XContractNode]:
-        if src not in self.g:
-            return set()
-        return set(nx.descendants(self.g, src)) | {src}
-
     def reachable_from_any(self, srcs: Iterable[XContractNode]) -> set[XContractNode]:
         out: set[XContractNode] = set()
         for s in srcs:
@@ -207,16 +201,6 @@ class XContractTaintGraph:
                         return out
         out.sort(key=len)
         return out
-
-    def op_of(self, xn: XContractNode) -> Optional[str]:
-        if xn not in self.g:
-            return None
-        return self.g.nodes[xn].get("op")
-
-    def immediates_of(self, xn: XContractNode) -> Optional[str]:
-        if xn not in self.g:
-            return None
-        return self.g.nodes[xn].get("immediates")
 
 
 # --- copying ------------------------------------------------------

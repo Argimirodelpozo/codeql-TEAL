@@ -29,6 +29,8 @@ from typing import Callable, Iterable, Iterator, Optional
 
 import networkx as nx
 
+from ._nx_view import NxGraphView
+
 from ..ssa import SSAProgram
 
 
@@ -50,7 +52,7 @@ class Node:
 
 
 @dataclass
-class TaintGraph:
+class TaintGraph(NxGraphView):
     """Graph wrapper with refinement API.
 
     One edge per ``(src, dst)`` pair; the flow channels
@@ -119,23 +121,6 @@ class TaintGraph:
                 g.add_edge(src, dst, kinds={kind})
         return cls(g=g, prog=prog)
 
-    def op_of(self, node: Node) -> Optional[str]:
-        """The TEAL opcode at this node (e.g. ``"box_create"``,
-        ``"asset_params_get"``). ``None`` for nodes that don't
-        correspond to an SSA assignment in ``prog.assignments``
-        (rare — synthetic / phi nodes)."""
-        if node not in self.g:
-            return None
-        return self.g.nodes[node].get("op")
-
-    def immediates_of(self, node: Node) -> Optional[str]:
-        """The TEAL immediates string at this node (e.g.
-        ``"ApplicationArgs 1"`` for ``txna ApplicationArgs 1``).
-        ``None`` if no SSA assignment matches."""
-        if node not in self.g:
-            return None
-        return self.g.nodes[node].get("immediates")
-
     def const_values_at(self, node: Node) -> tuple[tuple[str, str], ...]:
         """Concrete literals known to be produced by this node, after
         :meth:`SSAProgram.propagate_constants`. Each entry is
@@ -166,9 +151,6 @@ class TaintGraph:
 
     # --- queries ------------------------------------------------------
 
-    def nodes(self) -> Iterable[Node]:
-        return self.g.nodes  # type: ignore[return-value]
-
     def edges(self) -> Iterator[tuple[Node, Node, dict]]:
         for u, v, data in self.g.edges(data=True):
             yield u, v, data
@@ -196,19 +178,6 @@ class TaintGraph:
 
     def successors(self, node: Node) -> list[Node]:
         return list(self.g.successors(node))
-
-    def reachable_from(self, src: Node) -> set[Node]:
-        if src not in self.g:
-            return set()
-        return set(nx.descendants(self.g, src)) | {src}
-
-    def reachable_to(self, dst: Node) -> set[Node]:
-        if dst not in self.g:
-            return set()
-        return set(nx.ancestors(self.g, dst)) | {dst}
-
-    def reaches(self, src: Node, dst: Node) -> bool:
-        return src is dst or (src in self.g and dst in self.reachable_from(src))
 
     def paths(
         self,

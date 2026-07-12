@@ -35,9 +35,10 @@ the slot isn't a static immediate — a follow-up.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable, Optional
 
 import networkx as nx
+
+from ._nx_view import NxGraphView
 
 from ..ssa import SSAProgram
 from ..avm import SENSITIVE_ITXN_FIELDS, STATE_WRITE_OPS
@@ -56,7 +57,7 @@ class GroupNode:
 
 
 @dataclass
-class GroupTaintGraph:
+class GroupTaintGraph(NxGraphView):
     """Per-member :class:`TaintGraph`\\ s merged into one graph, plus the
     ``store -> gload`` scratch bridges between siblings."""
 
@@ -76,20 +77,6 @@ class GroupTaintGraph:
         return cls(g=big, members=members)
 
     # --- queries -------------------------------------------------------
-
-    def nodes(self) -> Iterable[GroupNode]:
-        return self.g.nodes  # type: ignore[return-value]
-
-    def op_of(self, gn: GroupNode) -> Optional[str]:
-        return self.g.nodes[gn].get("op") if gn in self.g else None
-
-    def immediates_of(self, gn: GroupNode) -> Optional[str]:
-        return self.g.nodes[gn].get("immediates") if gn in self.g else None
-
-    def reachable_from(self, src: GroupNode) -> set[GroupNode]:
-        if src not in self.g:
-            return set()
-        return set(nx.descendants(self.g, src)) | {src}
 
     def paths_between(
         self, src: GroupNode, dst: GroupNode, *, max_paths: int = 1,
