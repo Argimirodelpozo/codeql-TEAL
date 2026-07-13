@@ -114,7 +114,11 @@ def _normalize_pseudo_ops(data: bytes) -> bytes:
         elif op == "addr":
             try:                                   # 58-char base32 = 32B pubkey + 4B csum
                 raw = base64.b32decode(operand.strip() + "=" * (-len(operand.strip()) % 8))
-                new = f"pushbytes 0x{raw[:32].hex()}"
+                # The 32-byte public key is the prefix (a full address adds a
+                # 4-byte checksum -> 36 bytes). A decode SHORTER than 32 bytes
+                # would truncate to a sub-32-byte `pushbytes` and silently corrupt
+                # the constant — reject it so the parser handles the original line.
+                new = f"pushbytes 0x{raw[:32].hex()}" if len(raw) >= 32 else None
             except Exception:
                 new = None
         elif op == "method":
