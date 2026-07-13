@@ -217,6 +217,28 @@ def test_speculative_tier_is_additive_and_sound(tmp_path):
     assert any(x.in_bounds_speculative for x in spec)
 
 
+def test_abi_declared_arg_length_proves_speculative(tmp_path):
+    """An ABI router pins the method at the selector branch; a fixed-offset read of
+    a declared 32-byte `address` arg is in-bounds under the DECLARED signature
+    (well-formed ABI) — a speculative proof from the source `method "sig"` info,
+    which the encoded-type recovery (types decode outputs, not source args) can't
+    give. Optional: absent the method info there's no seed."""
+    teal = ("#pragma version 10\n"
+            "txna ApplicationArgs 0\n"
+            'method "transfer(address,uint64)void"\n'
+            "==\nbnz do\nint 1\nreturn\n"
+            "do:\n"
+            "txna ApplicationArgs 1\nextract 0 32\npop\nint 1\nreturn\n")
+    (tmp_path / "p.teal").write_text(teal)
+    sound = check_bounds(SSAProgram(str(tmp_path)), speculative=False)
+    spec = check_bounds(SSAProgram(str(tmp_path)), speculative=True)
+    ex_sound = [x for x in sound if x.op == "extract"][0]
+    ex_spec = [x for x in spec if x.op == "extract"][0]
+    assert not ex_sound.in_bounds                    # unprovable without the assumption
+    assert ex_spec.in_bounds_speculative             # provable via the declared arg type
+    assert not ex_spec.in_bounds                     # still NOT a sound proof
+
+
 def test_speculative_off_by_default(tmp_path):
     """Default mode is sound-only: no speculative verdicts, no lift required."""
     s = _sites(tmp_path, _LEN_FLOOR)                 # any sound-provable contract

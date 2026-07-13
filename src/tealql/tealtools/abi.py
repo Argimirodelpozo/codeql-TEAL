@@ -29,6 +29,15 @@ from typing import Optional
 # `pushbytess` selector both match, so one scan over the raw source finds all.
 _METHOD_RE = re.compile(r'method\s+"([^"]+)"')
 
+#: ARC-4 TRANSACTION arg types — passed as preceding GROUP txns, so they carry NO
+#: ApplicationArgs bytes and SHIFT the ApplicationArgs index of the args after them.
+TXN_ARG_TYPES = frozenset({
+    "txn", "pay", "keyreg", "acfg", "axfer", "afrz", "appl",
+})
+#: ARC-4 REFERENCE arg types — encoded as a uint8 index into the txn's foreign
+#: array, so they DO occupy one ApplicationArgs byte (unlike transaction args).
+REFERENCE_ARG_TYPES = frozenset({"account", "asset", "application"})
+
 
 @dataclass(frozen=True)
 class AbiMethod:
@@ -44,6 +53,27 @@ class AbiMethod:
     def selector_hex(self) -> str:
         """``0x``-prefixed 4-byte selector, matching a ``pushbytes 0x..`` operand."""
         return "0x" + self.selector.hex()
+
+    @property
+    def app_arg_types(self) -> tuple:
+        """The arg types carried in ``ApplicationArgs``, in order — transaction-type
+        args (``pay`` / ``axfer`` / …) are dropped (they ride as group txns, not
+        encoded bytes). ``ApplicationArgs[k]`` (1-based) is ``app_arg_types[k-1]``,
+        except that ARC-4 packs the 16th-onward encoded args into a tuple at index 15."""
+        return tuple(a for a in self.arg_types if a not in TXN_ARG_TYPES)
+
+    def app_arg_byte_length(self, n: int) -> Optional[int]:
+        """The ARC-4 encoded byte length of ``txna ApplicationArgs n`` (``n`` >= 1,
+        the selector is index 0), or ``None`` when unknown/dynamic/ambiguous.
+        Conservatively declines the packed 15th slot (>15 encoded args). This is
+        the WELL-FORMED-ABI byte length: the AVM router only checks the selector,
+        not arg lengths, so a consumer must treat it as a speculative assumption."""
+        args = self.app_arg_types
+        if n < 1 or n - 1 >= len(args):
+            return None
+        if len(args) > 15 and n >= 15:            # packed-tuple slot — ambiguous
+            return None
+        return abi_type_byte_length(args[n - 1])
 
 
 def method_selector(signature: str) -> bytes:
@@ -101,11 +131,12 @@ def parse_signature(signature: str) -> Optional[AbiMethod]:
 
 def abi_type_byte_length(t: str) -> Optional[int]:
     """The ARC-4 ENCODED byte length of a fixed-size type, or ``None`` when it is
-    dynamic (``string`` / ``byte[]`` / ``T[]``) or a reference/transaction type
-    (``account`` / ``asset`` / ``application`` / ``pay`` / ``appl`` …) that isn't
-    packed into the ApplicationArgs bytes at all. Consecutive ``bool`` are
-    bit-packed (ARC-4), so tuples/arrays account for that. Sound: never returns a
-    wrong length — only an exact one or ``None``."""
+    dynamic (``string`` / ``byte[]`` / ``T[]``) or a TRANSACTION type
+    (``pay`` / ``axfer`` / …, which rides as a group txn — no encoded bytes).
+    REFERENCE types (``account`` / ``asset`` / ``application``) encode as a
+    ``uint8`` index -> 1 byte. Consecutive ``bool`` are bit-packed (ARC-4), so
+    tuples/arrays account for that. Never returns a wrong length — only an exact
+    one or ``None``."""
     t = t.strip()
     if t == "bool":
         return 1
@@ -113,6 +144,10 @@ def abi_type_byte_length(t: str) -> Optional[int]:
         return 1
     if t == "address":
         return 32
+    if t in REFERENCE_ARG_TYPES:                  # account/asset/application -> uint8 index
+        return 1
+    if t in TXN_ARG_TYPES:                         # a group txn, not an encoded value
+        return None
     m = re.fullmatch(r"uint(\d+)", t)
     if m:
         n = int(m.group(1))

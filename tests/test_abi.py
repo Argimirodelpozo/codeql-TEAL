@@ -67,10 +67,39 @@ class TestByteLength:
         assert abi_type_byte_length("(bool,bool,bool)") == 1       # 3 bits -> 1 byte
         assert abi_type_byte_length("(bool,uint64,bool)") == 10    # 1 + 8 + 1
 
-    def test_dynamic_and_reference_are_none(self):
-        for t in ("string", "byte[]", "uint64[]", "account", "asset",
-                  "application", "pay", "(uint64,byte[])"):
+    def test_dynamic_and_transaction_are_none(self):
+        for t in ("string", "byte[]", "uint64[]", "pay", "axfer", "appl",
+                  "(uint64,byte[])"):
             assert abi_type_byte_length(t) is None, t
+
+    def test_reference_types_are_uint8(self):
+        # account/asset/application encode as a uint8 foreign-array index.
+        for t in ("account", "asset", "application"):
+            assert abi_type_byte_length(t) == 1, t
+
+
+class TestAppArgMapping:
+    def test_direct_mapping(self):
+        m = parse_signature("store(address,uint64,uint64)void")
+        # ApplicationArgs[0]=selector; [1]=address(32), [2]=uint64(8), [3]=uint64(8)
+        assert m.app_arg_byte_length(1) == 32
+        assert m.app_arg_byte_length(2) == 8
+        assert m.app_arg_byte_length(3) == 8
+        assert m.app_arg_byte_length(0) is None      # the selector, not an arg
+        assert m.app_arg_byte_length(4) is None      # past the args
+
+    def test_transaction_args_shift_the_index(self):
+        # a `pay` arg rides as a group txn, so it does NOT consume an ApplicationArg:
+        # ApplicationArgs[1] is the uint64, not the payment.
+        m = parse_signature("deposit(pay,uint64)void")
+        assert m.app_arg_types == ("uint64",)
+        assert m.app_arg_byte_length(1) == 8
+
+    def test_reference_arg_occupies_a_slot(self):
+        m = parse_signature("optin(account,uint64)void")
+        assert m.app_arg_types == ("account", "uint64")
+        assert m.app_arg_byte_length(1) == 1         # account -> uint8 index
+        assert m.app_arg_byte_length(2) == 8
 
 
 class TestExtract:

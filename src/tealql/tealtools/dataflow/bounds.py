@@ -124,6 +124,73 @@ def _seed_all(rel, sites) -> None:
         rel.seed_range(base)                   # bridge the offset/count interval
 
 
+def _abi_arg_lengths(prog) -> dict:
+    """``{ssa_key: (byte_length, confident)}`` for ``txna ApplicationArgs N``
+    buffers whose ABI method — pinned by the router selector holding at the read's
+    block — DECLARES a fixed-size arg. An OPTIONAL high-level enrichment: ``{}``
+    when the source carries no ``method "sig"`` info (raw disassembled bytecode),
+    so bounds degrades cleanly to the recovery-only speculative tier. The declared
+    arg length is the WELL-FORMED-ABI assumption (the AVM router checks only the
+    selector, not arg lengths), hence speculative — but it types the SOURCE
+    ApplicationArgs directly, where the encoded-type recovery could not."""
+    src_path = str(getattr(prog, "source_path", "") or "")
+    if not src_path:
+        return {}
+    try:
+        return _abi_arg_lengths_impl(prog, src_path)
+    except Exception:                          # an optional layer must never break bounds
+        return {}
+
+
+def _abi_arg_lengths_impl(prog, src_path: str) -> dict:
+    from pathlib import Path
+    from ..abi import extract_method_table
+    from ..path_predicates import PathPredicateAnalysis
+    from ..ssa.operands import const_bytes
+
+    p = Path(src_path)
+    if p.is_dir():
+        text = "\n".join(f.read_text(errors="ignore")
+                         for f in sorted(p.rglob("*.teal")))
+    elif p.exists():
+        text = p.read_text(errors="ignore")
+    else:
+        return {}
+    table = extract_method_table(text)
+    if not table:                              # availability gate
+        return {}
+    pp = PathPredicateAnalysis(prog)
+
+    def _method_at(block):
+        for bc in pp.bb_preds.get(block, ()):
+            if bc.kind == "eq" and bc.args and const_bytes(bc.args[0]) in table:
+                return table[const_bytes(bc.args[0])]
+        return None
+
+    out: dict = {}
+    for a in prog.assignments:
+        if a.op != "txna" or not a.outputs:
+            continue
+        toks = (a.immediates or "").split()
+        if len(toks) != 2 or toks[0] != "ApplicationArgs":
+            continue
+        try:
+            n = int(toks[1])
+        except ValueError:
+            continue
+        if n < 1:                              # index 0 is the selector, not an arg
+            continue
+        method = _method_at(a.basic_block)
+        if method is None:
+            continue
+        bl = method.app_arg_byte_length(n)
+        if bl is not None:
+            k = getattr(a.outputs[0], "_key", None)
+            if k is not None:
+                out[k()] = (bl, True)
+    return out
+
+
 def check_bounds(prog: SSAProgram, *, run_passes: bool = True,
                  speculative: bool = False) -> list:
     """Every byte-access site with its in-bounds verdict. Runs the analysis
@@ -149,7 +216,11 @@ def check_bounds(prog: SSAProgram, *, run_passes: bool = True,
     rel_spec = None
     if speculative:
         from ..lift import to_puya_ir
-        fixed = to_puya_ir.recovered_min_lengths(prog)
+        # Two speculative length sources, both LOWER bounds (never taint proven_oob):
+        # the encoded-type recovery, and — additively, when the source carries it —
+        # declared ABI arg lengths from `method "sig"` info (types the source
+        # ApplicationArgs directly; takes precedence as the DECLARED contract).
+        fixed = {**to_puya_ir.recovered_min_lengths(prog), **_abi_arg_lengths(prog)}
         if fixed:
             rel_spec = LengthRelations(prog)
             _seed_all(rel_spec, sites)
