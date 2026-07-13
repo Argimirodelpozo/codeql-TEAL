@@ -48,6 +48,9 @@ class AbiMethod:
     return_type: str            # "void" or an ABI type
     signature: str              # the canonical signature text
     selector: bytes             # sha512_256(signature)[:4]
+    # Argument names, in declaration order, when a richer source (an ARC-56 spec)
+    # carries them — empty for signatures recovered from bare `method "sig"` text.
+    arg_names: tuple = ()
 
     @property
     def selector_hex(self) -> str:

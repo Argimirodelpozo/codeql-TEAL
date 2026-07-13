@@ -156,6 +156,67 @@ def test_cli_methods_json(tmp_path, capsys):
     assert data[0]["arg_byte_lengths"] == [8]
 
 
+_ARC56_SPEC = {
+    "name": "Vault",
+    "structs": {"Rec": [{"name": "a", "type": "uint64"},
+                        {"name": "b", "type": "address"}]},
+    "methods": [
+        {"name": "store", "args": [{"type": "Rec", "name": "rec"}],
+         "returns": {"type": "void"}},
+        {"name": "peek", "args": [{"type": "uint64", "name": "i"}],
+         "returns": {"type": "address"}},
+    ],
+    "state": {"keys": {"global": {"total": {"keyType": "AVMString",
+                                            "valueType": "uint64", "key": "dA=="}}}},
+}
+
+
+def _write_spec(tmp_path):
+    p = tmp_path / "app.arc56.json"
+    p.write_text(json.dumps(_ARC56_SPEC))
+    return p
+
+
+def test_cli_arc56_dump(tmp_path, capsys):
+    rc = main(["arc56", str(_write_spec(tmp_path))])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "contract: Vault" in out
+    assert "Rec = (uint64,address)" in out
+    assert "store(rec: (uint64,address)[40B]) -> void" in out
+    assert "peek(i: uint64[8B]) -> address" in out
+    assert "total: AVMString -> uint64" in out
+
+
+def test_cli_arc56_json(tmp_path, capsys):
+    main(["arc56", str(_write_spec(tmp_path)), "--json"])
+    data = json.loads(capsys.readouterr().out)
+    assert data["name"] == "Vault"
+    names = {m["name"]: m for m in data["methods"]}
+    assert names["store"]["arg_types"] == ["(uint64,address)"]
+    assert names["store"]["arg_names"] == ["rec"]
+    assert data["state"]["global"][0]["value_type"] == "uint64"
+
+
+def test_cli_arc56_bad_spec_exit2(tmp_path, capsys):
+    bad = tmp_path / "bad.json"
+    bad.write_text("{not json")
+    assert main(["arc56", str(bad)]) == 2
+    assert "could not read ARC-56 spec" in capsys.readouterr().err
+
+
+def test_cli_methods_arc56_override(tmp_path, capsys):
+    # a raw .teal (no `method` text) + an ARC-56 spec: the spec is authoritative,
+    # so the table comes from it (with struct-resolved types + arg names).
+    (tmp_path / "p.teal").write_text("#pragma version 10\nint 1\nreturn\n")
+    spec = _write_spec(tmp_path)
+    rc = main(["methods", str(tmp_path / "p.teal"), "--arc56", str(spec)])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "store(rec: (uint64,address)[40B]) -> void" in out
+    assert "peek(i: uint64[8B]) -> address" in out
+
+
 def test_cli_json_auth_shape(capsys):
     main(["auth", str(VULN_DB), "--json"])
     data = json.loads(capsys.readouterr().out)

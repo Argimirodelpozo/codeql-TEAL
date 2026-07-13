@@ -124,39 +124,44 @@ def _seed_all(rel, sites) -> None:
         rel.seed_range(base)                   # bridge the offset/count interval
 
 
-def _abi_arg_lengths(prog) -> dict:
+def _abi_arg_lengths(prog, method_table: "dict | None" = None) -> dict:
     """``{ssa_key: (byte_length, confident)}`` for ``txna ApplicationArgs N``
     buffers whose ABI method — pinned by the router selector holding at the read's
     block — DECLARES a fixed-size arg. An OPTIONAL high-level enrichment: ``{}``
-    when the source carries no ``method "sig"`` info (raw disassembled bytecode),
-    so bounds degrades cleanly to the recovery-only speculative tier. The declared
-    arg length is the WELL-FORMED-ABI assumption (the AVM router checks only the
-    selector, not arg lengths), hence speculative — but it types the SOURCE
-    ApplicationArgs directly, where the encoded-type recovery could not."""
-    src_path = str(getattr(prog, "source_path", "") or "")
-    if not src_path:
-        return {}
+    when neither an ARC-56 spec nor source ``method "sig"`` info is available (raw
+    disassembled bytecode), so bounds degrades cleanly to the recovery-only
+    speculative tier. The declared arg length is the WELL-FORMED-ABI assumption
+    (the AVM router checks only the selector, not arg lengths), hence speculative —
+    but it types the SOURCE ApplicationArgs directly, where the encoded-type
+    recovery could not. ``method_table`` (from a provided ARC-56 spec) overrides
+    the source-text table when given — the authoritative, struct-resolved types."""
     try:
-        return _abi_arg_lengths_impl(prog, src_path)
+        return _abi_arg_lengths_impl(prog, method_table)
     except Exception:                          # an optional layer must never break bounds
         return {}
 
 
-def _abi_arg_lengths_impl(prog, src_path: str) -> dict:
+def _abi_arg_lengths_impl(prog, method_table: "dict | None" = None) -> dict:
     from pathlib import Path
     from ..abi import extract_method_table
     from ..path_predicates import PathPredicateAnalysis
     from ..ssa.operands import const_bytes
 
-    p = Path(src_path)
-    if p.is_dir():
-        text = "\n".join(f.read_text(errors="ignore")
-                         for f in sorted(p.rglob("*.teal")))
-    elif p.exists():
-        text = p.read_text(errors="ignore")
+    if method_table:                           # authoritative ARC-56 spec wins
+        table = method_table
     else:
-        return {}
-    table = extract_method_table(text)
+        src_path = str(getattr(prog, "source_path", "") or "")
+        if not src_path:
+            return {}
+        p = Path(src_path)
+        if p.is_dir():
+            text = "\n".join(f.read_text(errors="ignore")
+                             for f in sorted(p.rglob("*.teal")))
+        elif p.exists():
+            text = p.read_text(errors="ignore")
+        else:
+            return {}
+        table = extract_method_table(text)
     if not table:                              # availability gate
         return {}
     pp = PathPredicateAnalysis(prog)
@@ -192,7 +197,7 @@ def _abi_arg_lengths_impl(prog, src_path: str) -> dict:
 
 
 def check_bounds(prog: SSAProgram, *, run_passes: bool = True,
-                 speculative: bool = False) -> list:
+                 speculative: bool = False, arc56=None) -> list:
     """Every byte-access site with its in-bounds verdict. Runs the analysis
     pipeline first (idempotent) so ranges, byte-lengths and ``len`` equalities
     are populated, then asks the relational domain at each site.
@@ -202,7 +207,13 @@ def check_bounds(prog: SSAProgram, *, run_passes: bool = True,
     bound) — an ASSUMPTION about well-formed ABI input, reported as the distinct
     ``in_bounds_speculative`` verdict (never merged into the sound ``in_bounds``,
     never affecting ``proven_oob``). Needs the lift (puya); degrades to sound-only
-    if the contract doesn't lower."""
+    if the contract doesn't lower.
+
+    ``arc56`` (an :class:`tealql.tealtools.arc56.Arc56Spec`, or a path to one) is an
+    OPTIONAL authoritative source of ABI arg types for the speculative tier — its
+    struct-resolved declared arg lengths type the source ApplicationArgs directly,
+    superseding the source-text ``method "sig"`` table. Ignored unless
+    ``speculative``; degrades cleanly to the source table when absent/unparseable."""
     if run_passes:
         run_all_passes(prog)
 
@@ -220,7 +231,13 @@ def check_bounds(prog: SSAProgram, *, run_passes: bool = True,
         # the encoded-type recovery, and — additively, when the source carries it —
         # declared ABI arg lengths from `method "sig"` info (types the source
         # ApplicationArgs directly; takes precedence as the DECLARED contract).
-        fixed = {**to_puya_ir.recovered_min_lengths(prog), **_abi_arg_lengths(prog)}
+        mtable = None
+        if arc56 is not None:
+            from ..arc56 import Arc56Spec, load_optional
+            spec = arc56 if isinstance(arc56, Arc56Spec) else load_optional(arc56)
+            mtable = spec.method_table() if spec is not None else None
+        fixed = {**to_puya_ir.recovered_min_lengths(prog),
+                 **_abi_arg_lengths(prog, mtable)}
         if fixed:
             rel_spec = LengthRelations(prog)
             _seed_all(rel_spec, sites)

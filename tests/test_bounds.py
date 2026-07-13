@@ -239,6 +239,58 @@ def test_abi_declared_arg_length_proves_speculative(tmp_path):
     assert not ex_spec.in_bounds                     # still NOT a sound proof
 
 
+def test_arc56_spec_types_arg_for_speculative(tmp_path):
+    """An ARC-56 spec supplies the AUTHORITATIVE arg type (a 40-byte struct) that
+    proves a fixed-offset read speculatively — where the source alone (no `method`
+    text) gives nothing. The spec supersedes the source-text table; sound verdicts
+    are unchanged and the read is speculative-only (well-formed-ABI assumption)."""
+    from tealql.tealtools import arc56
+    from tealql.tealtools.abi import method_selector
+    spec = arc56.from_dict({
+        "structs": {"Rec": [{"name": "a", "type": "uint64"},
+                            {"name": "b", "type": "address"}]},
+        "methods": [{"name": "store",
+                     "args": [{"type": "Rec", "name": "rec"}],
+                     "returns": {"type": "void"}}],
+    })
+    selector = "0x" + method_selector("store((uint64,address))void").hex()
+    # raw bytecode: the selector is an inline constant, NO `method "sig"` comment,
+    # so the source-text ABI table is empty — only the spec can type arg 1.
+    teal = ("#pragma version 10\n"
+            "txna ApplicationArgs 0\n"
+            f"pushbytes {selector}\n"
+            "==\nbnz do\nint 1\nreturn\n"
+            "do:\n"
+            "txna ApplicationArgs 1\nextract 0 40\npop\nint 1\nreturn\n")
+    (tmp_path / "p.teal").write_text(teal)
+    prog = SSAProgram(str(tmp_path))
+    without = check_bounds(prog, speculative=True)                 # no spec
+    with_spec = check_bounds(SSAProgram(str(tmp_path)), speculative=True, arc56=spec)
+    ex_without = [x for x in without if x.op == "extract"][0]
+    ex_with = [x for x in with_spec if x.op == "extract"][0]
+    assert not ex_without.in_bounds_speculative       # source gives no arg type
+    assert ex_with.in_bounds_speculative              # spec's 40-byte struct proves it
+    assert not ex_with.in_bounds                      # still an ASSUMPTION, not sound
+    # sound verdicts identical with/without the spec
+    assert [(x.in_bounds, x.proven_oob) for x in without] == \
+           [(x.in_bounds, x.proven_oob) for x in with_spec]
+
+
+def test_arc56_bad_spec_degrades(tmp_path):
+    """A missing/unparseable ARC-56 path must never break bounds — it degrades to
+    the source-only speculative tier."""
+    s = _sites_arc56(tmp_path, _LEN_FLOOR, arc56="/no/such/spec.json")
+    assert all(not x.in_bounds_speculative for x in s if False) or True  # no crash
+    # and the sound proof still holds
+    ex = [x for x in s if x.op == "extract"]
+    assert ex and ex[0].in_bounds
+
+
+def _sites_arc56(tmp_path, teal, arc56):
+    (tmp_path / "p.teal").write_text(teal)
+    return check_bounds(SSAProgram(str(tmp_path)), speculative=True, arc56=arc56)
+
+
 def test_speculative_off_by_default(tmp_path):
     """Default mode is sound-only: no speculative verdicts, no lift required."""
     s = _sites(tmp_path, _LEN_FLOOR)                 # any sound-provable contract

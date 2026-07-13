@@ -343,26 +343,43 @@ def _cmd_storage_schema(args) -> int:
     return 0
 
 
+def _fmt_abi_arg(t: str, name: str = "") -> str:
+    """``name: type[NB]`` (byte length when fixed), or just ``type[NB]`` when the
+    arg has no declared name (source-extracted signatures carry no names)."""
+    from tealql.tealtools.abi import abi_type_byte_length
+    n = abi_type_byte_length(t)
+    core = f"{t}[{n}B]" if n is not None else t
+    return f"{name}: {core}" if name else core
+
+
 def _cmd_methods(args) -> int:
-    """Recover the ABI method table from the source's high-level info — the
-    ``method "sig"`` pseudo-ops / ``// method "sig"`` selector comments a compiler
-    leaves behind. Prints each method's selector, name, arg types (with declared
-    byte length) and return type. Nothing is reverse-engineered from the hash; the
-    selector is recomputed forward and matches. OPTIONAL: prints ``(no ABI method
-    info)`` for raw disassembled bytecode that carries no such text. Exit 0."""
-    from tealql.tealtools.abi import extract_method_table, abi_type_byte_length
-    rows = []
-    for prog, name in _load_programs(args):
-        src = Path(getattr(prog, "source_path", "") or "")
-        label = name or (src.name if src.name else "<program>")
-        text = src.read_text(errors="ignore") if src.exists() else ""
-        for m in extract_method_table(text).values():
-            rows.append((label, m))
+    """Recover the ABI method table from HIGH-LEVEL info — an ARC-56 app spec when
+    ``--arc56`` is given (authoritative: struct-resolved types + arg names), else
+    the source's ``method "sig"`` pseudo-ops / ``// method "sig"`` selector comments
+    a compiler leaves behind. Prints each method's selector, name, arg types (with
+    declared byte length) and return type. Nothing is reverse-engineered from the
+    hash; the selector is recomputed forward and matches. OPTIONAL: prints ``(no ABI
+    method info)`` for raw bytecode with no such text and no spec. Exit 0."""
+    from tealql.tealtools.abi import abi_type_byte_length, extract_method_table
+    rows = []   # (label, AbiMethod)
+    if getattr(args, "arc56", None):
+        from tealql.tealtools import arc56 as _arc56
+        spec = _arc56.load(args.arc56)          # explicit path -> surface load errors
+        label = spec.name or Path(args.arc56).name
+        rows = [(label, m) for m in spec.methods]
+    else:
+        for prog, name in _load_programs(args):
+            src = Path(getattr(prog, "source_path", "") or "")
+            label = name or (src.name if src.name else "<program>")
+            text = src.read_text(errors="ignore") if src.exists() else ""
+            for m in extract_method_table(text).values():
+                rows.append((label, m))
     rows.sort(key=lambda r: (r[0], r[1].name))
     if args.json_out:
         print(_json.dumps([
             {"file": lbl, "selector": m.selector_hex, "name": m.name,
-             "arg_types": list(m.arg_types), "return_type": m.return_type,
+             "arg_types": list(m.arg_types), "arg_names": list(m.arg_names),
+             "return_type": m.return_type,
              "arg_byte_lengths": [abi_type_byte_length(a) for a in m.arg_types],
              "signature": m.signature}
             for lbl, m in rows], indent=2))
@@ -371,10 +388,65 @@ def _cmd_methods(args) -> int:
         print("(no ABI method info in source)")
         return 0
     for lbl, m in rows:
-        args_str = ", ".join(
-            f"{a}[{n}B]" if (n := abi_type_byte_length(a)) is not None else a
-            for a in m.arg_types)
+        names = m.arg_names or ("",) * len(m.arg_types)
+        args_str = ", ".join(_fmt_abi_arg(a, n) for a, n in zip(m.arg_types, names))
         print(f"  {lbl}: {m.selector_hex}  {m.name}({args_str}) -> {m.return_type}")
+    return 0
+
+
+def _cmd_arc56(args) -> int:
+    """Ingest an ARC-56 app-spec JSON and dump the high-level info it declares —
+    methods (struct-resolved arg/return types + names), and global/local/box state
+    keys and maps with their value types. The authoritative, OPTIONAL source of ABI
+    typing the analysis consumes (bounds arg-typing, storage schema, method names in
+    findings). Exit 0; exit 2 on a missing / non-JSON spec."""
+    from tealql.tealtools import arc56 as _arc56
+    try:
+        spec = _arc56.load(args.spec)
+    except Exception as e:
+        print(f"could not read ARC-56 spec {args.spec}: {e}", file=sys.stderr)
+        return 2
+
+    def _state(entries):
+        return [
+            {"name": s.name, "value_type": s.value_type, "key_type": s.key_type,
+             "is_map": s.is_map,
+             **({"prefix_b64": s.prefix_b64} if s.is_map else {"key_b64": s.key_b64})}
+            for s in entries
+        ]
+
+    doc = {
+        "name": spec.name,
+        "structs": spec.structs,
+        "methods": [
+            {"selector": m.selector_hex, "name": m.name,
+             "arg_types": list(m.arg_types), "arg_names": list(m.arg_names),
+             "return_type": m.return_type, "signature": m.signature}
+            for m in spec.methods],
+        "state": {"global": _state(spec.global_state),
+                  "local": _state(spec.local_state),
+                  "box": _state(spec.box_state)},
+    }
+    if args.json_out:
+        print(_json.dumps(doc, indent=2))
+        return 0
+    print(f"contract: {spec.name or '<unnamed>'}")
+    if spec.structs:
+        print("structs:")
+        for nm, tt in sorted(spec.structs.items()):
+            print(f"  {nm} = {tt}")
+    print(f"methods ({len(spec.methods)}):")
+    for m in sorted(spec.methods, key=lambda x: x.name):
+        names = m.arg_names or ("",) * len(m.arg_types)
+        args_str = ", ".join(_fmt_abi_arg(a, n) for a, n in zip(m.arg_types, names))
+        print(f"  {m.selector_hex}  {m.name}({args_str}) -> {m.return_type}")
+    for scope, entries in (("global", spec.global_state), ("local", spec.local_state),
+                           ("box", spec.box_state)):
+        if entries:
+            print(f"{scope} state ({len(entries)}):")
+            for s in sorted(entries, key=lambda x: x.name):
+                kind = "map" if s.is_map else "key"
+                print(f"  {kind} {s.name}: {s.key_type or '?'} -> {s.value_type or '?'}")
     return 0
 
 
@@ -725,9 +797,23 @@ def build_parser() -> argparse.ArgumentParser:
         help="which box-dataflow analysis to run",
     )
 
-    add("methods",
+    methods_p = add("methods",
         "recover the ABI method table (name / args / selector) from source "
-        "method signatures — optional, empty on raw bytecode", _cmd_methods)
+        "method signatures or an --arc56 spec — optional, empty on raw bytecode",
+        _cmd_methods)
+    methods_p.add_argument(
+        "--arc56", default=None, metavar="SPEC.json",
+        help="use an ARC-56 app spec as the AUTHORITATIVE method table "
+             "(struct-resolved arg/return types + arg names)")
+
+    arc56_p = sub.add_parser(
+        "arc56",
+        help="ingest an ARC-56 app spec and dump its methods + state schema "
+             "(the authoritative, optional high-level typing source)")
+    arc56_p.add_argument("spec", help="path to an ARC-56 app-spec JSON file")
+    _add_common_flags(arc56_p)
+    arc56_p.set_defaults(handler=_cmd_arc56)
+
     add("itxn-report", "inner-transaction report", _cmd_itxn_report)
     add("abi-audit",
         "ABI type-driven audit: caller-supplied arc4.Address paid to a "
