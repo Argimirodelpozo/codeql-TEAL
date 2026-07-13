@@ -343,6 +343,41 @@ def _cmd_storage_schema(args) -> int:
     return 0
 
 
+def _cmd_methods(args) -> int:
+    """Recover the ABI method table from the source's high-level info — the
+    ``method "sig"`` pseudo-ops / ``// method "sig"`` selector comments a compiler
+    leaves behind. Prints each method's selector, name, arg types (with declared
+    byte length) and return type. Nothing is reverse-engineered from the hash; the
+    selector is recomputed forward and matches. OPTIONAL: prints ``(no ABI method
+    info)`` for raw disassembled bytecode that carries no such text. Exit 0."""
+    from tealql.tealtools.abi import extract_method_table, abi_type_byte_length
+    rows = []
+    for prog, name in _load_programs(args):
+        src = Path(getattr(prog, "source_path", "") or "")
+        label = name or (src.name if src.name else "<program>")
+        text = src.read_text(errors="ignore") if src.exists() else ""
+        for m in extract_method_table(text).values():
+            rows.append((label, m))
+    rows.sort(key=lambda r: (r[0], r[1].name))
+    if args.json_out:
+        print(_json.dumps([
+            {"file": lbl, "selector": m.selector_hex, "name": m.name,
+             "arg_types": list(m.arg_types), "return_type": m.return_type,
+             "arg_byte_lengths": [abi_type_byte_length(a) for a in m.arg_types],
+             "signature": m.signature}
+            for lbl, m in rows], indent=2))
+        return 0
+    if not rows:
+        print("(no ABI method info in source)")
+        return 0
+    for lbl, m in rows:
+        args_str = ", ".join(
+            f"{a}[{n}B]" if (n := abi_type_byte_length(a)) is not None else a
+            for a in m.arg_types)
+        print(f"  {lbl}: {m.selector_hex}  {m.name}({args_str}) -> {m.return_type}")
+    return 0
+
+
 def _cmd_itxn_report(args) -> int:
     from tealql.tealtools.inner_txn_report import InnerTxnReport
     r = InnerTxnReport(_load(args))
@@ -690,6 +725,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="which box-dataflow analysis to run",
     )
 
+    add("methods",
+        "recover the ABI method table (name / args / selector) from source "
+        "method signatures — optional, empty on raw bytecode", _cmd_methods)
     add("itxn-report", "inner-transaction report", _cmd_itxn_report)
     add("abi-audit",
         "ABI type-driven audit: caller-supplied arc4.Address paid to a "

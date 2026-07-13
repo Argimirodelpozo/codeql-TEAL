@@ -125,6 +125,37 @@ def test_cli_exit_one_on_findings(capsys):
     assert "prog.teal" in out
 
 
+def test_cli_methods_recovers_table(tmp_path, capsys):
+    (tmp_path / "p.teal").write_text(
+        '#pragma version 10\n'
+        'txna ApplicationArgs 0\n'
+        'method "transfer(address,uint64)void"\n'
+        '==\nbnz do\nint 1\nreturn\ndo:\nint 1\nreturn\n')
+    rc = main(["methods", str(tmp_path)])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "transfer" in out and "address" in out
+    from tealql.tealtools.abi import method_selector
+    assert method_selector("transfer(address,uint64)void").hex() in out   # forward selector
+
+
+def test_cli_methods_empty_on_raw_bytecode(tmp_path, capsys):
+    (tmp_path / "p.teal").write_text(
+        "#pragma version 8\npushbytes 0x11223344\nint 1\nreturn\n")
+    rc = main(["methods", str(tmp_path)])
+    assert rc == 0
+    assert "no ABI method info" in capsys.readouterr().out
+
+
+def test_cli_methods_json(tmp_path, capsys):
+    (tmp_path / "p.teal").write_text(
+        '#pragma version 10\nmethod "foo(uint64)void"\nint 1\nreturn\n')
+    main(["methods", str(tmp_path), "--json"])
+    data = json.loads(capsys.readouterr().out)
+    assert data[0]["name"] == "foo"
+    assert data[0]["arg_byte_lengths"] == [8]
+
+
 def test_cli_json_auth_shape(capsys):
     main(["auth", str(VULN_DB), "--json"])
     data = json.loads(capsys.readouterr().out)

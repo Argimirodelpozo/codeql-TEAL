@@ -196,3 +196,91 @@ def extract_method_table(source: str) -> dict:
         if m is not None:
             table[m.selector_hex] = m
     return table
+
+
+# --- source-line attribution: which ABI method a finding sits in -------------
+
+# A label definition line: ``foo:`` / ``main_get_address_route@14:`` at col 0.
+_LABEL_DEF_RE = re.compile(r"^([A-Za-z_][\w@]*):\s*$")
+#: Ops whose operands are a POSITIONAL list of branch targets, paired 1:1 with the
+#: selectors of the immediately-preceding ``pushbytess ... // method ...`` line.
+_DISPATCH_OPS = ("match", "switch")
+#: Single-selector branch: ``pushbytes SEL // method "sig"`` then ``==`` then one of these.
+_COND_BRANCH_OPS = ("bnz", "bz", "b")
+
+
+def method_line_ranges(source: str):
+    """``[(start_line, end_line, AbiMethod), ...]`` — the source-line span each ABI
+    method OWNS, from the router's selector→target-label pairing (``match`` /
+    ``switch`` positional targets, or a single ``pushbytes SEL // method`` followed
+    by a conditional branch). A method's span runs from its entry label to just
+    before the next *boundary* label (another method entry or a ``callsub`` target),
+    so internal branch blocks stay with the method while shared helper subroutines
+    do not. Spans are disjoint; 1-based inclusive. ``[]`` when the source has no
+    ``// method`` dispatch info — the OPTIONAL enrichment simply contributes
+    nothing. Source-text only (no CFG), and conservative: an unrecognised dispatch
+    shape yields no attribution rather than a wrong one."""
+    lines = source.splitlines()
+
+    label_order = []                       # (line_1based, label) in file order
+    for i, ln in enumerate(lines, 1):
+        m = _LABEL_DEF_RE.match(ln)
+        if m:
+            label_order.append((i, m.group(1)))
+
+    boundaries = set()                     # labels that END a preceding method span
+    for ln in lines:                       # every callsub target is a subroutine start
+        toks = ln.strip().split()
+        if len(toks) >= 2 and toks[0] == "callsub":
+            boundaries.add(toks[1])
+
+    entry_method = {}                      # target_label -> AbiMethod
+    for i, ln in enumerate(lines):
+        if "// method" not in ln:
+            continue
+        sigs = _METHOD_RE.findall(ln)      # ordered, aligned with the target labels
+        if not sigs:
+            continue
+        for j in range(i, min(i + 8, len(lines))):   # find the dispatch op below
+            toks = lines[j].strip().split()
+            if not toks:
+                continue
+            if toks[0] in _DISPATCH_OPS:
+                for sig, tgt in zip(sigs, toks[1:]):
+                    meth = parse_signature(sig)
+                    if meth is not None:
+                        entry_method.setdefault(tgt, meth)
+                        boundaries.add(tgt)
+                break
+            if len(sigs) == 1 and toks[0] in _COND_BRANCH_OPS and len(toks) >= 2:
+                meth = parse_signature(sigs[0])
+                if meth is not None:
+                    entry_method.setdefault(toks[1], meth)
+                    boundaries.add(toks[1])
+                break
+
+    ranges = []
+    ordered = sorted(label_order)          # by line
+    for idx, (ln_no, lbl) in enumerate(ordered):
+        meth = entry_method.get(lbl)
+        if meth is None:
+            continue
+        end = len(lines)
+        for ln2, lbl2 in ordered[idx + 1:]:
+            if lbl2 in boundaries:
+                end = ln2 - 1
+                break
+        ranges.append((ln_no, end, meth))
+    return ranges
+
+
+def method_at_line(ranges, line: Optional[int]) -> Optional[AbiMethod]:
+    """The :class:`AbiMethod` whose span contains ``line`` (from
+    :func:`method_line_ranges`), or ``None``. Spans are disjoint, so the first
+    hit is the answer."""
+    if line is None:
+        return None
+    for start, end, meth in ranges:
+        if start <= line <= end:
+            return meth
+    return None

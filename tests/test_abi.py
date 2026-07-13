@@ -10,6 +10,7 @@ import glob
 
 from tealql.tealtools.abi import (
     parse_signature, method_selector, abi_type_byte_length, extract_method_table,
+    method_line_ranges, method_at_line,
 )
 
 
@@ -118,6 +119,58 @@ class TestExtract:
         # no `method "..."` text -> optional layer contributes nothing
         assert extract_method_table("#pragma version 8\npushbytes 0x03b5c0af\nint 1\nreturn\n") == {}
 
+class TestLineAttribution:
+    # a minimal `match`-router: two selectors -> two handler labels.
+    _ROUTER = (
+        "#pragma version 10\n"
+        "main:\n"                                                # 2  router glue
+        "    txna ApplicationArgs 0\n"                           # 3
+        '    pushbytess 0x03b5c0af 0x7fad9780 // method "add_one(uint64)uint64", method "get_address()address"\n'  # 4
+        "    match handle_add handle_addr\n"                     # 5
+        "    err\n"                                              # 6
+        "handle_add:\n"                                          # 7
+        "    int 1\n"                                            # 8  <- in add_one
+        "    callsub helper\n"                                   # 9  helper is a boundary
+        "    return\n"                                           # 10
+        "handle_addr:\n"                                         # 11
+        "    global ZeroAddress\n"                               # 12 <- in get_address
+        "    return\n"                                           # 13
+        "helper:\n"                                              # 14 shared sub (no method)
+        "    retsub\n"                                           # 15
+    )
+
+    def test_spans_pair_selector_to_handler(self):
+        r = method_line_ranges(self._ROUTER)
+        named = {m.name: (s, e) for s, e, m in r}
+        assert named["add_one"] == (7, 10)          # handle_add .. before handle_addr
+        assert named["get_address"] == (11, 13)     # handle_addr .. before helper (callsub target)
+
+    def test_method_at_line(self):
+        r = method_line_ranges(self._ROUTER)
+        assert method_at_line(r, 8).name == "add_one"
+        assert method_at_line(r, 12).name == "get_address"
+        assert method_at_line(r, 3) is None         # router glue
+        assert method_at_line(r, 15) is None         # shared helper sub
+        assert method_at_line(r, None) is None
+
+    def test_empty_on_raw_bytecode(self):
+        assert method_line_ranges("#pragma version 8\nint 1\nreturn\n") == []
+
+    def test_real_router_attribution(self):
+        import glob
+        fs = glob.glob("tests/experimental_IR_lift/puya/abi_routing_Reference/src/*.approval.teal")
+        if not fs:
+            import pytest
+            pytest.skip("abi_routing fixture not present")
+        r = method_line_ranges(open(fs[0]).read())
+        names = {m.name for _s, _e, m in r}
+        assert {"method_with_default_args", "get_address", "hello_with_algopy_string"} <= names
+        # spans are disjoint
+        spans = sorted((s, e) for s, e, _m in r)
+        assert all(spans[i][1] < spans[i + 1][0] for i in range(len(spans) - 1))
+
+
+class TestCorpus:
     def test_corpus_selectors_match_source(self):
         # SOUNDNESS on real compiler output: every recovered selector must actually
         # appear as a pushbytes/pushbytess operand in the source (forward hash ==

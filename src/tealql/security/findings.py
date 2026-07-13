@@ -51,6 +51,9 @@ class Finding:
     file: Optional[str] = None
     line: Optional[int] = None
     witness: Optional[dict] = None
+    # The ABI method the finding sits in, recovered from source `method "sig"`
+    # info (OPTIONAL enrichment — None on raw bytecode or non-ABI code).
+    method: Optional[str] = None
     _extra: dict = _field(default_factory=dict)   # detector-specific to_dict keys
 
     def to_dict(self) -> dict[str, Any]:
@@ -63,6 +66,8 @@ class Finding:
             "file": self.file,
             "line": self.line,
         }
+        if self.method:
+            out["method"] = self.method
         if self.witness:
             out["witness"] = self.witness
         if self._extra:
@@ -85,6 +90,13 @@ def _extract_line(violation) -> tuple[Optional[str], Optional[int]]:
     return None, None
 
 
+def violation_line(violation) -> Optional[int]:
+    """The 1-based source line a violation anchors to (see :func:`_extract_line`),
+    or ``None`` (whole-program). Public so the scanner can attribute a finding to
+    an ABI method by line before the :class:`Finding` is built."""
+    return _extract_line(violation)[1]
+
+
 def _extract_witness(violation) -> Optional[dict]:
     """Structured provenance if the violation carries it — the IR taint road's
     ``sources`` (attacker-input origins), else ``None``."""
@@ -101,6 +113,7 @@ def normalize(
     rel_path: "str | Path | None" = None,
     severity: str = "medium",
     confidence: str = "medium",
+    method: Optional[str] = None,
 ) -> Finding:
     """Build a :class:`Finding` from any detector violation.
 
@@ -122,5 +135,6 @@ def normalize(
             extra = {}
     return Finding(
         rule_id=rule_id, message=msg, severity=severity, confidence=confidence,
-        file=file, line=line, witness=_extract_witness(violation), _extra=extra,
+        file=file, line=line, method=method,
+        witness=_extract_witness(violation), _extra=extra,
     )

@@ -76,6 +76,48 @@ def test_whole_program_finding_has_no_line():
         assert f.line is None, "absence-style finding must stay whole-program"
 
 
+def test_findings_carry_abi_method_when_source_has_it(tmp_path):
+    """A finding inside an ABI method body is attributed to that method (source
+    `method "sig"` router info) — an OPTIONAL enrichment on `.method` / format()."""
+    (tmp_path / "p.teal").write_text(
+        "#pragma version 10\n"
+        "main:\n"
+        "    txna ApplicationArgs 0\n"
+        '    pushbytess 0x03b5c0af 0x7fad9780 // method "add_one(uint64)uint64", method "get_address()address"\n'
+        "    match handle_add handle_addr\n"
+        "    err\n"
+        "handle_add:\n"                       # add_one body: an unguarded fund flow
+        "    itxn_begin\n"
+        "    int pay\n    itxn_field TypeEnum\n"
+        "    txna ApplicationArgs 1\n    btoi\n    itxn_field Amount\n"
+        "    txn Sender\n    itxn_field Receiver\n"
+        "    itxn_submit\n"
+        "    int 1\n    return\n"
+        "handle_addr:\n"
+        "    global ZeroAddress\n    return\n")
+    findings = scan(tmp_path)
+    add_findings = [f for f in findings if f.method_name == "add_one"]
+    assert add_findings, "no finding attributed to add_one?"
+    sf = add_findings[0]
+    assert "[add_one]" in sf.format()
+    assert sf.to_finding().method == "add_one"
+    assert sf.to_dict().get("method") == "add_one"
+
+
+def test_no_method_attribution_on_raw_bytecode(tmp_path):
+    """No `method "sig"` info -> no attribution; findings degrade cleanly."""
+    (tmp_path / "p.teal").write_text(
+        "#pragma version 10\n"
+        "itxn_begin\nint pay\nitxn_field TypeEnum\n"
+        "txna ApplicationArgs 0\nbtoi\nitxn_field Amount\n"
+        "txn Sender\nitxn_field Receiver\nitxn_submit\nint 1\nreturn\n")
+    findings = scan(tmp_path)
+    assert findings, "raw fixture produced no findings?"
+    assert all(f.method_name is None for f in findings)
+    assert all("[" not in f.format().split(": ", 1)[0].split("] ", 1)[1]
+               for f in findings)   # no `[method]` chip after the path
+
+
 def test_prose_only_violation_is_whole_program():
     """A violation satisfying none of the structured contract reports as
     whole-program — pretty() prose is deliberately NOT parsed."""

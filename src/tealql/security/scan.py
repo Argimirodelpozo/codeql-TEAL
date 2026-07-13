@@ -49,6 +49,30 @@ from .config import ConfigError, DetectionConfig, glob_match
 logger = logging.getLogger("tealql.security.scan")
 
 
+def _method_ranges_for(teal: Path):
+    """ABI method line-spans for a ``.teal`` file (source ``method "sig"`` router
+    info), or ``[]``. Fully defensive: an OPTIONAL enrichment must never break a
+    scan, so any read/parse failure degrades to no attribution."""
+    try:
+        from tealql.tealtools.abi import method_line_ranges
+        return method_line_ranges(Path(teal).read_text(errors="ignore"))
+    except Exception:
+        return []
+
+
+def _method_at(ranges, violation) -> Optional[str]:
+    """The ABI method name a violation sits in (by its source line), or ``None``."""
+    if not ranges:
+        return None
+    try:
+        from tealql.tealtools.abi import method_at_line
+        from .findings import violation_line
+        m = method_at_line(ranges, violation_line(violation))
+        return m.name if m is not None else None
+    except Exception:
+        return None
+
+
 def _drop_superseded(detectors: Iterable[str]) -> list[str]:
     """Drop any detector marked ``superseded_by`` a superseder that is actually
     going to run -- the superseder covers it (and falls back to it internally),
@@ -311,6 +335,9 @@ class ScanFinding:
     detector_name: str
     violation: object  # has .pretty()
     severity_override: Optional[str] = None  # set by scan from DetectionOptions
+    # ABI method the finding sits in, from source `method "sig"` info (OPTIONAL —
+    # None on raw bytecode / non-ABI code); set by scan when available.
+    method_name: Optional[str] = None
 
     @property
     def severity(self) -> str:
@@ -338,19 +365,21 @@ class ScanFinding:
 
     def format(self) -> str:
         """One-line greppable form:
-        ``[SEVERITY] <rel_path>: sec-guide/<name>  <message>``."""
-        return (f"[{self.severity.upper()}] {self.rel_path}: "
+        ``[SEVERITY] <rel_path>: sec-guide/<name>  <message>``. When the ABI
+        method is known (source ``method`` info), it is named after the path."""
+        loc = f"{self.rel_path} [{self.method_name}]" if self.method_name else self.rel_path
+        return (f"[{self.severity.upper()}] {loc}: "
                 f"sec-guide/{self.detector_name}  {self.violation.pretty()}")  # type: ignore[attr-defined]
 
     def to_finding(self):
         """Normalize to the structured :class:`tealql.security.findings.Finding` (the
         stable, versioned record every machine-readable output is built from —
-        carries file + LINE + confidence + witness, not just prose)."""
+        carries file + LINE + confidence + witness + method, not just prose)."""
         from .findings import normalize
         return normalize(
             self.violation, rule_id=self.detector_name,
             rel_path=self.rel_path, severity=self.severity,
-            confidence=self.confidence,
+            confidence=self.confidence, method=self.method_name,
         )
 
     def to_dict(self) -> dict:
@@ -439,6 +468,10 @@ def scan(
                 mode = None
             logger.info("scanning %s (mode=%s): %d detection(s)",
                         rel, mode or "unfiltered", len(names))
+            # OPTIONAL: map each finding's line to the ABI method it sits in, from
+            # the source `method "sig"` router info. Empty (no attribution) on raw
+            # bytecode / non-ABI code — findings just carry no method then.
+            method_ranges = _method_ranges_for(teal)
             for name in names:
                 cls = DETECTORS.get(name)
                 if cls is None:
@@ -472,6 +505,7 @@ def scan(
                     findings.append(ScanFinding(
                         rel_path=rel, detector_name=name, violation=v,
                         severity_override=sev,
+                        method_name=_method_at(method_ranges, v),
                     ))
     findings.sort(key=lambda f: (str(f.rel_path), f.detector_name))
     return findings
@@ -554,7 +588,8 @@ def render_sarif(findings: list[ScanFinding]) -> str:
                     "region": region,
                 }
             }],
-            "properties": {"confidence": f.confidence, "severity": f.severity},
+            "properties": {"confidence": f.confidence, "severity": f.severity,
+                           **({"method": fnd.method} if fnd.method else {})},
         }
         if fnd.witness and fnd.witness.get("sources"):
             result["codeFlows"] = [{
