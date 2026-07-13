@@ -36,7 +36,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from ..ssa import IntRange, SSAProgram, SSAVar
+from ..ssa import IntRange, SSAProgram, SSAVar, binary_operands
 from ..cfg.dominance import all_blocks, reachable_avoiding
 from ..avm import U64_CMP_OPS
 from .range_arith import (
@@ -152,7 +152,7 @@ def propagate_assert_ranges(prog: SSAProgram) -> int:
             # var to guard it — excluded from the dominance check.
             cons = []
             if d is not None and d.op in _CMP and len(d.inputs) == 2:
-                lhs, rhs = d.inputs[1], d.inputs[0]  # top-first: in1 op in0
+                lhs, rhs = binary_operands(d)
                 if isinstance(lhs, SSAVar):
                     yb = _operand_range(rhs)
                     if yb is not None:

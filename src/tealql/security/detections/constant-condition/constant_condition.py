@@ -43,7 +43,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-from tealql.tealtools.ssa import IntRange, Location, SSAProgram, is_const
+from tealql.tealtools.ssa import IntRange, Location, SSAProgram, binary_operands, is_const
 from tealql.tealtools.passes.range_arith import _operand_range
 
 # uint64 comparison ops, in the top-first ``inputs[1] OP inputs[0]`` form.
@@ -140,7 +140,7 @@ class ConstantConditionDetector:
         a comparison, else the SSAVar's defining op / name."""
         d = getattr(cond, "defined_by", None)
         if d is not None and d.op in _CMP and len(d.inputs) == 2:
-            lhs, rhs = d.inputs[1], d.inputs[0]
+            lhs, rhs = binary_operands(d)
             return f"{_label(lhs)} {d.op} {_label(rhs)}"
         return _label(cond)
 
@@ -157,7 +157,7 @@ class ConstantConditionDetector:
         (a field read, input, or computed result)."""
         d = getattr(cond, "defined_by", None)
         if d is not None and d.op in _CMP and len(d.inputs) == 2:
-            lhs, rhs = d.inputs[1], d.inputs[0]
+            lhs, rhs = binary_operands(d)
             if is_const(lhs) and is_const(rhs):
                 return None
             lr = _operand_range(lhs)

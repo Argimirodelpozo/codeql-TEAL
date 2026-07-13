@@ -42,7 +42,8 @@ from __future__ import annotations
 
 from typing import Callable, Optional
 
-from ..ssa import Const, Phi, SSAProgram, SSAVar, const_int, operand_const
+from ..ssa import (Const, Phi, SSAProgram, SSAVar, binary_operands, const_int,
+                   operand_const)
 from ..avm import _txn_field_name
 from ..ssa.models import _shuffle_mapping
 
@@ -362,7 +363,7 @@ def _validated_intervals(prog: SSAProgram) -> tuple[dict, dict]:
         d = getattr(a.inputs[0], "defined_by", None)
         if d is None or d.op != "==" or len(d.inputs) != 2:
             continue
-        lhs, rhs = d.inputs[1], d.inputs[0]
+        lhs, rhs = binary_operands(d)
         x = lo = hi = test = None
         for s, other in ((lhs, rhs), (rhs, lhs)):
             if not (isinstance(s, SSAVar) and _is_clean(other)):

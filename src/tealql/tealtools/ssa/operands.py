@@ -72,3 +72,16 @@ def const_byte_length(op) -> Optional[int]:
 def is_const(op) -> bool:
     """``True`` when ``op`` resolves to any compile-time constant."""
     return operand_const(op) is not None
+
+
+def binary_operands(a) -> "Optional[tuple]":
+    """The ``(lhs, rhs)`` of a 2-input opcode in SOURCE order — ``lhs OP rhs`` as
+    written (``a b <`` ⇒ ``a < b``). SSA inputs are TOP-FIRST (``inputs[0]`` is the
+    topmost popped = the SECOND source operand), so ``lhs = inputs[1]``,
+    ``rhs = inputs[0]``. Centralizes the swap that every comparison / non-commutative
+    arithmetic decoder needs and that is an invisible correctness bug if hand-rolled
+    the wrong way round (see ``reference_ssa_inputs_top_first``). ``None`` when the
+    op doesn't have exactly two inputs."""
+    if len(a.inputs) != 2:
+        return None
+    return a.inputs[1], a.inputs[0]

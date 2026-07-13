@@ -44,7 +44,7 @@ claim). Read-only; used by :mod:`.bounds`.
 from __future__ import annotations
 
 from ..ssa import SSAProgram, SSAVar
-from ..ssa.operands import const_int, const_byte_length
+from ..ssa.operands import binary_operands, const_int, const_byte_length
 from ..cfg.dominance import all_blocks, reachable_avoiding
 from ..avm import U64_CMP_OPS
 
@@ -279,7 +279,7 @@ class LengthRelations:
         """Difference edges proven by ``assert(cond)`` continuing past."""
         d = getattr(cond, "defined_by", None)
         if d is not None and d.op in U64_CMP_OPS and len(d.inputs) == 2:
-            lhs, rhs = d.inputs[1], d.inputs[0]      # top-first: in1 op in0
+            lhs, rhs = binary_operands(d)
             return self._cmp_edges(lhs, d.op, rhs)
         if isinstance(cond, SSAVar):                 # truthiness: cond >= 1
             return [(ORIGIN, _iatom(cond), -1)]
