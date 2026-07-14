@@ -16,6 +16,7 @@ from ._enforcement import (
     _bb_at,
     _fall_through_bb,
     _label_to_bb_first_line,
+    scratch_forward_map,
 )
 from ._program_shape import (
     _txna_reads,
@@ -77,6 +78,7 @@ def _bb_strict_dominators(
 
 def _collect_field_enforcement_bbs(
     prog: SSAProgram, var: SSAVar, label_lines: dict, out: set, seen: set,
+    scratch_fwd: Optional[dict] = None,
 ) -> None:
     """Forward-walk the SSA chain from a field-comparison result and record the
     BASIC BLOCK of every enforcement site it reaches (``assert`` / ``bnz``
@@ -85,10 +87,19 @@ def _collect_field_enforcement_bbs(
     instead of returning on the first hit — so the caller can require every
     approving path to CROSS an enforcement site (a MUST-reach) rather than merely
     that one exists somewhere (the may-reach that let a field compared in a
-    dominator but asserted on a single branch read as validated-on-all-paths)."""
+    dominator but asserted on a single branch read as validated-on-all-paths).
+
+    Scratch-aware like its boolean twin: a comparison round-tripped through
+    ``store``/``load`` before its ``assert`` still records the enforcing BB, when
+    the round-trip provably preserves it (:func:`scratch_forward_map`)."""
     if var in seen:
         return
     seen.add(var)
+    if scratch_fwd is None:
+        scratch_fwd = scratch_forward_map(prog)
+    for fwd in scratch_fwd.get(var, ()):
+        _collect_field_enforcement_bbs(prog, fwd, label_lines, out, seen,
+                                       scratch_fwd)
     for cons in var.uses:
         if cons.op == "assert":
             if cons.basic_block is not None:
@@ -108,7 +119,8 @@ def _collect_field_enforcement_bbs(
                     out.add(cons.basic_block)
         for o in cons.outputs:
             if isinstance(o, SSAVar):
-                _collect_field_enforcement_bbs(prog, o, label_lines, out, seen)
+                _collect_field_enforcement_bbs(prog, o, label_lines, out, seen,
+                                               scratch_fwd)
 
 
 def _field_enforcement_bbs(
@@ -123,6 +135,7 @@ def _field_enforcement_bbs(
     2-input form."""
     out: set = set()
     label_lines = _label_to_bb_first_line(prog)
+    scratch_fwd = scratch_forward_map(prog)
     for cmp in prog.assignments:
         if not file_match(cmp.location.file, file):
             continue
@@ -136,7 +149,8 @@ def _field_enforcement_bbs(
         if not any(_operand_flows_from_field_var(prog, op, field_vars)
                    for op in cmp.inputs):
             continue
-        _collect_field_enforcement_bbs(prog, cmp.outputs[0], label_lines, out, set())
+        _collect_field_enforcement_bbs(prog, cmp.outputs[0], label_lines, out,
+                                       set(), scratch_fwd)
     return out
 
 

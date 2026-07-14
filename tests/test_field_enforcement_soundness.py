@@ -159,3 +159,53 @@ def test_rekey_branch_enforced_is_flagged(tmp_path):
 def test_rekey_asserted_on_all_paths_is_clean(tmp_path):
     """RekeyTo asserted unconditionally (dominates both exits) — no finding."""
     assert _detector(tmp_path, "rekey-to", _REKEY_SAFE) == []
+
+
+# --- scratch-aware enforcement (the pre-existing store/load round-trip gap) ---
+
+from tealql.security.common import def_forward_reaches_enforcement  # noqa: E402
+
+
+def _reaches_enforcement(tmp_path, teal: str, cmp_op: str) -> bool:
+    (tmp_path / "p.teal").write_text(teal)
+    prog = SSAProgram(str(tmp_path))
+    cmp = next(a for a in prog.assignments if a.op == cmp_op)
+    return def_forward_reaches_enforcement(prog, cmp.outputs[0])
+
+
+# `==; store 0; load 0; assert` — the comparison is enforced, just laundered
+# through scratch. The walk must follow the provable round-trip.
+_SCRATCH_ENFORCED = """#pragma version 10
+gtxn 0 Receiver
+global CurrentApplicationAddress
+==
+store 0
+load 0
+assert
+int 1
+return
+"""
+
+
+def test_scratch_roundtrip_reaches_enforcement(tmp_path):
+    assert _reaches_enforcement(tmp_path, _SCRATCH_ENFORCED, "==")
+
+
+# The slot is CLOBBERED by a constant before the load, so the assert enforces the
+# constant, not the comparison — must-semantics must NOT claim enforcement.
+_SCRATCH_CLOBBERED = """#pragma version 10
+gtxn 0 Receiver
+global CurrentApplicationAddress
+==
+store 0
+int 1
+store 0
+load 0
+assert
+int 1
+return
+"""
+
+
+def test_clobbered_scratch_does_not_reach_enforcement(tmp_path):
+    assert not _reaches_enforcement(tmp_path, _SCRATCH_CLOBBERED, "==")

@@ -1,0 +1,18 @@
+#pragma version 10
+    // The accompanying sibling is an ASSET transfer: XferAsset + AssetReceiver are
+    // pinned to this app. Reading gtxn 1 Amount (the ALGO field, 0 on an axfer) is
+    // not trusting an ALGO payment, so no Receiver pin is required.
+    gtxn 1 AssetReceiver
+    global CurrentApplicationAddress
+    ==
+    assert
+    gtxn 1 XferAsset
+    int 31566704
+    ==
+    assert
+    gtxn 1 AssetAmount
+    gtxn 1 Amount
+    +
+    pop
+    int 1
+    return

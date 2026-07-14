@@ -75,10 +75,13 @@ from ._enforcement import (  # noqa: E402,F401
     _label_to_bb_first_line,
     def_forward_reaches_enforcement,
     enforced_op_exists,
+    scratch_forward_map,
 )
 from ._field_protection import (  # noqa: E402,F401
+    _all_entry_paths_cross,
     _approval_exit_protected_for_seeds,
     _bb_strict_dominators,
+    _collect_field_enforcement_bbs,
     _global_field_seeds,
     _is_protected_bb_for_seeds,
     _txn_field_seeds,

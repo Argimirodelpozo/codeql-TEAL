@@ -1,0 +1,15 @@
+#pragma version 10
+    // The receiver pin comparison is stored to scratch and asserted after a load;
+    // the enforcement is real, just laundered through slot 0.
+    gtxn 0 Receiver
+    global CurrentApplicationAddress
+    ==
+    store 0
+    load 0
+    assert
+    gtxn 0 Amount
+    int 1000000
+    >=
+    assert
+    int 1
+    return

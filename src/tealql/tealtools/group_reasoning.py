@@ -462,7 +462,7 @@ class PerExitShapes:
         return {"exit_shapes": [s.to_dict() for s in self.shapes]}
 
 
-def _exit_method_lookup(prog):
+def exit_method_lookup(prog):
     """A ``bb -> ABI method name | None`` resolver over the source ``method "sig"``
     info, cached per file. ``bb.file`` is a BASENAME, so it's resolved to a real
     path through ``prog.source_path`` (a single file, or a directory searched by
@@ -520,7 +520,7 @@ def analyze_per_exit(
     *before* a single return still can't be split — that needs full per-path
     enumeration. In practice distinct shapes reach distinct exits.)"""
     pp = pp or PathPredicateAnalysis(prog)
-    method_of = _exit_method_lookup(prog)
+    method_of = exit_method_lookup(prog)
     groups: dict = {}     # shape-key -> [GroupShape, exits]
     order: list = []
     for bb in sorted(pp.approving_exits(),

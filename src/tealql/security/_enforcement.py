@@ -30,6 +30,33 @@ from ._program_shape import file_match, is_rejection_exit
 _ENFORCEMENT_TERM_OPS = frozenset({"assert", "bnz", "bz"})
 
 
+def scratch_forward_map(prog: SSAProgram) -> dict:
+    """``{stored_var: [load_output_var, ...]}`` — the scratch round-trips a value
+    PROVABLY survives: a ``load N`` continues a value's forward chain only when
+    EVERY ``store N`` that may influence it (per the reaching-definitions
+    ``scratch_stores`` annotation) wrote that same SSAVar. Must-semantics — the
+    same rule as ``propagate_scratch_values`` — so following these edges never
+    claims an assert enforces a value some other store may have replaced. Unlike
+    that pass this is NON-mutating, safe on the scan-shared program.
+
+    Without it, a check written as ``==; store 0; load 0; assert`` reads as
+    unenforced (the forward walk dies at the output-less ``store``) — a false
+    "unvalidated" for every detector in this family."""
+    prog._ensure_scratch_influence()
+    influence = getattr(prog, "_scratch_influence", None) or {}
+    out: dict = {}
+    for (load_file, load_line), store_keys in influence.items():
+        load_var = prog.var(load_file, load_line, 1)
+        if load_var is None or not store_keys:
+            continue
+        sources = [prog.var(*k) for k in store_keys]
+        first = sources[0]
+        if (first is not None and first is not load_var
+                and all(s is first for s in sources)):
+            out.setdefault(first, []).append(load_var)
+    return out
+
+
 
 
 def _label_to_bb_first_line(prog: SSAProgram) -> dict[tuple[str, str], int]:
@@ -59,6 +86,7 @@ def def_forward_reaches_enforcement(
     *,
     label_lines: Optional[dict[tuple[str, str], int]] = None,
     seen: Optional[set[SSAVar]] = None,
+    scratch_fwd: Optional[dict] = None,
 ) -> bool:
     """The def-forward reaches an enforcement: the SSA chain rooted at
     ``var`` terminates in some opcode that enforces rejection when the
@@ -80,6 +108,10 @@ def def_forward_reaches_enforcement(
     code that branches on failure to a ``pushint 0; return`` block
     rather than an explicit ``err`` — the old ``first-op-is-err`` check
     silently missed every such guard.
+
+    A value round-tripped through scratch (``store N`` … ``load N``) keeps its
+    chain when the round-trip provably preserves it (:func:`scratch_forward_map`,
+    must-semantics), so ``cmp; store 0; load 0; assert`` counts as enforced.
     """
     if seen is None:
         seen = set()
@@ -87,6 +119,13 @@ def def_forward_reaches_enforcement(
         return False
     seen.add(var)
     label_lines = label_lines if label_lines is not None else _label_to_bb_first_line(prog)
+    if scratch_fwd is None:
+        scratch_fwd = scratch_forward_map(prog)
+    for fwd in scratch_fwd.get(var, ()):        # survive a store/load round-trip
+        if def_forward_reaches_enforcement(
+                prog, fwd, label_lines=label_lines, seen=seen,
+                scratch_fwd=scratch_fwd):
+            return True
     for cons in var.uses:
         if cons.op == "assert":
             return True
@@ -109,6 +148,7 @@ def def_forward_reaches_enforcement(
                 continue
             if def_forward_reaches_enforcement(
                 prog, out, label_lines=label_lines, seen=seen,
+                scratch_fwd=scratch_fwd,
             ):
                 return True
     return False
@@ -146,12 +186,16 @@ def enforced_op_exists(prog: SSAProgram, ops, flows, *, file: Optional[str] = No
     nothing. Each caller supplies its own ``flows`` predicate (one-sided vs
     two-sided tie), so the differing flow logic stays explicit at the call
     site while the loop + enforcement test are shared."""
+    label_lines = _label_to_bb_first_line(prog)
+    scratch_fwd = scratch_forward_map(prog)
     for op in prog.assignments:
         if op.op not in ops or not file_match(op.location.file, file):
             continue
         if not flows(op):
             continue
         if op.outputs and isinstance(op.outputs[0], SSAVar) and \
-                def_forward_reaches_enforcement(prog, op.outputs[0]):
+                def_forward_reaches_enforcement(
+                    prog, op.outputs[0], label_lines=label_lines,
+                    scratch_fwd=scratch_fwd):
             return True
     return False

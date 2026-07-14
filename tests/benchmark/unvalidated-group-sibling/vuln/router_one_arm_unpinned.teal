@@ -1,0 +1,30 @@
+#pragma version 10
+    // Two-method inline router. deposit() pins gtxn 0 Receiver; withdraw() reads
+    // gtxn 0 Amount with NO receiver pin. The pin on the deposit arm must NOT
+    // vouch for withdraw — a per-arm unvalidated sibling (the cross-arm bug).
+    txna ApplicationArgs 0
+    byte 0xdeadbeef
+    ==
+    bnz deposit
+    byte 0xcafef00d
+    ==
+    bnz withdraw
+    err
+deposit:
+    gtxn 0 Receiver
+    global CurrentApplicationAddress
+    ==
+    assert
+    gtxn 0 Amount
+    txn Sender
+    swap
+    app_global_put
+    int 1
+    return
+withdraw:
+    gtxn 0 Amount
+    txn Sender
+    swap
+    app_global_put
+    int 1
+    return
