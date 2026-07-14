@@ -217,6 +217,31 @@ def test_cli_methods_arc56_override(tmp_path, capsys):
     assert "peek(i: uint64[8B]) -> address" in out
 
 
+def test_cli_group_shape_per_exit(tmp_path, capsys):
+    # two-shape router: the default common shape shows nothing; --per-exit splits.
+    (tmp_path / "p.teal").write_text(
+        "#pragma version 10\n"
+        "txna ApplicationArgs 0\nbyte \"swap\"\n==\nbnz swap_path\n"
+        "byte \"solo\"\n==\nbnz solo_path\nerr\n"
+        "swap_path:\nglobal GroupSize\nint 2\n==\nassert\nint 1\nreturn\n"
+        "solo_path:\nglobal GroupSize\nint 1\n==\nassert\nint 1\nreturn\n")
+    rc = main(["group-shape", str(tmp_path / "p.teal"), "--per-exit"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "Global.GroupSize == 2" in out and "Global.GroupSize == 1" in out
+
+
+def test_cli_group_shape_per_exit_json(tmp_path, capsys):
+    (tmp_path / "p.teal").write_text(
+        "#pragma version 10\n"
+        "gtxn 0 TypeEnum\nint pay\n==\nassert\nint 1\nreturn\n")
+    main(["group-shape", str(tmp_path / "p.teal"), "--per-exit", "--json"])
+    data = json.loads(capsys.readouterr().out)
+    assert "exit_shapes" in data
+    rhs = {c["rhs"] for s in data["exit_shapes"] for c in s["constraints"]}
+    assert "pay" in rhs                      # TypeEnum rendered symbolically
+
+
 def test_cli_json_auth_shape(capsys):
     main(["auth", str(VULN_DB), "--json"])
     data = json.loads(capsys.readouterr().out)

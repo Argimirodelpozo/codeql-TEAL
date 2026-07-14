@@ -603,6 +603,30 @@ _GLOBAL_FIELD_RANGES: dict = {
     "GroupSize": (1, 16),
 }
 
+# Symbolic names for the enum-valued txn fields, so a recovered `TypeEnum == 1`
+# renders as `TypeEnum == pay` (the parser resolves the `int pay` / `int NoOp`
+# pseudo-ops to these ints; this is the reverse map). Field -> {int: name}.
+_TXN_TYPE_ENUM_NAMES: dict[int, str] = {
+    0: "unknown", 1: "pay", 2: "keyreg", 3: "acfg", 4: "axfer", 5: "afrz",
+    6: "appl",
+}
+_ONCOMPLETION_NAMES: dict[int, str] = {
+    0: "NoOp", 1: "OptIn", 2: "CloseOut", 3: "ClearState",
+    4: "UpdateApplication", 5: "DeleteApplication",
+}
+#: Enum-valued txn field -> its {int: symbolic-name} table.
+TXN_ENUM_FIELD_NAMES: dict[str, dict] = {
+    "TypeEnum": _TXN_TYPE_ENUM_NAMES,
+    "OnCompletion": _ONCOMPLETION_NAMES,
+}
+
+
+def enum_field_name(field: str, value: int) -> "str | None":
+    """The symbolic name of an enum-valued txn field's integer value
+    (``("TypeEnum", 1) -> "pay"``, ``("OnCompletion", 5) -> "DeleteApplication"``),
+    or ``None`` if ``field`` isn't enum-valued or ``value`` is out of range."""
+    return TXN_ENUM_FIELD_NAMES.get(field, {}).get(value)
+
 # Positional output range seeds for multi-output ops, top-first:
 # ``op -> [(output_index, lo, hi), …]``. The ``*_get`` / ``*_ex`` family
 # pushes a 0/1 "exists / found" flag as its top output (``outputs[0]``) —

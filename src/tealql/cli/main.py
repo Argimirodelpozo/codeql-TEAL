@@ -463,8 +463,14 @@ def _cmd_itxn_report(args) -> int:
 
 
 def _cmd_group_shape(args) -> int:
-    from tealql.tealtools.group_reasoning import analyze
-    s = analyze(_load(args))
+    from tealql.tealtools.group_reasoning import analyze, analyze_per_exit
+    prog = _load(args)
+    if getattr(args, "per_exit", False):
+        # DISTINCT admissible shapes (one per approving exit, ABI-labelled) instead
+        # of only their intersection — recovers shapes the common summary drops.
+        s = analyze_per_exit(prog)
+    else:
+        s = analyze(prog)
     return _emit_dict(s.to_dict(), json_out=args.json_out, text=s.render())
 
 
@@ -835,7 +841,11 @@ def build_parser() -> argparse.ArgumentParser:
     add("box-audit",
         "box access-control: caller-supplied address-keyed BoxMap not bound to "
         "txn Sender = cross-user access (needs puya)", _cmd_box_audit)
-    add("group-shape", "forced group shape", _cmd_group_shape)
+    group_shape_p = add("group-shape", "forced group shape", _cmd_group_shape)
+    group_shape_p.add_argument(
+        "--per-exit", action="store_true",
+        help="enumerate the DISTINCT group shapes per approving exit (ABI-labelled) "
+             "instead of only the common shape across all exits")
     add("group-layout", "forced group size + per-position layout", _cmd_group_layout)
     add("cost", "per-line opcode cost", _cmd_cost)
     add("path-predicates", "per-BB path predicates", _cmd_path_predicates)

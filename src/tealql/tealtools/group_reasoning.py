@@ -28,7 +28,7 @@ from typing import Optional
 
 from .path_predicates import BranchCondition, PathPredicateAnalysis
 from .ssa import Const, SSAProgram, SSAVar, binary_operands
-from .avm import U64_CMP_OPS
+from .avm import U64_CMP_OPS, enum_field_name
 
 
 # Comparison ops in TEAL whose result is the boolean we typically
@@ -229,18 +229,30 @@ class GroupConstraint:
     rhs: object
 
     def render(self) -> str:
-        return f"{self.ref!r} {self.op} {_render_rhs(self.rhs)}"
+        return f"{self.ref!r} {self.op} {_render_rhs(self.rhs, self.ref.field)}"
 
     def to_dict(self) -> dict:
-        return {"ref": repr(self.ref), "op": self.op, "rhs": _render_rhs(self.rhs)}
+        return {"ref": repr(self.ref), "op": self.op,
+                "rhs": _render_rhs(self.rhs, self.ref.field)}
 
 
-def _render_rhs(rhs: object) -> str:
+def _render_rhs(rhs: object, field: Optional[str] = None) -> str:
+    val = None
     if isinstance(rhs, Const):
-        return rhs.value
-    cv = getattr(rhs, "const_value", None)
-    if cv is not None and isinstance(cv, Const):
-        return cv.value
+        val = rhs.value
+    else:
+        cv = getattr(rhs, "const_value", None)
+        if cv is not None and isinstance(cv, Const):
+            val = cv.value
+    if val is not None:
+        if field is not None:                     # TypeEnum==1 -> `pay`, OnCompletion==5 -> ...
+            try:
+                name = enum_field_name(field, int(val))
+            except (ValueError, TypeError):
+                name = None
+            if name is not None:
+                return name
+        return val
     ref = classify(rhs)
     if ref is not None:
         return repr(ref)
@@ -355,15 +367,164 @@ def analyze(
     predicate-based analyses), or builds one from scratch.
     """
     pp = pp or PathPredicateAnalysis(prog)
-    constraints: list[GroupConstraint] = []
+    return GroupShape(constraints=_constraints_from(pp.approving_exit_summary()))
+
+
+def _constraints_from(preds) -> list[GroupConstraint]:
+    """Distinct group constraints derivable from a predicate set (order-preserving
+    dedup). The shared primitive under both the common-shape summary and the
+    per-block / per-exit views."""
+    out: list[GroupConstraint] = []
     seen: set[GroupConstraint] = set()
-    for pred in pp.approving_exit_summary():
+    for pred in preds:
         c = derive_constraint(pred)
-        if c is None or c in seen:
-            continue
-        seen.add(c)
-        constraints.append(c)
-    return GroupShape(constraints=constraints)
+        if c is not None and c not in seen:
+            seen.add(c)
+            out.append(c)
+    return out
+
+
+def constraints_at(pp: PathPredicateAnalysis, bb) -> list[GroupConstraint]:
+    """The group constraints IN FORCE at a basic block — the per-block substrate.
+    Derived from ``bb_preds[bb]`` (the meet over every path reaching ``bb``), so it
+    answers "what group facts are already established here" at any program point,
+    not just at approving exits. This is the query layer a flow-sensitive consumer
+    uses (e.g. asking whether a ``GroupSize`` bound holds at a given access site)."""
+    return _constraints_from(pp.bb_preds.get(bb, frozenset()))
+
+
+def per_block_constraints(
+    prog: SSAProgram, pp: Optional[PathPredicateAnalysis] = None
+) -> dict:
+    """``{BasicBlock: [GroupConstraint, ...]}`` for every block that has any — the
+    full per-block substrate in one call (see :func:`constraints_at`)."""
+    pp = pp or PathPredicateAnalysis(prog)
+    out = {}
+    for bb in prog.blocks.values():
+        cs = constraints_at(pp, bb)
+        if cs:
+            out[bb] = cs
+    return out
+
+
+@dataclass
+class ExitShape:
+    """The group shape forced on the paths reaching one approving exit (or the set
+    of exits that force the IDENTICAL shape). Finer than :class:`GroupShape`, which
+    intersects across *all* approving exits and so shows only what's common: this
+    keeps the distinct admissible shapes apart. ``exits`` is ``(line, method)``
+    pairs — ``method`` is the ABI method the exit sits in when source ``method``
+    info is available, else ``None``."""
+
+    shape: GroupShape
+    exits: list          # list[tuple[int, Optional[str]]]
+
+    def _tag(self) -> str:
+        return ", ".join((f"{m}@L{ln}" if m else f"L{ln}") for ln, m in self.exits)
+
+    def render(self) -> str:
+        body = self.shape.render()
+        indented = "\n".join("    " + ln for ln in body.splitlines())
+        return f"[{self._tag()}]\n{indented}"
+
+    def to_dict(self) -> dict:
+        return {
+            "exits": [{"line": ln, "method": m} for ln, m in self.exits],
+            **self.shape.to_dict(),
+        }
+
+
+@dataclass
+class PerExitShapes:
+    """All distinct per-exit group shapes a program admits (see
+    :func:`analyze_per_exit`)."""
+
+    shapes: list         # list[ExitShape]
+
+    def render(self) -> str:
+        if not self.shapes:
+            return "(no approving exits)"
+        return "\n".join(s.render() for s in self.shapes)
+
+    def to_dict(self) -> dict:
+        return {"exit_shapes": [s.to_dict() for s in self.shapes]}
+
+
+def _exit_method_lookup(prog):
+    """A ``bb -> ABI method name | None`` resolver over the source ``method "sig"``
+    info, cached per file. ``bb.file`` is a BASENAME, so it's resolved to a real
+    path through ``prog.source_path`` (a single file, or a directory searched by
+    basename). Fully defensive — no info / any failure ⇒ always ``None`` (the
+    OPTIONAL ABI-label enrichment)."""
+    from pathlib import Path
+    from .abi import method_line_ranges, method_at_line
+
+    src = Path(str(getattr(prog, "source_path", "") or ""))
+    by_name: dict = {}
+    try:
+        if src.is_dir():
+            for p in src.rglob("*.teal"):
+                by_name.setdefault(p.name, p)
+        elif src.exists():
+            by_name[src.name] = src
+    except Exception:
+        by_name = {}
+
+    cache: dict = {}
+
+    def _ranges(fname):
+        if fname not in cache:
+            p = by_name.get(fname) or by_name.get(Path(fname).name)
+            try:
+                cache[fname] = method_line_ranges(p.read_text(errors="ignore")) if p else []
+            except Exception:
+                cache[fname] = []
+        return cache[fname]
+
+    def _lookup(bb):
+        f = getattr(bb, "file", None)
+        if not f:
+            return None
+        m = method_at_line(_ranges(f), getattr(bb, "last_line", None))
+        return m.name if m is not None else None
+
+    return _lookup
+
+
+def analyze_per_exit(
+    prog: SSAProgram, pp: Optional[PathPredicateAnalysis] = None
+) -> PerExitShapes:
+    """The DISTINCT group shapes a contract admits — one per approving exit,
+    instead of only their intersection (:func:`analyze`).
+
+    Each approving ``return`` contributes the group constraints in force on the
+    paths that reach it; exits that force the identical shape are merged. A
+    contract whose arms demand different shapes (``GroupSize==2`` on one,
+    ``GroupSize==3`` on another) shows both here, where ``analyze`` shows nothing.
+    When the source carries ABI ``method "sig"`` info, each exit is labelled with
+    the method it belongs to — "this method forces this shape".
+
+    (Per-exit is a meet over the paths reaching one exit, so two shapes that merge
+    *before* a single return still can't be split — that needs full per-path
+    enumeration. In practice distinct shapes reach distinct exits.)"""
+    pp = pp or PathPredicateAnalysis(prog)
+    method_of = _exit_method_lookup(prog)
+    groups: dict = {}     # shape-key -> [GroupShape, exits]
+    order: list = []
+    for bb in sorted(pp.approving_exits(),
+                     key=lambda b: (b.file, b.first_line)):
+        cs = constraints_at(pp, bb)
+        key = frozenset(c.render() for c in cs)
+        line = getattr(bb, "last_line", None) or getattr(bb, "first_line", 0)
+        entry = groups.get(key)
+        if entry is None:
+            groups[key] = [GroupShape(cs), [(line, method_of(bb))]]
+            order.append(key)
+        else:
+            entry[1].append((line, method_of(bb)))
+    return PerExitShapes(shapes=[
+        ExitShape(shape=groups[k][0], exits=groups[k][1]) for k in order
+    ])
 
 
 # ---------------------------------------------------------------------------

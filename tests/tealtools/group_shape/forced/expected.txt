@@ -1,4 +1,4 @@
 Global.GroupSize == 2
 Txn.GroupIndex == 1
 gtxn[0].Receiver == Global.CurrentApplicationAddress
-gtxn[0].TypeEnum == 1
+gtxn[0].TypeEnum == pay
