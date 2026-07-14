@@ -7,16 +7,28 @@ group itself via ``Global.GroupSize`` / ``Txn.GroupIndex``. Any
 that constraint on every approving execution — the contract rejects
 otherwise.
 
-This module walks :meth:`PathPredicateAnalysis.approving_exit_summary`
-(the intersection of predicates over approving paths), pulls out the
-predicates whose operands trace back to a group-related opcode, and
-rebuilds them as semantic constraints (``Global.GroupSize == 2``,
-``gtxn[0].Receiver == Global.CurrentApplicationAddress``, …).
+The module pulls out the predicates whose operands trace back to a group-related
+opcode and rebuilds them as semantic constraints (``Global.GroupSize == 2``,
+``gtxn[0].Receiver == Global.CurrentApplicationAddress``,
+``gtxn[0].TypeEnum == pay``, …). It captures ANY comparison on a group field —
+not just ``GroupSize`` but txn types, pinned params, and ranges alike.
 
-Conservative: returns only the *common* shape across approving paths.
-A contract that admits multiple shapes (e.g. ``GroupSize==2`` on one
-arm and ``GroupSize==3`` on another) shows only what's true on every
-approving path. Per-path enumeration is a follow-up.
+Three views, coarse to fine:
+
+* :func:`analyze` — the *common* shape: predicates true on EVERY approving path
+  (the intersection, :meth:`PathPredicateAnalysis.approving_exit_summary`). A
+  contract admitting several shapes (``GroupSize==2`` on one arm, ``==3`` on
+  another) shows only what they share — often nothing.
+* :func:`analyze_per_exit` — the DISTINCT admissible shapes, one per approving
+  exit (deduped, and labelled with the ABI method the exit sits in). Recovers the
+  per-arm shapes the common summary drops.
+* :func:`constraints_at` / :func:`per_block_constraints` — the per-block
+  substrate: the group facts in force at any program point (from ``bb_preds``),
+  for a flow-sensitive consumer.
+
+Per-exit is a meet over the paths reaching one exit, so two shapes that merge
+*before* a single ``return`` still aren't split — that needs full per-path
+enumeration (in practice distinct shapes reach distinct exits).
 
 The substrate (``tealql.tealtools.ssa``) is not modified — this module only
 consumes ``SSAProgram`` and ``PathPredicateAnalysis``.
