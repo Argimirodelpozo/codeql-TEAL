@@ -60,6 +60,35 @@ def test_not_inverts_truthiness():
     assert any(bc.value is inner and bc.kind == "zero" for bc in preds)
 
 
+def test_ge_comparison_not_inverted():
+    # `x >= 1000` — operands are TOP-FIRST, so a positional read would flip it to
+    # `x <= 1000`. The variable-side predicate must carry kind 'ge', rhs 1000.
+    teal = ("#pragma version 8\n"
+            "txna ApplicationArgs 0\nbtoi\nint 1000\n>=\nassert\nint 1\nreturn\n")
+    p = SSAProgram.from_text(teal, name="t")
+    p.propagate_constants()
+    pp = PathPredicateAnalysis(p)
+    cond = _by_op(p, ">=")[0].outputs[0]
+    x = _by_op(p, "btoi")[0].outputs[0]
+    preds = pp._decompose_cond(cond, taken=True)
+    on_x = [bc for bc in preds if bc.value is x]
+    assert on_x and on_x[0].kind == "ge"          # NOT 'le'
+    assert "1000" in repr(on_x[0])                # rhs preserved
+
+
+def test_lt_comparison_not_inverted():
+    # symmetric check with `x < 5` -> kind 'lt' on the variable, not 'gt'.
+    teal = ("#pragma version 8\n"
+            "txna ApplicationArgs 0\nbtoi\nint 5\n<\nassert\nint 1\nreturn\n")
+    p = SSAProgram.from_text(teal, name="t")
+    p.propagate_constants()
+    pp = PathPredicateAnalysis(p)
+    cond = _by_op(p, "<")[0].outputs[0]
+    x = _by_op(p, "btoi")[0].outputs[0]
+    on_x = [bc for bc in pp._decompose_cond(cond, taken=True) if bc.value is x]
+    assert on_x and on_x[0].kind == "lt"
+
+
 def test_cyclic_cond_terminates():
     # A synthetic cyclic value web (a && depends on b, b && depends on a) — the
     # recursive form would loop forever; the iterative `seen` worklist bails.

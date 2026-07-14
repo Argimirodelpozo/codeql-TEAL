@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from .path_predicates import BranchCondition, PathPredicateAnalysis
-from .ssa import Const, SSAProgram, SSAVar
+from .ssa import Const, SSAProgram, SSAVar, binary_operands
 from .avm import U64_CMP_OPS
 
 
@@ -288,7 +288,10 @@ def derive_constraint(pred: BranchCondition) -> Optional[GroupConstraint]:
     a = getattr(pred.value, "defined_by", None)
     if a is None or a.op not in _CMP_OPS or len(a.inputs) < 2:
         return None
-    lhs, rhs = a.inputs[0], a.inputs[1]
+    # Operands are TOP-FIRST: the SOURCE-order comparison is ``inputs[1] OP
+    # inputs[0]``, so a non-commutative relation (``>=`` / ``<`` …) inverts if
+    # read positionally (see ``reference_ssa_inputs_top_first``).
+    lhs, rhs = binary_operands(a)
     lhs_ref = classify(lhs)
     rhs_ref = classify(rhs)
     if lhs_ref is None and rhs_ref is None:

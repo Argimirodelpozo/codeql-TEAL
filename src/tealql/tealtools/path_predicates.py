@@ -55,6 +55,7 @@ from .ssa import (
     Phi,
     SSAProgram,
     SSAVar,
+    binary_operands,
     is_const,
 )
 from .avm import CMP_OPS, LOGICAL_OPS
@@ -537,11 +538,15 @@ class PathPredicateAnalysis:
             if producer is None:
                 continue
             op, ins = producer.op, producer.inputs
-            # Binary comparisons.
+            # Binary comparisons. Operands are TOP-FIRST, so the SOURCE-order
+            # ``lhs OP rhs`` is ``inputs[1] OP inputs[0]`` — use ``binary_operands``
+            # so a non-commutative relation (``>=`` / ``<`` …) isn't silently
+            # flipped (see ``reference_ssa_inputs_top_first``).
             kind = _CMP_OP_TO_KIND_TAKEN.get(op)
             if kind is not None and len(ins) == 2:
                 actual_kind = kind if t else _KIND_NEGATION[kind]
-                out.add(_canonical_binary_pred(ins[0], actual_kind, ins[1]))
+                lhs, rhs = binary_operands(producer)
+                out.add(_canonical_binary_pred(lhs, actual_kind, rhs))
                 continue
             # ``!``: invert the truthiness on the single operand.
             if op == "!" and len(ins) == 1:
