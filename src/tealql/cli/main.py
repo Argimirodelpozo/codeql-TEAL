@@ -305,13 +305,19 @@ def _cmd_storage_schema(args) -> int:
     a tuple). Requires puya (the recovery runs on the Puya IR). Exit 0."""
     try:
         from tealql.tealtools.lift import to_puya
-        from tealql.tealtools.lift.box_recovery import recover_storage_schema
+        from tealql.tealtools.lift.box_recovery import (
+            recover_storage_schema, annotate_with_arc56)
     except ImportError:
         print("error: storage-schema requires the 'puya' package (pip install puyapy)",
               file=sys.stderr)
         return 2
     import logging as _logging
     _logging.getLogger("puya").setLevel(_logging.CRITICAL)
+
+    spec = None
+    if getattr(args, "arc56", None):
+        from tealql.tealtools import arc56 as _arc56
+        spec = _arc56.load(args.arc56)          # explicit path -> surface load errors
 
     rows: list = []
     for prog, name in _load_programs(args):
@@ -322,12 +328,12 @@ def _cmd_storage_schema(args) -> int:
             logger.warning("storage-schema: %s did not lift (%s: %s) — skipped",
                            label, type(e).__name__, e)
             continue
-        for s in recover_storage_schema(main, subs):
+        for s in annotate_with_arc56(recover_storage_schema(main, subs), spec):
             rows.append((label, s))
 
     if args.json_out:
         print(_json.dumps([
-            {"file": lbl, "kind": s.kind, "is_map": s.is_map,
+            {"file": lbl, "kind": s.kind, "is_map": s.is_map, "name": s.name,
              "key_or_prefix": s.key_or_prefix.decode("latin-1"),
              "arc56_key_type": s.arc56_key_type,
              "arc56_value_type": s.arc56_value_type,
@@ -715,6 +721,7 @@ def _cmd_detections_scan(args) -> int:
         detection_config=detection_config,
         options=options,
         strict=getattr(args, "strict", False),
+        arc56=getattr(args, "arc56", None),
     )
 
     # --update-baseline: record the CURRENT findings' fingerprints and exit 0.
@@ -818,9 +825,13 @@ def build_parser() -> argparse.ArgumentParser:
     add("abi-audit",
         "ABI type-driven audit: caller-supplied arc4.Address paid to a "
         "fund/asset sink unguarded (needs puya)", _cmd_abi_audit)
-    add("storage-schema",
+    storage_p = add("storage-schema",
         "reconstruct global/local/box storage schema (keys + maps) with "
         "recovered key/value types (needs puya)", _cmd_storage_schema)
+    storage_p.add_argument(
+        "--arc56", default=None, metavar="SPEC.json",
+        help="annotate entries with authoritative names + value/key types from "
+             "an ARC-56 app spec (matched on kind + key/prefix bytes)")
     add("box-audit",
         "box access-control: caller-supplied address-keyed BoxMap not bound to "
         "txn Sender = cross-user access (needs puya)", _cmd_box_audit)
@@ -970,6 +981,10 @@ def build_parser() -> argparse.ArgumentParser:
     sgs.add_argument("--update-baseline", default=None, metavar="PATH",
                      help="write the current findings' fingerprints to PATH and "
                           "exit 0 (accept the current state as the baseline)")
+    sgs.add_argument("--arc56", default=None, metavar="SPEC.json",
+                     help="ARC-56 app spec; keeps ABI method-name attribution on "
+                          "findings even when the source's `method` comments were "
+                          "stripped (optional, degrades cleanly)")
     sgs.set_defaults(handler=_cmd_detections_scan)
 
     return p

@@ -156,6 +156,33 @@ class TestLineAttribution:
     def test_empty_on_raw_bytecode(self):
         assert method_line_ranges("#pragma version 8\nint 1\nreturn\n") == []
 
+    def test_stripped_comments_attributed_via_method_table(self):
+        # a router whose `// method` comments were stripped: only hex selector
+        # operands remain. With an ARC-56-style table, selector->name survives.
+        sel_a = "0x" + method_selector("add_one(uint64)uint64").hex()
+        sel_b = "0x" + method_selector("get_address()address").hex()
+        src = (
+            "#pragma version 10\n"
+            "main:\n"
+            "    txna ApplicationArgs 0\n"
+            f"    pushbytess {sel_a} {sel_b}\n"          # no `// method` comment
+            "    match handle_add handle_addr\n"
+            "    err\n"
+            "handle_add:\n    int 1\n    return\n"
+            "handle_addr:\n    int 1\n    return\n")
+        assert method_line_ranges(src) == []             # no comments, no table -> nothing
+        table = {sel_a: parse_signature("add_one(uint64)uint64"),
+                 sel_b: parse_signature("get_address()address")}
+        named = {m.name: (s, e) for s, e, m in method_line_ranges(src, method_table=table)}
+        assert named == {"add_one": (7, 9), "get_address": (10, 12)}
+
+    def test_method_table_ignores_non_selector_pushbytess(self):
+        # a `pushbytess` of DATA (operands not in the table) contributes nothing.
+        src = ('#pragma version 10\n'
+               'main:\n    pushbytess "hello" "world"\n    match a b\n'
+               'a:\n    int 1\n    return\nb:\n    int 1\n    return\n')
+        assert method_line_ranges(src, method_table={"0xdeadbeef": None}) == []
+
     def test_real_router_attribution(self):
         import glob
         fs = glob.glob("tests/experimental_IR_lift/puya/abi_routing_Reference/src/*.approval.teal")

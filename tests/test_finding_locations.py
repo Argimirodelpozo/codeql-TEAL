@@ -104,6 +104,35 @@ def test_findings_carry_abi_method_when_source_has_it(tmp_path):
     assert sf.to_dict().get("method") == "add_one"
 
 
+def test_arc56_recovers_method_names_when_comments_stripped(tmp_path):
+    """When the compiler's `method "sig"` comments are stripped, an ARC-56 spec
+    still attributes findings to their method via the selector operands."""
+    from tealql.tealtools.abi import method_selector
+    from tealql.tealtools import arc56
+    sel = "0x" + method_selector("withdraw(uint64)void").hex()
+    (tmp_path / "p.teal").write_text(
+        "#pragma version 10\n"
+        "main:\n"
+        "    txna ApplicationArgs 0\n"
+        f"    pushbytess {sel} 0x00000000\n"            # NO `// method` comment
+        "    match withdraw other\n"
+        "    err\n"
+        "withdraw:\n"                                    # an unguarded fund flow
+        "    itxn_begin\n    int pay\n    itxn_field TypeEnum\n"
+        "    txna ApplicationArgs 1\n    btoi\n    itxn_field Amount\n"
+        "    txn Sender\n    itxn_field Receiver\n    itxn_submit\n"
+        "    int 1\n    return\n"
+        "other:\n    int 1\n    return\n")
+    spec = arc56.from_dict({"methods": [
+        {"name": "withdraw", "args": [{"type": "uint64", "name": "amt"}],
+         "returns": {"type": "void"}}]})
+    # without the spec: comments stripped -> no attribution
+    assert all(f.method_name is None for f in scan(tmp_path))
+    # with the spec: the selector operand resolves to `withdraw`
+    with_spec = scan(tmp_path, arc56=spec)
+    assert any(f.method_name == "withdraw" for f in with_spec)
+
+
 def test_no_method_attribution_on_raw_bytecode(tmp_path):
     """No `method "sig"` info -> no attribution; findings degrade cleanly."""
     (tmp_path / "p.teal").write_text(

@@ -55,6 +55,9 @@ class StorageEntry:
     storage_type: str = "bytes"        # 'uint64' | 'bytes'
     value_confident: bool = False
     ops: set = field(default_factory=set)
+    # The declared NAME from an ARC-56 spec, when one was matched to this entry
+    # (an OPTIONAL enrichment — None on a spec-less recovery).
+    name: "str | None" = None
 
     def render(self) -> str:
         kp = repr(self.key_or_prefix.decode("latin-1")) if self.key_or_prefix else "''"
@@ -62,10 +65,56 @@ class StorageEntry:
         conf = "" if self.value_confident or self.arc56_value_type is None \
             else " (speculative)"
         ops = ",".join(sorted(self.ops))
+        nm = f"{self.name} " if self.name else ""
         if self.is_map:
-            return (f"{self.kind} map prefix={kp} key={self.arc56_key_type or '?'} "
+            return (f"{self.kind} map {nm}prefix={kp} key={self.arc56_key_type or '?'} "
                     f"value={val}{conf}  [{ops}]")
-        return f"{self.kind} key={kp} value={val}{conf}  [{ops}]"
+        return f"{self.kind} {nm}key={kp} value={val}{conf}  [{ops}]"
+
+
+def annotate_with_arc56(entries: list, spec) -> list:
+    """Fill each recovered :class:`StorageEntry` with the AUTHORITATIVE name and
+    value/key types from a matching ARC-56 :class:`tealql.tealtools.arc56.StateEntry`
+    (matched on ``kind`` + ``is_map`` + the constant key / prefix bytes). An OPTIONAL
+    enrichment: entries with no spec match are left exactly as recovered, and a
+    ``None`` / empty spec is a no-op. The spec value type is treated as confident
+    (it is the declared contract, not a recovery guess). Mutates and returns
+    ``entries``."""
+    import base64
+    if spec is None:
+        return entries
+
+    def _b64(s):
+        try:
+            return base64.b64decode(s) if s else b""
+        except Exception:
+            return None
+
+    scoped = {"global": spec.global_state, "local": spec.local_state,
+              "box": spec.box_state}
+    # index spec state by (kind, is_map, key/prefix bytes); skip ambiguous keys
+    index: dict = {}
+    ambiguous: set = set()
+    for kind, states in scoped.items():
+        for st in states:
+            kb = _b64(st.prefix_b64 if st.is_map else st.key_b64)
+            if kb is None:
+                continue
+            gk = (kind, st.is_map, kb)
+            if gk in index:
+                ambiguous.add(gk)
+            index[gk] = st
+    for e in entries:
+        gk = (e.kind, e.is_map, e.key_or_prefix)
+        st = index.get(gk)
+        if st is None or gk in ambiguous:
+            continue
+        e.name = st.name
+        if st.value_type:
+            e.arc56_value_type, e.value_confident = st.value_type, True
+        if e.is_map and st.key_type:
+            e.arc56_key_type = st.key_type
+    return entries
 
 
 # op -> (kind, key_arg_index, value_arg_index | None, value_is_a_result_target).

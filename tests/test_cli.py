@@ -573,6 +573,25 @@ def test_storage_schema_json_shape(tmp_path, capsys):
                and r["key_or_prefix"] == "counter" for r in data)
 
 
+def test_storage_schema_arc56_annotates_name(tmp_path, capsys):
+    pytest.importorskip("puya")
+    import base64
+    (tmp_path / "m.teal").write_text(
+        "#pragma version 10\n"
+        'byte "m"\ntxna ApplicationArgs 0\nbtoi\nitob\nconcat\n'
+        "box_get\npop\npop\nint 1\nreturn\n"
+    )
+    spec = tmp_path / "app.arc56.json"
+    spec.write_text(json.dumps({"state": {"maps": {"box": {
+        "balances": {"keyType": "uint64", "valueType": "uint64",
+                     "prefix": base64.b64encode(b"m").decode()}}}}}))
+    main(["storage-schema", str(tmp_path / "m.teal"), "--arc56", str(spec), "--json"])
+    data = json.loads(capsys.readouterr().out)
+    box = [r for r in data if r["kind"] == "box" and r["is_map"]]
+    assert box and box[0]["name"] == "balances"
+    assert box[0]["arc56_value_type"] == "uint64" and box[0]["value_confident"]
+
+
 def test_box_audit_flags_caller_address(tmp_path, capsys):
     pytest.importorskip("puya")
     (tmp_path / "v.teal").write_text(

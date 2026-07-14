@@ -143,3 +143,52 @@ class TestTolerance:
         p = tmp_path / "spec.json"
         p.write_text(json.dumps(_SPEC))
         assert arc56.load(p).name == "Vault"
+
+
+class TestStorageAnnotation:
+    """`box_recovery.annotate_with_arc56` matches recovered storage entries to the
+    spec's state by kind + key/prefix bytes and fills in name + authoritative type.
+    Imported here (not puya) — the annotate path only needs base64 + the spec."""
+
+    def _entries(self):
+        from tealql.tealtools.lift.box_recovery import StorageEntry
+        return [
+            StorageEntry(kind="global", is_map=False, key_or_prefix=b"total",
+                         arc56_value_type="bytes", value_confident=False),
+            StorageEntry(kind="box", is_map=True, key_or_prefix=b"r",
+                         arc56_key_type="address", arc56_value_type=None),
+            StorageEntry(kind="global", is_map=False, key_or_prefix=b"nomatch"),
+        ]
+
+    def _spec(self):
+        import base64
+        b = lambda s: base64.b64encode(s).decode()
+        return arc56.from_dict({"state": {
+            "keys": {"global": {"total": {"keyType": "AVMString",
+                                          "valueType": "uint64", "key": b(b"total")}}},
+            "maps": {"box": {"records": {"keyType": "address",
+                                         "valueType": "(uint64,address)",
+                                         "prefix": b(b"r")}}},
+        }})
+
+    def test_matched_entries_get_name_and_authoritative_type(self):
+        from tealql.tealtools.lift.box_recovery import annotate_with_arc56
+        out = {(e.kind, e.key_or_prefix): e
+               for e in annotate_with_arc56(self._entries(), self._spec())}
+        total = out[("global", b"total")]
+        assert total.name == "total" and total.arc56_value_type == "uint64"
+        assert total.value_confident                  # spec type is authoritative
+        rec = out[("box", b"r")]
+        assert rec.name == "records" and rec.arc56_value_type == "(uint64,address)"
+
+    def test_unmatched_entry_untouched(self):
+        from tealql.tealtools.lift.box_recovery import annotate_with_arc56
+        out = {e.key_or_prefix: e
+               for e in annotate_with_arc56(self._entries(), self._spec())}
+        assert out[b"nomatch"].name is None
+
+    def test_none_spec_is_noop(self):
+        from tealql.tealtools.lift.box_recovery import annotate_with_arc56
+        ents = self._entries()
+        assert annotate_with_arc56(ents, None) is ents
+        assert all(e.name is None for e in ents)

@@ -210,9 +210,26 @@ _LABEL_DEF_RE = re.compile(r"^([A-Za-z_][\w@]*):\s*$")
 _DISPATCH_OPS = ("match", "switch")
 #: Single-selector branch: ``pushbytes SEL // method "sig"`` then ``==`` then one of these.
 _COND_BRANCH_OPS = ("bnz", "bz", "b")
+#: The selector-pushing ops whose operands are the router's method selectors.
+_PUSH_OPS = ("pushbytess", "pushbytes")
 
 
-def method_line_ranges(source: str):
+def _dispatch_methods(line: str, method_table: "dict | None"):
+    """The ordered list of :class:`AbiMethod` (or ``None`` per slot) a selector-
+    pushing router line declares — from its ``// method "sig"`` comments, or, when
+    those were stripped, from resolving the line's ``0x``-selector operands through
+    ``method_table`` (an ARC-56 spec). ``[]`` if the line pushes no selectors."""
+    sigs = _METHOD_RE.findall(line)
+    if sigs:
+        return [parse_signature(s) for s in sigs]
+    toks = line.split("//", 1)[0].split()
+    if not method_table or not toks or toks[0] not in _PUSH_OPS:
+        return []
+    hits = [method_table.get(t.lower()) for t in toks[1:] if t.startswith("0x")]
+    return hits if any(hits) else []
+
+
+def method_line_ranges(source: str, method_table: "dict | None" = None):
     """``[(start_line, end_line, AbiMethod), ...]`` — the source-line span each ABI
     method OWNS, from the router's selector→target-label pairing (``match`` /
     ``switch`` positional targets, or a single ``pushbytes SEL // method`` followed
@@ -220,9 +237,15 @@ def method_line_ranges(source: str):
     before the next *boundary* label (another method entry or a ``callsub`` target),
     so internal branch blocks stay with the method while shared helper subroutines
     do not. Spans are disjoint; 1-based inclusive. ``[]`` when the source has no
-    ``// method`` dispatch info — the OPTIONAL enrichment simply contributes
+    dispatch info to attribute from — the OPTIONAL enrichment simply contributes
     nothing. Source-text only (no CFG), and conservative: an unrecognised dispatch
-    shape yields no attribution rather than a wrong one."""
+    shape yields no attribution rather than a wrong one.
+
+    ``method_table`` (``{selector_hex: AbiMethod}`` from an ARC-56 spec) lets the
+    selector→name mapping survive even when the compiler's ``// method "sig"``
+    comments were stripped: the ``0x``-selector OPERANDS of the router's push are
+    resolved through it. It's the authoritative name source (the source comments,
+    when present, are used directly)."""
     lines = source.splitlines()
 
     label_order = []                       # (line_1based, label) in file order
@@ -239,26 +262,22 @@ def method_line_ranges(source: str):
 
     entry_method = {}                      # target_label -> AbiMethod
     for i, ln in enumerate(lines):
-        if "// method" not in ln:
-            continue
-        sigs = _METHOD_RE.findall(ln)      # ordered, aligned with the target labels
-        if not sigs:
+        methods = _dispatch_methods(ln, method_table)   # ordered, aligned w/ targets
+        if not methods:
             continue
         for j in range(i, min(i + 8, len(lines))):   # find the dispatch op below
             toks = lines[j].strip().split()
             if not toks:
                 continue
             if toks[0] in _DISPATCH_OPS:
-                for sig, tgt in zip(sigs, toks[1:]):
-                    meth = parse_signature(sig)
+                for meth, tgt in zip(methods, toks[1:]):
                     if meth is not None:
                         entry_method.setdefault(tgt, meth)
                         boundaries.add(tgt)
                 break
-            if len(sigs) == 1 and toks[0] in _COND_BRANCH_OPS and len(toks) >= 2:
-                meth = parse_signature(sigs[0])
-                if meth is not None:
-                    entry_method.setdefault(toks[1], meth)
+            if len(methods) == 1 and toks[0] in _COND_BRANCH_OPS and len(toks) >= 2:
+                if methods[0] is not None:
+                    entry_method.setdefault(toks[1], methods[0])
                     boundaries.add(toks[1])
                 break
 

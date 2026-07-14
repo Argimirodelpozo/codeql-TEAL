@@ -49,15 +49,31 @@ from .config import ConfigError, DetectionConfig, glob_match
 logger = logging.getLogger("tealql.security.scan")
 
 
-def _method_ranges_for(teal: Path):
+def _method_ranges_for(teal: Path, method_table=None):
     """ABI method line-spans for a ``.teal`` file (source ``method "sig"`` router
-    info), or ``[]``. Fully defensive: an OPTIONAL enrichment must never break a
-    scan, so any read/parse failure degrades to no attribution."""
+    info, or an ARC-56 ``method_table`` when the comments were stripped), or ``[]``.
+    Fully defensive: an OPTIONAL enrichment must never break a scan, so any
+    read/parse failure degrades to no attribution."""
     try:
         from tealql.tealtools.abi import method_line_ranges
-        return method_line_ranges(Path(teal).read_text(errors="ignore"))
+        return method_line_ranges(
+            Path(teal).read_text(errors="ignore"), method_table=method_table)
     except Exception:
         return []
+
+
+def _arc56_method_table(arc56):
+    """``{selector_hex: AbiMethod}`` from an ARC-56 spec (an ``Arc56Spec`` or a path
+    to one), or ``None``. Fully defensive — a bad/absent spec degrades to no table
+    (source ``method "sig"`` comments then remain the only attribution source)."""
+    if arc56 is None:
+        return None
+    try:
+        from tealql.tealtools.arc56 import Arc56Spec, load_optional
+        spec = arc56 if isinstance(arc56, Arc56Spec) else load_optional(arc56)
+        return spec.method_table() if spec is not None else None
+    except Exception:
+        return None
 
 
 def _method_at(ranges, violation) -> Optional[str]:
@@ -398,6 +414,7 @@ def scan(
     detection_config: "Optional[DetectionConfig]" = None,
     options: "Optional[DetectionOptions]" = None,
     strict: bool = False,
+    arc56=None,
 ) -> list[ScanFinding]:
     """Discover, reconstruct, and detect. Returns a flat list of findings
     sorted by ``(rel_path, detector_name)``.
@@ -411,6 +428,11 @@ def scan(
     A file with no declared mode is unfiltered (every selected detector runs)
     unless ``options.auto_mode`` is set, which classifies it by opcode.
 
+    ``arc56`` (an :class:`tealql.tealtools.arc56.Arc56Spec`, or a path to one) is an
+    OPTIONAL authoritative selector→method-name source, so findings keep their ABI
+    method attribution even when the compiler's ``method "sig"`` comments were
+    stripped from the source. Degrades cleanly when absent/unparseable.
+
     A file the grammar cannot fully parse is analyzed PARTIALLY with a
     warning (the unparsed spans are excluded — the scan may miss findings
     there); a file whose SSA cannot be reconstructed at all is skipped with
@@ -420,6 +442,7 @@ def scan(
     if options is not None:
         config = options.selection
         detection_config = options.modes
+    method_table = _arc56_method_table(arc56)
     root = Path(root).resolve()
     by_dir = discover_teal_files(root)
     logger.info("scan: %d .teal file(s) across %d director(ies) under %s",
@@ -471,7 +494,7 @@ def scan(
             # OPTIONAL: map each finding's line to the ABI method it sits in, from
             # the source `method "sig"` router info. Empty (no attribution) on raw
             # bytecode / non-ABI code — findings just carry no method then.
-            method_ranges = _method_ranges_for(teal)
+            method_ranges = _method_ranges_for(teal, method_table)
             for name in names:
                 cls = DETECTORS.get(name)
                 if cls is None:
