@@ -1,7 +1,0 @@
-#pragma version 10
-gtxn 0 AssetCloseTo
-global ZeroAddress
-==
-assert
-int 1
-return

@@ -103,7 +103,7 @@ _BASELINE: dict[str, tuple[int, int, int, int]] = {
     "abi-method-selector": (1, 0, 0, 1),
     "arbitrary-inner-appcall": (4, 0, 0, 4),
     "arbitrary-inner-asset": (2, 0, 0, 3),
-    "asset-close-to": (2, 0, 0, 3),
+    "asset-close-to": (3, 0, 0, 4),
     "asset-id-validation": (1, 0, 0, 2),
     "box-key": (3, 0, 0, 2),
     "close-remainder-to": (2, 0, 0, 2),

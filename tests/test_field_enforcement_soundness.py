@@ -209,3 +209,55 @@ return
 
 def test_clobbered_scratch_does_not_reach_enforcement(tmp_path):
     assert not _reaches_enforcement(tmp_path, _SCRATCH_CLOBBERED, "==")
+
+
+# --- signed-txn-scope for delegated-lsig drain fields (asset-close-to) ---
+# A `gtxn N AssetCloseTo` check protects the SIGNER only when it reads the SIGNED
+# txn's own field: `txn`, `gtxns` indexed by GroupIndex, or `gtxn N` with
+# `GroupIndex == N` pinned. A bare `gtxn N` on an unpinned index does not.
+
+def _acto(tmp_path, teal):
+    return _detector(tmp_path, "asset-close-to", teal)
+
+
+_H = "#pragma version 8\n"
+
+
+def test_asset_close_to_txn_self_clean(tmp_path):
+    assert _acto(tmp_path, _H + "txn AssetCloseTo\nglobal ZeroAddress\n==\n"
+                 "assert\nint 1\nreturn\n") == []
+
+
+def test_asset_close_to_dynamic_self_gtxns_clean(tmp_path):
+    # gtxns AssetCloseTo indexed by txn GroupIndex = the signed txn's own field
+    assert _acto(tmp_path, _H + "txn GroupIndex\ngtxns AssetCloseTo\n"
+                 "global ZeroAddress\n==\nassert\nint 1\nreturn\n") == []
+
+
+def test_asset_close_to_gtxn_with_groupindex_pin_clean(tmp_path):
+    # gtxn 0 checked AND GroupIndex==0 pinned -> gtxn 0 IS the signed txn
+    assert _acto(tmp_path, _H + "txn GroupIndex\nint 0\n==\nassert\n"
+                 "gtxn 0 AssetCloseTo\nglobal ZeroAddress\n==\nassert\n"
+                 "int 1\nreturn\n") == []
+
+
+def test_asset_close_to_unpinned_sibling_flagged(tmp_path):
+    # gtxn 0 checked but GroupIndex NOT pinned -> signed txn still exposed
+    vs = _acto(tmp_path, _H + "gtxn 0 AssetCloseTo\nglobal ZeroAddress\n==\n"
+               "assert\nint 1\nreturn\n")
+    assert len(vs) == 1
+    assert "GroupIndex" in vs[0].pretty()          # the specific unpinned-index warning
+
+
+def test_asset_close_to_wrong_index_pin_flagged(tmp_path):
+    # pins GroupIndex==1 but checks gtxn 0 (a genuine sibling) -> flagged
+    vs = _acto(tmp_path, _H + "txn GroupIndex\nint 1\n==\nassert\n"
+               "gtxn 0 AssetCloseTo\nglobal ZeroAddress\n==\nassert\n"
+               "int 1\nreturn\n")
+    assert len(vs) == 1
+
+
+def test_asset_close_to_no_check_generic_message(tmp_path):
+    vs = _acto(tmp_path, _H + "int 1\nreturn\n")
+    assert len(vs) == 1
+    assert "does not validate txn AssetCloseTo" in vs[0].pretty()

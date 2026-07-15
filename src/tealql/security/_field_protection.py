@@ -179,8 +179,57 @@ def _all_entry_paths_cross(exit_bb: BasicBlock, gates: set) -> bool:
     return True
 
 
+def _pinned_group_index(prog, *, file: Optional[str] = None) -> Optional[int]:
+    """The single value ``txn GroupIndex`` is pinned to on EVERY approving path,
+    or ``None`` — read off the common group shape (``group_reasoning.analyze``).
+    Defensive: any failure yields ``None`` (nothing credited as position-certain)."""
+    try:
+        from tealql.tealtools import group_reasoning as G
+        from tealql.tealtools.ssa import const_int
+        for c in G.analyze(prog).constraints:
+            if (c.ref.slot == "this" and c.ref.field == "GroupIndex"
+                    and c.op == "=="):
+                return const_int(c.rhs)
+    except Exception:
+        pass
+    return None
+
+
+def _signed_txn_field_reads(prog, field: str, *, file: Optional[str] = None) -> list:
+    """Reads of the SIGNED transaction's own ``field`` — the only ones that
+    protect a delegated logicsig against its own drain. Three forms all read the
+    running txn's field: ``txn FIELD`` (self); ``gtxns FIELD`` indexed by
+    ``txn GroupIndex`` (dynamic self); and ``gtxn N FIELD`` only when
+    ``GroupIndex == N`` is pinned (an absolute index that IS the signed txn). A
+    bare ``gtxn N FIELD`` on an unpinned index reads a SIBLING, not the signer, so
+    it is excluded — checking it does not protect the signed transaction."""
+    from tealql.tealtools import group_reasoning as G
+    reads = list(txn_field_reads(prog, field, file=file))
+    gtxn_reads = gtxn_field_reads(prog, field, file=file)
+    for a in gtxn_reads:                                     # gtxns indexed by GroupIndex
+        if a.op in ("gtxns", "gtxnsa", "gtxnsas") and a.inputs \
+                and G.relative_slot(a.inputs[0]) == "this":
+            reads.append(a)
+    # The GroupIndex pin is only needed to credit an ABSOLUTE ``gtxn N`` read — run
+    # the (expensive) group-shape analysis ONLY when such a read is present.
+    abs_reads = [a for a in gtxn_reads if a.op in ("gtxn", "gtxna", "gtxnas")]
+    if abs_reads:
+        pinned = _pinned_group_index(prog, file=file)
+        if pinned is not None:
+            for a in abs_reads:
+                toks = a.immediates.split()
+                try:
+                    n = int(toks[0])
+                except (IndexError, ValueError):
+                    continue
+                if n == pinned:                             # gtxn N, GroupIndex==N pinned
+                    reads.append(a)
+    return reads
+
+
 def field_validated_on_all_paths(
     prog: SSAProgram, field: str, *, file: Optional[str] = None,
+    signed_txn_only: bool = False,
 ) -> bool:
     """The field is validated on EVERY approving path: every CFG path from a
     program entry to each approving exit CROSSES a BB that ENFORCES a comparison
@@ -192,19 +241,21 @@ def field_validated_on_all_paths(
     reaches *some* enforcement" — existential, so a field compared in a dominating
     BB but asserted on only one branch (``dup``'d, asserted on the Delete branch,
     dropped on an approving NoOp branch) read as validated, letting an attacker set
-    the field on the unenforced approving path. Affected the asset-close-to /
-    close-remainder-to / tx-type-check family. Seeds both ``txn`` and sibling
-    ``gtxn`` reads of the field."""
+    the field on the unenforced approving path.
+
+    ``signed_txn_only`` (for delegated-LOGICSIG drain fields): a check protects the
+    signer only if it reads the SIGNED transaction's OWN field — ``txn FIELD``,
+    ``gtxns FIELD`` indexed by ``GroupIndex``, or ``gtxn N FIELD`` with
+    ``GroupIndex == N`` pinned. A bare ``gtxn N`` reads a sibling and does NOT
+    count. Default (False) seeds all ``txn`` + sibling ``gtxn`` reads (app-mode:
+    a field validated on a group sibling)."""
     exits = approving_exits(prog, file=file)
     if not exits:
         return False
-    field_vars = {
-        out
-        for a in (txn_field_reads(prog, field, file=file)
-                  + gtxn_field_reads(prog, field, file=file))
-        for out in a.outputs
-        if isinstance(out, SSAVar)
-    }
+    reads = (_signed_txn_field_reads(prog, field, file=file) if signed_txn_only
+             else txn_field_reads(prog, field, file=file)
+             + gtxn_field_reads(prog, field, file=file))
+    field_vars = {out for a in reads for out in a.outputs if isinstance(out, SSAVar)}
     if not field_vars:
         return False
     gates = _field_enforcement_bbs(prog, field_vars, file=file)

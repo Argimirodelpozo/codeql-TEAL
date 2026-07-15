@@ -1,0 +1,10 @@
+#pragma version 8
+// VULN: checks a SIBLING's close (gtxn 0) but never pins txn GroupIndex == 0, so
+// the SIGNED transaction's own AssetCloseTo is unchecked — drainable if the lsig
+// txn is placed at any index != 0.
+gtxn 0 AssetCloseTo
+global ZeroAddress
+==
+assert
+int 1
+return
