@@ -1,0 +1,9 @@
+#pragma version 8
+// VULN: checks gtxn 0 RekeyTo but never pins txn GroupIndex == 0 — the SIGNED
+// txn's own RekeyTo is unchecked.
+gtxn 0 RekeyTo
+global ZeroAddress
+==
+assert
+int 1
+return

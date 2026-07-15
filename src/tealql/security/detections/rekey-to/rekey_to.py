@@ -49,4 +49,5 @@ class RekeyToDetector(_ApprovalExitProtectedDetector):
     # own signed txn (see common.py doctrine; rekey was removed from the
     # app fund-flow fields for the same reason).
     applies_to = frozenset({"logicsig"})
+    signed_txn = True   # only the SIGNED txn's own field protects the signer
     violation_cls = RekeyToViolation

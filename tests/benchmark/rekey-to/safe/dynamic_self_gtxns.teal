@@ -1,0 +1,9 @@
+#pragma version 8
+// SAFE: gtxns RekeyTo indexed by txn GroupIndex reads the SIGNED txn's own field.
+txn GroupIndex
+gtxns RekeyTo
+global ZeroAddress
+==
+assert
+int 1
+return

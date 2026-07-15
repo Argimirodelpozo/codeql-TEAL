@@ -30,6 +30,10 @@ class _ApprovalExitProtectedDetector:
     # Detectors whose field is checked on a SIBLING group txn (asset-id-validation)
     # set this so a `gtxn N FIELD` guard counts; default keeps app-call scope.
     seed_gtxn: ClassVar[bool] = False
+    # Delegated-LOGICSIG drain fields (close-remainder-to, rekey-to): the check
+    # must read the SIGNED txn's OWN field — `txn`, `gtxns` by GroupIndex, or
+    # `gtxn N` with GroupIndex==N pinned. A bare sibling `gtxn N` does not count.
+    signed_txn: ClassVar[bool] = False
 
     def __init__(self, prog: SSAProgram, *, file: Optional[str] = None):
         self.prog = prog
@@ -48,9 +52,13 @@ class _ApprovalExitProtectedDetector:
             common.approving_exits(self.prog, file=self.file),
             key=lambda b: (b.file, b.first_line),
         ):
-            if not common.approval_exit_protected_for_field(
-                self.prog, exit_bb, self.field, file=self.file,
-                include_gtxn=self.seed_gtxn,
-            ):
+            if self.signed_txn:
+                protected = common.approval_exit_protected_for_signed_txn_field(
+                    self.prog, exit_bb, self.field, file=self.file)
+            else:
+                protected = common.approval_exit_protected_for_field(
+                    self.prog, exit_bb, self.field, file=self.file,
+                    include_gtxn=self.seed_gtxn)
+            if not protected:
                 out.append(self.violation_cls(exit_bb))
         return out

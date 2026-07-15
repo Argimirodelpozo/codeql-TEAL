@@ -261,3 +261,44 @@ def test_asset_close_to_no_check_generic_message(tmp_path):
     vs = _acto(tmp_path, _H + "int 1\nreturn\n")
     assert len(vs) == 1
     assert "does not validate txn AssetCloseTo" in vs[0].pretty()
+
+
+# --- signed-txn scope for close-remainder-to / rekey-to (same rule as
+#     asset-close-to, via the _ApprovalExitProtected path) ---
+
+def test_close_remainder_to_dynamic_self_clean(tmp_path):
+    assert _detector(tmp_path, "close-remainder-to",
+                     _H + "txn GroupIndex\ngtxns CloseRemainderTo\n"
+                     "global ZeroAddress\n==\nassert\nint 1\nreturn\n") == []
+
+
+def test_close_remainder_to_pinned_absolute_clean(tmp_path):
+    assert _detector(tmp_path, "close-remainder-to",
+                     _H + "txn GroupIndex\nint 0\n==\nassert\n"
+                     "gtxn 0 CloseRemainderTo\nglobal ZeroAddress\n==\nassert\n"
+                     "int 1\nreturn\n") == []
+
+
+def test_close_remainder_to_unpinned_sibling_flagged(tmp_path):
+    assert _detector(tmp_path, "close-remainder-to",
+                     _H + "gtxn 0 CloseRemainderTo\nglobal ZeroAddress\n==\n"
+                     "assert\nint 1\nreturn\n")
+
+
+def test_rekey_to_dynamic_self_clean(tmp_path):
+    assert _detector(tmp_path, "rekey-to",
+                     _H + "txn GroupIndex\ngtxns RekeyTo\n"
+                     "global ZeroAddress\n==\nassert\nint 1\nreturn\n") == []
+
+
+def test_rekey_to_pinned_absolute_clean(tmp_path):
+    assert _detector(tmp_path, "rekey-to",
+                     _H + "txn GroupIndex\nint 0\n==\nassert\n"
+                     "gtxn 0 RekeyTo\nglobal ZeroAddress\n==\nassert\n"
+                     "int 1\nreturn\n") == []
+
+
+def test_rekey_to_unpinned_sibling_flagged(tmp_path):
+    assert _detector(tmp_path, "rekey-to",
+                     _H + "gtxn 0 RekeyTo\nglobal ZeroAddress\n==\n"
+                     "assert\nint 1\nreturn\n")

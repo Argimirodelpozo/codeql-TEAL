@@ -1,0 +1,9 @@
+#pragma version 8
+// VULN: checks gtxn 0 CloseRemainderTo but never pins txn GroupIndex == 0 — the SIGNED
+// txn's own CloseRemainderTo is unchecked.
+gtxn 0 CloseRemainderTo
+global ZeroAddress
+==
+assert
+int 1
+return

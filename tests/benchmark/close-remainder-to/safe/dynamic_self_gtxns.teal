@@ -1,0 +1,9 @@
+#pragma version 8
+// SAFE: gtxns CloseRemainderTo indexed by txn GroupIndex reads the SIGNED txn's own field.
+txn GroupIndex
+gtxns CloseRemainderTo
+global ZeroAddress
+==
+assert
+int 1
+return

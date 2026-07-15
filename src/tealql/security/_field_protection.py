@@ -368,6 +368,22 @@ def approval_exit_protected_for_field(
     )
 
 
+def approval_exit_protected_for_signed_txn_field(
+    prog: SSAProgram, exit_bb: BasicBlock, field: str,
+    *, file: Optional[str] = None,
+) -> bool:
+    """Like :func:`approval_exit_protected_for_field` but the check must read the
+    SIGNED transaction's OWN ``field`` — ``txn FIELD``, ``gtxns FIELD`` indexed by
+    ``GroupIndex``, or ``gtxn N FIELD`` with ``GroupIndex == N`` pinned (see
+    :func:`_signed_txn_field_reads`). A bare ``gtxn N`` reads a sibling and does
+    NOT protect the signer. For the delegated-LOGICSIG drain-field detectors
+    (close-remainder-to, rekey-to, asset-close-to)."""
+    if file is None:
+        file = exit_bb.file
+    seeds = ssavar_outputs(_signed_txn_field_reads(prog, field, file=file))
+    return _approval_exit_protected_for_seeds(prog, exit_bb, seeds, file=file)
+
+
 
 
 def approval_exit_protected_for_global_field(
