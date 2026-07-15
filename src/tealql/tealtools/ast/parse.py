@@ -91,6 +91,31 @@ def _named_int_error(c) -> bool:
         and c.children[1].type == "label_identifier"
     )
 
+_NUMERIC_ARG_OPCODES = frozenset({
+    "single_numeric_argument_opcode",   # int / pushint
+    "intcblock_opcode",
+    "intc_opcode",
+    "pushints_opcode",
+})
+
+
+def _hex_int_split(ch, nxt, src: bytes) -> bool:
+    """A grammar hex/oct/bin-literal split: ``ch`` is a decimal-numeric int opcode
+    whose literal was truncated at the ``0`` (the ``numeric_argument`` rule accepts
+    only decimal), and ``nxt`` is the adjacent ``x..`` / ``o..`` / ``b..`` tail the
+    grammar mis-emitted as a ``label`` / ``ERROR``. Adjacency (``nxt`` starts
+    exactly where ``ch`` ends, no whitespace) is unambiguous: a label / stray token
+    fused to an opcode's operand is never valid TEAL, so this only ever fires on a
+    split literal. Over-merging a genuinely malformed token degrades to ``None`` in
+    ``const_values`` (never a wrong value)."""
+    if ch.type not in _NUMERIC_ARG_OPCODES or nxt.type not in ("label", "ERROR"):
+        return False
+    if nxt.start_byte != ch.end_byte:            # must be adjacent — no whitespace
+        return False
+    return src[nxt.start_byte:nxt.start_byte + 1] in (b"x", b"X", b"o", b"O",
+                                                      b"b", b"B")
+
+
 def _ts_to_pascal(node_type: str) -> str:
     """Fallback node-class for an opcode whose mnemonic no class claims:
     PascalCase the tree-sitter node type (``txn_opcode`` -> ``TxnOpcode``).
@@ -160,6 +185,11 @@ def parse_nodes(
         for c in root.children:
             if _named_int_error(c):
                 real.append(c)
+            elif c.type == "ERROR" and real and _hex_int_split(real[-1], c, src):
+                # a hex/oct/bin int tail the grammar split off (e.g. the `x10 5`
+                # after `intcblock 0`) — keep it so the next pass merges it back,
+                # rather than dropping it as an unparseable-span diagnostic.
+                real.append(c)
             elif c.type == "ERROR":
                 if diagnostics is not None:
                     text = src[c.start_byte:c.end_byte].decode("utf-8", "replace")
@@ -187,7 +217,23 @@ def parse_nodes(
         # All opcode nodes are emitted; label nodes are reachability-gated below.
         op_nodes: list = []
         label_nodes: list = []
-        for ch in real:
+        i = 0
+        while i < len(real):
+            ch = real[i]
+            nxt = real[i + 1] if i + 1 < len(real) else None
+            if nxt is not None and _hex_int_split(ch, nxt, src):
+                # Recovered `int 0x10` / `pushint 0x..` / `intcblock 0x.. ..`: the
+                # grammar's numeric_argument is DECIMAL-only, so a hex/oct/bin
+                # literal parses as `<op> 0` plus an adjacent bogus `label`/`ERROR`
+                # tail (`x10`). Re-span the opcode through that tail so its `.code`
+                # carries the whole literal; const_values then resolves it.
+                cls, override = _class_for(ch)
+                op_nodes.append(_node(
+                    ch.start_point[0] + 1, ch.start_point[1],
+                    nxt.end_point[0] + 1, nxt.end_point[1],
+                    cls, override))
+                i += 2
+                continue
             if _named_int_error(ch):
                 # Recovered `int <name>`: span the `int` token through the named
                 # identifier (tight, robust to greedy ERROR recovery), emit as
@@ -197,6 +243,7 @@ def parse_nodes(
                     a.start_point[0] + 1, a.start_point[1],
                     b.end_point[0] + 1, b.end_point[1],
                     SingleNumericArgumentOpcode))
+                i += 1
                 continue
             sl, sc, el, ec = _loc(ch)
             if ch.type == "label":
@@ -204,6 +251,7 @@ def parse_nodes(
             else:
                 cls, override = _class_for(ch)
                 op_nodes.append(_node(sl, sc, el, ec, cls, override))
+            i += 1
 
         reach_lines: set[int] = set()
         kids = _children(op_nodes + label_nodes).get(file, [])

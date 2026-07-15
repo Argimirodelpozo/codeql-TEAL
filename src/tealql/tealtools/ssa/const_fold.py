@@ -253,8 +253,8 @@ def _fold_bitwise(op: str, inputs: list[Const]) -> Optional[Const]:
     """Fold the uint64 bitwise / shift binary ops. Operand order
     matches the arithmetic folders and :mod:`tealql.tealtools.passes.range_arith`:
     ``inputs[0]`` is the deeper stack value ``A``, ``inputs[1]`` the
-    top ``B``. AVM semantics: ``<<`` is ``A * 2^B mod 2^64`` (wraps,
-    never halts); ``>>`` is ``A // 2^B``; ``&`` / ``|`` / ``^`` are the
+    top ``B``. AVM semantics: ``shl`` is ``A * 2^B mod 2^64`` (wraps,
+    never halts); ``shr`` is ``A // 2^B``; ``&`` / ``|`` / ``^`` are the
     usual uint64 bit ops."""
     if len(inputs) != 2:
         return None
@@ -269,11 +269,11 @@ def _fold_bitwise(op: str, inputs: list[Const]) -> Optional[Const]:
         r = a | b
     elif op == "^":
         r = a ^ b
-    elif op == "<<":
+    elif op == "shl":
         # B ≥ 64 zeroes the result. Guard the shift so we never
         # materialise a multi-exabit Python int before masking.
         r = 0 if b >= 64 else (a << b) & _UINT64_MAX
-    elif op == ">>":
+    elif op == "shr":
         r = 0 if b >= 64 else a >> b
     else:
         return None
@@ -445,7 +445,7 @@ def try_fold_assignment(a: Assignment) -> Optional[Const]:
         return _fold_setbyte(inputs)
     if op in ("+", "-", "*", "/", "%"):
         return _fold_int_arith(op, inputs)
-    if op in ("&", "|", "^", "<<", ">>"):
+    if op in ("&", "|", "^", "shl", "shr"):
         return _fold_bitwise(op, inputs)
     if op == "~":
         return _fold_bitwise_not(inputs)

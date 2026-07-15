@@ -32,23 +32,23 @@ class TestBitwiseBinary:
         assert _val(_fold_bitwise("^", [_c(0xFF), _c(0x0F)])) == 0xF0
 
     def test_shl_basic(self):
-        assert _val(_fold_bitwise("<<", [_c(1), _c(4)])) == 16
-        assert _val(_fold_bitwise("<<", [_c(1), _c(63)])) == 1 << 63
+        assert _val(_fold_bitwise("shl", [_c(1), _c(4)])) == 16
+        assert _val(_fold_bitwise("shl", [_c(1), _c(63)])) == 1 << 63
 
     def test_shl_wraps_mod_2_64(self):
         # AVM ``<<`` is ``A * 2^B mod 2^64`` — the top bit overflows away.
-        assert _val(_fold_bitwise("<<", [_c(3), _c(63)])) == (3 << 63) & UMAX
-        assert _val(_fold_bitwise("<<", [_c(UMAX), _c(1)])) == (UMAX << 1) & UMAX
+        assert _val(_fold_bitwise("shl", [_c(3), _c(63)])) == (3 << 63) & UMAX
+        assert _val(_fold_bitwise("shl", [_c(UMAX), _c(1)])) == (UMAX << 1) & UMAX
 
     def test_shift_count_ge_64_is_zero(self):
         # B >= 64 zeroes the result; must not allocate a giant Python int.
-        assert _val(_fold_bitwise("<<", [_c(1), _c(64)])) == 0
-        assert _val(_fold_bitwise("<<", [_c(UMAX), _c(UMAX)])) == 0
-        assert _val(_fold_bitwise(">>", [_c(1), _c(64)])) == 0
+        assert _val(_fold_bitwise("shl", [_c(1), _c(64)])) == 0
+        assert _val(_fold_bitwise("shl", [_c(UMAX), _c(UMAX)])) == 0
+        assert _val(_fold_bitwise("shr", [_c(1), _c(64)])) == 0
 
     def test_shr(self):
-        assert _val(_fold_bitwise(">>", [_c(256), _c(4)])) == 16
-        assert _val(_fold_bitwise(">>", [_c(UMAX), _c(63)])) == 1
+        assert _val(_fold_bitwise("shr", [_c(256), _c(4)])) == 16
+        assert _val(_fold_bitwise("shr", [_c(UMAX), _c(63)])) == 1
 
     def test_non_const_or_oob_rejected(self):
         assert _fold_bitwise("&", [Const("bytes", "0x01"), _c(1)]) is None
@@ -95,7 +95,12 @@ def _assign(op: str, *const_inputs: Const) -> Assignment:
 class TestDispatch:
     def test_bitwise_routed(self):
         assert _val(try_fold_assignment(_assign("&", _c(0xFF), _c(0x0F)))) == 0x0F
-        assert _val(try_fold_assignment(_assign("<<", _c(1), _c(4)))) == 16
+        # `shl`/`shr` are the real AVM mnemonics (NOT `<<`/`>>`); dispatch on the
+        # wrong token silently left every static shift unfolded.
+        assert _val(try_fold_assignment(_assign("shl", _c(1), _c(4)))) == 16
+        assert _val(try_fold_assignment(_assign("shr", _c(256), _c(4)))) == 16
+        # directional: `A shr B` is `A // 2^B`, not `B // 2^A` (2 shr 256 != 256 shr 2)
+        assert _val(try_fold_assignment(_assign("shr", _c(256), _c(2)))) == 64
         assert _val(try_fold_assignment(_assign("~", _c(0)))) == UMAX
 
     def test_logical_not_confused_with_bitwise(self):

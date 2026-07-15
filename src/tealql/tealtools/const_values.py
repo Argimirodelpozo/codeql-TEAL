@@ -43,17 +43,25 @@ def _imms(n) -> str:
 
 
 def _to_int(tok: str) -> Optional[int]:
-    """Decimal-only int parse (no ``0x``, no named constants)."""
+    """Parse an integer literal — decimal, or a ``0x`` / ``0o`` / ``0b`` prefixed
+    literal (all accepted by ``goal`` / puya, e.g. ``int 0x10``). No named
+    constants. Decimal is tried first so leading-zero decimals still parse (``int``
+    with base 0 would reject them)."""
+    tok = tok.strip()
     try:
         return int(tok)
+    except (ValueError, TypeError):
+        pass
+    try:
+        return int(tok, 0)              # 0x.. / 0o.. / 0b.. prefixed
     except (ValueError, TypeError):
         return None
 
 
 def _resolve_int_immediate(tok: str) -> Optional[int]:
-    """An ``int`` immediate: a decimal literal OR a named AVM constant
-    (``DeleteApplication`` -> 5, ``pay`` -> 1). Hex / template variables still
-    yield ``None`` (no statically-known value)."""
+    """An ``int`` immediate: a decimal / ``0x`` / ``0o`` / ``0b`` literal OR a
+    named AVM constant (``DeleteApplication`` -> 5, ``pay`` -> 1). Template
+    variables still yield ``None`` (no statically-known value)."""
     v = _to_int(tok)
     if v is not None:
         return v
