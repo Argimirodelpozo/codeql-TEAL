@@ -332,25 +332,16 @@ def _validated_intervals(prog: SSAProgram) -> tuple[dict, dict]:
     guard would otherwise lose taint unsoundly). Dominance is approximated by
     reachability-without-the-assert-block on the raw interprocedural CFG
     (over-approximates → conservative)."""
-    from ..cfg.dominance import all_blocks, reachable_avoiding
+    from ..cfg.dominance import AssertDominance, all_blocks
 
-    entries = [b for b in all_blocks(prog) if not b.predecessors]
-    if not entries:
+    if not any(not b.predecessors for b in all_blocks(prog)):
         # Same (validated, provenance) shape as the normal return — an empty
         # program (or one with no entry block) validates nothing.
         return {}, {}
-    dom_cache: dict = {}
+    dom = AssertDominance(prog)
 
     def dominates(block_a, use, line: int) -> bool:
-        ub = use.basic_block
-        if ub is None:
-            return False
-        if ub is block_a:
-            return use.location.line > line
-        reach = dom_cache.get(block_a)
-        if reach is None:
-            reach = dom_cache[block_a] = reachable_avoiding(entries, block_a)
-        return ub not in reach
+        return dom.dominates(block_a, use.basic_block, line, use.location.line)
 
     out: dict = {}
     prov: dict = {}       # value -> [(lo, hi, kind, line)] : which op validated

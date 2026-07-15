@@ -45,7 +45,7 @@ from __future__ import annotations
 
 from ..ssa import SSAProgram, SSAVar
 from ..ssa.operands import binary_operands, const_int, const_byte_length
-from ..cfg.dominance import all_blocks, reachable_avoiding
+from ..cfg.dominance import AssertDominance
 from ..avm import U64_CMP_OPS
 
 # The DBM origin (the constant 0); constants fold in as ``ORIGIN + n``.
@@ -149,12 +149,11 @@ class LengthRelations:
     access site with the assert facts that dominate *that* site folded in."""
 
     def __init__(self, prog: SSAProgram):
-        self._entries = [b for b in all_blocks(prog) if not b.predecessors]
+        self._dom = AssertDominance(prog)
         self._base = DBM()
         self._seed_structural(prog)
         # (assert-assignment, [(a, b, c), ...]) for every decodable assert.
         self._asserts = self._collect_asserts(prog)
-        self._reach_cache: dict = {}   # assert-block -> reachable-without-it
         self._dbm_cache: dict = {}     # frozenset(assert idx) -> constraint graph
         self._sssp_cache: dict = {}    # (assert-set, source atom) -> (dist, ok)
 
@@ -302,20 +301,11 @@ class LengthRelations:
         return edges
 
     def _dominating_assert_ids(self, block, line: int) -> frozenset:
-        ids = []
-        for i, (a, _edges) in enumerate(self._asserts):
-            ab = a.basic_block
-            if ab is None:
-                continue
-            if ab is block:
-                if line > a.location.line:
-                    ids.append(i)
-                continue
-            reach = self._reach_cache.get(ab)
-            if reach is None:
-                reach = self._reach_cache[ab] = reachable_avoiding(self._entries, ab)
-            if block not in reach:
-                ids.append(i)
+        ids = [
+            i for i, (a, _edges) in enumerate(self._asserts)
+            if a.basic_block is not None
+            and self._dom.dominates(a.basic_block, block, a.location.line, line)
+        ]
         return frozenset(ids)
 
     def _graph_for(self, ids: frozenset) -> DBM:

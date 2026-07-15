@@ -92,3 +92,33 @@ def reachable_avoiding(entries: list, avoid) -> set:
             seen.add(s)
             stack.append(s)
     return seen
+
+
+class AssertDominance:
+    """Approximate "a guard at ``guard_block`` dominates a target ``target_block``"
+    by reachability — the shared substrate for the assert-guarded analyses
+    (relational bounds, range-from-assert, byte-taint validation).
+
+    ``dominates(guard_block, target_block, guard_line, target_line)``: the guard
+    dominates the target iff the target is NOT reachable from the entries while
+    avoiding the guard block (so every path to it crosses the guard); within the
+    SAME block, iff the target is strictly after the guard's line. Over-
+    approximates on the raw interprocedural CFG, so a fact is at worst skipped,
+    never applied unsoundly. The per-guard-block reach set is cached, so repeated
+    queries across many (guard, target) pairs stay cheap."""
+
+    def __init__(self, prog):
+        self._entries = [b for b in all_blocks(prog) if not b.predecessors]
+        self._reach: dict = {}
+
+    def dominates(self, guard_block, target_block, guard_line: int,
+                  target_line: int) -> bool:
+        if target_block is None:
+            return False
+        if target_block is guard_block:
+            return target_line > guard_line
+        reach = self._reach.get(guard_block)
+        if reach is None:
+            reach = self._reach[guard_block] = reachable_avoiding(
+                self._entries, guard_block)
+        return target_block not in reach

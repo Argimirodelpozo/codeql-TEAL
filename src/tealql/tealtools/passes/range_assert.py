@@ -37,7 +37,7 @@ from __future__ import annotations
 from typing import Optional
 
 from ..ssa import IntRange, SSAProgram, SSAVar, binary_operands
-from ..cfg.dominance import all_blocks, reachable_avoiding
+from ..cfg.dominance import AssertDominance, all_blocks
 from ..avm import U64_CMP_OPS
 from .range_arith import (
     _UINT64_MAX,
@@ -106,8 +106,7 @@ def propagate_assert_ranges(prog: SSAProgram) -> int:
     if not getattr(prog, "_range_arith_propagated", False):
         propagate_range_arithmetic(prog)
 
-    entries = [b for b in all_blocks(prog) if not b.predecessors]
-    if not entries:
+    if not any(not b.predecessors for b in all_blocks(prog)):
         return 0
 
     # (assert assignment, condition value) for every assert with an operand.
@@ -123,19 +122,11 @@ def propagate_assert_ranges(prog: SSAProgram) -> int:
     phi_fed = {id(arg) for ph in prog.phis.values() for arg in ph.args
                if isinstance(arg, SSAVar)}
 
-    dom_cache: dict = {}  # assert-block -> reachable-without-it (static CFG)
+    dom = AssertDominance(prog)
 
     def _dominates(block_a, use, assert_line: int) -> bool:
-        ub = use.basic_block
-        if ub is None:
-            return False
-        if ub is block_a:
-            # same block: dominated only if strictly after the assert.
-            return use.location.line > assert_line
-        reach = dom_cache.get(block_a)
-        if reach is None:
-            reach = dom_cache[block_a] = reachable_avoiding(entries, block_a)
-        return ub not in reach
+        return dom.dominates(block_a, use.basic_block, assert_line,
+                             use.location.line)
 
     changed_overall = 0
     changed = True

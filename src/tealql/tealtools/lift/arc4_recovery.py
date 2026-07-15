@@ -610,21 +610,11 @@ def _guess_static_arrays(main, subs) -> dict:
     return out
 
 
-def _account_txn_fields() -> frozenset:
-    """The transaction fields whose value IS a 32-byte address, read from puya's
-    own field registry (``wtype`` == account: Receiver / Sender / CloseRemainderTo
-    / RekeyTo / the AssetXxx + ConfigAsset* address fields). Empty if the registry
-    moves -- the usage-side guess then simply produces nothing."""
-    try:
-        from puya.awst.txn_fields import TxnField
-        return frozenset(f.name for f in TxnField
-                         if "account" in str(getattr(f, "wtype", "")).lower())
-    except Exception as e:                               # registry moved / renamed
-        logger.debug("account txn-field registry unavailable: %s", e)
-        return frozenset()
-
-
-_ACCOUNT_TXN_FIELDS = _account_txn_fields()
+# The transaction fields whose value IS a 32-byte address (Receiver / Sender /
+# CloseRemainderTo / RekeyTo / the AssetXxx address fields) — the canonical
+# langspec-derived set in ``avm.py`` (verified identical to puya's account-wtype
+# registry). Single-sourced here so the address-field decision lives in one place.
+from ..avm import ADDRESS_TXN_FIELDS as _ACCOUNT_TXN_FIELDS  # noqa: E402
 
 # Ops whose FIRST operand (``args[0]`` -- verified against the lift's arg order)
 # is an account address: the local-state family + the account-parameter reads.

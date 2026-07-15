@@ -353,7 +353,7 @@ _TXN_FIELD_TYPE = {
     "ExtraProgramPages": "uint64", "ConfigAssetTotal": "uint64",
     "ConfigAssetDecimals": "uint64", "VoteFirst": "uint64", "VoteLast": "uint64",
     "VoteKeyDilution": "uint64", "NumApprovalProgramPages": "uint64",
-    "NumClearStateProgramPages": "uint64",
+    "NumClearStateProgramPages": "uint64", "RejectVersion": "uint64",
     # bool
     "ConfigAssetDefaultFrozen": "bool", "FreezeAssetFrozen": "bool",
     "Nonparticipation": "bool",
@@ -406,6 +406,25 @@ def _field_type(op, immediates):
     for tk in toks:
         if tk in table:
             return table[tk]
+    return None
+
+
+#: AVM types that live in a byte-slice stack value vs a uint64.
+_AVM_BYTES_TYPES = frozenset({"bytes", "account", "string"})
+_AVM_UINT64_TYPES = frozenset({"uint64", "bool", "asset", "application"})
+
+
+def txn_field_avm_type(field: str) -> "str | None":
+    """The AVM stack type of a transaction field's value — ``'b'`` (byte slice)
+    or ``'u'`` (uint64), or ``None`` for an unknown field. The canonical
+    field -> ``'b'``/``'u'`` decision (addresses / notes / programs are bytes;
+    ids / amounts / flags are uint64), so the lift's itxn-field typing single-
+    sources it here instead of re-deriving from puya's registry."""
+    t = _TXN_FIELD_TYPE.get(field)
+    if t in _AVM_BYTES_TYPES:
+        return "b"
+    if t in _AVM_UINT64_TYPES:
+        return "u"
     return None
 
 

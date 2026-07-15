@@ -13,7 +13,7 @@ import logging
 from ..ssa import Const, Phi, SSAVar
 from . import pre_ir
 from ..avm import (_BYTES_CONSUME, _BYTES_OPS, _U64_CONSUME, _U64_OPS,
-                      _field_type, _imm0, avm)
+                      _field_type, _imm0, avm, txn_field_avm_type)
 from .teal_const import _const_bytes
 
 logger = logging.getLogger("tealql.tealtools.lift")
@@ -26,22 +26,10 @@ def _empty_bytes(b) -> bool:
 
 
 def _itxn_field_avm(field: str):
-    """The AVM type ('b'/'u') a given `itxn_field <Field>` operand must be, from
-    Puya's own transaction-field registry (OnCompletion -> uint64, Note -> bytes,
-    Receiver -> account/bytes, ...). None for an unknown field."""
-    try:
-        from puya.awst.txn_fields import TxnField
-        w = str(getattr(TxnField[field], "wtype", "")).lower()
-    except (ImportError, AttributeError, KeyError) as e:
-        # ImportError: puya moved the registry; KeyError: unknown field name
-        # (the documented None case); AttributeError: enum-member API change.
-        logger.debug("itxn-field typing unavailable for %r: %s", field, e)
-        return None
-    if "byte" in w or "account" in w or "string" in w:
-        return "b"
-    if "uint64" in w or "bool" in w or "asset" in w or "application" in w:
-        return "u"
-    return None
+    """The AVM type ('b'/'u') a given `itxn_field <Field>` operand must be
+    (OnCompletion -> uint64, Note -> bytes, Receiver -> account/bytes, ...), from
+    the canonical langspec table in ``avm.py``. None for an unknown field."""
+    return txn_field_avm_type(field)
 
 
 def _itob_const(v: int) -> "pre_ir.BytesConstant":
