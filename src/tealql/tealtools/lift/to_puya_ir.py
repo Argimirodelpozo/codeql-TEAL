@@ -463,7 +463,11 @@ def _to_puya_full(prog):
         prog.propagate_constants()
         prog.propagate_scratch_constants()
     except Exception as e:
-        logger.debug("pre-lift scratch const-propagation skipped: %s", e)
+        # These mutate prog in place; they must not fail on valid input, so a
+        # raise here points at a bug, not a coverage limit. Degrade (the partial
+        # annotations leave valid IR) but make it VISIBLE, not a silent DEBUG line.
+        logger.warning("pre-lift scratch const-propagation FAILED (%s: %s) — "
+                       "lifting un-simplified; likely a bug", type(e).__name__, e)
     # Build via the lifter directly (not `lift()`) so we keep its SSAVar->Register
     # map for the byte-length sized-bytes bridge below.
     lifter = _Lifter(prog)
@@ -525,7 +529,9 @@ def _to_puya_full(prog):
         prog.propagate_byte_lengths()
         bytelen = _byte_length_map(lifter, t)
     except Exception as e:
-        logger.debug("byte-length sized-bytes bridge skipped: %s", e)
+        # Mutating pass; a failure on valid input is a bug — degrade but surface it.
+        logger.warning("byte-length sized-bytes bridge FAILED (%s: %s) — "
+                       "lengths not bridged; likely a bug", type(e).__name__, e)
         bytelen = {}
     _recover_ir_types(main, subs, byte_lengths=bytelen)
     _recover_encoded_types(main, subs)

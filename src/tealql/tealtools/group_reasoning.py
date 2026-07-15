@@ -39,7 +39,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from .path_predicates import BranchCondition, PathPredicateAnalysis
-from .ssa import Const, SSAProgram, SSAVar, binary_operands
+from .ssa import Const, SSAProgram, SSAVar, binary_operands, const_int as _const_int
 from .avm import U64_CMP_OPS, enum_field_name
 
 
@@ -109,21 +109,6 @@ def classify(operand: object) -> Optional[GroupRef]:
 # ADDITIVE (separate from ``classify``/``analyze`` so existing snapshots are
 # untouched) and consumed by the verifier's harness group setup.
 # ---------------------------------------------------------------------------
-
-
-def _const_int(operand: object) -> Optional[int]:
-    """``operand`` as a Python int if it's a compile-time integer literal
-    (a :class:`Const` or a const-propagated :class:`SSAVar`/:class:`Phi`)."""
-    if isinstance(operand, Const):
-        cv = operand
-    else:
-        cv = getattr(operand, "const_value", None)
-    if isinstance(cv, Const) and cv.kind == "int":
-        try:
-            return int(cv.value)
-        except (ValueError, TypeError):
-            return None
-    return None
 
 
 def _is_group_index(operand: object) -> bool:

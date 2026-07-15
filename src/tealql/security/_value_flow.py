@@ -28,7 +28,7 @@ def cached_path_predicates(prog: SSAProgram) -> PathPredicateAnalysis:
         pp = PathPredicateAnalysis(prog)
         try:
             prog._sec_path_predicates = pp
-        except Exception:
+        except AttributeError:      # only if SSAProgram ever gains __slots__
             pass
     return pp
 
@@ -45,7 +45,7 @@ def _frame_param_sources_cached(prog: SSAProgram) -> dict:
         cache = frame_param_sources(prog)
         try:
             prog._sec_frame_param_sources = cache
-        except Exception:
+        except AttributeError:      # only if SSAProgram ever gains __slots__
             pass
     return cache
 

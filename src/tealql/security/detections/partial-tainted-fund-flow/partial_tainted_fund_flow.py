@@ -59,7 +59,7 @@ def _cached_byte_taint(prog: SSAProgram):
         bt = byte_taint(prog, sources=_byte_sources, validate=True)
         try:
             prog._sec_partial_byte_taint = bt
-        except Exception:
+        except AttributeError:      # only if SSAProgram ever gains __slots__
             pass
     return bt
 

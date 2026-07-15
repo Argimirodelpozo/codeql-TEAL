@@ -174,7 +174,7 @@ def user_input_taint(prog: SSAProgram, file: Optional[str] = None) -> dict:
         cache = {}
         try:
             prog._sec_user_input_taint = cache
-        except Exception:
+        except AttributeError:      # only if SSAProgram ever gains __slots__
             pass
     if file in cache:
         return cache[file]
@@ -261,7 +261,7 @@ def ir_lifter(prog: SSAProgram, file: Optional[str] = None):
                     src, type(e).__name__, e)
     try:
         prog._sec_ir_lifter = lifter
-    except Exception:
+    except AttributeError:          # only if SSAProgram ever gains __slots__
         pass
     return lifter
 
