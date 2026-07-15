@@ -1,4 +1,4 @@
-"""The SPECULATIVE ARC4 encoded-type side-channel (``_guess_encoded_types``).
+"""The SPECULATIVE ARC4 encoded-type side-channel (``guess_encoded_types_scored``).
 
 Pins the tier's two contracts:
 
@@ -26,7 +26,7 @@ def _guesses_for(tmp_path, teal: str):
 
     (tmp_path / "prog.teal").write_text(teal)
     main, subs = to_puya(SSAProgram(str(tmp_path)))
-    guesses = to_puya_ir._guess_encoded_types(main, subs)
+    guesses = to_puya_ir.guess_encoded_types_scored(main, subs)[0]
     by_op = {}          # defining op name -> list[(Register, EncodedType)]
     for sub in (main, *subs):
         for bb in sub.body:

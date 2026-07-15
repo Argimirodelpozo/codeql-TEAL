@@ -31,7 +31,6 @@ from . import arc4_recovery
 # `to_puya_ir.<name>` reference keeps resolving -- the split is transparent.
 _recover_encoded_types = arc4_recovery._recover_encoded_types
 guess_encoded_types_scored = arc4_recovery.guess_encoded_types_scored
-_guess_encoded_types = arc4_recovery._guess_encoded_types
 abi_address_fund_flows = arc4_recovery.abi_address_fund_flows
 is_address_encoding = arc4_recovery.is_address_encoding
 _ACCOUNT_TXN_FIELDS = arc4_recovery._ACCOUNT_TXN_FIELDS
@@ -451,7 +450,7 @@ def _to_puya_full(prog):
     """The full lower, additionally returning the ``lifter`` (SSAVar -> pre_ir
     Register maps) and ``t`` translator (id(pre_ir Register) -> M.Register), so a
     caller can bridge an SSA value to its lowered puya register (see
-    :func:`recovered_fixed_lengths`). :func:`to_puya` returns only ``(main, subs)``."""
+    :func:`recovered_min_lengths`). :func:`to_puya` returns only ``(main, subs)``."""
     # Pre-lift scratch simplification: forward compile-time-constant scratch loads to
     # their literal so the lift emits the constant directly. propagate_scratch_constants
     # only rewires the LOAD's consumers -- it KEEPS the store, which stays
@@ -561,7 +560,7 @@ def recovered_min_lengths(prog) -> dict:
         main, subs, lifter, t = _to_puya_full(fresh)
         guesses, confident = guess_encoded_types_scored(main, subs)
     except Exception as e:
-        logger.debug("recovered_fixed_lengths: lower/recover skipped: %s", e)
+        logger.debug("recovered_min_lengths: lower/recover skipped: %s", e)
         return {}
     reg_src: dict = {}
     reg_src.update(getattr(lifter, "regs", {}))

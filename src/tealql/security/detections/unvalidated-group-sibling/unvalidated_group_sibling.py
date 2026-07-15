@@ -135,6 +135,9 @@ class UnvalidatedGroupSiblingViolation:
 
 class UnvalidatedGroupSiblingDetector:
     name: ClassVar[str] = "sec-guide/unvalidated-group-sibling"
+    # HIGH — a trusted-but-unpinned sibling transfer drains/credits wrongly. The
+    # messages say [HIGH]; declare it so machine severity (SARIF/JSON) agrees.
+    severity: ClassVar[str] = "high"
     applies_to: ClassVar[frozenset] = frozenset({"app"})  # gtxn-relying apps
     violation_cls: ClassVar[type] = UnvalidatedGroupSiblingViolation
 

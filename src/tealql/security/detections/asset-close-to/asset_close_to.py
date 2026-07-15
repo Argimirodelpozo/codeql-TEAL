@@ -1,7 +1,8 @@
 """sec-guide/asset-close-to: missing AssetCloseTo validation.
 
-Strict-dominance form: a single comparison must dominate every approval
-exit.
+Every-path form: ``AssetCloseTo`` must be ENFORCED (asserted / branch-to-reject)
+on every approving path — a must-reach on the enforcement site, not merely a
+comparison that dominates the exits (see :func:`common.field_validated_on_all_paths`).
 """
 from __future__ import annotations
 

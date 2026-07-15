@@ -88,7 +88,7 @@ def _confident_encoding_for(intrinsic: "M.Intrinsic", reg_def: dict):
     These are applied to ``ir_type`` by :func:`_recover_encoded_types` and are proven
     TEAL-neutral. The *speculative* counterpart -- idioms that need a length/offset
     proof or a confidence score (dynamic arrays / strings / dynamic tuples) -- lives
-    entirely separately in :func:`_guess_encoding_for` / :func:`_guess_encoded_types`
+    entirely separately in :func:`_guess_encoding_for` / :func:`guess_encoded_types_scored`
     and never touches ``ir_type``; do NOT add a non-wire-provable idiom here.
 
     Recognised so far:
@@ -221,7 +221,7 @@ def _guess_encoding_for(intrinsic: "M.Intrinsic", reg_def: dict):
     producer idiom.
 
     Anything added here is best-effort: it is collected into a SIDE-CHANNEL by
-    :func:`_guess_encoded_types` and never written to a register's ``ir_type``, so
+    :func:`guess_encoded_types_scored` and never written to a register's ``ir_type``, so
     a wrong guess can neither change codegen nor weaken the confident, TEAL-neutral
     IR. (Consumers that tolerate imprecision -- e.g. structure-aware fuzzing --
     read the side-channel; a verifier would treat a guess as a
@@ -683,14 +683,6 @@ def _guess_address_usage(main, subs) -> dict:
     return out
 
 
-def _guess_encoded_types(main, subs) -> dict:
-    """SPECULATIVE encoded-type recovery as a SIDE-CHANNEL ``{id(M.Register):
-    EncodedType}`` map (never mutates ``ir_type``; not on :func:`to_puya`'s default
-    path). The guesses only -- see :func:`guess_encoded_types_scored` for the same
-    map plus, per guess, whether it is fully or only somewhat confident."""
-    return guess_encoded_types_scored(main, subs)[0]
-
-
 def guess_encoded_types_scored(main, subs):
     """The speculative recovery split into two honest confidence classes: returns
     ``(guesses, confident)`` where ``guesses`` is ``{id(Register): EncodedType}``
@@ -1135,7 +1127,7 @@ def _recover_encoded_types(main, subs) -> int:
     this is the first recovery that is NOT guaranteed a free annotation by
     construction -- its TEAL-neutrality is established by the gate, not by the
     avm_type argument alone (measured 247/0). The SPECULATIVE tier
-    (:func:`_guess_encoded_types`) is kept strictly separate and side-channelled so
+    (:func:`guess_encoded_types_scored`) is kept strictly separate and side-channelled so
     it can never reach this IR. Returns the count refined."""
     reg_def: dict = {}
     for s in (main, *subs):

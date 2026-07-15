@@ -134,7 +134,7 @@ def _ir_text(source) -> str:
 
 def _guessed_encodings_text(source) -> str:
     """The SPECULATIVE ARC4 encoded-type recovery side-channel
-    (:func:`to_puya_ir._guess_encoded_types`) -- best-effort guesses (decode-side
+    (:func:`to_puya_ir.guess_encoded_types_scored`) -- best-effort guesses (decode-side
     dynamic arrays/structs, strict-proof ``arc4.String`` literals, and the
     length-proven dynamic-sequence encode idiom) that are deliberately NOT in the IR's
     ``ir_type``, so a wrong guess can't affect lowering. Shown here so a consumer

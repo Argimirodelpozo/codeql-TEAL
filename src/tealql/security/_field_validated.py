@@ -1,5 +1,7 @@
-"""Shared base for the strict-dominance ``txnFieldValidatedOnAllPaths``
-family — asset-close-to, close-remainder-to, tx-type-check.
+"""Shared base for the every-path ``txnFieldValidatedOnAllPaths`` family —
+asset-close-to, close-remainder-to, tx-type-check. (Every-path enforcement-site
+must-reach, not the old strict-dominance formulation — see
+:func:`common.field_validated_on_all_paths`.)
 
 Each detector is a one-liner over :func:`common.field_validated_on_all_paths`
 with a different field name and message. Rather than duplicating the
