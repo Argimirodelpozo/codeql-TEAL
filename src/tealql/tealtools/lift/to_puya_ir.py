@@ -87,7 +87,10 @@ def _make_const(operand: str, is_u64: bool):
             return M.UInt64Constant(source_location=None, value=int(operand, 0))
         except ValueError:
             return None
-    return _bytes_const(operand)
+    try:
+        return _bytes_const(operand)
+    except ValueError:      # malformed byte literal -> degrade this one const,
+        return None         # symmetric with the u64 path (don't fail the lift)
 
 
 #: ``intc_N`` / ``bytec_N`` -> the const-block index N they load.

@@ -164,9 +164,11 @@ def _state_read(operand) -> Optional[tuple[str, str]]:
         key = _state_key(a.inputs)
         return ("local", key) if key is not None else None
     # *_get_ex takes a foreign-apps index; index 0 is the running app's own state.
-    if op in ("app_global_get_ex", "app_local_get_ex") and any(
-        const_int(i) == 0 for i in a.inputs
-    ):
+    # The app-reference is specifically inputs[1] (TOP-FIRST: [key, app] for global,
+    # [key, app, account] for local) — scanning ALL inputs mis-classified a FOREIGN
+    # app read whose account operand happens to be 0 (e.g. Sender) as own-app.
+    if (op in ("app_global_get_ex", "app_local_get_ex") and len(a.inputs) >= 2
+            and const_int(a.inputs[1]) == 0):
         scope = "global" if op == "app_global_get_ex" else "local"
         key = _state_key(a.inputs)
         return (scope, key) if key is not None else None
