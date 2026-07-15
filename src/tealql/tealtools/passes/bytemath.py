@@ -78,7 +78,8 @@ from collections import deque
 from typing import Optional
 
 from ..ssa import (
-    Assignment, Const, IntRange, SSAProgram, SSAVar, TealType, operand_const,
+    Assignment, Const, IntRange, SSAProgram, SSAVar, TealType, binary_operands,
+    operand_const,
 )
 
 logger = logging.getLogger("tealql.tealtools.passes.bytemath")
@@ -308,12 +309,15 @@ def propagate_bytemath_ranges(prog: SSAProgram) -> int:
                 fan_out(out)
             return
 
-        # Bytemath arithmetic.
+        # Bytemath arithmetic. Operands are TOP-FIRST, so source order ``A op B``
+        # is ``inputs[1] op inputs[0]`` — use ``binary_operands`` (as range_arith
+        # does) so ``b-`` / ``b/`` / ``b%`` aren't computed reversed.
         if op in _BYTES_OP_RULES:
             if len(a.inputs) != 2:
                 return
-            ra = _operand_bigint_range(a.inputs[0])
-            rb = _operand_bigint_range(a.inputs[1])
+            lhs, rhs = binary_operands(a)
+            ra = _operand_bigint_range(lhs)
+            rb = _operand_bigint_range(rhs)
             if ra is None or rb is None:
                 return
             result = _bytemath_result(op, ra, rb)

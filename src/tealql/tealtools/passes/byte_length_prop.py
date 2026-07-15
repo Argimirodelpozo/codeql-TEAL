@@ -210,31 +210,34 @@ def _op_byte_length(a: Assignment) -> Optional[int]:
         return la + lb
 
     if op == "extract3":
-        # Stack form: (X, A, B) → bytes[A : A + B]. Output length is B
-        # when the count is a const int.
+        # ``extract3 X A B`` → bytes[A : A + B]; output length is the COUNT B.
+        # Operands are TOP-FIRST: B=inputs[0] (top), A=inputs[1], X=inputs[2]
+        # (deepest) — see ``dataflow.bounds._access``.
         if len(a.inputs) != 3:
             return None
-        n = const_int(operand_const(a.inputs[2]))
+        n = const_int(operand_const(a.inputs[0]))
         if n is None or n < 0:
             return None
         return n
 
     if op == "substring3":
-        # Stack form: (X, A, B) → bytes[A : B]. Need both endpoints
-        # const to know the length.
+        # ``substring3 X A B`` → bytes[A : B]; length is B - A. TOP-FIRST:
+        # B(end)=inputs[0], A(start)=inputs[1], X=inputs[2].
         if len(a.inputs) != 3:
             return None
+        end = const_int(operand_const(a.inputs[0]))
         start = const_int(operand_const(a.inputs[1]))
-        end = const_int(operand_const(a.inputs[2]))
         if start is None or end is None or end < start:
             return None
         return end - start
 
-    # Length-preserving ops: result inherits input[0]'s byte_length.
+    # Length-preserving ops: result inherits the BUFFER's byte_length. The buffer
+    # (``X`` in ``setbyte X i b`` / ``replace2 X V`` / ``replace3 X A V``) is pushed
+    # first, so it is the DEEPEST operand (``inputs[-1]``), not ``inputs[0]``.
     if op in ("setbyte", "replace2", "replace3"):
         if not a.inputs:
             return None
-        return _operand_byte_length(a.inputs[0])
+        return _operand_byte_length(a.inputs[-1])
 
     # Fixed-width hash digests.
     if op in ("sha256", "sha512_256", "keccak256", "sha3_256"):
@@ -340,24 +343,27 @@ def _input_min_length(a: Assignment) -> Optional[tuple[int, int, Optional[int]]]
             return None
         return (0, 1, 8)
 
-    # getbyte(X, i) — needs len(X) ≥ i + 1 when i is a const.
+    # getbyte(X, i) — needs len(X) ≥ i + 1 when i is a const. TOP-FIRST:
+    # i=inputs[0] (top), X=inputs[1] (see ``dataflow.bounds._access``); the
+    # constraint is on the BUFFER X = input index 1.
     if op == "getbyte":
         if len(a.inputs) != 2:
             return None
-        idx = const_int(operand_const(a.inputs[1]))
+        idx = const_int(operand_const(a.inputs[0]))
         if idx is None or idx < 0:
             return None
-        return (0, idx + 1, None)
+        return (1, idx + 1, None)
 
-    # extract_uint{16,32,64}(X, i) — needs len(X) ≥ i + 2/4/8.
+    # extract_uint{16,32,64}(X, i) — needs len(X) ≥ i + 2/4/8. TOP-FIRST:
+    # i=inputs[0], X=inputs[1]; constraint is on X = input index 1.
     if op in ("extract_uint16", "extract_uint32", "extract_uint64"):
         if len(a.inputs) != 2:
             return None
-        idx = const_int(operand_const(a.inputs[1]))
+        idx = const_int(operand_const(a.inputs[0]))
         if idx is None or idx < 0:
             return None
         width = {"extract_uint16": 2, "extract_uint32": 4, "extract_uint64": 8}[op]
-        return (0, idx + width, None)
+        return (1, idx + width, None)
 
     # extract A B X  (immediate) — needs len(X) ≥ A + B when B != 0,
     # ≥ A when B == 0 ("to end of input").
@@ -383,40 +389,43 @@ def _input_min_length(a: Assignment) -> Optional[tuple[int, int, Optional[int]]]
         if len(toks) != 2:
             return None
         try:
-            _start, end = int(toks[0]), int(toks[1])
+            end = int(toks[1])
         except ValueError:
             return None
         if end < 0:
             return None
         return (0, end, None)
 
-    # extract3 X A B — needs len(X) ≥ A + B when both A and B are const.
+    # extract3 X A B — needs len(X) ≥ A + B when both A and B are const. TOP-FIRST:
+    # B(count)=inputs[0], A(start)=inputs[1], X=inputs[2]; constraint on X = index 2.
     if op == "extract3":
         if len(a.inputs) != 3:
             return None
+        length = const_int(operand_const(a.inputs[0]))
         start = const_int(operand_const(a.inputs[1]))
-        length = const_int(operand_const(a.inputs[2]))
         if start is None or length is None or start < 0 or length < 0:
             return None
-        return (0, start + length, None)
+        return (2, start + length, None)
 
-    # substring3 X A B — needs len(X) ≥ B when B is a const.
+    # substring3 X A B — needs len(X) ≥ B when B is a const. TOP-FIRST:
+    # B(end)=inputs[0], A=inputs[1], X=inputs[2]; constraint on X = index 2.
     if op == "substring3":
         if len(a.inputs) != 3:
             return None
-        end = const_int(operand_const(a.inputs[2]))
+        end = const_int(operand_const(a.inputs[0]))
         if end is None or end < 0:
             return None
-        return (0, end, None)
+        return (2, end, None)
 
-    # setbyte X i b — needs len(X) ≥ i + 1 when i is a const.
+    # setbyte X i b — needs len(X) ≥ i + 1 when i is a const. TOP-FIRST:
+    # b=inputs[0], i=inputs[1], X=inputs[2]; constraint on X = index 2.
     if op == "setbyte":
         if len(a.inputs) != 3:
             return None
         idx = const_int(operand_const(a.inputs[1]))
         if idx is None or idx < 0:
             return None
-        return (0, idx + 1, None)
+        return (2, idx + 1, None)
 
     return None
 

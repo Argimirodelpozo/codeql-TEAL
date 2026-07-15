@@ -147,6 +147,21 @@ def test_propagate_forward_chain_through_fan_out():
     assert v3.type.int_value_range == _R(13, 13)
 
 
+def test_propagate_b_div_is_directional():
+    # `A b/ B` = A/B. inputs are TOP-FIRST, so inputs[0]=B (top), inputs[1]=A.
+    # With A=100, B=2 the result is 50; the operand-swap bug computed B/A = 0.
+    # (The pure _bytemath_result tests can't catch this — only the call site maps
+    # inputs to operands.)
+    vb, va, vr = _var(10, 0), _var(11, 1), _var(12, 2)
+    a_b = _asn("bytec_0", outputs=[vb], const=Const("bytes", "0x02"))    # B=2 (top)
+    a_a = _asn("bytec_1", outputs=[va], const=Const("bytes", "0x64"))    # A=100 (deep)
+    a_div = _asn("b/", inputs=[vb, va], outputs=[vr])                    # A b/ B
+    vb.uses.append(a_div)
+    va.uses.append(a_div)
+    propagate_bytemath_ranges(_prog([a_div, a_b, a_a]))
+    assert vr.type.int_value_range == _R(50, 50)
+
+
 def test_propagate_itob_seeds_bigint_range_from_const_int():
     # itob (uint64 -> bytes) carries the integer value across into bytes-land.
     v = _var(10, 0)

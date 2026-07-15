@@ -108,33 +108,42 @@ def test_substring_length():
 
 
 # -- extract3 / substring3 (stack forms) --
+#
+# Operands are TOP-FIRST (inputs[0] = topmost popped), so for `extract3 X A B`
+# the SSA inputs are [B, A, X] — count/end FIRST, buffer LAST. (The prior tests
+# here built inputs source-first, matching an operand-order bug in the pass; both
+# are now corrected to real SSA order.)
 
 
 def test_extract3_const_count():
-    # (X, A, B) -> bytes[A:A+B], length B
-    assert _op_byte_length(_asn("extract3", inputs=[_bytes_operand(10), _int(2), _int(4)])) == 4
+    # extract3 X A B -> bytes[A:A+B], length B (the count = inputs[0])
+    assert _op_byte_length(_asn("extract3", inputs=[_int(4), _int(2), _bytes_operand(10)])) == 4
 
 
 def test_substring3_const_endpoints():
-    assert _op_byte_length(_asn("substring3", inputs=[_bytes_operand(10), _int(2), _int(7)])) == 5
+    # substring3 X A B -> bytes[A:B], length B - A. inputs = [B, A, X]
+    assert _op_byte_length(_asn("substring3", inputs=[_int(7), _int(2), _bytes_operand(10)])) == 5
 
 
 def test_substring3_non_const_is_none():
-    asn = _asn("substring3", inputs=[_bytes_operand(10), _bytes_operand(1), _int(7)])
+    # non-const START (inputs[1]) -> unknown length
+    asn = _asn("substring3", inputs=[_int(7), _bytes_operand(1), _bytes_operand(10)])
     assert _op_byte_length(asn) is None
 
 
-# -- length-preserving ops inherit input[0]'s length --
+# -- length-preserving ops inherit the BUFFER's length (deepest operand) --
 
 
-def test_length_preserving_inherits_input0():
+def test_length_preserving_inherits_buffer():
+    # setbyte X i b -> [b, i, X]; replace2 X V -> [V, X]; replace3 X A V -> [V, A, X].
+    # The buffer X is pushed first, so it is the DEEPEST operand = inputs[-1].
     for op in ("setbyte", "replace2", "replace3"):
-        asn = _asn(op, inputs=[_bytes_operand(12), _int(0), _int(255)])
+        asn = _asn(op, inputs=[_int(255), _int(0), _bytes_operand(12)])
         assert _op_byte_length(asn) == 12
 
 
-def test_length_preserving_unknown_input_is_none():
-    assert _op_byte_length(_asn("setbyte", inputs=[_bytes_operand(None), _int(0), _int(1)])) is None
+def test_length_preserving_unknown_buffer_is_none():
+    assert _op_byte_length(_asn("setbyte", inputs=[_int(1), _int(0), _bytes_operand(None)])) is None
 
 
 # -- anything else --
@@ -145,6 +154,9 @@ def test_unknown_op_is_none():
 
 
 # -- _input_min_length: inverse constraints (a successful op bounds an input) --
+# Return is (buffer_input_index, min_len, max_len). Under top-first the buffer is
+# NOT inputs[0]: for `getbyte X i` = [i, X] it is index 1; for the 3-input forms
+# [.., .., X] it is index 2.
 
 
 def test_input_min_length_btoi():
@@ -153,17 +165,18 @@ def test_input_min_length_btoi():
 
 
 def test_input_min_length_getbyte_const_index():
-    assert _input_min_length(_asn("getbyte", inputs=[_var(), _int(5)])) == (0, 6, None)
+    # getbyte X i -> [i, X]; needs len(X) >= i+1, constraint on X = index 1
+    assert _input_min_length(_asn("getbyte", inputs=[_int(5), _var()])) == (1, 6, None)
 
 
 def test_input_min_length_getbyte_non_const_index_is_none():
-    assert _input_min_length(_asn("getbyte", inputs=[_var(), _bytes_operand(1)])) is None
+    assert _input_min_length(_asn("getbyte", inputs=[_bytes_operand(1), _var()])) is None
 
 
 def test_input_min_length_extract_uint_widths():
-    assert _input_min_length(_asn("extract_uint16", inputs=[_var(), _int(4)])) == (0, 6, None)
-    assert _input_min_length(_asn("extract_uint32", inputs=[_var(), _int(4)])) == (0, 8, None)
-    assert _input_min_length(_asn("extract_uint64", inputs=[_var(), _int(0)])) == (0, 8, None)
+    assert _input_min_length(_asn("extract_uint16", inputs=[_int(4), _var()])) == (1, 6, None)
+    assert _input_min_length(_asn("extract_uint32", inputs=[_int(4), _var()])) == (1, 8, None)
+    assert _input_min_length(_asn("extract_uint64", inputs=[_int(0), _var()])) == (1, 8, None)
 
 
 def test_input_min_length_extract_and_substring_immediate():
@@ -172,12 +185,14 @@ def test_input_min_length_extract_and_substring_immediate():
 
 
 def test_input_min_length_extract3_substring3_const():
-    assert _input_min_length(_asn("extract3", inputs=[_var(), _int(2), _int(5)])) == (0, 7, None)
-    assert _input_min_length(_asn("substring3", inputs=[_var(), _int(2), _int(7)])) == (0, 7, None)
+    # inputs = [B, A, X]; constraint on the buffer X = index 2
+    assert _input_min_length(_asn("extract3", inputs=[_int(5), _int(2), _var()])) == (2, 7, None)
+    assert _input_min_length(_asn("substring3", inputs=[_int(7), _int(2), _var()])) == (2, 7, None)
 
 
 def test_input_min_length_setbyte():
-    assert _input_min_length(_asn("setbyte", inputs=[_var(), _int(3), _int(255)])) == (0, 4, None)
+    # setbyte X i b -> [b, i, X]; needs len(X) >= i+1, constraint on X = index 2
+    assert _input_min_length(_asn("setbyte", inputs=[_int(255), _int(3), _var()])) == (2, 4, None)
 
 
 def test_input_min_length_none_for_unconstraining_op():
