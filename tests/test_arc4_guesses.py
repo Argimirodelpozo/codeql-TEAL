@@ -490,3 +490,20 @@ return
     # At minimum the producer; propagation through the scratch/branch merge
     # should carry it to more than the single concat result.
     assert len(dyn) >= 1
+
+
+# -- is_address_encoding element-type guard (a 32-elem non-byte array is NOT an
+#    address; regression for the omitted element check) --
+
+def test_is_address_encoding_checks_element_type():
+    from puya.ir.encodings import ArrayEncoding, UIntEncoding
+    from tealql.tealtools.lift.arc4_recovery import is_address_encoding
+
+    class _ET:
+        def __init__(self, enc):
+            self.encoding = enc
+
+    addr = ArrayEncoding(element=UIntEncoding(n=8), size=32, length_header=False)
+    u64x32 = ArrayEncoding(element=UIntEncoding(n=64), size=32, length_header=False)
+    assert is_address_encoding(_ET(addr)) is True
+    assert is_address_encoding(_ET(u64x32)) is False   # same size=32, not bytes

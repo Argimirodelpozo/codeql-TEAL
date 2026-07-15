@@ -646,6 +646,11 @@ def _cmd_detections(args) -> int:
             print(name)
         return 0
 
+    if not getattr(args, "target", None):
+        print("error: a target (.teal file or directory) is required "
+              "unless --list is given", file=sys.stderr)
+        return 2
+
     mode = _resolve_mode(args)
     programs = _load_programs(args)
     names = list(DETECTORS) if args.all else [args.detector]

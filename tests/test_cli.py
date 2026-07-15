@@ -338,6 +338,14 @@ def test_cli_detections_list(capsys):
     assert "ir-tainted-fund-flow" in names
 
 
+def test_cli_detections_missing_target_clean_error(capsys):
+    # `--all` / `--detector` without a target used to crash with a raw TypeError
+    # traceback (Path(None)); now a clean exit-2 message.
+    rc = main(["detections", "--all"])
+    assert rc == 2
+    assert "target" in capsys.readouterr().err.lower()
+
+
 def test_cli_detections_scan_text_exit_one_on_findings(capsys):
     rc = main(["detections-scan", str(REKEY_VULN_DIR)])
     assert rc == 1

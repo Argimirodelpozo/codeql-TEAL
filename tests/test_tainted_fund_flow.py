@@ -61,6 +61,28 @@ def test_sender_guard_clears(tmp_path):
     assert _detect(_SENDER, tmp_path) == []
 
 
+# `Sender != ZeroAddress` is a SANITY check, not authentication — it pins no
+# identity, so it must NOT clear a tainted fund flow (was a false negative: any
+# comparison touching Sender counted as a guard, ignoring op and polarity).
+_SENDER_SANITY = """#pragma version 10
+    txn Sender
+    global ZeroAddress
+    !=
+    assert
+    itxn_begin
+    txn ApplicationArgs 0
+    itxn_field Receiver
+    itxn_submit
+    int 1
+    return
+"""
+
+
+def test_sender_sanity_check_does_not_clear(tmp_path):
+    vs = _detect(_SENDER_SANITY, tmp_path)
+    assert any(v.field == "Receiver" for v in vs)
+
+
 _VALCHECK = """#pragma version 10
     txn ApplicationArgs 0
     btoi

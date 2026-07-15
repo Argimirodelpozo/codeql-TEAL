@@ -992,11 +992,15 @@ _ABI_ARG_OPS = (AVMOp.txna, AVMOp.txnas, AVMOp.gtxna, AVMOp.gtxnas)
 
 
 def is_address_encoding(et) -> bool:
-    """``et`` is the arc4.Address shape: a fixed 32-byte, header-less byte array
-    (``StaticArray<Byte, 32>``)."""
-    from puya.ir.encodings import ArrayEncoding
-    return (isinstance(et.encoding, ArrayEncoding)
-            and et.encoding.size == 32 and not et.encoding.length_header)
+    """``et`` is the arc4.Address shape: a fixed 32-element, header-less array of
+    BYTES (``StaticArray<Byte, 32>``). The element type must be checked too — a
+    32-element static array of a wider type (e.g. ``StaticArray<UInt64, 32>``)
+    also has ``size == 32`` but is NOT an address (mirrors ``_arc56_encoding``)."""
+    from puya.ir.encodings import ArrayEncoding, UIntEncoding
+    enc = et.encoding
+    return (isinstance(enc, ArrayEncoding)
+            and enc.size == 32 and not enc.length_header
+            and isinstance(enc.element, UIntEncoding) and enc.element.n == 8)
 
 
 def abi_address_fund_flows(main, subs, guesses=None) -> list:

@@ -346,15 +346,24 @@ def itxn_value_guarded(
     """The inner-txn field write at ``assignment`` is dominated by a check of
     either the tainted value itself (a predicate derived from the SAME input
     slot — taint propagates through the comparison, so ``arg < N`` carries
-    ``arg``'s slot) or of ``txn Sender`` (a sender/creator equality)."""
-    preds = pp.predicates_at(file=assignment.location.file, line=assignment.location.line)
+    ``arg``'s slot) or of ``txn Sender`` (a sender/creator equality).
+
+    A genuine sender guard AUTHENTICATES — it pins the caller's identity: an
+    EQUALITY (``Sender == Creator`` / ``== <admin>``) that HOLDS on this path.
+    A ``!=`` (e.g. the ``Sender != ZeroAddress`` sanity check) pins nothing, and
+    a ``==`` taken on its FALSE edge (the explicitly non-matching arm) authorizes
+    nothing — neither counts, or a real tainted write would read as guarded."""
+    file = assignment.location.file
+    preds = pp.predicates_at(file=file, line=assignment.location.line)
     for cond in preds:
         v = cond.value
         if taint.get(v, frozenset()) & sink_slots:        # value-check
             return True
         d = getattr(v, "defined_by", None)
-        if d is not None and d.op in _CMP_OPS and any(    # sender-check
-                _operand_flows_from_field_var(prog, op, sender_vars)
-                for op in d.inputs):
+        if (d is not None and d.op == "==" and cond.kind == "nonzero"
+                and any(_operand_flows_from_field_var(prog, op, sender_vars)
+                        for op in d.inputs)
+                and not any(value_is_zero_address(prog, op, file=file)
+                            for op in d.inputs)):       # sender IDENTITY pin
             return True
     return False
