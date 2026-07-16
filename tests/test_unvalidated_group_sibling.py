@@ -321,3 +321,12 @@ def test_vacuous_pin_to_app_arg_flagged(tmp_path):
         "#pragma version 8\ngtxn 1 Receiver\ntxna ApplicationArgs 0\n==\nassert\n"
         "gtxn 1 Amount\npop\nint 1\nreturn\n", tmp_path)
     assert any(v.value_field == "Amount" for v in vs)
+
+
+def test_pin_enforced_via_retsub_zero_clean(tmp_path):
+    # the pin's failure branches to a subroutine arm that returns 0 (reject) —
+    # a rejection expressed as `int 0; retsub`, not a top-level `return 0`.
+    assert _detect(
+        "#pragma version 8\ncallsub validate\ngtxn 1 Amount\npop\nint 1\nreturn\n"
+        "validate:\ngtxn 1 Receiver\nglobal CurrentApplicationAddress\n==\n"
+        "bz reject\nint 1\nretsub\nreject:\nint 0\nretsub\n", tmp_path) == []

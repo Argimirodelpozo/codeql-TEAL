@@ -36,7 +36,7 @@ def _return_likely_zero(bb: BasicBlock) -> bool:
     resolvable."""
     if len(bb.assignments) < 2:
         return False
-    if bb.assignments[-1].op != "return":
+    if bb.assignments[-1].op not in ("return", "retsub"):
         return False
     prev = bb.assignments[-2]
     if not prev.outputs:
@@ -66,13 +66,16 @@ def is_approval_exit(bb: BasicBlock) -> bool:
 
 
 def is_rejection_exit(bb: BasicBlock) -> bool:
-    """A rejection exit: BB ends in ``err`` or ``return 0``."""
+    """A rejection exit: BB ends in ``err``, ``return 0``, or ``intc_0; retsub``
+    (returning 0 from a subroutine — the compiled form of a validator sub's
+    "reject" arm; overwhelmingly a program rejection when reached from a failed
+    security check, e.g. ``<check>; bz <return-0-block>``)."""
     if not bb.assignments:
         return False
     last = bb.assignments[-1]
     if last.op == "err":
         return True
-    if last.op == "return" and _return_likely_zero(bb):
+    if last.op in ("return", "retsub") and _return_likely_zero(bb):
         return True
     return False
 
