@@ -1,0 +1,12 @@
+#pragma version 8
+// SAFE: the sibling's Receiver is pinned to an app-controlled address stored in
+// global state (the escrow pattern) — the attacker cannot redirect the payment.
+gtxn 1 Receiver
+byte "Escrow"
+app_global_get
+==
+assert
+gtxn 1 Amount
+pop
+int 1
+return

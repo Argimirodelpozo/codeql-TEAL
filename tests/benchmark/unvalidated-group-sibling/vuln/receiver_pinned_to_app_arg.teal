@@ -1,0 +1,11 @@
+#pragma version 8
+// VULN: the "pin" compares the sibling's Receiver to an ATTACKER-SUPPLIED value
+// (ApplicationArgs) — vacuous, since the attacker sets both sides.
+gtxn 1 Receiver
+txna ApplicationArgs 0
+==
+assert
+gtxn 1 Amount
+pop
+int 1
+return

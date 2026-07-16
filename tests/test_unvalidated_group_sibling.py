@@ -295,3 +295,29 @@ _VULN_CARRYING_TYPE = """#pragma version 10
 def test_carrying_type_still_flagged(tmp_path):
     vs = _detect(_VULN_CARRYING_TYPE, tmp_path)
     assert len(vs) == 1 and vs[0].value_field == "Amount"
+
+
+# --- safe pin TARGET must be non-attacker-controlled (taint / safe-source) ---
+# A receiver pin protects only when the compared-to address is one the attacker
+# can't choose: CurrentApplicationAddress, an app-state (escrow) value, or a
+# constant. A pin to ApplicationArgs / a gtxn field is vacuous.
+
+def test_escrow_state_pin_clean(tmp_path):
+    # Receiver pinned to an app-controlled address stored in global state.
+    assert _detect(
+        "#pragma version 8\ngtxn 1 Receiver\nbyte \"Escrow\"\napp_global_get\n==\n"
+        "assert\ngtxn 1 Amount\npop\nint 1\nreturn\n", tmp_path) == []
+
+
+def test_constant_address_pin_clean(tmp_path):
+    assert _detect(
+        "#pragma version 8\ngtxn 1 Receiver\nbyte 0x" + "11" * 32 + "\n==\nassert\n"
+        "gtxn 1 Amount\npop\nint 1\nreturn\n", tmp_path) == []
+
+
+def test_vacuous_pin_to_app_arg_flagged(tmp_path):
+    # "pin" to an ATTACKER-SUPPLIED value (ApplicationArgs) is no protection.
+    vs = _detect(
+        "#pragma version 8\ngtxn 1 Receiver\ntxna ApplicationArgs 0\n==\nassert\n"
+        "gtxn 1 Amount\npop\nint 1\nreturn\n", tmp_path)
+    assert any(v.value_field == "Amount" for v in vs)

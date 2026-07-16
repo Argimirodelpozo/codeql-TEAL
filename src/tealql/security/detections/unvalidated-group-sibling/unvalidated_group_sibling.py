@@ -53,7 +53,7 @@ from dataclasses import dataclass
 from typing import ClassVar, Optional
 
 from tealql.security import common
-from tealql.tealtools.ssa import SSAProgram, SSAVar, const_int
+from tealql.tealtools.ssa import SSAProgram, SSAVar, const_int, operand_const
 
 # Value field -> the receiver field that must be pinned for that transfer kind.
 _VALUE_TO_RECEIVER = {
@@ -147,7 +147,7 @@ class UnvalidatedGroupSiblingDetector:
 
     def detect(self) -> list:
         reads = self._gtxn_index_reads()                 # (index, field) -> [assigns]
-        app_seeds = self._global_seeds("CurrentApplicationAddress")
+        app_seeds = self._safe_receiver_targets()
         # The per-arm PATH-existence check relies on CFG reachability, which is
         # only trustworthy when the program has NO subroutines: `retsub` returns
         # context-insensitively, so a read inside a sub spuriously "reaches"
@@ -237,6 +237,33 @@ class UnvalidatedGroupSiblingDetector:
             common.global_field_reads(self.prog, gfield, file=self.file)
         )
 
+    def _safe_receiver_targets(self) -> set:
+        """SSAVars holding an address the ATTACKER CANNOT CHOOSE — the only values
+        a receiver pin can meaningfully constrain to. A pin ``gtxn i Receiver == X``
+        protects the app iff ``X`` is not attacker-controlled:
+
+          * ``Global.CurrentApplicationAddress`` / ``Global.CreatorAddress`` — the
+            app's / creator's account;
+          * a value read from the app's OWN state (``app_global_get`` /
+            ``app_local_get``) — the ESCROW pattern (funds routed to a
+            contract-designated account stored in state), extremely common in
+            older AMM / game contracts.
+
+        Constants are handled directly in :meth:`_pin_gates`. A pin against
+        ``ApplicationArgs`` / a ``gtxn`` field / ``Sender`` is NOT here — the
+        attacker supplies those, so the pin is vacuous and the read stays flagged.
+        (Positive safe-set, the SOUND dual of "X is not user-tainted": an
+        unmodelled address form fails safe — still flagged — not silently trusted.)"""
+        seeds: set = set()
+        for gf in ("CurrentApplicationAddress", "CreatorAddress"):
+            seeds |= self._global_seeds(gf)
+        state_ops = ("app_global_get", "app_local_get",
+                     "app_global_get_ex", "app_local_get_ex")
+        for a in self.prog.assignments:
+            if a.op in state_ops and common.file_match(a.location.file, self.file):
+                seeds |= {o for o in a.outputs if isinstance(o, SSAVar)}
+        return seeds
+
     def _pin_gates(self, index: int, recv_field: str, reads: dict,
                    app_seeds: set) -> set:
         """The BASIC BLOCKS that ENFORCE the receiver pin — an ``assert`` /
@@ -248,10 +275,17 @@ class UnvalidatedGroupSiblingDetector:
         recv_seeds = {o for a in recv_assigns for o in a.outputs
                       if isinstance(o, SSAVar)}
         gates: set = set()
-        if not recv_seeds or not app_seeds:
+        if not recv_seeds:                # a constant pin still counts w/o app_seeds
             return gates
         label_lines = common._label_to_bb_first_line(self.prog)
         scratch_fwd = common.scratch_forward_map(self.prog)
+
+        def _safe(op):
+            # A not-attacker-controlled pin target: flows from a safe address
+            # source, or is a constant (a hard-coded address literal).
+            return (common._operand_flows_from_field_var(self.prog, op, app_seeds)
+                    or operand_const(op) is not None)
+
         for cmp in self.prog.assignments:
             if cmp.op != "==" or len(cmp.inputs) != 2:
                 continue
@@ -260,10 +294,10 @@ class UnvalidatedGroupSiblingDetector:
             x, y = cmp.inputs
             tied = (
                 (common._operand_flows_from_field_var(self.prog, x, recv_seeds)
-                 and common._operand_flows_from_field_var(self.prog, y, app_seeds))
+                 and _safe(y))
                 or
                 (common._operand_flows_from_field_var(self.prog, y, recv_seeds)
-                 and common._operand_flows_from_field_var(self.prog, x, app_seeds))
+                 and _safe(x))
             )
             if not tied:
                 continue
