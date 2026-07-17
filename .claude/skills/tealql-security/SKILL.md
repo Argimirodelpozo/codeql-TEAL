@@ -48,7 +48,22 @@ tealql taint-query app.teal --sinks      # every dangerous sink + severity
 tealql taint-query app.teal --sources    # every attacker input
 
 # add --json to any of the above for structured output.
+
+# --precise: back the attack surface with the lifted Puya IR instead of the
+# coarse def-use graph — drops phantom reaches AND recovers interprocedural
+# (across-callsub) flows the coarse graph misses. Composes with --verify:
+tealql taint-query app.teal --precise
+tealql taint-query app.teal --precise --verify
 ```
+
+**Coarse vs `--precise`.** The default reachability is a coarse SSA def-use
+graph: fast, needs no compiler, but it both over-approximates (invents def-use
+edges → phantom sinks) and under-approximates across subroutine calls.
+`--precise` re-runs reachability over the lifted IR (reaching-def / scratch /
+interprocedural summaries — the same engine the `ir-*` detectors use), so it is
+both sharper and more complete. It needs the lift (puya); when a contract
+doesn't lift it transparently falls back to the coarse graph. `--precise` is
+still GUARD-BLIND (a triage lens) — pair it with `--verify` for the verdict.
 
 Output lines look like:
 `[HIGH] app.teal:9  inner-payment-receiver  itxn_field Receiver  <- contract.py:105`
@@ -127,7 +142,9 @@ prog = SSAProgram("app.teal")                 # reconstruct SSA from raw TEAL
 q = TaintQuery(prog)
 for hit in q.sinks_from(op="txna", immediates="ApplicationArgs 1"):
     print(hit.category, hit.severity, hit.location, hit.source)
-for hit in q.tainted_sinks():                 # whole attack surface
+for hit in q.tainted_sinks():                 # whole attack surface (coarse)
+    ...
+for hit in q.tainted_sinks(precise=True):     # IR-backed (sharper + interproc)
     ...
 q.sources_of(line=904)                        # backward: who reaches this sink
 

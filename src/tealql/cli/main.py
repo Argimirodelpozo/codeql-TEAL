@@ -633,11 +633,12 @@ def _cmd_taint_query(args) -> int:
     triage lens, not a verdict. Exit 0."""
     from tealql.tealtools.dataflow.taint_query import TaintQuery
     prog = _load(args)
+    precise = getattr(args, "precise", False)
 
     if getattr(args, "verify", False):
         # Chain reachability -> guard-aware detectors for a per-sink verdict.
         from tealql.security.sink_verdict import verify_sinks
-        verdicts = verify_sinks(prog)
+        verdicts = verify_sinks(prog, precise=precise)
         if args.json_out:
             print(_json.dumps([v.to_dict() for v in verdicts], indent=2))
         elif not verdicts:
@@ -683,7 +684,7 @@ def _cmd_taint_query(args) -> int:
     elif args.list_sources:
         _emit_nodes(q.all_sources(), "(no attacker-input sources)")
     else:
-        _emit_hits(q.tainted_sinks())      # default: whole attack surface
+        _emit_hits(q.tainted_sinks(precise=precise))   # default: whole attack surface
     return 0
 
 
@@ -939,6 +940,11 @@ def build_parser() -> argparse.ArgumentParser:
                      help="attack surface + per-sink VERDICT: chain each reachable "
                           "sink to its guard-aware detector (CONFIRMED / guarded / "
                           "unverified)")
+    tq.add_argument("--precise", dest="precise", action="store_true",
+                    help="back reachability with the lifted Puya IR (drops phantom "
+                         "reaches + recovers interprocedural ones); applies to the "
+                         "attack surface and --verify. Needs the lift; falls back to "
+                         "the coarse graph when the contract doesn't lift")
 
     add("cost", "per-line opcode cost", _cmd_cost)
     add("path-predicates", "per-BB path predicates", _cmd_path_predicates)

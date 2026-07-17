@@ -280,6 +280,16 @@ def test_cli_taint_query_verify(tmp_path, capsys):
     assert "ir-tainted-fund-flow" in recv[0]["confirmed_by"]
 
 
+def test_cli_taint_query_precise(tmp_path, capsys):
+    # --precise runs (IR-backed when the lift succeeds, else coarse fallback) and
+    # still surfaces the tainted receiver.
+    (tmp_path / "p.teal").write_text(_TAINT_TEAL)
+    rc = main(["taint-query", str(tmp_path / "p.teal"), "--precise", "--json"])
+    assert rc == 0
+    data = json.loads(capsys.readouterr().out)
+    assert any(d["category"] == "inner-payment-receiver" for d in data)
+
+
 def test_cli_json_auth_shape(capsys):
     main(["auth", str(VULN_DB), "--json"])
     data = json.loads(capsys.readouterr().out)

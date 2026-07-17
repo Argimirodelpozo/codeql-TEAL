@@ -169,3 +169,51 @@ class TestVerify:
         ranks = ["CONFIRMED", "GUARDED", "UNVERIFIED"]
         idx = [ranks.index(v.verdict) for v in vs]
         assert idx == sorted(idx)
+
+
+class TestPrecise:
+    """`tainted_sinks(precise=True)` backs reachability with the lifted IR."""
+
+    def _lifts(self, prog):
+        from tealql.tealtools.lift import build_lifter
+        return build_lifter(prog) is not None
+
+    def test_precise_is_guard_blind_and_line_parity(self, tmp_path):
+        # a straight tainted payment: precise reaches the same sink LINES as coarse
+        # (guard-blind, so the join key with the verdict layer is preserved).
+        (tmp_path / "p.teal").write_text(_TEAL)
+        prog = SSAProgram(str(tmp_path / "p.teal"))
+        if not self._lifts(prog):
+            import pytest
+            pytest.skip("contract does not lift (puya unavailable?)")
+        q = TaintQuery(prog)
+        coarse = {(h.node.line, h.category) for h in q.tainted_sinks()}
+        precise = {(h.node.line, h.category) for h in q.tainted_sinks(precise=True)}
+        # the tainted itxn fields are reached by both.
+        for want in {(7, "inner-payment-amount"), (9, "inner-payment-receiver")}:
+            assert want in coarse and want in precise
+
+    def test_precise_drops_phantom_reaches(self):
+        # a fixture where the coarse def-use graph over-approximates: the IR's
+        # reaching-def precision drops sinks that aren't really attacker-reachable.
+        import glob, os
+        d = "tests/experimental_IR_lift/puya/arc4_conversions_TestContract/src"
+        if not glob.glob(d + "/*.teal"):
+            import pytest
+            pytest.skip("fixture missing")
+        prog = SSAProgram(d)
+        if not self._lifts(prog):
+            import pytest
+            pytest.skip("contract does not lift (puya unavailable?)")
+        q = TaintQuery(prog, file=os.path.basename(glob.glob(d + "/*.teal")[0]))
+        assert len(q.tainted_sinks()) > 0            # coarse over-reports
+        assert len(q.tainted_sinks(precise=True)) == 0   # IR: none truly reachable
+
+    def test_precise_falls_back_without_lift(self, tmp_path):
+        # no source_path -> no lift -> precise transparently returns the coarse set.
+        from tealql.tealtools.dataflow.taint_query import TaintQuery as TQ
+        (tmp_path / "p.teal").write_text(_TEAL)
+        prog = SSAProgram(str(tmp_path / "p.teal"))
+        prog._tt_ir_lifter = None                    # force the no-lift path
+        q = TQ(prog)
+        assert q.tainted_sinks(precise=True) == q.tainted_sinks()

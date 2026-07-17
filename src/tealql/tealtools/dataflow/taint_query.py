@@ -167,6 +167,16 @@ class TaintQuery:
         self.srcmap = source_map_for(src_path, file=file) if src_path else {}
         self._rev = reverse_source_map(self.srcmap)
 
+    def _file_name(self) -> str:
+        """The file label the coarse nodes carry (``a.location.file``), so precise
+        IR hits render with the same ``file:line`` string as the coarse ones."""
+        for a in getattr(self.prog, "assignments", ()) or ():
+            loc = getattr(a, "location", None)
+            if loc is not None and getattr(loc, "file", ""):
+                return loc.file
+        sp = getattr(self.prog, "source_path", None)
+        return getattr(sp, "name", "") or "<program>"
+
     def _hits(self, nodes) -> list["SinkHit"]:
         hits = [h for n in nodes
                 if (h := _sink_hit(self.g, n, self.srcmap)) is not None]
@@ -233,13 +243,65 @@ class TaintQuery:
                        if is_source(self.g.op_of(n), self.g.immediates_of(n))),
                       key=lambda n: (n.file, n.line))
 
-    def tainted_sinks(self, sources: Optional[Iterable[Node]] = None
-                      ) -> list[SinkHit]:
+    def tainted_sinks(self, sources: Optional[Iterable[Node]] = None,
+                      *, precise: bool = False) -> list[SinkHit]:
         """Every dangerous sink reachable from ANY attacker-input source — the
         program's attack surface in one call. ``sources`` overrides the default
-        (all detected sources)."""
+        (all detected sources).
+
+        ``precise=True`` backs reachability with the lifted Puya IR instead of the
+        coarse SSA def-use graph: the IR's reaching-def / scratch / interprocedural
+        summaries drop the phantom edges the coarse graph invents AND recover the
+        across-``callsub`` flows it misses. It needs the lift (built + cached
+        on-demand); when the contract doesn't lift it transparently falls back to
+        the coarse graph. ``precise`` still reports GUARD-BLIND reachability (a
+        triage lens) — run ``sink_verdict.verify_sinks`` for the guard-aware
+        verdict. ``sources`` is ignored in precise mode (whole-surface only)."""
+        if precise and sources is None:
+            from ..lift import build_lifter
+            lifter = build_lifter(self.prog)
+            if lifter is not None:
+                return self._ir_sink_hits(lifter)
         srcs = list(sources) if sources is not None else self.all_sources()
         reach: set = set()
         for s in srcs:
             reach |= self.g.reachable_from(s)
         return self._hits(reach)
+
+    def _ir_sink_hits(self, lifter) -> list[SinkHit]:
+        """Attack-surface sinks from the lifted IR taint (see ``tainted_sinks``).
+        Reuses the same fund-flow / state-write / log engine the ir-* detectors
+        run on, so the reported lines match a subsequent detector verdict."""
+        from ..lift import fund_flow as FF
+        from ..lift.taint import user_input_taint
+        fname = self._file_name()
+        taint = user_input_taint(lifter)
+        # fund_flow keys its internal sort by UPPERCASE severities; the SinkHit's
+        # own category/severity come from ``classify_sink`` regardless.
+        itxn_fields = {f: sev.upper() for f, (_c, sev) in _ITXN_FIELD_SINKS.items()}
+        findings = (FF.tainted_itxn_flows(lifter, itxn_fields, taint=taint)
+                    + FF.tainted_state_writes(lifter, taint=taint)
+                    + FF.tainted_logs(lifter, taint=taint))
+        hits: list[SinkHit] = []
+        seen: set = set()
+        for f in findings:
+            if f.field in _ITXN_FIELD_SINKS:            # itxn_field FIELD sink
+                op, imm = "itxn_field", f.field
+            elif f.field in _OP_SINKS:                  # opcode sink (state / log)
+                op, imm = f.field, ""
+            else:
+                continue
+            cls = classify_sink(op, imm)
+            if cls is None:
+                continue
+            key = (f.line, op, imm)
+            if key in seen:
+                continue
+            seen.add(key)
+            node = Node(file=fname, line=f.line, node_class="ir")
+            hl = self.srcmap.get(f.line) if self.srcmap else None
+            src = f"{hl[0]}:{hl[1]}" if hl else None
+            hits.append(SinkHit(node=node, op=op, field=(imm if op == "itxn_field" else ""),
+                                category=cls[0], severity=cls[1], source=src))
+        return sorted(hits, key=lambda h: (_SEV_ORDER.get(h.severity, 9),
+                                           h.node.file, h.node.line))

@@ -71,16 +71,22 @@ class SinkVerdict:
         return d
 
 
-def verify_sinks(prog: SSAProgram, *, file: Optional[str] = None) -> list[SinkVerdict]:
+def verify_sinks(prog: SSAProgram, *, file: Optional[str] = None,
+                 precise: bool = False) -> list[SinkVerdict]:
     """Every attacker-reachable dangerous sink with its detector verdict
     (CONFIRMED / GUARDED / UNVERIFIED). Runs each relevant detector once; a
-    detector crash leaves its sinks UNVERIFIED rather than failing the query."""
+    detector crash leaves its sinks UNVERIFIED rather than failing the query.
+
+    ``precise=True`` sources the reachable set from the lifted IR (fewer phantom
+    reaches, plus interprocedural ones the coarse graph misses) — see
+    ``TaintQuery.tainted_sinks``. The verdict layer is unchanged; only the sink
+    set it judges gets sharper."""
     from tealql.tealtools.dataflow.taint_query import TaintQuery
     from tealql.security import DETECTORS
     from tealql.security.findings import violation_line
 
     q = TaintQuery(prog, file=file)
-    sinks = q.tainted_sinks()
+    sinks = q.tainted_sinks(precise=precise)
 
     needed = {d for h in sinks for d in _CATEGORY_DETECTORS.get(h.category, ())}
     flagged: dict[str, set] = {}          # detector -> {flagged line}
