@@ -623,6 +623,55 @@ def _cmd_group_taint(args) -> int:
     return 1 if findings else 0
 
 
+def _cmd_taint_query(args) -> int:
+    """Open taint-reachability queries over the coarse taint graph — the free-form
+    counterpart to the fixed detectors. Point at a SOURCE line (``--from``) to list
+    the dangerous sinks a value there can reach; at a SINK line (``--to``) to list
+    the attacker inputs that steer it; ``--sinks`` / ``--sources`` dump the
+    inventories; the default is the whole attack surface (every attacker input ->
+    sink). Reachability OVER-approximates (a reachable sink may be validated) — a
+    triage lens, not a verdict. Exit 0."""
+    from tealql.tealtools.dataflow.taint_query import TaintQuery
+    q = TaintQuery(_load(args))
+
+    def _emit_hits(hits):
+        if args.json_out:
+            print(_json.dumps([h.to_dict() for h in hits], indent=2))
+        elif not hits:
+            print("(no dangerous sinks)")
+        else:
+            for h in hits:
+                print(h.render())
+
+    def _emit_nodes(nodes, empty):
+        if args.json_out:
+            print(_json.dumps([{"file": n.file, "line": n.line,
+                                "node_class": n.node_class} for n in nodes], indent=2))
+        elif not nodes:
+            print(empty)
+        else:
+            for n in nodes:
+                print(f"  {n.file}:{n.line}  {n.node_class}")
+
+    if args.from_line is not None:
+        _emit_hits(q.sinks_from(line=args.from_line))
+    elif args.from_src is not None:
+        sf, _, sl = args.from_src.rpartition(":")
+        if not sl.isdigit():
+            print("error: --from-src expects [FILE:]LINE", file=sys.stderr)
+            return 2
+        _emit_hits(q.sinks_from(source_file=sf or None, source_line=int(sl)))
+    elif args.to_line is not None:
+        _emit_nodes(q.sources_of(line=args.to_line), "(no attacker source reaches it)")
+    elif args.list_sinks:
+        _emit_hits(q.all_sinks())
+    elif args.list_sources:
+        _emit_nodes(q.all_sources(), "(no attacker-input sources)")
+    else:
+        _emit_hits(q.tainted_sinks())      # default: whole attack surface
+    return 0
+
+
 def _resolve_mode(args) -> "str | None":
     """Determine the declared detection mode (``"app"`` / ``"logicsig"``
     / ``None``) for the target. ``--mode`` wins outright; otherwise a
@@ -852,6 +901,26 @@ def build_parser() -> argparse.ArgumentParser:
         help="enumerate the DISTINCT group shapes per approving exit (ABI-labelled) "
              "instead of only the common shape across all exits")
     add("group-layout", "forced group size + per-position layout", _cmd_group_layout)
+
+    tq = add("taint-query",
+             "open taint reachability: dangerous sinks reachable from a source "
+             "(--from LINE), attacker inputs steering a sink (--to LINE), the "
+             "sink/source inventories (--sinks/--sources), or (default) the whole "
+             "attacker-input -> sink attack surface", _cmd_taint_query)
+    tqg = tq.add_mutually_exclusive_group()
+    tqg.add_argument("--from", dest="from_line", type=int, default=None,
+                     metavar="LINE", help="source TEAL line -> reachable sinks")
+    tqg.add_argument("--from-src", dest="from_src", default=None,
+                     metavar="[FILE:]LINE",
+                     help="HIGH-LEVEL source line (via the compiler's source map) "
+                          "-> reachable sinks")
+    tqg.add_argument("--to", dest="to_line", type=int, default=None,
+                     metavar="LINE", help="sink TEAL line -> attacker sources reaching it")
+    tqg.add_argument("--sinks", dest="list_sinks", action="store_true",
+                     help="list every dangerous sink in the program")
+    tqg.add_argument("--sources", dest="list_sources", action="store_true",
+                     help="list every attacker-input source")
+
     add("cost", "per-line opcode cost", _cmd_cost)
     add("path-predicates", "per-BB path predicates", _cmd_path_predicates)
     add("all", "run every detector + report", _cmd_all)

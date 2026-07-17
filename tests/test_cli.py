@@ -242,6 +242,33 @@ def test_cli_group_shape_per_exit_json(tmp_path, capsys):
     assert "pay" in rhs                      # TypeEnum rendered symbolically
 
 
+_TAINT_TEAL = ("#pragma version 8\n"
+               "itxn_begin\nint pay\nitxn_field TypeEnum\n"
+               "txna ApplicationArgs 0\nitxn_field Receiver\nitxn_submit\n"
+               "int 1\nreturn\n")
+
+
+def test_cli_taint_query_default_attack_surface(tmp_path, capsys):
+    (tmp_path / "p.teal").write_text(_TAINT_TEAL)
+    rc = main(["taint-query", str(tmp_path / "p.teal")])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "inner-payment-receiver" in out and "itxn_field Receiver" in out
+
+
+def test_cli_taint_query_from_source_line(tmp_path, capsys):
+    (tmp_path / "p.teal").write_text(_TAINT_TEAL)
+    main(["taint-query", str(tmp_path / "p.teal"), "--from", "5", "--json"])
+    data = json.loads(capsys.readouterr().out)
+    assert any(d["category"] == "inner-payment-receiver" for d in data)
+
+
+def test_cli_taint_query_sinks_inventory(tmp_path, capsys):
+    (tmp_path / "p.teal").write_text(_TAINT_TEAL)
+    main(["taint-query", str(tmp_path / "p.teal"), "--sinks"])
+    assert "Receiver" in capsys.readouterr().out
+
+
 def test_cli_json_auth_shape(capsys):
     main(["auth", str(VULN_DB), "--json"])
     data = json.loads(capsys.readouterr().out)
