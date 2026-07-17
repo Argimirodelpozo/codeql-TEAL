@@ -1,0 +1,137 @@
+---
+name: tealql-security
+description: >-
+  Analyze TEAL / Algorand smart contracts for security with the `tealql` toolkit.
+  Use when asked to find vulnerabilities, taint flows, dangerous sinks, or attack
+  surface in a .teal file (or a PuyaPy/TealScript contract compiled to TEAL) —
+  e.g. "what dangerous sinks can this input reach?", "is this fund transfer
+  guarded?", "what's the attack surface?", "which attacker inputs reach this
+  state write?". Also for structural recovery (ABI methods, storage schema, group
+  shape) on compiled Algorand apps.
+---
+
+# tealql — TEAL/Algorand security analysis
+
+`tealql` is a pure-Python static-analysis toolkit for Algorand TEAL. It
+reconstructs SSA from raw `.teal` (no source needed), and can lift to Puya IR when
+`puya` is installed. Invoke the CLI as `python -m tealql.cli.main <command>` (or
+`tealql <command>` if installed). Every command takes a TARGET: a `.teal` file or
+a directory of them (one program per directory).
+
+**Key mental model.** A contract runs inside an atomic group; an external caller
+(the *attacker*) controls this txn's `ApplicationArgs`, all *sibling* group txns
+(`gtxn N …`), and the sender. A finding is real only if attacker-controlled data
+reaches a **dangerous sink** *without being validated*. Taint reachability tells
+you the first half; guard reasoning (the detectors) tells you the second.
+
+## Answering "dangerous sinks for a source" — use `taint-query`
+
+This is the open query layer. It maps taint reachability over the SSA def-use
+graph and classifies sinks by category + severity.
+
+```
+# every dangerous sink an attacker input can reach (the attack surface):
+tealql taint-query app.teal
+
+# sinks reachable from a specific TEAL line (a source):
+tealql taint-query app.teal --from 158
+
+# sinks reachable from a HIGH-LEVEL source line (PuyaPy/TealScript), via the
+# compiler's `// contract.py:N` comments in the TEAL:
+tealql taint-query app.teal --from-src contract.py:42
+
+# who can steer this sink? (attacker inputs reaching a sink line):
+tealql taint-query app.teal --to 904
+
+# inventories:
+tealql taint-query app.teal --sinks      # every dangerous sink + severity
+tealql taint-query app.teal --sources    # every attacker input
+
+# add --json to any of the above for structured output.
+```
+
+Output lines look like:
+`[HIGH] app.teal:9  inner-payment-receiver  itxn_field Receiver  <- contract.py:105`
+— severity, TEAL location, category, the op, and (when a source map exists) the
+high-level line it compiled from.
+
+**Sink categories** (severity): inner-txn `CloseRemainderTo`/`AssetCloseTo`/
+`RekeyTo` (critical), `Receiver`/`AssetReceiver`/`ApplicationID`/`XferAsset`/asset-
+admin/freeze fields (high), `Amount`/`AssetAmount`/`Fee` (medium); `app_global_put`/
+`app_local_put`/box writes — the KEY (high); `log` (low).
+
+**IMPORTANT — over-approximation.** A reachable sink is *not* necessarily
+exploitable: the taint may be validated (a receiver pinned to the app, a sender
+gate) before reaching it. `taint-query` is a **triage lens**, not a verdict. To
+know if a reachable flow is actually unguarded, run the detectors.
+
+## Verdicts — the fixed detectors
+
+```
+tealql detections app.teal --all          # run every detector on one program
+tealql detections app.teal --detector ir-tainted-fund-flow
+tealql detections --list                  # names of all detectors
+tealql detections-scan ./contracts/ --json   # recursively scan a tree
+```
+
+Detectors encode both the sink AND the guard reasoning (sender auth, receiver
+pins, group-index pinning, type exclusion), so their findings are verdicts, not
+just reachability. Notable ones: `ir-tainted-fund-flow` (attacker input → inner
+payment/close/rekey, guard-aware), `unvalidated-group-sibling` (trusts a sibling
+transfer's value without pinning its receiver), `rekey-to` / `close-remainder-to`
+/ `asset-close-to` (delegated-lsig drain fields), `ir-tainted-state-write`
+(attacker picks a state-write key).
+
+Mode matters: many detectors are `applies_to=logicsig` and only meaningful on a
+delegated LogicSig, not an app. `detections-scan` with a modes config scopes them;
+running an lsig detector on an app is meaningless.
+
+## Structural recovery (compiled apps)
+
+```
+tealql methods app.teal              # ABI method table (name/args/selector)
+tealql methods app.teal --arc56 app.arc56.json   # authoritative, from a spec
+tealql arc56 app.arc56.json          # ingest an ARC-56 app spec
+tealql storage-schema app.teal       # global/local/box keys + recovered types (needs puya)
+tealql group-shape app.teal --per-exit   # the group shape(s) the contract forces
+tealql group-taint m0.teal m1.teal   # cross-member taint over a group (in order)
+tealql xcontract ...                 # cross-contract appcall analysis
+tealql dump app.teal                 # every representation (debug)
+```
+
+## Python API (for deeper / composed analysis)
+
+```python
+from tealql.tealtools.ssa import SSAProgram
+from tealql.tealtools.dataflow.taint_query import TaintQuery
+
+prog = SSAProgram("app.teal")                 # reconstruct SSA from raw TEAL
+q = TaintQuery(prog)
+for hit in q.sinks_from(op="txna", immediates="ApplicationArgs 1"):
+    print(hit.category, hit.severity, hit.location, hit.source)
+for hit in q.tainted_sinks():                 # whole attack surface
+    ...
+q.sources_of(line=904)                        # backward: who reaches this sink
+
+# run a specific detector:
+from tealql.security import DETECTORS
+findings = DETECTORS["ir-tainted-fund-flow"](prog, file="app.teal").detect()
+```
+
+Other useful modules: `tealql.tealtools.group_reasoning` (`analyze`,
+`analyze_per_exit`, `constraints_at` — what group shape / GroupIndex a contract
+forces), `tealql.tealtools.dataflow.bounds` (`check_bounds` — in-bounds proofs for
+`extract`/`substring`), `tealql.tealtools.arc56` (`load` an ARC-56 spec),
+`tealql.tealtools.source_map` (`source_map_for` — TEAL ↔ high-level lines).
+
+## Workflow for a free-form question
+
+1. **Locate.** If the user names a high-level line, `taint-query --from-src` (or
+   `source_map_for` to resolve it to TEAL lines). If a TEAL line, `--from`.
+2. **Reach.** Use `taint-query` for the source→sink or sink→source reachability —
+   fast triage of what *could* flow.
+3. **Verify.** For anything that looks live, run the matching detector
+   (`detections --detector …`) to get a guard-aware verdict, and read the flagged
+   code to confirm — reachability over-approximates.
+4. **Report** in the user's terms: use the high-level source line from the sink's
+   `source` field when available.

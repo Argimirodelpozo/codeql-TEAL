@@ -1,5 +1,9 @@
 # Editor / IDE / agent state
-.claude/
+# Ignore local .claude state, but SHARE committed skills (project analysis
+# capabilities for any model/user). `.claude/*` (not `.claude/`) leaves the dir
+# traversable so the skills negation below can re-include its subtree.
+.claude/*
+!.claude/skills/
 .vscode/
 .idea/
 
