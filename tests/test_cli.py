@@ -269,6 +269,17 @@ def test_cli_taint_query_sinks_inventory(tmp_path, capsys):
     assert "Receiver" in capsys.readouterr().out
 
 
+def test_cli_taint_query_verify(tmp_path, capsys):
+    # unguarded tainted receiver -> the fund-flow detector confirms the reach.
+    (tmp_path / "p.teal").write_text(_TAINT_TEAL)
+    rc = main(["taint-query", str(tmp_path / "p.teal"), "--verify", "--json"])
+    assert rc == 0
+    data = json.loads(capsys.readouterr().out)
+    recv = [d for d in data if d["category"] == "inner-payment-receiver"]
+    assert recv and recv[0]["verdict"] == "CONFIRMED"
+    assert "ir-tainted-fund-flow" in recv[0]["confirmed_by"]
+
+
 def test_cli_json_auth_shape(capsys):
     main(["auth", str(VULN_DB), "--json"])
     data = json.loads(capsys.readouterr().out)

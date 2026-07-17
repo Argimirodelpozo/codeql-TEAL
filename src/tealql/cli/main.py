@@ -632,7 +632,22 @@ def _cmd_taint_query(args) -> int:
     sink). Reachability OVER-approximates (a reachable sink may be validated) — a
     triage lens, not a verdict. Exit 0."""
     from tealql.tealtools.dataflow.taint_query import TaintQuery
-    q = TaintQuery(_load(args))
+    prog = _load(args)
+
+    if getattr(args, "verify", False):
+        # Chain reachability -> guard-aware detectors for a per-sink verdict.
+        from tealql.security.sink_verdict import verify_sinks
+        verdicts = verify_sinks(prog)
+        if args.json_out:
+            print(_json.dumps([v.to_dict() for v in verdicts], indent=2))
+        elif not verdicts:
+            print("(no dangerous sinks reachable from attacker input)")
+        else:
+            for v in verdicts:
+                print(v.render())
+        return 0
+
+    q = TaintQuery(prog)
 
     def _emit_hits(hits):
         if args.json_out:
@@ -920,6 +935,10 @@ def build_parser() -> argparse.ArgumentParser:
                      help="list every dangerous sink in the program")
     tqg.add_argument("--sources", dest="list_sources", action="store_true",
                      help="list every attacker-input source")
+    tqg.add_argument("--verify", dest="verify", action="store_true",
+                     help="attack surface + per-sink VERDICT: chain each reachable "
+                          "sink to its guard-aware detector (CONFIRMED / guarded / "
+                          "unverified)")
 
     add("cost", "per-line opcode cost", _cmd_cost)
     add("path-predicates", "per-BB path predicates", _cmd_path_predicates)

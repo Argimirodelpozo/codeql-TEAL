@@ -65,6 +65,24 @@ exploitable: the taint may be validated (a receiver pinned to the app, a sender
 gate) before reaching it. `taint-query` is a **triage lens**, not a verdict. To
 know if a reachable flow is actually unguarded, run the detectors.
 
+### One-shot verdict — `taint-query --verify`
+
+```
+tealql taint-query app.teal --verify        # (add --json for structured output)
+```
+
+Chains the two halves automatically: for every attacker-reachable sink it runs
+the matching guard-aware detector once and labels the sink
+
+* **CONFIRMED** — a detector flags it (a likely-real *unguarded* flow);
+* **guarded** — a detector that covers this sink category ran and did *not* flag
+  it (its sender-auth / receiver-pin / group-index reasoning cleared the reach);
+* **unverified** — no detector covers this category yet (reachable, unjudged).
+
+CONFIRMED first. This is usually the fastest path from "what's the attack
+surface?" to "which reaches actually survive the guards?" — prefer it over
+eyeballing `taint-query` output against a separate `detections` run.
+
 ## Verdicts — the fixed detectors
 
 ```
@@ -116,6 +134,11 @@ q.sources_of(line=904)                        # backward: who reaches this sink
 # run a specific detector:
 from tealql.security import DETECTORS
 findings = DETECTORS["ir-tainted-fund-flow"](prog, file="app.teal").detect()
+
+# one-shot: reachable sinks + guard-aware verdict (CONFIRMED / GUARDED / UNVERIFIED):
+from tealql.security.sink_verdict import verify_sinks
+for v in verify_sinks(prog):
+    print(v.verdict, v.sink.render(), v.confirmed_by)
 ```
 
 Other useful modules: `tealql.tealtools.group_reasoning` (`analyze`,
@@ -130,8 +153,9 @@ forces), `tealql.tealtools.dataflow.bounds` (`check_bounds` — in-bounds proofs
    `source_map_for` to resolve it to TEAL lines). If a TEAL line, `--from`.
 2. **Reach.** Use `taint-query` for the source→sink or sink→source reachability —
    fast triage of what *could* flow.
-3. **Verify.** For anything that looks live, run the matching detector
-   (`detections --detector …`) to get a guard-aware verdict, and read the flagged
-   code to confirm — reachability over-approximates.
+3. **Verify.** `taint-query --verify` gives every reachable sink a one-shot
+   CONFIRMED / guarded / unverified verdict (or run a specific
+   `detections --detector …`), then read the flagged code to confirm —
+   reachability over-approximates.
 4. **Report** in the user's terms: use the high-level source line from the sink's
    `source` field when available.

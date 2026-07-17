@@ -121,3 +121,51 @@ def test_high_level_query_end_to_end():
     q = TaintQuery(SSAProgram(src[0]), file=src[1])
     sinks = q.all_sinks()
     assert sinks and any(h.source and ".py:" in h.source for h in sinks)
+
+
+_GUARDED = """#pragma version 8
+txn Sender
+global CreatorAddress
+==
+assert
+itxn_begin
+int pay
+itxn_field TypeEnum
+txna ApplicationArgs 0
+btoi
+itxn_field Amount
+txna ApplicationArgs 1
+itxn_field Receiver
+itxn_submit
+int 1
+return
+"""
+
+
+class TestVerify:
+    """`verify_sinks` chains reachability -> guard-aware detector verdict."""
+
+    def test_unguarded_is_confirmed(self, tmp_path):
+        from tealql.security.sink_verdict import verify_sinks
+        (tmp_path / "p.teal").write_text(_TEAL)
+        vs = verify_sinks(SSAProgram(str(tmp_path / "p.teal")))
+        fund = [v for v in vs if v.sink.category.startswith("inner-payment")]
+        assert fund and all(v.verdict == "CONFIRMED" for v in fund)
+        assert all("ir-tainted-fund-flow" in v.confirmed_by for v in fund)
+
+    def test_sender_gate_is_guarded(self, tmp_path):
+        # reachable but the fund-flow detector's sender-auth reasoning clears it.
+        from tealql.security.sink_verdict import verify_sinks
+        (tmp_path / "p.teal").write_text(_GUARDED)
+        vs = verify_sinks(SSAProgram(str(tmp_path / "p.teal")))
+        fund = [v for v in vs if v.sink.category.startswith("inner-payment")]
+        assert fund and all(v.verdict == "GUARDED" for v in fund)
+        assert all(not v.confirmed_by and v.covered_by for v in fund)
+
+    def test_confirmed_ranks_before_guarded(self, tmp_path):
+        from tealql.security.sink_verdict import verify_sinks
+        (tmp_path / "p.teal").write_text(_TEAL)
+        vs = verify_sinks(SSAProgram(str(tmp_path / "p.teal")))
+        ranks = ["CONFIRMED", "GUARDED", "UNVERIFIED"]
+        idx = [ranks.index(v.verdict) for v in vs]
+        assert idx == sorted(idx)
