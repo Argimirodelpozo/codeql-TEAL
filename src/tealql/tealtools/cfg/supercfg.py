@@ -95,7 +95,14 @@ class SuperCFG:
         """Build the super-CFG TRANSITIVELY from ``caller`` over ``registry``.
         Reuses :meth:`XContractGraph.build` for the call graph (caller + every
         reachable callee + one :class:`AppcallEdge` per appcall), then lays a
-        per-program :class:`CFG` over each and splices the call/return edges."""
+        per-program :class:`CFG` over each and splices the call/return edges.
+
+        ``registry`` may be a path (str) to a registry file — load it first, since
+        ``XContractGraph.build`` / ``find_appcall_sites`` need the mapping (an
+        ``app_id in registry`` membership test crashes on a bare string)."""
+        if isinstance(registry, str):
+            from ..xcontract import load_registry
+            registry = load_registry(registry)
         xg = XContractGraph.build(caller, registry, max_depth=max_depth)
         cfgs: dict[Optional[int], CFG] = {None: CFG.of(xg.caller)}
         for app_id, prog in xg.callees.items():

@@ -146,18 +146,25 @@ def from_dict(data: dict) -> Arc56Spec:
     """Parse an already-loaded ARC-56 JSON object into an :class:`Arc56Spec`.
     Tolerant: unknown/absent sections are skipped, malformed method entries are
     dropped (never raises on a partial spec)."""
-    field_types, resolved = _parse_structs(data.get("structs") or {})
+    # Defensive: a valid-JSON spec may carry a non-dict where a dict is expected
+    # (e.g. `"state": []`, `"contract": "x"`); coerce to {} so a malformed-but-
+    # JSON spec degrades rather than raising AttributeError (the "never raises on
+    # a partial spec" contract). Only genuinely non-JSON input raises, in `load`.
+    def _dict(v):
+        return v if isinstance(v, dict) else {}
+
+    field_types, resolved = _parse_structs(_dict(data.get("structs")))
     methods = tuple(
         mm for mm in (
             _method_from_spec(m, field_types)
             for m in (data.get("methods") or []) if isinstance(m, dict)
         ) if mm is not None
     )
-    state = data.get("state") or {}
-    keys = state.get("keys") or {}
-    maps = state.get("maps") or {}
+    state = _dict(data.get("state"))
+    keys = _dict(state.get("keys"))
+    maps = _dict(state.get("maps"))
     return Arc56Spec(
-        name=data.get("name") or data.get("contract", {}).get("name") or "",
+        name=data.get("name") or _dict(data.get("contract")).get("name") or "",
         methods=methods,
         structs=resolved,
         global_state=_state_entries(keys.get("global"), maps.get("global"), field_types),
