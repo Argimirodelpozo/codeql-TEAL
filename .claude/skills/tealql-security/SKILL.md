@@ -61,9 +61,13 @@ graph: fast, needs no compiler, but it both over-approximates (invents def-use
 edges → phantom sinks) and under-approximates across subroutine calls.
 `--precise` re-runs reachability over the lifted IR (reaching-def / scratch /
 interprocedural summaries — the same engine the `ir-*` detectors use), so it is
-both sharper and more complete. It needs the lift (puya); when a contract
-doesn't lift it transparently falls back to the coarse graph. `--precise` is
-still GUARD-BLIND (a triage lens) — pair it with `--verify` for the verdict.
+both sharper and more complete. It needs the lift (which is puya-FREE — the
+pre-IR path never imports `puya`), and when a contract doesn't lift it
+transparently falls back to the coarse graph, so there's no dependency or
+coverage downside — only the extra lift cost (a few ms to ~300ms on a large
+contract), which is why the *Python API* keeps it opt-in for bulk scans.
+`--precise` is still GUARD-BLIND (a triage lens) — pair it with `--verify` for
+the verdict; the two then share a single lift.
 
 Output lines look like:
 `[HIGH] app.teal:9  inner-payment-receiver  itxn_field Receiver  <- contract.py:105`
