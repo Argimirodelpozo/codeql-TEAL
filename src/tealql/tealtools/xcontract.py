@@ -16,7 +16,7 @@ consumes ``SSAProgram`` and ``InnerTxnReport``.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace as _dc_replace
 from pathlib import Path
 from typing import Optional
 
@@ -590,20 +590,27 @@ class XContractGraph:
         cls, caller: SSAProgram, registry: Registry, *, max_depth: int = 4,
     ) -> "XContractGraph":
         """Transitively walk appcall sites from ``caller`` through the
-        ``registry``, up to ``max_depth`` hops. Each callee is loaded and
-        seeded-analysed exactly once (keyed by AppID); a callee already in the
-        graph (a shared callee or a cycle) still records an :class:`AppcallEdge`
-        but is not re-analysed, so the walk always terminates."""
+        ``registry``, up to ``max_depth`` hops. Each callee is loaded once (keyed
+        by AppID), but its seeded analysis uses the INTERSECTION of the arg pins
+        across EVERY site that calls it: a pin is honored only if all callers
+        agree on the same constant. Otherwise the first caller's pins would win,
+        and a second site leaving an arg attacker-controlled would inherit the
+        first site's (over-pinned) analysis — silently suppressing a flow
+        exploitable via that second site. Re-analysis on a weakened intersection
+        is monotone (pins only shrink), so the walk still terminates."""
         from collections import deque
 
         root_sites = find_appcall_sites(caller, registry)
         callees: dict[int, SSAProgram] = {}
         callee_sources: dict[int, Path] = {}
         analyses: dict[int, CalleeAnalysis] = {}
+        merged_pins: dict[int, dict] = {}   # app_id -> intersected const_args used
         edges: list[AppcallEdge] = []
+        edge_seen: set = set()              # (caller_id, app_id, file, line) dedup
         # frontier item: (program, its AppID or None for the root, depth, the
         # pins a caller placed on THIS program's args -- so a forwarded arg keeps
-        # the pin one hop deeper).
+        # the pin one hop deeper). A callee is re-enqueued when its pins weaken so
+        # the weakening propagates to its own (grandchild) call sites.
         frontier: deque = deque([(caller, None, 0, {})])
         while frontier:
             prog, prog_id, depth, incoming_pins = frontier.popleft()
@@ -612,14 +619,31 @@ class XContractGraph:
             sites = (root_sites if prog is caller
                      else find_appcall_sites(prog, registry, incoming_pins))
             for site in sites:
-                edges.append(AppcallEdge(prog_id, site, depth))
-                if site.app_id in callees:
-                    continue            # already analysed (dedup + cycle guard)
-                callee = SSAProgram(str(site.callee_source))
-                callees[site.app_id] = callee
-                callee_sources[site.app_id] = site.callee_source
-                analyses[site.app_id] = analyze_callee(callee, site)
-                frontier.append((callee, site.app_id, depth + 1, dict(site.const_args)))
+                ekey = (prog_id, site.app_id, site.file, site.submit_line)
+                if ekey not in edge_seen:
+                    edge_seen.add(ekey)
+                    edges.append(AppcallEdge(prog_id, site, depth))
+                if site.app_id not in callees:
+                    callee = SSAProgram(str(site.callee_source))
+                    callees[site.app_id] = callee
+                    callee_sources[site.app_id] = site.callee_source
+                    merged_pins[site.app_id] = dict(site.const_args)
+                    analyses[site.app_id] = analyze_callee(callee, site)
+                    frontier.append((callee, site.app_id, depth + 1,
+                                     dict(site.const_args)))
+                else:
+                    # Shared callee / cycle: intersect this site's pins with the
+                    # merged set — keep only args both pin to the SAME constant.
+                    cur = merged_pins[site.app_id]
+                    new = {k: v for k, v in cur.items()
+                           if site.const_args.get(k) == v}
+                    if new != cur:                       # strictly weakened
+                        merged_pins[site.app_id] = new
+                        analyses[site.app_id] = analyze_callee(
+                            callees[site.app_id],
+                            _dc_replace(site, const_args=new))
+                        frontier.append((callees[site.app_id], site.app_id,
+                                         depth + 1, dict(new)))
         return cls(
             caller=caller, sites=root_sites, callees=callees,
             callee_sources=callee_sources, analyses=analyses, edges=edges,
