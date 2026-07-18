@@ -82,7 +82,7 @@ def _invoke(o):
     return None
 
 
-def _return_summary(lifter) -> dict:
+def _return_summary(lifter, trusted_args=frozenset()) -> dict:
     """Per-subroutine taint summary ``{sub.id: (srcs, params)}`` for a SOUND +
     PRECISE interprocedural rule at call sites:
 
@@ -126,8 +126,8 @@ def _return_summary(lifter) -> dict:
                     src = _intr(o)
                     if src is not None:
                         lbl = source_label(src)
-                        if lbl:
-                            ins.add(lbl)
+                        if lbl and not _trusted_apparg(src, trusted_args):
+                            ins.add(lbl)                # honor the caller's pin here too
                         for a in src.args:
                             ins |= reg_t(a)
                         if src.op in ("load", "loads"):     # scratch reaching-def
@@ -176,7 +176,7 @@ def user_input_taint(lifter, trusted_args=frozenset()) -> dict:
     surface as attacker-controlled on that edge."""
     # register -> its SSA var, to consult the scratch reaching-def on a `load`.
     ssa_of = {id(r): sv for sv, r in lifter.regs.items()}
-    summary = _return_summary(lifter)         # interprocedural param->return summary
+    summary = _return_summary(lifter, trusted_args)   # interprocedural param->return summary
     taint: dict = defaultdict(set)
 
     def reg_t(v):

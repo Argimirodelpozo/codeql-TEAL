@@ -78,10 +78,14 @@ def compute_scratch_influence(prog: SSAProgram) -> dict:
             except (ValueError, IndexError, AttributeError):
                 continue
             if a.op == "store":
-                if a.inputs:
-                    keys = _leaf_value_keys(a.inputs[0])
-                    if keys:
-                        events.append((i, "store", slot, keys))
+                # ALWAYS record the store (so it KILLs the slot); the value keys
+                # may be empty when the operand is unresolvable (model underflow /
+                # leafless phi). An unresolved store must still overwrite the
+                # slot — otherwise a MUST consumer (scratch const/value prop, the
+                # ssa identity bridge) reads a STALE reaching value the later
+                # store clobbered at runtime.
+                keys = _leaf_value_keys(a.inputs[0]) if a.inputs else set()
+                events.append((i, "store", slot, keys))
             elif a.op == "load":
                 events.append((i, "load", slot, None))
                 loads_here.append((a, slot, i))
@@ -95,8 +99,8 @@ def compute_scratch_influence(prog: SSAProgram) -> dict:
     for b, events in bb_events.items():
         for _, kind, slot, val_keys in events:
             if kind == "store":
-                gen[b][slot] = set(val_keys)
-                kill[b].add(slot)
+                kill[b].add(slot)                 # a store always overwrites the slot
+                gen[b][slot] = set(val_keys)      # empty set = killed, value unknown
 
     # Fixed-point reaching-definitions at BB granularity.
     # in[B][slot] = ⋃_{pred} out[pred][slot]
