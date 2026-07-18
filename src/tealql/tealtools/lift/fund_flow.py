@@ -309,10 +309,30 @@ def _classify(kind, polarity, cond, def_of, sink_regs, sink_keys, inv_ret=None) 
     return Guard(kind, polarity, ci, cs)
 
 
+def _blocks_reaching(by_id, target) -> set:
+    """Block ids that can reach ``target`` (backward reachability over
+    successors), including ``target`` itself."""
+    preds: dict = {i: [] for i in by_id}
+    for i, b in by_id.items():
+        for s in _succs(b.terminator):
+            if s in preds:
+                preds[s].append(i)
+    seen = {target}
+    stack = [target]
+    while stack:
+        n = stack.pop()
+        for p in preds.get(n, ()):
+            if p not in seen:
+                seen.add(p)
+                stack.append(p)
+    return seen
+
+
 def _dominating_guards(by_id, dom, sink_bid, sink_idx, def_of, sink_regs, sink_keys,
                        inv_ret=None) -> list:
     doms = dom.get(sink_bid, {sink_bid})
     guards = []
+    reach_sink = None                       # lazily: blocks that can reach the sink
     for d in doms:
         blk = by_id.get(d)
         if blk is None:
@@ -325,15 +345,23 @@ def _dominating_guards(by_id, dom, sink_bid, sink_idx, def_of, sink_regs, sink_k
                 guards.append(_classify("assert", None, o.condition, def_of,
                                         sink_regs, sink_keys, inv_ret))
         # A conditional branch in a strictly-dominating block whose outcome is
-        # forced: exactly one successor dominates the sink => that edge is taken
-        # on every path to the sink, so its condition guards it.
+        # forced: exactly one successor dominates the sink. That is necessary but
+        # NOT sufficient — if the OTHER (non-dominating) successor can itself
+        # reach the sink (a loop/merge back into the dominating block), a path
+        # takes the branch the other way yet still reaches the sink, so the
+        # condition does NOT hold there. Credit the guard only when the
+        # non-dominating edge cannot reach the sink at all.
         t = blk.terminator
         if isinstance(t, pre_ir.ConditionalBranch) and d != sink_bid:
             nz, z = t.non_zero in doms, t.zero in doms
             if nz != z:
-                guards.append(_classify("branch", "true" if nz else "false",
-                                        t.condition, def_of, sink_regs, sink_keys,
-                                        inv_ret))
+                if reach_sink is None:
+                    reach_sink = _blocks_reaching(by_id, sink_bid)
+                other = t.zero if nz else t.non_zero
+                if other not in reach_sink:
+                    guards.append(_classify("branch", "true" if nz else "false",
+                                            t.condition, def_of, sink_regs, sink_keys,
+                                            inv_ret))
     return guards
 
 

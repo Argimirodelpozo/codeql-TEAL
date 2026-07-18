@@ -118,6 +118,38 @@ def test_branch_guard_same_input_slot(tmp_path):
     assert any(g.checks_input and g.kind == "branch" for g in rec[0].guards)
 
 
+# A sender check that branches to the sink block — but the FALSE path ALSO merges
+# into that block (`b do`), so the check does NOT actually hold at the sink. The
+# branch-taken successor dominates the sink yet the condition is bypassable.
+_LOOPBACK_FALSE_GUARD = """#pragma version 10
+    txn Sender
+    global CreatorAddress
+    ==
+    bnz do
+    int 1
+    pop
+    b do
+do:
+    itxn_begin
+    txn ApplicationArgs 0
+    itxn_field Receiver
+    int 1000
+    itxn_field Amount
+    itxn_submit
+    int 1
+    return
+"""
+
+
+def test_loopback_branch_is_not_a_guard(tmp_path):
+    # successor-dominance is necessary but not sufficient: the non-dominating
+    # edge reaches the sink, so the branch condition is bypassable -> not guarded.
+    flows = _flows(_LOOPBACK_FALSE_GUARD, tmp_path)
+    rec = [f for f in flows if f.field == "Receiver"]
+    assert len(rec) == 1
+    assert not rec[0].guarded, "the false path merges into the sink block"
+
+
 # The value is checked in the CALLER, then passed into the callee that does the
 # itxn -- intra-procedural dominance can't see the guard; interprocedural must.
 _CALLER_GUARDED = """#pragma version 10
