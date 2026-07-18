@@ -13,10 +13,12 @@ description: >-
 # tealql — TEAL/Algorand security analysis
 
 `tealql` is a pure-Python static-analysis toolkit for Algorand TEAL. It
-reconstructs SSA from raw `.teal` (no source needed), and can lift to Puya IR when
-`puya` is installed. Invoke the CLI as `python -m tealql.cli.main <command>` (or
-`tealql <command>` if installed). Every command takes a TARGET: a `.teal` file or
-a directory of them (one program per directory).
+reconstructs SSA from raw `.teal` (no source needed) and lifts it to a
+Puya-shaped IR — the lift itself is dependency-free; only the *typed* audits
+(`abi-audit`, `box-audit`, `storage-schema`) need the `puya` package. Invoke the
+CLI as `python -m tealql.cli.main <command>` (or `tealql <command>` if
+installed). Most commands take a TARGET: a `.teal` file or a directory of them
+(one program per directory). Every command accepts `--json`.
 
 **Key mental model.** A contract runs inside an atomic group; an external caller
 (the *attacker*) controls this txn's `ApplicationArgs`, all *sibling* group txns
@@ -26,8 +28,8 @@ you the first half; guard reasoning (the detectors) tells you the second.
 
 ## Answering "dangerous sinks for a source" — use `taint-query`
 
-This is the open query layer. It maps taint reachability over the SSA def-use
-graph and classifies sinks by category + severity.
+This is the open query layer: taint reachability from attacker inputs to
+dangerous sinks, classified by category + severity.
 
 ```
 # every dangerous sink an attacker input can reach (the attack surface):
@@ -46,28 +48,7 @@ tealql taint-query app.teal --to 904
 # inventories:
 tealql taint-query app.teal --sinks      # every dangerous sink + severity
 tealql taint-query app.teal --sources    # every attacker input
-
-# add --json to any of the above for structured output.
-
-# --precise: back the attack surface with the lifted Puya IR instead of the
-# coarse def-use graph — drops phantom reaches AND recovers interprocedural
-# (across-callsub) flows the coarse graph misses. Composes with --verify:
-tealql taint-query app.teal --precise
-tealql taint-query app.teal --precise --verify
 ```
-
-**Coarse vs `--precise`.** The default reachability is a coarse SSA def-use
-graph: fast, needs no compiler, but it both over-approximates (invents def-use
-edges → phantom sinks) and under-approximates across subroutine calls.
-`--precise` re-runs reachability over the lifted IR (reaching-def / scratch /
-interprocedural summaries — the same engine the `ir-*` detectors use), so it is
-both sharper and more complete. It needs the lift (which is puya-FREE — the
-pre-IR path never imports `puya`), and when a contract doesn't lift it
-transparently falls back to the coarse graph, so there's no dependency or
-coverage downside — only the extra lift cost (a few ms to ~300ms on a large
-contract), which is why the *Python API* keeps it opt-in for bulk scans.
-`--precise` is still GUARD-BLIND (a triage lens) — pair it with `--verify` for
-the verdict; the two then share a single lift.
 
 Output lines look like:
 `[HIGH] app.teal:9  inner-payment-receiver  itxn_field Receiver  <- contract.py:105`
@@ -77,38 +58,49 @@ high-level line it compiled from.
 **Sink categories** (severity): inner-txn `CloseRemainderTo`/`AssetCloseTo`/
 `RekeyTo` (critical), `Receiver`/`AssetReceiver`/`ApplicationID`/`XferAsset`/asset-
 admin/freeze fields (high), `Amount`/`AssetAmount`/`Fee` (medium); `app_global_put`/
-`app_local_put`/box writes — the KEY (high); `log` (low).
+`app_local_put`/box writes — the KEY (high), `box_del` (medium); `log` (low).
 
 **IMPORTANT — over-approximation.** A reachable sink is *not* necessarily
 exploitable: the taint may be validated (a receiver pinned to the app, a sender
-gate) before reaching it. `taint-query` is a **triage lens**, not a verdict. To
-know if a reachable flow is actually unguarded, run the detectors.
+gate) before reaching it. Plain `taint-query` is a **triage lens**, not a
+verdict. Two flags close the gap:
 
-### One-shot verdict — `taint-query --verify`
+### `--precise` — IR-backed reachability
 
-```
-tealql taint-query app.teal --verify        # (add --json for structured output)
-```
+The default reachability is a coarse SSA def-use graph: fast, but it both
+invents phantom def-use edges AND misses flows across subroutine calls.
+`--precise` re-runs reachability over the lifted IR (reaching-def / scratch /
+interprocedural summaries — the same engine the `ir-*` detectors use), so it is
+sharper *and* more complete. No downside beyond lift time (ms → ~300ms on a
+large contract); if the contract doesn't lift it silently falls back to coarse.
+Still guard-blind.
 
-Chains the two halves automatically: for every attacker-reachable sink it runs
-the matching guard-aware detector once and labels the sink
+### `--verify` — one-shot guard-aware verdict
+
+For every attacker-reachable sink, runs the matching guard-aware detector once
+and labels the sink:
 
 * **CONFIRMED** — a detector flags it (a likely-real *unguarded* flow);
 * **guarded** — a detector that covers this sink category ran and did *not* flag
   it (its sender-auth / receiver-pin / group-index reasoning cleared the reach);
 * **unverified** — no detector covers this category yet (reachable, unjudged).
 
-CONFIRMED first. This is usually the fastest path from "what's the attack
-surface?" to "which reaches actually survive the guards?" — prefer it over
-eyeballing `taint-query` output against a separate `detections` run.
+```
+# the recommended one-shot for a single contract — sharpest sink set, each with
+# a verdict, CONFIRMED first (the two share a single lift):
+tealql taint-query app.teal --precise --verify
+```
+
+Prefer this over eyeballing `taint-query` output against a separate
+`detections` run.
 
 ## Verdicts — the fixed detectors
 
 ```
-tealql detections app.teal --all          # run every detector on one program
+tealql detections app.teal --all --mode app   # every detector that applies to an app
 tealql detections app.teal --detector ir-tainted-fund-flow
-tealql detections --list                  # names of all detectors
-tealql detections-scan ./contracts/ --json   # recursively scan a tree
+tealql detections --list                      # names of all ~36 detectors
+tealql detections-scan ./contracts/ --json    # recursively scan a tree
 ```
 
 Detectors encode both the sink AND the guard reasoning (sender auth, receiver
@@ -119,11 +111,21 @@ transfer's value without pinning its receiver), `rekey-to` / `close-remainder-to
 / `asset-close-to` (delegated-lsig drain fields), `ir-tainted-state-write`
 (attacker picks a state-write key).
 
-Mode matters: many detectors are `applies_to=logicsig` and only meaningful on a
-delegated LogicSig, not an app. `detections-scan` with a modes config scopes them;
-running an lsig detector on an app is meaningless.
+**Mode matters.** Several detectors only make sense for a delegated LogicSig
+(`applies_to=logicsig`); running them on an app is meaningless noise. Pass
+`--mode app` or `--mode logicsig` with `--all` (or a `--config` with globs for
+scans) so only applicable detectors run.
 
-## Structural recovery (compiled apps)
+Two typed audits complement the detectors when `puya` is installed:
+
+```
+tealql abi-audit app.teal   # caller-supplied arc4.Address paid to a fund/asset
+                            # sink unguarded (ABI-type-driven)
+tealql box-audit app.teal   # address-keyed BoxMap not bound to txn Sender =
+                            # cross-user box access
+```
+
+## Structural recovery & recon (compiled apps)
 
 ```
 tealql methods app.teal              # ABI method table (name/args/selector)
@@ -131,9 +133,24 @@ tealql methods app.teal --arc56 app.arc56.json   # authoritative, from a spec
 tealql arc56 app.arc56.json          # ingest an ARC-56 app spec
 tealql storage-schema app.teal       # global/local/box keys + recovered types (needs puya)
 tealql group-shape app.teal --per-exit   # the group shape(s) the contract forces
-tealql group-taint m0.teal m1.teal   # cross-member taint over a group (in order)
-tealql xcontract ...                 # cross-contract appcall analysis
+tealql group-layout app.teal         # forced group size + per-position layout
+tealql itxn-report app.teal          # every inner transaction the app can send
+tealql auth app.teal                 # state-mutating ops + the path predicates
+                                     # dominating them (exit 1 if any unguarded)
+tealql box-df app.teal --flavour into        # box dataflow; also: out, correlated
 tealql dump app.teal                 # every representation (debug)
+```
+
+## Cross-contract / group analysis
+
+```
+# taint across an atomic group (members IN ORDER; shared scratch + logs):
+tealql group-taint m0.teal m1.teal
+
+# follow inner appcalls into callee contracts; registry maps AppID -> .teal,
+# or --from-chain fetches deployed callees (transitive, cached):
+tealql xcontract app.teal --registry registry.yaml --detections
+tealql xcontract app.teal --from-chain --detections
 ```
 
 ## Python API (for deeper / composed analysis)
@@ -146,20 +163,18 @@ prog = SSAProgram("app.teal")                 # reconstruct SSA from raw TEAL
 q = TaintQuery(prog)
 for hit in q.sinks_from(op="txna", immediates="ApplicationArgs 1"):
     print(hit.category, hit.severity, hit.location, hit.source)
-for hit in q.tainted_sinks():                 # whole attack surface (coarse)
-    ...
-for hit in q.tainted_sinks(precise=True):     # IR-backed (sharper + interproc)
+for hit in q.tainted_sinks(precise=True):     # attack surface (IR-backed)
     ...
 q.sources_of(line=904)                        # backward: who reaches this sink
+
+# one-shot: reachable sinks + guard-aware verdict (CONFIRMED / GUARDED / UNVERIFIED):
+from tealql.security.sink_verdict import verify_sinks
+for v in verify_sinks(prog, precise=True):
+    print(v.verdict, v.sink.render(), v.confirmed_by)
 
 # run a specific detector:
 from tealql.security import DETECTORS
 findings = DETECTORS["ir-tainted-fund-flow"](prog, file="app.teal").detect()
-
-# one-shot: reachable sinks + guard-aware verdict (CONFIRMED / GUARDED / UNVERIFIED):
-from tealql.security.sink_verdict import verify_sinks
-for v in verify_sinks(prog):
-    print(v.verdict, v.sink.render(), v.confirmed_by)
 ```
 
 Other useful modules: `tealql.tealtools.group_reasoning` (`analyze`,
@@ -172,11 +187,11 @@ forces), `tealql.tealtools.dataflow.bounds` (`check_bounds` — in-bounds proofs
 
 1. **Locate.** If the user names a high-level line, `taint-query --from-src` (or
    `source_map_for` to resolve it to TEAL lines). If a TEAL line, `--from`.
-2. **Reach.** Use `taint-query` for the source→sink or sink→source reachability —
-   fast triage of what *could* flow.
-3. **Verify.** `taint-query --verify` gives every reachable sink a one-shot
-   CONFIRMED / guarded / unverified verdict (or run a specific
-   `detections --detector …`), then read the flagged code to confirm —
-   reachability over-approximates.
+2. **Reach + verify.** `taint-query --precise --verify` gives the sharpest
+   reachable-sink set, each with a CONFIRMED / guarded / unverified verdict.
+   For a *specific* source→sink question use `--from`/`--to` (coarse,
+   guard-blind) and then the matching `detections --detector …`.
+3. **Read the flagged code** to confirm — reachability over-approximates, and
+   detectors can be wrong in both directions.
 4. **Report** in the user's terms: use the high-level source line from the sink's
    `source` field when available.

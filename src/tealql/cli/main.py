@@ -921,8 +921,10 @@ def build_parser() -> argparse.ArgumentParser:
     tq = add("taint-query",
              "open taint reachability: dangerous sinks reachable from a source "
              "(--from LINE), attacker inputs steering a sink (--to LINE), the "
-             "sink/source inventories (--sinks/--sources), or (default) the whole "
-             "attacker-input -> sink attack surface", _cmd_taint_query)
+             "sink/source inventories (--sinks/--sources), per-sink guard-aware "
+             "verdicts (--verify), or (default) the whole attacker-input -> sink "
+             "attack surface; --precise backs reachability with the lifted IR",
+             _cmd_taint_query)
     tqg = tq.add_mutually_exclusive_group()
     tqg.add_argument("--from", dest="from_line", type=int, default=None,
                      metavar="LINE", help="source TEAL line -> reachable sinks")
