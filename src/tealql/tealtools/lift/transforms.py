@@ -49,9 +49,14 @@ def _phi_only_scratch_stores(blocks, ph):
             if (isinstance(s, pre_ir.Intrinsic) and s.op == "store"
                     and s.args and s.args[0] is ph.register):
                 stores.append((bb, i, str(s.immediates[0]), s))
-            elif s is not None and any(a is ph.register for a in s.args):
-                return None
-            elif isinstance(o, pre_ir.Assignment) and o.source is ph.register:
+                continue
+            # ANY other use — op arg, copy source, INVOKE arg, ValueTuple
+            # element — makes sinking unsafe. Scan via pre_ir.operands (descends
+            # into Intrinsic/InvokeSubroutine/ValueTuple); the old hand-rolled
+            # check saw only _intr().args + copy source, so a phi consumed solely
+            # as a callsub arg slipped through -> sinking left a dangling ref
+            # that lowered to a typed-zero (callee silently got 0).
+            if any(v is ph.register for v in pre_ir.operands(o)):
                 return None
         for ph2 in bb.phis:
             if any(a.value is ph.register for a in ph2.args):
