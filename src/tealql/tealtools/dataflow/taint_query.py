@@ -23,7 +23,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable, Optional
 
-from ..avm import FUND_FIELDS
+from ..avm import FUND_FIELDS, TXN_SOURCE_OPS
 from .taint_graph import Node, TaintGraph
 
 # --- sink taxonomy ----------------------------------------------------------
@@ -60,8 +60,11 @@ _OP_SINKS: dict[str, tuple[str, str]] = {
     "log": ("log-emit", "low"),
 }
 
-#: Source opcodes carrying an attacker-steerable value.
-_ARG_ARRAY_OPS = frozenset({"txna", "txnas", "gtxna", "gtxnas", "gtxnsa", "gtxnsas"})
+#: Source opcodes carrying an attacker-steerable value — the full canonical
+#: txn/gtxn read family (scalar `txn ApplicationArgs N` and array `txna …` forms
+#: alike); ``is_source`` gates on the ``ApplicationArgs`` field so the scalar-read
+#: ops only ever match an actual arg read.
+_ARG_ARRAY_OPS = TXN_SOURCE_OPS
 _LSIG_ARG_OPS = frozenset({"arg", "args", "arg_0", "arg_1", "arg_2", "arg_3"})
 
 
@@ -236,6 +239,8 @@ class TaintQuery:
                    ) -> list[Node]:
         """The attacker-input sources that reach the sink at the given location
         (taint-backward). Answers "who can steer this sink?"."""
+        if line is None and file is None:
+            return []               # all-None find() returns EVERY node — refuse
         reach: set = set()
         for sink in self._nodes(line=line, file=file):
             reach |= self.g.reachable_to(sink)
@@ -256,7 +261,8 @@ class TaintQuery:
         on-demand); when the contract doesn't lift it transparently falls back to
         the coarse graph. ``precise`` still reports GUARD-BLIND reachability (a
         triage lens) — run ``sink_verdict.verify_sinks`` for the guard-aware
-        verdict. ``sources`` is ignored in precise mode (whole-surface only)."""
+        verdict. Passing an explicit ``sources`` set disables precise mode (the
+        IR path computes the whole attack surface only)."""
         if precise and sources is None:
             from ..lift import build_lifter
             lifter = build_lifter(self.prog)

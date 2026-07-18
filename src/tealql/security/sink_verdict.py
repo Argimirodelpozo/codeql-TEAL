@@ -30,7 +30,10 @@ _CATEGORY_DETECTORS: dict[str, tuple[str, ...]] = {
     "inner-asset-amount": ("ir-tainted-fund-flow",),
     "inner-close-remainder": ("ir-tainted-fund-flow",),
     "inner-asset-close": ("ir-tainted-fund-flow",),
-    "inner-rekey": ("ir-tainted-fund-flow",),
+    # ir-tainted-fund-flow's field set (FUND_FIELDS) EXCLUDES RekeyTo, so it can
+    # never flag an itxn-rekey sink; inner-txn-close-rekey is the app-mode detector
+    # that covers CloseRemainderTo/RekeyTo/AssetCloseTo inner-txn writes.
+    "inner-rekey": ("inner-txn-close-rekey",),
     "inner-fee": ("ir-tainted-fee",),
     "inner-appcall-target": ("ir-arbitrary-inner-appcall",),
     "inner-asset-selector": ("ir-arbitrary-inner-asset",),

@@ -606,11 +606,13 @@ _STATE_WRITE_KEY_IDX = {
     "box_put": 1,           # args: value, KEY
     "box_create": 1,        # args: size, KEY
     "box_replace": 2,       # args: bytes, start, KEY
+    "box_del": 0,           # args: KEY (attacker-chosen box deleted)
 }
 _STATE_WRITE_SEV = {
     "app_global_put": "CRITICAL",   # overwrite ANY global slot (owner/admin state)
     "app_local_put": "HIGH",
     "box_put": "HIGH", "box_replace": "HIGH", "box_create": "MEDIUM",
+    "box_del": "MEDIUM",            # delete an arbitrary (e.g. another user's) box
 }
 
 
@@ -624,8 +626,9 @@ def _state_write_sink_of(s):
 def tainted_state_writes(lifter, taint=None, trusted_args=frozenset()) -> list:
     """Tainted-KEY persistent state writes: a user-input value reaching the KEY of
     ``app_global_put`` / ``app_local_put`` / ``box_put`` / ``box_create`` /
-    ``box_replace`` lets the attacker write to an arbitrary slot -- overwrite
-    owner/admin global state, collide with a sensitive box. (A key derived from
+    ``box_replace`` / ``box_del`` lets the attacker write to (or delete) an
+    arbitrary slot -- overwrite owner/admin global state, collide with or destroy
+    a sensitive box. (A key derived from
     ``txn Sender`` -- the ubiquitous per-caller ``box[Sender]`` pattern -- is NOT a
     taint source, so it never surfaces; a key checked == Sender is guard-cleared.)"""
     return _tainted_sink_flows(lifter, _state_write_sink_of, taint, trusted_args)

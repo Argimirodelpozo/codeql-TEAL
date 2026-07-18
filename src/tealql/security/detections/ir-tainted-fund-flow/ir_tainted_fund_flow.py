@@ -2,9 +2,10 @@
 
 The interprocedural-IR PRIMARY fund-flow detector (run on the lifted Puya IR via
 :func:`common.ir_lifter`). An attacker-controlled value reaching a fund-flow
-inner-transaction field (``Receiver`` / ``Amount`` / ``CloseRemainderTo`` /
-``RekeyTo`` / asset variants) without a dominating guard lets the attacker
-redirect, size, or sweep a payment.
+inner-transaction field (``Receiver`` / ``Amount`` / ``CloseRemainderTo`` / asset
+variants — the ``FUND_FIELDS`` set, which excludes ``RekeyTo``: an app/itxn rekey
+is self-inflicted, covered by ``inner-txn-close-rekey``) without a dominating
+guard lets the attacker redirect, size, or sweep a payment.
 
 It matches or beats the SSA ``tainted-fund-flow`` on every analysis axis -- the
 key edge being **guard dominance across a ``callsub``**: ``PathPredicateAnalysis``

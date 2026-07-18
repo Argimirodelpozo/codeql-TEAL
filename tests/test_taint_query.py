@@ -58,6 +58,14 @@ class TestTaxonomy:
         assert not is_source("txn", "Sender")
         assert not is_source("txna", "Accounts 0")
 
+    def test_sources_full_txn_family(self):
+        # the scalar `txn ApplicationArgs N` and dynamic gtxn forms are attacker
+        # inputs too (canonical avm.TXN_SOURCE_OPS), not just the `txna` array op.
+        assert is_source("txn", "ApplicationArgs 1")
+        assert is_source("gtxn", "0 ApplicationArgs 1")
+        assert is_source("gtxnsas", "ApplicationArgs")  # index popped off stack
+        assert not is_source("txn", "NumAppArgs")       # gate still holds
+
 
 class TestQuery:
     def test_all_sinks(self, tmp_path):
@@ -169,6 +177,31 @@ class TestVerify:
         ranks = ["CONFIRMED", "GUARDED", "UNVERIFIED"]
         idx = [ranks.index(v.verdict) for v in vs]
         assert idx == sorted(idx)
+
+    def _verdict(self, tmp_path, teal, category):
+        from tealql.security.sink_verdict import verify_sinks
+        (tmp_path / "p.teal").write_text(teal)
+        vs = verify_sinks(SSAProgram(str(tmp_path / "p.teal")), file="p.teal")
+        return [v for v in vs if v.sink.category == category]
+
+    def test_tainted_rekey_not_falsely_guarded(self, tmp_path):
+        # ir-tainted-fund-flow's FUND_FIELDS excludes RekeyTo — inner-rekey must map
+        # to inner-txn-close-rekey (which DOES cover it), not report false GUARDED.
+        teal = ("#pragma version 8\nitxn_begin\nint pay\nitxn_field TypeEnum\n"
+                "txna ApplicationArgs 0\nitxn_field RekeyTo\nitxn_submit\n"
+                "int 1\nreturn\n")
+        vr = self._verdict(tmp_path, teal, "inner-rekey")
+        assert vr and vr[0].verdict == "CONFIRMED"
+        assert "inner-txn-close-rekey" in vr[0].confirmed_by
+
+    def test_tainted_box_del_confirmed(self, tmp_path):
+        # box_del was absent from the state-write engine — a tainted box key now
+        # both flags (coverage gap closed) and verdicts CONFIRMED, not GUARDED.
+        teal = ("#pragma version 8\ntxna ApplicationArgs 0\nbox_del\npop\n"
+                "int 1\nreturn\n")
+        vb = self._verdict(tmp_path, teal, "box-delete")
+        assert vb and vb[0].verdict == "CONFIRMED"
+        assert "ir-tainted-state-write" in vb[0].confirmed_by
 
 
 class TestPrecise:
