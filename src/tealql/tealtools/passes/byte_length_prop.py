@@ -27,8 +27,8 @@ Op semantics covered (forward, single-output bytes producers):
   - ``substring3 X A B``        → ``B - A`` bytes when A and B are
                                   both const ints on the stack.
   - ``setbyte X i b``           → preserves ``len(X)``.
-  - ``replace2 A X V``          → preserves ``len(X)`` (X is input[0]).
-  - ``replace3 X A V``          → preserves ``len(X)`` (X is input[0]).
+  - ``replace2 A X V``          → preserves ``len(X)`` (X is inputs[-1], the deepest).
+  - ``replace3 X A V``          → preserves ``len(X)`` (X is inputs[-1], the deepest).
   - ``sha256`` / ``sha512_256``
     / ``keccak256`` / ``sha3_256``  → 32 bytes (AVM hash digests have
                                   fixed output width).

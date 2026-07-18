@@ -679,7 +679,11 @@ def _address_operand_identities(main, subs) -> set:
     account-typed field, or the account operand (``args[0]``) of a local-state /
     account-parameter op. Only ``bytes``-form operands are taken -- the same ops
     also accept a ``uint64`` account INDEX (0=sender, i=Accounts[i-1]), which is
-    not an address -- so the ``avm_type == bytes`` filter keeps this sound."""
+    not an address -- so the ``avm_type == bytes`` filter keeps this sound.
+
+    Identities are scoped by owning subroutine (``id(s)``): SSA names like ``l%3``
+    / ``p%0`` are only unique WITHIN a sub, so a global ``(name, version)`` set
+    would retype an unrelated register of the same name in another sub."""
     out: set = set()
     for s in (main, *subs):
         for bb in s.body:
@@ -695,7 +699,7 @@ def _address_operand_identities(main, subs) -> set:
                     r = src.args[0]
                 if isinstance(r, M.Register) \
                         and r.ir_type.avm_type == PT.account.avm_type:
-                    out.add((r.name, r.version))
+                    out.add((id(s), r.name, r.version))
     return out
 
 
@@ -760,7 +764,7 @@ def _recover_ir_types(main, subs, allow=_is_refinable, byte_lengths=None) -> int
                     hit = False
                     for tgt in o.targets:
                         if tgt.ir_type is PT.bytes \
-                                and (tgt.name, tgt.version) in addr_ids:
+                                and (id(s), tgt.name, tgt.version) in addr_ids:
                             _compat.set_ir_type(tgt, PT.account)
                             n += 1
                             hit = True

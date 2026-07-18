@@ -4,10 +4,11 @@ constant-pushing opcodes.
 Emits one ``(file, line, out_idx, kind, value)`` row per produced
 constant:
 
-  - ``int`` / ``pushint``     → out_idx=1, kind="int", decimal value.
-    Named constants (``int pay``) yield NO row: decimal-only parsing
-    has no result on non-numeric / non-decimal text (so ``int 0x10``
-    is also dropped).
+  - ``int`` / ``pushint``     → out_idx=1, kind="int", value via
+    ``_resolve_int_immediate`` — decimal, ``0x`` / ``0o`` / ``0b``
+    literals (``int 0x10`` → 16), AND named constants (``int pay`` →
+    1, from ``NAMED_INT_CONSTANTS``). Only genuinely unresolvable text
+    yields no row.
   - ``intc`` / ``intc_0..3``  → out_idx=1, kind="int", value from the
     single ``intcblock`` at the given index.
   - ``pushbytes``             → out_idx=1, kind="bytes", raw literal text.

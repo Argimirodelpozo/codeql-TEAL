@@ -397,8 +397,8 @@ def try_fold_assignment(a: Assignment) -> Optional[Const]:
     op = a.op
     if not a.outputs or len(a.outputs) != 1:
         return None
-    # ``global FIELD`` and ``txn FIELD`` have no stack inputs; resolve
-    # them from the immediate alone (bytes / int constant propagation).
+    # ``global FIELD`` has no stack inputs; resolve it from the immediate
+    # alone (bytes / int constant propagation).
     # Without this, field-constant resolution is lost and downstream
     # rendering breaks (e.g. ``Global ZeroAddress`` comparisons).
     if op == "global":
