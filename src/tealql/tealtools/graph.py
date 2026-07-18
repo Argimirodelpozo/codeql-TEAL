@@ -32,6 +32,7 @@ from .ast import AstNode, Location
 
 import base64
 import hashlib
+import re
 
 # TEAL assembler pseudo-ops the tree-sitter grammar doesn't know (`byte` / `method`
 # / `addr` parse as ERROR nodes and get dropped, starving their consumers). Rewrite
@@ -94,9 +95,14 @@ def _strip_inline_comment(code: str) -> str:
     return code
 
 
+#: a ``byte`` / ``method`` / ``addr`` pseudo-op at line start (after indent),
+#: followed by ANY whitespace — tab-separated forms count too.
+_PSEUDO_OP_RE = re.compile(r"(?:^|\n)[ \t]*(?:byte|method|addr)[ \t]")
+
+
 def _normalize_pseudo_ops(data: bytes) -> bytes:
     text = data.decode("utf-8", "replace")
-    if not any(k in text for k in ("byte ", "method ", "addr ")):
+    if not _PSEUDO_OP_RE.search(text):
         return data                                # fast path: nothing to rewrite
     out = []
     for line in text.split("\n"):

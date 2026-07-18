@@ -47,21 +47,37 @@ def reverse_source_map(fwd: dict[int, tuple[str, int]]
     return rev
 
 
-def source_map_for(source_path: str, file: Optional[str] = None) -> dict:
-    """Build the map for a ``.teal`` file (or a directory of them, keyed nowhere
-    special since teal lines are per-file). ``file`` restricts a directory build
-    to one basename. Defensive: any read failure yields ``{}``."""
+def reverse_file_source_map(fwd: dict[tuple[str, int], tuple[str, int]]
+                            ) -> dict[tuple[str, int], list[tuple[str, int]]]:
+    """Inverse of a ``(teal_file, teal_line) -> (src_file, src_line)`` map:
+    ``{(src_file, src_line): [(teal_file, teal_line), …]}`` (sorted)."""
+    rev: dict[tuple[str, int], list[tuple[str, int]]] = {}
+    for tl, src in fwd.items():
+        rev.setdefault(src, []).append(tl)
+    for v in rev.values():
+        v.sort()
+    return rev
+
+
+def source_map_for(source_path: str, file: Optional[str] = None
+                   ) -> dict[tuple[str, int], tuple[str, int]]:
+    """Build a ``{(teal_file, teal_line): (src_file, src_line)}`` map for a
+    ``.teal`` file (or a directory of them). Keyed by ``(teal_file, line)`` so
+    a directory's programs (e.g. approval + clear) do NOT clobber each other on
+    equal line numbers. ``file`` restricts a directory build to one basename.
+    Defensive: any read failure yields ``{}``."""
+    out: dict[tuple[str, int], tuple[str, int]] = {}
     try:
         p = Path(source_path)
         if p.is_dir():
-            out: dict[int, tuple[str, int]] = {}
             for f in sorted(p.rglob("*.teal")):
                 if file is not None and f.name != file:
                     continue
-                out.update(build_source_map(f.read_text(errors="ignore")))
-            return out
-        if p.exists():
-            return build_source_map(p.read_text(errors="ignore"))
+                for ln, src in build_source_map(f.read_text(errors="ignore")).items():
+                    out[(f.name, ln)] = src
+        elif p.exists():
+            for ln, src in build_source_map(p.read_text(errors="ignore")).items():
+                out[(p.name, ln)] = src
     except Exception:
         pass
-    return {}
+    return out

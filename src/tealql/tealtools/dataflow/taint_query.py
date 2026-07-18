@@ -137,7 +137,7 @@ def _sink_hit(g: TaintGraph, node: Node,
     field = (imm or "").strip() if op == "itxn_field" else ""
     src = None
     if srcmap:
-        hl = srcmap.get(node.line)
+        hl = srcmap.get((node.file, node.line))
         if hl is not None:
             src = f"{hl[0]}:{hl[1]}"
     return SinkHit(node=node, op=op, field=field, category=cls[0],
@@ -161,14 +161,15 @@ class TaintQuery:
     """
 
     def __init__(self, prog, *, file: Optional[str] = None):
-        from ..source_map import source_map_for, reverse_source_map
+        from ..source_map import source_map_for, reverse_file_source_map
         self.prog = prog
         self.g = TaintGraph.of(prog)
         # high-level <-> TEAL line map from the compiler's `// file.py:N` comments
         # (empty on raw bytecode — the query then works in TEAL lines only).
+        # Keyed by (teal_file, line): a directory's programs don't clobber.
         src_path = str(getattr(prog, "source_path", "") or "")
         self.srcmap = source_map_for(src_path, file=file) if src_path else {}
-        self._rev = reverse_source_map(self.srcmap)
+        self._rev = reverse_file_source_map(self.srcmap)
 
     def _file_name(self) -> str:
         """The file label the coarse nodes carry (``a.location.file``), so precise
@@ -189,11 +190,12 @@ class TaintQuery:
     def teal_lines_for_source(self, src_file: str, src_line: int) -> list[int]:
         """The TEAL lines a high-level ``src_file:src_line`` compiled to, or ``[]``
         (no source map / not that line)."""
-        # match by (file, line) exactly, or by basename if the caller gave one.
+        # _rev: (src_file, src_line) -> [(teal_file, teal_line), …]. Match the
+        # source ref by exact path or basename, and return the bare TEAL lines.
         for (f, ln), tls in self._rev.items():
             if ln == src_line and (f == src_file or f.endswith("/" + src_file)
                                    or f.split("/")[-1] == src_file):
-                return tls
+                return [tl for _tf, tl in tls]
         return []
 
     # -- source / sink location lookup ----------------------------------
@@ -305,7 +307,7 @@ class TaintQuery:
                 continue
             seen.add(key)
             node = Node(file=fname, line=f.line, node_class="ir")
-            hl = self.srcmap.get(f.line) if self.srcmap else None
+            hl = self.srcmap.get((fname, f.line)) if self.srcmap else None
             src = f"{hl[0]}:{hl[1]}" if hl else None
             hits.append(SinkHit(node=node, op=op, field=(imm if op == "itxn_field" else ""),
                                 category=cls[0], severity=cls[1], source=src))

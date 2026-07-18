@@ -488,6 +488,11 @@ class PathPredicateAnalysis:
             target_line = self._label_lines.get((pred.file, target_name))
             if target_line is None:
                 return frozenset()
+            # `bnz next` / `bz next` to the immediately-following label collapses
+            # both edges onto ONE successor — the branch does not partition flow,
+            # so neither the taken nor the fall-through predicate holds there.
+            if len({s.first_line for s in pred.successors}) < 2:
+                return frozenset()
             took_branch = succ.first_line == target_line
             # The cond is "truthy" when bnz fires (taken) or bz doesn't (fall-through).
             taken_means_truthy = (
