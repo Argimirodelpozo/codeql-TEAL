@@ -123,13 +123,12 @@ def _is_appcall(txn: InnerTxn) -> bool:
 
 
 def _state_key(inputs) -> Optional[str]:
-    """The constant bytes key among a state op's operands (the other being the
-    app index for ``*_get_ex`` / the value for ``*_put``)."""
-    for inp in inputs:
-        kb = _const_bytes(inp)
-        if kb is not None:
-            return kb
-    return None
+    """The constant bytes KEY of a state READ — the TOP-OF-STACK operand
+    (``inputs[0]``, top-first: ``[key, account?, app?]``). Returns None when the
+    key isn't a bytes const, so a DYNAMIC key with a constant account/app operand
+    below it is not mis-read as the key (scanning ALL inputs for the first bytes
+    const took a constant ACCOUNT address as the key — a wrong AppID resolution)."""
+    return _const_bytes(inputs[0]) if inputs else None
 
 
 # State scope -> the write op that stores into it. An ApplicationID stashed in any
@@ -151,7 +150,8 @@ def _state_read(operand) -> Optional[tuple[str, str]]:
       (a ``box_extract`` sub-slice can't be matched against a whole ``box_put``).
 
     The key is always the top-of-stack operand for a read, so ``_state_key``
-    (first bytes const) picks it even when the account is itself an address const.
+    reads ``inputs[0]`` directly — correct even when the account below it is
+    itself a constant address (which an all-inputs scan would take as the key).
     """
     a = getattr(operand, "defined_by", None)
     if a is None:

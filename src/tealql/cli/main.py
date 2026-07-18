@@ -78,12 +78,19 @@ def _add_common_flags(sp: argparse.ArgumentParser) -> None:
                          "analyzing the partial program with a warning")
 
 
-def _add_target_args(sp: argparse.ArgumentParser, *, dest: str = "target") -> None:
-    """Add the universal ``<target>`` positional and common flags."""
-    sp.add_argument(
-        dest,
-        help="path to a .teal file or a directory of .teal files",
-    )
+def _add_target_args(sp: argparse.ArgumentParser, *, dest: str = "target",
+                     optional: bool = False) -> None:
+    """Add the universal ``<target>`` positional and common flags. ``optional``
+    makes the target ``nargs="?"`` (for commands that can run without one, e.g.
+    ``methods --arc56 SPEC.json``)."""
+    if optional:
+        sp.add_argument(dest, nargs="?", default=None,
+                        help="path to a .teal file or a directory of .teal files")
+    else:
+        sp.add_argument(
+            dest,
+            help="path to a .teal file or a directory of .teal files",
+        )
     _add_common_flags(sp)
 
 
@@ -373,6 +380,10 @@ def _cmd_methods(args) -> int:
         spec = _arc56.load(args.arc56)          # explicit path -> surface load errors
         label = spec.name or Path(args.arc56).name
         rows = [(label, m) for m in spec.methods]
+    elif not getattr(args, "target", None):
+        print("error: a target (.teal file or directory) is required unless "
+              "--arc56 SPEC.json is given", file=sys.stderr)
+        return 2
     else:
         for prog, name in _load_programs(args):
             src = Path(getattr(prog, "source_path", "") or "")
@@ -866,9 +877,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sub = p.add_subparsers(dest="cmd", required=True, metavar="<command>")
 
-    def add(name: str, help_: str, handler: Callable) -> argparse.ArgumentParser:
+    def add(name: str, help_: str, handler: Callable, *,
+            optional_target: bool = False) -> argparse.ArgumentParser:
         sp = sub.add_parser(name, help=help_)
-        _add_target_args(sp)
+        _add_target_args(sp, optional=optional_target)
         sp.set_defaults(handler=handler)
         return sp
 
@@ -883,7 +895,7 @@ def build_parser() -> argparse.ArgumentParser:
     methods_p = add("methods",
         "recover the ABI method table (name / args / selector) from source "
         "method signatures or an --arc56 spec — optional, empty on raw bytecode",
-        _cmd_methods)
+        _cmd_methods, optional_target=True)   # target unused (and optional) with --arc56
     methods_p.add_argument(
         "--arc56", default=None, metavar="SPEC.json",
         help="use an ARC-56 app spec as the AUTHORITATIVE method table "
