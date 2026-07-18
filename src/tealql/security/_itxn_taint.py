@@ -216,7 +216,11 @@ def ir_lifter(prog: SSAProgram, file: Optional[str] = None):
     findings), and the user must be able to see the reduced precision."""
     global _LIFT_IMPORT_WARNED
     sentinel = object()
-    cached = getattr(prog, "_sec_ir_lifter", sentinel)
+    # Shared with the query-side ``tealtools.lift.build_lifter`` under the SAME
+    # ``_ir_lifter`` attribute, so one program is lifted at most once even when a
+    # precise taint-query and the ir-* detectors both run (e.g. taint-query
+    # --precise --verify): whichever builds first caches here; the other reuses.
+    cached = getattr(prog, "_ir_lifter", sentinel)
     if cached is not sentinel:
         return cached
     lifter = None
@@ -260,7 +264,7 @@ def ir_lifter(prog: SSAProgram, file: Optional[str] = None):
                     "is likely a bug; ir-* detections fall back. Please report.",
                     src, type(e).__name__, e)
     try:
-        prog._sec_ir_lifter = lifter
+        prog._ir_lifter = lifter
     except AttributeError:          # only if SSAProgram ever gains __slots__
         pass
     return lifter

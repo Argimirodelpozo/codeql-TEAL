@@ -25,16 +25,20 @@ __all__ = ["render", "to_puya", "lift", "lift_to_teal", "pre_ir", "build_lifter"
 
 def build_lifter(prog):
     """Build + cache the pre-IR ``_Lifter`` for ``prog``, or ``None`` if it does
-    not lift. Puya-free (the pre-IR path never imports ``puya``). Cached on the
-    program under ``_tt_ir_lifter``.
+    not lift. Puya-free (the pre-IR path never imports ``puya``).
 
     The QUERY-side counterpart to ``security.common.ir_lifter``: that one warns
     loudly (its detectors must surface reduced precision), whereas this degrades
     *quietly* so a caller can transparently fall back to a coarser analysis. Like
     ``ir_lifter`` it lifts a FRESH ``SSAProgram`` off ``prog.source_path`` (the
-    lift mutates its input CFG) so ``prog``'s own SSA substrate stays pristine."""
+    lift mutates its input CFG) so ``prog``'s own SSA substrate stays pristine.
+
+    Both share ONE cache attribute (``_ir_lifter``), so a program is lifted at
+    most once no matter which side runs first. When ``ir_lifter`` might also run
+    (e.g. a ``--verify`` flow), pre-warm through IT so its warnings aren't lost to
+    this function's quiet build."""
     sentinel = object()
-    cached = getattr(prog, "_tt_ir_lifter", sentinel)
+    cached = getattr(prog, "_ir_lifter", sentinel)
     if cached is not sentinel:
         return cached
     lifter = None
@@ -51,7 +55,7 @@ def build_lifter(prog):
         except Exception:
             lifter = None            # any lift/import failure -> coarse fallback
     try:
-        prog._tt_ir_lifter = lifter
+        prog._ir_lifter = lifter
     except Exception:
         pass
     return lifter

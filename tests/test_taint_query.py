@@ -214,6 +214,6 @@ class TestPrecise:
         from tealql.tealtools.dataflow.taint_query import TaintQuery as TQ
         (tmp_path / "p.teal").write_text(_TEAL)
         prog = SSAProgram(str(tmp_path / "p.teal"))
-        prog._tt_ir_lifter = None                    # force the no-lift path
+        prog._ir_lifter = None                       # force the no-lift path
         q = TQ(prog)
         assert q.tainted_sinks(precise=True) == q.tainted_sinks()

@@ -85,6 +85,13 @@ def verify_sinks(prog: SSAProgram, *, file: Optional[str] = None,
     from tealql.security import DETECTORS
     from tealql.security.findings import violation_line
 
+    if precise:
+        # Pre-warm the shared lift through the detector-grade builder so its
+        # coverage/crash warnings fire (the quiet query-side build would swallow
+        # them); the detectors below then reuse this ONE lift, not a second.
+        from tealql.security.common import ir_lifter
+        ir_lifter(prog, file)
+
     q = TaintQuery(prog, file=file)
     sinks = q.tainted_sinks(precise=precise)
 
