@@ -40,11 +40,13 @@ class TestBitwiseBinary:
         assert _val(_fold_bitwise("shl", [_c(3), _c(63)])) == (3 << 63) & UMAX
         assert _val(_fold_bitwise("shl", [_c(UMAX), _c(1)])) == (UMAX << 1) & UMAX
 
-    def test_shift_count_ge_64_is_zero(self):
-        # B >= 64 zeroes the result; must not allocate a giant Python int.
-        assert _val(_fold_bitwise("shl", [_c(1), _c(64)])) == 0
-        assert _val(_fold_bitwise("shl", [_c(UMAX), _c(UMAX)])) == 0
-        assert _val(_fold_bitwise("shr", [_c(1), _c(64)])) == 0
+    def test_shift_count_ge_64_halts_no_fold(self):
+        # B > 63 HALTS the AVM ("shl/shr arg too big") — folding to 0 would
+        # fabricate a constant on an always-erroring path, so return None.
+        assert _fold_bitwise("shl", [_c(1), _c(64)]) is None
+        assert _fold_bitwise("shl", [_c(UMAX), _c(UMAX)]) is None
+        assert _fold_bitwise("shr", [_c(1), _c(64)]) is None
+        assert _val(_fold_bitwise("shr", [_c(1), _c(63)])) == 0   # 63 still folds
 
     def test_shr(self):
         assert _val(_fold_bitwise("shr", [_c(256), _c(4)])) == 16

@@ -464,7 +464,9 @@ def _shuffle_mapping(a: "Assignment") -> Optional[list[int]]:
         # After:  ... A   X_{n-1} … X_1       (n elts).
         # in  (top-first): [A, X_1, X_2, …, X_n]
         # out (top-first): [X_1, X_2, …, X_{n-1}, A]
-        if n_in == n + 1 and n_out == n:
+        # `bury 0` fails at runtime (buries into the popped slot); reject it so
+        # we never emit a length-1 mapping for zero outputs (would IndexError).
+        if n >= 1 and n_in == n + 1 and n_out == n:
             return list(range(1, n)) + [0]
     elif op == "frame_dig":
         # SSA model layout (top-first): ``inputs`` is [top_local,
@@ -529,6 +531,8 @@ def _canon_shuffle(op: str, immediates: str):
     if op == "dig":
         return (n + 1, [n] + list(range(n + 1)))
     if op == "bury":
+        if n < 1:                       # bury 0 fails at runtime — unmodellable
+            return (None, None)
         return (n + 1, list(range(1, n)) + [0])
     return (None, None)
 

@@ -7,11 +7,15 @@ returns the same value within one transaction:
   - ``txn FIELD`` / ``txna FIELD i`` — current transaction's fields.
   - ``gtxn N FIELD`` / ``gtxna N FIELD i`` / ``gtxnas N FIELD`` —
     immediate-indexed group transaction.
-  - ``gtxns FIELD`` / ``gtxnsa FIELD i`` / ``gtxnsas FIELD`` — stack-
-    indexed group transaction (the popped index is part of the key).
+  - ``gtxns FIELD`` / ``gtxnsa FIELD i`` / ``gtxnsas FIELD`` /
+    ``gtxnas N FIELD`` / ``args`` — at least one selecting index is
+    POPPED off the stack, so every popped operand is part of the key
+    (``gtxnsas`` pops both the txn and the array index; ``gtxnas``
+    pops the array index; ``args`` pops the arg index).
   - ``global FIELD`` — constant per execution (GroupSize, Round,
-    LatestTimestamp, ...).
-  - ``arg`` / ``args`` — LogicSig program arguments.
+    LatestTimestamp, ...) EXCEPT ``OpcodeBudget``, which decreases as
+    the program runs and so is never unified.
+  - ``arg i`` — LogicSig program argument (immediate index).
 
 Yet the SSA model treats each *syntactic* read as a fresh SSAVar.
 Multiple ``txn NumAppArgs`` reads at different source lines all end
@@ -53,17 +57,26 @@ from typing import Optional
 from ..ssa import Assignment, Const, Phi, SSAProgram, SSAVar
 
 
-# Ops whose result is execution-stable, modulo their key.
+# Ops whose result is execution-stable, keyed by (op, immediates) ALONE — every
+# operand that selects the value is an IMMEDIATE (txn/array index).
 _STABLE_INPUT_OPS_IMM_ONLY = frozenset({
     "txn", "txna",
-    "gtxn", "gtxna", "gtxnas",
+    "gtxn", "gtxna",
     "global",
-    "arg", "args",
+    "arg",
 })
 
+# Execution-stable, but at least one selecting operand is POPPED off the stack —
+# the key must include every popped input, or reads returning different values
+# unify. ``args`` pops the arg index; ``gtxnas`` pops the array index (txn index
+# is immediate); ``gtxnsas`` pops BOTH the txn index and the array index.
 _STABLE_INPUT_OPS_STACK = frozenset({
-    "gtxns", "gtxnsa", "gtxnsas",
+    "gtxns", "gtxnsa", "gtxnsas", "gtxnas", "args",
 })
+
+# ``global`` fields that are NOT execution-stable — they change as the program
+# runs, so two reads can differ and must never unify.
+_UNSTABLE_GLOBAL_FIELDS = frozenset({"OpcodeBudget"})
 
 
 def _operand_key(operand) -> Optional[tuple]:
@@ -93,14 +106,19 @@ def _input_key(a: Assignment) -> Optional[tuple]:
     """
     op = a.op
     if op in _STABLE_INPUT_OPS_IMM_ONLY:
+        if op == "global" and a.immediates.strip() in _UNSTABLE_GLOBAL_FIELDS:
+            return None
         return (op, a.immediates)
     if op in _STABLE_INPUT_OPS_STACK:
         if not a.inputs:
             return None
-        idx_key = _operand_key(a.inputs[0])
-        if idx_key is None:
+        # Key on EVERY popped operand (an op may pop more than one index, e.g.
+        # gtxnsas pops both the txn index and the array index); if any is
+        # unresolved the reads stay distinct (conservative — never over-unify).
+        idx_keys = tuple(_operand_key(x) for x in a.inputs)
+        if any(k is None for k in idx_keys):
             return None
-        return (op, a.immediates, idx_key)
+        return (op, a.immediates, idx_keys)
     return None
 
 

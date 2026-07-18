@@ -253,9 +253,11 @@ def _fold_bitwise(op: str, inputs: list[Const]) -> Optional[Const]:
     """Fold the uint64 bitwise / shift binary ops. Operand order
     matches the arithmetic folders and :mod:`tealql.tealtools.passes.range_arith`:
     ``inputs[0]`` is the deeper stack value ``A``, ``inputs[1]`` the
-    top ``B``. AVM semantics: ``shl`` is ``A * 2^B mod 2^64`` (wraps,
-    never halts); ``shr`` is ``A // 2^B``; ``&`` / ``|`` / ``^`` are the
-    usual uint64 bit ops."""
+    top ``B``. AVM semantics: ``shl`` is ``A * 2^B mod 2^64``; ``shr`` is
+    ``A // 2^B``; ``&`` / ``|`` / ``^`` are the usual uint64 bit ops.
+    A shift amount ``B > 63`` HALTS the AVM ("shl/shr arg too big"), so
+    those fold to ``None`` (no constant on an always-erroring path) —
+    like the ``-`` underflow case."""
     if len(inputs) != 2:
         return None
     a, b = _int_from_const(inputs[0]), _int_from_const(inputs[1])
@@ -270,11 +272,13 @@ def _fold_bitwise(op: str, inputs: list[Const]) -> Optional[Const]:
     elif op == "^":
         r = a ^ b
     elif op == "shl":
-        # B ≥ 64 zeroes the result. Guard the shift so we never
-        # materialise a multi-exabit Python int before masking.
-        r = 0 if b >= 64 else (a << b) & _UINT64_MAX
+        if b >= 64:
+            return None          # AVM halts (arg too big) — no constant result
+        r = (a << b) & _UINT64_MAX
     elif op == "shr":
-        r = 0 if b >= 64 else a >> b
+        if b >= 64:
+            return None          # AVM halts (arg too big) — no constant result
+        r = a >> b
     else:
         return None
     return _int_const(r)
