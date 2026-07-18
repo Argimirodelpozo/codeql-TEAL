@@ -11,9 +11,13 @@ The AVM halts once its opcode budget is exhausted. That budget is
 :func:`program_budget_ceiling`: ``TXN_BUDGET * ASSUMED_GROUP_SIZE``
 from peer group txns, plus ``TXN_BUDGET`` per inner appcall the
 program may submit (capped at :data:`HARD_BUDGET_LIMIT` /
-:data:`MAX_INNER_TXNS`). The reported ``cumulative`` is always a
-**sound over-approximation** of the actual worst-case — no false
-negatives for budget-exhaustion findings.
+:data:`MAX_INNER_TXNS`). For ops with a FIXED per-invocation cost the
+reported ``cumulative`` is a **sound over-approximation** of the actual
+worst-case — no false negatives for budget-exhaustion findings. A few
+ops cost proportionally to their operand LENGTH (``base64_decode`` /
+``json_ref`` / ``mimc``) or their CURVE immediate (the ``ec_*`` family);
+those use a representative constant from :data:`OPCODE_COSTS` and may
+under-count on very large inputs / the most expensive curve.
 
 Algorithm — structural-analysis fold over the control tree:
 
@@ -96,6 +100,12 @@ OPCODE_COSTS: dict[str, int] = {
     "expw": 10,
     "bsqrt": 40,
     "divw": 4,
+    "divmodw": 20,
+    "sqrt": 4,
+    # 512-bit byte-math (fixed per-op costs, AVM v10).
+    "b+": 10, "b-": 10,
+    "b*": 20, "b/": 20, "b%": 20,
+    "b|": 6, "b&": 6, "b^": 6, "b~": 4,
 }
 DEFAULT_COST = 1
 

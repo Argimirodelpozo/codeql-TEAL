@@ -205,7 +205,9 @@ def _bb_label(bb: BasicBlockNode, *, max_lines: int = 20) -> str:
     if len(body_lines) > max_lines:
         elided = len(body_lines) - (max_lines - 1)
         body_lines = body_lines[: max_lines - 1] + [f"... (+{elided} more)"]
-    return "\\l".join([header, ""] + body_lines) + "\\l"
+    # Escape each part, then join with the literal ``\l`` (Graphviz left-align);
+    # escaping the joined result would double the separators' backslashes.
+    return "\\l".join(escape(p) for p in [header, ""] + body_lines) + "\\l"
 
 
 def _bb_dot_id(bb: BasicBlockNode) -> str:
@@ -233,7 +235,7 @@ def to_bb_dot(
     ]
     for n in sorted(nodes, key=lambda bb: (bb.file, bb.first_line)):
         attrs = (
-            f'label="{escape(_bb_label(n))}", '
+            f'label="{_bb_label(n)}", '   # already escaped part-wise (keeps \l breaks)
             'shape=box, style="rounded,filled", fillcolor="#f4f4f8"'
         )
         lines.append(f"  {_bb_dot_id(n)} [{attrs}];")

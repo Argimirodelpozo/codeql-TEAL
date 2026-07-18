@@ -347,26 +347,39 @@ def _caller_field_nodes(
     this field-set within the inner txn (reset at ``itxn_begin``/``itxn_next``,
     so it counts the array of the inner txn this submit finalises)."""
     # Walk the caller's assignments in source order, finding the itxn block
-    # this submit belongs to and counting <field> field-set ops as we go.
+    # this submit belongs to and counting <field> field-set ops as we go. Fields
+    # are BUFFERED per group (itxn_begin..itxn_submit) and only yielded once the
+    # group's submit matches site.submit_line — otherwise an EARLIER submit's
+    # fields (in_block never reset) would leak into a later site's callee.
     prog = caller_tg.prog
     in_block = False
     push_index = 0
+    pending: list[tuple[int, Node]] = []
     for a in prog.assignments:
         if a.location.file != site.file:
             continue
-        if a.op in ("itxn_begin", "itxn_next"):
+        if a.op == "itxn_begin":
             in_block = True
             push_index = 0
+            pending = []               # new group — drop any prior group's fields
+            continue
+        if a.op == "itxn_next":
+            push_index = 0             # new txn in the SAME group — keep pending
             continue
         if not in_block:
             continue
-        if a.op == "itxn_submit" and a.location.line == site.submit_line:
-            return  # done with this submit
+        if a.op == "itxn_submit":
+            if a.location.line == site.submit_line:
+                yield from pending     # this is our group
+                return
+            in_block = False           # a different submit — that group wasn't ours
+            pending = []
+            continue
         if a.op == "itxn_field" and a.immediates.strip() == field:
             # Find the matching graph node by (file, line)
             for n in caller_tg.nodes():
                 if n.file == site.file and n.line == a.location.line:
-                    yield push_index, n
+                    pending.append((push_index, n))
                     break
             push_index += 1
 

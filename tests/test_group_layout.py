@@ -33,7 +33,7 @@ class TestForcedLayout:
         # incl. the cross-ref flipped so the slot field reads on the left.
         assert "gtxn[0]:" in text
         assert "Receiver == Global.CurrentApplicationAddress" in text
-        assert "TypeEnum == 1" in text
+        assert "TypeEnum == pay" in text   # enum-symbolised, matching the shape view
 
     def test_to_dict_structure(self):
         from tealql.tealtools.group_reasoning import analyze_layout
@@ -42,7 +42,7 @@ class TestForcedLayout:
         assert d["this_index"] == ["== 1"]
         assert "0" in d["positions"]
         assert any("Receiver" in s for s in d["positions"]["0"])
-        assert any("TypeEnum == 1" == s for s in d["positions"]["0"])
+        assert any("TypeEnum == pay" == s for s in d["positions"]["0"])
 
 
 class TestNoneLayout:

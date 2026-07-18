@@ -581,7 +581,7 @@ class GroupLayout:
             rhs_i = _gtxn_index(rhs_ref) if rhs_ref is not None else None
             if lhs_i is not None:
                 positions.setdefault(lhs_i, []).append(
-                    (ref.field, c.op, _render_rhs(rhs))
+                    (ref.field, c.op, _render_rhs(rhs, ref.field))
                 )
             elif rhs_i is not None:
                 # ref is on the rhs of this slot's constraint; flip so
@@ -639,11 +639,11 @@ class GroupLayout:
                 for i in sorted(positions)
             },
             "this_txn_fields": [
-                f"{c.ref.field} {c.op} {_render_rhs(c.rhs)}"
+                f"{c.ref.field} {c.op} {_render_rhs(c.rhs, c.ref.field)}"
                 for c in sorted(this_fields, key=_constraint_sort_key)
             ],
             "globals": [
-                f"{c.ref.field} {c.op} {_render_rhs(c.rhs)}"
+                f"{c.ref.field} {c.op} {_render_rhs(c.rhs, c.ref.field)}"
                 for c in sorted(globals_, key=_constraint_sort_key)
             ],
         }

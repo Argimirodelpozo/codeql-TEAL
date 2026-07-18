@@ -37,7 +37,10 @@ def bb_label(head: str, lines: list[str]) -> str:
     left-align) and escaped with a trailing ``\\l``."""
     if not lines:
         return escape(head)
-    return escape("\\l".join([head, *lines])) + "\\l"
+    # Escape each part FIRST, then join with the literal ``\l`` — escaping the
+    # already-joined string would double the separators' backslashes (Graphviz
+    # then renders literal "\l" text instead of left-aligned line breaks).
+    return "\\l".join(escape(p) for p in [head, *lines]) + "\\l"
 
 
 class SvgResult:
