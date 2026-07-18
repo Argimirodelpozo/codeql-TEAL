@@ -44,7 +44,7 @@ from typing import Callable, Optional
 
 from ..ssa import (Const, Phi, SSAProgram, SSAVar, binary_operands, const_int,
                    operand_const)
-from ..avm import _txn_field_name
+from ..avm import _txn_field_name, _multi_out_type
 from ..ssa.models import _shuffle_mapping
 
 INF = float("inf")  # sentinel the Intervals algebra tolerates as an open right end
@@ -343,6 +343,17 @@ def _validated_intervals(prog: SSAProgram) -> tuple[dict, dict]:
     def dominates(block_a, use, line: int) -> bool:
         return dom.dominates(block_a, use.basic_block, line, use.location.line)
 
+    # Values that flow into a phi. The dominance check below only sees ``x.uses``
+    # (OP uses), never phi consumers — and a phi arg comes from a SPECIFIC
+    # predecessor edge that may bypass the assert, so clearing such a value
+    # globally is unsound (a false negative). Never clear a phi-fed value — the
+    # same conservative contract as ``passes.range_assert`` (which defers bytes
+    # ``==`` clearing to here). This also neutralises the ``all([])``
+    # vacuous-true case: an x whose only op-use is the guard but which is
+    # phi-carried elsewhere no longer clears with zero dominance evidence.
+    phi_fed = {id(arg) for ph in prog.phis.values() for arg in ph.args
+               if isinstance(arg, SSAVar)}
+
     out: dict = {}
     prov: dict = {}       # value -> [(lo, hi, kind, line)] : which op validated
     for a in prog.assignments:
@@ -371,8 +382,8 @@ def _validated_intervals(prog: SSAProgram) -> tuple[dict, dict]:
                 x, lo, hi = s, 0, (_byte_length(s) or _len_bound(s))
                 test = d                          # the `==` read forms the guard
             break
-        if not isinstance(x, SSAVar):
-            continue
+        if not isinstance(x, SSAVar) or id(x) in phi_fed:
+            continue                          # phi-fed: dominance is edge-specific
         if all(dominates(block_a, u, a.location.line)
                for u in x.uses if u is not test):
             out.setdefault(x, []).append((lo, hi))
@@ -407,6 +418,8 @@ def _validated_intervals(prog: SSAProgram) -> tuple[dict, dict]:
                 if info is not None and isinstance(info[0], SSAVar):
                     slice_cands[bc.value] = info
     for slc, (x, lo, hi) in slice_cands.items():
+        if id(x) in phi_fed:
+            continue                          # phi-fed: edge-specific, don't clear
         uses = [u for u in x.uses if u is not getattr(slc, "defined_by", None)]
         if uses and all(_eq_clean_at(slc, u) for u in uses):
             out.setdefault(x, []).append((lo, hi))
@@ -587,6 +600,30 @@ def byte_taint(
     from ..passes.frame_flow import frame_param_sources
     frame_src = frame_param_sources(prog)
 
+    # Scratch bridge: a `load N` has no def-use input in PySSA, so byte taint
+    # would die at any `store N; …; load N` roundtrip. The `scratch_stores` graph
+    # annotation gives, per `load N`, the reaching `store N` VALUE producers (MAY
+    # — union is a sound over-approximation). Build {load output var -> [store
+    # value vars]} and join them in the fixpoint, exactly like the frame bridge
+    # and the boolean engine's step 2c.
+    scratch_src: dict = {}
+    graph = getattr(prog, "_graph", None)
+    if graph is not None:
+        for n in graph.nodes:
+            stores = graph.nodes[n].get("scratch_stores")
+            if not stores:
+                continue
+            loc = getattr(n, "location", None)
+            if loc is None:
+                continue
+            load_var = prog.var(loc.file, loc.start_line, 1)
+            if load_var is None:
+                continue
+            srcs = [sv for (sf, sl, si) in stores
+                    if (sv := prog.var(sf, sl, si)) is not None]
+            if srcs:
+                scratch_src.setdefault(load_var, []).extend(srcs)
+
     bt: dict = {}     # value -> Intervals (tainted byte ranges)
     st: set = set()   # scalar (uint64) values that are tainted
 
@@ -739,6 +776,17 @@ def byte_taint(
         if op == "itob" and a.inputs:
             return set_bytes(out, Intervals.whole(8)) if sget(a.inputs[0]) else False
 
+        # ---- select A B C -> A if C==0 else B (polymorphic: value inputs are
+        # inputs[2]=A, inputs[1]=B, top-first). Like a phi of the two values:
+        # carry BOTH the byte-intervals (bytes case) and scalar taint (uint64
+        # case), so a tainted bytes value survives a downstream extract.
+        if op == "select" and len(a.inputs) == 3:
+            iv = bget(a.inputs[1]).union(bget(a.inputs[2]))
+            changed = set_bytes(out, iv)
+            if sget(a.inputs[1]) or sget(a.inputs[2]):
+                changed = set_scalar(out) or changed
+            return changed
+
         # ---- conservative fallback: any-input-tainted -> output tainted ----
         if any_tainted(a):
             # len / bitlen derive metadata, not content — don't propagate.
@@ -751,7 +799,24 @@ def byte_taint(
             # the module's "never a false negative" soundness contract.
             if op in _BYTES_OUT_FALLBACK:
                 return set_bytes(out, Intervals.whole(_len_bound(out)))
-            return set_scalar(out)
+            if len(a.outputs) == 1:
+                return set_scalar(out)
+            # Multi-result op with no precise rule (divmodw quad, addw/mulw/expw
+            # word pairs, a `*_get_ex`/`box_get` value BELOW the flag): taint
+            # EVERY output by its slot type — outputs[1..] were previously left
+            # clean, a false negative (e.g. an attacker-steered divmodw quotient
+            # or a box_get value flowing to an itxn field).
+            changed = False
+            for oi, o in enumerate(a.outputs):
+                t = _multi_out_type(op, a.immediates, oi)
+                if t in ("bytes", "account"):
+                    changed = set_bytes(o, Intervals.whole(_len_bound(o))) or changed
+                elif t in ("uint64", "bool"):
+                    changed = set_scalar(o) or changed
+                else:                      # unknown slot type -> sound both ways
+                    c = set_scalar(o)
+                    changed = set_bytes(o, Intervals.whole(_len_bound(o))) or c or changed
+            return changed
         return False
 
     def _join(target, operands) -> bool:
@@ -777,6 +842,8 @@ def byte_taint(
             changed = _join(ph, ph.args) or changed
         for dig_out, args in frame_src.items():
             changed = _join(dig_out, args) or changed
+        for load_var, stores in scratch_src.items():
+            changed = _join(load_var, stores) or changed
 
     return ByteTaintResult(bt, st, validated_by, frame_src)
 

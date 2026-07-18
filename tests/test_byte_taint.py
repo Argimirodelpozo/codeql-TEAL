@@ -65,6 +65,41 @@ def _by_op(p, op, imm=None):
 _PREFIX = "byte 0x0011223344556677\ntxna ApplicationArgs 0\nconcat\n"  # 8-byte clean ++ arg
 
 
+class TestSoundnessNoFalseNegatives:
+    """Regressions for the multi-agent review's byte_taint false-negative batch —
+    each previously left an attacker-reachable value untainted."""
+
+    def test_scratch_roundtrip_bridges_taint(self):
+        # store N; load N used to drop byte taint (load has no def-use input).
+        p, r = _taint("#pragma version 8\ntxna ApplicationArgs 0\nstore 5\n"
+                      "load 5\nextract 2 4\npop\nint 1\nreturn\n")
+        out = _by_op(p, "extract", "2 4")[0].outputs[0]
+        assert r.tainted_bytes(out) == Intervals([(0, 4)])
+
+    def test_select_carries_bytes_taint(self):
+        # select over a tainted bytes value and a clean one -> byte-tainted, so a
+        # downstream extract still sees it (was: scalar taint -> empty byte map).
+        p, r = _taint("#pragma version 8\ntxna ApplicationArgs 0\nbyte 0x0000\n"
+                      "int 1\nselect\nextract 0 2\npop\nint 1\nreturn\n")
+        out = _by_op(p, "extract", "0 2")[0].outputs[0]
+        assert r.tainted_bytes(out) == Intervals([(0, 2)])
+
+    def test_divmodw_taints_every_output(self):
+        # multi-result ops only tainted outputs[0] (top); the deeper quotient
+        # words stayed clean -> an attacker-steered quotient was invisible.
+        p, r = _taint("#pragma version 8\ntxna ApplicationArgs 0\nbtoi\n"
+                      "int 0\nint 3\nint 0\ndivmodw\nreturn\n")
+        outs = _by_op(p, "divmodw")[0].outputs
+        assert all(r.is_scalar_tainted(o) for o in outs)
+
+    def test_box_get_value_output_is_byte_tainted(self):
+        # box_get leaves (value, did_exist); the value (output 1) is bytes and
+        # must carry byte taint, not be left clean below the flag.
+        p, r = _taint("#pragma version 8\ntxna ApplicationArgs 0\nbox_get\nreturn\n")
+        outs = _by_op(p, "box_get")[0].outputs
+        assert r.tainted_bytes(outs[1])          # value output byte-tainted
+
+
 class TestForwardPropagation:
     def test_application_args_is_source(self):
         p, r = _taint("#pragma version 8\ntxna ApplicationArgs 0\npop\nint 1\nreturn\n")
