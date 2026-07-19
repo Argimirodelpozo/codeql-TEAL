@@ -101,7 +101,12 @@ class IrPartialTaintedFundFlowDetector(_IrTaintSinkDetector):
         kept = []
         for f in findings:
             reg = getattr(f, "sink_reg", None)
-            if (reg is not None and not view.tainted_bytes(reg)
+            # Suppress only a COVERED, byte-empty, non-byte-extracted scalar —
+            # a genuine whole value. An UNCOVERED register (the carry-up never
+            # reached it) is unknown, so keep it: suppressing on uncertainty
+            # would be a false negative.
+            if (reg is not None and view.is_covered(reg)
+                    and not view.tainted_bytes(reg)
                     and not _ir_byte_extracted(reg, def_of)):
                 continue                               # whole-value scalar → defer
             kept.append(f)
