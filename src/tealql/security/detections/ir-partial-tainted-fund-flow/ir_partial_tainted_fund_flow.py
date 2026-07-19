@@ -25,6 +25,25 @@ from tealql.tealtools.avm import PAYMENT_FUND_FIELDS
 
 from tealql.security._ir_taint_sink import _IrTaintSinkDetector, _IrTaintSinkViolation
 
+# Ops that read a specific BYTE POSITION of a buffer — a scalar produced through
+# any of these carries partial (sub-field) provenance. A scalar with none of them
+# in its def-tree is a WHOLE value (btoi/arithmetic) with no sub-field blind spot,
+# which belongs to ir-tainted-fund-flow's full guard reasoning, not here.
+_BYTE_POSITION_OPS = frozenset({
+    "getbyte", "extract_uint16", "extract_uint32", "extract_uint64",
+    "extract", "extract3", "substring", "substring3",
+})
+
+
+def _ir_byte_extracted(reg, def_of) -> bool:
+    """True if ``reg``'s lifted-IR def-tree reads a specific byte position."""
+    from tealql.tealtools.lift import fund_flow as FF
+    for _r, o in FF._walk(reg, def_of):
+        s = FF._intr(o) if o is not None else None
+        if s is not None and s.op in _BYTE_POSITION_OPS:
+            return True
+    return False
+
 
 class IrPartialTaintedFundFlowViolation(_IrTaintSinkViolation):
     pass
@@ -69,7 +88,24 @@ class IrPartialTaintedFundFlowDetector(_IrTaintSinkDetector):
             (f.field, f.line) for f in FF.tainted_fund_flows(lifter, trusted_args=self.trusted_args)
             if not f.guarded and not f.param_derived
         }
-        return [f for f in findings if (f.field, f.line) not in owned]
+        findings = [f for f in findings if (f.field, f.line) not in owned]
+        # Keep only the partial (byte-granular) class: a byte-INTERVAL flow, or a
+        # scalar with byte-extract provenance. A WHOLE-VALUE scalar (btoi /
+        # arithmetic) has no sub-field blind spot — byte_taint can't clear a
+        # scalar validation (bounds / non-slice equality), so reporting it here
+        # (sender_only) surfaces an already-validated amount as a false positive.
+        # It belongs to ir-tainted-fund-flow's full guard reasoning instead.
+        from tealql.tealtools.dataflow.byte_taint import byte_taint_view
+        view = byte_taint_view(lifter)
+        def_of = FF._def_map(lifter)
+        kept = []
+        for f in findings:
+            reg = getattr(f, "sink_reg", None)
+            if (reg is not None and not view.tainted_bytes(reg)
+                    and not _ir_byte_extracted(reg, def_of)):
+                continue                               # whole-value scalar → defer
+            kept.append(f)
+        return kept
 
     def _message(self, f, location: str) -> str:
         return (f"[{f.severity}] partially-validated attacker bytes reach itxn "

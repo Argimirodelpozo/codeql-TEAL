@@ -32,7 +32,40 @@ from tealql.security import common
 from tealql.security.detections.tainted_fund_flow import TaintedFundFlowDetector
 from tealql.tealtools.dataflow.byte_taint import Intervals, byte_taint
 from tealql.tealtools.path_predicates import PathPredicateAnalysis
-from tealql.tealtools.ssa import SSAProgram
+from tealql.tealtools.ssa import SSAProgram, SSAVar, Phi
+
+
+# Ops that read a specific BYTE POSITION of a buffer — a scalar produced through
+# any of these carries partial (sub-field) provenance, so byte_taint's byte-level
+# narrowing governs it (this detector's slot-granular class). A scalar with NO
+# such op in its def-tree is a WHOLE value (btoi of a whole buffer, or pure
+# arithmetic); byte_taint cannot clear a whole-scalar validation (a bounds check /
+# non-slice equality), so such a value defers to the whole-value detector's full
+# guard reasoning instead of this detector's sender-only reasoning.
+_BYTE_POSITION_OPS = frozenset({
+    "getbyte", "extract_uint16", "extract_uint32", "extract_uint64",
+    "extract", "extract3", "substring", "substring3",
+})
+
+
+def _byte_extracted(value, seen=None) -> bool:
+    """True if ``value``'s def-tree reads a specific byte position of a buffer
+    (see :data:`_BYTE_POSITION_OPS`) — i.e. it has partial sub-field provenance."""
+    if seen is None:
+        seen = set()
+    if value in seen:
+        return False
+    seen.add(value)
+    if isinstance(value, Phi):
+        return any(_byte_extracted(a, seen) for a in value.args)
+    if not isinstance(value, SSAVar):
+        return False
+    d = getattr(value, "defined_by", None)
+    if d is None:
+        return False
+    if d.op in _BYTE_POSITION_OPS:
+        return True
+    return any(_byte_extracted(i, seen) for i in (getattr(d, "inputs", ()) or ()))
 from tealql.tealtools.avm import PAYMENT_FUND_FIELDS
 
 _FUND_FIELDS = PAYMENT_FUND_FIELDS
@@ -114,6 +147,7 @@ class PartialTaintedFundFlowDetector:
         }
         bt = _cached_byte_taint(self.prog)
         sender_vars = common.sender_creator_vars(self.prog, file=self.file)
+        taint = common.user_input_taint(self.prog, self.file)   # input-slot map
         violations: list = []
         for fs in common.inner_txn_field_assigns(self.prog, file=self.file):
             if fs.field not in _FUND_FIELDS:
@@ -125,9 +159,21 @@ class PartialTaintedFundFlowDetector:
             loc = common.loc(fs.assignment)
             if (fs.field, loc) in already:
                 continue                              # boolean detector owns it
+            # Guard reasoning splits by provenance. A byte-INTERVAL flow, or a
+            # scalar with partial byte-extract provenance, is this detector's
+            # slot-granular class: byte_taint's narrowing already did the
+            # byte-level clearing, so only a sender/creator gate should suppress
+            # (an input-slot guard would reproduce the sub-field blind spot).
+            # A WHOLE-VALUE scalar (btoi / arithmetic, no byte-position read) has
+            # no sub-field to be blind to, and byte_taint cannot clear a scalar
+            # validation (bounds / non-slice equality) — so apply the FULL
+            # value-slot guard reasoning (as the whole-value detector does),
+            # else a validated amount is reported as a false positive.
+            slots = (taint.get(fs.value, frozenset())
+                     if (not iv and not _byte_extracted(fs.value)) else frozenset())
             if common.itxn_value_guarded(
-                self.prog, self.pp, fs.assignment, frozenset(), {}, sender_vars):
-                continue                              # sender/creator-gated
+                self.prog, self.pp, fs.assignment, slots, taint, sender_vars):
+                continue                              # sender-gated, or value-checked
             sev = _FUND_FIELDS[fs.field]
             rng = str(iv) if iv else "scalar"
             hint = " (32 bytes — address-sized)" if iv and _is_addr_sized(iv) else ""
