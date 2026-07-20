@@ -141,6 +141,18 @@ tealql box-df app.teal --flavour into        # box dataflow; also: out, correlat
 tealql dump app.teal                 # every representation (debug)
 ```
 
+## One-command mainnet audit
+
+```
+# fetch a DEPLOYED app by ID (+ its cross-contract callees) from chain, run
+# every app-mode detector, print a consolidated report (methods + own findings +
+# cross-contract findings). Network: mainnet API for the bytes + a local algod
+# (:4001) for disassembly (TEAL_ALGOD_* env-overridable). --json for structured.
+tealql audit 1050186549
+```
+Exit 1 if findings, 2 if the app can't be fetched, 0 if clean. This is the
+fastest path from "here's an app ID" to a full security report.
+
 ## Cross-contract / group analysis
 
 ```

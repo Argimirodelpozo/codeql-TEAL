@@ -551,6 +551,120 @@ def _cmd_cfg(args) -> int:
     return 0
 
 
+def _cmd_audit(args) -> int:
+    """One-command mainnet audit. Fetch deployed app ``<ID>``'s approval program
+    (and, transitively, its cross-contract callees) from chain, run every app-mode
+    detector, and print a consolidated report: recovered ABI methods, findings on
+    the app itself, and findings in each callee across the appcall boundary.
+
+    Network-touching (mainnet API for the program bytes + a local algod on :4001
+    for disassembly; both env-overridable). A fetched program is cached under
+    ``--cache-dir`` (default ~/.cache/tealql/xcontract-callees). Exit 1 if any
+    finding, 2 if the app can't be fetched, 0 if clean."""
+    from tealql.tealtools._utils.chain import fetch_approval
+    from tealql.tealtools.ssa import SSAProgram
+    from tealql.tealtools.xcontract import _DEFAULT_CALLEE_CACHE, XContractGraph
+    from tealql.security import DETECTORS
+    from tealql.security.scan import default_detection_names
+
+    app_id = args.app_id
+    cache = Path(args.cache_dir) if args.cache_dir else _DEFAULT_CALLEE_CACHE
+    cache.mkdir(parents=True, exist_ok=True)
+    teal_path = cache / f"app_{app_id}.teal"
+    if not teal_path.exists():
+        try:
+            teal, _bc = fetch_approval(app_id)
+        except Exception as e:
+            print(f"error: could not fetch app {app_id} from chain ({e}). "
+                  "The program bytes come from the mainnet API and disassembly "
+                  "needs a local algod (:4001) — see TEAL_ALGOD_* env vars.",
+                  file=sys.stderr)
+            return 2
+        teal_path.write_text(teal)
+    caller = SSAProgram(str(teal_path))
+
+    # App-mode detectors, supersession-deduped (the same default set as
+    # `detections --all --mode app`), each guarded so one crash doesn't sink the run.
+    app_names = default_detection_names(
+        [n for n, c in DETECTORS.items()
+         if "app" in getattr(c, "applies_to", frozenset({"app", "logicsig"}))])
+    own: "dict[str, list]" = {}
+    for name in app_names:
+        try:
+            vs = DETECTORS[name](caller, file=teal_path.name).detect()
+        except Exception as e:                       # a detector fault ≠ audit fault
+            logger.warning("detector %s failed on app %s: %s", name, app_id, e)
+            continue
+        if vs:
+            own[name] = vs
+
+    # Cross-contract: transitively fetch + analyse callees across the appcall
+    # boundary (caller context: pinned args + seeded predicates). Best-effort —
+    # a fetch outage degrades to app-only, it does not fail the audit.
+    graph = None
+    cross: list = []
+    try:
+        graph = XContractGraph.from_chain(caller, cache_dir=str(cache))
+        from tealql.security.xcontract import cross_detection_findings
+        cross = cross_detection_findings(graph, detector_names=default_detection_names())
+    except Exception as e:
+        logger.warning("cross-contract analysis unavailable for app %s: %s", app_id, e)
+
+    # Structural recon: the ABI method table (empty on raw/non-ABI bytecode).
+    methods = []
+    try:
+        from tealql.tealtools.abi import extract_method_table
+        methods = list(extract_method_table(teal_path.read_text()).values())
+    except Exception:
+        pass
+
+    callees = sorted(graph.callees) if graph is not None else []
+    n_own = sum(len(v) for v in own.values())
+
+    if args.json_out:
+        from tealql.tealtools._utils.serialize import finding_to_dict
+        print(_json.dumps({
+            "app_id": app_id,
+            "approval_program": str(teal_path),
+            "callees": callees,
+            "methods": [{"selector": m.selector_hex, "name": m.name,
+                         "signature": m.signature} for m in methods],
+            "findings": {name: [finding_to_dict(v) for v in vs]
+                         for name, vs in own.items()},
+            "cross_contract_findings": [
+                {"app_id": f.app_id, "detector": f.detector_name,
+                 "message": f.violation.pretty()} for f in cross],
+        }, indent=2))
+        return 1 if (n_own or cross) else 0
+
+    print(f"═══ tealql audit — app {app_id} ═══")
+    print(f"  approval program : {teal_path}")
+    if callees:
+        print(f"  cross-contract   : {', '.join('app' + str(a) for a in callees)}")
+    if methods:
+        print(f"  ABI methods ({len(methods)}):")
+        for m in methods[:25]:
+            print(f"    {m.selector_hex}  {m.signature}")
+        if len(methods) > 25:
+            print(f"    … (+{len(methods) - 25} more)")
+
+    print(f"\n── findings on app {app_id} — {n_own} ──")
+    if not own:
+        print("  (none)")
+    for name in sorted(own):
+        print(f"  ▸ {name}  ({len(own[name])})")
+        for v in own[name]:
+            print(f"      {v.pretty()}")
+
+    print(f"\n── cross-contract findings — {len(cross)} ──")
+    if not cross:
+        print("  (none)")
+    else:
+        from tealql.security.xcontract import render_findings as _render_sg
+        print(_render_sg(graph, cross))
+    return 1 if (n_own or cross) else 0
+
+
 def _cmd_xcontract(args) -> int:
     from tealql.tealtools.xcontract import (
         XContractGraph,
@@ -1017,6 +1131,19 @@ def build_parser() -> argparse.ArgumentParser:
     xc.add_argument("--detector", choices=sorted(_DETS), default=None,
                     help="scope the cross-contract detections to one detector "
                          "(implies --detections)")
+
+    audit_p = sub.add_parser(
+        "audit",
+        help="one-command mainnet audit of a deployed app by ID: fetch its "
+             "approval program + cross-contract callees from chain, run every "
+             "app-mode detector, print a consolidated report")
+    audit_p.set_defaults(handler=_cmd_audit)
+    audit_p.add_argument("app_id", type=int, metavar="APP_ID",
+                         help="the on-chain application ID to audit")
+    audit_p.add_argument("--cache-dir", default=None,
+                         help="directory to cache fetched .teal in "
+                              "(default: ~/.cache/tealql/xcontract-callees)")
+    _add_common_flags(audit_p)
 
     gt = sub.add_parser(
         "group-taint",

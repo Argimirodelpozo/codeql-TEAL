@@ -693,3 +693,31 @@ def test_box_audit_clean_on_sender_key(tmp_path, capsys):
     )
     rc = main(["box-audit", str(tmp_path)])
     assert rc == 0 and "no cross-user" in capsys.readouterr().out
+
+
+# A minimal deployed-app stand-in: attacker arg0 steers an inner payment Receiver.
+_AUDIT_TEAL = (
+    "#pragma version 10\nitxn_begin\nint pay\nitxn_field TypeEnum\n"
+    "txna ApplicationArgs 0\nitxn_field Receiver\nitxn_submit\nint 1\nreturn\n"
+)
+
+
+def test_audit_offline_via_cached_program(tmp_path, capsys, monkeypatch):
+    # `audit <id>` reuses a cached app_<id>.teal without touching the network;
+    # point the chain endpoints at an unreachable host to prove it stays offline.
+    monkeypatch.setenv("TEAL_ALGOD_MAINNET", "http://127.0.0.1:1")
+    monkeypatch.setenv("TEAL_ALGOD_LOCAL", "http://127.0.0.1:1")
+    (tmp_path / "app_777.teal").write_text(_AUDIT_TEAL)
+    rc = main(["audit", "777", "--cache-dir", str(tmp_path), "--json"])
+    data = json.loads(capsys.readouterr().out)
+    assert rc == 1                                  # findings present
+    assert data["app_id"] == 777
+    dets = data["findings"]
+    assert any("fund-flow" in d for d in dets)      # the tainted receiver surfaced
+
+
+def test_audit_unfetchable_app_exits_2(tmp_path, capsys, monkeypatch):
+    monkeypatch.setenv("TEAL_ALGOD_MAINNET", "http://127.0.0.1:1")
+    monkeypatch.setenv("TEAL_ALGOD_LOCAL", "http://127.0.0.1:1")
+    rc = main(["audit", "999999999", "--cache-dir", str(tmp_path)])
+    assert rc == 2 and "could not fetch" in capsys.readouterr().err
