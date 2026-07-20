@@ -621,6 +621,27 @@ def _cmd_audit(args) -> int:
     callees = sorted(graph.callees) if graph is not None else []
     n_own = sum(len(v) for v in own.values())
 
+    # Order detectors by SEVERITY (critical first), then name — an auditor wants
+    # the worst findings up top, not an alphabetical detector dump. A group's
+    # severity is the MAX of its findings' own ``.severity`` (the IR sink family
+    # carries per-finding HIGH/MEDIUM/LOW), falling back to the detector default.
+    from tealql.security import severity_of
+    from tealql.security.scan import SEVERITY_ORDER
+
+    def _rank(level: str) -> int:
+        return SEVERITY_ORDER.index(level) if level in SEVERITY_ORDER else -1
+
+    def _group_severity(name: str, vs: list) -> str:
+        levels = [(getattr(v, "severity", "") or "").lower() or severity_of(name)
+                  for v in vs]
+        return max(levels, key=_rank, default=severity_of(name))
+
+    group_sev = {name: _group_severity(name, vs) for name, vs in own.items()}
+    ordered = sorted(own, key=lambda n: (-_rank(group_sev[n]), n))
+    sev_counts: "dict[str, int]" = {}
+    for name, vs in own.items():
+        sev_counts[group_sev[name]] = sev_counts.get(group_sev[name], 0) + len(vs)
+
     if args.json_out:
         from tealql.tealtools._utils.serialize import finding_to_dict
         print(_json.dumps({
@@ -629,8 +650,11 @@ def _cmd_audit(args) -> int:
             "callees": callees,
             "methods": [{"selector": m.selector_hex, "name": m.name,
                          "signature": m.signature} for m in methods],
-            "findings": {name: [finding_to_dict(v) for v in vs]
-                         for name, vs in own.items()},
+            "summary": {s: sev_counts[s]                    # counts by severity
+                        for s in reversed(SEVERITY_ORDER) if s in sev_counts},
+            "findings": {name: {"severity": group_sev[name],
+                                "findings": [finding_to_dict(v) for v in own[name]]}
+                         for name in ordered},               # severity-ordered
             "cross_contract_findings": [
                 {"app_id": f.app_id, "detector": f.detector_name,
                  "message": f.violation.pretty()} for f in cross],
@@ -648,11 +672,14 @@ def _cmd_audit(args) -> int:
         if len(methods) > 25:
             print(f"    … (+{len(methods) - 25} more)")
 
-    print(f"\n── findings on app {app_id} — {n_own} ──")
+    summary = "  ".join(f"{s}:{sev_counts[s]}"
+                        for s in reversed(SEVERITY_ORDER) if s in sev_counts)
+    print(f"\n── findings on app {app_id} — {n_own} ──"
+          + (f"   [{summary}]" if summary else ""))
     if not own:
         print("  (none)")
-    for name in sorted(own):
-        print(f"  ▸ {name}  ({len(own[name])})")
+    for name in ordered:
+        print(f"  ▸ [{group_sev[name].upper():13}] {name}  ({len(own[name])})")
         for v in own[name]:
             print(f"      {v.pretty()}")
 
