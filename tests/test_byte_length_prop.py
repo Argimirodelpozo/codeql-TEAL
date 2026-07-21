@@ -160,8 +160,9 @@ def test_unknown_op_is_none():
 
 
 def test_input_min_length_btoi():
-    # btoi(X) succeeds => len(X) in [1, 8]
-    assert _input_min_length(_asn("btoi", inputs=[_var()])) == (0, 1, 8)
+    # btoi(X) succeeds => len(X) in [0, 8]. go-algorand's opBtoi fails only
+    # for len > 8 — btoi("") legally yields 0, so 0 is a reachable length.
+    assert _input_min_length(_asn("btoi", inputs=[_var()])) == (0, 0, 8)
 
 
 def test_input_min_length_getbyte_const_index():
@@ -238,13 +239,51 @@ def test_propagate_phi_range_union_on_disagreement():
     assert ph.type.byte_length_range == IntRange(8, 32)
 
 
-def test_propagate_inverse_constraint_seeds_input_range():
-    # btoi(v1) succeeding bounds v1's length to [1, 8] even though nothing
-    # forward-derives v1's own length.
-    v1, v2 = _var(10, 0), _var(11, 1)
-    propagate_byte_lengths(_prog([_asn("btoi", inputs=[v1], outputs=[v2])]))
-    assert v1.type.byte_length is None
-    assert v1.type.byte_length_range == IntRange(1, 8)
+def test_propagate_inverse_constraint_seeds_input_range(tmp_path):
+    # btoi(X) succeeding bounds X's length to [0, 8] even though nothing
+    # forward-derives X's own length. Built from real TEAL (not a synthetic
+    # assignment list) because the install is dominance-gated: the op must
+    # dominate every other use of X, which needs real basic blocks.
+    p = tmp_path / "a.teal"
+    p.write_text("#pragma version 8\ntxn ApplicationArgs 0\nbtoi\nreturn\n")
+    from tealql.tealtools.ssa import SSAProgram
+    prog = SSAProgram(str(p))
+    propagate_byte_lengths(prog)
+    (arg_read,) = [a for a in prog.assignments if a.op == "txn"]
+    x = arg_read.outputs[0]
+    assert x.type.byte_length is None
+    assert x.type.byte_length_range == IntRange(0, 8)
+
+
+def test_inverse_constraint_not_installed_without_dominance(tmp_path):
+    # One branch btoi's X; the other passes X along un-narrowed. The btoi does
+    # NOT dominate the other branch's use, so NO global byte_length_range may
+    # be installed on X — a range would cap X (e.g. byte-taint span) on paths
+    # that never ran the btoi.
+    p = tmp_path / "b.teal"
+    p.write_text(
+        "#pragma version 8\n"
+        "txn ApplicationArgs 0\n"     # X (single SSA read site)
+        "txn NumAppArgs\n"
+        "bz other\n"
+        "dup\n"
+        "btoi\n"
+        "pop\n"
+        "pop\n"
+        "int 1\n"
+        "return\n"
+        "other:\n"
+        "len\n"                        # use of X NOT dominated by the btoi
+        "return\n"
+    )
+    from tealql.tealtools.ssa import SSAProgram
+    prog = SSAProgram(str(p))
+    propagate_byte_lengths(prog)
+    (arg_read,) = [a for a in prog.assignments if a.op == "txn"
+                   and "ApplicationArgs" in a.immediates]
+    x = arg_read.outputs[0]
+    rng = getattr(x.type, "byte_length_range", None) if x.type else None
+    assert rng is None or rng.hi > 8   # no unsound [.., 8] cap leaks across
 
 
 # --------------------------------------------------------------------------

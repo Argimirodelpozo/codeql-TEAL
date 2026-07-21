@@ -61,7 +61,7 @@ Inverse range constraints (item 3): a single forward op whose
 successful execution constrains the byte_length of one of its inputs
 also installs a ``byte_length_range`` on that input:
 
-  - ``btoi(X)``                 → ``len(X) ∈ [1, 8]``.
+  - ``btoi(X)``                 → ``len(X) ∈ [0, 8]`` (``btoi("")`` = 0).
   - ``getbyte(X, i)`` (i const) → ``len(X) ≥ i + 1``.
   - ``extract_uint16/32/64(X, i)`` (i const) → ``len(X) ≥ i + 2/4/8``.
   - ``extract A B X``            → ``len(X) ≥ A + B``.
@@ -336,12 +336,13 @@ def _input_min_length(a: Assignment) -> Optional[tuple[int, int, Optional[int]]]
     """
     op = a.op
 
-    # btoi(X) succeeds ⇒ len(X) ∈ [1, 8]. (TEAL spec: btoi panics on
-    # an empty input or on length > 8.)
+    # btoi(X) succeeds ⇒ len(X) ∈ [0, 8]. go-algorand's opBtoi fails ONLY
+    # for len > 8 — btoi("") legally yields 0, so 0 is a reachable length
+    # and the lower bound must include it.
     if op == "btoi":
         if not a.inputs:
             return None
-        return (0, 1, 8)
+        return (0, 0, 8)
 
     # getbyte(X, i) — needs len(X) ≥ i + 1 when i is a const. TOP-FIRST:
     # i=inputs[0] (top), X=inputs[1] (see ``dataflow.bounds._access``); the
@@ -544,6 +545,18 @@ def propagate_byte_lengths(prog: SSAProgram) -> int:
 
     # (2) Inverse length constraints are op-only (op / immediates / const
     # operands), stable across the walk -- a one-shot seed, not in the fixpoint.
+    #
+    # FLOW-GATED: "this op executed successfully" only holds on paths through
+    # the op, but a range on the SSAVar is read at EVERY use. Install the
+    # constraint only when every other use of the input is dominated by the
+    # op — the same soundness model as passes.range_assert (a use reachable
+    # without passing the op would otherwise inherit a bound the value need
+    # not satisfy there, e.g. one branch's btoi(X) capping X's byte-taint
+    # span at 8 in the other branch). Phi-fed values are excluded: a phi arg
+    # belongs to a specific incoming edge the dominance check can't see.
+    from ..cfg.dominance import AssertDominance
+    dom = AssertDominance(prog)
+    phi_fed = {id(arg) for ph in prog.phis.values() for arg in ph.args}
     for a in prog.assignments:
         constraint = _input_min_length(a)
         if constraint is None:
@@ -553,6 +566,17 @@ def propagate_byte_lengths(prog: SSAProgram) -> int:
             continue
         target = a.inputs[idx]
         if not isinstance(target, (SSAVar, Phi)):
+            continue
+        if id(target) in phi_fed:
+            continue
+        block_a = a.basic_block
+        if block_a is None:
+            continue
+        if not all(
+            dom.dominates(block_a, u.basic_block,
+                          a.location.line, u.location.line)
+            for u in target.uses if u is not a
+        ):
             continue
         hi_eff = _BYTES_STACK_CAP if hi is None else hi
         if _set_byte_length_range(target, lo, hi_eff):

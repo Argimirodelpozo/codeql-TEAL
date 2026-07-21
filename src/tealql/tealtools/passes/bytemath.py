@@ -44,10 +44,11 @@ Cross-pollination into uint64 land (writes :attr:`SSAVar.range`):
   - ``btoi X``                        → ``X.int_value_range``
                                         (assuming the call succeeds —
                                         which also implies
-                                        ``len(X) ∈ [1, 8]``, a
-                                        constraint that
+                                        ``len(X) ∈ [0, 8]``; ``btoi``
+                                        fails only for len > 8, and
+                                        ``btoi("")`` = 0. A constraint
                                         :mod:`tealql.tealtools.byte_length_prop`
-                                        already installs).
+                                        installs when dominance allows).
 
 Phi union iterates to fixed point, but the iteration counter is
 capped: bigint ranges can grow without bound in a cyclic CFG (no
