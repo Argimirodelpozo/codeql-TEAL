@@ -94,6 +94,15 @@ def annotate_bytes_inline(prog: SSAProgram, body: str) -> str:
     def _sub(match: re.Match) -> str:
         ident = match.group(0)
         annot = annot_for.get(ident)
-        return ident if annot is None else f"{ident} {annot}"
+        if annot is None:
+            return ident
+        # Genuinely idempotent: the identifier regex's lookahead only rejects
+        # trailing identifier characters, so a SECOND pass re-matched an
+        # already-annotated occurrence and appended a duplicate comment. Skip
+        # when this occurrence is already followed by one.
+        rest = match.string[match.end():]
+        if rest.startswith(" /*") or rest.startswith("/*"):
+            return ident
+        return f"{ident} {annot}"
 
     return _IDENTIFIER_RE.sub(_sub, body)

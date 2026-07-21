@@ -7,6 +7,15 @@ For each line in a program, computes:
   to that line, taken as the max across all CFG paths that reach
   it without already exceeding the AVM budget.
 
+  CAVEAT for lines INSIDE a subroutine: each sub is folded once from a
+  fresh ``(0, 0)`` state, so its per-line cums are relative to
+  SUBROUTINE entry, not program entry (threading caller-side cum in
+  would mean folding the sub once per call site — exponential on deeply
+  nested call graphs). A hot line inside a sub called late in an
+  expensive program therefore reports a small cumulative; the caller's
+  side of the cost shows up at its ``callsub`` line, which IS charged
+  the callee's whole summary.
+
 The AVM halts once its opcode budget is exhausted. That budget is
 :func:`program_budget_ceiling`: ``TXN_BUDGET * ASSUMED_GROUP_SIZE``
 from peer group txns, plus ``TXN_BUDGET`` per inner appcall the

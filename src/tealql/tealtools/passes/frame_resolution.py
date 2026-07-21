@@ -50,6 +50,54 @@ def resolve_sub(blocks, nargs: int) -> SubFrames:
     cur: dict = {}                           # slot -> current version
     nextver: dict = {}                       # slot -> next version
 
+    # A param slot stops being "the incoming arg" once a `frame_bury` writes
+    # it. Deciding that from SOURCE order alone (has a bury been *scanned*
+    # yet?) is wrong for a loop: `def f(i): while ...: i += 1` buries slot -k
+    # in the body, which is LATER in source but EARLIER in execution for every
+    # iteration after the first, so the loop-head dig was misclassified as a
+    # clean param read. `frame_flow.frame_param_sources` then reported the
+    # CALLER's args as that value's complete sources, and a must-style
+    # consumer (security/_value_flow's pin propagation) could credit a
+    # caller pin to a loop-mutated local and suppress a finding.
+    #
+    # Decide it on CFG order instead: a dig of slot k is a param read only if
+    # NO bury of k can reach it.
+    _in_sub = {id(b) for b in blocks}
+    _fwd: dict = {}
+
+    def _reaches_block(src, dst) -> bool:
+        """Is ``dst`` reachable from ``src`` over CFG edges inside this sub?"""
+        seen = _fwd.get(id(src))
+        if seen is None:
+            seen, stack = set(), [src]
+            while stack:
+                b = stack.pop()
+                for s in getattr(b, "successors", ()) or ():
+                    if id(s) in _in_sub and id(s) not in seen:
+                        seen.add(id(s))
+                        stack.append(s)
+            _fwd[id(src)] = seen
+        return id(dst) in seen
+
+    # slot -> [(block, op_index)] for every frame_bury of that slot.
+    _burys: dict = {}
+    for _bb in blocks:
+        for _i, _a in enumerate(_bb.assignments):
+            if _a.op == "frame_bury":
+                _k = _imm0(_a)
+                if _k is not None:
+                    _burys.setdefault(_k, []).append((_bb, _i))
+
+    def _bury_reaches(slot: int, bb, idx: int) -> bool:
+        """Can any `frame_bury slot` reach the dig at ``(bb, idx)``?"""
+        for (wbb, widx) in _burys.get(slot, ()):
+            if wbb is bb:
+                if widx < idx or _reaches_block(bb, bb):   # or around a loop
+                    return True
+            elif _reaches_block(wbb, bb):
+                return True
+        return False
+
     def fresh(slot: int) -> int:
         v = nextver.get(slot, 0)
         nextver[slot] = v + 1
@@ -57,13 +105,14 @@ def resolve_sub(blocks, nargs: int) -> SubFrames:
         return v
 
     for bb in blocks:
-        for a in bb.assignments:
+        for op_i, a in enumerate(bb.assignments):
             if a.op == "frame_dig" and a.outputs:
                 k = _imm0(a)
                 if k is None:
                     continue
                 out0 = a.outputs[0]
-                if -nargs <= k <= -1 and k not in cur:
+                if (-nargs <= k <= -1 and k not in cur
+                        and not _bury_reaches(k, bb, op_i)):
                     # A param slot, still holding the incoming arg. Once it has
                     # been `frame_bury`-d (k in cur) it is a mutable local from
                     # that point on, so fall through to the versioned-local read.

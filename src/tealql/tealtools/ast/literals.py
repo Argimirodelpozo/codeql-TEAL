@@ -24,14 +24,21 @@ from __future__ import annotations
 # `int` rule only accepts a numeric argument, so the named form (`int
 # DeleteApplication`) parses as an ERROR; parse.py recovers the node and this
 # table gives const_values the value. (AVM langspec named constants.)
-NAMED_INT_CONSTANTS: dict[str, int] = {
-    # OnCompletion
-    "NoOp": 0, "OptIn": 1, "CloseOut": 2, "ClearState": 3,
-    "UpdateApplication": 4, "DeleteApplication": 5,
-    # TxnType / TypeEnum
-    "unknown": 0, "pay": 1, "keyreg": 2, "acfg": 3, "axfer": 4, "afrz": 5,
-    "appl": 6,
-}
+# DERIVED from avm.TXN_ENUM_FIELD_NAMES rather than re-listed: avm.py is the
+# single home for AVM metadata, and two hand-maintained copies of the same
+# enums can disagree (a new OnCompletion added to one and not the other would
+# silently change which guards resolve).
+def _named_int_constants() -> dict[str, int]:
+    from ..avm import TXN_ENUM_FIELD_NAMES
+
+    out: dict[str, int] = {}
+    for by_value in TXN_ENUM_FIELD_NAMES.values():
+        for value, name in by_value.items():
+            out.setdefault(name, value)
+    return out
+
+
+NAMED_INT_CONSTANTS: dict[str, int] = _named_int_constants()
 
 
 _HEX_DIGITS = frozenset("0123456789abcdefABCDEF")

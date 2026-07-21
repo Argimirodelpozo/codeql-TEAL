@@ -223,15 +223,30 @@ def _select_back_edges(
     # Tarjan-style DFS marking back-edges.
     color: dict[BasicBlock, str] = {n: "white" for n in scc}
 
-    def dfs(u: BasicBlock) -> None:
-        color[u] = "gray"
-        for v in sorted(sub.successors(u), key=_bb_sort_key):
-            c = color[v]
-            if c == "gray":
-                back.add((u, v))
-            elif c == "white":
-                dfs(v)
-        color[u] = "black"
+    def dfs(root: BasicBlock) -> None:
+        """Iterative Tarjan-style DFS. Explicit stack rather than recursion:
+        a ~1000-block chain (large flattened mainnet programs are exactly
+        that) exceeded Python's recursion limit and crashed the analysis."""
+        # Each frame is [node, iterator over its sorted successors].
+        color[root] = "gray"
+        stack: list = [[root, iter(sorted(sub.successors(root), key=_bb_sort_key))]]
+        while stack:
+            u, it = stack[-1]
+            advanced = False
+            for v in it:
+                c = color[v]
+                if c == "gray":
+                    back.add((u, v))
+                elif c == "white":
+                    color[v] = "gray"
+                    stack.append(
+                        [v, iter(sorted(sub.successors(v), key=_bb_sort_key))]
+                    )
+                    advanced = True
+                    break
+            if not advanced:
+                color[u] = "black"
+                stack.pop()
 
     for entry in sorted(entries, key=_bb_sort_key):
         if color[entry] == "white":

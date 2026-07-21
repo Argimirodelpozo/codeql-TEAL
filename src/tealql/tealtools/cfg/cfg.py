@@ -123,23 +123,27 @@ class CFG:
             return [[src]]
         out: list[list[BasicBlock]] = []
 
-        def dfs(node: BasicBlock, path: list[BasicBlock], visited: set[BasicBlock]) -> None:
+        # Explicit stack, not recursion: with `max_length=None` the walk is
+        # bounded only by the block count, and a ~1000-block program (large
+        # flattened mainnet contracts) overflowed Python's recursion limit.
+        work: list = [(src, [src], {src})]
+        while work:
+            node, path, visited = work.pop()
             if len(out) >= max_paths:
-                return
+                break
             if max_length is not None and len(path) > max_length:
-                return
-            for s in node.successors:
+                continue
+            # Reversed so the pops preserve the original successor order.
+            for s in reversed(list(node.successors)):
                 if s in visited:
                     continue  # skip back-edge / cycle
                 new_path = path + [s]
                 if s is dst:
                     out.append(new_path)
                     if len(out) >= max_paths:
-                        return
+                        break
                     continue
-                dfs(s, new_path, visited | {s})
-
-        dfs(src, [src], {src})
+                work.append((s, new_path, visited | {s}))
         out.sort(key=len)
         return out
 
@@ -246,16 +250,36 @@ class CFG:
     def in_loop(self, bb: BasicBlock) -> bool:
         """``True`` iff ``bb`` is on a CFG cycle (reachable from itself
         via at least one edge)."""
-        for s in bb.successors:
-            if bb in self.reachable_from(s):
-                return True
-        return False
+        return bb in self.loop_blocks()
 
     def loop_blocks(self) -> set[BasicBlock]:
         """Every BB that participates in any cycle. Useful for
         cost / iteration analyses that need to flag unbounded
-        regions conservatively."""
-        return {bb for bb in self.blocks if self.in_loop(bb)}
+        regions conservatively.
+
+        One SCC pass over the whole graph, cached. The former
+        implementation ran an uncached BFS per successor per block —
+        ``O(V·(V+E))`` — and ``in_loop`` is called per block."""
+        cached = getattr(self, "_loop_blocks_cache", None)
+        if cached is not None:
+            return cached
+        import networkx as nx
+
+        g = nx.DiGraph()
+        g.add_nodes_from(self.blocks)
+        for b in self.blocks:
+            for s in b.successors:
+                g.add_edge(b, s)
+        out: set[BasicBlock] = set()
+        for comp in nx.strongly_connected_components(g):
+            if len(comp) > 1:
+                out |= comp
+            else:
+                (only,) = comp
+                if g.has_edge(only, only):
+                    out.add(only)
+        self._loop_blocks_cache = out  # type: ignore[attr-defined]
+        return out
 
     # --- DOT rendering ------------------------------------------------
 
