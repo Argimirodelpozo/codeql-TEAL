@@ -37,7 +37,7 @@ from __future__ import annotations
 from typing import Optional
 
 from ..ssa import IntRange, SSAProgram, SSAVar, binary_operands
-from ..cfg.dominance import AssertDominance, all_blocks
+from ..cfg.dominance import AssertDominance
 from ..avm import U64_CMP_OPS
 from .range_arith import (
     _UINT64_MAX,
@@ -106,9 +106,9 @@ def propagate_assert_ranges(prog: SSAProgram) -> int:
     if not getattr(prog, "_range_arith_propagated", False):
         propagate_range_arithmetic(prog)
 
-    if not any(not b.predecessors for b in all_blocks(prog)):
-        return 0
-
+    # (No "has an entry block" bail here: AssertDominance now computes the real
+    # per-file entries itself — the old no-predecessor-block guard existed only
+    # to paper over its entries=[] saturation.)
     # (assert assignment, condition value) for every assert with an operand.
     guards = [(a, a.inputs[0]) for a in prog.assignments
               if a.op == "assert" and a.inputs]

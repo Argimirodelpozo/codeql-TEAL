@@ -23,7 +23,7 @@ from __future__ import annotations
 
 from typing import Iterable, Optional
 
-from .engine import Sink, Source, TaintAnalysis, Violation
+from .engine import ATTACKER_CONTROL_RULES, Sink, Source, TaintAnalysis, Violation
 from .box import APP_GLOBAL_PUT_VALUE_SINK, APP_LOCAL_PUT_VALUE_SINK, ITXN_FIELD_SENSITIVE_SINKS
 from ..ssa import SSAProgram
 
@@ -100,4 +100,5 @@ def detect_out_of_state_flows(
         else DEFAULT_OUT_OF_STATE_SOURCES,
         sinks=list(sinks) if sinks is not None
         else DEFAULT_OUT_OF_STATE_SINKS,
+        default_rules=ATTACKER_CONTROL_RULES,   # control question, not collision
     ).detect()

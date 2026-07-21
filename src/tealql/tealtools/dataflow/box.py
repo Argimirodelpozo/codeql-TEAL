@@ -33,6 +33,7 @@ from dataclasses import dataclass
 from typing import Iterable, Optional
 
 from .engine import (
+    ATTACKER_CONTROL_RULES,
     TaintAnalysis,
     Sink,
     Source,
@@ -188,6 +189,11 @@ def detect_into_box_flows(
         prog,
         sources=list(sources) if sources is not None else DEFAULT_INTO_BOX_SOURCES,
         sinks=list(sinks) if sinks is not None else DEFAULT_INTO_BOX_SINKS,
+        # Attacker-CONTROL question → concat propagates on ANY tainted input.
+        # The default (collision-model) concat rule blocked taint whenever a
+        # non-const untainted operand was present — a silent false negative
+        # for `concat(dynamic_prefix, user_arg)` flowing into the sink.
+        default_rules=ATTACKER_CONTROL_RULES,
     ).detect()
 
 
@@ -207,6 +213,7 @@ def detect_out_of_box_flows(
         prog,
         sources=list(sources) if sources is not None else DEFAULT_OUT_OF_BOX_SOURCES,
         sinks=list(sinks) if sinks is not None else DEFAULT_OUT_OF_BOX_SINKS,
+        default_rules=ATTACKER_CONTROL_RULES,   # control question, not collision
     ).detect()
 
 
@@ -319,7 +326,8 @@ def detect_correlated_flows(
 
     # Pass 1: which box writes carry tainted values, keyed by signature.
     pass1 = TaintAnalysis(
-        prog, sources=init_sources, sinks=DEFAULT_INTO_BOX_SINKS
+        prog, sources=init_sources, sinks=DEFAULT_INTO_BOX_SINKS,
+        default_rules=ATTACKER_CONTROL_RULES,   # control question, not collision
     )
     # Compute the taint fixpoint ONCE (it also yields the source-of map); the
     # per-write loop below used to re-run the full fixpoint on every iteration.
@@ -369,7 +377,8 @@ def detect_correlated_flows(
         ))
     if not synth_sources:
         return []
-    pass2 = TaintAnalysis(prog, sources=synth_sources, sinks=sinks)
+    pass2 = TaintAnalysis(prog, sources=synth_sources, sinks=sinks,
+                          default_rules=ATTACKER_CONTROL_RULES)
     flat_violations = pass2.detect()
 
     # Rebuild as chains. Each Violation's ``source`` is a synthetic

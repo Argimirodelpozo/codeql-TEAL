@@ -28,7 +28,7 @@ def test_try_remove_trivial_deep_cascade_is_iterative():
     phis[0].args = [leaf, leaf]
     for i in range(1, N):
         phis[i].args = [phis[i - 1], leaf]
-        ss._phi_users.setdefault(id(phis[i - 1]), set()).add(phis[i])
+        ss._phi_users.setdefault(phis[i - 1].key(), set()).add(phis[i])
 
     old = sys.getrecursionlimit()
     sys.setrecursionlimit(200)                 # a recursive depth-2000 cascade overflows
@@ -39,4 +39,4 @@ def test_try_remove_trivial_deep_cascade_is_iterative():
 
     assert result is leaf                      # the head collapses to the leaf value
     assert ss.phis == {}                       # every trivial phi removed
-    assert all(id(p) in ss._replaced for p in phis)
+    assert all(p.key() in ss._replaced for p in phis)

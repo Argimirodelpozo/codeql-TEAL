@@ -406,8 +406,12 @@ class _Lifter:
             self._name_group(gb)
             # Re-simulate EVERY group's value-stack -- main and all subs alike,
             # all-or-nothing (see the rationale above the resim_* maps).
+            # Main-group entry = the block holding the first instruction. NOT
+            # "a block with no predecessors": when the first block is a branch
+            # target that set is empty (or worse, holds only a dead-code block
+            # further down, which would be picked as the resim entry).
             entry = (s.entry_bb if s is not None
-                     else next((b for b in gb if not b.predecessors), gb[0]))
+                     else min(gb, key=lambda b: (b.file, b.first_line)))
             self._resim(gb, entry, params)
             self.resim_blocks.update(gb)
             body = [self._build_block(bb) for bb in gb]

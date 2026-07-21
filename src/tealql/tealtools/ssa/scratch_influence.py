@@ -19,6 +19,25 @@ from __future__ import annotations
 from .models import Phi, SSAVar
 from .program import SSAProgram
 
+# Sentinel value-keys. Both are 3-tuples shaped like real ``(file, line, index)``
+# keys so every consumer's unpack/lookup works; the ``<...>`` file component can
+# never collide with a real source file, so ``prog.var(*key)`` returns None and
+# must-consumers bail (value-identity forwarding can't cross them).
+#
+# UNINIT_STORE — the AVM zero-initialises scratch, so a load reachable from
+# program entry with NO store on some path reads uint64 0. That value is
+# precisely known: const-prop consumers may resolve this key to ``int 0``
+# (and must then require agreement with every real store, as always).
+#
+# UNKNOWN_STORE — a store whose value is unresolvable (model underflow,
+# leafless phi) or a dynamic ``stores`` (any slot, any value). Nothing can be
+# assumed; consumers must treat the load as unresolvable. Kept as an element of
+# the reaching set — NOT an empty set — because an empty set vanishes at a CFG
+# join (``set() | {k} == {k}``), which silently erased the "unknown value may
+# reach here" fact and let must-consumers see false agreement.
+UNINIT_STORE = ("<scratch-uninit>", 0, 0)
+UNKNOWN_STORE = ("<scratch-unknown>", 0, 0)
+
 
 def _leaf_value_keys(v, seen=None) -> set:
     """The ``(file, line, index)`` keys of the SSAVar leaves of a stored value.
@@ -57,53 +76,91 @@ def compute_scratch_influence(prog: SSAProgram) -> dict:
                      store in the same BB, with later same-slot stores
                      in the BB killing earlier ones).
 
-    Returns ``{(load_file, load_line): [(val_file, val_line, val_idx), …]}``.
+    Returns ``{(load_file, load_line): [(val_file, val_line, val_idx), …]}``,
+    where the value keys may include the :data:`UNINIT_STORE` /
+    :data:`UNKNOWN_STORE` sentinels (see the module header).
 
-    Only handles the immediate forms (``store N`` / ``load N``); the
-    dynamic forms (``stores`` / ``loads``) pop the slot off the stack
-    and aren't covered.
+    Dynamic ``stores`` (slot popped off the stack) kills EVERY slot with an
+    unknown value — it may write any of them. Dynamic ``loads`` reads an
+    unknown slot and contributes nothing (its output stays unresolvable).
     """
     # Per-BB walk to collect store/load events in order. Each event
     # is a tuple ``(kind, slot, val_key_or_None)``; ``kind`` is
-    # ``"store"`` or ``"load"``. Value keys are
-    # ``(file, line, index)``.
+    # ``"store"`` (immediate), ``"storeany"`` (dynamic ``stores``) or
+    # ``"load"``. Value keys are ``(file, line, index)``.
     bb_events: dict = {}
     bb_loads: dict = {}  # bb -> list of (load_op, slot, op_index)
     for b in prog.blocks.values():
         events: list = []
         loads_here: list = []
         for i, a in enumerate(b.assignments):
+            if a.op == "stores":
+                # Dynamic store: the target slot is a runtime value — it may
+                # overwrite ANY slot with a value we can't name. Recorded as a
+                # universal kill; skipping it (the old behaviour) let a
+                # must-consumer resolve ``store 0; …; stores; load 0`` to the
+                # stale constant.
+                events.append((i, "storeany", None, None))
+                continue
             try:
                 slot = int(a.immediates.strip().split()[0])
             except (ValueError, IndexError, AttributeError):
                 continue
             if a.op == "store":
-                # ALWAYS record the store (so it KILLs the slot); the value keys
-                # may be empty when the operand is unresolvable (model underflow /
-                # leafless phi). An unresolved store must still overwrite the
-                # slot — otherwise a MUST consumer (scratch const/value prop, the
-                # ssa identity bridge) reads a STALE reaching value the later
-                # store clobbered at runtime.
+                # ALWAYS record the store (so it KILLs the slot); an
+                # unresolvable operand (model underflow / leafless phi) records
+                # the UNKNOWN sentinel rather than an empty set — the empty set
+                # both let a MUST consumer read a STALE reaching value the
+                # store clobbered at runtime AND vanished at CFG joins.
                 keys = _leaf_value_keys(a.inputs[0]) if a.inputs else set()
-                events.append((i, "store", slot, keys))
+                events.append((i, "store", slot, keys or {UNKNOWN_STORE}))
             elif a.op == "load":
                 events.append((i, "load", slot, None))
                 loads_here.append((a, slot, i))
         bb_events[b] = events
         bb_loads[b] = loads_here
 
+    # The slot universe: every immediate slot mentioned anywhere. (A slot only
+    # ever accessed dynamically never appears in the influences map — same as
+    # before — so the universe is sufficient for every reported load.)
+    universe: set = set()
+    for events in bb_events.values():
+        for _, kind, slot, _ in events:
+            if slot is not None:
+                universe.add(slot)
+
     # gen[B][slot] = set with the LAST store-slot's value-key in B.
-    # kill[B] = set of slots written in B.
+    # kill[B] = set of slots written in B. A ``storeany`` kills the whole
+    # universe with UNKNOWN; a later immediate store re-defines its own slot.
     gen: dict = {b: {} for b in prog.blocks.values()}
     kill: dict = {b: set() for b in prog.blocks.values()}
     for b, events in bb_events.items():
         for _, kind, slot, val_keys in events:
             if kind == "store":
                 kill[b].add(slot)                 # a store always overwrites the slot
-                gen[b][slot] = set(val_keys)      # empty set = killed, value unknown
+                gen[b][slot] = set(val_keys)
+            elif kind == "storeany":
+                kill[b].update(universe)
+                for s in universe:
+                    gen[b][s] = {UNKNOWN_STORE}
+
+    # Entry seeding: the AVM zero-initialises scratch, so at each program entry
+    # every slot holds the UNINIT pseudo-definition. The entry is the block
+    # holding the file's FIRST instruction — NOT "blocks with no predecessors"
+    # (a program whose first block is a branch target has none, and the
+    # pseudo-def would silently vanish, letting a must-consumer fold the
+    # store-on-one-path / load-at-join flag idiom to the stored constant).
+    seed: dict = {b: {} for b in prog.blocks.values()}
+    first_by_file: dict = {}
+    for b in prog.blocks.values():
+        cur = first_by_file.get(b.file)
+        if cur is None or b.first_line < cur.first_line:
+            first_by_file[b.file] = b
+    for b in first_by_file.values():
+        seed[b] = {slot: {UNINIT_STORE} for slot in universe}
 
     # Fixed-point reaching-definitions at BB granularity.
-    # in[B][slot] = ⋃_{pred} out[pred][slot]
+    # in[B][slot] = seed[B][slot] ∪ ⋃_{pred} out[pred][slot]
     # out[B][slot] = in[B][slot] (if slot not killed) ∪ gen[B][slot]
     in_set: dict = {b: {} for b in prog.blocks.values()}
     out_set: dict = {b: {} for b in prog.blocks.values()}
@@ -111,7 +168,7 @@ def compute_scratch_influence(prog: SSAProgram) -> dict:
     while changed:
         changed = False
         for b in prog.blocks.values():
-            new_in: dict = {}
+            new_in: dict = {slot: set(srcs) for slot, srcs in seed[b].items()}
             for pred in b.predecessors:
                 for slot, srcs in out_set[pred].items():
                     if slot in new_in:
@@ -140,6 +197,9 @@ def compute_scratch_influence(prog: SSAProgram) -> dict:
         for ev_i, kind, slot, val_keys in bb_events[b]:
             if kind == "store":
                 local[slot] = set(val_keys)
+            elif kind == "storeany":
+                for s in universe:
+                    local[s] = {UNKNOWN_STORE}
             elif kind == "load":
                 srcs = local.get(slot)
                 if srcs:

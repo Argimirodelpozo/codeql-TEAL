@@ -19,7 +19,7 @@ from typing import Optional
 
 from ..ssa import BasicBlock, SSAProgram
 from .._utils.dot import bb_label, header, sanitize_id
-from .dominance import iterative_dominators
+from .dominance import iterative_dominators, program_entries
 
 
 @dataclass
@@ -47,8 +47,12 @@ class CFG:
 
     @property
     def entries(self) -> list[BasicBlock]:
-        """BBs with no predecessors (program / subroutine entry points)."""
-        return [b for b in self.blocks if not b.predecessors]
+        """The real execution entries: per file, the BB holding the file's
+        first instruction. NOT "BBs with no predecessors" — a program whose
+        first block is a branch target (top-level loop) has none, and an empty
+        entry set saturates dominance into everything-dominates-everything.
+        Predecessor-less non-first BBs are dead code, not entries."""
+        return program_entries(self.blocks)
 
     @property
     def exits(self) -> list[BasicBlock]:
@@ -217,6 +221,23 @@ class CFG:
         post = iterative_dominators(
             self.blocks, self.exits, lambda b: b.successors,
         )
+        # A block that cannot reach ANY exit (an infinite-loop region — or the
+        # whole program, when it has no return/err at all) is "unreachable" on
+        # the reversed graph and comes out SATURATED, which here reads
+        # "everything post-dominates it" — the unsound direction for any
+        # consumer asking "is this check unavoidable after that action".
+        # Nothing post-dominates a block that never terminates.
+        can_exit: set = set(self.exits)
+        stack = list(can_exit)
+        while stack:
+            b = stack.pop()
+            for p in b.predecessors:
+                if p not in can_exit:
+                    can_exit.add(p)
+                    stack.append(p)
+        for b in self.blocks:
+            if b not in can_exit:
+                post[b] = {b}
         self._pdom_cache = post  # type: ignore[attr-defined]
         return post
 

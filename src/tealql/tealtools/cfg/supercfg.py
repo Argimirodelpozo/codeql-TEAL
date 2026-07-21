@@ -273,8 +273,14 @@ class SuperCFG:
         cached = getattr(self, "_dom_cache", None)
         if cached is not None:
             return cached
+        # Entry = the root program's real entry only. ``self.entries`` (no-pred
+        # super-blocks) is empty when the root's first block is a branch target,
+        # which would saturate dominance; dead no-pred blocks aren't entries.
+        root = self.root_entry
         dom = iterative_dominators(
-            self._succ.keys(), self.entries, lambda sb: self._pred.get(sb, ()),
+            self._succ.keys(),
+            [root] if root is not None else self.entries,
+            lambda sb: self._pred.get(sb, ()),
         )
         self._dom_cache = dom  # type: ignore[attr-defined]
         return dom

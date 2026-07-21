@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Optional
 
 from tealql.tealtools.avm import CMP_OPS
-from tealql.tealtools.cfg.dominance import iterative_dominators
+from tealql.tealtools.cfg.dominance import iterative_dominators, program_entries
 from tealql.tealtools.ssa import Assignment, BasicBlock, SSAProgram, SSAVar
 
 from ._enforcement import (
@@ -64,10 +64,13 @@ def _bb_strict_dominators(
     blocks = [
         bb for bb in prog.blocks.values() if file_match(bb.file, file)
     ]
-    # Entries = BBs with no predecessors at all; preds are file-filtered so a
-    # block whose only edges are cross-file stays saturated (defensive — BB CFG
-    # edges don't cross files in tealtools' model).
-    entries = [bb for bb in blocks if not bb.predecessors]
+    # Entries = the real per-file execution entries (first instruction's BB) —
+    # NOT "no predecessors": a first block that is a branch target has preds,
+    # and an empty entry set saturates dominance into everything-dominates-
+    # everything (silently crediting every guard). Preds stay file-filtered so
+    # a block whose only edges are cross-file stays saturated (defensive — BB
+    # CFG edges don't cross files in tealtools' model).
+    entries = program_entries(blocks)
     return iterative_dominators(
         blocks, entries,
         lambda bb: [p for p in bb.predecessors if file_match(p.file, file)],

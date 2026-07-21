@@ -21,6 +21,8 @@ Most-used names are re-exported here so callers can do
 
 from .engine import (
     DEFAULT_RULES,
+    ATTACKER_CONTROL_RULES,
+    CONCAT_ANY_PROPAGATION_RULE,
     CONCAT_PROPAGATION_RULE,
     HASH_PROPAGATION_RULE,
     SLICE_PROPAGATION_RULE,
@@ -79,6 +81,7 @@ __all__ = [
     "TaintAnalysis", "Source", "Sink", "FlowRule",
     "Violation", "Operand", "TaintedOperand",
     "HASH_PROPAGATION_RULE", "SLICE_PROPAGATION_RULE",
+    "ATTACKER_CONTROL_RULES", "CONCAT_ANY_PROPAGATION_RULE",
     "CONCAT_PROPAGATION_RULE", "DEFAULT_RULES",
     # box
     "detect_into_box_flows", "detect_out_of_box_flows",

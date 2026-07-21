@@ -171,11 +171,35 @@ CONCAT_PROPAGATION_RULE = FlowRule(
 )
 
 
+CONCAT_ANY_PROPAGATION_RULE = FlowRule(
+    name="concat-of-any-tainted",
+    matches=lambda a: a.op == "concat",
+    # Attacker-CONTROL semantics: the output embeds every input byte-for-byte,
+    # so it is attacker-influenced iff ANY input is. This is the rule the
+    # into-box / out-of-box / out-of-state detectors need — the COLLISION rule
+    # above blocks taint whenever a non-const untainted operand is present
+    # (`concat(itob(asset_id), user_arg)` → box_put was a silent miss).
+    flows=lambda a, ti: [1] if ti else [],
+)
+
+
 DEFAULT_RULES: list[FlowRule] = [
     HASH_PROPAGATION_RULE,
     SLICE_PROPAGATION_RULE,
     TRANSCODE_PROPAGATION_RULE,
     CONCAT_PROPAGATION_RULE,
+]
+
+# The rule set for attacker-CONTROL detectors ("can the attacker influence the
+# value that reaches this sink"), where concat must propagate on ANY tainted
+# input. DEFAULT_RULES keeps the box-key COLLISION concat (a dynamic prefix
+# makes keys unique → blocks taint), which is only right for the key-collision
+# question — see _concat_flows' docstring for why the two genuinely conflict.
+ATTACKER_CONTROL_RULES: list[FlowRule] = [
+    HASH_PROPAGATION_RULE,
+    SLICE_PROPAGATION_RULE,
+    TRANSCODE_PROPAGATION_RULE,
+    CONCAT_ANY_PROPAGATION_RULE,
 ]
 
 

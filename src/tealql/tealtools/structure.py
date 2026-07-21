@@ -35,6 +35,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
+from .cfg.dominance import program_entries
 from .ssa import Assignment, BasicBlock, SSAProgram
 
 
@@ -322,10 +323,13 @@ def analyze_structure(prog: SSAProgram) -> ProgramStructure:
         ))
     subroutines.sort(key=lambda s: (s.entry_bb.file, s.entry_bb.first_line))
 
-    # Routing: entry-rooted closure of routing-internal main-flow BBs.
+    # Routing: entry-rooted closure of routing-internal main-flow BBs. Roots
+    # are the real per-file execution entries (first instruction's BB) — a
+    # first block that is a branch target has predecessors, and the old
+    # "no-preds" criterion then found no root at all (routing came out empty).
     main_flow = [bb for bb in prog.blocks.values() if bb not in sub_body_bbs]
     main_set = set(main_flow)
-    entries = [bb for bb in main_flow if not bb.predecessors]
+    entries = program_entries(main_flow)
     routing: set[BasicBlock] = set()
     stack = [bb for bb in entries if _is_routing_internal(bb)]
     while stack:

@@ -52,6 +52,24 @@ def iterative_dominators(
     return dom
 
 
+def program_entries(blocks) -> list:
+    """The real execution entries: per file, the block holding the file's FIRST
+    instruction. TEAL starts executing at the first instruction, so this is the
+    entry even when that block is a branch target — which means it HAS
+    predecessors. "Blocks with no predecessors" is NOT an entry criterion: a
+    program whose first block is a branch target (a top-level retry loop) has
+    no such block, and an empty entry set makes ``iterative_dominators`` leave
+    every set saturated — every block "dominates" every block, silently
+    crediting guards everywhere. Predecessor-less non-first blocks are dead
+    code, not entries; they stay saturated (the unreachable convention)."""
+    first: dict = {}
+    for b in blocks:
+        cur = first.get(b.file)
+        if cur is None or b.first_line < cur.first_line:
+            first[b.file] = b
+    return sorted(first.values(), key=lambda b: (b.file, b.first_line))
+
+
 def all_blocks(prog) -> set:
     """Every ``BasicBlock`` reachable through ``predecessors`` / ``successors``
     from any block that owns an assignment or phi (duck-typed on ``prog`` so this
@@ -108,7 +126,10 @@ class AssertDominance:
     queries across many (guard, target) pairs stay cheap."""
 
     def __init__(self, prog):
-        self._entries = [b for b in all_blocks(prog) if not b.predecessors]
+        # Real per-file entries — NOT "blocks with no predecessors": with an
+        # empty entry set, ``reachable_avoiding`` returns {} and EVERY guard
+        # "dominates" every target, applying validation facts unsoundly.
+        self._entries = program_entries(all_blocks(prog))
         self._reach: dict = {}
 
     def dominates(self, guard_block, target_block, guard_line: int,

@@ -217,9 +217,16 @@ class PySSA:
     # TEAL_SSA_JOIN_ONLY select the superseded alternates).
     _surv_by_slot: dict = field(default_factory=dict)   # block -> {slot: PyVar}
     _entry_val: dict = field(default_factory=dict)       # (bb_key, slot) -> value
-    _replaced: dict = field(default_factory=dict)        # id(PyPhi) -> replacement
-    _phi_users: dict = field(default_factory=dict)       # id(PyPhi) -> set[PyPhi]
+    # Both keyed by PyPhi.key() == (bb_key, slot) — NEVER by id(): a removed
+    # trivial phi loses its last strong reference (popped from self.phis /
+    # entry_phis), and with __slots__ CPython reuses the freed address, so an
+    # id() key can alias a NEW live phi and resolve it to the OLD phi's value.
+    # (bb_key, slot) is unique per phi (the _entry_val memo creates at most one).
+    _replaced: dict = field(default_factory=dict)        # PyPhi.key() -> replacement
+    _phi_users: dict = field(default_factory=dict)       # PyPhi.key() -> set[PyPhi]
     _max_entry: dict = field(default_factory=dict)       # bb_key -> max entry slot read
+    # block -> frame-aware exit-stack sim (or None); see _build_frame_exit_sim.
+    _frame_sim_cache: dict = field(default_factory=dict)
 
     @classmethod
     def build(cls, prog: SSAProgram) -> SSAProgram:
@@ -546,6 +553,11 @@ class PySSA:
             self._surv_by_slot = {b: {k: v for v, k in self._surv[b]}
                                   for b in self.blocks}
             self._depth = self._compute_entry_depths()
+            # Routine/frame metadata BEFORE any demand: _read_exit consults the
+            # frame-aware exit sim (frame_bury redefines its slot) from the very
+            # first read, so proto info and frame entry depths must exist now.
+            self._compute_subs_and_protos()
+            self._frame_edepth = self._frame_entry_depths()
             # Demand: every entry slot an op consumes (top-first 1..C) per block.
             # The recursion pulls in the passthrough slots successors read.
             for b in self.blocks:
@@ -560,14 +572,12 @@ class PySSA:
             # +1 / frame_bury -1, every other op n_out-n_in), then demand EXACTLY each
             # frame_dig's slot. Exact (not 1..D): an over-broad demand deepens other
             # blocks and threads wrong values. Bounded by the forward cap in _read_entry.
-            self._compute_subs_and_protos()
-            edepth = self._frame_entry_depths()
             for b in self.blocks:
                 sub = self._bb_to_sub.get(b)
                 if sub is None or sub not in self._proto_io:
                     continue
                 nargs = self._proto_io[sub][0]
-                d = edepth.get(b.key)
+                d = self._frame_edepth.get(b.key)
                 if d is None:
                     continue
                 for o in b.ops:
@@ -657,8 +667,8 @@ class PySSA:
     def _resolve(self, v):
         """Follow the trivial-phi replacement chain to the surviving value."""
         n = 0
-        while isinstance(v, PyPhi) and id(v) in self._replaced:
-            v = self._replaced[id(v)]
+        while isinstance(v, PyPhi) and v.key() in self._replaced:
+            v = self._replaced[v.key()]
             n += 1
             if n > STACK_MAX:        # paranoia — replacement chains are acyclic
                 break
@@ -668,7 +678,32 @@ class PySSA:
         """Value at predecessor ``p``'s EXIT slot ``slot`` (top-first): a slot
         within ``p``'s own locals (``slot <= L``) is the producing PyVar; a
         deeper slot is an entry value passing through, mapped back to ``p``'s
-        entry slot ``slot - L + C`` (the inverse of ``L + k - C``)."""
+        entry slot ``slot - L + C`` (the inverse of ``L + k - C``).
+
+        Blocks containing a ``frame_bury`` are answered from the frame-aware
+        exit sim instead: the narrow phase-2 model treats ``frame_bury`` as a
+        bare pop (no definition), so both branches above lie for such blocks —
+        the buried slot reads as an untouched passthrough (a loop-carried slot
+        then collapses to its pre-loop value) and the survivor ranks are
+        shifted. See :meth:`_build_frame_exit_sim`."""
+        sim = self._frame_sim_cache.get(p, _MISSING)
+        if sim is _MISSING:
+            sim = self._build_frame_exit_sim(p)
+            self._frame_sim_cache[p] = sim
+        if sim is not None:
+            st, d = sim
+            idx = len(st) - slot
+            if idx >= 0:
+                v = st[idx]
+                if type(v) is tuple:            # ("entry", k) passthrough
+                    return self._read_entry(p, v[1])
+                return v
+            # Deeper than the routine band: the caller's stack, untouched by
+            # frame ops. Same passthrough arithmetic as the narrow path (the
+            # fat and narrow conventions agree on net depth change).
+            if slot > STACK_MAX:
+                return None
+            return self._read_entry(p, slot - (len(st) - d))
         L = self._locals[p]
         if slot <= L:
             return self._surv_by_slot[p].get(slot)
@@ -678,6 +713,56 @@ class PySSA:
             # cap it so the recursion terminates instead of growing unbounded.
             return None
         return self._read_entry(p, slot - L + self._consumed[p])
+
+    def _build_frame_exit_sim(self, p: PyBlock):
+        """Symbolic exit stack for a ``frame_bury``-containing block, or None
+        when inapplicable (no parseable bury, block outside a proto'd sub,
+        unknown entry depth, or the sim dips below the routine band).
+
+        Simulates ``p`` over the routine's stack band in top-first-consistent
+        bottom-first order: entry slot ``k`` sits at index ``d - k`` where ``d``
+        is the routine-relative entry depth (args + locals — deeper caller
+        stack is unreachable to frame ops and stays out of the band). Frame ops
+        use their REAL semantics — ``frame_dig N`` pushes the value at frame
+        position ``nargs + N``; ``frame_bury N`` pops the top INTO that
+        position — while every other op applies its narrow phase-1 arity
+        (pop ``n_in``, push ``outputs``), exactly like phase 2, so the two
+        models agree wherever no bury interferes."""
+        if not any(o.op == "frame_bury" and _frame_imm(o) is not None
+                   for o in p.ops):
+            return None
+        sub = self._bb_to_sub.get(p)
+        if sub is None or sub not in self._proto_io:
+            return None
+        d = getattr(self, "_frame_edepth", {}).get(p.key)
+        if d is None or d < 0:
+            return None
+        nargs = self._proto_io[sub][0]
+        st: list = [("entry", d - i) for i in range(d)]
+        for o in p.ops:
+            n = _frame_imm(o) if o.op in ("frame_dig", "frame_bury") else None
+            if n is not None:
+                pos = nargs + n
+                if o.op == "frame_dig":
+                    if not (0 <= pos < len(st)):
+                        return None
+                    st.append(st[pos])
+                else:  # frame_bury
+                    if not st or pos < 0 or pos > len(st) - 1:
+                        return None
+                    top = st.pop()
+                    if pos < len(st):
+                        st[pos] = top
+                    # pos == len(st): degenerate self-bury — the value lands
+                    # at/above the new top and is gone (fat n_out = 0).
+                continue
+            for _ in range(o.n_in):
+                if not st:
+                    return None      # dips below the band — model mismatch
+                st.pop()
+            for v in reversed(o.outputs):
+                st.append(v)
+        return (st, d)
 
     def _read_entry(self, b: PyBlock, k: int):
         """Value at ``b``'s ENTRY slot ``k`` (top-first), creating phis on
@@ -711,7 +796,7 @@ class PySSA:
             a = self._read_exit(p, k)
             P.args.append(a)
             if isinstance(a, PyPhi):
-                self._phi_users.setdefault(id(a), set()).add(P)
+                self._phi_users.setdefault(a.key(), set()).add(P)
         v = self._try_remove_trivial(P)
         self._entry_val[key] = v
         return v
@@ -750,18 +835,18 @@ class PySSA:
             same = distinct[0] if distinct else None  # 0 distinct -> undefined slot
             if first:
                 result, first = same, False
-            self._replaced[id(cur)] = same
+            self._replaced[cur.key()] = same
             self.phis.pop((cur.bb_key, cur.slot), None)
             b = self._bb_by_key.get(cur.bb_key)
             if b is not None:
                 b.entry_phis = [ph for ph in b.entry_phis if ph is not cur]
             # Sort users by their STABLE identity (bb_key, slot) — `_phi_users` is
             # a set, and id() is not seed-stable; the (bb_key, slot) key is.
-            users = sorted(self._phi_users.pop(id(cur), ()), key=lambda u: u.key())
+            users = sorted(self._phi_users.pop(cur.key(), ()), key=lambda u: u.key())
             for u in users:
                 u.args = [same if a is cur else a for a in u.args]
                 if isinstance(same, PyPhi):
-                    self._phi_users.setdefault(id(same), set()).add(u)
+                    self._phi_users.setdefault(same.key(), set()).add(u)
             for u in reversed(users):             # LIFO -> pops in sorted order
                 stack.append(u)
         return result
@@ -1091,6 +1176,8 @@ def _seed_consts_and_identity_steps(prog: SSAProgram, scratch_stores: dict) -> N
     Pre-filters the candidate ops once so the fixpoint only scans ops that
     could seed a const, then iterates so identity-of-identity chains flow
     (e.g. const -> swap -> load -> swap -> consumer)."""
+    from . import scratch_influence as _scratch
+
     _shuffle_candidates: list[tuple] = []
     _load_candidates: list = []
     for _a in prog.assignments:
@@ -1125,7 +1212,16 @@ def _seed_consts_and_identity_steps(prog: SSAProgram, scratch_stores: dict) -> N
             _resolved: list[Const] = []
             _ok = True
             for _sv_file, _sv_line, _sv_idx in _stores:
-                _src_v = prog.vars.get((_sv_file, _sv_line, _sv_idx))
+                _k = (_sv_file, _sv_line, _sv_idx)
+                if _k == _scratch.UNINIT_STORE:
+                    # AVM scratch zero-init: a precisely-known int 0 that must
+                    # agree with every real reaching store.
+                    _resolved.append(Const("int", "0"))
+                    continue
+                if _k == _scratch.UNKNOWN_STORE:
+                    _ok = False
+                    break
+                _src_v = prog.vars.get(_k)
                 _src_cv = _src_v.const_value if _src_v is not None else None
                 if _src_cv is None:
                     _ok = False
@@ -1189,6 +1285,9 @@ def _seed_consts_and_identity_steps(prog: SSAProgram, scratch_stores: dict) -> N
         if not _stores or len(_stores) != 1:
             continue
         _sv_file, _sv_line, _sv_idx = next(iter(_stores))
+        if (_sv_file, _sv_line, _sv_idx) in (_scratch.UNINIT_STORE,
+                                             _scratch.UNKNOWN_STORE):
+            continue      # no SSAVar identity behind a sentinel reaching def
         _identity_steps.append(
             (("var", _sv_file, _sv_line, _sv_idx), _ssavar_key(_out_v))
         )

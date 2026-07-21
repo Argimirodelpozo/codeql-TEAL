@@ -48,6 +48,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional, Union
 
+from .cfg.dominance import program_entries
 from .subroutines import sound_return_targets
 from .ssa import (
     BasicBlock,
@@ -397,11 +398,19 @@ class PathPredicateAnalysis:
         caller_of, return_target_of = self._callsub_return_maps()
 
         # Initial: TOP everywhere; ``∅`` for BBs with no predecessors
-        # (program entry, plus any unreachable BBs — both default to
-        # "no constraints" which is the right zero element).
+        # (unreachable BBs and the usual no-pred program entry — "no
+        # constraints" is the right zero element for both).
+        #
+        # A program entry that HAS predecessors (its first block is a branch
+        # target — a top-level loop) additionally contributes a VIRTUAL
+        # fresh-entry path to its own meet below: execution reaches it from
+        # outside with only the entry seeds, so any fact the back edge carries
+        # must be intersected against that path or it would be credited to
+        # executions that never took the loop.
+        program_entry_set = set(program_entries(prog.blocks.values()))
         bb_preds: dict[BasicBlock, object] = {bb: _TOP for bb in prog.blocks.values()}
         for bb in prog.blocks.values():
-            if not bb.predecessors:
+            if not bb.predecessors or bb in program_entry_set:
                 bb_preds[bb] = (
                     self.entry_seeds | self.bb_seeds.get(bb, frozenset())
                 )
@@ -409,6 +418,8 @@ class PathPredicateAnalysis:
         while worklist:
             bb = worklist.pop()
             new_preds: Optional[set[BranchCondition]] = None
+            if bb in program_entry_set:
+                new_preds = set(self.entry_seeds)
             for pred in bb.predecessors:
                 pred_preds = bb_preds[pred]
                 if pred_preds is _TOP:
