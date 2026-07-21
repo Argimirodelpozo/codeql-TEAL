@@ -457,8 +457,17 @@ def _entry_guards(lifter, def_of, dom_by_sub, taint, inv_ret=None):
                     if not tainted:
                         continue                  # safe site: doesn't constrain
                     seen = True
-                    all_ci &= ci0 or any(eg[cid][k][0] for k in ks)
-                    all_cs &= cs0 or any(eg[cid][k][1] for k in ks)
+                    # ``ks`` is EVERY caller-param in this argument's def tree,
+                    # so a composite like ``p0 + p1`` lists both. Credit the
+                    # transitive guard only when ALL of them are guarded at the
+                    # caller's entry: with ``any``, validating just ``p0`` and
+                    # passing ``p0 + p1`` marked the whole argument guarded and
+                    # SUPPRESSED a real attacker-controlled flow through the
+                    # unchecked ``p1``. Empty ``ks`` (no caller-param in the
+                    # tree) carries no transitive credit at all — ``all(())``
+                    # is vacuously True, hence the explicit guard.
+                    all_ci &= ci0 or bool(ks) and all(eg[cid][k][0] for k in ks)
+                    all_cs &= cs0 or bool(ks) and all(eg[cid][k][1] for k in ks)
                 new = (seen and all_ci, seen and all_cs)
                 if new != eg[tid][i]:
                     eg[tid][i] = new

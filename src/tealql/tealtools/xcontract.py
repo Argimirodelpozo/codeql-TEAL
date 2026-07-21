@@ -136,6 +136,19 @@ def _state_key(inputs) -> Optional[str]:
 # the same way: prove EVERY write of the key agrees on one int constant.
 _PUT_OP = {"global": "app_global_put", "local": "app_local_put", "box": "box_put"}
 
+#: Ops that MUTATE or REMOVE stored state without being a full ``*_put``. The
+#: "every write agrees on one constant" proof must see these too: a box
+#: initialised with ``box_put KEY, itob(123)`` and later updated via
+#: ``box_replace KEY, 0, itob(456)`` (or deleted and re-created) resolves to
+#: the stale 123, and the ENTIRE callee analysis — auth findings, summaries,
+#: caller pins — then runs against the wrong program. Any of these touching
+#: the key makes the value unprovable.
+_MUTATE_OPS = {
+    "global": frozenset({"app_global_del"}),
+    "local": frozenset({"app_local_del"}),
+    "box": frozenset({"box_replace", "box_splice", "box_resize", "box_del"}),
+}
+
 
 def _state_read(operand) -> Optional[tuple[str, str]]:
     """If ``operand`` reads a value out of THIS app's own persistent state under a
@@ -234,8 +247,17 @@ def _resolve_state_app_id(prog: SSAProgram, operand) -> Optional[int]:
         return None
     scope, key = read
     put_op = _PUT_OP[scope]
+    mutate_ops = _MUTATE_OPS[scope]
     vals: set[int] = set()
     for w in prog.assignments:
+        if w.op in mutate_ops:
+            # A partial update / delete of this key (or of an unresolvable
+            # key, which MAY be this one) defeats the all-writes-agree proof.
+            if any(_const_bytes(inp) == key for inp in w.inputs):
+                return None
+            if all(_const_bytes(inp) is None for inp in w.inputs):
+                return None                   # dynamic key: can't rule it out
+            continue
         if w.op != put_op:
             continue
         if all(_const_bytes(inp) != key for inp in w.inputs):
@@ -625,6 +647,13 @@ class XContractGraph:
                     edges.append(AppcallEdge(prog_id, site, depth))
                 if site.app_id not in callees:
                     callee = SSAProgram(str(site.callee_source))
+                    # Match discover_registry: resolve constants BEFORE walking
+                    # the callee's own appcall sites. Construction only tags
+                    # direct pushes, so a callee whose target AppID needs
+                    # propagation (folded arithmetic, dup/cover flow, phi
+                    # resolution) had its own callees silently omitted from
+                    # `callees` / `analyses` / `edges`.
+                    callee.propagate_constants()
                     callees[site.app_id] = callee
                     callee_sources[site.app_id] = site.callee_source
                     merged_pins[site.app_id] = dict(site.const_args)

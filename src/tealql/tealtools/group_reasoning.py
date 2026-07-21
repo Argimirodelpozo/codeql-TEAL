@@ -267,6 +267,15 @@ def _negate(op: str) -> str:
     }.get(op, op)
 
 
+#: :class:`BranchCondition` kind -> comparator, for predicates that constrain a
+#: group ref DIRECTLY (no intervening comparison op to recover the operator
+#: from) — switch / match targets and ordered compares that drive a branch.
+_KIND_TO_OP = {
+    "eq": "==", "neq": "!=",
+    "lt": "<", "le": "<=", "gt": ">", "ge": ">=",
+}
+
+
 def derive_constraint(pred: BranchCondition) -> Optional[GroupConstraint]:
     """Translate a path predicate into a group-shape constraint.
 
@@ -290,8 +299,21 @@ def derive_constraint(pred: BranchCondition) -> Optional[GroupConstraint]:
             return GroupConstraint(direct, "!=", Const("int", "0"))
         if pred.kind == "zero":
             return GroupConstraint(direct, "==", Const("int", "0"))
-        return None  # eq / neq_all / not_in_range on a direct ref —
-                    # fall through, render generically (TODO).
+        # A group ref routed by switch / match / an ordered compare. This is
+        # the DOMINANT PuyaPy router idiom (``txn OnCompletion; switch …``),
+        # so dropping these lost the ``Txn.OnCompletion == N`` fact the
+        # program actually enforces — consumers like ``constraints_at`` saw
+        # fewer constraints than the contract really imposes.
+        if pred.kind in _KIND_TO_OP and len(pred.args) >= 1:
+            return GroupConstraint(direct, _KIND_TO_OP[pred.kind], pred.args[0])
+        if pred.kind == "not_in_range" and len(pred.args) >= 2:
+            # value ∉ [lo .. hi-1] — the only faithful single-comparator
+            # rendering is against the exclusive upper bound.
+            return GroupConstraint(direct, ">=", pred.args[1])
+        # ``neq_all`` is a conjunction of != over N candidates; a single
+        # GroupConstraint cannot express it, so leave it out rather than
+        # render one arbitrary disjunct as if it were the whole fact.
+        return None
     if not isinstance(pred.value, SSAVar):
         return None
     a = getattr(pred.value, "defined_by", None)

@@ -122,6 +122,11 @@ def _load(args):
     source = _resolve(args)
     logger.info("building SSA program from %s", source)
     prog = SSAProgram(str(source))
+    # Construction only tags direct pushes; anything needing propagation
+    # (folded arithmetic, dup/cover flow, phi resolution) stays unresolved.
+    # Cross-contract discovery keys on constant AppIDs, so without this the
+    # root program's callees could be silently missed. Idempotent.
+    prog.propagate_constants()
     logger.info("SSA program ready (%d assignments)", len(prog.assignments))
     _check_parse_health(prog, args)
     return prog

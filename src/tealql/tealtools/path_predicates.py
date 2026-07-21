@@ -616,6 +616,16 @@ class PathPredicateAnalysis:
         # predicate rather than a false guard a detector might trust.
         if len(matches) > 1:
             return None
+        # The same collapsed-edge hazard the bnz/bz path guards against: when
+        # the instruction after the switch/match IS one of its target labels,
+        # the target edge and the fall-through edge land on the SAME successor.
+        # ``matches`` then finds exactly one hit and we would emit the
+        # over-strong ``key == k`` — but that block is also reached with the
+        # key OUT of range, so a caller with any other key bypasses the
+        # "guard" a detector trusted. Fewer than 2 distinct successors means
+        # the branch doesn't partition flow at all.
+        if len({s.first_line for s in pred.successors}) < 2:
+            return None
         target_index: Optional[int] = matches[0] if matches else None
         key = last.inputs[0]
         if target_index is not None:
