@@ -202,9 +202,21 @@ def _index_window(idx_op, width: int) -> tuple:
 
 
 def _default_sources(a) -> Optional[Intervals]:
-    """Default attacker-input seed: every ``ApplicationArgs`` read is fully
-    tainted (its length is usually dynamic, so ``[0, len-bound)`` — the exact /
-    range-bounded length when known, else the 4096-byte AVM cap)."""
+    """Default attacker-input seed: every ``ApplicationArgs`` read AND every
+    LogicSig ``arg`` read is fully tainted (length is usually dynamic, so
+    ``[0, len-bound)`` — the exact / range-bounded length when known, else the
+    4096-byte AVM cap).
+
+    The lsig ``arg`` family belongs here for the same reason it is in
+    :func:`tealql.tealtools.dataflow.taint_query.is_source`: a LogicSig's args
+    are wholly attacker-supplied. Seeding only ApplicationArgs meant any
+    consumer that did not pass its own ``sources=`` (notably
+    :func:`byte_taint_view`) saw NO taint at all in a LogicSig."""
+    from .taint_query import _LSIG_ARG_OPS
+
+    if a.op in _LSIG_ARG_OPS:
+        out = a.outputs[0] if a.outputs else None
+        return Intervals.whole(_len_bound(out) if out is not None else None)
     if not a.immediates:
         return None
     if _txn_field_name(a.op, a.immediates.split()) == "ApplicationArgs":
@@ -216,8 +228,9 @@ def _default_sources(a) -> Optional[Intervals]:
 _HASH_OPS = frozenset({"sha256", "sha512_256", "keccak256", "sha3_256"})
 _EXTRACT_UINT = {"extract_uint16": 2, "extract_uint32": 4, "extract_uint64": 8}
 # Bytes-PRODUCING ops with no precise byte-interval rule: the conservative
-# fallback must record byte taint, not scalar (json_ref is excluded -- it is
-# polymorphic on its immediate, e.g. JSONUint64 -> uint64).
+# fallback must record byte taint, not scalar. (json_ref is handled separately
+# in the fallback -- it is polymorphic on its immediate: JSONUint64 -> uint64,
+# JSONString / JSONObject -> bytes.)
 _BYTES_OUT_FALLBACK = frozenset({
     "b+", "b-", "b*", "b/", "b%", "bsqrt",      # bigint arithmetic
     "b|", "b&", "b^", "b~", "bzero",            # bytewise
@@ -798,6 +811,15 @@ def byte_taint(
             # the module's "never a false negative" soundness contract.
             if op in _BYTES_OUT_FALLBACK:
                 return set_bytes(out, Intervals.whole(_len_bound(out)))
+            if op == "json_ref":
+                # Polymorphic on its immediate: JSONUint64 yields a uint64
+                # (scalar taint), but JSONString / JSONObject yield BYTES —
+                # tagging those scalar meant a later extract / getbyte found
+                # an empty byte map and propagated nothing (false negative).
+                kind = (a.immediates or "").strip().split()
+                if kind and kind[0] in ("JSONString", "JSONObject"):
+                    return set_bytes(out, Intervals.whole(_len_bound(out)))
+                return set_scalar(out)
             if len(a.outputs) == 1:
                 return set_scalar(out)
             # Multi-result op with no precise rule (divmodw quad, addw/mulw/expw

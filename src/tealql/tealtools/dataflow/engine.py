@@ -171,6 +171,46 @@ CONCAT_PROPAGATION_RULE = FlowRule(
 )
 
 
+#: ``select A B C`` returns A or B depending on C — the result IS one of the
+#: two values, so taint on either flows through. It is NOT a pure stack shuffle
+#: (``_shuffle_mapping`` excludes it), so without a rule the boolean engine
+#: dropped the taint entirely.
+SELECT_PROPAGATION_RULE = FlowRule(
+    name="select-of-tainted",
+    matches=lambda a: a.op == "select",
+    # TOP-FIRST inputs: [0] = condition, [1] = B (returned when cond != 0),
+    # [2] = A. Taint flows if either VALUE is tainted (the condition only
+    # chooses; it doesn't contribute bytes to the result).
+    flows=lambda a, ti: [1] if (2 in ti or 3 in ti) else [],
+)
+
+#: Splice ops write a tainted value INTO a buffer: the result carries the
+#: attacker's bytes, so it must stay tainted. ``byte_taint`` models these at
+#: byte granularity; the boolean engine needs the coarse version or the flow
+#: into a box/state/itxn sink is lost.
+_SPLICE_OPS = frozenset({"setbyte", "setbit", "replace2", "replace3"})
+
+SPLICE_PROPAGATION_RULE = FlowRule(
+    name="splice-into-buffer",
+    matches=lambda a: a.op in _SPLICE_OPS,
+    flows=lambda a, ti: [1] if ti else [],
+)
+
+#: 512-bit byte arithmetic / bitwise ops: the output is a deterministic
+#: function of the operands, so attacker influence carries through. Mirrors
+#: ``byte_taint._BYTES_OUT_FALLBACK``.
+_BYTE_MATH_OPS = frozenset({
+    "b+", "b-", "b*", "b/", "b%", "bsqrt",
+    "b|", "b&", "b^", "b~",
+})
+
+BYTE_MATH_PROPAGATION_RULE = FlowRule(
+    name="byte-math-of-tainted",
+    matches=lambda a: a.op in _BYTE_MATH_OPS,
+    flows=lambda a, ti: [1] if ti else [],
+)
+
+
 CONCAT_ANY_PROPAGATION_RULE = FlowRule(
     name="concat-of-any-tainted",
     matches=lambda a: a.op == "concat",
@@ -188,6 +228,9 @@ DEFAULT_RULES: list[FlowRule] = [
     SLICE_PROPAGATION_RULE,
     TRANSCODE_PROPAGATION_RULE,
     CONCAT_PROPAGATION_RULE,
+    SELECT_PROPAGATION_RULE,
+    SPLICE_PROPAGATION_RULE,
+    BYTE_MATH_PROPAGATION_RULE,
 ]
 
 # The rule set for attacker-CONTROL detectors ("can the attacker influence the
@@ -200,6 +243,9 @@ ATTACKER_CONTROL_RULES: list[FlowRule] = [
     SLICE_PROPAGATION_RULE,
     TRANSCODE_PROPAGATION_RULE,
     CONCAT_ANY_PROPAGATION_RULE,
+    SELECT_PROPAGATION_RULE,
+    SPLICE_PROPAGATION_RULE,
+    BYTE_MATH_PROPAGATION_RULE,
 ]
 
 
