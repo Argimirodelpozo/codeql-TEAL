@@ -1,5 +1,14 @@
-"""Interprocedural frame dataflow — the caller-arg -> callee-param edges the base
-PySSA def-use relation leaves implicit.
+"""The def-use edges the base PySSA relation leaves implicit — the shared
+bridges every taint-style analysis needs.
+
+Two of them, both "this value has no def-use input, but a value does flow into
+it": :func:`frame_param_sources` (caller arg -> callee ``frame_dig`` param) and
+:func:`scratch_load_sources` (``store N`` value -> ``load N`` output). The
+boolean taint engine, the byte-interval taint and the taint graph each used to
+rebuild these independently; they are one definition here so the three cannot
+drift apart on what "reaches" means.
+
+--- interprocedural frame dataflow ---
 
 Algorand subroutines pass arguments on the STACK: the caller pushes values, then
 ``callsub`` transfers control, and the callee reads each parameter with
@@ -56,4 +65,43 @@ def frame_param_sources(prog: SSAProgram) -> dict:
             srcs = param_args.get(p)
             if srcs:
                 out.setdefault(dig_out, set()).update(srcs)
+    return out
+
+
+def scratch_load_sources(prog: SSAProgram) -> dict:
+    """``{load N output SSAVar -> [store N value SSAVars that may reach it]}``.
+
+    Scratch is written by ``store N`` (which has no SSA output) and read by
+    ``load N`` (which has no SSA input), so the base def-use relation drops the
+    connection entirely and taint dies at any ``store N; …; load N`` round trip.
+    The ``scratch_stores`` graph annotation
+    (:func:`tealql.tealtools.ssa.scratch_influence.compute_scratch_influence`)
+    supplies the reaching-definition answer; this resolves those keys to the
+    actual value SSAVars.
+
+    MAY semantics: the union over every reaching store is a sound
+    over-approximation. Sentinel reaching-defs (the zero-init pseudo-store, an
+    unresolvable store, a dynamic ``stores``) resolve to no SSAVar and are
+    simply absent here — correct for a may-union consumer, and the reason
+    must-style consumers must read ``_scratch_influence`` directly rather than
+    this map (they have to SEE the sentinel in order to bail on it)."""
+    prog._ensure_scratch_influence()
+    out: dict = {}
+    graph = getattr(prog, "_graph", None)
+    if graph is None:
+        return out
+    for n in graph.nodes:
+        stores = graph.nodes[n].get("scratch_stores")
+        if not stores:
+            continue
+        loc = getattr(n, "location", None)
+        if loc is None:
+            continue
+        load_var = prog.var(loc.file, loc.start_line, 1)
+        if load_var is None:
+            continue
+        srcs = [sv for (sf, sl, si) in stores
+                if (sv := prog.var(sf, sl, si)) is not None]
+        if srcs:
+            out.setdefault(load_var, []).extend(srcs)
     return out

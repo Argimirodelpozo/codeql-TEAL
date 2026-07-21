@@ -38,10 +38,9 @@ from typing import Iterable, Iterator, Optional
 
 import networkx as nx
 
-from ._nx_view import NxGraphView
+from ._nx_view import NxGraphView, copy_into, sensitive_sinks
 
 from ..ssa import SSAProgram
-from ..avm import SENSITIVE_ITXN_FIELDS, STATE_WRITE_OPS
 from ..xcontract import AppcallSite, find_appcall_sites, load_registry
 from .taint_graph import Node, TaintGraph
 
@@ -207,16 +206,7 @@ class XContractTaintGraph(NxGraphView):
 
 
 def _copy_into(big: nx.DiGraph, tg: TaintGraph, *, app_id: Optional[int]) -> None:
-    for n, attrs in tg.g.nodes(data=True):
-        big.add_node(XContractNode(app_id=app_id, inner=n), **attrs)
-    for u, v, data in tg.g.edges(data=True):
-        # Copy with a shallow new kinds set so prunes on big don't
-        # mutate the per-contract tg.
-        big.add_edge(
-            XContractNode(app_id=app_id, inner=u),
-            XContractNode(app_id=app_id, inner=v),
-            kinds=set(data.get("kinds", ())),
-        )
+    copy_into(big, tg, lambda n: XContractNode(app_id=app_id, inner=n))
 
 
 # --- appcall bridges ----------------------------------------------
@@ -409,12 +399,9 @@ def _caller_field_nodes(
 # --- cross-contract taint reachability detector -------------------
 
 
-# Sinks whose operand governs value movement or control transfer; a tainted
-# value reaching one of these is the thing worth reporting. Canonical sets in
-# tealql.tealtools.avm (STATE_WRITE_OPS is the full box/app put/del family, broader
-# than the former local-here {app_global_put, app_local_put}).
-_SENSITIVE_ITXN_FIELDS = SENSITIVE_ITXN_FIELDS
-_STATE_WRITE_OPS = STATE_WRITE_OPS
+# The sink taxonomy (sensitive itxn fields + the full box/app state-write
+# family) lives in tealql.tealtools.avm and is applied by
+# _nx_view.sensitive_sinks, shared with the group view.
 
 
 @dataclass(frozen=True)
@@ -441,15 +428,7 @@ class CrossTaintFinding:
 
 
 def _sensitive_sinks(xtg: "XContractTaintGraph") -> list[tuple[XContractNode, str]]:
-    out: list[tuple[XContractNode, str]] = []
-    for xn in xtg.nodes():
-        op = xtg.op_of(xn)
-        imm = xtg.immediates_of(xn)
-        if op == "itxn_field" and imm in _SENSITIVE_ITXN_FIELDS:
-            out.append((xn, f"itxn_field {imm}"))
-        elif op in _STATE_WRITE_OPS:
-            out.append((xn, op))
-    return out
+    return sensitive_sinks(xtg)
 
 
 def cross_taint_findings(xtg: "XContractTaintGraph") -> list[CrossTaintFinding]:

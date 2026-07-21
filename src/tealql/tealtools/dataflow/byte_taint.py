@@ -609,32 +609,13 @@ def byte_taint(
     # supplies {frame_dig output -> caller-arg operands}; the fixpoint unions each
     # param's byte-intervals from its callers' args -> a value fed INTO a sub is
     # tracked through it, at byte granularity, with no IR lift.
-    from ..passes.frame_flow import frame_param_sources
+    from ..passes.frame_flow import frame_param_sources, scratch_load_sources
     frame_src = frame_param_sources(prog)
 
     # Scratch bridge: a `load N` has no def-use input in PySSA, so byte taint
-    # would die at any `store N; …; load N` roundtrip. The `scratch_stores` graph
-    # annotation gives, per `load N`, the reaching `store N` VALUE producers (MAY
-    # — union is a sound over-approximation). Build {load output var -> [store
-    # value vars]} and join them in the fixpoint, exactly like the frame bridge
-    # and the boolean engine's step 2c.
-    scratch_src: dict = {}
-    graph = getattr(prog, "_graph", None)
-    if graph is not None:
-        for n in graph.nodes:
-            stores = graph.nodes[n].get("scratch_stores")
-            if not stores:
-                continue
-            loc = getattr(n, "location", None)
-            if loc is None:
-                continue
-            load_var = prog.var(loc.file, loc.start_line, 1)
-            if load_var is None:
-                continue
-            srcs = [sv for (sf, sl, si) in stores
-                    if (sv := prog.var(sf, sl, si)) is not None]
-            if srcs:
-                scratch_src.setdefault(load_var, []).extend(srcs)
+    # would die at any `store N; …; load N` roundtrip. Shared with the boolean
+    # engine so the two cannot disagree on what reaches a load.
+    scratch_src = scratch_load_sources(prog)
 
     bt: dict = {}     # value -> Intervals (tainted byte ranges)
     st: set = set()   # scalar (uint64) values that are tainted

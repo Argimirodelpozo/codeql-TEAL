@@ -38,10 +38,9 @@ from dataclasses import dataclass
 
 import networkx as nx
 
-from ._nx_view import NxGraphView
+from ._nx_view import NxGraphView, copy_into, sensitive_sinks
 
 from ..ssa import SSAProgram
-from ..avm import SENSITIVE_ITXN_FIELDS, STATE_WRITE_OPS
 from .taint_graph import Node, TaintGraph
 
 
@@ -96,13 +95,7 @@ class GroupTaintGraph(NxGraphView):
 
 
 def _copy_into(big: nx.DiGraph, tg: TaintGraph, *, index: int) -> None:
-    for n, attrs in tg.g.nodes(data=True):
-        big.add_node(GroupNode(index, n), **attrs)
-    for u, v, data in tg.g.edges(data=True):
-        big.add_edge(
-            GroupNode(index, u), GroupNode(index, v),
-            kinds=set(data.get("kinds", ())),
-        )
+    copy_into(big, tg, lambda n: GroupNode(index, n))
 
 
 def _add_scratch_bridges(big: nx.DiGraph, members: list[TaintGraph]) -> None:
@@ -184,15 +177,7 @@ class GroupTaintFinding:
 
 
 def _sensitive_sinks(gtg: GroupTaintGraph) -> list[tuple[GroupNode, str]]:
-    out: list[tuple[GroupNode, str]] = []
-    for gn in gtg.nodes():
-        op = gtg.op_of(gn)
-        imm = gtg.immediates_of(gn)
-        if op == "itxn_field" and imm in SENSITIVE_ITXN_FIELDS:
-            out.append((gn, f"itxn_field {imm}"))
-        elif op in STATE_WRITE_OPS:
-            out.append((gn, op))
-    return out
+    return sensitive_sinks(gtg)
 
 
 def _attacker_sources(gtg: GroupTaintGraph) -> list[GroupNode]:

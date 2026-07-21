@@ -36,7 +36,7 @@ from ..ssa import (
     _shuffle_mapping,
     is_const,
 )
-from ..passes.frame_flow import frame_param_sources
+from ..passes.frame_flow import frame_param_sources, scratch_load_sources
 
 
 Operand = Union[SSAVar, Phi, Const]
@@ -432,6 +432,7 @@ class TaintAnalysis:
         # it), so taint crosses the callsub/proto boundary natively — the base
         # def-use leaves frame_dig disconnected. See passes.frame_flow.
         frame_src = frame_param_sources(self.prog)
+        scratch_src = scratch_load_sources(self.prog)
 
         # Step 2: fixpoint propagation.
         changed = True
@@ -471,19 +472,14 @@ class TaintAnalysis:
                         source_for[ph] = source_for[arg]
                         changed = True
                         break
-            # 2c. Through scratch (store/load via scratch_stores annotation).
-            for n in self.prog._graph.nodes:
-                stores = self.prog._graph.nodes[n].get("scratch_stores")
-                if not stores:
+            # 2c. Through scratch (store N value -> load N output). Shared
+            # with byte_taint via `scratch_load_sources` so the two agree on
+            # what reaches a load.
+            for load_var, srcs in scratch_src.items():
+                if load_var in tainted:
                     continue
-                load_var = self.prog.var(
-                    n.location.file, n.location.start_line, 1
-                )
-                if load_var is None or load_var in tainted:
-                    continue
-                for sv_file, sv_line, sv_idx in stores:
-                    src_var = self.prog.var(sv_file, sv_line, sv_idx)
-                    if src_var is not None and src_var in tainted:
+                for src_var in srcs:
+                    if src_var in tainted:
                         tainted.add(load_var)
                         source_for[load_var] = source_for[src_var]
                         changed = True
