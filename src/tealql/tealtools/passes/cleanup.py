@@ -39,11 +39,22 @@ from ..ssa import SSAProgram, SSAVar
 # Each one computes a deterministic function of its inputs with no
 # external observability beyond the result SSAVar. State reads and
 # control-flow ops are deliberately absent (see module docstring).
+#
+# CAVEAT — several members can HALT the program: `/` and `%` on a zero divisor,
+# `-` on underflow, `+` / `*` on overflow, `btoi` above 8 bytes, the
+# extract / getbyte / setbyte family out of range, and the shifts above 63.
+# Deleting a dead instance therefore removes a halt condition, so path
+# reasoning may see executions surviving a point where the AVM would have
+# panicked — notably the `x / y` divide-by-zero GUARD idiom, whose only
+# purpose is the panic. That is an over-approximation (more paths considered,
+# so findings are at worst false POSITIVE, never suppressed), and this pass
+# exists to make rendered IR readable rather than to feed path reasoning —
+# but it is a real semantic difference, not a no-op.
 _PURE_OPS: frozenset[str] = frozenset({
     # Input / context reads (the canonical readers stay live by
     # construction; only duplicate post-propagate_inputs reads end
     # up matching here).
-    "txn", "txna",
+    "txn", "txna", "txnas",
     "gtxn", "gtxna", "gtxnas",
     "gtxns", "gtxnsa", "gtxnsas",
     "global",

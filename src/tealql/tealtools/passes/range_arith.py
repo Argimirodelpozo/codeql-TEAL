@@ -117,9 +117,11 @@ def _arith_result_range(
         hi = (1 << max(ra.hi.bit_length(), rb.hi.bit_length())) - 1
         return (0, hi)
     if op == "<<":
-        # AVM ``<<`` is ``A * 2^B mod 2^64`` — it wraps, never halts.
-        # If any (a, b) pair can overflow uint64 the wrapped result is
-        # unconstrained; otherwise the shift is monotonic in both args.
+        # AVM ``shl`` is ``A * 2^B mod 2^64``: the RESULT wraps, but the op
+        # itself FAILS when B > 63 (go-algorand `opShiftLeft`) — it does not
+        # "never halt". A halting pair produces no value, so ignoring B > 63
+        # would be legitimate; we keep the conservative widening instead,
+        # which stays a sound over-approximation either way.
         if rb.hi >= 64:
             return (0, _UINT64_MAX)
         hi = ra.hi << rb.hi
@@ -127,8 +129,10 @@ def _arith_result_range(
             return (0, _UINT64_MAX)
         return (ra.lo << rb.lo, hi)
     if op == ">>":
-        # ``>>`` is ``A // 2^B`` — never overflows, monotonic (larger
-        # shift ⇒ smaller result). A shift ≥ 64 zeroes the value.
+        # ``shr`` is ``A // 2^B``: never overflows, monotonic (larger shift =>
+        # smaller result). Like ``shl`` it FAILS for B > 63 rather than
+        # zeroing the value; the ``min(.., 64)`` clamps only widen the result
+        # range, so the bound stays sound.
         return (ra.lo >> min(rb.hi, 64), ra.hi >> min(rb.lo, 64))
     return None
 

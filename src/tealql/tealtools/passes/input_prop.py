@@ -71,7 +71,10 @@ _STABLE_INPUT_OPS_IMM_ONLY = frozenset({
 # unify. ``args`` pops the arg index; ``gtxnas`` pops the array index (txn index
 # is immediate); ``gtxnsas`` pops BOTH the txn index and the array index.
 _STABLE_INPUT_OPS_STACK = frozenset({
-    "gtxns", "gtxnsa", "gtxnsas", "gtxnas", "args",
+    # `txnas` belongs here with `gtxnas`: same shape (field immediate + a
+    # popped array index), same execution stability. Omitting it only cost
+    # precision (its reads never unified), but there is no reason for it.
+    "gtxns", "gtxnsa", "gtxnsas", "gtxnas", "txnas", "args",
 })
 
 # ``global`` fields that are NOT execution-stable — they change as the program

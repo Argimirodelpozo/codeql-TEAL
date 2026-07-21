@@ -286,6 +286,11 @@ def _set_byte_length(obj, n: int) -> bool:
         "bytes",
         byte_length=n,
         byte_length_range=IntRange(n, n),
+        # Carry any bigint value-range forward: the three fields coexist on one
+        # TealType (cf. bytemath._set_int_value_range, which preserves the
+        # length fields symmetrically). Dropping it silently erased bytemath's
+        # facts whenever these passes ran in the other order.
+        int_value_range=getattr(existing, "int_value_range", None),
     )
     return True
 
@@ -321,6 +326,7 @@ def _set_byte_length_range(obj, lo: int, hi: int) -> bool:
         "bytes",
         byte_length=None,
         byte_length_range=IntRange(lo, hi),
+        int_value_range=getattr(existing, "int_value_range", None),
     )
     return True
 

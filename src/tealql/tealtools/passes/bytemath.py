@@ -80,7 +80,7 @@ from typing import Optional
 
 from ..ssa import (
     Assignment, Const, IntRange, SSAProgram, SSAVar, TealType, binary_operands,
-    operand_const,
+    const_int, operand_const,
 )
 
 logger = logging.getLogger("tealql.tealtools.passes.bytemath")
@@ -206,14 +206,26 @@ _UINT64 = TealType("uint64")
 
 
 def _set_uint64_range(obj, lo: int, hi: int) -> bool:
-    """Install / widen :attr:`SSAVar.range` on ``obj``. Used for the
+    """Install / TIGHTEN :attr:`SSAVar.range` on ``obj``. Used for the
     ``btoi`` bridge that lifts a bigint range from bytes-land back
-    into uint64-land."""
+    into uint64-land.
+
+    Intersects with any existing range instead of replacing it, mirroring
+    :func:`_set_int_value_range`. `run_all_passes` runs `propagate_assert_ranges`
+    (step 7) BEFORE this pass (step 9), so overwriting re-WIDENED a range an
+    assert had already tightened — not unsound, but it silently discarded the
+    sharper fact every consumer of ``.range`` then reads. An empty
+    intersection means the two facts contradict, so keep what we had."""
     if lo < 0 or hi > (1 << 64) - 1 or lo > hi:
         return False
     existing = getattr(obj, "range", None)
-    if existing is not None and existing.lo == lo and existing.hi == hi:
-        return False
+    if existing is not None:
+        lo = max(existing.lo, lo)
+        hi = min(existing.hi, hi)
+        if lo > hi:
+            return False
+        if existing.lo == lo and existing.hi == hi:
+            return False
     obj.range = IntRange(lo, hi)
     if obj.type is None:
         obj.type = _UINT64
@@ -282,14 +294,12 @@ def propagate_bytemath_ranges(prog: SSAProgram) -> int:
                 return
             r = getattr(a.inputs[0], "range", None)
             if r is None:
-                cv = getattr(a.inputs[0], "const_value", None) \
-                    or (a.inputs[0] if isinstance(a.inputs[0], Const) else None)
-                if cv is not None and cv.kind == "int":
-                    try:
-                        n = int(cv.value)
-                        r = IntRange(n, n)
-                    except (TypeError, ValueError):
-                        r = None
+                # `const_int` is the canonical operand->int helper (it handles
+                # the Const / const_value split and the parse); this used to
+                # re-roll both, which is exactly the copy-paste ssa/operands.py
+                # was created to end.
+                n = const_int(a.inputs[0])
+                r = IntRange(n, n) if n is not None else None
             if r is None:
                 return
             if _set_int_value_range(out, r.lo, r.hi):
