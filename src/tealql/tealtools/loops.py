@@ -116,46 +116,70 @@ def find_loops(prog: SSAProgram, *, graph: Optional[nx.DiGraph] = None) -> LoopF
     as loops). Must be a BB→BB :class:`nx.DiGraph` over ``prog.blocks``."""
     g = graph if graph is not None else _build_cfg_graph(prog)
     loops: list[Loop] = []
-    for scc_nodes in nx.strongly_connected_components(g):
-        if len(scc_nodes) == 1:
-            (only,) = scc_nodes
-            # Trivial unless self-loop.
-            if not g.has_edge(only, only):
-                continue
-        scc = set(scc_nodes)
-        entries = {n for n in scc if any(p not in scc for p in n.predecessors)}
-        if not entries:
-            # Unreachable cycle (no entry from outside the SCC). Pick
-            # any node as a conventional entry so back-edge selection
-            # has somewhere to start.
-            entries = {next(iter(scc))}
-        back_edges, body_dag = _select_back_edges(g, scc, entries)
-        loops.append(Loop(
-            nodes=scc,
-            entries=entries,
-            back_edges=back_edges,
-            body_dag_edges=body_dag,
-        ))
-
-    # Build nesting tree: parent of L = the smallest enclosing loop, or
-    # None if L is top-level.
     parents: dict[int, Optional[int]] = {}
-    for i, l in enumerate(loops):
-        enclosing = [
-            (j, o) for j, o in enumerate(loops)
-            if i != j and l.is_nested_inside(o)
-        ]
-        if not enclosing:
-            parents[i] = None
-        else:
-            parents[i] = min(enclosing, key=lambda jo: len(jo[1].nodes))[0]
 
-    # Map BB → innermost loop index.
+    def _collect(sub: nx.DiGraph, parent: Optional[int]) -> None:
+        """Find the loops in ``sub``, then RECURSE into each one's body.
+
+        ``nx.strongly_connected_components`` returns a PARTITION — maximal,
+        pairwise-disjoint components — so one pass can never discover a nested
+        loop: ``for i: for j:`` comes back as a single SCC containing both.
+        The nesting tree built by comparing whole node-sets was therefore
+        always all-``None`` and ``is_nested_inside`` could never be true. That
+        cost real precision: the inner loop's own repetition was invisible, so
+        a nested body was summarised as if it ran once per outer iteration.
+
+        Removing a loop's back edges breaks its outermost cycle; any SCC that
+        SURVIVES inside the remainder is a genuinely nested loop, so recursing
+        yields the standard loop-nest forest.
+        """
+        for scc_nodes in nx.strongly_connected_components(sub):
+            if len(scc_nodes) == 1:
+                (only,) = scc_nodes
+                # Trivial unless self-loop.
+                if not sub.has_edge(only, only):
+                    continue
+            scc = set(scc_nodes)
+            # Entries are relative to THIS subgraph: a nested loop's entry is
+            # reached from elsewhere in the enclosing body, not from outside
+            # the whole routine.
+            entries = {n for n in scc
+                       if any(p not in scc for p in sub.predecessors(n))}
+            if not entries:
+                # No entry from outside the SCC (an unreachable cycle, or the
+                # whole subgraph IS the cycle). Pick a deterministic node so
+                # back-edge selection has somewhere to start.
+                entries = {min(scc, key=_bb_sort_key)}
+            back_edges, body_dag = _select_back_edges(sub, scc, entries)
+            idx = len(loops)
+            loops.append(Loop(
+                nodes=scc,
+                entries=entries,
+                back_edges=back_edges,
+                body_dag_edges=body_dag,
+            ))
+            parents[idx] = parent
+            if not back_edges:
+                continue                  # nothing removed -> no further nesting
+            # Cut ONLY the edges that close THIS loop (those returning to one
+            # of its headers). ``_select_back_edges`` reports every DFS back
+            # edge in the SCC, including an inner loop's own — removing all of
+            # them would break the nested cycle too and hide it. Falling back
+            # to the full set keeps termination guaranteed when no edge
+            # targets a header.
+            header_edges = [(u, v) for (u, v) in back_edges if v in entries]
+            inner = sub.subgraph(scc).copy()
+            inner.remove_edges_from(header_edges or back_edges)
+            _collect(inner, idx)
+
+    _collect(g, None)
+
+    # Map BB → innermost (smallest) containing loop index.
     innermost: dict[BasicBlock, int] = {}
     for bb in prog.blocks.values():
         candidates = [(i, l) for i, l in enumerate(loops) if bb in l.nodes]
         if candidates:
-            i_best, _ = min(candidates, key=lambda il: len(il[1].nodes))
+            i_best, _ = min(candidates, key=lambda il: (len(il[1].nodes), il[0]))
             innermost[bb] = i_best
 
     return LoopForest(loops=loops, parents=parents, innermost=innermost)

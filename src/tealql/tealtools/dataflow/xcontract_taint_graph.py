@@ -351,37 +351,59 @@ def _caller_field_nodes(
     # are BUFFERED per group (itxn_begin..itxn_submit) and only yielded once the
     # group's submit matches site.submit_line — otherwise an EARLIER submit's
     # fields (in_block never reset) would leak into a later site's callee.
+    from ..ssa.operands import const_int
+
     prog = caller_tg.prog
     in_block = False
     push_index = 0
-    pending: list[tuple[int, Node]] = []
+    # Fields are buffered PER INNER TXN, not per group: `itxn_next` starts a
+    # new txn that reuses push indices from 0. Keeping one flat buffer meant a
+    # group with two inner txns each setting <field> merged both txns' fields
+    # (with colliding push indices) onto the single callee this site names.
+    txns: list[list[tuple[int, Node]]] = [[]]
+    txn_app_ids: list[Optional[int]] = [None]
     for a in prog.assignments:
         if a.location.file != site.file:
             continue
         if a.op == "itxn_begin":
             in_block = True
             push_index = 0
-            pending = []               # new group — drop any prior group's fields
+            txns = [[]]                # new group — drop any prior group's fields
+            txn_app_ids = [None]
             continue
         if a.op == "itxn_next":
-            push_index = 0             # new txn in the SAME group — keep pending
+            push_index = 0             # a new txn in the SAME group
+            txns.append([])
+            txn_app_ids.append(None)
             continue
         if not in_block:
             continue
         if a.op == "itxn_submit":
             if a.location.line == site.submit_line:
-                yield from pending     # this is our group
+                # Prefer the txn that actually targets this site's callee; if
+                # no txn's ApplicationID resolves to it, fall back to every
+                # txn in the group (over-approximate: extra edges inflate
+                # reachability, never drop it).
+                matched = [t for t, aid in zip(txns, txn_app_ids)
+                           if aid is not None and aid == site.app_id]
+                for bucket in (matched or txns):
+                    yield from bucket
                 return
             in_block = False           # a different submit — that group wasn't ours
-            pending = []
+            txns = [[]]
+            txn_app_ids = [None]
             continue
-        if a.op == "itxn_field" and a.immediates.strip() == field:
-            # Find the matching graph node by (file, line)
-            for n in caller_tg.nodes():
-                if n.file == site.file and n.line == a.location.line:
-                    pending.append((push_index, n))
-                    break
-            push_index += 1
+        if a.op == "itxn_field":
+            imm = a.immediates.strip()
+            if imm == "ApplicationID" and a.inputs:
+                txn_app_ids[-1] = const_int(a.inputs[0])
+            if imm == field:
+                # Find the matching graph node by (file, line)
+                for n in caller_tg.nodes():
+                    if n.file == site.file and n.line == a.location.line:
+                        txns[-1].append((push_index, n))
+                        break
+                push_index += 1
 
 
 # --- cross-contract taint reachability detector -------------------

@@ -257,14 +257,24 @@ def sound_return_targets(prog: "SSAProgram") -> tuple[dict, dict]:
     other path)."""
     caller_of: dict[BasicBlock, BasicBlock] = {}
     return_target_of: dict[BasicBlock, BasicBlock] = {}
+    # Per-file blocks sorted by first_line, so "the next block after this
+    # callsub" is a bisect rather than a full scan. This runs inside
+    # PathPredicateAnalysis on every program; the old list-scan-per-callsub
+    # was O(callsubs x blocks).
+    by_file: dict[str, list[BasicBlock]] = {}
+    for b in prog.blocks.values():
+        by_file.setdefault(b.file, []).append(b)
+    for f in by_file:
+        by_file[f].sort(key=lambda x: x.first_line)
+    firsts = {f: [x.first_line for x in bs] for f, bs in by_file.items()}
     for c in prog.blocks.values():
         if not c.assignments or c.assignments[-1].op != "callsub":
             continue
-        after = [b for b in prog.blocks.values()
-                 if b.file == c.file and b.first_line > c.last_line]
-        if not after:
+        siblings = by_file.get(c.file, [])
+        i = bisect.bisect_right(firsts[c.file], c.last_line)
+        if i >= len(siblings):
             continue
-        b = min(after, key=lambda x: x.first_line)
+        b = siblings[i]
         if b.predecessors and all(
             p.assignments and p.assignments[-1].op == "retsub"
             for p in b.predecessors

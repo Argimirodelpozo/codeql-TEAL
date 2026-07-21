@@ -372,8 +372,15 @@ class InnerTxnReport:
 
         def _walk(file: str, chain: list) -> None:
             cur = chain[-1]
+            # Exclude every txn already ON this chain, not just ``cur``: the
+            # boundary pass is path-insensitive, so a loop body with two
+            # `itxn_next` ops can yield mutually-reaching pairs (a→b and b→a)
+            # and the recursion would never terminate (RecursionError — caught
+            # by detector._safe, but NOT by direct InnerTxnReport consumers
+            # such as xcontract / audit).
+            on_chain = {id(t) for t in chain}
             succs = ([t for t in by_start.get((file, cur.end_line), [])
-                      if t is not cur]
+                      if id(t) not in on_chain]
                      if cur.end_kind == "itxn_next" else [])
             if not succs:                  # closed at a submit (or dead-ends)
                 groups.append(InnerTxnGroup(

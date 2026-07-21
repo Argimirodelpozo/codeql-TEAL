@@ -12,6 +12,7 @@ detectors and reports.
 """
 from __future__ import annotations
 
+import bisect as _bisect
 from pathlib import Path
 from typing import Iterable, Optional
 
@@ -261,10 +262,39 @@ class SSAProgram:
         return self.blocks.get((file, first_line, last_line))
 
     def block_containing(self, file: str, line: int) -> Optional[BasicBlock]:
-        for bb in self.blocks.values():
-            if bb.file == file and bb.contains(line):
-                return bb
-        return None
+        """The BB whose source range contains ``(file, line)``.
+
+        Bisects a per-file index of (first_line, last_line, bb), built once and
+        cached. This is called per-instruction by several detectors, so the
+        former linear scan over every block made those callers quadratic in
+        program size."""
+        cached = getattr(self, "_bb_line_index", None)
+        # Cheap staleness check: the blocks dict is not rebuilt after
+        # construction, but re-index if it ever is.
+        if cached is None or cached[0] != len(self.blocks):
+            idx: dict = {}
+            for bb in self.blocks.values():
+                idx.setdefault(bb.file, []).append(bb)
+            # Store the sorted first_lines ALONGSIDE the blocks so the bisect
+            # key list isn't rebuilt (an O(n) scan) on every lookup.
+            packed = {
+                f: (sorted(bs, key=lambda b: b.first_line),
+                    sorted(b.first_line for b in bs))
+                for f, bs in idx.items()
+            }
+            cached = (len(self.blocks), packed)
+            self._bb_line_index = cached       # type: ignore[attr-defined]
+        entry = cached[1].get(file)
+        if entry is None:
+            return None
+        blocks, firsts = entry
+        # Rightmost block whose first_line <= line; BB ranges are disjoint and
+        # ordered, so only that one can contain the line.
+        i = _bisect.bisect_right(firsts, line) - 1
+        if i < 0:
+            return None
+        bb = blocks[i]
+        return bb if bb.contains(line) else None
 
     def assignments_in(
         self,

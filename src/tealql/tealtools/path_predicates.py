@@ -57,6 +57,7 @@ from .ssa import (
     SSAProgram,
     SSAVar,
     binary_operands,
+    const_int,
     is_const,
 )
 from .avm import CMP_OPS, LOGICAL_OPS
@@ -302,21 +303,27 @@ class PathPredicateAnalysis:
         return self.bb_preds.get(bb, frozenset())
 
     def approving_exits(self) -> list[BasicBlock]:
-        """BBs whose last opcode is ``return`` — approving exits in TEAL.
+        """BBs whose last opcode is an APPROVING ``return``.
 
-        Only ``return`` and ``err`` legitimately terminate execution
-        (running past end-of-program is itself an error). ``err`` BBs
-        are excluded as rejecting; ``return`` BBs are included
-        regardless of the popped value's const-ness — refining by
-        nonzero-only is a possible v2 once a return-value classifier
-        is needed.
+        Only ``return`` and ``err`` legitimately terminate execution (running
+        past end-of-program is itself an error). ``err`` BBs are rejecting, and
+        so is a ``return`` whose popped value is the constant ``0`` — those are
+        excluded: reporting a reject-only arm as an admissible group shape
+        (``analyze_per_exit``) is user-visible nonsense, and intersecting
+        reject-path facts into ``approving_exit_summary`` weakens the caller
+        feedback for no reason. A non-constant return value stays included
+        (it may approve).
         """
         out: list[BasicBlock] = []
         for bb in self.prog.blocks.values():
             if not bb.assignments:
                 continue
-            if bb.assignments[-1].op == "return":
-                out.append(bb)
+            last = bb.assignments[-1]
+            if last.op != "return":
+                continue
+            if last.inputs and const_int(last.inputs[0]) == 0:
+                continue                      # provably rejects
+            out.append(bb)
         return out
 
     def approving_exit_summary(self) -> frozenset[BranchCondition]:

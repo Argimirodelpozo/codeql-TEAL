@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Callable, Iterable, Protocol, runtime_checkable
+from typing import Callable, Iterable, Optional, Protocol, runtime_checkable
 
 from .ssa import SSAProgram
 
@@ -82,9 +82,15 @@ class _FnDetector:
 class _FnReport:
     name: str
     fn: Callable[[SSAProgram], str]
+    #: JSON form. Optional only so a report can be text-only; when absent
+    #: ``run_all_dict`` emits ``{}`` rather than silently omitting the key.
+    dict_fn: "Optional[Callable[[SSAProgram], dict]]" = None
 
     def run(self, prog: SSAProgram) -> str:
         return self.fn(prog)
+
+    def run_dict(self, prog: SSAProgram) -> dict:
+        return self.dict_fn(prog) if self.dict_fn is not None else {}
 
 
 # Lazy imports inside each adapter keep import-time cheap and avoid
@@ -140,6 +146,31 @@ def _path_preds(prog: SSAProgram) -> str:
     return PathPredicateAnalysis(prog).render()
 
 
+def _itxn_report_d(prog: SSAProgram) -> dict:
+    from .inner_txn_report import InnerTxnReport
+    return InnerTxnReport(prog).to_dict()
+
+
+def _group_shape_d(prog: SSAProgram) -> dict:
+    from .group_reasoning import analyze
+    return analyze(prog).to_dict()
+
+
+def _group_layout_d(prog: SSAProgram) -> dict:
+    from .group_reasoning import analyze_layout
+    return analyze_layout(prog).to_dict()
+
+
+def _cost_d(prog: SSAProgram) -> dict:
+    from .cost_analysis import to_dict
+    return to_dict(prog)
+
+
+def _path_preds_d(prog: SSAProgram) -> dict:
+    from .path_predicates import PathPredicateAnalysis
+    return PathPredicateAnalysis(prog).to_dict()
+
+
 # Only the analysis-layer detectors live here — this module is pure tealtools
 # and knows nothing about the security/ detector registry. The sec-guide
 # detectors are injected as ``extra_detectors`` by ``tealql.security.run`` (which the
@@ -154,11 +185,11 @@ ALL_DETECTORS: list[Detector] = [
 
 
 ALL_REPORTS: list[Report] = [
-    _FnReport("itxn-report", _itxn_report),
-    _FnReport("group-shape", _group_shape),
-    _FnReport("group-layout", _group_layout),
-    _FnReport("cost", _cost),
-    _FnReport("path-predicates", _path_preds),
+    _FnReport("itxn-report", _itxn_report, _itxn_report_d),
+    _FnReport("group-shape", _group_shape, _group_shape_d),
+    _FnReport("group-layout", _group_layout, _group_layout_d),
+    _FnReport("cost", _cost, _cost_d),
+    _FnReport("path-predicates", _path_preds, _path_preds_d),
 ]
 
 
@@ -206,26 +237,18 @@ def run_all_dict(prog: SSAProgram, *, extra_detectors: Iterable[Detector] = (),
     ``to_dict()`` if available, falling back to ``{"message": ...}``.
     """
     from ._utils.serialize import finding_to_dict
-    from .inner_txn_report import InnerTxnReport
-    from .group_reasoning import analyze, analyze_layout
-    from .cost_analysis import to_dict as cost_to_dict
-    from .path_predicates import PathPredicateAnalysis
 
     detectors: dict[str, list[dict]] = {}
     for det in [*ALL_DETECTORS, *extra_detectors]:
         findings = _safe(f"detector {det.name}",
                          lambda d=det: list(d.run(prog)), [], strict=strict)
         detectors[det.name] = [finding_to_dict(f) for f in findings]
+    # Driven by ALL_REPORTS, same as the text path: the JSON output used to
+    # hardcode its own copy of the list, so a report added to the registry
+    # appeared in text and silently VANISHED from --json.
     reports = {
-        "itxn-report": _safe("report itxn-report",
-                             lambda: InnerTxnReport(prog).to_dict(), {}, strict=strict),
-        "group-shape": _safe("report group-shape",
-                             lambda: analyze(prog).to_dict(), {}, strict=strict),
-        "group-layout": _safe("report group-layout",
-                              lambda: analyze_layout(prog).to_dict(), {}, strict=strict),
-        "cost": _safe("report cost", lambda: cost_to_dict(prog), {}, strict=strict),
-        "path-predicates": _safe("report path-predicates",
-                                 lambda: PathPredicateAnalysis(prog).to_dict(), {},
-                                 strict=strict),
+        rep.name: _safe(f"report {rep.name}",
+                        lambda r=rep: r.run_dict(prog), {}, strict=strict)
+        for rep in ALL_REPORTS
     }
     return {"detectors": detectors, "reports": reports}
