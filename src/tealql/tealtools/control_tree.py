@@ -232,7 +232,11 @@ def build_control_tree(prog: SSAProgram) -> Region:
     # Loop detection has to run on the *cut* CFG — otherwise recursive
     # subs (and mutual-call pairs) create cross-sub cycles that get
     # misclassified as loops and pull multiple subs' BBs into one
-    # LoopR.
+    # LoopR. It must ALSO carry the synthetic ``callsub → continuation``
+    # edges the region graph gets below: without them a callsub block
+    # dead-ends, so a loop whose body contains a call has no cycle at all
+    # and is silently flattened into a SequenceR (its iteration cost then
+    # folds as a single pass — an under-count reported as exact).
     cut_cfg = nx.DiGraph()
     for bb in prog.blocks.values():
         cut_cfg.add_node(bb)
@@ -241,6 +245,9 @@ def build_control_tree(prog: SSAProgram) -> Region:
             if (bb, s) in cut_edges:
                 continue
             cut_cfg.add_edge(bb, s)
+    for callsub_bb, cont_bb in callsub_to_continuation.items():
+        if cont_bb is not None:
+            cut_cfg.add_edge(callsub_bb, cont_bb)
     forest = find_loops(prog, graph=cut_cfg)
 
     # Initial Region graph: one BlockR per BB. Same cuts apply, plus
@@ -484,6 +491,12 @@ def _try_sequence(g: nx.DiGraph, n: Region) -> bool:
     if m is n:
         return False
     if g.in_degree(m) != 1:
+        return False
+    if g.has_edge(m, n):
+        # ``n → m → n`` is a CYCLE, not a sequence. Contracting it would
+        # drop the back edge inside the merged node and silently turn a
+        # loop into straight-line code (folded as a single iteration).
+        # Leave it for loop collapse / the Improper fallback.
         return False
     seq = _flatten_sequence([n, m])
     _replace(g, [n, m], seq)

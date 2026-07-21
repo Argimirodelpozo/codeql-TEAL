@@ -38,8 +38,10 @@ Algorithm — structural-analysis fold over the control tree:
      summary, derive ``max_iters`` from budget + 256-inner-txn
      caps, fold the body at the last-full-iter entry and at the
      partial-halting-iter entry to capture worst-case line cums.
-   - ``Improper``: irreducible fallback — assume each component
-     can run :data:`MAX_INNER_TXNS` times (sound but loose).
+   - ``Improper``: irreducible fallback — thread state through the
+     residual DAG when it is acyclic; when it still has a cycle,
+     bound it like a loop (budget-derived ``max_iters`` × one-pass
+     summary), which is sound but loose.
 
 3. Per-line cum is the max recorded across every fold visit —
    sound over-approximation in every region kind.
@@ -57,11 +59,11 @@ already there.
 
 Limitations:
 
-- ``callsub`` is counted as a single opcode (cost 1). The called
-  subroutine's body is its own BBs and is accounted for via the
-  CFG edges if those exist; if the SSA layer doesn't connect call
-  sites to subroutine entries, subroutine costs aren't amortised
-  onto the caller. Worth re-checking on a real fixture.
+- ``callsub`` is charged the callee's whole static ``(cost, submits)``
+  summary — both in the path fold and in the loop-body summary — via
+  the subroutine summary table built by ``per_line_cost_paths``. When
+  a region is analysed without its enclosing program the table is
+  empty and the call falls back to cost 1.
 - Every submitted inner txn is treated as if it were an appcall
   (only appcalls actually grant +700 budget). Filtering by
   TypeEnum via ``inner_txn_report`` would tighten this.
@@ -257,11 +259,16 @@ def _max_iters_full(
 # ---------------------------------------------------------------------------
 
 
-def _body_summary(region) -> tuple[int, int]:
+def _body_summary(region, group_size: int = ASSUMED_GROUP_SIZE) -> tuple[int, int]:
     """Worst-case ``(per_iter_cost, per_iter_submits)`` for executing
     ``region`` once. Used to drive ``_max_iters_full`` when summarising
     a parent loop. Nested loops contribute ``max_iters × body_summary``
-    of their own body — sound under-the-hood recursion."""
+    of their own body — sound under-the-hood recursion.
+
+    ``group_size`` must be the one the caller is analysing with: it sets the
+    budget ceiling that bounds nested-loop iteration counts, so a hardcoded
+    default would compute inner-loop bounds for a group size the caller never
+    asked about."""
     from .control_tree import (
         BlockR, SequenceR, IfR, IfElseR, SwitchR, GuardR, LoopR, ImproperR,
         ProgramR,
@@ -270,8 +277,8 @@ def _body_summary(region) -> tuple[int, int]:
         # Programs are independent; conservatively take the worst-case
         # program's per-iter cost (callers usually evaluate per-program
         # via the outer fold, so this branch is mostly a safety net).
-        c = max((_body_summary(p)[0] for p in region.programs), default=0)
-        s = max((_body_summary(p)[1] for p in region.programs), default=0)
+        c = max((_body_summary(p, group_size)[0] for p in region.programs), default=0)
+        s = max((_body_summary(p, group_size)[1] for p in region.programs), default=0)
         return c, s
     if isinstance(region, BlockR):
         cost = 0
@@ -280,56 +287,82 @@ def _body_summary(region) -> tuple[int, int]:
             cost += opcode_cost(a.op)
             if a.op in ("itxn_submit", "itxn_next"):
                 subs += 1
+            elif a.op == "callsub":
+                # Charge the callee's whole static cost / submit count, the
+                # same as the path fold (_fold_paths_block). Without this a
+                # loop body that CALLS a subroutine was summarised at
+                # opcode_cost("callsub") == 1 with zero submits, so
+                # _max_iters_full over-estimated the iteration count and the
+                # per-iteration bases under-accumulated — under-approximating
+                # the worst case, which breaks this module's no-false-negative
+                # contract for budget exhaustion.
+                extra_c, extra_s = _callsub_extra(region.bb)
+                cost += extra_c
+                subs += extra_s
         return cost, subs
     if isinstance(region, SequenceR):
         c = s = 0
         for p in region.parts:
-            pc, ps = _body_summary(p)
+            pc, ps = _body_summary(p, group_size)
             c += pc
             s += ps
         return c, s
     if isinstance(region, IfR):
-        cc, cs = _body_summary(region.cond)
-        tc, ts = _body_summary(region.then_branch)
+        cc, cs = _body_summary(region.cond, group_size)
+        tc, ts = _body_summary(region.then_branch, group_size)
         # Worst case: take the then-arm.
         return cc + tc, cs + ts
     if isinstance(region, IfElseR):
-        cc, cs = _body_summary(region.cond)
-        tc, ts = _body_summary(region.then_branch)
-        ec, es = _body_summary(region.else_branch)
+        cc, cs = _body_summary(region.cond, group_size)
+        tc, ts = _body_summary(region.then_branch, group_size)
+        ec, es = _body_summary(region.else_branch, group_size)
         return cc + max(tc, ec), cs + max(ts, es)
     if isinstance(region, SwitchR):
-        cc, cs = _body_summary(region.cond)
+        cc, cs = _body_summary(region.cond, group_size)
         if not region.cases:
             return cc, cs
-        max_c = max(_body_summary(c)[0] for c in region.cases)
-        max_s = max(_body_summary(c)[1] for c in region.cases)
+        max_c = max(_body_summary(c, group_size)[0] for c in region.cases)
+        max_s = max(_body_summary(c, group_size)[1] for c in region.cases)
         return cc + max_c, cs + max_s
     if isinstance(region, GuardR):
         # Worst case for "completing the body": the guard doesn't
         # fire, control falls through. cost = cond only. (The
         # exit_arm runs on a different path that doesn't continue.)
-        return _body_summary(region.cond)
+        return _body_summary(region.cond, group_size)
     if isinstance(region, LoopR):
-        body_c, body_s = _body_summary(region.body)
+        body_c, body_s = _body_summary(region.body, group_size)
         # Most permissive entry state (0, 0) → maximum iters → sound
         # over-approximation when this loop appears inside an outer body.
-        iters = _max_iters_full(0, 0, body_c, body_s, ASSUMED_GROUP_SIZE)
+        iters = _max_iters_full(0, 0, body_c, body_s, group_size)
         return body_c * iters, body_s * iters
     if isinstance(region, ImproperR):
-        # The improper's interior is an *acyclic* DAG by construction
-        # (loops were collapsed in Phase 1 of build_control_tree, so
-        # what's left in an Improper is a DAG of regions). Each
-        # component executes at most once per pass through; nested
-        # loops have already been expanded inside their LoopR
-        # ``_body_summary``. Just sum — no MAX_INNER_TXNS multiplier.
+        # Each component executes at most once per PASS through the region;
+        # nested loops were already expanded inside their LoopR summary.
         c = s = 0
         for n in region.nodes:
-            nc, ns = _body_summary(n)
+            nc, ns = _body_summary(n, group_size)
             c += nc
             s += ns
+        # An improper region is *irreducible*, not necessarily acyclic: Phase 1
+        # of build_control_tree collapses the loops it can recognise, and what
+        # survives here is exactly what it could not. When the residual has a
+        # cycle the region can run many passes, so bound it like a loop
+        # (summing one pass would UNDER-approximate the worst case).
+        if _improper_is_cyclic(region):
+            iters = _max_iters_full(0, 0, c, s, group_size)
+            return c * iters, s * iters
         return c, s
     return 0, 0
+
+
+def _improper_is_cyclic(region) -> bool:
+    """``True`` when an :class:`ImproperR`'s residual graph has a cycle."""
+    import networkx as nx
+
+    g = nx.DiGraph()
+    g.add_nodes_from(id(n) for n in region.nodes)
+    g.add_edges_from((id(u), id(v)) for u, v in region.edges)
+    return not nx.is_directed_acyclic_graph(g)
 
 
 def per_line_costs(
@@ -456,7 +489,7 @@ def _fold_paths(
             region.then_branch, cond_states, group_size, cums_per_line, op_meta
         )
         # Join: either skip (cond_states) or take then-arm (then_states).
-        return _merge_states(cond_states, then_states)
+        return _merge_states(cond_states, then_states, group_size)
 
     if isinstance(region, GuardR):
         cond_states = _fold_paths(
@@ -478,7 +511,7 @@ def _fold_paths(
         else_states = _fold_paths(
             region.else_branch, cond_states, group_size, cums_per_line, op_meta
         )
-        return _merge_states(then_states, else_states)
+        return _merge_states(then_states, else_states, group_size)
 
     if isinstance(region, SwitchR):
         cond_states = _fold_paths(
@@ -489,7 +522,7 @@ def _fold_paths(
             case_states = _fold_paths(
                 case, cond_states, group_size, cums_per_line, op_meta
             )
-            joined = _merge_states(joined, case_states)
+            joined = _merge_states(joined, case_states, group_size)
         return joined
 
     if isinstance(region, LoopR):
@@ -525,14 +558,19 @@ def _fold_improper_paths(
     try:
         topo = list(nx.topological_sort(g))
     except nx.NetworkXUnfeasible:
-        # Cyclic improper — loose fall-back.
+        # Cyclic improper — the region can run many passes, so bound it like a
+        # loop rather than charging a single pass (which UNDER-approximated the
+        # worst case and broke the no-false-negative contract downstream of an
+        # irreducible region).
         for sub in region.nodes:
             _fold_paths(sub, entry_states, group_size, cums_per_line, op_meta)
-        c, s = _body_summary(region)
+        c, s = _body_summary(region, group_size)   # already iteration-bounded
         result: set[tuple[int, int]] = set()
         for cum, ic in entry_states:
-            new_ic = min(MAX_INNER_TXNS, ic + s)
-            new_cum = min(cum + c, path_ceiling(new_ic, group_size=group_size))
+            iters = _max_iters_full(cum, ic, c, s, group_size)
+            new_ic = min(MAX_INNER_TXNS, ic + s * iters)
+            new_cum = min(cum + c * iters,
+                          path_ceiling(new_ic, group_size=group_size))
             result.add((new_cum, new_ic))
         return frozenset(result)
 
@@ -552,11 +590,11 @@ def _fold_improper_paths(
         exit_states = _fold_paths(n, es, group_size, cums_per_line, op_meta)
         succs = list(g.successors(n))
         if not succs:
-            sink_exits = _merge_states(sink_exits, exit_states)
+            sink_exits = _merge_states(sink_exits, exit_states, group_size)
             continue
         for succ in succs:
             in_states[id(succ)] = _merge_states(
-                in_states[id(succ)], exit_states
+                in_states[id(succ)], exit_states, group_size
             )
     return sink_exits
 
@@ -615,7 +653,7 @@ def _fold_paths_loop(
     halting iter). Records per-line cums on each iter into
     ``cums_per_line``. Returns the union of exit states across all
     entry states and iter counts."""
-    body_cost, body_submits = _body_summary(region.body)
+    body_cost, body_submits = _body_summary(region.body, group_size)
     exits: set[tuple[int, int]] = set()
     for entry_cum, entry_ic in sorted(entry_states, reverse=True):
         if body_cost == 0:
@@ -670,16 +708,38 @@ def _fold_paths_loop(
 def _merge_states(
     a: frozenset[tuple[int, int]],
     b: frozenset[tuple[int, int]],
+    group_size: int = ASSUMED_GROUP_SIZE,
 ) -> frozenset[tuple[int, int]]:
     """Set-union with a soft cap so chained branches/loops can't blow
-    up the state set unboundedly. Past the cap we keep the largest
-    cums (worst-case is what callers care about)."""
+    up the state set unboundedly.
+
+    Past the cap, rank by remaining HEADROOM (``path_ceiling(ic) - cum``),
+    not by raw cum. A lower-cum state with a much larger inner-txn count
+    carries a far higher ceiling and can legally accumulate tens of
+    thousands more units downstream, so "keep the largest cums" could drop
+    the state that actually produces the worst case. Both extremes are
+    force-kept so neither the max-cum nor the max-headroom answer is lost."""
     merged = a | b
     if len(merged) <= MAX_CUMS_PER_LINE:
         return merged
-    # Cap reached — keep the largest cums (sound for max-cum questions
-    # downstream; the dropped states have strictly smaller cums).
-    return frozenset(sorted(merged, key=lambda s: (s[0], s[1]))[-MAX_CUMS_PER_LINE:])
+    keep = set()
+    by_cum = max(merged, key=lambda s: (s[0], s[1]))
+    by_head = max(
+        merged,
+        key=lambda s: (path_ceiling(s[1], group_size=group_size) - s[0], s[1]),
+    )
+    keep.add(by_cum)
+    keep.add(by_head)
+    ranked = sorted(
+        merged,
+        key=lambda s: (path_ceiling(s[1], group_size=group_size) - s[0], s[0]),
+        reverse=True,
+    )
+    for st in ranked:
+        if len(keep) >= MAX_CUMS_PER_LINE:
+            break
+        keep.add(st)
+    return frozenset(keep)
 
 
 def render(prog: SSAProgram) -> str:
