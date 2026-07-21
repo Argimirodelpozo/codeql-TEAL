@@ -282,7 +282,12 @@ class _Translator:
                              blocks=[B[b] for b in t.blocks], default=B[t.default])
         if isinstance(t, pre_ir.Switch):
             val = self.val(t.value)
-            is_u64 = getattr(val, "ir_type", None) == PT.uint64
+            # Test the AVM TYPE FAMILY, not the exact ir_type: type recovery
+            # refines uint64 registers to bool / asset / application, and an
+            # exact `== PT.uint64` then misclassified those as bytes-keyed —
+            # `_bytes_const("5")` raises (not a byte literal), failing the lift.
+            _vt = getattr(val, "ir_type", None)
+            is_u64 = (getattr(_vt, "avm_type", None) == PT.uint64.avm_type)
             cases = {}
             for lbl, blk in t.cases:
                 if is_u64:                       # uint64-keyed match (e.g. OnCompletion)

@@ -760,9 +760,12 @@ class _Lifter:
             term = self._control_switch(t, succ)
             if term is not None:
                 return term
-        if op == "match":
-            return pre_ir.GotoNth(self._sel_value(t),
-                              [self.bid[s] for s in succ[:-1]], self.bid[succ[-1]])
+        # `match` is KEYED (it compares the popped value against the case
+        # values), so routing it with a POSITIONAL GotoNth over CFG-successor
+        # order mis-targets the arms and coerces a bytes key to uint64. When
+        # neither key recovery nor the source fallback worked we genuinely do
+        # not know the selector — say so with Undefined rather than emit a
+        # confident wrong route.
         return pre_ir.GotoNth(pre_ir.Undefined(),
                               [self.bid[s] for s in succ[:-1]], self.bid[succ[-1]])
 

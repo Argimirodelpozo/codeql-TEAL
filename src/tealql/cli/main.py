@@ -104,6 +104,19 @@ def _check_parse_health(prog, args) -> None:
     covers only part of the source. Default: loud warning (a partially-
     parsed contract must never read as silently clean). ``--strict``:
     raise, which the top level turns into exit code 2."""
+    # An opcode this build has never seen is modelled with a (0, 0) stack
+    # effect, which corrupts the simulation everything else is derived from —
+    # exactly as damaging as an unparsed span, and previously silent.
+    from tealql.tealtools.avm import unknown_opcodes
+
+    unknown = sorted(unknown_opcodes())
+    if unknown:
+        logger.warning(
+            "%d opcode(s) unknown to this build were modelled with NO stack "
+            "effect, so results for programs using them are unreliable "
+            "(%s). This build may predate the contract's AVM version.",
+            len(unknown), ", ".join(unknown[:8]),
+        )
     diags = getattr(prog, "parse_diagnostics", ())
     if not diags:
         return

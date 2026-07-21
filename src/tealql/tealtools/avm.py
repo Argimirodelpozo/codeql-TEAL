@@ -59,7 +59,7 @@ SIG: dict[str, tuple[int, int]] = {
     "b|": (2, 1), "b&": (2, 1), "b^": (2, 1), "b~": (1, 1),
     # Hashing
     "sha256": (1, 1), "sha512_256": (1, 1), "keccak256": (1, 1),
-    "sha3_256": (1, 1), "mimc": (1, 1),
+    "sha3_256": (1, 1), "mimc": (1, 1), "sumhash512": (1, 1),
     # Crypto
     "ed25519verify": (3, 1), "ed25519verify_bare": (3, 1), "ecdsa_verify": (5, 1),
     "ecdsa_pk_decompress": (1, 2), "ecdsa_pk_recover": (4, 2), "vrf_verify": (3, 2),
@@ -80,6 +80,11 @@ SIG: dict[str, tuple[int, int]] = {
     "bytec": (0, 1), "bytec_0": (0, 1), "bytec_1": (0, 1), "bytec_2": (0, 1),
     "bytec_3": (0, 1), "pushbytes": (0, 1), "bytecblock": (0, 0), "bzero": (1, 1),
     # Control flow (callsub/retsub handled by op_arity overrides; match dynamic)
+    # NOTE `return` is DELIBERATELY (0, 0) though the AVM pops 1 (the approval
+    # value): it terminates the program, so modelling the pop would shrink the
+    # exit stack the lift reads its ProgramExit operand off, and
+    # `path_predicates` documents not classifying that value. Any NEW consumer
+    # of op_arity must account for this one divergence from the spec.
     "return": (0, 0), "err": (0, 0), "assert": (1, 0), "b": (0, 0),
     "bnz": (1, 0), "bz": (1, 0), "switch": (1, 0),
     # Stack manipulation (dig/popn/dupn/bury/cover/uncover/frame_* dynamic)
@@ -131,8 +136,28 @@ def _imm_int(immediates: str) -> int:
         return 0
 
 
+#: Opcodes ``op_arity`` was asked about but does not know. A future AVM version
+#: adds opcodes this table has never seen; they silently default to ``(0, 0)``,
+#: which makes the whole downstream stack simulation wrong with no signal at
+#: all. Recording them lets a caller (and :func:`unknown_opcodes`) surface the
+#: gap instead of trusting a bad model. Module-level because ``op_arity`` is a
+#: pure function called from every layer.
+_UNKNOWN_OPS: set[str] = set()
+
+
+def unknown_opcodes() -> frozenset[str]:
+    """Opcodes seen so far that have no entry in :data:`SIG` — their stack
+    effect was modelled as ``(0, 0)``, so any analysis of a program using them
+    is unreliable. Non-empty means this build predates the contract's AVM
+    version (or the table is missing an op)."""
+    return frozenset(_UNKNOWN_OPS)
+
+
 def op_arity(op: str, immediates: str) -> tuple[int, int]:
-    """Return ``(n_in, n_out)`` for an opcode + its immediate text."""
+    """Return ``(n_in, n_out)`` for an opcode + its immediate text.
+
+    An opcode absent from :data:`SIG` yields ``(0, 0)`` and is recorded in
+    :func:`unknown_opcodes` — see the note there."""
     o = _FRAME_OVERRIDES.get(op)
     if o is not None:
         return o
@@ -156,7 +181,11 @@ def op_arity(op: str, immediates: str) -> tuple[int, int]:
         return (0, len(_split_byte_literals(immediates)))
     if op == "match":
         return (len(immediates.split()) + 1, 0)
-    return SIG.get(op, (0, 0))
+    sig = SIG.get(op)
+    if sig is None:
+        _UNKNOWN_OPS.add(op)
+        return (0, 0)
+    return sig
 
 
 # ===========================================================================

@@ -53,7 +53,13 @@ from ..cfg.dominance import iterative_dominators
 # (canonical FUND_FIELDS in tealql.tealtools.avm).
 _SEV_ORDER = {"CRITICAL": 3, "HIGH": 2, "MEDIUM": 1, "LOW": 0}
 
-_TXN_SENDER_FAM = frozenset({"txn", "txna", "gtxn", "gtxna", "gtxns", "gtxnsa"})
+#: Reads of the CURRENT transaction's Sender. The ``gtxn*`` sibling family is
+#: DELIBERATELY excluded: `gtxn 1 Sender` is another group transaction's
+#: sender, and whoever composes the group chooses it, so treating it as an
+#: authorisation check let an attacker-satisfiable condition suppress a real
+#: fund flow. Only the current txn's sender (and the immutable creator) are
+#: sound authorisation signals here.
+_TXN_SENDER_FAM = frozenset({"txn", "txna"})
 
 
 # --------------------------------------------------------------------------

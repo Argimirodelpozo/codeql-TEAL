@@ -715,15 +715,18 @@ def _infer_state_types(lifter):
             key_types.setdefault(rk, set()).add("bytes" if fam == "b" else "uint64")
 
     def _resolve(types: set):
-        # One put type -> that type. On a conflict, a `bytes` put is
-        # authoritative: a Puya-typed key never mixes types, so a bytes/
-        # uint64 clash means some reads of a bytes key (an address/hash) were
-        # mistyped uint64 by an `==` peer and then re-stored -- resolve the
-        # whole chain to bytes. (Puya-compiled contracts never conflict, so
-        # this only fires on decompiled type-recovery slips.)
+        # ONE put type -> that type. A genuine bytes/uint64 clash is left
+        # UNRESOLVED: forcing the whole chain to bytes crossed the avm_type
+        # divide by fiat, and type recovery's contract is that it only refines
+        # WITHIN a family (same avm_type, coarse -> fine) so it stays a pure
+        # annotation. Demoting a register that genuinely feeds a uint64 op
+        # would propagate and change lowering — a real semantic change made on
+        # the strength of a guess about which side was mistyped. Puya-compiled
+        # contracts never conflict, so this only gives up on the decompiled
+        # type-recovery slips it used to guess at.
         if len(types) == 1:
             return next(iter(types))
-        return "bytes" if "bytes" in types else None
+        return None
 
     key_types = {k: t for k, s in key_types.items()
                  if (t := _resolve(s)) is not None}
