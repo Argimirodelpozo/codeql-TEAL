@@ -79,7 +79,14 @@ def compute_inner_txn_fields(prog: SSAProgram) -> list:
         src_bb, src_i = src_info
         dst_bb, dst_i = dst_info
         if src_bb is dst_bb:
-            return src_i <= dst_i
+            # Forward within the block, OR backward around a DIRECT self-loop:
+            # in a single-block loop body an `itxn_field` written textually
+            # above its `itxn_begin` still reaches it on the next lap. Keyed on
+            # a real self-edge, not general `bb_forward` membership — a block
+            # inside any larger cycle is reachable from itself, which would
+            # make every op reach every other and collapse the boundary
+            # pairing entirely.
+            return src_i <= dst_i or src_bb in getattr(src_bb, "successors", ())
         return dst_bb in bb_forward[src_bb]
 
     def _resolve_def_key(op_input):

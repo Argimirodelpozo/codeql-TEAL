@@ -1297,21 +1297,23 @@ def _seed_consts_and_identity_steps(prog: SSAProgram, scratch_stores: dict) -> N
 
 
 def _drop_unconsumed_phis(prog: SSAProgram) -> None:
-    """Drop phis not transitively consumed by any op input, so ``prog.phis``
-    is the consumer set rather than the full builder output."""
-    _consumed: set = set()
+    """Drop phis not consumed by any op input, so ``prog.phis`` is the
+    consumer set rather than the full builder output.
+
+    A DIRECT filter: ``_collapse_phi_args_to_leaves`` has already run, so a
+    public ``Phi.args`` holds only ``SSAVar``s and a phi can never be reached
+    *through* another phi. This used to run a transitive worklist over
+    phi-valued args, which was dead code (measured: zero phi-typed args across
+    the corpus) that read as if phi-through-phi consumption were handled — so
+    a future change to leaf collapse would have silently relied on it."""
+    _reached: set = set()
     for _a in prog.assignments:
         for _inp in _a.inputs:
             if isinstance(_inp, Phi):
-                _consumed.add(id(_inp))
-    _reached: set = set(_consumed)
-    _work: list = [p for p in prog.phis.values() if id(p) in _reached]
-    while _work:
-        _phi = _work.pop()
-        for _arg in _phi.args:
-            if isinstance(_arg, Phi) and id(_arg) not in _reached:
-                _reached.add(id(_arg))
-                _work.append(_arg)
+                _reached.add(id(_inp))
+    assert not any(isinstance(_arg, Phi)
+                   for _p in prog.phis.values() for _arg in _p.args), \
+        "phi args must be leaf-collapsed before _drop_unconsumed_phis"
     prog.phis = {k: p for k, p in prog.phis.items() if id(p) in _reached}
     for bb in prog.blocks.values():
         bb.phis = [p for p in bb.phis if id(p) in _reached]

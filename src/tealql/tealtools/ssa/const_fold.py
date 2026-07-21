@@ -312,6 +312,14 @@ def _fold_cmp(op: str, inputs: list[Const]) -> Optional[Const]:
             x = int.from_bytes(bx, "big")
             y = int.from_bytes(by, "big")
         else:
+            # The BARE ordered comparisons (`<` `<=` `>` `>=`) are uint64-only:
+            # two bytes operands is a type error the AVM rejects at runtime, so
+            # that path produces NO value and must not be folded. (Folding gave
+            # Python's LEXICOGRAPHIC answer, inventing a constant on an
+            # always-erroring path — the same policy `-` underflow and the
+            # over-shifts already follow.) `==` / `!=` on bytes are legal.
+            if op not in ("==", "!="):
+                return None
             x, y = bx, by
     else:
         return None
