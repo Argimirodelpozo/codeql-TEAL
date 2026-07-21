@@ -85,22 +85,39 @@ def compute_const_values(g) -> list[tuple]:
     value)`` tuples, computed from the loaded graph's AST nodes."""
     opcodes = [n for n in g.nodes if isinstance(n, Opcode)]
 
-    intcblocks = [n for n in opcodes if _opname(n) == "intcblock"]
-    bytecblocks = [n for n in opcodes if _opname(n) == "bytecblock"]
-    intc_vals: Optional[list] = (
-        [_to_int(t) for t in _split_int_tokens(_imms(intcblocks[0]))]
-        if len(intcblocks) == 1 else None
-    )
-    bytec_vals: Optional[list] = (
-        _split_byte_literals(_imms(bytecblocks[0]))
-        if len(bytecblocks) == 1 else None
-    )
+    # Constant blocks are PER FILE: each program carries its own intcblock /
+    # bytecblock, and `intc_1` resolves against its OWN file's table. Pooling
+    # them across the whole graph (the documented directory target is approval
+    # + clear) meant two files each with a block resolved NOTHING in either,
+    # and one block plus two files resolved the second file's `intc` against
+    # the first file's table — a silently WRONG constant.
+    intc_by_file: dict[str, Optional[list]] = {}
+    bytec_by_file: dict[str, Optional[list]] = {}
+    _intcblocks: dict[str, list] = {}
+    _bytecblocks: dict[str, list] = {}
+    for n in opcodes:
+        op = _opname(n)
+        if op == "intcblock":
+            _intcblocks.setdefault(n.location.file, []).append(n)
+        elif op == "bytecblock":
+            _bytecblocks.setdefault(n.location.file, []).append(n)
+    for f_, blocks in _intcblocks.items():
+        intc_by_file[f_] = (
+            [_to_int(t) for t in _split_int_tokens(_imms(blocks[0]))]
+            if len(blocks) == 1 else None
+        )
+    for f_, blocks in _bytecblocks.items():
+        bytec_by_file[f_] = (
+            _split_byte_literals(_imms(blocks[0])) if len(blocks) == 1 else None
+        )
 
     rows: list[tuple] = []
     for n in opcodes:
         op = _opname(n)
         f = n.location.file
         ln = n.location.start_line
+        intc_vals: Optional[list] = intc_by_file.get(f)
+        bytec_vals: Optional[list] = bytec_by_file.get(f)
 
         if op in ("int", "pushint"):
             v = _resolve_int_immediate(_imms(n))

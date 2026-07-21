@@ -42,46 +42,23 @@ import re
 # have none of these -> unchanged.
 
 
-def _teal_str_bytes(s: str) -> bytes:
-    """Decode a TEAL ``"..."`` string body (\\\\ \\" \\n \\r \\t \\xNN)."""
-    out = bytearray()
-    i = 0
-    while i < len(s):
-        c = s[i]
-        if c == "\\" and i + 1 < len(s):
-            n = s[i + 1]
-            if n == "x" and i + 4 <= len(s):
-                out.append(int(s[i + 2:i + 4], 16)); i += 4; continue
-            out.append({"n": 10, "r": 13, "t": 9, "\\": 92, '"': 34}.get(n, ord(n)))
-            i += 2; continue
-        out.append(ord(c)); i += 1
-    return bytes(out)
-
-
 def _byte_literal(v: str):
     """Raw bytes for a TEAL byte literal (``0x`` / ``"str"`` / ``b64``/``base64(..)``
-    / ``b32``/``base32(..)``), or None if unrecognised."""
-    v = v.strip()
+    / ``b32``/``base32(..)``), or None if unrecognised.
+
+    Thin wrapper over the canonical :func:`tealql.tealtools.ast.literals.
+    decode_byte_literal`. This module previously carried its own copy, which had
+    drifted: its string decoder emitted ``ord(c)`` per character, so a non-ASCII
+    literal like ``byte "caf\u00e9"`` normalised to ``636166e9`` instead of the
+    assembler's UTF-8 ``636166c3a9`` — every guard comparing against that
+    constant then mis-evaluated. One decoder, one behaviour.
+    """
+    from .ast.literals import decode_byte_literal
     try:
-        if v.startswith("0x"):
-            return bytes.fromhex(v[2:])
-        if v.startswith('"') and v.endswith('"'):
-            return _teal_str_bytes(v[1:-1])
-        if v.startswith(("b64 ", "base64 ")):
-            b = v.split(None, 1)[1].strip()
-            return base64.b64decode(b + "=" * (-len(b) % 4))
-        if v.startswith("base64(") and v.endswith(")"):
-            b = v[7:-1]
-            return base64.b64decode(b + "=" * (-len(b) % 4))
-        if v.startswith(("b32 ", "base32 ")):
-            b = v.split(None, 1)[1].strip()
-            return base64.b32decode(b + "=" * (-len(b) % 8))
-        if v.startswith("base32(") and v.endswith(")"):
-            b = v[7:-1]
-            return base64.b32decode(b + "=" * (-len(b) % 8))
+        raw, _kind = decode_byte_literal(v.strip())
     except Exception:
         return None
-    return None
+    return raw
 
 
 def _strip_inline_comment(code: str) -> str:

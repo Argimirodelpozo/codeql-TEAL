@@ -176,7 +176,17 @@ def _program_cfg(
     nxt_of: dict[int, _Node | None] = {
         i: (kids[i + 1] if i + 1 < len(kids) else None) for i in range(len(kids))
     }
-    labels: dict[str, _Node] = {k.label_name(): k for k in kids if k.cls == _LABEL}
+    # FIRST definition wins on a duplicate label. The assembler rejects
+    # duplicates outright, so this only arises on adversarial / hand-written
+    # source; the previous dict comprehension silently took the LAST, which
+    # branched past the first definition's code and pruned it as unreachable —
+    # a confidently wrong graph. Taking the first keeps the branch target the
+    # earliest reachable definition (`_program_cfg` callers surface the
+    # duplicate through the parse-diagnostic channel).
+    labels: dict[str, _Node] = {}
+    for k in kids:
+        if k.cls == _LABEL:
+            labels.setdefault(k.label_name(), k)
     idx_of = {id(k): i for i, k in enumerate(kids)}
 
     # --- subroutine-local containment + retsub return prediction -----------

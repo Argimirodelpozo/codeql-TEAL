@@ -34,17 +34,38 @@ NAMED_INT_CONSTANTS: dict[str, int] = {
 }
 
 
+_HEX_DIGITS = frozenset("0123456789abcdefABCDEF")
+
+
 def _teal_str_bytes(s: str) -> bytes:
-    r"""Decode a TEAL ``byte "..."`` string body (handles \\ \" \n \r \t \xNN)."""
+    r"""Decode a TEAL ``byte "..."`` string body (handles \\ \" \n \r \t \xNN).
+
+    Non-ASCII characters encode as UTF-8, matching the assembler — emitting
+    ``ord(c)`` as one byte (as a former duplicate of this function in
+    ``graph.py`` did) turns ``byte "café"`` into ``636166e9`` where the real
+    constant is ``636166c3a9``, so every comparison against it mis-evaluates.
+
+    A malformed escape is emitted literally rather than raising: this runs on
+    untrusted / hand-written source, the assembler would reject such a file
+    anyway, and a decode crash escaping as a non-LiftError reads as a genuine
+    bug (see :mod:`tealql.tealtools.errors`).
+    """
     out = bytearray()
     i = 0
     while i < len(s):
         c = s[i]
         if c == "\\" and i + 1 < len(s):
             n = s[i + 1]
-            if n == "x" and i + 3 < len(s) + 1:
-                out.append(int(s[i + 2:i + 4], 16))
-                i += 4
+            if n == "x":
+                # Need BOTH hex digits present and valid (`i + 4 <= len(s)`);
+                # the old bound `i + 3 < len(s) + 1` accepted a truncated
+                # one-digit `\x4` and decoded it as 0x04.
+                if i + 4 <= len(s) and set(s[i + 2:i + 4]) <= _HEX_DIGITS:
+                    out.append(int(s[i + 2:i + 4], 16))
+                    i += 4
+                    continue
+                out.extend(c.encode("utf-8"))      # malformed -> literal
+                i += 1
                 continue
             out.append({"n": 10, "r": 13, "t": 9, "\\": 92, '"': 34}.get(n, ord(n)))
             i += 2

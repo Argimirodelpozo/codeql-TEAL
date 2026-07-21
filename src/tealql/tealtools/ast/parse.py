@@ -235,14 +235,43 @@ def parse_nodes(
                 i += 2
                 continue
             if _named_int_error(ch):
-                # Recovered `int <name>`: span the `int` token through the named
+                # Recovered `int <name>`: span each `int` token through its named
                 # identifier (tight, robust to greedy ERROR recovery), emit as
                 # the same opcode class a numeric `int N` gets.
-                a, b = ch.children[0], ch.children[1]
-                op_nodes.append(_node(
-                    a.start_point[0] + 1, a.start_point[1],
-                    b.end_point[0] + 1, b.end_point[1],
-                    SingleNumericArgumentOpcode))
+                #
+                # ERROR recovery is GREEDY: consecutive named ints
+                # (`int pay` / `int axfer`) collapse into ONE error node, so
+                # recovering only children[0..1] silently swallowed every
+                # instruction after the first. Walk the whole child list,
+                # recovering every `int <name>` pair, and record anything left
+                # unconsumed as a diagnostic rather than dropping it in silence.
+                kids_e = list(ch.children)
+                j = 0
+                unconsumed: list = []
+                while j < len(kids_e):
+                    a = kids_e[j]
+                    b = kids_e[j + 1] if j + 1 < len(kids_e) else None
+                    if (a.type == "int" and b is not None
+                            and b.type == "label_identifier"):
+                        op_nodes.append(_node(
+                            a.start_point[0] + 1, a.start_point[1],
+                            b.end_point[0] + 1, b.end_point[1],
+                            SingleNumericArgumentOpcode))
+                        j += 2
+                        continue
+                    if not _is_trivia(a.type):
+                        unconsumed.append(a)
+                    j += 1
+                if unconsumed and diagnostics is not None:
+                    lo = min(u.start_point[0] for u in unconsumed) + 1
+                    hi = max(u.end_point[0] for u in unconsumed) + 1
+                    text = src[unconsumed[0].start_byte:
+                               unconsumed[-1].end_byte].decode("utf-8", "replace")
+                    snippet = (text.splitlines()[0].strip()[:80]
+                               if text.strip() else "")
+                    diagnostics.append(ParseDiagnostic(
+                        file=file, start_line=lo, end_line=hi, snippet=snippet,
+                    ))
                 i += 1
                 continue
             sl, sc, el, ec = _loc(ch)
@@ -252,6 +281,45 @@ def parse_nodes(
                 cls, override = _class_for(ch)
                 op_nodes.append(_node(sl, sc, el, ec, cls, override))
             i += 1
+
+        # One instruction per line is an ARCHITECTURAL invariant, not a style
+        # preference: AstNode identity, SSAVar identity (file, line, index),
+        # the scratch/cost/graph indexes and every reported violation are all
+        # keyed by (file, line). TEAL's grammar does allow `int 1; int 2`, and
+        # such a line silently COLLAPSES to a single graph node — the extra
+        # pushes vanish and the consuming op loses operands. We cannot
+        # represent it, so we must not pretend to: record it through the same
+        # channel as unparseable source (strict callers then refuse, and a
+        # scan of such a file never reads as "clean").
+        if diagnostics is not None:
+            by_line: dict[int, list] = {}
+            for n in op_nodes:
+                by_line.setdefault(n.location.start_line, []).append(n)
+            for ln, group in sorted(by_line.items()):
+                if len(group) > 1:
+                    diagnostics.append(ParseDiagnostic(
+                        file=file, start_line=ln, end_line=ln,
+                        snippet=(f"{len(group)} instructions on one line "
+                                 f"(only the first is analyzed): "
+                                 f"{'; '.join(g.code for g in group)[:80]}"),
+                    ))
+            # Duplicate labels: the assembler rejects them, and branch
+            # resolution can only pick one target, so the other definition's
+            # code becomes unreachable and is pruned. Never silently.
+            seen_labels: dict[str, int] = {}
+            for n in label_nodes:
+                nm = n.code.rstrip(":").strip()
+                if nm in seen_labels:
+                    diagnostics.append(ParseDiagnostic(
+                        file=file,
+                        start_line=n.location.start_line,
+                        end_line=n.location.start_line,
+                        snippet=(f"duplicate label {nm!r} (first defined at "
+                                 f"line {seen_labels[nm]}; branches resolve to "
+                                 f"that one and this block is unreachable)"),
+                    ))
+                else:
+                    seen_labels[nm] = n.location.start_line
 
         reach_lines: set[int] = set()
         kids = _children(op_nodes + label_nodes).get(file, [])

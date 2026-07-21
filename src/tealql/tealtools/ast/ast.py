@@ -52,10 +52,13 @@ class Location:
 class AstNode:
     """Any TEAL AST node that can appear as a graph node.
 
-    Hashing/equality are keyed by ``(file, start_line)`` — TEAL is
+    Hashing/equality are keyed by ``(file, start_line)`` — analyzed TEAL is
     one-instruction-per-line, so this uniquely identifies each node and
     lets edge endpoints (reported by ``(file, line)``) look
-    up the matching node instance directly.
+    up the matching node instance directly. The grammar does permit
+    ``int 1; int 2``; :func:`tealql.tealtools.ast.parse.parse_nodes` records
+    any such line as a ``ParseDiagnostic`` rather than letting it collapse
+    into one node unnoticed.
     """
 
     #: Registry of ``node_class`` name -> concrete ``AstNode`` subclass.
@@ -88,6 +91,13 @@ class AstNode:
         self.location = location
         self.code = code
 
+    # NOTE the (file, start_line) key is an ARCHITECTURAL invariant shared with
+    # SSAVar identity ``(file, line, index)``, the scratch / cost / graph
+    # indexes and every reported violation — not a local choice. TEAL's grammar
+    # permits several instructions on one line (``int 1; int 2``), which this
+    # key cannot distinguish; ``ast.parse`` records any such line as a
+    # ParseDiagnostic so it is never analyzed silently. Widening the key to
+    # include ``start_column`` means widening all of the above with it.
     def __hash__(self) -> int:
         return hash((self.location.file, self.location.start_line))
 
@@ -198,13 +208,11 @@ class ComparisonOpcode(Opcode): pass
 class LogicalComparisonOp(ComparisonOpcode): pass
 
 class EqualsComparisonOpcode(LogicalComparisonOp): mnemonic = "=="
-class NotEqualsComparisonOpcode(LogicalComparisonOp): pass
 class NotOpcode(ComparisonOpcode): mnemonic = "!"
 class IntegerLessThanOpcode(ComparisonOpcode): mnemonic = "<"
 class IntegerLteOpcode(ComparisonOpcode): mnemonic = "<="
 class IntegerGreaterThanOpcode(ComparisonOpcode): mnemonic = ">"
 class IntegerGteOpcode(ComparisonOpcode): mnemonic = ">="
-class IntegerEqualsOpcode(ComparisonOpcode): pass
 class IntegerNotEqualsOpcode(ComparisonOpcode): mnemonic = "!="
 
 
@@ -237,7 +245,7 @@ class BitnotOpcode(LogicOpcode): mnemonic = "~"
 class BorOpcode(LogicOpcode): mnemonic = "b|"
 class BandOpcode(LogicOpcode): mnemonic = "b&"
 class BxorOpcode(LogicOpcode): mnemonic = "b^"
-class BnotOpcode(LogicOpcode): pass
+class BnotOpcode(LogicOpcode): mnemonic = "b~"
 
 
 # ---------------------------------------------------------------------------
