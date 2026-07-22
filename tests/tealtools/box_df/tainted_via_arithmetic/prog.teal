@@ -1,0 +1,22 @@
+#pragma version 10
+// External arg passes through btoi + arithmetic before reaching the box
+// write. Arithmetic is NOT sanitisation: after `% 1000` the attacker still
+// chooses the value, just from a smaller set — every one of those 1000
+// outcomes is theirs to pick. The flow must stay flagged.
+//
+// This fixture previously asserted "(no violations)" and was named
+// safe_via_arithmetic, documenting a REAL false negative (the engine's
+// default is BLOCK, and no rule covered arithmetic) as if it were intended
+// behaviour. Its own comment had already gone stale — it claimed taint dies
+// at `btoi`, which propagates via the transcode rule.
+
+pushbytes "k"
+txna ApplicationArgs 1
+btoi
+pushint 1000
+%
+itob
+box_put
+
+pushint 1
+return

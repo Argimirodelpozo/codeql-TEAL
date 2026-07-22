@@ -171,6 +171,48 @@ CONCAT_PROPAGATION_RULE = FlowRule(
 )
 
 
+#: Ops whose output is a deterministic FUNCTION of their operands, so attacker
+#: influence carries straight through: control `x` and you control `x + 1`.
+#: Without these the boolean engine dropped taint at the first bit of
+#: arithmetic — `btoi(arg) + 1` reaching a box_put / itxn field was simply not
+#: reported. (``byte_taint`` never had this hole: its fallback taints the
+#: output of ANY op with a tainted input, so only this engine, whose default
+#: is BLOCK, needed them enumerated.)
+#:
+#: Deliberately EXCLUDED, each for a reason:
+#:   * ``len`` / ``bitlen`` — metadata about the value, not the value (same
+#:     call ``byte_taint`` makes).
+#:   * comparisons and ``&&`` / ``||`` / ``!`` — they produce a branch
+#:     condition, not a value; tainting them would mark most guards attacker-
+#:     derived and swamp every consumer.
+#:   * ``bzero`` — the attacker picks the LENGTH, but the content is zeros.
+#:   * the crypto VERIFY ops (``ed25519verify``, ``ecdsa_verify``,
+#:     ``ec_pairing_check``, ``ec_subgroup_check``) — a 0/1 validity flag.
+#:   * state / txn-field reads — those are SOURCES, seeded directly; taint on
+#:     a key operand does not make the stored value attacker-controlled.
+_VALUE_TRANSFORM_OPS = frozenset({
+    # uint64 arithmetic, incl. the wide (two-output) forms
+    "+", "-", "*", "/", "%", "exp", "sqrt", "shl", "shr", "<<", ">>",
+    "addw", "mulw", "expw", "divw", "divmodw",
+    # bitwise
+    "&", "|", "^", "~",
+    # single-bit read (the sibling of `getbyte`, which SLICE already covers)
+    "getbit",
+    # value transforms / derivations
+    "base64_decode", "mimc", "sumhash512", "json_ref", "bsqrt",
+    "ecdsa_pk_decompress", "ecdsa_pk_recover",
+})
+
+VALUE_TRANSFORM_RULE = FlowRule(
+    name="value-transform-of-tainted",
+    matches=lambda a: a.op in _VALUE_TRANSFORM_OPS,
+    # Any tainted operand taints EVERY output: for the multi-output forms
+    # (`addw` hi/lo, `divmodw`'s quad, `ecdsa_pk_recover`'s X/Y) the attacker
+    # influences both halves.
+    flows=lambda a, ti: [i + 1 for i in range(len(a.outputs))] if ti else [],
+)
+
+
 #: ``select A B C`` returns A or B depending on C — the result IS one of the
 #: two values, so taint on either flows through. It is NOT a pure stack shuffle
 #: (``_shuffle_mapping`` excludes it), so without a rule the boolean engine
@@ -227,6 +269,7 @@ DEFAULT_RULES: list[FlowRule] = [
     HASH_PROPAGATION_RULE,
     SLICE_PROPAGATION_RULE,
     TRANSCODE_PROPAGATION_RULE,
+    VALUE_TRANSFORM_RULE,
     CONCAT_PROPAGATION_RULE,
     SELECT_PROPAGATION_RULE,
     SPLICE_PROPAGATION_RULE,
@@ -242,6 +285,7 @@ ATTACKER_CONTROL_RULES: list[FlowRule] = [
     HASH_PROPAGATION_RULE,
     SLICE_PROPAGATION_RULE,
     TRANSCODE_PROPAGATION_RULE,
+    VALUE_TRANSFORM_RULE,
     CONCAT_ANY_PROPAGATION_RULE,
     SELECT_PROPAGATION_RULE,
     SPLICE_PROPAGATION_RULE,
