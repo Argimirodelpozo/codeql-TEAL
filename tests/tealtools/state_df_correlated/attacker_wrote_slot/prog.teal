@@ -1,0 +1,20 @@
+#pragma version 10
+// The ROUND TRIP state-df-correlated exists to find: an attacker-controlled
+// arg is stored in global "admin", and a later read of that SAME slot steers
+// an inner payment. `state-df-out` also reports this, but it reports every
+// state-read-to-sink flow; this one fires only because the slot is one an
+// attacker can write.
+pushbytes "admin"
+txna ApplicationArgs 1
+app_global_put
+
+itxn_begin
+pushint 1
+itxn_field TypeEnum
+pushbytes "admin"
+app_global_get
+itxn_field Receiver
+itxn_submit
+
+pushint 1
+return

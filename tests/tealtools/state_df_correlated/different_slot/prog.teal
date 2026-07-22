@@ -1,0 +1,17 @@
+#pragma version 10
+// The attacker writes "other", but the routed slot is "admin". Different
+// storage, so no correlated flow — the slot signature must distinguish them.
+pushbytes "other"
+txna ApplicationArgs 1
+app_global_put
+
+itxn_begin
+pushint 1
+itxn_field TypeEnum
+pushbytes "admin"
+app_global_get
+itxn_field Receiver
+itxn_submit
+
+pushint 1
+return

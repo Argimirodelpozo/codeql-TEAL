@@ -121,6 +121,11 @@ def _state_out(prog: SSAProgram):
     return detect_out_of_state_flows(prog)
 
 
+def _state_corr(prog: SSAProgram):
+    from .dataflow.state import detect_correlated_state_flows
+    return detect_correlated_state_flows(prog)
+
+
 def _itxn_report(prog: SSAProgram) -> str:
     from .inner_txn_report import InnerTxnReport
     return InnerTxnReport(prog).render()
@@ -181,6 +186,7 @@ ALL_DETECTORS: list[Detector] = [
     _FnDetector("box-df-out", _box_out),
     _FnDetector("box-df-correlated", _box_corr),
     _FnDetector("state-df-out", _state_out),
+    _FnDetector("state-df-correlated", _state_corr),
 ]
 
 

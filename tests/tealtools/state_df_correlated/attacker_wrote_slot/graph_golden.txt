@@ -1,0 +1,39 @@
+## nodes
+prog.teal	1	0	20	6	Source
+prog.teal	7	0	7	17	PushbytesOpcode
+prog.teal	8	0	8	22	TxnaOpcode
+prog.teal	9	0	9	14	AppGlobalPutOpcode
+prog.teal	11	0	11	10	InnerTransactionBegin
+prog.teal	12	0	12	9	PushintOpcode
+prog.teal	13	0	13	19	InnerTransactionField
+prog.teal	14	0	14	17	PushbytesOpcode
+prog.teal	15	0	15	14	AppGlobalGetOpcode
+prog.teal	16	0	16	19	InnerTransactionField
+prog.teal	17	0	17	11	InnerTransactionSubmit
+prog.teal	19	0	19	9	PushintOpcode
+prog.teal	20	0	20	6	ReturnOpcode
+## cfgEdges
+prog.teal	7	prog.teal	8	NormalSuccessor
+prog.teal	8	prog.teal	9	NormalSuccessor
+prog.teal	9	prog.teal	11	NormalSuccessor
+prog.teal	11	prog.teal	12	NormalSuccessor
+prog.teal	12	prog.teal	13	NormalSuccessor
+prog.teal	13	prog.teal	14	NormalSuccessor
+prog.teal	14	prog.teal	15	NormalSuccessor
+prog.teal	15	prog.teal	16	NormalSuccessor
+prog.teal	16	prog.teal	17	NormalSuccessor
+prog.teal	17	prog.teal	19	NormalSuccessor
+prog.teal	19	prog.teal	20	NormalSuccessor
+## basicBlocks
+prog.teal	7	7	17
+prog.teal	8	7	17
+prog.teal	9	7	17
+prog.teal	11	7	17
+prog.teal	12	7	17
+prog.teal	13	7	17
+prog.teal	14	7	17
+prog.teal	15	7	17
+prog.teal	16	7	17
+prog.teal	17	7	17
+prog.teal	19	19	20
+prog.teal	20	19	20

@@ -65,6 +65,8 @@ from .xcontract_taint_graph import (
 )
 
 from .state import (
+    CorrelatedStateViolation,
+    detect_correlated_state_flows,
     APP_GLOBAL_GET_SOURCE,
     APP_GLOBAL_GET_EX_SOURCE,
     APP_LOCAL_GET_SOURCE,

@@ -1,0 +1,2 @@
+txna ApplicationArgs@prog.teal:8  →  app_global_put@prog.teal:9  →  app_global_get@prog.teal:15  →  itxn_field Receiver@prog.teal:16  (sink_value = V#1@L15)
+-- state-df-out (broad) reports 1 --

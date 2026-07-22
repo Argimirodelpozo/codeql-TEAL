@@ -155,6 +155,18 @@ def _render(analysis: str, case_dir: Path) -> str:
         body = "\n".join(v.pretty() for v in violations) or "(no violations)"
         return body + "\n"
 
+    if analysis == "state_df_correlated":
+        from tealql.tealtools.dataflow.state import (
+            detect_correlated_state_flows, detect_out_of_state_flows,
+        )
+        # Both counts, so the fixture documents the DIFFERENCE between the
+        # broad detector and the correlated one — that contrast is the reason
+        # the correlated variant exists.
+        corr = detect_correlated_state_flows(prog)
+        broad = detect_out_of_state_flows(prog)
+        body = "\n".join(v.pretty() for v in corr) or "(no correlated flows)"
+        return f"{body}\n-- state-df-out (broad) reports {len(broad)} --\n"
+
     if analysis == "box_df":
         from tealql.tealtools.dataflow.box import (
             detect_correlated_flows,

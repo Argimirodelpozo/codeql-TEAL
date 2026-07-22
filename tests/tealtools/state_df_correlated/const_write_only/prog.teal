@@ -1,0 +1,19 @@
+#pragma version 10
+// Same routing shape, but the slot is only ever written a CONSTANT — no
+// attacker influence, so there is no round trip and this must stay silent.
+// (`state-df-out` still reports it: every state read is a source there.
+// That difference is the whole point of the correlated variant.)
+pushbytes "admin"
+pushbytes 0x0000000000000000000000000000000000000000000000000000000000000000
+app_global_put
+
+itxn_begin
+pushint 1
+itxn_field TypeEnum
+pushbytes "admin"
+app_global_get
+itxn_field Receiver
+itxn_submit
+
+pushint 1
+return
