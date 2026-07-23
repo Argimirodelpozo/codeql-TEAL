@@ -301,13 +301,13 @@ class TestValidationNarrowing:
         assert r.is_scalar_tainted(gb.outputs[0])
 
     def test_slice_eq_clean_derived_value_clears(self):
-        # assert(extract 0 8 arg == itob(global LatestTimestamp)) — the RHS is
-        # attacker-INDEPENDENT (a global through a pure op), so bytes 0..7 are
-        # pinned to a value outside attacker control and clear, exactly as a
-        # compile-time const would.
+        # assert(extract 0 8 arg == itob(global MinTxnFee)) — the RHS is
+        # deployment-fixed and attacker-INDEPENDENT (a global through a pure op),
+        # so bytes 0..7 are pinned to a value outside attacker control and clear,
+        # exactly as a compile-time const would.
         teal = (
             "#pragma version 8\n"
-            "txna ApplicationArgs 0\nextract 0 8\nglobal LatestTimestamp\nitob\n==\nassert\n"
+            "txna ApplicationArgs 0\nextract 0 8\nglobal MinTxnFee\nitob\n==\nassert\n"
             "txna ApplicationArgs 0\nint 3\ngetbyte\nreturn\n"
         )
         p = SSAProgram.from_text(teal, name="t")
@@ -316,6 +316,23 @@ class TestValidationNarrowing:
         arg = [a for a in p.assignments if a.op == "txna"][0].outputs[0]
         assert not r.is_scalar_tainted(read)
         assert r.tainted_bytes(arg) == Intervals([(8, AVM_MAX_BYTES)])
+
+    def test_slice_eq_steerable_global_does_not_clear(self):
+        # assert(extract 0 8 arg == itob(global GroupSize)) must NOT clear taint:
+        # GroupSize/GroupID/Round/LatestTimestamp are chosen or influenced by the
+        # attacker when they assemble the group, so pinning input bytes to one is
+        # not a real sanitisation (would be a false negative). Same shape as the
+        # clean-global case above, only the global field differs.
+        for field in ("GroupSize", "LatestTimestamp", "Round"):
+            teal = (
+                "#pragma version 8\n"
+                f"txna ApplicationArgs 0\nextract 0 8\nglobal {field}\nitob\n==\nassert\n"
+                "txna ApplicationArgs 0\nint 3\ngetbyte\nreturn\n"
+            )
+            p = SSAProgram.from_text(teal, name="t")
+            r = byte_taint(p, validate=True)
+            read = [a for a in p.assignments if a.op == "getbyte"][-1].outputs[0]
+            assert r.is_scalar_tainted(read), f"{field} wrongly cleared taint"
 
     def test_slice_eq_attacker_slice_does_not_clear(self):
         # assert(extract 0 8 arg0 == extract 0 8 arg1) — BOTH sides are

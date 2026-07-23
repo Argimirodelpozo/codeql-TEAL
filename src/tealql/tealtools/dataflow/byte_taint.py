@@ -256,6 +256,22 @@ _PURE_COMBINATORS = frozenset({
     "sha256", "sha512_256", "keccak256", "sha3_256",
 })
 
+# ``global`` fields whose value is fixed by the chain / deployment and cannot be
+# steered by whoever submits the transaction — the ONLY globals safe to treat as
+# an attacker-independent pin. Deliberately EXCLUDES the group-assembly fields
+# ``GroupSize`` / ``GroupID`` (chosen by the attacker when they build the group)
+# and the consensus fields ``Round`` / ``LatestTimestamp`` / ``OpcodeBudget``
+# (attacker-/miner-influenceable). ``CallerApplication*`` stay in — an inner-txn
+# caller cannot forge which app called it. Unknown/future fields fall through to
+# NOT-clean, the sound direction (at worst a lost proof, never a cleared taint).
+_CLEAN_GLOBALS = frozenset({
+    "ZeroAddress", "MinTxnFee", "MinBalance", "MaxTxnLife",
+    "LogicSigVersion", "GenesisHash",
+    "CurrentApplicationID", "CurrentApplicationAddress", "CreatorAddress",
+    "CallerApplicationID", "CallerApplicationAddress",
+    "AssetCreateMinBalance", "AssetOptInMinBalance",
+})
+
 
 def _is_clean(v, seen: Optional[set] = None) -> bool:
     """True if operand ``v`` is attacker-INDEPENDENT — its value cannot be
@@ -285,7 +301,10 @@ def _is_clean(v, seen: Optional[set] = None) -> bool:
     if d is None:
         return False                      # unknown origin (param / frame read)
     if d.op == "global":
-        return True                       # chain / app metadata, attacker-independent
+        # Only truly deployment-fixed globals pin bytes; GroupSize/GroupID/Round/
+        # LatestTimestamp are attacker- or miner-influenceable (see _CLEAN_GLOBALS).
+        field = (d.immediates or "").split()[:1]
+        return bool(field) and field[0] in _CLEAN_GLOBALS
     if d.op in _PURE_COMBINATORS and d.inputs:
         return all(_is_clean(i, seen) for i in d.inputs)
     return False

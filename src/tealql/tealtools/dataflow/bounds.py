@@ -253,6 +253,20 @@ def check_bounds(prog: SSAProgram, *, run_passes: bool = True,
     out: list = []
     for a, (buf, base, extra_c, dynamic) in sites:
         spec = spec_conf = False
+        # ``substring A B`` panics unconditionally when start > end (A > B),
+        # regardless of buffer length — a static, index-independent over-read.
+        # Caught here BEFORE the relational query, which only checks B <= len
+        # and would otherwise wrongly report in-bounds for e.g. ``substring 8 4``
+        # on a >=4-byte buffer.
+        if a.op == "substring":
+            toks = (a.immediates or "").split()
+            A = int(toks[0]) if len(toks) == 2 and toks[0].lstrip("-").isdigit() else None
+            B = int(toks[1]) if len(toks) == 2 and toks[1].lstrip("-").isdigit() else None
+            if A is not None and B is not None and A > B:
+                out.append(BoundsSite(
+                    a.op, a.location.line, False, True, False,
+                    "OUT OF BOUNDS (substring start > end)"))
+                continue
         if extra_c is None:
             in_bounds, proven_oob, reason = False, False, "offset+width unbounded"
         else:

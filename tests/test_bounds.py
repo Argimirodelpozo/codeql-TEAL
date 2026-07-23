@@ -33,6 +33,23 @@ def test_proven_oob_on_literal_buffer(tmp_path):
     assert ex and ex[0].proven_oob and not ex[0].in_bounds
 
 
+def test_substring_start_gt_end_is_proven_oob(tmp_path):
+    """``substring 8 4`` has start > end — the AVM panics UNCONDITIONALLY,
+    regardless of buffer length (here B=4 <= len=24 would otherwise look
+    in-bounds). Must be proven_oob, never in_bounds."""
+    s = _sites(tmp_path, f"#pragma version 10\npushbytes {_B24}\nsubstring 8 4\npop\nint 1\nreturn\n")
+    ss = [x for x in s if x.op == "substring"]
+    assert ss and ss[0].proven_oob and not ss[0].in_bounds
+
+
+def test_substring_start_le_end_stays_in_bounds(tmp_path):
+    """The well-formed companion: ``substring 4 8`` (start <= end, end <= len)
+    is a normal in-bounds read — the A>B guard must not over-fire."""
+    s = _sites(tmp_path, f"#pragma version 10\npushbytes {_B24}\nsubstring 4 8\npop\nint 1\nreturn\n")
+    ss = [x for x in s if x.op == "substring"]
+    assert ss and ss[0].in_bounds and not ss[0].proven_oob
+
+
 def test_dynamic_index_is_oob_risk_not_proven(tmp_path):
     """A dynamic offset into an unknown-length buffer: can't prove in-bounds, and
     must NOT be claimed as a proven over-read (unsound)."""
@@ -116,6 +133,39 @@ def test_length_prefix_wellformedness_is_transitively_in_bounds(tmp_path):
     """The flagship 3-variable relation: ``assert(L + 2 <= len X)`` proves
     ``extract3 X 2 L`` in-bounds transitively through the difference closure."""
     s = _sites(tmp_path, _LEN_PREFIX)
+    e3 = [x for x in s if x.op == "extract3"]
+    assert e3 and e3[0].in_bounds and not e3[0].oob_risk
+
+
+# assert(len X >= 32); remaining = 32 - offset; extract3 X 0 remaining. The
+# `remaining = C - var` subtraction is a SUM (s + offset == 32) the zone can't
+# hold, but underflow-panic semantics give the sound facet `remaining <= 32`,
+# which chains through the `len X >= 32` floor to prove `remaining <= len X`.
+_CONST_MINUS_VAR = """#pragma version 10
+txna ApplicationArgs 0
+dup
+len
+int 32
+>=
+assert
+int 0
+int 32
+txna ApplicationArgs 1
+btoi
+-
+extract3
+pop
+int 1
+return
+"""
+
+
+def test_const_minus_var_width_chains_to_length_floor(tmp_path):
+    """``remaining = 32 - offset`` used as a read width is in-bounds against a
+    ``len >= 32`` floor: the ``C - var`` structural rule seeds ``remaining <= 32``
+    (sound via uint64 underflow-panic), which the difference closure chains to
+    ``remaining <= len``. Without that rule the width is unbounded → oob_risk."""
+    s = _sites(tmp_path, _CONST_MINUS_VAR)
     e3 = [x for x in s if x.op == "extract3"]
     assert e3 and e3[0].in_bounds and not e3[0].oob_risk
 

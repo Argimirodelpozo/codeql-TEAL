@@ -335,12 +335,16 @@ def detect_correlated_flows(
     # cluster_sig → list of (write_assignment, originating_source_assignment, source_name)
     cluster_writes: dict[str, list[tuple[Assignment, Assignment, str]]] = {}
     for write in prog.assignments:
-        if write.op not in {"box_put", "box_replace", "box_create"}:
+        # box_create is DELIBERATELY excluded: its input 0 is the allocation
+        # SIZE, not attacker content — box_create zero-fills, storing no value.
+        # A tainted size is a distinct concern owned by BOX_CREATE_SIZE_SINK;
+        # enrolling the box's key here would falsely make a later box_get of a
+        # zero-filled box read as attacker-controlled (wrong provenance chain).
+        if write.op not in {"box_put", "box_replace"}:
             continue
         if not write.inputs:
             continue
-        # value is top (input 0); size for box_create is at the same slot.
-        value_op = write.inputs[0]
+        value_op = write.inputs[0]           # value/replacement bytes (top of stack)
         if isinstance(value_op, Const) or value_op not in tainted_ops:
             continue
         key = _box_op_key(write)

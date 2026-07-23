@@ -159,3 +159,88 @@ def test_foreign_asset_bridge_uses_offset_zero(tmp_path):
     xtg = _build(tmp_path, _ASSET_CALLER, _ASSET_CALLEE)
     targets = {xtg.immediates_of(v) for _, v in _bridge_edges(xtg, "appcall-foreign")}
     assert "Assets 0" in targets, targets   # no implicit-entry offset for Assets
+
+
+# --- (3) return channel: the scalar `itxn LastLog` read form -------------
+
+# Caller forwards arg0 to the callee, then reads the callee's single log return
+# via the SCALAR `itxn LastLog` (not the `itxna Logs i` array form) and pays it.
+_RET_CALLER = """#pragma version 10
+itxn_begin
+int 6
+itxn_field TypeEnum
+int 100
+itxn_field ApplicationID
+txna ApplicationArgs 0
+itxn_field ApplicationArgs
+itxn_submit
+itxn LastLog
+itxn_begin
+itxn_field Receiver
+int 1000
+itxn_field Amount
+itxn_submit
+int 1
+return
+"""
+# Callee logs the attacker-derived arg — this is the return value the caller reads.
+_RET_CALLEE = """#pragma version 10
+txna ApplicationArgs 0
+log
+int 1
+return
+"""
+
+
+# Same shape, reading the return via the `itxna Logs 0` array form instead.
+_RET_CALLER_ARRAY = _RET_CALLER.replace("itxn LastLog", "itxna Logs 0")
+
+
+# A callee that does NOT log — no return value, so no return channel at all.
+_RET_CALLEE_NO_LOG = """#pragma version 10
+int 1
+return
+"""
+
+
+def test_return_bridge_reaches_lastlog_read(tmp_path):
+    """A callee ``log`` must bridge to the caller's scalar ``itxn LastLog`` read,
+    not only the ``itxna Logs i`` array form — before the fix the return-read
+    filter accepted only first-immediate ``Logs`` and dropped ``LastLog``, so the
+    bridge was silently absent and the detector's verdict flipped on which
+    equivalent return opcode the caller used (parity with the group axis, see
+    ``group_taint_graph._add_log_bridges``)."""
+    xtg = _build(tmp_path, _RET_CALLER, _RET_CALLEE)
+    lastlog = [v for _, v in _bridge_edges(xtg, "appcall-return")
+               if xtg.op_of(v) == "itxn" and xtg.immediates_of(v) == "LastLog"]
+    assert lastlog, "itxn LastLog return read was not bridged"
+    # Parity: the array form is bridged identically (same single return edge).
+    xtg_arr = _build(tmp_path, _RET_CALLER_ARRAY, _RET_CALLEE)
+    arr = [v for _, v in _bridge_edges(xtg_arr, "appcall-return")]
+    assert len(arr) == len(_bridge_edges(xtg, "appcall-return")), \
+        "LastLog and Logs return reads must bridge symmetrically"
+
+
+def test_return_channel_reaches_caller_sink(tmp_path):
+    """End-to-end RETURN channel: attacker arg -> callee log -> caller reads the
+    return (LastLog OR Logs) -> caller sink. This lands in the CALLER's scope but
+    is genuinely cross-contract (the caller alone can't tell the inner-txn return
+    carries attacker data), so it must be reported — for either return opcode."""
+    for caller_src in (_RET_CALLER, _RET_CALLER_ARRAY):
+        xtg = _build(tmp_path, caller_src, _RET_CALLEE)
+        findings = cross_taint_findings(xtg)
+        recv = [f for f in findings if f.sink_name == "itxn_field Receiver"]
+        assert recv, f"return channel missed for {caller_src.splitlines()[9]!r}: " \
+            f"{[f.sink_name for f in findings]}"
+        # The witness must actually cross into the callee and come back.
+        assert any(n.app_id is not None for n in recv[0].path), \
+            "witness path does not cross the appcall boundary"
+        assert recv[0].sink.app_id is None, "return-channel sink is in the caller"
+
+
+def test_return_channel_needs_a_log(tmp_path):
+    """No callee ``log`` -> no return value -> no return channel: the caller's
+    ``itxn LastLog`` read is untied to attacker input, so nothing is reported."""
+    xtg = _build(tmp_path, _RET_CALLER, _RET_CALLEE_NO_LOG)
+    assert not [f for f in cross_taint_findings(xtg)
+                if f.sink_name == "itxn_field Receiver"]

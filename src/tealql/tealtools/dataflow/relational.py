@@ -174,10 +174,22 @@ class LengthRelations:
                 # top-first: s = inputs[1] - inputs[0]; subtrahend inputs[0]
                 s, sub, minu = outs[0], ins[0], ins[1]
                 k = const_int(sub)
+                kminu = const_int(minu)
                 if k is not None and isinstance(minu, SSAVar):
+                    # s = minu - k: an exact difference relation.
                     sv, mv = _iatom(s), _iatom(minu)
                     base.add(sv, mv, -k)   # s - minu <= -k
                     base.add(mv, sv, k)    # minu - s <= k
+                elif kminu is not None and isinstance(sub, SSAVar):
+                    # s = C - sub, i.e. s + sub == C — a SUM, which the zone
+                    # cannot hold. But any execution that reaches here did NOT
+                    # underflow (the AVM panics on uint64 subtraction < 0), so
+                    # sub <= C; and s >= 0 (uint64) gives s <= C. Seed both
+                    # ABSOLUTE facets — sound, and enough to bound reads that use
+                    # `remaining = C - offset` as a width against a length floor.
+                    sv, subv = _iatom(s), _iatom(sub)
+                    base.add(sv, ORIGIN, kminu)     # s   <= C
+                    base.add(subv, ORIGIN, kminu)   # sub <= C
             elif outs:
                 self._seed_slice_len(a, op, ins, outs[0])
 

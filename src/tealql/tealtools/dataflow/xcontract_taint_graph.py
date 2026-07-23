@@ -303,16 +303,19 @@ def _add_return_bridges(
     site: AppcallSite,
 ) -> None:
     """The callee's ``log`` ops feed the caller's reads of the inner
-    txn's ``Logs`` field after the submit. Bridge every callee ``log``
-    node to every caller ``itxn``/``itxna``/``itxnas Logs`` read that
-    sits after this site's submit line (``caller_app_id`` scopes them)."""
+    txn's log output after the submit. Bridge every callee ``log`` node
+    to every caller read of the inner txn's ``Logs`` array OR its scalar
+    ``LastLog`` field (the standard single-return read) that sits after
+    this site's submit line (``caller_app_id`` scopes them). ``LastLog``
+    parity with the group axis (see ``group_taint_graph._add_log_bridges``)
+    — the verdict must not flip on which equivalent return opcode was used."""
     callee_logs = callee_tg.find(op="log")
     if not callee_logs:
         return
     caller_log_reads = [
         n for n in caller_tg.nodes()
         if caller_tg.op_of(n) in ("itxn", "itxna", "itxnas")
-        and (caller_tg.immediates_of(n) or "").split()[:1] == ["Logs"]
+        and (caller_tg.immediates_of(n) or "").split()[:1] in (["Logs"], ["LastLog"])
         and n.file == site.file
         and n.line > site.submit_line
     ]
@@ -431,16 +434,50 @@ def _sensitive_sinks(xtg: "XContractTaintGraph") -> list[tuple[XContractNode, st
     return sensitive_sinks(xtg)
 
 
+def _boundary_crossing_path(
+    xtg: "XContractTaintGraph",
+    src: XContractNode,
+    sink: XContractNode,
+    reach: set,
+) -> Optional[tuple]:
+    """A witness path ``src -> ... -> sink`` that passes through a callee scope
+    (a node with ``app_id is not None``), or ``None`` when every ``src -> sink``
+    path stays entirely in the caller.
+
+    A callee-scope node lies on some ``src -> sink`` path iff it is both
+    forward-reachable from ``src`` (``reach``) and backward-reachable to ``sink``
+    (``ancestors``). If one exists, the attacker value crossed the appcall
+    boundary and came back — the RETURN channel — which the single-program caller
+    analysis cannot see; we stitch ``src -> mid -> sink`` as the witness."""
+    back = xtg.reachable_to(sink)
+    mids = [n for n in reach & back if n.app_id is not None]
+    if not mids:
+        return None
+    mid = min(mids, key=repr)                 # deterministic witness pick
+    left = xtg.paths_between([src], [mid], max_paths=1)
+    right = xtg.paths_between([mid], [sink], max_paths=1)
+    if not left or not right:
+        return None
+    return tuple(left[0]) + tuple(right[0][1:])
+
+
 def cross_taint_findings(xtg: "XContractTaintGraph") -> list[CrossTaintFinding]:
     """Report caller-side attacker inputs (``txna ApplicationArgs``)
-    that reach a sensitive sink in a callee, following the appcall
-    bridge edges. One finding per (source, callee-sink) reachable pair,
-    carrying a shortest witness path.
+    that reach a sensitive sink ACROSS the appcall boundary, following the
+    bridge edges. One finding per (source, sink) reachable pair, carrying a
+    shortest witness path.
 
-    Cross-boundary only: a sink in the caller's own scope is the job of
-    the single-program :mod:`tealql.tealtools.dataflow.box` / ``state`` flows;
-    here we report exactly the flows that cross an appcall, which is the
-    capability the bridges add."""
+    Cross-boundary only, in both directions:
+    - a sink in a CALLEE reached from a caller input (forward channel), and
+    - a sink in the CALLER reached via the RETURN channel — a callee ``log``
+      that launders attacker input back to the caller's ``itxn LastLog`` /
+      ``Logs`` read and into a caller sink. This lands in the caller's scope but
+      is genuinely cross-contract: the caller analysis alone can't tell the
+      inner-txn return carries attacker data.
+
+    A caller-scope sink reachable WITHOUT crossing the boundary is left to the
+    single-program :mod:`tealql.tealtools.dataflow.box` / ``state`` flows and is
+    NOT reported here."""
     sources = [
         xn for xn in (xtg.find(app_id=None, op="txna")
                       + xtg.find(app_id=None, op="txn"))
@@ -451,10 +488,18 @@ def cross_taint_findings(xtg: "XContractTaintGraph") -> list[CrossTaintFinding]:
     for src in sources:
         reach = xtg.reachable_from(src)
         for sink_xn, name in sinks:
-            if sink_xn.app_id is None or sink_xn not in reach:
-                continue  # caller-scope sink, or unreachable
-            paths = xtg.paths_between([src], [sink_xn], max_paths=1)
-            path = tuple(paths[0]) if paths else (src, sink_xn)
+            if sink_xn not in reach:
+                continue  # unreachable
+            if sink_xn.app_id is None:
+                # Caller-scope sink: report ONLY when the flow crosses the
+                # appcall boundary (the return channel); a pure-caller flow is
+                # the single-program analysis's job.
+                path = _boundary_crossing_path(xtg, src, sink_xn, reach)
+                if path is None:
+                    continue
+            else:
+                paths = xtg.paths_between([src], [sink_xn], max_paths=1)
+                path = tuple(paths[0]) if paths else (src, sink_xn)
             findings.append(CrossTaintFinding(
                 source=src, sink=sink_xn, sink_name=name, path=path,
             ))

@@ -1,0 +1,21 @@
+#pragma version 10
+// External arg → box_create SIZE (input 0), NOT content. box_create zero-fills
+// the box; a later box_get of "k" reads zeros, never attacker data. This must
+// NOT be reported as a correlated attacker-controlled chain — the tainted value
+// is the allocation LENGTH (owned by BOX_CREATE_SIZE_SINK), not box content.
+// Same key→get→sink shape as key_correlated, only the write is a box_create.
+
+pushbytes "k"
+txna ApplicationArgs 1
+btoi
+box_create
+pop
+
+pushbytes "g"
+pushbytes "k"
+box_get
+pop
+app_global_put
+
+pushint 1
+return
