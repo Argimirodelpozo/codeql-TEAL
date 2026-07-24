@@ -13,11 +13,14 @@ recompile, but ``import tealql.tealtools.lift`` stays puya-free (only calling
 """
 from __future__ import annotations
 
+import logging
 import re
 from pathlib import Path
 
 from ..errors import LiftError
 from . import _puya_compat as _compat
+
+logger = logging.getLogger("tealql.tealtools.lift")
 
 
 def lift_to_teal(source, *, aggressive: bool = False) -> str:
@@ -92,6 +95,12 @@ def lift_to_teal(source, *, aggressive: bool = False) -> str:
                     for s in [main, *subs]]
                 if not (hits and any(hits)):
                     raise
+                # Typed-zero orphan (see _destructure_with_orphans) — surface it,
+                # as the recompiled TEAL may compute with 0 for this register.
+                logger.warning(
+                    "reconstruction orphan %s#%s defined as typed ZERO during MIR "
+                    "lowering — recompiled TEAL may compute with 0",
+                    m.group(1), m.group(2))
         else:
             raise RuntimeError("backend lowering did not converge")
         return emit_teal(ctx, teal)
@@ -144,6 +153,15 @@ def _destructure_with_orphans(ctx, program) -> None:
                     | frozenset(_compat.get_assigned_registers(sub.body)))
                 if not bad:
                     raise
+                # A reconstruction orphan compiles to a typed ZERO — the
+                # recompiled TEAL then computes with 0 where the original had a
+                # real value. Faithful for covered contracts (the behavioural
+                # dryrun would catch divergence), but for an UNCOVERED contract
+                # this is a silently-wrong recompile, so surface it.
+                logger.warning(
+                    "reconstruction orphan(s) in %s defined as typed ZERO — "
+                    "recompiled TEAL may compute with 0 for: %s",
+                    sub.id, ", ".join(sorted(r.name for r in bad)))
                 for r in bad:
                     sub.body[0].ops.insert(0, M.Assignment(
                         source_location=None, targets=[r],

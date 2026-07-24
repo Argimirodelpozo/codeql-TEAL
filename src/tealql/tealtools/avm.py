@@ -502,6 +502,10 @@ def _multi_out_type(op, immediates, idx):
         return "uint64"
     if op == "box_get":
         return "uint64" if idx == 0 else "bytes"   # did_exist, value
+    if op == "vrf_verify":
+        return "uint64" if idx == 0 else "bytes"   # verified flag, 64-byte output
+        # (the bytes length is pinned to 64 by _OP_OUTPUT_BYTELEN, which only
+        # fires once the slot is already typed bytes — hence typing it here.)
     if op in _EX_FLAG_OPS:
         if idx == 0:
             return "uint64"                         # did_exist flag

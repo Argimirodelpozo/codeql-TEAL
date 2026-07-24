@@ -15,7 +15,7 @@ import pytest
 
 pytest.importorskip("puya")  # pre_ir package __init__ eagerly imports the lift
 
-from tealql.tealtools.avm import avm  # noqa: E402
+from tealql.tealtools.avm import avm, _multi_out_type  # noqa: E402
 from tealql.tealtools.lift.type_recovery import (  # noqa: E402
     _avm_join,
     _unify_comparison_operands,
@@ -95,6 +95,14 @@ def test_sink_applies_when_store_post_dominated():
 
 def test_string_is_bytes_backed():
     assert avm("string") == "b"
+
+
+def test_vrf_verify_output_is_bytes():
+    # vrf_verify pushes (64-byte output, verified-flag) — top-first the flag is
+    # slot 0 (uint64), the 64-byte output is slot 1 (bytes). Previously slot 1
+    # fell through to the uint64 default, mistyping the VRF output.
+    assert _multi_out_type("vrf_verify", "VrfAlgorand", 0) == "uint64"
+    assert _multi_out_type("vrf_verify", "VrfAlgorand", 1) == "bytes"
 
 
 def test_string_phi_join_stays_bytes():

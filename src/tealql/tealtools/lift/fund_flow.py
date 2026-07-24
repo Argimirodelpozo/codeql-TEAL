@@ -61,6 +61,11 @@ _SEV_ORDER = {"CRITICAL": 3, "HIGH": 2, "MEDIUM": 1, "LOW": 0}
 #: sound authorisation signals here.
 _TXN_SENDER_FAM = frozenset({"txn", "txna"})
 
+#: Ops whose result depends on the LENGTH, not the VALUE, of their operand — a
+#: guard reaching an input only through these (``assert(len(arg) == 8)``) bounds
+#: its length, not its value, so it is not a value guard (see ``_classify``).
+_VALUE_OPAQUE_OPS = frozenset({"len", "bitlen"})
+
 
 # --------------------------------------------------------------------------
 # IR CFG + dominators (intra-subroutine)
@@ -302,16 +307,64 @@ def _classify(kind, polarity, cond, def_of, sink_regs, sink_keys, inv_ret=None) 
     # ApplicationArgs[i] separately" pattern). Family-level overlap (any
     # ApplicationArgs read) would mark "the contract validates SOME input" as
     # "validates THIS value" and hide real findings.
+    #
+    # BOOLEAN STRUCTURE: only a check that the assert/branch actually GUARANTEES may
+    # be credited. `assert(A && B)` guarantees both A and B; `assert(A || B)`
+    # guarantees NEITHER individually (A is bypassable whenever B holds), so a
+    # sender/input check inside a disjunction must NOT be credited -- crediting it
+    # would suppress a real, bypassable-guard flow. We descend the condition tree
+    # marking everything below an `||` as un-guaranteed.
+    #
+    # LENGTH vs VALUE: a check credits `checks_input` only if it constrains the
+    # input's VALUE. `assert(len(arg) == 8)` before `amount = btoi(arg)` shares the
+    # register `arg` (and the same input slot) with the sink, but bounds only its
+    # LENGTH -- the attacker still picks any 8-byte value. So an input reached
+    # SOLELY through a length op (`len`/`bitlen`) does not count as a value check;
+    # `value_ok` goes false under such ops, exactly as `guaranteed` goes false
+    # under `||`. A path that also constrains the value (`assert(len==8 && btoi(arg)
+    # <= max)`) still credits, via the value-preserving conjunct.
     ci = cs = False
-    for r, o in _walk(cond, def_of, inv_ret=inv_ret):
-        if id(r) in sink_regs:
-            ci = True
+    # A register may appear under different (guaranteed, value_ok) contexts (e.g.
+    # `(A||B) && A`, or `len(arg)==8 && arg==k`); both flags only ever go
+    # True->False down a path, so key the visited-set on the context to let a
+    # stronger path credit even after a weaker one was walked.
+    seen: set = set()
+
+    def visit(value, guaranteed, value_ok, depth=0):
+        nonlocal ci, cs
+        if not isinstance(value, pre_ir.Register) or depth > 8:
+            return
+        key = (id(value), guaranteed, value_ok)
+        if key in seen:
+            return
+        seen.add(key)
+        o = def_of.get(id(value))
         src = _intr(o) if o is not None else None
-        if src is not None:
-            if _is_sender_op(src):
-                cs = True
-            if _input_key(src) in sink_keys:
+        if guaranteed and value_ok:
+            if id(value) in sink_regs:
                 ci = True
+            if src is not None:
+                if _is_sender_op(src):
+                    cs = True
+                if _input_key(src) in sink_keys:
+                    ci = True
+        # `||` un-guarantees its operands; `len`/`bitlen` make the operand's VALUE
+        # unconstrained by this comparison (only its length is checked).
+        child_guar = guaranteed and not (src is not None and src.op == "||")
+        child_val = value_ok and not (src is not None and src.op in _VALUE_OPAQUE_OPS)
+        if src is not None:
+            for a in src.args:
+                visit(a, child_guar, child_val, depth + 1)
+        elif isinstance(o, pre_ir.Assignment) and isinstance(o.source, pre_ir.Register):
+            visit(o.source, child_guar, child_val, depth + 1)
+        elif isinstance(o, pre_ir.Phi):
+            for pa in o.args:
+                visit(pa.value, child_guar, child_val, depth + 1)
+        if inv_ret:                       # descend into an asserted validation sub
+            for rv in inv_ret.get(id(value), ()):
+                visit(rv, child_guar, child_val, depth + 1)
+
+    visit(cond, True, True)
     return Guard(kind, polarity, ci, cs)
 
 
@@ -646,15 +699,22 @@ def tainted_itxn_flows(lifter, fields, taint=None, trusted_args=frozenset(),
 _STATE_WRITE_KEY_IDX = {
     "app_global_put": 1,    # args: value, KEY
     "app_local_put": 1,     # args: value, KEY, account
+    "app_global_del": 0,    # args: KEY (attacker-chosen global slot deleted)
+    "app_local_del": 0,     # args: KEY, account
     "box_put": 1,           # args: value, KEY
     "box_create": 1,        # args: size, KEY
     "box_replace": 2,       # args: bytes, start, KEY
+    "box_splice": 3,        # args: replacement, length, start, KEY
+    "box_resize": 1,        # args: size, KEY
     "box_del": 0,           # args: KEY (attacker-chosen box deleted)
 }
 _STATE_WRITE_SEV = {
     "app_global_put": "CRITICAL",   # overwrite ANY global slot (owner/admin state)
     "app_local_put": "HIGH",
-    "box_put": "HIGH", "box_replace": "HIGH", "box_create": "MEDIUM",
+    "app_global_del": "CRITICAL",   # delete ANY global slot (owner/admin/pause key)
+    "app_local_del": "HIGH",
+    "box_put": "HIGH", "box_replace": "HIGH", "box_splice": "HIGH",
+    "box_create": "MEDIUM", "box_resize": "MEDIUM",
     "box_del": "MEDIUM",            # delete an arbitrary (e.g. another user's) box
 }
 
@@ -668,10 +728,11 @@ def _state_write_sink_of(s):
 
 def tainted_state_writes(lifter, taint=None, trusted_args=frozenset()) -> list:
     """Tainted-KEY persistent state writes: a user-input value reaching the KEY of
-    ``app_global_put`` / ``app_local_put`` / ``box_put`` / ``box_create`` /
-    ``box_replace`` / ``box_del`` lets the attacker write to (or delete) an
-    arbitrary slot -- overwrite owner/admin global state, collide with or destroy
-    a sensitive box. (A key derived from
+    ``app_global_put`` / ``app_local_put`` / ``app_global_del`` / ``app_local_del``
+    / ``box_put`` / ``box_create`` / ``box_replace`` / ``box_splice`` /
+    ``box_resize`` / ``box_del`` lets the attacker write to, resize, or delete an
+    arbitrary slot -- overwrite or erase owner/admin global state, collide with or
+    destroy a sensitive box. (A key derived from
     ``txn Sender`` -- the ubiquitous per-caller ``box[Sender]`` pattern -- is NOT a
     taint source, so it never surfaces; a key checked == Sender is guard-cleared.)"""
     return _tainted_sink_flows(lifter, _state_write_sink_of, taint, trusted_args)

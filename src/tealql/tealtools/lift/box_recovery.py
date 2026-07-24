@@ -339,8 +339,15 @@ def recover_storage_schema(main, subs, guesses=None, confident=None) -> list:
               if isinstance(kv, M.Register) else None)
         if isinstance(kd, M.Intrinsic) and kd.op is AVMOp.concat and len(kd.args) == 2:
             p, _ = flow.deref(kd.args[0], ksub)
-            if isinstance(p, M.BytesConstant):                # prefixed map
-                kt, _, _ = _type_of(kd.args[1])
+            if isinstance(p, M.BytesConstant):
+                tail, _ = flow.deref(kd.args[1], ksub)
+                if isinstance(tail, M.BytesConstant):
+                    # BOTH halves constant -> a single fixed box (e.g.
+                    # concat("balance_", "v2") == the one box "balance_v2"),
+                    # NOT a map. The unfolded IR doesn't const-fold the concat,
+                    # so without this the fixed key masquerades as a BoxMap.
+                    return False, p.value + tail.value, None
+                kt, _, _ = _type_of(kd.args[1])               # prefixed map
                 return True, p.value, kt
         kt, _, _ = _type_of(kv)                               # unprefixed / composite map
         return True, b"", kt

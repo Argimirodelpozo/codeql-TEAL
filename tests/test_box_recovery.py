@@ -30,6 +30,20 @@ def test_static_box_named_by_const_key(tmp_path):
                for s in schema)
 
 
+def test_const_concat_key_is_single_box_not_map(tmp_path):
+    """concat("balance_", "v2") — BOTH halves constant — is the single fixed box
+    "balance_v2", NOT a BoxMap. Without the const-tail check it masqueraded as a
+    prefixed map (prefix "balance_") with no confidence flag."""
+    teal = ('#pragma version 10\nbyte "balance_"\nbyte "v2"\nconcat\n'
+            'box_get\npop\npop\nint 1\nreturn\n')
+    schema = _schema(tmp_path, teal)
+    boxes = [s for s in schema if s.kind == "box"]
+    assert boxes, "no box recovered"
+    assert all(not s.is_map for s in boxes), "const concat key wrongly a BoxMap"
+    assert any(s.key_or_prefix == b"balance_v2" for s in boxes), \
+        [s.key_or_prefix for s in boxes]
+
+
 def test_boxmap_uint64_key(tmp_path):
     """concat("m", itob(k)) => a prefixed box map with a recovered key type."""
     teal = """#pragma version 10

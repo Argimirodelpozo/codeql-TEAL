@@ -10,7 +10,7 @@ import pytest
 
 from tealql.tealtools.ssa import SSAProgram
 from tealql.tealtools.lift.lift import _Lifter
-from tealql.tealtools.lift.fund_flow import tainted_fund_flows
+from tealql.tealtools.lift.fund_flow import tainted_fund_flows, tainted_state_writes
 
 TESTS_DIR = Path(__file__).resolve().parent
 
@@ -21,6 +21,93 @@ def _flows(teal: str, tmp_path: Path):
     lifter = _Lifter(SSAProgram(str(p)))
     lifter.build()
     return tainted_fund_flows(lifter)
+
+
+def _state_writes(teal: str, tmp_path: Path):
+    p = tmp_path / "prog.teal"
+    p.write_text(teal)
+    lifter = _Lifter(SSAProgram(str(p)))
+    lifter.build()
+    return tainted_state_writes(lifter)
+
+
+_SENDER_OR_BYPASS = """#pragma version 10
+    txn Sender
+    global CreatorAddress
+    ==
+    txn ApplicationArgs 1
+    btoi
+    ||
+    assert
+    itxn_begin
+    txn ApplicationArgs 0
+    btoi
+    itxn_field Amount
+    itxn_submit
+    int 1
+    return
+"""
+
+
+_LEN_ONLY_CHECK = """#pragma version 10
+    txn ApplicationArgs 0
+    len
+    int 8
+    ==
+    assert
+    itxn_begin
+    txn ApplicationArgs 0
+    btoi
+    itxn_field Amount
+    itxn_submit
+    int 1
+    return
+"""
+
+
+def test_length_check_is_not_a_value_guard(tmp_path):
+    """`assert(len(arg) == 8)` before `amount = btoi(arg)` bounds the LENGTH, not
+    the value — the attacker still chooses any 8-byte amount. It must not be
+    credited as a value guard (both read ApplicationArgs[0], but only the length
+    is checked), so the tainted Amount flow stays reported."""
+    flows = _flows(_LEN_ONLY_CHECK, tmp_path)
+    amt = [f for f in flows if f.field == "Amount"]
+    assert len(amt) == 1
+    assert not any(g.checks_input for g in amt[0].guards), \
+        "a len() check bounds length, not value — not a value guard"
+    assert not amt[0].guarded, "length-only guard flow must be reported"
+
+
+def test_or_bypassable_sender_guard_not_credited(tmp_path):
+    """`assert((Sender == Creator) || attacker_flag)` does NOT guarantee the sender
+    check — it passes whenever the attacker sets the flag. The sender check under
+    `||` must not be credited, so the tainted Amount flow stays UNGUARDED."""
+    flows = _flows(_SENDER_OR_BYPASS, tmp_path)
+    amt = [f for f in flows if f.field == "Amount"]
+    assert len(amt) == 1
+    assert not any(g.checks_sender for g in amt[0].guards), \
+        "a sender check under || is bypassable — must not be credited"
+    assert not amt[0].guarded, "bypassable-guard flow must be reported"
+
+
+def test_tainted_key_global_delete_is_flagged(tmp_path):
+    """app_global_del with an attacker-chosen key erases an arbitrary global slot
+    (owner/admin/pause state) — must be a state-write sink (was omitted)."""
+    teal = ("#pragma version 10\ntxn ApplicationArgs 0\napp_global_del\n"
+            "int 1\nreturn\n")
+    w = _state_writes(teal, tmp_path)
+    d = [f for f in w if f.field == "app_global_del"]
+    assert d, [f.field for f in w]
+    assert not d[0].guarded and not d[0].param_derived
+
+
+def test_tainted_key_box_resize_is_flagged(tmp_path):
+    """box_resize with an attacker-chosen box name resizes an arbitrary box — the
+    key is input 1 (below the size), a state-write sink (was omitted)."""
+    teal = ("#pragma version 10\ntxn ApplicationArgs 0\nint 100\nbox_resize\n"
+            "int 1\nreturn\n")
+    w = _state_writes(teal, tmp_path)
+    assert any(f.field == "box_resize" for f in w), [f.field for f in w]
 
 
 _UNGUARDED = """#pragma version 10
