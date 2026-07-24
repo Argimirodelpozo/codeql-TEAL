@@ -70,13 +70,23 @@ def _phi_only_scratch_stores(blocks, ph):
 def _stores_sinkable(stores, B, by_id, preds, chain_to, slot_touched) -> bool:
     """The sink guards: every predecessor of merge block `B` branches ONLY to it
     (no critical edge), and each store is reachable from `B` by a unique
-    single-predecessor chain with no intervening touch of its slot."""
+    single-predecessor chain that `B` also UNCONDITIONALLY reaches, with no
+    intervening touch of its slot."""
     if not all(set(_succ_ids(by_id[p].terminator)) == {B.id}
                for p in preds.get(B.id, [])):
         return False                      # a predecessor has a critical edge
     for (sb, idx, slot, s) in stores:
-        ch = chain_to(sb.id, B.id)
+        ch = chain_to(sb.id, B.id)        # [sb, .., B] — single-predecessor chain
         if ch is None or slot_touched(ch, sb, idx, slot):
+            return False
+        # POST-DOMINANCE: the store must be UNCONDITIONALLY reached from `B`, i.e.
+        # every chain block from B down to (but not including) sb has a single
+        # successor. Without this, `B` (or a chain block) could branch — one arm
+        # reaches sb, the other skips it — yet the sunk store is appended to `B`'s
+        # predecessors and so runs on BOTH arms, writing the slot on a path the
+        # original never did. That changes the slot's FINAL value a cross-group
+        # `gload` observes, breaking the very invariant this transform upholds.
+        if any(len(set(_succ_ids(by_id[bid].terminator))) != 1 for bid in ch[1:]):
             return False
     return True
 

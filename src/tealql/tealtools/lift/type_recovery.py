@@ -60,7 +60,11 @@ def _const_key(operand) -> "str | None":
     return None
 
 
-_BYTES_FAMILY = frozenset({"bytes", "account"})
+# Must agree with avm.py's `avm()` and `_AVM_BYTES_TYPES` on what is bytes-backed
+# — a type bytes-backed in one table but not another would make a phi join of two
+# genuinely-bytes types cross the divide and default to uint64 (unsound). `string`
+# is bytes-backed (an ARC-4 String is a length-prefixed byte array).
+_BYTES_FAMILY = frozenset({"bytes", "account", "string"})
 
 
 _U64_FAMILY = frozenset({"uint64", "bool", "asset", "application"})
@@ -441,14 +445,16 @@ def _unify_comparison_operands(prog) -> None:
                 for t in o.targets:
                     producer[id(t)] = o.source
 
-    _REFINED = ("account", "asset", "application")  # biguint handled explicitly above
+    _REFINED = ("account", "asset", "application")
 
     def strength(v):
         """(strength, family) for a comparison operand — higher strength = more
         trustworthy evidence of the AVM family. HARD (4): a constant, a txn/global
-        field, or a typed-op result. REFINED (3): a specific type (account/asset/
-        application/biguint) — implies a typed source. BASE (2): plain bytes/uint64.
-        BOOL (1): the cheapest default. UNKNOWN (0)."""
+        field, or a typed-op result — evidence the AVM itself fixes, so it is
+        UNIMPEACHABLE and the only strength trusted to drive a retype below.
+        REFINED (3): a specific type (account/asset/application) — implies a typed
+        source. BASE (2): plain bytes/uint64. BOOL (1): the cheapest default.
+        UNKNOWN (0)."""
         if isinstance(v, pre_ir.UInt64Constant):
             return (4, "u")
         if isinstance(v, pre_ir.BytesConstant):
@@ -466,8 +472,6 @@ def _unify_comparison_operands(prog) -> None:
                 return (4, "u")
             if ft == "bytes":
                 return (4, "b")
-        if v.ir_type == "biguint":       # Puya BigUInt is byteslice-backed; avm()
-            return (3, "b")              # doesn't map it, so handle it explicitly
         t = avm(v.ir_type)               # 'b' / 'u' / '?'
         if t == "?":
             return (0, "?")
@@ -485,11 +489,16 @@ def _unify_comparison_operands(prog) -> None:
             (s0, f0), (s1, f1) = strength(a0), strength(a1)
             if f0 == "?" or f1 == "?" or f0 == f1:
                 continue                 # agree (or unknown) -> nothing to do
-            # cross-family conflict: retype the weaker operand to the stronger's
-            # family (equal strength => genuine, leave for the encoder to flag).
-            if s0 > s1 and isinstance(a1, pre_ir.Register):
+            # Cross-family conflict on a `==`/`!=` (impossible at runtime, so one
+            # side is a recovery error): retype the OTHER operand to match — but
+            # ONLY when the trusted side is HARD (strength 4: const / field /
+            # typed-op), evidence the AVM itself fixes. A REFINED/BASE/BOOL guess
+            # is not trusted to overwrite the other side (it might be the mistyped
+            # one); such conflicts are left for the encoder to flag. This keeps the
+            # pass from ever minting a family a well-typed operand doesn't have.
+            if s0 == 4 and s1 < 4 and isinstance(a1, pre_ir.Register):
                 a1.ir_type = "uint64" if f0 == "u" else "bytes"
-            elif s1 > s0 and isinstance(a0, pre_ir.Register):
+            elif s1 == 4 and s0 < 4 and isinstance(a0, pre_ir.Register):
                 a0.ir_type = "uint64" if f1 == "u" else "bytes"
 
 

@@ -96,19 +96,25 @@ def _infer_arities(struct, callsite) -> dict:
             depth = {s.entry_bb: 0}
             order = [s.entry_bb]
             floor = 0
-            ret_d = None
+            ret_ds: list[int] = []
             i = 0
             while i < len(order):
                 b = order[i]
                 i += 1
                 d_out, mn = block_io(b, depth[b])
                 floor = min(floor, mn)
-                if b.assignments and b.assignments[-1].op == "retsub" and ret_d is None:
-                    ret_d = d_out
+                if b.assignments and b.assignments[-1].op == "retsub":
+                    ret_ds.append(d_out)
                 for su in internal_succ(b, s.body):
                     if su not in depth:
                         depth[su] = d_out
                         order.append(su)
+            # A legacy (non-proto) sub's return arity is the stack depth left at
+            # `retsub`. Take the MAX across ALL retsub sites, not just the first
+            # reached: well-formed subs leave the same depth at every retsub (max
+            # == first, no change), but a sub whose paths diverge would, taking
+            # only the first, silently truncate a deeper path's return values.
+            ret_d = max(ret_ds) if ret_ds else None
             na, nr = -floor, (ret_d - floor if ret_d is not None else 0)
             if arity[s] != (na, nr):
                 arity[s] = (na, nr)

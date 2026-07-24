@@ -529,7 +529,7 @@ _BYTES_CONSUME = frozenset({
 def avm(t) -> str:
     """Coarse AVM type lattice of a type name: 'b' (bytes-backed), 'u'
     (uint64-backed), or '?' (unknown)."""
-    return ("b" if t in ("bytes", "account")
+    return ("b" if t in ("bytes", "account", "string")
             else "u" if t in ("uint64", "bool", "asset", "application")
             else "?")
 
