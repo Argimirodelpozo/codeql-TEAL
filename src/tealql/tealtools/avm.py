@@ -63,6 +63,7 @@ SIG: dict[str, tuple[int, int]] = {
     # Crypto
     "ed25519verify": (3, 1), "ed25519verify_bare": (3, 1), "ecdsa_verify": (5, 1),
     "ecdsa_pk_decompress": (1, 2), "ecdsa_pk_recover": (4, 2), "vrf_verify": (3, 2),
+    "falcon_verify": (3, 1),          # AVM v12: (message, signature, pubkey) -> bool
     # Elliptic curve
     "ec_add": (2, 1), "ec_scalar_mul": (2, 1), "ec_pairing_check": (2, 1),
     "ec_multi_scalar_mul": (2, 1),
@@ -298,6 +299,41 @@ LSIG_ARG_OPS: frozenset[str] = frozenset({
     "arg", "args", "arg_0", "arg_1", "arg_2", "arg_3",
 })
 
+#: Opcodes the AVM accepts ONLY in Application mode (it rejects them in
+#: Signature mode), so their presence PROVES a program is an application.
+#: Keyed strictly on opcodes, never on txn fields: a logic signature can be
+#: attached to an ApplicationCall txn and therefore may read ``OnCompletion`` /
+#: ``ApplicationArgs`` / ``ApplicationID`` (every AlgoPlonk-style proof
+#: verifier does), so those fields prove nothing and keying on them would
+#: misclassify that whole lsig class.
+#:
+#: Lives here rather than in the detection layer because it is AVM spec data
+#: (this module is the single home, per the module docstring); the classifier
+#: :func:`tealql.security.common.classify_program` consumes it. The account-
+#: query family (``balance`` / ``min_balance`` / ``gaid`` / ``gaids`` /
+#: ``online_stake`` / ``voter_params_get``) was missing, so a program whose only
+#: app-mode opcodes were those classified as a LOGICSIG and then had the
+#: lsig-only detectors (rekey / close-remainder / fee / lsig-args) run against
+#: it — a false-positive swarm on an app.
+APP_ONLY_OPS: frozenset[str] = frozenset({
+    # state
+    "app_global_get", "app_global_put", "app_global_del", "app_global_get_ex",
+    "app_local_get", "app_local_put", "app_local_del", "app_local_get_ex",
+    "app_opted_in",
+    # parameter / holding queries
+    "app_params_get", "asset_params_get", "asset_holding_get",
+    "acct_params_get", "voter_params_get", "online_stake",
+    "balance", "min_balance",
+    # inner transactions
+    "itxn_begin", "itxn_field", "itxn_submit", "itxn_next",
+    "itxn", "itxna", "itxnas", "gitxn", "gitxna", "gitxnas",
+    # boxes
+    "box_create", "box_put", "box_get", "box_del", "box_replace",
+    "box_extract", "box_len", "box_resize", "box_splice",
+    # logging + cross-group scratch / created-id reads
+    "log", "gload", "gloads", "gloadss", "gaid", "gaids",
+})
+
 # --- comparison / boolean-combinator opcodes ------------------------------
 
 #: uint64 comparison ops.
@@ -333,6 +369,7 @@ _U64_OPS = frozenset({"+", "-", "*", "/", "%", "exp", "sqrt", "shl", "shr",
                       "extract_uint16", "extract_uint32", "extract_uint64",
                       "box_create", "box_del",     # both return a uint64 flag
                       "gaid", "gaids",             # created asset/app id (uint64)
+                      "falcon_verify",             # verified flag (uint64/bool)
                       "balance", "min_balance", "app_opted_in"}) | _U64_PUSH
 _BYTES_OPS = frozenset({"itob", "concat", "substring", "substring3", "extract",
                         "extract3", "replace2", "replace3", "sha256",
@@ -527,7 +564,13 @@ _BYTES_CONSUME = frozenset({
     "concat", "len", "btoi", "log", "sha256", "sha512_256", "keccak256",
     "sha3_256", "extract", "extract3", "substring", "substring3", "replace2",
     "replace3", "b+", "b-", "b*", "b/", "b%", "b<", "b>",
-    "extract_uint16", "extract_uint32", "extract_uint64"})
+    "extract_uint16", "extract_uint32", "extract_uint64",
+    # The rest of the unambiguously-bytes consumers the set had missed. The
+    # `b`-prefixed comparisons are NOT the polymorphic `==`/`!=`: `b==` / `b!=`
+    # take byteslices only, so they type their operands just as hard as `b<`.
+    "b<=", "b>=", "b==", "b!=", "b|", "b&", "b^", "b~", "bsqrt",
+    "setbyte", "getbyte", "base64_decode", "mimc", "sumhash512",
+    "ed25519verify_bare", "falcon_verify"})
 
 
 def avm(t) -> str:
@@ -728,6 +771,21 @@ _OP_OUTPUT_BYTELEN: dict = {
     "ecdsa_pk_recover":    [(0, 32), (1, 32)],
     # vrf_verify's non-flag output (outputs[1]) is the 64-byte VRF output.
     "vrf_verify":          [(1, 64)],
+}
+
+#: Single-output ops with a FIXED-WIDTH bytes result — the hash / digest family.
+#: ``passes/byte_length_prop`` used to carry the four SHA/Keccak lengths inline
+#: as a literal, which left ``mimc`` (32) and ``sumhash512`` (64) — both of
+#: which puya types as sized-bytes returns — with no length at all. Keeping the
+#: table here is the module's stated contract: one AVM-metadata home, derived
+#: rather than re-listed per consumer.
+FIXED_BYTES_OUTPUT_LEN: dict[str, int] = {
+    "sha256":     32,
+    "sha512_256": 32,
+    "keccak256":  32,
+    "sha3_256":   32,
+    "mimc":       32,
+    "sumhash512": 64,
 }
 
 # ``asset_params_get`` / ``app_params_get`` / ``acct_params_get`` push

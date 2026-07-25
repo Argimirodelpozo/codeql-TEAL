@@ -1,0 +1,23 @@
+#pragma version 10
+    // The RekeyTo guard is real, but the value reaches the comparison through a
+    // phi whose two arms BOTH trace back to the same intermediate scratch load
+    // (a diamond — the shape compiled output produces constantly). The MUST-flow
+    // walk used a single visited-set as a memo, so the second arm answered
+    // "already seen" = no-flow and the guard vanished.
+    txn RekeyTo
+    store 2
+    load 2
+    store 3
+    txna ApplicationArgs 0
+    btoi
+    bnz alt
+    load 3
+    b join
+alt:
+    load 3
+join:
+    global ZeroAddress
+    ==
+    assert
+    int 1
+    return

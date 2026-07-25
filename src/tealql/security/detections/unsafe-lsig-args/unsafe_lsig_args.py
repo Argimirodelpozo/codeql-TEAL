@@ -61,13 +61,22 @@ class UnsafeLsigArgsDetector:
         self.prog = prog
         self.file = file
 
+    def _assignment_index(self) -> dict:
+        """``{(file, line): Assignment}`` built once. This used to be a linear
+        scan of ``prog.assignments`` per graph node, i.e. quadratic in program
+        size on exactly the big proof-verifier LogicSigs this detector targets."""
+        idx = getattr(self, "_asn_index", None)
+        if idx is None:
+            idx = {}
+            for a in self.prog.assignments:
+                idx.setdefault((a.location.file, a.location.line), a)
+            self._asn_index = idx
+        return idx
+
     def _assignment_at(self, node) -> Optional[Assignment]:
         """The ``Assignment`` an op-graph taint node stands for, matched by
         ``(file, line)`` — the node identity the TaintGraph exposes."""
-        for a in self.prog.assignments:
-            if a.location.file == node.file and a.location.line == node.line:
-                return a
-        return None
+        return self._assignment_index().get((node.file, node.line))
 
     def detect(self) -> list[UnsafeLsigArgsViolation]:
         tg = TaintGraph.of(self.prog)

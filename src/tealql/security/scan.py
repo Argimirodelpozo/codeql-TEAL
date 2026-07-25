@@ -41,7 +41,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Optional
 
-from tealql.tealtools.errors import TealParseError, TealQLError
+from tealql.tealtools.errors import (
+    TargetError, TargetNotFoundError, TealParseError, TealQLError,
+)
 from tealql.tealtools.ssa import SSAProgram
 from . import DETECTORS
 from .config import ConfigError, DetectionConfig, glob_match
@@ -332,7 +334,19 @@ class DetectionOptions:
 def discover_teal_files(root: Path) -> dict[Path, list[Path]]:
     """Walk ``root`` for ``*.teal`` files and group them by parent
     directory. The returned dict's keys are absolute parent dirs; each
-    value is a list of teal file paths, sorted by basename."""
+    value is a list of teal file paths, sorted by basename.
+
+    Raises :class:`tealql.tealtools.errors.TargetNotFoundError` when ``root``
+    does not exist, and :class:`~tealql.tealtools.errors.TargetError` when it
+    is not a directory. A mistyped path used to ``rglob`` an empty result, so
+    the scan reported "(no findings)" and exited 0 — a GREEN CI run on a
+    directory that was never scanned, the exact silent-clean outcome the rest
+    of this module (``--strict``, parse diagnostics, ``has_instructions``) is
+    built to prevent."""
+    if not root.exists():
+        raise TargetNotFoundError(f"scan root does not exist: {root}")
+    if not root.is_dir():
+        raise TargetError(f"scan root is not a directory: {root}")
     by_dir: dict[Path, list[Path]] = {}
     for teal in sorted(root.rglob("*.teal")):
         by_dir.setdefault(teal.parent.resolve(), []).append(teal.resolve())
@@ -445,8 +459,17 @@ def scan(
     method_table = _arc56_method_table(arc56)
     root = Path(root).resolve()
     by_dir = discover_teal_files(root)
+    n_files = sum(len(v) for v in by_dir.values())
     logger.info("scan: %d .teal file(s) across %d director(ies) under %s",
-                sum(len(v) for v in by_dir.values()), len(by_dir), root)
+                n_files, len(by_dir), root)
+    if not n_files:
+        # The root exists but holds no TEAL. Reporting "(no findings)" for it is
+        # true but misleading — nothing was analyzed — so say so, and let
+        # --strict refuse to hand out the clean bill at all.
+        msg = f"no .teal files found under {root} — nothing was analyzed"
+        if strict:
+            raise TealQLError(msg)
+        logger.warning("%s", msg)
     findings: list[ScanFinding] = []
     for dir_path, teal_files in sorted(by_dir.items()):
         for teal in teal_files:

@@ -23,7 +23,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable, Optional
 
-from ..avm import FUND_FIELDS, TXN_SOURCE_OPS
+from ..avm import FUND_FIELDS, LSIG_ARG_OPS, TXN_SOURCE_OPS
 from .taint_graph import Node, TaintGraph
 
 # --- sink taxonomy ----------------------------------------------------------
@@ -47,6 +47,13 @@ _ITXN_FIELD_SINKS: dict[str, tuple[str, str]] = {
     "ConfigAssetClawback": ("asset-admin", "high"),
     "ConfigAssetFreeze": ("asset-admin", "high"),
     "ConfigAssetReserve": ("asset-admin", "high"),
+    # Attacker-chosen program bytes on an inner app create/update = arbitrary
+    # code deployed under this app's authority. Both are already in
+    # ``avm.SENSITIVE_ITXN_FIELDS`` (the box / viz layers treat them as sinks)
+    # but this inventory — the one the "what is the attack surface" query
+    # reports — was missing them entirely.
+    "ApprovalProgram": ("inner-program-code", "critical"),
+    "ClearStateProgram": ("inner-program-code", "critical"),
 }
 
 #: Sinks identified by OPCODE alone (the danger is the op, not a field).
@@ -65,7 +72,9 @@ _OP_SINKS: dict[str, tuple[str, str]] = {
 #: alike); ``is_source`` gates on the ``ApplicationArgs`` field so the scalar-read
 #: ops only ever match an actual arg read.
 _ARG_ARRAY_OPS = TXN_SOURCE_OPS
-_LSIG_ARG_OPS = frozenset({"arg", "args", "arg_0", "arg_1", "arg_2", "arg_3"})
+# Derived, not re-listed: ``avm.py`` is the single home and warns that
+# hand-rolled copies of these tables are exactly how they drifted apart before.
+_LSIG_ARG_OPS = LSIG_ARG_OPS
 
 
 def classify_sink(op: Optional[str], immediates: Optional[str]

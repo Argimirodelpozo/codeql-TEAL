@@ -80,6 +80,69 @@ def _bb_at(prog: SSAProgram, file: str, line: int) -> Optional[BasicBlock]:
 
 
 
+#: Conditions whose FALSITY is itself a positive pin on the compared value:
+#: ``!(a != b)`` is ``a == b``, ``!(!x)`` is ``x``. See
+#: :func:`branch_gates_rejection`.
+_NEGATED_COND_OPS = frozenset({"!=", "b!=", "!"})
+
+
+def branch_gates_rejection(
+    prog: SSAProgram, branch, label_lines: dict[tuple[str, str], int],
+) -> bool:
+    """The ``bnz`` / ``bz`` at ``branch`` gates rejection on the condition, so
+    reaching an approval past it means the condition held.
+
+    Four shapes, by which edge lands on a rejection exit:
+
+    ====================  ===============================  ====================
+    rejecting edge        surviving constraint             credited?
+    ====================  ===============================  ====================
+    cond is FALSE         the comparison AS WRITTEN holds  yes, always
+    cond is TRUE          the comparison's NEGATION holds  only when negated
+    ====================  ===============================  ====================
+
+    The first row is the classic ``cmp; bz reject`` / ``cmp; bnz ok; err`` pair
+    and was the only thing recognised. The second row was recognised NOWHERE,
+    which made the idiomatic hand-written guard ``txn RekeyTo; global
+    ZeroAddress; !=; bnz fail`` (``fail: err``) read as UNENFORCED — a false
+    positive on a contract that pins RekeyTo to the zero address exactly as
+    correctly as the accepted ``==; assert`` form.
+
+    It is credited only when the condition is a NEGATED form (``!=`` / ``b!=``
+    / ``!``), because then its falsity is the positive comparison. A plain
+    ``==`` whose FALSE side approves is deliberately NOT credited: that pins
+    the field AWAY from the compared value — the "the check is inverted, so
+    approval requires the dangerous value" antipattern (see the
+    ``false_path_approves__vuln_inverted_bz`` fixture). Compound conditions
+    (``&&`` / ``||``) on the true-rejects side stay uncredited: conservative,
+    i.e. it may still over-report, never under-report."""
+    bb = getattr(branch, "basic_block", None)
+    if bb is None:
+        return False
+    target = None
+    target_line = label_lines.get((branch.location.file, branch.immediates.strip()))
+    if target_line is not None:
+        target = _bb_at(prog, branch.location.file, target_line)
+    fall_through = _fall_through_bb(prog, bb)
+    target_rejects = target is not None and is_rejection_exit(target)
+    ft_rejects = fall_through is not None and is_rejection_exit(fall_through)
+
+    if branch.op == "bnz":       # taken on TRUE, falls through on FALSE
+        rejects_when_false, rejects_when_true = ft_rejects, target_rejects
+    else:                        # bz: taken on FALSE, falls through on TRUE
+        rejects_when_false, rejects_when_true = target_rejects, ft_rejects
+
+    if rejects_when_false:
+        return True
+    if rejects_when_true and branch.inputs:
+        cond = branch.inputs[0]
+        d = getattr(cond, "defined_by", None)
+        return d is not None and d.op in _NEGATED_COND_OPS
+    return False
+
+
+
+
 def def_forward_reaches_enforcement(
     prog: SSAProgram,
     var: SSAVar,
@@ -94,11 +157,10 @@ def def_forward_reaches_enforcement(
 
     Recognised sinks:
       - ``assert`` consumes the SSA chain.
-      - ``bnz target`` consumes it and the fall-through BB is a
+      - a ``bnz`` / ``bz`` consumes it and EITHER of its two edges lands on a
         *rejection exit* (``err`` or ``return 0`` — see
-        :func:`is_rejection_exit`), so cmp=false ⇒ fall through ⇒ reject.
-      - ``bz target`` consumes it and the target BB is a rejection exit,
-        so cmp=false ⇒ branch to rejection ⇒ reject.
+        :func:`is_rejection_exit`), in either polarity — see
+        :func:`branch_gates_rejection`.
 
     Walks through every consuming opcode that produces an SSA def
     (``&&``, ``||``, ``dup``, etc.), so compositions like ``cmp1; cmp2;
@@ -129,19 +191,9 @@ def def_forward_reaches_enforcement(
     for cons in var.uses:
         if cons.op == "assert":
             return True
-        if cons.op == "bnz":
-            bnz_bb = cons.basic_block
-            if bnz_bb is not None:
-                fall_through = _fall_through_bb(prog, bnz_bb)
-                if fall_through is not None and is_rejection_exit(fall_through):
-                    return True
-        elif cons.op == "bz":
-            target_name = cons.immediates.strip()
-            target_line = label_lines.get((cons.location.file, target_name))
-            if target_line is not None:
-                target_bb = _bb_at(prog, cons.location.file, target_line)
-                if target_bb is not None and is_rejection_exit(target_bb):
-                    return True
+        if cons.op in ("bnz", "bz") and branch_gates_rejection(
+                prog, cons, label_lines):
+            return True
         # Step: consume produces an SSA def whose forward chain we walk.
         for out in cons.outputs:
             if not isinstance(out, SSAVar):

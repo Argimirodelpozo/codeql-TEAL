@@ -9,13 +9,11 @@ from __future__ import annotations
 from typing import Optional
 
 from tealql.tealtools.avm import CMP_OPS
-from tealql.tealtools.cfg.dominance import iterative_dominators, program_entries
 from tealql.tealtools.ssa import Assignment, BasicBlock, SSAProgram, SSAVar
 
 from ._enforcement import (
-    _bb_at,
-    _fall_through_bb,
     _label_to_bb_first_line,
+    branch_gates_rejection,
     scratch_forward_map,
 )
 from ._program_shape import (
@@ -24,7 +22,6 @@ from ._program_shape import (
     file_match,
     global_field_reads,
     gtxn_field_reads,
-    is_rejection_exit,
     ssavar_outputs,
     txn_field_reads,
 )
@@ -40,41 +37,6 @@ from ._value_flow import _operand_flows_from_field_var
 def is_comparison(a: Assignment) -> bool:
     """An ``Assignment`` whose op compares two stack values."""
     return a.op in CMP_OPS
-
-
-
-
-def _bb_strict_dominators(
-    prog: SSAProgram, *, file: Optional[str] = None,
-) -> dict[BasicBlock, set[BasicBlock]]:
-    """Iterative dataflow over the BB CFG: ``dom(b)`` = intersection of
-    ``dom(p)`` over predecessors, plus ``b`` itself. Entry BBs (no
-    predecessors) dominate only themselves at the start. Returns a
-    map ``bb -> {bbs that dominate bb}`` (including ``bb`` itself).
-
-    Multiple entry BBs are handled by giving each entry only itself as
-    its initial dominator set; non-entry BBs intersect across all
-    predecessors. Standard worklist algorithm.
-
-    With ``file`` set, only blocks in that file participate — useful
-    when one source carries multiple programs and dominance must stay
-    intra-program. (BB CFG edges don't cross files in tealtools'
-    model, so the result is structurally the same as building a
-    single-program source.)"""
-    blocks = [
-        bb for bb in prog.blocks.values() if file_match(bb.file, file)
-    ]
-    # Entries = the real per-file execution entries (first instruction's BB) —
-    # NOT "no predecessors": a first block that is a branch target has preds,
-    # and an empty entry set saturates dominance into everything-dominates-
-    # everything (silently crediting every guard). Preds stay file-filtered so
-    # a block whose only edges are cross-file stays saturated (defensive — BB
-    # CFG edges don't cross files in tealtools' model).
-    entries = program_entries(blocks)
-    return iterative_dominators(
-        blocks, entries,
-        lambda bb: [p for p in bb.predecessors if file_match(p.file, file)],
-    )
 
 
 
@@ -107,19 +69,13 @@ def _collect_field_enforcement_bbs(
         if cons.op == "assert":
             if cons.basic_block is not None:
                 out.add(cons.basic_block)
-        elif cons.op == "bnz":
-            bb = cons.basic_block
-            if bb is not None:
-                ft = _fall_through_bb(prog, bb)
-                if ft is not None and is_rejection_exit(ft):
-                    out.add(bb)
-        elif cons.op == "bz":
-            tgt = label_lines.get((cons.location.file, cons.immediates.strip()))
-            if tgt is not None:
-                tbb = _bb_at(prog, cons.location.file, tgt)
-                if (tbb is not None and is_rejection_exit(tbb)
-                        and cons.basic_block is not None):
-                    out.add(cons.basic_block)
+        elif cons.op in ("bnz", "bz"):
+            # Either polarity gates approval — see ``branch_gates_rejection``.
+            # The BB recorded is the BRANCH's own block, which every path
+            # continuing to an approving exit crosses whichever edge it takes.
+            if (cons.basic_block is not None
+                    and branch_gates_rejection(prog, cons, label_lines)):
+                out.add(cons.basic_block)
         for o in cons.outputs:
             if isinstance(o, SSAVar):
                 _collect_field_enforcement_bbs(prog, o, label_lines, out, seen,
@@ -265,39 +221,6 @@ def field_validated_on_all_paths(
     if not gates:
         return False
     return all(_all_entry_paths_cross(exit_bb, gates) for exit_bb in exits)
-
-
-
-
-def _is_protected_bb_for_seeds(
-    prog: SSAProgram,
-    bb: BasicBlock,
-    field_vars: set[SSAVar],
-    *,
-    file: Optional[str] = None,
-    allow_unary_cmp: bool = False,
-) -> bool:
-    """Takes the seed set of
-    field-source SSAVars directly so callers can swap the source
-    (``txn`` / ``global`` / ``gtxn``) or pass a *union* of seeds for
-    disjunction (e.g. ``TypeEnum`` OR ``Type``).
-
-    A BB is protected for ``field_vars`` iff it is an ENFORCEMENT SITE — it
-    contains an ``assert`` / branch-to-reject whose condition SSA-derives from a
-    comparison consuming a seed. This is the MUST-reach predicate (crossing the BB
-    means the field was enforced), not the old may-reach "a comparison here reaches
-    *some* enforcement" — which let a field compared in a dominator but asserted on
-    a single branch read as protected (a false negative).
-
-    ``allow_unary_cmp``: also accept the field compared against an *inlined literal*
-    (arity-1 comparison, e.g. an ABI selector), not just the strict two-input
-    form. Empty seeds → not protected (vacuously)."""
-    if not field_vars:
-        return False
-    if file is None:
-        file = bb.file
-    return bb in _field_enforcement_bbs(
-        prog, field_vars, file=file, allow_unary_cmp=allow_unary_cmp)
 
 
 

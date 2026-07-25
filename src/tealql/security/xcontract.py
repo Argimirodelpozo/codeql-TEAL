@@ -35,12 +35,15 @@ Example::
 from __future__ import annotations
 
 import inspect
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Optional
 
 from tealql.tealtools.xcontract import XContractGraph
 from . import DETECTORS
+
+logger = logging.getLogger("tealql.security.xcontract")
 
 
 @dataclass(frozen=True)
@@ -95,6 +98,7 @@ def cross_detection_findings(
     graph: XContractGraph,
     *,
     detector_names: Optional[Iterable[str]] = None,
+    strict: bool = False,
 ) -> list[CrossSecGuideFinding]:
     """Run sec-guide detectors against every callee in ``graph``.
 
@@ -107,7 +111,15 @@ def cross_detection_findings(
     :class:`PathPredicateAnalysis` so caller-side facts propagate.
     Detectors that don't take seeds run as plain
     ``cls(callee).detect()`` — they're program-level and don't depend
-    on the call-site context."""
+    on the call-site context.
+
+    Per-(callee, detector) crash isolation, matching
+    :func:`tealql.security.scan.scan` and
+    :func:`tealql.tealtools.detector.run_all_findings`: one detector faulting on
+    one weird callee is logged and skipped, not allowed to sink every other
+    callee's findings. ``strict=True`` re-raises instead. (``tealql audit``
+    wrapped this whole call in one try/except, so a single fault used to erase
+    the entire cross-contract section of the report.)"""
     names = list(detector_names) if detector_names is not None else list(DETECTORS)
     out: list[CrossSecGuideFinding] = []
     for app_id, callee in graph.callees.items():
@@ -124,8 +136,15 @@ def cross_detection_findings(
             )
             if "app" not in applies:
                 continue
-            det = _construct_detector(cls, callee, ca)
-            for v in det.detect():
+            try:
+                violations = list(_construct_detector(cls, callee, ca).detect())
+            except Exception as e:
+                if strict:
+                    raise
+                logger.error("detector %s crashed on callee app%s (skipped): %s",
+                             name, app_id, e)
+                continue
+            for v in violations:
                 out.append(CrossSecGuideFinding(
                     app_id=app_id,
                     detector_name=f"sec-guide/{name}",

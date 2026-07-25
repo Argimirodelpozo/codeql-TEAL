@@ -73,6 +73,7 @@ from ._enforcement import (  # noqa: E402,F401
     _bb_at,
     _fall_through_bb,
     _label_to_bb_first_line,
+    branch_gates_rejection,
     def_forward_reaches_enforcement,
     enforced_op_exists,
     scratch_forward_map,
@@ -80,10 +81,8 @@ from ._enforcement import (  # noqa: E402,F401
 from ._field_protection import (  # noqa: E402,F401
     _all_entry_paths_cross,
     _approval_exit_protected_for_seeds,
-    _bb_strict_dominators,
     _collect_field_enforcement_bbs,
     _global_field_seeds,
-    _is_protected_bb_for_seeds,
     _txn_field_seeds,
     approval_exit_protected_for_any_txn_field,
     approval_exit_protected_for_arg_reads,

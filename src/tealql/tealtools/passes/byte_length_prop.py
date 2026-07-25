@@ -29,9 +29,11 @@ Op semantics covered (forward, single-output bytes producers):
   - ``setbyte X i b``           → preserves ``len(X)``.
   - ``replace2 A X V``          → preserves ``len(X)`` (X is inputs[-1], the deepest).
   - ``replace3 X A V``          → preserves ``len(X)`` (X is inputs[-1], the deepest).
-  - ``sha256`` / ``sha512_256``
-    / ``keccak256`` / ``sha3_256``  → 32 bytes (AVM hash digests have
-                                  fixed output width).
+  - the hash / digest family      → their fixed output width, from
+                                  :data:`avm.FIXED_BYTES_OUTPUT_LEN`
+                                  (``sha256`` / ``sha512_256`` /
+                                  ``keccak256`` / ``sha3_256`` / ``mimc`` = 32,
+                                  ``sumhash512`` = 64).
   - Any ``txn`` / ``gtxn*`` / ``itxn*`` / ``gitxn*`` form (via
     :func:`_txn_field_name`) reading a fixed-width bytes field — 32-byte
     addresses incl. the ``Accounts`` array element + ``Lease`` / ``VotePK``
@@ -93,6 +95,7 @@ from ..ssa import (
     const_int, operand_const,
 )
 from ..avm import (
+    FIXED_BYTES_OUTPUT_LEN,
     _GLOBAL_FIELD_BYTELEN,
     _OP_OUTPUT_BYTELEN,
     _PARAMS_OPS,
@@ -239,9 +242,12 @@ def _op_byte_length(a: Assignment) -> Optional[int]:
             return None
         return _operand_byte_length(a.inputs[-1])
 
-    # Fixed-width hash digests.
-    if op in ("sha256", "sha512_256", "keccak256", "sha3_256"):
-        return 32
+    # Fixed-width hash / digest outputs, from the AVM metadata table (the four
+    # SHA/Keccak lengths used to be inline here, which left `mimc` (32) and
+    # `sumhash512` (64) unlengthed).
+    n = FIXED_BYTES_OUTPUT_LEN.get(op)
+    if n is not None:
+        return n
 
     # Fixed-width bytes fields (32-byte addresses / keys, 64-byte
     # StateProofPK) read off the txn-family or global field tables.

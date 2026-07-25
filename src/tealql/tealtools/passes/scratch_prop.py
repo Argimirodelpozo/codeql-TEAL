@@ -60,7 +60,28 @@ def propagate_scratch_constants(prog: SSAProgram) -> None:
 
 
 def propagate_scratch_values(prog: SSAProgram) -> int:
-    """Returns the number of loads forwarded. Mutates the SSA in place."""
+    """Returns the number of loads forwarded. Mutates the SSA in place.
+
+    Iterates to a FIXED POINT, like its ``propagate_scratch_constants`` sibling:
+    a chained round-trip (``store 2; load 2; store 3; load 3``) only resolves one
+    level per sweep, and the sweep order over ``_graph.nodes`` decides which
+    level that is. A single sweep therefore left the value web half-forwarded and
+    made ``run_all_passes`` NON-idempotent — the second run kept forwarding, and
+    a chain of depth N needed N runs to converge, contradicting both this
+    function's "a second call finds nothing further" claim and orchestrate's
+    "running run_all_passes twice is a no-op"."""
+    total = 0
+    while True:
+        forwarded = _forward_scratch_loads_once(prog)
+        total += forwarded
+        if not forwarded:
+            return total
+
+
+def _forward_scratch_loads_once(prog: SSAProgram) -> int:
+    """One sweep. Returns loads whose consumers were ACTUALLY rewired — the
+    count must reflect real change or the fixpoint loop above never terminates
+    (a load with nothing left to rewire would keep reporting progress)."""
     forwarded = 0
     for n in prog._graph.nodes:
         stores = prog._graph.nodes[n].get("scratch_stores")
@@ -87,15 +108,19 @@ def propagate_scratch_values(prog: SSAProgram) -> int:
             continue
         if load_var is first:
             continue
+        rewired = False
         for cons in list(load_var.uses):
             for i, inp in enumerate(cons.inputs):
                 if inp is load_var:
                     cons.inputs[i] = first
                     first.uses.append(cons)
+                    rewired = True
         for phi in prog.phis.values():
             for i, arg in enumerate(phi.args):
                 if arg is load_var:
                     phi.args[i] = first
+                    rewired = True
         load_var.uses = []
-        forwarded += 1
+        if rewired:
+            forwarded += 1
     return forwarded

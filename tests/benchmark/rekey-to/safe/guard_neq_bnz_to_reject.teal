@@ -1,0 +1,14 @@
+#pragma version 10
+    // RekeyTo pinned to zero with the OPPOSITE branch polarity to
+    // rekey_checked_via_bz: the `!=` is TRUE on the rejecting edge, so what
+    // survives to the approval is `RekeyTo == ZeroAddress`. Idiomatic in
+    // hand-written TEAL; the enforcement walk only recognised the
+    // cond-false-rejects direction and called this contract unprotected.
+    txn RekeyTo
+    global ZeroAddress
+    !=
+    bnz reject
+    int 1
+    return
+reject:
+    err

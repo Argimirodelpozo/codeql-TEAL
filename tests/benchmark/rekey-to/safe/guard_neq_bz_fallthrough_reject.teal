@@ -1,0 +1,11 @@
+#pragma version 10
+    // Same negated guard, mirrored onto `bz`: the rejecting edge is the
+    // FALL-THROUGH (cond true), the approving edge is the branch target.
+    txn RekeyTo
+    global ZeroAddress
+    !=
+    bz ok
+    err
+ok:
+    int 1
+    return

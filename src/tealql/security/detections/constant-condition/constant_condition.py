@@ -25,6 +25,15 @@ semantics, constants, arithmetic) only, so a flagged guard is genuinely
 redundant given what the program structurally knows -- independent of any
 assertion.
 
+That is a precondition on the SHARED program, not just on this detector:
+if anything ran the standard pass pipeline
+(:func:`tealql.tealtools.passes.run_all_passes`, which includes assert
+refinement) on the same ``SSAProgram`` first, every asserted comparison
+reads as vacuous -- measured at 0 findings before, 87 after, on a sample
+of real contracts. The detector cannot un-refine an annotation, so it
+checks ``prog._assert_ranges_applied`` and declines to report rather than
+emit a swarm of confident nonsense.
+
 Sound by construction: a condition is reported only when its operand
 ranges *prove* the outcome (disjoint or fully-ordered intervals); any
 overlap yields no finding. Compound ``&&`` / ``||`` conditions are not
@@ -40,11 +49,14 @@ finding count from 64 (all boilerplate) to 0.
 """
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Optional
 
 from tealql.tealtools.ssa import IntRange, Location, SSAProgram, binary_operands, is_const
 from tealql.tealtools.passes.range_arith import _operand_range
+
+logger = logging.getLogger("tealql.security.constant-condition")
 
 # uint64 comparison ops, in the top-first ``inputs[1] OP inputs[0]`` form.
 _CMP = frozenset({"<", "<=", ">", ">=", "==", "!="})
@@ -177,6 +189,17 @@ class ConstantConditionDetector:
 
     def detect(self) -> list[ConstantConditionViolation]:
         prog = self.prog
+        # PRECONDITION: the ranges must be value FACTS, not assert-refined ones
+        # (see the module docstring). Assert refinement is irreversible on a
+        # shared program, so decline rather than report every asserted
+        # comparison as vacuous.
+        if getattr(prog, "_assert_ranges_applied", False):
+            logger.warning(
+                "constant-condition skipped: propagate_assert_ranges has "
+                "already refined this program's ranges USING its asserts, so "
+                "every asserted comparison would read as vacuous. Run this "
+                "detector on a freshly built SSAProgram.")
+            return []
         # Value-fact ranges only (NOT assert-refinement — see module docs).
         prog.propagate_constants()
         prog.propagate_range_arithmetic()  # lazy-trips propagate_ranges

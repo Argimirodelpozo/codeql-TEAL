@@ -53,10 +53,17 @@ def _configure_logging(verbosity: int) -> None:
         level = logging.INFO
     else:
         level = logging.WARNING
-    handler = logging.StreamHandler(sys.stderr)
-    handler.setFormatter(logging.Formatter("%(levelname)-7s %(message)s"))
     root = logging.getLogger("tealql")
     root.setLevel(level)
+    # Replace, don't append: ``main()`` is called in-process repeatedly (the
+    # test suite, any library embedding), and appending a fresh StreamHandler
+    # each time multiplied every log line by the number of calls so far.
+    for existing in [h for h in root.handlers
+                     if getattr(h, "_tealql_cli", False)]:
+        root.removeHandler(existing)
+    handler = logging.StreamHandler(sys.stderr)
+    handler.setFormatter(logging.Formatter("%(levelname)-7s %(message)s"))
+    handler._tealql_cli = True                    # type: ignore[attr-defined]
     root.addHandler(handler)
 
 
@@ -600,6 +607,11 @@ def _cmd_audit(args) -> int:
             return 2
         teal_path.write_text(teal)
     caller = SSAProgram(str(teal_path))
+    # Same preparation every other subcommand does through ``_load``: cross-
+    # contract callee discovery keys on CONSTANT AppIDs, and a partially-parsed
+    # program must not read as silently clean.
+    caller.propagate_constants()
+    _check_parse_health(caller, args)
 
     # App-mode detectors, supersession-deduped (the same default set as
     # `detections --all --mode app`), each guarded so one crash doesn't sink the run.

@@ -23,10 +23,15 @@ program may submit (capped at :data:`HARD_BUDGET_LIMIT` /
 :data:`MAX_INNER_TXNS`). For ops with a FIXED per-invocation cost the
 reported ``cumulative`` is a **sound over-approximation** of the actual
 worst-case — no false negatives for budget-exhaustion findings. A few
-ops cost proportionally to their operand LENGTH (``base64_decode`` /
-``json_ref`` / ``mimc``) or their CURVE immediate (the ``ec_*`` family);
-those use a representative constant from :data:`OPCODE_COSTS` and may
-under-count on very large inputs / the most expensive curve.
+ops cost proportionally to their operand LENGTH
+(:data:`LENGTH_SCALED_OPS` — ``base64_decode`` / ``json_ref`` / ``mimc``
+/ ``sumhash512``) or their CURVE immediate (:data:`CURVE_SCALED_OPS` —
+the ``ec_*`` / ``ecdsa_*`` family); those carry a representative BASE
+constant in :data:`OPCODE_COSTS` and may under-count on very large
+inputs / the most expensive curve. When a program uses one,
+:func:`length_scaled_ops_used` names it and both :func:`render` and
+:func:`to_dict` say the cums are a lower bound for those lines — the
+over-approximation guarantee above holds only for the fixed-cost ops.
 
 Algorithm — structural-analysis fold over the control tree:
 
@@ -90,7 +95,10 @@ from __future__ import annotations
 from .ssa import BasicBlock, SSAProgram
 
 
-# Crypto / EC / hash ops with non-default costs. TEAL v10.
+# Crypto / EC / hash ops with non-default costs. Fixed-cost entries are pinned
+# against puya's langspec by ``tests/test_cost_drift.py``; the variable-cost ops
+# (which puya models as ``cost=None``) carry a representative constant here and
+# are listed in ``_LENGTH_SCALED_OPS`` below.
 OPCODE_COSTS: dict[str, int] = {
     "sha256": 35,
     "keccak256": 130,
@@ -98,10 +106,20 @@ OPCODE_COSTS: dict[str, int] = {
     "sha3_256": 130,
     "ed25519verify": 1900,
     "ed25519verify_bare": 1900,
+    "falcon_verify": 1700,
     "ecdsa_verify": 1700,
     "ecdsa_pk_decompress": 650,
     "ecdsa_pk_recover": 2000,
     "vrf_verify": 5700,
+    # Length-scaled ops. The AVM charges these a base plus a per-input-chunk
+    # term, so no single constant is exact; the BASE is charged here. Without
+    # these entries they defaulted to 1 — three orders of magnitude under for
+    # `mimc`, which silently broke the module's "sound over-approximation of the
+    # worst case" contract while the docstring claimed they were covered.
+    "mimc": 10,             # + 550 per 32 bytes
+    "sumhash512": 150,      # + 7  per 4 bytes
+    "json_ref": 25,         # + 2  per 7 bytes
+    "base64_decode": 1,     # + 1  per 16 bytes
     "ec_add": 13,
     "ec_scalar_mul": 970,
     "ec_pairing_check": 8700,
@@ -110,7 +128,8 @@ OPCODE_COSTS: dict[str, int] = {
     "ec_map_to": 2300,
     "expw": 10,
     "bsqrt": 40,
-    "divw": 4,
+    # `divw` is NOT here: the langspec prices it at the default 1 (the table
+    # said 4, an over-count this file's drift test now catches).
     "divmodw": 20,
     "sqrt": 4,
     # 512-bit byte-math (fixed per-op costs, AVM v10).
@@ -119,6 +138,34 @@ OPCODE_COSTS: dict[str, int] = {
     "b|": 6, "b&": 6, "b^": 6, "b~": 4,
 }
 DEFAULT_COST = 1
+
+#: Ops whose real AVM cost is ``OPCODE_COSTS[op] + k * ceil(len(input)/chunk)``.
+#: :func:`opcode_cost` returns only the base, so a cum that includes one of
+#: these is a LOWER bound on that op's contribution — surfaced by
+#: :func:`length_scaled_ops_used` so a report can say so instead of implying
+#: the usual worst-case over-approximation.
+LENGTH_SCALED_OPS: frozenset[str] = frozenset({
+    "mimc", "sumhash512", "json_ref", "base64_decode",
+})
+
+#: Ops whose cost depends on the CURVE immediate; the table carries a
+#: representative (not maximal) constant. Same caveat as above.
+CURVE_SCALED_OPS: frozenset[str] = frozenset({
+    "ec_add", "ec_scalar_mul", "ec_pairing_check", "ec_multi_scalar_mul",
+    "ec_subgroup_check", "ec_map_to", "ecdsa_verify", "ecdsa_pk_decompress",
+})
+
+
+def length_scaled_ops_used(prog: SSAProgram) -> list[str]:
+    """Sorted opcodes in ``prog`` whose modelled cost is not a sound upper
+    bound (see :data:`LENGTH_SCALED_OPS` / :data:`CURVE_SCALED_OPS`). Empty
+    means every op in the program has a fixed per-invocation cost, so the
+    reported cums ARE the documented worst-case over-approximation."""
+    inexact = LENGTH_SCALED_OPS | CURVE_SCALED_OPS
+    return sorted({
+        a.op for bb in prog.blocks.values() for a in bb.assignments
+        if a.op in inexact
+    })
 
 # Absolute opcode-budget ceiling: the AVM halts long before this in
 # practice (~190k worst-case observed). 200k is a safe round cap.
@@ -752,7 +799,10 @@ def _merge_states(
 
 
 def render(prog: SSAProgram) -> str:
-    """Per-line cost table, sorted by (file, line)."""
+    """Per-line cost table, sorted by (file, line). When the program uses an op
+    whose modelled cost is not a sound upper bound (length- or curve-scaled), a
+    trailing note says so — the table's usual "worst-case over-approximation"
+    guarantee does not hold for those lines."""
     lines = per_line_costs(prog)
     if not lines:
         return "(no instructions)"
@@ -762,6 +812,12 @@ def render(prog: SSAProgram) -> str:
         out.append(
             f"{f}:L{ln:<3}  {op.ljust(op_w)}  op_cost={oc:<4}  cum={cum}"
         )
+    inexact = length_scaled_ops_used(prog)
+    if inexact:
+        out.append(
+            f"\nNOTE: {', '.join(inexact)} cost more than the modelled constant "
+            "(the AVM scales them by input length / curve), so these cums are a "
+            "LOWER bound, not the usual worst-case over-approximation.")
     return "\n".join(out)
 
 
@@ -776,6 +832,9 @@ def to_dict(prog: SSAProgram, paths: bool = False) -> dict:
 
     - ``budget_ceiling``: :func:`program_budget_ceiling` headline.
     - ``max_observed_cumulative``: largest cum across all lines.
+    - ``inexact_cost_ops``: ops whose modelled cost is NOT a sound upper bound
+      (see :func:`length_scaled_ops_used`); non-empty means the cums are a
+      lower bound for the lines involving them.
     - ``paths`` (only when ``paths=True``): the input mode echo.
     """
     if paths:
@@ -796,6 +855,7 @@ def to_dict(prog: SSAProgram, paths: bool = False) -> dict:
             "entries": entries,
             "budget_ceiling": program_budget_ceiling(prog),
             "max_observed_cumulative": max_cum,
+            "inexact_cost_ops": length_scaled_ops_used(prog),
             "paths": True,
         }
     lines = per_line_costs(prog)
@@ -815,4 +875,5 @@ def to_dict(prog: SSAProgram, paths: bool = False) -> dict:
         "entries": entries,
         "budget_ceiling": program_budget_ceiling(prog),
         "max_observed_cumulative": max_cum,
+        "inexact_cost_ops": length_scaled_ops_used(prog),
     }

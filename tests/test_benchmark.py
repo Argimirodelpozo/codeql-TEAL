@@ -127,7 +127,10 @@ _BASELINE: dict[str, tuple[int, int, int, int]] = {
     "is-updatable": (1, 0, 0, 1),
     "lease-validation": (1, 0, 0, 1),
     "partial-tainted-fund-flow": (3, 0, 0, 4),
-    "rekey-to": (5, 0, 0, 5),
+    # +3 TN (2026-07-25 review): the two negated-guard branch polarities and the
+    # diamond-joined guard — all three were FALSE POSITIVES before the fix, and
+    # the corpus had no safe case covering either shape.
+    "rekey-to": (5, 0, 0, 8),
     "tainted-fund-flow": (4, 0, 0, 4),
     "timelock-upgrade": (1, 0, 0, 1),
     "tx-type-check": (1, 0, 0, 1),
@@ -147,4 +150,20 @@ def test_benchmark_baseline(capsys):
     assert actual == _BASELINE, (
         "detector behaviour changed vs the benchmark baseline; review the new "
         "FP/FN and update _BASELINE intentionally"
+    )
+
+
+def test_published_precision_doc_is_current():
+    """``docs/PRECISION.md`` is GENERATED but nothing forced regeneration, so it
+    silently went stale — it advertised 74+84 ground-truth cases while the
+    corpus on disk held 80+98, and carried an out-of-date severity. The
+    published numbers are the project's public quality claim; a stale one is
+    worse than none."""
+    from pathlib import Path
+
+    from gen_precision import OUT, build_report
+
+    assert Path(OUT).read_text() == build_report(), (
+        "docs/PRECISION.md is out of date — regenerate with "
+        "`python -m tests.gen_precision` and commit it"
     )

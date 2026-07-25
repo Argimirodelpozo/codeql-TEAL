@@ -102,9 +102,19 @@ def propagate_assert_ranges(prog: SSAProgram) -> int:
 
     Lazily trips :func:`propagate_range_arithmetic` first so const and
     arithmetic bounds are in place to refine; iterates to a fixed point so
-    guards that depend on one another compose."""
+    guards that depend on one another compose.
+
+    Sets ``prog._assert_ranges_applied``. This pass makes the range annotations
+    ASSERT-CONDITIONAL rather than pure value facts, which silently invalidates
+    any consumer that reasons about whether a guard is redundant — see
+    :mod:`tealql.security.detections.constant_condition`, which checks the flag
+    and refuses to run on a program whose ranges have been refined this way."""
     if not getattr(prog, "_range_arith_propagated", False):
         propagate_range_arithmetic(prog)
+    try:
+        prog._assert_ranges_applied = True
+    except AttributeError:          # only if SSAProgram ever gains __slots__
+        pass
 
     # (No "has an entry block" bail here: AssertDominance now computes the real
     # per-file entries itself — the old no-predecessor-block guard existed only

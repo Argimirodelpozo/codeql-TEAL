@@ -454,15 +454,18 @@ class SSAProgram:
         subsequent :meth:`cleanup_unused_ssavars` removes it.
 
         Returns the number of loads forwarded. Mutates the SSA in place.
-        Idempotent — a second call finds nothing further to forward.
+        Iterates to a fixed point (a chained ``store/load/store/load``
+        round-trip resolves one level per sweep), so a second call finds
+        nothing further to forward.
 
         Best run after :meth:`propagate_inputs` (so equivalent input
         reads are already unified and forwarding through scratch can
         see them as a single SSAVar) and :meth:`propagate_scratch_constants`
-        (so const stores resolve via const_value first). Not part of
-        :func:`run_all_passes` because — like ``propagate_inputs`` —
-        the SSAVar-identity change can surprise analyses that expect a
-        1:1 mapping between load assignments and their downstream uses.
+        (so const stores resolve via const_value first). Runs as Phase A
+        step 4 of :func:`tealql.tealtools.passes.run_all_passes`. Callers
+        outside that pipeline should note that the SSAVar-identity change
+        can surprise an analysis expecting a 1:1 mapping between load
+        assignments and their downstream uses.
         """
         self._ensure_scratch_influence()
         from ..passes.scratch_prop import propagate_scratch_values as _impl

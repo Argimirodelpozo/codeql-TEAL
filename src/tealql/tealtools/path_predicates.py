@@ -49,6 +49,7 @@ from dataclasses import dataclass
 from typing import Optional, Union
 
 from .cfg.dominance import program_entries
+from .cfg.exits import is_approval_exit
 from .subroutines import sound_return_targets
 from .ssa import (
     BasicBlock,
@@ -57,7 +58,6 @@ from .ssa import (
     SSAProgram,
     SSAVar,
     binary_operands,
-    const_int,
     is_const,
 )
 from .avm import CMP_OPS, LOGICAL_OPS
@@ -188,31 +188,69 @@ _TXN_FIELD_READ_OPS = frozenset({
 _PURE_COMBINATOR_OPS = CMP_OPS | LOGICAL_OPS
 
 
-def _rooted_in_immutable_fields(v, seen: Optional[set] = None) -> bool:
+def _rooted_in_immutable_fields(v, seen: Optional[set] = None,
+                                memo: Optional[dict] = None) -> bool:
     """True if every leaf of ``v`` is an immutable transaction/global field read
     or a constant, combined only through pure comparison/boolean ops. Such a
     value cannot be altered by a ``callsub`` (the callee can touch stack/scratch,
-    never the txn fields), so a predicate on it is preserved across the return."""
+    never the txn fields), so a predicate on it is preserved across the return.
+
+    ``memo`` is an OPTIONAL per-analysis result cache (the property is a pure
+    function of an SSA value the analysis never mutates). ``_compute`` supplies
+    one because without it this re-walked the whole value DAG for every
+    predicate at every return target on every worklist iteration — 468k calls,
+    ~14% of a real contract's entire detector run. It is deliberately NOT a
+    module-level cache: ``SSAVar`` hashes by ``(file, line, index)``, so a
+    shared dict would collide across two programs with the same basename.
+
+    ``seen`` is per-walk and exists only to break cycles; a result whose walk
+    took the cycle short-circuit is not cached, because that answer holds only
+    for the traversal that reached it."""
+    return _rooted_walk(v, set() if seen is None else seen,
+                        {} if memo is None else memo)[0]
+
+
+def _rooted_walk(v, seen: set, memo: dict) -> "tuple[bool, bool]":
+    """``(rooted_in_immutable_fields, took_a_cycle_shortcut)``."""
     if is_const(v):
-        return True
-    if seen is None:
-        seen = set()
-    if isinstance(v, (SSAVar, Phi)):
-        if v in seen:
-            return True
-        seen.add(v)
+        return True, False
+    if not isinstance(v, (SSAVar, Phi)):
+        return False, False
+    if v in memo:
+        return memo[v], False
+    if v in seen:
+        return True, True                    # cycle: neutral for the conjunction
+    seen.add(v)
+    try:
         if isinstance(v, Phi):
-            return bool(v.args) and all(
-                _rooted_in_immutable_fields(a, seen) for a in v.args)
-        d = v.defined_by
-        if d is None:
-            return False                     # param / frame_dig / unknown
-        if d.op in _TXN_FIELD_READ_OPS:
-            return True
-        if d.op in _PURE_COMBINATOR_OPS:
-            return all(_rooted_in_immutable_fields(i, seen) for i in d.inputs)
-        return False                         # load / app_global_get / arith / …
-    return False
+            parts, ok = v.args, bool(v.args)
+        else:
+            d = v.defined_by
+            if d is None:
+                return _cache(memo, v, False)         # param / frame_dig / unknown
+            if d.op in _TXN_FIELD_READ_OPS:
+                return _cache(memo, v, True)
+            if d.op not in _PURE_COMBINATOR_OPS:
+                return _cache(memo, v, False)         # load / state / arith / …
+            parts, ok = d.inputs, True
+        cut = False
+        if ok:
+            for part in parts:
+                rooted, part_cut = _rooted_walk(part, seen, memo)
+                cut = cut or part_cut
+                if not rooted:
+                    ok = False
+                    break
+    finally:
+        seen.discard(v)
+    if not cut:
+        memo[v] = ok
+    return ok, cut
+
+
+def _cache(memo: dict, v, result: bool) -> "tuple[bool, bool]":
+    memo[v] = result
+    return result, False
 
 
 def _disp(op) -> str:
@@ -313,18 +351,14 @@ class PathPredicateAnalysis:
         reject-path facts into ``approving_exit_summary`` weakens the caller
         feedback for no reason. A non-constant return value stays included
         (it may approve).
+
+        Classification is :func:`tealql.tealtools.cfg.exits.is_approval_exit`.
+        This used to test ``last.inputs[0]``, which is ALWAYS EMPTY — ``return``
+        is deliberately modelled as ``(0, 0)`` in :data:`avm.SIG` — so the
+        reject-arm exclusion documented above could never fire and every
+        ``int 0; return`` arm was intersected in as if it approved.
         """
-        out: list[BasicBlock] = []
-        for bb in self.prog.blocks.values():
-            if not bb.assignments:
-                continue
-            last = bb.assignments[-1]
-            if last.op != "return":
-                continue
-            if last.inputs and const_int(last.inputs[0]) == 0:
-                continue                      # provably rejects
-            out.append(bb)
-        return out
+        return [bb for bb in self.prog.blocks.values() if is_approval_exit(bb)]
 
     def approving_exit_summary(self) -> frozenset[BranchCondition]:
         """Intersection of predicates over every approving exit BB.
@@ -403,6 +437,8 @@ class PathPredicateAnalysis:
         # return-target BB -> its calling (callsub) BB; ``return_target_of`` is
         # the reverse, so a change to a caller re-queues its return target.
         caller_of, return_target_of = self._callsub_return_maps()
+        # One immutability memo for the whole fixpoint (see the function's note).
+        rooted_memo: dict = {}
 
         # Initial: TOP everywhere; ``∅`` for BBs with no predecessors
         # (unreachable BBs and the usual no-pred program entry — "no
@@ -450,9 +486,10 @@ class PathPredicateAnalysis:
                 if caller_preds is not _TOP:
                     new_preds |= {
                         c for c in caller_preds  # type: ignore[union-attr]
-                        if _rooted_in_immutable_fields(c.value)
-                        and all(_rooted_in_immutable_fields(a) for a in c.args
-                                if isinstance(a, (SSAVar, Phi)))
+                        if _rooted_in_immutable_fields(c.value, memo=rooted_memo)
+                        and all(
+                            _rooted_in_immutable_fields(a, memo=rooted_memo)
+                            for a in c.args if isinstance(a, (SSAVar, Phi)))
                     }
             new_frozen = frozenset(new_preds)
             old = bb_preds[bb]
