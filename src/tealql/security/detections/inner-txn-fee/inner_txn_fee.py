@@ -43,9 +43,10 @@ class InnerTxnFeeDetector:
     applies_to = frozenset({"app"})  # itxn_* is app-only
 
     def __init__(self, prog: SSAProgram, *, file: Optional[str] = None):
-        # Constant propagation must have run so the value SSAVar carries
-        # its const_value (parsed as an integer when possible).
-        prog.propagate_constants()
+        # Needs const_value on the value SSAVar (parsed as an int when
+        # possible). The runner already prepared the program; this is the
+        # idempotent fallback for a detector built directly by a caller.
+        common.prepare(prog)
         self.prog = prog
         self.file = file
 

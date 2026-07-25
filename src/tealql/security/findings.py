@@ -117,8 +117,11 @@ def normalize(
 ) -> Finding:
     """Build a :class:`Finding` from any detector violation.
 
-    ``rel_path`` (the scanned file) is the reported ``file`` unless the
-    violation's own message names a different one. Structured extra keys from a
+    ``rel_path`` (the scanned file) WINS as the reported ``file`` — the caller
+    knows which artifact it handed the detector, and a violation's own
+    structured file is a basename from the SSA location, not a path relative to
+    the scan root. The violation's file is used only as the fallback when no
+    ``rel_path`` is supplied (direct library use). Structured extra keys from a
     violation's ``to_dict()`` (minus the ones Finding already models) are kept
     under ``details`` so nothing is lost."""
     msg = violation.pretty() if hasattr(violation, "pretty") else str(violation)

@@ -59,6 +59,7 @@ from ._program_shape import (  # noqa: E402,F401
     is_rejection_exit,
     loc,
     op_output_seeds,
+    prepare,
     ssavar_outputs,
     txn_field_reads,
 )

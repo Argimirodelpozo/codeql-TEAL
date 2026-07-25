@@ -160,7 +160,12 @@ def _load_programs(args) -> "list[tuple]":
     answers when several programs' entries and exits are pooled into one
     (the same reason ``tealql.security.scan`` builds per-file). ``file_filter`` is
     the basename for a multi-file target (so detectors scope to it) or
-    ``None`` for a single file."""
+    ``None`` for a single file.
+
+    Each program is const-propagated exactly like :func:`_load` does — the
+    detectors this feeds assume it (see ``tealql.security.common.prepare``), and
+    omitting it made ``tealql detections`` start from a different program state
+    than ``tealql all`` and ``detections-scan``."""
     from tealql.tealtools._utils.targets import _discover_teal_files
     from tealql.tealtools.ssa import SSAProgram
     source = _resolve(args)
@@ -170,6 +175,7 @@ def _load_programs(args) -> "list[tuple]":
     for teal in teal_files:
         logger.info("building SSA program from %s", teal)
         prog = SSAProgram(str(teal))
+        prog.propagate_constants()
         _check_parse_health(prog, args)
         progs.append((prog, None if single else teal.name))
     return progs

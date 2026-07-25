@@ -51,9 +51,10 @@ class HardcodedMinBalanceDetector:
     applies_to = frozenset({"app"})  # min_balance is an app idiom
 
     def __init__(self, prog: SSAProgram, *, file: Optional[str] = None):
-        # Constant propagation needed to recognise the hardcoded operand
-        # (``intc_*`` / ``int N`` / ``pushint N``).
-        prog.propagate_constants()
+        # Const propagation is needed to recognise the hardcoded operand
+        # (``intc_*`` / ``int N`` / ``pushint N``). Idempotent fallback — the
+        # runner prepares the program once.
+        common.prepare(prog)
         self.prog = prog
         self.file = file
 

@@ -20,6 +20,27 @@ from tealql.tealtools.cfg.exits import (  # noqa: F401
 )
 
 
+def prepare(prog: SSAProgram) -> SSAProgram:
+    """Make ``prog`` ready for the detector layer, once. Returns ``prog``.
+
+    THE contract between a detector runner and the detectors: the runner calls
+    this immediately after building each program, and a detector may then
+    assume ``const_value`` is resolved on anything reachable by propagation
+    (folded arithmetic, dup/cover flow, phi resolution) — not merely on direct
+    literal pushes, which is all construction tags.
+
+    It exists because three detectors used to call ``prog.propagate_constants()``
+    from their own ``__init__``, i.e. mutate the program every other detector in
+    the same scan shares. That happened to be harmless (the pass is idempotent
+    and annotation-only) but it made a detector's inputs depend on which
+    detectors ran before it, and it is the same coupling that let
+    ``constant-condition`` read assert-refined ranges as value facts. Idempotent,
+    so a detector constructed directly by a library caller can still call it
+    without paying twice."""
+    prog.propagate_constants()
+    return prog
+
+
 def _is_const_zero(operand) -> bool:
     return const_int(operand) == 0
 

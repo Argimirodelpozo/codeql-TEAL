@@ -30,9 +30,10 @@ if anything ran the standard pass pipeline
 (:func:`tealql.tealtools.passes.run_all_passes`, which includes assert
 refinement) on the same ``SSAProgram`` first, every asserted comparison
 reads as vacuous -- measured at 0 findings before, 87 after, on a sample
-of real contracts. The detector cannot un-refine an annotation, so it
-checks ``prog._assert_ranges_applied`` and declines to report rather than
-emit a swarm of confident nonsense.
+of real contracts. Refinement only ever narrows, so it cannot be undone in
+place: when ``prog._assert_ranges_applied`` is set the detector reads its
+ranges off a PRIVATE rebuild from the same source instead (and declines only
+for an in-memory program with no source to rebuild from).
 
 Sound by construction: a condition is reported only when its operand
 ranges *prove* the outcome (disjoint or fully-ordered intervals); any
@@ -187,18 +188,35 @@ class ConstantConditionDetector:
                 return 0
         return None
 
-    def detect(self) -> list[ConstantConditionViolation]:
+    def _range_program(self) -> Optional[SSAProgram]:
+        """The program to read ranges off. Normally the shared one — building
+        value-fact ranges on it is exactly what the standard pipeline does at
+        the same point, so it is not a hazard.
+
+        When the shared program has ALREADY been assert-refined, its ranges are
+        assert-CONDITIONAL and every asserted comparison would read as vacuous;
+        refinement only narrows, so it cannot be undone in place. Rebuild a
+        private program from the same source instead and answer correctly, and
+        decline only when there is no source to rebuild from (an in-memory
+        program)."""
         prog = self.prog
-        # PRECONDITION: the ranges must be value FACTS, not assert-refined ones
-        # (see the module docstring). Assert refinement is irreversible on a
-        # shared program, so decline rather than report every asserted
-        # comparison as vacuous.
-        if getattr(prog, "_assert_ranges_applied", False):
+        if not getattr(prog, "_assert_ranges_applied", False):
+            return prog
+        src = str(getattr(prog, "source_path", "") or "")
+        if not src:
             logger.warning(
-                "constant-condition skipped: propagate_assert_ranges has "
-                "already refined this program's ranges USING its asserts, so "
-                "every asserted comparison would read as vacuous. Run this "
-                "detector on a freshly built SSAProgram.")
+                "constant-condition skipped: this program's ranges were already "
+                "refined USING its asserts (every asserted comparison would read "
+                "as vacuous) and it has no source path to rebuild from.")
+            return None
+        logger.info(
+            "constant-condition: shared program is assert-refined; reading "
+            "value-fact ranges off a private rebuild of %s", src)
+        return SSAProgram(src)
+
+    def detect(self) -> list[ConstantConditionViolation]:
+        prog = self._range_program()
+        if prog is None:
             return []
         # Value-fact ranges only (NOT assert-refinement — see module docs).
         prog.propagate_constants()

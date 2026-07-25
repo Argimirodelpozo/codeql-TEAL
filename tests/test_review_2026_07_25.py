@@ -228,14 +228,18 @@ def test_scan_of_an_empty_dir_warns_and_strict_refuses(tmp_path, caplog):
 
 
 # ---------------------------------------------------------------------------
-# 5. constant-condition must not run on assert-refined ranges.
+# 5. constant-condition must not read assert-refined ranges as value facts.
 # ---------------------------------------------------------------------------
 
 
-def test_constant_condition_declines_after_assert_refinement(tmp_path):
+def test_constant_condition_is_not_pass_order_dependent(tmp_path):
     """``propagate_assert_ranges`` tightens operands USING the asserts, so every
     asserted comparison then reads as vacuous (measured: 0 -> 87 findings on a
-    real-contract sample). The detector cannot un-refine, so it declines."""
+    real-contract sample). Refinement only narrows and cannot be undone in
+    place, so the detector reads its ranges off a private rebuild and the answer
+    is identical either way. See also
+    ``test_constant_condition_answers_the_same_either_way`` for the case where
+    the fixture actually HAS a vacuous assert."""
     src = """#pragma version 8
 txna ApplicationArgs 0
 btoi
@@ -250,15 +254,14 @@ int 1
 return
 """
     fresh = _prog(tmp_path, "a.teal", src)
-    baseline = DETECTORS["constant-condition"](fresh, file=None).detect()
+    on_fresh = [v.pretty() for v in DETECTORS["constant-condition"](fresh).detect()]
 
     refined = _prog(tmp_path, "b.teal", src)
     run_all_passes(refined)
     assert getattr(refined, "_assert_ranges_applied", False)
-    assert DETECTORS["constant-condition"](refined, file=None).detect() == []
-    # The fresh program's answer is whatever it is — the point is that the
-    # refined one does not invent findings on top of it.
-    assert isinstance(baseline, list)
+    on_refined = [v.pretty() for v in DETECTORS["constant-condition"](refined).detect()]
+
+    assert sorted(on_fresh) == sorted(on_refined)
 
 
 # ---------------------------------------------------------------------------
@@ -312,3 +315,140 @@ return
     assert cost_analysis.length_scaled_ops_used(prog) == ["mimc"]
     assert "LOWER bound" in cost_analysis.render(prog)
     assert cost_analysis.to_dict(prog)["inexact_cost_ops"] == ["mimc"]
+
+
+# ---------------------------------------------------------------------------
+# 7. Follow-ups: the items the review deferred, applied.
+# ---------------------------------------------------------------------------
+
+
+def test_clawback_source_is_on_the_attack_surface(tmp_path):
+    """``itxn_field AssetSender`` on an axfer is the CLAWBACK source — an app
+    holding clawback authority that lets a caller steer it drains any holder.
+    It was absent from the sink inventory entirely."""
+    from tealql.tealtools.dataflow.taint_query import TaintQuery
+    prog = _prog(tmp_path, "prog.teal", """#pragma version 8
+itxn_begin
+int axfer
+itxn_field TypeEnum
+txna ApplicationArgs 0
+itxn_field AssetSender
+itxn_submit
+int 1
+return
+""")
+    cats = {h.category for h in TaintQuery(prog).all_sinks()}
+    assert "asset-clawback-source" in cats
+    # and it is reachable from the attacker input, i.e. on the attack surface
+    assert any(h.category == "asset-clawback-source"
+               for h in TaintQuery(prog).tainted_sinks())
+
+
+def test_sarif_code_flow_steps_carry_a_physical_location(tmp_path):
+    """A ``threadFlowLocation`` with no ``physicalLocation`` has nowhere to
+    anchor, so SARIF viewers (GitHub code scanning included) drop the whole
+    code flow — the witness never reached the user."""
+    import json
+
+    from tealql.security.scan import render_sarif, scan
+
+    src = tmp_path / "c.teal"
+    src.write_text("""#pragma version 8
+itxn_begin
+int pay
+itxn_field TypeEnum
+txna ApplicationArgs 0
+itxn_field Receiver
+itxn_submit
+int 1
+return
+""")
+    doc = json.loads(render_sarif(scan(tmp_path)))
+    flows = [r for r in doc["runs"][0]["results"] if "codeFlows" in r]
+    assert flows, "expected at least one witness-carrying finding"
+    for r in flows:
+        for tf in r["codeFlows"][0]["threadFlows"]:
+            for step in tf["locations"]:
+                assert "physicalLocation" in step["location"]
+                assert step["location"]["physicalLocation"]["region"]["startLine"]
+
+
+def test_constant_condition_answers_the_same_either_way(tmp_path):
+    """Upgraded from "decline" to "answer correctly": when the shared program is
+    already assert-refined, ranges are read off a private rebuild."""
+    src = """#pragma version 8
+txn OnCompletion
+int 9
+<
+assert
+int 1
+return
+"""
+    fresh = _prog(tmp_path, "a.teal", src)
+    on_fresh = [v.pretty() for v in DETECTORS["constant-condition"](fresh).detect()]
+
+    refined = _prog(tmp_path, "a.teal", src)   # same path -> rebuildable
+    run_all_passes(refined)
+    assert getattr(refined, "_assert_ranges_applied", False)
+    on_refined = [v.pretty() for v in DETECTORS["constant-condition"](refined).detect()]
+
+    assert on_fresh, "fixture should have a vacuous assert (OnCompletion < 9)"
+    assert sorted(on_fresh) == sorted(on_refined)
+
+
+def test_detector_runners_prepare_the_program_once(tmp_path):
+    """``common.prepare`` is the documented handshake; ``scan`` and the CLI's
+    per-file loader both apply it, so a detector's inputs no longer depend on
+    which detector ran before it."""
+    from tealql.security import common
+
+    src = tmp_path / "c.teal"
+    src.write_text("#pragma version 8\nint 1\nreturn\n")
+    prog = SSAProgram(str(src))
+    assert common.prepare(prog) is prog
+    assert getattr(prog, "_consts_propagated", False)
+    common.prepare(prog)              # idempotent
+
+
+def test_fund_flow_walk_reexpands_on_a_shallower_reach():
+    """``_walk``'s visited map keys on the SHALLOWEST depth a register has been
+    expanded at. With a plain visited set, a register first reached near the
+    depth cap was expanded with almost no budget left and then permanently
+    suppressed — so the same register reached shallowly through another path
+    never had its subtree enumerated, and which guards the walk found depended
+    on traversal order.
+
+    Built here as: ``top = f(deep_chain, shared)`` where ``deep_chain`` bottoms
+    out in ``shared`` at the depth cap, and ``shared`` itself hangs one level
+    below ``top``. Whichever argument is visited first, ``leaf`` must be
+    reachable."""
+    from tealql.tealtools.lift import fund_flow, pre_ir
+
+    def reg(n):
+        return pre_ir.Register(name=n, version=0, ir_type="uint64")
+
+    def_of = {}
+
+    def define(target, *args):
+        def_of[id(target)] = pre_ir.Assignment(
+            targets=[target], source=pre_ir.Intrinsic("+", [], list(args)))
+        return target
+
+    leaf = reg("leaf")
+    shared = define(reg("shared"), leaf)
+    # Chain sized so `shared`, reached through it, lands EXACTLY on the depth
+    # cap: expanded there (so a set-based `seen` marks it) with no budget left
+    # for `leaf`. One link longer and it would be cut before being marked,
+    # which hides the bug.
+    chain = shared
+    for i in range(fund_flow._WALK_MAX_DEPTH - 1):
+        chain = define(reg(f"c{i}"), chain)
+    # `top` reaches the deep chain FIRST and `shared` directly second.
+    top = define(reg("top"), chain, shared)
+
+    names = {r.name for r, _ in fund_flow._walk(top, def_of)}
+    assert "shared" in names
+    assert "leaf" in names, (
+        "the shallow reach to `shared` did not re-expand, so its subtree was "
+        "never enumerated"
+    )

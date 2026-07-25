@@ -52,8 +52,9 @@ class InnerTxnCloseRekeyDetector:
 
     def __init__(self, prog: SSAProgram, *, file: Optional[str] = None):
         # Const propagation lets a 32-zero-byte literal / scratch-loaded
-        # ZeroAddress resolve for the safe-no-op suppression below.
-        prog.propagate_constants()
+        # ZeroAddress resolve for the safe-no-op suppression below. Idempotent
+        # fallback — the runner prepares the program once.
+        common.prepare(prog)
         self.prog = prog
         self.file = file
 

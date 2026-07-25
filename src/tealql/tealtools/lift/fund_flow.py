@@ -135,17 +135,37 @@ def _invoke_returns(lifter) -> dict:
     return out
 
 
+#: Depth bound on :func:`_walk`. The def-expression tree behind a sink operand
+#: is unbounded in principle; 8 levels covers every real guard shape observed
+#: and keeps the enumeration cheap.
+_WALK_MAX_DEPTH = 8
+
+
 def _walk(value, def_of, depth=0, seen=None, inv_ret=None):
     """Yield ``(register, defining_op_or_None)`` for every register in the
     def-expression tree behind ``value`` (bounded). With ``inv_ret`` (from
     :func:`_invoke_returns`), descend through a call result into the callee's
     returned values -- so a check inside an asserted validation subroutine is
-    seen as part of the guard condition."""
+    seen as part of the guard condition.
+
+    ``seen`` maps ``id(register) -> the shallowest depth it has been expanded
+    at``, NOT a plain visited set. With a set, a register first reached at
+    depth 7 was expanded with one level of budget left and then permanently
+    suppressed, so the same register reached at depth 1 through another path --
+    with seven levels of budget -- was skipped and its subtree never
+    enumerated. Which guards the walk found therefore depended on traversal
+    order. Re-expanding on a strictly shallower reach fixes that and still
+    terminates: depth is bounded, so each register is expanded at most
+    ``_WALK_MAX_DEPTH + 1`` times. Every caller collects into a set, so the
+    repeated yields are absorbed."""
     if seen is None:
-        seen = set()
-    if not isinstance(value, pre_ir.Register) or depth > 8 or id(value) in seen:
+        seen = {}
+    if not isinstance(value, pre_ir.Register) or depth > _WALK_MAX_DEPTH:
         return
-    seen.add(id(value))
+    previous = seen.get(id(value))
+    if previous is not None and previous <= depth:
+        return
+    seen[id(value)] = depth
     o = def_of.get(id(value))
     yield value, o
     if o is not None:

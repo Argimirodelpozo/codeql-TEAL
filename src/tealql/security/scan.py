@@ -482,7 +482,11 @@ def scan(
             # analysis builds its own multi-program setup in `tealql.security.xcontract`;
             # it does not go through this single-contract scanner.
             try:
-                prog = SSAProgram(str(teal))
+                # ONE preparation per program (see ``common.prepare``): the
+                # detectors then all see the same resolved constants instead of
+                # each one's inputs depending on which detector ran before it.
+                from .common import prepare
+                prog = prepare(SSAProgram(str(teal)))
             except Exception as e:                   # pragma: no cover
                 if strict:
                     raise TealQLError(
@@ -624,28 +628,34 @@ def render_sarif(findings: list[ScanFinding]) -> str:
             }
         fnd = f.to_finding()
         region = {"startLine": fnd.line} if fnd.line else {"startLine": 1}
+        physical = {
+            "artifactLocation": {"uri": fnd.file or str(f.rel_path)},
+            "region": region,
+        }
         result = {
             "ruleId": rid,
             "level": _LEVEL.get(f.severity, "warning"),
             "message": {"text": fnd.message},
-            "locations": [{
-                "physicalLocation": {
-                    "artifactLocation": {"uri": fnd.file or str(f.rel_path)},
-                    "region": region,
-                }
-            }],
+            "locations": [{"physicalLocation": physical}],
             "properties": {"confidence": f.confidence, "severity": f.severity,
                            **({"method": fnd.method} if fnd.method else {})},
         }
         if fnd.witness and fnd.witness.get("sources"):
-            result["codeFlows"] = [{
-                "threadFlows": [{
-                    "locations": [
-                        {"location": {"message": {"text": f"source: {s}"}}}
-                        for s in fnd.witness["sources"]
-                    ]
-                }]
-            }]
+            # Every threadFlowLocation carries a physicalLocation. Without one a
+            # SARIF viewer (GitHub code scanning included) has nowhere to anchor
+            # the step and drops the whole code flow, so the witness we went to
+            # the trouble of computing never reached the user. The witness
+            # sources are input-slot LABELS ("ApplicationArgs"), not lines, so
+            # each step is anchored at the sink and the label carries in the
+            # message; the final step is the sink itself.
+            steps = [
+                {"location": {"physicalLocation": physical,
+                              "message": {"text": f"attacker input: {s}"}}}
+                for s in fnd.witness["sources"]
+            ]
+            steps.append({"location": {"physicalLocation": physical,
+                                       "message": {"text": "reaches this sink"}}})
+            result["codeFlows"] = [{"threadFlows": [{"locations": steps}]}]
         results.append(result)
 
     doc = {

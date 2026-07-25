@@ -54,6 +54,17 @@ _ITXN_FIELD_SINKS: dict[str, tuple[str, str]] = {
     # reports — was missing them entirely.
     "ApprovalProgram": ("inner-program-code", "critical"),
     "ClearStateProgram": ("inner-program-code", "critical"),
+    # ``AssetSender`` on an axfer is the CLAWBACK source: non-zero means "move
+    # units OUT of this account", which the AVM permits only when the sender of
+    # the inner txn is the asset's clawback address. An app that holds clawback
+    # and lets a caller steer this field can drain any holder. It is deliberately
+    # NOT in the fund-flow DETECTOR's sink set (that decision stands — the
+    # detector would need clawback-authority reasoning to avoid false positives),
+    # but this layer is the over-approximating INVENTORY: leaving a
+    # drain-anyone's-balance primitive off the attack surface is the wrong
+    # trade-off here. No detector covers it, so a verdict reports it UNVERIFIED
+    # — reachable and unjudged, which is the honest answer.
+    "AssetSender": ("asset-clawback-source", "critical"),
 }
 
 #: Sinks identified by OPCODE alone (the danger is the op, not a field).
