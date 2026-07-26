@@ -1,0 +1,29 @@
+#pragma version 10
+// The classic delegated-logicsig shape: pin every field of the SIGNED txn.
+// Hand-written lsigs look like this; no compiler emits it.
+txn TypeEnum
+int pay
+==
+assert
+txn Fee
+int 1000
+<=
+assert
+txn RekeyTo
+global ZeroAddress
+==
+assert
+txn CloseRemainderTo
+global ZeroAddress
+==
+assert
+txn Receiver
+addr 7777777777777777777777777777777777777777777777777774MSJUVU
+==
+assert
+txn Amount
+int 1000000
+<=
+assert
+int 1
+return

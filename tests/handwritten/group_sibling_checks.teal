@@ -1,0 +1,25 @@
+#pragma version 10
+// Absolute gtxn indexing with a GroupSize pin — the hand-written atomic-swap
+// idiom. Compiled output overwhelmingly uses gtxns with a dynamic index.
+global GroupSize
+int 2
+==
+assert
+txn GroupIndex
+int 0
+==
+assert
+gtxn 1 TypeEnum
+int axfer
+==
+assert
+gtxn 1 XferAsset
+int 31566704
+==
+assert
+gtxn 1 AssetAmount
+int 1000000
+>=
+assert
+int 1
+return

@@ -1,0 +1,18 @@
+#pragma version 10
+// Every byte-literal spelling a human might reach for, in one program.
+byte 0x48656c6c6f
+pop
+byte "Hello"
+pop
+byte base64(SGVsbG8=)
+pop
+byte b64(SGVsbG8=)
+pop
+byte base32(JBSWY3DP)
+pop
+byte b32(JBSWY3DP)
+pop
+addr 7777777777777777777777777777777777777777777777777774MSJUVU
+pop
+int 1
+return

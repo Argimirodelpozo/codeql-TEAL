@@ -1,0 +1,15 @@
+#pragma version 10
+// Router labels named after ABI methods that collide with opcode mnemonics.
+txna ApplicationArgs 0
+btoi
+match get set store
+err
+get:
+int 1
+return
+set:
+int 1
+return
+store:
+int 1
+return

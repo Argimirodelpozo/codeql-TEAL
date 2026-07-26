@@ -10,8 +10,18 @@ hold for EVERY program, catching whole bug classes the examples miss:
 * the lift is deterministic (the ~dN clone-suffix nondeterminism fixed this
   session must stay fixed) — puya-gated.
 
-Corpus = every ``tests/benchmark/*/{vuln,safe}/*.teal`` (small, fast). Failure
-names the offending contract.
+Corpus = every ``tests/benchmark/*/{vuln,safe}/*.teal`` PLUS
+``tests/handwritten/*.teal`` (small, fast). Failure names the offending
+contract.
+
+The hand-written half matters disproportionately. Everything else here is
+compiler output, which has a narrow and very regular shape — and this project's
+gate gap was exactly that: the branch-polarity false positive found in the
+2026-07-25 review was an IDIOMATIC HAND-WRITTEN guard (`!=; bnz fail`) that
+puya never emits, so no fixture in the corpus contained one. Scratch-based
+locals, mixed branch polarity, `dig`/`cover`/`uncover` shuffling, `match` on
+opcode-named labels and hand-rolled loops are all ordinary in hand-written TEAL
+and absent from compiled output.
 """
 from __future__ import annotations
 
@@ -23,9 +33,12 @@ from tealql.tealtools.ssa import SSAProgram
 from tealql.tealtools.passes import run_all_passes
 
 TESTS_ROOT = Path(__file__).resolve().parent
-CORPUS = sorted((TESTS_ROOT / "benchmark").rglob("*.teal"))
+CORPUS = sorted(
+    list((TESTS_ROOT / "benchmark").rglob("*.teal"))
+    + list((TESTS_ROOT / "handwritten").glob("*.teal"))
+)
 assert CORPUS, "benchmark corpus is missing"
-_IDS = [str(p.relative_to(TESTS_ROOT / "benchmark")) for p in CORPUS]
+_IDS = [str(p.relative_to(TESTS_ROOT)) for p in CORPUS]
 
 
 @pytest.mark.parametrize("teal", CORPUS, ids=_IDS)

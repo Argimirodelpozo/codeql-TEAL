@@ -1,0 +1,20 @@
+#pragma version 10
+// One assert over a && / || tree. Compilers split these into branches.
+txn TypeEnum
+int pay
+==
+txn Fee
+int 2000
+<=
+&&
+global GroupSize
+int 2
+==
+txn GroupIndex
+int 0
+==
+&&
+||
+assert
+int 1
+return

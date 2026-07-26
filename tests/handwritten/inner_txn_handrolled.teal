@@ -1,0 +1,23 @@
+#pragma version 10
+// A hand-written inner payment with an explicit sender guard first.
+txn Sender
+global CreatorAddress
+==
+assert
+itxn_begin
+int pay
+itxn_field TypeEnum
+txna ApplicationArgs 0
+itxn_field Receiver
+int 100000
+itxn_field Amount
+int 0
+itxn_field Fee
+itxn_submit
+itxn Receiver
+len
+int 32
+==
+assert
+int 1
+return

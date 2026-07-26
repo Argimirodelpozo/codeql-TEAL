@@ -1,0 +1,19 @@
+#pragma version 10
+// Hand-written locals live in SCRATCH, not proto frames. puya always emits
+// proto/frame_dig; hand-written TEAL predating v8 (and much of it since) does
+// this instead, so the frame-based analyses never see this shape.
+txn Sender
+store 0
+global CreatorAddress
+store 1
+load 0
+load 1
+==
+assert
+load 0
+len
+int 32
+==
+assert
+int 1
+return

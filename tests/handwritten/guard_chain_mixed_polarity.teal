@@ -1,0 +1,19 @@
+#pragma version 10
+// Hand-written idiom: a guard chain alternating bnz-to-reject and bz-to-ok.
+// Compilers emit one polarity consistently; humans mix them freely.
+txn RekeyTo
+global ZeroAddress
+!=
+bnz fail
+txn CloseRemainderTo
+global ZeroAddress
+==
+bz fail
+txn Fee
+int 1000
+<=
+assert
+int 1
+return
+fail:
+err

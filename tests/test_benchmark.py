@@ -106,14 +106,22 @@ _BASELINE: dict[str, tuple[int, int, int, int]] = {
     "asset-close-to": (3, 0, 0, 4),
     "asset-id-validation": (1, 0, 0, 2),
     "box-key": (3, 0, 0, 2),
-    "close-remainder-to": (3, 0, 0, 4),
+    # +1 TN (2026-07-25): a HAND-WRITTEN fixture. The corpus is otherwise
+    # compiled output, whose shape is narrow and regular — the branch-polarity
+    # FP found this session was an idiomatic hand-written guard no compiler
+    # emits, so no fixture contained one.
+    "close-remainder-to": (3, 0, 0, 5),
     "constant-condition": (4, 0, 0, 4),
     # +2 TN each (2026-07-25 review, OnCompletion FP-stress): the guard
     # round-tripped through scratch and the guard joined at a phi were both
     # FALSE POSITIVES — the path predicate lands on the `load`/phi, not the
     # comparison, so every OnCompletion detector read the guard as absent.
     "delete-funds-check": (2, 0, 0, 3),
-    "fee-validation": (1, 0, 0, 2),
+    # +1 TN (2026-07-25): a HAND-WRITTEN fixture. The corpus is otherwise
+    # compiled output, whose shape is narrow and regular — the branch-polarity
+    # FP found this session was an idiomatic hand-written guard no compiler
+    # emits, so no fixture contained one.
+    "fee-validation": (1, 0, 0, 3),
     "group-size-check": (1, 0, 0, 2),
     "hardcoded-min-balance": (1, 0, 0, 1),
     "inner-txn-close-rekey": (1, 0, 0, 1),
@@ -148,7 +156,11 @@ _BASELINE: dict[str, tuple[int, int, int, int]] = {
     # +2 TN (2026-07-25): the Update-action half of the OnCompletion
     # scratch/phi guard fix — verified clean, now pinned.
     "timelock-upgrade": (1, 0, 0, 3),
-    "tx-type-check": (1, 0, 0, 1),
+    # +1 TN (2026-07-25): a HAND-WRITTEN fixture. The corpus is otherwise
+    # compiled output, whose shape is narrow and regular — the branch-polarity
+    # FP found this session was an idiomatic hand-written guard no compiler
+    # emits, so no fixture contained one.
+    "tx-type-check": (1, 0, 0, 2),
     # +2 TN each (2026-07-25 review, OnCompletion FP-stress): the guard
     # round-tripped through scratch and the guard joined at a phi were both
     # FALSE POSITIVES — the path predicate lands on the `load`/phi, not the

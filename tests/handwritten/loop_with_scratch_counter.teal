@@ -1,0 +1,20 @@
+#pragma version 10
+// A hand-rolled bounded loop over a scratch counter. Compilers emit these
+// with frame slots and a different back-edge shape.
+int 0
+store 0
+loop:
+load 0
+int 1
++
+store 0
+load 0
+int 5
+<
+bnz loop
+load 0
+int 5
+==
+assert
+int 1
+return

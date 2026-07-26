@@ -1,0 +1,18 @@
+#pragma version 10
+// dig / cover / uncover / swap used as a human would, rather than the narrow
+// dup/swap a compiler emits.
+int 10
+int 20
+int 30
+dig 2
+swap
+cover 2
+uncover 2
++
++
++
+int 70
+==
+assert
+int 1
+return
