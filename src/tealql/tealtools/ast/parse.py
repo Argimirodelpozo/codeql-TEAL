@@ -176,10 +176,21 @@ def _split_txn_field_error(c) -> "tuple[list, list]":
     return groups, unconsumed
 
 
+#: Opcode nodes whose trailing NUMERIC immediate the grammar drops into a bare
+#: ERROR. ``itxna`` loses its array index; ``gaid`` loses its group index
+#: entirely (the grammar rejects EVERY index, not just an out-of-range one, and
+#: types the op as a zero-argument opcode).
+_INDEX_TAIL_NODES = frozenset({"itxna_opcode", "zero_argument_opcode"})
+_INDEX_TAIL_MNEMONICS = frozenset({"itxna", "gaid"})
+
+
 def _itxna_index_split(ch, nxt, src: bytes) -> bool:
     """The grammar's ``itxna`` rule takes only a FIELD, no array index — so
     ``itxna Logs 1`` parses as an ``itxna_opcode`` covering ``itxna Logs`` plus
-    a bare ERROR holding the ``1``.
+    a bare ERROR holding the ``1``. ``gaid N`` is the same defect with the
+    index gone completely: the op types as a ZERO-argument opcode and the
+    index becomes a bare ERROR, so ``gaid 5`` and ``gaid 20`` — different
+    group transactions — are indistinguishable.
 
     The opcode SURVIVES, which is what makes this nastier than a clean drop:
     its ``.code`` is ``itxna Logs``, so the immediates lose the index entirely
@@ -192,7 +203,10 @@ def _itxna_index_split(ch, nxt, src: bytes) -> bool:
     Re-span the opcode through the index tail, exactly as
     :func:`_hex_int_split` does for a split numeric literal. Same line only, so
     an unrelated ERROR below can never be absorbed."""
-    if ch.type != "itxna_opcode" or nxt is None or nxt.type != "ERROR":
+    if ch.type not in _INDEX_TAIL_NODES or nxt is None or nxt.type != "ERROR":
+        return False
+    mnem = ch.children[0].type if ch.children else None
+    if mnem not in _INDEX_TAIL_MNEMONICS:
         return False
     if ch.end_point[0] != nxt.start_point[0]:
         return False                               # different lines

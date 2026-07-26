@@ -152,6 +152,31 @@ def _sanitize_path_labels(text: str) -> str:
     return "\n".join(out)
 
 
+def _blank_quoted_comments(text: str) -> str:
+    """Blank out an inline ``//`` comment that CONTAINS a quote character.
+
+    The grammar's string tokenizer runs past the ``//`` when the comment holds
+    a ``"``, so `pushbytes "asa_"   // [name, "asa_"]` parses with the
+    string_argument `'"asa_"   // [name,'` — the comment text becomes PART OF
+    THE CONSTANT. A guard comparing against that value can never match, and
+    nothing reports a problem; only a stray `]` shows up as a diagnostic
+    elsewhere on the line.
+
+    Replaced with spaces rather than deleted, so line lengths — and therefore
+    every column span — are preserved exactly. Only comments containing a quote
+    are touched; ordinary comments parse fine and are left for the grammar.
+    Our own :func:`_strip_inline_comment` already finds the boundary correctly
+    (it tracks quote state), so the split is reliable."""
+    if '"' not in text:
+        return text
+    out = []
+    for line in text.split("\n"):
+        code = _strip_inline_comment(line)
+        comment = line[len(code):]
+        out.append(code + " " * len(comment) if '"' in comment else line)
+    return "\n".join(out)
+
+
 def _opcode_named_labels(text: str) -> str:
     """Rename LABELS whose name is an opcode mnemonic (``pop:`` / ``concat:`` /
     ``store:`` / ``get:`` …), consistently at the definition and every
@@ -222,7 +247,8 @@ def _opcode_mnemonics() -> frozenset:
 
 
 def _normalize_pseudo_ops(data: bytes) -> bytes:
-    text = _opcode_named_labels(_sanitize_path_labels(data.decode("utf-8", "replace")))
+    text = _opcode_named_labels(_sanitize_path_labels(
+        _blank_quoted_comments(data.decode("utf-8", "replace"))))
     if not _PSEUDO_OP_RE.search(text) and not _BYTE_ENC_RE.search(text):
         return text.encode("utf-8")                # fast path: nothing to rewrite
     out = []

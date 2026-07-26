@@ -10,6 +10,8 @@ plus the types the lift adds that TEAL lacks (polymorphic ``load`` /
 """
 from __future__ import annotations
 
+import re
+
 import copy
 import logging
 
@@ -106,6 +108,26 @@ def _line_of(bb) -> int:
     return int(c[1:]) if c.startswith("L") and c[1:].isdigit() else 1
 
 
+#: A deployment template variable: ALL-CAPS ``PREFIX_NAME``. `TMPL_` is
+#: algokit's default; puya lets a contract choose its own (e.g. `PRFX_`).
+_TEMPLATE_VAR_RE = re.compile(r"^[A-Z][A-Z0-9]*_[A-Z0-9_]+$")
+
+
+def _is_template_push(immediates) -> bool:
+    """No immediate at all, or ONLY deployment template variables.
+
+    The parser used to DROP a template operand entirely, so "no immediates" was
+    the signal for the const-push recovery path below. It now recovers the
+    operand (which is what keeps a const block's arity right), so a recovered
+    `pushint TMPL_DELETABLE` arrives WITH immediates and fell through to
+    `AVMOp(s.op)` — `'PushintOpcode' is not a valid AVMOp`, on the real xgov
+    contract. A template's value is unknown until deployment either way, so
+    both spellings must reach the TemplateVar path."""
+    if not immediates:
+        return True
+    return all(_TEMPLATE_VAR_RE.match(str(i).strip()) for i in immediates)
+
+
 class _Translator:
     def __init__(self, src_map: dict | None = None):
         self.regs: dict = {}      # id(pre-IR Register) -> M.Register
@@ -195,7 +217,7 @@ class _Translator:
             # const-push whose inline operand the parser dropped (e.g.
             # `pushbytes base64(..)`): recover the literal, else a template var.
             if (s.op in _PUSH_U64 or s.op in _PUSH_BYTES) and not s.args \
-                    and not s.immediates:
+                    and _is_template_push(s.immediates):
                 is_u64 = s.op in _PUSH_U64
                 ops = self._operands_at(s.line)
                 if ops and not ops[0].startswith("TMPL_"):

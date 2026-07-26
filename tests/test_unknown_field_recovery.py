@@ -379,3 +379,52 @@ def test_bare_pushint_template_stays_a_diagnostic(tmp_path):
     diagnostic beats IR the lift chokes on."""
     prog = _prog(tmp_path, "pushint TMPL_DELETABLE\npop\n", version=10)
     assert list(getattr(prog, "parse_diagnostics", ()) or []) != []
+
+
+# ---------------------------------------------------------------------------
+# The last residuals: gaid's index, and a quote-bearing inline comment
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("idx", ["0", "5", "15", "20"])
+def test_gaid_keeps_its_group_index(tmp_path, idx):
+    """The grammar rejects EVERY `gaid` index — not just an out-of-range one —
+    and types the op as a ZERO-argument opcode, so the index landed in a bare
+    ERROR and `gaid 5` / `gaid 20` (different group transactions) were
+    indistinguishable. Same silent-wrong-immediate class as `itxna`."""
+    prog = _prog(tmp_path, f"gaid {idx}\npop\n", version=10)
+    assert list(getattr(prog, "parse_diagnostics", ()) or []) == []
+    assert ("gaid", idx) in _ops(prog)
+
+
+def test_gaids_without_an_immediate_is_untouched(tmp_path):
+    prog = _prog(tmp_path, "int 0\ngaids\npop\n", version=10)
+    assert list(getattr(prog, "parse_diagnostics", ()) or []) == []
+    assert ("gaids", "") in _ops(prog)
+
+
+def test_quoted_inline_comment_does_not_pollute_the_constant(tmp_path):
+    """The grammar's string tokenizer runs past `//` when the comment holds a
+    quote, so `pushbytes "asa_"   // [name, "asa_"]` parsed with the comment
+    text INSIDE the string argument — the constant became
+    `"asa_"   // [name,`. A guard comparing against it could never match, and
+    only a stray `]` showed up as a diagnostic elsewhere on the line."""
+    prog = _prog(tmp_path, 'pushbytes "asa_"   // [name, "asa_"]\npop\n', version=10)
+    assert list(getattr(prog, "parse_diagnostics", ()) or []) == []
+    assert ("pushbytes", '"asa_"') in _ops(prog)
+
+
+def test_ordinary_comments_are_untouched(tmp_path):
+    prog = _prog(tmp_path, 'pushbytes "asa_"   // just a name\npop\n', version=10)
+    assert list(getattr(prog, "parse_diagnostics", ()) or []) == []
+    assert ("pushbytes", '"asa_"') in _ops(prog)
+
+
+def test_blanking_preserves_line_length():
+    """Comments are blanked with spaces, not deleted, so every column span on
+    the line stays valid."""
+    from tealql.tealtools.graph import _blank_quoted_comments
+    src = 'pushbytes "asa_"   // [name, "asa_"]\nint 1\n'
+    out = _blank_quoted_comments(src)
+    for a, b in zip(src.split("\n"), out.split("\n")):
+        assert len(a) == len(b)

@@ -11,7 +11,8 @@
     global CurrentApplicationAddress
     itxn_field Receiver
     txna ApplicationArgs 0
-    extract_uint64 2
+    int 2
+    extract_uint64
     itxn_field Amount
     itxn_submit
     int 1
