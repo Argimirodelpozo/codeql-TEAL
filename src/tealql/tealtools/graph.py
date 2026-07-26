@@ -76,11 +76,74 @@ def _strip_inline_comment(code: str) -> str:
 #: followed by ANY whitespace — tab-separated forms count too.
 _PSEUDO_OP_RE = re.compile(r"(?:^|\n)[ \t]*(?:byte|method|addr)[ \t]")
 
+#: Ops whose operand is a LABEL (so a path-mangled label must be renamed there
+#: too). ``b`` is the bare branch — ``b+`` / ``b-`` etc. are different tokens and
+#: do not match, since the comparison is against the whole first token.
+_LABEL_REF_OPS = frozenset({"b", "bz", "bnz", "callsub", "match", "switch"})
+
+
+def _sanitize_path_labels(text: str) -> str:
+    """Mangle grammar-unsafe ``/`` and ``.`` inside LABELS to ``_``.
+
+    puya-sol emits full source paths as subroutine labels
+    (``callsub /home/dev/contracts/Token.sol.transfer``). The tree-sitter-teal
+    grammar's label token stops at the first ``/``, so the target truncates to
+    ``/home``, the rest of the path parses as a run of bare ``/`` division
+    opcodes, and the subroutine is never resolved — five parse diagnostics and
+    an empty label set on a contract that is perfectly well-formed TEAL.
+
+    The rename is applied CONSISTENTLY to the label's definition and to every
+    branch / callsub / match / switch reference, so it is bijective and leaves
+    the CFG identical. It is char-for-char (``/`` and ``.`` both become one
+    ``_``), so line lengths are preserved and every node's column span stays
+    valid. Only label-definition and label-reference lines are touched — never
+    the ``/`` division opcode, never a numeric or hex operand.
+
+    A no-op when no label contains ``/`` or ``.``. If two distinct labels would
+    mangle to the SAME name (or onto a label already present), that rename is
+    dropped rather than silently merging two blocks."""
+    rename: dict[str, str] = {}
+    existing: set[str] = set()
+    for line in text.split("\n"):
+        body = _strip_inline_comment(line.strip()).rstrip()
+        if body.endswith(":") and len(body) > 1:
+            label = body[:-1].rstrip()
+            existing.add(label)
+            if "/" in label or "." in label:
+                rename[label] = label.replace("/", "_").replace(".", "_")
+    if not rename:
+        return text
+    # Drop any rename that would collide — with another mangled label, or with a
+    # label that already exists under that name. Merging two blocks would corrupt
+    # the CFG far worse than the truncation this works around.
+    taken: dict[str, str] = {}
+    for label, mangled in list(rename.items()):
+        if mangled in taken or mangled in existing - {label}:
+            rename.pop(label, None)
+            rename.pop(taken.get(mangled, ""), None)
+            continue
+        taken[mangled] = label
+    if not rename:
+        return text
+    # Longest-first, so a label that is a prefix of another (``Foo`` vs
+    # ``Foo_after@3``) cannot be rewritten inside the longer one.
+    ordered = sorted(rename.items(), key=lambda kv: len(kv[0]), reverse=True)
+
+    out = []
+    for line in text.split("\n"):
+        body = _strip_inline_comment(line.strip()).rstrip()
+        op = body.split(None, 1)[0] if body else ""
+        if (body.endswith(":") or op in _LABEL_REF_OPS) and ("/" in line or "." in line):
+            for old, new in ordered:
+                line = line.replace(old, new)
+        out.append(line)
+    return "\n".join(out)
+
 
 def _normalize_pseudo_ops(data: bytes) -> bytes:
-    text = data.decode("utf-8", "replace")
+    text = _sanitize_path_labels(data.decode("utf-8", "replace"))
     if not _PSEUDO_OP_RE.search(text):
-        return data                                # fast path: nothing to rewrite
+        return text.encode("utf-8")                # fast path: no pseudo-ops left
     out = []
     for line in text.split("\n"):
         body = line.strip()
