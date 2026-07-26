@@ -61,6 +61,7 @@ from .ssa import (
     is_const,
 )
 from .avm import CMP_OPS, LOGICAL_OPS
+from .ast.literals import render_byte_constant
 
 
 Operand = Union[SSAVar, Phi, Const]
@@ -259,10 +260,10 @@ def _disp(op) -> str:
     ``100`` instead of ``V#1@L7`` once
     :meth:`SSAProgram.propagate_constants` has run."""
     if isinstance(op, Const):
-        return op.value
+        return render_byte_constant(op.value)
     cv = getattr(op, "const_value", None)
     if cv is not None:
-        return cv.value
+        return render_byte_constant(cv.value)
     return repr(op)
 
 

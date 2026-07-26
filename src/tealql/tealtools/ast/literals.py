@@ -29,6 +29,26 @@ import re
 _TEMPLATE_VAR_RE = re.compile(r"^[A-Z][A-Z0-9]*_[A-Z0-9_]+$")
 
 
+def render_byte_constant(value: str) -> str:
+    """A bytes constant for HUMAN output.
+
+    Bytes constants are STORED canonically as ``0x<hex>`` so two spellings of
+    one value compare equal (`byte "hi"` and `pushbytes "hi"` used to resolve
+    to different strings and silently fail an equality match in `xcontract`'s
+    state-key resolution). But a finding that reads ``== 0x616c6c6f776564`` is
+    worse than ``== "allowed"``, so printable ASCII is rendered back as a
+    string for display. Display ONLY — the stored value stays canonical."""
+    if not (isinstance(value, str) and value.startswith("0x")):
+        return value
+    try:
+        raw = bytes.fromhex(value[2:])
+    except ValueError:
+        return value
+    if raw and all(0x20 <= c < 0x7F for c in raw):
+        return '"' + raw.decode("ascii") + '"'
+    return value
+
+
 def is_template_variable(token: str) -> bool:
     """``token`` is a deployment template variable — a value that does not
     exist until the app is deployed.

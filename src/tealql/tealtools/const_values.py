@@ -30,7 +30,8 @@ from typing import Optional
 
 from .ast import Opcode
 from .ast.literals import (
-    NAMED_INT_CONSTANTS, is_template_variable, tokenize_operands,
+    NAMED_INT_CONSTANTS, decode_byte_literal, is_template_variable,
+    tokenize_operands,
 )
 
 
@@ -80,6 +81,28 @@ def _split_byte_literals(imms: str) -> list[str]:
     token per literal (``b64 <data>`` folded into one). Thin alias over the
     canonical :func:`tealql.tealtools.ast.literals.tokenize_operands`."""
     return tokenize_operands(imms, fold_byte_keywords=True)
+
+
+def _canonical_bytes(literal: str) -> "str | None":
+    """A bytes literal as canonical ``0x<hex>``, or ``None`` if undecodable.
+
+    ONE representation for one value. The `byte` PSEUDO-op is rewritten to
+    `pushbytes 0x..` before parsing, so it always arrived canonical — but the
+    REAL opcodes (`pushbytes` / `bytecblock` / `bytec_N` / `pushbytess`) kept
+    their raw source text, so `byte "hi"` resolved to `0x6869` while
+    `pushbytes "hi"` resolved to `'"hi"'`. Same constant, two values that
+    compare unequal.
+
+    That is not cosmetic: `xcontract` matches state keys by comparing these
+    (`_const_bytes(inp) == key`), so a contract writing `pushbytes "cfg"` and
+    reading `byte "cfg"` failed to match and its AppID silently stayed
+    unresolved; and `_bytes_const_to_int` only accepts `0x`, so a quoted
+    constant read as an int returned None."""
+    try:
+        raw, _kind = decode_byte_literal(literal.strip())
+    except Exception:
+        return None
+    return f"0x{raw.hex()}"
 
 
 def _resolvable_byte_literal(tok) -> bool:
@@ -149,7 +172,7 @@ def compute_const_values(g) -> list[tuple]:
 
         elif op == "pushbytes":
             # exactly one byte literal — the whole immediate text.
-            imm = _imms(n)
+            imm = _canonical_bytes(_imms(n)) if _imms(n) else None
             if imm:
                 rows.append((f, ln, 1, "bytes", imm))
 
@@ -157,14 +180,16 @@ def compute_const_values(g) -> list[tuple]:
             idx = _to_int(_imms(n))
             if (idx is not None and bytec_vals is not None
                     and 0 <= idx < len(bytec_vals)
-                    and _resolvable_byte_literal(bytec_vals[idx])):
-                rows.append((f, ln, 1, "bytes", bytec_vals[idx]))
+                    and _resolvable_byte_literal(bytec_vals[idx])
+                    and (_cb := _canonical_bytes(bytec_vals[idx])) is not None):
+                rows.append((f, ln, 1, "bytes", _cb))
 
         elif op in ("bytec_0", "bytec_1", "bytec_2", "bytec_3"):
             idx = int(op[-1])
             if (bytec_vals is not None and idx < len(bytec_vals)
-                    and _resolvable_byte_literal(bytec_vals[idx])):
-                rows.append((f, ln, 1, "bytes", bytec_vals[idx]))
+                    and _resolvable_byte_literal(bytec_vals[idx])
+                    and (_cb := _canonical_bytes(bytec_vals[idx])) is not None):
+                rows.append((f, ln, 1, "bytes", _cb))
 
         elif op == "pushints":
             # A multi-push emits N stack values; the LAST token is pushed last
@@ -180,6 +205,8 @@ def compute_const_values(g) -> list[tuple]:
         elif op == "pushbytess":
             toks = _split_byte_literals(_imms(n))
             for i, tok in enumerate(toks):
-                rows.append((f, ln, len(toks) - i, "bytes", tok))
+                cb = _canonical_bytes(tok)
+                if cb is not None:
+                    rows.append((f, ln, len(toks) - i, "bytes", cb))
 
     return rows

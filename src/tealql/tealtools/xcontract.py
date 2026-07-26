@@ -26,6 +26,7 @@ logger = logging.getLogger("tealql.tealtools.xcontract")
 
 from .inner_txn_report import InnerTxn, InnerTxnReport
 from .path_predicates import BranchCondition, PathPredicateAnalysis
+from .ast.literals import render_byte_constant
 from .ssa import Const, SSAProgram, const_bytes as _const_bytes, const_int
 
 # TEAL TypeEnum integer for application calls. The assembler folds
@@ -51,7 +52,7 @@ class AppcallSite:
     def render(self, relative_to: Optional[Path] = None) -> str:
         if self.const_args:
             args = ", ".join(
-                f"args[{i}]={v}"
+                f"args[{i}]={render_byte_constant(v)}"
                 for i, v in sorted(self.const_args.items())
             )
         else:

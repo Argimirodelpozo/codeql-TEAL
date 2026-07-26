@@ -62,12 +62,27 @@ def _byte_literal(v: str):
 
 
 def _strip_inline_comment(code: str) -> str:
-    """Drop a ``//`` inline comment that sits OUTSIDE a quoted string."""
+    """Drop a ``//`` inline comment that sits outside a quoted string AND
+    outside a parenthesised group.
+
+    The paren rule is not decoration: the base64 alphabet INCLUDES ``/``, so a
+    payload containing ``//`` is ordinary — ``pushbytes base64(AA//)`` is a
+    perfectly good constant. Cutting at the first ``//`` truncated the operand
+    to ``base64(AA`` and the value silently became the ASCII text of the
+    fragment. ``tokenize_operands`` already tracks depth for the same reason."""
     q = False
+    depth = 0
     for i in range(len(code) - 1):
-        if code[i] == '"' and (i == 0 or code[i - 1] != "\\"):
+        c = code[i]
+        if c == '"' and (i == 0 or code[i - 1] != "\\"):
             q = not q
-        elif not q and code[i:i + 2] == "//":
+        elif q:
+            continue
+        elif c == "(":
+            depth += 1
+        elif c == ")":
+            depth = max(0, depth - 1)
+        elif depth == 0 and code[i:i + 2] == "//":
             return code[:i]
     return code
 
