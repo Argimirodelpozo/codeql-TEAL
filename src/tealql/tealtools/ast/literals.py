@@ -103,14 +103,20 @@ def decode_byte_literal(v: str) -> tuple[bytes, str]:
         return bytes.fromhex(v[2:]), "base16"
     if len(v) >= 2 and v[0] == '"' and v[-1] == '"':
         return _teal_str_bytes(v[1:-1]), "utf8"
-    if v.startswith(("b64 ", "base64 ")):
-        return _b64(v.split(None, 1)[1]), "base64"
-    if v.startswith("base64(") and v.endswith(")"):
-        return _b64(v[7:-1]), "base64"
-    if v.startswith(("b32 ", "base32 ")):
-        return _b32(v.split(None, 1)[1]), "base32"
-    if v.startswith("base32(") and v.endswith(")"):
-        return _b32(v[7:-1]), "base32"
+    # Both spellings of each keyword, in BOTH the space form (`b64 AAAA`) and
+    # the parenthesised form (`b64(AAAA)`) — the assembler accepts all four per
+    # encoding. The abbreviated PARENTHESISED spellings (`b64(..)` / `b32(..)`)
+    # used to be missing, so they fell through to the utf-8 fallback and
+    # decoded to the literal ASCII text `b64(AAAA)`. That is worse than failing:
+    # a guard comparing against the constant silently mis-evaluates against a
+    # value the chain never produces.
+    for kws, dec, kind in ((("b64", "base64"), _b64, "base64"),
+                           (("b32", "base32"), _b32, "base32")):
+        for kw in kws:
+            if v.startswith(f"{kw} "):
+                return dec(v.split(None, 1)[1]), kind
+            if v.startswith(f"{kw}(") and v.endswith(")"):
+                return dec(v[len(kw) + 1:-1]), kind
     try:
         return bytes.fromhex(v), "base16"
     except ValueError:

@@ -76,6 +76,18 @@ def _strip_inline_comment(code: str) -> str:
 #: followed by ANY whitespace — tab-separated forms count too.
 _PSEUDO_OP_RE = re.compile(r"(?:^|\n)[ \t]*(?:byte|method|addr)[ \t]")
 
+#: Real (non-pseudo) opcodes that take a byte-LITERAL operand list. The grammar
+#: accepts ``0x..`` and ``"str"`` for these but NOT the ``base64(..)`` /
+#: ``b64(..)`` / ``base32(..)`` / ``b32(..)`` encodings the assembler allows, so
+#: such a line parses as an ERROR and the opcode keeps EMPTY immediates — the
+#: constant is gone. For ``bytecblock`` that is severe: every ``bytec_N``
+#: reference in the program then resolves to nothing. Puya emits exactly this
+#: (``bytecblock base64(DIEBQw==)``) for embedded program bytes.
+_BYTE_LITERAL_OPS = frozenset({"pushbytes", "pushbytess", "bytecblock"})
+
+#: The encodings the grammar chokes on, in either spelling and either form.
+_BYTE_ENC_RE = re.compile(r"\b(?:b64|base64|b32|base32)\s*[( ]")
+
 #: Ops whose operand is a LABEL (so a path-mangled label must be renamed there
 #: too). ``b`` is the bare branch — ``b+`` / ``b-`` etc. are different tokens and
 #: do not match, since the comparison is against the whole first token.
@@ -142,8 +154,8 @@ def _sanitize_path_labels(text: str) -> str:
 
 def _normalize_pseudo_ops(data: bytes) -> bytes:
     text = _sanitize_path_labels(data.decode("utf-8", "replace"))
-    if not _PSEUDO_OP_RE.search(text):
-        return text.encode("utf-8")                # fast path: no pseudo-ops left
+    if not _PSEUDO_OP_RE.search(text) and not _BYTE_ENC_RE.search(text):
+        return text.encode("utf-8")                # fast path: nothing to rewrite
     out = []
     for line in text.split("\n"):
         body = line.strip()
@@ -167,6 +179,19 @@ def _normalize_pseudo_ops(data: bytes) -> bytes:
                 new = f"pushbytes 0x{raw[:32].hex()}" if len(raw) >= 32 else None
             except Exception:
                 new = None
+        elif op in _BYTE_LITERAL_OPS and _BYTE_ENC_RE.search(operand):
+            # Re-encode each operand to `0x..`, which the grammar DOES accept.
+            # `tokenize_operands` already keeps a parenthesised `base64(..)`
+            # group (and, folded, the `b64 <data>` pair) as ONE token, so an
+            # operand list survives intact.
+            from .ast.literals import tokenize_operands
+            try:
+                toks = tokenize_operands(operand, fold_byte_keywords=True)
+                raws = [_byte_literal(t) for t in toks]
+                new = (f"{op} " + " ".join(f"0x{r.hex()}" for r in raws)
+                       if toks and all(r is not None for r in raws) else None)
+            except Exception:
+                new = None                          # leave it for the diagnostic
         elif op == "method":
             sig = operand.strip()
             if sig.startswith('"') and sig.endswith('"'):

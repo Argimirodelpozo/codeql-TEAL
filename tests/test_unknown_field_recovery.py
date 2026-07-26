@@ -114,3 +114,75 @@ def test_real_avm12_contracts_parse_clean():
             pytest.skip(f"corpus fixture missing: {name}")
         prog = SSAProgram(str(p))
         assert list(getattr(prog, "parse_diagnostics", ()) or []) == [], name
+
+
+# ---------------------------------------------------------------------------
+# Byte-literal encodings the grammar rejects (the second half of the AVM-12 gap)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("literal,raw", [
+    ("b64(SGVsbG8=)", b"Hello"),
+    ("base64(SGVsbG8=)", b"Hello"),
+    ("b64 SGVsbG8=", b"Hello"),
+    ("base64 SGVsbG8=", b"Hello"),
+    ("b32(NBSWY3DP)", b"hello"),
+    ("base32(NBSWY3DP)", b"hello"),
+    ("b32 NBSWY3DP", b"hello"),
+    ("0x48656c6c6f", b"Hello"),
+    ('"Hello"', b"Hello"),
+])
+def test_every_byte_literal_spelling_decodes(literal, raw):
+    """`b64(..)` / `b32(..)` — the ABBREVIATED parenthesised spellings — fell
+    through to the utf-8 fallback and decoded to the literal ASCII text
+    `b64(SGVsbG8=)`. Worse than failing: a guard comparing against the constant
+    silently mis-evaluates against a value the chain never produces."""
+    from tealql.tealtools.ast.literals import decode_byte_literal
+    assert decode_byte_literal(literal)[0] == raw
+
+
+@pytest.mark.parametrize("line,op,imm", [
+    ("pushbytes base64(SGVsbG8=)", "pushbytes", "0x48656c6c6f"),
+    ("bytecblock base64(SGVsbG8=)", "bytecblock", "0x48656c6c6f"),
+    ("bytecblock base64(SGVsbG8=) base64(d29ybGQ=)", "bytecblock",
+     "0x48656c6c6f 0x776f726c64"),
+    ("pushbytess base64(SGVsbG8=) base64(d29ybGQ=)", "pushbytess",
+     "0x48656c6c6f 0x776f726c64"),
+])
+def test_encoded_byte_literal_operands_are_re_encoded(tmp_path, line, op, imm):
+    """The grammar accepts `0x..` / `"str"` for these opcodes but not the
+    base64/base32 encodings, so the line parsed as an ERROR and the opcode kept
+    EMPTY immediates — the constant simply gone. For `bytecblock` that is
+    severe: every `bytec_N` in the program then resolves to nothing."""
+    body = f"{line}\npop\n" if op != "pushbytess" else f"{line}\npop\npop\n"
+    prog = _prog(tmp_path, body, version=10)
+    assert list(getattr(prog, "parse_diagnostics", ()) or []) == []
+    assert (op, imm) in _ops(prog)
+
+
+def test_plain_byte_literal_operands_are_left_alone(tmp_path):
+    prog = _prog(tmp_path, 'bytecblock 0x48 "hi"\nbytec_0\npop\n', version=10)
+    assert list(getattr(prog, "parse_diagnostics", ()) or []) == []
+    assert ("bytecblock", '0x48 "hi"') in _ops(prog)
+
+
+def test_bytecblock_constant_survives_to_its_bytec_reference(tmp_path):
+    """The point of the fix: a `bytec_N` must resolve to the real constant."""
+    prog = _prog(tmp_path, "bytecblock base64(SGVsbG8=)\nbytec_0\npop\n", version=10)
+    bytec = [a for a in prog.assignments if a.op == "bytec_0"]
+    assert bytec and bytec[0].outputs
+    cv = getattr(bytec[0].outputs[0], "const_value", None)
+    assert cv is not None and cv.value == "0x48656c6c6f", cv
+
+
+def test_the_avm12_contract_parses_completely():
+    """The contract this thread started from: 11 diagnostics -> 0."""
+    from pathlib import Path
+    p = (Path(__file__).resolve().parent / "experimental_IR_lift" / "puya"
+         / "avm_12_Contract" / "src" / "Contract.approval.teal")
+    if not p.exists():
+        pytest.skip("corpus fixture missing")
+    prog = SSAProgram(str(p))
+    assert list(getattr(prog, "parse_diagnostics", ()) or []) == []
+    assert any(a.op == "bytecblock" and a.immediates.strip().startswith("0x")
+               for a in prog.assignments)
