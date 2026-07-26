@@ -91,6 +91,82 @@ def _named_int_error(c) -> bool:
         and c.children[1].type == "label_identifier"
     )
 
+#: Every mnemonic that carries a FIELD-NAME immediate — the ops whose field
+#: enumeration the grammar hard-codes, and therefore the ops a newer or simply
+#: missed field name can break. The txn-family READS come from the AVM tables
+#: (derived, not re-listed); the field WRITE and the params/holding queries are
+#: added here because they take a field name too. ``itxn_field`` matters most:
+#: it POPS, so dropping it loses the write AND leaves the stack one deep.
+def _field_arg_mnemonics() -> frozenset:
+    from ..avm import ITXN_SOURCE_OPS, TXN_SOURCE_OPS
+    return TXN_SOURCE_OPS | ITXN_SOURCE_OPS | frozenset({
+        "itxn_field",
+        "app_params_get", "asset_params_get", "acct_params_get",
+        "asset_holding_get", "voter_params_get", "block",
+    })
+
+
+_TXN_FIELD_MNEMONICS = _field_arg_mnemonics()
+
+
+def _unknown_txn_field_error(c) -> bool:
+    """A tree-sitter ERROR that is really a txn-family field read the grammar's
+    field enumeration does not list — ``txn GroupID``, ``txn AssetCloseAmount``,
+    ``txn RejectVersion`` (and the ``gtxn``/``itxn``/… forms of each).
+
+    The grammar hard-codes the set of field names, so a field added by a newer
+    AVM version — or simply missed — parses as an ERROR and the WHOLE
+    instruction is dropped as an unparseable span. That is not a cosmetic loss:
+    the push disappears, so the stack simulation every later analysis is built
+    on is short one value from that point, and any consumer of the field (a
+    ``log`` of ``txn GroupID``, an ``AssetCloseAmount`` guard) silently loses
+    its operand.
+
+    Recovering it needs no special emit path: the ERROR's first child IS the
+    mnemonic token (``txn``), which is exactly what :func:`_class_for` keys on,
+    and :func:`_loc` spans the whole node so ``.code`` carries the full
+    ``txn GroupID`` text for the immediates. ``avm._TXN_FIELD_TYPE`` already
+    types all three correctly, so only the parse was missing.
+
+    Deliberately narrow: the node must start with a txn-family mnemonic and
+    contain a bare identifier (the field name). Anything else stays an
+    unparseable-span diagnostic. ERROR recovery is GREEDY, so two adjacent bad
+    reads collapse into ONE node — :func:`_split_txn_field_error` segments them,
+    exactly as the named-int path does."""
+    if c.type != "ERROR" or len(c.children) < 2:
+        return False
+    if c.children[0].type not in _TXN_FIELD_MNEMONICS:
+        return False
+    return any(k.type == "label_identifier" for k in c.children[1:])
+
+
+def _split_txn_field_error(c) -> "tuple[list, list]":
+    """Segment a (possibly greedy) txn-field ERROR into ``(groups, unconsumed)``.
+
+    Each group is ``[mnemonic, …immediates…, field_identifier]`` — one recovered
+    instruction. Children that do not fit that shape are returned separately so
+    the caller can report them rather than drop them in silence."""
+    groups: list = []
+    unconsumed: list = []
+    kids = [k for k in c.children if not _is_trivia(k.type)]
+    i = 0
+    while i < len(kids):
+        if kids[i].type not in _TXN_FIELD_MNEMONICS:
+            unconsumed.append(kids[i])
+            i += 1
+            continue
+        j = i + 1
+        while j < len(kids) and kids[j].type == "numeric_argument":
+            j += 1                                   # immediate group/array index
+        if j < len(kids) and kids[j].type == "label_identifier":
+            groups.append(kids[i:j + 1])
+            i = j + 1
+        else:
+            unconsumed.extend(kids[i:j + 1])         # mnemonic with no field
+            i = j + 1
+    return groups, unconsumed
+
+
 _NUMERIC_ARG_OPCODES = frozenset({
     "single_numeric_argument_opcode",   # int / pushint
     "intcblock_opcode",
@@ -183,7 +259,7 @@ def parse_nodes(
 
         real: list = []
         for c in root.children:
-            if _named_int_error(c):
+            if _named_int_error(c) or _unknown_txn_field_error(c):
                 real.append(c)
             elif c.type == "ERROR" and real and _hex_int_split(real[-1], c, src):
                 # a hex/oct/bin int tail the grammar split off (e.g. the `x10 5`
@@ -233,6 +309,31 @@ def parse_nodes(
                     nxt.end_point[0] + 1, nxt.end_point[1],
                     cls, override))
                 i += 2
+                continue
+            if _unknown_txn_field_error(ch):
+                # Recovered txn-family field read the grammar's field list is
+                # missing (`txn GroupID` / `AssetCloseAmount` / `RejectVersion`).
+                # `_class_for` keys on the ERROR's first child — the mnemonic
+                # token — so each group emits as the very node the grammar would
+                # have produced for a known field.
+                groups, unconsumed = _split_txn_field_error(ch)
+                for grp in groups:
+                    cls, override = _class_for(ch)
+                    op_nodes.append(_node(
+                        grp[0].start_point[0] + 1, grp[0].start_point[1],
+                        grp[-1].end_point[0] + 1, grp[-1].end_point[1],
+                        cls, override))
+                if unconsumed and diagnostics is not None:
+                    lo = min(u.start_point[0] for u in unconsumed) + 1
+                    hi = max(u.end_point[0] for u in unconsumed) + 1
+                    text = src[unconsumed[0].start_byte:
+                               unconsumed[-1].end_byte].decode("utf-8", "replace")
+                    snippet = (text.splitlines()[0].strip()[:80]
+                               if text.strip() else "")
+                    diagnostics.append(ParseDiagnostic(
+                        file=file, start_line=lo, end_line=hi, snippet=snippet,
+                    ))
+                i += 1
                 continue
             if _named_int_error(ch):
                 # Recovered `int <name>`: span each `int` token through its named
