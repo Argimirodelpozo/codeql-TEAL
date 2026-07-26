@@ -192,6 +192,75 @@ def _is_sender_op(src) -> bool:
     return src.op == "global" and ("CreatorAddress" in imm or "Sender" in imm)
 
 
+def _scratch_value_edges(lifter, dom_by_sub) -> dict:
+    """``{id(load_result_register): [stored_register]}`` for scratch round-trips
+    the value PROVABLY survives — the same map shape as :func:`_invoke_returns`,
+    so it merges into that map and every ``_walk`` already threading it gets the
+    edge for free.
+
+    The lift keeps ``store N`` / ``load N`` as IR intrinsics AND rebuilds the IR
+    from the op stream rather than the SSA def-use graph, so a guard whose
+    RESULT is round-tripped (``txn Sender; global CreatorAddress; ==; store 0;
+    load 0; assert``) reaches the IR as ``assert (load 0)`` and the def-walk
+    dead-ends there. The guard is real and dominates the sink, but it is
+    invisible — a false positive on a correctly-guarded contract.
+
+    MUST-semantics, deliberately strict (an unprovable case simply does not
+    bridge, which is exactly today's behaviour):
+
+    * the program contains no dynamic ``stores`` write — one of those can target
+      any slot, which destroys the "only this store writes this slot" premise;
+    * the slot has EXACTLY ONE ``store`` in the whole program (scratch is global
+      to the program, so this must be a whole-program count, not per-sub);
+    * that store is in the SAME subroutine as the load (per-sub dominance is all
+      we have) and DOMINATES it — a strictly-dominating block, or the same block
+      at an earlier op index.
+
+    Under those conditions the store always executes before the load and nothing
+    else can have written the slot, so the load carries exactly that register."""
+    stores: dict = {}          # slot -> [(sub_id, block_id, op_index, register|None)]
+    loads: list = []           # (slot, sub_id, block_id, op_index, result_register)
+    for s in lifter.subs:
+        for b in s.body:
+            for idx, o in enumerate(b.ops):
+                intr = _intr(o)
+                if intr is None:
+                    continue
+                # CHECK THIS FIRST: `stores` takes its slot off the STACK, so it
+                # has no immediates — behind an `immediates` guard this bail-out
+                # is unreachable and a dynamic write silently keeps its slot
+                # looking single-writer.
+                if intr.op == "stores":
+                    return {}                      # dynamic slot: prove nothing
+                if not intr.immediates:
+                    continue
+                slot = str(intr.immediates[0])
+                if intr.op == "store":
+                    val = intr.args[0] if intr.args else None
+                    stores.setdefault(slot, []).append(
+                        (s.id, b.id, idx,
+                         val if isinstance(val, pre_ir.Register) else None))
+                elif (intr.op == "load" and isinstance(o, pre_ir.Assignment)
+                        and o.targets and isinstance(o.targets[0], pre_ir.Register)):
+                    loads.append((slot, s.id, b.id, idx, o.targets[0]))
+
+    out: dict = {}
+    for slot, sub_id, bid, idx, result in loads:
+        st = stores.get(slot) or []
+        if len(st) != 1:
+            continue                               # 0 or several writers: unprovable
+        s_sub, s_bid, s_idx, s_reg = st[0]
+        if s_reg is None or s_sub != sub_id or s_reg is result:
+            continue
+        if s_bid == bid:
+            if s_idx >= idx:
+                continue                           # store is not before the load
+        elif s_bid not in dom_by_sub.get(sub_id, {}).get(bid, ()):
+            continue                               # store does not dominate the load
+        out[id(result)] = [s_reg]
+    return out
+
+
 def _def_map(lifter) -> dict:
     d: dict = {}
     for b in pre_ir.blocks(lifter.subs):
@@ -604,8 +673,12 @@ def _tainted_sink_flows(lifter, sink_of, taint=None, trusted_args=frozenset(),
     if taint is None:
         taint = user_input_taint(lifter, trusted_args)
     def_of = _def_map(lifter)
-    inv_ret = _invoke_returns(lifter)
     dom_by_sub = {s.id: _dominators(s) for s in lifter.subs}
+    # Value edges the def-walk follows: a call result into the callee's returns,
+    # AND a scratch round-trip back to what was stored (same map shape, so every
+    # `_walk` already threading `inv_ret` picks the scratch edge up too).
+    inv_ret = _invoke_returns(lifter)
+    inv_ret.update(_scratch_value_edges(lifter, dom_by_sub))
     entry_guards, called = _entry_guards(lifter, def_of, dom_by_sub, taint, inv_ret)
     callee_pg = _callee_param_guards(lifter, def_of, dom_by_sub, inv_ret)
     findings: list = []

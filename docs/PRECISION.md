@@ -33,7 +33,7 @@
 | `ir-tainted-asset-admin` | medium | high | 2 | 0 | 0 | 3 | 1.00 | 1.00 | 1.00 |
 | `ir-tainted-fee` | medium | high | 1 | 0 | 0 | 2 | 1.00 | 1.00 | 1.00 |
 | `ir-tainted-freeze` | medium | high | 1 | 0 | 0 | 2 | 1.00 | 1.00 | 1.00 |
-| `ir-tainted-fund-flow` | medium | high | 5 | 2 | 0 | 6 | 0.71 | 1.00 | 0.83 |
+| `ir-tainted-fund-flow` | medium | high | 5 | 0 | 0 | 8 | 1.00 | 1.00 | 1.00 |
 | `ir-tainted-log` | medium | high | 2 | 0 | 0 | 3 | 1.00 | 1.00 | 1.00 |
 | `ir-tainted-state-write` | medium | high | 2 | 0 | 0 | 3 | 1.00 | 1.00 | 1.00 |
 | `is-deletable` | informational | high | 1 | 0 | 0 | 3 | 1.00 | 1.00 | 1.00 |
@@ -49,6 +49,6 @@
 | `unsafe-division-order` | medium | high | 3 | 0 | 0 | 3 | 1.00 | 1.00 | 1.00 |
 | `unsafe-lsig-args` | high | high | 1 | 0 | 0 | 1 | 1.00 | 1.00 | 1.00 |
 | `unvalidated-group-sibling` | high | high | 6 | 0 | 0 | 9 | 1.00 | 1.00 | 1.00 |
-| **overall** | | | **80** | **2** | **0** | **104** | **0.98** | **1.00** | **0.99** |
+| **overall** | | | **80** | **0** | **0** | **106** | **1.00** | **1.00** | **1.00** |
 
 _Regenerate with_ `python -m tests.gen_precision`.

@@ -1,7 +1,7 @@
 #pragma version 10
-// KNOWN FALSE POSITIVE (recorded deliberately) — same guard as the sibling
-// fixture, reaching its assert through a phi as well as scratch. Same root
-// cause: the IR-level def-walk cannot cross the scratch round-trip.
+// SAFE: the same guard reaching its assert through a phi as well as scratch.
+// Same bridge; the phi is followed by the existing def-walk once the scratch
+// edge reconnects it to the `==`.
 txn Sender
 global CreatorAddress
 ==
