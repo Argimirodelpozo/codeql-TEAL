@@ -246,9 +246,24 @@ def _opcode_mnemonics() -> frozenset:
     })
 
 
+#: SOURCE REWRITES applied, in order, before the grammar ever sees the text.
+#: Each works around a construct tree-sitter-teal cannot parse, and each is a
+#: no-op on source that does not contain it. Order matters: comments are
+#: neutralised first (a quote inside one derails the string tokenizer), then
+#: labels are made parseable, and only then does the per-line pseudo-op rewrite
+#: below run. Kept as a named sequence rather than nested calls so the order is
+#: legible and a new rewrite has an obvious place to go.
+_SOURCE_REWRITES = (
+    ("blank quote-bearing comments", _blank_quoted_comments),
+    ("sanitize path labels",         _sanitize_path_labels),
+    ("rename opcode-named labels",   _opcode_named_labels),
+)
+
+
 def _normalize_pseudo_ops(data: bytes) -> bytes:
-    text = _opcode_named_labels(_sanitize_path_labels(
-        _blank_quoted_comments(data.decode("utf-8", "replace"))))
+    text = data.decode("utf-8", "replace")
+    for _name, rewrite in _SOURCE_REWRITES:
+        text = rewrite(text)
     if not _PSEUDO_OP_RE.search(text) and not _BYTE_ENC_RE.search(text):
         return text.encode("utf-8")                # fast path: nothing to rewrite
     out = []

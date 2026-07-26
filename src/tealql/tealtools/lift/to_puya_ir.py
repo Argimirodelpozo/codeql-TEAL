@@ -25,7 +25,7 @@ from . import pre_ir
 from . import _puya_compat as _compat
 from .lift import _Lifter
 from .teal_const import _const_bytes, _load_src, _tmpl_name
-from ..ast.literals import tokenize_operands as _tokenize_operands
+from ..ast.literals import is_template_variable, tokenize_operands as _tokenize_operands
 from . import arc4_recovery
 # The ARC-4 encoded-type recovery was extracted to `arc4_recovery` (this module
 # was a 2000-line god module). Re-export the API used INTERNALLY here (the lift
@@ -81,7 +81,7 @@ _PUSH_BYTES = {"pushbytes", "bytec", "bytec_0", "bytec_1", "bytec_2", "bytec_3"}
 def _make_const(operand: str, is_u64: bool):
     """A recovered operand string -> a Puya constant / template var, or None."""
     operand = operand.strip()
-    if operand.startswith("TMPL_"):
+    if is_template_variable(operand):
         return M.TemplateVar(source_location=None, name=operand,
                              ir_type=PT.uint64 if is_u64 else PT.bytes)
     if is_u64:
@@ -108,11 +108,6 @@ def _line_of(bb) -> int:
     return int(c[1:]) if c.startswith("L") and c[1:].isdigit() else 1
 
 
-#: A deployment template variable: ALL-CAPS ``PREFIX_NAME``. `TMPL_` is
-#: algokit's default; puya lets a contract choose its own (e.g. `PRFX_`).
-_TEMPLATE_VAR_RE = re.compile(r"^[A-Z][A-Z0-9]*_[A-Z0-9_]+$")
-
-
 def _is_template_push(immediates) -> bool:
     """No immediate at all, or ONLY deployment template variables.
 
@@ -131,7 +126,7 @@ def _is_template_push(immediates) -> bool:
         operands.append(tok)
     if not operands:
         return True
-    return all(_TEMPLATE_VAR_RE.match(t) for t in operands)
+    return all(is_template_variable(t) for t in operands)
 
 
 class _Translator:
@@ -226,7 +221,7 @@ class _Translator:
                     and _is_template_push(s.immediates):
                 is_u64 = s.op in _PUSH_U64
                 ops = self._operands_at(s.line)
-                if ops and not ops[0].startswith("TMPL_"):
+                if ops and not is_template_variable(ops[0]):
                     v = _make_const(ops[0], is_u64)
                     if v is not None:
                         return v

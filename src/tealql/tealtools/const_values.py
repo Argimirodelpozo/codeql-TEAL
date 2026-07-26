@@ -29,7 +29,9 @@ from __future__ import annotations
 from typing import Optional
 
 from .ast import Opcode
-from .ast.literals import NAMED_INT_CONSTANTS, tokenize_operands
+from .ast.literals import (
+    NAMED_INT_CONSTANTS, is_template_variable, tokenize_operands,
+)
 
 
 def _opname(n) -> str:
@@ -80,15 +82,12 @@ def _split_byte_literals(imms: str) -> list[str]:
     return tokenize_operands(imms, fold_byte_keywords=True)
 
 
-#: A deployment template variable has no value until the app is deployed, so a
-#: const-block slot holding one must resolve to NOTHING. Emitting the raw text
-#: as a bytes constant would be a fabricated value that every downstream
-#: comparison then trusts.
-_TEMPLATE_PREFIX = "TMPL_"
-
-
 def _resolvable_byte_literal(tok) -> bool:
-    return tok is not None and not tok.strip().startswith(_TEMPLATE_PREFIX)
+    """A const-block slot holding a deployment TEMPLATE has no value until the
+    app is deployed, so it must resolve to NOTHING. Emitting the raw text as a
+    bytes constant would be a fabricated value every downstream comparison then
+    trusts."""
+    return tok is not None and not is_template_variable(tok)
 
 
 def compute_const_values(g) -> list[tuple]:

@@ -202,12 +202,6 @@ def _pins_operand(pred: BranchCondition, operand) -> bool:
     return False
 
 
-def _predicate_mentions(pred: BranchCondition, operand) -> bool:
-    if pred.value is operand:
-        return True
-    return any(arg is operand for arg in pred.args)
-
-
 def _validating_predicate(
     operand,
     file: str,

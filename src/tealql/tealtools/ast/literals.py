@@ -18,6 +18,29 @@ today only the lift consumes them (it would otherwise re-parse the raw text).
 """
 from __future__ import annotations
 
+import re
+
+
+#: A DEPLOYMENT TEMPLATE VARIABLE token: an ALL-CAPS ``PREFIX_NAME`` identifier
+#: standing in for a value supplied at deploy time (``TMPL_DELETABLE``).
+#: ``TMPL_`` is algokit's default prefix, but puya lets a contract choose its
+#: own — the ``compile_HelloPrfx`` fixture uses ``PRFX_`` — so keying on the
+#: literal ``TMPL_`` misses real ones.
+_TEMPLATE_VAR_RE = re.compile(r"^[A-Z][A-Z0-9]*_[A-Z0-9_]+$")
+
+
+def is_template_variable(token: str) -> bool:
+    """``token`` is a deployment template variable — a value that does not
+    exist until the app is deployed.
+
+    ONE definition, consumed by the parser (recover the operand rather than
+    drop it), ``const_values`` (resolve the slot to NOTHING rather than to the
+    literal text) and the lift (lower to puya's ``TemplateVar``). It previously
+    existed in three places in two different forms — a ``TMPL_`` prefix test
+    and this regex — which disagree on every custom prefix.
+    """
+    return bool(token) and _TEMPLATE_VAR_RE.match(token.strip()) is not None
+
 
 # TEAL `int` pseudo-op named constants -- the OnCompletion and TxnType (TypeEnum)
 # enums the assembler resolves to fixed uint64 values. The tree-sitter grammar's

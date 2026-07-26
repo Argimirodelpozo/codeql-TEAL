@@ -496,3 +496,58 @@ def test_the_whole_corpus_parses_clean():
         if d:
             bad.append((f, d[0].snippet[:60]))
     assert bad == [], bad
+
+
+# ---------------------------------------------------------------------------
+# Structural: one definition of "template variable", one recovery registry
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("token,expected", [
+    ("TMPL_DELETABLE", True),
+    ("PRFX_GREETING", True),      # puya lets a contract pick its own prefix
+    ("A_B", True),
+    ("somethingelse", False),
+    ("main", False),
+    ("lower_case", False),
+    ("", False),
+])
+def test_template_variable_predicate(token, expected):
+    from tealql.tealtools.ast.literals import is_template_variable
+    assert is_template_variable(token) is expected
+
+
+def test_template_predicate_has_exactly_one_definition():
+    """It lived in four modules in two DIFFERENT forms — a `TMPL_` prefix test
+    and a regex — which disagree on every custom prefix, so `const_values`
+    would emit `PRFX_GREETING` as a real bytes constant while the parser
+    treated it as a template. One definition, or they drift again."""
+    import pathlib
+    src = pathlib.Path(__file__).resolve().parent.parent / "src"
+    offenders = [
+        str(f) for f in src.rglob("*.py")
+        if f.name != "literals.py"
+        and ("_TEMPLATE_VAR_RE" in (t := f.read_text())
+             or 'startswith("TMPL_")' in t)
+    ]
+    assert offenders == [], offenders
+
+
+def test_every_recovery_is_in_a_registry():
+    """Each grammar gap is recovered as either a STANDALONE instruction or a
+    TAIL merged into the preceding opcode. Keeping both families as registries
+    means the next AVM version is one tuple entry, not another clause in two
+    `or` chains that can drift out of step."""
+    import inspect
+
+    from tealql.tealtools.ast import parse as P
+
+    assert len(P._STANDALONE_RECOVERIES) >= 3
+    assert len(P._TAIL_RECOVERIES) >= 3
+    # UNIFORM SIGNATURES are the whole point: standalone takes (node, src),
+    # tail takes (prev, node, src). Before the registries these had three
+    # different arities and each new gap grew another bespoke `or` clause.
+    for fn in P._STANDALONE_RECOVERIES:
+        assert len(inspect.signature(fn).parameters) == 2, fn.__name__
+    for fn in P._TAIL_RECOVERIES:
+        assert len(inspect.signature(fn).parameters) == 3, fn.__name__

@@ -45,6 +45,7 @@ from .ast import (
     AstNode, Label, Location, SingleNumericArgumentOpcode, Source,
     ZeroArgumentOpcode, node_class_for_mnemonic,
 )
+from .literals import is_template_variable
 
 _LANG = _ts.Language(_tsteal.language())
 
@@ -76,7 +77,7 @@ def _is_trivia(node_type: str) -> bool:
     return node_type in _TRIVIA or node_type.startswith("pragma")
 
 
-def _named_int_error(c) -> bool:
+def _named_int_error(c, src: bytes = b"") -> bool:
     """A tree-sitter ERROR that is really the ``int <NamedConstant>`` pseudo-op
     (``int DeleteApplication`` / ``int pay`` / …). The grammar's ``int`` rule
     only accepts a numeric argument, so the named OnCompletion / TxnType form
@@ -118,7 +119,7 @@ def _field_arg_mnemonics() -> frozenset:
 _TXN_FIELD_MNEMONICS = _field_arg_mnemonics()
 
 
-def _unknown_txn_field_error(c) -> bool:
+def _unknown_txn_field_error(c, src: bytes = b"") -> bool:
     """A tree-sitter ERROR that is really a txn-family field read the grammar's
     field enumeration does not list — ``txn GroupID``, ``txn AssetCloseAmount``,
     ``txn RejectVersion`` (and the ``gtxn``/``itxn``/… forms of each).
@@ -226,12 +227,7 @@ _TEMPLATE_HOST_NODES = frozenset({
 #: which the lift's lowering cannot express (`'PushintOpcode' is not a valid
 #: AVMOp` on the xgov contract) — so it stays a visible diagnostic instead.
 
-#: A deployment template variable: an ALL-CAPS ``PREFIX_NAME`` identifier.
-#: ``TMPL_`` is the algokit default, but puya lets a contract choose its own
-#: (the ``compile_HelloPrfx`` fixture uses ``PRFX_``), so keying on the literal
-#: ``TMPL_`` missed real ones. Still narrow enough that an ordinary
-#: lowercase identifier after a const block is not mistaken for a template.
-_TEMPLATE_VAR_RE = __import__("re").compile(r"^[A-Z][A-Z0-9]*_[A-Z0-9_]+$")
+
 
 
 def _is_phantom_label(c) -> bool:
@@ -270,7 +266,7 @@ def _template_push_error(c, src: bytes) -> bool:
     rest = [k for k in c.children[1:] if not _is_trivia(k.type)]
     return bool(rest) and all(
         k.type == "label_identifier"
-        and _TEMPLATE_VAR_RE.match(
+        and is_template_variable(
             src[k.start_byte:k.end_byte].decode("utf-8", "replace"))
         for k in rest)
 
@@ -316,7 +312,7 @@ def _template_var_tail(ch, nxt, src: bytes) -> bool:
     kids = [k for k in nxt.children if k.type == "label_identifier"]
     if not kids:
         return False
-    return all(_TEMPLATE_VAR_RE.match(
+    return all(is_template_variable(
         src[k.start_byte:k.end_byte].decode("utf-8", "replace")) for k in kids)
 
 
@@ -343,6 +339,37 @@ def _hex_int_split(ch, nxt, src: bytes) -> bool:
         return False
     return src[nxt.start_byte:nxt.start_byte + 1] in (b"x", b"X", b"o", b"O",
                                                       b"b", b"B")
+
+
+#: RECOVERY REGISTRIES. The tree-sitter grammar rejects a growing set of valid
+#: TEAL, and each gap is recovered in one of exactly two shapes:
+#:
+#:   * STANDALONE — an ERROR node that IS one or more instructions, emitted on
+#:     its own (`_class_for` keys on its first child, the mnemonic token);
+#:   * TAIL — a node that belongs to the PRECEDING opcode and is merged into it
+#:     by re-spanning (always clamped to the opcode's own line).
+#:
+#: Adding the next AVM version's gap is one entry in one tuple, rather than
+#: another clause in two `or` chains that had drifted out of step.
+_STANDALONE_RECOVERIES = (
+    _named_int_error,            # `int DeleteApplication`
+    _unknown_txn_field_error,    # `txn GroupID`, `itxn_field RejectVersion`
+    _template_push_error,        # `pushint TMPL_DELETABLE`
+)
+
+_TAIL_RECOVERIES = (
+    _hex_int_split,              # `int 0x10` split into `int 0` + `x10`
+    _itxna_index_split,          # `itxna Logs 1` / `gaid 5` losing the index
+    _template_var_tail,          # `bytecblock "a" TMPL_X`
+)
+
+
+def _is_standalone_recovery(c, src: bytes) -> bool:
+    return any(f(c, src) for f in _STANDALONE_RECOVERIES)
+
+
+def _is_tail_recovery(prev, node, src: bytes) -> bool:
+    return prev is not None and any(f(prev, node, src) for f in _TAIL_RECOVERIES)
 
 
 def _ts_to_pascal(node_type: str) -> str:
@@ -412,11 +439,9 @@ def parse_nodes(
 
         real: list = []
         for c in root.children:
-            if (_named_int_error(c) or _unknown_txn_field_error(c)
-                    or _template_push_error(c, src)
-                    or (real and c.type in ("ERROR", "label")
-                        and (_itxna_index_split(real[-1], c, src)
-                             or _template_var_tail(real[-1], c, src)))):
+            if (_is_standalone_recovery(c, src)
+                    or (c.type in ("ERROR", "label") and real
+                        and _is_tail_recovery(real[-1], c, src))):
                 real.append(c)
             elif c.type == "ERROR" and real and _hex_int_split(real[-1], c, src):
                 # a hex/oct/bin int tail the grammar split off (e.g. the `x10 5`
@@ -454,9 +479,7 @@ def parse_nodes(
         while i < len(real):
             ch = real[i]
             nxt = real[i + 1] if i + 1 < len(real) else None
-            if nxt is not None and (_hex_int_split(ch, nxt, src)
-                                    or _itxna_index_split(ch, nxt, src)
-                                    or _template_var_tail(ch, nxt, src)):
+            if nxt is not None and _is_tail_recovery(ch, nxt, src):
                 # Clamp to the END OF THE OPCODE'S OWN LINE. A salvaged tail can
                 # span FURTHER (xgov's `pushint TMPL_DELETABLE // TMPL_DELETABLE`
                 # swallowed its comment AND the next line), and a multi-line span
@@ -485,7 +508,7 @@ def parse_nodes(
                        and real[i].start_point[0] == ch.start_point[0]):
                     i += 1
                 continue
-            if _unknown_txn_field_error(ch):
+            if _unknown_txn_field_error(ch, src):
                 # Recovered txn-family field read the grammar's field list is
                 # missing (`txn GroupID` / `AssetCloseAmount` / `RejectVersion`).
                 # `_class_for` keys on the ERROR's first child — the mnemonic
@@ -510,7 +533,7 @@ def parse_nodes(
                     ))
                 i += 1
                 continue
-            if _named_int_error(ch):
+            if _named_int_error(ch, src):
                 # Recovered `int <name>`: span each `int` token through its named
                 # identifier (tight, robust to greedy ERROR recovery), emit as
                 # the same opcode class a numeric `int N` gets.
