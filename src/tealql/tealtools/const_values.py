@@ -80,6 +80,17 @@ def _split_byte_literals(imms: str) -> list[str]:
     return tokenize_operands(imms, fold_byte_keywords=True)
 
 
+#: A deployment template variable has no value until the app is deployed, so a
+#: const-block slot holding one must resolve to NOTHING. Emitting the raw text
+#: as a bytes constant would be a fabricated value that every downstream
+#: comparison then trusts.
+_TEMPLATE_PREFIX = "TMPL_"
+
+
+def _resolvable_byte_literal(tok) -> bool:
+    return tok is not None and not tok.strip().startswith(_TEMPLATE_PREFIX)
+
+
 def compute_const_values(g) -> list[tuple]:
     """Return resolved-constant rows as ``(file, line, out_idx, kind,
     value)`` tuples, computed from the loaded graph's AST nodes."""
@@ -146,12 +157,14 @@ def compute_const_values(g) -> list[tuple]:
         elif op == "bytec":
             idx = _to_int(_imms(n))
             if (idx is not None and bytec_vals is not None
-                    and 0 <= idx < len(bytec_vals)):
+                    and 0 <= idx < len(bytec_vals)
+                    and _resolvable_byte_literal(bytec_vals[idx])):
                 rows.append((f, ln, 1, "bytes", bytec_vals[idx]))
 
         elif op in ("bytec_0", "bytec_1", "bytec_2", "bytec_3"):
             idx = int(op[-1])
-            if bytec_vals is not None and idx < len(bytec_vals):
+            if (bytec_vals is not None and idx < len(bytec_vals)
+                    and _resolvable_byte_literal(bytec_vals[idx])):
                 rows.append((f, ln, 1, "bytes", bytec_vals[idx]))
 
         elif op == "pushints":

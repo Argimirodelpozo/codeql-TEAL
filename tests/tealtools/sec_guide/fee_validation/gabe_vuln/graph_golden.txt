@@ -1,7 +1,7 @@
 ## nodes
 prog.teal	1	0	96	10	Source
 prog.teal	7	0	7	5	Label
-prog.teal	8	4	8	14	BytecblockOpcode
+prog.teal	8	4	8	48	BytecblockOpcode
 prog.teal	11	4	11	16	TxnOpcode
 prog.teal	12	4	12	13	PushintOpcode
 prog.teal	13	4	13	6	EqualsComparisonOpcode

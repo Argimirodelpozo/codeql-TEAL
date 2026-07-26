@@ -191,6 +191,45 @@ def _itxna_index_split(ch, nxt, src: bytes) -> bool:
     return tail.isdigit()
 
 
+#: Opcodes whose operand list may carry a deployment TEMPLATE VARIABLE.
+_TEMPLATE_HOST_NODES = frozenset({
+    "intcblock_opcode", "bytecblock_opcode",
+    "pushints_opcode", "pushbytess_opcode",
+})
+
+#: algokit / ARC-4 template-variable naming convention. Deliberately narrow —
+#: an arbitrary identifier after a const block is a genuine error, not this.
+_TEMPLATE_PREFIX = "TMPL_"
+
+
+def _template_var_tail(ch, nxt, src: bytes) -> bool:
+    """A const block whose operand list ends in un-instantiated deployment
+    TEMPLATE VARIABLES (``bytecblock "greeting" TMPL_GREETING``,
+    ``intcblock 1 64 TMPL_DELETABLE``).
+
+    The grammar has no template-variable token, so the opcode node STOPS at the
+    last real literal and the ``TMPL_*`` tail becomes a separate node — an
+    ERROR, or (worse) a spurious ``label`` DEFINITION, since `TMPL_X` on its own
+    looks exactly like one. A phantom label is a phantom branch target.
+
+    Re-spanning the opcode through the tail keeps the block's ARITY right, which
+    is what actually matters: ``bytec_N`` indexes the block POSITIONALLY, so a
+    truncated list silently renumbers every later slot. The template slots
+    themselves stay UNRESOLVED — a template's value is genuinely unknown until
+    deployment — which :mod:`const_values` models per slot."""
+    if ch.type not in _TEMPLATE_HOST_NODES or nxt is None:
+        return False
+    if nxt.type not in ("ERROR", "label"):
+        return False
+    if ch.end_point[0] != nxt.start_point[0]:
+        return False
+    kids = [k for k in nxt.children if k.type == "label_identifier"]
+    if not kids:
+        return False
+    return all(src[k.start_byte:k.end_byte].decode("utf-8", "replace")
+               .startswith(_TEMPLATE_PREFIX) for k in kids)
+
+
 _NUMERIC_ARG_OPCODES = frozenset({
     "single_numeric_argument_opcode",   # int / pushint
     "intcblock_opcode",
@@ -284,8 +323,9 @@ def parse_nodes(
         real: list = []
         for c in root.children:
             if (_named_int_error(c) or _unknown_txn_field_error(c)
-                    or (real and c.type == "ERROR"
-                        and _itxna_index_split(real[-1], c, src))):
+                    or (real and c.type in ("ERROR", "label")
+                        and (_itxna_index_split(real[-1], c, src)
+                             or _template_var_tail(real[-1], c, src)))):
                 real.append(c)
             elif c.type == "ERROR" and real and _hex_int_split(real[-1], c, src):
                 # a hex/oct/bin int tail the grammar split off (e.g. the `x10 5`
@@ -324,7 +364,8 @@ def parse_nodes(
             ch = real[i]
             nxt = real[i + 1] if i + 1 < len(real) else None
             if nxt is not None and (_hex_int_split(ch, nxt, src)
-                                    or _itxna_index_split(ch, nxt, src)):
+                                    or _itxna_index_split(ch, nxt, src)
+                                    or _template_var_tail(ch, nxt, src)):
                 # Recovered `int 0x10` / `pushint 0x..` / `intcblock 0x.. ..`: the
                 # grammar's numeric_argument is DECIMAL-only, so a hex/oct/bin
                 # literal parses as `<op> 0` plus an adjacent bogus `label`/`ERROR`

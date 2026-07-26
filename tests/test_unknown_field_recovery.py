@@ -269,3 +269,64 @@ def test_the_real_pop_opcode_still_pops(tmp_path):
 def test_ordinary_labels_are_not_renamed(tmp_path):
     prog = _prog(tmp_path, "int 0\nb main\nmain:\n", version=10)
     assert _labels(prog) == ["main"]
+
+
+# ---------------------------------------------------------------------------
+# Deployment template variables in a constant block
+# ---------------------------------------------------------------------------
+
+
+def test_template_block_keeps_real_constants_and_arity(tmp_path):
+    """The grammar has no template-variable token, so the const-block opcode
+    STOPPED at the last real literal. `bytec_N` indexes the block POSITIONALLY,
+    so a truncated list silently renumbers every later slot."""
+    prog = _prog(tmp_path, 'bytecblock "greeting" "num" TMPL_GREETING TMPL_NUM\n'
+                           "bytec_0\nbytec_1\nbytec_2\npop\npop\npop\n", version=10)
+    assert list(getattr(prog, "parse_diagnostics", ()) or []) == []
+    block = [a for a in prog.assignments if a.op == "bytecblock"][0]
+    assert block.immediates.strip() == '"greeting" "num" TMPL_GREETING TMPL_NUM'
+
+
+def test_template_slots_resolve_to_nothing(tmp_path):
+    """A template has no value until deployment. Emitting the raw text as a
+    bytes constant would be a fabricated value every later comparison trusts."""
+    prog = _prog(tmp_path, 'bytecblock "greeting" TMPL_GREETING\n'
+                           "bytec_0\nbytec_1\npop\npop\n", version=10)
+    prog.propagate_constants()
+    consts = {a.op: [getattr(o, "const_value", None) for o in a.outputs]
+              for a in prog.assignments if a.op.startswith("bytec_")}
+    assert consts["bytec_0"][0] is not None      # the real string resolves
+    assert consts["bytec_1"][0] is None          # the template does NOT
+
+
+def test_intcblock_template_slots(tmp_path):
+    prog = _prog(tmp_path, "intcblock 1 64 TMPL_DELETABLE\nintc_0\nintc_2\npop\npop\n",
+                 version=10)
+    prog.propagate_constants()
+    assert list(getattr(prog, "parse_diagnostics", ()) or []) == []
+    consts = {a.op: [getattr(o, "const_value", None) for o in a.outputs]
+              for a in prog.assignments if a.op.startswith("intc_")}
+    assert consts["intc_0"][0] is not None
+    assert consts["intc_2"][0] is None
+
+
+def test_template_tail_does_not_become_a_phantom_label(tmp_path):
+    """`TMPL_X` alone on the operand list looks exactly like a label
+    definition to tree-sitter — a phantom label is a phantom branch target."""
+    prog = _prog(tmp_path, 'bytecblock "greeting" TMPL_GREETING\nbytec_0\npop\n',
+                 version=10)
+    assert [c for _, _, c in prog.labels] == []
+
+
+def test_non_template_identifier_is_not_absorbed(tmp_path):
+    """The recovery is deliberately narrow — keyed on the `TMPL_` convention —
+    so an arbitrary identifier after a const block must NOT be pulled into the
+    block's operand list.
+
+    (What that identifier does instead is a SEPARATE, pre-existing gap this
+    test does not assert away: it is silently swallowed with no diagnostic at
+    all, and the block truncates. Verified identical before and after this
+    change, so it is not a regression — but it is worth fixing on its own.)"""
+    prog = _prog(tmp_path, 'bytecblock "a" somethingelse\nbytec_0\npop\n', version=10)
+    block = [a for a in prog.assignments if a.op == "bytecblock"][0]
+    assert block.immediates.strip() == '"a"'
