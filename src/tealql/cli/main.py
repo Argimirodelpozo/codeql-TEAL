@@ -212,6 +212,37 @@ def _emit_dict(payload: dict, *, json_out: bool, text: str) -> int:
 # ---------------------------------------------------------------------------
 
 
+def _lifted_programs(args, command: str):
+    """Yield ``(label, main, subs)`` for each target program lifted to real Puya
+    IR — the shared preamble of every ``puya``-gated subcommand.
+
+    Three concerns, identical in each and previously copy-pasted three times:
+
+    * the OPTIONAL dependency. Absent puya, fail with the standard message.
+      Raised rather than returned, so ``main`` renders it and exits 2 like every
+      other expected failure — same output, one less bespoke path.
+    * puya's IR builder emits heavy DEBUG/ERROR logging (including the lift's
+      known tolerated arg-mistypes); silence it so audit output stays readable.
+    * a program that does not lift is a COVERAGE GAP, not a failure — warn and
+      skip it, so one stubborn contract cannot sink a directory-wide audit.
+    """
+    try:
+        from tealql.tealtools.lift import to_puya
+    except ImportError as e:
+        raise TealQLError(
+            f"{command} requires the 'puya' package (pip install puyapy)") from e
+    logging.getLogger("puya").setLevel(logging.CRITICAL)
+    for prog, name in _load_programs(args):
+        label = name or Path(getattr(prog, "source_path", "") or "<program>").name
+        try:
+            main_sub, subs = to_puya(prog)
+        except Exception as e:                       # coverage gap, not a crash
+            logger.warning("%s: %s did not lift (%s: %s) — skipped",
+                           command, label, type(e).__name__, e)
+            continue
+        yield label, main_sub, subs
+
+
 def _cmd_auth(args) -> int:
     from tealql.tealtools.auth_domination import AuthDominationDetector
     return _emit_findings(
@@ -244,27 +275,9 @@ def _cmd_abi_audit(args) -> int:
     clear message when it is missing or a contract does not lift.
 
     Exit 1 if any arbitrary-recipient flow is found (CI-friendly), else 0."""
-    try:
-        from tealql.tealtools.lift import to_puya, to_puya_ir
-    except ImportError:
-        print("error: abi-audit requires the 'puya' package (pip install puyapy)",
-              file=sys.stderr)
-        return 2
-    # The recovery drives Puya's own IR builder, which emits heavy DEBUG/ERROR
-    # logging (incl. the lift's known tolerated arg-mistypes); keep the audit
-    # output clean.
-    import logging as _logging
-    _logging.getLogger("puya").setLevel(_logging.CRITICAL)
-
     leads: list = []
-    for prog, name in _load_programs(args):
-        label = name or Path(getattr(prog, "source_path", "") or "<program>").name
-        try:
-            main, subs = to_puya(prog)
-        except Exception as e:                       # coverage gap, not a crash
-            logger.warning("abi-audit: %s did not lift (%s: %s) — skipped",
-                           label, type(e).__name__, e)
-            continue
+    for label, main, subs in _lifted_programs(args, "abi-audit"):
+        from tealql.tealtools.lift import to_puya_ir
         for lead in to_puya_ir.abi_address_fund_flows(main, subs):
             leads.append({"file": label, **lead})
 
@@ -299,25 +312,9 @@ def _cmd_box_audit(args) -> int:
     picks whose box to read/write, so an attacker can touch any account's slot
     (cross-user access; a WRITE is worse). Suppressed when the contract validates
     the caller against the sender. Requires puya. Exit 1 if any finding."""
-    try:
-        from tealql.tealtools.lift import to_puya
-        from tealql.tealtools.lift.box_recovery import box_access_control
-    except ImportError:
-        print("error: box-audit requires the 'puya' package (pip install puyapy)",
-              file=sys.stderr)
-        return 2
-    import logging as _logging
-    _logging.getLogger("puya").setLevel(_logging.CRITICAL)
-
     rows: list = []
-    for prog, name in _load_programs(args):
-        label = name or Path(getattr(prog, "source_path", "") or "<program>").name
-        try:
-            main, subs = to_puya(prog)
-        except Exception as e:
-            logger.warning("box-audit: %s did not lift (%s: %s) — skipped",
-                           label, type(e).__name__, e)
-            continue
+    for label, main, subs in _lifted_programs(args, "box-audit"):
+        from tealql.tealtools.lift.box_recovery import box_access_control
         for f in box_access_control(main, subs):
             rows.append((label, f))
 
@@ -341,33 +338,17 @@ def _cmd_storage_schema(args) -> int:
     (mirroring Puya's ContractState: a constant key is a single stored value;
     ``concat(prefix, encode(k))`` or a computed key is a map, whose key type may be
     a tuple). Requires puya (the recovery runs on the Puya IR). Exit 0."""
-    try:
-        from tealql.tealtools.lift import to_puya
-        from tealql.tealtools.lift.box_recovery import (
-            recover_storage_schema, annotate_with_arc56)
-    except ImportError:
-        print("error: storage-schema requires the 'puya' package (pip install puyapy)",
-              file=sys.stderr)
-        return 2
-    import logging as _logging
-    _logging.getLogger("puya").setLevel(_logging.CRITICAL)
-
     spec = None
     if getattr(args, "arc56", None):
         from tealql.tealtools import arc56 as _arc56
         spec = _arc56.load(args.arc56)          # explicit path -> surface load errors
 
     rows: list = []
-    for prog, name in _load_programs(args):
-        label = name or Path(getattr(prog, "source_path", "") or "<program>").name
-        try:
-            main, subs = to_puya(prog)
-        except Exception as e:
-            logger.warning("storage-schema: %s did not lift (%s: %s) — skipped",
-                           label, type(e).__name__, e)
-            continue
-        for s in annotate_with_arc56(recover_storage_schema(main, subs), spec):
-            rows.append((label, s))
+    for label, main, subs in _lifted_programs(args, "storage-schema"):
+        from tealql.tealtools.lift.box_recovery import (
+            annotate_with_arc56, recover_storage_schema)
+        for entry in annotate_with_arc56(recover_storage_schema(main, subs), spec):
+            rows.append((label, entry))
 
     if args.json_out:
         print(_json.dumps([

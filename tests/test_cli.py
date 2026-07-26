@@ -721,3 +721,50 @@ def test_audit_unfetchable_app_exits_2(tmp_path, capsys, monkeypatch):
     monkeypatch.setenv("TEAL_ALGOD_LOCAL", "http://127.0.0.1:1")
     rc = main(["audit", "999999999", "--cache-dir", str(tmp_path)])
     assert rc == 2 and "could not fetch" in capsys.readouterr().err
+
+
+# ---------------------------------------------------------------------------
+# The shared puya-gated preamble (`_lifted_programs`)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("command", ["abi-audit", "box-audit", "storage-schema"])
+def test_puya_gated_commands_share_one_missing_dependency_message(
+        command, tmp_path, monkeypatch, capsys):
+    """The three puya-gated subcommands had an identical ~12-line preamble
+    copy-pasted three times. It is now `_lifted_programs`, which RAISES rather
+    than printing + returning 2 — `main` renders it exactly as before, so the
+    user-visible output is unchanged."""
+    import builtins
+
+    (tmp_path / "a.teal").write_text("#pragma version 10\nint 1\nreturn\n")
+    real_import = builtins.__import__
+
+    def _no_puya(name, *a, **k):
+        if name == "tealql.tealtools.lift":
+            raise ImportError("no puya")
+        return real_import(name, *a, **k)
+
+    monkeypatch.setattr(builtins, "__import__", _no_puya)
+    rc = main([command, str(tmp_path)])
+    monkeypatch.setattr(builtins, "__import__", real_import)
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert f"{command} requires the 'puya' package (pip install puyapy)" in err
+
+
+def test_a_program_that_does_not_lift_is_skipped_not_fatal(tmp_path, monkeypatch):
+    """A contract the lift cannot reconstruct is a COVERAGE GAP, not a failure:
+    one stubborn program must not sink a directory-wide audit."""
+    pytest.importorskip("puya")
+    from tealql.cli import main as cli
+
+    (tmp_path / "a.teal").write_text("#pragma version 10\nint 1\nreturn\n")
+
+    def _boom(prog):
+        raise RuntimeError("synthetic lift failure")
+
+    import tealql.tealtools.lift as lift_mod
+    monkeypatch.setattr(lift_mod, "to_puya", _boom)
+    # No exception, and the command still completes with a clean exit code.
+    assert cli.main(["storage-schema", str(tmp_path)]) == 0
