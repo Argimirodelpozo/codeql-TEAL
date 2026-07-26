@@ -1,6 +1,6 @@
 # Detector precision / recall
 
-36 detectors · 80 vulnerable + 106 safe ground-truth cases.
+36 detectors · 80 vulnerable + 112 safe ground-truth cases.
 
 > **Read this first.** These numbers are measured on a **small, curated**
 > ground-truth corpus (`tests/benchmark/<detector>/{vuln,safe}/`), not on a
@@ -37,18 +37,18 @@
 | `ir-tainted-log` | medium | high | 2 | 0 | 0 | 3 | 1.00 | 1.00 | 1.00 |
 | `ir-tainted-state-write` | medium | high | 2 | 0 | 0 | 3 | 1.00 | 1.00 | 1.00 |
 | `is-deletable` | informational | high | 1 | 0 | 0 | 3 | 1.00 | 1.00 | 1.00 |
-| `is-updatable` | informational | high | 1 | 0 | 0 | 1 | 1.00 | 1.00 | 1.00 |
+| `is-updatable` | informational | high | 1 | 0 | 0 | 3 | 1.00 | 1.00 | 1.00 |
 | `lease-validation` | medium | high | 1 | 0 | 0 | 1 | 1.00 | 1.00 | 1.00 |
 | `partial-tainted-fund-flow` | medium | high | 3 | 0 | 0 | 4 | 1.00 | 1.00 | 1.00 |
 | `rekey-to` | high | high | 5 | 0 | 0 | 8 | 1.00 | 1.00 | 1.00 |
 | `tainted-fund-flow` | medium | high | 4 | 0 | 0 | 4 | 1.00 | 1.00 | 1.00 |
-| `timelock-upgrade` | medium | high | 1 | 0 | 0 | 1 | 1.00 | 1.00 | 1.00 |
+| `timelock-upgrade` | medium | high | 1 | 0 | 0 | 3 | 1.00 | 1.00 | 1.00 |
 | `tx-type-check` | high | high | 1 | 0 | 0 | 1 | 1.00 | 1.00 | 1.00 |
 | `unprotected-deletable` | high | high | 1 | 0 | 0 | 3 | 1.00 | 1.00 | 1.00 |
-| `unprotected-updatable` | high | high | 1 | 0 | 0 | 1 | 1.00 | 1.00 | 1.00 |
+| `unprotected-updatable` | high | high | 1 | 0 | 0 | 3 | 1.00 | 1.00 | 1.00 |
 | `unsafe-division-order` | medium | high | 3 | 0 | 0 | 3 | 1.00 | 1.00 | 1.00 |
 | `unsafe-lsig-args` | high | high | 1 | 0 | 0 | 1 | 1.00 | 1.00 | 1.00 |
 | `unvalidated-group-sibling` | high | high | 6 | 0 | 0 | 9 | 1.00 | 1.00 | 1.00 |
-| **overall** | | | **80** | **0** | **0** | **106** | **1.00** | **1.00** | **1.00** |
+| **overall** | | | **80** | **0** | **0** | **112** | **1.00** | **1.00** | **1.00** |
 
 _Regenerate with_ `python -m tests.gen_precision`.

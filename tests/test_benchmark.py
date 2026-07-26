@@ -135,7 +135,9 @@ _BASELINE: dict[str, tuple[int, int, int, int]] = {
     # FALSE POSITIVES — the path predicate lands on the `load`/phi, not the
     # comparison, so every OnCompletion detector read the guard as absent.
     "is-deletable": (1, 0, 0, 3),
-    "is-updatable": (1, 0, 0, 1),
+    # +2 TN (2026-07-25): the Update-action half of the OnCompletion
+    # scratch/phi guard fix — verified clean, now pinned.
+    "is-updatable": (1, 0, 0, 3),
     "lease-validation": (1, 0, 0, 1),
     "partial-tainted-fund-flow": (3, 0, 0, 4),
     # +3 TN (2026-07-25 review): the two negated-guard branch polarities and the
@@ -143,14 +145,18 @@ _BASELINE: dict[str, tuple[int, int, int, int]] = {
     # the corpus had no safe case covering either shape.
     "rekey-to": (5, 0, 0, 8),
     "tainted-fund-flow": (4, 0, 0, 4),
-    "timelock-upgrade": (1, 0, 0, 1),
+    # +2 TN (2026-07-25): the Update-action half of the OnCompletion
+    # scratch/phi guard fix — verified clean, now pinned.
+    "timelock-upgrade": (1, 0, 0, 3),
     "tx-type-check": (1, 0, 0, 1),
     # +2 TN each (2026-07-25 review, OnCompletion FP-stress): the guard
     # round-tripped through scratch and the guard joined at a phi were both
     # FALSE POSITIVES — the path predicate lands on the `load`/phi, not the
     # comparison, so every OnCompletion detector read the guard as absent.
     "unprotected-deletable": (1, 0, 0, 3),
-    "unprotected-updatable": (1, 0, 0, 1),
+    # +2 TN (2026-07-25): the Update-action half of the OnCompletion
+    # scratch/phi guard fix — verified clean, now pinned.
+    "unprotected-updatable": (1, 0, 0, 3),
     "unsafe-division-order": (3, 0, 0, 3),
     "unsafe-lsig-args": (1, 0, 0, 1),
     "unvalidated-group-sibling": (6, 0, 0, 9),

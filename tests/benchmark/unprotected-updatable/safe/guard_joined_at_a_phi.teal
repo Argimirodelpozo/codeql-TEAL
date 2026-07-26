@@ -1,0 +1,20 @@
+#pragma version 10
+// SAFE: the same guard reaching its assert through a phi, which has no
+// `defined_by` at all.
+txn OnCompletion
+int UpdateApplication
+!=
+store 0
+txn NumAppArgs
+bnz alt
+load 0
+b join
+alt:
+load 0
+join:
+assert
+byte "k"
+app_global_get
+pop
+int 1
+return
