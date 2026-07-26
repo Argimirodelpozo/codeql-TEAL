@@ -873,6 +873,35 @@ def _infer_select_types(subs) -> None:
                         o.targets[0].ir_type = j
 
 
+def _infer_setbit_types(subs) -> None:
+    # `setbit A B C` sets bit B of the VALUE operand A to bit C and returns the SAME
+    # AVM type as A -- setbit is polymorphic (uint64 OR byteslice) but TYPE-PRESERVING.
+    # SSA args are top-first [C (bit), B (index), A (value)], so A is args[2]. Unify a
+    # `?` result with A's type (and a `?` A register with the result's), so an ARC-4
+    # bool-pack chain seeded by a `0x00` byte literal stays `bytes` instead of each
+    # intermediate defaulting to uint64 (which lowers to a Bytes/uint64 mixed-type
+    # error). Monotonic (only `?` -> concrete), so it joins the fixpoint.
+    def _vt(v):
+        if isinstance(v, pre_ir.Register):       return v.ir_type
+        if isinstance(v, pre_ir.UInt64Constant): return "uint64"
+        if isinstance(v, pre_ir.BytesConstant):  return "bytes"
+        return "?"
+    for b in pre_ir.blocks(subs):
+        for o in b.ops:
+            if not (isinstance(o, pre_ir.Assignment) and len(o.targets) == 1):
+                continue
+            s = o.source
+            if not (isinstance(s, pre_ir.Intrinsic) and s.op == "setbit"
+                    and len(s.args) == 3):
+                continue
+            val, res = s.args[2], o.targets[0]
+            rt, vt = res.ir_type, _vt(val)
+            if rt == "?" and vt != "?":
+                res.ir_type = vt                              # value type -> ? result
+            elif isinstance(val, pre_ir.Register) and val.ir_type == "?" and rt != "?":
+                val.ir_type = rt                              # result type -> ? value
+
+
 def _warn_residual_unknowns(subs) -> None:
     """Surface any register type recovery could NOT resolve. Lowering defaults a
     residual ``?`` to uint64 (``to_puya_ir._IRT``), which silently mistypes a
@@ -918,6 +947,7 @@ def recover_types(lifter, sub_pairs) -> None:
         _unify_params_from_call_args(subs)
         _unify_phi_types(subs)
         _infer_select_types(subs)
+        _infer_setbit_types(subs)
         _infer_state_types(lifter)
         _propagate_copy_load_types(lifter)
         _infer_returns(subs)

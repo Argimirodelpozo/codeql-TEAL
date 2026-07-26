@@ -39,6 +39,10 @@ class SubFrames:
     pushed: set = field(default_factory=set)         # frame_dig out0 of a k>=0 pushed
     #   local resolved to its band target (vs an orphan); the resim path must
     #   route these through value() too — see lift._setup_frame / _build_block.
+    pushed_slot: dict = field(default_factory=dict)  # pushed frame_dig out0 -> its slot k,
+    #   so the resim can read the LIVE slot value off its stack (len(params)+k) when
+    #   available — the band `a.inputs[-1]` is polluted by a loop's band phis (a
+    #   frame_dig of a pre-loop local returned the loop's mutated register).
 
 
 def resolve_sub(blocks, nargs: int) -> SubFrames:
@@ -133,6 +137,7 @@ def resolve_sub(blocks, nargs: int) -> SubFrames:
                         # (resolving them via value() diverges from the IR path).
                         res.passthrough[out0] = a.inputs[-1]
                         res.pushed.add(out0)
+                        res.pushed_slot[out0] = k
                     else:
                         res.dig_local[out0] = (k, v if v is not None else fresh(k))
                 for i in range(1, len(a.outputs)):   # dig: out[i] = in[i-1]
