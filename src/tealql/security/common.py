@@ -68,6 +68,7 @@ from ._value_flow import (  # noqa: E402,F401
     _operand_flows_from_field_var,
     _scratch_stores_for,
     cached_path_predicates,
+    resolve_through_copies,
 )
 from ._enforcement import (  # noqa: E402,F401
     _ENFORCEMENT_TERM_OPS,

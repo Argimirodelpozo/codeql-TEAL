@@ -1,0 +1,16 @@
+#pragma version 10
+// SAFE: the OnCompletion guard is round-tripped through scratch before its
+// assert (`!=; store 0; load 0; assert`). The path predicate lands on the LOAD
+// output, so a consumer reading `value.defined_by` saw a `load` rather than the
+// comparison and called the guard absent.
+txn OnCompletion
+int DeleteApplication
+!=
+store 0
+load 0
+assert
+byte "k"
+app_global_get
+pop
+int 1
+return

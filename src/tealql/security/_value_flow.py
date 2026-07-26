@@ -152,6 +152,51 @@ def _operand_flows_from_field_var(
 
 
 
+def resolve_through_copies(prog: SSAProgram, value, _seen=None):
+    """Follow ``value`` back through VALUE-PRESERVING copies to the operand it
+    really carries, or return it unchanged.
+
+    Two bridges, both MUST-semantics (an unprovable step stops the walk):
+
+    * a ``load N`` whose every may-influencing ``store N`` wrote the SAME
+      SSAVar — the round-trip provably preserves that value;
+    * a phi whose every argument resolves to the SAME SSAVar — the join is
+      value-preserving no matter which edge was taken.
+
+    Path predicates record the operand the branch/assert actually consumed, so
+    ``<cmp>; store 0; load 0; assert`` leaves a predicate on the LOAD's output
+    and ``<cmp>`` … joined at a phi leaves one on the PHI. Both are correct
+    facts, but a consumer that inspects ``value.defined_by`` looking for a
+    comparison finds a ``load`` (or, for a phi, nothing at all) and concludes
+    the guard is absent — a false positive on a contract that plainly checks
+    the field. Every OnCompletion-family detector had that hole."""
+    if _seen is None:
+        _seen = set()
+    if isinstance(value, SSAVar):
+        if value in _seen:
+            return value
+        _seen.add(value)
+        d = value.defined_by
+        if d is not None and d.op == "load":
+            stores = _scratch_stores_for(prog, value)
+            if stores:
+                sources = [prog.var(*s) for s in stores]
+                first = sources[0]
+                if (first is not None and first is not value
+                        and all(s is first for s in sources)):
+                    return resolve_through_copies(prog, first, _seen)
+        return value
+    if isinstance(value, Phi):
+        if value in _seen or not value.args:
+            return value
+        _seen.add(value)
+        resolved = [resolve_through_copies(prog, a, _seen) for a in value.args]
+        first = resolved[0]
+        if first is not value and all(r is first for r in resolved):
+            return first
+    return value
+
+
 def _scratch_stores_index(prog: SSAProgram) -> dict:
     """``{(file, start_line): scratch_stores}`` over the op graph, built once per
     program. :func:`_scratch_stores_for` used to LINEAR-SCAN ``prog._graph.nodes``

@@ -108,7 +108,11 @@ _BASELINE: dict[str, tuple[int, int, int, int]] = {
     "box-key": (3, 0, 0, 2),
     "close-remainder-to": (3, 0, 0, 4),
     "constant-condition": (4, 0, 0, 4),
-    "delete-funds-check": (2, 0, 0, 1),
+    # +2 TN each (2026-07-25 review, OnCompletion FP-stress): the guard
+    # round-tripped through scratch and the guard joined at a phi were both
+    # FALSE POSITIVES — the path predicate lands on the `load`/phi, not the
+    # comparison, so every OnCompletion detector read the guard as absent.
+    "delete-funds-check": (2, 0, 0, 3),
     "fee-validation": (1, 0, 0, 2),
     "group-size-check": (1, 0, 0, 2),
     "hardcoded-min-balance": (1, 0, 0, 1),
@@ -123,7 +127,11 @@ _BASELINE: dict[str, tuple[int, int, int, int]] = {
     "ir-tainted-log": (2, 0, 0, 3),
     "ir-tainted-state-write": (2, 0, 0, 3),
     "ir-partial-tainted-fund-flow": (4, 0, 0, 4),
-    "is-deletable": (1, 0, 0, 1),
+    # +2 TN each (2026-07-25 review, OnCompletion FP-stress): the guard
+    # round-tripped through scratch and the guard joined at a phi were both
+    # FALSE POSITIVES — the path predicate lands on the `load`/phi, not the
+    # comparison, so every OnCompletion detector read the guard as absent.
+    "is-deletable": (1, 0, 0, 3),
     "is-updatable": (1, 0, 0, 1),
     "lease-validation": (1, 0, 0, 1),
     "partial-tainted-fund-flow": (3, 0, 0, 4),
@@ -134,7 +142,11 @@ _BASELINE: dict[str, tuple[int, int, int, int]] = {
     "tainted-fund-flow": (4, 0, 0, 4),
     "timelock-upgrade": (1, 0, 0, 1),
     "tx-type-check": (1, 0, 0, 1),
-    "unprotected-deletable": (1, 0, 0, 1),
+    # +2 TN each (2026-07-25 review, OnCompletion FP-stress): the guard
+    # round-tripped through scratch and the guard joined at a phi were both
+    # FALSE POSITIVES — the path predicate lands on the `load`/phi, not the
+    # comparison, so every OnCompletion detector read the guard as absent.
+    "unprotected-deletable": (1, 0, 0, 3),
     "unprotected-updatable": (1, 0, 0, 1),
     "unsafe-division-order": (3, 0, 0, 3),
     "unsafe-lsig-args": (1, 0, 0, 1),

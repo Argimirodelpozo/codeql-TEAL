@@ -10,6 +10,8 @@ from typing import Optional
 from tealql.tealtools.path_predicates import PathPredicateAnalysis
 from tealql.tealtools.ssa import Assignment, BasicBlock, SSAProgram, SSAVar, const_int, is_field_var
 
+from ._value_flow import resolve_through_copies
+
 
 
 # ---------------------------------------------------------------------------
@@ -82,7 +84,9 @@ def sender_creator_guard_dominates(
     for cond in pp.predicates_at(bb.file, bb.first_line):
         if cond.kind != "nonzero":
             continue
-        v = cond.value
+        # See through a scratch round-trip / value-preserving phi to the
+        # comparison the predicate really carries.
+        v = resolve_through_copies(prog, cond.value)
         if not isinstance(v, SSAVar) or v.defined_by is None:
             continue
         if _is_sender_eq_creator(v.defined_by):
@@ -167,7 +171,9 @@ def approval_exit_guarded_for_action(
     output use ``match`` dispatch on OC). This is deliberately tight —
     contracts that actually route OC=K to err are not flagged here."""
     for cond in pp.predicates_at(exit_bb.file, exit_bb.first_line):
-        v = cond.value
+        # See through a scratch round-trip / value-preserving phi (a predicate
+        # recorded on a `load` output or a phi hid every guard behind one).
+        v = resolve_through_copies(prog, cond.value)
 
         # Case 0: a DIRECT truth constraint on the OnCompletion field var itself.
         # `txn OnCompletion; !; assert` (the NoOp-only idiom Puya emits, often
