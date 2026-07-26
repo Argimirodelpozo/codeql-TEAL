@@ -266,7 +266,7 @@ approval.teal	270	0	270	10	TxnOpcode
 approval.teal	271	0	271	21	GlobalOpcode
 approval.teal	272	0	272	2	EqualsComparisonOpcode
 approval.teal	274	0	274	6	AssertOpcode
-approval.teal	275	0	275	7	PushintOpcode
+approval.teal	275	0	275	40	PushintOpcode
 approval.teal	277	0	277	6	AssertOpcode
 approval.teal	278	0	278	6	RetsubOpcode
 approval.teal	281	0	281	16	Label

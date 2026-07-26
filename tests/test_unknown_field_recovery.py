@@ -371,14 +371,15 @@ def test_custom_template_prefix_is_recognised(tmp_path):
     assert list(getattr(prog, "parse_diagnostics", ()) or []) == []
 
 
-def test_bare_pushint_template_stays_a_diagnostic(tmp_path):
-    """Deliberately NOT recovered. A const BLOCK holding a template keeps its
-    other slots useful and its arity right; a bare `pushint TMPL_X` would
-    recover to a push with no resolvable value, which the lift cannot lower
-    (`'PushintOpcode' is not a valid AVMOp` on the real xgov contract). Visible
-    diagnostic beats IR the lift chokes on."""
+def test_bare_pushint_template_is_recovered_too(tmp_path):
+    """This case was left OPEN for two commits — twice I recovered it and twice
+    it broke the xgov lift, because a salvaged tail can span past its own line
+    and a multi-line span slices to an empty `.code` (see
+    `test_recovered_span_never_runs_past_its_own_line`). With the span clamped
+    it recovers cleanly and lowers to a TemplateVar."""
     prog = _prog(tmp_path, "pushint TMPL_DELETABLE\npop\n", version=10)
-    assert list(getattr(prog, "parse_diagnostics", ()) or []) != []
+    assert list(getattr(prog, "parse_diagnostics", ()) or []) == []
+    assert "pushint" in [a.op for a in prog.assignments]
 
 
 # ---------------------------------------------------------------------------
@@ -428,3 +429,70 @@ def test_blanking_preserves_line_length():
     out = _blank_quoted_comments(src)
     for a, b in zip(src.split("\n"), out.split("\n")):
         assert len(a) == len(b)
+
+
+# ---------------------------------------------------------------------------
+# Bare template pushes — the last two, and the span bug behind them
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("line,op", [
+    ("pushint TMPL_DELETABLE", "pushint"),
+    ("pushint TMPL_DELETABLE // TMPL_DELETABLE", "pushint"),
+    ("pushbytes TMPL_SOME_BYTES", "pushbytes"),
+])
+def test_bare_template_push_is_recovered(tmp_path, line, op):
+    prog = _prog(tmp_path, f"{line}\npop\n", version=10)
+    assert list(getattr(prog, "parse_diagnostics", ()) or []) == []
+    assert op in [a.op for a in prog.assignments]
+
+
+def test_recovered_span_never_runs_past_its_own_line(tmp_path):
+    """THE root cause of two failed attempts at this. A salvaged tail can span
+    FURTHER than its own line — xgov's `pushint TMPL_DELETABLE // TMPL_DELETABLE`
+    swallowed the comment AND the following line — and a multi-line span slices
+    to an EMPTY `.code`. `_opname` is `code or node_class`, so the op then became
+    the literal string "PushintOpcode", which is not an AVMOp and broke the
+    lift."""
+    prog = _prog(tmp_path, "pushint TMPL_DELETABLE // TMPL_DELETABLE\n"
+                           "// a following comment line\npop\n", version=10)
+    assert list(getattr(prog, "parse_diagnostics", ()) or []) == []
+    ops = [a.op for a in prog.assignments]
+    assert "pushint" in ops
+    assert not any("Opcode" in o for o in ops), ops
+
+
+def test_several_template_tails_on_one_line(tmp_path):
+    """A long operand list can shed MORE THAN ONE salvaged tail; absorbing only
+    the first left the rest to become phantom labels."""
+    prog = _prog(tmp_path, "bytecblock 0x151f7c75 TMPL_A TMPL_B TMPL_C TMPL_D TMPL_E\n"
+                           "bytec_0\npop\n", version=10)
+    assert list(getattr(prog, "parse_diagnostics", ()) or []) == []
+    block = [a for a in prog.assignments if a.op == "bytecblock"][0]
+    for name in ("TMPL_A", "TMPL_B", "TMPL_C", "TMPL_D", "TMPL_E"):
+        assert name in block.immediates
+    assert [c for _, _, c in prog.labels] == []
+
+
+def test_template_push_lowers_to_a_puya_template_var(tmp_path):
+    """A template push has no value until deployment, so it must lower to
+    `TemplateVar` rather than an Intrinsic — `'pushint' is not a valid AVMOp`."""
+    pytest.importorskip("puya")
+    from tealql.tealtools.lift import to_puya
+    prog = _prog(tmp_path, "pushint TMPL_DELETABLE // TMPL_DELETABLE\npop\n", version=10)
+    to_puya(prog)          # must not raise
+
+
+def test_the_whole_corpus_parses_clean():
+    """Every .teal fixture in the tree, after this thread. Started at 35
+    contracts / 123 diagnostics."""
+    import glob
+    bad = []
+    for f in sorted(glob.glob("tests/**/*.teal", recursive=True)):
+        try:
+            d = list(getattr(SSAProgram(f), "parse_diagnostics", ()) or [])
+        except Exception:
+            continue
+        if d:
+            bad.append((f, d[0].snippet[:60]))
+    assert bad == [], bad

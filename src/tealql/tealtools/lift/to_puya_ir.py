@@ -123,9 +123,15 @@ def _is_template_push(immediates) -> bool:
     `AVMOp(s.op)` — `'PushintOpcode' is not a valid AVMOp`, on the real xgov
     contract. A template's value is unknown until deployment either way, so
     both spellings must reach the TemplateVar path."""
-    if not immediates:
+    operands = []
+    for imm in immediates:
+        tok = str(imm).strip()
+        if tok.startswith("//"):
+            break            # the rest of the line is an inline comment
+        operands.append(tok)
+    if not operands:
         return True
-    return all(_TEMPLATE_VAR_RE.match(str(i).strip()) for i in immediates)
+    return all(_TEMPLATE_VAR_RE.match(t) for t in operands)
 
 
 class _Translator:

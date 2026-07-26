@@ -218,6 +218,7 @@ def _itxna_index_split(ch, nxt, src: bytes) -> bool:
 _TEMPLATE_HOST_NODES = frozenset({
     "intcblock_opcode", "bytecblock_opcode",
     "pushints_opcode", "pushbytess_opcode",
+    "single_numeric_argument_opcode", "pushbytes_opcode",
 })
 #: NOT the single-push opcodes. A CONST BLOCK holding a template keeps its
 #: other slots useful and its arity right, so recovering it is a clear win. A
@@ -248,6 +249,39 @@ def _is_phantom_label(c) -> bool:
     if c.type != "label":
         return False
     return any(k.type == ":" and k.is_missing for k in c.children)
+
+
+#: Const-push mnemonics that can carry a template variable as their operand.
+_TEMPLATE_PUSH_MNEMONICS = frozenset({"pushint", "pushbytes", "int", "byte"})
+
+
+def _template_push_error(c, src: bytes) -> bool:
+    """``ERROR[<push mnemonic>, <TEMPLATE identifier>]`` — the BARE form.
+
+    `pushint TMPL_DELETABLE // comment` parses as an opcode node plus a
+    salvaged tail (handled by :func:`_template_var_tail`), but the same line
+    WITHOUT a trailing comment parses as one ERROR that CONTAINS the mnemonic.
+    Two shapes for one construct, so both need recovering or the bare form
+    stays dropped — losing the push and leaving the stack short."""
+    if c.type != "ERROR" or len(c.children) < 2:
+        return False
+    if c.children[0].type not in _TEMPLATE_PUSH_MNEMONICS:
+        return False
+    rest = [k for k in c.children[1:] if not _is_trivia(k.type)]
+    return bool(rest) and all(
+        k.type == "label_identifier"
+        and _TEMPLATE_VAR_RE.match(
+            src[k.start_byte:k.end_byte].decode("utf-8", "replace"))
+        for k in rest)
+
+
+def _end_of_line(node, src: bytes) -> "tuple[int, int]":
+    """``(line, end_col)`` of the END of the line ``node`` STARTS on — 1-based
+    line, native column. Used to clamp a re-spanned opcode so it never runs
+    past its own line."""
+    row = node.start_point[0]
+    lines = src.decode("utf-8", "replace").split("\n")
+    return row + 1, len(lines[row]) if row < len(lines) else node.end_point[1]
 
 
 def _phantom_is_opcode(c, src: bytes) -> bool:
@@ -379,6 +413,7 @@ def parse_nodes(
         real: list = []
         for c in root.children:
             if (_named_int_error(c) or _unknown_txn_field_error(c)
+                    or _template_push_error(c, src)
                     or (real and c.type in ("ERROR", "label")
                         and (_itxna_index_split(real[-1], c, src)
                              or _template_var_tail(real[-1], c, src)))):
@@ -422,6 +457,14 @@ def parse_nodes(
             if nxt is not None and (_hex_int_split(ch, nxt, src)
                                     or _itxna_index_split(ch, nxt, src)
                                     or _template_var_tail(ch, nxt, src)):
+                # Clamp to the END OF THE OPCODE'S OWN LINE. A salvaged tail can
+                # span FURTHER (xgov's `pushint TMPL_DELETABLE // TMPL_DELETABLE`
+                # swallowed its comment AND the next line), and a multi-line span
+                # slices to an EMPTY `.code` — whereupon `_opname` falls back to
+                # `node_class` and the op literally becomes "PushintOpcode".
+                # One instruction per line is an architectural invariant here, so
+                # clamping is always right.
+                el_, ec_ = _end_of_line(nxt, src)
                 # Recovered `int 0x10` / `pushint 0x..` / `intcblock 0x.. ..`: the
                 # grammar's numeric_argument is DECIMAL-only, so a hex/oct/bin
                 # literal parses as `<op> 0` plus an adjacent bogus `label`/`ERROR`
@@ -429,10 +472,18 @@ def parse_nodes(
                 # carries the whole literal; const_values then resolves it.
                 cls, override = _class_for(ch)
                 op_nodes.append(_node(
-                    ch.start_point[0] + 1, ch.start_point[1],
-                    nxt.end_point[0] + 1, nxt.end_point[1],
+                    ch.start_point[0] + 1, ch.start_point[1], el_, ec_,
                     cls, override))
+                # Absorb EVERY salvaged tail that starts on the opcode's line,
+                # not just the first: a long operand list can shed more than one
+                # (`bytecblock 0x.. TMPL_A TMPL_B TMPL_C ... TMPL_STRUCT` left a
+                # second tail behind, which then became its own phantom label).
+                # Safe because the span is already clamped to this line, and one
+                # instruction per line is an architectural invariant here.
                 i += 2
+                while (i < len(real)
+                       and real[i].start_point[0] == ch.start_point[0]):
+                    i += 1
                 continue
             if _unknown_txn_field_error(ch):
                 # Recovered txn-family field read the grammar's field list is
