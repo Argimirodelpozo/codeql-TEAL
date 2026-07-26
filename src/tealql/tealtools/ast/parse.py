@@ -167,6 +167,30 @@ def _split_txn_field_error(c) -> "tuple[list, list]":
     return groups, unconsumed
 
 
+def _itxna_index_split(ch, nxt, src: bytes) -> bool:
+    """The grammar's ``itxna`` rule takes only a FIELD, no array index — so
+    ``itxna Logs 1`` parses as an ``itxna_opcode`` covering ``itxna Logs`` plus
+    a bare ERROR holding the ``1``.
+
+    The opcode SURVIVES, which is what makes this nastier than a clean drop:
+    its ``.code`` is ``itxna Logs``, so the immediates lose the index entirely
+    and ``itxna Logs 0`` becomes indistinguishable from ``itxna Logs 5``. Every
+    analysis keyed on the array slot — input unification's canonical key, the
+    taint layer's per-slot identity — then conflates distinct elements of the
+    SAME array, silently. (``txna`` has the ``numeric_argument`` child and is
+    fine; ``gitxna`` is fine; it is specifically ``itxna``.)
+
+    Re-span the opcode through the index tail, exactly as
+    :func:`_hex_int_split` does for a split numeric literal. Same line only, so
+    an unrelated ERROR below can never be absorbed."""
+    if ch.type != "itxna_opcode" or nxt is None or nxt.type != "ERROR":
+        return False
+    if ch.end_point[0] != nxt.start_point[0]:
+        return False                               # different lines
+    tail = src[nxt.start_byte:nxt.end_byte].decode("utf-8", "replace").strip()
+    return tail.isdigit()
+
+
 _NUMERIC_ARG_OPCODES = frozenset({
     "single_numeric_argument_opcode",   # int / pushint
     "intcblock_opcode",
@@ -259,7 +283,9 @@ def parse_nodes(
 
         real: list = []
         for c in root.children:
-            if _named_int_error(c) or _unknown_txn_field_error(c):
+            if (_named_int_error(c) or _unknown_txn_field_error(c)
+                    or (real and c.type == "ERROR"
+                        and _itxna_index_split(real[-1], c, src))):
                 real.append(c)
             elif c.type == "ERROR" and real and _hex_int_split(real[-1], c, src):
                 # a hex/oct/bin int tail the grammar split off (e.g. the `x10 5`
@@ -297,7 +323,8 @@ def parse_nodes(
         while i < len(real):
             ch = real[i]
             nxt = real[i + 1] if i + 1 < len(real) else None
-            if nxt is not None and _hex_int_split(ch, nxt, src):
+            if nxt is not None and (_hex_int_split(ch, nxt, src)
+                                    or _itxna_index_split(ch, nxt, src)):
                 # Recovered `int 0x10` / `pushint 0x..` / `intcblock 0x.. ..`: the
                 # grammar's numeric_argument is DECIMAL-only, so a hex/oct/bin
                 # literal parses as `<op> 0` plus an adjacent bogus `label`/`ERROR`

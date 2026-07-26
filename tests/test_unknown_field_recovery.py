@@ -186,3 +186,86 @@ def test_the_avm12_contract_parses_completely():
     assert list(getattr(prog, "parse_diagnostics", ()) or []) == []
     assert any(a.op == "bytecblock" and a.immediates.strip().startswith("0x")
                for a in prog.assignments)
+
+
+# ---------------------------------------------------------------------------
+# `itxna FIELD INDEX` — the op survived with the INDEX silently missing
+# ---------------------------------------------------------------------------
+
+
+def test_itxna_keeps_its_array_index(tmp_path):
+    """The grammar's `itxna` rule takes only a field, so the index parsed as a
+    stray ERROR. The opcode SURVIVED with `.code == "itxna Logs"` — nastier
+    than a drop, because `itxna Logs 0` and `itxna Logs 5` became identical to
+    every analysis keyed on the array slot."""
+    prog = _prog(tmp_path, "itxna Logs 0\nitxna Logs 5\npop\npop\n", version=10)
+    assert list(getattr(prog, "parse_diagnostics", ()) or []) == []
+    imms = [a.immediates.strip() for a in prog.assignments if a.op == "itxna"]
+    assert imms == ["Logs 0", "Logs 5"], imms
+
+
+@pytest.mark.parametrize("line,imm", [
+    ("itxna ApplicationArgs 0", "ApplicationArgs 0"),
+    ("itxna ApprovalProgramPages 1", "ApprovalProgramPages 1"),
+])
+def test_itxna_index_forms(tmp_path, line, imm):
+    prog = _prog(tmp_path, f"{line}\npop\n", version=10)
+    assert list(getattr(prog, "parse_diagnostics", ()) or []) == []
+    assert ("itxna", imm) in _ops(prog)
+
+
+def test_itxnas_and_txna_and_gitxna_unaffected(tmp_path):
+    prog = _prog(tmp_path, "itxnas Logs\npop\ntxna ApplicationArgs 0\npop\n"
+                           "gitxna 0 Logs 1\npop\n", version=10)
+    assert list(getattr(prog, "parse_diagnostics", ()) or []) == []
+    ops = _ops(prog)
+    assert ("itxnas", "Logs") in ops
+    assert ("txna", "ApplicationArgs 0") in ops
+    assert ("gitxna", "0 Logs 1") in ops
+
+
+# ---------------------------------------------------------------------------
+# Labels named after an opcode
+# ---------------------------------------------------------------------------
+
+
+def _labels(prog):
+    return sorted(c.rstrip(":").strip() for _, _, c in prog.labels)
+
+
+def test_label_named_after_an_opcode_is_defined(tmp_path):
+    """`pop:` tokenized as the `pop` OPCODE plus a stray `:`, so the label was
+    never defined and every branch to it lost its CFG edge. Puya names router
+    labels after ABI methods, and `get` / `set` / `pop` / `append` are ordinary
+    method names."""
+    prog = _prog(tmp_path, "int 0\nb pop\npop:\n", version=10)
+    assert list(getattr(prog, "parse_diagnostics", ()) or []) == []
+    assert _labels(prog) == ["pop_label"]
+
+
+def test_match_dispatch_to_opcode_named_labels(tmp_path):
+    prog = _prog(tmp_path, "int 0\nmatch pop concat\npop:\nint 1\nreturn\nconcat:\n",
+                 version=10)
+    assert list(getattr(prog, "parse_diagnostics", ()) or []) == []
+    assert _labels(prog) == ["concat_label", "pop_label"]
+
+
+def test_rename_never_touches_the_opcode_token(tmp_path):
+    """A label named `b`, branched to with `b b`: the operand must be renamed
+    and the branch opcode left alone. A substring sweep would eat both."""
+    prog = _prog(tmp_path, "int 0\nb b\nb:\n", version=10)
+    assert list(getattr(prog, "parse_diagnostics", ()) or []) == []
+    assert _labels(prog) == ["b_label"]
+    assert ("b", "b_label") in _ops(prog)
+
+
+def test_the_real_pop_opcode_still_pops(tmp_path):
+    prog = _prog(tmp_path, "int 0\nint 1\npop\nb store\nstore:\n", version=10)
+    assert list(getattr(prog, "parse_diagnostics", ()) or []) == []
+    assert ("pop", "") in _ops(prog)
+    assert _labels(prog) == ["store_label"]
+
+
+def test_ordinary_labels_are_not_renamed(tmp_path):
+    prog = _prog(tmp_path, "int 0\nb main\nmain:\n", version=10)
+    assert _labels(prog) == ["main"]

@@ -152,8 +152,77 @@ def _sanitize_path_labels(text: str) -> str:
     return "\n".join(out)
 
 
+def _opcode_named_labels(text: str) -> str:
+    """Rename LABELS whose name is an opcode mnemonic (``pop:`` / ``concat:`` /
+    ``store:`` / ``get:`` …), consistently at the definition and every
+    reference.
+
+    The grammar tokenizes ``pop:`` as the ``pop`` OPCODE followed by a stray
+    ``:``, so the label is never defined: it vanishes from ``prog.labels``, and
+    every ``b``/``match``/``switch`` that targets it loses its CFG edge. Puya
+    names a router label after the ABI method, and methods called ``get`` /
+    ``set`` / ``pop`` / ``append`` / ``concat`` / ``store`` are entirely
+    ordinary — this accounts for most of the residual parse failures in the
+    corpus (a single ``match`` line with four such targets emits four).
+
+    Renaming is bijective, so the CFG is unchanged. Unlike
+    :func:`_sanitize_path_labels` it does NOT preserve line length (a suffix
+    must be added); that is fine because every span is computed against this
+    normalized text, and line NUMBERS — the thing findings report — are
+    untouched.
+
+    Replacement is token-wise, never a substring sweep: a label named ``b`` on
+    the line ``b b`` must rename the operand and leave the branch opcode alone.
+    A rename that would collide with an existing label is dropped."""
+    mnemonics = _opcode_mnemonics()
+    defs: set = set()
+    for line in text.split("\n"):
+        body = _strip_inline_comment(line.strip()).rstrip()
+        if body.endswith(":") and len(body) > 1:
+            defs.add(body[:-1].rstrip())
+    clashing = {d for d in defs if d in mnemonics}
+    if not clashing:
+        return text
+    rename = {}
+    for d in sorted(clashing):
+        cand = f"{d}_label"
+        while cand in defs or cand in rename.values():
+            cand += "_"
+        rename[d] = cand
+
+    out = []
+    for line in text.split("\n"):
+        code = _strip_inline_comment(line)
+        body = code.strip()
+        if not body:
+            out.append(line); continue
+        indent = line[:len(line) - len(line.lstrip())]
+        comment = line[len(code):]
+        if body.endswith(":") and body[:-1].rstrip() in rename:
+            out.append(f"{indent}{rename[body[:-1].rstrip()]}:{comment}")
+            continue
+        toks = body.split()
+        if toks[0] in _LABEL_REF_OPS and len(toks) > 1:
+            # Operands only — token-wise — so the opcode itself is never touched.
+            toks = [toks[0]] + [rename.get(t, t) for t in toks[1:]]
+            out.append(f"{indent}{' '.join(toks)}{comment}")
+            continue
+        out.append(line)
+    return "\n".join(out)
+
+
+def _opcode_mnemonics() -> frozenset:
+    """Every opcode token the grammar recognises, so a label colliding with one
+    can be spotted. Derived from the AVM arity table, not re-listed."""
+    from .avm import SIG, _FRAME_OVERRIDES
+    return frozenset(SIG) | frozenset(_FRAME_OVERRIDES) | frozenset({
+        "dig", "bury", "cover", "uncover", "popn", "dupn",
+        "pushints", "pushbytess", "match", "switch", "proto",
+    })
+
+
 def _normalize_pseudo_ops(data: bytes) -> bytes:
-    text = _sanitize_path_labels(data.decode("utf-8", "replace"))
+    text = _opcode_named_labels(_sanitize_path_labels(data.decode("utf-8", "replace")))
     if not _PSEUDO_OP_RE.search(text) and not _BYTE_ENC_RE.search(text):
         return text.encode("utf-8")                # fast path: nothing to rewrite
     out = []

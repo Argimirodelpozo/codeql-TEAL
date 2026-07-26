@@ -8,7 +8,7 @@ prog.teal	9	0	9	24	InnerTransactionField
 prog.teal	10	0	10	22	TxnaOpcode
 prog.teal	11	0	11	26	InnerTransactionField
 prog.teal	12	0	12	11	InnerTransactionSubmit
-prog.teal	13	0	13	10	ItxnaOpcode
+prog.teal	13	0	13	12	ItxnaOpcode
 prog.teal	14	0	14	3	LogOpcode
 prog.teal	15	0	15	9	PushintOpcode
 prog.teal	16	0	16	6	ReturnOpcode
