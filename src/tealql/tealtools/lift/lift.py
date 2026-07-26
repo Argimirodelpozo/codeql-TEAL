@@ -342,6 +342,9 @@ class _Lifter:
         #   (frame_resolution.SubFrames.pushed) — the resim path resolves THESE via
         #   value() (their value lives cross-block), but leaves every other frame_dig
         #   on the plain frame_map path so negative/param reads don't diverge.
+        self.pushed_slot: dict = {}           # pushed frame_dig out0 -> slot k, so the
+        #   resim prefers the LIVE slot value off its stack over the band input (which
+        #   a loop's band phis pollute) — see _resim_exec_op frame_dig.
         self.frame_local_slot: dict = {}      # frame_dig out0 (a frame_bury-d local)
         #   -> its slot k. The resim reads the slot's LIVE value off the re-sim stack
         #   at len(params)+k — which carries the frame_bury deep-writes AND the merge
@@ -554,6 +557,7 @@ class _Lifter:
             self.bury_target[aid] = self._local_reg(slot, ver)
         self.shuffle_src.update(res.passthrough)
         self.frame_passthrough |= res.pushed
+        self.pushed_slot.update(res.pushed_slot)
         self.final_locals[self.cur_gname] = {
             slot: self._local_reg(slot, ver) for slot, ver in res.final.items()}
 
@@ -1065,7 +1069,19 @@ class _Lifter:
             # it through shuffle_src): resolve via value() so the value
             # carried from the defining block reaches here.
             if out0 is not None and out0 in self.frame_passthrough:
-                stack.append(self.value(out0))
+                # A pushed local: read its LIVE value off the re-sim stack at the slot
+                # position (len(params)+k) when present. The band `a.inputs[-1]` that
+                # value() resolves to is polluted by a loop's band phis — a frame_dig
+                # of a pre-loop local (e.g. a byteslice `frame_dig`-d inside a `for`)
+                # returned the loop's mutated register (its offset). Fall back to
+                # value() only when the slot isn't on the stack (a straight-line band
+                # target the re-sim never materialised at that position).
+                slot = self.pushed_slot.get(out0)
+                pos = len(params) + slot if slot is not None else -1
+                if 0 <= pos < len(stack):
+                    stack.append(stack[pos])
+                else:
+                    stack.append(self.value(out0))
             elif out0 is not None and out0 in self.frame_local_slot:
                 # A frame_bury-d local: read its live value straight off the
                 # re-sim stack at the slot position (len(params)+k). That slot
