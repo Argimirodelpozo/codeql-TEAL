@@ -43,7 +43,7 @@ import tree_sitter_teal as _tsteal
 from ..cfg_build import _children, _program_cfg
 from .ast import (
     AstNode, Label, Location, SingleNumericArgumentOpcode, Source,
-    node_class_for_mnemonic,
+    ZeroArgumentOpcode, node_class_for_mnemonic,
 )
 
 _LANG = _ts.Language(_tsteal.language())
@@ -83,7 +83,16 @@ def _named_int_error(c) -> bool:
     parses as an ERROR and would be dropped as trivia — silently losing the
     pushed constant, so the comparison that consumes it loses an operand (the
     root cause of the named-constant guard blind spot). We recover it as an
-    ``int`` opcode node; :mod:`const_values` resolves the name to its value."""
+    ``int`` opcode node; :mod:`const_values` resolves the name to its value.
+
+    Deliberately ``int`` only, NOT ``pushint``. The named form the grammar
+    rejects for ``int`` is an OnCompletion / TxnType constant, which
+    ``const_values`` can resolve. The ``pushint`` case seen in the wild is
+    ``pushint TMPL_DELETABLE`` — a deployment TEMPLATE, whose value is unknown
+    until deploy time. Recovering it yields a push with no resolvable value,
+    which the lift's lowering cannot express (``'PushintOpcode' is not a valid
+    AVMOp``), so it stays a visible diagnostic rather than IR the lift chokes
+    on."""
     return (
         c.type == "ERROR"
         and len(c.children) >= 2
@@ -196,10 +205,43 @@ _TEMPLATE_HOST_NODES = frozenset({
     "intcblock_opcode", "bytecblock_opcode",
     "pushints_opcode", "pushbytess_opcode",
 })
+#: NOT the single-push opcodes. A CONST BLOCK holding a template keeps its
+#: other slots useful and its arity right, so recovering it is a clear win. A
+#: bare `pushint TMPL_DELETABLE` recovers to a push with no resolvable value,
+#: which the lift's lowering cannot express (`'PushintOpcode' is not a valid
+#: AVMOp` on the xgov contract) — so it stays a visible diagnostic instead.
 
-#: algokit / ARC-4 template-variable naming convention. Deliberately narrow —
-#: an arbitrary identifier after a const block is a genuine error, not this.
-_TEMPLATE_PREFIX = "TMPL_"
+#: A deployment template variable: an ALL-CAPS ``PREFIX_NAME`` identifier.
+#: ``TMPL_`` is the algokit default, but puya lets a contract choose its own
+#: (the ``compile_HelloPrfx`` fixture uses ``PRFX_``), so keying on the literal
+#: ``TMPL_`` missed real ones. Still narrow enough that an ordinary
+#: lowercase identifier after a const block is not mistaken for a template.
+_TEMPLATE_VAR_RE = __import__("re").compile(r"^[A-Z][A-Z0-9]*_[A-Z0-9_]+$")
+
+
+def _is_phantom_label(c) -> bool:
+    """A ``label`` node tree-sitter SALVAGED from a bare identifier, rather than
+    a real ``name:`` definition.
+
+    A stray identifier — the tail of a truncated operand list, a typo — parses
+    as a ``label`` whose ``:`` token tree-sitter had to INVENT, and an invented
+    token is flagged ``is_missing``. A real ``main:`` has a genuine ``:``.
+
+    Without this, such an identifier was swallowed in total silence: no label
+    (reachability-gating drops it), no diagnostic, and the operand list it came
+    from quietly truncated. `bytecblock "a" somethingelse` reported nothing at
+    all while dropping a token."""
+    if c.type != "label":
+        return False
+    return any(k.type == ":" and k.is_missing for k in c.children)
+
+
+def _phantom_is_opcode(c, src: bytes) -> bool:
+    """A phantom label whose identifier is a KNOWN opcode mnemonic — i.e. an
+    opcode the grammar does not model, salvaged as a bare identifier."""
+    from ..avm import SIG
+    text = src[c.start_byte:c.end_byte].decode("utf-8", "replace").strip()
+    return text in SIG
 
 
 def _template_var_tail(ch, nxt, src: bytes) -> bool:
@@ -226,8 +268,8 @@ def _template_var_tail(ch, nxt, src: bytes) -> bool:
     kids = [k for k in nxt.children if k.type == "label_identifier"]
     if not kids:
         return False
-    return all(src[k.start_byte:k.end_byte].decode("utf-8", "replace")
-               .startswith(_TEMPLATE_PREFIX) for k in kids)
+    return all(_TEMPLATE_VAR_RE.match(
+        src[k.start_byte:k.end_byte].decode("utf-8", "replace")) for k in kids)
 
 
 _NUMERIC_ARG_OPCODES = frozenset({
@@ -444,7 +486,30 @@ def parse_nodes(
                 i += 1
                 continue
             sl, sc, el, ec = _loc(ch)
-            if ch.type == "label":
+            if _is_phantom_label(ch) and _phantom_is_opcode(ch, src):
+                # An opcode the grammar has never heard of (a newer AVM
+                # version's) parses as a bare identifier and would be DROPPED —
+                # taking its whole stack effect with it. `falcon_verify` (AVM
+                # 12, 3 in / 1 out) vanished exactly this way, desyncing the
+                # simulation from that point on. `avm.SIG` already knows its
+                # arity; emit it as the opcode it is.
+                mnem = src[ch.start_byte:ch.end_byte].decode(
+                    "utf-8", "replace").strip()
+                cls = node_class_for_mnemonic(mnem) or ZeroArgumentOpcode
+                op_nodes.append(_node(sl, sc, el, ec, cls,
+                                      None if cls is not ZeroArgumentOpcode
+                                      else _ts_to_pascal(f"{mnem}_opcode")))
+            elif _is_phantom_label(ch):
+                # Not a label: a bare identifier tree-sitter salvaged (see
+                # _is_phantom_label). Record the drop rather than swallow it.
+                if diagnostics is not None:
+                    text = src[ch.start_byte:ch.end_byte].decode("utf-8", "replace")
+                    diagnostics.append(ParseDiagnostic(
+                        file=file, start_line=sl, end_line=el,
+                        snippet=(f"stray token {text.strip()!r} is not a label and "
+                                 "was DROPPED (an operand list may be truncated)"),
+                    ))
+            elif ch.type == "label":
                 label_nodes.append(_node(sl, sc, el, ec, Label))
             else:
                 cls, override = _class_for(ch)

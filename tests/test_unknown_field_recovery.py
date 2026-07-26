@@ -330,3 +330,52 @@ def test_non_template_identifier_is_not_absorbed(tmp_path):
     prog = _prog(tmp_path, 'bytecblock "a" somethingelse\nbytec_0\npop\n', version=10)
     block = [a for a in prog.assignments if a.op == "bytecblock"][0]
     assert block.immediates.strip() == '"a"'
+
+
+# ---------------------------------------------------------------------------
+# Phantom labels: a bare identifier tree-sitter salvages as a "label"
+# ---------------------------------------------------------------------------
+
+
+def test_stray_identifier_is_reported_not_swallowed(tmp_path):
+    """A stray identifier parses as a `label` whose `:` tree-sitter had to
+    INVENT. It was then dropped by reachability gating, so the token vanished
+    with NO diagnostic and the operand list it came from quietly truncated."""
+    prog = _prog(tmp_path, 'bytecblock "a" somethingelse\nbytec_0\npop\n', version=10)
+    diags = list(getattr(prog, "parse_diagnostics", ()) or [])
+    assert diags and "stray token" in diags[0].snippet
+
+
+def test_real_labels_are_not_reported(tmp_path):
+    prog = _prog(tmp_path, "int 0\nb main\nmain:\n", version=10)
+    assert list(getattr(prog, "parse_diagnostics", ()) or []) == []
+    assert _labels(prog) == ["main"]
+
+
+def test_unknown_opcode_salvaged_as_a_label_is_emitted_as_the_opcode(tmp_path):
+    """`falcon_verify` (AVM 12) is absent from the grammar, so it parsed as a
+    bare identifier and was DROPPED — taking its 3-in/1-out stack effect with
+    it and desyncing the simulation from that point. `avm.SIG` knows its arity;
+    it just had to survive the parse."""
+    prog = _prog(tmp_path, "pushbytes 0x00\npushbytes 0x00\npushbytes 0x00\n"
+                           "falcon_verify\npop\n", version=12)
+    assert list(getattr(prog, "parse_diagnostics", ()) or []) == []
+    assert "falcon_verify" in [a.op for a in prog.assignments]
+
+
+def test_custom_template_prefix_is_recognised(tmp_path):
+    """`TMPL_` is algokit's default, but puya lets a contract pick its own —
+    the `compile_HelloPrfx` fixture uses `PRFX_`."""
+    prog = _prog(tmp_path, 'bytecblock "greeting" PRFX_GREETING\nbytec_0\npop\n',
+                 version=10)
+    assert list(getattr(prog, "parse_diagnostics", ()) or []) == []
+
+
+def test_bare_pushint_template_stays_a_diagnostic(tmp_path):
+    """Deliberately NOT recovered. A const BLOCK holding a template keeps its
+    other slots useful and its arity right; a bare `pushint TMPL_X` would
+    recover to a push with no resolvable value, which the lift cannot lower
+    (`'PushintOpcode' is not a valid AVMOp` on the real xgov contract). Visible
+    diagnostic beats IR the lift chokes on."""
+    prog = _prog(tmp_path, "pushint TMPL_DELETABLE\npop\n", version=10)
+    assert list(getattr(prog, "parse_diagnostics", ()) or []) != []
