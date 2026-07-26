@@ -123,7 +123,15 @@ _BASELINE: dict[str, tuple[int, int, int, int]] = {
     "ir-tainted-asset-admin": (2, 0, 0, 3),
     "ir-tainted-fee": (1, 0, 0, 2),
     "ir-tainted-freeze": (1, 0, 0, 2),
-    "ir-tainted-fund-flow": (5, 0, 0, 6),
+    # 2 KNOWN FALSE POSITIVES, recorded deliberately (2026-07-25 review).
+    # A real sender guard whose RESULT is round-tripped through scratch (or
+    # joined at a phi) before its assert is invisible to fund_flow: the lift
+    # keeps store/load as IR intrinsics and rebuilds from the op stream, not
+    # the SSA def-use graph, so the def-walk dead-ends at `(load N)`. The fix
+    # is a scratch reaching-def over the IR gated on block dominance; until
+    # then the limitation is a NUMBER here and in docs/PRECISION.md rather
+    # than an invisible gap. Drop these two when it lands.
+    "ir-tainted-fund-flow": (5, 2, 0, 6),
     "ir-tainted-log": (2, 0, 0, 3),
     "ir-tainted-state-write": (2, 0, 0, 3),
     "ir-partial-tainted-fund-flow": (4, 0, 0, 4),
