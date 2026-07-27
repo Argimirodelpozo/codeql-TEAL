@@ -1,0 +1,1331 @@
+{
+ "_comment": "Regenerate with UPDATE_MAINNET_DIGEST=1 pytest tests/test_mainnet_ratchet.py. Any movement is a behaviour change that needs an explanation in the commit.",
+ "detectors": {
+  "abi-method-selector": {
+   "contracts": 107,
+   "crashes": 0,
+   "findings": 255
+  },
+  "box-key": {
+   "contracts": 0,
+   "crashes": 0,
+   "findings": 0
+  },
+  "constant-condition": {
+   "contracts": 1,
+   "crashes": 0,
+   "findings": 1
+  },
+  "delete-funds-check": {
+   "contracts": 120,
+   "crashes": 0,
+   "findings": 288
+  },
+  "group-size-check": {
+   "contracts": 28,
+   "crashes": 0,
+   "findings": 174
+  },
+  "hardcoded-min-balance": {
+   "contracts": 4,
+   "crashes": 0,
+   "findings": 4
+  },
+  "inner-txn-close-rekey": {
+   "contracts": 48,
+   "crashes": 0,
+   "findings": 121
+  },
+  "inner-txn-fee": {
+   "contracts": 3,
+   "crashes": 0,
+   "findings": 22
+  },
+  "ir-arbitrary-inner-appcall": {
+   "contracts": 6,
+   "crashes": 0,
+   "findings": 14
+  },
+  "ir-arbitrary-inner-asset": {
+   "contracts": 14,
+   "crashes": 0,
+   "findings": 26
+  },
+  "ir-partial-tainted-fund-flow": {
+   "contracts": 6,
+   "crashes": 0,
+   "findings": 15
+  },
+  "ir-tainted-asset-admin": {
+   "contracts": 0,
+   "crashes": 0,
+   "findings": 0
+  },
+  "ir-tainted-fee": {
+   "contracts": 0,
+   "crashes": 0,
+   "findings": 0
+  },
+  "ir-tainted-freeze": {
+   "contracts": 1,
+   "crashes": 0,
+   "findings": 2
+  },
+  "ir-tainted-fund-flow": {
+   "contracts": 28,
+   "crashes": 0,
+   "findings": 87
+  },
+  "ir-tainted-log": {
+   "contracts": 26,
+   "crashes": 0,
+   "findings": 95
+  },
+  "ir-tainted-state-write": {
+   "contracts": 15,
+   "crashes": 0,
+   "findings": 52
+  },
+  "is-deletable": {
+   "contracts": 123,
+   "crashes": 0,
+   "findings": 291
+  },
+  "is-updatable": {
+   "contracts": 123,
+   "crashes": 0,
+   "findings": 290
+  },
+  "timelock-upgrade": {
+   "contracts": 30,
+   "crashes": 0,
+   "findings": 45
+  },
+  "unprotected-deletable": {
+   "contracts": 113,
+   "crashes": 0,
+   "findings": 244
+  },
+  "unprotected-updatable": {
+   "contracts": 103,
+   "crashes": 0,
+   "findings": 231
+  },
+  "unsafe-division-order": {
+   "contracts": 21,
+   "crashes": 0,
+   "findings": 52
+  },
+  "unvalidated-group-sibling": {
+   "contracts": 13,
+   "crashes": 0,
+   "findings": 23
+  }
+ },
+ "distinct_contracts": 141,
+ "per_contract": {
+  "01565792ce736888": {
+   "abi-method-selector": 1,
+   "delete-funds-check": 27,
+   "inner-txn-close-rekey": 1,
+   "ir-arbitrary-inner-asset": 2,
+   "ir-tainted-fund-flow": 5,
+   "ir-tainted-log": 11,
+   "ir-tainted-state-write": 6,
+   "is-deletable": 27,
+   "is-updatable": 27,
+   "unprotected-deletable": 27,
+   "unprotected-updatable": 27,
+   "unsafe-division-order": 1
+  },
+  "03cc9d66e58fef97": {
+   "abi-method-selector": 3,
+   "delete-funds-check": 2,
+   "is-deletable": 2,
+   "is-updatable": 2,
+   "timelock-upgrade": 1,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 1
+  },
+  "08bc4661b9b939bf": {
+   "abi-method-selector": 1,
+   "delete-funds-check": 1,
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 1
+  },
+  "0a29c4d2f380fddd": {
+   "abi-method-selector": 2,
+   "delete-funds-check": 2,
+   "inner-txn-close-rekey": 3,
+   "is-deletable": 2,
+   "is-updatable": 1,
+   "unprotected-deletable": 2,
+   "unprotected-updatable": 1,
+   "unsafe-division-order": 4
+  },
+  "0af5902f20fc0646": {
+   "abi-method-selector": 6,
+   "delete-funds-check": 5,
+   "ir-tainted-log": 2,
+   "is-deletable": 5,
+   "is-updatable": 4,
+   "timelock-upgrade": 4,
+   "unprotected-deletable": 1
+  },
+  "0b35caf4425ed5f1": {
+   "abi-method-selector": 1,
+   "delete-funds-check": 1,
+   "inner-txn-close-rekey": 2,
+   "ir-tainted-fund-flow": 2,
+   "ir-tainted-state-write": 4,
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "unprotected-deletable": 1
+  },
+  "0bbfc7dd47944663": {
+   "abi-method-selector": 2,
+   "delete-funds-check": 2,
+   "inner-txn-close-rekey": 1,
+   "ir-arbitrary-inner-asset": 1,
+   "ir-tainted-log": 3,
+   "ir-tainted-state-write": 7,
+   "is-deletable": 2,
+   "is-updatable": 3,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 2,
+   "unsafe-division-order": 1
+  },
+  "0c8b7dcb4cfd9a85": {
+   "abi-method-selector": 1,
+   "ir-arbitrary-inner-appcall": 1,
+   "ir-arbitrary-inner-asset": 1,
+   "ir-tainted-log": 2,
+   "is-deletable": 1,
+   "is-updatable": 1
+  },
+  "0e04e366aee5f994": {
+   "abi-method-selector": 2,
+   "delete-funds-check": 2,
+   "inner-txn-close-rekey": 3,
+   "is-deletable": 2,
+   "is-updatable": 1,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 1
+  },
+  "0e967510ca7cb448": {
+   "abi-method-selector": 3,
+   "delete-funds-check": 2,
+   "hardcoded-min-balance": 1,
+   "inner-txn-close-rekey": 6,
+   "inner-txn-fee": 11,
+   "ir-arbitrary-inner-appcall": 5,
+   "ir-arbitrary-inner-asset": 4,
+   "ir-tainted-fund-flow": 7,
+   "is-deletable": 2,
+   "is-updatable": 2,
+   "unprotected-deletable": 2,
+   "unprotected-updatable": 2
+  },
+  "0ef72006804c6af6": {
+   "delete-funds-check": 5,
+   "inner-txn-close-rekey": 4,
+   "is-deletable": 5,
+   "is-updatable": 5,
+   "timelock-upgrade": 3,
+   "unprotected-deletable": 2,
+   "unprotected-updatable": 2
+  },
+  "0f40ad51eb9d8db4": {
+   "abi-method-selector": 1,
+   "delete-funds-check": 1,
+   "inner-txn-close-rekey": 2,
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 1
+  },
+  "10b285aaaa5d0fa7": {
+   "abi-method-selector": 3,
+   "delete-funds-check": 3,
+   "inner-txn-close-rekey": 2,
+   "is-deletable": 3,
+   "is-updatable": 3,
+   "timelock-upgrade": 2,
+   "unprotected-deletable": 3,
+   "unprotected-updatable": 1
+  },
+  "11b959c8942d22fa": {
+   "abi-method-selector": 3,
+   "delete-funds-check": 2,
+   "is-deletable": 2,
+   "is-updatable": 2,
+   "unprotected-deletable": 2,
+   "unprotected-updatable": 2
+  },
+  "1270e70d0ecaa348": {
+   "abi-method-selector": 3,
+   "delete-funds-check": 2,
+   "group-size-check": 2,
+   "inner-txn-close-rekey": 2,
+   "ir-arbitrary-inner-asset": 1,
+   "is-deletable": 2,
+   "is-updatable": 2,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 1
+  },
+  "14bf824d4db9ea57": {
+   "abi-method-selector": 1
+  },
+  "1bc4e9d340e327f8": {
+   "abi-method-selector": 1,
+   "delete-funds-check": 1,
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 1
+  },
+  "1c7a5a843a87da06": {
+   "abi-method-selector": 3,
+   "delete-funds-check": 3,
+   "is-deletable": 3,
+   "is-updatable": 2,
+   "timelock-upgrade": 1,
+   "unprotected-updatable": 1
+  },
+  "20247df12a05e93c": {
+   "abi-method-selector": 1,
+   "delete-funds-check": 1,
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 1
+  },
+  "21a95558101a1cc5": {
+   "delete-funds-check": 1,
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "timelock-upgrade": 1
+  },
+  "234ba11a432027d6": {
+   "delete-funds-check": 6,
+   "inner-txn-close-rekey": 1,
+   "ir-partial-tainted-fund-flow": 2,
+   "is-deletable": 6,
+   "is-updatable": 6,
+   "unprotected-deletable": 6,
+   "unprotected-updatable": 6
+  },
+  "240aeb1c93069e03": {
+   "abi-method-selector": 1,
+   "delete-funds-check": 1,
+   "inner-txn-close-rekey": 2,
+   "ir-arbitrary-inner-asset": 2,
+   "ir-tainted-fund-flow": 3,
+   "ir-tainted-log": 6,
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 1
+  },
+  "24760309cb6490aa": {
+   "abi-method-selector": 2,
+   "delete-funds-check": 2,
+   "inner-txn-close-rekey": 1,
+   "ir-arbitrary-inner-asset": 1,
+   "ir-tainted-log": 3,
+   "ir-tainted-state-write": 7,
+   "is-deletable": 2,
+   "is-updatable": 3,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 2,
+   "unsafe-division-order": 1
+  },
+  "24bee4a24368f253": {
+   "abi-method-selector": 4,
+   "delete-funds-check": 2,
+   "group-size-check": 4,
+   "is-deletable": 2,
+   "is-updatable": 2,
+   "unprotected-deletable": 2,
+   "unprotected-updatable": 2
+  },
+  "259de42fe9dc47c7": {
+   "abi-method-selector": 1
+  },
+  "26c321c818124efa": {
+   "delete-funds-check": 10,
+   "inner-txn-close-rekey": 2,
+   "ir-tainted-log": 1,
+   "is-deletable": 10,
+   "is-updatable": 10,
+   "unprotected-deletable": 10,
+   "unprotected-updatable": 10
+  },
+  "26e055d585baa149": {
+   "abi-method-selector": 3,
+   "delete-funds-check": 2,
+   "is-deletable": 2,
+   "is-updatable": 2,
+   "timelock-upgrade": 1,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 1
+  },
+  "29a47e66c78d96ac": {
+   "delete-funds-check": 1,
+   "ir-tainted-fund-flow": 2,
+   "ir-tainted-log": 1,
+   "is-deletable": 1,
+   "is-updatable": 2,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 2,
+   "unsafe-division-order": 1
+  },
+  "2b0305e50afd3f15": {
+   "delete-funds-check": 5,
+   "inner-txn-close-rekey": 4,
+   "is-deletable": 5,
+   "is-updatable": 5,
+   "timelock-upgrade": 3,
+   "unprotected-deletable": 2,
+   "unprotected-updatable": 2
+  },
+  "2f5099d2a06e3a2f": {
+   "abi-method-selector": 3,
+   "delete-funds-check": 1,
+   "ir-tainted-state-write": 1,
+   "is-deletable": 1,
+   "is-updatable": 2,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 2
+  },
+  "2f9c17720d9b48c2": {
+   "abi-method-selector": 1
+  },
+  "3086a611b8fbdd6e": {
+   "abi-method-selector": 1,
+   "delete-funds-check": 1,
+   "inner-txn-close-rekey": 4,
+   "ir-tainted-fund-flow": 2,
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 1
+  },
+  "36b514112377b00e": {
+   "abi-method-selector": 2,
+   "delete-funds-check": 2,
+   "inner-txn-close-rekey": 3,
+   "is-deletable": 2,
+   "is-updatable": 1,
+   "unprotected-deletable": 2,
+   "unprotected-updatable": 1,
+   "unsafe-division-order": 4
+  },
+  "3a7a4f4bfcd30718": {
+   "delete-funds-check": 1,
+   "inner-txn-close-rekey": 2,
+   "ir-tainted-fund-flow": 2,
+   "ir-tainted-log": 1,
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 1
+  },
+  "3a8334289385925d": {
+   "abi-method-selector": 3,
+   "delete-funds-check": 2,
+   "is-deletable": 2,
+   "is-updatable": 2,
+   "timelock-upgrade": 1,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 1
+  },
+  "40953f7e6e9dee5c": {
+   "abi-method-selector": 1,
+   "delete-funds-check": 1,
+   "inner-txn-close-rekey": 4,
+   "ir-tainted-fund-flow": 2,
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 1
+  },
+  "439cdba8fbcbdb46": {
+   "delete-funds-check": 2,
+   "group-size-check": 6,
+   "is-deletable": 2,
+   "is-updatable": 1,
+   "unprotected-deletable": 2,
+   "unprotected-updatable": 1,
+   "unvalidated-group-sibling": 1
+  },
+  "47681e272dc6b1a0": {
+   "abi-method-selector": 3,
+   "delete-funds-check": 2,
+   "hardcoded-min-balance": 1,
+   "inner-txn-close-rekey": 6,
+   "inner-txn-fee": 10,
+   "ir-arbitrary-inner-appcall": 4,
+   "ir-arbitrary-inner-asset": 4,
+   "ir-tainted-fund-flow": 5,
+   "is-deletable": 2,
+   "is-updatable": 2,
+   "unprotected-deletable": 2,
+   "unprotected-updatable": 2
+  },
+  "486ee1299a99f9c1": {
+   "abi-method-selector": 3,
+   "delete-funds-check": 1,
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "timelock-upgrade": 1
+  },
+  "49cc205cd788cf82": {
+   "abi-method-selector": 5,
+   "delete-funds-check": 2,
+   "group-size-check": 8,
+   "inner-txn-close-rekey": 2,
+   "is-deletable": 2,
+   "is-updatable": 2,
+   "unprotected-deletable": 2,
+   "unprotected-updatable": 2,
+   "unsafe-division-order": 4
+  },
+  "4b2d2cd2f6e9c047": {
+   "abi-method-selector": 5,
+   "delete-funds-check": 2,
+   "group-size-check": 5,
+   "is-deletable": 2,
+   "is-updatable": 2,
+   "unprotected-deletable": 2,
+   "unprotected-updatable": 2
+  },
+  "4e4bfe3139770a8c": {
+   "abi-method-selector": 4,
+   "delete-funds-check": 2,
+   "group-size-check": 4,
+   "is-deletable": 2,
+   "is-updatable": 2,
+   "unprotected-deletable": 2,
+   "unprotected-updatable": 2
+  },
+  "5280ee1b111a6121": {
+   "abi-method-selector": 2,
+   "inner-txn-close-rekey": 6,
+   "ir-arbitrary-inner-asset": 1,
+   "is-updatable": 1,
+   "unprotected-updatable": 1
+  },
+  "540bcba4da89d692": {
+   "abi-method-selector": 3,
+   "delete-funds-check": 2,
+   "group-size-check": 3,
+   "inner-txn-close-rekey": 2,
+   "is-deletable": 2,
+   "is-updatable": 2,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 1
+  },
+  "56c8843f37dd4621": {
+   "abi-method-selector": 3,
+   "delete-funds-check": 2,
+   "inner-txn-close-rekey": 2,
+   "is-deletable": 2,
+   "is-updatable": 2,
+   "unprotected-deletable": 2,
+   "unprotected-updatable": 2
+  },
+  "57c75e86cb1d76d5": {
+   "abi-method-selector": 3,
+   "delete-funds-check": 2,
+   "is-deletable": 2,
+   "is-updatable": 2,
+   "timelock-upgrade": 1,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 1
+  },
+  "5d048d5ce45eef9b": {
+   "abi-method-selector": 5,
+   "delete-funds-check": 1,
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 1
+  },
+  "602a0914654aceea": {
+   "abi-method-selector": 6,
+   "delete-funds-check": 4,
+   "is-deletable": 4,
+   "is-updatable": 2,
+   "timelock-upgrade": 2,
+   "unprotected-deletable": 4,
+   "unvalidated-group-sibling": 4
+  },
+  "6193ff8f30c26a5b": {
+   "abi-method-selector": 1,
+   "delete-funds-check": 1,
+   "inner-txn-close-rekey": 4,
+   "ir-tainted-fund-flow": 2,
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 1
+  },
+  "678c9bfdcd11f061": {
+   "abi-method-selector": 2,
+   "delete-funds-check": 2,
+   "inner-txn-close-rekey": 3,
+   "is-deletable": 2,
+   "is-updatable": 2,
+   "unprotected-deletable": 2,
+   "unprotected-updatable": 2
+  },
+  "696edeb654199bd4": {
+   "delete-funds-check": 1,
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 1
+  },
+  "697d65336186e13e": {
+   "abi-method-selector": 1,
+   "inner-txn-close-rekey": 3,
+   "ir-arbitrary-inner-appcall": 1,
+   "ir-arbitrary-inner-asset": 2,
+   "ir-partial-tainted-fund-flow": 3,
+   "ir-tainted-log": 2,
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "timelock-upgrade": 1,
+   "unprotected-deletable": 1
+  },
+  "6d18f4081777da7f": {
+   "abi-method-selector": 1,
+   "delete-funds-check": 1,
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 1
+  },
+  "6fd0d96d0a92a60d": {
+   "abi-method-selector": 2,
+   "delete-funds-check": 2,
+   "inner-txn-close-rekey": 2,
+   "is-deletable": 2,
+   "is-updatable": 1,
+   "unprotected-deletable": 2,
+   "unprotected-updatable": 1
+  },
+  "70cd32b9f5339f47": {
+   "abi-method-selector": 1,
+   "delete-funds-check": 1,
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 1
+  },
+  "755c10451e44a3f9": {
+   "abi-method-selector": 1,
+   "delete-funds-check": 1,
+   "ir-tainted-state-write": 2,
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "timelock-upgrade": 1,
+   "unprotected-deletable": 1
+  },
+  "7884b6b0d517bff2": {
+   "abi-method-selector": 1,
+   "delete-funds-check": 1,
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 1
+  },
+  "7892a05b36d49769": {
+   "abi-method-selector": 3,
+   "delete-funds-check": 1,
+   "group-size-check": 3,
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 1,
+   "unvalidated-group-sibling": 1
+  },
+  "789f4ca7e0b1b676": {
+   "abi-method-selector": 1,
+   "delete-funds-check": 1,
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 1
+  },
+  "7d7fc482187fc09c": {
+   "abi-method-selector": 1,
+   "delete-funds-check": 1,
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 1
+  },
+  "80d51aad908df896": {
+   "abi-method-selector": 3,
+   "delete-funds-check": 2,
+   "is-deletable": 2,
+   "is-updatable": 2,
+   "timelock-upgrade": 1,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 1
+  },
+  "84590a11c1d681e5": {
+   "constant-condition": 1,
+   "delete-funds-check": 1,
+   "ir-arbitrary-inner-asset": 1,
+   "ir-partial-tainted-fund-flow": 1,
+   "ir-tainted-fund-flow": 4,
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 1
+  },
+  "845e0e216e544c06": {
+   "abi-method-selector": 1,
+   "delete-funds-check": 1,
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 1
+  },
+  "88ddbf11380d8e73": {
+   "abi-method-selector": 3,
+   "delete-funds-check": 7,
+   "inner-txn-close-rekey": 2,
+   "is-deletable": 7,
+   "is-updatable": 7,
+   "timelock-upgrade": 3,
+   "unprotected-deletable": 4,
+   "unprotected-updatable": 4,
+   "unsafe-division-order": 3
+  },
+  "8d41aba57a48d4c3": {
+   "abi-method-selector": 1,
+   "delete-funds-check": 2,
+   "is-deletable": 2,
+   "is-updatable": 2,
+   "unprotected-deletable": 2,
+   "unprotected-updatable": 2
+  },
+  "92fd7baf5f9da9de": {
+   "delete-funds-check": 1,
+   "ir-tainted-log": 1,
+   "ir-tainted-state-write": 1,
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 1,
+   "unsafe-division-order": 2
+  },
+  "930dc9a9b91a890a": {
+   "abi-method-selector": 1,
+   "delete-funds-check": 27,
+   "inner-txn-close-rekey": 1,
+   "ir-arbitrary-inner-asset": 2,
+   "ir-tainted-fund-flow": 5,
+   "ir-tainted-log": 11,
+   "ir-tainted-state-write": 6,
+   "is-deletable": 27,
+   "is-updatable": 27,
+   "unprotected-deletable": 27,
+   "unprotected-updatable": 27,
+   "unsafe-division-order": 1
+  },
+  "938f81b7fa63bd22": {
+   "ir-arbitrary-inner-appcall": 2
+  },
+  "950d1f9d93cd632c": {
+   "abi-method-selector": 1,
+   "delete-funds-check": 1,
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 1
+  },
+  "951f88cfbb8198b3": {
+   "abi-method-selector": 1
+  },
+  "95ff8430d668996d": {
+   "group-size-check": 28,
+   "ir-tainted-fund-flow": 1,
+   "ir-tainted-log": 9,
+   "unsafe-division-order": 1,
+   "unvalidated-group-sibling": 1
+  },
+  "9792905998d2ccbf": {
+   "abi-method-selector": 1,
+   "delete-funds-check": 1,
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 1
+  },
+  "9845a8da7b21155b": {
+   "abi-method-selector": 3,
+   "delete-funds-check": 2,
+   "group-size-check": 3,
+   "inner-txn-close-rekey": 2,
+   "is-deletable": 2,
+   "is-updatable": 2,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 1
+  },
+  "9cdcdbf9003cbf13": {
+   "abi-method-selector": 1
+  },
+  "a05c786436fcf459": {
+   "delete-funds-check": 1,
+   "ir-tainted-fund-flow": 2,
+   "ir-tainted-log": 1,
+   "is-deletable": 1,
+   "is-updatable": 2,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 2,
+   "unsafe-division-order": 1
+  },
+  "a1cacf500ecd49fc": {
+   "abi-method-selector": 2,
+   "delete-funds-check": 1,
+   "hardcoded-min-balance": 1,
+   "ir-tainted-state-write": 3,
+   "is-deletable": 1,
+   "is-updatable": 2,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 2
+  },
+  "a222d5f2a47414e5": {
+   "abi-method-selector": 3,
+   "delete-funds-check": 1,
+   "inner-txn-close-rekey": 3,
+   "ir-partial-tainted-fund-flow": 4,
+   "ir-tainted-fund-flow": 5,
+   "is-deletable": 1
+  },
+  "a22a0b825a86ce29": {
+   "delete-funds-check": 1,
+   "inner-txn-close-rekey": 2,
+   "ir-tainted-fund-flow": 3,
+   "ir-tainted-log": 1,
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 1
+  },
+  "a25b4f600ea09ae7": {
+   "abi-method-selector": 4,
+   "delete-funds-check": 1,
+   "group-size-check": 2,
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 1,
+   "unvalidated-group-sibling": 1
+  },
+  "a2cabc5f616a4d7b": {
+   "ir-tainted-fund-flow": 1
+  },
+  "a5660c1327ef2bdc": {
+   "abi-method-selector": 4,
+   "delete-funds-check": 2,
+   "group-size-check": 4,
+   "is-deletable": 2,
+   "is-updatable": 2,
+   "unprotected-deletable": 2,
+   "unprotected-updatable": 2
+  },
+  "a57dffcd3794f353": {
+   "abi-method-selector": 4,
+   "delete-funds-check": 2,
+   "group-size-check": 4,
+   "is-deletable": 2,
+   "is-updatable": 2,
+   "unprotected-deletable": 2,
+   "unprotected-updatable": 2
+  },
+  "a60c9442c0a42024": {
+   "delete-funds-check": 1,
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "timelock-upgrade": 1,
+   "unprotected-deletable": 1
+  },
+  "a6e8c284ed36b3b1": {
+   "abi-method-selector": 1,
+   "delete-funds-check": 1,
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 1
+  },
+  "a8b077399987e4b2": {
+   "abi-method-selector": 2,
+   "delete-funds-check": 2,
+   "inner-txn-close-rekey": 3,
+   "is-deletable": 2,
+   "is-updatable": 2,
+   "unprotected-deletable": 2,
+   "unprotected-updatable": 2
+  },
+  "aab1460aea8bd0f4": {
+   "abi-method-selector": 1,
+   "delete-funds-check": 2,
+   "is-deletable": 2,
+   "is-updatable": 2,
+   "unprotected-deletable": 2,
+   "unprotected-updatable": 2
+  },
+  "ab4e9c4f469d6954": {
+   "abi-method-selector": 9,
+   "delete-funds-check": 8,
+   "ir-tainted-fund-flow": 3,
+   "ir-tainted-state-write": 3,
+   "is-deletable": 8,
+   "is-updatable": 8,
+   "unprotected-deletable": 8,
+   "unprotected-updatable": 8
+  },
+  "abcc69e12b3faf00": {
+   "abi-method-selector": 1,
+   "delete-funds-check": 1,
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 1
+  },
+  "ae3a526129dc7e88": {
+   "abi-method-selector": 1,
+   "delete-funds-check": 1,
+   "inner-txn-close-rekey": 2,
+   "ir-tainted-log": 12,
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 1
+  },
+  "ae6098a180db5aed": {
+   "delete-funds-check": 1,
+   "ir-tainted-fund-flow": 1,
+   "ir-tainted-log": 1,
+   "ir-tainted-state-write": 1,
+   "is-deletable": 1,
+   "is-updatable": 2,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 2,
+   "unsafe-division-order": 1
+  },
+  "aecda94473307b1a": {
+   "group-size-check": 18,
+   "ir-tainted-log": 4,
+   "unsafe-division-order": 6,
+   "unvalidated-group-sibling": 4
+  },
+  "af1c556c32a6ae26": {
+   "delete-funds-check": 1,
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 1
+  },
+  "afd001f14db2f41f": {
+   "delete-funds-check": 1,
+   "inner-txn-close-rekey": 2,
+   "ir-tainted-fund-flow": 3,
+   "ir-tainted-log": 1,
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "timelock-upgrade": 1,
+   "unprotected-deletable": 1
+  },
+  "b0385c72fd03627d": {
+   "abi-method-selector": 2,
+   "delete-funds-check": 1,
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 1
+  },
+  "b08ce6faeb11912c": {
+   "delete-funds-check": 1,
+   "inner-txn-close-rekey": 2,
+   "ir-tainted-fund-flow": 3,
+   "ir-tainted-log": 1,
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "timelock-upgrade": 1,
+   "unprotected-deletable": 1
+  },
+  "b1ec32ec887509c4": {
+   "delete-funds-check": 1,
+   "is-deletable": 1,
+   "is-updatable": 2,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 2,
+   "unsafe-division-order": 1
+  },
+  "b24577052209c568": {
+   "abi-method-selector": 1,
+   "delete-funds-check": 1,
+   "inner-txn-close-rekey": 2,
+   "ir-tainted-fund-flow": 4,
+   "ir-tainted-state-write": 3,
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "unprotected-deletable": 1,
+   "unsafe-division-order": 1
+  },
+  "b3f03c70d4a3aada": {
+   "abi-method-selector": 1,
+   "delete-funds-check": 1,
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 1
+  },
+  "b6ced34cebe4448a": {
+   "abi-method-selector": 6,
+   "delete-funds-check": 2,
+   "group-size-check": 1,
+   "inner-txn-close-rekey": 1,
+   "inner-txn-fee": 1,
+   "ir-tainted-fund-flow": 1,
+   "is-deletable": 2,
+   "is-updatable": 2,
+   "unprotected-deletable": 2,
+   "unprotected-updatable": 2,
+   "unsafe-division-order": 10,
+   "unvalidated-group-sibling": 2
+  },
+  "b7469c9515a25926": {
+   "abi-method-selector": 1,
+   "delete-funds-check": 5,
+   "group-size-check": 2,
+   "is-deletable": 5,
+   "is-updatable": 5,
+   "timelock-upgrade": 2,
+   "unprotected-deletable": 3,
+   "unprotected-updatable": 3,
+   "unvalidated-group-sibling": 1
+  },
+  "b896d648afd17b4f": {
+   "delete-funds-check": 1,
+   "ir-tainted-state-write": 2,
+   "is-deletable": 1,
+   "is-updatable": 2,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 2,
+   "unsafe-division-order": 1
+  },
+  "bb73f01b89c89133": {
+   "abi-method-selector": 1,
+   "delete-funds-check": 1,
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 1
+  },
+  "bb9a8adb9e082093": {
+   "abi-method-selector": 1,
+   "delete-funds-check": 1,
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 1
+  },
+  "bd98153e386e7d95": {
+   "abi-method-selector": 5,
+   "delete-funds-check": 2,
+   "group-size-check": 5,
+   "is-deletable": 2,
+   "is-updatable": 2,
+   "unprotected-deletable": 2,
+   "unprotected-updatable": 2
+  },
+  "bf9dedbccbc33d3e": {
+   "abi-method-selector": 1,
+   "ir-tainted-freeze": 2
+  },
+  "c2f26fbe3ac5af68": {
+   "abi-method-selector": 5,
+   "delete-funds-check": 2,
+   "group-size-check": 5,
+   "is-deletable": 2,
+   "is-updatable": 2,
+   "unprotected-deletable": 2,
+   "unprotected-updatable": 2
+  },
+  "c7705660efc98486": {
+   "delete-funds-check": 1,
+   "inner-txn-close-rekey": 2,
+   "ir-tainted-fund-flow": 3,
+   "ir-tainted-log": 1,
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "timelock-upgrade": 1,
+   "unprotected-deletable": 1
+  },
+  "cf2daeda52103416": {
+   "abi-method-selector": 5,
+   "delete-funds-check": 2,
+   "is-deletable": 2,
+   "is-updatable": 2,
+   "unprotected-deletable": 2,
+   "unprotected-updatable": 2
+  },
+  "d02b5deda4d587ac": {
+   "abi-method-selector": 1,
+   "delete-funds-check": 1,
+   "inner-txn-close-rekey": 2,
+   "ir-tainted-fund-flow": 4,
+   "ir-tainted-state-write": 3,
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "unprotected-deletable": 1,
+   "unsafe-division-order": 1
+  },
+  "d151ab954622c79a": {
+   "abi-method-selector": 1,
+   "delete-funds-check": 1,
+   "inner-txn-close-rekey": 3,
+   "ir-arbitrary-inner-asset": 2,
+   "ir-tainted-fund-flow": 4,
+   "ir-tainted-log": 11,
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "timelock-upgrade": 1,
+   "unprotected-deletable": 1
+  },
+  "d605414bf36e02aa": {
+   "abi-method-selector": 3,
+   "delete-funds-check": 8,
+   "group-size-check": 10,
+   "is-deletable": 8,
+   "is-updatable": 8,
+   "unprotected-deletable": 8,
+   "unprotected-updatable": 8,
+   "unvalidated-group-sibling": 1
+  },
+  "d60702da0ff7155e": {
+   "abi-method-selector": 3,
+   "delete-funds-check": 1,
+   "inner-txn-close-rekey": 3,
+   "ir-partial-tainted-fund-flow": 4,
+   "ir-tainted-fund-flow": 5,
+   "is-deletable": 1
+  },
+  "d6f32424f5915310": {
+   "abi-method-selector": 1,
+   "delete-funds-check": 1,
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 1
+  },
+  "dae1dea43176e660": {
+   "abi-method-selector": 3,
+   "delete-funds-check": 2,
+   "is-deletable": 2,
+   "is-updatable": 2,
+   "unprotected-deletable": 2,
+   "unprotected-updatable": 2
+  },
+  "db42cf8f69ebe450": {
+   "delete-funds-check": 1,
+   "inner-txn-close-rekey": 2,
+   "ir-tainted-fund-flow": 3,
+   "ir-tainted-log": 1,
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 1
+  },
+  "dbccd7a8f6b4b2fc": {
+   "abi-method-selector": 1,
+   "delete-funds-check": 1,
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 1
+  },
+  "dfe4e600471ce554": {
+   "abi-method-selector": 1,
+   "delete-funds-check": 5,
+   "group-size-check": 2,
+   "is-deletable": 5,
+   "is-updatable": 5,
+   "timelock-upgrade": 2,
+   "unprotected-deletable": 3,
+   "unprotected-updatable": 3,
+   "unvalidated-group-sibling": 1
+  },
+  "e5a04ec371c6a7dd": {
+   "abi-method-selector": 1,
+   "delete-funds-check": 1,
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 1
+  },
+  "e9bd47418d6ad98e": {
+   "abi-method-selector": 1,
+   "ir-arbitrary-inner-appcall": 1,
+   "ir-arbitrary-inner-asset": 2,
+   "ir-tainted-log": 2,
+   "is-deletable": 1,
+   "is-updatable": 1
+  },
+  "e9f883f3d064eca9": {
+   "abi-method-selector": 3,
+   "delete-funds-check": 2,
+   "group-size-check": 3,
+   "inner-txn-close-rekey": 2,
+   "is-deletable": 2,
+   "is-updatable": 2,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 1
+  },
+  "ea52c8ab6316226a": {
+   "abi-method-selector": 4,
+   "delete-funds-check": 4,
+   "inner-txn-close-rekey": 2,
+   "is-deletable": 4,
+   "is-updatable": 3,
+   "unprotected-deletable": 4,
+   "unprotected-updatable": 1
+  },
+  "eaae54cabc8c8863": {
+   "abi-method-selector": 4,
+   "delete-funds-check": 2,
+   "group-size-check": 4,
+   "is-deletable": 2,
+   "is-updatable": 2,
+   "unprotected-deletable": 2,
+   "unprotected-updatable": 2
+  },
+  "eba5ab6f43a6c359": {
+   "abi-method-selector": 1,
+   "delete-funds-check": 1,
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 1
+  },
+  "ec57a6dac1cbdd1a": {
+   "abi-method-selector": 3,
+   "delete-funds-check": 2,
+   "is-deletable": 2,
+   "is-updatable": 2,
+   "timelock-upgrade": 1,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 1
+  },
+  "eda9a4bab5998fba": {
+   "abi-method-selector": 7,
+   "delete-funds-check": 2,
+   "group-size-check": 6,
+   "is-deletable": 2,
+   "is-updatable": 1,
+   "unprotected-deletable": 2,
+   "unprotected-updatable": 1,
+   "unvalidated-group-sibling": 1
+  },
+  "ee24edcc6a1e0af3": {
+   "abi-method-selector": 5,
+   "delete-funds-check": 2,
+   "group-size-check": 5,
+   "is-deletable": 2,
+   "is-updatable": 2,
+   "unprotected-deletable": 2,
+   "unprotected-updatable": 2
+  },
+  "eead34e66cdb7dde": {
+   "abi-method-selector": 3,
+   "delete-funds-check": 2,
+   "group-size-check": 3,
+   "inner-txn-close-rekey": 2,
+   "is-deletable": 2,
+   "is-updatable": 2,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 1
+  },
+  "ef200e2ebe348d98": {
+   "abi-method-selector": 5,
+   "delete-funds-check": 2,
+   "group-size-check": 5,
+   "is-deletable": 2,
+   "is-updatable": 2,
+   "unprotected-deletable": 2,
+   "unprotected-updatable": 2
+  },
+  "ef5d53b0aae5db76": {
+   "group-size-check": 19,
+   "ir-tainted-log": 5,
+   "is-updatable": 1,
+   "timelock-upgrade": 1,
+   "unsafe-division-order": 6,
+   "unvalidated-group-sibling": 4
+  },
+  "f23af47f2b272f33": {
+   "abi-method-selector": 3,
+   "delete-funds-check": 2,
+   "is-deletable": 2,
+   "is-updatable": 2,
+   "timelock-upgrade": 1,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 1
+  },
+  "f484294144c560fd": {
+   "abi-method-selector": 1,
+   "delete-funds-check": 1,
+   "ir-partial-tainted-fund-flow": 1,
+   "ir-tainted-log": 1,
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "timelock-upgrade": 1
+  },
+  "f4b4734402e25a05": {
+   "abi-method-selector": 2,
+   "delete-funds-check": 2,
+   "hardcoded-min-balance": 1,
+   "ir-tainted-state-write": 3,
+   "is-deletable": 2,
+   "is-updatable": 3,
+   "timelock-upgrade": 1,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 2,
+   "unsafe-division-order": 1
+  },
+  "f8f49ea81e10d5f3": {
+   "abi-method-selector": 1,
+   "delete-funds-check": 1,
+   "inner-txn-close-rekey": 2,
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "timelock-upgrade": 1
+  },
+  "fa8b98e848dad0ea": {
+   "delete-funds-check": 3,
+   "is-deletable": 3,
+   "is-updatable": 3,
+   "timelock-upgrade": 3
+  },
+  "fdfd5c7a54483a76": {
+   "abi-method-selector": 3,
+   "delete-funds-check": 8,
+   "group-size-check": 10,
+   "is-deletable": 8,
+   "is-updatable": 8,
+   "unprotected-deletable": 8,
+   "unprotected-updatable": 8,
+   "unvalidated-group-sibling": 1
+  }
+ }
+}
