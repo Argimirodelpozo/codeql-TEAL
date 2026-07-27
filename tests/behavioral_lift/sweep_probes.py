@@ -11,9 +11,16 @@ lift-fail per contract.
 
 Probes are kept (teal only) so a contract that surfaced a bug becomes a permanent
 test case. Re-runs skip ids already on disk for the dryrun but never re-delete.
+
+A fetched program is saved only when its CONTENT is new. Skipping by app id is
+not enough -- mainnet templates are deployed thousands of times under different
+ids, so id-only dedup let the corpus grow to 929 files holding 141 distinct
+programs. Redundancy costs more than disk: it skews every corpus-wide
+measurement toward whichever template happens to be popular.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import signal
 import sys
@@ -124,12 +131,33 @@ def _validate(az, clear, aid, teal, bc, tally: dict) -> None:
         print(f"FAITHFUL {aid} (v{_pragma_version(teal)}, {nl}L) m={m}", flush=True)
 
 
-def _run(az, clear, ids: list, tally: dict) -> None:
+def _corpus_hashes() -> set:
+    """Content hashes of every probe already on disk."""
+    return {hashlib.sha256(p.read_bytes()).hexdigest()
+            for p in PROBES.glob("*.teal")}
+
+
+def _run(az, clear, ids: list, tally: dict, seen_hashes: set | None = None) -> None:
+    seen_hashes = _corpus_hashes() if seen_hashes is None else seen_hashes
     for aid in ids:
         signal.alarm(220)
         try:
             teal, bc = fetch_approval(aid)
-            (PROBES / f"app_{aid}.teal").write_text(teal)      # PERSIST the probe
+            # PERSIST the probe -- but only when it is a program we do not
+            # already have. Skipping by app id (which `sample` does) is not
+            # enough: mainnet templates are deployed thousands of times under
+            # different ids, so every "new" id was saved even when its bytecode
+            # was byte-identical to a probe already on disk. That is how 929
+            # committed files came to hold 141 distinct programs -- 6.6x of pure
+            # redundancy, which also silently skews any corpus-wide measurement
+            # toward whichever template happens to be popular.
+            h = hashlib.sha256(teal.encode()).hexdigest()
+            if h in seen_hashes:
+                tally["dupe"] = tally.get("dupe", 0) + 1
+                signal.alarm(0)
+                continue
+            seen_hashes.add(h)
+            (PROBES / f"app_{aid}.teal").write_text(teal)
             _validate(az, clear, aid, teal, bc, tally)
         except _Timeout:
             tally["skip"] += 1
@@ -157,7 +185,10 @@ def main(argv) -> int:
     clear = C._compile(az, "#pragma version 10\nint 1")
     signal.signal(signal.SIGALRM, lambda *_: (_ for _ in ()).throw(_Timeout()))
     have = {int(p.stem.split("_")[1]) for p in PROBES.glob("app_*.teal")}
-    tally = dict(faithful=0, diverge=0, liftfail=0, compfail=0, skip=0)
+    # Content hashes, so a program already on disk is not saved again under a
+    # different app id -- see the note in `_run`.
+    seen_hashes = _corpus_hashes()
+    tally = dict(faithful=0, diverge=0, liftfail=0, compfail=0, skip=0, dupe=0)
 
     if argv and argv[0] == "byver":
         # Fetch broadly, keeping a contract only while its AVM version is still
@@ -183,6 +214,11 @@ def main(argv) -> int:
                 if per_ver.get(ver, 0) >= target:
                     signal.alarm(0)
                     continue                # this version already has enough
+                h = hashlib.sha256(teal.encode()).hexdigest()
+                if h in seen_hashes:        # same PROGRAM under another id
+                    signal.alarm(0)
+                    continue
+                seen_hashes.add(h)
                 (PROBES / f"app_{aid}.teal").write_text(teal)
                 _validate(az, clear, aid, teal, bc, tally)
                 per_ver[ver] = per_ver.get(ver, 0) + 1
@@ -203,12 +239,14 @@ def main(argv) -> int:
             pages += 1
         ids = ids[:count]
         print(f"sampled {len(ids)} NEW ids ({len(have)} already in corpus) -> {PROBES}", flush=True)
-        _run(az, clear, ids, tally)
+        _run(az, clear, ids, tally, seen_hashes)
 
     kept = len(list(PROBES.glob("*.teal")))
+    distinct = len(_corpus_hashes())
     print(f"\n=== faithful={tally['faithful']} diverge={tally['diverge']} "
           f"liftfail={tally['liftfail']} compfail={tally['compfail']} skip={tally['skip']} "
-          f"| corpus now {kept} probes ===", flush=True)
+          f"dupe={tally.get('dupe', 0)} "
+          f"| corpus now {kept} probes, {distinct} DISTINCT programs ===", flush=True)
     return 1 if tally["diverge"] else 0
 
 

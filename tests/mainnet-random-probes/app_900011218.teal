@@ -1,0 +1,2071 @@
+#pragma version 5
+intcblock 0 1 3 2 10000 6 4 1000000 5 10
+bytecblock 0x53495a45 0x415645524147455f5052494345 0x434f4c4c41544552414c 0x49535f4c4f4e47 0x454e5452595f46554e44494e475f52415445 0x4c4153545f494e435245415345445f54494d45 0x524553455256455f414d4f554e54 0x43554d554c41544956455f46554e44494e475f52415445 0x4143434f554e54 0x5641554c545f4150505f4944 0x434f4c4c41544552414c5f4150505f4944 0x494e4445585f4150505f4944 0x5245414c495a45445f50524f464954 0x5245414c495a45445f4c4f5353 0x434f4c4c41544552414c5f41535345545f4944 0x494e4445585f41535345545f4944 0x4d494e5f50524f4649545f54494d45 0x4d494e5f50524f4649545f42415349535f504f494e5453 0x4d415247494e5f4645455f42415349535f504f494e5453 0x4c49515549444154494f4e5f4645455f555344 0x4d41585f4c45564552414745 0x696e637265617365506f736974696f6e 0x6465637265617365506f736974696f6e 0x6c6971756964617465506f736974696f6e 0x444543494d414c53 0x474f56
+txn ApplicationID
+intc_0 // 0
+==
+bnz label1
+txn OnCompletion
+intc_1 // 1
+==
+bnz label2
+txn OnCompletion
+intc_3 // 2
+==
+bnz label3
+txn OnCompletion
+intc 6 // 4
+==
+bnz label4
+txn OnCompletion
+intc 8 // 5
+==
+bnz label5
+txna ApplicationArgs 0
+pushbytes 0x757064617465417070496473 // "updateAppIds"
+==
+bnz label6
+txna ApplicationArgs 0
+bytec 21 // "increasePosition"
+==
+bnz label7
+txna ApplicationArgs 0
+bytec 22 // "decreasePosition"
+==
+bnz label8
+txna ApplicationArgs 0
+bytec 23 // "liquidatePosition"
+==
+bnz label9
+err
+label9:
+global GroupSize
+intc 8 // 5
+>=
+assert
+gtxn 0 TypeEnum
+intc 5 // 6
+==
+gtxna 0 ApplicationArgs 0
+bytec 23 // "liquidatePosition"
+==
+&&
+gtxn 0 ApplicationID
+txna Applications 1
+==
+&&
+gtxna 0 Assets 0
+txna Assets 0
+==
+&&
+gtxna 0 Assets 1
+txna Assets 1
+==
+&&
+txn GroupIndex
+intc_3 // 2
+-
+gtxns TypeEnum
+intc 5 // 6
+==
+txn GroupIndex
+intc_3 // 2
+-
+gtxnsa ApplicationArgs 0
+pushbytes 0x6c6971756964617465506f736974696f6e436f6c6c61746572616c // "liquidatePositionCollateral"
+==
+&&
+txn GroupIndex
+intc_3 // 2
+-
+gtxns ApplicationID
+txna Applications 2
+==
+&&
+&&
+txn GroupIndex
+intc_1 // 1
+-
+gtxns TypeEnum
+intc 5 // 6
+==
+txn GroupIndex
+intc_1 // 1
+-
+gtxnsa ApplicationArgs 0
+pushbytes 0x6c6971756964617465506f736974696f6e496e646578 // "liquidatePositionIndex"
+==
+&&
+txn GroupIndex
+intc_1 // 1
+-
+gtxns ApplicationID
+txna Applications 3
+==
+&&
+&&
+assert
+bytec 14 // "COLLATERAL_ASSET_ID"
+app_global_get
+txna Assets 0
+==
+assert
+bytec 15 // "INDEX_ASSET_ID"
+app_global_get
+txna Assets 1
+==
+assert
+txn NumAppArgs
+intc_1 // 1
+==
+txn NumApplications
+intc_2 // 3
+==
+&&
+txn NumAssets
+intc_3 // 2
+==
+&&
+assert
+txna Applications 1
+bytec 9 // "VAULT_APP_ID"
+app_global_get
+==
+txna Applications 2
+bytec 10 // "COLLATERAL_APP_ID"
+app_global_get
+==
+&&
+txna Applications 3
+bytec 11 // "INDEX_APP_ID"
+app_global_get
+==
+&&
+assert
+bytec_0 // "SIZE"
+app_global_get
+intc_0 // 0
+>
+assert
+gtxna 0 ApplicationArgs 3
+btoi
+store 93
+gtxna 0 ApplicationArgs 4
+btoi
+store 94
+bytec_1 // "AVERAGE_PRICE"
+app_global_get
+intc_0 // 0
+>
+assert
+bytec_3 // "IS_LONG"
+app_global_get
+intc_1 // 1
+==
+bnz label10
+load 94
+store 105
+label31:
+bytec_1 // "AVERAGE_PRICE"
+app_global_get
+load 105
+>
+bnz label11
+load 105
+bytec_1 // "AVERAGE_PRICE"
+app_global_get
+-
+store 106
+label30:
+bytec_0 // "SIZE"
+app_global_get
+load 106
+mulw
+intc_0 // 0
+bytec_1 // "AVERAGE_PRICE"
+app_global_get
+divmodw
+pop
+pop
+swap
+!
+assert
+store 98
+bytec_3 // "IS_LONG"
+app_global_get
+bnz label12
+bytec_1 // "AVERAGE_PRICE"
+app_global_get
+load 105
+>
+store 97
+label29:
+txna Applications 1
+bytec 16 // "MIN_PROFIT_TIME"
+app_global_get_ex
+store 108
+store 109
+txna Applications 3
+bytec 17 // "MIN_PROFIT_BASIS_POINTS"
+app_global_get_ex
+store 110
+store 111
+global Round
+bytec 5 // "LAST_INCREASED_TIME"
+app_global_get
+load 109
++
+>
+bnz label13
+load 111
+store 107
+label28:
+load 97
+load 98
+intc 4 // 10000
+*
+bytec_0 // "SIZE"
+app_global_get
+load 107
+*
+<
+&&
+bnz label14
+label27:
+bytec_0 // "SIZE"
+app_global_get
+intc_0 // 0
+==
+bnz label15
+txna Applications 2
+bytec 7 // "CUMULATIVE_FUNDING_RATE"
+app_global_get_ex
+store 112
+store 113
+load 113
+bytec 4 // "ENTRY_FUNDING_RATE"
+app_global_get
+-
+store 114
+load 114
+intc_0 // 0
+==
+bnz label16
+bytec_0 // "SIZE"
+app_global_get
+load 114
+mulw
+intc_0 // 0
+intc 7 // 1000000
+divmodw
+pop
+pop
+swap
+!
+assert
+store 96
+label26:
+bytec_0 // "SIZE"
+app_global_get
+intc_0 // 0
+==
+bnz label17
+txna Applications 1
+bytec 18 // "MARGIN_FEE_BASIS_POINTS"
+app_global_get_ex
+store 115
+store 116
+bytec_0 // "SIZE"
+app_global_get
+intc 4 // 10000
+load 116
+-
+mulw
+intc_0 // 0
+intc 4 // 10000
+divmodw
+pop
+pop
+swap
+!
+assert
+store 117
+bytec_0 // "SIZE"
+app_global_get
+load 117
+-
+store 99
+label25:
+load 96
+load 99
++
+store 96
+load 97
+intc_0 // 0
+==
+bytec_2 // "COLLATERAL"
+app_global_get
+load 98
+<
+&&
+bnz label18
+bytec_2 // "COLLATERAL"
+app_global_get
+store 100
+load 97
+intc_0 // 0
+==
+bnz label19
+label24:
+load 100
+load 96
+<
+bnz label20
+txna Applications 1
+bytec 19 // "LIQUIDATION_FEE_USD"
+app_global_get_ex
+store 101
+store 102
+load 100
+load 96
+load 102
++
+<
+bnz label21
+txna Applications 1
+bytec 20 // "MAX_LEVERAGE"
+app_global_get_ex
+store 103
+store 104
+load 100
+load 104
+*
+bytec_0 // "SIZE"
+app_global_get
+intc 4 // 10000
+*
+<
+bnz label22
+intc_0 // 0
+store 95
+label23:
+load 95
+intc_1 // 1
+==
+assert
+load 96
+gtxna 0 ApplicationArgs 5
+btoi
+==
+assert
+bytec_0 // "SIZE"
+intc_0 // 0
+app_global_put
+bytec_2 // "COLLATERAL"
+intc_0 // 0
+app_global_put
+bytec_1 // "AVERAGE_PRICE"
+intc_0 // 0
+app_global_put
+bytec 4 // "ENTRY_FUNDING_RATE"
+intc_0 // 0
+app_global_put
+bytec 6 // "RESERVE_AMOUNT"
+intc_0 // 0
+app_global_put
+bytec 12 // "REALIZED_PROFIT"
+intc_0 // 0
+app_global_put
+bytec 13 // "REALIZED_LOSS"
+intc_0 // 0
+app_global_put
+bytec 5 // "LAST_INCREASED_TIME"
+intc_0 // 0
+app_global_put
+intc_1 // 1
+return
+label22:
+intc_0 // 0
+intc_0 // 0
+==
+assert
+intc_3 // 2
+store 95
+b label23
+label21:
+intc_0 // 0
+intc_0 // 0
+==
+assert
+intc_1 // 1
+store 95
+b label23
+label20:
+intc_0 // 0
+intc_0 // 0
+==
+assert
+intc_1 // 1
+store 95
+load 100
+store 96
+b label23
+label19:
+load 100
+load 98
+-
+store 100
+b label24
+label18:
+intc_0 // 0
+intc_0 // 0
+==
+assert
+intc_1 // 1
+store 95
+b label23
+label17:
+intc_0 // 0
+store 99
+b label25
+label16:
+intc_0 // 0
+store 96
+b label26
+label15:
+intc_0 // 0
+store 96
+b label26
+label14:
+intc_0 // 0
+store 98
+b label27
+label13:
+intc_0 // 0
+store 107
+b label28
+label12:
+load 105
+bytec_1 // "AVERAGE_PRICE"
+app_global_get
+>
+store 97
+b label29
+label11:
+bytec_1 // "AVERAGE_PRICE"
+app_global_get
+load 105
+-
+store 106
+b label30
+label10:
+load 93
+store 105
+b label31
+label8:
+global GroupSize
+intc 6 // 4
+>=
+assert
+txn GroupIndex
+intc_2 // 3
+-
+gtxns TypeEnum
+intc 5 // 6
+==
+txn GroupIndex
+intc_2 // 3
+-
+gtxnsa ApplicationArgs 0
+bytec 22 // "decreasePosition"
+==
+&&
+txn GroupIndex
+intc_2 // 3
+-
+gtxns ApplicationID
+txna Applications 1
+==
+&&
+txn GroupIndex
+intc_2 // 3
+-
+gtxnsa Assets 0
+txna Assets 0
+==
+&&
+txn GroupIndex
+intc_2 // 3
+-
+gtxnsa Assets 1
+txna Assets 1
+==
+&&
+txn GroupIndex
+intc_3 // 2
+-
+gtxns TypeEnum
+intc 5 // 6
+==
+txn GroupIndex
+intc_3 // 2
+-
+gtxnsa ApplicationArgs 0
+pushbytes 0x6465637265617365506f736974696f6e436f6c6c61746572616c // "decreasePositionCollateral"
+==
+&&
+txn GroupIndex
+intc_3 // 2
+-
+gtxns ApplicationID
+txna Applications 2
+==
+&&
+&&
+txn GroupIndex
+intc_1 // 1
+-
+gtxns TypeEnum
+intc 5 // 6
+==
+txn GroupIndex
+intc_1 // 1
+-
+gtxnsa ApplicationArgs 0
+pushbytes 0x6465637265617365506f736974696f6e496e646578 // "decreasePositionIndex"
+==
+&&
+txn GroupIndex
+intc_1 // 1
+-
+gtxns ApplicationID
+txna Applications 3
+==
+&&
+&&
+assert
+bytec 14 // "COLLATERAL_ASSET_ID"
+app_global_get
+txna Assets 0
+==
+assert
+bytec 15 // "INDEX_ASSET_ID"
+app_global_get
+txna Assets 1
+==
+assert
+txn NumAppArgs
+intc_2 // 3
+==
+txn NumApplications
+intc_2 // 3
+==
+&&
+txn NumAssets
+intc_3 // 2
+==
+&&
+assert
+txna Applications 1
+bytec 9 // "VAULT_APP_ID"
+app_global_get
+==
+txna Applications 2
+bytec 10 // "COLLATERAL_APP_ID"
+app_global_get
+==
+&&
+txna Applications 3
+bytec 11 // "INDEX_APP_ID"
+app_global_get
+==
+&&
+assert
+txn GroupIndex
+intc_2 // 3
+>=
+txn GroupIndex
+global GroupSize
+intc_1 // 1
+-
+<=
+&&
+assert
+txn Sender
+bytec 8 // "ACCOUNT"
+app_global_get
+==
+txn GroupIndex
+intc_2 // 3
+-
+gtxnsa Accounts 1
+bytec 8 // "ACCOUNT"
+app_global_get
+==
+||
+assert
+bytec_0 // "SIZE"
+app_global_get
+intc_0 // 0
+>
+bytec_0 // "SIZE"
+app_global_get
+txna ApplicationArgs 2
+btoi
+>=
+&&
+bytec_2 // "COLLATERAL"
+app_global_get
+txna ApplicationArgs 1
+btoi
+>=
+&&
+assert
+bytec 6 // "RESERVE_AMOUNT"
+app_global_get
+txna ApplicationArgs 2
+btoi
+mulw
+intc_0 // 0
+bytec_0 // "SIZE"
+app_global_get
+divmodw
+pop
+pop
+swap
+!
+assert
+store 47
+bytec 6 // "RESERVE_AMOUNT"
+bytec 6 // "RESERVE_AMOUNT"
+app_global_get
+load 47
+-
+app_global_put
+txn GroupIndex
+intc_2 // 3
+-
+gtxnsa ApplicationArgs 3
+btoi
+store 43
+txn GroupIndex
+intc_2 // 3
+-
+gtxnsa ApplicationArgs 4
+btoi
+store 44
+txna ApplicationArgs 1
+btoi
+store 45
+txna ApplicationArgs 2
+btoi
+store 46
+load 46
+intc_0 // 0
+==
+bnz label32
+txna Applications 1
+bytec 18 // "MARGIN_FEE_BASIS_POINTS"
+app_global_get_ex
+store 59
+store 60
+load 46
+intc 4 // 10000
+load 60
+-
+mulw
+intc_0 // 0
+intc 4 // 10000
+divmodw
+pop
+pop
+swap
+!
+assert
+store 61
+load 46
+load 61
+-
+store 57
+label84:
+bytec_0 // "SIZE"
+app_global_get
+intc_0 // 0
+==
+bnz label33
+txna Applications 2
+bytec 7 // "CUMULATIVE_FUNDING_RATE"
+app_global_get_ex
+store 62
+store 63
+load 63
+bytec 4 // "ENTRY_FUNDING_RATE"
+app_global_get
+-
+store 64
+load 64
+intc_0 // 0
+==
+bnz label34
+bytec_0 // "SIZE"
+app_global_get
+load 64
+mulw
+intc_0 // 0
+intc 7 // 1000000
+divmodw
+pop
+pop
+swap
+!
+assert
+store 58
+label83:
+load 57
+load 58
++
+store 54
+bytec_1 // "AVERAGE_PRICE"
+app_global_get
+intc_0 // 0
+>
+assert
+bytec_3 // "IS_LONG"
+app_global_get
+intc_1 // 1
+==
+bnz label35
+load 44
+store 65
+label82:
+bytec_1 // "AVERAGE_PRICE"
+app_global_get
+load 65
+>
+bnz label36
+load 65
+bytec_1 // "AVERAGE_PRICE"
+app_global_get
+-
+store 66
+label81:
+bytec_0 // "SIZE"
+app_global_get
+load 66
+mulw
+intc_0 // 0
+bytec_1 // "AVERAGE_PRICE"
+app_global_get
+divmodw
+pop
+pop
+swap
+!
+assert
+store 56
+bytec_3 // "IS_LONG"
+app_global_get
+bnz label37
+bytec_1 // "AVERAGE_PRICE"
+app_global_get
+load 65
+>
+store 55
+label80:
+txna Applications 1
+bytec 16 // "MIN_PROFIT_TIME"
+app_global_get_ex
+store 68
+store 69
+txna Applications 3
+bytec 17 // "MIN_PROFIT_BASIS_POINTS"
+app_global_get_ex
+store 70
+store 71
+global Round
+bytec 5 // "LAST_INCREASED_TIME"
+app_global_get
+load 69
++
+>
+bnz label38
+load 71
+store 67
+label79:
+load 55
+load 56
+intc 4 // 10000
+*
+bytec_0 // "SIZE"
+app_global_get
+load 67
+*
+<
+&&
+bnz label39
+label78:
+load 46
+load 56
+mulw
+intc_0 // 0
+bytec_0 // "SIZE"
+app_global_get
+divmodw
+pop
+pop
+swap
+!
+assert
+store 56
+intc_0 // 0
+store 48
+load 55
+load 56
+intc_0 // 0
+>
+&&
+bnz label40
+label77:
+load 55
+intc_0 // 0
+==
+load 56
+intc_0 // 0
+>
+&&
+bnz label41
+label76:
+load 45
+intc_0 // 0
+>
+bnz label42
+label75:
+bytec_0 // "SIZE"
+app_global_get
+load 46
+==
+bnz label43
+label74:
+load 48
+store 49
+load 48
+load 54
+>
+bnz label44
+bytec_2 // "COLLATERAL"
+app_global_get
+load 54
+>=
+bnz label45
+load 48
+load 54
+bytec_2 // "COLLATERAL"
+app_global_get
+-
+>
+bnz label46
+intc_0 // 0
+store 49
+label72:
+bytec_2 // "COLLATERAL"
+intc_0 // 0
+app_global_put
+label73:
+bytec_0 // "SIZE"
+app_global_get
+load 46
+!=
+bnz label47
+bytec_0 // "SIZE"
+intc_0 // 0
+app_global_put
+bytec_2 // "COLLATERAL"
+intc_0 // 0
+app_global_put
+bytec_1 // "AVERAGE_PRICE"
+intc_0 // 0
+app_global_put
+bytec 4 // "ENTRY_FUNDING_RATE"
+intc_0 // 0
+app_global_put
+bytec 6 // "RESERVE_AMOUNT"
+intc_0 // 0
+app_global_put
+bytec 12 // "REALIZED_PROFIT"
+intc_0 // 0
+app_global_put
+bytec 13 // "REALIZED_LOSS"
+intc_0 // 0
+app_global_put
+bytec 5 // "LAST_INCREASED_TIME"
+intc_0 // 0
+app_global_put
+label62:
+intc_1 // 1
+return
+label47:
+txna Applications 2
+bytec 7 // "CUMULATIVE_FUNDING_RATE"
+app_global_get_ex
+store 52
+store 53
+bytec 4 // "ENTRY_FUNDING_RATE"
+load 53
+app_global_put
+bytec_0 // "SIZE"
+bytec_0 // "SIZE"
+app_global_get
+load 46
+-
+app_global_put
+bytec_0 // "SIZE"
+app_global_get
+intc_0 // 0
+==
+bnz label48
+bytec_0 // "SIZE"
+app_global_get
+bytec_2 // "COLLATERAL"
+app_global_get
+>=
+assert
+label71:
+bytec_1 // "AVERAGE_PRICE"
+app_global_get
+intc_0 // 0
+>
+assert
+bytec_3 // "IS_LONG"
+app_global_get
+intc_1 // 1
+==
+bnz label49
+load 44
+store 80
+label70:
+bytec_1 // "AVERAGE_PRICE"
+app_global_get
+load 80
+>
+bnz label50
+load 80
+bytec_1 // "AVERAGE_PRICE"
+app_global_get
+-
+store 81
+label69:
+bytec_0 // "SIZE"
+app_global_get
+load 81
+mulw
+intc_0 // 0
+bytec_1 // "AVERAGE_PRICE"
+app_global_get
+divmodw
+pop
+pop
+swap
+!
+assert
+store 73
+bytec_3 // "IS_LONG"
+app_global_get
+bnz label51
+bytec_1 // "AVERAGE_PRICE"
+app_global_get
+load 80
+>
+store 72
+label68:
+txna Applications 1
+bytec 16 // "MIN_PROFIT_TIME"
+app_global_get_ex
+store 83
+store 84
+txna Applications 3
+bytec 17 // "MIN_PROFIT_BASIS_POINTS"
+app_global_get_ex
+store 85
+store 86
+global Round
+bytec 5 // "LAST_INCREASED_TIME"
+app_global_get
+load 84
++
+>
+bnz label52
+load 86
+store 82
+label67:
+load 72
+load 73
+intc 4 // 10000
+*
+bytec_0 // "SIZE"
+app_global_get
+load 82
+*
+<
+&&
+bnz label53
+label66:
+bytec_0 // "SIZE"
+app_global_get
+intc_0 // 0
+==
+bnz label54
+txna Applications 2
+bytec 7 // "CUMULATIVE_FUNDING_RATE"
+app_global_get_ex
+store 87
+store 88
+load 88
+bytec 4 // "ENTRY_FUNDING_RATE"
+app_global_get
+-
+store 89
+load 89
+intc_0 // 0
+==
+bnz label55
+bytec_0 // "SIZE"
+app_global_get
+load 89
+mulw
+intc_0 // 0
+intc 7 // 1000000
+divmodw
+pop
+pop
+swap
+!
+assert
+store 51
+label65:
+bytec_0 // "SIZE"
+app_global_get
+intc_0 // 0
+==
+bnz label56
+txna Applications 1
+bytec 18 // "MARGIN_FEE_BASIS_POINTS"
+app_global_get_ex
+store 90
+store 91
+bytec_0 // "SIZE"
+app_global_get
+intc 4 // 10000
+load 91
+-
+mulw
+intc_0 // 0
+intc 4 // 10000
+divmodw
+pop
+pop
+swap
+!
+assert
+store 92
+bytec_0 // "SIZE"
+app_global_get
+load 92
+-
+store 74
+label64:
+load 51
+load 74
++
+store 51
+load 72
+intc_0 // 0
+==
+bytec_2 // "COLLATERAL"
+app_global_get
+load 73
+<
+&&
+bnz label57
+bytec_2 // "COLLATERAL"
+app_global_get
+store 75
+load 72
+intc_0 // 0
+==
+bnz label58
+label63:
+load 75
+load 51
+<
+bnz label59
+txna Applications 1
+bytec 19 // "LIQUIDATION_FEE_USD"
+app_global_get_ex
+store 76
+store 77
+load 75
+load 51
+load 77
++
+<
+bnz label60
+txna Applications 1
+bytec 20 // "MAX_LEVERAGE"
+app_global_get_ex
+store 78
+store 79
+load 75
+load 79
+*
+bytec_0 // "SIZE"
+app_global_get
+intc 4 // 10000
+*
+<
+bnz label61
+intc_0 // 0
+store 50
+b label62
+label61:
+intc_1 // 1
+intc_0 // 0
+==
+assert
+intc_3 // 2
+store 50
+b label62
+label60:
+intc_1 // 1
+intc_0 // 0
+==
+assert
+intc_1 // 1
+store 50
+b label62
+label59:
+intc_1 // 1
+intc_0 // 0
+==
+assert
+intc_1 // 1
+store 50
+load 75
+store 51
+b label62
+label58:
+load 75
+load 73
+-
+store 75
+b label63
+label57:
+intc_1 // 1
+intc_0 // 0
+==
+assert
+intc_1 // 1
+store 50
+b label62
+label56:
+intc_0 // 0
+store 74
+b label64
+label55:
+intc_0 // 0
+store 51
+b label65
+label54:
+intc_0 // 0
+store 51
+b label65
+label53:
+intc_0 // 0
+store 73
+b label66
+label52:
+intc_0 // 0
+store 82
+b label67
+label51:
+load 80
+bytec_1 // "AVERAGE_PRICE"
+app_global_get
+>
+store 72
+b label68
+label50:
+bytec_1 // "AVERAGE_PRICE"
+app_global_get
+load 80
+-
+store 81
+b label69
+label49:
+load 43
+store 80
+b label70
+label48:
+bytec_2 // "COLLATERAL"
+app_global_get
+intc_0 // 0
+==
+assert
+b label71
+label46:
+load 48
+bytec_2 // "COLLATERAL"
+app_global_get
++
+load 54
+-
+store 49
+b label72
+label45:
+bytec_2 // "COLLATERAL"
+bytec_2 // "COLLATERAL"
+app_global_get
+load 54
+-
+app_global_put
+b label73
+label44:
+load 48
+load 54
+-
+store 49
+b label73
+label43:
+load 48
+bytec_2 // "COLLATERAL"
+app_global_get
++
+store 48
+bytec_2 // "COLLATERAL"
+intc_0 // 0
+app_global_put
+b label74
+label42:
+load 48
+load 45
++
+store 48
+bytec_2 // "COLLATERAL"
+bytec_2 // "COLLATERAL"
+app_global_get
+load 45
+-
+app_global_put
+b label75
+label41:
+bytec_2 // "COLLATERAL"
+bytec_2 // "COLLATERAL"
+app_global_get
+load 56
+-
+app_global_put
+bytec 13 // "REALIZED_LOSS"
+bytec 13 // "REALIZED_LOSS"
+app_global_get
+load 56
++
+app_global_put
+b label76
+label40:
+load 56
+store 48
+bytec 12 // "REALIZED_PROFIT"
+bytec 12 // "REALIZED_PROFIT"
+app_global_get
+load 56
++
+app_global_put
+b label77
+label39:
+intc_0 // 0
+store 56
+b label78
+label38:
+intc_0 // 0
+store 67
+b label79
+label37:
+load 65
+bytec_1 // "AVERAGE_PRICE"
+app_global_get
+>
+store 55
+b label80
+label36:
+bytec_1 // "AVERAGE_PRICE"
+app_global_get
+load 65
+-
+store 66
+b label81
+label35:
+load 43
+store 65
+b label82
+label34:
+intc_0 // 0
+store 58
+b label83
+label33:
+intc_0 // 0
+store 58
+b label83
+label32:
+intc_0 // 0
+store 57
+b label84
+label7:
+global GroupSize
+intc 8 // 5
+>=
+assert
+txn GroupIndex
+intc_2 // 3
+-
+gtxns TypeEnum
+intc 5 // 6
+==
+txn GroupIndex
+intc_2 // 3
+-
+gtxnsa ApplicationArgs 0
+bytec 21 // "increasePosition"
+==
+&&
+txn GroupIndex
+intc_2 // 3
+-
+gtxns ApplicationID
+txna Applications 1
+==
+&&
+txn GroupIndex
+intc_2 // 3
+-
+gtxnsa Assets 0
+txna Assets 0
+==
+&&
+txn GroupIndex
+intc_2 // 3
+-
+gtxnsa Assets 1
+txna Assets 1
+==
+&&
+txn GroupIndex
+intc_3 // 2
+-
+gtxns TypeEnum
+intc 5 // 6
+==
+txn GroupIndex
+intc_3 // 2
+-
+gtxnsa ApplicationArgs 0
+pushbytes 0x696e637265617365506f736974696f6e436f6c6c61746572616c // "increasePositionCollateral"
+==
+&&
+txn GroupIndex
+intc_3 // 2
+-
+gtxns ApplicationID
+txna Applications 2
+==
+&&
+&&
+txn GroupIndex
+intc_1 // 1
+-
+gtxns TypeEnum
+intc 5 // 6
+==
+txn GroupIndex
+intc_1 // 1
+-
+gtxnsa ApplicationArgs 0
+pushbytes 0x696e637265617365506f736974696f6e496e646578 // "increasePositionIndex"
+==
+&&
+txn GroupIndex
+intc_1 // 1
+-
+gtxns ApplicationID
+txna Applications 3
+==
+&&
+&&
+assert
+bytec 14 // "COLLATERAL_ASSET_ID"
+app_global_get
+txna Assets 0
+==
+assert
+bytec 15 // "INDEX_ASSET_ID"
+app_global_get
+txna Assets 1
+==
+assert
+txn NumAppArgs
+intc_3 // 2
+==
+txn NumApplications
+intc_2 // 3
+==
+&&
+txn NumAssets
+intc_3 // 2
+==
+&&
+assert
+txna Applications 1
+bytec 9 // "VAULT_APP_ID"
+app_global_get
+==
+txna Applications 2
+bytec 10 // "COLLATERAL_APP_ID"
+app_global_get
+==
+&&
+txna Applications 3
+bytec 11 // "INDEX_APP_ID"
+app_global_get
+==
+&&
+assert
+txn GroupIndex
+global GroupSize
+intc_1 // 1
+-
+==
+assert
+txn Sender
+bytec 8 // "ACCOUNT"
+app_global_get
+==
+txn GroupIndex
+intc_2 // 3
+-
+gtxnsa Accounts 1
+bytec 8 // "ACCOUNT"
+app_global_get
+==
+||
+assert
+txn GroupIndex
+intc_2 // 3
+-
+gtxnsa ApplicationArgs 1
+btoi
+store 4
+txn GroupIndex
+intc_2 // 3
+-
+gtxnsa ApplicationArgs 2
+btoi
+store 5
+txn GroupIndex
+intc_2 // 3
+-
+gtxnsa ApplicationArgs 3
+btoi
+store 6
+txn GroupIndex
+intc_2 // 3
+-
+gtxnsa ApplicationArgs 4
+btoi
+store 7
+txn GroupIndex
+intc_2 // 3
+-
+gtxnsa ApplicationArgs 5
+btoi
+store 8
+txn GroupIndex
+intc_2 // 3
+-
+gtxnsa ApplicationArgs 6
+btoi
+store 9
+bytec_3 // "IS_LONG"
+app_global_get
+intc_1 // 1
+==
+bnz label85
+load 6
+store 10
+label118:
+bytec_0 // "SIZE"
+app_global_get
+intc_0 // 0
+==
+bnz label86
+label117:
+bytec_0 // "SIZE"
+app_global_get
+intc_0 // 0
+>
+txna ApplicationArgs 1
+btoi
+intc_0 // 0
+>
+&&
+bnz label87
+label116:
+txn GroupIndex
+intc 6 // 4
+-
+gtxns AssetAmount
+store 11
+txna Applications 2
+bytec 24 // "DECIMALS"
+app_global_get_ex
+store 18
+store 19
+load 11
+intc_0 // 0
+==
+bnz label88
+load 11
+load 4
+mulw
+intc_0 // 0
+intc 9 // 10
+load 19
+exp
+divmodw
+pop
+pop
+swap
+!
+assert
+store 12
+label115:
+bytec_2 // "COLLATERAL"
+bytec_2 // "COLLATERAL"
+app_global_get
+load 12
++
+app_global_put
+bytec_2 // "COLLATERAL"
+app_global_get
+load 9
+>=
+assert
+bytec_2 // "COLLATERAL"
+bytec_2 // "COLLATERAL"
+app_global_get
+load 9
+-
+app_global_put
+txna Applications 2
+bytec 7 // "CUMULATIVE_FUNDING_RATE"
+app_global_get_ex
+store 16
+store 17
+bytec 4 // "ENTRY_FUNDING_RATE"
+load 17
+app_global_put
+bytec_0 // "SIZE"
+bytec_0 // "SIZE"
+app_global_get
+txna ApplicationArgs 1
+btoi
++
+app_global_put
+bytec 5 // "LAST_INCREASED_TIME"
+global Round
+app_global_put
+bytec_0 // "SIZE"
+app_global_get
+intc_0 // 0
+>
+assert
+bytec_0 // "SIZE"
+app_global_get
+intc_0 // 0
+==
+bnz label89
+bytec_0 // "SIZE"
+app_global_get
+bytec_2 // "COLLATERAL"
+app_global_get
+>=
+assert
+label114:
+bytec_1 // "AVERAGE_PRICE"
+app_global_get
+intc_0 // 0
+>
+assert
+bytec_3 // "IS_LONG"
+app_global_get
+intc_1 // 1
+==
+bnz label90
+load 7
+store 28
+label113:
+bytec_1 // "AVERAGE_PRICE"
+app_global_get
+load 28
+>
+bnz label91
+load 28
+bytec_1 // "AVERAGE_PRICE"
+app_global_get
+-
+store 29
+label112:
+bytec_0 // "SIZE"
+app_global_get
+load 29
+mulw
+intc_0 // 0
+bytec_1 // "AVERAGE_PRICE"
+app_global_get
+divmodw
+pop
+pop
+swap
+!
+assert
+store 21
+bytec_3 // "IS_LONG"
+app_global_get
+bnz label92
+bytec_1 // "AVERAGE_PRICE"
+app_global_get
+load 28
+>
+store 20
+label111:
+txna Applications 1
+bytec 16 // "MIN_PROFIT_TIME"
+app_global_get_ex
+store 31
+store 32
+txna Applications 3
+bytec 17 // "MIN_PROFIT_BASIS_POINTS"
+app_global_get_ex
+store 33
+store 34
+global Round
+bytec 5 // "LAST_INCREASED_TIME"
+app_global_get
+load 32
++
+>
+bnz label93
+load 34
+store 30
+label110:
+load 20
+load 21
+intc 4 // 10000
+*
+bytec_0 // "SIZE"
+app_global_get
+load 30
+*
+<
+&&
+bnz label94
+label109:
+bytec_0 // "SIZE"
+app_global_get
+intc_0 // 0
+==
+bnz label95
+txna Applications 2
+bytec 7 // "CUMULATIVE_FUNDING_RATE"
+app_global_get_ex
+store 35
+store 36
+load 36
+bytec 4 // "ENTRY_FUNDING_RATE"
+app_global_get
+-
+store 37
+load 37
+intc_0 // 0
+==
+bnz label96
+bytec_0 // "SIZE"
+app_global_get
+load 37
+mulw
+intc_0 // 0
+intc 7 // 1000000
+divmodw
+pop
+pop
+swap
+!
+assert
+store 15
+label108:
+bytec_0 // "SIZE"
+app_global_get
+intc_0 // 0
+==
+bnz label97
+txna Applications 1
+bytec 18 // "MARGIN_FEE_BASIS_POINTS"
+app_global_get_ex
+store 38
+store 39
+bytec_0 // "SIZE"
+app_global_get
+intc 4 // 10000
+load 39
+-
+mulw
+intc_0 // 0
+intc 4 // 10000
+divmodw
+pop
+pop
+swap
+!
+assert
+store 40
+bytec_0 // "SIZE"
+app_global_get
+load 40
+-
+store 22
+label107:
+load 15
+load 22
++
+store 15
+load 20
+intc_0 // 0
+==
+bytec_2 // "COLLATERAL"
+app_global_get
+load 21
+<
+&&
+bnz label98
+bytec_2 // "COLLATERAL"
+app_global_get
+store 23
+load 20
+intc_0 // 0
+==
+bnz label99
+label106:
+load 23
+load 15
+<
+bnz label100
+txna Applications 1
+bytec 19 // "LIQUIDATION_FEE_USD"
+app_global_get_ex
+store 24
+store 25
+load 23
+load 15
+load 25
++
+<
+bnz label101
+txna Applications 1
+bytec 20 // "MAX_LEVERAGE"
+app_global_get_ex
+store 26
+store 27
+load 23
+load 27
+*
+bytec_0 // "SIZE"
+app_global_get
+intc 4 // 10000
+*
+<
+bnz label102
+intc_0 // 0
+store 14
+label105:
+txna Applications 2
+bytec 24 // "DECIMALS"
+app_global_get_ex
+store 41
+store 42
+txna ApplicationArgs 1
+btoi
+intc_0 // 0
+==
+bnz label103
+txna ApplicationArgs 1
+btoi
+intc 9 // 10
+load 42
+exp
+mulw
+intc_0 // 0
+load 4
+divmodw
+pop
+pop
+swap
+!
+assert
+store 13
+label104:
+bytec 6 // "RESERVE_AMOUNT"
+bytec 6 // "RESERVE_AMOUNT"
+app_global_get
+load 13
++
+app_global_put
+intc_1 // 1
+return
+label103:
+intc_0 // 0
+store 13
+b label104
+label102:
+intc_1 // 1
+intc_0 // 0
+==
+assert
+intc_3 // 2
+store 14
+b label105
+label101:
+intc_1 // 1
+intc_0 // 0
+==
+assert
+intc_1 // 1
+store 14
+b label105
+label100:
+intc_1 // 1
+intc_0 // 0
+==
+assert
+intc_1 // 1
+store 14
+load 23
+store 15
+b label105
+label99:
+load 23
+load 21
+-
+store 23
+b label106
+label98:
+intc_1 // 1
+intc_0 // 0
+==
+assert
+intc_1 // 1
+store 14
+b label105
+label97:
+intc_0 // 0
+store 22
+b label107
+label96:
+intc_0 // 0
+store 15
+b label108
+label95:
+intc_0 // 0
+store 15
+b label108
+label94:
+intc_0 // 0
+store 21
+b label109
+label93:
+intc_0 // 0
+store 30
+b label110
+label92:
+load 28
+bytec_1 // "AVERAGE_PRICE"
+app_global_get
+>
+store 20
+b label111
+label91:
+bytec_1 // "AVERAGE_PRICE"
+app_global_get
+load 28
+-
+store 29
+b label112
+label90:
+load 6
+store 28
+b label113
+label89:
+bytec_2 // "COLLATERAL"
+app_global_get
+intc_0 // 0
+==
+assert
+b label114
+label88:
+intc_0 // 0
+store 12
+b label115
+label87:
+bytec_1 // "AVERAGE_PRICE"
+load 8
+app_global_put
+b label116
+label86:
+bytec_1 // "AVERAGE_PRICE"
+load 10
+app_global_put
+b label117
+label85:
+load 7
+store 10
+b label118
+label6:
+txn NumAppArgs
+intc_1 // 1
+==
+assert
+txn NumApplications
+intc 6 // 4
+==
+assert
+txna Applications 1
+bytec 25 // "GOV"
+app_global_get_ex
+store 0
+store 1
+txna Applications 2
+bytec 25 // "GOV"
+app_global_get_ex
+store 2
+store 3
+txn Sender
+load 1
+==
+assert
+load 1
+load 3
+==
+assert
+bytec 9 // "VAULT_APP_ID"
+txna Applications 2
+app_global_put
+bytec 10 // "COLLATERAL_APP_ID"
+txna Applications 3
+app_global_put
+bytec 11 // "INDEX_APP_ID"
+txna Applications 4
+app_global_put
+intc_1 // 1
+return
+label5:
+txn Sender
+bytec 8 // "ACCOUNT"
+app_global_get
+==
+assert
+bytec_0 // "SIZE"
+app_global_get
+intc_0 // 0
+==
+bytec_2 // "COLLATERAL"
+app_global_get
+intc_0 // 0
+==
+&&
+assert
+intc_1 // 1
+return
+label4:
+intc_0 // 0
+return
+label3:
+intc_1 // 1
+return
+label2:
+intc_1 // 1
+return
+label1:
+txn NumAppArgs
+intc_3 // 2
+==
+assert
+txn NumAssets
+intc_3 // 2
+==
+assert
+txn NumAccounts
+intc_1 // 1
+==
+assert
+txn NumApplications
+intc_2 // 3
+==
+assert
+bytec 9 // "VAULT_APP_ID"
+txna Applications 1
+app_global_put
+bytec 10 // "COLLATERAL_APP_ID"
+txna Applications 2
+app_global_put
+bytec 11 // "INDEX_APP_ID"
+txna Applications 3
+app_global_put
+pushbytes 0x4150505f56455253494f4e // "APP_VERSION"
+txna ApplicationArgs 1
+btoi
+app_global_put
+bytec 8 // "ACCOUNT"
+txna Accounts 1
+app_global_put
+bytec 14 // "COLLATERAL_ASSET_ID"
+txna Assets 0
+app_global_put
+bytec 15 // "INDEX_ASSET_ID"
+txna Assets 1
+app_global_put
+bytec_3 // "IS_LONG"
+txna ApplicationArgs 0
+btoi
+app_global_put
+bytec_0 // "SIZE"
+intc_0 // 0
+app_global_put
+bytec_2 // "COLLATERAL"
+intc_0 // 0
+app_global_put
+bytec_1 // "AVERAGE_PRICE"
+intc_0 // 0
+app_global_put
+bytec 4 // "ENTRY_FUNDING_RATE"
+intc_0 // 0
+app_global_put
+bytec 6 // "RESERVE_AMOUNT"
+intc_0 // 0
+app_global_put
+bytec 12 // "REALIZED_PROFIT"
+intc_0 // 0
+app_global_put
+bytec 13 // "REALIZED_LOSS"
+intc_0 // 0
+app_global_put
+bytec 5 // "LAST_INCREASED_TIME"
+intc_0 // 0
+app_global_put
+intc_1 // 1
+return

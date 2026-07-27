@@ -1,0 +1,796 @@
+#pragma version 4
+intcblock 0 1 4 100000 3 2
+bytecblock 0x646267 0x 0x696e697469616c697a6564 0x43726561746f72 0x46697273742063616c6c2c20696e697469616c697a696e672e 0x0d 0x4e6f74207468652066697273742063616c6c2e 0x637265617465 0x4f70656e696e67 0x416c726561647920637265617465642e 0x53656c6c6572 0x457363726f77 0x4475726174696f6e 0x41737365744944 0x57726f6e672074786e2074797065 0x626964 0x43616e277420626964206f6e206f776e2061756374696f6e2e 0x48696768426964 0x4669727374206269642072657365727665206e6f74206d65742e 0x4e6f742073656e7420746f20657363726f77 0x48696768426964646572 0x456e6454696d65 0x42696420616674657220657870697265642e 0x42696420746f6f206c6f772e 0x42696420696e6372656d656e7420746f6f20736d616c6c2e 0x42696420616761696e73742073656c662e 0x57726f6e672067726f757073697a652e 0x4e6f742073656e7420746f2070726576696f757320626964646572 0x5061796d656e74206e6f742073656e7420627920657363726f77 0x496e636f727265637420616d6f756e742072657475726e656420746f2070726576696f7573206269646465722e
+global ZeroAddress
+store 0
+intc_0 // 0
+store 1
+bytec_0 // "dbg"
+bytec_1 // ""
+app_global_put
+bytec_2 // "initialized"
+app_global_get
+intc_0 // 0
+==
+bz label1
+intc_0 // 0
+store 2
+load 2
+gtxns AssetCloseTo
+load 0
+==
+store 3
+load 2
+gtxns CloseRemainderTo
+load 0
+==
+store 4
+load 2
+gtxns RekeyTo
+load 0
+==
+store 5
+load 3
+load 4
+&&
+load 5
+&&
+assert
+intc_1 // 1
+b label2
+label2:
+store 1
+bytec_2 // "initialized"
+app_global_get
+intc_0 // 0
+==
+bz label3
+bytec_3 // "Creator"
+txn Sender
+app_global_put
+bytec_2 // "initialized"
+intc_1 // 1
+app_global_put
+bytec 4 // "First call, initializing."
+store 2
+bytec_0 // "dbg"
+bytec_0 // "dbg"
+app_global_get
+load 2
+concat
+app_global_put
+bytec_0 // "dbg"
+bytec_0 // "dbg"
+app_global_get
+bytec 5 // 0x0d
+concat
+app_global_put
+intc_1 // 1
+b label4
+label4:
+store 3
+intc_1 // 1
+b label5
+label5:
+store 1
+intc_1 // 1
+b label6
+b label6
+label3:
+bytec 6 // "Not the first call."
+store 2
+bytec_0 // "dbg"
+bytec_0 // "dbg"
+app_global_get
+load 2
+concat
+app_global_put
+bytec_0 // "dbg"
+bytec_0 // "dbg"
+app_global_get
+bytec 5 // 0x0d
+concat
+app_global_put
+intc_1 // 1
+b label7
+label7:
+store 3
+intc_1 // 1
+b label8
+label8:
+store 1
+intc_1 // 1
+b label6
+label6:
+return
+label1:
+txna ApplicationArgs 0
+store 2
+load 2
+store 3
+bytec_0 // "dbg"
+bytec_0 // "dbg"
+app_global_get
+load 3
+concat
+app_global_put
+bytec_0 // "dbg"
+bytec_0 // "dbg"
+app_global_get
+bytec 5 // 0x0d
+concat
+app_global_put
+intc_1 // 1
+b label9
+label9:
+store 4
+intc_1 // 1
+b label10
+label10:
+store 1
+load 2
+bytec 7 // "create"
+==
+bz label11
+bytec 8 // "Opening"
+app_global_get
+intc_0 // 0
+!=
+bz label12
+bytec 9 // "Already created."
+store 3
+bytec_0 // "dbg"
+bytec_0 // "dbg"
+app_global_get
+load 3
+concat
+app_global_put
+bytec_0 // "dbg"
+bytec_0 // "dbg"
+app_global_get
+bytec 5 // 0x0d
+concat
+app_global_put
+intc_1 // 1
+b label13
+label13:
+store 4
+intc_1 // 1
+b label14
+label14:
+store 1
+intc_1 // 1
+b label15
+label12:
+bytec 10 // "Seller"
+gtxn 0 Sender
+app_global_put
+bytec 11 // "Escrow"
+txna ApplicationArgs 1
+app_global_put
+bytec 8 // "Opening"
+txna ApplicationArgs 2
+btoi
+app_global_put
+bytec 12 // "Duration"
+txna ApplicationArgs 3
+btoi
+app_global_put
+bytec 13 // "AssetID"
+txna ApplicationArgs 4
+btoi
+app_global_put
+gtxn 1 TypeEnum
+intc_1 // 1
+!=
+bz label16
+bytec 14 // "Wrong txn type"
+store 3
+bytec_0 // "dbg"
+bytec_0 // "dbg"
+app_global_get
+load 3
+concat
+app_global_put
+bytec_0 // "dbg"
+bytec_0 // "dbg"
+app_global_get
+bytec 5 // 0x0d
+concat
+app_global_put
+intc_1 // 1
+b label17
+label17:
+store 4
+intc_1 // 1
+b label18
+label18:
+store 1
+intc_1 // 1
+b label15
+label16:
+gtxn 1 Receiver
+bytec 11 // "Escrow"
+app_global_get
+!=
+bz label19
+intc_1 // 1
+b label15
+label19:
+intc_1 // 1
+b label15
+label15:
+return
+label11:
+load 2
+bytec 15 // "bid"
+==
+bz label20
+intc_0 // 0
+store 3
+load 3
+gtxns AssetCloseTo
+load 0
+==
+store 4
+load 3
+gtxns CloseRemainderTo
+load 0
+==
+store 5
+load 3
+gtxns RekeyTo
+load 0
+==
+store 6
+load 4
+load 5
+&&
+load 6
+&&
+assert
+intc_1 // 1
+b label21
+label21:
+store 1
+gtxn 1 Sender
+bytec 10 // "Seller"
+app_global_get
+==
+bz label22
+bytec 16 // "Can't bid on own auction."
+store 3
+bytec_0 // "dbg"
+bytec_0 // "dbg"
+app_global_get
+load 3
+concat
+app_global_put
+bytec_0 // "dbg"
+bytec_0 // "dbg"
+app_global_get
+bytec 5 // 0x0d
+concat
+app_global_put
+intc_1 // 1
+b label23
+label23:
+store 4
+intc_1 // 1
+b label24
+label24:
+store 1
+intc_1 // 1
+b label25
+label22:
+intc_0 // 0
+b label25
+label25:
+bz label26
+intc_1 // 1
+b label27
+label26:
+bytec 17 // "HighBid"
+app_global_get
+intc_0 // 0
+==
+bz label28
+gtxn 1 Amount
+store 3
+load 3
+bytec 8 // "Opening"
+app_global_get
+<
+bz label29
+bytec 18 // "First bid reserve not met."
+store 4
+bytec_0 // "dbg"
+bytec_0 // "dbg"
+app_global_get
+load 4
+concat
+app_global_put
+bytec_0 // "dbg"
+bytec_0 // "dbg"
+app_global_get
+bytec 5 // 0x0d
+concat
+app_global_put
+intc_1 // 1
+b label30
+label30:
+store 5
+intc_1 // 1
+b label31
+label31:
+store 1
+intc_1 // 1
+b label32
+label29:
+gtxn 1 TypeEnum
+intc_1 // 1
+!=
+bz label33
+bytec 14 // "Wrong txn type"
+store 4
+bytec_0 // "dbg"
+bytec_0 // "dbg"
+app_global_get
+load 4
+concat
+app_global_put
+bytec_0 // "dbg"
+bytec_0 // "dbg"
+app_global_get
+bytec 5 // 0x0d
+concat
+app_global_put
+intc_1 // 1
+b label34
+label34:
+store 5
+intc_1 // 1
+b label35
+label35:
+store 1
+intc_0 // 0
+b label36
+label33:
+gtxn 1 Receiver
+bytec 11 // "Escrow"
+app_global_get
+!=
+bz label37
+bytec 19 // "Not sent to escrow"
+store 4
+bytec_0 // "dbg"
+bytec_0 // "dbg"
+app_global_get
+load 4
+concat
+app_global_put
+bytec_0 // "dbg"
+bytec_0 // "dbg"
+app_global_get
+bytec 5 // 0x0d
+concat
+app_global_put
+intc_1 // 1
+b label38
+label38:
+store 5
+intc_1 // 1
+b label39
+label39:
+store 1
+intc_0 // 0
+b label36
+label37:
+intc_1 // 1
+b label36
+label36:
+!
+bz label40
+intc_1 // 1
+b label32
+label40:
+bytec 17 // "HighBid"
+load 3
+app_global_put
+bytec 20 // "HighBidder"
+gtxn 1 Sender
+app_global_put
+global LatestTimestamp
+bytec 12 // "Duration"
+app_global_get
++
+store 4
+bytec 21 // "EndTime"
+load 4
+app_global_put
+intc_1 // 1
+b label32
+label32:
+b label27
+label28:
+global LatestTimestamp
+bytec 21 // "EndTime"
+app_global_get
+>
+bz label41
+bytec 22 // "Bid after expired."
+store 3
+bytec_0 // "dbg"
+bytec_0 // "dbg"
+app_global_get
+load 3
+concat
+app_global_put
+bytec_0 // "dbg"
+bytec_0 // "dbg"
+app_global_get
+bytec 5 // 0x0d
+concat
+app_global_put
+intc_1 // 1
+b label42
+label42:
+store 4
+intc_1 // 1
+b label43
+label43:
+store 1
+intc_1 // 1
+b label44
+b label44
+label41:
+intc_0 // 0
+b label44
+label44:
+bz label45
+intc_1 // 1
+b label27
+label45:
+bytec 17 // "HighBid"
+app_global_get
+store 3
+bytec 20 // "HighBidder"
+app_global_get
+store 4
+gtxn 1 Amount
+store 5
+gtxn 1 Sender
+store 6
+load 3
+load 5
+>
+bz label46
+bytec 23 // "Bid too low."
+store 7
+bytec_0 // "dbg"
+bytec_0 // "dbg"
+app_global_get
+load 7
+concat
+app_global_put
+bytec_0 // "dbg"
+bytec_0 // "dbg"
+app_global_get
+bytec 5 // 0x0d
+concat
+app_global_put
+intc_1 // 1
+b label47
+label47:
+store 8
+intc_1 // 1
+b label48
+label48:
+store 1
+intc_0 // 0
+b label49
+label46:
+load 5
+load 3
+-
+intc_3 // 100000
+<
+bz label50
+bytec 24 // "Bid increment too small."
+store 7
+bytec_0 // "dbg"
+bytec_0 // "dbg"
+app_global_get
+load 7
+concat
+app_global_put
+bytec_0 // "dbg"
+bytec_0 // "dbg"
+app_global_get
+bytec 5 // 0x0d
+concat
+app_global_put
+intc_1 // 1
+b label51
+label51:
+store 8
+intc_1 // 1
+b label52
+label52:
+store 1
+intc_0 // 0
+b label49
+label50:
+load 6
+load 4
+==
+bz label53
+bytec 25 // "Bid against self."
+store 7
+bytec_0 // "dbg"
+bytec_0 // "dbg"
+app_global_get
+load 7
+concat
+app_global_put
+bytec_0 // "dbg"
+bytec_0 // "dbg"
+app_global_get
+bytec 5 // 0x0d
+concat
+app_global_put
+intc_1 // 1
+b label54
+label54:
+store 8
+intc_1 // 1
+b label55
+label55:
+store 1
+intc_0 // 0
+b label49
+label53:
+intc_1 // 1
+b label49
+label49:
+!
+bz label56
+intc_1 // 1
+b label27
+label56:
+global GroupSize
+intc 4 // 3
+!=
+bz label57
+bytec 26 // "Wrong groupsize."
+store 3
+bytec_0 // "dbg"
+bytec_0 // "dbg"
+app_global_get
+load 3
+concat
+app_global_put
+bytec_0 // "dbg"
+bytec_0 // "dbg"
+app_global_get
+bytec 5 // 0x0d
+concat
+app_global_put
+intc_1 // 1
+b label58
+label58:
+store 4
+intc_1 // 1
+b label59
+label59:
+store 1
+intc_1 // 1
+b label27
+label57:
+gtxn 1 TypeEnum
+intc_1 // 1
+!=
+bz label60
+bytec 14 // "Wrong txn type"
+store 3
+bytec_0 // "dbg"
+bytec_0 // "dbg"
+app_global_get
+load 3
+concat
+app_global_put
+bytec_0 // "dbg"
+bytec_0 // "dbg"
+app_global_get
+bytec 5 // 0x0d
+concat
+app_global_put
+intc_1 // 1
+b label61
+label61:
+store 4
+intc_1 // 1
+b label62
+label62:
+store 1
+intc_0 // 0
+b label63
+label60:
+gtxn 1 Receiver
+bytec 11 // "Escrow"
+app_global_get
+!=
+bz label64
+bytec 19 // "Not sent to escrow"
+store 3
+bytec_0 // "dbg"
+bytec_0 // "dbg"
+app_global_get
+load 3
+concat
+app_global_put
+bytec_0 // "dbg"
+bytec_0 // "dbg"
+app_global_get
+bytec 5 // 0x0d
+concat
+app_global_put
+intc_1 // 1
+b label65
+label65:
+store 4
+intc_1 // 1
+b label66
+label66:
+store 1
+intc_0 // 0
+b label63
+label64:
+intc_1 // 1
+b label63
+label63:
+!
+bz label67
+intc_1 // 1
+b label27
+label67:
+gtxn 2 TypeEnum
+intc_1 // 1
+!=
+bz label68
+bytec 14 // "Wrong txn type"
+store 3
+bytec_0 // "dbg"
+bytec_0 // "dbg"
+app_global_get
+load 3
+concat
+app_global_put
+bytec_0 // "dbg"
+bytec_0 // "dbg"
+app_global_get
+bytec 5 // 0x0d
+concat
+app_global_put
+intc_1 // 1
+b label69
+label69:
+store 4
+intc_1 // 1
+b label70
+label70:
+store 1
+intc_0 // 0
+b label71
+label68:
+gtxn 2 Receiver
+bytec 20 // "HighBidder"
+app_global_get
+!=
+bz label72
+bytec 27 // "Not sent to previous bidder"
+store 3
+bytec_0 // "dbg"
+bytec_0 // "dbg"
+app_global_get
+load 3
+concat
+app_global_put
+bytec_0 // "dbg"
+bytec_0 // "dbg"
+app_global_get
+bytec 5 // 0x0d
+concat
+app_global_put
+intc_1 // 1
+b label73
+label73:
+store 4
+intc_1 // 1
+b label74
+label74:
+store 1
+intc_0 // 0
+b label71
+label72:
+gtxn 2 Sender
+bytec 11 // "Escrow"
+app_global_get
+!=
+bz label75
+bytec 28 // "Payment not sent by escrow"
+store 3
+bytec_0 // "dbg"
+bytec_0 // "dbg"
+app_global_get
+load 3
+concat
+app_global_put
+bytec_0 // "dbg"
+bytec_0 // "dbg"
+app_global_get
+bytec 5 // 0x0d
+concat
+app_global_put
+intc_1 // 1
+b label76
+label76:
+store 4
+intc_1 // 1
+b label77
+label77:
+store 1
+intc_0 // 0
+b label71
+label75:
+gtxn 2 Amount
+bytec 17 // "HighBid"
+app_global_get
+!=
+bz label78
+bytec 29 // "Incorrect amount returned to previous bidder."
+store 3
+bytec_0 // "dbg"
+bytec_0 // "dbg"
+app_global_get
+load 3
+concat
+app_global_put
+bytec_0 // "dbg"
+bytec_0 // "dbg"
+app_global_get
+bytec 5 // 0x0d
+concat
+app_global_put
+intc_1 // 1
+b label79
+label79:
+store 4
+intc_1 // 1
+b label80
+label80:
+store 1
+intc_0 // 0
+b label71
+label78:
+intc_1 // 1
+b label71
+label71:
+!
+bz label81
+intc_1 // 1
+b label27
+label81:
+bytec 17 // "HighBid"
+gtxn 1 Amount
+app_global_put
+bytec 20 // "HighBidder"
+gtxn 1 Sender
+app_global_put
+intc 4 // 3
+b label27
+label27:
+return
+label20:
+intc_1 // 1
+return

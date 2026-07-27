@@ -1,0 +1,240 @@
+#pragma version 4
+intcblock 0 1 4 2
+bytecblock 0x20202020 0x646267 0x 0x696e697469616c697a6564 0x43726561746f72 0x46697273742063616c6c2c20696e697469616c697a696e672e 0x0d 0x4e6f74207468652066697273742063616c6c2e 0x637265617465 0x4f70656e696e67 0x457363726f77 0x4475726174696f6e 0x41737365744944 0x736574657363726f77 0x53657474696e6720657363726f7720616464726573732e2e 0x5265636f726420657363726f772061646472657373206661696c656421
+global ZeroAddress
+store 0
+intc_0 // 0
+store 1
+intc_2 // 4
+store 2
+intc_1 // 1
+store 3
+intc_0 // 0
+store 4
+bytec_0 // "    "
+store 5
+bytec_1 // "dbg"
+bytec_2 // ""
+app_global_put
+txn NumAppArgs
+intc_0 // 0
+==
+bz label1
+intc_0 // 0
+store 6
+load 6
+gtxns AssetCloseTo
+load 0
+==
+load 6
+gtxns CloseRemainderTo
+load 0
+==
+&&
+load 6
+gtxns RekeyTo
+load 0
+==
+&&
+assert
+intc_1 // 1
+b label2
+label2:
+store 4
+bytec_3 // "initialized"
+app_global_get
+intc_0 // 0
+==
+bz label3
+bytec 4 // "Creator"
+txn Sender
+app_global_put
+bytec_3 // "initialized"
+intc_1 // 1
+app_global_put
+bytec 5 // "First call, initializing."
+store 6
+bytec_1 // "dbg"
+bytec_1 // "dbg"
+app_global_get
+load 6
+concat
+app_global_put
+bytec_1 // "dbg"
+bytec_1 // "dbg"
+app_global_get
+bytec 6 // 0x0d
+concat
+app_global_put
+intc_1 // 1
+b label4
+label4:
+store 7
+intc_1 // 1
+b label5
+label5:
+store 4
+intc_1 // 1
+b label6
+b label6
+label3:
+bytec 7 // "Not the first call."
+store 6
+bytec_1 // "dbg"
+bytec_1 // "dbg"
+app_global_get
+load 6
+concat
+app_global_put
+bytec_1 // "dbg"
+bytec_1 // "dbg"
+app_global_get
+bytec 6 // 0x0d
+concat
+app_global_put
+intc_1 // 1
+b label7
+label7:
+store 7
+intc_1 // 1
+b label8
+label8:
+store 4
+intc_1 // 1
+b label6
+label6:
+return
+label1:
+txna ApplicationArgs 0
+store 6
+load 6
+store 7
+bytec_1 // "dbg"
+bytec_1 // "dbg"
+app_global_get
+load 7
+concat
+app_global_put
+bytec_1 // "dbg"
+bytec_1 // "dbg"
+app_global_get
+bytec 6 // 0x0d
+concat
+app_global_put
+intc_1 // 1
+b label9
+label9:
+store 8
+intc_1 // 1
+b label10
+label10:
+store 4
+load 6
+bytec 8 // "create"
+==
+bz label11
+bytec 9 // "Opening"
+app_global_get
+intc_0 // 0
+!=
+bz label12
+intc_0 // 0
+b label13
+label12:
+bytec 10 // "Escrow"
+txna ApplicationArgs 1
+app_global_put
+bytec 9 // "Opening"
+txna ApplicationArgs 2
+app_global_put
+bytec 11 // "Duration"
+txna ApplicationArgs 3
+app_global_put
+bytec 12 // "AssetID"
+txna ApplicationArgs 4
+app_global_put
+intc_1 // 1
+b label13
+label13:
+return
+label11:
+load 6
+bytec 13 // "setescrow"
+==
+bz label14
+bytec 14 // "Setting escrow address.."
+store 7
+bytec_1 // "dbg"
+bytec_1 // "dbg"
+app_global_get
+load 7
+concat
+app_global_put
+bytec_1 // "dbg"
+bytec_1 // "dbg"
+app_global_get
+bytec 6 // 0x0d
+concat
+app_global_put
+intc_1 // 1
+b label15
+label15:
+store 8
+intc_1 // 1
+b label16
+label16:
+store 4
+txn OnCompletion
+load 1
+==
+store 7
+txn NumAppArgs
+intc_3 // 2
+==
+store 8
+global GroupSize
+intc_1 // 1
+==
+store 9
+load 9
+load 7
+&&
+load 8
+&&
+bz label17
+bytec 10 // "Escrow"
+txna ApplicationArgs 1
+app_global_put
+intc_1 // 1
+b label18
+label17:
+bytec 15 // "Record escrow address failed!"
+store 10
+bytec_1 // "dbg"
+bytec_1 // "dbg"
+app_global_get
+load 10
+concat
+app_global_put
+bytec_1 // "dbg"
+bytec_1 // "dbg"
+app_global_get
+bytec 6 // 0x0d
+concat
+app_global_put
+intc_1 // 1
+b label19
+label19:
+store 11
+intc_1 // 1
+b label20
+label20:
+store 4
+err
+intc_0 // 0
+b label18
+label18:
+return
+label14:
+intc_1 // 1
+return

@@ -1,0 +1,62 @@
+#pragma version 9
+intcblock 0 1
+bytecblock 0x7465737456616c7565
+txn ApplicationID
+!
+pushint 6
+*
+txn OnCompletion
++
+switch label1 label2 label2 label2 label2 label2 label3 label2 label2 label2 label2 label2
+label2:
+err
+label6:
+pushbytes 0x151f7c75 // 0x151f7c75
+callsub label4
+pushbytes 0x00 // 0x00
+intc_0 // 0
+uncover 2
+setbit
+concat
+log
+intc_1 // 1
+return
+label4:
+proto 0 1
+bytec_0 // "testValue"
+intc_0 // 0
+app_global_put
+intc_1 // 1
+retsub
+label7:
+txna ApplicationArgs 2
+btoi
+txna ApplicationArgs 1
+btoi
+callsub label5
+intc_1 // 1
+return
+label5:
+proto 2 0
+pushbytes 0x // ""
+frame_dig -1
+frame_dig -2
+app_global_get_ex
+assert
+frame_bury 0
+bytec_0 // "testValue"
+frame_dig 0
+intc_0 // 0
+extract_uint64
+app_global_put
+retsub
+label3:
+pushbytes 0x82c4f089 // 0x82c4f089
+txna ApplicationArgs 0
+match label6
+err
+label1:
+pushbytes 0x65f14133 // 0x65f14133
+txna ApplicationArgs 0
+match label7
+err

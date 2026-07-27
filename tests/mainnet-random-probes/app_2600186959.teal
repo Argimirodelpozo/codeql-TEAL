@@ -1,0 +1,937 @@
+#pragma version 8
+intcblock 0 1 5 8 3 1000000 16 32 100000 17 24 40 48 56 4
+bytecblock 0x 0x00 0x01
+txn ApplicationID
+bz label1
+bytec_0 // ""
+app_global_get
+dup
+intc_0 // 0
+extract_uint64
+store 1
+intc_3 // 8
+extract_uint64
+store 2
+bytec_1 // 0x00
+app_global_get
+bytec_2 // 0x01
+app_global_get
+concat
+pushbytess 0x2ca6c562 0x3b7a9681 0x5a4be1b0 0x708d5888 0x8db35ead 0x8ef70141 0x941f6757 0x9a00c650 0x9dbaf2a1 0xdd44117a 0xdfd92328 0xefe66ee6
+txna ApplicationArgs 0
+match label2 label3 label4 label5 label6 label7 label8 label9 label10 label11 label12 label13
+label24:
+err
+label4:
+intc_3 // 8
+bzero
+store 11
+label44:
+intc 4 // 3
+load 1
+==
+assert
+callsub label14
+load 11
+intc_0 // 0
+extract_uint64
+store 12
+pushbytes 0x0873e7f8 // 0x0873e7f8
+load 12
+itob
+concat
+log
+load 12
+callsub label15
+bytec_0 // ""
+store 11
+pushbytes 0x00000000000006b3 // 0x00000000000006b3
+load 11
+concat
+log
+load 11
+store 4
+intc_0 // 0
+load 21
+global CurrentApplicationAddress
+global CreatorAddress
+callsub label16
+intc_0 // 0
+load 23
+global CurrentApplicationAddress
+global CreatorAddress
+callsub label16
+txn OnCompletion
+intc_2 // 5
+==
+assert
+callsub label17
+intc_0 // 0
+global CurrentApplicationAddress
+global CreatorAddress
+callsub label18
+label30:
+load 3
+bnz label19
+label33:
+pushbytes 0x151f7c75 // 0x151f7c75
+load 4
+concat
+log
+label19:
+intc_1 // 1
+return
+label8:
+intc 9 // 17
+bzero
+store 11
+label25:
+intc_2 // 5
+load 1
+==
+assert
+callsub label20
+load 11
+intc_0 // 0
+extract_uint64
+store 12
+load 11
+extract 8 9
+store 13
+pushbytes 0x29276c36 // ")'l6"
+load 12
+itob
+concat
+load 13
+concat
+log
+load 12
+callsub label15
+load 13
+intc_0 // 0
+getbyte
+switch label21 label22 label23
+b label24
+label5:
+pushbytes 0x0000000000000000010000000000000000 // 0x0000000000000000010000000000000000
+store 11
+b label25
+label2:
+txna ApplicationArgs 1
+btoi
+store 11
+intc_3 // 8
+bzero
+pushbytes 0x02 // 0x02
+load 11
+itob
+concat
+concat
+store 11
+b label25
+label47:
+load 15
+extract 0 17
+intc_0 // 0
+extract_uint64
+load 22
+==
+assert
+load 15
+extract 17 17
+store 11
+load 15
+load 11
+dup
+intc_0 // 0
+extract_uint64
+load 17
++
+itob
+replace2 0
+replace2 17
+store 13
+load 17
+load 21
+callsub label26
+load 13
+extract 0 17
+dup
+store 12
+intc_0 // 0
+extract_uint64
+dup
+store 11
+load 22
+==
+assert
+load 14
+intc 5 // 1000000
+-
+store 26
+intc 5 // 1000000
+load 19
+callsub label27
+load 13
+load 12
+load 11
+dup
+-
+itob
+replace2 0
+replace2 0
+store 25
+load 11
+load 23
+txn Sender
+callsub label28
+load 25
+extract 17 17
+dup
+store 13
+intc_0 // 0
+extract_uint64
+dup
+store 12
+load 21
+load 24
+callsub label28
+load 26
+load 24
+callsub label27
+load 23
+itob
+load 22
+itob
+concat
+load 21
+itob
+concat
+load 20
+itob
+concat
+store 11
+pushbytes 0x000000000000052e // 0x000000000000052e
+load 11
+concat
+log
+load 11
+store 4
+intc_0 // 0
+global Round
+load 25
+load 13
+load 12
+dup
+-
+itob
+replace2 0
+replace2 17
+load 26
+dup
+-
+store 14
+store 15
+store 16
+store 18
+label31:
+load 18
+bz label29
+load 24
+load 23
+itob
+concat
+load 22
+itob
+concat
+load 21
+itob
+concat
+load 20
+itob
+concat
+load 19
+concat
+load 17
+itob
+concat
+load 15
+concat
+load 14
+itob
+concat
+intc_2 // 5
+global Round
+label39:
+store 2
+store 1
+bytec_1 // 0x00
+dig 1
+extract 0 127
+app_global_put
+bytec_2 // 0x01
+swap
+extract 127 19
+app_global_put
+bytec_0 // ""
+load 1
+itob
+load 2
+itob
+concat
+app_global_put
+txn OnCompletion
+intc_0 // 0
+==
+assert
+callsub label17
+b label30
+label48:
+txn Sender
+load 24
+==
+assert
+load 14
+intc 5 // 1000000
+-
+store 26
+intc 5 // 1000000
+load 24
+callsub label27
+load 15
+extract 0 17
+dup
+store 12
+intc_0 // 0
+extract_uint64
+store 11
+load 15
+load 12
+load 11
+dup
+-
+itob
+replace2 0
+replace2 0
+store 25
+load 11
+load 23
+load 24
+callsub label28
+load 25
+extract 17 17
+dup
+store 13
+intc_0 // 0
+extract_uint64
+dup
+store 12
+load 21
+load 24
+callsub label28
+load 26
+load 24
+callsub label27
+intc_1 // 1
+store 11
+pushbytes 0x00000000000005f8 // 0x00000000000005f8
+load 11
+itob
+substring 7 8
+concat
+log
+load 11
+itob
+substring 7 8
+store 4
+intc_0 // 0
+global Round
+load 25
+load 13
+load 12
+dup
+-
+itob
+replace2 0
+replace2 17
+load 26
+dup
+-
+store 14
+store 15
+store 16
+store 18
+b label31
+label49:
+txn Sender
+load 24
+==
+assert
+load 15
+extract 0 17
+intc_0 // 0
+extract_uint64
+load 22
+==
+assert
+load 13
+intc_1 // 1
+extract_uint64
+store 11
+pushbytes 0x000000000000069d // 0x000000000000069d
+load 11
+itob
+concat
+log
+load 11
+itob
+store 4
+intc_1 // 1
+load 11
+global Round
+store 16
+store 17
+store 18
+b label31
+label45:
+load 1
+intc_2 // 5
+<
+bz label32
+load 1
+intc 4 // 3
+==
+assert
+callsub label14
+load 21
+itob
+store 4
+label35:
+txn OnCompletion
+intc_0 // 0
+==
+assert
+b label33
+label46:
+load 1
+intc_2 // 5
+<
+bz label34
+load 1
+intc 4 // 3
+==
+assert
+callsub label14
+load 17
+itob
+store 4
+b label35
+label50:
+load 1
+intc_2 // 5
+<
+bz label36
+load 1
+intc 4 // 3
+==
+assert
+callsub label14
+load 23
+itob
+store 4
+b label35
+label51:
+load 1
+intc_2 // 5
+<
+bz label37
+load 1
+intc 4 // 3
+==
+assert
+callsub label14
+load 22
+itob
+store 4
+b label35
+label42:
+txn Sender
+store 24
+load 11
+intc_0 // 0
+extract_uint64
+store 12
+load 11
+intc_3 // 8
+extract_uint64
+store 23
+load 11
+intc 6 // 16
+extract_uint64
+store 22
+load 11
+intc 10 // 24
+extract_uint64
+store 21
+load 11
+intc 7 // 32
+extract_uint64
+store 20
+load 11
+extract 40 32
+store 19
+pushbytes 0xba05d561 // 0xba05d561
+load 12
+itob
+concat
+load 23
+itob
+concat
+load 22
+itob
+concat
+load 21
+itob
+concat
+load 20
+itob
+concat
+load 19
+concat
+log
+load 12
+callsub label15
+intc 9 // 17
+bzero
+dup
+store 11
+dup
+concat
+dup
+store 12
+dup
+extract 0 17
+intc_3 // 8
+bzero
+replace2 0
+replace2 0
+dup
+store 11
+dup
+extract 17 17
+intc_3 // 8
+bzero
+replace2 0
+replace2 17
+store 13
+load 21
+load 23
+!=
+assert
+intc 8 // 100000
+callsub label38
+intc_0 // 0
+load 23
+global CurrentApplicationAddress
+callsub label28
+intc 8 // 100000
+callsub label38
+intc_0 // 0
+load 21
+global CurrentApplicationAddress
+callsub label28
+load 24
+load 23
+itob
+concat
+load 22
+itob
+concat
+load 21
+itob
+concat
+load 20
+itob
+concat
+load 19
+concat
+load 13
+concat
+intc 6 // 16
+bzero
+concat
+intc_1 // 1
+global Round
+b label39
+label43:
+intc_1 // 1
+load 1
+==
+assert
+dup
+extract 0 32
+store 24
+dup
+intc 7 // 32
+extract_uint64
+store 23
+dup
+intc 11 // 40
+extract_uint64
+store 22
+dup
+intc 12 // 48
+extract_uint64
+store 21
+dup
+intc 13 // 56
+extract_uint64
+store 20
+dup
+extract 64 32
+store 19
+extract 96 34
+store 13
+load 11
+btoi
+store 12
+pushbytes 0xd5151914 // 0xd5151914
+load 12
+itob
+concat
+log
+load 12
+callsub label15
+intc 5 // 1000000
+callsub label40
+load 13
+extract 0 17
+store 12
+load 13
+load 12
+dup
+intc_0 // 0
+extract_uint64
+load 22
++
+itob
+replace2 0
+replace2 0
+store 11
+load 22
+load 23
+callsub label26
+load 24
+txn Sender
+==
+assert
+load 11
+extract 0 17
+intc_0 // 0
+extract_uint64
+load 22
+==
+assert
+intc_1 // 1
+load 20
+global Round
+load 11
+intc 5 // 1000000
+store 14
+store 15
+store 16
+store 17
+store 18
+b label31
+label13:
+callsub label41
+intc 8 // 100000
+callsub label38
+txna ApplicationArgs 1
+store 11
+b label42
+label12:
+callsub label41
+txna ApplicationArgs 1
+store 11
+b label43
+label6:
+callsub label41
+txna ApplicationArgs 1
+store 11
+b label44
+label7:
+callsub label41
+txna ApplicationArgs 1
+store 11
+b label25
+label1:
+intc_0 // 0
+txn GlobalNumUint
+==
+assert
+intc 4 // 3
+txn GlobalNumByteSlice
+==
+assert
+intc_0 // 0
+txn LocalNumUint
+==
+assert
+intc_0 // 0
+txn LocalNumByteSlice
+==
+assert
+callsub label41
+pushint 146
+bzero
+intc_0 // 0
+intc_0 // 0
+b label39
+label11:
+b label45
+label10:
+b label46
+label21:
+b label47
+label22:
+b label48
+label23:
+b label49
+label29:
+load 23
+itob
+load 22
+itob
+concat
+load 21
+itob
+concat
+load 17
+itob
+concat
+pushint 114
+bzero
+concat
+intc 4 // 3
+global Round
+b label39
+label54:
+intc_0 // 0
+itxn_field Fee
+intc_1 // 1
+itxn_field TypeEnum
+itxn_field Receiver
+itxn_field Amount
+itxn_submit
+retsub
+label53:
+intc_0 // 0
+itxn_field Fee
+intc 14 // 4
+itxn_field TypeEnum
+itxn_field AssetReceiver
+itxn_field XferAsset
+itxn_field AssetAmount
+itxn_submit
+retsub
+label32:
+load 1
+intc_2 // 5
+==
+assert
+callsub label20
+load 21
+itob
+store 4
+b label35
+label34:
+load 1
+intc_2 // 5
+==
+assert
+callsub label20
+load 17
+itob
+store 4
+b label35
+label36:
+load 1
+intc_2 // 5
+==
+assert
+callsub label20
+load 23
+itob
+store 4
+b label35
+label37:
+load 1
+intc_2 // 5
+==
+assert
+callsub label20
+load 22
+itob
+store 4
+b label35
+label9:
+b label50
+label3:
+b label51
+label52:
+pop
+retsub
+label55:
+swap
+-
+dup
+store 6
+global CreatorAddress
+callsub label27
+retsub
+label56:
+-
+dup
+bz label52
+dup
+store 6
+callsub label40
+retsub
+label28:
+itxn_begin
+b label53
+label20:
+dup
+extract 0 32
+store 24
+dup
+intc 7 // 32
+extract_uint64
+store 23
+dup
+intc 11 // 40
+extract_uint64
+store 22
+dup
+intc 12 // 48
+extract_uint64
+store 21
+dup
+intc 13 // 56
+extract_uint64
+store 20
+dup
+extract 64 32
+store 19
+dup
+pushint 96
+extract_uint64
+store 17
+dup
+extract 104 34
+store 15
+pushint 138
+extract_uint64
+store 14
+retsub
+label14:
+dup
+intc_0 // 0
+extract_uint64
+store 23
+dup
+intc_3 // 8
+extract_uint64
+store 22
+dup
+intc 6 // 16
+extract_uint64
+store 21
+intc 10 // 24
+extract_uint64
+store 17
+retsub
+label27:
+itxn_begin
+b label54
+label41:
+intc_1 // 1
+store 3
+retsub
+label15:
+dup
+intc_0 // 0
+==
+swap
+load 2
+==
+||
+assert
+retsub
+label38:
+load 6
++
+store 6
+retsub
+label17:
+load 6
+load 7
+dup2
+>=
+bz label55
+b label56
+label16:
+itxn_begin
+itxn_field AssetCloseTo
+b label53
+label26:
+txn GroupIndex
+load 0
+intc_1 // 1
++
+dup
+store 0
+-
+dupn 3
+gtxns AssetReceiver
+global CurrentApplicationAddress
+==
+assert
+gtxns TypeEnum
+intc 14 // 4
+==
+assert
+gtxns XferAsset
+uncover 2
+==
+assert
+gtxns AssetAmount
+==
+assert
+retsub
+label40:
+txn GroupIndex
+load 0
+intc_1 // 1
++
+dup
+store 0
+-
+dupn 2
+gtxns Receiver
+global CurrentApplicationAddress
+==
+assert
+gtxns TypeEnum
+intc_1 // 1
+==
+assert
+gtxns Amount
+==
+assert
+retsub
+label18:
+itxn_begin
+itxn_field CloseRemainderTo
+b label54

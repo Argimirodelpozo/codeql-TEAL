@@ -1,0 +1,579 @@
+#pragma version 5
+intcblock 1 0 2 4 3 100
+bytecblock 0x73656c6c6572 0x737461747573 0x73706f74735f72656d61696e696e67 0x73687566666c655f737461747573 0x67656d735f666565735f6163636f756e74 0x757365725f636f756e74 0x636c61696d65645f636f756e74 0x746f5f636c61696d 0x6275795f696e5f7072696365 0x7374617274 0x67656d735f666565735f70657263656e74
+txn ApplicationID
+intc_1 // 0
+==
+bnz label1
+txn OnCompletion
+intc_0 // 1
+==
+bnz label2
+txn OnCompletion
+intc_1 // 0
+==
+bnz label3
+txn OnCompletion
+intc_2 // 2
+==
+bnz label4
+txn OnCompletion
+pushint 5
+==
+bnz label5
+txn OnCompletion
+intc_3 // 4
+==
+bnz label6
+err
+label6:
+intc_1 // 0
+return
+label5:
+txn Sender
+bytec_0 // "seller"
+app_global_get
+==
+txn Sender
+global CreatorAddress
+==
+||
+txn Sender
+bytec 4 // "gems_fees_account"
+app_global_get
+==
+||
+assert
+bytec_0 // "seller"
+app_global_get
+callsub label7
+intc_0 // 1
+return
+intc_1 // 0
+return
+label4:
+txn Sender
+bytec_1 // "status"
+app_local_get
+intc 4 // 3
+==
+assert
+bytec 5 // "user_count"
+bytec 5 // "user_count"
+app_global_get
+intc_0 // 1
+-
+app_global_put
+intc_0 // 1
+return
+label3:
+txna ApplicationArgs 0
+bytec 9 // "start"
+==
+bnz label8
+txna ApplicationArgs 0
+pushbytes 0x6164645f617361 // "add_asa"
+==
+bnz label9
+txna ApplicationArgs 0
+pushbytes 0x6275795f696e // "buy_in"
+==
+bnz label10
+txna ApplicationArgs 0
+pushbytes 0x74726967676572 // "trigger"
+==
+bnz label11
+txna ApplicationArgs 0
+pushbytes 0x636c61696d // "claim"
+==
+bnz label12
+txna ApplicationArgs 0
+pushbytes 0x636c6f7365 // "close"
+==
+bnz label13
+txna ApplicationArgs 0
+pushbytes 0x77697468647261775f617361 // "withdraw_asa"
+==
+bnz label14
+txna ApplicationArgs 0
+pushbytes 0x6d61737465725f636c61696d // "master_claim"
+==
+bnz label15
+err
+label15:
+txn Sender
+bytec 4 // "gems_fees_account"
+app_global_get
+==
+assert
+txna ApplicationArgs 1
+bytec 7 // "to_claim"
+app_local_get
+bytec 4 // "gems_fees_account"
+app_global_get
+callsub label16
+bytec 6 // "claimed_count"
+bytec 6 // "claimed_count"
+app_global_get
+intc_0 // 1
++
+app_global_put
+txna ApplicationArgs 1
+bytec_1 // "status"
+intc 4 // 3
+app_local_put
+intc_0 // 1
+return
+label14:
+txn Sender
+bytec_0 // "seller"
+app_global_get
+==
+txn Sender
+global CreatorAddress
+==
+||
+bytec_3 // "shuffle_status"
+app_global_get
+intc_2 // 2
+==
+&&
+assert
+txna ApplicationArgs 1
+btoi
+bytec_0 // "seller"
+app_global_get
+callsub label17
+intc_0 // 1
+return
+intc_1 // 0
+return
+label13:
+txn Sender
+bytec_0 // "seller"
+app_global_get
+==
+txn Sender
+global CreatorAddress
+==
+||
+assert
+bytec_3 // "shuffle_status"
+intc_2 // 2
+app_global_put
+intc_0 // 1
+return
+label12:
+global CurrentApplicationAddress
+txn Sender
+bytec 7 // "to_claim"
+app_local_get
+asset_holding_get AssetBalance
+store 4
+store 5
+bytec_3 // "shuffle_status"
+app_global_get
+intc_0 // 1
+==
+txn Sender
+bytec_1 // "status"
+app_local_get
+intc_2 // 2
+==
+&&
+assert
+bytec_2 // "spots_remaining"
+app_global_get
+intc_1 // 0
+>=
+bnz label18
+intc_1 // 0
+return
+label18:
+txn Sender
+bytec 7 // "to_claim"
+app_local_get
+txn Sender
+callsub label16
+bytec 6 // "claimed_count"
+bytec 6 // "claimed_count"
+app_global_get
+intc_0 // 1
++
+app_global_put
+intc_1 // 0
+bytec_1 // "status"
+intc 4 // 3
+app_local_put
+intc_0 // 1
+return
+label11:
+global CurrentApplicationAddress
+txna ApplicationArgs 2
+btoi
+asset_holding_get AssetBalance
+store 2
+store 3
+txn Sender
+bytec 4 // "gems_fees_account"
+app_global_get
+==
+load 2
+&&
+load 3
+intc_1 // 0
+>
+&&
+bytec_3 // "shuffle_status"
+app_global_get
+intc_0 // 1
+==
+&&
+txna ApplicationArgs 1
+bytec_1 // "status"
+app_local_get
+intc_0 // 1
+==
+&&
+assert
+txna ApplicationArgs 1
+bytec_1 // "status"
+intc_2 // 2
+app_local_put
+txna ApplicationArgs 1
+bytec 7 // "to_claim"
+txna ApplicationArgs 2
+btoi
+app_local_put
+intc_0 // 1
+return
+intc_1 // 0
+return
+label10:
+bytec_3 // "shuffle_status"
+app_global_get
+intc_0 // 1
+==
+bytec_2 // "spots_remaining"
+app_global_get
+intc_0 // 1
+>=
+&&
+bytec 9 // "start"
+app_global_get
+global LatestTimestamp
+<=
+&&
+txn GroupIndex
+intc_0 // 1
+-
+gtxns TypeEnum
+intc_0 // 1
+==
+&&
+txn GroupIndex
+intc_0 // 1
+-
+gtxns Sender
+txn Sender
+==
+&&
+txn GroupIndex
+intc_0 // 1
+-
+gtxns Receiver
+global CurrentApplicationAddress
+==
+&&
+txn GroupIndex
+intc_0 // 1
+-
+gtxns Amount
+bytec 8 // "buy_in_price"
+app_global_get
+==
+&&
+txn GroupIndex
+intc_0 // 1
+-
+gtxns Sender
+bytec_1 // "status"
+app_local_get
+intc_0 // 1
+!=
+&&
+txn GroupIndex
+intc_0 // 1
+-
+gtxns Sender
+bytec_1 // "status"
+app_local_get
+intc_2 // 2
+!=
+&&
+assert
+bytec_2 // "spots_remaining"
+app_global_get
+intc_0 // 1
+>=
+bnz label19
+intc_1 // 0
+return
+label19:
+intc_1 // 0
+bytec_1 // "status"
+intc_0 // 1
+app_local_put
+callsub label20
+callsub label21
+bytec 5 // "user_count"
+bytec 5 // "user_count"
+app_global_get
+intc_0 // 1
++
+app_global_put
+bytec_2 // "spots_remaining"
+bytec_2 // "spots_remaining"
+app_global_get
+intc_0 // 1
+-
+app_global_put
+intc_0 // 1
+return
+label9:
+txn GroupIndex
+intc_0 // 1
++
+gtxns TypeEnum
+intc_3 // 4
+==
+assert
+txn GroupIndex
+intc_0 // 1
++
+gtxns AssetAmount
+intc_1 // 0
+>
+assert
+txn GroupIndex
+intc_0 // 1
++
+gtxns XferAsset
+asset_params_get AssetDecimals
+store 0
+store 1
+load 0
+assert
+txn Sender
+bytec_0 // "seller"
+app_global_get
+==
+assert
+bytec_3 // "shuffle_status"
+app_global_get
+intc_1 // 0
+==
+assert
+itxn_begin
+intc_3 // 4
+itxn_field TypeEnum
+txna ApplicationArgs 1
+btoi
+itxn_field XferAsset
+global CurrentApplicationAddress
+itxn_field AssetReceiver
+itxn_submit
+bytec_2 // "spots_remaining"
+bytec_2 // "spots_remaining"
+app_global_get
+txn GroupIndex
+intc_0 // 1
++
+gtxns AssetAmount
++
+app_global_put
+intc_0 // 1
+return
+label8:
+txn Sender
+bytec_0 // "seller"
+app_global_get
+==
+assert
+bytec_3 // "shuffle_status"
+intc_0 // 1
+app_global_put
+intc_0 // 1
+return
+label2:
+intc_0 // 1
+return
+label1:
+bytec_0 // "seller"
+txna ApplicationArgs 0
+app_global_put
+bytec 8 // "buy_in_price"
+txna ApplicationArgs 1
+btoi
+app_global_put
+bytec 4 // "gems_fees_account"
+txna ApplicationArgs 2
+app_global_put
+bytec 10 // "gems_fees_percent"
+txna ApplicationArgs 3
+btoi
+app_global_put
+bytec 9 // "start"
+txna ApplicationArgs 4
+btoi
+app_global_put
+txna ApplicationArgs 3
+btoi
+pushint 10
+<=
+assert
+bytec_3 // "shuffle_status"
+intc_1 // 0
+app_global_put
+bytec_2 // "spots_remaining"
+intc_1 // 0
+app_global_put
+bytec 5 // "user_count"
+intc_1 // 0
+app_global_put
+bytec 6 // "claimed_count"
+intc_1 // 0
+app_global_put
+bytec_2 // "spots_remaining"
+intc_1 // 0
+app_global_put
+intc_0 // 1
+return
+label17:
+store 7
+store 6
+global CurrentApplicationAddress
+load 6
+asset_holding_get AssetBalance
+store 8
+store 9
+load 8
+bz label22
+itxn_begin
+intc_3 // 4
+itxn_field TypeEnum
+load 6
+itxn_field XferAsset
+load 7
+itxn_field AssetCloseTo
+itxn_submit
+label22:
+retsub
+label20:
+itxn_begin
+intc_0 // 1
+itxn_field TypeEnum
+bytec 8 // "buy_in_price"
+app_global_get
+bytec 10 // "gems_fees_percent"
+app_global_get
+*
+intc 5 // 100
+/
+itxn_field Amount
+bytec 4 // "gems_fees_account"
+app_global_get
+itxn_field Receiver
+itxn_submit
+retsub
+label21:
+itxn_begin
+intc_0 // 1
+itxn_field TypeEnum
+bytec 8 // "buy_in_price"
+app_global_get
+intc 5 // 100
+bytec 10 // "gems_fees_percent"
+app_global_get
+-
+*
+intc 5 // 100
+/
+itxn_field Amount
+bytec_0 // "seller"
+app_global_get
+itxn_field Receiver
+itxn_submit
+retsub
+label26:
+itxn_begin
+intc_0 // 1
+itxn_field TypeEnum
+pushint 100000
+itxn_field Amount
+bytec_0 // "seller"
+app_global_get
+itxn_field Receiver
+itxn_submit
+retsub
+label16:
+store 11
+store 10
+global CurrentApplicationAddress
+load 10
+asset_holding_get AssetBalance
+store 12
+store 13
+load 13
+intc_0 // 1
+>=
+assert
+load 12
+bnz label23
+intc_1 // 0
+return
+label23:
+load 13
+intc_0 // 1
+==
+bnz label24
+itxn_begin
+intc_3 // 4
+itxn_field TypeEnum
+load 10
+itxn_field XferAsset
+load 11
+itxn_field AssetReceiver
+intc_0 // 1
+itxn_field AssetAmount
+global MinTxnFee
+itxn_field Fee
+itxn_submit
+b label25
+label24:
+itxn_begin
+intc_3 // 4
+itxn_field TypeEnum
+load 10
+itxn_field XferAsset
+load 11
+itxn_field AssetCloseTo
+itxn_submit
+callsub label26
+label25:
+retsub
+label7:
+store 14
+global CurrentApplicationAddress
+balance
+intc_1 // 0
+!=
+bz label27
+itxn_begin
+intc_0 // 1
+itxn_field TypeEnum
+load 14
+itxn_field CloseRemainderTo
+itxn_submit
+label27:
+retsub

@@ -1,0 +1,539 @@
+#pragma version 10
+intcblock 0 1 4 5 2000000
+bytecblock 0x6c656e645f737461747573 0x6c656e645f61737365745f6964 0x6c656e646572 0x626f72726f776572 0x6c656e645f7061796261636b 0x6c656e645f616d6f756e74 0x6c656e645f70616964 0x6c656e645f64617465 0x6c656e645f74696d65 0x6c656e645f74797065
+txn ApplicationID
+bnz label1
+callsub label2
+label1:
+callsub label3
+return
+label2:
+proto 0 0
+bytec_2 // "lender"
+global CreatorAddress
+app_global_put
+bytec_3 // "borrower"
+global ZeroAddress
+app_global_put
+bytec 9 // "lend_type"
+intc_0 // 0
+app_global_put
+pushbytes 0x6c656e645f7061796d656e745f61737365745f6964 // "lend_payment_asset_id"
+intc_0 // 0
+app_global_put
+bytec_1 // "lend_asset_id"
+intc_0 // 0
+app_global_put
+bytec 5 // "lend_amount"
+intc_0 // 0
+app_global_put
+bytec 6 // "lend_paid"
+intc_0 // 0
+app_global_put
+bytec_0 // "lend_status"
+intc_0 // 0
+app_global_put
+bytec 4 // "lend_payback"
+intc_0 // 0
+app_global_put
+bytec 7 // "lend_date"
+intc_0 // 0
+app_global_put
+bytec 8 // "lend_time"
+intc_0 // 0
+app_global_put
+retsub
+label3:
+proto 0 1
+txn NumAppArgs
+bz label4
+pushbytess 0x86bb85b4 0xafb73b7a 0x246b1743 0x0dd78e02 0x09d2b6ed 0x3976489f 0x9656047a 0x6e4a8ad8
+txna ApplicationArgs 0
+match label5 label6 label7 label8 label9 label10 label11 label12
+intc_0 // 0
+retsub
+label5:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+assert
+txna ApplicationArgs 1
+btoi
+txna ApplicationArgs 2
+btoi
+txna ApplicationArgs 3
+btoi
+callsub label13
+intc_1 // 1
+retsub
+label6:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+assert
+txna ApplicationArgs 1
+txna ApplicationArgs 2
+txna ApplicationArgs 3
+callsub label14
+intc_1 // 1
+retsub
+label7:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+assert
+callsub label15
+intc_1 // 1
+retsub
+label8:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+assert
+callsub label16
+intc_1 // 1
+retsub
+label9:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+assert
+callsub label17
+intc_1 // 1
+retsub
+label10:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+assert
+callsub label18
+intc_1 // 1
+retsub
+label11:
+txn OnCompletion
+intc_3 // 5
+==
+assert
+txn ApplicationID
+assert
+callsub label19
+intc_1 // 1
+retsub
+label12:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+assert
+callsub label20
+intc_1 // 1
+retsub
+label4:
+txn OnCompletion
+bnz label21
+txn ApplicationID
+!
+assert
+intc_1 // 1
+retsub
+label21:
+intc_0 // 0
+retsub
+label13:
+proto 3 0
+intc_0 // 0
+bytec_0 // "lend_status"
+app_global_get_ex
+assert
+!
+assert
+frame_dig -1
+asset_params_get AssetClawback
+assert
+global ZeroAddress
+==
+assert
+frame_dig -1
+asset_params_get AssetFreeze
+assert
+global ZeroAddress
+==
+assert
+frame_dig -1
+callsub label22
+bytec 9 // "lend_type"
+intc_1 // 1
+app_global_put
+bytec_1 // "lend_asset_id"
+frame_dig -1
+app_global_put
+bytec_0 // "lend_status"
+intc_1 // 1
+app_global_put
+retsub
+label22:
+proto 1 0
+itxn_begin
+global CurrentApplicationAddress
+frame_dig -1
+itxn_field XferAsset
+itxn_field AssetReceiver
+intc_2 // 4
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+retsub
+label14:
+proto 3 0
+intc_0 // 0
+bytec_0 // "lend_status"
+app_global_get_ex
+assert
+intc_1 // 1
+==
+assert
+txn Sender
+dup
+intc_1 // 1
+callsub label23
+dup
+itob
+frame_dig -3
+b==
+assert
+dup
+intc 4 // 2000000
+>
+assert
+dup
+intc 4 // 2000000
++
+itob
+frame_dig -2
+b<
+assert
+intc_0 // 0
+itob
+frame_dig -1
+b<
+assert
+bytec_2 // "lender"
+uncover 2
+app_global_put
+bytec 5 // "lend_amount"
+swap
+app_global_put
+frame_dig -2
+btoi
+bytec 4 // "lend_payback"
+swap
+app_global_put
+frame_dig -1
+btoi
+bytec 8 // "lend_time"
+swap
+app_global_put
+bytec_0 // "lend_status"
+pushint 2
+app_global_put
+retsub
+label23:
+proto 2 1
+txn GroupIndex
+dup
+assert
+frame_dig -1
+-
+dup
+gtxns TypeEnum
+intc_1 // 1
+==
+assert
+dup
+gtxns Sender
+frame_dig -2
+==
+assert
+dup
+gtxns Receiver
+global CurrentApplicationAddress
+==
+assert
+gtxns Amount
+retsub
+label15:
+proto 0 0
+intc_0 // 0
+bytec_0 // "lend_status"
+app_global_get_ex
+assert
+pushint 2
+==
+assert
+intc_0 // 0
+bytec_1 // "lend_asset_id"
+app_global_get_ex
+assert
+txn Sender
+intc_1 // 1
+uncover 2
+callsub label24
+intc_1 // 1
+==
+assert
+txn Sender
+itxn_begin
+intc_0 // 0
+bytec 5 // "lend_amount"
+app_global_get_ex
+assert
+dig 1
+itxn_field Receiver
+itxn_field Amount
+intc_1 // 1
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+bytec_3 // "borrower"
+swap
+app_global_put
+bytec 7 // "lend_date"
+global LatestTimestamp
+app_global_put
+bytec_0 // "lend_status"
+pushint 3
+app_global_put
+retsub
+label24:
+proto 3 1
+txn GroupIndex
+dup
+assert
+frame_dig -2
+-
+dup
+gtxns TypeEnum
+intc_2 // 4
+==
+assert
+dup
+gtxns Sender
+frame_dig -3
+==
+assert
+dup
+gtxns AssetReceiver
+global CurrentApplicationAddress
+==
+assert
+dup
+gtxns XferAsset
+frame_dig -1
+==
+assert
+gtxns AssetAmount
+retsub
+label16:
+proto 0 0
+intc_0 // 0
+bytec_0 // "lend_status"
+app_global_get_ex
+assert
+pushint 3
+==
+assert
+txn Sender
+intc_0 // 0
+bytec_3 // "borrower"
+app_global_get_ex
+assert
+==
+assert
+txn Sender
+intc_1 // 1
+callsub label23
+intc_0 // 0
+bytec 4 // "lend_payback"
+app_global_get_ex
+assert
+dig 1
+==
+assert
+intc_0 // 0
+bytec_1 // "lend_asset_id"
+app_global_get_ex
+assert
+itxn_begin
+intc_0 // 0
+bytec_3 // "borrower"
+app_global_get_ex
+assert
+dig 1
+asset_params_get AssetCreator
+assert
+itxn_field AssetCloseTo
+itxn_field AssetReceiver
+itxn_field XferAsset
+intc_1 // 1
+itxn_field AssetAmount
+intc_2 // 4
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+bytec 6 // "lend_paid"
+swap
+app_global_put
+bytec_0 // "lend_status"
+intc_2 // 4
+app_global_put
+retsub
+label17:
+proto 0 0
+intc_0 // 0
+bytec_0 // "lend_status"
+app_global_get_ex
+assert
+pushint 3
+==
+assert
+global LatestTimestamp
+intc_0 // 0
+bytec 7 // "lend_date"
+app_global_get_ex
+assert
+intc_0 // 0
+bytec 8 // "lend_time"
+app_global_get_ex
+assert
++
+>
+assert
+intc_0 // 0
+bytec_1 // "lend_asset_id"
+app_global_get_ex
+assert
+itxn_begin
+intc_0 // 0
+bytec_2 // "lender"
+app_global_get_ex
+assert
+dig 1
+asset_params_get AssetCreator
+assert
+itxn_field AssetCloseTo
+itxn_field AssetReceiver
+itxn_field XferAsset
+intc_1 // 1
+itxn_field AssetAmount
+intc_2 // 4
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+bytec_0 // "lend_status"
+intc_3 // 5
+app_global_put
+retsub
+label18:
+proto 0 0
+intc_0 // 0
+bytec_0 // "lend_status"
+app_global_get_ex
+assert
+intc_2 // 4
+==
+assert
+intc_0 // 0
+bytec 6 // "lend_paid"
+app_global_get_ex
+assert
+assert
+itxn_begin
+intc_0 // 0
+bytec 4 // "lend_payback"
+app_global_get_ex
+assert
+intc_0 // 0
+bytec_2 // "lender"
+app_global_get_ex
+assert
+itxn_field Receiver
+itxn_field Amount
+intc_1 // 1
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+bytec_0 // "lend_status"
+intc_3 // 5
+app_global_put
+retsub
+label19:
+proto 0 0
+txn OnCompletion
+intc_3 // 5
+==
+assert
+itxn_begin
+intc_0 // 0
+bytec_2 // "lender"
+app_global_get_ex
+assert
+intc_0 // 0
+bytec_2 // "lender"
+app_global_get_ex
+assert
+itxn_field CloseRemainderTo
+itxn_field Receiver
+intc_1 // 1
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+retsub
+label20:
+proto 0 0
+intc_0 // 0
+bytec_0 // "lend_status"
+app_global_get_ex
+assert
+pushint 2
+<=
+assert
+intc_0 // 0
+bytec_1 // "lend_asset_id"
+app_global_get_ex
+assert
+itxn_begin
+dup
+asset_params_get AssetCreator
+assert
+dig 1
+asset_params_get AssetCreator
+assert
+itxn_field AssetCloseTo
+itxn_field AssetReceiver
+itxn_field XferAsset
+intc_0 // 0
+itxn_field AssetAmount
+intc_2 // 4
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+bytec_0 // "lend_status"
+intc_3 // 5
+app_global_put
+bytec_1 // "lend_asset_id"
+intc_0 // 0
+app_global_put
+retsub

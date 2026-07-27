@@ -1,0 +1,114 @@
+#pragma version 11
+intcblock 0 1 32
+bytecblock 0x62656e 0x657870
+txn ApplicationID
+bnz label1
+bytec_0 // "ben"
+global ZeroAddress
+app_global_put
+bytec_1 // "exp"
+intc_0 // 0
+app_global_put
+label1:
+txn NumAppArgs
+bz label2
+txn OnCompletion
+!
+assert
+txn ApplicationID
+assert
+pushbytess 0x5c0f6323 0x85c19cb5 0xa7d2fcbb
+txna ApplicationArgs 0
+match label3 label4 label5
+err
+label2:
+txn OnCompletion
+!
+txn ApplicationID
+!
+&&
+return
+label3:
+txna ApplicationArgs 1
+dup
+len
+intc_2 // 32
+==
+assert
+txna ApplicationArgs 2
+dup
+len
+pushint 8
+==
+assert
+btoi
+intc_0 // 0
+bytec_0 // "ben"
+app_global_get_ex
+assert
+global ZeroAddress
+==
+assert
+bytec_0 // "ben"
+uncover 2
+app_global_put
+bytec_1 // "exp"
+swap
+app_global_put
+pushbytes 0x151f7c75000b657363726f7720696e6974 // 0x151f7c75000b657363726f7720696e6974
+log
+intc_1 // 1
+return
+label4:
+global Round
+intc_0 // 0
+bytec_1 // "exp"
+app_global_get_ex
+assert
+<
+itob
+pushbytes 0x151f7c75 // 0x151f7c75
+swap
+concat
+log
+intc_1 // 1
+return
+label5:
+txna ApplicationArgs 1
+dup
+len
+intc_2 // 32
+==
+assert
+intc_0 // 0
+bytec_0 // "ben"
+app_global_get_ex
+assert
+swap
+dig 1
+==
+assert
+global Round
+intc_0 // 0
+bytec_1 // "exp"
+app_global_get_ex
+assert
+>=
+assert
+itxn_begin
+global CurrentApplicationAddress
+dig 1
+itxn_field CloseRemainderTo
+intc_0 // 0
+itxn_field Amount
+itxn_field Sender
+itxn_field Receiver
+intc_1 // 1
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+pushbytes 0x151f7c750007636c61696d6564 // 0x151f7c750007636c61696d6564
+log
+intc_1 // 1
+return

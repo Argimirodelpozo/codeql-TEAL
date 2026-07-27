@@ -1,0 +1,94 @@
+#pragma version 5
+intcblock 1 0
+bytecblock 0x6568 0x6468
+txna ApplicationArgs 0
+pushbytes 0x6c6f67 // "log"
+==
+bnz label1
+txna ApplicationArgs 0
+pushbytes 0x756468 // "udh"
+==
+bnz label2
+txna ApplicationArgs 0
+pushbytes 0x756568 // "ueh"
+==
+bnz label3
+txna ApplicationArgs 0
+pushbytes 0x766468 // "vdh"
+==
+bnz label4
+txna ApplicationArgs 0
+pushbytes 0x766568 // "veh"
+==
+bnz label5
+err
+label5:
+txn Sender
+global CreatorAddress
+==
+assert
+bytec_0 // "eh"
+app_global_get
+txna ApplicationArgs 2
+==
+bnz label6
+intc_1 // 0
+return
+label6:
+txna ApplicationArgs 1
+log
+intc_0 // 1
+return
+label4:
+txn Sender
+global CreatorAddress
+==
+assert
+bytec_1 // "dh"
+app_global_get
+txna ApplicationArgs 2
+==
+bnz label7
+intc_1 // 0
+return
+label7:
+txna ApplicationArgs 1
+log
+intc_0 // 1
+return
+label3:
+txn Sender
+global CreatorAddress
+==
+assert
+bytec_0 // "eh"
+txna ApplicationArgs 2
+app_global_put
+txna ApplicationArgs 1
+log
+intc_0 // 1
+return
+label2:
+txn Sender
+global CreatorAddress
+==
+assert
+bytec_1 // "dh"
+txna ApplicationArgs 2
+app_global_put
+pushbytes 0x6d68 // "mh"
+txna ApplicationArgs 3
+app_global_put
+txna ApplicationArgs 1
+log
+intc_0 // 1
+return
+label1:
+txn Sender
+global CreatorAddress
+==
+assert
+txna ApplicationArgs 1
+log
+intc_0 // 1
+return

@@ -1,0 +1,146 @@
+#pragma version 4
+intcblock 0 1 1016 127
+bytecblock 0x00 0x4553
+txn ApplicationID
+intc_0 // 0
+==
+bnz label1
+txn OnCompletion
+pushint 4
+==
+bnz label2
+txn OnCompletion
+intc_1 // 1
+==
+bnz label3
+txn OnCompletion
+intc_0 // 0
+==
+txna ApplicationArgs 0
+pushbytes 0x5698b72d // 0x5698b72d
+==
+&&
+bnz label4
+intc_0 // 0
+return
+b label5
+label4:
+txna ApplicationArgs 1
+callsub label5
+intc_1 // 1
+return
+label3:
+txn Sender
+bytec_1 // "ES"
+txna ApplicationArgs 1
+app_local_put
+intc_0 // 0
+store 0
+label7:
+load 0
+pushint 15
+<
+bnz label6
+intc_1 // 1
+return
+label6:
+txn Sender
+load 0
+itob
+pushint 7
+pushint 8
+substring3
+intc_3 // 127
+bzero
+app_local_put
+load 0
+intc_1 // 1
++
+store 0
+b label7
+label2:
+txn Sender
+global CreatorAddress
+==
+return
+label1:
+intc_1 // 1
+return
+label5:
+store 1
+txn GroupIndex
+intc_1 // 1
+-
+gtxns TypeEnum
+intc_1 // 1
+==
+load 1
+btoi
+pushint 15240
+<
+&&
+txn GroupIndex
+intc_1 // 1
+-
+gtxns Sender
+txna Accounts 1
+bytec_1 // "ES"
+app_local_get
+==
+&&
+txna Accounts 1
+bytec_0 // 0x00
+intc_0 // 0
+load 1
+btoi
+intc_2 // 1016
+/
+setbyte
+app_local_get
+len
+intc_3 // 127
+==
+&&
+txna Accounts 1
+bytec_0 // 0x00
+intc_0 // 0
+load 1
+btoi
+intc_2 // 1016
+/
+setbyte
+app_local_get
+load 1
+btoi
+intc_2 // 1016
+%
+getbit
+intc_0 // 0
+==
+&&
+assert
+txna Accounts 1
+bytec_0 // 0x00
+intc_0 // 0
+load 1
+btoi
+intc_2 // 1016
+/
+setbyte
+txna Accounts 1
+bytec_0 // 0x00
+intc_0 // 0
+load 1
+btoi
+intc_2 // 1016
+/
+setbyte
+app_local_get
+load 1
+btoi
+intc_2 // 1016
+%
+intc_1 // 1
+setbit
+app_local_put
+retsub
