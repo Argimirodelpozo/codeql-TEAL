@@ -29,22 +29,21 @@ from ..avm import (
     ITXN_SOURCE_OPS as _ITXN_FAM,
     LSIG_ARG_OPS as _ARG_FAM,
     STATE_WRITE_OPS,
+    attacker_input_label as _attacker_input_label,
 )
 from . import pre_ir
 
 
 def source_label(intr) -> str | None:
-    """The user-input source kind an intrinsic reads, or ``None``."""
+    """The user-input source kind an intrinsic reads, or ``None``.
+
+    Delegates to :func:`tealql.tealtools.avm.attacker_input_label` — the single
+    source table shared with the SSA-level seeds, so the two can no longer
+    disagree about what counts as attacker input."""
     if not isinstance(intr, pre_ir.Intrinsic):
         return None
     imm = " ".join(str(i) for i in (intr.immediates or []))
-    if intr.op in _ARG_FAM:
-        return "LogicSigArgs"
-    if intr.op in _TXN_FAM and "ApplicationArgs" in imm:
-        return "ApplicationArgs"
-    if intr.op in _ITXN_FAM and "LastLog" in imm:
-        return "ItxnLastLog"
-    return None
+    return _attacker_input_label(intr.op, imm)
 
 
 def _trusted_apparg(src, trusted_args) -> bool:
