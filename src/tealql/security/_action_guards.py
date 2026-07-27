@@ -94,6 +94,115 @@ def sender_creator_guard_dominates(
     return False
 
 
+def _creator_enforcing_bbs(prog: SSAProgram) -> set:
+    """Blocks that ENFORCE ``txn Sender == global CreatorAddress`` — the block
+    holding an ``assert`` (or a branch to a rejection exit) whose condition is
+    that comparison.
+
+    Needed because path predicates describe what holds on ENTRY to a block, so
+    the block performing the check never satisfies
+    :func:`sender_creator_guard_dominates` about itself."""
+    from ._enforcement import _label_to_bb_first_line, branch_gates_rejection
+    label_lines = _label_to_bb_first_line(prog)
+    out: set = set()
+    for a in prog.assignments:
+        if a.op not in ("assert", "bnz", "bz") or not a.inputs:
+            continue
+        if a.basic_block is None:
+            continue
+        v = resolve_through_copies(prog, a.inputs[0])
+        if not isinstance(v, SSAVar) or v.defined_by is None:
+            continue
+        if not _is_sender_eq_creator(v.defined_by):
+            continue
+        if a.op == "assert" or branch_gates_rejection(prog, a, label_lines):
+            out.add(a.basic_block)
+    return out
+
+
+def sender_creator_guard_covers_action(
+    prog: SSAProgram,
+    pp: PathPredicateAnalysis,
+    exit_bb: BasicBlock,
+    action_int: int,
+) -> bool:
+    """Every path reaching ``exit_bb`` **with ``OnCompletion == action_int``**
+    was creator-checked.
+
+    :func:`sender_creator_guard_dominates` asks the same question of the exit
+    block alone, which is too strong the moment the guarded branch REJOINS the
+    unguarded one:
+
+    .. code-block:: text
+
+        txn OnCompletion; int UpdateApplication; ==; bz done
+        txn Sender; global CreatorAddress; ==; assert   # only the Update path
+        done:                                           # ...and both paths
+        int 1; return                                   #    share this exit
+
+    Path predicates at a join are the INTERSECTION of the incoming paths, so the
+    creator check is invisible at ``done`` and the contract reads "updatable by
+    anyone" — on 82% of distinct real mainnet contracts, at HIGH severity. A
+    shared return epilogue is what every optimising compiler emits (this repo
+    lifts one specially, see ``to_puya_ir._duplicate_shared_epilogues``); the
+    same guard given its own exit block was recognised fine.
+
+    So walk BACKWARD from the exit instead and close each path on either
+    condition that makes it harmless: it was creator-checked, or its predicates
+    already prove ``OnCompletion != action_int`` (so it is not an Update path at
+    all). Reaching a program entry with neither witnesses a genuinely unguarded
+    Update path. Same must-reach shape as
+    ``_field_protection._all_entry_paths_cross``, with the action-consistency
+    escape added."""
+    enforcing = _creator_enforcing_bbs(prog)
+
+    def _closed(bb: BasicBlock) -> bool:
+        # Three ways a path stops mattering: the check already held on entry,
+        # this very block performs it (path predicates describe a block's ENTRY
+        # state, so the block CONTAINING the `assert` is not covered by the
+        # first test), or the block cannot be on an ``action_int`` path at all.
+        return (bb in enforcing
+                or sender_creator_guard_dominates(prog, pp, bb)
+                or approval_exit_guarded_for_action(prog, pp, bb, action_int))
+
+    def _edge_excludes_action(pred: BasicBlock, succ: BasicBlock) -> bool:
+        """The EDGE ``pred → succ`` proves this is not an ``action_int`` path.
+
+        Reasoning per block instead of per edge is what makes the classic
+        one-branch dispatch look unguarded: ``OC == Update; bz done`` leaves an
+        entry block that is neither creator-checked nor action-excluded, yet
+        BOTH its outgoing edges are fine — the taken edge carries ``OC !=
+        Update`` and the fall-through leads into the guard. Blocks cannot
+        express that; edges can."""
+        try:
+            conds = pp._edge_predicates(pred, succ)
+        except Exception:
+            return False
+        return predicates_exclude_action(prog, conds, action_int)
+
+    if _closed(exit_bb):
+        return True
+    # Backward over EDGES. An edge is closed when its predecessor is guarded /
+    # action-excluded, or the edge itself excludes the action.
+    visited: set = set()
+    stack: list = [exit_bb]
+    seen_blocks: set = {exit_bb}
+    while stack:
+        bb = stack.pop()
+        for pred in bb.predecessors:
+            if (id(pred), id(bb)) in visited:
+                continue
+            visited.add((id(pred), id(bb)))
+            if _edge_excludes_action(pred, bb) or _closed(pred):
+                continue
+            if not pred.predecessors:
+                return False        # an entry reached with neither -> unguarded
+            if pred not in seen_blocks:
+                seen_blocks.add(pred)
+                stack.append(pred)
+    return True
+
+
 
 
 # ---------------------------------------------------------------------------
@@ -170,7 +279,19 @@ def approval_exit_guarded_for_action(
     else is a deliberate enhancement (real Algorand routers / Puya
     output use ``match`` dispatch on OC). This is deliberately tight —
     contracts that actually route OC=K to err are not flagged here."""
-    for cond in pp.predicates_at(exit_bb.file, exit_bb.first_line):
+    return predicates_exclude_action(
+        prog, pp.predicates_at(exit_bb.file, exit_bb.first_line), action_int)
+
+
+def predicates_exclude_action(prog: SSAProgram, conds, action_int: int) -> bool:
+    """``conds`` (a predicate set from anywhere — a block's entry state or a
+    single CFG EDGE) proves ``OnCompletion != action_int``.
+
+    Factored out of :func:`approval_exit_guarded_for_action` so the same case
+    analysis can be applied per-edge: at a join block the predicate set is the
+    INTERSECTION over incoming paths, which loses exactly the branch outcome
+    that says whether a given path was an ``action_int`` path at all."""
+    for cond in conds:
         # See through a scratch round-trip / value-preserving phi (a predicate
         # recorded on a `load` output or a phi hid every guard behind one).
         v = resolve_through_copies(prog, cond.value)

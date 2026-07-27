@@ -1,0 +1,12 @@
+#pragma version 10
+txn OnCompletion
+int UpdateApplication
+==
+bz done
+txn Sender
+global CreatorAddress
+==
+assert
+done:
+int 1
+return
