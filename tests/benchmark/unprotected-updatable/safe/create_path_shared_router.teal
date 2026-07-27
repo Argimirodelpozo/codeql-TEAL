@@ -1,0 +1,28 @@
+#pragma version 10
+// SAFE: the approving exit below is reached only when `txn ApplicationID == 0`,
+// i.e. the caller is CREATING an app. The handler never inspects OnCompletion,
+// so an accept IS reachable with OnCompletion == UpdateApplication — but an
+// update there applies to the app being created in that same transaction, which
+// the caller made and already controls. The deployed app is untouched, so this
+// is not "updatable by anyone". Every real router opens with this dispatch.
+txn ApplicationID
+int 0
+==
+bnz create
+txn OnCompletion
+int UpdateApplication
+==
+bz done
+txn Sender
+global CreatorAddress
+==
+assert
+done:
+int 1
+return
+create:
+byte "n"
+int 0
+app_global_put
+int 1
+return

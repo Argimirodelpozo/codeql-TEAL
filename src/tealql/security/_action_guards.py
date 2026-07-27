@@ -338,14 +338,50 @@ def approval_exit_guarded_for_action(
         prog, pp.predicates_at(exit_bb.file, exit_bb.first_line), action_int)
 
 
+#: Lifecycle actions that can only ever apply to an app that ALREADY exists.
+_EXISTING_APP_ACTIONS = frozenset({ONC_UPDATE_APPLICATION, ONC_DELETE_APPLICATION})
+
+
+def _is_app_creation_path(prog: SSAProgram, conds) -> bool:
+    """``conds`` proves ``txn ApplicationID == 0`` — the transaction is CREATING
+    an application rather than calling the deployed one.
+
+    Every router opens with this dispatch::
+
+        txn ApplicationID; intc_0 // 0; ==; bnz create
+
+    and the create handler does not inspect ``OnCompletion``, so an approving
+    exit there IS reachable with ``OnCompletion == UpdateApplication`` as far as
+    control flow goes. It still cannot be the vulnerability the lifecycle
+    detectors claim: with ``ApplicationID == 0`` the caller is creating a NEW
+    application, so an update or delete applies to the app being created in that
+    same transaction — one the caller made and already controls. The deployed
+    app is never touched, and no stranger gains anything.
+
+    Note this holds regardless of whether the protocol's well-formedness rules
+    even permit a create with those OnCompletion values: the claim fails on the
+    security argument alone, so it needs no ruling from a node."""
+    for cond in conds:
+        if cond.kind != "eq" or not cond.args:
+            continue
+        v = resolve_through_copies(prog, cond.value)
+        if _is_txn_field_var(v, "ApplicationID") and const_int(cond.args[0]) == 0:
+            return True
+    return False
+
+
 def predicates_exclude_action(prog: SSAProgram, conds, action_int: int) -> bool:
     """``conds`` (a predicate set from anywhere — a block's entry state or a
-    single CFG EDGE) proves ``OnCompletion != action_int``.
+    single CFG EDGE) proves the path cannot perform ``action_int``.
 
     Factored out of :func:`approval_exit_guarded_for_action` so the same case
     analysis can be applied per-edge: at a join block the predicate set is the
     INTERSECTION over incoming paths, which loses exactly the branch outcome
     that says whether a given path was an ``action_int`` path at all."""
+    # An app-CREATION path cannot update or delete the deployed app, whatever
+    # its OnCompletion says -- see _is_app_creation_path.
+    if action_int in _EXISTING_APP_ACTIONS and _is_app_creation_path(prog, conds):
+        return True
     for cond in conds:
         # See through a scratch round-trip / value-preserving phi (a predicate
         # recorded on a `load` output or a phi hid every guard behind one).

@@ -17,9 +17,9 @@
    "findings": 1
   },
   "delete-funds-check": {
-   "contracts": 195,
+   "contracts": 176,
    "crashes": 0,
-   "findings": 503
+   "findings": 423
   },
   "group-size-check": {
    "contracts": 52,
@@ -87,29 +87,29 @@
    "findings": 82
   },
   "is-deletable": {
-   "contracts": 200,
+   "contracts": 181,
    "crashes": 0,
-   "findings": 508
+   "findings": 428
   },
   "is-updatable": {
-   "contracts": 196,
+   "contracts": 169,
    "crashes": 0,
-   "findings": 490
+   "findings": 410
   },
   "timelock-upgrade": {
-   "contracts": 63,
+   "contracts": 64,
    "crashes": 0,
-   "findings": 117
+   "findings": 130
   },
   "unprotected-deletable": {
-   "contracts": 173,
+   "contracts": 113,
    "crashes": 0,
-   "findings": 370
+   "findings": 277
   },
   "unprotected-updatable": {
-   "contracts": 160,
+   "contracts": 95,
    "crashes": 0,
-   "findings": 347
+   "findings": 252
   },
   "unsafe-division-order": {
    "contracts": 34,
@@ -152,9 +152,7 @@
    "delete-funds-check": 2,
    "is-deletable": 2,
    "is-updatable": 2,
-   "timelock-upgrade": 1,
-   "unprotected-deletable": 1,
-   "unprotected-updatable": 1
+   "timelock-upgrade": 2
   },
   "04eaf9230f7557a9": {
    "abi-method-selector": 4,
@@ -176,12 +174,10 @@
   },
   "0a29c4d2f380fddd": {
    "abi-method-selector": 2,
-   "delete-funds-check": 2,
+   "delete-funds-check": 1,
    "inner-txn-close-rekey": 3,
-   "is-deletable": 2,
-   "is-updatable": 1,
-   "unprotected-deletable": 2,
-   "unprotected-updatable": 1,
+   "is-deletable": 1,
+   "unprotected-deletable": 1,
    "unsafe-division-order": 4
   },
   "0a2bbd4ed446cb64": {
@@ -214,15 +210,14 @@
   },
   "0bbfc7dd47944663": {
    "abi-method-selector": 2,
-   "delete-funds-check": 2,
+   "delete-funds-check": 1,
    "inner-txn-close-rekey": 1,
    "ir-arbitrary-inner-asset": 1,
    "ir-tainted-log": 3,
    "ir-tainted-state-write": 7,
-   "is-deletable": 2,
-   "is-updatable": 3,
-   "unprotected-deletable": 1,
-   "unprotected-updatable": 2,
+   "is-deletable": 1,
+   "is-updatable": 2,
+   "unprotected-updatable": 1,
    "unsafe-division-order": 1
   },
   "0c8b7dcb4cfd9a85": {
@@ -235,34 +230,28 @@
   },
   "0d3fe23d9a7d7737": {
    "abi-method-selector": 3,
-   "delete-funds-check": 1,
-   "is-deletable": 1,
-   "is-updatable": 2,
-   "unprotected-deletable": 1,
-   "unprotected-updatable": 2
+   "is-updatable": 1,
+   "unprotected-updatable": 1
   },
   "0e04e366aee5f994": {
    "abi-method-selector": 2,
-   "delete-funds-check": 2,
+   "delete-funds-check": 1,
    "inner-txn-close-rekey": 3,
-   "is-deletable": 2,
-   "is-updatable": 1,
-   "unprotected-deletable": 1,
-   "unprotected-updatable": 1
+   "is-deletable": 1
   },
   "0e967510ca7cb448": {
    "abi-method-selector": 3,
-   "delete-funds-check": 2,
+   "delete-funds-check": 1,
    "hardcoded-min-balance": 1,
    "inner-txn-close-rekey": 6,
    "inner-txn-fee": 11,
    "ir-arbitrary-inner-appcall": 5,
    "ir-arbitrary-inner-asset": 4,
    "ir-tainted-fund-flow": 7,
-   "is-deletable": 2,
-   "is-updatable": 2,
-   "unprotected-deletable": 2,
-   "unprotected-updatable": 2
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 1
   },
   "0ef72006804c6af6": {
    "delete-funds-check": 5,
@@ -293,44 +282,39 @@
   },
   "10b285aaaa5d0fa7": {
    "abi-method-selector": 3,
-   "delete-funds-check": 3,
+   "delete-funds-check": 2,
    "inner-txn-close-rekey": 2,
-   "is-deletable": 3,
-   "is-updatable": 3,
+   "is-deletable": 2,
+   "is-updatable": 2,
    "timelock-upgrade": 2,
-   "unprotected-deletable": 3,
-   "unprotected-updatable": 1
+   "unprotected-deletable": 2
   },
   "11b959c8942d22fa": {
    "abi-method-selector": 3,
-   "delete-funds-check": 2,
-   "is-deletable": 2,
-   "is-updatable": 2,
-   "unprotected-deletable": 2,
-   "unprotected-updatable": 2
+   "delete-funds-check": 1,
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 1
   },
   "1270e70d0ecaa348": {
    "abi-method-selector": 3,
-   "delete-funds-check": 2,
+   "delete-funds-check": 1,
    "group-size-check": 2,
    "inner-txn-close-rekey": 2,
    "ir-arbitrary-inner-asset": 1,
-   "is-deletable": 2,
-   "is-updatable": 2,
-   "unprotected-deletable": 1,
-   "unprotected-updatable": 1
+   "is-deletable": 1,
+   "is-updatable": 1
   },
   "14bf824d4db9ea57": {
    "abi-method-selector": 1
   },
   "181026c31883d293": {
    "abi-method-selector": 3,
-   "delete-funds-check": 3,
+   "delete-funds-check": 2,
    "inner-txn-close-rekey": 2,
-   "is-deletable": 3,
-   "is-updatable": 1,
-   "unprotected-deletable": 3,
-   "unprotected-updatable": 1
+   "is-deletable": 2,
+   "unprotected-deletable": 2
   },
   "18977677f3f5a21a": {
    "abi-method-selector": 2,
@@ -380,12 +364,10 @@
   },
   "1c1921f01be19b8b": {
    "abi-method-selector": 8,
-   "delete-funds-check": 2,
+   "delete-funds-check": 1,
    "group-size-check": 4,
-   "is-deletable": 2,
-   "is-updatable": 1,
-   "unprotected-deletable": 2,
-   "unprotected-updatable": 1,
+   "is-deletable": 1,
+   "unprotected-deletable": 1,
    "unsafe-division-order": 5,
    "unvalidated-group-sibling": 1
   },
@@ -462,15 +444,14 @@
   },
   "24760309cb6490aa": {
    "abi-method-selector": 2,
-   "delete-funds-check": 2,
+   "delete-funds-check": 1,
    "inner-txn-close-rekey": 1,
    "ir-arbitrary-inner-asset": 1,
    "ir-tainted-log": 3,
    "ir-tainted-state-write": 7,
-   "is-deletable": 2,
-   "is-updatable": 3,
-   "unprotected-deletable": 1,
-   "unprotected-updatable": 2,
+   "is-deletable": 1,
+   "is-updatable": 2,
+   "unprotected-updatable": 1,
    "unsafe-division-order": 1
   },
   "2496ac53b1095f55": {
@@ -480,13 +461,11 @@
   },
   "24bee4a24368f253": {
    "abi-method-selector": 4,
-   "delete-funds-check": 2,
+   "delete-funds-check": 1,
    "group-size-check": 4,
-   "is-deletable": 2,
-   "is-updatable": 2,
-   "timelock-upgrade": 1,
-   "unprotected-deletable": 1,
-   "unprotected-updatable": 1
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "timelock-upgrade": 1
   },
   "259de42fe9dc47c7": {
    "abi-method-selector": 1
@@ -506,8 +485,7 @@
    "ir-tainted-fund-flow": 1,
    "is-deletable": 1,
    "is-updatable": 1,
-   "unprotected-deletable": 1,
-   "unprotected-updatable": 1
+   "unprotected-deletable": 1
   },
   "26d018d20773cd25": {
    "abi-method-selector": 4,
@@ -524,18 +502,13 @@
    "delete-funds-check": 2,
    "is-deletable": 2,
    "is-updatable": 2,
-   "timelock-upgrade": 1,
-   "unprotected-deletable": 1,
-   "unprotected-updatable": 1
+   "timelock-upgrade": 2
   },
   "29a47e66c78d96ac": {
-   "delete-funds-check": 1,
    "ir-tainted-fund-flow": 2,
    "ir-tainted-log": 1,
-   "is-deletable": 1,
-   "is-updatable": 2,
-   "unprotected-deletable": 1,
-   "unprotected-updatable": 2,
+   "is-updatable": 1,
+   "unprotected-updatable": 1,
    "unsafe-division-order": 1
   },
   "2b0305e50afd3f15": {
@@ -549,12 +522,9 @@
   },
   "2f5099d2a06e3a2f": {
    "abi-method-selector": 3,
-   "delete-funds-check": 1,
    "ir-tainted-state-write": 1,
-   "is-deletable": 1,
-   "is-updatable": 2,
-   "unprotected-deletable": 1,
-   "unprotected-updatable": 2
+   "is-updatable": 1,
+   "unprotected-updatable": 1
   },
   "2f9c17720d9b48c2": {
    "abi-method-selector": 1
@@ -571,12 +541,10 @@
   },
   "315372a0e0362df8": {
    "abi-method-selector": 8,
-   "delete-funds-check": 2,
+   "delete-funds-check": 1,
    "group-size-check": 4,
-   "is-deletable": 2,
-   "is-updatable": 1,
-   "unprotected-deletable": 2,
-   "unprotected-updatable": 1,
+   "is-deletable": 1,
+   "unprotected-deletable": 1,
    "unsafe-division-order": 5,
    "unvalidated-group-sibling": 1
   },
@@ -591,12 +559,10 @@
   },
   "36b514112377b00e": {
    "abi-method-selector": 2,
-   "delete-funds-check": 2,
+   "delete-funds-check": 1,
    "inner-txn-close-rekey": 3,
-   "is-deletable": 2,
-   "is-updatable": 1,
-   "unprotected-deletable": 2,
-   "unprotected-updatable": 1,
+   "is-deletable": 1,
+   "unprotected-deletable": 1,
    "unsafe-division-order": 4
   },
   "3a5bd89f6f759365": {
@@ -617,18 +583,14 @@
    "delete-funds-check": 2,
    "is-deletable": 2,
    "is-updatable": 2,
-   "timelock-upgrade": 1,
-   "unprotected-deletable": 1,
-   "unprotected-updatable": 1
+   "timelock-upgrade": 2
   },
   "3b5ed44f8faef136": {
    "abi-method-selector": 4,
-   "delete-funds-check": 2,
+   "delete-funds-check": 1,
    "inner-txn-close-rekey": 3,
-   "is-deletable": 2,
-   "is-updatable": 1,
-   "unprotected-deletable": 2,
-   "unprotected-updatable": 1
+   "is-deletable": 1,
+   "unprotected-deletable": 1
   },
   "40953f7e6e9dee5c": {
    "abi-method-selector": 1,
@@ -642,47 +604,39 @@
   },
   "4098a8a708c85064": {
    "abi-method-selector": 8,
-   "delete-funds-check": 2,
+   "delete-funds-check": 1,
    "group-size-check": 4,
-   "is-deletable": 2,
-   "is-updatable": 1,
-   "unprotected-deletable": 2,
-   "unprotected-updatable": 1,
+   "is-deletable": 1,
+   "unprotected-deletable": 1,
    "unsafe-division-order": 5,
    "unvalidated-group-sibling": 1
   },
   "439cdba8fbcbdb46": {
-   "delete-funds-check": 2,
+   "delete-funds-check": 1,
    "group-size-check": 6,
-   "is-deletable": 2,
-   "is-updatable": 1,
-   "unprotected-deletable": 1,
-   "unprotected-updatable": 1,
+   "is-deletable": 1,
    "unvalidated-group-sibling": 1
   },
   "44b9099f15d37f5e": {
    "abi-method-selector": 4,
-   "delete-funds-check": 4,
+   "delete-funds-check": 3,
    "hardcoded-min-balance": 1,
    "inner-txn-close-rekey": 3,
-   "is-deletable": 4,
-   "is-updatable": 1,
-   "unprotected-deletable": 1,
-   "unprotected-updatable": 1
+   "is-deletable": 3
   },
   "47681e272dc6b1a0": {
    "abi-method-selector": 3,
-   "delete-funds-check": 2,
+   "delete-funds-check": 1,
    "hardcoded-min-balance": 1,
    "inner-txn-close-rekey": 6,
    "inner-txn-fee": 10,
    "ir-arbitrary-inner-appcall": 4,
    "ir-arbitrary-inner-asset": 4,
    "ir-tainted-fund-flow": 5,
-   "is-deletable": 2,
-   "is-updatable": 2,
-   "unprotected-deletable": 2,
-   "unprotected-updatable": 2
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 1
   },
   "486ee1299a99f9c1": {
    "abi-method-selector": 3,
@@ -693,33 +647,29 @@
   },
   "49cc205cd788cf82": {
    "abi-method-selector": 5,
-   "delete-funds-check": 2,
+   "delete-funds-check": 1,
    "group-size-check": 8,
    "inner-txn-close-rekey": 2,
-   "is-deletable": 2,
-   "is-updatable": 2,
-   "unprotected-deletable": 2,
-   "unprotected-updatable": 2,
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 1,
    "unsafe-division-order": 4
   },
   "4b2d2cd2f6e9c047": {
    "abi-method-selector": 5,
-   "delete-funds-check": 2,
+   "delete-funds-check": 1,
    "group-size-check": 5,
-   "is-deletable": 2,
-   "is-updatable": 2,
-   "timelock-upgrade": 1,
-   "unprotected-deletable": 1,
-   "unprotected-updatable": 1
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "timelock-upgrade": 1
   },
   "4e4bfe3139770a8c": {
    "abi-method-selector": 4,
-   "delete-funds-check": 2,
+   "delete-funds-check": 1,
    "group-size-check": 4,
-   "is-deletable": 2,
-   "is-updatable": 2,
-   "unprotected-deletable": 1,
-   "unprotected-updatable": 1
+   "is-deletable": 1,
+   "is-updatable": 1
   },
   "5280ee1b111a6121": {
    "abi-method-selector": 2,
@@ -739,52 +689,41 @@
   },
   "540bcba4da89d692": {
    "abi-method-selector": 3,
-   "delete-funds-check": 2,
+   "delete-funds-check": 1,
    "group-size-check": 3,
    "inner-txn-close-rekey": 2,
-   "is-deletable": 2,
-   "is-updatable": 2,
-   "unprotected-deletable": 1,
-   "unprotected-updatable": 1
+   "is-deletable": 1,
+   "is-updatable": 1
   },
   "54a941889b0799cd": {
    "abi-method-selector": 5,
-   "delete-funds-check": 2,
+   "delete-funds-check": 1,
    "group-size-check": 8,
    "inner-txn-close-rekey": 2,
-   "is-deletable": 2,
-   "is-updatable": 2,
-   "unprotected-deletable": 2,
-   "unprotected-updatable": 2,
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 1,
    "unsafe-division-order": 4
   },
   "56c8843f37dd4621": {
    "abi-method-selector": 3,
-   "delete-funds-check": 2,
+   "delete-funds-check": 1,
    "inner-txn-close-rekey": 2,
-   "is-deletable": 2,
-   "is-updatable": 2,
-   "unprotected-deletable": 2,
-   "unprotected-updatable": 2
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 1
   },
   "57c75e86cb1d76d5": {
    "abi-method-selector": 3,
    "delete-funds-check": 2,
    "is-deletable": 2,
    "is-updatable": 2,
-   "timelock-upgrade": 1,
-   "unprotected-deletable": 1,
-   "unprotected-updatable": 1
+   "timelock-upgrade": 2
   },
   "591bee9f179b3c2f": {
    "abi-method-selector": 1
-  },
-  "5cd9284180f24892": {
-   "delete-funds-check": 1,
-   "is-deletable": 1,
-   "is-updatable": 1,
-   "unprotected-deletable": 1,
-   "unprotected-updatable": 1
   },
   "5d048d5ce45eef9b": {
    "abi-method-selector": 5,
@@ -885,12 +824,10 @@
   },
   "6753af89b116a777": {
    "abi-method-selector": 4,
-   "delete-funds-check": 2,
+   "delete-funds-check": 1,
    "inner-txn-close-rekey": 3,
-   "is-deletable": 2,
-   "is-updatable": 1,
-   "unprotected-deletable": 2,
-   "unprotected-updatable": 1
+   "is-deletable": 1,
+   "unprotected-deletable": 1
   },
   "678c9bfdcd11f061": {
    "abi-method-selector": 2,
@@ -903,13 +840,6 @@
   },
   "67da7da65cf29166": {
    "ir-tainted-log": 2
-  },
-  "696edeb654199bd4": {
-   "delete-funds-check": 1,
-   "is-deletable": 1,
-   "is-updatable": 1,
-   "unprotected-deletable": 1,
-   "unprotected-updatable": 1
   },
   "697d65336186e13e": {
    "abi-method-selector": 1,
@@ -943,21 +873,16 @@
   },
   "6fd0d96d0a92a60d": {
    "abi-method-selector": 2,
-   "delete-funds-check": 2,
+   "delete-funds-check": 1,
    "inner-txn-close-rekey": 2,
-   "is-deletable": 2,
-   "is-updatable": 1,
-   "unprotected-deletable": 2,
-   "unprotected-updatable": 1
+   "is-deletable": 1,
+   "unprotected-deletable": 1
   },
   "70059ceef033444d": {
    "abi-method-selector": 4,
-   "delete-funds-check": 2,
+   "delete-funds-check": 1,
    "group-size-check": 5,
-   "is-deletable": 2,
-   "is-updatable": 1,
-   "unprotected-deletable": 1,
-   "unprotected-updatable": 1
+   "is-deletable": 1
   },
   "70cd32b9f5339f47": {
    "abi-method-selector": 1,
@@ -990,8 +915,7 @@
    "group-size-check": 3,
    "is-deletable": 1,
    "is-updatable": 1,
-   "unprotected-deletable": 1,
-   "unprotected-updatable": 1,
+   "timelock-upgrade": 1,
    "unvalidated-group-sibling": 1
   },
   "789f4ca7e0b1b676": {
@@ -1015,9 +939,7 @@
    "delete-funds-check": 2,
    "is-deletable": 2,
    "is-updatable": 2,
-   "timelock-upgrade": 1,
-   "unprotected-deletable": 1,
-   "unprotected-updatable": 1
+   "timelock-upgrade": 2
   },
   "81020cba3a6966db": {
    "abi-method-selector": 3,
@@ -1079,33 +1001,29 @@
   },
   "88ddbf11380d8e73": {
    "abi-method-selector": 3,
-   "delete-funds-check": 7,
+   "delete-funds-check": 6,
    "inner-txn-close-rekey": 2,
-   "is-deletable": 7,
-   "is-updatable": 7,
+   "is-deletable": 6,
+   "is-updatable": 6,
    "timelock-upgrade": 3,
-   "unprotected-deletable": 4,
-   "unprotected-updatable": 4,
+   "unprotected-deletable": 3,
+   "unprotected-updatable": 3,
    "unsafe-division-order": 3
   },
   "89bc8c1a7f263451": {
    "abi-method-selector": 5,
-   "delete-funds-check": 2,
+   "delete-funds-check": 1,
    "group-size-check": 5,
-   "is-deletable": 2,
-   "is-updatable": 2,
-   "timelock-upgrade": 1,
-   "unprotected-deletable": 1,
-   "unprotected-updatable": 1
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "timelock-upgrade": 1
   },
   "8d41aba57a48d4c3": {
    "abi-method-selector": 1,
-   "delete-funds-check": 2,
-   "is-deletable": 2,
-   "is-updatable": 2,
-   "timelock-upgrade": 1,
-   "unprotected-deletable": 1,
-   "unprotected-updatable": 1
+   "delete-funds-check": 1,
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "timelock-upgrade": 1
   },
   "8dada863e2ab3b0d": {
    "abi-method-selector": 1,
@@ -1113,17 +1031,11 @@
    "ir-tainted-fund-flow": 1,
    "is-deletable": 1,
    "is-updatable": 1,
-   "unprotected-deletable": 1,
-   "unprotected-updatable": 1
+   "unprotected-deletable": 1
   },
   "92fd7baf5f9da9de": {
-   "delete-funds-check": 1,
    "ir-tainted-log": 1,
    "ir-tainted-state-write": 1,
-   "is-deletable": 1,
-   "is-updatable": 1,
-   "unprotected-deletable": 1,
-   "unprotected-updatable": 1,
    "unsafe-division-order": 2
   },
   "930dc9a9b91a890a": {
@@ -1156,11 +1068,11 @@
   },
   "9549dac15898c880": {
    "abi-method-selector": 3,
-   "delete-funds-check": 2,
-   "is-deletable": 2,
-   "is-updatable": 2,
-   "unprotected-deletable": 2,
-   "unprotected-updatable": 2
+   "delete-funds-check": 1,
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 1
   },
   "95ff8430d668996d": {
    "group-size-check": 28,
@@ -1190,22 +1102,19 @@
   },
   "97a788b3289053e0": {
    "abi-method-selector": 4,
-   "delete-funds-check": 4,
+   "delete-funds-check": 3,
    "inner-txn-close-rekey": 2,
-   "is-deletable": 4,
-   "is-updatable": 3,
-   "unprotected-deletable": 4,
-   "unprotected-updatable": 1
+   "is-deletable": 3,
+   "is-updatable": 2,
+   "unprotected-deletable": 3
   },
   "9845a8da7b21155b": {
    "abi-method-selector": 3,
-   "delete-funds-check": 2,
+   "delete-funds-check": 1,
    "group-size-check": 3,
    "inner-txn-close-rekey": 2,
-   "is-deletable": 2,
-   "is-updatable": 2,
-   "unprotected-deletable": 1,
-   "unprotected-updatable": 1
+   "is-deletable": 1,
+   "is-updatable": 1
   },
   "993ec3747870c69e": {
    "ir-tainted-log": 2
@@ -1233,24 +1142,18 @@
    "abi-method-selector": 1
   },
   "a05c786436fcf459": {
-   "delete-funds-check": 1,
    "ir-tainted-fund-flow": 2,
    "ir-tainted-log": 1,
-   "is-deletable": 1,
-   "is-updatable": 2,
-   "unprotected-deletable": 1,
-   "unprotected-updatable": 2,
+   "is-updatable": 1,
+   "unprotected-updatable": 1,
    "unsafe-division-order": 1
   },
   "a1cacf500ecd49fc": {
    "abi-method-selector": 2,
-   "delete-funds-check": 1,
    "hardcoded-min-balance": 1,
    "ir-tainted-state-write": 3,
-   "is-deletable": 1,
-   "is-updatable": 2,
-   "unprotected-deletable": 1,
-   "unprotected-updatable": 2
+   "is-updatable": 1,
+   "unprotected-updatable": 1
   },
   "a222d5f2a47414e5": {
    "abi-method-selector": 3,
@@ -1271,12 +1174,7 @@
   },
   "a25b4f600ea09ae7": {
    "abi-method-selector": 4,
-   "delete-funds-check": 1,
    "group-size-check": 2,
-   "is-deletable": 1,
-   "is-updatable": 1,
-   "unprotected-deletable": 1,
-   "unprotected-updatable": 1,
    "unvalidated-group-sibling": 1
   },
   "a2cabc5f616a4d7b": {
@@ -1291,22 +1189,18 @@
   },
   "a5660c1327ef2bdc": {
    "abi-method-selector": 4,
-   "delete-funds-check": 2,
+   "delete-funds-check": 1,
    "group-size-check": 4,
-   "is-deletable": 2,
-   "is-updatable": 2,
-   "unprotected-deletable": 1,
-   "unprotected-updatable": 1
+   "is-deletable": 1,
+   "is-updatable": 1
   },
   "a57dffcd3794f353": {
    "abi-method-selector": 4,
-   "delete-funds-check": 2,
+   "delete-funds-check": 1,
    "group-size-check": 4,
-   "is-deletable": 2,
-   "is-updatable": 2,
-   "timelock-upgrade": 1,
-   "unprotected-deletable": 1,
-   "unprotected-updatable": 1
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "timelock-upgrade": 1
   },
   "a60c9442c0a42024": {
    "delete-funds-check": 1,
@@ -1317,13 +1211,11 @@
   },
   "a66fdbaf024abe62": {
    "abi-method-selector": 5,
-   "delete-funds-check": 2,
+   "delete-funds-check": 1,
    "group-size-check": 12,
-   "is-deletable": 2,
-   "is-updatable": 2,
+   "is-deletable": 1,
+   "is-updatable": 1,
    "timelock-upgrade": 1,
-   "unprotected-deletable": 1,
-   "unprotected-updatable": 1,
    "unsafe-division-order": 16,
    "unvalidated-group-sibling": 3
   },
@@ -1372,12 +1264,10 @@
   },
   "aab1460aea8bd0f4": {
    "abi-method-selector": 1,
-   "delete-funds-check": 2,
-   "is-deletable": 2,
-   "is-updatable": 2,
-   "timelock-upgrade": 1,
-   "unprotected-deletable": 1,
-   "unprotected-updatable": 1
+   "delete-funds-check": 1,
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "timelock-upgrade": 1
   },
   "ab4e9c4f469d6954": {
    "abi-method-selector": 9,
@@ -1407,37 +1297,25 @@
    "unprotected-updatable": 1
   },
   "ae6098a180db5aed": {
-   "delete-funds-check": 1,
    "ir-tainted-fund-flow": 1,
    "ir-tainted-log": 1,
    "ir-tainted-state-write": 1,
-   "is-deletable": 1,
-   "is-updatable": 2,
-   "unprotected-deletable": 1,
-   "unprotected-updatable": 2,
+   "is-updatable": 1,
+   "unprotected-updatable": 1,
    "unsafe-division-order": 1
   },
   "ae61683840e3301d": {
    "abi-method-selector": 4,
-   "delete-funds-check": 2,
+   "delete-funds-check": 1,
    "inner-txn-close-rekey": 3,
-   "is-deletable": 2,
-   "is-updatable": 1,
-   "unprotected-deletable": 2,
-   "unprotected-updatable": 1
+   "is-deletable": 1,
+   "unprotected-deletable": 1
   },
   "aecda94473307b1a": {
    "group-size-check": 18,
    "ir-tainted-log": 4,
    "unsafe-division-order": 6,
    "unvalidated-group-sibling": 4
-  },
-  "af1c556c32a6ae26": {
-   "delete-funds-check": 1,
-   "is-deletable": 1,
-   "is-updatable": 1,
-   "unprotected-deletable": 1,
-   "unprotected-updatable": 1
   },
   "afd001f14db2f41f": {
    "delete-funds-check": 1,
@@ -1449,12 +1327,7 @@
    "timelock-upgrade": 1
   },
   "b0385c72fd03627d": {
-   "abi-method-selector": 2,
-   "delete-funds-check": 1,
-   "is-deletable": 1,
-   "is-updatable": 1,
-   "unprotected-deletable": 1,
-   "unprotected-updatable": 1
+   "abi-method-selector": 2
   },
   "b08ce6faeb11912c": {
    "delete-funds-check": 1,
@@ -1475,11 +1348,8 @@
    "unprotected-updatable": 1
   },
   "b1ec32ec887509c4": {
-   "delete-funds-check": 1,
-   "is-deletable": 1,
-   "is-updatable": 2,
-   "unprotected-deletable": 1,
-   "unprotected-updatable": 2,
+   "is-updatable": 1,
+   "unprotected-updatable": 1,
    "unsafe-division-order": 1
   },
   "b24577052209c568": {
@@ -1502,54 +1372,46 @@
    "unprotected-updatable": 1
   },
   "b6324fabd28600e4": {
-   "abi-method-selector": 2,
-   "delete-funds-check": 1,
-   "is-deletable": 1,
-   "is-updatable": 1,
-   "unprotected-deletable": 1,
-   "unprotected-updatable": 1
+   "abi-method-selector": 2
   },
   "b6ced34cebe4448a": {
    "abi-method-selector": 6,
-   "delete-funds-check": 2,
+   "delete-funds-check": 1,
    "group-size-check": 1,
    "inner-txn-close-rekey": 1,
    "inner-txn-fee": 1,
    "ir-tainted-fund-flow": 1,
-   "is-deletable": 2,
-   "is-updatable": 2,
-   "unprotected-deletable": 2,
-   "unprotected-updatable": 2,
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 1,
    "unsafe-division-order": 10,
    "unvalidated-group-sibling": 2
   },
   "b7469c9515a25926": {
    "abi-method-selector": 1,
-   "delete-funds-check": 5,
+   "delete-funds-check": 4,
    "group-size-check": 2,
-   "is-deletable": 5,
-   "is-updatable": 5,
+   "is-deletable": 4,
+   "is-updatable": 4,
    "timelock-upgrade": 2,
-   "unprotected-deletable": 3,
-   "unprotected-updatable": 3,
+   "unprotected-deletable": 2,
+   "unprotected-updatable": 2,
    "unvalidated-group-sibling": 1
   },
   "b896d648afd17b4f": {
-   "delete-funds-check": 1,
    "ir-tainted-state-write": 2,
-   "is-deletable": 1,
-   "is-updatable": 2,
-   "unprotected-deletable": 1,
-   "unprotected-updatable": 2,
+   "is-updatable": 1,
+   "unprotected-updatable": 1,
    "unsafe-division-order": 1
   },
   "b9c1176331fb85ab": {
    "abi-method-selector": 3,
-   "delete-funds-check": 2,
-   "is-deletable": 2,
-   "is-updatable": 2,
-   "unprotected-deletable": 2,
-   "unprotected-updatable": 2
+   "delete-funds-check": 1,
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 1
   },
   "badcfb6810c58a90": {
    "abi-method-selector": 2,
@@ -1586,13 +1448,11 @@
   },
   "bd98153e386e7d95": {
    "abi-method-selector": 5,
-   "delete-funds-check": 2,
+   "delete-funds-check": 1,
    "group-size-check": 5,
-   "is-deletable": 2,
-   "is-updatable": 2,
-   "timelock-upgrade": 1,
-   "unprotected-deletable": 1,
-   "unprotected-updatable": 1
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "timelock-upgrade": 1
   },
   "be3a3d58433b7a44": {
    "abi-method-selector": 1,
@@ -1621,28 +1481,19 @@
    "delete-funds-check": 2,
    "is-deletable": 2,
    "is-updatable": 2,
-   "timelock-upgrade": 1,
-   "unprotected-deletable": 1,
-   "unprotected-updatable": 1
+   "timelock-upgrade": 2
   },
   "c2f26fbe3ac5af68": {
    "abi-method-selector": 5,
-   "delete-funds-check": 2,
-   "group-size-check": 5,
-   "is-deletable": 2,
-   "is-updatable": 2,
-   "timelock-upgrade": 1,
-   "unprotected-deletable": 1,
-   "unprotected-updatable": 1
-  },
-  "c57569548e5e6011": {
-   "abi-method-selector": 1,
    "delete-funds-check": 1,
    "group-size-check": 5,
    "is-deletable": 1,
    "is-updatable": 1,
-   "unprotected-deletable": 1,
-   "unprotected-updatable": 1
+   "timelock-upgrade": 1
+  },
+  "c57569548e5e6011": {
+   "abi-method-selector": 1,
+   "group-size-check": 5
   },
   "c587085c042b55d6": {
    "ir-arbitrary-inner-asset": 1,
@@ -1667,11 +1518,11 @@
   },
   "cf2daeda52103416": {
    "abi-method-selector": 5,
-   "delete-funds-check": 2,
-   "is-deletable": 2,
-   "is-updatable": 2,
-   "unprotected-deletable": 2,
-   "unprotected-updatable": 2
+   "delete-funds-check": 1,
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 1
   },
   "d02b5deda4d587ac": {
    "abi-method-selector": 1,
@@ -1708,19 +1559,17 @@
    "delete-funds-check": 2,
    "is-deletable": 2,
    "is-updatable": 2,
-   "timelock-upgrade": 1,
-   "unprotected-deletable": 1,
-   "unprotected-updatable": 1
+   "timelock-upgrade": 2
   },
   "d605414bf36e02aa": {
    "abi-method-selector": 3,
-   "delete-funds-check": 8,
+   "delete-funds-check": 7,
    "group-size-check": 10,
-   "is-deletable": 8,
-   "is-updatable": 8,
+   "is-deletable": 7,
+   "is-updatable": 7,
    "timelock-upgrade": 4,
-   "unprotected-deletable": 4,
-   "unprotected-updatable": 4,
+   "unprotected-deletable": 3,
+   "unprotected-updatable": 3,
    "unvalidated-group-sibling": 1
   },
   "d60702da0ff7155e": {
@@ -1747,20 +1596,18 @@
   },
   "dae1dea43176e660": {
    "abi-method-selector": 3,
-   "delete-funds-check": 2,
-   "is-deletable": 2,
-   "is-updatable": 2,
-   "unprotected-deletable": 2,
-   "unprotected-updatable": 2
+   "delete-funds-check": 1,
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 1
   },
   "db1857ede327f1e7": {
    "abi-method-selector": 8,
-   "delete-funds-check": 2,
+   "delete-funds-check": 1,
    "group-size-check": 4,
-   "is-deletable": 2,
-   "is-updatable": 1,
-   "unprotected-deletable": 2,
-   "unprotected-updatable": 1,
+   "is-deletable": 1,
+   "unprotected-deletable": 1,
    "unsafe-division-order": 5,
    "unvalidated-group-sibling": 1
   },
@@ -1793,13 +1640,13 @@
   },
   "dfe4e600471ce554": {
    "abi-method-selector": 1,
-   "delete-funds-check": 5,
+   "delete-funds-check": 4,
    "group-size-check": 2,
-   "is-deletable": 5,
-   "is-updatable": 5,
+   "is-deletable": 4,
+   "is-updatable": 4,
    "timelock-upgrade": 2,
-   "unprotected-deletable": 3,
-   "unprotected-updatable": 3,
+   "unprotected-deletable": 2,
+   "unprotected-updatable": 2,
    "unvalidated-group-sibling": 1
   },
   "e01988220dc9c15b": {
@@ -1807,27 +1654,22 @@
    "delete-funds-check": 2,
    "is-deletable": 2,
    "is-updatable": 2,
-   "timelock-upgrade": 1,
-   "unprotected-deletable": 1,
-   "unprotected-updatable": 1
+   "timelock-upgrade": 2
   },
   "e24119f3ba2fd263": {
    "abi-method-selector": 5,
-   "delete-funds-check": 2,
+   "delete-funds-check": 1,
    "group-size-check": 5,
-   "is-deletable": 2,
-   "is-updatable": 2,
-   "unprotected-deletable": 1,
-   "unprotected-updatable": 2
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "unprotected-updatable": 1
   },
   "e319ae37af461165": {
    "abi-method-selector": 3,
    "delete-funds-check": 2,
    "is-deletable": 2,
    "is-updatable": 2,
-   "timelock-upgrade": 1,
-   "unprotected-deletable": 1,
-   "unprotected-updatable": 1
+   "timelock-upgrade": 2
   },
   "e5a04ec371c6a7dd": {
    "abi-method-selector": 1,
@@ -1856,32 +1698,27 @@
   },
   "e9f883f3d064eca9": {
    "abi-method-selector": 3,
-   "delete-funds-check": 2,
+   "delete-funds-check": 1,
    "group-size-check": 3,
    "inner-txn-close-rekey": 2,
-   "is-deletable": 2,
-   "is-updatable": 2,
-   "unprotected-deletable": 1,
-   "unprotected-updatable": 1
+   "is-deletable": 1,
+   "is-updatable": 1
   },
   "ea52c8ab6316226a": {
    "abi-method-selector": 4,
-   "delete-funds-check": 4,
+   "delete-funds-check": 3,
    "inner-txn-close-rekey": 2,
-   "is-deletable": 4,
-   "is-updatable": 3,
-   "unprotected-deletable": 4,
-   "unprotected-updatable": 1
+   "is-deletable": 3,
+   "is-updatable": 2,
+   "unprotected-deletable": 3
   },
   "eaae54cabc8c8863": {
    "abi-method-selector": 4,
-   "delete-funds-check": 2,
+   "delete-funds-check": 1,
    "group-size-check": 4,
-   "is-deletable": 2,
-   "is-updatable": 2,
-   "timelock-upgrade": 1,
-   "unprotected-deletable": 1,
-   "unprotected-updatable": 1
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "timelock-upgrade": 1
   },
   "eba5ab6f43a6c359": {
    "abi-method-selector": 1,
@@ -1896,19 +1733,17 @@
    "delete-funds-check": 2,
    "is-deletable": 2,
    "is-updatable": 2,
-   "timelock-upgrade": 1,
-   "unprotected-deletable": 1,
-   "unprotected-updatable": 1
+   "timelock-upgrade": 2
   },
   "ec579efeae941776": {
    "abi-method-selector": 3,
-   "delete-funds-check": 8,
+   "delete-funds-check": 7,
    "group-size-check": 9,
-   "is-deletable": 8,
-   "is-updatable": 8,
+   "is-deletable": 7,
+   "is-updatable": 7,
    "timelock-upgrade": 4,
-   "unprotected-deletable": 4,
-   "unprotected-updatable": 4,
+   "unprotected-deletable": 3,
+   "unprotected-updatable": 3,
    "unvalidated-group-sibling": 1
   },
   "ec57a6dac1cbdd1a": {
@@ -1916,20 +1751,16 @@
    "delete-funds-check": 2,
    "is-deletable": 2,
    "is-updatable": 2,
-   "timelock-upgrade": 1,
-   "unprotected-deletable": 1,
-   "unprotected-updatable": 1
+   "timelock-upgrade": 2
   },
   "ed051077c0d8b831": {
    "abi-method-selector": 4,
-   "delete-funds-check": 2,
+   "delete-funds-check": 1,
    "group-size-check": 9,
    "inner-txn-close-rekey": 1,
    "ir-tainted-state-write": 8,
-   "is-deletable": 2,
-   "is-updatable": 1,
-   "unprotected-deletable": 2,
-   "unprotected-updatable": 1,
+   "is-deletable": 1,
+   "unprotected-deletable": 1,
    "unvalidated-group-sibling": 1
   },
   "ed34b21a92a4d7de": {
@@ -1943,23 +1774,18 @@
   },
   "eda9a4bab5998fba": {
    "abi-method-selector": 7,
-   "delete-funds-check": 2,
+   "delete-funds-check": 1,
    "group-size-check": 6,
-   "is-deletable": 2,
-   "is-updatable": 1,
-   "unprotected-deletable": 1,
-   "unprotected-updatable": 1,
+   "is-deletable": 1,
    "unvalidated-group-sibling": 1
   },
   "ee24edcc6a1e0af3": {
    "abi-method-selector": 5,
-   "delete-funds-check": 2,
+   "delete-funds-check": 1,
    "group-size-check": 5,
-   "is-deletable": 2,
-   "is-updatable": 2,
-   "timelock-upgrade": 1,
-   "unprotected-deletable": 1,
-   "unprotected-updatable": 1
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "timelock-upgrade": 1
   },
   "ee9c72e8f3daa727": {
    "abi-method-selector": 1,
@@ -1971,23 +1797,19 @@
   },
   "eead34e66cdb7dde": {
    "abi-method-selector": 3,
-   "delete-funds-check": 2,
+   "delete-funds-check": 1,
    "group-size-check": 3,
    "inner-txn-close-rekey": 2,
-   "is-deletable": 2,
-   "is-updatable": 2,
-   "unprotected-deletable": 1,
-   "unprotected-updatable": 1
+   "is-deletable": 1,
+   "is-updatable": 1
   },
   "ef200e2ebe348d98": {
    "abi-method-selector": 5,
-   "delete-funds-check": 2,
+   "delete-funds-check": 1,
    "group-size-check": 5,
-   "is-deletable": 2,
-   "is-updatable": 2,
-   "timelock-upgrade": 1,
-   "unprotected-deletable": 1,
-   "unprotected-updatable": 1
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "timelock-upgrade": 1
   },
   "ef5d53b0aae5db76": {
    "group-size-check": 19,
@@ -2011,9 +1833,7 @@
    "delete-funds-check": 2,
    "is-deletable": 2,
    "is-updatable": 2,
-   "timelock-upgrade": 1,
-   "unprotected-deletable": 1,
-   "unprotected-updatable": 1
+   "timelock-upgrade": 2
   },
   "f3be6a65813fb573": {
    "abi-method-selector": 1,
@@ -2034,23 +1854,17 @@
   },
   "f4b4734402e25a05": {
    "abi-method-selector": 2,
-   "delete-funds-check": 2,
+   "delete-funds-check": 1,
    "hardcoded-min-balance": 1,
    "ir-tainted-state-write": 3,
-   "is-deletable": 2,
-   "is-updatable": 3,
+   "is-deletable": 1,
+   "is-updatable": 2,
    "timelock-upgrade": 1,
-   "unprotected-deletable": 1,
-   "unprotected-updatable": 2,
+   "unprotected-updatable": 1,
    "unsafe-division-order": 1
   },
   "f6dad0a32cea5b34": {
-   "abi-method-selector": 1,
-   "delete-funds-check": 1,
-   "is-deletable": 1,
-   "is-updatable": 1,
-   "unprotected-deletable": 1,
-   "unprotected-updatable": 1
+   "abi-method-selector": 1
   },
   "f8e816049ba831ce": {
    "abi-method-selector": 1,
@@ -2084,45 +1898,36 @@
   },
   "fca8aebfe0aafddb": {
    "abi-method-selector": 6,
-   "delete-funds-check": 2,
+   "delete-funds-check": 1,
    "group-size-check": 1,
    "inner-txn-close-rekey": 1,
    "ir-tainted-fund-flow": 1,
-   "is-deletable": 2,
-   "is-updatable": 2,
-   "unprotected-deletable": 2,
-   "unprotected-updatable": 2,
+   "is-deletable": 1,
+   "is-updatable": 1,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 1,
    "unsafe-division-order": 10,
    "unvalidated-group-sibling": 2
   },
   "fd2b9aa705590813": {
-   "delete-funds-check": 1,
    "ir-tainted-fund-flow": 2,
    "ir-tainted-log": 1,
-   "is-deletable": 1,
-   "is-updatable": 2,
-   "unprotected-deletable": 1,
-   "unprotected-updatable": 1,
+   "is-updatable": 1,
    "unsafe-division-order": 1
   },
   "fdebc35de3f92437": {
    "abi-method-selector": 2,
-   "delete-funds-check": 1,
-   "ir-tainted-fund-flow": 2,
-   "is-deletable": 1,
-   "is-updatable": 1,
-   "unprotected-deletable": 1,
-   "unprotected-updatable": 1
+   "ir-tainted-fund-flow": 2
   },
   "fdfd5c7a54483a76": {
    "abi-method-selector": 3,
-   "delete-funds-check": 8,
+   "delete-funds-check": 7,
    "group-size-check": 10,
-   "is-deletable": 8,
-   "is-updatable": 8,
+   "is-deletable": 7,
+   "is-updatable": 7,
    "timelock-upgrade": 4,
-   "unprotected-deletable": 4,
-   "unprotected-updatable": 4,
+   "unprotected-deletable": 3,
+   "unprotected-updatable": 3,
    "unvalidated-group-sibling": 1
   }
  }

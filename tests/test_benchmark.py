@@ -203,7 +203,15 @@ _BASELINE: dict[str, tuple[int, int, int, int]] = {
     # corpus does exactly this, rejecting with `err` when the sender is not the
     # stored admin. The new TP is the shape that must stay a finding: an "admin"
     # the CALLER supplies, which authorises nothing.
-    "unprotected-deletable": (1, 0, 0, 5),
+    # +1 TN (2026-07-27): the app-CREATION path. Every router opens
+    # `txn ApplicationID; int 0; ==; bnz create`, and the create handler does not
+    # inspect OnCompletion — so an accept IS reachable there with OnCompletion ==
+    # DeleteApplication. It still cannot be the claimed vulnerability: with
+    # ApplicationID == 0 the caller is creating a NEW app, so the action applies
+    # to the app being created in that same transaction, which the caller made
+    # and already controls. Holds regardless of what the protocol's
+    # well-formedness rules permit, so it needed no ruling from a node.
+    "unprotected-deletable": (1, 0, 0, 6),
     # +2 TN (2026-07-25): the Update-action half of the OnCompletion
     # scratch/phi guard fix — verified clean, now pinned.
     # +1 TN (2026-07-26 review): the creator guard on the ACTION BRANCH,
@@ -222,7 +230,15 @@ _BASELINE: dict[str, tuple[int, int, int, int]] = {
     # corpus does exactly this, rejecting with `err` when the sender is not the
     # stored admin. The new TP is the shape that must stay a finding: an "admin"
     # the CALLER supplies, which authorises nothing.
-    "unprotected-updatable": (2, 0, 0, 6),
+    # +1 TN (2026-07-27): the app-CREATION path. Every router opens
+    # `txn ApplicationID; int 0; ==; bnz create`, and the create handler does not
+    # inspect OnCompletion — so an accept IS reachable there with OnCompletion ==
+    # UpdateApplication. It still cannot be the claimed vulnerability: with
+    # ApplicationID == 0 the caller is creating a NEW app, so the action applies
+    # to the app being created in that same transaction, which the caller made
+    # and already controls. Holds regardless of what the protocol's
+    # well-formedness rules permit, so it needed no ruling from a node.
+    "unprotected-updatable": (2, 0, 0, 7),
     "unsafe-division-order": (3, 0, 0, 3),
     "unsafe-lsig-args": (1, 0, 0, 1),
     "unvalidated-group-sibling": (6, 0, 0, 9),
