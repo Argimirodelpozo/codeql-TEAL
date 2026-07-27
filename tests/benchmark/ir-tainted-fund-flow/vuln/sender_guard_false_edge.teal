@@ -1,0 +1,18 @@
+#pragma version 10
+// VULN: the sender comparison is written correctly, but the payout sits on the
+// FALSE edge — it runs precisely when the caller is NOT the creator.
+txn Sender
+global CreatorAddress
+==
+bnz done
+txna ApplicationArgs 0
+itxn_begin
+int pay
+itxn_field TypeEnum
+itxn_field Receiver
+int 1000000
+itxn_field Amount
+itxn_submit
+done:
+int 1
+return

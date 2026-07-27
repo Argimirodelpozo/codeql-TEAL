@@ -1,0 +1,20 @@
+#pragma version 10
+// SAFE: the guard is spelled as a rejecting inequality — reject when the
+// caller is NOT the creator. The payout still requires Sender == creator, so
+// the inverted-guard fix must not flag this.
+txn Sender
+global CreatorAddress
+!=
+bnz reject
+txna ApplicationArgs 0
+itxn_begin
+int pay
+itxn_field TypeEnum
+itxn_field Receiver
+int 1000000
+itxn_field Amount
+itxn_submit
+int 1
+return
+reject:
+err

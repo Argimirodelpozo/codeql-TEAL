@@ -66,6 +66,13 @@ _TXN_SENDER_FAM = frozenset({"txn", "txna"})
 #: its length, not its value, so it is not a value guard (see ``_classify``).
 _VALUE_OPAQUE_OPS = frozenset({"len", "bitlen"})
 
+#: Equality / inequality comparisons, uint64 and bytes. Which one encloses a
+#: sender read decides whether that read PINS the sender (an equality that must
+#: hold) or merely excludes one address (an inequality that must hold) -- see
+#: the comparison-sense reasoning in :func:`_classify`.
+_EQ_OPS = frozenset({"==", "b=="})
+_NEQ_OPS = frozenset({"!=", "b!="})
+
 
 # --------------------------------------------------------------------------
 # IR CFG + dominators (intra-subroutine)
@@ -412,18 +419,42 @@ def _classify(kind, polarity, cond, def_of, sink_regs, sink_keys, inv_ret=None) 
     # `value_ok` goes false under such ops, exactly as `guaranteed` goes false
     # under `||`. A path that also constrains the value (`assert(len==8 && btoi(arg)
     # <= max)`) still credits, via the value-preserving conjunct.
+    # COMPARISON SENSE: a sender check only authorises when it RESTRICTS the sender
+    # to a trusted address. `assert(Sender == creator)` does; `assert(Sender !=
+    # creator)` does the opposite -- it admits everyone BUT the creator, which is
+    # every attacker. The branch polarity matters the same way: a payout reached
+    # only on the FALSE edge of `Sender == creator` runs precisely when the caller
+    # is not the creator. Both read as "guarded by sender" until the sense of the
+    # enclosing comparison is tracked, so a wide-open payout was reported clean.
+    #
+    # `sense` is what the surrounding condition must evaluate to for this guard to
+    # hold: True normally, False on a branch whose FALSE edge reaches the sink.
+    # `!` flips it, and De Morgan swaps which connective destroys the guarantee --
+    # under a required-False condition it is `&&`, not `||`, that leaves each
+    # operand free.
     ci = cs = False
-    # A register may appear under different (guaranteed, value_ok) contexts (e.g.
-    # `(A||B) && A`, or `len(arg)==8 && arg==k`); both flags only ever go
-    # True->False down a path, so key the visited-set on the context to let a
-    # stronger path credit even after a weaker one was walked.
+    # A register may appear under different (guaranteed, value_ok, sense,
+    # sender_ok) contexts (e.g. `(A||B) && A`, or `len(arg)==8 && arg==k`); the
+    # flags only ever weaken down a path, so key the visited-set on the context to
+    # let a stronger path credit even after a weaker one was walked.
     seen: set = set()
 
-    def visit(value, guaranteed, value_ok, depth=0):
+    def _compares_against_user_input(src) -> bool:
+        """The comparison has an operand the ATTACKER supplies -- so pinning the
+        sender against it authorises nothing (`Sender == ApplicationArgs[2]` is
+        satisfied by any caller who passes their own address)."""
+        for a in src.args:
+            o = def_of.get(id(a))
+            s = _intr(o) if o is not None else None
+            if s is not None and source_label(s) is not None:
+                return True
+        return False
+
+    def visit(value, guaranteed, value_ok, sense, sender_ok, depth=0):
         nonlocal ci, cs
         if not isinstance(value, pre_ir.Register) or depth > 8:
             return
-        key = (id(value), guaranteed, value_ok)
+        key = (id(value), guaranteed, value_ok, sense, sender_ok)
         if key in seen:
             return
         seen.add(key)
@@ -433,27 +464,40 @@ def _classify(kind, polarity, cond, def_of, sink_regs, sink_keys, inv_ret=None) 
             if id(value) in sink_regs:
                 ci = True
             if src is not None:
-                if _is_sender_op(src):
+                if _is_sender_op(src) and sender_ok:
                     cs = True
                 if _input_key(src) in sink_keys:
                     ci = True
-        # `||` un-guarantees its operands; `len`/`bitlen` make the operand's VALUE
-        # unconstrained by this comparison (only its length is checked).
-        child_guar = guaranteed and not (src is not None and src.op == "||")
+        # A connective un-guarantees its operands when satisfying the whole
+        # condition does not force each one: `||` under a required-True condition,
+        # `&&` under a required-False one (De Morgan).
+        breaks = "||" if sense else "&&"
+        child_guar = guaranteed and not (src is not None and src.op == breaks)
         child_val = value_ok and not (src is not None and src.op in _VALUE_OPAQUE_OPS)
+        child_sense = (not sense) if (src is not None and src.op == "!") else sense
+        # Descending INTO a comparison decides whether a sender read below it is
+        # actually pinned: an equality that must hold pins it, an equality that
+        # must NOT hold (or a `!=` that must hold) excludes one address and admits
+        # the rest.
+        child_sender = sender_ok
+        if src is not None and src.op in _EQ_OPS:
+            child_sender = child_sense and not _compares_against_user_input(src)
+        elif src is not None and src.op in _NEQ_OPS:
+            child_sender = (not child_sense) and not _compares_against_user_input(src)
         if src is not None:
             for a in src.args:
-                visit(a, child_guar, child_val, depth + 1)
+                visit(a, child_guar, child_val, child_sense, child_sender, depth + 1)
         elif isinstance(o, pre_ir.Assignment) and isinstance(o.source, pre_ir.Register):
-            visit(o.source, child_guar, child_val, depth + 1)
+            visit(o.source, child_guar, child_val, child_sense, child_sender, depth + 1)
         elif isinstance(o, pre_ir.Phi):
             for pa in o.args:
-                visit(pa.value, child_guar, child_val, depth + 1)
+                visit(pa.value, child_guar, child_val, child_sense, child_sender,
+                      depth + 1)
         if inv_ret:                       # descend into an asserted validation sub
             for rv in inv_ret.get(id(value), ()):
-                visit(rv, child_guar, child_val, depth + 1)
+                visit(rv, child_guar, child_val, child_sense, child_sender, depth + 1)
 
-    visit(cond, True, True)
+    visit(cond, True, True, polarity != "false", False)
     return Guard(kind, polarity, ci, cs)
 
 
@@ -703,13 +747,22 @@ def _tainted_sink_flows(lifter, sink_of, taint=None, trusted_args=frozenset(),
                     if not sources:
                         continue
                     if valreg is not None:
-                        walked = list(_walk(valreg, def_of))
+                        walked = list(_walk(valreg, def_of, inv_ret=inv_ret))
                         sink_regs = {id(r) for r, _ in walked}
+                        # Only the TAINTED sub-terms may satisfy a value check.
+                        # `sink_regs` is the sink operand's whole def-tree, so
+                        # matching a guard against any member credited checks on
+                        # co-operands the attacker does not control: with
+                        # `Amount = state_rate * arg`, `assert(state_rate <= cap)`
+                        # read as "the input is validated" and suppressed the
+                        # finding, while `arg` stayed free. That is the canonical
+                        # `payout = shares * price` shape.
+                        guard_regs = {r for r in sink_regs if taint.get(r)}
                         sink_keys = {k for _, oo in walked
                                      if (k := _input_key(_intr(oo) if oo is not None else None)) is not None}
                     else:
-                        sink_regs, sink_keys = set(), set()
-                    guards = _dominating_guards(by_id, dom, b.id, idx, def_of, sink_regs,
+                        sink_regs, guard_regs, sink_keys = set(), set(), set()
+                    guards = _dominating_guards(by_id, dom, b.id, idx, def_of, guard_regs,
                                                 sink_keys, inv_ret)
                     # Interprocedural: a value flowing from a caller-checked param.
                     feeding = {pidx[r] for r in sink_regs if r in pidx}

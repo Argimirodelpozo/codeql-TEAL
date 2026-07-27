@@ -1,0 +1,17 @@
+#pragma version 10
+// VULN: the sender is pinned against an address the CALLER supplies, so the
+// equality authorises nothing — any caller passes their own address.
+txn Sender
+txna ApplicationArgs 2
+==
+assert
+txna ApplicationArgs 0
+itxn_begin
+int pay
+itxn_field TypeEnum
+itxn_field Receiver
+int 1000000
+itxn_field Amount
+itxn_submit
+int 1
+return
