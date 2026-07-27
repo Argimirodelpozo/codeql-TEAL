@@ -3,20 +3,23 @@ contracts the lift has never seen).
 
   python -m tests.behavioral_lift.fetch_mainnet <out-dir> [app_id ...]
 
-With no ids, samples a diverse batch from the public mainnet indexer. The chain
-helpers themselves live in :mod:`tealql.tealtools._utils.chain`.
+With no ids, samples a diverse batch from the public mainnet indexer via
+:func:`sampling.sample`. The chain fetch helper itself lives in
+:mod:`tealql.tealtools._utils.chain`.
 """
 from __future__ import annotations
 
 import sys
 from pathlib import Path
 
-from tealql.tealtools._utils.chain import fetch_approval, sample_app_ids  # noqa: F401 (re-export)
+from tealql.tealtools._utils.chain import fetch_approval
+
+from .sampling import sample
 
 
 def main(argv):
     out = Path(argv[0]) if argv else Path("/tmp/mainnet_contracts")
-    ids = [int(x) for x in argv[1:]] or sample_app_ids()
+    ids = [int(x) for x in argv[1:]] or sample(pages=2)[:60]
     out.mkdir(parents=True, exist_ok=True)
     ok = 0
     for app_id in ids:
