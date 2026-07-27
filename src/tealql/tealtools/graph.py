@@ -62,14 +62,28 @@ def _byte_literal(v: str):
 
 
 def _strip_inline_comment(code: str) -> str:
-    """Drop a ``//`` inline comment that sits outside a quoted string AND
-    outside a parenthesised group.
+    """Drop a ``//`` inline comment that sits outside a quoted string, outside a
+    parenthesised group, and at a TOKEN BOUNDARY.
 
-    The paren rule is not decoration: the base64 alphabet INCLUDES ``/``, so a
-    payload containing ``//`` is ordinary — ``pushbytes base64(AA//)`` is a
-    perfectly good constant. Cutting at the first ``//`` truncated the operand
-    to ``base64(AA`` and the value silently became the ASCII text of the
-    fragment. ``tokenize_operands`` already tracks depth for the same reason."""
+    None of the three rules is decoration; each corresponds to a way the base64
+    alphabet collides with the comment marker, because that alphabet INCLUDES
+    ``/``. A payload containing ``//`` is ordinary in both spellings the
+    assembler accepts:
+
+    * ``pushbytes base64(AA//)`` — the paren rule. Cutting at the first ``//``
+      truncated the operand to ``base64(AA`` and the value silently became the
+      ASCII text of the fragment.
+    * ``pushbytes base64 AAAAAA//`` — the token-boundary rule, and the same bug
+      one spelling over: with no parens there is no depth to track, so
+      ``b'\\x00\\x00\\x00\\x00\\x0f\\xff'`` decoded to four zero bytes. A guard
+      comparing against such a constant simply never matches, and nothing says
+      so. (Found by ``test_the_push_opcodes_agree_with_the_pseudo_op``, which is
+      precisely the payload shape a hand-written example never produces.)
+
+    The token-boundary rule is also what the real assembler does: go-algorand
+    splits the line on whitespace first and only then asks whether a token
+    STARTS with ``//``, so ``AAAAAA//`` stays one token and ``int 1// x`` is not
+    a comment at all. ``tokenize_operands`` already applies the same rule."""
     q = False
     depth = 0
     for i in range(len(code) - 1):
@@ -82,7 +96,8 @@ def _strip_inline_comment(code: str) -> str:
             depth += 1
         elif c == ")":
             depth = max(0, depth - 1)
-        elif depth == 0 and code[i:i + 2] == "//":
+        elif (depth == 0 and code[i:i + 2] == "//"
+                and (i == 0 or code[i - 1].isspace())):
             return code[:i]
     return code
 
