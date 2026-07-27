@@ -1,0 +1,13 @@
+#pragma version 10
+// VULN: the Fee bound holds only when the other arm of the `||` is false,
+// and the sender chooses Amount.
+txn Fee
+int 1000
+<=
+txn Amount
+int 5
+<
+||
+assert
+int 1
+return

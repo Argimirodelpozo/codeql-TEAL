@@ -1,0 +1,13 @@
+#pragma version 10
+// VULN: RekeyTo is compared, but only inside an `||` whose other arm an
+// attacker satisfies at will. A low-fee transaction rekeys the account.
+txn RekeyTo
+global ZeroAddress
+==
+txn Fee
+int 1000
+<
+||
+assert
+int 1
+return

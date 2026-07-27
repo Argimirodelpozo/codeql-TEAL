@@ -1,0 +1,12 @@
+#pragma version 10
+// VULN: CloseRemainderTo pinned only inside a bypassable disjunction.
+txn CloseRemainderTo
+global ZeroAddress
+==
+txn Fee
+int 1000
+<
+||
+assert
+int 1
+return

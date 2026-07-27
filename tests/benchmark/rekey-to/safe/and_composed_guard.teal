@@ -1,0 +1,13 @@
+#pragma version 10
+// SAFE: composed into a CONJUNCTION — assert(A && B) forces A, so the RekeyTo
+// pin still holds. The `||` fix must not over-correct onto `&&`.
+txn RekeyTo
+global ZeroAddress
+==
+txn Fee
+int 1000
+<
+&&
+assert
+int 1
+return

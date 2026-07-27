@@ -1,0 +1,14 @@
+#pragma version 10
+// SAFE: a disjunction whose EVERY arm constrains RekeyTo — no arm leaves the
+// field free, so this is a real (if unusual) pin. Must not be confused with
+// the bypassable `or_bypass_unrelated_arm` shape.
+txn RekeyTo
+global ZeroAddress
+==
+txn RekeyTo
+addr AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+==
+||
+assert
+int 1
+return
