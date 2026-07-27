@@ -103,14 +103,17 @@ _BASELINE: dict[str, tuple[int, int, int, int]] = {
     "abi-method-selector": (1, 0, 0, 1),
     "arbitrary-inner-appcall": (4, 0, 0, 4),
     "arbitrary-inner-asset": (2, 0, 0, 3),
-    "asset-close-to": (3, 0, 0, 4),
+    # +1 TP (2026-07-26): the `||`-bypass. See the rekey-to entry below — the
+    # same exploitable hole existed in every detector on this enforcement path.
+    "asset-close-to": (4, 0, 0, 4),
     "asset-id-validation": (1, 0, 0, 2),
     "box-key": (3, 0, 0, 2),
     # +1 TN (2026-07-25): a HAND-WRITTEN fixture. The corpus is otherwise
     # compiled output, whose shape is narrow and regular — the branch-polarity
     # FP found this session was an idiomatic hand-written guard no compiler
     # emits, so no fixture contained one.
-    "close-remainder-to": (3, 0, 0, 5),
+    # +1 TP (2026-07-26): the `||`-bypass — see the rekey-to entry.
+    "close-remainder-to": (4, 0, 0, 5),
     "constant-condition": (4, 0, 0, 4),
     # +2 TN each (2026-07-25 review, OnCompletion FP-stress): the guard
     # round-tripped through scratch and the guard joined at a phi were both
@@ -121,7 +124,8 @@ _BASELINE: dict[str, tuple[int, int, int, int]] = {
     # compiled output, whose shape is narrow and regular — the branch-polarity
     # FP found this session was an idiomatic hand-written guard no compiler
     # emits, so no fixture contained one.
-    "fee-validation": (1, 0, 0, 3),
+    # +1 TP (2026-07-26): the `||`-bypass — see the rekey-to entry.
+    "fee-validation": (2, 0, 0, 3),
     "group-size-check": (1, 0, 0, 2),
     "hardcoded-min-balance": (1, 0, 0, 1),
     "inner-txn-close-rekey": (1, 0, 0, 1),
@@ -134,7 +138,16 @@ _BASELINE: dict[str, tuple[int, int, int, int]] = {
     # +2 TN (2026-07-25): a sender guard whose RESULT is round-tripped through
     # scratch, and the same joined at a phi — both were FPs until
     # `fund_flow._scratch_value_edges` bridged the IR-level round-trip.
-    "ir-tainted-fund-flow": (5, 0, 0, 8),
+    #
+    # +3 TP / +1 TN (2026-07-26 review): comparison SENSE. `_classify` credited
+    # any structural appearance of `txn Sender` / `CreatorAddress` in a guard,
+    # so all three of `assert(Sender != creator)`, a payout on the FALSE edge of
+    # `Sender == creator`, and `assert(Sender == ApplicationArgs[2])` read as
+    # sender-guarded — each admits every attacker. The polarity was already
+    # computed in `_dominating_guards` and stored on `Guard()`; nothing read it.
+    # The new TN pins the shape the fix must NOT break: the same guard spelled as
+    # a rejecting inequality (`!=; bnz reject`), which is a real guard.
+    "ir-tainted-fund-flow": (8, 0, 0, 9),
     "ir-tainted-log": (2, 0, 0, 3),
     "ir-tainted-state-write": (2, 0, 0, 3),
     "ir-partial-tainted-fund-flow": (4, 0, 0, 4),
@@ -151,7 +164,16 @@ _BASELINE: dict[str, tuple[int, int, int, int]] = {
     # +3 TN (2026-07-25 review): the two negated-guard branch polarities and the
     # diamond-joined guard — all three were FALSE POSITIVES before the fix, and
     # the corpus had no safe case covering either shape.
-    "rekey-to": (5, 0, 0, 8),
+    #
+    # +1 TP / +2 TN (2026-07-26 review): the `||`-bypass. The enforcement walk
+    # crossed `||` unconditionally, so `assert(RekeyTo == ZeroAddress || Fee <
+    # 1000)` read as a rekey guard — an attacker sends a low-fee transaction and
+    # takes the account. Exploitable, and it was silent in rekey-to,
+    # close-remainder-to, asset-close-to and fee-validation alike. The two new
+    # TNs are the shapes the fix must NOT break: a disjunction whose every arm
+    # pins the field (a real pin), and the same guard composed with `&&` (which
+    # genuinely does force each conjunct).
+    "rekey-to": (6, 0, 0, 10),
     "tainted-fund-flow": (4, 0, 0, 4),
     # +2 TN (2026-07-25): the Update-action half of the OnCompletion
     # scratch/phi guard fix — verified clean, now pinned.
@@ -165,10 +187,26 @@ _BASELINE: dict[str, tuple[int, int, int, int]] = {
     # round-tripped through scratch and the guard joined at a phi were both
     # FALSE POSITIVES — the path predicate lands on the `load`/phi, not the
     # comparison, so every OnCompletion detector read the guard as absent.
-    "unprotected-deletable": (1, 0, 0, 3),
+    # +1 TN (2026-07-26 review): the creator guard on the ACTION BRANCH,
+    # falling through to a shared epilogue. Path predicates at a join are the
+    # intersection of the incoming paths, so the guard was invisible there and
+    # the contract read "deletable by anyone" — on ~82% of distinct real
+    # mainnet contracts, at HIGH. A shared return block is what every
+    # optimising compiler emits. Fixed by walking back over EDGES
+    # (`sender_creator_guard_covers_action`), which can express "this edge is
+    # not an Update path" where a block cannot.
+    "unprotected-deletable": (1, 0, 0, 4),
     # +2 TN (2026-07-25): the Update-action half of the OnCompletion
     # scratch/phi guard fix — verified clean, now pinned.
-    "unprotected-updatable": (1, 0, 0, 3),
+    # +1 TN (2026-07-26 review): the creator guard on the ACTION BRANCH,
+    # falling through to a shared epilogue. Path predicates at a join are the
+    # intersection of the incoming paths, so the guard was invisible there and
+    # the contract read "updatable by anyone" — on ~82% of distinct real
+    # mainnet contracts, at HIGH. A shared return block is what every
+    # optimising compiler emits. Fixed by walking back over EDGES
+    # (`sender_creator_guard_covers_action`), which can express "this edge is
+    # not an Update path" where a block cannot.
+    "unprotected-updatable": (1, 0, 0, 4),
     "unsafe-division-order": (3, 0, 0, 3),
     "unsafe-lsig-args": (1, 0, 0, 1),
     "unvalidated-group-sibling": (6, 0, 0, 9),
