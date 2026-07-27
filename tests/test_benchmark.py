@@ -195,7 +195,15 @@ _BASELINE: dict[str, tuple[int, int, int, int]] = {
     # optimising compiler emits. Fixed by walking back over EDGES
     # (`sender_creator_guard_covers_action`), which can express "this edge is
     # not an Update path" where a block cannot.
-    "unprotected-deletable": (1, 0, 0, 4),
+    # +1 TN (2026-07-27, from the expanded probe corpus): only
+    # `Sender == global CreatorAddress` counted as authorisation, so the two
+    # ways real apps actually gate an upgrade — an admin address held in global
+    # state (CreatorAddress is immutable and cannot be rotated) and a hardcoded
+    # `addr` literal — both read as "deletable by anyone". A v2 mainnet app in the
+    # corpus does exactly this, rejecting with `err` when the sender is not the
+    # stored admin. The new TP is the shape that must stay a finding: an "admin"
+    # the CALLER supplies, which authorises nothing.
+    "unprotected-deletable": (1, 0, 0, 5),
     # +2 TN (2026-07-25): the Update-action half of the OnCompletion
     # scratch/phi guard fix — verified clean, now pinned.
     # +1 TN (2026-07-26 review): the creator guard on the ACTION BRANCH,
@@ -206,7 +214,15 @@ _BASELINE: dict[str, tuple[int, int, int, int]] = {
     # optimising compiler emits. Fixed by walking back over EDGES
     # (`sender_creator_guard_covers_action`), which can express "this edge is
     # not an Update path" where a block cannot.
-    "unprotected-updatable": (1, 0, 0, 4),
+    # +2 TN / +1 TP (2026-07-27, from the expanded probe corpus): only
+    # `Sender == global CreatorAddress` counted as authorisation, so the two
+    # ways real apps actually gate an upgrade — an admin address held in global
+    # state (CreatorAddress is immutable and cannot be rotated) and a hardcoded
+    # `addr` literal — both read as "updatable by anyone". A v2 mainnet app in the
+    # corpus does exactly this, rejecting with `err` when the sender is not the
+    # stored admin. The new TP is the shape that must stay a finding: an "admin"
+    # the CALLER supplies, which authorises nothing.
+    "unprotected-updatable": (2, 0, 0, 6),
     "unsafe-division-order": (3, 0, 0, 3),
     "unsafe-lsig-args": (1, 0, 0, 1),
     "unvalidated-group-sibling": (6, 0, 0, 9),

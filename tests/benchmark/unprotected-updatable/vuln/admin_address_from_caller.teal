@@ -1,0 +1,13 @@
+#pragma version 10
+// VULN: the "admin" is an address the CALLER supplies — authorises nothing.
+txn OnCompletion
+int UpdateApplication
+==
+bz done
+txn Sender
+txna ApplicationArgs 1
+==
+assert
+done:
+int 1
+return

@@ -56,14 +56,69 @@ def _is_global_field_var(var, field: str) -> bool:
 
 
 
+#: State reads that yield an address the CONTRACT controls, not the caller.
+_STATE_READ_OPS = frozenset({
+    "app_global_get", "app_global_get_ex", "app_local_get", "app_local_get_ex",
+})
+
+
+def _is_trusted_address(var) -> bool:
+    """``var`` holds an address the caller cannot choose, so pinning
+    ``txn Sender`` against it is a real authorisation check.
+
+    Three sources qualify:
+
+    * ``global CreatorAddress`` — immutable, the original recognised shape.
+    * an ``addr`` literal — hardcoded in the program.
+    * an ``app_global_get`` / ``app_local_get`` read — an admin address the
+      CONTRACT stores. This is how real Algorand apps do rotatable admin, since
+      ``global CreatorAddress`` cannot be changed, and recognising only the
+      immutable form is why `unprotected-updatable` fired on 82% of distinct
+      mainnet contracts. A v2 app in the probe corpus is exactly this shape::
+
+          label3:                       # OnCompletion == UpdateApplication
+              txn Sender
+              bytec_3                   # the global key, literally "Creator"
+              app_global_get
+              ==
+              bnz ok
+              err                       # everyone else is rejected
+
+    What must NOT qualify is anything the caller supplies —
+    ``txna ApplicationArgs k``, ``txn Accounts k``, a group sibling's
+    ``Sender`` — since `Sender == <attacker's own value>` authorises nothing.
+    Those are exactly the reads :func:`avm.attacker_input_label` names, so the
+    trust line is drawn against that one table rather than a second list that
+    can drift from it."""
+    from tealql.tealtools.avm import attacker_input_label
+    a = getattr(var, "defined_by", None)
+    if a is None:
+        return False
+    if a.op == "global" and a.immediates.strip() == "CreatorAddress":
+        return True
+    if attacker_input_label(a.op, a.immediates or "") is not None:
+        return False                      # caller-supplied: authorises nothing
+    if a.op in _STATE_READ_OPS:
+        return True
+    # A hardcoded address literal: `addr AAAA...` (the parser records the
+    # decoded bytes as a const), or a pushbytes of one.
+    if a.op in ("addr", "byte", "pushbytes") and getattr(var, "const_value", None):
+        return True
+    return False
+
+
 def _is_sender_eq_creator(cmp: Assignment) -> bool:
+    """``cmp`` pins ``txn Sender`` to an address the caller cannot choose.
+
+    Named for the original creator-only shape it recognised; it now accepts any
+    trusted address source (see :func:`_is_trusted_address`)."""
     if cmp.op != "==" or len(cmp.inputs) != 2:
         return False
     a0, a1 = cmp.inputs
     return (
-        (_is_txn_field_var(a0, "Sender") and _is_global_field_var(a1, "CreatorAddress"))
+        (_is_txn_field_var(a0, "Sender") and _is_trusted_address(a1))
         or
-        (_is_txn_field_var(a1, "Sender") and _is_global_field_var(a0, "CreatorAddress"))
+        (_is_txn_field_var(a1, "Sender") and _is_trusted_address(a0))
     )
 
 

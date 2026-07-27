@@ -1,0 +1,13 @@
+#pragma version 10
+txn OnCompletion
+int DeleteApplication
+==
+bz done
+txn Sender
+byte "admin"
+app_global_get
+==
+assert
+done:
+int 1
+return
