@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import json as _json
+import contextlib
 import logging
 import sys
 from pathlib import Path
@@ -191,18 +192,27 @@ def _lifted_programs(args, command: str):
 
     HAZARD: a program that does not lift is a COVERAGE GAP, not a failure — it
     is warned about and SKIPPED, so results here are silently partial (one
-    stubborn contract must not sink a directory-wide audit)."""
+    stubborn contract must not sink a directory-wide audit).
+
+    HAZARD: puya's IR builder writes to STDOUT, and not through ``logging`` —
+    it prints via structlog, so raising the ``puya`` logger's level silences
+    nothing. Its lines landed ahead of the payload and made ``--json`` emit
+    unparseable output, breaking the one path the flag exists for. The lift is
+    therefore run with stdout redirected to STDERR: diagnostics still reach a
+    human, and stdout carries only the payload. The redirect wraps ONLY the
+    ``to_puya`` call — this is a generator, so holding it open would also
+    capture whatever the CALLER prints between yields."""
     try:
         from tealql.tealtools.lift import to_puya
     except ImportError as e:
         raise TealQLError(
             f"{command} requires the 'puya' package (pip install puyapy)") from e
-    # puya's IR builder logs heavily at DEBUG/ERROR; silence it.
-    logging.getLogger("puya").setLevel(logging.CRITICAL)
+    logging.getLogger("puya").setLevel(logging.CRITICAL)   # the stdlib half
     for prog, name in _load_programs(args):
         label = name or Path(getattr(prog, "source_path", "") or "<program>").name
         try:
-            main_sub, subs = to_puya(prog)
+            with contextlib.redirect_stdout(sys.stderr):
+                main_sub, subs = to_puya(prog)
         except Exception as e:                       # coverage gap, not a crash
             logger.warning("%s: %s did not lift (%s: %s) — skipped",
                            command, label, type(e).__name__, e)

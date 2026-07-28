@@ -768,3 +768,27 @@ def test_a_program_that_does_not_lift_is_skipped_not_fatal(tmp_path, monkeypatch
     monkeypatch.setattr(lift_mod, "to_puya", _boom)
     # No exception, and the command still completes with a clean exit code.
     assert cli.main(["storage-schema", str(tmp_path)]) == 0
+
+
+# --- `--json` must be PARSEABLE on the puya-gated commands -------------------
+
+#: A contract whose lift makes puya's IR builder log. puya writes those lines to
+#: STDOUT via structlog — not through `logging` — so they landed ahead of the
+#: payload and `--json` emitted unparseable output. Raising the `puya` logger's
+#: level does not silence structlog, which is why the first attempt at this
+#: silently did nothing.
+_LIFT_LOGS = (
+    "#pragma version 10\n"
+    'byte "b"\ntxna ApplicationArgs 0\nbtoi\nbox_put\n'
+    "int 1\nreturn\n"
+)
+
+
+@pytest.mark.parametrize("cmd", ["storage-schema", "abi-audit", "box-audit"])
+def test_lift_commands_emit_parseable_json(cmd, tmp_path, capsys):
+    """stdout carries ONLY the payload, whatever puya prints."""
+    pytest.importorskip("puya")
+    (tmp_path / "c.teal").write_text(_LIFT_LOGS)
+    main([cmd, str(tmp_path), "--json"])
+    out = capsys.readouterr().out
+    json.loads(out)          # raises if a log line leaked into stdout
