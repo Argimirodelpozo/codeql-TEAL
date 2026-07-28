@@ -1,17 +1,10 @@
-"""Cross-contract analysis layer for TEAL `itxn_submit` app calls.
+"""Cross-contract analysis layer for TEAL ``itxn_submit`` app calls.
 
-Slice 1: identification only. Walks a caller :class:`SSAProgram` for
-`itxn_submit` groups whose first txn is an `appl` (TypeEnum == 6) with
-a constant `ApplicationID` resolvable in a registry, and returns
-:class:`AppcallSite` records describing the call.
-
-Slice 2 (planned) extends :class:`PathPredicateAnalysis` with entry
-seeds and computes an approving-exit summary on the callee. Slice 3
-adds an :class:`XContractGraph` orchestrator and the first
-cross-contract detector.
-
-The substrate (``tealql.tealtools.ssa``) is *not* modified — this module only
-consumes ``SSAProgram`` and ``InnerTxnReport``.
+Finds appcall sites with a resolvable callee AppID (:class:`AppcallSite`), walks
+the transitive call graph (:class:`XContractGraph`), runs each callee under
+caller-seeded path predicates, and feeds the callee's approving-exit summary
+back to the caller. Consumes ``SSAProgram`` / ``InnerTxnReport`` only — the
+substrate is never modified.
 """
 from __future__ import annotations
 
@@ -29,8 +22,7 @@ from .path_predicates import BranchCondition, PathPredicateAnalysis
 from .ast.literals import render_byte_constant
 from .ssa import Const, SSAProgram, const_bytes as _const_bytes, const_int
 
-# TEAL TypeEnum integer for application calls. The assembler folds
-# `int appl` and `byte "appl"` into the integer literal 6 before SSA.
+# TypeEnum for appl: the assembler folds `int appl` to the literal 6 pre-SSA.
 TYPEENUM_APPL = "6"
 
 Registry = dict[int, str]
@@ -44,9 +36,8 @@ class AppcallSite:
     submit_line: int
     app_id: int
     callee_source: Path
-    # Constant ApplicationArgs by index. Non-constant args are absent;
-    # consumers can still walk the underlying ``InnerTxn`` for
-    # full operand info.
+    # Constant ApplicationArgs by index; non-constant args are absent (walk the
+    # underlying ``InnerTxn`` for those).
     const_args: dict[int, str] = field(default_factory=dict)
 
     def render(self, relative_to: Optional[Path] = None) -> str:
@@ -79,11 +70,8 @@ class AppcallSite:
 
 
 def load_registry(path: str | Path) -> Registry:
-    """Load an AppID → ``.teal``-path mapping from a yaml file.
-
-    Paths in the yaml are resolved relative to the yaml's parent dir
-    so fixtures can carry self-contained registries.
-    """
+    """Load an AppID → ``.teal``-path mapping from yaml; paths resolve relative
+    to the yaml's parent dir, so a registry can be self-contained."""
     p = Path(path).resolve()
     raw = yaml.safe_load(p.read_text()) or {}
     base = p.parent
@@ -94,10 +82,8 @@ def load_registry(path: str | Path) -> Registry:
 
 
 def _const_only(values: list[str]) -> Optional[str]:
-    """Return the single literal if ``values`` is exactly one literal,
-    else ``None``. A literal is anything that didn't get prefixed with
-    ``?`` (unresolved) or come back as a non-literal source-op
-    description (containing whitespace or ``(``)."""
+    """The single literal in ``values``, else ``None`` — a literal being one that
+    is neither ``?``-prefixed (unresolved) nor a source-op description."""
     if len(values) != 1:
         return None
     v = values[0]
@@ -113,10 +99,8 @@ def _is_appcall(txn: InnerTxn) -> bool:
     type_fields = by_name.get("TypeEnum") or []
     if not type_fields:
         return False
-    # Every TypeEnum-set must agree on `appl`. If multiple sets
-    # disagree (e.g. branchy code that sometimes makes pay sometimes
-    # appl), be conservative and skip — we don't have a reliable
-    # callee in that case.
+    # Every TypeEnum-set must agree on `appl`: if sets disagree (branchy code
+    # that sometimes makes pay, sometimes appl) there is no reliable callee.
     for f in type_fields:
         if _const_only(f.possible_values()) != TYPEENUM_APPL:
             return False
@@ -124,26 +108,26 @@ def _is_appcall(txn: InnerTxn) -> bool:
 
 
 def _state_key(inputs) -> Optional[str]:
-    """The constant bytes KEY of a state READ — the TOP-OF-STACK operand
-    (``inputs[0]``, top-first: ``[key, account?, app?]``). Returns None when the
-    key isn't a bytes const, so a DYNAMIC key with a constant account/app operand
-    below it is not mis-read as the key (scanning ALL inputs for the first bytes
-    const took a constant ACCOUNT address as the key — a wrong AppID resolution)."""
+    """The constant bytes KEY of a state READ, or ``None`` if the key isn't const.
+
+    HAZARD: SSA inputs are TOP-FIRST, so the key is ``inputs[0]``
+    (``[key, account?, app?]``). Scanning ALL inputs for the first bytes const
+    instead takes a constant ACCOUNT address as the key when the key is dynamic —
+    a wrong AppID resolution."""
     return _const_bytes(inputs[0]) if inputs else None
 
 
-# State scope -> the write op that stores into it. An ApplicationID stashed in any
-# of the three persistent stores and read back to drive an inner appcall resolves
-# the same way: prove EVERY write of the key agrees on one int constant.
+# State scope -> its write op. An AppID stashed in any persistent store and read
+# back to drive an inner appcall resolves the same way: EVERY write of the key
+# must agree on one int constant.
 _PUT_OP = {"global": "app_global_put", "local": "app_local_put", "box": "box_put"}
 
-#: Ops that MUTATE or REMOVE stored state without being a full ``*_put``. The
-#: "every write agrees on one constant" proof must see these too: a box
-#: initialised with ``box_put KEY, itob(123)`` and later updated via
-#: ``box_replace KEY, 0, itob(456)`` (or deleted and re-created) resolves to
+#: Ops that MUTATE or REMOVE stored state without being a full ``*_put``.
+#: HAZARD: the "every write agrees on one constant" proof must see these. A box
+#: put with ``itob(123)`` and later ``box_replace``d to 456 otherwise resolves to
 #: the stale 123, and the ENTIRE callee analysis — auth findings, summaries,
-#: caller pins — then runs against the wrong program. Any of these touching
-#: the key makes the value unprovable.
+#: caller pins — runs against the wrong program. Any of these on the key makes
+#: the value unprovable.
 _MUTATE_OPS = {
     "global": frozenset({"app_global_del"}),
     "local": frozenset({"app_local_del"}),
@@ -152,20 +136,14 @@ _MUTATE_OPS = {
 
 
 def _state_read(operand) -> Optional[tuple[str, str]]:
-    """If ``operand`` reads a value out of THIS app's own persistent state under a
-    constant key, return ``(scope, key)`` with ``scope`` in ``{"global", "local",
-    "box"}``; else ``None``. Only reads that unambiguously target the running
-    application's own state qualify:
+    """``(scope, key)`` if ``operand`` reads THIS app's own persistent state under
+    a constant key (``scope`` in ``{"global", "local", "box"}``), else ``None``.
 
-    - ``app_global_get KEY`` / ``app_global_get_ex 0 KEY`` (foreign-app index 0 = self)
-    - ``app_local_get ACCT KEY`` / ``app_local_get_ex ACCT 0 KEY``
-    - ``btoi (box_get KEY)`` — box values are bytes, so an AppID read from a box is
-      de-serialised with ``btoi``; only the whole-value ``box_get`` read is matched
-      (a ``box_extract`` sub-slice can't be matched against a whole ``box_put``).
-
-    The key is always the top-of-stack operand for a read, so ``_state_key``
-    reads ``inputs[0]`` directly — correct even when the account below it is
-    itself a constant address (which an all-inputs scan would take as the key).
+    Only unambiguously own-app reads qualify: ``app_global_get`` /
+    ``app_local_get``, the ``*_get_ex`` forms with foreign-app index 0 (= self),
+    and ``btoi (box_get KEY)`` — box values are bytes, and only the whole-value
+    ``box_get`` is matched (a ``box_extract`` sub-slice can't be matched against
+    a whole ``box_put``).
     """
     a = getattr(operand, "defined_by", None)
     if a is None:
@@ -178,9 +156,9 @@ def _state_read(operand) -> Optional[tuple[str, str]]:
         key = _state_key(a.inputs)
         return ("local", key) if key is not None else None
     # *_get_ex takes a foreign-apps index; index 0 is the running app's own state.
-    # The app-reference is specifically inputs[1] (TOP-FIRST: [key, app] for global,
-    # [key, app, account] for local) — scanning ALL inputs mis-classified a FOREIGN
-    # app read whose account operand happens to be 0 (e.g. Sender) as own-app.
+    # HAZARD: TOP-FIRST inputs — the app-reference is specifically inputs[1]
+    # ([key, app] for global, [key, app, account] for local). Scanning ALL inputs
+    # mis-classifies a FOREIGN app read whose account operand happens to be 0.
     if (op in ("app_global_get_ex", "app_local_get_ex") and len(a.inputs) >= 2
             and const_int(a.inputs[1]) == 0):
         scope = "global" if op == "app_global_get_ex" else "local"
@@ -195,9 +173,8 @@ def _state_read(operand) -> Optional[tuple[str, str]]:
 
 
 def _bytes_const_to_int(operand) -> Optional[int]:
-    """Interpret a bytes-constant ``operand`` as the big-endian uint64 a ``btoi``
-    would read from it — the value a ``box_put KEY, <=8-byte const`` stored. Only a
-    <=8-byte constant is a valid ``btoi`` input; anything wider is rejected."""
+    """A bytes-constant ``operand`` as the big-endian uint64 a ``btoi`` would read
+    from it. Wider than 8 bytes is rejected — ``btoi`` panics on those."""
     vb = _const_bytes(operand)
     if vb is None or not vb.startswith("0x"):
         return None
@@ -218,11 +195,11 @@ def _itob_int(operand) -> Optional[int]:
 
 
 def _put_int_value(scope: str, inputs, key: str) -> Optional[int]:
-    """The int constant a write op stores under ``key``, or ``None`` if the value
-    isn't a statically-known int. A ``box`` value is bytes — a raw <=8-byte
-    constant (decoded big-endian) or an ``itob`` of a constant. A ``global`` /
-    ``local`` value is a uint64 pushed last, so it is the top-of-stack operand
-    (``inputs[0]``, SSA inputs being top-first); the key (and, for local, the
+    """The int constant a write op stores under ``key``, else ``None``. A ``box``
+    value is bytes — a raw <=8-byte constant or an ``itob`` of a constant.
+
+    HAZARD: a ``global``/``local`` value is a uint64 pushed LAST, so with
+    TOP-FIRST SSA inputs it is ``inputs[0]``; the key (and, for local, the
     account) are lower operands."""
     if scope == "box":
         for inp in inputs:
@@ -238,11 +215,11 @@ def _put_int_value(scope: str, inputs, key: str) -> Optional[int]:
 
 
 def _resolve_state_app_id(prog: SSAProgram, operand) -> Optional[int]:
-    """Resolve an ApplicationID read from THIS app's own persistent state —
-    global, local, or box — when EVERY write of the key stores the SAME int
-    constant. Sound-ish: a single non-constant or disagreeing write leaves it
-    unresolved (no invented target). Covers the common router/factory pattern that
-    stashes its target app id in state and reads it back to make the call."""
+    """Resolve an ApplicationID read back from THIS app's own state (global, local
+    or box) when EVERY write of the key stores the SAME int constant.
+
+    Errs unresolved: one non-constant or disagreeing write yields ``None`` rather
+    than an invented target."""
     read = _state_read(operand)
     if read is None:
         return None
@@ -252,8 +229,8 @@ def _resolve_state_app_id(prog: SSAProgram, operand) -> Optional[int]:
     vals: set[int] = set()
     for w in prog.assignments:
         if w.op in mutate_ops:
-            # A partial update / delete of this key (or of an unresolvable
-            # key, which MAY be this one) defeats the all-writes-agree proof.
+            # A partial update / delete of this key — or of an unresolvable key,
+            # which MAY be this one — defeats the all-writes-agree proof.
             if any(_const_bytes(inp) == key for inp in w.inputs):
                 return None
             if all(_const_bytes(inp) is None for inp in w.inputs):
@@ -291,10 +268,9 @@ def _const_app_id(txn: InnerTxn, prog: Optional[SSAProgram] = None) -> Optional[
 
 
 def _forwarded_apparg_index(operand) -> Optional[int]:
-    """If ``operand`` is a direct ``txn`` / ``txna ApplicationArgs N`` read -- the
-    program forwarding one of ITS OWN appcall args onward to a deeper callee --
-    return ``N``. Lets a pin a caller placed on that arg propagate THROUGH this
-    forwarding hop (transitive cross-contract suppression). Else ``None``."""
+    """``N`` if ``operand`` is a direct ``txn``/``txna ApplicationArgs N`` read --
+    the program forwarding one of ITS OWN args to a deeper callee, so a caller's
+    pin on that arg propagates THROUGH the hop. Else ``None``."""
     d = getattr(operand, "defined_by", None)
     if d is None or d.op not in ("txn", "txna"):
         return None
@@ -308,14 +284,12 @@ def _forwarded_apparg_index(operand) -> Optional[int]:
 
 
 def _const_args(txn: InnerTxn, incoming_pins: Optional[dict] = None) -> dict[int, str]:
-    """Index the constant ApplicationArgs by their stack-set order.
+    """Constant ApplicationArgs indexed by stack-set order.
 
-    Each ``itxn_field ApplicationArgs`` op pushes one element onto the array;
-    ``InnerTxnReport`` lists them in source order. ``incoming_pins`` are the
-    constants a caller pinned on THIS program's own args (``{arg_index: const}``):
-    an arg the program FORWARDS verbatim (a ``txna ApplicationArgs N`` read) is
-    pinned to ``incoming_pins[N]`` if present, so a root-pinned value stays pinned
-    across a proxy/forwarder hop."""
+    Each ``itxn_field ApplicationArgs`` pushes one element; ``InnerTxnReport``
+    lists them in source order. ``incoming_pins`` (``{arg_index: const}``) is what
+    a caller pinned on THIS program's own args: an arg forwarded verbatim keeps
+    its pin, so a root-pinned value survives a proxy/forwarder hop."""
     incoming_pins = incoming_pins or {}
     fields = txn.fields_by_name().get("ApplicationArgs") or []
     out: dict[int, str] = {}
@@ -332,22 +306,18 @@ def _const_args(txn: InnerTxn, incoming_pins: Optional[dict] = None) -> dict[int
 
 def find_appcall_sites(prog: SSAProgram, registry: Registry,
                        incoming_pins: Optional[dict] = None) -> list[AppcallSite]:
-    """Find every appcall itxn submit in ``prog`` whose ApplicationID
-    is a constant present in ``registry``.
+    """Every appcall itxn submit in ``prog`` whose ApplicationID is a constant
+    present in ``registry``, sorted by ``(file, submit_line)``.
 
-    Returns sites sorted by (file, submit_line) for deterministic
-    output. Submits whose first txn isn't an appl, or whose AppID is
-    non-constant or unregistered, are silently skipped — slice 1 is
-    only about resolvable cross-contract calls.
+    Submits that aren't appl, or whose AppID is non-constant or unregistered, are
+    silently skipped — only resolvable cross-contract calls are reported.
     """
     report = InnerTxnReport(prog)
     sites: list[AppcallSite] = []
     for group in report.groups:
         if not group.txns:
             continue
-        # An appcall group typically contains one txn; if more, the
-        # appcall is whichever txn(s) had TypeEnum=appl. Emit one
-        # site per appcall txn.
+        # A group is usually one txn; if more, emit one site per appcall txn.
         for txn in group.txns:
             if not _is_appcall(txn):
                 continue
@@ -372,8 +342,7 @@ def find_appcall_sites(prog: SSAProgram, registry: Registry,
 
 def candidate_app_ids(prog: SSAProgram) -> list[int]:
     """Every appcall callee AppID resolvable from ``prog`` -- inline constant or
-    state-backed (see :func:`_resolve_state_app_id`) -- regardless of any registry.
-    The set :func:`discover_registry` would fetch. Deterministic order, deduped."""
+    state-backed -- regardless of any registry; deterministic order, deduped."""
     report = InnerTxnReport(prog)
     ids: list[int] = []
     seen: set[int] = set()
@@ -392,8 +361,8 @@ _DEFAULT_CALLEE_CACHE = Path.home() / ".cache" / "tealql" / "xcontract-callees"
 
 
 def _default_chain_fetch(app_id: int):
-    """Default fetcher: pull a deployed approval program off chain. Imported lazily
-    so the analysis library doesn't hard-depend on the (network-touching) tool."""
+    """Pull a deployed approval program off chain; imported lazily so the analysis
+    library doesn't hard-depend on the network-touching tool."""
     from ._utils.chain import fetch_approval
     return fetch_approval(app_id)
 
@@ -409,14 +378,11 @@ def discover_registry(
     """Build an xcontract registry by FETCHING each reachable callee's deployed
     approval program from chain into ``cache_dir`` -- no hand-written yaml.
 
-    Discovery is TRANSITIVE: ``prog``'s callees are fetched, then parsed to find
-    THEIR callees, and so on up to ``max_depth`` hops -- so an A->B->C chain
-    pulls B and C. ``fetch(app_id) -> (teal_text, bytecode)`` defaults to
-    :func:`_default_chain_fetch`; inject a stub to run offline. CACHED: an
-    existing ``app_<id>.teal`` in ``cache_dir`` is reused. AppIDs that don't
-    fetch (not found / network error) are skipped. Passing an explicit
-    ``app_ids`` fetches exactly those (one level, no transitive walk). Returns
-    ``{app_id: teal_path}``."""
+    TRANSITIVE: callees are fetched, parsed for THEIR callees, and so on up to
+    ``max_depth`` hops. ``fetch(app_id) -> (teal_text, bytecode)`` defaults to
+    :func:`_default_chain_fetch`; inject a stub to run offline. An existing
+    ``app_<id>.teal`` is reused; unfetchable AppIDs are skipped. An explicit
+    ``app_ids`` fetches exactly those, one level. Returns ``{app_id: teal_path}``."""
     cache = Path(cache_dir) if cache_dir is not None else _DEFAULT_CALLEE_CACHE
     cache.mkdir(parents=True, exist_ok=True)
     if fetch is None:
@@ -429,9 +395,8 @@ def discover_registry(
             try:
                 teal, _bytecode = fetch(aid)
             except Exception as e:
-                # Unfetchable (not found / network / no local algod) -> skip, no
-                # invented callee. Logged so an empty registry from a fetch
-                # outage is distinguishable from "no cross-contract calls".
+                # Unfetchable -> skip, no invented callee. Logged so an empty
+                # registry from a fetch outage isn't read as "no xcontract calls".
                 logger.warning("could not fetch callee app %s: %s — skipped "
                                "(cross-contract coverage reduced)", aid, e)
                 return None
@@ -444,8 +409,7 @@ def discover_registry(
             _fetch_one(aid)
         return registry
 
-    # Transitive BFS over the call graph: fetch each program's callees, parse
-    # them, recurse into THEIR callees, deduped by AppID, bounded by max_depth.
+    # Transitive BFS over the call graph, deduped by AppID, bounded by max_depth.
     from collections import deque
 
     seen: set[int] = set()
@@ -476,27 +440,24 @@ def render(sites: list[AppcallSite], relative_to: Optional[Path] = None) -> str:
     return "\n".join(s.render(relative_to=relative_to) for s in sites)
 
 
-# --- slice 2: seeded callee analysis ----------------------------------
+# --- seeded callee analysis -------------------------------------------
 
 
 def seeds_for_callee(
     callee: SSAProgram, site: AppcallSite
 ) -> frozenset[BranchCondition]:
-    """Translate caller-side constant ApplicationArgs into entry
-    predicates over the callee's ``txna ApplicationArgs N`` SSAVars.
+    """Translate a site's constant ApplicationArgs into ``eq`` entry predicates
+    over the callee's ``txna ApplicationArgs N`` SSAVars.
 
-    Conservative: emits one ``eq`` predicate per (index, constant)
-    pair where the callee actually references that arg via ``txna``.
-    Indices the callee never reads are dropped — they'd dangle on
-    unreferenced SSAVars and pollute the predicate space.
+    Indices the callee never reads are dropped — they'd dangle on unreferenced
+    SSAVars and pollute the predicate space.
     """
     if not site.const_args:
         return frozenset()
     seeds: set[BranchCondition] = set()
     for a in callee.assignments:
-        # The current txn's args, indexed — both `txna ApplicationArgs N` (canonical)
-        # and the `txn ApplicationArgs N` form. NOT `gtxn*`, which reads a group
-        # sibling's args, not the ones this appcall passed.
+        # This txn's args, both the `txna` and `txn` forms. NOT `gtxn*`: that
+        # reads a group SIBLING's args, not the ones this appcall passed.
         if a.op not in ("txn", "txna") or not a.outputs:
             continue
         parts = a.immediates.split()
@@ -517,8 +478,7 @@ def seeds_for_callee(
 
 @dataclass
 class CalleeAnalysis:
-    """Result of running the seeded path-predicate analysis on a
-    callee, plus the approving-exit summary the caller can rely on."""
+    """A callee's seeded path-predicate analysis plus its approving-exit summary."""
 
     site: AppcallSite
     analysis: PathPredicateAnalysis
@@ -551,8 +511,7 @@ def render_xcontract(
     *,
     relative_to: Optional[Path] = None,
 ) -> str:
-    """Combined slice-1 + slice-2 rendering: each call site followed
-    by the callee's seeded approving-exit summary."""
+    """Each call site followed by its callee's seeded approving-exit summary."""
     if not sites:
         return "(no cross-contract appcall sites)"
     out: list[str] = []
@@ -567,14 +526,13 @@ def render_xcontract(
     return "\n".join(out)
 
 
-# --- slice 3: graph orchestrator + first cross-contract detector ------
+# --- graph orchestrator + cross-contract detector ---------------------
 
 
 @dataclass(frozen=True)
 class AppcallEdge:
-    """One appcall in the transitive graph: ``caller_app_id`` (``None`` =
-    the root caller) makes ``site``, reaching callee ``site.app_id`` at
-    ``depth`` hops from the root."""
+    """One appcall in the transitive graph: ``caller_app_id`` (``None`` = the
+    root caller) reaches ``site.app_id`` at ``depth`` hops from the root."""
 
     caller_app_id: Optional[int]
     site: AppcallSite
@@ -588,17 +546,13 @@ class AppcallEdge:
 
 @dataclass
 class XContractGraph:
-    """Caller + every TRANSITIVELY reachable callee (A->B->C->...), keyed by
-    AppID, with each callee's seeded path-predicate analysis precomputed.
+    """Caller + every TRANSITIVELY reachable callee, keyed by AppID, each with its
+    seeded path-predicate analysis precomputed.
 
-    ``callees`` / ``callee_sources`` / ``analyses`` span ALL hops, so a
-    detector that iterates them (``cross_auth_findings``,
-    ``cross_detection_findings``) gets multi-hop coverage for free.
-    ``sites`` is just the ROOT caller's appcall sites (backward-compatible);
-    ``edges`` is the full call graph (one :class:`AppcallEdge` per appcall).
-
-    Owns no analysis logic itself — detectors are external functions that
-    consume this graph, keeping detector composition explicit.
+    ``callees`` / ``callee_sources`` / ``analyses`` span ALL hops, so a detector
+    iterating them gets multi-hop coverage for free; ``sites`` is only the ROOT
+    caller's appcall sites, while ``edges`` is the full call graph. Owns no
+    analysis logic — detectors are external functions over this graph.
     """
 
     caller: SSAProgram
@@ -612,15 +566,15 @@ class XContractGraph:
     def build(
         cls, caller: SSAProgram, registry: Registry, *, max_depth: int = 4,
     ) -> "XContractGraph":
-        """Transitively walk appcall sites from ``caller`` through the
-        ``registry``, up to ``max_depth`` hops. Each callee is loaded once (keyed
-        by AppID), but its seeded analysis uses the INTERSECTION of the arg pins
-        across EVERY site that calls it: a pin is honored only if all callers
-        agree on the same constant. Otherwise the first caller's pins would win,
-        and a second site leaving an arg attacker-controlled would inherit the
-        first site's (over-pinned) analysis — silently suppressing a flow
-        exploitable via that second site. Re-analysis on a weakened intersection
-        is monotone (pins only shrink), so the walk still terminates."""
+        """Transitively walk appcall sites from ``caller`` through ``registry``,
+        up to ``max_depth`` hops.
+
+        HAZARD: a callee is loaded once, but analysed under the INTERSECTION of
+        arg pins across EVERY site calling it — a pin holds only if all callers
+        agree. Letting the first caller's pins win would hand a second site
+        (which leaves that arg attacker-controlled) the over-pinned analysis,
+        silently suppressing a flow exploitable through it. Re-analysis on a
+        weakened intersection is monotone, so the walk still terminates."""
         from collections import deque
 
         root_sites = find_appcall_sites(caller, registry)
@@ -630,10 +584,9 @@ class XContractGraph:
         merged_pins: dict[int, dict] = {}   # app_id -> intersected const_args used
         edges: list[AppcallEdge] = []
         edge_seen: set = set()              # (caller_id, app_id, file, line) dedup
-        # frontier item: (program, its AppID or None for the root, depth, the
-        # pins a caller placed on THIS program's args -- so a forwarded arg keeps
-        # the pin one hop deeper). A callee is re-enqueued when its pins weaken so
-        # the weakening propagates to its own (grandchild) call sites.
+        # frontier item: (program, its AppID or None for the root, depth, the pins
+        # a caller placed on THIS program's args). A callee is re-enqueued when
+        # its pins weaken, so the weakening reaches its own call sites.
         frontier: deque = deque([(caller, None, 0, {})])
         while frontier:
             prog, prog_id, depth, incoming_pins = frontier.popleft()
@@ -648,12 +601,10 @@ class XContractGraph:
                     edges.append(AppcallEdge(prog_id, site, depth))
                 if site.app_id not in callees:
                     callee = SSAProgram(str(site.callee_source))
-                    # Match discover_registry: resolve constants BEFORE walking
-                    # the callee's own appcall sites. Construction only tags
-                    # direct pushes, so a callee whose target AppID needs
-                    # propagation (folded arithmetic, dup/cover flow, phi
-                    # resolution) had its own callees silently omitted from
-                    # `callees` / `analyses` / `edges`.
+                    # Resolve constants BEFORE walking the callee's own appcall
+                    # sites: construction only tags direct pushes, so a callee
+                    # whose target AppID needs propagation (folded arithmetic,
+                    # dup/cover flow, phi) has ITS callees silently omitted.
                     callee.propagate_constants()
                     callees[site.app_id] = callee
                     callee_sources[site.app_id] = site.callee_source
@@ -683,15 +634,14 @@ class XContractGraph:
     def from_chain(
         cls, caller: SSAProgram, *, cache_dir=None, fetch=None, max_depth: int = 4,
     ) -> "XContractGraph":
-        """Like :meth:`build`, but auto-discovers the registry transitively by
-        fetching each reachable callee from chain (:func:`discover_registry`)."""
+        """:meth:`build`, with the registry auto-discovered from chain."""
         registry = discover_registry(
             caller, cache_dir=cache_dir, fetch=fetch, max_depth=max_depth)
         return cls.build(caller, registry, max_depth=max_depth)
 
     def chains(self) -> list[list[int]]:
-        """Every root -> ... -> leaf call path as a list of AppIDs, derived
-        from :attr:`edges`. A cycle is cut at its first repeat."""
+        """Every root -> ... -> leaf call path as AppIDs, from :attr:`edges`;
+        a cycle is cut at its first repeat."""
         by_caller: dict = {}
         for e in self.edges:
             by_caller.setdefault(e.caller_app_id, []).append(e.site.app_id)
@@ -715,9 +665,7 @@ class XContractGraph:
 
 @dataclass(frozen=True)
 class CrossAuthFinding:
-    """One auth-domination violation in a callee, surfaced via the
-    cross-contract graph. Includes the calling AppID so the report
-    can be grouped per callee."""
+    """One callee-side auth-domination violation, tagged with its AppID."""
 
     app_id: int
     violation: "object"  # AuthViolation; avoid heavy import at module load
@@ -743,14 +691,9 @@ class CrossAuthFinding:
 
 @dataclass(frozen=True)
 class ForeignVar:
-    """Tag wrapping a callee-side operand when it surfaces in a caller's
-    predicate set after submit-feedback. Without this, callee
-    SSAVars print as ``V#1@L4`` and collide visually with caller-side
-    vars (both source files are typically named ``prog.teal``).
-
-    ``inner`` is the original :class:`SSAVar` / :class:`Phi` from the
-    callee; ``app_id`` is the AppID of the callee. Consts are not
-    wrapped — they're literals with no provenance ambiguity.
+    """Tags a callee-side operand surfacing in a caller's predicate set, so it
+    prints as ``app<id>:V…`` instead of colliding visually with caller-side vars
+    (both source files are typically named ``prog.teal``). Consts aren't wrapped.
     """
 
     inner: object
@@ -776,18 +719,12 @@ def _wrap_callee_pred(pred: BranchCondition, app_id: int) -> BranchCondition:
 
 
 def caller_feedback_bb_seeds(graph: XContractGraph) -> dict:
-    """Map each caller BB containing an ``itxn_submit`` to the
-    matching callee's approving-exit summary, with callee-side
-    operands tagged via :class:`ForeignVar` so the renderer can
-    disambiguate them from caller-side vars.
+    """Map each caller BB containing an ``itxn_submit`` to the matching callee's
+    approving-exit summary, callee-side operands tagged :class:`ForeignVar`.
 
-    Imprecision note: predicates land on the *whole* BB containing
-    the submit, so any sink in that BB at a line *before* the submit
-    will appear to have the summary in its predicate set. Most TEAL
-    has control flow shortly after a submit, so this is rarely an
-    issue in practice — but a sink-before-submit would be falsely
-    over-guarded. A finer model would split the BB at the submit
-    boundary; that's a follow-up.
+    HAZARD: the predicates land on the WHOLE BB containing the submit, so a sink
+    earlier in that BB reads as over-guarded — an UNSOUND direction (missed
+    finding). Splitting the BB at the submit boundary would fix it.
     """
     seeds: dict = {}
     for site in graph.sites:
@@ -806,8 +743,7 @@ def caller_feedback_bb_seeds(graph: XContractGraph) -> dict:
 
 
 def caller_with_feedback(graph: XContractGraph) -> PathPredicateAnalysis:
-    """Run :class:`PathPredicateAnalysis` on the caller with each
-    submit-containing BB seeded with the matching callee's summary."""
+    """Caller path predicates, each submit BB seeded with its callee's summary."""
     return PathPredicateAnalysis(
         graph.caller, bb_seeds=caller_feedback_bb_seeds(graph)
     )
@@ -816,9 +752,8 @@ def caller_with_feedback(graph: XContractGraph) -> PathPredicateAnalysis:
 def render_caller_feedback(
     graph: XContractGraph, *, relative_to: Optional[Path] = None
 ) -> str:
-    """Render the caller's path predicates after callee-summary
-    feedback. Only shows BBs that received feedback — the rest match
-    a vanilla :class:`PathPredicateAnalysis`."""
+    """The caller's path predicates after callee-summary feedback; only BBs that
+    received feedback (the rest match a vanilla :class:`PathPredicateAnalysis`)."""
     bb_seeds = caller_feedback_bb_seeds(graph)
     if not bb_seeds:
         return "(no callee-summary feedback to caller)"
@@ -834,9 +769,13 @@ def render_caller_feedback(
 
 
 def cross_auth_findings(graph: XContractGraph) -> list[CrossAuthFinding]:
-    """Run :class:`AuthDominationDetector` on every callee using its
-    seeded :class:`PathPredicateAnalysis`. Returns one finding per
-    sensitive sink that no recognised guard dominates.
+    """One finding per callee sink that no recognised guard dominates, using each
+    callee's seeded :class:`PathPredicateAnalysis`.
+
+    HAZARD: inside an appcall callee ``txn Sender`` is the CALLER APP's address,
+    so a caller-side sender guard does NOT compose over the callee — never seed
+    one into a callee's predicates. Cross-contract auth keys on ``global
+    CallerApplicationID`` (see :mod:`.cfg.super_auth`).
     """
     from .auth_domination import AuthDominationDetector
 

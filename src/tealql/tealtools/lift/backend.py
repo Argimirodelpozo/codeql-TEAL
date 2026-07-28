@@ -1,15 +1,11 @@
 """Full decompilation backend: SSA -> Puya IR -> split/destructure -> MIR -> TEAL.
 
-The lift proper (:mod:`lift` / :mod:`to_puya_ir`) stops at optimised
-``puya.ir.models``. This module runs Puya's OWN backend the rest of the way to
-TEAL text, so a caller can round-trip a contract (disassemble -> lift ->
-recompile) — the basis of the behavioural faithfulness tests.
+Runs Puya's OWN backend on past where the lift proper (:mod:`to_puya_ir`) stops, so a
+contract can be round-tripped: disassemble -> lift -> recompile.
 
-Like :mod:`to_puya_ir`, this imports the ``puya`` package and so is gated: it
-lives here (not in ``tests/``) so a ``pip install tealql[lift]`` user can
-recompile, but ``import tealql.tealtools.lift`` stays puya-free (only calling
-:func:`lift_to_teal` pulls puya in). Failures surface as a typed
-:class:`tealql.tealtools.errors.LiftError` (stage ``"backend"``).
+HAZARD: this imports the ``puya`` package, so it must stay behind the lazy
+:func:`lift_to_teal` export — ``import tealql.tealtools.lift`` has to remain
+puya-free. Failures surface as :class:`tealql.tealtools.errors.LiftError`.
 """
 from __future__ import annotations
 
@@ -26,14 +22,10 @@ logger = logging.getLogger("tealql.tealtools.lift")
 def lift_to_teal(source, *, aggressive: bool = False) -> str:
     """``SSAProgram(source)`` -> Puya IR -> split/destructure -> MIR -> TEAL text.
 
-    ``source`` is a ``.teal`` file/dir (anything :class:`SSAProgram` accepts).
-    With ``aggressive`` the codegen-changing optimiser passes run (intrinsic
-    folding + ARC4 encode/decode elimination); behaviour should be unchanged,
-    which the differential dryrun in the behavioural tests verifies.
-
-    Raises :class:`tealql.tealtools.errors.LiftError` (cause chained) on any failure —
-    the inner lower/optimise stages raise their own stages, the destructure ->
-    MIR -> TEAL steps here raise stage ``"backend"``."""
+    ``aggressive`` additionally runs the codegen-changing optimiser passes (intrinsic
+    folding, ARC4 encode/decode elimination). Any failure raises
+    :class:`tealql.tealtools.errors.LiftError`, cause chained, tagged with the stage
+    that failed."""
     import puya.ir.models as M
     from puya.context import ArtifactCompileContext, CompiledProgramProvider
     from puya.errors import InternalError
@@ -46,13 +38,10 @@ def lift_to_teal(source, *, aggressive: bool = False) -> str:
     from . import to_puya_ir
 
     prog = SSAProgram(str(source))
-    # Emit the program's ACTUAL AVM version, not a hardcoded 10: a v11 contract
-    # using e.g. `block BlkFeeSink` must declare `#pragma version 11` or the
-    # assembler rejects the field as introduced-in-a-later-version. Read it off
-    # the source `#pragma version N`, FLOOR at 10 -- the lift reconstructs
-    # subroutines/stack with `proto`/`dupn`/`frame_*` (v8+) regardless of the
-    # original version, so a lower-versioned source would otherwise fail to
-    # assemble its own recompiled body.
+    # Emit the program's ACTUAL AVM version: a v11 field like `block BlkFeeSink`
+    # needs `#pragma version 11` or the assembler rejects it. FLOOR at 10 -- the lift
+    # always reconstructs subroutines/stack with `proto`/`dupn`/`frame_*` (v8+), so a
+    # lower-versioned source could not assemble its own recompiled body.
     avm_version = 10
     for _lines in to_puya_ir._load_src(prog.source_path).values():
         for _ln in _lines[:4]:
@@ -84,19 +73,16 @@ def lift_to_teal(source, *, aggressive: bool = False) -> str:
                 teal = mir_to_teal(ctx, program_ir_to_mir(ctx, program))
                 break
             except InternalError as e:
-                # mir lowering drops a register defined only in a now-unreachable
-                # block. Define it (typed zero, at entry) in EVERY sub that uses
-                # it, not just the first match -- the same name can recur across
-                # subs and the backend's complaint doesn't say which, so a
-                # first-match define fixes the wrong one and never converges.
+                # MIR lowering drops a register defined only in a now-unreachable
+                # block. Define it (typed zero, at entry) in EVERY sub using that
+                # name: the error doesn't say which sub, and the same name recurs
+                # across subs, so a first-match define never converges.
                 m = _compat.UNDEFINED_REGISTER_RE.search(str(e))
                 hits = m and [
                     to_puya_ir._define_named_orphan([s], m.group(1), int(m.group(2)))
                     for s in [main, *subs]]
                 if not (hits and any(hits)):
                     raise
-                # Typed-zero orphan (see _destructure_with_orphans) — surface it,
-                # as the recompiled TEAL may compute with 0 for this register.
                 logger.warning(
                     "reconstruction orphan %s#%s defined as typed ZERO during MIR "
                     "lowering — recompiled TEAL may compute with 0",
@@ -111,16 +97,14 @@ def lift_to_teal(source, *, aggressive: bool = False) -> str:
 
 
 def _destructure_with_orphans(ctx, program) -> None:
-    """Puya's ``destructure_ssa``, but per-subroutine with an orphan retry on the
-    FINAL validation only. ``destructure_ssa`` is monolithic and mutates in place:
-    when a late sub trips a reconstruction orphan (a value the lift lost to a
-    frame / dynamic-scratch gap, "used but never defined"), it has already fully
-    destructured the earlier subs, so a naive whole-program retry re-validates
-    those and trips "<reg> is assigned multiple times" on their now-materialised
-    phis. Running each sub's steps exactly once avoids that; a reconstruction
-    orphan only ever surfaces at the closing ``attrs.validate`` (the
-    ``_check_blocks`` body validator, after every transform), where we define it
-    as a typed zero and RE-VALIDATE -- never re-destructuring."""
+    """Puya's ``destructure_ssa``, per-subroutine, with an orphan retry on the final validation.
+
+    HAZARD: never retry the whole program. ``destructure_ssa`` mutates in place, so
+    when a late sub trips a reconstruction orphan the earlier subs are already
+    destructured, and re-validating them raises "assigned multiple times" on their
+    now-materialised phis. Run each sub's steps EXACTLY once; an orphan only surfaces
+    at the closing ``attrs.validate``, where it is defined as a typed zero and
+    RE-VALIDATED -- never re-destructured."""
     import attrs
 
     import puya.ir.models as M
@@ -134,13 +118,11 @@ def _destructure_with_orphans(ctx, program) -> None:
 
     def _validate(sub, check):
         # `check` is validate_with_ssa while still in (C)SSA, attrs.validate once
-        # destructured (the IR is then intentionally OUT of SSA -- registers ARE
-        # assigned multiple times -- so the SSA check must NOT run, matching Puya's
-        # own ordering). On a bad read -- a reconstruction orphan, a value the lift
-        # lost to a frame / dynamic-scratch gap -- define it as a typed zero at the
-        # sub entry (the SAME used-minus-defined _check_blocks raises on, robust to
-        # how the error formats names) and re-validate. "assigned multiple times"
-        # is never an orphan, so it is re-raised.
+        # destructured -- the IR is then intentionally OUT of SSA (registers ARE
+        # assigned multiple times), so the SSA check must NOT run there. A bad read is
+        # a reconstruction orphan (a value the lift lost to a frame / dynamic-scratch
+        # gap): define it as a typed zero at the sub entry and re-validate.
+        # "assigned multiple times" is never an orphan, so it is re-raised.
         for _ in range(64):
             try:
                 check(sub)
@@ -153,11 +135,7 @@ def _destructure_with_orphans(ctx, program) -> None:
                     | frozenset(_compat.get_assigned_registers(sub.body)))
                 if not bad:
                     raise
-                # A reconstruction orphan compiles to a typed ZERO — the
-                # recompiled TEAL then computes with 0 where the original had a
-                # real value. Faithful for covered contracts (the behavioural
-                # dryrun would catch divergence), but for an UNCOVERED contract
-                # this is a silently-wrong recompile, so surface it.
+                # On an uncovered contract this is a silently-wrong recompile.
                 logger.warning(
                     "reconstruction orphan(s) in %s defined as typed ZERO — "
                     "recompiled TEAL may compute with 0 for: %s",

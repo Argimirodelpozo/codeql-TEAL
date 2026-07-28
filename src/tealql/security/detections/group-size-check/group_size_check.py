@@ -1,25 +1,11 @@
-"""sec-guide/group-size-check: missing GroupSize check (path-aware).
+"""sec-guide/group-size-check: an approval exit reachable without crossing an
+ENFORCED comparison of ``global GroupSize``.
 
-Per-approval-exit: each exit must be reachable only along CFG paths
-that cross a BB where ``global GroupSize`` flows into a comparison
-whose result reaches enforcement. Uses the same machinery as
-:mod:`tealql.security.rekey_to`, but seeded from ``global FIELD``
-reads instead of ``txn FIELD``.
-
-GATED on the program actually using an **absolute** group index
-(``gtxn`` / ``gtxna`` / ``gtxnas`` — index in the first immediate). The
-GroupSize concern is "the contract reads ``gtxn N`` assuming a sibling at
-index N exists" — without an absolute index there is no such assumption, so
-flagging the absence of a GroupSize check is a false positive. (A dynamic
-``gtxns`` index is popped off the stack and is bounds-checked by the AVM, so it
-doesn't trigger this either.) This matches the reference linter (Tealer), which
-fires only on absolute-index usage; without the gate we flagged essentially
-every contract.
-
-Replaces the old heuristic (``compared anywhere?`` + per-``gtxn``
-finding gated on whole-program presence) which produced false
-negatives whenever the validation was on one branch only, or in a
-subroutine never called on every path.
+GATED on the program using an ABSOLUTE group index (``gtxn``/``gtxna``/
+``gtxnas``): the concern is "the contract reads ``gtxn N`` assuming a sibling at
+index N exists", and without that assumption the finding is a false positive on
+essentially every contract. A dynamic ``gtxns`` index is AVM-bounds-checked and
+does not count.
 """
 from __future__ import annotations
 
@@ -30,9 +16,7 @@ from tealql.tealtools.ssa import BasicBlock, SSAProgram
 from tealql.security import common
 
 
-# Absolute-index group-txn reads (index in the first immediate). The dynamic
-# ``gtxns*`` family pops the index off the stack and is AVM-bounds-checked, so it
-# does not create the "assumes a sibling at index N" hazard this detector covers.
+# Absolute-index group-txn reads (index in the first immediate).
 _ABS_GROUP_INDEX_OPS = frozenset({"gtxn", "gtxna", "gtxnas"})
 
 
@@ -53,8 +37,7 @@ class GroupSizeCheckViolation:
 
     @property
     def line(self) -> int:
-        # Structured anchor for machine output (JSON/SARIF/suppressions);
-        # mirrors pretty(): the exit's LAST line.
+        # Must mirror pretty(): the exit's LAST line.
         return self.exit_bb.last_line
 
     def pretty(self) -> str:

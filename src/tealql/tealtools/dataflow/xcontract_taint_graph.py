@@ -1,35 +1,14 @@
-"""Cross-contract taint graph: a unified flow graph spanning a
-caller plus its known callees, with bridge edges modelling the
-appcall boundary.
+"""Cross-contract taint graph — a caller plus its known callees, merged with
+AppID-qualified nodes and bridge edges over the appcall boundary.
 
-For each ``itxn_submit`` whose ``ApplicationID`` resolves in the
-provided registry, the corresponding callee's :class:`TaintGraph`
-is built and merged into one big :class:`networkx.DiGraph` with
-nodes qualified by AppID. Bridge edges connect:
+Four bridges: forwarded ``ApplicationArgs`` (``appcall-arg``), forwarded foreign
+arrays (``appcall-foreign``), the callee's ``txn Sender`` (``appcall-sender``),
+and the callee's ``log`` back into the caller's inner-txn log reads
+(``appcall-return``).
 
-- **Forward (args)** — caller's ``itxn_field ApplicationArgs`` (per
-  index ``i``) → every ``txna ApplicationArgs i`` / ``txn ApplicationArgs i``
-  read in the callee. Edge kind: ``"appcall-arg"``.
-- **Forward (foreign arrays)** — the caller's ``itxn_field
-  {Accounts,Assets,Applications}`` entries → the callee's positional
-  ``txn``/``txna`` reads of the same array, offset by the AVM implicit
-  entry (callee ``Accounts 0`` is the Sender, ``Applications 0`` is the
-  current app — see :data:`_FORWARD_ARRAYS`). Edge kind: ``"appcall-foreign"``.
-- **Forward (Sender)** — the callee's ``txn Sender`` reads resolve to
-  the caller's app address. Modelled as a single sentinel source node
-  (:data:`_CALLER_APP_ADDR`, scope ``None``) with edges to every
-  ``txn Sender`` read in the callee. Edge kind: ``"appcall-sender"``.
-- **Backward (return)** — the callee's ``log`` ops → the caller's
-  ``itxn``/``itxna``/``itxnas`` reads of the ``Logs`` field after the
-  submit. Edge kind: ``"appcall-return"``. ``log`` has no SSA output
-  but is still a graph node (the def-use step puts an edge into it
-  from the logged value's producer), so it can serve as the bridge
-  source directly.
-
-Together these let :func:`cross_taint_findings` follow an attacker
-input from the caller, across the appcall boundary, to a sensitive
-sink in the callee (or back to the caller via the return channel).
-"""
+HAZARD: inside a callee, ``txn Sender`` is the CALLER APP's address, not the end
+user's — a callee that authorises on ``Sender`` is trusting whichever app called
+it. That is why the sender bridge exists at all."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -47,8 +26,7 @@ from .taint_graph import Node, TaintGraph
 
 @dataclass(frozen=True)
 class XContractNode:
-    """A node in a cross-contract graph. ``app_id=None`` means the
-    caller; an ``int`` means a callee identified by its AppID."""
+    """A graph node; ``app_id=None`` is the caller, an int is that callee."""
 
     app_id: Optional[int]
     inner: Node
@@ -76,11 +54,7 @@ class XContractTaintGraph(NxGraphView):
         *,
         max_depth: int = 4,
     ) -> "XContractTaintGraph":
-        """Build the unified graph TRANSITIVELY (A->B->C->...): a TaintGraph
-        per reachable contract, plus appcall bridge edges at every hop, so a
-        value flows across the whole chain. ``registry`` may be a pre-loaded
-        ``{app_id: teal_path}`` dict, or a yaml path that
-        :func:`tealql.tealtools.xcontract.load_registry` accepts."""
+        """Build the graph TRANSITIVELY (A->B->C->…), bridging at every hop."""
         from collections import deque
 
         if not isinstance(registry, dict):
@@ -88,10 +62,8 @@ class XContractTaintGraph(NxGraphView):
         caller_tg = TaintGraph.of(caller_prog)
         root_sites = find_appcall_sites(caller_prog, registry)
         callees: dict[int, TaintGraph] = {}
-        # AppID of the calling contract (None == root) -> its TaintGraph.
-        tg_by_id: dict = {None: caller_tg}
-        # (caller_app_id, site) for every appcall edge in the transitive graph.
-        edges: list = []
+        tg_by_id: dict = {None: caller_tg}     # calling app id (None = root) -> graph
+        edges: list = []                       # (caller_app_id, site) per appcall
         # BFS over the call graph; each contract loaded + graphed once.
         frontier: deque = deque([(caller_prog, None, 0)])
         while frontier:
@@ -122,10 +94,8 @@ class XContractTaintGraph(NxGraphView):
         edges: list,
     ) -> nx.DiGraph:
         big: nx.DiGraph = nx.DiGraph()
-        # Every contract's nodes/edges, qualified by AppID (None = root).
         for app_id, tg in tg_by_id.items():
             _copy_into(big, tg, app_id=app_id)
-        # Bridge edges per appcall edge: caller_app_id -> site.app_id (callee).
         for caller_app_id, site in edges:
             callee_tg = callees.get(site.app_id)
             caller_tg = tg_by_id.get(caller_app_id)
@@ -148,9 +118,7 @@ class XContractTaintGraph(NxGraphView):
         file: Optional[str] = None,
         line: Optional[int] = None,
     ) -> list[XContractNode]:
-        """Find nodes across the unified graph. ``app_id="any"``
-        (default) matches every scope; ``app_id=None`` matches only
-        the caller; an int matches that specific callee."""
+        """Find nodes; ``app_id="any"`` spans every scope, ``None`` is the caller only."""
         out: list[XContractNode] = []
         for xn in self.g.nodes:
             if app_id != "any" and xn.app_id != app_id:
@@ -212,14 +180,13 @@ def _copy_into(big: nx.DiGraph, tg: TaintGraph, *, app_id: Optional[int]) -> Non
 # --- appcall bridges ----------------------------------------------
 
 
-# The array fields an appcall forwards into the callee, mapped to the AVM
-# implicit-entry offset: the callee reads each array at an index whose 0 slot
-# is reserved for an implicit value on some arrays, so the caller's i-th pushed
-# entry is read by the callee at index ``i + offset``.
-#   ApplicationArgs — no implicit entry          (callee read i  <- push i)
-#   Accounts        — callee read 0 == Sender    (callee read i+1 <- push i)
+# HAZARD: the caller's i-th pushed entry is read by the callee at ``i + offset``,
+# because some arrays reserve slot 0 for an AVM implicit value. Dropping the
+# offset bridges every foreign-array flow to the WRONG index.
+#   ApplicationArgs — no implicit entry            (callee read i   <- push i)
+#   Accounts        — callee read 0 == Sender      (callee read i+1 <- push i)
 #   Applications    — callee read 0 == current app (callee read i+1 <- push i)
-#   Assets          — no implicit entry          (callee read i  <- push i)
+#   Assets          — no implicit entry            (callee read i   <- push i)
 _FORWARD_ARRAYS: dict[str, int] = {
     "ApplicationArgs": 0,
     "Accounts": 1,
@@ -235,15 +202,8 @@ def _add_array_bridges(
     callee_tg: TaintGraph,
     site: AppcallSite,
 ) -> None:
-    """Forward every array the caller sets on the inner appcall txn
-    (``itxn_field {ApplicationArgs,Accounts,Assets,Applications}``) to the
-    matching positional read in the callee, accounting for the AVM
-    implicit-entry offset (:data:`_FORWARD_ARRAYS`). The callee read may be
-    either ``txna FIELD i`` or the equally-valid ``txn FIELD i`` form (both are
-    current-txn array reads — the ``txn`` form was previously missed, the same
-    gap fixed for ``seeds_for_callee``). ``caller_app_id`` (``None`` = root)
-    scopes the caller-side node; ``ApplicationArgs`` keeps the ``appcall-arg``
-    kind, the foreign arrays use ``appcall-foreign``."""
+    """Forward each array the caller sets on the inner txn to the matching
+    positional read in the callee, applying the implicit-entry offset."""
     for field, offset in _FORWARD_ARRAYS.items():
         kind = "appcall-arg" if field == "ApplicationArgs" else "appcall-foreign"
         for push_i, caller_node in _caller_field_nodes(caller_tg, site, field):
@@ -256,10 +216,8 @@ def _add_array_bridges(
 
 
 def _callee_array_reads(callee_tg: TaintGraph, field: str, index: int) -> list[Node]:
-    """Callee nodes reading ``field`` at the literal ``index`` via either the
-    ``txna`` or the ``txn`` form. The dynamic-index reads (``txnas`` /
-    ``gtxnas``, index popped from the stack) aren't pinned to a position, so
-    they're conservatively left unbridged for a follow-up."""
+    """Callee nodes reading ``field`` at literal ``index``, in ``txna`` or ``txn``
+    form; dynamic-index reads pin to no position and are left UNBRIDGED."""
     imm = f"{field} {index}"
     return (callee_tg.find(op="txna", immediates=imm)
             + callee_tg.find(op="txn", immediates=imm))
@@ -277,10 +235,8 @@ def _add_sender_bridge(
     callee_tg: TaintGraph,
     site: AppcallSite,
 ) -> None:
-    """The callee's ``txn Sender`` reads resolve to the CALLER's app
-    address (the inner-txn sender). Seed a per-caller sentinel source node
-    and connect it to every ``txn Sender`` read in the callee, so a callee
-    that trusts ``Sender`` is reachable from its caller's context."""
+    """Connect a per-caller sentinel to every ``txn Sender`` read in the callee,
+    since those resolve to the CALLER's app address."""
     sender_reads = callee_tg.find(op="txn", immediates="Sender")
     if not sender_reads:
         return
@@ -302,13 +258,11 @@ def _add_return_bridges(
     callee_tg: TaintGraph,
     site: AppcallSite,
 ) -> None:
-    """The callee's ``log`` ops feed the caller's reads of the inner
-    txn's log output after the submit. Bridge every callee ``log`` node
-    to every caller read of the inner txn's ``Logs`` array OR its scalar
-    ``LastLog`` field (the standard single-return read) that sits after
-    this site's submit line (``caller_app_id`` scopes them). ``LastLog``
-    parity with the group axis (see ``group_taint_graph._add_log_bridges``)
-    — the verdict must not flip on which equivalent return opcode was used."""
+    """Bridge every callee ``log`` to the caller's post-submit reads of the inner
+    txn's ``Logs`` array or its scalar ``LastLog``.
+
+    Both forms must be covered: a verdict that flips depending on which
+    equivalent return opcode the contract used is a false verdict."""
     callee_logs = callee_tg.find(op="log")
     if not callee_logs:
         return
@@ -335,24 +289,19 @@ def _caller_field_nodes(
     site: AppcallSite,
     field: str,
 ) -> Iterator[tuple[int, Node]]:
-    """Yield ``(push_index, node)`` for each ``itxn_field <field>`` op
-    contributing to ``site``'s submit. The push index is the position of
-    this field-set within the inner txn (reset at ``itxn_begin``/``itxn_next``,
-    so it counts the array of the inner txn this submit finalises)."""
-    # Walk the caller's assignments in source order, finding the itxn block
-    # this submit belongs to and counting <field> field-set ops as we go. Fields
-    # are BUFFERED per group (itxn_begin..itxn_submit) and only yielded once the
-    # group's submit matches site.submit_line — otherwise an EARLIER submit's
-    # fields (in_block never reset) would leak into a later site's callee.
+    """Yield ``(push_index, node)`` per ``itxn_field <field>`` feeding ``site``'s
+    submit, the index being that field-set's position within the inner txn.
+
+    HAZARD: fields are buffered and only yielded once the group's submit matches
+    ``site.submit_line``, or an EARLIER submit's fields leak into a later site."""
     from ..ssa.operands import const_int
 
     prog = caller_tg.prog
     in_block = False
     push_index = 0
-    # Fields are buffered PER INNER TXN, not per group: `itxn_next` starts a
-    # new txn that reuses push indices from 0. Keeping one flat buffer meant a
-    # group with two inner txns each setting <field> merged both txns' fields
-    # (with colliding push indices) onto the single callee this site names.
+    # Buffered PER INNER TXN, not per group: `itxn_next` starts a new txn that
+    # reuses push indices from 0, so one flat buffer would merge two txns'
+    # fields under colliding indices onto this site's single callee.
     txns: list[list[tuple[int, Node]]] = [[]]
     txn_app_ids: list[Optional[int]] = [None]
     for a in prog.assignments:
@@ -373,10 +322,9 @@ def _caller_field_nodes(
             continue
         if a.op == "itxn_submit":
             if a.location.line == site.submit_line:
-                # Prefer the txn that actually targets this site's callee; if
-                # no txn's ApplicationID resolves to it, fall back to every
-                # txn in the group (over-approximate: extra edges inflate
-                # reachability, never drop it).
+                # Prefer the txn actually targeting this callee, else fall back
+                # to every txn in the group — over-approximating, so extra edges
+                # inflate reachability rather than dropping a real flow.
                 matched = [t for t, aid in zip(txns, txn_app_ids)
                            if aid is not None and aid == site.app_id]
                 for bucket in (matched or txns):
@@ -391,7 +339,6 @@ def _caller_field_nodes(
             if imm == "ApplicationID" and a.inputs:
                 txn_app_ids[-1] = const_int(a.inputs[0])
             if imm == field:
-                # Find the matching graph node by (file, line)
                 for n in caller_tg.nodes():
                     if n.file == site.file and n.line == a.location.line:
                         txns[-1].append((push_index, n))
@@ -402,15 +349,9 @@ def _caller_field_nodes(
 # --- cross-contract taint reachability detector -------------------
 
 
-# The sink taxonomy (sensitive itxn fields + the full box/app state-write
-# family) lives in tealql.tealtools.avm and is applied by
-# _nx_view.sensitive_sinks, shared with the group view.
-
-
 @dataclass(frozen=True)
 class CrossTaintFinding:
-    """An attacker-controlled caller input that reaches a sensitive
-    sink in a callee, across the appcall boundary."""
+    """A caller input reaching a sensitive sink across the appcall boundary."""
 
     source: XContractNode
     sink: XContractNode
@@ -440,15 +381,12 @@ def _boundary_crossing_path(
     sink: XContractNode,
     reach: set,
 ) -> Optional[tuple]:
-    """A witness path ``src -> ... -> sink`` that passes through a callee scope
-    (a node with ``app_id is not None``), or ``None`` when every ``src -> sink``
-    path stays entirely in the caller.
+    """A witness path through a callee scope, or ``None`` if every ``src -> sink``
+    path stays in the caller.
 
-    A callee-scope node lies on some ``src -> sink`` path iff it is both
-    forward-reachable from ``src`` (``reach``) and backward-reachable to ``sink``
-    (``ancestors``). If one exists, the attacker value crossed the appcall
-    boundary and came back — the RETURN channel — which the single-program caller
-    analysis cannot see; we stitch ``src -> mid -> sink`` as the witness."""
+    A callee node lies on some such path iff it is both forward-reachable from
+    ``src`` and backward-reachable to ``sink``; one existing means the value
+    crossed the boundary and returned, which the caller analysis cannot see."""
     back = xtg.reachable_to(sink)
     mids = [n for n in reach & back if n.app_id is not None]
     if not mids:
@@ -462,22 +400,11 @@ def _boundary_crossing_path(
 
 
 def cross_taint_findings(xtg: "XContractTaintGraph") -> list[CrossTaintFinding]:
-    """Report caller-side attacker inputs (``txna ApplicationArgs``)
-    that reach a sensitive sink ACROSS the appcall boundary, following the
-    bridge edges. One finding per (source, sink) reachable pair, carrying a
-    shortest witness path.
+    """Caller inputs reaching a sensitive sink ACROSS the appcall boundary, in
+    both directions — forward into a callee, or back via the return channel.
 
-    Cross-boundary only, in both directions:
-    - a sink in a CALLEE reached from a caller input (forward channel), and
-    - a sink in the CALLER reached via the RETURN channel — a callee ``log``
-      that launders attacker input back to the caller's ``itxn LastLog`` /
-      ``Logs`` read and into a caller sink. This lands in the caller's scope but
-      is genuinely cross-contract: the caller analysis alone can't tell the
-      inner-txn return carries attacker data.
-
-    A caller-scope sink reachable WITHOUT crossing the boundary is left to the
-    single-program :mod:`tealql.tealtools.dataflow.box` / ``state`` flows and is
-    NOT reported here."""
+    A caller-scope sink reachable WITHOUT crossing the boundary belongs to the
+    single-program detectors and is deliberately not reported here."""
     sources = [
         xn for xn in (xtg.find(app_id=None, op="txna")
                       + xtg.find(app_id=None, op="txn"))
@@ -491,9 +418,7 @@ def cross_taint_findings(xtg: "XContractTaintGraph") -> list[CrossTaintFinding]:
             if sink_xn not in reach:
                 continue  # unreachable
             if sink_xn.app_id is None:
-                # Caller-scope sink: report ONLY when the flow crosses the
-                # appcall boundary (the return channel); a pure-caller flow is
-                # the single-program analysis's job.
+                # Caller-scope sink: only the return channel counts here.
                 path = _boundary_crossing_path(xtg, src, sink_xn, reach)
                 if path is None:
                     continue

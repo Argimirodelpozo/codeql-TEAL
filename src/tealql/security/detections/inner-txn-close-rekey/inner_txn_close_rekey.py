@@ -1,14 +1,8 @@
-"""sec-guide/inner-txn-close-rekey: itxn sets CloseRemainderTo / RekeyTo / AssetCloseTo.
+"""sec-guide/inner-txn-close-rekey: any ``itxn_field`` writing CloseRemainderTo /
+RekeyTo / AssetCloseTo, which should be left at their zero-address default.
 
-Per-assignment finding for any ``itxn_field`` writing one of the dangerous fields
-— these should typically default to the zero address, not be set explicitly.
-
-A write whose value *provably resolves to the zero address*
-(:func:`common.value_is_zero_address` — a 32-zero-byte constant or a value flowing
-from ``global ZeroAddress`` through phi / scratch / proto-frame) is suppressed: it
-is a defensive no-op equal to the field's default, not the drain/rekey
-antipattern. Without this, compilers that explicitly zero RekeyTo/CloseRemainderTo
-(a common safe idiom) tripped a false positive.
+A write whose value PROVABLY resolves to the zero address is suppressed — that is
+a defensive no-op equal to the default, and compilers emit it routinely.
 """
 from __future__ import annotations
 
@@ -31,7 +25,7 @@ class InnerTxnCloseRekeyViolation:
 
     @property
     def line(self) -> int:
-        # Structured anchor for machine output; mirrors pretty().
+        # Must mirror pretty().
         return self.assignment.location.line
 
     def pretty(self) -> str:
@@ -51,9 +45,8 @@ class InnerTxnCloseRekeyDetector:
     applies_to = frozenset({"app"})  # itxn_* is app-only
 
     def __init__(self, prog: SSAProgram, *, file: Optional[str] = None):
-        # Const propagation lets a 32-zero-byte literal / scratch-loaded
-        # ZeroAddress resolve for the safe-no-op suppression below. Idempotent
-        # fallback — the runner prepares the program once.
+        # Const propagation is what resolves a 32-zero-byte literal for the
+        # safe-no-op suppression; idempotent, so only a direct-use fallback.
         common.prepare(prog)
         self.prog = prog
         self.file = file

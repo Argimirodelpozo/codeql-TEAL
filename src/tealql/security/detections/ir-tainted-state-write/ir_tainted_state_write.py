@@ -1,13 +1,11 @@
-"""sec-guide/ir-tainted-state-write: attacker-controlled state-write KEY (IR).
+"""sec-guide/ir-tainted-state-write: a user-input-tainted value reaching the KEY of
+a persistent state write lets the attacker choose the destination slot —
+overwriting owner/admin/accounting global state, or colliding with a sensitive box.
 
-A user-input-tainted value reaching the KEY (the destination slot) of a persistent
-state write -- ``app_global_put`` / ``app_local_put`` / ``box_put`` /
-``box_create`` / ``box_replace`` -- lets the attacker write to a slot they choose:
-overwrite the contract's own owner / admin / accounting GLOBAL state, or collide
-with a sensitive box. Only the KEY is flagged, not the VALUE (storing user data is
-normal). A new sink CATEGORY (the first IR detector on a non-itxn sink); lift-only.
-Low-FP by construction: a key from ``txn Sender`` (the ``box[Sender]`` per-caller
-pattern) is not a taint source, and a key checked against state is guard-cleared.
+Only the KEY is flagged, never the VALUE: storing user data is normal. Low-FP by
+construction — a key from ``txn Sender`` (the ``box[Sender]`` per-caller pattern)
+is not a taint source, and a key checked against state is guard-cleared.
+Lift-only; no SSA sibling.
 """
 from __future__ import annotations
 

@@ -1,29 +1,13 @@
-"""sec-guide/arbitrary-inner-asset: attacker-controlled inner asset-transfer target.
+"""sec-guide/arbitrary-inner-asset: an inner asset transfer whose ``XferAsset`` —
+WHICH ASA leaves the application account — is attacker-controlled, unguarded, and
+not returned to the caller. The asset-confusion shape (Tinyman-class): the app
+moves whichever asset the attacker names to a party they never deposited for.
 
-The asset analogue of [[arbitrary-inner-appcall]] and the shape behind the
-Tinyman-class asset-confusion bug ($3M, 2022 — a pool that paid out the wrong
-asset). An inner asset transfer whose ``XferAsset`` — *which* ASA moves out of the
-application account — is attacker-controlled, with no dominating check and the
-asset NOT going back to the caller:
-
-    itxn_begin
-    int axfer;                  itxn_field TypeEnum
-    txna ApplicationArgs 1; btoi; itxn_field XferAsset      <-- attacker picks the asset
-    addr <fixed/other>;          itxn_field AssetReceiver   <-- ... sent elsewhere
-    itxn_field AssetAmount
-    itxn_submit
-
-The app moves whichever asset the attacker names out of its holdings to a party the
-attacker didn't have to deposit for — a confused deputy over the app's asset
-balances. (``AssetReceiver`` / ``AssetAmount`` are owned by tainted-fund-flow; this
-owns the asset *selector* they don't.)
-
-Precision: the legitimate "withdraw the asset I name back **to myself**" pattern is
-suppressed — if the same inner transaction's ``AssetReceiver`` flows from
-``txn Sender``, the chooser only receives their own chosen asset, not a third
-party's. A value/sender guard (shared :func:`common.itxn_value_guarded`) also
-suppresses. Only the immediate inner-txn block is correlated (``itxn_begin`` /
-``itxn_next`` … ``itxn_submit``).
+``AssetReceiver``/``AssetAmount`` belong to tainted-fund-flow; this owns the asset
+SELECTOR. Suppressed when the same inner txn's ``AssetReceiver`` flows from ``txn
+Sender`` (withdrawing your own named asset to yourself drains nobody), or on a
+value/sender guard. Only the immediate ``itxn_begin``/``itxn_next`` block is
+correlated.
 """
 from __future__ import annotations
 
@@ -68,9 +52,8 @@ class ArbitraryInnerAssetDetector:
     name: ClassVar[str] = "sec-guide/arbitrary-inner-asset"
     applies_to: ClassVar[frozenset] = frozenset({"app"})  # itxn_* is app-only
     violation_cls: ClassVar[type] = ArbitraryInnerAssetViolation
-    # Superseded by ir-arbitrary-inner-asset (IR taint/guards + the same receiver-
-    # context suppression), which falls back to this one on lift failure. Kept
-    # registered; skipped in default scans. See scan._drop_superseded.
+    # The IR sibling adds IR taint/guards and falls back to this one on lift
+    # failure; kept registered but skipped in default scans.
     superseded_by: ClassVar[str] = "ir-arbitrary-inner-asset"
 
     def __init__(self, prog: SSAProgram, *, file: Optional[str] = None,
@@ -95,8 +78,7 @@ class ArbitraryInnerAssetDetector:
             if common.itxn_value_guarded(
                 self.prog, self.pp, fs.assignment, sink_slots, taint, sender_vars):
                 continue
-            # Suppress "withdraw the asset I name to myself": the asset returns to
-            # the caller, so the chooser can't drain a third party.
+            # The asset returns to the caller, so the chooser drains nobody.
             recv = receiver_by_block.get(self._block_id(fs.assignment))
             if recv is not None and common._operand_flows_from_field_var(
                     self.prog, recv, sender_vars):
@@ -122,8 +104,7 @@ class ArbitraryInnerAssetDetector:
         )
 
     def _block_id(self, assignment) -> tuple:
-        """The (file, start_line) of the ``itxn_begin``/``itxn_next`` that opens
-        the inner-txn block containing ``assignment``."""
+        """The ``(file, line)`` of the delimiter opening ``assignment``'s itxn block."""
         cur = None
         for a in self._ordered_itxn_ops():
             if a.location.file != assignment.location.file:

@@ -1,48 +1,21 @@
-"""Canonical SSA module — the pure-Python SSA builder.
+"""The pure-Python SSA builder behind :class:`SSAProgram`.
 
-Provides :meth:`PySSA.build`, which returns an :class:`SSAProgram` (from
-:mod:`tealql.tealtools.ssa.program`) directly, ready for every existing analysis
-(constant propagation, taint, detectors, reports). The data classes it works
-over live in :mod:`tealql.tealtools.ssa.models`; external consumers import them (and
-``SSAProgram``) from the package ``__init__``, which is the re-export surface.
+Pipeline (:meth:`PySSA._construct`): instantiate PyVars per opcode output ->
+BB arities + surviving locals -> Braun on-demand phi placement -> per-BB stack
+sim filling ``op.inputs`` / ``b.exit_stack`` -> liveness filter.
 
-Canonical idiom:
+HAZARD — slot model. Stack slots are 1-based TOP-FIRST. An entry-slot phi ``k``
+of block ``b`` surfaces at exit slot ``L_b + k - C_b`` (locals, consumed), and is
+undefined when ``k <= C_b`` (consumed inside the block). ``frame_dig`` /
+``frame_bury`` (either sign of N) expand under the FAT-STACK convention: consume
+the whole band from the current top down to the target slot, emit fresh outputs
+covering the post-stack.
 
-```python
-from tealql.tealtools.ssa import SSAProgram, PySSA
+HAZARD — the ``PyPhi.args`` graph can be CYCLIC (constant-stack CFG loops), so
+every traversal needs a ``seen`` set. ``PyPhi`` is unified: the public
+Direct/Indirect kind distinction is collapsed here.
 
-prog = SSAProgram("contract.teal")   # a .teal file or a dir of them
-# every existing analysis runs on prog.
-```
-
-Pipeline (:meth:`PySSA._construct`):
-
-  1. Instantiate PyVars per opcode output.
-  2. BB arities + surviving locals (``outStackOrder``).
-  3. Phi placement: Braun on-demand construction (``_phase_braun`` + the
-     forward depth cap ``_compute_entry_depths``) -- minimal SSA, ~160-209x
-     faster than the maximal-then-pruned placement it replaced. (Two superseded
-     alternates, an eager placement and a join-only worklist, were reachable
-     only via ``TEAL_SSA_EAGER`` / ``TEAL_SSA_JOIN_ONLY``. Nothing ever set
-     either, so they were three phi-placement algorithms deep in the most
-     safety-critical file here with only one of them ever run -- and the
-     join-only path spiralled on net-changing loops, so it was not even a
-     working fallback. Both deleted.)
-  (The former phase 5 "heights" forward stack-delta DF was REMOVED -- its
-     result was never read and it blew up on recursive subroutines.)
-  6. Per-BB sim to fill ``op.inputs`` / ``b.exit_stack``;
-     ``frame_dig`` / ``frame_bury`` (any-sign N) expand under the
-     fat-stack convention (consume the band from current top down to
-     the target slot, emit fresh outputs covering the post-stack).
-  8. Liveness filter (drop phis not transitively consumed by any op).
-
-``phiNodeExitIndex(k, b) = L_b + k - C_b`` if ``k > C_b``, else
-undefined (consumed). Unified ``PyPhi`` class — kind=Direct/Indirect
-is collapsed; chain structure is preserved on the args graph (which
-can be cyclic at constant-stack CFG loops; traversal must use
-``seen`` sets).
-
-CLI: ``python -m tealql.tealtools.ssa <teal-source>`` (renders the PySSA build).
+CLI: ``python -m tealql.tealtools.ssa <teal-source>`` renders the build.
 """
 from __future__ import annotations
 
@@ -50,8 +23,7 @@ from collections import deque
 from dataclasses import dataclass, field
 from typing import Optional, Union
 
-# Data classes the builder works over; the re-export surface for external
-# consumers is the package __init__, not this module.
+# The re-export surface for external consumers is the package __init__.
 from .models import (
     Assignment,
     BasicBlock,
@@ -67,8 +39,8 @@ from ..avm import op_arity
 
 STACK_MAX = 1000
 
-# Sentinel for "entry slot not yet resolved" (``None`` is a valid resolved
-# value — an entry slot with no incoming definition).
+# "Not yet resolved" — distinct from ``None``, itself a valid resolved value
+# (an entry slot with no incoming definition).
 _MISSING = object()
 
 
@@ -80,17 +52,14 @@ def _frame_imm(op):
         return None
 
 
-# A reconstructed-SSA operand. ``None`` marks a slot the builder could
-# not resolve (a depth mismatch surfaced rather than hidden).
+# A reconstructed-SSA operand. ``None`` marks a slot the builder could not
+# resolve (a depth mismatch surfaced rather than hidden).
 Operand = Union["PyVar", "PyPhi"]
 
 
 class PyVar:
-    """An SSA variable: one stack value produced by one opcode output.
-
-    Identity is ``(file, line, idx)`` with ``idx`` 1-based; ``idx == 1``
-    is the opcode's topmost output.
-    """
+    """One stack value produced by one opcode output — identity
+    ``(file, line, idx)``, ``idx`` 1-based with ``idx == 1`` the topmost."""
 
     __slots__ = ("file", "line", "idx", "_hash")
 
@@ -98,9 +67,9 @@ class PyVar:
         self.file = file
         self.line = line
         self.idx = idx
-        # Identity (file, line, idx) is immutable, so cache the hash: the phi-leaf
-        # collapse hashes PyVars tens of millions of times on big proto contracts,
-        # and rebuilding+hashing the key tuple each call dominated SSA construction.
+        # Identity is immutable, so cache the hash — the phi-leaf collapse hashes
+        # PyVars tens of millions of times and rebuilding the key tuple dominated
+        # construction.
         self._hash = hash((file, line, idx))
 
     def key(self) -> tuple:
@@ -118,18 +87,12 @@ class PyVar:
 
 
 class PyPhi:
-    """A phi at a basic block's entry, for one stack slot.
+    """A phi at a block's entry for one stack slot — identity
+    ``((file, first_line, last_line), slot)``, ``slot`` 1-based top-first.
 
-    Identity is ``(bb_key, slot)`` — ``bb_key`` is ``(file, first_line,
-    last_line)``; ``slot`` is 1-based top-first (top of the entry
-    stack is slot 1, the stack-index convention).
-
-    ``args`` is the merged-in incoming values from preds — each entry
-    is a :class:`PyVar` (op-defined) or a :class:`PyPhi` (chain
-    predecessor in propagation). The args graph can be cyclic at
-    constant-stack CFG loops; consumers must walk with a ``visited``
-    set.
-    """
+    HAZARD: ``args`` (the values merged in from preds, each a :class:`PyVar` or
+    a chain-predecessor :class:`PyPhi`) forms a graph that can be CYCLIC at
+    constant-stack CFG loops; walk it with a ``visited`` set."""
 
     __slots__ = ("bb_key", "slot", "args")
 
@@ -153,13 +116,8 @@ class PyPhi:
 
 @dataclass
 class PyOp:
-    """An opcode in SSA form: ``outputs = op immediates (inputs)``.
-
-    ``n_in`` / ``n_out`` are arities from the loaded graph (overridden for
-    ``frame_dig`` / ``frame_bury`` / ``callsub`` / ``retsub`` to the
-    TEAL-spec values; see :meth:`PySSA._phase1_instantiate`).
-    ``inputs`` / ``outputs`` are filled by the per-BB simulator.
-    """
+    """An opcode in SSA form, ``outputs = op immediates (inputs)``, with
+    ``inputs`` / ``outputs`` filled by the per-BB simulator."""
 
     op: str
     immediates: str
@@ -172,11 +130,8 @@ class PyOp:
 
 
 class PyBlock:
-    """A basic block: ordered opcodes plus its CFG neighbours.
-
-    ``preds`` / ``succs`` are the raw CFG (callsubs and retsubs
-    included).
-    """
+    """Ordered opcodes plus CFG neighbours — ``preds`` / ``succs`` are the RAW
+    CFG, callsub and retsub edges included."""
 
     __slots__ = (
         "key", "ops", "preds", "succs",
@@ -215,15 +170,13 @@ class PySSA:
     # Subroutine metadata.
     _bb_to_sub: dict = field(default_factory=dict)
     _proto_io: dict = field(default_factory=dict)
-    # Braun on-demand construction state (the default; TEAL_SSA_EAGER /
-    # TEAL_SSA_JOIN_ONLY select the superseded alternates).
+    # Braun on-demand construction state.
     _surv_by_slot: dict = field(default_factory=dict)   # block -> {slot: PyVar}
     _entry_val: dict = field(default_factory=dict)       # (bb_key, slot) -> value
-    # Both keyed by PyPhi.key() == (bb_key, slot) — NEVER by id(): a removed
-    # trivial phi loses its last strong reference (popped from self.phis /
-    # entry_phis), and with __slots__ CPython reuses the freed address, so an
-    # id() key can alias a NEW live phi and resolve it to the OLD phi's value.
-    # (bb_key, slot) is unique per phi (the _entry_val memo creates at most one).
+    # HAZARD: both keyed by PyPhi.key() == (bb_key, slot), NEVER by id(). A
+    # removed trivial phi loses its last reference, and with __slots__ CPython
+    # reuses the freed address — an id() key then aliases a NEW live phi and
+    # resolves it to the OLD phi's value.
     _replaced: dict = field(default_factory=dict)        # PyPhi.key() -> replacement
     _phi_users: dict = field(default_factory=dict)       # PyPhi.key() -> set[PyPhi]
     _max_entry: dict = field(default_factory=dict)       # bb_key -> max entry slot read
@@ -232,42 +185,23 @@ class PySSA:
 
     @classmethod
     def build(cls, prog: SSAProgram) -> SSAProgram:
-        """End-to-end: construct SSA from a graph-loaded ``SSAProgram``
-        and return a fresh ``SSAProgram`` shell wired up with the
-        PySSA-built structures. Internal builder state is attached
-        to the result as ``prog._pyssa`` for the chain helpers
-        (:meth:`SSAProgram.chain_predecessors` et al.) — nothing in
-        the analysis layer touches it directly.
-
-        Note: :meth:`SSAProgram.__init__` already routes through
-        :func:`_apply_pyssa_to` internally, so calling ``PySSA.build``
-        on a prog produced by ``SSAProgram(source)`` is idempotent — it
-        re-runs the same PySSA construction and returns an
-        equivalently-built fresh prog."""
+        """Construct SSA from a graph-loaded ``SSAProgram`` and return a fresh
+        one wired to the PySSA-built structures (idempotent — ``__init__``
+        already routes through the same construction)."""
         py = cls._construct(prog)
         return _to_ssaprogram(py, source=prog)
 
     @classmethod
     def _construct(cls, prog: SSAProgram) -> "PySSA":
-        """Run the PySSA construction phases and return the builder
-        instance. Use :meth:`build` for the canonical
-        SSAProgram-returning entry point; this is exposed for
-        diagnostics (e.g. ``python -m tealql.tealtools.ssa``).
-
-        (The former phase 5 "heights" was removed: it ran a forward
-        height fixpoint whose result was never read — and it blew up to
-        ~STACK_MAX entries per BB on recursive subroutines.)"""
+        """Run the construction phases and return the builder itself (for
+        diagnostics); :meth:`build` is the SSAProgram-returning entry point."""
         self = cls()
         self._phase1_instantiate(prog)
         self._phase2_arities()
-        # Phi placement: Braun on-demand construction (``_phase_braun`` + the
-        # forward depth cap ``_compute_entry_depths``). Minimal SSA, ~160-209x
-        # faster than the maximal-then-pruned placement it replaced (xgov
-        # 0.95s/77k phis -> 0.01s/11; folks-v3 3.15s/160k -> 0.02s/25) and
-        # behaviourally identical to it (puya corpus 513/0, Tier-3 5/5,
-        # live-AVM 35-corpus 33/0). The depth cap fixes the loop spiral at its
-        # slot-model root (a net-changing loop's ``L+k-C`` map climbs to
-        # STACK_MAX under ANY construction).
+        # Braun on-demand placement + the forward depth cap in
+        # `_compute_entry_depths`, which fixes the loop spiral at its slot-model
+        # root: a net-changing loop's `L+k-C` map climbs to STACK_MAX under ANY
+        # construction unless the cap stops it.
         self._phase_braun()
         self._phase6_sim_blocks()
         self._phase8_live_filter()
@@ -280,10 +214,8 @@ class PySSA:
         for qbb in prog.blocks.values():
             b = PyBlock((qbb.file, qbb.first_line, qbb.last_line))
             for a in qbb.assignments:
-                # Arities from the opcode signature table. op_arity
-                # returns the simple phase-1 counts for
-                # frame_dig/frame_bury/callsub/
-                # retsub; their fat forms are rebuilt by later phases.
+                # Narrow phase-1 arities; the fat frame_dig/frame_bury/callsub/
+                # retsub forms are rebuilt by later phases.
                 n_in, n_out = op_arity(a.op, a.immediates)
                 op = PyOp(
                     op=a.op, immediates=a.immediates,
@@ -330,9 +262,8 @@ class PySSA:
             self._surv[b] = [(v, k + 1) for k, v in enumerate(top_first)]
 
     def _phi_node_exit_index(self, k: int, b: PyBlock) -> int | None:
-        """Slot the phi at entry slot ``k`` of ``b`` ends up at in
-        ``b``'s exit, or ``None`` if the phi is consumed (``k <=
-        consumed_count``). ``L + k - C``."""
+        """Exit slot ``L + k - C`` of the phi at ``b``'s entry slot ``k``, or
+        ``None`` when the phi is consumed inside ``b`` (``k <= C``)."""
         C = self._consumed[b]
         if k <= C:
             return None
@@ -345,28 +276,18 @@ class PySSA:
     # ----- Phase 3: Direct placement -------------------------------------
 
     def _phase6_sim_blocks(self) -> None:
-        """For each BB, build entry_stack from placed phis and run a
-        stack sim to populate ``op.inputs`` / ``op.outputs`` and
-        ``b.exit_stack``.
+        """Build each BB's entry_stack from the placed phis, then sim the block to
+        populate ``op.inputs`` / ``op.outputs`` and ``b.exit_stack``.
 
-        Negative-N ``frame_dig`` / ``frame_bury`` are modelled with
-        the fat-stack convention: each op consumes the entire stack
-        band from the current top down to (and including) the target
-        frame slot, and emits a fresh set of outputs covering the
-        post-stack. For ``frame_dig`` n_out == n_in + 1 (band + dug
-        copy on top); for ``frame_bury`` n_out == n_in - 1 (band minus
-        popped top, target replaced). This agrees with
-        :func:`_shuffle_mapping` so taint / constant / range
-        propagation can carry passthrough values through long
-        frame-access chains."""
-        # 6a: pre-compute b.entry_stack for every BB so per-op fat
-        # expansion below can read sub.entry_stack regardless of
-        # iteration order.
-        # Max phi slot per BB in a single pass over self.phis. The previous
-        # per-block ``[s for (bb_key, s) in self.phis if bb_key == b.key]``
-        # rescanned every phi for every block — O(blocks x phis), which is
-        # tens of millions of iterations once a contract hits the
-        # [1..STACK_MAX] indirect-phi space (phis number 100k+).
+        HAZARD: ``frame_dig`` / ``frame_bury`` use the FAT-STACK convention —
+        the op consumes the whole band from the current top down to and
+        including the target frame slot, and emits fresh outputs covering the
+        post-stack (``frame_dig`` n_out == n_in + 1, band plus the dug copy on
+        top; ``frame_bury`` n_out == n_in - 1, band with the target replaced).
+        This must agree with :func:`_shuffle_mapping` or taint / const / range
+        propagation stops carrying values through frame-access chains."""
+        # 6a: entry_stack for every BB first, so the per-op fat expansion can
+        # read sub.entry_stack regardless of iteration order.
         if self._entry_val:
             # Braun mode: entry_stack carries the on-demand resolved value at
             # each read slot -- phi OR a collapsed (trivial-phi) value, which
@@ -379,6 +300,8 @@ class PySSA:
                         self._entry_val.get((b.key, k)))
                 b.entry_stack = entry
         else:
+            # Max phi slot per BB in ONE pass: the per-block scan it replaced was
+            # O(blocks x phis), tens of millions of iterations at 100k+ phis.
             max_slot_by_bb: dict = {}
             for (bb_key, s) in self.phis:
                 if s > max_slot_by_bb.get(bb_key, 0):
@@ -391,17 +314,15 @@ class PySSA:
                     entry[max_slot - k] = phi
                 b.entry_stack = entry
 
-        # 6b: bb_to_sub / proto_io setup — used to look up the
-        # routine's arg count + entry stack for each fat expansion.
+        # 6b: routine arg counts + entry stacks, for each fat expansion.
         self._compute_subs_and_protos()
 
-        # 6c: per-BB simulator.
-        # A single-pred block places no phis (nothing merges), so its phi-built
-        # entry_stack (6a) is empty — losing the stack flowing in from its sole
-        # pred and hiding any frame slot the pred set up via a stack op (e.g.
-        # `bury`ing a box name) from a cross-block `frame_dig`. Seed such a block
-        # from the pred's already-simulated exit_stack (same sub, not a proto
-        # entry, pred already simulated — so order can't make this unsound).
+        # 6c: per-BB simulator. A single-pred block places no phis (nothing
+        # merges), so its 6a entry_stack is empty — losing the stack from its
+        # sole pred and hiding any frame slot that pred set up (e.g. a `bury`d
+        # box name) from a cross-block `frame_dig`. Seed such a block from the
+        # pred's exit_stack, gated on same-sub / non-proto-entry / already
+        # simulated so iteration order can't make it unsound.
         processed: set = set()
         for b in self.blocks:
             local_stack: list = list(b.entry_stack)
@@ -431,26 +352,22 @@ class PySSA:
     # ----- Phase 3+4: on-demand join-only phi placement ------------------
 
     def _phase_braun(self) -> None:
-        """Braun et al. (2013) on-demand SSA, filled+sealed case. Place a phi at
-        an entry slot only when it is READ (by an op here, or transitively by a
-        successor), recursing into predecessors and collapsing trivial phis at
-        creation. Memoising the phi BEFORE recursing breaks loop back-edge
-        cycles without the join-only worklist's growing-slot spiral, and the
-        trivial-phi cascade folds the constant-stack-loop chains to a single
-        value rather than churning slots 1..STACK_MAX.
+        """Braun et al. (2013) on-demand SSA (filled+sealed case): place a phi at
+        an entry slot only when it is READ, recursing into predecessors and
+        collapsing trivial phis at creation.
 
-        Produces ``self.phis`` plus ``self._entry_val[(bb_key, slot)]`` — the
-        value (phi / PyVar / collapsed) reaching each read entry slot. Phase 6
-        reads the latter to build entry_stacks: a collapsed slot has no phi, so
-        the entry_stack can't be rebuilt from ``self.phis`` alone."""
+        Memoising the phi BEFORE recursing is what breaks loop back-edge cycles,
+        and the trivial-phi cascade folds constant-stack-loop chains to a single
+        value instead of churning slots 1..STACK_MAX.
+
+        HAZARD: phase 6 must read ``self._entry_val[(bb_key, slot)]``, not
+        ``self.phis``, to rebuild entry stacks — a collapsed slot has a value but
+        no phi."""
         import sys as _sys
-        # The depth cap bounds recursion to the true stack depth x passthrough
-        # chain length (~35 on folks-v3, never the STACK_MAX spiral); a modest
-        # raise covers huge real contracts without the spiral's unbounded climb.
-        # try/finally restores the prior limit so this construction-local need
-        # never leaks process-wide -- including on the exception path, which now
-        # matters: a build failure is caught (LiftError) rather than aborting the
-        # process, so an un-restored limit WOULD leak into later work.
+        # The depth cap bounds recursion to true stack depth x passthrough chain
+        # length (~35 on real contracts), so a modest raise suffices. try/finally
+        # restores the limit: a build failure is CAUGHT (LiftError), so an
+        # un-restored limit would leak process-wide into later work.
         _prev_reclimit = _sys.getrecursionlimit()
         _sys.setrecursionlimit(max(_prev_reclimit, 10_000))
         try:
@@ -467,15 +384,13 @@ class PySSA:
             for b in self.blocks:
                 for k in range(1, self._consumed[b] + 1):
                     self._read_entry(b, k)
-            # Reconcile braun phi-placement with the phase-6c frame expander: a
-            # `frame_dig N` (N>=0) reads ABSOLUTE frame position `nargs+N`, whose
-            # top-first ENTRY slot is `entry_depth(b) - (nargs+N)`. That depth is only
-            # realised in 6c, so without demanding the read here no join phi is placed
-            # for a deep loop-invariant slot and it is dropped (silent 0). Compute the
-            # per-block entry depth the SAME way 6c will (sub entry = nargs, frame_dig
-            # +1 / frame_bury -1, every other op n_out-n_in), then demand EXACTLY each
-            # frame_dig's slot. Exact (not 1..D): an over-broad demand deepens other
-            # blocks and threads wrong values. Bounded by the forward cap in _read_entry.
+            # HAZARD: reconcile placement with the 6c frame expander. A
+            # `frame_dig N` (N>=0) reads ABSOLUTE frame position `nargs+N`, i.e.
+            # top-first entry slot `entry_depth(b) - (nargs+N)`, and that depth
+            # only exists in 6c — without demanding the read here, a deep
+            # loop-invariant slot gets no join phi and silently reads as 0.
+            # Demand EXACTLY each frame_dig's slot: an over-broad 1..D demand
+            # deepens other blocks and threads wrong values.
             for b in self.blocks:
                 sub = self._bb_to_sub.get(b)
                 if sub is None or sub not in self._proto_io:
@@ -499,12 +414,9 @@ class PySSA:
             _sys.setrecursionlimit(_prev_reclimit)
 
     def _frame_entry_depths(self) -> dict:
-        """`bb_key -> entry stack depth INCLUDING the sub's args`, simulated the
-        way phase 6c builds local_stack: each sub entry starts at `nargs`, then
-        every op applies its net (`frame_dig` +1, `frame_bury` -1, else
-        n_out-n_in). Forward BFS within each sub; first (forward) reach wins, so a
-        loop header keeps its preheader depth (same rule as _compute_entry_depths).
-        Used only to locate each frame_dig's read slot for phi demand."""
+        """``bb_key -> entry stack depth INCLUDING the sub's args``, simulated
+        exactly as phase 6c builds local_stack, to locate each frame_dig's read
+        slot; first (forward) reach wins, as in :meth:`_compute_entry_depths`."""
         from collections import deque
         def net(op):
             if op.op == "frame_dig":
@@ -513,7 +425,7 @@ class PySSA:
                 return -1
             return op.n_out - op.n_in
         ed = {}
-        # sub entry blocks (proto subs) start at nargs; main-routine roots at 0.
+        # proto sub entries start at nargs; main-routine roots at 0.
         roots = {}
         for b in self.blocks:
             sub = self._bb_to_sub.get(b)
@@ -539,17 +451,14 @@ class PySSA:
         return ed
 
     def _compute_entry_depths(self) -> dict:
-        """``bb_key -> entry stack depth`` (top-first slot count) via a forward
-        BFS from the no-pred entry block(s), ``exit = entry + L - C`` along each
-        edge. On disagreement KEEP the first (forward) value: a loop header is
+        """``bb_key -> entry stack depth`` (top-first slot count) via forward BFS
+        from the no-pred blocks, ``exit = entry + L - C`` along each edge.
+
+        HAZARD: on disagreement KEEP THE FIRST (forward) value. A loop header is
         reached from its preheader before its latch, so it keeps the true
         loop-invariant depth ``D``; the latch's differing proposal is the
-        slot-model net artifact that drives the spiral and is ignored. The cap
-        ``read_entry(b, k>D) -> None`` then never creates the spurious deep phis.
-
-        (Interprocedural callsub/retsub edges can pollute depths *inside* a
-        callee or a continuation, but the targeted loop header in the caller
-        still gets its forward depth, which is what bounds the spiral.)"""
+        slot-model artifact that drives the spiral. The resulting cap
+        (``_read_entry(b, k>D) -> None``) is what stops the deep phi climb."""
         from collections import deque
         depth: dict = {}
         wl: deque = deque()
@@ -579,17 +488,16 @@ class PySSA:
         return v
 
     def _read_exit(self, p: PyBlock, slot: int):
-        """Value at predecessor ``p``'s EXIT slot ``slot`` (top-first): a slot
-        within ``p``'s own locals (``slot <= L``) is the producing PyVar; a
-        deeper slot is an entry value passing through, mapped back to ``p``'s
-        entry slot ``slot - L + C`` (the inverse of ``L + k - C``).
+        """Value at predecessor ``p``'s EXIT slot ``slot`` (top-first): within
+        ``p``'s own locals (``slot <= L``) that is the producing PyVar, deeper is
+        an entry value passing through, at entry slot ``slot - L + C`` (the
+        inverse of ``L + k - C``).
 
-        Blocks containing a ``frame_bury`` are answered from the frame-aware
-        exit sim instead: the narrow phase-2 model treats ``frame_bury`` as a
-        bare pop (no definition), so both branches above lie for such blocks —
-        the buried slot reads as an untouched passthrough (a loop-carried slot
-        then collapses to its pre-loop value) and the survivor ranks are
-        shifted. See :meth:`_build_frame_exit_sim`."""
+        HAZARD: blocks containing a ``frame_bury`` are answered from
+        :meth:`_build_frame_exit_sim` instead, because the narrow phase-2 model
+        treats ``frame_bury`` as a bare pop with no definition — so the buried
+        slot would read as an untouched passthrough (collapsing a loop-carried
+        slot to its pre-loop value) and the survivor ranks would be shifted."""
         sim = self._frame_sim_cache.get(p, _MISSING)
         if sim is _MISSING:
             sim = self._build_frame_exit_sim(p)
@@ -603,8 +511,8 @@ class PySSA:
                     return self._read_entry(p, v[1])
                 return v
             # Deeper than the routine band: the caller's stack, untouched by
-            # frame ops. Same passthrough arithmetic as the narrow path (the
-            # fat and narrow conventions agree on net depth change).
+            # frame ops. The fat and narrow conventions agree on net depth
+            # change, so the narrow passthrough arithmetic applies.
             if slot > STACK_MAX:
                 return None
             return self._read_entry(p, slot - (len(st) - d))
@@ -613,25 +521,23 @@ class PySSA:
             return self._surv_by_slot[p].get(slot)
         if slot > STACK_MAX:
             # Same guard as ``_phi_node_exit_index``: a net-changing loop maps
-            # the value to an ever-deeper slot each lap (the slot-model spiral);
-            # cap it so the recursion terminates instead of growing unbounded.
+            # the value one slot deeper each lap, so without the cap the
+            # recursion grows unbounded.
             return None
         return self._read_entry(p, slot - L + self._consumed[p])
 
     def _build_frame_exit_sim(self, p: PyBlock):
-        """Symbolic exit stack for a ``frame_bury``-containing block, or None
+        """Symbolic exit stack for a ``frame_bury``-containing block, or ``None``
         when inapplicable (no parseable bury, block outside a proto'd sub,
         unknown entry depth, or the sim dips below the routine band).
 
-        Simulates ``p`` over the routine's stack band in top-first-consistent
-        bottom-first order: entry slot ``k`` sits at index ``d - k`` where ``d``
-        is the routine-relative entry depth (args + locals — deeper caller
-        stack is unreachable to frame ops and stays out of the band). Frame ops
-        use their REAL semantics — ``frame_dig N`` pushes the value at frame
-        position ``nargs + N``; ``frame_bury N`` pops the top INTO that
-        position — while every other op applies its narrow phase-1 arity
-        (pop ``n_in``, push ``outputs``), exactly like phase 2, so the two
-        models agree wherever no bury interferes."""
+        Simulated bottom-first over the routine's band — entry slot ``k`` at
+        index ``d - k``, ``d`` the routine-relative entry depth (args + locals;
+        deeper caller stack is unreachable to frame ops). Frame ops use their
+        REAL semantics (``frame_dig N`` pushes frame position ``nargs + N``,
+        ``frame_bury N`` pops the top INTO it) while every other op keeps its
+        narrow phase-1 arity, so the two models agree wherever no bury
+        interferes."""
         if not any(o.op == "frame_bury" and _frame_imm(o) is not None
                    for o in p.ops):
             return None
@@ -676,9 +582,9 @@ class PySSA:
         if memo is not _MISSING:
             return memo
         if k > self._depth.get(b.key, STACK_MAX):
-            # Beyond the block's true entry stack depth -> a spurious slot the
-            # net-changing-loop spiral would otherwise climb to. No such value
-            # exists at runtime; stop here so no deep phi chain is created.
+            # THE DEPTH CAP: beyond the block's true entry depth no such value
+            # exists at runtime, so stop rather than build the deep phi chain a
+            # net-changing loop would otherwise climb to.
             self._entry_val[key] = None
             return None
         if k > self._max_entry.get(b.key, 0):
@@ -706,20 +612,16 @@ class PySSA:
         return v
 
     def _try_remove_trivial(self, P: PyPhi):
-        """Braun ``tryRemoveTrivialPhi``: if ``P``'s args (ignoring self-refs)
-        are a single distinct value ``v``, replace ``P`` with ``v`` and re-check
-        every phi that referenced ``P`` (cascade). Returns ``P``'s replacement.
+        """Braun ``tryRemoveTrivialPhi``: if ``P``'s args (ignoring self-refs) are
+        one distinct value ``v``, replace ``P`` with ``v``, cascade into every phi
+        that referenced ``P``, and return ``P``'s replacement.
 
-        ITERATIVE (a depth-first worklist), not recursive: the cascade can chain
-        through a long phi web and a deep chain would overflow the stack. The
-        cascade only ever RETURNS into the very first phi (recursive-call returns
-        were discarded), so only the initial ``P``'s result matters; the rest is
-        side effects. Depth-first + the sorted user order is preserved exactly (a
-        LIFO stack with users pushed in reverse pops them in sorted order and
-        finishes each user's own cascade before the next sibling) — the cascade is
-        order-sensitive (processing u1 before u2 can change u2's triviality; an
-        unstable order made SSA construction NONDETERMINISTIC), so this MUST match
-        the recursion's traversal."""
+        HAZARD: the cascade is ORDER-SENSITIVE — processing u1 before u2 can
+        change u2's triviality, and an unstable order makes SSA construction
+        NONDETERMINISTIC. The iterative form (needed because a deep chain would
+        overflow the stack) must therefore reproduce the recursion's traversal
+        exactly: LIFO with users pushed in reverse pops them in sorted order and
+        finishes each user's cascade before the next sibling."""
         result = None
         first = True
         stack: list = [P]
@@ -744,8 +646,8 @@ class PySSA:
             b = self._bb_by_key.get(cur.bb_key)
             if b is not None:
                 b.entry_phis = [ph for ph in b.entry_phis if ph is not cur]
-            # Sort users by their STABLE identity (bb_key, slot) — `_phi_users` is
-            # a set, and id() is not seed-stable; the (bb_key, slot) key is.
+            # Sort by the STABLE (bb_key, slot) identity: `_phi_users` is a set
+            # and id() is not seed-stable.
             users = sorted(self._phi_users.pop(cur.key(), ()), key=lambda u: u.key())
             for u in users:
                 u.args = [same if a is cur else a for a in u.args]
@@ -758,13 +660,11 @@ class PySSA:
     # ----- Phase 6 helpers ------------------------------------------------
 
     def _compute_subs_and_protos(self) -> None:
-        """Populate ``self._bb_to_sub`` (every BB → its owning routine
-        entry BB) and ``self._proto_io`` (sub entry BB → (args, returns)
-        from its ``proto`` opcode). Independent of stack sim — only
-        depends on CFG shape and proto immediates from phase 1."""
-        # Ownership under the CONSTRUCTION policy — the exact semantics this
-        # depth machinery was validated against live (verbatim) in
-        # tealql.tealtools.subroutines.pyblock_partition.
+        """Populate ``self._bb_to_sub`` (BB -> owning routine entry BB) and
+        ``self._proto_io`` (sub entry -> ``(args, returns)`` from its ``proto``);
+        depends only on CFG shape and phase-1 immediates, not on the stack sim."""
+        # Ownership follows the CONSTRUCTION policy this depth machinery was
+        # validated against, which lives verbatim in pyblock_partition.
         from ..subroutines import pyblock_partition
         self._bb_to_sub = pyblock_partition(self.blocks)
 
@@ -787,40 +687,29 @@ class PySSA:
     def _try_expand_frame_op(
         self, op: PyOp, local_stack: list, sub: PyBlock, proto: tuple,
     ) -> bool:
-        """Rewrite ``frame_dig N`` / ``frame_bury N`` (either sign of
-        ``N``) to the fat-stack convention. Returns ``True`` on
-        rewrite; ``False`` to fall back to the narrow path.
+        """Rewrite ``frame_dig N`` / ``frame_bury N`` (either sign of ``N``) to
+        the fat-stack convention; ``False`` falls back to the narrow path.
 
-        The target slot lives at bottom-first stack index
-        ``len(sub.entry_stack) + N``:
-        - For ``N < 0`` (args below frame_base): ``len - |N|`` — args
-          occupy the top of the sub's pre-stack.
-        - For ``N >= 0`` (locals above frame_base): ``len + N`` —
-          locals must already have been pushed before this read/write.
-
-        The consumed band is everything at and above the target in the
-        current ``local_stack`` (top down to target, inclusive).
-        ``frame_dig`` emits ``n_consumed + 1`` outputs (band + dug copy
-        on top, per :func:`_shuffle_mapping`); ``frame_bury`` emits
-        ``n_consumed - 1`` (band with target replaced, top popped)."""
+        HAZARD: frame_base sits at bottom-first index ``len(sub.entry_stack)``,
+        so the target is index ``len + N`` for BOTH signs — ``N < 0`` are args
+        below it (at the top of the sub's pre-stack), ``N >= 0`` locals above it
+        (already pushed by the time of the access). The consumed band is
+        everything at and above the target; ``frame_dig`` emits
+        ``n_consumed + 1`` outputs (band + dug copy on top, per
+        :func:`_shuffle_mapping`) and ``frame_bury`` ``n_consumed - 1``."""
         try:
             n = int(op.immediates.strip().split()[0])
         except (ValueError, IndexError, AttributeError):
             return False
-        # Unified position: arg slot -K at index ``len - K``; local
-        # slot +K at index ``len + K``. Frame_base sits at index
-        # ``len(sub.entry_stack)``.
         target_idx = len(sub.entry_stack) + n
         if target_idx < 0 or target_idx >= len(local_stack):
             return False
-        # n_consumed = depth from top to target inclusive (band size).
-        n_consumed = len(local_stack) - target_idx
-        # Top-first band — first element was the previous top.
+        n_consumed = len(local_stack) - target_idx      # top to target inclusive
         band_topfirst = list(reversed(local_stack[target_idx:]))
 
         if op.op == "frame_dig":
             n_out_new = n_consumed + 1
-        else:  # frame_bury -- need at least one slot above the target to pop.
+        else:  # frame_bury needs a slot above the target to pop
             if n_consumed < 1:
                 return False
             n_out_new = n_consumed - 1
@@ -834,7 +723,7 @@ class PySSA:
         op.outputs = new_outs
         op.n_in = n_consumed
         op.n_out = n_out_new
-        # ``new_outs`` is top-first per shuffle convention; push back bottom-first.
+        # new_outs is top-first per the shuffle convention; push back bottom-first.
         local_stack.extend(reversed(new_outs))
         return True
 
@@ -875,11 +764,9 @@ class PySSA:
 
     @property
     def _bb_by_key(self) -> dict:
-        # `self.blocks` is fixed once (built in __init__) before this is used, so
-        # the lookup is cached. (NB single-underscore name: a `__`-prefixed
-        # attribute is name-mangled, so the old `hasattr("__bb_by_key")` never
-        # matched the stored `_PySSA__bb_by_key` and the dict was rebuilt on
-        # every call -- an O(calls x blocks) hot spot on large programs.)
+        # Cacheable because `self.blocks` is fixed before first use. Keep the
+        # single-underscore cache name: a `__` attribute is name-mangled, so the
+        # hasattr check misses and the dict is rebuilt on every call.
         cache = getattr(self, "_bb_by_key_cache", None)
         if cache is None:
             cache = self._bb_by_key_cache = {b.key: b for b in self.blocks}
@@ -920,54 +807,40 @@ class PySSA:
 # ---------------------------------------------------------------------------
 
 
+# Lazy-import wrappers: ssa.py stays free of even sibling-module imports at
+# load time.
+
 def _fold_spec_fixed(a):
-    """Lazy import wrapper around :func:`const_fold.fold_spec_fixed`.
-    Kept module-private (and function-local) so ``ssa.py`` stays free
-    of even sibling-module imports at load time."""
     from .const_fold import fold_spec_fixed
     return fold_spec_fixed(a)
 
 
 def _compute_inner_txn_fields(prog: SSAProgram) -> list:
-    """Lazy import wrapper around
-    :func:`.inner_txn_fields.compute_inner_txn_fields`.
-    Kept module-private (and function-local) so ``ssa.py`` stays free
-    of even sibling-module imports at load time."""
     from .inner_txn_fields import compute_inner_txn_fields
     return compute_inner_txn_fields(prog)
 
 
 def _compute_scratch_influence(prog: SSAProgram) -> dict:
-    """Lazy import wrapper around
-    :func:`.scratch_influence.compute_scratch_influence`.
-    Kept module-private (and function-local) so ``ssa.py`` stays free
-    of even sibling-module imports at load time."""
     from .scratch_influence import compute_scratch_influence
     return compute_scratch_influence(prog)
 
 
 def _to_ssaprogram(py: PySSA, source: SSAProgram) -> SSAProgram:
-    """Translate a freshly-built :class:`PySSA` into a new
-    ``SSAProgram`` shell using ``source`` as the read-only graph
-    backend. See :func:`_apply_pyssa_to` for the version that mutates
-    an existing program in place (used by ``SSAProgram.__init__`` to
-    route SSA construction through PySSA)."""
+    """Translate a built :class:`PySSA` into a new ``SSAProgram`` shell, with
+    ``source`` as the read-only graph backend."""
     prog = SSAProgram.__new__(SSAProgram)
     _apply_pyssa_to(prog, py, source=source)
     return prog
 
 
 def _collapse_phi_args_to_leaves(py: PySSA, phi_map: dict, var_map: dict) -> None:
-    """Collapse each ``Phi``'s args to the transitive ``SSAVar`` leaves
-    reachable through PySSA's ``PyPhi.args`` graph (SCC condensation,
-    O(N+E) memoized per SCC). This is the phi-args projection."""
+    """Collapse each ``Phi``'s args to the transitive ``SSAVar`` leaves reachable
+    through the ``PyPhi.args`` graph (SCC condensation, memoized per SCC)."""
     import networkx as nx
-    # Graph nodes are integer indices, not the PyPhi objects: PyPhi.__hash__
-    # rebuilds + hashes the ``(bb_key, slot)`` tuple, and using phis as nodes
-    # called it millions of times across add_node / add_edge / SCC / lookups.
-    # networkx iterates nodes + adjacency in INSERTION order, so inserting
-    # ``0..N-1`` and the edges in the original phi order yields the identical SCC
-    # condensation + leaf order -- only the per-lookup hashing gets cheaper.
+    # Nodes are integer indices, not PyPhis, purely to avoid millions of
+    # `(bb_key, slot)` rehashes. networkx iterates in INSERTION order, so
+    # inserting 0..N-1 and the edges in phi order gives the identical
+    # condensation and leaf order.
     _phis = list(py.phis.values())
     _key2i = {p.key(): i for i, p in enumerate(_phis)}
     _g = nx.DiGraph()
@@ -1012,9 +885,8 @@ def _collapse_phi_args_to_leaves(py: PySSA, phi_map: dict, var_map: dict) -> Non
                     _out.append(_v)
         _scc_leaves[_s] = _out
 
-    # Resolve each SCC's leaves to SSAVars ONCE: phis sharing an SCC share the
-    # same leaf set, so the per-phi var_map.get was ~33M lookups on big proto
-    # contracts. Same SSAVars in the same order -> byte-identical.
+    # Resolve each SCC's leaves ONCE — phis in an SCC share a leaf set, so the
+    # per-phi lookup was ~33M calls. Same SSAVars, same order.
     _scc_leaf_ssa = [[s for _pv in _leaves if (s := var_map.get(_pv)) is not None]
                      for _leaves in _scc_leaves]
     for py_p, p in phi_map.items():
@@ -1056,8 +928,8 @@ def _build_assignments(prog: SSAProgram, py: PySSA, var_map: dict,
             )
             for v in outputs:
                 v.defined_by = a
-                # Inline seed for spec-fixed AVM ops whose value is a known
-                # compile-time literal (e.g. ``global ZeroAddress``).
+                # Seed spec-fixed AVM ops whose value is a known literal
+                # (e.g. `global ZeroAddress`).
                 if v.const_value is None:
                     fold = _fold_spec_fixed(a)
                     if fold is not None:
@@ -1072,14 +944,10 @@ def _build_assignments(prog: SSAProgram, py: PySSA, var_map: dict,
 
 
 def _seed_consts_and_identity_steps(prog: SSAProgram, scratch_stores: dict) -> None:
-    """Seed ``const_value`` through value-identity edges (shuffle pass-
-    through + scratch reads, to a fixed point) and build the identity-flow
-    step relation (the constant / value-identity step relation);
-    stashes the relation on ``prog._graph.graph["identity_steps"]``.
-
-    Pre-filters the candidate ops once so the fixpoint only scans ops that
-    could seed a const, then iterates so identity-of-identity chains flow
-    (e.g. const -> swap -> load -> swap -> consumer)."""
+    """Seed ``const_value`` through value-identity edges (shuffle pass-through +
+    scratch reads, to a fixed point) and stash the identity-step relation on
+    ``prog._graph.graph["identity_steps"]``; iterating lets identity-of-identity
+    chains flow (const -> swap -> load -> swap -> consumer)."""
     from . import scratch_influence as _scratch
 
     _shuffle_candidates: list[tuple] = []
@@ -1118,7 +986,7 @@ def _seed_consts_and_identity_steps(prog: SSAProgram, scratch_stores: dict) -> N
             for _sv_file, _sv_line, _sv_idx in _stores:
                 _k = (_sv_file, _sv_line, _sv_idx)
                 if _k == _scratch.UNINIT_STORE:
-                    # AVM scratch zero-init: a precisely-known int 0 that must
+                    # AVM scratch zero-init is a precisely-known int 0, and must
                     # agree with every real reaching store.
                     _resolved.append(Const("int", "0"))
                     continue
@@ -1172,13 +1040,11 @@ def _seed_consts_and_identity_steps(prog: SSAProgram, scratch_stores: dict) -> N
             if _src is not None and _src != _snk:
                 _identity_steps.append((_src, _snk))
 
-    # (c) scratch bridge -- ONLY when the load has a single reaching store.
-    # An identity step asserts snk *is* src, so a load fed by >1 store would get
-    # one identity per store and const-prop would fold it to whichever store is
-    # constant first -- unsound when another reaching store is a runtime value
-    # (e.g. a slot that's 0 on a loop back-edge but a runtime btoi on entry).
-    # The sound all-stores-agree case is handled by propagate_scratch_constants
-    # (must-semantics); a multi-store load is a merge, not an identity.
+    # (c) scratch bridge -- HAZARD: single reaching store ONLY. An identity step
+    # asserts snk IS src, so a multi-store load would get one identity per store
+    # and const-prop would fold it to whichever is constant first -- unsound when
+    # another reaching store is a runtime value. A multi-store load is a merge,
+    # handled with must-semantics by propagate_scratch_constants.
     for _a in _load_candidates:
         _out_v = _a.outputs[0]
         if not isinstance(_out_v, SSAVar):
@@ -1201,15 +1067,12 @@ def _seed_consts_and_identity_steps(prog: SSAProgram, scratch_stores: dict) -> N
 
 
 def _drop_unconsumed_phis(prog: SSAProgram) -> None:
-    """Drop phis not consumed by any op input, so ``prog.phis`` is the
-    consumer set rather than the full builder output.
+    """Drop phis not consumed by any op input, so ``prog.phis`` is the consumer
+    set rather than the full builder output.
 
-    A DIRECT filter: ``_collapse_phi_args_to_leaves`` has already run, so a
-    public ``Phi.args`` holds only ``SSAVar``s and a phi can never be reached
-    *through* another phi. This used to run a transitive worklist over
-    phi-valued args, which was dead code (measured: zero phi-typed args across
-    the corpus) that read as if phi-through-phi consumption were handled — so
-    a future change to leaf collapse would have silently relied on it."""
+    A DIRECT filter, valid only because ``_collapse_phi_args_to_leaves`` has run:
+    a public ``Phi.args`` then holds only ``SSAVar``s, so no phi is reachable
+    THROUGH another phi. The assert below pins that precondition."""
     _reached: set = set()
     for _a in prog.assignments:
         for _inp in _a.inputs:
@@ -1226,39 +1089,17 @@ def _drop_unconsumed_phis(prog: SSAProgram) -> None:
 def _apply_pyssa_to(
     prog: SSAProgram, py: PySSA, *, source: Optional[SSAProgram] = None,
 ) -> None:
-    """Mutate ``prog`` to use ``py``-built SSA: rebuilds ``prog.vars`` /
-    ``prog.phis`` / ``prog.assignments`` / ``prog.blocks`` from PySSA
-    structures and discards whatever was there before.
+    """Mutate ``prog`` to use ``py``-built SSA, rebuilding ``vars`` / ``phis`` /
+    ``assignments`` / ``blocks`` and discarding whatever was there before.
 
-    Used by:
-
-    - :meth:`PySSA.build` (with ``source`` == a separately-loaded program).
-    - :meth:`SSAProgram.__init__` (with ``source is None`` — reads
-      directly from ``prog`` for graph + var const/range/type
-      annotations). This lets ``SSAProgram(source)`` route SSA
-      construction through PySSA without an external bridge step.
-
-    Steps:
-
-    - Each :class:`PyVar` becomes an :class:`SSAVar`; each :class:`PyPhi`
-      a :class:`Phi` (kind ``"DirectPhi"``). Phi args are collapsed to
-      transitive ``SSAVar`` leaves via SCC condensation of the
-      ``PyPhi.args`` graph (O(N+E) memoized per SCC).
-    - Phis not transitively consumed by any op input are dropped, so
-      ``prog.phis`` is the consumer set rather than the full builder
-      output (the difference is large on wormhole-class contracts).
-    - Original chain structure is preserved off the hot path via
-      ``prog._pyssa`` / ``prog._phi_to_pyphi`` / ``prog._pyphi_to_phi``;
-      ``SSAProgram.chain_predecessors`` / ``chain_root`` /
-      ``chain_reaches`` query through it backend-agnostically.
-    """
-    # ``source`` defaults to ``prog`` for the in-place case. We read
-    # const_value / range / type from source.vars (already populated
-    # by the graph-loading pre-pass) and reuse source._graph + source.labels.
-    # Snapshot anything we'll re-read from ``src`` *before* wiping
-    # ``prog`` — in the in-place case (``source is None``) ``src.vars``
-    # IS ``prog.vars``, so the wipe would otherwise clobber the data
-    # we need to copy over.
+    ``source`` is a separately-loaded program (:meth:`PySSA.build`) or ``None``
+    for the in-place case (:meth:`SSAProgram.__init__`), where annotations are
+    read back out of ``prog`` itself. Chain structure survives off the hot path
+    on ``prog._pyssa`` / ``_phi_to_pyphi`` / ``_pyphi_to_phi``, which
+    :meth:`SSAProgram.chain_predecessors` and friends query."""
+    # HAZARD: snapshot everything re-read from `src` BEFORE wiping `prog` — in
+    # the in-place case `src.vars` IS `prog.vars`, so the wipe would clobber the
+    # const/range/type annotations being copied over.
     src = source if source is not None else prog
     src_vars_snapshot = dict(getattr(src, "vars", {}))
     src_labels_snapshot = list(getattr(src, "labels", []))
@@ -1272,17 +1113,16 @@ def _apply_pyssa_to(
     prog.labels = src_labels_snapshot
     prog._graph = src_graph_snapshot
     prog.source_path = src_source_path_snapshot
-    # Match the exact state flags ``SSAProgram.__init__`` sets, so every
-    # pass that gates on one of them finds it.
+    # Match the state flags `SSAProgram.__init__` sets, so every pass that gates
+    # on one of them finds it.
     prog._consts_propagated = False
     prog._scratch_propagated = False
     prog._ranges_propagated = False
     prog._shuffles_propagated = False
     prog._inputs_propagated = False
 
-    # 1) SSAVars. Seed const_value / range / type from the source
-    # prog's already-populated var table (the pre-pass wired these from
-    # ``const_outputs`` / ``must_outputs`` graph annotations).
+    # 1) SSAVars, seeding const_value / range / type from the source prog's
+    # already-populated var table.
     var_map: dict = {}  # PyVar -> SSAVar
     for key, py_v in py.vars.items():
         v = SSAVar(py_v.file, py_v.line, py_v.idx)
@@ -1297,13 +1137,9 @@ def _apply_pyssa_to(
             if src_v.type is not None:
                 v.type = src_v.type
 
-    # 2) Phis. PySSA has one phi per (bb_key, slot); the
-    # Direct/Indirect distinction is collapsed in PySSA's unified
-    # model. Register under DirectPhi only. Lookups via
-    # :meth:`SSAProgram.phi` are kind-agnostic so consumers that
-    # receive a kind from a field row (e.g.
-    # ``inner_txn_report._resolve_operand``) still find the phi
-    # whether they ask for ``DirectPhi`` or ``IndirectPhi``.
+    # 2) Phis: one per (bb_key, slot), registered under DirectPhi only since the
+    # Direct/Indirect distinction is collapsed here. `SSAProgram.phi` lookups are
+    # kind-agnostic, so a consumer holding an "IndirectPhi" kind still resolves.
     phi_map: dict = {}  # PyPhi -> Phi
     for (bb_key, slot), py_p in py.phis.items():
         p = Phi(bb_key[0], bb_key[1], slot, "DirectPhi")
@@ -1327,12 +1163,10 @@ def _apply_pyssa_to(
             p.basic_block = bb
             bb.phis.append(p)
 
-    # 4.5) Surface each BB's exit stack (the per-edge slot values) onto the
-    # public block, translated to public operands. Out-of-SSA / block-arg
-    # lowering reads ``pred.exit_stack[k]`` for the value a successor's
-    # slot-k phi receives on that edge -- info ``Phi.args`` (a dedup'd
-    # value-set) no longer carries. Verbatim order (bottom-first); a dead
-    # slot stays ``None``. Pure plumbing of construction data.
+    # 4.5) Surface each BB's exit stack, translated to public operands, in
+    # VERBATIM bottom-first order with dead slots left None. Out-of-SSA /
+    # block-arg lowering reads `pred.exit_stack[k]` for the value a successor's
+    # slot-k phi gets on that edge — which `Phi.args` (dedup'd) no longer has.
     for py_b, bb in bb_map.items():
         translated: list = []
         for o in py_b.exit_stack:
@@ -1346,30 +1180,17 @@ def _apply_pyssa_to(
                 translated.append(None)
         bb.exit_stack = translated
 
-    # 5) Collapse each Phi's args to the transitive SSAVar leaves reachable
-    # through PySSA's PyPhi.args graph (SCC condensation).
+    # 5) Collapse each Phi's args to the transitive SSAVar leaves.
     _collapse_phi_args_to_leaves(py, phi_map, var_map)
 
     # 6) Build Assignments (+ bb back-refs, def/use links, spec-fixed seeds).
     _build_assignments(prog, py, var_map, phi_map, bb_map)
 
-    # 6.4/6.45/6.6) Three consumer-specific analyses — inner-txn field
-    # grouping, scratch-slot reaching-definitions, and const_value seeding
-    # + the value-identity step relation — used to run EAGERLY here on
-    # EVERY build (~58% of build time on a mid-size contract), even for
-    # callers that never read their output. They are now computed-and-
-    # cached pay-for-what-you-use, mirroring ``frame_resolution``:
-    #   * ``inner_txn_fields``  -> ``SSAProgram._ensure_inner_txn_fields``
-    #     (consumed by ``inner_txn_report.InnerTxnReport``);
-    #   * ``scratch_stores``    -> ``SSAProgram._ensure_scratch_influence``
-    #     (consumed by the lift, taint engine/graph, scratch_prop passes,
-    #     ``tealql.security.common._scratch_stores_for``);
-    #   * const_value seeding + ``identity_steps`` ->
-    #     ``SSAProgram._ensure_identity_steps`` (triggered by
-    #     ``propagate_constants``, which every ``const_value`` reader runs
-    #     first). Each ``_ensure_*`` reproduces byte-for-byte what the eager
-    #     block produced; the deferral is observationally neutral (see the
-    #     methods in ``program.py``).
+    # NB inner-txn field grouping, scratch reaching-definitions and const/
+    # identity-step seeding are deliberately NOT run here — they were ~58% of
+    # build time for callers that never read them. They now live behind
+    # SSAProgram._ensure_inner_txn_fields / _ensure_scratch_influence /
+    # _ensure_identity_steps, each reproducing what the eager block produced.
 
     # 7) Drop phis not transitively consumed by any op input.
     _drop_unconsumed_phis(prog)
@@ -1378,9 +1199,7 @@ def _apply_pyssa_to(
         bb.assignments.sort(key=lambda a: a.location.line)
         bb.phis.sort(key=lambda p: (p.kind, p.stack_index))
 
-    # 8) Auxiliary chain-structure refs for analyses that need them
-    # (chain root, propagation graph). Off the hot path: nothing in
-    # ``prog.phis`` iteration touches these.
+    # 8) Chain-structure refs (chain root, propagation graph), off the hot path.
     prog._pyssa = py
     prog._phi_to_pyphi = {p: pp for pp, p in phi_map.items()}
     prog._pyphi_to_phi = dict(phi_map)
@@ -1389,11 +1208,7 @@ def _apply_pyssa_to(
 
 
 def _demo(source: str) -> None:
-    """Render the PySSA-built SSA for a TEAL source. Uses the internal
-    :meth:`PySSA._construct` to get the builder instance directly so
-    we can call :meth:`PySSA.render` for the diagnostic dump — every
-    other caller should use :meth:`PySSA.build` which returns the
-    wrapped ``SSAProgram``."""
+    """Render the PySSA-built SSA for a TEAL source (CLI diagnostic dump)."""
     import time
     t0 = time.perf_counter()
     prog = SSAProgram(source)

@@ -1,54 +1,13 @@
-"""Inner-transaction (`itxn_*`) report.
+"""Inner-transaction (``itxn_*``) report: for each ``itxn_submit``, walk the
+``itxn_begin`` / ``itxn_next`` / ``itxn_submit`` boundary chain and report every
+contributing ``itxn_field`` op with its consumed operand and, where statically
+known, that operand's literal value.
 
-For each ``itxn_submit`` in a TEAL program, walks the chain of
-``itxn_begin`` / ``itxn_next`` / ``itxn_submit`` boundaries and reports
-every ``itxn_field`` op that contributes — together with the consumed
-operand and (when statically known) its literal value.
-
-    from tealql.tealtools.ssa import SSAProgram
-    from tealql.tealtools.inner_txn_report import InnerTxnReport
-
-    prog = SSAProgram("tests/contracts/xgov")
-    prog.propagate_constants()             # optional but improves resolution
-    prog.propagate_scratch_constants()     # ditto
-
-    report = InnerTxnReport(prog)
-    print(report.render())
-
-Preconditions
--------------
-
-Operates on the standard SSA representation — the state
-:class:`tealql.tealtools.ssa.SSAProgram` is in by default, optionally after
-:meth:`propagate_constants` / :meth:`propagate_scratch_constants` (those
-only *add* ``const_value`` without removing anything). Per-field operand
-resolution follows the consumed value's ``(file, line, idx)`` identity, so
-it needs the phis and original SSAVars intact.
-
-The boundary structure (which ``itxn_field`` belongs to which txn
-within which submit-group) is computed by the inner-transaction-field
-pass. The python side groups the resulting field rows into
-:class:`InnerTxnGroup` objects and resolves each consumed operand by
-:meth:`SSAProgram.var` / :meth:`SSAProgram.phi`.
-
-Field values
-------------
-
-Each :class:`InnerTxnField` keeps a typed reference to the consumed
-operand (``SSAVar`` / ``Phi``). :meth:`possible_values`
-flattens this into a list of literal-or-symbolic strings:
-
-- An :class:`SSAVar` / :class:`Phi` whose ``const_value`` is set →
-  one literal entry.
-- A :class:`Phi` with a populated ``args`` list, all resolving to
-  literals → one entry per arg's literal value (deduplicated).
-- A symbolic operand (no ``const_value``, mixed phi args) → one
-  entry containing the operand's identifier (e.g. ``V#3@L42``)
-  prefixed with ``?`` to mark "not statically known".
-
-Runs cleanly without any propagation pass, but values are easier to
-read once :meth:`SSAProgram.propagate_constants` and (where relevant)
-:meth:`propagate_scratch_constants` have been run on the program.
+Runs on default SSA; ``propagate_constants`` / ``propagate_scratch_constants``
+only ADD ``const_value``, so they sharpen values without changing structure.
+Operand resolution keys on the consumed value's ``(file, line, idx)`` identity —
+it needs the phis and original SSAVars INTACT, so a pass that rewrites or
+eliminates them leaves fields unresolved.
 """
 from __future__ import annotations
 
@@ -68,11 +27,10 @@ from .passes.frame_flow import frame_param_sources
 Operand = Union[SSAVar, Phi, Const]
 
 
-# AVM itxn fields that are *arrays*: each ``itxn_field F`` op APPENDS an
-# element rather than overwriting. So N field ops for one of these names
-# means an N-element array (in program order), not N alternative values
-# the way repeated scalar-field writes across branches would. The report
-# renders these as ordered ``[e0, e1, …]`` instead of a ``{a | b}`` set.
+# AVM itxn fields that are ARRAYS: ``itxn_field F`` APPENDS an element rather
+# than overwriting, so N ops on one of these names mean an N-element array in
+# program order — NOT N alternative values, the way repeated scalar writes
+# across branches do. Rendered ``[e0, e1, …]``, not ``{a | b}``.
 _ARRAY_ITXN_FIELDS = frozenset({
     "ApplicationArgs",
     "Accounts",
@@ -85,40 +43,25 @@ _ARRAY_ITXN_FIELDS = frozenset({
 
 @dataclass
 class InnerTxnField:
-    """A single ``itxn_field F`` op in the program.
-
-    ``operand`` is the typed SSA operand consumed by the field op.
-    Resolve to literal(s) via :meth:`possible_values`.
-    """
+    """A single ``itxn_field F`` op and the typed SSA ``operand`` it consumes
+    (resolve to literals via :meth:`possible_values`)."""
 
     name: str
     file: str
     line: int
     operand: Optional[Operand]
-    # ``{frame_dig output -> {caller args}}`` so a param-fed value resolves to
-    # the caller args instead of a symbolic frame_dig. Set by InnerTxnReport.
+    # ``{frame_dig output -> {caller args}}``, set by InnerTxnReport, so a
+    # param-fed value resolves to caller args, not a symbolic frame_dig.
     frame_src: Optional[dict] = None
 
     def possible_values(self) -> list[str]:
-        """Flatten ``operand`` to a list of value descriptions.
+        """Flatten ``operand`` to value descriptions, in order of preference:
+        the literal (``100``), else the producing op (``txn Sender``,
+        ``+ (V#3@L20, 100)``), else the ``?``-prefixed operand identifier
+        meaning "not statically known, trace it yourself".
 
-        Each entry is one of three shapes, in order of preference:
-
-        - **Literal** — ``"100"``, ``"0x1234"``, ``"\"hello\""``: the
-          operand is a :class:`Const` or has ``const_value`` set.
-        - **Source op** — ``"txn Sender"``, ``"txna ApplicationArgs 0"``,
-          ``"+ (V#3@L20, 100)"``: the operand is an :class:`SSAVar`
-          whose runtime value is determined by the producing
-          opcode. Often *this* is the most useful answer — for
-          ``txn Sender`` and friends the value isn't a static literal
-          but it has a meaningful semantic name.
-        - **Symbolic** — ``"?V#3@L42"`` or ``"?phi_…"``: the operand
-          can't be described by a single producer. The ``?`` prefix
-          flags "trace this in the SSA graph yourself".
-
-        Phis expand to one entry per arg, deduplicated. A ``frame_dig`` param
-        read expands the same way over its caller args (``frame_src``).
-        """
+        Phis expand to one entry per arg, deduplicated; a ``frame_dig`` param
+        read expands the same way over its caller args (``frame_src``)."""
         return _operand_possible_values(self.operand, frame_src=self.frame_src)
 
     def value_str(self) -> str:
@@ -140,9 +83,8 @@ def _operand_possible_values(
     op: Optional[Operand], _seen: Optional[set] = None,
     frame_src: Optional[dict] = None,
 ) -> list[str]:
-    """Shared resolver for :class:`InnerTxnField` and recursive phi /
-    frame-param expansion. ``_seen`` breaks cycles (legitimate around
-    recursive subroutines)."""
+    """Shared operand resolver; ``_seen`` breaks cycles, which are legitimate
+    around recursive subroutines."""
     if op is None:
         return ["?<unresolved>"]
     if isinstance(op, Const):
@@ -153,9 +95,8 @@ def _operand_possible_values(
     if isinstance(op, Phi):
         return _phi_possible_values(op, _seen, frame_src)
     if isinstance(op, SSAVar):
-        # A `frame_dig` param read: expand to the caller args bound to it across
-        # all call sites (interprocedural, like a phi over the call-site values),
-        # so a param-fed value resolves instead of showing a symbolic frame_dig.
+        # A `frame_dig` param read: expand over the caller args bound at every
+        # call site — interprocedural, like a phi over the call-site values.
         if frame_src and op in frame_src:
             seen = _seen or set()
             if op in seen:
@@ -174,23 +115,15 @@ def _operand_possible_values(
         a = getattr(op, "defined_by", None)
         if a is not None:
             return [_describe_assignment(a)]
-    # SSAVar whose ``defined_by`` was cleared (e.g. by
-    # ``eliminate_dead_constants`` after the constant was inlined into
-    # all consumers). Fall back to the operand identifier.
+    # ``defined_by`` cleared (const inlined into every consumer) — fall back to
+    # the operand identifier.
     return [f"?{op!r}"]
 
 
 def _describe_assignment(a) -> str:
-    """One-liner description of an :class:`tealql.tealtools.ssa.Assignment`'s RHS,
-    suitable for in-line use in a value summary.
-
-    Reads the ``Assignment`` rather than reformatting from scratch so
-    immediates like ``txn Sender`` / ``txna ApplicationArgs 0`` /
-    ``pushint 5`` come through unchanged. Includes input operand
-    identifiers in parens for ops that consume from the stack
-    (``+``, ``concat``, ``btoi``, ...) so the consumer can chain into
-    the dataflow if they want.
-    """
+    """One-line description of an ``Assignment``'s RHS: op plus immediates
+    verbatim (``txn Sender``, ``pushint 5``), with input operand identifiers in
+    parens for stack-consuming ops so a reader can chain into the dataflow."""
     head = a.op
     if a.immediates:
         head = f"{head} {a.immediates}"
@@ -203,10 +136,8 @@ def _describe_assignment(a) -> str:
 def _phi_possible_values(
     phi: Phi, _seen: Optional[set] = None, frame_src: Optional[dict] = None,
 ) -> list[str]:
-    """Expand a phi's args to their value descriptions.
-
-    Deduplicated so two paths that push the same value don't show up
-    twice. Uses a ``_seen`` set to break phi-of-phi cycles."""
+    """Expand a phi's args to value descriptions, deduplicated so two paths
+    pushing the same value show once; ``_seen`` breaks phi-of-phi cycles."""
     if _seen is None:
         _seen = set()
     if phi in _seen:
@@ -226,16 +157,11 @@ def _phi_possible_values(
 
 @dataclass
 class InnerTxn:
-    """One inner transaction within a submit-group.
+    """One inner transaction, delimited by ``itxn_begin``/``itxn_next`` and the
+    next ``itxn_next``/``itxn_submit``.
 
-    Delimited by an ``itxn_begin``/``itxn_next`` (``begin_line``) and
-    the next ``itxn_next``/``itxn_submit`` (``end_line``).
-
-    ``fields`` is an ordered list of every ``itxn_field`` event that
-    contributed — duplicate field names are kept (e.g. ``Amount`` set
-    in two separate branches that both flow into this txn's submit).
-    Use :meth:`fields_by_name` to collapse by name.
-    """
+    ``fields`` keeps duplicate names — ``Amount`` set in two branches that both
+    reach this submit stays two entries; :meth:`fields_by_name` collapses."""
 
     begin_line: int
     begin_kind: str  # "itxn_begin" or "itxn_next"
@@ -259,12 +185,8 @@ class InnerTxn:
 
 @dataclass
 class InnerTxnGroup:
-    """An ``itxn_begin`` … ``itxn_submit`` group of one-or-more txns.
-
-    A group is one atomic submit. ``txns`` lists each txn in the group
-    in source order; a single ``itxn_begin`` followed by N
-    ``itxn_next``s plus one ``itxn_submit`` produces ``N+1`` txns.
-    """
+    """One atomic ``itxn_begin`` … ``itxn_submit`` submit, ``txns`` in source
+    order — one begin plus N ``itxn_next`` gives ``N+1`` txns."""
 
     file: str
     submit_line: int
@@ -290,15 +212,9 @@ class InnerTxnGroup:
 
 
 class InnerTxnReport:
-    """Aggregates inner-transaction-field rows into per-submit groups.
-
-    Construction is cheap — it only walks the cached graph annotation,
-    no re-evaluation. Re-running ``SSAProgram`` propagation passes
-    after construction is fine: the operands stored on
-    :class:`InnerTxnField` carry references to the SSA layer's typed
-    objects, so any subsequently-set ``const_value`` is reflected on
-    the next :meth:`possible_values` call.
-    """
+    """Aggregates inner-transaction-field rows into per-submit groups; operands
+    stay live references into the SSA layer, so a ``const_value`` set by a later
+    propagation pass shows up on the next :meth:`possible_values` call."""
 
     def __init__(self, prog: SSAProgram):
         self.prog = prog
@@ -309,21 +225,17 @@ class InnerTxnReport:
     def _build(self) -> list[InnerTxnGroup]:
         self.prog._ensure_inner_txn_fields()
         rows = self.prog._graph.graph.get("inner_txn_fields") or []
-        # Interprocedural frame edges so a param-fed field value (e.g. a
-        # forwarded ApplicationID) resolves to its caller args, not a symbolic
-        # frame_dig. Best-effort — empty for a program with no proto subs.
+        # Interprocedural frame edges so a param-fed field value resolves to its
+        # caller args. Best-effort — empty for a program with no proto subs.
         try:
             frame_src = frame_param_sources(self.prog)
         except Exception:
             frame_src = {}
 
-        # Bucket every (start, end) pair to its (start_line, end_line,
-        # start_kind, end_kind) key. The (file, start, end) triple is
-        # unique per physical pair of itxn-boundary opcodes — the same
-        # pair can appear in many rows (one per contributing field).
-        # We use ``(file, start_line, end_line)`` as the bucket key so
-        # we can later chain consecutive (start, end) pairs that share
-        # an ``itxn_next`` boundary into a single submit group.
+        # Bucket rows by (file, start_line, end_line): unique per physical pair
+        # of boundary opcodes (one pair spans many rows, one per contributing
+        # field), and the key that later chains pairs sharing an ``itxn_next``
+        # boundary into one submit group.
         Boundary = tuple[str, int, int]  # (file, start_line, end_line)
         per_pair: dict[Boundary, InnerTxn] = {}
         # Resolve the operand for each field row through the SSA layer.
@@ -351,19 +263,11 @@ class InnerTxnReport:
         for txn in per_pair.values():
             txn.fields.sort(key=lambda f: f.line)
 
-        # Walk submit-back: each `itxn_submit` is a group end. Build
-        # backwards through `itxn_next` chains until we hit an
-        # `itxn_begin`. The result is one InnerTxnGroup per submit,
-        # txns ordered front-to-back.
-        # Index pairs by their end-line to find the txn that closes
-        # at a given itxn_next/submit, and by their start-line to walk
-        # forward.
-        # (file, begin_line) -> ALL txns starting there. The same boundary line
-        # is both end-of-txn_k and start-of-txn_{k+1}; on DIVERGENT control paths
-        # one boundary opcode can start more than one successor txn (e.g. an
-        # itxn_next followed by either another itxn_next or an itxn_submit
-        # depending on the branch). A single-value index would silently keep only
-        # the last, mis-building one chain and dropping the other.
+        # (file, begin_line) -> ALL txns starting there; each chain is then
+        # walked forward to its submit, one group per submit. A boundary line is
+        # both end-of-txn_k and start-of-txn_{k+1}, and on DIVERGENT paths one
+        # boundary can start MORE THAN ONE successor txn — a single-value index
+        # would silently keep the last and drop the other chain.
         by_start: dict[tuple[str, int], list[InnerTxn]] = {}
         for k, v in per_pair.items():
             by_start.setdefault((k[0], v.begin_line), []).append(v)
@@ -374,10 +278,8 @@ class InnerTxnReport:
             cur = chain[-1]
             # Exclude every txn already ON this chain, not just ``cur``: the
             # boundary pass is path-insensitive, so a loop body with two
-            # `itxn_next` ops can yield mutually-reaching pairs (a→b and b→a)
-            # and the recursion would never terminate (RecursionError — caught
-            # by detector._safe, but NOT by direct InnerTxnReport consumers
-            # such as xcontract / audit).
+            # `itxn_next` ops yields mutually-reaching pairs (a→b and b→a) and
+            # the recursion never terminates.
             on_chain = {id(t) for t in chain}
             succs = ([t for t in by_start.get((file, cur.end_line), [])
                       if id(t) not in on_chain]
@@ -396,9 +298,8 @@ class InnerTxnReport:
                 continue  # follows from a chain head only.
             _walk(file, [txn])
 
-        # Also surface single-pair "lonely" groups even when their
-        # begin isn't an itxn_begin — defensively (well-formed TEAL
-        # always has a begin, but malformed input shouldn't crash us).
+        # Lonely pairs whose begin isn't an itxn_begin: well-formed TEAL always
+        # has one, but malformed input must still be reported, not dropped.
         seen_txns = {id(t) for g in groups for t in g.txns}
         for txn in per_pair.values():
             if id(txn) in seen_txns:
@@ -413,17 +314,9 @@ class InnerTxnReport:
         return groups
 
     def _resolve_operand(self, row: dict) -> Optional[Operand]:
-        """Map a field row's ``(def_kind, def_file, def_line, def_idx)``
-        back to the corresponding SSAProgram object.
-
-        Phis referenced by the field rows may not have been
-        materialised by ``SSAProgram.__init__`` (lazy materialisation
-        only creates phis referenced in some ``Assignment.inputs``).
-        Every itxn_field IS such an assignment, so the consumed phi
-        WILL be materialised — but we still guard for ``None`` and
-        return it through to ``possible_values``, which renders
-        ``?<unresolved>``.
-        """
+        """Map a field row's ``(def_kind, def_file, def_line, def_idx)`` back to
+        its SSAProgram object, or ``None`` — which ``possible_values`` renders
+        as ``?<unresolved>``."""
         kind = row["def_kind"]
         if kind == "SSAVar":
             return self.prog.var(row["def_file"], row["def_line"], row["def_idx"])
@@ -451,9 +344,8 @@ class InnerTxnReport:
                 if not txn.fields:
                     out.append("    (no fields)")
                     continue
-                # Group fields by name for compact rendering, but keep
-                # the order of first occurrence so the listing tracks
-                # source layout.
+                # Group by name, in order of first occurrence so the listing
+                # still tracks source layout.
                 seen_names: list[str] = []
                 grouped = txn.fields_by_name()
                 for f in txn.fields:
@@ -464,16 +356,14 @@ class InnerTxnReport:
                     fs = grouped[name]
                     lines = ", ".join(f"L{f.line}" for f in fs)
                     if name in _ARRAY_ITXN_FIELDS:
-                        # Array-valued field: each itxn_field op appends an
-                        # element, so render the ops in program order
-                        # (fs is line-sorted) as an ordered sequence.
+                        # Appends, not overwrites — render the line-sorted ops
+                        # as an ordered sequence.
                         elems = ", ".join(f.value_str() for f in fs)
                         out.append(f"    {name.ljust(w)} = [{elems}]  (set@{lines})")
                     elif len(fs) == 1:
                         out.append(f"    {name.ljust(w)} = {fs[0].value_str()}  (set@L{fs[0].line})")
                     else:
-                        # Scalar field written by multiple itxn_field ops
-                        # along different paths — show the union of values.
+                        # One scalar field written on several paths — union.
                         union_vals: list[str] = []
                         for f in fs:
                             for v in f.possible_values():

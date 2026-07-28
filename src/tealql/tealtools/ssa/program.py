@@ -1,14 +1,9 @@
-"""The :class:`SSAProgram` class — the canonical program type every
-analysis consumes.
+""":class:`SSAProgram` — the canonical program type every analysis consumes.
 
-``SSAProgram(source)`` runs a graph-loading pre-pass via
-:mod:`tealql.tealtools.graph`
-(CFG / AST / arity / constant annotations, populating the data
-classes from :mod:`tealql.tealtools.ssa.models`), then routes SSA
-construction through :class:`PySSA` (:mod:`tealql.tealtools.ssa.ssa`) which
-overwrites the phi layer in place. The constant-folding / range /
-liveness passes live here as methods consumed by the
-detectors and reports.
+``SSAProgram(source)`` loads a graph (:mod:`..graph`: CFG, AST, arities, const
+annotations) then reconstructs SSA through :class:`PySSA` (:mod:`.ssa`), which
+overwrites the phi layer in place. The pass bridge methods the detectors and
+reports call live here.
 """
 from __future__ import annotations
 
@@ -33,52 +28,44 @@ from .._utils.dot import render
 class SSAProgram:
     """Typed SSA-form representation of a TEAL program."""
 
+    # Four ways in, same two stages: load_graph(source) then SSA reconstruction.
+    # `from_graph` exists so a caller can load/cache/transform the graph once and
+    # rebuild SSA without re-parsing.
+
     def __init__(self, source: str | Path):
-        """Convenience constructor: parse a ``.teal`` file/dir into a graph, then
-        reconstruct SSA. The two stages are separable -- prefer :meth:`from_source`
-        when you want the parse stage explicit, or :meth:`from_graph` to build SSA
-        from an already-loaded graph (no parsing). ``SSAProgram(source)`` stays as
-        the one-liner."""
+        """Parse a ``.teal`` file/dir and reconstruct SSA."""
         from .. import graph as tg
         self._build_from_graph(tg.load_graph(source))
 
     @classmethod
     def from_source(cls, source: str | Path) -> "SSAProgram":
-        """Build SSA from TEAL source as an EXPLICIT two-stage pipeline:
-        ``graphs.load_graph(source)`` (parse / extract → graph) then
-        :meth:`from_graph` (SSA reconstruction). Same result as ``cls(source)`` --
-        named so the parse stage is visible at the call site."""
+        """As ``cls(source)``, named so the parse stage is visible at the call site."""
         from .. import graph as tg
         return cls.from_graph(tg.load_graph(source))
 
     @classmethod
     def from_graph(cls, graph) -> "SSAProgram":
-        """Reconstruct SSA from an ALREADY-LOADED graph (the output of
-        :func:`graphs.load_graph`). This is the SSA stage with parsing DECOUPLED --
-        ``__init__`` is just this plus a ``load_graph`` call. Lets a caller load /
-        cache / transform the graph once and build SSA without re-parsing."""
+        """Reconstruct SSA from an already-loaded graph — no parsing."""
         self = cls.__new__(cls)
         self._build_from_graph(graph)
         return self
 
     @classmethod
     def from_text(cls, teal: str, *, name: str = "contract.teal") -> "SSAProgram":
-        """Build SSA from in-memory TEAL source TEXT -- no filesystem. ``name`` is
-        the logical file name the SSA / findings report. For several files pass a
-        ``{name: text}`` mapping straight to :func:`graphs.load_graph`. (The lift's
-        source-text recovery -- template names, dropped consts -- still needs a real
-        path; all SSA + detector analysis works in-memory.)"""
+        """Build SSA from in-memory source; ``name`` is the file name findings report.
+
+        The lift's source-text recovery (template names, dropped consts) still
+        needs a real path; SSA and detector analysis work fully in-memory."""
         from .. import graph as tg
         return cls.from_graph(tg.load_graph({name: teal}))
 
     @property
     def parse_diagnostics(self) -> tuple:
         """Spans of TEAL source the grammar could not parse — recorded by
-        :func:`tealql.tealtools.graph.load_graph` and DROPPED from analysis. A
-        non-empty tuple means this program is PARTIAL: every downstream
-        result (detectors included) may be incomplete, so surface it —
-        never report a partially-parsed contract as clean. Each entry is a
-        :class:`tealql.tealtools.errors.ParseDiagnostic`."""
+        :class:`..errors.ParseDiagnostic` spans dropped from analysis.
+
+        HAZARD: non-empty means the program is PARTIAL — every downstream result
+        may be incomplete. Never report a partially-parsed contract as clean."""
         return self._graph.graph.get("parse_diagnostics", ())
 
     def _build_from_graph(self, g) -> None:

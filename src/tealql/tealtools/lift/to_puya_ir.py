@@ -1,12 +1,11 @@
 """Lower the pre-IR (:mod:`pre_ir`) to *real* ``puya.ir.models``, then render /
 optimise with Puya's own renderer and optimiser passes (:func:`optimize`).
 
-:func:`to_puya` rebuilds the pre-IR with genuine Puya classes, respecting what
-Puya enforces: intrinsic args in AVM order (our top-first inputs reversed),
-bottom-first multi-result outputs, every used register defined by identity, wired
-predecessor lists, real ``IRType``/``AVMOp``, a ``SourceLocation`` per block --
-plus the types the lift adds that TEAL lacks (polymorphic ``load`` /
-``app_global_get``, and source-recovered ``TemplateVar``s).
+HAZARD: Puya's operand order is the INVERSE of ours — intrinsic args go in AVM
+order (our top-first inputs REVERSED) and multi-result outputs are bottom-first
+(our top-first targets reversed). Puya additionally enforces every used register
+defined by identity, wired predecessor lists, real ``IRType``/``AVMOp``, and a
+``SourceLocation`` per block.
 """
 from __future__ import annotations
 
@@ -27,10 +26,8 @@ from .lift import _Lifter
 from .teal_const import _const_bytes, _load_src, _tmpl_name
 from ..ast.literals import is_template_variable, tokenize_operands as _tokenize_operands
 from . import arc4_recovery
-# The ARC-4 encoded-type recovery was extracted to `arc4_recovery` (this module
-# was a 2000-line god module). Re-export the API used INTERNALLY here (the lift
-# seeds recovery) and by EXTERNAL consumers (box schema, viz, cli, tests) so every
-# `to_puya_ir.<name>` reference keeps resolving -- the split is transparent.
+# Re-exported so every `to_puya_ir.<name>` reference keeps resolving after the
+# ARC-4 encoded-type recovery moved out to `arc4_recovery`.
 _recover_encoded_types = arc4_recovery._recover_encoded_types
 guess_encoded_types_scored = arc4_recovery.guess_encoded_types_scored
 abi_address_fund_flows = arc4_recovery.abi_address_fund_flows
@@ -40,9 +37,8 @@ _ACCOUNT_OPERAND_OPS = arc4_recovery._ACCOUNT_OPERAND_OPS
 
 logger = logging.getLogger("tealql.tealtools.lift")
 
-# Neutral encoding-kind string (from teal_const, puya-free) -> puya's enum.
-# The mapping lives HERE, not in teal_const, so the detector-facing lift path
-# stays importable without puya (see teal_const's module docstring).
+# Neutral encoding-kind string -> puya's enum. Lives HERE, not in teal_const, so
+# the detector-facing lift path stays importable without puya.
 _AVM_ENCODING = {
     "base16": AVMBytesEncoding.base16,
     "utf8": AVMBytesEncoding.utf8,
@@ -52,8 +48,7 @@ _AVM_ENCODING = {
 
 
 def _bytes_const(literal: str) -> "M.BytesConstant":
-    """A puya ``BytesConstant`` from a TEAL byte literal — decodes via the
-    puya-free ``_const_bytes`` and maps its neutral kind to the puya enum."""
+    """A puya ``BytesConstant`` from a TEAL byte literal."""
     raw, kind = _const_bytes(literal)
     return M.BytesConstant(source_location=None, value=raw,
                            encoding=_AVM_ENCODING[kind])
@@ -62,17 +57,15 @@ def _bytes_const(literal: str) -> "M.BytesConstant":
 _IRT = {
     "uint64": PT.uint64, "bytes": PT.bytes, "bool": PT.bool,
     "account": PT.account, "asset": PT.uint64, "application": PT.uint64,
-    # Last-resort default for a type recovery could NOT resolve. Recovery aims
-    # to leave none (interprocedural param/return/state/phi unification); any
-    # residual `?` is logged by type_recovery._warn_residual_unknowns so this
-    # silent uint64 fallback can't quietly mistype a bytes value.
+    # Last-resort default for a type recovery could NOT resolve. Any residual `?`
+    # is logged by type_recovery._warn_residual_unknowns, so this fallback can't
+    # quietly mistype a bytes value.
     "?": PT.uint64,
 }
 
 # Const-push pseudo-ops that survive the lift only when their immediate was a
-# deploy-time template variable (`pushint TMPL_X`) -- the parser strips the
-# operand, leaving an arg-less, immediate-less push. Puya models these as
-# TemplateVar (a non-foldable constant), so the optimiser won't fold them away.
+# deploy-time template variable (`pushint TMPL_X`). Puya models these as
+# TemplateVar -- a non-foldable constant, so the optimiser can't fold them away.
 _PUSH_U64 = {"pushint", "intc", "intc_0", "intc_1", "intc_2", "intc_3"}
 _PUSH_BYTES = {"pushbytes", "bytec", "bytec_0", "bytec_1", "bytec_2", "bytec_3"}
 
@@ -109,15 +102,9 @@ def _line_of(bb) -> int:
 
 
 def _is_template_push(immediates) -> bool:
-    """No immediate at all, or ONLY deployment template variables.
-
-    The parser used to DROP a template operand entirely, so "no immediates" was
-    the signal for the const-push recovery path below. It now recovers the
-    operand (which is what keeps a const block's arity right), so a recovered
-    `pushint TMPL_DELETABLE` arrives WITH immediates and fell through to
-    `AVMOp(s.op)` — `'PushintOpcode' is not a valid AVMOp`, on the real xgov
-    contract. A template's value is unknown until deployment either way, so
-    both spellings must reach the TemplateVar path."""
+    """No immediate at all, or ONLY deployment template variables — both spellings
+    must reach the TemplateVar path (a template's value is unknown until deployment,
+    and falling through to ``AVMOp("pushint")`` raises)."""
     operands = []
     for imm in immediates:
         tok = str(imm).strip()
@@ -177,10 +164,9 @@ class _Translator:
         return _tokenize_operands(parts[1]) if len(parts) == 2 else []
 
     def _const_block(self, kind: str, line: int) -> list:
-        """The ``intcblock`` / ``bytecblock`` operand list in scope at ``line``
-        (the latest definition at or before it), recovered from source. The
-        parser truncates these blocks (drops ``TMPL_*`` / encoded entries),
-        so the SSA can't resolve ``bytec N`` into a dropped slot -- source can."""
+        """The ``intcblock`` / ``bytecblock`` operand list in scope at ``line``, read
+        from source because the parser truncates these blocks (dropping ``TMPL_*`` /
+        encoded entries), leaving a ``bytec N`` into a dropped slot unresolvable."""
         key = (kind, line)
         if key in self._block_cache:
             return self._block_cache[key]
@@ -204,8 +190,8 @@ class _Translator:
 
     def vp(self, s, result_types=None):
         if isinstance(s, pre_ir.Intrinsic):
-            # const-load by index (intc_N / bytec_N / `intc N` / `bytec N`)
-            # whose const-block slot the parser dropped -> recover from source.
+            # A const-load by index whose const-block slot the parser dropped:
+            # recover from source.
             idx = None
             if s.op in ("bytec", "intc") and len(s.immediates) == 1 and not s.args:
                 idx = int(self._imm(s.immediates[0]))
@@ -215,8 +201,8 @@ class _Translator:
                 v = self._block_value(s.op, idx, s.line)
                 if v is not None:
                     return v
-            # const-push whose inline operand the parser dropped (e.g.
-            # `pushbytes base64(..)`): recover the literal, else a template var.
+            # A const-push whose inline operand the parser dropped: recover the
+            # literal, else treat it as a template var.
             if (s.op in _PUSH_U64 or s.op in _PUSH_BYTES) and not s.args \
                     and _is_template_push(s.immediates):
                 is_u64 = s.op in _PUSH_U64
@@ -232,7 +218,8 @@ class _Translator:
             return M.Intrinsic(
                 source_location=None, op=AVMOp(s.op),
                 immediates=[self._imm(i) for i in s.immediates],
-                args=[self.val(a) for a in reversed(s.args)], **kw)
+                args=[self.val(a) for a in reversed(s.args)],   # top-first -> AVM order
+                **kw)
         if isinstance(s, pre_ir.InvokeSubroutine):
             # Subroutine args are positional (args[i] -> param i), NOT AVM-order
             # like Intrinsic args -- Puya builds them `for param in parameters`.
@@ -246,10 +233,9 @@ class _Translator:
 
     def op(self, o):
         if isinstance(o, pre_ir.Assignment):
-            # Multi-const push (`pushbytess` / `pushints`) whose inline operands
-            # the parser dropped: Puya has no such op, so split into one
-            # `let target_i = <const_i>` per value (targets reversed to source
-            # order). Recovered from source; only when counts line up.
+            # Multi-const push whose inline operands the parser dropped: Puya has no
+            # such op, so split into one `let target_i = <const_i>` per value, with
+            # the top-first targets reversed back to source (push) order.
             src = o.source
             if isinstance(src, pre_ir.Intrinsic) and src.op in ("pushbytess", "pushints") \
                     and not src.args:
@@ -273,9 +259,8 @@ class _Translator:
         if isinstance(o, pre_ir.IntrinsicOp):
             if isinstance(o.intrinsic, pre_ir.Intrinsic) and o.intrinsic.op in (
                     "pop", "popn", "pushbytess", "pushints"):
-                # pop/popn discard; a 0-output pushbytess/pushints is a phantom
-                # push (operands dropped by the parser) whose values, if used,
-                # are recovered elsewhere (e.g. match keys from source) -- no-op.
+                # pop/popn discard; a 0-output pushbytess/pushints is a phantom push
+                # whose values, if used, are recovered elsewhere (match keys).
                 return None
             return self.vp(o.intrinsic)          # side-effecting intrinsic = an Op
         if isinstance(o, pre_ir.Assert):
@@ -284,8 +269,8 @@ class _Translator:
         raise TypeError(f"op: {type(o).__name__}")
 
     def _u64_cond(self, v):
-        """A branch selector must be uint64. A bytes *constant* there is a
-        reconstruction artifact for an undefined value -> a sensible uint64."""
+        """Coerce a branch selector to uint64 (a bytes *constant* there is a
+        reconstruction artifact for an undefined value)."""
         c = self.val(v)
         if isinstance(c, M.BytesConstant):
             return M.UInt64Constant(source_location=None,
@@ -305,10 +290,10 @@ class _Translator:
                              blocks=[B[b] for b in t.blocks], default=B[t.default])
         if isinstance(t, pre_ir.Switch):
             val = self.val(t.value)
-            # Test the AVM TYPE FAMILY, not the exact ir_type: type recovery
-            # refines uint64 registers to bool / asset / application, and an
-            # exact `== PT.uint64` then misclassified those as bytes-keyed —
-            # `_bytes_const("5")` raises (not a byte literal), failing the lift.
+            # Test the AVM TYPE FAMILY, not the exact ir_type: type recovery refines
+            # uint64 registers to bool / asset / application, which an exact
+            # `== PT.uint64` misclassifies as bytes-keyed -- `_bytes_const("5")`
+            # then raises and fails the lift.
             _vt = getattr(val, "ir_type", None)
             is_u64 = (getattr(_vt, "avm_type", None) == PT.uint64.avm_type)
             cases = {}
@@ -325,32 +310,27 @@ class _Translator:
                                       result=[self.val(v) for v in t.result])
         if isinstance(t, pre_ir.ProgramExit):
             r = self.val(t.result)
-            # A constant-0 program exit is an unconditional reject. Puya's MIR
-            # rewrites `exit 0` to `err` ("simplifying exit 0 to err") as a *new
-            # explicit* check, which its TEAL optimiser then folds into the
-            # surrounding `assert` -- tripping the "explicit condition check(s)
-            # removed" invariant. Emit the reject as a non-explicit Fail directly
-            # (same on-chain outcome -- both fail the txn) so the fold is allowed.
+            # A constant-0 exit is an unconditional reject. Emit it as a
+            # non-explicit Fail (same on-chain outcome): Puya's own `exit 0` -> `err`
+            # rewrite marks the check EXPLICIT, and the later fold into the
+            # surrounding assert then trips its "explicit check removed" invariant.
             if isinstance(r, M.UInt64Constant) and r.value == 0:
                 return M.Fail(source_location=None, error_message="reject", explicit=False)
             return M.ProgramExit(source_location=None, result=r)
         if isinstance(t, pre_ir.Fail):
             # NOT explicit: a reconstructed reject/err path is control flow, not a
-            # user-written check. Puya's TEAL optimiser legitimately folds
-            # ``goto cond ? body : err`` into an equivalent ``assert cond`` (an
-            # err-branch IS an assert) -- behaviourally identical -- but if the Err
-            # were `explicit` that fold would drop it and trip Puya's "explicit
-            # condition check(s) removed" invariant. (Assert above stays explicit so
-            # a genuinely-dropped assert still surfaces rather than silently going.)
+            # user-written check, and Puya legitimately folds `goto cond ? body : err`
+            # into `assert cond` -- which trips its "explicit check removed"
+            # invariant if the Err is explicit. `Assert` above stays explicit, so a
+            # genuinely-dropped assert still surfaces.
             return M.Fail(source_location=None,
                           error_message=t.error_message or "err", explicit=False)
         raise TypeError(f"ctrl: {type(t).__name__}")
 
     def phi(self, p):
-        # One arg per predecessor: when a block reaches a successor by >1 edge
-        # (e.g. two switch cases -> same target) the CFG-derived predecessor set
-        # holds it once, but our phi has one arg per edge -> dedup by `through`
-        # (the duplicate edges carry the same value).
+        # Puya wants one arg per PREDECESSOR, ours has one per EDGE: a block reached
+        # by >1 edge (two switch cases -> same target) appears once in the CFG
+        # predecessor set, so dedup by `through` (duplicate edges carry one value).
         seen, args = set(), []
         for a in p.args:
             if not isinstance(a.value, pre_ir.Register) or a.through in seen:
@@ -404,21 +384,14 @@ def _retarget_terminator(term, old: int, new: int) -> None:
 
 
 def _duplicate_shared_epilogues(lifted):
-    """Tail-duplicate a shared "epilogue" block reached by direct branches from
-    more than one routine. Puya requires each block to belong to exactly one
-    subroutine, but a compiler-shared exit block (e.g. a common ``exit 0`` reject
-    that many handlers AND a subroutine's body jump to) is branched to from
-    several routines -- so Puya's Subroutine validator rejects it ("predecessor
-    block(s) outside of list").
+    """Give each routine its own copy of a shared "epilogue" block (a compiler-shared
+    ``exit 0`` reject branched to from several routines), which Puya's per-subroutine
+    block ownership otherwise rejects.
 
-    Only a PURE CONTROL SINK is duplicated: no phis, no ops, a terminal
-    terminator (no successor blocks), and no register operands -- so there is
-    nothing to merge or thread across the routine boundary and each consuming
-    routine can get its own independent, identical copy. The shared original is
-    removed and replaced by one fresh-id clone per caller routine, with that
-    routine's edges retargeted to its clone. A block carrying any value is left
-    untouched (it needs real tail-duplication with phi splitting, not done here).
-    No-op for the overwhelmingly common case of no cross-routine-shared sink."""
+    HAZARD: only a PURE CONTROL SINK qualifies — no phis, no ops, a terminal
+    terminator, no register operands — so there is nothing to merge or thread across
+    the routine boundary. A block carrying any value needs real tail-duplication with
+    phi splitting, which this does NOT do; leave it untouched."""
     groups = [lifted.main, *lifted.subroutines]
     block_by_id = {bb.id: bb for g in groups for bb in g.body}
     if not block_by_id:
@@ -457,12 +430,8 @@ def _duplicate_shared_epilogues(lifted):
 
 
 def to_puya(prog):
-    """SSAProgram -> (main, subroutines) as real puya.ir.models objects.
-
-    Wraps :func:`_to_puya_impl` so a lowering failure surfaces as a typed
-    :class:`tealql.tealtools.errors.LiftError` (stage ``"lower"``) with the cause
-    chained. A ``LiftError`` from the inner build stage passes through with its
-    original stage intact."""
+    """SSAProgram -> (main, subroutines) as real ``puya.ir.models`` objects, with any
+    lowering failure surfaced as a typed ``LiftError`` (stage ``"lower"``)."""
     from ..errors import LiftError
     try:
         return _to_puya_impl(prog)
@@ -479,41 +448,36 @@ def _to_puya_impl(prog):
 
 def _to_puya_full(prog):
     """The full lower, additionally returning the ``lifter`` (SSAVar -> pre_ir
-    Register maps) and ``t`` translator (id(pre_ir Register) -> M.Register), so a
-    caller can bridge an SSA value to its lowered puya register (see
-    :func:`recovered_min_lengths`). :func:`to_puya` returns only ``(main, subs)``."""
+    Register) and ``t`` translator (id(pre_ir Register) -> M.Register) so a caller
+    can bridge an SSA value to its lowered puya register."""
     # Pre-lift scratch simplification: forward compile-time-constant scratch loads to
-    # their literal so the lift emits the constant directly. propagate_scratch_constants
-    # only rewires the LOAD's consumers -- it KEEPS the store, which stays
-    # gload-readable cross-group, so this is behaviour-preserving even for grouped
-    # contracts (verified by the behavioural dryrun, incl. the gload contracts). This
-    # reaches scratch (slot) redundancy Puya's context-free optimiser can't: its
-    # slot_elimination is omitted because scratch isn't a sound local -- a `gload i N`
-    # in a SIBLING program can read a slot this program never reads locally.
+    # their literal. HAZARD: this only rewires the LOAD's consumers and KEEPS the
+    # store -- scratch is not a sound local, since a `gload i N` in a SIBLING program
+    # can read a slot this one never reads. (Puya's own slot_elimination is omitted
+    # for the same reason.)
     try:
         prog.propagate_constants()
         prog.propagate_scratch_constants()
     except Exception as e:
-        # These mutate prog in place; they must not fail on valid input, so a
-        # raise here points at a bug, not a coverage limit. Degrade (the partial
-        # annotations leave valid IR) but make it VISIBLE, not a silent DEBUG line.
+        # These must not fail on valid input, so a raise points at a bug, not a
+        # coverage limit: degrade (partial annotations still leave valid IR) but
+        # make it VISIBLE, not a silent DEBUG line.
         logger.warning("pre-lift scratch const-propagation FAILED (%s: %s) — "
                        "lifting un-simplified; likely a bug", type(e).__name__, e)
-    # Build via the lifter directly (not `lift()`) so we keep its SSAVar->Register
-    # map for the byte-length sized-bytes bridge below.
+    # Via the lifter directly (not `lift()`), to keep its SSAVar->Register map for
+    # the byte-length bridge below.
     lifter = _Lifter(prog)
     lifted = lifter.build()
-    # Collapse trivial / self-referential phis (`r = phi(r)`) before lowering:
-    # Puya's own copy_propagation asserts on these (it can't represent a
-    # register replaced by itself), but our reconstruction can emit them.
+    # Our reconstruction can emit self-referential phis (`r = phi(r)`), which Puya's
+    # copy_propagation asserts on -- collapse them before lowering.
     from .transforms import simplify_trivial_phis
     simplify_trivial_phis(lifted)
     _duplicate_shared_epilogues(lifted)
     t = _Translator(_load_src(getattr(prog, "source_path", "")))
     groups = [lifted.main, *lifted.subroutines]
 
-    # Pass 1: shells (empty body validates trivially), so control ops and
-    # InvokeSubroutine can reference real block / subroutine objects.
+    # Pass 1: shells, so control ops and InvokeSubroutine can reference real
+    # block / subroutine objects.
     for s in groups:
         for bb in s.body:
             t.blocks[bb.id] = M.BasicBlock(source_location=_sl(_line_of(bb)),
@@ -554,13 +518,13 @@ def _to_puya_full(prog):
     main = M.Subroutine(id=lifted.main.id, short_name="main", source_location=None,
                         parameters=[], returns=[], body=main_body, inline=None)
     subs = [t.subs[s.id] for s in lifted.subroutines]
-    # Run byte-length propagation AFTER the lift (so it can't perturb the lift's
-    # own coarse typing) and bridge the exact lengths into the recovery.
+    # AFTER the lift, so byte-length propagation can't perturb the lift's own
+    # coarse typing.
     try:
         prog.propagate_byte_lengths()
         bytelen = _byte_length_map(lifter, t)
     except Exception as e:
-        # Mutating pass; a failure on valid input is a bug — degrade but surface it.
+        # A failure on valid input is a bug — degrade but surface it.
         logger.warning("byte-length sized-bytes bridge FAILED (%s: %s) — "
                        "lengths not bridged; likely a bug", type(e).__name__, e)
         bytelen = {}
@@ -571,23 +535,14 @@ def _to_puya_full(prog):
 
 def recovered_min_lengths(prog) -> dict:
     """``{ssa_key: (min_bytes, confident)}`` — a LOWER bound on the byte length of
-    every SSA value the SPECULATIVE ARC-4 recovery gives an encoded type: a
-    FIXED-size type (``arc4.Address`` -> 32, ``arc4.Bool`` -> 1, a static
-    struct/array -> its total) contributes ``num_bytes``; a DYNAMIC (length-
-    prefixed / offset-table) type contributes ``2`` — every well-formed dynamic
-    ARC-4 value has at least a 2-byte length/offset head. Bridges the guess —
-    keyed by the lowered ``M.Register`` — back to the SSA value via the lift's
-    ``SSAVar -> pre_ir.Register`` and translator's ``id(pre_ir.Register) ->
-    M.Register`` maps. ``confident`` is the recovery's own confidence (a forced
-    idiom vs a shape that merely fits). This is an ASSUMPTION about well-formed ABI
-    input, not a proof — the consumer (``dataflow.bounds``) reports any bound it
-    enables as a distinct *speculative* verdict.
+    every SSA value the SPECULATIVE ARC-4 recovery gives an encoded type (a
+    fixed-size type contributes ``num_bytes``, a dynamic one ``2``, its
+    length/offset head), keyed by the SSA value's stable ``_key()``.
 
-    Keyed by the SSA value's STABLE identity (``_key()`` = ``(file, line, index)``,
-    not ``id()``) so the result maps onto a caller's own SSAProgram, and lifts a
-    FRESH copy off ``prog.source_path`` (the lift mutates its input CFG) to keep the
-    caller's program pristine. ``{}`` if the contract doesn't lower (puya absent /
-    lift failure) or has no source path; never raises."""
+    HAZARD: an ASSUMPTION about well-formed ABI input, NOT a proof — the consumer
+    must report any bound it enables as a distinct *speculative* verdict.
+    Lifts a FRESH copy off ``prog.source_path`` because the lift mutates its input
+    CFG. ``{}`` if the contract doesn't lower or has no source path; never raises."""
     from ..ssa import SSAProgram
     src_path = str(getattr(prog, "source_path", "") or "")
     if not src_path:
@@ -617,17 +572,15 @@ def recovered_min_lengths(prog) -> dict:
         nb = getattr(g, "num_bytes", None)
         nb = 2 if nb is None else nb            # dynamic ⇒ >= 2-byte head
         prev = out.get(k)
-        if prev is None or nb < prev[0]:        # disagreement: keep the SMALLER
+        if prev is None or nb < prev[0]:        # disagreement: keep the SMALLER bound
             out[k] = (nb, bool(confident.get(id(m))))
     return out
 
 
 def _byte_length_map(lifter, t) -> dict:
-    """``{id(M.Register): exact_byte_length}`` composed from the lift's
-    ``SSAVar -> pre_ir.Register`` maps and the translator's
-    ``id(pre_ir.Register) -> M.Register`` map, for every SSA value the byte-length
-    pass gave a known *exact* length. A register fed by SSA values of disagreeing
-    exact lengths is dropped (ambiguous -> stays plain ``bytes``)."""
+    """``{id(M.Register): exact_byte_length}`` for every SSA value the byte-length
+    pass gave an *exact* length; a register fed by values of disagreeing lengths is
+    dropped (ambiguous -> stays plain ``bytes``)."""
     out: dict = {}
     conflict: set = set()
     src: dict = {}
@@ -652,23 +605,13 @@ def _byte_length_map(lifter, t) -> dict:
     return out
 
 
-# Refined IR types we restore from Puya's langspec when the recovery flattened
-# them to the coarse AVM divide. Each is INTERCHANGEABLE with its AVM base (same
-# `avm_type`, no reinterpret cast in Puya's IR), so retyping is a pure precision
-# refinement Puya's intrinsic validator (which checks `avm_type`) accepts:
-#   bool      <- uint64  (a 0/1 result: cmp / verify / opted-in / getbit / ...)
-#   biguint   <- bytes   (big-endian unbounded int: b+ b- b* b/ b% bsqrt)
-#   account   <- bytes   (32-byte address: txn Sender, global ZeroAddress, ...)
-#   bytes[N]  <- bytes   (a SizedBytesType: itob -> bytes[8], hashes -> bytes[32],
-#                         sumhash/vrf -> bytes[64], txn TxID -> bytes[32], ...)
-# Sized bytes were initially assumed unsafe (a hash/itob result folding into the
-# generic `bytes` webs it flows through). Measured instead: with them on, the
-# corpus + backend gate stays green AND the lowered TEAL is byte-identical (they
-# share `avm_type=bytes`, so it's a pure annotation -- proven by diffing the
-# backend output), and it matches Puya's own genuine IR more closely. So they're
-# included; the guard below keeps any refinement on the same side of the AVM
-# divide, so a langspec `bytes[32]` is only ever applied over a `bytes` (never a
-# uint64 the recovery may have mislabelled -- that stays for the encoder to flag).
+# Refined IR types restored from Puya's langspec when the recovery flattened them
+# to the coarse AVM divide: bool <- uint64; biguint / account / SizedBytesType
+# bytes[N] <- bytes.
+# HAZARD: this must stay a PURE ANNOTATION -- each refined type is INTERCHANGEABLE
+# with its AVM base (same `avm_type`, no reinterpret cast in Puya's IR), so the
+# lowered TEAL is byte-identical. A refinement must NEVER cross the AVM divide;
+# the `rt.avm_type == cur.avm_type` guard below is what keeps it semantics-free.
 _REFINED_IR_TYPES = frozenset({PT.bool, PT.biguint, PT.account})
 
 # The coarse base types the recovery leaves; only these get refined (never an
@@ -677,17 +620,16 @@ _COARSE_BASE = frozenset({PT.uint64, PT.bytes})
 
 
 def _is_refinable(rt) -> bool:
-    """A langspec return type worth restoring: one of the interchangeable refined
-    primitives, or any fixed-width ``SizedBytesType`` (all bytes-backed)."""
+    """A langspec return type worth restoring: an interchangeable refined primitive,
+    or any (bytes-backed) fixed-width ``SizedBytesType``."""
     from puya.ir.types_ import SizedBytesType
     return rt in _REFINED_IR_TYPES or isinstance(rt, SizedBytesType)
 
 
 def _langspec_returns(intrinsic: "M.Intrinsic"):
-    """Authoritative return IRTypes (bottom-first, matching Puya's target order)
-    for an Intrinsic, from Puya's own ``AVMOpData`` signature -- resolving a
-    field-keyed dynamic op (``global``/``txn``/...) by its immediate. ``None`` if
-    the op has no static signature (or the immediate doesn't select a variant)."""
+    """An Intrinsic's authoritative return IRTypes from Puya's own ``AVMOpData``
+    signature — BOTTOM-FIRST, matching Puya's target order — resolving a field-keyed
+    dynamic op by its immediate; ``None`` if it has no static signature."""
     from puya.ir.avm_ops_models import DynamicVariants, Variant
     v = _compat.langspec_variants(intrinsic.op)
     if isinstance(v, Variant):
@@ -702,16 +644,14 @@ def _langspec_returns(intrinsic: "M.Intrinsic"):
 
 
 def _address_operand_identities(main, subs) -> set:
-    """The SSA identities ``(name, version)`` of every value FED to an operand the
-    AVM REQUIRES to be a 32-byte address: the operand of ``itxn_field <F>`` for an
-    account-typed field, or the account operand (``args[0]``) of a local-state /
-    account-parameter op. Only ``bytes``-form operands are taken -- the same ops
-    also accept a ``uint64`` account INDEX (0=sender, i=Accounts[i-1]), which is
-    not an address -- so the ``avm_type == bytes`` filter keeps this sound.
+    """The identities of every value FED to an operand the AVM REQUIRES to be a
+    32-byte address: an account-typed ``itxn_field``, or ``args[0]`` of a
+    local-state / account-parameter op.
 
-    Identities are scoped by owning subroutine (``id(s)``): SSA names like ``l%3``
-    / ``p%0`` are only unique WITHIN a sub, so a global ``(name, version)`` set
-    would retype an unrelated register of the same name in another sub."""
+    HAZARD: take only ``bytes``-form operands — these ops also accept a ``uint64``
+    account INDEX (0=sender, i=Accounts[i-1]), which is NOT an address. Identities
+    must stay scoped by owning subroutine (``id(s)``): names like ``l%3`` / ``p%0``
+    are unique only WITHIN a sub, so a global set retypes unrelated registers."""
     out: set = set()
     for s in (main, *subs):
         for bb in s.body:
@@ -733,17 +673,12 @@ def _address_operand_identities(main, subs) -> set:
 
 def _recover_ir_types(main, subs, allow=_is_refinable, byte_lengths=None) -> int:
     """Refine each intrinsic result register from the coarse AVM type the recovery
-    left (``uint64``/``bytes``) to the finer IR type Puya's langspec declares for
-    that op -- but only the interchangeable ones ``allow`` accepts (see
-    :func:`_is_refinable`), and only when the finer type shares the current one's
-    ``avm_type`` (so a refinement never crosses the AVM divide).
+    left to the finer IR type Puya's langspec declares (or, via ``byte_lengths``,
+    to a ``SizedBytesType`` the byte-length pass proved), returning the count.
 
-    ``byte_lengths`` (``{id(M.Register): N}``) additionally refines a still-plain
-    ``bytes`` result to ``SizedBytesType(N)`` when the byte-length pass proved its
-    exact length (``concat`` / ``extract`` / ``bzero`` / ``replace`` / a fixed-width
-    field, etc.) -- the same ``avm_type``-preserving annotation as the langspec
-    sized-bytes, just sourced from length analysis instead of the op's own return.
-    The intrinsic's ``types`` tuple is rebuilt to match. Returns the count refined."""
+    HAZARD: a refinement is only sound while it shares the current type's
+    ``avm_type`` — it must never cross the AVM divide, and the intrinsic's ``types``
+    tuple must be rebuilt to match the refined targets."""
     from puya.ir.types_ import SizedBytesType
     byte_lengths = byte_lengths or {}
     n = 0
@@ -763,24 +698,21 @@ def _recover_ir_types(main, subs, allow=_is_refinable, byte_lengths=None) -> int
                             _compat.set_ir_type(tgt, rt)
                             changed = True
                             n += 1
-                # Byte-length sized-bytes: refine a target the langspec left as
-                # plain `bytes` when its exact length is known.
+                # Refine a target the langspec left as plain `bytes` when the
+                # byte-length pass knows its exact length.
                 for tgt in o.targets:
                     if tgt.ir_type is PT.bytes and id(tgt) in byte_lengths:
                         _compat.set_ir_type(tgt, SizedBytesType(byte_lengths[id(tgt)]))
                         changed = True
                         n += 1
                 if changed:
-                    # Keep the intrinsic's declared result types in sync with the
-                    # refined targets (see _puya_compat.set_intrinsic_types).
                     _compat.set_intrinsic_types(
                         o.source, (t.ir_type for t in o.targets))
 
     # USAGE-BACKWARD account recovery: the langspec pass above types addresses
-    # FORWARD from producer ops (txn Sender, global ZeroAddress). This types them
-    # from CONSUMPTION -- a value fed to an AVM-forced address operand IS a 32-byte
-    # account, so its plain-`bytes` intrinsic definition refines to `account`. Same
-    # avm_type (bytes), so still a free annotation; the neutrality gate measures it.
+    # FORWARD from producer ops, this one from CONSUMPTION -- a value fed to an
+    # AVM-forced address operand IS a 32-byte account. Same avm_type (bytes), so
+    # still a pure annotation.
     addr_ids = _address_operand_identities(main, subs)
     if addr_ids:
         for s in (main, *subs):
@@ -805,13 +737,15 @@ def _recover_ir_types(main, subs, allow=_is_refinable, byte_lengths=None) -> int
 
 
 def _opt_passes():
-    """Puya optimiser passes that take no (or an unused) compile context AND are pure
-    cleanups (do not alter the lowered TEAL beyond removing dead/duplicate work), so
-    they run directly on our translated subroutines -- order roughly follows Puya's
-    own pipeline. The CODEGEN-CHANGING simplifications (intrinsic_simplifier,
-    encode_decode_pair_elimination) are opt-in via :func:`_aggressive_passes`;
-    slot_elimination / inlining / box / itxn-field passes need a real context or the
-    Slot abstraction we don't emit, so they stay omitted."""
+    """Puya optimiser passes that need no compile context AND are pure cleanups (they
+    remove dead/duplicate work without altering the lowered TEAL), in roughly Puya's
+    own pipeline order.
+
+    HAZARD: keep this list codegen-neutral — the simplifications that CHANGE the
+    lowered TEAL belong in :func:`_aggressive_passes`, and slot_elimination must
+    stay out entirely (scratch is gload-readable from a sibling program, so it is
+    not a sound local). Inlining / box / itxn-field passes need a real context or
+    the Slot abstraction we don't emit."""
     from puya.ir.optimize.assignments import copy_propagation
     from puya.ir.optimize.collapse_blocks import merge_blocks, remove_linear_jumps
     from puya.ir.optimize.constant_propagation import constant_replacer
@@ -830,22 +764,17 @@ def _opt_passes():
 
 
 def _aggressive_passes():
-    """Extra Puya passes that genuinely SIMPLIFY the lowered TEAL (not pure
-    annotations): ``intrinsic_simplifier`` (constant folding, strength reduction, and
-    -- using our recovered sized-byte / account types -- ``len`` + comparison folding)
-    and ``encode_decode_pair_elimination`` (redundant ARC4 encode∘decode round-trips).
+    """Extra Puya passes that genuinely SIMPLIFY the lowered TEAL: intrinsic folding
+    plus ARC4 encode∘decode round-trip elimination.
 
-    Opt-in (``optimize(aggressive=True)``) because they CHANGE codegen, so they are
-    gated behaviourally (the lift behaves identically), NOT by byte-identity. Neither
-    needs a real compile context: ``encode_decode_pair_elimination`` ignores its
-    ``_context``, and ``intrinsic_simplifier`` reads only ``expand_all_bytes`` (a bool,
-    supplied via a tiny shim) -- so the old "needs a real context" exclusion was
-    overstated. ``intrinsic_simplifier`` is wrapped to take the uniform ``(ctx, sub)``
-    shape so :func:`optimize` can call it like the rest."""
+    HAZARD: these CHANGE codegen, so they are opt-in and gated BEHAVIOURALLY (the
+    lift behaves identically), never by byte-identity like the default passes."""
     import types
 
     from puya.ir.optimize.assignments import encode_decode_pair_elimination
     from puya.ir.optimize.intrinsic_simplification import intrinsic_simplifier
+    # intrinsic_simplifier reads only `expand_all_bytes` off its context, and
+    # encode_decode_pair_elimination ignores its own -- so a shim suffices.
     shim = types.SimpleNamespace(expand_all_bytes=False)
     return [lambda _ctx, s: intrinsic_simplifier(shim, s),
             encode_decode_pair_elimination]
@@ -858,11 +787,10 @@ def _puya_zero(ir_type):
     if ir_type in _BYTES_IRT:
         return M.BytesConstant(source_location=None, value=b"",
                                encoding=AVMBytesEncoding.utf8)
-    # A bytes-backed type that is NOT plain bytes/account -- e.g. an ARC4
-    # ``EncodedType`` (uint64-tuple, address, fixed array). A uint64 zero is the
-    # wrong AVM type for it, so emit a bytes zero of the type's fixed width and
-    # type the constant AS the target so the orphan-default assignment type-checks
-    # exactly (Puya rejects ``source=(uint64) target=(Encoded(...))`` otherwise).
+    # A bytes-backed type that is NOT plain bytes/account (an ARC4 `EncodedType`):
+    # emit a bytes zero of the type's fixed width and type the constant AS the
+    # target, else the assignment fails Puya's exact type check
+    # (`source=(uint64) target=(Encoded(...))`).
     if getattr(ir_type, "avm_type", None) == AVMType.bytes:
         nb = getattr(ir_type, "num_bytes", None)
         n = nb if isinstance(nb, int) else 0
@@ -874,8 +802,11 @@ def _puya_zero(ir_type):
 def _define_named_orphan(subs, name: str, version: int) -> bool:
     """Define a register the optimiser rejected as undefined (a value the
     reconstruction lost to a frame / dynamic-scratch gap) as a typed zero at its
-    subroutine's entry. Precise: only the exact register Puya names is touched,
-    so a contract that optimises cleanly never reaches this."""
+    subroutine's entry.
+
+    HAZARD: keep this PRECISE — only the exact register Puya names. Blanket
+    orphan-defaulting corrupts real contracts, and a program that optimises cleanly
+    must never reach here."""
     for sub in subs:
         if not sub.body:
             continue
@@ -889,20 +820,9 @@ def _define_named_orphan(subs, name: str, version: int) -> bool:
 
 
 def optimize(subs, *, max_rounds: int = 100, aggressive: bool = False) -> int:
-    """Run Puya's context-free optimiser passes over ``subs`` to a fixpoint.
-    Mutates the subroutines in place; returns the number of rounds taken. Puya's
-    pass logging is silenced for the duration. If a pass rejects a register the
-    reconstruction left undefined, define it (typed zero) and retry -- bounded,
-    and only ever engaged by a contract that fails to optimise.
-
-    ``aggressive`` adds the CODEGEN-CHANGING simplifications (:func:`_aggressive_passes`
-    -- intrinsic folding + ARC4 encode/decode elimination). Default off, so the lift
-    stays faithful / byte-identical for analysis; turn it on for a maximally-optimised
-    lowering (gated behaviourally, since it alters the TEAL).
-
-    Wraps :func:`_optimize_impl` so a failure the internal typed-zero retry can't
-    resolve surfaces as a typed :class:`tealql.tealtools.errors.LiftError` (stage
-    ``"optimize"``), cause chained."""
+    """Run Puya's context-free optimiser passes over ``subs`` to a fixpoint (mutating
+    them in place, returning the rounds taken), where ``aggressive`` additionally
+    enables the CODEGEN-CHANGING simplifications the faithful default leaves off."""
     from ..errors import LiftError
     try:
         return _optimize_impl(subs, max_rounds=max_rounds, aggressive=aggressive)
@@ -936,8 +856,8 @@ def _optimize_impl(subs, *, max_rounds: int = 100, aggressive: bool = False) -> 
 
 
 def render(prog, *, optimize_ir: bool = False) -> str:
-    """Render an SSAProgram as real Puya IR text, using Puya's own emitter. With
-    ``optimize_ir`` set, Puya's optimiser passes run on the IR first."""
+    """Render an SSAProgram as real Puya IR text with Puya's own emitter, optionally
+    running the optimiser passes first."""
     TextEmitter, _render_body = _compat.text_emitter_and_render()
 
     main, subs = to_puya(prog)

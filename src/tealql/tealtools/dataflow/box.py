@@ -1,32 +1,12 @@
-"""Box dataflow detectors.
+"""Box dataflow detectors: into-box, out-of-box, and the key-correlated round trip.
 
-Configurations of :class:`tealql.tealtools.dataflow.TaintAnalysis` for three
-box-related questions:
+HAZARD: every sink/source index below encodes a TOP-FIRST stack layout. The box
+KEY is pushed first and so is the DEEPEST input, and the ``_ex``-style two-output
+reads leave the existence flag ON TOP. Reading these backwards taints a key or a
+0/1 flag instead of the value.
 
-- **into-box** — external/attacker inputs reaching a box write
-  (value or size), unsanitised. ``detect_into_box_flows``.
-- **out-of-box** — values read out of a box reaching sensitive
-  consumers (state writes, itxn fields). ``detect_out_of_box_flows``.
-- **key-correlated** — two-pass: external → box write at key K, then
-  read at key K → sensitive sink. ``detect_correlated_flows``.
-
-Caveats inherited from the substrate:
-
-- Taint stops at ops whose default decision is BLOCK (arithmetic,
-  ``btoi``, etc.). Hash and slice ops *propagate* taint —
-  attacker-controlled bytes hashed into a box value are still
-  attacker-controlled.
-- The detector is taint-only, not predicate-aware. ``assert(arg <
-  100)`` before the sink doesn't break the chain — the value is
-  still tainted at the sink. A predicate-aware variant would consult
-  :class:`PathPredicateAnalysis` to check whether a dominating
-  guard constrains the operand.
-- Key correlation is *syntactic*: two keys are matched if their SSA
-  expressions canonicalise to the same signature (recursively
-  identical opcode + immediates + inputs, or both Consts with the
-  same value). Different syntactic forms that happen to yield the
-  same bytes at runtime are not matched.
-"""
+Taint-only, not predicate-aware — ``assert(arg < 100)`` before the sink does not
+break the chain. Compose with :mod:`.predicate_aware` for that."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -47,8 +27,7 @@ from ..ssa import Assignment, Const, Phi, SSAProgram
 # --- sources ---------------------------------------------------------
 
 
-# ``txna ApplicationArgs N``: pops 0, pushes 1 (the bytes for arg N).
-# Tainted output is index 1 (the only output).
+# ``txna ApplicationArgs N``: pushes 1 (the bytes for arg N).
 EXTERNAL_ARG_SOURCE = Source(
     name="txna ApplicationArgs",
     matches=lambda a: a.op == "txna"
@@ -60,13 +39,8 @@ EXTERNAL_ARG_SOURCE = Source(
 # --- sinks -----------------------------------------------------------
 
 
-# Stack convention: TEAL pushes the box key first, value second; the
-# value sits on top after the pushes. Top-first ``inputs`` therefore
-# has [value, key] (or [size, key] for ``box_create``).
-#
-# Per dataflow.Sink, this is the generic
-# "input position to check for taint" — the framework predates the
-# value-flow use case.
+# TEAL pushes the box key FIRST and the value second, so top-first ``inputs``
+# is [value, key] — or [size, key] for ``box_create``.
 
 BOX_PUT_VALUE_SINK = Sink(
     name="box_put value",
@@ -74,8 +48,7 @@ BOX_PUT_VALUE_SINK = Sink(
     tainted_input_index=lambda a: 1,
 )
 
-# ``box_replace key start replacement``: pushes name, then start,
-# then replacement. Top-first inputs: [replacement, start, key].
+# ``box_replace key start replacement`` — top-first: [replacement, start, key].
 BOX_REPLACE_VALUE_SINK = Sink(
     name="box_replace value",
     matches=lambda a: a.op == "box_replace",
@@ -101,23 +74,21 @@ DEFAULT_INTO_BOX_SINKS: list[Sink] = [
 # --- box-out sources -------------------------------------------------
 
 
-# ``box_get key``: pops 1, pushes 2 (value, did_exist). Top-first
-# outputs: [did_exist, value]. Value is output index 2.
+# ``box_get key`` — top-first outputs [did_exist, value], so value is index 2.
 BOX_GET_VALUE_SOURCE = Source(
     name="box_get value",
     matches=lambda a: a.op == "box_get",
     tainted_outputs=lambda a: [2],
 )
 
-# ``box_extract key start length``: pops 3, pushes 1 (bytes).
+# ``box_extract key start length`` — a single bytes output.
 BOX_EXTRACT_SOURCE = Source(
     name="box_extract value",
     matches=lambda a: a.op == "box_extract",
     tainted_outputs=lambda a: [1],
 )
 
-# ``box_len key``: pops 1, pushes 2 (length, did_exist). Top-first
-# outputs: [did_exist, length]. Length is output index 2.
+# ``box_len key`` — top-first outputs [did_exist, length], so length is index 2.
 BOX_LEN_SOURCE = Source(
     name="box_len value",
     matches=lambda a: a.op == "box_len",
@@ -128,15 +99,14 @@ BOX_LEN_SOURCE = Source(
 # --- sensitive sinks for box-out flow --------------------------------
 
 
-# State writes — value is at the top of the stack after the keys/
-# accounts get pushed. Top-first inputs: value at 1.
+# State writes push keys/accounts first, so top-first the value is index 1.
 APP_GLOBAL_PUT_VALUE_SINK = Sink(
     name="app_global_put value",
     matches=lambda a: a.op == "app_global_put",
     tainted_input_index=lambda a: 1,
 )
 
-# ``app_local_put account key value``: top-first inputs [value, key, account].
+# ``app_local_put account key value`` — top-first: [value, key, account].
 APP_LOCAL_PUT_VALUE_SINK = Sink(
     name="app_local_put value",
     matches=lambda a: a.op == "app_local_put",
@@ -144,9 +114,8 @@ APP_LOCAL_PUT_VALUE_SINK = Sink(
 )
 
 
-# Sensitive itxn_field sinks (flowing arbitrary bytes into these governs payment
-# routing or app control transfer) — canonical set in tealql.tealtools.avm, imported
-# at the top of this module.
+# Sensitive itxn_field sinks — arbitrary bytes into these steer payment routing
+# or transfer app control.
 
 
 def _itxn_field_sink(field_name: str) -> Sink:
@@ -189,10 +158,10 @@ def detect_into_box_flows(
         prog,
         sources=list(sources) if sources is not None else DEFAULT_INTO_BOX_SOURCES,
         sinks=list(sinks) if sinks is not None else DEFAULT_INTO_BOX_SINKS,
-        # Attacker-CONTROL question → concat propagates on ANY tainted input.
-        # The default (collision-model) concat rule blocked taint whenever a
-        # non-const untainted operand was present — a silent false negative
-        # for `concat(dynamic_prefix, user_arg)` flowing into the sink.
+        # HAZARD: this is a CONTROL question, so concat must propagate on ANY
+        # tainted input. The collision-model default blocks taint whenever an
+        # untainted non-const operand is present, silently losing
+        # `concat(dynamic_prefix, user_arg)`.
         default_rules=ATTACKER_CONTROL_RULES,
     ).detect()
 
@@ -203,12 +172,11 @@ def detect_out_of_box_flows(
     sources: Optional[Iterable[Source]] = None,
     sinks: Optional[Iterable[Sink]] = None,
 ) -> list[Violation]:
-    """Find box-stored values reaching sensitive consumers (state
-    writes, itxn fields) without sanitisation. Treats *every* box
-    read as a source — pair with :func:`detect_correlated_flows` if
-    you only want to flag reads that demonstrably alias an
-    attacker-tainted prior write.
-    """
+    """Box-stored values reaching sensitive consumers.
+
+    HAZARD: EVERY box read is a source, so this is an attack-surface map, not a
+    triage list. :func:`detect_correlated_flows` restricts it to reads that
+    demonstrably alias an attacker-tainted prior write."""
     return TaintAnalysis(
         prog,
         sources=list(sources) if sources is not None else DEFAULT_OUT_OF_BOX_SOURCES,
@@ -221,16 +189,8 @@ def detect_out_of_box_flows(
 
 
 def _key_signature(op, depth: int = 4) -> str:
-    """Recursive structural signature of a key operand. Two operands
-    with the same signature are *syntactically* equivalent — same
-    opcode + immediates + recursively-equal inputs, or both Consts
-    with the same value. Different syntactic forms that resolve to
-    the same bytes at runtime are not matched (that would need a
-    semantic equality, not modelled here).
-
-    ``depth`` caps recursion for cyclic phi structures; matches are
-    conservative beyond that depth.
-    """
+    """Structural signature of a key operand; equal signatures mean SYNTACTIC
+    equivalence only, so two forms yielding the same runtime bytes won't match."""
     if depth == 0:
         return "?"
     if isinstance(op, Const):
@@ -239,8 +199,8 @@ def _key_signature(op, depth: int = 4) -> str:
     if isinstance(cv, Const):
         return f"const:{cv.value}"
     if isinstance(op, Phi):
-        # A phi joins multiple paths — conservatively treat each phi
-        # as its own cluster (id-based) so we don't over-correlate.
+        # A phi joins several paths, so give it its own cluster rather than
+        # over-correlating keys that agree on only one arm.
         return f"phi:{id(op)}"
     a = getattr(op, "defined_by", None)
     if a is None:
@@ -250,11 +210,10 @@ def _key_signature(op, depth: int = 4) -> str:
 
 
 def _box_op_key(a: Assignment):
-    """Return the key operand for a box op, or None if the shape doesn't fit."""
-    # All five ops put the key as the deepest input (last in top-first
-    # order). box_put: [value, key]; box_create: [size, key];
-    # box_replace: [replacement, start, key]; box_get: [key];
-    # box_extract: [length, start, key]; box_len: [key].
+    """The key operand of a box op, or None if the shape doesn't fit."""
+    # Every box op pushes the key first, so TOP-FIRST it is the DEEPEST input:
+    # box_put [value, key]; box_create [size, key]; box_replace [replacement,
+    # start, key]; box_extract [length, start, key]; box_get / box_len [key].
     if a.op in {"box_put", "box_create", "box_replace",
                 "box_get", "box_extract", "box_len"}:
         if a.inputs:
@@ -264,8 +223,7 @@ def _box_op_key(a: Assignment):
 
 @dataclass
 class CorrelatedViolation:
-    """End-to-end chain: external source → box write at key K →
-    box read at key K → sensitive sink."""
+    """The chain: external source → box write at key K → read of K → sink."""
 
     initial_source: Assignment
     initial_source_name: str
@@ -302,19 +260,7 @@ def detect_correlated_flows(
     initial_sources: Optional[Iterable[Source]] = None,
     sensitive_sinks: Optional[Iterable[Sink]] = None,
 ) -> list[CorrelatedViolation]:
-    """Two-pass analysis chaining box writes to subsequent reads at
-    the same key cluster.
-
-    Pass 1: ``initial_sources`` (default: external args) → box writes
-    (value position). Records which box_put/replace/create writes are
-    tainted, plus their key signatures and originating sources.
-
-    Pass 2: synthesises a per-read :class:`Source` for every box_get/
-    extract/len whose key signature matches a tainted-write cluster.
-    Runs the detector with these synthetic sources and the sensitive
-    sinks. Each resulting :class:`Violation` is rebuilt as a
-    :class:`CorrelatedViolation` carrying the full chain.
-    """
+    """Chain attacker-tainted box writes to later reads of the same key cluster."""
     init_sources = (
         list(initial_sources) if initial_sources is not None
         else DEFAULT_INTO_BOX_SOURCES
@@ -329,17 +275,14 @@ def detect_correlated_flows(
         prog, sources=init_sources, sinks=DEFAULT_INTO_BOX_SINKS,
         default_rules=ATTACKER_CONTROL_RULES,   # control question, not collision
     )
-    # Compute the taint fixpoint ONCE (it also yields the source-of map); the
-    # per-write loop below used to re-run the full fixpoint on every iteration.
     tainted_ops, source_for = pass1._compute_taint()
-    # cluster_sig → list of (write_assignment, originating_source_assignment, source_name)
+    # cluster_sig → list of (write, originating source assignment, source name)
     cluster_writes: dict[str, list[tuple[Assignment, Assignment, str]]] = {}
     for write in prog.assignments:
-        # box_create is DELIBERATELY excluded: its input 0 is the allocation
-        # SIZE, not attacker content — box_create zero-fills, storing no value.
-        # A tainted size is a distinct concern owned by BOX_CREATE_SIZE_SINK;
-        # enrolling the box's key here would falsely make a later box_get of a
-        # zero-filled box read as attacker-controlled (wrong provenance chain).
+        # HAZARD: box_create is DELIBERATELY excluded. Its input 0 is the
+        # allocation SIZE and it zero-fills, storing no attacker content, so
+        # enrolling its key would make a later read of a zero-filled box look
+        # attacker-controlled. Tainted sizes belong to BOX_CREATE_SIZE_SINK.
         if write.op not in {"box_put", "box_replace"}:
             continue
         if not write.inputs:
@@ -351,15 +294,13 @@ def detect_correlated_flows(
         if key is None:
             continue
         sig = _key_signature(key)
-        # Originating source from the precomputed source-of map (hoisted above).
         src_a, src_name = source_for[value_op]
         cluster_writes.setdefault(sig, []).append((write, src_a, src_name))
     if not cluster_writes:
         return []
 
-    # Pass 2: synthesise a Source per matching box_get/extract/len.
-    # Assignments aren't hashable (unfrozen dataclass), so key the
-    # read→cluster map by id().
+    # Pass 2: synthesise a Source per matching box read. Assignments aren't
+    # hashable (unfrozen dataclass), so the read→cluster map is keyed by id().
     synth_sources: list[Source] = []
     read_to_cluster: dict[int, str] = {}
     for read in prog.assignments:
@@ -372,7 +313,8 @@ def detect_correlated_flows(
         if sig not in cluster_writes:
             continue
         read_to_cluster[id(read)] = sig
-        # Output index: 2 for box_get/box_len (did_exist on top), 1 for box_extract.
+        # box_get / box_len leave did_exist on top, so the value is output 2;
+        # box_extract has a single output.
         out_idx = 1 if read.op == "box_extract" else 2
         synth_sources.append(Source(
             name="box read of correlated cluster",
@@ -385,18 +327,13 @@ def detect_correlated_flows(
                           default_rules=ATTACKER_CONTROL_RULES)
     flat_violations = pass2.detect()
 
-    # Rebuild as chains. Each Violation's ``source`` is a synthetic
-    # one (the box read); look up its cluster, take any tainted write
-    # in that cluster as the chain's middle, and that write's
-    # originating source as the chain's start.
     out: list[CorrelatedViolation] = []
     for v in flat_violations:
         cluster = read_to_cluster.get(id(v.source))
         if cluster is None:
             continue
-        # Pick the first matching write — multiple are possible if the
-        # cluster has several tainted writes; we report one chain per
-        # (read, sink) pair to keep output bounded.
+        # A cluster may hold several tainted writes; one chain per (read, sink)
+        # pair keeps the output bounded.
         write, init_a, init_name = cluster_writes[cluster][0]
         out.append(CorrelatedViolation(
             initial_source=init_a,

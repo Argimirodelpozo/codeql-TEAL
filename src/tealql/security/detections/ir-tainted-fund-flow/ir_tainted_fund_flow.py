@@ -1,20 +1,14 @@
-"""sec-guide/ir-tainted-fund-flow: attacker-controlled inner-txn fund flow (IR).
+"""sec-guide/ir-tainted-fund-flow: the PRIMARY fund-flow detector, on the lifted
+Puya IR. An attacker-controlled value reaching a ``FUND_FIELDS`` inner-txn field
+without a dominating guard lets the attacker redirect, size, or sweep a payment.
 
-The interprocedural-IR PRIMARY fund-flow detector (run on the lifted Puya IR via
-:func:`common.ir_lifter`). An attacker-controlled value reaching a fund-flow
-inner-transaction field (``Receiver`` / ``Amount`` / ``CloseRemainderTo`` / asset
-variants — the ``FUND_FIELDS`` set, which excludes ``RekeyTo``: an app/itxn rekey
-is self-inflicted, covered by ``inner-txn-close-rekey``) without a dominating
-guard lets the attacker redirect, size, or sweep a payment.
+``FUND_FIELDS`` excludes ``RekeyTo`` — an app/itxn rekey is self-inflicted and
+belongs to ``inner-txn-close-rekey``.
 
-It matches or beats the SSA ``tainted-fund-flow`` on every analysis axis -- the
-key edge being **guard dominance across a ``callsub``**: ``PathPredicateAnalysis``
-is context-INSENSITIVE there, so an owner/sender check before a callsub on the
-path to the sink is lost at the multi-caller return merge (a false positive the IR
-clears by computing dominance within the lifted subroutine). The SSA detector is
-marked ``superseded_by`` this one and skipped in default scans; this detector
-falls back to it when the lift fails, so it is the single complete entry point.
-Emits only the UNGUARDED, call-resolved flows.
+The IR's edge over the SSA sibling is guard dominance across a ``callsub``:
+``PathPredicateAnalysis`` is context-INSENSITIVE there, so an owner check before a
+callsub is lost at the multi-caller return merge. This detector falls back to the
+SSA one when the lift fails, making it the single complete entry point.
 """
 from __future__ import annotations
 

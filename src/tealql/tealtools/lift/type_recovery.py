@@ -1,10 +1,14 @@
 """AVM type / phi recovery for the lift (see :mod:`lift`).
 
-After :class:`lift._Lifter` builds the IR, some registers are still ``?`` (params
-/ returns crossing subroutines, scratch loads, state reads, placeholder phi webs).
-:func:`recover_types` closes them with a monotonic per-sub fixpoint;
-:func:`finalize_types` reconciles mixed-type phi webs on the assembled program.
-Both read the lifter's maps via a duck-typed ``lifter`` (never imports lift).
+:func:`recover_types` closes the registers :class:`lift._Lifter` leaves ``?``
+(params / returns crossing subroutines, scratch loads, state reads, placeholder
+phi webs) with a monotonic fixpoint; :func:`finalize_types` reconciles mixed-type
+phi webs on the assembled program. Both reach the lifter's maps duck-typed,
+never importing lift.
+
+HAZARD: recovery must stay a PURE ANNOTATION -- it may only refine a register
+WITHIN one AVM family (same avm_type, coarse -> fine). Crossing the uint64/bytes
+divide changes what the program lowers to, i.e. its semantics.
 """
 from __future__ import annotations
 
@@ -26,21 +30,18 @@ def _empty_bytes(b) -> bool:
 
 
 def _itxn_field_avm(field: str):
-    """The AVM type ('b'/'u') a given `itxn_field <Field>` operand must be
-    (OnCompletion -> uint64, Note -> bytes, Receiver -> account/bytes, ...), from
-    the canonical langspec table in ``avm.py``. None for an unknown field."""
+    """The AVM type (``'b'``/``'u'``) an ``itxn_field <Field>`` operand must be,
+    from the canonical langspec table in ``avm.py``; None for an unknown field."""
     return txn_field_avm_type(field)
 
 
 def _itob_const(v: int) -> "pre_ir.BytesConstant":
-    """A uint64 placeholder rewritten to bytes: empty for the (dead) 0 seed
-    that a `bytes` accumulator slot is initialised with, else its itob form."""
+    """A uint64 placeholder as bytes: empty for the dead 0 seed, else its itob form."""
     return pre_ir.BytesConstant("0x" if v == 0 else "0x" + v.to_bytes(8, "big").hex())
 
 
 def _to_u64_const(b) -> "pre_ir.UInt64Constant":
-    """A bytes placeholder rewritten to uint64 (the symmetric case: a uint64
-    slot seeded with empty `""`/`0x`); empty -> 0, else its btoi value."""
+    """A bytes placeholder as uint64: empty -> 0, else its btoi value."""
     try:
         raw, _ = _const_bytes(getattr(b, "value", "") or "0x")
         return pre_ir.UInt64Constant(int.from_bytes(raw[-8:], "big") if raw else 0)
@@ -49,9 +50,8 @@ def _to_u64_const(b) -> "pre_ir.UInt64Constant":
 
 
 def _const_key(operand) -> "str | None":
-    """The constant bytes value of a state-key operand (verbatim ``0x…`` hex),
-    or ``None`` if the key isn't a static constant (a dynamic key can't be
-    matched across put / get)."""
+    """The constant bytes value of a state-key operand (verbatim ``0x…`` hex), or
+    ``None`` for a dynamic key, which cannot be matched across put / get."""
     if isinstance(operand, Const):
         return operand.value if operand.kind == "bytes" else None
     cv = getattr(operand, "const_value", None)
@@ -60,10 +60,10 @@ def _const_key(operand) -> "str | None":
     return None
 
 
-# Must agree with avm.py's `avm()` and `_AVM_BYTES_TYPES` on what is bytes-backed
-# — a type bytes-backed in one table but not another would make a phi join of two
-# genuinely-bytes types cross the divide and default to uint64 (unsound). `string`
-# is bytes-backed (an ARC-4 String is a length-prefixed byte array).
+# HAZARD: must agree with avm.py's `avm()` and `_AVM_BYTES_TYPES` on what is
+# bytes-backed. A type bytes-backed in one table but not the other makes a phi
+# join of two genuinely-bytes types cross the divide and default to uint64.
+# `string` is bytes-backed (an ARC-4 String is a length-prefixed byte array).
 _BYTES_FAMILY = frozenset({"bytes", "account", "string"})
 
 
@@ -72,8 +72,8 @@ _U64_FAMILY = frozenset({"uint64", "bool", "asset", "application"})
 
 def _avm_join(types) -> str | None:
     """Common AVM type of a set of lift type strings, or None if they cross the
-    uint64/bytes divide. Puya phis/assignments check the *AVM* type, so an
-    `account` and a `bytes` unify to `bytes`, `bool` and `uint64` to `uint64`."""
+    uint64/bytes divide — Puya checks the *AVM* type, so `account` and `bytes`
+    unify to `bytes`, `bool` and `uint64` to `uint64`."""
     ts = {t for t in types if t and t != "?"}
     if not ts:
         return None
@@ -101,16 +101,15 @@ _BYTES_IN_ALL = frozenset({
 })
 
 
-# Position-specific input types, indexed by SSA arg position which is
-# **top-first** (inputs[0] is the topmost popped value). So for a TEAL op
-# documented ``op A B C`` (A deepest, C on top) the SSA args are [C, B, A].
+# Position-specific input types, indexed by SSA arg position.
+# HAZARD: positions are **top-first** — args[0] is the topmost popped value, so a
+# TEAL op documented ``op A B C`` (A deepest, C on top) has SSA args [C, B, A].
 # ``None`` = leave the value unknown.
 _POS_IN = {
     "getbyte": ("uint64", "bytes"),               # A(bytes) B(idx) -> [B, A]
-    # getbit is POLYMORPHIC (value operand A is uint64 OR a byteslice) -- forcing `bytes`
-    # mis-types a uint64 BITMAP (a u64 slot read by getbit), conflicts with the u64 store of the
-    # same scratch slot -> spurious `poly` slot -> byteslice-mode getbit -> vacuous path. Leave A
-    # unknown so the VALUE FLOW types it (u64 source -> u64; digest -> bytes); index B is uint64.
+    # getbit is POLYMORPHIC (value operand A is uint64 OR a byteslice); forcing
+    # `bytes` mis-types a uint64 BITMAP and clashes with the u64 store of the same
+    # scratch slot. Leave A unknown so the VALUE FLOW types it; index B is uint64.
     "getbit": ("uint64", None),
     "setbyte": ("uint64", "uint64", "bytes"),     # A(bytes) B(idx) C(val)
     "extract3": ("uint64", "uint64", "bytes"),    # A(bytes) B(start) C(len)
@@ -124,24 +123,20 @@ _POS_IN = {
     "app_global_get": ("bytes",),                 # key
     "app_global_put": (None, "bytes"),            # K(key) V(val) -> [V, K]
     "app_global_get_ex": ("bytes", "uint64"),     # app key -> [key, app]
-    # local-state ops mirror the global ones plus the DEEPEST account operand.
-    # Without these the key (and account) positions stay `?` and lower to uint64
-    # -> app_local_get(uint64,uint64) mixed-type encode error. Source order is
-    # (account, [app,] key[, value]); SSA is top-first (reversed), key shallowest.
+    # local-state ops mirror the global ones plus the DEEPEST account operand;
+    # without these the key stays `?` and lowers to uint64, giving an
+    # app_local_get(uint64, uint64) mixed-type encode error.
     "app_local_get": ("bytes", None),            # acct key -> [key, acct]
     "app_local_put": (None, "bytes", None),      # acct key val -> [val, key, acct]
     "app_local_get_ex": ("bytes", "uint64", None),  # acct app key -> [key, app, acct]
-    # the `del` siblings carry a bytes key too — same gap, same byteslice-key
-    # lowering error if the key reaches them only through an untyped frame/phi.
+    # the `del` siblings carry a bytes key too — same lowering error.
     "app_global_del": ("bytes",),                # key
     "app_local_del": ("bytes", None),            # acct key -> [key, acct]
     "bzero": ("uint64",), "txnas": ("uint64",), "gtxnas": ("uint64",),
-    # box ops: the NAME is the deepest operand (= last, top-first), always
-    # bytes. Without this a box name reaching box_get only through a stack
-    # frame slot (`bury N; ... frame_dig N; box_get`, the BoxMap `key in map`
-    # membership+read pattern) stays `?` and lowers to uint64 -> mixed-type
-    # encode error. Position-precise, so the u64 start/len/size operands stay
-    # uint64, and the unanimity guard leaves a genuinely-mixed register `?`.
+    # box ops: the NAME is the deepest operand (so last, top-first) and always
+    # bytes; without this a name reaching box_get only through a frame slot stays
+    # `?` and lowers to uint64. Position-precise, so the u64 start/len/size
+    # operands stay uint64.
     "box_get": ("bytes",), "box_len": ("bytes",), "box_del": ("bytes",),
     "box_create": ("uint64", "bytes"),            # name size -> [size, name]
     "box_resize": ("uint64", "bytes"),
@@ -157,10 +152,9 @@ def _expected_type(op, idx, args, imm=None):
     if op in ("__cond__", "__exit__"):
         return "uint64"
     if op == "itxn_field" and idx == 0 and imm:
-        # The single operand of `itxn_field <Field>` must be the field's AVM
-        # type (Sender/Receiver/... -> bytes, Amount/Fee/... -> uint64). Without
-        # this a non-phi value feeding an address field stays `?` and lowering
-        # defaults it to uint64, which Puya's backend then rejects.
+        # The operand of `itxn_field <Field>` must be the field's AVM type;
+        # without this a non-phi value feeding an address field stays `?` and
+        # lowers to uint64, which Puya's backend rejects.
         a = _itxn_field_avm(str(imm[0]).strip())
         return "bytes" if a == "b" else "uint64" if a == "u" else None
     if op in _U64_IN_ALL:
@@ -178,9 +172,8 @@ def _expected_type(op, idx, args, imm=None):
 
 
 def _infer_types_from_uses(subs) -> None:
-    """Refine ``?``-typed registers (params, locals, …) from the ops that
-    consume them: arithmetic/cmp inputs are uint64, bytes-op inputs are bytes,
-    ``==`` matches the other operand, branch conditions are uint64."""
+    """Refine ``?``-typed registers from the ops that consume them: arithmetic and
+    branch inputs uint64, bytes-op inputs bytes, ``==`` matching its peer."""
     reg_by_id: dict = {}
     uses: dict = {}
 
@@ -208,16 +201,13 @@ def _infer_types_from_uses(subs) -> None:
         if isinstance(t, pre_ir.ConditionalBranch):
             use(t.condition, "__cond__", 0, [t.condition])
         elif isinstance(t, pre_ir.ProgramExit):
-            # `return` (and fall-off-end) pop a uint64 success value, so the
-            # exit operand pins its producer to uint64. This is the only typing
-            # signal for a program whose returned value comes from an otherwise
-            # unconstrained source -- e.g. `gloads`/`gloadss` reading another
-            # group txn's scratch (statically unknowable) feeding `return`.
+            # `return` pops a uint64 success value, pinning its producer. Often
+            # the only typing signal when the returned value comes from an
+            # unconstrained source (`gloads` on another group txn's scratch).
             use(t.result, "__exit__", 0, [t.result])
 
-    # Monotonic (only `?` -> a concrete type, guarded by `!= "?"`), so loop to
-    # the fixpoint: guaranteed to terminate, with no depth cap to truncate a
-    # long use-chain.
+    # Monotonic (only `?` -> concrete), so the fixpoint terminates; no depth cap,
+    # so a long use-chain is never truncated.
     changed = True
     while changed:
         changed = False
@@ -232,8 +222,8 @@ def _infer_types_from_uses(subs) -> None:
 
 
 def _infer_returns(subs) -> None:
-    """Set each subroutine's return types from its ``SubroutineReturn`` values
-    (first typed value per position, across return sites)."""
+    """Set each subroutine's return types from the first typed ``SubroutineReturn``
+    value per position, across return sites."""
     for sub in subs:
         if sub.is_main:
             continue
@@ -247,8 +237,8 @@ def _infer_returns(subs) -> None:
                 else:
                     rets = [a if a != "?" else b2 for a, b2 in zip(rets, ts)]
         if rets is not None:
-            # monotonic: keep any return position already typed (e.g. pinned by
-            # inter-procedural unification from a caller), only fill the `?` ones.
+            # monotonic: keep positions already typed (e.g. pinned from a
+            # caller), fill only the `?` ones.
             old = sub.returns
             sub.returns = [o if o != "?" else n
                            for o, n in zip(old, rets)] if len(old) == len(rets) \
@@ -257,9 +247,8 @@ def _infer_returns(subs) -> None:
 
 def _unify_phi_types(subs) -> None:
     # A phi merges one logical value, so its register and every arg share an AVM
-    # type. Propagate BOTH ways: args -> register (joined to their common AVM
-    # type) and register -> any still-`?` arg. Monotonic (only `?` -> concrete),
-    # so the fixpoint terminates and no phi web is left half-typed.
+    # type; propagate BOTH ways. Monotonic (only `?` -> concrete), so the fixpoint
+    # terminates and no phi web is left half-typed.
     changed = True
     while changed:
         changed = False
@@ -290,11 +279,9 @@ def _reg_args(x):
 
 
 def _collect_phi_evidence(blocks, find, phi_ids, parent):
-    """Aggregate per-web type evidence in priority tiers. A phi-web's type is
-    decided by, in order: how its values are *consumed* (strongest -- the seed of
-    a wrong type is dead and can't be consumed as that type anyway), then a
-    non-placeholder constant arg, then a non-phi member's own def type. Returns
-    `(consumer, constev, defev)`, each `web-root -> {"u"|"b"}`."""
+    """Per-web type evidence in priority tiers -- `(consumer, constev, defev)`,
+    each `web-root -> {"u"|"b"}`. Consumption is strongest: a wrongly-typed seed
+    is dead and cannot be consumed as that type anyway."""
     from collections import defaultdict
     consumer: dict = defaultdict(set)
     constev: dict = defaultdict(set)
@@ -313,9 +300,8 @@ def _collect_phi_evidence(blocks, find, phi_ids, parent):
                 for t in o.targets:
                     if id(t) in parent and id(t) not in phi_ids and avm(t.ir_type) != "?":
                         defev[find(id(t))].add(avm(t.ir_type))
-            # Consumer evidence counts only *phi* registers (the accumulator
-            # values): a seed register's own uses elsewhere (e.g. NumAppArgs in
-            # routing) say nothing about the accumulator phi it merely seeds.
+            # Consumer evidence counts only *phi* registers: a seed register's own
+            # uses elsewhere say nothing about the accumulator it merely seeds.
             src = getattr(o, "source", None) or getattr(o, "intrinsic", None)
             if isinstance(src, pre_ir.Intrinsic):
                 k = ("u" if src.op in _U64_CONSUME
@@ -334,9 +320,8 @@ def _collect_phi_evidence(blocks, find, phi_ids, parent):
 
 
 def _decide_webtypes(phi_ids, find, consumer, constev, defev) -> dict:
-    """Pick each web's type (`'bytes'`/`'uint64'`) from the first tier with a
-    unanimous vote; a web with no real evidence at any tier is a dead-placeholder
-    web -> collapse to uint64."""
+    """Pick each web's type from the first tier with a unanimous vote; a web with
+    no real evidence at any tier is a dead placeholder -> collapse to uint64."""
     webtype: dict = {}                   # web root -> 'bytes' / 'uint64'
     for root in {find(rid) for rid in phi_ids}:
         for tier in (consumer, constev, defev):
@@ -345,14 +330,12 @@ def _decide_webtypes(phi_ids, find, consumer, constev, defev) -> dict:
                 webtype[root] = "bytes" if "b" in ev else "uint64"
                 break
         else:
-            # No real evidence at ANY tier -> a DEAD-placeholder web: every const
-            # arg is a zero / empty `""` coarse-SSA seed (real consts/defs are what
-            # the tiers count, and all were excluded) and no op consumes it as a
-            # type. Such a web merges differently-typed dead seeds (e.g. uint64 0
-            # with empty bytes) and Puya rejects the cross-type phi -- but the value
-            # is never used, so collapse it to one family. uint64 = the lowering
-            # default; the bytes seeds then coerce to uint64 0 below. (A web with
-            # any REAL evidence is left for the encoder to flag as a true conflict.)
+            # No evidence at ANY tier -> a DEAD-placeholder web: every const arg
+            # is a zero / empty coarse-SSA seed and nothing consumes it as a type.
+            # Such a web merges differently-typed dead seeds and Puya rejects the
+            # cross-type phi, but the value is never used, so collapse it to the
+            # uint64 lowering default. A web with any REAL evidence is left for
+            # the encoder to flag as a true conflict.
             if not (consumer.get(root) or constev.get(root) or defev.get(root)):
                 webtype[root] = "uint64"
     return webtype
@@ -388,14 +371,14 @@ def _apply_webtypes(blocks, find, phi_ids, webtype) -> None:
 
 
 def _reconcile_mixed_phis(prog) -> None:
-    """Re-type a phi-web left holding a wrong-AVM-type constant: a `bytes`
-    accumulator slot is seeded with the cheaper `intc_0 0` (uint64 slots with
-    empty `""`) before the loop fills it, so the loop-header phi merges the dead
-    placeholder with the real value, which Puya's typed IR rejects. Per web (keyed
-    by register *identity* -- `tmp%`/`cr%` names repeat across groups), one tier
-    of hard evidence decides -- consumer > non-placeholder const > non-phi def --
-    then retype and rewrite the dead placeholders to match; skip a web showing
-    both types (a real merge)."""
+    """Re-type a phi-web left holding a wrong-AVM-type constant -- a `bytes`
+    accumulator seeded with the cheaper `intc_0 0` merges the dead placeholder
+    with the real value at the loop header, which Puya's typed IR rejects.
+
+    Per web (keyed by register IDENTITY -- `tmp%`/`cr%` names repeat across
+    groups), one tier of hard evidence decides (consumer > non-placeholder const
+    > non-phi def), then the placeholders are rewritten to match. A web showing
+    both types is a real merge and is skipped."""
     blocks = list(pre_ir.blocks(prog))
     parent: dict = {}                    # id(Register) -> id(Register)
     obj: dict = {}                       # id(Register) -> Register
@@ -427,17 +410,14 @@ def _reconcile_mixed_phis(prog) -> None:
 
 
 def _unify_comparison_operands(prog) -> None:
-    """The two operands of `==` / `!=` must share an AVM family — you cannot
-    compare a uint64 to a byteslice (Algorand Python wouldn't emit it). When they
-    disagree, retype the SOFT operand (a state read / load whose family was only
-    guessed) to the family fixed by HARD evidence on the other side: a constant, a
-    txn/global field, or a typed-op result. This corrects e.g. a global read that
-    defaulted to uint64 but is compared against `txn Sender` (bytes) — the read's
-    slot type was guessed wrong, and the comparison is the ground truth.
+    """The two operands of `==` / `!=` must share an AVM family, so retype the
+    SOFT operand (a state read whose family was only guessed) to the family fixed
+    by HARD evidence on the other side — a constant, a txn/global field, or a
+    typed-op result.
 
-    Override only ever moves a SOFT operand; two hard operands that conflict are
-    left for the encoder to flag (a genuine inconsistency). For well-typed
-    contracts the operands already agree, so nothing changes."""
+    HAZARD: an override may only ever move a SOFT operand. Two HARD operands that
+    conflict are left for the encoder to flag; letting a guess overwrite a
+    well-typed operand would mint a family the value does not have."""
     producer: dict = {}                  # id(Register) -> defining Intrinsic
     for bb in pre_ir.blocks(prog):
         for o in bb.ops:
@@ -448,13 +428,11 @@ def _unify_comparison_operands(prog) -> None:
     _REFINED = ("account", "asset", "application")
 
     def strength(v):
-        """(strength, family) for a comparison operand — higher strength = more
-        trustworthy evidence of the AVM family. HARD (4): a constant, a txn/global
-        field, or a typed-op result — evidence the AVM itself fixes, so it is
-        UNIMPEACHABLE and the only strength trusted to drive a retype below.
-        REFINED (3): a specific type (account/asset/application) — implies a typed
-        source. BASE (2): plain bytes/uint64. BOOL (1): the cheapest default.
-        UNKNOWN (0)."""
+        """(strength, family) for a comparison operand. HARD (4) = a constant,
+        txn/global field, or typed-op result — fixed by the AVM itself, and the
+        only strength trusted to drive a retype. REFINED (3) =
+        account/asset/application; BASE (2) = plain bytes/uint64; BOOL (1) = the
+        cheapest default; UNKNOWN (0)."""
         if isinstance(v, pre_ir.UInt64Constant):
             return (4, "u")
         if isinstance(v, pre_ir.BytesConstant):
@@ -489,13 +467,9 @@ def _unify_comparison_operands(prog) -> None:
             (s0, f0), (s1, f1) = strength(a0), strength(a1)
             if f0 == "?" or f1 == "?" or f0 == f1:
                 continue                 # agree (or unknown) -> nothing to do
-            # Cross-family conflict on a `==`/`!=` (impossible at runtime, so one
-            # side is a recovery error): retype the OTHER operand to match — but
-            # ONLY when the trusted side is HARD (strength 4: const / field /
-            # typed-op), evidence the AVM itself fixes. A REFINED/BASE/BOOL guess
-            # is not trusted to overwrite the other side (it might be the mistyped
-            # one); such conflicts are left for the encoder to flag. This keeps the
-            # pass from ever minting a family a well-typed operand doesn't have.
+            # Cross-family conflict (impossible at runtime, so one side is a
+            # recovery error): retype the OTHER operand, but ONLY when the trusted
+            # side is HARD — see the docstring.
             if s0 == 4 and s1 < 4 and isinstance(a1, pre_ir.Register):
                 a1.ir_type = "uint64" if f0 == "u" else "bytes"
             elif s1 == 4 and s0 < 4 and isinstance(a0, pre_ir.Register):
@@ -503,11 +477,9 @@ def _unify_comparison_operands(prog) -> None:
 
 
 def _realign_call_returns(prog) -> None:
-    """Re-pin each call-result register to its callee's (authoritative) return
-    type. `_reconcile_mixed_phis` can retype a callee's return value to bytes
-    without touching the caller's result registers, leaving the InvokeSubroutine
-    assignment's targets the wrong type; align them (targets are positional,
-    matching `returns`)."""
+    """Re-pin each call-result register to its callee's authoritative return type
+    — `_reconcile_mixed_phis` can retype a callee return without touching the
+    caller's result registers (targets are positional, matching `returns`)."""
     sub_by_id = {s.id: s for s in prog.subroutines}
     for bb in pre_ir.blocks(prog):
         for o in bb.ops:
@@ -523,9 +495,8 @@ def _realign_call_returns(prog) -> None:
 
 def _propagate_copy_types(prog) -> None:
     """Propagate a reconciled AVM type across register-to-register copies to a
-    fixpoint: a copy must preserve its operand's type, so when reconciliation
-    retyped a source to bytes/uint64 its copy targets (frame locals, temps) must
-    follow, else the copy fails Puya's assignment type check."""
+    fixpoint — a copy must preserve its operand's type or it fails Puya's
+    assignment type check."""
     changed = True
     while changed:
         changed = False
@@ -559,12 +530,11 @@ def _untyped(subs):
 
 
 def _infer_params_from_callers(lifter, pairs):
-    # Sub args are passed via scratch / frame here, not callsub operands. The
-    # caller's exit_stack top `nargs` (param order es[-nargs+i]) are the
-    # args; type each by tracing its scratch store, and -- when it is a
-    # `frame_dig` -- directly through to the caller subroutine's own param
-    # (inter-procedural: the param index is the immediate + the caller's
-    # nargs, independent of the fat-frame output shape).
+    # Sub args are passed via scratch / frame here, not callsub operands: the
+    # caller's exit_stack top `nargs` are the args (param order es[-nargs+i]).
+    # Type each by tracing its scratch store, and when it is a `frame_dig` go
+    # straight through to the caller's own param — index = immediate + caller
+    # nargs, independent of the fat-frame output shape.
     struct2ir = {sb: ir_s for ir_s, sb in pairs}
 
     def _arg_type(arg, owner_ir, owner_nargs):
@@ -575,7 +545,7 @@ def _infer_params_from_callers(lifter, pairs):
                 return owner_ir.parameters[owner_nargs + k].register.ir_type
         if isinstance(arg, (SSAVar, Phi)):
             rt = lifter.reg(arg).ir_type        # IR-level type is the complete one
-            if rt != "?":                # (render + use / state / copy-load)
+            if rt != "?":
                 return rt
         return lifter._ssa_type(arg)
 
@@ -612,23 +582,20 @@ def _arg_avm_type(v) -> str:
 
 
 def _unify_params_from_call_args(subs) -> None:
-    """Interprocedural param typing from the pre_ir ``InvokeSubroutine`` args.
+    """Fill a still-``?`` parameter with the AVM type its pre_ir
+    ``InvokeSubroutine`` call sites agree on (``_avm_join`` -> None on a
+    cross-family clash, so a genuine disagreement is left untouched).
 
-    A still-``?`` parameter is filled with the AVM type its call sites agree on
-    (``_avm_join`` -> None on a cross-family clash, so a genuine disagreement is
-    left untouched). This is the direct, pre_ir-level counterpart to
-    ``_infer_params_from_callers`` (which traces the SSA exit-stack / frame chain):
-    it catches the case where args reach the call as already-typed pre_ir values
-    but the frame/scratch trace doesn't ground out — e.g. params the lift left
-    ``?`` that, without this, lower via the ``?`` -> uint64 default while their
-    args are bytes (an ill-typed callee, rejected downstream). Monotonic
-    (only ``?`` -> concrete), so it joins the recovery fixpoint."""
+    The pre_ir-level counterpart to ``_infer_params_from_callers``, which traces
+    the SSA exit-stack / frame chain: this catches args that reach the call
+    already typed but whose frame/scratch trace does not ground out. Monotonic,
+    so it joins the recovery fixpoint."""
     sub_by_id = {s.id: s for s in subs}
     cols: dict = {}                       # sub_id -> list[set] per param position
     for b in pre_ir.blocks(subs):
         for o in b.ops:
             # A call with results is an Assignment source; a VOID call is wrapped
-            # in an IntrinsicOp (its `.intrinsic` holds the InvokeSubroutine).
+            # in an IntrinsicOp (`.intrinsic` holds the InvokeSubroutine).
             src = (o.source if isinstance(o, pre_ir.Assignment)
                    else o.intrinsic if isinstance(o, pre_ir.IntrinsicOp) else None)
             if not isinstance(src, pre_ir.InvokeSubroutine):
@@ -652,12 +619,9 @@ def _unify_params_from_call_args(subs) -> None:
 
 def _infer_args_from_params(subs) -> None:
     """Callee -> caller propagation: a still-``?`` call ARGUMENT register inherits
-    the (known) type of the parameter it is passed to. The dual of
-    ``_unify_params_from_call_args`` (caller -> callee). Without this, a value
-    that is only ever forwarded into a typed param (e.g. an address threaded
-    through to an `itxn_field Sender`, or a number into `Amount`) stays ``?`` and
-    lowers via the ``?`` -> uint64 default — so a bytes param fed by it, or a u64
-    param it feeds, ends up mismatched. Monotonic (only ``?`` -> concrete)."""
+    the type of the parameter it is passed to. The dual of
+    ``_unify_params_from_call_args``; without it a value only ever forwarded into
+    a typed param stays ``?`` and lowers via the ``?`` -> uint64 default."""
     sub_by_id = {s.id: s for s in subs}
     for b in pre_ir.blocks(subs):
         for o in b.ops:
@@ -678,11 +642,10 @@ def _infer_args_from_params(subs) -> None:
 
 
 def _infer_state_types(lifter):
-    """Type state read *values* from the contract's own put schema: a value is
-    whatever was put to its (constant) key. Reads each put value's *final*
-    register type (top-first: value [0], key [1]); a key with conflicting put
-    types stays unknown. The read value is output 1 for ``*_get_ex`` (did_exist
-    at 0), the sole output for ``*_get``."""
+    """Type state read VALUES from the contract's own put schema -- a value is
+    whatever was put to its constant key; a key with conflicting put types stays
+    unknown. Put inputs are top-first (value [0], key [1]); the read value is
+    output 1 for ``*_get_ex`` (did_exist at 0), the sole output for ``*_get``."""
     key_types: dict = {}
     for a in lifter.prog.assignments:
         if a.op in ("app_global_put", "app_local_put") and len(a.inputs) >= 2:
@@ -702,10 +665,9 @@ def _infer_state_types(lifter):
             if vt and vt != "?":
                 key_types.setdefault(key, set()).add(vt)
 
-    # Also seed from READ value types. A key never PUT with a determinate type in
-    # THIS contract still needs unifying if it is read with CONFLICTING types
-    # (e.g. an address read bytes by use vs a uint64-default sibling read); else a
-    # state-forwarding optimiser pass substitutes one access's value into another's
+    # Also seed from READ value types: a key never PUT with a determinate type
+    # here still needs unifying if it is read with CONFLICTING types, else a
+    # state-forwarding pass substitutes one access's value into another's
     # wrong-typed register and rejects the cross-type assignment.
     for a in lifter.prog.assignments:
         if a.op in ("app_global_get", "app_local_get"):
@@ -724,15 +686,11 @@ def _infer_state_types(lifter):
             key_types.setdefault(rk, set()).add("bytes" if fam == "b" else "uint64")
 
     def _resolve(types: set):
-        # ONE put type -> that type. A genuine bytes/uint64 clash is left
-        # UNRESOLVED: forcing the whole chain to bytes crossed the avm_type
-        # divide by fiat, and type recovery's contract is that it only refines
-        # WITHIN a family (same avm_type, coarse -> fine) so it stays a pure
-        # annotation. Demoting a register that genuinely feeds a uint64 op
-        # would propagate and change lowering — a real semantic change made on
-        # the strength of a guess about which side was mistyped. Puya-compiled
-        # contracts never conflict, so this only gives up on the decompiled
-        # type-recovery slips it used to guess at.
+        # ONE put type -> that type. HAZARD: a genuine bytes/uint64 clash is left
+        # UNRESOLVED. Forcing the chain to bytes crosses the avm_type divide by
+        # fiat and propagates into lowering — a real semantic change made on a
+        # guess about which side was mistyped. Recovery only refines WITHIN a
+        # family, so it stays a pure annotation.
         if len(types) == 1:
             return next(iter(types))
         return None
@@ -749,8 +707,8 @@ def _infer_state_types(lifter):
             val = a.outputs[1] if len(a.outputs) > 1 else None
             k = _const_key(a.inputs[0]) if a.inputs else None
         elif a.op in ("app_global_put", "app_local_put") and len(a.inputs) >= 2:
-            # The forwarding pass copies a put VALUE straight into a later read of
-            # the key, so the put value must carry the key's decided type too.
+            # The forwarding pass copies a put VALUE into a later read of the key,
+            # so the put value must carry the key's decided type too.
             val = a.inputs[0]
             k = _const_key(a.inputs[1])
         else:
@@ -759,24 +717,20 @@ def _infer_state_types(lifter):
             continue
         if k not in key_types:
             continue
-        # The put is authoritative: a read of a key with one consistent put
-        # type *is* that type. Correct a read mistyped by use-inference (e.g.
-        # an address read typed uint64 by an `==` peer) -- else a value-cache
-        # optimiser pass substitutes the stored value into the wrong-typed
-        # register. For consistent (puya-compiled) contracts the read type
-        # already matches, so this is a no-op there.
+        # The put is authoritative: a read of a key with one consistent put type
+        # IS that type. Corrects a read mistyped by use-inference, else a
+        # value-cache pass substitutes the stored value into the wrong-typed
+        # register.
         r = lifter.reg(val)
         if r.ir_type != key_types[k]:
             r.ir_type = key_types[k]
 
 
 def _propagate_copy_load_types(lifter):
-    """Close the remaining untyped registers at the IR level, to a
-    fixpoint: a copy / local store (``let l%N = <reg>``) takes its source
-    register's type, and a scratch ``(load N)`` takes the type stored to
-    its slot (via the reaching-def ``load_stores``). Iterated because a
-    typed load feeds a copy that feeds another load. Runs last, after
-    param / return / state inference have typed the leaves."""
+    """Close the remaining untyped registers to a fixpoint: a copy takes its
+    source register's type, a scratch ``(load N)`` the type stored to its slot
+    (via the reaching-def ``load_stores``). Runs last, after param / return /
+    state inference have typed the leaves."""
     def _src_type(v):
         if isinstance(v, pre_ir.Register):
             return v.ir_type
@@ -786,11 +740,8 @@ def _propagate_copy_load_types(lifter):
             return "bytes"
         return None                          # Intrinsic / invoke: not a copy
 
-    # Monotonic: each step only turns a `?` into a concrete type, never the
-    # reverse (every write is guarded by `== "?"`), so this can't oscillate
-    # and converges in at worst one pass per register. Loop to the fixpoint
-    # rather than capping the depth, so a long copy/load chain can't be left
-    # half-typed.
+    # Monotonic (every write is guarded by `== "?"`), so this cannot oscillate;
+    # loop to the fixpoint so a long copy/load chain is never left half-typed.
     changed = True
     while changed:
         changed = False
@@ -816,9 +767,9 @@ def _propagate_copy_load_types(lifter):
 
 
 def _unify_call_returns(lifter):
-    # A callsite's result register and the callee's declared return are the
-    # same value -- unify their AVM types both ways, and pin the callee's
-    # SubroutineReturn value register too, so the callee types up internally.
+    # A callsite's result register and the callee's declared return are the same
+    # value: unify both ways, and pin the callee's SubroutineReturn register too
+    # so the callee types up internally.
     for cs_bb, regs in lifter.call_results.items():
         cs = lifter.callsite.get(cs_bb)
         callee = lifter.name2sub.get(cs.target_name) if cs else None
@@ -828,12 +779,10 @@ def _unify_call_returns(lifter):
             if pos >= len(callee.returns):
                 continue
             ret = callee.returns[pos]
-            # The result register IS the callee's return value, so the two
-            # types must be equal. The callee return (typed from the value
-            # actually produced) is authoritative; on a cross-family clash
-            # it overrides the caller's use-derived guess (e.g. a `bytes`
-            # address result mis-typed `uint64` by an `==` peer). When the
-            # callee is still `?`, the caller's concrete type informs it.
+            # The callee return, typed from the value actually produced, is
+            # authoritative and overrides the caller's use-derived guess on a
+            # cross-family clash; when the callee is still `?`, the caller's
+            # concrete type informs it.
             if ret != "?":
                 rreg.ir_type = ret
             elif rreg.ir_type != "?":
@@ -847,12 +796,9 @@ def _unify_call_returns(lifter):
 
 
 def _infer_select_types(subs) -> None:
-    # `select C B A` pushes B or A chosen by the runtime condition C, so its
-    # result shares ONE AVM type with both value operands. The args are
-    # [C (condition, uint64), B, A]; type a `?` result from the value operands
-    # (which agree by construction -- you cannot select between two different AVM
-    # types). Skip arg 0 (the condition); a genuine type clash joins to None and
-    # is left alone. Monotonic (only `?` -> concrete), so it joins the fixpoint.
+    # `select C B A` returns B or A, so the result shares ONE AVM type with both
+    # value operands. Args are top-first [C, B, A] — skip arg 0 (the uint64
+    # condition) and join the value operands; a genuine clash joins to None.
     def _vt(v):
         if isinstance(v, pre_ir.Register):
             return v.ir_type
@@ -874,13 +820,11 @@ def _infer_select_types(subs) -> None:
 
 
 def _infer_setbit_types(subs) -> None:
-    # `setbit A B C` sets bit B of the VALUE operand A to bit C and returns the SAME
-    # AVM type as A -- setbit is polymorphic (uint64 OR byteslice) but TYPE-PRESERVING.
-    # SSA args are top-first [C (bit), B (index), A (value)], so A is args[2]. Unify a
-    # `?` result with A's type (and a `?` A register with the result's), so an ARC-4
-    # bool-pack chain seeded by a `0x00` byte literal stays `bytes` instead of each
-    # intermediate defaulting to uint64 (which lowers to a Bytes/uint64 mixed-type
-    # error). Monotonic (only `?` -> concrete), so it joins the fixpoint.
+    # `setbit A B C` is POLYMORPHIC (uint64 OR byteslice) but TYPE-PRESERVING: the
+    # result has A's AVM type. SSA args are top-first [C (bit), B (index),
+    # A (value)], so A is args[2]. Unify a `?` result with A and vice versa, so an
+    # ARC-4 bool-pack chain seeded by `0x00` stays `bytes` instead of each
+    # intermediate defaulting to uint64.
     def _vt(v):
         if isinstance(v, pre_ir.Register):       return v.ir_type
         if isinstance(v, pre_ir.UInt64Constant): return "uint64"
@@ -903,11 +847,11 @@ def _infer_setbit_types(subs) -> None:
 
 
 def _warn_residual_unknowns(subs) -> None:
-    """Surface any register type recovery could NOT resolve. Lowering defaults a
-    residual ``?`` to uint64 (``to_puya_ir._IRT``), which silently mistypes a
-    value that is really bytes -- so make the gap visible instead of quiet. Not
-    fatal (a genuinely-uint64 value defaults correctly), but logged so a recovery
-    miss is caught rather than shipped as a wrong type."""
+    """Log any register type recovery could NOT resolve.
+
+    HAZARD: lowering defaults a residual ``?`` to uint64 (``to_puya_ir._IRT``),
+    silently mistyping a value that is really bytes. Not fatal, but the gap must
+    be visible rather than shipped as a wrong type."""
     res: list[str] = []
     for sub in subs:
         for pp in sub.parameters:
@@ -930,18 +874,17 @@ def _warn_residual_unknowns(subs) -> None:
 
 def recover_types(lifter, sub_pairs) -> None:
     """Run the type passes to a fixpoint -- they feed each other (a typed caller
-    arg types a callee param; a typed value types the slots/loads of it; a put
-    types its matching get; uses and phi args pin the rest). Each is monotonic
-    (only ``?`` -> concrete), so the untyped count falls and this terminates."""
+    arg types a callee param, a typed value types the slots/loads of it, a put
+    types its matching get). Each is monotonic, so the untyped count falls and
+    this terminates."""
     subs = lifter.subs
     prev = -1
     while prev != _untyped(subs):
         prev = _untyped(subs)
         _infer_types_from_uses(subs)
-        # Propagate typed params back to ?-args BEFORE the SSA-frame trace, so a
-        # value forwarded only into a typed param (e.g. into itxn_field Sender /
-        # Amount) is typed by that param rather than mis-guessed by the trace
-        # (which fills ?-params, so it then skips the now-typed one).
+        # Propagate typed params back to ?-args BEFORE the SSA-frame trace: a
+        # value forwarded only into a typed param should be typed by that param
+        # rather than mis-guessed by the trace.
         _infer_args_from_params(subs)
         _infer_params_from_callers(lifter, sub_pairs)
         _unify_params_from_call_args(subs)
@@ -956,16 +899,13 @@ def recover_types(lifter, sub_pairs) -> None:
 
 
 def _reconcile_return_arity(prog) -> None:
-    """A subroutine returns a FIXED number of values, but an early / fail return
-    path can leave the deepest return value off its (re-simulated) exit stack, so
-    the lift builds a SHORT ``SubroutineReturn`` there; ``_infer_returns`` then
-    zip-truncates the signature, yielding a callee whose declared arity is less
-    than the values its call sites consume (Puya: ``source = (uint64), target =
-    (uint64, uint64)``). Reconcile to the widest return site: widen the signature,
-    and front-pad each short site with a typed-zero for the missing (deepest)
-    positions so every site and the signature agree on arity. The padded slot is
-    a fail/early path the caller's result is not expected to read (the real value
-    was never computed there); the behavioural test is the gate on that."""
+    """Widen every ``SubroutineReturn`` site and the signature to one fixed arity.
+
+    An early / fail return path can leave the deepest value off its re-simulated
+    exit stack, so the lift builds a SHORT site and ``_infer_returns``
+    zip-truncates the signature below what call sites consume. Short sites are
+    FRONT-padded with a typed zero for the missing (deepest) positions; those
+    slots are fail paths whose result the caller is not expected to read."""
     for sub in prog.subroutines:
         sites = [b.terminator for b in sub.body
                  if isinstance(b.terminator, pre_ir.SubroutineReturn)]
@@ -974,13 +914,11 @@ def _reconcile_return_arity(prog) -> None:
         n = max([len(sub.returns)] + [len(t.result) for t in sites])
         if n == 0:
             continue
-        # Re-derive EVERY position from the authoritative widest (arity-complete,
-        # deepest-first) site, not just the appended tail: _infer_returns may have
-        # zip-truncated sub.returns down to a SHORT site whose positions are
-        # logically SHALLOWER than the widest site's, so trusting the existing
-        # prefix (append-only widening) leaves position 0 mis-typed (e.g. a bytes
-        # deepest return recorded as uint64). Keep an existing value only where the
-        # widest slot is still `?` (don't clobber a good caller-derived type).
+        # Re-derive EVERY position from the widest (arity-complete, deepest-first)
+        # site, not just the appended tail: _infer_returns may have truncated
+        # sub.returns to a SHORT site whose positions are logically SHALLOWER, so
+        # trusting the existing prefix leaves position 0 mis-typed. Keep an
+        # existing value only where the widest slot is still `?`.
         widest = max(sites, key=lambda t: len(t.result)).result
         old = list(sub.returns)
         types = []
@@ -1002,18 +940,13 @@ def _reconcile_return_arity(prog) -> None:
 
 
 def _fix_branch_conditions(prog) -> None:
-    """A ``ConditionalBranch`` condition MUST be uint64-backed -- Puya rejects a
-    bytes one outright (``Branch condition can only be uint64 backed value``), a
-    HARD error, unlike the arg-type mismatches on intrinsics which it only *logs*.
+    """Relabel a bytes-typed ``ConditionalBranch`` condition uint64 — Puya HARD-
+    rejects a bytes one, unlike the intrinsic arg-type mismatches it merely logs.
+
     A branch condition is uint64 at runtime by construction (``bnz``/``bz`` pop a
-    uint64), so a bytes-typed one is a recovery mislabel. Relabel it uint64 --
-    which is the SAFE direction: a uint64 value reaching a bytes op is tolerated,
-    only the reverse is fatal, so the condition's other uses stay valid. Its
-    *definition* must agree, and does whenever the producer is a uint64 op
-    (`+`/`-`/cmp), a schema-flexible read (state / txn field), or a copy/phi of
-    one -- which is every branch condition in practice (you cannot branch on a
-    genuine byte-string). Reactive: only the fatal sites are touched, so a
-    contract that already lifts is left exactly as-is."""
+    uint64), so a bytes label is a recovery mislabel, and uint64 is the SAFE
+    direction: a uint64 reaching a bytes op is tolerated, only the reverse is
+    fatal. Reactive — only the fatal sites are touched."""
     for b in pre_ir.blocks(prog):
         t = b.terminator
         if isinstance(t, pre_ir.ConditionalBranch) and isinstance(t.condition, pre_ir.Register):
@@ -1022,10 +955,9 @@ def _fix_branch_conditions(prog) -> None:
 
 
 def finalize_types(prog) -> None:
-    """Reconcile and re-align types on the assembled pre_ir.Program (post-fixpoint):
-    re-type placeholder-seeded mixed phi webs, widen varying-arity subroutine
-    returns to one fixed count, propagate the result across call-result registers
-    and copies, then force branch conditions uint64 (Puya hard-rejects bytes ones)."""
+    """Reconcile types on the assembled ``pre_ir.Program`` after the fixpoint:
+    mixed phi webs, varying-arity returns, call-result and copy propagation, then
+    forcing branch conditions uint64."""
     _reconcile_mixed_phis(prog)
     _reconcile_return_arity(prog)
     _realign_call_returns(prog)

@@ -1,17 +1,11 @@
-"""CFG package — re-exports the contents of :mod:`tealql.tealtools.cfg.cfg` so
-external imports (``from tealql.tealtools.cfg import CFG``) keep working
-unchanged after the file was moved inside a folder.
+"""CFG package — re-exports :mod:`tealql.tealtools.cfg.cfg` so
+``from tealql.tealtools.cfg import CFG`` keeps working.
 
-The per-program :class:`CFG` and :func:`dominance.iterative_dominators` are
-pure substrate (they import only ``ssa`` + ``_utils``). :class:`SuperCFG`
-and :mod:`super_auth` are cross-contract ANALYSES — they import
-:mod:`tealql.tealtools.xcontract` (top of the stack). They live in this folder for
-historical reasons, but they are re-exported LAZILY (PEP 562 ``__getattr__``)
-so that ``import tealql.tealtools.cfg`` / ``from tealql.tealtools.cfg import CFG`` does NOT
-drag the whole cross-contract analysis layer (xcontract → auth_domination,
-inner_txn_report) into the substrate. ``from tealql.tealtools.cfg import SuperCFG``
-still works — it just triggers the analysis import at that point, not at
-substrate load."""
+HAZARD: :class:`CFG` and :mod:`dominance` are pure substrate (``ssa`` +
+``_utils`` only), while :class:`SuperCFG` / :mod:`super_auth` are cross-contract
+ANALYSES importing :mod:`tealql.tealtools.xcontract` (top of the stack). Those are
+re-exported LAZILY (PEP 562 ``__getattr__``) so importing the substrate does not
+drag the analysis layer in; keep any new eager re-export substrate-only."""
 from .cfg import *  # noqa: F401,F403
 
 _SUPERCFG_EXPORTS = {"SuperCFG", "SuperBlock", "SuperEdge"}

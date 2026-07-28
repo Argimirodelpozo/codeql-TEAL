@@ -1,36 +1,6 @@
-"""Structural analysis (Sharir / Allen-Cocke) — lift the CFG into a
-**control tree** of typed regions so analyses become folds rather
-than worklists.
-
-Each region is one of:
-
-- :class:`BlockR` — leaf, a single basic block.
-- :class:`SequenceR` — ordered list of regions executed in sequence.
-- :class:`IfR` — head with a conditional skip (one branch falls
-  through to the join, the other passes through ``then_branch``).
-- :class:`IfElseR` — head with two arms joining at a common point.
-- :class:`SwitchR` — head with N≥3 arms joining at a common point.
-- :class:`LoopR` — natural loop with a body region (kind = ``"while"``,
-  ``"dowhile"``, or ``"loop"`` when the head-vs-tail distinction
-  isn't clean).
-- :class:`ImproperR` — irreducible region. Holds the raw sub-graph;
-  consumers should fall back to a worst-case bound.
-
-Pipeline (:func:`build_control_tree`):
-
-1. Wrap each ``BasicBlock`` in a :class:`BlockR`.
-2. Use :mod:`tealql.tealtools.loops` (SCC + sub-loop nesting) to identify
-   every loop, innermost first. For each loop, recursively reduce
-   its body sub-graph (back-edges excluded) into one region and
-   wrap as a :class:`LoopR`; collapse the loop's BBs in the parent
-   graph to that single node.
-3. With the graph now acyclic, apply pattern reductions
-   (sequence, if/else, switch) until a single root remains.
-4. Anything that won't reduce becomes an :class:`ImproperR`.
-
-Output: one :class:`Region` rooted at the program's entry — the
-whole program is a single typed tree. Cost analysis, path
-predicates, etc. can fold over it.
+"""Structural analysis (Sharir / Allen-Cocke): lift the CFG into a **control
+tree** of typed regions — loops collapsed innermost-first, then sequence /
+if / switch pattern reductions — so analyses fold instead of iterating.
 """
 from __future__ import annotations
 
@@ -42,9 +12,7 @@ import networkx as nx
 from .cfg import CFG
 from .loops import find_loops, Loop, _bb_sort_key
 from .ssa import BasicBlock, SSAProgram
-# The subroutine-partition policies live in tealql.tealtools.subroutines;
-# identify_subroutines is re-exported here (public API since the
-# control-tree era).
+# identify_subroutines is re-exported here — public API at this name.
 from .subroutines import _terminator_op, identify_subroutines  # noqa: F401
 
 
@@ -55,15 +23,13 @@ from .subroutines import _terminator_op, identify_subroutines  # noqa: F401
 
 @dataclass(eq=False)
 class Region:
-    """Base type for all control-tree nodes. Identity-based equality
-    so each region is its own dict/set key — multiple structurally-
-    identical regions in a tree are still distinct."""
+    """Base control-tree node; equality is identity, so structurally-identical
+    regions stay distinct dict/set keys."""
 
     kind: str = field(init=False, default="region")
 
     def children(self) -> list["Region"]:
-        """Direct child regions, in execution order where applicable.
-        Leaf regions return ``[]``."""
+        """Direct child regions in execution order (``[]`` for leaves)."""
         return []
 
     def basic_blocks(self) -> Iterator[BasicBlock]:
@@ -129,11 +95,9 @@ class SwitchR(Region):
 
 @dataclass(eq=False)
 class GuardR(Region):
-    """``cond → [exit_arm, continuation]`` where ``exit_arm`` is a
-    terminal region with no outgoing edges (e.g. a method body that
-    ends in ``retsub`` / ``return`` / ``err``). The continuation
-    becomes the only forward-flow successor; the exit arm executes
-    only on the branch-taken path and doesn't flow back."""
+    """``cond`` with one terminal ``exit_arm`` peeled off (no outgoing edges —
+    ``retsub`` / ``return`` / ``err``); it never flows back, so the
+    continuation is the only forward-flow successor."""
 
     cond: Region
     exit_arm: Region
@@ -155,7 +119,10 @@ class LoopR(Region):
 
 @dataclass(eq=False)
 class ImproperR(Region):
-    """Irreducible sub-graph — couldn't be reduced to a typed region."""
+    """Irreducible sub-graph — couldn't be reduced to a typed region.
+
+    HAZARD: nothing about its control flow is known. A fold that treats it as
+    straight-line UNDER-counts; consumers must fall back to a worst-case bound."""
 
     nodes: list[Region]
     edges: list[tuple[Region, Region]]
@@ -168,20 +135,10 @@ class ImproperR(Region):
 
 @dataclass(eq=False)
 class ProgramR(Region):
-    """Multi-program root — a TEAL source can hold several independent
-    programs (e.g., approval + clear-state .teal files). Each
-    program's CFG is its own connected component; they don't call
-    each other, so analyses should treat them independently.
-
-    ``programs`` lists each program's region in source-order by entry
-    file/line. For single-program sources the builder returns that
-    program's region directly rather than wrapping it here.
-
-    ``subroutines`` (when non-empty) maps each subroutine entry BB to
-    its lifted region. The main programs reach subroutines via
-    ``callsub`` ops; cost analysis uses :attr:`subroutine_summaries`
-    to charge each ``callsub`` for the callee's per-execution cost.
-    """
+    """Multi-program root: one region per independent program (a source can hold
+    approval + clear-state, which never call each other) in entry order, plus
+    each subroutine's region and its ``(cost, submits)`` summary keyed by entry
+    BB — what cost analysis charges at a ``callsub``."""
 
     programs: list[Region]
     subroutines: dict[BasicBlock, Region] = field(default_factory=dict)
@@ -195,23 +152,13 @@ class ProgramR(Region):
 
 
 def build_control_tree(prog: SSAProgram) -> Region:
-    """Lift ``prog``'s CFG into a control tree. The root region
-    represents the entire program.
+    """Lift ``prog``'s CFG into a control tree: subroutines reduce into their own
+    regions and each ``callsub → entry`` / ``retsub → caller`` edge is cut and
+    replaced by a synthetic ``callsub → continuation``, so the main flow stays
+    connected and each post-cut component is one program.
 
-    Subroutines (``callsub``-reachable BBs) are detected and reduced
-    into their own regions (keyed in ``subroutines``), then the main flow's
-    CFG has each ``callsub → entry`` and ``retsub → caller`` edge
-    cut and replaced with a synthetic ``callsub → continuation`` edge
-    so the main program's flow is connected without the per-call-site
-    fan-in/out at subroutine boundaries. Per-subroutine static
-    ``(cost, submits)`` summaries (computed by topo-sorting the call
-    graph) are stored on the returned :class:`ProgramR` for cost
-    analyses to charge at each ``callsub`` site.
-
-    Multi-program sources (e.g. approval + clear-state .teal files in one
-    source) likewise produce one program per weakly-connected component
-    of the post-cut graph; single-program sources without subroutines get
-    a bare region back."""
+    Returns a BARE region, not a :class:`ProgramR`, when the source has one
+    program and no subroutines."""
     cfg = CFG.of(prog)
 
     # ---- Interprocedural pre-pass: identify subroutines + cut edges. ----
@@ -220,23 +167,19 @@ def build_control_tree(prog: SSAProgram) -> Region:
     sub_entries = sub_info["entries"]                    # set of subroutine entry BBs
     sub_bodies = sub_info["bodies"]                       # entry → set of body BBs
 
-    # Compute interprocedural edge cuts ONCE — used for both loop
-    # detection (BB-level cut CFG) and the Region-level reduction graph.
-    # Cut ``callsub`` BB → callee-entry, and ``retsub`` BB → caller-continuation.
+    # Cut callsub BB → callee-entry and retsub BB → caller-continuation, once,
+    # for both the BB-level loop CFG and the Region-level reduction graph.
     cut_edges: set[tuple[BasicBlock, BasicBlock]] = set()
     for bb in prog.blocks.values():
         if _terminator_op(bb) in ("callsub", "retsub"):
             for s in bb.successors:
                 cut_edges.add((bb, s))
 
-    # Loop detection has to run on the *cut* CFG — otherwise recursive
-    # subs (and mutual-call pairs) create cross-sub cycles that get
-    # misclassified as loops and pull multiple subs' BBs into one
-    # LoopR. It must ALSO carry the synthetic ``callsub → continuation``
-    # edges the region graph gets below: without them a callsub block
-    # dead-ends, so a loop whose body contains a call has no cycle at all
-    # and is silently flattened into a SequenceR (its iteration cost then
-    # folds as a single pass — an under-count reported as exact).
+    # Loop detection runs on the CUT CFG (recursion / mutual calls would
+    # otherwise read as loops) but must ALSO carry the synthetic continuation
+    # edges: without them a callsub dead-ends, a loop whose body calls has no
+    # cycle at all, and it flattens to a SequenceR — its iteration cost folds
+    # as a single pass, an UNDER-count reported as exact.
     cut_cfg = nx.DiGraph()
     for bb in prog.blocks.values():
         cut_cfg.add_node(bb)
@@ -250,9 +193,7 @@ def build_control_tree(prog: SSAProgram) -> Region:
             cut_cfg.add_edge(callsub_bb, cont_bb)
     forest = find_loops(prog, graph=cut_cfg)
 
-    # Initial Region graph: one BlockR per BB. Same cuts apply, plus
-    # synthetic ``callsub → continuation`` edges so the main program
-    # flows past each call site.
+    # Region graph: one BlockR per BB, same cuts, same synthetic edges.
     bb_to_region: dict[BasicBlock, Region] = {
         bb: BlockR(bb=bb) for bb in cfg.blocks
     }
@@ -271,13 +212,10 @@ def build_control_tree(prog: SSAProgram) -> Region:
             continue
         g.add_edge(bb_to_region[callsub_bb], bb_to_region[cont_bb])
 
-    # Phase 1: collapse loops innermost-first. Each loop's body
-    # sub-graph (back-edges excluded) is recursively reduced and
-    # wrapped as a LoopR; the loop's BBs in the parent graph are
-    # replaced by that single node.
+    # Phase 1: collapse loops innermost-first — each body sub-graph (back-edges
+    # excluded) is reduced, wrapped as a LoopR, contracted to one node.
     for loop in forest.innermost_first():
-        # Stable BB ordering so the resulting body-subgraph node /
-        # edge insertion order is reproducible across runs.
+        # Stable BB order so subgraph insertion order is reproducible per run.
         ordered_nodes = sorted(loop.nodes, key=_bb_sort_key)
         body_regions = [
             bb_to_region[bb] for bb in ordered_nodes if bb in bb_to_region
@@ -297,18 +235,13 @@ def build_control_tree(prog: SSAProgram) -> Region:
         body_region = _reduce(body_g)
         loop_region = LoopR(body=body_region, loop=loop)
         _contract_nodes(g, body_regions, loop_region)
-        # Re-map BBs to the new region so any later (outer) loop's
-        # body-region list still resolves.
+        # Re-map BBs so a later (outer) loop's body-region list still resolves.
         for bb in ordered_nodes:
             if bb in bb_to_region:
                 bb_to_region[bb] = loop_region
 
-    # Phase 2: split into weakly-connected components and reduce each.
-    # After cutting callsub/retsub edges, each subroutine becomes its
-    # own component (rooted at its entry BB). Top-level program(s) are
-    # the components that include a CFG entry. We classify components,
-    # reduce each, and stash subroutine bodies under their entry BB
-    # for cost analysis to pull summaries from.
+    # Phase 2: reduce each weakly-connected component. Post-cut, a subroutine is
+    # its own component (rooted at its entry BB); the rest are main programs.
     components = list(nx.weakly_connected_components(g))
     main_programs: list[Region] = []
     subroutines: dict[BasicBlock, Region] = {}
@@ -335,11 +268,9 @@ def build_control_tree(prog: SSAProgram) -> Region:
         else:
             main_programs.append(comp_region)
 
-    # Topo-sort the call graph for subroutine-summary computation.
     summaries = _compute_subroutine_summaries(prog, sub_entries, sub_bodies)
 
-    # If there are no subroutines and exactly one main program, return
-    # the bare region (back-compat for simple programs).
+    # One program, no subroutines → hand back the bare region.
     if not subroutines and len(main_programs) == 1:
         return main_programs[0]
     return ProgramR(
@@ -354,16 +285,12 @@ def _compute_subroutine_summaries(
     entries: set[BasicBlock],
     bodies: dict[BasicBlock, set[BasicBlock]],
 ) -> dict[BasicBlock, tuple[int, int]]:
-    """Per-subroutine ``(cost, submits)`` summary, computed by
-    topo-sorting the call graph and folding bottom-up: each
-    subroutine's cost is the sum of its body BBs' op costs, with
-    each ``callsub`` op replaced by its callee's summary cost.
+    """Per-subroutine ``(cost, submits)``, folded bottom-up over the topo-sorted
+    call graph with each ``callsub`` charged its callee's summary.
 
-    Recursive call graphs degrade to a fixed-point iteration with
-    a bounded number of rounds; the result remains a sound upper
-    bound. Lazily imports ``opcode_cost`` from cost_analysis to
-    avoid a hard cycle at module load time."""
-    from .cost_analysis import opcode_cost
+    A recursive call graph falls back to a round-capped fixed point — still a
+    sound UPPER bound."""
+    from .cost_analysis import opcode_cost   # local: module-level would cycle
 
     # Build call graph (subroutine → set of called sub entries).
     call_graph: dict[BasicBlock, set[BasicBlock]] = {e: set() for e in entries}
@@ -410,8 +337,7 @@ def _compute_subroutine_summaries(
 
 
 def _summarize_body_with_calls(body, summaries, opcode_cost):
-    """Sum body BB op costs, charging each ``callsub`` for its
-    callee's static summary."""
+    """Sum body BB op costs, charging each ``callsub`` its callee's summary."""
     cost = 0
     submits = 0
     for bb in body:
@@ -433,10 +359,8 @@ def _summarize_body_with_calls(body, summaries, opcode_cost):
 
 
 def _reduce(g: nx.DiGraph) -> Region:
-    """Reduce an acyclic graph of regions to a single Region by
-    repeatedly applying pattern matchers. Returns an
-    :class:`ImproperR` wrapping whatever's left if no further
-    reductions apply."""
+    """Reduce an acyclic region graph to one Region by repeated pattern
+    matching; whatever won't reduce comes back as an :class:`ImproperR`."""
     while g.number_of_nodes() > 1:
         progressed = False
         for n in list(g.nodes):
@@ -466,8 +390,7 @@ def _reduce(g: nx.DiGraph) -> Region:
     # Couldn't reduce further — wrap as Improper.
     entries = [n for n in g.nodes if g.in_degree(n) == 0]
     if not entries:
-        # Every node has a predecessor — pick any (irreducible loop
-        # with no clear entry).
+        # Every node has a predecessor: irreducible loop, no clear entry.
         entries = [next(iter(g.nodes))]
     return ImproperR(
         nodes=list(g.nodes),
@@ -483,8 +406,8 @@ def _reduce(g: nx.DiGraph) -> Region:
 
 
 def _try_sequence(g: nx.DiGraph, n: Region) -> bool:
-    """Sequence: ``n → m`` is the only edge out of ``n``, and the
-    only edge into ``m``. Collapse to a ``SequenceR``."""
+    """Sequence: ``n → m`` is the only edge out of ``n`` and the only edge into
+    ``m``. Collapse to a ``SequenceR``."""
     if g.out_degree(n) != 1:
         return False
     m = next(iter(g.successors(n)))
@@ -493,10 +416,9 @@ def _try_sequence(g: nx.DiGraph, n: Region) -> bool:
     if g.in_degree(m) != 1:
         return False
     if g.has_edge(m, n):
-        # ``n → m → n`` is a CYCLE, not a sequence. Contracting it would
-        # drop the back edge inside the merged node and silently turn a
-        # loop into straight-line code (folded as a single iteration).
-        # Leave it for loop collapse / the Improper fallback.
+        # ``n → m → n`` is a CYCLE, not a sequence: contracting it hides the
+        # back edge and folds a loop as one iteration. Leave it for loop
+        # collapse / the Improper fallback.
         return False
     seq = _flatten_sequence([n, m])
     _replace(g, [n, m], seq)
@@ -504,9 +426,7 @@ def _try_sequence(g: nx.DiGraph, n: Region) -> bool:
 
 
 def _try_if_else(g: nx.DiGraph, n: Region) -> bool:
-    """IfElse: ``n`` has 2 successors ``a, b``; each has only ``n``
-    as predecessor and a single successor; both successors equal a
-    common join. Collapse to an ``IfElseR``."""
+    """IfElse: ``n``'s two successors are simple arms sharing one join."""
     if g.out_degree(n) != 2:
         return False
     a, b = list(g.successors(n))
@@ -526,11 +446,8 @@ def _try_if_else(g: nx.DiGraph, n: Region) -> bool:
 
 
 def _try_if_then(g: nx.DiGraph, n: Region) -> bool:
-    """IfThen: ``n`` has 2 successors ``a, b``; one of them
-    (say ``a``) has only ``n`` as predecessor and its single
-    successor is the *other* ``n``-successor ``b``. Collapse to
-    an ``IfR`` with ``a`` as the then-arm; ``b`` becomes the
-    join. Symmetric in which arm is the skip."""
+    """IfThen: one of ``n``'s two successors is a simple arm whose successor is
+    the other — that arm becomes the then-branch, the other the join."""
     if g.out_degree(n) != 2:
         return False
     a, b = list(g.successors(n))
@@ -549,15 +466,10 @@ def _try_if_then(g: nx.DiGraph, n: Region) -> bool:
 
 
 def _try_guard(g: nx.DiGraph, n: Region) -> bool:
-    """Guard: peel off one **terminal** successor of ``n`` (out-degree
-    0 in the residual graph, reached only from ``n``) into a
-    ``GuardR``. ``n``'s remaining successors are preserved on the
-    collapsed node.
-
-    Generalised to any out-degree ≥ 2 — peeling one arm per iteration
-    drives the residual towards an If/IfElse/Switch shape. Catches
-    ABI dispatch chains, ``assert`` + ``err`` bailouts, and N-way
-    branches where K of the arms early-exit."""
+    """Peel one terminal successor of ``n`` (out-degree 0, reached only from
+    ``n``) into a ``GuardR``, keeping ``n``'s other successors — repeated at any
+    out-degree ≥ 2, this drives dispatch chains and ``err`` bailouts towards an
+    If/IfElse/Switch shape."""
     if g.out_degree(n) < 2:
         return False
     for tail in list(g.successors(n)):
@@ -584,8 +496,7 @@ def _try_guard(g: nx.DiGraph, n: Region) -> bool:
 
 
 def _try_switch(g: nx.DiGraph, n: Region) -> bool:
-    """Switch: ``n`` has ≥3 successors, each a simple arm joining
-    at a single common point. Collapse to a ``SwitchR``."""
+    """Switch: ``n``'s ≥3 successors are all simple arms sharing one join."""
     if g.out_degree(n) < 3:
         return False
     arms = list(g.successors(n))
@@ -607,8 +518,7 @@ def _try_switch(g: nx.DiGraph, n: Region) -> bool:
 
 
 def _is_simple_arm(g: nx.DiGraph, head: Region, arm: Region) -> bool:
-    """``arm`` is reached only from ``head`` and has exactly one
-    successor — eligible as an If/IfElse/Switch arm."""
+    """``arm`` is reached only from ``head`` and has exactly one successor."""
     if g.in_degree(arm) != 1:
         return False
     if next(iter(g.predecessors(arm))) is not head:
@@ -638,12 +548,9 @@ def _replace(
     *,
     joins_to: Optional[Region] = None,
 ) -> None:
-    """Contract ``consumed`` (a head node + its companions) into ``new``.
-
-    ``new`` inherits the predecessors of ``consumed[0]`` (minus the consumed
-    set). Its successor is ``joins_to`` if given; otherwise ``new`` inherits
-    the successors of ``consumed[-1]`` (also minus the consumed set) -- the
-    "pair" case where the contraction has no explicit join target."""
+    """Contract ``consumed`` into ``new``, which inherits ``consumed[0]``'s
+    predecessors and — unless ``joins_to`` names the join — ``consumed[-1]``'s
+    successors, both minus the consumed set."""
     head, tail = consumed[0], consumed[-1]
     consumed_set = set(consumed)
     preds = [p for p in g.predecessors(head) if p not in consumed_set]
@@ -663,12 +570,9 @@ def _replace(
 def _contract_nodes(
     g: nx.DiGraph, nodes: list[Region], replacement: Region
 ) -> None:
-    """Replace ``nodes`` with a single ``replacement``. External
-    edges into any of ``nodes`` redirect to ``replacement``, and
-    external out-edges originate from ``replacement``. Intra-cluster
-    edges are dropped. Uses an ordered-dedup so edge insertion order
-    is deterministic (sets keyed on identity-hashed Region objects
-    would give run-to-run variance)."""
+    """Replace ``nodes`` with one ``replacement`` — external edges redirect to
+    it, intra-cluster edges drop — deduping in ORDER, since sets keyed on
+    identity-hashed Regions would vary the edge order run to run."""
     node_set = set(nodes)
     in_preds: list[Region] = []
     out_succs: list[Region] = []
@@ -700,8 +604,7 @@ def _contract_nodes(
 
 
 def pretty(region: Region, indent: int = 0) -> str:
-    """Indented textual dump of the control tree. Useful for tests
-    and debug."""
+    """Indented textual dump of the control tree."""
     pad = "  " * indent
     if isinstance(region, BlockR):
         ops = ",".join(a.op for a in region.bb.assignments)

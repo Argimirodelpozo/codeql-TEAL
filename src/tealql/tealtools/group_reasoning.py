@@ -1,37 +1,22 @@
 """Identify the group shape(s) a TEAL contract forces.
 
-A TEAL contract executes inside an atomic group of up to 16 txns; it
-can inspect siblings via ``gtxn[i].field`` / ``gtxns field`` and the
-group itself via ``Global.GroupSize`` / ``Txn.GroupIndex``. Any
-``assert`` or branch on those values *forces* the group to satisfy
-that constraint on every approving execution — the contract rejects
-otherwise.
+A contract runs inside an atomic group of up to 16 txns and inspects it via
+``gtxn[i].field`` / ``gtxns field`` / ``Global.GroupSize`` / ``Txn.GroupIndex``.
+Any ``assert`` or branch on those values FORCES the group to satisfy that
+constraint on every approving execution — the contract rejects otherwise. This
+module rebuilds those path predicates as semantic constraints
+(``Global.GroupSize == 2``, ``gtxn[0].TypeEnum == pay``, …).
 
-The module pulls out the predicates whose operands trace back to a group-related
-opcode and rebuilds them as semantic constraints (``Global.GroupSize == 2``,
-``gtxn[0].Receiver == Global.CurrentApplicationAddress``,
-``gtxn[0].TypeEnum == pay``, …). It captures ANY comparison on a group field —
-not just ``GroupSize`` but txn types, pinned params, and ranges alike.
+Three views, coarse to fine: :func:`analyze` (common shape),
+:func:`analyze_per_exit` (distinct admissible shapes, ABI-labelled),
+:func:`constraints_at` / :func:`per_block_constraints` (per-block substrate).
 
-Three views, coarse to fine:
-
-* :func:`analyze` — the *common* shape: predicates true on EVERY approving path
-  (the intersection, :meth:`PathPredicateAnalysis.approving_exit_summary`). A
-  contract admitting several shapes (``GroupSize==2`` on one arm, ``==3`` on
-  another) shows only what they share — often nothing.
-* :func:`analyze_per_exit` — the DISTINCT admissible shapes, one per approving
-  exit (deduped, and labelled with the ABI method the exit sits in). Recovers the
-  per-arm shapes the common summary drops.
-* :func:`constraints_at` / :func:`per_block_constraints` — the per-block
-  substrate: the group facts in force at any program point (from ``bb_preds``),
-  for a flow-sensitive consumer.
-
-Per-exit is a meet over the paths reaching one exit, so two shapes that merge
-*before* a single ``return`` still aren't split — that needs full per-path
-enumeration (in practice distinct shapes reach distinct exits).
-
-The substrate (``tealql.tealtools.ssa``) is not modified — this module only
-consumes ``SSAProgram`` and ``PathPredicateAnalysis``.
+HAZARD: :func:`analyze` INTERSECTS across approving exits, so a contract
+admitting several shapes (``GroupSize==2`` on one arm, ``==3`` on another)
+reports only what they share — often nothing. An empty result means "no COMMON
+constraint", never "unconstrained"; use :func:`analyze_per_exit` for the per-arm
+truth. Per-exit is itself a meet over the paths reaching one exit, so shapes
+that merge before a single ``return`` are still not split.
 """
 from __future__ import annotations
 
@@ -43,8 +28,7 @@ from .ssa import Const, SSAProgram, SSAVar, binary_operands, const_int as _const
 from .avm import U64_CMP_OPS, enum_field_name
 
 
-# Comparison ops in TEAL whose result is the boolean we typically
-# end up asserting / branching on.
+# Comparison ops whose result is the boolean we end up asserting / branching on.
 _CMP_OPS = U64_CMP_OPS
 
 
@@ -52,11 +36,9 @@ _CMP_OPS = U64_CMP_OPS
 class GroupRef:
     """A reference into the group context.
 
-    ``slot`` ∈ ``{"global", "this", "gtxn[N]"}`` — ``"global"`` for
-    ``Global.X``, ``"this"`` for ``Txn.X``, ``"gtxn[N]"`` for direct
-    ``gtxn N field``. ``gtxns`` (stack-popped index) is unmodelled
-    in v1 — its ref slot would be ``"gtxn[?]"`` carrying a runtime
-    operand.
+    ``slot`` ∈ ``{"global", "this", "gtxn[N]"}`` for ``Global.X`` / ``Txn.X`` /
+    direct ``gtxn N field``. Stack-indexed ``gtxns`` is not classified here —
+    see :func:`relative_slot`.
     """
 
     slot: str
@@ -71,13 +53,9 @@ class GroupRef:
 
 
 def classify(operand: object) -> Optional[GroupRef]:
-    """If ``operand`` is an SSAVar produced directly by a
-    group-related opcode (``gtxn``, ``txn``, ``global``), return the
-    matching :class:`GroupRef`. Otherwise ``None``.
-
-    Doesn't follow phis or arithmetic — a value joined from multiple
-    refs is conservatively unclassified, since "what slot is this"
-    has no single answer.
+    """The :class:`GroupRef` for an SSAVar produced DIRECTLY by ``gtxn`` /
+    ``txn`` / ``global``, else ``None`` — phis and arithmetic are not followed,
+    so a value joined from several refs stays conservatively unclassified.
     """
     if not isinstance(operand, SSAVar):
         return None
@@ -99,15 +77,10 @@ def classify(operand: object) -> Optional[GroupRef]:
 # ---------------------------------------------------------------------------
 # Relative-index group members + per-member array sizing
 #
-# A contract that reads a sibling at a *relative* position -- ``gtxns F`` where
-# the popped index is ``Txn.GroupIndex - 1`` (a preceding txn) or ``+ 1`` (a
-# following one) -- forces a member at that offset on every approving run. And
-# ``gtxnsa F i`` / ``txna F i`` / ``gtxna N F i`` force the addressed member to
-# carry at least enough ``F`` elements, or the read panics. Both facts are pure
-# static reads of the bytecode; :func:`classify` (v1) punts on the stack-index
-# ``gtxns`` and emits no array sizing. The two helpers below recover them, kept
-# ADDITIVE (separate from ``classify``/``analyze`` so existing snapshots are
-# untouched) and consumed by the verifier's harness group setup.
+# ``gtxns F`` whose popped index is ``Txn.GroupIndex ± k`` forces a member at
+# that offset on every approving run, and ``gtxnsa/txna/gtxna F i`` forces the
+# addressed member to carry enough ``F`` elements or the read panics.
+# :func:`classify` models neither; the helpers below recover them ADDITIVELY.
 # ---------------------------------------------------------------------------
 
 
@@ -118,16 +91,14 @@ def _is_group_index(operand: object) -> bool:
 
 
 def relative_slot(idx_operand: object) -> Optional[str]:
-    """The group slot a ``gtxns``/``gtxnsa`` stack index addresses, as a slot
-    string: ``"this"`` (``Txn.GroupIndex``), ``"this-k"``/``"this+k"`` (a
-    ``GroupIndex -/+ k`` sibling), or ``"gtxn[N]"`` (a constant index). ``None``
-    when the index isn't a statically-recognised group position.
+    """The group slot a ``gtxns``/``gtxnsa`` stack index addresses: ``"this"``,
+    ``"this-k"`` / ``"this+k"`` for a ``GroupIndex ∓ k`` sibling, or
+    ``"gtxn[N]"``; ``None`` if the index isn't a static group position.
 
-    Relies on the SSA convention (confirmed on the substrate): a binary op's
-    ``inputs`` are ``[top_of_stack, deeper]`` and the value is ``deeper OP top``
-    -- so ``txn GroupIndex; intc_1; -`` has ``inputs=[1, GroupIndex]`` and means
-    ``GroupIndex - 1``. Run ``propagate_scratch_values()`` first so a ``load N``
-    of a stored ``GroupIndex-1`` forwards to the arithmetic.
+    HAZARD: a binary op's ``inputs`` are TOP-FIRST — ``[top_of_stack, deeper]``
+    with value ``deeper OP top``, so ``txn GroupIndex; intc_1; -`` has
+    ``inputs=[1, GroupIndex]`` and means ``GroupIndex - 1``. Run
+    ``propagate_scratch_values()`` first so a stored ``GroupIndex-1`` forwards.
     """
     k = _const_int(idx_operand)
     if k is not None:
@@ -152,12 +123,10 @@ def relative_slot(idx_operand: object) -> Optional[str]:
     return None
 
 
-# gtxnsa/txna array field -> (Num-field, the +1 the encoder's panic bound needs).
-# ApplicationArgs/Assets are 0-based on their count (panic i >= NumX  => need
-# NumX >= i+1); Accounts/Applications include an implicit element 0 = Sender /
-# current app (panic i > NumX => need NumX >= i). Mirrors the encoder's
-# elem_panic (chc_encoder/ops.py) so the recovered minimum unblocks exactly the
-# reads the contract makes.
+# Array field -> (Num-field, bump). HAZARD: the bump is NOT uniform —
+# ApplicationArgs/Assets panic at `i >= NumX` (need NumX >= i+1), but
+# Accounts/Applications carry an implicit element 0 (Sender / current app) and
+# panic at `i > NumX` (need NumX >= i).
 _ARRAY_FIELD_NUM = {
     "ApplicationArgs": ("NumAppArgs", 1),
     "Assets": ("NumAssets", 1),
@@ -167,15 +136,13 @@ _ARRAY_FIELD_NUM = {
 
 
 def array_counts(prog: SSAProgram) -> dict[str, dict[str, int]]:
-    """The minimum array-element counts a contract's ``gtxnsa``/``gtxna``/``txna``
-    reads force on each group slot: ``{slot: {NumField: min_count}}``.
+    """Minimum array-element counts a contract's ``gtxnsa``/``gtxna``/``txna``
+    reads force per group slot: ``{slot: {NumField: min_count}}``.
 
-    A member addressed by ``F i`` must carry at least ``min_count`` ``F`` elements
-    or the read panics (so the accepting path is unreachable -- exactly the
-    completeTransfer vacuity: the harness pins siblings to ``NumAppArgs=0`` while
-    the core call is read at ``ApplicationArgs 1``). Slots are ``relative_slot``
-    strings (``"this"``, ``"this-1"``, ``"gtxn[0]"``, …). Run
-    ``propagate_scratch_values()`` on ``prog`` first for relative indices.
+    A member addressed by ``F i`` must carry at least ``min_count`` ``F``
+    elements or the read panics and the accepting path is unreachable. Slots are
+    :func:`relative_slot` strings; run ``propagate_scratch_values()`` on ``prog``
+    first for relative indices.
     """
     out: dict[str, dict[str, int]] = {}
     for a in prog:
@@ -213,11 +180,8 @@ def array_counts(prog: SSAProgram) -> dict[str, dict[str, int]]:
 
 @dataclass(frozen=True)
 class GroupConstraint:
-    """One semantic constraint a contract forces on the group.
-
-    ``ref`` is the constrained slot/field; ``op`` is one of ``==``,
-    ``!=``, ``<``, ``>``, ``<=``, ``>=``; ``rhs`` is a :class:`Const`
-    literal, another :class:`GroupRef`, or an unresolved operand
+    """One constraint a contract forces: ``ref op rhs``, where ``rhs`` is a
+    :class:`Const`, another :class:`GroupRef`, or an unresolved operand
     (rendered with a ``?`` prefix).
     """
 
@@ -242,7 +206,7 @@ def _render_rhs(rhs: object, field: Optional[str] = None) -> str:
         if cv is not None and isinstance(cv, Const):
             val = cv.value
     if val is not None:
-        if field is not None:                     # TypeEnum==1 -> `pay`, OnCompletion==5 -> ...
+        if field is not None:                     # render the enum: TypeEnum==1 -> `pay`
             try:
                 name = enum_field_name(field, int(val))
             except (ValueError, TypeError):
@@ -267,9 +231,9 @@ def _negate(op: str) -> str:
     }.get(op, op)
 
 
-#: :class:`BranchCondition` kind -> comparator, for predicates that constrain a
-#: group ref DIRECTLY (no intervening comparison op to recover the operator
-#: from) — switch / match targets and ordered compares that drive a branch.
+#: :class:`BranchCondition` kind -> comparator, for predicates constraining a
+#: group ref DIRECTLY — switch / match targets and ordered compares driving a
+#: branch, where there is no comparison op to recover the operator from.
 _KIND_TO_OP = {
     "eq": "==", "neq": "!=",
     "lt": "<", "le": "<=", "gt": ">", "ge": ">=",
@@ -277,20 +241,15 @@ _KIND_TO_OP = {
 
 
 def derive_constraint(pred: BranchCondition) -> Optional[GroupConstraint]:
-    """Translate a path predicate into a group-shape constraint.
+    """Translate a path predicate into a group-shape constraint, else ``None``.
 
-    Two cases:
+    Either ``pred.value`` IS a group ref (a direct branch/assert on it, rendered
+    against literal ``0``), or it is the result of a comparison whose operands
+    include one and the comparator is recovered from that op.
 
-    1. ``pred.value`` *is* a group ref (e.g. ``Txn.GroupIndex != 0``
-       from a direct ``bnz`` on the value). Renders as a comparison
-       to literal ``0``.
-    2. ``pred.value`` is the result of a comparison op whose inputs
-       include a group ref (the common ``assert(gtxn[0].X == ...)``
-       case). The comparator is recovered from the op; if
-       ``pred.kind == "zero"`` (i.e. the comparison was *false* on
-       every approving path) the comparator is negated.
-
-    Returns ``None`` if neither case applies.
+    HAZARD: ``pred.kind == "zero"`` means the comparison was FALSE on every
+    approving path, so the recovered comparator MUST be negated. Skipping the
+    negation records the opposite of what the contract enforces.
     """
     direct = classify(pred.value)
     if direct is not None:
@@ -299,29 +258,26 @@ def derive_constraint(pred: BranchCondition) -> Optional[GroupConstraint]:
             return GroupConstraint(direct, "!=", Const("int", "0"))
         if pred.kind == "zero":
             return GroupConstraint(direct, "==", Const("int", "0"))
-        # A group ref routed by switch / match / an ordered compare. This is
-        # the DOMINANT PuyaPy router idiom (``txn OnCompletion; switch …``),
-        # so dropping these lost the ``Txn.OnCompletion == N`` fact the
-        # program actually enforces — consumers like ``constraints_at`` saw
-        # fewer constraints than the contract really imposes.
+        # A group ref routed by switch / match / an ordered compare — the PuyaPy
+        # router idiom (``txn OnCompletion; switch …``).
         if pred.kind in _KIND_TO_OP and len(pred.args) >= 1:
             return GroupConstraint(direct, _KIND_TO_OP[pred.kind], pred.args[0])
         if pred.kind == "not_in_range" and len(pred.args) >= 2:
-            # value ∉ [lo .. hi-1] — the only faithful single-comparator
+            # value ∉ [lo .. hi-1]: the only faithful single-comparator
             # rendering is against the exclusive upper bound.
             return GroupConstraint(direct, ">=", pred.args[1])
-        # ``neq_all`` is a conjunction of != over N candidates; a single
-        # GroupConstraint cannot express it, so leave it out rather than
-        # render one arbitrary disjunct as if it were the whole fact.
+        # ``neq_all`` is a conjunction of != over N candidates that one
+        # GroupConstraint cannot express — emit nothing rather than one
+        # arbitrary disjunct posing as the whole fact.
         return None
     if not isinstance(pred.value, SSAVar):
         return None
     a = getattr(pred.value, "defined_by", None)
     if a is None or a.op not in _CMP_OPS or len(a.inputs) < 2:
         return None
-    # Operands are TOP-FIRST: the SOURCE-order comparison is ``inputs[1] OP
-    # inputs[0]``, so a non-commutative relation (``>=`` / ``<`` …) inverts if
-    # read positionally (see ``reference_ssa_inputs_top_first``).
+    # HAZARD: operands are TOP-FIRST — the SOURCE-order comparison is
+    # ``inputs[1] OP inputs[0]``, so a non-commutative relation (``>=`` / ``<``
+    # …) inverts if read positionally. Always go through ``binary_operands``.
     lhs, rhs = binary_operands(a)
     lhs_ref = classify(lhs)
     rhs_ref = classify(rhs)
@@ -336,14 +292,13 @@ def derive_constraint(pred: BranchCondition) -> Optional[GroupConstraint]:
         # Comparison was false on every approving path → negate.
         op = _negate(op)
     elif pred.kind != "nonzero":
-        return None  # eq-of-cmp-result etc. — uncommon, skip for v1.
+        return None  # eq-of-cmp-result etc. — not modelled.
     return GroupConstraint(ref=ref, op=op, rhs=other)  # type: ignore[arg-type]
 
 
 @dataclass
 class GroupShape:
-    """All group-shape constraints a program forces on every
-    approving exit, ready to render."""
+    """The group-shape constraints a program forces on every approving exit."""
 
     constraints: list[GroupConstraint]
 
@@ -379,20 +334,13 @@ def _constraint_sort_key(c: GroupConstraint):
 def analyze(
     prog: SSAProgram, pp: Optional[PathPredicateAnalysis] = None
 ) -> GroupShape:
-    """Top-level entry: compute the forced group shape for ``prog``.
-
-    Reuses an externally-built :class:`PathPredicateAnalysis` if
-    provided (cheap to share when the caller is also doing other
-    predicate-based analyses), or builds one from scratch.
-    """
+    """The group shape ``prog`` forces on EVERY approving path (their intersection)."""
     pp = pp or PathPredicateAnalysis(prog)
     return GroupShape(constraints=_constraints_from(pp.approving_exit_summary()))
 
 
 def _constraints_from(preds) -> list[GroupConstraint]:
-    """Distinct group constraints derivable from a predicate set (order-preserving
-    dedup). The shared primitive under both the common-shape summary and the
-    per-block / per-exit views."""
+    """Distinct group constraints derivable from a predicate set, dedup order-preserving."""
     out: list[GroupConstraint] = []
     seen: set[GroupConstraint] = set()
     for pred in preds:
@@ -404,19 +352,15 @@ def _constraints_from(preds) -> list[GroupConstraint]:
 
 
 def constraints_at(pp: PathPredicateAnalysis, bb) -> list[GroupConstraint]:
-    """The group constraints IN FORCE at a basic block — the per-block substrate.
-    Derived from ``bb_preds[bb]`` (the meet over every path reaching ``bb``), so it
-    answers "what group facts are already established here" at any program point,
-    not just at approving exits. This is the query layer a flow-sensitive consumer
-    uses (e.g. asking whether a ``GroupSize`` bound holds at a given access site)."""
+    """Group constraints IN FORCE at ``bb`` — the meet over every path reaching
+    it, so a flow-sensitive consumer can ask what holds at an arbitrary point."""
     return _constraints_from(pp.bb_preds.get(bb, frozenset()))
 
 
 def per_block_constraints(
     prog: SSAProgram, pp: Optional[PathPredicateAnalysis] = None
 ) -> dict:
-    """``{BasicBlock: [GroupConstraint, ...]}`` for every block that has any — the
-    full per-block substrate in one call (see :func:`constraints_at`)."""
+    """``{BasicBlock: [GroupConstraint, ...]}`` for every block that has any."""
     pp = pp or PathPredicateAnalysis(prog)
     out = {}
     for bb in prog.blocks.values():
@@ -428,12 +372,9 @@ def per_block_constraints(
 
 @dataclass
 class ExitShape:
-    """The group shape forced on the paths reaching one approving exit (or the set
-    of exits that force the IDENTICAL shape). Finer than :class:`GroupShape`, which
-    intersects across *all* approving exits and so shows only what's common: this
-    keeps the distinct admissible shapes apart. ``exits`` is ``(line, method)``
-    pairs — ``method`` is the ABI method the exit sits in when source ``method``
-    info is available, else ``None``."""
+    """The shape forced on the paths reaching one approving exit — or the set of
+    exits forcing the IDENTICAL shape. ``exits`` is ``(line, method)`` pairs,
+    ``method`` being ``None`` when no source ABI info is available."""
 
     shape: GroupShape
     exits: list          # list[tuple[int, Optional[str]]]
@@ -455,8 +396,7 @@ class ExitShape:
 
 @dataclass
 class PerExitShapes:
-    """All distinct per-exit group shapes a program admits (see
-    :func:`analyze_per_exit`)."""
+    """All distinct per-exit group shapes a program admits."""
 
     shapes: list         # list[ExitShape]
 
@@ -470,11 +410,12 @@ class PerExitShapes:
 
 
 def exit_method_lookup(prog):
-    """A ``bb -> ABI method name | None`` resolver over the source ``method "sig"``
-    info, cached per file. ``bb.file`` is a BASENAME, so it's resolved to a real
-    path through ``prog.source_path`` (a single file, or a directory searched by
-    basename). Fully defensive — no info / any failure ⇒ always ``None`` (the
-    OPTIONAL ABI-label enrichment)."""
+    """A ``bb -> ABI method name | None`` resolver over source ``method "sig"``
+    info, cached per file.
+
+    HAZARD: ``bb.file`` is a BASENAME and must be resolved back to a real path
+    through ``prog.source_path``. Fully defensive — any failure yields ``None``;
+    this is OPTIONAL labelling, never a fact analysis may depend on."""
     from pathlib import Path
     from .abi import method_line_ranges, method_at_line
 
@@ -513,19 +454,10 @@ def exit_method_lookup(prog):
 def analyze_per_exit(
     prog: SSAProgram, pp: Optional[PathPredicateAnalysis] = None
 ) -> PerExitShapes:
-    """The DISTINCT group shapes a contract admits — one per approving exit,
-    instead of only their intersection (:func:`analyze`).
-
-    Each approving ``return`` contributes the group constraints in force on the
-    paths that reach it; exits that force the identical shape are merged. A
-    contract whose arms demand different shapes (``GroupSize==2`` on one,
-    ``GroupSize==3`` on another) shows both here, where ``analyze`` shows nothing.
-    When the source carries ABI ``method "sig"`` info, each exit is labelled with
-    the method it belongs to — "this method forces this shape".
-
-    (Per-exit is a meet over the paths reaching one exit, so two shapes that merge
-    *before* a single return still can't be split — that needs full per-path
-    enumeration. In practice distinct shapes reach distinct exits.)"""
+    """The DISTINCT group shapes a contract admits — one per approving exit
+    (identical shapes merged, ABI-labelled), rather than :func:`analyze`'s
+    intersection. Still a meet over the paths reaching each exit, so shapes that
+    merge before a single ``return`` are not split."""
     pp = pp or PathPredicateAnalysis(prog)
     method_of = exit_method_lookup(prog)
     groups: dict = {}     # shape-key -> [GroupShape, exits]
@@ -546,9 +478,7 @@ def analyze_per_exit(
     ])
 
 
-# ---------------------------------------------------------------------------
-# Group size + layout report (presentation over GroupShape)
-# ---------------------------------------------------------------------------
+# --- Group size + layout report: presentation over GroupShape --------------
 
 
 def _gtxn_index(ref: GroupRef) -> Optional[int]:
@@ -563,20 +493,10 @@ def _gtxn_index(ref: GroupRef) -> Optional[int]:
 
 @dataclass
 class GroupLayout:
-    """A group-size + per-position *layout* view of the forced shape:
-    the same :class:`GroupConstraint`s :func:`analyze` produces,
-    reorganised by the group slot each one pins and rendered in the
-    style of :class:`tealql.tealtools.inner_txn_report.InnerTxnReport`.
-
-    Buckets:
-      - ``Global.GroupSize`` constraints → the group size line.
-      - ``Txn.GroupIndex`` constraints → this app's own position.
-      - ``gtxn[N].field`` constraints → grouped under position ``N``.
-        A constraint relating a position to a literal / global / this
-        (either operand) is filed under that position so the slot's
-        requirements read together.
-      - remaining ``Txn.field`` / ``Global.field`` → "this txn" /
-        "globals" sections.
+    """A size + per-position view of :func:`analyze`'s constraints, bucketed by
+    the slot each pins: ``Global.GroupSize`` → group size, ``Txn.GroupIndex`` →
+    this app's position, ``gtxn[N].field`` → position ``N`` (either operand, so
+    a slot's requirements read together), the rest → "this txn" / "globals".
     """
 
     file: str
@@ -596,8 +516,7 @@ class GroupLayout:
             if ref.slot == "this" and ref.field == "GroupIndex":
                 index.append(c)
                 continue
-            # Position bucket: prefer a gtxn slot on either side so the
-            # slot's requirements group together.
+            # Prefer a gtxn slot on either side so a slot's requirements group.
             lhs_i = _gtxn_index(ref)
             rhs_ref = classify(rhs)
             rhs_i = _gtxn_index(rhs_ref) if rhs_ref is not None else None
@@ -606,9 +525,8 @@ class GroupLayout:
                     (ref.field, c.op, _render_rhs(rhs, ref.field))
                 )
             elif rhs_i is not None:
-                # ref is on the rhs of this slot's constraint; flip so
-                # the slot field reads on the left. ``ref`` renders via
-                # its own GroupRef repr (e.g. ``Global.CurrentAppAddr``).
+                # The slot is on the RHS here, so the comparator must be
+                # flipped when the slot field is moved to the left.
                 positions.setdefault(rhs_i, []).append(
                     (rhs_ref.field, _flip(c.op), repr(ref))
                 )
@@ -674,9 +592,7 @@ class GroupLayout:
 def analyze_layout(
     prog: SSAProgram, pp: Optional[PathPredicateAnalysis] = None
 ) -> GroupLayout:
-    """Compute the forced group shape and present it as a size +
-    per-position :class:`GroupLayout`. Companion to :func:`analyze`
-    (which returns the flat constraint list)."""
+    """:func:`analyze`'s forced shape, presented as a :class:`GroupLayout`."""
     pp = pp or PathPredicateAnalysis(prog)
     shape = analyze(prog, pp)
     files = sorted({bb.file for bb in pp.approving_exits()})

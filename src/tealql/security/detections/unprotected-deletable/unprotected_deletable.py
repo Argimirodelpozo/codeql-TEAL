@@ -1,8 +1,6 @@
-"""sec-guide/unprotected-deletable: deletable AND no sender==creator guard.
-
-Approval exit reachable with
-``OnCompletion == DeleteApplication`` AND no dominating ``txn Sender ==
-global CreatorAddress`` check — anyone can delete the application.
+"""sec-guide/unprotected-deletable: an approval exit reachable with ``OnCompletion
+== DeleteApplication`` and no covering sender==creator check — anyone can delete
+the application.
 """
 from __future__ import annotations
 

@@ -1,28 +1,9 @@
-"""Resolved literal constants per SSAVar output, for the
-constant-pushing opcodes.
+"""Resolved literal constants per SSAVar output — one ``(file, line, out_idx,
+kind, value)`` row per constant a pushing opcode produces (ints as decimal
+strings, bytes as canonical ``0x<hex>``).
 
-Emits one ``(file, line, out_idx, kind, value)`` row per produced
-constant:
-
-  - ``int`` / ``pushint``     → out_idx=1, kind="int", value via
-    ``_resolve_int_immediate`` — decimal, ``0x`` / ``0o`` / ``0b``
-    literals (``int 0x10`` → 16), AND named constants (``int pay`` →
-    1, from ``NAMED_INT_CONSTANTS``). Only genuinely unresolvable text
-    yields no row.
-  - ``intc`` / ``intc_0..3``  → out_idx=1, kind="int", value from the
-    single ``intcblock`` at the given index.
-  - ``pushbytes``             → out_idx=1, kind="bytes", raw literal text.
-  - ``bytec`` / ``bytec_0..3``→ out_idx=1, kind="bytes", raw literal text
-    from the single ``bytecblock`` at the given index.
-  - ``pushints``              → out_idx=1..N, kind="int".
-  - ``pushbytess``            → out_idx=1..N, kind="bytes", raw literal text.
-
-Value forms: ints are decimal strings; bytes are the raw source token
-text (``0xdeadbeef``, ``"hello"``, ``b64 AAAA``) — NOT decoded bytes.
-
-``intc``/``bytec`` resolution assumes there's only one block; we
-implement the single-block case and rely on the differential parity
-test to flag any multi-block fixture that would need real dominance.
+A file with more than one ``intcblock`` / ``bytecblock`` resolves NOTHING
+rather than guessing which one dominates a given ``intc``.
 """
 from __future__ import annotations
 
@@ -47,13 +28,11 @@ def _imms(n) -> str:
 
 
 def _to_int(tok: str) -> Optional[int]:
-    """Parse an integer literal — decimal, or a ``0x`` / ``0o`` / ``0b`` prefixed
-    literal (all accepted by ``goal`` / puya, e.g. ``int 0x10``). No named
-    constants. Decimal is tried first so leading-zero decimals still parse (``int``
-    with base 0 would reject them)."""
+    """Parse an integer literal — decimal, or ``0x`` / ``0o`` / ``0b`` prefixed
+    (``int 0x10``); no named constants."""
     tok = tok.strip()
     try:
-        return int(tok)
+        return int(tok)                 # decimal first: base 0 rejects leading zeros
     except (ValueError, TypeError):
         pass
     try:
@@ -63,9 +42,8 @@ def _to_int(tok: str) -> Optional[int]:
 
 
 def _resolve_int_immediate(tok: str) -> Optional[int]:
-    """An ``int`` immediate: a decimal / ``0x`` / ``0o`` / ``0b`` literal OR a
-    named AVM constant (``DeleteApplication`` -> 5, ``pay`` -> 1). Template
-    variables still yield ``None`` (no statically-known value)."""
+    """An ``int`` immediate: a numeric literal OR a named AVM constant
+    (``DeleteApplication`` -> 5); a template variable has no static value -> ``None``."""
     v = _to_int(tok)
     if v is not None:
         return v
@@ -77,27 +55,17 @@ def _split_int_tokens(imms: str) -> list[str]:
 
 
 def _split_byte_literals(imms: str) -> list[str]:
-    """Split a ``bytecblock``/``pushbytess`` literal list into one raw-text
-    token per literal (``b64 <data>`` folded into one). Thin alias over the
-    canonical :func:`tealql.tealtools.ast.literals.tokenize_operands`."""
+    """Split a ``bytecblock``/``pushbytess`` literal list into one raw-text token
+    per literal (``b64 <data>`` folded into one)."""
     return tokenize_operands(imms, fold_byte_keywords=True)
 
 
 def _canonical_bytes(literal: str) -> "str | None":
     """A bytes literal as canonical ``0x<hex>``, or ``None`` if undecodable.
 
-    ONE representation for one value. The `byte` PSEUDO-op is rewritten to
-    `pushbytes 0x..` before parsing, so it always arrived canonical — but the
-    REAL opcodes (`pushbytes` / `bytecblock` / `bytec_N` / `pushbytess`) kept
-    their raw source text, so `byte "hi"` resolved to `0x6869` while
-    `pushbytes "hi"` resolved to `'"hi"'`. Same constant, two values that
-    compare unequal.
-
-    That is not cosmetic: `xcontract` matches state keys by comparing these
-    (`_const_bytes(inp) == key`), so a contract writing `pushbytes "cfg"` and
-    reading `byte "cfg"` failed to match and its AppID silently stayed
-    unresolved; and `_bytes_const_to_int` only accepts `0x`, so a quoted
-    constant read as an int returned None."""
+    ONE representation per value: consumers compare these for equality (xcontract
+    matches state keys, ``_bytes_const_to_int`` accepts only ``0x``), so raw source
+    text would make ``byte "cfg"`` and ``pushbytes "cfg"`` silently unequal."""
     try:
         raw, _kind = decode_byte_literal(literal.strip())
     except Exception:
@@ -106,24 +74,22 @@ def _canonical_bytes(literal: str) -> "str | None":
 
 
 def _resolvable_byte_literal(tok) -> bool:
-    """A const-block slot holding a deployment TEMPLATE has no value until the
-    app is deployed, so it must resolve to NOTHING. Emitting the raw text as a
-    bytes constant would be a fabricated value every downstream comparison then
-    trusts."""
+    """False for a const-block slot holding a deployment TEMPLATE.
+
+    HAZARD: a template has no value until deploy — emitting its raw text as a
+    bytes constant fabricates a value every downstream comparison then trusts."""
     return tok is not None and not is_template_variable(tok)
 
 
 def compute_const_values(g) -> list[tuple]:
-    """Return resolved-constant rows as ``(file, line, out_idx, kind,
-    value)`` tuples, computed from the loaded graph's AST nodes."""
+    """Resolved-constant rows ``(file, line, out_idx, kind, value)`` from the
+    loaded graph's AST nodes."""
     opcodes = [n for n in g.nodes if isinstance(n, Opcode)]
 
-    # Constant blocks are PER FILE: each program carries its own intcblock /
-    # bytecblock, and `intc_1` resolves against its OWN file's table. Pooling
-    # them across the whole graph (the documented directory target is approval
-    # + clear) meant two files each with a block resolved NOTHING in either,
-    # and one block plus two files resolved the second file's `intc` against
-    # the first file's table — a silently WRONG constant.
+    # HAZARD: constant blocks are PER FILE — `intc_1` resolves against its OWN
+    # file's table. Pooling across the graph (a directory target is approval +
+    # clear) resolves one file's `intc` against another's table: a silently
+    # WRONG constant.
     intc_by_file: dict[str, Optional[list]] = {}
     bytec_by_file: dict[str, Optional[list]] = {}
     _intcblocks: dict[str, list] = {}
@@ -192,9 +158,8 @@ def compute_const_values(g) -> list[tuple]:
                 rows.append((f, ln, 1, "bytes", _cb))
 
         elif op == "pushints":
-            # A multi-push emits N stack values; the LAST token is pushed last
-            # and so is the TOP output — and the stack convention is that
-            # ``output_index 1`` is the topmost value (see models.py). So number
+            # HAZARD: the LAST token is pushed last and so is the TOP output,
+            # and ``output_index 1`` is the TOPMOST value (models.py). Number
             # the tokens back-to-front: token i (0-based) → out_idx ``N - i``.
             toks = _split_int_tokens(_imms(n))
             for i, tok in enumerate(toks):

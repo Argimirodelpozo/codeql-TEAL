@@ -1,15 +1,9 @@
 """Detect non-unique external field values flowing into box keys.
 
-A box's address space is keyed by an arbitrary byte string. If a contract
-uses a *non-unique* external field (an ASA's ``AssetName`` is the canonical
-example — multiple ASAs may share a name) as the box key without mixing
-in something distinguishing, two different real-world entities collide
-on the same box. The mistake usually surfaces as silent data overwrites.
-
-Thin wrapper over :class:`tealql.tealtools.dataflow.TaintAnalysis` configured
-with this analysis's defaults: ``asset_params_get AssetName``'s value
-output as the source; ``box_create`` / ``box_put`` key positions as
-sinks; the standard hash / slice / concat-with-const flow rules.
+Multiple ASAs may share an ``AssetName``, so keying a box on one without mixing in
+something distinguishing collides two real-world entities on the same box — the
+mistake surfaces as silent data overwrites. A :class:`TaintAnalysis` configured
+with that value as source and the ``box_create``/``box_put`` key positions as sinks.
 """
 from __future__ import annotations
 
@@ -27,8 +21,7 @@ from tealql.tealtools.dataflow.engine import (
 from tealql.tealtools.ssa import Assignment, SSAProgram
 
 
-# Re-export the taint-framework names this detector is configured from,
-# so callers can pull them straight off this module.
+# Re-export the taint-framework names this detector is configured from.
 __all__ = [
     "Source", "Sink", "FlowRule", "Violation", "TaintedOperand",
     "ASSET_PARAMS_NAME_SOURCE",
@@ -48,10 +41,8 @@ def _is_asset_params_get(a: Assignment, field_name: str) -> bool:
     )
 
 
-# ``asset_params_get F``: consumes 1 (asset id), produces 2 (value, did_exist).
-# By the SSA model's top-first output convention, ``outputs[0]`` (output_index=1)
-# is the topmost — that's ``did_exist``. The actual field value sits at
-# ``outputs[1]`` (output_index=2).
+# HAZARD: outputs are TOP-FIRST. ``asset_params_get`` produces (value, did_exist)
+# with ``did_exist`` topmost, so the field VALUE is output_index=2, not 1.
 ASSET_PARAMS_NAME_SOURCE = Source(
     name="asset_params_get AssetName",
     matches=lambda a: _is_asset_params_get(a, "AssetName"),
@@ -59,12 +50,8 @@ ASSET_PARAMS_NAME_SOURCE = Source(
 )
 
 
-# Box ops are stack-bottom-keyed: the key sits *below* the other args
-# because it was pushed first. By top-first convention this means the
-# key has the largest input index.
-#
-# - ``box_create key length``  → top: length (1), key: 2.
-# - ``box_put key value``      → top: value (1), key: 2.
+# HAZARD: inputs are TOP-FIRST and the key was pushed FIRST, so it sits below the
+# other arg and takes the LARGEST input index — 2 for both ops here.
 BOX_CREATE_SINK = Sink(
     name="box_create",
     matches=lambda a: a.op == "box_create",
@@ -85,19 +72,11 @@ DEFAULT_SINKS: list[Sink] = [BOX_CREATE_SINK, BOX_PUT_SINK]
 
 
 class NonUniqueBoxKeyDetector(TaintAnalysis):
+    """:class:`TaintAnalysis` preconfigured for non-unique box keys; override
+    ``sources`` / ``sinks`` / ``rules`` for custom configs."""
+
     severity = "high"
-    """Configured :class:`TaintAnalysis` with this analysis's defaults.
-
-        det = NonUniqueBoxKeyDetector(prog)
-        for v in det.detect():
-            print(v.pretty())
-
-    Override ``sources`` / ``sinks`` / ``rules`` for custom configs.
-    """
-
-    # Boxes are application storage — ``box_create`` / ``box_put`` are
-    # app-only opcodes, so this detection never applies to a LogicSig.
-    applies_to = frozenset({"app"})
+    applies_to = frozenset({"app"})   # box_create / box_put are app-only opcodes
 
     def __init__(
         self,
@@ -116,7 +95,7 @@ class NonUniqueBoxKeyDetector(TaintAnalysis):
             rules=rules,
             default_rules=default_rules,
             file=file,
-            # A non-unique value laundered through app-global state before keying
-            # a box still collides — follow the state roundtrip.
+            # A non-unique value laundered through global state before keying a
+            # box still collides, so follow the state roundtrip.
             cross_state=True,
         )

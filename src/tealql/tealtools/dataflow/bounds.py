@@ -1,30 +1,16 @@
-"""Relational in-bounds analysis for byte-access ops — proving ``offset + width
-<= len(buffer)`` for ``extract`` / ``substring`` / ``getbyte`` / ``extract_uint*``
-/ ``setbyte`` (and the immediate forms).
+"""Decode each byte-access site into a ``(buffer, base, width)`` bound and ask
+:mod:`.relational` whether ``offset + width <= len(buffer)``.
 
-This is the relation ABI-decode safety turns on, and the one the *non-relational*
-domains cannot express alone: intervals bound the offset and the width separately,
-and ``byte_length_prop`` bounds the buffer separately — none relates them. The
-reasoning lives in :mod:`.relational` (a zone / difference-bound domain over
-symbolic ``Len(buf)`` atoms, offsets, widths and assert-derived facts); this module
-just decodes each access site into a ``(buffer, base, width)`` bound and asks it.
+Operand order is TOP-FIRST: for the stack-arg ops the array is pushed FIRST, so
+it is the LAST input (``inputs[-1]``), and the numeric args count down from
+``inputs[0]``.
 
-Three verdicts, each with the right soundness:
-  * ``in_bounds`` — SOUND. Proven ``offset + width <= Len(buffer)`` from constant
-    widths/offsets, ``len X`` equalities, and dominating asserts (e.g.
-    ``extract3 X 0 (len X)`` whole-buffer reads, or ``assert(len X >= 32)`` then
-    fixed-offset field reads).
-  * ``proven_oob`` — SOUND, and only where the buffer length is UNAMBIGUOUS (a
-    bytes literal, seeded as an exact ``Len == n``); a true over-read the AVM
-    panics on. Never claimed off a possibly-under-counting ``byte_length``.
-  * ``oob_risk`` — a HEURISTIC signal (a dynamic index we can't prove in-bounds),
-    NOT a precise detector: most such sites are Puya's own bounds-checked accesses
-    the relational facts still don't pin down.
-
-Operand order is TOP-FIRST (``reference_ssa_inputs_top_first``): for the
-stack-arg ops the array is pushed FIRST, so it is the LAST input
-(``inputs[-1]``), and the numeric args count down from ``inputs[0]``. Read-only.
-"""
+HAZARD: the three verdicts do NOT carry the same weight. ``in_bounds`` is a
+proof. ``proven_oob`` is a proof too, but only against an UNAMBIGUOUS length (a
+bytes literal) — never claim it off a possibly-under-counting ``byte_length``.
+``oob_risk`` is a heuristic "couldn't prove it", not a detection; most such sites
+are ordinary bounds-checked accesses. Reporting one as another is a false
+verdict in either direction."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -51,16 +37,12 @@ class BoundsSite:
 
     @property
     def oob_risk(self) -> bool:
-        """A crafted-input out-of-bounds risk: a dynamic index we cannot prove
-        in-bounds (the AVM panics on OOB — DoS, or missing validation). A
-        speculative in-bounds (a well-formed-ABI assumption) removes it from the
-        residual risk set."""
+        """A dynamic index we cannot prove in-bounds; a speculative proof clears it."""
         return self.dynamic and not self.in_bounds and not self.in_bounds_speculative
 
 
 def _fold(base_operand, extra_c: int):
-    """Normalise ``value(base_operand) + extra_c`` — collapse a constant base
-    into the offset so the query has at most one symbolic term."""
+    """Collapse a constant base into the offset, leaving at most one symbolic term."""
     k = const_int(base_operand)
     if k is not None:
         return None, extra_c + k
@@ -68,10 +50,9 @@ def _fold(base_operand, extra_c: int):
 
 
 def _access(a):
-    """``(buffer, base_operand | None, extra_c | None, dynamic)`` for a
-    byte-access assignment, or ``None``. The access reads up to byte
-    ``value(base) + extra_c`` (``base is None`` ⇒ the constant ``extra_c``;
-    ``extra_c is None`` ⇒ unbounded)."""
+    """``(buffer, base | None, extra_c | None, dynamic)`` for a byte access, else
+    ``None``. Reads up to byte ``value(base) + extra_c``; ``base is None`` means
+    the constant ``extra_c`` alone, ``extra_c is None`` means unbounded."""
     op, ins, imm = a.op, a.inputs, (a.immediates or "").split()
 
     def _imm(i):
@@ -125,16 +106,13 @@ def _seed_all(rel, sites) -> None:
 
 
 def _abi_arg_lengths(prog, method_table: "dict | None" = None) -> dict:
-    """``{ssa_key: (byte_length, confident)}`` for ``txna ApplicationArgs N``
-    buffers whose ABI method — pinned by the router selector holding at the read's
-    block — DECLARES a fixed-size arg. An OPTIONAL high-level enrichment: ``{}``
-    when neither an ARC-56 spec nor source ``method "sig"`` info is available (raw
-    disassembled bytecode), so bounds degrades cleanly to the recovery-only
-    speculative tier. The declared arg length is the WELL-FORMED-ABI assumption
-    (the AVM router checks only the selector, not arg lengths), hence speculative —
-    but it types the SOURCE ApplicationArgs directly, where the encoded-type
-    recovery could not. ``method_table`` (from a provided ARC-56 spec) overrides
-    the source-text table when given — the authoritative, struct-resolved types."""
+    """``{ssa_key: (byte_length, confident)}`` for ``txna ApplicationArgs N`` reads
+    whose selector-pinned ABI method declares a fixed-size arg.
+
+    HAZARD: a DECLARED length is not a checked one — the AVM router matches the
+    selector only, so an attacker can send a short arg. These lengths are the
+    well-formed-ABI ASSUMPTION and belong to the speculative tier alone. Returns
+    ``{}`` (never raises) when no spec or source signature info exists."""
     try:
         return _abi_arg_lengths_impl(prog, method_table)
     except Exception:                          # an optional layer must never break bounds
@@ -183,7 +161,7 @@ def _abi_arg_lengths_impl(prog, method_table: "dict | None" = None) -> dict:
             n = int(toks[1])
         except ValueError:
             continue
-        if n < 1:                              # index 0 is the selector, not an arg
+        if n < 1:                              # index 0 is the selector
             continue
         method = _method_at(a.basic_block)
         if method is None:
@@ -198,22 +176,12 @@ def _abi_arg_lengths_impl(prog, method_table: "dict | None" = None) -> dict:
 
 def check_bounds(prog: SSAProgram, *, run_passes: bool = True,
                  speculative: bool = False, arc56=None) -> list:
-    """Every byte-access site with its in-bounds verdict. Runs the analysis
-    pipeline first (idempotent) so ranges, byte-lengths and ``len`` equalities
-    are populated, then asks the relational domain at each site.
+    """Every byte-access site with its in-bounds verdict.
 
-    ``speculative`` opt-in: buffers whose length isn't soundly known are given a
-    length from the ARC-4 encoded-type recovery (a fixed-size type ⇒ a lower
-    bound) — an ASSUMPTION about well-formed ABI input, reported as the distinct
-    ``in_bounds_speculative`` verdict (never merged into the sound ``in_bounds``,
-    never affecting ``proven_oob``). Needs the lift (puya); degrades to sound-only
-    if the contract doesn't lower.
-
-    ``arc56`` (an :class:`tealql.tealtools.arc56.Arc56Spec`, or a path to one) is an
-    OPTIONAL authoritative source of ABI arg types for the speculative tier — its
-    struct-resolved declared arg lengths type the source ApplicationArgs directly,
-    superseding the source-text ``method "sig"`` table. Ignored unless
-    ``speculative``; degrades cleanly to the source table when absent/unparseable."""
+    HAZARD: ``speculative`` assumes well-formed ARC-4 input, giving unproven
+    buffers a length from type recovery. It reports through the separate
+    ``in_bounds_speculative`` field and must never be merged into the sound
+    ``in_bounds`` or allowed to affect ``proven_oob``."""
     if run_passes:
         run_all_passes(prog)
 
@@ -221,16 +189,11 @@ def check_bounds(prog: SSAProgram, *, run_passes: bool = True,
     rel = LengthRelations(prog)
     _seed_all(rel, sites)
 
-    # Speculative pass: a SEPARATE relational store seeded with the sound facts
-    # PLUS recovered fixed-size lengths (lower bounds only). Queried for in-bounds
-    # only, on sites the sound pass left unproven.
+    # A SEPARATE relational store, so speculative lengths can never leak into the
+    # sound verdicts. Both speculative sources supply LOWER bounds only.
     rel_spec = None
     if speculative:
         from ..lift import to_puya_ir
-        # Two speculative length sources, both LOWER bounds (never taint proven_oob):
-        # the encoded-type recovery, and — additively, when the source carries it —
-        # declared ABI arg lengths from `method "sig"` info (types the source
-        # ApplicationArgs directly; takes precedence as the DECLARED contract).
         mtable = None
         if arc56 is not None:
             from ..arc56 import Arc56Spec, load_optional
@@ -253,11 +216,10 @@ def check_bounds(prog: SSAProgram, *, run_passes: bool = True,
     out: list = []
     for a, (buf, base, extra_c, dynamic) in sites:
         spec = spec_conf = False
-        # ``substring A B`` panics unconditionally when start > end (A > B),
-        # regardless of buffer length — a static, index-independent over-read.
-        # Caught here BEFORE the relational query, which only checks B <= len
-        # and would otherwise wrongly report in-bounds for e.g. ``substring 8 4``
-        # on a >=4-byte buffer.
+        # ``substring A B`` panics unconditionally when A > B, whatever the
+        # buffer length. Must be caught BEFORE the relational query, which only
+        # checks B <= len and would call ``substring 8 4`` in-bounds on a
+        # 4-byte buffer.
         if a.op == "substring":
             toks = (a.immediates or "").split()
             A = int(toks[0]) if len(toks) == 2 and toks[0].lstrip("-").isdigit() else None
@@ -272,12 +234,10 @@ def check_bounds(prog: SSAProgram, *, run_passes: bool = True,
         else:
             in_bounds, proven_oob = rel.verdict(
                 buf, base, extra_c, a.basic_block, a.location.line)
-            # Only an UNCONDITIONAL static over-read is a sound proven-OOB. A
-            # dynamic-index over-read (e.g. reading element `i` of an empty
-            # array) is mathematically OOB for every i>=0 yet is typically a
-            # LOOP BODY guarded by `i < len` — unreachable when empty. Without
-            # reachability we can't tell, so we keep only the index-independent
-            # (constant offset+width) case as proven; the rest stays oob_risk.
+            # HAZARD: only an index-INDEPENDENT over-read is a sound proven-OOB.
+            # Reading element `i` of an empty array is OOB for every i>=0 yet is
+            # typically a loop body guarded by `i < len`, hence never executed;
+            # without reachability we cannot tell, so dynamic sites stay oob_risk.
             proven_oob = proven_oob and not dynamic
             if in_bounds:
                 reason = "in-bounds (offset+width <= len)"

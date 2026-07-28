@@ -1,26 +1,10 @@
-"""Lift a :class:`~tealql.tealtools.ssa.SSAProgram` into the Puya-shaped IR
-(``lift(prog) -> pre_ir.Program``) — the decompiler direction: stack-machine TEAL
-SSA (frame slots, scratch, shuffles) becomes value-based, typed, subroutine IR.
+"""Lift an :class:`~tealql.tealtools.ssa.SSAProgram` into the Puya-shaped IR: TEAL's
+stack machine (frame slots, scratch, shuffles) becomes value-based, typed IR,
+partitioned into ``main`` plus one subroutine per ``callsub`` target.
 
-Two structural rewrites (both contained in the lifted IR):
-
-- **Subroutine partitioning** (via :func:`tealql.tealtools.structure.analyze_structure`):
-  routing/handler BBs become ``main``; each ``callsub``-reachable routine becomes
-  a ``pre_ir.Subroutine``; ``callsub``/``retsub`` -> Invoke / Return.
-- **Frame modeling** de-noises PySSA's ``_try_expand_frame_op``, which models
-  ``frame_dig``/``frame_bury`` as ~1000-wide stack ops over the ``[1..STACK_MAX]``
-  unroll. Here ``frame_dig -k`` reads param ``nargs-k`` and other slots read/write
-  a local (single values), the fat frame ops drop, and the now-dead stack-model
-  phis are pruned by liveness. Heuristic, but removes essentially all the noise.
-
-.. warning:: The lift is NOT free of substrate change: before lowering,
-   :func:`_prune_dead_assert_edges` MUTATES the input :class:`SSAProgram` (it
-   removes always-failing blocks' dead CFG edges and rebuilds the affected join
-   phis). Callers that share the SSAProgram with SSA-level analyses should lift
-   a FRESH program built from the same source, as ``tealql.security.common.ir_lifter``
-   does.
-
-Constants and trivial single-pred phis are inlined; types come from :mod:`tealql.tealtools.avm`.
+HAZARD: analysis passes do NOT compose with the lift — running ``run_all_passes``
+before :func:`lift` yields INVALID IR. Only annotations ride up; mutations break
+the builder.
 """
 from __future__ import annotations
 
@@ -55,12 +39,8 @@ _FRAME_OPS = frozenset({"frame_dig", "frame_bury"})
 
 
 def _infer_arities(struct, callsite) -> dict:
-    """``Subroutine -> (nargs, nret)`` for every routine. Proto subs read it off
-    their ``proto``; legacy subs pass args / return on the stack, so infer it from
-    a cross-procedural stack-depth fixpoint: propagate depth over each sub's
-    internal CFG (a ``callsub`` flows to its continuation with the callee's current
-    arity), where the deepest point below entry is ``nargs`` and a ``retsub``'s
-    depth above that floor is ``nret``."""
+    """``Subroutine -> (nargs, nret)``: read off ``proto``, or — for legacy subs that
+    pass args / returns on the stack — inferred by a cross-procedural depth fixpoint."""
     by_name = {s.name: s for s in struct.subroutines}
     proto = {s: _proto_io(s.entry_bb) if any(a.op == "proto" for a in s.entry_bb.assignments)
              else None for s in struct.subroutines}
@@ -109,11 +89,8 @@ def _infer_arities(struct, callsite) -> dict:
                     if su not in depth:
                         depth[su] = d_out
                         order.append(su)
-            # A legacy (non-proto) sub's return arity is the stack depth left at
-            # `retsub`. Take the MAX across ALL retsub sites, not just the first
-            # reached: well-formed subs leave the same depth at every retsub (max
-            # == first, no change), but a sub whose paths diverge would, taking
-            # only the first, silently truncate a deeper path's return values.
+            # MAX over ALL retsub sites, not the first reached: a sub whose paths
+            # diverge would otherwise silently truncate a deeper path's returns.
             ret_d = max(ret_ds) if ret_ds else None
             na, nr = -floor, (ret_d - floor if ret_d is not None else 0)
             if arity[s] != (na, nr):
@@ -125,9 +102,9 @@ def _infer_arities(struct, callsite) -> dict:
 
 
 def _const(cv: Const):
-    # SSA integer consts carry kind "int" (not "uint64"); without this they all
-    # fell through to BytesConstant(decimal-string) -- rendered verbatim so it
-    # looked right, but semantically a uint64 stored as bytes (Puya wants `Nu`).
+    # SSA integer consts carry kind "int", not "uint64"; without this they fall
+    # through to BytesConstant(decimal-string) -- renders right, but is a uint64
+    # stored as bytes.
     if cv.kind == "int":
         try:
             return pre_ir.UInt64Constant(int(cv.value))
@@ -140,9 +117,8 @@ _UINT64_MAX = (1 << 64) - 1
 
 
 def _range_note(local_id: str, rng) -> str | None:
-    """A compact ``// `` annotation for an :class:`IntRange`, or ``None`` when
-    the range is the full uint64 domain (uninformative). The uint64 ceiling is
-    rendered as an open ``>=`` floor rather than the 20-digit max."""
+    """A compact ``// `` annotation for an :class:`IntRange`, or ``None`` for the
+    (uninformative) full uint64 domain."""
     lo, hi = rng.lo, rng.hi
     if lo <= 0 and hi >= _UINT64_MAX:
         return None
@@ -156,8 +132,8 @@ def _range_note(local_id: str, rng) -> str | None:
 
 
 def _len_note(local_id: str, t) -> str | None:
-    """``len(x) = 8`` / ``len(x) <= 20`` / ``2 <= len(x) <= 4096`` from a bytes
-    type's exact ``byte_length`` or its ``byte_length_range``."""
+    """``len(x) = 8`` / ``2 <= len(x) <= 4096`` from a bytes type's ``byte_length``
+    or ``byte_length_range``."""
     bl = getattr(t, "byte_length", None)
     if bl is not None:
         return f"len({local_id}) = {bl}"
@@ -172,9 +148,8 @@ def _len_note(local_id: str, t) -> str | None:
 
 
 def _val_note(local_id: str, t, cap: int = 40) -> str | None:
-    """``x = N`` / ``lo <= x <= hi`` from a bytes type's bigint
-    ``int_value_range`` (bytemath). Multi-hundred-digit bounds collapse to
-    ``<N-bit>`` so the line stays readable."""
+    """``x = N`` / ``lo <= x <= hi`` from a bytes type's bigint ``int_value_range``
+    (bytemath), with multi-hundred-digit bounds collapsed to ``<N-bit>``."""
     r = getattr(t, "int_value_range", None)
     if r is None:
         return None
@@ -189,37 +164,25 @@ def _val_note(local_id: str, t, cap: int = 40) -> str | None:
 
 
 def lift(prog: SSAProgram) -> pre_ir.Program:
-    """Lift ``prog`` into the Puya-shaped IR model (see module docstring).
+    """Lift ``prog`` into the Puya-shaped IR model.
 
-    Warning: MUTATES ``prog`` -- :func:`_prune_dead_assert_edges` drops dead
-    CFG edges and rebuilds the affected join phis on the input SSAProgram.
-    Callers sharing ``prog`` with SSA-level analyses should lift a fresh
-    program built from the same source (as ``tealql.security.common.ir_lifter``
-    does)."""
+    HAZARD: MUTATES ``prog`` — :func:`_prune_dead_assert_edges` drops dead CFG
+    edges and rebuilds join phis on the input SSAProgram. A caller sharing
+    ``prog`` with SSA-level analyses must lift a FRESH program built from the
+    same source (as ``tealql.security.common.ir_lifter`` does)."""
     return _Lifter(prog).build()
 
 
 def _prune_dead_assert_edges(prog: SSAProgram) -> None:
-    """Drop the dead fall-through edges of always-failing ``assert`` blocks before
-    block-args lowering.
+    """Drop the dead fall-through edges of always-failing ``assert 0`` blocks and
+    rebuild the affected join phis from the surviving predecessors.
 
-    A straight-line block that asserts a compile-time ZERO (``int 0; assert`` --
-    the usual ``bz fail; … ; fail: assert 0`` reject idiom) ALWAYS aborts, so
-    every edge OUT of it is dead: it never reaches a successor at runtime. The AVM
-    tolerates that (runtime-dead) edge, but it still makes the always-failing
-    block a STRUCTURAL predecessor of whatever physically follows it. At a JOIN
-    that pollutes the entry phi -- e.g. with a value of a DIFFERENT AVM type than
-    the live predecessors carry -- which the typed lift cannot reconcile (it drops
-    the phi, losing the live survivor, and emits an operand-less intrinsic the MIR
-    backend rejects; see project_lift_assert_false_survivor).
-
-    Remove the dead edge into any MULTI-predecessor join and rebuild that join's
-    phis from the SURVIVING predecessors' exit stacks, so the join is the clean
-    merge it actually is at runtime. The always-failing block -- now with no (or
-    fewer) successors -- lifts to a ``ProgramExit``/``Fail`` it can never reach. A
-    single-predecessor successor is skipped: it has no phi to pollute, and it is
-    the block's only edge, so dropping it would orphan still-live code rather than
-    de-pollute a join."""
+    HAZARD: the edge is runtime-dead but STRUCTURAL, so the failing block stays a
+    phi predecessor at a join, where it can contribute a value of a different AVM
+    type than the live preds — the typed lift then drops the phi, loses the live
+    survivor, and emits an operand-less intrinsic the MIR backend rejects. Prune
+    only MULTI-predecessor successors: a single-pred successor has no phi to
+    pollute, and dropping its only edge would orphan still-live code."""
     from ..ssa import const_int
 
     dead = [b for b in prog.blocks.values()
@@ -232,7 +195,7 @@ def _prune_dead_assert_edges(prog: SSAProgram) -> None:
             b.successors.remove(s)
             if b in s.predecessors:
                 s.predecessors.remove(b)
-            for phi in s.phis:                 # rebuild from surviving preds
+            for phi in s.phis:
                 if phi.kind != "DirectPhi":
                     continue
                 k = phi.stack_index
@@ -243,20 +206,14 @@ def _prune_dead_assert_edges(prog: SSAProgram) -> None:
 
 
 class _Lifter:
-    """Stateful builder behind :func:`lift` (one instance per program). ``build``
-    drives the pipeline; the methods share working state -- register maps, the
-    block-id table, frame / local / shuffle routing -- as instance attributes."""
+    """Stateful builder behind :func:`lift` — one instance per program."""
 
     def __init__(self, prog: SSAProgram) -> None:
         self.prog = prog
 
     def build(self) -> pre_ir.Program:
-        """Lift to the pre-IR. Wraps :meth:`_build_impl` so any lift failure —
-        a reconstruction limit the ~0.1% of non-lifting mainnet contracts hit,
-        or a bug — surfaces as a typed :class:`tealql.tealtools.errors.LiftError`
-        (stage ``"build"``) with the original exception chained, instead of a
-        bare ``TypeError`` / ``KeyError``. A ``LiftError`` already raised deeper
-        is passed through unchanged."""
+        """Lift to the pre-IR, surfacing any failure as a typed
+        :class:`tealql.tealtools.errors.LiftError` (stage ``"build"``)."""
         from ..errors import LiftError
         try:
             return self._build_impl()
@@ -274,35 +231,25 @@ class _Lifter:
         self.callsite = {cs.callsub_bb: cs for cs in struct.call_sites}
         self.cont_site = {cs.continuation_bb: cs for cs in struct.call_sites
                           if cs.continuation_bb is not None}
-        # Subroutine (nargs, nret): proto subs declare it; legacy non-proto subs pass
-        # args / return on the stack, so it is inferred (see `_infer_arities`).
         _arity = _infer_arities(struct, self.callsite)
         self._io_by_entry = {s.entry_bb: a for s, a in _arity.items()}
-        # Every legacy non-proto sub needs its value-stack re-simulated with correct
-        # callsub arities (see `_resim`): PySSA threads the whole-program stack
-        # through them (proto subs escape via frame ops + dead-phi pruning), so it
-        # caps at STACK_MAX and corrupts their args / survivors / returns. `resim_*`
-        # carry that re-simulation into `_build_block`, replacing the fat SSA wiring.
         self._proto_entries = {s.entry_bb for s in struct.subroutines
                                if any(a.op == "proto" for a in s.entry_bb.assignments)}
-        # Re-simulate EVERY sub's value stack. A proto sub that calls another can
-        # leave a stack survivor that PySSA's fat [1..STACK_MAX] band conflates and
-        # loses across the interprocedural return edge (it surfaces as a
-        # used-but-never-defined operand that Puya's destructure_ssa rejects);
-        # re-simulation reconstructs the clean stack so the survivor is real. It
-        # has to be all-or-nothing -- re-simulating only some subs mismatches the
-        # shared call interface and corrupts others. The added cost is negligible
-        # (folks-v3 lift+lower ~3s either way; SSA *construction* dominates, ~17-40s).
-        # Frame ops are handled on the clean stack inside `_resim` (frame_dig pushes
-        # its param/local, frame_bury pops).
+        # `resim_*`: every group's value stack re-simulated with correct callsub
+        # arities (`_resim`), replacing the fat SSA wiring in `_build_block`. PySSA
+        # threads the whole-program stack through subs, caps it at STACK_MAX and
+        # loses cross-call survivors -- which surface as used-but-never-defined
+        # operands Puya's destructure_ssa rejects. HAZARD: all-or-nothing --
+        # re-simulating only some subs mismatches the shared call interface and
+        # corrupts the others.
         self.resim_args: dict = {}                # id(assignment) -> [pre-IR operand]
         self.resim_phis: dict = {}                # PyBlock -> [pre_ir.Phi]
         self.resim_exit: dict = {}                # PyBlock -> re-simulated exit stack
         self.resim_blocks: set = set()            # blocks whose ops use re-simulated args
         self._param_phis: set = set()             # non-proto entry arg phis -> params (skip)
-        # SSA-level producer map + scratch reaching-def (per `load N`, the value
-        # SSAVars its influencing `store N`s wrote) -- used to type call args,
-        # which are passed via scratch (load/store) here, not as callsub operands.
+        # Producer map + scratch reaching-def (per `load N`, the SSAVars its
+        # influencing `store N`s wrote) -- call args are passed via scratch here,
+        # not as callsub operands, so typing them needs the reaching-def.
         self.producer = {o: a for a in self.prog.assignments
                          for o in a.outputs if isinstance(o, SSAVar)}
         self.load_stores: dict = {}
@@ -322,12 +269,9 @@ class _Lifter:
         for s in sorted(struct.subroutines, key=lambda s: self._key(s.entry_bb)):
             groups.append((s.name or f"sub@L{s.entry_bb.first_line}", s,
                            sorted(s.body, key=self._key)))
-        # Global block ids. Puya restarts block@0 per subroutine, but that's not
-        # safe here: structure.py's partition has ~28 cross-routine branch edges
-        # (tail-calls / compiler-shared epilogues that don't belong to one
-        # routine), so a per-subroutine-local id would silently mis-target those
-        # gotos. Global ids keep control flow correct; per-sub numbering needs the
-        # routines to be closed CFG regions, which is a structure.py concern.
+        # Global block ids, though Puya restarts block@0 per subroutine: the
+        # partition leaves cross-routine branch edges (tail-calls / shared
+        # epilogues), which a per-subroutine-local id would silently mis-target.
         self.bid = {bb: i for i, bb in enumerate(all_blocks)}
         self.line2block = {bb.first_line: bb for bb in all_blocks}
         self.regs: dict = {}
@@ -338,28 +282,18 @@ class _Lifter:
         self.bury_target: dict = {}           # id(frame_bury assignment) -> versioned Register
         self.final_locals: dict = {}          # gname -> {slot: final versioned Register}
         self.shuffle_src: dict = {}           # SSAVar (shuffle output) -> source operand
+        # The frame reads below resolve off the LIVE re-sim stack, not frame_map;
+        # only param / negative reads take the plain frame_map path (see
+        # `_resim_exec_op`).
         self.frame_passthrough: set = set()   # frame_dig out0 of k>=0 pushed locals
-        #   (frame_resolution.SubFrames.pushed) — the resim path resolves THESE via
-        #   value() (their value lives cross-block), but leaves every other frame_dig
-        #   on the plain frame_map path so negative/param reads don't diverge.
-        self.pushed_slot: dict = {}           # pushed frame_dig out0 -> slot k, so the
-        #   resim prefers the LIVE slot value off its stack over the band input (which
-        #   a loop's band phis pollute) — see _resim_exec_op frame_dig.
-        self.frame_local_slot: dict = {}      # frame_dig out0 (a frame_bury-d local)
-        #   -> its slot k. The resim reads the slot's LIVE value off the re-sim stack
-        #   at len(params)+k — which carries the frame_bury deep-writes AND the merge
-        #   phi the resim already builds when a slot is written on >1 path into a join
-        #   — instead of frame_map's version, which frame_resolution picks by a CFG-
-        #   blind block-order walk (the last bury wins) and so loses the merge, leaving
-        #   the post-join read undominated (an entry-orphan).
+        self.pushed_slot: dict = {}           # pushed frame_dig out0 -> slot k
+        self.frame_local_slot: dict = {}      # frame_bury-d local's frame_dig out0 -> slot k
         self.cur_gname = "main"
         self.cur_nret = 0                     # proto return count of the group being built
-        # Inter-procedural return wiring. A callsub's continuation receives the
-        # callee's return value(s). In the raw CFG that value is a phi whose only
-        # predecessor is the callee's retsub block, so it would resolve into the
-        # callee's register space -- a different Puya subroutine, hence "undefined"
-        # in the caller. Bind it to the InvokeSubroutine's result instead: alias the
-        # continuation's top-of-stack return phi(s) to a caller-local result reg.
+        # Inter-procedural return wiring: alias the continuation's return phi(s) to
+        # a caller-local result register. In the raw CFG that phi's only predecessor
+        # is the callee's retsub block, so it would resolve into the callee's
+        # register space -- a different Puya subroutine, hence "undefined" here.
         self.call_results: dict = {}          # callsub_bb -> [result Register], declared order
         for cs in struct.call_sites:
             cont, entry = cs.continuation_bb, cs.target_entry
@@ -372,9 +306,8 @@ class _Lifter:
             outs = []
             for j in range(nret):                # j: declared order; stack_index 1 = top
                 ph = by_idx.get(nret - j)
-                # Use a `cr` prefix (not reg()'s `v`): this pre-pass runs before the
-                # per-group `_name_group`, whose `ctr.clear()` would otherwise restart
-                # the `v` counter and collide these with a group's own `v%N`.
+                # A `cr` prefix, not reg()'s `v`: this pre-pass runs before the
+                # per-group `_name_group`, so these must not share its counter.
                 if ph is not None:
                     r = self.regs.get(ph) or self._new_reg("cr", self.type_of(ph))
                     self.regs[ph] = r
@@ -395,10 +328,8 @@ class _Lifter:
                 params = [pre_ir.Parameter(pre_ir.Register(f"p%{i}", 0, "?"))
                           for i in range(nargs)]
                 # Legacy non-proto subs have no `frame_dig`: their args are the entry
-                # block's stack-index phis (merged from the call sites). The pre-IR
-                # sub entry has no predecessors, so map those phis to params (entry
-                # stack_index k = k-th from top = param[nargs-k]) and skip building
-                # them -- matching how proto subs read args off the frame.
+                # block's stack-index phis. Map those to params -- entry stack_index
+                # k = k-th from TOP = param[nargs-k] -- and skip building them.
                 if s.entry_bb not in self._proto_entries:
                     for ph in s.entry_bb.phis:
                         if 1 <= ph.stack_index <= nargs:
@@ -406,19 +337,15 @@ class _Lifter:
                             self._param_phis.add(ph)
             self.cur_nret = nrets
             self.cur_nargs = len(params)
-            # proto subs read args/returns off a frame; legacy non-proto subs leave
-            # their returns on the value stack. _control_retsub needs this to pick the
-            # right return-slot rule (a non-proto sub has no frame slots).
+            # `_control_retsub` picks its return-slot rule off this: proto subs read
+            # returns off frame slots, non-proto subs leave them on the value stack.
             self.cur_is_proto = (s is not None and s.entry_bb in self._proto_entries)
             self._setup_frame(gb, params)
             self._setup_shuffles(gb)
             self._name_group(gb)
-            # Re-simulate EVERY group's value-stack -- main and all subs alike,
-            # all-or-nothing (see the rationale above the resim_* maps).
-            # Main-group entry = the block holding the first instruction. NOT
-            # "a block with no predecessors": when the first block is a branch
-            # target that set is empty (or worse, holds only a dead-code block
-            # further down, which would be picked as the resim entry).
+            # Main-group entry = the block holding the first instruction, NOT "a
+            # block with no predecessors": when the first block is a branch target
+            # that set is empty, or holds only a dead-code block further down.
             entry = (s.entry_bb if s is not None
                      else min(gb, key=lambda b: (b.file, b.first_line)))
             self._resim(gb, entry, params)
@@ -434,36 +361,26 @@ class _Lifter:
                 self.subs.append(sub_ir)
                 sub_pairs.append((sub_ir, s))
         transforms.prune_dead_phis(self.subs)
-        # Replace cross-group passthrough phis with each caller's own value (loop:
-        # a passthrough value can itself be another passthrough), then re-prune the
-        # phis they orphaned.
+        # Loop: a cross-group passthrough value can itself be another passthrough.
         while transforms.isolate_cross_group_phis(self.subs):
             pass
         transforms.prune_dead_phis(self.subs)
         self.name2sub = {s.id: s for s in self.subs if not s.is_main}
-        # Recover the register / return / phi AVM types to a fixpoint (see
-        # :mod:`type_recovery`), then assemble the program and reconcile the
-        # placeholder-seeded mixed-type phi webs on its final shape.
         type_recovery.recover_types(self, sub_pairs)
-        # Now that the phi-arg AVM types are known, sink any mixed-type phi that
-        # only feeds scratch stores into per-predecessor stores (the reused-slot
-        # artifact). This PRESERVES the scratch write -- it is gload-readable
-        # across the group, so it must not be dropped -- while removing the merge
-        # Puya would reject. (Runs after recovery so "mixed" is observable.)
+        # Sink mixed-type phis that only feed scratch stores into per-predecessor
+        # stores (runs after recovery, so "mixed" is observable). HAZARD: this
+        # PRESERVES the write -- scratch is gload-readable across the group, so a
+        # store with no local load is NOT dead and must never be dropped.
         transforms.sink_mixed_phi_scratch_stores(self.subs)
         main = next(sub for sub in self.subs if sub.is_main)
         prog_ir = pre_ir.Program(main=main, subroutines=[s for s in self.subs if not s.is_main])
         type_recovery.finalize_types(prog_ir)
-        # A generic accessor sub called with conflicting result AVM types (a state
-        # reader returning uint64 for some keys, a bytes address for others) can't
-        # have one Puya return type; clone it per return type and re-route the
-        # clashing callsites (runs after finalize so caller result types settled).
+        # A sub called with conflicting result AVM types can't have one Puya return
+        # type; clone it per type (after finalize, so caller result types settled).
         transforms.specialize_polymorphic_returns(prog_ir)
         transforms.materialize_phi_consts(prog_ir)
-        # A block reached from more than one subroutine (a shared `retsub` / tail
-        # `b`-ed into from several subs) breaks Puya's per-sub block ownership;
-        # clone the shared region into each consuming sub so every block's
-        # predecessors live in its own subroutine.
+        # Puya requires per-sub block ownership, so a block reached from more than
+        # one subroutine is cloned into each consuming sub.
         transforms.duplicate_cross_subroutine_blocks(prog_ir)
         return prog_ir
 
@@ -489,10 +406,8 @@ class _Lifter:
         if op in _BYTES_OPS:
             return "bytes"
         if op == "load":
-            # A scratch load is typed by what was stored into the slot, via
-            # the reaching-def (``_ssa_type`` resolves it through
-            # ``load_stores`` with a depth guard); the slot itself carries no
-            # type, which is why the plain checks above leave it ``?``.
+            # The slot itself carries no type (hence `?` above); type the load by
+            # what was stored, via the reaching-def in `_ssa_type`.
             rt = self._ssa_type(o)
             if rt != "?":
                 return rt
@@ -521,11 +436,8 @@ class _Lifter:
         return self.regs[o]
 
     def _range_comment(self, outs) -> str | None:
-        """``// v0 = 1, len(v1) = 8`` style note for the ranged outputs of an
-        assignment / phi. uint64 vars carry an ``IntRange`` (range_arith /
-        range_assert); bytes vars carry a byte length and/or a bigint value
-        range on their type (byte_lengths / bytemath). ``None`` when nothing
-        informative is annotated."""
+        """``// v0 = 1, len(v1) = 8`` style note for an assignment's ranged outputs,
+        or ``None`` when nothing informative is annotated."""
         parts = []
         for o in outs:
             lid = self.reg(o).local_id
@@ -542,11 +454,9 @@ class _Lifter:
         return ", ".join(parts) if parts else None
 
     def _setup_frame(self, gb, params):
-        # frame_dig / frame_bury are resolved to params / versioned locals by
-        # passes.frame_resolution (precise for proto subs -- the sound case, and
-        # the only place frame ops occur); bind that substrate slot model onto
-        # this group's registers. The k<0 `frame_bury` fallback stays in
-        # `_build_block` via `_local`.
+        # Bind frame_resolution's slot model (frame_dig / frame_bury -> params /
+        # versioned locals) onto this group's registers. The k<0 `frame_bury`
+        # fallback stays in `_build_block` via `_local`.
         res = resolve_sub(gb, len(params))
         for out0, i in res.dig_param.items():
             self.frame_map[out0] = params[i].register
@@ -570,12 +480,9 @@ class _Lifter:
         return r
 
     def _setup_shuffles(self, gb):
-        # A pure stack shuffle (dup/dupn/swap/cover/uncover) just reorders or
-        # duplicates values; map each output to its source operand so consumers
-        # reference the value directly and the op drops out (Puya is value-based,
-        # no shuffles). The mapping is exact (out[i] = in[m[i]]), so this is
-        # always value-preserving; fat-frame stack vars a routed source lands on
-        # resolve through the frame-op passthrough routing in `_setup_frame`.
+        # Puya is value-based, so a pure stack shuffle drops out: map each output
+        # to its source operand and let consumers reference the value directly.
+        # The mapping is exact (out[i] = in[m[i]]), hence value-preserving.
         for bb in gb:
             for a in bb.assignments:
                 if a.op not in _STACK_SHUFFLE_OPS:
@@ -596,12 +503,10 @@ class _Lifter:
         return bool(outs) and all(o in self.shuffle_src for o in outs)
 
     def _name_group(self, gb):
-        # feat/verifier-stuff: do NOT clear the counter per group, so generated register
-        # names (tmp%n, v%n, cr%n, not%n, ...) are GLOBALLY UNIQUE. The verifier's range
-        # cross-check (experiment_3/chc_encoder/sast.py) bridges SSAVar ranges to encoder
-        # registers by (name, version), which must be INJECTIVE — per-group reuse of tmp%0
-        # collapsed 765 SSAVars to ~186 names. self.ctr only feeds naming (no logic), so a
-        # global counter is behaviour-preserving for the IR, only the temp numbers change.
+        # HAZARD: do NOT clear `self.ctr` per group. Generated register names must be
+        # GLOBALLY UNIQUE because consumers bridge to them by (name, version), which
+        # has to stay INJECTIVE; per-group reuse of tmp%0 collapses distinct values
+        # onto one name. The counter feeds naming only, so this changes no behaviour.
         for bb in gb:
             if len(bb.predecessors) > 1:
                 for ph in sorted(bb.phis, key=lambda p: p.stack_index):
@@ -624,13 +529,12 @@ class _Lifter:
                 for idx, o in enumerate(a.outputs):
                     if not isinstance(o, SSAVar):
                         continue
-                    # idx is the top-first output slot; multi-result ops
-                    # (get_ex / params / box / addw…) type their slots
-                    # individually -- type_of can't tell them apart.
+                    # idx is the TOP-FIRST output slot; multi-result ops (get_ex /
+                    # params / box / addw…) type their slots individually.
                     mt = _multi_out_type(a.op, a.immediates, idx) if nssa > 1 else None
                     if a.op in _POLY_FIRST_OPERAND_OPS and a.inputs:
-                        # setbit: result type == its VALUE operand (the deepest
-                        # stack input == last top-first SSA input), uint64 or bytes.
+                        # setbit: result type == its VALUE operand -- the deepest
+                        # stack input, i.e. the LAST top-first SSA input.
                         vt = self._ssa_type(a.inputs[-1])
                         rt = vt if vt != "?" else self.type_of(o, a.op, a.immediates)
                     else:
@@ -638,10 +542,9 @@ class _Lifter:
                     if o not in self.regs:
                         self.regs[o] = self._new_reg(pfx, rt)
                     elif self.regs[o].ir_type == "?" and rt != "?":
-                        # already registered untyped by an earlier cross-group
-                        # reference (a tail-call / shared-epilogue edge reaches
-                        # value() before this, the defining, group is named);
-                        # now that we know its op, fix the type in place.
+                        # Registered untyped by an earlier cross-group reference (a
+                        # tail-call / shared-epilogue edge reaching value() before the
+                        # defining group is named); its op is known now, so fix it.
                         self.regs[o].ir_type = rt
 
     def value(self, o, _seen=None):
@@ -681,20 +584,15 @@ class _Lifter:
         return last
 
     def _asserts_false(self, bb) -> bool:
-        """``bb`` contains an always-failing ``assert <const-0>`` -- it aborts
-        unconditionally, so (like ``err``) it lifts to a ``Fail`` terminator, NOT
-        a ``ProgramExit`` of its stack top (which may be a non-uint64 value). Its
-        dead fall-through edge was already removed by ``_prune_dead_assert_edges``;
-        this gives the now-terminal block the right terminator."""
+        """``bb`` asserts a compile-time zero, so it aborts unconditionally and (like
+        ``err``) lifts to ``Fail``, not a ``ProgramExit`` of a maybe-non-uint64 top."""
         from ..ssa import const_int
         return any(a.op == "assert" and a.inputs and const_int(a.inputs[0]) == 0
                    for a in bb.assignments)
 
     def _recover_match_keys(self, bb, labels):
-        """Recover a `match`'s case keys from source when the parser dropped
-        them (a `pushbytess base32(..) ..` whose operands it stripped, leaving a
-        phantom 0-output push). The keys are the push's operands, in label order;
-        stored as their source literal (`teal_const._const_bytes` parses them)."""
+        """Recover a `match`'s case keys, in label order, from the source line of a
+        multi-push whose operands the parser stripped (leaving a phantom push)."""
         src = _load_src(getattr(self.prog, "source_path", ""))
         if len(src) != 1:
             return None, set()
@@ -726,10 +624,9 @@ class _Lifter:
             cont = cs.continuation_bb if cs else None
             if cont is not None and cont in self.bid:
                 return pre_ir.Goto(self.bid[cont])
-            # No continuation: the callee doesn't return here (non-returning). In
-            # a sub, model that as a value-less return; in main there is no caller
-            # to return to, so the post-call flow is an unreachable program exit
-            # (a value-less SubroutineReturn would be invalid for the main program).
+            # No continuation (a non-returning callee): in a sub that is a value-less
+            # return, but in main there is no caller, so it must be a program exit --
+            # a value-less SubroutineReturn is invalid for the main program.
             if self.cur_is_main:
                 return pre_ir.ProgramExit(pre_ir.UInt64Constant(0))
             return pre_ir.SubroutineReturn([])
@@ -739,14 +636,11 @@ class _Lifter:
         if not succ:
             if op == "err" or self._asserts_false(bb):
                 return pre_ir.Fail()
-            # `return` (arity 0/0) returns the stack top; a block that falls off
-            # the end with NO explicit terminator (op is None -- a bare-expression
-            # program, e.g. a v6 `txn Sender; global CreatorAddress; ==`) returns
-            # its stack top implicitly too. Both ProgramExit the top value (the
-            # approval result), NOT a hardcoded 0 -- else the lift turns an
-            # approve-if-X program into an unconditional reject. For a re-simulated
-            # block use its clean local stack; bb.exit_stack is the fat STACK_MAX
-            # garbage and would yield an undefined operand.
+            # HAZARD: `return`, and a block that falls off the end with no explicit
+            # terminator, both exit with the STACK TOP (the approval result), never a
+            # hardcoded 0 -- that would turn an approve-if-X program into an
+            # unconditional reject. Read it off the clean re-simulated stack;
+            # bb.exit_stack is fat STACK_MAX garbage and yields an undefined operand.
             rsx = self.resim_exit.get(bb, [])
             v = rsx[-1] if rsx else pre_ir.UInt64Constant(0)
             return pre_ir.ProgramExit(v)
@@ -770,12 +664,10 @@ class _Lifter:
             term = self._control_switch(t, succ)
             if term is not None:
                 return term
-        # `match` is KEYED (it compares the popped value against the case
-        # values), so routing it with a POSITIONAL GotoNth over CFG-successor
-        # order mis-targets the arms and coerces a bytes key to uint64. When
-        # neither key recovery nor the source fallback worked we genuinely do
-        # not know the selector — say so with Undefined rather than emit a
-        # confident wrong route.
+        # `match` is KEYED, so a POSITIONAL GotoNth over CFG-successor order
+        # mis-targets its arms. Reaching here means neither key recovery nor the
+        # source fallback worked, so emit Undefined rather than a confident wrong
+        # route.
         return pre_ir.GotoNth(pre_ir.Undefined(),
                               [self.bid[s] for s in succ[:-1]], self.bid[succ[-1]])
 
@@ -785,84 +677,48 @@ class _Lifter:
         return self.value(t.inputs[0]) if (t and t.inputs) else pre_ir.Undefined()
 
     def _control_retsub(self, bb):
-        """Build the `SubroutineReturn` for a `retsub` block.
+        """Build the ``SubroutineReturn`` for a ``retsub`` block.
 
-        A retsub returns to its caller. Its raw-CFG successors are the callers'
-        continuations (interprocedural return edges), but each caller already
-        reaches its own continuation via its callsub -> Goto(continuation). So
-        model retsub as a value return, NOT a goto / goto_nth into the callers —
-        the latter, with >1 caller, had no selector and rendered as
-        `goto_nth undefined`.
-
-        The N returns are frame slots 0..N-1. A sub that *buries* its return into
-        the slot (frame_bury 0) leaves the slot's current value there, not on the
-        exit stack — so prefer the final slot local; only fall back to the
-        (bottom-first) exit-stack slice for returns left on the stack.
-        """
+        HAZARD: a retsub's raw-CFG successors are the CALLERS' continuations
+        (interprocedural return edges), not internal flow — model it as a value
+        return, never a goto into them (with >1 caller that has no selector and
+        renders as `goto_nth undefined`). The return VALUES differ by convention:
+        a `proto A R` sub returns frame slots A..A+R-1, a legacy sub the TOP R of
+        the stack; applying the proto rule to a short non-proto stack reads past
+        the end, yields Undefined, and DCEs the whole body."""
         rsx = self.resim_exit.get(bb, [])              # clean re-simulated stack
         if not self.cur_nret:
             return pre_ir.SubroutineReturn([])
-        # A `proto A R` retsub returns frame slots 0..R-1 -- the FIRST R
-        # locals (just above the A args), NOT the top R of the stack.
-        # When a sub keeps extra working locals past its returns (e.g. a
-        # loop counter buried in slot 1 while the bytes accumulator it
-        # returns lives in slot 0), the stack top is that counter, so the
-        # old `rsx[-R:]` returned the wrong value (a uint64 counter where
-        # the caller reads a bytes array). The frame slots sit at
-        # rsx[nargs+0 .. nargs+R-1] (resim seeds the stack with the params,
-        # then frame_bury deep-writes each slot there). Verified on a live
-        # localnet: `len(repeat(3))==3` PASSES (slot-0 bytes returned),
-        # `repeat(3)==3` fails to compare []byte to uint64.
         np = self.cur_nargs
         if self.cur_is_proto:
-            # `proto A R`: returns are frame slots A..A+R-1 (resim seeds the params,
-            # then frame_bury deep-writes each slot at rsx[A+j]).
+            # Frame slots A..A+R-1: resim seeds the stack with the params, then
+            # frame_bury deep-writes each slot at rsx[A+j]. NOT the top R -- a sub
+            # keeping working locals past its returns has something else on top.
             rets = [rsx[np + j] if np + j < len(rsx) else pre_ir.Undefined()
                     for j in range(self.cur_nret)]
         else:
-            # Legacy non-proto sub: no frame slots -- the R returns are the TOP R of
-            # the clean re-simulated stack (same as the non-resim exit-stack branch).
-            # The proto rsx[A+j] rule reads PAST a short non-proto stack and yields
-            # Undefined, which DCEs the whole body (the wormhole-core regression).
+            # Legacy sub: no frame slots, so the R returns are the TOP R.
             base = len(rsx) - self.cur_nret
             rets = [rsx[base + j] if 0 <= base + j < len(rsx) else pre_ir.Undefined()
                     for j in range(self.cur_nret)]
         return pre_ir.SubroutineReturn(rets)
 
     def _control_match(self, bb, t, succ):
-        """Build a keyed `Switch` for a `match` block, or `None` to fall through
+        """Build a keyed ``Switch`` for a ``match`` block, or ``None`` to fall through
         to the generic positional GotoNth.
 
-        `match t0..t_{n-1}`: matched value on top, the n case values below. AVM
-        pairs label[i] with the i-th case counting from the DEEPEST (first-pushed)
-        constant -- label[0] <-> C_0. SSA inputs are TOP-FIRST, so the case
-        constants normally arrive deepest-LAST and label[i] is `ins[n-i]`. BUT a
-        single multi-push op (`pushbytess`/`pushints`) emits its N outputs in push
-        order, so when all n case operands come from ONE op they arrive deepest-
-        FIRST and label[i] is `ins[i+1]`. Discriminate by whether the n case
-        operands share a source line (one op) or not (n separate `intc`/`pushint`
-        pushes). Getting this wrong silently SWAPS sibling arms -- e.g. an
-        OnCompletion/ABI selector routed to the wrong body (oracle-confirmed on
-        app_3543081435's no-arg OnCompletion router: NoOp<->UpdateApplication were
-        swapped).
-        """
+        HAZARD: `match t0..t_{n-1}` takes the matched value on top and the n keys
+        below; AVM pairs label[i] with the i-th key counting from the DEEPEST
+        (first-pushed) one. SSA inputs are TOP-FIRST, so keys arrive deepest-LAST
+        and the mapping is uniformly label[i] -> ins[n - i] (matched value = ins[0]),
+        whether the keys come from one multi-push op or separate pushes. Getting
+        this wrong silently SWAPS sibling arms — an OnCompletion / ABI selector
+        routed to the wrong body."""
         labels = (t.immediates or "").split()
         n = len(labels)
         ins = (self.resim_args.get(id(t)) if id(t) in self.resim_args
                else [self.value(x) for x in t.inputs])
-        # Pair label[i] with the i-th case key in PUSH order (deepest-first),
-        # which AVM `match` requires (label[0] <-> the first-pushed/deepest
-        # key). The n keys are pushed C_0..C_{n-1} in source order, so C_0 is
-        # ALWAYS deepest — and SSA inputs are TOP-FIRST, so C_i sits at
-        # ins[n - i]. The mapping is therefore uniformly `order = reversed`
-        # (label[i] -> ins[n - i]), whether the keys come from one multi-push
-        # op or separate `intc`/`pushint` pushes. (This used to special-case
-        # the multi-push op because `const_values` numbered its outputs
-        # front-to-back, scrambling which var held which key; that root bug is
-        # fixed -- output_index 1 is now the top/last-pushed value.
-        # Getting this wrong silently SWAPS sibling arms -- oracle-confirmed on
-        # app_3543081435's no-arg OnCompletion router, NoOp<->UpdateApplication.)
-        order = list(range(n))[::-1]
+        order = list(range(n))[::-1]           # label[i] -> ins[n - i]
         cases, targets = [], set()
         for i, lbl in enumerate(labels):
             blk = self.line2block.get(self.label2line.get(lbl))
@@ -888,19 +744,15 @@ class _Lifter:
         return None
 
     def _control_switch(self, t, succ):
-        """Build the POSITIONAL `GotoNth` for a `switch` block, or `None` to fall
-        through to the generic GotoNth.
+        """Build the POSITIONAL ``GotoNth`` for a ``switch`` block, or ``None`` to
+        fall through to the generic GotoNth.
 
-        AVM `switch L0..L_{n-1}` is POSITIONAL: the popped index i jumps to L_i,
-        and DUPLICATE labels are significant (an OnCompletion router sends most
-        indices to the same `err`). Out-of-range falls through to the next
-        instruction. Building arms from the distinct successor SET (as the generic
-        GotoNth does) scrambles the index->target map and mis-routes — oracle-
-        confirmed on switch_demo and the RugNinja dispatch (every NoOp method call
-        was routed to `err`). Map by position; the fall-through is the block on the
-        next source line (which may COINCIDE with a labeled target, so resolve it
-        by line, not by set-difference like `match`).
-        """
+        HAZARD: `switch L0..L_{n-1}` is POSITIONAL (popped index i jumps to L_i) and
+        DUPLICATE labels are significant, so arms must be built by position — from
+        the distinct successor SET, as the generic GotoNth does, the index->target
+        map scrambles and every arm can mis-route. Out-of-range falls through to the
+        next instruction, which may COINCIDE with a labeled target, so resolve the
+        default by source line, not by set-difference like `match`."""
         labels = (t.immediates or "").split()
         arms, ok = [], True
         for lbl in labels:
@@ -921,20 +773,15 @@ class _Lifter:
         return None
 
     def _resim(self, body_list, entry_bb, params):
-        """Re-simulate a routine's value-stack with correct callsub arities. Runs
-        on main and EVERY sub, all-or-nothing: re-simulating only some subs would
-        mismatch the shared call interface and corrupt the others (see the
-        rationale in `build`). PySSA caps a non-proto sub's stack at STACK_MAX so
-        its post-call survivors come back as fat-phi garbage, and even a proto sub
-        can lose a cross-call stack survivor; here operands come from a clean
-        local stack instead. Fills `resim_args` (per-op operands), `resim_phis`
-        (merge phis), `resim_exit` (per-block stacks)."""
+        """Re-simulate a routine's value-stack with correct callsub arities, filling
+        `resim_args` (per-op operands), `resim_phis` (merge phis) and `resim_exit`
+        (per-block stacks)."""
         body = set(body_list)
 
         def isucc(b):
-            # retsub/return/err leave the sub -- their raw successors are the
-            # callers' continuations (interprocedural return edges), NOT internal
-            # flow. A callsub flows to its continuation, not into the callee.
+            # retsub/return/err LEAVE the sub: their raw successors are the callers'
+            # continuations, not internal flow. A callsub flows to its own
+            # continuation, not into the callee.
             if b.assignments and b.assignments[-1].op in ("retsub", "return", "err"):
                 return []
             cs = self.callsite.get(b)
@@ -942,9 +789,8 @@ class _Lifter:
                 return [cs.continuation_bb]
             return [s for s in b.successors if s in body]
 
-        # Back-edge detection (DFS), so loops work: a loop header's phis are
-        # created up-front from the forward edge, and their back-edge args are
-        # filled once the body has been simulated.
+        # Back-edge detection, so a loop header's phis can be created up-front from
+        # the forward edge and closed once the body has been simulated.
         WHITE, GRAY, BLACK = 0, 1, 2
         color: dict = {b: WHITE for b in body_list}
         back: set = set()
@@ -978,8 +824,8 @@ class _Lifter:
 
         visit(entry_bb)
         order.reverse()                       # topological over forward edges
-        order += [b for b in body_list if b not in seen]   # cover any block the
-        #            forward DAG missed, so every op still gets clean resim_args
+        order += [b for b in body_list if b not in seen]   # blocks the forward DAG
+        #            missed still need clean resim_args
 
         pending: list = []                    # (phi, slot, back-pred) to close
         for b in order:
@@ -1005,10 +851,9 @@ class _Lifter:
 
     def _resim_entry_stack(self, b, entry_bb, params, preds,
                            back_targets, bpred_b, pending):
-        """Compute block `b`'s entry value-stack for the re-sim: the sub's args at
-        entry, a loop-header phi set (back-edge args deferred into `pending`), a copy
-        of the single predecessor's exit, or a slot-wise merge that builds
-        `resim_phis`."""
+        """Block `b`'s entry value-stack: the sub's args, a loop-header phi set
+        (back-edge args deferred into `pending`), a copy of the single predecessor's
+        exit, or a slot-wise merge that builds `resim_phis`."""
         if b is entry_bb or not preds:
             return [pp.register for pp in params]          # entry: the args
         if b in back_targets:                              # loop header
@@ -1026,19 +871,12 @@ class _Lifter:
             return stack
         if len(preds) == 1:
             return list(self.resim_exit[preds[0]])
-        # plain merge: phi/slot.
-        # Align predecessors by their STACK TOP (the common top `depth`
-        # values), not the bottom. Consumers (log / return / the next
-        # op) read the top, and a pred that carries extra DEEP values --
-        # e.g. an unconsumed `app_global_get_ex` value the source leaves
-        # UNDER the result and never reads (the branch popped only the
-        # exists flag) -- keeps its live values at the top. Bottom-first
-        # `[slot]` mis-read such a pred at a shared join, passing the
-        # leftover instead of the computed value: app_1100070621's
-        # 12-way "log + approve" join logged the DeleteApplication path's
-        # leftover uint64 instead of its concat bytes -> AVM type error
-        # -> reject. For uniform-depth joins `len-depth+slot == slot`, so
-        # this is a no-op (the common case).
+        # Plain merge, slot-wise. HAZARD: align predecessors by their STACK TOP (the
+        # common top `depth` values), never the bottom -- consumers read the top, and
+        # a pred carrying extra DEEP values (an unconsumed `..._get_ex` value left
+        # under the result) keeps its live values there. Bottom-first indexing merges
+        # such a pred's leftover instead of its computed value. For uniform-depth
+        # joins `len-depth+slot == slot`, so this is a no-op.
         depth = min(len(self.resim_exit[p]) for p in preds)
         tops = {p: self.resim_exit[p][len(self.resim_exit[p]) - depth:]
                 for p in preds}
@@ -1059,23 +897,17 @@ class _Lifter:
     def _resim_exec_op(self, a, b, stack, params):
         """Simulate one assignment `a` of block `b` against the clean re-sim `stack`
         (mutated in place), recording per-op operands into `resim_args`."""
-        # Frame ops first: PySSA models them as fat [1..STACK_MAX] band ops
-        # (also in _STACK_SHUFFLE_OPS), so the generic / shuffle paths below
-        # would pop the whole stack. On the clean stack a `frame_dig` pushes
-        # its resolved param/local (one value) and a `frame_bury` pops one.
+        # Frame ops FIRST: PySSA models them as fat [1..STACK_MAX] band ops (and they
+        # are in _STACK_SHUFFLE_OPS), so the generic / shuffle paths below would pop
+        # the whole stack. On the clean stack frame_dig pushes one value, bury pops one.
         if a.op == "frame_dig":
             out0 = a.outputs[0] if a.outputs else None
-            # A k>=0 pushed local read cross-block (frame_resolution routed
-            # it through shuffle_src): resolve via value() so the value
-            # carried from the defining block reaches here.
             if out0 is not None and out0 in self.frame_passthrough:
-                # A pushed local: read its LIVE value off the re-sim stack at the slot
-                # position (len(params)+k) when present. The band `a.inputs[-1]` that
-                # value() resolves to is polluted by a loop's band phis — a frame_dig
-                # of a pre-loop local (e.g. a byteslice `frame_dig`-d inside a `for`)
-                # returned the loop's mutated register (its offset). Fall back to
-                # value() only when the slot isn't on the stack (a straight-line band
-                # target the re-sim never materialised at that position).
+                # A pushed local: read its LIVE value off the re-sim stack at slot
+                # position len(params)+k. The band input value() resolves to is
+                # polluted by a loop's band phis, so it returns the loop's mutated
+                # register for a pre-loop local. Fall back to value() only when the
+                # slot isn't on the stack.
                 slot = self.pushed_slot.get(out0)
                 pos = len(params) + slot if slot is not None else -1
                 if 0 <= pos < len(stack):
@@ -1083,36 +915,30 @@ class _Lifter:
                 else:
                     stack.append(self.value(out0))
             elif out0 is not None and out0 in self.frame_local_slot:
-                # A frame_bury-d local: read its live value straight off the
-                # re-sim stack at the slot position (len(params)+k). That slot
-                # carries the frame_bury deep-writes and, at a join where the
-                # slot was written on >1 incoming path, the merge phi the
-                # resim already built — which frame_map's CFG-blind version
-                # drops, leaving the read undominated (an entry-orphan).
+                # A frame_bury-d local: read its live value off the re-sim stack at
+                # len(params)+k, which carries the deep-writes AND the merge phi for
+                # a slot written on >1 path into a join. frame_map's version is
+                # picked by a CFG-blind walk, drops that merge, and leaves the
+                # post-join read undominated (an entry-orphan).
                 pos = len(params) + self.frame_local_slot[out0]
                 if 0 <= pos < len(stack):
                     stack.append(stack[pos])
                 else:
                     stack.append(self.frame_map.get(out0) or pre_ir.Undefined())
             else:
-                # param / negative below-frame read: the plain frame_map path
-                # (widening value() to these re-resolves them and diverges
-                # from the IR construction path — a bytes value into a u64 op).
+                # param / negative below-frame read: the plain frame_map path.
+                # Widening value() to these re-resolves them and diverges from the
+                # IR construction path -- a bytes value into a u64 op.
                 stack.append(self.frame_map.get(out0) or pre_ir.Undefined())
             return
         if a.op == "frame_bury":
             if stack:
                 v = stack.pop()
                 self.resim_args[id(a)] = [v]
-                # frame_bury N writes the popped value INTO frame slot N —
-                # an absolute stack position (len(params)+N on the clean
-                # proto frame: args at 0..nargs-1, locals above). The pop
-                # alone modelled only the stack-top removal, not the deep
-                # write, so a later working-stack read of that slot saw the
-                # stale frame-init. Concretely a sub that arranges its
-                # return via `frame_dig k; frame_bury 0; popn …; retsub`
-                # returned the init "" instead of the computed value. Model
-                # the deep write so the slot carries the buried value.
+                # frame_bury N also DEEP-WRITES frame slot N -- an absolute stack
+                # position (len(params)+N: args at 0..nargs-1, locals above).
+                # Modelling only the pop leaves a later read of that slot seeing
+                # the stale frame-init instead of the buried value.
                 toks = (a.immediates or "").split()
                 if toks:
                     try:
@@ -1123,10 +949,10 @@ class _Lifter:
                         stack[pos] = v
             return
         if a.op in _STACK_SHUFFLE_OPS:
-            # Use the op's CANONICAL arity, not a.inputs: the SSA's fat-band
-            # sim can under-count a shuffle's inputs on a shallow model stack
-            # (e.g. dup2 with 1 input), which makes _shuffle_mapping bail and
-            # the resim drop the op -- starving a downstream callsub's args.
+            # Use the op's CANONICAL arity, not a.inputs: the SSA's fat-band sim can
+            # under-count a shuffle's inputs on a shallow model stack (dup2 with 1
+            # input), making _shuffle_mapping bail and the resim drop the op --
+            # which starves a downstream callsub's args.
             n_in, m = _canon_shuffle(a.op, a.immediates)
             if m is None:                       # frame_* / unrecognised
                 m, n_in = _shuffle_mapping(a), len(a.inputs)
@@ -1161,8 +987,8 @@ class _Lifter:
                 stack.append(self._resim_value(o))
 
     def _build_block(self, bb):
-        # Every group is re-simulated (see `_build_impl`), so `resim` is always
-        # True here; the per-op `resim_args` lookup below still needs the flag.
+        # Always True (every group is re-simulated); the per-op `resim_args`
+        # lookups below still take it as a flag.
         resim = bb in self.resim_blocks
         phis = self._block_phis(bb)
         ops = []
@@ -1172,26 +998,19 @@ class _Lifter:
                              terminator=self.control(bb), comment=f"L{bb.first_line}")
 
     def _block_phis(self, bb):
-        """Entry phis for block `bb`, taken from the re-simulation.
-
-        Every group is re-simulated (`_build_impl` calls `_resim` then adds the
-        whole group to `resim_blocks`), so this is the only path; the former
-        `resim=False` branch reconciled phis across predecessors and relabelled
-        the interprocedural return edge, and was unreachable.
-        """
+        """Entry phis for block `bb`, taken from the re-simulation."""
         return self.resim_phis.get(bb, [])
 
     def _block_emit_op(self, a, bb, resim, ops):
-        """Lower one assignment `a` of block `bb` into pre-IR, appending to `ops`
-        (frame reads / re-sim shuffles / inlined consts emit nothing)."""
+        """Lower one assignment `a` of block `bb` into `ops` (frame reads, re-sim
+        shuffles and inlined consts emit nothing)."""
         if a.op == "frame_dig":
             return                              # a param/local read (no op)
         if a.op == "frame_bury":
-            # frame_bury DEFINES its slot (l%slot = buried value). Emit that
-            # before any shuffle / resim skip below: PySSA models the bury as
-            # a fat-band op, so it would otherwise be dropped and the slot's
-            # later frame_dig reads go undefined. On a re-simulated block the
-            # buried value is the clean resim-stack top; else the SSA operand.
+            # frame_bury DEFINES its slot (l%slot = buried value), and must be
+            # emitted BEFORE the shuffle / resim skips below: PySSA models the bury
+            # as a fat-band op, so it would otherwise be dropped and the slot's
+            # later frame_dig reads go undefined.
             slot = _imm0(a)
             if slot is not None:
                 src = (self.resim_args[id(a)][0]
@@ -1209,8 +1028,8 @@ class _Lifter:
             cs = self.callsite.get(bb)
             target = (cs.target_name if cs and cs.target_name
                       else (a.immediates or "?"))
-            # Args are passed via scratch, not callsub operands, so take the
-            # caller's exit_stack top nargs in param order (es[-nargs+i]).
+            # Args are passed via scratch, not callsub operands: take the caller's
+            # exit_stack top nargs in PARAM order (es[-nargs+i]).
             nargs = self._sub_io(cs.target_entry)[0] if (cs and cs.target_entry) else 0
             es = bb.exit_stack
             if resim:
@@ -1246,9 +1065,8 @@ class _Lifter:
             ops.append(pre_ir.IntrinsicOp(intr))
 
     def _ssa_type(self, o, depth=0):
-        """Type an SSA operand by its producing op, tracing scratch loads
-        through the reaching-def to the stored value's type, and frame reads
-        through to the param/local register they map to."""
+        """Type an SSA operand by its producing op, tracing scratch loads through the
+        reaching-def and frame reads through to their param/local register."""
         if isinstance(o, Const):
             return o.kind
         if not isinstance(o, SSAVar) or depth > 6:

@@ -1,42 +1,15 @@
-"""Shared helpers for the sec-guide detectors — the FACADE.
+"""Shared helpers for the sec-guide detectors — the FACADE over six sibling
+modules (``_program_shape``, ``_value_flow``, ``_enforcement``,
+``_field_protection``, ``_action_guards``, ``_itxn_taint``).
 
-The common helper layer (OnCompletion guards, fee-validation guards, …) on top
-of the :class:`SSAProgram` substrate and :class:`PathPredicateAnalysis`. Each
-detector imports the predicates it needs from here rather than rebuilding them.
+Every name is re-exported, ``_``-prefixed ones included, because detector bodies
+and tests reach both through ``common.<name>`` — this is the ONLY import surface
+a detector should need.
 
-The implementation lives in six cohesive sibling modules; this module
-re-exports every name (public and ``_``-prefixed alike — detector bodies and
-tests reach both through ``common.<name>``), so ``from tealql.security import
-common`` remains the ONLY import surface detectors need:
-
-  - :mod:`._program_shape`    — approval/rejection exits, file-scoped field
-                                reads + seed builders, app-vs-logicsig
-                                classification, ``loc`` formatting.
-  - :mod:`._value_flow`       — cached path predicates, the interprocedural
-                                frame-param map, the MUST-flow operand walk
-                                (phi / scratch / proto-frame bridges).
-  - :mod:`._enforcement`      — "does this check's result actually reach an
-                                assert / branch-to-reject sink?"
-  - :mod:`._field_protection` — ``field_validated_on_all_paths`` (dominance)
-                                and the every-path ``approval_exit_protected_
-                                for_*`` family.
-  - :mod:`._action_guards`    — sender==creator and OnCompletion action
-                                guards over path predicates.
-  - :mod:`._itxn_taint`       — inner-txn field sets, the shared user-input
-                                taint fixpoint, and the cached IR-lifter
-                                bridge (``ir_lifter``) the ir-* family runs on.
-
-Where possible, we lean on :meth:`PathPredicateAnalysis.predicates_at` for
-"must hold on every path" reasoning — it's already a sound, cached abstraction
-over branch / assert outcomes. Hand-rolled CFG reachability only shows up in
-:func:`approval_exit_protected_for_field` (which is strictly stronger than
-what path predicates alone can express).
-
-The detector outputs are intentionally over-conservative on several fixtures
-(e.g. ``is-deletable`` flags ``fixed-complex-dispatch.teal`` because the
-OnCompletion==5 reject sits *after* the dispatch). This is a deliberate choice
-— the goal is soundness, not strictly tighter detection. Improvements live in
-follow-ups.
+Prefer :meth:`PathPredicateAnalysis.predicates_at` for "must hold on every path"
+reasoning; it is already a sound, cached abstraction over branch/assert outcomes.
+Hand-rolled CFG reachability appears only where it is strictly stronger than what
+path predicates can express.
 """
 from __future__ import annotations
 

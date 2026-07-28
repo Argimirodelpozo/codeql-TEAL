@@ -1,75 +1,10 @@
-"""Run every available SSA functional / cleanup pass on a program,
-in the canonical order, and return the flat functional rendering.
+"""Chain every SSA functional / cleanup pass in the canonical order and render.
 
-The canonical pipeline has three logical phases. Within a phase,
-pass order is constrained by per-pass docstring prerequisites; the
-phases themselves carry the high-level dependencies.
-
-**Phase A — value flow.** Resolve constants and unify equivalent
-reads so downstream propagation sees one canonical SSAVar per
-distinct value, not one per syntactic read site.
-
-  1. :meth:`SSAProgram.propagate_constants` — ``const_value`` on
-     literal-pushing producers (other passes consume it).
-  2. :meth:`SSAProgram.propagate_scratch_constants` — same but
-     across ``store`` / ``load`` for scratch slots.
-  3. :meth:`SSAProgram.propagate_inputs` — unify execution-stable
-     reads (``txn``-family, ``global``, ``arg``). Rewires consumers
-     to a canonical SSAVar per ``(op, immediates [, stack-key])``.
-  4. :meth:`SSAProgram.propagate_scratch_values` — generalises (2)
-     to arbitrary SSA values: a load is forwarded to its single
-     may-store source when all influencing stores agree.
-
-**Phase B — analytical annotation.** Layer range / type / length
-annotations on the unified value flow. Order within the phase is
-driven by precondition: integer ranges first (other layers consume
-them), then arithmetic composition, then bytes-length, then bytes-
-as-bigint.
-
-  5. :meth:`SSAProgram.propagate_ranges` — uint64 ``IntRange`` seeds
-     from op tables (boolean comparisons, ``getbyte``, txn enum
-     fields, …) plus phi union.
-  6. :meth:`SSAProgram.propagate_range_arithmetic` — composes (5)
-     through ``+`` / ``-`` / ``*`` / ``/`` / ``%`` with phi re-union.
-  7. :meth:`SSAProgram.propagate_assert_ranges` — tightens (5)/(6)
-     from the contract's own ``assert`` guards, flow-sensitively (a
-     guard only constrains the SSAVars whose every non-test use it
-     dominates, so the single per-var range stays sound on bypassing
-     paths). Runs after arithmetic so composed bounds exist to refine.
-  8. :meth:`SSAProgram.propagate_byte_lengths` — exact byte_length
-     on bytes producers (``itob``, ``concat``, ``sha256``, …) plus
-     inverse range constraints from ``btoi`` / ``getbyte`` /
-     ``extract_uint*`` / etc. on their bytes inputs.
-  9. :meth:`SSAProgram.propagate_bytemath_ranges` — bigint value
-     range via Python ints on bytemath ops (``b+``, ``b-``, ``b*``,
-     ``b/``, ``b%``) plus the ``itob`` / ``btoi`` bridge between
-     uint64 and bytes-bigint value spaces.
-
-**Phase C — structural cleanup.** Once every annotation is in
-place, simplify the IR for rendering: collapse stack shuffles and
-prune dead pure-op assignments.
-
-  10. :meth:`SSAProgram.propagate_stack_shuffles` — copy-propagate
-      pure shuffles (``dup``, ``swap``, ``frame_dig``, …) into every
-      consumer; the shuffle Assignments stay in the IR with
-      ``shuffled=True`` so they render as ``// …`` comments.
-  11. :meth:`SSAProgram.cleanup_unused_ssavars` — drop side-effect-
-      free Assignments whose every output is now dead (the duplicate
-      readers from step 3 and the forwarded loads from step 4 are
-      the typical victims).
-
-(The pipeline used to end with four further lowering passes — CSE of
-stable expressions, dead-constant inlining, phi dedup, and out-of-SSA
-phi materialisation. They were superseded by the Puya-IR lift, which
-does its own out-of-SSA via :mod:`tealql.tealtools.block_args` and phi
-simplification via its transforms, and were removed; the functional
-dump now renders live phis in phi form.)
-
-After all eleven run, :meth:`SSAProgram.functional` (and
-``functional_by_block``, plus :func:`functional_dump` here) give
-the most-annotated flat dump the substrate can produce. Every
-pass is idempotent — running ``run_all_passes`` twice is a no-op
-the second time."""
+HAZARD: every pass must be idempotent — callers re-run the pipeline freely, so a
+pass that accumulates on a second run corrupts the annotations. Phase order is a
+precondition chain, not a preference: value flow (A) must canonicalise SSAVars
+before the annotation layers (B) attach anything to them, and structural cleanup
+(C) must come last or it drops assignments the annotators still need."""
 from __future__ import annotations
 
 import logging
@@ -82,13 +17,7 @@ logger = logging.getLogger("tealql.tealtools.passes")
 
 
 def run_all_passes(prog: SSAProgram) -> SSAProgram:
-    """Apply every SSA functional pass in the canonical order.
-    Returns the same ``prog`` (mutated in place) for chaining. See
-    the module docstring for the per-phase rationale.
-
-    Progress is reported through the ``tealtools`` logger: an
-    ``INFO`` line when the pipeline starts and a ``DEBUG`` line with
-    the wall-clock time for each pass (CLI ``-v`` / ``-vv``)."""
+    """Apply every SSA functional pass in canonical order; mutates and returns ``prog``."""
     passes = [
         # Phase A — value flow.
         ("propagate_constants",         prog.propagate_constants),
@@ -122,22 +51,7 @@ def functional_dump(
     show_ranges: bool = False,
     show_bytes: bool = False,
 ) -> str:
-    """Run all SSA passes (idempotent) then return the flat
-    functional dump.
-
-    ``by_block=True`` groups assignments by basic block with a
-    predecessor/successor header per block.
-
-    ``show_ranges=True`` adds ``/*[V<=hi]*/``-style annotations on
-    uint64 SSAVars whose :class:`tealql.tealtools.ssa.IntRange` is set.
-
-    ``show_bytes=True`` adds ``/*len=N*/`` / ``/*N<=len<=M*/`` /
-    ``/*val=…*/`` annotations on bytes-typed SSAVars whose
-    :class:`tealql.tealtools.ssa.TealType` carries length or value info.
-    Implemented via :mod:`tealql.tealtools.render_annotated` as a post-pass
-    over the existing functional output, so the substrate renderer
-    stays focused on IntRange.
-    """
+    """Run all SSA passes, then return the functional dump with the requested annotations."""
     run_all_passes(prog)
     if by_block:
         out = prog.functional_by_block(file=file, show_ranges=show_ranges)

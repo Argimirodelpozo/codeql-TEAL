@@ -1,12 +1,10 @@
-"""Pre-IR — the Puya-shaped *working* model the lift builds, lowered to real
-``puya.ir.models`` by :mod:`to_puya_ir`.
+"""Pre-IR — the Puya-shaped *working* model the lift builds, mirroring
+``puya/ir/models.py`` and lowered to it by :mod:`to_puya_ir`. A type is one
+``ir_type`` kind string (uint64/bytes/bool/account/asset/application/?).
 
-A *separate*, mutable model is needed because the lift recovers types by a
-fixpoint (registers born ``?``, refined in place), while Puya's ``Register`` is
-``@attrs.frozen`` with no unknown ``IRType``. Types here are one ``ir_type`` kind
-string (uint64/bytes/bool/account/asset/application/?); the class/field structure
-otherwise matches ``puya/ir/models.py`` (Value, ValueProvider, Op, Phi, ControlOp,
-structural). Nodes self-render the ``.ssa.slot.ir`` shape via ``render()``.
+HAZARD: it stays SEPARATE and MUTABLE because the lift recovers types by a fixpoint
+(registers born ``?``, refined in place) — something Puya's ``@attrs.frozen``
+``Register``, with no unknown ``IRType``, cannot express.
 """
 from __future__ import annotations
 
@@ -22,8 +20,8 @@ from typing import Optional, Union
 class Register:
     """Puya ``Register``: an SSA value, ``name#version`` of type ``ir_type``.
 
-    Mutable (and never hashed) so a later pass can refine ``ir_type`` — e.g.
-    unifying a phi's type from its arguments."""
+    HAZARD: mutable and never hashed — passes refine ``ir_type`` in place, so every
+    consumer must key a register by ``id()``, not by value."""
     name: str
     version: int
     ir_type: str
@@ -304,15 +302,15 @@ class Program:
 
 
 # --------------------------------------------------------------------------
-# Traversal & operand access — the one place that knows a program's blocks and
-# where each node's Values live, so passes don't re-spell the iteration / the
-# Op/ControlOp dispatch. ``operands`` reads, ``map_operands`` rewrites in place.
+# Traversal & operand access — the ONE place that knows where a node's Values live,
+# so passes never re-spell the Op/ControlOp dispatch and miss an operand position.
+# ``operands`` reads, ``map_operands`` rewrites in place.
 # --------------------------------------------------------------------------
 
 
 def blocks(prog_or_subs):
-    """Every :class:`BasicBlock` of a :class:`Program` (main first) or of an
-    iterable of :class:`Subroutine`, in order."""
+    """Every :class:`BasicBlock` of a :class:`Program` (main first) or of an iterable
+    of :class:`Subroutine`, in order."""
     subs = ((prog_or_subs.main, *prog_or_subs.subroutines)
             if isinstance(prog_or_subs, Program) else prog_or_subs)
     for s in subs:
@@ -329,9 +327,8 @@ def _vp_values(vp):
 
 
 def operands(node):
-    """Yield each :data:`Value` operand of an Op / ControlOp / Phi — the leaf
-    values, descending into ``Intrinsic``/``InvokeSubroutine`` args and
-    ``ValueTuple`` values. Nothing for operand-less nodes (Goto, Fail, None)."""
+    """Yield each leaf :data:`Value` operand of an Op / ControlOp / Phi, descending
+    into ``Intrinsic`` / ``InvokeSubroutine`` args and ``ValueTuple`` values."""
     if isinstance(node, Phi):
         for a in node.args:
             yield a.value
@@ -360,13 +357,12 @@ def _map_vp(vp, fn, copy_source):
 
 
 def map_operands(node, fn, *, copy_source: bool = True) -> None:
-    """Rewrite each Value operand of ``node`` through ``fn`` in place — the write
-    twin of :func:`operands`; no-op for operand-less nodes / None.
+    """Rewrite each Value operand of ``node`` through ``fn`` in place — the write twin
+    of :func:`operands`; no-op for operand-less nodes / None.
 
-    ``copy_source`` governs a bare copy source (an Assignment whose source is a
-    plain Value): ``True`` rewrites it (substitution touches every reference),
-    ``False`` leaves it (trivial-phi collapse must not forward a copy into a
-    removed register)."""
+    HAZARD: ``copy_source`` governs a bare copy source (an Assignment whose source is
+    a plain Value): ``True`` rewrites it, reaching every reference; ``False`` leaves
+    it, as trivial-phi collapse needs, or it forwards a copy into a removed register."""
     if isinstance(node, Phi):
         for a in node.args:
             a.value = fn(a.value)

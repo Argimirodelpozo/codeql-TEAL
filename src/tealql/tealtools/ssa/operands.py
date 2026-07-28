@@ -1,20 +1,8 @@
 """Operand → compile-time-constant resolution — one source of truth.
 
-A TEAL SSA operand is a :class:`Const` literal, an :class:`SSAVar`, or a
-:class:`Phi`. Nearly every annotation pass and detector asks the same
-question of one: *does it resolve to a known constant, and if so what
-value?* That logic used to be copy-pasted — with subtly different names
-and signatures (``_const_int`` / ``_const_int_value`` / ``_operand_const``
-/ ``_is_const_like`` / ``_operand_is_constant``) — across ``range_arith``,
-``byte_length_prop``, ``bytemath``, ``detections.common``,
-``path_predicates``, ``xcontract`` and ``dataflow.engine``. These three
-helpers replace all of them.
-
-``const_value`` is set on SSAVars / Phis by
-:meth:`SSAProgram.propagate_constants` (a Phi gets one when every arg
-agrees on a literal), so resolution flows transitively through it. Each
-helper accepts a bare ``Const`` too, so a caller that has already resolved
-one operand can pass it straight back in.
+HAZARD: for an SSAVar / Phi these read ``const_value``, which is set by
+:meth:`SSAProgram.propagate_constants` (a Phi gets one when every arg agrees).
+Query them before that pass has run and every non-literal looks non-constant.
 """
 from __future__ import annotations
 
@@ -24,10 +12,7 @@ from .models import Const
 
 
 def operand_const(op) -> Optional[Const]:
-    """The :class:`Const` ``op`` resolves to — itself when it is a Const,
-    else the ``const_value`` set on an SSAVar / Phi by
-    :meth:`SSAProgram.propagate_constants` — or ``None`` when not
-    statically known."""
+    """The :class:`Const` ``op`` resolves to, or ``None`` when not statically known."""
     if isinstance(op, Const):
         return op
     cv = getattr(op, "const_value", None)
@@ -35,8 +20,7 @@ def operand_const(op) -> Optional[Const]:
 
 
 def const_int(op) -> Optional[int]:
-    """The uint64 value ``op`` resolves to, or ``None`` when it isn't a
-    statically-known int-kind literal."""
+    """The uint64 value ``op`` resolves to, or ``None`` when it isn't a known int."""
     c = operand_const(op)
     if c is None or c.kind != "int":
         return None
@@ -47,11 +31,9 @@ def const_int(op) -> Optional[int]:
 
 
 def const_bytes(op) -> Optional[str]:
-    """The bytes value ``op`` resolves to, or ``None`` when it isn't a
-    statically-known bytes-kind literal. The bytes analogue of
-    :func:`const_int`. The value is the SSA-normalised ``0x``-hex form (every
-    bytes literal — ``addr`` / ``byte "s"`` / ``byte b64 ..`` — is folded to
-    ``0x``+hex by const propagation)."""
+    """The bytes value ``op`` resolves to, as the SSA-normalised ``0x``-hex form
+    every literal (``addr`` / ``byte "s"`` / ``byte b64 ..``) is folded to — or
+    ``None`` when it isn't a statically-known bytes literal."""
     c = operand_const(op)
     if c is None or c.kind != "bytes":
         return None
@@ -59,10 +41,7 @@ def const_bytes(op) -> Optional[str]:
 
 
 def const_byte_length(op) -> Optional[int]:
-    """The length, in bytes, of the bytes constant ``op`` resolves to, or
-    ``None`` when it isn't a statically-known bytes literal. Reads it off the
-    normalised ``0x``-hex form (so e.g. a 32-byte address is 64 hex digits ->
-    32). Useful for shape checks like "is this a 32-byte address constant?"."""
+    """The length in bytes of the constant ``op`` resolves to, or ``None``."""
     v = const_bytes(op)
     if v is None or not v.startswith("0x"):
         return None
@@ -75,13 +54,13 @@ def is_const(op) -> bool:
 
 
 def binary_operands(a) -> "Optional[tuple]":
-    """The ``(lhs, rhs)`` of a 2-input opcode in SOURCE order — ``lhs OP rhs`` as
-    written (``a b <`` ⇒ ``a < b``). SSA inputs are TOP-FIRST (``inputs[0]`` is the
-    topmost popped = the SECOND source operand), so ``lhs = inputs[1]``,
-    ``rhs = inputs[0]``. Centralizes the swap that every comparison / non-commutative
-    arithmetic decoder needs and that is an invisible correctness bug if hand-rolled
-    the wrong way round (see ``reference_ssa_inputs_top_first``). ``None`` when the
-    op doesn't have exactly two inputs."""
+    """The ``(lhs, rhs)`` of a 2-input opcode in SOURCE order (``a b <`` ⇒ ``a < b``),
+    or ``None`` unless it has exactly two inputs.
+
+    HAZARD: SSA ``Assignment.inputs`` are TOP-FIRST — ``inputs[0]`` is the topmost
+    popped value, i.e. the SECOND source operand — so ``lhs = inputs[1]`` and
+    ``rhs = inputs[0]``. Hand-rolling that swap the wrong way round is an invisible
+    correctness bug in every comparison / non-commutative decoder; use this."""
     if len(a.inputs) != 2:
         return None
     return a.inputs[1], a.inputs[0]

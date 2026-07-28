@@ -1,39 +1,18 @@
-"""Parse TEAL source into AST nodes.
+"""Parse TEAL source into :mod:`tealql.tealtools.ast` nodes via ``tree-sitter-teal``.
 
-Uses the ``tree-sitter-teal`` grammar (via the ``tree_sitter`` +
-``tree_sitter_teal`` Python packages) to parse TEAL -- the grammar handles
-semicolons, byte/string literals, labels, pragmas -- and emits one node per opcode
-(plus ``Label`` nodes and the program-root ``Source`` node), each tagged with its
-*most specific* :mod:`tealql.tealtools.ast` node type and source location.
+Emits one node per opcode, plus ``Label`` nodes and the program-root ``Source``
+node (spanning line 1 to the end of the last non-trivia child); ``comment`` and
+``pragma_*`` are skipped.
 
-Output shape per node:
-``(file, startLine, startCol, endLine, endCol, node_type)``.
+HAZARD — coordinates: lines are 1-based (``ts.row + 1``), columns stay
+tree-sitter-native 0-based half-open. Mixing the two conventions is an
+off-by-one in every reported location.
 
-Key conventions:
-
-* **Coordinates** — 1-based lines (``line = ts.row + 1``), tree-sitter's native
-  0-based half-open columns (``start_col = ts.start_col``,
-  ``end_col = ts.end_col``). Lines are 1-based because that's how editors /
-  reports number TEAL; columns stay native (no off-by-one).
-* **Type is keyed by the mnemonic** (the opcode's first child token), not
-  the tree-sitter node type: generic buckets like ``zero_argument_opcode``
-  cover ``==`` / ``+`` / ``return`` / ``dup`` … so the mnemonic decides.
-* **One node per opcode.** Each opcode emits exactly one node of its most
-  specific class. (Earlier ``==`` / ``!=`` each emitted two nodes — the
-  typed and the generic comparison class — but the two collapse to one graph
-  node by ``(file, line)`` and nothing downstream read the second, so it was
-  dropped.)
-* **`Source`** — the program root; emitted once, spanning ``(1,1)`` to the
-  end of the last real (non-trivia) child (tree-sitter's root span includes
-  the trailing newline, which the legacy extractor trimmed).
-* **Skipped** — ``comment`` and ``pragma_*`` nodes (neither is emitted).
-
-Each opcode class declares its own :attr:`~tealql.tealtools.ast.AstNode.mnemonic`
-and auto-registers (:func:`node_class_for_mnemonic`), so the classes are the
-single source of truth — there is no separate mnemonic→class string table.
-The mnemonic assignments were originally derived by aligning tree-sitter
-parses against the legacy node facts across 216 fixture contracts
-(single-opcode lines only, to avoid cross-node pollution).
+A node's class is keyed by the MNEMONIC (its first child token), never by the
+tree-sitter node type: generic buckets like ``zero_argument_opcode`` cover
+``==`` / ``+`` / ``return`` / ``dup`` alike. Each opcode class declares its own
+:attr:`~tealql.tealtools.ast.AstNode.mnemonic` and auto-registers
+(:func:`node_class_for_mnemonic`), so the classes are the single source of truth.
 """
 from __future__ import annotations
 
@@ -49,9 +28,8 @@ from .literals import is_template_variable
 
 _LANG = _ts.Language(_tsteal.language())
 
-# tree-sitter Parser objects are NOT thread-safe (a shared one corrupts
-# concurrent parses), and parallel corpus scans are a natural usage. Keep one
-# Parser PER THREAD instead of a module-global; construction is cheap.
+# One Parser PER THREAD: tree-sitter Parsers are not thread-safe (a shared one
+# corrupts concurrent parses) and parallel corpus scans are normal usage.
 import threading as _threading
 
 _PARSER_TLS = _threading.local()
@@ -63,13 +41,9 @@ def _parser() -> "_ts.Parser":
         p = _PARSER_TLS.parser = _ts.Parser(_LANG)
     return p
 
-# Tree-sitter child types that are not program statements / not emitted.
-# Any ``pragma*`` node (``pragma_version`` / ``pragma_typetrack`` / ...) is
-# also dropped — pragmas produce no rows. ``ERROR`` nodes are NOT trivia:
-# they are unparseable source and are handled explicitly in
-# :func:`parse_nodes` so the drop is *recorded* as a ParseDiagnostic
-# instead of silently shrinking the program (a security scan of a
-# partially-parsed contract must not read as "clean").
+# Non-statement child types, dropped silently (any ``pragma*`` too). ERROR is
+# NOT trivia: it is unparseable source, handled in :func:`parse_nodes` so the
+# drop is RECORDED — a scan of a partially-parsed contract must not read clean.
 _TRIVIA = frozenset({"comment"})
 
 
@@ -78,22 +52,16 @@ def _is_trivia(node_type: str) -> bool:
 
 
 def _named_int_error(c, src: bytes = b"") -> bool:
-    """A tree-sitter ERROR that is really the ``int <NamedConstant>`` pseudo-op
-    (``int DeleteApplication`` / ``int pay`` / …). The grammar's ``int`` rule
-    only accepts a numeric argument, so the named OnCompletion / TxnType form
-    parses as an ERROR and would be dropped as trivia — silently losing the
-    pushed constant, so the comparison that consumes it loses an operand (the
-    root cause of the named-constant guard blind spot). We recover it as an
-    ``int`` opcode node; :mod:`const_values` resolves the name to its value.
+    """A tree-sitter ERROR that is really the ``int <NamedConstant>`` pseudo-op.
 
-    Deliberately ``int`` only, NOT ``pushint``. The named form the grammar
-    rejects for ``int`` is an OnCompletion / TxnType constant, which
-    ``const_values`` can resolve. The ``pushint`` case seen in the wild is
-    ``pushint TMPL_DELETABLE`` — a deployment TEMPLATE, whose value is unknown
-    until deploy time. Recovering it yields a push with no resolvable value,
-    which the lift's lowering cannot express (``'PushintOpcode' is not a valid
-    AVMOp``), so it stays a visible diagnostic rather than IR the lift chokes
-    on."""
+    GRAMMAR DEFECT: ``int`` accepts only a numeric argument, so the named
+    OnCompletion / TxnType form (``int DeleteApplication``, ``int pay``) parses
+    as ERROR; dropping it loses the push, so its consumer loses an operand.
+    Recovered as an ``int`` node — :mod:`const_values` resolves the name.
+
+    HAZARD: ``int`` only, never ``pushint``. The wild ``pushint`` named form is
+    ``pushint TMPL_X``, a deploy-time TEMPLATE with no resolvable value;
+    recovering it yields IR the lift cannot lower, so it stays a diagnostic."""
     return (
         c.type == "ERROR"
         and len(c.children) >= 2
@@ -101,12 +69,11 @@ def _named_int_error(c, src: bytes = b"") -> bool:
         and c.children[1].type == "label_identifier"
     )
 
-#: Every mnemonic that carries a FIELD-NAME immediate — the ops whose field
-#: enumeration the grammar hard-codes, and therefore the ops a newer or simply
-#: missed field name can break. The txn-family READS come from the AVM tables
-#: (derived, not re-listed); the field WRITE and the params/holding queries are
-#: added here because they take a field name too. ``itxn_field`` matters most:
-#: it POPS, so dropping it loses the write AND leaves the stack one deep.
+#: Every mnemonic carrying a FIELD-NAME immediate — i.e. every op the grammar's
+#: hard-coded field enumeration can break. txn-family reads are derived from the
+#: AVM tables; the field WRITE and params/holding queries are added here.
+#: ``itxn_field`` matters most: it POPS, so dropping it loses the write AND
+#: leaves the stack one deep.
 def _field_arg_mnemonics() -> frozenset:
     from ..avm import ITXN_SOURCE_OPS, TXN_SOURCE_OPS
     return TXN_SOURCE_OPS | ITXN_SOURCE_OPS | frozenset({
@@ -120,29 +87,17 @@ _TXN_FIELD_MNEMONICS = _field_arg_mnemonics()
 
 
 def _unknown_txn_field_error(c, src: bytes = b"") -> bool:
-    """A tree-sitter ERROR that is really a txn-family field read the grammar's
-    field enumeration does not list — ``txn GroupID``, ``txn AssetCloseAmount``,
-    ``txn RejectVersion`` (and the ``gtxn``/``itxn``/… forms of each).
+    """A tree-sitter ERROR that is really a txn-family read of a field the
+    grammar's enumeration omits (``txn GroupID`` / ``AssetCloseAmount`` /
+    ``RejectVersion``, and the ``gtxn``/``itxn``/… forms of each).
 
-    The grammar hard-codes the set of field names, so a field added by a newer
-    AVM version — or simply missed — parses as an ERROR and the WHOLE
-    instruction is dropped as an unparseable span. That is not a cosmetic loss:
-    the push disappears, so the stack simulation every later analysis is built
-    on is short one value from that point, and any consumer of the field (a
-    ``log`` of ``txn GroupID``, an ``AssetCloseAmount`` guard) silently loses
-    its operand.
+    GRAMMAR DEFECT: the field-name set is hard-coded, so a newer or missed field
+    parses as ERROR and the WHOLE instruction is dropped — the push disappears
+    and the stack simulation is short one value from there on.
 
-    Recovering it needs no special emit path: the ERROR's first child IS the
-    mnemonic token (``txn``), which is exactly what :func:`_class_for` keys on,
-    and :func:`_loc` spans the whole node so ``.code`` carries the full
-    ``txn GroupID`` text for the immediates. ``avm._TXN_FIELD_TYPE`` already
-    types all three correctly, so only the parse was missing.
-
-    Deliberately narrow: the node must start with a txn-family mnemonic and
-    contain a bare identifier (the field name). Anything else stays an
-    unparseable-span diagnostic. ERROR recovery is GREEDY, so two adjacent bad
-    reads collapse into ONE node — :func:`_split_txn_field_error` segments them,
-    exactly as the named-int path does."""
+    Deliberately narrow: a txn-family mnemonic plus a bare identifier; anything
+    else stays a diagnostic. ERROR recovery is GREEDY, so two adjacent bad reads
+    collapse into ONE node — :func:`_split_txn_field_error` segments them."""
     if c.type != "ERROR" or len(c.children) < 2:
         return False
     if c.children[0].type not in _TXN_FIELD_MNEMONICS:
@@ -151,11 +106,9 @@ def _unknown_txn_field_error(c, src: bytes = b"") -> bool:
 
 
 def _split_txn_field_error(c) -> "tuple[list, list]":
-    """Segment a (possibly greedy) txn-field ERROR into ``(groups, unconsumed)``.
-
-    Each group is ``[mnemonic, …immediates…, field_identifier]`` — one recovered
-    instruction. Children that do not fit that shape are returned separately so
-    the caller can report them rather than drop them in silence."""
+    """Segment a greedy txn-field ERROR into ``(groups, unconsumed)``, each group
+    ``[mnemonic, …immediates…, field_identifier]`` — one recovered instruction;
+    children that do not fit come back separately so the caller reports them."""
     groups: list = []
     unconsumed: list = []
     kids = [k for k in c.children if not _is_trivia(k.type)]
@@ -178,32 +131,26 @@ def _split_txn_field_error(c) -> "tuple[list, list]":
 
 
 #: Opcode nodes whose trailing NUMERIC immediate the grammar drops into a bare
-#: ERROR. ``itxna`` loses its array index; ``gaid`` loses its group index
-#: entirely (the grammar rejects EVERY index, not just an out-of-range one, and
-#: types the op as a zero-argument opcode).
+#: ERROR: ``itxna`` loses its array index, ``gaid`` its group index (every
+#: index, not just out-of-range ones; the op then types as zero-argument).
 _INDEX_TAIL_NODES = frozenset({"itxna_opcode", "zero_argument_opcode"})
 _INDEX_TAIL_MNEMONICS = frozenset({"itxna", "gaid"})
 
 
 def _itxna_index_split(ch, nxt, src: bytes) -> bool:
-    """The grammar's ``itxna`` rule takes only a FIELD, no array index — so
-    ``itxna Logs 1`` parses as an ``itxna_opcode`` covering ``itxna Logs`` plus
-    a bare ERROR holding the ``1``. ``gaid N`` is the same defect with the
-    index gone completely: the op types as a ZERO-argument opcode and the
-    index becomes a bare ERROR, so ``gaid 5`` and ``gaid 20`` — different
-    group transactions — are indistinguishable.
+    """An opcode node followed by the bare-ERROR numeric index the grammar split
+    off it, to be merged back by re-spanning.
 
-    The opcode SURVIVES, which is what makes this nastier than a clean drop:
-    its ``.code`` is ``itxna Logs``, so the immediates lose the index entirely
-    and ``itxna Logs 0`` becomes indistinguishable from ``itxna Logs 5``. Every
-    analysis keyed on the array slot — input unification's canonical key, the
-    taint layer's per-slot identity — then conflates distinct elements of the
-    SAME array, silently. (``txna`` has the ``numeric_argument`` child and is
-    fine; ``gitxna`` is fine; it is specifically ``itxna``.)
+    GRAMMAR DEFECT: ``itxna`` takes only a FIELD, so ``itxna Logs 1`` parses as
+    ``itxna Logs`` plus an ERROR holding the ``1``; ``gaid N`` loses its index
+    the same way and types as a ZERO-argument opcode. (``txna`` and ``gitxna``
+    are fine — they have the ``numeric_argument`` child.)
 
-    Re-span the opcode through the index tail, exactly as
-    :func:`_hex_int_split` does for a split numeric literal. Same line only, so
-    an unrelated ERROR below can never be absorbed."""
+    HAZARD: the opcode SURVIVES with its index gone, so ``itxna Logs 0`` and
+    ``itxna Logs 5`` become identical and every slot-keyed analysis (input
+    unification, per-slot taint) silently conflates distinct array elements.
+
+    Same line only, so an unrelated ERROR below can never be absorbed."""
     if ch.type not in _INDEX_TAIL_NODES or nxt is None or nxt.type != "ERROR":
         return False
     mnem = ch.children[0].type if ch.children else None
@@ -221,27 +168,20 @@ _TEMPLATE_HOST_NODES = frozenset({
     "pushints_opcode", "pushbytess_opcode",
     "single_numeric_argument_opcode", "pushbytes_opcode",
 })
-#: NOT the single-push opcodes. A CONST BLOCK holding a template keeps its
-#: other slots useful and its arity right, so recovering it is a clear win. A
-#: bare `pushint TMPL_DELETABLE` recovers to a push with no resolvable value,
-#: which the lift's lowering cannot express (`'PushintOpcode' is not a valid
-#: AVMOp` on the xgov contract) — so it stays a visible diagnostic instead.
+#: NOT the single-push opcodes: a const BLOCK holding a template keeps its other
+#: slots and its arity, but a bare `pushint TMPL_X` recovers to a push with no
+#: resolvable value, which the lift cannot lower — it stays a diagnostic.
 
 
 
 
 def _is_phantom_label(c) -> bool:
-    """A ``label`` node tree-sitter SALVAGED from a bare identifier, rather than
-    a real ``name:`` definition.
+    """A ``label`` node tree-sitter SALVAGED from a bare identifier (a truncated
+    operand list's tail, a typo) rather than a real ``name:`` definition.
 
-    A stray identifier — the tail of a truncated operand list, a typo — parses
-    as a ``label`` whose ``:`` token tree-sitter had to INVENT, and an invented
-    token is flagged ``is_missing``. A real ``main:`` has a genuine ``:``.
-
-    Without this, such an identifier was swallowed in total silence: no label
-    (reachability-gating drops it), no diagnostic, and the operand list it came
-    from quietly truncated. `bytecblock "a" somethingelse` reported nothing at
-    all while dropping a token."""
+    Detected by the ``:`` token being ``is_missing`` — tree-sitter had to invent
+    it, whereas a real ``main:`` has a genuine one. Untreated, such a token is
+    swallowed in total silence: no label, no diagnostic, operand list truncated."""
     if c.type != "label":
         return False
     return any(k.type == ":" and k.is_missing for k in c.children)
@@ -254,11 +194,11 @@ _TEMPLATE_PUSH_MNEMONICS = frozenset({"pushint", "pushbytes", "int", "byte"})
 def _template_push_error(c, src: bytes) -> bool:
     """``ERROR[<push mnemonic>, <TEMPLATE identifier>]`` — the BARE form.
 
-    `pushint TMPL_DELETABLE // comment` parses as an opcode node plus a
-    salvaged tail (handled by :func:`_template_var_tail`), but the same line
-    WITHOUT a trailing comment parses as one ERROR that CONTAINS the mnemonic.
-    Two shapes for one construct, so both need recovering or the bare form
-    stays dropped — losing the push and leaving the stack short."""
+    GRAMMAR DEFECT: `pushint TMPL_X // comment` parses as an opcode plus a
+    salvaged tail (:func:`_template_var_tail`), but WITHOUT the trailing comment
+    the same line parses as one ERROR that CONTAINS the mnemonic. Two shapes for
+    one construct; miss this one and the push is dropped, leaving the stack
+    short."""
     if c.type != "ERROR" or len(c.children) < 2:
         return False
     if c.children[0].type not in _TEMPLATE_PUSH_MNEMONICS:
@@ -272,17 +212,16 @@ def _template_push_error(c, src: bytes) -> bool:
 
 
 def _end_of_line(node, src: bytes) -> "tuple[int, int]":
-    """``(line, end_col)`` of the END of the line ``node`` STARTS on — 1-based
-    line, native column. Used to clamp a re-spanned opcode so it never runs
-    past its own line."""
+    """``(line, end_col)`` of the end of the line ``node`` STARTS on — clamps a
+    re-spanned opcode so it never runs past its own line."""
     row = node.start_point[0]
     lines = src.decode("utf-8", "replace").split("\n")
     return row + 1, len(lines[row]) if row < len(lines) else node.end_point[1]
 
 
 def _phantom_is_opcode(c, src: bytes) -> bool:
-    """A phantom label whose identifier is a KNOWN opcode mnemonic — i.e. an
-    opcode the grammar does not model, salvaged as a bare identifier."""
+    """A phantom label whose identifier is a KNOWN opcode mnemonic — an opcode the
+    grammar does not model, salvaged as a bare identifier."""
     from ..avm import SIG
     text = src[c.start_byte:c.end_byte].decode("utf-8", "replace").strip()
     return text in SIG
@@ -290,19 +229,16 @@ def _phantom_is_opcode(c, src: bytes) -> bool:
 
 def _template_var_tail(ch, nxt, src: bytes) -> bool:
     """A const block whose operand list ends in un-instantiated deployment
-    TEMPLATE VARIABLES (``bytecblock "greeting" TMPL_GREETING``,
-    ``intcblock 1 64 TMPL_DELETABLE``).
+    TEMPLATE VARIABLES (``bytecblock "greeting" TMPL_GREETING``).
 
-    The grammar has no template-variable token, so the opcode node STOPS at the
-    last real literal and the ``TMPL_*`` tail becomes a separate node — an
-    ERROR, or (worse) a spurious ``label`` DEFINITION, since `TMPL_X` on its own
-    looks exactly like one. A phantom label is a phantom branch target.
+    GRAMMAR DEFECT: there is no template-variable token, so the opcode STOPS at
+    the last real literal and the ``TMPL_*`` tail becomes an ERROR — or, worse,
+    a spurious ``label`` DEFINITION, i.e. a phantom branch target.
 
-    Re-spanning the opcode through the tail keeps the block's ARITY right, which
-    is what actually matters: ``bytec_N`` indexes the block POSITIONALLY, so a
-    truncated list silently renumbers every later slot. The template slots
-    themselves stay UNRESOLVED — a template's value is genuinely unknown until
-    deployment — which :mod:`const_values` models per slot."""
+    HAZARD: re-spanning through the tail is about ARITY. ``bytec_N`` indexes the
+    block POSITIONALLY, so a truncated list silently renumbers every later slot.
+    The template slots stay unresolved (:mod:`const_values` models them per
+    slot) — their value is genuinely unknown until deployment."""
     if ch.type not in _TEMPLATE_HOST_NODES or nxt is None:
         return False
     if nxt.type not in ("ERROR", "label"):
@@ -325,14 +261,13 @@ _NUMERIC_ARG_OPCODES = frozenset({
 
 
 def _hex_int_split(ch, nxt, src: bytes) -> bool:
-    """A grammar hex/oct/bin-literal split: ``ch`` is a decimal-numeric int opcode
-    whose literal was truncated at the ``0`` (the ``numeric_argument`` rule accepts
-    only decimal), and ``nxt`` is the adjacent ``x..`` / ``o..`` / ``b..`` tail the
-    grammar mis-emitted as a ``label`` / ``ERROR``. Adjacency (``nxt`` starts
-    exactly where ``ch`` ends, no whitespace) is unambiguous: a label / stray token
-    fused to an opcode's operand is never valid TEAL, so this only ever fires on a
-    split literal. Over-merging a genuinely malformed token degrades to ``None`` in
-    ``const_values`` (never a wrong value)."""
+    """An int opcode plus the ``x..``/``o..``/``b..`` tail of its split literal.
+
+    GRAMMAR DEFECT: ``numeric_argument`` is DECIMAL-only, so ``int 0x10``
+    truncates at the ``0`` and the tail mis-emits as a ``label``/``ERROR``.
+    Adjacency (no whitespace between them) is unambiguous — a token fused to an
+    operand is never valid TEAL — and over-merging degrades to ``None`` in
+    ``const_values``, never to a wrong value."""
     if ch.type not in _NUMERIC_ARG_OPCODES or nxt.type not in ("label", "ERROR"):
         return False
     if nxt.start_byte != ch.end_byte:            # must be adjacent — no whitespace
@@ -341,16 +276,12 @@ def _hex_int_split(ch, nxt, src: bytes) -> bool:
                                                       b"b", b"B")
 
 
-#: RECOVERY REGISTRIES. The tree-sitter grammar rejects a growing set of valid
-#: TEAL, and each gap is recovered in one of exactly two shapes:
-#:
-#:   * STANDALONE — an ERROR node that IS one or more instructions, emitted on
-#:     its own (`_class_for` keys on its first child, the mnemonic token);
-#:   * TAIL — a node that belongs to the PRECEDING opcode and is merged into it
-#:     by re-spanning (always clamped to the opcode's own line).
-#:
-#: Adding the next AVM version's gap is one entry in one tuple, rather than
-#: another clause in two `or` chains that had drifted out of step.
+#: RECOVERY REGISTRIES — the list of valid TEAL the grammar rejects. Each gap is
+#: recovered in one of two shapes: STANDALONE, an ERROR node that IS one or more
+#: instructions, emitted on its own (`_class_for` keys on its first child, the
+#: mnemonic token); or TAIL, a node belonging to the PRECEDING opcode, merged in
+#: by re-spanning (always clamped to that opcode's own line). The next AVM
+#: version's gap is one entry in one tuple.
 _STANDALONE_RECOVERIES = (
     _named_int_error,            # `int DeleteApplication`
     _unknown_txn_field_error,    # `txn GroupID`, `itxn_field RejectVersion`
@@ -373,19 +304,14 @@ def _is_tail_recovery(prev, node, src: bytes) -> bool:
 
 
 def _ts_to_pascal(node_type: str) -> str:
-    """Fallback node-class for an opcode whose mnemonic no class claims:
-    PascalCase the tree-sitter node type (``txn_opcode`` -> ``TxnOpcode``).
-    Faithful for specifically-typed grammar nodes; for generic buckets it
-    yields the bucket class."""
+    """PascalCase a tree-sitter node type (``txn_opcode`` -> ``TxnOpcode``) as the
+    fallback class for an opcode whose mnemonic no class claims."""
     return "".join(p.capitalize() for p in node_type.split("_"))
 
 
 def _class_for(child) -> tuple[type, "str | None"]:
-    """The :class:`AstNode` subclass to instantiate for an opcode ``child``,
-    and an optional ``node_class`` override used only for the bare-:class:`AstNode`
-    fallback. Resolution: the mnemonic registry (each opcode class declares its
-    own :attr:`mnemonic`), else the tree-sitter PascalCase node-class, else a
-    plain ``AstNode`` tagged with that name."""
+    """``(AstNode subclass, node_class override)`` for an opcode child: mnemonic
+    registry first, else the PascalCase node-class, else a tagged ``AstNode``."""
     mnem = child.children[0].type if child.children else child.type
     cls = node_class_for_mnemonic(mnem)
     if cls is not None:
@@ -398,8 +324,8 @@ def _class_for(child) -> tuple[type, "str | None"]:
 
 
 def _loc(node) -> tuple[int, int, int, int]:
-    """tree-sitter span -> ``(start_line, start_col, end_line, end_col)``:
-    1-based lines, native 0-based half-open columns."""
+    """tree-sitter span -> ``(start_line, start_col, end_line, end_col)`` — 1-based
+    lines, native 0-based half-open columns."""
     return (
         node.start_point[0] + 1,
         node.start_point[1],
@@ -415,20 +341,14 @@ def parse_nodes(
 ) -> list:
     """Parse ``{file: source}`` into :class:`tealql.tealtools.ast.AstNode` objects.
 
-    One node per opcode (plus ``Label`` nodes and the program-root ``Source``
-    node), each with its source location and the source text of its line. The
-    opcode's class comes from the mnemonic registry (:func:`node_class_for_mnemonic`).
-    A ``Label`` is emitted only when it is a reachable CFG node (dead-subroutine
-    entry labels are dropped) -- gated by the control-flow reachability over the
-    opcode+label set.
+    A ``Label`` is emitted only if reachable in the CFG over the opcode+label set
+    (dead-subroutine entry labels are dropped).
 
-    ``diagnostics``: optional accumulator. Every top-level tree-sitter
-    ``ERROR`` span (unparseable source, other than the recovered
-    ``int <NamedConstant>`` form) is DROPPED from the node stream; when an
-    accumulator is passed, each drop appends a
-    :class:`tealql.tealtools.errors.ParseDiagnostic` so callers can tell a fully-
-    parsed program from a partial one.
-    """
+    HAZARD: every unrecovered ``ERROR`` span is DROPPED from the node stream, as
+    are extra instructions on a shared line and duplicate labels. Each drop
+    appends a :class:`tealql.tealtools.errors.ParseDiagnostic` to ``diagnostics``
+    when one is passed — the ONLY way a caller can tell a fully-parsed program
+    from a partial one."""
     from ..errors import ParseDiagnostic
     from ..graph import _slice_source        # lazy: graph imports this module
     out: list = []
@@ -444,9 +364,7 @@ def parse_nodes(
                         and _is_tail_recovery(real[-1], c, src))):
                 real.append(c)
             elif c.type == "ERROR" and real and _hex_int_split(real[-1], c, src):
-                # a hex/oct/bin int tail the grammar split off (e.g. the `x10 5`
-                # after `intcblock 0`) — keep it so the next pass merges it back,
-                # rather than dropping it as an unparseable-span diagnostic.
+                # Keep the split hex/oct/bin tail so the next pass merges it back.
                 real.append(c)
             elif c.type == "ERROR":
                 if diagnostics is not None:
@@ -480,40 +398,28 @@ def parse_nodes(
             ch = real[i]
             nxt = real[i + 1] if i + 1 < len(real) else None
             if nxt is not None and _is_tail_recovery(ch, nxt, src):
-                # Clamp to the END OF THE OPCODE'S OWN LINE. A salvaged tail can
-                # span FURTHER (xgov's `pushint TMPL_DELETABLE // TMPL_DELETABLE`
-                # swallowed its comment AND the next line), and a multi-line span
-                # slices to an EMPTY `.code` — whereupon `_opname` falls back to
-                # `node_class` and the op literally becomes "PushintOpcode".
-                # One instruction per line is an architectural invariant here, so
-                # clamping is always right.
+                # Re-span the opcode through its salvaged tail so `.code` carries
+                # the whole instruction, CLAMPED to the opcode's own line: a tail
+                # can span further (swallowing a comment and the next line), and a
+                # multi-line span slices to an EMPTY `.code`, whereupon `_opname`
+                # falls back to `node_class` and the op becomes "PushintOpcode".
                 el_, ec_ = _end_of_line(nxt, src)
-                # Recovered `int 0x10` / `pushint 0x..` / `intcblock 0x.. ..`: the
-                # grammar's numeric_argument is DECIMAL-only, so a hex/oct/bin
-                # literal parses as `<op> 0` plus an adjacent bogus `label`/`ERROR`
-                # tail (`x10`). Re-span the opcode through that tail so its `.code`
-                # carries the whole literal; const_values then resolves it.
                 cls, override = _class_for(ch)
                 op_nodes.append(_node(
                     ch.start_point[0] + 1, ch.start_point[1], el_, ec_,
                     cls, override))
-                # Absorb EVERY salvaged tail that starts on the opcode's line,
-                # not just the first: a long operand list can shed more than one
-                # (`bytecblock 0x.. TMPL_A TMPL_B TMPL_C ... TMPL_STRUCT` left a
-                # second tail behind, which then became its own phantom label).
-                # Safe because the span is already clamped to this line, and one
-                # instruction per line is an architectural invariant here.
+                # Absorb EVERY tail starting on this line, not just the first: a
+                # long operand list sheds more than one, and a leftover becomes
+                # its own phantom label. Safe — the span is already clamped and
+                # one instruction per line is architectural.
                 i += 2
                 while (i < len(real)
                        and real[i].start_point[0] == ch.start_point[0]):
                     i += 1
                 continue
             if _unknown_txn_field_error(ch, src):
-                # Recovered txn-family field read the grammar's field list is
-                # missing (`txn GroupID` / `AssetCloseAmount` / `RejectVersion`).
-                # `_class_for` keys on the ERROR's first child — the mnemonic
-                # token — so each group emits as the very node the grammar would
-                # have produced for a known field.
+                # `_class_for` keys on the ERROR's first child — the mnemonic —
+                # so each group emits as the node a known field would have got.
                 groups, unconsumed = _split_txn_field_error(ch)
                 for grp in groups:
                     cls, override = _class_for(ch)
@@ -534,16 +440,9 @@ def parse_nodes(
                 i += 1
                 continue
             if _named_int_error(ch, src):
-                # Recovered `int <name>`: span each `int` token through its named
-                # identifier (tight, robust to greedy ERROR recovery), emit as
-                # the same opcode class a numeric `int N` gets.
-                #
-                # ERROR recovery is GREEDY: consecutive named ints
-                # (`int pay` / `int axfer`) collapse into ONE error node, so
-                # recovering only children[0..1] silently swallowed every
-                # instruction after the first. Walk the whole child list,
-                # recovering every `int <name>` pair, and record anything left
-                # unconsumed as a diagnostic rather than dropping it in silence.
+                # ERROR recovery is GREEDY — consecutive named ints collapse into
+                # ONE error node — so walk the whole child list, spanning each
+                # `int` through its identifier, and report the leftovers.
                 kids_e = list(ch.children)
                 j = 0
                 unconsumed: list = []
@@ -575,12 +474,10 @@ def parse_nodes(
                 continue
             sl, sc, el, ec = _loc(ch)
             if _is_phantom_label(ch) and _phantom_is_opcode(ch, src):
-                # An opcode the grammar has never heard of (a newer AVM
-                # version's) parses as a bare identifier and would be DROPPED —
-                # taking its whole stack effect with it. `falcon_verify` (AVM
-                # 12, 3 in / 1 out) vanished exactly this way, desyncing the
-                # simulation from that point on. `avm.SIG` already knows its
-                # arity; emit it as the opcode it is.
+                # GRAMMAR DEFECT: an opcode the grammar has never heard of (a
+                # newer AVM version's, e.g. `falcon_verify`) parses as a bare
+                # identifier and would be DROPPED, taking its stack effect with
+                # it and desyncing the simulation. `avm.SIG` knows its arity.
                 mnem = src[ch.start_byte:ch.end_byte].decode(
                     "utf-8", "replace").strip()
                 cls = node_class_for_mnemonic(mnem) or ZeroArgumentOpcode
@@ -588,8 +485,7 @@ def parse_nodes(
                                       None if cls is not ZeroArgumentOpcode
                                       else _ts_to_pascal(f"{mnem}_opcode")))
             elif _is_phantom_label(ch):
-                # Not a label: a bare identifier tree-sitter salvaged (see
-                # _is_phantom_label). Record the drop rather than swallow it.
+                # A salvaged bare identifier, not a label — record the drop.
                 if diagnostics is not None:
                     text = src[ch.start_byte:ch.end_byte].decode("utf-8", "replace")
                     diagnostics.append(ParseDiagnostic(
@@ -604,15 +500,12 @@ def parse_nodes(
                 op_nodes.append(_node(sl, sc, el, ec, cls, override))
             i += 1
 
-        # One instruction per line is an ARCHITECTURAL invariant, not a style
-        # preference: AstNode identity, SSAVar identity (file, line, index),
-        # the scratch/cost/graph indexes and every reported violation are all
-        # keyed by (file, line). TEAL's grammar does allow `int 1; int 2`, and
-        # such a line silently COLLAPSES to a single graph node — the extra
-        # pushes vanish and the consuming op loses operands. We cannot
-        # represent it, so we must not pretend to: record it through the same
-        # channel as unparseable source (strict callers then refuse, and a
-        # scan of such a file never reads as "clean").
+        # HAZARD: one instruction per line is ARCHITECTURAL, not stylistic —
+        # AstNode identity, SSAVar identity (file, line, index), the
+        # scratch/cost/graph indexes and every violation are keyed by
+        # (file, line). TEAL allows `int 1; int 2`, which COLLAPSES to a single
+        # node (extra pushes vanish, the consumer loses operands). We cannot
+        # represent it, so it is reported like unparseable source.
         if diagnostics is not None:
             by_line: dict[int, list] = {}
             for n in op_nodes:
@@ -625,9 +518,8 @@ def parse_nodes(
                                  f"(only the first is analyzed): "
                                  f"{'; '.join(g.code for g in group)[:80]}"),
                     ))
-            # Duplicate labels: the assembler rejects them, and branch
-            # resolution can only pick one target, so the other definition's
-            # code becomes unreachable and is pruned. Never silently.
+            # Duplicate labels: the assembler rejects them, and branch resolution
+            # picks one target, so the other block is pruned as unreachable.
             seen_labels: dict[str, int] = {}
             for n in label_nodes:
                 nm = n.code.rstrip(":").strip()
@@ -649,8 +541,7 @@ def parse_nodes(
             _cand, reachable, _idx = _program_cfg(kids)
             reach_lines = {kids[i].line for i in reachable}
 
-        # Source node: the whole program, (line 1, col 0) .. the end of the
-        # last real child (native half-open columns).
+        # Source node spans (line 1, col 0) .. end of the last real child.
         last = real[-1]
         out.append(_node(1, 0, last.end_point[0] + 1, last.end_point[1], Source))
         out.extend(op_nodes)

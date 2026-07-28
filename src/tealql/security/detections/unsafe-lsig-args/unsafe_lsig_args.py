@@ -1,17 +1,11 @@
-"""sec-guide/unsafe-lsig-args: arg* opcode used as an equality key.
+"""sec-guide/unsafe-lsig-args: an ``arg*`` opcode used as an equality key. LogicSig
+arguments are not covered by delegation signatures and the caller changes them
+per-transaction, so they provide zero access control.
 
-LogicSig arguments aren't covered by delegation signatures and can be changed
-per-transaction by the caller, so using them as equality keys for access control
-provides no security.
-
-The value-flow is followed over the **interprocedural taint graph**
-(:class:`tealql.tealtools.dataflow.taint_graph.TaintGraph`) rather than the arg read's
-direct ``==`` uses: the graph carries def-use, phi, scratch (store/load) AND
-proto-frame edges, so an arg that is stashed in scratch, threaded through one or
-more subroutines, and/or hashed (``sha256``) before the comparison is still
-caught. The old direct-use scan saw only ``arg; …; ==`` in one basic block and
-silently missed every cross-sub / cross-scratch / hash-then-compare guard (the
-exact shapes a real LogicSig uses) — a false negative per missed flow.
+Followed over the interprocedural :class:`TaintGraph`, not the arg read's direct
+``==`` uses — the graph carries def-use, phi, scratch and proto-frame edges, so an
+arg stashed in scratch, threaded through subroutines and/or hashed before the
+comparison is still caught. Those are the shapes real LogicSigs use.
 """
 from __future__ import annotations
 
@@ -38,7 +32,7 @@ class UnsafeLsigArgsViolation:
 
     @property
     def line(self) -> int:
-        # Structured anchor for machine output; mirrors pretty().
+        # Must mirror pretty().
         return self.arg_op.location.line
 
     def pretty(self) -> str:
@@ -62,9 +56,8 @@ class UnsafeLsigArgsDetector:
         self.file = file
 
     def _assignment_index(self) -> dict:
-        """``{(file, line): Assignment}`` built once. This used to be a linear
-        scan of ``prog.assignments`` per graph node, i.e. quadratic in program
-        size on exactly the big proof-verifier LogicSigs this detector targets."""
+        """``{(file, line): Assignment}`` built once — a scan per graph node is
+        quadratic on exactly the big proof-verifier LogicSigs this targets."""
         idx = getattr(self, "_asn_index", None)
         if idx is None:
             idx = {}
@@ -74,8 +67,7 @@ class UnsafeLsigArgsDetector:
         return idx
 
     def _assignment_at(self, node) -> Optional[Assignment]:
-        """The ``Assignment`` an op-graph taint node stands for, matched by
-        ``(file, line)`` — the node identity the TaintGraph exposes."""
+        """The ``Assignment`` a taint node stands for, matched by ``(file, line)``."""
         return self._assignment_index().get((node.file, node.line))
 
     def detect(self) -> list[UnsafeLsigArgsViolation]:
@@ -94,8 +86,7 @@ class UnsafeLsigArgsDetector:
             key = (n.file, n.line)
             if key in seen_args:
                 continue
-            # First equality comparison this arg's value reaches (through any
-            # mix of scratch / subroutine / value-op edges the graph models).
+            # First equality this arg's value reaches, over any mix of edges.
             reached = tg.reachable_from(n) & cmp_set
             if not reached:
                 continue

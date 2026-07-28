@@ -1,16 +1,5 @@
-"""Copy-propagation of pure stack-shuffle opcode outputs into consumers.
-
-For each shuffle op (``_STACK_SHUFFLE_OPS``), :func:`_shuffle_mapping` gives
-the per-output source input; each output SSAVar is rewritten in every consumer
-(``Assignment.inputs`` and ``Phi.args``) to read the source directly, with
-shuffle-of-shuffle chains flattened in one hop. The shuffle assignments are
-marked ``.shuffled`` so :meth:`Assignment.functional` renders them as ``// …``
-comments.
-
-Bridged from ``SSAProgram.propagate_stack_shuffles`` (which keeps the
-idempotency guard + flag). Must run before ``materialize_phis`` — phi args are
-``list[SSAVar | Phi]`` until materialisation.
-"""
+"""Copy-propagate pure stack-shuffle outputs (``dup``, ``swap``, …) into their
+consumers, marking the shuffle assignments ``.shuffled`` instead of deleting them."""
 from __future__ import annotations
 
 from ..ssa import (
@@ -24,8 +13,6 @@ from ..ssa import (
 
 
 def propagate_stack_shuffles(prog: SSAProgram) -> None:
-    # Step 1: collect shuffle assignments + the per-output redirect from each
-    # output SSAVar to its source operand.
     redirect: dict[SSAVar, Operand] = {}
     shuffle_assigns: list[Assignment] = []
     for a in prog.assignments:
@@ -43,8 +30,7 @@ def propagate_stack_shuffles(prog: SSAProgram) -> None:
     if not redirect:
         return
 
-    # Step 2: flatten shuffle-of-shuffle chains so each output resolves to its
-    # deepest non-shuffle source in one hop.
+    # Flatten shuffle-of-shuffle chains to the deepest non-shuffle source.
     def _resolve(o: Operand) -> Operand:
         seen: set[SSAVar] = set()
         while isinstance(o, SSAVar) and o in redirect:
@@ -56,7 +42,6 @@ def propagate_stack_shuffles(prog: SSAProgram) -> None:
 
     final: dict[SSAVar, Operand] = {v: _resolve(v) for v in redirect}
 
-    # Step 3: rewrite every consumer (Assignment.inputs and Phi.args).
     for a in prog.assignments:
         a.inputs = [final.get(i, i) if isinstance(i, SSAVar) else i
                     for i in a.inputs]
@@ -64,20 +49,14 @@ def propagate_stack_shuffles(prog: SSAProgram) -> None:
         ph.args = [final.get(arg, arg) if isinstance(arg, SSAVar) else arg
                    for arg in ph.args]
 
-    # Step 4: mark the shuffle assignments (they stay in the IR; the flag
-    # drives the ``// …`` prefix in Assignment.functional).
     for a in shuffle_assigns:
         a.shuffled = True
 
-    # Step 5: restore the `.uses` invariant. Step 3 changed which var each
-    # consumer reads, and the shuffle ops are now DEAD (`.shuffled`) — their
-    # outputs were redirected away, so they are no longer LIVE readers of their
-    # own inputs either. `.uses` must reflect only live reads, or a consumer that
-    # walks it (e.g. `range_assert`'s dominance check, which would otherwise see a
-    # stale dead-`dup` use and refuse to tighten an asserted-then-dup'd value; DCE;
-    # byte_taint) reasons over the wrong set. Rebuild from current, non-shuffle
-    # assignment inputs (phi args are not op-uses — matches construction). Cheap:
-    # only runs when some redirect happened.
+    # HAZARD: rebuild `.uses` from live reads only. The rewrite above changed
+    # which var each consumer reads, and the now-`.shuffled` ops are no longer
+    # live readers of their own inputs; anything that walks `.uses` (range_assert
+    # dominance, DCE, byte_taint) reasons over the wrong set if a stale dead use
+    # survives. Phi args are not op-uses — that matches construction.
     touched: dict = {}
     for a in prog.assignments:
         for op in (*a.inputs, *a.outputs):

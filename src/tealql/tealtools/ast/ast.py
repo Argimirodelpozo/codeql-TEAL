@@ -1,40 +1,15 @@
-"""TEAL AST node types.
-
-Every class here is a TEAL AST node type that can appear as a node in the graph
-produced by :mod:`tealql.tealtools.graph`. Instances of these classes are what
-:mod:`tealql.tealtools.graph` stores as the NetworkX node objects, so you get typed
-node inspection for free:
-
-    >>> from tealql.tealtools.ast import IntegerAddOpcode, Opcode, ArithmeticOpcode
-    >>> g = load_graph("contract.teal")
-    >>> [n for n in g if isinstance(n, IntegerAddOpcode)]
-    >>> [n for n in g if isinstance(n, ArithmeticOpcode)]
-
-Each node carries two fields:
-
-- ``location``: a :class:`Location` (file + full start/end span)
-- ``code``: the opcode with its immediates, as written in the source
-  (e.g. ``"int 1"``, ``"load 2"``, ``"txna ApplicationArgs 0"``).
-
-The hierarchy groups opcodes into families (``ArithmeticOpcode``,
-``CryptoOpcode``, ...). Family classes are pure Python groupings — they are
-not ``node_class`` names and are never instantiated directly;
-only the concrete leaf classes are.
-"""
+"""TEAL AST node types — the objects :mod:`tealql.tealtools.graph` stores as graph nodes."""
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import ClassVar, Optional
 
 
-# ---------------------------------------------------------------------------
-# Location
-# ---------------------------------------------------------------------------
+# ----- Location -------------------------------------------------------------
 
 @dataclass(frozen=True)
 class Location:
-    """A source-range location: 1-based lines, native 0-based half-open
-    columns (``[start_column, end_column)``)."""
+    """A source range: 1-based lines, 0-based half-open columns ``[start, end)``."""
     file: str
     start_line: int
     start_column: int
@@ -45,38 +20,32 @@ class Location:
         return f"{self.file}:{self.start_line}:{self.start_column}"
 
 
-# ---------------------------------------------------------------------------
-# Base class + registry
-# ---------------------------------------------------------------------------
+# ----- Base class + registry ------------------------------------------------
 
 class AstNode:
     """Any TEAL AST node that can appear as a graph node.
 
-    Hashing/equality are keyed by ``(file, start_line)`` — analyzed TEAL is
-    one-instruction-per-line, so this uniquely identifies each node and
-    lets edge endpoints (reported by ``(file, line)``) look
-    up the matching node instance directly. The grammar does permit
-    ``int 1; int 2``; :func:`tealql.tealtools.ast.parse.parse_nodes` records
-    any such line as a ``ParseDiagnostic`` rather than letting it collapse
-    into one node unnoticed.
+    HAZARD: hashing/equality are keyed by ``(file, start_line)``, NOT by the
+    instruction. One-instruction-per-line is architectural, shared with SSAVar
+    identity ``(file, line, index)``, the scratch/cost/graph indexes and every
+    reported violation — widening the key here means widening all of them.
+    TEAL's grammar does permit ``int 1; int 2``, so
+    :func:`tealql.tealtools.ast.parse.parse_nodes` records any such line as a
+    ``ParseDiagnostic`` rather than letting it collapse into one node unnoticed.
     """
 
-    #: Registry of ``node_class`` name -> concrete ``AstNode`` subclass.
+    #: ``node_class`` name -> concrete ``AstNode`` subclass.
     _registry: ClassVar[dict[str, type["AstNode"]]] = {}
 
-    #: Registry of opcode mnemonic -> the subclass that parses it (e.g.
-    #: ``"+"`` -> ``IntegerAddOpcode``). Each concrete opcode class declares
-    #: its own :attr:`mnemonic`; the parser builds nodes off this map, so the
+    #: Opcode mnemonic -> the subclass that parses it (``"+"`` ->
+    #: ``IntegerAddOpcode``). Built from each class's :attr:`mnemonic`, so the
     #: classes are the single source of truth (no separate string table).
     _by_mnemonic: ClassVar[dict[str, type["AstNode"]]] = {}
 
-    #: The node-class name string this class corresponds to (used as the
-    #: node-type identifier throughout the graph). Subclasses inherit their
-    #: own class name unless they set this explicitly.
+    #: Node-type identifier used throughout the graph; defaults to the class name.
     node_class: ClassVar[str] = "AstNode"
 
-    #: The opcode mnemonic this class parses, or ``None`` for non-opcode /
-    #: abstract / family classes that no source token maps to directly.
+    #: Mnemonic this class parses; ``None`` for non-opcode / family classes.
     mnemonic: ClassVar[Optional[str]] = None
 
     def __init_subclass__(cls, **kwargs):
@@ -91,13 +60,6 @@ class AstNode:
         self.location = location
         self.code = code
 
-    # NOTE the (file, start_line) key is an ARCHITECTURAL invariant shared with
-    # SSAVar identity ``(file, line, index)``, the scratch / cost / graph
-    # indexes and every reported violation — not a local choice. TEAL's grammar
-    # permits several instructions on one line (``int 1; int 2``), which this
-    # key cannot distinguish; ``ast.parse`` records any such line as a
-    # ParseDiagnostic so it is never analyzed silently. Widening the key to
-    # include ``start_column`` means widening all of the above with it.
     def __hash__(self) -> int:
         return hash((self.location.file, self.location.start_line))
 
@@ -114,16 +76,13 @@ class AstNode:
 
 
 def node_class_for_mnemonic(mnemonic: str) -> Optional[type["AstNode"]]:
-    """The concrete :class:`AstNode` subclass that parses opcode mnemonic
-    ``mnemonic`` (e.g. ``"+"`` -> :class:`IntegerAddOpcode`,
-    ``"txn"`` -> :class:`TxnOpcode`), or ``None`` when no class claims it
-    (the parser then falls back to the tree-sitter node type)."""
+    """The class that parses ``mnemonic`` (``"+"`` -> ``IntegerAddOpcode``), or ``None``."""
     return AstNode._by_mnemonic.get(mnemonic)
 
 
-# ---------------------------------------------------------------------------
-# Top-level groupings
-# ---------------------------------------------------------------------------
+# ----- Top-level groupings --------------------------------------------------
+# Every `Family...Opcode` base below is a pure Python grouping, never
+# instantiated: it exists so `isinstance(n, ArithmeticOpcode)` selects a family.
 
 class Opcode(AstNode):
     """Base class for every TEAL opcode."""
@@ -133,9 +92,7 @@ class NonOpcodeNode(AstNode):
     """Base for AST nodes that aren't opcodes (labels, comments, pragmas, ...)."""
 
 
-# ---------------------------------------------------------------------------
-# Non-opcode node kinds
-# ---------------------------------------------------------------------------
+# ----- Non-opcode node kinds ------------------------------------------------
 
 class Label(NonOpcodeNode): pass
 class LabelIdentifier(NonOpcodeNode): pass
@@ -154,19 +111,15 @@ class StringArgument(NonOpcodeNode): pass
 class ItxnFieldName(NonOpcodeNode): pass
 
 
-# ---------------------------------------------------------------------------
-# Argument-shape categories (tree-sitter buckets that some opcodes report as
-# their node_class when they have no more specific leaf class)
-# ---------------------------------------------------------------------------
+# ----- Argument-shape categories --------------------------------------------
+# The node_class an opcode reports when no more specific leaf class claims it.
 
 class ZeroArgumentOpcode(Opcode): pass
 class SingleNumericArgumentOpcode(Opcode): pass
 class DoubleNumericArgumentOpcode(Opcode): pass
 
 
-# ---------------------------------------------------------------------------
-# Family: Arithmetic
-# ---------------------------------------------------------------------------
+# ----- Family: Arithmetic ---------------------------------------------------
 
 class ArithmeticOpcode(Opcode): pass
 
@@ -186,9 +139,7 @@ class ShlOpcode(ArithmeticOpcode): mnemonic = "shl"
 class ShrOpcode(ArithmeticOpcode): mnemonic = "shr"
 
 
-# ---------------------------------------------------------------------------
-# Family: Byte arithmetic
-# ---------------------------------------------------------------------------
+# ----- Family: Byte arithmetic ----------------------------------------------
 
 class ByteArithmeticOpcode(Opcode): pass
 
@@ -200,9 +151,7 @@ class BmodOpcode(ByteArithmeticOpcode): mnemonic = "b%"
 class BsqrtOpcode(ByteArithmeticOpcode): mnemonic = "bsqrt"
 
 
-# ---------------------------------------------------------------------------
-# Family: Integer comparison + logical not
-# ---------------------------------------------------------------------------
+# ----- Family: Integer comparison + logical not -----------------------------
 
 class ComparisonOpcode(Opcode): pass
 class LogicalComparisonOp(ComparisonOpcode): pass
@@ -216,9 +165,7 @@ class IntegerGteOpcode(ComparisonOpcode): mnemonic = ">="
 class IntegerNotEqualsOpcode(ComparisonOpcode): mnemonic = "!="
 
 
-# ---------------------------------------------------------------------------
-# Family: Byte comparison
-# ---------------------------------------------------------------------------
+# ----- Family: Byte comparison ----------------------------------------------
 
 class ByteComparisonOpcode(Opcode): pass
 
@@ -230,9 +177,7 @@ class BeqOpcode(ByteComparisonOpcode): mnemonic = "b=="
 class BneqOpcode(ByteComparisonOpcode): mnemonic = "b!="
 
 
-# ---------------------------------------------------------------------------
-# Family: Logic (integer + byte bitwise)
-# ---------------------------------------------------------------------------
+# ----- Family: Logic (integer + byte bitwise) -------------------------------
 
 class LogicOpcode(Opcode): pass
 
@@ -248,9 +193,7 @@ class BxorOpcode(LogicOpcode): mnemonic = "b^"
 class BnotOpcode(LogicOpcode): mnemonic = "b~"
 
 
-# ---------------------------------------------------------------------------
-# Family: Byte-string operations
-# ---------------------------------------------------------------------------
+# ----- Family: Byte-string operations ---------------------------------------
 
 class ByteOpsOpcode(Opcode): pass
 
@@ -276,9 +219,7 @@ class Base64DecodeOpcode(ByteOpsOpcode): mnemonic = "base64_decode"
 class JsonRefOpcode(ByteOpsOpcode): mnemonic = "json_ref"
 
 
-# ---------------------------------------------------------------------------
-# Family: Constants / pushes / block loads
-# ---------------------------------------------------------------------------
+# ----- Family: Constants / pushes / block loads -----------------------------
 
 class ConstantOpcode(Opcode): pass
 
@@ -302,9 +243,7 @@ class PushbytessOpcode(ConstantOpcode): mnemonic = "pushbytess"
 class BzeroOpcode(ConstantOpcode): mnemonic = "bzero"
 
 
-# ---------------------------------------------------------------------------
-# Family: Control flow
-# ---------------------------------------------------------------------------
+# ----- Family: Control flow -------------------------------------------------
 
 class ControlFlowOpcode(Opcode): pass
 class BranchOpcode(ControlFlowOpcode): pass
@@ -322,9 +261,7 @@ class SwitchOpcode(BranchOpcode): mnemonic = "switch"
 class MatchOpcode(BranchOpcode): mnemonic = "match"
 
 
-# ---------------------------------------------------------------------------
-# Family: Cryptography (signature verification)
-# ---------------------------------------------------------------------------
+# ----- Family: Cryptography (signature verification) ------------------------
 
 class CryptoOpcode(Opcode): pass
 
@@ -336,9 +273,7 @@ class EcdsaPkRecoverOpcode(CryptoOpcode): mnemonic = "ecdsa_pk_recover"
 class VrfVerifyOpcode(CryptoOpcode): mnemonic = "vrf_verify"
 
 
-# ---------------------------------------------------------------------------
-# Family: Elliptic curve primitives
-# ---------------------------------------------------------------------------
+# ----- Family: Elliptic curve primitives ------------------------------------
 
 class EllipticCurveOpcode(Opcode): pass
 
@@ -350,9 +285,7 @@ class EcSubgroupCheckOpcode(EllipticCurveOpcode): mnemonic = "ec_subgroup_check"
 class EcMapToOpcode(EllipticCurveOpcode): mnemonic = "ec_map_to"
 
 
-# ---------------------------------------------------------------------------
-# Family: Hashing
-# ---------------------------------------------------------------------------
+# ----- Family: Hashing ------------------------------------------------------
 
 class HashingOpcode(Opcode): pass
 
@@ -363,9 +296,7 @@ class Sha3_256Opcode(HashingOpcode): mnemonic = "sha3_256"
 class MimcOpcode(HashingOpcode): mnemonic = "mimc"
 
 
-# ---------------------------------------------------------------------------
-# Family: Global / application / asset / account state
-# ---------------------------------------------------------------------------
+# ----- Family: Global / application / asset / account state -----------------
 
 class GlobalStateOpcode(Opcode): pass
 
@@ -389,9 +320,7 @@ class OnlineStakeOpcode(GlobalStateOpcode): mnemonic = "online_stake"
 class VoterParamsGetOpcode(GlobalStateOpcode): mnemonic = "voter_params_get"
 
 
-# ---------------------------------------------------------------------------
-# Family: Box storage
-# ---------------------------------------------------------------------------
+# ----- Family: Box storage --------------------------------------------------
 
 class BoxStorageOpcode(Opcode): pass
 
@@ -406,9 +335,7 @@ class BoxSpliceOpcode(BoxStorageOpcode): mnemonic = "box_splice"
 class BoxResizeOpcode(BoxStorageOpcode): mnemonic = "box_resize"
 
 
-# ---------------------------------------------------------------------------
-# Family: Transaction accessors
-# ---------------------------------------------------------------------------
+# ----- Family: Transaction accessors ----------------------------------------
 
 class TransactionOpcode(Opcode): pass
 
@@ -426,9 +353,7 @@ class GitxnaOpcode(TransactionOpcode): mnemonic = "gitxna"
 class GitxnasOpcode(TransactionOpcode): mnemonic = "gitxnas"
 
 
-# ---------------------------------------------------------------------------
-# Family: Inner transactions
-# ---------------------------------------------------------------------------
+# ----- Family: Inner transactions -------------------------------------------
 
 class InnerTransactionOpcode(Opcode): pass
 class InnerTransactionStart(InnerTransactionOpcode): pass  # begin | next
@@ -443,18 +368,14 @@ class InnerTransactionNext(InnerTransactionStart, InnerTransactionEnd): mnemonic
 class InnerTransactionSubmit(InnerTransactionEnd): mnemonic = "itxn_submit"
 
 
-# ---------------------------------------------------------------------------
-# Family: Logging
-# ---------------------------------------------------------------------------
+# ----- Family: Logging ------------------------------------------------------
 
 class LoggingOpcode(Opcode): pass
 
 class LogOpcode(LoggingOpcode): mnemonic = "log"
 
 
-# ---------------------------------------------------------------------------
-# Family: Scratch space
-# ---------------------------------------------------------------------------
+# ----- Family: Scratch space ------------------------------------------------
 
 class ScratchSpaceOpcode(Opcode): pass
 
@@ -469,9 +390,7 @@ class GaidOpcode(ScratchSpaceOpcode): mnemonic = "gaid"
 class GaidsOpcode(ScratchSpaceOpcode): mnemonic = "gaids"
 
 
-# ---------------------------------------------------------------------------
-# Family: Stack manipulation
-# ---------------------------------------------------------------------------
+# ----- Family: Stack manipulation -------------------------------------------
 
 class StackManipulationOpcode(Opcode): pass
 
@@ -491,9 +410,7 @@ class FrameBuryOpcode(StackManipulationOpcode): mnemonic = "frame_bury"
 class SelectOpcode(StackManipulationOpcode): mnemonic = "select"
 
 
-# ---------------------------------------------------------------------------
-# Family: Misc (program args, block lookup)
-# ---------------------------------------------------------------------------
+# ----- Family: Misc (program args, block lookup) ----------------------------
 
 class MiscOpcode(Opcode): pass
 
@@ -507,18 +424,12 @@ class BlockOpcode(MiscOpcode): mnemonic = "block"
 
 
 
-# ---------------------------------------------------------------------------
-# Public surface
-# ---------------------------------------------------------------------------
+# ----- Public surface -------------------------------------------------------
 
-#: Every AST node type, plus `Location` and the mnemonic lookup. Declared
-#: explicitly because the package `__init__` re-exports this module with
-#: `import *`: without an `__all__`, a star import takes every public name the
-#: module happens to hold, so `dataclass`, `ClassVar`, `Optional` and
-#: `annotations` were all importable from `tealql.tealtools.ast` as though they
-#: were part of the AST API. Computed from the class hierarchy rather than
-#: hand-listed -- there are 200+ node types and a hand-written list would drift
-#: the first time an opcode is added.
+#: Every AST node type, plus `Location` and the mnemonic lookup. Explicit because
+#: the package `__init__` star-imports this module: without it, `dataclass`,
+#: `ClassVar`, `Optional` and `annotations` leak out as part of the AST API.
+#: Computed from the hierarchy so adding an opcode cannot make it drift.
 __all__ = ["Location", "node_class_for_mnemonic", *sorted(
     _name for _name, _obj in list(globals().items())
     if isinstance(_obj, type) and issubclass(_obj, AstNode)

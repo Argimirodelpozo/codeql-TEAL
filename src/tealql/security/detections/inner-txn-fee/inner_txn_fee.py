@@ -1,8 +1,5 @@
-"""sec-guide/inner-txn-fee: itxn explicitly sets non-zero Fee.
-
-Per-assignment finding for any ``itxn_field Fee`` whose value resolves to
-a known non-zero integer constant. Dynamic (non-constant) fees aren't
-flagged.
+"""sec-guide/inner-txn-fee: an ``itxn_field Fee`` set to a KNOWN non-zero integer
+constant; dynamic fees are not flagged.
 """
 from __future__ import annotations
 
@@ -23,7 +20,7 @@ class InnerTxnFeeViolation:
 
     @property
     def line(self) -> int:
-        # Structured anchor for machine output; mirrors pretty().
+        # Must mirror pretty().
         return self.assignment.location.line
 
     def pretty(self) -> str:
@@ -43,9 +40,8 @@ class InnerTxnFeeDetector:
     applies_to = frozenset({"app"})  # itxn_* is app-only
 
     def __init__(self, prog: SSAProgram, *, file: Optional[str] = None):
-        # Needs const_value on the value SSAVar (parsed as an int when
-        # possible). The runner already prepared the program; this is the
-        # idempotent fallback for a detector built directly by a caller.
+        # Needs const_value on the value SSAVar; idempotent, so this is only the
+        # fallback for a detector built directly by a library caller.
         common.prepare(prog)
         self.prog = prog
         self.file = file

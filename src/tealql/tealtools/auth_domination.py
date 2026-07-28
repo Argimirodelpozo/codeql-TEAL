@@ -1,43 +1,11 @@
-"""Auth-dominates-sink detector.
+"""Flags sensitive sinks that no auth-shaped path predicate dominates.
 
-For each "sensitive" sink in a TEAL program (state mutations, inner
-transactions, …), checks that *some* auth-shaped predicate
-dominates it via :class:`tealql.tealtools.path_predicates.PathPredicateAnalysis`.
-Sinks reachable along a path that lacks the auth predicate get
-flagged.
+A sink is clean iff some predicate at its BB matches some matcher; new sink
+families / guard patterns are appended to ``sinks`` / ``matchers``.
 
-    from tealql.tealtools.ssa import SSAProgram
-    from tealql.tealtools.auth_domination import (
-        AuthDominationDetector,
-        DEFAULT_SINKS, DEFAULT_MATCHERS,
-    )
-
-    prog = SSAProgram("path/to/contract.teal")
-    prog.propagate_constants()
-    for v in AuthDominationDetector(prog).detect():
-        print(v.pretty())
-
-Pluggable
----------
-
-- :class:`AuthSink` — predicate that picks out which assignments
-  count as "sensitive" (default: state-mutating ops).
-- :class:`AuthMatcher` — recogniser for a guard pattern over a
-  :class:`tealql.tealtools.path_predicates.BranchCondition` (default: ``txn
-  Sender == <const>`` style admin checks).
-
-A sink is *not* flagged if at least one path-predicate at the
-sink's BB matches at least one matcher. Adding new sink families
-or guard patterns is a matter of appending to ``sinks`` /
-``matchers`` — no detector internals need to change.
-
-Preconditions
--------------
-
-Path predicates trace back through ``defined_by`` chains, so this needs the
-standard (phi-preserving, def-use-intact) SSA representation that
-:class:`tealql.tealtools.ssa.SSAProgram` produces by default — the same as
-:class:`tealql.tealtools.inner_txn_report.InnerTxnReport`.
+HAZARD: guards are recognised by walking ``defined_by`` chains, so this needs
+the default phi-preserving, def-use-intact SSA. On a mutated IR a real guard
+reads as absent and the sink is reported unguarded.
 """
 from __future__ import annotations
 
@@ -58,9 +26,7 @@ from .path_predicates import (
 from .avm import STATE_MUTATING_OPS as _STATE_MUTATING_OPS
 
 
-# ---------------------------------------------------------------------------
-# Pluggable sink and matcher types
-# ---------------------------------------------------------------------------
+# -- pluggable sink and matcher types ---------------------------------------
 
 
 @dataclass(frozen=True)
@@ -73,28 +39,17 @@ class AuthSink:
 
 @dataclass(frozen=True)
 class AuthMatcher:
-    """Recogniser for a guard pattern.
-
-    ``matches(cond, prog)`` returns True if ``cond`` (a single
-    :class:`BranchCondition`) represents the kind of auth-shaped
-    check the matcher is looking for. The intent is "cheap pattern
-    matching against the SSA shape" — anything more involved
-    (range reasoning, value-flow) lives in the consumer.
-    """
+    """Recogniser for one auth-guard pattern over a :class:`BranchCondition`."""
 
     name: str
     matches: Callable[[BranchCondition, SSAProgram], bool]
 
 
-# ---------------------------------------------------------------------------
-# Built-in sinks
-# ---------------------------------------------------------------------------
+# -- built-in sinks ---------------------------------------------------------
 
 
-# State-mutating opcodes that should typically only run on a guard-dominated
-# path — the canonical set (``tealql.tealtools.avm.STATE_MUTATING_OPS``, imported
-# above). Restrict a detector by passing a narrower ``sinks`` list, not by
-# editing the shared set.
+# Narrow a detector with its own ``sinks`` list, never by editing the shared
+# canonical set in ``avm``.
 STATE_MUTATION_SINK = AuthSink(
     name="state-mutating op",
     matches=lambda a: a.op in _STATE_MUTATING_OPS,
@@ -104,9 +59,7 @@ STATE_MUTATION_SINK = AuthSink(
 DEFAULT_SINKS: list[AuthSink] = [STATE_MUTATION_SINK]
 
 
-# ---------------------------------------------------------------------------
-# Built-in matchers
-# ---------------------------------------------------------------------------
+# -- built-in matchers ------------------------------------------------------
 
 
 def _is_txn_sender(op) -> bool:
@@ -115,28 +68,19 @@ def _is_txn_sender(op) -> bool:
 
 
 def _is_addr_const(op) -> bool:
-    """True if ``op`` is a 32-byte address-shaped constant. An Algorand address
-    is exactly 32 bytes, so a sender check against a shorter/longer bytes literal
-    (e.g. ``txn Sender == "admin"``) can never hold and is NOT a real guard —
-    requiring 32 bytes rejects those vacuous comparisons."""
+    """True if ``op`` is a 32-byte address-shaped constant.
+
+    HAZARD: an Algorand address is exactly 32 bytes, so ``txn Sender == "admin"``
+    can never hold — accepting a shorter/longer literal would read a vacuous
+    comparison as a real guard."""
     return const_byte_length(op) == 32
 
 
 def _matches_sender_eq_const(cond: BranchCondition, prog: SSAProgram) -> bool:
-    """Pattern: ``(txn Sender) == <bytes-const>`` checked truthy.
+    """Pattern: ``(txn Sender) == <bytes-const>`` checked truthy (kind ``nonzero``).
 
-    Triggered on a :class:`BranchCondition` of kind ``"nonzero"``
-    whose ``value`` is an SSAVar produced by an ``==`` op consuming
-    one ``txn Sender`` and one bytes constant. Covers the canonical
-    admin-address check shape:
-
-        txn Sender
-        addr ADMIN
-        ==
-        assert       (or: bnz l_admin / b...)
-
-    Doesn't catch ``!=`` checks or pseudo-equality through hashes —
-    those are separate matchers worth adding later.
+    Under-approximates: ``!=`` checks and hash-mediated equality aren't matched,
+    so such a guard reads as absent — errs toward reporting, never toward clean.
     """
     if cond.kind != "nonzero":
         return False
@@ -165,18 +109,15 @@ SENDER_EQ_CONST_MATCHER = AuthMatcher(
 DEFAULT_MATCHERS: list[AuthMatcher] = [SENDER_EQ_CONST_MATCHER]
 
 
-# ---------------------------------------------------------------------------
-# Violation + detector
-# ---------------------------------------------------------------------------
+# -- violation + detector ---------------------------------------------------
 
 
 @dataclass
 class AuthViolation:
     sink: Assignment
     sink_class: str
-    # Path predicates that hold at the sink, for the analyst to see
-    # *what* dominated it (frequently helpful — "well, X is checked,
-    # but X isn't admin"). Empty list when nothing dominates.
+    # What did hold at the sink, so an analyst sees why it wasn't a guard
+    # ("X is checked, but X isn't admin"). Empty when nothing dominates.
     dominating_predicates: list[BranchCondition]
 
     @property
@@ -185,7 +126,7 @@ class AuthViolation:
 
     @property
     def line(self) -> int:
-        # Structured anchor for machine output; mirrors the sink in pretty().
+        # Structured anchor for machine output.
         return self.sink.location.line
 
     def pretty(self) -> str:
@@ -204,13 +145,7 @@ class AuthViolation:
 
 
 class AuthDominationDetector:
-    """Flags sensitive assignments that aren't dominated by any
-    matcher-recognised guard.
-
-    Construction takes ``sinks`` and ``matchers`` lists; both default
-    to the module's ``DEFAULT_*`` lists. Pass custom lists to extend
-    or restrict the analysis.
-    """
+    """Flags sensitive assignments no matcher-recognised guard dominates."""
 
     def __init__(
         self,

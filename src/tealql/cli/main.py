@@ -1,28 +1,17 @@
 """``tealql`` — unified CLI for the TealQL static-analysis toolkit.
 
-Each subcommand takes a single ``<target>`` and runs one analysis or
-report against it. A target is one of:
+Each subcommand takes one ``<target>`` (a ``.teal`` file or a directory of them)
+and reconstructs everything from that source — nothing to build or cache.
 
-* a ``.teal`` file, or
-* a directory tree containing one or more ``.teal`` files.
-
-The pipeline reconstructs everything (graph → SSA → analysis) straight
-from that source — there is nothing to build, cache, or read.
-
-Common flags accepted by every analysis subcommand:
-
-  ``--json``           emit JSON instead of text
-  ``-v`` / ``-vv``     progress logging to stderr (``-v`` = INFO
-                       milestones, ``-vv`` = DEBUG per-pass timings)
-  ``--strict``         refuse to analyze a partially-parsed program
-                       (unparseable TEAL spans normally WARN and continue)
-
-Exit codes (uniform across subcommands):
+HAZARD — the exit-code contract, uniform across every subcommand:
 
   ``0``  clean — analysis ran, no findings
   ``1``  findings — at least one detector reported something
-  ``2``  error — bad target, unparseable source under ``--strict``,
-         or any other expected failure (clean message on stderr)
+  ``2``  error — bad target, unparseable source under ``--strict``, or any other
+         expected failure (clean message on stderr; genuine bugs still traceback)
+
+CI depends on 1 meaning "findings", so a handler must never return 1 for an
+error, nor 0 when it found something.
 """
 from __future__ import annotations
 
@@ -40,13 +29,8 @@ logger = logging.getLogger("tealql.tealtools.cli")
 
 
 def _configure_logging(verbosity: int) -> None:
-    """Wire the ``tealtools`` AND ``security`` logger hierarchies to stderr
-    at a level set by the ``-v`` count: 0 → warnings only (quiet), 1
-    (``-v``) → INFO progress milestones, 2+ (``-vv``) → DEBUG (per-pass
-    timings, finer detail). Library modules emit through the ``tealql.*``
-    hierarchy (``tealql.tealtools.*`` and ``tealql.security.*`` alike), so a
-    single handler on the ``tealql`` root covers the whole pipeline; the CLI
-    is the only place a handler gets attached."""
+    """Attach the one stderr handler for the whole ``tealql`` logger hierarchy,
+    at WARNING / INFO / DEBUG per the ``-v`` count."""
     if verbosity >= 2:
         level = logging.DEBUG
     elif verbosity == 1:
@@ -55,9 +39,8 @@ def _configure_logging(verbosity: int) -> None:
         level = logging.WARNING
     root = logging.getLogger("tealql")
     root.setLevel(level)
-    # Replace, don't append: ``main()`` is called in-process repeatedly (the
-    # test suite, any library embedding), and appending a fresh StreamHandler
-    # each time multiplied every log line by the number of calls so far.
+    # Replace, don't append: `main()` runs repeatedly in-process (tests, library
+    # embedding), and appending multiplied every log line by the call count.
     for existing in [h for h in root.handlers
                      if getattr(h, "_tealql_cli", False)]:
         root.removeHandler(existing)
@@ -87,9 +70,8 @@ def _add_common_flags(sp: argparse.ArgumentParser) -> None:
 
 def _add_target_args(sp: argparse.ArgumentParser, *, dest: str = "target",
                      optional: bool = False) -> None:
-    """Add the universal ``<target>`` positional and common flags. ``optional``
-    makes the target ``nargs="?"`` (for commands that can run without one, e.g.
-    ``methods --arc56 SPEC.json``)."""
+    """Add the universal ``<target>`` positional plus the common flags;
+    ``optional`` is for commands that can run without a target."""
     if optional:
         sp.add_argument(dest, nargs="?", default=None,
                         help="path to a .teal file or a directory of .teal files")
@@ -107,13 +89,13 @@ def _resolve(args) -> Path:
 
 
 def _check_parse_health(prog, args) -> None:
-    """Surface unparseable-TEAL spans: the parser DROPS them, so analysis
-    covers only part of the source. Default: loud warning (a partially-
-    parsed contract must never read as silently clean). ``--strict``:
-    raise, which the top level turns into exit code 2."""
-    # An opcode this build has never seen is modelled with a (0, 0) stack
-    # effect, which corrupts the simulation everything else is derived from —
-    # exactly as damaging as an unparsed span, and previously silent.
+    """Warn (or, under ``--strict``, raise → exit 2) about anything the analysis
+    silently lost.
+
+    HAZARD: the parser DROPS unparseable spans and an opcode unknown to this
+    build is modelled with a (0, 0) stack effect that corrupts the whole
+    simulation. Both must be surfaced — a partial contract must never read as
+    clean."""
     from tealql.tealtools.avm import unknown_opcodes
 
     unknown = sorted(unknown_opcodes())
@@ -142,10 +124,8 @@ def _load(args):
     source = _resolve(args)
     logger.info("building SSA program from %s", source)
     prog = SSAProgram(str(source))
-    # Construction only tags direct pushes; anything needing propagation
-    # (folded arithmetic, dup/cover flow, phi resolution) stays unresolved.
-    # Cross-contract discovery keys on constant AppIDs, so without this the
-    # root program's callees could be silently missed. Idempotent.
+    # Construction only tags direct pushes. Cross-contract discovery keys on
+    # CONSTANT AppIDs, so without this the callees are silently missed.
     prog.propagate_constants()
     logger.info("SSA program ready (%d assignments)", len(prog.assignments))
     _check_parse_health(prog, args)
@@ -154,18 +134,12 @@ def _load(args):
 
 def _load_programs(args) -> "list[tuple]":
     """Resolve target → ``[(SSAProgram, file_filter), …]``, ONE program per
-    ``.teal`` file. A directory of N contracts becomes N single-contract
-    programs — not one merged program — because the AVM runs each program
-    independently and strict-dominance / path-predicate detectors give wrong
-    answers when several programs' entries and exits are pooled into one
-    (the same reason ``tealql.security.scan`` builds per-file). ``file_filter`` is
-    the basename for a multi-file target (so detectors scope to it) or
-    ``None`` for a single file.
+    ``.teal`` file, each const-propagated as :func:`_load` does.
 
-    Each program is const-propagated exactly like :func:`_load` does — the
-    detectors this feeds assume it (see ``tealql.security.common.prepare``), and
-    omitting it made ``tealql detections`` start from a different program state
-    than ``tealql all`` and ``detections-scan``."""
+    HAZARD: never merge a directory into one program. The AVM runs each program
+    independently, so dominance / path-predicate detectors give WRONG answers
+    once several programs' entries and exits are pooled. ``file_filter`` is the
+    basename (so detectors scope to it), or ``None`` for a single file."""
     from tealql.tealtools._utils.targets import _discover_teal_files
     from tealql.tealtools.ssa import SSAProgram
     source = _resolve(args)
@@ -182,11 +156,7 @@ def _load_programs(args) -> "list[tuple]":
 
 
 def _emit_findings(findings: Iterable, *, json_out: bool) -> int:
-    """Standard renderer for finding-style output (auth, box-key, etc.).
-
-    Returns 1 if any findings were emitted (non-zero exit signals
-    "violations found"), 0 otherwise — convenient for CI usage.
-    """
+    """Render finding-style output; returns the exit code (1 = findings)."""
     findings = list(findings)
     if json_out:
         from tealql.tealtools._utils.serialize import finding_to_dict
@@ -201,36 +171,33 @@ def _emit_findings(findings: Iterable, *, json_out: bool) -> int:
 
 
 def _emit_dict(payload: dict, *, json_out: bool, text: str) -> int:
-    """Standard renderer for report-style output. Caller pre-computes
-    both the dict (used under --json) and the text (used otherwise)."""
+    """Render report-style output; the caller pre-computes both forms."""
     print(_json.dumps(payload, indent=2) if json_out else text)
     return 0
 
 
 # ---------------------------------------------------------------------------
 # Analysis subcommands
+#
+# One ``_cmd_*`` per subcommand, each returning the module's exit code. The
+# user-facing description of every command lives in its ``add(...)`` help text
+# in :func:`build_parser`, not in these docstrings.
 # ---------------------------------------------------------------------------
 
 
 def _lifted_programs(args, command: str):
-    """Yield ``(label, main, subs)`` for each target program lifted to real Puya
-    IR — the shared preamble of every ``puya``-gated subcommand.
+    """Yield ``(label, main, subs)`` per target program lifted to real Puya IR —
+    the shared preamble of the ``puya``-gated subcommands.
 
-    Three concerns, identical in each and previously copy-pasted three times:
-
-    * the OPTIONAL dependency. Absent puya, fail with the standard message.
-      Raised rather than returned, so ``main`` renders it and exits 2 like every
-      other expected failure — same output, one less bespoke path.
-    * puya's IR builder emits heavy DEBUG/ERROR logging (including the lift's
-      known tolerated arg-mistypes); silence it so audit output stays readable.
-    * a program that does not lift is a COVERAGE GAP, not a failure — warn and
-      skip it, so one stubborn contract cannot sink a directory-wide audit.
-    """
+    HAZARD: a program that does not lift is a COVERAGE GAP, not a failure — it
+    is warned about and SKIPPED, so results here are silently partial (one
+    stubborn contract must not sink a directory-wide audit)."""
     try:
         from tealql.tealtools.lift import to_puya
     except ImportError as e:
         raise TealQLError(
             f"{command} requires the 'puya' package (pip install puyapy)") from e
+    # puya's IR builder logs heavily at DEBUG/ERROR; silence it.
     logging.getLogger("puya").setLevel(logging.CRITICAL)
     for prog, name in _load_programs(args):
         label = name or Path(getattr(prog, "source_path", "") or "<program>").name
@@ -267,14 +234,11 @@ def _cmd_box_df(args) -> int:
 
 
 def _cmd_abi_audit(args) -> int:
-    """ABI type-driven audit: a caller-supplied ``arc4.Address`` paid out to a
-    fund / asset-transfer sink WITHOUT a validating guard (the arbitrary-recipient
-    shape). Powered by the speculative ABI type recovery — the recovered address
-    type is what tells us a 32-byte operand is a caller-chosen recipient. Requires
-    the ``puya`` package (the recovery lives in the real Puya IR); degrades with a
-    clear message when it is missing or a contract does not lift.
+    """Report caller-supplied ``arc4.Address`` values reaching a fund / asset sink,
+    flagging the UNGUARDED ones (arbitrary recipient); exit 1 if any.
 
-    Exit 1 if any arbitrary-recipient flow is found (CI-friendly), else 0."""
+    The recovered ABI address type is what identifies a 32-byte operand as a
+    caller-chosen recipient, and that recovery is SPECULATIVE."""
     leads: list = []
     for label, main, subs in _lifted_programs(args, "abi-audit"):
         from tealql.tealtools.lift import to_puya_ir
@@ -307,11 +271,8 @@ def _cmd_abi_audit(args) -> int:
 
 
 def _cmd_box_audit(args) -> int:
-    """Box access-control audit: an ADDRESS-keyed BoxMap (per-account storage)
-    whose key is CALLER-SUPPLIED rather than bound to txn Sender — the caller
-    picks whose box to read/write, so an attacker can touch any account's slot
-    (cross-user access; a WRITE is worse). Suppressed when the contract validates
-    the caller against the sender. Requires puya. Exit 1 if any finding."""
+    """Report address-keyed BoxMaps whose key is CALLER-SUPPLIED rather than bound
+    to ``txn Sender`` — cross-user access to any account's slot; exit 1 if any."""
     rows: list = []
     for label, main, subs in _lifted_programs(args, "box-audit"):
         from tealql.tealtools.lift.box_recovery import box_access_control
@@ -333,15 +294,13 @@ def _cmd_box_audit(args) -> int:
 
 
 def _cmd_storage_schema(args) -> int:
-    """Reconstruct the STORAGE SCHEMA -- the global / local / box keys and maps
-    behind a contract's storage opcodes, with recovered key and value types
-    (mirroring Puya's ContractState: a constant key is a single stored value;
-    ``concat(prefix, encode(k))`` or a computed key is a map, whose key type may be
-    a tuple). Requires puya (the recovery runs on the Puya IR). Exit 0."""
+    """Reconstruct the global / local / box storage schema with recovered key and
+    value types: a constant key is one stored value, a computed or
+    ``concat(prefix, encode(k))`` key is a map."""
     spec = None
     if getattr(args, "arc56", None):
         from tealql.tealtools import arc56 as _arc56
-        spec = _arc56.load(args.arc56)          # explicit path -> surface load errors
+        spec = _arc56.load(args.arc56)          # explicit path -> surface errors
 
     rows: list = []
     for label, main, subs in _lifted_programs(args, "storage-schema"):
@@ -369,8 +328,8 @@ def _cmd_storage_schema(args) -> int:
 
 
 def _fmt_abi_arg(t: str, name: str = "") -> str:
-    """``name: type[NB]`` (byte length when fixed), or just ``type[NB]`` when the
-    arg has no declared name (source-extracted signatures carry no names)."""
+    """``name: type[NB]``, or bare ``type[NB]`` when the arg has no declared name
+    (source-extracted signatures carry none); ``[NB]`` only for fixed widths."""
     from tealql.tealtools.abi import abi_type_byte_length
     n = abi_type_byte_length(t)
     core = f"{t}[{n}B]" if n is not None else t
@@ -378,18 +337,18 @@ def _fmt_abi_arg(t: str, name: str = "") -> str:
 
 
 def _cmd_methods(args) -> int:
-    """Recover the ABI method table from HIGH-LEVEL info — an ARC-56 app spec when
-    ``--arc56`` is given (authoritative: struct-resolved types + arg names), else
-    the source's ``method "sig"`` pseudo-ops / ``// method "sig"`` selector comments
-    a compiler leaves behind. Prints each method's selector, name, arg types (with
-    declared byte length) and return type. Nothing is reverse-engineered from the
-    hash; the selector is recomputed forward and matches. OPTIONAL: prints ``(no ABI
-    method info)`` for raw bytecode with no such text and no spec. Exit 0."""
+    """Print the ABI method table — selector, name, arg types, return type.
+
+    HAZARD: the table comes only from HIGH-LEVEL info — an ``--arc56`` spec
+    (authoritative) or the source's ``method "sig"`` pseudo-ops / ``// method``
+    comments. NOTHING is reverse-engineered from the selector hash (it is
+    irreversible; the selector is recomputed FORWARD and matched). Raw bytecode
+    with neither simply reports no method info."""
     from tealql.tealtools.abi import abi_type_byte_length, extract_method_table
     rows = []   # (label, AbiMethod)
     if getattr(args, "arc56", None):
         from tealql.tealtools import arc56 as _arc56
-        spec = _arc56.load(args.arc56)          # explicit path -> surface load errors
+        spec = _arc56.load(args.arc56)          # explicit path -> surface errors
         label = spec.name or Path(args.arc56).name
         rows = [(label, m) for m in spec.methods]
     elif not getattr(args, "target", None):
@@ -424,11 +383,8 @@ def _cmd_methods(args) -> int:
 
 
 def _cmd_arc56(args) -> int:
-    """Ingest an ARC-56 app-spec JSON and dump the high-level info it declares —
-    methods (struct-resolved arg/return types + names), and global/local/box state
-    keys and maps with their value types. The authoritative, OPTIONAL source of ABI
-    typing the analysis consumes (bounds arg-typing, storage schema, method names in
-    findings). Exit 0; exit 2 on a missing / non-JSON spec."""
+    """Dump an ARC-56 app spec's methods and state schema — the authoritative but
+    OPTIONAL source of the ABI typing the analysis consumes; exit 2 on a bad spec."""
     from tealql.tealtools import arc56 as _arc56
     try:
         spec = _arc56.load(args.spec)
@@ -489,8 +445,8 @@ def _cmd_group_shape(args) -> int:
     from tealql.tealtools.group_reasoning import analyze, analyze_per_exit
     prog = _load(args)
     if getattr(args, "per_exit", False):
-        # DISTINCT admissible shapes (one per approving exit, ABI-labelled) instead
-        # of only their intersection — recovers shapes the common summary drops.
+        # DISTINCT shapes per approving exit, not their intersection — the common
+        # summary drops any shape not shared by every exit.
         s = analyze_per_exit(prog)
     else:
         s = analyze(prog)
@@ -514,15 +470,7 @@ def _cmd_cost(args) -> int:
 
 
 def _cmd_functional(args) -> int:
-    """Run the canonical SSA pipeline and print the functional dump.
-
-    ``--show-ranges`` adds inline ``/*[V<=hi]*/`` IntRange comments on
-    uint64 SSAVars (the substrate's existing renderer flag).
-    ``--show-bytes`` adds inline ``/*len=N*/`` / ``/*val=...*/``
-    annotations on bytes-typed SSAVars (post-process via
-    :mod:`tealql.tealtools.render_annotated`). ``--by-block`` groups
-    assignments per basic block with predecessor/successor headers.
-    """
+    """Run the canonical SSA pipeline and print the functional dump."""
     from tealql.tealtools.passes import functional_dump
     prog = _load(args)
     line_range = None
@@ -564,15 +512,11 @@ def _cmd_cfg(args) -> int:
 
 
 def _cmd_audit(args) -> int:
-    """One-command mainnet audit. Fetch deployed app ``<ID>``'s approval program
-    (and, transitively, its cross-contract callees) from chain, run every app-mode
-    detector, and print a consolidated report: recovered ABI methods, findings on
-    the app itself, and findings in each callee across the appcall boundary.
+    """Fetch deployed app ``<ID>`` and its callees from chain, run every app-mode
+    detector, and print a consolidated report; exit 2 if the app can't be fetched.
 
-    Network-touching (mainnet API for the program bytes + a local algod on :4001
-    for disassembly; both env-overridable). A fetched program is cached under
-    ``--cache-dir`` (default ~/.cache/tealql/xcontract-callees). Exit 1 if any
-    finding, 2 if the app can't be fetched, 0 if clean."""
+    NETWORK-touching: the mainnet API for program bytes plus a local algod on
+    :4001 for disassembly (both env-overridable), cached under ``--cache-dir``."""
     from tealql.tealtools._utils.chain import fetch_approval
     from tealql.tealtools.ssa import SSAProgram
     from tealql.tealtools.xcontract import _DEFAULT_CALLEE_CACHE, XContractGraph
@@ -594,14 +538,12 @@ def _cmd_audit(args) -> int:
             return 2
         teal_path.write_text(teal)
     caller = SSAProgram(str(teal_path))
-    # Same preparation every other subcommand does through ``_load``: cross-
-    # contract callee discovery keys on CONSTANT AppIDs, and a partially-parsed
-    # program must not read as silently clean.
+    # The same preparation `_load` does; see its comments for why both are needed.
     caller.propagate_constants()
     _check_parse_health(caller, args)
 
-    # App-mode detectors, supersession-deduped (the same default set as
-    # `detections --all --mode app`), each guarded so one crash doesn't sink the run.
+    # App-mode detectors, supersession-deduped, each guarded so one crash
+    # doesn't sink the run.
     app_names = default_detection_names(
         [n for n, c in DETECTORS.items()
          if "app" in getattr(c, "applies_to", frozenset({"app", "logicsig"}))])
@@ -615,9 +557,8 @@ def _cmd_audit(args) -> int:
         if vs:
             own[name] = vs
 
-    # Cross-contract: transitively fetch + analyse callees across the appcall
-    # boundary (caller context: pinned args + seeded predicates). Best-effort —
-    # a fetch outage degrades to app-only, it does not fail the audit.
+    # Cross-contract callees, with caller context (pinned args + seeded
+    # predicates). Best-effort: a fetch outage degrades to app-only.
     graph = None
     cross: list = []
     try:
@@ -627,7 +568,7 @@ def _cmd_audit(args) -> int:
     except Exception as e:
         logger.warning("cross-contract analysis unavailable for app %s: %s", app_id, e)
 
-    # Structural recon: the ABI method table (empty on raw/non-ABI bytecode).
+    # ABI method table (empty on raw/non-ABI bytecode).
     methods = []
     try:
         from tealql.tealtools.abi import extract_method_table
@@ -638,10 +579,9 @@ def _cmd_audit(args) -> int:
     callees = sorted(graph.callees) if graph is not None else []
     n_own = sum(len(v) for v in own.values())
 
-    # Order detectors by SEVERITY (critical first), then name — an auditor wants
-    # the worst findings up top, not an alphabetical detector dump. A group's
-    # severity is the MAX of its findings' own ``.severity`` (the IR sink family
-    # carries per-finding HIGH/MEDIUM/LOW), falling back to the detector default.
+    # Order by SEVERITY (worst first), then name. A group's severity is the MAX
+    # of its findings' own `.severity` (the IR sink family carries per-finding
+    # levels), falling back to the detector default.
     from tealql.security import severity_of
     from tealql.security.scan import SEVERITY_ORDER
 
@@ -719,18 +659,16 @@ def _cmd_xcontract(args) -> int:
     )
     caller = _load(args)
     if args.from_chain:
-        # Auto-discover the registry by fetching each reachable callee from chain
-        # (transitive BFS, cached). A fetch outage / unregistered callee is logged
-        # and skipped inside discover_registry — never invented.
+        # Registry discovered by transitive BFS from chain (cached). A fetch
+        # outage or unregistered callee is logged and skipped, never invented.
         graph = XContractGraph.from_chain(caller, cache_dir=args.cache_dir)
     else:
         graph = XContractGraph.build(caller, load_registry(args.registry))
     auth = cross_auth_findings(graph)
 
-    # --detections (or --detector) additionally runs the security detector
-    # suite against each callee across the boundary, with caller context
-    # (trusted_args pins + seeded predicates). Supersession-dedup by default;
-    # an explicit --detector requests exactly that one.
+    # --detections/--detector also runs the detector suite against each callee
+    # across the boundary with caller context (trusted_args pins + seeded
+    # predicates); supersession-deduped unless one detector was named.
     sg_findings = []
     if args.detections or args.detector:
         from tealql.security.xcontract import (
@@ -769,11 +707,12 @@ def _cmd_xcontract(args) -> int:
 
 
 def _cmd_group_taint(args) -> int:
-    """Cross-member taint over ONE atomic group: an attacker-controlled input in
-    an earlier member reaching a sensitive sink in a later one via shared scratch
-    (``store`` -> ``gload``) or the log channel. Takes the member .teal files in
-    GROUP ORDER (``members[i]`` is group txn ``i``); the AVM ``i < k`` rule (a
-    member reads only an earlier sibling) is enforced by the graph."""
+    """Cross-member taint over ONE atomic group — an attacker input in an earlier
+    member reaching a sink in a later one via shared scratch or the log channel.
+
+    HAZARD: ``args.members`` must be in GROUP ORDER (``members[i]`` is group txn
+    ``i``); the graph enforces the AVM ``i < k`` rule off those positions, so a
+    mis-ordered command line silently analyses a different group."""
     from tealql.tealtools.ssa import SSAProgram
     from tealql.tealtools.dataflow.group_taint_graph import (
         GroupTaintGraph, group_taint_findings, render_group_taint,
@@ -794,18 +733,16 @@ def _cmd_group_taint(args) -> int:
 
 def _cmd_taint_query(args) -> int:
     """Open taint-reachability queries over the coarse taint graph — the free-form
-    counterpart to the fixed detectors. Point at a SOURCE line (``--from``) to list
-    the dangerous sinks a value there can reach; at a SINK line (``--to``) to list
-    the attacker inputs that steer it; ``--sinks`` / ``--sources`` dump the
-    inventories; the default is the whole attack surface (every attacker input ->
-    sink). Reachability OVER-approximates (a reachable sink may be validated) — a
-    triage lens, not a verdict. Exit 0."""
+    counterpart to the fixed detectors.
+
+    HAZARD: reachability OVER-approximates (a reachable sink may be perfectly
+    validated), so this is a triage lens, NOT a verdict — ``--verify`` is what
+    chains a sink to its guard-aware detector. Exit is always 0."""
     from tealql.tealtools.dataflow.taint_query import TaintQuery
     prog = _load(args)
     precise = getattr(args, "precise", False)
 
     if getattr(args, "verify", False):
-        # Chain reachability -> guard-aware detectors for a per-sink verdict.
         from tealql.security.sink_verdict import verify_sinks
         verdicts = verify_sinks(prog, precise=precise)
         if args.json_out:
@@ -858,11 +795,9 @@ def _cmd_taint_query(args) -> int:
 
 
 def _resolve_mode(args) -> "str | None":
-    """Determine the declared detection mode (``"app"`` / ``"logicsig"``
-    / ``None``) for the target. ``--mode`` wins outright; otherwise a
-    ``--config`` file is consulted by matching the *target string*
-    against its globs. ``None`` means "unfiltered — run every
-    detector"; no opcode inference happens."""
+    """The DECLARED detection mode: ``--mode``, else a ``--config`` glob match on
+    the target string, else ``None`` meaning unfiltered — never inferred from
+    opcodes."""
     if args.mode:
         return args.mode
     if args.config:
@@ -888,8 +823,7 @@ def _cmd_detections(args) -> int:
     mode = _resolve_mode(args)
     programs = _load_programs(args)
     names = list(DETECTORS) if args.all else [args.detector]
-    # Mode filtering applies to --all only; an explicit --detector is an
-    # explicit request and runs regardless of declared mode.
+    # Mode filtering is for --all only; an explicit --detector runs as asked.
     if mode is not None and args.all:
         names = [
             n for n in names
@@ -897,18 +831,15 @@ def _cmd_detections(args) -> int:
                                frozenset({"app", "logicsig"}))
         ]
     if args.all:
-        # Supersession dedup, AFTER mode filtering: a superseded detector is
-        # skipped only when its superseder survived the filter and will run
-        # (the superseder falls back to it internally on lift failure); an
-        # explicit --detector request always runs as asked.
+        # Supersession dedup AFTER mode filtering: a superseded detector is
+        # skipped only if its superseder survived the filter and will run.
         from tealql.security.scan import default_detection_names
         names = default_detection_names(names)
     logger.info("running %d detection(s) on %d program(s) (mode=%s)",
                 len(names), len(programs), mode or "unfiltered")
 
     def _run(name):
-        # A detector's findings across every per-file program (one entry
-        # unless the target was a multi-file directory).
+        # One detector's findings across every per-file program.
         cls = DETECTORS[name]
         found = []
         for prog, file in programs:
@@ -969,16 +900,15 @@ def _cmd_detections_scan(args) -> int:
         arc56=getattr(args, "arc56", None),
     )
 
-    # --update-baseline: record the CURRENT findings' fingerprints and exit 0.
+    # --update-baseline accepts the CURRENT findings and exits 0.
     if args.update_baseline:
         from tealql.security.suppress import write_baseline
         n = write_baseline(args.update_baseline, findings)
         print(f"wrote {n} fingerprint(s) to {args.update_baseline}", file=sys.stderr)
         return 0
 
-    # Suppressions: inline `// tealql-ignore` comments (always) + a baseline
-    # file of accepted fingerprints (--baseline). Suppressed findings are
-    # dropped from output and the exit code.
+    # Suppressions — inline `// tealql-ignore` (always) + --baseline fingerprints
+    # — drop findings from BOTH the output and the exit code.
     from tealql.security.suppress import partition, load_baseline
     baseline = load_baseline(args.baseline) if args.baseline else set()
     findings, suppressed = partition(findings, root=root, baseline=baseline)
@@ -989,8 +919,8 @@ def _cmd_detections_scan(args) -> int:
     fmt = args.format or ("json" if args.json_out else "text")
     renderer = {"text": render_text, "json": render_json, "sarif": render_sarif}[fmt]
     print(renderer(findings))
-    # Exit 1 only on FAILURES: with --options, findings below fail_on
-    # (informational is-deletable style) are reported but don't fail CI.
+    # Exit 1 only on FAILURES: with --options, findings below `fail_on` are
+    # reported but do not fail CI.
     return 1 if failures(findings, options) else 0
 
 
@@ -1053,7 +983,7 @@ def build_parser() -> argparse.ArgumentParser:
     methods_p = add("methods",
         "recover the ABI method table (name / args / selector) from source "
         "method signatures or an --arc56 spec — optional, empty on raw bytecode",
-        _cmd_methods, optional_target=True)   # target unused (and optional) with --arc56
+        _cmd_methods, optional_target=True)   # target unused with --arc56
     methods_p.add_argument(
         "--arc56", default=None, metavar="SPEC.json",
         help="use an ARC-56 app spec as the AUTHORITATIVE method table "
@@ -1205,7 +1135,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="run one (or every) Algorand-security-guide detection",
     )
     det.set_defaults(handler=_cmd_detections)
-    # Target is optional here because ``--list`` doesn't need one.
+    # Target is optional because --list doesn't need one.
     det.add_argument(
         "target", nargs="?", default=None,
         help="path to a .teal file or a directory of .teal files "
@@ -1236,9 +1166,8 @@ def build_parser() -> argparse.ArgumentParser:
     group.add_argument("--list", action="store_true",
                        help="list available detector short names and exit")
 
-    # detections-scan is structurally different: it walks a directory of
-    # .teal files and reconstructs each parent dir's SSA, so it bypasses
-    # ``resolve_target``. Route --json / --verbose through the same flags.
+    # detections-scan walks a directory and reconstructs each parent dir's SSA,
+    # so it bypasses `resolve_target` and re-declares the common flags.
     sgs = sub.add_parser(
         "detections-scan",
         help="recursively scan a directory of .teal files; reconstruct "
@@ -1291,8 +1220,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         return args.handler(args)
     except (TealQLError, FileNotFoundError) as e:
-        # Every EXPECTED failure (bad target, --strict parse refusal, …)
-        # exits 2 with a clean message; genuine bugs still traceback.
+        # Every EXPECTED failure exits 2 with a clean message (see the
+        # module-level exit-code contract); genuine bugs still traceback.
         print(f"error: {e}", file=sys.stderr)
         return 2
 

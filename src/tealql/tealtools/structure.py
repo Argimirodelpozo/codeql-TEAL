@@ -1,34 +1,11 @@
-"""Structural partition of a TEAL program.
+"""Structural partition of an :class:`..ssa.SSAProgram` into subroutines (every
+``callsub``-reachable routine), call sites, ROUTING (the entry-rooted region of
+main-flow BBs that only branch or fall through — the OnCompletion /
+method-selector dispatch, of which ``dispatch`` is the part branching on a
+recognised routing field), and HANDLERS (the remaining per-route bodies).
 
-Splits a :class:`tealql.tealtools.ssa.SSAProgram` into the three structural
-roles a downstream analysis usually wants to isolate:
-
-  - **subroutines** — every ``callsub``-reachable routine, with its
-    entry BB, body BBs, label name, and the call sites that invoke it.
-  - **call sites** ("f-calls") — every ``callsub`` op, with the
-    subroutine it targets and the BB control returns to.
-  - **routing** — the entry dispatch skeleton of the main flow: the
-    maximal region, rooted at a program entry, of BBs that only branch
-    / fall through (no side effects, no ``return`` / ``err`` / call) —
-    i.e. the OnCompletion / method-selector dispatch that decides which
-    handler runs. ``dispatch`` is the subset of routing BBs whose
-    branch is on a recognised routing field.
-  - **handlers** — the remaining main-flow BBs (the per-route bodies
-    that do the actual work).
-
-This is a data/partition API only — no rendering. Every BB belongs to
-exactly one of: a subroutine body, the routing region, or the handler
-region. Built on :func:`tealql.tealtools.control_tree.identify_subroutines`
-(the same interprocedural pre-pass the control tree uses), so it agrees
-with the control tree on what the subroutines are.
-
-    from tealql.tealtools.ssa import SSAProgram
-    from tealql.tealtools.structure import analyze_structure
-
-    s = analyze_structure(SSAProgram("contract.teal"))
-    for sub in s.subroutines:
-        print(sub.name, len(sub.body), "called from", [c.line for c in sub.callers])
-    routing_code = s.assignments_in(s.routing)   # feed a detector, etc.
+Subroutines come from :func:`..control_tree.identify_subroutines`, so this
+partition agrees with the control tree's.
 """
 from __future__ import annotations
 
@@ -39,9 +16,7 @@ from .cfg.dominance import program_entries
 from .ssa import Assignment, BasicBlock, SSAProgram
 
 
-# Ops that make a BB a *handler* (does real work) rather than pure
-# dispatch. A BB containing any of these is never part of the routing
-# region.
+# Real-work ops: a BB containing any of these is a handler, never routing.
 _SIDE_EFFECT_OPS = frozenset({
     "itxn_begin", "itxn_next", "itxn_submit", "itxn_field",
     "app_global_put", "app_local_put", "app_global_del", "app_local_del",
@@ -49,8 +24,8 @@ _SIDE_EFFECT_OPS = frozenset({
     "log",
 })
 
-# Terminators that end a path (a trivial approve/reject handler) rather
-# than route onward; reaching one closes the routing region.
+# Terminators that end a path rather than route onward; reaching one closes
+# the routing region.
 _TERMINAL_OPS = frozenset({"return", "err"})
 _CALL_OPS = frozenset({"callsub", "retsub"})
 
@@ -79,9 +54,8 @@ def _has_side_effect(bb: BasicBlock) -> bool:
 
 
 def _is_routing_internal(bb: BasicBlock) -> bool:
-    """A BB belongs to the routing skeleton iff it does no real work and
-    doesn't terminate / call — i.e. it only branches or falls through to
-    more dispatch."""
+    """A BB is routing iff it does no real work and neither terminates nor
+    calls — it only branches or falls through to more dispatch."""
     if _has_side_effect(bb):
         return False
     term = _terminator(bb)
@@ -111,7 +85,7 @@ class Subroutine:
 
 @dataclass
 class ProgramStructure:
-    """A structural partition of ``prog``. Every BB is in exactly one of
+    """A structural partition of ``prog`` — every BB is in exactly one of
     ``routing``, ``handlers``, or some subroutine's ``body``."""
 
     prog: SSAProgram
@@ -136,20 +110,17 @@ class ProgramStructure:
         return None
 
     def assignments_in(self, bbs) -> list[Assignment]:
-        """All assignments in ``bbs`` (a BB iterable), sorted by source
-        position — a ready-to-feed slice for another analysis."""
+        """All assignments in ``bbs``, sorted by source position."""
         bb_set = set(bbs)
         out = [a for bb in bb_set for a in bb.assignments]
         out.sort(key=lambda a: (a.location.file, a.location.line))
         return out
 
     def handler_functions(self) -> list[tuple[str, frozenset]]:
-        """Partition the handler BBs into per-route "functions" — the
-        connected components of the handler subgraph (each dispatch
-        target's body is its own component, since separate route bodies
-        connect only through the routing region). Each is named by its
-        entry BB's source label, else ``f{N}`` in entry order. Returns
-        ``[(name, frozenset[BasicBlock])]`` ordered by entry line."""
+        """Handler BBs as per-route ``[(name, frozenset[BasicBlock])]`` ordered
+        by entry line — the connected components of the handler subgraph (route
+        bodies connect only through routing), named by entry label else
+        ``f{N}``."""
         import networkx as nx
 
         h: "nx.Graph" = nx.Graph()
@@ -175,9 +146,8 @@ class ProgramStructure:
         return out
 
     def _is_arc4(self) -> bool:
-        """Heuristic: the program reads the ABI method selector
-        (``txna ApplicationArgs 0``) and has a dispatch — i.e. it routes
-        like an ARC4 router."""
+        """Heuristic: has a dispatch AND reads the ABI method selector
+        (``txna ApplicationArgs 0``), so it routes like an ARC4 router."""
         if not self.dispatch:
             return False
         return any(
@@ -188,10 +158,9 @@ class ProgramStructure:
     def _render_region(
         self, bbs, *, show_ranges: bool, max_width: Optional[int] = 160,
     ) -> list[str]:
-        """Functional lines for ``bbs``, with BB-head labels interleaved
-        so internal branch targets stay visible. ``max_width`` truncates
-        very long lines (raw-SSA phi expansions can be enormous before
-        the const/materialize passes collapse them); ``None`` disables."""
+        """Functional lines for ``bbs`` with BB-head labels interleaved, so
+        internal branch targets stay visible; ``max_width`` truncates the
+        enormous raw-SSA phi expansions (``None`` disables)."""
         bb_set = set(bbs)
         head_lines = {(bb.file, bb.first_line) for bb in bb_set}
         labels = _label_map(self.prog)
@@ -209,9 +178,8 @@ class ProgramStructure:
         return [text for _, _, text in items] or ["    (empty)"]
 
     def render(self, *, show_ranges: bool = False, max_width: Optional[int] = 160) -> str:
-        """Decompilation-style dump: the routing region, then each
-        handler function, then each subroutine — each as a labelled
-        section with its actual functional lines below."""
+        """Decompilation-style dump: routing, then each handler function, then
+        each subroutine, as labelled sections of functional lines."""
         out: list[str] = []
         rname = "arc4_routing" if self._is_arc4() else "routing"
         out.append(f"{rname}:  // {len(self.routing)} BB(s)"
@@ -245,9 +213,8 @@ def _label_map(prog: SSAProgram) -> dict:
 
 
 def _branches_on_routing_field(bb: BasicBlock, depth: int = 3) -> bool:
-    """True if ``bb``'s terminator is a conditional branch whose
-    condition derives from a recognised routing field (OnCompletion /
-    TypeEnum / … / the ABI selector ``txna ApplicationArgs 0``)."""
+    """True if ``bb``'s conditional branch tests a value derived from a routing
+    field (OnCompletion / TypeEnum / … / the ABI selector)."""
     cond = None
     for a in bb.assignments:
         if a.op in _COND_BRANCH and a.inputs:
@@ -276,8 +243,7 @@ def _flows_from_routing_field(operand, depth: int) -> bool:
 
 
 def analyze_structure(prog: SSAProgram) -> ProgramStructure:
-    """Partition ``prog`` into routing / handlers / subroutines / call
-    sites. See the module docstring for the precise definitions."""
+    """Partition ``prog`` into routing / handlers / subroutines / call sites."""
     from .control_tree import identify_subroutines
 
     info = identify_subroutines(prog)
@@ -323,10 +289,10 @@ def analyze_structure(prog: SSAProgram) -> ProgramStructure:
         ))
     subroutines.sort(key=lambda s: (s.entry_bb.file, s.entry_bb.first_line))
 
-    # Routing: entry-rooted closure of routing-internal main-flow BBs. Roots
-    # are the real per-file execution entries (first instruction's BB) — a
-    # first block that is a branch target has predecessors, and the old
-    # "no-preds" criterion then found no root at all (routing came out empty).
+    # Routing: entry-rooted closure of routing-internal main-flow BBs. Roots are
+    # the per-file execution entries (first instruction's BB), NOT "BBs with no
+    # predecessors" — a first block that is also a branch target HAS preds, and
+    # that criterion finds no root at all, leaving routing empty.
     main_flow = [bb for bb in prog.blocks.values() if bb not in sub_body_bbs]
     main_set = set(main_flow)
     entries = program_entries(main_flow)

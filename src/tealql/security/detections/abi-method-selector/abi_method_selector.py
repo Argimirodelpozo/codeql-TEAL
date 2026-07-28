@@ -1,31 +1,12 @@
-"""sec-guide/abi-method-selector: unvalidated ABI method dispatch.
+"""sec-guide/abi-method-selector: an approval exit reachable without the ABI method
+selector (``txna ApplicationArgs 0``) being checked, so a caller reaches logic the
+method table was supposed to gate.
 
-An ABI application routes on the method selector in ``txna ApplicationArgs 0`` —
-comparing it to each method's 4-byte signature hash and rejecting anything
-unrecognised. If an approval exit is reachable *without* the selector being
-checked (e.g. a bare ``int 1; return`` fall-through past the dispatch, or a router
-that routes but never rejects an unknown selector), a caller can reach application
-logic the method table was supposed to gate.
-
-Heuristic (scoped to ABI-shaped apps): only programs that actually read
-``txna ApplicationArgs 0`` are considered. For such apps, an approval exit is
-protected when EITHER:
-
-  1. **Enforcement** — a selector comparison whose result reaches enforcement
-     (assert / branch-to-err) on every path to the exit
-     (:func:`common.approval_exit_protected_for_arg_reads`); or
-  2. **Matched-selector edge** — the path predicate at the exit proves the
-     selector equals a specific constant (the exit is reached only because the
-     selector matched a known method). This is the ``txna ApplicationArgs 0;
-     match m0 m1 …; err`` router shape (and the ``selector == M; bnz handler``
-     shape): reaching a handler means the selector matched, so the handler exit
-     is genuinely protected — only the final fall-through ``err`` rejects an
-     unknown selector.
-
-Case 2 (path-predicate reasoning, mirroring the OnCompletion match/switch guard
-recognition in :func:`common.approval_exit_guarded_for_action`) removes the old
-KNOWN IMPRECISION: a correct multi-method router used to have its *handlers*
-flagged because reaching a handler via ``match`` didn't count as enforcement.
+Scoped to programs that actually read the selector. An exit is protected when a
+selector comparison reaches ENFORCEMENT on every path to it, or when the exit's
+path predicate pins the selector to a constant — the ``match m0 m1 …; err`` router
+shape, where reaching a handler already means the selector matched and only the
+fall-through ``err`` rejects an unknown one.
 """
 from __future__ import annotations
 
@@ -49,8 +30,7 @@ class AbiMethodSelectorViolation:
 
     @property
     def line(self) -> int:
-        # Structured anchor for machine output (JSON/SARIF/suppressions);
-        # mirrors pretty(): the exit's LAST line.
+        # Must mirror pretty(): the exit's LAST line.
         return self.exit_bb.last_line
 
     def pretty(self) -> str:
@@ -67,7 +47,7 @@ class AbiMethodSelectorViolation:
 
 class AbiMethodSelectorDetector:
     name = "sec-guide/abi-method-selector"
-    applies_to = frozenset({"app"})  # ABI dispatch is an application concern
+    applies_to = frozenset({"app"})  # ABI dispatch is app-only
 
     def __init__(
         self,
@@ -91,11 +71,8 @@ class AbiMethodSelectorDetector:
         return self._pp
 
     def _selector_matched_at_exit(self, exit_bb: BasicBlock) -> bool:
-        """The path predicate at ``exit_bb`` pins the selector to a constant — the
-        exit is reached only because the selector matched a known method (a
-        ``match`` target edge, or the truthy edge of ``selector == K``). Such an
-        exit is genuinely protected: an attacker cannot reach it with an arbitrary
-        selector."""
+        """The path predicate at ``exit_bb`` pins the selector to a constant, so the
+        exit is reachable only with a matched selector, not an arbitrary one."""
         for cond in self.pp.predicates_at(exit_bb.file, exit_bb.first_line):
             v = cond.value
             # match / switch target edge: (selector, "eq", (K,))
@@ -114,8 +91,7 @@ class AbiMethodSelectorDetector:
         return False
 
     def detect(self) -> list[AbiMethodSelectorViolation]:
-        # Only ABI-shaped apps: if the program never reads the method selector,
-        # it isn't doing method dispatch — nothing to validate.
+        # A program that never reads the selector isn't doing method dispatch.
         if not self._selector_vars:
             return []
         out: list[AbiMethodSelectorViolation] = []

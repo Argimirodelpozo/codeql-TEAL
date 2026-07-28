@@ -1,8 +1,6 @@
-"""sec-guide/unprotected-updatable: updatable AND no sender==creator guard.
-
-Approval exit reachable with
-``OnCompletion == UpdateApplication`` AND no dominating ``txn Sender ==
-global CreatorAddress`` check — anyone can update the contract code.
+"""sec-guide/unprotected-updatable: an approval exit reachable with ``OnCompletion
+== UpdateApplication`` and no covering sender==creator check — anyone can replace
+the contract code.
 """
 from __future__ import annotations
 

@@ -1,43 +1,21 @@
-"""TEAL literal + operand parsing — pure text helpers, no IR / puya dependency.
-
-The tree-sitter parse hands downstream the raw opcode text (the node ``code``);
-these helpers recover the structured pieces a consumer needs from it:
-
-  - :func:`tokenize_operands` — split the operand list (the text after the
-    mnemonic) into tokens, honoring ``"quoted strings"`` and parenthesised
-    ``base64(..)`` / ``base32(..)`` groups (which can contain spaces and ``/``).
-  - :func:`decode_byte_literal` — decode a TEAL byte literal (``0x`` / ``"str"``
-    / ``b64 ..`` / ``base64(..)`` / ``b32 ..`` / ``base32(..)``) to
-    ``(raw_bytes, encoding_kind)``. ``encoding_kind`` is a neutral string
-    (``"base16"`` / ``"utf8"`` / ``"base64"`` / ``"base32"``); a caller that
-    needs puya's ``AVMBytesEncoding`` maps it itself, keeping this layer
-    puya-free.
-
-These live in the AST layer because they are TEAL-syntax parsing, even though
-today only the lift consumes them (it would otherwise re-parse the raw text).
-"""
+"""TEAL literal + operand parsing over raw opcode text — no IR / puya dependency."""
 from __future__ import annotations
 
 import re
 
 
-#: A DEPLOYMENT TEMPLATE VARIABLE token: an ALL-CAPS ``PREFIX_NAME`` identifier
-#: standing in for a value supplied at deploy time (``TMPL_DELETABLE``).
-#: ``TMPL_`` is algokit's default prefix, but puya lets a contract choose its
-#: own — the ``compile_HelloPrfx`` fixture uses ``PRFX_`` — so keying on the
-#: literal ``TMPL_`` misses real ones.
+#: A deployment template variable: ALL-CAPS ``PREFIX_NAME`` (``TMPL_DELETABLE``).
+#: Not keyed on the literal ``TMPL_`` — that is only algokit's default prefix and
+#: puya lets a contract choose its own (``PRFX_``), so a prefix test misses real ones.
 _TEMPLATE_VAR_RE = re.compile(r"^[A-Z][A-Z0-9]*_[A-Z0-9_]+$")
 
 
 def render_byte_constant(value: str) -> str:
-    """A bytes constant for HUMAN output.
+    """Render a stored ``0x<hex>`` constant as ``"text"`` when it is printable ASCII.
 
-    Bytes constants are STORED canonically as ``0x<hex>`` so two spellings of
-    one value compare equal (`byte "hi"` and `pushbytes "hi"` used to resolve
-    to different strings and silently fail an equality match in `xcontract`'s
-    state-key resolution). But a finding that reads ``== 0x616c6c6f776564`` is
-    worse than ``== "allowed"``, so printable ASCII is rendered back as a
-    string for display. Display ONLY — the stored value stays canonical."""
+    HAZARD: display ONLY. Bytes constants are stored canonically as ``0x<hex>`` so
+    that two spellings of one value compare equal (``byte "hi"`` vs
+    ``pushbytes "hi"``); feeding this output back into a comparison breaks that."""
     if not (isinstance(value, str) and value.startswith("0x")):
         return value
     try:
@@ -50,27 +28,18 @@ def render_byte_constant(value: str) -> str:
 
 
 def is_template_variable(token: str) -> bool:
-    """``token`` is a deployment template variable — a value that does not
-    exist until the app is deployed.
+    """``token`` is a deployment template variable — no value until the app is deployed.
 
-    ONE definition, consumed by the parser (recover the operand rather than
-    drop it), ``const_values`` (resolve the slot to NOTHING rather than to the
-    literal text) and the lift (lower to puya's ``TemplateVar``). It previously
-    existed in three places in two different forms — a ``TMPL_`` prefix test
-    and this regex — which disagree on every custom prefix.
-    """
+    HAZARD: callers must resolve such a token to NOTHING; emitting its text as a
+    constant fabricates a value every downstream comparison then trusts."""
     return bool(token) and _TEMPLATE_VAR_RE.match(token.strip()) is not None
 
 
-# TEAL `int` pseudo-op named constants -- the OnCompletion and TxnType (TypeEnum)
-# enums the assembler resolves to fixed uint64 values. The tree-sitter grammar's
-# `int` rule only accepts a numeric argument, so the named form (`int
-# DeleteApplication`) parses as an ERROR; parse.py recovers the node and this
-# table gives const_values the value. (AVM langspec named constants.)
-# DERIVED from avm.TXN_ENUM_FIELD_NAMES rather than re-listed: avm.py is the
-# single home for AVM metadata, and two hand-maintained copies of the same
-# enums can disagree (a new OnCompletion added to one and not the other would
-# silently change which guards resolve).
+# `int` pseudo-op named constants — the OnCompletion / TxnType (TypeEnum) enums.
+# HAZARD: the grammar's `int` rule accepts only a number, so `int DeleteApplication`
+# parses as an ERROR node; parse.py recovers it and THIS table is where its
+# const_value comes from. Derived from avm.TXN_ENUM_FIELD_NAMES, never re-listed —
+# a second hand-kept copy would silently disagree about which guards resolve.
 def _named_int_constants() -> dict[str, int]:
     from ..avm import TXN_ENUM_FIELD_NAMES
 
@@ -90,15 +59,10 @@ _HEX_DIGITS = frozenset("0123456789abcdefABCDEF")
 def _teal_str_bytes(s: str) -> bytes:
     r"""Decode a TEAL ``byte "..."`` string body (handles \\ \" \n \r \t \xNN).
 
-    Non-ASCII characters encode as UTF-8, matching the assembler — emitting
-    ``ord(c)`` as one byte (as a former duplicate of this function in
-    ``graph.py`` did) turns ``byte "café"`` into ``636166e9`` where the real
-    constant is ``636166c3a9``, so every comparison against it mis-evaluates.
-
-    A malformed escape is emitted literally rather than raising: this runs on
-    untrusted / hand-written source, the assembler would reject such a file
-    anyway, and a decode crash escaping as a non-LiftError reads as a genuine
-    bug (see :mod:`tealql.tealtools.errors`).
+    HAZARD: non-ASCII encodes as UTF-8, matching the assembler — a per-character
+    ``ord(c)`` decoder turns ``byte "café"`` into ``636166e9`` instead of the real
+    ``636166c3a9`` and every comparison against it mis-evaluates. A malformed escape
+    is emitted LITERALLY, never raised — this runs on untrusted source.
     """
     out = bytearray()
     i = 0
@@ -107,9 +71,8 @@ def _teal_str_bytes(s: str) -> bytes:
         if c == "\\" and i + 1 < len(s):
             n = s[i + 1]
             if n == "x":
-                # Need BOTH hex digits present and valid (`i + 4 <= len(s)`);
-                # the old bound `i + 3 < len(s) + 1` accepted a truncated
-                # one-digit `\x4` and decoded it as 0x04.
+                # BOTH hex digits must be present and valid; a truncated `\x4`
+                # is malformed, not 0x04.
                 if i + 4 <= len(s) and set(s[i + 2:i + 4]) <= _HEX_DIGITS:
                     out.append(int(s[i + 2:i + 4], 16))
                     i += 4
@@ -125,34 +88,31 @@ def _teal_str_bytes(s: str) -> bytes:
     return bytes(out)
 
 
+# TEAL omits `=` padding (an address is 52 chars), so both decoders re-pad first.
 def _b64(s: str) -> bytes:
     import base64
     return base64.b64decode(s.strip() + "=" * (-len(s.strip()) % 4))
 
 
 def _b32(s: str) -> bytes:
-    import base64                       # TEAL omits padding; addresses are 52 chars
+    import base64
     return base64.b32decode(s.strip() + "=" * (-len(s.strip()) % 8))
 
 
 def decode_byte_literal(v: str) -> tuple[bytes, str]:
-    """Parse a TEAL byte literal -> ``(raw bytes, encoding-kind name)``. Accepts
-    the ``0x..`` / ``"str"`` / ``b64 ..`` / ``base64(..)`` / ``b32 ..`` /
-    ``base32(..)`` forms. Base64/base32 bodies are re-padded (TEAL writes them
-    without ``=``). The kind name is one of ``base16`` / ``utf8`` / ``base64``
-    / ``base32``."""
+    """Parse a TEAL byte literal -> ``(raw bytes, kind)``, kind being one of
+    ``base16`` / ``utf8`` / ``base64`` / ``base32``.
+
+    HAZARD: a malformed ``0x`` / ``b64`` / ``b32`` body RAISES (callers must catch),
+    whereas an unrecognised bare token falls back SILENTLY to its utf-8 bytes."""
     v = v.strip()
     if v.startswith("0x"):
         return bytes.fromhex(v[2:]), "base16"
     if len(v) >= 2 and v[0] == '"' and v[-1] == '"':
         return _teal_str_bytes(v[1:-1]), "utf8"
-    # Both spellings of each keyword, in BOTH the space form (`b64 AAAA`) and
-    # the parenthesised form (`b64(AAAA)`) — the assembler accepts all four per
-    # encoding. The abbreviated PARENTHESISED spellings (`b64(..)` / `b32(..)`)
-    # used to be missing, so they fell through to the utf-8 fallback and
-    # decoded to the literal ASCII text `b64(AAAA)`. That is worse than failing:
-    # a guard comparing against the constant silently mis-evaluates against a
-    # value the chain never produces.
+    # All four spellings the assembler accepts per encoding: `b64 X`, `base64 X`,
+    # `b64(X)`, `base64(X)`. A missed one does not fail — it falls through to the
+    # utf-8 fallback and decodes to the literal text `b64(X)`, which a guard trusts.
     for kws, dec, kind in ((("b64", "base64"), _b64, "base64"),
                            (("b32", "base32"), _b32, "base32")):
         for kw in kws:
@@ -171,16 +131,12 @@ _BYTE_ENC_KW = frozenset({"b64", "base64", "b32", "base32"})
 
 
 def tokenize_operands(text: str, *, fold_byte_keywords: bool = False) -> list:
-    """Split a TEAL operand list (the text after the opcode) into tokens,
-    honoring ``"quoted strings"`` and parenthesised ``base64(..)`` /
-    ``base32(..)`` groups (which can contain spaces and ``/``). Stops at an
-    inline ``//`` comment that sits between tokens (depth 0, outside quotes).
+    """Split the text after an opcode into tokens, honoring ``"quoted strings"``,
+    parenthesised ``base64(..)`` groups and a between-token ``//`` comment.
 
-    ``fold_byte_keywords=True`` additionally folds the two-token
-    ``b64 <data>`` / ``base64 <data>`` / ``b32 <data>`` / ``base32 <data>``
-    form into ONE token (``"b64 AAAA"``) — the shape a ``bytecblock`` /
-    ``intcblock`` literal list uses, where each such pair is a single
-    literal. (Without it the keyword and its data are separate tokens.)"""
+    HAZARD: a ``bytecblock`` / ``intcblock`` literal list needs
+    ``fold_byte_keywords=True`` — without it ``b64 AAAA`` splits into two tokens and
+    every constant index after it shifts."""
     toks: list = []
     i, n = 0, len(text)
     while i < n:

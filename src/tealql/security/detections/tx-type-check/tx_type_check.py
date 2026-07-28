@@ -1,14 +1,6 @@
-"""sec-guide/tx-type-check: missing transaction-type restriction (path-aware).
-
-Per-approval-exit: each exit must be reachable only along CFG paths
-that cross a BB where *either* ``txn TypeEnum`` or ``txn Type`` flows
-into a comparison whose result reaches enforcement. The disjunction means
-validating either field counts as restricting the transaction type.
-
-Was: dominance-based shared base (``_FieldValidatedDetector``), which
-required a *single* comparison BB to dominate every approval exit —
-sound but over-conservative on dispatch chains where different
-methods validate the field in their own branches.
+"""sec-guide/tx-type-check: an approval exit reachable without crossing an ENFORCED
+comparison of EITHER ``txn TypeEnum`` or ``txn Type`` — validating either one
+counts as restricting the transaction type.
 """
 from __future__ import annotations
 
@@ -29,8 +21,7 @@ class TxTypeCheckViolation:
 
     @property
     def line(self) -> int:
-        # Structured anchor for machine output (JSON/SARIF/suppressions);
-        # mirrors pretty(): the exit's LAST line.
+        # Must mirror pretty(): the exit's LAST line.
         return self.exit_bb.last_line
 
     def pretty(self) -> str:
@@ -48,10 +39,9 @@ class TxTypeCheckViolation:
 class TxTypeCheckDetector:
     severity = "high"
     name = "sec-guide/tx-type-check"
-    # A logic signature must restrict which transaction TYPES it authorizes; an
-    # application is *always* invoked as an `appl` txn, so checking its own
-    # TypeEnum is redundant — flagging the absence on an app is a false positive.
-    # (Validating a SIBLING's type is the unvalidated-group-sibling concern.)
+    # An application is ALWAYS invoked as an `appl` txn, so checking its own
+    # TypeEnum is redundant and flagging its absence is a false positive.
+    # Validating a SIBLING's type is the unvalidated-group-sibling concern.
     applies_to = frozenset({"logicsig"})
 
     def __init__(self, prog: SSAProgram, *, file: Optional[str] = None):

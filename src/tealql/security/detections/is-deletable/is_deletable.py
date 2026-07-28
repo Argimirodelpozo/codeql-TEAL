@@ -1,9 +1,5 @@
-"""sec-guide/is-deletable: app can reach approval with OnCompletion=DeleteApplication.
-
-One finding per approval exit not guarded against ``OnCompletion == 5``.
-Deliberately over-conservative: guards expressed via ``match`` / ``switch``
-dispatch tables aren't recognised; explicit ``OnCompletion == K`` (or
-``!=``) checks that control the path to the exit are.
+"""sec-guide/is-deletable: one finding per approval exit not guarded against
+``OnCompletion == DeleteApplication``.
 """
 from __future__ import annotations
 
@@ -21,9 +17,8 @@ class IsDeletableViolation(_ExitBBViolation):
 
 class IsDeletableDetector(_ApprovalActionGuardDetector):
     name = "sec-guide/is-deletable"
-    # A PROPERTY, not a vulnerability: a deletable app is usually deletable on
-    # purpose (the creator can tear it down). Whether *anyone* can delete it
-    # without authorization is the real bug — that's unprotected-deletable.
+    # A PROPERTY, not a vulnerability — deletable is usually deliberate. Whether
+    # ANYONE can delete it is the real bug, and that is unprotected-deletable.
     severity = "informational"
     action = common.ONC_DELETE_APPLICATION
     violation_cls = IsDeletableViolation

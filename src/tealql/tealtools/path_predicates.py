@@ -1,47 +1,15 @@
 """Per-BB path predicates derived from branch and assert outcomes.
 
-For each :class:`tealql.tealtools.ssa.BasicBlock`, computes the set of
-value-outcome pairs that hold on **every** path from program entry to
-that BB. A pair ``(V, "nonzero")`` reads as "the SSA value ``V`` was
-non-zero on every path that reaches this BB" — typically because
-some ``bnz`` / ``bz`` / ``assert`` dominated the BB.
+For each :class:`.ssa.BasicBlock`, the ``(value, outcome)`` pairs that hold on
+**every** path from program entry to that BB — the substrate for "guard must
+dominate sink" detectors. Forward dataflow, intersecting at joins::
 
-This is the substrate for "must dominate sink" detectors. Example
-(an upcoming auth-checker would do something like this):
+    bb_preds[bb] = ⋂_{p ∈ preds(bb)} ( bb_preds[p] ∪ edge_pred(p, bb) )
 
-    pp = PathPredicateAnalysis(prog)
-    for sink in suspicious_assignments(prog):
-        bb = prog.block_containing(sink.location.file, sink.location.line)
-        if not any(p.is_admin_check() for p in pp.bb_preds[bb]):
-            flag(sink)
-
-Algorithm
----------
-
-Forward dataflow with intersection at BB joins:
-
-    bb_preds[entry]   = ∅
-    bb_preds[bb]      = ⋂_{p ∈ preds(bb)}  ( bb_preds[p]  ∪  edge_pred(p, bb) )
-
-Edge predicates per branch op:
-
-- ``bnz l_target``: target edge ⇒ ``(value, "nonzero")``;
-                    fall-through ⇒ ``(value, "zero")``.
-- ``bz l_target``:  target edge ⇒ ``(value, "zero")``;
-                    fall-through ⇒ ``(value, "nonzero")``.
-- ``assert``:       only successor (success path) ⇒
-                    ``(value, "nonzero")``.
-
-Self-loops are handled correctly by the standard "TOP starts
-unknown" fixpoint convention — a back-edge predicate that's only
-true on the back-edge intersects to ∅ at the merge with the
-non-back-edge contribution and drops out.
-
-``switch`` / ``match`` aren't modelled yet; their edge predicates
-are richer (per-target equality with an immediate value) and don't
-fit the binary nonzero/zero shape. A successor BB reached from a
-``switch`` will simply not pick up a predicate from that edge —
-sound but imprecise.
+HAZARD: edge polarity is the whole analysis. ``bnz l``: target edge ⇒
+``nonzero``, fall-through ⇒ ``zero``. ``bz l``: the mirror image. ``assert``:
+its single (success) successor ⇒ ``nonzero``. A reversed polarity turns an
+absent guard into a proven one.
 """
 from __future__ import annotations
 
@@ -71,29 +39,15 @@ Operand = Union[SSAVar, Phi, Const]
 class BranchCondition:
     """A predicate on an SSA value, derived from a dominated branch.
 
-    ``kind``:
-        - ``"nonzero"``: value != 0 (bnz-taken, bz-not-taken, asserted).
-        - ``"zero"``: value == 0 (bnz-not-taken, bz-taken).
-        - ``"eq"``: value == ``args[0]``. Emitted both for switch /
-          match (where ``args[0]`` is the target's literal) and for
-          a guarded ``==`` whose result feeds into a branch (where
-          ``args[0]`` is the other operand the value was compared with).
-        - ``"neq"``: value != ``args[0]``. Complement of ``eq``;
-          emitted on the negative side of a guarded ``==``, or directly
-          when ``!=`` drives the branch.
-        - ``"lt"`` / ``"le"`` / ``"gt"`` / ``"ge"``: value vs.
-          ``args[0]`` with the named relation. Emitted when an ordered
-          comparison (``<``/``<=``/``>``/``>=`` and the ``b``-prefixed
-          byte-arithmetic variants) drives the branch.
-        - ``"not_in_range"``: value ∉ ``[args[0]..args[1] - 1]``
-          (switch fall-through: index out of [0..N-1]).
-        - ``"neq_all"``: value not equal to any of the operands in
-          ``args`` (match fall-through: key didn't match any
-          candidate).
+    Identity is ``(value, kind, args)`` so predicates can be set-intersected at
+    joins; ``args`` must be a tuple of hashables (Const / SSAVar / Phi / int / str).
 
-    Identity is ``(value, kind, args)`` so the analysis can put these
-    in sets and intersect across joins. ``args`` must be a tuple of
-    hashables (Const / SSAVar / Phi / int / str).
+    HAZARD: ``kind`` encodes branch polarity. ``nonzero`` = bnz-taken /
+    bz-not-taken / asserted; ``zero`` is its complement. ``eq`` / ``neq`` /
+    ``lt`` / ``le`` / ``gt`` / ``ge`` relate ``value`` to ``args[0]`` in SOURCE
+    order. ``not_in_range`` = ``value`` ∉ ``[args[0]..args[1] - 1]`` (switch
+    fall-through); ``neq_all`` = ``value`` equals no operand in ``args`` (match
+    fall-through).
     """
 
     value: Operand
@@ -126,11 +80,9 @@ class BranchCondition:
         return f"({v} ?? {self.kind}{self.args})"
 
 
-# Branch-taken → kind map for each binary op. The "not-taken" side
-# uses the *negated* kind from the same table (eq ↔ neq, lt ↔ ge,
-# le ↔ gt, gt ↔ le, ge ↔ lt). Byte-arithmetic variants are treated
-# as the same predicate kinds for downstream reasoning; consumers
-# that care about width can inspect the operand types.
+# Branch-TAKEN → kind. HAZARD: the not-taken side is the `_KIND_NEGATION` of the
+# same entry, never the entry itself. `b`-prefixed byte variants share the kinds;
+# consumers that care about width inspect the operand types.
 _CMP_OP_TO_KIND_TAKEN: dict[str, str] = {
     "==": "eq", "b==": "eq",
     "!=": "neq", "b!=": "neq",
@@ -148,8 +100,8 @@ _KIND_NEGATION: dict[str, str] = {
 }
 
 
-# Swapping operands of an ordered comparison flips the relation
-# (``a < b`` ↔ ``b > a``). Equality and inequality are symmetric.
+# Swapping operands flips an ordered relation (``a < b`` ↔ ``b > a``); equality
+# and inequality are symmetric.
 _KIND_FLIP: dict[str, str] = {
     "eq": "eq", "neq": "neq",
     "lt": "gt", "gt": "lt",
@@ -160,26 +112,22 @@ _KIND_FLIP: dict[str, str] = {
 def _canonical_binary_pred(
     left: Operand, kind: str, right: Operand,
 ) -> BranchCondition:
-    """Construct a binary :class:`BranchCondition` with the *variable*
-    side on the left when the other operand is a known constant. For
-    ordered relations, the operator is flipped to preserve semantics
-    after the swap (``5 < V`` ↦ ``V > 5``). Keeps downstream filtering
-    simple — consumers only have to check ``isinstance(p.value, SSAVar)``
-    once instead of also handling the reversed form. Const-resolved
-    SSAVars (e.g. an ``intc_0`` output that ``propagate_constants``
-    pinned to 0) count as "constant" for this swap."""
+    """Put the variable side left when the other operand is constant, so
+    consumers only handle one form.
+
+    HAZARD: the swap MUST flip an ordered relation to preserve semantics
+    (``5 < V`` ↦ ``V > 5``). Const-resolved SSAVars count as constants here."""
     if is_const(left) and not is_const(right):
         return BranchCondition(value=right, kind=_KIND_FLIP[kind], args=(left,))
     return BranchCondition(value=left, kind=kind, args=(right,))
 
 
-# Opcodes that read an IMMUTABLE transaction / global field. A subroutine cannot
-# change what `txn OnCompletion` (or `global CreatorAddress`, …) reads — these are
-# properties of the transaction / group, re-derived by opcode, not stack or
-# scratch values. So a predicate rooted ONLY in these survives a `callsub` return
-# even though the callee may clobber the caller's stack or scratch (a `dig` /
-# `bury` beyond its frame, a `store`). Predicates touching anything else
-# (load / dig / frame_dig / app_global_get / a sub parameter / …) are NOT carried.
+# Opcodes reading an IMMUTABLE transaction / global field.
+#
+# HAZARD: only a predicate rooted ONLY in these survives a `callsub` return — a
+# callee may clobber the caller's stack/scratch but cannot change the
+# transaction. Adding an op a callee CAN affect (load / dig / frame_dig /
+# app_global_get / a sub parameter) makes carried-across-return facts unsound.
 _TXN_FIELD_READ_OPS = frozenset({
     "txn", "txna", "txnas", "gtxn", "gtxna", "gtxnas",
     "gtxns", "gtxnsa", "gtxnsas", "global",
@@ -191,22 +139,14 @@ _PURE_COMBINATOR_OPS = CMP_OPS | LOGICAL_OPS
 
 def _rooted_in_immutable_fields(v, seen: Optional[set] = None,
                                 memo: Optional[dict] = None) -> bool:
-    """True if every leaf of ``v`` is an immutable transaction/global field read
-    or a constant, combined only through pure comparison/boolean ops. Such a
-    value cannot be altered by a ``callsub`` (the callee can touch stack/scratch,
-    never the txn fields), so a predicate on it is preserved across the return.
+    """True if every leaf of ``v`` is an immutable txn/global field read or a
+    constant, combined only through pure comparison/boolean ops — so a predicate
+    on it survives a ``callsub`` return.
 
-    ``memo`` is an OPTIONAL per-analysis result cache (the property is a pure
-    function of an SSA value the analysis never mutates). ``_compute`` supplies
-    one because without it this re-walked the whole value DAG for every
-    predicate at every return target on every worklist iteration — 468k calls,
-    ~14% of a real contract's entire detector run. It is deliberately NOT a
-    module-level cache: ``SSAVar`` hashes by ``(file, line, index)``, so a
-    shared dict would collide across two programs with the same basename.
-
-    ``seen`` is per-walk and exists only to break cycles; a result whose walk
-    took the cycle short-circuit is not cached, because that answer holds only
-    for the traversal that reached it."""
+    HAZARD: ``memo`` must stay PER-ANALYSIS. ``SSAVar`` hashes by
+    ``(file, line, index)``, so a module-level cache collides across two programs
+    sharing a basename. A result whose walk took the ``seen`` cycle
+    short-circuit is likewise never cached — it holds only for that traversal."""
     return _rooted_walk(v, set() if seen is None else seen,
                         {} if memo is None else memo)[0]
 
@@ -255,10 +195,7 @@ def _cache(memo: dict, v, result: bool) -> "tuple[bool, bool]":
 
 
 def _disp(op) -> str:
-    """Compact rendering for an :class:`Operand`. Resolves
-    ``const_value`` to a literal so a candidate SSAVar reads as
-    ``100`` instead of ``V#1@L7`` once
-    :meth:`SSAProgram.propagate_constants` has run."""
+    """Compact rendering for an :class:`Operand`, resolving ``const_value`` to a literal."""
     if isinstance(op, Const):
         return render_byte_constant(op.value)
     cv = getattr(op, "const_value", None)
@@ -267,11 +204,8 @@ def _disp(op) -> str:
     return repr(op)
 
 
-# ---------------------------------------------------------------------------
-# Static-incompatibility check for exclusive-pair detection
-# ---------------------------------------------------------------------------
-
-
+# Lattice top for the fixpoint: "not computed yet", distinct from ∅ ("no
+# constraints") — a BB at ∅ is a real answer, a BB at TOP must not be read.
 class _Top:
     __slots__ = ()
 
@@ -291,11 +225,7 @@ _MATCH = "match"
 
 
 class PathPredicateAnalysis:
-    """Forward dataflow over basic blocks accumulating branch / assert
-    predicates that must hold on every path to each BB.
-
-    Construction is cheap — one fixpoint pass over BBs.
-    """
+    """Branch/assert predicates that must hold on every path to each BB."""
 
     def __init__(
         self,
@@ -304,26 +234,17 @@ class PathPredicateAnalysis:
         entry_seeds: frozenset[BranchCondition] = frozenset(),
         bb_seeds: Optional[dict[BasicBlock, frozenset[BranchCondition]]] = None,
     ):
-        """``entry_seeds``: predicates known to hold at every program
-        entry BB before any branch — used by cross-contract analyses
-        to propagate caller-side facts (e.g. ``ApplicationArgs[0] ==
-        "do_thing"``) into the callee. They flow forward like any
-        other predicate.
-
-        ``bb_seeds``: predicates known to hold at the start of specific
-        BBs, regardless of join inputs — used when an external event
-        (e.g. a successful ``itxn_submit`` returning a callee's
-        approving-exit summary) injects facts into a non-entry BB.
-        Unioned in *after* the predecessor-intersection step on each
-        recomputation of that BB.
-        """
+        """``entry_seeds`` hold at every program-entry BB before any branch
+        (cross-contract caller-side facts); ``bb_seeds`` hold at named BBs
+        regardless of join inputs (facts injected by an external event such as a
+        successful ``itxn_submit``), unioned in AFTER the predecessor
+        intersection on every recomputation."""
         self.prog = prog
         self.entry_seeds = entry_seeds
         self.bb_seeds: dict[BasicBlock, frozenset[BranchCondition]] = (
             bb_seeds or {}
         )
-        # (file, label_name) → label's source line, used to resolve
-        # branch immediates (``bnz l_target`` ↦ which successor BB).
+        # (file, label_name) → source line, to resolve branch immediates.
         self._label_lines: dict[tuple[str, str], int] = self._index_labels()
         self.bb_preds: dict[BasicBlock, frozenset[BranchCondition]] = {}
         self._compute()
@@ -333,41 +254,29 @@ class PathPredicateAnalysis:
     def predicates_at(
         self, file: str, line: int
     ) -> frozenset[BranchCondition]:
-        """Predicates that hold on every path from program entry to
-        ``(file, line)``. Returns an empty set if ``(file, line)``
-        isn't inside any computed BB."""
+        """Predicates holding on every path to ``(file, line)``; empty if it is in no BB."""
         bb = self.prog.block_containing(file, line)
         if bb is None:
             return frozenset()
         return self.bb_preds.get(bb, frozenset())
 
     def approving_exits(self) -> list[BasicBlock]:
-        """BBs whose last opcode is an APPROVING ``return``.
+        """BBs whose last opcode is an APPROVING ``return``, per
+        :func:`.cfg.exits.is_approval_exit`.
 
-        Only ``return`` and ``err`` legitimately terminate execution (running
-        past end-of-program is itself an error). ``err`` BBs are rejecting, and
-        so is a ``return`` whose popped value is the constant ``0`` — those are
-        excluded: reporting a reject-only arm as an admissible group shape
-        (``analyze_per_exit``) is user-visible nonsense, and intersecting
-        reject-path facts into ``approving_exit_summary`` weakens the caller
-        feedback for no reason. A non-constant return value stays included
-        (it may approve).
+        ``err`` BBs and a ``return`` of the constant ``0`` are rejecting and are
+        excluded, so reject-path facts never intersect into
+        :meth:`approving_exit_summary`; a non-constant return value stays in.
 
-        Classification is :func:`tealql.tealtools.cfg.exits.is_approval_exit`.
-        This used to test ``last.inputs[0]``, which is ALWAYS EMPTY — ``return``
-        is deliberately modelled as ``(0, 0)`` in :data:`avm.SIG` — so the
-        reject-arm exclusion documented above could never fire and every
-        ``int 0; return`` arm was intersected in as if it approved.
+        HAZARD: do not classify by ``last.inputs`` — ``return`` is modelled as
+        arity ``(0, 0)`` in :data:`.avm.SIG`, so its ``inputs`` are ALWAYS EMPTY
+        and any test on them silently admits every reject arm as approving.
         """
         return [bb for bb in self.prog.blocks.values() if is_approval_exit(bb)]
 
     def approving_exit_summary(self) -> frozenset[BranchCondition]:
-        """Intersection of predicates over every approving exit BB.
-
-        These are facts that hold *on every path that leads to an
-        approval* — i.e. what a caller can assume after a successful
-        ``itxn_submit`` of this program. Returns the empty set if
-        there are no approving exits."""
+        """Predicates common to every approving exit — what a caller may assume
+        after a successful ``itxn_submit``; empty if nothing approves."""
         exits = self.approving_exits()
         if not exits:
             return frozenset()
@@ -378,8 +287,7 @@ class PathPredicateAnalysis:
         return summary or frozenset()
 
     def render(self, *, file: Optional[str] = None) -> str:
-        """Per-BB dump of accumulated predicates, sorted by source
-        order. Useful for spot-checking the analysis on a fixture."""
+        """Per-BB dump of accumulated predicates, in source order."""
         out: list[str] = []
         for bb in sorted(
             self.prog.blocks.values(),
@@ -426,31 +334,27 @@ class PathPredicateAnalysis:
 
     def _compute(self) -> None:
         prog = self.prog
-        # Interprocedural return precision: PathPredicateAnalysis is context-
-        # INSENSITIVE — a subroutine reached from N call sites merges (intersects)
-        # all callers' facts at its entry, so a caller-specific predicate (e.g.
-        # `OnCompletion == 5` asserted before the call) is lost by the time the
-        # callee's `retsub` returns. But each return TARGET is reached only via
-        # its own call (the return address), so the caller's IMMUTABLE-field
-        # predicates do still hold there. Recover them: at a return target, union
-        # in the calling block's predicates restricted to the txn/global-rooted
-        # subset (sound — the callee can't change those). ``caller_of`` maps a
-        # return-target BB -> its calling (callsub) BB; ``return_target_of`` is
-        # the reverse, so a change to a caller re-queues its return target.
+        # Context-INSENSITIVE: a subroutine intersects all callers' facts at its
+        # entry, so a caller-specific predicate is gone by `retsub`. But each
+        # return TARGET is reached only via its own call, so the caller's
+        # IMMUTABLE-field predicates still hold there and are unioned back in
+        # (sound — a callee cannot change txn/global fields). `caller_of`:
+        # return-target BB → its callsub BB; `return_target_of` is the reverse,
+        # so a change to a caller re-queues its return target.
         caller_of, return_target_of = self._callsub_return_maps()
-        # One immutability memo for the whole fixpoint (see the function's note).
+        # One immutability memo for the whole fixpoint (per-analysis, see
+        # _rooted_in_immutable_fields).
         rooted_memo: dict = {}
 
-        # Initial: TOP everywhere; ``∅`` for BBs with no predecessors
-        # (unreachable BBs and the usual no-pred program entry — "no
-        # constraints" is the right zero element for both).
+        # Initial: TOP everywhere; ∅ for BBs with no predecessors (unreachable
+        # BBs and the usual no-pred program entry).
         #
-        # A program entry that HAS predecessors (its first block is a branch
-        # target — a top-level loop) additionally contributes a VIRTUAL
-        # fresh-entry path to its own meet below: execution reaches it from
-        # outside with only the entry seeds, so any fact the back edge carries
-        # must be intersected against that path or it would be credited to
-        # executions that never took the loop.
+        # HAZARD: a program entry that HAS predecessors (its first block is a
+        # branch target — a top-level loop) must also contribute a VIRTUAL
+        # fresh-entry path to its own meet below. Execution reaches it from
+        # outside carrying only the entry seeds, so anything the back edge
+        # carries must be intersected against that path or it gets credited to
+        # executions that never looped.
         program_entry_set = set(program_entries(prog.blocks.values()))
         bb_preds: dict[BasicBlock, object] = {bb: _TOP for bb in prog.blocks.values()}
         for bb in prog.blocks.values():
@@ -479,8 +383,7 @@ class PathPredicateAnalysis:
             extra = self.bb_seeds.get(bb)
             if extra:
                 new_preds |= extra
-            # Carry the calling block's immutable-field predicates across the
-            # return into this return target (see comment above).
+            # Carry the caller's immutable-field predicates across the return.
             caller = caller_of.get(bb)
             if caller is not None:
                 caller_preds = bb_preds[caller]
@@ -502,33 +405,22 @@ class PathPredicateAnalysis:
                 rt = return_target_of.get(bb)
                 if rt is not None:
                     worklist.append(rt)
-        # Replace any surviving TOP (unreachable) with ∅ for downstream
-        # consumers that expect a frozenset.
+        # Surviving TOP means unreachable; hand downstream a frozenset.
         for bb in list(bb_preds.keys()):
             if bb_preds[bb] is _TOP:
                 bb_preds[bb] = frozenset()
         self.bb_preds = bb_preds  # type: ignore[assignment]
 
     def _callsub_return_maps(self):
-        """``(caller_of, return_target_of)`` under the SOUND policy — see
-        :func:`tealql.tealtools.subroutines.sound_return_targets` (the
-        implementation moved there; the semantics are unchanged)."""
+        """``(caller_of, return_target_of)`` under :func:`.subroutines.sound_return_targets`."""
         return sound_return_targets(self.prog)
 
     def _edge_predicates(
         self, pred: BasicBlock, succ: BasicBlock
     ) -> frozenset[BranchCondition]:
-        """All predicates added on the CFG edge ``pred → succ``, based
-        on ``pred``'s last assignment.
-
-        For ``bnz`` / ``bz`` / ``assert``, returns the boolean predicate
-        on the cond input *plus* any decomposed predicates when the
-        cond is itself an SSAVar produced by a recognisable op
-        (binary comparison, ``&&``, ``||``, ``!``). For ``switch`` /
-        ``match``, returns the per-target equality (or fall-through
-        not-in-range / neq_all). Empty frozenset when the edge carries
-        no predicate information (sequential fall-through,
-        callsub/retsub edges, ops we don't model)."""
+        """Predicates added on the CFG edge ``pred → succ`` by ``pred``'s last
+        assignment; empty when the edge carries none (sequential fall-through,
+        callsub/retsub edges, unmodelled ops)."""
         if not pred.assignments:
             return frozenset()
         last = pred.assignments[-1]
@@ -536,17 +428,17 @@ class PathPredicateAnalysis:
             return frozenset()
         cond = last.inputs[0]
         if last.op == _ASSERT:
-            # An asserter BB has exactly one successor (the success
-            # path); the assertion guarantees the value was non-zero.
+            # The single successor is the success path: the value was non-zero.
             return self._decompose_cond(cond, taken=True)
         if last.op in (_BNZ, _BZ):
             target_name = last.immediates.strip()
             target_line = self._label_lines.get((pred.file, target_name))
             if target_line is None:
                 return frozenset()
-            # `bnz next` / `bz next` to the immediately-following label collapses
-            # both edges onto ONE successor — the branch does not partition flow,
-            # so neither the taken nor the fall-through predicate holds there.
+            # HAZARD: `bnz next` / `bz next` to the immediately-following label
+            # collapses both edges onto ONE successor. The branch does not
+            # partition flow, so NEITHER the taken nor the fall-through
+            # predicate holds there.
             if len({s.first_line for s in pred.successors}) < 2:
                 return frozenset()
             took_branch = succ.first_line == target_line
@@ -564,25 +456,18 @@ class PathPredicateAnalysis:
     def _decompose_cond(
         self, cond: Operand, *, taken: bool,
     ) -> frozenset[BranchCondition]:
-        """Given a boolean cond at a branch point and whether the
-        "truthy" side is being taken, derive every predicate we can
-        prove on this edge.
+        """Every predicate provable on this edge for ``cond``, given which side
+        (``taken`` = truthy) is taken — the bare ``nonzero``/``zero`` plus any
+        decomposition through a comparison or ``&&`` / ``||`` / ``!`` producer.
 
-        Always emits the bare ``(cond, nonzero|zero)`` predicate. If
-        ``cond`` is an SSAVar whose producing op is a binary comparison
-        or a boolean connective (``&&``, ``||``, ``!``), additional
-        predicates on the underlying operands are emitted by
-        propagating through the op's semantics. The connective rules
-        are asymmetric: ``&&`` is fully decomposable on its truthy
-        side (both args must be non-zero) but not its falsy side (one
-        of them is zero — a disjunction we don't model); ``||`` is
-        the mirror image.
+        HAZARD: the connective rules are ASYMMETRIC. ``&&`` decomposes only on
+        its TRUTHY side (both args non-zero); its falsy side is a disjunction we
+        don't model. ``||`` is the mirror image. Decomposing the other side
+        invents a guard that isn't there.
         """
-        # Iterative (worklist) rather than recursive: a long `a && b && ...`
-        # chain nests the connective ops thousands deep, and a cyclic SSA value
-        # web (a phi feeding its own guard) is unbounded — either blows the Python
-        # recursion limit. `seen` makes it cycle-safe; the result is the same
-        # set-union the recursive form produced.
+        # Iterative, not recursive: a long `a && b && ...` chain nests thousands
+        # deep and a cyclic value web (a phi feeding its own guard) is unbounded
+        # — either blows the recursion limit. `seen` makes it cycle-safe.
         out: set[BranchCondition] = set()
         seen: set = set()
         stack: list = [(cond, taken)]
@@ -599,10 +484,10 @@ class PathPredicateAnalysis:
             if producer is None:
                 continue
             op, ins = producer.op, producer.inputs
-            # Binary comparisons. Operands are TOP-FIRST, so the SOURCE-order
-            # ``lhs OP rhs`` is ``inputs[1] OP inputs[0]`` — use ``binary_operands``
-            # so a non-commutative relation (``>=`` / ``<`` …) isn't silently
-            # flipped (see ``reference_ssa_inputs_top_first``).
+            # HAZARD: operands are TOP-FIRST, so SOURCE-order ``lhs OP rhs`` is
+            # ``inputs[1] OP inputs[0]``. Always go through ``binary_operands``
+            # or a non-commutative relation (``>=`` / ``<`` …) is silently
+            # flipped and the guard's polarity inverts.
             kind = _CMP_OP_TO_KIND_TAKEN.get(op)
             if kind is not None and len(ins) == 2:
                 actual_kind = kind if t else _KIND_NEGATION[kind]
@@ -627,48 +512,37 @@ class PathPredicateAnalysis:
     def _switch_or_match_edge(
         self, pred: BasicBlock, succ: BasicBlock, last
     ) -> Optional[BranchCondition]:
-        """``switch`` and ``match`` carry one predicate per target plus a
-        fall-through predicate. The two ops differ in where the
-        comparand lives: ``switch`` compares the popped int against
-        the target's positional index (0..N-1); ``match`` compares it
-        against the corresponding stack-popped candidate.
+        """One predicate per ``switch`` / ``match`` target plus a fall-through
+        one: ``switch`` compares the popped int against the target's positional
+        index (0..N-1), ``match`` against the correspondingly-popped candidate.
 
-        Stack convention reminder (top-first ``inputs``):
-
-        - ``switch t0 t1 t2``: pops ``index``. ``inputs = [index]``.
-        - ``match t0 t1 t2``: pops ``key`` then candidates v0..vN-1
-          (deepest first on the underlying stack). ``inputs[0] = key``;
-          ``inputs[1..N]`` are the candidates with ``inputs[N] = v0``
-          (deepest pushed first), ``inputs[1] = vN-1`` (most recent
-          push, just below the key).
+        HAZARD: ``inputs`` is TOP-FIRST. ``switch t0 t1 t2`` → ``inputs = [index]``.
+        ``match t0 t1 t2`` → ``inputs[0] = key`` and the candidates fill
+        ``inputs[1..N]`` REVERSED: ``inputs[N] = v0`` (pushed first/deepest),
+        ``inputs[1] = vN-1`` (pushed last). Target ``k`` is ``inputs[N - k]``.
         """
         target_names = last.immediates.split()
         if not target_names:
             return None
-        # (target_index, target_line) — None if a target's label is
-        # unresolved, kept positional so a missing label doesn't shift
-        # the others' indices.
+        # None for an unresolved label, kept POSITIONAL so a missing one doesn't
+        # shift the other targets' indices.
         target_lines: list[Optional[int]] = [
             self._label_lines.get((pred.file, n)) for n in target_names
         ]
-        # Identify which target ``succ`` corresponds to (or fall-through).
+        # Which target ``succ`` corresponds to (or fall-through).
         matches = [k for k, ln in enumerate(target_lines)
                    if ln is not None and succ.first_line == ln]
-        # A label that appears at MORE THAN ONE switch/match position is reached
-        # under a DISJUNCTION of keys (e.g. ``switch a a b`` -> a on key==0 OR
-        # key==1). A single ``key == target_index`` predicate would be over-strong
-        # (unsound: it claims only one key reaches the edge), so emit no edge
-        # predicate rather than a false guard a detector might trust.
+        # HAZARD: a label at MORE THAN ONE position is reached under a
+        # DISJUNCTION of keys (``switch a a b`` → a on key==0 OR key==1), so a
+        # single ``key == target_index`` would be over-strong. Emit nothing
+        # rather than a false guard a detector will trust.
         if len(matches) > 1:
             return None
-        # The same collapsed-edge hazard the bnz/bz path guards against: when
-        # the instruction after the switch/match IS one of its target labels,
-        # the target edge and the fall-through edge land on the SAME successor.
-        # ``matches`` then finds exactly one hit and we would emit the
-        # over-strong ``key == k`` — but that block is also reached with the
-        # key OUT of range, so a caller with any other key bypasses the
-        # "guard" a detector trusted. Fewer than 2 distinct successors means
-        # the branch doesn't partition flow at all.
+        # HAZARD: same collapsed-edge trap as bnz/bz — when the instruction
+        # after the switch/match IS one of its targets, the target edge and the
+        # fall-through edge land on the SAME successor. That block is also
+        # reached with the key OUT of range, so ``key == k`` would let any other
+        # key bypass the "guard".
         if len({s.first_line for s in pred.successors}) < 2:
             return None
         target_index: Optional[int] = matches[0] if matches else None
@@ -685,10 +559,7 @@ class PathPredicateAnalysis:
             n_candidates = len(last.inputs) - 1
             if not (0 <= target_index < n_candidates):
                 return None
-            # ``inputs`` is top-first: candidates appear with the
-            # most-recently-pushed (vN-1) at inputs[1] and the
-            # earliest-pushed (v0) at inputs[N]. Target k → candidate vk
-            # → inputs[N - k].
+            # Top-first: target k → candidate vk → ``inputs[N - k]``.
             candidate = last.inputs[n_candidates - target_index]
             return BranchCondition(
                 value=key, kind="eq", args=(candidate,),

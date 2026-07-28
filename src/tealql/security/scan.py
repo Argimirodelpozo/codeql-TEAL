@@ -1,36 +1,6 @@
-"""Recursive sec-guide scan over a TEAL codebase.
-
-Walks a root directory for ``.teal`` files, groups them by parent dir,
-reconstructs the SSA for each dir straight from its raw ``.teal`` source,
-then runs each registered sec-guide detector against each ``.teal``
-independently using the ``file=`` filter on the detector.
-
-Per-file detector selection is driven by an optional yaml/json config:
-
-.. code-block:: yaml
-
-    # First matching rule wins; if no rule matches, every detector runs.
-    # `match` is one or more glob patterns evaluated against the file's
-    # path relative to the scan root. `only` is a whitelist (run exactly
-    # these detectors); `exclude` is a blacklist (skip these). They are
-    # mutually exclusive on the same rule.
-    rules:
-      - match: "**/*lsig*.teal"
-        only: [unsafe-lsig-args, fee-validation, tx-type-check, group-size-check]
-      - match: ["**/*clearstate*.teal", "**/clear/*.teal"]
-        only: []                         # nothing applies to clear-state programs
-      - match: "**/*.teal"               # catch-all: skip lsig detector on
-        exclude: [unsafe-lsig-args]      # everything that didn't match above
-
-JSON works the same way; the loader picks based on file extension.
-
-Library use::
-
-    from tealql.security.scan import scan, ScanConfig
-    findings = scan(Path("contracts/"), ScanConfig.from_path(Path("rules.yml")))
-    for f in findings:
-        print(f.format())
-
+"""Recursive sec-guide scan over a TEAL codebase — one SSA program per ``.teal``,
+every selected detector run against it. Selection comes from a YAML/JSON config
+(:class:`DetectionOptions`, or the legacy :class:`ScanConfig`).
 CLI: ``tealql detections-scan <root> [--config rules.yml] [--json]``.
 """
 from __future__ import annotations
@@ -52,10 +22,9 @@ logger = logging.getLogger("tealql.security.scan")
 
 
 def _method_ranges_for(teal: Path, method_table=None):
-    """ABI method line-spans for a ``.teal`` file (source ``method "sig"`` router
-    info, or an ARC-56 ``method_table`` when the comments were stripped), or ``[]``.
-    Fully defensive: an OPTIONAL enrichment must never break a scan, so any
-    read/parse failure degrades to no attribution."""
+    """ABI method line-spans for a ``.teal`` (source ``method "sig"`` comments or an
+    ARC-56 ``method_table``), or ``[]`` — an OPTIONAL enrichment, so every failure
+    degrades to no attribution rather than breaking the scan."""
     try:
         from tealql.tealtools.abi import method_line_ranges
         return method_line_ranges(
@@ -65,9 +34,8 @@ def _method_ranges_for(teal: Path, method_table=None):
 
 
 def _arc56_method_table(arc56):
-    """``{selector_hex: AbiMethod}`` from an ARC-56 spec (an ``Arc56Spec`` or a path
-    to one), or ``None``. Fully defensive — a bad/absent spec degrades to no table
-    (source ``method "sig"`` comments then remain the only attribution source)."""
+    """``{selector_hex: AbiMethod}`` from an ARC-56 spec (or a path to one), or
+    ``None`` — an OPTIONAL enrichment, so a bad/absent spec degrades to no table."""
     if arc56 is None:
         return None
     try:
@@ -92,14 +60,11 @@ def _method_at(ranges, violation) -> Optional[str]:
 
 
 def _drop_superseded(detectors: Iterable[str]) -> list[str]:
-    """Drop any detector marked ``superseded_by`` a superseder that is actually
-    going to run -- the superseder covers it (and falls back to it internally),
-    so a default scan runs only the superseder and avoids duplicate findings.
+    """Drop detectors whose ``superseded_by`` superseder is also going to run.
 
-    A detector is dropped only when its superseder is BOTH registered AND present
-    in this very set: if the superseder was filtered out (e.g. ``exclude``-d), the
-    superseded detector is KEPT so its analysis still runs as the fallback. An
-    explicit ``only`` list bypasses this entirely (request a detector by name)."""
+    HAZARD: the superseder must be BOTH registered AND present in this very set —
+    if it was filtered out (e.g. ``exclude``-d) the superseded detector is KEPT as
+    the fallback, or the scan silently loses that coverage."""
     survivors = list(detectors)
     present = set(survivors)
     out: list[str] = []
@@ -113,11 +78,9 @@ def _drop_superseded(detectors: Iterable[str]) -> list[str]:
 
 
 def default_detection_names(names: Optional[Iterable[str]] = None) -> list[str]:
-    """``names`` (default: the whole registry, registration order) minus any
-    detector superseded by another detector present in the same set — the
-    default selection for "run everything" surfaces (``tealql detections
-    --all``, the ``tealql all`` aggregate). Explicitly requesting a superseded
-    detector (``--detector``, an ``only:`` rule) still runs it."""
+    """``names`` (default: the whole registry) minus detectors superseded by another
+    present in the same set — the "run everything" default. Naming a superseded
+    detector explicitly (``--detector``, an ``only:`` rule) still runs it."""
     return _drop_superseded(DETECTORS if names is None else names)
 
 
@@ -128,12 +91,11 @@ def default_detection_names(names: Optional[Iterable[str]] = None) -> list[str]:
 
 @dataclass(frozen=True)
 class ScanRule:
-    """One config rule. ``match`` is one or more glob patterns
-    (``fnmatch`` semantics — ``*`` matches anything including ``/``,
-    so ``*lsig*`` matches at any depth; a ``**/`` prefix also matches
-    files at the scan root). ``only`` and ``exclude`` are mutually
-    exclusive on the same rule. The relative-path-from-root is what
-    gets matched."""
+    """One config rule, matched against the file's path relative to the scan root.
+
+    ``match`` globs use ``fnmatch`` semantics: ``*`` matches ``/`` too, so
+    ``*lsig*`` matches at any depth and a ``**/`` prefix also matches files at the
+    root. ``only`` and ``exclude`` are mutually exclusive on the same rule."""
 
     match: tuple[str, ...]
     only: Optional[tuple[str, ...]] = None
@@ -144,7 +106,7 @@ class ScanRule:
 
     def select(self, all_detectors: Iterable[str]) -> list[str]:
         if self.only is not None:
-            # explicit list overrides supersession -- ask for any detector by name
+            # explicit list overrides supersession — ask for any detector by name
             return [d for d in self.only if d in DETECTORS]
         if self.exclude is not None:
             excl = set(self.exclude)
@@ -154,8 +116,7 @@ class ScanRule:
 
 @dataclass(frozen=True)
 class ScanConfig:
-    """List of :class:`ScanRule` evaluated first-match-wins. Empty
-    config (no rules) means every detector runs on every file."""
+    """:class:`ScanRule` list, first-match-wins; no rules means every detector runs."""
 
     rules: tuple[ScanRule, ...] = ()
 
@@ -180,11 +141,9 @@ class ScanConfig:
 
     @classmethod
     def from_dict(cls, data: dict) -> "ScanConfig":
-        """Build + VALIDATE. Every mistake that would silently change scan
-        coverage is a :class:`ConfigError` at load time instead: an unknown
-        detector name (typo), a rule with both ``only`` and ``exclude``, a
-        rule that can never match (missing/empty ``match``), an unknown
-        rule key."""
+        """Build + validate — every mistake that would silently change scan coverage
+        (unknown detector name, both ``only`` and ``exclude``, missing ``match``,
+        unknown rule key) raises :class:`ConfigError` at load time."""
         rules: list[ScanRule] = []
         for raw in data.get("rules", []):
             unknown = set(raw) - {"match", "only", "exclude"}
@@ -216,8 +175,7 @@ class ScanConfig:
         return cls(tuple(rules))
 
     def detectors_for(self, rel_path: str) -> list[str]:
-        """Resolve the detector set for ``rel_path`` against the rules.
-        First match wins; no match means all detectors run."""
+        """Detector set for ``rel_path``; first match wins, no match means all run."""
         for rule in self.rules:
             if rule.matches(rel_path):
                 return rule.select(DETECTORS)
@@ -229,8 +187,7 @@ class ScanConfig:
 # ---------------------------------------------------------------------------
 
 
-# Ascending severity. "informational" findings (e.g. is-deletable) are reported
-# but, by default, do not constitute a failure — see DetectionOptions.fail_on.
+# Ascending. "informational" is reported but never fails by default (fail_on).
 SEVERITY_ORDER = ("informational", "low", "medium", "high", "critical")
 
 
@@ -240,23 +197,16 @@ class DetectionOptions:
 
     .. code-block:: yaml
 
-        modes:                       # per-glob mode; scopes detectors by applies_to
-          - match: "**/*.approval.teal"
-            mode: app
-          - match: "**/*Verifier.teal"
-            mode: logicsig
-        detectors:                   # per-glob detector selection (only | exclude)
-          - match: "**/*.teal"
-            exclude: [unsafe-lsig-args]
-        severity:                    # per-detector severity override
-          rekey-to: high
-          is-deletable: informational
-        fail_on: medium              # findings at/above this level are FAILURES;
-                                     # informational (and anything below) never fails
-        auto_mode: false             # opt-in: classify undeclared files by opcode
+        modes:                                  # per-glob mode; scopes by applies_to
+          - {match: "**/*.approval.teal", mode: app}
+        detectors:                              # per-glob selection (only | exclude)
+          - {match: "**/*.teal", exclude: [unsafe-lsig-args]}
+        severity: {rekey-to: high}              # per-detector override
+        fail_on: medium                         # at/above this level = FAILURE
+        auto_mode: false                        # opt-in: classify by opcode
 
-    A file matching no ``modes`` rule is unfiltered (every selected detector
-    runs) unless ``auto_mode`` is set, which then classifies it by opcode."""
+    A file matching no ``modes`` rule is unfiltered (every selected detector runs)
+    unless ``auto_mode`` is set."""
 
     modes: DetectionConfig = DetectionConfig.empty()
     selection: ScanConfig = ScanConfig.empty()
@@ -305,8 +255,7 @@ class DetectionOptions:
         )
 
     def mode_for(self, rel_path: str, prog=None, file=None) -> Optional[str]:
-        """Declared mode for ``rel_path``; if none and ``auto_mode`` is set,
-        classify ``prog`` by opcode (opt-in inference). Else ``None``."""
+        """Declared mode for ``rel_path``, else opcode inference when ``auto_mode``."""
         m = self.modes.mode_for(rel_path)
         if m is None and self.auto_mode and prog is not None:
             from .common import classify_program
@@ -321,8 +270,7 @@ class DetectionOptions:
         return dict(self.severity).get(detector_name, severity_of(detector_name))
 
     def is_failure(self, severity: str) -> bool:
-        """A finding of this severity is a FAILURE (something is wrong) iff it is
-        at or above ``fail_on``. Informational findings never fail by default."""
+        """A finding of this severity is a FAILURE iff it is at or above ``fail_on``."""
         return SEVERITY_ORDER.index(severity) >= SEVERITY_ORDER.index(self.fail_on)
 
 
@@ -332,17 +280,11 @@ class DetectionOptions:
 
 
 def discover_teal_files(root: Path) -> dict[Path, list[Path]]:
-    """Walk ``root`` for ``*.teal`` files and group them by parent
-    directory. The returned dict's keys are absolute parent dirs; each
-    value is a list of teal file paths, sorted by basename.
+    """Walk ``root`` for ``*.teal``, grouped by absolute parent dir, sorted by basename.
 
-    Raises :class:`tealql.tealtools.errors.TargetNotFoundError` when ``root``
-    does not exist, and :class:`~tealql.tealtools.errors.TargetError` when it
-    is not a directory. A mistyped path used to ``rglob`` an empty result, so
-    the scan reported "(no findings)" and exited 0 — a GREEN CI run on a
-    directory that was never scanned, the exact silent-clean outcome the rest
-    of this module (``--strict``, parse diagnostics, ``has_instructions``) is
-    built to prevent."""
+    HAZARD: a missing or non-directory ``root`` RAISES rather than returning empty —
+    a mistyped path would otherwise rglob nothing, report "(no findings)" and exit 0,
+    a green CI run on a directory that was never scanned."""
     if not root.exists():
         raise TargetNotFoundError(f"scan root does not exist: {root}")
     if not root.is_dir():
@@ -357,27 +299,21 @@ def discover_teal_files(root: Path) -> dict[Path, list[Path]]:
 
 @dataclass(frozen=True)
 class ScanFinding:
-    """One sec-guide finding from the scan. ``rel_path`` is the
-    .teal's path relative to the scan root; ``detector_name`` is the
-    kebab-case short name (no ``sec-guide/`` prefix)."""
+    """One scan finding: ``rel_path`` is relative to the scan root, ``detector_name``
+    the kebab short name (no ``sec-guide/`` prefix)."""
 
     rel_path: Path
     detector_name: str
     violation: object  # has .pretty()
     severity_override: Optional[str] = None  # set by scan from DetectionOptions
-    # ABI method the finding sits in, from source `method "sig"` info (OPTIONAL —
-    # None on raw bytecode / non-ABI code); set by scan when available.
+    # OPTIONAL — None on raw bytecode / non-ABI code; set by scan when available.
     method_name: Optional[str] = None
 
     @property
     def severity(self) -> str:
-        """The finding's severity. Precedence: a per-detector override from
-        the detection options; else the VIOLATION's own ``severity`` when it
-        carries a valid one (the IR taint family grades per sink field —
-        ``critical`` for CloseRemainderTo, ``medium`` for Amount); else the
-        detector's declared class ``severity`` (``"informational"`` for
-        property-style findings like ``is-deletable``; ``"medium"`` by
-        default)."""
+        """Severity, in precedence order: the per-detector options override; else the
+        VIOLATION's own ``severity`` when valid (the IR taint family grades per sink
+        field); else the detector's declared class ``severity``."""
         if self.severity_override is not None:
             return self.severity_override
         from . import SEVERITY_LEVELS, severity_of
@@ -388,23 +324,18 @@ class ScanFinding:
 
     @property
     def confidence(self) -> str:
-        """How likely this finding is a true positive (see
-        :func:`tealql.security.confidence_of`)."""
+        """How likely this finding is a true positive (:func:`..confidence_of`)."""
         from . import confidence_of
         return confidence_of(self.detector_name)
 
     def format(self) -> str:
-        """One-line greppable form:
-        ``[SEVERITY] <rel_path>: sec-guide/<name>  <message>``. When the ABI
-        method is known (source ``method`` info), it is named after the path."""
+        """Greppable ``[SEVERITY] <rel_path> [method]: sec-guide/<name>  <message>``."""
         loc = f"{self.rel_path} [{self.method_name}]" if self.method_name else self.rel_path
         return (f"[{self.severity.upper()}] {loc}: "
                 f"sec-guide/{self.detector_name}  {self.violation.pretty()}")  # type: ignore[attr-defined]
 
     def to_finding(self):
-        """Normalize to the structured :class:`tealql.security.findings.Finding` (the
-        stable, versioned record every machine-readable output is built from —
-        carries file + LINE + confidence + witness + method, not just prose)."""
+        """Normalize to the stable versioned :class:`.findings.Finding` record."""
         from .findings import normalize
         return normalize(
             self.violation, rule_id=self.detector_name,
@@ -413,9 +344,8 @@ class ScanFinding:
         )
 
     def to_dict(self) -> dict:
-        """The stable versioned finding record (schema in
-        :mod:`tealql.security.findings`). ``rule_id`` is the kebab detector name;
-        ``detector`` keeps the ``sec-guide/`` display form for back-compat."""
+        """The finding record as a dict; ``detector`` keeps the ``sec-guide/``
+        display form for back-compat alongside the kebab ``rule_id``."""
         d = self.to_finding().to_dict()
         d["detector"] = f"sec-guide/{self.detector_name}"
         return d
@@ -430,29 +360,18 @@ def scan(
     strict: bool = False,
     arc56=None,
 ) -> list[ScanFinding]:
-    """Discover, reconstruct, and detect. Returns a flat list of findings
-    sorted by ``(rel_path, detector_name)``.
+    """Discover, reconstruct, and detect; findings sorted by ``(rel_path, detector)``.
 
-    Pass a single unified ``options`` (:class:`DetectionOptions` from one YAML)
-    for detector selection + mode scoping + per-detector severity (and it carries
-    the ``fail_on`` threshold for :func:`failures`). The legacy ``config`` /
-    ``detection_config`` pair still works and is used when ``options`` is None.
+    ``options`` (one YAML) supplies selection + mode scoping + severity; the legacy
+    ``config``/``detection_config`` pair is used when it is None. A detector whose
+    ``applies_to`` excludes a file's declared mode is skipped; a file with no declared
+    mode is unfiltered unless ``options.auto_mode``. ``arc56`` is an OPTIONAL
+    selector→method-name source and degrades cleanly when absent.
 
-    A detector whose ``applies_to`` excludes a file's declared mode is skipped.
-    A file with no declared mode is unfiltered (every selected detector runs)
-    unless ``options.auto_mode`` is set, which classifies it by opcode.
-
-    ``arc56`` (an :class:`tealql.tealtools.arc56.Arc56Spec`, or a path to one) is an
-    OPTIONAL authoritative selector→method-name source, so findings keep their ABI
-    method attribution even when the compiler's ``method "sig"`` comments were
-    stripped from the source. Degrades cleanly when absent/unparseable.
-
-    A file the grammar cannot fully parse is analyzed PARTIALLY with a
-    warning (the unparsed spans are excluded — the scan may miss findings
-    there); a file whose SSA cannot be reconstructed at all is skipped with
-    a warning. ``strict=True`` turns both into a raised
-    :class:`tealql.tealtools.errors.TealQLError` instead, so a CI scan can refuse
-    to hand out a clean bill for input it could not actually analyze."""
+    HAZARD: a file the grammar cannot fully parse is analyzed PARTIALLY (unparsed
+    spans excluded — findings there may be missing) and one whose SSA cannot be
+    reconstructed is SKIPPED, both with a warning only. ``strict=True`` raises
+    instead, so CI can refuse a clean bill for input that was never analyzed."""
     if options is not None:
         config = options.selection
         detection_config = options.modes
@@ -463,9 +382,7 @@ def scan(
     logger.info("scan: %d .teal file(s) across %d director(ies) under %s",
                 n_files, len(by_dir), root)
     if not n_files:
-        # The root exists but holds no TEAL. Reporting "(no findings)" for it is
-        # true but misleading — nothing was analyzed — so say so, and let
-        # --strict refuse to hand out the clean bill at all.
+        # "(no findings)" here is true but misleading — nothing was analyzed.
         msg = f"no .teal files found under {root} — nothing was analyzed"
         if strict:
             raise TealQLError(msg)
@@ -474,17 +391,13 @@ def scan(
     for dir_path, teal_files in sorted(by_dir.items()):
         for teal in teal_files:
             rel = teal.relative_to(root)
-            # ONE SSAProgram PER FILE. Each .teal is an independent program (the
-            # AVM runs approval / clear-state programs separately), and a per-file
-            # program keeps a per-file detector's cost from scaling with the whole
-            # directory -- loading a directory of N contracts into one program made
-            # the per-file detectors roughly O(N^2). Genuine cross-contract
-            # analysis builds its own multi-program setup in `tealql.security.xcontract`;
-            # it does not go through this single-contract scanner.
+            # ONE SSAProgram PER FILE: each .teal is an independent AVM program, and
+            # sharing one program across a directory of N contracts makes the
+            # per-file detectors O(N^2). Cross-contract analysis lives in
+            # `tealql.security.xcontract`, not in this single-contract scanner.
             try:
-                # ONE preparation per program (see ``common.prepare``): the
-                # detectors then all see the same resolved constants instead of
-                # each one's inputs depending on which detector ran before it.
+                # ONE preparation per program, so every detector sees the same
+                # resolved constants instead of depending on run order.
                 from .common import prepare
                 prog = prepare(SSAProgram(str(teal)))
             except Exception as e:                   # pragma: no cover
@@ -518,9 +431,7 @@ def scan(
                 mode = None
             logger.info("scanning %s (mode=%s): %d detection(s)",
                         rel, mode or "unfiltered", len(names))
-            # OPTIONAL: map each finding's line to the ABI method it sits in, from
-            # the source `method "sig"` router info. Empty (no attribution) on raw
-            # bytecode / non-ABI code — findings just carry no method then.
+            # OPTIONAL: map each finding's line to the ABI method it sits in.
             method_ranges = _method_ranges_for(teal, method_table)
             for name in names:
                 cls = DETECTORS.get(name)
@@ -532,16 +443,13 @@ def scan(
                     )
                     if mode not in applies:
                         continue
-                # The program holds exactly this file (keyed by basename); pass
-                # it as the file filter so the detector scopes to it.
+                # The program holds exactly this file (keyed by basename); the
+                # file filter scopes the detector to it.
                 sev = options.severity_for(name) if options is not None else None
                 try:
-                    # Construction AND detection are both guarded — a detector
-                    # that does its analysis in __init__ (or crashes building)
-                    # must not kill a whole corpus scan any more than one that
-                    # crashes in detect(). Record it loudly and move on (strict
-                    # mode refuses instead); the ERROR log keeps the crash
-                    # visible so real bugs still get reported.
+                    # Construction AND detection are both guarded: detectors that
+                    # analyze in __init__ must not kill a whole corpus scan either.
+                    # The ERROR log keeps the crash visible; strict mode raises.
                     det = cls(prog, file=teal.name)
                     violations = list(det.detect())
                 except Exception as e:
@@ -564,9 +472,7 @@ def scan(
 def failures(
     findings: list[ScanFinding], options: "Optional[DetectionOptions]" = None,
 ) -> list[ScanFinding]:
-    """The subset of ``findings`` that are FAILURES — at or above the
-    ``options.fail_on`` threshold (default ``"low"``, so informational findings
-    are reported but never fail). With no options, every finding counts."""
+    """Findings at or above ``options.fail_on``; with no options, every finding counts."""
     if options is None:
         return list(findings)
     return [f for f in findings if options.is_failure(f.severity)]
@@ -579,9 +485,7 @@ def render_text(findings: list[ScanFinding]) -> str:
 
 
 def render_json(findings: list[ScanFinding]) -> str:
-    """Versioned JSON envelope: ``{schema_version, tool, findings: [...]}`` where
-    each finding is the stable :class:`tealql.security.findings.Finding` record (real
-    ``file`` + ``line``, severity, confidence, structured witness)."""
+    """Versioned envelope ``{schema_version, tool, findings: [...]}``."""
     from .findings import SCHEMA_VERSION
     return json.dumps({
         "schema_version": SCHEMA_VERSION,
@@ -591,12 +495,7 @@ def render_json(findings: list[ScanFinding]) -> str:
 
 
 def render_sarif(findings: list[ScanFinding]) -> str:
-    """SARIF 2.1.0 — the format GitHub code scanning / most CI dashboards ingest.
-
-    rules[] are the detectors that fired (id ``sec-guide/<name>``, level from
-    severity, help text from the per-detector README when present); results[]
-    carry a physicalLocation (file + 1-based region) and, when the IR taint road
-    is available, a codeFlows entry from the finding's witness sources."""
+    """SARIF 2.1.0 — the format GitHub code scanning / most CI dashboards ingest."""
     from . import severity_of
     from .findings import SCHEMA_VERSION
 
@@ -641,13 +540,10 @@ def render_sarif(findings: list[ScanFinding]) -> str:
                            **({"method": fnd.method} if fnd.method else {})},
         }
         if fnd.witness and fnd.witness.get("sources"):
-            # Every threadFlowLocation carries a physicalLocation. Without one a
-            # SARIF viewer (GitHub code scanning included) has nowhere to anchor
-            # the step and drops the whole code flow, so the witness we went to
-            # the trouble of computing never reached the user. The witness
-            # sources are input-slot LABELS ("ApplicationArgs"), not lines, so
-            # each step is anchored at the sink and the label carries in the
-            # message; the final step is the sink itself.
+            # HAZARD: every threadFlowLocation MUST carry a physicalLocation or a
+            # SARIF viewer (GitHub included) silently drops the whole code flow.
+            # Witness sources are input-slot LABELS, not lines, so each step is
+            # anchored at the sink and the label rides in the message.
             steps = [
                 {"location": {"physicalLocation": physical,
                               "message": {"text": f"attacker input: {s}"}}}

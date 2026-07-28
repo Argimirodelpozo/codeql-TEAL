@@ -1,6 +1,5 @@
-"""sec-guide/is-updatable: app can reach approval with OnCompletion=UpdateApplication.
-
-One finding per approval exit not guarded against ``OnCompletion == 4``.
+"""sec-guide/is-updatable: one finding per approval exit not guarded against
+``OnCompletion == UpdateApplication``.
 """
 from __future__ import annotations
 
@@ -18,9 +17,8 @@ class IsUpdatableViolation(_ExitBBViolation):
 
 class IsUpdatableDetector(_ApprovalActionGuardDetector):
     name = "sec-guide/is-updatable"
-    # A PROPERTY, not a vulnerability: an upgradeable app is usually upgradeable
-    # on purpose. Whether *anyone* can update it without authorization is the
-    # real bug — that's unprotected-updatable.
+    # A PROPERTY, not a vulnerability — upgradeable is usually deliberate.
+    # Whether ANYONE can update it is the real bug: unprotected-updatable.
     severity = "informational"
     action = common.ONC_UPDATE_APPLICATION
     violation_cls = IsUpdatableViolation

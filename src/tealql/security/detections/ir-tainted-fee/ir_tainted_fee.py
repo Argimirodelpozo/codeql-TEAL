@@ -1,11 +1,7 @@
-"""sec-guide/ir-tainted-fee: attacker-controlled inner-transaction fee (IR).
-
-A user-input-tainted ``itxn_field Fee`` lets the attacker choose the fee the app
-pays on an inner transaction -- set it large and drain the app's algo balance one
-inflated inner txn at a time. Distinct from the ``inner-txn-fee`` detector, which
-flags a CONSTANT non-zero fee and explicitly skips dynamic ones; this covers
-exactly that skipped attacker-controlled case. A new capability (no SSA sibling);
-lift-only.
+"""sec-guide/ir-tainted-fee: a user-input-tainted ``itxn_field Fee`` lets the
+attacker set the fee the app pays and drain its balance one inflated inner txn at
+a time. Covers exactly the dynamic case ``inner-txn-fee`` skips (that one flags a
+CONSTANT non-zero fee). Lift-only; no SSA sibling.
 """
 from __future__ import annotations
 

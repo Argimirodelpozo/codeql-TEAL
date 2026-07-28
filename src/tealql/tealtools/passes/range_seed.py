@@ -1,20 +1,4 @@
-"""Static integer-range + type seeding for SSAProgram.
-
-Tags SSAVars / Phis with an :class:`IntRange` + uint64 type from the seed
-tables — ``_OP_RANGE_SEEDS`` (op alone bounds the single output, e.g.
-bool-shaped comparisons / ``getbyte`` / ``sqrt`` / ``len``),
-``_OP_OUTPUT_SEEDS`` (positional bounds on a *multi*-output op: the 0/1
-exists-flag the ``*_get`` / ``*_ex`` family pushes, ``box_len``'s length,
-``addw``'s carry), ``_PARAMS_VALUE_RANGES`` (the bounded *value* output of
-``*_params_get`` keyed by its field immediate), ``_TXN_FIELD_RANGES`` (enum
-/ count-valued txn-family fields, via :func:`_txn_field_name` so every
-``txn`` / ``gtxn*`` / ``itxn*`` / ``gitxn*`` form is covered) and
-``_GLOBAL_FIELD_RANGES`` (``global FIELD``) — then unions arg ranges
-through phis to a fixed point.
-
-Bridged from ``SSAProgram.propagate_ranges`` (which keeps the idempotency
-guard + state flag).
-"""
+"""Seed SSAVars / Phis with an :class:`IntRange` from the static AVM seed tables."""
 from __future__ import annotations
 
 from ..ssa import IntRange, SSAProgram, SSAVar, TealType, _OP_RANGE_SEEDS
@@ -36,18 +20,15 @@ def propagate_ranges(prog: SSAProgram) -> None:
             o.range = IntRange(lo, hi)
             o.type = UINT64
 
-    # Pass 1: seed from per-op rules.
     for a in prog.assignments:
-        # Multi-output / positional seeds first (exists-flags on the
-        # ``*_get`` / ``*_ex`` family, box_len's length) — these have >1
-        # output, so they precede the single-output rules below.
+        # Positional seeds bind by output INDEX, so multi-output ops must be
+        # matched before the single-output rules below.
         out_seeds = _OP_OUTPUT_SEEDS.get(a.op)
         if out_seeds is not None:
             for idx, lo, hi in out_seeds:
                 if idx < len(a.outputs):
                     _seed(a.outputs[idx], lo, hi)
-            # *_params_get: the value output (outputs[1]) carries a
-            # field-keyed range for bounded scalar / boolean fields.
+            # *_params_get: outputs[1] is the VALUE, outputs[0] the exists-flag.
             if a.op in _PARAMS_OPS and a.immediates and len(a.outputs) > 1:
                 rng = _PARAMS_VALUE_RANGES.get(a.immediates.split()[0])
                 if rng is not None:
@@ -84,8 +65,8 @@ def propagate_ranges(prog: SSAProgram) -> None:
                 _seed(o, *rng)
                 continue
 
-    # Pass 2: union ranges through phis to fixed point. A phi gets a range
-    # only if every arg has one; type unifies to uint64 only when all agree.
+    # Union arg ranges through phis to a fixed point. A phi needs EVERY arg
+    # ranged — one unknown arg means the phi is unbounded, not partially bounded.
     changed = True
     while changed:
         changed = False

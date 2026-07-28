@@ -1,10 +1,4 @@
-"""``tealql`` command-line interface.
-
-A top-level package (``cli/``), kept separate from the ``tealtools``
-analysis library it drives. The CLI is a thin layer — it imports
-everything it needs from ``tealql.tealtools.*`` and owns no analysis logic.
-
-Entry points:
-  - console script ``tealql`` → :func:`cli.main.main`
-  - ``python -m tealql.cli``
+"""``tealql`` command-line interface — a thin layer over ``tealql.tealtools.*``
+that owns no analysis logic; entry points are the ``tealql`` console script and
+``python -m tealql.cli``, both :func:`cli.main.main`.
 """

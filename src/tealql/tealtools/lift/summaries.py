@@ -1,34 +1,17 @@
 """PROTOTYPE: bottom-up interprocedural procedure summaries over the lifted IR.
 
-A *summary* is a per-subroutine function from input facts to output facts,
-computed ONCE bottom-up over the call graph and applied at every call site
-instead of re-analysing the callee. This module demonstrates the technique on two
-fact lattices sharing ONE marker-based fixpoint (mutual recursion converges — a
-callee's summary is consulted as it is built):
+A summary is computed ONCE per subroutine over the call graph and applied at every
+call site instead of re-analysing the callee. ``passthrough`` + ``internal_sources``
+give a precise taint transfer — never "the result is tainted if ANY arg is" — and
+``checked_params`` records params the callee asserts, so a value validated inside a
+callee stops surfacing as attacker-controlled at the caller. Read-only; computes over
+an already-built ``_Lifter``.
 
-  * TAINT TRANSFER (distributive → IFDS-exact): ``passthrough`` = the param
-    indices whose value reaches a returned value, and ``internal_sources`` = the
-    source labels a returned value carries independent of the caller's args. A
-    call's result is then tainted by ``internal_sources`` plus the arg sources at
-    the passthrough indices — never "the result is tainted if ANY arg is". (This
-    reproduces the taint half of :func:`taint._return_summary`, extracted here as
-    a reusable, testable abstraction — see ``tests/test_summaries.py`` for the
-    equivalence check on real contracts.)
-
-  * GUARD / VALIDATION (the fact taint summaries do NOT yet carry, and the one
-    that retires the documented context-insensitive-``callsub`` false positives):
-    ``checked_params`` = the param indices the subroutine ASSERTS unconditionally.
-    A caller passing an argument to a checked param may treat that argument as
-    validated by the callee — so a user value the callee asserts ``== Sender``
-    stops surfacing as attacker-controlled across the call.
-
-Prototype scope / soundness: ``checked_params`` currently recognises asserts in
-the subroutine's ENTRY block (which always execute) — sound but conservative
-(a dominating assert after a branch is missed; the sound upgrade is a
-must-reach/post-dominance analysis over the block CFG, exactly like the
-enforcement-seeded every-path check in ``security/_field_protection``). ``passthrough``
-propagates through every op (matching the existing conservative taint summary).
-Read-only; computes over an already-built ``_Lifter``.
+HAZARD: both facts are conservative in the SAFE direction and must stay that way.
+``checked_params`` counts only ENTRY-block asserts, so it UNDER-approximates
+validation (a dominating assert after a branch is missed → false positives, never a
+missed vulnerability); the sound upgrade is must-reach/post-dominance over the block
+CFG. ``passthrough`` propagates through every op, OVER-approximating taint.
 """
 from __future__ import annotations
 
@@ -60,10 +43,11 @@ class SubSummary:
 
 
 def compute_summaries(lifter) -> dict:
-    """Bottom-up ``{sub.id: SubSummary}`` over ``lifter``'s subroutines. One
-    monotone marker fixpoint: each param register is seeded with a namespaced
-    marker ``("p", sub.id, i)``; source reads seed their label; a nested call
-    resolves through the callee's summary-so-far (so mutual recursion converges).
+    """Bottom-up ``{sub.id: SubSummary}`` over ``lifter``'s subroutines.
+
+    HAZARD: one monotone fixpoint over per-sub-namespaced markers ``("p", sub.id, i)``
+    — de-namespacing them aliases params across subs, and a nested call MUST resolve
+    through the callee's summary-so-far or mutual recursion never converges.
     """
     subs = [s for s in lifter.subs if not s.is_main]
     taint: dict = defaultdict(set)

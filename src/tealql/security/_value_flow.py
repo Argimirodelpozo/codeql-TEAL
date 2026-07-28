@@ -1,8 +1,7 @@
 """Value-flow bridges shared by the detector layer: the per-program
 PathPredicateAnalysis cache, the interprocedural frame-param map, and the
 MUST-flow walk (phi / scratch / proto-frame) from a seed-var set.
-
-Split out of ``common.py``; import via :mod:`tealql.security.common`.
+Import via :mod:`tealql.security.common`.
 """
 from __future__ import annotations
 
@@ -14,15 +13,10 @@ from tealql.tealtools.ssa import Phi, SSAProgram, SSAVar
 
 
 def cached_path_predicates(prog: SSAProgram) -> PathPredicateAnalysis:
-    """One :class:`PathPredicateAnalysis` per program, memoised on ``prog``.
-
-    The OnCompletion / field-guard family (is-deletable, is-updatable,
-    unprotected-*, delete-funds-check, timelock-upgrade, rekey-to, …) each need
-    path predicates; building them once and sharing avoids re-running the whole
-    branch/assert analysis per detector — the bulk of a scan's per-contract cost.
-    Detectors that accept a caller-SEEDED ``path_predicates`` (the cross-contract
-    runner) still pass their own; only the default is cached. Sound because the
-    analysis is a pure read of ``prog``'s CFG, unaffected by additive passes."""
+    """One :class:`PathPredicateAnalysis` per program, memoised on ``prog`` — the
+    guard-family detectors would otherwise each re-run the branch/assert analysis,
+    the bulk of a scan's per-contract cost. Sound because the analysis is a pure
+    read of the CFG; a caller-SEEDED ``path_predicates`` bypasses the cache."""
     pp = getattr(prog, "_sec_path_predicates", None)
     if pp is None:
         pp = PathPredicateAnalysis(prog)
@@ -36,9 +30,7 @@ def cached_path_predicates(prog: SSAProgram) -> PathPredicateAnalysis:
 
 
 def _frame_param_sources_cached(prog: SSAProgram) -> dict:
-    """``frame_param_sources(prog)`` (the interprocedural ``frame_dig`` output ->
-    caller-arg map), memoised on the program so the per-BB path walk doesn't
-    rebuild it. Cheap to compute, but called once per comparison operand."""
+    """``frame_param_sources(prog)`` memoised — cheap, but called once per operand."""
     cache = getattr(prog, "_sec_frame_param_sources", None)
     if cache is None:
         from tealql.tealtools.passes.frame_flow import frame_param_sources
@@ -59,38 +51,19 @@ def _operand_flows_from_field_var(
     *,
     seen: Optional[set] = None,
 ) -> bool:
-    """True if ``operand`` provably reads from one of the SSAVars in
-    ``field_vars``, allowing for SSA-level bridges:
+    """``operand`` provably reads from one of ``field_vars``, over three MUST-semantics
+    bridges: a phi whose every arg flows, a ``load N`` whose every may-influencing
+    store wrote a flowing var, and a ``frame_dig`` param whose every caller-bound
+    arg flows (which is what sees a guard living inside a proto subroutine).
 
-      - direct: operand is the SSAVar itself.
-      - phi join: every arg flows from a field var (MUST semantics).
-      - scratch: operand is a ``load N`` output whose every may-influencing
-        store wrote a field-flowing SSAVar (MUST semantics, mirrors
-        :meth:`SSAProgram.propagate_scratch_constants`).
-      - frame (interprocedural): operand is a ``frame_dig`` param read whose
-        every caller-bound argument flows from a field var (MUST). This is what
-        lets a guard living *inside a proto subroutine* (``frame_dig -1; global
-        ZeroAddress; ==; assert``, the field read happening in the caller and
-        passed as a proto arg) count as protecting the field — without it the
-        whole approval-exit family is blind across the callsub boundary and
-        reports a cross-sub guard as absent (a false positive).
+    HAZARD: ``on_path`` (cycle-break) and ``memo`` (results) MUST stay separate
+    sets. One set doing both jobs breaks DIAMONDS — a value computed once and
+    joined at a phi is "already seen" on the second conjunct, answers False, and
+    collapses the whole ``all(...)``, hiding a guard that is plainly there. An
+    answer influenced by a cycle-cut is context-dependent and is never memoised.
 
-    Termination: ``on_path`` (the nodes on the CURRENT walk) breaks cycles by
-    answering False for a back-edge — sound under the MUST ``all(...)``
-    semantics, since an unprovable arm just fails the conjunction. There is
-    deliberately no recursion-depth cap: the old ``depth=4`` limit only
-    suppressed *real* field-flows sitting behind deep scratch / phi
-    indirection (common in compiled Puya / ABI output), which made a present
-    guard look absent — a false-positive source.
-
-    NOTE the cycle-break set is NOT a memo. It used to be one shared ``seen``
-    set doing both jobs, which silently broke DIAMONDS: a node reached by a
-    second conjunct — a value computed once and joined at a phi, the single
-    most common shape in compiled output — was "already seen" and answered
-    False, collapsing the whole ``all(...)`` and hiding a guard that is
-    plainly there. ``memo`` caches genuine results (and skips caching any
-    answer that a cycle-cut influenced, since that one is context-dependent),
-    so a re-reached node is re-used rather than refuted.
+    There is deliberately NO recursion-depth cap: a cap only suppresses real
+    field-flows behind deep scratch/phi indirection, making present guards absent.
     """
     if operand is None:
         return False
@@ -98,21 +71,19 @@ def _operand_flows_from_field_var(
     on_path: set = set(seen) if seen else set()
 
     def _expand(node) -> "tuple[list, bool]":
-        """``(operands that must ALL flow, is_a_bridge)``. ``is_a_bridge``
-        False means the node has no incoming bridge at all (⇒ not a flow)."""
+        """``(operands that must ALL flow, is_a_bridge)``; ``is_a_bridge`` False
+        means no incoming bridge at all, hence not a flow."""
         if isinstance(node, Phi):
             return list(node.args), bool(node.args)
-        # Scratch bridge: load N reads from a slot. Every may-influencing
-        # store must have written a field-flowing SSAVar.
+        # Scratch bridge: every may-influencing store must have written a
+        # field-flowing SSAVar.
         if node.defined_by is not None and node.defined_by.op == "load":
             stores = _scratch_stores_for(prog, node)
             if not stores:
                 return [], False
             return [prog.var(*s) for s in stores], True
-        # Frame bridge: a `frame_dig` param read flows from the field iff every
-        # caller argument bound to that param does (MUST). The fat-frame SSA has
-        # no def-use edge across the proto boundary; `frame_param_sources` is the
-        # precise interprocedural layer that supplies the caller-arg set.
+        # Frame bridge: the fat-frame SSA has no def-use edge across the proto
+        # boundary, so `frame_param_sources` supplies the caller-arg set.
         args = _frame_param_sources_cached(prog).get(node)
         return (list(args), True) if args else ([], False)
 
@@ -153,23 +124,16 @@ def _operand_flows_from_field_var(
 
 
 def resolve_through_copies(prog: SSAProgram, value, _seen=None):
-    """Follow ``value`` back through VALUE-PRESERVING copies to the operand it
-    really carries, or return it unchanged.
+    """Follow ``value`` back through VALUE-PRESERVING copies — a ``load N`` whose
+    every may-influencing store wrote the SAME SSAVar, or a phi whose every arg
+    resolves to the same one — else return it unchanged. MUST-semantics: an
+    unprovable step stops the walk.
 
-    Two bridges, both MUST-semantics (an unprovable step stops the walk):
-
-    * a ``load N`` whose every may-influencing ``store N`` wrote the SAME
-      SSAVar — the round-trip provably preserves that value;
-    * a phi whose every argument resolves to the SAME SSAVar — the join is
-      value-preserving no matter which edge was taken.
-
-    Path predicates record the operand the branch/assert actually consumed, so
-    ``<cmp>; store 0; load 0; assert`` leaves a predicate on the LOAD's output
-    and ``<cmp>`` … joined at a phi leaves one on the PHI. Both are correct
-    facts, but a consumer that inspects ``value.defined_by`` looking for a
-    comparison finds a ``load`` (or, for a phi, nothing at all) and concludes
-    the guard is absent — a false positive on a contract that plainly checks
-    the field. Every OnCompletion-family detector had that hole."""
+    HAZARD: any consumer inspecting ``value.defined_by`` for a comparison must go
+    through this. Path predicates record the operand the branch actually consumed,
+    so ``<cmp>; store 0; load 0; assert`` leaves the predicate on the LOAD output
+    and a joined ``<cmp>`` leaves it on the PHI — reading either directly finds no
+    comparison and declares a present guard absent."""
     if _seen is None:
         _seen = set()
     if isinstance(value, SSAVar):
@@ -198,11 +162,9 @@ def resolve_through_copies(prog: SSAProgram, value, _seen=None):
 
 
 def _scratch_stores_index(prog: SSAProgram) -> dict:
-    """``{(file, start_line): scratch_stores}`` over the op graph, built once per
-    program. :func:`_scratch_stores_for` used to LINEAR-SCAN ``prog._graph.nodes``
-    on every lookup — ~0.25 ms per call on a real contract (tens of thousands of
-    nodes) — from inside both the MUST-flow walk and the user-input taint
-    fixpoint, i.e. inside two nested loops."""
+    """``{(file, start_line): scratch_stores}``, built once per program — the
+    lookup sits inside two nested fixpoint loops, so a linear graph scan per call
+    dominates the runtime."""
     idx = getattr(prog, "_sec_scratch_store_index", None)
     if idx is None:
         prog._ensure_scratch_influence()
@@ -222,12 +184,9 @@ def _scratch_stores_index(prog: SSAProgram) -> dict:
 
 
 def _scratch_stores_for(prog: SSAProgram, load_var: SSAVar) -> Optional[list]:
-    """``g.nodes[load_node]["scratch_stores"]`` for the ``load`` opcode
-    that produced ``load_var``. Returns the raw list of
-    ``(file, line, output_idx)`` tuples that
-    :func:`tealql.tealtools.graph.load_graph` populated, or ``None`` when the
-    load isn't covered (dynamic-slot ``loads`` op, or the scratch
-    influence query found no stores)."""
+    """The ``(file, line, output_idx)`` store tuples reaching the ``load`` that
+    produced ``load_var``, or ``None`` when it isn't covered (dynamic-slot
+    ``loads``, or no stores found)."""
     if load_var.defined_by is None or load_var.defined_by.op != "load":
         return None
     return _scratch_stores_index(prog).get((load_var.file, load_var.line))

@@ -1,14 +1,4 @@
-"""Stack-side constant propagation for SSAProgram.
-
-Resolves SSAVars / Phis to compile-time literals: (1) seed each SSAVar from
-its defining Assignment's resolved ``const``; (2) iterate to a fixed point
-over phi-arg unification, the value-identity step relation
-(``g.graph["identity_steps"]``), and op-level folding (``const_fold``) so
-fold→propagate→fold chains converge.
-
-Bridged from ``SSAProgram.propagate_constants`` (which keeps the idempotency
-guard + state flag).
-"""
+"""Resolve SSAVars / Phis to compile-time literals, to a fixed point."""
 from __future__ import annotations
 
 from ..ssa import Const, Phi, SSAProgram, SSAVar
@@ -16,13 +6,12 @@ from ..ssa.const_fold import try_fold_assignment
 
 
 def propagate_constants(prog: SSAProgram) -> None:
-    # Pass 1: SSAVars from their defining Assignment's resolved constant.
     for v in prog.vars.values():
         if v.defined_by is not None and v.defined_by.const is not None:
             v.const_value = v.defined_by.const
 
-    # Pass 2: fixed point over (a) phi-arg unification, (b) the value-identity
-    # step relation, and (c) op-level folding.
+    # Fixed point over phi-arg unification, identity steps and op-level folding
+    # — each can unlock the others, so fold→propagate→fold chains need to iterate.
     steps = prog._graph.graph.get("identity_steps", []) or []
 
     def _resolve_endpoint(key):
@@ -32,7 +21,6 @@ def propagate_constants(prog: SSAProgram) -> None:
         _, f, l, kind, idx = key
         return prog.phis.get((f, l, kind, idx))
 
-    # Pre-resolve endpoints once; skip steps where either side is missing.
     resolved_steps: list[tuple] = []
     for src_key, snk_key in steps:
         src = _resolve_endpoint(src_key)

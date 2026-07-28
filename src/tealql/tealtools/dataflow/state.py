@@ -1,24 +1,8 @@
-"""App-state dataflow detector.
+"""App-state dataflow: a value read back out of global / local state reaching a
+payment-routing or app-control sink without re-validation.
 
-Companion to :mod:`tealql.tealtools.dataflow.box`. Where box-out flow treats
-box reads as sources, this treats *application-state reads*
-(``app_global_get`` / ``app_local_get`` and their ``_ex`` variants) as
-sources and looks for a stored value reaching a sensitive consumer
-(payment-routing / app-control ``itxn_field`` sets, or another state
-write) without validation.
-
-The risk this models: a contract that trusts a value it previously
-stored in global / local state -- a withdrawal address, an amount, an
-admin app id -- and routes a payment or app call from it without
-re-checking, so anyone who can influence that stored value (an earlier
-unguarded write, a sibling app in the group) steers the outflow.
-
-Same substrate and caveats as :mod:`tealql.tealtools.dataflow.box`: taint-only
-(not predicate-aware on its own -- compose with
-:mod:`tealql.tealtools.dataflow.predicate_aware` to drop guarded flows), stops
-at BLOCK ops (arithmetic, ``btoi``), propagates through hash / slice /
-concat-with-const.
-"""
+Taint-only on its own — compose with :mod:`.predicate_aware` to drop the flows a
+dominating guard already constrains."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -34,14 +18,13 @@ from ..ssa import Assignment, Const, SSAProgram
 
 # --- app-state read sources ------------------------------------------
 #
-# Output-index conventions (1-based, top-first after the op runs; the
-# arities live in tealql.tealtools.avm):
-#   app_global_get     (1 -> 1): pushes [value]            -> value = 1
-#   app_local_get      (2 -> 1): pushes [value]            -> value = 1
-#   app_global_get_ex  (2 -> 2): pushes [value, did_exist] -> value = 2
-#   app_local_get_ex   (3 -> 2): pushes [value, did_exist] -> value = 2
-# The ``_ex`` variants leave ``did_exist`` on top (output 1); the stored
-# value we care about is the deeper output 2 -- mirrors box_get/box_len.
+# Output indices are 1-based and TOP-FIRST:
+#   app_global_get     (1 -> 1): [value]            -> value = 1
+#   app_local_get      (2 -> 1): [value]            -> value = 1
+#   app_global_get_ex  (2 -> 2): [value, did_exist] -> value = 2
+#   app_local_get_ex   (3 -> 2): [value, did_exist] -> value = 2
+# The ``_ex`` forms leave ``did_exist`` ON TOP, so the stored value is the
+# DEEPER output 2 — taking output 1 there taints a 0/1 flag instead.
 
 APP_GLOBAL_GET_SOURCE = Source(
     name="app_global_get value",
@@ -75,12 +58,9 @@ DEFAULT_OUT_OF_STATE_SOURCES: list[Source] = [
     APP_LOCAL_GET_EX_SOURCE,
 ]
 
-# Payment-routing / app-control itxn fields are the high-value sinks
-# (a stored address/amount steering an outflow). The state-write sinks
-# are included so a state value laundered into a *different* state slot
-# and then used downstream is still reachable; they don't create
-# trivial self-flows because a read's own output never feeds its own
-# write input.
+# State-write sinks are included so a value laundered into a DIFFERENT slot is
+# still reachable; they create no self-flows because a read's own output never
+# feeds its own write input.
 DEFAULT_OUT_OF_STATE_SINKS: list[Sink] = [
     *ITXN_FIELD_SENSITIVE_SINKS,
     APP_GLOBAL_PUT_VALUE_SINK,
@@ -94,10 +74,11 @@ def detect_out_of_state_flows(
     sources: Optional[Iterable[Source]] = None,
     sinks: Optional[Iterable[Sink]] = None,
 ) -> list[Violation]:
-    """Find app-state values reaching sensitive consumers without
-    sanitisation. Treats *every* state read as a source; compose with
-    :mod:`tealql.tealtools.dataflow.predicate_aware` to suppress flows a
-    dominating guard already constrains."""
+    """State values reaching sensitive consumers.
+
+    HAZARD: EVERY state read is a source, so this is an attack-surface map, not
+    a triage list — it cannot tell an attacker-writable slot from an admin-only
+    one. Use :func:`detect_correlated_state_flows` for the latter."""
     return TaintAnalysis(
         prog,
         sources=list(sources) if sources is not None
@@ -110,33 +91,21 @@ def detect_out_of_state_flows(
 
 # --- correlated: attacker-written state, later read and used ---------
 #
-# ``detect_out_of_state_flows`` treats EVERY state read as a source, which
-# answers "where does stored state steer an outflow" — an attack-surface map,
-# not a triage list. It cannot tell a slot an attacker could have written from
-# one only an admin path writes, so on a real contract it reports every
-# config-read-then-route, which is most of them.
-#
-# This narrows it the same way :func:`tealql.tealtools.dataflow.box.
-# detect_correlated_flows` narrows the box equivalent: first find the state
-# WRITES that carry attacker-tainted values, then treat only READS OF THOSE
-# SAME SLOTS as sources. The result is the actual round trip the module
-# docstring describes as the risk — "anyone who can influence that stored
-# value steers the outflow" — rather than every stored value.
+# Narrows the above to the actual round trip: find the state WRITES carrying
+# attacker-tainted values, then treat only READS OF THOSE SAME SLOTS as sources.
 
-#: Ops that write app state, and the input index holding the KEY.
-#: Verified against the SSA (top-first): ``app_global_put`` is
-#: ``[value, key]`` and ``app_local_put`` is ``[value, key, account]``, so on
-#: BOTH the value is index 0 and the key is index 1. (Reads put the key at
-#: index 0 — see ``_STATE_READ_KEY_IDX``. The asymmetry is real; do not
-#: collapse the two tables.)
+#: Ops that write app state -> the input index holding the KEY.
+#: TOP-FIRST: ``app_global_put`` is ``[value, key]`` and ``app_local_put`` is
+#: ``[value, key, account]``, so on BOTH the value is index 0 and the key is 1.
+#: HAZARD: READS put the key at index 0 instead (``_STATE_READ_KEY_IDX``). The
+#: asymmetry is real — collapsing the two tables reads a value as a key.
 _STATE_WRITE_KEY_IDX: dict[str, int] = {
     "app_global_put": 1,
     "app_local_put": 1,
 }
 
 #: Ops that read app state -> (key input index, 1-based output index of the
-#: VALUE). The ``_ex`` forms leave ``did_exist`` on top, so the stored value
-#: is the deeper output 2.
+#: VALUE); the ``_ex`` forms put the value at the deeper output 2.
 _STATE_READ_KEY_IDX: dict[str, tuple[int, int]] = {
     "app_global_get": (0, 1),
     "app_local_get": (0, 1),
@@ -148,24 +117,13 @@ _LOCAL_OPS = frozenset({"app_local_put", "app_local_get", "app_local_get_ex"})
 
 
 def _state_slot_signature(a: Assignment) -> Optional[str]:
-    """A syntactic identity for the storage slot a state op touches, or
-    ``None`` when the shape doesn't fit.
+    """Syntactic identity of the storage slot a state op touches, or ``None``.
 
-    Three components, because all three have to match for a write and a read
-    to be the same storage:
-
-    * **scope** — global ``"admin"`` and local ``"admin"`` are different slots.
-    * **key** — via :func:`tealql.tealtools.dataflow.box._key_signature`, the
-      same syntactic-equivalence used for box keys.
-    * **account**, for local state only — ``app_local_put(A, k, v)`` and
-      ``app_local_get(B, k)`` are different storage unless ``A`` is ``B``.
-
-    Syntactic, like the box version: two forms that resolve to the same bytes
-    at runtime by different routes are NOT matched (that needs semantic
-    equality, which isn't modelled). Being strict here costs recall, not
-    soundness — an unmatched pair simply isn't reported as a correlated flow,
-    and ``detect_out_of_state_flows`` still covers it.
-    """
+    HAZARD: scope, key AND account (local only) must all match for a write and a
+    read to be the same storage — global ``"admin"`` is not local ``"admin"``,
+    and ``app_local_put(A, k, v)`` is not ``app_local_get(B, k)``. Matching is
+    syntactic, so two keys that agree at runtime by different routes do NOT
+    match; that costs recall, never soundness."""
     from .box import _key_signature
 
     if a.op in _STATE_WRITE_KEY_IDX:
@@ -190,8 +148,7 @@ def _state_slot_signature(a: Assignment) -> Optional[str]:
 
 @dataclass
 class CorrelatedStateViolation:
-    """End-to-end chain: external source → state write at slot S →
-    state read at slot S → sensitive sink."""
+    """The chain: external source → state write at slot S → read of S → sink."""
 
     initial_source: Assignment
     initial_source_name: str
@@ -228,18 +185,7 @@ def detect_correlated_state_flows(
     initial_sources: Optional[Iterable[Source]] = None,
     sensitive_sinks: Optional[Iterable[Sink]] = None,
 ) -> list[CorrelatedStateViolation]:
-    """Two-pass analysis chaining attacker-tainted state writes to later reads
-    of the SAME slot.
-
-    Pass 1: ``initial_sources`` (default: external args) → state-write value
-    positions. Records which ``app_global_put`` / ``app_local_put`` carry
-    tainted values, keyed by slot signature, with the originating source.
-
-    Pass 2: synthesises a per-read :class:`Source` for every state read whose
-    slot signature matches a tainted-write cluster, and runs the detector with
-    the sensitive sinks. Each :class:`Violation` is rebuilt as a
-    :class:`CorrelatedStateViolation` carrying the whole chain.
-    """
+    """Chain attacker-tainted state writes to later reads of the SAME slot."""
     from .box import DEFAULT_INTO_BOX_SOURCES
 
     init_sources = (list(initial_sources) if initial_sources is not None
@@ -250,7 +196,6 @@ def detect_correlated_state_flows(
     write_sinks = [APP_GLOBAL_PUT_VALUE_SINK, APP_LOCAL_PUT_VALUE_SINK]
     pass1 = TaintAnalysis(prog, sources=init_sources, sinks=write_sinks,
                           default_rules=ATTACKER_CONTROL_RULES)
-    # One fixpoint for every write below (it also yields the source-of map).
     tainted_ops, source_for = pass1._compute_taint()
 
     # slot signature → [(write, originating source assignment, source name)]
@@ -294,9 +239,8 @@ def detect_correlated_state_flows(
         cluster = read_to_cluster.get(id(v.source))
         if cluster is None:
             continue
-        # The write that STORED the attacker value. Several are possible; one
-        # chain per (read, sink) pair keeps the output bounded, same as the
-        # box version.
+        # Several writes may have stored it; one chain per (read, sink) pair
+        # keeps the output bounded.
         write, init_a, init_name = clusters[cluster][0]
         if write is v.sink:
             continue        # the storing write itself is not an onward flow

@@ -1,27 +1,9 @@
-"""Predicate-aware filtering of taint violations.
+"""Suppress taint violations whose sink operand a path predicate has PINNED.
 
-Wraps any taint detector that emits :class:`tealql.tealtools.dataflow.Violation`
-records and consults :class:`PathPredicateAnalysis` at each sink. A flow
-is suppressed when the sink operand — or any operand in its
-backwards taint chain — is mentioned by a path predicate that
-holds on every path to the sink.
-
-What "mentioned" means here is intentionally coarse: any
-:class:`BranchCondition` whose ``value`` or ``args`` references the
-operand counts as validation. The analyst's ``assert`` is treated
-as enough evidence that the value is constrained, even if we don't
-inspect the predicate's content. A predicate-content-aware variant
-(e.g. recognising ``V < 100`` as a bound and suppressing only flows
-to sinks that need bounded inputs) is a future refinement.
-
-Suppression preserves the original :class:`Violation` plus the
-validating predicate, so triage can see what the analyst's check
-looked like:
-
-    remaining, suppressed = filter_validated(detect_into_box_flows(prog), prog)
-    for s in suppressed:
-        print(f"{s.violation.pretty()}  (validated by {s.validated_by!r})")
-"""
+HAZARD: suppression must require pinning the VALUE, never merely mentioning it.
+``assert(len(arg) == 4)`` mentions ``arg`` and shares its taint chain, but the
+attacker still picks all four bytes — treating that as validation hides a real
+finding. Only an equality tying the operand itself to a clean value counts."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -53,20 +35,11 @@ class SuppressedViolation:
 
 
 def _taint_chain(operand, depth: int = 6) -> list:
-    """Walk back from ``operand`` through ``defined_by`` chains and
-    Phi merge args, returning every operand visited (including
-    ``operand`` itself).
+    """Every operand upstream of ``operand``, via ``defined_by`` and phi args.
 
-    Both walk directions matter: ``defined_by`` covers ordinary SSA
-    assignments; ``args`` covers phis (BB-join merges) which don't
-    have a ``defined_by`` of their own. Without phi traversal a
-    sink operand reached via a join would never connect to its
-    upstream sources.
-
-    Bounded depth so cyclic phi structures don't blow up — beyond
-    the cap we conservatively stop walking. Returns a list (not a
-    set) because operands may not be hashable.
-    """
+    Phi args must be walked — a phi has no ``defined_by``, so without them a
+    sink operand reached through a join never connects to its sources. Depth is
+    capped against cyclic phis; a list because operands may not be hashable."""
     out: list = [operand]
     seen_ids: set[int] = {id(operand)}
     stack: list[tuple[object, int]] = [(operand, depth)]
@@ -92,25 +65,17 @@ def _taint_chain(operand, depth: int = 6) -> list:
 
 
 def _same_value_set(operand, depth: int = 8) -> list:
-    """Every operand that IS ``operand`` (the same runtime value), following
-    stack-shuffle identity edges in BOTH directions.
+    """Every operand that IS ``operand``, over stack-shuffle identity edges.
 
-    Deliberately much narrower than :func:`_taint_chain`, which walks every
-    upstream input: ``len(X)`` has ``X`` in its taint chain but is NOT the same
-    value as ``X``, and pinning a derived property does not pin the value.
-
-    Identity comes from :func:`_shuffle_mapping`, which gives the exact
-    ``output_index -> input_index`` permutation, so ``dup``'s two outputs are
-    both linked to their shared input (and to each other, transitively) while
-    ``swap``'s two outputs stay correctly DISTINCT. A blanket "same op" rule
-    would wrongly equate the two halves of a swap.
-
-    Phis are NOT traversed: ``phi(a, b)`` equals ``a`` only on one incoming
-    edge, so a guard pinning ``a`` does not pin the phi. Stopping here costs
-    precision (a possible extra report), never soundness."""
+    HAZARD: much narrower than :func:`_taint_chain` on purpose — ``len(X)`` is in
+    X's taint chain but is NOT X, and pinning a derived property does not pin the
+    value. Identity comes from the exact ``output_index -> input_index``
+    permutation, so ``dup``'s outputs link but ``swap``'s stay DISTINCT; a
+    blanket "same op" rule would equate the two halves of a swap. Phis are not
+    traversed (``phi(a, b)`` equals ``a`` on one edge only), which costs a
+    possible extra report but never soundness."""
     from ..ssa.ssa import _shuffle_mapping
 
-    # Build the identity edges lazily from the defining assignments we meet.
     out: list = [operand]
     seen: set[int] = {id(operand)}
     stack: list[tuple[object, int]] = [(operand, depth)]
@@ -135,8 +100,7 @@ def _same_value_set(operand, depth: int = 8) -> list:
                         res.append(a.outputs[oj])
         return res
 
-    # Also walk forward from an input into the outputs it feeds. Collect the
-    # candidate assignments once from the operand's own uses.
+    # Forward from an input into the outputs it feeds.
     def _forward(v):
         res: list = []
         for use in getattr(v, "uses", ()) or ():
@@ -165,9 +129,8 @@ def _same_value_set(operand, depth: int = 8) -> list:
 def _equality_operands(pred: BranchCondition):
     """``(lhs, rhs)`` of the equality this predicate asserts, or ``None``.
 
-    Recognises the two shapes an equality reaches us in: a ``kind="eq"``
-    predicate carrying its literal in ``args``, and a boolean predicate on the
-    result of an ``==`` op (or ``zero`` on a ``!=``, its complement)."""
+    Both shapes count: a ``kind="eq"`` predicate, and a boolean predicate on an
+    ``==`` result — or on ``zero`` of a ``!=``, which is its complement."""
     from ..ssa.operands import binary_operands
 
     if pred.kind == "eq" and pred.args:
@@ -182,13 +145,7 @@ def _equality_operands(pred: BranchCondition):
 
 
 def _pins_operand(pred: BranchCondition, operand) -> bool:
-    """True iff ``pred`` constrains ``operand`` ITSELF to an attacker-
-    independent value.
-
-    A predicate that merely MENTIONS the operand does not sanitise it: after
-    ``assert(len(arg) == 4)`` the attacker still chooses all four bytes, so
-    suppressing the ``box_put(arg)`` flow on that basis hides a real finding.
-    Require an equality that pins the whole value against a clean operand."""
+    """True iff ``pred`` pins ``operand`` ITSELF to an attacker-independent value."""
     from .byte_taint import _is_clean
 
     pair = _equality_operands(pred)
@@ -208,20 +165,9 @@ def _validating_predicate(
     line: int,
     pp: PathPredicateAnalysis,
 ) -> Optional[BranchCondition]:
-    """A predicate validates the sink operand only if it PINS that value to
-    something attacker-independent.
-
-    Example that validates: ``assert(arg == "allowed"); ... box_put(arg)`` —
-    the equality ties ``arg`` itself to a constant.
-
-    Example that does NOT: ``assert(len(arg) == 4); ... box_put(arg)``. The
-    guard mentions ``arg`` and their taint chains intersect, but the attacker
-    still chooses every byte, so treating it as validation SUPPRESSED a real
-    finding. Chain intersection alone is not sanitisation.
-    """
-    # ``predicates_at`` returns a frozenset; its iteration order is
-    # hash-seed-dependent. Sort by repr so that when several predicates
-    # validate the same operand the *reported* one is deterministic.
+    """The predicate at ``(file, line)`` that pins ``operand``, if any."""
+    # ``predicates_at`` returns a frozenset whose order is hash-seed-dependent;
+    # sort so the reported predicate is deterministic when several match.
     preds = sorted(pp.predicates_at(file, line), key=repr)
     for p in preds:
         if _pins_operand(p, operand):
@@ -235,12 +181,7 @@ def filter_validated(
     *,
     pp: Optional[PathPredicateAnalysis] = None,
 ) -> tuple[list[Violation], list[SuppressedViolation]]:
-    """Partition ``violations`` into ``(remaining, suppressed)``.
-
-    A violation is suppressed iff some :class:`BranchCondition` at the sink BB
-    PINS the sink operand to an attacker-independent value (see
-    :func:`_pins_operand`) — not merely mentions it.
-    """
+    """Partition ``violations`` into ``(remaining, suppressed)`` by sink pinning."""
     pp = pp or PathPredicateAnalysis(prog)
     remaining: list[Violation] = []
     suppressed: list[SuppressedViolation] = []

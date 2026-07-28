@@ -1,52 +1,16 @@
-"""Typed SSA-assignment representation of a TEAL program.
+"""The value types :class:`SSAProgram` is made of — no extraction of its own.
 
-Built on top of :mod:`tealql.tealtools.graph`. Where
-``tealql.tealtools.graph`` exposes a low-level ``MultiDiGraph`` keyed by AST nodes,
-this module presents the same information as a first-class *program*
-object: a sequence of :class:`Assignment`\\ s grouped into
-:class:`BasicBlock`\\ s, referring to :class:`SSAVar`\\ s, :class:`Phi`\\ s,
-and :class:`Const` literals.
+:class:`Assignment` (``outputs = op immediates (inputs)``) over :class:`SSAVar` /
+:class:`Phi` / :class:`Const` operands, grouped into :class:`BasicBlock`\\ s.
 
-    from tealql.tealtools.ssa import SSAProgram
-    p = SSAProgram("approval.teal")
-    print(p.functional(file="approval.teal", line_range=(225, 260)))
+HAZARD — identity keys are source positions, so one instruction per line is
+architectural: SSAVar is ``(file, line, output_index)``, Phi is
+``(file, line, kind, stack_index)``, BasicBlock is
+``(file, first_line, last_line)``.
 
-Model
------
-
-- :class:`SSAVar` — a stack variable produced by one opcode.
-  Identity: ``(file, line, output_index)``. Back-reference
-  ``defined_by`` points at the :class:`Assignment` that produced it;
-  ``uses`` lists assignments consuming it.
-
-- :class:`Phi` — an SSA phi (direct or indirect). Identity:
-  ``(file, line, kind, stack_index)``. ``args`` is an ordered list of
-  :class:`SSAVar` (for ``DirectPhi``) or a single :class:`Phi` (for
-  ``IndirectPhi``, pointing at its root ``DirectPhi``). Back-reference
-  ``basic_block`` points at the :class:`BasicBlock` it lives in.
-
-- :class:`Const` — a resolved compile-time literal
-  (``intcblock``/``bytecblock`` entry, ``pushint``, ``pushbytes``,
-  or the ``int`` pseudo-opcode).
-
-- :class:`Assignment` — ``outputs = op immediates (inputs)``.
-  ``outputs`` are SSAVars; ``inputs`` are :class:`SSAVar` / :class:`Phi`
-  operands. ``const`` is populated for const-pushing opcodes so consumers
-  can render ``V#1@L5 = 10`` instead of ``V#1@L5 = intc_2 ()``. Back-
-  reference ``basic_block``.
-
-- :class:`BasicBlock` — maximal single-entry/single-exit straight-line
-  region. Identity: ``(file, first_line, last_line)``. Carries its
-  ordered ``assignments`` + entry ``phis``, plus ``predecessors`` and
-  ``successors`` (both lists of ``BasicBlock``).
-
-Phi materialization is lazy: only phis referenced (directly or
-transitively via ``IndirectPhi`` parents) by some assignment are
-materialized. This keeps the object count tractable on programs where
-the underlying model emits many unreferenced phi identities.
-
-The module performs no extraction itself — it calls
-:func:`tealql.tealtools.graph.load_graph` and reads the populated node attributes.
+HAZARD — ``Assignment.inputs`` and ``outputs`` are TOP-FIRST (index 0 = topmost
+value popped / pushed); ``BasicBlock.exit_stack`` is BOTTOM-first. Reading either
+in the other's order silently swaps operands of non-commutative ops.
 """
 from __future__ import annotations
 
@@ -65,11 +29,8 @@ class Location:
 
 
 class SSAVar:
-    """A stack variable produced by one opcode.
-
-    Identity is ``(file, line, index)``; the textual form is
-    ``V#{index}@L{line}``.
-    """
+    """A stack variable produced by one opcode — identity ``(file, line, index)``,
+    rendered ``V#{index}@L{line}``; ``index`` is 1-based and TOP-FIRST."""
 
     __slots__ = (
         "file", "line", "index", "defined_by", "uses",
@@ -82,12 +43,9 @@ class SSAVar:
         self.index = index
         self.defined_by: Optional["Assignment"] = None
         self.uses: list["Assignment"] = []
-        # Resolved by SSAProgram.propagate_constants(): when set, this
-        # SSAVar's value is statically known and renders as the literal
-        # in functional form. None means "unknown / not constant".
+        # const_value: set by propagate_constants(); range: by propagate_ranges().
+        # None means "not resolved", never "not constant"/"unbounded".
         self.const_value: Optional["Const"] = None
-        # Resolved by SSAProgram.propagate_ranges(): independent pass,
-        # purely informational. None means "no range info yet".
         self.range: Optional["IntRange"] = None
         self.type: Optional["TealType"] = None
 
@@ -109,13 +67,11 @@ class SSAVar:
 
 
 class Phi:
-    """An SSA phi. ``kind`` is ``"DirectPhi"`` or ``"IndirectPhi"``.
+    """An SSA phi at stack slot ``stack_index`` (1-based, top-first).
 
-    For ``DirectPhi``, ``args`` is the list of originating-input
-    :class:`SSAVar`\\ s, one per contributing predecessor BB.
-    For ``IndirectPhi``, ``args`` is a single-element list containing
-    the root :class:`Phi` the indirect phi propagates from.
-    """
+    ``kind`` decides what ``args`` holds: a ``DirectPhi`` lists one originating
+    :class:`SSAVar` per contributing predecessor BB, an ``IndirectPhi`` holds a
+    single :class:`Phi` — the chain root it propagates from."""
 
     __slots__ = (
         "file", "line", "stack_index", "kind",
@@ -131,12 +87,9 @@ class Phi:
         self.args: list[Union[SSAVar, "Phi"]] = []
         self.uses: list["Assignment"] = []
         self.basic_block: Optional["BasicBlock"] = None
-        # Resolved by SSAProgram.propagate_constants(): set when every
-        # arg of this phi resolves to the same constant literal.
+        # const_value: set only when EVERY arg resolves to the same literal.
+        # range: union of the arg ranges, so ranges flow through joins.
         self.const_value: Optional["Const"] = None
-        # Resolved by SSAProgram.propagate_ranges(): tracked on phis so
-        # ranges can flow through joins (union of arg ranges). Not
-        # rendered — annotations are only attached to SSAVar outputs.
         self.range: Optional["IntRange"] = None
         self.type: Optional["TealType"] = None
 
@@ -154,14 +107,10 @@ class Phi:
         return f"{tag}_{self.stack_index}@L{self.line}"
 
     def __repr__(self) -> str:
-        # Iterative DFS with cycle protection and a visited-node cap.
-        # PySSA's unified PyPhi can have cyclic phi-arg graphs AND chains
-        # of ~1000 phis at constant-stack CFG loops. The naive recursive
-        # form blows the Python recursion limit; full expansion of a deep
-        # graph blows memory. Iterative DFS handles recursion; a
-        # ``_REPR_NODE_CAP`` short-renders after visiting that many phis
-        # to keep output bounded. Output identical to the naive form on
-        # acyclic graphs below the cap.
+        # Iterative DFS, cycle-protected and capped: phi-arg graphs can be
+        # CYCLIC and ~1000 deep at constant-stack loops, so the recursive form
+        # blows the recursion limit and full expansion blows memory. Identical
+        # output to the naive form on acyclic graphs below the cap.
         if not self.args:
             return self._short()
         _CAP = 200
@@ -203,12 +152,7 @@ class Const:
 
 @dataclass(frozen=True)
 class IntRange:
-    """Inclusive integer range ``[lo..hi]`` for a uint64-typed value.
-
-    Set by :meth:`SSAProgram.propagate_ranges`. Currently only seeded
-    from boolean-returning ops (always ``[0..1]``) and unioned through
-    phis; collections-of-values aren't represented yet.
-    """
+    """Inclusive integer range ``[lo..hi]`` for a uint64-typed value."""
     lo: int
     hi: int
 
@@ -228,29 +172,16 @@ class IntRange:
 class TealType:
     """Static type of a stack value. ``kind`` ∈ ``{"uint64", "bytes"}``.
 
-    For ``"bytes"``:
-      - ``byte_length`` is the exact length when statically derivable
-        (forward propagation, e.g. ``itob`` always 8, ``sha256`` always
-        32, ``concat`` of two known-length inputs).
-      - ``byte_length_range`` is an inclusive ``[lo..hi]`` bound when
-        only the *range* is known (typically from inverse constraints:
-        ``btoi(X)`` succeeding ⇒ ``len(X) ∈ [1, 8]``, ``getbyte(X, i)``
-        succeeding ⇒ ``len(X) ≥ i+1``, …). When ``byte_length`` is set,
-        ``byte_length_range`` mirrors it as ``IntRange(N, N)`` so a
-        consumer that only cares about the range has one field to read.
+    All three optional fields are bytes-only; for ``"uint64"`` read
+    :attr:`SSAVar.range` instead. ``byte_length`` is the exact length when
+    statically derivable, and mirrors itself into ``byte_length_range`` as
+    ``IntRange(N, N)`` so range consumers read one field; ``byte_length_range``
+    alone means only a bound is known (e.g. ``btoi(X)`` succeeding ⇒
+    ``len(X) ∈ [1, 8]``).
 
-    ``int_value_range`` (also bytes-only) is the inclusive range of
-    the bytes value *interpreted as a big-endian unsigned integer* —
-    the abstraction TEAL's bytemath ops (``b+``, ``b-``, ``b*``,
-    ``b/``, …) work over. Uses :class:`IntRange` storage but its
-    bounds are not capped at ``2^64-1`` — Python ints are arbitrary
-    precision, so a value derived from many ``b*``-style ops can
-    legitimately exceed uint64. Populated by
-    :meth:`SSAProgram.propagate_bytemath_ranges`.
-
-    For ``"uint64"`` all three bytes-specific fields are unused (use
-    :attr:`SSAVar.range` instead).
-    """
+    HAZARD: ``int_value_range`` is the bytes value read as a big-endian unsigned
+    integer (the abstraction bytemath ``b+``/``b-``/``b*``/… work over) and is
+    NOT capped at ``2^64-1`` — it can legitimately exceed uint64."""
     kind: str
     byte_length: Optional[int] = None
     byte_length_range: Optional["IntRange"] = None
@@ -262,7 +193,11 @@ Operand = Union[SSAVar, Phi, Const]
 
 @dataclass(eq=False)
 class Assignment:
-    """``outputs = op immediates (inputs)`` — one TEAL opcode's SSA form."""
+    """``outputs = op immediates (inputs)`` — one TEAL opcode's SSA form.
+
+    HAZARD: ``inputs`` and ``outputs`` are TOP-FIRST — ``inputs[0]`` is the
+    topmost value popped. Reading them in source order swaps the operands of
+    every non-commutative op (``-``, ``/``, ``%``, comparisons, ``concat``)."""
 
     outputs: list[SSAVar]
     op: str
@@ -272,11 +207,9 @@ class Assignment:
     ast_code: str
     const: Optional[Const] = None
     basic_block: Optional["BasicBlock"] = None
-    # Set by :meth:`SSAProgram.propagate_stack_shuffles`. When True, this
-    # opcode is a pure stack shuffle whose outputs have all been
-    # redirected to their producing inputs at every consumer; the
-    # assignment is kept around but rendered with a ``//`` comment
-    # prefix so the original stack movement stays inspectable.
+    # Set by propagate_stack_shuffles(): a pure shuffle whose outputs have been
+    # redirected to their producing inputs at every consumer. Kept in the IR but
+    # rendered as a `//` comment, so the stack movement stays inspectable.
     shuffled: bool = False
 
     def functional(
@@ -286,18 +219,8 @@ class Assignment:
         propagate_consts: bool = True,
         show_ranges: bool = False,
     ) -> str:
-        """Render this assignment in functional form.
-
-        ``resolve_consts``: replace constblock-referencing opcodes
-            (``intc_*``/``bytec_*``) with the resolved literal as the RHS.
-        ``propagate_consts``: when an input's :class:`SSAVar` or :class:`Phi`
-            has been resolved by :meth:`SSAProgram.propagate_constants`,
-            render it as its literal instead of the variable identifier.
-        ``show_ranges``: when an SSAVar has a ``range`` set by
-            :meth:`SSAProgram.propagate_ranges`, suffix it with a
-            ``/*[V<=hi]*/``-style annotation. Constant-collapsed inputs
-            and phi expressions are not annotated.
-        """
+        """Render this assignment in functional form, optionally substituting
+        resolved literals for const opcodes / inputs and annotating ranges."""
         def _annotate_var(v: "SSAVar") -> str:
             label = v.identifier
             if show_ranges and v.range is not None:
@@ -319,8 +242,7 @@ class Assignment:
                 return _annotate_var(operand)
             return repr(operand)
 
-        # Copy assignment (materialized phi): render `mat_phi_k = arg` without
-        # the opcode/tuple syntax.
+        # Copy assignment (materialized phi): no opcode/tuple syntax.
         if self.op == "=" and len(self.inputs) == 1 and self.outputs:
             body = f"{out_str} = {_input_label(self.inputs[0])}"
             return f"// {body}" if self.shuffled else body
@@ -334,23 +256,15 @@ class Assignment:
 
 
 class BasicBlock:
-    """A maximal straight-line region of assignments.
+    """A maximal straight-line region of assignments, identity
+    ``(file, first_line, last_line)``, with entry ``phis`` and inter-BB
+    ``predecessors`` / ``successors``.
 
-    Identity is ``(file, first_line, last_line)``. ``assignments`` is the
-    ordered list of the BB's :class:`Assignment`\\ s (by source line).
-    ``phis`` is the list of :class:`Phi`\\ s attached at the BB's entry.
-    ``predecessors`` / ``successors`` are the other BBs this BB is
-    directly connected to via inter-BB CFG edges.
-
-    ``exit_stack`` is the operand in each stack slot at the BB's exit,
-    **bottom-first** (index 0 = bottom of stack, last = top), with
-    ``None`` for a slot whose value is dead. Each entry is an
-    :class:`SSAVar` or :class:`Phi`. It is surfaced verbatim from PySSA
-    construction (the per-edge value a successor's phi reads on this
-    edge) so out-of-SSA / block-argument lowering has the per-edge
-    values that ``Phi.args`` (a dedup'd value-set) no longer carries.
-    Empty unless construction populated it.
-    """
+    HAZARD: ``exit_stack`` is BOTTOM-FIRST (index 0 = bottom, last = top) —
+    the opposite of ``Assignment.inputs`` — with ``None`` for dead slots. It
+    carries the PER-EDGE values that ``Phi.args`` (a dedup'd value-set) no
+    longer has, which out-of-SSA / block-argument lowering needs. Empty
+    unless construction populated it."""
 
     __slots__ = (
         "file", "first_line", "last_line",
@@ -384,43 +298,33 @@ class BasicBlock:
     def contains(self, line: int) -> bool:
         return self.first_line <= line <= self.last_line
 
-# All AVM metadata tables (ranges, byte-lengths, terminators, shuffle/
-# constblock classification, field positions) live in the single home
-# :mod:`tealql.tealtools.avm`; the SSA layer keeps only the MODEL-convention
-# algorithms below (top-first shuffle permutations over Assignment shapes).
+# AVM metadata tables all live in :mod:`tealql.tealtools.avm`; only the
+# MODEL-convention algorithms (top-first shuffle permutations) belong here.
 from ..avm import _STACK_SHUFFLE_OPS  # noqa: F401  (re-export: ssa-layer callers)
 
 
 
 
 def _shuffle_mapping(a: "Assignment") -> Optional[list[int]]:
-    """Return ``m`` such that ``a.outputs[i] = a.inputs[m[i]]`` for the
-    pure stack-shuffle opcodes in :data:`_STACK_SHUFFLE_OPS`. Returns
-    ``None`` when ``a`` isn't a shuffle, or when its input/output shape
-    doesn't match the immediate (defensive — a malformed Assignment
-    should not silently get its consumers redirected).
+    """``m`` such that ``a.outputs[i] = a.inputs[m[i]]`` for the shuffle opcodes
+    in :data:`_STACK_SHUFFLE_OPS`, else ``None``.
 
-    Stack convention: **top-first**. ``inputs[0]`` and ``outputs[0]``
-    are the topmost stack value (a 1-based stack position where 1 = top
-    consumed); the deepest consumed/produced value sits at index
-    ``n - 1``. The SSAVar identity convention agrees: ``output_index 1``
-    ranks first by stack order (i.e. is the topmost output).
-    """
+    HAZARD: everything here is TOP-FIRST — ``inputs[0]``/``outputs[0]`` are the
+    topmost value, the deepest sits at index ``n - 1``, and SSAVar
+    ``output_index 1`` is likewise the topmost output. A shape that disagrees
+    with the immediate returns ``None`` rather than redirecting consumers of a
+    malformed Assignment."""
     op = a.op
     n_in = len(a.inputs)
     n_out = len(a.outputs)
     if op == "swap":
-        # ... a b  →  ... b a   (b was top; a becomes new top)
-        # in (top-first):  [b, a]
-        # out (top-first): [a, b]
+        # ... a b → ... b a;  in [b, a]  out [a, b]
         return [1, 0] if (n_in == 2 and n_out == 2) else None
     if op == "dup":
-        # ... a  →  ... a a   (both outputs = a)
+        # ... a → ... a a
         return [0, 0] if (n_in == 1 and n_out == 2) else None
     if op == "dup2":
-        # ... a b  →  ... a b a b   (b was top)
-        # in (top-first):  [b, a]
-        # out (top-first): [b, a, b, a]
+        # ... a b → ... a b a b;  in [b, a]  out [b, a, b, a]
         return [0, 1, 0, 1] if (n_in == 2 and n_out == 4) else None
     if op not in ("dupn", "cover", "uncover", "dig", "bury",
                   "frame_dig", "frame_bury"):
@@ -433,64 +337,40 @@ def _shuffle_mapping(a: "Assignment") -> Optional[list[int]]:
     except ValueError:
         return None
     if op == "dupn":
-        # ... a  →  ... a a … a   (n+1 copies of the original top)
+        # ... a → ... a a … a  (n+1 copies of the top)
         if n_in == 1 and n_out == n + 1:
             return [0] * (n + 1)
     elif op == "cover":
-        # cover n: pop top A, place it n positions down. Before:
-        # ... X_n X_{n-1} … X_1 A   (A = top). After:
-        # ... A X_n X_{n-1} … X_1   (X_1 = new top).
-        # in  (top-first): [A, X_1, X_2, …, X_n]
-        # out (top-first): [X_1, X_2, …, X_n, A]
+        # pop top A, place it n down;  in [A, X_1..X_n]  out [X_1..X_n, A]
         if n_in == n + 1 and n_out == n + 1:
             return list(range(1, n + 1)) + [0]
     elif op == "uncover":
-        # uncover n: lift the value at depth n to the top. Before:
-        # ... X_n X_{n-1} … X_1 X_0   (X_0 = top, X_n at depth n).
-        # After: ... X_{n-1} … X_1 X_0 X_n   (X_n = new top).
-        # in  (top-first): [X_0, X_1, …, X_n]
-        # out (top-first): [X_n, X_0, X_1, …, X_{n-1}]
+        # lift depth-n to top;  in [X_0..X_n]  out [X_n, X_0..X_{n-1}]
         if n_in == n + 1 and n_out == n + 1:
             return [n] + list(range(n))
     elif op == "dig":
-        # dig n: copy the value at depth n to the top (no pops).
-        # in  (top-first): [X_0, X_1, …, X_n]                (n+1 elts)
-        # out (top-first): [X_n, X_0, X_1, …, X_{n-1}, X_n]  (n+2 elts)
+        # copy depth-n to top, no pops;  in [X_0..X_n]  out [X_n, X_0..X_n]
         if n_in == n + 1 and n_out == n + 2:
             return [n] + list(range(n + 1))
     elif op == "bury":
-        # bury n: pop top A, overwrite the value at depth n with A.
-        # Before: ... X_n X_{n-1} … X_1 A     (A = top, n+1 elts).
-        # After:  ... A   X_{n-1} … X_1       (n elts).
-        # in  (top-first): [A, X_1, X_2, …, X_n]
-        # out (top-first): [X_1, X_2, …, X_{n-1}, A]
-        # `bury 0` fails at runtime (buries into the popped slot); reject it so
-        # we never emit a length-1 mapping for zero outputs (would IndexError).
+        # pop top A over depth-n;  in [A, X_1..X_n]  out [X_1..X_{n-1}, A]
+        # `bury 0` fails at runtime (buries into the popped slot); rejecting it
+        # also avoids a length-1 mapping for zero outputs (IndexError).
         if n >= 1 and n_in == n + 1 and n_out == n:
             return list(range(1, n)) + [0]
     elif op == "frame_dig":
-        # SSA model layout (top-first): ``inputs`` is [top_local,
-        # next_local, …, frame[N]]; the dug slot ``frame[N]`` is the
-        # **deepest** of the consumed range, so ``inputs[n_in-1]``
-        # always holds it regardless of whether ``N`` is positive
-        # (locals above frame ptr) or negative (args below it).
-        # ``outputs`` is the same block with the dug copy prepended on
-        # top: ``[dug, top_local, …, frame[N]]``. We don't even need
-        # to look at ``N`` — the model's ``n_in`` already encodes the
-        # span "from dug slot up to top".
+        # FAT-BAND model, top-first: inputs are [top_local, …, frame[N]] — the
+        # dug slot is the DEEPEST consumed, hence `inputs[n_in-1]` whether N is
+        # positive (locals) or negative (args) — and outputs are that band with
+        # the dug copy prepended. `n_in` already encodes the span, so N is unused.
         if n_in < 1 or n_out != n_in + 1:
             return None
         return [n_in - 1] + list(range(n_in))
     elif op == "frame_bury":
-        # SSA model layout (top-first): ``inputs[0]`` is the stack top
-        # being popped (the value to bury); ``inputs[1:]`` is the
-        # consumed frame band [top_local, …, frame[N+1]] (the dug
-        # target ``frame[N]`` itself isn't consumed because it's
-        # only being written, not read). After the bury, ``frame[N]``
-        # holds the popped value, so the new output band is
-        # ``[top_local, …, frame[N+1], frame[N]_new]`` — i.e. the
-        # input frame slots shifted, with the popped value at the
-        # deepest output position. Independent of ``N``.
+        # FAT-BAND model, top-first: inputs[0] is the popped value, inputs[1:]
+        # the consumed band [top_local, …, frame[N+1]] (the target frame[N] is
+        # written, not read, so it is NOT consumed). Outputs are that band with
+        # the popped value at the deepest position. Independent of N.
         if n_out < 1 or n_in != n_out + 1:
             return None
         return list(range(1, n_out)) + [0]
@@ -498,17 +378,15 @@ def _shuffle_mapping(a: "Assignment") -> Optional[list[int]]:
 
 
 def _canon_shuffle(op: str, immediates: str):
-    """``(n_in, mapping)`` for a FIXED-arity stack shuffle from its CANONICAL
-    arity, independent of a possibly fat-band-clamped ``Assignment.inputs``.
+    """``(n_in, mapping)`` for a FIXED-arity shuffle from its CANONICAL arity, or
+    ``(None, None)``.
 
-    The resim re-simulates the stack on a clean depth, but :func:`_shuffle_mapping`
-    keys off ``len(a.inputs)`` -- which the SSA's fat-band sim can UNDER-count when
-    its model stack was shallow at the op (e.g. ``dup2`` recorded with 1 input, so
-    ``_shuffle_mapping`` defensively returns ``None`` and the resim drops the op,
-    losing stack depth that then starves a downstream callsub's args). Computing the
-    effect from the op's true arity fixes that. Excludes ``frame_dig`` /
-    ``frame_bury`` (genuinely band-dependent, handled separately). Returns
-    ``(None, None)`` when ``op`` isn't a fixed-arity shuffle."""
+    HAZARD: use this, not :func:`_shuffle_mapping`, when re-simulating on a clean
+    stack — that one keys off ``len(a.inputs)``, which the fat-band sim
+    UNDER-counts where its model stack was shallow (``dup2`` recorded with one
+    input), so it returns ``None`` and the resim drops the op, losing depth that
+    later starves a callsub's args. Excludes ``frame_dig``/``frame_bury``, which
+    are genuinely band-dependent."""
     if op == "swap":
         return (2, [1, 0])
     if op == "dup":

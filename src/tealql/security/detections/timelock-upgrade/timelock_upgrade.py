@@ -1,18 +1,6 @@
-"""sec-guide/timelock-upgrade: updatable + creator-guarded but no timelock.
-
-Flags an approval exit that:
-  - is reachable with ``OnCompletion == UpdateApplication``,
-  - has a dominating ``txn Sender == global CreatorAddress`` guard
-    (so the creator-only upgrade is intentional),
-  - and the program has no genuine timelock check — a ``global
-    LatestTimestamp`` value flowing into a *comparison* (against a stored
-    deadline). Users can't review code before the upgrade takes effect.
-
-The timelock recognition requires the timestamp to reach a comparison, not merely
-that the ``LatestTimestamp`` opcode appears: a contract that only *records* the
-current time (``global LatestTimestamp; app_global_put``) without ever comparing
-it has no enforced delay, but the old opcode-presence proxy treated that read as a
-timelock and suppressed the finding — a false negative.
+"""sec-guide/timelock-upgrade: an approval exit reachable with ``OnCompletion ==
+UpdateApplication``, creator-guarded (so the upgrade is intentional), but with no
+genuine timelock — users cannot review code before it takes effect.
 """
 from __future__ import annotations
 
@@ -36,18 +24,19 @@ class TimelockUpgradeViolation(_ExitBBViolation):
 def _has_timestamp_check(
     prog: SSAProgram, file: Optional[str] = None,
 ) -> bool:
-    """A genuine timelock: a ``global LatestTimestamp`` value flows (through the
-    phi / scratch / proto-frame bridge) into a comparison — not merely that the
-    opcode is read. A timestamp that is only stored/logged enforces no delay."""
+    """A genuine timelock: a ``global LatestTimestamp`` value flows into a
+    comparison.
+
+    HAZARD: opcode PRESENCE is not enough. A timestamp that is only stored or
+    logged (``global LatestTimestamp; app_global_put``) enforces no delay, and
+    crediting it lets one dead read suppress the finding."""
     seeds = common.ssavar_outputs(
         common.global_field_reads(prog, "LatestTimestamp", file=file)
     )
     if not seeds:
         return False
-    # The comparison must be ENFORCED — a `LatestTimestamp > deadline` whose
-    # result is dropped (or sits on an unrelated branch and is never asserted)
-    # enforces no delay. Without this, an attacker silences the detector with
-    # one dead timestamp comparison while leaving the upgrade un-timelocked.
+    # And ENFORCED: a comparison whose result is dropped enforces no delay, so
+    # one dead comparison would silence the detector.
     return common.enforced_op_exists(
         prog, CMP_OPS,
         lambda op: any(common._operand_flows_from_field_var(prog, v, seeds)

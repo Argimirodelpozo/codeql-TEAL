@@ -1,21 +1,10 @@
-"""sec-guide/unsafe-division-order: precision loss from divide-before-multiply.
+"""sec-guide/unsafe-division-order: a multiply whose operand comes directly from a
+divide. AVM integer division truncates toward zero, so ``(a / b) * c`` discards
+the remainder before scaling and loses up to ``c - 1`` units versus the equal
+``(a * c) / b``, which truncates once. A divide by literal ``1`` is excluded.
 
-AVM integer division truncates toward zero, so ``(a / b) * c`` discards the
-remainder of ``a / b`` *before* scaling by ``c`` — losing up to ``c - 1`` units
-versus the mathematically-equal ``(a * c) / b``, which truncates only once, at the
-end. In share-price / exchange-rate / reward math this is a systematic value leak
-(rounding always favours one side), and it is the single most common arithmetic
-bug auditors find in DeFi contracts.
-
-The detector is a def-use shape match on the SSA: a multiply (``*`` / ``b*``)
-whose operand is produced *directly* by a divide (``/`` / ``b/`` / ``divw``). That
-is the divide-before-multiply order; reordering to multiply-first is the standard
-fix. A divide by the literal ``1`` (a no-op that never truncates) is excluded.
-
-This is a correctness/precision smell, not an exploit primitive, so it is reported
-at MEDIUM and is intentionally a "review this expression" signal: a contract that
-*intends* floor-then-scale semantics is rare but legitimate, and the finding points
-the auditor straight at the expression to confirm.
+A precision SMELL, not an exploit primitive — floor-then-scale is rare but
+legitimate, so this is a "review this expression" signal at MEDIUM.
 """
 from __future__ import annotations
 
@@ -44,7 +33,7 @@ class UnsafeDivisionOrderViolation:
 
     @property
     def line(self) -> int:
-        # Structured anchor for machine output; mirrors the mul anchor in pretty()/location.
+        # Must mirror the mul anchor in pretty()/location.
         return self.mul.location.line
 
     def pretty(self) -> str:
@@ -70,7 +59,7 @@ class UnsafeDivisionOrderViolation:
 
 class UnsafeDivisionOrderDetector:
     name: ClassVar[str] = "sec-guide/unsafe-division-order"
-    # Arithmetic precision is contract-kind-agnostic (apps and lsigs both do math).
+    # Arithmetic precision is contract-kind-agnostic.
     applies_to: ClassVar[frozenset] = frozenset({"app", "logicsig"})
     violation_cls: ClassVar[type] = UnsafeDivisionOrderViolation
 
@@ -93,13 +82,10 @@ class UnsafeDivisionOrderDetector:
         return out
 
     def _div_def(self, operand, seen=None) -> Optional[Assignment]:
-        """The divide ``Assignment`` whose result reaches ``operand`` through
-        value-preserving copies, or None. Follows the direct def, the scratch
-        store→load bridge (``store N`` / ``load N`` — how Puya/PyTeal hold an
-        intermediate), and phi joins — but NOT through other arithmetic, since a
-        value that has been combined further is no longer "the divided value
-        being scaled". MAY semantics (any reaching div counts): this is a
-        precision smell and recall matters."""
+        """The divide whose result reaches ``operand`` through value-preserving
+        copies (direct def, scratch store→load, phi), else ``None``. NOT through
+        other arithmetic — a further-combined value is no longer "the divided value
+        being scaled". MAY semantics: recall matters for a precision smell."""
         if seen is None:
             seen = set()
         if operand in seen:
@@ -128,7 +114,8 @@ class UnsafeDivisionOrderDetector:
 
 
 def _divides_by_one(div: Assignment) -> bool:
-    """A divide whose divisor is the literal 1 — a no-op that never truncates, so
-    the multiply order is irrelevant. inputs are top-of-stack first, so the
-    divisor (the second `/` operand) is inputs[0]."""
+    """A divide by literal 1 — a no-op that never truncates.
+
+    HAZARD: inputs are TOP-FIRST, so the divisor (the second ``/`` operand) is
+    ``inputs[0]``, not ``inputs[1]``."""
     return bool(div.inputs) and const_int(div.inputs[0]) == 1

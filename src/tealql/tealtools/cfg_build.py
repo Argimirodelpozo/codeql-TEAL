@@ -1,14 +1,11 @@
 """Derive the control-flow graph -- edges and basic blocks -- from the AST.
 
-For every CFG node ``pred`` and successor ``succ``, emits the triple
-``(pred.startLine, succ.startLine, successorType)``; and, separately, the
-basic-block ranges. Consumes the AST nodes (:mod:`tealql.tealtools.ast.parse`) plus the
-source text (for opcode operands / label names) -- nothing else.
+Emits ``(pred.startLine, succ.startLine, successorType)`` per edge, plus the
+basic-block ranges; node/edge identity is ``(file, startLine)``. Consumes the
+AST nodes and the source text (operands / label names), nothing else.
 
-Only three successor-type strings are ever emitted (confirmed empirically
-across every contract tested), because most completions map to ``NormalSuccessor``
-and the exit completions (``return``/``err``/assert-false) have no matching
-successor type and so produce no edge:
+HAZARD: exactly three successor-type strings exist, and their boolean POLARITY
+is what downstream guard reasoning reads off an edge:
 
 * ``NormalSuccessor``        -- linear fall-through, ``b``/``callsub`` jumps,
                                 ``switch``/``match`` arms (incl. fall-through),
@@ -17,8 +14,8 @@ successor type and so produce no edge:
                                 ``assert``->fall-through.
 * ``BooleanSuccessor(false)`` -- ``bnz``->fall-through, ``bz``->target.
 
-Node / edge identity is ``(file, startLine)`` (the key the rest of the
-Python layer uses too).
+Exit completions (``return``/``err``/assert-false) have no matching successor
+type and so produce no edge.
 """
 from __future__ import annotations
 
@@ -38,9 +35,8 @@ _BNZ = "BnzOpcode"
 _BZ = "BzOpcode"
 _SWITCH = "SwitchOpcode"
 _MATCH = "MatchOpcode"
-# itxn_submit ends a basic block (it's the cross-contract call site, the clean
-# boundary the xcontract supergraph splices call/return edges at) but does NOT
-# end control flow — it keeps its NormalSuccessor continuation edge, like assert.
+# Ends a basic block (the boundary the xcontract supergraph splices call/return
+# edges at) but NOT control flow — it keeps its NormalSuccessor edge, like assert.
 _ITXN_SUBMIT = "InnerTransactionSubmit"
 _LABEL = "Label"
 
@@ -52,8 +48,7 @@ _AUX_STOP = frozenset({_RETURN, _ERR, _RETSUB})
 
 @dataclass
 class _Node:
-    """One program child (an AST line) as the CFG sees it -- a thin internal
-    working type wrapping an :class:`tealql.tealtools.ast.AstNode`."""
+    """One program child (an AST line) as the CFG sees it."""
     file: str
     line: int          # source start line  -> edge identity
     col: int           # source start column-> child ordering tiebreak
@@ -76,11 +71,11 @@ class _Node:
 
 
 def _children(nodes) -> dict[str, list[_Node]]:
-    """Group :class:`tealql.tealtools.ast.AstNode` objects into per-program ordered child
-    lists. The ``Source`` root is dropped (it isn't a child); exact-duplicate
-    locations (a node matching two leaf types, e.g. ``==`` -> IntegerEquals +
-    EqualsComparison) collapse to one child, keeping the first object but
-    preferring a control-flow type. Order is ``(line, col)`` -- source order.
+    """Group AstNodes into per-program child lists ordered by ``(line, col)``.
+
+    The ``Source`` root is dropped; exact-duplicate locations (a node matching
+    two leaf types, e.g. ``==`` -> IntegerEquals + EqualsComparison) collapse to
+    one child, keeping the first object but preferring a control-flow type.
     """
     by_file: dict[str, dict[tuple[int, int], _Node]] = {}
     for node in nodes:
@@ -112,12 +107,10 @@ def _aux_succ(n: _Node, nxt: _Node | None, labels: dict[str, _Node]) -> list[_No
     Branches follow their target(s); ``callsub`` continues at the next line
     (never descends into the callee); ``return``/``err``/``retsub`` stop.
     ``switch``/``match`` follow BOTH their arms and the fall-through -- the arms
-    are sub-local dispatch targets, so a ``retsub`` reached only through a switch
-    arm (a sub that dispatches `load N; switch a b c` to arms that each `retsub`)
-    still belongs to the sub's body. (Following only the fall-through would
-    orphan such arm-retsubs from their entry: their return edge to the
-    caller's continuation was never predicted, and the whole nested-call
-    reachability chain unravelled -- e.g. app_3100133227's interleaved subs.)
+    are sub-local dispatch, so a ``retsub`` reached only through an arm still
+    belongs to the sub's body. Fall-through only would orphan such arm-retsubs
+    from their entry, their return edge to the caller's continuation would never
+    be predicted, and the nested-call reachability chain unravels.
     """
     if n.cls in _AUX_STOP:
         return []
@@ -137,11 +130,10 @@ def _aux_succ(n: _Node, nxt: _Node | None, labels: dict[str, _Node]) -> list[_No
 def build_cfg_edges(nodes) -> list:
     """The CFG edges as ``(pred_AstNode, succ_AstNode, successorType)``.
 
-    Only nodes reachable from the program entry appear: candidate edges are built
-    per the completion rules, then pruned to those whose predecessor is reachable.
-    This drops, e.g., the ``retsub`` of a subroutine only ever reached through a
-    ``callsub`` to a sibling sub that exits via ``return`` (control never flows
-    back).
+    Candidate edges are pruned to those whose predecessor is reachable from the
+    program entry — dropping, e.g., the ``retsub`` of a sub only ever reached
+    through a ``callsub`` to a sibling that exits via ``return`` (control never
+    flows back).
     """
     edges: list = []
     for _file, kids in _children(nodes).items():
@@ -157,17 +149,16 @@ def build_cfg_edges(nodes) -> list:
 def _program_cfg(
     kids: list[_Node],
 ) -> tuple[list[tuple[_Node, _Node, str]], set[int], dict[int, int]]:
-    """Build one program's candidate CFG edges + reachable-node set.
+    """One program's candidate CFG edges + reachable-node set.
 
-    Returns ``(cand, reachable, idx_of)`` where ``cand`` is the list of
-    ``(pred, succ, type)`` candidate edges, ``reachable`` is the set of child
-    indices reachable from the entry (``getChild(0)``), and ``idx_of`` maps
-    node identity to child index. Shared by ``build_cfg_edges`` and
-    ``build_basic_blocks`` so both see exactly the same reachability.
+    ``(cand, reachable, idx_of)``: candidate ``(pred, succ, type)`` edges, the
+    child indices reachable from the entry (``getChild(0)``), and node identity
+    -> child index. Shared by :func:`build_cfg_edges` and
+    :func:`build_basic_blocks` so both see exactly the same reachability.
     """
     cand: list[tuple[_Node, _Node, str]] = []
-    # retsub-return candidates, deferred so reachability can gate them on their
-    # callsub being reachable (see the fixpoint at the end of this function).
+    # retsub-return candidates, deferred so the fixpoint below can gate them on
+    # their callsub being reachable.
     retsub_cand: list[tuple[_Node, _Node, _Node]] = []   # (retsub, cont, callsub)
 
     def emit(pred: _Node, succ: _Node, t: str) -> None:
@@ -176,13 +167,10 @@ def _program_cfg(
     nxt_of: dict[int, _Node | None] = {
         i: (kids[i + 1] if i + 1 < len(kids) else None) for i in range(len(kids))
     }
-    # FIRST definition wins on a duplicate label. The assembler rejects
-    # duplicates outright, so this only arises on adversarial / hand-written
-    # source; the previous dict comprehension silently took the LAST, which
-    # branched past the first definition's code and pruned it as unreachable —
-    # a confidently wrong graph. Taking the first keeps the branch target the
-    # earliest reachable definition (`_program_cfg` callers surface the
-    # duplicate through the parse-diagnostic channel).
+    # FIRST definition wins on a duplicate label (only reachable on adversarial /
+    # hand-written source — the assembler rejects duplicates). Taking the LAST
+    # would branch past the first definition's code and prune it as unreachable:
+    # a confidently wrong graph.
     labels: dict[str, _Node] = {}
     for k in kids:
         if k.cls == _LABEL:
@@ -190,10 +178,9 @@ def _program_cfg(
     idx_of = {id(k): i for i, k in enumerate(kids)}
 
     # --- subroutine-local containment + retsub return prediction -----------
-    # Entries = labels targeted by some callsub. For each, the reflexive-
-    # transitive closure under _aux_succ is its body. A retsub's entrypoint(s)
-    # are the entries whose body contains it; its predicted returns are the
-    # lines after every callsub to those entries.
+    # Entries = labels targeted by some callsub; each one's body is its closure
+    # under _aux_succ. A retsub's predicted returns are the lines after every
+    # callsub to the entries whose body contains it.
     callsubs_to: dict[str, list[_Node]] = {}
     for k in kids:
         if k.cls == _CALLSUB and (tgt := labels.get(k.operand())):
@@ -277,17 +264,15 @@ def _program_cfg(
             emit(n, nxt, NORMAL)
 
     # --- reachability from the entry (getChild(0)) -------------------------
-    # A `retsub` is context-INSENSITIVE: it fans a return edge out to EVERY
-    # caller's continuation. When a callsub is itself unreachable (dead code),
-    # its `callsub -> callee` edge is pruned (unreachable predecessor) but the
+    # HAZARD: a `retsub` is context-INSENSITIVE -- it fans a return edge out to
+    # EVERY caller's continuation. When a callsub is itself unreachable, its
+    # `callsub -> callee` edge is pruned (unreachable predecessor) but the
     # matching `retsub -> continuation` edge would survive (the retsub IS
-    # reachable, called from live sites) -- leaving that continuation reachable
-    # only via a return-with-no-reachable-call. That phantom inflates the
-    # callee's return count past its reachable call count and corrupts the lift
-    # (e.g. large_box_StructMultipleArrayUInt64: a dead box_update call chain
-    # whose blocks resim to an empty stack, truncating a sibling callsub's
-    # args). Keep a retsub-return live only while its callsub is reachable, to a
-    # fixpoint: dropping one can make a downstream callsub in a dead call chain
+    # reachable, from live sites), leaving that continuation reachable only via a
+    # return-with-no-reachable-call. That phantom inflates the callee's return
+    # count past its reachable call count and corrupts the lift. So keep a
+    # retsub-return live only while its callsub is reachable, to a fixpoint:
+    # dropping one can make a downstream callsub in a dead call chain
     # unreachable, cascading until the whole dead region is gone.
     def _reach(live_retsub: list[tuple[_Node, _Node, _Node]]) -> set[int]:
         adj: dict[int, list[_Node]] = {}
@@ -320,8 +305,7 @@ def _program_cfg(
     return cand, reachable, idx_of
 
 
-# Opcode classes that END a codeblock: any
-# branch, any contract-exit, or a node immediately followed by a label.
+# Opcode classes that END a codeblock (as does any node followed by a label).
 _ENDS_CLASSES = frozenset(
     {_B, _CALLSUB, _RETSUB, _BZ, _BNZ, _SWITCH, _MATCH, _RETURN, _ERR, _ASSERT,
      _ITXN_SUBMIT}
@@ -329,15 +313,12 @@ _ENDS_CLASSES = frozenset(
 
 
 def build_basic_blocks(nodes) -> list:
-    """Basic blocks as ``(AstNode, bbFirstLine, bbLastLine)`` -- one per reachable
-    CFG node.
+    """Basic blocks as ``(AstNode, bbFirstLine, bbLastLine)``, one per reachable node.
 
-    In TEAL a basic block coincides exactly with a *codeblock* (the maximal
+    In TEAL a basic block coincides exactly with a codeblock (the maximal
     straight-line region between labels / branch boundaries): every join, branch
-    successor and boolean-edge target is already a codeblock start (branch targets
-    are labels; bz/bnz/assert/switch fall-throughs and retsub-return targets all
-    follow a block-ender). So the partition is structural; we only intersect it
-    with CFG reachability (a node has a basic block only if reachable).
+    successor and boolean-edge target already starts one. So the partition is
+    structural and is only intersected with CFG reachability.
     """
     rows: list = []
     for _file, kids in _children(nodes).items():

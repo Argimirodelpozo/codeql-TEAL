@@ -1,7 +1,5 @@
 """Sender==creator and OnCompletion action guards, read off path predicates
-(switch/match dispatch shapes included).
-
-Split out of ``common.py``; import via :mod:`tealql.security.common`.
+(switch/match dispatch included). Import via :mod:`tealql.security.common`.
 """
 from __future__ import annotations
 
@@ -63,33 +61,13 @@ _STATE_READ_OPS = frozenset({
 
 
 def _is_trusted_address(var) -> bool:
-    """``var`` holds an address the caller cannot choose, so pinning
-    ``txn Sender`` against it is a real authorisation check.
+    """``var`` holds an address the caller cannot choose, so pinning ``txn Sender``
+    against it is a real authorisation check: ``global CreatorAddress``, an ``addr``
+    literal, or an ``app_global_get``/``app_local_get`` read (rotatable admin).
 
-    Three sources qualify:
-
-    * ``global CreatorAddress`` — immutable, the original recognised shape.
-    * an ``addr`` literal — hardcoded in the program.
-    * an ``app_global_get`` / ``app_local_get`` read — an admin address the
-      CONTRACT stores. This is how real Algorand apps do rotatable admin, since
-      ``global CreatorAddress`` cannot be changed, and recognising only the
-      immutable form is why `unprotected-updatable` fired on 82% of distinct
-      mainnet contracts. A v2 app in the probe corpus is exactly this shape::
-
-          label3:                       # OnCompletion == UpdateApplication
-              txn Sender
-              bytec_3                   # the global key, literally "Creator"
-              app_global_get
-              ==
-              bnz ok
-              err                       # everyone else is rejected
-
-    What must NOT qualify is anything the caller supplies —
-    ``txna ApplicationArgs k``, ``txn Accounts k``, a group sibling's
-    ``Sender`` — since `Sender == <attacker's own value>` authorises nothing.
-    Those are exactly the reads :func:`avm.attacker_input_label` names, so the
-    trust line is drawn against that one table rather than a second list that
-    can drift from it."""
+    HAZARD: anything the CALLER supplies must NOT qualify — ``Sender == <attacker's
+    own value>`` authorises nothing. The trust line is drawn against the single
+    :func:`avm.attacker_input_label` table so it cannot drift from a second list."""
     from tealql.tealtools.avm import attacker_input_label
     a = getattr(var, "defined_by", None)
     if a is None:
@@ -108,10 +86,7 @@ def _is_trusted_address(var) -> bool:
 
 
 def _is_sender_eq_creator(cmp: Assignment) -> bool:
-    """``cmp`` pins ``txn Sender`` to an address the caller cannot choose.
-
-    Named for the original creator-only shape it recognised; it now accepts any
-    trusted address source (see :func:`_is_trusted_address`)."""
+    """``cmp`` pins ``txn Sender`` to any :func:`_is_trusted_address`, not just creator."""
     if cmp.op != "==" or len(cmp.inputs) != 2:
         return False
     a0, a1 = cmp.inputs
@@ -129,18 +104,12 @@ def sender_creator_guard_dominates(
     pp: PathPredicateAnalysis,
     bb: BasicBlock,
 ) -> bool:
-    """``bb`` is reached only along paths where ``txn Sender == global
-    CreatorAddress`` was checked truthy.
-
-    We read this off path predicates: if ``bb``'s path predicates
-    include ``(V, "nonzero")`` for some SSAVar ``V`` produced by an
-    ``==`` op consuming ``txn Sender`` and ``global CreatorAddress``,
-    the guard dominates."""
+    """``bb`` is reached only along paths where a sender/trusted-address ``==`` was
+    checked truthy, i.e. its entry predicates carry ``(V, "nonzero")`` for that ``V``."""
     for cond in pp.predicates_at(bb.file, bb.first_line):
         if cond.kind != "nonzero":
             continue
-        # See through a scratch round-trip / value-preserving phi to the
-        # comparison the predicate really carries.
+        # See through a scratch round-trip / value-preserving phi to the real cmp.
         v = resolve_through_copies(prog, cond.value)
         if not isinstance(v, SSAVar) or v.defined_by is None:
             continue
@@ -150,13 +119,10 @@ def sender_creator_guard_dominates(
 
 
 def _creator_enforcing_bbs(prog: SSAProgram) -> set:
-    """Blocks that ENFORCE ``txn Sender == global CreatorAddress`` — the block
-    holding an ``assert`` (or a branch to a rejection exit) whose condition is
-    that comparison.
+    """Blocks holding an ``assert`` (or a branch to a rejection exit) on a sender guard.
 
-    Needed because path predicates describe what holds on ENTRY to a block, so
-    the block performing the check never satisfies
-    :func:`sender_creator_guard_dominates` about itself."""
+    HAZARD: path predicates describe a block's ENTRY state, so the block PERFORMING
+    the check never satisfies :func:`sender_creator_guard_dominates` about itself."""
     from ._enforcement import _label_to_bb_first_line, branch_gates_rejection
     label_lines = _label_to_bb_first_line(prog)
     out: set = set()
@@ -181,41 +147,20 @@ def sender_creator_guard_covers_action(
     exit_bb: BasicBlock,
     action_int: int,
 ) -> bool:
-    """Every path reaching ``exit_bb`` **with ``OnCompletion == action_int``**
-    was creator-checked.
+    """Every path reaching ``exit_bb`` **with ``OnCompletion == action_int``** was
+    creator-checked — a backward must-reach walk closing each path on either
+    "creator-checked" or "predicates prove ``OnCompletion != action_int``".
 
-    :func:`sender_creator_guard_dominates` asks the same question of the exit
-    block alone, which is too strong the moment the guarded branch REJOINS the
-    unguarded one:
-
-    .. code-block:: text
-
-        txn OnCompletion; int UpdateApplication; ==; bz done
-        txn Sender; global CreatorAddress; ==; assert   # only the Update path
-        done:                                           # ...and both paths
-        int 1; return                                   #    share this exit
-
-    Path predicates at a join are the INTERSECTION of the incoming paths, so the
-    creator check is invisible at ``done`` and the contract reads "updatable by
-    anyone" — on 82% of distinct real mainnet contracts, at HIGH severity. A
-    shared return epilogue is what every optimising compiler emits (this repo
-    lifts one specially, see ``to_puya_ir._duplicate_shared_epilogues``); the
-    same guard given its own exit block was recognised fine.
-
-    So walk BACKWARD from the exit instead and close each path on either
-    condition that makes it harmless: it was creator-checked, or its predicates
-    already prove ``OnCompletion != action_int`` (so it is not an Update path at
-    all). Reaching a program entry with neither witnesses a genuinely unguarded
-    Update path. Same must-reach shape as
-    ``_field_protection._all_entry_paths_cross``, with the action-consistency
-    escape added."""
+    HAZARD: do NOT substitute :func:`sender_creator_guard_dominates` on the exit
+    block. Path predicates at a join are the INTERSECTION of incoming paths, so a
+    guarded branch REJOINING an unguarded one (the shared return epilogue every
+    optimising compiler emits) hides the check and reads as "anyone can update"."""
     enforcing = _creator_enforcing_bbs(prog)
 
     def _closed(bb: BasicBlock) -> bool:
-        # Three ways a path stops mattering: the check already held on entry,
-        # this very block performs it (path predicates describe a block's ENTRY
-        # state, so the block CONTAINING the `assert` is not covered by the
-        # first test), or the block cannot be on an ``action_int`` path at all.
+        # Three ways a path stops mattering: this very block performs the check
+        # (entry-state predicates miss it), the check already held on entry, or
+        # the block cannot be on an ``action_int`` path at all.
         return (bb in enforcing
                 or sender_creator_guard_dominates(prog, pp, bb)
                 or approval_exit_guarded_for_action(prog, pp, bb, action_int))
@@ -223,12 +168,10 @@ def sender_creator_guard_covers_action(
     def _edge_excludes_action(pred: BasicBlock, succ: BasicBlock) -> bool:
         """The EDGE ``pred → succ`` proves this is not an ``action_int`` path.
 
-        Reasoning per block instead of per edge is what makes the classic
-        one-branch dispatch look unguarded: ``OC == Update; bz done`` leaves an
-        entry block that is neither creator-checked nor action-excluded, yet
-        BOTH its outgoing edges are fine — the taken edge carries ``OC !=
-        Update`` and the fall-through leads into the guard. Blocks cannot
-        express that; edges can."""
+        HAZARD: this must stay per-EDGE. ``OC == Update; bz done`` leaves an entry
+        block that is neither creator-checked nor action-excluded even though BOTH
+        its out-edges are fine (one carries ``OC != Update``, the other leads into
+        the guard) — reasoning per block reports that dispatch as unguarded."""
         try:
             conds = pp._edge_predicates(pred, succ)
         except Exception:
@@ -237,7 +180,7 @@ def sender_creator_guard_covers_action(
 
     if _closed(exit_bb):
         return True
-    # Backward over EDGES. An edge is closed when its predecessor is guarded /
+    # Backward over EDGES: an edge is closed when its predecessor is guarded /
     # action-excluded, or the edge itself excludes the action.
     visited: set = set()
     stack: list = [exit_bb]
@@ -272,10 +215,8 @@ def _is_oncompletion_var(var) -> bool:
 
 
 def _oncompletion_eq_const_value(cmp: Assignment) -> Optional[int]:
-    """If ``cmp`` is ``txn OnCompletion (==/!=) <const_K>`` (operands in
-    either order), return ``K``. Otherwise ``None``. Used by the
-    extended OC-guard analysis to recognise ``OC == K`` (or ``!= K``)
-    for any ``K``, not just for the action under test."""
+    """``K`` if ``cmp`` is ``txn OnCompletion (==/!=) <const_K>`` (either operand
+    order), for any ``K`` — not just the action under test. Else ``None``."""
     if cmp.op not in ("==", "!=") or len(cmp.inputs) != 2:
         return None
     a0, a1 = cmp.inputs
@@ -294,46 +235,11 @@ def approval_exit_guarded_for_action(
     exit_bb: BasicBlock,
     action_int: int,
 ) -> bool:
-    """Every approving path to ``exit_bb`` proves ``OnCompletion !=
-    action_int``.
+    """Every approving path to ``exit_bb`` proves ``OnCompletion != action_int``
+    (guard shapes enumerated in :func:`predicates_exclude_action`).
 
-    Recognised guard shapes (broader than a plain OnCompletion equality
-    guard):
-
-    1. **Direct equality / inequality** with the action under test:
-       - ``V = OC == action_int``, on a path where V is false → guarded.
-       - ``V = OC != action_int``, on a path where V is true → guarded.
-
-    2. **Equality with some other constant K**:
-       - ``V = OC == K``, on a path where V is true → ``OC == K`` →
-         ``OC != action_int`` whenever ``K != action_int``. This is what
-         catches ``bnz`` dispatch tables (``OC == 0; bnz handle_noop``
-         → at handle_noop, ``OC == 0`` → guarded against any non-0 action).
-       - Symmetric: ``V = OC != K``, V is false → ``OC == K`` → guarded
-         when ``K != action_int``.
-
-    3. **Switch dispatch on OnCompletion** (``txn OnCompletion; switch
-       handler_0 handler_1 ...``):
-       - On a target edge: predicate ``(OC, "eq", (Const(int, str(K)),))``
-         → ``OC == K`` → guarded when ``K != action``.
-       - On the fall-through edge: ``(OC, "not_in_range", (lo, hi))``
-         → ``OC ∉ [lo, hi)``. Guarded when ``action ∈ [lo, hi)`` (the
-         action would have routed to a target, but execution reached
-         the fall-through, so OC isn't action).
-
-    4. **Match dispatch on OnCompletion** (``... candidates ...; txn
-       OnCompletion; match h0 h1 ...``):
-       - On a target edge: predicate ``(OC, "eq", (candidate,))`` →
-         ``OC == candidate``. Guarded when the candidate resolves to a
-         const ``K != action``.
-       - On the fall-through edge: ``(OC, "neq_all", (c0, c1, …))``.
-         Guarded when any candidate resolves to ``action`` (the action
-         would have matched but didn't, so OC isn't action).
-
-    A plain OnCompletion equality guard only models case 1; everything
-    else is a deliberate enhancement (real Algorand routers / Puya
-    output use ``match`` dispatch on OC). This is deliberately tight —
-    contracts that actually route OC=K to err are not flagged here."""
+    Deliberately tight: a contract that routes ``OC == K`` to ``err`` is treated as
+    guarded, so this under-reports rather than emitting a wrong verdict."""
     return predicates_exclude_action(
         prog, pp.predicates_at(exit_bb.file, exit_bb.first_line), action_int)
 
@@ -343,24 +249,12 @@ _EXISTING_APP_ACTIONS = frozenset({ONC_UPDATE_APPLICATION, ONC_DELETE_APPLICATIO
 
 
 def _is_app_creation_path(prog: SSAProgram, conds) -> bool:
-    """``conds`` proves ``txn ApplicationID == 0`` — the transaction is CREATING
-    an application rather than calling the deployed one.
+    """``conds`` proves ``txn ApplicationID == 0`` — the txn is CREATING an app.
 
-    Every router opens with this dispatch::
-
-        txn ApplicationID; intc_0 // 0; ==; bnz create
-
-    and the create handler does not inspect ``OnCompletion``, so an approving
-    exit there IS reachable with ``OnCompletion == UpdateApplication`` as far as
-    control flow goes. It still cannot be the vulnerability the lifecycle
-    detectors claim: with ``ApplicationID == 0`` the caller is creating a NEW
-    application, so an update or delete applies to the app being created in that
-    same transaction — one the caller made and already controls. The deployed
-    app is never touched, and no stranger gains anything.
-
-    Note this holds regardless of whether the protocol's well-formedness rules
-    even permit a create with those OnCompletion values: the claim fails on the
-    security argument alone, so it needs no ruling from a node."""
+    Deliberate FP suppression: a create handler does not inspect ``OnCompletion``,
+    so its approving exit IS control-flow-reachable with Update/Delete, but the
+    action then applies to the brand-new app the caller is creating and already
+    controls. The deployed app is never touched."""
     for cond in conds:
         if cond.kind != "eq" or not cond.args:
             continue
@@ -371,38 +265,35 @@ def _is_app_creation_path(prog: SSAProgram, conds) -> bool:
 
 
 def predicates_exclude_action(prog: SSAProgram, conds, action_int: int) -> bool:
-    """``conds`` (a predicate set from anywhere — a block's entry state or a
-    single CFG EDGE) proves the path cannot perform ``action_int``.
+    """``conds`` — a block's entry state or a single CFG EDGE — proves the path
+    cannot perform ``action_int``. Recognises direct ``OC ==/!= K`` comparisons,
+    truth constraints on the OC field var, and switch/match dispatch edges.
 
-    Factored out of :func:`approval_exit_guarded_for_action` so the same case
-    analysis can be applied per-edge: at a join block the predicate set is the
-    INTERSECTION over incoming paths, which loses exactly the branch outcome
-    that says whether a given path was an ``action_int`` path at all."""
+    Takes a raw predicate set (not a block) so it can be applied per-EDGE: at a
+    join the set is the INTERSECTION over incoming paths, which loses exactly the
+    branch outcome saying whether a path was an ``action_int`` path at all."""
     # An app-CREATION path cannot update or delete the deployed app, whatever
-    # its OnCompletion says -- see _is_app_creation_path.
+    # its OnCompletion says — see _is_app_creation_path.
     if action_int in _EXISTING_APP_ACTIONS and _is_app_creation_path(prog, conds):
         return True
     for cond in conds:
-        # See through a scratch round-trip / value-preserving phi (a predicate
-        # recorded on a `load` output or a phi hid every guard behind one).
+        # See through a scratch round-trip / value-preserving phi, or a predicate
+        # recorded on a `load` output hides every guard behind one.
         v = resolve_through_copies(prog, cond.value)
 
-        # Case 0: a DIRECT truth constraint on the OnCompletion field var itself.
-        # `txn OnCompletion; !; assert` (the NoOp-only idiom Puya emits, often
-        # folded into `(OC == 0) && …`) leaves `(OC, "zero")` — OC == 0 — at the
-        # guarded exit; `txn OnCompletion; assert` leaves `(OC, "nonzero")`.
-        #   OC == 0  ⇒ guarded against any non-zero action (DeleteApplication=5,
-        #              UpdateApplication=4, …).
-        #   OC != 0  ⇒ guarded against the NoOp action (0) only (it could still be
-        #              any of 1..5, so it does NOT guard Delete/Update).
+        # Case 0: a DIRECT truth constraint on the OnCompletion field var. The
+        # asymmetry is load-bearing:
+        #   OC == 0 ("zero", from `txn OnCompletion; !; assert`) ⇒ guarded against
+        #           every non-zero action.
+        #   OC != 0 ("nonzero")                                  ⇒ guards NoOp ONLY;
+        #           OC may still be any of 1..5, so NOT Delete/Update.
         if _is_oncompletion_var(v):
             if cond.kind == "zero" and action_int != 0:
                 return True
             if cond.kind == "nonzero" and action_int == 0:
                 return True
 
-        # Case 3 + 4: switch / match edge predicates against an
-        # OnCompletion-typed key.
+        # switch / match edge predicates against an OnCompletion-typed key.
         if cond.kind == "eq" and _is_oncompletion_var(v) and cond.args:
             k = const_int(cond.args[0])
             if k is not None and k != action_int:
@@ -416,8 +307,7 @@ def predicates_exclude_action(prog: SSAProgram, conds, action_int: int) -> bool:
                 if const_int(cand) == action_int:
                     return True
 
-        # Cases 1 + 2: SSA-level recognition of ``V = OC ==/!= K``
-        # whose truth/falsity is captured by the path predicate.
+        # SSA-level ``V = OC ==/!= K`` whose truth is captured by the predicate.
         if isinstance(v, SSAVar) and v.defined_by is not None:
             a = v.defined_by
             if a.op in ("==", "!="):

@@ -1,9 +1,5 @@
-"""Shared Graphviz DOT primitives.
-
-String escaping + a render-to-SVG helper, used by every module that emits
-DOT (:mod:`tealql.tealtools.viz`, :class:`tealql.tealtools.ssa.SSAProgram`,
-:mod:`tealql.tealtools.cfg`, ...). Depends only on the stdlib + a ``dot`` binary
-on PATH at render time.
+"""Shared Graphviz DOT primitives — string escaping plus a render-to-SVG helper
+(needs a ``dot`` binary on PATH at render time).
 """
 from __future__ import annotations
 
@@ -18,28 +14,26 @@ def escape(s: str) -> str:
 
 
 def sanitize_id(s: str) -> str:
-    """Turn a source path into a DOT-safe node-id fragment (``/``, ``.``, ``-``
-    -> ``_``). The shared core of every emitter's BB-id builder."""
+    """Turn a source path into a DOT-safe node-id fragment (``/``, ``.``, ``-`` ->
+    ``_``)."""
     return s.replace("/", "_").replace(".", "_").replace("-", "_")
 
 
 def header(name: str, *, rankdir: str = "TB",
            node_attrs: str = 'shape=box, fontname="monospace"') -> list[str]:
-    """The standard DOT preamble lines for a node-box digraph: ``digraph
-    <name> {``, the ``rankdir``, and the default ``node [...]`` attributes."""
+    """The standard DOT preamble lines for a node-box digraph."""
     return [f"digraph {name} {{", f"  rankdir={rankdir};",
             f"  node [{node_attrs}];"]
 
 
 def bb_label(head: str, lines: list[str]) -> str:
-    """A basic-block DOT label: just ``head`` (escaped) when there are no body
-    ``lines``, else ``head`` followed by each line, ``\\l``-joined (DOT's
-    left-align) and escaped with a trailing ``\\l``."""
+    """A basic-block DOT label: ``head`` plus each body line, ``\\l``-joined (DOT's
+    left-align)."""
     if not lines:
         return escape(head)
-    # Escape each part FIRST, then join with the literal ``\l`` — escaping the
-    # already-joined string would double the separators' backslashes (Graphviz
-    # then renders literal "\l" text instead of left-aligned line breaks).
+    # Escape each part FIRST, then join with the literal ``\l``: escaping the
+    # joined string doubles the separators' backslashes, and Graphviz then
+    # renders literal "\l" text instead of left-aligned breaks.
     return "\\l".join(escape(p) for p in [head, *lines]) + "\\l"
 
 
@@ -62,8 +56,8 @@ class SvgResult:
 
 
 def render(dot_source: str, *, format: str = "svg", engine: str = "dot"):
-    """Pipe ``dot_source`` through Graphviz (``engine``), returning an
-    :class:`SvgResult` for ``svg`` or the raw bytes for other formats."""
+    """Pipe ``dot_source`` through Graphviz, returning an :class:`SvgResult` for
+    ``svg`` or the raw bytes for other formats."""
     res = subprocess.run(
         [engine, f"-T{format}"],
         input=dot_source.encode("utf-8"),

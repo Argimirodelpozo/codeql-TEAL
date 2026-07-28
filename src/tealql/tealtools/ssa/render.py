@@ -1,12 +1,6 @@
-"""Rendering / view-construction for SSAProgram.
-
-The textual functional dump (:func:`functional` / :func:`functional_by_block`),
-the data-dependency and CFG view graphs (:func:`data_graph` / :func:`cfg`),
-and the Graphviz DOT emitter (:func:`to_dot`) for a reconstructed program.
-
-Bridged from the same-named ``SSAProgram`` methods so ``prog.functional()``
-etc. keep working unchanged; ``draw`` / ``print_functional`` stay on the class
-as thin composers over these.
+"""Rendering / view-construction for SSAProgram — the functional text dump, the
+data-dependency and CFG view graphs, and the Graphviz DOT emitter, each bridged
+from the same-named ``SSAProgram`` method.
 """
 from __future__ import annotations
 
@@ -30,9 +24,8 @@ def functional(
     propagate_consts: bool = True,
     show_ranges: bool = False,
 ) -> str:
-    # Merge labels and assignments by (file, line). Labels carry no SSA effect,
-    # so the kind tiebreaker (0 label, 1 assignment) sorts labels above
-    # assignments at the same line — matching the source layout.
+    # Merge labels and assignments by (file, line); the kind tiebreaker (0 label,
+    # 1 assignment) puts a label above an assignment sharing its line, as in source.
     items: list[tuple] = []
     for lbl_file, lbl_line, lbl_code in prog.labels:
         if file is not None and lbl_file != file:
@@ -64,8 +57,7 @@ def functional_by_block(
     propagate_consts: bool = True,
     show_ranges: bool = False,
 ) -> str:
-    """Same as :func:`functional` but groups assignments by BB with a header
-    line and predecessor/successor summary per block."""
+    """:func:`functional`, grouped per BB under a header with preds/succs."""
     blocks = sorted(
         (bb for bb in prog.blocks.values() if file is None or bb.file == file),
         key=lambda bb: (bb.file, bb.first_line),
@@ -87,8 +79,7 @@ def functional_by_block(
 
 
 def data_graph(prog: "SSAProgram") -> nx.MultiDiGraph:
-    """Data-dependency graph over SSA objects (Assignment / SSAVar / Phi)
-    with def / use / phi_in edges."""
+    """Data-dependency graph over Assignment / SSAVar / Phi with def/use/phi_in edges."""
     h = nx.MultiDiGraph()
     for a in prog.assignments:
         h.add_node(a)
@@ -129,8 +120,8 @@ def to_dot(
     rankdir: str = "TB",
     max_lines_per_bb: int = 80,
 ) -> str:
-    """Emit Graphviz DOT: one rounded box per BB, labeled with entry phis +
-    functional assignments; edges are pred → succ."""
+    """Graphviz DOT: one rounded box per BB (entry phis + functional assignments),
+    edges pred → succ."""
 
     def _bb_id(bb: BasicBlock) -> str:
         return f'"BB_{bb.file}_{bb.first_line}_{bb.last_line}"'

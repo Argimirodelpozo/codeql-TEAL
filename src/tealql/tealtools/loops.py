@@ -1,36 +1,9 @@
-"""SCC-based loop detection and per-loop static summaries.
+"""SCC-based loop detection: every cyclic region of a :class:`SSAProgram`'s CFG,
+the nesting tree over them, and each loop's back-edges / body DAG.
 
-Consumes :class:`SSAProgram` and produces a :class:`LoopForest` — every
-strongly-connected component containing a cycle, plus the inclusion
-(nesting) tree among them, plus per-loop body-DAG summaries.
-
-Why SCCs and not natural loops:
-The natural-loop algorithm (back-edge + dominator) only recognises
-*reducible* CFGs. Real TEAL output, especially after compiler
-optimisations, can produce SCCs that aren't single-header (irreducible
-control flow, multi-entry cycles, etc.). Using SCCs directly lets us
-treat every cycle region uniformly: collapse it into a per-iteration
-summary regardless of how it was structured.
-
-What each :class:`Loop` carries:
-
-- ``nodes``: the SCC's BBs.
-- ``entries``: BBs in the SCC with at least one predecessor outside the
-  SCC — these are the points control can flow *into* the loop. Their
-  count tells you whether the loop is single-header (reducible-style)
-  or multi-header (irreducible).
-- ``back_edges``: edges within the SCC that, if removed, leave the
-  remaining within-SCC edges acyclic (the "body DAG"). Computed by
-  removing one edge per cycle until the result is acyclic — networkx's
-  :func:`feedback_arc_set` semantics. We use a deterministic greedy:
-  for each entry, walk the SCC in topological order using the body DAG;
-  edges that would form a cycle become back-edges.
-- ``body_dag_edges``: the within-SCC edges that are NOT back-edges. A
-  DAG over ``nodes``.
-
-The :class:`LoopForest` exposes inside-out iteration so consumers can
-summarise innermost loops first (their summary becomes a compound op
-attributed to the loop's entry node in the outer-loop body DAG).
+SCCs rather than natural loops (back-edge + dominator), because compiler-emitted
+TEAL is regularly irreducible — multi-entry cycles a dominator-based finder
+misses entirely, leaving a real loop summarised as straight-line code.
 """
 from __future__ import annotations
 
@@ -47,13 +20,12 @@ class Loop:
     """One cycle region (a non-trivial SCC)."""
 
     nodes: set[BasicBlock]
-    entries: set[BasicBlock]
-    back_edges: set[tuple[BasicBlock, BasicBlock]]
-    body_dag_edges: set[tuple[BasicBlock, BasicBlock]]
+    entries: set[BasicBlock]                            # reached from OUTSIDE the SCC
+    back_edges: set[tuple[BasicBlock, BasicBlock]]      # cut these -> acyclic
+    body_dag_edges: set[tuple[BasicBlock, BasicBlock]]  # the remaining in-SCC edges
 
     def exits(self) -> set[BasicBlock]:
-        """BBs outside ``nodes`` that are direct successors of some
-        body BB — where execution lands when the loop terminates."""
+        """BBs outside the loop that a body BB branches to."""
         out: set[BasicBlock] = set()
         for bb in self.nodes:
             for s in bb.successors:
@@ -62,8 +34,7 @@ class Loop:
         return out
 
     def is_nested_inside(self, other: "Loop") -> bool:
-        """True when this loop's nodes are a strict subset of
-        ``other``'s — i.e. this loop sits inside that one."""
+        """True when this loop's nodes are a strict subset of ``other``'s."""
         return self is not other and self.nodes < other.nodes
 
     def is_reducible(self) -> bool:
@@ -82,9 +53,8 @@ class LoopForest:
     innermost: dict[BasicBlock, int]
 
     def innermost_first(self) -> Iterator[Loop]:
-        """Iterate loops innermost-first (leaves of nesting tree
-        before their ancestors). Order within a level is by
-        construction order."""
+        """Loops innermost-first — nesting leaves before their ancestors,
+        construction order within a level."""
         # Order by depth descending: a loop's depth = chain length to root.
         depth: dict[int, int] = {}
 
@@ -106,33 +76,24 @@ class LoopForest:
 
 
 def find_loops(prog: SSAProgram, *, graph: Optional[nx.DiGraph] = None) -> LoopForest:
-    """Build a :class:`LoopForest` for ``prog``'s CFG. Uses networkx
-    SCC + greedy back-edge selection (no dominators needed, so this
-    handles irreducible regions too).
+    """Build a :class:`LoopForest` for ``prog``'s CFG (SCC + greedy back-edge
+    selection; no dominators, so irreducible regions work).
 
-    Pass ``graph`` to run loop detection on an alternative CFG view
-    (e.g. with interprocedural ``callsub``/``retsub`` edges removed,
-    so cross-sub recursion / mutual-call cycles aren't misclassified
-    as loops). Must be a BB→BB :class:`nx.DiGraph` over ``prog.blocks``."""
+    ``graph`` swaps in another CFG view — a BB→BB :class:`nx.DiGraph` over
+    ``prog.blocks``, e.g. with ``callsub``/``retsub`` edges cut so cross-sub
+    recursion isn't misread as a loop."""
     g = graph if graph is not None else _build_cfg_graph(prog)
     loops: list[Loop] = []
     parents: dict[int, Optional[int]] = {}
 
     def _collect(sub: nx.DiGraph, parent: Optional[int]) -> None:
-        """Find the loops in ``sub``, then RECURSE into each one's body.
+        """Find the loops in ``sub``, then recurse into each one's body.
 
-        ``nx.strongly_connected_components`` returns a PARTITION — maximal,
-        pairwise-disjoint components — so one pass can never discover a nested
-        loop: ``for i: for j:`` comes back as a single SCC containing both.
-        The nesting tree built by comparing whole node-sets was therefore
-        always all-``None`` and ``is_nested_inside`` could never be true. That
-        cost real precision: the inner loop's own repetition was invisible, so
-        a nested body was summarised as if it ran once per outer iteration.
-
-        Removing a loop's back edges breaks its outermost cycle; any SCC that
-        SURVIVES inside the remainder is a genuinely nested loop, so recursing
-        yields the standard loop-nest forest.
-        """
+        HAZARD: SCCs are a PARTITION, so one pass can never see a nested loop
+        (``for i: for j:`` returns as one SCC) and the inner repetition goes
+        invisible — a nested body then folds as one pass per outer iteration,
+        an UNDER-count. Cutting this loop's back edges leaves any genuinely
+        nested loop as a surviving SCC."""
         for scc_nodes in nx.strongly_connected_components(sub):
             if len(scc_nodes) == 1:
                 (only,) = scc_nodes
@@ -140,15 +101,13 @@ def find_loops(prog: SSAProgram, *, graph: Optional[nx.DiGraph] = None) -> LoopF
                 if not sub.has_edge(only, only):
                     continue
             scc = set(scc_nodes)
-            # Entries are relative to THIS subgraph: a nested loop's entry is
-            # reached from elsewhere in the enclosing body, not from outside
-            # the whole routine.
+            # Entries are relative to THIS subgraph: a nested loop is entered
+            # from the enclosing body, not from outside the whole routine.
             entries = {n for n in scc
                        if any(p not in scc for p in sub.predecessors(n))}
             if not entries:
-                # No entry from outside the SCC (an unreachable cycle, or the
-                # whole subgraph IS the cycle). Pick a deterministic node so
-                # back-edge selection has somewhere to start.
+                # Unreachable cycle, or the subgraph IS the cycle. Pick
+                # deterministically so back-edge selection has a start.
                 entries = {min(scc, key=_bb_sort_key)}
             back_edges, body_dag = _select_back_edges(sub, scc, entries)
             idx = len(loops)
@@ -161,12 +120,10 @@ def find_loops(prog: SSAProgram, *, graph: Optional[nx.DiGraph] = None) -> LoopF
             parents[idx] = parent
             if not back_edges:
                 continue                  # nothing removed -> no further nesting
-            # Cut ONLY the edges that close THIS loop (those returning to one
-            # of its headers). ``_select_back_edges`` reports every DFS back
-            # edge in the SCC, including an inner loop's own — removing all of
-            # them would break the nested cycle too and hide it. Falling back
-            # to the full set keeps termination guaranteed when no edge
-            # targets a header.
+            # Cut ONLY the edges closing THIS loop (those returning to a
+            # header): ``_select_back_edges`` reports an inner loop's back edges
+            # too, and cutting those would break the nested cycle and hide it.
+            # Full-set fallback keeps termination when no edge targets a header.
             header_edges = [(u, v) for (u, v) in back_edges if v in entries]
             inner = sub.subgraph(scc).copy()
             inner.remove_edges_from(header_edges or back_edges)
@@ -196,8 +153,8 @@ def _build_cfg_graph(prog: SSAProgram) -> nx.DiGraph:
 
 
 def _bb_sort_key(bb: BasicBlock) -> tuple:
-    """Stable cross-run sort key for a basic block: (file, first-line).
-    Falls back to id() for BBs with no assignments (defensive)."""
+    """Stable cross-run sort key ``(file, first-line)``, ``id()`` for an empty
+    BB (defensive)."""
     if bb.assignments:
         loc = bb.assignments[0].location
         return (loc.file, loc.line)
@@ -209,24 +166,19 @@ def _select_back_edges(
     scc: set[BasicBlock],
     entries: set[BasicBlock],
 ) -> tuple[set[tuple[BasicBlock, BasicBlock]], set[tuple[BasicBlock, BasicBlock]]]:
-    """Pick a set of edges to designate as back-edges such that the
-    remaining within-SCC edges form a DAG.
-
-    Strategy: DFS from each entry through SCC-internal edges, marking
-    edges that close a cycle (target on the DFS stack) as back-edges.
-    Iteration order uses :func:`_bb_sort_key` (file + first-line) so
-    results are stable across runs.
-    """
+    """Designate back-edges — DFS from each entry, marking any edge whose target
+    is already on the stack — so the remaining within-SCC edges form a DAG;
+    :func:`_bb_sort_key` ordering keeps the choice stable across runs."""
     sub = full_graph.subgraph(scc).copy()
     back: set[tuple[BasicBlock, BasicBlock]] = set()
 
-    # Tarjan-style DFS marking back-edges.
+    # white = unvisited, gray = ON the DFS stack (an edge into gray closes a
+    # cycle, i.e. is a back-edge), black = finished.
     color: dict[BasicBlock, str] = {n: "white" for n in scc}
 
     def dfs(root: BasicBlock) -> None:
-        """Iterative Tarjan-style DFS. Explicit stack rather than recursion:
-        a ~1000-block chain (large flattened mainnet programs are exactly
-        that) exceeded Python's recursion limit and crashed the analysis."""
+        """Iterative DFS — an explicit stack, since ~1000-block programs blow
+        Python's recursion limit."""
         # Each frame is [node, iterator over its sorted successors].
         color[root] = "gray"
         stack: list = [[root, iter(sorted(sub.successors(root), key=_bb_sort_key))]]
@@ -251,8 +203,7 @@ def _select_back_edges(
     for entry in sorted(entries, key=_bb_sort_key):
         if color[entry] == "white":
             dfs(entry)
-    # Any SCC nodes not reached from entries (e.g. multi-entry
-    # irreducible structure) — start fresh DFS to ensure coverage.
+    # Multi-entry irreducible structure: cover nodes no entry reached.
     for n in sorted(scc, key=_bb_sort_key):
         if color[n] == "white":
             dfs(n)

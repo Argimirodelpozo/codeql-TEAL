@@ -1,13 +1,8 @@
-"""sec-guide/ir-arbitrary-inner-asset: attacker-controlled inner asset-transfer (IR).
-
-A user-input-tainted ``XferAsset`` -- *which* ASA moves out of the app's holdings
--- lets the attacker pick the asset, draining a balance the contract didn't mean to
-touch. Same taint-to-sink shape as :mod:`ir_tainted_fund_flow` on ``XferAsset``,
-inheriting the IR layer's across-``callsub`` guard dominance + cross-contract
-suppression. Plus the asset-specific RECEIVER-CONTEXT suppression: if the asset
-returns to the caller (``AssetReceiver`` flows from the sender / the app itself),
-the chooser is only moving an asset to themselves -- not a third-party drain -- so
-it is not a finding. Supersedes the SSA ``arbitrary-inner-asset``.
+"""sec-guide/ir-arbitrary-inner-asset: a user-input-tainted ``XferAsset`` lets the
+attacker pick WHICH ASA leaves the app's holdings. The IR-layer sibling of
+``arbitrary-inner-asset``, plus the asset-specific RECEIVER-CONTEXT suppression:
+if ``AssetReceiver`` flows from the sender, the chooser is only moving an asset to
+themselves, not draining a third party.
 """
 from __future__ import annotations
 
@@ -43,10 +38,8 @@ class IrArbitraryInnerAssetDetector(_IrTaintSinkDetector):
 
     def _xfer_lines_returning_to_caller(self) -> set:
         """Source lines of ``XferAsset`` ops whose inner-txn block sets an
-        ``AssetReceiver`` that flows from the sender / the app -- the named asset
-        returns to the caller, so it isn't a third-party drain. Computed on the SSA
-        ``prog`` (orthogonal to the IR taint/guard work; reuses the shared
-        sender-flow helper), correlated by XferAsset source line."""
+        ``AssetReceiver`` flowing from the sender. Computed on the SSA ``prog`` and
+        correlated back by source line, orthogonally to the IR taint work."""
         prog = self.prog
         sender_vars = common.sender_creator_vars(prog, file=self.file)
         if not sender_vars:

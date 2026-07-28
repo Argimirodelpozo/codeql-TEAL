@@ -1,37 +1,15 @@
-"""Atomic-group cross-program taint graph (the horizontal sibling axis).
+"""Taint across the members of one atomic group — the horizontal sibling axis,
+bridged over shared scratch (``store N`` -> ``gload i N``) and the log channel.
 
-An atomic group is ``[txn0, txn1, ...]`` submitted together; each runs its own
-program, and siblings share state via ``gload i N`` — read scratch slot ``N`` of
-group txn ``i``. This loads each member's :class:`TaintGraph`, merges them into
-one graph qualified by GROUP INDEX, and splices the scratch-sharing bridge:
+This is the cross-group scratch read that makes a ``store`` with no in-program
+load still live; DSE must never drop it. Group members have no call/return, and
+the group is assembled EXTERNALLY, so :meth:`GroupTaintGraph.build` takes an
+ORDERED list where the list index IS the group position.
 
-    ``store N`` in member i   ->   ``gload i N`` in member k      (i < k)
-
-so a value an earlier member stashes in scratch flows into a later member that
-``gload``\\ s it — crossing the trust boundary WITHIN one atomic group (the
-``gload``-readable-cross-group scratch that DSE must never drop).
-
-Contrast with the inner-transaction graph
-(:class:`tealql.tealtools.dataflow.xcontract_taint_graph.XContractTaintGraph`): that is
-the *vertical/nested* axis (A ``itxn_submit``s a call to B), with call/return and
-``ApplicationArgs``/``log`` bridges. A group has NO call/return — members run in
-sequence, connected only by dataflow — and its composition is EXTERNAL (the user
-assembles the group), so :meth:`GroupTaintGraph.build` takes an ORDERED list of
-member programs (index = group position), not an AppID registry.
-
-Two member-to-member channels are bridged (both enforcing the AVM ``i < k``
-rule — a member may only read an EARLIER, already-executed sibling):
-
-- **scratch** — ``store N`` (member i) -> ``gload i N`` / ``gloads N`` (member k).
-  ``gload`` pins the sibling index statically; ``gloads`` pops it from the stack
-  so we conservatively bridge every earlier member's ``store N``.
-- **log** — ``log`` (member i) -> ``gtxn i LastLog`` / ``gtxna i Logs`` (member k):
-  a sibling reads what an earlier member logged (the group analog of xcontract's
-  appcall-return channel).
-
-Still conservative: ``stores`` / ``gloadss`` (dynamic SLOT) are left unbridged —
-the slot isn't a static immediate — a follow-up.
-"""
+HAZARD: the AVM only lets a member read an EARLIER sibling, so every bridge is
+gated on ``i < k``; bridging forward invents flows that cannot happen. Errs the
+other way too — ``stores`` / ``gloadss`` carry a dynamic SLOT and are left
+unbridged, so a real cross-member flow through them is MISSED."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -65,8 +43,7 @@ class GroupTaintGraph(NxGraphView):
 
     @classmethod
     def build(cls, member_progs: list[SSAProgram]) -> "GroupTaintGraph":
-        """Build the group graph from an ORDERED list of member programs
-        (``member_progs[i]`` is group txn ``i``)."""
+        """Build from an ORDERED member list — ``member_progs[i]`` is group txn ``i``."""
         members = [TaintGraph.of(p) for p in member_progs]
         big: nx.DiGraph = nx.DiGraph()
         for idx, tg in enumerate(members):
@@ -99,14 +76,10 @@ def _copy_into(big: nx.DiGraph, tg: TaintGraph, *, index: int) -> None:
 
 
 def _add_scratch_bridges(big: nx.DiGraph, members: list[TaintGraph]) -> None:
-    """Scratch sharing — taint reaching a ``store N`` reaches a sibling that
-    reads that slot. Two read forms (both enforce the AVM ``i < k`` rule):
+    """Bridge taint from a ``store N`` to the siblings that read that slot.
 
-    - ``gload i N`` — static sibling index + slot: bridge member ``i``'s
-      ``store N`` to it precisely.
-    - ``gloads N`` — static slot, sibling index popped from the stack: the index
-      isn't known statically, so conservatively bridge EVERY earlier member's
-      ``store N``. (``gloadss`` has a dynamic slot too -> left unbridged.)"""
+    ``gload i N`` pins the sibling statically. ``gloads N`` pops the index off
+    the stack, so it OVER-approximates to every earlier member's ``store N``."""
     for k, tg_k in enumerate(members):
         for gnode in tg_k.find(op="gload"):
             parts = (tg_k.immediates_of(gnode) or "").split()
@@ -130,10 +103,7 @@ def _add_scratch_bridges(big: nx.DiGraph, members: list[TaintGraph]) -> None:
 
 
 def _add_log_bridges(big: nx.DiGraph, members: list[TaintGraph]) -> None:
-    """Log channel — a sibling reads what an earlier member logged. For each
-    ``gtxn i LastLog`` / ``gtxna i Logs j`` in member ``k`` (``i < k``), bridge
-    every ``log`` in member ``i`` to it (the group analog of xcontract's
-    appcall-return ``log -> Logs`` bridge)."""
+    """Bridge every ``log`` in member ``i`` to a sibling's read of it (``i < k``)."""
     for k, tg_k in enumerate(members):
         for op in ("gtxn", "gtxna"):
             for rnode in tg_k.find(op=op):
@@ -155,8 +125,7 @@ def _add_log_bridges(big: nx.DiGraph, members: list[TaintGraph]) -> None:
 
 @dataclass(frozen=True)
 class GroupTaintFinding:
-    """An attacker-controlled input in one group member that reaches a sensitive
-    sink in ANOTHER member via shared scratch (``store`` -> ``gload``)."""
+    """An input in one group member reaching a sensitive sink in ANOTHER member."""
 
     source: GroupNode
     sink: GroupNode
@@ -181,9 +150,8 @@ def _sensitive_sinks(gtg: GroupTaintGraph) -> list[tuple[GroupNode, str]]:
 
 
 def _attacker_sources(gtg: GroupTaintGraph) -> list[GroupNode]:
-    """User-controlled arg reads in any member — the whole group is attacker-
-    assembled, so a member's own ``ApplicationArgs`` (``txn``/``txna``) AND a
-    sibling's args read via ``gtxn i ApplicationArgs`` / ``gtxna`` are in scope."""
+    """Arg reads in any member — the whole group is attacker-assembled, so a
+    sibling's args are as controlled as the member's own."""
     out: list[GroupNode] = []
     for idx, tg in enumerate(gtg.members):
         for op in ("txna", "txn", "gtxn", "gtxna"):
@@ -194,10 +162,8 @@ def _attacker_sources(gtg: GroupTaintGraph) -> list[GroupNode]:
 
 
 def group_taint_findings(gtg: GroupTaintGraph) -> list[GroupTaintFinding]:
-    """Report attacker-controlled inputs that reach a sensitive sink in a
-    DIFFERENT group member — i.e. flows that cross a ``store`` -> ``gload``
-    bridge. Intra-member flows are the single-program detectors' job; here we
-    report exactly the group-scratch capability the bridges add."""
+    """Report inputs reaching a sensitive sink in a DIFFERENT member — intra-member
+    flows belong to the single-program detectors and are excluded here."""
     sinks = _sensitive_sinks(gtg)
     findings: list[GroupTaintFinding] = []
     for src in _attacker_sources(gtg):

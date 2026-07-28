@@ -1,12 +1,7 @@
-"""Iterative dominator-set computation — one source of truth.
-
-The standard worklist fixpoint ``dom(entry) = {entry}``;
-``dom(n) = {n} ∪ ⋂_p dom(p)`` was hand-rolled four times over four node types
-(``CFG`` BasicBlocks, ``SuperCFG`` SuperBlocks, ``detections.common`` BBs with a
-file filter, and the lifted-IR block ids in ``lift.fund_flow``). This
-generic version is parameterised by accessor callables so all four call it.
-
-Pure — no ``tealtools`` imports — so every layer can use it without a cycle.
+"""Iterative dominator-set computation — one source of truth, parameterised by
+accessor callables so every node type (BasicBlock, SuperBlock, lifted-IR block
+id) shares it. Stays pure — no ``tealtools`` imports — so any layer can use it
+without an import cycle.
 """
 from __future__ import annotations
 
@@ -20,15 +15,11 @@ def iterative_dominators(
     entries: Iterable[N],
     preds_of: Callable[[N], Iterable[N]],
 ) -> dict[N, set[N]]:
-    """Dominator sets over a directed graph, including each node itself.
+    """Dominator sets over a directed graph, reflexively including each node.
 
-    ``nodes``: every node in the graph. ``entries``: the entry nodes (each
-    dominated only by itself). ``preds_of(n)``: ``n``'s predecessors. Reflexive:
-    ``n in dom[n]``. A non-entry node with no predecessors is unreachable and is
-    left saturated (dominated by everything), the conventional treatment.
-
-    Standard monotone fixpoint: ``dom(entry) = {entry}``;
-    ``dom(n) = {n} ∪ ⋂_{p ∈ preds(n)} dom(p)``.
+    HAZARD: a non-entry node with no predecessors is left SATURATED (dominated by
+    everything) — the conventional unreachable treatment, which means an empty
+    ``entries`` makes every node dominate every node.
     """
     nodes = list(nodes)
     all_nodes = set(nodes)
@@ -53,15 +44,13 @@ def iterative_dominators(
 
 
 def program_entries(blocks) -> list:
-    """The real execution entries: per file, the block holding the file's FIRST
-    instruction. TEAL starts executing at the first instruction, so this is the
-    entry even when that block is a branch target — which means it HAS
-    predecessors. "Blocks with no predecessors" is NOT an entry criterion: a
-    program whose first block is a branch target (a top-level retry loop) has
-    no such block, and an empty entry set makes ``iterative_dominators`` leave
-    every set saturated — every block "dominates" every block, silently
-    crediting guards everywhere. Predecessor-less non-first blocks are dead
-    code, not entries; they stay saturated (the unreachable convention)."""
+    """Per file, the block holding that file's FIRST instruction — where TEAL
+    starts executing, even when that block is a branch target (so it HAS preds).
+
+    HAZARD: "blocks with no predecessors" is NOT an entry criterion — a program
+    whose first block is a branch target (top-level retry loop) has none, and an
+    empty entry set leaves ``iterative_dominators`` saturated, silently crediting
+    guards everywhere. Predecessor-less non-first blocks are dead code."""
     first: dict = {}
     for b in blocks:
         cur = first.get(b.file)
@@ -71,9 +60,8 @@ def program_entries(blocks) -> list:
 
 
 def all_blocks(prog) -> set:
-    """Every ``BasicBlock`` reachable through ``predecessors`` / ``successors``
-    from any block that owns an assignment or phi (duck-typed on ``prog`` so this
-    stays import-free)."""
+    """Every ``BasicBlock`` reachable either way from a block owning an
+    assignment or phi (duck-typed on ``prog`` to stay import-free)."""
     seed = set()
     for a in prog.assignments:
         if a.basic_block is not None:
@@ -94,12 +82,12 @@ def all_blocks(prog) -> set:
 
 
 def reachable_avoiding(entries: list, avoid) -> set:
-    """Blocks reachable from ``entries`` over CFG ``successors`` *without* passing
-    through ``avoid``. The approximate-dominance primitive the flow-sensitive
-    analyses share: block ``A`` dominates ``U`` iff ``U`` is reachable normally
-    but absent from ``reachable_avoiding(entries, A)``. Over-approximates on the
-    raw interprocedural CFG, so the dominance test is conservative (a fact is at
-    worst skipped, never applied unsoundly)."""
+    """Blocks reachable from ``entries`` over ``successors`` while avoiding
+    ``avoid`` — the shared approximate-dominance primitive: ``A`` dominates ``U``
+    iff ``U`` is reachable normally but missing here.
+
+    HAZARD: over-approximates on the raw interprocedural CFG, so the dominance
+    test is conservative — a fact is at worst skipped, never applied unsoundly."""
     seen = {e for e in entries if e is not avoid}
     stack = list(seen)
     while stack:
@@ -113,22 +101,15 @@ def reachable_avoiding(entries: list, avoid) -> set:
 
 
 class AssertDominance:
-    """Approximate "a guard at ``guard_block`` dominates a target ``target_block``"
-    by reachability — the shared substrate for the assert-guarded analyses
-    (relational bounds, range-from-assert, byte-taint validation).
-
-    ``dominates(guard_block, target_block, guard_line, target_line)``: the guard
-    dominates the target iff the target is NOT reachable from the entries while
-    avoiding the guard block (so every path to it crosses the guard); within the
-    SAME block, iff the target is strictly after the guard's line. Over-
-    approximates on the raw interprocedural CFG, so a fact is at worst skipped,
-    never applied unsoundly. The per-guard-block reach set is cached, so repeated
-    queries across many (guard, target) pairs stay cheap."""
+    """Approximate "the guard at ``guard_block`` dominates ``target_block``" by
+    reachability (within one block, by line order) — the shared substrate for the
+    assert-guarded analyses (relational bounds, range-from-assert, byte-taint
+    validation), conservative per :func:`reachable_avoiding`."""
 
     def __init__(self, prog):
-        # Real per-file entries — NOT "blocks with no predecessors": with an
-        # empty entry set, ``reachable_avoiding`` returns {} and EVERY guard
-        # "dominates" every target, applying validation facts unsoundly.
+        # HAZARD: real per-file entries, NOT "blocks with no predecessors" — an
+        # empty entry set makes ``reachable_avoiding`` return {} and EVERY guard
+        # "dominate" every target, applying validation facts unsoundly.
         self._entries = program_entries(all_blocks(prog))
         self._reach: dict = {}
 

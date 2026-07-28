@@ -1,21 +1,15 @@
-"""ABI method-table recovery from HIGH-LEVEL info in the source — the sound,
-optional counterpart to the (impossible) "reverse the selector" idea.
+"""ABI method-table recovery from HIGH-LEVEL info in the source.
 
-An ABI method selector in a compiled contract is ``sha512_256("name(args)ret")[:4]``
-— a hash, NOT reversible. But the signature itself survives as SOURCE TEXT: a
-compiler emits ``pushbytes 0x03b5c0af // method "add_one(uint64)uint64"`` (and a
-multi-selector router as ``pushbytess 0x.. 0x.. // method "a()..", method "b()...``),
-and hand-written / higher-level TEAL uses ``method "sig"`` pseudo-ops verbatim. So
-we READ the signature from the source and compute its selector forward; nothing is
-reverse-engineered.
+HAZARD: a method selector is ``sha512_256("name(args)ret")[:4]`` — a hash, NOT
+invertible. The signature is READ from source text (``method "sig"`` pseudo-ops,
+and the ``// method "sig"`` comments a compiler leaves on the lowered
+``pushbytes`` / ``pushbytess`` selector) and its selector computed FORWARD;
+nothing is ever reverse-engineered from the selector.
 
-This is a VERY OPTIONAL enrichment: raw disassembled bytecode carries no
-``method "…"`` text, so :func:`extract_method_table` returns ``{}`` and every
-consumer degrades cleanly to its no-high-level-info behaviour. When the info IS
-present it yields the ABI method table (name / arg types / return type per
-selector) — the SOUND source for ABI arg typing (arg N is a 32-byte ``address``
-*because the declared contract says so*), for buffer-length seeding in the
-relational bounds domain, box/state schema, and human-readable finding messages.
+An optional enrichment: raw disassembled bytecode carries no ``method "…"``
+text, so :func:`extract_method_table` returns ``{}`` and consumers degrade to
+their no-high-level-info behaviour. When present it is the SOUND source for ABI
+arg typing, buffer-length seeding, box/state schema and finding messages.
 """
 from __future__ import annotations
 
@@ -24,9 +18,8 @@ import re
 from dataclasses import dataclass
 from typing import Optional
 
-# Every `method "..."` occurrence — the pseudo-op operand AND the trailing
-# `// method "..."` comment a compiler leaves on the lowered `pushbytes`/
-# `pushbytess` selector both match, so one scan over the raw source finds all.
+# Matches both forms — the pseudo-op operand and the compiler's trailing
+# `// method "..."` comment — so one scan over the raw source finds all.
 _METHOD_RE = re.compile(r'method\s+"([^"]+)"')
 
 #: ARC-4 TRANSACTION arg types — passed as preceding GROUP txns, so they carry NO
@@ -34,8 +27,8 @@ _METHOD_RE = re.compile(r'method\s+"([^"]+)"')
 TXN_ARG_TYPES = frozenset({
     "txn", "pay", "keyreg", "acfg", "axfer", "afrz", "appl",
 })
-#: ARC-4 REFERENCE arg types — encoded as a uint8 index into the txn's foreign
-#: array, so they DO occupy one ApplicationArgs byte (unlike transaction args).
+#: ARC-4 REFERENCE arg types — a uint8 index into the txn's foreign array, so they
+#: DO occupy one ApplicationArgs byte (unlike transaction args).
 REFERENCE_ARG_TYPES = frozenset({"account", "asset", "application"})
 
 
@@ -48,8 +41,8 @@ class AbiMethod:
     return_type: str            # "void" or an ABI type
     signature: str              # the canonical signature text
     selector: bytes             # sha512_256(signature)[:4]
-    # Argument names, in declaration order, when a richer source (an ARC-56 spec)
-    # carries them — empty for signatures recovered from bare `method "sig"` text.
+    # Declaration order; only a richer source (an ARC-56 spec) carries names, so
+    # empty for signatures recovered from bare `method "sig"` text.
     arg_names: tuple = ()
 
     @property
@@ -60,17 +53,20 @@ class AbiMethod:
     @property
     def app_arg_types(self) -> tuple:
         """The arg types carried in ``ApplicationArgs``, in order — transaction-type
-        args (``pay`` / ``axfer`` / …) are dropped (they ride as group txns, not
-        encoded bytes). ``ApplicationArgs[k]`` (1-based) is ``app_arg_types[k-1]``,
-        except that ARC-4 packs the 16th-onward encoded args into a tuple at index 15."""
+        args are dropped, since they ride as group txns rather than encoded bytes.
+
+        HAZARD: ``ApplicationArgs[k]`` (1-based) is ``app_arg_types[k-1]``, except
+        that ARC-4 packs the 16th-onward encoded args into a tuple at index 15."""
         return tuple(a for a in self.arg_types if a not in TXN_ARG_TYPES)
 
     def app_arg_byte_length(self, n: int) -> Optional[int]:
         """The ARC-4 encoded byte length of ``txna ApplicationArgs n`` (``n`` >= 1,
-        the selector is index 0), or ``None`` when unknown/dynamic/ambiguous.
-        Conservatively declines the packed 15th slot (>15 encoded args). This is
-        the WELL-FORMED-ABI byte length: the AVM router only checks the selector,
-        not arg lengths, so a consumer must treat it as a speculative assumption."""
+        the selector being index 0), or ``None`` when unknown / dynamic / the packed
+        15th slot.
+
+        HAZARD: this is the WELL-FORMED-ABI length — the AVM router checks only the
+        selector, never arg lengths, so a consumer must treat it as a speculative
+        assumption, not a proven bound."""
         args = self.app_arg_types
         if n < 1 or n - 1 >= len(args):
             return None
@@ -85,8 +81,8 @@ def method_selector(signature: str) -> bytes:
 
 
 def _split_top_level(s: str) -> list:
-    """Split ``s`` on top-level commas, respecting nested ``()`` / ``[]`` (so a
-    tuple or array element with its own commas stays one item)."""
+    """Split ``s`` on top-level commas, respecting nested ``()`` / ``[]`` so a tuple
+    or array element with its own commas stays one item."""
     s = s.strip()
     if not s:
         return []
@@ -106,10 +102,9 @@ def _split_top_level(s: str) -> list:
 
 
 def parse_signature(signature: str) -> Optional[AbiMethod]:
-    """Parse ``name(arg,arg,...)ret`` into an :class:`AbiMethod`, or ``None`` if it
-    isn't a well-formed signature. The return type may itself be a tuple, so the
-    argument list is delimited by balancing the FIRST ``(`` (not by the last
-    ``)``)."""
+    """Parse ``name(arg,arg,...)ret`` into an :class:`AbiMethod`, or ``None`` if
+    malformed — the arg list is delimited by BALANCING the first ``(``, not by the
+    last ``)``, since the return type may itself be a tuple."""
     signature = signature.strip()
     op = signature.find("(")
     if op <= 0:                                  # no args paren, or empty name
@@ -133,13 +128,12 @@ def parse_signature(signature: str) -> Optional[AbiMethod]:
 
 
 def abi_type_byte_length(t: str) -> Optional[int]:
-    """The ARC-4 ENCODED byte length of a fixed-size type, or ``None`` when it is
-    dynamic (``string`` / ``byte[]`` / ``T[]``) or a TRANSACTION type
-    (``pay`` / ``axfer`` / …, which rides as a group txn — no encoded bytes).
-    REFERENCE types (``account`` / ``asset`` / ``application``) encode as a
-    ``uint8`` index -> 1 byte. Consecutive ``bool`` are bit-packed (ARC-4), so
-    tuples/arrays account for that. Never returns a wrong length — only an exact
-    one or ``None``."""
+    """The ARC-4 ENCODED byte length of a fixed-size type, or ``None`` when dynamic
+    (``string`` / ``byte[]`` / ``T[]``) or a TRANSACTION type (rides as a group txn,
+    no encoded bytes); REFERENCE types encode as a ``uint8`` index -> 1 byte.
+
+    HAZARD: consecutive ``bool`` are BIT-PACKED in ARC-4 (tuples/arrays account for
+    that). Never returns a wrong length — only an exact one or ``None``."""
     t = t.strip()
     if t == "bool":
         return 1
@@ -187,12 +181,9 @@ def abi_type_byte_length(t: str) -> Optional[int]:
 
 
 def extract_method_table(source: str) -> dict:
-    """``{selector_hex: AbiMethod}`` for every ``method "sig"`` found in ``source``
-    (pseudo-op operands AND ``// method "sig"`` comments). ``{}`` when the source
-    has no high-level ABI info (e.g. raw disassembled bytecode) — the caller then
-    degrades to its non-enriched behaviour. Keyed by ``0x``-selector so a
-    ``pushbytes 0x..`` / ``pushbytess 0x..`` operand in the program maps straight
-    to its method."""
+    """``{selector_hex: AbiMethod}`` for every ``method "sig"`` in ``source``, keyed
+    by ``0x``-selector so a ``pushbytes 0x..`` operand maps straight to its method;
+    ``{}`` when the source carries no high-level ABI info."""
     table: dict = {}
     for sig in set(_METHOD_RE.findall(source)):
         m = parse_signature(sig)
@@ -208,17 +199,17 @@ _LABEL_DEF_RE = re.compile(r"^([A-Za-z_][\w@]*):\s*$")
 #: Ops whose operands are a POSITIONAL list of branch targets, paired 1:1 with the
 #: selectors of the immediately-preceding ``pushbytess ... // method ...`` line.
 _DISPATCH_OPS = ("match", "switch")
-#: Single-selector branch: ``pushbytes SEL // method "sig"`` then ``==`` then one of these.
+#: Single-selector branch: ``pushbytes SEL // method "sig"``, ``==``, then one of these.
 _COND_BRANCH_OPS = ("bnz", "bz", "b")
 #: The selector-pushing ops whose operands are the router's method selectors.
 _PUSH_OPS = ("pushbytess", "pushbytes")
 
 
 def _dispatch_methods(line: str, method_table: "dict | None"):
-    """The ordered list of :class:`AbiMethod` (or ``None`` per slot) a selector-
-    pushing router line declares — from its ``// method "sig"`` comments, or, when
-    those were stripped, from resolving the line's ``0x``-selector operands through
-    ``method_table`` (an ARC-56 spec). ``[]`` if the line pushes no selectors."""
+    """The ORDERED :class:`AbiMethod` list (``None`` per unresolved slot) a
+    selector-pushing router line declares — from its ``// method "sig"`` comments,
+    else by resolving its ``0x`` operands through ``method_table``; order matters,
+    the dispatch op's targets pair with it positionally."""
     sigs = _METHOD_RE.findall(line)
     if sigs:
         return [parse_signature(s) for s in sigs]
@@ -230,22 +221,17 @@ def _dispatch_methods(line: str, method_table: "dict | None"):
 
 
 def method_line_ranges(source: str, method_table: "dict | None" = None):
-    """``[(start_line, end_line, AbiMethod), ...]`` — the source-line span each ABI
-    method OWNS, from the router's selector→target-label pairing (``match`` /
-    ``switch`` positional targets, or a single ``pushbytes SEL // method`` followed
-    by a conditional branch). A method's span runs from its entry label to just
-    before the next *boundary* label (another method entry or a ``callsub`` target),
-    so internal branch blocks stay with the method while shared helper subroutines
-    do not. Spans are disjoint; 1-based inclusive. ``[]`` when the source has no
-    dispatch info to attribute from — the OPTIONAL enrichment simply contributes
-    nothing. Source-text only (no CFG), and conservative: an unrecognised dispatch
-    shape yields no attribution rather than a wrong one.
+    """``[(start_line, end_line, AbiMethod), ...]`` — the disjoint, 1-based-inclusive
+    source-line span each ABI method OWNS, from the router's selector→target-label
+    pairing; a span runs from the entry label to just before the next *boundary*
+    label (another method entry or a ``callsub`` target), so internal branch blocks
+    stay with the method while shared subroutines do not.
 
-    ``method_table`` (``{selector_hex: AbiMethod}`` from an ARC-56 spec) lets the
-    selector→name mapping survive even when the compiler's ``// method "sig"``
-    comments were stripped: the ``0x``-selector OPERANDS of the router's push are
-    resolved through it. It's the authoritative name source (the source comments,
-    when present, are used directly)."""
+    Source-text only (no CFG) and conservative: an unrecognised dispatch shape
+    yields NO attribution rather than a wrong one, and ``[]`` when the source has
+    no dispatch info. ``method_table`` (from an ARC-56 spec) keeps the
+    selector→name mapping alive when the ``// method "sig"`` comments were
+    stripped, by resolving the router's ``0x``-selector operands."""
     lines = source.splitlines()
 
     label_order = []                       # (line_1based, label) in file order
@@ -297,9 +283,8 @@ def method_line_ranges(source: str, method_table: "dict | None" = None):
 
 
 def method_at_line(ranges, line: Optional[int]) -> Optional[AbiMethod]:
-    """The :class:`AbiMethod` whose span contains ``line`` (from
-    :func:`method_line_ranges`), or ``None``. Spans are disjoint, so the first
-    hit is the answer."""
+    """The :class:`AbiMethod` from :func:`method_line_ranges` whose span contains
+    ``line``, or ``None``; spans are disjoint, so the first hit is the answer."""
     if line is None:
         return None
     for start, end, meth in ranges:

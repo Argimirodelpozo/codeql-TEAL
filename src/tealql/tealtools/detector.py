@@ -1,20 +1,6 @@
-"""Unified detector / report registry.
-
-Each existing analysis already has its own surface — some emit
-"findings" (zero-or-more violation records), others emit a single
-rendered string. This module gives both shapes a stable protocol so
-callers can iterate over the registry instead of dispatching by
-analysis name.
-
-Two shapes, one registry each:
-
-- :class:`Detector` — ``run(prog) -> Iterable[Finding]``. A finding
-  is anything with a ``.pretty()`` method.
-- :class:`Report` — ``run(prog) -> str``. Produces one block of
-  pre-rendered text (suitable for ``print``-ing as-is).
-
-Adapters live here so the underlying analysis modules stay focused;
-adding a new detector is one extra entry in :data:`ALL_DETECTORS`.
+"""Registry over both analysis shapes — :class:`Detector` (``run(prog)`` yields
+findings, anything with ``.pretty()``) and :class:`Report` (``run(prog)`` returns
+one pre-rendered text block) — so callers iterate instead of dispatching by name.
 """
 from __future__ import annotations
 
@@ -28,11 +14,8 @@ logger = logging.getLogger("tealql.tealtools")
 
 
 def _safe(label: str, fn: "Callable[[], object]", default, *, strict: bool):
-    """Run ``fn()`` in isolation — a detector or report that crashes on one weird
-    contract must not sink the whole ``tealql all`` output (the same contract the
-    security scanner honours in ``scan.py``). Logs the crash and returns
-    ``default``; ``strict`` re-raises instead. Covers construction too: the
-    sec-guide detector adapters build their underlying detector inside ``run()``."""
+    """Run ``fn()`` crash-isolated — one detector that dies on a weird contract must
+    not sink the whole output; logs and returns ``default``, ``strict`` re-raises."""
     try:
         return fn()
     except Exception as e:
@@ -44,10 +27,8 @@ def _safe(label: str, fn: "Callable[[], object]", default, *, strict: bool):
 
 @runtime_checkable
 class Finding(Protocol):
-    """Any value an :class:`Detector` may yield. Must render
-    itself via ``.pretty()`` (existing :class:`Violation`,
-    :class:`AuthViolation`, :class:`CorrelatedViolation`, etc. all
-    satisfy this)."""
+    """Any value a :class:`Detector` may yield: it must render itself via
+    ``.pretty()``."""
 
     def pretty(self) -> str: ...
 
@@ -82,8 +63,8 @@ class _FnDetector:
 class _FnReport:
     name: str
     fn: Callable[[SSAProgram], str]
-    #: JSON form. Optional only so a report can be text-only; when absent
-    #: ``run_all_dict`` emits ``{}`` rather than silently omitting the key.
+    #: JSON form; when absent ``run_all_dict`` emits ``{}`` rather than dropping
+    #: the key.
     dict_fn: "Optional[Callable[[SSAProgram], dict]]" = None
 
     def run(self, prog: SSAProgram) -> str:
@@ -93,8 +74,7 @@ class _FnReport:
         return self.dict_fn(prog) if self.dict_fn is not None else {}
 
 
-# Lazy imports inside each adapter keep import-time cheap and avoid
-# circulars.
+# Lazy imports inside each adapter keep import-time cheap and avoid circulars.
 
 def _auth(prog: SSAProgram):
     from .auth_domination import AuthDominationDetector
@@ -176,10 +156,9 @@ def _path_preds_d(prog: SSAProgram) -> dict:
     return PathPredicateAnalysis(prog).to_dict()
 
 
-# Only the analysis-layer detectors live here — this module is pure tealtools
-# and knows nothing about the security/ detector registry. The sec-guide
-# detectors are injected as ``extra_detectors`` by ``tealql.security.run`` (which the
-# CLI uses for ``tealql all``), keeping the dependency one-directional.
+# Only analysis-layer detectors live here; the security/ ones are injected as
+# ``extra_detectors`` by ``tealql.security.run``, keeping tealtools free of any
+# dependency on the security registry.
 ALL_DETECTORS: list[Detector] = [
     _FnDetector("auth-domination", _auth),
     _FnDetector("box-df-into", _box_into),
@@ -203,10 +182,8 @@ def run_all_findings(
     prog: SSAProgram, *, extra_detectors: Iterable[Detector] = (),
     strict: bool = False,
 ) -> tuple[str, int]:
-    """Like :func:`run_all` but also returns the total detector-finding
-    count, so callers (the CLI's ``all``) can set a findings exit code
-    without re-running every detector. Per-detector/report crash-isolated
-    (``strict=True`` re-raises) so one broken analysis can't sink the report."""
+    """Like :func:`run_all` but also returns the total finding count, so a caller can
+    set a findings exit code without re-running every detector."""
     out: list[str] = []
     n_findings = 0
     for det in [*ALL_DETECTORS, *extra_detectors]:
@@ -229,19 +206,14 @@ def run_all_findings(
 
 def run_all(prog: SSAProgram, *, extra_detectors: Iterable[Detector] = (),
             strict: bool = False) -> str:
-    """Run every core detector (+ any ``extra_detectors``) + report against
-    ``prog`` and return one big text block, sectioned by analysis name.
-    ``extra_detectors`` lets ``tealql.security.run`` inject the sec-guide detectors
-    without this module importing the registry."""
+    """Run every core detector (+ any ``extra_detectors``) and report against ``prog``,
+    returning one text block sectioned by analysis name."""
     return run_all_findings(prog, extra_detectors=extra_detectors, strict=strict)[0]
 
 
 def run_all_dict(prog: SSAProgram, *, extra_detectors: Iterable[Detector] = (),
                  strict: bool = False) -> dict:
-    """Same coverage as :func:`run_all` but returns a structured dict
-    suitable for JSON. Detector findings use each finding's
-    ``to_dict()`` if available, falling back to ``{"message": ...}``.
-    """
+    """Same coverage as :func:`run_all`, as a JSON-shaped dict."""
     from ._utils.serialize import finding_to_dict
 
     detectors: dict[str, list[dict]] = {}
@@ -249,9 +221,8 @@ def run_all_dict(prog: SSAProgram, *, extra_detectors: Iterable[Detector] = (),
         findings = _safe(f"detector {det.name}",
                          lambda d=det: list(d.run(prog)), [], strict=strict)
         detectors[det.name] = [finding_to_dict(f) for f in findings]
-    # Driven by ALL_REPORTS, same as the text path: the JSON output used to
-    # hardcode its own copy of the list, so a report added to the registry
-    # appeared in text and silently VANISHED from --json.
+    # Driven by ALL_REPORTS like the text path — a second hardcoded list here
+    # silently drops any newly registered report from --json.
     reports = {
         rep.name: _safe(f"report {rep.name}",
                         lambda r=rep: r.run_dict(prog), {}, strict=strict)

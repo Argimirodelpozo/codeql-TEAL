@@ -1,13 +1,10 @@
-"""sec-guide/ir-tainted-log: attacker-controlled data emitted via log (IR).
+"""sec-guide/ir-tainted-log: a contract that ``log``s a user-input-tainted value
+emits FORGED data to anything trusting its logs — a caller reading its ``LastLog``
+after an inner appcall, or an off-chain indexer treating its events as truth.
 
-A contract that ``log``s a user-input-tainted value emits FORGED data to anything
-that trusts its logs: a CALLER reading its ``LastLog`` after an inner appcall --
-which is itself a taint source (``ItxnLastLog``); a spoofed ARC-4 return value or
-event can make the caller act on attacker-chosen data -- and off-chain indexers /
-dapps that treat the contract's logged events as truth. Output-integrity rather
-than direct fund loss, so LOW severity -- but it is the on-chain SOURCE of the
-cross-contract ``ItxnLastLog`` taint the caller-side detectors react to. A new
-capability (no SSA sibling); lift-only.
+Output-integrity rather than direct fund loss, hence LOW, but it is the on-chain
+SOURCE of the cross-contract ``ItxnLastLog`` taint the caller-side detectors react
+to. Lift-only; no SSA sibling.
 """
 from __future__ import annotations
 

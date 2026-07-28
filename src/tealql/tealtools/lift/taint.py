@@ -1,23 +1,13 @@
-"""Forward user-input taint over the lifted IR (see :mod:`lift`).
-
-Marks every IR register whose value derives from USER-CONTROLLED input -- what an
-attacker chooses when invoking the contract -- and with which source(s):
-
-  * ``ApplicationArgs`` -- ``txn``/``txna``/``txnas``/``gtxn*``/``gtxns*``
-    ``ApplicationArgs`` (the call's app-call arguments, incl. another group txn's)
-  * ``LogicSigArgs``    -- ``arg`` / ``args`` / ``arg_0``..``arg_3`` (lsig args)
-  * ``ItxnLastLog``     -- ``itxn``/``gitxn`` ``LastLog`` (the output of a contract
-    this app itself called -- attacker-influenceable through that callee)
-
-This is an IR-LAYER analysis -- the sources are ordinary opcodes the lift keeps and
-value flow is explicit (Assignment / Phi / Intrinsic args) -- but it consumes ONE
-low-layer fact carried up through the lifter: the scratch reaching-def
-(``load_stores``), so a ``load N`` is tainted exactly by the ``store N`` values that
-reach it, not by every store to the slot (which on a reused slot would over-taint
-into uselessness). Subroutine results are tainted if any call arg is (conservative;
-a param->return summary would sharpen it). Forward monotonic fixpoint.
-
+"""Forward user-input taint over the lifted IR (see :mod:`lift`):
 ``user_input_taint(lifter) -> {id(Register): frozenset[str sources]}``.
+
+HAZARD: the source set is the soundness boundary of every verdict built on it.
+``ApplicationArgs`` (``txn``/``txna``/``txnas``/``gtxn*``/``gtxns*`` — a GROUP
+SIBLING's args count too), ``LogicSigArgs`` (``arg``/``args``/``arg_0``..``arg_3``),
+and ``ItxnLastLog`` (``itxn``/``gitxn`` ``LastLog``: the output of a contract this
+app called, attacker-influenceable through that callee — NOT clean). Taint also
+crosses scratch through the lifter's reaching-def (``load_stores``); drop that
+bridge and flow through ``store``/``load`` is silently lost.
 """
 from __future__ import annotations
 
@@ -35,11 +25,9 @@ from . import pre_ir
 
 
 def source_label(intr) -> str | None:
-    """The user-input source kind an intrinsic reads, or ``None``.
-
-    Delegates to :func:`tealql.tealtools.avm.attacker_input_label` — the single
-    source table shared with the SSA-level seeds, so the two can no longer
-    disagree about what counts as attacker input."""
+    """The user-input source kind an intrinsic reads, or ``None`` — via
+    :func:`tealql.tealtools.avm.attacker_input_label`, the ONE source table this
+    shares with the SSA-level seeds so the two layers cannot disagree."""
     if not isinstance(intr, pre_ir.Intrinsic):
         return None
     imm = " ".join(str(i) for i in (intr.immediates or []))
@@ -47,11 +35,12 @@ def source_label(intr) -> str | None:
 
 
 def _trusted_apparg(src, trusted_args) -> bool:
-    """True if ``src`` reads a CURRENT-txn ``ApplicationArgs[i]`` whose index ``i``
-    a CALLER pinned to a constant (cross-contract). Such an arg is fixed by the
-    caller on this call edge, so it is NOT attacker-controlled and must not seed
-    taint. Only the current txn's args (``txn``/``txna``) -- ``gtxn*`` reads a group
-    sibling's args, which this appcall did not pass."""
+    """True if ``src`` reads a CURRENT-txn ``ApplicationArgs[i]`` a caller pinned to a
+    constant, so it is fixed on this call edge and must not seed taint.
+
+    HAZARD: the only exemption in the whole analysis. It is restricted to
+    ``txn``/``txna`` because ``gtxn*`` reads a GROUP SIBLING's args, which this
+    appcall never passed — widening it to those would clear real attacker input."""
     if not trusted_args or not isinstance(src, pre_ir.Intrinsic):
         return False
     if src.op not in ("txn", "txna"):
@@ -82,21 +71,13 @@ def _invoke(o):
 
 
 def _return_summary(lifter, trusted_args=frozenset()) -> dict:
-    """Per-subroutine taint summary ``{sub.id: (srcs, params)}`` for a SOUND +
-    PRECISE interprocedural rule at call sites:
+    """Per-subroutine taint summary ``{sub.id: (srcs, params)}`` — ``srcs`` = source
+    labels reaching a returned value from INSIDE the sub, ``params`` = the parameter
+    indices that pass through to a returned value.
 
-      * ``srcs``  -- source labels that reach a RETURNED value from a source INSIDE
-        the sub (or a nested call), independent of the caller's args; and
-      * ``params`` -- the set of parameter INDICES whose value reaches a returned
-        value (the "passthrough" params).
-
-    A call's result is then tainted by ``srcs`` (always) plus ``reg_t(arg[i])`` for
-    each passthrough ``i`` -- never by an arg that doesn't flow through (the old
-    "result <- any arg" rule both OVER-tainted on a non-passthrough arg and
-    UNDER-tainted by ignoring internal-source returns entirely). Marker-based
-    monotone fixpoint: each param register seeds a namespaced marker ``("p", id, i)``,
-    each source seeds its label, nested calls resolve through the summary as it is
-    built (so mutual recursion converges)."""
+    HAZARD: a call site must apply BOTH halves — ``srcs`` always, plus the taint of
+    each passthrough arg. Using only the args UNDER-taints (it misses a sub that
+    reads a source itself); tainting on any arg OVER-taints."""
     ssa_of = {id(r): sv for sv, r in lifter.regs.items()}
     subs = [s for s in lifter.subs if not s.is_main]
     taint: dict = defaultdict(set)
@@ -166,13 +147,9 @@ def _return_summary(lifter, trusted_args=frozenset()) -> dict:
 
 
 def user_input_taint(lifter, trusted_args=frozenset()) -> dict:
-    """Forward taint from the user-input sources to a fixpoint over ``lifter``'s
-    lifted IR. Returns ``{id(Register): frozenset(sources)}`` for tainted registers.
-
-    ``trusted_args`` -- ApplicationArgs indices a CALLER pinned to constants
-    (cross-contract): those current-txn ``ApplicationArgs[i]`` reads are NOT seeded
-    as user input, so a callee whose payment is fixed by its caller doesn't
-    surface as attacker-controlled on that edge."""
+    """Forward taint from the user-input sources to a fixpoint over ``lifter``'s IR,
+    returning ``{id(Register): frozenset(sources)}``; ``trusted_args`` indices are
+    exempted from seeding per :func:`_trusted_apparg`."""
     # register -> its SSA var, to consult the scratch reaching-def on a `load`.
     ssa_of = {id(r): sv for sv, r in lifter.regs.items()}
     summary = _return_summary(lifter, trusted_args)   # interprocedural param->return summary
@@ -185,7 +162,7 @@ def user_input_taint(lifter, trusted_args=frozenset()) -> dict:
     while changed:
         changed = False
         for b in pre_ir.blocks(lifter.subs):
-            for ph in b.phis:                       # phi: union of its args
+            for ph in b.phis:
                 new = set()
                 for a in ph.args:
                     new |= reg_t(a.value)
@@ -213,9 +190,8 @@ def user_input_taint(lifter, trusted_args=frozenset()) -> dict:
                 if inv is not None:
                     callee = lifter.name2sub.get(inv.target)
                     if callee is not None:
-                        # result <- the callee's return summary: internal-source
-                        # returns (which the old "any arg" rule MISSED) + only the
-                        # params that actually flow through (not every tainted arg).
+                        # result <- the callee's summary: its internal-source returns
+                        # plus only the params that actually flow through.
                         csrcs, cparams = summary.get(callee.id, (frozenset(), frozenset()))
                         ins |= csrcs
                         for i in cparams:
@@ -237,19 +213,15 @@ def user_input_taint(lifter, trusted_args=frozenset()) -> dict:
     return {k: frozenset(v) for k, v in taint.items() if v}
 
 
-# Sensitive sinks: where a user-controlled value reaching them is worth flagging --
-# the canonical persistent-state writes (STATE_WRITE_OPS), plus inner-transaction
-# fields (who gets paid / how much), emitted logs, and -- via _CATEGORIES below --
-# asserted conditions (user-controlled control flow).
+# Sensitive sinks: persistent-state writes, inner-txn fields (who gets paid, how
+# much) and logs. `assert` is a sink too (user-controlled control flow) but is not an
+# intrinsic, so each consumer below matches pre_ir.Assert separately.
 _SINKS = STATE_WRITE_OPS | {"log", "itxn_field"}
 
 
 def tainted_sinks(lifter, taint=None) -> list:
-    """User-input -> sensitive-sink flows over the lifted IR: a list of
-    ``(sources, sink_op, immediates)`` for every sink whose operands include a
-    tainted value. The security payoff of :func:`user_input_taint` -- e.g. a
-    user-controlled value reaching an inner-txn ``Amount`` or an ``app_global_put``.
-    Pass a precomputed ``taint`` map or one is built."""
+    """``(sources, sink_op, immediates)`` for every sink whose operands include a
+    tainted value; pass a precomputed ``taint`` map or one is built."""
     if taint is None:
         taint = user_input_taint(lifter)
     out = []
@@ -284,9 +256,8 @@ _CATEGORIES = [
 
 
 def taint_report(lifter, name: str = "<program>") -> str:
-    """A human-readable user-input-taint report for a lifted program: every
-    attacker-controlled value reaching a sensitive sink, grouped by category and
-    annotated with the original TEAL line(s)."""
+    """A human-readable taint report: every attacker-controlled value reaching a sink,
+    grouped by category and annotated with the original TEAL line(s)."""
     taint = user_input_taint(lifter)
     present = sorted({s for v in taint.values() for s in v})
     groups: dict = defaultdict(lambda: {"lines": set(), "sources": set()})
@@ -344,11 +315,8 @@ def taint_report(lifter, name: str = "<program>") -> str:
 
 
 def render_with_taint(lifter, name: str = "<program>") -> str:
-    """Render the lifted Puya-shaped IR with user-input taint annotated inline on
-    each line: ``<== SOURCE X`` where an attacker input enters, ``<== tainted X``
-    where a value derives from one, and ``<== SINK X`` where a tainted value
-    reaches a sensitive op. The taint is native to this IR (computed on its own
-    registers), so the annotations line up exactly with the rendered ops."""
+    """Render the lifted IR with taint inline: ``<== SOURCE X`` where an attacker
+    input enters, ``<== tainted X`` downstream, ``<== SINK X`` at a sensitive op."""
     taint = user_input_taint(lifter)
 
     def note(o, is_phi=False):

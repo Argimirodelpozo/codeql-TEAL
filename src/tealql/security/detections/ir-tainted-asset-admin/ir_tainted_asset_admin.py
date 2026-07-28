@@ -1,11 +1,7 @@
-"""sec-guide/ir-tainted-asset-admin: attacker-controlled asset ADMIN role (IR).
-
-An inner asset-config (``acfg``) transaction sets the ASA's privileged roles. A
-user-input-tainted value reaching ``ConfigAssetManager`` (reconfigure / destroy),
-``ConfigAssetClawback`` (claw back ANYONE's holdings), ``ConfigAssetFreeze``
-(freeze any holder), or ``ConfigAssetReserve`` lets the attacker install THEMSELVES
-as that role -- e.g. set clawback to their own address and then claw the asset out
-of every holder. A new capability (no SSA sibling); lift-only.
+"""sec-guide/ir-tainted-asset-admin: a user-input-tainted value reaching an inner
+``acfg``'s privileged role fields lets the attacker install THEMSELVES as manager,
+clawback, freeze or reserve — e.g. set clawback to their own address and then claw
+the asset out of every holder. Lift-only; no SSA sibling.
 """
 from __future__ import annotations
 

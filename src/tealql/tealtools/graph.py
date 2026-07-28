@@ -1,24 +1,8 @@
-"""TEAL program graph.
-
-Build a NetworkX MultiDiGraph from TEAL source in two passes: parse the source
-into typed :class:`tealql.tealtools.ast.AstNode` nodes (one per opcode, hashed by
-``(file, line)``) via :mod:`tealql.tealtools.ast.parse`, then derive the control flow --
-``kind="cfg"`` edges carrying a ``successor`` label, plus basic blocks -- from
-those nodes via :mod:`tealql.tealtools.cfg_build`. SSA / phis / const values / taint
-are reconstructed downstream (``tealql.tealtools.ssa``).
-
-The source may be a single ``.teal`` file, a directory of ``.teal`` files, or an
-in-memory ``{name: text}`` mapping.
-
-Quick start
------------
-    >>> from tealql.tealtools.graph import load_graph
-    >>> from .ast import Opcode, IntegerAddOpcode
-    >>> g = load_graph("contract.teal")         # a .teal file or a dir of them
-    >>> [n for n in g if isinstance(n, IntegerAddOpcode)]
-
-Graphviz rendering of the loaded graph lives in :mod:`tealql.tealtools.viz`
-(``to_dot`` / ``draw_cfg`` / ``cfg_bb_graph`` / ``draw_cfg_bb``).
+"""TEAL program graph: parse source into typed :mod:`.ast` nodes (one per opcode,
+hashed by ``(file, line)``), then derive ``kind="cfg"`` edges — each carrying a
+``successor`` label — plus basic blocks from them via :mod:`.cfg_build`. SSA /
+phis / const values are reconstructed downstream. The source may be a ``.teal``
+file, a directory of them, or an in-memory ``{name: text}`` mapping.
 """
 from __future__ import annotations
 
@@ -34,25 +18,20 @@ import base64
 import hashlib
 import re
 
-# TEAL assembler pseudo-ops the tree-sitter grammar doesn't know (`byte` / `method`
-# / `addr` parse as ERROR nodes and get dropped, starving their consumers). Rewrite
-# them line-for-line to the canonical push the assembler itself emits, so the whole
-# pipeline sees real opcodes. `int` IS in the grammar (single_numeric_argument) and
-# already const-resolves, so it's left untouched. Canonical (disassembled) sources
-# have none of these -> unchanged.
+# Pseudo-ops the tree-sitter grammar doesn't know: `byte` / `method` / `addr`
+# parse as ERROR nodes and are DROPPED, starving their consumers, so they are
+# rewritten line-for-line to the canonical push the assembler emits. `int` IS in
+# the grammar and already const-resolves, so it is left untouched.
 
 
 def _byte_literal(v: str):
-    """Raw bytes for a TEAL byte literal (``0x`` / ``"str"`` / ``b64``/``base64(..)``
-    / ``b32``/``base32(..)``), or None if unrecognised.
+    """Raw bytes for a TEAL byte literal (``0x`` / ``"str"`` / ``b64`` /
+    ``base64(..)`` / ``b32`` / ``base32(..)``), or None if unrecognised.
 
-    Thin wrapper over the canonical :func:`tealql.tealtools.ast.literals.
-    decode_byte_literal`. This module previously carried its own copy, which had
-    drifted: its string decoder emitted ``ord(c)`` per character, so a non-ASCII
-    literal like ``byte "caf\u00e9"`` normalised to ``636166e9`` instead of the
-    assembler's UTF-8 ``636166c3a9`` — every guard comparing against that
-    constant then mis-evaluated. One decoder, one behaviour.
-    """
+    HAZARD: delegate to the one canonical decoder, never re-implement — a copy
+    drifts: a per-character ``ord`` decoder turns the non-ASCII literal
+    ``byte "caf\u00e9"`` into ``636166e9``, not the
+    assembler's UTF-8 ``636166c3a9``, so every guard on it mis-evaluates."""
     from .ast.literals import decode_byte_literal
     try:
         raw, _kind = decode_byte_literal(v.strip())
@@ -65,25 +44,14 @@ def _strip_inline_comment(code: str) -> str:
     """Drop a ``//`` inline comment that sits outside a quoted string, outside a
     parenthesised group, and at a TOKEN BOUNDARY.
 
-    None of the three rules is decoration; each corresponds to a way the base64
-    alphabet collides with the comment marker, because that alphabet INCLUDES
-    ``/``. A payload containing ``//`` is ordinary in both spellings the
-    assembler accepts:
-
-    * ``pushbytes base64(AA//)`` — the paren rule. Cutting at the first ``//``
-      truncated the operand to ``base64(AA`` and the value silently became the
-      ASCII text of the fragment.
-    * ``pushbytes base64 AAAAAA//`` — the token-boundary rule, and the same bug
-      one spelling over: with no parens there is no depth to track, so
-      ``b'\\x00\\x00\\x00\\x00\\x0f\\xff'`` decoded to four zero bytes. A guard
-      comparing against such a constant simply never matches, and nothing says
-      so. (Found by ``test_the_push_opcodes_agree_with_the_pseudo_op``, which is
-      precisely the payload shape a hand-written example never produces.)
-
-    The token-boundary rule is also what the real assembler does: go-algorand
-    splits the line on whitespace first and only then asks whether a token
-    STARTS with ``//``, so ``AAAAAA//`` stays one token and ``int 1// x`` is not
-    a comment at all. ``tokenize_operands`` already applies the same rule."""
+    HAZARD: all three rules are load-bearing, because the base64 alphabet
+    includes ``/`` and a payload containing ``//`` is ordinary. Cutting at the
+    first ``//`` truncates ``pushbytes base64(AA//)`` to ``base64(AA`` (the
+    value silently becomes the ASCII of the fragment) and decodes
+    ``pushbytes base64 AAAAAA//`` to four zero bytes — a guard against such a
+    constant then never matches, and nothing reports it. The token-boundary rule
+    is what go-algorand does: split on whitespace, then ask whether a token
+    STARTS with ``//``, so ``int 1// x`` is not a comment at all."""
     q = False
     depth = 0
     for i in range(len(code) - 1):
@@ -102,48 +70,37 @@ def _strip_inline_comment(code: str) -> str:
     return code
 
 
-#: a ``byte`` / ``method`` / ``addr`` pseudo-op at line start (after indent),
-#: followed by ANY whitespace — tab-separated forms count too.
+#: a ``byte`` / ``method`` / ``addr`` pseudo-op at line start, any whitespace
+#: after it (tab-separated forms count too).
 _PSEUDO_OP_RE = re.compile(r"(?:^|\n)[ \t]*(?:byte|method|addr)[ \t]")
 
-#: Real (non-pseudo) opcodes that take a byte-LITERAL operand list. The grammar
-#: accepts ``0x..`` and ``"str"`` for these but NOT the ``base64(..)`` /
-#: ``b64(..)`` / ``base32(..)`` / ``b32(..)`` encodings the assembler allows, so
-#: such a line parses as an ERROR and the opcode keeps EMPTY immediates — the
-#: constant is gone. For ``bytecblock`` that is severe: every ``bytec_N``
-#: reference in the program then resolves to nothing. Puya emits exactly this
-#: (``bytecblock base64(DIEBQw==)``) for embedded program bytes.
+#: Real opcodes taking a byte-LITERAL operand list. The grammar takes ``0x..``
+#: and ``"str"`` but NOT the ``base64(..)`` / ``b32(..)`` encodings the assembler
+#: allows: the line parses as an ERROR and the opcode keeps EMPTY immediates, so
+#: the constant is gone. For ``bytecblock`` — which is how Puya emits embedded
+#: program bytes — that leaves every ``bytec_N`` in the program resolving to
+#: nothing.
 _BYTE_LITERAL_OPS = frozenset({"pushbytes", "pushbytess", "bytecblock"})
 
 #: The encodings the grammar chokes on, in either spelling and either form.
 _BYTE_ENC_RE = re.compile(r"\b(?:b64|base64|b32|base32)\s*[( ]")
 
-#: Ops whose operand is a LABEL (so a path-mangled label must be renamed there
-#: too). ``b`` is the bare branch — ``b+`` / ``b-`` etc. are different tokens and
-#: do not match, since the comparison is against the whole first token.
+#: Ops whose operand is a LABEL (a mangled label must be renamed there too).
+#: Comparison is against the WHOLE first token, so the bare ``b`` branch here
+#: never matches the separate ``b+`` / ``b-`` tokens.
 _LABEL_REF_OPS = frozenset({"b", "bz", "bnz", "callsub", "match", "switch"})
 
 
 def _sanitize_path_labels(text: str) -> str:
     """Mangle grammar-unsafe ``/`` and ``.`` inside LABELS to ``_``.
 
-    puya-sol emits full source paths as subroutine labels
-    (``callsub /home/dev/contracts/Token.sol.transfer``). The tree-sitter-teal
-    grammar's label token stops at the first ``/``, so the target truncates to
-    ``/home``, the rest of the path parses as a run of bare ``/`` division
-    opcodes, and the subroutine is never resolved — five parse diagnostics and
-    an empty label set on a contract that is perfectly well-formed TEAL.
-
-    The rename is applied CONSISTENTLY to the label's definition and to every
-    branch / callsub / match / switch reference, so it is bijective and leaves
-    the CFG identical. It is char-for-char (``/`` and ``.`` both become one
-    ``_``), so line lengths are preserved and every node's column span stays
-    valid. Only label-definition and label-reference lines are touched — never
-    the ``/`` division opcode, never a numeric or hex operand.
-
-    A no-op when no label contains ``/`` or ``.``. If two distinct labels would
-    mangle to the SAME name (or onto a label already present), that rename is
-    dropped rather than silently merging two blocks."""
+    The grammar's label token stops at the first ``/``, so a path-named label
+    (puya-sol emits ``callsub /home/dev/Token.sol.transfer``) truncates, the
+    rest parses as bare ``/`` division opcodes, and the subroutine is never
+    resolved. The rename covers the definition AND every branch / callsub /
+    match / switch reference, so it is bijective and the CFG is identical; it is
+    char-for-char, so column spans stay valid. A rename that would collide with
+    another label is dropped rather than merging two blocks."""
     rename: dict[str, str] = {}
     existing: set[str] = set()
     for line in text.split("\n"):
@@ -155,9 +112,8 @@ def _sanitize_path_labels(text: str) -> str:
                 rename[label] = label.replace("/", "_").replace(".", "_")
     if not rename:
         return text
-    # Drop any rename that would collide — with another mangled label, or with a
-    # label that already exists under that name. Merging two blocks would corrupt
-    # the CFG far worse than the truncation this works around.
+    # A collision — with another mangled label or an existing one — would MERGE
+    # two blocks, corrupting the CFG worse than the truncation. Drop it.
     taken: dict[str, str] = {}
     for label, mangled in list(rename.items()):
         if mangled in taken or mangled in existing - {label}:
@@ -185,18 +141,11 @@ def _sanitize_path_labels(text: str) -> str:
 def _blank_quoted_comments(text: str) -> str:
     """Blank out an inline ``//`` comment that CONTAINS a quote character.
 
-    The grammar's string tokenizer runs past the ``//`` when the comment holds
-    a ``"``, so `pushbytes "asa_"   // [name, "asa_"]` parses with the
-    string_argument `'"asa_"   // [name,'` — the comment text becomes PART OF
-    THE CONSTANT. A guard comparing against that value can never match, and
-    nothing reports a problem; only a stray `]` shows up as a diagnostic
-    elsewhere on the line.
-
-    Replaced with spaces rather than deleted, so line lengths — and therefore
-    every column span — are preserved exactly. Only comments containing a quote
-    are touched; ordinary comments parse fine and are left for the grammar.
-    Our own :func:`_strip_inline_comment` already finds the boundary correctly
-    (it tracks quote state), so the split is reliable."""
+    The grammar's string tokenizer runs past the ``//`` when the comment holds a
+    ``"``, so on `pushbytes "asa_"   // [name, "asa_"]` the comment text becomes
+    PART OF THE CONSTANT — a guard against that value can never match, and only
+    a stray `]` shows up as a diagnostic. Blanked, not deleted, so line lengths
+    and therefore every column span are preserved exactly."""
     if '"' not in text:
         return text
     out = []
@@ -209,26 +158,17 @@ def _blank_quoted_comments(text: str) -> str:
 
 def _opcode_named_labels(text: str) -> str:
     """Rename LABELS whose name is an opcode mnemonic (``pop:`` / ``concat:`` /
-    ``store:`` / ``get:`` …), consistently at the definition and every
-    reference.
+    ``get:`` …), at the definition and every reference.
 
-    The grammar tokenizes ``pop:`` as the ``pop`` OPCODE followed by a stray
-    ``:``, so the label is never defined: it vanishes from ``prog.labels``, and
-    every ``b``/``match``/``switch`` that targets it loses its CFG edge. Puya
-    names a router label after the ABI method, and methods called ``get`` /
-    ``set`` / ``pop`` / ``append`` / ``concat`` / ``store`` are entirely
-    ordinary — this accounts for most of the residual parse failures in the
-    corpus (a single ``match`` line with four such targets emits four).
-
-    Renaming is bijective, so the CFG is unchanged. Unlike
-    :func:`_sanitize_path_labels` it does NOT preserve line length (a suffix
-    must be added); that is fine because every span is computed against this
-    normalized text, and line NUMBERS — the thing findings report — are
-    untouched.
-
-    Replacement is token-wise, never a substring sweep: a label named ``b`` on
-    the line ``b b`` must rename the operand and leave the branch opcode alone.
-    A rename that would collide with an existing label is dropped."""
+    The grammar reads ``pop:`` as the ``pop`` OPCODE plus a stray ``:``, so the
+    label is never defined and every ``b``/``match``/``switch`` targeting it
+    loses its CFG edge; Puya names router labels after ABI methods, and methods
+    called ``get`` / ``pop`` / ``concat`` are ordinary. The rename is bijective
+    (CFG unchanged) and token-wise, never a substring sweep: a label named ``b``
+    on the line ``b b`` must rename the operand and leave the opcode alone. It
+    does NOT preserve line length, which is safe because spans are computed
+    against this normalized text and line NUMBERS don't move. A rename colliding
+    with an existing label is dropped."""
     mnemonics = _opcode_mnemonics()
     defs: set = set()
     for line in text.split("\n"):
@@ -268,7 +208,7 @@ def _opcode_named_labels(text: str) -> str:
 
 def _opcode_mnemonics() -> frozenset:
     """Every opcode token the grammar recognises, so a label colliding with one
-    can be spotted. Derived from the AVM arity table, not re-listed."""
+    can be spotted — derived from the AVM arity table, never re-listed."""
     from .avm import SIG, _FRAME_OVERRIDES
     return frozenset(SIG) | frozenset(_FRAME_OVERRIDES) | frozenset({
         "dig", "bury", "cover", "uncover", "popn", "dupn",
@@ -276,13 +216,11 @@ def _opcode_mnemonics() -> frozenset:
     })
 
 
-#: SOURCE REWRITES applied, in order, before the grammar ever sees the text.
-#: Each works around a construct tree-sitter-teal cannot parse, and each is a
-#: no-op on source that does not contain it. Order matters: comments are
-#: neutralised first (a quote inside one derails the string tokenizer), then
-#: labels are made parseable, and only then does the per-line pseudo-op rewrite
-#: below run. Kept as a named sequence rather than nested calls so the order is
-#: legible and a new rewrite has an obvious place to go.
+#: Source rewrites applied, IN ORDER, before the grammar sees the text; each
+#: works around a construct tree-sitter-teal cannot parse and is a no-op
+#: otherwise. Order is load-bearing: comments are neutralised first (a quote
+#: inside one derails the string tokenizer), then labels are made parseable,
+#: and only then does the per-line pseudo-op rewrite below run.
 _SOURCE_REWRITES = (
     ("blank quote-bearing comments", _blank_quoted_comments),
     ("sanitize path labels",         _sanitize_path_labels),
@@ -312,18 +250,16 @@ def _normalize_pseudo_ops(data: bytes) -> bytes:
         elif op == "addr":
             try:                                   # 58-char base32 = 32B pubkey + 4B csum
                 raw = base64.b32decode(operand.strip() + "=" * (-len(operand.strip()) % 8))
-                # The 32-byte public key is the prefix (a full address adds a
-                # 4-byte checksum -> 36 bytes). A decode SHORTER than 32 bytes
-                # would truncate to a sub-32-byte `pushbytes` and silently corrupt
-                # the constant — reject it so the parser handles the original line.
+                # The pubkey is the 32-byte prefix (+4B checksum = 36). A shorter
+                # decode would silently corrupt the constant — reject it and let
+                # the parser handle the original line.
                 new = f"pushbytes 0x{raw[:32].hex()}" if len(raw) >= 32 else None
             except Exception:
                 new = None
         elif op in _BYTE_LITERAL_OPS and _BYTE_ENC_RE.search(operand):
-            # Re-encode each operand to `0x..`, which the grammar DOES accept.
-            # `tokenize_operands` already keeps a parenthesised `base64(..)`
-            # group (and, folded, the `b64 <data>` pair) as ONE token, so an
-            # operand list survives intact.
+            # Re-encode each operand to `0x..`, which the grammar DOES accept;
+            # `tokenize_operands` keeps a `base64(..)` group (and, folded, the
+            # `b64 <data>` pair) as ONE token, so the operand list survives.
             from .ast.literals import tokenize_operands
             try:
                 toks = tokenize_operands(operand, fold_byte_keywords=True)
@@ -343,15 +279,10 @@ def _normalize_pseudo_ops(data: bytes) -> bytes:
 
 
 def _resolve_source_files(source):
-    """Yield ``(relpath, bytes)`` for each ``.teal`` under ``source``, pseudo-op-
-    normalized (see :func:`_normalize_pseudo_ops`) so the parser sees only
-    canonical opcodes.
-
-    ``source`` is one of: a single ``.teal`` file, a directory containing ``.teal``
-    files, **or an in-memory mapping** ``{name: str | bytes}`` of TEAL source -- the
-    last form lets the whole pipeline (graph -> SSA -> lift -> analysis) run with no
-    filesystem at all (editor integrations, fuzzing, tests without temp files).
-    """
+    """Yield ``(relpath, bytes)`` for each ``.teal`` under ``source`` — a file, a
+    directory, or an in-memory ``{name: str | bytes}`` mapping (no filesystem) —
+    normalized by :func:`_normalize_pseudo_ops` so the parser sees only canonical
+    opcodes."""
     if isinstance(source, Mapping):
         for name, text in source.items():
             data = text.encode("utf-8") if isinstance(text, str) else text
@@ -367,19 +298,14 @@ def _resolve_source_files(source):
 
 
 def _load_source_bytes(source: Path) -> dict[str, bytes]:
-    """Map basename -> raw source bytes (keyed by basename, the relative path the
-    ``ast.parse`` pass reports for each node)."""
+    """Map basename -> raw source bytes; basename is the path ``ast.parse``
+    reports for each node."""
     return {Path(rel).name: data for rel, data in _resolve_source_files(source)}
 
 
 def _slice_source(sources: dict[str, list[str]], loc: Location) -> str:
-    """Extract the source text covered by a :class:`Location`.
-
-    Lines are 1-based; columns are native 0-based half-open ``[start, end)``.
-    TEAL opcodes are always single-line; for multi-line spans (e.g. the
-    program-root ``Source`` node) we return ``""`` since the covered region
-    isn't a single statement.
-    """
+    """Source text covered by a :class:`Location` — lines 1-based, columns
+    0-based half-open ``[start, end)``, ``""`` for a multi-line span."""
     lines = sources.get(loc.file) or sources.get(Path(loc.file).name)
     if lines is None:
         return ""
@@ -393,15 +319,8 @@ def _slice_source(sources: dict[str, list[str]], loc: Location) -> str:
 def load_graph(
     source,
 ) -> nx.MultiDiGraph:
-    """Build a MultiDiGraph from a TEAL source.
-
-    Parameters
-    ----------
-    source:
-        A raw ``.teal`` file, a directory of ``.teal`` files, **or** an in-memory
-        mapping ``{name: str | bytes}`` of TEAL source (no filesystem). All run the
-        same pure-Python pipeline.
-    """
+    """Build a MultiDiGraph from a ``.teal`` file, a directory of them, or an
+    in-memory ``{name: str | bytes}`` mapping (no filesystem)."""
     if isinstance(source, Mapping):
         g_source = "<memory>"
     else:
@@ -416,16 +335,14 @@ def load_graph(
     # (file, start_line) -> AstNode, for the const-value mapping below.
     by_loc: dict[tuple[str, int], AstNode] = {}
 
-    # Pass 1: parse the source into AstNode objects. Pass 2: derive the
-    # control-flow edges + basic blocks from them. No relational intermediate --
-    # the same objects flow through both passes and into the graph.
+    # Pass 1: parse into AstNodes. Pass 2: derive CFG edges + BBs from them.
     from .ast.parse import parse_nodes
     from .cfg_build import build_cfg_edges, build_basic_blocks
     parse_diags: list = []
     nodes = parse_nodes(_load_source_bytes(source), diagnostics=parse_diags)
-    # Unparseable spans the grammar dropped. Non-empty => the graph (and
-    # everything built on it) covers only PART of the source; consumers
-    # surface this via SSAProgram.parse_diagnostics.
+    # HAZARD: spans the grammar dropped. Non-empty => the graph, and everything
+    # built on it, covers only PART of the source; consumers surface this via
+    # SSAProgram.parse_diagnostics.
     g.graph["parse_diagnostics"] = tuple(parse_diags)
     for node in nodes:
         by_loc[(node.location.file, node.location.start_line)] = node

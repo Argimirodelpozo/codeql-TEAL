@@ -1,9 +1,9 @@
-"""Inner-transaction field helpers, the shared user-input taint fixpoint, and
-the cached Puya-IR lifter bridge the ir-* detector family runs on.
+"""Inner-transaction field helpers, the shared user-input taint fixpoint, and the
+cached Puya-IR lifter bridge the ir-* detector family runs on. Import via
+:mod:`tealql.security.common`.
 
-Split out of ``common.py``; import via :mod:`tealql.security.common`.
-NOTE: tests monkeypatch ``common.ir_lifter``; detectors call it attribute-style
-(``common.ir_lifter(...)``), which resolves through the facade — keep it so.
+HAZARD: detectors must call ``common.ir_lifter(...)`` attribute-style so it
+resolves through the facade — tests monkeypatch it there.
 """
 from __future__ import annotations
 
@@ -30,8 +30,7 @@ logger = logging.getLogger("tealql.security.common")
 
 @dataclass(frozen=True)
 class InnerTxnFieldSet:
-    """One ``itxn_field FIELD`` assignment, with the SSA value being
-    written."""
+    """One ``itxn_field FIELD`` assignment plus the SSA value being written."""
 
     assignment: Assignment
     field: str
@@ -53,8 +52,7 @@ class InnerTxnFieldSet:
 def inner_txn_field_assigns(
     prog: SSAProgram, *, file: Optional[str] = None,
 ) -> list[InnerTxnFieldSet]:
-    """Iterate every ``itxn_field FIELD`` opcode. The set value is
-    ``inputs[0]`` (top-of-stack at the itxn_field call)."""
+    """Every ``itxn_field FIELD`` opcode; the value set is ``inputs[0]`` (top of stack)."""
     out: list[InnerTxnFieldSet] = []
     for a in prog.assignments:
         if not file_match(a.location.file, file):
@@ -71,8 +69,7 @@ def inner_txn_field_assigns(
 def _zero_address_seeds(
     prog: SSAProgram, *, file: Optional[str] = None,
 ) -> set:
-    """SSAVars that read ``global ZeroAddress`` — the canonical 32-zero-byte
-    address source. Seeds for :func:`value_is_zero_address`."""
+    """SSAVars reading ``global ZeroAddress`` — seeds for :func:`value_is_zero_address`."""
     return {
         out for a in global_field_reads(prog, "ZeroAddress", file=file)
         for out in a.outputs if isinstance(out, SSAVar)
@@ -84,13 +81,9 @@ def _zero_address_seeds(
 def value_is_zero_address(
     prog: SSAProgram, value, *, file: Optional[str] = None,
 ) -> bool:
-    """``value`` provably resolves to the zero address: either a 32-byte all-zero
-    bytes constant, or a value flowing (through phi / scratch / proto-frame, via
-    :func:`_operand_flows_from_field_var`) from ``global ZeroAddress``.
-
-    Used to suppress *safe* dangerous-field writes — setting ``itxn_field
-    RekeyTo`` / ``CloseRemainderTo`` to the zero address is a defensive no-op
-    (the field's default), not the drain/rekey antipattern."""
+    """``value`` provably resolves to the zero address — a 32-byte all-zero constant,
+    or a flow from ``global ZeroAddress``. Setting ``RekeyTo``/``CloseRemainderTo``
+    to it is the field's default (a defensive no-op), not the drain antipattern."""
     cv = value if isinstance(value, Const) else getattr(value, "const_value", None)
     if isinstance(cv, Const) and cv.kind == "bytes":
         hexpart = cv.value[2:] if cv.value.startswith("0x") else cv.value
@@ -105,9 +98,7 @@ def value_is_zero_address(
 
 
 def inner_txn_sets_nonzero_fee(field_set: InnerTxnFieldSet) -> bool:
-    """``itxn_field Fee`` whose value resolves to a non-zero integer
-    constant (a *known* non-zero int — dynamic values aren't
-    flagged)."""
+    """``itxn_field Fee`` set to a KNOWN non-zero int; dynamic values aren't flagged."""
     if field_set.field != "Fee":
         return False
     cv = field_set.value_const
@@ -122,14 +113,10 @@ def inner_txn_sets_nonzero_fee(field_set: InnerTxnFieldSet) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# User-input taint + itxn-field guard
-#
-# Shared by every detector that asks "does an attacker-controlled value reach
-# a sensitive inner-transaction field without a dominating check?" — the
-# tainted-fund-flow family (payment fields) and arbitrary-inner-appcall (the
-# call target). The taint is a forward propagation over the PySSA
-# def-use / phi / scratch relation, interprocedural via the frame-flow bridge
-# (a value fed into a proto param is tainted from the caller args bound to it).
+# User-input taint + itxn-field guard: "does an attacker-controlled value reach a
+# sensitive inner-txn field without a dominating check?" Forward propagation over
+# the PySSA def-use / phi / scratch relation, interprocedural via the frame-flow
+# bridge (a proto param is tainted from the caller args bound to it).
 # ---------------------------------------------------------------------------
 
 
@@ -139,14 +126,9 @@ _CMP_OPS = frozenset({"==", "!="})
 
 
 def source_label(op: str, imm: str) -> Optional[str]:
-    """The user-input source family ``op`` (with immediates ``imm``) reads, or
-    ``None``: ``ApplicationArgs`` and the caller-composed foreign arrays
-    (``Accounts`` / ``Assets`` / ``Applications``), LogicSig ``arg``s, and the
-    ``itxn ... LastLog`` of a just-called sub-app.
-
-    Delegates to :func:`tealql.tealtools.avm.attacker_input_label`, the single
-    table shared with the IR-level seeds — this used to be a second hand-kept
-    copy, and the two silently agreed on an incomplete source set."""
+    """The user-input source family ``op``/``imm`` reads, or ``None``. Delegates to
+    :func:`avm.attacker_input_label` — the ONE table, shared with the IR-level
+    seeds; a second hand-kept copy silently drifts to an incomplete source set."""
     from tealql.tealtools.avm import attacker_input_label
     return attacker_input_label(op, imm)
 
@@ -154,20 +136,13 @@ def source_label(op: str, imm: str) -> Optional[str]:
 
 
 def user_input_taint(prog: SSAProgram, file: Optional[str] = None) -> dict:
-    """``{SSAVar|Phi: frozenset[(label, slot)]}`` — forward taint from the
-    user-input sources over the SSA def-use / phi / scratch relation, where
-    ``slot`` = ``(op, immediates)`` so two reads of the SAME input slot match
-    (and ``ApplicationArgs[0]`` vs ``[1]`` don't).
+    """``{SSAVar|Phi: frozenset[(label, slot)]}`` — forward taint from the user-input
+    sources, where ``slot`` = ``(op, immediates)`` so reads of the SAME input slot
+    match and ``ApplicationArgs[0]`` vs ``[1]`` do not. Interprocedural: a
+    ``frame_dig`` param read inherits the taint of the caller args bound to it.
 
-    Interprocedural: each ``frame_dig`` param read inherits the taint of the
-    caller args bound to it (:func:`frame_param_sources`), so a value fed INTO a
-    subroutine parameter and consumed inside the callee is caught natively — no
-    IR lift, no per-detector supplement.
-
-    Memoised per ``(prog, file)``: the whole tainted-fund-flow family
-    (tainted-fund-flow / partial / arbitrary-inner-appcall / -asset) shares one
-    fixpoint instead of recomputing it per detector. Sound because the detectors
-    only READ ``prog`` (no mutation between runs in a scan)."""
+    Memoised per ``(prog, file)`` so the whole fund-flow family shares one fixpoint
+    — sound only because detectors READ ``prog`` and never mutate it mid-scan."""
     cache = getattr(prog, "_sec_user_input_taint", None)
     if cache is None:
         cache = {}
@@ -184,41 +159,29 @@ def user_input_taint(prog: SSAProgram, file: Optional[str] = None) -> dict:
 
 
 
-# Warn only once per process if the lift package itself fails to import
-# (a real breakage — the pre-IR path is puya-free, so missing puya alone does
-# NOT trip this); per-contract lift failures warn individually in ir_lifter.
+# The pre-IR path is puya-free, so a lift-package ImportError is a real breakage,
+# not merely puya-not-installed. Warned once per process.
 _LIFT_IMPORT_WARNED = False
 
 
 
 
 def ir_lifter(prog: SSAProgram, file: Optional[str] = None):
-    """Build + cache the IR lifter for ``prog`` -- the lifted, Puya-shaped IR the
-    interprocedural detectors (e.g. ``ir-tainted-fund-flow``) run on.
+    """Build + cache the post-``build`` ``_Lifter`` the ir-* detectors run on, or
+    ``None`` when the contract doesn't lift. Cached per ``prog``; ``file`` is taken
+    for signature parity but unused (the lift is whole-program).
 
-    Built from a FRESH ``SSAProgram`` off ``prog.source_path`` rather than ``prog``
-    itself: the lift mutates its input CFG (``_prune_dead_assert_edges`` drops dead
-    edges + rebuilds join phis), and the SSA-layer detectors read the SAME
-    ``prog`` -- so lifting a copy keeps their substrate pristine. Returns the
-    ``_Lifter`` instance (post-``build``, carrying ``.subs``/``.regs``/``.reg`` the
-    taint + fund-flow analyses consume), or ``None`` when the contract doesn't lift
-    (rare; the lift is ~99.9% robust on real mainnet). Cached per ``prog`` -- one
-    lift shared by every IR detector in a scan.
+    HAZARD: lift from a FRESH ``SSAProgram`` off ``prog.source_path``, never from
+    ``prog`` — the lift MUTATES its input CFG (dead-edge prune + phi rebuild) and
+    the SSA-layer detectors read that same ``prog``.
 
-    ``file`` is accepted for signature parity with the SSA analyses but unused: the
-    lift is whole-program, and SSAPrograms are per-file (xcontract aside).
-
-    Failure is NEVER silent: a per-contract lift failure warns with the
-    reason, and a lift-package import failure (which should NOT happen just
-    because puya is missing — the pre-IR taint path is puya-free) warns once.
-    Either way the ir-* detectors degrade (SSA-sibling fallback or no
-    findings), and the user must be able to see the reduced precision."""
+    Failure is never silent: it warns, and the ir-* detectors then degrade to an
+    SSA-sibling fallback or no findings, which the user must be able to see."""
     global _LIFT_IMPORT_WARNED
     sentinel = object()
-    # Shared with the query-side ``tealtools.lift.build_lifter`` under the SAME
-    # ``_ir_lifter`` attribute, so one program is lifted at most once even when a
-    # precise taint-query and the ir-* detectors both run (e.g. taint-query
-    # --precise --verify): whichever builds first caches here; the other reuses.
+    # Same ``_ir_lifter`` attribute as the query-side ``lift.build_lifter``, so a
+    # program is lifted at most once when both a taint-query and the ir-* detectors
+    # run: whichever builds first caches here, the other reuses.
     cached = getattr(prog, "_ir_lifter", sentinel)
     if cached is not sentinel:
         return cached
@@ -226,8 +189,6 @@ def ir_lifter(prog: SSAProgram, file: Optional[str] = None):
     try:
         from tealql.tealtools.lift.lift import _Lifter
     except ImportError as e:
-        # The detector-facing lift is deliberately puya-free, so this is a
-        # genuine breakage (not merely puya-not-installed), hence once-only.
         if not _LIFT_IMPORT_WARNED:
             _LIFT_IMPORT_WARNED = True
             logger.warning(
@@ -249,15 +210,13 @@ def ir_lifter(prog: SSAProgram, file: Optional[str] = None):
                 lf.build()
                 lifter = lf
             except LiftError as e:
-                # EXPECTED coverage gap: a contract the lift can't reconstruct
-                # (~0.1% of real mainnet). Info, not warning — the ir-* fallback
-                # is the designed behaviour, not an anomaly.
+                # EXPECTED coverage gap (~0.1% of real mainnet), so info: the
+                # ir-* fallback is designed behaviour, not an anomaly.
                 logger.info(
                     "Puya-IR lift did not cover %s (%s) — ir-* detections use "
                     "their SSA fallback; results may be less precise.", src, e)
             except Exception as e:
-                # UNEXPECTED: the lift raised something other than a LiftError,
-                # which points at a bug rather than a coverage limit. Louder.
+                # Anything but a LiftError points at a bug, not a coverage limit.
                 logger.warning(
                     "Puya-IR lift crashed UNEXPECTEDLY for %s (%s: %s) — this "
                     "is likely a bug; ir-* detections fall back. Please report.",
@@ -328,8 +287,8 @@ def _compute_user_input_taint(prog: SSAProgram, file: Optional[str] = None) -> d
 
 
 def sender_creator_vars(prog: SSAProgram, *, file: Optional[str] = None) -> set:
-    """SSAVars reading ``txn Sender`` or ``global CreatorAddress`` — the seeds
-    for the "this access is gated on who sent it" suppression."""
+    """SSAVars reading ``txn Sender`` / ``global CreatorAddress`` — seeds for the
+    "this access is gated on who sent it" suppression."""
     return (
         ssavar_outputs(txn_field_reads(prog, "Sender", file=file))
         | ssavar_outputs(global_field_reads(prog, "CreatorAddress", file=file))
@@ -346,16 +305,13 @@ def itxn_value_guarded(
     taint: dict,
     sender_vars: set,
 ) -> bool:
-    """The inner-txn field write at ``assignment`` is dominated by a check of
-    either the tainted value itself (a predicate derived from the SAME input
-    slot — taint propagates through the comparison, so ``arg < N`` carries
-    ``arg``'s slot) or of ``txn Sender`` (a sender/creator equality).
+    """The inner-txn field write at ``assignment`` is dominated by a check of the
+    tainted value itself (a predicate from the SAME input slot) or of ``txn Sender``.
 
-    A genuine sender guard AUTHENTICATES — it pins the caller's identity: an
-    EQUALITY (``Sender == Creator`` / ``== <admin>``) that HOLDS on this path.
-    A ``!=`` (e.g. the ``Sender != ZeroAddress`` sanity check) pins nothing, and
-    a ``==`` taken on its FALSE edge (the explicitly non-matching arm) authorizes
-    nothing — neither counts, or a real tainted write would read as guarded."""
+    HAZARD: a sender guard counts only as an EQUALITY that HOLDS on this path. A
+    ``!=`` (``Sender != ZeroAddress``) pins nothing, and a ``==`` taken on its FALSE
+    edge authorizes nothing — crediting either makes a real tainted write read as
+    guarded."""
     file = assignment.location.file
     preds = pp.predicates_at(file=file, line=assignment.location.line)
     for cond in preds:

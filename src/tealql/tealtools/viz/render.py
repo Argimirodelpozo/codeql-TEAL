@@ -1,15 +1,7 @@
-"""Graphviz rendering for the loaded CFG graph.
-
-Operates on the ``networkx`` graph returned by :func:`tealql.tealtools.graph.load_graph`
-(AST nodes + ``kind="cfg"`` edges + per-node ``bb`` annotations). Two views:
-
-- op-level: :func:`to_dot` / :func:`draw_cfg` — one node per opcode.
-- basic-block level: :func:`cfg_bb_graph` + :func:`to_bb_dot` /
-  :func:`draw_cfg_bb` — opcodes collapsed into BB boxes.
-
-For the SSA *functional* view (``out = op(in)`` per assignment, with const /
-range resolution), use :meth:`tealql.tealtools.ssa.SSAProgram.functional` /
-``functional_by_block`` — those render the reconstructed SSA directly.
+"""Graphviz rendering for the loaded CFG graph (AST nodes + ``kind="cfg"`` edges +
+per-node ``bb`` annotations), at op level (:func:`to_dot`) or with opcodes
+collapsed into BB boxes (:func:`cfg_bb_graph` + :func:`to_bb_dot`), plus the
+control-tree region renderers.
 """
 from __future__ import annotations
 
@@ -99,8 +91,8 @@ def to_dot(
     file: str | None = None,
     rankdir: str = "TB",
 ) -> str:
-    """Emit Graphviz DOT for the op-level CFG. ``file`` optionally restricts
-    to one source file; nodes are labeled ``<line>: <opcode>``."""
+    """Emit Graphviz DOT for the op-level CFG, one node per opcode labeled
+    ``<line>: <opcode>``; ``file`` restricts to one source file."""
     nodes = [n for n in g.nodes if file is None or n.location.file == file]
     node_set = set(nodes)
 
@@ -149,13 +141,9 @@ def draw_cfg(
 
 
 def cfg_bb_graph(g: nx.MultiDiGraph) -> nx.MultiDiGraph:
-    """Return a CFG graph with every basic block collapsed into one node.
-
-    Output nodes are :class:`BasicBlockNode` instances (carrying the ordered
-    list of AST nodes inside). Inter-BB CFG edges are kept with their original
-    ``successor`` label; intra-BB straight-line edges are collapsed. Requires
-    that ``load_graph`` annotated every AST node with a ``bb`` attribute.
-    """
+    """A CFG graph with every basic block collapsed into one :class:`BasicBlockNode`,
+    keeping inter-BB edges with their ``successor`` label; requires the per-node
+    ``bb`` annotation ``load_graph`` adds."""
     bb_cache: dict[tuple, BasicBlockNode] = {}
 
     def _bb_for_ast(n: AstNode) -> BasicBlockNode | None:
@@ -205,8 +193,8 @@ def _bb_label(bb: BasicBlockNode, *, max_lines: int = 20) -> str:
     if len(body_lines) > max_lines:
         elided = len(body_lines) - (max_lines - 1)
         body_lines = body_lines[: max_lines - 1] + [f"... (+{elided} more)"]
-    # Escape each part, then join with the literal ``\l`` (Graphviz left-align);
-    # escaping the joined result would double the separators' backslashes.
+    # Escape each part, THEN join with the literal ``\l`` (Graphviz left-align);
+    # escaping the joined result doubles the separators' backslashes.
     return "\\l".join(escape(p) for p in [header, ""] + body_lines) + "\\l"
 
 
@@ -261,9 +249,8 @@ def draw_cfg_bb(
     engine: str = "dot",
     rankdir: str = "TB",
 ):
-    """Render the CFG at basic-block granularity. Accepts either the op-level
-    graph (collapsed internally) or a pre-built BB graph from
-    :func:`cfg_bb_graph`."""
+    """Render the CFG at basic-block granularity, from either the op-level graph
+    (collapsed internally) or a pre-built BB graph."""
     h = g if any(isinstance(n, BasicBlockNode) for n in g.nodes) else cfg_bb_graph(g)
     return render(
         to_bb_dot(h, file=file, rankdir=rankdir),
@@ -276,22 +263,9 @@ def draw_cfg_bb(
 
 
 def region_to_dot(region: Region, *, nested: bool = True) -> str:
-    """Render the control tree as a Graphviz DOT string.
-
-    ``nested=True`` (default): each non-leaf region is a cluster
-    (subgraph) containing its children — useful for *seeing* the
-    decomposition. Leaf blocks show their op list. Sibling clusters
-    don't carry CFG edges; ordering within a ``SequenceR`` is shown
-    via dashed arrows so flow direction is visible.
-
-    ``nested=False``: a pure parent-child tree where every region
-    is its own node and edges are labelled by role (``"then"``,
-    ``"body"``, ``"case 2"``, etc.). Easier to read for very
-    deeply nested structures.
-
-    Render with: ``dot -Tsvg tree.dot -o tree.svg`` or paste into
-    https://dreampuf.github.io/GraphvizOnline.
-    """
+    """Render the control tree as DOT — ``nested=True`` puts each non-leaf region in
+    a cluster containing its children, ``nested=False`` emits a pure parent-child
+    tree with role-labelled edges."""
     if nested:
         return _to_dot_nested(region)
     return _to_dot_tree(region)
@@ -303,9 +277,8 @@ def _short_label(s: str) -> str:
 
 
 def _block_label(region: BlockR) -> str:
-    # Escape each line's text individually, then join with literal
-    # ``\l`` (Graphviz's left-align line break) — keep those unescaped
-    # so they survive into the DOT output.
+    # Escape each line individually, then join with the literal ``\l``
+    # (Graphviz left-align) — those must stay unescaped in the DOT output.
     parts = [
         _short_label(f"L{a.location.line:>3} {a.op}")
         for a in region.bb.assignments
@@ -314,9 +287,8 @@ def _block_label(region: BlockR) -> str:
 
 
 def _to_dot_nested(root: Region) -> str:
-    """Nested-cluster rendering. Each non-leaf region is a cluster
-    containing its children; the cluster's label shows the region
-    kind. Sequences carry dashed-arrow ordering edges."""
+    """Nested-cluster rendering: each non-leaf region is a cluster labelled with its
+    kind; sequences carry dashed-arrow ordering edges."""
     lines: list[str] = [
         "digraph ControlTree {",
         "  compound=true;",
@@ -331,9 +303,8 @@ def _to_dot_nested(root: Region) -> str:
         return f"n{counter[0]}"
 
     def emit(region: Region, depth: int) -> tuple[str, str]:
-        """Return ``(anchor_id, last_id)`` — the anchor we use for
-        inter-cluster edges (the cluster name for non-leaves, the
-        node id for leaves) and the same id again for symmetry."""
+        """``(anchor_id, last_id)`` — the anchor for inter-cluster edges (cluster
+        name for non-leaves, node id for leaves)."""
         pad = "  " * (depth + 1)
         if isinstance(region, BlockR):
             nid = fresh()
@@ -353,7 +324,7 @@ def _to_dot_nested(root: Region) -> str:
         lines.append(f'{pad}  label="{kind_label}";')
         lines.append(f"{pad}  style=rounded;")
         lines.append(f"{pad}  color={_color_for(region)};")
-        # Emit children and remember their anchors for intra-cluster wiring.
+        # Children's anchors, kept for intra-cluster wiring.
         anchors: list[str] = []
         for c in region.children():
             anchor, _ = emit(c, depth + 1)
@@ -363,8 +334,8 @@ def _to_dot_nested(root: Region) -> str:
             for a, b in zip(anchors, anchors[1:]):
                 lines.append(f'{pad}  {a} -> {b} [style=dashed, arrowhead=open];')
         lines.append(f"{pad}}}")
-        # Pick a stable representative inside the cluster so callers
-        # wanting to draw an edge to the whole thing have a target.
+        # A stable representative inside the cluster, so a caller drawing an edge
+        # to the whole thing has a target.
         return anchors[0] if anchors else fresh(), cluster
 
     emit(root, 0)
@@ -373,8 +344,7 @@ def _to_dot_nested(root: Region) -> str:
 
 
 def _to_dot_tree(root: Region) -> str:
-    """Parent-child rendering. Each region (including non-leaves) is
-    its own node; edges are labelled by role."""
+    """Parent-child rendering: every region is its own node, edges labelled by role."""
     lines: list[str] = [
         "digraph ControlTree {",
         "  rankdir=TB;",
@@ -447,7 +417,7 @@ def _to_dot_tree(root: Region) -> str:
 
 
 def _color_for(region: Region) -> str:
-    """Per-kind border colour, makes the kinds easy to skim in DOT."""
+    """Per-kind border colour, so the region kinds skim easily in DOT."""
     return {
         "block": "gray60",
         "sequence": "black",
@@ -462,10 +432,8 @@ def _color_for(region: Region) -> str:
 
 
 def region_to_mermaid(region: Region) -> str:
-    """Render the control tree as a Mermaid ``flowchart`` source —
-    handy for inlining in markdown / Jupyter where Graphviz isn't
-    available. Produces a parent-child tree mirroring
-    :func:`_to_dot_tree`."""
+    """Render the control tree as a Mermaid ``flowchart`` parent-child tree, for
+    markdown / Jupyter where Graphviz isn't available."""
     lines: list[str] = ["flowchart TD"]
     counter = [0]
 

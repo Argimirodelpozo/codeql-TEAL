@@ -1,33 +1,23 @@
-"""Scratch-slot value/constant forwarding for SSAProgram.
+"""Forward a scratch ``load N`` to the value its ``store N``s wrote.
 
-Both consume the ``scratch_stores`` graph annotation (per ``load N``, the
-may-influencing ``store N`` value-SSAVar keys produced by
-:func:`tealql.tealtools.ssa.scratch_influence.compute_scratch_influence`):
-
-- :func:`propagate_scratch_constants` — resolve a load to a literal when every
-  influencing store wrote the same compile-time constant (must-semantics).
-- :func:`propagate_scratch_values` — generalise to arbitrary SSA values: when
-  every influencing store wrote the same SSAVar, rewire the load's consumers
-  to reference it directly.
-
-Bridged from ``SSAProgram.propagate_scratch_*``, which keep the idempotency
-guards and pass-ordering preconditions.
-"""
+HAZARD: MUST-semantics — both passes require EVERY may-influencing store from
+the ``scratch_stores`` annotation to agree, and bail on any store they cannot
+resolve. Accepting a majority, or ignoring an unresolved store, forwards a
+value the load may never actually hold."""
 from __future__ import annotations
 
 from ..ssa import Const, SSAProgram, SSAVar
 from ..ssa.scratch_influence import UNINIT_STORE, UNKNOWN_STORE
 
-# The AVM zero-initialises scratch: the entry pseudo-definition has the
-# precisely-known value uint64 0, so const-prop treats it as one more store
-# that must agree with the rest. UNKNOWN (dynamic ``stores`` / unresolvable
-# operand) can never agree with anything.
+# The AVM zero-initialises scratch, so the entry pseudo-definition is a
+# precisely-known uint64 0 and counts as one more store that must agree.
+# UNKNOWN (dynamic ``stores`` / unresolvable operand) agrees with nothing.
 _UNINIT_CONST = Const("int", "0")
 
 
 def propagate_scratch_constants(prog: SSAProgram) -> None:
-    # Iterate to fixed point: a load resolved to K can in turn flow back into
-    # another store, whose load can then resolve, and so on.
+    # Fixed point: a load resolved to K can flow into another store, whose load
+    # then resolves, and so on.
     changed = True
     while changed:
         changed = False
@@ -39,7 +29,6 @@ def propagate_scratch_constants(prog: SSAProgram) -> None:
             load_var = prog.var(n.location.file, n.location.start_line, 1)
             if load_var is None or load_var.const_value is not None:
                 continue
-            # Look up each store's consumed-value SSAVar by its key.
             resolved: list[Const] = []
             ok = True
             for sv_file, sv_line, sv_idx in stores:
@@ -60,16 +49,11 @@ def propagate_scratch_constants(prog: SSAProgram) -> None:
 
 
 def propagate_scratch_values(prog: SSAProgram) -> int:
-    """Returns the number of loads forwarded. Mutates the SSA in place.
+    """Forward loads to their agreed source SSAVar; returns how many were forwarded.
 
-    Iterates to a FIXED POINT, like its ``propagate_scratch_constants`` sibling:
-    a chained round-trip (``store 2; load 2; store 3; load 3``) only resolves one
-    level per sweep, and the sweep order over ``_graph.nodes`` decides which
-    level that is. A single sweep therefore left the value web half-forwarded and
-    made ``run_all_passes`` NON-idempotent — the second run kept forwarding, and
-    a chain of depth N needed N runs to converge, contradicting both this
-    function's "a second call finds nothing further" claim and orchestrate's
-    "running run_all_passes twice is a no-op"."""
+    HAZARD: must iterate to a fixed point. One sweep resolves only one level of
+    a chained round-trip (``store 2; load 2; store 3; load 3``), which leaves the
+    value web half-forwarded and makes ``run_all_passes`` non-idempotent."""
     total = 0
     while True:
         forwarded = _forward_scratch_loads_once(prog)
@@ -79,9 +63,10 @@ def propagate_scratch_values(prog: SSAProgram) -> int:
 
 
 def _forward_scratch_loads_once(prog: SSAProgram) -> int:
-    """One sweep. Returns loads whose consumers were ACTUALLY rewired — the
-    count must reflect real change or the fixpoint loop above never terminates
-    (a load with nothing left to rewire would keep reporting progress)."""
+    """One sweep; returns the loads whose consumers were ACTUALLY rewired.
+
+    HAZARD: the count must reflect real change or the fixpoint loop above never
+    terminates — a load with nothing left to rewire would report progress forever."""
     forwarded = 0
     for n in prog._graph.nodes:
         stores = prog._graph.nodes[n].get("scratch_stores")
@@ -93,9 +78,8 @@ def _forward_scratch_loads_once(prog: SSAProgram) -> int:
         sources: list[SSAVar] = []
         ok = True
         for sv_file, sv_line, sv_idx in stores:
-            # Sentinel keys (UNINIT/UNKNOWN) resolve to no var → bail: there is
-            # no SSAVar identity to forward across an uninitialised or unknown
-            # reaching definition.
+            # Sentinel keys (UNINIT/UNKNOWN) resolve to no var — there is no
+            # SSAVar identity to forward across them, so bail.
             src = prog.var(sv_file, sv_line, sv_idx)
             if src is None:
                 ok = False

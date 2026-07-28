@@ -1,11 +1,5 @@
 """In-place structural rewrites over the pre-IR (:mod:`pre_ir`) — phi / block
-cleanup and out-of-SSA prep, as distinct from :mod:`type_recovery` (types only).
-
-:func:`prune_dead_phis`, :func:`isolate_cross_group_phis` and
-:func:`materialize_phi_consts` run during :class:`lift._Lifter` build;
-:func:`simplify_trivial_phis` runs in :func:`to_puya_ir.to_puya` before lowering.
-See each function for details.
-"""
+cleanup and out-of-SSA prep (types live in :mod:`type_recovery`)."""
 from __future__ import annotations
 
 import copy as _copy
@@ -15,8 +9,7 @@ from ..avm import avm
 
 
 def _intr(o):
-    """The :class:`pre_ir.Intrinsic` an op wraps (IntrinsicOp.intrinsic or an
-    Assignment whose source is one), else None."""
+    """The :class:`pre_ir.Intrinsic` an op wraps, else None."""
     if isinstance(o, pre_ir.IntrinsicOp):
         return o.intrinsic
     if isinstance(o, pre_ir.Assignment) and isinstance(o.source, pre_ir.Intrinsic):
@@ -38,10 +31,8 @@ def _succ_ids(t) -> list:
 
 
 def _phi_only_scratch_stores(blocks, ph):
-    """If every use of phi-register `ph.register` is a scratch ``store N`` op,
-    return the list of `(block, op_index, slot, intrinsic)` stores; otherwise
-    `None` (some copy / op / terminator / phi use makes sinking unsafe -- the value
-    must keep flowing through the phi)."""
+    """The `(block, op_index, slot, intrinsic)` scratch stores of `ph.register`, or
+    `None` if it has ANY other use (the value must keep flowing through the phi)."""
     stores = []                            # (block, op_index, slot, intrinsic)
     for bb in blocks:
         for i, o in enumerate(bb.ops):
@@ -50,12 +41,9 @@ def _phi_only_scratch_stores(blocks, ph):
                     and s.args and s.args[0] is ph.register):
                 stores.append((bb, i, str(s.immediates[0]), s))
                 continue
-            # ANY other use — op arg, copy source, INVOKE arg, ValueTuple
-            # element — makes sinking unsafe. Scan via pre_ir.operands (descends
-            # into Intrinsic/InvokeSubroutine/ValueTuple); the old hand-rolled
-            # check saw only _intr().args + copy source, so a phi consumed solely
-            # as a callsub arg slipped through -> sinking left a dangling ref
-            # that lowered to a typed-zero (callee silently got 0).
+            # ANY other use — op arg, copy source, INVOKE arg, ValueTuple element
+            # — makes sinking unsafe, so scan via pre_ir.operands: a use it misses
+            # leaves a dangling ref that lowers to a typed zero.
             if any(v is ph.register for v in pre_ir.operands(o)):
                 return None
         for ph2 in bb.phis:
@@ -68,10 +56,8 @@ def _phi_only_scratch_stores(blocks, ph):
 
 
 def _stores_sinkable(stores, B, by_id, preds, chain_to, slot_touched) -> bool:
-    """The sink guards: every predecessor of merge block `B` branches ONLY to it
-    (no critical edge), and each store is reachable from `B` by a unique
-    single-predecessor chain that `B` also UNCONDITIONALLY reaches, with no
-    intervening touch of its slot."""
+    """The sink guards: no critical edge into merge block `B`, and each store sits on
+    a unique single-predecessor chain `B` UNCONDITIONALLY reaches, slot untouched."""
     if not all(set(_succ_ids(by_id[p].terminator)) == {B.id}
                for p in preds.get(B.id, [])):
         return False                      # a predecessor has a critical edge
@@ -79,24 +65,21 @@ def _stores_sinkable(stores, B, by_id, preds, chain_to, slot_touched) -> bool:
         ch = chain_to(sb.id, B.id)        # [sb, .., B] — single-predecessor chain
         if ch is None or slot_touched(ch, sb, idx, slot):
             return False
-        # POST-DOMINANCE: the store must be UNCONDITIONALLY reached from `B`, i.e.
-        # every chain block from B down to (but not including) sb has a single
-        # successor. Without this, `B` (or a chain block) could branch — one arm
-        # reaches sb, the other skips it — yet the sunk store is appended to `B`'s
-        # predecessors and so runs on BOTH arms, writing the slot on a path the
-        # original never did. That changes the slot's FINAL value a cross-group
-        # `gload` observes, breaking the very invariant this transform upholds.
+        # POST-DOMINANCE: every chain block from B down to (not including) sb needs a
+        # single successor. If one could branch, the sunk store — appended to `B`'s
+        # predecessors — would run on the arm that skips sb too, writing the slot on a
+        # path the original never did and changing what a cross-group `gload` reads.
         if any(len(set(_succ_ids(by_id[bid].terminator))) != 1 for bid in ch[1:]):
             return False
     return True
 
 
 def _apply_phi_sink(stores, B, ph, by_id, preds) -> bool:
-    """Per predecessor of merge block `B`, append a ``store slot <edge-value>`` for
-    each sunk store; then remove the original stores and drop the phi. Returns True
-    on success, or False with NO mutation if any predecessor edge lacks a phi arg
-    (incomplete coverage -> leave the phi untouched so it fails loudly downstream,
-    rather than half-sinking and double-storing the slot on the covered edges)."""
+    """Append a per-predecessor ``store slot <edge-value>`` to `B`, drop the originals
+    and the phi; False with NO mutation if an edge lacks a phi arg.
+
+    HAZARD: the no-mutation bail is what keeps it atomic — half-sinking would
+    double-store the slot on the edges it did cover."""
     arg_of = {a.through: a.value for a in ph.args}
     edge_preds = preds.get(B.id, [])
     if any(arg_of.get(p) is None for p in edge_preds):
@@ -113,27 +96,13 @@ def _apply_phi_sink(stores, B, ph, by_id, preds) -> bool:
 
 
 def sink_mixed_phi_scratch_stores(subs) -> int:
-    """Eliminate a mixed-AVM-type phi (the reused-slot artifact: a slot the source
-    register-allocator packed two disjoint-live variables into, merged at a CFG
-    join) by SINKING the scratch store it feeds into its predecessors, rather than
-    dropping the store. Scratch is gload-readable across the atomic group, so a
-    store with no in-program load is NOT dead -- a sibling transaction may read it
-    -- and must be preserved; only the typing of the merge value is the problem.
+    """Kill a mixed-AVM-type phi (a reused scratch slot merged at a join) by SINKING
+    the scratch store it feeds into the predecessors, one single-typed store per edge.
 
-    For a phi ``p = φ(v_i @ P_i)`` whose ONLY uses are scratch ``store N <p>`` ops,
-    replace each with per-predecessor ``store N <v_i>`` appended to P_i (each v_i is
-    the value on that edge, single-typed), then drop the phi. The mixed-type merge
-    never forms. Returns the number of phis sunk.
-
-    Guards (else the phi is left to fail loudly, never silently mis-stored):
-      * every use of p is a scratch store (no copy / op / terminator / phi use);
-      * every predecessor of p's block branches ONLY to it (no critical edge), so
-        appending to the predecessor runs exactly on the edge into the merge;
-      * each store is reachable from the phi block by a UNIQUE single-predecessor
-        chain with no load/store of that slot before it -- so moving the write to
-        the edge changes neither an in-program read nor the slot's final value
-        (the only thing a cross-group gload observes).
-    """
+    HAZARD: never delete the store instead. Scratch is ``gload``-readable across the
+    atomic group, so a store with no in-program load is NOT dead — a sibling
+    transaction may read it. A phi failing the guards is left alone, never
+    mis-stored."""
     blocks = list(pre_ir.blocks(subs))
     by_id = {b.id: b for b in blocks}
     preds: dict = {b.id: [] for b in blocks}
@@ -154,8 +123,8 @@ def sink_mixed_phi_scratch_stores(subs) -> int:
         return chain                          # sb .. b (order doesn't matter here)
 
     def slot_touched(chain, sb, store_idx, slot):
-        """A static load/store of ``slot``, or ANY dynamic scratch op, on the chain
-        before the store (dynamic loads/stores could touch any slot)."""
+        """A static load/store of ``slot``, or ANY dynamic scratch op (which could
+        touch any slot), on the chain before the store."""
         for bid in chain:
             b = by_id[bid]
             ops = b.ops[:store_idx] if b is sb else b.ops
@@ -198,10 +167,8 @@ def _vkey(v):
 
 
 def simplify_trivial_phis(program: pre_ir.Program) -> int:
-    """Collapse trivial phis to a fixpoint. A phi is trivial when, ignoring
-    arguments that reference its own register (loop self-edges), all remaining
-    arguments are the same value -- then the phi *is* that value. Returns the
-    number removed."""
+    """Collapse trivial phis (all args the same value once self-edges are ignored) to
+    a fixpoint; returns the number removed."""
     repl: dict = {}
 
     def resolve(v, _seen=None):
@@ -234,27 +201,22 @@ def simplify_trivial_phis(program: pre_ir.Program) -> int:
     for b in pre_ir.blocks(program):
         b.phis = [phi for phi in b.phis if id(phi.register) not in repl]
 
-    for b in pre_ir.blocks(program):           # copy_source=False: don't forward a
-        for node in (*b.phis, *b.ops, b.terminator):   # copy's source into a
-            pre_ir.map_operands(node, resolve, copy_source=False)  # removed phi reg
+    # copy_source=False: don't forward a copy's source into a removed phi register.
+    for b in pre_ir.blocks(program):
+        for node in (*b.phis, *b.ops, b.terminator):
+            pre_ir.map_operands(node, resolve, copy_source=False)
     return len(repl)
 
 
 
 def prune_dead_phis(subs) -> None:
-    """Drop phis not reachable (through phi args) from a real use — i.e. the
-    frame stack-model phis, now that frame ops no longer consume them. Forward
-    liveness: seed from ops / control / returns (NOT phi args, and NOT ``pop`` /
-    ``popn`` operands), then propagate backward through phi arguments; keep only
-    live phis.
+    """Drop phis no real use reaches, seeding liveness from ops / terminators and
+    propagating backward through phi args.
 
-    ``pop`` / ``popn`` are stack-discipline drops — in value-based IR a discard is
-    not a real use, so a phi feeding ONLY a ``popn`` is dead (the value is thrown
-    away). Counting the discard as a use keeps such phis artificially live; for a
-    frame's dead locals (``popn``-d before ``retsub``) that revives a genuinely
-    mixed-AVM-type merge Puya's typed IR then rejects. Operands a pruned phi left
-    dangling in a ``pop`` / ``popn`` are trimmed so no operand references a removed
-    register (the discard itself is dropped at lowering)."""
+    HAZARD: ``pop`` / ``popn`` operands must NOT seed — a discard is not a use in a
+    value-based IR, and counting it keeps a frame's dead locals alive, reviving
+    mixed-AVM-type merges Puya's typed IR rejects. Pruned registers are trimmed back
+    out of those discards so no operand references a removed register."""
     live: set = set()
     phi_by_reg: dict = {}
     for b in pre_ir.blocks(subs):
@@ -305,15 +267,9 @@ def _subst_block(bb, m: dict) -> None:
 
 
 def isolate_cross_group_phis(subs) -> int:
-    """Resolve passthrough values PySSA shares across subroutine groups; returns
-    the phis dropped (loop: a passthrough can chain to another).
-
-    Caller stack surviving a call (below the args, untouched by the callee,
-    re-emerging in the continuation) becomes ONE phi at the callee entry merged
-    across all callers -- so its register is used in a different group than it's
-    defined in, invalid for Puya and the source of cross-family phi conflicts.
-    Each caller already supplies its own value as the arg from its callsub block;
-    resolve every cross-group use to that arg and drop the orphaned phi."""
+    """Resolve a cross-group use of a callee-entry passthrough phi (invalid for Puya:
+    the register is defined in another subroutine) to the caller's own arg and drop
+    the orphaned phi; returns the count, so callers loop until it reaches 0."""
     phi_by_reg: dict = {}                # id(register) -> (group, phi)
     blocks_of: dict = {}                 # id(group) -> {pre-IR block ids}
     for g in subs:
@@ -335,8 +291,8 @@ def isolate_cross_group_phis(subs) -> int:
             if entry is None or entry[0] is b_group:
                 continue                     # not a phi, or same group -- fine
             ph = entry[1]
-            # the value this group itself supplied: the phi arg flowing in from
-            # one of its own (callsub) blocks. Exactly one => unambiguous.
+            # the phi arg flowing in from one of this group's own (callsub) blocks;
+            # resolve only when there is exactly one, i.e. unambiguous.
             mine = [a.value for a in ph.args if a.through in blocks_of[id(b_group)]]
             if len(mine) == 1:
                 sub_map[rid] = mine[0]
@@ -352,17 +308,12 @@ def isolate_cross_group_phis(subs) -> int:
 
 
 def materialize_phi_consts(prog) -> None:
-    """Puya requires phi arguments to be registers, so a phi merging a constant
-    on some edge (a path-dependent literal) needs that constant materialized: a
-    ``let r = <const>`` at the end of the through block, with the phi arg pointing
-    at ``r``. (Without this the translator silently drops the const arg, leaving
-    the phi short an operand vs its predecessors.)
+    """Materialize a constant phi argument as a ``let r = <const>`` at the end of its
+    through block, coerced to the phi's AVM type.
 
-    The materialized register takes the phi's AVM type, so a const whose family
-    DISAGREES with it (a dead coarse-SSA placeholder -- e.g. an empty ``""`` on an
-    edge of a uint64-resolved phi) is coerced to that type first; otherwise
-    ``let pc: uint64 = <bytes>`` fails Puya's assignment check (same cross-family
-    fix `_reconcile_mixed_phis` applies to phi-arg registers)."""
+    HAZARD: Puya requires phi args to be registers and SILENTLY DROPS a constant one,
+    leaving the phi short an operand vs its predecessors. The coercion is equally
+    required: ``let pc: uint64 = <bytes>`` fails Puya's assignment check."""
     from .type_recovery import _itob_const, _to_u64_const
     block_by_id: dict = {}
     for bb in pre_ir.blocks(prog):
@@ -407,13 +358,9 @@ def _remap_succ_ids(t, idmap: dict) -> None:
 
 
 def _clone_subroutine(callee, new_id: str, rets: list, base_bid: int):
-    """Deep-copy ``callee`` as a new subroutine ``new_id`` returning ``rets``.
-
-    Body block ids are renumbered from ``base_bid`` (global-unique, like the
-    lift's own ids) and every terminator / phi-arg predecessor reference is
-    remapped; the return value registers are retyped and the retype propagated
-    over the clone's copies / phis. The clone's registers are FRESH (deep copy),
-    so the original subroutine is untouched."""
+    """Deep-copy ``callee`` as a new subroutine ``new_id`` returning ``rets``, with
+    body block ids renumbered from the global-unique ``base_bid`` and every
+    terminator / phi-arg predecessor reference remapped."""
     body = _copy.deepcopy(callee.body)
     params = _copy.deepcopy(callee.parameters)
     idmap = {bb.id: base_bid + i for i, bb in enumerate(body)}
@@ -439,20 +386,13 @@ def _clone_subroutine(callee, new_id: str, rets: list, base_bid: int):
 
 
 def specialize_polymorphic_returns(prog) -> int:
-    """Clone a subroutine called with conflicting result AVM types.
+    """Route a callsite whose result AVM type clashes with the callee's declared
+    return to a per-return-type CLONE of it; returns the number of clones created.
 
-    Hand-written / non-Puya contracts often have ONE generic state accessor --
-    ``get(app, key) = app_global_get_ex; …; retsub`` -- called for keys of
-    different types: ``position`` / ``side`` hold uint64, ``escrow_cancel_address``
-    holds a bytes address. The sub passes the raw (untyped) state value through,
-    so its single Puya return type can't be both: ``_unify_call_returns`` pins one
-    and the other callsite's ``cr = invoke(...)`` fails Puya's assignment type
-    check (uint64 source into a bytes target). Specialize -- for each callsite
-    whose result type clashes (a concrete uint64/bytes family disagreement) with
-    the callee's declared return, route it to a per-return-type CLONE of the
-    callee. Behaviour-preserving: a pass-through value lowers identically whether
-    the register is typed bytes or uint64; only the type annotation differs.
-    Returns the number of clones created."""
+    HAZARD: legal only because the clone differs by type ANNOTATION — a value the
+    callee passes through (a generic state accessor returning a raw state value)
+    lowers identically whether its register is typed uint64 or bytes. Without it one
+    callsite's ``cr = invoke(...)`` fails Puya's assignment type check."""
     sub_by_id = {s.id: s for s in prog.subroutines}
     next_bid = max((b.id for b in pre_ir.blocks(prog)), default=0) + 1
     clones: dict = {}                          # (callee_id, want-tuple) -> clone_id
@@ -491,8 +431,7 @@ def specialize_polymorphic_returns(prog) -> int:
 
 
 def _block_registers(b):
-    """Every Register that appears anywhere in a block (phi reg / args, op
-    targets / operands, terminator operands)."""
+    """Every Register appearing anywhere in a block, defs and uses alike."""
     for ph in b.phis:
         yield ph.register
         for a in ph.args:
@@ -522,8 +461,7 @@ def _region_defined(region_blocks) -> set:
 
 
 def _fix_phi_predecessors(groups) -> None:
-    """Drop phi args whose ``through`` is no longer an actual CFG predecessor of
-    the block (after edges were redirected by duplication)."""
+    """Drop phi args whose ``through`` is no longer a CFG predecessor of the block."""
     preds: dict = {}
     for g in groups:
         for b in g.body:
@@ -539,24 +477,16 @@ def _fix_phi_predecessors(groups) -> None:
 
 
 def duplicate_cross_subroutine_blocks(prog, _max_rounds: int = 12) -> int:
-    """Give every subroutine a PRIVATE, self-contained body by cloning blocks it
-    shares with another subroutine.
+    """Give every subroutine a PRIVATE body, to a fixpoint, by cloning the blocks it
+    shares with another (a hand-written contract ``b``-ing into a shared ``retsub``
+    epilogue); returns the region copies made.
 
-    The structure partition can leave a block reachable from / present in more
-    than one subroutine -- a hand-written contract ``b``-ing into a shared
-    epilogue (`retsub`) from several subs, or two subs whose bodies OVERLAP a
-    common region (the same block object in both ``.body`` lists). Puya requires
-    each block to belong to exactly one subroutine with all its predecessors
-    there ("block@N of subroutine X has predecessor block(s) outside of list";
-    and a shared object collides in ``to_puya``'s id-keyed block map). For each
-    subroutine S, the blocks reachable from its entry that are OWNED by another
-    sub (first sub, in [main, …] order, whose reachable set contains the block)
-    are cloned PRIVATELY into S: fresh global-unique block ids (edges + phi
-    predecessors remapped), and region-DEFINED registers get fresh, uniquely
-    renamed copies while registers defined OUTSIDE the region stay shared (a
-    deepcopy ``memo`` pre-seeded with them). S's own blocks then have their edges
-    redirected to the clones and their USES of region-defined registers remapped
-    to the renamed copies. Re-run to a fixpoint. Returns the region copies made."""
+    HAZARD: Puya requires each block to belong to exactly one subroutine with all its
+    predecessors there, and a shared block object also collides in ``to_puya``'s
+    id-keyed block map. The clone is correct only under the register split the
+    pre-seeded deepcopy ``memo`` enforces: region-DEFINED registers get fresh
+    uniquely-renamed copies (else SSA "assigned multiple times"), while registers
+    defined OUTSIDE stay SHARED."""
     made = 0
     renames = [0]                                  # global rename counter for clones
     for _ in range(_max_rounds):
@@ -576,20 +506,19 @@ def duplicate_cross_subroutine_blocks(prog, _max_rounds: int = 12) -> int:
                 seen.add(x)
                 stack += succ(x)
             reach[g.id] = seen
-        owner: dict = {}                          # block id -> first sub whose BODY holds it
-        for g in groups:                          # (physical membership, NOT mere reach, so
-            for b in g.body:                      #  the kept original always physically exists)
+        # block id -> first sub whose BODY holds it: physical membership, NOT mere
+        # reach, so the kept original always physically exists somewhere.
+        owner: dict = {}
+        for g in groups:
+            for b in g.body:
                 owner.setdefault(b.id, g.id)
 
         next_bid = max(bid2blk) + 1
         changed = False
         for g in groups:
-            # main as a CONSUMER (it `b`s into a subroutine's body) is a different,
-            # rarer pattern: the shared region ends in `retsub`, which is invalid in
-            # main (it exits via ProgramExit, and a void retsub has no exit value to
-            # synthesize). Don't clone into main -- leave it a clean lift-failure
-            # rather than emit an invalid main. (main as an OWNER is fine: subs that
-            # share main's blocks still clone them privately.)
+            # Never clone INTO main: the shared region ends in `retsub`, invalid in a
+            # main that exits via ProgramExit, so a clean lift-failure beats an
+            # invalid main. (main as an OWNER is fine — subs still clone its blocks.)
             if g is prog.main:
                 continue
             foreign = sorted(bid for bid in reach[g.id] if owner[bid] != g.id)
@@ -598,19 +527,15 @@ def duplicate_cross_subroutine_blocks(prog, _max_rounds: int = 12) -> int:
             changed = True
             region_blocks = [bid2blk[f] for f in foreign]
             defined = _region_defined(region_blocks)
-            memo: dict = {}                       # share registers defined OUTSIDE the region
+            memo: dict = {}
             for b in region_blocks:
                 for r in _block_registers(b):
                     if id(r) not in defined:
-                        memo[id(r)] = r           # external reg -> itself (not copied)
+                        memo[id(r)] = r           # external reg -> itself, not copied
             clones = _copy.deepcopy(region_blocks, memo)
-            # original region-defined reg -> its fresh clone; rename each uniquely
-            # (the owner's names may already be used by S -> SSA "assigned multiple
-            # times"). Object identity carries the rename through the clone.
             regmap = {rid: memo[rid] for rid in defined if rid in memo}
-            # Deterministic suffix assignment: `defined` is a set of id()s whose
-            # iteration order varies run-to-run, so sort the clones by their
-            # stable SSA identity before numbering (keeps rendered IR diffable).
+            # `defined` is a set of id()s whose iteration order varies run-to-run, so
+            # sort by stable SSA identity before numbering (keeps rendered IR diffable).
             for r in sorted(regmap.values(), key=lambda r: (r.name, r.version)):
                 renames[0] += 1
                 r.name = f"{r.name}~d{renames[0]}"

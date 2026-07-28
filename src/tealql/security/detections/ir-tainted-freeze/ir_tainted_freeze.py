@@ -1,10 +1,7 @@
-"""sec-guide/ir-tainted-freeze: attacker-controlled inner asset-freeze target (IR).
-
-An inner asset-freeze (``afrz``) transaction freezes a specific holder's units of
-an ASA. A user-input-tainted ``FreezeAssetAccount`` lets the attacker freeze ANY
-account they name -- a targeted denial-of-service on a victim's holdings (and, with
-a tainted ``FreezeAsset``, of any asset the app can freeze). A new capability (no
-SSA sibling); lift-only.
+"""sec-guide/ir-tainted-freeze: a user-input-tainted ``FreezeAssetAccount`` on an
+inner ``afrz`` lets the attacker freeze ANY account they name — a targeted DoS on
+a victim's holdings, and with a tainted ``FreezeAsset``, of any asset the app can
+freeze. Lift-only; no SSA sibling.
 """
 from __future__ import annotations
 

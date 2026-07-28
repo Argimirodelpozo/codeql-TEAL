@@ -1,23 +1,9 @@
-"""Ad-hoc taint reachability queries over the coarse :class:`TaintGraph`.
+"""The OPEN query layer over the coarse :class:`TaintGraph` — ask which dangerous
+sinks a source reaches, or which attacker inputs reach a sink.
 
-The detectors answer FIXED questions ("is this specific sink tainted?"). This is
-the OPEN query layer: point at any source (a TEAL line, or every read of an input
-slot) and ask "what dangerous sinks can this reach?", or the reverse ("what
-attacker inputs reach this sink?"). It is the substrate a model/agent drives to
-answer free-form security questions.
-
-Two taxonomies, both consolidated here from what the detectors already encode:
-
-* SOURCES — attacker-steerable inputs (``ApplicationArgs``, LogicSig ``arg``s).
-* SINKS — operations whose attacker control is dangerous, tagged with a category
-  and severity: inner-transaction fund / rekey / asset-admin / appcall fields
-  (``itxn_field FIELD``), persistent-state and box writes, and ``log``.
-
-Pure taint reachability over the SSA def-use graph (no lift needed); a hit means
-"a value from the source flows into the sink", NOT "the sink is exploitable" —
-guard/validation reasoning is the detectors' job. So this OVER-approximates by
-design: it is a triage/exploration lens, not a verdict.
-"""
+HAZARD: OVER-approximates by design. A hit means a value flows from source to
+sink, NOT that the sink is exploitable — this layer does no guard reasoning at
+all, so it is a triage lens and must never be reported as a verdict."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -47,23 +33,15 @@ _ITXN_FIELD_SINKS: dict[str, tuple[str, str]] = {
     "ConfigAssetClawback": ("asset-admin", "high"),
     "ConfigAssetFreeze": ("asset-admin", "high"),
     "ConfigAssetReserve": ("asset-admin", "high"),
-    # Attacker-chosen program bytes on an inner app create/update = arbitrary
-    # code deployed under this app's authority. Both are already in
-    # ``avm.SENSITIVE_ITXN_FIELDS`` (the box / viz layers treat them as sinks)
-    # but this inventory — the one the "what is the attack surface" query
-    # reports — was missing them entirely.
+    # Attacker-chosen program bytes on an inner app create/update deploy
+    # arbitrary code under this app's authority.
     "ApprovalProgram": ("inner-program-code", "critical"),
     "ClearStateProgram": ("inner-program-code", "critical"),
-    # ``AssetSender`` on an axfer is the CLAWBACK source: non-zero means "move
-    # units OUT of this account", which the AVM permits only when the sender of
-    # the inner txn is the asset's clawback address. An app that holds clawback
-    # and lets a caller steer this field can drain any holder. It is deliberately
-    # NOT in the fund-flow DETECTOR's sink set (that decision stands — the
-    # detector would need clawback-authority reasoning to avoid false positives),
-    # but this layer is the over-approximating INVENTORY: leaving a
-    # drain-anyone's-balance primitive off the attack surface is the wrong
-    # trade-off here. No detector covers it, so a verdict reports it UNVERIFIED
-    # — reachable and unjudged, which is the honest answer.
+    # ``AssetSender`` on an axfer is the CLAWBACK source — non-zero moves units
+    # OUT of another account, so an app holding clawback that lets a caller
+    # steer it can drain any holder. Deliberately NOT a fund-flow DETECTOR sink
+    # (that needs clawback-authority reasoning to stay precise), so a verdict
+    # reports it UNVERIFIED: reachable and unjudged.
     "AssetSender": ("asset-clawback-source", "critical"),
 }
 
@@ -78,21 +56,15 @@ _OP_SINKS: dict[str, tuple[str, str]] = {
     "log": ("log-emit", "low"),
 }
 
-#: Source opcodes carrying an attacker-steerable value — the full canonical
-#: txn/gtxn read family (scalar `txn ApplicationArgs N` and array `txna …` forms
-#: alike); ``is_source`` gates on the ``ApplicationArgs`` field so the scalar-read
-#: ops only ever match an actual arg read.
+#: The whole txn/gtxn read family. HAZARD: these ops read any field, so
+#: ``is_source`` must gate on ``ApplicationArgs`` or every txn read is a source.
 _ARG_ARRAY_OPS = TXN_SOURCE_OPS
-# Derived, not re-listed: ``avm.py`` is the single home and warns that
-# hand-rolled copies of these tables are exactly how they drifted apart before.
 _LSIG_ARG_OPS = LSIG_ARG_OPS
 
 
 def classify_sink(op: Optional[str], immediates: Optional[str]
                   ) -> Optional[tuple[str, str]]:
-    """``(category, severity)`` if ``(op, immediates)`` is a dangerous sink, else
-    ``None``. ``itxn_field FIELD`` is classified by ``FIELD``; the state / box /
-    log ops by opcode."""
+    """``(category, severity)`` if this is a dangerous sink, else ``None``."""
     if op is None:
         return None
     if op == "itxn_field":
@@ -102,8 +74,7 @@ def classify_sink(op: Optional[str], immediates: Optional[str]
 
 
 def is_source(op: Optional[str], immediates: Optional[str]) -> bool:
-    """``(op, immediates)`` reads an attacker-steerable input (``ApplicationArgs``
-    array read, or a LogicSig ``arg``)."""
+    """True if this reads an ``ApplicationArgs`` entry or a LogicSig ``arg``."""
     if op is None:
         return False
     if op in _ARG_ARRAY_OPS and "ApplicationArgs" in (immediates or ""):
@@ -116,9 +87,7 @@ def is_source(op: Optional[str], immediates: Optional[str]) -> bool:
 
 @dataclass(frozen=True)
 class SinkHit:
-    """A dangerous sink and how severe it is. ``field`` is the ``itxn_field``
-    field (or ``""`` for opcode sinks). ``source`` is the high-level
-    ``file:line`` it compiled from, when a source map is available (else None)."""
+    """A dangerous sink, its severity, and the high-level line it compiled from."""
     node: Node
     op: str
     field: str
@@ -168,32 +137,20 @@ def _sink_hit(g: TaintGraph, node: Node,
 
 
 class TaintQuery:
-    """Open taint-reachability queries over a program's coarse taint graph.
-
-    Build once (``TaintQuery(prog)``), then ask any of:
-      * :meth:`sinks_from` — dangerous sinks reachable from a source location;
-      * :meth:`sources_of` — attacker inputs that reach a sink location;
-      * :meth:`all_sinks` / :meth:`all_sources` — the full inventories.
-
-    All results OVER-approximate (a reachable sink is not necessarily an
-    exploitable one — the taint may be validated on the way); this is a triage
-    lens, not a verdict.
-    """
+    """Open taint-reachability queries over a program's coarse taint graph."""
 
     def __init__(self, prog, *, file: Optional[str] = None):
         from ..source_map import source_map_for, reverse_file_source_map
         self.prog = prog
         self.g = TaintGraph.of(prog)
-        # high-level <-> TEAL line map from the compiler's `// file.py:N` comments
-        # (empty on raw bytecode — the query then works in TEAL lines only).
-        # Keyed by (teal_file, line): a directory's programs don't clobber.
+        # Keyed by (teal_file, line) so a directory's programs don't clobber;
+        # empty on raw bytecode, where queries work in TEAL lines only.
         src_path = str(getattr(prog, "source_path", "") or "")
         self.srcmap = source_map_for(src_path, file=file) if src_path else {}
         self._rev = reverse_file_source_map(self.srcmap)
 
     def _file_name(self) -> str:
-        """The file label the coarse nodes carry (``a.location.file``), so precise
-        IR hits render with the same ``file:line`` string as the coarse ones."""
+        """The file label the coarse nodes carry, so IR hits render identically."""
         for a in getattr(self.prog, "assignments", ()) or ():
             loc = getattr(a, "location", None)
             if loc is not None and getattr(loc, "file", ""):
@@ -208,10 +165,9 @@ class TaintQuery:
                                            h.node.file, h.node.line))
 
     def teal_lines_for_source(self, src_file: str, src_line: int) -> list[int]:
-        """The TEAL lines a high-level ``src_file:src_line`` compiled to, or ``[]``
-        (no source map / not that line)."""
-        # _rev: (src_file, src_line) -> [(teal_file, teal_line), …]. Match the
-        # source ref by exact path or basename, and return the bare TEAL lines.
+        """The TEAL lines a high-level ``src_file:src_line`` compiled to, or ``[]``."""
+        # _rev: (src_file, src_line) -> [(teal_file, teal_line), …]; the source
+        # ref matches by exact path or basename.
         for (f, ln), tls in self._rev.items():
             if ln == src_line and (f == src_file or f.endswith("/" + src_file)
                                    or f.split("/")[-1] == src_file):
@@ -241,11 +197,8 @@ class TaintQuery:
                    immediates: Optional[str] = None, file: Optional[str] = None,
                    source_line: Optional[int] = None,
                    source_file: Optional[str] = None) -> list[SinkHit]:
-        """The dangerous sinks a value defined at the given source location can
-        reach (taint-forward). Point at a TEAL line, at every read of an input slot
-        (``op="txna", immediates="ApplicationArgs 1"``), or at a HIGH-LEVEL line
-        (``source_line=42`` [+ ``source_file``]) which resolves through the source
-        map to the TEAL it compiled to."""
+        """The dangerous sinks reachable from a TEAL line, an op/immediates match,
+        or a HIGH-LEVEL line resolved through the source map."""
         srcs: list[Node] = []
         if any(x is not None for x in (line, op, immediates)):
             srcs += self._nodes(line=line, op=op, immediates=immediates, file=file)
@@ -259,8 +212,7 @@ class TaintQuery:
 
     def sources_of(self, *, line: Optional[int] = None, file: Optional[str] = None
                    ) -> list[Node]:
-        """The attacker-input sources that reach the sink at the given location
-        (taint-backward). Answers "who can steer this sink?"."""
+        """The attacker inputs that reach the sink at the given location."""
         if line is None and file is None:
             return []               # all-None find() returns EVERY node — refuse
         reach: set = set()
@@ -272,19 +224,16 @@ class TaintQuery:
 
     def tainted_sinks(self, sources: Optional[Iterable[Node]] = None,
                       *, precise: bool = False) -> list[SinkHit]:
-        """Every dangerous sink reachable from ANY attacker-input source — the
-        program's attack surface in one call. ``sources`` overrides the default
-        (all detected sources).
+        """Every dangerous sink reachable from any attacker input — the attack
+        surface in one call.
 
-        ``precise=True`` backs reachability with the lifted Puya IR instead of the
-        coarse SSA def-use graph: the IR's reaching-def / scratch / interprocedural
-        summaries drop the phantom edges the coarse graph invents AND recover the
-        across-``callsub`` flows it misses. It needs the lift (built + cached
-        on-demand); when the contract doesn't lift it transparently falls back to
-        the coarse graph. ``precise`` still reports GUARD-BLIND reachability (a
-        triage lens) — run ``sink_verdict.verify_sinks`` for the guard-aware
-        verdict. Passing an explicit ``sources`` set disables precise mode (the
-        IR path computes the whole attack surface only)."""
+        ``precise=True`` uses the lifted IR, dropping phantom edges the coarse
+        graph invents and recovering the across-``callsub`` flows it misses; it
+        falls back silently when the contract doesn't lift, and is disabled by an
+        explicit ``sources`` set.
+
+        HAZARD: precise is still GUARD-BLIND. Only ``sink_verdict.verify_sinks``
+        answers whether a reachable sink is actually unguarded."""
         if precise and sources is None:
             from ..lift import build_lifter
             lifter = build_lifter(self.prog)
@@ -297,15 +246,16 @@ class TaintQuery:
         return self._hits(reach)
 
     def _ir_sink_hits(self, lifter) -> list[SinkHit]:
-        """Attack-surface sinks from the lifted IR taint (see ``tainted_sinks``).
-        Reuses the same fund-flow / state-write / log engine the ir-* detectors
-        run on, so the reported lines match a subsequent detector verdict."""
+        """Attack-surface sinks from the lifted IR taint.
+
+        Reuses the same engine the ir-* detectors run on, so the lines reported
+        here match a subsequent detector verdict."""
         from ..lift import fund_flow as FF
         from ..lift.taint import user_input_taint
         fname = self._file_name()
         taint = user_input_taint(lifter)
-        # fund_flow keys its internal sort by UPPERCASE severities; the SinkHit's
-        # own category/severity come from ``classify_sink`` regardless.
+        # fund_flow sorts by UPPERCASE severities; SinkHit's own category and
+        # severity still come from ``classify_sink``.
         itxn_fields = {f: sev.upper() for f, (_c, sev) in _ITXN_FIELD_SINKS.items()}
         findings = (FF.tainted_itxn_flows(lifter, itxn_fields, taint=taint)
                     + FF.tainted_state_writes(lifter, taint=taint)

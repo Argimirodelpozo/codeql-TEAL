@@ -1,14 +1,9 @@
-"""Dump EVERY representation of a TEAL contract — a one-shot debugging view of
-the whole pipeline.
+"""Dump EVERY representation of a TEAL contract — a one-shot debugging view of the
+whole pipeline (source → graph → CFG → SSA → structure → control tree → path
+predicates → inner-txn report → Puya IR).
 
-:func:`dump_all` builds a labeled text report walking each layer
-(source → graph → CFG → SSA → structure → control tree → path predicates →
-inner-txn report → Puya IR) and, when ``out_dir`` is given, writes it to
-``contract.txt`` plus the graph-shaped layers (graph / CFG / SSA / control-tree)
-as ``.svg`` (or ``.dot`` if Graphviz's ``dot`` binary isn't on PATH).
-
-Each layer is best-effort: a representation that fails to build (e.g. a contract
-that doesn't lift) is reported as ``(unavailable: …)`` and the rest still dump.
+Each layer is best-effort: one that fails to build is reported as
+``(unavailable: …)`` and the rest still dump.
 """
 from __future__ import annotations
 
@@ -29,16 +24,14 @@ from . import render as _viz
 
 def dump_all(source, out_dir: Optional[str] = None, *, svg: bool = True,
              registry=None) -> str:
-    """Return a labeled text dump of every representation of ``source`` (a
-    ``.teal`` file, a directory of them, or an in-memory ``{name: text}`` map).
-    When ``out_dir`` is given, also write ``contract.txt`` + the graph-shaped
-    layers as ``.svg``/``.dot`` there. ``registry`` (an ``{app_id: path}`` dict
-    or a yaml path) adds the cross-contract super-CFG when the contract makes
-    resolvable appcalls."""
+    """Labeled text dump of every representation of ``source`` (a ``.teal`` file, a
+    directory of them, or an in-memory ``{name: text}`` map); with ``out_dir`` also
+    writes ``contract.txt`` + the graph-shaped layers as ``.svg`` / ``.dot``, and
+    ``registry`` adds the cross-contract super-CFG."""
     prog = SSAProgram(source)
     prog.propagate_constants()
-    # Additive analytical passes (no materialize/DCE), so the SSA section can
-    # show IntRange overlays while the pre-materialized sections still work.
+    # Additive passes only (no materialize/DCE): the SSA section gets its IntRange
+    # overlays while the pre-materialized sections still work.
     for _p in ("propagate_ranges", "propagate_range_arithmetic",
                "propagate_assert_ranges", "propagate_byte_lengths",
                "propagate_bytemath_ranges"):
@@ -122,24 +115,16 @@ def _cfg_text(prog: SSAProgram) -> str:
 
 
 def _ir_text(source) -> str:
-    """The genuine ``puya.ir`` (via Puya's own text emitter), un-optimised so
-    every register shows with its recovered type -- incl. the langspec
-    refinements (``bool`` / ``biguint`` / ``account`` / ``bytes[N]``) and the
-    CONFIDENT ARC4 encoded types (``arc4.UInt64`` / ``arc4.Bool`` / static
-    ``arc4.Tuple`` / ...) that only exist in the real Puya IR, not the lift's
-    pre-IR intermediate."""
+    """The genuine ``puya.ir`` via Puya's own text emitter, un-optimised so every
+    register shows with its recovered type."""
     from ..lift import to_puya_ir
     return to_puya_ir.render(SSAProgram(source), optimize_ir=False)
 
 
 def _guessed_encodings_text(source) -> str:
-    """The SPECULATIVE ARC4 encoded-type recovery side-channel
-    (:func:`to_puya_ir.guess_encoded_types_scored`) -- best-effort guesses (decode-side
-    dynamic arrays/structs, strict-proof ``arc4.String`` literals, and the
-    length-proven dynamic-sequence encode idiom) that are deliberately NOT in the IR's
-    ``ir_type``, so a wrong guess can't affect lowering. Shown here so a consumer
-    (e.g. structure-aware fuzzing) can see what's available; for a string guess the
-    decoded text is included."""
+    """The SPECULATIVE ARC4 encoded-type recovery side-channel — best-effort
+    guesses that are deliberately NOT in the IR's ``ir_type``, so a wrong guess
+    cannot affect lowering."""
     import puya.ir.models as M
     from ..lift import to_puya_ir
     main, subs = to_puya_ir.to_puya(SSAProgram(source))
@@ -183,10 +168,8 @@ def _guessed_encodings_text(source) -> str:
 
 
 def _abi_security_leads_text(source) -> str:
-    """The first CONSUMER of the ABI type recovery, in a security register:
-    fund/asset-transfer sinks paying out to a value recovered as ``arc4.Address``
-    (:func:`to_puya_ir.abi_address_fund_flows`). Flags the arbitrary-recipient
-    shape -- a CALLER-SUPPLIED ABI address paid out UNGUARDED."""
+    """Fund/asset-transfer sinks paying out to a value recovered as ``arc4.Address``,
+    flagging the arbitrary-recipient shape (caller-supplied and UNGUARDED)."""
     from ..lift import to_puya_ir
     main, subs = to_puya_ir.to_puya(SSAProgram(source))
     leads = to_puya_ir.abi_address_fund_flows(main, subs)
@@ -206,10 +189,8 @@ def _abi_security_leads_text(source) -> str:
 
 
 def _box_schema_text(source) -> str:
-    """Reconstructed STORAGE SCHEMA -- the global / local / box keys and maps
-    recovered from the storage opcodes (:func:`box_recovery.recover_storage_schema`,
-    mirroring Puya's ``ContractState``), reusing the ABI type recovery for the key
-    and value types."""
+    """Reconstructed STORAGE SCHEMA — the global / local / box keys and maps
+    recovered from the storage opcodes, typed via the ABI type recovery."""
     from ..lift import to_puya_ir
     from ..lift.box_recovery import recover_storage_schema
     main, subs = to_puya_ir.to_puya(SSAProgram(source))
@@ -220,9 +201,8 @@ def _box_schema_text(source) -> str:
 
 
 def _ssa_overlay(prog: SSAProgram) -> str:
-    """SSA functional dump with BOTH overlays: ``/*[V<=hi]*/`` IntRange (the
-    substrate renderer) and ``/*len=N*/`` / ``/*val=…*/`` byte-length/value
-    (a post-pass over the text, since the renderer only does IntRange)."""
+    """SSA functional dump with BOTH overlays: ``/*[V<=hi]*/`` IntRange from the
+    substrate renderer, ``/*len=N*/`` / ``/*val=…*/`` from the text post-pass."""
     out = _ssa_render.functional_by_block(prog, show_ranges=True)
     try:
         from ..render_annotated import annotate_bytes_inline
@@ -233,8 +213,7 @@ def _ssa_overlay(prog: SSAProgram) -> str:
 
 
 def _taint_text(prog: SSAProgram) -> str:
-    """User-input → sensitive-sink reachability over the TaintGraph (which now
-    carries the interprocedural frame edges, so param-fed flows are seen)."""
+    """User-input → sensitive-sink reachability over the TaintGraph."""
     import networkx as nx
     from ..dataflow.taint_graph import TaintGraph
     from ..avm import (
@@ -265,8 +244,8 @@ def _taint_text(prog: SSAProgram) -> str:
 
 
 def _supercfg(prog: SSAProgram, registry):
-    """Build the SuperCFG for ``prog`` + ``registry`` (dict or yaml path), or
-    ``None`` if there are no resolvable appcall sites."""
+    """Build the SuperCFG for ``prog`` + ``registry`` (dict or yaml path), or ``None``
+    if there are no resolvable appcall sites."""
     from ..cfg import SuperCFG
     from ..xcontract import find_appcall_sites, load_registry
     reg = registry if isinstance(registry, dict) else load_registry(registry)

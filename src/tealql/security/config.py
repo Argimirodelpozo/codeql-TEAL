@@ -1,31 +1,17 @@
-"""Detection-mode config.
+"""Detection-mode config: is a TEAL artifact an **application** (stateful,
+OnCompletion lifecycle) or a **logicsig** (stateless)? Detections are scoped by
+it — the lifecycle family is meaningless on a logicsig, ``unsafe-lsig-args`` on
+an app.
 
-A TEAL artifact is either an **application** (stateful — approval /
-clear-state programs, an OnCompletion lifecycle) or a **logicsig**
-(stateless — a logic signature attached to an account). Several
-detections only make sense for one mode: the OnCompletion-lifecycle
-family (`is-deletable`, `unprotected-updatable`, …) is meaningless for
-a logicsig, which has no lifecycle; `unsafe-lsig-args` is meaningless
-for an application, which has no `arg` opcodes.
-
-Rather than *infer* the mode from opcode heuristics — which misfires on
-genuine logicsigs that happen to read `ApplicationArgs` (every
-AlgoPlonk-style proof verifier, for one) — the mode is **declared**
-in a config file the caller passes:
+The mode is DECLARED, never inferred here — opcode heuristics misfire on genuine
+logicsigs that read ``ApplicationArgs`` (every proof verifier). An artifact
+matching no rule gets ``None``, which callers treat as "run everything".
 
 .. code-block:: yaml
 
-    # First matching rule wins. `match` is one or more glob patterns
-    # tested against the artifact path the caller resolved.
-    modes:
-      - match: "**/*Verifier.teal"
-        mode: logicsig
-      - match: ["**/*.approval.teal", "**/approval.teal"]
-        mode: app
-
-When an artifact matches no rule (or no config is supplied) the mode is
-``None`` — callers treat that as "run every detector, unfiltered". No
-inference happens anywhere.
+    modes:                                     # first matching rule wins
+      - {match: "**/*Verifier.teal", mode: logicsig}
+      - {match: ["**/*.approval.teal", "**/approval.teal"], mode: app}
 """
 from __future__ import annotations
 
@@ -41,17 +27,14 @@ VALID_MODES = ("app", "logicsig")
 
 
 class ConfigError(TealQLError, ValueError):
-    """A detection config file is invalid — bad schema, unknown detector
-    name, contradictory rule. Raised at LOAD time so a typo fails the run
-    instead of silently changing scan coverage."""
+    """An invalid config, raised at LOAD time so a typo fails the run instead of
+    silently changing scan coverage."""
 
 
 def glob_match(path: str, pattern: str) -> bool:
-    """``fnmatch`` with the doc-style ``**/`` prefix fixed. ``fnmatch`` has
-    no ``**``: a literal ``**/x.teal`` demands a ``/`` in the path, so the
-    natural catch-all pattern silently missed files sitting at the scan
-    root. A ``**/``-prefixed pattern therefore also matches with the prefix
-    stripped. (Plain ``*`` already crosses ``/`` in fnmatch.)"""
+    """``fnmatch`` with the doc-style ``**/`` prefix fixed: fnmatch has no ``**``,
+    so a literal ``**/x.teal`` demands a ``/`` and the natural catch-all pattern
+    silently missed files at the scan root. Prefix-stripped is retried."""
     if fnmatch.fnmatch(path, pattern):
         return True
     return pattern.startswith("**/") and fnmatch.fnmatch(path, pattern[3:])
@@ -59,10 +42,8 @@ def glob_match(path: str, pattern: str) -> bool:
 
 @dataclass(frozen=True)
 class ModeRule:
-    """One mode declaration. ``match`` is one or more ``fnmatch`` glob
-    patterns (``*`` matches anything including ``/``, so ``*Verifier*``
-    matches at any depth; a ``**/`` prefix also matches at the root).
-    ``mode`` is one of :data:`VALID_MODES`."""
+    """One mode declaration: ``match`` globs (see :func:`glob_match`) plus a
+    ``mode`` from :data:`VALID_MODES`."""
 
     match: tuple[str, ...]
     mode: str
@@ -73,8 +54,7 @@ class ModeRule:
 
 @dataclass(frozen=True)
 class DetectionConfig:
-    """Ordered list of :class:`ModeRule`, evaluated first-match-wins.
-    An empty config classifies nothing — every lookup returns ``None``."""
+    """:class:`ModeRule` list, first-match-wins; empty classifies nothing."""
 
     rules: tuple[ModeRule, ...] = ()
 
@@ -84,10 +64,8 @@ class DetectionConfig:
 
     @classmethod
     def from_path(cls, path: Path) -> "DetectionConfig":
-        """Load from a ``.yml`` / ``.yaml`` / ``.json`` file. The file may
-        contain only a ``modes:`` section — an unknown top-level key is a
-        :class:`ConfigError` (a typo'd section would otherwise be ignored
-        wholesale)."""
+        """Load from ``.yml``/``.yaml``/``.json``; only a ``modes:`` section is
+        allowed, since a typo'd section would otherwise be ignored wholesale."""
         text = Path(path).read_text()
         if str(path).endswith((".yml", ".yaml")):
             import yaml
@@ -123,9 +101,7 @@ class DetectionConfig:
         return cls(tuple(rules))
 
     def mode_for(self, path: str) -> Optional[str]:
-        """Return the declared mode for ``path``, or ``None`` if no rule
-        matches. ``path`` is whatever string the caller wants to match
-        against the config globs (typically the artifact path)."""
+        """The declared mode for ``path``, or ``None`` when no rule matches."""
         for rule in self.rules:
             if rule.matches(path):
                 return rule.mode

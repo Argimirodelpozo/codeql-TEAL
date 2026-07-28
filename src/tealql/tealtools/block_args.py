@@ -1,41 +1,20 @@
 """Block-argument (functional-SSA) lowering view of an :class:`SSAProgram`.
 
-The canonical out-of-SSA form for a *functional executable* IR — the shape
-MLIR / Cranelift / Swift SIL use: each block that has phis is a function whose
-parameters are those phis, and every predecessor's terminator passes, on its
-edge, the value it holds in each of those slots.
+Each block with phis is a function whose parameters are those phis, and every
+predecessor passes, on its edge, the value it holds in each slot. Unlike
+:mod:`tealql.tealtools.passes.materialize` — which flattens a phi to its leaf
+value-*set* and drops a copy at each leaf's def site, discarding *which value
+arrives on which edge* — the per-edge value stays explicit, so the lost-copy /
+swap problems cannot arise.
 
-Why this and not :mod:`tealql.tealtools.passes.materialize`: materialisation flattens
-a phi to its transitive leaf value-*set* and drops one ``mat_phi = leaf`` copy
-at each leaf's def site. That discards *which value arrives on which edge*, so
-when a phi's leaves are co-defined on one path (e.g. a ``swap`` after copy-
-propagation) every copy fires and the last writer wins — the control-flow
-selection is lost. Block-args keep the per-edge value explicit, so the
-lost-copy / swap problems cannot arise; it is a faithful (value-preserving)
-out-of-SSA translation.
+HAZARD: the per-edge value of a join's slot ``k`` is the predecessor's
+``exit_stack[-k]`` — phi ``stack_index`` is 1-based TOP-FIRST while
+:attr:`BasicBlock.exit_stack` is bottom-first.
 
-The per-edge value of a join's slot ``k`` is the predecessor's
-``exit_stack[-k]`` — phi ``stack_index`` is 1-based top-first while
-:attr:`BasicBlock.exit_stack` is bottom-first, so slot ``k`` is index ``-k``.
-``exit_stack`` is surfaced verbatim from construction, so this view reflects
-the real data movement (a ``swap``'s fresh output vars, not their copy-
-propagated sources) regardless of which value-flow passes have run.
-
-Run it while phis still exist — it is the out-of-SSA lowering used by the
-lift, consuming phis into per-edge block arguments rather than rewriting them
-into copy assignments in place. Value-flow passes (constants,
-ranges, shuffles, …) may run first — ``exit_stack`` is fixed at construction,
-so the view is stable across them.
-
-This is a **view** — it does not mutate the program. Lowering block-args
-*further* to imperative edge-copies (split critical edges, sequentialise the
-parallel copy on each edge, break swap cycles with a temp, coalesce on
-interference) is a separate backend step and is intentionally not done here.
-
-    >>> from tealql.tealtools.ssa import SSAProgram
-    >>> from tealql.tealtools.block_args import to_block_args
-    >>> form = to_block_args(SSAProgram("contract.teal"))
-    >>> print(form.render())
+A read-only view: run it while phis still exist. Value-flow passes may run
+first (``exit_stack`` is fixed at construction, so it still reflects the real
+data movement). Lowering further to imperative edge-copies is a separate
+backend step, deliberately not done here.
 """
 from __future__ import annotations
 
@@ -46,9 +25,7 @@ from .ssa import BasicBlock, Const, Phi, SSAProgram, SSAVar
 
 
 def _fmt(o) -> str:
-    """Compact operand label for the render. ``None`` is a dead slot.
-    Resolved constants render as their bare literal — an integer, or ``0x…``
-    bytes verbatim."""
+    """Compact operand label for the render; ``None`` is a dead slot."""
     if o is None:
         return "·"  # ·
     if isinstance(o, SSAVar):
@@ -63,11 +40,9 @@ def _fmt(o) -> str:
 def _slot_value(pred: BasicBlock, slot: int):
     """The operand predecessor ``pred`` supplies for a join slot.
 
-    ``slot`` is 1-based top-first (phi ``stack_index``); ``exit_stack`` is
-    bottom-first, so the slot is index ``-slot``. Returns ``None`` if the
-    predecessor's exit stack is too shallow (a malformed edge) — never
-    raises, so a bad CFG degrades to an explicit ``·`` rather than a crash.
-    """
+    HAZARD: ``slot`` is 1-based TOP-FIRST (phi ``stack_index``); ``exit_stack``
+    is bottom-first, so the slot is index ``-slot``. A too-shallow exit stack
+    (malformed edge) yields ``None`` rather than raising."""
     es = pred.exit_stack
     if 0 < slot <= len(es):
         return es[-slot]
@@ -76,11 +51,8 @@ def _slot_value(pred: BasicBlock, slot: int):
 
 @dataclass
 class EdgeArgs:
-    """The argument list one CFG edge supplies to its successor's params.
-
-    ``args[i]`` is the value for ``params[succ][i]`` — same order as the
-    successor's parameter list (sorted by phi ``stack_index``).
-    """
+    """The argument list one CFG edge supplies to its successor's params —
+    ``args[i]`` is the value for ``params[succ][i]``."""
 
     pred: BasicBlock
     succ: BasicBlock
@@ -89,36 +61,26 @@ class EdgeArgs:
 
 @dataclass
 class BlockArgForm:
-    """Block-argument view of a program.
-
-    ``params[bb]`` is ``bb``'s parameter list (its phis, sorted by
-    ``stack_index``) for every ``bb`` that has phis. ``edges`` holds one
-    :class:`EdgeArgs` per (predecessor → parameterised-block) CFG edge.
-
-    Invariant: every phi is a block parameter, and every edge into a
-    parameterised block carries exactly one argument per parameter. Single-
-    predecessor "joins" are kept (their one edge supplies the args) — that is
-    a faithful, uniform form; eliminating those trivial parameters is a later
-    optimisation, not a correctness concern.
-    """
+    """Block-argument view: ``params[bb]`` is ``bb``'s phis sorted by
+    ``stack_index``, ``edges`` one :class:`EdgeArgs` per (predecessor →
+    parameterised-block) CFG edge."""
 
     prog: SSAProgram
     params: dict  # BasicBlock -> list[Phi]
     edges: list = field(default_factory=list)  # list[EdgeArgs]
 
     def edge(self, pred: BasicBlock, succ: BasicBlock) -> Optional[EdgeArgs]:
-        """The :class:`EdgeArgs` for ``pred -> succ``, or ``None`` if ``succ``
-        has no parameters (so the edge carries no arguments)."""
+        """The :class:`EdgeArgs` for ``pred -> succ``, or ``None`` if ``succ`` has
+        no parameters."""
         for e in self.edges:
             if e.pred is pred and e.succ is succ:
                 return e
         return None
 
     def _src(self, op) -> str:
-        """Display label for an operand. Inlines trivial (single-predecessor)
-        phis to their source, transitively, so they don't clutter use sites;
-        prefers a known constant value over the var name. A real (multi-
-        predecessor) phi passes through and is referenced by its name."""
+        """Display label for an operand — trivial (single-predecessor) phis are
+        inlined to their source transitively, a known constant preferred over the
+        var name; a real multi-predecessor phi passes through by name."""
         seen: set = set()
         while isinstance(op, Phi):
             bb = op.basic_block
@@ -135,15 +97,9 @@ class BlockArgForm:
         return _fmt(cv) if cv is not None else _fmt(op)
 
     def render(self) -> str:
-        """Readable *phi-at-join* dump. Each block is
-        ``block L<n>  (preds: …):``. A real join (>1 predecessor) shows each
-        of its phis at the join as ``<phi> = phi(L<pred>: <value>, …)`` — the
-        per-edge sources, labelled by predecessor, read in one place. Trivial
-        single-predecessor phis are inlined at their use sites (not shown).
-        Then the block's assignments, then one ``-> L<succ>(carried values)``
-        line per successor — the control jump *with* the values it carries to
-        that successor's slots (so the data flow reads forward on the edges
-        as well as backward at the join phis)."""
+        """Readable *phi-at-join* dump: per block, its phis as ``<phi> =
+        phi(L<pred>: <value>, …)``, its assignments, then one ``-> L<succ>(carried
+        values)`` line per successor."""
         out: list[str] = []
         for bb in sorted(self.prog.blocks.values(),
                          key=lambda b: (b.file, b.first_line)):
@@ -153,8 +109,8 @@ class BlockArgForm:
                          + ", ".join(f"L{p.first_line}" for p in bb.predecessors)
                          + ")")
             out.append(head + ":")
-            # Phi-at-join: only real joins define phis; trivial single-pred
-            # phis are inlined by _src at their uses.
+            # Only real joins define phis; trivial single-pred phis are inlined
+            # by _src at their uses.
             if len(bb.predecessors) > 1:
                 for i, phi in enumerate(self.params.get(bb, [])):
                     srcs = []
@@ -164,8 +120,8 @@ class BlockArgForm:
                         srcs.append(f"L{pred.first_line}: {self._src(val)}")
                     out.append(f"    {_fmt(phi)} = phi(" + ", ".join(srcs) + ")")
             for a in bb.assignments:
-                # Constants are inlined at use sites by _src, so drop the
-                # pool decls and the now-redundant const-push lines.
+                # _src inlines constants at use sites, so the pool decls and
+                # const-push lines are redundant here.
                 if a.op in ("intcblock", "bytecblock"):
                     continue
                 if (len(a.outputs) == 1 and not a.inputs
@@ -188,12 +144,8 @@ class BlockArgForm:
 
 
 def to_block_args(prog: SSAProgram) -> BlockArgForm:
-    """Build the block-argument view of ``prog`` (see the module docstring).
-
-    Reads only the CFG (``BasicBlock.predecessors`` / ``phis`` /
-    ``exit_stack``), so it is independent of which value-flow passes have run
-    and never mutates the program.
-    """
+    """Build the block-argument view of ``prog`` — reads only the CFG
+    (``predecessors`` / ``phis`` / ``exit_stack``) and never mutates."""
     params: dict = {
         bb: sorted(bb.phis, key=lambda p: p.stack_index)
         for bb in prog.blocks.values()

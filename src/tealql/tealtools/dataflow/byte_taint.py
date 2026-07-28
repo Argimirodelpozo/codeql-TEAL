@@ -1,43 +1,16 @@
-"""Byte-interval ("partial") taint — a standalone prototype.
+"""Taint at BYTE-OFFSET granularity — each bytes value carries a set of tainted
+half-open intervals, so "bytes 0..7 are a validated selector, bytes 8.. are
+attacker-controlled" is expressible where the boolean engine sees one blob.
 
-The live taint engine (:mod:`tealql.tealtools.dataflow.engine`) is boolean: a
-bytes value is tainted or it isn't. But TEAL contracts routinely pack
-several logical fields into one byte array (ABI args, length-prefixed
-blobs, embedded 32-byte addresses), so whole-value taint is too coarse —
-"bytes 0..7 of this arg are a validated selector, bytes 8.. are
-attacker-controlled" can't be expressed.
+Three layers: forward interval propagation, validation-narrowing that CLEARS a
+sub-range an ``assert(slice(X) == clean)`` guard pins, and an interprocedural
+bridge giving a ``frame_dig`` param its caller args' intervals.
 
-This module tracks taint at **byte-offset granularity**: each bytes value
-carries a set of tainted half-open intervals over ``[0, len)`` (an
-:class:`Intervals`). The TEAL byte ops map cleanly onto interval algebra,
-and the offsets/lengths the rules need come from
-:meth:`SSAProgram.propagate_byte_lengths` (already in the substrate):
-
-  - ``extract A B X`` / ``substring A B X`` → ``(taint(X) ∩ window) − A``
-  - ``concat A B``                         → ``taint(A) ∪ (taint(B) + len(A))``
-  - ``setbyte`` / ``replace2`` / ``replace3`` → splice
-  - ``getbyte`` / ``extract_uint16/32/64``   → the byte-range → **scalar**
-    bridge: the uint64 result is tainted iff any byte it reads is tainted
-  - ``btoi`` / ``itob``                     → scalar ↔ first-8-bytes bridge
-  - hashes (``sha256`` …)                   → a 32-byte digest, tainted iff
-    the input carries any taint (attacker can steer it)
-
-Soundness over precision: when an offset or length isn't statically known
-(``extract3`` with a runtime count, an unknown-length ``concat`` prefix),
-the rule falls back to whole-value taint — never a false negative, just a
-lost partition. Any op without a precise rule is handled conservatively
-(output tainted if any input is).
-
-Three layers, all live: (1) the **forward** interval propagation; (2)
-**validation-narrowing** (``validate=True``) that *clears* a sub-range pinned
-by an ``assert(slice(X) == clean)`` guard (see :func:`_validated_intervals`);
-and (3) an **interprocedural** bridge — a ``frame_dig`` param inherits the
-byte-intervals of its caller args via :func:`frame_param_sources`, so taint fed
-INTO a subroutine is tracked through it at byte granularity without an IR lift.
-
-Entry point: :func:`byte_taint`. Standalone — it does not touch the live
-engine.
-"""
+HAZARD: soundness beats precision everywhere here — the whole point is that a
+range reported CLEAN is trusted downstream. Whenever an offset or length is not
+statically known the rule falls back to whole-value taint, and any op without a
+precise rule taints its output if any input is tainted. Losing a partition is
+acceptable; a false negative is not."""
 from __future__ import annotations
 
 from typing import Callable, Optional
@@ -64,8 +37,7 @@ def _normalize(parts) -> tuple:
 
 
 class Intervals:
-    """An immutable set of half-open ``[lo, hi)`` byte intervals (``hi`` may
-    be :data:`INF`), kept normalized: sorted, disjoint, non-adjacent."""
+    """An immutable, normalized set of half-open ``[lo, hi)`` byte intervals."""
 
     __slots__ = ("parts",)
 
@@ -78,8 +50,7 @@ class Intervals:
 
     @classmethod
     def whole(cls, length: Optional[float] = None) -> "Intervals":
-        """``[0, length)`` — or ``[0, AVM_MAX_BYTES)`` when the length is unknown
-        (a byteslice value can't exceed the AVM's 4096-byte cap)."""
+        """``[0, length)``, or the AVM byte cap when the length is unknown."""
         return cls([(0, AVM_MAX_BYTES if length is None else length)])
 
     def __bool__(self) -> bool:
@@ -108,7 +79,7 @@ class Intervals:
         return Intervals((max(p0, lo), min(p1, hi)) for p0, p1 in self.parts)
 
     def subtract(self, lo: float, hi: float) -> "Intervals":
-        """Remove the window ``[lo, hi)`` (used by splice ops)."""
+        """Remove the window ``[lo, hi)``."""
         out = []
         for p0, p1 in self.parts:
             if p0 < lo:
@@ -122,8 +93,7 @@ class Intervals:
         return Intervals((lo + d, hi + d) for lo, hi in self.parts)
 
     def minus(self, other: "Intervals") -> "Intervals":
-        """Set difference: ``self`` with every interval of ``other`` removed
-        (used by the validation pass to clear checked sub-ranges)."""
+        """Set difference — used to clear validated sub-ranges."""
         result = self
         for lo, hi in other.parts:
             result = result.subtract(lo, hi)
@@ -142,11 +112,8 @@ class Intervals:
 
 
 def _byte_length(op) -> Optional[int]:
-    """Exact byte length of an operand — from the ``byte_length`` that
-    :func:`propagate_byte_lengths` pinned, else from a bytes ``const_value``
-    (a literal ``byte 0x..`` carries its length even when the length pass
-    didn't tag the SSAVar). ``None`` when unknown → caller falls back
-    conservatively."""
+    """EXACT byte length of an operand, or ``None`` — on which every caller
+    falls back to whole-value taint."""
     t = getattr(op, "type", None)
     if t is not None and getattr(t, "byte_length", None) is not None:
         return t.byte_length
@@ -158,11 +125,8 @@ def _byte_length(op) -> Optional[int]:
 
 
 def _len_bound(op) -> int:
-    """UPPER bound on a value's byte length — the honest open-end for a taint
-    interval (there is no true ∞; the AVM caps a byteslice at 4096 bytes).
-    Reuses :func:`propagate_byte_lengths`' annotations (byte_taint runs the pass):
-    the exact ``byte_length``, else the ``byte_length_range`` hi (e.g. ``btoi(X)``
-    ⇒ ``len(X) ≤ 8``), else :data:`AVM_MAX_BYTES`."""
+    """UPPER bound on a value's byte length — the honest open end for an
+    interval, since the AVM caps a byteslice and there is no true ∞."""
     exact = _byte_length(op)
     if exact is not None:
         return min(exact, AVM_MAX_BYTES)
@@ -175,9 +139,7 @@ def _len_bound(op) -> int:
 
 
 def _uint_hi(op) -> Optional[int]:
-    """UPPER bound on a uint64 operand: its constant value, else its
-    :class:`IntRange` ``hi`` (populated when the range passes have run — byte_taint
-    doesn't trip them, so this is opportunistic), else ``None``."""
+    """UPPER bound on a uint64 operand: its constant, else its range hi, else None."""
     c = const_int(op)
     if c is not None:
         return c
@@ -186,12 +148,8 @@ def _uint_hi(op) -> Optional[int]:
 
 
 def _index_window(idx_op, width: int) -> tuple:
-    """The ``[lo, hi)`` byte window a ``width``-byte read at ``idx_op`` could
-    touch: exact for a compile-time constant index, else bounded by its
-    :class:`IntRange` (opportunistic — populated when the range passes have run,
-    which byte_taint trips), capped at the AVM byte limit. Falls back to
-    ``(0, AVM_MAX_BYTES)`` (= "any byte", the old any-taint behaviour) when the
-    index is unbounded."""
+    """The byte window a ``width``-byte read at ``idx_op`` could touch — exact
+    for a const index, else its range, else every byte."""
     c = const_int(idx_op)
     if c is not None:
         return (c, c + width)
@@ -202,16 +160,11 @@ def _index_window(idx_op, width: int) -> tuple:
 
 
 def _default_sources(a) -> Optional[Intervals]:
-    """Default attacker-input seed: every ``ApplicationArgs`` read AND every
-    LogicSig ``arg`` read is fully tainted (length is usually dynamic, so
-    ``[0, len-bound)`` — the exact / range-bounded length when known, else the
-    4096-byte AVM cap).
+    """Seed: every ``ApplicationArgs`` read and every LogicSig ``arg`` read is
+    fully tainted, both being wholly attacker-supplied.
 
-    The lsig ``arg`` family belongs here for the same reason it is in
-    :func:`tealql.tealtools.dataflow.taint_query.is_source`: a LogicSig's args
-    are wholly attacker-supplied. Seeding only ApplicationArgs meant any
-    consumer that did not pass its own ``sources=`` (notably
-    :func:`byte_taint_view`) saw NO taint at all in a LogicSig."""
+    HAZARD: the lsig ``arg`` family must stay — without it a LogicSig analysed
+    with the default sources shows NO taint at all."""
     from .taint_query import _LSIG_ARG_OPS
 
     if a.op in _LSIG_ARG_OPS:
@@ -227,10 +180,8 @@ def _default_sources(a) -> Optional[Intervals]:
 
 _HASH_OPS = frozenset({"sha256", "sha512_256", "keccak256", "sha3_256"})
 _EXTRACT_UINT = {"extract_uint16": 2, "extract_uint32": 4, "extract_uint64": 8}
-# Bytes-PRODUCING ops with no precise byte-interval rule: the conservative
-# fallback must record byte taint, not scalar. (json_ref is handled separately
-# in the fallback -- it is polymorphic on its immediate: JSONUint64 -> uint64,
-# JSONString / JSONObject -> bytes.)
+# Bytes-PRODUCING ops with no precise rule: the fallback must record BYTE
+# taint for these, not scalar (json_ref is polymorphic, handled separately).
 _BYTES_OUT_FALLBACK = frozenset({
     "b+", "b-", "b*", "b/", "b%", "bsqrt",      # bigint arithmetic
     "b|", "b&", "b^", "b~", "bzero",            # bytewise
@@ -238,12 +189,9 @@ _BYTES_OUT_FALLBACK = frozenset({
 })
 
 
-# Pure combinators: their output is a deterministic function of their stack
-# inputs, with no external read. Used by :func:`_is_clean` — a value built only
-# from constants / ``global`` reads through these ops is attacker-independent.
-# Deliberately an ALLOWLIST: any op NOT here (``txn`` / ``arg`` / ``frame_dig``
-# / ``load`` / ``app_global_get`` / a source, …) breaks cleanliness, so a
-# missing entry costs precision, never soundness.
+# Ops whose output is a deterministic function of their stack inputs with no
+# external read. Deliberately an ALLOWLIST: any op not here breaks cleanliness,
+# so a missing entry costs precision, never soundness.
 _PURE_COMBINATORS = frozenset({
     "+", "-", "*", "/", "%", "exp", "sqrt", "shl", "shr", "<<", ">>",
     "b+", "b-", "b*", "b/", "b%", "bsqrt",
@@ -256,14 +204,12 @@ _PURE_COMBINATORS = frozenset({
     "sha256", "sha512_256", "keccak256", "sha3_256",
 })
 
-# ``global`` fields whose value is fixed by the chain / deployment and cannot be
-# steered by whoever submits the transaction — the ONLY globals safe to treat as
-# an attacker-independent pin. Deliberately EXCLUDES the group-assembly fields
-# ``GroupSize`` / ``GroupID`` (chosen by the attacker when they build the group)
-# and the consensus fields ``Round`` / ``LatestTimestamp`` / ``OpcodeBudget``
-# (attacker-/miner-influenceable). ``CallerApplication*`` stay in — an inner-txn
-# caller cannot forge which app called it. Unknown/future fields fall through to
-# NOT-clean, the sound direction (at worst a lost proof, never a cleared taint).
+# HAZARD: the ONLY globals safe to treat as an attacker-independent pin —
+# fixed by the chain or the deployment. EXCLUDES ``GroupSize`` / ``GroupID``
+# (the attacker assembles the group) and ``Round`` / ``LatestTimestamp`` /
+# ``OpcodeBudget`` (attacker- or miner-influenceable). ``CallerApplication*``
+# stay because an inner-txn caller cannot forge which app called it. Unknown
+# fields fall through to NOT-clean: a lost proof, never a wrongly cleared taint.
 _CLEAN_GLOBALS = frozenset({
     "ZeroAddress", "MinTxnFee", "MinBalance", "MaxTxnLife",
     "LogicSigVersion", "GenesisHash",
@@ -274,18 +220,15 @@ _CLEAN_GLOBALS = frozenset({
 
 
 def _is_clean(v, seen: Optional[set] = None) -> bool:
-    """True if operand ``v`` is attacker-INDEPENDENT — its value cannot be
-    steered by attacker input, so an ``assert(slice(X) == v)`` guard genuinely
-    pins those bytes of X to a value outside attacker control.
+    """True if ``v`` is attacker-INDEPENDENT, so an ``assert(slice(X) == v)``
+    genuinely pins those bytes outside attacker control.
 
-    Sound over-approximation via an allowlist: a value is clean iff every leaf
-    of its def-tree is a constant or a ``global`` read, combined only through
-    :data:`_PURE_COMBINATORS`. Everything else — ``txn``/``arg`` reads, a
-    ``frame_dig`` param (interprocedurally attacker-controlled), scratch/state
-    reads, unknown ops — is treated as NOT clean. Note we do NOT define clean as
-    "currently untainted": byte_taint is intra-procedural, so a param can look
-    untainted here yet carry taint from the caller; clearing against it would be
-    a false negative."""
+    Clean iff every leaf of the def-tree is a constant or an allowlisted
+    ``global``, combined only through :data:`_PURE_COMBINATORS`.
+
+    HAZARD: clean is NOT "currently untainted". This analysis is
+    intra-procedural, so a subroutine param can look untainted here while
+    carrying taint from its caller; clearing against it is a false negative."""
     if operand_const(v) is not None:
         return True
     if seen is None:
@@ -301,8 +244,6 @@ def _is_clean(v, seen: Optional[set] = None) -> bool:
     if d is None:
         return False                      # unknown origin (param / frame read)
     if d.op == "global":
-        # Only truly deployment-fixed globals pin bytes; GroupSize/GroupID/Round/
-        # LatestTimestamp are attacker- or miner-influenceable (see _CLEAN_GLOBALS).
         field = (d.immediates or "").split()[:1]
         return bool(field) and field[0] in _CLEAN_GLOBALS
     if d.op in _PURE_COMBINATORS and d.inputs:
@@ -311,10 +252,7 @@ def _is_clean(v, seen: Optional[set] = None) -> bool:
 
 
 def _slice_of(v) -> Optional[tuple]:
-    """If SSAVar ``v`` is a *static* byte-slice read of some value ``X`` —
-    ``extract`` / ``substring`` (immediate or stack-const), ``getbyte``,
-    ``extract_uint16/32/64`` — return ``(X, lo, hi)``: the byte window of X
-    it reads. ``None`` when the offsets aren't statically known."""
+    """``(X, lo, hi)`` if ``v`` is a STATIC byte-slice read of ``X``, else ``None``."""
     d = getattr(v, "defined_by", None)
     if d is None:
         return None
@@ -345,43 +283,28 @@ def _slice_of(v) -> Optional[tuple]:
 
 
 def _validated_intervals(prog: SSAProgram) -> tuple[dict, dict]:
-    """``(value -> Intervals, value -> provenance)`` proven NOT
-    attacker-controlled by ``assert(slice(X) == clean)`` guards,
-    flow-sensitively.
+    """``(value -> Intervals, value -> provenance)`` for the byte ranges an
+    ``assert(slice(X) == clean)`` guard proves are NOT attacker-controlled.
 
-    A guard pinning a static slice of X to an attacker-INDEPENDENT value means
-    those bytes can't be attacker-chosen past the assert (the txn fails
-    otherwise). ``clean`` is a compile-time constant OR any value that
-    :func:`_is_clean` proves attacker-independent (a ``global`` read, or pure
-    computation over constants / globals — e.g. ``extract(X,0,32) == global
-    CurrentApplicationAddress`` or ``== itob(global Round)``). Comparing two
-    attacker slices (``slice(X) == slice(Y)``) clears nothing — neither side is
-    clean.
+    Comparing two attacker slices clears nothing — neither side is clean.
 
-    We clear the range from X's taint **globally** only when every *other* use
-    of X is dominated by the assert — the same soundness contract as
-    :mod:`tealql.tealtools.passes.range_assert` (a use reachable without passing the
-    guard would otherwise lose taint unsoundly). Dominance is approximated by
-    reachability-without-the-assert-block on the raw interprocedural CFG
-    (over-approximates → conservative)."""
+    HAZARD: the clearing is GLOBAL on X, so it is only applied when every other
+    use of X is dominated by the guard; a use reachable without passing it would
+    otherwise lose taint unsoundly. Same contract as
+    :mod:`tealql.tealtools.passes.range_assert`, with dominance approximated by
+    reachability, which over-approximates and so errs toward not clearing."""
     from ..cfg.dominance import AssertDominance
 
-    # (No "has an entry block" bail here: AssertDominance now computes the real
-    # per-file entries itself — the old no-predecessor-block guard existed only
-    # to paper over its entries=[] saturation.)
     dom = AssertDominance(prog)
 
     def dominates(block_a, use, line: int) -> bool:
         return dom.dominates(block_a, use.basic_block, line, use.location.line)
 
-    # Values that flow into a phi. The dominance check below only sees ``x.uses``
-    # (OP uses), never phi consumers — and a phi arg comes from a SPECIFIC
-    # predecessor edge that may bypass the assert, so clearing such a value
-    # globally is unsound (a false negative). Never clear a phi-fed value — the
-    # same conservative contract as ``passes.range_assert`` (which defers bytes
-    # ``==`` clearing to here). This also neutralises the ``all([])``
-    # vacuous-true case: an x whose only op-use is the guard but which is
-    # phi-carried elsewhere no longer clears with zero dominance evidence.
+    # HAZARD: the dominance check sees only ``x.uses`` (OP uses), never phi
+    # consumers, and a phi arg arrives on a SPECIFIC predecessor edge that may
+    # bypass the guard — so a phi-fed value is never cleared. This also kills the
+    # vacuous ``all([])`` case, where an x whose only op-use IS the guard would
+    # otherwise clear on zero dominance evidence.
     phi_fed = {id(arg) for ph in prog.phis.values() for arg in ph.args
                if isinstance(arg, SSAVar)}
 
@@ -406,10 +329,8 @@ def _validated_intervals(prog: SSAProgram) -> tuple[dict, dict]:
                 x, lo, hi = info                 # a static slice of X is pinned
                 test = getattr(s, "defined_by", None)   # the slice read forms the guard
             else:
-                # Whole-value equality: `s` itself is pinned to a clean value, so
-                # its ENTIRE taint clears past the assert (`arg == global X`, an
-                # input equated to a chain constant, …) — the equality-class case
-                # the per-slice rule missed.
+                # Whole-value equality: `s` itself is pinned to a clean value,
+                # so its ENTIRE taint clears past the assert.
                 x, lo, hi = s, 0, (_byte_length(s) or _len_bound(s))
                 test = d                          # the `==` read forms the guard
             break
@@ -420,15 +341,11 @@ def _validated_intervals(prog: SSAProgram) -> tuple[dict, dict]:
             out.setdefault(x, []).append((lo, hi))
             prov.setdefault(x, []).append((lo, hi, "assert", a.location.line))
 
-    # Branch-to-reject validation: a `slice(X) == clean` that drives a `bz` /
-    # `bnz` to a rejection -- OR a `match` / `switch` arm -- pins those bytes on
-    # the reachable path exactly as an `assert` does, but the loop above only sees
-    # a literal `assert`. PathPredicateAnalysis derives the same `slice == clean`
-    # fact from a guarded `==`, a branch, AND a match/switch arm (an ABI router
-    # pins the selector to that arm's method const) -- all as an "eq" predicate on
-    # the slice value. Clear X's range when such a predicate holds at every OTHER
-    # use of X -- the same global-soundness contract (different arms may pin to
-    # different clean consts; each still validates the same slice bytes).
+    # A `slice(X) == clean` driving a branch to rejection — or a match/switch
+    # arm, as an ABI router pins the selector to that arm's const — pins those
+    # bytes exactly as an assert does, but the loop above only sees literal
+    # asserts. Same global-soundness contract: clear only when the predicate
+    # holds at every OTHER use of X.
     from ..path_predicates import PathPredicateAnalysis
     pp = PathPredicateAnalysis(prog)
 
@@ -438,9 +355,7 @@ def _validated_intervals(prog: SSAProgram) -> tuple[dict, dict]:
             for bc in pp.predicates_at(use.location.file, use.location.line)
         )
 
-    # Candidate slice values pinned to a clean value on some path (== branch or
-    # match/switch arm), gathered straight from the predicate facts.
-    slice_cands: dict = {}
+    slice_cands: dict = {}                    # slice values pinned on some path
     for preds in pp.bb_preds.values():
         for bc in preds:
             if (bc.kind == "eq" and bc.args and isinstance(bc.value, SSAVar)
@@ -450,7 +365,7 @@ def _validated_intervals(prog: SSAProgram) -> tuple[dict, dict]:
                     slice_cands[bc.value] = info
     for slc, (x, lo, hi) in slice_cands.items():
         if id(x) in phi_fed:
-            continue                          # phi-fed: edge-specific, don't clear
+            continue                          # edge-specific: never clear
         uses = [u for u in x.uses if u is not getattr(slc, "defined_by", None)]
         if uses and all(_eq_clean_at(slc, u) for u in uses):
             out.setdefault(x, []).append((lo, hi))
@@ -468,10 +383,7 @@ def _op_desc(d) -> str:
 
 
 def taint_chain(value, result: "ByteTaintResult", *, max_hops: int = 32) -> list:
-    """The op chain SOURCE → ``value``: walk backward from ``value``, at each hop
-    following the input that carries the taint reaching it, until a source (an op
-    with no tainted input, e.g. ``txna ApplicationArgs 0``). Returns the defining
-    assignments source-first -- the provenance of *why* the value is tainted."""
+    """The op chain SOURCE → ``value``, source-first: why the value is tainted."""
     chain: list = []
     seen: set = set()
     cur = value
@@ -487,9 +399,8 @@ def taint_chain(value, result: "ByteTaintResult", *, max_hops: int = 32) -> list
                                              result.is_scalar_tainted(i)):
                 nxt = i
                 break
-        # Interprocedural: a `frame_dig` param has no local input -- follow the
-        # frame bridge back to a tainted caller arg, so the chain crosses callsub
-        # (the IR-level advantage) instead of dead-ending at the param read.
+        # A `frame_dig` param has no local input, so follow the frame bridge to
+        # a tainted caller arg rather than dead-ending at the param read.
         if nxt is None:
             for arg in result.frame_src.get(cur, ()):
                 if result.tainted_bytes(arg) or result.is_scalar_tainted(arg):
@@ -501,9 +412,8 @@ def taint_chain(value, result: "ByteTaintResult", *, max_hops: int = 32) -> list
 
 
 class ByteTaintResult:
-    """The fixpoint result: per-value tainted byte intervals + the set of
-    tainted scalar (uint64) values produced by the byte→scalar bridges, plus the
-    validation provenance (which op cleared which range)."""
+    """The fixpoint: per-value tainted byte intervals, tainted scalars, and the
+    provenance of which op cleared which range."""
 
     def __init__(self, bytes_taint: dict, scalar_taint: set,
                  validated_by: Optional[dict] = None, frame_src: Optional[dict] = None):
@@ -516,8 +426,7 @@ class ByteTaintResult:
         return self.bytes_taint.get(value, Intervals.empty())
 
     def provenance(self, value) -> str:
-        """A witness for ``value``: the chain of ops that TAINT it (source → sink)
-        and the ops that VALIDATE (clear) its byte ranges."""
+        """A witness: the ops that TAINT ``value`` and the ops that VALIDATE it."""
         lines = [f"{value}: {self.tainted_bytes(value) or '(scalar)'}"]
         chain = taint_chain(value, self)
         if chain:
@@ -543,14 +452,8 @@ class ByteTaintResult:
         return "\n".join(lines)
 
     def render(self, *, width: int = 32) -> str:
-        """A byte-STRIP debug view: each tainted value's byte layout as a bar
-        (``█`` attacker-tainted, ``·`` clean/validated), anchored to its source
-        line + producing opcode. Byte granularity at a glance -- e.g. a checked
-        selector shows a clean ``·`` head and a tainted ``█`` tail, and a
-        ``validate=True`` clearing is visible as ``·`` where taint used to be.
-
-        ``width``: cells shown for an open-ended (``∞``) or over-wide value,
-        suffixed ``→``."""
+        """A byte-STRIP debug view: each tainted value's layout as a bar of
+        ``█`` (tainted) and ``·`` (clean), anchored to its line and opcode."""
         lines = ["byte-interval taint  (█ attacker-tainted   · clean/validated)"]
         rows = []
         for v, iv in self.bytes_taint.items():
@@ -567,8 +470,7 @@ class ByteTaintResult:
         return "\n".join(lines)
 
     def render_provenance(self) -> str:
-        """Full witness per tainted value: the chain of ops that TAINT it (source
-        → value, crossing callsub) + the ops that VALIDATE its byte ranges."""
+        """The full witness for every tainted value."""
         blocks = [self.provenance(v)
                   for v in sorted(self.bytes_taint, key=lambda x: getattr(x, "line", 0))
                   if self.bytes_taint[v]]
@@ -576,10 +478,8 @@ class ByteTaintResult:
 
 
 def _byte_strip(iv: Intervals, bound: Optional[int], width: int = 32) -> str:
-    """Intervals -> a byte bar: one cell per byte (``█`` tainted, ``·`` clean).
-    ``bound`` is the value's max byte length (see :func:`_len_bound`); the bar is
-    truncated at ``width`` cells and suffixed ``→`` when the value extends past
-    what's shown (``bound`` unknown, or > the cells drawn, or an ``INF`` end)."""
+    """Intervals to a byte bar, truncated at ``width`` and suffixed ``→`` when
+    the value extends past what is drawn."""
     n = width if bound is None else min(int(bound), width)
     cells = "".join("█" if iv.overlaps(i, i + 1) else "·" for i in range(n))
     max_hi = max((hi for _, hi in iv.parts), default=0)
@@ -595,45 +495,30 @@ def byte_taint(
 ) -> ByteTaintResult:
     """Forward byte-interval taint to a fixed point.
 
-    ``sources(assignment) -> Optional[Intervals]`` seeds an output value's
-    initial taint (default: ``ApplicationArgs`` reads, fully tainted). Trips
-    :meth:`propagate_constants`, :meth:`propagate_byte_lengths` and
-    :meth:`propagate_assert_ranges` first so the slice offsets, concat lengths and
-    runtime-count bounds the rules read are in place.
-
-    ``validate=True`` adds the flow-sensitive **validation-narrowing** layer:
-    a sub-range of a value pinned to a constant by an ``assert(slice == const)``
-    guard is cleared from its taint (so e.g. a checked ABI selector / magic
-    prefix stops a downstream read of those bytes from being flagged). It
-    first runs :meth:`propagate_inputs` + :meth:`propagate_stack_shuffles` so
-    the validated value and its downstream reads share one canonical SSAVar
-    (in a stack machine they otherwise diverge across dups / re-reads). See
-    :func:`_validated_intervals` for the soundness contract."""
+    ``validate=True`` adds the validation-narrowing layer, which CLEARS the
+    bytes a guard pins. It first unifies inputs and shuffles so the validated
+    value and its downstream reads share one canonical SSAVar — on a stack
+    machine they otherwise diverge across dups and re-reads, and the clearing
+    lands on a value nothing reads."""
     prog.propagate_constants()
     if validate:
         prog.propagate_inputs()
         prog.propagate_stack_shuffles()
     prog.propagate_byte_lengths()
-    # Integer ranges (seeds -> arithmetic -> assert-refinement, idempotent) so a
-    # const-offset slice with a RUNTIME count can bound the length by the count's
-    # IntRange hi (`_uint_hi`) — e.g. `assert(L <= 32); extract3 X 4 L` taints
-    # only [4, 36) instead of [4, 4096). Only ever narrows a range, so it can
-    # only tighten taint; a no-op when the caller already ran the range passes.
+    # Integer ranges let a const-offset slice with a RUNTIME count bound its
+    # length by the count's range: `assert(L <= 32); extract3 X 4 L` taints
+    # [4, 36) rather than [4, 4096). Ranges only ever narrow, so this can only
+    # tighten taint, never clear a byte that should stay tainted.
     prog.propagate_assert_ranges()
     seed = sources or _default_sources
     validated, validated_by = _validated_intervals(prog) if validate else ({}, {})
 
-    # Interprocedural bridge: a `frame_dig` param read has no def-use input in
-    # PySSA, so caller taint would stop at the call boundary. `frame_param_sources`
-    # supplies {frame_dig output -> caller-arg operands}; the fixpoint unions each
-    # param's byte-intervals from its callers' args -> a value fed INTO a sub is
-    # tracked through it, at byte granularity, with no IR lift.
+    # Both bridges close a def-use gap in PySSA: a `frame_dig` param and a
+    # `load N` have no input, so without them taint dies at the call boundary
+    # and at every `store N; …; load N` roundtrip. Shared with the boolean
+    # engine so the two cannot disagree on what reaches a load.
     from ..passes.frame_flow import frame_param_sources, scratch_load_sources
     frame_src = frame_param_sources(prog)
-
-    # Scratch bridge: a `load N` has no def-use input in PySSA, so byte taint
-    # would die at any `store N; …; load N` roundtrip. Shared with the boolean
-    # engine so the two cannot disagree on what reaches a load.
     scratch_src = scratch_load_sources(prog)
 
     bt: dict = {}     # value -> Intervals (tainted byte ranges)
@@ -673,8 +558,7 @@ def byte_taint(
             return False
         op = a.op
 
-        # Stack shuffles (dup / swap / dig / frame_*): copy each output's
-        # taint from its mapped source operand — intervals and scalar alike.
+        # Stack shuffles copy each output's taint from its mapped source.
         sm = _shuffle_mapping(a)
         if sm is not None:
             changed = False
@@ -711,12 +595,9 @@ def byte_taint(
                 hi = A + B if op == "extract3" else B
                 return set_bytes(out, bget(x).clip(A, hi).shift(-A))
             if A is not None:
-                # Const OFFSET, runtime count/end: the byte mapping is still
-                # EXACT (out[j] = X[A+j]); only the length is uncertain. Bound it
-                # by the count/end's range if known, else by X's own length — far
-                # tighter than whole-value: X's taint BEFORE offset A never
-                # reaches the output (so a fixed-offset read of a clean prefix
-                # region stays clean).
+                # Const OFFSET, runtime count: the byte mapping is still EXACT
+                # (out[j] = X[A+j]), only the length is uncertain — so X's taint
+                # BEFORE offset A genuinely never reaches the output.
                 bh = _uint_hi(a.inputs[0])
                 if op == "extract3":
                     hi = (A + bh) if bh is not None else _len_bound(x)
@@ -739,10 +620,9 @@ def byte_taint(
                 if sget(b):
                     iv = iv.union(Intervals([(i, i + 1)]))
                 return set_bytes(out, iv)
-            # Runtime index: can't subtract (unknown position — dropping X taint
-            # would be a false NEGATIVE); keep ALL of X's taint, and if the written
-            # byte is tainted add it over the index's possible window. Beats
-            # whole-value whenever `b` is clean or the index range is bounded.
+            # HAZARD: runtime index — the overwritten position is unknown, so
+            # subtracting anything would be a false NEGATIVE. Keep ALL of X's
+            # taint and add the written byte over the index's possible window.
             iv = bget(x)
             if sget(b):
                 lo, hi = _index_window(i_op, 1)
@@ -760,21 +640,18 @@ def byte_taint(
                 iv = bget(x).subtract(A, A + lv).union(bget(v).shift(A))
                 return set_bytes(out, iv)
             if A is not None and x is not None:
-                # Const offset, UNKNOWN value length: we can't subtract the
-                # overwritten region (dropping X taint there would be a false
-                # NEGATIVE), so keep ALL of X's taint and add V's at A — a sound
-                # over-approx that still beats whole-value (the output length is
-                # len(X), and clean regions of X outside V stay clean).
+                # HAZARD: const offset but UNKNOWN value length — the overwritten
+                # region is unbounded, so subtracting it would be a false
+                # NEGATIVE. Keep ALL of X's taint and add V's at A.
                 iv = bget(x).union(bget(v).shift(A)) if v is not None else bget(x)
                 return set_bytes(out, iv)
             return set_bytes(out, Intervals.whole(_len_bound(out))) if any_tainted(a) else False
         if op in _HASH_OPS and a.inputs:                           # digest of tainted -> tainted
             return set_bytes(out, Intervals.whole(32)) if bget(a.inputs[0]) else False
 
-        # ---- bytes -> scalar (the byte-range -> scalar bridge) ----
-        # A non-const index falls back to its IntRange window (not "any taint"),
-        # so a read whose possible byte range misses X's tainted bytes is clean —
-        # e.g. `getbyte X (i%8)` of a buffer tainted only past byte 8.
+        # ---- bytes -> scalar bridge ----
+        # A non-const index uses its range window rather than "any taint", so a
+        # read whose possible bytes miss X's tainted region stays clean.
         if op == "getbyte" and len(a.inputs) == 2:
             lo, hi = _index_window(a.inputs[0], 1)
             return set_scalar(out) if bget(a.inputs[1]).overlaps(lo, hi) else False
@@ -788,10 +665,10 @@ def byte_taint(
         if op == "itob" and a.inputs:
             return set_bytes(out, Intervals.whole(8)) if sget(a.inputs[0]) else False
 
-        # ---- select A B C -> A if C==0 else B (polymorphic: value inputs are
-        # inputs[2]=A, inputs[1]=B, top-first). Like a phi of the two values:
-        # carry BOTH the byte-intervals (bytes case) and scalar taint (uint64
-        # case), so a tainted bytes value survives a downstream extract.
+        # ---- select A B C -> A if C==0 else B. TOP-FIRST, so the two VALUE
+        # inputs are inputs[2]=A and inputs[1]=B. Treated as a phi of them,
+        # carrying byte intervals AND scalar taint so a tainted bytes value
+        # survives a downstream extract.
         if op == "select" and len(a.inputs) == 3:
             iv = bget(a.inputs[1]).union(bget(a.inputs[2]))
             changed = set_bytes(out, iv)
@@ -804,29 +681,24 @@ def byte_taint(
             # len / bitlen derive metadata, not content — don't propagate.
             if op in ("len", "bitlen"):
                 return False
-            # Bytes-PRODUCING ops with no precise interval rule must record
-            # BYTE taint (not scalar): a tainted byte result later read by
-            # extract / getbyte / extract_uintN would otherwise find an empty
-            # byte map and propagate nothing -- a false negative, which violates
-            # the module's "never a false negative" soundness contract.
+            # HAZARD: a bytes-PRODUCING op must record BYTE taint, not scalar.
+            # A later extract / getbyte / extract_uintN of a scalar-tagged
+            # result finds an empty byte map and propagates nothing.
             if op in _BYTES_OUT_FALLBACK:
                 return set_bytes(out, Intervals.whole(_len_bound(out)))
             if op == "json_ref":
-                # Polymorphic on its immediate: JSONUint64 yields a uint64
-                # (scalar taint), but JSONString / JSONObject yield BYTES —
-                # tagging those scalar meant a later extract / getbyte found
-                # an empty byte map and propagated nothing (false negative).
+                # Polymorphic on its immediate: JSONUint64 is a scalar but
+                # JSONString / JSONObject are BYTES, and must be tagged so.
                 kind = (a.immediates or "").strip().split()
                 if kind and kind[0] in ("JSONString", "JSONObject"):
                     return set_bytes(out, Intervals.whole(_len_bound(out)))
                 return set_scalar(out)
             if len(a.outputs) == 1:
                 return set_scalar(out)
-            # Multi-result op with no precise rule (divmodw quad, addw/mulw/expw
-            # word pairs, a `*_get_ex`/`box_get` value BELOW the flag): taint
-            # EVERY output by its slot type — outputs[1..] were previously left
-            # clean, a false negative (e.g. an attacker-steered divmodw quotient
-            # or a box_get value flowing to an itxn field).
+            # HAZARD: a multi-result op must taint EVERY output by its slot
+            # type. The interesting value is often NOT output 0 — a `box_get` /
+            # `*_get_ex` value sits BELOW its exists flag, and divmodw and the
+            # word pairs carry attacker influence in both halves.
             changed = False
             for oi, o in enumerate(a.outputs):
                 t = _multi_out_type(op, a.immediates, oi)
@@ -841,9 +713,8 @@ def byte_taint(
         return False
 
     def _join(target, operands) -> bool:
-        """Union the byte-intervals + scalar taint of ``operands`` into
-        ``target`` — the meet for a phi (its args) and a frame param (its
-        caller args)."""
+        """Union the operands' taint into ``target`` — the join for a phi, a
+        frame param and a scratch load alike."""
         iv = Intervals.empty()
         sc = False
         for o in operands:
@@ -872,20 +743,11 @@ def byte_taint(
 class IrByteTaint:
     """SSA byte-taint carried UP onto the lifted IR's registers.
 
-    The precise, interprocedural byte-interval taint is computed once on the SSA
-    substrate (:func:`byte_taint`) and mapped onto IR ``Register`` objects via the
-    lifter's ``SSAVar -> Register`` bridge — the same rail ``const_value`` /
-    ``range`` / ``type`` ride up. IR-layer detectors then get byte-granular taint
-    without re-deriving it on the IR (a re-derivation gains nothing: the SSA
-    computation is already interprocedural via the frame bridge).
-
-    ``tainted_bytes(reg)`` / ``is_scalar_tainted(reg)`` answer for any register.
-    ``is_covered(reg)`` reports whether the carry-up reached the register at all:
-    a register with NO source SSAVar (lift-synthesized — a block-arg / phi-copy)
-    is *uncovered*, and a caller MUST treat an uncovered sink operand
-    conservatively (whole-value tainted), exactly as the boolean IR taint does
-    today. So the view is purely additive: byte precision where covered, no
-    regression where not."""
+    HAZARD: the carry-up does not reach every register — a lift-synthesized one
+    (block-arg, phi-copy) has no source SSAVar and is UNCOVERED, meaning "no
+    information", not "clean". A caller must treat an uncovered sink operand as
+    whole-value tainted, or the view silently loses flows instead of refining
+    them; :meth:`sink_tainted` does exactly that."""
 
     def __init__(self, bytes_view: dict, scalar_view: set, covered: set):
         self._b = bytes_view      # {id(Register): Intervals}
@@ -902,8 +764,7 @@ class IrByteTaint:
         return id(reg) in self._covered
 
     def sink_tainted(self, reg) -> bool:
-        """Conservative sink verdict: an uncovered operand is treated as tainted
-        (whole-value), a covered one iff it actually carries byte or scalar taint."""
+        """Sink verdict — an UNCOVERED operand counts as tainted."""
         return (not self.is_covered(reg)) or bool(self.tainted_bytes(reg)) or self.is_scalar_tainted(reg)
 
 
@@ -912,22 +773,9 @@ def byte_taint_view(
 ) -> IrByteTaint:
     """Carry the SSA byte-taint of ``lifter.prog`` up onto its IR registers.
 
-    Runs :func:`byte_taint` on the lifter's own program and maps each
-    ``SSAVar/Phi`` result onto its ``Register`` by object identity. Pass a
-    precomputed ``result`` to share one fixpoint.
-
-    ``validate=True`` (default) carries up the validation-narrowing too — an
-    ``assert(slice(X) == clean)`` guard clears those bytes at the IR sink, the
-    headline partial-taint precision. It runs ``propagate_inputs`` on
-    ``lifter.prog``; despite rewriting SSAVar *consumers*, the def SSAVars in
-    ``lifter.regs`` persist and still receive their (cleared) taint, so the
-    bridge does NOT desync — measured on real contracts: coverage preserved
-    (<0.1% merge drift, absorbed by the conservative fallback) while validated
-    ranges clear correctly.
-
-    Returns an :class:`IrByteTaint`. A register is *covered* iff its SSAVar is in
-    ``lifter.regs``; lift-synthesized registers are absent and callers fall back
-    conservatively (see :meth:`IrByteTaint.sink_tainted`)."""
+    ``validate=True`` runs ``propagate_inputs`` on ``lifter.prog``. That rewrites
+    SSAVar CONSUMERS only — the def SSAVars in ``lifter.regs`` persist and still
+    receive their cleared taint, so the register bridge does not desync."""
     if result is None:
         result = byte_taint(lifter.prog, validate=validate)
     bytes_view: dict = {}

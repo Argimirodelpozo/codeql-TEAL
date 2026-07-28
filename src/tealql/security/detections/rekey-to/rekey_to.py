@@ -1,11 +1,6 @@
-"""sec-guide/rekey-to: path-aware missing-RekeyTo detector.
-
-For each approval exit, checks that
-every CFG path from any program entry to the exit crosses at least one
-BB containing a comparison receiving flow from ``txn RekeyTo`` whose
-result reaches enforcement (``assert`` / ``bnz`` to ``err`` / ``bz`` to
-``err``). Per-exit alerts — partially-guarded contracts produce one
-alert per unprotected exit.
+"""sec-guide/rekey-to: an approval exit reachable without crossing an ENFORCED
+comparison of ``txn RekeyTo``. One alert per unprotected exit, so a
+partially-guarded contract reports each gap.
 """
 from __future__ import annotations
 
@@ -25,8 +20,7 @@ class RekeyToViolation:
 
     @property
     def line(self) -> int:
-        # Structured anchor for machine output (JSON/SARIF/suppressions);
-        # mirrors pretty(): the exit's LAST line.
+        # Must mirror pretty(): the exit's LAST line.
         return self.exit_bb.last_line
 
     def pretty(self) -> str:
@@ -44,10 +38,9 @@ class RekeyToDetector(_ApprovalExitProtectedDetector):
     severity = "high"
     name = "sec-guide/rekey-to"
     field = "RekeyTo"
-    # Signed-txn-field check: RekeyTo on the outer txn rekeys the SIGNER's
-    # account — a delegated-logicsig concern; on an app it is the caller's
-    # own signed txn (see common.py doctrine; rekey was removed from the
-    # app fund-flow fields for the same reason).
+    # RekeyTo on the outer txn rekeys the SIGNER's account, so this is a
+    # delegated-logicsig concern; on an app it is the CALLER's own signed txn,
+    # which is why rekey was removed from the app fund-flow fields too.
     applies_to = frozenset({"logicsig"})
     signed_txn = True   # only the SIGNED txn's own field protects the signer
     violation_cls = RekeyToViolation

@@ -1,35 +1,25 @@
 """AVM / TEAL language metadata — THE single home (one place per AVM bump).
 
-Everything the toolkit knows about the AVM spec lives here, as pure data plus
-tiny lookup helpers, with NO imports from the rest of ``tealtools`` (leaf
-module; every layer — ssa, dataflow, lift, cfg, security detectors — consumes
-it without cycles):
+Pure spec data plus tiny lookups, with NO imports from the rest of
+``tealtools`` (leaf module, so ssa / dataflow / lift / cfg / security all
+consume it without cycles): opcode arities (:data:`SIG` / :func:`op_arity`),
+opcode groups and txn-field families, op result types and field types, uint64
+range and byte-length seeds, and op classification (shuffles, terminators,
+constblock refs).
 
-  * opcode stack ARITIES ``(n_in, n_out)`` .... :data:`SIG` / :func:`op_arity`
-  * opcode GROUPS (cmp / logical / txn-source / state-write / …) and
-    txn-field FAMILIES (address / fund / close-rekey / …)
-  * op RESULT TYPES + txn/global/params field TYPES
-    (``_U64_OPS`` / ``_BYTES_OPS`` / :func:`_field_type` / :func:`_multi_out_type`)
-  * uint64 RANGE and BYTE-LENGTH seeds per op / field
-  * op classification: shuffles, terminators, constblock references
-
-Consumers that need a narrower or wider view should derive it from these
-(filter / union) with a comment, rather than hand-rolling a fresh literal —
-before consolidation these tables had drifted apart across four modules.
-
-Correctness of the op-result-type and byte-length tables is pinned against
-puya's langspec by ``tests/test_avm_metadata_drift.py``; bump
-:data:`AVM_LANGSPEC_VERSION` (and re-run the drift test) when adding a new
-AVM version's opcodes.
+HAZARD: this is SPEC data with a real source of truth. Derive narrower views by
+filtering these tables — never hand-roll a fresh literal, which is how they
+drifted apart across four modules before consolidation. The result-type and
+byte-length tables are pinned against puya's langspec by
+``tests/test_avm_metadata_drift.py``; bump :data:`AVM_LANGSPEC_VERSION` and
+re-run it when adding a new AVM version's opcodes.
 """
 from __future__ import annotations
 
 from typing import Optional
 
-#: The AVM/TEAL langspec version these tables are written against.
-#: Informational: the drift test pins the result-type tables to whatever puya
-#: (``puyapy``) is installed, so a mismatch surfaces there; keep this in sync
-#: when widening the tables for a new version.
+#: AVM/TEAL langspec version these tables target. Informational — the drift test
+#: pins result types to the installed puya, so a mismatch surfaces there.
 AVM_LANGSPEC_VERSION = 11
 
 
@@ -38,8 +28,8 @@ AVM_LANGSPEC_VERSION = 11
 # ===========================================================================
 
 
-# Constant-arity opcodes: mnemonic -> (n_in, n_out). Mnemonics are the
-# source tokens (so symbolic ops are "+", "&&", "b==", etc.).
+# Constant-arity opcodes: mnemonic -> (n_in, n_out). Mnemonics are source
+# tokens, so symbolic ops are "+", "&&", "b==", etc.
 SIG: dict[str, tuple[int, int]] = {
     # Arithmetic
     "+": (2, 1), "-": (2, 1), "*": (2, 1), "/": (2, 1), "%": (2, 1),
@@ -81,11 +71,11 @@ SIG: dict[str, tuple[int, int]] = {
     "bytec": (0, 1), "bytec_0": (0, 1), "bytec_1": (0, 1), "bytec_2": (0, 1),
     "bytec_3": (0, 1), "pushbytes": (0, 1), "bytecblock": (0, 0), "bzero": (1, 1),
     # Control flow (callsub/retsub handled by op_arity overrides; match dynamic)
-    # NOTE `return` is DELIBERATELY (0, 0) though the AVM pops 1 (the approval
-    # value): it terminates the program, so modelling the pop would shrink the
-    # exit stack the lift reads its ProgramExit operand off, and
-    # `path_predicates` documents not classifying that value. Any NEW consumer
-    # of op_arity must account for this one divergence from the spec.
+    # HAZARD: `return` is DELIBERATELY (0, 0) though the AVM pops 1 (the
+    # approval value). It terminates the program, so modelling the pop would
+    # shrink the exit stack the lift reads its ProgramExit operand off. Every
+    # NEW consumer of op_arity must account for this one divergence from spec —
+    # a `return`'s `inputs` are ALWAYS EMPTY, so never classify by them.
     "return": (0, 0), "err": (0, 0), "assert": (1, 0), "b": (0, 0),
     "bnz": (1, 0), "bz": (1, 0), "switch": (1, 0),
     # Stack manipulation (dig/popn/dupn/bury/cover/uncover/frame_* dynamic)
@@ -121,7 +111,7 @@ SIG: dict[str, tuple[int, int]] = {
 }
 
 # Height-dependent ops PySSA phase 1 instantiates with simple counts; the
-# fat / proto-aware forms are rebuilt by later PySSA phases.
+# proto-aware forms are rebuilt by later PySSA phases.
 _FRAME_OVERRIDES: dict[str, tuple[int, int]] = {
     "frame_dig": (0, 1),
     "frame_bury": (1, 0),
@@ -137,28 +127,23 @@ def _imm_int(immediates: str) -> int:
         return 0
 
 
-#: Opcodes ``op_arity`` was asked about but does not know. A future AVM version
-#: adds opcodes this table has never seen; they silently default to ``(0, 0)``,
-#: which makes the whole downstream stack simulation wrong with no signal at
-#: all. Recording them lets a caller (and :func:`unknown_opcodes`) surface the
-#: gap instead of trusting a bad model. Module-level because ``op_arity`` is a
-#: pure function called from every layer.
+#: Opcodes :func:`op_arity` was asked about but does not know. Module-level
+#: because ``op_arity`` is a pure function called from every layer.
 _UNKNOWN_OPS: set[str] = set()
 
 
 def unknown_opcodes() -> frozenset[str]:
-    """Opcodes seen so far that have no entry in :data:`SIG` — their stack
-    effect was modelled as ``(0, 0)``, so any analysis of a program using them
-    is unreliable. Non-empty means this build predates the contract's AVM
-    version (or the table is missing an op)."""
+    """Opcodes seen so far with no :data:`SIG` entry.
+
+    HAZARD: their stack effect was modelled as ``(0, 0)``, which makes the whole
+    downstream stack simulation wrong with no other signal. Non-empty means this
+    build predates the contract's AVM version — treat every result as unreliable."""
     return frozenset(_UNKNOWN_OPS)
 
 
 def op_arity(op: str, immediates: str) -> tuple[int, int]:
-    """Return ``(n_in, n_out)`` for an opcode + its immediate text.
-
-    An opcode absent from :data:`SIG` yields ``(0, 0)`` and is recorded in
-    :func:`unknown_opcodes` — see the note there."""
+    """``(n_in, n_out)`` for an opcode + its immediate text; an opcode absent
+    from :data:`SIG` yields ``(0, 0)`` and is recorded in :func:`unknown_opcodes`."""
     o = _FRAME_OVERRIDES.get(op)
     if o is not None:
         return o
@@ -195,11 +180,10 @@ def op_arity(op: str, immediates: str) -> tuple[int, int]:
 
 # --- address (32-byte account) fields -------------------------------------
 
-#: Txn-family fields that read a 32-byte account address. SINGLE SOURCE of the
-#: address-field universe: a field being an address determines BOTH its AVM type
-#: (``"account"``, in ``_TXN_FIELD_TYPE`` below) AND its byte length (32, in
-#: ``_TXN_FIELD_BYTELEN`` below). Both derive from this set instead of each
-#: re-listing the fields, so a new address field is added in ONE place.
+#: Txn-family fields reading a 32-byte account address. SINGLE SOURCE: being an
+#: address determines BOTH the AVM type (``"account"``, ``_TXN_FIELD_TYPE``) and
+#: the byte length (32, ``_TXN_FIELD_BYTELEN``); both derive from this set, so a
+#: new address field is added in ONE place.
 ADDRESS_TXN_FIELDS: frozenset[str] = frozenset({
     "Sender", "Receiver", "CloseRemainderTo", "RekeyTo",
     "AssetSender", "AssetReceiver", "AssetCloseTo", "FreezeAssetAccount",
@@ -208,8 +192,7 @@ ADDRESS_TXN_FIELDS: frozenset[str] = frozenset({
     "Accounts",                         # array element (txna Accounts i)
 })
 
-#: ``global`` fields that read a 32-byte account address (same single-source
-#: role as :data:`ADDRESS_TXN_FIELDS`).
+#: ``global`` fields reading a 32-byte address (same single-source role).
 ADDRESS_GLOBAL_FIELDS: frozenset[str] = frozenset({
     "ZeroAddress", "CreatorAddress",
     "CurrentApplicationAddress", "CallerApplicationAddress",
@@ -227,16 +210,12 @@ SENSITIVE_ITXN_FIELDS: frozenset[str] = frozenset({
 })
 
 #: Payment fields where attacker control = redirected / oversized fund movement,
-#: tagged by severity (the account-draining close fields rank CRITICAL).
+#: tagged by severity (account-draining close fields rank CRITICAL).
 #:
-#: ``RekeyTo`` is deliberately NOT here. A rekey check is a LOGICSIG concern: an
-#: lsig that authorises a spend must validate the outer txn's ``RekeyTo`` or an
-#: attacker rekeys the lsig account away. For an APP there is nothing to validate
-#: — an app-call's ``txn RekeyTo`` rekeys the *user's own* account (their
-#: business, not the app's), and an ``itxn_field RekeyTo`` rekeys the *app's own*
-#: account, a self-inflicted, vanishingly-rare operation rather than a tainted-
-#: field vuln. So rekey lives in the lsig-scoped detectors, not the app fund-flow
-#: sink set. See :data:`CLOSE_REKEY_FIELDS` for the field-name catalog.
+#: HAZARD: ``RekeyTo`` is deliberately NOT here — rekey is an LSIG-only check. An
+#: app-call's ``txn RekeyTo`` rekeys the USER's own account and an ``itxn_field
+#: RekeyTo`` rekeys the app's own, so neither is an app fund-flow sink; adding it
+#: here fires on every app. See :data:`CLOSE_REKEY_FIELDS`.
 FUND_FIELDS: dict[str, str] = {
     "CloseRemainderTo": "CRITICAL",
     "AssetCloseTo": "CRITICAL",
@@ -246,8 +225,7 @@ FUND_FIELDS: dict[str, str] = {
     "AssetAmount": "MEDIUM",
 }
 
-#: The "pure payment" subset of :data:`FUND_FIELDS` (no close/rekey) — the
-#: Receiver/Amount destination+amount fields.
+#: The "pure payment" (no close/rekey) subset of :data:`FUND_FIELDS`.
 PAYMENT_FUND_FIELDS: dict[str, str] = {
     k: v for k, v in FUND_FIELDS.items()
     if k in ("Receiver", "AssetReceiver", "Amount", "AssetAmount")
@@ -266,8 +244,8 @@ ASSET_TRANSFER_FIELDS: frozenset[str] = frozenset({
 
 # --- state-mutating / sink opcodes ----------------------------------------
 
-#: Opcodes that mutate persistent state or emit a transaction — the "sensitive
-#: sink" family that should typically run only on a guard-dominated path.
+#: Opcodes mutating persistent state or emitting a transaction — the sensitive
+#: sink family, which should run only on a guard-dominated path.
 STATE_MUTATING_OPS: frozenset[str] = frozenset({
     "box_create", "box_put", "box_replace", "box_del", "box_splice",
     "box_resize",
@@ -299,17 +277,11 @@ LSIG_ARG_OPS: frozenset[str] = frozenset({
     "arg", "args", "arg_0", "arg_1", "arg_2", "arg_3",
 })
 
-#: Transaction ARRAY fields whose contents the SENDER chooses, and which are
-#: therefore attacker-controlled input in exactly the way ``ApplicationArgs``
-#: is. The caller composes the foreign arrays when it builds the transaction:
-#: ``txn Accounts 1`` is a caller-named address, ``txn Assets 0`` a caller-named
-#: asset, ``txn Applications 0`` a caller-named app.
-#:
-#: Omitting these made an unguarded payout to ``txn Accounts 1`` completely
-#: silent while the byte-identical payout to ``txna ApplicationArgs 0`` was
-#: reported HIGH. Index 0 of ``Accounts`` is the SENDER (an authorisation value,
-#: not an arbitrary choice), so callers that care about that distinction should
-#: check the index — see ``FOREIGN_ARRAY_SELF_INDEX``.
+#: Transaction ARRAY fields the SENDER composes, so attacker-controlled input in
+#: exactly the way ``ApplicationArgs`` is: ``txn Accounts 1`` is a caller-named
+#: address, ``txn Assets 0`` a caller-named asset. HAZARD: index 0 of
+#: ``Accounts`` is the SENDER — an authorisation value, not a free choice — so
+#: check the index against :data:`FOREIGN_ARRAY_SELF_INDEX`.
 FOREIGN_ARRAY_FIELDS: frozenset[str] = frozenset({
     "Accounts", "Assets", "Applications",
 })
@@ -319,17 +291,10 @@ FOREIGN_ARRAY_SELF_INDEX: dict[str, int] = {"Accounts": 0}
 
 
 def attacker_input_label(op: str, immediates: str) -> Optional[str]:
-    """The attacker-controlled input family ``op`` reads, or ``None``.
-
-    THE single source of truth for "is this read attacker-steerable", shared by
-    the SSA-level (:mod:`tealql.security._itxn_taint`) and IR-level
-    (:mod:`tealql.tealtools.lift.taint`) taint seeds. It previously existed as
-    two hand-maintained copies, which is how the foreign arrays came to be
-    missing from both.
-
-    ``immediates`` is the raw immediate string (``"Accounts 1"``,
-    ``"ApplicationArgs 0"``); an absent or non-constant index still labels the
-    read, since a computed index is no less attacker-chosen."""
+    """The attacker-controlled input family ``op`` reads, or ``None`` — THE
+    single source for "is this read attacker-steerable", shared by the SSA-level
+    and IR-level taint seeds. An absent or non-constant index in ``immediates``
+    still labels the read: a computed index is no less attacker-chosen."""
     if op in LSIG_ARG_OPS:
         return "LogicSigArgs"
     if op in TXN_SOURCE_OPS:
@@ -349,22 +314,14 @@ def attacker_input_label(op: str, immediates: str) -> Optional[str]:
         return "ItxnLastLog"
     return None
 
-#: Opcodes the AVM accepts ONLY in Application mode (it rejects them in
-#: Signature mode), so their presence PROVES a program is an application.
-#: Keyed strictly on opcodes, never on txn fields: a logic signature can be
-#: attached to an ApplicationCall txn and therefore may read ``OnCompletion`` /
-#: ``ApplicationArgs`` / ``ApplicationID`` (every AlgoPlonk-style proof
-#: verifier does), so those fields prove nothing and keying on them would
-#: misclassify that whole lsig class.
+#: Opcodes the AVM accepts ONLY in Application mode, so their presence PROVES a
+#: program is an application (consumed by ``classify_program``).
 #:
-#: Lives here rather than in the detection layer because it is AVM spec data
-#: (this module is the single home, per the module docstring); the classifier
-#: :func:`tealql.security.common.classify_program` consumes it. The account-
-#: query family (``balance`` / ``min_balance`` / ``gaid`` / ``gaids`` /
-#: ``online_stake`` / ``voter_params_get``) was missing, so a program whose only
-#: app-mode opcodes were those classified as a LOGICSIG and then had the
-#: lsig-only detectors (rekey / close-remainder / fee / lsig-args) run against
-#: it — a false-positive swarm on an app.
+#: HAZARD: keyed strictly on OPCODES, never on txn fields. A logic signature can
+#: be attached to an ApplicationCall txn and so may read ``OnCompletion`` /
+#: ``ApplicationArgs`` / ``ApplicationID``; keying on those misclassifies that
+#: whole lsig class. An app missing from this set is classified LOGICSIG and
+#: gets the lsig-only detectors run against it — a false-positive swarm.
 APP_ONLY_OPS: frozenset[str] = frozenset({
     # state
     "app_global_get", "app_global_put", "app_global_del", "app_global_get_ex",
@@ -395,20 +352,19 @@ BYTE_CMP_OPS: frozenset[str] = frozenset({"b==", "b!=", "b<", "b>", "b<=", "b>="
 #: All comparison ops (uint64 + byteslice).
 CMP_OPS: frozenset[str] = U64_CMP_OPS | BYTE_CMP_OPS
 
-#: Pure boolean combinators (logical and / or / not). Union with
-#: :data:`CMP_OPS` for the "pure boolean/comparison combinator" view.
+#: Pure boolean combinators; union with :data:`CMP_OPS` for the combined view.
 LOGICAL_OPS: frozenset[str] = frozenset({"&&", "||", "!"})
 
 
 # ===========================================================================
-# Op result types and field types (formerly lift/optypes.py)
+# Op result types and field types
 # ===========================================================================
 
 
 _BOOL_OPS = CMP_OPS | LOGICAL_OPS
-# Const-push / const-load ops are normally typed by their folded const value;
-# they fall back to these sets only when the parser dropped the operand
-# (`pushbytes base64(..)`, `bytec N`) so there is no value to type them from.
+# Const-push / const-load ops are normally typed from their folded const value;
+# these sets are the fallback when the parser dropped the operand
+# (`pushbytes base64(..)`, `bytec N`) and there is no value to type them from.
 _U64_PUSH = frozenset({"pushint", "pushints", "intc",
                        "intc_0", "intc_1", "intc_2", "intc_3"})
 _BYTES_PUSH = frozenset({"pushbytes", "pushbytess", "bytec",
@@ -426,36 +382,28 @@ _BYTES_OPS = frozenset({"itob", "concat", "substring", "substring3", "extract",
                         "sha512_256", "keccak256", "sha3_256", "bzero",
                         "setbyte", "b+", "b-", "b*", "b/", "b%",
                         "b|", "b&", "b^", "b~", "bsqrt", "box_extract",
-                        # further single-`bytes`-return ops (per Puya's langspec)
-                        # the table previously missed -- so e.g. `mimc` and the
-                        # crypto / lsig-arg producers no longer default to uint64
-                        # and cross the AVM divide (the residual recovery bug).
                         "mimc", "sumhash512", "base64_decode",
                         "ec_add", "ec_map_to", "ec_scalar_mul",
                         "ec_multi_scalar_mul",
-                        # ecdsa pubkey ops return TWO byteslices (the X, Y coords
-                        # of the recovered / decompressed point) -- both bytes, so
-                        # type_of (called per output) types each correctly. Without
-                        # this the outputs default to uint64 and Puya rejects the
-                        # bytes assignment downstream (`source=(uint64) target=
-                        # (bytes)`). `ecdsa_verify` returns a uint64 flag -> NOT here.
+                        # ecdsa pubkey ops return TWO byteslices (X, Y of the
+                        # recovered / decompressed point); `ecdsa_verify` returns
+                        # a uint64 flag and so is NOT here.
                         "ecdsa_pk_recover", "ecdsa_pk_decompress",
                         "arg", "arg_0", "arg_1", "arg_2", "arg_3", "args",
                         }) | _BYTES_PUSH
-# `setbit` is polymorphic: its result type equals its VALUE operand (`setbit A B
-# C` -> type of A, uint64 or bytes), so it is NOT in _BYTES_OPS; lift.type_of /
-# _ssa_type type it from that operand. (`getbit` always returns uint64, so it
-# stays in _U64_OPS; `setbyte` is byte-array only, so it stays in _BYTES_OPS.)
+# HAZARD: `setbit` is POLYMORPHIC — its result type equals its VALUE operand
+# (`setbit A B C` -> type of A, uint64 or bytes), so it must stay out of
+# _BYTES_OPS and be typed from that operand. (`getbit` always returns uint64;
+# `setbyte` is byte-array only.)
 _POLY_FIRST_OPERAND_OPS = frozenset({"setbit"})
 _NAME_PREFIX = {"len": "len", "==": "eq", "!=": "ne", "<": "lt", ">": "gt",
                 "<=": "le", ">=": "ge", "!": "not", "&&": "and", "||": "or",
                 "btoi": "val", "concat": "concat", "itob": "enc"}
 _COND_BRANCH = frozenset({"bnz", "bz"})
 
-# Transaction-field accessors (txn/txna/gtxn/itxn families). The field name is
-# one of the immediate tokens (position varies: gtxn has a group index first),
-# so _field_type scans all tokens against the table. Canonical families in
-# the groups section above.
+# Transaction-field accessors. The field name is one of the immediate tokens and
+# its POSITION varies (gtxn puts a group index first), so _field_type scans all
+# tokens against the table.
 _TXN_OPS = TXN_SOURCE_OPS | ITXN_SOURCE_OPS
 _TXN_FIELD_TYPE = {
     # uint64
@@ -473,8 +421,7 @@ _TXN_FIELD_TYPE = {
     # bool
     "ConfigAssetDefaultFrozen": "bool", "FreezeAssetFrozen": "bool",
     "Nonparticipation": "bool",
-    # account (addresses) — derived from ADDRESS_TXN_FIELDS above (single source
-    # shared with the 32-byte length table below); see the merge below.
+    # account (addresses) — merged in below from ADDRESS_TXN_FIELDS.
     # asset / application ids
     "XferAsset": "asset", "ConfigAsset": "asset", "FreezeAsset": "asset",
     "CreatedAssetID": "asset", "Assets": "asset",
@@ -482,7 +429,7 @@ _TXN_FIELD_TYPE = {
     "CreatedApplicationID": "application",
     # bytes
     "Note": "bytes", "Lease": "bytes", "Type": "bytes", "GroupID": "bytes",
-    "TxID": "bytes",                  # 32-byte transaction hash (was defaulting u64)
+    "TxID": "bytes",                  # 32-byte transaction hash
     "ApplicationArgs": "bytes", "Logs": "bytes", "LastLog": "bytes",
     "ApprovalProgram": "bytes", "ClearStateProgram": "bytes",
     "ApprovalProgramPages": "bytes", "ClearStateProgramPages": "bytes",
@@ -490,8 +437,7 @@ _TXN_FIELD_TYPE = {
     "ConfigAssetName": "bytes", "ConfigAssetUnitName": "bytes",
     "ConfigAssetURL": "bytes", "ConfigAssetMetadataHash": "bytes",
 }
-# Merge in the account (address) fields from the single source above, so the
-# address-field universe isn't hand-listed both here and in the length table.
+# Merged from the single source so the address universe isn't listed twice.
 _TXN_FIELD_TYPE.update({f: "account" for f in ADDRESS_TXN_FIELDS})
 
 _GLOBAL_FIELD_TYPE = {
@@ -509,9 +455,8 @@ _GLOBAL_FIELD_TYPE.update({f: "account" for f in ADDRESS_GLOBAL_FIELDS})
 
 
 def _field_type(op, immediates):
-    """Type of a ``txn``-family / ``global`` field read, by scanning the
-    immediate tokens for a known field name. ``None`` if not a field read or
-    the field is unknown."""
+    """Type of a ``txn``-family / ``global`` field read (immediates scanned for a
+    known field name), or ``None`` if not a field read or the field is unknown."""
     toks = immediates.split() if immediates else []
     if op in _TXN_OPS:
         table = _TXN_FIELD_TYPE
@@ -531,11 +476,9 @@ _AVM_UINT64_TYPES = frozenset({"uint64", "bool", "asset", "application"})
 
 
 def txn_field_avm_type(field: str) -> "str | None":
-    """The AVM stack type of a transaction field's value — ``'b'`` (byte slice)
-    or ``'u'`` (uint64), or ``None`` for an unknown field. The canonical
-    field -> ``'b'``/``'u'`` decision (addresses / notes / programs are bytes;
-    ids / amounts / flags are uint64), so the lift's itxn-field typing single-
-    sources it here instead of re-deriving from puya's registry."""
+    """The canonical AVM stack type of a txn field's value: ``'b'`` (byte slice —
+    addresses, notes, programs), ``'u'`` (uint64 — ids, amounts, flags), or
+    ``None`` for an unknown field."""
     t = _TXN_FIELD_TYPE.get(field)
     if t in _AVM_BYTES_TYPES:
         return "b"
@@ -544,11 +487,11 @@ def txn_field_avm_type(field: str) -> "str | None":
     return None
 
 
-# Per-output-slot types for multi-result intrinsics. The `*_get_ex` /
-# `*_params_get` / `*_holding_get` / `box_get` ops leave `did_exist` on top
-# (output 0, uint64) and the value below (output 1); `box_len` leaves
-# `did_exist` over a uint64 length; the `w` arithmetic ops produce all-uint64
-# word pairs / quads. (Output order per dataflow/state.py + dataflow/box.py.)
+# Per-output-slot types for multi-result intrinsics. HAZARD: outputs are
+# TOP-FIRST — the `*_get_ex` / `*_params_get` / `*_holding_get` / `box_get` ops
+# leave `did_exist` on TOP (output 0, uint64) and the value below (output 1).
+# `box_len` puts `did_exist` over a uint64 length; the `w` arithmetic ops give
+# all-uint64 word pairs / quads.
 _MULTI_ALL_U64 = frozenset({"addw", "mulw", "expw", "divmodw", "box_len"})
 _EX_FLAG_OPS = frozenset({
     "app_global_get_ex", "app_local_get_ex", "asset_holding_get",
@@ -581,18 +524,17 @@ _PARAMS_FIELD_TYPE = {
 
 
 def _multi_out_type(op, immediates, idx):
-    """Type of output slot ``idx`` (0 = top of stack) of a multi-result op, or
-    ``None`` when the op isn't a typed multi-result here, or the slot's type
-    is unknown — e.g. an ``app_global_get_ex`` / ``app_local_get_ex`` *value*,
-    whose type depends on the contract's state schema, not the op."""
+    """Type of output slot ``idx`` (0 = TOP of stack) of a multi-result op, or
+    ``None`` when the op isn't a typed multi-result or the slot's type is
+    unknowable here (an ``*_get_ex`` value depends on the contract's state
+    schema, not the op)."""
     if op in _MULTI_ALL_U64:
         return "uint64"
     if op == "box_get":
         return "uint64" if idx == 0 else "bytes"   # did_exist, value
     if op == "vrf_verify":
         return "uint64" if idx == 0 else "bytes"   # verified flag, 64-byte output
-        # (the bytes length is pinned to 64 by _OP_OUTPUT_BYTELEN, which only
-        # fires once the slot is already typed bytes — hence typing it here.)
+        # _OP_OUTPUT_BYTELEN pins the 64 only once the slot is typed bytes.
     if op in _EX_FLAG_OPS:
         if idx == 0:
             return "uint64"                         # did_exist flag
@@ -604,9 +546,9 @@ def _multi_out_type(op, immediates, idx):
     return None
 
 
-# Ops whose operand AVM type is unambiguous (used to decide a phi-web's type in
-# the lift's mixed-type reconciliation). `==`/`!=` are excluded (they accept
-# both); `itxn_field`/`setbyte` are field/position dependent.
+# Ops whose operand AVM type is unambiguous, used to decide a phi-web's type in
+# the lift's mixed-type reconciliation. `==`/`!=` are excluded because they
+# accept BOTH; `itxn_field` is field-dependent.
 _U64_CONSUME = frozenset({
     "+", "-", "*", "/", "%", "exp", "sqrt", "shl", "shr", "<", ">", "<=", ">=",
     "itob", "bitlen", "!", "&&", "||", "assert", "&", "|", "^", "~"})
@@ -615,25 +557,22 @@ _BYTES_CONSUME = frozenset({
     "sha3_256", "extract", "extract3", "substring", "substring3", "replace2",
     "replace3", "b+", "b-", "b*", "b/", "b%", "b<", "b>",
     "extract_uint16", "extract_uint32", "extract_uint64",
-    # The rest of the unambiguously-bytes consumers the set had missed. The
-    # `b`-prefixed comparisons are NOT the polymorphic `==`/`!=`: `b==` / `b!=`
-    # take byteslices only, so they type their operands just as hard as `b<`.
+    # `b==` / `b!=` are NOT the polymorphic `==`/`!=`: they take byteslices
+    # only, so they type their operands just as hard as `b<`.
     "b<=", "b>=", "b==", "b!=", "b|", "b&", "b^", "b~", "bsqrt",
     "setbyte", "getbyte", "base64_decode", "mimc", "sumhash512",
     "ed25519verify_bare", "falcon_verify"})
 
 
 def avm(t) -> str:
-    """Coarse AVM type lattice of a type name: 'b' (bytes-backed), 'u'
-    (uint64-backed), or '?' (unknown)."""
+    """Coarse AVM type of a type name: 'b' (bytes), 'u' (uint64), '?' (unknown)."""
     return ("b" if t in ("bytes", "account", "string")
             else "u" if t in ("uint64", "bool", "asset", "application")
             else "?")
 
 
 def _imm0(a) -> int | None:
-    """First immediate of an SSA assignment as an int (slot / frame index / ...),
-    or None when it has none or it isn't an integer."""
+    """First immediate of an assignment as an int (slot / frame index), else None."""
     toks = (a.immediates or "").split()
     if not toks:
         return None
@@ -644,30 +583,24 @@ def _imm0(a) -> int | None:
 
 
 # ===========================================================================
-# Range / byte-length seeds and op classification (formerly ssa/models.py)
+# Range / byte-length seeds and op classification
 # ===========================================================================
-
-
-
-# -------------------------------------------------------------------------
 
 
 _CONST_BLOCK_REF_NAMES = frozenset({
     # constblock references
     "Intc0Opcode", "Intc1Opcode", "Intc2Opcode", "Intc3Opcode", "IntcOpcode",
     "Bytec0Opcode", "Bytec1Opcode", "Bytec2Opcode", "Bytec3Opcode", "BytecOpcode",
-    # inline-literal pushers (carry their literal in immediates; the
-    # resolved-constant table already emits values for them, so
-    # propagation reads through naturally).
+    # inline-literal pushers (literal in immediates; the resolved-constant
+    # table already emits values, so propagation reads through).
     "IntOpcode", "PushintOpcode", "PushbytesOpcode",
 })
 
 
-# Control-flow terminators. These ops have side effects on the flow graph
-# independent of their SSA outputs, so dead-code elimination must NOT drop
-# them even if every output is a "dead constant" (e.g. a ``retsub`` whose
-# return-value output is constant-propagated and has no remaining consumers
-# in the SSA — the op still transfers control to the caller).
+# Control-flow terminators. HAZARD: these affect the flow graph independently of
+# their SSA outputs, so dead-code elimination must NOT drop them even when every
+# output is a dead constant — a `retsub` whose return value was const-propagated
+# still transfers control to the caller.
 _TERMINATOR_OPS = frozenset({
     "callsub", "retsub",
     "b", "bnz", "bz",
@@ -676,18 +609,9 @@ _TERMINATOR_OPS = frozenset({
 })
 
 
-# Op-level constant folding (concat / itob / extract / arithmetic /
-# comparisons / ...) is layered above the SSA substrate in
-# :mod:`tealql.tealtools.const_fold`; lazily imported inside
-# :meth:`SSAProgram.propagate_constants` so the substrate itself
-# carries no TEAL-semantics knowledge.
-
-
-
-# Per-op uint64 output ranges for ops whose bound is determined by the
-# op semantics alone (no operand or immediate dependency). Source for
-# `propagate_ranges`. AVM bytes-stack values are capped at 4096 bytes,
-# which gives `len`/`bitlen` their upper bounds.
+# Per-op uint64 output ranges for ops whose bound follows from the op semantics
+# alone (no operand or immediate dependency); source for `propagate_ranges`. AVM
+# bytes-stack values cap at 4096 bytes, which bounds `len` / `bitlen`.
 _OP_RANGE_SEEDS: dict = None  # filled in below
 
 def _build_op_range_seeds():
@@ -703,9 +627,9 @@ def _build_op_range_seeds():
         "getbyte":        ("uint64", 0, 0xFF),
         "extract_uint16": ("uint64", 0, 0xFFFF),
         "extract_uint32": ("uint64", 0, 0xFFFFFFFF),
-        # bytes -> full-width uint64: not a tightening in itself, but a non-None
-        # range so downstream arithmetic can bound it (e.g. `btoi(x) % 8 -> [0,7]`;
-        # range_arith needs BOTH operand ranges, and these are the usual dividend).
+        # Full-width, so not a tightening — but a non-None range lets downstream
+        # arithmetic bound it (`btoi(x) % 8 -> [0,7]`; range_arith needs BOTH
+        # operand ranges and these are the usual dividend).
         "extract_uint64": ("uint64", 0, 0xFFFFFFFFFFFFFFFF),
         "btoi":           ("uint64", 0, 0xFFFFFFFFFFFFFFFF),
         # isqrt of any uint64 never exceeds 2^32 - 1, regardless of input.
@@ -717,14 +641,14 @@ def _build_op_range_seeds():
 
 _OP_RANGE_SEEDS = _build_op_range_seeds()
 
-# Bounded enum / count fields for txn-family / global field reads. Values
-# track the AVM consensus spec: OnCompletion in {0..5}, TypeEnum in {0..6}
-# (unknown..appl), GroupIndex 0-based with max group size 16, GroupSize ≥ 1.
-# The Num* fields are array lengths capped by the per-txn reference limits
-# (MaxAppArgs 16, accounts 4, foreign assets/apps 8, logs 32); the schema
-# counts by MaxGlobalSchemaEntries 64 / MaxLocalSchemaEntries 16; asset
-# decimals at 19; extra program pages at 3. Each bound is the *sound* upper
-# limit for the field read in isolation (a too-tight cap would be unsound).
+# Bounded enum / count fields, tracking the AVM consensus spec: OnCompletion
+# {0..5}, TypeEnum {0..6} (unknown..appl), GroupIndex 0-based under a max group
+# size of 16, GroupSize >= 1; Num* are array lengths at the per-txn reference
+# limits (MaxAppArgs 16, accounts 4, foreign assets/apps 8, logs 32); schema
+# counts at MaxGlobal/LocalSchemaEntries 64 / 16; decimals 19; program pages 3.
+#
+# HAZARD: each bound must be the SOUND upper limit for the field read in
+# isolation — a too-tight cap silently proves things that are false.
 _TXN_FIELD_RANGES: dict = {
     "OnCompletion":        (0, 5),
     "TypeEnum":            (0, 6),
@@ -748,9 +672,8 @@ _GLOBAL_FIELD_RANGES: dict = {
     "GroupSize": (1, 16),
 }
 
-# Symbolic names for the enum-valued txn fields, so a recovered `TypeEnum == 1`
-# renders as `TypeEnum == pay` (the parser resolves the `int pay` / `int NoOp`
-# pseudo-ops to these ints; this is the reverse map). Field -> {int: name}.
+# Reverse of the parser's `int pay` / `int NoOp` pseudo-op resolution, so a
+# recovered `TypeEnum == 1` renders as `TypeEnum == pay`. Field -> {int: name}.
 _TXN_TYPE_ENUM_NAMES: dict[int, str] = {
     0: "unknown", 1: "pay", 2: "keyreg", 3: "acfg", 4: "axfer", 5: "afrz",
     6: "appl",
@@ -767,21 +690,17 @@ TXN_ENUM_FIELD_NAMES: dict[str, dict] = {
 
 
 def enum_field_name(field: str, value: int) -> "str | None":
-    """The symbolic name of an enum-valued txn field's integer value
-    (``("TypeEnum", 1) -> "pay"``, ``("OnCompletion", 5) -> "DeleteApplication"``),
-    or ``None`` if ``field`` isn't enum-valued or ``value`` is out of range."""
+    """Symbolic name of an enum field's value (``("TypeEnum", 1) -> "pay"``), or ``None``."""
     return TXN_ENUM_FIELD_NAMES.get(field, {}).get(value)
 
-# Positional output range seeds for multi-output ops, top-first:
-# ``op -> [(output_index, lo, hi), …]``. The ``*_get`` / ``*_ex`` family
-# pushes a 0/1 "exists / found" flag as its top output (``outputs[0]``) —
-# the value most often fed to ``assert`` / ``bz`` / ``bnz`` — which the
-# single-output ``_OP_RANGE_SEEDS`` path can't reach. ``box_len`` also
-# bounds its length output (``outputs[1]``) by the 32768-byte max box size.
-# ``addw`` pushes ``(high, low)`` with low on top, so its high word
-# (``outputs[1]``) is the carry of a 64+64-bit add — always 0 or 1.
-# ``vrf_verify`` pushes ``(output, verified)`` with the 0/1 verified flag
-# on top (its 64-byte output length is seeded in ``_OP_OUTPUT_BYTELEN``).
+# Positional output range seeds, ``op -> [(output_index, lo, hi), …]``.
+#
+# HAZARD: indices are TOP-FIRST. The ``*_get`` / ``*_ex`` family pushes its 0/1
+# "exists" flag as ``outputs[0]`` (the value fed to ``assert`` / ``bz``);
+# ``box_len`` bounds its length at ``outputs[1]`` by the 32768-byte max box;
+# ``addw`` pushes ``(high, low)`` with LOW on top, so the 0/1 carry is
+# ``outputs[1]``; ``vrf_verify`` pushes ``(output, verified)`` with the flag on
+# top. Reading any of these positionally the other way inverts flag and value.
 _OP_OUTPUT_SEEDS: dict = {
     "asset_params_get":  [(0, 0, 1)],
     "app_params_get":    [(0, 0, 1)],
@@ -794,16 +713,10 @@ _OP_OUTPUT_SEEDS: dict = {
     "vrf_verify":        [(0, 0, 1)],
 }
 
-# Static byte_length seeds, consumed by ``passes/byte_length_prop``.
-#
-# ``_TXN_FIELD_BYTELEN`` / ``_GLOBAL_FIELD_BYTELEN`` — txn-family / global
-# field reads whose output is a fixed-width bytes value: 32-byte addresses
-# and the participation keys (StateProofPK is 64). ``_OP_OUTPUT_BYTELEN``
-# — positional fixed lengths on multi-output crypto ops, top-first
-# (``op -> [(output_index, byte_length), …]``).
-# 32-byte address fields come from the single source above (shared with the
-# ``"account"`` type table) — derived, not re-listed — plus the
-# non-address fixed-width fields (participation keys, lease) enumerated here.
+# Static byte_length seeds for ``passes/byte_length_prop``: fixed-width txn /
+# global field reads, plus ``_OP_OUTPUT_BYTELEN`` positional (TOP-FIRST) lengths
+# on multi-output crypto ops. Address fields are DERIVED from the single source
+# above, never re-listed; only the non-address fixed widths are enumerated here.
 _ADDR_TXN, _ADDR_GLOBAL = ADDRESS_TXN_FIELDS, ADDRESS_GLOBAL_FIELDS
 
 _TXN_FIELD_BYTELEN: dict = {
@@ -824,11 +737,6 @@ _OP_OUTPUT_BYTELEN: dict = {
 }
 
 #: Single-output ops with a FIXED-WIDTH bytes result — the hash / digest family.
-#: ``passes/byte_length_prop`` used to carry the four SHA/Keccak lengths inline
-#: as a literal, which left ``mimc`` (32) and ``sumhash512`` (64) — both of
-#: which puya types as sized-bytes returns — with no length at all. Keeping the
-#: table here is the module's stated contract: one AVM-metadata home, derived
-#: rather than re-listed per consumer.
 FIXED_BYTES_OUTPUT_LEN: dict[str, int] = {
     "sha256":     32,
     "sha512_256": 32,
@@ -838,12 +746,10 @@ FIXED_BYTES_OUTPUT_LEN: dict[str, int] = {
     "sumhash512": 64,
 }
 
-# ``asset_params_get`` / ``app_params_get`` / ``acct_params_get`` push
-# ``(value, exists)`` — the 0/1 exists flag (``outputs[0]``) is seeded by
-# ``_OP_OUTPUT_SEEDS``; the *value* (``outputs[1]``) is keyed by the field
-# immediate here. Field names are globally unique (Asset*/App*/Acct*), so a
-# single flat table per kind is unambiguous. Range fields are bounded scalars
-# / booleans; byte-length fields are 32-byte addresses + the metadata hash.
+# The ``*_params_get`` family pushes ``(value, exists)``: the 0/1 exists flag is
+# ``outputs[0]`` (seeded by ``_OP_OUTPUT_SEEDS``), the VALUE is ``outputs[1]``
+# and is keyed by field immediate here. Field names are globally unique
+# (Asset*/App*/Acct*), so one flat table per kind is unambiguous.
 _PARAMS_OPS: frozenset = frozenset({
     "asset_params_get", "app_params_get", "acct_params_get",
 })
@@ -869,21 +775,14 @@ _PARAMS_VALUE_BYTELEN: dict = {
     "AcctAuthAddr":      32,
 }
 
-# Field-immediate position for every txn-family field-reading op. The field
-# name is the *first* immediate for current-txn / stack-group forms, and the
-# *second* (after the immediate group index) for the ``gtxn``/``gitxn``
-# group-indexed forms. One helper unifies field extraction across the range,
-# byte-length and any future field-keyed seeding (so the inner-txn ``itxna`` /
-# ``gitxn*`` and stack-group ``gtxnsa`` / ``gtxnsas`` forms are covered too).
+# HAZARD: the field-name immediate POSITION varies. It is immediate 0 for the
+# current-txn and stack-group forms, but immediate 1 for the ``gtxn``/``gitxn``
+# group-indexed forms (the group index comes first). Getting this wrong returns
+# no field name, which silently zeroes taint and byte lengths on those reads.
 _FIELD_OPS_POS0: frozenset = frozenset({
     "txn", "txna", "gtxns", "gtxnsa", "gtxnsas", "itxn", "itxna",
-    # The stack-index forms belong here too: they pop the ARRAY INDEX off the
-    # stack, so the field name is still immediate 0. Omitting them made
-    # ``_txn_field_name`` return None for every computed-index array read, which
-    # silently zeroed byte-interval taint on ``txnas ApplicationArgs`` (the
-    # static ``txna ApplicationArgs 0`` was fully tainted) and lost the 32-byte
-    # length on ``txnas Accounts``. A loop walking ApplicationArgs by computed
-    # index — the natural way to write a batch handler — reads as untainted.
+    # The stack-index forms belong here: they pop the ARRAY INDEX off the
+    # stack, so the field name is still immediate 0.
     "txnas", "itxnas",
 })
 _FIELD_OPS_POS1: frozenset = frozenset({
@@ -892,9 +791,8 @@ _FIELD_OPS_POS1: frozenset = frozenset({
 
 
 def _txn_field_name(op: str, toks: list) -> Optional[str]:
-    """The field-name immediate of a txn-family field read, or ``None``
-    when ``op`` doesn't read a named field (or its immediates are absent).
-    ``toks`` is ``immediates.split()``."""
+    """The field-name immediate of a txn-family field read (``toks`` is
+    ``immediates.split()``), or ``None`` when ``op`` reads no named field."""
     if op in _FIELD_OPS_POS0 and toks:
         return toks[0]
     if op in _FIELD_OPS_POS1 and len(toks) >= 2:
@@ -902,12 +800,10 @@ def _txn_field_name(op: str, toks: list) -> Optional[str]:
     return None
 
 
-# Pure stack-shuffle opcodes — they don't compute, they only permute /
-# duplicate / drop existing stack values (or, for the frame variants,
-# move values between the stack top and the visible frame slots). For
-# each, the per-output input index is fixed by the opcode plus its
-# immediate, so every output SSAVar can be rewritten to its source
-# value at every consumer (see :meth:`SSAProgram.propagate_stack_shuffles`).
+# Pure stack-shuffle opcodes: they permute / duplicate / drop existing values
+# (frame variants move between stack top and visible frame slots) rather than
+# compute. The per-output input index is fixed by opcode + immediate, so every
+# output SSAVar can be rewritten to its source value at every consumer.
 _STACK_SHUFFLE_OPS: frozenset = frozenset({
     "swap", "dup", "dup2", "dupn", "cover", "uncover", "dig", "bury",
     "frame_dig", "frame_bury",

@@ -1,16 +1,6 @@
-"""Inner-transaction field grouping for SSA programs.
-
-For every ``itxn_field`` opcode, identify the immediately-enclosing
-inner-transaction ``(start, end)`` pair via CFG reachability and emit
-one row per consumed-value definition; the result is consumed by
+"""Inner-transaction field grouping — which inner-transaction ``(start, end)``
+pair each ``itxn_field`` belongs to, for
 :class:`tealql.tealtools.inner_txn_report.InnerTxnReport`.
-
-A construction-time substrate helper: it lives in the ``ssa`` package
-but is split out of ``ssa.py`` (which calls it eagerly while building a
-program) so the builder stays focused on SSA construction. It is *not*
-an optional ``passes/`` analysis — those layer on a finished program;
-this one runs as part of producing it (cf. the sibling
-:mod:`const_fold` / :mod:`scratch_influence` helpers).
 """
 from __future__ import annotations
 
@@ -19,20 +9,10 @@ from .program import SSAProgram
 
 
 def compute_inner_txn_fields(prog: SSAProgram) -> list:
-    """For every ``itxn_field`` opcode, identify the immediately-
-    enclosing inner-transaction ``(start, end)`` pair via CFG reach
-    and emit one row per consumed-value definition.
-
-    A ``start`` is ``itxn_begin`` or ``itxn_next``; an ``end`` is
-    ``itxn_submit`` or ``itxn_next``. "Immediately enclosing" means:
-
-      - ``start.reaches(field)`` (CFG-forward) and no other start
-        sits between ``start`` and ``field``.
-      - ``field.reaches(end)`` and no other end sits between
-        ``field`` and ``end``.
-
-    Returns a list of dicts matching the shape consumed by
-    :class:`tealql.tealtools.inner_txn_report.InnerTxnReport`.
+    """One row per ``itxn_field`` × immediately-enclosing ``(start, end)`` pair,
+    where a start is ``itxn_begin``/``itxn_next``, an end is
+    ``itxn_submit``/``itxn_next``, and "immediately" means CFG-forward reach with
+    no other start between start and field (resp. no other end after it).
     """
     start_ops: list = []
     end_ops: list = []
@@ -50,15 +30,14 @@ def compute_inner_txn_fields(prog: SSAProgram) -> list:
     if not field_ops:
         return []
 
-    # Per-assignment ``(BB, op_index)`` map — used by ``_op_reaches``
-    # to disambiguate same-BB order from across-BB CFG reach.
+    # Per-assignment ``(BB, op_index)`` — lets ``_op_reaches`` tell same-BB order
+    # from across-BB CFG reach.
     op_idx: dict = {}
     for b in prog.blocks.values():
         for i, a in enumerate(b.assignments):
             op_idx[id(a)] = (b, i)
 
-    # BB-level forward reachability (transitive successors, inclusive
-    # of the source BB).
+    # BB-level forward reachability (transitive successors, source BB included).
     bb_forward: dict = {}
     for b in prog.blocks.values():
         seen: set = {b}
@@ -79,20 +58,18 @@ def compute_inner_txn_fields(prog: SSAProgram) -> list:
         src_bb, src_i = src_info
         dst_bb, dst_i = dst_info
         if src_bb is dst_bb:
-            # Forward within the block, OR backward around a DIRECT self-loop:
-            # in a single-block loop body an `itxn_field` written textually
-            # above its `itxn_begin` still reaches it on the next lap. Keyed on
-            # a real self-edge, not general `bb_forward` membership — a block
-            # inside any larger cycle is reachable from itself, which would
-            # make every op reach every other and collapse the boundary
-            # pairing entirely.
+            # Forward within the block, OR backward around a DIRECT self-loop: in
+            # a single-block loop body an `itxn_field` written textually above its
+            # `itxn_begin` still reaches it next lap. Keyed on a real self-edge,
+            # NOT `bb_forward` membership — any block inside a larger cycle
+            # reaches itself, which would make every op reach every other and
+            # collapse the boundary pairing entirely.
             return src_i <= dst_i or src_bb in getattr(src_bb, "successors", ())
         return dst_bb in bb_forward[src_bb]
 
     def _resolve_def_key(op_input):
-        """Map an :class:`SSAVar` / :class:`Phi` to the row's
-        ``(kind, file, line, idx)`` tuple. Returns ``None`` for
-        anything else (e.g. ``Const``, unresolved operand)."""
+        """The row's ``(kind, file, line, idx)`` for an :class:`SSAVar` /
+        :class:`Phi`, or ``None`` for anything else (``Const``, unresolved)."""
         if isinstance(op_input, SSAVar):
             return ("SSAVar", op_input.file, op_input.line, op_input.index)
         if isinstance(op_input, Phi):
@@ -129,12 +106,10 @@ def compute_inner_txn_fields(prog: SSAProgram) -> list:
 
         if not field_op.inputs:
             continue
-        # ``itxn_field`` consumes exactly one operand. The row's
-        # ``def`` IS that operand (an SSAVar or a Phi) — NOT the phi's
-        # args. ``inner_txn_report._resolve_operand`` resolves the phi
-        # itself and expands it to ``{100 | 200}`` etc. Fanning out per
-        # phi-arg here would emit one row per arg and the report would
-        # render ``(set@L30, L30, …)``.
+        # ``itxn_field`` consumes exactly one operand, and the row's ``def`` IS
+        # that operand — NOT a phi's args. ``inner_txn_report._resolve_operand``
+        # expands the phi itself to ``{100 | 200}``; fanning out per arg here
+        # would emit one row each and render ``(set@L30, L30, …)``.
         key = _resolve_def_key(field_op.inputs[0])
         if key is None:
             continue

@@ -1,51 +1,13 @@
-"""sec-guide/unvalidated-group-sibling: trusting a sibling transfer it never checks.
+"""sec-guide/unvalidated-group-sibling: the app draws VALUE from a sibling txn
+(``gtxn i Amount`` / ``AssetAmount``) without pinning that sibling's receiver to
+``Global.CurrentApplicationAddress``, so the attacker can pay someone else and
+still be credited.
 
-The single most Algorand-native composition bug. A stateful app routinely relies
-on a *sibling* transaction in the same atomic group — "transaction 0 is a payment
-of N microAlgo to me" — and reads its value (``gtxn 0 Amount`` / ``gtxn 1
-AssetAmount``). The bug is reading that value WITHOUT pinning the sibling's
-receiver to this application:
-
-    gtxn 0 Amount            // trust an incoming payment of this size ...
-    // ... credit the caller, mint shares, release collateral ...
-
-If the contract never asserts ``gtxn 0 Receiver == Global.CurrentApplicationAddress``,
-the attacker submits a group whose transaction 0 pays *someone else* (or themselves)
-— the app credits them for funds it never received. ``group-size-check`` only
-validates the COUNT of transactions; this validates that a sibling the app draws
-VALUE from actually pays the app.
-
-Detection (group reads at a STATICALLY KNOWN sibling index — immediate-index
-``gtxn``/``gtxna``/``gtxnas`` plus ``gtxns`` with a const-resolved index, e.g.
-``int 0; gtxns Amount``; a genuinely dynamic ``gtxns`` index is skipped soundly):
-for each sibling index that the program reads a value field from
-(``Amount`` → a payment, ``AssetAmount`` → an asset transfer), require the
-matching receiver pin — an equality comparing that sibling's ``Receiver`` /
-``AssetReceiver`` against ``global CurrentApplicationAddress`` that reaches
-enforcement (``assert`` / branch-to-reject) — ON EVERY PATH through the read:
-
-    flag  ⟺  ∃ a CFG path  entry → read → approving exit  crossing NO pin-
-              enforcement block.
-
-The old check was a whole-program EXISTENCE test ("a pin exists somewhere"), so a
-router whose ``deposit`` arm pins the receiver silently vouched for an unpinned
-read in its ``swap`` arm — the exact per-arm bug this detector exists to catch.
-Pin-enforcement blocks come from the shared must-reach machinery
-(:func:`common._collect_field_enforcement_bbs`, scratch-aware); the tie check is
-the phi/scratch/proto-frame-aware :func:`common._operand_flows_from_field_var`,
-so a pin living behind a sub or a scratch slot still counts. Order within a path
-is irrelevant (a failed ``assert`` rejects wherever it sits), which is why the
-question is path-crossing, not anything-dominates-anything.
-
-Two precision guards:
-
-* TYPE EXCLUSION — a read of a value field whose CARRYING txn type is pinned
-  away on every approving path through the read (``gtxn[i].TypeEnum == axfer``
-  enforced ⇒ ``gtxn i Amount`` is constantly 0) is inert, not a trusted
-  transfer; suppressed via the per-block group substrate
-  (:func:`group_reasoning.constraints_at`).
-* The escaping exit is labelled with the ABI method it belongs to (source
-  ``method "sig"`` info, optional) so the finding names the vulnerable arm.
+Flag ⟺ ∃ a CFG path entry → read → approving exit crossing NO pin-enforcement
+block. The question is PATH-CROSSING, not dominance: a failed ``assert`` rejects
+wherever it sits, so a pin after the read still protects it. It is also per-path,
+not whole-program existence — a router whose ``deposit`` arm pins the receiver
+must not vouch for an unpinned read in its ``swap`` arm.
 """
 from __future__ import annotations
 
@@ -61,9 +23,8 @@ _VALUE_TO_RECEIVER = {
     "AssetAmount": "AssetReceiver",  # asset transfer
 }
 
-# Value field -> the AVM txn type for which that field carries a real transfer.
-# ``Amount`` is nonzero only on a ``pay``; ``AssetAmount`` only on an ``axfer`` —
-# so a read whose sibling is pinned to any OTHER type is definitionally 0 (inert).
+# Value field -> the only AVM txn type on which it carries a real transfer; a
+# sibling pinned to any OTHER type reads definitionally 0 (inert).
 _FIELD_CARRYING_TYPE = {
     "Amount": "pay",
     "AssetAmount": "axfer",
@@ -71,8 +32,7 @@ _FIELD_CARRYING_TYPE = {
 
 # Value field -> the receiver field of the OTHER transfer kind. Pinning it to the
 # app proves the sibling is that other type (a ``pay``'s ``AssetReceiver`` is the
-# zero address, so ``AssetReceiver == CurrentApp`` can only hold on an ``axfer``,
-# and vice-versa), which makes THIS field definitionally 0.
+# zero address), which makes THIS field definitionally 0.
 _COMPLEMENT_RECEIVER = {
     "Amount": "AssetReceiver",       # axfer-exclusive -> pins the sibling to axfer
     "AssetAmount": "Receiver",       # pay-exclusive  -> pins the sibling to pay
@@ -80,9 +40,8 @@ _COMPLEMENT_RECEIVER = {
 
 
 def _forward_reachable(starts) -> set:
-    """Every basic block reachable from ``starts`` over CFG successors (the CFG is
-    interprocedural, so a read inside a subroutine still reaches its callers'
-    approving exits)."""
+    """Blocks reachable from ``starts`` over CFG successors (interprocedural — a read
+    inside a subroutine reaches its callers' approving exits)."""
     seen = set(b for b in starts if b is not None)
     stack = list(seen)
     while stack:
@@ -95,9 +54,8 @@ def _forward_reachable(starts) -> set:
 
 
 def _pinned_typeenum(G, pp, exit_bb, index: int):
-    """The symbolic txn-type name (``"pay"`` / ``"axfer"`` / …) that
-    ``gtxn[index].TypeEnum`` is pinned to in force at ``exit_bb`` (via the group
-    substrate), or ``None`` if it isn't pinned to a resolvable constant there."""
+    """The txn-type name (``"pay"``/``"axfer"``/…) ``gtxn[index].TypeEnum`` is pinned
+    to at ``exit_bb``, or ``None`` when it is not pinned to a resolvable constant."""
     from tealql.tealtools.avm import enum_field_name
     slot = f"gtxn[{index}]"
     for c in G.constraints_at(pp, exit_bb):
@@ -135,8 +93,7 @@ class UnvalidatedGroupSiblingViolation:
 
 class UnvalidatedGroupSiblingDetector:
     name: ClassVar[str] = "sec-guide/unvalidated-group-sibling"
-    # HIGH — a trusted-but-unpinned sibling transfer drains/credits wrongly. The
-    # messages say [HIGH]; declare it so machine severity (SARIF/JSON) agrees.
+    # Declared so machine severity (SARIF/JSON) agrees with the [HIGH] messages.
     severity: ClassVar[str] = "high"
     applies_to: ClassVar[frozenset] = frozenset({"app"})  # gtxn-relying apps
     violation_cls: ClassVar[type] = UnvalidatedGroupSiblingViolation
@@ -148,13 +105,11 @@ class UnvalidatedGroupSiblingDetector:
     def detect(self) -> list:
         reads = self._gtxn_index_reads()                 # (index, field) -> [assigns]
         app_seeds = self._safe_receiver_targets()
-        # The per-arm PATH-existence check relies on CFG reachability, which is
-        # only trustworthy when the program has NO subroutines: `retsub` returns
-        # context-insensitively, so a read inside a sub spuriously "reaches"
-        # approving exits in unrelated callers. That's exactly where the cross-arm
-        # false NEGATIVE bites too (inline ABI routers), so we run the path check
-        # only there and fall back to the whole-program EXISTENCE check when subs
-        # are present — sound, and never worse than the legacy behaviour.
+        # HAZARD: the per-arm PATH check is gated on there being NO subroutines.
+        # `retsub` returns context-insensitively, so a read inside a sub spuriously
+        # "reaches" approving exits in unrelated callers and the path check turns
+        # into an FP machine. With subs present, fall back to the whole-program
+        # EXISTENCE check — never worse than the legacy behaviour.
         inline = not self._has_subroutines()
         out: list = []
         for (index, field), assigns in sorted(reads.items()):
@@ -199,18 +154,12 @@ class UnvalidatedGroupSiblingDetector:
     # -- internals ------------------------------------------------------
 
     def _gtxn_index_reads(self) -> dict:
-        """``(index, field) -> [assignments]`` for every group read with a
-        STATICALLY KNOWN sibling index:
+        """``(index, field) -> [assignments]`` for every group read at a STATICALLY
+        KNOWN sibling index: ``gtxn``/``gtxna``/``gtxnas`` (immediate index) plus
+        ``gtxns`` with a const-resolvable index operand.
 
-        * the immediate-index opcodes ``gtxn`` / ``gtxna`` / ``gtxnas`` (index in
-          the first immediate), and
-        * the stack-index ``gtxns`` when its popped index operand is a
-          compile-time constant — e.g. ``int 0; gtxns Amount``, the usual
-          compiler output for ``gtxn.PaymentTxn(0)``.
-
-        A genuinely DYNAMIC ``gtxns`` index (one not const-resolvable) is still
-        skipped: the sibling it reads isn't statically known, so there is no fixed
-        index to demand a receiver pin for."""
+        A genuinely dynamic ``gtxns`` index is skipped — no fixed sibling to demand
+        a receiver pin for (a deliberate FN)."""
         out: dict = {}
         for a in self.prog.assignments:
             if not common.file_match(a.location.file, self.file):
@@ -222,7 +171,7 @@ class UnvalidatedGroupSiblingDetector:
                 out.setdefault((int(toks[0]), toks[1]), []).append(a)
             elif a.op == "gtxns":
                 # field is the only immediate; the sibling index is the popped
-                # stack operand, usable only when it is a compile-time constant.
+                # operand, usable only when it is a compile-time constant.
                 toks = a.immediates.split()
                 if not toks or not a.inputs:
                     continue
@@ -238,22 +187,13 @@ class UnvalidatedGroupSiblingDetector:
         )
 
     def _safe_receiver_targets(self) -> set:
-        """SSAVars holding an address the ATTACKER CANNOT CHOOSE — the only values
-        a receiver pin can meaningfully constrain to. A pin ``gtxn i Receiver == X``
-        protects the app iff ``X`` is not attacker-controlled:
+        """SSAVars holding an address the ATTACKER CANNOT CHOOSE: the app's/creator's
+        address, or a read of the app's OWN state (the escrow pattern). Constants are
+        handled in :meth:`_pin_gates`.
 
-          * ``Global.CurrentApplicationAddress`` / ``Global.CreatorAddress`` — the
-            app's / creator's account;
-          * a value read from the app's OWN state (``app_global_get`` /
-            ``app_local_get``) — the ESCROW pattern (funds routed to a
-            contract-designated account stored in state), extremely common in
-            older AMM / game contracts.
-
-        Constants are handled directly in :meth:`_pin_gates`. A pin against
-        ``ApplicationArgs`` / a ``gtxn`` field / ``Sender`` is NOT here — the
-        attacker supplies those, so the pin is vacuous and the read stays flagged.
-        (Positive safe-set, the SOUND dual of "X is not user-tainted": an
-        unmodelled address form fails safe — still flagged — not silently trusted.)"""
+        HAZARD: this is a POSITIVE safe-set, not "X is not user-tainted". An
+        unmodelled address form must fail SAFE (still flagged), never be trusted —
+        pinning ``Receiver`` to ``ApplicationArgs``/``Sender`` protects nothing."""
         seeds: set = set()
         for gf in ("CurrentApplicationAddress", "CreatorAddress"):
             seeds |= self._global_seeds(gf)
@@ -266,11 +206,10 @@ class UnvalidatedGroupSiblingDetector:
 
     def _pin_gates(self, index: int, recv_field: str, reads: dict,
                    app_seeds: set) -> set:
-        """The BASIC BLOCKS that ENFORCE the receiver pin — an ``assert`` /
-        branch-to-reject whose condition SSA-derives from an equality tying
-        ``gtxn <index> <recv_field>`` to ``Global.CurrentApplicationAddress``.
-        Crossing one of these on a path means that path enforced the pin. Empty
-        when the receiver is never compared, or compared but never enforced."""
+        """Blocks ENFORCING the receiver pin (``assert``/branch-to-reject on an
+        equality tying ``gtxn <index> <recv_field>`` to a safe address); crossing one
+        means that path enforced the pin. Empty when never compared or never
+        enforced."""
         recv_assigns = reads.get((index, recv_field), [])
         recv_seeds = {o for a in recv_assigns for o in a.outputs
                       if isinstance(o, SSAVar)}
@@ -308,15 +247,9 @@ class UnvalidatedGroupSiblingDetector:
         return gates
 
     def _unpinned_path(self, assigns: list, gates: set):
-        """``(exit_line, abi_method | None)`` witnessing a pin-free approving
-        path through one of these reads — a CFG path entry → read → approving
-        exit that crosses NO gate — or ``None`` when every such path is gated.
-
-        Decomposed as prefix ∧ suffix (independent through the read block):
-        some entry→read path avoids the gates AND some read→approving-exit path
-        avoids them. Order within the path is irrelevant (an ``assert`` after
-        the read still rejects the whole txn), which is exactly what gate-
-        crossing captures and a dominance test would not."""
+        """``(exit_line, abi_method | None)`` witnessing a gate-free entry → read →
+        approving-exit path, or ``None`` when every such path is gated. Decomposed
+        as prefix ∧ suffix, independent through the read block."""
         exits = set(common.approving_exits(self.prog, file=self.file))
         if not exits:
             return None
@@ -340,8 +273,7 @@ class UnvalidatedGroupSiblingDetector:
 
     @staticmethod
     def _gate_free_exit(start, gates: set, exits: set):
-        """The first approving exit reachable from ``start`` over CFG successors
-        WITHOUT crossing a gate block, or ``None``."""
+        """First approving exit reachable from ``start`` crossing no gate, or ``None``."""
         seen = {start}
         stack = [start]
         while stack:
@@ -366,23 +298,14 @@ class UnvalidatedGroupSiblingDetector:
 
     def _type_excludes_field(self, index: int, field: str, assigns: list,
                              reads: dict, app_seeds: set) -> bool:
-        """True when sibling ``gtxn[index]`` is provably NOT the transfer type this
-        field carries on every approving path through the read, so the value is
-        definitionally 0 (an inert read — e.g. ``gtxn 1 Amount`` of a sibling the
-        app pins as an ``axfer``), not a trusted transfer. Two independent signals,
-        either sufficient:
+        """Sibling ``gtxn[index]`` is provably NOT the transfer type this field
+        carries, on every approving path through the read, so the value is
+        definitionally 0 (inert). Either signal suffices: the COMPLEMENTARY
+        receiver is pinned to the app on every such path, or ``TypeEnum`` is
+        explicitly pinned to an incompatible type at every reachable exit.
 
-        1. COMPLEMENTARY RECEIVER PIN — the other kind's receiver
-           (``AssetReceiver`` for an ``Amount`` read, ``Receiver`` for
-           ``AssetAmount``) is pinned to the app on EVERY approving path through
-           the read. That pin can only hold on the other txn type (a ``pay``'s
-           ``AssetReceiver`` is the zero address), so this field is 0. Reuses the
-           detection gate machinery (must-cross on every path).
-        2. EXPLICIT ``TypeEnum`` pinned to an incompatible type at every reachable
-           approving exit.
-
-        Conservative — suppresses only under a proof that holds on all relevant
-        paths; anything weaker leaves the finding standing."""
+        Suppresses only under a proof holding on ALL relevant paths — anything
+        weaker must leave the finding standing."""
         carrying = _FIELD_CARRYING_TYPE.get(field)
         if carrying is None:
             return False

@@ -1,10 +1,6 @@
-"""Combined detector run for the CLI's ``all`` command: the tealtools core
-analysis detectors PLUS the sec-guide detectors.
-
-tealtools core (:mod:`tealql.tealtools.detector`) knows nothing about the security
-registry; it exposes ``run_all(prog, extra_detectors=...)``. This module builds
-the sec-guide detector adapters and injects them, so the dependency stays
-one-directional (security -> tealtools, never the reverse).
+"""Combined detector run for the CLI's ``all`` command: tealtools core detectors
+PLUS the sec-guide ones, injected as ``extra_detectors`` adapters so the
+dependency stays one-directional (security -> tealtools, never the reverse).
 """
 from __future__ import annotations
 
@@ -18,30 +14,24 @@ from tealql.tealtools.detector import (
 from . import DETECTORS
 from .scan import default_detection_names
 
-# Deliberately kept OUT of the ``tealql all`` overview — run on demand via
-# ``tealql detections --detector NAME`` (report-style / lint-noise on typical
-# contracts, per the original curation).
+# Report-style / lint-noise on typical contracts, so kept OUT of the ``tealql
+# all`` overview — run via ``tealql detections --detector NAME``.
 _ON_DEMAND_ONLY = frozenset({
     "abi-method-selector",
     "constant-condition",
 })
 
-# Everything else registered in security.DETECTORS runs, with superseded
-# detectors dropped (their successors subsume them and fall back to them
-# internally when the IR lift fails). Derived, not enumerated: a hand-written
-# inclusion list lived here before and silently excluded every detector
-# registered after it was written — the whole ir-* family never ran in
-# ``tealql all``.
+# HAZARD: DERIVED from the registry, never enumerated. A hand-written inclusion
+# list silently excludes every detector registered after it was written.
 _SECGUIDE_NAMES = tuple(
     n for n in default_detection_names() if n not in _ON_DEMAND_ONLY
 )
 
 
 def _secguide_detector(short_name: str) -> Detector:
-    """A ``Detector`` adapter that instantiates and runs the registered
-    detector class for ``short_name``. Scope filtering (app vs logicsig) is a
-    DECLARED concern — see :class:`tealql.security.config.DetectionOptions` and the
-    scanner — not inferred here, so ``tealql all`` runs every detector."""
+    """A ``Detector`` adapter around the registered class for ``short_name``.
+    App-vs-logicsig scope is a DECLARED concern of the scanner, not inferred here,
+    so ``tealql all`` runs every detector."""
     def _run(prog: SSAProgram):
         return DETECTORS[short_name](prog).detect()
     return _FnDetector(f"detections/{short_name}", _run)

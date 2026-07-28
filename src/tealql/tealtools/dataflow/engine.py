@@ -1,27 +1,12 @@
-"""Generic taint-flow framework.
+"""Generic taint-flow framework: a detector supplies :class:`Source`,
+:class:`Sink` and :class:`FlowRule` sets and runs :class:`TaintAnalysis`.
 
-A detector specifies three things and runs :class:`TaintAnalysis`:
+HAZARD: the default decision is BLOCK, so taint dies at any op no rule covers.
+Every propagating op has to be enumerated below — a missing one is a silent
+false negative, not a conservative answer. (``byte_taint`` defaults the other
+way and has no such hole.)
 
-- :class:`Source` — assignments whose outputs are seeded as tainted.
-- :class:`Sink`   — assignments whose specific input is checked for
-                    a tainted value at the end.
-- :class:`FlowRule` — per-op decisions for how taint flows
-                      (default behaviour: identity preservation
-                      through stack shuffles, propagation through
-                      hashes / slices / concat-with-const, BLOCK on
-                      everything else).
-
-Yields :class:`Violation` records — ``source → sink`` provenance pairs
-with the tainted operand at the sink.
-
-Consumed by:
-- ``src/tealql/security/detections/box-key/`` (asset-params source → box-key sinks)
-- :mod:`tealql.tealtools.dataflow.box` (external args / box reads / state writes)
-- :mod:`tealql.tealtools.dataflow.predicate_aware` (post-filter on any result)
-
-Pre-materialized SSA only (phi structure is needed to track taint
-across BB joins; ``materialize_phis()`` would erase it).
-"""
+Needs the phi structure intact to carry taint across BB joins."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -50,14 +35,10 @@ TaintedOperand = Union[SSAVar, Phi]  # Const never tainted.
 
 @dataclass(frozen=True)
 class Source:
-    """A taint source.
+    """A taint source: assignments matching it seed their ``tainted_outputs``.
 
-    ``matches(a)`` is true for assignments that produce a tainted value.
-    ``tainted_outputs(a)`` returns the 1-based output indices on that
-    assignment that carry the tainted value (output 1 = topmost after
-    the op runs; matches :class:`tealql.tealtools.ssa.SSAVar`'s
-    ``output_index``).
-    """
+    HAZARD: output indices are 1-based and TOP-FIRST — output 1 is the topmost
+    value after the op runs, so a two-output read's deeper value is index 2."""
 
     name: str
     matches: Callable[[Assignment], bool]
@@ -68,12 +49,10 @@ class Source:
 
 @dataclass(frozen=True)
 class Sink:
-    """A taint sink.
+    """A taint sink: the operand at ``tainted_input_index`` is checked for taint.
 
-    ``tainted_input_index(a)`` returns the 1-based stack-input position
-    of the operand we want to check for taint on assignment ``a``
-    (input 1 = topmost; matches ``Assignment.inputs`` top-first order).
-    """
+    HAZARD: 1-based and TOP-FIRST, matching ``Assignment.inputs`` — input 1 is
+    the topmost popped operand, not the leftmost in source order."""
 
     name: str
     matches: Callable[[Assignment], bool]
@@ -82,16 +61,10 @@ class Sink:
 
 @dataclass(frozen=True)
 class FlowRule:
-    """Custom per-op decision for how taint flows.
+    """Per-op decision for how taint flows.
 
-    ``flows(a, tainted_input_indices)`` returns:
-        - ``None`` to abstain (default rules apply),
-        - ``[]`` to block (no output is tainted),
-        - a list of 1-based output indices that should be tainted.
-
-    Rules are consulted in registration order; first non-``None``
-    answer wins. Defaults are applied last.
-    """
+    ``flows`` returns ``None`` to abstain, ``[]`` to block, or the 1-based output
+    indices to taint. First non-``None`` answer wins, defaults consulted last."""
 
     name: str
     matches: Callable[[Assignment], bool]
@@ -116,22 +89,22 @@ _SLICE_OPS = frozenset({
     "extract", "extract3",
     "extract_uint16", "extract_uint32", "extract_uint64",
     "substring", "substring3",
-    # getbyte reads a byte out of the value (bytes -> scalar); the byte it
-    # returns is part of the tainted value, so taint flows. Same operand shape
-    # as the extract family: the value is the bottom (highest-index) input.
+    # getbyte returns a byte OF the value, so taint flows, and it has the same
+    # operand shape as the extract family.
     "getbyte",
 })
 
 SLICE_PROPAGATION_RULE = FlowRule(
     name="slice-of-tainted",
     matches=lambda a: a.op in _SLICE_OPS,
+    # TOP-FIRST: the sliced VALUE is the deepest operand, so its 1-based index
+    # is ``len(a.inputs)``. Checking index 1 would test an offset instead.
     flows=lambda a, ti: [1] if len(a.inputs) in ti else [],
 )
 
 
-# itob / btoi re-encode the SAME value between uint64 and bytes — taint passes
-# straight through (a tainted scalar `itob`'d into a box key is still attacker-
-# influenced). Single input, single output.
+# itob / btoi re-encode the SAME value between uint64 and bytes, so taint
+# passes straight through.
 _TRANSCODE_OPS = frozenset({"itob", "btoi"})
 
 TRANSCODE_PROPAGATION_RULE = FlowRule(
@@ -142,18 +115,13 @@ TRANSCODE_PROPAGATION_RULE = FlowRule(
 
 
 def _concat_flows(a: Assignment, tainted_in: list[int]) -> Optional[list[int]]:
-    """``concat A B`` propagates taint to its output iff every non-tainted input
-    is statically constant.
+    """``concat`` propagates taint iff every non-tainted input is constant.
 
-    NB this is the COLLISION model the box-key detector needs, NOT generic
-    attacker-control: a *constant* prefix (``concat("bal", AssetName)``) doesn't
-    distinguish instances, so same-name assets still collide → taint flows → flag;
-    a *dynamic* prefix (``concat(itob(asset_id), AssetName)``) makes the key
-    unique → no collision → taint blocked (see the ``box_key/safe_id_prefix``
-    fixture). An attacker-CONTROL detector (e.g. box_df into-box) wants "taint if
-    ANY input tainted" instead — that needs its OWN concat rule, not a change
-    here, since the two semantics genuinely conflict on ``concat(dynamic, user)``.
-    """
+    HAZARD: this is the COLLISION model, not attacker-control. A dynamic prefix
+    makes a box key unique, so taint is BLOCKED — correct for key collisions,
+    wrong for "can the attacker influence this value", which needs
+    :data:`CONCAT_ANY_PROPAGATION_RULE`. The two genuinely conflict on
+    ``concat(dynamic, user)``; pick the rule set, never edit this one."""
     if a.op != "concat":
         return None
     for i, inp in enumerate(a.inputs):
@@ -171,25 +139,18 @@ CONCAT_PROPAGATION_RULE = FlowRule(
 )
 
 
-#: Ops whose output is a deterministic FUNCTION of their operands, so attacker
-#: influence carries straight through: control `x` and you control `x + 1`.
-#: Without these the boolean engine dropped taint at the first bit of
-#: arithmetic — `btoi(arg) + 1` reaching a box_put / itxn field was simply not
-#: reported. (``byte_taint`` never had this hole: its fallback taints the
-#: output of ANY op with a tainted input, so only this engine, whose default
-#: is BLOCK, needed them enumerated.)
+#: Ops whose output is a deterministic FUNCTION of their operands: control `x`
+#: and you control `x + 1`.
 #:
 #: Deliberately EXCLUDED, each for a reason:
-#:   * ``len`` / ``bitlen`` — metadata about the value, not the value (same
-#:     call ``byte_taint`` makes).
-#:   * comparisons and ``&&`` / ``||`` / ``!`` — they produce a branch
-#:     condition, not a value; tainting them would mark most guards attacker-
-#:     derived and swamp every consumer.
+#:   * ``len`` / ``bitlen`` — metadata about the value, not the value.
+#:   * comparisons and ``&&`` / ``||`` / ``!`` — a branch condition, not a
+#:     value; tainting them marks most guards attacker-derived and swamps
+#:     every consumer.
 #:   * ``bzero`` — the attacker picks the LENGTH, but the content is zeros.
-#:   * the crypto VERIFY ops (``ed25519verify``, ``ecdsa_verify``,
-#:     ``ec_pairing_check``, ``ec_subgroup_check``) — a 0/1 validity flag.
-#:   * state / txn-field reads — those are SOURCES, seeded directly; taint on
-#:     a key operand does not make the stored value attacker-controlled.
+#:   * the crypto VERIFY ops — a 0/1 validity flag.
+#:   * state / txn-field reads — those are SOURCES; taint on a KEY operand does
+#:     not make the stored value attacker-controlled.
 _VALUE_TRANSFORM_OPS = frozenset({
     # uint64 arithmetic, incl. the wide (two-output) forms
     "+", "-", "*", "/", "%", "exp", "sqrt", "shl", "shr", "<<", ">>",
@@ -206,30 +167,26 @@ _VALUE_TRANSFORM_OPS = frozenset({
 VALUE_TRANSFORM_RULE = FlowRule(
     name="value-transform-of-tainted",
     matches=lambda a: a.op in _VALUE_TRANSFORM_OPS,
-    # Any tainted operand taints EVERY output: for the multi-output forms
-    # (`addw` hi/lo, `divmodw`'s quad, `ecdsa_pk_recover`'s X/Y) the attacker
-    # influences both halves.
+    # Any tainted operand taints EVERY output — on the multi-output forms
+    # (`addw` hi/lo, `divmodw`, `ecdsa_pk_recover` X/Y) the attacker influences
+    # both halves, so tainting only output 1 loses the flow.
     flows=lambda a, ti: [i + 1 for i in range(len(a.outputs))] if ti else [],
 )
 
 
-#: ``select A B C`` returns A or B depending on C — the result IS one of the
-#: two values, so taint on either flows through. It is NOT a pure stack shuffle
-#: (``_shuffle_mapping`` excludes it), so without a rule the boolean engine
-#: dropped the taint entirely.
+#: ``select A B C`` returns one of its two values, so taint on either flows
+#: through. It is not a pure stack shuffle, so it needs an explicit rule.
 SELECT_PROPAGATION_RULE = FlowRule(
     name="select-of-tainted",
     matches=lambda a: a.op == "select",
     # TOP-FIRST inputs: [0] = condition, [1] = B (returned when cond != 0),
-    # [2] = A. Taint flows if either VALUE is tainted (the condition only
-    # chooses; it doesn't contribute bytes to the result).
+    # [2] = A. Only the two VALUES matter — the condition chooses but
+    # contributes no bytes, so 1-based indices 2 and 3.
     flows=lambda a, ti: [1] if (2 in ti or 3 in ti) else [],
 )
 
-#: Splice ops write a tainted value INTO a buffer: the result carries the
-#: attacker's bytes, so it must stay tainted. ``byte_taint`` models these at
-#: byte granularity; the boolean engine needs the coarse version or the flow
-#: into a box/state/itxn sink is lost.
+#: Splice ops write a tainted value INTO a buffer, so the result carries the
+#: attacker's bytes. ``byte_taint`` models these at byte granularity.
 _SPLICE_OPS = frozenset({"setbyte", "setbit", "replace2", "replace3"})
 
 SPLICE_PROPAGATION_RULE = FlowRule(
@@ -238,9 +195,8 @@ SPLICE_PROPAGATION_RULE = FlowRule(
     flows=lambda a, ti: [1] if ti else [],
 )
 
-#: 512-bit byte arithmetic / bitwise ops: the output is a deterministic
-#: function of the operands, so attacker influence carries through. Mirrors
-#: ``byte_taint._BYTES_OUT_FALLBACK``.
+#: 512-bit byte arithmetic — a deterministic function of the operands, so
+#: attacker influence carries through.
 _BYTE_MATH_OPS = frozenset({
     "b+", "b-", "b*", "b/", "b%", "bsqrt",
     "b|", "b&", "b^", "b~",
@@ -257,10 +213,7 @@ CONCAT_ANY_PROPAGATION_RULE = FlowRule(
     name="concat-of-any-tainted",
     matches=lambda a: a.op == "concat",
     # Attacker-CONTROL semantics: the output embeds every input byte-for-byte,
-    # so it is attacker-influenced iff ANY input is. This is the rule the
-    # into-box / out-of-box / out-of-state detectors need — the COLLISION rule
-    # above blocks taint whenever a non-const untainted operand is present
-    # (`concat(itob(asset_id), user_arg)` → box_put was a silent miss).
+    # so it is influenced iff ANY input is.
     flows=lambda a, ti: [1] if ti else [],
 )
 
@@ -276,11 +229,9 @@ DEFAULT_RULES: list[FlowRule] = [
     BYTE_MATH_PROPAGATION_RULE,
 ]
 
-# The rule set for attacker-CONTROL detectors ("can the attacker influence the
-# value that reaches this sink"), where concat must propagate on ANY tainted
-# input. DEFAULT_RULES keeps the box-key COLLISION concat (a dynamic prefix
-# makes keys unique → blocks taint), which is only right for the key-collision
-# question — see _concat_flows' docstring for why the two genuinely conflict.
+# HAZARD: pick this set for "can the attacker influence the value reaching this
+# sink". DEFAULT_RULES keeps the box-key COLLISION concat, which BLOCKS taint
+# behind a dynamic prefix — correct only for the key-collision question.
 ATTACKER_CONTROL_RULES: list[FlowRule] = [
     HASH_PROPAGATION_RULE,
     SLICE_PROPAGATION_RULE,
@@ -306,10 +257,8 @@ class Violation:
     source_name: str
     sink: Assignment
     sink_name: str
-    # The exact tainted operand consumed at the sink. May be an
-    # SSAVar (locally produced) or a Phi (carried across
-    # BB joins). Trace ``defined_by`` / ``args`` from here to
-    # reconstruct the path the value took.
+    # The tainted operand consumed at the sink — an SSAVar, or a Phi when the
+    # value crossed a BB join. Walk ``defined_by`` / ``args`` to rebuild the path.
     sink_operand: TaintedOperand
 
     @property
@@ -318,7 +267,7 @@ class Violation:
 
     @property
     def line(self) -> int:
-        # Structured anchor for machine output; mirrors the SINK (the violation point; pretty() names source AND sink).
+        # The SINK is the violation point; pretty() names source AND sink.
         return self.sink.location.line
 
     def pretty(self) -> str:
@@ -346,25 +295,11 @@ class Violation:
 
 
 class TaintAnalysis:
-    """Forward taint propagation with pluggable Source / Sink / FlowRule
-    configuration.
+    """Forward taint propagation with pluggable Source / Sink / FlowRule sets.
 
-    Construct with the (sources, sinks, rules) you want; call
-    :meth:`detect` for ``list[Violation]`` or
-    :meth:`tainted_operands` for the raw set (useful for diagnostics
-    or downstream analyses that want their own sink semantics).
-
-    Doesn't mutate ``prog``. Reads the structural SSA layer + the
-    cached ``scratch_stores`` annotation from the scratch-influence
-    pass. Re-running SSA passes between calls is
-    safe; the next ``detect()`` will see the updated state.
-
-    ``file`` scopes the analysis to a single source file: source
-    seeding and sink reporting only consider assignments in that
-    file. Since each ``.teal`` is an independent program (no SSAVars
-    shared across files), this isolates one program inside a
-    multi-file program — the shape ``scan`` relies on.
-    """
+    Does not mutate ``prog``. ``file`` scopes seeding and reporting to one source
+    file, which fully isolates that program because SSAVars are never shared
+    across files."""
 
     def __init__(
         self,
@@ -381,26 +316,19 @@ class TaintAnalysis:
         self.file = file
         self.sources: list[Source] = list(sources)
         self.sinks: list[Sink] = list(sinks)
-        # Custom rules consulted first (user can pre-empt defaults).
+        # Custom rules consulted first, so they can pre-empt the defaults.
         self.rules: list[FlowRule] = list(rules) if rules is not None else []
-        # Built-in propagation through hash / slice / concat-with-const.
-        # Pass ``default_rules=[]`` to disable them, or a custom list to
-        # subset.
         self.default_rules: list[FlowRule] = (
             list(default_rules) if default_rules is not None else list(DEFAULT_RULES)
         )
-        # Opt-in: also carry taint through an application-global-state roundtrip
-        # (`app_global_put` value -> `app_global_get` of the same key). Off by
-        # default (most detectors don't want state to be a taint conduit); the
-        # box-key detector enables it to catch a non-unique value laundered
-        # through state before becoming a box key.
+        # Opt-in taint through an app-global-state roundtrip; off by default
+        # because most detectors do not want state to be a taint conduit.
         self.cross_state = cross_state
 
     # -- public ---------------------------------------------------------
 
     def _in_scope(self, a: Assignment) -> bool:
-        """True if ``a`` belongs to the file this analysis is scoped to
-        (or no ``file`` scope was set)."""
+        """True if ``a`` is in the scoped file, or no scope was set."""
         return self.file is None or a.location.file == self.file
 
     def detect(self) -> list[Violation]:
@@ -429,9 +357,7 @@ class TaintAnalysis:
         return violations
 
     def tainted_operands(self) -> set[TaintedOperand]:
-        """Diagnostic hook: full set of operands the propagation
-        marked as tainted. Useful for inspecting why a sink was
-        (or wasn't) flagged."""
+        """Every operand the propagation marked tainted — a diagnostic hook."""
         tainted, _ = self._compute_taint()
         return tainted
 
@@ -440,22 +366,16 @@ class TaintAnalysis:
     def _compute_taint(
         self,
     ) -> tuple[set[TaintedOperand], dict[TaintedOperand, tuple[Assignment, str]]]:
-        # This engine reads ``const_value`` (concat-with-const / cross-state
-        # rules via ``is_const`` / ``operand_const``) and the ``scratch_stores``
-        # annotation WITHOUT running ``propagate_constants`` — it relies on the
-        # const seeds SSA construction used to set eagerly (now lazy). Trigger
-        # ``_ensure_identity_steps`` (which also ensures scratch influence): it
-        # restores EXACTLY those shuffle-passthrough + scratch const seeds and
-        # nothing more, so the taint result is unchanged. (``propagate_constants``
-        # would seed additional phi/fold consts and change behaviour.)
+        # HAZARD: this must NOT be ``propagate_constants``. The rules read
+        # ``const_value``, and `_ensure_identity_steps` restores exactly the
+        # shuffle-passthrough + scratch const seeds construction used to set
+        # eagerly. ``propagate_constants`` seeds extra phi/fold consts, which
+        # would silently change which flows the concat rules block.
         self.prog._ensure_identity_steps()
         tainted: set[TaintedOperand] = set()
         source_for: dict[TaintedOperand, tuple[Assignment, str]] = {}
 
-        # Step 1: seed from sources. Scoped to ``self.file`` so a
-        # multi-file program only seeds the program under analysis; taint
-        # then can't reach another file because SSAVars aren't shared
-        # across programs.
+        # Step 1: seed from sources, scoped to the file under analysis.
         for a in self.prog.assignments:
             if not self._in_scope(a):
                 continue
@@ -472,9 +392,8 @@ class TaintAnalysis:
                         tainted.add(v)
                         source_for[v] = (a, src.name)
 
-        # Interprocedural frame edges (callee param <- the caller args bound to
-        # it), so taint crosses the callsub/proto boundary natively — the base
-        # def-use leaves frame_dig disconnected. See passes.frame_flow.
+        # Interprocedural frame edges: the base def-use leaves frame_dig
+        # disconnected, so without these taint dies at every callsub.
         frame_src = frame_param_sources(self.prog)
         scratch_src = scratch_load_sources(self.prog)
 
@@ -516,9 +435,8 @@ class TaintAnalysis:
                         source_for[ph] = source_for[arg]
                         changed = True
                         break
-            # 2c. Through scratch (store N value -> load N output). Shared
-            # with byte_taint via `scratch_load_sources` so the two agree on
-            # what reaches a load.
+            # 2c. Through scratch (store N value -> load N output), shared with
+            # byte_taint so the two agree on what reaches a load.
             for load_var, srcs in scratch_src.items():
                 if load_var in tainted:
                     continue
@@ -538,18 +456,15 @@ class TaintAnalysis:
                         source_for[dig_out] = source_for[arg]
                         changed = True
                         break
-            # 2e. Through application-global state (opt-in): a value written by
-            # `app_global_put` re-emerges tainted from `app_global_get` of the
-            # same key. Key-aware where both keys are static constants; otherwise
-            # conservative (any tainted put may reach the get). A realistic
-            # laundering path the def-use relation can't see.
+            # 2e. Through app-global state (opt-in): a put's value re-emerges
+            # tainted from a get of the same key. Key-aware when both keys are
+            # static, else conservative — any tainted put may reach the get.
             if self.cross_state:
                 changed = self._propagate_state(tainted, source_for) or changed
         return tainted, source_for
 
     def _propagate_state(self, tainted: set, source_for: dict) -> bool:
-        """One round of the app-global-state taint bridge. Returns whether any
-        new value became tainted."""
+        """One round of the state taint bridge; True if anything became tainted."""
         from ..ssa import operand_const
         puts: list = []   # (key_const_or_None, value_var)
         for a in self.prog.assignments:
@@ -568,8 +483,8 @@ class TaintAnalysis:
                 continue
             get_key = operand_const(a.inputs[0]) if a.inputs else None
             for put_key, put_val in puts:
-                # connect on a matching const key, or conservatively when either
-                # side's key isn't statically known.
+                # Matching const keys, or conservatively when either key is
+                # not statically known.
                 if put_key is None or get_key is None or put_key == get_key:
                     tainted.add(out)
                     source_for[out] = source_for[put_val]
@@ -580,16 +495,8 @@ class TaintAnalysis:
     def _decide_flow(
         self, a: Assignment, tainted_input_indices: list[int]
     ) -> list[int]:
-        """Resolution order:
-
-        1. User rules (``self.rules``) — pre-empt anything.
-        2. Built-in defaults (``self.default_rules``) — hash / slice /
-           concat-with-const.
-        3. Pure stack shuffles via ``_shuffle_mapping``.
-        4. BLOCK.
-
-        First non-``None`` decision wins.
-        """
+        """Which outputs taint: user rules, then defaults, then pure shuffles,
+        then BLOCK — first non-``None`` decision wins."""
         for rule_list in (self.rules, self.default_rules):
             for rule in rule_list:
                 if not rule.matches(a):

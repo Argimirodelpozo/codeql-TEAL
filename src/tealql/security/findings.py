@@ -1,25 +1,12 @@
-"""One structured finding shape for the whole detector layer.
+""":class:`Finding` — the one normalized, versioned record every output path
+(JSON, SARIF, text) is built from.
 
-:class:`Finding` is the normalized record every output path (JSON, SARIF,
-text) is built from. Every violation class carries a STRUCTURED location —
-the contract :func:`normalize` reads:
-
-  - ``.line`` (int) + ``.file`` — the anchor line, mirroring the location the
-    class's ``pretty()`` message names (the exit BB's last line, the sink
-    assignment's line, …); or
-  - ``.location`` — a well-formed ``"file:line"`` string (the taint-family
-    classes build one at construction); or
-  - ``line = None`` — an explicitly whole-program finding (the violation is
-    the ABSENCE of a validation, e.g. the ``_FieldValidatedViolation``
-    family), which reports without a line anchor.
-
-There is deliberately NO parsing of ``pretty()`` prose here — the old
-best-effort regex extraction made machine locations only as reliable as the
-sentence wording. A custom violation that satisfies none of the contract
-simply reports as whole-program.
-
-The JSON shape is versioned (:data:`SCHEMA_VERSION`) so downstream consumers
-can pin it.
+A violation must carry a STRUCTURED location for :func:`normalize` to read: an
+int ``.line`` (plus ``.file``), or a ``"file:line"`` ``.location`` string, or
+neither for a deliberately whole-program finding (the violation IS the absence of
+a validation). ``pretty()`` prose is never parsed — that would make machine
+locations only as reliable as the sentence wording — so a violation satisfying
+none of the contract simply reports as whole-program.
 """
 from __future__ import annotations
 
@@ -37,12 +24,8 @@ _FILE_LINE_TAIL_RE = re.compile(r"([\w./\-]+):(\d+)$")
 
 @dataclass(frozen=True)
 class Finding:
-    """A single normalized detection result.
-
-    ``line`` is 1-based or ``None`` (whole-program finding). ``witness`` holds
-    structured provenance when the violation carries it (the IR taint road's
-    ``sources``), else ``None``. ``file`` is the path the finding is reported
-    against (the scanned file's rel-path, or the file parsed from the message)."""
+    """A single normalized detection result; ``line`` is 1-based, or ``None`` for
+    a whole-program finding."""
 
     rule_id: str                 # kebab detector name, e.g. "ir-tainted-fund-flow"
     message: str
@@ -51,8 +34,7 @@ class Finding:
     file: Optional[str] = None
     line: Optional[int] = None
     witness: Optional[dict] = None
-    # The ABI method the finding sits in, recovered from source `method "sig"`
-    # info (OPTIONAL enrichment — None on raw bytecode or non-ABI code).
+    # OPTIONAL enrichment — None on raw bytecode or non-ABI code.
     method: Optional[str] = None
     _extra: dict = _field(default_factory=dict)   # detector-specific to_dict keys
 
@@ -76,8 +58,7 @@ class Finding:
 
 
 def _extract_line(violation) -> tuple[Optional[str], Optional[int]]:
-    """Structured location from a violation (see the module docstring for the
-    contract). ``(None, None)`` = whole-program finding."""
+    """Structured ``(file, line)`` from a violation; ``(None, None)`` = whole-program."""
     line = getattr(violation, "line", None)
     if isinstance(line, int):
         f = getattr(violation, "file", None)
@@ -91,15 +72,13 @@ def _extract_line(violation) -> tuple[Optional[str], Optional[int]]:
 
 
 def violation_line(violation) -> Optional[int]:
-    """The 1-based source line a violation anchors to (see :func:`_extract_line`),
-    or ``None`` (whole-program). Public so the scanner can attribute a finding to
-    an ABI method by line before the :class:`Finding` is built."""
+    """The 1-based line a violation anchors to, or ``None`` — public so the scanner
+    can attribute a finding to an ABI method before the :class:`Finding` exists."""
     return _extract_line(violation)[1]
 
 
 def _extract_witness(violation) -> Optional[dict]:
-    """Structured provenance if the violation carries it — the IR taint road's
-    ``sources`` (attacker-input origins), else ``None``."""
+    """The violation's ``sources`` (attacker-input origins) as provenance, else ``None``."""
     srcs = getattr(violation, "sources", None)
     if srcs:
         return {"sources": [str(s) for s in srcs]}
@@ -117,13 +96,9 @@ def normalize(
 ) -> Finding:
     """Build a :class:`Finding` from any detector violation.
 
-    ``rel_path`` (the scanned file) WINS as the reported ``file`` — the caller
-    knows which artifact it handed the detector, and a violation's own
-    structured file is a basename from the SSA location, not a path relative to
-    the scan root. The violation's file is used only as the fallback when no
-    ``rel_path`` is supplied (direct library use). Structured extra keys from a
-    violation's ``to_dict()`` (minus the ones Finding already models) are kept
-    under ``details`` so nothing is lost."""
+    ``rel_path`` WINS as the reported ``file``: a violation's own file is an SSA
+    basename, not a path relative to the scan root, so it is only the fallback for
+    direct library use. Unmodelled ``to_dict()`` keys are kept under ``details``."""
     msg = violation.pretty() if hasattr(violation, "pretty") else str(violation)
     msg_file, line = _extract_line(violation)
     file = str(rel_path) if rel_path is not None else msg_file

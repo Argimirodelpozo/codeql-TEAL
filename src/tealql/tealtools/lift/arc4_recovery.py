@@ -1,18 +1,20 @@
-"""ARC-4 encoded-type recovery — the SPECULATIVE side-channel that guesses each
-lifted register's ABI encoded type (``arc4.Address`` / ``arc4.String`` / dynamic
-arrays / structs / static arrays) from producer + decode idioms, scores each guess
-by confidence (a forced idiom vs a shape that merely fits), and propagates guesses
-along identity-preserving relations.
+"""ARC-4 encoded-type recovery — guess each lifted register's ABI encoded type
+(``arc4.Address`` / ``arc4.String`` / dynamic arrays / structs / static arrays)
+from producer + decode idioms, score each guess by confidence, and propagate
+guesses along identity-preserving relations.
 
-Extracted verbatim from :mod:`.to_puya_ir` (a 2000-line god module): this is a
-DISTINCT concern from the SSA->puya translation and the sound langspec IR-type
-recovery that stay there. Operates purely on lowered ``puya.ir.models`` objects
-(``main`` + ``subs`` from :func:`.to_puya_ir.to_puya`); it never lifts or
-translates, so the dependency is one-way (``to_puya_ir`` imports the two entry
-points it needs -- :func:`_recover_encoded_types`, :func:`guess_encoded_types_scored`
--- back from here). The guesses are ASSUMPTIONS about well-formed ABI input, never
-proofs; consumers (box schema, ABI fund-flow, the relational bounds speculative
-tier) attribute anything they enable as speculative.
+Operates purely on lowered ``puya.ir.models`` objects (``main`` + ``subs`` from
+:func:`.to_puya_ir.to_puya`); the dependency is one-way, ``to_puya_ir`` importing
+:func:`_recover_encoded_types` and :func:`guess_encoded_types_scored` back from
+here.
+
+HAZARD: two STRICTLY separated tiers. The CONFIDENT tier
+(:func:`_confident_encoding_for`, applied by :func:`_recover_encoded_types`) is
+the only one that writes ``ir_type``, and admits only idioms whose byte layout
+unambiguously IS the ABI encoding. Everything else is SPECULATIVE -- an
+ASSUMPTION about well-formed ABI input, collected into a side-channel that never
+reaches ``ir_type``, so a wrong guess cannot change codegen. Consumers must
+attribute anything a guess enables as speculative.
 """
 from __future__ import annotations
 
@@ -27,9 +29,8 @@ from . import _puya_compat as _compat
 logger = logging.getLogger("tealql.tealtools.lift")
 
 def _static_byte_len(value, reg_def: dict):
-    """The statically-known byte length of an IR value, or ``None``: a bytes
-    constant's literal length, a ``SizedBytesType`` register's width, or a register
-    defined by ``bzero N`` with a constant ``N``."""
+    """The statically-known byte length of an IR value, or ``None`` -- a bytes
+    constant's length, a ``SizedBytesType`` width, or a constant ``bzero N``."""
     from puya.ir.types_ import SizedBytesType
     if isinstance(value, M.BytesConstant):
         return len(value.value)
@@ -45,21 +46,17 @@ def _static_byte_len(value, reg_def: dict):
 
 
 def _static_encoding_elements(value):
-    """The element ``Encoding`` list of ``value`` IF it is a *static* (fixed-size)
-    ABI element -- so a ``concat`` of statics can be recognised as a static tuple --
-    else ``None``. Flattens a tuple operand into its elements so nested binary
-    concats build one flat N-tuple. Confident element sources only:
+    """The element ``Encoding`` list of ``value`` IF it is a STATIC (fixed-size)
+    ABI element, else ``None``, flattening a tuple operand so nested binary concats
+    build one flat N-tuple. Confident sources only: a static ``EncodedType``
+    register (a dynamic encoding uses the head/tail offset layout, not a plain
+    concat), and an ``account`` register, unambiguously the 32 bytes that
+    ``arc4.Address`` wire-identically is.
 
-      - a static ``EncodedType`` register (``num_bytes`` known; a dynamic encoding
-        uses the head/tail offset layout, not a plain concat, so it's excluded);
-      - an ``account`` register -> ``arc4.Address`` (``StaticArray<Byte, 32>``):
-        ``account`` is unambiguously a 32-byte address and arc4.Address IS that
-        static byte array, wire-identical. (The account register itself stays
-        ``account`` -- only its tuple-element encoding is taken here.)
-
-    NOT included (would be guesses, belong in the speculative tier): a plain
-    ``bytes[N]`` / a bytes constant reinterpreted as ``StaticArray<Byte, N>`` -- the
-    raw bytes don't disambiguate a byte array from a uint128 / hash / selector."""
+    HAZARD: a plain ``bytes[N]``, or a bytes constant reinterpreted as
+    ``StaticArray<Byte, N>``, must NOT be admitted -- raw bytes do not
+    disambiguate a byte array from a uint128 / hash / selector, so that is a guess
+    and belongs in the speculative tier."""
     from puya.ir.encodings import ArrayEncoding, TupleEncoding, UIntEncoding
     from puya.ir.types_ import EncodedType
     if not isinstance(value, M.Register):
@@ -81,33 +78,25 @@ def _is_bool_encoding(enc) -> bool:
 
 
 def _confident_encoding_for(intrinsic: "M.Intrinsic", reg_def: dict):
-    """The ARC4 / ABI ``EncodedType`` a producing op's *result wire-encodes*, or
-    ``None`` -- the **CONFIDENT** tier: only idioms whose byte layout unambiguously
-    IS the ABI encoding (the "byte layout == the type" standard), so the recovered
-    structured type is faithful to the bytes regardless of the source's intent.
-    These are applied to ``ir_type`` by :func:`_recover_encoded_types` and are proven
-    TEAL-neutral. The *speculative* counterpart -- idioms that need a length/offset
-    proof or a confidence score (dynamic arrays / strings / dynamic tuples) -- lives
-    entirely separately in :func:`_guess_encoding_for` / :func:`guess_encoded_types_scored`
-    and never touches ``ir_type``; do NOT add a non-wire-provable idiom here.
+    """The ARC4 ``EncodedType`` a producing op's result provably wire-encodes, or
+    ``None`` -- the CONFIDENT tier, applied to ``ir_type`` by
+    :func:`_recover_encoded_types`.
 
-    Recognised so far:
-      - ``itob X`` -> ``arc4.UInt64`` (``UIntEncoding(64)``): ``itob`` emits exactly
-        the big-endian 8-byte encoding, which IS the ABI ``uint64`` wire format.
-      - ``setbit base 0 b`` where ``base`` is a single byte (``bzero 1`` / a 1-byte
-        ``0x00`` constant) -> ``arc4.Bool`` (``Bool8Encoding``): this writes the bool
-        into the high bit of a lone byte, the standalone ABI ``bool`` form.
-      - ``concat A B`` where A and B are BOTH already-recovered *static* encoded
-        types -> a static ``arc4.Tuple`` (``TupleEncoding``): a static ABI tuple's
-        wire format IS exactly the concatenation of its element encodings (no length
-        prefix, no head/tail offset table -- those appear only for *dynamic*
-        elements). Nested binary concats flatten into one N-tuple. EXCLUDED: a
-        bool|bool boundary (the ABI packs runs of bools into shared bits, so
-        ``concat(bool8, bool8)`` is NOT the tuple form) -- a single bool adjacent to
-        a non-bool is fine (one byte, which IS how a lone tuple bool encodes).
+    HAZARD: the admission standard is "the byte layout unambiguously IS the ABI
+    encoding", so a recovered type is faithful to the bytes whatever the source
+    intended. Do NOT add an idiom that needs a length/offset proof or a confidence
+    score -- those live in :func:`_guess_encoding_for` and must never touch
+    ``ir_type``.
 
-    Speculative idioms (dynamic arrays / strings / dynamic tuples) do NOT go here --
-    see :func:`_guess_encoding_for`."""
+      - ``itob X`` -> ``arc4.UInt64``: ``itob`` emits exactly the big-endian
+        8-byte encoding, which IS the ABI ``uint64`` wire format.
+      - ``setbit base 0 b`` on a single byte -> ``arc4.Bool``: this writes the
+        bool into the high bit of a lone byte, the standalone ABI ``bool`` form.
+      - ``concat A B`` of two already-recovered STATIC encoded types -> a static
+        ``arc4.Tuple``: a static tuple's wire format IS the concatenation of its
+        element encodings, and nested binary concats flatten into one N-tuple.
+        EXCLUDED: a bool|bool boundary, since the ABI packs runs of bools into
+        shared bits; a lone bool adjacent to a non-bool is fine."""
     from puya.ir.encodings import Bool8Encoding, TupleEncoding, UIntEncoding
     from puya.ir.types_ import EncodedType
     op = intrinsic.op
@@ -125,10 +114,9 @@ def _confident_encoding_for(intrinsic: "M.Intrinsic", reg_def: dict):
             return EncodedType(TupleEncoding([*le, *re]))
     if op is AVMOp.extract and len(intrinsic.args) == 1 \
             and len(intrinsic.immediates) == 2:
-        # `extract START LEN <uintN encoding>` taking the LOW K bytes (the extract
+        # `extract START LEN` taking the LOW K bytes of a uintN (the extract
         # reaches the end: START + K == width) -> the narrower arc4.UInt(K*8): a
         # big-endian UIntK's wire form IS the trailing K bytes of the wider uint.
-        # (`itob x` -> Encoded(uint64), then `extract 6 2` -> arc4.UInt16, etc.)
         start, length = intrinsic.immediates
         base = intrinsic.args[0]
         if (isinstance(start, int) and isinstance(length, int)
@@ -144,9 +132,8 @@ def _confident_encoding_for(intrinsic: "M.Intrinsic", reg_def: dict):
 
 
 def _same_register(a, b) -> bool:
-    """SSA-value identity for two IR operands: the same ``Register`` object, or
-    two ``Register`` instances naming the same ``name#version`` (frozen-attrs
-    rebuilds can produce distinct objects for one SSA value)."""
+    """SSA-value identity: the same ``Register`` object, or two naming the same
+    ``name#version`` (frozen-attrs rebuilds produce distinct objects per value)."""
     return (a is b) or (
         isinstance(a, M.Register) and isinstance(b, M.Register)
         and (a.name, a.version) == (b.name, b.version)
@@ -166,13 +153,9 @@ def _def_intrinsic(value, reg_def: dict, op) -> "M.Intrinsic | None":
 
 def _is_uint16_of_len(prefix, data, reg_def: dict) -> bool:
     """PROOF that ``prefix`` is the big-endian uint16 of ``len(data)`` -- the ABI
-    dynamic length header. Recognised prefix chains (all ending in
-    ``itob(len(data))``, whose low two bytes ARE ``uint16(len(data))``):
-
-      - ``extract 6 2 (itob (len data))``   (immediate form)
-      - ``extract3 (itob (len data)) 6 2``  (stack form, constant 6/2)
-      - ``substring 6 8 (itob (len data))`` (pre-v5 spelling)
-    """
+    dynamic length header. Recognises the chains ending in ``itob(len(data))``,
+    whose low two bytes ARE ``uint16(len(data))``: ``extract 6 2`` (immediate),
+    ``extract3 … 6 2`` (stack), and the pre-v5 ``substring 6 8``."""
     itob_arg = None
     ex = _def_intrinsic(prefix, reg_def, AVMOp.extract)
     if ex is not None and list(ex.immediates) == [6, 2] and ex.args:
@@ -198,34 +181,23 @@ def _is_uint16_of_len(prefix, data, reg_def: dict) -> bool:
 
 
 def _guess_encoding_for(intrinsic: "M.Intrinsic", reg_def: dict):
-    """The ARC4 / ABI ``EncodedType`` a producing op's result is *most likely* but
-    NOT provably encoded as, or ``None`` -- the **SPECULATIVE** producer-side tier,
-    kept deliberately separate from :func:`_confident_encoding_for`.
+    """The ARC4 ``EncodedType`` a producing op's result is MOST LIKELY but not
+    provably encoded as, or ``None`` -- the SPECULATIVE producer-side tier.
 
-    The bar here: a guess needs a NAMED idiom with a discharged local proof, but
-    the byte layout still isn't *self-evidently* one ABI type (a program could
-    hand-roll the same shape for a non-ABI format), so it stays out of ``ir_type``.
+    The bar: a NAMED idiom with a discharged local proof, where the byte layout is
+    still not self-evidently one ABI type (a program could hand-roll the same
+    shape for a non-ABI format).
 
-    Recognised:
-      - ``concat(P, D)`` where ``P`` is PROVEN to be ``uint16(len(D))``
-        (:func:`_is_uint16_of_len` -- the ``extract 6 2 (itob (len D))`` chain and
-        its spellings) -> the ARC4 dynamic-sequence ENCODE idiom:
-        ``ArrayEncoding(byte, length_header=True)`` (``arc4.DynamicBytes``-shaped).
-        ``arc4.String`` is this plus a UTF-8 claim the dataflow can't make -- the
-        constant tier (:func:`_guess_const_encoding`) handles the provable-text
-        case.
+      - ``concat(P, D)`` with ``P`` PROVEN to be ``uint16(len(D))``
+        (:func:`_is_uint16_of_len`) -> the ARC4 dynamic-sequence ENCODE idiom,
+        ``ArrayEncoding(byte, length_header=True)``. ``arc4.String`` is this plus
+        a UTF-8 claim the dataflow cannot make; :func:`_guess_const_encoding`
+        covers the provable-text case.
 
-    Still to mine (documented, not implemented): ``bytes[N]`` reinterpreted as
-    ``arc4.StaticArray<Byte, N>`` / ``arc4.Address`` -- 32 bytes don't
-    disambiguate an address from a hash, so that needs usage evidence, not a
-    producer idiom.
-
-    Anything added here is best-effort: it is collected into a SIDE-CHANNEL by
-    :func:`guess_encoded_types_scored` and never written to a register's ``ir_type``, so
-    a wrong guess can neither change codegen nor weaken the confident, TEAL-neutral
-    IR. (Consumers that tolerate imprecision -- e.g. structure-aware fuzzing --
-    read the side-channel; a verifier would treat a guess as a
-    proposed-and-discharged obligation.)"""
+    HAZARD: anything added here is collected into a SIDE-CHANNEL by
+    :func:`guess_encoded_types_scored` and must never be written to a register's
+    ``ir_type``, so a wrong guess can neither change codegen nor weaken the
+    confident, TEAL-neutral IR."""
     from puya.ir.encodings import ArrayEncoding, UIntEncoding
     from puya.ir.types_ import EncodedType
     if intrinsic.op is AVMOp.concat and len(intrinsic.args) == 2:
@@ -238,24 +210,15 @@ def _guess_encoding_for(intrinsic: "M.Intrinsic", reg_def: dict):
 
 def _guess_const_encoding(raw: bytes):
     """A bytes CONSTANT that is a self-describing ``arc4.String`` literal, or
-    ``None``. STRICT-PROOF, all checkable from the constant alone (no data-flow):
+    ``None`` -- all checkable from the constant alone: a 2-byte big-endian length
+    prefix equal to the remaining length, a non-empty UTF-8 payload, NO embedded
+    null byte, and PRINTABLE decoded text.
 
-      - a 2-byte big-endian length prefix that provably equals the remaining length
-        (``uint16(raw[:2]) == len(raw) - 2``) -- the arc4.String / dynamic-array wire
-        shape;
-      - a non-empty payload that decodes as UTF-8;
-      - NO embedded null byte; and the decoded text is PRINTABLE.
-
-    The no-null + printable rules are what make it strict: a length-consistent
-    constant whose payload parses as UTF-8 only because it is full of ``0x00`` (a
-    zero buffer), contains its own inner length prefix (a NESTED structure, e.g.
-    ``<13><0x000b "Hello World">``), or is control-byte binary (``0x010204``) is
-    rejected -- a real flat text string is printable and almost never carries
-    embedded nulls. Combined with the ~1/65536 odds of a random prefix matching, a
-    survivor is very likely a genuine ``arc4.String``.
-
-    Still a guess (a constant *could* coincidentally be a self-describing UTF-8 blob),
-    so it lives only in the speculative side-channel, never in ``ir_type``."""
+    The no-null + printable rules are what make it strict -- they reject a zero
+    buffer, a NESTED structure carrying its own inner length prefix, and
+    control-byte binary. Combined with the ~1/65536 odds of a random prefix
+    matching, a survivor is very likely genuine, but it is still a guess:
+    side-channel only, never ``ir_type``."""
     from puya.ir.encodings import UTF8Encoding
     from puya.ir.types_ import EncodedType
     if len(raw) < 3 or int.from_bytes(raw[:2], "big") != len(raw) - 2:
@@ -273,34 +236,23 @@ def _guess_const_encoding(raw: bytes):
 
 
 def _guess_decoded_dynamic(main, subs) -> dict:
-    """Recognise a value being DECODED as a uint16-length-prefixed dynamic
-    array/string and map it to the right ``arc4.DynamicArray<T>``: ``{id(Register):
-    EncodedType}``.
+    """Recognise a value DECODED as a uint16-length-prefixed dynamic array/string
+    and map it to the right ``arc4.DynamicArray<T>``: ``{id(Register): EncodedType}``.
 
-    PROVABLE decode shape (#3): a value ``X`` is decoded that way when it is BOTH
-      - read at offset 0 as a uint16 -- the length prefix, ``extract_uint16 X 0`` --
-        AND
-      - has its payload taken with ``extract X 2 0`` (start 2, length 0 = TO-END):
-        strip the 2-byte length prefix, take the rest.
-    The to-end payload extract is what makes it the canonical dynamic decode (a
-    fixed-length slice from offset 2 would be a struct field, not a dynamic array),
-    so this is much tighter than a bare ``slice-from-2`` co-occurrence.
+    Decode shape: ``X`` qualifies when it is BOTH read at offset 0 as a uint16
+    (the length prefix) AND has its payload taken with ``extract X 2 0`` (start 2,
+    length 0 = TO-END). The to-end payload extract is what makes it the canonical
+    dynamic decode -- a fixed-length slice from offset 2 would be a struct field.
 
-    ELEMENT type (#1/#2): inferred from how the payload (the ``extract X 2 0``
-    result -- or ``X`` itself, for the offset table) is then accessed:
-      - ``extract_uint64`` -> ``DynamicArray<UInt64>``, ``extract_uint32`` -> ``<UInt32>``;
-      - ``extract_uint16`` whose result is used as a slice START (an OFFSET into
-        the head/tail layout) -> the elements are DYNAMIC: ``DynamicArray<DynamicBytes>``
-        (the offset-table signature -- a dynamic tuple/array-of-dynamics; the exact
-        element types are #3's full reconstruction, this is the approximation);
-      - ``extract_uint16`` whose result is used as a VALUE -> ``DynamicArray<UInt16>``;
-      - else ``Byte`` (a string / dynamic bytes).
-    The uint16 value-vs-offset split (#2) is what resolves the ambiguity that left
-    every uint16-accessed payload as ``Byte`` before.
+    ELEMENT type, from how the payload (or ``X`` itself, for the offset table) is
+    then accessed: ``extract_uint64`` / ``extract_uint32`` -> that width;
+    ``extract_uint16`` whose result is a slice START -> an OFFSET into a head/tail
+    layout, so the elements are DYNAMIC; ``extract_uint16`` used as a VALUE ->
+    ``UInt16``; else ``Byte``.
 
-    Uniquely valuable because it types INPUTS the producer-side recovery can't reach
-    (``txna ApplicationArgs N`` / sub params). Best-effort (a struct whose first
-    field is a uint16 and rest is a tail could still match), so side-channel only."""
+    Uniquely valuable because it types INPUTS the producer-side recovery cannot
+    reach (``txna ApplicationArgs N`` / sub params). Best-effort -- a struct whose
+    first field is a uint16 could still match -- so side-channel only."""
     from puya.ir.encodings import ArrayEncoding, UIntEncoding
     from puya.ir.types_ import EncodedType
     len_read: set = set()        # id(X): extract_uint16(X, 0)  -- the count/length
@@ -360,25 +312,22 @@ def _guess_decoded_dynamic(main, subs) -> dict:
 
 
 def _guess_struct_encodings(main, subs, dynamic_guesses) -> dict:
-    """Reconstruct a dynamic struct / dynamic *tuple* type from its decode, as
+    """Reconstruct a dynamic struct / dynamic tuple from its decode, as
     ``{id(Register): EncodedType(TupleEncoding(...))}``.
 
-    A value ``X`` is a struct (fixed-shape aggregate with >=1 dynamic field) when its
-    head is read at MULTIPLE FIXED positions whose uint16 results are used as slice
-    STARTS -- the offset table of a fixed shape (a dynamic ARRAY uses a count + a
-    COMPUTED offset in a loop instead, so it's excluded here). Reconstruction:
-      - ``extract_uint16(X, p_const)`` whose result is a slice start -> a DYNAMIC
-        field at head position ``p`` (2-byte offset slot); its type is the bracket
-        ``substring3(X, off_p, off_q)`` slice -- a NESTED struct (the bracket itself
-        decoded as a struct) recurses, else a ``dynamic_guesses`` String/DynamicArray,
-        else dynamic bytes;
-      - ``extract_uintN(X, p_const)`` (used as a value) -> a static ``UIntN`` field;
-      - fields ordered by head position, with any UNREAD head gap modeled as a
-        ``uint8[gap]`` byte BLOB (we know the byte count from the positions, just not
-        the type -- partial reconstruction, still useful).
+    ``X`` is a struct when its head is read at MULTIPLE FIXED positions whose
+    uint16 results are used as slice STARTS -- the offset table of a fixed shape
+    (a dynamic ARRAY uses a count plus a COMPUTED offset in a loop, so it is
+    excluded):
+      - ``extract_uint16(X, p_const)`` feeding a slice start -> a DYNAMIC field at
+        head position ``p``, typed by its ``substring3`` bracket: a NESTED struct
+        recurses, else a ``dynamic_guesses`` entry, else dynamic bytes;
+      - ``extract_uintN(X, p_const)`` used as a value -> a static ``UIntN`` field;
+      - fields ordered by head position, an UNREAD gap modeled as a ``uint8[gap]``
+        blob (the byte count is known from the positions, the type is not).
 
-    PARTIAL by nature (only decoded fields are seen; the tail beyond the last read is
-    omitted), so speculative side-channel only -- never ``ir_type``."""
+    PARTIAL by nature -- only decoded fields are seen, the tail beyond the last
+    read is omitted -- so speculative side-channel only, never ``ir_type``."""
     from puya.ir.encodings import ArrayEncoding, TupleEncoding, UIntEncoding
     from puya.ir.types_ import EncodedType
     slots: dict = {}             # id(X) -> {pos: (kind, head_size, info)}
@@ -428,9 +377,8 @@ def _guess_struct_encodings(main, subs, dynamic_guesses) -> dict:
     memo: dict = {}                                  # id(base) -> TupleEncoding | None
 
     def _struct_enc(base, building):
-        """The ``TupleEncoding`` reconstructed for a struct base, recursing on
-        nested-struct fields (a dynamic field whose sliced-out value is itself
-        decoded as a struct). ``None`` if the head reads are inconsistent."""
+        """The ``TupleEncoding`` for a struct base, recursing on nested-struct
+        fields; ``None`` if the head reads are inconsistent."""
         if base in memo:
             return memo[base]
         if base in building:                         # cyclic (shouldn't happen) -> bail
@@ -473,29 +421,20 @@ def _guess_struct_encodings(main, subs, dynamic_guesses) -> dict:
 
 def _guess_decoded_static_arrays(main, subs) -> dict:
     """Recognise a value DECODED as an ``arc4.StaticArray<UIntN, K>`` -- the
-    consumer-side counterpart to :func:`_guess_static_arrays`. ``{id(Register):
-    EncodedType}``.
+    consumer-side counterpart to :func:`_guess_static_arrays`.
 
-    A value ``X`` is a static array when ALL of:
-      - it is read only via same-width fixed-offset ``extract_uint64`` /
-        ``extract_uint32`` (homogeneous element width ``w`` in {8, 4}) at >= 2
-        distinct constant positions, each a multiple of ``w``;
-      - it has NO ``extract_uint16(X, 0)`` read -- that offset-0 uint16 is the
-        length prefix of a DYNAMIC array or the first offset of a struct table,
-        both of which this must not swallow;
-      - its total byte length ``M`` is STATICALLY KNOWN (:func:`_static_byte_len`
-        -- a ``SizedBytesType`` register or a constant, which a fixed-length ABI
-        static-array arg / ``extract Y a b`` slice is) and divisible by ``w``.
-    Then ``K = M / w`` is EXACT (from the length, not the read count -- so partial
-    element access still gives the true size) and every read lands inside ``[0,
-    M)``.
+    ``X`` qualifies when it is read only via same-width fixed-offset
+    ``extract_uint64`` / ``extract_uint32`` (element width ``w``) at >= 2 distinct
+    constant positions each a multiple of ``w``; has NO ``extract_uint16(X, 0)``
+    read; and has a STATICALLY KNOWN total length ``M`` divisible by ``w``. Then
+    ``K = M / w`` is EXACT -- taken from the length, not the read count, so
+    partial element access still gives the true size.
 
-    ``uint16`` elements are deliberately EXCLUDED: an offset-0 uint16 is
-    indistinguishable from a length prefix / offset-table slot, so admitting it
-    would misread dynamic arrays and structs. Homogeneous-but-actually-a-struct
-    (e.g. ``Tuple<UInt64, UInt64>``) is the inherent speculation, hence
-    side-channel only. Pairs with the struct recogniser, which only fires for a
-    shape with >= 1 DYNAMIC field -- a pure-static homogeneous value is this."""
+    HAZARD: ``uint16`` elements are deliberately EXCLUDED. An offset-0 uint16 is
+    indistinguishable from a dynamic array's length prefix or a struct table's
+    first offset, so admitting it would swallow both.
+    Homogeneous-but-actually-a-struct is the inherent speculation, hence
+    side-channel only."""
     from puya.ir.encodings import ArrayEncoding, UIntEncoding
     from puya.ir.types_ import EncodedType
 
@@ -551,24 +490,19 @@ def _guess_decoded_static_arrays(main, subs) -> dict:
 
 
 def _guess_static_arrays(main, subs) -> dict:
-    """Recognise a producer-built ``arc4.StaticArray<T, N>`` -- ``{id(Register):
-    EncodedType}``. A ``concat`` that flattens (nested binary concats included) to
-    N >= 2 elements that are ALL the identical STATIC ABI encoding is, on the wire,
-    exactly a static array of that element: identical layout to the homogeneous
-    static ``Tuple`` the CONFIDENT tier already puts in ``ir_type``.
+    """Recognise a producer-built ``arc4.StaticArray<T, N>``: a ``concat`` that
+    flattens to N >= 2 elements of ALL the identical STATIC ABI encoding is, on the
+    wire, exactly a static array of that element. The element count N is exact,
+    every element being a visible concat operand.
 
-    Calling it an ARRAY rather than a homogeneous tuple is the SPECULATION (the
-    bytes don't say which the author meant -- a ``Tuple<Address, Address>`` and an
-    ``Address[2]`` are wire-identical), so it lives only in the side-channel. The
-    exact element count N is KNOWN (every element is a visible concat operand); the
-    idiom (``concat`` of identical statics) and its proof (the shared
-    :func:`_static_encoding_elements` encoding) are discharged -- attributed
-    speculation. N == 2 is the ambiguous case (a homogeneous pair is as likely a
-    struct as an array), kept but inherently the weakest.
+    Calling it an ARRAY rather than a homogeneous tuple is the SPECULATION -- a
+    ``Tuple<Address, Address>`` and an ``Address[2]`` are wire-identical -- so it
+    lives only in the side-channel. N == 2 is the weakest case, a homogeneous pair
+    being as likely a struct as an array.
 
-    Only the OUTERMOST concat is emitted: an inner concat whose result feeds
-    another concat is an intermediate partial array, skipped (matched by SSA
-    ``name#version`` identity, since a register duplicates as distinct objects)."""
+    Only the OUTERMOST concat is emitted; an inner concat feeding another is an
+    intermediate partial array, matched by SSA ``name#version`` identity since a
+    register duplicates as distinct objects."""
     from puya.ir.encodings import ArrayEncoding
     from puya.ir.types_ import EncodedType
 
@@ -610,14 +544,12 @@ def _guess_static_arrays(main, subs) -> dict:
     return out
 
 
-# The transaction fields whose value IS a 32-byte address (Receiver / Sender /
-# CloseRemainderTo / RekeyTo / the AssetXxx address fields) — the canonical
-# langspec-derived set in ``avm.py`` (verified identical to puya's account-wtype
-# registry). Single-sourced here so the address-field decision lives in one place.
+# The transaction fields whose value IS a 32-byte address, single-sourced from
+# the canonical langspec-derived set in ``avm.py``.
 from ..avm import ADDRESS_TXN_FIELDS as _ACCOUNT_TXN_FIELDS  # noqa: E402
 
-# Ops whose FIRST operand (``args[0]`` -- verified against the lift's arg order)
-# is an account address: the local-state family + the account-parameter reads.
+# Ops whose FIRST operand (``args[0]``) is an account address: the local-state
+# family plus the account-parameter reads.
 _ACCOUNT_OPERAND_OPS = (
     AVMOp.app_local_get, AVMOp.app_local_get_ex, AVMOp.app_local_put,
     AVMOp.app_opted_in, AVMOp.balance, AVMOp.min_balance,
@@ -626,34 +558,24 @@ _ACCOUNT_OPERAND_OPS = (
 
 
 def _is_zero_address(a) -> bool:
-    """``a`` is the 32-byte zero address constant (``global ZeroAddress``, which
-    the lift const-folds to a ``BytesConstant`` of 32 null bytes)."""
+    """``a`` is the 32-byte zero-address constant the lift folds ``global
+    ZeroAddress`` into."""
     return isinstance(a, M.BytesConstant) and a.value == b"\x00" * 32
 
 
 def _guess_address_usage(main, subs) -> dict:
     """USAGE-side speculative tier: a bytes value CONSUMED at a langspec ADDRESS
-    operand position is guessed ``arc4.Address`` (``StaticArray<Byte, 32>``).
-    Returns ``{id(Register): EncodedType}``.
+    operand position is guessed ``arc4.Address``, as ``{id(Register): EncodedType}``.
 
-    The complement of the producer / consumer / constant idioms: instead of
-    reading how a value was BUILT, it reads how a value is USED. The named idioms,
-    each with a discharged local proof (the operand position's langspec type):
+    Reads how a value is USED rather than how it was BUILT. Each idiom's proof is
+    the operand position's langspec type: the operand of ``itxn_field <F>`` for an
+    account-typed ``F``; the account operand of a local-state / account-parameter
+    op; and an operand compared for equality against the zero address.
 
-      - the single operand of ``itxn_field <F>`` where ``F`` is an account-typed
-        field (:data:`_ACCOUNT_TXN_FIELDS`) -- the AVM requires a 32-byte address
-        there, so the value IS an address;
-      - the account operand (``args[0]``) of a local-state / account-parameter op
-        (:data:`_ACCOUNT_OPERAND_OPS`);
-      - an operand compared for equality (``eq`` / ``neq``) against the zero
-        address (:func:`_is_zero_address`) -- a canonical address presence check.
-
-    Kept SPECULATIVE (not confident) because "it is an address value" is weaker
-    than "it is ABI-encoded as ``arc4.Address``": the value may never be
-    round-tripped through ABI. Side-channel only, and lowest priority in the merge
-    (a producer/decode guess for the same register wins), then
-    :func:`_propagate_guesses` -- including the backward-copy hop -- carries it
-    from the use site back to the value's definition."""
+    Kept SPECULATIVE because "it is an address value" is weaker than "it is
+    ABI-encoded as ``arc4.Address``" -- the value may never be round-tripped
+    through ABI. Lowest priority in the merge, so a producer/decode guess for the
+    same register wins."""
     from puya.ir.encodings import ArrayEncoding, UIntEncoding
     from puya.ir.types_ import EncodedType
     address = EncodedType(ArrayEncoding(
@@ -685,32 +607,25 @@ def _guess_address_usage(main, subs) -> dict:
 
 def guess_encoded_types_scored(main, subs):
     """The speculative recovery split into two honest confidence classes: returns
-    ``(guesses, confident)`` where ``guesses`` is ``{id(Register): EncodedType}``
-    and ``confident`` is ``{id(Register): bool}`` -- ``True`` = FULLY confident,
-    ``False`` = SOMEWHAT confident. (Only two states; a finer scale would be
-    invented precision.)
+    ``(guesses, confident)``, where ``confident[id(Register)]`` is ``True`` for
+    FULLY and ``False`` for SOMEWHAT confident. (Only two states; a finer scale
+    would be invented precision.)
 
     ``True`` iff the idiom's proof FORCES the exact guessed type -- no other ABI
-    value produces the same observable:
-      - a self-describing ``arc4.String`` CONSTANT (strict: length + UTF-8 +
-        printable + no-null), :func:`_guess_const_encoding`;
-      - a value the AVM REQUIRES to be a 32-byte address at its operand position,
-        :func:`_guess_address_usage` -> ``arc4.Address``.
+    value produces the same observable: a strict self-describing ``arc4.String``
+    constant (:func:`_guess_const_encoding`), and a value the AVM REQUIRES to be a
+    32-byte address at its operand position (:func:`_guess_address_usage`).
 
-    ``False`` (a structural shape that FITS but isn't forced -- an alternative ABI
-    type carries the same bytes, so it's a lead, not a guarantee):
-      - decoded length-prefixed dynamic arrays/strings, :func:`_guess_decoded_dynamic`
-        (String vs DynamicBytes vs DynamicArray<T> all share the shape);
-      - offset-table STRUCTS / tuples, :func:`_guess_struct_encodings` (partial);
-      - static arrays, producer + decode (:func:`_guess_static_arrays` /
-        :func:`_guess_decoded_static_arrays`) -- array vs homogeneous struct;
-      - the length-proven ENCODE idiom, :func:`_guess_encoding_for` (element coarse).
+    ``False`` for a structural shape that FITS but is not forced, an alternative
+    ABI type carrying the same bytes: decoded dynamic arrays/strings (String vs
+    DynamicBytes vs DynamicArray<T> share a shape), offset-table structs (partial),
+    static arrays (array vs homogeneous struct), and the length-proven ENCODE
+    idiom (coarse element).
 
-    A later, more-specific source overrides the guess AND its class for a register.
-    Then :func:`_propagate_guesses` flows each guess along identity-preserving
-    relations; a derived guess stays confident only if the whole path preserves it
-    (a copy inherits, a phi needs every arm confident, a state round-trip -- an
-    assumption, not a proof -- is never confident)."""
+    A later, more-specific source overrides both the guess and its class.
+    :func:`_propagate_guesses` then flows each guess along identity-preserving
+    relations; a derived guess stays confident only if the whole path preserves
+    it."""
     reg_def: dict = {}
     for s in (main, *subs):
         for bb in s.body:
@@ -780,8 +695,8 @@ def guess_encoded_types_scored(main, subs):
 
 
 # State-write ops whose (key, value) a get of the same key can inherit an
-# encoding from (all-writes-agree). uint64/box put/del excluded -- box values
-# are handled by the decode-side guesses, and del carries no value.
+# encoding from. Box put/del excluded: box values come from the decode-side
+# guesses, and del carries no value.
 _STATE_PUT_OPS = (AVMOp.app_global_put, AVMOp.app_local_put)
 _STATE_GET_OPS = (AVMOp.app_global_get, AVMOp.app_local_get,
                   AVMOp.app_global_get_ex, AVMOp.app_local_get_ex)
@@ -789,38 +704,30 @@ _STATE_GET_OPS = (AVMOp.app_global_get, AVMOp.app_local_get,
 
 def _propagate_guesses(main, subs, guesses: dict, confident: dict = None) -> None:
     """Flow the per-register speculative encodings along IDENTITY-preserving
-    relations, so a guess reaches the whole value web it feeds -- not just the
-    one op that produced it. In-place: adds ``id(register) -> EncodedType``
-    entries to ``guesses`` for every register-OBJECT whose SSA value carries a
-    propagated encoding (registers duplicate as distinct objects for one
-    ``name#version``, so propagation is keyed by that logical identity, then
-    stamped onto every object).
+    relations, so a guess reaches the whole value web it feeds. In-place: adds
+    ``id(register) -> EncodedType`` entries to ``guesses`` for every register
+    OBJECT whose SSA value carries a propagated encoding (registers duplicate as
+    distinct objects for one ``name#version``, so propagation keys on that logical
+    identity and is then stamped onto every object).
 
-    Relations (all preserve the value's bytes, hence its ARC4 encoding):
-      - register COPY (``t = r``): ``t`` inherits ``r``'s encoding;
-      - PHI: the joined register inherits iff every register arg has an
-        encoding and they all AGREE (MUST -- a disagreeing or unknown arm
-        blocks it);
-      - state PUT->GET: a ``app_*_get KEY`` result inherits iff every
-        ``app_*_put`` to that KEY wrote a value with the SAME encoding
-        (all-writes-agree, mirroring the state-resolution soundness elsewhere).
+    Relations, all preserving the value's bytes and hence its ARC4 encoding: a
+    register COPY; a PHI, iff every register arg has an encoding and they all
+    AGREE (a disagreeing or unknown arm blocks it); and a state PUT->GET, iff
+    every ``app_*_put`` to that key wrote the same encoding.
 
-    ``confident`` (optional ``{id: bool}``) is propagated in lock-step: a copy
-    inherits the source class, a phi is confident only if EVERY agreeing arm is,
-    and a state round-trip is never confident (all-writes-agree is an assumption,
-    not a proof). A derived guess is never more confident than what it came from.
-
-    Speculative + side-channel throughout: never touches ``ir_type``, so a
-    wrong hop cannot affect lowering -- only what a tolerant consumer reads."""
+    HAZARD: ``confident`` propagates in lock-step and a derived guess is NEVER
+    more confident than its source -- a phi is confident only if EVERY agreeing
+    arm is, and a state round-trip never is, all-writes-agree being an assumption
+    rather than a proof. Side-channel throughout, so a wrong hop cannot reach
+    ``ir_type`` or lowering."""
     confident = confident if confident is not None else {}
 
-    # SSA register names are unique only WITHIN a subroutine (params `p%i`, locals
-    # `l%slot` recur across subs), so a propagation identity must include the
-    # owning subroutine — else a guess on sub A's `p%0` stamps onto sub B's `p%0`
-    # (a spurious cross-sub guess that surfaces as a wrong abi-audit/box-audit
-    # finding). Map every register OBJECT to its sub; all copy/phi relations are
-    # intra-sub, and state round-trips key on state-key-bytes, so per-sub keys are
-    # both sufficient and correct.
+    # HAZARD: SSA register names are unique only WITHIN a subroutine (params
+    # `p%i`, locals `l%slot` recur across subs), so the propagation identity must
+    # include the owning sub — else a guess on sub A's `p%0` stamps onto sub B's
+    # `p%0` and surfaces as a wrong abi-audit / box-audit finding. Copy/phi
+    # relations are all intra-sub and state round-trips key on state-key bytes, so
+    # per-sub keys are both sufficient and correct.
     reg_sub: dict = {}
     for s in (main, *subs):
         for bb in s.body:
@@ -931,11 +838,10 @@ def _propagate_guesses(main, subs, guesses: dict, confident: dict = None) -> Non
                         kb = _key_const(src.args)
                         e, ec = state_enc.get(kb), state_conf.get(kb)
                     if e is None:
-                        # BACKWARD copy (``t = r``): if the copy result already
-                        # carries a guess (e.g. a use-site address stamp) but the
-                        # source does not, the source -- the same bytes -- inherits
-                        # it. This is what carries a usage-evidence guess back past
-                        # a rename to the value's real definition.
+                        # BACKWARD copy (``t = r``): when the copy RESULT carries a
+                        # guess but the source does not, the source — the same
+                        # bytes — inherits it. This is what carries a
+                        # usage-evidence guess back past a rename to the real def.
                         if isinstance(src, M.Register) and key(src) not in enc:
                             te = [(enc.get(key(t)), enc_conf.get(key(t)))
                                   for t in o.targets if isinstance(t, M.Register)]
@@ -962,22 +868,21 @@ def _propagate_guesses(main, subs, guesses: dict, confident: dict = None) -> Non
                 confident[id(r)] = enc_conf.get(k, False)
 
 
-# Fund / asset-transfer itxn fields whose operand is an address the CONTRACT
-# pays out to -- a recovered arc4.Address arriving here is a payout recipient.
+# Fund / asset-transfer itxn fields whose operand is an address the CONTRACT pays
+# out to: a recovered arc4.Address arriving here is a payout recipient.
 _FUND_SINK_FIELDS = frozenset({
     "Receiver", "AssetReceiver", "CloseRemainderTo", "AssetCloseTo",
     "AssetSender", "RekeyTo",
 })
-# The transaction-arg reads that expose an ABI method argument (a caller-chosen
-# value). ``txnas`` / ``gtxnas`` take the index off the stack; ``txna`` inlines it.
+# The transaction-arg reads exposing an ABI method argument (a caller-chosen
+# value); ``txnas``/``gtxnas`` take the index off the stack, ``txna`` inlines it.
 _ABI_ARG_OPS = (AVMOp.txna, AVMOp.txnas, AVMOp.gtxna, AVMOp.gtxnas)
 
 
 def is_address_encoding(et) -> bool:
     """``et`` is the arc4.Address shape: a fixed 32-element, header-less array of
-    BYTES (``StaticArray<Byte, 32>``). The element type must be checked too — a
-    32-element static array of a wider type (e.g. ``StaticArray<UInt64, 32>``)
-    also has ``size == 32`` but is NOT an address (mirrors ``_arc56_encoding``)."""
+    BYTES. HAZARD: the ELEMENT type must be checked too — a 32-element static
+    array of a wider type also has ``size == 32`` but is NOT an address."""
     from puya.ir.encodings import ArrayEncoding, UIntEncoding
     enc = et.encoding
     return (isinstance(enc, ArrayEncoding)
@@ -986,33 +891,23 @@ def is_address_encoding(et) -> bool:
 
 
 def abi_address_fund_flows(main, subs, guesses=None) -> list:
-    """TYPE-DRIVEN security leads -- the first CONSUMER of the speculative ABI
-    type side-channel. Reports every fund / asset-transfer sink
-    (:data:`_FUND_SINK_FIELDS`) whose recipient operand is a value RECOVERED as
-    ``arc4.Address``: the type recovery is precisely what tells us a 32-byte
-    operand is a caller-meaningful ADDRESS rather than an opaque blob, which is
-    what turns ``itxn_field Receiver`` into a 'who gets the money' question.
+    """TYPE-DRIVEN security leads: every fund / asset-transfer sink whose recipient
+    operand is a value RECOVERED as ``arc4.Address``. The type recovery is what
+    tells us a 32-byte operand is a caller-meaningful ADDRESS rather than an opaque
+    blob, turning ``itxn_field Receiver`` into a 'who gets the money' question.
 
-    Each lead is tagged over a BACKWARD SLICE of the recipient value (its def-use
-    predecessors, transitively -- through intrinsic operands, register copies and
-    phis, memoised, cycle-safe), so it survives the ABI-decode chain real
-    compiled contracts interpose (the address is ``extract``-ed out of the args
-    tuple, not read raw at the sink):
-      - ``caller_supplied`` -- the slice roots in an ABI method-argument read
-        (:data:`_ABI_ARG_OPS` on ``ApplicationArgs``): the caller chooses the
-        address;
-      - ``guarded`` -- some value on the slice is an ``eq`` / ``neq`` operand (a
-        'was it pinned/validated' proxy).
+    Each lead is tagged over a BACKWARD SLICE of the recipient value (transitively
+    through intrinsic operands, register copies and phis; memoised, cycle-safe),
+    so it survives the ABI-decode chain compiled contracts interpose:
+      - ``caller_supplied`` -- the slice roots in an ABI method-argument read;
+      - ``guarded`` -- some value on the slice is an ``eq``/``neq`` operand, a
+        'was it pinned' proxy.
+    ``caller_supplied and not guarded`` is the arbitrary-recipient shape.
 
-    ``caller_supplied and not guarded`` is the arbitrary-recipient shape: the
-    caller passes an ABI address and the contract pays it without checking. The
-    slice is INTRA-procedural -- a value arriving as a subroutine frame parameter
-    breaks the chain (documented gap; taint's interprocedural bridge is the fuller
-    answer). Op-granular (Puya IR carries no source line on this path); returns
-    dicts ``{field, subroutine, encoding, confident, caller_supplied, guarded}``,
-    where ``confident`` (bool) is whether the recovered address type is fully or
-    only somewhat confident (see :func:`guess_encoded_types_scored`). Side-channel
-    in, report out -- never touches ``ir_type``."""
+    The slice is INTRA-procedural, so a value arriving as a subroutine frame
+    parameter breaks the chain -- a known gap; taint's interprocedural bridge is
+    the fuller answer. Returns dicts ``{field, subroutine, encoding, confident,
+    caller_supplied, guarded}``; side-channel in, report out, never ``ir_type``."""
     if guesses is None:
         guesses, confident = guess_encoded_types_scored(main, subs)
     else:
@@ -1021,9 +916,8 @@ def abi_address_fund_flows(main, subs, guesses=None) -> list:
     def kv(r):
         return (r.name, r.version)
 
-    # Backward def-use graph: each identity -> its predecessor identities, plus
-    # the set of identities that ARE a raw ApplicationArgs read, and those used
-    # as an eq/neq operand.
+    # Backward def-use graph: each identity -> its predecessors, plus the sets of
+    # identities that ARE a raw ApplicationArgs read and that are eq/neq operands.
     preds: dict = {}
     is_arg: set = set()
     compared: set = set()
@@ -1061,9 +955,8 @@ def abi_address_fund_flows(main, subs, guesses=None) -> list:
                             compared.add(kv(a))
 
     # Arg-origin closure over `compared`: comparing ONE read of ApplicationArgs N
-    # validates the arg, so every (distinct-SSA) read of the same constant-index
-    # arg counts as compared -- catches a `validate arg0` / `pay arg0` pattern
-    # where the two reads are separate registers (uncommon post-CSE, but sound).
+    # validates the arg, so every distinct-SSA read of the same constant index
+    # counts as compared — catches a `validate arg0` / `pay arg0` split.
     compared_origins = {origin_of[x] for x in compared if x in origin_of}
     if compared_origins:
         for idn, org in origin_of.items():
@@ -1115,20 +1008,18 @@ def abi_address_fund_flows(main, subs, guesses=None) -> list:
 
 
 def _recover_encoded_types(main, subs) -> int:
-    """**CONFIDENT** encoded-type recovery: refine a result register to the ARC4
+    """CONFIDENT encoded-type recovery: refine a result register to the ARC4
     ``EncodedType`` its producing op provably wire-encodes
-    (:func:`_confident_encoding_for`). Only moves a register whose ``avm_type``
-    already matches (an ``EncodedType``'s ``avm_type`` is ``bytes`` for the
-    byte-backed encodings, so it sits over the same ``bytes``/``bytes[N]`` the
-    sized-bytes pass left), and rebuilds the intrinsic's ``types`` to match. This is
-    the only encoded-type pass wired into :func:`to_puya`'s default IR.
+    (:func:`_confident_encoding_for`), rebuilding the intrinsic's ``types`` to
+    match. Only moves a register whose ``avm_type`` already matches. Returns the
+    count refined.
 
-    NOTE: unlike the scalar refinements, an ``EncodedType`` is *layout-bearing*, so
-    this is the first recovery that is NOT guaranteed a free annotation by
-    construction -- its TEAL-neutrality is established by the gate, not by the
-    avm_type argument alone (measured 247/0). The SPECULATIVE tier
-    (:func:`guess_encoded_types_scored`) is kept strictly separate and side-channelled so
-    it can never reach this IR. Returns the count refined."""
+    HAZARD: unlike the scalar refinements an ``EncodedType`` is LAYOUT-BEARING, so
+    this is NOT guaranteed a free annotation by the avm_type argument alone — its
+    TEAL-neutrality rests on the gate. It is the only encoded-type pass wired into
+    :func:`to_puya`'s default IR; the SPECULATIVE tier
+    (:func:`guess_encoded_types_scored`) is side-channelled so it can never reach
+    this IR."""
     reg_def: dict = {}
     for s in (main, *subs):
         for bb in s.body:
@@ -1138,8 +1029,7 @@ def _recover_encoded_types(main, subs) -> int:
                         reg_def[id(t)] = o
     # Iterate to a fixpoint: `concat` reads its operands' recovered types, so a
     # nested `concat(concat(a, b), c)` resolves over successive rounds. Monotonic
-    # (a register only ever moves from a coarse/smaller encoding to a richer one of
-    # the same avm_type), so it terminates.
+    # (coarse -> richer encoding of the same avm_type), so it terminates.
     n = 0
     changed = True
     while changed:

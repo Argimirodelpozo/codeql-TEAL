@@ -1,9 +1,5 @@
-"""Target resolution for the tealql CLI.
-
-A *target* is whatever the user points at on the command line: a single ``.teal``
-file, or a directory containing one or more ``.teal`` files. The pipeline
-(:class:`~tealql.tealtools.ssa.SSAProgram` / :func:`~tealql.tealtools.graph.load_graph`)
-reconstructs everything straight from that source.
+"""Target resolution for the tealql CLI — a target is a single ``.teal`` file or a
+directory containing one or more, which the pipeline reads directly.
 """
 from __future__ import annotations
 
@@ -16,9 +12,8 @@ logger = logging.getLogger("tealql.tealtools._utils.targets")
 
 
 def _discover_teal_files(path: Path) -> list[Path]:
-    """The ``.teal`` files implied by ``path``: a ``foo.teal`` file yields
-    ``[foo.teal]``; a directory is walked recursively. Raises if the file isn't
-    ``.teal`` or the directory holds none."""
+    """The ``.teal`` files implied by ``path`` (a directory is walked recursively);
+    raises if the file isn't ``.teal`` or the directory holds none."""
     if path.is_file():
         if path.suffix != ".teal":
             raise TargetError(f"{path}: not a .teal file")
@@ -30,12 +25,10 @@ def _discover_teal_files(path: Path) -> list[Path]:
 
 
 def resolve_target(target: str | Path) -> Path:
-    """Validate a user-supplied target and return its path. The pipeline reads
-    the ``.teal`` source directly, so this just checks the target exists and
-    contains TEAL. Raises :class:`tealql.tealtools.errors.TargetError` /
-    :class:`~tealql.tealtools.errors.TargetNotFoundError` (which are also
-    ``ValueError`` / ``FileNotFoundError``) if it doesn't exist, or is a
-    directory / file with no ``.teal``."""
+    """Validate a user-supplied target and return its path, raising
+    :class:`~tealql.tealtools.errors.TargetError` /
+    :class:`~tealql.tealtools.errors.TargetNotFoundError` if it doesn't exist or
+    holds no ``.teal``."""
     path = Path(target).resolve()
     if not path.exists():
         raise TargetNotFoundError(f"target does not exist: {target}")

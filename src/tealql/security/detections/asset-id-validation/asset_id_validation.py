@@ -1,17 +1,6 @@
-"""sec-guide/asset-id-validation: missing XferAsset check on asset transfers
-(path-aware).
-
-If the program reads any asset-transfer field (``AssetAmount`` /
-``AssetReceiver`` / ``AssetSender`` via ``txn`` or ``gtxn``), then every
-approval exit must be reachable only along CFG paths that cross a BB
-where ``XferAsset`` flows into a comparison whose result reaches
-enforcement.
-
-Was: whole-program existence check (``handles asset transfer AND
-not compared anywhere``), which produced false negatives whenever
-the ``XferAsset`` check was on one branch and the asset-transfer
-read on another, or when the check was inside a subroutine not on
-every path.
+"""sec-guide/asset-id-validation: a program that reads any asset-transfer field
+but has an approval exit reachable without an ENFORCED ``XferAsset`` comparison,
+so an attacker substitutes a worthless token for the intended asset.
 """
 from __future__ import annotations
 
@@ -45,8 +34,7 @@ class AssetIdValidationViolation:
 
     @property
     def line(self) -> int:
-        # Structured anchor for machine output (JSON/SARIF/suppressions);
-        # mirrors pretty(): the exit's LAST line.
+        # Must mirror pretty(): the exit's LAST line.
         return self.exit_bb.last_line
 
     def pretty(self) -> str:
@@ -65,14 +53,13 @@ class AssetIdValidationDetector(_ApprovalExitProtectedDetector):
     severity = "high"
     name = "sec-guide/asset-id-validation"
     field = "XferAsset"
-    # Signed-txn-field check: an unpinned XferAsset lets the axfer the
-    # logicsig approves move the WRONG asset — delegated-logicsig concern.
+    # An unpinned XferAsset lets the axfer the logicsig approves move the WRONG
+    # asset — a delegated-logicsig concern.
     applies_to = frozenset({"logicsig"})
     violation_cls = AssetIdValidationViolation
-    # The asset transfer is usually a SIBLING axfer, so the XferAsset pin lives on
-    # `gtxn N XferAsset`, not `txn XferAsset` — seed both.
+    # The transfer is usually a SIBLING axfer, so the pin lives on
+    # `gtxn N XferAsset` rather than `txn XferAsset`; seed both.
     seed_gtxn = True
 
     def applies(self) -> bool:
-        # Only programs that actually move assets need an XferAsset check.
         return _handles_asset_transfer(self.prog, file=self.file)

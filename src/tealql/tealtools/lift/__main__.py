@@ -1,7 +1,4 @@
-"""Render TEAL source as real Puya IR.
-
-    python -m tealql.tealtools.lift <teal-source> [--optimize]
-"""
+"""CLI entry point: render a TEAL source file as real Puya IR."""
 import sys
 
 from ..ssa import SSAProgram

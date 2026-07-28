@@ -1,19 +1,11 @@
-"""Chain the OPEN taint reachability (``TaintQuery``) to the guard-aware detectors
-for a per-sink VERDICT.
+"""Join the OPEN taint reachability (``TaintQuery``, which over-approximates: the
+flow may be validated on the way) to the guard-aware detectors, for a per-sink
+CONFIRMED / GUARDED / UNVERIFIED verdict.
 
-``taint_query`` answers "can an attacker input REACH this sink?" (a triage lens
-that over-approximates — the flow may be validated on the way). The detectors
-answer "is a reach here actually UNGUARDED?" (the verdict, with sender-auth /
-receiver-pin / group-index / type reasoning). This joins them: every
-attacker-reachable dangerous sink, annotated with
-
-  * CONFIRMED — a guard-aware detector flags it (a likely-real unguarded flow);
-  * GUARDED   — a detector that covers this sink category RAN and did NOT flag it
-    (its guard reasoning cleared the reach);
-  * UNVERIFIED — no detector covers this sink category (reachable, unjudged).
-
-The join key is the source LINE: the IR-taint detectors report at the sink op's
-line, which is exactly the ``TaintQuery`` sink node's line.
+HAZARD: GUARDED means a detector covering that category RAN and did not flag it,
+UNVERIFIED means NO detector covers the category — reachable but unjudged, never
+"safe". The join key is the source LINE, since the IR-taint detectors report at
+the sink op's line, exactly the ``TaintQuery`` sink node's line.
 """
 from __future__ import annotations
 
@@ -30,9 +22,9 @@ _CATEGORY_DETECTORS: dict[str, tuple[str, ...]] = {
     "inner-asset-amount": ("ir-tainted-fund-flow",),
     "inner-close-remainder": ("ir-tainted-fund-flow",),
     "inner-asset-close": ("ir-tainted-fund-flow",),
-    # ir-tainted-fund-flow's field set (FUND_FIELDS) EXCLUDES RekeyTo, so it can
-    # never flag an itxn-rekey sink; inner-txn-close-rekey is the app-mode detector
-    # that covers CloseRemainderTo/RekeyTo/AssetCloseTo inner-txn writes.
+    # HAZARD: ir-tainted-fund-flow's FUND_FIELDS EXCLUDES RekeyTo, so listing it
+    # here would make every itxn-rekey sink read GUARDED. inner-txn-close-rekey is
+    # the detector that actually covers RekeyTo/CloseRemainderTo/AssetCloseTo.
     "inner-rekey": ("inner-txn-close-rekey",),
     "inner-fee": ("ir-tainted-fee",),
     "inner-appcall-target": ("ir-arbitrary-inner-appcall",),
@@ -76,22 +68,18 @@ class SinkVerdict:
 
 def verify_sinks(prog: SSAProgram, *, file: Optional[str] = None,
                  precise: bool = False) -> list[SinkVerdict]:
-    """Every attacker-reachable dangerous sink with its detector verdict
-    (CONFIRMED / GUARDED / UNVERIFIED). Runs each relevant detector once; a
-    detector crash leaves its sinks UNVERIFIED rather than failing the query.
-
-    ``precise=True`` sources the reachable set from the lifted IR (fewer phantom
-    reaches, plus interprocedural ones the coarse graph misses) — see
-    ``TaintQuery.tainted_sinks``. The verdict layer is unchanged; only the sink
-    set it judges gets sharper."""
+    """Every attacker-reachable dangerous sink with its verdict, running each
+    relevant detector once; a detector crash leaves its sinks UNVERIFIED rather
+    than failing the query. ``precise=True`` sources the reachable set from the
+    lifted IR — a sharper sink set, same verdict layer."""
     from tealql.tealtools.dataflow.taint_query import TaintQuery
     from tealql.security import DETECTORS
     from tealql.security.findings import violation_line
 
     if precise:
-        # Pre-warm the shared lift through the detector-grade builder so its
-        # coverage/crash warnings fire (the quiet query-side build would swallow
-        # them); the detectors below then reuse this ONE lift, not a second.
+        # Pre-warm through the DETECTOR-grade builder so its coverage/crash
+        # warnings fire (the query-side build is quiet) and the detectors below
+        # reuse this one lift rather than building a second.
         from tealql.security.common import ir_lifter
         ir_lifter(prog, file)
 
@@ -117,6 +105,6 @@ def verify_sinks(prog: SSAProgram, *, file: Optional[str] = None,
         covered = [d for d in dets if d in flagged]          # actually ran
         confirmed = [d for d in covered if h.node.line in flagged[d]]
         out.append(SinkVerdict(sink=h, confirmed_by=confirmed, covered_by=covered))
-    # CONFIRMED first, then GUARDED, then UNVERIFIED; keep the sink severity order.
+    # CONFIRMED, then GUARDED, then UNVERIFIED; sink severity order is preserved.
     _rank = {"CONFIRMED": 0, "GUARDED": 1, "UNVERIFIED": 2}
     return sorted(out, key=lambda v: (_rank[v.verdict],))

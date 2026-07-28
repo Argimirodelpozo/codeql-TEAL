@@ -1,8 +1,11 @@
-"""Field-validation reasoning: strict dominance (``field_validated_on_all_
-paths``) and the stronger every-path protection family
-(``approval_exit_protected_for_*``), parameterised on seed sets.
+"""Field-validation reasoning: ``field_validated_on_all_paths`` and the
+``approval_exit_protected_for_*`` family, parameterised on seed sets.
+Import via :mod:`tealql.security.common`.
 
-Split out of ``common.py``; import via :mod:`tealql.security.common`.
+Every member asks the same MUST-reach question — does every entry→exit path CROSS
+a block that ENFORCES a comparison of the seeds? A may-reach ("some enforcement
+exists") lets a field compared in a dominator but asserted on only one branch read
+as validated, leaving the other approving path unguarded.
 """
 from __future__ import annotations
 
@@ -47,18 +50,10 @@ def _collect_field_enforcement_bbs(
     prog: SSAProgram, var: SSAVar, label_lines: dict, out: set, seen: set,
     scratch_fwd: Optional[dict] = None, field_vars: Optional[set] = None,
 ) -> None:
-    """Forward-walk the SSA chain from a field-comparison result and record the
-    BASIC BLOCK of every enforcement site it reaches (``assert`` / ``bnz``
-    fall-through-to-reject / ``bz`` target-reject). Same traversal as
-    :func:`def_forward_reaches_enforcement`, but it RECORDS the enforcing BB
-    instead of returning on the first hit — so the caller can require every
-    approving path to CROSS an enforcement site (a MUST-reach) rather than merely
-    that one exists somewhere (the may-reach that let a field compared in a
-    dominator but asserted on a single branch read as validated-on-all-paths).
-
-    Scratch-aware like its boolean twin: a comparison round-tripped through
-    ``store``/``load`` before its ``assert`` still records the enforcing BB, when
-    the round-trip provably preserves it (:func:`scratch_forward_map`)."""
+    """Record the BASIC BLOCK of every enforcement site the SSA chain from a
+    field-comparison result reaches — :func:`def_forward_reaches_enforcement`'s
+    traversal, but collecting instead of returning on the first hit, which is what
+    lets the caller demand a MUST-reach. Scratch-aware like its boolean twin."""
     if var in seen:
         return
     seen.add(var)
@@ -72,15 +67,14 @@ def _collect_field_enforcement_bbs(
             if cons.basic_block is not None:
                 out.add(cons.basic_block)
         elif cons.op in ("bnz", "bz"):
-            # Either polarity gates approval — see ``branch_gates_rejection``.
-            # The BB recorded is the BRANCH's own block, which every path
-            # continuing to an approving exit crosses whichever edge it takes.
+            # Record the BRANCH's own block: every path continuing to an
+            # approving exit crosses it whichever edge it takes.
             if (cons.basic_block is not None
                     and branch_gates_rejection(prog, cons, label_lines)):
                 out.add(cons.basic_block)
-        # A ``||`` carries enforcement to this arm only when every OTHER arm
-        # pins the same field; otherwise the other arm alone can satisfy the
-        # assert and this one is unconstrained. Same rule as the boolean twin.
+        # A ``||`` carries enforcement to this arm only when every OTHER arm pins
+        # the same field, else the other arm alone satisfies the assert and this
+        # one is unconstrained. Same rule as the boolean twin.
         if cons.op in _DISJUNCTION_OPS and not _disjunction_is_enforcing(
                 prog, cons, var, field_vars):
             continue
@@ -94,12 +88,10 @@ def _field_enforcement_bbs(
     prog: SSAProgram, field_vars: set, *, file: Optional[str],
     allow_unary_cmp: bool = False,
 ) -> set:
-    """The set of BBs that ENFORCE a comparison of the field (an assert /
-    branch-to-reject whose condition SSA-derives from a comparison consuming a
-    field seed). Empty when the field is compared but never enforced, or never
-    compared at all. ``allow_unary_cmp``: accept a 1-input comparison (the field
-    against an inlined literal, e.g. an ABI selector) as well as the strict
-    2-input form."""
+    """BBs ENFORCING a comparison that consumes a field seed; empty when the field
+    is never compared, or compared but never enforced. ``allow_unary_cmp`` also
+    accepts a 1-input comparison (field against an inlined literal, e.g. an ABI
+    selector)."""
     out: set = set()
     label_lines = _label_to_bb_first_line(prog)
     scratch_fwd = scratch_forward_map(prog)
@@ -122,10 +114,8 @@ def _field_enforcement_bbs(
 
 
 def _all_entry_paths_cross(exit_bb: BasicBlock, gates: set) -> bool:
-    """Every CFG path from a program entry (a no-predecessor BB) to ``exit_bb``
-    crosses at least one BB in ``gates``. Backward BFS: a predecessor in
-    ``gates`` closes that path; reaching an entry NOT in ``gates`` witnesses an
-    uncrossed path (return False)."""
+    """Every path from a no-predecessor entry BB to ``exit_bb`` crosses a ``gates``
+    BB — backward BFS, where reaching an entry witnesses an uncrossed path."""
     if exit_bb in gates:
         return True
     if not exit_bb.predecessors:
@@ -147,9 +137,8 @@ def _all_entry_paths_cross(exit_bb: BasicBlock, gates: set) -> bool:
 
 
 def _pinned_group_index(prog, *, file: Optional[str] = None) -> Optional[int]:
-    """The single value ``txn GroupIndex`` is pinned to on EVERY approving path,
-    or ``None`` — read off the common group shape (``group_reasoning.analyze``).
-    Defensive: any failure yields ``None`` (nothing credited as position-certain)."""
+    """The value ``txn GroupIndex`` is pinned to on EVERY approving path, else
+    ``None`` — any failure yields ``None``, crediting nothing as position-certain."""
     try:
         from tealql.tealtools import group_reasoning as G
         from tealql.tealtools.ssa import const_int
@@ -163,13 +152,13 @@ def _pinned_group_index(prog, *, file: Optional[str] = None) -> Optional[int]:
 
 
 def _signed_txn_field_reads(prog, field: str, *, file: Optional[str] = None) -> list:
-    """Reads of the SIGNED transaction's own ``field`` — the only ones that
-    protect a delegated logicsig against its own drain. Three forms all read the
-    running txn's field: ``txn FIELD`` (self); ``gtxns FIELD`` indexed by
-    ``txn GroupIndex`` (dynamic self); and ``gtxn N FIELD`` only when
-    ``GroupIndex == N`` is pinned (an absolute index that IS the signed txn). A
-    bare ``gtxn N FIELD`` on an unpinned index reads a SIBLING, not the signer, so
-    it is excluded — checking it does not protect the signed transaction."""
+    """Reads of the SIGNED transaction's own ``field``: ``txn FIELD``, ``gtxns
+    FIELD`` indexed by ``txn GroupIndex``, and ``gtxn N FIELD`` only when
+    ``GroupIndex == N`` is pinned.
+
+    HAZARD: a bare ``gtxn N FIELD`` on an unpinned index reads a SIBLING, not the
+    signer — crediting it would let a delegated logicsig be drained through a check
+    that never touched the signed transaction."""
     from tealql.tealtools import group_reasoning as G
     reads = list(txn_field_reads(prog, field, file=file))
     gtxn_reads = gtxn_field_reads(prog, field, file=file)
@@ -177,8 +166,8 @@ def _signed_txn_field_reads(prog, field: str, *, file: Optional[str] = None) -> 
         if a.op in ("gtxns", "gtxnsa", "gtxnsas") and a.inputs \
                 and G.relative_slot(a.inputs[0]) == "this":
             reads.append(a)
-    # The GroupIndex pin is only needed to credit an ABSOLUTE ``gtxn N`` read — run
-    # the (expensive) group-shape analysis ONLY when such a read is present.
+    # Only an ABSOLUTE ``gtxn N`` read needs the pin, so run the expensive
+    # group-shape analysis only when one is present.
     abs_reads = [a for a in gtxn_reads if a.op in ("gtxn", "gtxna", "gtxnas")]
     if abs_reads:
         pinned = _pinned_group_index(prog, file=file)
@@ -198,24 +187,12 @@ def field_validated_on_all_paths(
     prog: SSAProgram, field: str, *, file: Optional[str] = None,
     signed_txn_only: bool = False,
 ) -> bool:
-    """The field is validated on EVERY approving path: every CFG path from a
-    program entry to each approving exit CROSSES a BB that ENFORCES a comparison
-    of the field (assert / branch-to-reject).
+    """The field is enforced on EVERY approving path (must-reach, seeded on the
+    ENFORCEMENT SITE rather than the comparison).
 
-    Seeds the every-path check on the ENFORCEMENT SITE, not the comparison — the
-    must-reach that fixes the false negative in the old dominance formulation. The
-    old check accepted "a single comparison dominates all exits AND its result
-    reaches *some* enforcement" — existential, so a field compared in a dominating
-    BB but asserted on only one branch (``dup``'d, asserted on the Delete branch,
-    dropped on an approving NoOp branch) read as validated, letting an attacker set
-    the field on the unenforced approving path.
-
-    ``signed_txn_only`` (for delegated-LOGICSIG drain fields): a check protects the
-    signer only if it reads the SIGNED transaction's OWN field — ``txn FIELD``,
-    ``gtxns FIELD`` indexed by ``GroupIndex``, or ``gtxn N FIELD`` with
-    ``GroupIndex == N`` pinned. A bare ``gtxn N`` reads a sibling and does NOT
-    count. Default (False) seeds all ``txn`` + sibling ``gtxn`` reads (app-mode:
-    a field validated on a group sibling)."""
+    ``signed_txn_only`` restricts the seeds to :func:`_signed_txn_field_reads` for
+    the delegated-LOGICSIG drain fields; the default also seeds sibling ``gtxn``
+    reads, which is what app-mode wants."""
     exits = approving_exits(prog, file=file)
     if not exits:
         return False
@@ -241,12 +218,8 @@ def _approval_exit_protected_for_seeds(
     file: Optional[str] = None,
     allow_unary_cmp: bool = False,
 ) -> bool:
-    """Core of :func:`approval_exit_protected_for_field`: every CFG path from a
-    program entry to ``exit_bb`` CROSSES a BB that ENFORCES the field. Seeds the
-    every-path (must-reach) check on the enforcement site — the fix for the
-    may-reach false negative where a field compared in a dominating BB but
-    asserted on only one branch read as protected. Parameterised on the seed set
-    to reuse for ``global FIELD`` / disjunctions / ``gtxn`` / ABI-selector."""
+    """Every path from an entry to ``exit_bb`` CROSSES a BB enforcing ``field_vars``
+    — the shared core of the ``approval_exit_protected_for_*`` family."""
     if file is None:
         file = exit_bb.file
     if not field_vars:
@@ -264,9 +237,8 @@ def _txn_field_seeds(
 ) -> set[SSAVar]:
     reads = txn_field_reads(prog, field, file=file)
     if include_gtxn:
-        # Some fields are validated on a SIBLING transaction in the group, not the
-        # app call itself — e.g. AssetCloseTo / XferAsset on the deposit axfer.
-        # Opt-in (asset-close-to, asset-id-validation) so the txn-only detectors
+        # Some fields are validated on a SIBLING txn, not the app call itself (e.g.
+        # AssetCloseTo on the deposit axfer). Opt-in, so the txn-only detectors
         # (rekey-to, fee, …) keep their app-call-scoped semantics.
         reads = reads + gtxn_field_reads(prog, field, file=file)
     return ssavar_outputs(reads)
@@ -286,13 +258,8 @@ def approval_exit_protected_for_field(
     prog: SSAProgram, exit_bb: BasicBlock, field: str,
     *, file: Optional[str] = None, include_gtxn: bool = False,
 ) -> bool:
-    """Approval exit protected for a field: every CFG path from any
-    program entry to ``exit_bb`` crosses at least one BB protected
-    for ``field``. Equivalently, ``exit_bb`` is *not* reachable from
-    any entry along a path of unprotected BBs.
-
-    ``include_gtxn`` also seeds ``gtxn``/``gtxns`` reads of the field — for
-    detectors whose field is validated on a sibling group transaction."""
+    """``exit_bb`` is protected for ``txn FIELD``; ``include_gtxn`` also seeds
+    ``gtxn``/``gtxns`` reads, for fields validated on a sibling group txn."""
     if file is None:
         file = exit_bb.file
     return _approval_exit_protected_for_seeds(
@@ -306,12 +273,8 @@ def approval_exit_protected_for_signed_txn_field(
     prog: SSAProgram, exit_bb: BasicBlock, field: str,
     *, file: Optional[str] = None,
 ) -> bool:
-    """Like :func:`approval_exit_protected_for_field` but the check must read the
-    SIGNED transaction's OWN ``field`` — ``txn FIELD``, ``gtxns FIELD`` indexed by
-    ``GroupIndex``, or ``gtxn N FIELD`` with ``GroupIndex == N`` pinned (see
-    :func:`_signed_txn_field_reads`). A bare ``gtxn N`` reads a sibling and does
-    NOT protect the signer. For the delegated-LOGICSIG drain-field detectors
-    (close-remainder-to, rekey-to, asset-close-to)."""
+    """Protected for the SIGNED txn's own ``field`` only, per
+    :func:`_signed_txn_field_reads` — the delegated-LOGICSIG drain-field detectors."""
     if file is None:
         file = exit_bb.file
     seeds = ssavar_outputs(_signed_txn_field_reads(prog, field, file=file))
@@ -324,9 +287,7 @@ def approval_exit_protected_for_global_field(
     prog: SSAProgram, exit_bb: BasicBlock, gfield: str,
     *, file: Optional[str] = None,
 ) -> bool:
-    """Like :func:`approval_exit_protected_for_field` but the seed
-    is ``global GFIELD`` rather than ``txn FIELD``. Used by detectors
-    whose validation target is a ``global`` field (e.g. ``GroupSize``)."""
+    """Protected for ``global GFIELD`` (e.g. ``GroupSize``) rather than a txn field."""
     if file is None:
         file = exit_bb.file
     return _approval_exit_protected_for_seeds(
@@ -340,9 +301,8 @@ def approval_exit_protected_for_any_txn_field(
     prog: SSAProgram, exit_bb: BasicBlock, fields: list[str],
     *, file: Optional[str] = None,
 ) -> bool:
-    """Disjunctive form: protected if *any* of ``fields`` is enforced
-    on every path. Used by tx-type-check (validating either ``TypeEnum``
-    or ``Type`` counts as fixed)."""
+    """Protected if ANY of ``fields`` is enforced on every path (``TypeEnum`` or
+    ``Type`` both count as pinning the txn type)."""
     if file is None:
         file = exit_bb.file
     seeds: set[SSAVar] = set()
@@ -357,11 +317,8 @@ def approval_exit_protected_for_arg_reads(
     prog: SSAProgram, exit_bb: BasicBlock, immediates: str,
     *, file: Optional[str] = None,
 ) -> bool:
-    """Like :func:`approval_exit_protected_for_field` but the seed is a
-    ``txna`` *array* read (e.g. ``ApplicationArgs 0``) rather than a
-    scalar ``txn FIELD``. Used by the ABI-method-selector detector,
-    where the value validated on every approving path is the method
-    selector ``txna ApplicationArgs 0``."""
+    """Protected for a ``txna`` ARRAY read (e.g. ``ApplicationArgs 0``, the ABI
+    method selector) rather than a scalar ``txn FIELD``."""
     if file is None:
         file = exit_bb.file
     seeds = {

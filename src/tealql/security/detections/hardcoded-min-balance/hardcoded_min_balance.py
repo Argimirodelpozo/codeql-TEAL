@@ -1,15 +1,8 @@
-"""sec-guide/hardcoded-min-balance: balance op subtracted from a hardcoded const.
-
-Flags a ``balance`` value flowing into a ``-`` (sub) op where the other operand
-resolves to a known integer constant — and the program never uses ``min_balance``.
-The hardcoded assumption breaks when the contract opts into assets, creates boxes,
-or adds local state.
-
-The ``balance`` value is followed into the subtraction through the
-phi / scratch / proto-frame bridge (:func:`common._operand_flows_from_field_var`),
-not just as a direct operand — so the common ``balance; store N; … load N; int K;
--`` shape (the balance stashed in scratch before the subtract) is caught rather
-than missed.
+"""sec-guide/hardcoded-min-balance: a ``balance`` value subtracted from a known
+integer constant in a program that never uses ``min_balance``. The hardcoded
+assumption breaks as soon as the contract opts into assets, creates boxes, or adds
+local state. The balance is followed through the phi/scratch/proto-frame bridge,
+so the ``balance; store N; … load N; int K; -`` shape is caught too.
 """
 from __future__ import annotations
 
@@ -31,7 +24,7 @@ class HardcodedMinBalanceViolation:
 
     @property
     def line(self) -> int:
-        # Structured anchor for machine output; mirrors pretty().
+        # Must mirror pretty().
         return self.sub_op.location.line
 
     def pretty(self) -> str:
@@ -51,23 +44,22 @@ class HardcodedMinBalanceDetector:
     applies_to = frozenset({"app"})  # min_balance is an app idiom
 
     def __init__(self, prog: SSAProgram, *, file: Optional[str] = None):
-        # Const propagation is needed to recognise the hardcoded operand
-        # (``intc_*`` / ``int N`` / ``pushint N``). Idempotent fallback — the
-        # runner prepares the program once.
+        # Const propagation is needed to recognise the hardcoded operand;
+        # idempotent, so this is only a fallback for direct library use.
         common.prepare(prog)
         self.prog = prog
         self.file = file
 
     def detect(self) -> list[HardcodedMinBalanceViolation]:
-        # Skip silently when the program already uses min_balance — treat
-        # that as evidence the developer is aware of the right primitive.
+        # Using min_balance anywhere is evidence the developer knows the right
+        # primitive, so say nothing.
         if any(
             a.op == "min_balance" for a in self.prog.assignments
             if common.file_match(a.location.file, self.file)
         ):
             return []
-        # Seed set = every `balance` (and `min_balance`-absent) read output; the
-        # flow bridge follows it through scratch / phi / proto-frame into the sub.
+        # Seed set = every `balance` read output; the flow bridge follows it
+        # through scratch / phi / proto-frame into the sub.
         bal_ops = [
             a for a in self.prog.assignments
             if a.op == "balance" and common.file_match(a.location.file, self.file)
@@ -82,7 +74,7 @@ class HardcodedMinBalanceDetector:
                 continue
             if sub.op != "-" or len(sub.inputs) != 2:
                 continue
-            # One operand must flow from a balance read; the other a known int const.
+            # One operand must flow from a balance read, the other be a const.
             for bal_idx, const_idx in ((0, 1), (1, 0)):
                 bal = sub.inputs[bal_idx]
                 cnst = sub.inputs[const_idx]

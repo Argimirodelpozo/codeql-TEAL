@@ -1,39 +1,29 @@
 """Subroutine partitioning — the single home for callsub/retsub boundary
-reasoning.
+reasoning, kept in one file so the policies stay visible against each other.
 
-One program, three questions, three deliberately DIFFERENT policies that
-historically lived in three modules (control_tree / path_predicates / the SSA
-builder) and could drift apart:
+HAZARD: three DELIBERATELY different policies, not interchangeable.
 
-  * :func:`identify_subroutines` — the CORRECTED policy (formerly
-    ``control_tree.identify_subroutines``, moved verbatim): entries (with a
-    label-resolution fallback for dangling callsub edges), bodies, and
-    fixpoint-corrected continuations that handle never-returning callees and
-    linker-interleaved bodies. The most precise view; feeds the control tree,
-    ``structure`` (and through it the lift's frame resolution), and cost.
+  * :func:`identify_subroutines` — CORRECTED: entries (with a label-resolution
+    fallback for dangling callsub edges), bodies, and fixpoint-corrected
+    continuations handling never-returning callees and linker-interleaved
+    bodies. The most precise view; feeds the control tree, ``structure`` (and
+    through it the lift's frame resolution), and cost.
 
-  * :func:`sound_return_targets` — the SOUND policy (formerly
-    ``PathPredicateAnalysis._callsub_return_maps``, moved verbatim): a
-    callsub's return block only when EVERY predecessor is a retsub — the
-    condition under which caller-specific facts may be carried across the
-    call. Deliberately a subset of the corrected policy: measured over the
-    full fixture universe (490 programs, ~25k callsubs) it NEVER disagrees
-    with the corrected continuation where it resolves.
+  * :func:`sound_return_targets` — SOUND: a callsub's return block only when
+    EVERY predecessor is a retsub, the condition under which caller-specific
+    facts may be carried across the call. A deliberate SUBSET of the corrected
+    policy; where it resolves it never disagrees with it.
 
-  * :func:`pyblock_partition` — the CONSTRUCTION policy (formerly the
-    ownership core of ``PySSA._compute_subs_and_protos``, moved verbatim):
-    every-block ownership over the mid-build PyBlock model, using the NAIVE
-    next-op return point. It runs BEFORE the SSAProgram exists, so it cannot
-    reuse the corrected policy — and the naive and corrected continuations
-    genuinely diverge in the wild (~1.3%% of callsubs on the fixture
-    universe), so this is a distinct policy, not a lesser copy. Its exact
-    behavior is pinned by the SSA behavioural gates (the folks-xgov history);
-    converging it onto the corrected policy is a SEMANTIC change — gate any
-    attempt with the c2 differential harness + corpus + behavioural.
+  * :func:`pyblock_partition` — CONSTRUCTION: every-block ownership over the
+    mid-build PyBlock model, using the NAIVE next-op return point. It runs
+    BEFORE the SSAProgram exists, so it cannot reuse the corrected policy, and
+    naive vs corrected continuations genuinely diverge in the wild (~1.3% of
+    callsubs) — a distinct policy, not a lesser copy. Its exact behavior is
+    pinned by the SSA behavioural gates; converging it onto the corrected
+    policy is a SEMANTIC change — gate any attempt with the c2 differential
+    harness + corpus + behavioural.
 
-The three functions share this module so the policies are visible against
-each other instead of drifting apart in three files. Pure leaf: imports only
-:mod:`tealql.tealtools.avm` metadata at runtime.
+Pure leaf: imports only :mod:`tealql.tealtools.avm` metadata at runtime.
 """
 from __future__ import annotations
 
@@ -47,13 +37,11 @@ if TYPE_CHECKING:  # pragma: no cover
 
 
 def _terminator_op(bb: "BasicBlock") -> Optional[str]:
-    """Return the control-flow terminator op of ``bb``, or ``None`` if
-    the BB has no terminator (e.g. fall-through end of program).
+    """The control-flow terminator op of ``bb``, or ``None`` if it has none.
 
-    Scans instead of reading ``bb.assignments[-1].op`` defensively: any
-    pass that appends synthetic assignments after a terminator (the removed
-    materialize_phis did exactly that, and broke the interprocedural edge
-    cut via naive ``[-1]`` checks) keeps classification correct.
+    Scans rather than reading ``bb.assignments[-1]``: a pass that appends
+    synthetic assignments after the terminator would otherwise misclassify the
+    block and break the interprocedural edge cut.
     """
     for a in bb.assignments:
         if a.op in _TERMINATOR_OPS:
@@ -62,30 +50,24 @@ def _terminator_op(bb: "BasicBlock") -> Optional[str]:
 
 
 def identify_subroutines(prog: "SSAProgram") -> dict:
-    """Inspect the CFG for ``callsub`` / ``retsub`` ops and produce:
+    """The CORRECTED ``callsub``/``retsub`` partition of the CFG.
 
-    - ``entries``: BBs that are direct successors of any ``callsub``-
-      ending BB. These are the subroutine entry points.
-    - ``bodies``: ``entry_bb → set[BB]`` — the intraprocedural-reachable
-      BBs starting from each entry. We follow successor edges, but
-      stop at ``retsub`` BBs (their successors leave the body) and
-      don't enter other subroutine entries.
-    - ``continuations``: ``callsub_bb → continuation_bb``. Heuristic:
-      after ``callsub`` at line L, control returns to the BB whose
-      first line is the smallest ``> L`` in the same file *and* is a
-      successor of some ``retsub`` in the called subroutine. Captures
-      the linear "after the call" code without following the long way
-      around through the callee's retsub edges.
+    - ``entries``: BBs that are direct successors of a ``callsub``-ending BB.
+    - ``bodies``: ``entry_bb → set[BB]``, intraprocedural reachability from
+      each entry — ``retsub`` BBs are terminal (their successors leave the
+      body) and other subroutine entries are never crossed.
+    - ``continuations``: ``callsub_bb → return BB``, heuristically the nearest
+      later BB in the same file that is also a ``retsub`` successor of the
+      callee.
+    - ``callsub_target``: ``callsub_bb → callee entry BB``.
     """
     entries: set[BasicBlock] = set()
     callsub_target: dict[BasicBlock, BasicBlock] = {}
 
-    # label name -> source line, and blocks by source line, to resolve a callsub
-    # whose CFG entry edge is missing -- a subroutine whose own entry block is
-    # empty and merged into a reentrant loop-header successor leaves the
-    # `callsub -> entry` edge dangling, so the callee is never seen via
-    # `bb.successors`. Resolving the `callsub <label>` immediate to the first
-    # block at/after that label recovers it.
+    # Label line + blocks by line, to recover a callsub whose CFG entry edge is
+    # missing: a sub whose entry block is empty and merged into a reentrant
+    # loop-header successor leaves `callsub -> entry` dangling, so the callee is
+    # never seen via `bb.successors`.
     _label_line = {code.rstrip(":").strip(): ln for _f, ln, code in prog.labels}
     _by_line = sorted(prog.blocks.values(), key=lambda b: b.first_line)
 
@@ -109,8 +91,7 @@ def identify_subroutines(prog: "SSAProgram") -> dict:
         elif last == "retsub":
             retsub_bbs.append(bb)
 
-    # Source-ordered blocks per file, for the source-order continuation
-    # heuristic.
+    # Source-ordered blocks per file, for the continuation heuristic.
     bb_by_file_line: dict[str, list[BasicBlock]] = {}
     for bb in prog.blocks.values():
         if not bb.assignments:
@@ -121,10 +102,8 @@ def identify_subroutines(prog: "SSAProgram") -> dict:
         bb_by_file_line[f].sort(key=lambda b: b.assignments[0].location.line)
 
     def _source_next(cs_bb: BasicBlock) -> Optional[BasicBlock]:
-        """Heuristic 1: the next BB in source order after the callsub,
-        excluding subroutine entries (those are call *targets*, not return
-        points). Compiled TEAL emits the continuation right after the callsub
-        op, so this resolves almost every call on its own."""
+        """Heuristic 1: the next BB in source order after the callsub, excluding
+        subroutine entries (those are call TARGETS, not return points)."""
         last = cs_bb.assignments[-1].location
         for b in bb_by_file_line.get(last.file, ()):
             if b.assignments[0].location.line <= last.line:
@@ -135,20 +114,18 @@ def identify_subroutines(prog: "SSAProgram") -> dict:
         return None
 
     def _body(entry: BasicBlock, conts: dict, *, follow_callsub: bool = True) -> set[BasicBlock]:
-        """A subroutine's body: intraprocedural reachability from the entry,
-        modelling ``callsub`` as a *side-effecting op* that flows to its
-        continuation (the return point) — not a control transfer into the
-        callee. This is the same cut-callsub / splice-continuation model
-        :func:`build_control_tree` uses; doing it here keeps the continuation
-        (which runs in this sub's frame, before its own ``retsub``) in the
-        body rather than leaking it to the frame-less main flow. ``retsub`` is
-        terminal (its successors are caller continuations), and we never cross
-        into another subroutine's entry.
+        """A subroutine's body: intraprocedural reachability from ``entry``.
 
-        With ``follow_callsub=False`` an internal ``callsub`` is terminal too,
-        giving the sub's *own* blocks (entry → retsub) without the spliced-in
-        caller continuations — used to test "is X inside this callee?" without
-        the false overlaps the spliced continuations create."""
+        ``callsub`` is modelled as a side-effecting op flowing to its
+        continuation, not as a transfer into the callee — the continuation runs
+        in THIS sub's frame, so it belongs to the body rather than leaking to
+        the frame-less main flow. ``retsub`` is terminal (its successors are
+        caller continuations) and another sub's entry is never crossed.
+
+        ``follow_callsub=False`` makes an internal ``callsub`` terminal too,
+        giving the sub's OWN blocks (entry → retsub) without spliced-in caller
+        continuations — for "is X inside this callee?" without their false
+        overlaps."""
         body: set[BasicBlock] = set()
         stack = [entry]
         while stack:
@@ -171,19 +148,17 @@ def identify_subroutines(prog: "SSAProgram") -> dict:
                 stack.append(s)
         return body
 
-    # Bodies and continuations refine each other: a body must flow through
-    # each internal callsub's continuation, while the heuristic-2 continuation
-    # fallback needs the *callee's* retsubs — which live in a body. Seed the
-    # continuations with heuristic 1 (self-contained), then iterate to a
-    # fixpoint: heuristic 2 fills any callsub whose return point isn't the next
-    # source block (a linker that interleaved subroutine bodies). Converges in
-    # a round or two — each pass can only add continuations, never remove them.
+    # Bodies and continuations refine each other: a body must flow through each
+    # internal callsub's continuation, while the heuristic-2 fallback needs the
+    # CALLEE's retsubs — which live in a body. Seed with heuristic 1, then
+    # iterate to a fixpoint; heuristic 2 fills any callsub whose return point
+    # isn't the next source block (interleaved subroutine bodies).
     continuations: dict[BasicBlock, Optional[BasicBlock]] = {
         cs_bb: _source_next(cs_bb) for cs_bb in callsub_bbs
     }
     bodies: dict[BasicBlock, set[BasicBlock]] = {}
-    # bounded (the body/continuation refinement is monotone; the cap only guards
-    # against a pathological invalidate<->refill oscillation).
+    # Bounded: the refinement is monotone, so the cap only guards a pathological
+    # invalidate<->refill oscillation.
     for _round in range(len(callsub_bbs) + len(entries) + 8):
         bodies = {entry: _body(entry, continuations) for entry in entries}
         pure = {entry: _body(entry, continuations, follow_callsub=False)
@@ -201,17 +176,14 @@ def identify_subroutines(prog: "SSAProgram") -> dict:
             for entry, body in bodies.items()
         }
         # Fix mis-attributed continuations:
-        #  (a) a callee that never `retsub`s (it ends every path in `return` /
-        #      `err`) does not return, so its callsub has *no* continuation --
-        #      heuristic 1's next-source-block guess is spurious (and may land in
-        #      an unrelated subroutine's body, leaking a cross-group edge);
-        #  (b) a continuation may not lie inside the callee's *own* body
-        #      (entry -> retsub) unless it is a retsub target -- when the linker
-        #      placed that body right after the callsub, heuristic 1 mis-picked a
-        #      callee block as the return point. Drop it so heuristic 2 refills.
-        # The pure body (no spliced continuations) and the retsub-target
-        # exemption keep a block legitimately shared with the callee from being
-        # dropped.
+        #  (a) a callee that never `retsub`s does not return, so its callsub has
+        #      NO continuation -- heuristic 1's guess is spurious and may land in
+        #      an unrelated sub's body, leaking a cross-group edge;
+        #  (b) a continuation inside the callee's OWN body (entry -> retsub) that
+        #      isn't a retsub target means heuristic 1 mis-picked a callee block
+        #      as the return point; drop it so heuristic 2 refills.
+        # The pure body + the retsub-target exemption keep a block legitimately
+        # shared with the callee from being dropped.
         for cs_bb in callsub_bbs:
             callee = callsub_target.get(cs_bb)
             cont = continuations[cs_bb]
@@ -249,18 +221,18 @@ def identify_subroutines(prog: "SSAProgram") -> dict:
 
 
 def sound_return_targets(prog: "SSAProgram") -> tuple[dict, dict]:
-    """``(caller_of, return_target_of)``: for each ``callsub`` block C, the
-    block B that execution returns to (the next block in source order, whose
-    predecessors are ALL ``retsub`` blocks — i.e. B is reached ONLY via the
-    return, making it sound to carry C's caller-specific facts there). B with
-    any non-return predecessor is skipped (the facts wouldn't hold on the
-    other path)."""
+    """``(caller_of, return_target_of)``: per ``callsub`` block C, the block B
+    execution returns to — the next block in source order.
+
+    HAZARD: B qualifies only when its predecessors are ALL ``retsub`` blocks, so
+    B is reached ONLY via the return and C's caller-specific facts hold there.
+    Any non-return predecessor and B is skipped — the facts wouldn't hold on
+    that other path."""
     caller_of: dict[BasicBlock, BasicBlock] = {}
     return_target_of: dict[BasicBlock, BasicBlock] = {}
-    # Per-file blocks sorted by first_line, so "the next block after this
-    # callsub" is a bisect rather than a full scan. This runs inside
-    # PathPredicateAnalysis on every program; the old list-scan-per-callsub
-    # was O(callsubs x blocks).
+    # Per-file blocks sorted by first_line so "the next block" is a bisect, not
+    # an O(callsubs x blocks) scan — this runs inside PathPredicateAnalysis on
+    # every program.
     by_file: dict[str, list[BasicBlock]] = {}
     for b in prog.blocks.values():
         by_file.setdefault(b.file, []).append(b)
@@ -285,12 +257,11 @@ def sound_return_targets(prog: "SSAProgram") -> tuple[dict, dict]:
 
 
 def _pyblock_return_point(blocks) -> dict:
-    """The CONSTRUCTION policy's return points: for each callsub-terminated
-    block, the block holding the next op in ``(file, line)`` order — the
-    naive source-next heuristic (no entry exclusion, no retsub-predecessor
-    requirement). ``blocks`` follows the PyBlock structural protocol:
-    ``.ops`` (each with ``.op`` / ``.file`` / ``.line``), ``.succs``,
-    ``.preds``, ``.key``."""
+    """CONSTRUCTION-policy return points: per callsub-terminated block, the block
+    holding the next op in ``(file, line)`` order — NAIVE source-next, with no
+    entry exclusion and no retsub-predecessor requirement. ``blocks`` follows the
+    PyBlock protocol: ``.ops`` (each with ``.op``/``.file``/``.line``),
+    ``.succs``, ``.preds``, ``.key``."""
     op_lines: list = sorted(
         (op.file, op.line) for b in blocks for op in b.ops
     )
@@ -311,15 +282,14 @@ def _pyblock_return_point(blocks) -> dict:
 
 
 def pyblock_partition(blocks) -> dict:
-    """The CONSTRUCTION policy (moved verbatim from
-    ``PySSA._compute_subs_and_protos``): map every block to its owning
-    routine's entry block. Roots = main entries (no preds, not a callsub
-    successor) plus every callsub successor; ownership = DFS over
-    intra-routine successors, where a ``callsub`` flows to its naive return
-    point (:func:`_pyblock_return_point`) and ``retsub``/``return``/``err``
-    are terminal. First claim wins (roots iterate mains first, then entries
-    in ``.key`` order) — exactly the construction-time semantics the SSA
-    depth machinery was validated against."""
+    """CONSTRUCTION policy: map every block to its owning routine's entry block.
+
+    Roots = main entries (no preds, not a callsub successor) plus every callsub
+    successor; ownership = DFS over intra-routine successors where ``callsub``
+    flows to its naive return point (:func:`_pyblock_return_point`) and
+    ``retsub``/``return``/``err`` are terminal. First claim wins (mains first,
+    then entries in ``.key`` order) — exactly the construction-time semantics
+    the SSA depth machinery was validated against."""
     return_points = _pyblock_return_point(blocks)
 
     sub_entries: set = set()

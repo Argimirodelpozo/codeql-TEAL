@@ -1,12 +1,4 @@
-"""Shared read-queries over a ``self.g: networkx.DiGraph`` — the node-attribute
-getters and reachability helpers that ``TaintGraph`` / ``GroupTaintGraph`` /
-``XContractTaintGraph`` each re-implemented identically, plus the merge
-(:func:`copy_into`) and sink-classification (:func:`sensitive_sinks`) helpers
-the two composite views duplicated almost verbatim. Divergent methods
-(``paths`` / ``paths_between``, whose signatures differ per view; the per-view
-``find`` / ``build``) stay on the concrete classes. Consolidated in the spirit of
-``ssa/operands.py`` and ``cfg/dominance.py``.
-"""
+"""Read-queries, merging and sink classification shared by every taint-graph view."""
 from __future__ import annotations
 
 from typing import Callable, Iterable, Optional
@@ -17,11 +9,10 @@ from ..avm import SENSITIVE_ITXN_FIELDS, STATE_WRITE_OPS
 
 
 def copy_into(big: "nx.DiGraph", tg, wrap: Callable) -> None:
-    """Copy every node/edge of ``tg`` into ``big``, mapping each node through
-    ``wrap`` (the composite view's node wrapper).
+    """Copy every node/edge of ``tg`` into ``big``, wrapping each node.
 
-    Edge ``kinds`` are copied into a NEW set so pruning ``big`` can't mutate
-    the per-contract graph it was built from."""
+    HAZARD: edge ``kinds`` must be copied into a NEW set — sharing it lets a
+    prune of the composite silently mutate the per-contract graph it came from."""
     for n, attrs in tg.g.nodes(data=True):
         big.add_node(wrap(n), **attrs)
     for u, v, data in tg.g.edges(data=True):
@@ -29,10 +20,7 @@ def copy_into(big: "nx.DiGraph", tg, wrap: Callable) -> None:
 
 
 def sensitive_sinks(view) -> list[tuple[object, str]]:
-    """``(node, label)`` for every node of ``view`` that writes a sensitive
-    inner-txn field or persistent state — the sink taxonomy shared by the
-    group and cross-contract views. Reads through the ``NxGraphView``
-    accessors, so it works for any wrapper node type."""
+    """``(node, label)`` for every node writing a sensitive itxn field or state."""
     out: list[tuple[object, str]] = []
     for n in view.nodes():
         op = view.op_of(n)
@@ -46,10 +34,8 @@ def sensitive_sinks(view) -> list[tuple[object, str]]:
 
 
 class NxGraphView:
-    """Mixin: read-queries over ``self.g`` (a ``networkx.DiGraph`` the concrete
-    dataclass supplies). Node attributes ``op`` / ``immediates`` are read off
-    ``g.nodes[node]``; missing nodes return the empty/None answer rather than
-    raising."""
+    """Mixin of read-queries over ``self.g``; a missing node answers empty/None
+    rather than raising."""
 
     g: "nx.DiGraph"   # provided by the concrete dataclass (annotation only)
 

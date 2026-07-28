@@ -1,104 +1,44 @@
 """Per-line and per-path opcode cost analysis for TEAL programs.
 
-For each line in a program, computes:
+Per line: ``op_cost`` (the instruction's own AVM budget cost) and ``cumulative``
+(worst-case cost from entry, the max over CFG paths reaching it within budget).
+Computed by a recursive fold over :mod:`.control_tree`'s typed region tree, so
+nested loops count their inner contribution per outer iteration and branches
+inside loops take the worst-case arm.
 
-- ``op_cost``: the AVM opcode-budget cost of the single instruction.
-- ``cumulative``: the worst-case cumulative cost from program entry
-  to that line, taken as the max across all CFG paths that reach
-  it without already exceeding the AVM budget.
+HAZARD: the whole module trades precision for SOUNDNESS in ONE direction —
+reported cums OVER-approximate, so there are no false negatives for
+budget-exhaustion findings. Two documented exceptions break that guarantee and
+must be surfaced, not silently trusted:
 
-  CAVEAT for lines INSIDE a subroutine: each sub is folded once from a
-  fresh ``(0, 0)`` state, so its per-line cums are relative to
-  SUBROUTINE entry, not program entry (threading caller-side cum in
-  would mean folding the sub once per call site — exponential on deeply
-  nested call graphs). A hot line inside a sub called late in an
-  expensive program therefore reports a small cumulative; the caller's
-  side of the cost shows up at its ``callsub`` line, which IS charged
-  the callee's whole summary.
+* :data:`LENGTH_SCALED_OPS` and :data:`CURVE_SCALED_OPS` carry a representative
+  BASE constant only, so they UNDER-count on large inputs / expensive curves.
+  :func:`length_scaled_ops_used` names them; :func:`render` / :func:`to_dict`
+  then report those lines as a lower bound.
+* Box / state ops are charged 1, though the AVM scales box cost with size.
 
-The AVM halts once its opcode budget is exhausted. That budget is
-:func:`program_budget_ceiling`: ``TXN_BUDGET * ASSUMED_GROUP_SIZE``
-from peer group txns, plus ``TXN_BUDGET`` per inner appcall the
-program may submit (capped at :data:`HARD_BUDGET_LIMIT` /
-:data:`MAX_INNER_TXNS`). For ops with a FIXED per-invocation cost the
-reported ``cumulative`` is a **sound over-approximation** of the actual
-worst-case — no false negatives for budget-exhaustion findings. A few
-ops cost proportionally to their operand LENGTH
-(:data:`LENGTH_SCALED_OPS` — ``base64_decode`` / ``json_ref`` / ``mimc``
-/ ``sumhash512``) or their CURVE immediate (:data:`CURVE_SCALED_OPS` —
-the ``ec_*`` / ``ecdsa_*`` family); those carry a representative BASE
-constant in :data:`OPCODE_COSTS` and may under-count on very large
-inputs / the most expensive curve. When a program uses one,
-:func:`length_scaled_ops_used` names it and both :func:`render` and
-:func:`to_dict` say the cums are a lower bound for those lines — the
-over-approximation guarantee above holds only for the fixed-cost ops.
+HAZARD: for lines INSIDE a subroutine, cums are relative to SUBROUTINE entry,
+not program entry — each sub is folded once from a fresh ``(0, 0)`` state
+(threading caller-side cum in would mean folding it per call site, exponential
+on deep call graphs). A hot line in a sub called late in an expensive program
+therefore reports a SMALL cumulative; the caller's share appears at its
+``callsub`` line, which IS charged the callee's whole summary.
 
-Algorithm — structural-analysis fold over the control tree:
-
-1. :mod:`tealql.tealtools.control_tree` lifts the CFG into a typed
-   region tree (sequence / if / ifelse / switch / loop / improper),
-   processing inner loops first (via :mod:`tealql.tealtools.loops`).
-2. The cost fold is a recursive function over that tree:
-
-   - ``Block``: walk ops, accumulate cum and ic, record per-line
-     max into ``out``. Halt the block when cum would exceed
-     ``path_ceiling(ic)``.
-   - ``Sequence``: thread (cum, ic) through parts in order.
-   - ``If``: fold cond, then either skip (cond's exit) or take
-     the then-arm; cum/ic at join = max of both.
-   - ``IfElse`` / ``Switch``: fold cond, then every arm from
-     cond's exit; join state = max across arms.
-   - ``Loop``: compute body's static ``(per_iter_cost, submits)``
-     summary, derive ``max_iters`` from budget + 256-inner-txn
-     caps, fold the body at the last-full-iter entry and at the
-     partial-halting-iter entry to capture worst-case line cums.
-   - ``Improper``: irreducible fallback — thread state through the
-     residual DAG when it is acyclic; when it still has a cycle,
-     bound it like a loop (budget-derived ``max_iters`` × one-pass
-     summary), which is sound but loose.
-
-3. Per-line cum is the max recorded across every fold visit —
-   sound over-approximation in every region kind.
-
-Outcome: nested loops are correct (inner contribution counted per
-outer iter via the static body summary), branches inside loops are
-sound (worst-case arm cost), irreducible regions degrade gracefully
-to a documented loose bound.
-
-Cost table is intentionally partial — well-known expensive ops
-(crypto verifies, hashes, EC) are listed; everything else defaults
-to 1, which is correct for the vast majority of TEAL opcodes.
-Extend :data:`OPCODE_COSTS` for ops you care about that aren't
-already there.
-
-Limitations:
-
-- ``callsub`` is charged the callee's whole static ``(cost, submits)``
-  summary — both in the path fold and in the loop-body summary — via
-  the subroutine summary table built by ``per_line_cost_paths``. When
-  a region is analysed without its enclosing program the table is
-  empty and the call falls back to cost 1.
-- Every submitted inner txn is treated as if it were an appcall
-  (only appcalls actually grant +700 budget). Filtering by
-  TypeEnum via ``inner_txn_report`` would tighten this.
-- ``ASSUMED_GROUP_SIZE`` is a flat heuristic; group-shape analysis
-  (see ``group_reasoning``) can replace it with a known size.
-- Per-iter cost is the longest body-DAG path — for loops with
-  divergent branches, iters that take a short path are bounded by
-  the long-path cost (over-approximation but sound).
-- Box / state ops are charged 1 each. The AVM actually scales box
-  costs with size; for accurate budget accounting on box-heavy
-  contracts, refine the table.
+Other approximations, all over-approximate: every submitted inner txn is treated
+as an appcall (only appcalls grant +700); ``ASSUMED_GROUP_SIZE`` is a flat
+heuristic :mod:`.group_reasoning` can replace; per-iter cost is the longest
+body-DAG path; an irreducible region with a residual cycle is bounded like a
+loop. The cost table is intentionally partial — unlisted ops default to 1.
 """
 from __future__ import annotations
 
 from .ssa import BasicBlock, SSAProgram
 
 
-# Crypto / EC / hash ops with non-default costs. Fixed-cost entries are pinned
-# against puya's langspec by ``tests/test_cost_drift.py``; the variable-cost ops
-# (which puya models as ``cost=None``) carry a representative constant here and
-# are listed in ``_LENGTH_SCALED_OPS`` below.
+# Crypto / EC / hash ops with non-default costs. HAZARD: this is AVM spec data —
+# fixed-cost entries are pinned against puya's langspec by
+# ``tests/test_cost_drift.py``. Variable-cost ops (puya models them as
+# ``cost=None``) carry a representative constant and are listed below.
 OPCODE_COSTS: dict[str, int] = {
     "sha256": 35,
     "keccak256": 130,
@@ -111,11 +51,8 @@ OPCODE_COSTS: dict[str, int] = {
     "ecdsa_pk_decompress": 650,
     "ecdsa_pk_recover": 2000,
     "vrf_verify": 5700,
-    # Length-scaled ops. The AVM charges these a base plus a per-input-chunk
-    # term, so no single constant is exact; the BASE is charged here. Without
-    # these entries they defaulted to 1 — three orders of magnitude under for
-    # `mimc`, which silently broke the module's "sound over-approximation of the
-    # worst case" contract while the docstring claimed they were covered.
+    # Length-scaled: the AVM charges a base plus a per-input-chunk term, so no
+    # constant is exact and only the BASE is charged here.
     "mimc": 10,             # + 550 per 32 bytes
     "sumhash512": 150,      # + 7  per 4 bytes
     "json_ref": 25,         # + 2  per 7 bytes
@@ -128,8 +65,7 @@ OPCODE_COSTS: dict[str, int] = {
     "ec_map_to": 2300,
     "expw": 10,
     "bsqrt": 40,
-    # `divw` is NOT here: the langspec prices it at the default 1 (the table
-    # said 4, an over-count this file's drift test now catches).
+    # `divw` is NOT here: the langspec prices it at the default 1.
     "divmodw": 20,
     "sqrt": 4,
     # 512-bit byte-math (fixed per-op costs, AVM v10).
@@ -140,10 +76,8 @@ OPCODE_COSTS: dict[str, int] = {
 DEFAULT_COST = 1
 
 #: Ops whose real AVM cost is ``OPCODE_COSTS[op] + k * ceil(len(input)/chunk)``.
-#: :func:`opcode_cost` returns only the base, so a cum that includes one of
-#: these is a LOWER bound on that op's contribution — surfaced by
-#: :func:`length_scaled_ops_used` so a report can say so instead of implying
-#: the usual worst-case over-approximation.
+#: HAZARD: :func:`opcode_cost` returns only the base, so a cum including one of
+#: these is a LOWER bound, not the usual over-approximation.
 LENGTH_SCALED_OPS: frozenset[str] = frozenset({
     "mimc", "sumhash512", "json_ref", "base64_decode",
 })
@@ -157,54 +91,46 @@ CURVE_SCALED_OPS: frozenset[str] = frozenset({
 
 
 def length_scaled_ops_used(prog: SSAProgram) -> list[str]:
-    """Sorted opcodes in ``prog`` whose modelled cost is not a sound upper
-    bound (see :data:`LENGTH_SCALED_OPS` / :data:`CURVE_SCALED_OPS`). Empty
-    means every op in the program has a fixed per-invocation cost, so the
-    reported cums ARE the documented worst-case over-approximation."""
+    """Sorted opcodes in ``prog`` whose modelled cost is NOT a sound upper bound.
+
+    HAZARD: empty is the only case in which the reported cums are the documented
+    worst-case over-approximation; non-empty means they may under-count."""
     inexact = LENGTH_SCALED_OPS | CURVE_SCALED_OPS
     return sorted({
         a.op for bb in prog.blocks.values() for a in bb.assignments
         if a.op in inexact
     })
 
-# Absolute opcode-budget ceiling: the AVM halts long before this in
-# practice (~190k worst-case observed). 200k is a safe round cap.
+# Absolute ceiling; the AVM halts long before this (~190k worst-case observed).
 HARD_BUDGET_LIMIT = 200_000
 
-# Budget contribution per app-call transaction — both group peers
-# and submitted inner appcalls add this much to the shared pool.
+# Budget per app-call txn — group peers and submitted inner appcalls each add
+# this to the shared pool.
 TXN_BUDGET = 700
 
-# Conservative assumption about how many app-call peers we share a
-# group with. The protocol max is 16, but 4 fits typical groups and
-# yields a tight bound; refine with ``group_reasoning`` when the
-# real shape is known.
+# Assumed app-call peers in the group. The protocol max is 16; 4 fits typical
+# groups and bounds tighter. Replace with a known size via ``group_reasoning``.
 ASSUMED_GROUP_SIZE = 4
 
-# AVM protocol cap on inner txns a single top-level call may submit.
-# Bounds how far a loop that emits inner appcalls can extend its own
-# budget — each submission grants +TXN_BUDGET to the pool, but you
-# can only do this 256 times.
+# AVM cap on inner txns one top-level call may submit. Bounds how far a loop
+# emitting inner appcalls can extend its own budget: each grants +TXN_BUDGET,
+# but only 256 times.
 MAX_INNER_TXNS = 256
 
-# Soft cap for :func:`per_line_cost_paths` — when a line's distinct-cum
-# set exceeds this, we keep the smallest and largest values plus a
-# uniform sample of the rest, and flag the line as truncated. Stops
-# chained-loop multiplicative blowup from dominating output size.
+# Soft cap per line in :func:`per_line_cost_paths` — beyond it, keep min, max
+# and a uniform sample, and flag the line truncated, so chained-loop
+# multiplicative blowup can't dominate output size.
 MAX_CUMS_PER_LINE = 10_000
 
 
 def opcode_cost(op: str) -> int:
-    """AVM opcode-budget cost for ``op``. Defaults to 1 for unknown
-    opcodes (correct for the bulk of TEAL ops)."""
+    """AVM opcode-budget cost for ``op``, defaulting to 1 for unlisted opcodes."""
     return OPCODE_COSTS.get(op, DEFAULT_COST)
 
 
 def inner_txn_count(prog: SSAProgram) -> int:
-    """Static upper bound on inner txns this program may submit.
-    Each ``itxn_submit`` ends one txn; each ``itxn_next`` ends one
-    and starts another. Sums to the total submitted across all
-    groups."""
+    """Static upper bound on inner txns this program may submit — each
+    ``itxn_submit`` ends one and each ``itxn_next`` ends one and starts another."""
     return sum(
         1
         for bb in prog.blocks.values()
@@ -214,11 +140,8 @@ def inner_txn_count(prog: SSAProgram) -> int:
 
 
 def path_ceiling(inner_count: int, group_size: int = ASSUMED_GROUP_SIZE) -> int:
-    """Opcode budget available to a path that has already submitted
-    ``inner_count`` inner txns. ``inner_count`` is monotonically
-    non-decreasing along any path and is capped by
-    :data:`MAX_INNER_TXNS`; the result is capped by
-    :data:`HARD_BUDGET_LIMIT`."""
+    """Opcode budget left to a path that has already submitted ``inner_count``
+    inner txns, capped by :data:`HARD_BUDGET_LIMIT`."""
     return min(
         HARD_BUDGET_LIMIT,
         TXN_BUDGET * group_size + TXN_BUDGET * inner_count,
@@ -226,8 +149,7 @@ def path_ceiling(inner_count: int, group_size: int = ASSUMED_GROUP_SIZE) -> int:
 
 
 def _bb_in_cycle(bb: BasicBlock) -> bool:
-    """True if ``bb`` can reach itself via the CFG. Linear scan;
-    fine for TEAL programs at typical sizes."""
+    """True if ``bb`` can reach itself via the CFG."""
     stack = list(bb.successors)
     seen_ids: set[int] = set()
     while stack:
@@ -242,9 +164,8 @@ def _bb_in_cycle(bb: BasicBlock) -> bool:
 
 
 def _has_submit_in_cycle(prog: SSAProgram) -> bool:
-    """True iff any ``itxn_submit`` / ``itxn_next`` sits on a CFG
-    cycle. If so, the same submit can grant +``TXN_BUDGET`` to the
-    path more than once, defeating the static-count budget bound."""
+    """True iff any ``itxn_submit`` / ``itxn_next`` sits on a CFG cycle — if so
+    it can grant +``TXN_BUDGET`` repeatedly, defeating the static-count bound."""
     for bb in prog.blocks.values():
         if any(a.op in ("itxn_submit", "itxn_next") for a in bb.assignments):
             if _bb_in_cycle(bb):
@@ -257,21 +178,11 @@ def program_budget_ceiling(
 ) -> int:
     """Sound upper bound on opcode budget for any execution.
 
-    Three tiers, selected automatically by program structure — the
-    direction is always *over*-approximate, so reported cumulatives
-    are always an upper bound on the actual max cost (no false
-    negatives for budget-exhaustion findings):
-
-    - No ``itxn_submit`` / ``itxn_next``: base group budget only.
-      Tight.
-    - Submits present but none on any CFG cycle: base + ``700`` per
-      static submit. Tight — each submit grants its +700 at most
-      once on any execution since cycle-free CFGs can't revisit it.
-    - Submits on a CFG cycle: ``path_ceiling(MAX_INNER_TXNS)`` —
-      assume worst-case fan-out to the 256-submission protocol cap.
-      Loose but sound; the 256 cap is the only remaining bound on
-      how many times the cycle can re-grant +700. Future path-
-      relative analysis could tighten this per loop.
+    HAZARD: three tiers, always erring OVER. No submits at all: base group
+    budget, tight. Submits but none on a CFG cycle: base + 700 each, tight —
+    a cycle-free CFG can't revisit a submit. Submits ON a cycle:
+    ``path_ceiling(MAX_INNER_TXNS)``, since the 256-submission protocol cap is
+    then the only bound on how often the cycle re-grants +700 — loose but sound.
     """
     if _has_submit_in_cycle(prog):
         return path_ceiling(MAX_INNER_TXNS, group_size=group_size)
@@ -285,9 +196,7 @@ def _max_iters_full(
     submits_per_iter: int,
     group_size: int,
 ) -> int:
-    """Max ``k`` such that ``k`` full iterations all stay within
-    budget and the inner-txn cap, computed by inspecting the
-    iter-end state alone."""
+    """Max ``k`` full iterations that stay within budget and the inner-txn cap."""
     # End-of-iter state on iter k:
     #   cum = entry_cum + k*body_cost
     #   ic  = entry_ic  + k*submits_per_iter
@@ -316,23 +225,18 @@ def _max_iters_full(
 
 
 def _body_summary(region, group_size: int = ASSUMED_GROUP_SIZE) -> tuple[int, int]:
-    """Worst-case ``(per_iter_cost, per_iter_submits)`` for executing
-    ``region`` once. Used to drive ``_max_iters_full`` when summarising
-    a parent loop. Nested loops contribute ``max_iters × body_summary``
-    of their own body — sound under-the-hood recursion.
+    """Worst-case ``(per_iter_cost, per_iter_submits)`` for one execution of
+    ``region``; a nested loop contributes ``max_iters × body_summary``.
 
-    ``group_size`` must be the one the caller is analysing with: it sets the
-    budget ceiling that bounds nested-loop iteration counts, so a hardcoded
-    default would compute inner-loop bounds for a group size the caller never
-    asked about."""
+    HAZARD: ``group_size`` must be the one the caller is analysing with — it
+    sets the budget ceiling bounding nested-loop iteration counts, so the
+    default would silently bound inner loops for a different group size."""
     from .control_tree import (
         BlockR, SequenceR, IfR, IfElseR, SwitchR, GuardR, LoopR, ImproperR,
         ProgramR,
     )
     if isinstance(region, ProgramR):
-        # Programs are independent; conservatively take the worst-case
-        # program's per-iter cost (callers usually evaluate per-program
-        # via the outer fold, so this branch is mostly a safety net).
+        # Programs are independent; take the worst-case program's per-iter cost.
         c = max((_body_summary(p, group_size)[0] for p in region.programs), default=0)
         s = max((_body_summary(p, group_size)[1] for p in region.programs), default=0)
         return c, s
@@ -344,14 +248,10 @@ def _body_summary(region, group_size: int = ASSUMED_GROUP_SIZE) -> tuple[int, in
             if a.op in ("itxn_submit", "itxn_next"):
                 subs += 1
             elif a.op == "callsub":
-                # Charge the callee's whole static cost / submit count, the
-                # same as the path fold (_fold_paths_block). Without this a
-                # loop body that CALLS a subroutine was summarised at
-                # opcode_cost("callsub") == 1 with zero submits, so
-                # _max_iters_full over-estimated the iteration count and the
-                # per-iteration bases under-accumulated — under-approximating
-                # the worst case, which breaks this module's no-false-negative
-                # contract for budget exhaustion.
+                # HAZARD: charge the callee's whole static cost / submit count,
+                # as the path fold does. Charging opcode_cost("callsub") == 1
+                # with zero submits lets _max_iters_full over-estimate the
+                # iteration count and UNDER-approximates the worst case.
                 extra_c, extra_s = _callsub_extra(region.bb)
                 cost += extra_c
                 subs += extra_s
@@ -381,14 +281,13 @@ def _body_summary(region, group_size: int = ASSUMED_GROUP_SIZE) -> tuple[int, in
         max_s = max(_body_summary(c, group_size)[1] for c in region.cases)
         return cc + max_c, cs + max_s
     if isinstance(region, GuardR):
-        # Worst case for "completing the body": the guard doesn't
-        # fire, control falls through. cost = cond only. (The
-        # exit_arm runs on a different path that doesn't continue.)
+        # Worst case for completing the body is the guard NOT firing and control
+        # falling through, so cost = cond only; exit_arm doesn't continue.
         return _body_summary(region.cond, group_size)
     if isinstance(region, LoopR):
         body_c, body_s = _body_summary(region.body, group_size)
-        # Most permissive entry state (0, 0) → maximum iters → sound
-        # over-approximation when this loop appears inside an outer body.
+        # Most permissive entry state (0, 0) → maximum iters → over-approximate
+        # when this loop sits inside an outer body.
         iters = _max_iters_full(0, 0, body_c, body_s, group_size)
         return body_c * iters, body_s * iters
     if isinstance(region, ImproperR):
@@ -399,11 +298,10 @@ def _body_summary(region, group_size: int = ASSUMED_GROUP_SIZE) -> tuple[int, in
             nc, ns = _body_summary(n, group_size)
             c += nc
             s += ns
-        # An improper region is *irreducible*, not necessarily acyclic: Phase 1
-        # of build_control_tree collapses the loops it can recognise, and what
-        # survives here is exactly what it could not. When the residual has a
-        # cycle the region can run many passes, so bound it like a loop
-        # (summing one pass would UNDER-approximate the worst case).
+        # HAZARD: an improper region is IRREDUCIBLE, not necessarily acyclic —
+        # it is exactly what build_control_tree could not collapse. With a
+        # residual cycle it can run many passes, so it must be bounded like a
+        # loop; summing one pass UNDER-approximates the worst case.
         if _improper_is_cyclic(region):
             iters = _max_iters_full(0, 0, c, s, group_size)
             return c * iters, s * iters
@@ -424,27 +322,22 @@ def _improper_is_cyclic(region) -> bool:
 def per_line_costs(
     prog: SSAProgram, group_size: int = ASSUMED_GROUP_SIZE
 ) -> dict[tuple[str, int], tuple[str, int, int]]:
-    """Per-line ``(op_name, op_cost, max_cumulative)`` map.
-
-    Delegates to :func:`per_line_cost_paths` and takes the max of
-    each line's cum set."""
+    """Per-line ``(op_name, op_cost, max_cumulative)`` — the max of each line's cum set."""
     paths = per_line_cost_paths(prog, group_size=group_size)
     return {
         key: (op, oc, max(cums)) for key, (op, oc, cums) in paths.items()
     }
 
 
-# Module-level cache used during a single ``per_line_cost_paths`` call
-# so the BlockR fold can look up the active subroutine summaries
-# without threading an extra parameter through every recursive call.
+# Valid only during one ``per_line_cost_paths`` call, so the BlockR fold can
+# reach the active subroutine summaries without threading a parameter through
+# every recursive call.
 _active_sub_summaries: dict[int, tuple[int, int]] = {}
 
 
 def _callsub_extra(bb) -> tuple[int, int]:
-    """Extra ``(cost, submits)`` to add at a ``callsub`` op based on
-    the active subroutine summaries. Resolved by following the
-    callee BB id; returns ``(0, 0)`` when the callee isn't known
-    (e.g. analyzing a region without its enclosing program)."""
+    """Extra ``(cost, submits)`` for a ``callsub``, from the active subroutine
+    summaries; ``(0, 0)`` when the callee is unknown (region analysed alone)."""
     if not bb.successors or not _active_sub_summaries:
         return 0, 0
     callee = bb.successors[0]
@@ -454,22 +347,18 @@ def _callsub_extra(bb) -> tuple[int, int]:
 def per_line_cost_paths(
     prog: SSAProgram, group_size: int = ASSUMED_GROUP_SIZE
 ) -> dict[tuple[str, int], tuple[str, int, list[int]]]:
-    """Per-line ``(op_name, op_cost, sorted_cums)`` — every distinct
-    cum at which the line is reachable, including one per loop
-    iteration. Built by folding ``cum``-set propagation over the
-    control tree (see module docstring).
+    """Per-line ``(op_name, op_cost, sorted_cums)`` — every distinct cum at which
+    the line is reachable, one per loop iteration included.
 
-    Capped at :data:`MAX_CUMS_PER_LINE` per line; lines that hit the
-    cap remain sound (every reported cum is genuinely reachable, just
-    not exhaustive)."""
+    Capped at :data:`MAX_CUMS_PER_LINE`; a capped line stays sound — every
+    reported cum is genuinely reachable, just not exhaustive."""
     from .control_tree import build_control_tree, ProgramR
 
     tree = build_control_tree(prog)
     cums_per_line: dict[tuple[str, int], set[int]] = {}
     op_meta: dict[tuple[str, int], tuple[str, int]] = {}
 
-    # Populate the active subroutine summary table so ``BlockR`` folds
-    # can charge each ``callsub`` op for its callee's static cost.
+    # So each ``callsub`` can be charged its callee's static cost.
     global _active_sub_summaries
     _active_sub_summaries = {}
     if isinstance(tree, ProgramR):
@@ -496,9 +385,8 @@ def _fold_paths(
     cums_per_line: dict[tuple[str, int], set[int]],
     op_meta: dict[tuple[str, int], tuple[str, int]],
 ) -> frozenset[tuple[int, int]]:
-    """Recursive path-set fold: each region takes a set of possible
-    entry ``(cum, ic)`` states and produces the set of possible exit
-    states, while recording per-line cums into ``cums_per_line``."""
+    """Recursive fold: a region maps a set of entry ``(cum, ic)`` states to the
+    set of exit states, recording per-line cums into ``cums_per_line``."""
     from .control_tree import (
         BlockR, SequenceR, IfR, IfElseR, SwitchR, GuardR, LoopR, ImproperR,
         ProgramR,
@@ -510,10 +398,8 @@ def _fold_paths(
                 prog_region, frozenset([(0, 0)]), group_size,
                 cums_per_line, op_meta,
             )
-        # Also fold each subroutine intraprocedurally — gives per-line
-        # cums relative to a fresh subroutine-entry state. Doesn't try
-        # to thread caller-side cum in (would require folding the sub
-        # once per call site, exponential in deeply nested call graphs).
+        # Subroutines fold INTRAPROCEDURALLY, so their per-line cums are
+        # relative to a fresh sub-entry state, not program entry.
         for sub_region in region.subroutines.values():
             _fold_paths(
                 sub_region, frozenset([(0, 0)]), group_size,
@@ -601,9 +487,8 @@ def _fold_improper_paths(
     cums_per_line: dict[tuple[str, int], set[int]],
     op_meta: dict[tuple[str, int], tuple[str, int]],
 ) -> frozenset[tuple[int, int]]:
-    """Acyclic-DAG paths fold for an :class:`ImproperR`. Topologically
-    threads cum/ic state sets through the residual, merging at each
-    join via :func:`_merge_states`. Output = union of sink exits."""
+    """Fold an :class:`ImproperR` by topologically threading state through the
+    residual DAG, merging at joins; output is the union of sink exits."""
     import networkx as nx
 
     g = nx.DiGraph()
@@ -614,10 +499,8 @@ def _fold_improper_paths(
     try:
         topo = list(nx.topological_sort(g))
     except nx.NetworkXUnfeasible:
-        # Cyclic improper — the region can run many passes, so bound it like a
-        # loop rather than charging a single pass (which UNDER-approximated the
-        # worst case and broke the no-false-negative contract downstream of an
-        # irreducible region).
+        # HAZARD: cyclic improper — many passes are possible, so bound it like a
+        # loop; a single pass UNDER-approximates the worst case.
         for sub in region.nodes:
             _fold_paths(sub, entry_states, group_size, cums_per_line, op_meta)
         c, s = _body_summary(region, group_size)   # already iteration-bounded
@@ -662,9 +545,8 @@ def _fold_paths_block(
     cums_per_line: dict[tuple[str, int], set[int]],
     op_meta: dict[tuple[str, int], tuple[str, int]],
 ) -> frozenset[tuple[int, int]]:
-    """Block paths fold: for each entry state, walk ops, recording
-    each line's cum into ``cums_per_line``. Return the set of exit
-    states (one per entry that completed the block)."""
+    """Walk each entry state through the block's ops, recording per-line cums;
+    returns one exit state per entry that completed the block."""
     exits: set[tuple[int, int]] = set()
     for entry_cum, entry_ic in sorted(entry_states, reverse=True):
         cum, ic = entry_cum, entry_ic
@@ -704,11 +586,8 @@ def _fold_paths_loop(
     cums_per_line: dict[tuple[str, int], set[int]],
     op_meta: dict[tuple[str, int], tuple[str, int]],
 ) -> frozenset[tuple[int, int]]:
-    """Loop paths fold: for each entry state, fold the body at every
-    iter k ∈ [0, full_iters + 1] (the +1 picks up the partial
-    halting iter). Records per-line cums on each iter into
-    ``cums_per_line``. Returns the union of exit states across all
-    entry states and iter counts."""
+    """Fold the body at every iter ``k ∈ [0, full_iters + 1]`` per entry state
+    (the ``+1`` picks up the partial halting iter), unioning the exit states."""
     body_cost, body_submits = _body_summary(region.body, group_size)
     exits: set[tuple[int, int]] = set()
     for entry_cum, entry_ic in sorted(entry_states, reverse=True):
@@ -723,11 +602,9 @@ def _fold_paths_loop(
         full_iters = _max_iters_full(
             entry_cum, entry_ic, body_cost, body_submits, group_size
         )
-        # k = 0: exit before entering body (rare but allowed for
-        # multi-entry SCCs whose entry is also an exit).
+        # k = 0: exit before entering the body — allowed for a multi-entry SCC
+        # whose entry is also an exit.
         exits.add((entry_cum, entry_ic))
-        # k = 1..full_iters: each iter records per-line cums and adds
-        # an exit state.
         for k in range(1, full_iters + 1):
             iter_entry_cum = entry_cum + (k - 1) * body_cost
             iter_entry_ic = entry_ic + (k - 1) * body_submits
@@ -745,9 +622,8 @@ def _fold_paths_loop(
             exits.add((exit_cum, exit_ic))
             if len(exits) >= MAX_CUMS_PER_LINE:
                 break
-        # Partial halting iter: per-line cums get recorded via the
-        # block-level ceiling check inside ``_fold_paths`` — but we
-        # do not contribute an "exit" state from a halting iter.
+        # Partial halting iter: its per-line cums are recorded by the
+        # block-level ceiling check, but it contributes NO exit state.
         partial_cum = entry_cum + full_iters * body_cost
         partial_ic = entry_ic + full_iters * body_submits
         if (
@@ -766,15 +642,14 @@ def _merge_states(
     b: frozenset[tuple[int, int]],
     group_size: int = ASSUMED_GROUP_SIZE,
 ) -> frozenset[tuple[int, int]]:
-    """Set-union with a soft cap so chained branches/loops can't blow
-    up the state set unboundedly.
+    """Set-union with a soft cap so chained branches/loops can't blow up the
+    state set.
 
-    Past the cap, rank by remaining HEADROOM (``path_ceiling(ic) - cum``),
-    not by raw cum. A lower-cum state with a much larger inner-txn count
-    carries a far higher ceiling and can legally accumulate tens of
-    thousands more units downstream, so "keep the largest cums" could drop
-    the state that actually produces the worst case. Both extremes are
-    force-kept so neither the max-cum nor the max-headroom answer is lost."""
+    HAZARD: past the cap, rank by remaining HEADROOM
+    (``path_ceiling(ic) - cum``), not by raw cum. A lower-cum state with a
+    larger inner-txn count has a far higher ceiling and can accumulate much more
+    downstream, so "keep the largest cums" drops the state that actually
+    produces the worst case. Both extremes are force-kept."""
     merged = a | b
     if len(merged) <= MAX_CUMS_PER_LINE:
         return merged
@@ -799,10 +674,8 @@ def _merge_states(
 
 
 def render(prog: SSAProgram) -> str:
-    """Per-line cost table, sorted by (file, line). When the program uses an op
-    whose modelled cost is not a sound upper bound (length- or curve-scaled), a
-    trailing note says so — the table's usual "worst-case over-approximation"
-    guarantee does not hold for those lines."""
+    """Per-line cost table sorted by ``(file, line)``, with a trailing note when
+    the program uses an op whose modelled cost is not a sound upper bound."""
     lines = per_line_costs(prog)
     if not lines:
         return "(no instructions)"
@@ -822,21 +695,12 @@ def render(prog: SSAProgram) -> str:
 
 
 def to_dict(prog: SSAProgram, paths: bool = False) -> dict:
-    """Structured cost output. With ``paths=False`` (default) each
-    entry carries the per-line max ``cumulative``. With ``paths=True``
-    each entry carries the full sorted ``cumulatives`` list — every
-    distinct cum at which the line is reachable (capped at
-    :data:`MAX_CUMS_PER_LINE`).
+    """Structured cost output — per-line max ``cumulative``, or the full sorted
+    ``cumulatives`` list with ``paths=True``, plus ``budget_ceiling``,
+    ``max_observed_cumulative`` and ``inexact_cost_ops``.
 
-    Top-level fields:
-
-    - ``budget_ceiling``: :func:`program_budget_ceiling` headline.
-    - ``max_observed_cumulative``: largest cum across all lines.
-    - ``inexact_cost_ops``: ops whose modelled cost is NOT a sound upper bound
-      (see :func:`length_scaled_ops_used`); non-empty means the cums are a
-      lower bound for the lines involving them.
-    - ``paths`` (only when ``paths=True``): the input mode echo.
-    """
+    HAZARD: a non-empty ``inexact_cost_ops`` means the cums for lines using
+    those ops are a LOWER bound, not the usual over-approximation."""
     if paths:
         lines = per_line_cost_paths(prog)
         entries = []

@@ -1,22 +1,11 @@
-"""Suppressions — inline ``// tealql-ignore`` comments and a baseline file.
+"""Suppressions, so CI on a brownfield codebase fails only on NEW findings.
 
-Table stakes for adopting a scanner on an existing (brownfield) codebase:
-a way to accept known findings so CI fails only on NEW ones.
-
-Two mechanisms:
-
-* **Inline** — a ``// tealql-ignore`` comment on the flagged line (or the line
-  directly above it) suppresses findings there. Scope it to detectors with
-  ``// tealql-ignore: rekey-to, fee-validation``; bare ``// tealql-ignore``
-  suppresses every detector on that line. Best for an intentional,
-  locally-justified exception (pair it with a human reason in the same
-  comment).
-
-* **Baseline** — a JSON file of finding FINGERPRINTS (``--baseline``). Findings
-  whose fingerprint is in the file are dropped; ``--update-baseline`` rewrites
-  it from the current run. Best for "accept everything as-is today, fail on
-  regressions." The fingerprint is LINE-INSENSITIVE (rule + file + message with
-  line numbers stripped) so unrelated edits elsewhere don't invalidate it.
+* **Inline** — ``// tealql-ignore`` on the flagged line or the one above it;
+  ``// tealql-ignore: rekey-to, fee-validation`` scopes it to detectors, bare
+  suppresses all. For an intentional, locally-justified exception.
+* **Baseline** — a JSON file of finding FINGERPRINTS. The fingerprint is
+  LINE-INSENSITIVE (rule + file + line-stripped message), so unrelated edits
+  elsewhere in the file do not invalidate it.
 """
 from __future__ import annotations
 
@@ -31,19 +20,16 @@ _LINE_NUM_RE = re.compile(r":\d+")
 
 
 def fingerprint(finding) -> str:
-    """A stable, line-insensitive fingerprint of a :class:`ScanFinding`:
-    ``sha256(rule_id | file | message-with-line-numbers-stripped)``. Line
-    numbers are stripped from the message so an edit that shifts lines
-    elsewhere in the file doesn't churn the baseline."""
+    """``sha256(rule_id | file | line-stripped message)`` — line-insensitive so an
+    edit that shifts lines elsewhere doesn't churn the baseline."""
     msg = _LINE_NUM_RE.sub(":N", finding.violation.pretty())
     key = f"{finding.detector_name}\x00{finding.rel_path}\x00{msg}"
     return hashlib.sha256(key.encode()).hexdigest()[:16]
 
 
 def _ignore_directive(line: str) -> "tuple[bool, frozenset[str]] | None":
-    """Parse a ``// tealql-ignore[: names]`` directive from a source line, or
-    ``None``. Returns ``(is_ignore, detector_names)`` where an empty name set
-    means "all detectors"."""
+    """``(is_ignore, detector_names)`` for a ``// tealql-ignore[: names]`` directive,
+    or ``None``; an empty name set means all detectors."""
     m = _IGNORE_RE.search(line)
     if not m:
         return None
@@ -54,9 +40,8 @@ def _ignore_directive(line: str) -> "tuple[bool, frozenset[str]] | None":
 
 
 def inline_suppressed(finding, source_lines: "list[str]") -> bool:
-    """True when the finding's line — or the line directly above it — carries a
-    ``// tealql-ignore`` directive covering this detector. Findings with no line
-    (whole-program) can only be suppressed by a directive on line 1."""
+    """The finding's line, or the one above it, carries a directive covering this
+    detector. A whole-program finding can only be suppressed from line 1."""
     line = finding.to_finding().line or 1
     for probe in (line, line - 1):          # same line, or the line above
         if 1 <= probe <= len(source_lines):
@@ -69,8 +54,7 @@ def inline_suppressed(finding, source_lines: "list[str]") -> bool:
 
 
 def load_baseline(path: "str | Path") -> set[str]:
-    """Load fingerprints from a baseline JSON file (``{"fingerprints": [...]}``);
-    empty set if the file doesn't exist yet."""
+    """Fingerprints from a baseline JSON file; empty set when it doesn't exist yet."""
     p = Path(path)
     if not p.exists():
         return set()
@@ -79,8 +63,7 @@ def load_baseline(path: "str | Path") -> set[str]:
 
 
 def write_baseline(path: "str | Path", findings: Iterable) -> int:
-    """Write the findings' fingerprints to ``path`` (sorted, deduped). Returns
-    the count written."""
+    """Write the findings' fingerprints to ``path``, sorted and deduped."""
     fps = sorted({fingerprint(f) for f in findings})
     Path(path).write_text(json.dumps(
         {"tool": "tealql", "fingerprints": fps}, indent=2))
@@ -93,9 +76,8 @@ def partition(
     root: "str | Path | None" = None,
     baseline: "set[str] | None" = None,
 ) -> "tuple[list, list]":
-    """Split findings into ``(kept, suppressed)``. A finding is suppressed if an
-    inline ``// tealql-ignore`` covers it (source read relative to ``root``) or
-    its fingerprint is in ``baseline``. Source read is cached per file."""
+    """Split findings into ``(kept, suppressed)`` by inline directive (source read
+    relative to ``root``, cached per file) or ``baseline`` fingerprint."""
     baseline = baseline or set()
     root = Path(root) if root is not None else None
     src_cache: dict[str, list[str]] = {}

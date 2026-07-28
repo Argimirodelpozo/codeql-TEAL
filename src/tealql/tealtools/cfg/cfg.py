@@ -1,15 +1,8 @@
-"""Basic-block CFG view of a TEAL program.
+"""Basic-block CFG view of a TEAL program: reachability, dominance, loop
+membership, DOT rendering — a thin view over ``SSAProgram``'s BBs.
 
-Thin abstraction over :class:`tealql.tealtools.ssa.SSAProgram`'s already-built
-BB structure. Three concerns only:
-
-1. **Build** — :meth:`CFG.of` collects ``prog.blocks`` into one object.
-2. **Predicates** — reachability (forward / backward), dominance,
-   loop membership, entry / exit identification.
-3. **Render** — ``to_dot()`` emits a Graphviz string.
-
-Everything is per-method-cached lazily; rebuild via :meth:`CFG.of` if
-the underlying ``SSAProgram`` changes.
+HAZARD: results are cached lazily on the instance; rebuild via :meth:`CFG.of`
+if the underlying ``SSAProgram`` changes.
 """
 from __future__ import annotations
 
@@ -33,8 +26,7 @@ class CFG:
 
     @classmethod
     def of(cls, prog: SSAProgram) -> "CFG":
-        """Build the CFG view from a program. Cheap — just collects
-        the BBs already laid out by SSA construction."""
+        """Collect the BBs SSA construction already laid out into a CFG view."""
         return cls(
             prog=prog,
             blocks=sorted(
@@ -47,10 +39,11 @@ class CFG:
 
     @property
     def entries(self) -> list[BasicBlock]:
-        """The real execution entries: per file, the BB holding the file's
-        first instruction. NOT "BBs with no predecessors" — a program whose
-        first block is a branch target (top-level loop) has none, and an empty
-        entry set saturates dominance into everything-dominates-everything.
+        """Per file, the BB holding that file's first instruction.
+
+        HAZARD: NOT "BBs with no predecessors" — a program whose first block is
+        a branch target (top-level loop) has none, and an empty entry set
+        saturates dominance into everything-dominates-everything.
         Predecessor-less non-first BBs are dead code, not entries."""
         return program_entries(self.blocks)
 
@@ -66,8 +59,7 @@ class CFG:
     # --- reachability -------------------------------------------------
 
     def reachable_from(self, src: BasicBlock) -> set[BasicBlock]:
-        """All BBs reachable from ``src`` along the CFG. Includes
-        ``src`` itself even if it has no successors."""
+        """All BBs reachable from ``src``, including ``src`` itself."""
         seen: set[BasicBlock] = {src}
         queue: deque[BasicBlock] = deque([src])
         while queue:
@@ -79,8 +71,7 @@ class CFG:
         return seen
 
     def reachable_to(self, dst: BasicBlock) -> set[BasicBlock]:
-        """All BBs that can reach ``dst`` (i.e. on some path to it).
-        Includes ``dst``."""
+        """All BBs that can reach ``dst``, including ``dst`` itself."""
         seen: set[BasicBlock] = {dst}
         queue: deque[BasicBlock] = deque([dst])
         while queue:
@@ -107,25 +98,18 @@ class CFG:
         max_paths: int = 100,
         max_length: Optional[int] = None,
     ) -> list[list[BasicBlock]]:
-        """All *simple* (cycle-free) paths from ``src`` to ``dst``,
-        sorted by length (shortest first).
+        """All *simple* (cycle-free) paths from ``src`` to ``dst``, shortest first.
 
-        ``max_paths``: cap the number of paths returned — programs
-        with many branches can blow up exponentially. Default 100.
-        ``max_length``: optional per-path BB-count cap; if a search
-        branch grows past it, it's pruned. ``None`` = no cap.
-
-        Cycles are broken by the simple-path constraint: a BB never
-        appears twice in the same path. For loop-aware enumeration,
-        unroll the loop in the source first.
+        HAZARD: the result is TRUNCATED at ``max_paths`` (default 100) and pruned
+        past ``max_length`` BBs, so a short result is no proof no other path
+        exists. A BB never repeats, so loops need source-level unrolling.
         """
         if src is dst:
             return [[src]]
         out: list[list[BasicBlock]] = []
 
-        # Explicit stack, not recursion: with `max_length=None` the walk is
-        # bounded only by the block count, and a ~1000-block program (large
-        # flattened mainnet contracts) overflowed Python's recursion limit.
+        # Explicit stack, not recursion: with `max_length=None` the walk is bounded
+        # only by the block count, and ~1000-block programs overflow the limit.
         work: list = [(src, [src], {src})]
         while work:
             node, path, visited = work.pop()
@@ -136,7 +120,7 @@ class CFG:
             # Reversed so the pops preserve the original successor order.
             for s in reversed(list(node.successors)):
                 if s in visited:
-                    continue  # skip back-edge / cycle
+                    continue
                 new_path = path + [s]
                 if s is dst:
                     out.append(new_path)
@@ -150,45 +134,34 @@ class CFG:
     # --- dominance ----------------------------------------------------
 
     def dominators(self, target: BasicBlock) -> set[BasicBlock]:
-        """All BBs that dominate ``target`` — every path from a CFG
-        entry to ``target`` passes through every dominator. Includes
-        ``target`` itself.
-
-        Standard fixpoint: ``dom(entry) = {entry}``;
-        ``dom(b) = {b} ∪ ⋂_p dom(p)`` over predecessors.
-        """
+        """BBs through which every entry-to-``target`` path passes; reflexive."""
         return self._all_dominators()[target]
 
     def post_dominators(self, source: BasicBlock) -> set[BasicBlock]:
-        """All BBs that post-dominate ``source`` — every path from
-        ``source`` to a CFG exit passes through every post-dominator.
-        Symmetric to :meth:`dominators` on the reversed CFG."""
+        """BBs through which every ``source``-to-exit path passes; reflexive."""
         return self._all_post_dominators()[source]
 
     def dominates(self, a: BasicBlock, b: BasicBlock) -> bool:
-        """``True`` iff every path from a CFG entry to ``b`` passes
-        through ``a``. Reflexive: ``dominates(b, b) is True``."""
+        """``True`` iff every path from a CFG entry to ``b`` crosses ``a``."""
         return a in self.dominators(b)
 
     def strictly_dominates(self, a: BasicBlock, b: BasicBlock) -> bool:
         return a is not b and self.dominates(a, b)
 
     def post_dominates(self, a: BasicBlock, b: BasicBlock) -> bool:
-        """``True`` iff every path from ``b`` to a CFG exit passes
-        through ``a``. Reflexive."""
+        """``True`` iff every path from ``b`` to a CFG exit crosses ``a``."""
         return a in self.post_dominators(b)
 
     def strictly_post_dominates(self, a: BasicBlock, b: BasicBlock) -> bool:
         return a is not b and self.post_dominates(a, b)
 
     def immediate_dominator(self, bb: BasicBlock) -> Optional[BasicBlock]:
-        """The unique closest strict dominator of ``bb``, if any.
-        Entries (and unreachable BBs) return ``None``."""
+        """The closest strict dominator of ``bb``; ``None`` for entries."""
         strict = self.dominators(bb) - {bb}
         if not strict:
             return None
-        # idom = the dominator that's dominated by every other strict
-        # dominator (i.e. lowest in the dominance tree).
+        # idom = the strict dominator dominated by every other one (lowest in
+        # the dominance tree).
         all_doms = self._all_dominators()
         for d in strict:
             if all(other is d or other in all_doms[d] for other in strict):
@@ -220,16 +193,14 @@ class CFG:
         cached = getattr(self, "_pdom_cache", None)
         if cached is not None:
             return cached
-        # Post-dominance is dominance on the reversed CFG: exits become entries,
-        # successors become predecessors.
+        # Post-dominance is dominance on the reversed CFG: exits become entries.
         post = iterative_dominators(
             self.blocks, self.exits, lambda b: b.successors,
         )
-        # A block that cannot reach ANY exit (an infinite-loop region — or the
-        # whole program, when it has no return/err at all) is "unreachable" on
-        # the reversed graph and comes out SATURATED, which here reads
-        # "everything post-dominates it" — the unsound direction for any
-        # consumer asking "is this check unavoidable after that action".
+        # HAZARD: a block reaching NO exit (infinite-loop region, or a whole
+        # program with no return/err) is unreachable on the reversed graph and
+        # comes out SATURATED — reading as "everything post-dominates it", the
+        # unsound direction for "is this check unavoidable after that action".
         # Nothing post-dominates a block that never terminates.
         can_exit: set = set(self.exits)
         stack = list(can_exit)
@@ -248,18 +219,12 @@ class CFG:
     # --- loop membership ----------------------------------------------
 
     def in_loop(self, bb: BasicBlock) -> bool:
-        """``True`` iff ``bb`` is on a CFG cycle (reachable from itself
-        via at least one edge)."""
+        """``True`` iff ``bb`` is on a CFG cycle."""
         return bb in self.loop_blocks()
 
     def loop_blocks(self) -> set[BasicBlock]:
-        """Every BB that participates in any cycle. Useful for
-        cost / iteration analyses that need to flag unbounded
-        regions conservatively.
-
-        One SCC pass over the whole graph, cached. The former
-        implementation ran an uncached BFS per successor per block —
-        ``O(V·(V+E))`` — and ``in_loop`` is called per block."""
+        """Every BB participating in any cycle — one cached SCC pass, since
+        ``in_loop`` is called per block."""
         cached = getattr(self, "_loop_blocks_cache", None)
         if cached is not None:
             return cached
@@ -290,13 +255,8 @@ class CFG:
         rankdir: str = "TB",
         with_assignments: bool = True,
     ) -> str:
-        """Render the CFG as a Graphviz DOT string.
-
-        ``file``: restrict to BBs in this source file (e.g. when a program
-        spans multiple ``.teal`` sources).
-        ``with_assignments``: include each BB's opcode list in the
-        node label. Set ``False`` for a tiny, structural-only graph.
-        """
+        """Render the CFG as a Graphviz DOT string, optionally restricted to
+        the BBs of one source ``file``."""
         blocks = (
             self.blocks if file is None
             else [b for b in self.blocks if b.file == file]

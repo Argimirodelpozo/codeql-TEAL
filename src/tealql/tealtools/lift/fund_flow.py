@@ -1,43 +1,21 @@
 """Attacker-controlled inner-transaction FUND-FLOW detector (IR layer).
 
-This is the PRIMARY fund-flow analysis: it backs the first-class
-``ir-tainted-fund-flow`` detector (run via the ``tealql.security.common.ir_lifter``
-bridge) and SUBSUMES the SSA-layer ``security/detections/tainted-fund-flow``
-sibling on every axis -- interprocedural taint (the lift resolves ``proto``
-frames into explicit params, a connection the SSA def-use does not carry),
-guard dominance across ``callsub`` boundaries (:func:`_entry_guards`), typed
-values, and cross-contract caller-pin suppression via ``trusted_args``. The SSA
-detector is marked ``superseded_by`` this one and dropped from default scans;
-it remains only as the automatic fallback when a contract fails to lift.
+Backs the ``ir-tainted-fund-flow`` detector. Every user-input-tainted value
+reaching a fund-flow inner-txn field -- Receiver / Amount / CloseRemainderTo and
+their asset variants -- is a finding, annotated with the guards that dominate the
+sink (asserts and forced branches, classified by whether they check the tainted
+input or the ``Sender``) so an UNGUARDED flow stands out from an already-gated
+one. Built on :func:`taint.user_input_taint` plus dominators over the lifted IR
+CFG; guards are recognised intra-procedurally AND across ``callsub`` boundaries.
+``param_derived`` marks only the residual unresolved case: a param feeds the
+sink, nothing guards it, and the sub has no call sites to inspect.
 
-Every user-input-tainted value reaching a *fund-flow* inner-transaction field is a
-finding: the attacker can influence WHO gets paid, HOW MUCH, or WHO controls the
-account.
+Supersedes the SSA-layer ``tainted-fund-flow`` sibling, which survives only as
+the automatic fallback when a contract fails to lift.
 
-    CloseRemainderTo / AssetCloseTo              -- sweep the account
-    Receiver / AssetReceiver                     -- redirect a payment
-    Amount / AssetAmount                         -- control how much moves
-
-    (RekeyTo is intentionally NOT a fund field here -- an app/itxn RekeyTo is
-    self-inflicted, not a tainted-field vuln; rekey is an lsig-only check. See
-    ``avm.FUND_FIELDS`` and the lsig ``rekey-to`` detector.)
-
-Each finding records the *dominating guards* on the path to the sink -- asserts,
-and conditional branches whose outcome is forced on every path that reaches the
-sink -- classified by whether they test the tainted input or the transaction
-``Sender``. So an UNGUARDED attacker-controlled fund flow (nothing on the path
-checks the input or who's calling) stands out from one already gated by a check;
-the guard list is reported either way so a human triages, à la the SSA-layer
-``auth_domination`` detector.
-
-Built on :func:`taint.user_input_taint` (precise interprocedural IR taint) plus a
-dominator computation over the lifted IR CFG. Guards are recognised both
-intra-procedurally AND across call boundaries: a value passed into a parameter that
-the caller already checked counts as guarded (:func:`_entry_guards`, a monotone
-fixpoint that ANDs the guard over every tainted-passing call site, with
-transitivity through the caller's own params). ``param-derived`` now means only the
-residual UNRESOLVED case -- a param feeds the sink, nothing guards it, and the sub
-has no call sites to inspect (e.g. dead / externally-entered).
+HAZARD: RekeyTo is deliberately NOT a fund field here -- an app/itxn RekeyTo is
+self-inflicted, not a tainted-field vuln. Rekey is an lsig-only check; see
+``avm.FUND_FIELDS`` and the lsig ``rekey-to`` detector.
 """
 from __future__ import annotations
 
@@ -49,27 +27,23 @@ from .taint import _intr, _invoke, source_label, user_input_taint
 from ..avm import FUND_FIELDS as _FUND_FIELDS
 from ..cfg.dominance import iterative_dominators
 
-# Inner-txn fields where attacker control = fund redirection / theft, by severity
-# (canonical FUND_FIELDS in tealql.tealtools.avm).
 _SEV_ORDER = {"CRITICAL": 3, "HIGH": 2, "MEDIUM": 1, "LOW": 0}
 
-#: Reads of the CURRENT transaction's Sender. The ``gtxn*`` sibling family is
-#: DELIBERATELY excluded: `gtxn 1 Sender` is another group transaction's
-#: sender, and whoever composes the group chooses it, so treating it as an
-#: authorisation check let an attacker-satisfiable condition suppress a real
-#: fund flow. Only the current txn's sender (and the immutable creator) are
-#: sound authorisation signals here.
+#: Reads of the CURRENT transaction's Sender. HAZARD: the ``gtxn*`` family is
+#: DELIBERATELY excluded -- whoever composes the group chooses `gtxn 1 Sender`,
+#: so counting it as authorisation lets an attacker-satisfiable condition
+#: suppress a real fund flow. Only the current txn's sender and the immutable
+#: creator are sound authorisation signals.
 _TXN_SENDER_FAM = frozenset({"txn", "txna"})
 
-#: Ops whose result depends on the LENGTH, not the VALUE, of their operand — a
-#: guard reaching an input only through these (``assert(len(arg) == 8)``) bounds
-#: its length, not its value, so it is not a value guard (see ``_classify``).
+#: Ops whose result depends on the LENGTH, not the VALUE, of their operand: a
+#: guard reaching an input only through these bounds its length, not its value
+#: (see :func:`_classify`).
 _VALUE_OPAQUE_OPS = frozenset({"len", "bitlen"})
 
 #: Equality / inequality comparisons, uint64 and bytes. Which one encloses a
-#: sender read decides whether that read PINS the sender (an equality that must
-#: hold) or merely excludes one address (an inequality that must hold) -- see
-#: the comparison-sense reasoning in :func:`_classify`.
+#: sender read decides whether that read PINS the sender or merely excludes one
+#: address -- see the comparison-sense reasoning in :func:`_classify`.
 _EQ_OPS = frozenset({"==", "b=="})
 _NEQ_OPS = frozenset({"!=", "b!="})
 
@@ -92,8 +66,7 @@ def _succs(term) -> list:
 
 
 def _dominators(sub) -> dict:
-    """``{block_id: set(block_ids that dominate it)}`` for one subroutine.
-    The IR sub has a single entry (``ids[0]``) and all blocks reachable."""
+    """``{block_id: dominators}`` for one subroutine (single entry, ``ids[0]``)."""
     ids = [b.id for b in sub.body]
     if not ids:
         return {}
@@ -112,13 +85,9 @@ def _dominators(sub) -> dict:
 
 
 def _invoke_returns(lifter) -> dict:
-    """``{id(call_result_register): [callee return-value registers]}``.
-
-    Lets a guard walk descend into a VALIDATION SUBROUTINE: an
-    ``assert (callsub check ...)`` where the actual ``txn Sender == owner`` (or
-    value) check lives inside the callee's body and flows out through its
-    ``SubroutineReturn``. Maps the i-th result of each ``InvokeSubroutine`` to the
-    i-th returned register of every ``SubroutineReturn`` in the callee."""
+    """Map the i-th result of each ``InvokeSubroutine`` to the i-th register
+    returned by every ``SubroutineReturn`` in the callee, so a guard walk can
+    descend into an asserted validation subroutine."""
     name2sub = {s.id: s for s in lifter.subs}
     out: dict = {}
     for b in pre_ir.blocks(lifter.subs):
@@ -142,29 +111,22 @@ def _invoke_returns(lifter) -> dict:
     return out
 
 
-#: Depth bound on :func:`_walk`. The def-expression tree behind a sink operand
-#: is unbounded in principle; 8 levels covers every real guard shape observed
-#: and keeps the enumeration cheap.
+#: Depth bound on :func:`_walk`; the def-expression tree is unbounded in principle.
 _WALK_MAX_DEPTH = 8
 
 
 def _walk(value, def_of, depth=0, seen=None, inv_ret=None):
-    """Yield ``(register, defining_op_or_None)`` for every register in the
-    def-expression tree behind ``value`` (bounded). With ``inv_ret`` (from
-    :func:`_invoke_returns`), descend through a call result into the callee's
-    returned values -- so a check inside an asserted validation subroutine is
-    seen as part of the guard condition.
+    """Yield ``(register, defining_op_or_None)`` for every register in the bounded
+    def-expression tree behind ``value``, descending through a call result into
+    the callee's returned values when ``inv_ret`` is given.
 
-    ``seen`` maps ``id(register) -> the shallowest depth it has been expanded
-    at``, NOT a plain visited set. With a set, a register first reached at
-    depth 7 was expanded with one level of budget left and then permanently
-    suppressed, so the same register reached at depth 1 through another path --
-    with seven levels of budget -- was skipped and its subtree never
-    enumerated. Which guards the walk found therefore depended on traversal
-    order. Re-expanding on a strictly shallower reach fixes that and still
-    terminates: depth is bounded, so each register is expanded at most
-    ``_WALK_MAX_DEPTH + 1`` times. Every caller collects into a set, so the
-    repeated yields are absorbed."""
+    HAZARD: ``seen`` maps ``id(register) -> shallowest depth expanded at``, NOT a
+    plain visited set. With a set, a register first reached near the depth limit
+    is expanded on a starved budget then permanently suppressed, so reaching it
+    shallowly later skips its subtree -- which guards the walk finds becomes
+    traversal-order dependent. Re-expanding on a strictly shallower reach still
+    terminates: depth is bounded, so each register expands at most
+    ``_WALK_MAX_DEPTH + 1`` times, and callers collect into sets."""
     if seen is None:
         seen = {}
     if not isinstance(value, pre_ir.Register) or depth > _WALK_MAX_DEPTH:
@@ -202,29 +164,16 @@ def _is_sender_op(src) -> bool:
 def _scratch_value_edges(lifter, dom_by_sub) -> dict:
     """``{id(load_result_register): [stored_register]}`` for scratch round-trips
     the value PROVABLY survives — the same map shape as :func:`_invoke_returns`,
-    so it merges into that map and every ``_walk`` already threading it gets the
-    edge for free.
+    so it merges into that map and every ``_walk`` threading it gets the edge for
+    free. Without it a guard whose RESULT is round-tripped (``==; store 0;
+    load 0; assert``) reaches the IR as ``assert (load 0)``, the def-walk
+    dead-ends, and a correctly-guarded contract reads as a finding.
 
-    The lift keeps ``store N`` / ``load N`` as IR intrinsics AND rebuilds the IR
-    from the op stream rather than the SSA def-use graph, so a guard whose
-    RESULT is round-tripped (``txn Sender; global CreatorAddress; ==; store 0;
-    load 0; assert``) reaches the IR as ``assert (load 0)`` and the def-walk
-    dead-ends there. The guard is real and dominates the sink, but it is
-    invisible — a false positive on a correctly-guarded contract.
-
-    MUST-semantics, deliberately strict (an unprovable case simply does not
-    bridge, which is exactly today's behaviour):
-
-    * the program contains no dynamic ``stores`` write — one of those can target
-      any slot, which destroys the "only this store writes this slot" premise;
-    * the slot has EXACTLY ONE ``store`` in the whole program (scratch is global
-      to the program, so this must be a whole-program count, not per-sub);
-    * that store is in the SAME subroutine as the load (per-sub dominance is all
-      we have) and DOMINATES it — a strictly-dominating block, or the same block
-      at an earlier op index.
-
-    Under those conditions the store always executes before the load and nothing
-    else can have written the slot, so the load carries exactly that register."""
+    HAZARD: MUST-semantics. Relaxing any condition credits a guard that need not
+    have run, suppressing a real flow. No dynamic ``stores`` anywhere (one can
+    target any slot, destroying the single-writer premise); EXACTLY ONE ``store``
+    for the slot PROGRAM-WIDE (scratch is global, so the count cannot be
+    per-sub); and that store in the SAME subroutine as the load, dominating it."""
     stores: dict = {}          # slot -> [(sub_id, block_id, op_index, register|None)]
     loads: list = []           # (slot, sub_id, block_id, op_index, result_register)
     for s in lifter.subs:
@@ -233,10 +182,10 @@ def _scratch_value_edges(lifter, dom_by_sub) -> dict:
                 intr = _intr(o)
                 if intr is None:
                     continue
-                # CHECK THIS FIRST: `stores` takes its slot off the STACK, so it
-                # has no immediates — behind an `immediates` guard this bail-out
-                # is unreachable and a dynamic write silently keeps its slot
-                # looking single-writer.
+                # Check `stores` BEFORE the `immediates` guard: it takes its slot
+                # off the STACK so it has none, and behind that guard this
+                # bail-out is unreachable — a dynamic write would silently leave
+                # its slot looking single-writer.
                 if intr.op == "stores":
                     return {}                      # dynamic slot: prove nothing
                 if not intr.immediates:
@@ -295,12 +244,10 @@ def _ir_op_str(o) -> str:
 
 
 def ir_taint_chain(lifter, register, view, *, max_hops: int = 40) -> list:
-    """The taint road in LIFTED-IR ops: walk backward from ``register`` following
-    the tainted arg (per ``view`` -- a :class:`byte_taint.IrByteTaint`) to the
-    source op, SOURCE-first. Natively interprocedural: at a subroutine PARAMETER
-    (no defining op in a block) it crosses to the caller's bound arg at each
-    ``InvokeSubroutine`` site -- the IR represents the callsub arg-passing
-    directly, so no ``frame_dig`` hop like the SSA chain."""
+    """The taint road in lifted-IR ops, SOURCE-first: walk backward from
+    ``register`` along the tainted arg (per ``view``, a
+    :class:`byte_taint.IrByteTaint`), crossing at a subroutine PARAMETER to the
+    caller's bound arg at each ``InvokeSubroutine`` site."""
     def_of = _def_map(lifter)
     param_args: dict = {}          # id(param register) -> [caller arg values]
     for b in pre_ir.blocks(lifter.subs):
@@ -320,10 +267,9 @@ def ir_taint_chain(lifter, register, view, *, max_hops: int = 40) -> list:
             bool(view.tainted_bytes(v)) or view.is_scalar_tainted(v))
 
     def _pick(values):
-        """Follow a covered-tainted operand if there is one; else fall back to an
-        UNCOVERED register -- byte_taint_view only covers ~90% of registers (a
-        lift-synthesized param / block-arg is uncovered), so the taint road runs
-        through those coverage gaps rather than dead-ending at them."""
+        """Follow a covered-tainted operand, else an UNCOVERED register -- the
+        byte-taint view covers only ~90% of registers, so the road must run
+        through the gaps rather than dead-end at them."""
         values = list(values)
         return (next((v for v in values if _tainted(v)), None)
                 or next((v for v in values
@@ -345,7 +291,7 @@ def ir_taint_chain(lifter, register, view, *, max_hops: int = 40) -> list:
                 nxt = _pick([o.source])
             elif isinstance(o, pre_ir.Phi):
                 nxt = _pick([pa.value for pa in o.args])
-        if nxt is None:               # a parameter -> cross callsub to the caller arg
+        if nxt is None:               # a parameter: cross callsub to the caller arg
             nxt = _pick(param_args.get(id(cur), ()))
         cur = nxt
     chain.reverse()
@@ -353,8 +299,7 @@ def ir_taint_chain(lifter, register, view, *, max_hops: int = 40) -> list:
 
 
 def ir_taint_road(lifter, register, view, *, sep: str = "  →  ") -> str:
-    """The taint road for ``register`` as a one-line string of lifted-IR ops,
-    source → sink (see :func:`ir_taint_chain`). ``(no tainted road)`` if none."""
+    """:func:`ir_taint_chain` as one line of IR ops; ``(no tainted road)`` if none."""
     ops = ir_taint_chain(lifter, register, view)
     return sep.join(_ir_op_str(o) for o in ops) if ops else "(no tainted road)"
 
@@ -383,64 +328,56 @@ class Guard:
 
 def _input_key(src):
     """Identity of a specific user-input READ, e.g. ``("txn", ("ApplicationArgs",
-    "0"))`` -- so two reads of the SAME slot match, but ApplicationArgs[0] vs [1]
-    don't. ``None`` if ``src`` isn't a user-input source op."""
+    "0"))``, so two reads of the SAME slot match but ApplicationArgs[0] vs [1]
+    don't; ``None`` if ``src`` isn't a user-input source op."""
     if src is None or source_label(src) is None:
         return None
-    # Dynamic-index reads (txnas/gtxnas/gtxnsas/gloadss) carry the array INDEX on
-    # the stack, not in immediates -- so two DIFFERENT-index reads share the same
-    # (op, immediates) and would wrongly collapse to one key. Fall back to
-    # register-identity matching for them (None = no cross-read key).
+    # HAZARD: dynamic-index reads carry the array INDEX on the stack, not in
+    # immediates, so two DIFFERENT-index reads share one (op, immediates) key and
+    # would collapse -- a guard on arg[0] crediting a use of arg[1]. Return None
+    # so they fall back to register-identity matching.
     if src.op in ("txnas", "gtxnas", "gtxnsas", "gloadss"):
         return None
     return (src.op, tuple(str(i) for i in (src.immediates or [])))
 
 
 def _classify(kind, polarity, cond, def_of, sink_regs, sink_keys, inv_ret=None) -> Guard:
-    # checks_input is VALUE-level, not source-FAMILY-level: the guard must test the
-    # SAME value the sink uses -- a shared register in their def-trees, OR a read of
-    # the same specific input slot (reconnecting the common "check and use each read
-    # ApplicationArgs[i] separately" pattern). Family-level overlap (any
-    # ApplicationArgs read) would mark "the contract validates SOME input" as
-    # "validates THIS value" and hide real findings.
+    # HAZARD: guard-classification soundness. Every rule below exists because
+    # crediting a check that does not actually constrain the sink's value
+    # suppresses a real, exploitable flow.
     #
-    # BOOLEAN STRUCTURE: only a check that the assert/branch actually GUARANTEES may
-    # be credited. `assert(A && B)` guarantees both A and B; `assert(A || B)`
-    # guarantees NEITHER individually (A is bypassable whenever B holds), so a
-    # sender/input check inside a disjunction must NOT be credited -- crediting it
-    # would suppress a real, bypassable-guard flow. We descend the condition tree
-    # marking everything below an `||` as un-guaranteed.
+    # VALUE-level, not source-FAMILY-level: the guard must test the SAME value the
+    # sink uses -- a shared register in their def-trees, or a read of the same
+    # specific input slot. Family-level overlap (any ApplicationArgs read) would
+    # read "validates SOME input" as "validates THIS value".
     #
-    # LENGTH vs VALUE: a check credits `checks_input` only if it constrains the
-    # input's VALUE. `assert(len(arg) == 8)` before `amount = btoi(arg)` shares the
-    # register `arg` (and the same input slot) with the sink, but bounds only its
-    # LENGTH -- the attacker still picks any 8-byte value. So an input reached
-    # SOLELY through a length op (`len`/`bitlen`) does not count as a value check;
-    # `value_ok` goes false under such ops, exactly as `guaranteed` goes false
-    # under `||`. A path that also constrains the value (`assert(len==8 && btoi(arg)
-    # <= max)`) still credits, via the value-preserving conjunct.
-    # COMPARISON SENSE: a sender check only authorises when it RESTRICTS the sender
-    # to a trusted address. `assert(Sender == creator)` does; `assert(Sender !=
-    # creator)` does the opposite -- it admits everyone BUT the creator, which is
-    # every attacker. The branch polarity matters the same way: a payout reached
-    # only on the FALSE edge of `Sender == creator` runs precisely when the caller
-    # is not the creator. Both read as "guarded by sender" until the sense of the
-    # enclosing comparison is tracked, so a wide-open payout was reported clean.
+    # BOOLEAN STRUCTURE: only a check the assert/branch GUARANTEES may be
+    # credited. `assert(A && B)` guarantees both; `assert(A || B)` guarantees
+    # NEITHER individually (A is bypassable whenever B holds), so everything below
+    # an `||` is marked un-guaranteed.
     #
-    # `sense` is what the surrounding condition must evaluate to for this guard to
-    # hold: True normally, False on a branch whose FALSE edge reaches the sink.
-    # `!` flips it, and De Morgan swaps which connective destroys the guarantee --
-    # under a required-False condition it is `&&`, not `||`, that leaves each
-    # operand free.
+    # LENGTH vs VALUE: `assert(len(arg) == 8)` before `btoi(arg)` shares the
+    # register and the input slot with the sink but bounds only the LENGTH -- the
+    # attacker still picks any 8-byte value. `value_ok` goes false under
+    # `_VALUE_OPAQUE_OPS` exactly as `guaranteed` goes false under `||`; a
+    # value-preserving conjunct (`len==8 && btoi(arg) <= max`) still credits.
+    #
+    # COMPARISON SENSE: a sender check authorises only when it RESTRICTS the
+    # sender. `Sender == creator` does; `Sender != creator` admits everyone BUT
+    # the creator, and a payout on the FALSE edge of `Sender == creator` runs
+    # precisely when the caller is not the creator. `sense` is what the enclosing
+    # condition must evaluate to for the guard to hold -- True normally, False on
+    # a branch whose FALSE edge reaches the sink; `!` flips it, and De Morgan
+    # swaps which connective destroys the guarantee.
     ci = cs = False
-    # A register may appear under different (guaranteed, value_ok, sense,
-    # sender_ok) contexts (e.g. `(A||B) && A`, or `len(arg)==8 && arg==k`); the
-    # flags only ever weaken down a path, so key the visited-set on the context to
-    # let a stronger path credit even after a weaker one was walked.
+    # Key the visited-set on the CONTEXT, not the register: one register can be
+    # reached under different (guaranteed, value_ok, sense, sender_ok) flags
+    # (`(A||B) && A`), and since the flags only weaken down a path, a stronger
+    # path must still credit after a weaker one was walked.
     seen: set = set()
 
     def _compares_against_user_input(src) -> bool:
-        """The comparison has an operand the ATTACKER supplies -- so pinning the
+        """The comparison has an operand the ATTACKER supplies, so pinning the
         sender against it authorises nothing (`Sender == ApplicationArgs[2]` is
         satisfied by any caller who passes their own address)."""
         for a in src.args:
@@ -468,17 +405,14 @@ def _classify(kind, polarity, cond, def_of, sink_regs, sink_keys, inv_ret=None) 
                     cs = True
                 if _input_key(src) in sink_keys:
                     ci = True
-        # A connective un-guarantees its operands when satisfying the whole
-        # condition does not force each one: `||` under a required-True condition,
-        # `&&` under a required-False one (De Morgan).
+        # De Morgan: `||` breaks the guarantee under a required-True condition,
+        # `&&` under a required-False one.
         breaks = "||" if sense else "&&"
         child_guar = guaranteed and not (src is not None and src.op == breaks)
         child_val = value_ok and not (src is not None and src.op in _VALUE_OPAQUE_OPS)
         child_sense = (not sense) if (src is not None and src.op == "!") else sense
-        # Descending INTO a comparison decides whether a sender read below it is
-        # actually pinned: an equality that must hold pins it, an equality that
-        # must NOT hold (or a `!=` that must hold) excludes one address and admits
-        # the rest.
+        # An equality that must hold PINS a sender read below it; one that must
+        # NOT hold (or a `!=` that must) only excludes one address.
         child_sender = sender_ok
         if src is not None and src.op in _EQ_OPS:
             child_sender = child_sense and not _compares_against_user_input(src)
@@ -502,8 +436,7 @@ def _classify(kind, polarity, cond, def_of, sink_regs, sink_keys, inv_ret=None) 
 
 
 def _blocks_reaching(by_id, target) -> set:
-    """Block ids that can reach ``target`` (backward reachability over
-    successors), including ``target`` itself."""
+    """Block ids that can reach ``target``, including ``target`` itself."""
     preds: dict = {i: [] for i in by_id}
     for i, b in by_id.items():
         for s in _succs(b.terminator):
@@ -536,13 +469,12 @@ def _dominating_guards(by_id, dom, sink_bid, sink_idx, def_of, sink_regs, sink_k
             if isinstance(o, pre_ir.Assert):
                 guards.append(_classify("assert", None, o.condition, def_of,
                                         sink_regs, sink_keys, inv_ret))
-        # A conditional branch in a strictly-dominating block whose outcome is
-        # forced: exactly one successor dominates the sink. That is necessary but
-        # NOT sufficient — if the OTHER (non-dominating) successor can itself
-        # reach the sink (a loop/merge back into the dominating block), a path
-        # takes the branch the other way yet still reaches the sink, so the
-        # condition does NOT hold there. Credit the guard only when the
-        # non-dominating edge cannot reach the sink at all.
+        # A conditional branch whose outcome is forced: exactly one successor
+        # dominates the sink.
+        # HAZARD: that is necessary but NOT sufficient. If the OTHER successor
+        # can itself reach the sink (a loop/merge back), a path takes the branch
+        # the other way and still arrives, so the condition does not hold there.
+        # Credit only when the non-dominating EDGE cannot reach the sink at all.
         t = blk.terminator
         if isinstance(t, pre_ir.ConditionalBranch) and d != sink_bid:
             nz, z = t.non_zero in doms, t.zero in doms
@@ -597,18 +529,17 @@ class FundFlowFinding:
 
 def _entry_guards(lifter, def_of, dom_by_sub, taint, inv_ret=None):
     """Interprocedural guard summary ``{sub.id: {param_idx: (checks_input,
-    checks_sender)}}`` plus the set of subs that are called somewhere.
+    checks_sender)}}``, plus the set of subs that are called somewhere.
 
-    Param ``i`` of sub ``S`` is entry-guarded iff at EVERY call site that passes a
-    TAINTED value for arg ``i`` the caller dominates that call with a guard testing
-    that value (input) or the sender. Transitive: if the caller's arg is itself one
-    of the caller's params, it inherits that param's entry guard. Monotone fixpoint
-    (guards only grow), AND-across-sites (sound: must hold on every path in). An
-    untainted-passing site can't expose the sink, so it doesn't constrain the
-    summary."""
+    HAZARD: param ``i`` of sub ``S`` is entry-guarded only if EVERY call site
+    passing a TAINTED value for arg ``i`` dominates that call with a guard on
+    that value or the sender -- AND-across-sites, because the guard must hold on
+    every path in. Transitive through the caller's own params; monotone fixpoint,
+    so guards only grow. An untainted-passing site cannot expose the sink, so it
+    does not constrain the summary."""
     subs = {s.id: s for s in lifter.subs}
-    # Precompute each call-site arg's STATIC facts once (only the transitive part
-    # changes across iterations): (caller_id, tainted, intra_input, intra_sender,
+    # Per-call-site arg facts, computed once (only the transitive part changes
+    # across iterations): (caller_id, tainted, intra_input, intra_sender,
     # [caller param indices the arg flows from]).
     recs: dict = {sid: [] for sid in subs}
     for s in lifter.subs:
@@ -649,15 +580,14 @@ def _entry_guards(lifter, def_of, dom_by_sub, taint, inv_ret=None):
                     if not tainted:
                         continue                  # safe site: doesn't constrain
                     seen = True
-                    # ``ks`` is EVERY caller-param in this argument's def tree,
-                    # so a composite like ``p0 + p1`` lists both. Credit the
-                    # transitive guard only when ALL of them are guarded at the
-                    # caller's entry: with ``any``, validating just ``p0`` and
-                    # passing ``p0 + p1`` marked the whole argument guarded and
-                    # SUPPRESSED a real attacker-controlled flow through the
-                    # unchecked ``p1``. Empty ``ks`` (no caller-param in the
-                    # tree) carries no transitive credit at all — ``all(())``
-                    # is vacuously True, hence the explicit guard.
+                    # HAZARD: ``ks`` lists EVERY caller-param in this argument's
+                    # def tree, so a composite like ``p0 + p1`` lists both.
+                    # Credit the transitive guard only when ALL are guarded at
+                    # the caller's entry — with ``any``, validating just ``p0``
+                    # and passing ``p0 + p1`` marks the argument guarded and
+                    # SUPPRESSES the flow through the unchecked ``p1``. Empty
+                    # ``ks`` must carry no credit (``all(())`` is vacuously
+                    # True), hence the explicit ``bool(ks)``.
                     all_ci &= ci0 or bool(ks) and all(eg[cid][k][0] for k in ks)
                     all_cs &= cs0 or bool(ks) and all(eg[cid][k][1] for k in ks)
                 new = (seen and all_ci, seen and all_cs)
@@ -670,14 +600,13 @@ def _entry_guards(lifter, def_of, dom_by_sub, taint, inv_ret=None):
 def _callee_param_guards(lifter, def_of, dom_by_sub, inv_ret=None) -> dict:
     """``{sub.id: {param_idx: (checks_input, checks_sender)}}`` — guards a sub
     applies to a param INTERNALLY that hold on RETURN (they dominate every
-    ``SubroutineReturn`` block, so any post-call use of the caller's argument is
-    constrained). The CALLEE-side complement of :func:`_entry_guards`: it closes
-    the case a caller-side guard summary and validation-return descent both miss —
-    a helper that ``assert``s its own parameter (``validate(x){ assert x==Sender }``)
-    and returns nothing. Classified with the same :func:`_classify` machinery as
-    every other guard, so it records WHAT the check tests (sender / the value),
-    not a bare "is asserted" — a length/non-content check does not spuriously
-    become a content guard here any more than it does intra-procedurally."""
+    ``SubroutineReturn``, so a post-call use of the caller's argument is
+    constrained).
+
+    The callee-side complement of :func:`_entry_guards`, covering a helper that
+    ``assert``s its own parameter and returns nothing. Runs through
+    :func:`_classify` like every other guard, so it records WHAT the check tests
+    rather than a bare "is asserted"."""
     out: dict = {}
     for s in lifter.subs:
         dom, by_id = dom_by_sub[s.id], {b.id: b for b in s.body}
@@ -699,28 +628,25 @@ def _callee_param_guards(lifter, def_of, dom_by_sub, inv_ret=None) -> dict:
 
 def _tainted_sink_flows(lifter, sink_of, taint=None, trusted_args=frozenset(),
                         sender_only=False) -> list:
-    """Core taint-to-sink engine. ``sink_of(intrinsic)`` yields
-    ``(label, severity, value_args)`` for each sink the op represents -- where
-    ``value_args`` is the operand(s) whose taint makes it a finding. Returns
-    UNGUARDED-first findings with the full guard machinery: intra- AND inter-
-    procedural dominance, validation-subroutine descent, caller entry-guards, and
-    cross-contract ``trusted_args``. Parameterising the sink lets one engine power
-    inner-txn fields (fund-flow / appcall / asset / asset-admin) AND persistent
-    state writes.
+    """Core taint-to-sink engine: ``sink_of(intrinsic)`` yields ``(label,
+    severity, value_args)`` per sink, ``value_args`` being the operands whose
+    taint makes it a finding. Returns UNGUARDED-first findings with the full
+    guard machinery -- intra- and interprocedural dominance,
+    validation-subroutine descent, caller entry-guards, cross-contract
+    ``trusted_args``.
 
-    ``sender_only``: count ONLY sender/creator guards toward ``guarded``, not
-    input-value checks. The byte-precise partial-fund-flow detector sets this --
-    it drives the engine with a byte-interval taint map that has ALREADY cleared
-    validated byte ranges, so an input-slot guard would double-count (and, worse,
-    reproduce the slot-granular blind spot: a check of one sub-field spuriously
-    guarding a different, unchecked sub-field of the same arg)."""
+    HAZARD: ``sender_only`` counts ONLY sender/creator guards toward
+    ``guarded``. The byte-precise partial-fund-flow detector sets it because it
+    drives the engine with a byte-interval taint map that has ALREADY cleared
+    validated byte ranges -- an input-slot guard would double-count and
+    reintroduce the slot-granular blind spot where a check of one sub-field
+    guards a different, unchecked one."""
     if taint is None:
         taint = user_input_taint(lifter, trusted_args)
     def_of = _def_map(lifter)
     dom_by_sub = {s.id: _dominators(s) for s in lifter.subs}
     # Value edges the def-walk follows: a call result into the callee's returns,
-    # AND a scratch round-trip back to what was stored (same map shape, so every
-    # `_walk` already threading `inv_ret` picks the scratch edge up too).
+    # plus a scratch round-trip back to what was stored (same map shape).
     inv_ret = _invoke_returns(lifter)
     inv_ret.update(_scratch_value_edges(lifter, dom_by_sub))
     entry_guards, called = _entry_guards(lifter, def_of, dom_by_sub, taint, inv_ret)
@@ -749,14 +675,13 @@ def _tainted_sink_flows(lifter, sink_of, taint=None, trusted_args=frozenset(),
                     if valreg is not None:
                         walked = list(_walk(valreg, def_of, inv_ret=inv_ret))
                         sink_regs = {id(r) for r, _ in walked}
-                        # Only the TAINTED sub-terms may satisfy a value check.
-                        # `sink_regs` is the sink operand's whole def-tree, so
-                        # matching a guard against any member credited checks on
-                        # co-operands the attacker does not control: with
+                        # HAZARD: only the TAINTED sub-terms may satisfy a value
+                        # check. `sink_regs` is the sink operand's whole def-tree,
+                        # so matching a guard against any member credits checks on
+                        # co-operands the attacker does not control — with
                         # `Amount = state_rate * arg`, `assert(state_rate <= cap)`
-                        # read as "the input is validated" and suppressed the
-                        # finding, while `arg` stayed free. That is the canonical
-                        # `payout = shares * price` shape.
+                        # reads as "the input is validated" while `arg` stays
+                        # free. The canonical `payout = shares * price` shape.
                         guard_regs = {r for r in sink_regs if taint.get(r)}
                         sink_keys = {k for _, oo in walked
                                      if (k := _input_key(_intr(oo) if oo is not None else None)) is not None}
@@ -771,10 +696,9 @@ def _tainted_sink_flows(lifter, sink_of, taint=None, trusted_args=frozenset(),
                         guards.append(Guard("caller", None, True, False))
                     if any(egp.get(i, (False, False))[1] for i in feeding):
                         guards.append(Guard("caller", None, False, True))
-                    # Interprocedural (callee-side): the sink value was passed to a
-                    # helper that validates that parameter internally, on a call
-                    # that dominates the sink (runs before it). Transfer the
-                    # callee's param guard to the caller's value.
+                    # Interprocedural (callee-side): the sink value was passed to
+                    # a helper that validates that param, on a call dominating
+                    # the sink; transfer that guard to the caller's value.
                     for cbid in dom.get(b.id, {b.id}):
                         cblk = by_id.get(cbid)
                         if cblk is None:
@@ -801,10 +725,8 @@ def _tainted_sink_flows(lifter, sink_of, taint=None, trusted_args=frozenset(),
                                     if cs:
                                         guards.append(Guard("callee", None, False, True))
                     if sender_only:
-                        # Byte-taint owns input-validation (byte-precise); drop
-                        # input-slot guards so only sender/creator checks suppress
-                        # (and FundFlowFinding.guarded, a property over `guards`,
-                        # reflects it).
+                        # Byte-taint owns input validation (byte-precise); drop
+                        # input-slot guards so only sender/creator checks clear.
                         guards = [g for g in guards if g.checks_sender]
                     guarded = any(g.checks_input or g.checks_sender for g in guards)
                     param_derived = bool(feeding) and not guarded and sub.id not in called
@@ -830,18 +752,17 @@ def _itxn_sink_of(fields):
 def tainted_itxn_flows(lifter, fields, taint=None, trusted_args=frozenset(),
                        sender_only=False) -> list:
     """User-input-tainted values reaching one of the inner-txn ``fields`` (a
-    ``{field_name: severity}`` map). Powers fund-flow (Receiver/Amount/Close/Rekey),
-    arbitrary-inner-appcall (ApplicationID), -asset (XferAsset), -asset-admin (acfg
-    roles) -- each gets the IR layer's across-callsub dominance + cross-contract
-    suppression for free."""
+    ``{field_name: severity}`` map) -- fund-flow, arbitrary inner appcall
+    (ApplicationID), asset (XferAsset) and asset-admin (acfg roles)."""
     return _tainted_sink_flows(lifter, _itxn_sink_of(fields), taint, trusted_args,
                                sender_only)
 
 
 # Persistent-state-write ops -> the index of their KEY operand in the lifted
-# Intrinsic's args (TOP-FIRST: arg[0] is the last value pushed). Verified
-# empirically. The KEY is the destination slot a tainted value lets the attacker
-# choose; the VALUE is not flagged (storing user data is normal).
+# Intrinsic's args. HAZARD: args are TOP-FIRST (arg[0] is the LAST value pushed),
+# so these indices read backwards from TEAL source order. Only the KEY is flagged
+# — it is the destination slot a tainted value lets the attacker choose, whereas
+# storing user data in the VALUE is normal.
 _STATE_WRITE_KEY_IDX = {
     "app_global_put": 1,    # args: value, KEY
     "app_local_put": 1,     # args: value, KEY, account
@@ -873,14 +794,11 @@ def _state_write_sink_of(s):
 
 
 def tainted_state_writes(lifter, taint=None, trusted_args=frozenset()) -> list:
-    """Tainted-KEY persistent state writes: a user-input value reaching the KEY of
-    ``app_global_put`` / ``app_local_put`` / ``app_global_del`` / ``app_local_del``
-    / ``box_put`` / ``box_create`` / ``box_replace`` / ``box_splice`` /
-    ``box_resize`` / ``box_del`` lets the attacker write to, resize, or delete an
-    arbitrary slot -- overwrite or erase owner/admin global state, collide with or
-    destroy a sensitive box. (A key derived from
-    ``txn Sender`` -- the ubiquitous per-caller ``box[Sender]`` pattern -- is NOT a
-    taint source, so it never surfaces; a key checked == Sender is guard-cleared.)"""
+    """Tainted-KEY persistent state writes -- a user-input value reaching the KEY
+    of a global/local/box write, delete, create or resize lets the attacker target
+    an arbitrary slot: overwrite or erase owner/admin state, collide with or
+    destroy a sensitive box. (A key derived from ``txn Sender`` -- the ubiquitous
+    per-caller ``box[Sender]`` -- is not a taint source, so it never surfaces.)"""
     return _tainted_sink_flows(lifter, _state_write_sink_of, taint, trusted_args)
 
 
@@ -891,18 +809,16 @@ def _log_sink_of(s):
 
 
 def tainted_logs(lifter, taint=None, trusted_args=frozenset()) -> list:
-    """User-input-tainted values emitted via ``log``. A contract that logs
-    attacker-controlled data feeds FORGED data to anything that trusts its logs:
-    a CALLER reading its ``LastLog`` (itself a taint source -- a spoofed ARC-4
-    return / event), or an off-chain indexer. Output-integrity, hence LOW
-    severity; the guard machinery clears a logged value that was validated first."""
+    """User-input-tainted values emitted via ``log`` -- forged data for anything
+    that trusts them: a CALLER reading its ``LastLog`` (itself a taint source), or
+    an off-chain indexer. Output-integrity only, hence LOW severity."""
     return _tainted_sink_flows(lifter, _log_sink_of, taint, trusted_args)
 
 
 def tainted_fund_flows(lifter, taint=None, trusted_args=frozenset(),
                        sender_only=False) -> list:
-    """Fund-flow specialisation of :func:`tainted_itxn_flows` -- tainted values
-    reaching Receiver / Amount / CloseRemainderTo (+ asset variants)."""
+    """Fund-flow specialisation of :func:`tainted_itxn_flows`: tainted values
+    reaching Receiver / Amount / CloseRemainderTo and their asset variants."""
     return tainted_itxn_flows(lifter, _FUND_FIELDS, taint, trusted_args, sender_only)
 
 

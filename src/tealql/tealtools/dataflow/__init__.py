@@ -1,23 +1,4 @@
-"""Taint-flow framework + the detectors built on it.
-
-Layout:
-
-- :mod:`tealql.tealtools.dataflow.engine` — the generic engine (``TaintAnalysis``)
-  plus the descriptor classes (``Source``, ``Sink``, ``FlowRule``,
-  ``Violation``) and the built-in propagation rules (hash / slice /
-  concat-with-const).
-- :mod:`tealql.tealtools.dataflow.box` — into-box / out-of-box / key-correlated
-  flow detectors.
-
-The non-unique-box-key detector built on this framework is a
-first-class detection — it lives at ``src/tealql/security/detections/box-key/``
-and is reached via :data:`tealql.security.DETECTORS`.
-- :mod:`tealql.tealtools.dataflow.predicate_aware` — post-filter on any
-  ``Violation`` list using path-predicate constraints.
-
-Most-used names are re-exported here so callers can do
-``from tealql.tealtools.dataflow import TaintAnalysis``.
-"""
+"""Taint-flow framework and the detectors built on it, re-exported for callers."""
 
 from .engine import (
     DEFAULT_RULES,

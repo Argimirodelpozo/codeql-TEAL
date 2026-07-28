@@ -1,12 +1,6 @@
-"""Shared base for the every-path ``txnFieldValidatedOnAllPaths`` family —
-asset-close-to, close-remainder-to, tx-type-check. (Every-path enforcement-site
-must-reach, not the old strict-dominance formulation — see
-:func:`common.field_validated_on_all_paths`.)
-
-Each detector is a one-liner over :func:`common.field_validated_on_all_paths`
-with a different field name and message. Rather than duplicating the
-~40-LoC scaffold three times, the base class here parameterises the
-field + message; the concrete detectors are 5-line subclasses.
+"""Shared base for the whole-program field-validation family (asset-close-to,
+close-remainder-to, tx-type-check), parameterised on field + message over
+:func:`common.field_validated_on_all_paths`.
 """
 from __future__ import annotations
 
@@ -22,8 +16,7 @@ class _FieldValidatedViolation:
     prog: SSAProgram
     message: str = ""
 
-    # Whole-program finding — the violation is the ABSENCE of a validation, so
-    # there is no single anchor line. Structured location stays None.
+    # The violation is the ABSENCE of a validation, so there is no anchor line.
     file = None
     line = None
 
@@ -35,9 +28,8 @@ class _FieldValidatedViolation:
 
 
 class _FieldValidatedDetector:
-    """Subclasses set ``name``, ``field`` (single string or tuple — any
-    being validated counts as fixed), ``message``, and (optional)
-    ``violation_cls`` for naming the dataclass."""
+    """Subclasses set ``name``, ``field`` (a tuple — ANY of them being validated
+    counts as fixed), ``message``, and optionally ``violation_cls``."""
 
     name: ClassVar[str]
     field: ClassVar[tuple[str, ...]]
@@ -49,8 +41,8 @@ class _FieldValidatedDetector:
         self.file = file
 
     def detect(self) -> list[_FieldValidatedViolation]:
-        # Absence-style check: an empty / fully-unparsed program trivially
-        # "lacks" the validation — that is unanalyzable input, not a finding.
+        # HAZARD: an empty / fully-unparsed program trivially "lacks" the
+        # validation — unanalyzable input, not a finding.
         if not common.has_instructions(self.prog, file=self.file):
             return []
         for f in self.field:

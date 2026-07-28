@@ -1,76 +1,16 @@
-"""Bytemath range propagation — flow ``IntRange`` annotations over
-the bytes-as-big-endian-unsigned-bigint abstraction the AVM's
-bytemath family (``b+`` ``b-`` ``b*`` ``b/`` ``b%`` ``b&`` ``b|``
-``b^``) operates over.
+"""Range propagation over the bytes-as-big-endian-unsigned-bigint view the AVM's
+bytemath family (``b+`` ``b-`` ``b*`` ``b/`` ``b%`` ``b&`` ``b|`` ``b^``) takes.
 
-Why this is a separate pass rather than an extension of
-:mod:`tealql.tealtools.range_arith`:
+Separate from the uint64 pass because it uses different storage and different
+bounds: the bigint range lives on ``TealType.int_value_range`` (letting one
+bytes SSAVar carry "how many bytes" and "what number" at once), and Python ints
+are unbounded so nothing is clamped to ``2^64-1``. ``itob`` / ``btoi`` bridge
+the two value spaces and are handled inline so the bridge stays in one place.
 
-  - Different storage. The uint64 value range lives on
-    :attr:`tealql.tealtools.ssa.SSAVar.range`; the bigint value range lives
-    on :attr:`tealql.tealtools.ssa.TealType.int_value_range` (so a single
-    bytes SSAVar can carry both ``byte_length_range`` *and* a value
-    range, distinguishing "how many bytes" from "what number").
-  - Different bounds. Python ints are arbitrary precision, so a
-    bytemath ``b*`` chain can legitimately produce ranges whose
-    upper bounds exceed ``2^64-1``. No clamping to uint64.
-  - Cross-pollination with the uint64 side. ``itob X`` and
-    ``btoi X`` bridge the two value spaces — itob's bytes-output
-    bigint value equals its uint64 input, and a successful btoi's
-    uint64 output equals its bytes-input bigint value. Handled
-    inline here so the bridge stays in one place.
-
-Forward rules:
-
-  - ``Const("bytes", "0x..")``        → singleton bigint range from
-                                        ``int.from_bytes(..., "big")``.
-  - ``itob X``                        → ``X.range`` (carried across
-                                        the uint64/bytes boundary).
-  - ``b+ a b``                        → ``[a.lo+b.lo, a.hi+b.hi]``.
-  - ``b- a b``                        → AVM halts on underflow, so
-                                        result clamped to ``≥ 0``.
-  - ``b* a b``                        → ``[a.lo*b.lo, a.hi*b.hi]``.
-  - ``b/ a b``                        → AVM halts on divisor 0, so
-                                        smallest divisor is
-                                        ``max(b.lo, 1)``.
-  - ``b% a b``                        → ``[0, min(a.hi, b.hi-1)]``.
-  - ``b& a b``                        → ``[0, min(a.hi, b.hi)]``.
-  - ``b| a b``                        → ``[max(a.lo, b.lo),
-                                        all-bits-set]``.
-  - ``b^ a b``                        → ``[0, all-bits-set]``.
-
-Cross-pollination into uint64 land (writes :attr:`SSAVar.range`):
-
-  - ``btoi X``                        → ``X.int_value_range``
-                                        (assuming the call succeeds —
-                                        which also implies
-                                        ``len(X) ∈ [0, 8]``; ``btoi``
-                                        fails only for len > 8, and
-                                        ``btoi("")`` = 0. A constraint
-                                        :mod:`tealql.tealtools.byte_length_prop`
-                                        installs when dominance allows).
-
-Phi union iterates to fixed point, but the iteration counter is
-capped: bigint ranges can grow without bound in a cyclic CFG (no
-``2^64`` natural ceiling), so we bail with a warning rather than
-spinning forever. In practice convergence is fast — bytemath
-loops are rare and the cap is hit only on programs that need
-proper widening operators (an abstract-interpretation topic
-out of scope here).
-
-``b~`` (bitwise complement) and ``bsqrt`` are deferred: ``b~``
-flips every bit of a byte-string, so its bigint value depends on
-the operand's *byte length* — which this value-range pass doesn't
-track (``byte_length_prop`` does). TEAL has no byte-shift ops, so
-there's no ``b<<`` / ``b>>`` analogue. Comparison ops (``b<`` /
-``b>`` / …) already get their ``[0..1]`` range from
-:meth:`SSAProgram.propagate_ranges`' ``_OP_RANGE_SEEDS`` so they're
-not duplicated here.
-
-Opt-in. Lazily trips :meth:`SSAProgram.propagate_constants` and
-:meth:`SSAProgram.propagate_ranges` first so the bytes-const and
-uint64-range seeds are in place before bytemath composes them.
-"""
+HAZARD: without a uint64 ceiling a bigint range can grow forever around a cyclic
+CFG, so the fixpoint carries an explicit cap and warns rather than spinning.
+``b~`` is deliberately absent: complement flips every bit of the byte-string, so
+its value depends on the operand's BYTE LENGTH, which this pass does not track."""
 from __future__ import annotations
 
 import functools
@@ -88,17 +28,15 @@ logger = logging.getLogger("tealql.tealtools.passes.bytemath")
 
 _BYTES_OP_RULES = ("b+", "b-", "b*", "b/", "b%", "b&", "b|", "b^")
 
-# Safety net: bigint phi widening with no natural ceiling could
-# in principle loop forever. Bail before that. ``_PASS_ITER_CAP``
-# is intentionally generous — real programs converge in <10 passes.
+# Termination safety net for unbounded bigint widening; generous on purpose —
+# real programs converge in <10 passes.
 _PASS_ITER_CAP = 1000
 
 
 @functools.lru_cache(maxsize=None)
 def _bytes_to_int(hex_value: str) -> Optional[int]:
-    # Cached: a constant's bigint value is immutable, but the naive bytemath
-    # fixpoint re-derives it for every operand on every iteration (~4M fromhex
-    # re-parses on folks-v3). Pure function of the hex string -> identical result.
+    # Cacheable because it is a pure function of the hex string, and the fixpoint
+    # re-derives the same constants on every iteration.
     h = hex_value
     if h.startswith("0x") or h.startswith("0X"):
         h = h[2:]
@@ -118,10 +56,7 @@ def _const_bigint(c: Optional[Const]) -> Optional[int]:
 
 
 def _operand_bigint_range(operand) -> Optional[IntRange]:
-    """Best-known bigint range for an operand. Looks at (a) its
-    :attr:`TealType.int_value_range`, (b) its ``const_value``
-    treated as a bigint, (c) the operand itself if it's a bytes
-    :class:`Const`."""
+    """Best-known bigint range for an operand, lifting a bytes const to a singleton."""
     t = getattr(operand, "type", None)
     if t is not None and t.kind == "bytes" and t.int_value_range is not None:
         return t.int_value_range
@@ -134,10 +69,8 @@ def _operand_bigint_range(operand) -> Optional[IntRange]:
 def _bytemath_result(
     op: str, ra: IntRange, rb: IntRange,
 ) -> Optional[tuple[int, int]]:
-    """Compute the ``(lo, hi)`` of a bytemath two-input op given its
-    operand bigint ranges. Returns ``None`` when the op halts
-    unconditionally on this range (e.g. ``b/`` with ``b`` certainly
-    zero) or isn't supported here."""
+    """Output ``(lo, hi)`` of ``A op B`` from bigint ranges — ``ra`` is A, the
+    DEEPER operand. ``None`` if the op always halts here, or is unsupported."""
     if op == "b+":
         return (ra.lo + rb.lo, ra.hi + rb.hi)
     if op == "b-":
@@ -157,25 +90,22 @@ def _bytemath_result(
             return None
         return (0, min(ra.hi, max(rb.hi - 1, 0)))
     if op == "b&":
-        # Bitwise AND clears bits — result ≤ each operand.
+        # AND only clears bits — result ≤ each operand.
         return (0, min(ra.hi, rb.hi))
     if op == "b|":
-        # Bitwise OR only sets bits — result ≥ each operand. Ceiling:
-        # every bit set up to the wider operand's bit-length. Bigints,
-        # so no uint64 cap.
+        # OR only sets bits — floor is the larger floor, ceiling is all bits
+        # set up to the wider operand's bit-length (bigint, so no uint64 cap).
         hi = (1 << max(ra.hi.bit_length(), rb.hi.bit_length())) - 1
         return (max(ra.lo, rb.lo), hi)
     if op == "b^":
-        # XOR: ``a ^ a == 0`` so the floor is 0; ceiling as for b|.
+        # ``a ^ a == 0`` so the floor is 0; ceiling as for b|.
         hi = (1 << max(ra.hi.bit_length(), rb.hi.bit_length())) - 1
         return (0, hi)
     return None
 
 
 def _set_int_value_range(obj, lo: int, hi: int) -> bool:
-    """Install / tighten ``int_value_range`` on ``obj``. Preserves
-    existing ``byte_length`` and ``byte_length_range`` so the three
-    fields can coexist on one TealType."""
+    """Install / tighten ``int_value_range``, preserving the byte_length fields."""
     if lo > hi:
         return False
     existing = getattr(obj, "type", None)
@@ -196,8 +126,6 @@ def _set_int_value_range(obj, lo: int, hi: int) -> bool:
             int_value_range=IntRange(lo, hi),
         )
     else:
-        # No existing TealType (or it's uint64 — shouldn't happen on a
-        # bytemath output, but be defensive).
         obj.type = TealType("bytes", int_value_range=IntRange(lo, hi))
     return True
 
@@ -206,16 +134,12 @@ _UINT64 = TealType("uint64")
 
 
 def _set_uint64_range(obj, lo: int, hi: int) -> bool:
-    """Install / TIGHTEN :attr:`SSAVar.range` on ``obj``. Used for the
-    ``btoi`` bridge that lifts a bigint range from bytes-land back
-    into uint64-land.
+    """Install / TIGHTEN :attr:`SSAVar.range` for the ``btoi`` bridge back into
+    uint64-land.
 
-    Intersects with any existing range instead of replacing it, mirroring
-    :func:`_set_int_value_range`. `run_all_passes` runs `propagate_assert_ranges`
-    (step 7) BEFORE this pass (step 9), so overwriting re-WIDENED a range an
-    assert had already tightened — not unsound, but it silently discarded the
-    sharper fact every consumer of ``.range`` then reads. An empty
-    intersection means the two facts contradict, so keep what we had."""
+    HAZARD: must INTERSECT, never replace. Assert refinement runs earlier in the
+    pipeline, so overwriting re-widens a bound an assert already proved and every
+    consumer of ``.range`` silently loses the sharper fact."""
     if lo < 0 or hi > (1 << 64) - 1 or lo > hi:
         return False
     existing = getattr(obj, "range", None)
@@ -233,18 +157,7 @@ def _set_uint64_range(obj, lo: int, hi: int) -> bool:
 
 
 def propagate_bytemath_ranges(prog: SSAProgram) -> int:
-    """Walk ``prog`` to a fixed point. Each iteration:
-
-      1. Seed bigint ranges from bytes constants on operand sources
-         (``Const`` operands, ``const_value`` on producers).
-      2. Forward-propagate through bytemath arithmetic ops.
-      3. Cross-pollinate ``itob`` (uint64 ↦ bytes) and ``btoi``
-         (bytes ↦ uint64).
-      4. Union arg bigint ranges through phis.
-
-    Returns the cumulative count of range installations / tightenings.
-    Capped at :data:`_PASS_ITER_CAP` iterations to prevent runaway
-    growth on cyclic CFGs with bytemath loops."""
+    """Propagate bigint ranges to a fixed point; returns how many were set or tightened."""
     if not getattr(prog, "_consts_propagated", False):
         prog.propagate_constants()
     if not getattr(prog, "_ranges_propagated", False):
@@ -252,13 +165,10 @@ def propagate_bytemath_ranges(prog: SSAProgram) -> int:
 
     tagged = 0
 
-    # Worklist instead of re-walking all ~assignments + phis each round: a value
-    # flows only to the assignments that use it (.uses) and the phis that take it
-    # as an arg, so when an operand's range / int_value_range changes only its
-    # consumers are re-evaluated. _set_int_value_range only intersects (and the
-    # phi union's grown bounding is intersected away), so the lattice is
-    # monotonic and the final type state is identical -- just reached without the
-    # redundant re-walks. A defensive pop cap stands in for the old iteration cap.
+    # Worklist rather than re-walking everything each round: a value flows only
+    # to the assignments in its `.uses` and the phis taking it as an arg. Sound
+    # because `_set_int_value_range` only ever intersects, so the lattice is
+    # monotonic and the fixpoint is the same one a full re-walk would reach.
     phis = list(prog.phis.values())
     phi_consumers: dict = {}
     for ph in phis:
@@ -294,10 +204,6 @@ def propagate_bytemath_ranges(prog: SSAProgram) -> int:
                 return
             r = getattr(a.inputs[0], "range", None)
             if r is None:
-                # `const_int` is the canonical operand->int helper (it handles
-                # the Const / const_value split and the parse); this used to
-                # re-roll both, which is exactly the copy-paste ssa/operands.py
-                # was created to end.
                 n = const_int(a.inputs[0])
                 r = IntRange(n, n) if n is not None else None
             if r is None:
@@ -320,9 +226,9 @@ def propagate_bytemath_ranges(prog: SSAProgram) -> int:
                 fan_out(out)
             return
 
-        # Bytemath arithmetic. Operands are TOP-FIRST, so source order ``A op B``
-        # is ``inputs[1] op inputs[0]`` — use ``binary_operands`` (as range_arith
-        # does) so ``b-`` / ``b/`` / ``b%`` aren't computed reversed.
+        # HAZARD: operands are TOP-FIRST, so source order ``A op B`` is
+        # ``inputs[1] op inputs[0]``. Use ``binary_operands`` or ``b-`` / ``b/``
+        # / ``b%`` are computed reversed.
         if op in _BYTES_OP_RULES:
             if len(a.inputs) != 2:
                 return
@@ -339,7 +245,6 @@ def propagate_bytemath_ranges(prog: SSAProgram) -> int:
                 fan_out(out)
             return
 
-        # Single-output bytes constants: seed singleton range from the literal.
         if a.const is not None and a.const.kind == "bytes":
             n = _bytes_to_int(a.const.value)
             if n is not None and _set_int_value_range(out, n, n):

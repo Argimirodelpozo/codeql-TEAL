@@ -1,39 +1,11 @@
-"""Forward range arithmetic — flow :class:`IntRange` annotations
-through arithmetic ops that :meth:`tealql.tealtools.ssa.SSAProgram.propagate_ranges`
-leaves untouched.
+"""Compose :class:`IntRange` annotations through arithmetic, bitwise and shift
+ops, which the seeding pass leaves unranged.
 
-The stdlib pass seeds ranges from op-alone bounds (boolean-shaped
-comparisons → ``[0..1]``, ``getbyte`` → ``[0..255]``, txn enum
-fields, …) and then unions through phis at a fixed point. It does
-*not* compute ``a + b`` from ``range(a)`` and ``range(b)`` — so
-chains of arithmetic over ranged inputs (e.g. ``getbyte(x) + 1``)
-end up unranged even though the bound is statically derivable.
-
-This pass layers on top:
-
-  - Seeds ranges from ``const_value`` (a literal int has the
-    singleton range ``[N..N]``) for any operand the stdlib didn't
-    cover.
-  - Propagates ranges through the binary arithmetic ops ``+``,
-    ``-``, ``*``, ``/``, ``%``, the binary bitwise / shift ops
-    ``&``, ``|``, ``^``, ``<<``, ``>>``, and the unary ``~``, using
-    AVM semantics (``+`` / ``-`` / ``*`` halt on overflow /
-    underflow, ``/`` / ``%`` halt on divide-by-zero, ``<<`` wraps
-    mod 2^64 — so a successful execution reaches the next
-    instruction).
-  - Re-unions phi ranges from scratch each iteration so that arms
-    whose ranges only become known via arithmetic widen the join.
-
-Opt-in (not in :func:`tealql.tealtools.passes.run_all_passes`).
-Idempotent: a second call walks the fixed point again and finds
-nothing further to add. Lazily trips
-:meth:`SSAProgram.propagate_ranges` if it hasn't run, so seeding from
-the stdlib tables happens first.
-
-``sqrt`` / ``exp`` / ``expw`` aren't covered — rare, and ``expw``
-produces a two-word result that doesn't fit the single-output
-shape here.
-"""
+HAZARD: every bound here is derived under the assumption that execution REACHED
+the next instruction, so the AVM's halting cases are excluded from the range
+(``+`` / ``-`` / ``*`` halt on overflow / underflow, ``/`` / ``%`` on a zero
+divisor, the shifts above 63). A rule that instead models the halt as producing
+a value would put states in the range that no live execution can be in."""
 from __future__ import annotations
 
 from typing import Optional
@@ -46,9 +18,7 @@ _UINT64 = TealType("uint64")
 
 
 def _operand_range(operand) -> Optional[IntRange]:
-    """Best-known integer range for an input operand. Pulls directly
-    from ``operand.range`` if set; otherwise lifts a singleton range
-    from ``const_value`` (or the literal value of a ``Const``)."""
+    """Best-known integer range for an operand, lifting a const to a singleton."""
     if isinstance(operand, Const):
         n = const_int(operand)
         if n is not None and 0 <= n <= _UINT64_MAX:
@@ -68,19 +38,15 @@ def _operand_range(operand) -> Optional[IntRange]:
 def _arith_result_range(
     op: str, ra: IntRange, rb: IntRange,
 ) -> Optional[tuple[int, int]]:
-    """Compute the output ``(lo, hi)`` of a two-input AVM arithmetic op
-    given its operand ranges. Returns ``None`` if the op halts
-    unconditionally on this range (e.g. divide-by-zero with both
-    operands certainly zero) or isn't supported.
+    """Output ``(lo, hi)`` of ``A op B`` from the operand ranges — ``ra`` is A,
+    the DEEPER operand. ``None`` if the op always halts here, or is unsupported.
 
-    All clamping to ``[0, 2^64-1]`` is done in the caller.
-    """
+    Clamping to ``[0, 2^64-1]`` is the caller's job, so branches may overflow it."""
     if op == "+":
-        # Halts on overflow; cap the upper bound at the uint64 ceiling.
         return (ra.lo + rb.lo, ra.hi + rb.hi)
     if op == "-":
-        # Halts on underflow; if every (a, b) pair *could* underflow we
-        # still know the survivors are ≥ 0, so clamp the lower bound to 0.
+        # Halts on underflow, so the survivors are ≥ 0 even when every pair
+        # could underflow — clamping the floor to 0 stays sound.
         lo = max(0, ra.lo - rb.hi)
         hi = ra.hi - rb.lo
         if hi < lo:
@@ -89,39 +55,33 @@ def _arith_result_range(
     if op == "*":
         return (ra.lo * rb.lo, ra.hi * rb.hi)
     if op == "/":
-        # Halts on divisor == 0; if rb is certainly zero, give up.
         if rb.hi == 0:
             return None
-        # Successful execution requires divisor ≥ 1, so the smallest
-        # divisor we can reason about is max(rb.lo, 1).
+        # A successful execution had divisor ≥ 1.
         div_lo = max(rb.lo, 1)
         return (ra.lo // rb.hi, ra.hi // div_lo)
     if op == "%":
-        # Same divide-by-zero guard. Result is < divisor and ≤ dividend.
         if rb.hi == 0:
             return None
+        # Result is < divisor and ≤ dividend.
         div_hi_minus_1 = max(rb.hi - 1, 0)
         return (0, min(ra.hi, div_hi_minus_1))
     if op == "&":
-        # Bitwise AND clears bits — result ≤ each operand.
+        # AND only clears bits — result ≤ each operand.
         return (0, min(ra.hi, rb.hi))
     if op == "|":
-        # Bitwise OR only sets bits — result ≥ each operand, so the
-        # floor is the larger operand's floor. Ceiling: every bit set
-        # up to the wider operand's bit-length.
+        # OR only sets bits — floor is the larger floor, ceiling is all bits
+        # set up to the wider operand's bit-length.
         hi = (1 << max(ra.hi.bit_length(), rb.hi.bit_length())) - 1
         return (max(ra.lo, rb.lo), hi)
     if op == "^":
-        # XOR: ``a ^ a == 0`` so the floor is 0; ceiling is the same
-        # all-bits-set bound as OR.
+        # ``a ^ a == 0`` so the floor is 0; same all-bits-set ceiling as OR.
         hi = (1 << max(ra.hi.bit_length(), rb.hi.bit_length())) - 1
         return (0, hi)
     if op == "<<":
-        # AVM ``shl`` is ``A * 2^B mod 2^64``: the RESULT wraps, but the op
-        # itself FAILS when B > 63 (go-algorand `opShiftLeft`) — it does not
-        # "never halt". A halting pair produces no value, so ignoring B > 63
-        # would be legitimate; we keep the conservative widening instead,
-        # which stays a sound over-approximation either way.
+        # ``A * 2^B mod 2^64``: the RESULT wraps but the op FAILS for B > 63,
+        # so discarding those pairs would also be legal; widening to the full
+        # domain is the more conservative choice and sound either way.
         if rb.hi >= 64:
             return (0, _UINT64_MAX)
         hi = ra.hi << rb.hi
@@ -129,19 +89,16 @@ def _arith_result_range(
             return (0, _UINT64_MAX)
         return (ra.lo << rb.lo, hi)
     if op == ">>":
-        # ``shr`` is ``A // 2^B``: never overflows, monotonic (larger shift =>
-        # smaller result). Like ``shl`` it FAILS for B > 63 rather than
-        # zeroing the value; the ``min(.., 64)`` clamps only widen the result
-        # range, so the bound stays sound.
+        # ``A // 2^B``: monotonic (larger shift => smaller result), and the
+        # ``min(.., 64)`` clamps only widen the result, so the bound stays sound.
         return (ra.lo >> min(rb.hi, 64), ra.hi >> min(rb.lo, 64))
     return None
 
 
 def _unary_result_range(op: str, ra: IntRange) -> Optional[tuple[int, int]]:
-    """Compute the output ``(lo, hi)`` of a one-input AVM op given its
-    operand range. Returns ``None`` for unsupported ops."""
+    """Output ``(lo, hi)`` of a one-input AVM op, or ``None`` if unsupported."""
     if op == "~":
-        # uint64 bitwise NOT: ``~a == (2^64-1) - a``.
+        # uint64 NOT is ``(2^64-1) - a``, so the bounds SWAP.
         return (_UINT64_MAX - ra.hi, _UINT64_MAX - ra.lo)
     return None
 
@@ -155,9 +112,7 @@ def _clamp_uint64(lo: int, hi: int) -> tuple[int, int]:
 
 
 def _set_range(obj, lo: int, hi: int) -> bool:
-    """Install ``IntRange(lo, hi)`` on ``obj`` and tag it as uint64.
-    Returns True when this is a new range or strictly different from
-    the previous one (to drive the fixed-point loop)."""
+    """Install ``IntRange(lo, hi)`` on ``obj``, returning True if it changed."""
     if lo > hi:
         return False
     existing = getattr(obj, "range", None)
@@ -170,17 +125,7 @@ def _set_range(obj, lo: int, hi: int) -> bool:
 
 
 def propagate_range_arithmetic(prog: SSAProgram) -> int:
-    """Walk ``prog`` to a fixed point, propagating ``IntRange``
-    annotations through the arithmetic ops (``+`` ``-`` ``*`` ``/``
-    ``%``), the bitwise / shift ops (``&`` ``|`` ``^`` ``<<`` ``>>``
-    ``~``) over operands whose ranges are already known. Returns the
-    number of SSAVars / Phis whose range was newly set (or widened
-    during a phi re-union).
-
-    Lazy-trips :meth:`SSAProgram.propagate_ranges` first so the
-    stdlib seeds (boolean comparisons, txn enum fields, …) are in
-    place before arithmetic chains start composing them.
-    """
+    """Compose ranges to a fixed point; returns how many were newly set or widened."""
     if not getattr(prog, "_ranges_propagated", False):
         prog.propagate_ranges()
 
@@ -189,15 +134,9 @@ def propagate_range_arithmetic(prog: SSAProgram) -> int:
 
     changed_overall = 0
 
-    # Seed singleton ranges from ``const_value``: a value const-folded to a
-    # literal int N has the exact range ``[N, N]`` *everywhere* it is used — a
-    # constant is flow-insensitive, so this is unconditionally sound.
-    # ``propagate_ranges`` seeds from op / field *shape* (boolean comparisons,
-    # txn enum fields, …), not from const-prop results, so const vars are left
-    # unranged; this closes that gap and lets the arithmetic below compose them.
-    # (``_operand_range`` already lifts a const operand on the fly, but only the
-    # operands of arith ops — a detector reading ``var.range`` directly still
-    # saw ``None``.) Bytes constants stay unranged: ``_const_int`` rejects them.
+    # A const-folded literal N has the exact range [N, N] EVERYWHERE it is used
+    # — a constant is flow-insensitive, so this is unconditionally sound. The
+    # seeding pass keys on op / field shape, not const-prop, so it misses these.
     def _seed_const(obj) -> None:
         if obj.range is None:
             n = const_int(getattr(obj, "const_value", None))
@@ -216,7 +155,6 @@ def propagate_range_arithmetic(prog: SSAProgram) -> int:
     while changed:
         changed = False
 
-        # Arithmetic assignments: compute output range from inputs.
         for a in prog.assignments:
             if len(a.outputs) != 1:
                 continue
@@ -224,11 +162,10 @@ def propagate_range_arithmetic(prog: SSAProgram) -> int:
             if not isinstance(out, SSAVar) or out.range is not None:
                 continue
             if a.op in _BINARY_OPS and len(a.inputs) == 2:
-                # inputs are top-first (inputs[0] = topmost popped), but
-                # _arith_result_range is deepest-first: it computes ``A op B``
-                # with ``ra`` = the deeper operand ``A``. So A = inputs[1],
-                # B = inputs[0]. Without the swap, non-commutative ops (-, /,
-                # %, shifts) get their operands reversed.
+                # HAZARD: inputs are TOP-FIRST (inputs[0] = topmost popped) but
+                # _arith_result_range takes ``A op B`` deepest-first, so
+                # A = inputs[1], B = inputs[0]. Drop this swap and every
+                # non-commutative op (-, /, %, shifts) is computed backwards.
                 ra = _operand_range(a.inputs[1])
                 rb = _operand_range(a.inputs[0])
                 if ra is None or rb is None:
@@ -248,10 +185,8 @@ def propagate_range_arithmetic(prog: SSAProgram) -> int:
                 changed_overall += 1
                 changed = True
 
-        # Re-union phis: arms whose ranges only just became known
-        # (via the arithmetic pass above) need to feed the join. Unlike
-        # propagate_ranges' phi loop, this *widens* an existing range
-        # when new arg info would extend it.
+        # Re-union phis so arms newly ranged by the arithmetic above feed the
+        # join. Unlike the seeding pass this WIDENS an existing phi range.
         for ph in prog.phis.values():
             if not ph.args:
                 continue

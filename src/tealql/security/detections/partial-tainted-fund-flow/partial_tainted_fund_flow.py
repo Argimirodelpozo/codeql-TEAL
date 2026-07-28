@@ -1,27 +1,14 @@
-"""sec-guide/partial-tainted-fund-flow: byte-precise fund-flow (validation bypass).
+"""sec-guide/partial-tainted-fund-flow: the partial-validation bypass the
+slot-granular tainted-fund-flow detector misses.
 
-The boolean tainted-fund-flow detector reasons at *input-slot* granularity: a
-guard is "a check derived from the same ApplicationArgs slot". That is too coarse
-when a contract packs several logical fields into ONE argument and validates only
-some of them — validating ``arg[0..2]`` (a length / selector / discriminator)
-suppresses a finding on ``arg[2..34]`` (an embedded address that flows to
-``Receiver``), even though the bytes that actually steer the funds were never
-checked. A real **partial-validation bypass**, and a false negative for the
-slot-granular detector.
+When a contract packs several logical fields into ONE argument, validating
+``arg[0..2]`` suppresses a slot-granular finding on ``arg[2..34]`` — an embedded
+address flowing to ``Receiver`` that was never checked. Byte-interval taint
+(``byte_taint(..., validate=True)``) tracks per byte-offset instead, so an
+``assert(slice == const)`` clears only the bytes it actually pins.
 
-This detector closes that gap with the **byte-interval taint** engine
-(:func:`tealql.tealtools.dataflow.byte_taint.byte_taint`, ``validate=True``): taint is
-tracked per byte-offset, and an ``assert(slice == const)`` clears only the exact
-bytes it pins. A payment sink whose value still carries tainted (un-validated)
-bytes after narrowing is attacker-controlled at the byte level.
-
-To stay precise and non-overlapping, it reports only the **net-new** findings the
-boolean detector misses: it runs tainted-fund-flow first and subtracts whatever it
-already flags (the plain whole-value cases). What remains is exactly the
-partial-validation class — the contract DID validate the argument, just not the
-bytes on the funds path. Sender/creator-gated sinks are suppressed (shared
-machinery), and a sink whose flowing bytes ARE validated is cleared by the
-narrowing, so it never reaches here.
+Reports only NET-NEW findings: tainted-fund-flow runs first and whatever it flags
+is subtracted, leaving exactly the partial-validation class.
 """
 from __future__ import annotations
 
@@ -35,13 +22,10 @@ from tealql.tealtools.path_predicates import PathPredicateAnalysis
 from tealql.tealtools.ssa import SSAProgram, SSAVar, Phi
 
 
-# Ops that read a specific BYTE POSITION of a buffer — a scalar produced through
-# any of these carries partial (sub-field) provenance, so byte_taint's byte-level
-# narrowing governs it (this detector's slot-granular class). A scalar with NO
-# such op in its def-tree is a WHOLE value (btoi of a whole buffer, or pure
-# arithmetic); byte_taint cannot clear a whole-scalar validation (a bounds check /
-# non-slice equality), so such a value defers to the whole-value detector's full
-# guard reasoning instead of this detector's sender-only reasoning.
+# Ops reading a specific BYTE POSITION of a buffer. A scalar produced through one
+# has partial sub-field provenance, so byte_taint's narrowing governs it; a scalar
+# with none is a WHOLE value that byte_taint cannot clear (bounds check, non-slice
+# equality) and must fall back to full value-slot guard reasoning.
 _BYTE_POSITION_OPS = frozenset({
     "getbyte", "extract_uint16", "extract_uint32", "extract_uint64",
     "extract", "extract3", "substring", "substring3",
@@ -49,8 +33,8 @@ _BYTE_POSITION_OPS = frozenset({
 
 
 def _byte_extracted(value, seen=None) -> bool:
-    """True if ``value``'s def-tree reads a specific byte position of a buffer
-    (see :data:`_BYTE_POSITION_OPS`) — i.e. it has partial sub-field provenance."""
+    """``value``'s def-tree reads a specific byte position, i.e. it has partial
+    sub-field provenance (see :data:`_BYTE_POSITION_OPS`)."""
     if seen is None:
         seen = set()
     if value in seen:
@@ -72,9 +56,8 @@ _FUND_FIELDS = PAYMENT_FUND_FIELDS
 
 
 def _byte_sources(a):
-    """Seed every user-input read (ApplicationArgs / LogicSig args) as fully
-    tainted at byte granularity — the same source universe as the boolean
-    tainted-fund-flow detector, so the subtraction below lines up."""
+    """Seed every user-input read as fully tainted at byte granularity — the SAME
+    source universe as tainted-fund-flow, or the net-new subtraction misaligns."""
     lbl = common.source_label(a.op, a.immediates.strip())
     if lbl and a.outputs:
         return Intervals.whole()
@@ -83,10 +66,8 @@ def _byte_sources(a):
 
 def _cached_byte_taint(prog: SSAProgram):
     """The byte-interval taint fixpoint, memoised on ``prog``. ``byte_taint`` is
-    program-wide (no file scope) and this detector always runs it with the same
-    ``_byte_sources`` / ``validate=True`` config, so one result serves every file
-    in a multi-file program — without the cache the scanner re-ran the whole
-    fixpoint over the entire directory once per file."""
+    program-wide and always run with the same config here, so one result serves
+    every file — uncached, the scanner reran the whole fixpoint per file."""
     bt = getattr(prog, "_sec_partial_byte_taint", None)
     if bt is None:
         bt = byte_taint(prog, sources=_byte_sources, validate=True)
@@ -126,9 +107,8 @@ class PartialTaintedFundFlowDetector:
     name: ClassVar[str] = "sec-guide/partial-tainted-fund-flow"
     applies_to: ClassVar[frozenset] = frozenset({"app"})
     violation_cls: ClassVar[type] = PartialTaintedFundFlowViolation
-    # The IR sibling computes byte-taint on the same substrate but adds
-    # across-callsub guard dominance + interprocedural frame-resolved taint; it
-    # falls back to THIS detector when the contract doesn't lift.
+    # The IR sibling adds across-callsub guard dominance + frame-resolved taint,
+    # and falls back to THIS detector when the contract doesn't lift.
     superseded_by: ClassVar[str] = "ir-partial-tainted-fund-flow"
 
     def __init__(self, prog: SSAProgram, *, file: Optional[str] = None,
@@ -138,8 +118,7 @@ class PartialTaintedFundFlowDetector:
         self.pp = path_predicates or common.cached_path_predicates(prog)
 
     def detect(self) -> list:
-        # Net-new only: subtract what the boolean detector already flags so we
-        # surface exactly the byte-precision (partial-validation) class.
+        # Net-new only: subtract what the boolean detector already flags.
         already = {
             (v.field, v.location)
             for v in TaintedFundFlowDetector(
@@ -159,16 +138,12 @@ class PartialTaintedFundFlowDetector:
             loc = common.loc(fs.assignment)
             if (fs.field, loc) in already:
                 continue                              # boolean detector owns it
-            # Guard reasoning splits by provenance. A byte-INTERVAL flow, or a
-            # scalar with partial byte-extract provenance, is this detector's
-            # slot-granular class: byte_taint's narrowing already did the
-            # byte-level clearing, so only a sender/creator gate should suppress
-            # (an input-slot guard would reproduce the sub-field blind spot).
-            # A WHOLE-VALUE scalar (btoi / arithmetic, no byte-position read) has
-            # no sub-field to be blind to, and byte_taint cannot clear a scalar
-            # validation (bounds / non-slice equality) — so apply the FULL
-            # value-slot guard reasoning (as the whole-value detector does),
-            # else a validated amount is reported as a false positive.
+            # HAZARD: guard reasoning splits by provenance. A byte-INTERVAL flow or
+            # a byte-extracted scalar gets NO slots — byte_taint already did the
+            # byte-level clearing, and an input-slot guard would reproduce the
+            # sub-field blind spot. A WHOLE-VALUE scalar has no sub-field to be
+            # blind to and byte_taint cannot clear its validation, so it needs the
+            # full value-slot reasoning or a validated amount becomes an FP.
             slots = (taint.get(fs.value, frozenset())
                      if (not iv and not _byte_extracted(fs.value)) else frozenset())
             if common.itxn_value_guarded(

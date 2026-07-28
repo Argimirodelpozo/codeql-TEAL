@@ -1,37 +1,14 @@
-"""Assert-based range refinement — tighten :class:`IntRange` annotations
-using the contract's own ``assert`` guards.
+"""Tighten :class:`IntRange` annotations from the contract's own ``assert`` guards.
 
-A TEAL ``assert`` halts the program when its operand is 0, so on every path
-that *continues past* the assert the asserted condition holds. When that
-condition is a comparison ``X op Y`` — or a bare truthiness ``assert(X)``,
-i.e. ``X != 0`` — the operand ranges can be tightened: ``assert(x < 100)``
-proves ``x ∈ [0, 99]`` downstream; ``assert(amount >= 100000)`` proves the
-floor; ``assert(txn.TypeEnum == appl)`` collapses ``[0, 6]`` to ``[1, 1]``.
+HAZARD: :class:`IntRange` is ONE per-SSAVar fact read at every use, but an
+assert constrains only the paths it dominates. Tightening ``x`` when some use
+can be reached without passing the assert makes a detector read a bound that
+does not hold there and MISS a finding. So refine only when every non-test use
+is dominated. Dominance is approximated by reachability on the interprocedural
+CFG, which over-approximates "reachable without A" — the test therefore errs
+toward skipping a refinement, never toward applying one unsoundly.
 
-Soundness is **flow-sensitive**. An ``assert`` constrains its operands only
-on the paths it *dominates*; a use of ``x`` reachable *without* passing the
-assert is unconstrained. Since :class:`IntRange` is a single per-SSAVar fact
-(read at every use), we may tighten ``x`` globally ONLY when every non-test
-use of ``x`` is dominated by the assert — otherwise a detector reading the
-tightened range on a bypassing path could miss a finding (a false negative).
-
-We approximate dominance by reachability: block ``A`` dominates block ``U``
-iff ``U`` is unreachable from the program entry once ``A`` is removed. On the
-raw interprocedural CFG (``callsub`` → sub-entry, ``retsub`` → every return
-site) this *over*-approximates reachability — spurious return edges only ever
-make "U reachable without A" *more* often — so the dominance test is
-**conservative**: a refinement is at worst skipped, never applied unsoundly.
-A use in the assert's own block counts as dominated only when it is strictly
-after the assert in source (== execution) order. (Operands are top-first,
-``inputs[1] op inputs[0]`` — see ``reference_ssa_inputs_top_first``.)
-
-Runs in :func:`tealql.tealtools.passes.run_all_passes` as Phase B step 7, right
-after :func:`propagate_range_arithmetic` so const / arithmetic bounds exist
-before the guards refine them (it lazily trips that pass — hence
-``propagate_ranges`` — when called standalone). Iterates to a fixed point so
-chained guards (``assert(a < b); assert(b < 100)``) compose. Re-running finds
-no further tightening (``_apply`` only ever narrows), so it is idempotent.
-"""
+Operands are top-first, so a comparison reads ``inputs[1] op inputs[0]``."""
 from __future__ import annotations
 
 from typing import Optional
@@ -46,20 +23,17 @@ from .range_arith import (
     propagate_range_arithmetic,
 )
 
-# uint64 comparison ops. ``<`` ``<=`` ``>`` ``>=`` are uint64-only in the AVM
-# (bytes use the ``b``-prefixed forms), so they need no type guard; ``==`` /
-# ``!=`` are polymorphic and are guarded against bytes operands below.
+# ``<`` ``<=`` ``>`` ``>=`` are uint64-only in the AVM (bytes use the
+# ``b``-prefixed forms) so they need no type guard, but ``==`` / ``!=`` are
+# polymorphic and must be guarded against bytes operands below.
 _CMP = U64_CMP_OPS
-# Relation as seen with the *other* operand on the left (X is the right
-# operand): rewrite ``Y op X`` as ``X op' Y``.
+# Rewrite ``Y op X`` as ``X op' Y`` to refine the right-hand operand.
 _SWAP = {"<": ">", ">": "<", "<=": ">=", ">=": "<=", "==": "==", "!=": "!="}
 
 
 def _start_range(x: SSAVar) -> Optional[IntRange]:
-    """The range to refine *from*: the var's own range, else its const
-    singleton, else the full uint64 domain (a bare inequality/truthiness
-    guard proves a uint64 operand). ``None`` only for a non-uint64 var with
-    no numeric evidence."""
+    """The range to refine from: own range, else const singleton, else the full
+    uint64 domain; ``None`` for a non-uint64 var with no numeric evidence."""
     if x.range is not None:
         return x.range
     r = _operand_range(x)
@@ -71,9 +45,10 @@ def _start_range(x: SSAVar) -> Optional[IntRange]:
 
 
 def _apply(rel: str, x: IntRange, y: IntRange) -> tuple[int, int]:
-    """Tighten X's ``(lo, hi)`` under the proven fact ``X rel Y`` (Y the
-    other operand's known range). Only ever narrows toward the centre, so
-    the result is always ⊆ ``x``."""
+    """Tighten X's ``(lo, hi)`` under the proven fact ``X rel Y``.
+
+    HAZARD: must only ever narrow, so the result stays ⊆ ``x``. Any rule that
+    widens turns a sound bound into a claim the program does not guarantee."""
     lo, hi = x.lo, x.hi
     if rel == "<":
         hi = min(hi, y.hi - 1)
@@ -87,8 +62,8 @@ def _apply(rel: str, x: IntRange, y: IntRange) -> tuple[int, int]:
         lo = max(lo, y.lo)
         hi = min(hi, y.hi)
     elif rel == "!=" and y.lo == y.hi and lo < hi:
-        # ``X != c`` only narrows when c sits on a range boundary (an
-        # interior hole isn't representable as an interval).
+        # ``X != c`` narrows only when c sits on a boundary — an interior
+        # hole is not representable as an interval.
         if y.lo == lo:
             lo += 1
         elif y.hi == hi:
@@ -97,18 +72,12 @@ def _apply(rel: str, x: IntRange, y: IntRange) -> tuple[int, int]:
 
 
 def propagate_assert_ranges(prog: SSAProgram) -> int:
-    """Refine SSAVar / Phi ranges from ``assert`` guards, flow-sensitively.
-    Returns the number of ranges newly tightened.
+    """Refine SSAVar / Phi ranges from ``assert`` guards; returns how many tightened.
 
-    Lazily trips :func:`propagate_range_arithmetic` first so const and
-    arithmetic bounds are in place to refine; iterates to a fixed point so
-    guards that depend on one another compose.
-
-    Sets ``prog._assert_ranges_applied``. This pass makes the range annotations
-    ASSERT-CONDITIONAL rather than pure value facts, which silently invalidates
-    any consumer that reasons about whether a guard is redundant — see
-    :mod:`tealql.security.detections.constant_condition`, which checks the flag
-    and refuses to run on a program whose ranges have been refined this way."""
+    HAZARD: this makes the range annotations ASSERT-CONDITIONAL rather than pure
+    value facts, so any consumer asking "is this guard redundant?" now reads a
+    bound the guard itself created and calls the guard dead. Such consumers must
+    check ``prog._assert_ranges_applied`` and refuse to run."""
     if not getattr(prog, "_range_arith_propagated", False):
         propagate_range_arithmetic(prog)
     try:
@@ -116,19 +85,14 @@ def propagate_assert_ranges(prog: SSAProgram) -> int:
     except AttributeError:          # only if SSAProgram ever gains __slots__
         pass
 
-    # (No "has an entry block" bail here: AssertDominance now computes the real
-    # per-file entries itself — the old no-predecessor-block guard existed only
-    # to paper over its entries=[] saturation.)
-    # (assert assignment, condition value) for every assert with an operand.
     guards = [(a, a.inputs[0]) for a in prog.assignments
               if a.op == "assert" and a.inputs]
     if not guards:
         return 0
 
-    # Values that flow into a phi. The dominance soundness check below only sees
-    # ``x.uses`` (op uses), NOT phi consumers -- and a phi arg comes from a
-    # SPECIFIC predecessor edge that may bypass the assert, so tightening such a
-    # value globally is unsound. Be conservative: never tighten a phi-fed value.
+    # HAZARD: the dominance check below sees only ``x.uses`` (op uses), never phi
+    # consumers, and a phi arg arrives on a SPECIFIC predecessor edge that may
+    # bypass the assert — so a phi-fed value is never tightened.
     phi_fed = {id(arg) for ph in prog.phis.values() for arg in ph.args
                if isinstance(arg, SSAVar)}
 
@@ -148,9 +112,9 @@ def propagate_assert_ranges(prog: SSAProgram) -> int:
                 continue
             d = getattr(cond, "defined_by", None)
 
-            # Build (var-to-refine, relation, other-operand-range, test-op)
-            # constraints. ``test`` is the assignment that merely *reads* the
-            # var to guard it — excluded from the dominance check.
+            # (var-to-refine, relation, other-operand-range, test-op). ``test``
+            # merely READS the var to guard it, so it is excluded from the
+            # dominance check — counting it would block every refinement.
             cons = []
             if d is not None and d.op in _CMP and len(d.inputs) == 2:
                 lhs, rhs = binary_operands(d)

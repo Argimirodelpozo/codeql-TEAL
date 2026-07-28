@@ -1,89 +1,15 @@
-"""Byte-length propagation — populate ``TealType.byte_length`` on
-output SSAVars / Phis whose length is statically derivable from the
-producing op's semantics.
+"""Populate ``TealType.byte_length`` (exact) and ``byte_length_range`` (bounded)
+on bytes SSAVars / Phis, forward from producing ops and backward from the length
+each consuming op's successful execution implies.
 
-Independent, idempotent, opt-in (not part of
-:func:`tealql.tealtools.passes.run_all_passes`). Best run
-after :meth:`tealql.tealtools.ssa.SSAProgram.propagate_constants` so any
-``Const("bytes", ...)`` literals already on producers' ``const_value``
-can seed the analysis directly; the entry point lazy-trips
-``propagate_constants`` if it hasn't run.
+HAZARD: operands are TOP-FIRST throughout this module — for the three-input
+byte ops the BUFFER is the deepest operand and the indices/counts sit above it.
+Every rule below states the index mapping it relies on; getting one backwards
+silently reads a length off an index operand.
 
-Op semantics covered (forward, single-output bytes producers):
-
-  - ``itob X``                  → 8 bytes (TEAL spec: itob outputs a
-                                  big-endian 8-byte encoding of the
-                                  popped uint64).
-  - ``bzero N``                 → N bytes when the popped count is a
-                                  resolved constant int.
-  - ``extract A B``             → B bytes when B != 0; otherwise
-                                  ``len(input) - A`` if the input has
-                                  a known byte_length.
-  - ``substring A B``           → ``B - A`` bytes.
-  - ``concat X Y``              → ``len(X) + len(Y)`` when both inputs
-                                  have a known byte_length.
-  - ``extract3 X A B``          → B bytes when B is a const int on the
-                                  stack.
-  - ``substring3 X A B``        → ``B - A`` bytes when A and B are
-                                  both const ints on the stack.
-  - ``setbyte X i b``           → preserves ``len(X)``.
-  - ``replace2 A X V``          → preserves ``len(X)`` (X is inputs[-1], the deepest).
-  - ``replace3 X A V``          → preserves ``len(X)`` (X is inputs[-1], the deepest).
-  - the hash / digest family      → their fixed output width, from
-                                  :data:`avm.FIXED_BYTES_OUTPUT_LEN`
-                                  (``sha256`` / ``sha512_256`` /
-                                  ``keccak256`` / ``sha3_256`` / ``mimc`` = 32,
-                                  ``sumhash512`` = 64).
-  - Any ``txn`` / ``gtxn*`` / ``itxn*`` / ``gitxn*`` form (via
-    :func:`_txn_field_name`) reading a fixed-width bytes field — 32-byte
-    addresses incl. the ``Accounts`` array element + ``Lease`` / ``VotePK``
-    / ``SelectionPK``, 64-byte ``StateProofPK`` — from
-    ``_TXN_FIELD_BYTELEN``; ``global`` address fields from
-    ``_GLOBAL_FIELD_BYTELEN``.
-  - ``*_params_get`` value output (``outputs[1]``) for address / hash
-    fields (``AppAddress``, ``AssetManager``, ``AcctAuthAddr``, …) from
-    the field-keyed ``_PARAMS_VALUE_BYTELEN``.
-  - ``ecdsa_pk_decompress`` / ``ecdsa_pk_recover`` (both outputs 32) and
-    ``vrf_verify`` (64-byte output) — *multi*-output ops, seeded
-    positionally from ``_OP_OUTPUT_BYTELEN``.
-  - Any output already resolved to a ``Const("bytes", "0x..")`` via
-    :meth:`propagate_constants` has its length lifted directly from
-    the hex literal.
-
-A phi gets an exact byte_length only when every arg has the *same*
-known byte_length (intersect, not union — disagreeing args mean the
-value can be one of several lengths at runtime, so the exact static
-length is unknown). When the exact lengths disagree but the args all
-have known length *ranges*, the phi adopts the union — a strictly
-looser bound, but still useful for downstream consumers that just
-want "at most this many bytes". Iterated to fixed point so multi-hop
-chains converge.
-
-Inverse range constraints (item 3): a single forward op whose
-successful execution constrains the byte_length of one of its inputs
-also installs a ``byte_length_range`` on that input:
-
-  - ``btoi(X)``                 → ``len(X) ∈ [0, 8]`` (``btoi("")`` = 0).
-  - ``getbyte(X, i)`` (i const) → ``len(X) ≥ i + 1``.
-  - ``extract_uint16/32/64(X, i)`` (i const) → ``len(X) ≥ i + 2/4/8``.
-  - ``extract A B X``            → ``len(X) ≥ A + B``.
-  - ``substring A B X``          → ``len(X) ≥ B``.
-  - ``extract3 X A B`` (A, B const) → ``len(X) ≥ A + B``.
-  - ``substring3 X A B`` (B const)  → ``len(X) ≥ B``.
-  - ``setbyte X i b`` (i const) → ``len(X) ≥ i + 1``.
-
-The constraints intersect with anything already on the input's
-``byte_length_range`` (so multiple ops on the same SSAVar tighten
-the bound). Constraints are deliberately *not* applied when the
-input already has an exact ``byte_length`` — the exact value is
-strictly stronger.
-
-Mutates the SSA in place: sets :attr:`SSAVar.type` /
-:attr:`Phi.type` to ``TealType("bytes", byte_length=N,
-byte_length_range=IntRange(N, N))`` for the exact case, or
-``TealType("bytes", byte_length_range=IntRange(lo, hi))`` for the
-ranged case.
-"""
+A phi takes an exact length only when every arg agrees; disagreeing args mean
+the runtime length is one of several, so it falls back to the union of the arg
+RANGES — a strictly looser bound, never an exact claim."""
 from __future__ import annotations
 
 import functools
@@ -110,10 +36,7 @@ _BYTES_STACK_CAP = 4096  # AVM bytes-stack values are capped at 4096 bytes.
 
 @functools.lru_cache(maxsize=None)
 def _hex_byte_length(h: str) -> Optional[int]:
-    """Byte length of a ``0x...`` hex literal, or ``None`` if unparseable.
-    Cached: a constant's length is immutable, but the naive byte-length fixpoint
-    re-derives it for every operand on every iteration -- tens of millions of
-    times on large contracts (40M ``fromhex`` re-parses on folks-v3)."""
+    """Byte length of a ``0x...`` hex literal, or ``None`` if unparseable."""
     if h.startswith("0x") or h.startswith("0X"):
         h = h[2:]
     if len(h) % 2 != 0:
@@ -126,18 +49,14 @@ def _hex_byte_length(h: str) -> Optional[int]:
 
 
 def _const_bytes_length(c: Optional[Const]) -> Optional[int]:
-    """Length in bytes of a ``Const("bytes", "0x...")`` literal, or
-    ``None`` if the operand isn't a parseable bytes constant."""
+    """Length of a ``Const("bytes", "0x...")`` literal, or ``None`` if not one."""
     if c is None or c.kind != "bytes":
         return None
     return _hex_byte_length(c.value)
 
 
 def _operand_byte_length(operand) -> Optional[int]:
-    """Known byte_length of an input operand, looking at (a) its
-    TealType if set by a prior pass / iteration, then (b) its
-    ``const_value`` if it's a bytes literal, then (c) the operand
-    itself if it's a :class:`Const` bytes literal."""
+    """Known exact byte_length of an operand, else ``None``."""
     t = getattr(operand, "type", None)
     if t is not None and t.kind == "bytes" and t.byte_length is not None:
         return t.byte_length
@@ -145,12 +64,8 @@ def _operand_byte_length(operand) -> Optional[int]:
 
 
 def _op_byte_length(a: Assignment) -> Optional[int]:
-    """Compute the output byte_length implied by ``a``'s op semantics,
-    or ``None`` when the length isn't statically derivable yet (an
-    input is missing its byte_length, an immediate is malformed, etc.).
-    """
-    # Output of a const-folded bytes literal: lift the length straight
-    # from the hex value.
+    """Output byte_length implied by ``a``'s op semantics, or ``None`` if not
+    statically derivable (yet)."""
     if a.const is not None and a.const.kind == "bytes":
         return _const_bytes_length(a.const)
 
@@ -168,8 +83,8 @@ def _op_byte_length(a: Assignment) -> Optional[int]:
         return n
 
     if op == "extract":
-        # Immediate form: ``extract A B``. ``B == 0`` means "to end of
-        # input", so we need the input's known byte_length to compute.
+        # ``extract A B``, where ``B == 0`` means "to end of input" and so
+        # needs the input's own byte_length.
         if not a.immediates:
             return None
         toks = a.immediates.split()
@@ -189,7 +104,7 @@ def _op_byte_length(a: Assignment) -> Optional[int]:
         return None
 
     if op == "substring":
-        # Immediate form: ``substring A B`` → bytes[A:B], length B - A.
+        # ``substring A B`` → bytes[A:B], length B - A.
         if not a.immediates:
             return None
         toks = a.immediates.split()
@@ -214,8 +129,7 @@ def _op_byte_length(a: Assignment) -> Optional[int]:
 
     if op == "extract3":
         # ``extract3 X A B`` → bytes[A : A + B]; output length is the COUNT B.
-        # Operands are TOP-FIRST: B=inputs[0] (top), A=inputs[1], X=inputs[2]
-        # (deepest) — see ``dataflow.bounds._access``.
+        # TOP-FIRST: B=inputs[0] (top), A=inputs[1], X=inputs[2] (deepest).
         if len(a.inputs) != 3:
             return None
         n = const_int(operand_const(a.inputs[0]))
@@ -234,23 +148,20 @@ def _op_byte_length(a: Assignment) -> Optional[int]:
             return None
         return end - start
 
-    # Length-preserving ops: result inherits the BUFFER's byte_length. The buffer
-    # (``X`` in ``setbyte X i b`` / ``replace2 X V`` / ``replace3 X A V``) is pushed
-    # first, so it is the DEEPEST operand (``inputs[-1]``), not ``inputs[0]``.
+    # Length-preserving ops inherit the BUFFER's byte_length. The buffer X is
+    # pushed first, so TOP-FIRST it is the DEEPEST operand ``inputs[-1]``, not
+    # ``inputs[0]``.
     if op in ("setbyte", "replace2", "replace3"):
         if not a.inputs:
             return None
         return _operand_byte_length(a.inputs[-1])
 
-    # Fixed-width hash / digest outputs, from the AVM metadata table (the four
-    # SHA/Keccak lengths used to be inline here, which left `mimc` (32) and
-    # `sumhash512` (64) unlengthed).
+    # Fixed-width hash / digest outputs, from the AVM metadata table.
     n = FIXED_BYTES_OUTPUT_LEN.get(op)
     if n is not None:
         return n
 
-    # Fixed-width bytes fields (32-byte addresses / keys, 64-byte
-    # StateProofPK) read off the txn-family or global field tables.
+    # Fixed-width bytes fields (32-byte addresses / keys, 64-byte StateProofPK).
     if a.immediates:
         toks = a.immediates.split()
         field = _txn_field_name(op, toks)
@@ -267,9 +178,7 @@ def _op_byte_length(a: Assignment) -> Optional[int]:
 
 
 def _operand_byte_length_range(operand) -> Optional[IntRange]:
-    """Best-known length range for an operand. An exact byte_length
-    (from :func:`_operand_byte_length`) is returned as ``[N, N]``;
-    otherwise the operand's ``type.byte_length_range`` if set."""
+    """Best-known length range for an operand, an exact length becoming ``[N, N]``."""
     n = _operand_byte_length(operand)
     if n is not None:
         return IntRange(n, n)
@@ -280,10 +189,7 @@ def _operand_byte_length_range(operand) -> Optional[IntRange]:
 
 
 def _set_byte_length(obj, n: int) -> bool:
-    """Set ``obj.type`` to ``TealType("bytes", byte_length=n,
-    byte_length_range=IntRange(n, n))`` if it's not already set with
-    that length. Returns True when a change was made (to drive the
-    fixed-point loop)."""
+    """Pin ``obj`` to an exact byte length; returns True if it changed."""
     existing = getattr(obj, "type", None)
     if existing is not None and existing.kind == "bytes" \
             and existing.byte_length is not None:
@@ -292,21 +198,18 @@ def _set_byte_length(obj, n: int) -> bool:
         "bytes",
         byte_length=n,
         byte_length_range=IntRange(n, n),
-        # Carry any bigint value-range forward: the three fields coexist on one
-        # TealType (cf. bytemath._set_int_value_range, which preserves the
-        # length fields symmetrically). Dropping it silently erased bytemath's
-        # facts whenever these passes ran in the other order.
+        # Carry the bigint value-range forward — the three fields coexist on one
+        # TealType, and dropping it erases bytemath's facts depending on pass order.
         int_value_range=getattr(existing, "int_value_range", None),
     )
     return True
 
 
 def _set_byte_length_range(obj, lo: int, hi: int) -> bool:
-    """Install or *intersect* a byte_length range on ``obj``. Honours
-    an existing exact ``byte_length`` (would either confirm it or
-    indicate an infeasible path — we leave it alone in either case).
-    Returns True when the stored range was actually tightened so the
-    fixed-point loop knows to re-iterate."""
+    """Install or INTERSECT a length range on ``obj``; True if it tightened.
+
+    HAZARD: never widens, and never touches a var already pinned to an exact
+    ``byte_length`` — the exact fact is strictly stronger than any range."""
     # Clamp to the AVM bytes-stack cap.
     if lo < 0:
         lo = 0
@@ -317,7 +220,6 @@ def _set_byte_length_range(obj, lo: int, hi: int) -> bool:
     existing = getattr(obj, "type", None)
     if existing is not None and existing.kind == "bytes" \
             and existing.byte_length is not None:
-        # Already pinned to an exact length; nothing to refine.
         return False
     if existing is not None and existing.byte_length_range is not None:
         old = existing.byte_length_range
@@ -338,27 +240,19 @@ def _set_byte_length_range(obj, lo: int, hi: int) -> bool:
 
 
 def _input_min_length(a: Assignment) -> Optional[tuple[int, int, Optional[int]]]:
-    """Return ``(input_index, min_len, max_len)`` for any op whose
-    successful execution constrains the byte_length of one of its
-    inputs. ``max_len`` is ``None`` when only a lower bound is known
-    (it gets clamped to the bytes-stack cap by the caller). Returns
-    ``None`` when the op doesn't carry a static input-length
-    constraint (or its key immediates / stack operands aren't
-    resolved to constants).
-    """
+    """``(input_index, min_len, max_len)`` for an op whose success constrains an
+    input's byte_length; ``max_len`` ``None`` means lower bound only."""
     op = a.op
 
-    # btoi(X) succeeds ⇒ len(X) ∈ [0, 8]. go-algorand's opBtoi fails ONLY
-    # for len > 8 — btoi("") legally yields 0, so 0 is a reachable length
-    # and the lower bound must include it.
+    # btoi(X) succeeds ⇒ len(X) ∈ [0, 8]. It fails ONLY for len > 8, and
+    # btoi("") legally yields 0, so the lower bound must include 0.
     if op == "btoi":
         if not a.inputs:
             return None
         return (0, 0, 8)
 
     # getbyte(X, i) — needs len(X) ≥ i + 1 when i is a const. TOP-FIRST:
-    # i=inputs[0] (top), X=inputs[1] (see ``dataflow.bounds._access``); the
-    # constraint is on the BUFFER X = input index 1.
+    # i=inputs[0], X=inputs[1], so the constraint lands on index 1.
     if op == "getbyte":
         if len(a.inputs) != 2:
             return None
@@ -368,7 +262,7 @@ def _input_min_length(a: Assignment) -> Optional[tuple[int, int, Optional[int]]]
         return (1, idx + 1, None)
 
     # extract_uint{16,32,64}(X, i) — needs len(X) ≥ i + 2/4/8. TOP-FIRST:
-    # i=inputs[0], X=inputs[1]; constraint is on X = input index 1.
+    # i=inputs[0], X=inputs[1], so the constraint lands on index 1.
     if op in ("extract_uint16", "extract_uint32", "extract_uint64"):
         if len(a.inputs) != 2:
             return None
@@ -378,8 +272,7 @@ def _input_min_length(a: Assignment) -> Optional[tuple[int, int, Optional[int]]]
         width = {"extract_uint16": 2, "extract_uint32": 4, "extract_uint64": 8}[op]
         return (1, idx + width, None)
 
-    # extract A B X  (immediate) — needs len(X) ≥ A + B when B != 0,
-    # ≥ A when B == 0 ("to end of input").
+    # extract A B X (immediate) — needs len(X) ≥ A + B (≥ A when B == 0).
     if op == "extract":
         if not a.inputs or not a.immediates:
             return None
@@ -409,8 +302,8 @@ def _input_min_length(a: Assignment) -> Optional[tuple[int, int, Optional[int]]]
             return None
         return (0, end, None)
 
-    # extract3 X A B — needs len(X) ≥ A + B when both A and B are const. TOP-FIRST:
-    # B(count)=inputs[0], A(start)=inputs[1], X=inputs[2]; constraint on X = index 2.
+    # extract3 X A B — needs len(X) ≥ A + B when both are const. TOP-FIRST:
+    # B(count)=inputs[0], A(start)=inputs[1], X=inputs[2] — constraint on index 2.
     if op == "extract3":
         if len(a.inputs) != 3:
             return None
@@ -421,7 +314,7 @@ def _input_min_length(a: Assignment) -> Optional[tuple[int, int, Optional[int]]]
         return (2, start + length, None)
 
     # substring3 X A B — needs len(X) ≥ B when B is a const. TOP-FIRST:
-    # B(end)=inputs[0], A=inputs[1], X=inputs[2]; constraint on X = index 2.
+    # B(end)=inputs[0], A=inputs[1], X=inputs[2] — constraint on index 2.
     if op == "substring3":
         if len(a.inputs) != 3:
             return None
@@ -431,7 +324,7 @@ def _input_min_length(a: Assignment) -> Optional[tuple[int, int, Optional[int]]]
         return (2, end, None)
 
     # setbyte X i b — needs len(X) ≥ i + 1 when i is a const. TOP-FIRST:
-    # b=inputs[0], i=inputs[1], X=inputs[2]; constraint on X = index 2.
+    # b=inputs[0], i=inputs[1], X=inputs[2] — constraint on index 2.
     if op == "setbyte":
         if len(a.inputs) != 3:
             return None
@@ -444,29 +337,16 @@ def _input_min_length(a: Assignment) -> Optional[tuple[int, int, Optional[int]]]
 
 
 def propagate_byte_lengths(prog: SSAProgram) -> int:
-    """Walk ``prog`` to a fixed point. In each iteration:
-
-      1. Forward-propagate exact ``byte_length`` from ops whose
-         output length is statically derivable.
-      2. Install inverse ``byte_length_range`` constraints on inputs
-         of ops whose successful execution implies a minimum length
-         (``btoi``, ``getbyte``, ``extract_*``, ``setbyte``, …).
-      3. Union arg lengths through phis — exact when every arg
-         agrees, else the looser ``byte_length_range`` union.
-
-    Returns the cumulative number of (byte_length, byte_length_range)
-    assignments made across the fixed-point walk."""
+    """Propagate lengths to a fixed point; returns how many facts were installed."""
     if not getattr(prog, "_consts_propagated", False):
         prog.propagate_constants()
 
     tagged = 0
 
-    # Worklist instead of a fixpoint that re-walks all ~4M assignments + phis
-    # every round: a value flows only to the assignments that use it (.uses) and
-    # the phis that take it as an arg (phi_consumers), so when an operand's
-    # byte_length / range changes only its consumers are re-evaluated. The
-    # lattice is monotonic (byte_length set once, ranges only intersect), so the
-    # least fixed point -- and the final type state -- is identical.
+    # Worklist rather than re-walking everything each round: a value flows only
+    # to the assignments in its `.uses` and the phis taking it as an arg. Sound
+    # because the lattice is monotonic (byte_length set once, ranges only
+    # intersect), so this reaches the same least fixed point.
     phis = list(prog.phis.values())
     phi_consumers: dict = {}
     for ph in phis:
@@ -487,11 +367,11 @@ def propagate_byte_lengths(prog: SSAProgram) -> int:
         for ph in phi_consumers.get(id(v), ()):
             enqueue(ph)
 
-    # (1) Forward exact-length rule for one bytes-producing op.
+    # Forward exact-length rules for one bytes-producing op.
     def do_assignment(a) -> None:
         nonlocal tagged
-        # Multi-output ops with fixed-width bytes outputs (ecdsa pubkey
-        # words, vrf_verify's output) — positional, top-first.
+        # Multi-output fixed-width bytes ops (ecdsa pubkey words, vrf_verify)
+        # bind by output INDEX, top-first.
         out_lens = _OP_OUTPUT_BYTELEN.get(a.op)
         if out_lens is not None:
             for idx, n in out_lens:
@@ -502,8 +382,7 @@ def propagate_byte_lengths(prog: SSAProgram) -> int:
                         fan_out(out)
             return
 
-        # *_params_get: the value output (outputs[1]) is a fixed-width
-        # bytes value (address / metadata hash) for some fields.
+        # *_params_get: outputs[1] is the VALUE, fixed-width for some fields.
         if a.op in _PARAMS_OPS:
             if a.immediates and len(a.outputs) > 1:
                 n = _PARAMS_VALUE_BYTELEN.get(a.immediates.split()[0])
@@ -530,7 +409,7 @@ def propagate_byte_lengths(prog: SSAProgram) -> int:
             tagged += 1
             fan_out(out)
 
-    # (3) Phi propagation: exact-length agreement first, range union fallback.
+    # Phi propagation: exact-length agreement first, range union as fallback.
     def do_phi(ph) -> None:
         nonlocal tagged
         existing = ph.type
@@ -555,17 +434,15 @@ def propagate_byte_lengths(prog: SSAProgram) -> int:
             tagged += 1
             fan_out(ph)
 
-    # (2) Inverse length constraints are op-only (op / immediates / const
-    # operands), stable across the walk -- a one-shot seed, not in the fixpoint.
+    # Inverse length constraints depend only on op / immediates / const operands,
+    # so they are a one-shot seed rather than part of the fixpoint.
     #
-    # FLOW-GATED: "this op executed successfully" only holds on paths through
-    # the op, but a range on the SSAVar is read at EVERY use. Install the
-    # constraint only when every other use of the input is dominated by the
-    # op — the same soundness model as passes.range_assert (a use reachable
-    # without passing the op would otherwise inherit a bound the value need
-    # not satisfy there, e.g. one branch's btoi(X) capping X's byte-taint
-    # span at 8 in the other branch). Phi-fed values are excluded: a phi arg
-    # belongs to a specific incoming edge the dominance check can't see.
+    # HAZARD: FLOW-GATED, on the same model as passes.range_assert. "This op
+    # executed successfully" holds only on paths through the op, but the range
+    # lands on the SSAVar and is read at EVERY use — one branch's btoi(X) would
+    # otherwise cap X at 8 bytes in the other branch. So install it only when
+    # every other use is dominated by the op, and never on a phi-fed value,
+    # whose incoming edge the dominance check cannot see.
     from ..cfg.dominance import AssertDominance
     dom = AssertDominance(prog)
     phi_fed = {id(arg) for ph in prog.phis.values() for arg in ph.args}
@@ -595,7 +472,6 @@ def propagate_byte_lengths(prog: SSAProgram) -> int:
             tagged += 1
             fan_out(target)
 
-    # Seed every assignment + phi once, then propagate only to consumers.
     for a in prog.assignments:
         enqueue(a)
     for ph in phis:

@@ -1,46 +1,22 @@
-"""A relational (zone / difference-bound) abstract domain for byte-access
-bounds — proving ``offset + width <= len(buffer)`` when neither side is a
-compile-time constant.
+"""A relational (zone / difference-bound) domain over ``Len(buf)`` atoms, integer
+SSA vars and a shared origin, proving ``offset + width <= len(buffer)``.
 
-The non-relational domains bound each quantity *separately*: intervals give
-``offset ∈ [.,.]`` and ``width ∈ [.,.]``, ``byte_length_prop`` gives ``len(buf)``
-— but none RELATES them, and ABI-decode safety is exactly a relation. This
-domain tracks difference constraints ``a - b <= c`` (a Difference-Bound Matrix,
-the *zone* domain) between length-relevant terms:
+``offset + width <= len`` has three variables and so is not itself a difference
+constraint, but it becomes one as soon as either operand is constant — which
+covers nearly every real access: constant width ``w`` gives ``offset - Len <=
+-w``, constant offset ``k`` gives ``width - Len <= -k``.
 
-  * ``Len(buf)`` — a symbolic atom for each buffer's byte length,
-  * integer SSA vars — offsets, widths, and the results of ``len`` /
-    ``extract_uint*`` / ``btoi`` / integer arithmetic,
-  * a shared origin ``0`` — every constant ``n`` folds in as ``0 + n``.
-
-``offset + width <= len(buffer)`` is not itself a difference constraint (three
-variables), but it BECOMES one the moment either operand is constant — which is
-the overwhelming majority of real accesses:
-
-  * constant width ``w``  ⇒  ``offset - Len(buf) <= -w``   (``extract`` imm,
-    ``getbyte`` w=1, ``extract_uint*`` w∈{2,4,8}),
-  * constant offset ``k`` ⇒  ``width  - Len(buf) <= -k``   (the ``extract3 X 0
-    (len X)`` whole-buffer idiom: ``k=0``, and ``width == Len(X)`` from ``len``).
-
-Facts come from three places, each with the right soundness:
-
-  * STRUCTURAL (global — an SSA def dominates all its uses): ``L = len X`` gives
-    ``L == Len(X)``; ``s = a + k`` / ``s = a - k`` (one operand constant) give
-    ``s - a == ±k``; every uint64 term is ``>= 0``; a constant literal buffer
-    gives an EXACT ``Len == n`` (both bounds — enabling proven-OOB), a tracked
-    ``byte_length`` gives only a sound LOWER bound ``Len >= n`` (it can
-    under-count, the safe direction for an in-bounds proof).
-  * ASSERT-DERIVED (flow-sensitive — applied only where the assert DOMINATES the
-    query): ``assert(A <= B)`` ⇒ ``A - B <= 0``; ``assert(len X >= 32)`` seeds a
-    length floor; ``assert(off + 2 <= len X)`` seeds the length-prefix
-    well-formedness relation the decode turns on. Dominance is approximated by
-    reachability exactly as in :mod:`..passes.range_assert` (over-approx ⇒ a
-    constraint is at worst skipped, never applied unsoundly).
-
-The DBM is closed (Floyd–Warshall) so chained facts compose transitively, and
-consistency-checked (a negative self-cycle ⇒ the site is unreachable ⇒ no
-claim). Read-only; used by :mod:`.bounds`.
-"""
+Soundness of the fact sources, each erring toward proving LESS:
+  * STRUCTURAL facts are global because an SSA def dominates all its uses.
+  * A constant literal buffer seeds an EXACT ``Len == n``, and only such a
+    buffer can support a proven-OOB. A tracked ``byte_length`` seeds a LOWER
+    bound ONLY — it can under-count, which is safe for an in-bounds proof and
+    unsafe for the opposite claim.
+  * ASSERT facts apply only where the assert dominates the query, with dominance
+    approximated by reachability as in :mod:`..passes.range_assert`; the
+    over-approximation means a constraint is at worst skipped.
+  * A reachable negative cycle means the constraints contradict, so the site is
+    unreachable and NO claim is made in either direction."""
 from __future__ import annotations
 
 from ..ssa import SSAProgram, SSAVar
@@ -70,9 +46,8 @@ def _int_or_none(imm, i):
 
 
 def _term(operand):
-    """``(atom, offset)`` such that ``value(operand) == value(atom) + offset``,
-    or ``None`` when the operand isn't a length-relevant term (a phi, a bytes
-    value). A constant ``n`` is ``(ORIGIN, n)``; an SSA var is ``(v, 0)``."""
+    """``(atom, offset)`` with ``value(operand) == value(atom) + offset``, or
+    ``None`` if the operand is not a length-relevant term (a phi, a bytes value)."""
     n = const_int(operand)
     if n is not None:
         return (ORIGIN, n)
@@ -82,14 +57,12 @@ def _term(operand):
 
 
 class DBM:
-    """A system of difference constraints ``a - b <= c`` as a weighted graph
-    (edge ``a -> b`` with weight ``c``). Entailment of ``a - b <= c`` is exactly
-    "shortest path ``a -> b`` has weight ``<= c``". We answer queries by
-    ON-DEMAND single-source shortest path (Bellman–Ford) from the query's source
-    atom, scoped to the nodes reachable from it — NOT all-pairs closure, which
-    is O(n³) and blew up once slice-lengths and interval bridges made ``n``
-    program-wide. Nonnegativity (``ORIGIN -> v`` weight 0 for every ``v``) is
-    applied lazily during the reachable-set walk."""
+    """Difference constraints ``a - b <= c`` as a weighted graph (edge ``a -> b``
+    of weight ``c``), where entailment of ``a - b <= c`` is exactly "the shortest
+    path ``a -> b`` weighs ``<= c``".
+
+    Queries run on-demand single-source shortest path rather than an all-pairs
+    closure, which is O(n³) over a program-wide atom set."""
 
     __slots__ = ("adj",)
 
@@ -113,14 +86,12 @@ class DBM:
         return len(s)
 
     def shortest(self, src) -> "tuple[dict, bool]":
-        """``(dist, ok)`` — shortest path weight from ``src`` to every reachable
-        atom; ``ok`` is False if a negative cycle is reachable (infeasible ⇒ the
-        program point is unreachable, no claim). SPFA (queue-based Bellman–Ford):
-        only nodes whose distance improved are re-examined, near-linear on these
-        sparse constraint graphs — the all-pairs closure it replaces was O(n³)
-        and blew up once ``n`` spanned the whole program. (Uint64 nonnegativity
-        is NOT a graph edge — it would make ORIGIN a hub connected to every atom;
-        it is applied at the OOB query endpoint instead, the only place it pays.)"""
+        """``(dist, ok)`` — shortest path from ``src``, ``ok`` False on a reachable
+        negative cycle (the constraints are infeasible, so make no claim).
+
+        Uint64 nonnegativity is deliberately NOT an edge here: it would make
+        ORIGIN a hub joined to every atom. It is applied at the OOB query
+        endpoint instead, the only place it pays."""
         from collections import deque
         limit = self._node_count()
         dist = {src: 0}
@@ -145,8 +116,7 @@ class DBM:
 
 
 class LengthRelations:
-    """Builds the structural DBM once, then answers a bounds query at any
-    access site with the assert facts that dominate *that* site folded in."""
+    """The structural DBM, plus per-site the assert facts dominating that site."""
 
     def __init__(self, prog: SSAProgram):
         self._dom = AssertDominance(prog)
@@ -171,7 +141,8 @@ class LengthRelations:
                 # s = a + b, one operand constant k ⇒ s == other + k
                 self._affine(base, outs[0], ins[0], ins[1], sign=+1)
             elif op == "-" and len(ins) == 2 and outs:
-                # top-first: s = inputs[1] - inputs[0]; subtrahend inputs[0]
+                # TOP-FIRST: s = inputs[1] - inputs[0], so inputs[0] is the
+                # SUBTRAHEND. Swapping these inverts every difference below.
                 s, sub, minu = outs[0], ins[0], ins[1]
                 k = const_int(sub)
                 kminu = const_int(minu)
@@ -181,12 +152,11 @@ class LengthRelations:
                     base.add(sv, mv, -k)   # s - minu <= -k
                     base.add(mv, sv, k)    # minu - s <= k
                 elif kminu is not None and isinstance(sub, SSAVar):
-                    # s = C - sub, i.e. s + sub == C — a SUM, which the zone
-                    # cannot hold. But any execution that reaches here did NOT
-                    # underflow (the AVM panics on uint64 subtraction < 0), so
-                    # sub <= C; and s >= 0 (uint64) gives s <= C. Seed both
-                    # ABSOLUTE facets — sound, and enough to bound reads that use
-                    # `remaining = C - offset` as a width against a length floor.
+                    # s = C - sub is a SUM (s + sub == C), which a zone cannot
+                    # hold. Sound weaker facets: reaching here means no underflow
+                    # (the AVM panics on uint64 subtraction < 0) so sub <= C, and
+                    # s >= 0 gives s <= C. Enough to bound a `remaining = C -
+                    # offset` width against a length floor.
                     sv, subv = _iatom(s), _iatom(sub)
                     base.add(sv, ORIGIN, kminu)     # s   <= C
                     base.add(subv, ORIGIN, kminu)   # sub <= C
@@ -195,15 +165,15 @@ class LengthRelations:
 
     def _eq(self, a_atom, a_off: int, b_atom, b_off: int) -> None:
         """Assert ``value(a) == value(b)`` where ``value(x) == x_atom + x_off``."""
-        # a_atom + a_off == b_atom + b_off  ⇒  a_atom - b_atom == b_off - a_off
         self._base.add(a_atom, b_atom, b_off - a_off)
         self._base.add(b_atom, a_atom, a_off - b_off)
 
     def _seed_slice_len(self, a, op, ins, out) -> None:
-        """A slice op PRODUCES a bytes value whose length is determined by the
-        slice — the biggest sound source of buffer lengths (``Y = extract3 X A
-        B`` ⇒ ``Len(Y) == B``, exact even when ``B`` is a runtime variable, which
-        is why ``byte_length_prop`` — a forward CONSTANT length — misses it)."""
+        """Seed ``Len(Y)`` for a slice ``Y`` from the slice's own arguments.
+
+        The biggest sound source of lengths: ``Y = extract3 X A B`` gives
+        ``Len(Y) == B`` exactly, even when B is a runtime variable — which is
+        why ``byte_length_prop``, a forward CONSTANT length, cannot see it."""
         lo = _latom(out)
         if op == "extract3" and len(ins) == 3:            # Len(Y) == count(ins[0])
             t = _term(ins[0])
@@ -231,16 +201,14 @@ class LengthRelations:
                 self._eq(lo, 0, ORIGIN, B - A)
 
     def seed_length_lb(self, buf, n: int) -> None:
-        """Seed a LOWER bound ``Len(buf) >= n`` (never an upper bound), so it can
-        only ever help an in-bounds proof and can NEVER create a false proven-OOB.
-        Used for SPECULATIVE ARC-4 lengths (an assumption about well-formed input);
-        the sound seeds live in :meth:`seed_buffer`."""
+        """Seed a SPECULATIVE ``Len(buf) >= n``.
+
+        HAZARD: lower bound only, never an upper one — that is what keeps an
+        assumed ARC-4 length from manufacturing a false proven-OOB."""
         self._base.add(ORIGIN, _latom(buf), -n)      # Len >= n
 
     def seed_range(self, var) -> None:
-        """Bridge an SSA var's non-relational :class:`IntRange` INTO the zone
-        domain (``lo <= var <= hi``), so a relation like ``Len(Y) == count`` can
-        borrow the count's interval to prove a fixed-width read in-bounds."""
+        """Bridge an SSA var's :class:`IntRange` into the zone as ``lo <= var <= hi``."""
         if not isinstance(var, SSAVar) or var.range is None:
             return
         a = _iatom(var)
@@ -262,9 +230,11 @@ class LengthRelations:
         base.add(vv, sv, -k)   # var - s <= -k
 
     def seed_buffer(self, buf) -> None:
-        """Register a buffer's length bound: an EXACT ``Len == n`` for a literal
-        (enables proven-OOB), else a sound LOWER bound ``Len >= n`` from a tracked
-        ``byte_length`` (which can under-count — the safe direction)."""
+        """Register a buffer's length bound.
+
+        HAZARD: only a literal gets the EXACT ``Len == n`` that can support a
+        proven-OOB. A tracked ``byte_length`` may UNDER-count, so it seeds a
+        lower bound alone — as an upper bound it would fabricate over-reads."""
         la = _latom(buf)
         n = const_byte_length(buf)
         if n is not None:
@@ -321,8 +291,7 @@ class LengthRelations:
         return frozenset(ids)
 
     def _graph_for(self, ids: frozenset) -> DBM:
-        """Structural base + the dominating asserts' edges (un-closed), cached
-        by the assert-id set."""
+        """Structural base plus the dominating asserts' edges, cached by id set."""
         g = self._dbm_cache.get(ids)
         if g is None:
             g = self._base.copy()
@@ -350,12 +319,13 @@ class LengthRelations:
         return v is not None and v <= c
 
     def _prove_len_ge(self, buf, na, no: int, g, ids, depth: int = 0) -> bool:
-        """Prove ``len(buf) >= value(na) + no`` (the need ``na + no``). Tries the
-        seeded ``Len(buf)`` facts, then UNFOLDS a slice definition — a sub-slice's
-        length is a symbolic expression of its parent's offsets, which substitutes
-        the 3-variable ``offset+width <= len`` back into a 2-variable difference
-        query (and recurses through nested slices)."""
-        # (1) direct: len(buf) >= na+no  ⇔  na - Len(buf) <= -no
+        """Prove ``len(buf) >= value(na) + no``, from the seeded facts or by
+        UNFOLDING a slice definition.
+
+        A sub-slice's length is a symbolic expression of its parent's offsets, so
+        substituting it turns the 3-variable ``offset+width <= len`` back into a
+        2-variable difference query, recursively through nested slices."""
+        # Direct: len(buf) >= na+no  ⇔  na - Len(buf) <= -no
         if self._entails(g, ids, na, _latom(buf), -no):
             return True
         if depth > 4 or not isinstance(buf, SSAVar):
@@ -393,9 +363,9 @@ class LengthRelations:
     # -- query --------------------------------------------------------------
     def verdict(self, buf, base_operand, extra_c, site_block, site_line):
         """``(in_bounds, proven_oob)`` for an access reading up to byte
-        ``value(base_operand) + extra_c`` of ``buf`` (``base_operand is None`` ⇒
-        the bound is the constant ``extra_c``). ``extra_c is None`` ⇒ unbounded
-        (neither)."""
+        ``value(base_operand) + extra_c`` of ``buf``; ``base_operand is None``
+        means the bound is the constant ``extra_c``, ``extra_c is None`` means
+        unbounded and neither verdict holds."""
         if extra_c is None:
             return (False, False)
         la = _latom(buf)  # buffers must be pre-seeded via seed_buffer (see bounds.py)
@@ -409,12 +379,10 @@ class LengthRelations:
             thresh = extra_c + off
         ids = self._dominating_assert_ids(site_block, site_line)
         g = self._graph_for(ids)
-        # in-bounds: base + thresh <= len(buf) (unfolding slice definitions).
         if self._prove_len_ge(buf, base_atom, thresh, g, ids):
             return (True, False)
-        # proven-OOB: Len < base + thresh. Directly via shortest(Len -> base)
-        # <= thresh-1, OR via base >= 0 (uint64) and Len <= shortest(Len ->
-        # ORIGIN): then Len - base <= Len <= that bound.
+        # proven-OOB is Len < base + thresh: either directly, or via base >= 0
+        # (uint64) plus a bound on Len, since then Len - base <= Len.
         dist2, ok2 = self._sssp(g, ids, la)
         if not ok2:
             return (False, False)

@@ -1,27 +1,14 @@
-"""sec-guide/tainted-fund-flow: attacker-controlled inner-transaction payment.
+"""sec-guide/tainted-fund-flow: a user-input-tainted value reaching an inner-txn
+``Receiver``/``AssetReceiver``/``Amount``/``AssetAmount`` with no dominating check
+of that value or of ``txn Sender`` — the attacker redirects a payment or controls
+how much moves. ``RekeyTo``/``CloseRemainderTo``/``AssetCloseTo`` have their own
+validators; this owns the payment fields and adds the user-input precondition
+those taint-free validators lack.
 
-A user-input-tainted value reaching an inner-transaction ``Receiver`` /
-``AssetReceiver`` / ``Amount`` / ``AssetAmount`` that is NOT dominated by a check
-of that value or the transaction ``Sender`` -- the attacker can redirect a payment
-or control how much moves. (``RekeyTo`` / ``CloseRemainderTo`` / ``AssetCloseTo``
-have their own dedicated validators; this detector covers the payment fields they
-don't, and adds the user-input precondition those taint-free validators lack.)
-
-Lives at the SSA layer so it reuses the existing machinery rather than a parallel
-engine: :func:`common.inner_txn_field_assigns` (sinks), a forward user-input taint
-over the PySSA def-use/phi/scratch relation (precondition + value-check), and
-:class:`PathPredicateAnalysis` (guard dominance). Because taint propagates through
-all ops, a guard like ``arg < 100`` is automatically tainted by the same input
-slot, so the value-check is just a taint-slot overlap; the sender-check reuses
-:func:`common._operand_flows_from_field_var` (Sender is a direct read).
-
-GUARD dominance is interprocedural for free (``PathPredicateAnalysis`` propagates
-caller predicates across ``callsub`` edges), and so is the TAINT now: the base
-SSA def-use relation leaves ``frame_dig`` disconnected, but ``_user_input_taint``
-unions each ``frame_dig`` param read's taint from the caller args bound to it
-(:func:`tealql.tealtools.passes.frame_flow.frame_param_sources`), so a value fed INTO a
-subroutine parameter and paid out inside the callee is caught natively — no IR
-lift, no per-detector supplement.
+Taint propagates through every op, so a guard like ``arg < 100`` carries the same
+input slot and the value-check is just a taint-slot overlap. Both taint and guard
+dominance are interprocedural: predicates cross ``callsub`` edges and each
+``frame_dig`` param read inherits the caller args' taint.
 """
 from __future__ import annotations
 
@@ -66,22 +53,17 @@ class TaintedFundFlowDetector:
     name: ClassVar[str] = "sec-guide/tainted-fund-flow"
     applies_to: ClassVar[frozenset] = frozenset({"app"})
     violation_cls: ClassVar[type] = TaintedFundFlowViolation
-    # Superseded by the IR-layer ir-tainted-fund-flow, which matches or beats this
-    # detector on every analysis axis (across-callsub dominance, validation-sub
-    # guards, typed reasoning, cross-contract) and falls back to THIS detector when
-    # the lift fails. Kept registered (benchmark + that fallback + standalone use),
-    # but skipped in default scans so the IR detector is the single fund-flow entry
-    # point. Ask for it explicitly (``only: [tainted-fund-flow]``) to override.
+    # The IR sibling matches or beats this on every axis and falls back to THIS
+    # detector when the lift fails, so it stays registered but is skipped in
+    # default scans. ``only: [tainted-fund-flow]`` overrides.
     superseded_by: ClassVar[str] = "ir-tainted-fund-flow"
 
     def __init__(self, prog: SSAProgram, *, file: Optional[str] = None,
                  path_predicates: "Optional[PathPredicateAnalysis]" = None):
         self.prog = prog
         self.file = file
-        # Accept a pre-built (e.g. caller-SEEDED) PathPredicateAnalysis so the
-        # cross-contract runner (detections.xcontract._construct_detector) can feed
-        # the callee's seeded predicates -- a caller that pins an ApplicationArgs
-        # slot to a constant then guards the fund field fed by that slot.
+        # A pre-built analysis lets the cross-contract runner feed the callee's
+        # caller-SEEDED predicates (a caller pinning an ApplicationArgs slot).
         self.pp = path_predicates or common.cached_path_predicates(prog)
 
     def detect(self) -> list:

@@ -1,27 +1,11 @@
-"""sec-guide/lease-validation: delegated-LogicSig replay protection.
+"""sec-guide/lease-validation: an approval exit reachable without ``txn Lease``
+being compared and the comparison gating approval (polarity-agnostic).
 
-A delegated LogicSig signs the *shape* of a transaction, not a specific
-instance. If it approves a spend without constraining ``txn Lease``, the
-same signed transaction can be resubmitted (replayed) until the
-delegating key rotates — there is no other per-instance uniqueness. A
-non-zero ``Lease`` makes the (Sender, Lease) pair single-use within the
-lease window, which is the canonical fix.
-
-Heuristic (advisory, scoped to LogicSigs): for each approval exit, flag
-it when no path to it constrains ``txn Lease`` via a comparison whose
-result reaches enforcement. Reuses the same ``approval_exit_protected_
-for_field`` machinery as the RekeyTo / TypeEnum detectors; "protected"
-here means "Lease is compared and the comparison gates approval"
-(polarity-agnostic — ``Lease != ZeroAddress`` and ``Lease == <const>``
-both count).
-
-Deliberately narrow to ``logicsig`` programs: a stateful application has
-other replay protection (its own global/local state), so a missing
-Lease check there is usually not a finding. This keeps the false-
-positive rate down for the common app case. Like the other sec-guide
-ports this is intentionally conservative — a contract that enforces
-uniqueness by some means this heuristic doesn't model (e.g. a state
-nonce in an app) is out of scope by the logicsig gating, not a target.
+A delegated LogicSig signs the SHAPE of a transaction, not an instance, so
+without a non-zero Lease making (Sender, Lease) single-use the same signed
+transaction can be replayed until the delegating key rotates. Narrowed to
+logicsigs: an app has state-based replay protection, so flagging it there is a
+false positive.
 """
 from __future__ import annotations
 
@@ -41,8 +25,7 @@ class LeaseValidationViolation:
 
     @property
     def line(self) -> int:
-        # Structured anchor for machine output (JSON/SARIF/suppressions);
-        # mirrors pretty(): the exit's LAST line.
+        # Must mirror pretty(): the exit's LAST line.
         return self.exit_bb.last_line
 
     def pretty(self) -> str:
@@ -61,9 +44,7 @@ class LeaseValidationDetector(_ApprovalExitProtectedDetector):
     name = "sec-guide/lease-validation"
     applies_to = frozenset({"logicsig"})  # apps have state-based replay protection
     field = "Lease"
-    # A lease is scoped to (Sender, Lease) of the transaction that carries it, so
-    # only the SIGNED txn's own Lease provides this LogicSig's replay protection —
-    # `txn Lease`, `gtxns Lease` indexed by GroupIndex, or `gtxn N Lease` with
-    # GroupIndex == N pinned. Same rule as the other signed-txn-field detectors.
+    # A lease is scoped to (Sender, Lease) of the txn carrying it, so only the
+    # SIGNED txn's own Lease gives this LogicSig replay protection.
     signed_txn = True
     violation_cls = LeaseValidationViolation

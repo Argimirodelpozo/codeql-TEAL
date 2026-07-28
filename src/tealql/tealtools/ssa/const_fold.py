@@ -1,21 +1,11 @@
-"""Constant folding for SSA Assignments.
+"""Constant folding for SSA Assignments — the op-level half of
+:meth:`SSAProgram.propagate_constants`.
 
-Pure functions over :class:`tealql.tealtools.ssa.Const` values that compute
-the result of foldable opcodes when every input is statically known.
-Used by :meth:`tealql.tealtools.ssa.SSAProgram.propagate_constants` to
-extend its phi-unification + identity-step fixpoint with op-level
-folding — ``concat`` of two bytes literals, ``itob`` of an int,
-``extract A B`` of a known bytes value, ``+`` of two ints, etc.
-
-Kept as a separate module so the ssa.py substrate stays focused on
-type definitions and the SSA construction itself; everything in here
-is TEAL-semantics layered on top of those types.
-
-Each ``_fold_*`` helper returns either a :class:`Const` (the
-computed value) or ``None`` (folding unavailable: wrong input kind,
-overflow, divide-by-zero, out-of-range slice, etc.). The top-level
-entry point :func:`try_fold_assignment` dispatches on
-``Assignment.op``.
+HAZARD: every ``_fold_*`` helper below takes its inputs DEEPEST-FIRST
+(``inputs[0]`` = the deeper value ``A`` of ``A op B``), the reverse of raw SSA
+top-first order; :func:`try_fold_assignment` does that reversal once, so a new
+caller must too. ``None`` always means "no constant" — including on paths the
+AVM would halt on (underflow, over-shift, bad slice), never a made-up value.
 """
 from __future__ import annotations
 
@@ -25,9 +15,7 @@ from .models import Assignment, Const
 from ..avm import CMP_OPS
 
 
-# ---------------------------------------------------------------------------
-# Const ↔ runtime-value helpers
-# ---------------------------------------------------------------------------
+# --- Const ↔ runtime-value helpers -----------------------------------------
 
 
 def _bytes_from_const(c: Optional[Const]) -> Optional[bytes]:
@@ -62,9 +50,7 @@ def _int_const(n: int) -> Const:
 _UINT64_MAX = (1 << 64) - 1
 
 
-# ---------------------------------------------------------------------------
-# Per-op folders
-# ---------------------------------------------------------------------------
+# --- Per-op folders (inputs DEEPEST-FIRST; see module header) --------------
 
 
 def _fold_concat(inputs: list[Const]) -> Optional[Const]:
@@ -250,14 +236,12 @@ def _fold_int_arith(
 
 
 def _fold_bitwise(op: str, inputs: list[Const]) -> Optional[Const]:
-    """Fold the uint64 bitwise / shift binary ops. Operand order
-    matches the arithmetic folders and :mod:`tealql.tealtools.passes.range_arith`:
-    ``inputs[0]`` is the deeper stack value ``A``, ``inputs[1]`` the
-    top ``B``. AVM semantics: ``shl`` is ``A * 2^B mod 2^64``; ``shr`` is
-    ``A // 2^B``; ``&`` / ``|`` / ``^`` are the usual uint64 bit ops.
-    A shift amount ``B > 63`` HALTS the AVM ("shl/shr arg too big"), so
-    those fold to ``None`` (no constant on an always-erroring path) —
-    like the ``-`` underflow case."""
+    """Fold the uint64 bitwise / shift binary ops.
+
+    HAZARD: ``inputs[0]`` is the deeper stack value ``A``, ``inputs[1]`` the top
+    ``B`` (matching the other folders and :mod:`..passes.range_arith`): ``shl`` is
+    ``A * 2^B mod 2^64``, ``shr`` is ``A // 2^B``. A shift ``B > 63`` HALTS the AVM
+    ("arg too big"), so it folds to ``None`` — like the ``-`` underflow case."""
     if len(inputs) != 2:
         return None
     a, b = _int_from_const(inputs[0]), _int_from_const(inputs[1])
@@ -273,11 +257,11 @@ def _fold_bitwise(op: str, inputs: list[Const]) -> Optional[Const]:
         r = a ^ b
     elif op == "shl":
         if b >= 64:
-            return None          # AVM halts (arg too big) — no constant result
+            return None
         r = (a << b) & _UINT64_MAX
     elif op == "shr":
         if b >= 64:
-            return None          # AVM halts (arg too big) — no constant result
+            return None
         r = a >> b
     else:
         return None
@@ -313,11 +297,8 @@ def _fold_cmp(op: str, inputs: list[Const]) -> Optional[Const]:
             y = int.from_bytes(by, "big")
         else:
             # The BARE ordered comparisons (`<` `<=` `>` `>=`) are uint64-only:
-            # two bytes operands is a type error the AVM rejects at runtime, so
-            # that path produces NO value and must not be folded. (Folding gave
-            # Python's LEXICOGRAPHIC answer, inventing a constant on an
-            # always-erroring path — the same policy `-` underflow and the
-            # over-shifts already follow.) `==` / `!=` on bytes are legal.
+            # two bytes operands is a runtime type error, so there is no value to
+            # fold (Python would answer LEXICOGRAPHICALLY). `==`/`!=` are legal.
             if op not in ("==", "!="):
                 return None
             x, y = bx, by
@@ -340,31 +321,20 @@ def _fold_cmp(op: str, inputs: list[Const]) -> Optional[Const]:
 
 
 def _fold_global_field(immediates: str) -> Optional[Const]:
-    """Resolve a ``global FIELD`` opcode to its known compile-time
-    literal where the AVM spec fixes the value. Currently:
-
-    - ``ZeroAddress`` → 32 bytes of zero (the canonical zero address).
-
-    The other ``Global FIELD``s are either runtime (``LatestTimestamp``,
-    ``Round``, ``GroupSize``, ``GroupID``, ``CallerApplicationID``,
-    ``OpcodeBudget``, …) or protocol-config-dependent (``MinTxnFee``,
-    ``MinBalance``, ``MaxTxnLife``, ``LogicSigVersion``) — neither folds
-    to a literal."""
+    """The literal of a ``global FIELD`` whose value the AVM spec fixes — only
+    ``ZeroAddress``; the rest are runtime or protocol-config dependent."""
     field = immediates.strip()
     if field == "ZeroAddress":
-        # 32 zero bytes — AVM's canonical zero address.
         return Const("bytes", "0x" + "00" * 32)
     return None
 
 
 def fold_spec_fixed(a: Assignment) -> Optional[Const]:
-    """Resolve opcodes whose value is fixed by the AVM spec (no
-    arithmetic / no inputs required). Currently only ``global
-    ZeroAddress``, but the dispatch is intentionally separate from
-    :func:`try_fold_assignment` because this set of folds is safe to
-    run during SSA construction (no dependency on prior
-    const-resolution of inputs) — whereas ``try_fold_assignment``
-    expects all inputs to be const-resolved already."""
+    """Resolve opcodes whose value the AVM spec fixes outright, inputs or not.
+
+    HAZARD: kept separate from :func:`try_fold_assignment` because these folds
+    depend on no prior const-resolution and so are safe DURING SSA construction;
+    ``try_fold_assignment`` requires every input already resolved."""
     if a.op == "global":
         return _fold_global_field(a.immediates)
     return None
@@ -389,26 +359,16 @@ def _fold_logical(op: str, inputs: list[Const]) -> Optional[Const]:
     return None
 
 
-# ---------------------------------------------------------------------------
-# Dispatch
-# ---------------------------------------------------------------------------
+# --- Dispatch --------------------------------------------------------------
 
 
 def try_fold_assignment(a: Assignment) -> Optional[Const]:
-    """Return the computed :class:`Const` for the (single) output of a
-    foldable opcode when every input is statically known, else ``None``.
-
-    Two-output ops (``addw``, ``mulw``, etc.) aren't folded yet — their
-    output split would need a tuple return; the helpers above only
-    cover single-output ops.
-    """
+    """The :class:`Const` computed for a foldable single-output opcode whose every
+    input is statically known, else ``None``."""
     op = a.op
     if not a.outputs or len(a.outputs) != 1:
         return None
-    # ``global FIELD`` has no stack inputs; resolve it from the immediate
-    # alone (bytes / int constant propagation).
-    # Without this, field-constant resolution is lost and downstream
-    # rendering breaks (e.g. ``Global ZeroAddress`` comparisons).
+    # ``global FIELD`` has no stack inputs — resolve from the immediate alone.
     if op == "global":
         return _fold_global_field(a.immediates)
     inputs: list[Const] = []
@@ -420,12 +380,11 @@ def try_fold_assignment(a: Assignment) -> Optional[Const]:
         if cv is None:
             return None
         inputs.append(cv)
-    # ``Assignment.inputs`` are top-first (inputs[0] = topmost popped), but
-    # every folder below is written deepest-first (``inputs[0]`` = the deeper
-    # stack value ``A`` of ``A op B``). Reverse once so the folders see the
-    # operand order they assume — without this, non-commutative ops (``-``,
-    # ``/``, ``%``, shifts, ``concat``, ``extract*``, ``getbyte``, the
-    # inequality comparisons, …) fold with their operands swapped.
+    # HAZARD: ``Assignment.inputs`` are TOP-FIRST (inputs[0] = topmost popped) but
+    # every folder is written deepest-first (inputs[0] = the deeper value ``A`` of
+    # ``A op B``). Reverse once, else every non-commutative op (``-`` ``/`` ``%``,
+    # shifts, ``concat``, ``extract*``, ``getbyte``, the inequalities) folds with
+    # its operands swapped.
     inputs.reverse()
     if op == "concat":
         return _fold_concat(inputs)

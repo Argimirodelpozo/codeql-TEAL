@@ -1,16 +1,9 @@
-"""Precise frame-slot resolution — an opt-in layer over PySSA's conservative
-fat-frame model (which stays the sound substrate for the may-analyses).
+"""Resolve each ``frame_dig`` / ``frame_bury`` to its logical param or versioned
+local — an opt-in layer over PySSA's conservative fat-frame substrate.
 
-`frame_dig`/`frame_bury` only occur in `proto` subroutines, where the AVM frame
-layout is exact, so resolving each to its logical param / versioned local is
-*sound*, not heuristic. PySSA keeps modelling them as wide stack ops (so taint /
-const / range carry through conservatively); consumers wanting precision read the
-per-op slot model here instead, leaving the substrate untouched.
-
-`resolve_sub(blocks, nargs)` is the core (a sub's blocks + its proto arg count);
-`resolve(prog)` partitions via `structure.analyze_structure` and resolves every
-proto sub.
-"""
+Exact rather than heuristic: frame ops only occur in ``proto`` subroutines, where
+the AVM frame layout is fixed. The substrate keeps modelling them as wide stack
+ops so the may-analyses stay sound; precision consumers read this model instead."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -28,44 +21,39 @@ def _imm0(a) -> int | None:
 
 @dataclass
 class SubFrames:
-    """One subroutine's frame-slot model — substrate-level (SSA vars + ints, no
-    IR registers): which param / versioned local each frame op accesses, plus the
-    fat-frame band passthrough."""
+    """One subroutine's frame-slot model, in SSA vars and ints (no IR registers)."""
     dig_param: dict = field(default_factory=dict)    # frame_dig out0 -> param index
     dig_local: dict = field(default_factory=dict)    # frame_dig out0 -> (slot, version)
     bury: dict = field(default_factory=dict)         # id(frame_bury) -> (slot, version)
     passthrough: dict = field(default_factory=dict)  # fat-frame out -> source operand
     final: dict = field(default_factory=dict)        # slot -> final version
     pushed: set = field(default_factory=set)         # frame_dig out0 of a k>=0 pushed
-    #   local resolved to its band target (vs an orphan); the resim path must
-    #   route these through value() too — see lift._setup_frame / _build_block.
-    pushed_slot: dict = field(default_factory=dict)  # pushed frame_dig out0 -> its slot k,
-    #   so the resim can read the LIVE slot value off its stack (len(params)+k) when
-    #   available — the band `a.inputs[-1]` is polluted by a loop's band phis (a
-    #   frame_dig of a pre-loop local returned the loop's mutated register).
+    #   local resolved to its band target; the resim must route these through
+    #   value() too — see lift._setup_frame / _build_block.
+    pushed_slot: dict = field(default_factory=dict)  # pushed frame_dig out0 -> slot k,
+    #   so the resim can prefer the LIVE slot value at stack depth len(params)+k:
+    #   the band `a.inputs[-1]` is polluted by a loop's band phis, which made a
+    #   frame_dig of a pre-loop local return the loop's mutated register.
 
 
 def resolve_sub(blocks, nargs: int) -> SubFrames:
-    """Resolve one subroutine's frames: ``frame_dig -k`` (k in proto args) reads
-    param ``nargs-k``; other ``frame_dig``/``frame_bury`` read/write a versioned
-    local (each bury opens a version, each read takes the version reaching it in
-    block order). Also routes the fat-frame band passthrough (out[i] = in[i∓1])."""
+    """Resolve one subroutine's frames.
+
+    ``frame_dig -k`` with k inside the proto args reads param ``nargs - k``;
+    every other frame op reads/writes a versioned local (each bury opens a
+    version, each read takes the version reaching it in block order)."""
     res = SubFrames()
     cur: dict = {}                           # slot -> current version
     nextver: dict = {}                       # slot -> next version
 
-    # A param slot stops being "the incoming arg" once a `frame_bury` writes
-    # it. Deciding that from SOURCE order alone (has a bury been *scanned*
-    # yet?) is wrong for a loop: `def f(i): while ...: i += 1` buries slot -k
-    # in the body, which is LATER in source but EARLIER in execution for every
-    # iteration after the first, so the loop-head dig was misclassified as a
-    # clean param read. `frame_flow.frame_param_sources` then reported the
-    # CALLER's args as that value's complete sources, and a must-style
-    # consumer (security/_value_flow's pin propagation) could credit a
-    # caller pin to a loop-mutated local and suppress a finding.
-    #
-    # Decide it on CFG order instead: a dig of slot k is a param read only if
-    # NO bury of k can reach it.
+    # HAZARD: a param slot stops being "the incoming arg" once a `frame_bury`
+    # writes it, and that must be decided on CFG order — a dig of slot k is a
+    # param read only if NO bury of k can REACH it. Source order is wrong for a
+    # loop (`while ...: i += 1` buries slot -k later in source but earlier in
+    # execution), which misclassifies the loop-head dig as a clean param read;
+    # `frame_flow.frame_param_sources` then reports the caller's args as its
+    # complete sources and a must-consumer credits a caller pin to a loop-mutated
+    # local, suppressing a real finding.
     _in_sub = {id(b) for b in blocks}
     _fwd: dict = {}
 
@@ -83,8 +71,7 @@ def resolve_sub(blocks, nargs: int) -> SubFrames:
             _fwd[id(src)] = seen
         return id(dst) in seen
 
-    # slot -> [(block, op_index)] for every frame_bury of that slot.
-    _burys: dict = {}
+    _burys: dict = {}                        # slot -> [(block, op_index)]
     for _bb in blocks:
         for _i, _a in enumerate(_bb.assignments):
             if _a.op == "frame_bury":
@@ -117,24 +104,21 @@ def resolve_sub(blocks, nargs: int) -> SubFrames:
                 out0 = a.outputs[0]
                 if (-nargs <= k <= -1 and k not in cur
                         and not _bury_reaches(k, bb, op_i)):
-                    # A param slot, still holding the incoming arg. Once it has
-                    # been `frame_bury`-d (k in cur) it is a mutable local from
-                    # that point on, so fall through to the versioned-local read.
+                    # A param slot still holding the incoming arg; once buried
+                    # it is a mutable local and falls through below.
                     res.dig_param[out0] = nargs + k
                 else:
                     v = cur.get(k)
                     if v is not None:
                         res.dig_local[out0] = (k, v)          # a `frame_bury`-d local
                     elif k >= 0 and a.inputs:
-                        # A pushed local (slot ABOVE the frame base) never written
-                        # by `frame_bury`: its value was placed on the frame by a
-                        # *stack* op (`bury`/`dup`/push) this slot/version model
-                        # doesn't track. The dug value is the slot's current stack
-                        # value = the band target (deepest input; _try_expand_frame_op
-                        # lays inputs top-first). Route out0 there instead of an
-                        # l%slot version no write defines (the cross-block orphan).
-                        # k>=0 ONLY: negative below-frame reads keep prior behavior
-                        # (resolving them via value() diverges from the IR path).
+                        # A pushed local (slot ABOVE the frame base) was placed
+                        # there by a stack op this slot/version model doesn't
+                        # track, so route out0 to the band target rather than an
+                        # l%slot version no write defines. inputs are TOP-FIRST,
+                        # so the band target is the DEEPEST input, `inputs[-1]`.
+                        # k>=0 only: resolving below-frame reads this way diverges
+                        # from the IR path.
                         res.passthrough[out0] = a.inputs[-1]
                         res.pushed.add(out0)
                         res.pushed_slot[out0] = k
@@ -147,21 +131,14 @@ def resolve_sub(blocks, nargs: int) -> SubFrames:
             elif a.op == "frame_bury":
                 k = _imm0(a)
                 if k is not None:
-                    # Version EVERY bury, including a param slot (k < 0): writing
-                    # it turns that slot into a mutable local, and each write must
-                    # open a fresh SSA version or the lift emits one register
-                    # assigned many times (Puya rejects it as an SSA violation).
-                    #
-                    # Open the version EVEN with no SSA inputs: a `frame_bury` of
-                    # a value the base SSA doesn't carry on the stack -- e.g. a
-                    # `callsub` return (callsub has 0 SSA outputs; the resim
-                    # threads the return) -- still writes the slot. The old
-                    # `and a.inputs` guard skipped it, leaving the slot
-                    # unversioned, so a later `frame_dig` of that slot was
-                    # MISCLASSIFIED as a *pushed* local (cur.get(k) is None) and
-                    # routed to the stack-band value (the wrong register) instead
-                    # of `dig_local`. The resim writes the threaded value into the
-                    # slot, so versioning the bury makes the dig read it.
+                    # HAZARD: version EVERY bury, including a param slot (k < 0)
+                    # and one with no SSA inputs. Each write must open a fresh
+                    # version or the lift emits one register assigned many times
+                    # (Puya rejects it). A bury of a value the base SSA doesn't
+                    # carry on the stack — e.g. a `callsub` return, which the
+                    # resim threads — still writes the slot; skipping it leaves
+                    # the slot unversioned and a later `frame_dig` is then
+                    # misclassified as a pushed local and reads the wrong register.
                     res.bury[id(a)] = (k, fresh(k))
                 for i in range(len(a.outputs)):      # bury: out[i] = in[i+1]
                     o = a.outputs[i]
@@ -172,8 +149,7 @@ def resolve_sub(blocks, nargs: int) -> SubFrames:
 
 
 def _proto_nargs(entry_bb) -> int | None:
-    """Arg count from a sub entry's ``proto A R`` op, or None for a legacy
-    non-proto sub (which has no frame ops)."""
+    """Arg count from a sub entry's ``proto A R``, or None for a legacy non-proto sub."""
     for a in entry_bb.assignments:
         if a.op == "proto":
             toks = (a.immediates or "").split()

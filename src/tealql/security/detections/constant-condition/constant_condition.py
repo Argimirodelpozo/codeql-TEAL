@@ -1,52 +1,19 @@
-"""sec-guide/constant-condition: a guard whose outcome the range layer
-proves is fixed at compile time.
+"""sec-guide/constant-condition: a guard the static range layer proves is fixed at
+compile time — a vacuous ``assert`` (always true, enforces nothing), an
+unsatisfiable one (always false, everything past it dead), or a ``bnz``/``bz``
+with one dead arm.
 
-Consumes the static integer-range layer (txn-family enum / count field
-bounds, ``*_get`` exists flags, ``*_params_get`` value bounds, op-output
-seeds, const->range and arithmetic composition) to flag guards that look
-protective but constrain nothing:
+HAZARD: the ranges consumed here must come from value FACTS only, never from
+assert-refinement (:meth:`SSAProgram.propagate_assert_ranges` tightens operands
+USING the asserts, so every asserted comparison then reads as vacuous). This is a
+precondition on the SHARED program: if anything ran ``run_all_passes`` on it
+first, the detector must rebuild privately from source — refinement only narrows
+and cannot be undone in place.
 
-  - **vacuous assert**       — ``assert(cond)`` where ``cond`` is provably
-                               always non-zero, so the assert never halts
-                               and enforces nothing (a false sense of
-                               protection, e.g. ``assert(OnCompletion <= 6)``
-                               when OnCompletion is structurally in [0, 5]).
-  - **unsatisfiable assert** — ``assert(cond)`` where ``cond`` is provably
-                               always zero, so the program rejects on every
-                               path reaching it (dead code beyond / a bug).
-  - **constant branch**      — ``bnz`` / ``bz`` whose condition is a
-                               compile-time constant, so one arm is dead.
-
-This deliberately does NOT run assert-refinement
-(:meth:`SSAProgram.propagate_assert_ranges`): that tightens operands
-*using* the asserts, which would make every asserted comparison look
-vacuous. The ranges consumed here come from value *facts* (field
-semantics, constants, arithmetic) only, so a flagged guard is genuinely
-redundant given what the program structurally knows -- independent of any
-assertion.
-
-That is a precondition on the SHARED program, not just on this detector:
-if anything ran the standard pass pipeline
-(:func:`tealql.tealtools.passes.run_all_passes`, which includes assert
-refinement) on the same ``SSAProgram`` first, every asserted comparison
-reads as vacuous -- measured at 0 findings before, 87 after, on a sample
-of real contracts. Refinement only ever narrows, so it cannot be undone in
-place: when ``prog._assert_ranges_applied`` is set the detector reads its
-ranges off a PRIVATE rebuild from the same source instead (and declines only
-for an in-memory program with no source to rebuild from).
-
-Sound by construction: a condition is reported only when its operand
-ranges *prove* the outcome (disjoint or fully-ordered intervals); any
-overlap yields no finding. Compound ``&&`` / ``||`` conditions are not
-decomposed (no finding rather than a guess).
-
-Precision: pure-constant conditions (both comparison operands literal, or
-a bare literal condition — ``assert(1)``, ``0 < 1``, ``int 0; bnz``) are
-skipped. Those are compiler-emitted constant folding, not a guard that
-*looks* like it constrains a runtime value, so a finding always involves
-at least one non-constant value (a field read, input, or computed
-result). On a 120-contract sample of compiled/real TEAL this drops the
-finding count from 64 (all boilerplate) to 0.
+Sound by construction: reported only when the operand ranges PROVE the outcome
+(disjoint or fully-ordered intervals). Compound ``&&``/``||`` conditions are not
+decomposed, and pure-constant conditions (``assert(1)``, ``0 < 1``) are skipped as
+compiler-emitted folding — so a finding always involves a non-constant value.
 """
 from __future__ import annotations
 
@@ -64,9 +31,8 @@ _CMP = frozenset({"<", "<=", ">", ">=", "==", "!="})
 
 
 def _eval_cmp(op: str, lr: IntRange, rr: IntRange) -> Optional[int]:
-    """The constant truth value (1 / 0) of ``lr OP rr`` when the operand
-    ranges prove it, else ``None``. Only ever returns a value when the
-    intervals are disjoint or fully ordered."""
+    """The constant truth value of ``lr OP rr`` when the ranges PROVE it (disjoint
+    or fully-ordered intervals), else ``None``."""
     if op == "<":
         if lr.hi < rr.lo:
             return 1
@@ -114,7 +80,6 @@ class ConstantConditionViolation:
 
     @property
     def line(self) -> int:
-        # Structured anchor for machine output; mirrors the Location in pretty().
         return self.location.line
 
     def pretty(self) -> str:
@@ -149,8 +114,7 @@ class ConstantConditionDetector:
         self.file = file
 
     def _describe(self, cond) -> str:
-        """A short human label for the condition: ``lhs OP rhs`` when it is
-        a comparison, else the SSAVar's defining op / name."""
+        """A short label: ``lhs OP rhs`` for a comparison, else the var's own."""
         d = getattr(cond, "defined_by", None)
         if d is not None and d.op in _CMP and len(d.inputs) == 2:
             lhs, rhs = binary_operands(d)
@@ -158,16 +122,9 @@ class ConstantConditionDetector:
         return _label(cond)
 
     def _cond_const(self, cond) -> Optional[int]:
-        """1 if ``cond`` is provably non-zero (true), 0 if provably zero
-        (false), else ``None``. A comparison is evaluated from its operand
-        ranges; any other value from its own range.
-
-        Pure-constant conditions (both comparison operands literal, or a
-        bare literal condition) are skipped: ``assert(1)`` / ``0 < 1`` /
-        ``int 0; bnz`` are compiler-emitted constant folding, not a guard
-        that *looks* like it constrains a runtime value but doesn't. A
-        finding therefore always involves at least one non-constant value
-        (a field read, input, or computed result)."""
+        """1 if ``cond`` is provably non-zero, 0 if provably zero, else ``None`` —
+        a comparison from its operand ranges, anything else from its own.
+        Pure-constant conditions return ``None`` (compiler folding, not a guard)."""
         d = getattr(cond, "defined_by", None)
         if d is not None and d.op in _CMP and len(d.inputs) == 2:
             lhs, rhs = binary_operands(d)
@@ -189,16 +146,9 @@ class ConstantConditionDetector:
         return None
 
     def _range_program(self) -> Optional[SSAProgram]:
-        """The program to read ranges off. Normally the shared one — building
-        value-fact ranges on it is exactly what the standard pipeline does at
-        the same point, so it is not a hazard.
-
-        When the shared program has ALREADY been assert-refined, its ranges are
-        assert-CONDITIONAL and every asserted comparison would read as vacuous;
-        refinement only narrows, so it cannot be undone in place. Rebuild a
-        private program from the same source instead and answer correctly, and
-        decline only when there is no source to rebuild from (an in-memory
-        program)."""
+        """The program to read ranges off: the shared one normally, a PRIVATE rebuild
+        from source when it is already assert-refined (see the module hazard), and
+        ``None`` when there is no source to rebuild from."""
         prog = self.prog
         if not getattr(prog, "_assert_ranges_applied", False):
             return prog
@@ -218,7 +168,7 @@ class ConstantConditionDetector:
         prog = self._range_program()
         if prog is None:
             return []
-        # Value-fact ranges only (NOT assert-refinement — see module docs).
+        # Value-fact ranges ONLY — never assert-refinement, see the module hazard.
         prog.propagate_constants()
         prog.propagate_range_arithmetic()  # lazy-trips propagate_ranges
 

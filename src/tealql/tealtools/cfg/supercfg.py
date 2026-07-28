@@ -1,37 +1,20 @@
-"""Cross-contract *super*-CFG: one basic-block control-flow graph spanning a
-caller plus every transitively-reachable callee, joined by typed appcall edges.
+"""Cross-contract *super*-CFG: one basic-block graph spanning a caller plus every
+transitively-reachable callee, so reachability / dominance / path queries span
+the whole call graph (e.g. "does a caller guard dominate a callee sink?").
 
-The per-program :class:`CFG` is a thin view over one ``SSAProgram``'s blocks;
-its ``successors``/``predecessors`` never leave the program. A :class:`SuperCFG`
-overlays the appcall boundary WITHOUT mutating any per-program CFG (the user's
-"edges added only in xcontract mode" constraint): blocks are qualified by the
-contract they live in (:class:`SuperBlock`, ``app_id=None`` = the root caller,
-an ``int`` = a callee AppID), and two kinds of inter-program edge are spliced in
-at each ``itxn_submit`` appcall site — which, because ``itxn_submit`` now ENDS a
-basic block (see :mod:`tealql.tealtools.cfg_build`), is a clean BB boundary:
+Blocks are qualified by the contract they live in (:class:`SuperBlock`,
+``app_id=None`` = the root caller). At each appcall site — a clean BB boundary,
+since ``itxn_submit`` ENDS a basic block (:mod:`tealql.tealtools.cfg_build`) — two
+edges are spliced in ADDITIVELY, without mutating any per-program CFG: a **call**
+edge (submit BB -> callee entry) and a **return** edge (each callee exit -> the
+submit BB's intra successors). The submit BB's own fall-through is kept, so it
+stays the classic call-to-return-site edge carrying the caller's locals.
 
-- **call edge** — the caller's submit BB -> the callee's program-entry BB. The
-  values it carries are exactly the typed forward channels modelled by
-  :mod:`tealql.tealtools.dataflow.xcontract_taint_graph` (ApplicationArgs, foreign
-  arrays, the caller app addr as Sender) — NOT the caller's ambient stack.
-- **return edge** — each callee program-exit BB (``return``/``err``) -> the
-  caller's continuation BB (the submit BB's intra successor). The submit BB's
-  existing intra fall-through to the continuation is *kept* — that is the
-  classic call-to-return-site edge carrying the caller's own locals across the
-  call, so the callee path is purely additive.
-
-This makes interprocedural reachability / dominance / path queries span the
-whole call graph: e.g. "does a guard in the caller dominate a sink in the
-callee?" — the cross-contract generalisation of single-program auth-domination.
-
-Imprecision (inherent to a context-insensitive supergraph): a callee shared by
-several call sites has all callers' continuation BBs as successors of its exits,
-so a return can appear to flow back to the *wrong* caller (call/return
-mismatch). Context-sensitive matching is the analysis's job (IFDS-style), not
-the graph's; the structural over-approximation is sound for reachability. Reject
-(``err``) exits also get a return edge though a rejecting callee actually aborts
-the whole atomic group — distinguishing approve from reject is a value property
-left to the path-predicate summary layer (:func:`xcontract.caller_with_feedback`).
+HAZARD: context-insensitive, so it OVER-approximates — a callee shared by several
+call sites returns to EVERY caller's continuation (call/return mismatch), and
+``err`` exits get return edges though a rejecting callee aborts the whole atomic
+group. Sound for reachability; matching calls to returns (IFDS-style) and
+approve-vs-reject are the consuming analysis's job, not the graph's.
 """
 from __future__ import annotations
 
@@ -48,8 +31,8 @@ from .dominance import iterative_dominators
 
 @dataclass(frozen=True)
 class SuperBlock:
-    """A basic block qualified by the contract it lives in. ``app_id=None``
-    is the root caller; an ``int`` is a callee identified by its AppID."""
+    """A basic block qualified by its contract (``app_id=None`` = root caller,
+    an ``int`` = a callee AppID)."""
 
     app_id: Optional[int]
     bb: BasicBlock
@@ -61,9 +44,8 @@ class SuperBlock:
 
 @dataclass(frozen=True)
 class SuperEdge:
-    """A typed inter-program edge. ``kind`` is ``"call"`` or ``"return"``;
-    ``site`` is the appcall it was spliced at (intra edges aren't recorded as
-    :class:`SuperEdge`\\ s — they live in the underlying per-program CFGs)."""
+    """A typed inter-program edge (``kind`` is ``"call"`` or ``"return"``); intra
+    edges are not recorded here, they live in the per-program CFGs."""
 
     src: SuperBlock
     dst: SuperBlock
@@ -73,9 +55,8 @@ class SuperEdge:
 
 @dataclass
 class SuperCFG:
-    """A basic-block CFG spanning a caller and its transitive callees, with
-    typed appcall call/return edges. Mirrors the :class:`CFG` query surface
-    (reachability, dominance, paths) over the unified super-adjacency."""
+    """A CFG spanning a caller and its transitive callees, mirroring the
+    :class:`CFG` query surface over the unified super-adjacency."""
 
     cfgs: dict[Optional[int], CFG]
     inter_edges: list[SuperEdge]
@@ -92,14 +73,8 @@ class SuperCFG:
         *,
         max_depth: int = 4,
     ) -> "SuperCFG":
-        """Build the super-CFG TRANSITIVELY from ``caller`` over ``registry``.
-        Reuses :meth:`XContractGraph.build` for the call graph (caller + every
-        reachable callee + one :class:`AppcallEdge` per appcall), then lays a
-        per-program :class:`CFG` over each and splices the call/return edges.
-
-        ``registry`` may be a path (str) to a registry file — load it first, since
-        ``XContractGraph.build`` / ``find_appcall_sites`` need the mapping (an
-        ``app_id in registry`` membership test crashes on a bare string)."""
+        """Build the super-CFG transitively from ``caller`` over ``registry``
+        (a :class:`Registry`, or a path to one)."""
         if isinstance(registry, str):
             from ..xcontract import load_registry
             registry = load_registry(registry)
@@ -147,11 +122,10 @@ class SuperCFG:
                 continue
             submit_sb = node(caller_id, submit_bb)
             entry_sb = node(callee_id, entry_bb)
-            # call edge: submit BB -> callee entry.
             link(submit_sb, entry_sb)
             inter.append(SuperEdge(submit_sb, entry_sb, "call", site))
-            # return edges: each callee exit -> each continuation (the submit
-            # BB's intra successors — the fall-through after the submit).
+            # Continuations = the submit BB's intra successors (the fall-through
+            # after the submit).
             continuations = [node(caller_id, s) for s in submit_bb.successors]
             for ex in callee_cfg.exits:
                 ex_sb = node(callee_id, ex)
@@ -174,23 +148,20 @@ class SuperCFG:
 
     @property
     def root_entry(self) -> Optional[SuperBlock]:
-        """The root caller's program-entry block — the single true entry of
-        the whole super-CFG (callee entries gain a call-edge predecessor)."""
+        """The root caller's program entry — the single true entry of the whole
+        super-CFG, since callee entries gain a call-edge predecessor."""
         entry = _program_entry(self.cfgs[None])
         return SuperBlock(None, entry) if entry is not None else None
 
     @property
     def entries(self) -> list[SuperBlock]:
-        """Super-blocks with no predecessor in the unified graph. The root
-        entry plus any unreachable blocks (callee entries are NOT here — the
-        call edge gives them a predecessor)."""
+        """Super-blocks with no predecessor: the root entry plus unreachable
+        blocks (never a callee entry — its call edge is a predecessor)."""
         return [sb for sb in self._succ if not self._pred.get(sb)]
 
     @property
     def exits(self) -> list[SuperBlock]:
-        """Super-blocks with no successor — terminal program exits that
-        return to no caller (the root's own exits, plus any callee exit not
-        wired back, which shouldn't occur for a reachable callee)."""
+        """Super-blocks with no successor — exits that return to no caller."""
         return [sb for sb in self._succ if not self._succ.get(sb)]
 
     # --- reachability -------------------------------------------------
@@ -229,7 +200,7 @@ class SuperCFG:
         max_length: Optional[int] = None,
     ) -> list[list[SuperBlock]]:
         """All simple (cycle-free) paths ``src`` -> ``dst`` across the boundary,
-        shortest first. Caps mirror :meth:`CFG.paths`."""
+        shortest first; the caps and their hazard mirror :meth:`CFG.paths`."""
         if src == dst:
             return [[src]]
         out: list[list[SuperBlock]] = []
@@ -257,10 +228,8 @@ class SuperCFG:
     # --- dominance ----------------------------------------------------
 
     def dominators(self, target: SuperBlock) -> set[SuperBlock]:
-        """All super-blocks dominating ``target`` — every path from the root
-        entry to ``target`` passes through each. Standard fixpoint over the
-        unified adjacency; spans the appcall boundary, so a caller block can
-        dominate a callee block (interprocedural dominance)."""
+        """Super-blocks every root-entry-to-``target`` path crosses — spanning the
+        appcall boundary, so a caller block can dominate a callee block."""
         return self._all_dominators().get(target, {target})
 
     def dominates(self, a: SuperBlock, b: SuperBlock) -> bool:
@@ -273,9 +242,10 @@ class SuperCFG:
         cached = getattr(self, "_dom_cache", None)
         if cached is not None:
             return cached
-        # Entry = the root program's real entry only. ``self.entries`` (no-pred
-        # super-blocks) is empty when the root's first block is a branch target,
-        # which would saturate dominance; dead no-pred blocks aren't entries.
+        # HAZARD: entry = the root program's real entry ONLY. ``self.entries``
+        # (no-pred super-blocks) is empty when the root's first block is a branch
+        # target, which would saturate dominance; dead no-pred blocks aren't
+        # entries.
         root = self.root_entry
         dom = iterative_dominators(
             self._succ.keys(),
@@ -288,8 +258,8 @@ class SuperCFG:
     # --- DOT rendering ------------------------------------------------
 
     def to_dot(self, *, with_assignments: bool = False) -> str:
-        """Render the whole super-CFG: one Graphviz cluster per contract, intra
-        edges solid, call edges blue / return edges red (dashed)."""
+        """Render the super-CFG: one Graphviz cluster per contract, intra edges
+        solid, call edges blue, return edges red (dashed)."""
         out: list[str] = header("SuperCFG")
         for app_id, cfg in self.cfgs.items():
             scope = "root" if app_id is None else f"app{app_id}"
@@ -315,10 +285,8 @@ class SuperCFG:
 
 
 def _program_entry(cfg: CFG) -> Optional[BasicBlock]:
-    """A program's main entry block: the unique predecessor-less block at the
-    top of the source. (Subroutine entries have callsub predecessors, so the
-    only other predecessor-less blocks are unreachable — the topmost entry is
-    the program start.)"""
+    """A program's main entry: the topmost of :attr:`CFG.entries` (per-file
+    first blocks), i.e. where execution starts."""
     ents = cfg.entries
     if not ents:
         return None

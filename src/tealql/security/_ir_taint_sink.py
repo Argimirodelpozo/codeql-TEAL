@@ -1,17 +1,11 @@
-"""Shared base for the IR-layer taint-to-sink detector family.
-
-Eight detectors run the generalized IR engine (``fund_flow.tainted_itxn_flows`` /
-``tainted_state_writes`` / ``tainted_logs``) and differ only in: the SINK (an
-inner-txn field set, or a flow function), an optional SSA ``fallback`` to defer to
-when the contract doesn't lift, an optional post-filter, and the finding message.
-This base factors out the rest -- the lift, the unguarded-filter, the emit loop,
-and the violation dataclass -- so each concrete detector is ~15 lines of config
-(cf. :mod:`tealql.security._field_validated`).
+"""Shared base for the IR-layer taint-to-sink detector family: the lift, the
+unguarded-filter, the emit loop, and the violation dataclass.
 
 A concrete detector sets ``name``, ``violation_cls``, and EITHER ``fields`` (a
-``{field_name: severity}`` itxn map -> the default ``_raw_findings``) OR overrides
-``_raw_findings``; plus ``_message(finding, location)``. Optional: ``fallback`` (an
-SSA detector kebab) and ``_suppress(lifter, findings)`` (a post-filter)."""
+``{field_name: severity}`` itxn map, feeding the default ``_raw_findings``) OR an
+override of ``_raw_findings``; plus ``_message(finding, location)``. Optional:
+``fallback`` (an SSA detector kebab to defer to when the contract doesn't lift)
+and ``_suppress(lifter, findings)``."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -45,11 +39,8 @@ class _IrTaintSinkViolation:
 
 
 class _BoolTaintView:
-    """Adapts a boolean IR taint map ``{id(register): sources}`` to the tiny
-    view interface :func:`fund_flow.ir_taint_chain` needs (``tainted_bytes`` /
-    ``is_scalar_tainted`` / ``is_covered``), so the road witness works for the
-    boolean detectors too. Boolean taint covers every register, so
-    ``is_covered`` is always True (no uncovered fallback)."""
+    """Adapts a boolean IR taint map to the view interface the road witness needs.
+    Boolean taint covers every register, hence ``is_covered`` is always True."""
 
     def __init__(self, taint: dict):
         self._t = taint
@@ -66,7 +57,7 @@ class _BoolTaintView:
 
 class _IrTaintSinkDetector:
     name: ClassVar[str]
-    applies_to: ClassVar[frozenset] = frozenset({"app"})  # itxn / log / state are app-only
+    applies_to: ClassVar[frozenset] = frozenset({"app"})  # itxn/log/state are app-only
     violation_cls: ClassVar[type] = _IrTaintSinkViolation
     fields: ClassVar[Optional[dict]] = None      # default sink: these itxn fields
     fallback: ClassVar[Optional[str]] = None     # SSA sibling to defer to on lift-fail
@@ -81,29 +72,26 @@ class _IrTaintSinkDetector:
     # -- hooks ----------------------------------------------------------------
 
     def _raw_findings(self, lifter) -> list:
-        """The taint-to-sink findings (before the unguarded-filter). Default:
-        tainted values reaching the inner-txn ``fields``; override for a non-itxn
-        sink (state write / log)."""
+        """Taint-to-sink findings, BEFORE the unguarded-filter; override for a
+        non-itxn sink (state write / log)."""
         from tealql.tealtools.lift import fund_flow as FF
         return FF.tainted_itxn_flows(lifter, self.fields, trusted_args=self.trusted_args)
 
     def _suppress(self, lifter, findings) -> list:
-        """Optional per-detector post-filter (default: identity)."""
+        """Optional per-detector post-filter; identity by default."""
         return findings
 
     def _message(self, f, location: str) -> str:
         raise NotImplementedError
 
     def _taint_view(self, lifter):
-        """The taint oracle for the road WITNESS -- boolean user-input taint by
-        default (matches the boolean ``_raw_findings``); the byte-precise detector
-        overrides with ``byte_taint_view``."""
+        """The taint oracle for the road witness; must match ``_raw_findings``'
+        granularity (boolean by default, byte-precise where that detector overrides)."""
         from tealql.tealtools.lift.taint import user_input_taint
         return _BoolTaintView(user_input_taint(lifter, self.trusted_args))
 
     def _road(self, lifter, f, view) -> str:
-        """The lifted-IR taint road for finding ``f`` -- ``source → … → sink``, as
-        a witness appended to the message. Empty when unavailable."""
+        """The lifted-IR ``source → … → sink`` road for ``f``, or empty."""
         reg = getattr(f, "sink_reg", None)
         if reg is None:
             return ""

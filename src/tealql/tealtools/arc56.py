@@ -1,25 +1,18 @@
-"""ARC-56 app-spec ingestion — the richest, standardized source of the HIGH-LEVEL
-info the analysis can use, when the user PROVIDES the spec file.
+"""ARC-56 app-spec ingestion — the richest source of HIGH-LEVEL info, when the
+user PROVIDES the spec file.
 
-An ARC-56 JSON (a superset of ARC-32/ARC-4) declares, authoritatively, a
-contract's methods (name + arg/return ABI types, including *named struct* types),
-its global/local/box state keys with their value types, and its box maps. None of
-this is recoverable from compiled bytecode — it is the DECLARED contract. So this
-is a VERY OPTIONAL enrichment: everything downstream works on raw disassembled
-TEAL without a spec; a provided spec simply sharpens it (authoritative ABI arg
-typing for the relational bounds domain, box/state schema, method names in
-findings — the same consumers the source-text :mod:`.abi` table feeds, but richer
-and more reliable).
+An ARC-56 JSON declares, authoritatively, a contract's methods (arg/return ABI
+types incl. *named struct* types), its global/local/box state keys and box maps
+— none of it recoverable from bytecode. Optional: everything downstream works on
+raw TEAL without a spec; a spec just sharpens it, feeding the same consumers as
+the source-text :mod:`.abi` table but richer.
 
-We NEVER reverse a selector: the method table is built by resolving each declared
-signature (structs expanded to their tuple encoding) and computing the selector
-FORWARD (``sha512_256``), exactly as :mod:`.abi` does for source ``method "sig"``
-text — so an ARC-56 method table is a drop-in, higher-fidelity replacement for it.
+HAZARD: we NEVER reverse a selector. The method table resolves each DECLARED
+signature (structs expanded to their tuple encoding) and computes the selector
+FORWARD (``sha512_256``), exactly as :mod:`.abi` does for source ``method "sig"``.
 
 Tolerant by design: a partial / non-conforming spec yields whatever sections
-parse and empty for the rest, and :func:`load` raises only on input that isn't
-JSON at all. Nothing here imports the SSA/lift layers, so it is a pure, cheap
-front-end that any layer can consume.
+parse and empty for the rest; :func:`load` raises only on non-JSON input.
 """
 from __future__ import annotations
 
@@ -36,10 +29,8 @@ _AVM_TYPES = frozenset({"AVMBytes", "AVMString", "AVMUint64"})
 
 @dataclass(frozen=True)
 class StateEntry:
-    """One declared state key (global / local / box), or a box map, with its
-    resolved value type. ``key_b64`` is the base64 key bytes for a fixed key (a
-    map has ``prefix_b64`` instead); ``value_type`` / ``key_type`` are resolved
-    ABI type strings (or an AVM-native ``AVM*`` encoding)."""
+    """One declared state key (global / local / box) or box map, with its resolved
+    value type — a fixed key carries ``key_b64``, a map ``prefix_b64``."""
 
     name: str
     value_type: str
@@ -51,8 +42,8 @@ class StateEntry:
 
 @dataclass(frozen=True)
 class Arc56Spec:
-    """A parsed ARC-56 app spec. Every collection is empty when the corresponding
-    section is absent, so a partial spec degrades cleanly."""
+    """A parsed ARC-56 app spec; every collection is empty when its section is
+    absent, so a partial spec degrades cleanly."""
 
     name: str
     methods: tuple = ()                    # tuple[AbiMethod, ...] (structs resolved)
@@ -62,18 +53,17 @@ class Arc56Spec:
     box_state: tuple = ()                  # box keys AND box maps
 
     def method_table(self) -> dict:
-        """``{selector_hex: AbiMethod}`` — the same shape as
-        :func:`tealql.tealtools.abi.extract_method_table`, so a provided spec is a
-        drop-in, richer method source (last-write-wins on a selector collision)."""
+        """``{selector_hex: AbiMethod}`` — same shape as
+        :func:`tealql.tealtools.abi.extract_method_table`, so a spec is a drop-in
+        richer method source (last-write-wins on a selector collision)."""
         return {m.selector_hex: m for m in self.methods}
 
 
 def _resolve_type(t: str, field_types: dict, _seen: Optional[frozenset] = None) -> str:
-    """Resolve a declared type to its canonical ABI type string: a struct name
-    expands to the tuple of its (recursively resolved) field types; anything else
-    is returned unchanged. ``field_types`` maps a struct name to its ordered list
-    of field type strings. Cycle-safe (a self-referential struct resolves to its
-    own name rather than recursing forever)."""
+    """Resolve a declared type to its canonical ABI type string — a struct name
+    expands to the tuple of its recursively resolved field types, anything else
+    passes through; cycle-safe (a self-referential struct resolves to its own
+    name rather than recursing forever)."""
     _seen = _seen or frozenset()
     if t not in field_types or t in _seen:
         return t
@@ -83,9 +73,8 @@ def _resolve_type(t: str, field_types: dict, _seen: Optional[frozenset] = None) 
 
 
 def _parse_structs(raw: dict) -> tuple[dict, dict]:
-    """``(field_type_lists, resolved_tuple_types)`` from the spec's ``structs``.
-    A struct value is a list of ``{name, type}`` fields (ARC-56); we keep the
-    ordered field TYPES for resolution and the fully-resolved tuple string."""
+    """``(field_type_lists, resolved_tuple_types)`` from the spec's ``structs`` —
+    the ORDERED field types for resolution, plus the resolved tuple string."""
     field_types: dict = {}
     for name, fields in (raw or {}).items():
         if isinstance(fields, list):
@@ -99,7 +88,7 @@ def _parse_structs(raw: dict) -> tuple[dict, dict]:
 
 def _method_from_spec(m: dict, field_types: dict) -> Optional[AbiMethod]:
     """Build an :class:`AbiMethod` from an ARC-56 method object, resolving struct
-    arg/return types to their ABI encoding and computing the selector forward."""
+    arg/return types to their ABI encoding and computing the selector FORWARD."""
     name = m.get("name")
     if not name:
         return None
@@ -117,8 +106,8 @@ def _method_from_spec(m: dict, field_types: dict) -> Optional[AbiMethod]:
 
 
 def _state_entries(keys: dict, maps: dict, field_types: dict) -> tuple:
-    """Flatten one scope's ARC-56 ``keys`` (fixed keys) and ``maps`` (prefix maps)
-    into :class:`StateEntry` records with resolved value types."""
+    """Flatten one scope's ``keys`` (fixed) and ``maps`` (prefix) into
+    :class:`StateEntry` records with resolved value types."""
     out: list = []
     for nm, k in (keys or {}).items():
         if not isinstance(k, dict):
@@ -143,13 +132,10 @@ def _state_entries(keys: dict, maps: dict, field_types: dict) -> tuple:
 
 
 def from_dict(data: dict) -> Arc56Spec:
-    """Parse an already-loaded ARC-56 JSON object into an :class:`Arc56Spec`.
-    Tolerant: unknown/absent sections are skipped, malformed method entries are
-    dropped (never raises on a partial spec)."""
-    # Defensive: a valid-JSON spec may carry a non-dict where a dict is expected
-    # (e.g. `"state": []`, `"contract": "x"`); coerce to {} so a malformed-but-
-    # JSON spec degrades rather than raising AttributeError (the "never raises on
-    # a partial spec" contract). Only genuinely non-JSON input raises, in `load`.
+    """Parse an already-loaded ARC-56 JSON object into an :class:`Arc56Spec`,
+    skipping absent sections and dropping malformed method entries."""
+    # A valid-JSON spec may carry a non-dict where a dict is expected (`"state": []`);
+    # coerce to {} to hold the "never raises on a partial spec" contract.
     def _dict(v):
         return v if isinstance(v, dict) else {}
 
@@ -174,15 +160,14 @@ def from_dict(data: dict) -> Arc56Spec:
 
 
 def load(path) -> Arc56Spec:
-    """Load and parse an ARC-56 app-spec JSON file. Raises only if the file is
-    missing or not valid JSON; a valid-JSON-but-partial spec parses to whatever
-    sections are present."""
+    """Load and parse an ARC-56 app-spec JSON file — raises only when the file is
+    missing or not valid JSON."""
     return from_dict(json.loads(Path(path).read_text()))
 
 
 def load_optional(path) -> Optional[Arc56Spec]:
-    """:func:`load`, but ``None`` on any failure — for the optional CLI/analysis
-    path where a bad or absent spec must degrade to no enrichment, never error."""
+    """:func:`load`, but ``None`` on any failure — a bad or absent spec must degrade
+    to no enrichment, never error."""
     if not path:
         return None
     try:

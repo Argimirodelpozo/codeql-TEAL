@@ -1,21 +1,13 @@
 """Lift a :class:`tealql.tealtools.ssa.SSAProgram` into genuine ``puya.ir.models``.
 
-    from tealql.tealtools.ssa import SSAProgram
-    from tealql.tealtools.lift import render
-    print(render(SSAProgram("contract.teal"), optimize_ir=True))
+Map: :mod:`lift` builds the pre-IR (:mod:`pre_ir`), :mod:`to_puya_ir` lowers it to
+real Puya IR, :mod:`backend` carries that down to TEAL again; literals in
+:mod:`teal_const`, AVM metadata in :mod:`tealql.tealtools.avm`.
 
-``lift`` (:mod:`lift`) builds the pre-IR (:mod:`pre_ir`); ``render``
-(:mod:`to_puya_ir`) lowers it to real Puya IR. Metadata in :mod:`tealql.tealtools.avm`,
-literal parsing in :mod:`teal_const`. ``python -m tealql.tealtools.lift <contract>``
-renders a contract.
-
-``render`` / ``to_puya`` are exported LAZILY (PEP 562 ``__getattr__``):
-they live in :mod:`to_puya_ir`, the only module on this path that imports
-the ``puya`` package. The detector-facing side — ``lift`` / ``_Lifter``
-and the pre-IR taint layer — is puya-free, so ``import tealql.tealtools.lift``
-(which the security ``ir_lifter`` bridge triggers via
-``from tealql.tealtools.lift.lift import _Lifter``) must not pull in puya. Only
-touching ``render`` / ``to_puya`` does.
+HAZARD: ``render`` / ``to_puya`` are exported LAZILY (PEP 562) because
+:mod:`to_puya_ir` is the only module on this path that imports ``puya``. The
+detector-facing side — ``lift`` / ``_Lifter`` and the pre-IR taint layer — must stay
+puya-free, so never import them eagerly here.
 """
 from . import pre_ir
 from .lift import lift
@@ -24,19 +16,13 @@ __all__ = ["render", "to_puya", "lift", "lift_to_teal", "pre_ir", "build_lifter"
 
 
 def build_lifter(prog):
-    """Build + cache the pre-IR ``_Lifter`` for ``prog``, or ``None`` if it does
-    not lift. Puya-free (the pre-IR path never imports ``puya``).
+    """Build + cache the pre-IR ``_Lifter`` for ``prog``, or ``None`` if it does not lift.
 
-    The QUERY-side counterpart to ``security.common.ir_lifter``: that one warns
-    loudly (its detectors must surface reduced precision), whereas this degrades
-    *quietly* so a caller can transparently fall back to a coarser analysis. Like
-    ``ir_lifter`` it lifts a FRESH ``SSAProgram`` off ``prog.source_path`` (the
-    lift mutates its input CFG) so ``prog``'s own SSA substrate stays pristine.
-
-    Both share ONE cache attribute (``_ir_lifter``), so a program is lifted at
-    most once no matter which side runs first. When ``ir_lifter`` might also run
-    (e.g. a ``--verify`` flow), pre-warm through IT so its warnings aren't lost to
-    this function's quiet build."""
+    HAZARD: the lift MUTATES its input CFG, so this lifts a FRESH ``SSAProgram`` off
+    ``prog.source_path`` — never hand it ``prog`` itself. Unlike
+    ``security.common.ir_lifter`` it degrades QUIETLY; both share the ``_ir_lifter``
+    cache, so when ``ir_lifter`` may also run, pre-warm through IT or its
+    reduced-precision warnings are lost."""
     sentinel = object()
     cached = getattr(prog, "_ir_lifter", sentinel)
     if cached is not sentinel:
@@ -62,8 +48,7 @@ def build_lifter(prog):
 
 
 def __getattr__(name: str):
-    # Deferred so the package imports without puya installed; only the
-    # decompilation entry points need it.
+    # Deferred so the package imports without puya installed.
     if name in ("render", "to_puya"):
         from . import to_puya_ir
         return getattr(to_puya_ir, name)
