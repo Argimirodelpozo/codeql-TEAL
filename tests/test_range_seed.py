@@ -156,3 +156,33 @@ class TestParamsValueRangeSeeds:
         )
         (_, outs), = r["asset_params_get"]
         assert outs[1][1] is None
+
+
+def test_bool_typed_fields_seed_zero_one():
+    """A field DECLARED `bool` ranges 0..1, on both the global and txn sides.
+
+    Derived from the type tables rather than listed per field: the bound is what
+    the type MEANS. Contrast `MinTxnFee` / `MinBalance`, which are deliberately
+    unranged — those are consensus PARAMETERS, and pinning today's value would
+    let a consensus upgrade silently make the analyzer prove false things.
+    """
+    prog = SSAProgram({"p.teal":
+        "#pragma version 11\n"
+        "global PayoutsEnabled\ntxn Nonparticipation\n"
+        "txn ConfigAssetDefaultFrozen\n"
+        "global Round\ntxn Amount\n"
+        "pop\npop\npop\npop\npop\nint 1\nreturn\n"})
+    prog.propagate_constants()
+    prog.propagate_ranges()
+    got = {}
+    for a in prog.assignments:
+        if a.op in ("global", "txn") and a.outputs:
+            got[a.immediates.strip()] = getattr(a.outputs[0], "range", None)
+
+    for field in ("PayoutsEnabled", "Nonparticipation", "ConfigAssetDefaultFrozen"):
+        r = got[field]
+        assert r is not None and (r.lo, r.hi) == (0, 1), f"{field} -> {r}"
+
+    # Unbounded fields must stay unbounded — a range here would be unsound.
+    for field in ("Round", "Amount"):
+        assert got[field] is None, f"{field} -> {got[field]}"

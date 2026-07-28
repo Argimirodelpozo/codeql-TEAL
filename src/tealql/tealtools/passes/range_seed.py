@@ -8,6 +8,7 @@ from ..avm import (
     _PARAMS_OPS,
     _PARAMS_VALUE_RANGES,
     _TXN_FIELD_RANGES,
+    _field_type,
     _txn_field_name,
 )
 
@@ -64,6 +65,17 @@ def propagate_ranges(prog: SSAProgram) -> None:
             if rng is not None:
                 _seed(o, *rng)
                 continue
+
+        # Any field DECLARED `bool` is 0 or 1. Derived from the type tables
+        # rather than listed, because the bound is what the type MEANS, not a
+        # spec value that a consensus upgrade could move -- unlike `MinTxnFee`
+        # or `MinBalance`, which are deliberately absent from the range tables
+        # for exactly that reason. Covers `global PayoutsEnabled` plus the txn
+        # side (`ConfigAssetDefaultFrozen`, `FreezeAssetFrozen`,
+        # `Nonparticipation`, ...), none of which were ranged before.
+        if _field_type(a.op, a.immediates) == "bool":
+            _seed(o, 0, 1)
+            continue
 
     # Union arg ranges through phis to a fixed point. A phi needs EVERY arg
     # ranged — one unknown arg means the phi is unbounded, not partially bounded.
