@@ -49,18 +49,58 @@ def _probe_contracts() -> "tuple[Path, Path]":
     return Path(files[len(files) // 10]), Path(files[-1])
 
 
+#: Timing samples per measurement. The gates compare a small-vs-large RATIO, so
+#: a single skewed sample on EITHER side moves it — and a short measurement is
+#: the more fragile of the two.
+_REPS = 3
+
+
+def _cpu_best(work, setup=None) -> float:
+    """Best-of-``_REPS`` CPU time for ``work``, with ``setup()`` re-run untimed
+    before each repetition.
+
+    Two deliberate choices, both because these gates flaked under a loaded
+    machine (twice in one session, and CI runs ``-n auto`` so the contention is
+    not hypothetical):
+
+    * ``process_time``, not ``perf_counter`` — it counts THIS process's CPU, so
+      a sibling xdist worker saturating a core inflates wall-clock but not this.
+      The gate is about work done, not time elapsed.
+    * the MINIMUM of several runs — interference only ever adds time, never
+      removes it, so the floor is the cleanest estimate of the real cost.
+
+    HAZARD: every repetition must start COLD, which is what ``setup`` is for.
+    Reusing one ``SSAProgram`` across repetitions warms its caches, and not
+    evenly — measured 0.087→0.032s for a 342-line contract against 4.59→3.08s
+    for a 4762-line one. Taking the minimum then deflates the SMALL side ~2x
+    harder than the large, inflating the ratio these gates assert on and failing
+    a pipeline that never regressed."""
+    best = float("inf")
+    for _ in range(_REPS):
+        state = setup() if setup is not None else None
+        t0 = time.process_time()
+        work(state) if setup is not None else work()
+        best = min(best, time.process_time() - t0)
+    return best
+
+
 def _time_detectors(path: Path) -> "tuple[int, float]":
     lines = len(path.read_text().splitlines())
-    prog = SSAProgram(str(path))
-    prog.propagate_constants()
     names = default_detection_names()
-    t0 = time.perf_counter()
-    for name in names:
-        try:
-            DETECTORS[name](prog, file=None).detect()
-        except Exception:
-            pass                      # a detector fault is not a perf finding
-    return lines, time.perf_counter() - t0
+
+    def _fresh():                     # untimed: a COLD program per repetition
+        prog = SSAProgram(str(path))
+        prog.propagate_constants()
+        return prog
+
+    def _run(prog):
+        for name in names:
+            try:
+                DETECTORS[name](prog, file=None).detect()
+            except Exception:
+                pass                  # a detector fault is not a perf finding
+
+    return lines, _cpu_best(_run, setup=_fresh)
 
 
 @pytest.mark.slow
@@ -101,10 +141,12 @@ def test_ssa_construction_scales():
 
     def _build(p: Path):
         n = len(p.read_text().splitlines())
-        t0 = time.perf_counter()
-        prog = SSAProgram(str(p))
-        prog.propagate_constants()
-        return n, time.perf_counter() - t0
+
+        def _work():
+            prog = SSAProgram(str(p))
+            prog.propagate_constants()
+
+        return n, _cpu_best(_work)
 
     n_small, t_small = _build(small)
     n_large, t_large = _build(large)
