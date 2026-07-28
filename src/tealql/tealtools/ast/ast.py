@@ -505,3 +505,21 @@ class Arg3Opcode(MiscOpcode): mnemonic = "arg_3"
 class ArgsOpcode(MiscOpcode): mnemonic = "args"
 class BlockOpcode(MiscOpcode): mnemonic = "block"
 
+
+
+# ---------------------------------------------------------------------------
+# Public surface
+# ---------------------------------------------------------------------------
+
+#: Every AST node type, plus `Location` and the mnemonic lookup. Declared
+#: explicitly because the package `__init__` re-exports this module with
+#: `import *`: without an `__all__`, a star import takes every public name the
+#: module happens to hold, so `dataclass`, `ClassVar`, `Optional` and
+#: `annotations` were all importable from `tealql.tealtools.ast` as though they
+#: were part of the AST API. Computed from the class hierarchy rather than
+#: hand-listed -- there are 200+ node types and a hand-written list would drift
+#: the first time an opcode is added.
+__all__ = ["Location", "node_class_for_mnemonic", *sorted(
+    _name for _name, _obj in list(globals().items())
+    if isinstance(_obj, type) and issubclass(_obj, AstNode)
+)]
