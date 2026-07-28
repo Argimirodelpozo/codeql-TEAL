@@ -1,0 +1,174 @@
+#pragma version 7
+intcblock 1 0 2 4
+txn OnCompletion
+intc_1 // 0
+==
+bnz label1
+txn OnCompletion
+intc_0 // 1
+==
+bnz label2
+txn OnCompletion
+intc_2 // 2
+==
+bnz label3
+txn OnCompletion
+intc_3 // 4
+==
+bnz label4
+txn OnCompletion
+pushint 5
+==
+bnz label3
+b label5
+label1:
+txna ApplicationArgs 0
+pushbytes 0x4f50545f494e5f415341 // "OPT_IN_ASA"
+==
+bnz label6
+txna ApplicationArgs 0
+pushbytes 0x554e4c4f434b // "UNLOCK"
+==
+bnz label7
+txna ApplicationArgs 0
+pushbytes 0x52454445454d // "REDEEM"
+==
+bnz label8
+b label5
+label6:
+global GroupSize
+intc_2 // 2
+==
+gtxn 0 TypeEnum
+intc_0 // 1
+==
+gtxn 0 Receiver
+global CurrentApplicationAddress
+==
+gtxn 0 Amount
+pushint 101000
+==
+txn GroupIndex
+intc_0 // 1
+==
+&&
+&&
+&&
+&&
+assert
+intc_1 // 0
+global CurrentApplicationAddress
+txna Assets 0
+callsub label9
+b label10
+label7:
+txn Sender
+global CreatorAddress
+==
+assert
+txna ApplicationArgs 1
+btoi
+txna ApplicationArgs 2
+btoi
+txna Accounts 2
+callsub label11
+txna Accounts 1
+callsub label11
+b label10
+label8:
+global GroupSize
+intc_0 // 1
+==
+global CreatorAddress
+txn Sender
+==
+&&
+assert
+txna ApplicationArgs 1
+btoi
+txna Accounts 1
+callsub label11
+b label10
+label4:
+global GroupSize
+intc_0 // 1
+==
+global CreatorAddress
+txn Sender
+==
+&&
+bnz label10
+b label5
+label3:
+b label5
+label2:
+b label10
+label11:
+txn NumAssets
+bz label12
+txna Assets 0
+b label13
+label12:
+dig 1
+bz label14
+dig 1
+pushint 100000
+<
+bz label15
+dup
+balance
+intc_1 // 0
+==
+bz label15
+b label14
+label15:
+itxn_begin
+intc_0 // 1
+itxn_field TypeEnum
+itxn_field Receiver
+itxn_field Amount
+itxn_submit
+retsub
+label14:
+pop
+pop
+retsub
+label13:
+dig 2
+bz label16
+callsub label17
+retsub
+label16:
+pop
+pop
+pop
+retsub
+label17:
+dig 1
+dig 1
+asset_holding_get AssetBalance
+bz label18
+pop
+callsub label9
+retsub
+label18:
+pop
+pop
+pop
+pop
+retsub
+label9:
+itxn_begin
+intc_3 // 4
+itxn_field TypeEnum
+itxn_field XferAsset
+itxn_field AssetReceiver
+itxn_field AssetAmount
+itxn_submit
+retsub
+label5:
+intc_1 // 0
+return
+label10:
+intc_0 // 1
+return

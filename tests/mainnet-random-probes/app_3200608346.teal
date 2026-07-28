@@ -1,0 +1,529 @@
+#pragma version 10
+intcblock 1 0 32 4 6 100 10000
+bytecblock 0x70 0x
+txn ApplicationID
+!
+intc 4 // 6
+*
+txn OnCompletion
++
+switch label1 label2 label2 label2 label3 label4 label5 label2 label2 label2 label2 label2
+label2:
+err
+label18:
+txna ApplicationArgs 1
+dup
+len
+intc_2 // 32
+==
+assert
+callsub label6
+intc_0 // 1
+return
+label6:
+proto 1 0
+pushbytes 0x76 // "v"
+pushbytes 0x00116f666665722d77616c6c65742d76302e31 // 0x00116f666665722d77616c6c65742d76302e31
+app_global_put
+bytec_0 // "p"
+frame_dig -1
+app_global_put
+retsub
+label19:
+txna ApplicationArgs 1
+btoi
+callsub label7
+intc_0 // 1
+return
+label7:
+proto 1 0
+txn Sender
+txna Applications 0
+app_params_get AppCreator
+pop
+==
+assert
+itxn_begin
+intc_0 // 1
+itxn_field TypeEnum
+txna Applications 0
+app_params_get AppCreator
+pop
+itxn_field Receiver
+frame_dig -1
+itxn_field Amount
+intc_1 // 0
+itxn_field Fee
+itxn_submit
+retsub
+label20:
+txna ApplicationArgs 1
+btoi
+callsub label8
+intc_0 // 1
+return
+label8:
+proto 1 0
+txn Sender
+txna Applications 0
+app_params_get AppCreator
+pop
+==
+assert
+itxn_begin
+intc_3 // 4
+itxn_field TypeEnum
+txna Applications 0
+app_params_get AppCreator
+pop
+itxn_field AssetReceiver
+txna Applications 0
+app_params_get AppCreator
+pop
+itxn_field AssetCloseTo
+frame_dig -1
+itxn_field XferAsset
+intc_1 // 0
+itxn_field AssetAmount
+intc_1 // 0
+itxn_field Fee
+itxn_submit
+retsub
+label21:
+txna ApplicationArgs 11
+btoi
+txna ApplicationArgs 10
+btoi
+txna ApplicationArgs 9
+dup
+len
+intc_2 // 32
+==
+assert
+txna ApplicationArgs 8
+btoi
+txna ApplicationArgs 7
+btoi
+txna ApplicationArgs 6
+btoi
+txna ApplicationArgs 5
+dup
+len
+intc_2 // 32
+==
+assert
+txna ApplicationArgs 4
+btoi
+txna ApplicationArgs 3
+dup
+len
+intc_2 // 32
+==
+assert
+txna ApplicationArgs 2
+btoi
+txna ApplicationArgs 1
+btoi
+callsub label9
+intc_0 // 1
+return
+label9:
+proto 11 0
+bytec_1 // ""
+dupn 7
+txn Sender
+bytec_0 // "p"
+app_global_get
+==
+assert
+itxn_begin
+intc_3 // 4
+itxn_field TypeEnum
+global CurrentApplicationAddress
+itxn_field AssetReceiver
+frame_dig -6
+itxn_field XferAsset
+intc_1 // 0
+itxn_field AssetAmount
+intc_1 // 0
+itxn_field Fee
+pushbytes 0x6f70742d696e2073656c6c20746f206f666665722077616c6c6574 // "opt-in sell to offer wallet"
+itxn_field Note
+itxn_submit
+intc_0 // 1
+gtxns TypeEnum
+intc_3 // 4
+==
+assert
+intc_0 // 1
+gtxns AssetReceiver
+global CurrentApplicationAddress
+==
+assert
+intc_0 // 1
+gtxns Sender
+frame_dig -5
+==
+assert
+intc_0 // 1
+gtxns XferAsset
+frame_dig -6
+==
+assert
+intc_0 // 1
+gtxns AssetAmount
+intc_0 // 1
+==
+assert
+frame_dig -11
+frame_dig -4
+frame_dig -3
+frame_dig -7
+frame_dig -2
+callsub label10
+frame_bury 0
+frame_dig 0
+box_len
+swap
+pop
+assert
+itxn_begin
+intc 4 // 6
+itxn_field TypeEnum
+pushbytes 0xe19f1afe // 0xe19f1afe
+itxn_field ApplicationArgs
+frame_dig -1
+itxn_field ApplicationID
+frame_dig -6
+itob
+itxn_field ApplicationArgs
+intc_1 // 0
+itxn_field Fee
+itxn_submit
+itxn NumLogs
+intc_0 // 1
+-
+itxnas Logs
+extract 4 0
+btoi
+frame_bury 1
+frame_dig 1
+intc_0 // 1
+==
+assert
+frame_dig -8
+intc 5 // 100
+*
+frame_bury 2
+frame_dig -10
+intc 5 // 100
+*
+frame_bury 3
+frame_dig -2
+frame_dig 2
+*
+intc 6 // 10000
+/
+frame_bury 4
+frame_dig -2
+frame_dig 3
+*
+intc 6 // 10000
+/
+frame_bury 5
+frame_dig 4
+frame_dig 5
++
+frame_bury 6
+frame_dig 6
+frame_dig -2
+<=
+assert
+frame_dig -2
+frame_dig 6
+-
+frame_bury 7
+itxn_begin
+intc_0 // 1
+itxn_field TypeEnum
+frame_dig -5
+itxn_field Receiver
+frame_dig 7
+itxn_field Amount
+intc_1 // 0
+itxn_field Fee
+pushbytes 0x646f776e62616420636f6c6c656374696f6e206f666665722073616c65 // "downbad collection offer sale"
+itxn_field Note
+itxn_submit
+itxn_begin
+intc_0 // 1
+itxn_field TypeEnum
+frame_dig -9
+itxn_field Receiver
+frame_dig 4
+itxn_field Amount
+intc_1 // 0
+itxn_field Fee
+pushbytes 0x646f776e62616420636f6c6c656374696f6e206f666665722063726561746f7220666565 // "downbad collection offer creator fee"
+itxn_field Note
+itxn_submit
+itxn_begin
+intc_0 // 1
+itxn_field TypeEnum
+bytec_0 // "p"
+app_global_get
+itxn_field Receiver
+frame_dig 5
+itxn_field Amount
+intc_1 // 0
+itxn_field Fee
+pushbytes 0x646f776e62616420636f6c6c656374696f6e206f6666657220706c6174666f726d20666565 // "downbad collection offer platform fee"
+itxn_field Note
+itxn_submit
+frame_dig 0
+box_del
+retsub
+label22:
+txna ApplicationArgs 7
+extract 2 0
+txna ApplicationArgs 6
+extract 2 0
+txna ApplicationArgs 5
+btoi
+txna ApplicationArgs 4
+btoi
+txna ApplicationArgs 3
+dup
+len
+intc_2 // 32
+==
+assert
+txna ApplicationArgs 2
+btoi
+txna ApplicationArgs 1
+btoi
+callsub label11
+intc_0 // 1
+return
+label11:
+proto 7 0
+bytec_1 // ""
+txn Sender
+txna Applications 0
+app_params_get AppCreator
+pop
+==
+assert
+frame_dig -5
+frame_dig -4
+frame_dig -3
+frame_dig -2
+frame_dig -1
+callsub label10
+frame_bury 0
+frame_dig 0
+dup
+box_del
+pop
+bytec_1 // ""
+bytec_1 // ""
+pushbytes 0x0004 // 0x0004
+frame_dig -6
+dup
+len
+itob
+extract 6 2
+swap
+concat
+callsub label12
+frame_dig -7
+dup
+len
+itob
+extract 6 2
+swap
+concat
+callsub label12
+pop
+concat
+box_put
+retsub
+label23:
+pushbytes 0x151f7c75 // 0x151f7c75
+txna ApplicationArgs 5
+btoi
+txna ApplicationArgs 4
+btoi
+txna ApplicationArgs 3
+dup
+len
+intc_2 // 32
+==
+assert
+txna ApplicationArgs 2
+btoi
+txna ApplicationArgs 1
+btoi
+callsub label10
+concat
+log
+intc_0 // 1
+return
+label10:
+proto 5 1
+frame_dig -1
+itob
+frame_dig -2
+itob
+concat
+frame_dig -3
+concat
+frame_dig -4
+itob
+concat
+frame_dig -5
+itob
+concat
+retsub
+label24:
+txna ApplicationArgs 5
+btoi
+txna ApplicationArgs 4
+btoi
+txna ApplicationArgs 3
+dup
+len
+intc_2 // 32
+==
+assert
+txna ApplicationArgs 2
+btoi
+txna ApplicationArgs 1
+btoi
+callsub label13
+intc_0 // 1
+return
+label13:
+proto 5 0
+bytec_1 // ""
+txn Sender
+txna Applications 0
+app_params_get AppCreator
+pop
+==
+dup
+bnz label14
+txn Sender
+bytec_0 // "p"
+app_global_get
+==
+||
+label14:
+assert
+frame_dig -5
+frame_dig -4
+frame_dig -3
+frame_dig -2
+frame_dig -1
+callsub label10
+frame_bury 0
+frame_dig 0
+box_del
+retsub
+label26:
+callsub label15
+intc_0 // 1
+return
+label15:
+proto 0 0
+txna Applications 0
+app_params_get AppCreator
+pop
+txn Sender
+==
+dup
+bnz label16
+txn Sender
+bytec_0 // "p"
+app_global_get
+==
+||
+label16:
+assert
+itxn_begin
+intc_0 // 1
+itxn_field TypeEnum
+txna Applications 0
+app_params_get AppCreator
+pop
+itxn_field Receiver
+txna Applications 0
+app_params_get AppCreator
+pop
+itxn_field CloseRemainderTo
+intc_1 // 0
+itxn_field Amount
+intc_1 // 0
+itxn_field Fee
+itxn_submit
+retsub
+label25:
+callsub label17
+intc_0 // 1
+return
+label17:
+proto 0 0
+txn Sender
+bytec_0 // "p"
+app_global_get
+==
+assert
+retsub
+label5:
+pushbytes 0xd324bea4 // 0xd324bea4
+txna ApplicationArgs 0
+match label18
+err
+label1:
+pushbytes 0x21f1ddff // 0x21f1ddff
+pushbytes 0x3d1d2f0f // 0x3d1d2f0f
+pushbytes 0xf8f7a3f7 // 0xf8f7a3f7
+pushbytes 0x8454bb84 // 0x8454bb84
+pushbytes 0x05e81db5 // 0x05e81db5
+pushbytes 0x8a929203 // 0x8a929203
+txna ApplicationArgs 0
+match label19 label20 label21 label22 label23 label24
+err
+label3:
+pushbytes 0x46f76533 // 0x46f76533
+txna ApplicationArgs 0
+match label25
+err
+label4:
+pushbytes 0x2487c32c // 0x2487c32c
+txna ApplicationArgs 0
+match label26
+err
+label12:
+proto 4 3
+frame_dig -4
+frame_dig -2
+concat
+frame_bury -4
+frame_dig -1
+dup
+len
+frame_dig -2
+btoi
++
+itob
+extract 6 2
+frame_bury -2
+frame_dig -3
+swap
+concat
+frame_bury -3
+frame_dig -4
+frame_dig -3
+frame_dig -2
+retsub

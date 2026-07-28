@@ -1,0 +1,570 @@
+#pragma version 8
+intcblock 1 0 3 2 5 4 1000 8 303000
+bytecblock 0x151f7c75 0x706f61705f6173615f6964 0x706f61705f617574686f725f61646472657373 0x706f61705f617474656e6465655f717479 0x617574686f725f706179735f666565 0x616c676f706f61705f61646472657373 0x69735f73696e676c65 0x80620a3f 0x616c676f706f61705f76657273696f6e 0x76657273696f6e33 0x616c676f706f61705f6974656d5f64656c657465 0x706f61705f6e616d65 0x706f61705f6e66745f6d65646961 0x706f61705f73746172745f74696d657374616d70 0x706f61705f69735f72656c6561736564 0x616c676f706f61705f6974656d5f636c61696d6564 0x706f61705f6861735f736967
+txn TypeEnum
+pushint 6
+==
+assert
+txn Fee
+global MinTxnFee
+>=
+assert
+txn ApplicationID
+bz label1
+txn OnCompletion
+intc 4 // 5
+==
+bnz label2
+txn OnCompletion
+intc 5 // 4
+==
+bnz label3
+txn OnCompletion
+intc_3 // 2
+==
+bnz label4
+txn OnCompletion
+intc_0 // 1
+==
+bnz label5
+txn NumAppArgs
+bnz label6
+b label7
+label6:
+pushbytes 0x9a47e5d0 // 0x9a47e5d0
+txna ApplicationArgs 0
+==
+bnz label8
+pushbytes 0xf33c89e6 // 0xf33c89e6
+txna ApplicationArgs 0
+==
+bnz label9
+pushbytes 0x347b850c // 0x347b850c
+txna ApplicationArgs 0
+==
+bnz label10
+pushbytes 0x19558bc7 // 0x19558bc7
+txna ApplicationArgs 0
+==
+bnz label11
+bytec 7 // 0x80620a3f
+txna ApplicationArgs 0
+==
+bnz label11
+pushbytes 0x4ad5b43d // 0x4ad5b43d
+txna ApplicationArgs 0
+==
+bnz label12
+pushbytes 0x4e53431e // 0x4e53431e
+txna ApplicationArgs 0
+==
+bnz label12
+pushbytes 0x7e517c89 // 0x7e517c89
+txna ApplicationArgs 0
+==
+bnz label12
+b label7
+label21:
+gtxn 0 RekeyTo
+global ZeroAddress
+==
+assert
+gtxn 0 CloseRemainderTo
+global ZeroAddress
+==
+assert
+gtxn 0 AssetCloseTo
+global ZeroAddress
+==
+assert
+gtxn 0 TypeEnum
+intc_0 // 1
+==
+assert
+retsub
+label14:
+txn Sender
+global CreatorAddress
+==
+assert
+retsub
+label20:
+txn Sender
+bytec_2 // "poap_author_address"
+app_global_get
+==
+assert
+retsub
+label1:
+bytec_2 // "poap_author_address"
+txn Note
+app_global_put
+bytec 5 // "algopoap_address"
+pushbytes 0xa4d1f7801242e2306d123e3acfa7eb6c6fa022b04d91fca84232aab6147babe3 // addr UTI7PAASILRDA3ISHY5M7J7LNRX2AIVQJWI7ZKCCGKVLMFD3VPR5PWSZ4I
+app_global_put
+bytec 8 // "algopoap_version"
+bytec 9 // "version3"
+app_global_put
+bytec_0 // 0x151f7c75
+global CurrentApplicationID
+itob
+concat
+b label13
+label5:
+bytec_0 // 0x151f7c75
+pushbytes 0x616c676f706f61705f6974656d5f6f7074696e // "algopoap_item_optin"
+concat
+b label13
+label15:
+pop
+itxn_begin
+intc 6 // 1000
+itxn_field Fee
+intc_2 // 3
+itxn_field TypeEnum
+txna Assets 0
+dup
+itob
+log
+itxn_field ConfigAsset
+itxn_submit
+bytec_0 // 0x151f7c75
+bytec 10 // "algopoap_item_delete"
+concat
+b label13
+label2:
+callsub label14
+global CurrentApplicationID
+bytec_1 // "poap_asa_id"
+app_global_get_ex
+bnz label15
+bytec_0 // 0x151f7c75
+bytec 10 // "algopoap_item_delete"
+concat
+b label13
+label3:
+callsub label14
+bytec 8 // "algopoap_version"
+bytec 9 // "version3"
+app_global_put
+bytec_0 // 0x151f7c75
+global CurrentApplicationID
+itob
+concat
+b label13
+label4:
+bytec_0 // 0x151f7c75
+pushbytes 0x616c676f706f61705f6974656d5f636c6f73656f7574 // "algopoap_item_closeout"
+concat
+b label13
+label30:
+itxn_begin
+intc_2 // 3
+itxn_field TypeEnum
+bytec_3 // "poap_attendee_qty"
+app_global_get
+intc_0 // 1
++
+itxn_field ConfigAssetTotal
+intc_1 // 0
+itxn_field ConfigAssetDecimals
+pushbytes 0x504f4150 // "POAP"
+itxn_field ConfigAssetUnitName
+bytec 11 // "poap_name"
+app_global_get
+intc_3 // 2
+pushint 30
+substring3
+itxn_field ConfigAssetName
+load 26
+itxn_field ConfigAssetMetadataHash
+pushbytes 0x697066733a2f2f // "ipfs://"
+bytec 12 // "poap_nft_media"
+app_global_get
+extract 2 0
+concat
+pushbytes 0x2361726333 // "#arc3"
+concat
+itxn_field ConfigAssetURL
+global CurrentApplicationAddress
+dup
+itxn_field ConfigAssetManager
+itxn_field ConfigAssetReserve
+global ZeroAddress
+dup
+itxn_field ConfigAssetFreeze
+itxn_field ConfigAssetClawback
+itxn_submit
+bytec_1 // "poap_asa_id"
+itxn CreatedAssetID
+dup
+store 0
+app_global_put
+retsub
+label17:
+itxn_begin
+intc 5 // 4
+itxn_field TypeEnum
+load 0
+itxn_field XferAsset
+load 2
+itxn_field Sender
+load 3
+itxn_field AssetAmount
+load 4
+itxn_field AssetReceiver
+itxn_submit
+retsub
+label25:
+global LatestTimestamp
+bytec 13 // "poap_start_timestamp"
+app_global_get
+dup
+store 17
+>=
+assert
+retsub
+label16:
+bytec 14 // "poap_is_released"
+app_global_get
+intc_0 // 1
+==
+assert
+retsub
+label26:
+global GroupSize
+intc_2 // 3
+==
+assert
+callsub label16
+label27:
+bytec_1 // "poap_asa_id"
+app_global_get
+store 0
+global CurrentApplicationAddress
+store 2
+txn Sender
+store 4
+intc_0 // 1
+store 3
+callsub label17
+load 27
+intc_1 // 0
+==
+bz label18
+bytec_0 // 0x151f7c75
+bytec 15 // "algopoap_item_claimed"
+concat
+b label13
+label18:
+bytec 6 // "is_single"
+load 27
+intc_0 // 1
++
+app_global_put
+bytec_0 // 0x151f7c75
+bytec 15 // "algopoap_item_claimed"
+concat
+b label13
+label22:
+gtxn 0 Amount
+bytec_3 // "poap_attendee_qty"
+app_global_get
+pushint 768000
+*
+>=
+txn Sender
+bytec 5 // "algopoap_address"
+app_global_get
+==
+||
+assert
+b label19
+label23:
+gtxn 0 Amount
+intc_1 // 0
+==
+assert
+label19:
+pushbytes 0x706f61705f69735f616374697661746564 // "poap_is_activated"
+intc_0 // 1
+app_global_put
+pushbytes 0x706f61705f61637469766174655f74696d65 // "poap_activate_time"
+global LatestTimestamp
+app_global_put
+bytec_1 // "poap_asa_id"
+app_global_get
+store 0
+global CurrentApplicationAddress
+store 2
+intc_0 // 1
+store 3
+bytec_2 // "poap_author_address"
+app_global_get
+store 4
+callsub label17
+bytec_0 // 0x151f7c75
+pushbytes 0x616c676f706f61705f6974656d5f6163746976617465 // "algopoap_item_activate"
+concat
+b label13
+label12:
+global GroupSize
+intc 4 // 5
+==
+assert
+bytec 7 // 0x80620a3f
+gtxna 4 ApplicationArgs 0
+==
+assert
+bytec_0 // 0x151f7c75
+pushbytes 0x6275646765745f696e6372656173655f63616c6c // "budget_increase_call"
+concat
+log
+intc_0 // 1
+return
+label9:
+callsub label20
+callsub label21
+global GroupSize
+intc_2 // 3
+==
+assert
+gtxn 0 Fee
+global MinTxnFee
+>=
+assert
+bytec 4 // "author_pays_fee"
+app_global_get
+intc_0 // 1
+>=
+bnz label22
+b label23
+label10:
+callsub label20
+bytec 14 // "poap_is_released"
+intc_0 // 1
+app_global_put
+bytec_0 // 0x151f7c75
+pushbytes 0x616c676f706f61705f6974656d5f72656c6561736564 // "algopoap_item_released"
+concat
+b label13
+label28:
+bytec 4 // "author_pays_fee"
+load 28
+intc_0 // 1
++
+app_global_put
+b label24
+label29:
+gtxn 0 Amount
+pushint 3000
+==
+txn NumAppArgs
+intc 7 // 8
+||
+assert
+gtxn 0 Fee
+global MinTxnFee
+>=
+assert
+label24:
+bytec_2 // "poap_author_address"
+app_global_get
+store 4
+txna ApplicationArgs 4
+store 8
+txna ApplicationArgs 5
+store 6
+txna ApplicationArgs 6
+store 10
+load 10
+intc_1 // 0
+extract_uint64
+store 13
+load 10
+intc 7 // 8
+extract_uint64
+store 14
+load 10
+pushint 16
+extract_uint64
+store 15
+load 10
+pushint 24
+extract_uint64
+store 16
+load 10
+pushint 32
+extract_uint64
+store 7
+callsub label25
+bytec 16 // "poap_has_sig"
+app_global_get
+intc_0 // 1
+==
+bnz label26
+global GroupSize
+intc_3 // 2
+==
+global GroupSize
+intc_2 // 3
+==
+||
+assert
+b label27
+label11:
+bytec 6 // "is_single"
+app_global_get
+store 27
+bytec_3 // "poap_attendee_qty"
+app_global_get
+load 27
+>=
+assert
+txn Sender
+store 4
+callsub label21
+bytec 4 // "author_pays_fee"
+app_global_get
+store 28
+load 28
+intc_0 // 1
+>=
+bnz label28
+b label29
+label8:
+callsub label20
+callsub label21
+global GroupSize
+intc_3 // 2
+==
+assert
+gtxn 0 Fee
+global MinTxnFee
+>=
+assert
+gtxn 0 Receiver
+global CurrentApplicationAddress
+==
+assert
+bytec 12 // "poap_nft_media"
+txna ApplicationArgs 3
+app_global_put
+bytec 11 // "poap_name"
+txna ApplicationArgs 4
+app_global_put
+pushbytes 0x706f61705f6c6f676f // "poap_logo"
+txna ApplicationArgs 5
+app_global_put
+pushbytes 0x706f61705f64657363 // "poap_desc"
+txna ApplicationArgs 6
+app_global_put
+pushbytes 0x706f61705f74696d657a6f6e65 // "poap_timezone"
+txna ApplicationArgs 7
+app_global_put
+pushbytes 0x706f61705f61646472657373 // "poap_address"
+txna ApplicationArgs 8
+app_global_put
+pushbytes 0x706f61705f75726c // "poap_url"
+txna ApplicationArgs 9
+app_global_put
+pushbytes 0x706f61705f656d61696c // "poap_email"
+txna ApplicationArgs 10
+app_global_put
+pushbytes 0x706f61705f6d6574616461746168617368 // "poap_metadatahash"
+txna ApplicationArgs 11
+dup
+store 26
+app_global_put
+txna ApplicationArgs 12
+store 10
+bytec 13 // "poap_start_timestamp"
+load 10
+intc_1 // 0
+extract_uint64
+app_global_put
+bytec_3 // "poap_attendee_qty"
+load 10
+pushint 48
+extract_uint64
+dup
+store 22
+app_global_put
+pushbytes 0x706f61705f6861735f6e6674 // "poap_has_nft"
+load 10
+pushint 56
+extract_uint64
+app_global_put
+pushbytes 0x706f61705f6861735f67656f // "poap_has_geo"
+load 10
+pushint 64
+extract_uint64
+app_global_put
+bytec 16 // "poap_has_sig"
+load 10
+pushint 72
+extract_uint64
+app_global_put
+pushbytes 0x706f61705f6861735f7172636f6465 // "poap_has_qrcode"
+load 10
+pushint 80
+extract_uint64
+app_global_put
+bytec 4 // "author_pays_fee"
+load 10
+pushint 96
+extract_uint64
+dup
+store 23
+app_global_put
+bytec 6 // "is_single"
+load 10
+pushint 104
+extract_uint64
+app_global_put
+intc_1 // 0
+bytec_1 // "poap_asa_id"
+app_global_get_ex
+bnz label7
+callsub label30
+load 23
+intc_0 // 1
+==
+bnz label31
+gtxn 0 Amount
+intc 8 // 303000
+>=
+assert
+txn Sender
+store 30
+bytec_0 // 0x151f7c75
+load 0
+itob
+concat
+b label13
+label31:
+gtxn 0 Amount
+load 22
+intc 6 // 1000
+*
+intc 8 // 303000
++
+>=
+txn Sender
+bytec 5 // "algopoap_address"
+app_global_get
+==
+||
+assert
+txn Sender
+store 30
+bytec_0 // 0x151f7c75
+load 0
+itob
+concat
+label13:
+log
+intc_0 // 1
+return
+label7:
+err

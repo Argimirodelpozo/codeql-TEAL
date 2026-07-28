@@ -1,0 +1,77 @@
+#pragma version 5
+intcblock 0 1
+bytecblock 0x636f756e746572
+txn ApplicationID
+intc_0 // 0
+==
+bnz label1
+txn OnCompletion
+pushint 5
+==
+bnz label2
+txn OnCompletion
+pushint 4
+==
+bnz label3
+txn OnCompletion
+intc_1 // 1
+==
+bnz label4
+txn OnCompletion
+pushint 2
+==
+bnz label5
+txn OnCompletion
+intc_0 // 0
+==
+bnz label6
+err
+label6:
+txna ApplicationArgs 0
+pushbytes 0x696e63 // "inc"
+==
+bnz label7
+txna ApplicationArgs 0
+pushbytes 0x646563 // "dec"
+==
+bnz label8
+err
+label8:
+bytec_0 // "counter"
+bytec_0 // "counter"
+app_global_get
+intc_1 // 1
+-
+app_global_put
+intc_1 // 1
+return
+label7:
+bytec_0 // "counter"
+bytec_0 // "counter"
+app_global_get
+intc_1 // 1
++
+app_global_put
+intc_1 // 1
+return
+label5:
+intc_0 // 0
+return
+label4:
+intc_0 // 0
+return
+label3:
+intc_0 // 0
+return
+label2:
+intc_0 // 0
+return
+label1:
+pushbytes 0x6f776e6572 // "owner"
+txn Sender
+app_global_put
+bytec_0 // "counter"
+intc_0 // 0
+app_global_put
+intc_1 // 1
+return

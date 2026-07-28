@@ -1,1 +1,1 @@
-Application is deletable at exit prog.teal:41: OnCompletion == DeleteApplication can reach approval without a guard.
+(no violations)

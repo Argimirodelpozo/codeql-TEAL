@@ -1,0 +1,80 @@
+#pragma version 2
+intcblock 0 5 4 2 46 1
+bytecblock 0x73746f726544617461 0x55706461746f72 0x516d 0x696e64657846696c6548617368 0x43726561746f72 0xa818a30b0a3727249faf8a334c55d2906971cad8a76f8194b352ccaf1b2bce53
+txn ApplicationID
+intc_0 // 0
+==
+bnz label1
+txn OnCompletion
+intc_1 // 5
+==
+bnz label2
+txn OnCompletion
+intc_2 // 4
+==
+bnz label3
+txna ApplicationArgs 0
+bytec_0 // "storeData"
+==
+txn OnCompletion
+intc_0 // 0
+==
+&&
+bnz label4
+err
+label4:
+txn NumAppArgs
+intc_3 // 2
+==
+bnz label5
+err
+label5:
+txn Sender
+bytec_1 // "Updator"
+app_global_get
+==
+bnz label6
+err
+label6:
+txna ApplicationArgs 1
+len
+intc 4 // 46
+==
+bnz label7
+err
+label7:
+txna ApplicationArgs 1
+intc_0 // 0
+intc_3 // 2
+substring3
+bytec_2 // "Qm"
+==
+bnz label8
+err
+label8:
+bytec_3 // "indexFileHash"
+txna ApplicationArgs 1
+app_global_put
+intc 5 // 1
+return
+label3:
+txn Sender
+bytec 4 // "Creator"
+app_global_get
+==
+return
+label2:
+txn Sender
+bytec 4 // "Creator"
+app_global_get
+==
+return
+label1:
+bytec 4 // "Creator"
+txn Sender
+app_global_put
+bytec_1 // "Updator"
+bytec 5 // addr VAMKGCYKG4TSJH5PRIZUYVOSSBUXDSWYU5XYDFFTKLGK6GZLZZJ57QE3EQ
+app_global_put
+intc 5 // 1
+return

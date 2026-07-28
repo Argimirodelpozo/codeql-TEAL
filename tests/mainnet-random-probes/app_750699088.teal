@@ -1,0 +1,634 @@
+#pragma version 6
+intcblock 1 1000 0 4 2 5 150000 100000
+bytecblock 0x66656573 0x61737365745f696e 0x6173736574 0x61737365745f64697669736f72 0x616c676f5f6f7574 0x70657263656e74616765 0x6d6f6465 0x24c206a853964b0947e6180f0aee01d020124adebbc8be3f8ce1d19e3808e007
+txn ApplicationID
+intc_2 // 0
+==
+bnz label1
+txn OnCompletion
+intc_2 // 0
+==
+bnz label2
+txn OnCompletion
+intc 5 // 5
+==
+bnz label3
+txn OnCompletion
+intc_0 // 1
+==
+txn OnCompletion
+intc_3 // 4
+==
+||
+txn OnCompletion
+intc 4 // 2
+==
+||
+bnz label4
+err
+label4:
+intc_2 // 0
+return
+label3:
+bytec_2 // "asset"
+app_global_get
+asset_params_get AssetCreator
+store 3
+store 2
+txn Sender
+global CreatorAddress
+==
+assert
+bytec_0 // "fees"
+app_global_get
+intc_2 // 0
+==
+load 3
+intc_2 // 0
+==
+||
+bnz label5
+itxn_begin
+bytec_0 // "fees"
+app_global_get
+intc_0 // 1
+>
+bnz label6
+label7:
+intc_3 // 4
+itxn_field TypeEnum
+bytec_2 // "asset"
+app_global_get
+itxn_field XferAsset
+global CreatorAddress
+itxn_field AssetReceiver
+global CreatorAddress
+itxn_field AssetCloseTo
+itxn_next
+intc_0 // 1
+itxn_field TypeEnum
+global CreatorAddress
+itxn_field Receiver
+global CreatorAddress
+itxn_field CloseRemainderTo
+itxn_submit
+intc_0 // 1
+return
+label6:
+intc_0 // 1
+itxn_field TypeEnum
+bytec_0 // "fees"
+app_global_get
+intc_0 // 1
+-
+itxn_field Amount
+bytec 7 // addr ETBANKCTSZFQSR7GDAHQV3QB2AQBESW6XPEL4P4M4HIZ4OAI4AD5X5OWNQ
+itxn_field Receiver
+itxn_next
+bytec_0 // "fees"
+intc_0 // 1
+app_global_put
+b label7
+label5:
+global CurrentApplicationAddress
+balance
+intc_1 // 1000
+>
+bnz label8
+intc_0 // 1
+return
+label8:
+itxn_begin
+intc_0 // 1
+itxn_field TypeEnum
+intc_2 // 0
+itxn_field Amount
+global CreatorAddress
+itxn_field Receiver
+global CreatorAddress
+itxn_field CloseRemainderTo
+itxn_submit
+intc_0 // 1
+return
+label2:
+txna ApplicationArgs 0
+pushbytes 0x7365747570 // "setup"
+==
+bnz label9
+txna ApplicationArgs 0
+pushbytes 0x627579 // "buy"
+==
+bnz label10
+txna ApplicationArgs 0
+pushbytes 0x73656c6c // "sell"
+==
+bnz label11
+txna ApplicationArgs 0
+pushbytes 0x7769746864726177 // "withdraw"
+==
+bnz label12
+txna ApplicationArgs 0
+pushbytes 0x73657474696e6773 // "settings"
+==
+bnz label13
+txna ApplicationArgs 0
+pushbytes 0x77697468647261775f666565 // "withdraw_fee"
+==
+bnz label14
+err
+label14:
+bytec_0 // "fees"
+app_global_get
+intc_0 // 1
+>
+global GroupSize
+intc_0 // 1
+==
+&&
+txn Fee
+pushint 2000
+==
+&&
+txn Sender
+bytec 7 // addr ETBANKCTSZFQSR7GDAHQV3QB2AQBESW6XPEL4P4M4HIZ4OAI4AD5X5OWNQ
+==
+&&
+assert
+intc_0 // 1
+itxn_field TypeEnum
+bytec_0 // "fees"
+app_global_get
+intc_0 // 1
+-
+itxn_field Amount
+bytec 7 // addr ETBANKCTSZFQSR7GDAHQV3QB2AQBESW6XPEL4P4M4HIZ4OAI4AD5X5OWNQ
+itxn_field Receiver
+intc_2 // 0
+itxn_field Fee
+itxn_submit
+bytec_0 // "fees"
+intc_0 // 1
+app_global_put
+intc_0 // 1
+return
+label13:
+txn Sender
+global CreatorAddress
+==
+txna ApplicationArgs 1
+btoi
+intc 7 // 100000
+>=
+&&
+txna ApplicationArgs 2
+btoi
+intc_1 // 1000
+>=
+&&
+assert
+bytec 4 // "algo_out"
+txna ApplicationArgs 1
+btoi
+app_global_put
+bytec_1 // "asset_in"
+txna ApplicationArgs 2
+btoi
+app_global_put
+bytec 5 // "percentage"
+txna ApplicationArgs 3
+btoi
+app_global_put
+bytec_3 // "asset_divisor"
+txna ApplicationArgs 4
+btoi
+app_global_put
+bytec 6 // "mode"
+txna ApplicationArgs 5
+btoi
+app_global_put
+intc_0 // 1
+return
+label12:
+global CurrentApplicationAddress
+bytec_2 // "asset"
+app_global_get
+asset_holding_get AssetBalance
+store 5
+store 4
+txn Sender
+global CreatorAddress
+==
+assert
+txna ApplicationArgs 2
+btoi
+load 4
+<=
+bnz label15
+label18:
+txna ApplicationArgs 1
+btoi
+global CurrentApplicationAddress
+balance
+intc 6 // 150000
+-
+bytec_0 // "fees"
+app_global_get
+-
+<=
+bnz label16
+label17:
+intc_0 // 1
+return
+label16:
+itxn_begin
+intc_0 // 1
+itxn_field TypeEnum
+txna ApplicationArgs 1
+btoi
+itxn_field Amount
+txn Sender
+itxn_field Receiver
+itxn_submit
+b label17
+label15:
+itxn_begin
+intc_3 // 4
+itxn_field TypeEnum
+txna ApplicationArgs 2
+btoi
+itxn_field AssetAmount
+txn Sender
+itxn_field AssetReceiver
+bytec_2 // "asset"
+app_global_get
+itxn_field XferAsset
+itxn_submit
+b label18
+label11:
+global CurrentApplicationAddress
+bytec_2 // "asset"
+app_global_get
+asset_holding_get AssetBalance
+store 1
+store 0
+bytec_1 // "asset_in"
+app_global_get
+intc_1 // 1000
+*
+intc_1 // 1000
+bytec 5 // "percentage"
+app_global_get
++
+/
+bytec_1 // "asset_in"
+app_global_get
+!=
+txn GroupIndex
+intc_0 // 1
+-
+gtxns TypeEnum
+intc_0 // 1
+==
+&&
+txn GroupIndex
+intc_0 // 1
+-
+gtxns Amount
+load 0
+bytec 4 // "algo_out"
+app_global_get
+mulw
+intc_1 // 1000
+bytec 5 // "percentage"
+app_global_get
++
+intc 4 // 2
+exp
+uncover 2
+dig 1
+*
+cover 2
+mulw
+cover 2
++
+swap
+bytec_1 // "asset_in"
+app_global_get
+intc_1 // 1000
+intc 4 // 2
+exp
+mulw
+bytec_3 // "asset_divisor"
+app_global_get
+uncover 2
+dig 1
+*
+cover 2
+mulw
+cover 2
++
+swap
+divmodw
+pop
+pop
+swap
+!
+assert
+>=
+&&
+txn GroupIndex
+intc_0 // 1
+-
+gtxns Receiver
+global CurrentApplicationAddress
+==
+&&
+bytec 6 // "mode"
+app_global_get
+intc_0 // 1
+==
+bytec 6 // "mode"
+app_global_get
+pushint 3
+==
+||
+&&
+assert
+itxn_begin
+intc_3 // 4
+itxn_field TypeEnum
+load 0
+bytec_3 // "asset_divisor"
+app_global_get
+/
+itxn_field AssetAmount
+txn Sender
+itxn_field AssetReceiver
+bytec_2 // "asset"
+app_global_get
+itxn_field XferAsset
+intc_2 // 0
+itxn_field Fee
+itxn_submit
+bytec_1 // "asset_in"
+bytec_1 // "asset_in"
+app_global_get
+intc_1 // 1000
+*
+intc_1 // 1000
+bytec 5 // "percentage"
+app_global_get
++
+/
+app_global_put
+bytec_0 // "fees"
+bytec_0 // "fees"
+app_global_get
+load 0
+bytec 4 // "algo_out"
+app_global_get
+mulw
+intc_1 // 1000
+bytec 5 // "percentage"
+app_global_get
++
+intc 4 // 2
+exp
+uncover 2
+dig 1
+*
+cover 2
+mulw
+cover 2
++
+swap
+bytec_1 // "asset_in"
+app_global_get
+intc_1 // 1000
+intc 4 // 2
+exp
+mulw
+bytec_3 // "asset_divisor"
+app_global_get
+uncover 2
+dig 1
+*
+cover 2
+mulw
+cover 2
++
+swap
+divmodw
+pop
+pop
+swap
+!
+assert
+intc 5 // 5
+*
+intc_1 // 1000
+/
++
+app_global_put
+bytec_3 // "asset_divisor"
+bytec_3 // "asset_divisor"
+app_global_get
+intc_0 // 1
+-
+app_global_put
+intc_0 // 1
+return
+label10:
+bytec_1 // "asset_in"
+app_global_get
+intc_1 // 1000
+bytec 5 // "percentage"
+app_global_get
++
+*
+intc_1 // 1000
+/
+bytec_1 // "asset_in"
+app_global_get
+!=
+txn GroupIndex
+intc_0 // 1
+-
+gtxns TypeEnum
+intc_3 // 4
+==
+&&
+txn GroupIndex
+intc_0 // 1
+-
+gtxns AssetAmount
+bytec_1 // "asset_in"
+app_global_get
+>=
+&&
+txn GroupIndex
+intc_0 // 1
+-
+gtxns XferAsset
+bytec_2 // "asset"
+app_global_get
+==
+&&
+txn GroupIndex
+intc_0 // 1
+-
+gtxns AssetReceiver
+global CurrentApplicationAddress
+==
+&&
+global CurrentApplicationAddress
+balance
+bytec 4 // "algo_out"
+app_global_get
+intc 6 // 150000
++
+bytec_0 // "fees"
+app_global_get
+bytec 4 // "algo_out"
+app_global_get
+intc 5 // 5
+*
+intc_1 // 1000
+/
++
++
+>=
+&&
+bytec 6 // "mode"
+app_global_get
+intc_0 // 1
+==
+bytec 6 // "mode"
+app_global_get
+intc 4 // 2
+==
+||
+&&
+assert
+itxn_begin
+intc_0 // 1
+itxn_field TypeEnum
+bytec 4 // "algo_out"
+app_global_get
+itxn_field Amount
+txn Sender
+itxn_field Receiver
+intc_2 // 0
+itxn_field Fee
+itxn_submit
+bytec_1 // "asset_in"
+bytec_1 // "asset_in"
+app_global_get
+intc_1 // 1000
+bytec 5 // "percentage"
+app_global_get
++
+*
+intc_1 // 1000
+/
+app_global_put
+bytec_0 // "fees"
+bytec_0 // "fees"
+app_global_get
+bytec 4 // "algo_out"
+app_global_get
+intc 5 // 5
+*
+intc_1 // 1000
+/
++
+app_global_put
+bytec_3 // "asset_divisor"
+bytec_3 // "asset_divisor"
+app_global_get
+intc_0 // 1
++
+app_global_put
+intc_0 // 1
+return
+label9:
+txn Sender
+global CreatorAddress
+==
+bytec_0 // "fees"
+app_global_get
+intc_2 // 0
+==
+&&
+txna ApplicationArgs 1
+btoi
+intc 7 // 100000
+>=
+&&
+txna ApplicationArgs 2
+btoi
+intc_1 // 1000
+>=
+&&
+global CurrentApplicationAddress
+balance
+intc 6 // 150000
+>
+&&
+assert
+itxn_begin
+intc_3 // 4
+itxn_field TypeEnum
+bytec_2 // "asset"
+app_global_get
+itxn_field XferAsset
+intc_2 // 0
+itxn_field AssetAmount
+global CurrentApplicationAddress
+itxn_field AssetReceiver
+itxn_next
+intc_0 // 1
+itxn_field TypeEnum
+intc_2 // 0
+itxn_field Amount
+pushbytes 0x24e2437811ce82ae5ee7b5bc20b78fe29fbd840e279982533925fcfeeb17a6b6 // addr ETREG6ARZ2BK4XXHWW6CBN4P4KP33BAOE6MYEUZZEX6P52YXU23KJRXVNU
+itxn_field Receiver
+global CurrentApplicationID
+itob
+itxn_field Note
+itxn_submit
+bytec 4 // "algo_out"
+txna ApplicationArgs 1
+btoi
+app_global_put
+bytec_1 // "asset_in"
+txna ApplicationArgs 2
+btoi
+app_global_put
+bytec 5 // "percentage"
+txna ApplicationArgs 3
+btoi
+app_global_put
+bytec_3 // "asset_divisor"
+txna ApplicationArgs 4
+btoi
+app_global_put
+bytec 6 // "mode"
+txna ApplicationArgs 5
+btoi
+app_global_put
+bytec_0 // "fees"
+intc_0 // 1
+app_global_put
+intc_0 // 1
+return
+label1:
+txn NumAssets
+intc_0 // 1
+==
+assert
+bytec_2 // "asset"
+txna Assets 0
+app_global_put
+intc_0 // 1
+return

@@ -108,6 +108,7 @@ from ._action_guards import (  # noqa: E402,F401
     _oncompletion_eq_const_value,
     approval_exit_guarded_for_action,
     approval_exit_unguarded_for_action,
+    sender_creator_guard_covers_action,
     sender_creator_guard_dominates,
 )
 from ._itxn_taint import (  # noqa: E402,F401

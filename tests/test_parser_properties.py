@@ -45,10 +45,21 @@ def _byte_spellings(raw: bytes) -> list:
     out = [
         f"0x{raw.hex()}",
         f"base64({b64})", f"b64({b64})",
-        f"base64 {b64}", f"b64 {b64}",
         f"base32({b32})", f"b32({b32})",
         f"base32 {b32}", f"b32 {b32}",
     ]
+    # The SPACE-separated base64 form only when the payload does not START with
+    # `//`. The base64 alphabet includes `/`, so a payload can open with the
+    # comment marker at a token boundary (`byte base64 //8=`) — and whether the
+    # assembler reads that as payload or as a comment is a question this suite
+    # cannot answer offline. algod is the reference implementation, so
+    # `tests/assembler_differential.py` owns it; asserting either reading here
+    # would be guessing, and guessing at decode semantics is what produced the
+    # constant bugs that differential was written to catch. (A payload that
+    # merely CONTAINS `//` mid-token is not ambiguous and IS covered — it was a
+    # real truncation bug, fixed in `graph._strip_inline_comment`.)
+    if not b64.startswith("//"):
+        out += [f"base64 {b64}", f"b64 {b64}"]
     # The quoted form only when the bytes are printable ASCII with no escaping
     # subtleties — otherwise the spelling is not equivalent.
     if raw and all(0x20 <= c < 0x7F and c not in b'"\\' for c in raw):

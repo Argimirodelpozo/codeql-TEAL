@@ -1,0 +1,492 @@
+#pragma version 3
+intcblock 0 5 4 2 1
+bytecblock 0x70726f766964655f6c6f616e 0x636c61696d5f6c6f616e 0x70726f766964655f636f6c6c61746572616c 0x7061796261636b 0x636c61696d5f6261636b5f6c6f616e 0x7472616e736665725f636f6c6c61746572616c 0x657874656e645f646561646c696e65 0x69735f616374697665 0x69735f6c6f616e5f636c61696d6564 0x6c656e646572 0x6c6f616e5f646561646c696e65 0x69735f70616964 0x69735f6c6f616e5f636c61696d65645f6261636b 0x61737365745f6964 0x626f72726f776572 0x657363726f775f636f6e7472616374 0x6c6f616e5f616d6f756e74 0x69735f636f6c6c61746572616c5f7265717569726564 0x69735f636f6c6c61746572616c5f6465706f7369746564 0x61646d696e 0x6f776e6572
+txn ApplicationID
+intc_0 // 0
+==
+bnz label1
+txn OnCompletion
+intc_1 // 5
+==
+bnz label2
+txn OnCompletion
+intc_2 // 4
+==
+bnz label3
+txna ApplicationArgs 0
+bytec_0 // "provide_loan"
+==
+bnz label4
+txna ApplicationArgs 0
+bytec_1 // "claim_loan"
+==
+bnz label5
+txna ApplicationArgs 0
+bytec_2 // "provide_collateral"
+==
+bnz label6
+txna ApplicationArgs 0
+bytec_3 // "payback"
+==
+bnz label7
+txna ApplicationArgs 0
+bytec 4 // "claim_back_loan"
+==
+bnz label8
+txna ApplicationArgs 0
+bytec 5 // "transfer_collateral"
+==
+bnz label9
+txna ApplicationArgs 0
+bytec 6 // "extend_deadline"
+==
+bnz label10
+err
+label10:
+global GroupSize
+intc_3 // 2
+>=
+assert
+bytec 7 // "is_active"
+app_global_get
+intc 4 // 1
+==
+assert
+bytec 8 // "is_loan_claimed"
+app_global_get
+intc 4 // 1
+==
+assert
+txn Sender
+bytec 9 // "lender"
+app_global_get
+==
+assert
+txna ApplicationArgs 1
+btoi
+bytec 10 // "loan_deadline"
+app_global_get
+>
+assert
+bytec 10 // "loan_deadline"
+txna ApplicationArgs 1
+btoi
+app_global_put
+intc 4 // 1
+return
+label9:
+global GroupSize
+intc_3 // 2
+>=
+assert
+bytec 7 // "is_active"
+app_global_get
+intc 4 // 1
+==
+assert
+bytec 11 // "is_paid"
+app_global_get
+intc 4 // 1
+==
+assert
+bytec 12 // "is_loan_claimed_back"
+app_global_get
+intc_0 // 0
+==
+assert
+bytec 9 // "lender"
+app_global_get
+txn Sender
+==
+bytec 13 // "asset_id"
+app_global_get
+global GroupSize
+intc 4 // 1
+-
+gtxns XferAsset
+!=
+bytec 13 // "asset_id"
+app_global_get
+global GroupSize
+intc_3 // 2
+-
+gtxns XferAsset
+!=
+||
+&&
+bytec 10 // "loan_deadline"
+app_global_get
+global LatestTimestamp
+<
+&&
+bytec 8 // "is_loan_claimed"
+app_global_get
+intc 4 // 1
+==
+&&
+bytec 11 // "is_paid"
+app_global_get
+intc_0 // 0
+==
+&&
+bytec 14 // "borrower"
+app_global_get
+txn Sender
+==
+bytec 8 // "is_loan_claimed"
+app_global_get
+intc 4 // 1
+==
+&&
+bytec 11 // "is_paid"
+app_global_get
+intc 4 // 1
+==
+&&
+bytec 13 // "asset_id"
+app_global_get
+global GroupSize
+intc 4 // 1
+-
+gtxns XferAsset
+!=
+bytec 13 // "asset_id"
+app_global_get
+global GroupSize
+intc_3 // 2
+-
+gtxns XferAsset
+!=
+||
+&&
+||
+assert
+intc 4 // 1
+return
+label8:
+global GroupSize
+intc_3 // 2
+>=
+assert
+bytec 7 // "is_active"
+app_global_get
+intc 4 // 1
+==
+assert
+bytec 11 // "is_paid"
+app_global_get
+intc 4 // 1
+==
+assert
+bytec 12 // "is_loan_claimed_back"
+app_global_get
+intc_0 // 0
+==
+assert
+bytec 15 // "escrow_contract"
+app_global_get
+global GroupSize
+intc 4 // 1
+-
+gtxns Sender
+==
+assert
+bytec 9 // "lender"
+app_global_get
+global GroupSize
+intc 4 // 1
+-
+gtxns AssetReceiver
+==
+assert
+bytec 16 // "loan_amount"
+app_global_get
+global GroupSize
+intc 4 // 1
+-
+gtxns AssetAmount
+==
+assert
+bytec 13 // "asset_id"
+app_global_get
+global GroupSize
+intc 4 // 1
+-
+gtxns XferAsset
+==
+assert
+bytec 12 // "is_loan_claimed_back"
+intc 4 // 1
+app_global_put
+intc 4 // 1
+return
+label7:
+global GroupSize
+intc_3 // 2
+>=
+assert
+bytec 7 // "is_active"
+app_global_get
+intc 4 // 1
+==
+assert
+bytec 8 // "is_loan_claimed"
+app_global_get
+intc 4 // 1
+==
+assert
+bytec 11 // "is_paid"
+app_global_get
+intc_0 // 0
+==
+assert
+bytec 10 // "loan_deadline"
+app_global_get
+global LatestTimestamp
+>=
+assert
+global GroupSize
+intc_3 // 2
+-
+gtxns Sender
+bytec 14 // "borrower"
+app_global_get
+==
+assert
+global GroupSize
+intc_3 // 2
+-
+gtxns AssetAmount
+bytec 16 // "loan_amount"
+app_global_get
+>=
+assert
+global GroupSize
+intc_3 // 2
+-
+gtxns XferAsset
+bytec 13 // "asset_id"
+app_global_get
+==
+assert
+global GroupSize
+intc_3 // 2
+-
+gtxns AssetReceiver
+bytec 15 // "escrow_contract"
+app_global_get
+==
+assert
+bytec 11 // "is_paid"
+intc 4 // 1
+app_global_put
+intc 4 // 1
+return
+label6:
+global GroupSize
+intc_3 // 2
+>=
+assert
+bytec 7 // "is_active"
+app_global_get
+intc 4 // 1
+==
+assert
+bytec 17 // "is_collateral_required"
+app_global_get
+intc 4 // 1
+==
+assert
+bytec 18 // "is_collateral_deposited"
+app_global_get
+intc_0 // 0
+==
+assert
+global GroupSize
+intc_3 // 2
+-
+gtxns AssetAmount
+intc_0 // 0
+>
+assert
+global GroupSize
+intc_3 // 2
+-
+gtxns AssetReceiver
+bytec 15 // "escrow_contract"
+app_global_get
+==
+assert
+bytec 18 // "is_collateral_deposited"
+intc 4 // 1
+app_global_put
+intc 4 // 1
+return
+label5:
+global GroupSize
+intc_3 // 2
+>=
+assert
+bytec 7 // "is_active"
+app_global_get
+intc 4 // 1
+==
+assert
+bytec 8 // "is_loan_claimed"
+app_global_get
+intc_0 // 0
+==
+assert
+bytec 17 // "is_collateral_required"
+app_global_get
+intc_0 // 0
+==
+bytec 17 // "is_collateral_required"
+app_global_get
+intc 4 // 1
+==
+bytec 18 // "is_collateral_deposited"
+app_global_get
+intc 4 // 1
+==
+&&
+||
+assert
+bytec 15 // "escrow_contract"
+app_global_get
+global GroupSize
+intc 4 // 1
+-
+gtxns Sender
+==
+assert
+bytec 14 // "borrower"
+app_global_get
+global GroupSize
+intc 4 // 1
+-
+gtxns AssetReceiver
+==
+assert
+bytec 16 // "loan_amount"
+app_global_get
+global GroupSize
+intc 4 // 1
+-
+gtxns AssetAmount
+==
+assert
+bytec 13 // "asset_id"
+app_global_get
+global GroupSize
+intc 4 // 1
+-
+gtxns XferAsset
+==
+assert
+bytec 8 // "is_loan_claimed"
+intc 4 // 1
+app_global_put
+intc 4 // 1
+return
+label4:
+global GroupSize
+intc_3 // 2
+>=
+assert
+bytec 13 // "asset_id"
+app_global_get
+global GroupSize
+intc_3 // 2
+-
+gtxns XferAsset
+==
+assert
+bytec 16 // "loan_amount"
+app_global_get
+global GroupSize
+intc_3 // 2
+-
+gtxns AssetAmount
+==
+assert
+bytec 9 // "lender"
+global GroupSize
+intc_3 // 2
+-
+gtxns Sender
+app_global_put
+bytec 15 // "escrow_contract"
+global GroupSize
+intc_3 // 2
+-
+gtxns AssetReceiver
+app_global_put
+bytec 17 // "is_collateral_required"
+txna ApplicationArgs 1
+btoi
+app_global_put
+bytec 7 // "is_active"
+intc 4 // 1
+app_global_put
+intc 4 // 1
+return
+label3:
+bytec 19 // "admin"
+app_global_get
+txna Accounts 0
+==
+assert
+intc 4 // 1
+return
+label2:
+bytec 19 // "admin"
+app_global_get
+txna Accounts 0
+==
+return
+label1:
+txn NumAssets
+intc 4 // 1
+==
+assert
+bytec 20 // "owner"
+txna Accounts 0
+app_global_put
+bytec 19 // "admin"
+txna Accounts 1
+app_global_put
+bytec 14 // "borrower"
+txna Accounts 2
+app_global_put
+bytec 13 // "asset_id"
+txna Assets 0
+app_global_put
+bytec 16 // "loan_amount"
+txna ApplicationArgs 0
+btoi
+app_global_put
+bytec 10 // "loan_deadline"
+txna ApplicationArgs 1
+btoi
+app_global_put
+bytec 7 // "is_active"
+intc_0 // 0
+app_global_put
+bytec 17 // "is_collateral_required"
+intc_0 // 0
+app_global_put
+bytec 18 // "is_collateral_deposited"
+intc_0 // 0
+app_global_put
+bytec 8 // "is_loan_claimed"
+intc_0 // 0
+app_global_put
+bytec 11 // "is_paid"
+intc_0 // 0
+app_global_put
+bytec 12 // "is_loan_claimed_back"
+intc_0 // 0
+app_global_put
+intc 4 // 1
+return

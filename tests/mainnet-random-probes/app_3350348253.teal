@@ -1,0 +1,4762 @@
+#pragma version 11
+intcblock 0 1 2 6 10000 1 1
+bytecblock 0x7374617465 0x6164647262 0x425f6e5f6d6963726f 0x41 0x616464726c 0x61646d696e 0x66696e697465 0x0000000000000000 0x465f636c6f73655f6d6963726f 0x4c5f696e69745f6d6963726f 0x4c5f745f6d6963726f 0x6e 0x5443 0x465f6c69715f6d6963726f 0x425f6d696e5f6d6963726f 0x151f7c75 0x425f61646a5f6d6963726f 0x435f6d6963726f 0x54 0x635f69 0x745f616374697665 0x745f6c617374 0x4e5f6e65745f6d6963726f 0x00 0x695f6270 0x665f635f6270 0x4f5f6270 0x465f6d6963726f 0xd22e11fc 0x465f6f7269675f6d6963726f 0x745f6c6971 0x745f706179 0xa172799c 0x4150503a20444546492d5032502046554c4c20434f4c4c4154454152414c20524546554e442e20 0x4150503a20444546492d5032502046554c4c20434f4c4c4154454152414c204c49515549444154494f4e2e20 0x665f6f5f6270 0x665f6270 0x665f6c5f6270 0x665f615f6270 0x745f636c6f736564 0x745f696e6974 0x63725f6270 0x6c74765f6270 0x765f6c5f6d6963726f5f75736463 0x765f635f6d6963726f5f75736463 0xa908206c 0xbd05765f 0x0b93f07b 0x9eeef952 0x104d1353 0xa1079961 0x301c462f 0x22e3e959 0x5ee4befa 0x5b251279 0x068101 0x0000000000000001 0x0000000000000000000000000000000000000000000000000000000000000000 0x00000000000000000000000000000000 0x4150503a20444546492d5032502046554c4c20434f4c4c4154454152414c2041424f52542e20
+txn ApplicationID
+bnz label1
+bytec 16 // "B_adj_micro"
+intc_0 // 0
+app_global_put
+bytec_2 // "B_n_micro"
+intc_0 // 0
+app_global_put
+bytec 35 // "f_o_bp"
+pushint 100
+app_global_put
+bytec 36 // "f_bp"
+pushint 100
+app_global_put
+bytec 24 // "i_bp"
+intc_0 // 0
+app_global_put
+bytec 25 // "f_c_bp"
+pushint 200
+app_global_put
+bytec 37 // "f_l_bp"
+pushint 200
+app_global_put
+bytec 38 // "f_a_bp"
+pushint 100
+app_global_put
+bytec 18 // "T"
+intc_0 // 0
+app_global_put
+bytec 19 // "c_i"
+intc_0 // 0
+app_global_put
+bytec 12 // "TC"
+intc_0 // 0
+app_global_put
+bytec 26 // "O_bp"
+intc_0 // 0
+app_global_put
+bytec 29 // "F_orig_micro"
+intc_0 // 0
+app_global_put
+bytec 13 // "F_liq_micro"
+intc_0 // 0
+app_global_put
+bytec 17 // "C_micro"
+intc_0 // 0
+app_global_put
+bytec 14 // "B_min_micro"
+intc_0 // 0
+app_global_put
+bytec 27 // "F_micro"
+intc_0 // 0
+app_global_put
+bytec 22 // "N_net_micro"
+intc_0 // 0
+app_global_put
+bytec 8 // "F_close_micro"
+intc_0 // 0
+app_global_put
+bytec_0 // "state"
+intc_0 // 0
+app_global_put
+bytec 6 // "finite"
+intc_0 // 0
+app_global_put
+bytec_3 // "A"
+intc_0 // 0
+app_global_put
+bytec 9 // "L_init_micro"
+intc_0 // 0
+app_global_put
+bytec 10 // "L_t_micro"
+intc_0 // 0
+app_global_put
+bytec 20 // "t_active"
+intc_0 // 0
+app_global_put
+bytec 21 // "t_last"
+intc_0 // 0
+app_global_put
+bytec 39 // "t_closed"
+intc_0 // 0
+app_global_put
+bytec 40 // "t_init"
+intc_0 // 0
+app_global_put
+bytec 30 // "t_liq"
+intc_0 // 0
+app_global_put
+bytec 31 // "t_pay"
+intc_0 // 0
+app_global_put
+bytec 11 // "n"
+intc_0 // 0
+app_global_put
+bytec 41 // "cr_bp"
+intc_0 // 0
+app_global_put
+bytec 42 // "ltv_bp"
+intc_0 // 0
+app_global_put
+bytec 43 // "v_l_micro_usdc"
+intc_0 // 0
+app_global_put
+bytec 44 // "v_c_micro_usdc"
+intc_0 // 0
+app_global_put
+bytec_1 // "addrb"
+global ZeroAddress
+app_global_put
+bytec 4 // "addrl"
+global ZeroAddress
+app_global_put
+bytec 5 // "admin"
+global ZeroAddress
+app_global_put
+label1:
+txn NumAppArgs
+bz label2
+txn OnCompletion
+!
+assert
+txn ApplicationID
+bz label3
+bytec 45 // 0xa908206c
+bytec 46 // 0xbd05765f
+bytec 47 // 0x0b93f07b
+bytec 48 // 0x9eeef952
+bytec 49 // 0x104d1353
+bytec 50 // 0xa1079961
+bytec 51 // 0x301c462f
+bytec 32 // 0xa172799c
+bytec 52 // 0x22e3e959
+bytec 53 // 0x5ee4befa
+bytec 54 // 0x5b251279
+bytec 28 // 0xd22e11fc
+txna ApplicationArgs 0
+match label4 label5 label6 label7 label8 label9 label10 label11 label12 label13 label14 label15
+err
+label3:
+pushbytes 0x4c5c61ba // 0x4c5c61ba
+txna ApplicationArgs 0
+match label16
+err
+label2:
+pushints 4 5
+txn OnCompletion
+match label17 label18
+err
+label18:
+txn ApplicationID
+assert
+txn Sender
+intc_0 // 0
+bytec 5 // "admin"
+app_global_get_ex
+assert
+==
+assert
+intc 5 // 1
+assert
+intc_1 // 1
+return
+label17:
+txn ApplicationID
+assert
+txn Sender
+intc_0 // 0
+bytec 5 // "admin"
+app_global_get_ex
+assert
+==
+assert
+intc 6 // 1
+assert
+intc_1 // 1
+return
+label24:
+proto 2 0
+frame_dig -2
+pushint 10
++
+label22:
+frame_dig 0
+global OpcodeBudget
+>
+bz label19
+itxn_begin
+intc_3 // 6
+itxn_field TypeEnum
+pushint 5
+itxn_field OnCompletion
+bytec 55 // 0x068101
+itxn_field ApprovalProgram
+bytec 55 // 0x068101
+itxn_field ClearStateProgram
+frame_dig -1
+switch label20 label21
+label23:
+itxn_submit
+b label22
+label21:
+global MinTxnFee
+itxn_field Fee
+b label23
+label20:
+intc_0 // 0
+itxn_field Fee
+b label23
+label19:
+retsub
+label4:
+intc_0 // 0
+pushbytes 0x // ""
+dupn 8
+txna ApplicationArgs 1
+dupn 2
+len
+pushint 72
+==
+assert
+txna ApplicationArgs 2
+dup
+len
+pushint 8
+==
+assert
+btoi
+pushbytes 0x // ""
+cover 2
+intc_0 // 0
+bytec_0 // "state"
+app_global_get_ex
+assert
+!
+assert
+intc_0 // 0
+callsub label24
+callsub label25
+dup
+cover 2
+dig 1
+pushint 40
+extract_uint64
+bytec 19 // "c_i"
+swap
+app_global_put
+dig 1
+pushint 32
+extract_uint64
+dup
+cover 3
+bytec 18 // "T"
+swap
+app_global_put
+dig 1
+pushint 24
+extract_uint64
+bytec 24 // "i_bp"
+swap
+app_global_put
+swap
+pushint 16
+extract_uint64
+bytec 26 // "O_bp"
+swap
+app_global_put
+pushint 16
+extract_uint64
+intc_0 // 0
+bytec 19 // "c_i"
+app_global_get_ex
+assert
+pushint 60
+>=
+assert
+intc_0 // 0
+bytec 18 // "T"
+app_global_get_ex
+assert
+pushint 1800
+>=
+bz label26
+dig 1
+pushint 2592000
+<=
+bz label26
+intc_1 // 1
+label40:
+assert
+intc_0 // 0
+bytec 18 // "T"
+app_global_get_ex
+assert
+intc_0 // 0
+bytec 19 // "c_i"
+app_global_get_ex
+assert
+/
+bytec 12 // "TC"
+dig 1
+app_global_put
+assert
+intc_0 // 0
+bytec 24 // "i_bp"
+app_global_get_ex
+assert
+dup
+pushint 100
+>=
+assert
+pushint 1000
+<=
+assert
+intc_0 // 0
+bytec 26 // "O_bp"
+app_global_get_ex
+assert
+pushint 1000
+>=
+assert
+dupn 2
+intc 4 // 10000
+>=
+assert
+intc_0 // 0
+bytec 35 // "f_o_bp"
+app_global_get_ex
+assert
+dig 1
+mulw
+intc_0 // 0
+intc 4 // 10000
+divmodw
+popn 2
+swap
+!
+assert
+dup
+assert
+bytec 29 // "F_orig_micro"
+dig 1
+app_global_put
+-
+bytec 16 // "B_adj_micro"
+dig 1
+app_global_put
+dig 5
+pushint 64
+extract_uint64
+dig 1
+==
+assert
+intc_0 // 0
+bytec 24 // "i_bp"
+app_global_get_ex
+assert
+mulw
+intc_0 // 0
+intc 4 // 10000
+divmodw
+popn 2
+swap
+!
+assert
+dup
+assert
+bytec 17 // "C_micro"
+dig 1
+app_global_put
+intc_0 // 0
+bytec 36 // "f_bp"
+app_global_get_ex
+assert
+mulw
+intc_0 // 0
+intc 4 // 10000
+divmodw
+popn 2
+swap
+!
+assert
+dup
+assert
+bytec 27 // "F_micro"
+dig 1
+app_global_put
+intc_0 // 0
+bytec 17 // "C_micro"
+app_global_get_ex
+assert
+swap
+-
+bytec 22 // "N_net_micro"
+swap
+app_global_put
+intc_0 // 0
+bytec 17 // "C_micro"
+app_global_get_ex
+assert
+intc_0 // 0
+bytec 12 // "TC"
+app_global_get_ex
+assert
+mulw
+swap
+!
+assert
+intc_0 // 0
+bytec 16 // "B_adj_micro"
+app_global_get_ex
+assert
+dup
+dig 2
+>
+assert
+swap
+-
+dup
+callsub label27
+bytec 8 // "F_close_micro"
+swap
+app_global_put
+dup
+callsub label28
+bytec 13 // "F_liq_micro"
+dig 1
+app_global_put
+intc_0 // 0
+bytec 8 // "F_close_micro"
+app_global_get_ex
+assert
++
+dup
+bury 8
+swap
+dig 1
+>
+assert
+intc_0 // 0
+bytec 26 // "O_bp"
+app_global_get_ex
+assert
+intc_0 // 0
+bytec 16 // "B_adj_micro"
+app_global_get_ex
+assert
+mulw
+intc_0 // 0
+intc 4 // 10000
+divmodw
+popn 2
+dup
+cover 2
+bury 16
+!
+assert
+dup
+assert
+>
+bz label29
+dig 5
+label39:
+bytec 14 // "B_min_micro"
+dig 1
+app_global_put
+intc_0 // 0
+bytec 8 // "F_close_micro"
+app_global_get_ex
+assert
+intc_0 // 0
+bytec 13 // "F_liq_micro"
+app_global_get_ex
+assert
++
+>
+assert
+intc_0 // 0
+bytec 16 // "B_adj_micro"
+app_global_get_ex
+assert
+bytec_2 // "B_n_micro"
+swap
+app_global_put
+dig 2
+dup
+intc_0 // 0
+extract_uint64
+dup
+cover 2
+bury 13
+pushint 192
+getbit
+bytec 23 // 0x00
+intc_0 // 0
+uncover 2
+setbit
+intc_0 // 0
+getbit
+bury 10
+intc_1 // 1
++
+pushint 44100
+*
+bury 10
+global MinBalance
+dup
+pushint 3
+*
++
+pushint 1147500
++
+bury 7
+dig 4
+dup
+intc_0 // 0
+extract_uint64
+dup
+cover 2
+bury 16
+pushint 8
+extract_uint64
+bury 13
+bnz label30
+dig 8
+!
+assert
+intc_3 // 6
+bury 8
+label38:
+pushint 10
+dig 8
+expw
+swap
+!
+assert
+dig 12
+dup
+uncover 2
+>
+assert
+bytec_3 // "A"
+dig 15
+app_global_put
+bytec 9 // "L_init_micro"
+swap
+app_global_put
+dig 8
+bnz label31
+dig 13
+bnz label32
+label31:
+dig 10
+intc_1 // 1
+-
+bury 11
+label32:
+global AssetOptInMinBalance
+dig 11
+*
+dig 10
++
+dig 7
++
+intc_0 // 0
+gtxns Amount
+<=
+assert
+bytec_1 // "addrb"
+txn Sender
+app_global_put
+dig 4
+pushint 56
+extract_uint64
+bytec 6 // "finite"
+dig 1
+app_global_put
+intc_0 // 0
+bytec_3 // "A"
+app_global_get_ex
+assert
+!=
+assert
+dig 13
+bnz label33
+bytec 56 // 0x0000000000000001
+intc_3 // 6
+bury 9
+label37:
+intc_0 // 0
+bytec_3 // "A"
+app_global_get_ex
+assert
+itob
+intc_0 // 0
+bytec 9 // "L_init_micro"
+app_global_get_ex
+assert
+itob
+dig 10
+itob
+uncover 2
+bytec 7 // 0x0000000000000000
+concat
+uncover 2
+concat
+bytec 7 // 0x0000000000000000
+concat
+swap
+concat
+bytec 57 // addr AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ
+concat
+swap
+concat
+bytec 58 // 0x00000000000000000000000000000000
+concat
+dup
+extract 0 8
+dup
+box_del
+pop
+swap
+box_put
+global CurrentApplicationID
+callsub label34
+pushbytes 0x444546492d50325020474c4f42414c2053544f5241474520464f523a20 // "DEFI-P2P GLOBAL STORAGE FOR: "
+swap
+concat
+intc_0 // 0
+bytec 5 // "admin"
+app_global_get_ex
+swap
+bury 17
+assert
+dig 14
+bz label35
+global CurrentApplicationAddress
+itxn_begin
+swap
+itxn_field Note
+dig 7
+itxn_field Amount
+dig 15
+itxn_field Receiver
+intc_1 // 1
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_next
+itxn_field AssetReceiver
+intc_0 // 0
+itxn_field AssetAmount
+dig 3
+itxn_field XferAsset
+pushint 4
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+label36:
+intc_0 // 0
+bytec 16 // "B_adj_micro"
+app_global_get_ex
+assert
+itob
+intc_0 // 0
+bytec 17 // "C_micro"
+app_global_get_ex
+assert
+itob
+intc_0 // 0
+bytec 27 // "F_micro"
+app_global_get_ex
+assert
+itob
+intc_0 // 0
+bytec 8 // "F_close_micro"
+app_global_get_ex
+assert
+itob
+intc_0 // 0
+bytec 13 // "F_liq_micro"
+app_global_get_ex
+assert
+itob
+intc_0 // 0
+bytec 14 // "B_min_micro"
+app_global_get_ex
+assert
+itob
+intc_0 // 0
+bytec 12 // "TC"
+app_global_get_ex
+assert
+itob
+intc_0 // 0
+bytec 20 // "t_active"
+app_global_get_ex
+assert
+itob
+uncover 7
+uncover 7
+concat
+uncover 6
+concat
+uncover 5
+concat
+uncover 4
+concat
+uncover 3
+concat
+uncover 2
+concat
+swap
+concat
+bytec 15 // 0x151f7c75
+swap
+concat
+log
+intc_1 // 1
+return
+label35:
+itxn_begin
+itxn_field Note
+dig 6
+itxn_field Amount
+dig 14
+itxn_field Receiver
+intc_1 // 1
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+b label36
+label33:
+intc_0 // 0
+bytec_3 // "A"
+app_global_get_ex
+swap
+dup
+cover 2
+bury 6
+assert
+asset_params_get AssetDecimals
+swap
+bury 9
+assert
+bytec 7 // 0x0000000000000000
+b label37
+label30:
+dig 13
+asset_params_get AssetDecimals
+swap
+bury 9
+assert
+b label38
+label29:
+dig 12
+b label39
+label26:
+intc_0 // 0
+b label40
+label5:
+intc_0 // 0
+pushbytes 0x // ""
+txna ApplicationArgs 1
+dup
+len
+pushint 8
+==
+assert
+btoi
+intc_0 // 0
+callsub label24
+callsub label25
+pop
+txn NumAssets
+intc_0 // 0
+label43:
+dup
+dig 2
+<
+bz label41
+dup
+txnas Assets
+dup
+bury 4
+dup
+callsub label34
+bury 5
+bz label42
+pushbytes 0x4f505420494e544f20 // "OPT INTO "
+dig 4
+concat
+itxn_begin
+global CurrentApplicationAddress
+itxn_field AssetReceiver
+itxn_field Note
+intc_0 // 0
+itxn_field AssetAmount
+dig 2
+itxn_field XferAsset
+pushint 4
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+label42:
+dup
+intc_1 // 1
++
+bury 1
+b label43
+label41:
+intc_1 // 1
+return
+label6:
+intc_0 // 0
+dupn 2
+pushbytes 0x // ""
+dupn 5
+txna ApplicationArgs 1
+dupn 2
+intc_0 // 0
+extract_uint16
+dup
+cover 2
+pushint 96
+*
+intc_2 // 2
++
+swap
+len
+==
+assert
+txna ApplicationArgs 2
+dup
+len
+pushint 8
+==
+assert
+btoi
+intc_0 // 0
+callsub label24
+callsub label25
+pushint 8
+extract_uint64
+intc_2 // 2
+dig 1
++
+swap
+intc_2 // 2
+==
+intc_0 // 0
+swap
+bz label44
+dig 2
+pushint 8
+==
+bz label44
+pushint 8
+bury 1
+label44:
+intc_0 // 0
+bury 9
+label49:
+dig 8
+dig 3
+<
+bz label45
+dup2
++
+dig 9
+dup
+cover 2
++
+swap
+dig 5
+extract 2 0
+swap
+pushint 96
+*
+pushint 96
+extract3
+dup
+bury 15
+dup
+extract 8 8
+bury 14
+dup
+pushint 8
+extract_uint64
+bury 8
+dup
+extract 0 8
+bury 13
+intc_0 // 0
+extract_uint64
+dup
+bury 7
+bnz label46
+gtxns Amount
+bury 10
+intc_0 // 0
+intc_1 // 1
+bury 9
+label52:
+intc_0 // 0
+bytec 6 // "finite"
+app_global_get_ex
+assert
+dig 1
+==
+dig 6
+dup
+cover 2
+uncover 3
+==
+assert
+intc_0 // 0
+bytec_3 // "A"
+app_global_get_ex
+assert
+uncover 2
+!=
+assert
+bz label47
+intc_0 // 0
+bytec 29 // "F_orig_micro"
+app_global_get_ex
+assert
+dig 10
+swap
+-
+dup
+bury 8
+intc_0 // 0
+bytec 16 // "B_adj_micro"
+app_global_get_ex
+assert
+==
+bz label48
+dig 6
+dig 6
+==
+bz label48
+intc_1 // 1
+label50:
+assert
+bytec_0 // "state"
+intc_1 // 1
+app_global_put
+bytec 40 // "t_init"
+global LatestTimestamp
+app_global_put
+dig 6
+bury 10
+label51:
+dig 9
+itob
+dig 13
+extract 32 8
+dig 9
+itob
+dig 13
+dig 15
+concat
+bytec 7 // 0x0000000000000000
+concat
+uncover 3
+concat
+uncover 2
+concat
+bytec 57 // addr AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ
+concat
+swap
+concat
+bytec 58 // 0x00000000000000000000000000000000
+concat
+dup
+extract 0 8
+dup
+box_del
+pop
+swap
+box_put
+dig 8
+intc_1 // 1
++
+bury 9
+b label49
+label48:
+intc_0 // 0
+b label50
+label47:
+dig 9
+dup
+intc 4 // 10000
+>
+assert
+dup
+dig 7
+==
+assert
+intc_0 // 0
+bytec 25 // "f_c_bp"
+app_global_get_ex
+assert
+mulw
+intc_0 // 0
+intc 4 // 10000
+divmodw
+popn 2
+swap
+!
+assert
+assert
+b label51
+label46:
+dup
+gtxns AssetAmount
+bury 11
+gtxns XferAsset
+intc_0 // 0
+bury 9
+b label52
+label45:
+intc_1 // 1
+return
+label7:
+intc_0 // 0
+dupn 3
+pushbytes 0x // ""
+dupn 4
+txna ApplicationArgs 1
+dupn 2
+intc_0 // 0
+extract_uint16
+dup
+cover 2
+pushint 16
+*
+intc_2 // 2
++
+swap
+len
+==
+assert
+txna ApplicationArgs 2
+dup
+len
+pushint 8
+==
+assert
+txna ApplicationArgs 3
+dup
+len
+pushint 8
+==
+assert
+btoi
+intc_0 // 0
+callsub label24
+btoi
+dup
+intc_1 // 1
+==
+bz label53
+callsub label25
+pop
+label67:
+intc_0 // 0
+bury 4
+intc_0 // 0
+bury 5
+intc_0 // 0
+bury 7
+label58:
+dig 6
+dig 2
+<
+bz label54
+dig 2
+extract 2 0
+dig 7
+pushint 16
+*
+pushint 16
+extract3
+dup
+bury 13
+intc_0 // 0
+extract_uint64
+dup
+itob
+box_get
+swap
+bury 11
+assert
+intc_0 // 0
+bytec_3 // "A"
+app_global_get_ex
+assert
+==
+bz label55
+dig 8
+pushint 16
+extract_uint64
+label61:
+dig 12
+dup
+extract 8 8
+bury 13
+pushint 8
+extract_uint64
+dup
+bury 8
+dig 10
+dup
+extract 32 8
+bury 13
+dup
+pushint 32
+extract_uint64
+swap
+pushint 80
+extract_uint64
+bury 11
+pushint 10
+swap
+exp
+cover 2
+mulw
+intc_0 // 0
+uncover 3
+divmodw
+popn 2
+swap
+!
+assert
+dig 7
+bnz label56
+bury 4
+label60:
+dig 7
+bnz label57
+dig 5
+label59:
+dig 9
+dup
+extract 0 8
+dig 1
+extract 8 8
+dig 2
+extract 16 8
+dig 3
+extract 24 8
+dig 4
+extract 40 8
+dig 5
+extract 48 8
+dig 6
+extract 56 8
+dig 7
+extract 64 8
+uncover 8
+extract 72 8
+uncover 9
+itob
+uncover 9
+uncover 9
+concat
+uncover 8
+concat
+uncover 7
+concat
+dig 16
+concat
+uncover 6
+concat
+uncover 5
+concat
+uncover 4
+concat
+uncover 3
+concat
+uncover 2
+concat
+swap
+concat
+dig 11
+concat
+dup
+extract 0 8
+dup
+box_del
+pop
+swap
+box_put
+dig 6
+intc_1 // 1
++
+bury 7
+b label58
+label57:
+dig 7
+b label59
+label56:
+dig 5
++
+bury 5
+b label60
+label55:
+dig 8
+pushint 24
+extract_uint64
+b label61
+label54:
+bytec 43 // "v_l_micro_usdc"
+dig 4
+dup
+cover 2
+app_global_put
+bytec 44 // "v_c_micro_usdc"
+dig 6
+app_global_put
+bz label62
+dig 3
+label64:
+dig 5
+dup
+intc 4 // 10000
+mulw
+intc_0 // 0
+uncover 4
+divmodw
+popn 2
+swap
+!
+assert
+bytec 41 // "cr_bp"
+swap
+app_global_put
+bnz label63
+intc_1 // 1
+bury 5
+label63:
+dig 3
+intc 4 // 10000
+mulw
+intc_0 // 0
+dig 7
+divmodw
+popn 2
+swap
+!
+assert
+bytec 42 // "ltv_bp"
+swap
+app_global_put
+intc_1 // 1
+return
+label62:
+intc_1 // 1
+b label64
+label53:
+dup
+intc_2 // 2
+==
+bz label65
+callsub label66
+b label67
+label65:
+dup
+pushint 3
+==
+bz label68
+callsub label69
+pop
+b label67
+label68:
+dup
+pushint 4
+==
+bz label70
+callsub label71
+b label67
+label70:
+dup
+pushint 5
+==
+bz label72
+callsub label73
+pop
+b label67
+label72:
+global GroupSize
+intc_1 // 1
+==
+assert
+txn Sender
+intc_0 // 0
+bytec 5 // "admin"
+app_global_get_ex
+assert
+==
+assert
+b label67
+label8:
+txna ApplicationArgs 1
+dup
+len
+pushint 8
+==
+assert
+btoi
+intc_0 // 0
+callsub label24
+txn Sender
+intc_0 // 0
+bytec_1 // "addrb"
+app_global_get_ex
+assert
+!=
+assert
+intc_0 // 0
+bytec_0 // "state"
+app_global_get_ex
+assert
+intc_1 // 1
+==
+assert
+callsub label71
+intc_0 // 0
+bytec_3 // "A"
+app_global_get_ex
+assert
+itob
+box_get
+assert
+dup
+extract 0 8
+dig 1
+extract 16 8
+dig 2
+extract 32 8
+intc_0 // 0
+bytec 9 // "L_init_micro"
+app_global_get_ex
+assert
+itob
+dig 4
+extract 72 8
+dig 5
+extract 80 8
+uncover 6
+extract 88 8
+uncover 6
+bytec 7 // 0x0000000000000000
+concat
+uncover 6
+concat
+bytec 7 // 0x0000000000000000
+concat
+uncover 5
+concat
+uncover 4
+concat
+pushbytes 0x000000000000000000000000000000000000000000000000 // 0x000000000000000000000000000000000000000000000000
+concat
+uncover 3
+concat
+uncover 2
+concat
+swap
+concat
+dup
+extract 0 8
+dup
+box_del
+pop
+swap
+box_put
+bytec 4 // "addrl"
+txn Sender
+app_global_put
+global LatestTimestamp
+bytec 20 // "t_active"
+dig 1
+app_global_put
+bytec 21 // "t_last"
+swap
+app_global_put
+bytec_0 // "state"
+intc_2 // 2
+app_global_put
+intc_0 // 0
+bytec 10 // "L_t_micro"
+app_global_get_ex
+assert
+itob
+intc_0 // 0
+bytec 20 // "t_active"
+app_global_get_ex
+assert
+itob
+intc_2 // 2
+itob
+intc_0 // 0
+bytec 4 // "addrl"
+app_global_get_ex
+assert
+uncover 3
+uncover 3
+concat
+uncover 2
+concat
+swap
+concat
+bytec 15 // 0x151f7c75
+swap
+concat
+log
+intc_1 // 1
+return
+label9:
+txna ApplicationArgs 1
+dup
+len
+pushint 8
+==
+assert
+btoi
+intc_0 // 0
+callsub label24
+callsub label74
+intc_0 // 0
+bytec_2 // "B_n_micro"
+app_global_get_ex
+assert
+intc_0 // 0
+bytec 14 // "B_min_micro"
+app_global_get_ex
+assert
+>
+assert
+intc_0 // 0
+bytec_0 // "state"
+app_global_get_ex
+assert
+intc_2 // 2
+==
+assert
+intc_0 // 0
+bytec 9 // "L_init_micro"
+app_global_get_ex
+assert
+intc_0 // 0
+bytec 10 // "L_t_micro"
+app_global_get_ex
+assert
+!=
+assert
+callsub label66
+global LatestTimestamp
+intc_0 // 0
+bytec 21 // "t_last"
+app_global_get_ex
+assert
+-
+intc_0 // 0
+bytec 19 // "c_i"
+app_global_get_ex
+assert
+/
+dupn 2
+assert
+intc_0 // 0
+bytec 22 // "N_net_micro"
+app_global_get_ex
+assert
+dig 1
+mulw
+swap
+!
+assert
+intc_0 // 0
+bytec 17 // "C_micro"
+app_global_get_ex
+assert
+dig 2
+mulw
+swap
+!
+assert
+dig 2
+callsub label34
+global CurrentApplicationID
+callsub label34
+swap
+pushbytes 0x444546492d50325020494e544552455354205041594d454e545320464f5220504552494f44532020444546492d50325020494e544552455354205041594d454e545320464f5220504552494f445320466f7220444546492d50325020494e544552455354205041594d454e545320464f5220504552494f445320 // "DEFI-P2P INTEREST PAYMENTS FOR PERIODS  DEFI-P2P INTEREST PAYMENTS FOR PERIODS For DEFI-P2P INTEREST PAYMENTS FOR PERIODS "
+concat
+swap
+concat
+itxn_begin
+intc_0 // 0
+bytec 6 // "finite"
+app_global_get_ex
+assert
+intc_0 // 0
+bytec 4 // "addrl"
+app_global_get_ex
+assert
+uncover 2
+itxn_field Note
+itxn_field AssetReceiver
+dig 2
+itxn_field AssetAmount
+dup
+itxn_field XferAsset
+pushint 4
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+itob
+box_get
+assert
+intc_0 // 0
+bytec_2 // "B_n_micro"
+app_global_get_ex
+assert
+uncover 2
+-
+dig 1
+pushint 56
+extract_uint64
+uncover 3
++
+dig 2
+extract 0 8
+dig 3
+extract 8 8
+dig 4
+extract 16 8
+dig 4
+itob
+dup
+cover 6
+cover 8
+dig 6
+extract 32 8
+dig 7
+extract 40 8
+dig 8
+extract 48 8
+uncover 6
+itob
+dup
+cover 9
+cover 11
+dig 9
+extract 64 8
+dig 10
+extract 72 8
+dig 11
+extract 80 8
+uncover 12
+extract 88 8
+uncover 9
+uncover 9
+concat
+uncover 8
+concat
+uncover 9
+concat
+uncover 7
+concat
+uncover 6
+concat
+uncover 5
+concat
+uncover 6
+concat
+uncover 4
+concat
+uncover 3
+concat
+uncover 2
+concat
+swap
+concat
+dup
+extract 0 8
+dup
+box_del
+pop
+swap
+box_put
+bytec_2 // "B_n_micro"
+swap
+app_global_put
+callsub label75
+callsub label76
+bz label77
+bytec_0 // "state"
+pushint 7
+app_global_put
+label79:
+dig 2
+itob
+intc_0 // 0
+bytec 21 // "t_last"
+app_global_get_ex
+assert
+itob
+dig 3
+uncover 2
+concat
+dig 2
+concat
+swap
+concat
+bytec 15 // 0x151f7c75
+swap
+concat
+log
+intc_1 // 1
+return
+label77:
+intc_0 // 0
+bytec_2 // "B_n_micro"
+app_global_get_ex
+assert
+intc_0 // 0
+bytec 14 // "B_min_micro"
+app_global_get_ex
+assert
+<
+bz label78
+bytec_0 // "state"
+pushint 4
+app_global_put
+b label79
+label78:
+bytec_0 // "state"
+intc_2 // 2
+app_global_put
+b label79
+label10:
+intc_0 // 0
+pushbytes 0x // ""
+dup
+txna ApplicationArgs 1
+dup
+len
+pushint 8
+==
+assert
+btoi
+intc_0 // 0
+callsub label24
+intc_0 // 0
+bytec 10 // "L_t_micro"
+app_global_get_ex
+assert
+intc_0 // 0
+bytec 9 // "L_init_micro"
+app_global_get_ex
+assert
+<
+assert
+callsub label74
+intc_0 // 0
+bytec_0 // "state"
+app_global_get_ex
+assert
+intc_2 // 2
+==
+bnz label80
+intc_0 // 0
+bytec_0 // "state"
+app_global_get_ex
+assert
+pushint 4
+==
+bz label81
+label80:
+intc_1 // 1
+label84:
+assert
+intc_0 // 0
+bytec 9 // "L_init_micro"
+app_global_get_ex
+assert
+intc_0 // 0
+bytec 10 // "L_t_micro"
+app_global_get_ex
+assert
+!=
+assert
+callsub label73
+intc_0 // 0
+bytec 38 // "f_a_bp"
+app_global_get_ex
+assert
+dig 1
+mulw
+intc_0 // 0
+intc 4 // 10000
+divmodw
+popn 2
+dup
+cover 2
+bury 4
+!
+assert
+dup
+assert
+-
+dup
+bury 3
+intc_0 // 0
+bytec_2 // "B_n_micro"
+app_global_get_ex
+assert
+dig 1
++
+intc_0 // 0
+bytec 14 // "B_min_micro"
+app_global_get_ex
+assert
+dig 1
+<=
+assert
+dup
+callsub label27
+bytec 8 // "F_close_micro"
+swap
+app_global_put
+dup
+callsub label28
+bytec 13 // "F_liq_micro"
+dig 1
+app_global_put
+intc_0 // 0
+bytec 8 // "F_close_micro"
+app_global_get_ex
+assert
++
+dig 1
+<
+assert
+bytec_2 // "B_n_micro"
+dig 1
+app_global_put
+intc_0 // 0
+bytec 6 // "finite"
+app_global_get_ex
+assert
+itob
+box_get
+assert
+dup
+pushint 48
+extract_uint64
+uncover 3
++
+dig 1
+extract 0 8
+dig 2
+extract 8 8
+dig 3
+extract 16 8
+uncover 5
+itob
+dup
+cover 6
+bury 9
+dig 4
+extract 32 8
+uncover 4
+itob
+dig 5
+extract 56 8
+dig 6
+extract 64 8
+dig 7
+extract 72 8
+dig 8
+extract 80 8
+uncover 9
+extract 88 8
+uncover 9
+uncover 9
+concat
+uncover 8
+concat
+uncover 8
+concat
+uncover 7
+concat
+bytec 7 // 0x0000000000000000
+concat
+uncover 6
+concat
+uncover 5
+concat
+uncover 4
+concat
+uncover 3
+concat
+uncover 2
+concat
+swap
+concat
+dup
+extract 0 8
+dup
+box_del
+pop
+swap
+box_put
+callsub label76
+bz label82
+bytec_0 // "state"
+pushint 7
+app_global_put
+label83:
+dig 1
+itob
+dig 1
+itob
+global LatestTimestamp
+itob
+dig 5
+uncover 3
+concat
+uncover 2
+concat
+swap
+concat
+bytec 15 // 0x151f7c75
+swap
+concat
+log
+intc_1 // 1
+return
+label82:
+bytec_0 // "state"
+intc_2 // 2
+app_global_put
+b label83
+label81:
+intc_0 // 0
+b label84
+label11:
+intc_0 // 0
+dupn 5
+pushbytes 0x // ""
+dupn 12
+txna ApplicationArgs 1
+dup
+len
+pushint 8
+==
+assert
+btoi
+intc_0 // 0
+callsub label24
+callsub label76
+intc_0 // 0
+bytec_0 // "state"
+app_global_get_ex
+assert
+pushint 3
+==
+swap
+bz label85
+dup
+assert
+label107:
+callsub label69
+dup
+intc_0 // 0
+getbit
+bytec 23 // 0x00
+intc_0 // 0
+uncover 2
+setbit
+intc_0 // 0
+getbit
+dig 1
+extract 1 8
+bury 22
+dig 1
+intc_1 // 1
+extract_uint64
+bury 14
+dig 1
+pushint 9
+extract_uint64
+bury 5
+swap
+pushint 17
+extract_uint64
+bury 14
+intc_1 // 1
+==
+bz label86
+intc_0 // 0
+bury 7
+global CurrentApplicationID
+callsub label34
+bury 18
+txn NumAssets
+bury 2
+intc_0 // 0
+bury 8
+label92:
+dig 7
+dig 2
+<
+bz label87
+dig 7
+txnas Assets
+dup
+bury 11
+dup
+itob
+box_get
+swap
+dup
+cover 2
+bury 19
+assert
+dup
+extract 0 8
+bury 21
+dup
+intc_0 // 0
+extract_uint64
+swap
+pushint 24
+extract_uint64
+bury 11
+intc_0 // 0
+bytec_3 // "A"
+app_global_get_ex
+assert
+uncover 2
+==
+bury 7
+intc_0 // 0
+bytec 6 // "finite"
+app_global_get_ex
+assert
+==
+dup
+bury 8
+bz label88
+intc_0 // 0
+bytec 11 // "n"
+app_global_get_ex
+assert
+intc_0 // 0
+bytec 12 // "TC"
+app_global_get_ex
+assert
+>=
+bz label89
+intc_0 // 0
+dupn 2
+bury 16
+bury 12
+bury 5
+label94:
+dig 10
+bnz label90
+intc_0 // 0
+dup
+bury 12
+label93:
+dup
+callsub label27
+bytec 8 // "F_close_micro"
+dig 1
+app_global_put
+-
+bury 4
+global CurrentApplicationID
+callsub label34
+dup
+bury 18
+bytec 33 // "APP: DEFI-P2P FULL COLLATEARAL REFUND. "
+swap
+concat
+bury 15
+dig 10
+bz label91
+pushbytes 0x4150503a20444546492d50325020494e544552455354205041594d454e542042414c414e43452e20 // "APP: DEFI-P2P INTEREST PAYMENT BALANCE. "
+dig 17
+concat
+itxn_begin
+intc_0 // 0
+bytec 6 // "finite"
+app_global_get_ex
+assert
+intc_0 // 0
+bytec 4 // "addrl"
+app_global_get_ex
+assert
+uncover 2
+itxn_field Note
+itxn_field AssetReceiver
+dig 11
+itxn_field AssetAmount
+itxn_field XferAsset
+pushint 4
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+label91:
+itxn_begin
+intc_0 // 0
+bytec 6 // "finite"
+app_global_get_ex
+assert
+intc_0 // 0
+bytec_1 // "addrb"
+app_global_get_ex
+assert
+dig 16
+itxn_field Note
+itxn_field AssetReceiver
+dig 4
+itxn_field AssetAmount
+itxn_field XferAsset
+pushint 4
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+bytec_2 // "B_n_micro"
+intc_0 // 0
+app_global_put
+dig 15
+dup
+extract 8 8
+dig 1
+extract 16 8
+dig 2
+extract 32 8
+dig 3
+extract 40 8
+dig 4
+extract 48 8
+dig 5
+pushint 56
+extract_uint64
+dig 17
++
+itob
+dig 6
+extract 64 8
+dig 7
+extract 72 8
+dig 8
+extract 80 8
+uncover 9
+extract 88 8
+dig 28
+uncover 10
+concat
+uncover 9
+concat
+bytec 7 // 0x0000000000000000
+concat
+uncover 8
+concat
+uncover 7
+concat
+uncover 6
+concat
+uncover 5
+concat
+uncover 4
+concat
+uncover 3
+concat
+uncover 2
+concat
+swap
+concat
+dup
+extract 0 8
+dup
+box_del
+pop
+swap
+box_put
+label98:
+dig 7
+intc_1 // 1
++
+bury 8
+b label92
+label90:
+dig 4
+callsub label75
+intc_0 // 0
+bytec_2 // "B_n_micro"
+app_global_get_ex
+assert
+dig 14
+-
+b label93
+label89:
+intc_0 // 0
+bytec 12 // "TC"
+app_global_get_ex
+assert
+intc_0 // 0
+bytec 11 // "n"
+app_global_get_ex
+assert
+-
+dup
+bury 6
+intc_0 // 0
+bytec 22 // "N_net_micro"
+app_global_get_ex
+assert
+dig 1
+mulw
+bury 13
+!
+assert
+intc_0 // 0
+bytec 17 // "C_micro"
+app_global_get_ex
+assert
+mulw
+bury 15
+!
+assert
+b label94
+label88:
+dig 5
+bz label95
+global CurrentApplicationID
+callsub label34
+dup
+bury 18
+pushbytes 0x4150503a20444546492d5032502046554c4c204c4f414e205041594d454e542e20 // "APP: DEFI-P2P FULL LOAN PAYMENT. "
+swap
+concat
+intc_0 // 0
+bytec_3 // "A"
+app_global_get_ex
+assert
+bnz label96
+itxn_begin
+intc_0 // 0
+bytec 4 // "addrl"
+app_global_get_ex
+assert
+itxn_field Receiver
+itxn_field Note
+dig 12
+itxn_field Amount
+intc_1 // 1
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+dig 2
+bz label97
+itxn_begin
+intc_0 // 0
+bytec_1 // "addrb"
+app_global_get_ex
+assert
+pushbytes 0x4150503a20444546492d503250204f56455243484152474520524546554e442e20 // "APP: DEFI-P2P OVERCHARGE REFUND. "
+dig 18
+concat
+itxn_field Note
+itxn_field Receiver
+dig 2
+itxn_field Amount
+intc_1 // 1
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+label97:
+dig 15
+dup
+extract 8 8
+dig 1
+extract 16 8
+dig 2
+extract 32 8
+dig 3
+extract 40 8
+dig 4
+extract 48 8
+dig 5
+extract 56 8
+intc_0 // 0
+bytec 9 // "L_init_micro"
+app_global_get_ex
+assert
+itob
+dig 7
+extract 72 8
+dig 8
+extract 80 8
+uncover 9
+extract 88 8
+dig 28
+uncover 10
+concat
+dig 9
+concat
+uncover 9
+concat
+uncover 8
+concat
+uncover 7
+concat
+uncover 6
+concat
+uncover 5
+concat
+uncover 4
+concat
+uncover 3
+concat
+uncover 2
+concat
+swap
+concat
+dup
+extract 0 8
+dup
+box_del
+pop
+swap
+box_put
+b label98
+label96:
+itxn_begin
+intc_0 // 0
+bytec_3 // "A"
+app_global_get_ex
+assert
+intc_0 // 0
+bytec 4 // "addrl"
+app_global_get_ex
+assert
+intc_0 // 0
+bytec_1 // "addrb"
+app_global_get_ex
+assert
+itxn_field AssetCloseTo
+uncover 2
+itxn_field Note
+itxn_field AssetReceiver
+dig 13
+itxn_field AssetAmount
+itxn_field XferAsset
+pushint 4
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+b label97
+label95:
+dig 8
+dup
+callsub label99
+-
+dig 10
+bnz label100
+itxn_begin
+intc_0 // 0
+bytec_1 // "addrb"
+app_global_get_ex
+assert
+bytec 33 // "APP: DEFI-P2P FULL COLLATEARAL REFUND. "
+dig 20
+concat
+itxn_field Note
+itxn_field Receiver
+itxn_field Amount
+intc_1 // 1
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+b label98
+label100:
+itxn_begin
+intc_0 // 0
+bytec_1 // "addrb"
+app_global_get_ex
+assert
+bytec 33 // "APP: DEFI-P2P FULL COLLATEARAL REFUND. "
+dig 20
+concat
+itxn_field Note
+itxn_field AssetReceiver
+itxn_field AssetAmount
+dig 9
+itxn_field XferAsset
+pushint 4
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+dig 15
+dup
+extract 8 8
+dig 1
+extract 16 8
+dig 2
+extract 32 8
+dig 3
+extract 40 8
+dig 4
+extract 48 8
+dig 5
+extract 56 8
+dig 6
+extract 64 8
+dig 7
+extract 72 8
+dig 8
+extract 80 8
+uncover 9
+extract 88 8
+dig 28
+uncover 10
+concat
+uncover 9
+concat
+bytec 7 // 0x0000000000000000
+concat
+uncover 8
+concat
+uncover 7
+concat
+uncover 6
+concat
+uncover 5
+concat
+uncover 4
+concat
+uncover 3
+concat
+uncover 2
+concat
+swap
+concat
+dup
+extract 0 8
+dup
+box_del
+pop
+swap
+box_put
+b label98
+label87:
+dig 6
+bz label101
+bytec 10 // "L_t_micro"
+dig 12
+app_global_put
+bytec_0 // "state"
+pushint 3
+app_global_put
+bytec 31 // "t_pay"
+global LatestTimestamp
+app_global_put
+label102:
+intc_0 // 0
+bytec 10 // "L_t_micro"
+app_global_get_ex
+assert
+itob
+intc_0 // 0
+bytec 8 // "F_close_micro"
+app_global_get_ex
+assert
+itob
+intc_0 // 0
+bytec 13 // "F_liq_micro"
+app_global_get_ex
+assert
+itob
+intc_0 // 0
+bytec_2 // "B_n_micro"
+app_global_get_ex
+assert
+itob
+intc_0 // 0
+bytec 11 // "n"
+app_global_get_ex
+assert
+itob
+intc_0 // 0
+bytec 31 // "t_pay"
+app_global_get_ex
+assert
+itob
+intc_0 // 0
+bytec_0 // "state"
+app_global_get_ex
+assert
+itob
+uncover 6
+uncover 6
+concat
+uncover 5
+concat
+uncover 4
+concat
+uncover 3
+concat
+uncover 2
+concat
+swap
+concat
+bytec 15 // 0x151f7c75
+swap
+concat
+log
+intc_1 // 1
+return
+label101:
+bytec_0 // "state"
+pushint 3
+app_global_put
+b label102
+label86:
+intc_0 // 0
+bytec_3 // "A"
+app_global_get_ex
+assert
+itob
+box_get
+assert
+dup
+extract 0 8
+dig 1
+extract 8 8
+dig 2
+extract 16 8
+dig 3
+extract 24 8
+dig 4
+extract 32 8
+dig 5
+extract 40 8
+dig 6
+extract 48 8
+dig 7
+extract 56 8
+dig 8
+extract 72 8
+dig 9
+extract 80 8
+uncover 10
+extract 88 8
+uncover 10
+uncover 10
+concat
+uncover 9
+concat
+uncover 8
+concat
+uncover 7
+concat
+uncover 6
+concat
+uncover 5
+concat
+uncover 4
+concat
+dig 23
+concat
+uncover 3
+concat
+uncover 2
+concat
+swap
+concat
+dup
+extract 0 8
+dup
+box_del
+pop
+swap
+box_put
+bytec 10 // "L_t_micro"
+dig 12
+app_global_put
+callsub label76
+bz label103
+bytec_0 // "state"
+pushint 7
+app_global_put
+b label102
+label103:
+intc_0 // 0
+bytec_2 // "B_n_micro"
+app_global_get_ex
+assert
+intc_0 // 0
+bytec 14 // "B_min_micro"
+app_global_get_ex
+assert
+<
+bz label104
+bytec_0 // "state"
+pushint 4
+app_global_put
+b label102
+label104:
+bytec_0 // "state"
+intc_2 // 2
+app_global_put
+b label102
+label85:
+intc_0 // 0
+bytec_0 // "state"
+app_global_get_ex
+assert
+intc_2 // 2
+==
+bnz label105
+intc_0 // 0
+bytec_0 // "state"
+app_global_get_ex
+assert
+pushint 3
+==
+bz label106
+label105:
+intc_1 // 1
+label108:
+assert
+intc_0 // 0
+bytec 9 // "L_init_micro"
+app_global_get_ex
+assert
+intc_0 // 0
+bytec 10 // "L_t_micro"
+app_global_get_ex
+assert
+!=
+assert
+b label107
+label106:
+intc_0 // 0
+b label108
+label12:
+intc_0 // 0
+dupn 3
+pushbytes 0x // ""
+dupn 7
+txna ApplicationArgs 1
+dup
+len
+pushint 8
+==
+assert
+btoi
+intc_0 // 0
+callsub label24
+intc_0 // 0
+bytec_0 // "state"
+app_global_get_ex
+assert
+intc_2 // 2
+==
+bnz label109
+intc_0 // 0
+bytec_0 // "state"
+app_global_get_ex
+assert
+pushint 4
+==
+bnz label109
+intc_0 // 0
+bytec_0 // "state"
+app_global_get_ex
+assert
+pushint 7
+==
+bz label110
+label109:
+intc_1 // 1
+label124:
+assert
+callsub label76
+intc_0 // 0
+bytec_2 // "B_n_micro"
+app_global_get_ex
+assert
+intc_0 // 0
+bytec 14 // "B_min_micro"
+app_global_get_ex
+assert
+<
+||
+assert
+txn Sender
+intc_0 // 0
+bytec 4 // "addrl"
+app_global_get_ex
+assert
+==
+assert
+global GroupSize
+dup
+intc_2 // 2
+>=
+assert
+dup
+pushint 5
+<=
+assert
+intc_1 // 1
+-
+bury 5
+intc_0 // 0
+bury 4
+label112:
+dig 3
+dig 5
+<
+bz label111
+dig 3
+dup
+gtxns TypeEnum
+intc_3 // 6
+==
+assert
+dup
+gtxns ApplicationID
+global CurrentApplicationID
+==
+assert
+dup
+intc_0 // 0
+gtxnsas ApplicationArgs
+bytec 52 // 0x22e3e959
+==
+assert
+dup
+gtxns Sender
+intc_0 // 0
+bytec 4 // "addrl"
+app_global_get_ex
+assert
+==
+assert
+dup
+gtxns NumAccounts
+intc_2 // 2
+==
+assert
+dup
+intc_1 // 1
+gtxnsas Accounts
+intc_0 // 0
+bytec_1 // "addrb"
+app_global_get_ex
+assert
+==
+assert
+dup
+intc_2 // 2
+gtxnsas Accounts
+intc_0 // 0
+bytec 5 // "admin"
+app_global_get_ex
+assert
+==
+assert
+dup
+gtxns NumAssets
+dup
+pushint 3
+<=
+assert
+assert
+intc_1 // 1
++
+bury 4
+b label112
+label111:
+dig 4
+dup
+gtxns TypeEnum
+intc_3 // 6
+==
+assert
+dup
+gtxns ApplicationID
+global CurrentApplicationID
+==
+assert
+dup
+intc_0 // 0
+gtxnsas ApplicationArgs
+bytec 28 // 0xd22e11fc
+==
+assert
+gtxns Sender
+intc_0 // 0
+bytec 4 // "addrl"
+app_global_get_ex
+assert
+==
+assert
+intc_0 // 0
+bury 3
+global CurrentApplicationID
+callsub label34
+bury 10
+txn NumAssets
+bury 1
+intc_0 // 0
+bury 4
+label115:
+dig 3
+dig 1
+<
+bz label113
+dig 3
+txnas Assets
+dup
+bury 8
+dup
+itob
+box_get
+swap
+dup
+cover 2
+bury 12
+assert
+dup
+extract 0 8
+bury 14
+dup
+intc_0 // 0
+extract_uint64
+dig 1
+extract 24 8
+bury 14
+swap
+pushint 24
+extract_uint64
+bury 8
+intc_0 // 0
+bytec_3 // "A"
+app_global_get_ex
+assert
+uncover 2
+==
+bury 3
+intc_0 // 0
+bytec 6 // "finite"
+app_global_get_ex
+assert
+==
+dup
+bury 4
+bz label114
+intc_0 // 0
+bytec 12 // "TC"
+app_global_get_ex
+assert
+intc_0 // 0
+bytec 11 // "n"
+app_global_get_ex
+assert
+-
+intc_0 // 0
+bytec 27 // "F_micro"
+app_global_get_ex
+assert
+dig 1
+mulw
+swap
+!
+assert
+swap
+callsub label75
+intc_0 // 0
+bytec_2 // "B_n_micro"
+app_global_get_ex
+assert
+swap
+-
+dup
+callsub label28
+bytec 13 // "F_liq_micro"
+dig 1
+app_global_put
+-
+dup
+callsub label27
+bytec 8 // "F_close_micro"
+dig 1
+app_global_put
+-
+global CurrentApplicationID
+callsub label34
+bytec 34 // "APP: DEFI-P2P FULL COLLATEARAL LIQUIDATION. "
+swap
+concat
+itxn_begin
+intc_0 // 0
+bytec 6 // "finite"
+app_global_get_ex
+assert
+intc_0 // 0
+bytec 4 // "addrl"
+app_global_get_ex
+assert
+uncover 2
+itxn_field Note
+itxn_field AssetReceiver
+itxn_field XferAsset
+itxn_field AssetAmount
+pushint 4
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+bytec_2 // "B_n_micro"
+intc_0 // 0
+app_global_put
+dig 8
+dup
+extract 8 8
+dig 1
+extract 16 8
+dig 2
+extract 32 8
+dig 3
+extract 40 8
+dig 4
+extract 48 8
+intc_0 // 0
+bytec 22 // "N_net_micro"
+app_global_get_ex
+assert
+itob
+dig 6
+extract 64 8
+dig 7
+extract 72 8
+dig 8
+extract 80 8
+uncover 9
+extract 88 8
+dig 21
+uncover 10
+concat
+uncover 9
+concat
+bytec 7 // 0x0000000000000000
+concat
+uncover 8
+concat
+uncover 7
+concat
+uncover 6
+concat
+uncover 5
+concat
+uncover 4
+concat
+uncover 3
+concat
+uncover 2
+concat
+swap
+concat
+dup
+extract 0 8
+dup
+box_del
+pop
+swap
+box_put
+label119:
+dig 3
+intc_1 // 1
++
+bury 4
+b label115
+label114:
+dig 1
+bz label116
+intc_0 // 0
+bury 8
+label121:
+dig 6
+bnz label117
+itxn_begin
+intc_0 // 0
+bytec 4 // "addrl"
+app_global_get_ex
+assert
+bytec 34 // "APP: DEFI-P2P FULL COLLATEARAL LIQUIDATION. "
+dig 11
+concat
+itxn_field Note
+itxn_field Receiver
+dig 7
+itxn_field Amount
+intc_1 // 1
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+label120:
+dig 1
+bz label118
+dig 8
+dup
+extract 8 8
+dig 1
+extract 16 8
+dig 2
+extract 32 8
+dig 3
+extract 40 8
+dig 4
+extract 48 8
+dig 5
+extract 56 8
+intc_0 // 0
+bytec 10 // "L_t_micro"
+app_global_get_ex
+assert
+itob
+dig 7
+extract 72 8
+dig 8
+extract 80 8
+uncover 9
+extract 88 8
+dig 21
+uncover 10
+concat
+uncover 9
+concat
+dig 19
+concat
+uncover 8
+concat
+uncover 7
+concat
+uncover 6
+concat
+uncover 5
+concat
+uncover 4
+concat
+uncover 3
+concat
+uncover 2
+concat
+swap
+concat
+dup
+extract 0 8
+dup
+box_del
+pop
+swap
+box_put
+b label119
+label118:
+dig 8
+dup
+extract 8 8
+dig 1
+extract 16 8
+dig 2
+extract 32 8
+dig 3
+extract 40 8
+dig 4
+extract 48 8
+dig 5
+extract 56 8
+dig 6
+extract 64 8
+dig 7
+extract 72 8
+dig 8
+extract 80 8
+uncover 9
+extract 88 8
+dig 21
+uncover 10
+concat
+uncover 9
+concat
+bytec 7 // 0x0000000000000000
+concat
+uncover 8
+concat
+uncover 7
+concat
+uncover 6
+concat
+uncover 5
+concat
+uncover 4
+concat
+uncover 3
+concat
+uncover 2
+concat
+swap
+concat
+dup
+extract 0 8
+dup
+box_del
+pop
+swap
+box_put
+b label119
+label117:
+itxn_begin
+intc_0 // 0
+bytec 4 // "addrl"
+app_global_get_ex
+assert
+bytec 34 // "APP: DEFI-P2P FULL COLLATEARAL LIQUIDATION. "
+dig 11
+concat
+itxn_field Note
+itxn_field AssetReceiver
+dig 7
+itxn_field AssetAmount
+dig 6
+itxn_field XferAsset
+pushint 4
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+b label120
+label116:
+dig 5
+dup
+callsub label99
+-
+bury 8
+b label121
+label113:
+dig 2
+bnz label122
+bytec_0 // "state"
+pushint 4
+app_global_put
+label123:
+intc_0 // 0
+bytec 8 // "F_close_micro"
+app_global_get_ex
+assert
+itob
+intc_0 // 0
+bytec 13 // "F_liq_micro"
+app_global_get_ex
+assert
+itob
+intc_0 // 0
+bytec_2 // "B_n_micro"
+app_global_get_ex
+assert
+itob
+intc_0 // 0
+bytec 11 // "n"
+app_global_get_ex
+assert
+itob
+intc_0 // 0
+bytec 30 // "t_liq"
+app_global_get_ex
+assert
+itob
+intc_0 // 0
+bytec_0 // "state"
+app_global_get_ex
+assert
+itob
+uncover 5
+uncover 5
+concat
+uncover 4
+concat
+uncover 3
+concat
+uncover 2
+concat
+swap
+concat
+bytec 15 // 0x151f7c75
+swap
+concat
+log
+intc_1 // 1
+return
+label122:
+bytec_0 // "state"
+pushint 5
+app_global_put
+bytec_2 // "B_n_micro"
+intc_0 // 0
+app_global_put
+bytec 30 // "t_liq"
+global LatestTimestamp
+app_global_put
+b label123
+label110:
+intc_0 // 0
+b label124
+label13:
+intc_0 // 0
+dupn 2
+pushbytes 0x // ""
+dupn 6
+txna ApplicationArgs 1
+dup
+len
+pushint 8
+==
+assert
+btoi
+intc_0 // 0
+callsub label24
+txn Sender
+intc_0 // 0
+bytec_1 // "addrb"
+app_global_get_ex
+assert
+==
+assert
+intc_0 // 0
+bytec_0 // "state"
+app_global_get_ex
+assert
+intc_1 // 1
+==
+assert
+global GroupSize
+dup
+intc_2 // 2
+>=
+assert
+dup
+pushint 5
+<=
+assert
+intc_1 // 1
+-
+intc_0 // 0
+label126:
+dup
+dig 2
+<
+bz label125
+dupn 2
+gtxns TypeEnum
+intc_3 // 6
+==
+assert
+dup
+gtxns ApplicationID
+global CurrentApplicationID
+==
+assert
+dup
+intc_0 // 0
+gtxnsas ApplicationArgs
+bytec 53 // 0x5ee4befa
+==
+assert
+dup
+gtxns Sender
+intc_0 // 0
+bytec_1 // "addrb"
+app_global_get_ex
+assert
+==
+assert
+dup
+gtxns NumAccounts
+intc_1 // 1
+==
+assert
+dup
+intc_1 // 1
+gtxnsas Accounts
+intc_0 // 0
+bytec 5 // "admin"
+app_global_get_ex
+assert
+==
+assert
+dup
+gtxns NumAssets
+dup
+pushint 3
+<=
+assert
+assert
+intc_1 // 1
++
+bury 1
+b label126
+label125:
+dig 1
+dup
+gtxns TypeEnum
+intc_3 // 6
+==
+assert
+dup
+gtxns ApplicationID
+global CurrentApplicationID
+==
+assert
+dup
+intc_0 // 0
+gtxnsas ApplicationArgs
+bytec 28 // 0xd22e11fc
+==
+assert
+gtxns Sender
+intc_0 // 0
+bytec_1 // "addrb"
+app_global_get_ex
+assert
+==
+assert
+intc_0 // 0
+bury 5
+global CurrentApplicationID
+callsub label34
+bury 11
+txn NumAssets
+bury 3
+intc_0 // 0
+bury 1
+label131:
+dup
+dig 3
+<
+bz label127
+dup
+txnas Assets
+dup
+bury 8
+dup
+itob
+box_get
+swap
+dup
+cover 2
+bury 13
+assert
+dup
+extract 0 8
+bury 14
+dup
+intc_0 // 0
+extract_uint64
+swap
+pushint 24
+extract_uint64
+bury 8
+intc_0 // 0
+bytec_3 // "A"
+app_global_get_ex
+assert
+uncover 2
+==
+dup
+bury 6
+intc_0 // 0
+bytec 6 // "finite"
+app_global_get_ex
+assert
+uncover 2
+==
+bury 6
+bz label128
+intc_0 // 0
+bury 8
+label134:
+dig 6
+bnz label129
+itxn_begin
+intc_0 // 0
+bytec_1 // "addrb"
+app_global_get_ex
+assert
+bytec 59 // "APP: DEFI-P2P FULL COLLATEARAL ABORT. "
+dig 12
+concat
+itxn_field Note
+itxn_field Receiver
+dig 7
+itxn_field Amount
+intc_1 // 1
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+label132:
+dig 3
+bnz label130
+dig 9
+dup
+extract 8 8
+dig 1
+extract 16 8
+dig 2
+extract 32 8
+dig 3
+extract 40 8
+dig 4
+extract 48 8
+dig 5
+extract 56 8
+dig 6
+extract 64 8
+dig 7
+extract 72 8
+dig 8
+extract 80 8
+uncover 9
+extract 88 8
+dig 21
+uncover 10
+concat
+uncover 9
+concat
+bytec 7 // 0x0000000000000000
+concat
+uncover 8
+concat
+uncover 7
+concat
+uncover 6
+concat
+uncover 5
+concat
+uncover 4
+concat
+uncover 3
+concat
+uncover 2
+concat
+swap
+concat
+dup
+extract 0 8
+dup
+box_del
+pop
+swap
+box_put
+label130:
+dup
+intc_1 // 1
++
+bury 1
+b label131
+label129:
+itxn_begin
+intc_0 // 0
+bytec_1 // "addrb"
+app_global_get_ex
+assert
+bytec 59 // "APP: DEFI-P2P FULL COLLATEARAL ABORT. "
+dig 12
+concat
+itxn_field Note
+itxn_field AssetReceiver
+dig 7
+itxn_field AssetAmount
+dig 6
+itxn_field XferAsset
+pushint 4
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+b label132
+label128:
+dig 5
+callsub label99
+bury 9
+dig 4
+bz label133
+bytec 8 // "F_close_micro"
+dig 9
+app_global_put
+label133:
+dig 5
+dig 9
+-
+bury 8
+b label134
+label127:
+dig 4
+bz label135
+bytec_0 // "state"
+pushint 9
+app_global_put
+label135:
+intc_0 // 0
+bytec 8 // "F_close_micro"
+app_global_get_ex
+assert
+itob
+global LatestTimestamp
+itob
+intc_0 // 0
+bytec_0 // "state"
+app_global_get_ex
+assert
+itob
+cover 2
+concat
+swap
+concat
+bytec 15 // 0x151f7c75
+swap
+concat
+log
+intc_1 // 1
+return
+label14:
+intc_0 // 0
+pushbytes 0x // ""
+dupn 5
+txna ApplicationArgs 1
+dup
+len
+pushint 8
+==
+assert
+btoi
+intc_0 // 0
+callsub label24
+txn Sender
+intc_0 // 0
+bytec 5 // "admin"
+app_global_get_ex
+assert
+==
+assert
+intc_0 // 0
+bytec_0 // "state"
+app_global_get_ex
+assert
+intc_3 // 6
+==
+assert
+global GroupSize
+dupn 2
+intc_2 // 2
+>=
+assert
+pushint 5
+<=
+assert
+intc_0 // 0
+label137:
+dup
+dig 2
+<
+bz label136
+dupn 2
+gtxns TypeEnum
+intc_3 // 6
+==
+assert
+dup
+gtxns ApplicationID
+global CurrentApplicationID
+==
+assert
+dup
+intc_0 // 0
+gtxnsas ApplicationArgs
+bytec 54 // 0x5b251279
+==
+assert
+dup
+gtxns Sender
+intc_0 // 0
+bytec 5 // "admin"
+app_global_get_ex
+assert
+swap
+dig 1
+==
+assert
+dig 1
+intc_1 // 1
+gtxnsas Accounts
+==
+assert
+dup
+gtxns NumAssets
+dup
+intc_2 // 2
+<=
+assert
+assert
+intc_1 // 1
++
+bury 1
+b label137
+label136:
+global CurrentApplicationID
+callsub label34
+pushbytes 0x4150503a20444546492d5032502046454520434f4c4c454354494f4e20464f52204150503a20 // "APP: DEFI-P2P FEE COLLECTION FOR APP: "
+swap
+concat
+bury 9
+intc_0 // 0
+bury 6
+txn NumAssets
+bury 4
+intc_0 // 0
+bury 1
+label140:
+dup
+dig 4
+<
+bz label138
+dup
+txnas Assets
+dup
+bury 9
+dup
+itob
+box_get
+assert
+intc_0 // 0
+extract_uint64
+intc_0 // 0
+bytec 6 // "finite"
+app_global_get_ex
+assert
+==
+bury 7
+bz label139
+global CurrentApplicationAddress
+dig 8
+dup
+cover 2
+asset_holding_get AssetBalance
+assert
+dig 1
+asset_params_get AssetCreator
+assert
+itxn_begin
+intc_0 // 0
+bytec 5 // "admin"
+app_global_get_ex
+assert
+swap
+itxn_field AssetCloseTo
+dig 11
+itxn_field Note
+itxn_field AssetReceiver
+itxn_field AssetAmount
+itxn_field XferAsset
+pushint 4
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+label139:
+dup
+intc_1 // 1
++
+bury 1
+b label140
+label138:
+dig 5
+bz label141
+global CurrentApplicationAddress
+dup
+acct_params_get AcctMinBalance
+swap
+dup
+cover 3
+bury 8
+assert
+acct_params_get AcctBalance
+swap
+dup
+cover 2
+bury 10
+assert
+intc_0 // 0
+bury 5
+<
+bz label142
+dig 6
+dig 5
+-
+bury 3
+label142:
+dig 2
+bz label143
+itxn_begin
+intc_0 // 0
+bytec 5 // "admin"
+app_global_get_ex
+assert
+dig 9
+itxn_field Note
+itxn_field Receiver
+dig 2
+itxn_field Amount
+intc_1 // 1
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+label143:
+bytec_0 // "state"
+pushint 10
+app_global_put
+label141:
+intc_1 // 1
+return
+label15:
+intc_0 // 0
+pushbytes 0x // ""
+dupn 2
+txna ApplicationArgs 1
+dup
+len
+pushint 8
+==
+assert
+btoi
+intc_0 // 0
+callsub label24
+txn Sender
+intc_0 // 0
+bytec_1 // "addrb"
+app_global_get_ex
+assert
+==
+bnz label144
+txn Sender
+intc_0 // 0
+bytec 4 // "addrl"
+app_global_get_ex
+assert
+==
+bnz label144
+txn Sender
+intc_0 // 0
+bytec 5 // "admin"
+app_global_get_ex
+assert
+==
+bz label145
+label144:
+intc_1 // 1
+label153:
+assert
+intc_0 // 0
+bytec_0 // "state"
+app_global_get_ex
+assert
+pushint 3
+==
+bnz label146
+intc_0 // 0
+bytec_0 // "state"
+app_global_get_ex
+assert
+pushint 5
+==
+bnz label146
+intc_0 // 0
+bytec_0 // "state"
+app_global_get_ex
+assert
+pushint 9
+==
+bz label147
+label146:
+intc_1 // 1
+label152:
+assert
+global CurrentApplicationAddress
+dup
+acct_params_get AcctMinBalance
+swap
+dup
+cover 3
+bury 5
+assert
+acct_params_get AcctBalance
+swap
+dup
+cover 2
+bury 6
+assert
+intc_0 // 0
+bury 3
+<
+bz label148
+dig 2
+dig 2
+-
+bury 1
+label148:
+global CurrentApplicationID
+callsub label34
+bury 4
+dup
+bz label149
+itxn_begin
+intc_0 // 0
+bytec 5 // "admin"
+app_global_get_ex
+assert
+pushbytes 0x4150503a20444546492d50325020434c4f534544204c4f414e2e20 // "APP: DEFI-P2P CLOSED LOAN. "
+dig 5
+concat
+itxn_field Note
+itxn_field Receiver
+dup
+itxn_field Amount
+intc_1 // 1
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+label149:
+bytec_0 // "state"
+intc_3 // 6
+app_global_put
+bytec_2 // "B_n_micro"
+intc_0 // 0
+app_global_put
+bytec 39 // "t_closed"
+global LatestTimestamp
+app_global_put
+global CurrentApplicationAddress
+intc_0 // 0
+bytec 6 // "finite"
+app_global_get_ex
+assert
+asset_holding_get AssetBalance
+bury 1
+bz label150
+bytec 7 // 0x0000000000000000
+label151:
+global LatestTimestamp
+itob
+swap
+concat
+bytec 15 // 0x151f7c75
+swap
+concat
+log
+intc_1 // 1
+return
+label150:
+bytec 56 // 0x0000000000000001
+b label151
+label147:
+intc_0 // 0
+b label152
+label145:
+intc_0 // 0
+b label153
+label16:
+bytec 5 // "admin"
+txn Sender
+app_global_put
+intc_1 // 1
+return
+label76:
+intc_0 // 0
+bytec 18 // "T"
+app_global_get_ex
+assert
+intc_0 // 0
+bytec 20 // "t_active"
+app_global_get_ex
+assert
++
+global LatestTimestamp
+<
+retsub
+label27:
+proto 1 1
+intc_0 // 0
+bytec 25 // "f_c_bp"
+app_global_get_ex
+assert
+frame_dig -1
+mulw
+intc_0 // 0
+intc 4 // 10000
+divmodw
+popn 2
+swap
+!
+assert
+dup
+assert
+retsub
+label99:
+proto 1 1
+intc_0 // 0
+bytec 25 // "f_c_bp"
+app_global_get_ex
+assert
+frame_dig -1
+mulw
+intc_0 // 0
+intc 4 // 10000
+divmodw
+popn 2
+swap
+!
+assert
+dup
+assert
+retsub
+label28:
+proto 1 1
+intc_0 // 0
+bytec 37 // "f_l_bp"
+app_global_get_ex
+assert
+frame_dig -1
+mulw
+intc_0 // 0
+intc 4 // 10000
+divmodw
+popn 2
+swap
+!
+assert
+dup
+assert
+retsub
+label74:
+intc_0 // 0
+bytec 18 // "T"
+app_global_get_ex
+assert
+intc_0 // 0
+bytec 20 // "t_active"
+app_global_get_ex
+assert
++
+global LatestTimestamp
+>
+assert
+retsub
+label75:
+proto 1 0
+intc_0 // 0
+bytec 11 // "n"
+app_global_get_ex
+assert
+frame_dig -1
++
+bytec 11 // "n"
+swap
+app_global_put
+intc_0 // 0
+bytec 19 // "c_i"
+app_global_get_ex
+assert
+frame_dig -1
+*
+intc_0 // 0
+bytec 21 // "t_last"
+app_global_get_ex
+assert
++
+bytec 21 // "t_last"
+swap
+app_global_put
+retsub
+label34:
+proto 1 1
+pushbytes 0x // ""
+frame_dig -1
+bnz label154
+pushbytes 0x30 // "0"
+swap
+retsub
+label154:
+frame_dig -1
+pushint 10
+/
+dup
+frame_bury 0
+bz label155
+frame_dig 0
+callsub label34
+label156:
+frame_dig -1
+pushint 10
+%
+pushbytes 0x30313233343536373839 // "0123456789"
+swap
+intc_1 // 1
+extract3
+concat
+swap
+retsub
+label155:
+pushbytes 0x // ""
+b label156
+label25:
+proto 0 1
+pushbytes 0x // ""
+dupn 10
+global GroupSize
+dupn 2
+intc_3 // 6
+>=
+assert
+dup
+pushint 13
+!=
+assert
+dup
+pushint 14
+!=
+assert
+dup
+pushint 15
+!=
+assert
+intc_3 // 6
+>=
+bz label157
+frame_dig 11
+pushint 12
+<=
+bz label157
+frame_dig 11
+pushint 4
+-
+frame_bury 0
+intc_1 // 1
+dupn 2
+frame_bury 1
+label170:
+frame_dig 0
+dup
+intc_2 // 2
+>=
+assert
+dup
+pushint 5
+<=
+assert
+intc_1 // 1
+-
+intc_2 // 2
+frame_dig 1
++
+dup
+frame_bury 7
++
+dup
+frame_bury 3
+uncover 2
++
+dup
+frame_bury 4
++
+frame_bury 8
+intc_0 // 0
+gtxns TypeEnum
+dup
+itob
+log
+intc_1 // 1
+gtxns TypeEnum
+dup
+itob
+log
+swap
+intc_1 // 1
+==
+assert
+intc_0 // 0
+gtxns Receiver
+global CurrentApplicationAddress
+==
+assert
+intc_3 // 6
+==
+assert
+intc_1 // 1
+gtxns ApplicationID
+global CurrentApplicationID
+==
+assert
+intc_1 // 1
+intc_0 // 0
+gtxnsas ApplicationArgs
+bytec 45 // 0xa908206c
+==
+assert
+intc_2 // 2
+frame_bury 5
+label159:
+frame_dig 5
+frame_dig 7
+<
+bz label158
+frame_dig 5
+dup
+gtxns TypeEnum
+intc_3 // 6
+==
+assert
+dup
+gtxns ApplicationID
+global CurrentApplicationID
+==
+assert
+dup
+intc_0 // 0
+gtxnsas ApplicationArgs
+bytec 46 // 0xbd05765f
+==
+assert
+intc_1 // 1
++
+frame_bury 5
+b label159
+label158:
+frame_dig 7
+frame_bury 5
+label163:
+frame_dig 5
+frame_dig 3
+<
+bz label160
+frame_dig 3
+intc_1 // 1
+-
+frame_dig 5
+dup
+uncover 2
+==
+frame_bury 6
+gtxns TypeEnum
+dup
+intc_1 // 1
+==
+swap
+pushint 4
+==
+dig 1
+||
+assert
+bz label161
+frame_dig 5
+dup
+gtxns Amount
+frame_bury 2
+gtxns Receiver
+intc_1 // 1
+frame_bury 9
+label164:
+global CurrentApplicationAddress
+==
+assert
+frame_dig 2
+assert
+frame_dig 6
+bz label162
+frame_dig 2
+frame_bury 10
+label162:
+frame_dig 5
+intc_1 // 1
++
+frame_bury 5
+b label163
+label161:
+frame_dig 5
+dup
+gtxns AssetAmount
+frame_bury 2
+gtxns AssetReceiver
+intc_0 // 0
+frame_bury 9
+b label164
+label160:
+frame_dig 3
+frame_bury 5
+label166:
+frame_dig 5
+frame_dig 4
+<
+bz label165
+frame_dig 5
+dup
+gtxns TypeEnum
+dig 1
+gtxns ApplicationID
+dig 2
+intc_0 // 0
+gtxnsas ApplicationArgs
+uncover 2
+intc_3 // 6
+==
+assert
+global CurrentApplicationID
+uncover 2
+==
+assert
+bytec 47 // 0x0b93f07b
+==
+assert
+intc_1 // 1
++
+frame_bury 5
+b label166
+label165:
+frame_dig 4
+frame_bury 5
+label169:
+frame_dig 5
+frame_dig 8
+<
+bz label167
+frame_dig 5
+dup
+callsub label168
+intc_1 // 1
++
+frame_bury 5
+b label169
+label167:
+frame_dig 0
+itob
+frame_dig 1
+itob
+frame_dig 10
+itob
+bytec 23 // 0x00
+intc_0 // 0
+frame_dig 9
+setbit
+uncover 3
+uncover 3
+concat
+uncover 2
+concat
+swap
+concat
+frame_bury 0
+retsub
+label157:
+pushint 9
+frame_bury 0
+intc_2 // 2
+dupn 2
+frame_bury 1
+b label170
+label71:
+proto 0 0
+pushbytes 0x // ""
+dup
+txn Sender
+intc_0 // 0
+bytec_1 // "addrb"
+app_global_get_ex
+assert
+!=
+assert
+global GroupSize
+pushint 3
+==
+assert
+intc_0 // 0
+bytec_3 // "A"
+app_global_get_ex
+assert
+intc_0 // 0
+gtxns TypeEnum
+intc_3 // 6
+==
+assert
+intc_0 // 0
+gtxns ApplicationID
+global CurrentApplicationID
+==
+assert
+intc_0 // 0
+dup
+gtxnsas ApplicationArgs
+bytec 49 // 0x104d1353
+==
+assert
+bnz label171
+intc_1 // 1
+gtxns Amount
+frame_bury 0
+intc_1 // 1
+gtxns Receiver
+intc_0 // 0
+frame_bury 1
+intc_1 // 1
+gtxns TypeEnum
+intc_1 // 1
+==
+assert
+label172:
+intc_0 // 0
+bytec 9 // "L_init_micro"
+app_global_get_ex
+assert
+frame_dig 0
+==
+assert
+intc_0 // 0
+bytec_1 // "addrb"
+app_global_get_ex
+assert
+==
+assert
+intc_0 // 0
+bytec_3 // "A"
+app_global_get_ex
+assert
+frame_dig 1
+==
+assert
+intc_2 // 2
+callsub label168
+retsub
+label171:
+intc_1 // 1
+gtxns AssetAmount
+frame_bury 0
+intc_1 // 1
+gtxns AssetReceiver
+intc_1 // 1
+gtxns XferAsset
+frame_bury 1
+intc_1 // 1
+gtxns TypeEnum
+pushint 4
+==
+assert
+b label172
+label69:
+proto 0 1
+intc_0 // 0
+dupn 4
+pushbytes 0x // ""
+dupn 5
+global GroupSize
+intc_0 // 0
+gtxns Sender
+intc_0 // 0
+bytec_1 // "addrb"
+app_global_get_ex
+assert
+==
+assert
+intc_0 // 0
+bytec_3 // "A"
+app_global_get_ex
+assert
+bnz label173
+intc_0 // 0
+gtxns TypeEnum
+intc_1 // 1
+==
+assert
+intc_0 // 0
+dup
+gtxns Amount
+frame_bury 5
+intc_0 // 0
+gtxns Receiver
+frame_bury 4
+label185:
+intc_0 // 0
+bytec_3 // "A"
+app_global_get_ex
+assert
+==
+assert
+intc_0 // 0
+bytec 9 // "L_init_micro"
+app_global_get_ex
+assert
+intc_0 // 0
+bytec 10 // "L_t_micro"
+app_global_get_ex
+assert
+-
+dup
+frame_bury 6
+frame_dig 5
+>
+bz label174
+intc_0 // 0
+bytec 10 // "L_t_micro"
+app_global_get_ex
+assert
+frame_dig 5
+dup
+cover 2
++
+itob
+swap
+itob
+bytec 23 // 0x00
+uncover 2
+concat
+bytec 7 // 0x0000000000000000
+concat
+swap
+concat
+label184:
+dup
+intc_0 // 0
+getbit
+bytec 23 // 0x00
+intc_0 // 0
+uncover 2
+setbit
+frame_bury 0
+dup
+extract 1 8
+frame_bury 1
+dup
+intc_1 // 1
+extract_uint64
+frame_bury 7
+dup
+extract 9 8
+frame_bury 2
+extract 17 8
+frame_bury 3
+frame_dig 11
+intc_1 // 1
+-
+dup
+frame_bury 9
+dup
+gtxns TypeEnum
+intc_3 // 6
+==
+assert
+dup
+gtxns ApplicationID
+global CurrentApplicationID
+==
+assert
+intc_0 // 0
+gtxnsas ApplicationArgs
+bytec 28 // 0xd22e11fc
+==
+bnz label175
+intc_0 // 0
+bytec 4 // "addrl"
+app_global_get_ex
+assert
+frame_dig 4
+dig 1
+==
+assert
+intc_1 // 1
+gtxns TypeEnum
+intc_3 // 6
+==
+assert
+intc_1 // 1
+gtxns ApplicationID
+global CurrentApplicationID
+==
+assert
+intc_1 // 1
+intc_0 // 0
+gtxnsas ApplicationArgs
+bytec 32 // 0xa172799c
+==
+assert
+intc_1 // 1
+gtxns Sender
+intc_0 // 0
+bytec_1 // "addrb"
+app_global_get_ex
+assert
+==
+assert
+intc_1 // 1
+gtxns NumAccounts
+intc_2 // 2
+==
+assert
+intc_1 // 1
+dup
+gtxnsas Accounts
+==
+assert
+intc_1 // 1
+intc_2 // 2
+gtxnsas Accounts
+intc_0 // 0
+bytec 5 // "admin"
+app_global_get_ex
+assert
+==
+assert
+frame_dig 9
+callsub label168
+frame_dig 0
+frame_dig 1
+concat
+frame_dig 2
+concat
+frame_dig 3
+concat
+frame_bury 0
+retsub
+label175:
+pushint 3
+frame_dig 11
+<=
+bz label176
+frame_dig 11
+intc_3 // 6
+<=
+bz label176
+intc_1 // 1
+label183:
+assert
+frame_dig 4
+global CurrentApplicationAddress
+==
+assert
+intc_0 // 0
+bytec 9 // "L_init_micro"
+app_global_get_ex
+assert
+frame_dig 7
+<=
+assert
+intc_1 // 1
+frame_bury 8
+label180:
+frame_dig 8
+frame_dig 9
+<
+bz label177
+frame_dig 8
+dup
+gtxns TypeEnum
+intc_3 // 6
+==
+assert
+dup
+gtxns ApplicationID
+global CurrentApplicationID
+==
+assert
+dup
+intc_0 // 0
+gtxnsas ApplicationArgs
+bytec 32 // 0xa172799c
+==
+assert
+dup
+gtxns Sender
+intc_0 // 0
+bytec_1 // "addrb"
+app_global_get_ex
+assert
+==
+assert
+gtxns NumAccounts
+dup
+intc_2 // 2
+<=
+assert
+intc_1 // 1
+==
+bz label178
+frame_dig 8
+intc_1 // 1
+gtxnsas Accounts
+intc_0 // 0
+bytec 4 // "addrl"
+app_global_get_ex
+assert
+dig 1
+==
+assert
+intc_0 // 0
+bytec 5 // "admin"
+app_global_get_ex
+assert
+==
+assert
+label182:
+frame_dig 8
+gtxns NumAssets
+dup
+frame_bury 10
+pushint 3
+<=
+bz label179
+frame_dig 10
+bz label179
+intc_1 // 1
+label181:
+assert
+frame_dig 8
+intc_1 // 1
++
+frame_bury 8
+b label180
+label179:
+intc_0 // 0
+b label181
+label178:
+frame_dig 8
+dup
+intc_1 // 1
+gtxnsas Accounts
+intc_0 // 0
+bytec 4 // "addrl"
+app_global_get_ex
+assert
+==
+assert
+intc_2 // 2
+gtxnsas Accounts
+intc_0 // 0
+bytec 5 // "admin"
+app_global_get_ex
+assert
+==
+assert
+b label182
+label177:
+frame_dig 9
+gtxns Sender
+intc_0 // 0
+bytec_1 // "addrb"
+app_global_get_ex
+assert
+==
+assert
+frame_dig 0
+frame_dig 1
+concat
+frame_dig 2
+concat
+frame_dig 3
+concat
+frame_bury 0
+retsub
+label176:
+intc_0 // 0
+b label183
+label174:
+frame_dig 5
+frame_dig 6
+dup
+cover 2
+-
+intc_0 // 0
+bytec 9 // "L_init_micro"
+app_global_get_ex
+assert
+itob
+swap
+itob
+uncover 2
+itob
+pushbytes 0x80 // 0x80
+uncover 3
+concat
+uncover 2
+concat
+swap
+concat
+b label184
+label173:
+intc_0 // 0
+gtxns TypeEnum
+pushint 4
+==
+assert
+intc_0 // 0
+gtxns XferAsset
+intc_0 // 0
+gtxns AssetAmount
+frame_bury 5
+intc_0 // 0
+gtxns AssetReceiver
+frame_bury 4
+b label185
+label168:
+proto 1 0
+frame_dig -1
+gtxns TypeEnum
+intc_3 // 6
+==
+assert
+frame_dig -1
+gtxns ApplicationID
+global CurrentApplicationID
+==
+assert
+frame_dig -1
+intc_0 // 0
+gtxnsas ApplicationArgs
+bytec 48 // 0x9eeef952
+==
+assert
+frame_dig -1
+gtxns Sender
+intc_0 // 0
+bytec 5 // "admin"
+app_global_get_ex
+assert
+==
+assert
+retsub
+label66:
+intc_0 // 0
+bytec 11 // "n"
+app_global_get_ex
+assert
+intc_0 // 0
+bytec 12 // "TC"
+app_global_get_ex
+assert
+<
+assert
+global GroupSize
+intc_2 // 2
+==
+assert
+intc_0 // 0
+gtxns TypeEnum
+intc_3 // 6
+==
+assert
+intc_0 // 0
+gtxns ApplicationID
+global CurrentApplicationID
+==
+assert
+intc_0 // 0
+gtxns Sender
+intc_0 // 0
+bytec 4 // "addrl"
+app_global_get_ex
+assert
+==
+assert
+intc_0 // 0
+dup
+gtxnsas ApplicationArgs
+bytec 50 // 0xa1079961
+==
+assert
+intc_1 // 1
+callsub label168
+retsub
+label73:
+global GroupSize
+pushint 3
+==
+assert
+intc_1 // 1
+gtxns TypeEnum
+intc_3 // 6
+==
+assert
+intc_1 // 1
+gtxns ApplicationID
+global CurrentApplicationID
+==
+assert
+intc_1 // 1
+intc_0 // 0
+gtxnsas ApplicationArgs
+bytec 51 // 0x301c462f
+==
+assert
+intc_1 // 1
+gtxns Sender
+intc_0 // 0
+bytec_1 // "addrb"
+app_global_get_ex
+assert
+==
+assert
+intc_0 // 0
+gtxns AssetReceiver
+global CurrentApplicationAddress
+==
+assert
+intc_0 // 0
+gtxns XferAsset
+intc_0 // 0
+bytec 6 // "finite"
+app_global_get_ex
+assert
+==
+assert
+intc_2 // 2
+callsub label168
+intc_0 // 0
+gtxns AssetAmount
+retsub

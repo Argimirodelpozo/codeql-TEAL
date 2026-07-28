@@ -1,0 +1,19 @@
+#pragma version 10
+// VULN: the sender check is INVERTED. The payout requires Sender != creator,
+// so every attacker passes and only the creator is locked out. Structurally
+// identical to safe/sender_guarded.teal apart from the comparison.
+txn Sender
+global CreatorAddress
+!=
+assert
+txna ApplicationArgs 0
+itxn_begin
+int pay
+itxn_field TypeEnum
+itxn_field Receiver
+txna ApplicationArgs 1
+btoi
+itxn_field Amount
+itxn_submit
+int 1
+return

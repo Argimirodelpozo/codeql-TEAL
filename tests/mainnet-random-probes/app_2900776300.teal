@@ -1,0 +1,356 @@
+#pragma version 10
+intcblock 0 1 16490
+bytecblock 0x6d616e616765725f61646472657373 0x70726f706f73616c5f636f756e74 0x616e796f6e655f63616e5f637265617465 0x6d696e696d756d5f686f6c64696e67 0x61737365745f6964 0x5f70 0x151f7c75 0x0000000000000000 0x5f76
+txn NumAppArgs
+bz label1
+pushbytess 0xf15e53b2 0x21b89dde 0xef0ffc68 0x6b509907 0x97d5cecd 0xf812fd3d
+txna ApplicationArgs 0
+match label2 label3 label4 label5 label6 label7
+label1:
+intc_0 // 0
+return
+label7:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+assert
+txna ApplicationArgs 1
+btoi
+callsub label8
+bytec 6 // 0x151f7c75
+swap
+concat
+log
+intc_1 // 1
+return
+label6:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+assert
+txna ApplicationArgs 1
+btoi
+txna ApplicationArgs 2
+btoi
+txnas Accounts
+callsub label9
+pushbytes 0x00 // 0x00
+intc_0 // 0
+uncover 2
+setbit
+bytec 6 // 0x151f7c75
+swap
+concat
+log
+intc_1 // 1
+return
+label5:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+assert
+txna ApplicationArgs 1
+btoi
+txna ApplicationArgs 2
+intc_0 // 0
+getbit
+txn GroupIndex
+intc_1 // 1
+-
+dup
+gtxns TypeEnum
+intc_1 // 1
+==
+assert
+callsub label10
+intc_1 // 1
+return
+label4:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+assert
+txna ApplicationArgs 1
+extract 2 0
+txna ApplicationArgs 2
+extract 2 0
+txna ApplicationArgs 3
+btoi
+txn GroupIndex
+intc_1 // 1
+-
+dup
+gtxns TypeEnum
+intc_1 // 1
+==
+assert
+callsub label11
+intc_1 // 1
+return
+label3:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+assert
+txna ApplicationArgs 1
+intc_0 // 0
+getbit
+txna ApplicationArgs 2
+btoi
+txna ApplicationArgs 3
+btoi
+callsub label12
+intc_1 // 1
+return
+label2:
+txn OnCompletion
+!
+assert
+txn ApplicationID
+!
+assert
+txna ApplicationArgs 1
+intc_0 // 0
+getbit
+txna ApplicationArgs 2
+btoi
+txna ApplicationArgs 3
+btoi
+callsub label13
+intc_1 // 1
+return
+label13:
+proto 3 0
+bytec_0 // "manager_address"
+txn Sender
+app_global_put
+bytec_1 // "proposal_count"
+intc_0 // 0
+app_global_put
+bytec_2 // "anyone_can_create"
+frame_dig -3
+app_global_put
+bytec_3 // "minimum_holding"
+frame_dig -2
+app_global_put
+bytec 4 // "asset_id"
+frame_dig -1
+app_global_put
+retsub
+label12:
+proto 3 0
+intc_0 // 0
+bytec_0 // "manager_address"
+app_global_get_ex
+assert
+txn Sender
+==
+assert
+bytec_2 // "anyone_can_create"
+frame_dig -3
+app_global_put
+bytec_3 // "minimum_holding"
+frame_dig -2
+app_global_put
+bytec 4 // "asset_id"
+frame_dig -1
+app_global_put
+retsub
+label11:
+proto 4 0
+intc_0 // 0
+bytec_2 // "anyone_can_create"
+app_global_get_ex
+assert
+bnz label14
+intc_0 // 0
+bytec_0 // "manager_address"
+app_global_get_ex
+assert
+txn Sender
+==
+assert
+label14:
+global LatestTimestamp
+frame_dig -1
+gtxns Amount
+intc_2 // 16490
+>=
+assert
+frame_dig -1
+gtxns Receiver
+global CurrentApplicationAddress
+==
+assert
+dup
+frame_dig -2
++
+itob
+swap
+itob
+txn Sender
+frame_dig -4
+pushbytes 0x3a // ":"
+concat
+frame_dig -3
+concat
+dup
+len
+itob
+extract 6 2
+swap
+concat
+uncover 3
+uncover 3
+concat
+bytec 7 // 0x0000000000000000
+concat
+bytec 7 // 0x0000000000000000
+concat
+uncover 2
+concat
+pushbytes 0x0042 // 0x0042
+concat
+swap
+concat
+intc_0 // 0
+bytec_1 // "proposal_count"
+app_global_get_ex
+assert
+intc_1 // 1
++
+dup
+itob
+bytec 5 // "_p"
+swap
+concat
+dup
+box_len
+bury 1
+!
+assert
+bytec_1 // "proposal_count"
+uncover 2
+app_global_put
+dup
+box_del
+pop
+swap
+box_put
+retsub
+label10:
+proto 3 0
+frame_dig -3
+itob
+bytec 5 // "_p"
+dig 1
+concat
+dup
+box_len
+bury 1
+assert
+txn Sender
+uncover 2
+swap
+concat
+bytec 8 // "_v"
+swap
+concat
+dup
+box_len
+bury 1
+!
+assert
+dig 1
+box_get
+assert
+global LatestTimestamp
+dig 1
+intc_0 // 0
+extract_uint64
+dig 1
+<
+assert
+txn Sender
+intc_0 // 0
+bytec_0 // "manager_address"
+app_global_get_ex
+assert
+!=
+assert
+frame_dig -1
+gtxns Amount
+intc_2 // 16490
+>=
+assert
+frame_dig -1
+gtxns Receiver
+global CurrentApplicationAddress
+==
+assert
+txn Sender
+intc_0 // 0
+bytec 4 // "asset_id"
+app_global_get_ex
+assert
+asset_holding_get AssetBalance
+pop
+intc_0 // 0
+bytec_3 // "minimum_holding"
+app_global_get_ex
+assert
+>=
+assert
+itob
+dig 1
+pushint 16
+extract_uint64
+intc_1 // 1
++
+dig 2
+pushint 24
+extract_uint64
+frame_dig -2
++
+swap
+itob
+uncover 3
+swap
+replace2 16
+swap
+itob
+replace2 24
+cover 2
+box_put
+dig 1
+box_del
+pop
+box_put
+retsub
+label9:
+proto 2 1
+frame_dig -2
+itob
+frame_dig -1
+concat
+bytec 8 // "_v"
+swap
+concat
+box_len
+bury 1
+retsub
+label8:
+proto 1 1
+frame_dig -1
+itob
+bytec 5 // "_p"
+swap
+concat
+box_get
+assert
+retsub

@@ -1,0 +1,146 @@
+#pragma version 6
+intcblock 0 1 1732165149 86400 8571428571 1881540064
+txn ApplicationID
+bnz label1
+itxn_begin
+pushint 6
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+pushbytes 0x486bad826942f8cb5d09be7cbd11324e5cc7ff046b4d46c320a4c8dfc31278bb // addr JBV23ATJIL4MWXIJXZ6L2EJSJZOMP7YENNGUNQZAUTEN7QYSPC5ZHPR6SY
+itxn_field RekeyTo
+intc_2 // 1732165149
+dup
+itxn_field Assets
+pushbytes 0x636c61696d // "claim"
+itxn_field ApplicationArgs
+pushint 1702574687
+itxn_field ApplicationID
+intc 5 // 1881540064
+itob
+intc_3 // 86400
+itob
+concat
+intc_1 // 1
+itob
+concat
+intc 4 // 8571428571
+itob
+concat
+intc_0 // 0
+itob
+concat
+global LatestTimestamp
+itob
+concat
+pushint 1757124064
+itob
+concat
+intc_1 // 1
+itob
+concat
+intc_2 // 1732165149
+itob
+concat
+txna ApplicationArgs 0
+concat
+itxn_field ApplicationArgs
+txna ApplicationArgs 1
+itxn_field ApplicationArgs
+global CreatorAddress
+itxn_field ApplicationArgs
+itxn_submit
+global CurrentApplicationAddress
+dup
+uncover 2
+asset_holding_get AssetBalance
+assert
+intc_0 // 0
+intc 4 // 8571428571
++
+==
+assert
+acct_params_get AcctAuthAddr
+assert
+global ZeroAddress
+==
+assert
+intc_3 // 86400
+assert
+intc_1 // 1
+return
+label1:
+itxn_begin
+pushint 4
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+pushbytes 0x6df3d667fd63d154c3b50de0b328d92b6b603f2d3fbd53c91d3f792e43ecfb3c // addr NXZ5MZ75MPIVJQ5VBXQLGKGZFNVWAPZNH66VHSI5H54S4Q7M7M6HHMC5LE
+dup
+itxn_field AssetReceiver
+intc_2 // 1732165149
+dup2
+asset_holding_get AssetBalance
+store 0
+pop
+dup
+itxn_field XferAsset
+global CurrentApplicationAddress
+swap
+asset_holding_get AssetBalance
+pop
+intc 4 // 8571428571
+intc_1 // 1
+dup2
+txn Note
+btoi
+dup
+intc 5 // 1881540064
+dup2
+>=
+dup
+store 1
+select
+-
+intc_3 // 86400
+/
+dup2
+>
+select
+mulw
+uncover 2
+divw
+-
+-
+load 1
+*
+load 0
+*
+itxn_field AssetAmount
+txn OnCompletion
+dup
+pushint 5
+==
+bz label2
+global CreatorAddress
+dup
+dup
+txn Sender
+==
+assert
+itxn_field AssetCloseTo
+itxn_next
+intc_1 // 1
+itxn_field TypeEnum
+itxn_field CloseRemainderTo
+intc_0 // 0
+itxn_field Fee
+b label3
+label2:
+intc_0 // 0
+==
+assert
+label3:
+itxn_submit
+intc_1 // 1
+return

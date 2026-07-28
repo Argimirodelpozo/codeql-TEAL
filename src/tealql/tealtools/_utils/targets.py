@@ -3,8 +3,7 @@
 A *target* is whatever the user points at on the command line: a single ``.teal``
 file, or a directory containing one or more ``.teal`` files. The pipeline
 (:class:`~tealql.tealtools.ssa.SSAProgram` / :func:`~tealql.tealtools.graph.load_graph`)
-reconstructs everything straight from that source -- there is no database to
-build, cache, or read.
+reconstructs everything straight from that source.
 """
 from __future__ import annotations
 

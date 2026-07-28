@@ -1,0 +1,4048 @@
+#pragma version 10
+intcblock 0 1 32 10000000000000000000 1000 312 3000 4000 236 146 186 194 65537
+bytecblock 0x 0x068101 0x42 0x4d 0x554c5f4645455f5343414c45 0x151f7c75 0x554c5f535550455241444d494e5f415050 0x4d53475f50524f434553534f52 0x53 0x50 0x4d4252 0x554c5f535550455241444d494e5f57414c4c4554 0x4f5f 0x6465706f736974 0x7769746864726177 0x4c 0x54 0x616464 0x64656c657465 0x544b5f 0x544645455f544945525f31 0x554c5f4d464545 0x4d4645455f544945525f31 0x4343545055534443000000000000000000000000000000000000000000000000 0x4543445341 0x554c5f4d494e5f464545
+txn NumAppArgs
+intc_0 // 0
+==
+bnz label1
+txna ApplicationArgs 0
+pushbytes 0x240d2f67 // 0x240d2f67
+==
+bnz label2
+txna ApplicationArgs 0
+pushbytes 0x0c1c367c // 0x0c1c367c
+==
+bnz label3
+txna ApplicationArgs 0
+pushbytes 0x0f90370e // 0x0f90370e
+==
+bnz label4
+txna ApplicationArgs 0
+pushbytes 0xb6c2b148 // 0xb6c2b148
+==
+bnz label5
+txna ApplicationArgs 0
+pushbytes 0x7f53fb94 // 0x7f53fb94
+==
+bnz label6
+txna ApplicationArgs 0
+pushbytes 0x1c6ca5ce // 0x1c6ca5ce
+==
+bnz label7
+txna ApplicationArgs 0
+pushbytes 0xa127c1ab // 0xa127c1ab
+==
+bnz label8
+txna ApplicationArgs 0
+pushbytes 0x79f33995 // 0x79f33995
+==
+bnz label9
+txna ApplicationArgs 0
+pushbytes 0x773949f6 // 0x773949f6
+==
+bnz label10
+txna ApplicationArgs 0
+pushbytes 0x754c058e // 0x754c058e
+==
+bnz label11
+txna ApplicationArgs 0
+pushbytes 0x8c8f90a0 // 0x8c8f90a0
+==
+bnz label12
+txna ApplicationArgs 0
+pushbytes 0xfa3b3979 // 0xfa3b3979
+==
+bnz label13
+txna ApplicationArgs 0
+pushbytes 0xeaa1eb7b // 0xeaa1eb7b
+==
+bnz label14
+txna ApplicationArgs 0
+pushbytes 0x61d10580 // 0x61d10580
+==
+bnz label15
+txna ApplicationArgs 0
+pushbytes 0xbb39d051 // 0xbb39d051
+==
+bnz label16
+txna ApplicationArgs 0
+pushbytes 0xf6b03f57 // 0xf6b03f57
+==
+bnz label17
+txna ApplicationArgs 0
+pushbytes 0x2b248526 // 0x2b248526
+==
+bnz label18
+txna ApplicationArgs 0
+pushbytes 0x37e6cc4a // 0x37e6cc4a
+==
+bnz label19
+err
+label19:
+txn OnCompletion
+intc_0 // 0
+==
+txn ApplicationID
+intc_0 // 0
+!=
+&&
+assert
+callsub label20
+intc_1 // 1
+return
+label18:
+txn OnCompletion
+intc_0 // 0
+==
+txn ApplicationID
+intc_0 // 0
+!=
+&&
+assert
+callsub label21
+intc_1 // 1
+return
+label17:
+txn OnCompletion
+intc_0 // 0
+==
+txn ApplicationID
+intc_0 // 0
+!=
+&&
+assert
+callsub label22
+intc_1 // 1
+return
+label16:
+txn OnCompletion
+intc_0 // 0
+==
+txn ApplicationID
+intc_0 // 0
+!=
+&&
+assert
+callsub label23
+intc_1 // 1
+return
+label15:
+txn OnCompletion
+intc_0 // 0
+==
+txn ApplicationID
+intc_0 // 0
+!=
+&&
+assert
+callsub label24
+intc_1 // 1
+return
+label14:
+txn OnCompletion
+intc_0 // 0
+==
+txn ApplicationID
+intc_0 // 0
+!=
+&&
+assert
+callsub label25
+intc_1 // 1
+return
+label13:
+txn OnCompletion
+intc_0 // 0
+==
+txn ApplicationID
+intc_0 // 0
+!=
+&&
+assert
+callsub label26
+intc_1 // 1
+return
+label12:
+txn OnCompletion
+intc_0 // 0
+==
+txn ApplicationID
+intc_0 // 0
+!=
+&&
+assert
+callsub label27
+intc_1 // 1
+return
+label11:
+txn OnCompletion
+intc_0 // 0
+==
+txn ApplicationID
+intc_0 // 0
+!=
+&&
+assert
+callsub label28
+intc_1 // 1
+return
+label10:
+txn OnCompletion
+intc_0 // 0
+==
+txn ApplicationID
+intc_0 // 0
+!=
+&&
+assert
+callsub label29
+intc_1 // 1
+return
+label9:
+txn OnCompletion
+intc_0 // 0
+==
+txn ApplicationID
+intc_0 // 0
+!=
+&&
+assert
+callsub label30
+intc_1 // 1
+return
+label8:
+txn OnCompletion
+intc_0 // 0
+==
+txn ApplicationID
+intc_0 // 0
+!=
+&&
+assert
+callsub label31
+intc_1 // 1
+return
+label7:
+txn OnCompletion
+intc_0 // 0
+==
+txn ApplicationID
+intc_0 // 0
+!=
+&&
+assert
+callsub label32
+intc_1 // 1
+return
+label6:
+txn OnCompletion
+intc_0 // 0
+==
+txn ApplicationID
+intc_0 // 0
+!=
+&&
+assert
+callsub label33
+intc_1 // 1
+return
+label5:
+txn OnCompletion
+intc_0 // 0
+==
+txn ApplicationID
+intc_0 // 0
+!=
+&&
+assert
+callsub label34
+intc_1 // 1
+return
+label4:
+txn OnCompletion
+intc_0 // 0
+==
+txn ApplicationID
+intc_0 // 0
+!=
+&&
+assert
+callsub label35
+intc_1 // 1
+return
+label3:
+txn OnCompletion
+intc_0 // 0
+==
+txn ApplicationID
+intc_0 // 0
+!=
+&&
+assert
+callsub label36
+intc_1 // 1
+return
+label2:
+txn OnCompletion
+intc_0 // 0
+==
+txn ApplicationID
+intc_0 // 0
+==
+&&
+assert
+callsub label37
+intc_1 // 1
+return
+label1:
+txn OnCompletion
+pushint 4
+==
+bnz label38
+txn OnCompletion
+pushint 5
+==
+bnz label39
+err
+label39:
+txn ApplicationID
+intc_0 // 0
+!=
+assert
+callsub label40
+intc_1 // 1
+return
+label38:
+txn ApplicationID
+intc_0 // 0
+!=
+assert
+callsub label41
+intc_1 // 1
+return
+label109:
+proto 1 1
+bytec 6 // "UL_SUPERADMIN_APP"
+app_global_get
+!
+bz label42
+frame_dig -1
+app_global_get
+retsub
+label42:
+bytec 6 // "UL_SUPERADMIN_APP"
+app_global_get
+frame_dig -1
+app_global_get_ex
+store 135
+retsub
+label54:
+proto 3 0
+frame_dig -3
+intc_0 // 0
+==
+bnz label43
+itxn_begin
+pushint 4
+itxn_field TypeEnum
+frame_dig -3
+itxn_field XferAsset
+frame_dig -2
+itxn_field AssetAmount
+frame_dig -1
+itxn_field AssetReceiver
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+b label44
+label43:
+itxn_begin
+intc_1 // 1
+itxn_field TypeEnum
+frame_dig -2
+itxn_field Amount
+frame_dig -1
+itxn_field Receiver
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+label44:
+retsub
+label117:
+proto 2 1
+intc_2 // 32
+frame_dig -2
+frame_dig -1
+b+
+len
+-
+bzero
+frame_dig -2
+frame_dig -1
+b+
+concat
+retsub
+label89:
+proto 2 1
+intc_2 // 32
+frame_dig -2
+frame_dig -1
+b-
+len
+-
+bzero
+frame_dig -2
+frame_dig -1
+b-
+concat
+retsub
+label51:
+proto 2 1
+intc_2 // 32
+frame_dig -2
+frame_dig -1
+b*
+len
+-
+bzero
+frame_dig -2
+frame_dig -1
+b*
+concat
+retsub
+label58:
+proto 2 1
+intc_2 // 32
+frame_dig -2
+frame_dig -1
+b%
+len
+-
+bzero
+frame_dig -2
+frame_dig -1
+b%
+concat
+retsub
+label45:
+proto 0 1
+intc_2 // 32
+bzero
+retsub
+label115:
+proto 2 1
+frame_dig -2
+frame_dig -1
+b>
+retsub
+label57:
+proto 2 1
+frame_dig -2
+frame_dig -1
+b>=
+retsub
+label91:
+proto 1 1
+frame_dig -1
+callsub label45
+b>
+retsub
+label149:
+proto 1 1
+frame_dig -1
+callsub label45
+b>=
+retsub
+label56:
+proto 1 1
+frame_dig -1
+pushint 76
+>
+bnz label46
+frame_dig -1
+pushint 57
+>
+bnz label47
+frame_dig -1
+pushint 38
+>
+bnz label48
+frame_dig -1
+pushint 19
+>
+bz label49
+intc_3 // 10000000000000000000
+callsub label50
+pushint 10
+frame_dig -1
+pushint 19
+-
+exp
+callsub label50
+callsub label51
+retsub
+label48:
+intc_3 // 10000000000000000000
+callsub label50
+intc_3 // 10000000000000000000
+callsub label50
+pushint 10
+frame_dig -1
+pushint 38
+-
+exp
+callsub label50
+callsub label51
+callsub label51
+retsub
+label47:
+intc_3 // 10000000000000000000
+callsub label50
+intc_3 // 10000000000000000000
+callsub label50
+intc_3 // 10000000000000000000
+callsub label50
+pushint 10
+frame_dig -1
+pushint 57
+-
+exp
+callsub label50
+callsub label51
+callsub label51
+callsub label51
+retsub
+label46:
+intc_3 // 10000000000000000000
+callsub label50
+intc_3 // 10000000000000000000
+callsub label50
+intc_3 // 10000000000000000000
+callsub label50
+intc_3 // 10000000000000000000
+callsub label50
+pushint 10
+frame_dig -1
+pushint 76
+-
+exp
+callsub label50
+callsub label51
+callsub label51
+callsub label51
+callsub label51
+retsub
+label49:
+pushint 10
+frame_dig -1
+exp
+callsub label50
+retsub
+label102:
+proto 3 1
+intc_2 // 32
+frame_dig -3
+frame_dig -2
+b*
+frame_dig -1
+b/
+len
+-
+bzero
+frame_dig -3
+frame_dig -2
+b*
+frame_dig -1
+b/
+concat
+retsub
+label50:
+proto 1 1
+pushint 24
+bzero
+frame_dig -1
+itob
+concat
+retsub
+label207:
+proto 1 0
+bytec 7 // "MSG_PROCESSOR"
+intc_0 // 0
+app_global_put
+bytec 6 // "UL_SUPERADMIN_APP"
+intc_0 // 0
+app_global_put
+bytec 11 // "UL_SUPERADMIN_WALLET"
+bytec_0 // ""
+app_global_put
+bytec 6 // "UL_SUPERADMIN_APP"
+frame_dig -1
+app_global_put
+retsub
+label52:
+proto 0 1
+bytec 6 // "UL_SUPERADMIN_APP"
+app_global_get
+pushbytes 0x4d4e41 // "MNA"
+app_global_get_ex
+store 0
+retsub
+label53:
+proto 0 1
+bytec 6 // "UL_SUPERADMIN_APP"
+app_global_get
+pushbytes 0x424b41 // "BKA"
+app_global_get_ex
+store 1
+retsub
+label168:
+proto 0 1
+bytec 7 // "MSG_PROCESSOR"
+app_global_get
+app_params_get AppAddress
+store 154
+retsub
+label40:
+proto 0 0
+txn Sender
+callsub label52
+==
+assert
+intc_1 // 1
+return
+label41:
+proto 0 0
+txn Sender
+callsub label52
+==
+assert
+intc_1 // 1
+return
+label208:
+proto 1 0
+intc_1 // 1
+return
+label209:
+proto 1 0
+txn Sender
+callsub label52
+==
+assert
+bytec 7 // "MSG_PROCESSOR"
+frame_dig -1
+app_global_put
+retsub
+label210:
+proto 1 0
+txn Sender
+callsub label53
+==
+assert
+frame_dig -1
+txnas Assets
+intc_0 // 0
+global CurrentApplicationAddress
+callsub label54
+retsub
+label211:
+proto 7 1
+intc_0 // 0
+bytec_0 // ""
+dupn 2
+txn Sender
+callsub label53
+==
+assert
+frame_dig -7
+extract 2 0
+frame_dig -6
+itob
+concat
+keccak256
+frame_bury 1
+intc_2 // 32
+frame_dig 1
+len
+==
+assert
+frame_dig -5
+extract 2 0
+frame_dig -4
+itob
+concat
+keccak256
+frame_bury 2
+intc_2 // 32
+frame_dig 2
+len
+==
+assert
+frame_dig 1
+callsub label55
+store 2
+frame_dig 1
+box_len
+store 4
+store 3
+load 4
+assert
+frame_dig 2
+box_len
+store 6
+store 5
+load 6
+assert
+frame_dig -7
+extract 2 0
+frame_dig -6
+itob
+concat
+frame_dig -5
+extract 2 0
+concat
+frame_dig -4
+itob
+concat
+keccak256
+frame_bury 3
+intc_2 // 32
+frame_dig 3
+len
+==
+assert
+frame_dig -2
+extract 2 0
+frame_dig -3
+extract 2 0
+callsub label51
+load 2
+callsub label56
+callsub label57
+assert
+frame_dig -3
+extract 2 0
+frame_dig -1
+extract 2 0
+callsub label58
+callsub label45
+b==
+assert
+frame_dig 3
+frame_dig -3
+extract 2 0
+frame_dig -2
+extract 2 0
+frame_dig -1
+extract 2 0
+callsub label59
+retsub
+label212:
+proto 4 1
+intc_0 // 0
+bytec_0 // ""
+txn Sender
+callsub label53
+==
+assert
+frame_dig -4
+extract 2 0
+frame_dig -3
+itob
+concat
+keccak256
+frame_bury 1
+intc_2 // 32
+frame_dig 1
+len
+==
+assert
+frame_dig 1
+frame_dig -2
+extract 2 0
+frame_dig -1
+callsub label60
+retsub
+label213:
+proto 1 1
+intc_0 // 0
+bytec_0 // ""
+intc_0 // 0
+dupn 3
+txn Sender
+callsub label53
+==
+assert
+frame_dig -1
+intc_0 // 0
+extract_uint16
+frame_bury 3
+frame_dig 3
+intc_0 // 0
+>
+frame_dig -1
+intc_0 // 0
+extract_uint16
+frame_bury 4
+frame_dig 4
+pushint 34
+%
+intc_0 // 0
+==
+&&
+assert
+frame_dig -1
+intc_0 // 0
+extract_uint16
+frame_bury 5
+frame_dig 5
+pushint 34
+/
+store 11
+intc_0 // 0
+store 12
+label62:
+load 12
+load 11
+<
+bz label61
+frame_dig -1
+extract 2 0
+pushint 34
+load 12
+*
+pushint 34
+extract3
+store 13
+load 13
+extract 0 2
+bytec 12 // "O_"
+==
+assert
+load 13
+box_get
+store 15
+store 14
+load 15
+assert
+load 14
+frame_bury 1
+frame_dig 1
+pushint 64
+extract_uint64
+frame_bury 2
+frame_dig 2
+global LatestTimestamp
+<
+assert
+load 13
+box_del
+assert
+load 12
+intc_1 // 1
++
+store 12
+b label62
+label61:
+retsub
+label214:
+proto 3 1
+intc_0 // 0
+txn Sender
+callsub label53
+==
+assert
+bytec 17 // "add"
+frame_dig -3
+frame_dig -2
+frame_dig -1
+callsub label63
+intc_0 // 0
+frame_bury 0
+retsub
+label215:
+proto 3 1
+intc_0 // 0
+txn Sender
+callsub label53
+==
+assert
+bytec 18 // "delete"
+frame_dig -3
+frame_dig -2
+frame_dig -1
+callsub label63
+intc_0 // 0
+frame_bury 0
+retsub
+label63:
+proto 4 0
+bytec_0 // ""
+intc_0 // 0
+bytec_0 // ""
+frame_dig -3
+extract 2 0
+frame_dig -3
+intc_0 // 0
+extract_uint16
+frame_bury 1
+frame_dig 1
+pushint 108
+-
+pushint 108
+extract3
+base64_decode StdEncoding
+store 16
+intc_0 // 0
+store 22
+label74:
+load 22
+intc 7 // 4000
+global MinTxnFee
+/
+<
+bnz label64
+load 16
+extract 0 32
+frame_bury 2
+frame_dig 2
+len
+itob
+extract 6 0
+frame_dig 2
+concat
+frame_bury 2
+load 16
+extract 32 32
+store 19
+load 16
+extract 64 8
+store 20
+load 16
+extract 72 8
+btoi
+store 21
+frame_dig -3
+frame_dig -2
+frame_dig -1
+load 20
+btoi
+load 19
+callsub label65
+bytec 19 // "TK_"
+load 19
+concat
+keccak256
+store 17
+load 19
+frame_dig 2
+callsub label66
+store 18
+frame_dig -4
+bytec 17 // "add"
+==
+bnz label67
+label73:
+frame_dig -4
+bytec 18 // "delete"
+==
+bnz label68
+label71:
+frame_dig 0
+extract 2 0
+len
+intc_0 // 0
+==
+bnz label69
+load 17
+box_del
+pop
+load 17
+frame_dig 0
+extract 2 0
+box_put
+b label70
+label69:
+load 17
+box_del
+assert
+b label70
+label68:
+load 18
+intc_0 // 0
+>
+assert
+load 17
+box_get
+store 30
+store 29
+load 30
+assert
+load 29
+intc_0 // 0
+load 18
+intc_1 // 1
+-
+intc_2 // 32
+*
+extract3
+load 17
+box_get
+store 32
+store 31
+load 32
+assert
+load 31
+load 18
+intc_2 // 32
+*
+load 17
+box_get
+store 34
+store 33
+load 34
+assert
+load 33
+len
+load 18
+intc_2 // 32
+*
+-
+extract3
+concat
+frame_bury 0
+frame_dig 0
+len
+itob
+extract 6 0
+frame_dig 0
+concat
+frame_bury 0
+b label71
+label67:
+load 21
+intc_0 // 0
+==
+load 21
+global LatestTimestamp
+intc 4 // 1000
+*
+>=
+load 21
+global LatestTimestamp
+intc 4 // 1000
+*
+intc 4 // 1000
+pushint 24
+*
+pushint 60
+*
+pushint 60
+*
+intc 4 // 1000
+*
++
+<=
+&&
+||
+assert
+load 17
+box_len
+store 24
+store 23
+load 24
+bnz label72
+frame_dig 2
+extract 2 0
+frame_bury 0
+frame_dig 0
+len
+itob
+extract 6 0
+frame_dig 0
+concat
+frame_bury 0
+b label73
+label72:
+load 17
+box_get
+store 26
+store 25
+load 26
+assert
+load 25
+len
+pushint 160
+<
+assert
+load 18
+intc_0 // 0
+==
+assert
+load 17
+box_get
+store 28
+store 27
+load 28
+assert
+load 27
+frame_dig 2
+extract 2 0
+concat
+frame_bury 0
+frame_dig 0
+len
+itob
+extract 6 0
+frame_dig 0
+concat
+frame_bury 0
+b label73
+label64:
+itxn_begin
+pushint 6
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+pushint 5
+itxn_field OnCompletion
+bytec_1 // 0x068101
+itxn_field ApprovalProgram
+bytec_1 // 0x068101
+itxn_field ClearStateProgram
+itxn_submit
+load 22
+intc_1 // 1
++
+store 22
+b label74
+label70:
+retsub
+label66:
+proto 2 1
+bytec_0 // ""
+bytec 19 // "TK_"
+frame_dig -2
+concat
+keccak256
+store 35
+load 35
+box_len
+store 39
+store 38
+load 39
+!
+bnz label75
+load 35
+box_get
+store 41
+store 40
+load 41
+assert
+load 40
+len
+intc_2 // 32
+%
+intc_0 // 0
+==
+assert
+load 35
+box_get
+store 43
+store 42
+load 43
+assert
+load 42
+len
+intc_2 // 32
+/
+store 37
+load 37
+store 36
+label78:
+load 36
+intc_0 // 0
+>
+bz label76
+load 35
+box_get
+store 45
+store 44
+load 45
+assert
+load 44
+load 37
+load 36
+-
+intc_2 // 32
+*
+intc_2 // 32
+extract3
+frame_bury 0
+frame_dig 0
+len
+intc_2 // 32
+==
+assert
+frame_dig 0
+frame_dig -1
+extract 2 0
+==
+bnz label77
+load 36
+intc_1 // 1
+-
+store 36
+b label78
+label77:
+load 37
+load 36
+-
+intc_1 // 1
++
+frame_bury 0
+retsub
+label75:
+intc_0 // 0
+frame_bury 0
+retsub
+label76:
+load 36
+frame_bury 0
+retsub
+label93:
+proto 5 0
+frame_dig -3
+extract 2 0
+len
+intc_2 // 32
+==
+frame_dig -2
+frame_dig -3
+callsub label66
+intc_0 // 0
+>
+&&
+bnz label79
+frame_dig -5
+frame_dig -4
+frame_dig -3
+frame_dig -1
+frame_dig -2
+callsub label65
+b label80
+label79:
+frame_dig -5
+frame_dig -4
+frame_dig -3
+pushint 8
+frame_dig -3
+extract 2 0
+callsub label65
+label80:
+retsub
+label216:
+proto 1 1
+intc_0 // 0
+txn GroupIndex
+intc_1 // 1
+-
+gtxns TypeEnum
+pushint 4
+==
+txn GroupIndex
+intc_1 // 1
+-
+gtxns TypeEnum
+intc_1 // 1
+==
+||
+txn GroupIndex
+intc_1 // 1
+-
+gtxns TypeEnum
+pushint 4
+==
+bnz label81
+txn GroupIndex
+intc_1 // 1
+-
+gtxns Receiver
+global CurrentApplicationAddress
+==
+label84:
+&&
+txn GroupIndex
+intc_1 // 1
+-
+gtxns Sender
+txn Sender
+==
+&&
+assert
+txn GroupIndex
+intc_1 // 1
+-
+gtxns TypeEnum
+intc_1 // 1
+==
+bnz label82
+txn GroupIndex
+intc_1 // 1
+-
+gtxns XferAsset
+store 46
+txn GroupIndex
+intc_1 // 1
+-
+gtxns AssetAmount
+store 47
+b label83
+label82:
+intc_0 // 0
+store 46
+txn GroupIndex
+intc_1 // 1
+-
+gtxns Amount
+store 47
+b label83
+label81:
+txn GroupIndex
+intc_1 // 1
+-
+gtxns AssetReceiver
+global CurrentApplicationAddress
+==
+b label84
+label83:
+load 47
+intc_0 // 0
+>
+assert
+pushint 24
+bzero
+load 46
+itob
+concat
+store 48
+pushint 8
+store 49
+frame_dig -1
+extract 2 0
+extract 0 32
+frame_dig -1
+extract 2 0
+extract 32 8
+btoi
+load 48
+load 49
+pushint 24
+bzero
+load 47
+itob
+concat
+intc_1 // 1
+callsub label85
+bytec 13 // "deposit"
+log
+txn Sender
+pushint 8
+itob
+concat
+log
+frame_dig -1
+extract 2 0
+log
+load 48
+load 49
+itob
+concat
+log
+load 47
+itob
+log
+retsub
+label217:
+proto 3 0
+txn Sender
+callsub label52
+==
+assert
+frame_dig -3
+extract 2 0
+extract 0 32
+frame_dig -3
+extract 2 0
+extract 32 8
+btoi
+frame_dig -2
+extract 2 0
+extract 0 32
+frame_dig -2
+extract 2 0
+extract 32 8
+btoi
+frame_dig -1
+extract 2 0
+intc_1 // 1
+callsub label85
+pushbytes 0x7669727475616c5f6465706f736974 // "virtual_deposit"
+log
+txn Sender
+pushint 8
+itob
+concat
+log
+frame_dig -3
+extract 2 0
+log
+frame_dig -2
+extract 2 0
+log
+frame_dig -1
+extract 2 0
+log
+retsub
+label218:
+proto 3 1
+intc_0 // 0
+dup
+frame_dig -3
+intc_0 // 0
+extract_uint16
+frame_bury 1
+frame_dig 1
+intc 8 // 236
+-
+store 57
+frame_dig -3
+extract 2 0
+load 57
+intc 8 // 236
+extract3
+base64_decode StdEncoding
+store 56
+intc_0 // 0
+store 66
+label87:
+load 66
+intc 7 // 4000
+global MinTxnFee
+/
+<
+bz label86
+itxn_begin
+pushint 6
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+pushint 5
+itxn_field OnCompletion
+bytec_1 // 0x068101
+itxn_field ApprovalProgram
+bytec_1 // 0x068101
+itxn_field ClearStateProgram
+itxn_submit
+load 66
+intc_1 // 1
++
+store 66
+b label87
+label86:
+load 56
+extract 0 32
+store 58
+load 56
+extract 32 8
+store 59
+load 56
+extract 40 32
+store 60
+load 56
+extract 72 32
+store 61
+load 56
+extract 104 8
+store 62
+load 56
+extract 112 32
+store 63
+load 56
+extract 144 1
+store 64
+load 56
+extract 145 32
+store 65
+frame_dig -3
+frame_dig -2
+frame_dig -1
+load 59
+btoi
+load 58
+callsub label65
+load 63
+load 65
+callsub label57
+assert
+load 60
+load 62
+btoi
+load 65
+intc_1 // 1
+callsub label88
+load 58
+load 59
+btoi
+load 60
+load 62
+btoi
+load 63
+intc_0 // 0
+callsub label85
+load 60
+load 61
+load 62
+load 63
+load 65
+callsub label89
+load 64
+txn TxID
+callsub label90
+bytec 14 // "withdraw"
+log
+load 58
+load 59
+concat
+log
+load 61
+load 62
+concat
+log
+load 60
+load 62
+concat
+log
+load 63
+log
+txn TxID
+log
+load 65
+log
+intc_0 // 0
+frame_bury 0
+retsub
+label219:
+proto 12 1
+intc_0 // 0
+dupn 2
+bytec_0 // ""
+dupn 3
+txn Sender
+callsub label53
+==
+assert
+frame_dig -4
+extract 2 0
+callsub label91
+assert
+frame_dig -12
+intc_0 // 0
+extract_uint16
+frame_bury 1
+frame_dig 1
+intc 5 // 312
+-
+store 123
+frame_dig -12
+extract 2 0
+load 123
+intc 5 // 312
+extract3
+store 108
+frame_dig -8
+intc_0 // 0
+extract_uint16
+frame_bury 2
+frame_dig 2
+intc 5 // 312
+-
+store 123
+frame_dig -8
+extract 2 0
+load 123
+intc 5 // 312
+extract3
+store 109
+load 108
+base64_decode StdEncoding
+store 106
+load 109
+base64_decode StdEncoding
+store 107
+load 106
+intc_0 // 0
+extract_uint64
+store 68
+load 106
+extract 8 1
+store 69
+load 106
+extract 9 32
+store 70
+load 106
+extract 41 32
+store 71
+load 106
+extract 73 1
+store 72
+load 106
+extract 74 32
+store 73
+load 106
+pushint 106
+extract_uint64
+store 74
+load 106
+extract 114 32
+store 75
+load 106
+intc 9 // 146
+extract_uint64
+store 76
+load 106
+extract 154 32
+store 77
+load 106
+intc 10 // 186
+extract_uint64
+store 78
+load 106
+intc 11 // 194
+extract_uint64
+store 79
+load 107
+intc_0 // 0
+extract_uint64
+store 87
+load 107
+extract 8 1
+store 88
+load 107
+extract 9 32
+store 89
+load 107
+extract 41 32
+store 90
+load 107
+extract 73 1
+store 91
+load 107
+extract 74 32
+store 92
+load 107
+pushint 106
+extract_uint64
+store 93
+load 107
+extract 114 32
+store 94
+load 107
+intc 9 // 146
+extract_uint64
+store 95
+load 107
+extract 154 32
+store 96
+load 107
+intc 10 // 186
+extract_uint64
+store 97
+load 107
+intc 11 // 194
+extract_uint64
+store 98
+frame_dig -9
+store 81
+frame_dig -5
+store 100
+frame_dig -3
+extract 2 0
+intc_0 // 0
+extract_uint64
+store 86
+frame_dig -3
+extract 2 0
+pushint 8
+extract_uint64
+store 105
+frame_dig -3
+extract 2 0
+extract 16 11
+store 120
+frame_dig -3
+extract 2 0
+extract 27 11
+store 119
+frame_dig -3
+extract 2 0
+extract 38 13
+store 121
+frame_dig -3
+extract 2 0
+pushint 51
+extract_uint64
+store 122
+load 73
+load 92
+!=
+assert
+intc_0 // 0
+store 126
+label159:
+load 126
+intc 6 // 3000
+global MinTxnFee
+/
+<
+bnz label92
+frame_dig -12
+frame_dig -11
+frame_dig -10
+load 73
+load 74
+callsub label93
+intc_0 // 0
+store 127
+label158:
+load 127
+intc 6 // 3000
+global MinTxnFee
+/
+<
+bnz label94
+frame_dig -8
+frame_dig -7
+frame_dig -6
+load 92
+load 93
+callsub label93
+intc_0 // 0
+store 128
+label157:
+load 128
+pushint 5000
+global MinTxnFee
+/
+<
+bnz label95
+load 75
+load 94
+b==
+assert
+load 76
+load 95
+==
+assert
+load 77
+load 96
+b==
+assert
+load 78
+load 97
+==
+assert
+load 75
+load 76
+itob
+concat
+load 77
+concat
+load 78
+itob
+concat
+keccak256
+store 129
+load 129
+box_len
+store 131
+store 130
+load 131
+assert
+load 129
+box_get
+store 133
+store 132
+load 133
+assert
+load 132
+frame_bury 3
+frame_dig 3
+extract 0 32
+frame_bury 4
+frame_dig 4
+store 116
+frame_dig 3
+extract 32 32
+frame_bury 5
+frame_dig 5
+store 117
+frame_dig 3
+extract 64 0
+frame_bury 6
+frame_dig 6
+store 118
+load 68
+load 69
+load 72
+load 71
+load 70
+load 116
+load 117
+load 118
+callsub label96
+load 87
+load 88
+load 91
+load 90
+load 89
+load 116
+load 117
+load 118
+callsub label96
+frame_dig -4
+extract 2 0
+load 118
+callsub label58
+callsub label45
+b==
+assert
+load 106
+callsub label97
+store 124
+load 124
+len
+bnz label98
+label155:
+load 107
+callsub label97
+store 124
+load 124
+len
+bnz label99
+label153:
+load 69
+bytec_2 // "B"
+==
+load 88
+bytec 8 // "S"
+==
+&&
+assert
+load 75
+load 76
+itob
+concat
+keccak256
+callsub label55
+store 114
+load 77
+load 78
+itob
+concat
+keccak256
+callsub label55
+store 115
+load 81
+load 100
+<
+bnz label100
+load 91
+bytec 15 // "L"
+==
+load 91
+bytec 9 // "P"
+==
+||
+assert
+load 72
+bytec 9 // "P"
+==
+!
+assert
+bytec 16 // "T"
+store 82
+bytec_3 // "M"
+store 101
+load 89
+store 110
+label152:
+load 72
+bytec_3 // "M"
+==
+bnz label101
+callsub label45
+label151:
+store 111
+frame_dig -4
+extract 2 0
+load 110
+load 114
+callsub label56
+callsub label102
+store 112
+load 72
+bytec_3 // "M"
+==
+bnz label103
+load 70
+load 89
+callsub label57
+assert
+load 71
+frame_dig -4
+extract 2 0
+callsub label57
+load 90
+frame_dig -4
+extract 2 0
+callsub label57
+&&
+assert
+load 70
+frame_dig -4
+extract 2 0
+load 114
+callsub label56
+callsub label102
+load 112
+callsub label89
+store 113
+label150:
+load 79
+callsub label104
+store 80
+load 79
+load 98
+==
+bnz label105
+load 98
+callsub label104
+label148:
+store 99
+intc_0 // 0
+store 134
+label147:
+load 134
+pushint 7000
+global MinTxnFee
+/
+<
+bnz label106
+load 101
+bytec 16 // "T"
+==
+bnz label107
+frame_dig -4
+extract 2 0
+load 122
+load 80
+callsub label108
+callsub label50
+bytec 4 // "UL_FEE_SCALE"
+callsub label109
+callsub label50
+callsub label102
+load 119
+callsub label109
+callsub label50
+bytec 20 // "TFEE_TIER_1"
+callsub label109
+callsub label50
+callsub label102
+store 83
+callsub label45
+store 84
+load 121
+callsub label109
+intc_0 // 0
+!=
+bnz label110
+load 112
+bytec 21 // "UL_MFEE"
+callsub label109
+callsub label50
+bytec 4 // "UL_FEE_SCALE"
+callsub label109
+callsub label50
+callsub label102
+load 120
+callsub label109
+callsub label50
+bytec 22 // "MFEE_TIER_1"
+callsub label109
+callsub label50
+callsub label102
+store 102
+callsub label45
+store 103
+load 99
+load 105
+load 102
+load 112
+callsub label111
+frame_dig -1
+extract 2 0
+extract 0 96
+load 88
+bytec_2 // "B"
+==
+bnz label112
+load 96
+label132:
+load 88
+bytec_2 // "B"
+==
+bnz label113
+load 97
+label131:
+callsub label114
+store 104
+label133:
+load 83
+load 103
+callsub label115
+bnz label116
+load 103
+store 83
+callsub label45
+callsub label45
+concat
+store 85
+label128:
+load 83
+frame_dig -4
+extract 2 0
+callsub label111
+callsub label117
+store 83
+load 102
+load 112
+callsub label111
+callsub label117
+store 102
+label138:
+load 73
+load 74
+load 77
+load 78
+callsub label118
+load 112
+callsub label57
+assert
+load 73
+load 74
+load 77
+load 78
+load 112
+load 84
+callsub label89
+intc_0 // 0
+callsub label85
+load 73
+load 74
+load 75
+load 76
+frame_dig -4
+extract 2 0
+load 83
+callsub label89
+intc_1 // 1
+callsub label85
+load 92
+load 93
+load 94
+load 95
+callsub label118
+frame_dig -4
+extract 2 0
+callsub label57
+assert
+load 92
+load 93
+load 94
+load 95
+frame_dig -4
+extract 2 0
+load 103
+callsub label89
+intc_0 // 0
+callsub label85
+load 92
+load 93
+load 96
+load 97
+load 112
+load 102
+callsub label89
+intc_1 // 1
+callsub label85
+load 72
+bytec_3 // "M"
+==
+bnz label119
+load 106
+load 68
+load 71
+frame_dig -4
+extract 2 0
+callsub label89
+load 70
+callsub label120
+label125:
+load 107
+load 87
+load 90
+frame_dig -4
+extract 2 0
+callsub label89
+load 89
+callsub label120
+bytec 11 // "UL_SUPERADMIN_WALLET"
+app_global_get
+store 125
+pushbytes 0x6d617463685f6f72646572 // "match_order"
+log
+frame_dig -2
+extract 2 0
+log
+load 110
+log
+load 112
+log
+load 83
+log
+load 84
+log
+load 102
+log
+load 103
+log
+load 113
+log
+load 80
+len
+bnz label121
+bytec_0 // ""
+label124:
+log
+load 99
+len
+bnz label122
+bytec_0 // ""
+b label123
+label122:
+load 99
+extract 0 32
+load 99
+intc_2 // 32
+extract_uint64
+load 96
+load 97
+callsub label118
+b label123
+label121:
+load 80
+extract 0 32
+load 80
+intc_2 // 32
+extract_uint64
+load 94
+load 95
+callsub label118
+b label124
+label119:
+load 106
+load 68
+load 71
+load 70
+load 112
+callsub label89
+callsub label120
+b label125
+label116:
+load 80
+load 86
+load 83
+load 103
+callsub label89
+frame_dig -4
+extract 2 0
+callsub label111
+frame_dig -1
+extract 2 0
+extract 96 96
+load 69
+bytec_2 // "B"
+==
+bnz label126
+load 77
+label130:
+load 69
+bytec_2 // "B"
+==
+bnz label127
+load 78
+label129:
+callsub label114
+store 85
+b label128
+label127:
+load 76
+b label129
+label126:
+load 75
+b label130
+label113:
+load 95
+b label131
+label112:
+load 94
+b label132
+label110:
+callsub label45
+store 102
+callsub label45
+callsub label45
+concat
+store 104
+frame_dig -4
+extract 2 0
+load 121
+callsub label109
+callsub label50
+bytec 4 // "UL_FEE_SCALE"
+callsub label109
+callsub label50
+callsub label102
+store 103
+b label133
+label107:
+load 112
+load 122
+load 99
+callsub label108
+callsub label50
+bytec 4 // "UL_FEE_SCALE"
+callsub label109
+callsub label50
+callsub label102
+load 119
+callsub label109
+callsub label50
+bytec 20 // "TFEE_TIER_1"
+callsub label109
+callsub label50
+callsub label102
+store 102
+callsub label45
+store 103
+load 121
+callsub label109
+intc_0 // 0
+!=
+bnz label134
+frame_dig -4
+extract 2 0
+bytec 21 // "UL_MFEE"
+callsub label109
+callsub label50
+bytec 4 // "UL_FEE_SCALE"
+callsub label109
+callsub label50
+callsub label102
+load 120
+callsub label109
+callsub label50
+bytec 22 // "MFEE_TIER_1"
+callsub label109
+callsub label50
+callsub label102
+store 83
+callsub label45
+store 84
+load 80
+load 86
+load 83
+frame_dig -4
+extract 2 0
+callsub label111
+frame_dig -1
+extract 2 0
+extract 0 96
+load 69
+bytec_2 // "B"
+==
+bnz label135
+load 77
+label145:
+load 69
+bytec_2 // "B"
+==
+bnz label136
+load 78
+label144:
+callsub label114
+store 85
+label146:
+load 102
+load 84
+callsub label115
+bnz label137
+load 84
+store 102
+callsub label45
+callsub label45
+concat
+store 104
+label141:
+load 102
+load 112
+callsub label111
+callsub label117
+store 102
+load 83
+frame_dig -4
+extract 2 0
+callsub label111
+callsub label117
+store 83
+b label138
+label137:
+load 99
+load 105
+load 102
+load 84
+callsub label89
+load 112
+callsub label111
+frame_dig -1
+extract 2 0
+extract 96 96
+load 88
+bytec_2 // "B"
+==
+bnz label139
+load 96
+label143:
+load 88
+bytec_2 // "B"
+==
+bnz label140
+load 97
+label142:
+callsub label114
+store 104
+b label141
+label140:
+load 95
+b label142
+label139:
+load 94
+b label143
+label136:
+load 76
+b label144
+label135:
+load 75
+b label145
+label134:
+callsub label45
+store 83
+callsub label45
+callsub label45
+concat
+store 85
+load 112
+load 121
+callsub label109
+callsub label50
+bytec 4 // "UL_FEE_SCALE"
+callsub label109
+callsub label50
+callsub label102
+store 84
+b label146
+label106:
+itxn_begin
+pushint 6
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+pushint 5
+itxn_field OnCompletion
+bytec_1 // 0x068101
+itxn_field ApprovalProgram
+bytec_1 // 0x068101
+itxn_field ClearStateProgram
+itxn_submit
+load 134
+intc_1 // 1
++
+store 134
+b label147
+label105:
+load 80
+b label148
+label103:
+load 111
+load 112
+callsub label57
+assert
+load 71
+callsub label149
+load 90
+frame_dig -4
+extract 2 0
+callsub label57
+&&
+assert
+callsub label45
+store 113
+b label150
+label101:
+load 70
+b label151
+label100:
+load 72
+bytec 15 // "L"
+==
+load 72
+bytec 9 // "P"
+==
+||
+assert
+load 91
+bytec 9 // "P"
+==
+!
+assert
+bytec_3 // "M"
+store 82
+bytec 16 // "T"
+store 101
+load 70
+store 110
+b label152
+label99:
+load 124
+extract 0 32
+store 90
+load 90
+callsub label91
+assert
+b label153
+label98:
+load 72
+bytec_3 // "M"
+==
+bnz label154
+load 124
+extract 0 32
+store 71
+label156:
+load 71
+callsub label91
+assert
+b label155
+label154:
+load 124
+extract 32 32
+store 70
+b label156
+label95:
+itxn_begin
+pushint 6
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+pushint 5
+itxn_field OnCompletion
+bytec_1 // 0x068101
+itxn_field ApprovalProgram
+bytec_1 // 0x068101
+itxn_field ClearStateProgram
+itxn_submit
+load 128
+intc_1 // 1
++
+store 128
+b label157
+label94:
+itxn_begin
+pushint 6
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+pushint 5
+itxn_field OnCompletion
+bytec_1 // 0x068101
+itxn_field ApprovalProgram
+bytec_1 // 0x068101
+itxn_field ClearStateProgram
+itxn_submit
+load 127
+intc_1 // 1
++
+store 127
+b label158
+label92:
+itxn_begin
+pushint 6
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+pushint 5
+itxn_field OnCompletion
+bytec_1 // 0x068101
+itxn_field ApprovalProgram
+bytec_1 // 0x068101
+itxn_field ClearStateProgram
+itxn_submit
+load 126
+intc_1 // 1
++
+store 126
+b label159
+label123:
+log
+load 125
+extract 0 32
+load 125
+intc_2 // 32
+extract_uint64
+load 94
+load 95
+callsub label118
+log
+load 125
+extract 0 32
+load 125
+intc_2 // 32
+extract_uint64
+load 96
+load 97
+callsub label118
+log
+load 85
+extract 0 32
+log
+load 85
+extract 32 32
+log
+load 104
+extract 0 32
+log
+load 104
+extract 32 32
+log
+global OpcodeBudget
+itob
+log
+intc_0 // 0
+frame_bury 0
+retsub
+label96:
+proto 8 0
+frame_dig -8
+global LatestTimestamp
+>=
+assert
+frame_dig -7
+bytec_2 // "B"
+==
+frame_dig -7
+bytec 8 // "S"
+==
+||
+assert
+frame_dig -6
+bytec 15 // "L"
+==
+frame_dig -6
+bytec 9 // "P"
+==
+||
+frame_dig -6
+pushbytes 0x49 // "I"
+==
+||
+frame_dig -6
+bytec_3 // "M"
+==
+||
+assert
+frame_dig -6
+bytec_3 // "M"
+==
+frame_dig -7
+bytec 8 // "S"
+==
+&&
+bnz label160
+frame_dig -6
+bytec_3 // "M"
+==
+frame_dig -7
+bytec_2 // "B"
+==
+&&
+frame_dig -5
+callsub label45
+b==
+&&
+bnz label161
+frame_dig -6
+bytec_3 // "M"
+==
+frame_dig -7
+bytec_2 // "B"
+==
+&&
+frame_dig -5
+callsub label45
+b>
+&&
+bnz label162
+frame_dig -4
+callsub label45
+b>
+assert
+frame_dig -5
+callsub label45
+b>
+assert
+frame_dig -5
+frame_dig -1
+callsub label58
+callsub label45
+b==
+frame_dig -5
+frame_dig -3
+b>=
+&&
+frame_dig -4
+frame_dig -2
+callsub label58
+callsub label45
+b==
+&&
+assert
+b label163
+label162:
+frame_dig -4
+callsub label45
+b>
+frame_dig -5
+frame_dig -1
+callsub label58
+callsub label45
+b==
+&&
+frame_dig -5
+frame_dig -3
+b>=
+&&
+assert
+b label163
+label161:
+frame_dig -4
+callsub label45
+b>
+frame_dig -4
+frame_dig -2
+callsub label58
+callsub label45
+b==
+&&
+assert
+b label163
+label160:
+frame_dig -4
+callsub label45
+b==
+frame_dig -5
+callsub label45
+b>
+&&
+assert
+frame_dig -5
+frame_dig -1
+callsub label58
+callsub label45
+b==
+frame_dig -5
+frame_dig -3
+b>=
+&&
+assert
+label163:
+retsub
+label60:
+proto 3 0
+bytec_0 // ""
+dup
+intc_0 // 0
+dupn 2
+bytec_0 // ""
+dup
+frame_dig -2
+frame_bury 1
+frame_dig 1
+len
+itob
+extract 6 0
+frame_dig 1
+concat
+frame_bury 1
+frame_dig -1
+frame_bury 2
+frame_dig 1
+frame_bury 6
+frame_dig 6
+frame_bury 5
+pushint 10
+frame_bury 3
+frame_dig 3
+itob
+extract 6 0
+frame_dig 2
+itob
+concat
+frame_dig 5
+concat
+frame_bury 0
+frame_dig -3
+box_del
+pop
+frame_dig -3
+frame_dig 0
+box_put
+retsub
+label55:
+proto 1 1
+bytec_0 // ""
+intc_0 // 0
+frame_dig -1
+box_len
+store 8
+store 7
+load 8
+assert
+frame_dig -1
+box_get
+store 10
+store 9
+load 10
+assert
+load 9
+frame_bury 0
+frame_dig 0
+pushint 2
+extract_uint64
+frame_bury 1
+frame_dig 1
+frame_bury 0
+retsub
+label59:
+proto 4 0
+bytec_0 // ""
+dupn 3
+intc_0 // 0
+dup
+bytec_0 // ""
+dup
+frame_dig -3
+frame_bury 1
+intc_2 // 32
+frame_dig 1
+len
+==
+assert
+frame_dig -2
+frame_bury 2
+intc_2 // 32
+frame_dig 2
+len
+==
+assert
+frame_dig -1
+frame_bury 3
+intc_2 // 32
+frame_dig 3
+len
+==
+assert
+frame_dig 1
+frame_dig 2
+concat
+frame_dig 3
+concat
+frame_bury 0
+frame_dig -4
+box_del
+pop
+frame_dig -4
+frame_dig 0
+box_put
+retsub
+label118:
+proto 4 1
+bytec_0 // ""
+frame_dig -2
+bytec 23 // addr INBVIUCVKNCEGAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHLI6DUE
+==
+bnz label164
+frame_dig -4
+frame_dig -3
+itob
+concat
+frame_dig -2
+concat
+frame_dig -1
+itob
+concat
+keccak256
+store 136
+label166:
+load 136
+box_len
+store 138
+store 137
+load 138
+bnz label165
+callsub label45
+frame_bury 0
+retsub
+label165:
+load 136
+box_get
+store 140
+store 139
+load 140
+assert
+load 139
+frame_bury 0
+frame_dig 0
+frame_bury 0
+retsub
+label164:
+frame_dig -4
+frame_dig -3
+itob
+concat
+frame_dig -2
+concat
+intc 12 // 65537
+itob
+concat
+keccak256
+store 136
+b label166
+label120:
+proto 4 0
+bytec_0 // ""
+dupn 2
+intc_0 // 0
+dupn 2
+bytec_0 // ""
+dup
+bytec 12 // "O_"
+frame_dig -4
+keccak256
+concat
+store 141
+frame_dig -2
+frame_bury 1
+intc_2 // 32
+frame_dig 1
+len
+==
+assert
+frame_dig -1
+frame_bury 2
+intc_2 // 32
+frame_dig 2
+len
+==
+assert
+frame_dig -3
+frame_bury 3
+frame_dig 1
+frame_dig 2
+concat
+frame_dig 3
+itob
+concat
+frame_bury 0
+load 141
+box_del
+pop
+load 141
+frame_dig 0
+box_put
+retsub
+label97:
+proto 1 1
+bytec_0 // ""
+dupn 2
+bytec 12 // "O_"
+frame_dig -1
+keccak256
+concat
+store 142
+load 142
+box_len
+store 144
+store 143
+load 144
+bz label167
+load 142
+box_get
+store 146
+store 145
+load 146
+assert
+load 145
+frame_bury 0
+frame_dig 0
+extract 0 32
+frame_bury 1
+frame_dig 0
+extract 32 32
+frame_bury 2
+frame_dig 1
+frame_dig 2
+concat
+frame_bury 0
+retsub
+label167:
+bytec_0 // ""
+frame_bury 0
+retsub
+label220:
+proto 6 0
+txn Sender
+callsub label168
+==
+assert
+global CallerApplicationID
+bytec 7 // "MSG_PROCESSOR"
+app_global_get
+==
+assert
+frame_dig -6
+extract 2 0
+frame_dig -5
+frame_dig -4
+extract 2 0
+frame_dig -3
+frame_dig -2
+extract 2 0
+frame_dig -1
+callsub label85
+retsub
+label221:
+proto 2 1
+intc_0 // 0
+frame_dig -2
+extract 2 0
+bytec 13 // "deposit"
+==
+frame_dig -2
+extract 2 0
+bytec 14 // "withdraw"
+==
+||
+assert
+frame_dig -1
+intc_0 // 0
+>
+assert
+frame_dig -2
+extract 2 0
+bytec 13 // "deposit"
+==
+bnz label169
+txn Sender
+callsub label52
+==
+assert
+frame_dig -1
+intc_0 // 0
+callsub label170
+intc_0 // 0
+frame_dig -1
+txn Sender
+callsub label54
+b label171
+label169:
+txn GroupIndex
+intc_1 // 1
+-
+gtxns TypeEnum
+intc_1 // 1
+==
+assert
+txn GroupIndex
+intc_1 // 1
+-
+gtxns Receiver
+global CurrentApplicationAddress
+==
+assert
+txn GroupIndex
+intc_1 // 1
+-
+gtxns Sender
+txn Sender
+==
+assert
+txn GroupIndex
+intc_1 // 1
+-
+gtxns Amount
+frame_dig -1
+==
+assert
+frame_dig -1
+intc_1 // 1
+callsub label170
+label171:
+retsub
+label170:
+proto 2 0
+intc_0 // 0
+dup
+bytec 10 // "MBR"
+box_len
+store 157
+store 156
+load 157
+bnz label172
+intc_0 // 0
+frame_bury 0
+label175:
+frame_dig -1
+bnz label173
+frame_dig 0
+frame_dig -2
+>=
+assert
+frame_dig 0
+frame_dig -2
+-
+store 155
+b label174
+label173:
+frame_dig 0
+frame_dig -2
++
+store 155
+b label174
+label172:
+bytec 10 // "MBR"
+box_get
+store 159
+store 158
+load 159
+assert
+load 158
+btoi
+frame_bury 0
+b label175
+label174:
+load 155
+frame_bury 1
+bytec 10 // "MBR"
+box_del
+pop
+bytec 10 // "MBR"
+frame_dig 1
+itob
+box_put
+retsub
+label85:
+proto 6 0
+bytec_0 // ""
+frame_dig -4
+bytec 23 // addr INBVIUCVKNCEGAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHLI6DUE
+==
+bnz label176
+frame_dig -6
+frame_dig -5
+itob
+concat
+frame_dig -4
+concat
+frame_dig -3
+itob
+concat
+keccak256
+store 51
+label183:
+load 51
+box_len
+store 53
+store 52
+load 53
+bnz label177
+callsub label45
+frame_bury 0
+intc_2 // 32
+frame_dig 0
+len
+==
+assert
+label182:
+frame_dig -1
+bnz label178
+frame_dig 0
+frame_dig -2
+callsub label57
+assert
+frame_dig 0
+frame_dig -2
+callsub label89
+store 50
+label181:
+load 50
+callsub label91
+bnz label179
+load 51
+box_del
+pop
+b label180
+label179:
+load 51
+box_del
+pop
+load 51
+load 50
+box_put
+b label180
+label178:
+frame_dig 0
+frame_dig -2
+callsub label117
+store 50
+b label181
+label177:
+load 51
+box_get
+store 55
+store 54
+load 55
+assert
+load 54
+frame_bury 0
+b label182
+label176:
+frame_dig -6
+frame_dig -5
+itob
+concat
+frame_dig -4
+concat
+intc 12 // 65537
+itob
+concat
+keccak256
+store 51
+b label183
+label180:
+retsub
+label88:
+proto 4 0
+bytec 11 // "UL_SUPERADMIN_WALLET"
+app_global_get
+store 67
+load 67
+extract 0 32
+load 67
+extract 32 8
+btoi
+frame_dig -4
+frame_dig -3
+frame_dig -2
+frame_dig -1
+callsub label85
+retsub
+label104:
+proto 1 1
+frame_dig -1
+itob
+box_len
+store 148
+store 147
+load 148
+bz label184
+frame_dig -1
+itob
+box_get
+store 150
+store 149
+load 150
+assert
+load 149
+retsub
+label184:
+bytec_0 // ""
+retsub
+label90:
+proto 6 0
+frame_dig -4
+btoi
+pushint 8
+==
+bnz label185
+bytec 14 // "withdraw"
+frame_dig -5
+concat
+frame_dig -4
+concat
+frame_dig -6
+concat
+frame_dig -4
+concat
+frame_dig -3
+concat
+frame_dig -2
+concat
+frame_dig -1
+concat
+callsub label186
+b label187
+label185:
+frame_dig -6
+extract 24 8
+btoi
+frame_dig -3
+extract 24 8
+btoi
+frame_dig -5
+callsub label54
+label187:
+retsub
+label186:
+proto 1 0
+bytec_0 // ""
+frame_dig -1
+frame_bury 0
+frame_dig 0
+len
+itob
+extract 6 0
+frame_dig 0
+concat
+frame_bury 0
+itxn_begin
+pushint 6
+itxn_field TypeEnum
+bytec 7 // "MSG_PROCESSOR"
+app_global_get
+itxn_field ApplicationID
+pushbytes 0xf819d71f // 0xf819d71f
+itxn_field ApplicationArgs
+frame_dig 0
+itxn_field ApplicationArgs
+txna Applications 1
+itxn_field Applications
+global CurrentApplicationID
+itxn_field Applications
+txna Accounts 1
+itxn_field Accounts
+txna Accounts 2
+itxn_field Accounts
+intc_0 // 0
+itxn_field Fee
+itxn_submit
+retsub
+label65:
+proto 5 0
+frame_dig -2
+callsub label188
+bytec 24 // "ECDSA"
+==
+bnz label189
+frame_dig -5
+extract 2 0
+frame_dig -4
+extract 2 0
+frame_dig -3
+extract 2 0
+ed25519verify_bare
+assert
+frame_dig -3
+extract 2 0
+frame_dig -1
+==
+assert
+b label190
+label189:
+frame_dig -5
+extract 2 0
+keccak256
+frame_dig -4
+extract 2 0
+extract 0 32
+frame_dig -4
+extract 2 0
+extract 32 32
+frame_dig -3
+extract 2 0
+extract 0 32
+frame_dig -3
+extract 2 0
+extract 32 32
+ecdsa_verify Secp256k1
+assert
+frame_dig -1
+extract 12 20
+frame_dig -3
+extract 2 0
+keccak256
+frame_dig -3
+extract 2 0
+keccak256
+len
+pushint 20
+-
+pushint 20
+extract3
+==
+assert
+label190:
+retsub
+label188:
+proto 1 1
+frame_dig -1
+intc_1 // 1
+==
+frame_dig -1
+pushint 8
+==
+||
+bnz label191
+bytec 24 // "ECDSA"
+b label192
+label191:
+pushbytes 0x45443235353139 // "ED25519"
+label192:
+retsub
+label111:
+proto 1 1
+frame_dig -1
+bytec 25 // "UL_MIN_FEE"
+callsub label109
+callsub label50
+bytec 4 // "UL_FEE_SCALE"
+callsub label109
+callsub label50
+callsub label102
+retsub
+label114:
+proto 7 1
+frame_dig -5
+frame_dig -6
+callsub label50
+bytec 4 // "UL_FEE_SCALE"
+callsub label109
+callsub label50
+callsub label102
+store 151
+frame_dig -5
+load 151
+callsub label89
+frame_dig -3
+pushint 40
+extract_uint64
+callsub label50
+bytec 4 // "UL_FEE_SCALE"
+callsub label109
+callsub label50
+callsub label102
+store 152
+load 151
+frame_dig -3
+pushint 88
+extract_uint64
+callsub label50
+bytec 4 // "UL_FEE_SCALE"
+callsub label109
+callsub label50
+callsub label102
+store 153
+frame_dig -7
+len
+bnz label193
+frame_dig -2
+frame_dig -1
+frame_dig -4
+frame_dig -5
+load 152
+callsub label89
+callsub label117
+intc_1 // 1
+callsub label88
+label198:
+load 152
+callsub label91
+bnz label194
+label196:
+load 153
+callsub label91
+bz label195
+frame_dig -3
+extract 48 32
+frame_dig -3
+extract 80 8
+btoi
+frame_dig -2
+frame_dig -1
+load 153
+intc_1 // 1
+callsub label85
+b label195
+label194:
+frame_dig -3
+extract 0 32
+frame_dig -3
+extract 32 8
+btoi
+frame_dig -2
+frame_dig -1
+load 152
+intc_1 // 1
+callsub label85
+b label196
+label193:
+load 151
+callsub label91
+bnz label197
+label199:
+frame_dig -2
+frame_dig -1
+frame_dig -4
+frame_dig -5
+load 151
+load 152
+callsub label117
+callsub label89
+callsub label117
+intc_1 // 1
+callsub label88
+b label198
+label197:
+frame_dig -7
+extract 0 32
+frame_dig -7
+extract 32 8
+btoi
+frame_dig -2
+frame_dig -1
+load 151
+load 153
+callsub label89
+intc_1 // 1
+callsub label85
+b label199
+label195:
+load 152
+load 153
+concat
+retsub
+label108:
+proto 2 1
+frame_dig -2
+bnz label200
+frame_dig -1
+len
+bz label201
+frame_dig -1
+pushint 40
+extract_uint64
+bz label201
+frame_dig -1
+pushint 40
+extract_uint64
+retsub
+label200:
+frame_dig -2
+retsub
+label201:
+pushbytes 0x554c5f54464545 // "UL_TFEE"
+callsub label109
+retsub
+label222:
+proto 2 0
+bytec_0 // ""
+txn Sender
+callsub label53
+==
+assert
+frame_dig -2
+bytec 25 // "UL_MIN_FEE"
+callsub label109
+>=
+frame_dig -2
+pushbytes 0x554c5f4d41585f464545 // "UL_MAX_FEE"
+callsub label109
+<=
+&&
+assert
+frame_dig -1
+itob
+box_len
+store 161
+store 160
+load 161
+assert
+frame_dig -1
+itob
+box_get
+store 163
+store 162
+load 163
+assert
+load 162
+frame_bury 0
+frame_dig 0
+extract 0 40
+frame_dig -2
+itob
+concat
+frame_bury 0
+pushint 48
+frame_dig 0
+len
+==
+assert
+frame_dig -1
+itob
+box_del
+pop
+frame_dig -1
+itob
+frame_dig 0
+box_put
+retsub
+label223:
+proto 3 0
+bytec_0 // ""
+intc_0 // 0
+txn Sender
+callsub label53
+==
+assert
+frame_dig -3
+extract 2 0
+frame_dig -3
+intc_0 // 0
+extract_uint16
+frame_bury 1
+frame_dig 1
+pushint 64
+-
+pushint 64
+extract3
+base64_decode StdEncoding
+store 164
+load 164
+extract 0 32
+store 167
+load 164
+extract 32 8
+store 168
+load 164
+extract 40 8
+store 165
+intc_0 // 0
+store 169
+label204:
+load 169
+intc 6 // 3000
+global MinTxnFee
+/
+<
+bnz label202
+frame_dig -3
+frame_dig -2
+frame_dig -1
+load 168
+btoi
+load 167
+callsub label65
+intc_0 // 0
+itob
+store 166
+load 165
+box_len
+store 171
+store 170
+load 171
+bz label203
+load 165
+box_get
+store 173
+store 172
+load 173
+assert
+load 172
+frame_bury 0
+frame_dig 0
+extract 40 8
+store 166
+b label203
+label202:
+itxn_begin
+pushint 6
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field Fee
+pushint 5
+itxn_field OnCompletion
+bytec_1 // 0x068101
+itxn_field ApprovalProgram
+bytec_1 // 0x068101
+itxn_field ClearStateProgram
+itxn_submit
+load 169
+intc_1 // 1
++
+store 169
+b label204
+label203:
+load 167
+load 168
+concat
+load 166
+concat
+frame_bury 0
+pushint 48
+frame_dig 0
+len
+==
+assert
+load 165
+box_del
+pop
+load 165
+frame_dig 0
+box_put
+retsub
+label224:
+proto 3 0
+txn Sender
+callsub label52
+==
+assert
+frame_dig -1
+extract 2 0
+pushbytes 0x4e // "N"
+==
+frame_dig -1
+extract 2 0
+bytec 8 // "S"
+==
+||
+assert
+frame_dig -1
+extract 2 0
+bytec 8 // "S"
+==
+bnz label205
+frame_dig -3
+extract 2 0
+frame_dig -2
+extract 2 0
+btoi
+app_global_put
+b label206
+label205:
+frame_dig -3
+extract 2 0
+frame_dig -2
+extract 2 0
+app_global_put
+label206:
+intc_1 // 1
+return
+label37:
+proto 0 0
+intc_0 // 0
+txna ApplicationArgs 1
+btoi
+frame_bury 0
+frame_dig 0
+callsub label207
+retsub
+label36:
+proto 0 0
+intc_0 // 0
+txna ApplicationArgs 1
+btoi
+frame_bury 0
+frame_dig 0
+callsub label208
+retsub
+label35:
+proto 0 0
+intc_0 // 0
+txna ApplicationArgs 1
+btoi
+frame_bury 0
+frame_dig 0
+callsub label209
+retsub
+label34:
+proto 0 0
+intc_0 // 0
+txna ApplicationArgs 1
+intc_0 // 0
+getbyte
+frame_bury 0
+frame_dig 0
+callsub label210
+retsub
+label33:
+proto 0 0
+intc_0 // 0
+bytec_0 // ""
+intc_0 // 0
+bytec_0 // ""
+intc_0 // 0
+bytec_0 // ""
+dupn 2
+txna ApplicationArgs 1
+frame_bury 1
+txna ApplicationArgs 2
+btoi
+frame_bury 2
+txna ApplicationArgs 3
+frame_bury 3
+txna ApplicationArgs 4
+btoi
+frame_bury 4
+txna ApplicationArgs 5
+frame_bury 5
+txna ApplicationArgs 6
+frame_bury 6
+txna ApplicationArgs 7
+frame_bury 7
+frame_dig 1
+frame_dig 2
+frame_dig 3
+frame_dig 4
+frame_dig 5
+frame_dig 6
+frame_dig 7
+callsub label211
+frame_bury 0
+bytec 5 // 0x151f7c75
+frame_dig 0
+itob
+concat
+log
+retsub
+label32:
+proto 0 0
+intc_0 // 0
+bytec_0 // ""
+intc_0 // 0
+bytec_0 // ""
+intc_0 // 0
+txna ApplicationArgs 1
+frame_bury 1
+txna ApplicationArgs 2
+btoi
+frame_bury 2
+txna ApplicationArgs 3
+frame_bury 3
+txna ApplicationArgs 4
+btoi
+frame_bury 4
+frame_dig 1
+frame_dig 2
+frame_dig 3
+frame_dig 4
+callsub label212
+frame_bury 0
+bytec 5 // 0x151f7c75
+frame_dig 0
+itob
+concat
+log
+retsub
+label31:
+proto 0 0
+intc_0 // 0
+bytec_0 // ""
+txna ApplicationArgs 1
+frame_bury 1
+frame_dig 1
+callsub label213
+frame_bury 0
+bytec 5 // 0x151f7c75
+frame_dig 0
+itob
+concat
+log
+retsub
+label30:
+proto 0 0
+intc_0 // 0
+bytec_0 // ""
+dupn 2
+txna ApplicationArgs 1
+frame_bury 1
+txna ApplicationArgs 2
+frame_bury 2
+txna ApplicationArgs 3
+frame_bury 3
+frame_dig 1
+frame_dig 2
+frame_dig 3
+callsub label214
+frame_bury 0
+bytec 5 // 0x151f7c75
+frame_dig 0
+itob
+concat
+log
+retsub
+label29:
+proto 0 0
+intc_0 // 0
+bytec_0 // ""
+dupn 2
+txna ApplicationArgs 1
+frame_bury 1
+txna ApplicationArgs 2
+frame_bury 2
+txna ApplicationArgs 3
+frame_bury 3
+frame_dig 1
+frame_dig 2
+frame_dig 3
+callsub label215
+frame_bury 0
+bytec 5 // 0x151f7c75
+frame_dig 0
+itob
+concat
+log
+retsub
+label28:
+proto 0 0
+intc_0 // 0
+bytec_0 // ""
+txna ApplicationArgs 1
+frame_bury 1
+frame_dig 1
+callsub label216
+frame_bury 0
+bytec 5 // 0x151f7c75
+frame_dig 0
+itob
+concat
+log
+retsub
+label27:
+proto 0 0
+bytec_0 // ""
+dupn 2
+txna ApplicationArgs 1
+frame_bury 0
+txna ApplicationArgs 2
+frame_bury 1
+txna ApplicationArgs 3
+frame_bury 2
+frame_dig 0
+frame_dig 1
+frame_dig 2
+callsub label217
+retsub
+label26:
+proto 0 0
+intc_0 // 0
+bytec_0 // ""
+dupn 2
+txna ApplicationArgs 1
+frame_bury 1
+txna ApplicationArgs 2
+frame_bury 2
+txna ApplicationArgs 3
+frame_bury 3
+frame_dig 1
+frame_dig 2
+frame_dig 3
+callsub label218
+frame_bury 0
+bytec 5 // 0x151f7c75
+frame_dig 0
+itob
+concat
+log
+retsub
+label25:
+proto 0 0
+intc_0 // 0
+bytec_0 // ""
+dupn 2
+intc_0 // 0
+bytec_0 // ""
+dupn 2
+intc_0 // 0
+bytec_0 // ""
+dupn 3
+txna ApplicationArgs 1
+frame_bury 1
+txna ApplicationArgs 2
+frame_bury 2
+txna ApplicationArgs 3
+frame_bury 3
+txna ApplicationArgs 4
+btoi
+frame_bury 4
+txna ApplicationArgs 5
+frame_bury 5
+txna ApplicationArgs 6
+frame_bury 6
+txna ApplicationArgs 7
+frame_bury 7
+txna ApplicationArgs 8
+btoi
+frame_bury 8
+txna ApplicationArgs 9
+frame_bury 9
+txna ApplicationArgs 10
+frame_bury 10
+txna ApplicationArgs 11
+frame_bury 11
+txna ApplicationArgs 12
+frame_bury 12
+frame_dig 1
+frame_dig 2
+frame_dig 3
+frame_dig 4
+frame_dig 5
+frame_dig 6
+frame_dig 7
+frame_dig 8
+frame_dig 9
+frame_dig 10
+frame_dig 11
+frame_dig 12
+callsub label219
+frame_bury 0
+bytec 5 // 0x151f7c75
+frame_dig 0
+itob
+concat
+log
+retsub
+label24:
+proto 0 0
+bytec_0 // ""
+intc_0 // 0
+bytec_0 // ""
+intc_0 // 0
+bytec_0 // ""
+intc_0 // 0
+txna ApplicationArgs 1
+frame_bury 0
+txna ApplicationArgs 2
+btoi
+frame_bury 1
+txna ApplicationArgs 3
+frame_bury 2
+txna ApplicationArgs 4
+btoi
+frame_bury 3
+txna ApplicationArgs 5
+frame_bury 4
+txna ApplicationArgs 6
+btoi
+frame_bury 5
+frame_dig 0
+frame_dig 1
+frame_dig 2
+frame_dig 3
+frame_dig 4
+frame_dig 5
+callsub label220
+retsub
+label23:
+proto 0 0
+intc_0 // 0
+bytec_0 // ""
+intc_0 // 0
+txna ApplicationArgs 1
+frame_bury 1
+txna ApplicationArgs 2
+btoi
+frame_bury 2
+frame_dig 1
+frame_dig 2
+callsub label221
+frame_bury 0
+bytec 5 // 0x151f7c75
+frame_dig 0
+itob
+concat
+log
+retsub
+label22:
+proto 0 0
+intc_0 // 0
+dup
+txna ApplicationArgs 1
+btoi
+frame_bury 0
+txna ApplicationArgs 2
+btoi
+frame_bury 1
+frame_dig 0
+frame_dig 1
+callsub label222
+retsub
+label21:
+proto 0 0
+bytec_0 // ""
+dupn 2
+txna ApplicationArgs 1
+frame_bury 0
+txna ApplicationArgs 2
+frame_bury 1
+txna ApplicationArgs 3
+frame_bury 2
+frame_dig 0
+frame_dig 1
+frame_dig 2
+callsub label223
+retsub
+label20:
+proto 0 0
+bytec_0 // ""
+dupn 2
+txna ApplicationArgs 1
+frame_bury 0
+txna ApplicationArgs 2
+frame_bury 1
+txna ApplicationArgs 3
+frame_bury 2
+frame_dig 0
+frame_dig 1
+frame_dig 2
+callsub label224
+retsub

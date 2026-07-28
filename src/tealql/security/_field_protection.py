@@ -12,6 +12,8 @@ from tealql.tealtools.avm import CMP_OPS
 from tealql.tealtools.ssa import Assignment, BasicBlock, SSAProgram, SSAVar
 
 from ._enforcement import (
+    _DISJUNCTION_OPS,
+    _disjunction_is_enforcing,
     _label_to_bb_first_line,
     branch_gates_rejection,
     scratch_forward_map,
@@ -43,7 +45,7 @@ def is_comparison(a: Assignment) -> bool:
 
 def _collect_field_enforcement_bbs(
     prog: SSAProgram, var: SSAVar, label_lines: dict, out: set, seen: set,
-    scratch_fwd: Optional[dict] = None,
+    scratch_fwd: Optional[dict] = None, field_vars: Optional[set] = None,
 ) -> None:
     """Forward-walk the SSA chain from a field-comparison result and record the
     BASIC BLOCK of every enforcement site it reaches (``assert`` / ``bnz``
@@ -64,7 +66,7 @@ def _collect_field_enforcement_bbs(
         scratch_fwd = scratch_forward_map(prog)
     for fwd in scratch_fwd.get(var, ()):
         _collect_field_enforcement_bbs(prog, fwd, label_lines, out, seen,
-                                       scratch_fwd)
+                                       scratch_fwd, field_vars)
     for cons in var.uses:
         if cons.op == "assert":
             if cons.basic_block is not None:
@@ -76,10 +78,16 @@ def _collect_field_enforcement_bbs(
             if (cons.basic_block is not None
                     and branch_gates_rejection(prog, cons, label_lines)):
                 out.add(cons.basic_block)
+        # A ``||`` carries enforcement to this arm only when every OTHER arm
+        # pins the same field; otherwise the other arm alone can satisfy the
+        # assert and this one is unconstrained. Same rule as the boolean twin.
+        if cons.op in _DISJUNCTION_OPS and not _disjunction_is_enforcing(
+                prog, cons, var, field_vars):
+            continue
         for o in cons.outputs:
             if isinstance(o, SSAVar):
                 _collect_field_enforcement_bbs(prog, o, label_lines, out, seen,
-                                               scratch_fwd)
+                                               scratch_fwd, field_vars)
 
 
 def _field_enforcement_bbs(
@@ -109,7 +117,7 @@ def _field_enforcement_bbs(
                    for op in cmp.inputs):
             continue
         _collect_field_enforcement_bbs(prog, cmp.outputs[0], label_lines, out,
-                                       set(), scratch_fwd)
+                                       set(), scratch_fwd, field_vars)
     return out
 
 

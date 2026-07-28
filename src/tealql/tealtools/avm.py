@@ -299,6 +299,56 @@ LSIG_ARG_OPS: frozenset[str] = frozenset({
     "arg", "args", "arg_0", "arg_1", "arg_2", "arg_3",
 })
 
+#: Transaction ARRAY fields whose contents the SENDER chooses, and which are
+#: therefore attacker-controlled input in exactly the way ``ApplicationArgs``
+#: is. The caller composes the foreign arrays when it builds the transaction:
+#: ``txn Accounts 1`` is a caller-named address, ``txn Assets 0`` a caller-named
+#: asset, ``txn Applications 0`` a caller-named app.
+#:
+#: Omitting these made an unguarded payout to ``txn Accounts 1`` completely
+#: silent while the byte-identical payout to ``txna ApplicationArgs 0`` was
+#: reported HIGH. Index 0 of ``Accounts`` is the SENDER (an authorisation value,
+#: not an arbitrary choice), so callers that care about that distinction should
+#: check the index — see ``FOREIGN_ARRAY_SELF_INDEX``.
+FOREIGN_ARRAY_FIELDS: frozenset[str] = frozenset({
+    "Accounts", "Assets", "Applications",
+})
+
+#: ``Accounts 0`` is ``Sender`` — implicit, not caller-chosen.
+FOREIGN_ARRAY_SELF_INDEX: dict[str, int] = {"Accounts": 0}
+
+
+def attacker_input_label(op: str, immediates: str) -> Optional[str]:
+    """The attacker-controlled input family ``op`` reads, or ``None``.
+
+    THE single source of truth for "is this read attacker-steerable", shared by
+    the SSA-level (:mod:`tealql.security._itxn_taint`) and IR-level
+    (:mod:`tealql.tealtools.lift.taint`) taint seeds. It previously existed as
+    two hand-maintained copies, which is how the foreign arrays came to be
+    missing from both.
+
+    ``immediates`` is the raw immediate string (``"Accounts 1"``,
+    ``"ApplicationArgs 0"``); an absent or non-constant index still labels the
+    read, since a computed index is no less attacker-chosen."""
+    if op in LSIG_ARG_OPS:
+        return "LogicSigArgs"
+    if op in TXN_SOURCE_OPS:
+        if "ApplicationArgs" in immediates:
+            return "ApplicationArgs"
+        for field in FOREIGN_ARRAY_FIELDS:
+            if field not in immediates:
+                continue
+            # `Accounts 0` is the sender, which is not a free choice.
+            toks = immediates.split()
+            self_idx = FOREIGN_ARRAY_SELF_INDEX.get(field)
+            if self_idx is not None and toks and toks[-1].isdigit() \
+                    and int(toks[-1]) == self_idx:
+                return None
+            return f"Foreign{field}"
+    if op in ITXN_SOURCE_OPS and "LastLog" in immediates:
+        return "ItxnLastLog"
+    return None
+
 #: Opcodes the AVM accepts ONLY in Application mode (it rejects them in
 #: Signature mode), so their presence PROVES a program is an application.
 #: Keyed strictly on opcodes, never on txn fields: a logic signature can be
@@ -827,6 +877,14 @@ _PARAMS_VALUE_BYTELEN: dict = {
 # ``gitxn*`` and stack-group ``gtxnsa`` / ``gtxnsas`` forms are covered too).
 _FIELD_OPS_POS0: frozenset = frozenset({
     "txn", "txna", "gtxns", "gtxnsa", "gtxnsas", "itxn", "itxna",
+    # The stack-index forms belong here too: they pop the ARRAY INDEX off the
+    # stack, so the field name is still immediate 0. Omitting them made
+    # ``_txn_field_name`` return None for every computed-index array read, which
+    # silently zeroed byte-interval taint on ``txnas ApplicationArgs`` (the
+    # static ``txna ApplicationArgs 0`` was fully tainted) and lost the 32-byte
+    # length on ``txnas Accounts``. A loop walking ApplicationArgs by computed
+    # index — the natural way to write a batch handler — reads as untainted.
+    "txnas", "itxnas",
 })
 _FIELD_OPS_POS1: frozenset = frozenset({
     "gtxn", "gtxna", "gtxnas", "gitxn", "gitxna", "gitxnas",

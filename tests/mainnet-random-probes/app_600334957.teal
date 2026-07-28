@@ -1,0 +1,554 @@
+#pragma version 4
+intcblock 0 1 100 6 2 4 5 1000000 3 400 85
+bytecblock 0x4f776e6572 0x457363726f77 0x4869676865737420626964 0x4869676865737420626964646572 0x666f722073616c65 0x456e6420726f756e64 0x4d616e61676572 0x4475726174696f6e 0x75726c
+txn ApplicationID
+intc_0 // 0
+==
+bnz label1
+txn OnCompletion
+intc_0 // 0
+==
+bytec_1 // "Escrow"
+app_global_get
+global CreatorAddress
+!=
+&&
+bnz label2
+txn OnCompletion
+intc_0 // 0
+==
+bytec_1 // "Escrow"
+app_global_get
+global CreatorAddress
+==
+&&
+bnz label3
+txn OnCompletion
+intc_1 // 1
+==
+bnz label4
+txn OnCompletion
+intc 4 // 2
+==
+bnz label5
+txn OnCompletion
+intc 5 // 4
+==
+bnz label6
+txn OnCompletion
+intc 6 // 5
+==
+bnz label7
+err
+label1:
+pushbytes 0x5469746c65 // "Title"
+pushbytes 0x4d617373697665204e6f69736520232031 // "Massive Noise # 1"
+app_global_put
+pushbytes 0x417274697374 // "Artist"
+pushbytes 0x4d617263656c6f204d6f757261 // "Marcelo Moura"
+app_global_put
+pushbytes 0x43726561746564206174 // "Created at"
+pushbytes 0x64617274726f6f6d2e78797a // "dartroom.xyz"
+app_global_put
+bytec_0 // "Owner"
+global CreatorAddress
+app_global_put
+bytec 6 // "Manager"
+pushbytes 0x40bd0fadd0b0a981edf09689cd848e40eaf98c393e7d3ed4c40ac228c2ae6615 // addr IC6Q7LOQWCUYD3PQS2E43BEOIDVPTDBZHZ6T5VGEBLBCRQVOMYKSZBUU6I
+app_global_put
+bytec_1 // "Escrow"
+global CreatorAddress
+app_global_put
+bytec_2 // "Highest bid"
+intc_0 // 0
+app_global_put
+bytec 4 // "for sale"
+intc_0 // 0
+app_global_put
+bytec 7 // "Duration"
+intc_0 // 0
+app_global_put
+bytec 5 // "End round"
+intc_0 // 0
+app_global_put
+bytec_3 // "Highest bidder"
+global CreatorAddress
+app_global_put
+bytec 8 // "url"
+bytec 8 // "url"
+app_global_put
+intc_1 // 1
+return
+label2:
+bytec 4 // "for sale"
+app_global_get
+intc_1 // 1
+==
+bytec_0 // "Owner"
+app_global_get
+bytec_3 // "Highest bidder"
+app_global_get
+==
+&&
+bytec_0 // "Owner"
+app_global_get
+txn Sender
+!=
+&&
+bnz label8
+bytec 4 // "for sale"
+app_global_get
+intc_1 // 1
+==
+global Round
+bytec 5 // "End round"
+app_global_get
+<=
+&&
+bytec_0 // "Owner"
+app_global_get
+bytec_3 // "Highest bidder"
+app_global_get
+!=
+&&
+bytec_0 // "Owner"
+app_global_get
+txn Sender
+!=
+&&
+bnz label9
+bytec 4 // "for sale"
+app_global_get
+intc_1 // 1
+==
+bytec_0 // "Owner"
+app_global_get
+bytec_3 // "Highest bidder"
+app_global_get
+==
+&&
+bytec_0 // "Owner"
+app_global_get
+txn Sender
+==
+&&
+bnz label10
+bytec 4 // "for sale"
+app_global_get
+intc_1 // 1
+==
+global Round
+bytec 5 // "End round"
+app_global_get
+>
+&&
+bnz label11
+bytec 4 // "for sale"
+app_global_get
+intc_0 // 0
+==
+bnz label12
+intc_0 // 0
+return
+label12:
+txn TypeEnum
+intc_3 // 6
+==
+txn NumAppArgs
+intc 4 // 2
+==
+&&
+txn Sender
+bytec_0 // "Owner"
+app_global_get
+==
+&&
+txna ApplicationArgs 0
+btoi
+intc_2 // 100
+%
+intc_0 // 0
+==
+&&
+txna ApplicationArgs 0
+btoi
+intc 7 // 1000000
+>=
+&&
+pushint 800
+txna ApplicationArgs 1
+btoi
+<=
+&&
+bnz label13
+intc_0 // 0
+return
+label13:
+bytec_2 // "Highest bid"
+txna ApplicationArgs 0
+btoi
+app_global_put
+bytec 7 // "Duration"
+txna ApplicationArgs 1
+btoi
+app_global_put
+bytec_3 // "Highest bidder"
+txn Sender
+app_global_put
+bytec 4 // "for sale"
+intc_1 // 1
+app_global_put
+intc_1 // 1
+return
+label8:
+global GroupSize
+intc 4 // 2
+==
+gtxn 0 TypeEnum
+intc_3 // 6
+==
+&&
+gtxn 1 TypeEnum
+intc_1 // 1
+==
+&&
+gtxn 1 Receiver
+bytec_1 // "Escrow"
+app_global_get
+==
+&&
+gtxn 1 Amount
+bytec_2 // "Highest bid"
+app_global_get
+>=
+&&
+gtxn 1 Amount
+intc_2 // 100
+%
+intc_0 // 0
+==
+&&
+bnz label14
+intc_0 // 0
+return
+label9:
+global GroupSize
+intc 8 // 3
+==
+gtxn 0 TypeEnum
+intc_3 // 6
+==
+&&
+gtxn 1 TypeEnum
+intc_1 // 1
+==
+&&
+gtxn 1 Receiver
+bytec_1 // "Escrow"
+app_global_get
+==
+&&
+bytec_2 // "Highest bid"
+app_global_get
+intc 7 // 1000000
++
+gtxn 1 Amount
+<=
+&&
+gtxn 1 Amount
+intc_2 // 100
+%
+intc_0 // 0
+==
+&&
+gtxn 2 TypeEnum
+intc_1 // 1
+==
+&&
+gtxn 2 Sender
+bytec_1 // "Escrow"
+app_global_get
+==
+&&
+gtxn 2 Receiver
+bytec_3 // "Highest bidder"
+app_global_get
+==
+&&
+gtxn 2 Amount
+bytec_2 // "Highest bid"
+app_global_get
+==
+&&
+bnz label15
+intc_0 // 0
+return
+label14:
+bytec_2 // "Highest bid"
+gtxn 1 Amount
+app_global_put
+bytec_3 // "Highest bidder"
+gtxn 1 Sender
+app_global_put
+global Round
+bytec 7 // "Duration"
+app_global_get
++
+store 10
+bytec 5 // "End round"
+load 10
+app_global_put
+intc_1 // 1
+return
+label15:
+bytec_2 // "Highest bid"
+gtxn 1 Amount
+app_global_put
+bytec_3 // "Highest bidder"
+gtxn 1 Sender
+app_global_put
+global Round
+intc 9 // 400
++
+bytec 5 // "End round"
+app_global_get
+>=
+bnz label16
+intc_1 // 1
+return
+label16:
+global Round
+intc 9 // 400
++
+store 10
+bytec 5 // "End round"
+load 10
+app_global_put
+intc_1 // 1
+return
+label11:
+bytec_0 // "Owner"
+app_global_get
+bytec_3 // "Highest bidder"
+app_global_get
+==
+bnz label10
+bytec_0 // "Owner"
+app_global_get
+global CreatorAddress
+==
+bnz label17
+bytec_0 // "Owner"
+app_global_get
+global CreatorAddress
+!=
+bnz label18
+intc_0 // 0
+return
+label17:
+global GroupSize
+intc 8 // 3
+==
+gtxn 0 TypeEnum
+intc_3 // 6
+==
+&&
+gtxn 1 TypeEnum
+intc_1 // 1
+==
+&&
+gtxn 1 Receiver
+global CreatorAddress
+==
+&&
+gtxn 1 Sender
+bytec_1 // "Escrow"
+app_global_get
+==
+&&
+bytec_2 // "Highest bid"
+app_global_get
+intc_2 // 100
+/
+intc 10 // 85
+*
+gtxn 1 Amount
+==
+&&
+gtxn 2 TypeEnum
+intc_1 // 1
+==
+&&
+gtxn 2 Receiver
+bytec 6 // "Manager"
+app_global_get
+==
+&&
+gtxn 2 Sender
+bytec_1 // "Escrow"
+app_global_get
+==
+&&
+bytec_2 // "Highest bid"
+app_global_get
+intc_2 // 100
+/
+pushint 15
+*
+gtxn 2 Amount
+==
+&&
+bnz label10
+intc_0 // 0
+return
+label18:
+global GroupSize
+intc 5 // 4
+==
+gtxn 0 TypeEnum
+intc_3 // 6
+==
+&&
+gtxn 1 TypeEnum
+intc_1 // 1
+==
+&&
+gtxn 1 Receiver
+bytec_0 // "Owner"
+app_global_get
+==
+&&
+gtxn 1 Sender
+bytec_1 // "Escrow"
+app_global_get
+==
+&&
+bytec_2 // "Highest bid"
+app_global_get
+intc_2 // 100
+/
+intc 10 // 85
+*
+gtxn 1 Amount
+==
+&&
+gtxn 2 TypeEnum
+intc_1 // 1
+==
+&&
+gtxn 2 Receiver
+global CreatorAddress
+==
+&&
+gtxn 2 Sender
+bytec_1 // "Escrow"
+app_global_get
+==
+&&
+bytec_2 // "Highest bid"
+app_global_get
+intc_2 // 100
+/
+pushint 10
+*
+gtxn 2 Amount
+==
+&&
+gtxn 3 TypeEnum
+intc_1 // 1
+==
+&&
+gtxn 3 Receiver
+bytec 6 // "Manager"
+app_global_get
+==
+&&
+gtxn 3 Sender
+bytec_1 // "Escrow"
+app_global_get
+==
+&&
+bytec_2 // "Highest bid"
+app_global_get
+intc_2 // 100
+/
+intc 6 // 5
+*
+gtxn 3 Amount
+==
+&&
+bnz label10
+intc_0 // 0
+return
+label10:
+bytec_3 // "Highest bidder"
+app_global_get
+store 11
+bytec_0 // "Owner"
+load 11
+app_global_put
+bytec 4 // "for sale"
+intc_0 // 0
+app_global_put
+intc_1 // 1
+return
+label4:
+intc_0 // 0
+return
+label5:
+intc_0 // 0
+return
+label6:
+intc_0 // 0
+return
+label3:
+global GroupSize
+intc 4 // 2
+==
+gtxn 0 TypeEnum
+intc_3 // 6
+==
+&&
+gtxn 0 Sender
+global CreatorAddress
+==
+&&
+gtxn 0 NumAppArgs
+intc_1 // 1
+==
+&&
+gtxn 1 TypeEnum
+intc_1 // 1
+==
+&&
+gtxn 1 Sender
+global CreatorAddress
+==
+&&
+gtxn 1 Amount
+intc_0 // 0
+==
+&&
+bnz label19
+intc_0 // 0
+return
+label19:
+bytec_1 // "Escrow"
+gtxn 1 Receiver
+app_global_put
+bytec 8 // "url"
+gtxna 0 ApplicationArgs 0
+app_global_put
+intc_1 // 1
+return
+label7:
+global CreatorAddress
+txn Sender
+==
+bytec_0 // "Owner"
+app_global_get
+txn Sender
+==
+&&
+return
+err

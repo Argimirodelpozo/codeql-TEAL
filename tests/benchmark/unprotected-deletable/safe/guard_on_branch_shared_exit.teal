@@ -1,0 +1,15 @@
+#pragma version 10
+// SAFE: the creator check guards the Delete branch, which then falls through
+// to the epilogue it shares with every other path — the shape a shared return
+// block gives every compiled contract.
+txn OnCompletion
+int DeleteApplication
+==
+bz done
+txn Sender
+global CreatorAddress
+==
+assert
+done:
+int 1
+return

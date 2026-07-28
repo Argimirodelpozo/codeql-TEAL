@@ -1,0 +1,1054 @@
+#pragma version 8
+intcblock 1 0 64 4 2 6 3 8 16 32 338000
+bytecblock 0x151f7c75 0x706c6175735f636c61696d65725f717479 0x706c6175735f6173615f6964 0x706c6175735f63726561746f725f61646472657373 0x6c6f63616c5f636c61696d73 0x6469726563745f636c61696d73 0x706c6175735f69735f636c6f736564 0x6861735f62796f74 0x63726561746f725f706179735f666565 0x6861735f616c676f 0x69735f736f756c5f626f756e64 0x74656d706c6174655f6e66745f636f756e746572 0xf33c89e6 0x676f706c61757369626c655f61646472657373 0xa4d1f7801242e2306d123e3acfa7eb6c6fa022b04d91fca84232aab6147babe3 0x76657273696f6e 0x76342e352e35 0x706c6175735f616c676f 0x706c6175735f73746172745f74696d657374616d70 0x706c6175735f69735f616374697661746564 0x69735f73696e676c65 0x69735f646972656374 0x6861735f676974687562 0x6861735f6e616d655f74656d706c617465 0x6861735f656d61696c5f7265676973746572 0x706c6175735f636c61696d6564 0x706c6175735f6e66745f6d65646961 0x706c6175735f6e616d65 0x697066733a2f2f 0x2361726333
+txn TypeEnum
+intc 5 // 6
+==
+assert
+txn Fee
+global MinTxnFee
+>=
+assert
+txn ApplicationID
+bz label1
+txn OnCompletion
+intc_3 // 4
+==
+bnz label2
+txn OnCompletion
+intc 4 // 2
+!=
+assert
+txn OnCompletion
+intc_0 // 1
+!=
+assert
+txn NumAppArgs
+bnz label3
+intc_1 // 0
+err
+label3:
+pushbytes 0x8924e139 // 0x8924e139
+txna ApplicationArgs 0
+==
+bnz label4
+pushbytes 0xef311775 // 0xef311775
+txna ApplicationArgs 0
+==
+bnz label5
+bytec 12 // 0xf33c89e6
+txna ApplicationArgs 0
+==
+bnz label6
+pushbytes 0xca2bab12 // 0xca2bab12
+txna ApplicationArgs 0
+==
+bnz label7
+pushbytes 0x08d478ce // 0x08d478ce
+txna ApplicationArgs 0
+==
+bnz label8
+pushbytes 0x9656047a // 0x9656047a
+txna ApplicationArgs 0
+==
+bnz label9
+pushbytes 0xcd47956d // 0xcd47956d
+txna ApplicationArgs 0
+==
+pushbytes 0xe290dc47 // 0xe290dc47
+txna ApplicationArgs 0
+==
+||
+pushbytes 0xa9dc2351 // 0xa9dc2351
+txna ApplicationArgs 0
+==
+pushbytes 0xb022d184 // 0xb022d184
+txna ApplicationArgs 0
+==
+||
+||
+bnz label10
+pushbytes 0x4ad5b43d // 0x4ad5b43d
+txna ApplicationArgs 0
+==
+bnz label11
+intc_1 // 0
+err
+label21:
+gtxn 0 RekeyTo
+global ZeroAddress
+==
+assert
+gtxn 0 CloseRemainderTo
+global ZeroAddress
+==
+assert
+gtxn 0 AssetCloseTo
+global ZeroAddress
+==
+assert
+gtxn 0 TypeEnum
+intc_0 // 1
+==
+assert
+retsub
+label13:
+txn Sender
+global CreatorAddress
+==
+assert
+retsub
+label16:
+txn Sender
+bytec_3 // "plaus_creator_address"
+app_global_get
+==
+assert
+retsub
+label1:
+bytec_3 // "plaus_creator_address"
+txn Note
+app_global_put
+bytec 13 // "goplausible_address"
+bytec 14 // addr UTI7PAASILRDA3ISHY5M7J7LNRX2AIVQJWI7ZKCCGKVLMFD3VPR5PWSZ4I
+app_global_put
+bytec 15 // "version"
+bytec 16 // "v4.5.5"
+app_global_put
+bytec_0 // 0x151f7c75
+global CurrentApplicationID
+itob
+concat
+b label12
+label2:
+callsub label13
+bytec 15 // "version"
+bytec 16 // "v4.5.5"
+app_global_put
+bytec_0 // 0x151f7c75
+global CurrentApplicationID
+itob
+concat
+b label12
+label40:
+itxn_begin
+intc 6 // 3
+itxn_field TypeEnum
+load 42
+itxn_field ConfigAssetTotal
+intc_1 // 0
+itxn_field ConfigAssetDecimals
+pushbytes 0x504c415553 // "PLAUS"
+itxn_field ConfigAssetUnitName
+load 43
+itxn_field ConfigAssetName
+load 44
+itxn_field ConfigAssetMetadataHash
+load 45
+itxn_field ConfigAssetURL
+global CurrentApplicationAddress
+dup
+itxn_field ConfigAssetManager
+itxn_field ConfigAssetReserve
+load 48
+itxn_field ConfigAssetFreeze
+load 49
+itxn_field ConfigAssetClawback
+itxn_submit
+itxn CreatedAssetID
+retsub
+label38:
+itxn_begin
+intc_0 // 1
+itxn_field TypeEnum
+txn Sender
+itxn_field Receiver
+bytec 17 // "plaus_algo"
+app_global_get
+itxn_field Amount
+global MinTxnFee
+itxn_field Fee
+itxn_submit
+retsub
+label15:
+itxn_begin
+intc_3 // 4
+itxn_field TypeEnum
+txna Assets 0
+itxn_field XferAsset
+load 2
+itxn_field Sender
+intc_0 // 1
+itxn_field AssetAmount
+load 54
+itxn_field AssetReceiver
+itxn_submit
+retsub
+label32:
+itxn_begin
+pushint 5
+itxn_field TypeEnum
+load 67
+itxn_field FreezeAsset
+global CurrentApplicationAddress
+itxn_field Sender
+intc_0 // 1
+itxn_field FreezeAssetFrozen
+txn Sender
+itxn_field FreezeAssetAccount
+itxn_submit
+itxn_begin
+intc 6 // 3
+itxn_field TypeEnum
+load 67
+itxn_field ConfigAsset
+global CurrentApplicationAddress
+dup
+itxn_field ConfigAssetManager
+itxn_field ConfigAssetReserve
+global ZeroAddress
+dup
+itxn_field ConfigAssetFreeze
+itxn_field ConfigAssetClawback
+itxn_submit
+retsub
+label35:
+itxn_begin
+intc_3 // 4
+itxn_field TypeEnum
+load 67
+itxn_field XferAsset
+global CurrentApplicationAddress
+itxn_field Sender
+intc_0 // 1
+itxn_field AssetAmount
+txn Sender
+itxn_field AssetReceiver
+itxn_submit
+retsub
+label24:
+itxn_begin
+intc_3 // 4
+itxn_field TypeEnum
+load 53
+itxn_field XferAsset
+load 2
+itxn_field Sender
+load 4
+itxn_field AssetAmount
+load 54
+itxn_field AssetReceiver
+itxn_submit
+retsub
+label27:
+global LatestTimestamp
+bytec 18 // "plaus_start_timestamp"
+app_global_get
+dup
+store 17
+>=
+assert
+retsub
+label22:
+gtxn 0 Amount
+bytec_1 // "plaus_claimer_qty"
+app_global_get
+pushint 1500000
+*
+>=
+txn Sender
+bytec 14 // addr UTI7PAASILRDA3ISHY5M7J7LNRX2AIVQJWI7ZKCCGKVLMFD3VPR5PWSZ4I
+==
+||
+assert
+b label14
+label23:
+gtxn 0 Amount
+bytec_1 // "plaus_claimer_qty"
+app_global_get
+pushint 1000000
+*
+>=
+assert
+label14:
+global CurrentApplicationAddress
+store 2
+bytec_3 // "plaus_creator_address"
+app_global_get
+store 54
+callsub label15
+bytec_0 // 0x151f7c75
+pushbytes 0x706c6175735f6163746976617465 // "plaus_activate"
+concat
+b label12
+label4:
+callsub label16
+itxn_begin
+global CurrentApplicationAddress
+itxn_field Sender
+intc_3 // 4
+itxn_field TypeEnum
+global CurrentApplicationAddress
+itxn_field AssetReceiver
+intc_1 // 0
+itxn_field AssetAmount
+txna Assets 0
+itxn_field XferAsset
+itxn_submit
+itxn TxID
+log
+bytec_0 // 0x151f7c75
+txna Assets 0
+itob
+concat
+b label12
+label11:
+bytec 12 // 0xf33c89e6
+gtxna 2 ApplicationArgs 0
+==
+assert
+bytec_0 // 0x151f7c75
+pushbytes 0x6275646765745f696e6372656173655f63616c6c // "budget_increase_call"
+concat
+b label12
+label18:
+itxn_begin
+intc_3 // 4
+itxn_field TypeEnum
+load 5
+itxn_field XferAsset
+txn Sender
+itxn_field AssetReceiver
+intc_0 // 1
+itxn_field AssetAmount
+txn Sender
+itxn_field AssetCloseTo
+itxn_submit
+retsub
+label20:
+itxn_begin
+pushbytes 0xc429ee88 // 0xc429ee88
+itxn_field ApplicationArgs
+bytec_1 // "plaus_claimer_qty"
+app_global_get
+bytec 4 // "local_claims"
+app_global_get
+bytec 5 // "direct_claims"
+app_global_get
++
+-
+itob
+itxn_field ApplicationArgs
+intc 5 // 6
+itxn_field TypeEnum
+intc_1 // 0
+itxn_field OnCompletion
+txna Applications 1
+itxn_field ApplicationID
+global CurrentApplicationID
+itxn_field Applications
+txn Sender
+itxn_field Accounts
+itxn_submit
+retsub
+label9:
+callsub label16
+pushbytes 0x706c6175735f6861735f736563726574 // "plaus_has_secret"
+app_global_del
+bytec 6 // "plaus_is_closed"
+intc_0 // 1
+app_global_put
+global CurrentApplicationAddress
+store 1
+load 1
+balance
+store 2
+load 1
+min_balance
+store 3
+load 2
+load 3
+-
+pushint 2000
+-
+store 4
+bytec 7 // "has_byot"
+app_global_get
+intc_0 // 1
+==
+bz label17
+txna Assets 0
+store 5
+callsub label18
+txna Assets 1
+dup
+store 5
+intc_1 // 0
+==
+bnz label17
+callsub label18
+label17:
+load 4
+intc_1 // 0
+>
+bz label19
+itxn_begin
+intc_0 // 1
+itxn_field TypeEnum
+txn Sender
+itxn_field Receiver
+load 4
+itxn_field Amount
+global MinTxnFee
+itxn_field Fee
+itxn_submit
+label19:
+callsub label20
+bytec_0 // 0x151f7c75
+b label12
+label6:
+bytec 19 // "plaus_is_activated"
+app_global_get
+intc_0 // 1
+!=
+assert
+bytec 6 // "plaus_is_closed"
+intc_1 // 0
+app_global_put
+callsub label16
+callsub label21
+global GroupSize
+intc_3 // 4
+==
+gtxn 2 TypeEnum
+intc 5 // 6
+==
+&&
+global GroupSize
+intc 6 // 3
+==
+||
+assert
+gtxn 0 Fee
+global MinTxnFee
+>=
+assert
+bytec 19 // "plaus_is_activated"
+intc_0 // 1
+app_global_put
+pushbytes 0x706c6175735f61637469766174655f74696d65 // "plaus_activate_time"
+global LatestTimestamp
+app_global_put
+bytec 8 // "creator_pays_fee"
+app_global_get
+intc_0 // 1
+>=
+bnz label22
+b label23
+label28:
+txna Assets 1
+store 53
+load 14
+store 4
+callsub label24
+txn NumAssets
+intc 4 // 2
+==
+bnz label25
+txna Assets 2
+store 53
+load 15
+store 4
+callsub label24
+b label25
+label10:
+bytec_2 // "plaus_asa_id"
+app_global_get
+store 0
+txn Sender
+store 54
+bytec 20 // "is_single"
+app_global_get
+store 27
+bytec 8 // "creator_pays_fee"
+app_global_get
+store 28
+bytec_1 // "plaus_claimer_qty"
+app_global_get
+store 29
+bytec 21 // "is_direct"
+app_global_get
+store 30
+bytec_3 // "plaus_creator_address"
+app_global_get
+store 31
+bytec 5 // "direct_claims"
+app_global_get
+store 32
+bytec 4 // "local_claims"
+app_global_get
+store 33
+bytec 22 // "has_github"
+app_global_get
+store 34
+load 29
+load 33
+load 32
++
+>=
+assert
+callsub label21
+txna ApplicationArgs 3
+store 8
+txna ApplicationArgs 4
+extract 2 0
+store 6
+txna ApplicationArgs 5
+store 7
+load 7
+log
+txna ApplicationArgs 6
+store 10
+load 10
+intc_1 // 0
+extract_uint64
+store 13
+load 10
+intc 7 // 8
+extract_uint64
+store 14
+load 10
+intc 8 // 16
+extract_uint64
+store 15
+bytec 6 // "plaus_is_closed"
+app_global_get
+intc_1 // 0
+==
+assert
+load 54
+box_get
+bnz label26
+load 54
+load 6
+box_put
+global GroupSize
+intc 4 // 2
+>=
+global GroupSize
+intc 5 // 6
+<=
+||
+assert
+txna Assets 0
+store 0
+global CurrentApplicationAddress
+store 2
+txn Sender
+store 54
+callsub label27
+bytec 7 // "has_byot"
+app_global_get
+intc_0 // 1
+==
+txn NumAssets
+intc_0 // 1
+>
+&&
+bnz label28
+label25:
+bytec 23 // "has_name_template"
+app_global_get
+intc_0 // 1
+==
+bytec 24 // "has_email_register"
+app_global_get
+intc_0 // 1
+==
+||
+bnz label29
+txna Assets 0
+bytec_2 // "plaus_asa_id"
+app_global_get
+==
+assert
+callsub label15
+bytec 9 // "has_algo"
+app_global_get
+bnz label30
+b label31
+label36:
+callsub label32
+b label33
+label29:
+load 6
+len
+intc_2 // 64
+<
+bnz label34
+load 6
+intc_1 // 0
+intc_2 // 64
+substring3
+store 6
+label34:
+load 6
+box_get
+assert
+store 66
+load 66
+intc_1 // 0
+extract_uint64
+store 67
+callsub label35
+bytec 10 // "is_soul_bound"
+app_global_get
+intc_0 // 1
+==
+bnz label36
+label33:
+load 6
+len
+intc_2 // 64
+<
+bnz label37
+load 6
+intc_1 // 0
+intc_2 // 64
+substring3
+store 6
+label37:
+load 6
+box_del
+assert
+load 54
+box_del
+assert
+load 54
+load 66
+box_put
+bytec 9 // "has_algo"
+app_global_get
+bnz label30
+b label31
+label30:
+callsub label38
+label31:
+pushbytes 0xfba4eef5 // 0xfba4eef5
+txna ApplicationArgs 0
+!=
+bnz label39
+bytec 4 // "local_claims"
+load 33
+intc_0 // 1
++
+app_global_put
+bytec_0 // 0x151f7c75
+bytec 25 // "plaus_claimed"
+concat
+b label12
+label39:
+bytec 5 // "direct_claims"
+load 32
+intc_0 // 1
++
+app_global_put
+bytec_0 // 0x151f7c75
+bytec 25 // "plaus_claimed"
+concat
+b label12
+label45:
+intc_0 // 1
+store 42
+callsub label40
+dup
+store 0
+bytec_2 // "plaus_asa_id"
+swap
+app_global_put
+b label41
+label5:
+callsub label16
+callsub label21
+global GroupSize
+dup
+intc 6 // 3
+==
+intc 4 // 2
+==
+||
+assert
+gtxn 0 Fee
+global MinTxnFee
+>=
+assert
+gtxn 0 Receiver
+global CurrentApplicationAddress
+==
+assert
+txna ApplicationArgs 3
+store 26
+pushbytes 0x706c6175735f6d6574616461746168617368 // "plaus_metadatahash"
+load 26
+app_global_put
+bytec 26 // "plaus_nft_media"
+txna ApplicationArgs 4
+app_global_put
+bytec 27 // "plaus_name"
+txna ApplicationArgs 5
+app_global_put
+pushbytes 0x706c6175735f6c6f676f // "plaus_logo"
+txna ApplicationArgs 6
+app_global_put
+pushbytes 0x706c6175735f64657363 // "plaus_desc"
+txna ApplicationArgs 7
+app_global_put
+pushbytes 0x706c6175735f74696d657a6f6e65 // "plaus_timezone"
+txna ApplicationArgs 8
+app_global_put
+pushbytes 0x706c6175735f61646472657373 // "plaus_address"
+txna ApplicationArgs 9
+app_global_put
+pushbytes 0x706c6175735f75726c // "plaus_url"
+txna ApplicationArgs 10
+app_global_put
+pushbytes 0x706c6175735f656d61696c // "plaus_email"
+txna ApplicationArgs 11
+app_global_put
+pushbytes 0x706c6175735f65787472615f6d65646961 // "plaus_extra_media"
+txna ApplicationArgs 12
+app_global_put
+pushbytes 0x706c6175735f67656f5f636f756e747279 // "plaus_geo_country"
+txna ApplicationArgs 13
+app_global_put
+pushbytes 0x706c6175735f62616e5f636f756e747279 // "plaus_ban_country"
+txna ApplicationArgs 14
+app_global_put
+txna ApplicationArgs 15
+store 10
+bytec 18 // "plaus_start_timestamp"
+load 10
+intc_1 // 0
+extract_uint64
+store 30
+load 30
+bz label42
+load 30
+app_global_put
+b label43
+label42:
+global LatestTimestamp
+app_global_put
+label43:
+bytec 8 // "creator_pays_fee"
+intc_0 // 1
+store 23
+load 23
+app_global_put
+pushbytes 0x706c6175735f656e645f74696d657374616d70 // "plaus_end_timestamp"
+load 10
+intc 7 // 8
+extract_uint64
+app_global_put
+bytec_1 // "plaus_claimer_qty"
+load 10
+intc 8 // 16
+extract_uint64
+dup
+store 22
+app_global_put
+pushbytes 0x69735f617574686e // "is_authn"
+load 10
+pushint 24
+extract_uint64
+app_global_put
+bytec 20 // "is_single"
+load 10
+intc 9 // 32
+extract_uint64
+app_global_put
+bytec 21 // "is_direct"
+load 10
+pushint 40
+extract_uint64
+app_global_put
+pushbytes 0x69735f706879736963616c // "is_physical"
+load 10
+pushint 48
+extract_uint64
+app_global_put
+pushbytes 0x6861735f6578747261 // "has_extra"
+load 10
+pushint 72
+extract_uint64
+app_global_put
+pushbytes 0x6861735f636f6c6f72 // "has_color"
+load 10
+pushint 80
+extract_uint64
+app_global_put
+pushbytes 0x6861735f67656f // "has_geo"
+load 10
+pushint 88
+extract_uint64
+app_global_put
+bytec 9 // "has_algo"
+load 10
+pushint 96
+extract_uint64
+app_global_put
+bytec 17 // "plaus_algo"
+load 10
+pushint 104
+extract_uint64
+app_global_put
+pushbytes 0x6861735f70616765 // "has_page"
+load 10
+pushint 112
+extract_uint64
+app_global_put
+bytec 7 // "has_byot"
+load 10
+pushint 120
+extract_uint64
+store 34
+load 34
+app_global_put
+pushbytes 0x6861735f646973747269627574696f6e // "has_distribution"
+load 10
+pushint 128
+extract_uint64
+store 35
+load 35
+app_global_put
+bytec 22 // "has_github"
+load 10
+pushint 136
+extract_uint64
+app_global_put
+bytec 24 // "has_email_register"
+load 10
+pushint 160
+extract_uint64
+store 47
+load 47
+app_global_put
+bytec 23 // "has_name_template"
+load 10
+pushint 168
+extract_uint64
+store 41
+load 41
+app_global_put
+bytec 10 // "is_soul_bound"
+load 10
+pushint 176
+extract_uint64
+store 51
+load 51
+app_global_put
+bytec 5 // "direct_claims"
+intc_1 // 0
+app_global_put
+bytec 4 // "local_claims"
+intc_1 // 0
+app_global_put
+bytec 11 // "template_nft_counter"
+intc_1 // 0
+app_global_put
+intc_1 // 0
+bytec_2 // "plaus_asa_id"
+app_global_get_ex
+bnz label44
+bytec 27 // "plaus_name"
+app_global_get
+intc 4 // 2
+intc 9 // 32
+substring3
+store 43
+load 26
+extract 2 0
+store 44
+bytec 28 // "ipfs://"
+bytec 26 // "plaus_nft_media"
+app_global_get
+extract 2 0
+concat
+bytec 29 // "#arc3"
+concat
+store 45
+global ZeroAddress
+dup
+store 48
+store 49
+load 41
+load 47
+||
+bnz label45
+bytec_1 // "plaus_claimer_qty"
+app_global_get
+intc_0 // 1
++
+store 42
+callsub label40
+dup
+store 0
+bytec_2 // "plaus_asa_id"
+swap
+app_global_put
+label41:
+load 23
+intc_0 // 1
+==
+bnz label46
+gtxn 0 Amount
+intc 10 // 338000
+>=
+assert
+bytec_0 // 0x151f7c75
+load 0
+itob
+concat
+b label12
+label46:
+gtxn 0 Amount
+load 22
+pushint 1000
+*
+intc 10 // 338000
++
+load 22
+pushint 40900
+*
++
+>=
+assert
+bytec_0 // 0x151f7c75
+load 0
+itob
+concat
+b label12
+label8:
+txn Sender
+txna Accounts 0
+==
+assert
+txna Accounts 0
+txna ApplicationArgs 1
+extract 2 0
+txna ApplicationArgs 2
+extract 2 0
+concat
+concat
+store 1
+load 1
+len
+intc_2 // 64
+<
+bnz label47
+load 1
+intc_1 // 0
+intc_2 // 64
+substring3
+store 1
+label47:
+load 1
+box_get
+assert
+pop
+bytec_0 // 0x151f7c75
+load 1
+concat
+b label12
+label7:
+txn Sender
+bytec 13 // "goplausible_address"
+app_global_get
+==
+assert
+pushbytes 0x56657269666961626c652043726564656e7469616c // "Verifiable Credential"
+store 43
+bytec 11 // "template_nft_counter"
+app_global_get
+intc_0 // 1
++
+store 46
+bytec 11 // "template_nft_counter"
+load 46
+app_global_put
+txna ApplicationArgs 2
+extract 2 0
+store 44
+bytec 28 // "ipfs://"
+txna ApplicationArgs 3
+extract 2 0
+concat
+bytec 29 // "#arc3"
+concat
+store 45
+intc_0 // 1
+store 42
+global ZeroAddress
+store 48
+global ZeroAddress
+store 49
+bytec 10 // "is_soul_bound"
+app_global_get
+intc_0 // 1
+==
+bz label48
+global CurrentApplicationAddress
+store 48
+label48:
+callsub label40
+store 0
+txna Accounts 1
+txna ApplicationArgs 4
+extract 2 0
+txna ApplicationArgs 5
+extract 2 0
+concat
+concat
+store 50
+load 50
+len
+intc_2 // 64
+<
+bnz label49
+load 50
+intc_1 // 0
+intc_2 // 64
+substring3
+store 50
+label49:
+load 50
+box_get
+bnz label50
+load 50
+load 0
+itob
+box_put
+bytec_0 // 0x151f7c75
+load 0
+itob
+concat
+b label12
+label12:
+log
+intc_0 // 1
+return
+intc_1 // 0
+pushbytes 0x526f7574696e67204572726f72 // "Routing Error"
+err
+label44:
+intc_1 // 0
+pushbytes 0x417373657420616c726561647920657869737473 // "Asset already exists"
+err
+label26:
+intc_1 // 0
+pushbytes 0x446f75626c6520636c61696d // "Double claim"
+err
+label50:
+intc_1 // 0
+pushbytes 0x54656d706c61746520616c726561647920657869737473 // "Template already exists"
+err

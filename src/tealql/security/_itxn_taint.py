@@ -140,16 +140,15 @@ _CMP_OPS = frozenset({"==", "!="})
 
 def source_label(op: str, imm: str) -> Optional[str]:
     """The user-input source family ``op`` (with immediates ``imm``) reads, or
-    ``None``. ``ApplicationArgs`` (txn/gtxn array reads), LogicSig ``arg``s, and
-    the ``itxn ... LastLog`` of a just-called sub-app are all attacker-steerable."""
-    from tealql.tealtools.avm import TXN_SOURCE_OPS, ITXN_SOURCE_OPS, LSIG_ARG_OPS
-    if op in TXN_SOURCE_OPS and "ApplicationArgs" in imm:
-        return "ApplicationArgs"
-    if op in LSIG_ARG_OPS:
-        return "LogicSigArgs"
-    if op in ITXN_SOURCE_OPS and "LastLog" in imm:
-        return "ItxnLastLog"
-    return None
+    ``None``: ``ApplicationArgs`` and the caller-composed foreign arrays
+    (``Accounts`` / ``Assets`` / ``Applications``), LogicSig ``arg``s, and the
+    ``itxn ... LastLog`` of a just-called sub-app.
+
+    Delegates to :func:`tealql.tealtools.avm.attacker_input_label`, the single
+    table shared with the IR-level seeds — this used to be a second hand-kept
+    copy, and the two silently agreed on an incomplete source set."""
+    from tealql.tealtools.avm import attacker_input_label
+    return attacker_input_label(op, imm)
 
 
 

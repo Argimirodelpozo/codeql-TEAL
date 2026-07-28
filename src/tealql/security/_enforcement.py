@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from typing import Optional
 
+from tealql.tealtools.avm import CMP_OPS
 from tealql.tealtools.ssa import BasicBlock, SSAProgram, SSAVar
 
 from ._program_shape import file_match, is_rejection_exit
@@ -85,6 +86,72 @@ def _bb_at(prog: SSAProgram, file: str, line: int) -> Optional[BasicBlock]:
 #: :func:`branch_gates_rejection`.
 _NEGATED_COND_OPS = frozenset({"!=", "b!=", "!"})
 
+#: Boolean connectives the enforcement walk may cross. ``&&`` is unconditional:
+#: ``assert(A && B)`` forces A, so a check composed into a conjunction is still
+#: enforced. ``||`` is NOT, and is handled separately -- see
+#: :func:`_disjunction_is_enforcing`.
+_CONJUNCTION_OPS = frozenset({"&&"})
+_DISJUNCTION_OPS = frozenset({"||"})
+
+
+def _disjunct_constrains_field(prog: SSAProgram, var, field_vars: set,
+                               seen: Optional[set] = None) -> bool:
+    """``var`` (a boolean) constrains the field: its defining expression compares
+    a value flowing from ``field_vars``.
+
+    Recurses through the connectives with their real semantics: a conjunction
+    constrains the field when EITHER side does (both are forced), a disjunction
+    only when BOTH sides do, and ``!`` is transparent (a negated comparison of
+    the field still compares the field)."""
+    from ._value_flow import _operand_flows_from_field_var
+    if seen is None:
+        seen = set()
+    if var is None or id(var) in seen:
+        return False
+    seen.add(id(var))
+    d = getattr(var, "defined_by", None)
+    if d is None:
+        return False
+    if d.op in _CONJUNCTION_OPS:
+        return any(_disjunct_constrains_field(prog, i, field_vars, seen)
+                   for i in d.inputs)
+    if d.op in _DISJUNCTION_OPS:
+        return bool(d.inputs) and all(
+            _disjunct_constrains_field(prog, i, field_vars, seen)
+            for i in d.inputs)
+    if d.op == "!":
+        return any(_disjunct_constrains_field(prog, i, field_vars, seen)
+                   for i in d.inputs)
+    if d.op in CMP_OPS:
+        return any(_operand_flows_from_field_var(prog, op, field_vars)
+                   for op in d.inputs)
+    return False
+
+
+def _disjunction_is_enforcing(prog: SSAProgram, disj, arrived_from,
+                              field_vars: Optional[set]) -> bool:
+    """May the enforcement walk continue THROUGH the ``||`` at ``disj``, having
+    arrived along ``arrived_from``?
+
+    ``assert(A || B)`` does **not** force A: whenever B holds, A is free. Walking
+    through a disjunction unconditionally is how ``assert(RekeyTo == ZeroAddress
+    || Fee < 1000)`` came to read as a rekey guard -- an attacker just sends a
+    low-fee transaction and rekeys the account. The same hole existed in every
+    detector on this path (rekey-to, close-remainder-to, asset-close-to,
+    fee-validation).
+
+    The disjunction IS enforcing when EVERY arm independently constrains the
+    same field, because then no arm leaves the field free: ``assert(RekeyTo ==
+    ZeroAddress || RekeyTo == knownSafe)`` is a real, if unusual, pin. That test
+    needs to know which field is at stake, so with no ``field_vars`` the answer
+    is conservatively no -- over-reporting, never under-reporting, the same
+    stance :func:`branch_gates_rejection` takes on compound conditions."""
+    if not field_vars:
+        return False
+    others = [i for i in disj.inputs if i is not arrived_from]
+    return bool(others) and all(
+        _disjunct_constrains_field(prog, o, field_vars) for o in others)
+
 
 def branch_gates_rejection(
     prog: SSAProgram, branch, label_lines: dict[tuple[str, str], int],
@@ -150,10 +217,15 @@ def def_forward_reaches_enforcement(
     label_lines: Optional[dict[tuple[str, str], int]] = None,
     seen: Optional[set[SSAVar]] = None,
     scratch_fwd: Optional[dict] = None,
+    field_vars: Optional[set] = None,
 ) -> bool:
     """The def-forward reaches an enforcement: the SSA chain rooted at
     ``var`` terminates in some opcode that enforces rejection when the
     original value is false.
+
+    ``field_vars`` names the field seeds under test, which is what makes a
+    disjunction decidable: ``assert(A || B)`` enforces A only when B pins the
+    same field too. Without it a ``||`` simply stops the walk (conservative).
 
     Recognised sinks:
       - ``assert`` consumes the SSA chain.
@@ -194,13 +266,18 @@ def def_forward_reaches_enforcement(
         if cons.op in ("bnz", "bz") and branch_gates_rejection(
                 prog, cons, label_lines):
             return True
+        # A disjunction does not carry enforcement to THIS operand unless every
+        # other arm pins the same field -- see _disjunction_is_enforcing.
+        if cons.op in _DISJUNCTION_OPS and not _disjunction_is_enforcing(
+                prog, cons, var, field_vars):
+            continue
         # Step: consume produces an SSA def whose forward chain we walk.
         for out in cons.outputs:
             if not isinstance(out, SSAVar):
                 continue
             if def_forward_reaches_enforcement(
                 prog, out, label_lines=label_lines, seen=seen,
-                scratch_fwd=scratch_fwd,
+                scratch_fwd=scratch_fwd, field_vars=field_vars,
             ):
                 return True
     return False

@@ -1,0 +1,12 @@
+#pragma version 10
+// VULN: AssetCloseTo pinned only inside a bypassable disjunction.
+txn AssetCloseTo
+global ZeroAddress
+==
+txn Amount
+int 5
+<
+||
+assert
+int 1
+return

@@ -1,0 +1,14 @@
+#pragma version 10
+// SAFE: the admin is a hardcoded address literal — the caller cannot choose it,
+// so pinning the sender against it is a real authorisation check.
+txn OnCompletion
+int UpdateApplication
+==
+bz done
+txn Sender
+addr AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+==
+assert
+done:
+int 1
+return

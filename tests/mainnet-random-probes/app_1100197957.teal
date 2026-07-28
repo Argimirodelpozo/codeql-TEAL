@@ -1,0 +1,2307 @@
+#pragma version 6
+intcblock 0 1 24 4 8 16 6 3 32 64 72 80 88 5 10000 60 1250098493 2967028781 2968402364 2004428961 917182842 1008374487 40 48 56 17 18446744073709551615 10000000
+bytecblock 0x00 0x01 0x0000000000000000000000000000000000000000000000000de0b6b3a7640000 0x02 0x 0x010000000000000000
+intc_0 // 0
+store 0
+txn ApplicationID
+bz label1
+bytec 4 // ""
+app_global_get
+dup
+intc_0 // 0
+extract_uint64
+store 1
+dup
+intc 4 // 8
+extract_uint64
+store 2
+intc 5 // 16
+extract_uint64
+store 8
+txn OnCompletion
+intc_1 // 1
+==
+bz label2
+txn Sender
+bytec_0 // 0x00
+intc 15 // 60
+bzero
+app_local_put
+b label3
+label2:
+txna ApplicationArgs 0
+btoi
+dup
+bz label4
+intc_0 // 0
+store 4
+intc_1 // 1
+store 6
+dup
+intc 16 // 1250098493
+<
+bnz label5
+dup
+intc 17 // 2967028781
+<
+bnz label6
+dup
+intc 18 // 2968402364
+<
+bnz label7
+intc 18 // 2968402364
+==
+assert
+load 1
+intc_3 // 4
+==
+assert
+bytec_0 // 0x00
+app_global_get
+bytec_1 // 0x01
+app_global_get
+concat
+bytec_3 // 0x02
+app_global_get
+concat
+dup
+store 3
+extract 0 32
+load 3
+extract 32 8
+concat
+load 3
+extract 40 8
+concat
+load 3
+extract 48 8
+concat
+load 3
+extract 56 8
+concat
+load 3
+extract 64 8
+concat
+load 3
+extract 72 8
+concat
+load 3
+extract 80 8
+concat
+load 3
+extract 88 8
+concat
+store 7
+b label8
+label7:
+intc 17 // 2967028781
+==
+assert
+bytec 4 // ""
+store 255
+bytec_1 // 0x01
+load 255
+concat
+intc 4 // 8
+bzero
+concat
+b label9
+label6:
+dup
+intc 19 // 2004428961
+<
+bnz label10
+intc 19 // 2004428961
+==
+assert
+bytec 4 // ""
+store 255
+bytec_0 // 0x00
+load 255
+concat
+intc 4 // 8
+bzero
+concat
+b label9
+label10:
+intc 16 // 1250098493
+==
+assert
+txna ApplicationArgs 1
+store 255
+pushbytes 0x03 // 0x03
+load 255
+concat
+b label9
+label5:
+dup
+intc 20 // 917182842
+<
+bnz label11
+dup
+intc 21 // 1008374487
+<
+bnz label12
+intc 21 // 1008374487
+==
+assert
+load 1
+intc_3 // 4
+==
+assert
+txna ApplicationArgs 1
+store 255
+intc_0 // 0
+load 255
+callsub label13
+extract 0 9
+dup
+store 254
+intc_1 // 1
+extract_uint64
+load 254
+intc_0 // 0
+getbyte
+select
+itob
+intc_0 // 0
+load 255
+callsub label13
+extract 9 9
+dup
+store 254
+intc_1 // 1
+extract_uint64
+load 254
+intc_0 // 0
+getbyte
+select
+itob
+concat
+intc_0 // 0
+load 255
+callsub label13
+extract 18 9
+dup
+store 254
+intc_1 // 1
+extract_uint64
+load 254
+intc_0 // 0
+getbyte
+select
+itob
+concat
+global ZeroAddress
+load 255
+callsub label13
+extract 27 33
+dup
+store 254
+extract 1 32
+load 254
+intc_0 // 0
+getbyte
+select
+concat
+store 7
+b label8
+label12:
+intc 20 // 917182842
+==
+assert
+load 1
+intc_3 // 4
+==
+assert
+bytec_0 // 0x00
+app_global_get
+bytec_1 // 0x01
+app_global_get
+concat
+bytec_3 // 0x02
+app_global_get
+concat
+dup
+store 3
+extract 224 8
+load 3
+extract 136 8
+concat
+load 3
+extract 184 32
+concat
+store 7
+b label8
+label11:
+pushint 64922701
+==
+assert
+txna ApplicationArgs 1
+store 255
+bytec_3 // 0x02
+load 255
+concat
+b label9
+label4:
+txna ApplicationArgs 2
+btoi
+store 4
+txna ApplicationArgs 3
+txna ApplicationArgs 1
+btoi
+dup
+intc_1 // 1
+<
+bnz label14
+dup
+intc 7 // 3
+<
+bnz label15
+intc 7 // 3
+==
+assert
+label9:
+intc_3 // 4
+load 1
+==
+assert
+load 4
+dup
+intc_0 // 0
+==
+swap
+load 2
+==
+||
+assert
+bytec_0 // 0x00
+app_global_get
+bytec_1 // 0x01
+app_global_get
+concat
+bytec_3 // 0x02
+app_global_get
+concat
+dup
+store 3
+dup
+dup2
+dup2
+dup2
+dup2
+dup2
+dup2
+dup2
+dup2
+dup2
+dup
+extract 0 32
+store 255
+intc 8 // 32
+extract_uint64
+store 254
+intc 22 // 40
+extract_uint64
+store 253
+intc 23 // 48
+extract_uint64
+store 252
+intc 24 // 56
+extract_uint64
+store 251
+intc 9 // 64
+extract_uint64
+store 250
+intc 10 // 72
+extract_uint64
+store 249
+intc 11 // 80
+extract_uint64
+store 248
+intc 12 // 88
+extract_uint64
+store 247
+extract 96 32
+store 246
+pushint 128
+extract_uint64
+store 245
+pushint 136
+extract_uint64
+store 244
+pushint 144
+extract_uint64
+store 243
+extract 152 32
+store 242
+extract 184 32
+store 241
+pushint 216
+extract_uint64
+store 240
+pushint 224
+extract_uint64
+store 239
+extract 232 17
+store 238
+pushint 249
+extract_uint64
+store 237
+pushint 257
+intc 25 // 17
+extract3
+store 236
+pushint 274
+extract_uint64
+store 235
+dup
+store 5
+store 234
+pushbytes 0x91f1a79a // 0x91f1a79a
+load 234
+concat
+log
+load 234
+intc_0 // 0
+getbyte
+dup
+pushint 2
+<
+bnz label16
+dup
+intc 7 // 3
+<
+bnz label17
+intc 7 // 3
+==
+assert
+load 234
+extract 1 8
+store 233
+itxn_begin
+intc_0 // 0
+itxn_field Fee
+intc 6 // 6
+itxn_field TypeEnum
+load 8
+itxn_field ApplicationID
+itxn_submit
+load 233
+btoi
+store 232
+intc_0 // 0
+txn Sender
+callsub label13
+extract 0 9
+dup
+store 230
+intc_1 // 1
+extract_uint64
+load 230
+intc_0 // 0
+getbyte
+select
+dup
+store 231
+load 235
+<=
+assert
+load 232
+intc 26 // 18446744073709551615
+<
+assert
+load 232
+load 231
+<=
+assert
+load 235
+itob
+load 236
+extract 8 8
+concat
+load 236
+extract 16 1
+concat
+store 230
+load 230
+extract 0 17
+dup
+store 229
+intc_0 // 0
+extract_uint64
+store 228
+load 231
+load 228
+<=
+assert
+load 239
+intc_0 // 0
+>
+bz label18
+load 244
+global Round
+global Round
+load 244
+>
+select
+store 226
+load 241
+load 246
+intc_2 // 24
+bzero
+load 250
+load 226
+dup
+load 250
+<
+select
+load 244
+-
+itob
+concat
+b*
+callsub label19
+intc_2 // 24
+bzero
+load 239
+itob
+concat
+b/
+callsub label19
+b+
+callsub label19
+store 227
+b label20
+label18:
+load 241
+store 227
+label20:
+intc_2 // 24
+bzero
+load 231
+itob
+concat
+load 227
+global ZeroAddress
+txn Sender
+callsub label13
+extract 27 33
+dup
+store 225
+extract 1 32
+load 225
+intc_0 // 0
+getbyte
+select
+b-
+callsub label19
+b*
+callsub label19
+bytec_2 // addr AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAN4C3LHJ3EAAAFJV3SLA
+b/
+callsub label19
+dup
+dup2
+intc 5 // 16
+extract_uint64
+intc_0 // 0
+==
+assert
+intc 4 // 8
+extract_uint64
+intc_0 // 0
+==
+assert
+intc_0 // 0
+extract_uint64
+intc_0 // 0
+==
+assert
+intc_2 // 24
+extract_uint64
+intc_0 // 0
+txn Sender
+callsub label13
+extract 9 9
+dup
+store 225
+intc_1 // 1
+extract_uint64
+load 225
+intc_0 // 0
+getbyte
+select
++
+store 226
+txn Sender
+bytec_0 // 0x00
+txn Sender
+callsub label13
+bytec_1 // 0x01
+load 226
+itob
+concat
+store 225
+dup
+extract 0 9
+load 225
+concat
+swap
+extract 18 42
+concat
+app_local_put
+txn Sender
+bytec_0 // 0x00
+txn Sender
+callsub label13
+bytec_1 // 0x01
+load 227
+concat
+store 225
+extract 0 27
+load 225
+concat
+app_local_put
+load 244
+global Round
+global Round
+load 244
+>
+select
+dup
+store 225
+load 250
+>
+intc_0 // 0
+txn Sender
+callsub label13
+extract 18 9
+dup
+store 223
+intc_1 // 1
+extract_uint64
+load 223
+intc_0 // 0
+getbyte
+select
+load 247
++
+load 225
+<=
+||
+store 224
+load 226
+intc_0 // 0
+load 224
+select
+dup
+store 223
+load 248
+mulw
+load 249
+divw
+store 222
+load 224
+bz label21
+txn Sender
+bytec_0 // 0x00
+txn Sender
+callsub label13
+bytec_1 // 0x01
+load 231
+load 232
+-
+itob
+concat
+store 221
+extract 9 51
+load 221
+swap
+concat
+app_local_put
+itxn_begin
+intc_0 // 0
+itxn_field Fee
+load 232
+itxn_field AssetAmount
+intc_3 // 4
+itxn_field TypeEnum
+txn Sender
+itxn_field AssetReceiver
+load 252
+itxn_field XferAsset
+itxn_submit
+load 239
+load 232
+-
+store 221
+load 250
+load 225
+dup
+load 250
+<
+select
+store 220
+txn Sender
+bytec_0 // 0x00
+txn Sender
+callsub label13
+bytec_1 // 0x01
+load 220
+itob
+concat
+store 219
+dup
+extract 0 18
+load 219
+concat
+swap
+extract 27 33
+concat
+app_local_put
+pushbytes 0x0000000000001120 // 0x0000000000001120
+load 225
+itob
+load 232
+itob
+concat
+concat
+log
+load 225
+itob
+load 232
+itob
+concat
+store 7
+load 255
+load 254
+load 253
+load 252
+load 251
+load 250
+load 249
+load 248
+load 247
+load 246
+load 245
+load 222
++
+load 220
+load 225
+load 243
+load 221
+intc_0 // 0
+>
+select
+load 242
+load 227
+load 240
+load 223
++
+load 221
+global Round
+load 228
+load 232
+-
+itob
+load 229
+extract 8 8
+concat
+load 229
+extract 16 1
+concat
+load 237
+b label22
+label21:
+txn Sender
+bytec_0 // 0x00
+txn Sender
+callsub label13
+bytec 5 // 0x010000000000000000
+store 221
+dup
+extract 0 9
+load 221
+concat
+swap
+extract 18 42
+concat
+app_local_put
+txn Sender
+bytec_0 // 0x00
+txn Sender
+callsub label13
+bytec_1 // 0x01
+load 231
+load 232
+-
+itob
+concat
+store 221
+extract 9 51
+load 221
+swap
+concat
+app_local_put
+itxn_begin
+intc_0 // 0
+itxn_field Fee
+load 232
+itxn_field AssetAmount
+intc_3 // 4
+itxn_field TypeEnum
+txn Sender
+itxn_field AssetReceiver
+load 252
+itxn_field XferAsset
+itxn_submit
+load 239
+load 232
+-
+store 221
+load 250
+load 225
+dup
+load 250
+<
+select
+store 220
+txn Sender
+bytec_0 // 0x00
+txn Sender
+callsub label13
+bytec_1 // 0x01
+load 220
+itob
+concat
+store 219
+dup
+extract 0 18
+load 219
+concat
+swap
+extract 27 33
+concat
+app_local_put
+pushbytes 0x00000000000010f0 // 0x00000000000010f0
+load 225
+itob
+load 232
+itob
+concat
+concat
+log
+load 225
+itob
+load 232
+itob
+concat
+store 7
+load 255
+load 254
+load 253
+load 252
+load 251
+load 250
+load 249
+load 248
+load 247
+load 246
+load 245
+load 222
++
+load 220
+load 225
+load 243
+load 221
+intc_0 // 0
+>
+select
+load 242
+load 227
+load 240
+load 223
++
+load 221
+global Round
+load 228
+load 232
+-
+itob
+load 229
+extract 8 8
+concat
+load 229
+extract 16 1
+concat
+load 237
+b label22
+label17:
+pop
+load 234
+extract 1 8
+store 233
+itxn_begin
+intc_0 // 0
+itxn_field Fee
+intc 6 // 6
+itxn_field TypeEnum
+load 8
+itxn_field ApplicationID
+itxn_submit
+load 233
+btoi
+store 232
+load 239
+load 232
++
+dup
+store 231
+intc 26 // 18446744073709551615
+<
+assert
+load 232
+load 252
+callsub label23
+load 239
+intc_0 // 0
+>
+bz label24
+load 244
+global Round
+global Round
+load 244
+>
+select
+store 229
+load 241
+load 246
+intc_2 // 24
+bzero
+load 250
+load 229
+dup
+load 250
+<
+select
+load 244
+-
+itob
+concat
+b*
+callsub label19
+intc_2 // 24
+bzero
+load 239
+itob
+concat
+b/
+callsub label19
+b+
+callsub label19
+store 230
+b label25
+label24:
+load 241
+store 230
+label25:
+intc_0 // 0
+txn Sender
+callsub label13
+extract 0 9
+dup
+store 228
+intc_1 // 1
+extract_uint64
+load 228
+intc_0 // 0
+getbyte
+select
+store 229
+txn Sender
+bytec_0 // 0x00
+txn Sender
+callsub label13
+bytec_1 // 0x01
+intc_2 // 24
+bzero
+load 229
+itob
+concat
+load 230
+global ZeroAddress
+txn Sender
+callsub label13
+extract 27 33
+dup
+store 228
+extract 1 32
+load 228
+intc_0 // 0
+getbyte
+select
+b-
+callsub label19
+b*
+callsub label19
+bytec_2 // addr AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAN4C3LHJ3EAAAFJV3SLA
+b/
+callsub label19
+dup
+dup2
+intc 5 // 16
+extract_uint64
+intc_0 // 0
+==
+assert
+intc 4 // 8
+extract_uint64
+intc_0 // 0
+==
+assert
+intc_0 // 0
+extract_uint64
+intc_0 // 0
+==
+assert
+intc_2 // 24
+extract_uint64
+intc_0 // 0
+txn Sender
+callsub label13
+extract 9 9
+dup
+store 228
+intc_1 // 1
+extract_uint64
+load 228
+intc_0 // 0
+getbyte
+select
++
+itob
+concat
+store 228
+dup
+extract 0 9
+load 228
+concat
+swap
+extract 18 42
+concat
+app_local_put
+txn Sender
+bytec_0 // 0x00
+txn Sender
+callsub label13
+bytec_1 // 0x01
+load 230
+concat
+store 228
+extract 0 27
+load 228
+concat
+app_local_put
+txn Sender
+bytec_0 // 0x00
+txn Sender
+callsub label13
+bytec_1 // 0x01
+load 229
+load 232
++
+itob
+concat
+store 228
+extract 9 51
+load 228
+swap
+concat
+app_local_put
+load 244
+global Round
+global Round
+load 244
+>
+select
+store 228
+load 250
+load 228
+dup
+load 250
+<
+select
+store 227
+txn Sender
+bytec_0 // 0x00
+txn Sender
+callsub label13
+bytec_1 // 0x01
+load 227
+itob
+concat
+store 226
+dup
+extract 0 18
+load 226
+concat
+swap
+extract 27 33
+concat
+app_local_put
+pushbytes 0x0000000000000e9b // 0x0000000000000e9b
+load 228
+itob
+load 232
+itob
+concat
+concat
+log
+load 228
+itob
+load 232
+itob
+concat
+store 7
+load 239
+intc_0 // 0
+==
+load 243
+load 227
+<
+&&
+bz label26
+load 246
+intc_2 // 24
+bzero
+load 227
+load 243
+-
+itob
+concat
+b*
+callsub label19
+store 226
+b label27
+label26:
+global ZeroAddress
+store 226
+label27:
+load 255
+load 254
+load 253
+load 252
+load 251
+load 250
+load 249
+load 248
+load 247
+load 246
+load 245
+load 227
+load 243
+load 242
+load 226
+b+
+callsub label19
+load 230
+load 240
+load 231
+global Round
+load 235
+load 232
++
+itob
+load 236
+extract 8 8
+concat
+load 236
+extract 16 1
+concat
+load 237
+b label22
+label16:
+dup
+intc_1 // 1
+<
+bnz label28
+pop
+txn Sender
+load 255
+==
+assert
+load 235
+itob
+load 236
+extract 8 8
+concat
+load 236
+extract 16 1
+concat
+store 233
+load 244
+global Round
+global Round
+load 244
+>
+select
+store 231
+load 250
+load 231
+dup
+load 250
+<
+select
+store 230
+load 239
+intc_0 // 0
+==
+load 243
+load 230
+<
+&&
+bz label29
+load 246
+intc_2 // 24
+bzero
+load 230
+load 243
+-
+itob
+concat
+b*
+callsub label19
+store 232
+b label30
+label29:
+global ZeroAddress
+store 232
+label30:
+load 242
+load 232
+b+
+callsub label19
+dup
+store 229
+bytec_2 // addr AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAN4C3LHJ3EAAAFJV3SLA
+b/
+callsub label19
+dup
+dup2
+intc 5 // 16
+extract_uint64
+intc_0 // 0
+==
+assert
+intc 4 // 8
+extract_uint64
+intc_0 // 0
+==
+assert
+intc_0 // 0
+extract_uint64
+intc_0 // 0
+==
+assert
+intc_2 // 24
+extract_uint64
+store 228
+load 240
+load 228
++
+store 227
+load 233
+extract 0 17
+dup
+store 226
+intc_0 // 0
+extract_uint64
+dup
+store 225
+load 227
+dup
+load 225
+<
+select
+store 224
+load 228
+load 248
+mulw
+load 249
+divw
+load 245
++
+store 223
+load 237
+load 223
+dup
+load 237
+<
+select
+store 222
+itxn_begin
+intc_0 // 0
+itxn_field Fee
+load 222
+itxn_field Amount
+intc_1 // 1
+itxn_field TypeEnum
+load 255
+itxn_field Receiver
+itxn_submit
+itxn_begin
+intc_0 // 0
+itxn_field Fee
+load 224
+itxn_field AssetAmount
+intc_3 // 4
+itxn_field TypeEnum
+load 255
+itxn_field AssetReceiver
+load 252
+itxn_field XferAsset
+itxn_submit
+pushbytes 0x0000000000000c7e // 0x0000000000000c7e
+load 231
+itob
+load 224
+itob
+load 222
+itob
+concat
+concat
+concat
+log
+load 231
+itob
+load 224
+itob
+load 222
+itob
+concat
+concat
+store 7
+load 255
+load 254
+load 253
+load 252
+load 251
+load 250
+load 249
+load 248
+load 247
+load 246
+intc_0 // 0
+load 244
+load 231
+load 229
+intc_2 // 24
+bzero
+load 228
+itob
+concat
+bytec_2 // addr AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAN4C3LHJ3EAAAFJV3SLA
+b*
+callsub label19
+b-
+callsub label19
+load 241
+intc_0 // 0
+load 239
+global Round
+load 225
+load 224
+-
+itob
+load 226
+extract 8 8
+concat
+load 226
+extract 16 1
+concat
+load 237
+load 222
+-
+b label22
+label28:
+pop
+itxn_begin
+intc_0 // 0
+itxn_field Fee
+intc 6 // 6
+itxn_field TypeEnum
+load 8
+itxn_field ApplicationID
+itxn_submit
+load 235
+itob
+load 236
+extract 8 8
+concat
+load 236
+extract 16 1
+concat
+store 233
+load 239
+intc_0 // 0
+>
+bz label31
+load 244
+global Round
+global Round
+load 244
+>
+select
+store 231
+load 241
+load 246
+intc_2 // 24
+bzero
+load 250
+load 231
+dup
+load 250
+<
+select
+load 244
+-
+itob
+concat
+b*
+callsub label19
+intc_2 // 24
+bzero
+load 239
+itob
+concat
+b/
+callsub label19
+b+
+callsub label19
+store 232
+b label32
+label31:
+load 241
+store 232
+label32:
+intc_2 // 24
+bzero
+intc_0 // 0
+txn Sender
+callsub label13
+extract 0 9
+dup
+store 230
+intc_1 // 1
+extract_uint64
+load 230
+intc_0 // 0
+getbyte
+select
+itob
+concat
+load 232
+global ZeroAddress
+txn Sender
+callsub label13
+extract 27 33
+dup
+store 230
+extract 1 32
+load 230
+intc_0 // 0
+getbyte
+select
+b-
+callsub label19
+b*
+callsub label19
+bytec_2 // addr AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAN4C3LHJ3EAAAFJV3SLA
+b/
+callsub label19
+dup
+dup2
+intc 5 // 16
+extract_uint64
+intc_0 // 0
+==
+assert
+intc 4 // 8
+extract_uint64
+intc_0 // 0
+==
+assert
+intc_0 // 0
+extract_uint64
+intc_0 // 0
+==
+assert
+intc_2 // 24
+extract_uint64
+intc_0 // 0
+txn Sender
+callsub label13
+extract 9 9
+dup
+store 230
+intc_1 // 1
+extract_uint64
+load 230
+intc_0 // 0
+getbyte
+select
++
+store 231
+txn Sender
+bytec_0 // 0x00
+txn Sender
+callsub label13
+bytec_1 // 0x01
+load 231
+itob
+concat
+store 230
+dup
+extract 0 9
+load 230
+concat
+swap
+extract 18 42
+concat
+app_local_put
+txn Sender
+bytec_0 // 0x00
+txn Sender
+callsub label13
+bytec_1 // 0x01
+load 232
+concat
+store 230
+extract 0 27
+load 230
+concat
+app_local_put
+load 244
+global Round
+global Round
+load 244
+>
+select
+dup
+store 230
+load 250
+>
+intc_0 // 0
+txn Sender
+callsub label13
+extract 18 9
+dup
+store 229
+intc_1 // 1
+extract_uint64
+load 229
+intc_0 // 0
+getbyte
+select
+load 247
++
+load 230
+<=
+||
+bz label33
+load 231
+load 248
+mulw
+load 249
+divw
+store 229
+txn Sender
+bytec_0 // 0x00
+txn Sender
+callsub label13
+bytec 5 // 0x010000000000000000
+store 228
+dup
+extract 0 9
+load 228
+concat
+swap
+extract 18 42
+concat
+app_local_put
+load 233
+extract 0 17
+dup
+store 228
+intc_0 // 0
+extract_uint64
+store 227
+load 231
+load 227
+<=
+load 229
+load 237
+<=
+&&
+assert
+itxn_begin
+intc_0 // 0
+itxn_field Fee
+load 229
+itxn_field Amount
+intc_1 // 1
+itxn_field TypeEnum
+txn Sender
+itxn_field Receiver
+itxn_submit
+itxn_begin
+intc_0 // 0
+itxn_field Fee
+load 231
+itxn_field AssetAmount
+intc_3 // 4
+itxn_field TypeEnum
+txn Sender
+itxn_field AssetReceiver
+load 252
+itxn_field XferAsset
+itxn_submit
+load 250
+load 230
+dup
+load 250
+<
+select
+store 226
+txn Sender
+bytec_0 // 0x00
+txn Sender
+callsub label13
+bytec_1 // 0x01
+load 226
+itob
+concat
+store 225
+dup
+extract 0 18
+load 225
+concat
+swap
+extract 27 33
+concat
+app_local_put
+pushbytes 0x0000000000000a47 // 0x0000000000000a47
+load 230
+itob
+load 231
+itob
+load 229
+itob
+concat
+concat
+concat
+log
+load 230
+itob
+load 231
+itob
+load 229
+itob
+concat
+concat
+store 7
+load 255
+load 254
+load 253
+load 252
+load 251
+load 250
+load 249
+load 248
+load 247
+load 246
+load 245
+load 226
+load 243
+load 242
+load 232
+load 240
+load 239
+global Round
+load 227
+load 231
+-
+itob
+load 228
+extract 8 8
+concat
+load 228
+extract 16 1
+concat
+load 237
+load 229
+-
+b label22
+label33:
+pushbytes 0x0000000000000a5d // 0x0000000000000a5d
+load 230
+itob
+intc 5 // 16
+bzero
+concat
+concat
+log
+load 230
+itob
+intc 5 // 16
+bzero
+concat
+store 7
+load 255
+load 254
+load 253
+load 252
+load 251
+load 250
+load 249
+load 248
+load 247
+load 246
+load 245
+load 250
+load 230
+dup
+load 250
+<
+select
+load 243
+load 242
+load 232
+load 240
+load 239
+global Round
+load 233
+load 237
+b label22
+label15:
+intc_1 // 1
+==
+assert
+intc_1 // 1
+load 1
+==
+assert
+load 4
+dup
+intc_0 // 0
+==
+swap
+load 2
+==
+||
+assert
+bytec_0 // 0x00
+app_global_get
+bytec_1 // 0x01
+app_global_get
+concat
+dup
+store 3
+dup
+dup2
+dup2
+dup2
+intc 10 // 72
+extract_uint64
+store 255
+intc 11 // 80
+extract_uint64
+store 254
+intc 12 // 88
+extract_uint64
+store 253
+pushint 104
+extract_uint64
+store 252
+pushint 112
+extract_uint64
+store 251
+extract 128 17
+store 250
+pushint 177
+extract_uint64
+store 249
+pushint 185
+extract_uint64
+store 248
+pushbytes 0x9a8b9174 // 0x9a8b9174
+log
+load 251
+load 248
++
+load 255
++
+store 247
+load 252
+load 249
++
+store 246
+load 247
+callsub label34
+load 250
+extract 0 17
+store 245
+load 246
+load 254
+callsub label23
+load 3
+extract 0 32
+txn Sender
+==
+assert
+load 3
+extract 32 32
+load 3
+intc 9 // 64
+extract_uint64
+load 255
+load 254
+load 253
+load 3
+pushint 96
+extract_uint64
+load 252
+load 251
+load 3
+pushint 120
+extract_uint64
+load 3
+extract 145 32
+load 248
+load 255
++
+load 253
+dup
+global ZeroAddress
+global ZeroAddress
+load 249
+intc_0 // 0
+global Round
+load 245
+intc_0 // 0
+extract_uint64
+load 246
++
+itob
+load 245
+extract 8 8
+concat
+load 245
+extract 16 1
+concat
+load 247
+b label22
+label14:
+pop
+pushint 200000
+callsub label34
+itxn_begin
+intc_0 // 0
+itxn_field Fee
+intc 6 // 6
+itxn_field TypeEnum
+intc_0 // 0
+itxn_field ApplicationID
+pushbytes 0x063100320912 // 0x063100320912
+itxn_field ApprovalProgram
+pushbytes 0x06 // 0x06
+itxn_field ClearStateProgram
+itxn_submit
+itxn CreatedApplicationID
+store 8
+intc_0 // 0
+load 1
+==
+assert
+load 4
+dup
+intc_0 // 0
+==
+swap
+load 2
+==
+||
+assert
+dup
+store 5
+dup
+dup2
+dup2
+dup2
+dup
+extract 0 32
+store 255
+intc 8 // 32
+extract_uint64
+store 254
+intc 22 // 40
+extract_uint64
+store 253
+intc 23 // 48
+extract_uint64
+store 252
+intc 24 // 56
+extract_uint64
+store 251
+intc 9 // 64
+extract_uint64
+store 250
+intc 10 // 72
+extract_uint64
+store 249
+intc 11 // 80
+extract_uint64
+store 248
+intc 12 // 88
+extract_uint64
+store 247
+pushbytes 0xa82d33c9 // 0xa82d33c9
+load 255
+concat
+load 254
+itob
+concat
+load 253
+itob
+concat
+load 252
+itob
+concat
+load 251
+itob
+concat
+load 250
+itob
+concat
+load 249
+itob
+concat
+load 248
+itob
+concat
+load 247
+itob
+concat
+log
+intc 25 // 17
+bzero
+dup
+store 246
+extract 0 17
+store 245
+intc 4 // 8
+bzero
+load 245
+extract 8 8
+concat
+load 245
+extract 16 1
+concat
+store 244
+pushint 100000
+callsub label34
+itxn_begin
+intc_0 // 0
+itxn_field Fee
+intc_0 // 0
+itxn_field AssetAmount
+intc_3 // 4
+itxn_field TypeEnum
+global CurrentApplicationAddress
+itxn_field AssetReceiver
+load 252
+itxn_field XferAsset
+itxn_submit
+load 254
+intc 13 // 5
+*
+intc 14 // 10000
+<=
+assert
+load 253
+pushint 1000000000
+<=
+assert
+load 251
+load 250
+<
+assert
+load 250
+load 251
+-
+dup
+store 243
+intc 27 // 10000000
+<
+assert
+load 247
+intc 27 // 10000000
+<
+assert
+load 247
+load 243
+<=
+assert
+load 249
+intc_0 // 0
+>
+assert
+intc_2 // 24
+bzero
+load 249
+itob
+concat
+bytec_2 // addr AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAN4C3LHJ3EAAAFJV3SLA
+b*
+callsub label19
+intc_2 // 24
+bzero
+load 243
+itob
+concat
+b/
+callsub label19
+store 242
+load 249
+load 254
+*
+intc 14 // 10000
+/
+store 241
+load 248
+load 254
+*
+intc 14 // 10000
+/
+store 240
+txn Sender
+load 255
+concat
+load 254
+itob
+concat
+load 253
+itob
+concat
+load 252
+itob
+concat
+load 251
+itob
+concat
+load 250
+itob
+concat
+load 249
+itob
+concat
+load 248
+itob
+concat
+load 247
+itob
+concat
+load 244
+concat
+load 242
+concat
+load 241
+itob
+concat
+load 240
+itob
+concat
+bytec_0 // 0x00
+dig 1
+extract 0 127
+app_global_put
+bytec_1 // 0x01
+dig 1
+extract 127 66
+app_global_put
+pop
+intc_1 // 1
+store 1
+global Round
+store 2
+b label35
+label22:
+store 255
+store 254
+store 253
+store 252
+store 251
+store 250
+store 249
+store 248
+store 247
+store 246
+store 245
+store 244
+store 243
+store 242
+store 241
+store 240
+store 239
+store 238
+store 237
+store 236
+load 254
+extract 0 17
+dup
+store 235
+intc_0 // 0
+extract_uint64
+store 234
+load 251
+load 234
+<=
+assert
+load 246
+load 255
+<=
+assert
+load 236
+load 237
+itob
+concat
+load 238
+itob
+concat
+load 239
+itob
+concat
+load 240
+itob
+concat
+load 241
+itob
+concat
+load 242
+itob
+concat
+load 243
+itob
+concat
+load 244
+itob
+concat
+load 245
+concat
+load 246
+itob
+concat
+load 247
+itob
+concat
+load 248
+itob
+concat
+load 249
+concat
+load 250
+concat
+load 251
+itob
+concat
+load 252
+itob
+concat
+load 254
+concat
+load 255
+itob
+concat
+load 235
+concat
+load 234
+itob
+concat
+bytec_0 // 0x00
+dig 1
+extract 0 127
+app_global_put
+bytec_1 // 0x01
+dig 1
+extract 127 127
+app_global_put
+bytec_3 // 0x02
+dig 1
+extract 254 28
+app_global_put
+pop
+intc_3 // 4
+store 1
+global Round
+store 2
+b label35
+txn OnCompletion
+intc 13 // 5
+==
+assert
+itxn_begin
+intc_0 // 0
+itxn_field Fee
+intc 6 // 6
+itxn_field TypeEnum
+load 8
+itxn_field ApplicationID
+intc 13 // 5
+itxn_field OnCompletion
+itxn_submit
+itxn_begin
+intc_0 // 0
+itxn_field Fee
+intc_0 // 0
+itxn_field Amount
+intc_1 // 1
+itxn_field TypeEnum
+global CreatorAddress
+itxn_field CloseRemainderTo
+global CurrentApplicationAddress
+itxn_field Receiver
+itxn_submit
+b label36
+label35:
+txn OnCompletion
+intc_0 // 0
+==
+assert
+label36:
+bytec 4 // ""
+load 1
+itob
+load 2
+itob
+load 8
+itob
+concat
+concat
+app_global_put
+load 6
+bz label3
+label37:
+pushbytes 0x151f7c75 // 0x151f7c75
+load 7
+concat
+log
+label3:
+load 0
+dup
+intc_1 // 1
++
+global GroupSize
+==
+assert
+txn GroupIndex
+==
+assert
+intc_1 // 1
+return
+label8:
+txn OnCompletion
+intc_0 // 0
+==
+assert
+b label37
+label1:
+intc_0 // 0
+txn GlobalNumUint
+==
+assert
+intc_3 // 4
+txn GlobalNumByteSlice
+==
+assert
+intc_0 // 0
+txn LocalNumUint
+==
+assert
+intc_1 // 1
+txn LocalNumByteSlice
+==
+assert
+intc_0 // 0
+store 1
+intc_0 // 0
+store 2
+intc_0 // 0
+store 8
+b label35
+label13:
+dup
+txn ApplicationID
+app_opted_in
+bnz label38
+pop
+intc 15 // 60
+bzero
+retsub
+label38:
+bytec_0 // 0x00
+app_local_get
+retsub
+label34:
+load 0
+dup
+dup2
+intc_1 // 1
++
+store 0
+gtxns Receiver
+global CurrentApplicationAddress
+==
+assert
+gtxns TypeEnum
+intc_1 // 1
+==
+assert
+gtxns Amount
+==
+assert
+retsub
+label23:
+load 0
+dup
+dup2
+dup
+intc_1 // 1
++
+store 0
+gtxns AssetReceiver
+global CurrentApplicationAddress
+==
+assert
+gtxns TypeEnum
+intc_3 // 4
+==
+assert
+gtxns XferAsset
+uncover 2
+==
+assert
+gtxns AssetAmount
+==
+assert
+retsub
+label19:
+dup
+len
+intc 8 // 32
+swap
+-
+bzero
+swap
+concat
+retsub

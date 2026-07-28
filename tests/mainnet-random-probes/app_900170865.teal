@@ -1,0 +1,272 @@
+#pragma version 6
+intcblock 1 0 2
+bytecblock 0x6c696d69745f636f756e746572 0x726f756e645f72616e6765 0x6d61785f6c696d6974 0x61646d696e 0x66697273745f726f756e64 0x616d74 0x7761646472
+txn ApplicationID
+intc_1 // 0
+==
+bnz label1
+txn OnCompletion
+pushint 4
+==
+bnz label2
+txn OnCompletion
+pushint 5
+==
+bnz label3
+txn OnCompletion
+intc_0 // 1
+==
+bnz label4
+txn OnCompletion
+intc_1 // 0
+==
+bnz label5
+err
+label5:
+txna ApplicationArgs 0
+pushbytes 0x6e6f70 // "nop"
+==
+bnz label6
+txna ApplicationArgs 0
+pushbytes 0x75706461746541646472 // "updateAddr"
+==
+bnz label7
+txna ApplicationArgs 0
+pushbytes 0x757064617465416d74 // "updateAmt"
+==
+bnz label8
+txna ApplicationArgs 0
+pushbytes 0x61697264726f70 // "airdrop"
+==
+bnz label9
+txna ApplicationArgs 0
+pushbytes 0x75706461746541646d696e // "updateAdmin"
+==
+bnz label10
+txna ApplicationArgs 0
+pushbytes 0x7570646174654d61784c696d6974 // "updateMaxLimit"
+==
+bnz label11
+txna ApplicationArgs 0
+pushbytes 0x7769746864726177 // "withdraw"
+==
+bnz label12
+txna ApplicationArgs 0
+pushbytes 0x757064617465526f756e6452616e6765 // "updateRoundRange"
+==
+bnz label13
+err
+label13:
+callsub label14
+global GroupSize
+intc_0 // 1
+==
+txn NumAppArgs
+intc_2 // 2
+==
+&&
+assert
+bytec_1 // "round_range"
+txna ApplicationArgs 1
+btoi
+app_global_put
+intc_0 // 1
+return
+label12:
+callsub label14
+global GroupSize
+intc_0 // 1
+==
+txn NumAppArgs
+intc_2 // 2
+==
+&&
+assert
+itxn_begin
+global CurrentApplicationAddress
+itxn_field Sender
+intc_0 // 1
+itxn_field TypeEnum
+txna ApplicationArgs 1
+btoi
+itxn_field Amount
+txn Sender
+itxn_field Receiver
+itxn_submit
+intc_0 // 1
+return
+label11:
+callsub label14
+global GroupSize
+intc_0 // 1
+==
+txn NumAppArgs
+intc_2 // 2
+==
+&&
+assert
+bytec_2 // "max_limit"
+txna ApplicationArgs 1
+btoi
+app_global_put
+intc_0 // 1
+return
+label10:
+callsub label14
+global GroupSize
+intc_0 // 1
+==
+txn NumAccounts
+intc_0 // 1
+==
+&&
+assert
+bytec_3 // "admin"
+txna Accounts 1
+app_global_put
+intc_0 // 1
+return
+label9:
+callsub label15
+bytec 4 // "first_round"
+app_global_get
+bytec_1 // "round_range"
+app_global_get
++
+global Round
+<
+bnz label16
+bytec_0 // "limit_counter"
+app_global_get
+intc_0 // 1
++
+bytec_2 // "max_limit"
+app_global_get
+>
+bnz label17
+bytec_0 // "limit_counter"
+bytec_0 // "limit_counter"
+app_global_get
+intc_0 // 1
++
+app_global_put
+label18:
+global GroupSize
+intc_0 // 1
+==
+txna ApplicationArgs 1
+btoi
+bytec 5 // "amt"
+app_global_get
+<=
+&&
+assert
+itxn_begin
+global CurrentApplicationAddress
+itxn_field Sender
+intc_0 // 1
+itxn_field TypeEnum
+txna ApplicationArgs 1
+btoi
+itxn_field Amount
+txna Accounts 1
+itxn_field Receiver
+itxn_submit
+intc_0 // 1
+return
+label17:
+intc_1 // 0
+return
+label16:
+bytec 4 // "first_round"
+global Round
+app_global_put
+bytec_0 // "limit_counter"
+intc_0 // 1
+app_global_put
+b label18
+label8:
+callsub label14
+global GroupSize
+intc_0 // 1
+==
+txn NumAppArgs
+intc_2 // 2
+==
+&&
+assert
+bytec 5 // "amt"
+txna ApplicationArgs 1
+btoi
+app_global_put
+intc_0 // 1
+return
+label7:
+callsub label14
+global GroupSize
+intc_0 // 1
+==
+txn NumAccounts
+intc_0 // 1
+==
+&&
+assert
+bytec 6 // "waddr"
+txna Accounts 1
+app_global_put
+intc_0 // 1
+return
+label6:
+intc_0 // 1
+return
+label4:
+intc_0 // 1
+return
+label3:
+intc_1 // 0
+return
+label2:
+intc_1 // 0
+return
+label1:
+bytec 6 // "waddr"
+global CreatorAddress
+app_global_put
+bytec_3 // "admin"
+txn Sender
+app_global_put
+bytec 5 // "amt"
+pushint 212000
+app_global_put
+bytec 4 // "first_round"
+global Round
+app_global_put
+bytec_1 // "round_range"
+pushint 10
+app_global_put
+bytec_2 // "max_limit"
+pushint 100
+app_global_put
+bytec_0 // "limit_counter"
+intc_1 // 0
+app_global_put
+intc_0 // 1
+return
+label14:
+txn Sender
+global CreatorAddress
+==
+txn Sender
+bytec_3 // "admin"
+app_global_get
+==
+||
+assert
+retsub
+label15:
+txn Sender
+bytec 6 // "waddr"
+app_global_get
+==
+assert
+retsub

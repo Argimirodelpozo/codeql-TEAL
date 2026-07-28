@@ -1,0 +1,23 @@
+#pragma version 5
+intcblock 0 1
+txn ApplicationID
+intc_0 // 0
+==
+bnz label1
+txn OnCompletion
+intc_0 // 0
+==
+bnz label2
+err
+label2:
+global GroupSize
+pushint 3
+==
+bnz label3
+err
+label3:
+intc_1 // 1
+return
+label1:
+intc_1 // 1
+return

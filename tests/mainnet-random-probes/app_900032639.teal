@@ -1,0 +1,2458 @@
+#pragma version 5
+intcblock 1 0 2 6 1000000 605753404 4 1000000000 18446744073709551615 1000 7500
+bytecblock 0x6231 0x6232 0x6131 0x6132 0x6c63 0x7266 0x613172 0x613272 0x6d666c72 0x61 0x666c66 0x637574 0x637564 0x636631 0x636632 0x69 0x6c 0x6c74 0x736665 0x63743132 0x63743231 0x637631 0x637632 0x63763132 0x63763231 0x70 0x41462d504f4f4c2d 0x2d 0x2d37352e304250 0x7270613172 0x7270613272 0x6261316f 0x6261326f 0x727372
+txn ApplicationID
+intc_1 // 0
+==
+bnz label1
+txn OnCompletion
+pushint 5
+==
+bnz label2
+txn OnCompletion
+intc_0 // 1
+==
+bnz label3
+txn OnCompletion
+intc_2 // 2
+==
+bnz label4
+bytec 15 // "i"
+app_global_get
+intc_0 // 1
+==
+bnz label5
+txna ApplicationArgs 0
+pushbytes 0x6970 // "ip"
+==
+bnz label6
+err
+label6:
+txn OnCompletion
+intc_1 // 0
+==
+assert
+txn TypeEnum
+intc_3 // 6
+==
+assert
+bytec 15 // "i"
+app_global_get
+!
+assert
+bytec_2 // "a1"
+app_global_get
+intc_0 // 1
+>
+bnz label7
+label14:
+bytec_3 // "a2"
+app_global_get
+intc_0 // 1
+>
+bnz label8
+label13:
+bytec_2 // "a1"
+app_global_get
+intc_0 // 1
+==
+bnz label9
+bytec_2 // "a1"
+app_global_get
+asset_params_get AssetUnitName
+store 39
+store 40
+bytec_3 // "a2"
+app_global_get
+asset_params_get AssetUnitName
+store 41
+store 42
+load 39
+assert
+load 41
+assert
+bytec 26 // "AF-POOL-"
+load 40
+concat
+bytec 27 // "-"
+concat
+load 42
+concat
+bytec 28 // "-75.0BP"
+concat
+store 27
+label11:
+itxn_begin
+pushint 3
+itxn_field TypeEnum
+load 27
+itxn_field ConfigAssetName
+pushbytes 0x41462d504f4f4c // "AF-POOL"
+itxn_field ConfigAssetUnitName
+intc 8 // 18446744073709551615
+itxn_field ConfigAssetTotal
+intc_3 // 6
+itxn_field ConfigAssetDecimals
+pushbytes 0x68747470733a2f2f616c676f66692e6f7267 // "https://algofi.org"
+itxn_field ConfigAssetURL
+global CurrentApplicationAddress
+itxn_field ConfigAssetManager
+global CurrentApplicationAddress
+itxn_field ConfigAssetReserve
+itxn_submit
+bytec 16 // "l"
+itxn CreatedAssetID
+app_global_put
+intc 5 // 605753404
+bytec 5 // "rf"
+app_global_get_ex
+store 31
+store 32
+load 31
+assert
+load 32
+intc 4 // 1000000
+<=
+assert
+bytec 5 // "rf"
+load 32
+app_global_put
+intc 5 // 605753404
+bytec 10 // "flf"
+app_global_get_ex
+store 35
+store 36
+load 35
+assert
+load 36
+intc 4 // 1000000
+<=
+assert
+bytec 10 // "flf"
+load 36
+app_global_put
+intc 5 // 605753404
+bytec 8 // "mflr"
+app_global_get_ex
+store 37
+store 38
+load 37
+assert
+load 38
+intc 4 // 1000000
+<=
+assert
+bytec 8 // "mflr"
+load 38
+app_global_put
+bytec 11 // "cut"
+intc_1 // 0
+app_global_put
+intc 5 // 605753404
+bytec 12 // "cud"
+app_global_get_ex
+store 33
+store 34
+load 33
+assert
+bytec 12 // "cud"
+load 34
+app_global_put
+bytec 17 // "lt"
+global LatestTimestamp
+app_global_put
+bytec_0 // "b1"
+intc_1 // 0
+app_global_put
+bytec_1 // "b2"
+intc_1 // 0
+app_global_put
+bytec 4 // "lc"
+intc_1 // 0
+app_global_put
+bytec 6 // "a1r"
+intc_1 // 0
+app_global_put
+bytec 7 // "a2r"
+intc_1 // 0
+app_global_put
+bytec 19 // "ct12"
+intc_1 // 0
+app_global_put
+bytec 20 // "ct21"
+intc_1 // 0
+app_global_put
+bytec 21 // "cv1"
+intc_1 // 0
+app_global_put
+bytec 22 // "cv2"
+intc_1 // 0
+app_global_put
+bytec 23 // "cv12"
+intc_1 // 0
+app_global_put
+bytec 24 // "cv21"
+intc_1 // 0
+app_global_put
+bytec 13 // "cf1"
+intc_1 // 0
+app_global_put
+bytec 14 // "cf2"
+intc_1 // 0
+app_global_put
+pushbytes 0x6d61 // "ma"
+intc 5 // 605753404
+app_global_put
+pushbytes 0x736670 // "sfp"
+intc 10 // 7500
+app_global_put
+bytec 15 // "i"
+intc_0 // 1
+app_global_put
+intc_0 // 1
+b label10
+label9:
+bytec_3 // "a2"
+app_global_get
+asset_params_get AssetUnitName
+store 41
+store 42
+load 41
+assert
+bytec 26 // "AF-POOL-"
+pushbytes 0x414c474f // "ALGO"
+concat
+bytec 27 // "-"
+concat
+load 42
+concat
+bytec 28 // "-75.0BP"
+concat
+store 27
+b label11
+label8:
+bytec_3 // "a2"
+app_global_get
+callsub label12
+b label13
+label7:
+bytec_2 // "a1"
+app_global_get
+callsub label12
+b label14
+label5:
+txn Sender
+bytec 9 // "a"
+app_global_get
+==
+bnz label15
+txn OnCompletion
+intc_1 // 0
+==
+txn TypeEnum
+intc_3 // 6
+==
+&&
+bnz label16
+err
+label16:
+txna ApplicationArgs 0
+pushbytes 0x64756d6d79 // "dummy"
+==
+bnz label17
+txna ApplicationArgs 0
+bytec 25 // "p"
+==
+bnz label18
+txna ApplicationArgs 0
+bytec 29 // "rpa1r"
+==
+bnz label19
+txna ApplicationArgs 0
+bytec 30 // "rpa2r"
+==
+bnz label20
+txna ApplicationArgs 0
+bytec 31 // "ba1o"
+==
+bnz label21
+txna ApplicationArgs 0
+bytec 32 // "ba2o"
+==
+bnz label22
+txna ApplicationArgs 0
+bytec 18 // "sfe"
+==
+txna ApplicationArgs 0
+pushbytes 0x736566 // "sef"
+==
+||
+bnz label23
+txna ApplicationArgs 0
+bytec 33 // "rsr"
+==
+bnz label24
+txna ApplicationArgs 0
+pushbytes 0x666c // "fl"
+==
+bnz label25
+err
+label25:
+intc 5 // 605753404
+bytec 5 // "rf"
+app_global_get_ex
+store 31
+store 32
+load 31
+assert
+load 32
+intc 4 // 1000000
+<=
+assert
+bytec 5 // "rf"
+load 32
+app_global_put
+intc 5 // 605753404
+bytec 10 // "flf"
+app_global_get_ex
+store 35
+store 36
+load 35
+assert
+load 36
+intc 4 // 1000000
+<=
+assert
+bytec 10 // "flf"
+load 36
+app_global_put
+intc 5 // 605753404
+bytec 8 // "mflr"
+app_global_get_ex
+store 37
+store 38
+load 37
+assert
+load 38
+intc 4 // 1000000
+<=
+assert
+bytec 8 // "mflr"
+load 38
+app_global_put
+txna ApplicationArgs 2
+btoi
+bytec 10 // "flf"
+app_global_get
+mulw
+intc_1 // 0
+intc 4 // 1000000
+divmodw
+pop
+pop
+swap
+!
+assert
+intc_0 // 1
++
+store 22
+txn OnCompletion
+intc_1 // 0
+==
+assert
+txn TypeEnum
+intc_3 // 6
+==
+assert
+txn GroupIndex
+intc_1 // 0
+==
+assert
+txna ApplicationArgs 1
+btoi
+bytec_2 // "a1"
+app_global_get
+==
+txna ApplicationArgs 1
+btoi
+bytec_3 // "a2"
+app_global_get
+==
+||
+assert
+txna ApplicationArgs 2
+btoi
+intc_1 // 0
+>
+assert
+txna ApplicationArgs 1
+btoi
+bytec_2 // "a1"
+app_global_get
+==
+bnz label26
+txna ApplicationArgs 2
+btoi
+bytec_1 // "b2"
+app_global_get
+bytec 8 // "mflr"
+app_global_get
+mulw
+intc_1 // 0
+intc 4 // 1000000
+divmodw
+pop
+pop
+swap
+!
+assert
+<=
+assert
+label39:
+txna ApplicationArgs 1
+btoi
+intc_0 // 1
+==
+bnz label27
+global GroupSize
+intc_0 // 1
+-
+gtxns TypeEnum
+intc 6 // 4
+==
+assert
+global GroupSize
+intc_0 // 1
+-
+gtxns XferAsset
+txna ApplicationArgs 1
+btoi
+==
+assert
+global GroupSize
+intc_0 // 1
+-
+gtxns AssetReceiver
+global CurrentApplicationAddress
+==
+assert
+global GroupSize
+intc_0 // 1
+-
+gtxns AssetAmount
+intc_1 // 0
+>
+assert
+global GroupSize
+intc_0 // 1
+-
+gtxns AssetAmount
+txna ApplicationArgs 2
+btoi
+load 22
++
+==
+assert
+label38:
+txna ApplicationArgs 1
+btoi
+bytec_2 // "a1"
+app_global_get
+==
+bnz label28
+bytec_3 // "a2"
+app_global_get
+txna ApplicationArgs 2
+btoi
+callsub label29
+label36:
+txna ApplicationArgs 1
+btoi
+bytec_2 // "a1"
+app_global_get
+==
+bnz label30
+bytec_1 // "b2"
+bytec_1 // "b2"
+app_global_get
+load 22
++
+app_global_put
+label34:
+load 22
+bytec 5 // "rf"
+app_global_get
+mulw
+intc_1 // 0
+intc 4 // 1000000
+divmodw
+pop
+pop
+swap
+!
+assert
+store 23
+txna ApplicationArgs 1
+btoi
+bytec_2 // "a1"
+app_global_get
+==
+bnz label31
+bytec_1 // "b2"
+bytec_1 // "b2"
+app_global_get
+load 23
+-
+app_global_put
+bytec 7 // "a2r"
+bytec 7 // "a2r"
+app_global_get
+load 23
++
+app_global_put
+bytec 14 // "cf2"
+bytec 14 // "cf2"
+app_global_get
+load 22
+load 23
+-
+callsub label32
+app_global_put
+label33:
+bytec_0 // "b1"
+app_global_get
+intc 9 // 1000
+>=
+assert
+bytec_1 // "b2"
+app_global_get
+intc 9 // 1000
+>=
+assert
+bytec_0 // "b1"
+app_global_get
+bytec_1 // "b2"
+app_global_get
+/
+intc 7 // 1000000000
+<
+assert
+bytec_1 // "b2"
+app_global_get
+bytec_0 // "b1"
+app_global_get
+/
+intc 7 // 1000000000
+<
+assert
+intc_0 // 1
+b label10
+label31:
+bytec_0 // "b1"
+bytec_0 // "b1"
+app_global_get
+load 23
+-
+app_global_put
+bytec 6 // "a1r"
+bytec 6 // "a1r"
+app_global_get
+load 23
++
+app_global_put
+bytec 13 // "cf1"
+bytec 13 // "cf1"
+app_global_get
+load 22
+load 23
+-
+callsub label32
+app_global_put
+b label33
+label30:
+bytec_0 // "b1"
+bytec_0 // "b1"
+app_global_get
+load 22
++
+app_global_put
+b label34
+label28:
+bytec_2 // "a1"
+app_global_get
+intc_0 // 1
+==
+bnz label35
+bytec_2 // "a1"
+app_global_get
+txna ApplicationArgs 2
+btoi
+callsub label29
+b label36
+label35:
+txna ApplicationArgs 2
+btoi
+callsub label37
+b label36
+label27:
+global GroupSize
+intc_0 // 1
+-
+gtxns TypeEnum
+intc_0 // 1
+==
+assert
+global GroupSize
+intc_0 // 1
+-
+gtxns Receiver
+global CurrentApplicationAddress
+==
+assert
+global GroupSize
+intc_0 // 1
+-
+gtxns Amount
+intc_1 // 0
+>
+assert
+global GroupSize
+intc_0 // 1
+-
+gtxns Amount
+txna ApplicationArgs 2
+btoi
+load 22
++
+==
+assert
+b label38
+label26:
+txna ApplicationArgs 2
+btoi
+bytec_0 // "b1"
+app_global_get
+bytec 8 // "mflr"
+app_global_get
+mulw
+intc_1 // 0
+intc 4 // 1000000
+divmodw
+pop
+pop
+swap
+!
+assert
+<=
+assert
+b label39
+label24:
+txn OnCompletion
+intc_1 // 0
+==
+assert
+txn TypeEnum
+intc_3 // 6
+==
+assert
+txn GroupIndex
+intc_0 // 1
+-
+gtxns OnCompletion
+intc_1 // 0
+==
+assert
+txn GroupIndex
+intc_0 // 1
+-
+gtxns TypeEnum
+intc_3 // 6
+==
+assert
+txn GroupIndex
+intc_0 // 1
+-
+gtxns ApplicationID
+global CurrentApplicationID
+==
+assert
+txn GroupIndex
+intc_0 // 1
+-
+gtxnsa ApplicationArgs 0
+bytec 18 // "sfe"
+==
+assert
+txn GroupIndex
+intc_0 // 1
+-
+gloads 14
+intc_1 // 0
+>
+bnz label40
+label42:
+intc_0 // 1
+b label10
+label40:
+txn GroupIndex
+intc_0 // 1
+-
+gloads 8
+bnz label41
+bytec_3 // "a2"
+app_global_get
+txn GroupIndex
+intc_0 // 1
+-
+gloads 14
+callsub label29
+b label42
+label41:
+bytec_2 // "a1"
+app_global_get
+intc_0 // 1
+==
+bnz label43
+bytec_2 // "a1"
+app_global_get
+txn GroupIndex
+intc_0 // 1
+-
+gloads 14
+callsub label29
+b label42
+label43:
+txn GroupIndex
+intc_0 // 1
+-
+gloads 14
+callsub label37
+b label42
+label23:
+global LatestTimestamp
+bytec 17 // "lt"
+app_global_get
+-
+store 24
+bytec 17 // "lt"
+global LatestTimestamp
+app_global_put
+bytec_1 // "b2"
+app_global_get
+intc 7 // 1000000000
+mulw
+intc_1 // 0
+bytec_0 // "b1"
+app_global_get
+divmodw
+pop
+pop
+swap
+!
+assert
+store 25
+bytec_0 // "b1"
+app_global_get
+intc 7 // 1000000000
+mulw
+intc_1 // 0
+bytec_1 // "b2"
+app_global_get
+divmodw
+pop
+pop
+swap
+!
+assert
+store 26
+intc 8 // 18446744073709551615
+load 25
+/
+load 24
+>
+bnz label44
+label68:
+intc 8 // 18446744073709551615
+load 26
+/
+load 24
+>
+bnz label45
+label67:
+intc 5 // 605753404
+bytec 5 // "rf"
+app_global_get_ex
+store 31
+store 32
+load 31
+assert
+load 32
+intc 4 // 1000000
+<=
+assert
+bytec 5 // "rf"
+load 32
+app_global_put
+txn GroupIndex
+intc_0 // 1
+-
+gtxns TypeEnum
+intc_0 // 1
+==
+bnz label46
+txn GroupIndex
+intc_0 // 1
+-
+gtxns XferAsset
+bytec_2 // "a1"
+app_global_get
+==
+txn GroupIndex
+intc_0 // 1
+-
+gtxns XferAsset
+bytec_3 // "a2"
+app_global_get
+==
+||
+assert
+txn GroupIndex
+intc_0 // 1
+-
+gtxns TypeEnum
+intc 6 // 4
+==
+assert
+txn GroupIndex
+intc_0 // 1
+-
+gtxns XferAsset
+txn GroupIndex
+intc_0 // 1
+-
+gtxns XferAsset
+==
+assert
+txn GroupIndex
+intc_0 // 1
+-
+gtxns AssetReceiver
+global CurrentApplicationAddress
+==
+assert
+txn GroupIndex
+intc_0 // 1
+-
+gtxns AssetAmount
+intc_1 // 0
+>
+assert
+txn GroupIndex
+intc_0 // 1
+-
+gtxns AssetAmount
+store 9
+txn GroupIndex
+intc_0 // 1
+-
+gtxns XferAsset
+bytec_2 // "a1"
+app_global_get
+==
+bnz label47
+intc_1 // 0
+label65:
+store 8
+label66:
+txn OnCompletion
+intc_1 // 0
+==
+assert
+txn TypeEnum
+intc_3 // 6
+==
+assert
+txna ApplicationArgs 0
+bytec 18 // "sfe"
+==
+bnz label48
+label64:
+txna ApplicationArgs 0
+bytec 18 // "sfe"
+==
+bnz label49
+load 9
+intc 10 // 7500
+mulw
+intc_1 // 0
+intc 4 // 1000000
+divmodw
+pop
+pop
+swap
+!
+assert
+intc_0 // 1
++
+store 3
+load 9
+load 3
+-
+store 10
+load 10
+intc_1 // 0
+>
+assert
+load 8
+bnz label50
+bytec_0 // "b1"
+app_global_get
+load 10
+mulw
+intc_1 // 0
+bytec_1 // "b2"
+app_global_get
+load 10
++
+divmodw
+pop
+pop
+swap
+!
+assert
+store 2
+bytec_0 // "b1"
+bytec_0 // "b1"
+app_global_get
+load 2
+-
+app_global_put
+bytec_1 // "b2"
+bytec_1 // "b2"
+app_global_get
+load 9
++
+app_global_put
+bytec_2 // "a1"
+app_global_get
+intc_0 // 1
+==
+bnz label51
+bytec_2 // "a1"
+app_global_get
+load 2
+callsub label29
+label55:
+load 2
+load 10
+callsub label52
+label56:
+load 2
+intc_1 // 0
+>
+assert
+load 2
+txna ApplicationArgs 1
+btoi
+>=
+assert
+label60:
+load 3
+bytec 5 // "rf"
+app_global_get
+mulw
+intc_1 // 0
+intc 4 // 1000000
+divmodw
+pop
+pop
+swap
+!
+assert
+store 23
+load 8
+bnz label53
+bytec_1 // "b2"
+bytec_1 // "b2"
+app_global_get
+load 23
+-
+app_global_put
+bytec 7 // "a2r"
+bytec 7 // "a2r"
+app_global_get
+load 23
++
+app_global_put
+bytec 14 // "cf2"
+bytec 14 // "cf2"
+app_global_get
+load 3
+load 23
+-
+callsub label32
+app_global_put
+label54:
+bytec_0 // "b1"
+app_global_get
+intc 9 // 1000
+>=
+assert
+bytec_1 // "b2"
+app_global_get
+intc 9 // 1000
+>=
+assert
+bytec_0 // "b1"
+app_global_get
+bytec_1 // "b2"
+app_global_get
+/
+intc 7 // 1000000000
+<
+assert
+bytec_1 // "b2"
+app_global_get
+bytec_0 // "b1"
+app_global_get
+/
+intc 7 // 1000000000
+<
+assert
+intc_0 // 1
+b label10
+label53:
+bytec_0 // "b1"
+bytec_0 // "b1"
+app_global_get
+load 23
+-
+app_global_put
+bytec 6 // "a1r"
+bytec 6 // "a1r"
+app_global_get
+load 23
++
+app_global_put
+bytec 13 // "cf1"
+bytec 13 // "cf1"
+app_global_get
+load 3
+load 23
+-
+callsub label32
+app_global_put
+b label54
+label51:
+load 2
+callsub label37
+b label55
+label50:
+bytec_1 // "b2"
+app_global_get
+load 10
+mulw
+intc_1 // 0
+bytec_0 // "b1"
+app_global_get
+load 10
++
+divmodw
+pop
+pop
+swap
+!
+assert
+store 2
+bytec_0 // "b1"
+bytec_0 // "b1"
+app_global_get
+load 9
++
+app_global_put
+bytec_1 // "b2"
+bytec_1 // "b2"
+app_global_get
+load 2
+-
+app_global_put
+bytec_3 // "a2"
+app_global_get
+load 2
+callsub label29
+load 10
+load 2
+callsub label52
+b label56
+label49:
+txna ApplicationArgs 1
+btoi
+store 11
+load 11
+intc_1 // 0
+>
+assert
+load 8
+bnz label57
+bytec_1 // "b2"
+app_global_get
+load 11
+mulw
+intc_1 // 0
+bytec_0 // "b1"
+app_global_get
+load 11
+-
+divmodw
+pop
+pop
+swap
+!
+assert
+intc_0 // 1
++
+store 12
+label63:
+load 12
+intc_1 // 0
+>
+assert
+load 12
+intc 4 // 1000000
+mulw
+intc_1 // 0
+intc 4 // 1000000
+intc 10 // 7500
+-
+divmodw
+pop
+pop
+swap
+!
+assert
+intc_0 // 1
++
+load 12
+-
+store 3
+load 12
+load 3
++
+store 13
+load 9
+load 13
+>=
+assert
+load 8
+bnz label58
+bytec_0 // "b1"
+bytec_0 // "b1"
+app_global_get
+load 11
+-
+app_global_put
+bytec_1 // "b2"
+bytec_1 // "b2"
+app_global_get
+load 13
++
+app_global_put
+bytec_2 // "a1"
+app_global_get
+intc_0 // 1
+==
+bnz label59
+bytec_2 // "a1"
+app_global_get
+load 11
+callsub label29
+label61:
+load 11
+load 12
+callsub label52
+label62:
+load 9
+load 13
+-
+store 14
+b label60
+label59:
+load 11
+callsub label37
+b label61
+label58:
+bytec_0 // "b1"
+bytec_0 // "b1"
+app_global_get
+load 13
++
+app_global_put
+bytec_1 // "b2"
+bytec_1 // "b2"
+app_global_get
+load 11
+-
+app_global_put
+bytec_3 // "a2"
+app_global_get
+load 11
+callsub label29
+load 12
+load 11
+callsub label52
+b label62
+label57:
+bytec_0 // "b1"
+app_global_get
+load 11
+mulw
+intc_1 // 0
+bytec_1 // "b2"
+app_global_get
+load 11
+-
+divmodw
+pop
+pop
+swap
+!
+assert
+intc_0 // 1
++
+store 12
+b label63
+label48:
+txn GroupIndex
+intc_0 // 1
++
+gtxns OnCompletion
+intc_1 // 0
+==
+assert
+txn GroupIndex
+intc_0 // 1
++
+gtxns TypeEnum
+intc_3 // 6
+==
+assert
+txn GroupIndex
+intc_0 // 1
++
+gtxns ApplicationID
+global CurrentApplicationID
+==
+assert
+txn GroupIndex
+intc_0 // 1
++
+gtxnsa ApplicationArgs 0
+bytec 33 // "rsr"
+==
+assert
+b label64
+label47:
+intc_0 // 1
+b label65
+label46:
+bytec_2 // "a1"
+app_global_get
+intc_0 // 1
+==
+assert
+txn GroupIndex
+intc_0 // 1
+-
+gtxns TypeEnum
+intc_0 // 1
+==
+assert
+txn GroupIndex
+intc_0 // 1
+-
+gtxns Receiver
+global CurrentApplicationAddress
+==
+assert
+txn GroupIndex
+intc_0 // 1
+-
+gtxns Amount
+intc_1 // 0
+>
+assert
+txn GroupIndex
+intc_0 // 1
+-
+gtxns Amount
+store 9
+intc_0 // 1
+store 8
+b label66
+label45:
+bytec 20 // "ct21"
+bytec 20 // "ct21"
+app_global_get
+load 26
+load 24
+*
+callsub label32
+app_global_put
+b label67
+label44:
+bytec 19 // "ct12"
+bytec 19 // "ct12"
+app_global_get
+load 25
+load 24
+*
+callsub label32
+app_global_put
+b label68
+label22:
+txn GroupIndex
+intc_2 // 2
+-
+gtxns TypeEnum
+intc 6 // 4
+==
+assert
+txn GroupIndex
+intc_2 // 2
+-
+gtxns XferAsset
+bytec 16 // "l"
+app_global_get
+==
+assert
+txn GroupIndex
+intc_2 // 2
+-
+gtxns AssetReceiver
+global CurrentApplicationAddress
+==
+assert
+txn GroupIndex
+intc_2 // 2
+-
+gtxns AssetAmount
+intc_1 // 0
+>
+assert
+txn GroupIndex
+intc_0 // 1
+-
+gtxns OnCompletion
+intc_1 // 0
+==
+assert
+txn GroupIndex
+intc_0 // 1
+-
+gtxns TypeEnum
+intc_3 // 6
+==
+assert
+txn GroupIndex
+intc_0 // 1
+-
+gtxns ApplicationID
+global CurrentApplicationID
+==
+assert
+txn GroupIndex
+intc_0 // 1
+-
+gtxnsa ApplicationArgs 0
+bytec 31 // "ba1o"
+==
+assert
+txn OnCompletion
+intc_1 // 0
+==
+assert
+txn TypeEnum
+intc_3 // 6
+==
+assert
+txn GroupIndex
+intc_2 // 2
+-
+gtxns AssetAmount
+bytec 4 // "lc"
+app_global_get
+==
+bnz label69
+txn GroupIndex
+intc_2 // 2
+-
+gtxns AssetAmount
+bytec_1 // "b2"
+app_global_get
+mulw
+intc_1 // 0
+bytec 4 // "lc"
+app_global_get
+divmodw
+pop
+pop
+swap
+!
+assert
+store 7
+label70:
+load 7
+intc_1 // 0
+>
+assert
+load 7
+bytec_1 // "b2"
+app_global_get
+<=
+assert
+bytec_1 // "b2"
+bytec_1 // "b2"
+app_global_get
+load 7
+-
+app_global_put
+bytec 4 // "lc"
+bytec 4 // "lc"
+app_global_get
+txn GroupIndex
+intc_2 // 2
+-
+gtxns AssetAmount
+-
+app_global_put
+bytec_3 // "a2"
+app_global_get
+load 7
+callsub label29
+intc_0 // 1
+b label10
+label69:
+bytec_1 // "b2"
+app_global_get
+store 7
+b label70
+label21:
+txn GroupIndex
+intc_0 // 1
+-
+gtxns TypeEnum
+intc 6 // 4
+==
+assert
+txn GroupIndex
+intc_0 // 1
+-
+gtxns XferAsset
+bytec 16 // "l"
+app_global_get
+==
+assert
+txn GroupIndex
+intc_0 // 1
+-
+gtxns AssetReceiver
+global CurrentApplicationAddress
+==
+assert
+txn GroupIndex
+intc_0 // 1
+-
+gtxns AssetAmount
+intc_1 // 0
+>
+assert
+txn OnCompletion
+intc_1 // 0
+==
+assert
+txn TypeEnum
+intc_3 // 6
+==
+assert
+txn GroupIndex
+intc_0 // 1
++
+gtxns OnCompletion
+intc_1 // 0
+==
+assert
+txn GroupIndex
+intc_0 // 1
++
+gtxns TypeEnum
+intc_3 // 6
+==
+assert
+txn GroupIndex
+intc_0 // 1
++
+gtxns ApplicationID
+global CurrentApplicationID
+==
+assert
+txn GroupIndex
+intc_0 // 1
++
+gtxnsa ApplicationArgs 0
+bytec 32 // "ba2o"
+==
+assert
+txn GroupIndex
+intc_0 // 1
+-
+gtxns AssetAmount
+bytec 4 // "lc"
+app_global_get
+==
+bnz label71
+txn GroupIndex
+intc_0 // 1
+-
+gtxns AssetAmount
+bytec_0 // "b1"
+app_global_get
+mulw
+intc_1 // 0
+bytec 4 // "lc"
+app_global_get
+divmodw
+pop
+pop
+swap
+!
+assert
+store 6
+label74:
+load 6
+intc_1 // 0
+>
+assert
+load 6
+bytec_0 // "b1"
+app_global_get
+<=
+assert
+bytec_0 // "b1"
+bytec_0 // "b1"
+app_global_get
+load 6
+-
+app_global_put
+bytec_2 // "a1"
+app_global_get
+intc_0 // 1
+==
+bnz label72
+bytec_2 // "a1"
+app_global_get
+load 6
+callsub label29
+label73:
+intc_0 // 1
+b label10
+label72:
+load 6
+callsub label37
+b label73
+label71:
+bytec_0 // "b1"
+app_global_get
+store 6
+b label74
+label20:
+txn OnCompletion
+intc_1 // 0
+==
+assert
+txn TypeEnum
+intc_3 // 6
+==
+assert
+txn GroupIndex
+intc_2 // 2
+-
+gtxns OnCompletion
+intc_1 // 0
+==
+assert
+txn GroupIndex
+intc_2 // 2
+-
+gtxns TypeEnum
+intc_3 // 6
+==
+assert
+txn GroupIndex
+intc_2 // 2
+-
+gtxns ApplicationID
+global CurrentApplicationID
+==
+assert
+txn GroupIndex
+intc_2 // 2
+-
+gtxnsa ApplicationArgs 0
+bytec 25 // "p"
+==
+assert
+txn GroupIndex
+intc_2 // 2
+-
+gloads 20
+intc_1 // 0
+>
+bnz label75
+label77:
+intc_0 // 1
+b label10
+label75:
+intc_1 // 0
+bnz label76
+bytec_3 // "a2"
+app_global_get
+txn GroupIndex
+intc_2 // 2
+-
+gloads 20
+callsub label29
+b label77
+label76:
+bytec_2 // "a1"
+app_global_get
+intc_0 // 1
+==
+bnz label78
+bytec_2 // "a1"
+app_global_get
+txn GroupIndex
+intc_2 // 2
+-
+gloads 20
+callsub label29
+b label77
+label78:
+txn GroupIndex
+intc_2 // 2
+-
+gloads 20
+callsub label37
+b label77
+label19:
+txn OnCompletion
+intc_1 // 0
+==
+assert
+txn TypeEnum
+intc_3 // 6
+==
+assert
+txn GroupIndex
+intc_0 // 1
+-
+gtxns OnCompletion
+intc_1 // 0
+==
+assert
+txn GroupIndex
+intc_0 // 1
+-
+gtxns TypeEnum
+intc_3 // 6
+==
+assert
+txn GroupIndex
+intc_0 // 1
+-
+gtxns ApplicationID
+global CurrentApplicationID
+==
+assert
+txn GroupIndex
+intc_0 // 1
+-
+gtxnsa ApplicationArgs 0
+bytec 25 // "p"
+==
+assert
+txn GroupIndex
+intc_0 // 1
+-
+gloads 19
+intc_1 // 0
+>
+bnz label79
+label81:
+intc_0 // 1
+b label10
+label79:
+intc_0 // 1
+bnz label80
+bytec_3 // "a2"
+app_global_get
+txn GroupIndex
+intc_0 // 1
+-
+gloads 19
+callsub label29
+b label81
+label80:
+bytec_2 // "a1"
+app_global_get
+intc_0 // 1
+==
+bnz label82
+bytec_2 // "a1"
+app_global_get
+txn GroupIndex
+intc_0 // 1
+-
+gloads 19
+callsub label29
+b label81
+label82:
+txn GroupIndex
+intc_0 // 1
+-
+gloads 19
+callsub label37
+b label81
+label18:
+bytec_2 // "a1"
+app_global_get
+intc_0 // 1
+==
+bnz label83
+txn GroupIndex
+intc_2 // 2
+-
+gtxns TypeEnum
+intc 6 // 4
+==
+assert
+txn GroupIndex
+intc_2 // 2
+-
+gtxns XferAsset
+bytec_2 // "a1"
+app_global_get
+==
+assert
+txn GroupIndex
+intc_2 // 2
+-
+gtxns AssetReceiver
+global CurrentApplicationAddress
+==
+assert
+txn GroupIndex
+intc_2 // 2
+-
+gtxns AssetAmount
+intc_1 // 0
+>
+assert
+txn GroupIndex
+intc_2 // 2
+-
+gtxns AssetAmount
+store 4
+label95:
+txn GroupIndex
+intc_0 // 1
+-
+gtxns TypeEnum
+intc 6 // 4
+==
+assert
+txn GroupIndex
+intc_0 // 1
+-
+gtxns XferAsset
+bytec_3 // "a2"
+app_global_get
+==
+assert
+txn GroupIndex
+intc_0 // 1
+-
+gtxns AssetReceiver
+global CurrentApplicationAddress
+==
+assert
+txn GroupIndex
+intc_0 // 1
+-
+gtxns AssetAmount
+intc_1 // 0
+>
+assert
+txn GroupIndex
+intc_0 // 1
+-
+gtxns AssetAmount
+store 5
+txn OnCompletion
+intc_1 // 0
+==
+assert
+txn TypeEnum
+intc_3 // 6
+==
+assert
+txn GroupIndex
+intc_0 // 1
++
+gtxns OnCompletion
+intc_1 // 0
+==
+assert
+txn GroupIndex
+intc_0 // 1
++
+gtxns TypeEnum
+intc_3 // 6
+==
+assert
+txn GroupIndex
+intc_0 // 1
++
+gtxns ApplicationID
+global CurrentApplicationID
+==
+assert
+txn GroupIndex
+intc_0 // 1
++
+gtxnsa ApplicationArgs 0
+bytec 29 // "rpa1r"
+==
+assert
+txn GroupIndex
+intc_2 // 2
++
+gtxns OnCompletion
+intc_1 // 0
+==
+assert
+txn GroupIndex
+intc_2 // 2
++
+gtxns TypeEnum
+intc_3 // 6
+==
+assert
+txn GroupIndex
+intc_2 // 2
++
+gtxns ApplicationID
+global CurrentApplicationID
+==
+assert
+txn GroupIndex
+intc_2 // 2
++
+gtxnsa ApplicationArgs 0
+bytec 30 // "rpa2r"
+==
+assert
+bytec_0 // "b1"
+app_global_get
+bytec_1 // "b2"
+app_global_get
++
+intc_1 // 0
+==
+bnz label84
+bytec_0 // "b1"
+app_global_get
+intc 7 // 1000000000
+mulw
+intc_1 // 0
+bytec_1 // "b2"
+app_global_get
+divmodw
+pop
+pop
+swap
+!
+assert
+store 15
+load 4
+intc 7 // 1000000000
+mulw
+intc_1 // 0
+load 5
+divmodw
+pop
+pop
+swap
+!
+assert
+store 16
+load 15
+intc 4 // 1000000
+mulw
+intc_1 // 0
+load 16
+divmodw
+pop
+pop
+swap
+!
+assert
+store 21
+load 21
+intc 4 // 1000000
+txna ApplicationArgs 1
+btoi
+-
+>
+load 21
+intc 4 // 1000000
+txna ApplicationArgs 1
+btoi
++
+<
+&&
+assert
+load 16
+load 15
+>
+bnz label85
+load 16
+load 15
+<
+bnz label86
+load 16
+load 15
+==
+bnz label87
+err
+label87:
+load 4
+store 17
+load 5
+store 18
+intc_1 // 0
+store 19
+intc_1 // 0
+store 20
+label94:
+bytec_0 // "b1"
+app_global_get
+bytec_1 // "b2"
+app_global_get
++
+intc_1 // 0
+==
+bnz label88
+load 17
+bytec 4 // "lc"
+app_global_get
+mulw
+intc_1 // 0
+bytec_0 // "b1"
+app_global_get
+divmodw
+pop
+pop
+swap
+!
+assert
+store 28
+load 18
+bytec 4 // "lc"
+app_global_get
+mulw
+intc_1 // 0
+bytec_1 // "b2"
+app_global_get
+divmodw
+pop
+pop
+swap
+!
+assert
+store 29
+load 28
+load 29
+>
+bnz label89
+load 28
+store 0
+label92:
+load 0
+intc_1 // 0
+>
+assert
+bytec_0 // "b1"
+app_global_get
+bytec_1 // "b2"
+app_global_get
++
+intc_1 // 0
+==
+bnz label90
+label91:
+bytec_0 // "b1"
+bytec_0 // "b1"
+app_global_get
+load 17
++
+app_global_put
+bytec_1 // "b2"
+bytec_1 // "b2"
+app_global_get
+load 18
++
+app_global_put
+bytec 4 // "lc"
+bytec 4 // "lc"
+app_global_get
+load 0
++
+app_global_put
+bytec 16 // "l"
+app_global_get
+load 0
+callsub label29
+bytec_0 // "b1"
+app_global_get
+intc 9 // 1000
+>=
+assert
+bytec_1 // "b2"
+app_global_get
+intc 9 // 1000
+>=
+assert
+bytec_0 // "b1"
+app_global_get
+bytec_1 // "b2"
+app_global_get
+/
+intc 7 // 1000000000
+<
+assert
+bytec_1 // "b2"
+app_global_get
+bytec_0 // "b1"
+app_global_get
+/
+intc 7 // 1000000000
+<
+assert
+intc_0 // 1
+b label10
+label90:
+bytec 17 // "lt"
+global LatestTimestamp
+app_global_put
+b label91
+label89:
+load 29
+store 0
+b label92
+label88:
+intc 8 // 18446744073709551615
+load 17
+/
+load 18
+>
+bnz label93
+load 17
+sqrt
+load 18
+sqrt
+*
+store 0
+b label92
+label93:
+load 17
+load 18
+*
+sqrt
+store 0
+b label92
+label86:
+load 4
+store 17
+load 4
+bytec_1 // "b2"
+app_global_get
+mulw
+intc_1 // 0
+bytec_0 // "b1"
+app_global_get
+divmodw
+pop
+pop
+swap
+!
+assert
+intc_0 // 1
++
+store 18
+intc_1 // 0
+store 19
+load 5
+load 18
+-
+store 20
+b label94
+label85:
+load 5
+bytec_0 // "b1"
+app_global_get
+mulw
+intc_1 // 0
+bytec_1 // "b2"
+app_global_get
+divmodw
+pop
+pop
+swap
+!
+assert
+intc_0 // 1
++
+store 17
+load 5
+store 18
+load 4
+load 17
+-
+store 19
+intc_1 // 0
+store 20
+b label94
+label84:
+load 4
+store 17
+load 5
+store 18
+b label94
+label83:
+txn GroupIndex
+intc_2 // 2
+-
+gtxns TypeEnum
+intc_0 // 1
+==
+assert
+txn GroupIndex
+intc_2 // 2
+-
+gtxns Receiver
+global CurrentApplicationAddress
+==
+assert
+txn GroupIndex
+intc_2 // 2
+-
+gtxns Amount
+intc_1 // 0
+>
+assert
+txn GroupIndex
+intc_2 // 2
+-
+gtxns Amount
+store 4
+b label95
+label17:
+intc_0 // 1
+b label10
+label15:
+txn OnCompletion
+intc 6 // 4
+==
+bnz label96
+txna ApplicationArgs 0
+pushbytes 0x736375 // "scu"
+==
+bnz label97
+txna ApplicationArgs 0
+pushbytes 0x7272 // "rr"
+==
+bnz label98
+err
+label98:
+txn Sender
+bytec 9 // "a"
+app_global_get
+==
+assert
+bytec_2 // "a1"
+app_global_get
+intc_0 // 1
+==
+bnz label99
+bytec_2 // "a1"
+app_global_get
+bytec 6 // "a1r"
+app_global_get
+callsub label29
+label100:
+bytec_3 // "a2"
+app_global_get
+bytec 7 // "a2r"
+app_global_get
+callsub label29
+bytec 6 // "a1r"
+intc_1 // 0
+app_global_put
+bytec 7 // "a2r"
+intc_1 // 0
+app_global_put
+intc_0 // 1
+b label10
+label99:
+bytec 6 // "a1r"
+app_global_get
+callsub label37
+b label100
+label97:
+txn Sender
+bytec 9 // "a"
+app_global_get
+==
+assert
+intc 5 // 605753404
+bytec 12 // "cud"
+app_global_get_ex
+store 33
+store 34
+load 33
+bnz label101
+label102:
+txna ApplicationArgs 1
+btoi
+global LatestTimestamp
+bytec 12 // "cud"
+app_global_get
++
+>=
+assert
+bytec 11 // "cut"
+txna ApplicationArgs 1
+btoi
+app_global_put
+intc_0 // 1
+b label10
+label101:
+bytec 12 // "cud"
+load 34
+app_global_put
+b label102
+label96:
+txn Sender
+bytec 9 // "a"
+app_global_get
+==
+assert
+bytec 11 // "cut"
+app_global_get
+intc_1 // 0
+!=
+assert
+bytec 11 // "cut"
+app_global_get
+global LatestTimestamp
+<=
+assert
+bytec 11 // "cut"
+intc_1 // 0
+app_global_put
+intc_0 // 1
+b label10
+label4:
+intc_1 // 0
+b label10
+label3:
+intc_1 // 0
+b label10
+label2:
+intc_1 // 0
+b label10
+label1:
+txn GlobalNumByteSlice
+intc 6 // 4
+>=
+assert
+txn GlobalNumUint
+pushint 32
+>=
+assert
+intc 5 // 605753404
+bytec 9 // "a"
+app_global_get_ex
+store 1
+store 30
+load 1
+assert
+bytec 9 // "a"
+load 30
+app_global_put
+txna ApplicationArgs 0
+btoi
+intc_1 // 0
+!=
+txna ApplicationArgs 1
+btoi
+intc_1 // 0
+!=
+&&
+assert
+txna ApplicationArgs 0
+btoi
+txna ApplicationArgs 1
+btoi
+<
+assert
+bytec_2 // "a1"
+txna ApplicationArgs 0
+btoi
+app_global_put
+bytec_3 // "a2"
+txna ApplicationArgs 1
+btoi
+app_global_put
+pushbytes 0x7669 // "vi"
+txna ApplicationArgs 2
+btoi
+app_global_put
+bytec 15 // "i"
+intc_1 // 0
+app_global_put
+intc_0 // 1
+label10:
+return
+label32:
+store 44
+store 43
+load 44
+intc 8 // 18446744073709551615
+load 43
+-
+>
+bnz label103
+load 43
+load 44
++
+retsub
+label103:
+load 44
+intc 8 // 18446744073709551615
+load 43
+-
+-
+intc_0 // 1
+-
+retsub
+label12:
+store 45
+itxn_begin
+intc 6 // 4
+itxn_field TypeEnum
+load 45
+itxn_field XferAsset
+intc_1 // 0
+itxn_field AssetAmount
+global CurrentApplicationAddress
+itxn_field AssetReceiver
+intc_1 // 0
+itxn_field Fee
+itxn_submit
+retsub
+label29:
+store 47
+store 46
+itxn_begin
+intc 6 // 4
+itxn_field TypeEnum
+load 46
+itxn_field XferAsset
+load 47
+itxn_field AssetAmount
+txn Sender
+itxn_field AssetReceiver
+intc_1 // 0
+itxn_field Fee
+itxn_submit
+retsub
+label37:
+store 48
+global CurrentApplicationAddress
+balance
+load 48
+global MinBalance
++
+>=
+assert
+itxn_begin
+intc_0 // 1
+itxn_field TypeEnum
+load 48
+itxn_field Amount
+txn Sender
+itxn_field Receiver
+intc_1 // 0
+itxn_field Fee
+itxn_submit
+retsub
+label52:
+store 50
+store 49
+bytec 21 // "cv1"
+bytec 21 // "cv1"
+app_global_get
+load 49
+callsub label32
+app_global_put
+bytec 22 // "cv2"
+bytec 22 // "cv2"
+app_global_get
+load 50
+callsub label32
+app_global_put
+intc 8 // 18446744073709551615
+load 50
+/
+load 25
+>
+bnz label104
+label106:
+intc 8 // 18446744073709551615
+load 49
+/
+load 26
+>
+bz label105
+bytec 24 // "cv21"
+bytec 24 // "cv21"
+app_global_get
+load 49
+load 26
+*
+callsub label32
+app_global_put
+b label105
+label104:
+bytec 23 // "cv12"
+bytec 23 // "cv12"
+app_global_get
+load 50
+load 25
+*
+callsub label32
+app_global_put
+b label106
+label105:
+retsub

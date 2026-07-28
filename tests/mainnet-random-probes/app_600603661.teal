@@ -1,0 +1,405 @@
+#pragma version 5
+intcblock 1 0 4 10000
+bytecblock 0x6269645f6163636f756e74 0x6e66745f6964 0x73656c6c6572 0x6269645f616d6f756e74 0x656e64 0x7374617274 0x726573657276655f616d6f756e74 0x63726561746f72 0x7270 0x6d61726b6574 0x6370 0x6d696e5f6269645f696e63 0x6e756d5f62696473
+txn ApplicationID
+intc_1 // 0
+==
+bnz label1
+txn OnCompletion
+intc_1 // 0
+==
+bnz label2
+txn OnCompletion
+pushint 5
+==
+bnz label3
+txn OnCompletion
+intc_0 // 1
+==
+txn OnCompletion
+pushint 2
+==
+||
+txn OnCompletion
+intc_2 // 4
+==
+||
+bnz label4
+err
+label4:
+intc_1 // 0
+return
+label3:
+bytec 4 // "end"
+app_global_get
+bytec 5 // "start"
+app_global_get
+<
+bnz label5
+label15:
+global LatestTimestamp
+bytec 5 // "start"
+app_global_get
+<
+bnz label6
+bytec 4 // "end"
+app_global_get
+global LatestTimestamp
+<=
+bnz label7
+intc_1 // 0
+return
+label7:
+bytec_0 // "bid_account"
+app_global_get
+global ZeroAddress
+!=
+bnz label8
+bytec_1 // "nft_id"
+app_global_get
+bytec_2 // "seller"
+app_global_get
+callsub label9
+label13:
+bytec_2 // "seller"
+app_global_get
+callsub label10
+intc_0 // 1
+return
+label8:
+bytec_3 // "bid_amount"
+app_global_get
+bytec 6 // "reserve_amount"
+app_global_get
+>=
+bnz label11
+bytec_1 // "nft_id"
+app_global_get
+bytec_2 // "seller"
+app_global_get
+callsub label9
+bytec_0 // "bid_account"
+app_global_get
+bytec_3 // "bid_amount"
+app_global_get
+callsub label12
+b label13
+label11:
+bytec_1 // "nft_id"
+app_global_get
+bytec_0 // "bid_account"
+app_global_get
+callsub label9
+bytec 7 // "creator"
+app_global_get
+bytec_3 // "bid_amount"
+app_global_get
+bytec 8 // "rp"
+app_global_get
+*
+intc_3 // 10000
+/
+callsub label14
+bytec 9 // "market"
+app_global_get
+bytec_3 // "bid_amount"
+app_global_get
+bytec 10 // "cp"
+app_global_get
+*
+intc_3 // 10000
+/
+callsub label14
+b label13
+label6:
+txn Sender
+bytec_2 // "seller"
+app_global_get
+==
+txn Sender
+global CreatorAddress
+==
+||
+assert
+bytec_1 // "nft_id"
+app_global_get
+bytec_2 // "seller"
+app_global_get
+callsub label9
+bytec_2 // "seller"
+app_global_get
+callsub label10
+intc_0 // 1
+return
+label5:
+bytec_1 // "nft_id"
+app_global_get
+bytec_2 // "seller"
+app_global_get
+callsub label9
+bytec_0 // "bid_account"
+app_global_get
+bytec_3 // "bid_amount"
+app_global_get
+callsub label12
+b label15
+label2:
+txna ApplicationArgs 0
+pushbytes 0x7365747570 // "setup"
+==
+bnz label16
+txna ApplicationArgs 0
+pushbytes 0x626964 // "bid"
+==
+bnz label17
+err
+label17:
+global CurrentApplicationAddress
+bytec_1 // "nft_id"
+app_global_get
+asset_holding_get AssetBalance
+store 9
+store 10
+load 9
+load 10
+intc_1 // 0
+>
+&&
+bytec 5 // "start"
+app_global_get
+global LatestTimestamp
+<=
+&&
+global LatestTimestamp
+bytec 4 // "end"
+app_global_get
+<
+&&
+txn GroupIndex
+intc_0 // 1
+-
+gtxns TypeEnum
+intc_0 // 1
+==
+&&
+txn GroupIndex
+intc_0 // 1
+-
+gtxns Sender
+txn Sender
+==
+&&
+txn GroupIndex
+intc_0 // 1
+-
+gtxns Receiver
+global CurrentApplicationAddress
+==
+&&
+txn GroupIndex
+intc_0 // 1
+-
+gtxns Amount
+global MinTxnFee
+>=
+&&
+assert
+txn GroupIndex
+intc_0 // 1
+-
+gtxns Amount
+bytec_3 // "bid_amount"
+app_global_get
+bytec 11 // "min_bid_inc"
+app_global_get
++
+>=
+bnz label18
+intc_1 // 0
+return
+label18:
+bytec_0 // "bid_account"
+app_global_get
+global ZeroAddress
+!=
+bnz label19
+label22:
+bytec_3 // "bid_amount"
+txn GroupIndex
+intc_0 // 1
+-
+gtxns Amount
+app_global_put
+bytec_0 // "bid_account"
+txn GroupIndex
+intc_0 // 1
+-
+gtxns Sender
+app_global_put
+bytec 12 // "num_bids"
+bytec 12 // "num_bids"
+app_global_get
+intc_0 // 1
++
+app_global_put
+bytec 4 // "end"
+app_global_get
+global LatestTimestamp
+-
+pushint 300
+<
+bnz label20
+label21:
+intc_0 // 1
+return
+label20:
+bytec 4 // "end"
+global LatestTimestamp
+pushint 1800
++
+app_global_put
+b label21
+label19:
+bytec_0 // "bid_account"
+app_global_get
+bytec_3 // "bid_amount"
+app_global_get
+callsub label12
+b label22
+label16:
+global LatestTimestamp
+bytec 5 // "start"
+app_global_get
+<
+assert
+itxn_begin
+intc_2 // 4
+itxn_field TypeEnum
+bytec_1 // "nft_id"
+app_global_get
+itxn_field XferAsset
+global CurrentApplicationAddress
+itxn_field AssetReceiver
+itxn_submit
+intc_0 // 1
+return
+label1:
+bytec_2 // "seller"
+txna ApplicationArgs 0
+app_global_put
+bytec 7 // "creator"
+txna ApplicationArgs 1
+app_global_put
+bytec 9 // "market"
+txna ApplicationArgs 2
+app_global_put
+bytec 10 // "cp"
+txna ApplicationArgs 3
+btoi
+app_global_put
+bytec 8 // "rp"
+txna ApplicationArgs 4
+btoi
+app_global_put
+bytec_1 // "nft_id"
+txna ApplicationArgs 5
+btoi
+app_global_put
+bytec 5 // "start"
+txna ApplicationArgs 6
+btoi
+app_global_put
+bytec 4 // "end"
+txna ApplicationArgs 7
+btoi
+app_global_put
+bytec 6 // "reserve_amount"
+txna ApplicationArgs 8
+btoi
+app_global_put
+bytec 11 // "min_bid_inc"
+txna ApplicationArgs 9
+btoi
+app_global_put
+bytec_0 // "bid_account"
+global ZeroAddress
+app_global_put
+global LatestTimestamp
+txna ApplicationArgs 6
+btoi
+<
+txna ApplicationArgs 6
+btoi
+txna ApplicationArgs 7
+btoi
+<
+&&
+assert
+intc_0 // 1
+return
+label9:
+store 1
+store 0
+global CurrentApplicationAddress
+load 0
+asset_holding_get AssetBalance
+store 2
+store 3
+load 2
+bz label23
+itxn_begin
+intc_2 // 4
+itxn_field TypeEnum
+load 0
+itxn_field XferAsset
+load 1
+itxn_field AssetCloseTo
+itxn_submit
+label23:
+retsub
+label12:
+store 5
+store 4
+itxn_begin
+intc_0 // 1
+itxn_field TypeEnum
+load 5
+global MinTxnFee
+-
+itxn_field Amount
+load 4
+itxn_field Receiver
+itxn_submit
+retsub
+label14:
+store 7
+store 6
+load 6
+global ZeroAddress
+!=
+bz label24
+itxn_begin
+intc_0 // 1
+itxn_field TypeEnum
+load 7
+itxn_field Amount
+load 6
+itxn_field Receiver
+itxn_submit
+label24:
+retsub
+label10:
+store 8
+global CurrentApplicationAddress
+balance
+intc_1 // 0
+!=
+bz label25
+itxn_begin
+intc_0 // 1
+itxn_field TypeEnum
+load 8
+itxn_field CloseRemainderTo
+itxn_submit
+label25:
+retsub

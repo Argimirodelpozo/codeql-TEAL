@@ -104,8 +104,12 @@ class _ApprovalActionGuardDetector:
             ):
                 continue
             if self.creator_guard != "ignore":
-                dominates = common.sender_creator_guard_dominates(
-                    self.prog, self.pp, exit_bb,
+                # Ask whether the creator check covers every ACTION-CONSISTENT
+                # path, not merely whether it dominates the exit: a guard on the
+                # Update branch that rejoins the common epilogue dominates
+                # nothing, and reading it that way flagged most real contracts.
+                dominates = common.sender_creator_guard_covers_action(
+                    self.prog, self.pp, exit_bb, self.action,
                 )
                 if self.creator_guard == "require_absent" and dominates:
                     continue
