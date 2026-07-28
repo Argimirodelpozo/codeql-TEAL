@@ -18,6 +18,7 @@ import networkx as nx
 
 from ._nx_view import NxGraphView, copy_into, sensitive_sinks
 
+from ..avm import TXN_FIELD_OPS, txn_field_name
 from ..ssa import SSAProgram
 from .taint_graph import Node, TaintGraph
 
@@ -105,16 +106,22 @@ def _add_scratch_bridges(big: nx.DiGraph, members: list[TaintGraph]) -> None:
 def _add_log_bridges(big: nx.DiGraph, members: list[TaintGraph]) -> None:
     """Bridge every ``log`` in member ``i`` to a sibling's read of it (``i < k``)."""
     for k, tg_k in enumerate(members):
-        for op in ("gtxn", "gtxna"):
+        # Only the group-indexed forms, whose sibling index is immediate 0. The
+        # `gtxns*` family takes that index off the STACK, so there is no static
+        # sibling to bridge to and excluding them is correct, not an oversight.
+        # `gtxnas` was missing, though: it is index-immediate like the other two
+        # and only its ARRAY index is dynamic.
+        for op in ("gtxn", "gtxna", "gtxnas"):
             for rnode in tg_k.find(op=op):
-                parts = (tg_k.immediates_of(rnode) or "").split()
+                imms = tg_k.immediates_of(rnode) or ""
+                parts = imms.split()
                 if len(parts) < 2:
                     continue
                 try:
                     i = int(parts[0])
                 except ValueError:
                     continue
-                if parts[1] not in ("LastLog", "Logs") or not 0 <= i < k:
+                if txn_field_name(op, imms) not in ("LastLog", "Logs") or not 0 <= i < k:
                     continue
                 for lognode in members[i].find(op="log"):
                     big.add_edge(GroupNode(i, lognode), GroupNode(k, rnode), kinds={"log"})
@@ -154,9 +161,13 @@ def _attacker_sources(gtg: GroupTaintGraph) -> list[GroupNode]:
     sibling's args are as controlled as the member's own."""
     out: list[GroupNode] = []
     for idx, tg in enumerate(gtg.members):
-        for op in ("txna", "txn", "gtxn", "gtxna"):
+        # Every txn-family read form, not a hand-listed four: this only asks
+        # WHICH FIELD is read, so the dynamic-index forms (`txnas`, `gtxns*`,
+        # `gtxnas`) count too — and omitting them silently dropped attacker
+        # sources that a loop over ApplicationArgs produces.
+        for op in TXN_FIELD_OPS:
             for n in tg.find(op=op):
-                if "ApplicationArgs" in (tg.immediates_of(n) or ""):
+                if txn_field_name(op, tg.immediates_of(n) or "") == "ApplicationArgs":
                     out.append(GroupNode(idx, n))
     return out
 

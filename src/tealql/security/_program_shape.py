@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from tealql.tealtools.avm import APP_ONLY_OPS
+from tealql.tealtools.avm import APP_ONLY_OPS, txn_field_name
 from tealql.tealtools.ssa import Assignment, BasicBlock, SSAProgram, SSAVar, const_int
 
 # Exit classification is SUBSTRATE shared with the group-shape / cross-contract
@@ -92,6 +92,13 @@ def txn_field_reads(
 
 
 
+#: The GROUP-indexed read forms. Deliberately excludes ``txn``/``txna``/
+#: ``txnas``: those read THIS program's transaction, not a sibling's.
+_GROUP_FIELD_OPS = frozenset({
+    "gtxn", "gtxna", "gtxnas", "gtxns", "gtxnsa", "gtxnsas",
+})
+
+
 def gtxn_field_reads(
     prog: SSAProgram, field: str, *, file: Optional[str] = None,
 ) -> list[Assignment]:
@@ -102,10 +109,11 @@ def gtxn_field_reads(
     for a in prog.assignments:
         if not file_match(a.location.file, file):
             continue
-        toks = a.immediates.split()
-        if a.op in ("gtxn", "gtxna", "gtxnas") and len(toks) >= 2 and toks[1] == field:
-            out.append(a)
-        elif a.op in ("gtxns", "gtxnsa", "gtxnsas") and toks and toks[0] == field:
+        # Restricted to the GROUP-read forms on purpose — `txn Sender` is this
+        # program's own sender, not a sibling's. Which immediate holds the field
+        # name still differs across the two families, so that part defers to the
+        # one table (`avm.txn_field_name`) instead of being re-derived here.
+        if a.op in _GROUP_FIELD_OPS and txn_field_name(a.op, a.immediates) == field:
             out.append(a)
     return out
 

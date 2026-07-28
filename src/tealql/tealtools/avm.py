@@ -790,14 +790,31 @@ _FIELD_OPS_POS1: frozenset = frozenset({
 })
 
 
-def _txn_field_name(op: str, toks: list) -> Optional[str]:
-    """The field-name immediate of a txn-family field read (``toks`` is
-    ``immediates.split()``), or ``None`` when ``op`` reads no named field."""
+#: Every op that reads a named txn-family field, in either immediate position.
+#: Public so callers stop hand-rolling their own op tuples: two such lists in
+#: `group_taint_graph` had already drifted, covering only `("gtxn", "gtxna")`
+#: and `("txna", "txn", "gtxn", "gtxna")` and so missing the dynamic-index
+#: `gtxns*` forms entirely.
+TXN_FIELD_OPS: frozenset = _FIELD_OPS_POS0 | _FIELD_OPS_POS1
+
+
+def txn_field_name(op: str, immediates) -> Optional[str]:
+    """The field-name immediate of a txn-family field read, or ``None``.
+
+    ``immediates`` may be the raw string or an already-split token list — call
+    sites have both, and making each one split first is how they ended up
+    re-deriving the position rule instead of calling this."""
+    toks = immediates.split() if isinstance(immediates, str) else list(immediates or ())
     if op in _FIELD_OPS_POS0 and toks:
         return toks[0]
     if op in _FIELD_OPS_POS1 and len(toks) >= 2:
         return toks[1]
     return None
+
+
+#: Pre-rename alias. Kept only because this module is imported widely; prefer
+#: the public name.
+_txn_field_name = txn_field_name
 
 
 # Pure stack-shuffle opcodes: they permute / duplicate / drop existing values
