@@ -19,12 +19,15 @@ Pipeline (:meth:`PySSA._construct`):
 
   1. Instantiate PyVars per opcode output.
   2. BB arities + surviving locals (``outStackOrder``).
-  3. Phi placement. DEFAULT is Braun on-demand construction
-     (``_phase_braun`` + the forward depth cap ``_compute_entry_depths``):
-     minimal SSA, ~160-209x faster than eager. Two env-gated alternatives:
-     ``TEAL_SSA_EAGER=1`` -> maximal-then-pruned direct placement + indirect
-     propagation (the slow exact oracle); ``TEAL_SSA_JOIN_ONLY=1`` -> the
-     legacy join-only worklist (subsumed by Braun). See ``_construct``.
+  3. Phi placement: Braun on-demand construction (``_phase_braun`` + the
+     forward depth cap ``_compute_entry_depths``) -- minimal SSA, ~160-209x
+     faster than the maximal-then-pruned placement it replaced. (Two superseded
+     alternates, an eager placement and a join-only worklist, were reachable
+     only via ``TEAL_SSA_EAGER`` / ``TEAL_SSA_JOIN_ONLY``. Nothing ever set
+     either, so they were three phi-placement algorithms deep in the most
+     safety-critical file here with only one of them ever run -- and the
+     join-only path spiralled on net-changing loops, so it was not even a
+     working fallback. Both deleted.)
   (The former phase 5 "heights" forward stack-delta DF was REMOVED -- its
      result was never read and it blew up on recursive subroutines.)
   6. Per-BB sim to fill ``op.inputs`` / ``b.exit_stack``;
@@ -43,7 +46,6 @@ CLI: ``python -m tealql.tealtools.ssa <teal-source>`` (renders the PySSA build).
 """
 from __future__ import annotations
 
-import os
 from collections import deque
 from dataclasses import dataclass, field
 from typing import Optional, Union
@@ -258,25 +260,15 @@ class PySSA:
         self = cls()
         self._phase1_instantiate(prog)
         self._phase2_arities()
-        # Phi placement. DEFAULT is Braun on-demand construction
-        # (``_phase_braun`` + the forward depth cap ``_compute_entry_depths``):
-        # minimal SSA, ~160-209x faster than eager (xgov 0.95s/77k phis ->
-        # 0.01s/11; folks-v3 3.15s/160k -> 0.02s/25), and behaviourally identical
-        # to eager (puya corpus 513/0, Tier-3 5/5, live-AVM 35-corpus 33/0). The
-        # depth cap fixes the loop spiral at its slot-model root (a net-changing
-        # loop's ``L+k-C`` map climbs to STACK_MAX under ANY construction).
-        #
-        # ``TEAL_SSA_EAGER=1`` -> the maximal-then-pruned phase3/4 placement (the
-        # A/B oracle; still exact, just slow + ~100k trivial phis).
-        # ``TEAL_SSA_JOIN_ONLY=1`` -> the legacy worklist (spirals without the
-        # depth cap; kept for comparison, subsumed by Braun).
-        if os.environ.get("TEAL_SSA_EAGER"):
-            self._phase3_direct_placement()
-            self._phase4_indirect_propagation()
-        elif os.environ.get("TEAL_SSA_JOIN_ONLY"):
-            self._phase34_join_only()
-        else:
-            self._phase_braun()
+        # Phi placement: Braun on-demand construction (``_phase_braun`` + the
+        # forward depth cap ``_compute_entry_depths``). Minimal SSA, ~160-209x
+        # faster than the maximal-then-pruned placement it replaced (xgov
+        # 0.95s/77k phis -> 0.01s/11; folks-v3 3.15s/160k -> 0.02s/25) and
+        # behaviourally identical to it (puya corpus 513/0, Tier-3 5/5,
+        # live-AVM 35-corpus 33/0). The depth cap fixes the loop spiral at its
+        # slot-model root (a net-changing loop's ``L+k-C`` map climbs to
+        # STACK_MAX under ANY construction).
+        self._phase_braun()
         self._phase6_sim_blocks()
         self._phase8_live_filter()
         return self
@@ -351,61 +343,6 @@ class PySSA:
         return new_k
 
     # ----- Phase 3: Direct placement -------------------------------------
-
-    def _phase3_direct_placement(self) -> None:
-        """For each surviving local PyVar ``v`` at slot ``k`` of BB
-        ``b``, for each successor ``s``, add ``v`` to
-        ``phi(k, s).args``."""
-        for b in self.blocks:
-            for v, k in self._surv[b]:
-                for s in b.succs:
-                    self._add_arg(s, k, v)
-
-    def _add_arg(self, bb: PyBlock, slot: int, arg) -> bool:
-        """Get-or-create ``phi(slot, bb)`` and append ``arg`` if not
-        already in args (identity check). Returns True if the arg was
-        newly added."""
-        key = (bb.key, slot)
-        phi = self.phis.get(key)
-        if phi is None:
-            phi = PyPhi(bb.key, slot)
-            self.phis[key] = phi
-            bb.entry_phis.append(phi)
-        # Dedupe by identity.
-        for a in phi.args:
-            if a is arg:
-                return False
-        phi.args.append(arg)
-        return True
-
-    # ----- Phase 4: Indirect propagation (worklist) ----------------------
-
-    def _phase4_indirect_propagation(self) -> None:
-        """Forward-propagate every existing phi through the CFG via
-        ``phiNodeExitIndex``. Each phi ``P`` at ``(k, b)`` that
-        survives ``b`` (k' defined) propagates to ``phi(k', s).args``
-        for each succ ``s``. Iterate until no new args added or slot
-        caps out."""
-        wl: deque = deque(self.phis.values())
-        in_wl: set = set(id(p) for p in wl)
-        while wl:
-            P = wl.popleft()
-            in_wl.discard(id(P))
-            bb_key, k = P.bb_key, P.slot
-            b = self._bb_by_key.get(bb_key)
-            if b is None:
-                continue
-            k2 = self._phi_node_exit_index(k, b)
-            if k2 is None:
-                continue
-            for s in b.succs:
-                if self._add_arg(s, k2, P):
-                    new_phi = self.phis[(s.key, k2)]
-                    if id(new_phi) not in in_wl:
-                        wl.append(new_phi)
-                        in_wl.add(id(new_phi))
-
-    # ----- Phase 6: simulate each BB to fill op.inputs / exit_stack -----
 
     def _phase6_sim_blocks(self) -> None:
         """For each BB, build entry_stack from placed phis and run a
@@ -492,39 +429,6 @@ class PySSA:
             processed.add(b)
 
     # ----- Phase 3+4: on-demand join-only phi placement ------------------
-
-    def _phase34_join_only(self) -> None:
-        """Place phis only at join blocks (>=2 preds); thread values through
-        single-pred blocks (whose entry phase 6 reconstructs from the pred's
-        exit stack). Replaces eager phase3+4.
-
-        A value ``X`` sitting at ``from_b``'s exit slot ``eslot`` flows to
-        each successor ``s`` at the same (top-first) entry slot. At a JOIN it
-        becomes an arg of ``phi(s, eslot)`` (created on first touch, then
-        propagated onward by its own survival). Through a SINGLE-pred block it
-        threads on to that block's exit slot ``L+eslot-C`` (if it survives),
-        carrying the original value — no phi materialized.
-        """
-        wl: deque = deque()
-
-        # Seed: each block's surviving locals sit at its exit slots.
-        for b in self.blocks:
-            for v, k in self._surv[b]:
-                wl.append((v, b, k))
-
-        while wl:
-            X, from_b, eslot = wl.popleft()
-            for s in from_b.succs:
-                if len(s.preds) >= 2:  # join: merge into phi(s, eslot)
-                    if self._add_arg(s, eslot, X):
-                        # newly-created phi: propagate its own survival.
-                        if (k2 := self._phi_node_exit_index(eslot, s)) is not None:
-                            wl.append((self.phis[(s.key, eslot)], s, k2))
-                else:  # single-pred: thread through, no phi
-                    if (k2 := self._phi_node_exit_index(eslot, s)) is not None:
-                        wl.append((X, s, k2))
-
-    # ----- Braun on-demand phi placement (the default construction) ------
 
     def _phase_braun(self) -> None:
         """Braun et al. (2013) on-demand SSA, filled+sealed case. Place a phi at
