@@ -350,17 +350,25 @@ def test_speculative_off_by_default(tmp_path):
 def test_proven_oob_precision_on_corpus_oob_fixtures():
     """``proven_oob`` must fire on Puya's deliberate out-of-bounds regression
     cases — a sound, precise static over-read finding."""
-    base = Path("tests/experimental_IR_lift/puya")
-    hit = 0
+    import pytest
+
+    base = Path(__file__).resolve().parent / "experimental_IR_lift" / "puya"
+    present, hit = 0, 0
     for name in ("regression_tests_ExtractLengthOOB",
                  "regression_tests_ExtractStartOOB",
                  "regression_tests_SubstringEndOOB"):
         src = base / name / "src"
         if not (src.exists() and list(src.glob("*.teal"))):
             continue
+        present += 1
         if any(x.proven_oob for x in check_bounds(SSAProgram(str(src)))):
             hit += 1
-    if hit == 0:
-        import pytest
+    # Count fixture PRESENCE separately from hits. Skipping on `hit == 0`
+    # conflates "the corpus is absent" with "proven_oob stopped firing" — the
+    # second is the regression this test exists to catch, and it would have
+    # been reported as a skip.
+    if present == 0:
         pytest.skip("OOB corpus fixtures not present")
-    assert hit >= 1
+    assert hit >= 1, (
+        f"{present} OOB fixture(s) present but proven_oob fired on none — "
+        "the sound over-read finding has regressed")

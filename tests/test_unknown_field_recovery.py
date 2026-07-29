@@ -485,16 +485,32 @@ def test_template_push_lowers_to_a_puya_template_var(tmp_path):
 
 def test_the_whole_corpus_parses_clean():
     """Every .teal fixture in the tree, after this thread. Started at 35
-    contracts / 123 diagnostics."""
-    import glob
+    contracts / 123 diagnostics.
+
+    Uses load_graph, NOT SSAProgram: ``parse_diagnostics`` is produced entirely
+    by the parse stage and read straight off the graph, so reconstructing SSA
+    for 1663 files was pure waste — 108s against a 300s per-test ceiling, the
+    same 2x margin that had the mainnet ratchet timing out in CI. Parse-only is
+    53s and byte-identical here (verified: 0 files disagree across the corpus).
+    """
+    import pathlib
+    from tealql.tealtools import graph as tg
+
+    root = pathlib.Path(__file__).resolve().parent
+    # Anchored at THIS file, never at the cwd: the old relative glob found zero
+    # files when pytest ran from anywhere but the repo root, and a corpus test
+    # over an empty corpus passes silently.
+    files = sorted(root.rglob("*.teal"))
+    assert len(files) > 100, f"corpus not found ({len(files)} files) — vacuous"
+
     bad = []
-    for f in sorted(glob.glob("tests/**/*.teal", recursive=True)):
+    for f in files:
         try:
-            d = list(getattr(SSAProgram(f), "parse_diagnostics", ()) or [])
+            d = list(tg.load_graph(str(f)).graph.get("parse_diagnostics", ()) or [])
         except Exception:
             continue
         if d:
-            bad.append((f, d[0].snippet[:60]))
+            bad.append((str(f.relative_to(root)), d[0].snippet[:60]))
     assert bad == [], bad
 
 
