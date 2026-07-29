@@ -146,9 +146,14 @@ def test_cli_detections_scan_strict_refuses_garbage(tmp_path, capsys):
 def test_cli_detections_scan_garbage_warns_and_reports_nothing(tmp_path, capsys):
     (tmp_path / "prog.teal").write_text(GARBAGE)
     rc = main(["detections-scan", str(tmp_path)])
-    out, err = capsys.readouterr().out, capsys.readouterr().err
+    # ONE readouterr: it DRAINS the buffer, so a second call returns empty and
+    # any assertion on that half would pass vacuously.
+    captured = capsys.readouterr()
     assert rc == 0
-    assert "(no findings)" in out
+    assert "(no findings)" in captured.out
+    assert "failed to parse" in captured.err, (
+        "garbage input must warn on stderr — a silent '(no findings)' is the "
+        "exact false clean bill this module exists to prevent")
 
 
 # ---------------------------------------------------------------------------

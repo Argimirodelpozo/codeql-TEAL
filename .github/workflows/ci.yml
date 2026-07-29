@@ -1,6 +1,6 @@
-# CI: full hermetic suite (incl. the 248-case Puya lift corpus and the real-
-# contract fixtures under tests/contracts/) + a non-editable wheel-install
-# smoke job. The wheel job exists because an editable install masks broken
+# CI: a seconds-long ruff gate, the full hermetic suite (incl. the 248-case
+# Puya lift corpus and the real-contract fixtures under tests/contracts/), and
+# a non-editable wheel-install smoke job. The wheel job exists because an editable install masks broken
 # wheel layouts (learned the hard way: the pre-src-layout wheel shipped an
 # unimportable package for months while an editable install worked fine).
 #
@@ -19,6 +19,23 @@ on:
   workflow_dispatch:
 
 jobs:
+  lint:
+    # Separate from `test` and deliberately tiny: no env sync, so it reports in
+    # seconds instead of behind an 8-minute suite. Scope is bug rules only
+    # (F, E9) — see the reasoning in [tool.ruff.lint]. The dependency-direction
+    # rule is NOT here; it is a pytest test (tests/test_layering.py) so it runs
+    # locally too, where an architecture rule is actually useful.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - name: Ruff — unused imports, undefined names, syntax
+        run: uvx ruff check src/ tests/
+
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 30

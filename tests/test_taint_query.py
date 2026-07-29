@@ -2,7 +2,6 @@
 source map (`tealtools.source_map`)."""
 from __future__ import annotations
 
-from pathlib import Path
 
 from tealql.tealtools.ssa import SSAProgram
 from tealql.tealtools.dataflow.taint_query import (

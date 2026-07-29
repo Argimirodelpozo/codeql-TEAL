@@ -12,7 +12,6 @@ from tealql.tealtools.cost_analysis import (
     _merge_states,
     opcode_cost,
     path_ceiling,
-    per_line_cost_paths,
 )
 from tealql.tealtools.ssa import SSAProgram
 
@@ -176,7 +175,6 @@ def test_cyclic_improper_region_is_iteration_bounded():
     """A cyclic Improper must be bounded like a loop, not charged one pass."""
     from types import SimpleNamespace
 
-    from tealql.tealtools import cost_analysis as ca
     from tealql.tealtools.control_tree import ImproperR
 
     class _FakeBlock:

@@ -1,7 +1,6 @@
 """Suppressions: inline // tealql-ignore + baseline fingerprints (B2)."""
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 from tealql.cli.main import main

@@ -9,7 +9,6 @@ defined by identity, wired predecessor lists, real ``IRType``/``AVMOp``, and a
 """
 from __future__ import annotations
 
-import re
 
 import copy
 import logging

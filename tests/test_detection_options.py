@@ -4,7 +4,6 @@ One YAML controls: per-glob mode (app/logicsig), per-glob detector selection,
 per-detector severity override, and a fail_on threshold so the scan only "fails"
 on genuine problems (informational findings are reported but don't fail).
 """
-from pathlib import Path
 
 import pytest
 

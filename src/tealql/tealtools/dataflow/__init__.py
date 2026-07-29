@@ -81,6 +81,7 @@ __all__ = [
     "cross_taint_findings", "render_cross_taint",
     # state
     "detect_out_of_state_flows",
+    "detect_correlated_state_flows", "CorrelatedStateViolation",
     "APP_GLOBAL_GET_SOURCE", "APP_GLOBAL_GET_EX_SOURCE",
     "APP_LOCAL_GET_SOURCE", "APP_LOCAL_GET_EX_SOURCE",
     "DEFAULT_OUT_OF_STATE_SOURCES", "DEFAULT_OUT_OF_STATE_SINKS",

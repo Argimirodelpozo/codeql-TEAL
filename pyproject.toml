@@ -117,3 +117,26 @@ exclude_lines = [
 # hermetic suite; the floor stays below the measured value to catch only a
 # real regression. Ratchet upward as CI pins the number.
 fail_under = 68
+
+[tool.ruff]
+# Formatting is NOT gated: this codebase has deliberate alignment and comment
+# layout that a formatter would flatten, and reflowing 18k lines would bury
+# every future diff. Ruff is here as a BUG detector, not a style enforcer.
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+# F  = pyflakes: undefined names, unused imports/locals -- real defects, and
+#      the class that had accumulated 12 uncaught instances before this gate.
+# E9 = syntax / IO errors.
+# Deliberately NOT enabled: UP (594 hits), E (618, nearly all line length),
+# ARG (76), B (36), SIM (44). Each is defensible, none is a bug today, and a
+# gate nobody can get to zero is a gate that gets disabled. Add them one at a
+# time, each with its own cleanup commit.
+select = ["F", "E9"]
+
+# No per-file-ignore for __init__.py F401, which is the usual reflex: every
+# package __init__ here is already clean without one, and keeping the rule on
+# is what caught `dataflow` re-exporting `detect_out_of_state_flows` while
+# leaving its sharper sibling and violation type out of __all__. An unused
+# re-export must join __all__ or go.

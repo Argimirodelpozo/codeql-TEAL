@@ -24,7 +24,7 @@ pytest.importorskip("puya")
 
 from puya.avm import AVMType
 from puya.ir.avm_ops import AVMOp
-from puya.ir.avm_ops_models import DynamicVariants, Variant
+from puya.ir.avm_ops_models import Variant
 
 from tealql.tealtools import avm
 

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from tealql.tealtools.ssa import SSAProgram, SSAVar
 from tealql.tealtools.ssa.models import Assignment, Location
-from tealql.tealtools.path_predicates import PathPredicateAnalysis, BranchCondition
+from tealql.tealtools.path_predicates import PathPredicateAnalysis
 
 
 def _by_op(p, op):

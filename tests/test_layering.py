@@ -42,3 +42,55 @@ def test_supercfg_still_importable_lazily():
         print(SuperCFG.__name__)
     """)
     assert out.strip() == "SuperCFG"
+
+
+# ---------------------------------------------------------------------------
+# Package dependency direction
+# ---------------------------------------------------------------------------
+
+
+def test_tealtools_never_imports_security():
+    """``security`` builds on ``tealtools``; the arrow never points back.
+
+    ``tealtools`` is the reusable AVM substrate (parse, CFG, SSA, dataflow,
+    lift) and ``security`` is one consumer of it. A single reverse import makes
+    the substrate un-vendorable without dragging every detector along, and the
+    cycle it creates is the kind that only shows up as an import-order bug
+    months later.
+
+    Checked by reading source, not by importing: a lazy ``import`` inside a
+    function body is exactly as much of a cycle as a top-level one, and an
+    import probe would never execute it."""
+    import ast
+    from pathlib import Path
+
+    src = Path(__file__).resolve().parent.parent / "src"
+    root = src / "tealql" / "tealtools"
+    offenders = []
+    for py in sorted(root.rglob("*.py")):
+        # Dotted package path of the file's OWN package, so relative imports
+        # can be resolved: src/tealql/tealtools/dataflow/x.py -> tealql.tealtools.dataflow
+        pkg = py.relative_to(src).with_suffix("").parts
+        pkg = pkg[:-1] if py.name == "__init__.py" else pkg[:-1]
+        tree = ast.parse(py.read_text(), filename=str(py))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                targets = [a.name for a in node.names]
+            elif isinstance(node, ast.ImportFrom):
+                if node.level:
+                    # `from ...security import x` is level=3, module='security'
+                    base = pkg[:len(pkg) - node.level + 1]
+                    targets = [".".join((*base, node.module) if node.module else base)]
+                else:
+                    targets = [node.module or ""]
+            else:
+                continue
+            for n in targets:
+                if n == "tealql.security" or n.startswith("tealql.security."):
+                    rel = py.relative_to(src)
+                    offenders.append(f"{rel}:{node.lineno} imports {n}")
+
+    assert not offenders, (
+        "tealtools must not import security -- dependency direction is "
+        "security -> tealtools, never the reverse:\n  "
+        + "\n  ".join(offenders))
