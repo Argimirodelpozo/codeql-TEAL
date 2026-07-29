@@ -2,7 +2,7 @@
 
 See :mod:`tests.mainnet_ratchet` for why this exists. In short: the benchmark
 measures the tool against cases we wrote and has scored 1.00 through every
-false-positive swarm this project has shipped. This measures it against 141
+false-positive swarm this project has shipped. This measures it against 231
 distinct real mainnet programs and fails when the answer moves.
 
     # after an intended detector change
@@ -10,6 +10,9 @@ distinct real mainnet programs and fails when the answer moves.
 
 CI runs the full distinct set; it takes ~10 minutes, so it carries the ``slow``
 marker for local selection (``-m 'not slow'``).
+
+HAZARD: that ~10 minutes exceeds the global ``timeout = 300`` in pyproject,
+so this test needs its own ceiling — see the mark below.
 """
 from __future__ import annotations
 
@@ -28,6 +31,14 @@ _LIMIT = int(os.environ.get("MAINNET_RATCHET_LIMIT", "0")) or None
 
 
 @pytest.mark.slow
+# Runs every detector over all 231 contracts in ONE test, so it cannot fit the
+# global 300s per-test ceiling: 157s standalone on a dev box, and past 300s in
+# CI, where `-n auto` has the other workers competing for the same cores. That
+# timeout — not any behaviour change — is what turned CI red on four
+# consecutive pushes while the local suite stayed green. 900s keeps a genuine
+# hang failing loudly, and stays under the 30-minute job ceiling so a hang is
+# reported as this test failing rather than as the whole job dying.
+@pytest.mark.timeout(900)
 def test_findings_digest_unchanged():
     """Detector output over the real corpus matches the committed digest."""
     if not distinct_probes():
