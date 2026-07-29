@@ -297,17 +297,6 @@ def _validated_intervals(prog: SSAProgram) -> tuple[dict, dict]:
 
     dom = AssertDominance(prog)
 
-    def dominates(block_a, use, line: int) -> bool:
-        return dom.dominates(block_a, use.basic_block, line, use.location.line)
-
-    # HAZARD: the dominance check sees only ``x.uses`` (OP uses), never phi
-    # consumers, and a phi arg arrives on a SPECIFIC predecessor edge that may
-    # bypass the guard — so a phi-fed value is never cleared. This also kills the
-    # vacuous ``all([])`` case, where an x whose only op-use IS the guard would
-    # otherwise clear on zero dominance evidence.
-    phi_fed = {id(arg) for ph in prog.phis.values() for arg in ph.args
-               if isinstance(arg, SSAVar)}
-
     out: dict = {}
     prov: dict = {}       # value -> [(lo, hi, kind, line)] : which op validated
     for a in prog.assignments:
@@ -334,10 +323,9 @@ def _validated_intervals(prog: SSAProgram) -> tuple[dict, dict]:
                 x, lo, hi = s, 0, (_byte_length(s) or _len_bound(s))
                 test = d                          # the `==` read forms the guard
             break
-        if not isinstance(x, SSAVar) or id(x) in phi_fed:
-            continue                          # phi-fed: dominance is edge-specific
-        if all(dominates(block_a, u, a.location.line)
-               for u in x.uses if u is not test):
+        if not isinstance(x, SSAVar):
+            continue
+        if dom.narrowing_is_sound(x, block_a, a.location.line, exclude=test):
             out.setdefault(x, []).append((lo, hi))
             prov.setdefault(x, []).append((lo, hi, "assert", a.location.line))
 
@@ -364,7 +352,7 @@ def _validated_intervals(prog: SSAProgram) -> tuple[dict, dict]:
                 if info is not None and isinstance(info[0], SSAVar):
                     slice_cands[bc.value] = info
     for slc, (x, lo, hi) in slice_cands.items():
-        if id(x) in phi_fed:
+        if id(x) in dom.phi_fed:
             continue                          # edge-specific: never clear
         uses = [u for u in x.uses if u is not getattr(slc, "defined_by", None)]
         if uses and all(_eq_clean_at(slc, u) for u in uses):

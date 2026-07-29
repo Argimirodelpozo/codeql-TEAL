@@ -437,15 +437,11 @@ def propagate_byte_lengths(prog: SSAProgram) -> int:
     # Inverse length constraints depend only on op / immediates / const operands,
     # so they are a one-shot seed rather than part of the fixpoint.
     #
-    # HAZARD: FLOW-GATED, on the same model as passes.range_assert. "This op
-    # executed successfully" holds only on paths through the op, but the range
-    # lands on the SSAVar and is read at EVERY use — one branch's btoi(X) would
-    # otherwise cap X at 8 bytes in the other branch. So install it only when
-    # every other use is dominated by the op, and never on a phi-fed value,
-    # whose incoming edge the dominance check cannot see.
+    # HAZARD: FLOW-GATED. "This op executed successfully" holds only on paths
+    # through the op, so installing the range needs AssertDominance's
+    # narrowing_is_sound — see there for why.
     from ..cfg.dominance import AssertDominance
     dom = AssertDominance(prog)
-    phi_fed = {id(arg) for ph in prog.phis.values() for arg in ph.args}
     for a in prog.assignments:
         constraint = _input_min_length(a)
         if constraint is None:
@@ -456,16 +452,11 @@ def propagate_byte_lengths(prog: SSAProgram) -> int:
         target = a.inputs[idx]
         if not isinstance(target, (SSAVar, Phi)):
             continue
-        if id(target) in phi_fed:
-            continue
         block_a = a.basic_block
         if block_a is None:
             continue
-        if not all(
-            dom.dominates(block_a, u.basic_block,
-                          a.location.line, u.location.line)
-            for u in target.uses if u is not a
-        ):
+        if not dom.narrowing_is_sound(target, block_a, a.location.line,
+                                      exclude=a):
             continue
         hi_eff = _BYTES_STACK_CAP if hi is None else hi
         if _set_byte_length_range(target, lo, hi_eff):

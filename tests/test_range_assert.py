@@ -17,6 +17,7 @@ from tealql.tealtools.ssa import (
     Const,
     IntRange,
     Location,
+    Phi,
     SSAVar,
     TealType,
 )
@@ -185,6 +186,43 @@ class TestFlowSensitivity:
 
         assert propagate_assert_ranges(prog) == 1
         assert (x.range.lo, x.range.hi) == (1, UMAX)
+
+
+class TestPhiFedIsNeverNarrowed:
+    """The OTHER half of the soundness gate, and the half no test reached.
+
+    ``narrowing_is_sound`` refuses on two grounds: an undominated use (covered
+    above) and a phi-fed value. The second exists because the dominance check
+    walks ``x.uses``, which holds only OP uses — a phi consumer is invisible to
+    it. So a value can pass the dominance test while flowing, via a phi arg,
+    down a predecessor edge that never touched the guard.
+
+    Both tests below build the CFG of ``test_linear_guard_refines``, which DOES
+    refine, and add nothing but the phi edge. Any difference in outcome is
+    attributable to that edge alone."""
+
+    def _linear_guarded_var(self):
+        b0, b1 = _block(1), _block(10)
+        b0.successors, b1.predecessors = [b1], [b0]
+        x = _u64_var(1)
+        _cmp_assert(x, 100, "<", b0, cmp_line=2, assert_line=3)
+        _use(x, b1, 11)
+        return x, _Prog(b0.assignments + b1.assignments)
+
+    def test_control_refines_without_the_phi(self):
+        """Non-vacuity: this construction narrows when nothing is phi-fed."""
+        x, prog = self._linear_guarded_var()
+        assert propagate_assert_ranges(prog) == 1
+        assert (x.range.lo, x.range.hi) == (0, 99)
+
+    def test_phi_arg_blocks_refinement(self):
+        x, prog = self._linear_guarded_var()
+        ph = Phi("f.teal", 30, 1, "join")
+        ph.args = [x, Const("int", "7")]
+        prog.phis = {("f.teal", 30, 1): ph}
+
+        assert propagate_assert_ranges(prog) == 0
+        assert x.range is None
 
 
 # --------------------------------------------------------------------------

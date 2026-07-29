@@ -90,17 +90,7 @@ def propagate_assert_ranges(prog: SSAProgram) -> int:
     if not guards:
         return 0
 
-    # HAZARD: the dominance check below sees only ``x.uses`` (op uses), never phi
-    # consumers, and a phi arg arrives on a SPECIFIC predecessor edge that may
-    # bypass the assert — so a phi-fed value is never tightened.
-    phi_fed = {id(arg) for ph in prog.phis.values() for arg in ph.args
-               if isinstance(arg, SSAVar)}
-
     dom = AssertDominance(prog)
-
-    def _dominates(block_a, use, assert_line: int) -> bool:
-        return dom.dominates(block_a, use.basic_block, assert_line,
-                             use.location.line)
 
     changed_overall = 0
     changed = True
@@ -132,15 +122,11 @@ def propagate_assert_ranges(prog: SSAProgram) -> int:
             for x, rel, yb, test in cons:
                 if rel in ("==", "!=") and getattr(x.type, "kind", None) == "bytes":
                     continue
-                if id(x) in phi_fed:
-                    continue                       # phi-fed: dominance is edge-specific
                 xr = _start_range(x)
                 if xr is None:
                     continue
-                if not all(
-                    _dominates(block_a, u, a.location.line)
-                    for u in x.uses if u is not test
-                ):
+                if not dom.narrowing_is_sound(x, block_a, a.location.line,
+                                              exclude=test):
                     continue
                 lo, hi = _apply(rel, xr, yb)
                 if (lo > xr.lo or hi < xr.hi) and _set_range(x, lo, hi):

@@ -103,8 +103,13 @@ def reachable_avoiding(entries: list, avoid) -> set:
 class AssertDominance:
     """Approximate "the guard at ``guard_block`` dominates ``target_block``" by
     reachability (within one block, by line order) — the shared substrate for the
-    assert-guarded analyses (relational bounds, range-from-assert, byte-taint
-    validation), conservative per :func:`reachable_avoiding`."""
+    assert-guarded analyses (relational bounds, range-from-assert, byte-length
+    propagation, byte-taint validation), conservative per
+    :func:`reachable_avoiding`.
+
+    Most callers want :meth:`narrowing_is_sound` rather than :meth:`dominates`:
+    dominance alone is only half the condition for applying a guard's fact to a
+    value, and the missing half is not obvious."""
 
     def __init__(self, prog):
         # HAZARD: real per-file entries, NOT "blocks with no predecessors" — an
@@ -112,6 +117,52 @@ class AssertDominance:
         # "dominate" every target, applying validation facts unsoundly.
         self._entries = program_entries(all_blocks(prog))
         self._reach: dict = {}
+        self._prog = prog
+        self._phi_fed: "set | None" = None
+
+    @property
+    def phi_fed(self) -> set:
+        """``id()`` of every value that feeds a phi.
+
+        HAZARD: a phi arg arrives on ONE specific predecessor edge, and that
+        edge may bypass the guard entirely — but :meth:`dominates` only ever
+        sees a value's OP uses, never its phi consumers, so it cannot tell.
+        Any narrowing of a phi-fed value is therefore unsound."""
+        if self._phi_fed is None:
+            self._phi_fed = {id(arg) for ph in self._prog.phis.values()
+                             for arg in ph.args}
+        return self._phi_fed
+
+    def narrowing_is_sound(self, value, guard_block, guard_line: int,
+                           *, exclude=None) -> bool:
+        """May a guard at ``guard_block``:``guard_line`` narrow ``value``?
+
+        Two conditions, and both are soundness rather than precision:
+
+        * ``value`` must not be phi-fed (see :attr:`phi_fed`);
+        * EVERY other op use of it must be dominated by the guard, since the
+          narrowed fact lands on the SSAVar and is then read at every use —
+          one branch's ``btoi(X)`` must not cap ``X`` in the other branch.
+
+        ``exclude`` is the use that FORMS the guard, which is dominated by
+        definition and would otherwise never qualify.
+
+        The vacuous case — a value whose ONLY op use is the guard — passes
+        ``all([])`` on zero dominance evidence, deliberately: nothing else
+        reads a value with no other uses. A caller that needs strictness
+        anyway must add its own ``if uses and ...`` before calling, as
+        byte_taint's slice branch does.
+
+        HAZARD: the phi test does NOT double as a non-vacuity check, though a
+        comment here long claimed it did — measured on 200 mainnet contracts,
+        0 of 7568 vacuous values were phi-fed."""
+        if id(value) in self.phi_fed:
+            return False
+        return all(
+            self.dominates(guard_block, u.basic_block, guard_line,
+                           u.location.line)
+            for u in getattr(value, "uses", ()) if u is not exclude
+        )
 
     def dominates(self, guard_block, target_block, guard_line: int,
                   target_line: int) -> bool:
