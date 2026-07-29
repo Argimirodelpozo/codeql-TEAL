@@ -144,7 +144,7 @@ fully-annotated result.
 | **C. Structural cleanup** | `propagate_stack_shuffles` | copy-propagate pure shuffles (`dup`, `swap`, `frame_dig`, …); mark them `shuffled=True` so they render as `// …` comments |
 | | `cleanup_unused_ssavars` | drop side-effect-free Assignments whose every output is dead (typical victims: duplicate reader Assignments from phase A) |
 
-(Out-of-SSA lowering is no longer part of this pipeline — the Puya-IR lift does its own via `tealql.tealtools.block_args`; the functional dump renders live phis in phi form.)
+(Out-of-SSA lowering is no longer part of this pipeline — the Puya-IR lift does its own via `tealql.tealtools.ssa.block_args`; the functional dump renders live phis in phi form.)
 
 Each pass is idempotent — running `run_all_passes` twice is a
 no-op the second time. The per-pass implementations live in

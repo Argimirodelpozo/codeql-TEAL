@@ -8,7 +8,7 @@ the builder.
 """
 from __future__ import annotations
 
-from ..block_args import to_block_args
+from ..ssa.block_args import to_block_args
 from ..avm import _STACK_SHUFFLE_OPS, _TERMINATOR_OPS, op_arity
 from ..passes.frame_resolution import resolve_sub
 from ..ssa import (

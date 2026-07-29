@@ -109,7 +109,7 @@ analysis — which is also the opportunity.
   **already our default constructor** (`_phase_braun`).
 - **Boissinot et al.** "Revisiting Out-of-SSA Translation", *PLDI 2009* —
   the principled basis for the block-args out-of-SSA the lift does
-  (`block_args.py`).
+  (`ssa/block_args.py`).
 - **Cytron et al.** "Efficiently Computing SSA and the Control Dependence Graph",
   *TOPLAS 1991* — the classic dominance-frontier construction.
 

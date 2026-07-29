@@ -1,4 +1,4 @@
-"""Tests for the block-argument out-of-SSA view (``tealql.tealtools.block_args``)
+"""Tests for the block-argument out-of-SSA view (``tealql.tealtools.ssa.block_args``)
 and the ``BasicBlock.exit_stack`` surfacing it relies on.
 
 Uses the ``conditional_swap`` fixture — a conditional ``swap`` before a merge,
@@ -45,7 +45,7 @@ class TestExitStackSurfaced:
 
 class TestBlockArgsSwap:
     def _form(self):
-        from tealql.tealtools.block_args import to_block_args
+        from tealql.tealtools.ssa.block_args import to_block_args
         prog = _prog()
         return prog, to_block_args(prog)
 

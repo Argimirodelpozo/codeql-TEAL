@@ -2,7 +2,7 @@
 
 Each block with phis is a function whose parameters are those phis, and every
 predecessor passes, on its edge, the value it holds in each slot. Unlike
-:mod:`tealql.tealtools.passes.materialize` — which flattens a phi to its leaf
+:mod:`..passes.materialize` — which flattens a phi to its leaf
 value-*set* and drops a copy at each leaf's def site, discarding *which value
 arrives on which edge* — the per-edge value stays explicit, so the lost-copy /
 swap problems cannot arise.
@@ -21,7 +21,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional
 
-from .ssa import BasicBlock, Const, Phi, SSAProgram, SSAVar
+from .models import BasicBlock, Const, Phi, SSAVar
+from .program import SSAProgram
 
 
 def _fmt(o) -> str:
