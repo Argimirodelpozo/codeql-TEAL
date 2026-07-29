@@ -28,6 +28,7 @@ from .models import (
 )
 
 from .operands import (binary_operands, const_bytes, const_byte_length, const_int,
+                       source_operands,
                        is_const, operand_const)
 from .producers import is_field_var, producing_op
 
@@ -64,6 +65,7 @@ __all__ = [
     "const_bytes",
     "const_byte_length",
     "binary_operands",
+    "source_operands",
     "const_int",
     "is_const",
     "operand_const",

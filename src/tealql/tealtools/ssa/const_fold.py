@@ -1,11 +1,16 @@
 """Constant folding for SSA Assignments — the op-level half of
 :meth:`SSAProgram.propagate_constants`.
 
-HAZARD: every ``_fold_*`` helper below takes its inputs DEEPEST-FIRST
-(``inputs[0]`` = the deeper value ``A`` of ``A op B``), the reverse of raw SSA
-top-first order; :func:`try_fold_assignment` does that reversal once, so a new
-caller must too. ``None`` always means "no constant" — including on paths the
-AVM would halt on (underflow, over-shift, bad slice), never a made-up value.
+HAZARD: every ``_fold_*`` helper below takes ``operands`` in SOURCE order
+(``operands[0]`` = the deeper value ``A`` of ``A op B``), the reverse of raw SSA
+top-first ``Assignment.inputs``; :func:`try_fold_assignment` does that reversal
+once, so a new caller must too. The parameter is deliberately NOT called
+``inputs``: it used to be, and an expression as ordinary as ``inputs[0]`` then
+meant the topmost value everywhere else in the tree and the deepest one here,
+which is the single most re-found defect in this codebase.
+
+``None`` always means "no constant" — including on paths the AVM would halt on
+(underflow, over-shift, bad slice), never a made-up value.
 """
 from __future__ import annotations
 
@@ -50,24 +55,24 @@ def _int_const(n: int) -> Const:
 _UINT64_MAX = (1 << 64) - 1
 
 
-# --- Per-op folders (inputs DEEPEST-FIRST; see module header) --------------
+# --- Per-op folders (operands DEEPEST-FIRST; see module header) --------------
 
 
-def _fold_concat(inputs: list[Const]) -> Optional[Const]:
-    if len(inputs) != 2:
+def _fold_concat(operands: list[Const]) -> Optional[Const]:
+    if len(operands) != 2:
         return None
-    a, b = _bytes_from_const(inputs[0]), _bytes_from_const(inputs[1])
+    a, b = _bytes_from_const(operands[0]), _bytes_from_const(operands[1])
     if a is None or b is None:
         return None
     return _bytes_const(a + b)
 
 
 def _fold_extract_imm(
-    inputs: list[Const], immediates: str,
+    operands: list[Const], immediates: str,
 ) -> Optional[Const]:
-    if len(inputs) != 1:
+    if len(operands) != 1:
         return None
-    src = _bytes_from_const(inputs[0])
+    src = _bytes_from_const(operands[0])
     if src is None:
         return None
     parts = immediates.split()
@@ -83,12 +88,12 @@ def _fold_extract_imm(
     return _bytes_const(src[start:end])
 
 
-def _fold_extract3(inputs: list[Const]) -> Optional[Const]:
-    if len(inputs) != 3:
+def _fold_extract3(operands: list[Const]) -> Optional[Const]:
+    if len(operands) != 3:
         return None
-    src = _bytes_from_const(inputs[0])
-    start = _int_from_const(inputs[1])
-    length = _int_from_const(inputs[2])
+    src = _bytes_from_const(operands[0])
+    start = _int_from_const(operands[1])
+    length = _int_from_const(operands[2])
     if src is None or start is None or length is None:
         return None
     if start < 0 or start + length > len(src):
@@ -97,11 +102,11 @@ def _fold_extract3(inputs: list[Const]) -> Optional[Const]:
 
 
 def _fold_substring_imm(
-    inputs: list[Const], immediates: str,
+    operands: list[Const], immediates: str,
 ) -> Optional[Const]:
-    if len(inputs) != 1:
+    if len(operands) != 1:
         return None
-    src = _bytes_from_const(inputs[0])
+    src = _bytes_from_const(operands[0])
     if src is None:
         return None
     parts = immediates.split()
@@ -116,12 +121,12 @@ def _fold_substring_imm(
     return _bytes_const(src[start:end])
 
 
-def _fold_substring3(inputs: list[Const]) -> Optional[Const]:
-    if len(inputs) != 3:
+def _fold_substring3(operands: list[Const]) -> Optional[Const]:
+    if len(operands) != 3:
         return None
-    src = _bytes_from_const(inputs[0])
-    start = _int_from_const(inputs[1])
-    end = _int_from_const(inputs[2])
+    src = _bytes_from_const(operands[0])
+    start = _int_from_const(operands[1])
+    end = _int_from_const(operands[2])
     if src is None or start is None or end is None:
         return None
     if start < 0 or end > len(src) or start > end:
@@ -130,12 +135,12 @@ def _fold_substring3(inputs: list[Const]) -> Optional[Const]:
 
 
 def _fold_extract_uint(
-    inputs: list[Const], n_bytes: int,
+    operands: list[Const], n_bytes: int,
 ) -> Optional[Const]:
-    if len(inputs) != 2:
+    if len(operands) != 2:
         return None
-    src = _bytes_from_const(inputs[0])
-    offset = _int_from_const(inputs[1])
+    src = _bytes_from_const(operands[0])
+    offset = _int_from_const(operands[1])
     if src is None or offset is None:
         return None
     if offset < 0 or offset + n_bytes > len(src):
@@ -143,58 +148,58 @@ def _fold_extract_uint(
     return _int_const(int.from_bytes(src[offset:offset + n_bytes], "big"))
 
 
-def _fold_itob(inputs: list[Const]) -> Optional[Const]:
-    if len(inputs) != 1:
+def _fold_itob(operands: list[Const]) -> Optional[Const]:
+    if len(operands) != 1:
         return None
-    n = _int_from_const(inputs[0])
+    n = _int_from_const(operands[0])
     if n is None or n < 0 or n >= 2 ** 64:
         return None
     return _bytes_const(n.to_bytes(8, "big"))
 
 
-def _fold_btoi(inputs: list[Const]) -> Optional[Const]:
-    if len(inputs) != 1:
+def _fold_btoi(operands: list[Const]) -> Optional[Const]:
+    if len(operands) != 1:
         return None
-    src = _bytes_from_const(inputs[0])
+    src = _bytes_from_const(operands[0])
     if src is None or len(src) > 8:
         return None
     return _int_const(int.from_bytes(src, "big") if src else 0)
 
 
-def _fold_len(inputs: list[Const]) -> Optional[Const]:
-    if len(inputs) != 1:
+def _fold_len(operands: list[Const]) -> Optional[Const]:
+    if len(operands) != 1:
         return None
-    src = _bytes_from_const(inputs[0])
+    src = _bytes_from_const(operands[0])
     if src is None:
         return None
     return _int_const(len(src))
 
 
-def _fold_bzero(inputs: list[Const]) -> Optional[Const]:
-    if len(inputs) != 1:
+def _fold_bzero(operands: list[Const]) -> Optional[Const]:
+    if len(operands) != 1:
         return None
-    n = _int_from_const(inputs[0])
+    n = _int_from_const(operands[0])
     if n is None or n < 0 or n > 4096:
         return None
     return _bytes_const(b"\x00" * n)
 
 
-def _fold_getbyte(inputs: list[Const]) -> Optional[Const]:
-    if len(inputs) != 2:
+def _fold_getbyte(operands: list[Const]) -> Optional[Const]:
+    if len(operands) != 2:
         return None
-    src = _bytes_from_const(inputs[0])
-    idx = _int_from_const(inputs[1])
+    src = _bytes_from_const(operands[0])
+    idx = _int_from_const(operands[1])
     if src is None or idx is None or idx < 0 or idx >= len(src):
         return None
     return _int_const(src[idx])
 
 
-def _fold_setbyte(inputs: list[Const]) -> Optional[Const]:
-    if len(inputs) != 3:
+def _fold_setbyte(operands: list[Const]) -> Optional[Const]:
+    if len(operands) != 3:
         return None
-    src = _bytes_from_const(inputs[0])
-    idx = _int_from_const(inputs[1])
-    val = _int_from_const(inputs[2])
+    src = _bytes_from_const(operands[0])
+    idx = _int_from_const(operands[1])
+    val = _int_from_const(operands[2])
     if src is None or idx is None or val is None:
         return None
     if idx < 0 or idx >= len(src) or val < 0 or val > 255:
@@ -205,11 +210,11 @@ def _fold_setbyte(inputs: list[Const]) -> Optional[Const]:
 
 
 def _fold_int_arith(
-    op: str, inputs: list[Const],
+    op: str, operands: list[Const],
 ) -> Optional[Const]:
-    if len(inputs) != 2:
+    if len(operands) != 2:
         return None
-    a, b = _int_from_const(inputs[0]), _int_from_const(inputs[1])
+    a, b = _int_from_const(operands[0]), _int_from_const(operands[1])
     if a is None or b is None:
         return None
     if op == "+":
@@ -235,16 +240,16 @@ def _fold_int_arith(
     return _int_const(r)
 
 
-def _fold_bitwise(op: str, inputs: list[Const]) -> Optional[Const]:
+def _fold_bitwise(op: str, operands: list[Const]) -> Optional[Const]:
     """Fold the uint64 bitwise / shift binary ops.
 
-    HAZARD: ``inputs[0]`` is the deeper stack value ``A``, ``inputs[1]`` the top
+    HAZARD: ``operands[0]`` is the deeper stack value ``A``, ``operands[1]`` the top
     ``B`` (matching the other folders and :mod:`..passes.range_arith`): ``shl`` is
     ``A * 2^B mod 2^64``, ``shr`` is ``A // 2^B``. A shift ``B > 63`` HALTS the AVM
     ("arg too big"), so it folds to ``None`` — like the ``-`` underflow case."""
-    if len(inputs) != 2:
+    if len(operands) != 2:
         return None
-    a, b = _int_from_const(inputs[0]), _int_from_const(inputs[1])
+    a, b = _int_from_const(operands[0]), _int_from_const(operands[1])
     if a is None or b is None:
         return None
     if a < 0 or a > _UINT64_MAX or b < 0 or b > _UINT64_MAX:
@@ -268,20 +273,20 @@ def _fold_bitwise(op: str, inputs: list[Const]) -> Optional[Const]:
     return _int_const(r)
 
 
-def _fold_bitwise_not(inputs: list[Const]) -> Optional[Const]:
+def _fold_bitwise_not(operands: list[Const]) -> Optional[Const]:
     """uint64 bitwise NOT: ``~a == (2^64-1) - a``."""
-    if len(inputs) != 1:
+    if len(operands) != 1:
         return None
-    a = _int_from_const(inputs[0])
+    a = _int_from_const(operands[0])
     if a is None or a < 0 or a > _UINT64_MAX:
         return None
     return _int_const(_UINT64_MAX - a)
 
 
-def _fold_cmp(op: str, inputs: list[Const]) -> Optional[Const]:
-    if len(inputs) != 2:
+def _fold_cmp(op: str, operands: list[Const]) -> Optional[Const]:
+    if len(operands) != 2:
         return None
-    a, b = inputs[0], inputs[1]
+    a, b = operands[0], operands[1]
     if a is None or b is None:
         return None
     if a.kind == "int" and b.kind == "int":
@@ -330,7 +335,7 @@ def _fold_global_field(immediates: str) -> Optional[Const]:
 
 
 def fold_spec_fixed(a: Assignment) -> Optional[Const]:
-    """Resolve opcodes whose value the AVM spec fixes outright, inputs or not.
+    """Resolve opcodes whose value the AVM spec fixes outright, operands or not.
 
     HAZARD: kept separate from :func:`try_fold_assignment` because these folds
     depend on no prior const-resolution and so are safe DURING SSA construction;
@@ -340,8 +345,8 @@ def fold_spec_fixed(a: Assignment) -> Optional[Const]:
     return None
 
 
-def _fold_logical(op: str, inputs: list[Const]) -> Optional[Const]:
-    vals = [_int_from_const(c) for c in inputs]
+def _fold_logical(op: str, operands: list[Const]) -> Optional[Const]:
+    vals = [_int_from_const(c) for c in operands]
     if any(v is None for v in vals):
         return None
     if op == "!":
@@ -368,60 +373,61 @@ def try_fold_assignment(a: Assignment) -> Optional[Const]:
     op = a.op
     if not a.outputs or len(a.outputs) != 1:
         return None
-    # ``global FIELD`` has no stack inputs — resolve from the immediate alone.
+    # ``global FIELD`` has no stack operands — resolve from the immediate alone.
     if op == "global":
         return _fold_global_field(a.immediates)
-    inputs: list[Const] = []
-    for x in a.inputs:
+    resolved: list[Const] = []
+    for x in a.inputs:                       # TOP-first, per Assignment.inputs
         if isinstance(x, Const):
-            inputs.append(x)
+            resolved.append(x)
             continue
         cv = getattr(x, "const_value", None)
         if cv is None:
             return None
-        inputs.append(cv)
-    # HAZARD: ``Assignment.inputs`` are TOP-FIRST (inputs[0] = topmost popped) but
-    # every folder is written deepest-first (inputs[0] = the deeper value ``A`` of
-    # ``A op B``). Reverse once, else every non-commutative op (``-`` ``/`` ``%``,
-    # shifts, ``concat``, ``extract*``, ``getbyte``, the inequalities) folds with
-    # its operands swapped.
-    inputs.reverse()
+        resolved.append(cv)
+    # The ONE reversal in this module, and the reason the folders' parameter is
+    # named ``operands`` rather than ``inputs``: they read SOURCE order, where
+    # [0] is the deeper value A of `A op B`, and Assignment.inputs is top-first.
+    # Get it backwards and every non-commutative op (`-` `/` `%`, shifts,
+    # `concat`, `extract*`, `getbyte`, the inequalities) folds with its operands
+    # swapped — which is exactly the bug this codebase keeps re-finding.
+    operands = resolved[::-1]
     if op == "concat":
-        return _fold_concat(inputs)
+        return _fold_concat(operands)
     if op == "extract":
-        return _fold_extract_imm(inputs, a.immediates)
+        return _fold_extract_imm(operands, a.immediates)
     if op == "extract3":
-        return _fold_extract3(inputs)
+        return _fold_extract3(operands)
     if op == "substring":
-        return _fold_substring_imm(inputs, a.immediates)
+        return _fold_substring_imm(operands, a.immediates)
     if op == "substring3":
-        return _fold_substring3(inputs)
+        return _fold_substring3(operands)
     if op == "extract_uint16":
-        return _fold_extract_uint(inputs, 2)
+        return _fold_extract_uint(operands, 2)
     if op == "extract_uint32":
-        return _fold_extract_uint(inputs, 4)
+        return _fold_extract_uint(operands, 4)
     if op == "extract_uint64":
-        return _fold_extract_uint(inputs, 8)
+        return _fold_extract_uint(operands, 8)
     if op == "itob":
-        return _fold_itob(inputs)
+        return _fold_itob(operands)
     if op == "btoi":
-        return _fold_btoi(inputs)
+        return _fold_btoi(operands)
     if op == "len":
-        return _fold_len(inputs)
+        return _fold_len(operands)
     if op == "bzero":
-        return _fold_bzero(inputs)
+        return _fold_bzero(operands)
     if op == "getbyte":
-        return _fold_getbyte(inputs)
+        return _fold_getbyte(operands)
     if op == "setbyte":
-        return _fold_setbyte(inputs)
+        return _fold_setbyte(operands)
     if op in ("+", "-", "*", "/", "%"):
-        return _fold_int_arith(op, inputs)
+        return _fold_int_arith(op, operands)
     if op in ("&", "|", "^", "shl", "shr"):
-        return _fold_bitwise(op, inputs)
+        return _fold_bitwise(op, operands)
     if op == "~":
-        return _fold_bitwise_not(inputs)
+        return _fold_bitwise_not(operands)
     if op in CMP_OPS:
-        return _fold_cmp(op, inputs)
+        return _fold_cmp(op, operands)
     if op in ("!", "&&", "||"):
-        return _fold_logical(op, inputs)
+        return _fold_logical(op, operands)
     return None

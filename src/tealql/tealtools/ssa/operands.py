@@ -64,3 +64,17 @@ def binary_operands(a) -> "Optional[tuple]":
     if len(a.inputs) != 2:
         return None
     return a.inputs[1], a.inputs[0]
+
+
+def source_operands(a) -> tuple:
+    """Every operand of ``a`` in SOURCE order — the n-ary :func:`binary_operands`.
+
+    ``extract3`` is pushed ``buf start len``, so this returns
+    ``(buf, start, len)`` where ``a.inputs`` holds ``(len, start, buf)``.
+
+    Use this, and NAME the result something other than ``inputs``. The recurring
+    defect in this codebase is not the top-first convention itself — it is that
+    a reversed copy kept the name ``inputs``, so the identical expression
+    ``inputs[0]`` meant the topmost value in one module and the deepest in
+    another, distinguishable only by reading a docstring in a third."""
+    return tuple(reversed(a.inputs))
