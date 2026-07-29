@@ -921,7 +921,14 @@ def _cmd_detections_scan(args) -> int:
     # — drop findings from BOTH the output and the exit code.
     from tealql.security.suppress import partition, load_baseline
     baseline = load_baseline(args.baseline) if args.baseline else set()
+    # HAZARD: partition returns PLAIN lists, which would drop the degradation
+    # notifications on the floor — and a suppression config silently deleting
+    # "this detector never ran" is the exact failure the notifications exist to
+    # prevent. Suppressions apply to FINDINGS; they never apply to these.
+    from tealql.security.scan import ScanResults
+    notes = getattr(findings, "notifications", ())
     findings, suppressed = partition(findings, root=root, baseline=baseline)
+    findings = ScanResults(findings, notes)
     if suppressed:
         logger.info("%d finding(s) suppressed (inline / baseline)", len(suppressed))
 

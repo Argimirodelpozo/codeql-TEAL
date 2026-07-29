@@ -351,6 +351,50 @@ class ScanFinding:
         return d
 
 
+@dataclass(frozen=True)
+class ScanNotification:
+    """Something the scan could NOT do, carried alongside the findings.
+
+    HAZARD: without this, "no findings" has two meanings — analyzed and clean,
+    or never analyzed at all — and the output cannot tell them apart. Five of
+    the nine ``ir-*`` detectors have no SSA sibling, so a contract that fails to
+    lift silently drops them and the report still reads as a clean bill.
+
+    ``kind`` is a stable machine-readable slug; ``message`` is for humans."""
+
+    kind: str
+    message: str
+    rel_path: Optional[str] = None
+    detector: Optional[str] = None
+
+    def format(self) -> str:
+        where = f" {self.rel_path}" if self.rel_path else ""
+        who = f" [{self.detector}]" if self.detector else ""
+        return f"[DEGRADED]{where}{who}: {self.message}"
+
+    def to_dict(self) -> dict:
+        return {"kind": self.kind, "message": self.message,
+                "file": self.rel_path, "detector": self.detector}
+
+
+class ScanResults(list):
+    """The findings list, plus what the scan could not do.
+
+    Subclasses ``list`` on purpose: every existing caller treats a scan result
+    as a list of findings (iterate, len, comprehend, index) and keeps working
+    untouched. ``notifications`` is additive."""
+
+    def __init__(self, findings=(), notifications=()):
+        super().__init__(findings)
+        self.notifications: list[ScanNotification] = list(notifications)
+
+
+def _notifications_of(findings) -> list:
+    """Notifications carried by a scan result; ``()`` for a plain list, so the
+    renderers accept either."""
+    return list(getattr(findings, "notifications", ()))
+
+
 def scan(
     root: Path,
     config: ScanConfig = ScanConfig.empty(),
@@ -388,6 +432,7 @@ def scan(
             raise TealQLError(msg)
         logger.warning("%s", msg)
     findings: list[ScanFinding] = []
+    notes: list[ScanNotification] = []
     for dir_path, teal_files in sorted(by_dir.items()):
         for teal in teal_files:
             rel = teal.relative_to(root)
@@ -405,6 +450,10 @@ def scan(
                     raise TealQLError(
                         f"could not reconstruct SSA for {rel}: {e}") from e
                 logger.warning("could not reconstruct SSA for %s: %s", rel, e)
+                notes.append(ScanNotification(
+                    kind="ssa-failed", rel_path=str(rel),
+                    message=f"SSA could not be reconstructed, so NO detector "
+                            f"ran on this file: {e}"))
                 continue
             diags = getattr(prog, "parse_diagnostics", ())
             if diags:
@@ -414,6 +463,11 @@ def scan(
                     "%s: %d TEAL span(s) failed to parse and were EXCLUDED "
                     "from analysis — findings for this file may be "
                     "incomplete (first: %s)", rel, len(diags), diags[0])
+                notes.append(ScanNotification(
+                    kind="parse-incomplete", rel_path=str(rel),
+                    message=f"{len(diags)} TEAL span(s) failed to parse and "
+                            f"were EXCLUDED from analysis, so findings for "
+                            f"this file may be incomplete (first: {diags[0]})"))
             names = config.detectors_for(str(rel))
             try:
                 if options is not None:
@@ -458,7 +512,21 @@ def scan(
                             f"detector {name} crashed on {rel}: {e}") from e
                     logger.error(
                         "detector %s crashed on %s (skipped): %s", name, rel, e)
+                    notes.append(ScanNotification(
+                        kind="detector-crashed", rel_path=str(rel), detector=name,
+                        message=f"detector crashed and was skipped, so it "
+                                f"produced no findings for this file: {e}"))
                     continue
+                degraded = getattr(det, "degraded", None)
+                if degraded:
+                    if strict:
+                        raise TealQLError(
+                            f"detector {name} ran degraded on {rel}: {degraded}")
+                    logger.warning("detector %s degraded on %s: %s",
+                                   name, rel, degraded)
+                    notes.append(ScanNotification(
+                        kind="detector-degraded", rel_path=str(rel),
+                        detector=name, message=degraded))
                 for v in violations:
                     findings.append(ScanFinding(
                         rel_path=rel, detector_name=name, violation=v,
@@ -466,7 +534,7 @@ def scan(
                         method_name=_method_at(method_ranges, v),
                     ))
     findings.sort(key=lambda f: (str(f.rel_path), f.detector_name))
-    return findings
+    return ScanResults(findings, notes)
 
 
 def failures(
@@ -479,18 +547,32 @@ def failures(
 
 
 def render_text(findings: list[ScanFinding]) -> str:
-    if not findings:
-        return "(no findings)"
-    return "\n".join(f.format() for f in findings)
+    notes = _notifications_of(findings)
+    body = "\n".join(f.format() for f in findings) if findings else "(no findings)"
+    if not notes:
+        return body
+    # Degradation goes BELOW the findings and is never omitted: "(no findings)"
+    # on its own is a clean bill, and it must not be printed as one when part of
+    # the analysis did not run.
+    return "\n".join([
+        body, "",
+        f"{len(notes)} analysis degradation(s) — results are INCOMPLETE:",
+        *(f"  {n.format()}" for n in notes),
+    ])
 
 
 def render_json(findings: list[ScanFinding]) -> str:
-    """Versioned envelope ``{schema_version, tool, findings: [...]}``."""
+    """Versioned envelope ``{schema_version, tool, findings, notifications}``.
+
+    ``notifications`` is always present, so a consumer can tell "analyzed and
+    clean" from "never analyzed" without knowing whether this version emits the
+    key at all."""
     from .findings import SCHEMA_VERSION
     return json.dumps({
         "schema_version": SCHEMA_VERSION,
         "tool": "tealql",
         "findings": [f.to_dict() for f in findings],
+        "notifications": [n.to_dict() for n in _notifications_of(findings)],
     }, indent=2)
 
 
@@ -554,6 +636,25 @@ def render_sarif(findings: list[ScanFinding]) -> str:
             result["codeFlows"] = [{"threadFlows": [{"locations": steps}]}]
         results.append(result)
 
+    # SARIF's own home for "the tool could not do its job here" is
+    # invocations[].toolExecutionNotifications — NOT a result. Emitting these as
+    # results would put them in the dashboard's finding count and make a broken
+    # analysis look like a vulnerable contract.
+    notes = _notifications_of(findings)
+    invocation = {"executionSuccessful": not notes}
+    if notes:
+        invocation["toolExecutionNotifications"] = [
+            {
+                "level": "warning",
+                "message": {"text": n.format()},
+                "descriptor": {"id": n.kind},
+                **({"locations": [{"physicalLocation": {
+                    "artifactLocation": {"uri": n.rel_path}}}]}
+                   if n.rel_path else {}),
+            }
+            for n in notes
+        ]
+
     doc = {
         "version": "2.1.0",
         "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
@@ -563,6 +664,7 @@ def render_sarif(findings: list[ScanFinding]) -> str:
                 "informationUri": "https://github.com/Argimirodelpozo/codeql-TEAL",
                 "rules": list(rules.values()),
             }},
+            "invocations": [invocation],
             "results": results,
             "properties": {"tealqlSchemaVersion": SCHEMA_VERSION},
         }],

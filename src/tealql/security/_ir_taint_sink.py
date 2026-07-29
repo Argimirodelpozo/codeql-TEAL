@@ -68,6 +68,11 @@ class _IrTaintSinkDetector:
         self.file = file
         self.trusted_args = frozenset(trusted_args)
         self.path_predicates = path_predicates    # forwarded to the SSA fallback
+        #: Set by ``detect`` when this detector could not run at full strength.
+        #: ``scan`` reads it afterwards and reports it, because an empty finding
+        #: list from a detector that never ran is indistinguishable from a clean
+        #: bill of health -- the worst answer a security tool can give.
+        self.degraded: Optional[str] = None
 
     # -- hooks ----------------------------------------------------------------
 
@@ -109,9 +114,15 @@ class _IrTaintSinkDetector:
         if lifter is None:                        # didn't lift (~0.1% of mainnet)
             if self.fallback is not None:
                 from . import DETECTORS             # defer to the SSA sibling
+                self.degraded = (
+                    f"IR lift failed; answered with the SSA detector "
+                    f"'{self.fallback}' instead, which is less precise")
                 return DETECTORS[self.fallback](
                     self.prog, file=self.file, path_predicates=self.path_predicates,
                 ).detect()
+            self.degraded = (
+                "IR lift failed and this detector has no SSA fallback, so it "
+                "did NOT run — finding nothing here means nothing")
             return []
         findings = [f for f in self._raw_findings(lifter)
                     if not f.guarded and not f.param_derived]
