@@ -117,9 +117,9 @@
    "findings": 109
   },
   "unvalidated-group-sibling": {
-   "contracts": 27,
+   "contracts": 31,
    "crashes": 0,
-   "findings": 48
+   "findings": 52
   }
  },
  "distinct_contracts": 231,
@@ -693,7 +693,8 @@
    "group-size-check": 3,
    "inner-txn-close-rekey": 2,
    "is-deletable": 1,
-   "is-updatable": 1
+   "is-updatable": 1,
+   "unvalidated-group-sibling": 1
   },
   "54a941889b0799cd": {
    "abi-method-selector": 5,
@@ -1114,7 +1115,8 @@
    "group-size-check": 3,
    "inner-txn-close-rekey": 2,
    "is-deletable": 1,
-   "is-updatable": 1
+   "is-updatable": 1,
+   "unvalidated-group-sibling": 1
   },
   "993ec3747870c69e": {
    "ir-tainted-log": 2
@@ -1702,7 +1704,8 @@
    "group-size-check": 3,
    "inner-txn-close-rekey": 2,
    "is-deletable": 1,
-   "is-updatable": 1
+   "is-updatable": 1,
+   "unvalidated-group-sibling": 1
   },
   "ea52c8ab6316226a": {
    "abi-method-selector": 4,
@@ -1801,7 +1804,8 @@
    "group-size-check": 3,
    "inner-txn-close-rekey": 2,
    "is-deletable": 1,
-   "is-updatable": 1
+   "is-updatable": 1,
+   "unvalidated-group-sibling": 1
   },
   "ef200e2ebe348d98": {
    "abi-method-selector": 5,

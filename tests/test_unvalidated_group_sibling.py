@@ -323,10 +323,36 @@ def test_vacuous_pin_to_app_arg_flagged(tmp_path):
     assert any(v.value_field == "Amount" for v in vs)
 
 
-def test_pin_enforced_via_retsub_zero_clean(tmp_path):
-    # the pin's failure branches to a subroutine arm that returns 0 (reject) —
-    # a rejection expressed as `int 0; retsub`, not a top-level `return 0`.
-    assert _detect(
+# --- `int 0; retsub` is NOT a rejection; it depends on what the CALLER does ---
+# `retsub` resumes in the caller, which may assert the verdict, branch on it, or
+# ignore it. These three share one validator subroutine and differ only in the
+# caller, so the caller is provably the deciding factor.
+
+_VALIDATOR_SUB = ("validate:\ngtxn 1 Receiver\nglobal CurrentApplicationAddress\n"
+                  "==\nbz reject\nint 1\nretsub\nreject:\nint 0\nretsub\n")
+
+
+def test_retsub_zero_verdict_DISCARDED_is_flagged(tmp_path):
+    """The caller drops the result on the floor, so the receiver check cannot
+    affect the outcome — the program approves either way.
+
+    This asserted `== []` until 2026-07-30, and the matching benchmark fixture
+    sat in safe/. Both encoded "int 0; retsub is a rejection", which is false."""
+    vs = _detect(
         "#pragma version 8\ncallsub validate\ngtxn 1 Amount\npop\nint 1\nreturn\n"
-        "validate:\ngtxn 1 Receiver\nglobal CurrentApplicationAddress\n==\n"
-        "bz reject\nint 1\nretsub\nreject:\nint 0\nretsub\n", tmp_path) == []
+        + _VALIDATOR_SUB, tmp_path)
+    assert vs, "a discarded validator verdict pins nothing"
+
+
+def test_retsub_zero_verdict_ASSERTED_is_clean(tmp_path):
+    """`callsub check; assert` — the standard Puya idiom. Genuinely pinned."""
+    assert _detect(
+        "#pragma version 8\ncallsub validate\nassert\ngtxn 1 Amount\npop\n"
+        "int 1\nreturn\n" + _VALIDATOR_SUB, tmp_path) == []
+
+
+def test_retsub_zero_verdict_BRANCHED_is_clean(tmp_path):
+    """Enforced by branching to a real `return 0` instead of an assert."""
+    assert _detect(
+        "#pragma version 8\ncallsub validate\nbz bad\ngtxn 1 Amount\npop\n"
+        "int 1\nreturn\nbad:\nint 0\nreturn\n" + _VALIDATOR_SUB, tmp_path) == []

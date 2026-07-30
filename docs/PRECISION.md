@@ -1,6 +1,6 @@
 # Detector precision / recall
 
-36 detectors · 88 vulnerable + 125 safe ground-truth cases.
+36 detectors · 89 vulnerable + 126 safe ground-truth cases.
 
 > **Read this first.** These numbers are measured on a **small, curated**
 > ground-truth corpus (`tests/benchmark/<detector>/{vuln,safe}/`), not on a
@@ -48,7 +48,7 @@
 | `unprotected-updatable` | high | high | 2 | 0 | 0 | 7 | 1.00 | 1.00 | 1.00 |
 | `unsafe-division-order` | medium | high | 3 | 0 | 0 | 3 | 1.00 | 1.00 | 1.00 |
 | `unsafe-lsig-args` | high | high | 1 | 0 | 0 | 1 | 1.00 | 1.00 | 1.00 |
-| `unvalidated-group-sibling` | high | high | 6 | 0 | 0 | 9 | 1.00 | 1.00 | 1.00 |
-| **overall** | | | **88** | **0** | **0** | **125** | **1.00** | **1.00** | **1.00** |
+| `unvalidated-group-sibling` | high | high | 7 | 0 | 0 | 10 | 1.00 | 1.00 | 1.00 |
+| **overall** | | | **89** | **0** | **0** | **126** | **1.00** | **1.00** | **1.00** |
 
 _Regenerate with_ `python -m tests.gen_precision`.

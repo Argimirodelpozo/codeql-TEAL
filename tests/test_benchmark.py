@@ -241,7 +241,11 @@ _BASELINE: dict[str, tuple[int, int, int, int]] = {
     "unprotected-updatable": (2, 0, 0, 7),
     "unsafe-division-order": (3, 0, 0, 3),
     "unsafe-lsig-args": (1, 0, 0, 1),
-    "unvalidated-group-sibling": (6, 0, 0, 9),
+    # 7th vuln case: a validator sub whose 0-return the caller DISCARDS. It
+    # lived in safe/ until 2026-07-30, encoding the belief that `int 0;
+    # retsub` is a program rejection — it is not. Plus two safe cases where
+    # the caller DOES act on the verdict (assert / branch).
+    "unvalidated-group-sibling": (7, 0, 0, 10),
 }
 
 

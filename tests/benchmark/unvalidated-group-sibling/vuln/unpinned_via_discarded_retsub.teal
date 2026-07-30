@@ -1,0 +1,24 @@
+#pragma version 8
+// VULNERABLE: `validate` DOES compare the receiver and returns 0 when it fails —
+// but the caller never looks at the returned value. It pushes gtxn 1 Amount,
+// pops it, pushes int 1 and approves, so the receiver check cannot affect the
+// outcome. `retsub` returns to the CALLER; it is not a program rejection.
+//
+// This file previously sat in safe/ with a comment calling `int 0; retsub`
+// "a program rejection, just expressed via the sub's return value". That is the
+// misconception, and it made the benchmark score 1.00 on wrong ground truth.
+callsub validate
+gtxn 1 Amount
+pop
+int 1
+return
+validate:
+gtxn 1 Receiver
+global CurrentApplicationAddress
+==
+bz reject
+int 1
+retsub
+reject:
+int 0
+retsub

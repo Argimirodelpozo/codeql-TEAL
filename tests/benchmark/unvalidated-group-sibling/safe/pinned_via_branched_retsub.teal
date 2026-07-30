@@ -1,0 +1,22 @@
+#pragma version 8
+// SAFE: the caller BRANCHES on the validator's verdict to a real `return 0`.
+// Enforcement via a branch rather than an assert; equally effective.
+callsub validate
+bz bad
+gtxn 1 Amount
+pop
+int 1
+return
+bad:
+int 0
+return
+validate:
+gtxn 1 Receiver
+global CurrentApplicationAddress
+==
+bz reject
+int 1
+retsub
+reject:
+int 0
+retsub

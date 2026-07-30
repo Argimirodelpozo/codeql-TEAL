@@ -1,0 +1,20 @@
+#pragma version 8
+// SAFE: the same validator subroutine, but the caller ASSERTS its verdict, so a
+// 0 return really does halt the program. This is the standard Puya idiom
+// (`callsub check; assert`) and must stay clean.
+callsub validate
+assert
+gtxn 1 Amount
+pop
+int 1
+return
+validate:
+gtxn 1 Receiver
+global CurrentApplicationAddress
+==
+bz reject
+int 1
+retsub
+reject:
+int 0
+retsub

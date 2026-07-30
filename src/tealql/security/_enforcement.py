@@ -7,7 +7,8 @@ from __future__ import annotations
 from typing import Optional
 
 from tealql.tealtools.avm import CMP_OPS
-from tealql.tealtools.ssa import BasicBlock, SSAProgram, SSAVar
+from tealql.tealtools.ssa import (BasicBlock, SSAProgram, SSAVar,
+                                  const_int)
 
 from ._program_shape import file_match, is_rejection_exit
 
@@ -125,6 +126,59 @@ def _disjunction_is_enforcing(prog: SSAProgram, disj, arrived_from,
         _disjunct_constrains_field(prog, o, field_vars) for o in others)
 
 
+def _acted_on(prog: SSAProgram, var, depth: int = 0) -> bool:
+    """Does ``var`` reach an ``assert``, or a branch whose reject side is a REAL
+    program exit? Walks op uses AND phi membership.
+
+    HAZARD: phi consumers are NOT in ``var.uses`` (that holds op uses only), and
+    the caller sees a callee's return value precisely AS a phi over the callee's
+    ``retsub`` arms — so skipping phis misses every case this exists for.
+
+    Deliberately calls ``is_rejection_exit`` and never ``_rejects``: recursing
+    back through the callee-return credit would not terminate."""
+    if depth > 6:
+        return False
+    for use in getattr(var, "uses", ()):
+        if use.op == "assert":
+            return True
+        if use.op in ("bnz", "bz"):
+            bb = use.basic_block
+            if bb is not None and any(is_rejection_exit(s) for s in bb.successors):
+                return True
+        for o in use.outputs:
+            if _acted_on(prog, o, depth + 1):
+                return True
+    for ph in prog.phis.values():
+        if any(a is var for a in ph.args) and _acted_on(prog, ph, depth + 1):
+            return True
+    return False
+
+
+def _callee_zero_return_rejects(prog: SSAProgram, bb: BasicBlock) -> bool:
+    """``bb`` ends ``int 0; retsub`` and the 0 it hands back is ACTED ON by the
+    caller, so returning it does reject — just one frame up.
+
+    HAZARD: ``retsub`` is NOT an exit (see ``cfg.exits``); it resumes in the
+    caller, which may assert the value, branch on it, or IGNORE it. This is the
+    only sound way to credit the Puya validator idiom ``callsub check; assert``
+    without also crediting a callee whose verdict the caller DISCARDS — a check
+    with no effect on the outcome, i.e. a real vulnerability that the previous
+    "retsub counts as a rejection" rule read as safe."""
+    if len(bb.assignments) < 2 or bb.assignments[-1].op != "retsub":
+        return False
+    prev = bb.assignments[-2]
+    if not prev.outputs or const_int(prev.outputs[0]) != 0:
+        return False
+    return _acted_on(prog, prev.outputs[0])
+
+
+def _rejects(prog: SSAProgram, bb: "Optional[BasicBlock]") -> bool:
+    """A real program rejection, or a callee 0-return the caller acts on."""
+    if bb is None:
+        return False
+    return is_rejection_exit(bb) or _callee_zero_return_rejects(prog, bb)
+
+
 def branch_gates_rejection(
     prog: SSAProgram, branch, label_lines: dict[tuple[str, str], int],
 ) -> bool:
@@ -145,8 +199,8 @@ def branch_gates_rejection(
     if target_line is not None:
         target = _bb_at(prog, branch.location.file, target_line)
     fall_through = _fall_through_bb(prog, bb)
-    target_rejects = target is not None and is_rejection_exit(target)
-    ft_rejects = fall_through is not None and is_rejection_exit(fall_through)
+    target_rejects = _rejects(prog, target)
+    ft_rejects = _rejects(prog, fall_through)
 
     if branch.op == "bnz":       # taken on TRUE, falls through on FALSE
         rejects_when_false, rejects_when_true = ft_rejects, target_rejects
