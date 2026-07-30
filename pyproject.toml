@@ -125,6 +125,12 @@ fail_under = 68
 target-version = "py312"
 line-length = 100
 
+# Vendored generated source: the algopy contracts the example TEAL was compiled
+# FROM, carrying "Code automatically generated - DO NOT EDIT". They are evidence
+# of provenance, not code we maintain, so editing them to satisfy a linter would
+# be the wrong fix.
+extend-exclude = ["examples/**/BasicVerifier.py"]
+
 [tool.ruff.lint]
 # F  = pyflakes: undefined names, unused imports/locals -- real defects, and
 #      the class that had accumulated 12 uncaught instances before this gate.

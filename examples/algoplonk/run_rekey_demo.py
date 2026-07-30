@@ -20,6 +20,11 @@ CLI:
 
 Paths resolve relative to this script's location, so the CWD doesn't
 matter.
+
+Gated by tests/test_examples.py: this script rotted unnoticed once, calling
+``SSAProgram(db_dir, verbose=False)`` — a CodeQL-era signature with a
+two-step ``PySSA.build`` — long after both were gone. An example nobody runs
+is worse than no example.
 """
 from __future__ import annotations
 
@@ -30,16 +35,15 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parent.parent
 sys.path.insert(0, str(REPO / "src"))            # -> the tealql package
 
-from tealql.tealtools.ssa import SSAProgram, PySSA
+from tealql.tealtools.ssa import SSAProgram
 from tealql.tealtools.passes.orchestrate import run_all_passes
 from tealql.security import RekeyToDetector
 
 
 def run_one(kind: str) -> int:
-    db_path = HERE / kind / "db"
-    print(f"\n=== {kind.upper()} ({db_path.relative_to(REPO)}) ===", flush=True)
-    prog_ql = SSAProgram(str(db_path), verbose=False)
-    prog = PySSA.build(prog_ql)
+    teal = HERE / kind / "prog.teal"
+    print(f"\n=== {kind.upper()} ({teal.relative_to(REPO)}) ===", flush=True)
+    prog = SSAProgram(str(teal))
     run_all_passes(prog)
     viols = RekeyToDetector(prog).detect()
     print(f"  rekey-to violations: {len(viols)}")
@@ -47,7 +51,7 @@ def run_one(kind: str) -> int:
         print(f"    {v}")
     rpt = HERE / f"{kind}_rekey_report.txt"
     with rpt.open("w") as f:
-        f.write(f"# RekeyToDetector report — {kind} (DB: {db_path.relative_to(REPO)})\n")
+        f.write(f"# RekeyToDetector report — {kind} ({teal.relative_to(REPO)})\n")
         f.write(f"# Violations: {len(viols)}\n\n")
         if not viols:
             f.write("(no rekey-to violations detected)\n")

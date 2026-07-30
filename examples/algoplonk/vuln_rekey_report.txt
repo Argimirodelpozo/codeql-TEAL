@@ -1,4 +1,4 @@
-# RekeyToDetector report — vuln (DB: examples/algoplonk/vuln/db)
+# RekeyToDetector report — vuln (examples/algoplonk/vuln/prog.teal)
 # Violations: 1
 
 --- violation 1 ---
