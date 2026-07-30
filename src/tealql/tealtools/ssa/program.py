@@ -178,7 +178,7 @@ class SSAProgram:
             # markers (``pushint TMPL_FOO`` → ``Label@TMPL_FOO``) modelled
             # as same-line CFG edges that aren't real control flow;
             # including them creates spurious BB-self-loops that
-            # ``find_loops`` then misclassifies as actual loops.
+            # a loop finder would then misclassify as actual loops.
             if (
                 u_bb_id == v_bb_id
                 and u.location.start_line <= v.location.start_line

@@ -1,7 +1,7 @@
 """Unit tests for the ``tealql`` CLI surface.
 
 * Target resolution + the ``finding_to_dict`` helper.
-* End-to-end analysis commands (``auth`` / ``group-shape`` / ``cost`` /
+* End-to-end analysis commands (``auth`` / ``group-shape`` /
   ``itxn-report`` / ``path-predicates`` / ``cfg`` / ``all``) run against the
   committed ``.teal`` fixtures via the pure-Python backend.
 * Security subcommands (``detections`` / ``detections-scan``) — smoke +
@@ -309,16 +309,6 @@ def test_cli_json_group_shape_keys(capsys):
     assert isinstance(data["constraints"], list)
 
 
-def test_cli_json_cost_keys(capsys):
-    main(["cost", str(VULN_DB), "--json"])
-    data = json.loads(capsys.readouterr().out)
-    assert "entries" in data
-    for e in data["entries"]:
-        assert {"file", "line", "op", "op_cost", "cumulative"} <= e.keys()
-        assert isinstance(e["line"], int)
-        assert isinstance(e["op_cost"], int)
-
-
 def test_cli_json_itxn_report_keys(capsys):
     main(["itxn-report", str(VULN_DB), "--json"])
     data = json.loads(capsys.readouterr().out)
@@ -349,7 +339,8 @@ def test_cli_json_all_aggregator(capsys):
     for name, findings in data["detectors"].items():
         assert isinstance(findings, list), name
     # Every report key has a structured payload.
-    assert {"itxn-report", "group-shape", "cost", "path-predicates"} <= data["reports"].keys()
+    assert {"itxn-report", "group-shape", "group-layout",
+            "path-predicates"} <= data["reports"].keys()
 
 
 def test_cli_functional_smoke(capsys):

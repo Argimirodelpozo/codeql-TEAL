@@ -469,16 +469,6 @@ def _cmd_group_layout(args) -> int:
     return _emit_dict(layout.to_dict(), json_out=args.json_out, text=layout.render())
 
 
-def _cmd_cost(args) -> int:
-    from tealql.tealtools import cost_analysis
-    prog = _load(args)
-    return _emit_dict(
-        cost_analysis.to_dict(prog),
-        json_out=args.json_out,
-        text=cost_analysis.render(prog),
-    )
-
-
 def _cmd_functional(args) -> int:
     """Run the canonical SSA pipeline and print the functional dump."""
     from tealql.tealtools.passes import functional_dump
@@ -962,7 +952,7 @@ def _cmd_dump(args) -> int:
     if args.out_dir:
         _sys.stderr.write(
             f"wrote full dump to {args.out_dir}/ "
-            f"(contract.txt + graph/cfg/ssa/control_tree)\n")
+            f"(contract.txt + graph/cfg/ssa)\n")
     else:
         print(text, end="")
     return 0
@@ -1065,13 +1055,12 @@ def build_parser() -> argparse.ArgumentParser:
                          "attack surface and --verify. Needs the lift; falls back to "
                          "the coarse graph when the contract doesn't lift")
 
-    add("cost", "per-line opcode cost", _cmd_cost)
     add("path-predicates", "per-BB path predicates", _cmd_path_predicates)
     add("all", "run every detector + report", _cmd_all)
 
     dump_p = add("dump", "dump EVERY representation of a contract (debug)", _cmd_dump)
     dump_p.add_argument("-o", "--out-dir", default=None,
-                        help="also write contract.txt + graph/cfg/ssa/control_tree "
+                        help="also write contract.txt + graph/cfg/ssa "
                              ".svg files into this dir (else text to stdout)")
     dump_p.add_argument("--no-svg", action="store_true",
                         help="write .dot instead of rendering .svg (no Graphviz needed)")

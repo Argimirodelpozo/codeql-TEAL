@@ -4,7 +4,7 @@ main-flow BBs that only branch or fall through — the OnCompletion /
 method-selector dispatch, of which ``dispatch`` is the part branching on a
 recognised routing field), and HANDLERS (the remaining per-route bodies).
 
-Subroutines come from :func:`..control_tree.identify_subroutines`, so this
+Subroutines come from :func:`..subroutines.identify_subroutines`, so this
 partition agrees with the control tree's.
 """
 from __future__ import annotations
@@ -244,7 +244,7 @@ def _flows_from_routing_field(operand, depth: int) -> bool:
 
 def analyze_structure(prog: SSAProgram) -> ProgramStructure:
     """Partition ``prog`` into routing / handlers / subroutines / call sites."""
-    from .control_tree import identify_subroutines
+    from .subroutines import identify_subroutines
 
     info = identify_subroutines(prog)
     bodies: dict = info["bodies"]

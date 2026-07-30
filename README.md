@@ -103,7 +103,6 @@ tealql box-audit        <target>   # caller-supplied address-keyed BoxMap not bo
 tealql itxn-report     <target>
 tealql group-shape     <target>
 tealql group-layout    <target>
-tealql cost            <target>
 tealql path-predicates <target>
 tealql cfg             <target> [--file F] [--skeleton]
 tealql storage-schema  <target>   # reconstruct global/local/box keys + maps with recovered key/value types (needs lift)
@@ -180,7 +179,6 @@ Inline annotations rendered by `tealql functional`:
 | `tealql.tealtools.group_reasoning.analyze` | Group shape the contract forces on every approving exit (`Global.GroupSize == 2`, `gtxn[0].Receiver == ...`, etc.). |
 | `tealql.tealtools.dataflow.box` | Box dataflow in three flavours: `detect_into_box_flows` (external → box write), `detect_out_of_box_flows` (box read → sensitive sink), `detect_correlated_flows` (end-to-end chain via syntactic key matching). |
 | `tealql.tealtools.xcontract.XContractGraph` | Cross-contract analysis: identifies appcall itxns with a constant `ApplicationID` resolvable in a registry, runs path predicates on each callee with seeded args, computes approving-exit summaries, feeds them back into the caller's BB. Includes `cross_auth_findings` for auth-domination across the boundary. |
-| `tealql.tealtools.cost_analysis` | Per-line opcode-budget cost with worst-case path accumulation; loops report `unbounded`. |
 | `tealql.tealtools.dataflow.predicate_aware.filter_validated` | Wraps a taint detector — suppresses violations whose sink operand is constrained by a dominating path predicate. |
 
 The table above is a curated subset. The full detection suite is 36 registered

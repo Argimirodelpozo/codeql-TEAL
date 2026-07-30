@@ -1,4 +1,4 @@
-"""Guard avm.py's hand-maintained op-result-type tables against puya's langspec.
+"""Guard avm.py's hand-maintained op tables against puya's langspec.
 
 ``avm.py`` carries ``_U64_OPS`` / ``_BYTES_OPS`` — the set of opcodes
 whose single result is uint64- vs bytes-backed. It is a SECOND source of truth
@@ -25,6 +25,7 @@ pytest.importorskip("puya")
 from puya.avm import AVMType
 from puya.ir.avm_ops import AVMOp
 from puya.ir.avm_ops_models import Variant
+
 
 from tealql.tealtools import avm
 
@@ -134,3 +135,53 @@ def test_known_crypto_producers_are_bytes_typed():
         kinds = _puya_return_avm_kinds(op)
         if kinds:  # puya confirms all-bytes returns
             assert all(k == "b" for k in kinds), (op, kinds)
+
+
+# ---------------------------------------------------------------------------
+# SIG arity coverage
+#
+# Relocated here when cost_analysis was removed: this guards avm.SIG, not the
+# cost table, and only shared a file with the cost-drift tests by accident.
+# ---------------------------------------------------------------------------
+
+# Puya models these under an identifier where TEAL uses a symbol (`add` for `+`),
+# or as pseudo-ops this project resolves from the const block. They are outside
+# this test's reach by construction; kept explicit so a genuinely NEW opcode
+# cannot hide in the gap.
+_PUYA_ONLY_NAMES = frozenset({
+    "add", "sub", "mul", "div_floor", "mod",
+    "add_bytes", "sub_bytes", "mul_bytes", "div_floor_bytes", "mod_bytes",
+    "lt", "gt", "lte", "gte", "eq", "neq", "not_", "and_", "or_",
+    "lt_bytes", "gt_bytes", "lte_bytes", "gte_bytes", "eq_bytes", "neq_bytes",
+    "bitwise_and", "bitwise_or", "bitwise_xor", "bitwise_not",
+    "bitwise_and_bytes", "bitwise_or_bytes", "bitwise_xor_bytes",
+    "bitwise_not_bytes",
+    "len_", "global_",
+})
+
+# Height-dependent / dynamic-arity opcodes ``op_arity`` computes from the
+# immediates rather than from :data:`avm.SIG`.
+_DYNAMIC_ARITY = frozenset({
+    "dig", "bury", "cover", "uncover", "popn", "dupn",
+    "pushints", "pushbytess", "match", "switch",
+    "frame_dig", "frame_bury", "callsub", "retsub", "proto",
+})
+
+
+def _teal_ops():
+    """Puya ops that share a mnemonic with the TEAL source token."""
+    return [op for op in AVMOp if op.code not in _PUYA_ONLY_NAMES]
+
+
+def test_every_puya_opcode_has_a_sig_entry():
+    """An opcode absent from :data:`avm.SIG` is modelled as ``(0, 0)`` — no
+    stack effect at all — which corrupts the SSA reconstruction for every
+    program using it. That must never happen silently."""
+    missing = sorted(
+        op.code for op in _teal_ops()
+        if op.code not in avm.SIG and op.code not in _DYNAMIC_ARITY
+    )
+    assert not missing, (
+        f"opcodes puya models but avm.SIG does not: {missing} — each is "
+        "modelled with NO stack effect. Add them to SIG."
+    )

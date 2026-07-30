@@ -11,7 +11,7 @@ import pytest
 
 from tealql.security import DETECTORS, common
 from tealql.security.scan import discover_teal_files, scan
-from tealql.tealtools import avm, cost_analysis
+from tealql.tealtools import avm
 from tealql.tealtools.errors import TargetError, TargetNotFoundError, TealQLError
 from tealql.tealtools.group_reasoning import analyze, analyze_per_exit
 from tealql.tealtools.passes import run_all_passes
@@ -290,31 +290,9 @@ return
 
 def test_falcon_verify_is_modelled():
     """Absent from SIG it was ``(0, 0)`` — no stack effect — which corrupts the
-    reconstruction of every program using it, and it was charged cost 1."""
+    reconstruction of every program using it."""
     assert avm.op_arity("falcon_verify", "") == (3, 1)
-    assert cost_analysis.opcode_cost("falcon_verify") == 1700
     assert "falcon_verify" not in avm.unknown_opcodes()
-
-
-@pytest.mark.parametrize("op,cost", [
-    ("mimc", 10), ("sumhash512", 150), ("json_ref", 25),
-])
-def test_length_scaled_ops_are_no_longer_charged_one(op, cost):
-    assert cost_analysis.opcode_cost(op) == cost
-    assert op in cost_analysis.LENGTH_SCALED_OPS
-
-
-def test_cost_report_flags_inexact_ops(tmp_path):
-    prog = _prog(tmp_path, "prog.teal", """#pragma version 11
-txna ApplicationArgs 0
-mimc BN254Mp110
-pop
-int 1
-return
-""")
-    assert cost_analysis.length_scaled_ops_used(prog) == ["mimc"]
-    assert "LOWER bound" in cost_analysis.render(prog)
-    assert cost_analysis.to_dict(prog)["inexact_cost_ops"] == ["mimc"]
 
 
 # ---------------------------------------------------------------------------

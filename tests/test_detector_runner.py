@@ -31,7 +31,7 @@ def test_run_all_findings_isolates_a_crashing_detector(caplog):
     # the crash was logged, the report still built, other sections present
     assert any("boom-detector" in r.message for r in caplog.records)
     assert "=== auth-domination ===" in text        # a real core detector ran
-    assert "=== cost ===" in text                    # reports ran too
+    assert "=== path-predicates ===" in text          # reports ran too
     assert isinstance(n, int)
 
 
@@ -40,7 +40,7 @@ def test_run_all_dict_isolates_a_crashing_detector():
     out = run_all_dict(prog, extra_detectors=[_BoomDetector()])
     assert out["detectors"]["boom-detector"] == []   # crashed -> empty, not fatal
     assert "auth-domination" in out["detectors"]      # other detectors present
-    assert "cost" in out["reports"]                   # reports present
+    assert "path-predicates" in out["reports"]        # reports present
 
 
 def test_run_all_strict_reraises():

@@ -15,7 +15,6 @@ from ..ssa import render as _ssa_render
 from ..cfg import CFG
 from ..graph import load_graph
 from ..structure import analyze_structure
-from ..control_tree import build_control_tree, pretty as _ct_pretty
 from ..path_predicates import PathPredicateAnalysis
 from ..inner_txn_report import InnerTxnReport
 from .._utils.dot import render as _dot_render
@@ -56,7 +55,6 @@ def dump_all(source, out_dir: Optional[str] = None, *, svg: bool = True,
         lambda: _ssa_overlay(prog))
     add("USER-INPUT TAINT (sources -> sensitive sinks)", lambda: _taint_text(prog))
     add("STRUCTURE (subs / routing / handlers)", lambda: analyze_structure(prog).render())
-    add("CONTROL TREE (region tree)", lambda: _ct_pretty(build_control_tree(prog)))
     add("PATH PREDICATES", lambda: PathPredicateAnalysis(prog).render())
     add("INNER-TXN REPORT", lambda: InnerTxnReport(prog).render())
     add("PUYA IR (lift)", lambda: _ir_text(source))
@@ -286,7 +284,6 @@ def _write_graphs(out: Path, prog: SSAProgram, source, *, registry=None,
         ("graph", lambda: _viz.to_dot(load_graph(source))),
         ("cfg", lambda: CFG.of(prog).to_dot()),
         ("ssa", lambda: _ssa_render.to_dot(prog)),
-        ("control_tree", lambda: _viz.region_to_dot(build_control_tree(prog))),
     ]
     if registry is not None:
         def _sc_dot():

@@ -1,16 +1,16 @@
-"""Unit tests for ``control_tree.identify_subroutines`` — the CFG analysis that
+"""Unit tests for ``subroutines.identify_subroutines`` — the CFG analysis that
 recovers subroutine entries, bodies, and ``callsub``→continuation wiring
 (consumed by ``structure.analyze_structure`` → the lift).
 
 It reads only a small duck-typed interface (``prog.labels``, ``prog.blocks``, and
 per-block ``.first_line`` / ``.assignments`` / ``.successors``), so these run on
-hand-built mock CFGs — no CodeQL DB. They pin the core wiring plus the behaviours
-added this session for real contracts: reentrant entries resolved from the
+hand-built mock CFGs. They pin the core wiring plus the behaviours needed for
+real contracts: reentrant entries resolved from the
 ``callsub`` label when the CFG edge is absent, never-returning callees getting no
 continuation, and a continuation mis-picked inside the callee's own body being
 dropped and refilled from the real retsub target.
 """
-from tealql.tealtools.control_tree import identify_subroutines
+from tealql.tealtools.subroutines import identify_subroutines
 
 
 class _Loc:

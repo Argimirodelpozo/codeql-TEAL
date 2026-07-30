@@ -214,11 +214,6 @@ def _render(analysis: str, case_dir: Path) -> str:
 
         return analyze(prog).render() + "\n"
 
-    if analysis == "cost":
-        from tealql.tealtools.cost_analysis import render
-
-        return render(prog) + "\n"
-
     if analysis == "cfg":
         from tealql.tealtools.cfg import CFG
 

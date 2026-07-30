@@ -42,11 +42,6 @@ from .dataflow.engine import (
 from .auth_domination import AuthDominationDetector, AuthViolation
 from .inner_txn_report import InnerTxnReport
 from .group_reasoning import analyze as analyze_group_shape, GroupShape
-from .cost_analysis import (
-    per_line_costs, per_line_cost_paths, render as render_cost,
-)
-from .control_tree import build_control_tree, pretty as pretty_control_tree
-from .loops import find_loops
 from .dataflow.predicate_aware import filter_validated, SuppressedViolation
 
 # Box dataflow
@@ -93,8 +88,6 @@ __all__ = [
     "AuthDominationDetector", "AuthViolation",
     "InnerTxnReport",
     "analyze_group_shape", "GroupShape",
-    "per_line_costs", "per_line_cost_paths", "render_cost",
-    "build_control_tree", "pretty_control_tree", "find_loops",
     "filter_validated", "SuppressedViolation",
     "detect_into_box_flows", "detect_out_of_box_flows",
     "detect_correlated_flows", "CorrelatedViolation",

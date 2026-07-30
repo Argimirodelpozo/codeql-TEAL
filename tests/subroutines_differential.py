@@ -28,7 +28,7 @@ sys.path.insert(0, str(REPO / "src"))
 
 from tealql.tealtools.ssa import SSAProgram          # noqa: E402
 from tealql.tealtools.ssa.ssa import PySSA           # noqa: E402
-from tealql.tealtools.control_tree import identify_subroutines  # noqa: E402
+from tealql.tealtools.subroutines import identify_subroutines  # noqa: E402
 from tealql.tealtools.path_predicates import PathPredicateAnalysis  # noqa: E402
 
 

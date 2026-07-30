@@ -121,11 +121,6 @@ def _group_layout(prog: SSAProgram) -> str:
     return analyze_layout(prog).render()
 
 
-def _cost(prog: SSAProgram) -> str:
-    from .cost_analysis import render
-    return render(prog)
-
-
 def _path_preds(prog: SSAProgram) -> str:
     from .path_predicates import PathPredicateAnalysis
     return PathPredicateAnalysis(prog).render()
@@ -144,11 +139,6 @@ def _group_shape_d(prog: SSAProgram) -> dict:
 def _group_layout_d(prog: SSAProgram) -> dict:
     from .group_reasoning import analyze_layout
     return analyze_layout(prog).to_dict()
-
-
-def _cost_d(prog: SSAProgram) -> dict:
-    from .cost_analysis import to_dict
-    return to_dict(prog)
 
 
 def _path_preds_d(prog: SSAProgram) -> dict:
@@ -173,7 +163,6 @@ ALL_REPORTS: list[Report] = [
     _FnReport("itxn-report", _itxn_report, _itxn_report_d),
     _FnReport("group-shape", _group_shape, _group_shape_d),
     _FnReport("group-layout", _group_layout, _group_layout_d),
-    _FnReport("cost", _cost, _cost_d),
     _FnReport("path-predicates", _path_preds, _path_preds_d),
 ]
 
