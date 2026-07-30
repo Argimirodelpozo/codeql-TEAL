@@ -128,6 +128,8 @@ def _canonical_binary_pred(
 # callee may clobber the caller's stack/scratch but cannot change the
 # transaction. Adding an op a callee CAN affect (load / dig / frame_dig /
 # app_global_get / a sub parameter) makes carried-across-return facts unsound.
+from .avm import UNSTABLE_GLOBAL_FIELDS
+
 _TXN_FIELD_READ_OPS = frozenset({
     "txn", "txna", "txnas", "gtxn", "gtxna", "gtxnas",
     "gtxns", "gtxnsa", "gtxnsas", "global",
@@ -170,6 +172,13 @@ def _rooted_walk(v, seen: set, memo: dict) -> "tuple[bool, bool]":
             if d is None:
                 return _cache(memo, v, False)         # param / frame_dig / unknown
             if d.op in _TXN_FIELD_READ_OPS:
+                # HAZARD: `global` is in that set, but not every global field is
+                # execution-stable. `OpcodeBudget` DECREASES as the program runs,
+                # so a callee consumes it and a predicate on it does NOT survive
+                # the return — carrying it claims a budget that has been spent.
+                if (d.op == "global"
+                        and d.immediates.strip() in UNSTABLE_GLOBAL_FIELDS):
+                    return _cache(memo, v, False)
                 return _cache(memo, v, True)
             if d.op not in _PURE_COMBINATOR_OPS:
                 return _cache(memo, v, False)         # load / state / arith / …

@@ -193,6 +193,17 @@ ADDRESS_TXN_FIELDS: frozenset[str] = frozenset({
 })
 
 #: ``global`` fields reading a 32-byte address (same single-source role).
+#: ``global`` fields that are NOT execution-stable — they change as the program
+#: runs, so two reads can differ and a predicate on one does not survive a call.
+#:
+#: HAZARD: this is the STABILITY question, NOT the trust question. A field can be
+#: perfectly stable and still attacker-chosen (``GroupSize`` — the attacker
+#: assembles the group but it does not change mid-execution); that set lives in
+#: ``dataflow.byte_taint._CLEAN_GLOBALS``. Conflating them either loses proofs or
+#: credits guards on values the caller controls.
+UNSTABLE_GLOBAL_FIELDS = frozenset({"OpcodeBudget"})
+
+
 ADDRESS_GLOBAL_FIELDS: frozenset[str] = frozenset({
     "ZeroAddress", "CreatorAddress",
     "CurrentApplicationAddress", "CallerApplicationAddress",

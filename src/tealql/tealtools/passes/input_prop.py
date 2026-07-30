@@ -31,9 +31,8 @@ _STABLE_INPUT_OPS_STACK = frozenset({
     "gtxns", "gtxnsa", "gtxnsas", "gtxnas", "txnas", "args",
 })
 
-# ``global`` fields that are NOT execution-stable — they change as the program
-# runs, so two reads can differ and must never unify.
-_UNSTABLE_GLOBAL_FIELDS = frozenset({"OpcodeBudget"})
+# ``global`` fields that are NOT execution-stable; one home in ``avm``.
+from ..avm import UNSTABLE_GLOBAL_FIELDS as _UNSTABLE_GLOBAL_FIELDS
 
 
 def _operand_key(operand) -> Optional[tuple]:

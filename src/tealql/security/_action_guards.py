@@ -48,12 +48,6 @@ def _is_txn_field_var(var, field: str) -> bool:
 
 
 
-def _is_global_field_var(var, field: str) -> bool:
-    return is_field_var(var, "global", field)
-
-
-
-
 #: State reads that yield an address the CONTRACT controls, not the caller.
 _STATE_READ_OPS = frozenset({
     "app_global_get", "app_global_get_ex", "app_local_get", "app_local_get_ex",

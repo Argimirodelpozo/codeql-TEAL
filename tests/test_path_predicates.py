@@ -107,3 +107,78 @@ def test_cyclic_cond_terminates():
     # terminated (didn't hang / overflow) and still produced predicates
     assert isinstance(preds, frozenset)
     assert any(bc.value is a for bc in preds)
+
+
+# ---------------------------------------------------------------------------
+# What survives a `callsub` return
+#
+# `_rooted_in_immutable_fields` decides which of the caller's predicates are
+# carried back across a subroutine return. It had ZERO coverage: a mutation
+# sweep forcing it to True AND to False left the whole benchmark unchanged,
+# which is how the OpcodeBudget hole below survived.
+# ---------------------------------------------------------------------------
+
+
+def _cmp_out(tmp_path, src, op=">"):
+    from tealql.tealtools.ssa import SSAProgram
+    p = tmp_path / "r.teal"
+    p.write_text(src)
+    prog = SSAProgram(str(p))
+    prog.propagate_constants()
+    return next(a for a in prog.assignments if a.op == op).outputs[0]
+
+
+def _global_cmp(tmp_path, field):
+    return _cmp_out(tmp_path, f"#pragma version 8\nglobal {field}\nint 5\n>\n"
+                              f"bnz ok\nint 0\nreturn\nok:\nint 1\nreturn\n")
+
+
+def test_opcode_budget_is_not_immutable(tmp_path):
+    """`global OpcodeBudget` DECREASES as the program runs, so a callee spends
+    it and a predicate on it cannot be carried across the return — doing so
+    claims a budget that has already been consumed.
+
+    `passes/input_prop` already knew this (`_UNSTABLE_GLOBAL_FIELDS`); this
+    module did not, which is the whole reason the fact now lives in `avm`."""
+    from tealql.tealtools.path_predicates import _rooted_in_immutable_fields
+    assert _rooted_in_immutable_fields(_global_cmp(tmp_path, "OpcodeBudget")) is False
+
+
+def test_stable_globals_are_still_immutable(tmp_path):
+    """Non-vacuity: the fix must not reject every global.
+
+    `GroupSize` deliberately stays immutable. It is attacker-CHOSEN (the
+    attacker assembles the group) but it does not CHANGE mid-execution — that
+    is the trust question, not the stability one, and it is answered elsewhere
+    (`byte_taint._CLEAN_GLOBALS`)."""
+    from tealql.tealtools.path_predicates import _rooted_in_immutable_fields
+    for field in ("CreatorAddress", "CurrentApplicationID", "GroupSize"):
+        assert _rooted_in_immutable_fields(_global_cmp(tmp_path, field)) is True, field
+
+
+def test_txn_fields_and_constants_are_immutable(tmp_path):
+    from tealql.tealtools.path_predicates import _rooted_in_immutable_fields
+    v = _cmp_out(tmp_path, "#pragma version 8\ntxn Fee\nint 1000\n>\nbnz ok\n"
+                           "int 0\nreturn\nok:\nint 1\nreturn\n")
+    assert _rooted_in_immutable_fields(v) is True
+
+
+def test_state_reads_are_not_immutable(tmp_path):
+    """An `app_global_get` can be rewritten by the callee, so a predicate on it
+    must not cross the return."""
+    from tealql.tealtools.path_predicates import _rooted_in_immutable_fields
+    v = _cmp_out(tmp_path, '#pragma version 8\nbyte "k"\napp_global_get\nint 5\n>\n'
+                           'bnz ok\nint 0\nreturn\nok:\nint 1\nreturn\n')
+    assert _rooted_in_immutable_fields(v) is False
+
+
+def test_one_unstable_leaf_poisons_the_conjunction(tmp_path):
+    """Rooted-ness is a conjunction over leaves: `Creator == X && budget > 5`
+    is NOT carryable, because half of it can change."""
+    from tealql.tealtools.path_predicates import _rooted_in_immutable_fields
+    v = _cmp_out(tmp_path,
+                 "#pragma version 8\n"
+                 "txn Sender\nglobal CreatorAddress\n==\n"
+                 "global OpcodeBudget\nint 5\n>\n"
+                 "&&\nbnz ok\nint 0\nreturn\nok:\nint 1\nreturn\n", op="&&")
+    assert _rooted_in_immutable_fields(v) is False

@@ -74,7 +74,6 @@ from ._action_guards import (  # noqa: E402,F401
     ONC_NOOP,
     ONC_OPTIN,
     ONC_UPDATE_APPLICATION,
-    _is_global_field_var,
     _is_oncompletion_var,
     _is_sender_eq_creator,
     _is_txn_field_var,
