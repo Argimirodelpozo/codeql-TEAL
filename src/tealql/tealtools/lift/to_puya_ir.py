@@ -818,13 +818,41 @@ def _define_named_orphan(subs, name: str, version: int) -> bool:
     return False
 
 
+def _coerce_slice_operands(subs) -> None:
+    """extract3/substring3 take (bytes, uint64, uint64). The undefined-register typed-zero fallback
+    can leave a uint64 start/len operand as an empty BytesConstant (the register's reconstructed type
+    was bytes) -> a type-invalid slice length. Coerce it to a uint64 (empty -> 0), mirroring
+    _u64_cond: the operand position IS uint64, so a bytes there is a reconstruction artifact."""
+    import attrs
+    for sub in subs:
+        for bb in getattr(sub, "body", []):
+            for o in bb.ops:
+                if not (isinstance(o, M.Assignment) and isinstance(o.source, M.Intrinsic)):
+                    continue
+                src = o.source
+                if src.op not in (AVMOp.extract3, AVMOp.substring3) or len(src.args) != 3:
+                    continue
+                new_args, changed = list(src.args), False
+                for i in (1, 2):
+                    a = new_args[i]
+                    if isinstance(a, M.BytesConstant):
+                        new_args[i] = M.UInt64Constant(
+                            source_location=None,
+                            value=int.from_bytes(a.value[-8:], "big") if a.value else 0)
+                        changed = True
+                if changed:
+                    o.source = attrs.evolve(src, args=new_args)
+
+
 def optimize(subs, *, max_rounds: int = 100, aggressive: bool = False) -> int:
     """Run Puya's context-free optimiser passes over ``subs`` to a fixpoint (mutating
     them in place, returning the rounds taken), where ``aggressive`` additionally
     enables the CODEGEN-CHANGING simplifications the faithful default leaves off."""
     from ..errors import LiftError
     try:
-        return _optimize_impl(subs, max_rounds=max_rounds, aggressive=aggressive)
+        rounds = _optimize_impl(subs, max_rounds=max_rounds, aggressive=aggressive)
+        _coerce_slice_operands(subs)   # repair a typed-zero fallback that left a slice len as bytes
+        return rounds
     except LiftError:
         raise
     except Exception as e:
