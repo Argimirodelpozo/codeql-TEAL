@@ -18,13 +18,16 @@ from . import _puya_compat as _compat
 logger = logging.getLogger("tealql.tealtools.lift")
 
 
-def lift_to_teal(source, *, aggressive: bool = False) -> str:
+def lift_to_teal(source, *, aggressive: bool = False,
+                 diagnostics: list | None = None) -> str:
     """``SSAProgram(source)`` -> Puya IR -> split/destructure -> MIR -> TEAL text.
 
     ``aggressive`` additionally runs the codegen-changing optimiser passes (intrinsic
     folding, ARC4 encode/decode elimination). Any failure raises
     :class:`tealql.tealtools.errors.LiftError`, cause chained, tagged with the stage
-    that failed."""
+    that failed. Errors puya merely LOGS along the way (its validators do not raise)
+    are appended to ``diagnostics`` when given — see
+    :func:`to_puya_ir._puya_error_capture`."""
     import puya.ir.models as M
     from puya.context import ArtifactCompileContext, CompiledProgramProvider
     from puya.errors import InternalError
@@ -49,46 +52,47 @@ def lift_to_teal(source, *, aggressive: bool = False) -> str:
                 avm_version = max(int(_m.group(1)), 10)
                 break
     # Lower + optimise (these raise LiftError stage lower/optimize themselves).
-    main, subs = to_puya_ir.to_puya(prog)
-    to_puya_ir.optimize([main, *subs], aggressive=aggressive)
+    main, subs = to_puya_ir.to_puya(prog, diagnostics=diagnostics)
+    to_puya_ir.optimize([main, *subs], aggressive=aggressive, diagnostics=diagnostics)
     try:
-        try:
-            provider = CompiledProgramProvider()
-        except Exception:
-            provider = object.__new__(CompiledProgramProvider)
-        ctx = ArtifactCompileContext(
-            options=PuyaOptions(), compilation_set={}, sources_by_path={},
-            compiled_program_provider=provider, output_path_provider=None)
-        program = M.Program(
-            kind=ProgramKind.approval, main=main, subroutines=list(subs),
-            avm_version=avm_version,
-            slot_allocation=SlotAllocation(
-                reserved=frozenset(), strategy=SlotAllocationStrategy.none))
-        for s in [main, *subs]:
-            _compat.split_parallel_copies(ctx, s)
-        _destructure_with_orphans(ctx, program)
-        for _ in range(50):
+        with to_puya_ir._puya_error_capture("backend", diagnostics):
             try:
-                teal = mir_to_teal(ctx, program_ir_to_mir(ctx, program))
-                break
-            except InternalError as e:
-                # MIR lowering drops a register defined only in a now-unreachable
-                # block. Define it (typed zero, at entry) in EVERY sub using that
-                # name: the error doesn't say which sub, and the same name recurs
-                # across subs, so a first-match define never converges.
-                m = _compat.UNDEFINED_REGISTER_RE.search(str(e))
-                hits = m and [
-                    to_puya_ir._define_named_orphan([s], m.group(1), int(m.group(2)))
-                    for s in [main, *subs]]
-                if not (hits and any(hits)):
-                    raise
-                logger.warning(
-                    "reconstruction orphan %s#%s defined as typed ZERO during MIR "
-                    "lowering — recompiled TEAL may compute with 0",
-                    m.group(1), m.group(2))
-        else:
-            raise RuntimeError("backend lowering did not converge")
-        return emit_teal(ctx, teal)
+                provider = CompiledProgramProvider()
+            except Exception:
+                provider = object.__new__(CompiledProgramProvider)
+            ctx = ArtifactCompileContext(
+                options=PuyaOptions(), compilation_set={}, sources_by_path={},
+                compiled_program_provider=provider, output_path_provider=None)
+            program = M.Program(
+                kind=ProgramKind.approval, main=main, subroutines=list(subs),
+                avm_version=avm_version,
+                slot_allocation=SlotAllocation(
+                    reserved=frozenset(), strategy=SlotAllocationStrategy.none))
+            for s in [main, *subs]:
+                _compat.split_parallel_copies(ctx, s)
+            _destructure_with_orphans(ctx, program)
+            for _ in range(50):
+                try:
+                    teal = mir_to_teal(ctx, program_ir_to_mir(ctx, program))
+                    break
+                except InternalError as e:
+                    # MIR lowering drops a register defined only in a now-unreachable
+                    # block. Define it (typed zero, at entry) in EVERY sub using that
+                    # name: the error doesn't say which sub, and the same name recurs
+                    # across subs, so a first-match define never converges.
+                    m = _compat.UNDEFINED_REGISTER_RE.search(str(e))
+                    hits = m and [
+                        to_puya_ir._define_named_orphan([s], m.group(1), int(m.group(2)))
+                        for s in [main, *subs]]
+                    if not (hits and any(hits)):
+                        raise
+                    logger.warning(
+                        "reconstruction orphan %s#%s defined as typed ZERO during MIR "
+                        "lowering — recompiled TEAL may compute with 0",
+                        m.group(1), m.group(2))
+            else:
+                raise RuntimeError("backend lowering did not converge")
+            return emit_teal(ctx, teal)
     except LiftError:
         raise
     except Exception as e:

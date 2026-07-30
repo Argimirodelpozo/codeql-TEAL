@@ -10,6 +10,7 @@ defined by identity, wired predecessor lists, real ``IRType``/``AVMOp``, and a
 from __future__ import annotations
 
 
+import contextlib
 import copy
 import logging
 
@@ -428,12 +429,42 @@ def _duplicate_shared_epilogues(lifted):
                 _retarget_terminator(src.terminator, bid, clone.id)
 
 
-def to_puya(prog):
+@contextlib.contextmanager
+def _puya_error_capture(stage: str, diagnostics: list | None = None):
+    """Surface the errors Puya REPORTS but does not raise.
+
+    Puya's own validators (intrinsic arg types / arg counts / immediates —
+    ``puya/ir/models.py``) call ``logger.error`` and RETURN, so a type-invalid
+    program flows straight through ``to_puya``/``optimize`` as an apparent
+    success. Installing ``puya.log.logging_context()`` is the only way to see
+    them. On exit: append one line per error/critical to ``diagnostics`` (when
+    given) and emit a single summary warning, so a type-invalid lift is never a
+    silent green."""
+    from puya import log as puya_log
+    with puya_log.logging_context() as ctx:
+        yield
+    if ctx.num_errors:
+        msgs = [f"{lg.level}: {lg.message}"
+                + (f" @ {lg.file}:{lg.line}" if lg.file is not None else "")
+                for lg in ctx.logs if lg.level >= puya_log.LogLevel.error]
+        if diagnostics is not None:
+            diagnostics.extend(msgs)
+        logger.warning(
+            "puya reported %d error(s) during %s — the IR is type-invalid where "
+            "flagged (puya logs these, it does not raise): %s",
+            ctx.num_errors, stage,
+            "; ".join(msgs[:5]) + (" …" if len(msgs) > 5 else ""))
+
+
+def to_puya(prog, *, diagnostics: list | None = None):
     """SSAProgram -> (main, subroutines) as real ``puya.ir.models`` objects, with any
-    lowering failure surfaced as a typed ``LiftError`` (stage ``"lower"``)."""
+    lowering failure surfaced as a typed ``LiftError`` (stage ``"lower"``). Errors
+    puya merely LOGS during model validation are appended to ``diagnostics`` (when
+    given) — see :func:`_puya_error_capture`."""
     from ..errors import LiftError
     try:
-        return _to_puya_impl(prog)
+        with _puya_error_capture("lower", diagnostics):
+            return _to_puya_impl(prog)
     except LiftError:
         raise
     except Exception as e:
@@ -844,14 +875,18 @@ def _coerce_slice_operands(subs) -> None:
                     o.source = attrs.evolve(src, args=new_args)
 
 
-def optimize(subs, *, max_rounds: int = 100, aggressive: bool = False) -> int:
+def optimize(subs, *, max_rounds: int = 100, aggressive: bool = False,
+             diagnostics: list | None = None) -> int:
     """Run Puya's context-free optimiser passes over ``subs`` to a fixpoint (mutating
     them in place, returning the rounds taken), where ``aggressive`` additionally
-    enables the CODEGEN-CHANGING simplifications the faithful default leaves off."""
+    enables the CODEGEN-CHANGING simplifications the faithful default leaves off.
+    Errors puya merely LOGS while rebuilding ops are appended to ``diagnostics``
+    (when given) — see :func:`_puya_error_capture`."""
     from ..errors import LiftError
     try:
-        rounds = _optimize_impl(subs, max_rounds=max_rounds, aggressive=aggressive)
-        _coerce_slice_operands(subs)   # repair a typed-zero fallback that left a slice len as bytes
+        with _puya_error_capture("optimize", diagnostics):
+            rounds = _optimize_impl(subs, max_rounds=max_rounds, aggressive=aggressive)
+            _coerce_slice_operands(subs)   # repair a typed-zero fallback that left a slice len as bytes
         return rounds
     except LiftError:
         raise
@@ -865,7 +900,8 @@ def _optimize_impl(subs, *, max_rounds: int = 100, aggressive: bool = False) -> 
     passes = _opt_passes() + (_aggressive_passes() if aggressive else [])
     log = logging.getLogger("puya")
     prev = log.level
-    log.setLevel(logging.WARNING)
+    if log.getEffectiveLevel() < logging.WARNING:   # only ever RAISE the threshold —
+        log.setLevel(logging.WARNING)               # never re-enable chatter a caller silenced
     try:
         for _attempt in range(40):
             try:

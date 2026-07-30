@@ -7,6 +7,12 @@ that make the lift correct*, using oracles we already have:
   Tier 1 (validity): the lift lowers to genuine ``puya.ir.models`` and Puya's own
     optimiser runs to a fixpoint without rejecting it.
 
+  Tier 1b (puya-reported errors): Puya's model validators LOG arg-type/arity
+    errors instead of raising (``puya/ir/models.py``), so Tier 1 alone passes IR
+    Puya itself considers erroneous. ``to_puya``/``optimize`` now capture those
+    via ``puya.log.logging_context``; the per-contract set of offenders is pinned
+    EXACTLY (a new one is a regression, a fixed one must leave the pin).
+
   Tier 2 (completeness): walk the pre-IR -- every block terminates, every
     ``InvokeSubroutine``'s arity matches its callee, and type recovery did not
     collapse (residual ``"?"`` registers, which lowering would silently default
@@ -169,19 +175,21 @@ def _lower_to_teal(main, subs):
 
 @functools.lru_cache(maxsize=None)
 def _process(contract: str):
-    """(pre_ir Program, lowered main Subroutine, [lowered subs]). Lift + Puya's
-    own IR optimiser only -- the Tier-1/2 bar. Raises if the lift/optimise fails
-    (that is itself the Tier-1 signal). The backend (Tier 3) runs lazily so the
-    expected-fail, slower lowering doesn't burden Tiers 1-2."""
+    """(pre_ir Program, lowered main Subroutine, [lowered subs], puya-reported
+    error lines). Lift + Puya's own IR optimiser only -- the Tier-1/1b/2 bar.
+    Raises if the lift/optimise fails (that is itself the Tier-1 signal); errors
+    Puya merely LOGS are collected for Tier 1b. The backend (Tier 3) runs lazily
+    so the expected-fail, slower lowering doesn't burden Tiers 1-2."""
     from tealql.tealtools.ssa import SSAProgram
     from tealql.tealtools.lift import to_puya_ir
     from tealql.tealtools.lift.lift import lift
+    puya_errors: list = []
     with _quiet_puya():
         prog = SSAProgram(contract)
         pre = lift(prog)                                   # pre-IR for Tier 2
-        main, subs = to_puya_ir.to_puya(prog)              # genuine puya.ir.models
-        to_puya_ir.optimize([main, *subs])                # Puya's own IR optimiser
-    return pre, main, list(subs)
+        main, subs = to_puya_ir.to_puya(prog, diagnostics=puya_errors)
+        to_puya_ir.optimize([main, *subs], diagnostics=puya_errors)
+    return pre, main, list(subs), puya_errors
 
 
 # --------------------------------------------------------------------------
@@ -267,14 +275,37 @@ def test_checker_passes_matching_call_arity():
 @pytest.mark.parametrize("contract", _CONTRACT_PARAMS)
 def test_lifts_and_optimises(contract):
     """Tier 1: SSA lifts to genuine Puya IR and Puya's optimiser accepts it."""
-    pre, main, _subs = _process(contract)
+    pre, main, _subs, _errs = _process(contract)
     assert pre is not None and main is not None
+
+
+# Contracts whose lift currently yields IR puya REPORTS (but does not raise) type
+# errors on — today all "incompatible argument types on Intrinsic(extract3/replace3)":
+# a mistyped REGISTER in a uint64 slot, i.e. a type-recovery gap use-side evidence
+# never corrects (producer-side wins; see type_recovery._infer_types_from_uses).
+# Pinned EXACTLY: a NEW name failing here is a lift regression; fixing recovery for
+# a pinned name must DELETE its entry (the test fails on a stale pin too).
+_KNOWN_PUYA_REPORTED = {"array_Contract", "large_box_operations_NestedItemArrayUInt64"}
+_NAME_BY_PATH = {str(d): n for n, d in _all_contracts()}
+
+
+@pytest.mark.parametrize("contract", _CONTRACT_PARAMS)
+def test_puya_reports_no_errors(contract):
+    """Tier 1b: no puya-LOGGED validator errors (puya logs, it does not raise —
+    a green Tier 1 alone can carry IR puya itself calls erroneous)."""
+    _pre, _main, _subs, errs = _process(contract)
+    name = _NAME_BY_PATH.get(contract, contract)
+    if name in _KNOWN_PUYA_REPORTED:
+        assert errs, (f"{name} is pinned in _KNOWN_PUYA_REPORTED but puya reported "
+                      "no errors — recovery improved; remove the stale pin")
+    else:
+        assert not errs, f"puya reported NEW error(s) for {name}: {errs}"
 
 
 @pytest.mark.parametrize("contract", _CONTRACT_PARAMS)
 def test_pre_ir_well_formed(contract):
     """Tier 2: completeness invariants on the lifted pre-IR."""
-    pre, _main, _subs = _process(contract)
+    pre, _main, _subs, _errs = _process(contract)
     assert _violations(pre) == []
     unknown, total = _unknown_registers(pre)
     assert unknown <= _MAX_UNKNOWN_FRACTION * total, \
@@ -286,7 +317,7 @@ def test_lowers_through_puya_backend(contract):
     """Tier 3 (tracked/xfail): the lifted IR lowers through Puya's real MIR
     stack-allocator + TEAL backend to actual ops. Currently surfaces the lift's
     not-yet-backend-clean gaps on production contracts; flips to xpass when fixed."""
-    _pre, main, subs = _process(contract)
+    _pre, main, subs, _errs = _process(contract)
     teal = _lower_to_teal(main, subs)
     assert sum(len(b.ops) for b in teal.main.blocks) > 0    # produced real TEAL ops
 
