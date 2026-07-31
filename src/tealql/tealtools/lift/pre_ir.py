@@ -302,10 +302,43 @@ class Program:
 
 
 # --------------------------------------------------------------------------
-# Traversal & operand access — the ONE place that knows where a node's Values live,
-# so passes never re-spell the Op/ControlOp dispatch and miss an operand position.
-# ``operands`` reads, ``map_operands`` rewrites in place.
+# Traversal & structural access — the ONE place that knows where a node's Values
+# and SUCCESSORS live, so passes never re-spell the Op/ControlOp dispatch and miss
+# an operand position or an edge. ``operands`` / ``succ_ids`` read,
+# ``map_operands`` / ``map_succ_ids`` rewrite in place.
 # --------------------------------------------------------------------------
+
+
+def succ_ids(term) -> list:
+    """Successor block ids of a terminator, in edge order (no edges -> ``[]``).
+
+    Lives here for the same reason ``operands`` does: a terminator kind added to
+    only some of the spellings silently loses an edge, and this was previously
+    spelled four times across two modules."""
+    if isinstance(term, Goto):
+        return [term.target]
+    if isinstance(term, ConditionalBranch):
+        return [term.non_zero, term.zero]
+    if isinstance(term, GotoNth):
+        return [*term.blocks, term.default]
+    if isinstance(term, Switch):
+        return [b for _, b in term.cases] + [term.default]
+    return []
+
+
+def map_succ_ids(term, fn) -> None:
+    """Rewrite every successor block id of ``term`` in place through ``fn``."""
+    if isinstance(term, Goto):
+        term.target = fn(term.target)
+    elif isinstance(term, ConditionalBranch):
+        term.non_zero = fn(term.non_zero)
+        term.zero = fn(term.zero)
+    elif isinstance(term, GotoNth):
+        term.blocks = [fn(b) for b in term.blocks]
+        term.default = fn(term.default)
+    elif isinstance(term, Switch):
+        term.cases = [(k, fn(b)) for k, b in term.cases]
+        term.default = fn(term.default)
 
 
 def blocks(prog_or_subs):

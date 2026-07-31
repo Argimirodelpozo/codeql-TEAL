@@ -9,13 +9,13 @@ lower it all the way back to TEAL.
 
 ```
 CodeQL TEAL DB
-  └─ SSAProgram(db)              tealql.tealtools.ssa — stack-machine TEAL in SSA form
+  └─ SSAProgram(source)          tealql.tealtools.ssa — stack-machine TEAL in SSA form
        └─ lift(prog)             → pre_ir.Program   (the Puya-SHAPED working model)
             │  recover_types · transforms (phi prune, reused-slot store sink) · …
             └─ to_puya(prog)     → real puya.ir.models  (main, subroutines)
                  ├─ optimize()   Puya's own optimiser passes
                  ├─ render()     → Puya IR text
-                 └─ → MIR → TEAL  (tests/behavioral_lift/recompile.lift_to_teal)
+                 └─ → MIR → TEAL  (backend.lift_to_teal)
 ```
 
 > All commands assume the repo root and `PYTHONPATH=src` (the `tealql`
@@ -25,17 +25,18 @@ CodeQL TEAL DB
 
 ```bash
 # Render a DB as real Puya IR (add --optimize to run Puya's optimiser first)
-PYTHONPATH=src python -m tealql.tealtools.lift <db-path> [--optimize]
+PYTHONPATH=src python -m tealql.tealtools.lift <contract.teal> [--optimize]
 
 # User-input taint report (which attacker-controlled values reach sensitive sinks)
-PYTHONPATH=src python -m tealql.tealtools.lift.taint <db-path>
+PYTHONPATH=src python -m tealql.tealtools.lift.taint <contract.teal>
 
 # …the same, annotated inline on the rendered IR
-PYTHONPATH=src python -m tealql.tealtools.lift.taint --render <db-path>
+PYTHONPATH=src python -m tealql.tealtools.lift.taint --render <contract.teal>
 ```
 
-A `<db-path>` is a CodeQL database directory (the dir containing
-`codeql-database.yml`, or its `db/` subdir).
+The input is a TEAL source path (a file, or a directory of `.teal` for a
+multi-program artifact). CodeQL is no longer involved anywhere on this path.
+
 
 ## Python API
 
@@ -43,7 +44,7 @@ A `<db-path>` is a CodeQL database directory (the dir containing
 from tealql.tealtools.ssa import SSAProgram
 from tealql.tealtools.lift import lift, render
 
-prog = SSAProgram("path/to/db", verbose=False)
+prog = SSAProgram("path/to/contract.teal")
 
 ir   = lift(prog)                    # pre_ir.Program — the working model
 text = render(prog)                  # real Puya IR as text
@@ -62,8 +63,8 @@ to_puya_ir.optimize([main, *subs])           # Puya's optimiser passes
 Recompile all the way **back to TEAL** (used by the behavioural test):
 
 ```python
-from tests.behavioral_lift.recompile import lift_to_teal
-teal = lift_to_teal("path/to/db")            # TEAL text, re-assemblable
+from tealql.tealtools.lift import lift_to_teal
+teal = lift_to_teal("path/to/contract.teal")  # TEAL text, re-assemblable
 ```
 
 ## User-input taint (`taint.py`)
@@ -81,7 +82,7 @@ from tealql.tealtools.lift.lift import _Lifter
 from tealql.tealtools.lift.taint import (
     user_input_taint, tainted_sinks, taint_report, render_with_taint)
 
-lf = _Lifter(SSAProgram("path/to/db", verbose=False)); lf.build()  # need the lifter,
+lf = _Lifter(SSAProgram("path/to/contract.teal")); lf.build()  # need the lifter,
                                                 # for load_stores + the reg map
 taint = user_input_taint(lf)        # {id(Register): frozenset(sources)}
 flows = tainted_sinks(lf)           # [(sources, sink_op, immediates), …]
@@ -101,11 +102,16 @@ the result), and the source set is the three families above.
 | `lift.py` | `_Lifter`: SSA → `pre_ir`. Subroutine partitioning, frame/scratch/stack-shuffle resolution, constant + phi inlining. `lift(prog)` is the entry. |
 | `type_recovery.py` | AVM type + phi recovery on the pre-IR (uses/defs/phi-args/state/calls to a fixpoint; reconciles mixed-type phi webs). |
 | `transforms.py` | In-place structural rewrites: dead-phi pruning, cross-group phi isolation, and `sink_mixed_phi_scratch_stores` (the reused-slot fix). |
-| `optypes.py` | AVM opcode/type metadata — pure data (`_U64_OPS`, txn-field types, …), no IR dependency. |
+| `arc4_recovery.py` | ARC-4 encoded-type recovery (confident tier + a speculative side-channel). |
+| `box_recovery.py` | Rebuild Box/BoxMap declarations from the box opcodes. |
+| `fund_flow.py` | The IR tainted-fund-flow engine and its guard classification. |
+| `summaries.py` | Bottom-up procedure summaries (also consumed by the avm-prover submodule). |
+| `backend.py` | Carry the lowered IR down to TEAL again — `lift_to_teal`. |
+| `_puya_compat.py` | The one place that pins puya's private/moving API surface. |
 | `teal_const.py` | TEAL source / literal parsing — pure text helpers. |
 | `to_puya_ir.py` | Lower the pre-IR to **real** `puya.ir.models`; `to_puya()`, `render()`, `optimize()`. |
 | `taint.py` | User-input taint analysis over the lifted IR (+ report and inline-render). |
-| `__main__.py` | CLI entry — render a DB as Puya IR. |
+| `__main__.py` | CLI entry — render a contract as Puya IR. |
 
 ## Status
 

@@ -711,6 +711,52 @@ class SSAProgram:
         _seed_consts_and_identity_steps(self, self._scratch_influence)
         self._identity_steps_done = True
 
+    # -- shared indexes ----------------------------------------------------
+
+    def entry_blocks(self) -> list:
+        """Each file's entry block, in ``(file, line)`` order.
+
+        Use this rather than ``[b for b in blocks if not b.predecessors]``. TEAL's
+        entry is the FIRST block, and a program whose first block is a branch
+        target (a top-level retry loop) has predecessors on it — so the pred-free
+        spelling silently returns nothing for exactly those programs. That
+        criterion is documented as wrong in ``cfg.dominance.program_entries`` and
+        was still re-derived in three places, one of them incorrectly."""
+        first: dict = {}
+        for bb in self.blocks.values():
+            cur = first.get(bb.file)
+            if cur is None or bb.first_line < cur.first_line:
+                first[bb.file] = bb
+        return [first[f] for f in sorted(first)]
+
+    def phi_users(self, value) -> list:
+        """Every ``Phi`` that takes ``value`` as an argument.
+
+        ``SSAVar.uses`` records OP consumers only, never phi-argument references,
+        so a consumer walking uses alone loses a value at the merge that carries
+        it. Four call sites rebuilt this index by hand — two of them
+        byte-identically — and one carried a HAZARD comment about the trap.
+        Cached; call ``_invalidate_phi_users`` if phi args are rewritten."""
+        idx = getattr(self, "_phi_users_index", None)
+        if idx is None:
+            idx = {}
+            for p in self.phis.values():
+                for a in p.args:
+                    idx.setdefault(id(a), []).append(p)
+            try:
+                self._phi_users_index = idx
+            except AttributeError:      # only if SSAProgram ever gains __slots__
+                idx = idx
+        return idx.get(id(value), [])
+
+    def _invalidate_phi_users(self) -> None:
+        """Drop the :meth:`phi_users` cache — after any pass that rewrites
+        ``Phi.args`` (the lift's dead-edge prune does, then restores)."""
+        try:
+            self._phi_users_index = None
+        except AttributeError:
+            pass
+
     # -- graphviz rendering ------------------------------------------------
 
     def to_dot(self, **kwargs) -> str:

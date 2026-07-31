@@ -44,13 +44,22 @@ def lift_to_teal(source, *, aggressive: bool = False,
     # needs `#pragma version 11` or the assembler rejects it. FLOOR at 10 -- the lift
     # always reconstructs subroutines/stack with `proto`/`dupn`/`frame_*` (v8+), so a
     # lower-versioned source could not assemble its own recompiled body.
+    # MAX across every source, and scan past a header: the pragma is only required
+    # to precede the first instruction, so a licence comment pushes it below a
+    # fixed 4-line window, and taking the LAST file's answer instead of the
+    # highest lets a v10 file veto a v11 sibling. Either way the version comes out
+    # too low and the recompiled body stops assembling — the failure this block
+    # exists to avoid. Stop at the first non-comment, non-blank line.
     avm_version = 10
     for _lines in to_puya_ir._load_src(prog.source_path).values():
-        for _ln in _lines[:4]:
-            _m = re.match(r"#pragma version (\d+)", _ln.strip())
+        for _ln in _lines:
+            _s = _ln.strip()
+            if not _s or _s.startswith("//"):
+                continue
+            _m = re.match(r"#pragma version (\d+)", _s)
             if _m:
-                avm_version = max(int(_m.group(1)), 10)
-                break
+                avm_version = max(avm_version, int(_m.group(1)))
+            break                      # first real line decides for this file
     # Lower + optimise (these raise LiftError stage lower/optimize themselves).
     main, subs = to_puya_ir.to_puya(prog, diagnostics=diagnostics)
     to_puya_ir.optimize([main, *subs], aggressive=aggressive, diagnostics=diagnostics)

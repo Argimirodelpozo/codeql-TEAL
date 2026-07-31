@@ -140,12 +140,12 @@ def _lower_to_teal(main, subs):
     import puya.ir.models as M
     from puya.context import ArtifactCompileContext, CompiledProgramProvider
     from puya.errors import InternalError
-    from puya.ir.destructure.main import destructure_ssa
     from puya.ir.models import ProgramKind, SlotAllocation, SlotAllocationStrategy
     from puya.ir.optimize.main import _split_parallel_copies
     from puya.mir.main import program_ir_to_mir
     from puya.options import PuyaOptions
     from puya.teal.main import mir_to_teal
+    from tealql.tealtools.lift.backend import _destructure_with_orphans
     from tealql.tealtools.lift.to_puya_ir import _define_named_orphan
 
     try:
@@ -162,7 +162,12 @@ def _lower_to_teal(main, subs):
     with _quiet_puya():
         for s in groups:
             _split_parallel_copies(ctx, s)       # ValueTuple sources -> per-value copies
-        destructure_ssa(ctx, program)            # phis -> predecessor-edge copies (out of SSA)
+        # The SHIPPED destructure, not puya's plain one. backend's version runs the
+        # steps PER SUB with an orphan retry at each validate, because
+        # destructure_ssa mutates in place and re-validating an already-destructured
+        # sub raises "assigned multiple times" — so calling the plain one here
+        # tested a sequence no caller uses.
+        _destructure_with_orphans(ctx, program)
         for _ in range(50):
             try:
                 return mir_to_teal(ctx, program_ir_to_mir(ctx, program))

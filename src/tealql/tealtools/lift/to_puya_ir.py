@@ -351,36 +351,12 @@ class _Translator:
         return params
 
 
-def _term_targets(term):
-    if isinstance(term, pre_ir.Goto):
-        return [term.target]
-    if isinstance(term, pre_ir.ConditionalBranch):
-        return [term.non_zero, term.zero]
-    if isinstance(term, pre_ir.GotoNth):
-        return [*term.blocks, term.default]
-    if isinstance(term, pre_ir.Switch):
-        return [b for _, b in term.cases] + [term.default]
-    return []
+_term_targets = pre_ir.succ_ids          # kept: an established import for callers
 
 
 def _retarget_terminator(term, old: int, new: int) -> None:
     """Rewrite every ``old`` block-id target in ``term`` to ``new`` (in place)."""
-    if isinstance(term, pre_ir.Goto):
-        if term.target == old:
-            term.target = new
-    elif isinstance(term, pre_ir.ConditionalBranch):
-        if term.non_zero == old:
-            term.non_zero = new
-        if term.zero == old:
-            term.zero = new
-    elif isinstance(term, pre_ir.GotoNth):
-        term.blocks = [new if b == old else b for b in term.blocks]
-        if term.default == old:
-            term.default = new
-    elif isinstance(term, pre_ir.Switch):
-        term.cases = [(lbl, new if b == old else b) for lbl, b in term.cases]
-        if term.default == old:
-            term.default = new
+    pre_ir.map_succ_ids(term, lambda b: new if b == old else b)
 
 
 def _duplicate_shared_epilogues(lifted):

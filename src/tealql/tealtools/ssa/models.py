@@ -298,6 +298,20 @@ class BasicBlock:
     def contains(self, line: int) -> bool:
         return self.first_line <= line <= self.last_line
 
+    def slot(self, k: int):
+        """The value at TOP-FIRST exit slot ``k`` (1 = top), or ``None`` when the
+        block's ``exit_stack`` is not that deep.
+
+        The convention flip this hides is the codebase's most-feared one:
+        ``exit_stack`` is BOTTOM-first while slots are counted TOP-first, so the
+        read is ``exit_stack[-k]`` guarded by a length check. That pair was
+        open-coded at five sites (block-arg lowering, the lift's dead-edge phi
+        rebuild, the frame bridges, type recovery), and an off-by-one there reads
+        a neighbouring value rather than failing."""
+        if k < 1 or len(self.exit_stack) < k:
+            return None
+        return self.exit_stack[-k]
+
 # AVM metadata tables all live in :mod:`tealql.tealtools.avm`; only the
 # MODEL-convention algorithms (top-first shuffle permutations) belong here.
 from ..avm import _STACK_SHUFFLE_OPS  # noqa: F401  (re-export: ssa-layer callers)

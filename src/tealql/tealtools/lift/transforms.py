@@ -17,17 +17,7 @@ def _intr(o):
     return None
 
 
-def _succ_ids(t) -> list:
-    """Successor block ids of a terminator."""
-    if isinstance(t, pre_ir.Goto):
-        return [t.target]
-    if isinstance(t, pre_ir.ConditionalBranch):
-        return [t.non_zero, t.zero]
-    if isinstance(t, pre_ir.Switch):
-        return [b for _, b in t.cases] + [t.default]
-    if isinstance(t, pre_ir.GotoNth):
-        return list(t.blocks) + [t.default]
-    return []
+_succ_ids = pre_ir.succ_ids              # kept: an established import for callers
 
 
 def _phi_only_scratch_stores(blocks, ph):
@@ -344,17 +334,7 @@ def materialize_phi_consts(prog) -> None:
 
 def _remap_succ_ids(t, idmap: dict) -> None:
     """Rewrite a terminator's successor block ids in place via ``idmap``."""
-    if isinstance(t, pre_ir.Goto):
-        t.target = idmap.get(t.target, t.target)
-    elif isinstance(t, pre_ir.ConditionalBranch):
-        t.non_zero = idmap.get(t.non_zero, t.non_zero)
-        t.zero = idmap.get(t.zero, t.zero)
-    elif isinstance(t, pre_ir.Switch):
-        t.cases = [(k, idmap.get(b, b)) for k, b in t.cases]
-        t.default = idmap.get(t.default, t.default)
-    elif isinstance(t, pre_ir.GotoNth):
-        t.blocks = [idmap.get(b, b) for b in t.blocks]
-        t.default = idmap.get(t.default, t.default)
+    pre_ir.map_succ_ids(t, lambda b: idmap.get(b, b))
 
 
 def _clone_subroutine(callee, new_id: str, rets: list, base_bid: int):
