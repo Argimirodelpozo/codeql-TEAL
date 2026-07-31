@@ -27,6 +27,7 @@ from tealql.tealtools.ssa import SSAProgram
 from tealql.tealtools.passes.frame_flow import (
     frame_local_sources,
     frame_param_sources,
+    frame_unresolved_reads,
     frame_value_sources,
 )
 
@@ -56,38 +57,30 @@ def _frame_digs(prog):
 
 
 @pytest.mark.parametrize("teal", _sample(), ids=lambda p: Path(p).name)
-def test_no_written_local_read_is_left_without_a_source(teal):
-    """THE soundness property: a ``frame_dig`` reading a slot version some
-    ``frame_bury`` WROTE, and carrying no band (narrow fallback, so no inputs),
-    must be reconnected by the frame map. 394 such reads over a 40-probe sample
-    were previously unreachable from their ``frame_bury``.
+def test_every_local_frame_read_is_sourced_or_reported(teal):
+    """THE property, and it is TOTAL: a ``frame_dig`` of a local that carries no
+    band is either given a source, or listed by ``frame_unresolved_reads``. There
+    is no silent third category — that third category was the bug, 394 of 564
+    such reads over a 40-probe sample reading as clean with nothing to say so.
 
-    Scoped to version > 0 deliberately. A version-0 read takes the slot's
-    INITIALISER, which no bury produced — its value is whatever the routine
-    prologue pushed, and recovering that needs the very band arithmetic the
-    narrow fallback could not do. Compiled output initialises locals with
-    constants (``bytec_0 ""`` / ``intc_0 0``), so those reads are clean in
-    practice; hand-written TEAL could park a live value there, which is the
-    residual. Params are likewise not asserted at 100%: ``frame_param_sources``
-    documents that it skips a call site whose ``exit_stack`` was capped (21 of
-    530), and states that absence must be read as unknown, not clean."""
-    from tealql.tealtools.passes.frame_resolution import resolve
-
+    Do NOT scope this by slot version, which an earlier draft of this test did.
+    ``fresh()`` numbers the FIRST write to a slot version 0, so "version > 0" is
+    not "was written" — it silently excused real bury pairings, including the
+    ``callsub``-return case that has a demonstrated taint path behind it."""
     prog = SSAProgram(teal)
-    written = set()                       # frame_dig outputs reading a WRITTEN version
-    for _sub, fr in resolve(prog).items():
-        for out, key in fr.dig_local.items():
-            if key[1] > 0:
-                written.add(id(out))
-    covered = {id(k) for k in frame_value_sources(prog)}
-    orphans = [a for n, a in _frame_digs(prog)
-               if n >= 0 and not a.inputs and a.outputs
-               and id(a.outputs[0]) in written
-               and id(a.outputs[0]) not in covered]
-    assert not orphans, (
-        f"{len(orphans)} frame_dig read(s) of a WRITTEN local have neither a band "
-        f"nor a frame source, so they read as clean: "
-        f"{[f'{a.location.file}:{a.location.line}' for a in orphans[:5]]}")
+    sourced = {id(k) for k in frame_value_sources(prog)}
+    reported = {id(a.outputs[0]) for a in frame_unresolved_reads(prog) if a.outputs}
+    silent = []
+    for n, a in _frame_digs(prog):
+        if n < 0 or a.inputs or not a.outputs:
+            continue
+        oid = id(a.outputs[0])
+        if oid not in sourced and oid not in reported:
+            silent.append(a)
+    assert not silent, (
+        f"{len(silent)} frame read(s) of a local are neither sourced nor reported, "
+        f"so they read as clean with nothing recording the gap: "
+        f"{[f'{a.location.file}:{a.location.line}' for a in silent[:5]]}")
 
 
 @pytest.mark.parametrize("teal", _sample(6), ids=lambda p: Path(p).name)
@@ -153,3 +146,44 @@ def test_taint_survives_a_frame_local_roundtrip():
     assert n_new > n_old, (
         f"the frame-local edge carried no taint ({n_old} -> {n_new}) — either the "
         "join broke or the MAY consumers stopped using frame_value_sources")
+
+
+def test_the_blind_spot_is_reported_not_silent(caplog):
+    """A read the layer cannot source must SAY so. app_2450560800 has two, both
+    the ``callsub``-return shape: `callsub label74; frame_bury 0; ... frame_dig 0;
+    itob; concat; log` — the callee is `proto 2 1` with no bury of its own, so its
+    return is a pushed local and the chain has no SSA value anywhere along it.
+
+    This is the project's own rule applied to a dataflow gap: 0 findings because
+    nothing could be resolved must never read the same as 0 findings because it is
+    clean. Warned once per program so a whole-corpus sweep stays legible."""
+    import logging
+
+    probe = PROBES / "app_2450560800.teal"
+    if not probe.exists():
+        pytest.skip("app_2450560800 not present")
+    prog = SSAProgram(str(probe))
+    blind = frame_unresolved_reads(prog)
+    assert len(blind) == 2, f"expected the 2 known unsourceable reads, got {len(blind)}"
+    assert {a.location.line for a in blind} == {1390, 1440}
+
+    with caplog.at_level(logging.WARNING, logger="tealql.tealtools.passes.frame_flow"):
+        frame_value_sources(prog)
+        first = len(caplog.records)
+        frame_value_sources(prog)
+        assert len(caplog.records) == first, "warned more than once for one program"
+    assert first == 1 and "read as CLEAN" in caplog.records[0].getMessage()
+
+
+def test_a_clean_contract_stays_quiet(caplog):
+    """The warning must be a signal, not noise — nothing to report, nothing said."""
+    import logging
+
+    probe = PROBES / "app_104988925.teal"
+    if not probe.exists():
+        pytest.skip("app_104988925 not present")
+    prog = SSAProgram(str(probe))
+    assert frame_unresolved_reads(prog) == []
+    with caplog.at_level(logging.WARNING, logger="tealql.tealtools.passes.frame_flow"):
+        frame_value_sources(prog)
+    assert not caplog.records

@@ -8,10 +8,13 @@ IR lift. Defined once here so the boolean taint engine, the byte-interval taint
 and the taint graph cannot drift on what "reaches" means."""
 from __future__ import annotations
 
+import logging
 from typing import Optional
 
 from ..ssa import SSAProgram
 from .frame_resolution import resolve, _proto_nargs
+
+logger = logging.getLogger("tealql.tealtools.passes.frame_flow")
 
 
 def frame_param_sources(prog: SSAProgram) -> dict:
@@ -87,6 +90,49 @@ def frame_local_sources(prog: SSAProgram) -> dict:
     return out
 
 
+def frame_unresolved_reads(prog: SSAProgram) -> list:
+    """The ``frame_dig`` assignments this layer CANNOT give a source — the
+    irreducible blind spot, listed rather than left silent.
+
+    Each is a read of a local (``N >= 0``) that carries no band (narrow fallback,
+    so no inputs) and that the source maps could not connect to anything. Two
+    causes, both ending in the same place:
+
+    * the slot holds a PUSHED local — no ``frame_bury`` ever wrote it, the value
+      was left there by ordinary stack traffic;
+    * a bury DID write it, but of a value the base SSA does not carry on the stack
+      — a ``callsub`` return, which only the lift's re-simulation threads, so the
+      burying op has no inputs to take the value from.
+
+    Either way the value sits at band position ``nargs + N``, and finding it needs
+    the band arithmetic the narrow fallback could not do: the position follows
+    from a routine-relative depth, and phase 6c cannot compute one for a block
+    after a ``callsub`` — the continuation is reached along the callee's ``retsub``
+    edge, and no depth is consistent with a stack model that gives ``callsub``
+    arity ``(0, 0)``. Closing it means teaching that model what a call does.
+
+    Measured over the 231 distinct mainnet probes: 43 of 1580 narrow local reads
+    (2.7%), in 5 contracts. Each reads as CLEAN to a may-analysis, so a value
+    reaching one is a possible false negative — hence enumerable here rather than
+    merely absent from the source maps. Deliberately NOT filtered by whether a
+    bury nominally exists: the callsub-return case has a bury and is still
+    invisible, and it is the case with a demonstrated taint path behind it."""
+    covered: set = set()
+    for m in (frame_param_sources(prog), frame_local_sources(prog)):
+        covered |= {id(k) for k in m}
+    out: list = []
+    for a in prog.assignments:
+        if a.op != "frame_dig" or a.inputs or not a.outputs:
+            continue
+        try:
+            n = int(str(a.immediates).strip().split()[0])
+        except (ValueError, IndexError):
+            continue
+        if n >= 0 and id(a.outputs[0]) not in covered:
+            out.append(a)
+    return out
+
+
 def frame_value_sources(prog: SSAProgram) -> dict:
     """``frame_param_sources`` unioned with :func:`frame_local_sources` — every
     value a ``frame_dig`` may read, wherever it came from.
@@ -96,10 +142,31 @@ def frame_value_sources(prog: SSAProgram) -> dict:
     invites using the half that is in scope. MUST consumers must NOT use this —
     ``security._value_flow`` needs the param set specifically, since "every
     caller pins this arg" is a different claim from "every write to this slot
-    flows"."""
+    flows".
+
+    Warns ONCE per program about the reads it cannot source
+    (:func:`frame_unresolved_reads`). Every MAY consumer routes through here, so
+    this is the one place that sees the blind spot — and a value that reads clean
+    because nothing could be resolved must not be indistinguishable from one that
+    reads clean because it IS clean."""
     out = {k: set(v) for k, v in frame_param_sources(prog).items()}
     for k, v in frame_local_sources(prog).items():
         out.setdefault(k, set()).update(v)
+    if not getattr(prog, "_frame_unresolved_warned", False):
+        try:
+            prog._frame_unresolved_warned = True
+        except AttributeError:          # only if SSAProgram ever gains __slots__
+            pass
+        blind = frame_unresolved_reads(prog)
+        if blind:
+            where = ", ".join(f"{a.location.file}:{a.location.line}"
+                             for a in blind[:5])
+            logger.warning(
+                "%d frame read(s) of a local could not be sourced, so they "
+                "read as CLEAN and any value reaching them is invisible to the "
+                "SSA taint layer (%s%s). Cause: no routine-relative depth after a "
+                "callsub; see frame_unresolved_reads.",
+                len(blind), where, " …" if len(blind) > 5 else "")
     return out
 
 
