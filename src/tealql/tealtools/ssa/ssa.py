@@ -1072,12 +1072,26 @@ def _drop_unconsumed_phis(prog: SSAProgram) -> None:
 
     A DIRECT filter, valid only because ``_collapse_phi_args_to_leaves`` has run:
     a public ``Phi.args`` then holds only ``SSAVar``s, so no phi is reachable
-    THROUGH another phi. The assert below pins that precondition."""
+    THROUGH another phi. The assert below pins that precondition.
+
+    ``bb.exit_stack`` counts as a consumer. It is not decoration — block-arg
+    lowering, the lift's phi rebuild and the frame bridges all read
+    ``pred.exit_stack[-k]`` for the per-edge value ``Phi.args`` no longer
+    carries. Filtering on op inputs alone left those slots pointing at phis
+    absent from ``prog.phis`` (288 of 1225 such references over a 40-probe
+    sample): const/range propagation iterates ``prog.phis``, so it never visited
+    them and their ``const_value``/``range`` stayed None forever, making a
+    perfectly live value read as unresolvable. Nulling the slots instead would
+    DELETE the value the rebuild needs, so keep the phi."""
     _reached: set = set()
     for _a in prog.assignments:
         for _inp in _a.inputs:
             if isinstance(_inp, Phi):
                 _reached.add(id(_inp))
+    for _bb in prog.blocks.values():
+        for _e in _bb.exit_stack:
+            if isinstance(_e, Phi):
+                _reached.add(id(_e))
     assert not any(isinstance(_arg, Phi)
                    for _p in prog.phis.values() for _arg in _p.args), \
         "phi args must be leaf-collapsed before _drop_unconsumed_phis"

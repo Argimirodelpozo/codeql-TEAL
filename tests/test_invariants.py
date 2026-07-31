@@ -29,7 +29,7 @@ from pathlib import Path
 
 import pytest
 
-from tealql.tealtools.ssa import SSAProgram
+from tealql.tealtools.ssa import Phi, SSAProgram
 from tealql.tealtools.passes import run_all_passes
 
 TESTS_ROOT = Path(__file__).resolve().parent
@@ -46,6 +46,37 @@ def test_ssa_build_never_crashes(teal):
     # Every real fixture must reconstruct to SSA without raising.
     prog = SSAProgram(str(teal))
     assert prog is not None
+
+
+#: A deterministic slice of the REAL mainnet probes. The benchmark corpus is
+#: small compiled fixtures plus hand-written ones; neither has the block count
+#: or the join depth that produces an unconsumed phi, so an invariant checked
+#: only over CORPUS can pass while every real contract violates it — which is
+#: exactly what happened to the exit_stack invariant below (vacuous on CORPUS,
+#: 288 violations in 40 probes). Every 12th probe by name: wide, stable, ~30
+#: programs, no dependence on which template happens to be popular.
+_PROBES = sorted((TESTS_ROOT / "mainnet-random-probes").glob("*.teal"))[::12]
+_PROBE_IDS = [p.name for p in _PROBES]
+
+
+@pytest.mark.parametrize("teal", (CORPUS + _PROBES),
+                         ids=(_IDS + _PROBE_IDS))
+def test_exit_stack_phis_are_registered(teal):
+    # Every Phi reachable from a block's exit_stack must be in prog.phis.
+    # exit_stack carries the PER-EDGE value Phi.args no longer has, and
+    # block-arg lowering / the lift's phi rebuild / the frame bridges all read
+    # it — but const_prop and range_seed iterate prog.phis, so a phi present
+    # only in exit_stack is never annotated and reads as permanently
+    # unresolvable. _drop_unconsumed_phis used to filter on op inputs alone and
+    # left 288 of 1225 such references dangling across a 40-probe sample.
+    prog = SSAProgram(str(teal))
+    live = {id(p) for p in prog.phis.values()}
+    for bb in prog.blocks.values():
+        for slot in bb.exit_stack:
+            if isinstance(slot, Phi):
+                assert id(slot) in live, (
+                    f"{bb.file}:{bb.first_line} exit_stack holds a Phi "
+                    f"({slot.kind} slot {slot.stack_index}) missing from prog.phis")
 
 
 @pytest.mark.parametrize("teal", CORPUS, ids=_IDS)
