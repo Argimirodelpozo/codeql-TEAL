@@ -170,6 +170,11 @@ class PySSA:
     # Subroutine metadata.
     _bb_to_sub: dict = field(default_factory=dict)
     _proto_io: dict = field(default_factory=dict)
+    # Verified call/return pairings (see _compute_call_pairs):
+    #   cont.key -> (callsub PyBlock, A, R, frozenset of verified retsub pred keys)
+    #   callsub PyBlock -> (cont PyBlock, A, R)
+    _call_pairs: dict = field(default_factory=dict)
+    _pair_by_cs: dict = field(default_factory=dict)
     # Braun on-demand construction state.
     _surv_by_slot: dict = field(default_factory=dict)   # block -> {slot: PyVar}
     _entry_val: dict = field(default_factory=dict)       # (bb_key, slot) -> value
@@ -379,11 +384,13 @@ class PySSA:
         try:
             self._surv_by_slot = {b: {k: v for v, k in self._surv[b]}
                                   for b in self.blocks}
-            self._depth = self._compute_entry_depths()
-            # Routine/frame metadata BEFORE any demand: _read_exit consults the
-            # frame-aware exit sim (frame_bury redefines its slot) from the very
-            # first read, so proto info and frame entry depths must exist now.
+            # Routine/frame metadata BEFORE the depth maps and any demand: both
+            # depth BFSes cross verified call pairings, and _read_exit consults
+            # the frame-aware exit sim (frame_bury redefines its slot) from the
+            # very first read, so proto info and pairings must exist now.
             self._compute_subs_and_protos()
+            self._compute_call_pairs()
+            self._depth = self._compute_entry_depths()
             self._frame_edepth = self._frame_entry_depths()
             # Demand: every entry slot an op consumes (top-first 1..C) per block.
             # The recursion pulls in the passthrough slots successors read.
@@ -395,8 +402,12 @@ class PySSA:
             # top-first entry slot `entry_depth(b) - (nargs+N)`, and that depth
             # only exists in 6c — without demanding the read here, a deep
             # loop-invariant slot gets no join phi and silently reads as 0.
-            # Demand EXACTLY each frame_dig's slot: an over-broad 1..D demand
-            # deepens other blocks and threads wrong values.
+            # `frame_bury N` needs the same demand for the opposite reason: its
+            # fat form only runs when the band down to `nargs+N` is present in
+            # the seed (`target_idx < len(local_stack)`), and the narrow
+            # fallback is a bare pop that DROPS the buried value. Demand
+            # EXACTLY each frame op's slot: an over-broad 1..D demand deepens
+            # other blocks and threads wrong values.
             for b in self.blocks:
                 sub = self._bb_to_sub.get(b)
                 if sub is None or sub not in self._proto_io:
@@ -407,7 +418,8 @@ class PySSA:
                     continue
                 for o in b.ops:
                     n = _frame_imm(o)
-                    if o.op == "frame_dig" and n is not None and n >= 0:
+                    if (o.op in ("frame_dig", "frame_bury")
+                            and n is not None and n >= 0):
                         k = d - (nargs + n)
                         if 1 <= k <= self._depth.get(b.key, 0):
                             self._read_entry(b, k)
@@ -448,6 +460,19 @@ class PySSA:
                 d += net(o)
             if d < 0:
                 d = 0
+            # Cross a verified call to its continuation: the callee consumed the
+            # top A and left R, so the caller's band continues at ``d - A + R``.
+            # The CFG only reaches the continuation along the callee's retsub,
+            # which the same-routine gate below rightly refuses — this crossing
+            # is the caller-side depth that edge cannot carry. A negative result
+            # means the args were not on this routine's band (the model does not
+            # hold); refuse rather than clamp, an absent depth surfaces as None.
+            pair = self._pair_by_cs.get(b)
+            if pair is not None:
+                cont, a, r = pair
+                if d - a + r >= 0 and cont.key not in ed:
+                    ed[cont.key] = d - a + r
+                    wl.append(cont)
             for s in b.succs:
                 # stay within the routine (don't cross callsub/retsub edges)
                 if (self._bb_to_sub.get(s) is self._bb_to_sub.get(b)
@@ -464,7 +489,14 @@ class PySSA:
         reached from its preheader before its latch, so it keeps the true
         loop-invariant depth ``D``; the latch's differing proposal is the
         slot-model artifact that drives the spiral. The resulting cap
-        (``_read_entry(b, k>D) -> None``) is what stops the deep phi climb."""
+        (``_read_entry(b, k>D) -> None``) is what stops the deep phi climb.
+
+        Verified call pairings cross like the values do: a paired continuation
+        gets ``ex - A + R`` from its callsub block (the physical stack after
+        the callee consumed the args and left its results), and the callee's
+        ``retsub`` edge into it proposes nothing — that edge would carry the
+        CALLEE-relative depth, a different frame whose junk cap either culled
+        real reads to None or let artifact chains through uncapped."""
         from collections import deque
         depth: dict = {}
         wl: deque = deque()
@@ -477,7 +509,16 @@ class PySSA:
             ex = depth[b.key] + self._locals[b] - self._consumed[b]
             if ex < 0:
                 ex = 0
+            pair = self._pair_by_cs.get(b)
+            if pair is not None:
+                cont, a, r = pair
+                if ex - a + r >= 0 and cont.key not in depth:
+                    depth[cont.key] = ex - a + r
+                    wl.append(cont)
             for s in b.succs:
+                pair_s = self._call_pairs.get(s.key)
+                if pair_s is not None and b.key in pair_s[3]:
+                    continue                    # verified return edge: wrong frame
                 if s.key not in depth:          # first (forward) reach wins
                     depth[s.key] = ex
                     wl.append(s)
@@ -580,6 +621,30 @@ class PySSA:
                 st.append(v)
         return (st, d)
 
+    def _read_edge(self, b: PyBlock, p: PyBlock, k: int):
+        """Value arriving at ``b``'s entry slot ``k`` along the CFG edge from
+        ``p`` — normally ``p``'s exit slot ``k``, except deep across a verified
+        call return.
+
+        At a paired continuation, slots ``1..R`` really are what the call left
+        on top, so they keep reading the ``retsub`` predecessor's exit. Anything
+        deeper never travelled through the callee: the AVM discards the callee's
+        frame at ``retsub``, leaving the caller's pre-call stack minus the ``A``
+        args, so continuation slot ``k > R`` is the CALLER's pre-call slot
+        ``k - R + A`` — read it from the callsub block, whose exit stack IS the
+        pre-call stack under the ``(0, 0)`` arity convention (args on top, the
+        shape ``frame_param_sources`` and the lift's arg recovery rely on).
+        Reading the retsub edge instead threaded the callee's OWN band into the
+        caller: merge phis over a callee's every local and every OTHER caller's
+        stack (max_args 143 on one mainnet probe), values in slots they never
+        physically occupy."""
+        pair = self._call_pairs.get(b.key)
+        if pair is not None:
+            cs, a_in, r_out, ret_pred_keys = pair
+            if k > r_out and p.key in ret_pred_keys:
+                return self._read_exit(cs, k - r_out + a_in)
+        return self._read_exit(p, k)
+
     def _read_entry(self, b: PyBlock, k: int):
         """Value at ``b``'s ENTRY slot ``k`` (top-first), creating phis on
         demand (Braun ``readVariableRecursive`` — sealed-block path)."""
@@ -600,7 +665,7 @@ class PySSA:
             self._entry_val[key] = None          # routine entry / no incoming def
             return None
         if len(preds) == 1:
-            v = self._read_exit(preds[0], k)
+            v = self._read_edge(b, preds[0], k)
             self._entry_val[key] = v
             return v
         # Join: create the phi, memoise it (breaks back-edge cycles), fill args.
@@ -609,7 +674,7 @@ class PySSA:
         b.entry_phis.append(P)
         self._entry_val[key] = P
         for p in preds:
-            a = self._read_exit(p, k)
+            a = self._read_edge(b, p, k)
             P.args.append(a)
             if isinstance(a, PyPhi):
                 self._phi_users.setdefault(a.key(), set()).add(P)
@@ -689,6 +754,50 @@ class PySSA:
                 except (ValueError, IndexError):
                     pass
         self._proto_io = proto_io
+
+    def _compute_call_pairs(self) -> None:
+        """Verified call/return pairings — the ONE map every call-boundary
+        crossing (depth or value) keys off, so they cannot disagree.
+
+        A ``callsub`` block CS pairs with continuation K only when ALL of:
+
+        * CS's callee entry declares ``proto A R`` (a legacy callee has no
+          declared arity — guessing would be worse than the known gap, and
+          ``lift._infer_arities`` handles those separately);
+        * the construction partition puts K in CS's own routine (the naive
+          return point ``pyblock_partition`` itself uses, so ownership and
+          crossing agree about where the call comes back to);
+        * K really is reached along the callee's return — it has a ``retsub``
+          predecessor OWNED by that callee. ``_pyblock_return_point`` is the
+          naive source-next pairing, so a never-returning callee (or a
+          mispaired K) fails this check and gets NO crossing: an unresolved
+          depth surfaces as None downstream, a wrong one reads a neighbouring
+          frame slot as if it were this one.
+
+        The retsub predecessors are recorded per pair because K may ALSO be an
+        ordinary branch target; only the return edges get call semantics."""
+        from ..subroutines import _pyblock_return_point
+
+        self._call_pairs = {}
+        self._pair_by_cs = {}
+        for cs, cont in _pyblock_return_point(self.blocks).items():
+            if cont is None or cont is cs:
+                continue
+            callee = next((s for s in cs.succs if s in self._proto_io), None)
+            if callee is None:
+                continue
+            if self._bb_to_sub.get(cont) is not self._bb_to_sub.get(cs):
+                continue
+            ret_pred_keys = frozenset(
+                p.key for p in cont.preds
+                if p.ops and p.ops[-1].op == "retsub"
+                and self._bb_to_sub.get(p) is callee
+            )
+            if not ret_pred_keys:
+                continue
+            a, r = self._proto_io[callee]
+            self._call_pairs[cont.key] = (cs, a, r, ret_pred_keys)
+            self._pair_by_cs[cs] = (cont, a, r)
 
     def _try_expand_frame_op(
         self, op: PyOp, local_stack: list, sub: PyBlock, proto: tuple,

@@ -39,7 +39,7 @@
   "inner-txn-fee": {
    "contracts": 9,
    "crashes": 0,
-   "findings": 35
+   "findings": 36
   },
   "ir-arbitrary-inner-appcall": {
    "contracts": 10,
@@ -52,9 +52,9 @@
    "findings": 51
   },
   "ir-partial-tainted-fund-flow": {
-   "contracts": 11,
+   "contracts": 10,
    "crashes": 0,
-   "findings": 23
+   "findings": 21
   },
   "ir-tainted-asset-admin": {
    "contracts": 0,
@@ -79,7 +79,7 @@
   "ir-tainted-log": {
    "contracts": 46,
    "crashes": 0,
-   "findings": 154
+   "findings": 155
   },
   "ir-tainted-state-write": {
    "contracts": 22,
@@ -97,29 +97,29 @@
    "findings": 410
   },
   "timelock-upgrade": {
-   "contracts": 64,
+   "contracts": 65,
    "crashes": 0,
-   "findings": 130
+   "findings": 131
   },
   "unprotected-deletable": {
-   "contracts": 113,
+   "contracts": 111,
    "crashes": 0,
-   "findings": 277
+   "findings": 275
   },
   "unprotected-updatable": {
-   "contracts": 95,
+   "contracts": 93,
    "crashes": 0,
-   "findings": 252
+   "findings": 250
   },
   "unsafe-division-order": {
    "contracts": 34,
    "crashes": 0,
-   "findings": 109
+   "findings": 111
   },
   "unvalidated-group-sibling": {
    "contracts": 31,
    "crashes": 0,
-   "findings": 52
+   "findings": 50
   }
  },
  "distinct_contracts": 231,
@@ -142,7 +142,6 @@
    "abi-method-selector": 9,
    "delete-funds-check": 1,
    "inner-txn-close-rekey": 2,
-   "ir-partial-tainted-fund-flow": 2,
    "is-deletable": 1,
    "is-updatable": 1,
    "unvalidated-group-sibling": 2
@@ -218,7 +217,7 @@
    "is-deletable": 1,
    "is-updatable": 2,
    "unprotected-updatable": 1,
-   "unsafe-division-order": 1
+   "unsafe-division-order": 2
   },
   "0c8b7dcb4cfd9a85": {
    "abi-method-selector": 1,
@@ -452,7 +451,7 @@
    "is-deletable": 1,
    "is-updatable": 2,
    "unprotected-updatable": 1,
-   "unsafe-division-order": 1
+   "unsafe-division-order": 2
   },
   "2496ac53b1095f55": {
    "ir-arbitrary-inner-asset": 1,
@@ -984,7 +983,7 @@
   },
   "8731391f236f81c3": {
    "delete-funds-check": 29,
-   "inner-txn-fee": 8,
+   "inner-txn-fee": 9,
    "is-deletable": 29,
    "is-updatable": 29,
    "timelock-upgrade": 19,
@@ -1237,8 +1236,6 @@
    "ir-tainted-state-write": 6,
    "is-deletable": 1,
    "is-updatable": 1,
-   "unprotected-deletable": 1,
-   "unprotected-updatable": 1,
    "unsafe-division-order": 2
   },
   "a8b077399987e4b2": {
@@ -1292,7 +1289,7 @@
    "abi-method-selector": 1,
    "delete-funds-check": 1,
    "inner-txn-close-rekey": 2,
-   "ir-tainted-log": 12,
+   "ir-tainted-log": 13,
    "is-deletable": 1,
    "is-updatable": 1,
    "unprotected-deletable": 1,
@@ -1317,7 +1314,7 @@
    "group-size-check": 18,
    "ir-tainted-log": 4,
    "unsafe-division-order": 6,
-   "unvalidated-group-sibling": 4
+   "unvalidated-group-sibling": 3
   },
   "afd001f14db2f41f": {
    "delete-funds-check": 1,
@@ -1638,8 +1635,7 @@
    "ir-tainted-state-write": 4,
    "is-deletable": 1,
    "is-updatable": 1,
-   "unprotected-deletable": 1,
-   "unprotected-updatable": 1
+   "timelock-upgrade": 1
   },
   "dfe4e600471ce554": {
    "abi-method-selector": 1,
@@ -1822,7 +1818,7 @@
    "is-updatable": 1,
    "timelock-upgrade": 1,
    "unsafe-division-order": 6,
-   "unvalidated-group-sibling": 4
+   "unvalidated-group-sibling": 3
   },
   "efa9779f8584b2b9": {
    "abi-method-selector": 1,

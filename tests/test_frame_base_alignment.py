@@ -23,6 +23,21 @@ Each half has been wrong on its own, and each way silently corrupted values:
 Both failures show up as the 6c simulator and Braun disagreeing about which
 value flows on an edge, which is what these tests measure — as outcomes on
 committed real contracts, because that is what the divergence actually cost.
+
+The count must be taken in the PRIVATE PySSA representation (2026-07-31, the
+callsub stack-model change). Two public-representation artifacts count phantom
+disagreements:
+
+* ``_build_assignments`` DROPS None inputs, so a fat frame op whose band holds
+  an unmaterialised slot gets a shape-mismatched public input list —
+  ``_shuffle_mapping`` refuses it and resolution stops at an intermediate var;
+* the fat expansion re-mints ``op.outputs``, leaving equal-by-key twin PyVars
+  (the phase-2 survivors Braun handed out) that an ``id()``-keyed resolver
+  treats as distinct leaves.
+
+Resolved over the None-preserving PyOps with key identity, main measured 0
+violations — the historical "2" were both artifacts — and the call-aware stack
+model keeps it at 0, so the ceilings pin ZERO.
 """
 from pathlib import Path
 
@@ -30,6 +45,7 @@ import pytest
 
 from tealql.tealtools.ssa import SSAProgram
 from tealql.tealtools.ssa.models import Phi, _shuffle_mapping
+from tealql.tealtools.ssa.ssa import PyPhi
 
 PROBES = Path(__file__).resolve().parent / "mainnet-random-probes"
 
@@ -60,43 +76,87 @@ def _resolve(v, depth=0):
 
 
 def _real_edge_violations(prog) -> int:
-    """Phi-pred edges where ``pred.exit_stack[-k]`` cannot stand for ANY of the
-    slot-k phi's args, i.e. the 6c simulator and Braun genuinely disagree about
-    which value flows on that edge.
+    """Phi-pred edges where the predecessor's exit slot cannot stand for ANY of
+    the slot-k phi's args, i.e. the 6c simulator and Braun genuinely disagree
+    about which value flows on that edge.
 
-    Both renaming layers must be resolved or this measures representation, not
-    correctness. On the same 40-probe sample the three metrics read: strict
-    identity 599, leaf-aware-only 134, fully resolved 2. The first two counted
-    a value that IS the phi's arg — reached through a collapsed phi or a
-    fat-band rename — as a disagreement, which made a 0.06% problem look like
-    an 18% one."""
-    owner = {}
-    for bb in prog.blocks.values():
-        for ph in bb.phis:
-            owner[id(ph)] = bb
+    Measured in the PRIVATE PySSA representation (None-preserving fat-op
+    mappings, ``(file, line, idx)`` key identity — see the module docstring for
+    the two public-representation artifact classes this avoids). On a verified
+    ``retsub`` edge into a paired continuation, a slot ``k > R`` carries the
+    callsub block's exit slot ``k - R + A`` (the caller's pre-call band), which
+    is what the builder's ``_read_edge`` threads there — the retsub block's own
+    exit stack is the callee's frame and cannot express that per-edge value."""
+    py = prog._pyssa
+    pairs = getattr(py, "_call_pairs", {}) or {}
+    prod = {}
+    for b in py.blocks:
+        for o in b.ops:
+            for i, v in enumerate(o.outputs):
+                prod[v.key()] = (o, i)
+    memo = {}
+
+    def _vkey(v):
+        return ("phi",) + v.key() if isinstance(v, PyPhi) else v.key()
+
+    def _res(v, stack=frozenset()):
+        k = _vkey(v)
+        if k in memo:
+            return memo[k]
+        if k in stack:
+            return set()
+        st = stack | {k}
+        if isinstance(v, PyPhi):
+            out = set()
+            for a in v.args:
+                if a is not None:
+                    out |= _res(a, st)
+        else:
+            out = None
+            d = prod.get(k)
+            if d is not None:
+                o, i = d
+                m = _shuffle_mapping(o)
+                if m is not None and i < len(m) and m[i] < len(o.inputs):
+                    src = o.inputs[m[i]]
+                    if src is not None:
+                        out = _res(src, st)
+            if out is None:
+                out = {k}
+        if not stack:
+            memo[k] = out
+        return out
+
+    by_key = {b.key: b for b in py.blocks}
     bad = 0
-    for ph in prog.phis.values():
+    for ph in prog.phis.values():                  # live public phis only
         if ph.kind != "DirectPhi":
             continue
-        bb = owner.get(id(ph))
-        if bb is None:
+        pyph = prog._phi_to_pyphi.get(ph)
+        if pyph is None:
             continue
-        k = ph.stack_index
-        arg_vals = set()
-        for a in ph.args:
-            arg_vals |= _resolve(a)
-        for pred in bb.predecessors:
-            if len(pred.exit_stack) >= k and pred.exit_stack[-k] is not None:
-                if not (_resolve(pred.exit_stack[-k]) & arg_vals):
-                    bad += 1
+        b = by_key.get(pyph.bb_key)
+        if b is None:
+            continue
+        k = pyph.slot
+        arg_vals = _res(pyph)
+        pair = pairs.get(b.key)
+        for pred in b.preds:
+            if pair is not None and k > pair[2] and pred.key in pair[3]:
+                cs, slot = pair[0], k - pair[2] + pair[1]
+                v = cs.exit_stack[-slot] if len(cs.exit_stack) >= slot else None
+            else:
+                v = pred.exit_stack[-k] if len(pred.exit_stack) >= k else None
+            if v is not None and not (_res(v) & arg_vals):
+                bad += 1
     return bad
 
 
-#: The two contracts that carried essentially all of this divergence, and the
-#: ceiling the corrected index achieves on each. A ceiling, not an equality: the
-#: point is that it must never climb back. Measured on the 40-probe sample, total
-#: fully-resolved violations went 34 -> 2 when the truncation correction landed.
-_CEILINGS = {"app_3300088574.teal": 2, "app_2750067654.teal": 2}
+#: The two contracts that carried essentially all of this divergence. ZERO is
+#: not aspirational: main measured 0 under the artifact-free metric, and the
+#: call-aware stack model must hold that — one half of the builder disagreeing
+#: with the other is how silently wrong values ship.
+_CEILINGS = {"app_3300088574.teal": 0, "app_2750067654.teal": 0}
 
 
 @pytest.mark.parametrize("name,ceiling", sorted(_CEILINGS.items()))
