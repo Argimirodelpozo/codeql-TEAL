@@ -333,10 +333,16 @@ class PySSA:
                     local_stack = list(p.exit_stack)
             sub = self._bb_to_sub.get(b)
             proto = self._proto_io.get(sub) if sub is not None else None
+            # How much of the routine band sits BELOW this seed. Captured once,
+            # from the seed length: both the true depth and local_stack move by
+            # the same net per op, so the shortfall is constant for the block.
+            _ed = getattr(self, "_frame_edepth", {}).get(b.key)
+            missing_below = None if _ed is None else _ed - len(local_stack)
             for op in b.ops:
                 if (op.op in ("frame_dig", "frame_bury")
                         and proto is not None and sub is not None
-                        and self._try_expand_frame_op(op, local_stack, sub, proto, b)):
+                        and self._try_expand_frame_op(
+                            op, local_stack, sub, proto, missing_below)):
                     continue
                 op.inputs = []
                 for _ in range(op.n_in):
@@ -686,26 +692,30 @@ class PySSA:
 
     def _try_expand_frame_op(
         self, op: PyOp, local_stack: list, sub: PyBlock, proto: tuple,
-        bb: Optional[PyBlock] = None,
+        missing_below: Optional[int] = None,
     ) -> bool:
         """Rewrite ``frame_dig N`` / ``frame_bury N`` (either sign of ``N``) to
         the fat-stack convention; ``False`` falls back to the narrow path.
 
-        The target is located TOP-DOWN, by the one frame model the rest of the
-        builder uses: ``frame_dig N`` reads absolute frame position ``nargs + N``
-        (``N < 0`` are args below the base, ``N >= 0`` locals above it), which is
-        top-first slot ``edepth(bb) - (nargs + N)`` — the exact expression
-        :meth:`_phase_braun` demands the read at and
-        :meth:`_build_frame_exit_sim` / :meth:`_read_exit` index by.
+        The target is an ABSOLUTE frame position: ``nargs + N``, counted from the
+        BOTTOM of the routine band (``N < 0`` are args below the base, ``N >= 0``
+        locals above it). So the index is bottom-anchored — but ``local_stack``
+        is only the TOP of that band, because Braun materialises just the entry
+        slots something demanded. ``missing_below`` is how many band slots sit
+        below ``local_stack[0]`` (``edepth(bb) - len(seed)``, constant for the
+        whole block since both sides move by the same net per op), and the index
+        is ``nargs + N - missing_below``.
 
-        HAZARD: do NOT locate it bottom-up from ``len(sub.entry_stack)``, as this
-        did. Braun materialises only the entry slots something demanded, so that
-        length is not ``nargs`` (90 of 202 proto'd subs in the probe corpus have
-        it SHORTER) and ``local_stack`` is likewise only the TOP of the routine
-        band — so a bottom-anchored index silently slides. The two frame
-        simulators then disagreed on 13% of frame ops, which broke the invariant
-        that a successor's slot-``k`` phi finds its per-edge value at
-        ``pred.exit_stack[-k]`` (599 of 3222 phi-pred edges).
+        HAZARD: neither half of that is optional. Dropping the correction (as the
+        original ``len(sub.entry_stack) + N`` did) slides the index whenever the
+        seed is short — ``len(sub.entry_stack)`` is not ``nargs``, being shorter
+        for 90 of 202 proto'd subs in the probe corpus. But converting a TOP-first
+        slot against ``len(local_stack)`` instead is just as wrong: an entry-depth
+        slot only matches the current length at the block's first op, so a
+        ``frame_bury`` after a few pushes (``label39``'s ``dupn 4`` … ``frame_bury
+        1``) computed an out-of-range index, fell back to the narrow path — where
+        ``frame_bury`` is a bare pop with NO definition — and silently lost the
+        buried value.
 
         The consumed band is everything at and above the target; ``frame_dig``
         emits ``n_consumed + 1`` outputs (band + dug copy on top, per
@@ -714,12 +724,10 @@ class PySSA:
             n = int(op.immediates.strip().split()[0])
         except (ValueError, IndexError, AttributeError):
             return False
-        edepth = getattr(self, "_frame_edepth", {}).get(bb.key) if bb is not None else None
-        if edepth is None:
+        if missing_below is None:
             return False              # no routine-relative depth -> narrow path
-        slot = edepth - (proto[0] + n)          # top-first slot of the target
-        target_idx = len(local_stack) - slot
-        if slot < 1 or target_idx < 0 or target_idx >= len(local_stack):
+        target_idx = proto[0] + n - missing_below
+        if target_idx < 0 or target_idx >= len(local_stack):
             return False
         n_consumed = len(local_stack) - target_idx      # top to target inclusive
         band_topfirst = list(reversed(local_stack[target_idx:]))
