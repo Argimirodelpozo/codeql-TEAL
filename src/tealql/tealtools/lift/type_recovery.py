@@ -954,13 +954,159 @@ def _fix_branch_conditions(prog) -> None:
                 t.condition.ir_type = "uint64"
 
 
+def _avm_fixed_family(src):
+    """``'u'`` / ``'b'`` when an ``Intrinsic``'s RESULT type is fixed by the AVM
+    (a typed opcode or a typed txn/global field), else ``None``. The producer-side
+    twin of :func:`_hard_expected_type`, and the same HARD tier
+    :func:`_unify_comparison_operands`'s strength ladder trusts."""
+    if not isinstance(src, pre_ir.Intrinsic):
+        return None
+    if src.op in _U64_OPS:
+        return "u"
+    if src.op in _BYTES_OPS:
+        return "b"
+    # Through avm(): a field's type is often the REFINED name (`txn Sender` is
+    # "account", not "bytes"), which is every bit as AVM-fixed.
+    ft = _field_type(src.op, " ".join(str(i) for i in (src.immediates or [])))
+    f = avm(ft) if ft else "?"
+    return f if f in ("u", "b") else None
+
+
+def _hard_expected_type(op, idx, args, imm):
+    """``_expected_type`` restricted to LANGSPEC-FORCED positions.
+
+    Excludes ``==``/``!=``, whose expectation is merely its peer's current label
+    — relative evidence, already arbitrated by ``_unify_comparison_operands``'s
+    strength ladder. What is left is fixed by the AVM itself: the ``_POS_IN``
+    table, an ``itxn_field``'s field type, the all-uint64 / all-bytes op sets,
+    and a branch/exit condition."""
+    if op in ("==", "!="):
+        return None
+    return _expected_type(op, idx, args, imm)
+
+
+def _fix_langspec_operand_types(prog) -> None:
+    """Correct a register whose recovered type CONTRADICTS the AVM's own.
+
+    Reactive, like :func:`_fix_branch_conditions`, but for the mismatches Puya
+    merely LOGS instead of rejecting. It is needed because the recovery fixpoint
+    is monotone ``?`` -> concrete (:func:`_infer_types_from_uses` skips any
+    register already labelled), so nothing downstream can undo a wrong label —
+    and two passes above hand out wrong labels by design: an unresolved return
+    position becomes ``"uint64"`` in :func:`_reconcile_return_arity` (the
+    lowering default) and :func:`_realign_call_returns` then re-pins the
+    caller's result register to it. A recipient address arriving that way stayed
+    uint64 into ``itxn_field Receiver``, which cost it the ``arc4.Address``
+    recovery that ``box_recovery`` / ``abi_address_fund_flows`` read, and emitted
+    an intrinsic puya reports as type-invalid.
+
+    Correct only where the hard uses AGREE. A register pulled both ways is a
+    real ambiguity, and ``_warn_residual_unknowns`` surfacing it beats a coin
+    flip. Where the value is a call result, the callee's declared return moves
+    with it — but ONLY if every caller agrees; a genuine disagreement is left
+    standing so ``specialize_polymorphic_returns`` can clone the callee per type,
+    which is precisely the evidence ``_realign_call_returns`` used to erase.
+
+    A value whose PRODUCER is AVM-fixed is never touched: ``txn Sender`` returns
+    bytes whatever consumes it, so a use-side disagreement there means the error
+    is elsewhere, and relabelling the producer's result just moves puya's
+    complaint from the argument to the return."""
+    want: dict = {}                        # id(reg) -> {"uint64"/"bytes"} | None
+    reg_by_id: dict = {}
+
+    def note(vp):
+        if not isinstance(vp, pre_ir.Intrinsic):
+            return
+        for i, a in enumerate(vp.args):
+            if not isinstance(a, pre_ir.Register):
+                continue
+            et = _hard_expected_type(vp.op, i, vp.args, vp.immediates)
+            f = avm(et) if et else "?"
+            if f in ("u", "b"):
+                reg_by_id[id(a)] = a
+                want.setdefault(id(a), set()).add(et)
+
+    fixed: set = set()                     # registers the AVM already types
+    for b in pre_ir.blocks(prog):
+        for o in b.ops:
+            note(o.source if isinstance(o, pre_ir.Assignment)
+                 else o.intrinsic if isinstance(o, pre_ir.IntrinsicOp) else None)
+            if isinstance(o, pre_ir.Assignment) and isinstance(o.source, pre_ir.Intrinsic):
+                if _avm_fixed_family(o.source) is not None:
+                    fixed.update(id(t) for t in o.targets)
+
+    # Call results: which (callee, position) a register came out of, and every
+    # register that shares that slot — a retype is only safe if they all agree.
+    sub_by_id = {s.id: s for s in prog.subroutines}
+    slot_of: dict = {}                     # id(reg) -> (callee, pos)
+    slot_regs: dict = {}                   # (callee_id, pos) -> [reg, ...]
+    for b in pre_ir.blocks(prog):
+        for o in b.ops:
+            if isinstance(o, pre_ir.Assignment) and isinstance(
+                    o.source, pre_ir.InvokeSubroutine):
+                callee = sub_by_id.get(o.source.target)
+                if callee is None:
+                    continue
+                for pos, t in enumerate(o.targets):
+                    if isinstance(t, pre_ir.Register):
+                        slot_of[id(t)] = (callee, pos)
+                        slot_regs.setdefault((callee.id, pos), []).append(t)
+
+    phi_targets = {id(ph.register) for b in pre_ir.blocks(prog) for ph in b.phis
+                   if isinstance(ph.register, pre_ir.Register)}
+
+    for rid, types in want.items():
+        if len({avm(t) for t in types}) != 1:
+            continue                       # hard uses disagree -> genuine ambiguity
+        r = reg_by_id[rid]
+        et = next(iter(types))
+        if r.ir_type == "?" or avm(r.ir_type) == avm(et):
+            continue                       # unset or already the right family
+        if rid in phi_targets:
+            continue                       # a phi web is _reconcile_mixed_phis' job
+        if rid in fixed:
+            continue                       # producer is AVM-fixed -> it wins
+        slot = slot_of.get(rid)
+        sites = []
+        if slot is not None:
+            callee, pos = slot
+            for cb in callee.body:
+                t = cb.terminator
+                if isinstance(t, pre_ir.SubroutineReturn) and pos < len(t.result):
+                    rv = t.result[pos]
+                    if isinstance(rv, pre_ir.Register):
+                        sites.append(rv)
+            # The value the callee actually returns may itself be AVM-fixed (a
+            # sub whose tail is `txn Sender`). Then the use expectation is the
+            # side that is wrong, and retyping either end only relocates puya's
+            # complaint from the argument to the return.
+            if any(id(rv) in fixed and avm(rv.ir_type) != avm(et) for rv in sites):
+                continue
+        r.ir_type = et
+        if slot is None:
+            continue
+        callee, pos = slot
+        peers = slot_regs.get((callee.id, pos), ())
+        if any(avm(p.ir_type) != avm(et) for p in peers):
+            continue                       # callers disagree -> let specialize clone
+        if pos < len(callee.returns):
+            callee.returns[pos] = et
+        for rv in sites:                   # keep the return sites consistent
+            if id(rv) not in fixed and avm(rv.ir_type) != avm(et):
+                rv.ir_type = et
+
+
 def finalize_types(prog) -> None:
     """Reconcile types on the assembled ``pre_ir.Program`` after the fixpoint:
-    mixed phi webs, varying-arity returns, call-result and copy propagation, then
-    forcing branch conditions uint64."""
+    mixed phi webs, varying-arity returns, call-result and copy propagation,
+    correcting anything that contradicts the AVM, then forcing branch conditions
+    uint64."""
     _reconcile_mixed_phis(prog)
     _reconcile_return_arity(prog)
     _realign_call_returns(prog)
+    # After the two passes above have handed out lowering defaults, and BEFORE
+    # copy propagation spreads them.
+    _fix_langspec_operand_types(prog)
     _propagate_copy_types(prog)
     _unify_comparison_operands(prog)
     _fix_branch_conditions(prog)

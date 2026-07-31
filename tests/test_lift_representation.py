@@ -144,3 +144,91 @@ def test_unify_does_not_flip_on_a_refined_guess():
     _unify_comparison_operands(prog)
     assert acct.ir_type == "account", "correct operand must not be flipped"
     assert u.ir_type == "uint64", "correct operand must not be flipped"
+
+
+# ---------------------------------------------------------------------------
+# _fix_langspec_operand_types: the AVM's own operand types beat a lowering
+# default (2026-07-30 ssa/+lift review, finding 22)
+# ---------------------------------------------------------------------------
+
+
+def test_langspec_use_corrects_a_lowering_default():
+    """A register the recovery gave the WRONG concrete type must be corrected by
+    a langspec-forced operand position.
+
+    The fixpoint is monotone `?` -> concrete, so nothing downstream could undo a
+    wrong label — and two passes hand them out by design: an unresolved return
+    position becomes "uint64" (_reconcile_return_arity's lowering default) and
+    _realign_call_returns re-pins the caller's result register to it. An address
+    arriving that way stayed uint64 into `itxn_field Receiver`, losing the
+    arc4.Address recovery and emitting an op puya reports as type-invalid.
+    Measured over 30 mainnet probes: 18 of 99 recipient operands mistyped, 36
+    puya arg-type errors, 18 lost address guesses — all now zero."""
+    from tealql.tealtools.lift.type_recovery import _fix_langspec_operand_types
+
+    R = pre_ir.Register
+    wrong = R("r", 0, "uint64")            # a lowering default, not real evidence
+    put = pre_ir.IntrinsicOp(pre_ir.Intrinsic(
+        op="itxn_field", args=[wrong], immediates=["Receiver"]))
+    main = pre_ir.Subroutine(
+        id="main", parameters=[], returns=[], is_main=True,
+        body=[pre_ir.BasicBlock(id=1, phis=[], ops=[put],
+                                terminator=pre_ir.ProgramExit(pre_ir.UInt64Constant(1)))])
+    _fix_langspec_operand_types(pre_ir.Program(main=main, subroutines=[]))
+    assert wrong.ir_type == "bytes", "itxn_field Receiver forces a bytes operand"
+
+
+def test_avm_fixed_producer_is_never_relabelled():
+    """The producer wins when the AVM fixes it. `txn Sender` is an account
+    however it is consumed, so a use-side disagreement means the error is
+    elsewhere — relabelling the result just moves puya's complaint from the
+    argument to the return, which is exactly what the corpus tier caught when
+    this pass first shipped without the guard."""
+    from tealql.tealtools.lift.type_recovery import _fix_langspec_operand_types
+
+    R = pre_ir.Register
+    sender = R("s", 0, "account")
+    read = pre_ir.Assignment([sender], pre_ir.Intrinsic(
+        op="txn", args=[], immediates=["Sender"]))
+    # A uint64-forced position (bzero's length) consuming it: contradictory.
+    use = pre_ir.Assignment([R("z", 0, "bytes")], pre_ir.Intrinsic(
+        op="bzero", args=[sender], immediates=[]))
+    main = pre_ir.Subroutine(
+        id="main", parameters=[], returns=[], is_main=True,
+        body=[pre_ir.BasicBlock(id=1, phis=[], ops=[read, use],
+                                terminator=pre_ir.ProgramExit(pre_ir.UInt64Constant(1)))])
+    _fix_langspec_operand_types(pre_ir.Program(main=main, subroutines=[]))
+    assert sender.ir_type == "account", "an AVM-fixed producer must not be relabelled"
+
+
+@pytest.mark.parametrize("probe", ["app_1050027265.teal", "app_104988925.teal"])
+def test_no_recipient_operand_lowers_as_uint64(probe):
+    """End-to-end on real contracts: every inner-txn address field operand must
+    carry a bytes-family type. A uint64 there is the mistype above, and it costs
+    the register its arc4.Address guess — which box_recovery's _addr_label and
+    abi_address_fund_flows both read."""
+    import logging
+    from pathlib import Path
+
+    from tealql.tealtools.ssa import SSAProgram
+    from tealql.tealtools.lift import to_puya_ir
+    import puya.ir.models as M
+    from puya.ir.avm_ops import AVMOp
+
+    path = Path(__file__).resolve().parent / "mainnet-random-probes" / probe
+    if not path.exists():
+        pytest.skip(f"{probe} not present")
+    logging.getLogger("puya").setLevel(logging.CRITICAL)
+    main, subs = to_puya_ir.to_puya(SSAProgram(str(path)))
+    fields = {"Receiver", "AssetReceiver", "CloseRemainderTo", "AssetCloseTo"}
+    for sub in [main, *subs]:
+        for bb in sub.body:
+            for o in bb.ops:
+                src = o.source if isinstance(o, M.Assignment) else o
+                if not (isinstance(src, M.Intrinsic) and src.op == AVMOp.itxn_field):
+                    continue
+                if not src.args or str(src.immediates[0]) not in fields:
+                    continue
+                t = getattr(src.args[0].ir_type, "name", None)
+                assert t != "uint64", (
+                    f"{probe}: itxn_field {src.immediates[0]} operand typed uint64")

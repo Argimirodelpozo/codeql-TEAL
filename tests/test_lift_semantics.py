@@ -281,8 +281,18 @@ def test_lifts_and_optimises(contract):
 
 # Contracts whose lift currently yields IR puya REPORTS (but does not raise) type
 # errors on — today all "incompatible argument types on Intrinsic(extract3/replace3)":
-# a mistyped REGISTER in a uint64 slot, i.e. a type-recovery gap use-side evidence
-# never corrects (producer-side wins; see type_recovery._infer_types_from_uses).
+# a bytes-labelled REGISTER in a uint64 slot.
+#
+# The non-phi half of this class is FIXED (type_recovery._fix_langspec_operand_types
+# corrects a register whose label contradicts a langspec-forced operand position;
+# over 30 mainnet probes it took recipient mistypes 18 -> 0 and puya arg-type errors
+# 36 -> 0). What remains in BOTH pinned contracts is the PHI-WEB sub-case: the bad
+# operand is a phi register, so correcting it means retyping the whole web, which is
+# _reconcile_mixed_phis' job and this project's most breakage-prone area (see the
+# mixed-type join-phi and assert-0-survivor bugs). Deliberately left pinned rather
+# than half-fixed: the follow-up is to let _reconcile_mixed_phis take langspec
+# consumer evidence into its tier order.
+#
 # Pinned EXACTLY: a NEW name failing here is a lift regression; fixing recovery for
 # a pinned name must DELETE its entry (the test fails on a stale pin too).
 _KNOWN_PUYA_REPORTED = {"array_Contract", "large_box_operations_NestedItemArrayUInt64"}
