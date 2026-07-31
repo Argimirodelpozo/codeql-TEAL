@@ -16,7 +16,6 @@ from tealql.tealtools.ssa import Assignment, Const, SSAProgram, SSAVar
 
 from ._program_shape import file_match, global_field_reads, ssavar_outputs, txn_field_reads
 from ._value_flow import (
-    _frame_param_sources_cached,
     _frame_value_sources_cached,
     _operand_flows_from_field_var,
     _scratch_stores_for,
