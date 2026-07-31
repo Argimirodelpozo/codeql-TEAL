@@ -77,9 +77,9 @@
    "findings": 149
   },
   "ir-tainted-log": {
-   "contracts": 45,
+   "contracts": 46,
    "crashes": 0,
-   "findings": 153
+   "findings": 154
   },
   "ir-tainted-state-write": {
    "contracts": 22,
@@ -1634,6 +1634,7 @@
    "abi-method-selector": 3,
    "delete-funds-check": 1,
    "ir-tainted-fund-flow": 1,
+   "ir-tainted-log": 1,
    "ir-tainted-state-write": 4,
    "is-deletable": 1,
    "is-updatable": 1,

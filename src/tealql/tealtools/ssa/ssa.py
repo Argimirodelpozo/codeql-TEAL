@@ -336,7 +336,7 @@ class PySSA:
             for op in b.ops:
                 if (op.op in ("frame_dig", "frame_bury")
                         and proto is not None and sub is not None
-                        and self._try_expand_frame_op(op, local_stack, sub, proto)):
+                        and self._try_expand_frame_op(op, local_stack, sub, proto, b)):
                     continue
                 op.inputs = []
                 for _ in range(op.n_in):
@@ -686,23 +686,40 @@ class PySSA:
 
     def _try_expand_frame_op(
         self, op: PyOp, local_stack: list, sub: PyBlock, proto: tuple,
+        bb: Optional[PyBlock] = None,
     ) -> bool:
         """Rewrite ``frame_dig N`` / ``frame_bury N`` (either sign of ``N``) to
         the fat-stack convention; ``False`` falls back to the narrow path.
 
-        HAZARD: frame_base sits at bottom-first index ``len(sub.entry_stack)``,
-        so the target is index ``len + N`` for BOTH signs — ``N < 0`` are args
-        below it (at the top of the sub's pre-stack), ``N >= 0`` locals above it
-        (already pushed by the time of the access). The consumed band is
-        everything at and above the target; ``frame_dig`` emits
-        ``n_consumed + 1`` outputs (band + dug copy on top, per
+        The target is located TOP-DOWN, by the one frame model the rest of the
+        builder uses: ``frame_dig N`` reads absolute frame position ``nargs + N``
+        (``N < 0`` are args below the base, ``N >= 0`` locals above it), which is
+        top-first slot ``edepth(bb) - (nargs + N)`` — the exact expression
+        :meth:`_phase_braun` demands the read at and
+        :meth:`_build_frame_exit_sim` / :meth:`_read_exit` index by.
+
+        HAZARD: do NOT locate it bottom-up from ``len(sub.entry_stack)``, as this
+        did. Braun materialises only the entry slots something demanded, so that
+        length is not ``nargs`` (90 of 202 proto'd subs in the probe corpus have
+        it SHORTER) and ``local_stack`` is likewise only the TOP of the routine
+        band — so a bottom-anchored index silently slides. The two frame
+        simulators then disagreed on 13% of frame ops, which broke the invariant
+        that a successor's slot-``k`` phi finds its per-edge value at
+        ``pred.exit_stack[-k]`` (599 of 3222 phi-pred edges).
+
+        The consumed band is everything at and above the target; ``frame_dig``
+        emits ``n_consumed + 1`` outputs (band + dug copy on top, per
         :func:`_shuffle_mapping`) and ``frame_bury`` ``n_consumed - 1``."""
         try:
             n = int(op.immediates.strip().split()[0])
         except (ValueError, IndexError, AttributeError):
             return False
-        target_idx = len(sub.entry_stack) + n
-        if target_idx < 0 or target_idx >= len(local_stack):
+        edepth = getattr(self, "_frame_edepth", {}).get(bb.key) if bb is not None else None
+        if edepth is None:
+            return False              # no routine-relative depth -> narrow path
+        slot = edepth - (proto[0] + n)          # top-first slot of the target
+        target_idx = len(local_stack) - slot
+        if slot < 1 or target_idx < 0 or target_idx >= len(local_stack):
             return False
         n_consumed = len(local_stack) - target_idx      # top to target inclusive
         band_topfirst = list(reversed(local_stack[target_idx:]))
