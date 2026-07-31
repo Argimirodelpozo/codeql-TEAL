@@ -43,6 +43,66 @@ def frame_param_sources(prog: SSAProgram) -> dict:
     return out
 
 
+def frame_local_sources(prog: SSAProgram) -> dict:
+    """``{frame_dig output SSAVar -> set(values a ``frame_bury`` put in that slot)}``.
+
+    The other half of :func:`frame_param_sources`, and the half whose absence was
+    unsound rather than merely imprecise. PySSA models a frame op as a wide band
+    read, which over-approximates and is therefore safe — but only while the band
+    is actually there. When the fat expansion cannot locate the band it falls back
+    to the narrow arity, where ``frame_dig`` is ``(0, 1)``: an output with NO
+    inputs. That is not a wider read, it is an EMPTY one, and a value with no
+    incoming edge reads as clean to every may-analysis. Measured over 40 mainnet
+    probes: 394 of 564 ``frame_dig`` reads of a local were disconnected that way,
+    and unlike the param reads (509 of 530 rescued here) nothing reconnected them
+    — so a value parked in a frame slot and read back lost its taint.
+
+    Both halves of the edge were already computed and simply never joined:
+    ``SubFrames.dig_local`` maps a read to its ``(slot, version)`` and
+    ``SubFrames.bury`` maps each write to the version it opens. The value written
+    is the burying op's ``inputs[0]`` — top-first, so that is the buried operand
+    under the narrow arity and the band top under the fat one.
+
+    Versions are matched EXACTLY rather than unioned across the slot. That is the
+    same model the lift consumes (``lift._setup_frame`` reads ``dig_local``), and
+    it is behaviourally verified against a live AVM, so it is a semantic answer
+    and not an approximation that a may-consumer would need to widen."""
+    out: dict = {}
+    for sub, frames in resolve(prog).items():
+        if not frames.dig_local or not frames.bury:
+            continue
+        buried: dict = {}                     # (slot, version) -> {values}
+        for bb in sub.body:
+            for a in bb.assignments:
+                key = frames.bury.get(id(a))
+                if key is None or not a.inputs:
+                    continue
+                v = a.inputs[0]               # top-first: the value being buried
+                if v is not None:
+                    buried.setdefault(key, set()).add(v)
+        for dig_out, key in frames.dig_local.items():
+            srcs = buried.get(key)
+            if srcs:
+                out.setdefault(dig_out, set()).update(srcs)
+    return out
+
+
+def frame_value_sources(prog: SSAProgram) -> dict:
+    """``frame_param_sources`` unioned with :func:`frame_local_sources` — every
+    value a ``frame_dig`` may read, wherever it came from.
+
+    What a MAY consumer wants: a frame read is a frame read, and splitting the
+    map by whether the slot happens to hold a parameter or a written local only
+    invites using the half that is in scope. MUST consumers must NOT use this —
+    ``security._value_flow`` needs the param set specifically, since "every
+    caller pins this arg" is a different claim from "every write to this slot
+    flows"."""
+    out = {k: set(v) for k, v in frame_param_sources(prog).items()}
+    for k, v in frame_local_sources(prog).items():
+        out.setdefault(k, set()).update(v)
+    return out
+
+
 def scratch_load_sources(prog: SSAProgram) -> dict:
     """``{load N output SSAVar -> [store N value SSAVars that may reach it]}``.
 

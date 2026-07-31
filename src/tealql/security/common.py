@@ -38,6 +38,7 @@ from ._program_shape import (  # noqa: E402,F401
 )
 from ._value_flow import (  # noqa: E402,F401
     _frame_param_sources_cached,
+    _frame_value_sources_cached,
     _operand_flows_from_field_var,
     _scratch_stores_for,
     cached_path_predicates,

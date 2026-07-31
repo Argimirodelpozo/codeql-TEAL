@@ -30,13 +30,34 @@ def cached_path_predicates(prog: SSAProgram) -> PathPredicateAnalysis:
 
 
 def _frame_param_sources_cached(prog: SSAProgram) -> dict:
-    """``frame_param_sources(prog)`` memoised — cheap, but called once per operand."""
+    """``frame_param_sources(prog)`` memoised — cheap, but called once per operand.
+
+    PARAM sources only, deliberately. :func:`field_flows`' walk below is MUST
+    ("every operand must flow"), and "every caller pins this arg" is a different
+    claim from "every write to this slot flows" — so it must not be handed the
+    unioned map. MAY consumers want :func:`_frame_value_sources_cached`."""
     cache = getattr(prog, "_sec_frame_param_sources", None)
     if cache is None:
         from tealql.tealtools.passes.frame_flow import frame_param_sources
         cache = frame_param_sources(prog)
         try:
             prog._sec_frame_param_sources = cache
+        except AttributeError:      # only if SSAProgram ever gains __slots__
+            pass
+    return cache
+
+
+def _frame_value_sources_cached(prog: SSAProgram) -> dict:
+    """``frame_value_sources(prog)`` memoised — params AND written locals, for the
+    MAY-semantics taint consumers. Without the local half a value parked in a
+    frame slot and read back loses its taint entirely (the narrow ``frame_dig``
+    has no inputs at all), which is a false negative rather than imprecision."""
+    cache = getattr(prog, "_sec_frame_value_sources", None)
+    if cache is None:
+        from tealql.tealtools.passes.frame_flow import frame_value_sources
+        cache = frame_value_sources(prog)
+        try:
+            prog._sec_frame_value_sources = cache
         except AttributeError:      # only if SSAProgram ever gains __slots__
             pass
     return cache

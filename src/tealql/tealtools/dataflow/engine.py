@@ -21,7 +21,7 @@ from ..ssa import (
     _shuffle_mapping,
     is_const,
 )
-from ..passes.frame_flow import frame_param_sources, scratch_load_sources
+from ..passes.frame_flow import frame_value_sources, scratch_load_sources
 
 
 Operand = Union[SSAVar, Phi, Const]
@@ -394,7 +394,7 @@ class TaintAnalysis:
 
         # Interprocedural frame edges: the base def-use leaves frame_dig
         # disconnected, so without these taint dies at every callsub.
-        frame_src = frame_param_sources(self.prog)
+        frame_src = frame_value_sources(self.prog)
         scratch_src = scratch_load_sources(self.prog)
 
         # Step 2: fixpoint propagation.

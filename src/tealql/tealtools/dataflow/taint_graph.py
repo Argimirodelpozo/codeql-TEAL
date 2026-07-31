@@ -382,8 +382,8 @@ def _flow_rows_for(prog: SSAProgram) -> list[tuple]:
                       loc.file, loc.start_line, dc, _SCRATCH_KINDS)
 
     # frame params: each caller arg flows into the callee's `frame_dig` read.
-    from ..passes.frame_flow import frame_param_sources
-    for dig_out, args in frame_param_sources(prog).items():
+    from ..passes.frame_flow import frame_value_sources
+    for dig_out, args in frame_value_sources(prog).items():
         dst = _node(dig_out)
         if dst is None:
             continue
