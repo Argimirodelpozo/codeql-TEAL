@@ -9,37 +9,47 @@ HAZARD: ``render`` / ``to_puya`` are exported LAZILY (PEP 562) because
 detector-facing side — ``lift`` / ``_Lifter`` and the pre-IR taint layer — must stay
 puya-free, so never import them eagerly here.
 """
+import logging
+
 from . import pre_ir
 from .lift import lift
 
 __all__ = ["render", "to_puya", "lift", "lift_to_teal", "pre_ir", "build_lifter"]
 
+logger = logging.getLogger("tealql.tealtools.lift")
+
 
 def build_lifter(prog):
     """Build + cache the pre-IR ``_Lifter`` for ``prog``, or ``None`` if it does not lift.
 
-    HAZARD: the lift MUTATES its input CFG, so this lifts a FRESH ``SSAProgram`` off
-    ``prog.source_path`` — never hand it ``prog`` itself. Unlike
-    ``security.common.ir_lifter`` it degrades QUIETLY; both share the ``_ir_lifter``
-    cache, so when ``ir_lifter`` may also run, pre-warm through IT or its
-    reduced-precision warnings are lost."""
+    Lifts ``prog`` ITSELF — the lift restores its input CFG on exit (the dead-edge
+    prune is save/restored), so no fresh re-parse is needed and in-memory programs
+    without a ``source_path`` lift too. Shares the ``_ir_lifter`` cache with
+    ``security.common.ir_lifter``. A ``LiftError`` (an expected coverage gap)
+    degrades QUIETLY by design on this query-side path — when ``ir_lifter`` may
+    also run, pre-warm through IT so its reduced-precision warnings are seen; an
+    UNEXPECTED crash warns either way, since that points at a bug."""
     sentinel = object()
     cached = getattr(prog, "_ir_lifter", sentinel)
     if cached is not sentinel:
         return cached
     lifter = None
-    src = str(getattr(prog, "source_path", "") or "")
-    if src:
+    try:
+        from .lift import _Lifter
+        prog.propagate_constants()
+        lf = _Lifter(prog)
+        lf.build()
+        lifter = lf
+    except Exception as e:
         try:
-            from tealql.tealtools.ssa import SSAProgram
-            from .lift import _Lifter
-            fresh = SSAProgram(src)
-            fresh.propagate_constants()
-            lf = _Lifter(fresh)
-            lf.build()
-            lifter = lf
-        except Exception:
-            lifter = None            # any lift/import failure -> coarse fallback
+            from ..errors import LiftError
+        except ImportError:
+            LiftError = ()
+        if not isinstance(e, LiftError):
+            logger.warning(
+                "pre-IR lift crashed UNEXPECTEDLY (%s: %s) — degrading to the "
+                "SSA layer; this is likely a bug", type(e).__name__, e)
+        lifter = None                # lift failure -> coarse fallback
     try:
         prog._ir_lifter = lifter
     except Exception:

@@ -13,6 +13,7 @@ precise rule taints its output if any input is tainted. Losing a partition is
 acceptable; a false negative is not."""
 from __future__ import annotations
 
+import contextlib
 from typing import Callable, Optional
 
 from ..ssa import (Const, Phi, SSAProgram, SSAVar, binary_operands, const_int,
@@ -475,6 +476,39 @@ def _byte_strip(iv: Intervals, bound: Optional[int], width: int = 32) -> str:
     return cells + ("→" if open_end else "")
 
 
+@contextlib.contextmanager
+def _unification_confined(prog: SSAProgram, active: bool):
+    """Keep the ``validate=True`` unification from OUTLIVING this analysis.
+
+    ``propagate_inputs`` / ``propagate_stack_shuffles`` REWIRE consumers, and the
+    program they run on is one the caller shares with the SSA-layer detectors
+    (``ir_lifter`` lifts it in place rather than re-parsing a copy). Annotations
+    may cross that boundary — they only ever refine — but a rewiring must not:
+    it replaces a ``frame_dig``/shuffle read with a coarse slot-merge phi, which
+    a MAY-semantics consumer then walks into unrelated producers (a 30-arg phi
+    mixing bytes and uint64 producers is a stack-slot artefact, not a value).
+
+    So snapshot the consumer wiring and put it back. A program that ALREADY
+    carried the unification is left alone — that state is its own, not ours."""
+    if not active or (getattr(prog, "_inputs_propagated", False)
+                      and getattr(prog, "_shuffles_propagated", False)):
+        yield
+        return
+    saved_inputs = [(a, list(a.inputs), a.shuffled) for a in prog.assignments]
+    saved_args = [(p, list(p.args)) for p in prog.phis.values()]
+    had = (getattr(prog, "_inputs_propagated", False),
+           getattr(prog, "_shuffles_propagated", False))
+    try:
+        yield
+    finally:
+        for a, ins, shuf in saved_inputs:
+            a.inputs[:] = ins
+            a.shuffled = shuf
+        for p, args in saved_args:
+            p.args[:] = args
+        prog._inputs_propagated, prog._shuffles_propagated = had
+
+
 def byte_taint(
     prog: SSAProgram,
     *,
@@ -487,7 +521,19 @@ def byte_taint(
     bytes a guard pins. It first unifies inputs and shuffles so the validated
     value and its downstream reads share one canonical SSAVar — on a stack
     machine they otherwise diverge across dups and re-reads, and the clearing
-    lands on a value nothing reads."""
+    lands on a value nothing reads. That unification is CONFINED to this call
+    (:func:`_unification_confined`); the result keys on def SSAVars, which the
+    rewiring never touches, so nothing downstream needs it to persist."""
+    with _unification_confined(prog, validate):
+        return _byte_taint_impl(prog, sources=sources, validate=validate)
+
+
+def _byte_taint_impl(
+    prog: SSAProgram,
+    *,
+    sources: Optional[Callable] = None,
+    validate: bool = False,
+) -> ByteTaintResult:
     prog.propagate_constants()
     if validate:
         prog.propagate_inputs()
@@ -756,16 +802,36 @@ class IrByteTaint:
         return (not self.is_covered(reg)) or bool(self.tainted_bytes(reg)) or self.is_scalar_tainted(reg)
 
 
+def _cached_byte_taint(lifter, validate: bool) -> ByteTaintResult:
+    """``byte_taint(lifter.prog)`` memoised per lifter + ``validate``. Keys on the
+    lifter, not the program: the result is consumed through ``lifter.regs``, and a
+    lifter is already the per-program unit both entry points cache."""
+    key = f"_sec_byte_taint_{'v' if validate else 'nv'}"
+    res = getattr(lifter, key, None)
+    if res is None:
+        res = byte_taint(lifter.prog, validate=validate)
+        try:
+            setattr(lifter, key, res)
+        except AttributeError:          # only if _Lifter ever gains __slots__
+            pass
+    return res
+
+
 def byte_taint_view(
     lifter, *, validate: bool = True, result: Optional[ByteTaintResult] = None,
 ) -> IrByteTaint:
     """Carry the SSA byte-taint of ``lifter.prog`` up onto its IR registers.
 
-    ``validate=True`` runs ``propagate_inputs`` on ``lifter.prog``. That rewrites
-    SSAVar CONSUMERS only — the def SSAVars in ``lifter.regs`` persist and still
-    receive their cleared taint, so the register bridge does not desync."""
+    ``validate=True`` unifies inputs on ``lifter.prog`` for the duration of the
+    fixpoint (:func:`_unification_confined`); that rewrites SSAVar CONSUMERS only
+    — the def SSAVars in ``lifter.regs`` persist and still receive their cleared
+    taint, so the register bridge does not desync.
+
+    The fixpoint is MEMOISED on the lifter: the ir-* detectors call this several
+    times per program (three sites in ``ir-partial-tainted-fund-flow`` alone) and
+    each call used to redo the whole analysis."""
     if result is None:
-        result = byte_taint(lifter.prog, validate=validate)
+        result = _cached_byte_taint(lifter, validate)
     bytes_view: dict = {}
     scalar_view: set = set()
     covered: set = set()

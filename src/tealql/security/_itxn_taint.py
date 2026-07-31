@@ -171,9 +171,12 @@ def ir_lifter(prog: SSAProgram, file: Optional[str] = None):
     ``None`` when the contract doesn't lift. Cached per ``prog``; ``file`` is taken
     for signature parity but unused (the lift is whole-program).
 
-    HAZARD: lift from a FRESH ``SSAProgram`` off ``prog.source_path``, never from
-    ``prog`` — the lift MUTATES its input CFG (dead-edge prune + phi rebuild) and
-    the SSA-layer detectors read that same ``prog``.
+    Lifts ``prog`` ITSELF: the lift restores its input CFG on exit (the dead-edge
+    prune + phi rebuild is save/restored inside ``_Lifter.build``), so the
+    SSA-layer detectors reading the same ``prog`` are unaffected and no fresh
+    re-parse is paid — this used to rebuild an ``SSAProgram`` from
+    ``prog.source_path`` per lift, ~45% of the lift path's cost, and made
+    programs without a source path unliftable.
 
     Failure is never silent: it warns, and the ir-* detectors then degrade to an
     SSA-sibling fallback or no findings, which the user must be able to see."""
@@ -196,31 +199,25 @@ def ir_lifter(prog: SSAProgram, file: Optional[str] = None):
                 "(%s). ir-* detectors with an SSA sibling fall back to it; "
                 "the rest report nothing.", e)
     else:
-        src = str(getattr(prog, "source_path", "") or "")
-        if not src:
-            logger.debug(
-                "ir_lifter: program has no source path (in-memory build?) — "
-                "IR layer skipped")
-        else:
-            from tealql.tealtools.errors import LiftError
-            try:
-                fresh = SSAProgram(src)
-                fresh.propagate_constants()
-                lf = _Lifter(fresh)
-                lf.build()
-                lifter = lf
-            except LiftError as e:
-                # EXPECTED coverage gap (~0.1% of real mainnet), so info: the
-                # ir-* fallback is designed behaviour, not an anomaly.
-                logger.info(
-                    "Puya-IR lift did not cover %s (%s) — ir-* detections use "
-                    "their SSA fallback; results may be less precise.", src, e)
-            except Exception as e:
-                # Anything but a LiftError points at a bug, not a coverage limit.
-                logger.warning(
-                    "Puya-IR lift crashed UNEXPECTEDLY for %s (%s: %s) — this "
-                    "is likely a bug; ir-* detections fall back. Please report.",
-                    src, type(e).__name__, e)
+        src = str(getattr(prog, "source_path", "") or "<in-memory>")
+        from tealql.tealtools.errors import LiftError
+        try:
+            prog.propagate_constants()
+            lf = _Lifter(prog)
+            lf.build()
+            lifter = lf
+        except LiftError as e:
+            # EXPECTED coverage gap (~0.1% of real mainnet), so info: the
+            # ir-* fallback is designed behaviour, not an anomaly.
+            logger.info(
+                "Puya-IR lift did not cover %s (%s) — ir-* detections use "
+                "their SSA fallback; results may be less precise.", src, e)
+        except Exception as e:
+            # Anything but a LiftError points at a bug, not a coverage limit.
+            logger.warning(
+                "Puya-IR lift crashed UNEXPECTEDLY for %s (%s: %s) — this "
+                "is likely a bug; ir-* detections fall back. Please report.",
+                src, type(e).__name__, e)
     try:
         prog._ir_lifter = lifter
     except AttributeError:          # only if SSAProgram ever gains __slots__

@@ -166,16 +166,20 @@ def _val_note(local_id: str, t, cap: int = 40) -> str | None:
 def lift(prog: SSAProgram) -> pre_ir.Program:
     """Lift ``prog`` into the Puya-shaped IR model.
 
-    HAZARD: MUTATES ``prog`` — :func:`_prune_dead_assert_edges` drops dead CFG
-    edges and rebuilds join phis on the input SSAProgram. A caller sharing
-    ``prog`` with SSA-level analyses must lift a FRESH program built from the
-    same source (as ``tealql.security.common.ir_lifter`` does)."""
+    The input comes back STRUCTURALLY UNTOUCHED: the dead-assert-edge prune the
+    typed lift needs (:func:`_prune_dead_assert_edges`) is applied for the
+    duration of the build and inverted on exit, success or failure — so a caller
+    may lift the very program its SSA-level analyses read (``build_lifter`` /
+    ``security.common.ir_lifter`` do; no fresh re-parse). Annotation passes the
+    build triggers (const/scratch caches) do land on ``prog`` — they are the
+    shared annotation layer, not mutations."""
     return _Lifter(prog).build()
 
 
-def _prune_dead_assert_edges(prog: SSAProgram) -> None:
+def _prune_dead_assert_edges(prog: SSAProgram):
     """Drop the dead fall-through edges of always-failing ``assert 0`` blocks and
-    rebuild the affected join phis from the surviving predecessors.
+    rebuild the affected join phis from the surviving predecessors, returning an
+    undo record for :func:`_restore_pruned_edges`.
 
     HAZARD: the edge is runtime-dead but STRUCTURAL, so the failing block stays a
     phi predecessor at a join, where it can contribute a value of a different AVM
@@ -185,6 +189,9 @@ def _prune_dead_assert_edges(prog: SSAProgram) -> None:
     pollute, and dropping its only edge would orphan still-live code."""
     from ..ssa import const_int
 
+    undo_edges: list = []              # (block, succ_idx, succ, pred_idx|None)
+    undo_phis: list = []               # (phi, original args list), first-seen
+    seen_phis: set = set()
     dead = [b for b in prog.blocks.values()
             if any(a.op == "assert" and a.inputs and const_int(a.inputs[0]) == 0
                    for a in b.assignments)]
@@ -192,9 +199,12 @@ def _prune_dead_assert_edges(prog: SSAProgram) -> None:
         for s in list(b.successors):
             if len(s.predecessors) <= 1:
                 continue                       # not a join -> no phi to de-pollute
+            si = b.successors.index(s)
+            pi = s.predecessors.index(b) if b in s.predecessors else None
             b.successors.remove(s)
-            if b in s.predecessors:
+            if pi is not None:
                 s.predecessors.remove(b)
+            undo_edges.append((b, si, s, pi))
             for phi in s.phis:
                 if phi.kind != "DirectPhi":
                     continue
@@ -202,7 +212,24 @@ def _prune_dead_assert_edges(prog: SSAProgram) -> None:
                 newargs = [p.exit_stack[-k] for p in s.predecessors
                            if len(p.exit_stack) >= k and p.exit_stack[-k] is not None]
                 if newargs:
+                    if id(phi) not in seen_phis:
+                        seen_phis.add(id(phi))
+                        undo_phis.append((phi, phi.args))
                     phi.args = newargs
+    return undo_edges, undo_phis
+
+
+def _restore_pruned_edges(undo) -> None:
+    """Invert :func:`_prune_dead_assert_edges` exactly — edges re-inserted at
+    their original list positions (successor ORDER can be semantic), original
+    ``phi.args`` lists re-bound."""
+    undo_edges, undo_phis = undo
+    for b, si, s, pi in reversed(undo_edges):
+        b.successors.insert(si, s)
+        if pi is not None:
+            s.predecessors.insert(pi, b)
+    for phi, args in undo_phis:
+        phi.args = args
 
 
 class _Lifter:
@@ -213,17 +240,26 @@ class _Lifter:
 
     def build(self) -> pre_ir.Program:
         """Lift to the pre-IR, surfacing any failure as a typed
-        :class:`tealql.tealtools.errors.LiftError` (stage ``"build"``)."""
+        :class:`tealql.tealtools.errors.LiftError` (stage ``"build"``). The
+        input program's CFG is restored on the way out, success or failure."""
         from ..errors import LiftError
+        # Scratch influence is consumed by the build (load_stores) but CACHED on
+        # prog and shared with the SSA layer — force it BEFORE the prune so the
+        # cache always holds the un-pruned result. (Entry points that pre-run
+        # propagate_constants computed it pre-prune already; this pins the bare
+        # lift() path to the same semantics.)
+        self.prog._ensure_scratch_influence()
+        undo = _prune_dead_assert_edges(self.prog)
         try:
             return self._build_impl()
         except LiftError:
             raise
         except Exception as e:
             raise LiftError(f"{type(e).__name__}: {e}", stage="build") from e
+        finally:
+            _restore_pruned_edges(undo)
 
     def _build_impl(self) -> pre_ir.Program:
-        _prune_dead_assert_edges(self.prog)
         self.form = to_block_args(self.prog)
         self.label2line = {code.rstrip(":").strip(): ln for (_f, ln, code) in self.prog.labels}
         struct = analyze_structure(self.prog)

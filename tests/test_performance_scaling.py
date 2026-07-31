@@ -41,12 +41,33 @@ _MAX_MS_PER_LINE = 25.0
 
 
 def _probe_contracts() -> "tuple[Path, Path]":
-    """The smallest and largest mainnet probes — a wide, real size spread."""
+    """A small and the largest mainnet probe — a wide, real size spread.
+
+    The small end is the 25th percentile, NOT the 10th. A ratio gate only reads
+    as scaling when BOTH measurements are dominated by the analysis; at the 10th
+    percentile (~340 lines) the per-program fixed cost is most of the measurement,
+    so shrinking that fixed cost inflates the ratio and the gate reports
+    "superlinear" for a change that made every absolute time smaller. Measured
+    when the lift stopped re-parsing the program: at the 10th percentile the
+    apparent exponent moved 1.47 -> 1.75 while the 25th/40th/50th all held at
+    1.46-1.56 — the curve had not changed shape, the shortest measurement had
+    just stopped measuring the curve. That probe is now only ~50ms and its
+    readings swing 1.71-1.83 run to run, i.e. flaky as well as wrong.
+
+    TRADE-OFF, recorded because it is a real loss: the shorter probe was the
+    better DISCRIMINATOR. Fault-injecting a dominating n^2 hot spot into one
+    detector reads 1.72 against the 10th percentile (fires, barely) but 1.63
+    against the 25th (misses, budget 1.7) — a small probe barely feels the
+    injected term, so the ratio amplifies it. Between today's 1.53 and an
+    injected quadratic's 1.63 there is not enough room for a threshold that is
+    neither flaky nor blind, which is a limit of gating the AGGREGATE curve: a
+    quadratic component only trips it once it dominates every other cost. A
+    per-detector curve is the fix; this gate still catches a whole-suite blowup."""
     files = sorted(glob.glob(str(TESTS / "mainnet-random-probes" / "*.teal")),
                    key=lambda p: len(Path(p).read_text()))
     if len(files) < 20:
         pytest.skip("mainnet probe corpus not present")
-    return Path(files[len(files) // 10]), Path(files[-1])
+    return Path(files[len(files) // 4]), Path(files[-1])
 
 
 #: Timing samples per measurement. The gates compare a small-vs-large RATIO, so

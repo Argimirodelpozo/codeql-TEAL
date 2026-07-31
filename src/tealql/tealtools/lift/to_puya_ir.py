@@ -571,15 +571,11 @@ def recovered_min_lengths(prog) -> dict:
 
     HAZARD: an ASSUMPTION about well-formed ABI input, NOT a proof — the consumer
     must report any bound it enables as a distinct *speculative* verdict.
-    Lifts a FRESH copy off ``prog.source_path`` because the lift mutates its input
-    CFG. ``{}`` if the contract doesn't lower or has no source path; never raises."""
-    from ..ssa import SSAProgram
-    src_path = str(getattr(prog, "source_path", "") or "")
-    if not src_path:
-        return {}
+    Lifts ``prog`` itself (the lift restores its input CFG on exit, so sharing it
+    with SSA-level analyses is safe). ``{}`` if the contract doesn't lower; never
+    raises."""
     try:
-        fresh = SSAProgram(src_path)
-        main, subs, lifter, t = _to_puya_full(fresh)
+        main, subs, lifter, t = _to_puya_full(prog)
         guesses, confident = guess_encoded_types_scored(main, subs)
     except Exception as e:
         logger.debug("recovered_min_lengths: lower/recover skipped: %s", e)
