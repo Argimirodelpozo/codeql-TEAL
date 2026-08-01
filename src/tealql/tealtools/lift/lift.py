@@ -296,6 +296,8 @@ class _Lifter:
         self.callsite = {cs.callsub_bb: cs for cs in struct.call_sites}
         self.cont_site = {cs.continuation_bb: cs for cs in struct.call_sites
                           if cs.continuation_bb is not None}
+        self._clobber_callees: set = set(
+            getattr(getattr(self.prog, "_pyssa", None), "_clobber_callee_keys", ()) or ())
         self.not_function_shaped: set = set()
         _arity = _infer_arities(struct, self.callsite,
                                 divergent=self.not_function_shaped)
@@ -1052,6 +1054,22 @@ class _Lifter:
             self.resim_args[id(a)] = stack[len(stack) - nargs:]      # param order
             if nargs:
                 del stack[len(stack) - nargs:]
+            if (cs is not None and cs.target_entry is not None
+                    and getattr(cs.target_entry, "_key", None) is not None
+                    and cs.target_entry._key() in self._clobber_callees):
+                # This callee reaches under its own frame with a plain stack op
+                # (`cover`/`uncover`/a dip), which the AVM permits — it bounds
+                # only `frame_dig`/`frame_bury` — so it may have permuted or
+                # eaten the caller's OWN values. This re-simulation otherwise
+                # assumes everything below the args survives a call, and on a
+                # live-AVM differential that assumption emitted the STALE
+                # pre-call value and INVERTED the program's outcome. Nothing
+                # below the args is knowable here, and no `(nargs, nret)` can
+                # say what became of it (expressing it needs per-call-site
+                # inlining), so mark those slots explicitly undefined: still a
+                # lift, never a false value.
+                for _i in range(len(stack)):
+                    stack[_i] = pre_ir.Undefined()
             for r in self.call_results.get(b, []):
                 stack.append(r)
             return

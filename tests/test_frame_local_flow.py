@@ -187,56 +187,37 @@ def test_the_callsub_return_blind_spot_is_closed():
         "dig@1440 no longer sources its callee's returned value")
 
 
-def test_below_frame_writing_callee_resolves_to_the_written_value(tmp_path):
-    """A callee that writes BELOW its own frame must yield the value it WROTE.
+def test_below_band_frame_ops_cannot_run_so_are_never_read_as_clean(tmp_path):
+    """A ``frame_bury`` targeting below its own args is DEAD, and must not be
+    mistaken for a modelable write.
 
-    ``frame_bury -2`` under ``proto 1 1`` targets band position
-    ``nargs + n = -1`` — the CALLER's residual — and rewrites it, so at runtime
-    the caller's ``int 99`` is 7 after the call. Three answers are possible and
-    only one is true: the pre-call value (what the clean caller-side reroute
-    would say — stale), the callee's exit slot (discarded by the retsub
-    truncation), or the residual read AFTER the call past the discarded frame.
-    The classifier calls this callee a WRITER (its below-band access is at a
-    static position, so the exit sim's widened window models it) and the
-    truncation mapping reads ``k - R + h_ret`` off the retsub — the written
-    value. Compilers never emit this; a decompiler pulling chain contracts
-    must still get it right."""
-    teal = tmp_path / "deep_writer.teal"
+    Measured on a live AVM (2026-08-01): the node rejects this at RUNTIME —
+    "frame_bury -2 in sub with 1 args" — not merely at assembly, so no such
+    program can execute. An earlier draft read the "frame is a convention"
+    docs as licence to model the write and thread the caller's residual
+    through the retsub; that machinery described a shape with no runtime
+    meaning, and is gone. What the frame really does NOT bound is PLAIN stack
+    ops (`cover` reaching under the band runs and permutes caller values) —
+    that is the case ``_classify_call_effects`` exists for.
+
+    The requirement that survives: build it, lift it, and never call it
+    clean."""
+    teal = tmp_path / "dead_writer.teal"
     teal.write_text(
-        "#pragma version 8\n"   # L1
-        "int 99\n"              # L2  caller residual (rewritten by the callee!)
-        "int 1\n"               # L3  the arg
-        "callsub evil\n"        # L4
-        "pop\n"                 # L5  pops the return
-        "pop\n"                 # L6  pops the deep slot (k=2 > R=1)
-        "int 1\n"               # L7
-        "return\n"              # L8
-        "evil:\n"               # L9
-        "proto 1 1\n"           # L10
-        "int 7\n"               # L11 the value that lands in the caller
-        "frame_bury -2\n"       # L12 nargs+n = -1: below the args
-        "int 5\n"               # L13 the return value
-        "retsub\n"              # L14
+        "#pragma version 8\n"
+        "int 99\nint 1\ncallsub evil\npop\npop\nint 1\nreturn\n"
+        "evil:\nproto 1 1\nint 7\nframe_bury -2\nint 5\nretsub\n"
     )
     prog = SSAProgram(str(teal))
     py = prog._pyssa
     cont_key = next((k for k in py._call_pairs), None)
-    assert cont_key is not None, "the call should pair (depths stay valid)"
-    assert cont_key in py._writer_conts, (
-        "a static below-band write is MODELABLE — classifying it hard would "
-        "refuse a value the model can derive")
-    assert py._sub_below_reach, "the exit sim window was not widened"
-
-    pop_ret = next(a for a in prog.assignments
-                   if a.op == "pop" and a.location.line == 5)
-    assert any(getattr(i, "line", None) == 13 for i in pop_ret.inputs), (
-        "slot k <= R is the VM-enforced return value (int 5 at L13)")
+    assert cont_key is not None, "the call should still pair (depths stay valid)"
+    assert cont_key in py._value_unsafe_conts, (
+        "an out-of-frame frame_bury must not leave the continuation reading the "
+        "caller's pre-call value as if the callee were clean")
     pop_deep = next(a for a in prog.assignments
                     if a.op == "pop" and a.location.line == 6)
-    lines = {getattr(i, "line", None) for i in pop_deep.inputs}
-    assert lines == {11}, (
-        f"the deep slot must be the value the callee WROTE (int 7 at L11), "
-        f"not the stale pre-call 99 at L2 nor a refusal; got lines {lines}")
+    assert not pop_deep.inputs, "the withdrawn deep slot must refuse"
 
 
 def test_reroute_into_a_context_insensitive_cycle_terminates(tmp_path):

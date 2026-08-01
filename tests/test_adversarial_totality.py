@@ -6,6 +6,13 @@ on hand-written code, but it must always (a) BUILD, (b) assert only true value
 facts — an underivable value is an explicit unknown, never a plausible wrong
 one — and (c) LIFT to IR without raising.
 
+The sharpest case measured: a callee that consumes the CALLER's stack has no
+function signature to lift to, and assuming its caller's values survived
+INVERTED a program's outcome against a live AVM. The lift keeps clause (c) by
+marking those slots ``Undefined`` — an explicit unknown, the same answer it
+already gives a not-function-shaped sub — instead of the stale value. Recovering
+the real values there needs per-call-site inlining.
+
 Each fixture here is legal AVM behaviour that no compiler emits — the frame is
 a convention, not a boundary, and pre-proto callsub/retsub are just jumps with
 NO stack truncation (a no-proto callee's exit stack IS the continuation's
@@ -13,10 +20,18 @@ stack, verbatim — which is why the pre-call-model threading is kept, correct i
 bloated, for legacy calls).
 
 The third element pins the call-effect class (:meth:`PySSA._classify_call_effects`):
-``"clean"`` (residual untouched — deep slots read the callsub block),
-``"writer"`` (below-band writes at static positions — deep slots read the
-retsub through the truncation mapping and SEE the writes), ``"hard"``
-(unmodelable — deep slots refuse), or ``None`` where no verified pair exists.
+``"clean"`` (residual untouched — deep slots read the callsub block), ``"hard"``
+(the callee may have permuted the caller's residual — deep slots refuse), or
+``None`` where no verified pair exists.
+
+VERIFIED ON A LIVE AVM (2026-08-01) — the docs call the frame a convention,
+which is only half true and misled an earlier draft here:
+
+* ``frame_dig`` / ``frame_bury`` outside the frame are rejected at RUNTIME, not
+  just by the assembler, so those shapes cannot execute and are dead;
+* PLAIN stack ops are unbounded: ``cover 3`` under a ``proto 1 1`` band runs and
+  permutes the caller's values — the real below-band case, and why HARD exists;
+* the bound is re-checked at ``retsub``, so a dip must restore the height.
 """
 
 from pathlib import Path
@@ -40,13 +55,17 @@ _FIXTURES = {
         "legacy:\nint 5\nint 6\nretsub\n",
         None,
     ),
-    # proto'd callee writing BELOW its args — rewrites the caller's residual.
-    "below_frame_bury": (
+    # proto'd callee whose frame_bury targets BELOW its args. The AVM rejects
+    # this at runtime, so the program is dead — but it must still build and
+    # lift, and must never be read as clean.
+    "below_frame_bury_is_dead": (
         "#pragma version 8\nint 99\nint 1\ncallsub evil\npop\npop\nint 1\n"
         "return\nevil:\nproto 1 1\nint 7\nframe_bury -2\nint 5\nretsub\n",
-        "writer",
+        "hard",
     ),
-    # proto'd callee PERMUTING across its band boundary with cover.
+    # proto'd callee PERMUTING across its band boundary with cover — LEGAL and
+    # RUNS on the AVM (the frame bounds frame ops, not plain stack ops), so the
+    # caller's residual really is rewritten. Refused by the lift, see below.
     "cross_band_cover": (
         "#pragma version 8\nint 1\nint 2\nint 3\ncallsub perm\npop\nint 1\n"
         "return\nperm:\nproto 1 1\nint 7\nint 8\ncover 3\nretsub\n",
@@ -106,11 +125,7 @@ _FIXTURES = {
 def _effect_class(py) -> "str | None":
     if not py._call_pairs:
         return None
-    if py._value_unsafe_conts:
-        return "hard"
-    if py._writer_conts:
-        return "writer"
-    return "clean"
+    return "hard" if py._value_unsafe_conts else "clean"
 
 
 @pytest.mark.parametrize("name", sorted(_FIXTURES))
@@ -251,3 +266,33 @@ def test_a_real_divergent_legacy_sub_is_still_caught():
     lifter = _Lifter(SSAProgram(str(probe)))
     lifter.build()
     assert {s.name for s in lifter.not_function_shaped} == {"label9"}
+
+
+def test_a_callee_that_eats_the_callers_stack_yields_undefined_not_a_stale_value():
+    """The measured wrong-answer case, and the answer that replaced it.
+
+    ``perm`` is ``proto 1 1`` and does ``cover 3``, which reaches UNDER its own
+    frame band and moves an 8 into the caller's residual. The AVM runs this —
+    verified live: the frame bounds ``frame_dig``/``frame_bury`` (runtime error
+    outside it) but places NO bound on plain stack ops — so the caller's second
+    value really is 8 after the call, and the contract APPROVES.
+
+    ``_resim`` assumed a call leaves everything below its args alone, so the
+    lift emitted ``pushints 2 8; ==`` — the STALE pre-call value — and the
+    recompiled program REJECTED: 10 of 10 dryrun inputs diverged, outcome
+    inverted. No ``(nargs, nret)`` can express "and it ate two of your values",
+    so recovering the real value needs per-call-site inlining. What the lift
+    owes meanwhile is an explicit unknown, never the stale value."""
+    probe = Path(__file__).resolve().parent / "contracts" / "hostile-crossband"
+    teal = probe / "crossband.teal"
+    if not teal.exists():
+        pytest.skip("hostile-crossband fixture not present")
+    prog = SSAProgram(str(teal))
+    assert prog._pyssa._residual_clobber_conts, (
+        "the cross-band cover must be classified as clobbering the caller")
+    rendered = lift(prog).render()
+    assert "undefined" in rendered, (
+        "the clobbered caller slot must lift as an explicit unknown")
+    assert "2u" not in rendered, (
+        "the lift asserted the STALE pre-call value for a slot the callee "
+        f"overwrote — the measured outcome-inverting bug is back:\n{rendered}")

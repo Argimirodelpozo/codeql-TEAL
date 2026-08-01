@@ -178,20 +178,16 @@ class PySSA:
     # (bb_key, slot) resolutions currently on the _read_entry stack — the
     # no-join-cycle guard (see _read_entry).
     _reading: set = field(default_factory=set)
-    # Call-effect classification (see _classify_call_effects).
-    #   _value_unsafe_conts: callee's below-band effect is UNMODELABLE — deep
-    #     continuation slots refuse; depth crossings remain (writes and
-    #     permutes change no heights).
-    #   _writer_conts: callee writes below its band at STATIC positions — deep
-    #     slots read the retsub block through the truncation mapping and see
-    #     the writes.
-    #   _sub_below_reach: sub -> how far below its band it reaches, the extra
-    #     window _build_frame_exit_sim seeds so those cells are modelled.
-    #   _retsub_height: retsub bb_key -> band height there (the discarded frame).
+    # Continuation keys whose callee may have rewritten the caller's residual
+    # stack (see _classify_call_effects) — deep continuation slots refuse there;
+    # depth crossings remain (permutes change no heights).
     _value_unsafe_conts: set = field(default_factory=set)
-    _writer_conts: set = field(default_factory=set)
-    _sub_below_reach: dict = field(default_factory=dict)
-    _retsub_height: dict = field(default_factory=dict)
+    # Subset of the above whose callee may have CLOBBERED the caller's residual
+    # (an op consumed past the band). The lift cannot express that — its
+    # re-simulation assumes a call leaves the residual alone — so it refuses
+    # rather than emit a program with different behaviour.
+    _residual_clobber_conts: set = field(default_factory=set)
+    _clobber_callee_keys: set = field(default_factory=set)
     # Braun on-demand construction state.
     _surv_by_slot: dict = field(default_factory=dict)   # block -> {slot: PyVar}
     _entry_val: dict = field(default_factory=dict)       # (bb_key, slot) -> value
@@ -660,20 +656,11 @@ class PySSA:
         if d is None or d < 0:
             return None
         nargs = self._proto_io[sub][0]
-        # A sub classified as a WRITER reaches below its own band, so simulate a
-        # window that wide: the extra cells are the CALLER's residual, entry
-        # slots deeper than the band, which thread back through the callee entry
-        # to the call sites exactly as an ordinary deep read does. Without the
-        # window the below-band write bails to the narrow path, where
-        # ``frame_bury`` is a bare pop with no definition — the write would
-        # vanish and the continuation would read the stale pre-call value.
-        m = self._sub_below_reach.get(sub, 0)
-        d += m
         st: list = [("entry", d - i) for i in range(d)]
         for o in p.ops:
             n = _frame_imm(o) if o.op in ("frame_dig", "frame_bury") else None
             if n is not None:
-                pos = m + nargs + n
+                pos = nargs + n
                 if o.op == "frame_dig":
                     if not (0 <= pos < len(st)):
                         return None
@@ -722,18 +709,6 @@ class PySSA:
                     # and the callee's exit slot is discarded by the truncation.
                     # Refuse — a surfaced unknown, never a wrong value.
                     return None
-                if b.key in self._writer_conts:
-                    # THE TRUNCATION MAPPING. This callee did write below its
-                    # band, so the caller's residual must be read AFTER the
-                    # call — off this very ``retsub``, past the frame the VM
-                    # discards there (``h_ret``, per-retsub because paths can
-                    # return at different heights). Same shape as the clean
-                    # path's ``k - R + A``, with the discarded frame being the
-                    # whole band instead of just the args.
-                    h_ret = self._retsub_height.get(p.key)
-                    if h_ret is None:
-                        return None
-                    return self._read_exit(p, k - r_out + h_ret)
                 return self._read_exit(cs, k - r_out + a_in)
         return self._read_exit(p, k)
 
@@ -928,37 +903,41 @@ class PySSA:
 
         * CLEAN — never touches below its own band, so the residual is exactly
           the pre-call stack and the continuation's deep slots read the
-          CALLSUB block (the cheap path).
-        * WRITER (``_sub_below_reach``) — reaches below the band, but only via
-          ``frame_dig``/``frame_bury`` at STATIC positions, which
-          :meth:`_build_frame_exit_sim` models exactly once its window is
-          widened by that reach. The continuation's deep slots then read the
-          RETSUB block through the truncation mapping and SEE the writes.
-        * HARD (``_value_unsafe_conts``) — the effect cannot be modelled at
-          all: an unknowable band height, an op consuming past the band (a dip
-          or cross-band ``cover``/``uncover``/``bury``, whose arity says how
-          many cells it took but not which caller values they were), a nested
-          call needing more args than the band holds, or a ``callsub`` that is
-          not its block's terminator. Deep slots there REFUSE.
+          CALLSUB block.
+        * HARD (``_value_unsafe_conts``) — an op consuming past the band, an
+          unknowable band height, a nested call needing more args than the
+          band holds, or a ``callsub`` that is not its block's terminator.
+          Deep slots there REFUSE.
 
-        The AVM's frame is a convention, not a boundary — a callee can reach
-        below its own band, and compiled output never does but hand-written
-        TEAL may — so "continuation slot ``k > R`` is the caller's pre-call
-        slot" holds only for CLEAN callees and must be replaced (writer) or
-        withdrawn (hard) otherwise. Depth crossings survive every class:
-        writes and permutes change no heights, and a returning ``retsub``'s
-        stack shape is VM-enforced, so the band stays locatable.
+        WHAT THE AVM ACTUALLY ENFORCES (measured on a live node, 2026-08-01 —
+        the docs describe the frame as a convention, which misled an earlier
+        draft of this into modelling shapes that cannot run):
+
+        * ``frame_dig``/``frame_bury`` outside the frame are rejected at
+          RUNTIME, not merely by the assembler ("frame_bury -2 in sub with 1
+          args"). A below-band frame op therefore cannot execute at all, so
+          the sub is dead and refusing costs nothing.
+        * PLAIN stack ops are NOT bounded by the frame: ``cover 3`` reaching
+          under a ``proto 1 1`` band runs and permutes the caller's values.
+          This is the real below-band case and the reason HARD exists.
+        * The bound is re-checked at ``retsub`` ("retsub executed with stack
+          below frame"), so a callee may dip below only if it puts the height
+          back — the values it took are still gone.
+
+        Depth crossings survive both classes: a permute changes no heights,
+        and a returning ``retsub``'s stack shape is VM-enforced, so the band
+        stays locatable even where the values do not.
 
         A block matters only if it CAN REACH a ``retsub`` of its sub (over the
         construction-policy local edges — an internal callsub flows to its
-        return point): the reroute's claim is about the stack AT retsub, so a
-        region that only ever exits the program (a never-returning branch, the
-        dead continuation of a call to an assert-fail helper — exactly where
-        band heights are legitimately unknowable) cannot compromise it, however
-        it writes. Within reaching blocks, an uncomputable height IS unsafe —
-        including every live continuation of a legacy no-proto call, whose
-        frame ops act directly on the CALLER's frame. Unsafety is transitive
-        over ``callsub`` (a clean wrapper around a deep writer inherits it)."""
+        return point): the claim being protected is about the stack AT retsub,
+        so a region that only ever exits the program (a never-returning branch,
+        the dead continuation of a call to an assert-fail helper — exactly
+        where band heights are legitimately unknowable) cannot compromise it,
+        however it writes. Within reaching blocks, an uncomputable height IS
+        unsafe — including every live continuation of a legacy no-proto call,
+        whose frame ops act directly on the CALLER's frame. Unsafety is
+        transitive over ``callsub`` (a clean wrapper inherits its callee's)."""
         def net(op):
             if op.op == "frame_dig":
                 return 1
@@ -996,7 +975,7 @@ class PySSA:
 
         _READONLY = frozenset({"dig", "frame_dig", "dup", "dup2", "dupn"})
         unsafe: set = set()
-        reach: dict = {}                       # sub -> cells written below band
+        clobber: set = set()        # unsafe BECAUSE caller values were consumed
         calls: dict = {}
         for b in self.blocks:
             sub = self._bb_to_sub.get(b)
@@ -1013,15 +992,11 @@ class PySSA:
                 continue
             nargs = self._proto_io.get(sub, (0, 0))[0]
             for i, o in enumerate(b.ops):
-                if o.op in ("frame_bury", "frame_dig"):
+                if o.op == "frame_bury":
                     n = _frame_imm(o)
-                    if n is None:
+                    if n is None or nargs + n < 0:
                         unsafe.add(sub)
                         break
-                    if nargs + n < 0:
-                        # MODELABLE below-band access: the position is static,
-                        # so widening the exit sim's window covers it exactly.
-                        reach[sub] = max(reach.get(sub, 0), -(nargs + n))
                 elif o.op == "callsub":
                     if i != len(b.ops) - 1:
                         unsafe.add(sub)      # sim would have to model a call
@@ -1031,54 +1006,41 @@ class PySSA:
                          if s in self._proto_io), 0)
                     if a_callee > h:
                         unsafe.add(sub)
+                        clobber.add(sub)
                         break
                 elif o.n_in > h and o.op not in _READONLY:
-                    # A dip or a cross-band cover/uncover/bury: its arity says
-                    # how many cells it consumed, not which caller values they
-                    # were, so no window makes the sim faithful.
+                    # A dip or a cross-band cover/uncover/bury. The AVM does
+                    # NOT bound plain stack ops by the frame (verified live:
+                    # `cover 3` under a `proto 1 1` band runs and permutes the
+                    # caller's values), and the op's arity says how many cells
+                    # it consumed, not which caller values they were.
                     unsafe.add(sub)
+                    clobber.add(sub)
                     break
                 h += net(o)
         changed = True
         while changed:
             changed = False
             for sub, callees in calls.items():
-                if sub in unsafe:
-                    continue
-                if None in callees or callees & unsafe:
+                if sub not in unsafe and (None in callees or callees & unsafe):
                     unsafe.add(sub)
                     changed = True
-                    continue
-                # A callee's below-band writes reach at most that far below the
-                # CALLER's band too (the callee's band bottom sits at or above
-                # it), so inheriting the max is a sound window bound.
-                inherited = max((reach.get(c, 0) for c in callees), default=0)
-                if inherited > reach.get(sub, 0):
-                    reach[sub] = inherited
+                if sub not in clobber and callees & clobber:
+                    clobber.add(sub)
                     changed = True
-        self._sub_below_reach = {s: m for s, m in reach.items()
-                                 if s not in unsafe and m > 0}
-        self._value_unsafe_conts = set()
-        self._writer_conts = set()
-        for cont_key, pair in self._call_pairs.items():
-            callee = pair[4]
-            if callee in unsafe:
-                self._value_unsafe_conts.add(cont_key)
-            elif callee in self._sub_below_reach:
-                self._writer_conts.add(cont_key)
-        # Band height at each retsub — the frame the VM discards there, and so
-        # the anchor the truncation mapping counts the caller's residual from.
-        self._retsub_height = {}
-        for b in self.blocks:
-            if not (b.ops and b.ops[-1].op == "retsub"):
-                continue
-            h = self._frame_edepth.get(b.key)
-            if h is None:
-                continue
-            for o in b.ops:
-                h += net(o)
-            if h >= 0:
-                self._retsub_height[b.key] = h
+        self._value_unsafe_conts = {
+            cont_key for cont_key, pair in self._call_pairs.items()
+            if pair[4] in unsafe
+        }
+        self._residual_clobber_conts = {
+            cont_key for cont_key, pair in self._call_pairs.items()
+            if pair[4] in clobber
+        }
+        # Keyed by CALLEE ENTRY as well, because the lift pairs calls with the
+        # corrected continuation policy while `_call_pairs` uses the
+        # construction one — the two can disagree, and a consumer must not
+        # miss a clobbering callee because the pairing differs.
+        self._clobber_callee_keys = {sub.key for sub in clobber}
 
     def _try_expand_frame_op(
         self, op: PyOp, local_stack: list, sub: PyBlock, proto: tuple,

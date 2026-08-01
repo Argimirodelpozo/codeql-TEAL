@@ -1,0 +1,20 @@
+#pragma version 8
+// Legal-but-hostile: `cover 3` inside a `proto 1 1` sub reaches UNDER the frame
+// and permutes the CALLER's own values. Verified on a live AVM: the frame
+// bounds frame_dig/frame_bury (runtime error outside it) but NOT plain stack
+// ops, so this runs. The caller then READS the permuted slot, so any model that
+// assumes its residual survived the call gets a different answer.
+int 1
+int 2
+int 3
+callsub perm
+pop
+int 8
+==
+return
+perm:
+proto 1 1
+int 7
+int 8
+cover 3
+retsub
