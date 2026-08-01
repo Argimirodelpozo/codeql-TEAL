@@ -168,13 +168,96 @@ def test_the_callsub_return_blind_spot_is_closed():
         pytest.skip("app_2450560800 not present")
     prog = SSAProgram(str(probe))
     assert not frame_unresolved_reads(prog), "the closed blind spot re-opened"
+
+    def _leaf_lines(srcs) -> set:
+        out: set = set()
+        for s in srcs:
+            for leaf in (s.args if getattr(s, "args", None) else (s,)):
+                line = getattr(leaf, "line", None)
+                if line is not None:
+                    out.add(line)
+        return out
+
     by_line = {}
     for dig_out, srcs in frame_local_sources(prog).items():
         by_line[dig_out.defined_by.location.line] = srcs
-    assert any(getattr(s, "line", None) == 872 for s in by_line.get(1390, ())), (
+    assert 872 in _leaf_lines(by_line.get(1390, ())), (
         "dig@1390 no longer sources label74's returned value")
-    assert any(getattr(s, "line", None) == 1201 for s in by_line.get(1440, ())), (
+    assert 1201 in _leaf_lines(by_line.get(1440, ())), (
         "dig@1440 no longer sources its callee's returned value")
+
+
+def test_below_frame_writing_callee_withdraws_the_value_reroute(tmp_path):
+    """A callee that writes BELOW its own frame must not let the continuation
+    assert pre-call values.
+
+    The AVM's frame is a convention: ``frame_bury -2`` under ``proto 1 1``
+    targets band position ``nargs + n = -1`` — the CALLER's residual stack —
+    and rewrites it (here the ``int 99`` becomes 7 at runtime). The call-aware
+    model's deep-slot claim "continuation slot k > R is the caller's pre-call
+    slot k - R + A" is false for such callees, so ``_flag_band_unsafe_pairs``
+    must withdraw the value reroute (falling back to the pre-existing model)
+    while keeping the depth crossing (writes change no heights). Compiler
+    output never does this — the gate exists for adversarial/hand-written
+    TEAL, where a silently wrong value is the one unacceptable failure."""
+    teal = tmp_path / "deep_writer.teal"
+    teal.write_text(
+        "#pragma version 8\n"   # L1
+        "int 99\n"              # L2  caller residual (rewritten by the callee!)
+        "int 1\n"               # L3  the arg
+        "callsub evil\n"        # L4
+        "pop\n"                 # L5  pops the return
+        "pop\n"                 # L6  pops the deep slot (k=2 > R=1)
+        "int 1\n"               # L7
+        "return\n"              # L8
+        "evil:\n"               # L9
+        "proto 1 1\n"           # L10
+        "int 7\n"               # L11
+        "frame_bury -2\n"       # L12 nargs+n = -1: below the args
+        "int 5\n"               # L13
+        "retsub\n"              # L14
+    )
+    prog = SSAProgram(str(teal))
+    py = prog._pyssa
+    cont_key = next((k for k in py._call_pairs), None)
+    assert cont_key is not None, "the call should still PAIR (depths stay valid)"
+    assert cont_key in py._value_unsafe_conts, (
+        "a below-frame-writing callee must withdraw the deep-slot value reroute")
+    pop_deep = next(a for a in prog.assignments
+                    if a.op == "pop" and a.location.line == 6)
+    stale = prog.var(str(teal), 2, 1)
+    assert not any(i is stale for i in pop_deep.inputs), (
+        "the continuation asserted the caller's PRE-CALL value for a slot the "
+        "callee rewrote — the exact silently-wrong-value class the gate exists "
+        "to prevent")
+
+
+def test_reroute_into_a_context_insensitive_cycle_terminates(tmp_path):
+    """The deep-slot reroute reads the CALLSUB block, skipping the callee entry
+    — which used to be the join that broke value-walk cycles created by the
+    context-insensitive retsub fan-out (a continuation is statically reachable
+    through ANOTHER caller's call). The walk must terminate on such shapes
+    (slot-shifting cycles hit the depth cap; a slot-fixed cycle hits the
+    ``_reading`` re-entry guard) — a RecursionError here is a contract we
+    fail to build at all."""
+    teal = tmp_path / "cycle.teal"
+    teal.write_text(
+        "#pragma version 8\n"
+        "callsub f\n"           # outside call: makes the loop region reachable
+        "int 1\n"
+        "return\n"
+        "xsite:\n"
+        "callsub f\n"           # in-loop call; its continuation follows
+        "pop\n"                 # pops the return (k=1)
+        "pop\n"                 # demands k=2 > R -> rerouted through xsite
+        "b xsite\n"             # single-pred loop back to the call site
+        "f:\n"
+        "proto 0 1\n"
+        "int 5\n"
+        "retsub\n"
+    )
+    prog = SSAProgram(str(teal))    # must not RecursionError
+    assert prog.blocks, "build produced no blocks"
 
 
 def test_the_blind_spot_is_reported_not_silent(tmp_path, caplog):

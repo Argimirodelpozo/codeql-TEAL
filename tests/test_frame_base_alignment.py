@@ -89,6 +89,7 @@ def _real_edge_violations(prog) -> int:
     exit stack is the callee's frame and cannot express that per-edge value."""
     py = prog._pyssa
     pairs = getattr(py, "_call_pairs", {}) or {}
+    withdrawn = getattr(py, "_value_unsafe_conts", set()) or set()
     prod = {}
     for b in py.blocks:
         for o in b.ops:
@@ -140,7 +141,7 @@ def _real_edge_violations(prog) -> int:
             continue
         k = pyph.slot
         arg_vals = _res(pyph)
-        pair = pairs.get(b.key)
+        pair = pairs.get(b.key) if b.key not in withdrawn else None
         for pred in b.preds:
             if pair is not None and k > pair[2] and pred.key in pair[3]:
                 cs, slot = pair[0], k - pair[2] + pair[1]

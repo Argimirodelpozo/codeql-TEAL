@@ -175,6 +175,13 @@ class PySSA:
     #   callsub PyBlock -> (cont PyBlock, A, R)
     _call_pairs: dict = field(default_factory=dict)
     _pair_by_cs: dict = field(default_factory=dict)
+    # (bb_key, slot) resolutions currently on the _read_entry stack — the
+    # no-join-cycle guard (see _read_entry).
+    _reading: set = field(default_factory=set)
+    # Continuation keys whose callee may rewrite the caller's residual stack
+    # (see _flag_band_unsafe_pairs) — the deep-slot value reroute is withdrawn
+    # there; depth crossings remain (heights are unaffected by writes).
+    _value_unsafe_conts: set = field(default_factory=set)
     # Braun on-demand construction state.
     _surv_by_slot: dict = field(default_factory=dict)   # block -> {slot: PyVar}
     _entry_val: dict = field(default_factory=dict)       # (bb_key, slot) -> value
@@ -392,6 +399,7 @@ class PySSA:
             self._compute_call_pairs()
             self._depth = self._compute_entry_depths()
             self._frame_edepth = self._frame_entry_depths()
+            self._flag_band_unsafe_pairs()
             # Demand: every entry slot an op consumes (top-first 1..C) per block.
             # The recursion pulls in the passthrough slots successors read.
             for b in self.blocks:
@@ -639,8 +647,8 @@ class PySSA:
         stack (max_args 143 on one mainnet probe), values in slots they never
         physically occupy."""
         pair = self._call_pairs.get(b.key)
-        if pair is not None:
-            cs, a_in, r_out, ret_pred_keys = pair
+        if pair is not None and b.key not in self._value_unsafe_conts:
+            cs, a_in, r_out, ret_pred_keys = pair[:4]
             if k > r_out and p.key in ret_pred_keys:
                 return self._read_exit(cs, k - r_out + a_in)
         return self._read_exit(p, k)
@@ -658,29 +666,60 @@ class PySSA:
             # net-changing loop would otherwise climb to.
             self._entry_val[key] = None
             return None
+        if key in self._reading:
+            # A value-walk cycle re-entered an IN-FLIGHT single-pred
+            # resolution. Braun breaks join cycles by memoising the phi before
+            # recursing, and every reachable CFG cycle contains a >=2-pred
+            # block — but the walk is not the CFG: the call-return reroute
+            # reads the CALLSUB block for deep continuation slots, skipping
+            # the callee entry that may have been the only join on the cycle.
+            # Braun's answer for exactly this is the operandless placeholder
+            # phi: hand it out now, and the outer frame completes it when its
+            # value arrives — whereupon it trivially collapses to that value,
+            # or to None when the cycle defines nothing (joinless passthrough
+            # all the way around). Never registered in ``phis``/``entry_phis``:
+            # a single-arg phi always collapses.
+            P = PyPhi(b.key, k)
+            self._entry_val[key] = P
+            return P
         if k > self._max_entry.get(b.key, 0):
             self._max_entry[b.key] = k
         preds = b.preds
         if not preds:
             self._entry_val[key] = None          # routine entry / no incoming def
             return None
-        if len(preds) == 1:
-            v = self._read_edge(b, preds[0], k)
+        self._reading.add(key)
+        try:
+            if len(preds) == 1:
+                v = self._read_edge(b, preds[0], k)
+                ph = self._entry_val.get(key, _MISSING)
+                if (ph is not _MISSING and isinstance(ph, PyPhi)
+                        and ph.key() == key):
+                    # A re-entrant read minted the placeholder for THIS
+                    # resolution while we recursed; complete and collapse it
+                    # so its users get the real value.
+                    ph.args.append(v)
+                    if isinstance(v, PyPhi):
+                        self._phi_users.setdefault(v.key(), set()).add(ph)
+                    v = self._try_remove_trivial(ph)
+                self._entry_val[key] = v
+                return v
+            # Join: create the phi, memoise it (breaks back-edge cycles), fill
+            # args.
+            P = PyPhi(b.key, k)
+            self.phis[key] = P
+            b.entry_phis.append(P)
+            self._entry_val[key] = P
+            for p in preds:
+                a = self._read_edge(b, p, k)
+                P.args.append(a)
+                if isinstance(a, PyPhi):
+                    self._phi_users.setdefault(a.key(), set()).add(P)
+            v = self._try_remove_trivial(P)
             self._entry_val[key] = v
             return v
-        # Join: create the phi, memoise it (breaks back-edge cycles), fill args.
-        P = PyPhi(b.key, k)
-        self.phis[key] = P
-        b.entry_phis.append(P)
-        self._entry_val[key] = P
-        for p in preds:
-            a = self._read_edge(b, p, k)
-            P.args.append(a)
-            if isinstance(a, PyPhi):
-                self._phi_users.setdefault(a.key(), set()).add(P)
-        v = self._try_remove_trivial(P)
-        self._entry_val[key] = v
-        return v
+        finally:
+            self._reading.discard(key)
 
     def _try_remove_trivial(self, P: PyPhi):
         """Braun ``tryRemoveTrivialPhi``: if ``P``'s args (ignoring self-refs) are
@@ -796,8 +835,120 @@ class PySSA:
             if not ret_pred_keys:
                 continue
             a, r = self._proto_io[callee]
-            self._call_pairs[cont.key] = (cs, a, r, ret_pred_keys)
+            self._call_pairs[cont.key] = (cs, a, r, ret_pred_keys, callee)
             self._pair_by_cs[cs] = (cont, a, r)
+
+    def _flag_band_unsafe_pairs(self) -> None:
+        """Withdraw the VALUE reroute from continuations whose callee may have
+        rewritten the caller's residual stack — populate ``_value_unsafe_conts``.
+
+        The AVM's frame is a convention, not a boundary: a callee can reach
+        BELOW its own band with ``frame_bury n < -nargs``, with any stack op
+        whose consumption exceeds the current band height (``bury``/``cover``/
+        ``uncover``/``popn``/plain arithmetic after a dip — all of them pop or
+        permute caller values and push replacements), or by passing a callsub
+        more args than it has (the callee's retsub truncation then eats below
+        this band). Compilers emit none of these; hand-written TEAL may. No
+        per-block sim on either side of the builder models such writes, so for
+        these callees the claim "continuation slot ``k > R`` is the caller's
+        pre-call slot ``k - R + A``" is NOT VM-enforced — asserting it would be
+        a silently wrong value, the one failure mode this model must never
+        have. Purely-reading deep ops (``dig``/``frame_dig``/``dup*``) are
+        safe. Depth crossings are kept even for flagged callees: writes and
+        permutes change no heights, and a returning ``retsub``'s stack shape is
+        VM-enforced, so the frame band stays locatable.
+
+        A block matters only if it CAN REACH a ``retsub`` of its sub (over the
+        construction-policy local edges — an internal callsub flows to its
+        return point): the reroute's claim is about the stack AT retsub, so a
+        region that only ever exits the program (a never-returning branch, the
+        dead continuation of a call to an assert-fail helper — exactly where
+        band heights are legitimately unknowable) cannot compromise it, however
+        it writes. Within reaching blocks, an uncomputable height IS unsafe —
+        including every live continuation of a legacy no-proto call, whose
+        frame ops act directly on the CALLER's frame. Unsafety is transitive
+        over ``callsub`` (a clean wrapper around a deep writer inherits it)."""
+        def net(op):
+            if op.op == "frame_dig":
+                return 1
+            if op.op == "frame_bury":
+                return -1
+            return op.n_out - op.n_in
+
+        # Reverse reachability to a retsub over local edges (callsub -> its
+        # return point; retsub/return/err terminal), mirroring pyblock_partition.
+        from ..subroutines import _pyblock_return_point
+        return_point = _pyblock_return_point(self.blocks)
+        local_preds: dict = {}
+        reach_wl: list = []
+        for b in self.blocks:
+            if not b.ops:
+                continue
+            last = b.ops[-1].op
+            if last == "retsub":
+                reach_wl.append(b)
+                continue
+            if last in ("return", "err"):
+                continue
+            succs = ([return_point.get(b)] if last == "callsub"
+                     else b.succs)
+            for s in succs:
+                if s is not None:
+                    local_preds.setdefault(s, []).append(b)
+        reaches_retsub: set = set(reach_wl)
+        while reach_wl:
+            b = reach_wl.pop()
+            for p in local_preds.get(b, ()):
+                if p not in reaches_retsub:
+                    reaches_retsub.add(p)
+                    reach_wl.append(p)
+
+        _READONLY = frozenset({"dig", "frame_dig", "dup", "dup2", "dupn"})
+        unsafe: set = set()
+        calls: dict = {}
+        for b in self.blocks:
+            sub = self._bb_to_sub.get(b)
+            if sub is None or b not in reaches_retsub:
+                continue
+            if b.ops and b.ops[-1].op == "callsub":
+                for s in b.succs:
+                    calls.setdefault(sub, set()).add(self._bb_to_sub.get(s))
+            if sub in unsafe:
+                continue
+            h = self._frame_edepth.get(b.key)
+            if h is None:
+                unsafe.add(sub)
+                continue
+            nargs = self._proto_io.get(sub, (0, 0))[0]
+            for o in b.ops:
+                if o.op == "frame_bury":
+                    n = _frame_imm(o)
+                    if n is None or nargs + n < 0:
+                        unsafe.add(sub)
+                        break
+                elif o.op == "callsub":
+                    a_callee = next(
+                        (self._proto_io[s][0] for s in b.succs
+                         if s in self._proto_io), 0)
+                    if a_callee > h:
+                        unsafe.add(sub)
+                        break
+                elif o.n_in > h and o.op not in _READONLY:
+                    unsafe.add(sub)
+                    break
+                h += net(o)
+        changed = True
+        while changed:
+            changed = False
+            for sub, callees in calls.items():
+                if sub not in unsafe and (None in callees
+                                          or callees & unsafe):
+                    unsafe.add(sub)
+                    changed = True
+        self._value_unsafe_conts = {
+            cont_key for cont_key, pair in self._call_pairs.items()
+            if pair[4] in unsafe
+        }
 
     def _try_expand_frame_op(
         self, op: PyOp, local_stack: list, sub: PyBlock, proto: tuple,
