@@ -223,13 +223,17 @@ def test_below_frame_writing_callee_withdraws_the_value_reroute(tmp_path):
     assert cont_key is not None, "the call should still PAIR (depths stay valid)"
     assert cont_key in py._value_unsafe_conts, (
         "a below-frame-writing callee must withdraw the deep-slot value reroute")
+    pop_ret = next(a for a in prog.assignments
+                   if a.op == "pop" and a.location.line == 5)
+    assert any(getattr(i, "line", None) == 13 for i in pop_ret.inputs), (
+        "slot k <= R is the VM-enforced return value (the int 5 at L13) and "
+        "must keep threading")
     pop_deep = next(a for a in prog.assignments
                     if a.op == "pop" and a.location.line == 6)
-    stale = prog.var(str(teal), 2, 1)
-    assert not any(i is stale for i in pop_deep.inputs), (
-        "the continuation asserted the caller's PRE-CALL value for a slot the "
-        "callee rewrote — the exact silently-wrong-value class the gate exists "
-        "to prevent")
+    assert not pop_deep.inputs, (
+        "the withdrawn deep slot must REFUSE: the pre-call value may be "
+        "rewritten and the callee's exit slot is discarded by the retsub "
+        "truncation — either would be a silently wrong value")
 
 
 def test_reroute_into_a_context_insensitive_cycle_terminates(tmp_path):

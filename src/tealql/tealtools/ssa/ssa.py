@@ -647,9 +647,18 @@ class PySSA:
         stack (max_args 143 on one mainnet probe), values in slots they never
         physically occupy."""
         pair = self._call_pairs.get(b.key)
-        if pair is not None and b.key not in self._value_unsafe_conts:
+        if pair is not None:
             cs, a_in, r_out, ret_pred_keys = pair[:4]
             if k > r_out and p.key in ret_pred_keys:
+                if b.key in self._value_unsafe_conts:
+                    # The callee can rewrite the caller's residual stack, so
+                    # NEITHER candidate is the runtime value: the pre-call slot
+                    # may have been overwritten, and the callee's exit slot is
+                    # discarded by the proto retsub truncation. Refuse — a
+                    # surfaced unknown, never a silently wrong value. (A
+                    # below-frame effect summary could supply the real answer;
+                    # until then this is the honest one.)
+                    return None
                 return self._read_exit(cs, k - r_out + a_in)
         return self._read_exit(p, k)
 
@@ -856,7 +865,11 @@ class PySSA:
         have. Purely-reading deep ops (``dig``/``frame_dig``/``dup*``) are
         safe. Depth crossings are kept even for flagged callees: writes and
         permutes change no heights, and a returning ``retsub``'s stack shape is
-        VM-enforced, so the frame band stays locatable.
+        VM-enforced, so the frame band stays locatable. The withdrawn deep
+        reads REFUSE (``None``) rather than fall back to threading the retsub
+        exit — for a proto'd callee that fallback ignores the retsub
+        truncation and is silently wrong; a refusal is surfaced by
+        ``frame_flow`` and lifts as an explicit unknown.
 
         A block matters only if it CAN REACH a ``retsub`` of its sub (over the
         construction-policy local edges — an internal callsub flows to its

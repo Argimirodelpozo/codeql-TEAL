@@ -141,9 +141,11 @@ def _real_edge_violations(prog) -> int:
             continue
         k = pyph.slot
         arg_vals = _res(pyph)
-        pair = pairs.get(b.key) if b.key not in withdrawn else None
+        pair = pairs.get(b.key)
         for pred in b.preds:
             if pair is not None and k > pair[2] and pred.key in pair[3]:
+                if b.key in withdrawn:
+                    continue        # builder REFUSES these; nothing to compare
                 cs, slot = pair[0], k - pair[2] + pair[1]
                 v = cs.exit_stack[-slot] if len(cs.exit_stack) >= slot else None
             else:
