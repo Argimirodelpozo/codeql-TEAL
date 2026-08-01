@@ -111,8 +111,16 @@ def _infer_arities(struct, callsite, *, divergent: "set | None" = None) -> dict:
             # MAX over ALL retsub sites, not the first reached: a sub whose paths
             # diverge would otherwise silently truncate a deeper path's returns.
             ret_d = max(ret_ds) if ret_ds else None
-            if divergent is not None and len(set(ret_ds)) > 1:
-                divergent.add(s)
+            # HAZARD: reflect the CONVERGED iteration, so discard as well as add.
+            # Early iterations assume (0, 0) for every legacy callee, which makes
+            # a path THROUGH one look shallower than its siblings — accumulating
+            # the mark would report a sub that is perfectly function-shaped once
+            # its callee's arity is known.
+            if divergent is not None:
+                if len(set(ret_ds)) > 1:
+                    divergent.add(s)
+                else:
+                    divergent.discard(s)
             na, nr = -floor, (ret_d - floor if ret_d is not None else 0)
             if arity[s] != (na, nr):
                 arity[s] = (na, nr)

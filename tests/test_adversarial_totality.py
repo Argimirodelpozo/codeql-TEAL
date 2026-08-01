@@ -209,3 +209,45 @@ def test_height_ambiguous_region_still_answers_every_frame_read():
         f"{len(silent)} frame read(s) in the height-ambiguous region are neither "
         f"sourced nor reported — the refusal must degrade to an ANSWERED value "
         f"or a listed unknown, never a silent clean read")
+
+
+def test_function_shaped_detection_reflects_the_converged_fixpoint(tmp_path):
+    """``not_function_shaped`` must report the CONVERGED arities, not an early
+    fixpoint iteration.
+
+    ``_infer_arities`` starts every legacy callee at ``(0, 0)`` and iterates.
+    On the first pass ``outer``'s call path looks one shallower than its
+    sibling — divergent — and only once ``inner`` is known to leave a value do
+    the two paths agree. A mark that accumulates across iterations therefore
+    reports a sub that IS a function, which would send a reader hunting for an
+    inlining problem that does not exist (and, once inlining lands, would
+    inline a sub that never needed it)."""
+    from tealql.tealtools.lift.lift import _Lifter
+
+    teal = tmp_path / "fixpoint.teal"
+    teal.write_text(
+        "#pragma version 8\ncallsub outer\nreturn\n"
+        "outer:\nint 0\nbnz other\ncallsub inner\nretsub\n"
+        "other:\nint 7\nretsub\n"
+        "inner:\nint 5\nretsub\n"
+    )
+    lifter = _Lifter(SSAProgram(str(teal)))
+    lifter.build()
+    assert not lifter.not_function_shaped, (
+        "a sub whose paths agree once its callee's arity is known was reported "
+        "as not function-shaped — the mark is accumulating across fixpoint "
+        f"iterations: {sorted(s.name for s in lifter.not_function_shaped)}")
+
+
+def test_a_real_divergent_legacy_sub_is_still_caught():
+    """The converged-state fix must not silence the true positive: app_1050193569's
+    `label9` returns at depth -1 down one path and -2 down the other with fully
+    converged arities, so it genuinely has no single signature."""
+    probe = PROBES / "app_1050193569.teal"
+    if not probe.exists():
+        pytest.skip("app_1050193569 not present")
+    from tealql.tealtools.lift.lift import _Lifter
+
+    lifter = _Lifter(SSAProgram(str(probe)))
+    lifter.build()
+    assert {s.name for s in lifter.not_function_shaped} == {"label9"}
