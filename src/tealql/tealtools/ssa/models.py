@@ -67,11 +67,15 @@ class SSAVar:
 
 
 class Phi:
-    """An SSA phi at stack slot ``stack_index`` (1-based, top-first).
+    """An SSA phi at stack slot ``stack_index`` (1-based, top-first); ``args``
+    holds the originating :class:`SSAVar`\\ s that can flow in.
 
-    ``kind`` decides what ``args`` holds: a ``DirectPhi`` lists one originating
-    :class:`SSAVar` per contributing predecessor BB, an ``IndirectPhi`` holds a
-    single :class:`Phi` — the chain root it propagates from."""
+    ``kind`` is VESTIGIAL — it is always ``"DirectPhi"``. The CodeQL extractor
+    once also emitted ``IndirectPhi`` (a phi holding a single chain-root phi
+    rather than leaves); nothing has produced one since the builder moved to
+    Python, and chain structure now lives on the ``PyPhi`` graph
+    (:meth:`SSAProgram.chain_predecessors`). The field and its place in the
+    identity key are kept only because they are public API."""
 
     __slots__ = (
         "file", "line", "stack_index", "kind",
@@ -103,8 +107,7 @@ class Phi:
         return isinstance(other, Phi) and self._key() == other._key()
 
     def _short(self) -> str:
-        tag = "φ" if self.kind == "DirectPhi" else "φᵢ"
-        return f"{tag}_{self.stack_index}@L{self.line}"
+        return f"φ_{self.stack_index}@L{self.line}"
 
     def __repr__(self) -> str:
         # Iterative DFS, cycle-protected and capped: phi-arg graphs can be

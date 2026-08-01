@@ -1535,9 +1535,8 @@ def _apply_pyssa_to(
             if src_v.type is not None:
                 v.type = src_v.type
 
-    # 2) Phis: one per (bb_key, slot), registered under DirectPhi only since the
-    # Direct/Indirect distinction is collapsed here. `SSAProgram.phi` lookups are
-    # kind-agnostic, so a consumer holding an "IndirectPhi" kind still resolves.
+    # 2) Phis: one per (bb_key, slot). ``kind`` is always "DirectPhi" — it is a
+    # vestigial field kept for public API compatibility (see :class:`Phi`).
     phi_map: dict = {}  # PyPhi -> Phi
     for (bb_key, slot), py_p in py.phis.items():
         p = Phi(bb_key[0], bb_key[1], slot, "DirectPhi")

@@ -130,7 +130,7 @@ def to_dot(
         header = f"BB L{bb.first_line}-L{bb.last_line}"
         lines_out = [header]
         for phi in bb.phis:
-            lines_out.append(f"  φ_{phi.stack_index}[{phi.kind[0]}] = {repr(phi)}")
+            lines_out.append(f"  φ_{phi.stack_index} = {repr(phi)}")
         for a in bb.assignments:
             lines_out.append(f"  L{a.location.line:>4}: {a.functional(resolve_consts=resolve_consts)}")
         if len(lines_out) > max_lines_per_bb:

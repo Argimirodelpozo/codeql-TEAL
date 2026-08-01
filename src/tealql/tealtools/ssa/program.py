@@ -265,15 +265,14 @@ class SSAProgram:
         return self.vars.get((file, line, index))
 
     def phi(self, file: str, line: int, kind: str, stack_index: int) -> Optional[Phi]:
-        # PySSA-built progs unify the Direct/Indirect distinction
-        # under ``DirectPhi``. Fall back to the other kind so callers
-        # that get a ``kind`` from field-row data (e.g.
-        # ``inner_txn_report._resolve_operand``) still resolve.
+        # ``kind`` is vestigial — every phi built here is a ``DirectPhi`` (see
+        # :class:`Phi`). It stays in the signature because it is public API, and
+        # a miss retries under the real kind so a caller still holding an old
+        # CodeQL-era ``"IndirectPhi"`` label resolves rather than getting None.
         p = self.phis.get((file, line, kind, stack_index))
         if p is not None:
             return p
-        other = "IndirectPhi" if kind == "DirectPhi" else "DirectPhi"
-        return self.phis.get((file, line, other, stack_index))
+        return self.phis.get((file, line, "DirectPhi", stack_index))
 
     def block(self, file: str, first_line: int, last_line: int) -> Optional[BasicBlock]:
         return self.blocks.get((file, first_line, last_line))
@@ -335,22 +334,17 @@ class SSAProgram:
     # need *chain structure*: which intermediate phis sit between a phi
     # and its leaves (loop detection, chain-root coalescing, etc.).
     #
-    # Graph-loaded programs carry chain structure in ``IndirectPhi.args``
-    # (single-element list pointing at the chain root). PySSA-built
-    # programs (via :meth:`tealql.tealtools.ssa.PySSA.build`) collapse args to
-    # SSAVar leaves for fast iteration but keep an auxiliary
-    # back-reference to the original PyPhi graph in ``self._pyssa`` /
-    # ``self._phi_to_pyphi``. These helpers abstract over both, so
-    # consumers can write backend-agnostic structural code without
-    # paying the iteration cost when they don't need it.
+    # ``Phi.args`` is collapsed to SSAVar leaves for fast iteration, so the
+    # structure lives on the auxiliary back-reference to the PyPhi graph
+    # (``self._pyssa`` / ``self._phi_to_pyphi``). These helpers read it, so
+    # consumers get structural queries without paying the iteration cost when
+    # they don't need them. (The CodeQL extractor used to carry the same
+    # structure in an ``IndirectPhi``'s args; nothing produces one any more.)
 
     def chain_predecessors(self, phi: "Phi") -> list["Phi"]:
         """Phis whose values flow into ``phi`` via propagation. Empty
         for chain roots (whose args are all :class:`SSAVar`)."""
-        # IndirectPhi-backed: read IndirectPhi.args directly.
-        if isinstance(phi, Phi) and phi.kind == "IndirectPhi":
-            return [a for a in phi.args if isinstance(a, Phi)]
-        # PySSA-wrapped: walk via the PyPhi graph if present.
+        # Walk via the PyPhi graph if present.
         ptp = getattr(self, "_phi_to_pyphi", None)
         ptw = getattr(self, "_pyphi_to_phi", None)
         if ptp is None or ptw is None:
