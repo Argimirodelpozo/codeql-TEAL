@@ -8,6 +8,8 @@ the builder.
 """
 from __future__ import annotations
 
+import logging
+
 from ..ssa.block_args import to_block_args
 from ..avm import _STACK_SHUFFLE_OPS, _TERMINATOR_OPS, op_arity
 from ..passes.frame_resolution import resolve_sub
@@ -35,12 +37,29 @@ from ..avm import (
 from .teal_const import _load_src
 from ..ast.literals import tokenize_operands as _tokenize_operands
 
+logger = logging.getLogger("tealql.tealtools.lift")
+
 _FRAME_OPS = frozenset({"frame_dig", "frame_bury"})
 
 
-def _infer_arities(struct, callsite) -> dict:
+def _infer_arities(struct, callsite, *, divergent: "set | None" = None) -> dict:
     """``Subroutine -> (nargs, nret)``: read off ``proto``, or — for legacy subs that
-    pass args / returns on the stack — inferred by a cross-procedural depth fixpoint."""
+    pass args / returns on the stack — inferred by a cross-procedural depth fixpoint.
+
+    ``divergent`` (out-param) collects the legacy subs that are NOT FUNCTION-SHAPED:
+    their ``retsub`` sites leave different stack depths, so the callee's net effect
+    depends on the path it took. A pre-``proto`` ``retsub`` does not truncate — it
+    is a jump — so such a sub is perfectly legal TEAL and simply is not a function:
+    NO single ``(nargs, nret)`` describes it, and this fixpoint's ``max`` over
+    return sites necessarily over-declares the shallow paths, which the re-simulator
+    then pads with ``Undefined`` (an explicit unknown — imprecise, never a wrong
+    value; the caller's own pre-call value is what physically sits there).
+
+    Making those calls faithful means INLINING the callee per call site, which the
+    IR can express (its block ids are synthetic, unlike the SSA layer's
+    source-position identities) but this lift does not yet do. Until it does, the
+    set is surfaced so a consumer can tell "not function-shaped, values below the
+    call are unknown" from "this value happens to be unknown"."""
     by_name = {s.name: s for s in struct.subroutines}
     proto = {s: _proto_io(s.entry_bb) if any(a.op == "proto" for a in s.entry_bb.assignments)
              else None for s in struct.subroutines}
@@ -92,6 +111,8 @@ def _infer_arities(struct, callsite) -> dict:
             # MAX over ALL retsub sites, not the first reached: a sub whose paths
             # diverge would otherwise silently truncate a deeper path's returns.
             ret_d = max(ret_ds) if ret_ds else None
+            if divergent is not None and len(set(ret_ds)) > 1:
+                divergent.add(s)
             na, nr = -floor, (ret_d - floor if ret_d is not None else 0)
             if arity[s] != (na, nr):
                 arity[s] = (na, nr)
@@ -267,7 +288,25 @@ class _Lifter:
         self.callsite = {cs.callsub_bb: cs for cs in struct.call_sites}
         self.cont_site = {cs.continuation_bb: cs for cs in struct.call_sites
                           if cs.continuation_bb is not None}
-        _arity = _infer_arities(struct, self.callsite)
+        self.not_function_shaped: set = set()
+        _arity = _infer_arities(struct, self.callsite,
+                                divergent=self.not_function_shaped)
+        if self.not_function_shaped:
+            # Legal TEAL that is not a function: a pre-`proto` `retsub` is a jump,
+            # so a sub whose return sites leave different depths has no single
+            # signature. The inferred one over-declares its shallow paths and the
+            # re-simulator pads them with `Undefined` — an explicit unknown, but
+            # the caller's own value is what physically sits there, so say so
+            # rather than let a silent `Undefined` read as an ordinary gap.
+            logger.warning(
+                "%d legacy subroutine(s) are NOT function-shaped (their retsub "
+                "sites leave different stack depths), so the lifted signature "
+                "over-declares the shallow paths and values below the call read "
+                "as Undefined: %s. Faithful lifting of these needs per-call-site "
+                "inlining.",
+                len(self.not_function_shaped),
+                ", ".join(sorted(str(getattr(s_, "name", s_))
+                                 for s_ in self.not_function_shaped)[:5]))
         self._io_by_entry = {s.entry_bb: a for s, a in _arity.items()}
         self._proto_entries = {s.entry_bb for s in struct.subroutines
                                if any(a.op == "proto" for a in s.entry_bb.assignments)}
