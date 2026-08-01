@@ -168,13 +168,28 @@ def test_height_ambiguous_region_still_answers_every_frame_read():
     entry stack per block, so a top-first slot means a DIFFERENT band position on
     each lap. Hence the refusal (:meth:`_compute_entry_depths` poisoning).
 
-    Per-height cloning cannot rescue this one: the height set is unbounded
-    (one more cell per lap), so there is no finite set of contexts to clone —
-    and for the finite (branch-join) case the SSA layer's identity model,
-    ``(file, line, index)``, forbids two copies of a block anyway. The right
-    degradation is what this pins: the band arithmetic refuses, and every frame
-    read is still sourced through the call-site and bury-version maps, which are
-    anchored structurally rather than by height."""
+    The height set is FINITE — the AVM caps the stack at 1000 (:data:`STACK_MAX`)
+    and the opcode budget caps the lap count long before that (this body is 74
+    opcodes, so ~9 laps unpooled, a few hundred pooled — and this contract bumps
+    its own budget with the inner txn at L471). So per-height cloning is not
+    impossible for want of finiteness. What blocks it is:
+
+    * IDENTITY — the SSA layer keys ``SSAVar`` on ``(file, line, index)`` and
+      ``BasicBlock`` on ``(file, first_line, last_line)``, so two copies of one
+      block collide by construction. Cloning needs a different identity model
+      everywhere, not a change here.
+    * COST AND STILL-INEXACTNESS — the lap count is a RUNTIME fact (budget
+      bumping), so a static clone set has to cover the stack-limit worst case
+      (~993 copies of this 7-block body) or k-limit and widen the tail back to
+      the refusal this already gives.
+
+    The principled fix is not contexts at all but BOTTOM-anchoring: a band
+    position is invariant across laps (frame ops address ``frame_base + N``,
+    and the base does not move) — only its TOP-first slot varies, and slots are
+    what this model materialises. That is exactly why the structural maps below
+    still answer, and what this pins: the band arithmetic refuses, and every
+    frame read is still sourced through the call-site and bury-version maps,
+    which are anchored structurally rather than by height."""
     probe = PROBES / "app_3300088574.teal"
     if not probe.exists():
         pytest.skip("app_3300088574 not present")
