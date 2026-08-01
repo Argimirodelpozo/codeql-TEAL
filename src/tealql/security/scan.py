@@ -444,7 +444,7 @@ def scan(
                 # ONE preparation per program, so every detector sees the same
                 # resolved constants instead of depending on run order.
                 from .common import prepare
-                prog = prepare(SSAProgram(str(teal)))
+                prog = prepare(SSAProgram(str(teal), strict=False))
             except Exception as e:                   # pragma: no cover
                 if strict:
                     raise TealQLError(

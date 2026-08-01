@@ -131,6 +131,26 @@ def _imm_int(immediates: str) -> int:
 #: because ``op_arity`` is a pure function called from every layer.
 _UNKNOWN_OPS: set[str] = set()
 
+#: Every opcode :func:`op_arity` special-cases AHEAD of the :data:`SIG` lookup
+#: (immediate-dependent arities). :func:`is_known_op`'s contract is that this
+#: set + :data:`_FRAME_OVERRIDES` + :data:`SIG` is the complete modelled
+#: universe — a new special-case branch in ``op_arity`` must be added here too,
+#: and forgetting fails LOUD (a spurious refusal on corpus contracts), never
+#: wrong.
+_IMMEDIATE_ARITY_OPS: frozenset[str] = frozenset({
+    "dig", "bury", "cover", "uncover", "popn", "dupn",
+    "pushints", "pushbytess", "match",
+})
+
+
+def is_known_op(op: str) -> bool:
+    """Whether this build can model ``op``'s stack effect. :func:`op_arity`
+    answers ``(0, 0)`` for an unknown opcode — which silently corrupts the
+    whole downstream stack simulation — so boundary callers consult this and
+    refuse instead (:class:`..errors.UnknownOpcodeError`)."""
+    return (op in SIG or op in _FRAME_OVERRIDES
+            or op in _IMMEDIATE_ARITY_OPS)
+
 
 def unknown_opcodes() -> frozenset[str]:
     """Opcodes seen so far with no :data:`SIG` entry.

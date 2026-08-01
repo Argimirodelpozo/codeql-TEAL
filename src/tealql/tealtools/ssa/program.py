@@ -21,7 +21,7 @@ from .models import (
     Phi,
     SSAVar,
 )
-from ..avm import _CONST_BLOCK_REF_NAMES, op_arity
+from ..avm import _CONST_BLOCK_REF_NAMES, is_known_op, op_arity
 from .._utils.dot import render
 
 
@@ -32,32 +32,41 @@ class SSAProgram:
     # `from_graph` exists so a caller can load/cache/transform the graph once and
     # rebuild SSA without re-parsing.
 
-    def __init__(self, source: str | Path):
-        """Parse a ``.teal`` file/dir and reconstruct SSA."""
+    def __init__(self, source: str | Path, *, strict: bool = True):
+        """Parse a ``.teal`` file/dir and reconstruct SSA.
+
+        ``strict`` (the default) REFUSES a program the representation cannot
+        be truthful about — unparsed spans (:class:`..errors.TealParseError`)
+        or opcodes this build cannot model
+        (:class:`..errors.UnknownOpcodeError`) — instead of silently building
+        a wrong stack model. ``strict=False`` restores the permissive
+        behaviour for surfaces that surface partiality themselves (the CLI
+        and ``security.scan`` warn and annotate)."""
         from .. import graph as tg
-        self._build_from_graph(tg.load_graph(source))
+        self._build_from_graph(tg.load_graph(source), strict=strict)
 
     @classmethod
-    def from_source(cls, source: str | Path) -> "SSAProgram":
+    def from_source(cls, source: str | Path, *, strict: bool = True) -> "SSAProgram":
         """As ``cls(source)``, named so the parse stage is visible at the call site."""
         from .. import graph as tg
-        return cls.from_graph(tg.load_graph(source))
+        return cls.from_graph(tg.load_graph(source), strict=strict)
 
     @classmethod
-    def from_graph(cls, graph) -> "SSAProgram":
+    def from_graph(cls, graph, *, strict: bool = True) -> "SSAProgram":
         """Reconstruct SSA from an already-loaded graph — no parsing."""
         self = cls.__new__(cls)
-        self._build_from_graph(graph)
+        self._build_from_graph(graph, strict=strict)
         return self
 
     @classmethod
-    def from_text(cls, teal: str, *, name: str = "contract.teal") -> "SSAProgram":
+    def from_text(cls, teal: str, *, name: str = "contract.teal",
+                  strict: bool = True) -> "SSAProgram":
         """Build SSA from in-memory source; ``name`` is the file name findings report.
 
         The lift's source-text recovery (template names, dropped consts) still
         needs a real path; SSA and detector analysis work fully in-memory."""
         from .. import graph as tg
-        return cls.from_graph(tg.load_graph({name: teal}))
+        return cls.from_graph(tg.load_graph({name: teal}), strict=strict)
 
     @property
     def parse_diagnostics(self) -> tuple:
@@ -68,9 +77,23 @@ class SSAProgram:
         may be incomplete. Never report a partially-parsed contract as clean."""
         return self._graph.graph.get("parse_diagnostics", ())
 
-    def _build_from_graph(self, g) -> None:
-        """Reconstruct the SSA program from a loaded graph ``g`` (no parsing)."""
+    def _build_from_graph(self, g, *, strict: bool = True) -> None:
+        """Reconstruct the SSA program from a loaded graph ``g`` (no parsing).
+
+        Strict mode enforces the representation's never-lie contract at its
+        boundary: the parser DROPS spans it cannot parse (the model then
+        behaves as if those ops never ran), and an opcode absent from this
+        build's langspec is modelled with a ``(0, 0)`` stack effect (every
+        value after it lands in the wrong slot). Both produce a plausible,
+        silently wrong program — refusal with a named cause is the only
+        truthful answer."""
         from ..ast import Opcode, Label
+
+        if strict:
+            _diags = g.graph.get("parse_diagnostics", ())
+            if _diags:
+                from ..errors import TealParseError
+                raise TealParseError(_diags)
 
         self._graph = g
         src = g.graph.get("source", "")
@@ -99,11 +122,14 @@ class SSAProgram:
 
         # Pass 1: build Assignments + their output SSAVars (arities from the
         # opcode signature table; PySSA reconstructs operand wiring + phis).
+        _unknown_ops: set = set()
         for n in g.nodes:
             if not isinstance(n, Opcode):
                 continue
             code = n.code or n.node_class
             op_name, _, imms = code.partition(" ")
+            if strict and not is_known_op(op_name):
+                _unknown_ops.add(op_name)
             cv = g.nodes[n].get("const_value")
             const: Optional[Const] = None
             if cv is not None and type(n).__name__ in _CONST_BLOCK_REF_NAMES:
@@ -149,6 +175,10 @@ class SSAProgram:
                     v.const_value = Const(*co)
             if bb is not None:
                 bb.assignments.append(a)
+
+        if _unknown_ops:
+            from ..errors import UnknownOpcodeError
+            raise UnknownOpcodeError(_unknown_ops)
 
         # Pass 2: wire BB predecessor/successor from CFG edges that
         # cross BB *boundaries*. An edge ``u → v`` represents entering

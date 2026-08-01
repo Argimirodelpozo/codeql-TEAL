@@ -41,7 +41,7 @@ VALID = "#pragma version 8\n// a comment\nint 1\nreturn\n"
 def test_garbage_source_yields_diagnostics(tmp_path):
     f = tmp_path / "prog.teal"
     f.write_text(GARBAGE)
-    prog = SSAProgram(str(f))
+    prog = SSAProgram(str(f), strict=False)
     assert prog.parse_diagnostics
     d = prog.parse_diagnostics[0]
     assert isinstance(d, ParseDiagnostic)
@@ -53,11 +53,42 @@ def test_garbage_source_yields_diagnostics(tmp_path):
 def test_partial_source_keeps_valid_tail_and_records_drop(tmp_path):
     f = tmp_path / "prog.teal"
     f.write_text(PARTIAL)
-    prog = SSAProgram(str(f))
+    prog = SSAProgram(str(f), strict=False)
     assert len(prog.parse_diagnostics) >= 1
     assert prog.parse_diagnostics[0].start_line == 2
     # The valid `int 1 / return` tail still analyzed.
     assert prog.assignments
+
+
+def test_strict_default_refuses_a_partial_program(tmp_path):
+    """The representation boundary is strict BY DEFAULT (2026-07-31, the
+    never-fail-never-lie contract): a dropped span means the stack model
+    behaves as if those ops never ran — a plausible, silently wrong program.
+    Library consumers get the refusal; the CLI and scan() opt into
+    ``strict=False`` because they surface partiality themselves."""
+    f = tmp_path / "prog.teal"
+    f.write_text(PARTIAL)
+    with pytest.raises(TealParseError):
+        SSAProgram(str(f))
+
+
+def test_strict_default_refuses_an_unknown_opcode(monkeypatch):
+    """An opcode absent from this build's langspec is modelled ``(0, 0)`` —
+    every value after it lands in the wrong slot. The strict boundary refuses
+    with the opcode named (the newer-AVM-version case a decompiler pulling
+    chain contracts WILL eventually hit); permissive mode still builds and
+    records it in ``avm.unknown_opcodes()`` for the CLI's warning."""
+    from tealql.tealtools import avm
+    from tealql.tealtools.errors import UnknownOpcodeError
+
+    src = "#pragma version 8\nbyte 0x00\nlog\nint 1\nreturn\n"
+    monkeypatch.delitem(avm.SIG, "log")
+    with pytest.raises(UnknownOpcodeError) as ei:
+        SSAProgram.from_text(src)
+    assert "log" in str(ei.value)
+    prog = SSAProgram.from_text(src, strict=False)
+    assert prog.assignments
+    assert "log" in avm.unknown_opcodes()
 
 
 def test_valid_source_has_no_diagnostics(tmp_path):

@@ -27,7 +27,8 @@ _UNKNOWN_TXN_FIELDS = ["GroupID", "AssetCloseAmount", "RejectVersion"]
 def _prog(tmp_path, body, version=12):
     p = tmp_path / "prog.teal"
     p.write_text(f"#pragma version {version}\n{body}int 1\nreturn\n")
-    prog = SSAProgram(str(p))
+    # strict=False: several cases deliberately carry parse diagnostics.
+    prog = SSAProgram(str(p), strict=False)
     prog.propagate_constants()
     return prog
 

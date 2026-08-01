@@ -61,6 +61,23 @@ class TealParseError(TealQLError):
         )
 
 
+class UnknownOpcodeError(TealQLError):
+    """The program uses opcode(s) this build cannot model — ``op_arity`` would
+    default them to a ``(0, 0)`` stack effect, silently corrupting every
+    downstream stack simulation. Typically the contract targets an AVM version
+    newer than this build's langspec; a loud refusal beats a wrong model."""
+
+    def __init__(self, ops):
+        self.ops = tuple(sorted(ops))
+        shown = ", ".join(self.ops[:8]) + ("…" if len(self.ops) > 8 else "")
+        super().__init__(
+            f"{len(self.ops)} opcode(s) unknown to this build ({shown}) — "
+            "their stack effects cannot be modelled, so the representation "
+            "would be silently wrong; refusing. This build likely predates "
+            "the contract's AVM version."
+        )
+
+
 class LiftError(TealQLError):
     """The Puya-IR lift failed; ``stage`` names where (``build`` = SSA→pre-IR,
     ``lower`` = pre-IR→puya.ir, ``optimize``, ``backend`` = destructure→MIR→TEAL)

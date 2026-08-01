@@ -13,7 +13,8 @@ from tealql.tealtools.ssa import SSAProgram
 def _prog(tmp_path, src: str, name: str = "t.teal") -> SSAProgram:
     p = tmp_path / name
     p.write_text(src)
-    return SSAProgram(str(p))
+    # strict=False: these tests exercise the DIAGNOSTIC surface itself.
+    return SSAProgram(str(p), strict=False)
 
 
 def test_consecutive_named_ints_are_all_recovered(tmp_path):

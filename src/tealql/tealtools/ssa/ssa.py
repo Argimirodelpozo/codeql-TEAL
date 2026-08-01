@@ -461,6 +461,7 @@ class PySSA:
         for b, d0 in roots.items():
             ed[b.key] = d0
             wl.append(b)
+        conflicted: list = []
         while wl:
             b = wl.popleft()
             d = ed[b.key]
@@ -475,18 +476,64 @@ class PySSA:
             # is the caller-side depth that edge cannot carry. A negative result
             # means the args were not on this routine's band (the model does not
             # hold); refuse rather than clamp, an absent depth surfaces as None.
+            targets: list = []
             pair = self._pair_by_cs.get(b)
             if pair is not None:
                 cont, a, r = pair
-                if d - a + r >= 0 and cont.key not in ed:
-                    ed[cont.key] = d - a + r
-                    wl.append(cont)
-            for s in b.succs:
-                # stay within the routine (don't cross callsub/retsub edges)
-                if (self._bb_to_sub.get(s) is self._bb_to_sub.get(b)
-                        and s.key not in ed):
-                    ed[s.key] = d
-                    wl.append(s)
+                if d - a + r >= 0:
+                    targets.append((cont, d - a + r))
+            # Intra-FRAME successors only, as pyblock_partition walks them: a
+            # callsub block's one CFG succ is the callee ENTRY and a retsub's
+            # succs are continuations — both cross into a different frame, so
+            # neither may carry this frame's depth. The same-routine test alone
+            # is NOT that gate: under RECURSION the callee entry and the
+            # internal call's continuation belong to this very sub, the edges
+            # pass it, and the caller-side depth lands on a fresh-frame block
+            # (first-reach luck used to bury the bogus proposal; the ambiguity
+            # detector below would read it as height variance).
+            term = b.ops[-1].op if b.ops else None
+            if term not in ("callsub", "retsub"):
+                for s in b.succs:
+                    # stay within the routine
+                    if self._bb_to_sub.get(s) is self._bb_to_sub.get(b):
+                        targets.append((s, d))
+            for t, dt in targets:
+                if t.key not in ed:
+                    ed[t.key] = dt
+                    wl.append(t)
+                elif ed[t.key] != dt:
+                    conflicted.append(t)
+
+        # HAZARD — height-ambiguous joins. The AVM has NO static verifier: a
+        # join whose paths arrive at different depths is legal (later ops just
+        # find whatever operands are there), and then this block has no single
+        # frame anchor — a fat expansion anchored to either path's depth reads
+        # or buries a NEIGHBOURING slot on the other path, a silent wrong
+        # value. Compilers never emit this; hand-written TEAL can. Poison the
+        # conflicted blocks and everything depth-reachable from them (their
+        # stored first-reach values are one path's truth at best): a missing
+        # depth makes every consumer refuse — narrow frame ops, no demand, and
+        # the band-unsafe scan flags the sub (unknown height reaching retsub),
+        # withdrawing its callers' deep-slot reroutes.
+        if conflicted:
+            amb: set = set()
+            wl2 = list(conflicted)
+            while wl2:
+                b = wl2.pop()
+                if b.key in amb:
+                    continue
+                amb.add(b.key)
+                pair = self._pair_by_cs.get(b)
+                if pair is not None and pair[0].key not in amb:
+                    wl2.append(pair[0])
+                term = b.ops[-1].op if b.ops else None
+                if term not in ("callsub", "retsub"):
+                    wl2.extend(
+                        s for s in b.succs
+                        if (self._bb_to_sub.get(s) is self._bb_to_sub.get(b)
+                            and s.key not in amb))
+            for key in amb:
+                ed.pop(key, None)
         return ed
 
     def _compute_entry_depths(self) -> dict:

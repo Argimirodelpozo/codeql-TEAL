@@ -23,7 +23,7 @@ _logging.getLogger("tealql.tealtools").addHandler(_logging.NullHandler())
 # Substrate
 from .errors import (
     ParseDiagnostic, TargetError, TargetNotFoundError,
-    TealParseError, TealQLError,
+    TealParseError, TealQLError, UnknownOpcodeError,
 )
 from .ssa import SSAProgram, BasicBlock, Const, Phi, SSAVar, Assignment
 from .path_predicates import PathPredicateAnalysis, BranchCondition
@@ -78,6 +78,7 @@ from .structure import (
 
 __all__ = [
     "TealQLError", "TealParseError", "TargetError", "TargetNotFoundError",
+    "UnknownOpcodeError",
     "ParseDiagnostic",
     "SSAProgram", "BasicBlock", "Const", "Phi", "SSAVar", "Assignment",
     "PathPredicateAnalysis", "BranchCondition",

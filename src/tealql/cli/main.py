@@ -124,7 +124,7 @@ def _load(args):
     from tealql.tealtools.ssa import SSAProgram
     source = _resolve(args)
     logger.info("building SSA program from %s", source)
-    prog = SSAProgram(str(source))
+    prog = SSAProgram(str(source), strict=False)
     # Construction only tags direct pushes. Cross-contract discovery keys on
     # CONSTANT AppIDs, so without this the callees are silently missed.
     prog.propagate_constants()
@@ -149,7 +149,7 @@ def _load_programs(args) -> "list[tuple]":
     progs: list[tuple] = []
     for teal in teal_files:
         logger.info("building SSA program from %s", teal)
-        prog = SSAProgram(str(teal))
+        prog = SSAProgram(str(teal), strict=False)
         prog.propagate_constants()
         _check_parse_health(prog, args)
         progs.append((prog, None if single else teal.name))
@@ -537,7 +537,7 @@ def _cmd_audit(args) -> int:
                   file=sys.stderr)
             return 2
         teal_path.write_text(teal)
-    caller = SSAProgram(str(teal_path))
+    caller = SSAProgram(str(teal_path), strict=False)
     # The same preparation `_load` does; see its comments for why both are needed.
     caller.propagate_constants()
     _check_parse_health(caller, args)
@@ -719,7 +719,7 @@ def _cmd_group_taint(args) -> int:
     )
     progs = []
     for member in args.members:
-        prog = SSAProgram(str(member))
+        prog = SSAProgram(str(member), strict=False)
         prog.propagate_constants()
         _check_parse_health(prog, args)
         progs.append(prog)

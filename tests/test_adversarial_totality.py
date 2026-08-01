@@ -69,6 +69,25 @@ _FIXTURES = {
         "reader:\nproto 0 1\ndig 0\nretsub\n",
         False,
     ),
+    # A join whose paths arrive at DIFFERENT band heights (legal — the AVM has
+    # no static verifier). The frame op after it has no single anchor: the
+    # depth walk must poison the region, the fat expansion must refuse, and
+    # the sub must flag band-unsafe (unknown height reaching retsub) — either
+    # path's anchor would read a neighbouring slot on the other path.
+    "height_ambiguous_join": (
+        "#pragma version 8\nint 1\ncallsub s\npop\nreturn\n"
+        "s:\nproto 0 1\nint 0\nbnz stwo\nint 7\nb sjoin\n"
+        "stwo:\nint 7\nint 8\nsjoin:\nframe_dig 0\nretsub\n",
+        True,
+    ),
+    # Control: the same shape with height-CONSISTENT paths must anchor fine
+    # and stay unflagged.
+    "height_consistent_join": (
+        "#pragma version 8\nint 1\ncallsub s\npop\nreturn\n"
+        "s:\nproto 0 1\nint 0\nbnz stwo\nint 7\nb sjoin\n"
+        "stwo:\nint 8\nsjoin:\nframe_dig 0\nretsub\n",
+        False,
+    ),
 }
 
 
