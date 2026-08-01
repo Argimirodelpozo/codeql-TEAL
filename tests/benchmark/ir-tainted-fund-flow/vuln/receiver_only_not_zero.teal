@@ -1,0 +1,19 @@
+#pragma version 10
+// VULN: a pure DISEQUALITY restricts nothing about who gets paid. Asserting the
+// recipient is not the zero address leaves every other address passing, yet it
+// used to credit `checks_input` and clear the flow. The sender side already made
+// this distinction (`==` pins, `!=` merely excludes); the input side did not.
+txna ApplicationArgs 0
+global ZeroAddress
+!=
+assert
+txna ApplicationArgs 0
+itxn_begin
+int pay
+itxn_field TypeEnum
+itxn_field Receiver
+int 1000000
+itxn_field Amount
+itxn_submit
+int 1
+return

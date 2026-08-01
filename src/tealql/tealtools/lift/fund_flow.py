@@ -66,7 +66,17 @@ def _succs(term) -> list:
 
 
 def _dominators(sub) -> dict:
-    """``{block_id: dominators}`` for one subroutine (single entry, ``ids[0]``)."""
+    """``{block_id: dominators}`` for one subroutine.
+
+    HAZARD: seed EVERY in-sub-preds-less block, not ``ids[0]``. ``sub.body`` is
+    ordered by ``(file, first_line)``, so any sub holding a block emitted above
+    its own label — a shared epilogue, a block branched back into — has a
+    non-entry block first. ``iterative_dominators`` then leaves the real entry
+    SATURATED (its own documented failure for an unreachable seed), which makes
+    every block in the sub "dominate" every sink, so every assert anywhere in it
+    reads as guarding — a false GUARDED that suppresses the finding outright.
+    With several entries dominator sets only SHRINK, which is the safe
+    direction; ``or ids[:1]`` keeps a fully-cyclic body from having no seed."""
     ids = [b.id for b in sub.body]
     if not ids:
         return {}
@@ -76,7 +86,8 @@ def _dominators(sub) -> dict:
         for s in succ[i]:
             if s in preds:
                 preds[s].append(i)
-    return iterative_dominators(ids, [ids[0]], lambda i: preds[i])
+    entries = [i for i in ids if not preds[i]] or ids[:1]
+    return iterative_dominators(ids, entries, lambda i: preds[i])
 
 
 # --------------------------------------------------------------------------
@@ -379,25 +390,32 @@ def _classify(kind, polarity, cond, def_of, sink_regs, sink_keys, inv_ret=None) 
     def _compares_against_user_input(src) -> bool:
         """The comparison has an operand the ATTACKER supplies, so pinning the
         sender against it authorises nothing (`Sender == ApplicationArgs[2]` is
-        satisfied by any caller who passes their own address)."""
+        satisfied by any caller who passes their own address).
+
+        HAZARD: walk the operand's whole def-tree, not just its defining op. An
+        ARC-4 address argument reaches the comparison through at least one
+        `extract`, so a one-hop check saw only that `extract` and credited a
+        sender guard for the COMPILED spelling of the very idiom it exists to
+        refuse — while correctly refusing the hand-written one. The benchmark
+        pinned only the direct form, so nothing caught it."""
         for a in src.args:
-            o = def_of.get(id(a))
-            s = _intr(o) if o is not None else None
-            if s is not None and source_label(s) is not None:
-                return True
+            for _r, oo in _walk(a, def_of, inv_ret=inv_ret):
+                s = _intr(oo) if oo is not None else None
+                if s is not None and source_label(s) is not None:
+                    return True
         return False
 
-    def visit(value, guaranteed, value_ok, sense, sender_ok, depth=0):
+    def visit(value, guaranteed, value_ok, sense, sender_ok, input_ok=True, depth=0):
         nonlocal ci, cs
         if not isinstance(value, pre_ir.Register) or depth > 8:
             return
-        key = (id(value), guaranteed, value_ok, sense, sender_ok)
+        key = (id(value), guaranteed, value_ok, sense, sender_ok, input_ok)
         if key in seen:
             return
         seen.add(key)
         o = def_of.get(id(value))
         src = _intr(o) if o is not None else None
-        if guaranteed and value_ok:
+        if guaranteed and value_ok and input_ok:
             if id(value) in sink_regs:
                 ci = True
             if src is not None:
@@ -418,18 +436,33 @@ def _classify(kind, polarity, cond, def_of, sink_regs, sink_keys, inv_ret=None) 
             child_sender = child_sense and not _compares_against_user_input(src)
         elif src is not None and src.op in _NEQ_OPS:
             child_sender = (not child_sense) and not _compares_against_user_input(src)
+        # A relation that only EXCLUDES one value restricts nothing about which
+        # value the sink gets. `assert(recipient != ZeroAddress)` says the payee is
+        # not the zero address; every other address still passes, so it is not a
+        # check on WHO gets paid. Ordering relations (`<=`, `<`, …) and a pinning
+        # `==` do constrain, and keep the credit. This mirrors what `sender_ok`
+        # already does for the sender — the asymmetry was the bug: one side of
+        # `_EQ_OPS`/`_NEQ_OPS` x sense was implemented, the other was not.
+        child_input = input_ok
+        if src is not None and (
+                (src.op in _NEQ_OPS and child_sense)
+                or (src.op in _EQ_OPS and not child_sense)):
+            child_input = False
         if src is not None:
             for a in src.args:
-                visit(a, child_guar, child_val, child_sense, child_sender, depth + 1)
+                visit(a, child_guar, child_val, child_sense, child_sender,
+                      child_input, depth + 1)
         elif isinstance(o, pre_ir.Assignment) and isinstance(o.source, pre_ir.Register):
-            visit(o.source, child_guar, child_val, child_sense, child_sender, depth + 1)
+            visit(o.source, child_guar, child_val, child_sense, child_sender,
+                  child_input, depth + 1)
         elif isinstance(o, pre_ir.Phi):
             for pa in o.args:
                 visit(pa.value, child_guar, child_val, child_sense, child_sender,
-                      depth + 1)
+                      child_input, depth + 1)
         if inv_ret:                       # descend into an asserted validation sub
             for rv in inv_ret.get(id(value), ()):
-                visit(rv, child_guar, child_val, child_sense, child_sender, depth + 1)
+                visit(rv, child_guar, child_val, child_sense, child_sender,
+                      child_input, depth + 1)
 
     visit(cond, True, True, polarity != "false", False)
     return Guard(kind, polarity, ci, cs)

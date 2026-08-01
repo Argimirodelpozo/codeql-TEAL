@@ -1,0 +1,24 @@
+#pragma version 10
+// VULN: the sender is pinned against the CREATOR OF A FOREIGN APP — and the
+// caller composes the foreign-apps array. The attacker deploys a throwaway app,
+// names it in Applications[0], and AppCreator of it is their own address, so the
+// assert passes for anyone. Same class as pinning against ApplicationArgs, but
+// reached through `app_params_get`, so a one-hop check of the comparison's
+// operands saw only that opcode and credited the guard.
+// Found in the wild: app_3200608346 label7/label8.
+txn Sender
+txna Applications 0
+app_params_get AppCreator
+pop
+==
+assert
+txna ApplicationArgs 0
+itxn_begin
+int pay
+itxn_field TypeEnum
+itxn_field Receiver
+int 1000000
+itxn_field Amount
+itxn_submit
+int 1
+return

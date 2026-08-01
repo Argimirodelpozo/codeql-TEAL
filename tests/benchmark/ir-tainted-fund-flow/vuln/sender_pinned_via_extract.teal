@@ -1,0 +1,21 @@
+#pragma version 10
+// VULN: the COMPILED spelling of sender_pinned_to_caller_arg. An ARC-4 address
+// argument reaches the comparison through `extract`, so a one-hop check of the
+// comparison's operands saw only that `extract` and credited a sender guard —
+// while correctly refusing the identical hand-written form next door. The
+// equality still authorises nothing: any caller passes their own address.
+txn Sender
+txna ApplicationArgs 1
+extract 0 32
+==
+assert
+txna ApplicationArgs 0
+itxn_begin
+int pay
+itxn_field TypeEnum
+itxn_field Receiver
+int 1000000
+itxn_field Amount
+itxn_submit
+int 1
+return
