@@ -1040,7 +1040,14 @@ class PySSA:
         # corrected continuation policy while `_call_pairs` uses the
         # construction one — the two can disagree, and a consumer must not
         # miss a clobbering callee because the pairing differs.
-        self._clobber_callee_keys = {sub.key for sub in clobber}
+        # PROTO'D subs only. "Reached below its own band" presupposes a band:
+        # a legacy sub has no ``proto``, so ``nargs`` is 0 and its band starts
+        # empty — consuming caller values is simply how it takes arguments, and
+        # every such sub would otherwise be flagged (97 of 97 flagged callees
+        # over a 60-probe sample were this false positive). The lift then wiped
+        # the caller's stack at every legacy call, losing real values.
+        self._clobber_callee_keys = {sub.key for sub in clobber
+                                     if sub in self._proto_io}
 
     def _try_expand_frame_op(
         self, op: PyOp, local_stack: list, sub: PyBlock, proto: tuple,
