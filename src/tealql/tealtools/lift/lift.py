@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import logging
 
-from ..ssa.block_args import to_block_args
 from ..avm import _STACK_SHUFFLE_OPS, _TERMINATOR_OPS, op_arity
 from ..passes.frame_resolution import resolve_sub
 from ..ssa import (
@@ -287,7 +286,6 @@ class _Lifter:
             _restore_pruned_edges(undo)
 
     def _build_impl(self) -> pre_ir.Program:
-        self.form = to_block_args(self.prog)
         self.label2line = {code.rstrip(":").strip(): ln for (_f, ln, code) in self.prog.labels}
         struct = analyze_structure(self.prog)
         self.sub_of = {bb: s for s in struct.subroutines for bb in s.body}
@@ -350,8 +348,37 @@ class _Lifter:
         main_blocks = [bb for bb in all_blocks if bb not in self.sub_of]
         groups = [("main", None, main_blocks)]
         for s in sorted(struct.subroutines, key=lambda s: self._key(s.entry_bb)):
+            # Drop blocks this body cannot actually REACH. Bodies overlap, and
+            # for two different reasons that must not be conflated:
+            #
+            #  * legitimately — a tail reachable from two entries is in both
+            #    bodies, and each context re-simulates it from its own
+            #    predecessor. `_resim` is per-group precisely so that works.
+            #  * spuriously — a helper called from several places fans its
+            #    `retsub` out to EVERY caller's continuation, so the
+            #    continuation heuristic pulls other callers' blocks in
+            #    (app_1850858495: one block landed in five bodies, four of them
+            #    unreachable there).
+            #
+            # Only the second kind is a bug, and it is the one that produces
+            # wrong VALUES: with no predecessor in the group the re-sim starts
+            # on an empty stack, and `frame_dig N` — which resolves by absolute
+            # index — reads whatever was pushed next. `callsub; frame_bury 0;
+            # pushbytes 0x151f7c75; frame_dig 0; itob` lifted to
+            # `(itob 0x151f7c75)`, the puya "incompatible argument types"
+            # reports on the probe corpus.
+            #
+            # Reachable = the entry, or holding a CFG predecessor, or the
+            # continuation of a `callsub` in this body (a continuation's CFG
+            # predecessor is the CALLEE's retsub, so the call edge must be
+            # consulted or every continuation reads as unreachable).
+            body = [bb for bb in s.body
+                    if bb is s.entry_bb
+                    or any(q in s.body for q in bb.predecessors)
+                    or self.cont_site.get(bb) is not None
+                    and self.cont_site[bb].callsub_bb in s.body]
             groups.append((s.name or f"sub@L{s.entry_bb.first_line}", s,
-                           sorted(s.body, key=self._key)))
+                           sorted(body, key=self._key)))
         # Global block ids, though Puya restarts block@0 per subroutine: the
         # partition leaves cross-routine branch edges (tail-calls / shared
         # epilogues), which a per-subroutine-local id would silently mis-target.
