@@ -143,12 +143,17 @@ class _Param:
         return f"param{self.index}@{self.sub_key[1]}"
 
 
-def simulate(blocks, bb_to_sub, proto_io, return_point, phi_factory) -> "_Result":
+def simulate(blocks, bb_to_sub, proto_io, return_point, phi_factory,
+             *, bind_params: bool = False) -> "_Result":
     """Simulate every routine and return a :class:`_Result`.
 
     ``phi_factory(block, slot) -> phi`` mints the merge value, so the caller
     decides what a phi IS (a ``PyPhi`` in the builder, a stand-in in a test).
-    """
+
+    ``bind_params`` resolves each routine's incoming slots to what its call
+    sites pass. OFF by default and NOT yet trusted: it is right on a
+    hand-checked fixture but drops corpus agreement with the incumbent from
+    99.92% to 97.6%, and an unexplained 2% is not a thing to switch on."""
     res = _Result()
     # Real arities FIRST: a legacy callee's (nargs, nret) is not declared
     # anywhere, and treating it as (0, 0) leaves its arguments on the caller's
@@ -165,12 +170,111 @@ def simulate(blocks, bb_to_sub, proto_io, return_point, phi_factory) -> "_Result
         if b.ops and b.ops[-1].op == "retsub":
             retsubs.setdefault(bb_to_sub.get(b), []).append(b)
 
+    # CALLEES FIRST. A call site pushes the values its callee's `retsub` blocks
+    # leave, so simulating a caller before its callee makes every call result
+    # None — and the ops consuming them then read as unresolved rather than
+    # wrong, which is exactly the kind of hole a differential skips over.
+    for sub in _callee_first(by_sub, bb_to_sub):
+        _run_routine(sub, by_sub[sub], res, arity, bb_to_sub, return_point,
+                     retsubs, phi_factory)
+    if bind_params:
+        _bind_params(blocks, res, arity, bb_to_sub, phi_factory)
+    return res
+
+
+def _callee_first(by_sub, bb_to_sub):
+    """Routine entries ordered so a callee precedes its callers.
+
+    Recursion has no such order, so a cycle is emitted in discovery order and
+    its self-referential call results stay unresolved — honest, and the only
+    thing a single pass can say."""
+    calls: dict = {}
     for sub, body in by_sub.items():
         if sub is None:
             continue
-        _run_routine(sub, body, res, arity, bb_to_sub, return_point,
-                     retsubs, phi_factory)
-    return res
+        seen: set = set()
+        for b in body:
+            if b.ops and b.ops[-1].op == "callsub":
+                c = _callee_of(b, bb_to_sub)
+                if c is not None and c is not sub:
+                    seen.add(c)
+        calls[sub] = seen
+
+    order: list = []
+    state: dict = {}                        # 0 = visiting, 1 = done
+
+    def visit(s):
+        st = state.get(s)
+        if st is not None:
+            return                          # done, or a cycle we must not re-enter
+        state[s] = 0
+        for c in calls.get(s, ()):
+            if state.get(c) is None:
+                visit(c)
+        state[s] = 1
+        order.append(s)
+
+    for s in calls:
+        visit(s)
+    return order
+
+
+def _bind_params(blocks, res, arity, bb_to_sub, phi_factory):
+    """Replace every :class:`_Param` with what the CALL SITES actually pass.
+
+    Simulating a routine leaves its incoming slots symbolic, because a callee is
+    walked without knowing its callers. Binding them afterwards is what makes the
+    result whole-program: the args a ``callsub`` popped are already recorded in
+    ``res.args``, so param ``i`` (0 = deepest) is arg ``A-1-i`` at each site,
+    merged with a phi when a routine has several callers.
+
+    The phi is created BEFORE it is filled, so a recursive routine — whose own
+    body contains a call that supplies one of its params — terminates instead of
+    recursing forever."""
+    sites: dict = {}                       # sub -> [callsub block]
+    for b in blocks:
+        if b.ops and b.ops[-1].op == "callsub":
+            callee = _callee_of(b, bb_to_sub)
+            if callee is not None:
+                sites.setdefault(callee, []).append(b)
+
+    bound: dict = {}                       # (sub.key, index) -> value
+    for sub, callers in sites.items():
+        a_in = arity.get(sub, (0, 0))[0]
+        for i in range(a_in):
+            vals = []
+            for cb in callers:
+                args = res.args.get(id(cb.ops[-1]))
+                pos = a_in - 1 - i         # top-first within the call's args
+                if args and pos < len(args) and args[pos] is not None:
+                    vals.append(args[pos])
+            key = (sub.key, i)
+            if len(vals) == 1:
+                bound[key] = vals[0]
+            elif vals:
+                ph = phi_factory(sub, a_in - i)
+                bound[key] = ph
+                ph.args.extend(vals)
+
+    def resolve(v, depth=0):
+        while isinstance(v, _Param) and depth < 16:
+            nxt = bound.get((v.sub_key, v.index))
+            if nxt is None or nxt is v:
+                return None                # no call site supplies it
+            v, depth = nxt, depth + 1
+        return v
+
+    for k, ins in res.args.items():
+        for j, v in enumerate(ins):
+            if isinstance(v, _Param):
+                ins[j] = resolve(v)
+    for b, st in res.exit.items():
+        for j, v in enumerate(st):
+            if isinstance(v, _Param):
+                st[j] = resolve(v)
+    for phis in res.phis.values():
+        for _slot, ph in phis:
+            ph.args = [resolve(a) if isinstance(a, _Param) else a for a in ph.args]
 
 
 def _isucc(b, body, return_point):
