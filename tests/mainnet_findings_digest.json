@@ -47,9 +47,9 @@
    "findings": 18
   },
   "ir-arbitrary-inner-asset": {
-   "contracts": 35,
+   "contracts": 33,
    "crashes": 0,
-   "findings": 66
+   "findings": 61
   },
   "ir-partial-tainted-fund-flow": {
    "contracts": 10,
@@ -67,24 +67,24 @@
    "findings": 0
   },
   "ir-tainted-freeze": {
-   "contracts": 2,
+   "contracts": 1,
    "crashes": 0,
-   "findings": 3
+   "findings": 1
   },
   "ir-tainted-fund-flow": {
    "contracts": 55,
    "crashes": 0,
-   "findings": 173
+   "findings": 167
   },
   "ir-tainted-log": {
-   "contracts": 46,
+   "contracts": 43,
    "crashes": 0,
-   "findings": 155
+   "findings": 131
   },
   "ir-tainted-state-write": {
-   "contracts": 23,
+   "contracts": 20,
    "crashes": 0,
-   "findings": 85
+   "findings": 80
   },
   "is-deletable": {
    "contracts": 181,
@@ -130,7 +130,7 @@
    "inner-txn-close-rekey": 1,
    "ir-arbitrary-inner-asset": 4,
    "ir-tainted-fund-flow": 10,
-   "ir-tainted-log": 11,
+   "ir-tainted-log": 9,
    "ir-tainted-state-write": 6,
    "is-deletable": 27,
    "is-updatable": 27,
@@ -322,7 +322,6 @@
    "delete-funds-check": 1,
    "group-size-check": 1,
    "inner-txn-fee": 1,
-   "ir-tainted-log": 1,
    "is-deletable": 1,
    "is-updatable": 1,
    "unprotected-deletable": 1,
@@ -437,7 +436,7 @@
    "inner-txn-close-rekey": 2,
    "ir-arbitrary-inner-asset": 2,
    "ir-tainted-fund-flow": 3,
-   "ir-tainted-log": 6,
+   "ir-tainted-log": 5,
    "is-deletable": 1,
    "is-updatable": 1,
    "unprotected-deletable": 1,
@@ -678,7 +677,6 @@
   "5280ee1b111a6121": {
    "abi-method-selector": 2,
    "inner-txn-close-rekey": 6,
-   "ir-arbitrary-inner-asset": 1,
    "is-updatable": 1
   },
   "5347401452b2624a": {
@@ -755,7 +753,7 @@
    "inner-txn-close-rekey": 2,
    "ir-arbitrary-inner-asset": 2,
    "ir-tainted-fund-flow": 2,
-   "ir-tainted-log": 6,
+   "ir-tainted-log": 5,
    "is-deletable": 1,
    "is-updatable": 1,
    "unprotected-deletable": 1,
@@ -822,7 +820,7 @@
    "inner-txn-close-rekey": 1,
    "ir-arbitrary-inner-asset": 4,
    "ir-tainted-fund-flow": 10,
-   "ir-tainted-log": 11,
+   "ir-tainted-log": 9,
    "ir-tainted-state-write": 6,
    "is-deletable": 27,
    "is-updatable": 27,
@@ -903,7 +901,6 @@
   "755c10451e44a3f9": {
    "abi-method-selector": 1,
    "delete-funds-check": 1,
-   "ir-tainted-state-write": 2,
    "is-deletable": 1,
    "is-updatable": 1,
    "timelock-upgrade": 1,
@@ -1052,7 +1049,7 @@
    "inner-txn-close-rekey": 1,
    "ir-arbitrary-inner-asset": 4,
    "ir-tainted-fund-flow": 10,
-   "ir-tainted-log": 11,
+   "ir-tainted-log": 9,
    "ir-tainted-state-write": 6,
    "is-deletable": 27,
    "is-updatable": 27,
@@ -1094,7 +1091,6 @@
    "delete-funds-check": 1,
    "group-size-check": 1,
    "inner-txn-fee": 1,
-   "ir-tainted-log": 1,
    "is-deletable": 1,
    "is-updatable": 1,
    "unprotected-deletable": 1,
@@ -1243,7 +1239,7 @@
    "ir-arbitrary-inner-asset": 1,
    "ir-tainted-fund-flow": 4,
    "ir-tainted-log": 5,
-   "ir-tainted-state-write": 6,
+   "ir-tainted-state-write": 5,
    "is-deletable": 1,
    "is-updatable": 1,
    "unsafe-division-order": 2
@@ -1263,9 +1259,9 @@
    "group-size-check": 1,
    "inner-txn-close-rekey": 1,
    "inner-txn-fee": 1,
-   "ir-arbitrary-inner-asset": 2,
+   "ir-arbitrary-inner-asset": 1,
    "ir-tainted-fund-flow": 1,
-   "ir-tainted-log": 3,
+   "ir-tainted-log": 2,
    "is-deletable": 1,
    "is-updatable": 1,
    "unprotected-deletable": 1,
@@ -1299,7 +1295,7 @@
    "abi-method-selector": 1,
    "delete-funds-check": 1,
    "inner-txn-close-rekey": 2,
-   "ir-tainted-log": 13,
+   "ir-tainted-log": 1,
    "is-deletable": 1,
    "is-updatable": 1,
    "unprotected-deletable": 1,
@@ -1308,7 +1304,6 @@
   "ae6098a180db5aed": {
    "ir-tainted-fund-flow": 1,
    "ir-tainted-log": 1,
-   "ir-tainted-state-write": 1,
    "is-updatable": 1,
    "unprotected-updatable": 1,
    "unsafe-division-order": 1
@@ -1472,8 +1467,7 @@
    "is-deletable": 1
   },
   "bf9dedbccbc33d3e": {
-   "abi-method-selector": 1,
-   "ir-tainted-freeze": 2
+   "abi-method-selector": 1
   },
   "bfeec9bc9797a893": {
    "abi-method-selector": 4,
@@ -1641,7 +1635,6 @@
    "abi-method-selector": 3,
    "delete-funds-check": 1,
    "ir-tainted-fund-flow": 1,
-   "ir-tainted-log": 1,
    "ir-tainted-state-write": 4,
    "is-deletable": 1,
    "is-updatable": 1,
@@ -1801,8 +1794,7 @@
    "abi-method-selector": 1,
    "group-size-check": 1,
    "inner-txn-close-rekey": 3,
-   "ir-arbitrary-inner-asset": 2,
-   "ir-tainted-fund-flow": 7,
+   "ir-tainted-fund-flow": 2,
    "ir-tainted-state-write": 2
   },
   "eead34e66cdb7dde": {
@@ -1884,11 +1876,10 @@
    "group-size-check": 1,
    "inner-txn-close-rekey": 1,
    "ir-arbitrary-inner-appcall": 1,
-   "ir-arbitrary-inner-asset": 2,
+   "ir-arbitrary-inner-asset": 1,
    "ir-tainted-freeze": 1,
    "ir-tainted-fund-flow": 1,
    "ir-tainted-log": 2,
-   "ir-tainted-state-write": 1,
    "is-deletable": 1,
    "is-updatable": 1,
    "unprotected-deletable": 1,
@@ -1929,7 +1920,7 @@
   },
   "fdebc35de3f92437": {
    "abi-method-selector": 2,
-   "ir-tainted-fund-flow": 2
+   "ir-tainted-fund-flow": 1
   },
   "fdfd5c7a54483a76": {
    "abi-method-selector": 3,

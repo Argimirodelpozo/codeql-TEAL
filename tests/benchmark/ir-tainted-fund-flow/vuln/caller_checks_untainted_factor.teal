@@ -1,0 +1,30 @@
+#pragma version 10
+// VULN: the call site checks the UNTAINTED factor of a composite argument.
+// `pay(rate * btoi(arg0))` with `assert(rate <= 100)` — the attacker's arg0 is
+// entirely unconstrained, but the interprocedural summary matched the guard
+// against the argument's whole def-tree, so `rate`'s check read as "the argument
+// is validated". The canonical `payout = shares * price` shape; the sink path
+// already refused it, this path did not.
+byte "rate"
+app_global_get
+dup
+int 100
+<=
+assert
+txna ApplicationArgs 0
+btoi
+*
+callsub pay
+int 1
+return
+pay:
+proto 1 0
+itxn_begin
+int pay
+itxn_field TypeEnum
+global CreatorAddress
+itxn_field Receiver
+frame_dig -1
+itxn_field Amount
+itxn_submit
+retsub

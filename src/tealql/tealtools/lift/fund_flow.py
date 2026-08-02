@@ -90,6 +90,50 @@ def _dominators(sub) -> dict:
     return iterative_dominators(ids, entries, lambda i: preds[i])
 
 
+def _post_dominators(sub) -> dict:
+    """``{block_id: post-dominators}`` for one subroutine — dominators on the
+    REVERSED CFG, seeded at the blocks that leave it.
+
+    ``iterative_dominators`` is parameterised by its edge accessor, so this is
+    the same fixpoint with successors for predecessors and exits for entries."""
+    ids = [b.id for b in sub.body]
+    if not ids:
+        return {}
+    live = set(ids)
+    succ = {b.id: [s for s in _succs(b.terminator) if s in live] for b in sub.body}
+    exits = [i for i in ids if not succ[i]] or ids[-1:]
+    return iterative_dominators(ids, exits, lambda i: succ[i])
+
+
+def _post_dominating_guards(by_id, pdom, sink_bid, sink_idx, def_of, sink_regs,
+                            sink_keys, inv_ret=None) -> list:
+    """Asserts that MUST run after the sink, and therefore still gate it.
+
+    A failed ``assert`` reverts the ENTIRE transaction, inner transactions
+    included, so an assert the sink cannot avoid reaching undoes the submit just
+    as surely as one that ran before it. `itxn_submit; ...; assert(sender ==
+    creator)` is a guarded flow, and reading only dominators called it unguarded.
+
+    ASSERTS ONLY, deliberately. A forced branch is credited pre-sink because
+    reaching the sink PROVES the condition held; after the sink it proves
+    nothing — the sink already executed, and the branch merely selects which
+    path runs next. Post-dominance is also intra-sub, which is sufficient: the
+    sub must reach one of its own exits, and the assert lies on every such path
+    (``retsub`` returns to the caller and is not a program exit, so the exit set
+    below is what makes the claim, not the terminator kind)."""
+    guards = []
+    for d in pdom.get(sink_bid, {sink_bid}):
+        blk = by_id.get(d)
+        if blk is None:
+            continue
+        ops = blk.ops if d != sink_bid else blk.ops[sink_idx + 1:]
+        for o in ops:
+            if isinstance(o, pre_ir.Assert):
+                guards.append(_classify("assert-after", None, o.condition, def_of,
+                                        sink_regs, sink_keys, inv_ret))
+    return guards
+
+
 # --------------------------------------------------------------------------
 # Expression walk: registers + their defining ops behind a Value
 # --------------------------------------------------------------------------
@@ -589,7 +633,17 @@ def _entry_guards(lifter, def_of, dom_by_sub, taint, inv_ret=None):
                     aregs = {id(r) for r, _ in walked}
                     akeys = {k for _, oo in walked
                              if (k := _input_key(_intr(oo) if oo is not None else None)) is not None}
-                    guards = _dominating_guards(by_id, dom, b.id, idx, def_of, aregs,
+                    # Match guards against the TAINTED members only, exactly as
+                    # the sink path narrows `sink_regs` to `guard_regs`. `aregs`
+                    # is the arg's whole def-tree, so matching any member credits
+                    # a check on a co-operand the attacker does not control: with
+                    # `callsub pay(state_rate * btoi(arg))`,
+                    # `assert(state_rate <= cap)` reads as "the argument is
+                    # validated" while `arg` stays free. Same canonical
+                    # `payout = shares * price` shape the sink path already
+                    # refuses — this path just never applied the rule.
+                    gregs = {r for r in aregs if taint.get(r)}
+                    guards = _dominating_guards(by_id, dom, b.id, idx, def_of, gregs,
                                                 akeys, inv_ret)
                     facts.append((s.id, any(r in taint for r in aregs),
                                   any(g.checks_input for g in guards),
@@ -659,6 +713,35 @@ def _callee_param_guards(lifter, def_of, dom_by_sub, inv_ret=None) -> dict:
     return out
 
 
+def _callee_sender_guards(lifter, def_of, dom_by_sub, inv_ret=None) -> dict:
+    """``{sub.id: bool}`` — the sub checks the SENDER on every path that returns.
+
+    A sender check is not about any particular parameter, so it cannot be
+    expressed in :func:`_callee_param_guards`' per-param map, and the sink path
+    only consults that map inside ``for ai, arg in enumerate(inv.args)`` gated on
+    the arg overlapping the sink. The canonical ``self._check_owner()`` helper —
+    ``proto 0 0``, assert sender == creator, return — therefore has no argument
+    to overlap and could never be credited, no matter how plainly it dominates
+    the sink. Same for a helper whose args are unrelated to the sink's value.
+
+    AND across returns: a helper that checks the sender on one path and falls
+    through on another has not checked it."""
+    out: dict = {}
+    for s in lifter.subs:
+        dom, by_id = dom_by_sub[s.id], {b.id: b for b in s.body}
+        rets = [b for b in s.body
+                if isinstance(b.terminator, pre_ir.SubroutineReturn)]
+        ok = bool(rets)
+        for rb in rets:
+            # Empty match sets: `_classify` sets `checks_sender` from a sender
+            # read under a pinning equality, with no reference to sink_regs.
+            gs = _dominating_guards(by_id, dom, rb.id, len(rb.ops), def_of,
+                                    set(), set(), inv_ret)
+            ok = ok and any(g.checks_sender for g in gs)
+        out[s.id] = ok
+    return out
+
+
 def _tainted_sink_flows(lifter, sink_of, taint=None, trusted_args=frozenset(),
                         sender_only=False) -> list:
     """Core taint-to-sink engine: ``sink_of(intrinsic)`` yields ``(label,
@@ -678,15 +761,18 @@ def _tainted_sink_flows(lifter, sink_of, taint=None, trusted_args=frozenset(),
         taint = user_input_taint(lifter, trusted_args)
     def_of = _def_map(lifter)
     dom_by_sub = {s.id: _dominators(s) for s in lifter.subs}
+    pdom_by_sub = {s.id: _post_dominators(s) for s in lifter.subs}
     # Value edges the def-walk follows: a call result into the callee's returns,
     # plus a scratch round-trip back to what was stored (same map shape).
     inv_ret = _invoke_returns(lifter)
     inv_ret.update(_scratch_value_edges(lifter, dom_by_sub))
     entry_guards, called = _entry_guards(lifter, def_of, dom_by_sub, taint, inv_ret)
     callee_pg = _callee_param_guards(lifter, def_of, dom_by_sub, inv_ret)
+    callee_sender = _callee_sender_guards(lifter, def_of, dom_by_sub, inv_ret)
     findings: list = []
     for sub in lifter.subs:
         dom = dom_by_sub[sub.id]
+        pdom = pdom_by_sub[sub.id]
         by_id = {b.id: b for b in sub.body}
         pidx = {id(p.register): i for i, p in enumerate(sub.parameters)}
         for b in sub.body:
@@ -722,6 +808,10 @@ def _tainted_sink_flows(lifter, sink_of, taint=None, trusted_args=frozenset(),
                         sink_regs, guard_regs, sink_keys = set(), set(), set()
                     guards = _dominating_guards(by_id, dom, b.id, idx, def_of, guard_regs,
                                                 sink_keys, inv_ret)
+                    # A failed assert reverts the inner txn too, so one the sink
+                    # cannot avoid reaching gates it as well.
+                    guards += _post_dominating_guards(by_id, pdom, b.id, idx, def_of,
+                                                      guard_regs, sink_keys, inv_ret)
                     # Interprocedural: a value flowing from a caller-checked param.
                     feeding = {pidx[r] for r in sink_regs if r in pidx}
                     egp = entry_guards.get(sub.id, {})
@@ -742,6 +832,12 @@ def _tainted_sink_flows(lifter, sink_of, taint=None, trusted_args=frozenset(),
                             callee = lifter.name2sub.get(inv.target) if inv else None
                             if callee is None:
                                 continue
+                            # A sub that checks the SENDER on every return
+                            # guards this sink by dominating it — no argument
+                            # needs to reach the sink's value, and a `proto 0 0`
+                            # owner-check has none to offer.
+                            if callee_sender.get(callee.id):
+                                guards.append(Guard("callee", None, False, True))
                             cpg = callee_pg.get(callee.id, {})
                             for ai, arg in enumerate(inv.args):
                                 ci, cs = cpg.get(ai, (False, False))
@@ -752,7 +848,11 @@ def _tainted_sink_flows(lifter, sink_of, taint=None, trusted_args=frozenset(),
                                 akeys = {k for _, oo in aw
                                          if (k := _input_key(_intr(oo) if oo else None))
                                          is not None}
-                                if (aregs & sink_regs) or (akeys & sink_keys):
+                                # `guard_regs`, not `sink_regs`: overlapping the
+                                # sink's whole def-tree credits a callee that
+                                # validated an UNTAINTED co-operand — the same
+                                # narrowing the intra-procedural path applies.
+                                if (aregs & guard_regs) or (akeys & sink_keys):
                                     if ci:
                                         guards.append(Guard("callee", None, True, False))
                                     if cs:

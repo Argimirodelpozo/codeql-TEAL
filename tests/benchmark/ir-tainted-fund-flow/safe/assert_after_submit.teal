@@ -1,0 +1,19 @@
+#pragma version 10
+// SAFE: the sender check runs AFTER itxn_submit. A failed assert reverts the
+// whole transaction, inner transactions included, so an assert the sink cannot
+// avoid reaching gates it exactly as one before it would. Reading only
+// dominators called this unguarded.
+txna ApplicationArgs 0
+itxn_begin
+int pay
+itxn_field TypeEnum
+itxn_field Receiver
+int 1000000
+itxn_field Amount
+itxn_submit
+txn Sender
+global CreatorAddress
+==
+assert
+int 1
+return

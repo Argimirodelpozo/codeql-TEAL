@@ -147,7 +147,7 @@ _BASELINE: dict[str, tuple[int, int, int, int]] = {
     # computed in `_dominating_guards` and stored on `Guard()`; nothing read it.
     # The new TN pins the shape the fix must NOT break: the same guard spelled as
     # a rejecting inequality (`!=; bnz reject`), which is a real guard.
-    "ir-tainted-fund-flow": (11, 0, 0, 9),
+    "ir-tainted-fund-flow": (12, 0, 0, 11),
     "ir-tainted-log": (2, 0, 0, 3),
     "ir-tainted-state-write": (2, 0, 0, 3),
     "ir-partial-tainted-fund-flow": (4, 0, 0, 4),

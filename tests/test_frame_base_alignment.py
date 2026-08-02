@@ -203,8 +203,7 @@ def test_frame_bury_after_a_push_keeps_its_value():
 
 
 def test_taint_survives_a_bury_dig_roundtrip_into_a_call():
-    """A recovered FALSE NEGATIVE, and the clearest proof the slid index cost
-    real analysis rather than tidiness.
+    """The clearest proof the slid index cost real analysis rather than tidiness.
 
     app_2450560800 label11 does:
 
@@ -213,16 +212,35 @@ def test_taint_survives_a_bury_dig_roundtrip_into_a_call():
         concat ; log
 
     i.e. attacker input is parked in a frame slot, read back, passed through a
-    `proto 1 1` callee and logged as the ARC-4 return. With the bottom-anchored
-    index the `frame_dig 1` resolved to a neighbouring slot, the chain broke, and
-    `ir-tainted-log` reported nothing on this contract."""
-    from tealql.security import DETECTORS
+    callee and logged as the ARC-4 return. With the bottom-anchored index the
+    `frame_dig 1` resolved to a neighbouring slot and the chain broke, so the
+    engine saw no flow here at all.
+
+    Asserts the TAINT REACHES the sink, not that a vulnerability is reported.
+    Those are different claims and this test used to conflate them: label77
+    asserts the sender on its single return, so the flow is legitimately GUARDED
+    and `.detect()` rightly says nothing. Pinning the verdict made this test fail
+    the moment a callee-sender guard started being credited — for a fix that was
+    correct. What the frame index owns is whether the value arrives at all."""
+    from tealql.security.common import ir_lifter
+    from tealql.tealtools.lift import fund_flow as FF
 
     probe = PROBES / "app_2450560800.teal"
     if not probe.exists():
         pytest.skip("app_2450560800 not present")
     prog = SSAProgram(str(probe))
     prog.propagate_constants()
-    vs = DETECTORS["ir-tainted-log"](prog, file=probe.name).detect()
-    assert vs, ("attacker input reaching `log` through a frame-slot roundtrip "
-                "went unreported — the frame target index has slid again")
+    lifter = ir_lifter(prog)
+    assert lifter is not None, "contract no longer lifts"
+
+    def sink_of(s):
+        return (("log", "MEDIUM", list(s.args)),) if s.op == "log" else ()
+
+    flows = FF._tainted_sink_flows(lifter, sink_of)
+    at_1442 = [f for f in flows if f.sub_id == "label11"]
+    assert at_1442, (
+        "attacker input no longer reaches the `log` in label11 through the "
+        "frame-slot roundtrip — the frame target index has slid again")
+    # And it is guarded for the RIGHT reason: the callee pins the sender.
+    assert all(f.guarded for f in at_1442)
+    assert any("sender" in g.describe() for f in at_1442 for g in f.guards)

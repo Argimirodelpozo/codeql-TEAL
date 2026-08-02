@@ -1,0 +1,29 @@
+#pragma version 10
+// SAFE: the canonical compiled `self._check_owner()` — a `proto 0 0` helper that
+// asserts sender == creator and returns nothing. It dominates the sink, but the
+// callee summary was consulted only per-ARGUMENT and gated on the argument
+// overlapping the sink's value, so a helper with no arguments could never be
+// credited however plainly it guarded.
+txn ApplicationID
+bz create
+callsub only_owner
+txna ApplicationArgs 0
+itxn_begin
+int pay
+itxn_field TypeEnum
+itxn_field Receiver
+int 1000000
+itxn_field Amount
+itxn_submit
+int 1
+return
+create:
+int 1
+return
+only_owner:
+proto 0 0
+txn Sender
+global CreatorAddress
+==
+assert
+retsub
