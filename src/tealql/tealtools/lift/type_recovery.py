@@ -312,6 +312,20 @@ def _collect_phi_evidence(blocks, find, phi_ids, parent):
                     for r in _reg_args(src):
                         if id(r) in phi_ids:
                             consumer[find(id(r))].add(k)
+                # POSITIONAL expectations too, not just whole-op families. An
+                # op can pin one operand without being uniformly typed, and
+                # those were invisible here: `extract3`'s START is uint64 while
+                # its array operand is bytes, so a loop index whose web was
+                # seeded by a bytes placeholder stayed bytes all the way into
+                # the slice and puya rejected the intrinsic. Same tier as the
+                # evidence above — a consumer is a consumer.
+                for i, a in enumerate(src.args):
+                    if not isinstance(a, pre_ir.Register) or id(a) not in phi_ids:
+                        continue
+                    et = _hard_expected_type(src.op, i, src.args, src.immediates)
+                    f = avm(et) if et else None
+                    if f in ("u", "b"):
+                        consumer[find(id(a))].add(f)
             if isinstance(o, pre_ir.Assert):
                 for r in _reg_args(o.condition):
                     if id(r) in phi_ids:

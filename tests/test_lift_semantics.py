@@ -285,22 +285,24 @@ def test_lifts_and_optimises(contract):
 
 
 # Contracts whose lift currently yields IR puya REPORTS (but does not raise) type
-# errors on — today all "incompatible argument types on Intrinsic(extract3/replace3)":
-# a bytes-labelled REGISTER in a uint64 slot.
+# errors on. EMPTY as of 2026-08-02: the class it held was
+# "incompatible argument types on Intrinsic(extract3/replace3)" — a bytes-labelled
+# REGISTER in a uint64 slot — and both halves are now fixed.
 #
-# The non-phi half of this class is FIXED (type_recovery._fix_langspec_operand_types
-# corrects a register whose label contradicts a langspec-forced operand position;
-# over 30 mainnet probes it took recipient mistypes 18 -> 0 and puya arg-type errors
-# 36 -> 0). What remains in BOTH pinned contracts is the PHI-WEB sub-case: the bad
-# operand is a phi register, so correcting it means retyping the whole web, which is
-# _reconcile_mixed_phis' job and this project's most breakage-prone area (see the
-# mixed-type join-phi and assert-0-survivor bugs). Deliberately left pinned rather
-# than half-fixed: the follow-up is to let _reconcile_mixed_phis take langspec
-# consumer evidence into its tier order.
+# The non-phi half went first (_fix_langspec_operand_types corrects a register whose
+# label contradicts a langspec-forced operand position). The PHI-WEB half was left
+# pinned rather than half-fixed, because retyping a web is this project's most
+# breakage-prone area; the recorded follow-up was to let _reconcile_mixed_phis take
+# langspec consumer evidence into its tier order, and that is what closed it:
+# _collect_phi_evidence now reads POSITIONAL expectations (extract3's start is
+# uint64 while its array operand is bytes), not just whole-op families, so a loop
+# index seeded by a bytes placeholder no longer stays bytes into the slice.
 #
 # Pinned EXACTLY: a NEW name failing here is a lift regression; fixing recovery for
 # a pinned name must DELETE its entry (the test fails on a stale pin too).
-_KNOWN_PUYA_REPORTED = {"array_Contract", "large_box_operations_NestedItemArrayUInt64"}
+#: EMPTY, and it must stay a pin rather than a comment: the test below fails
+#: on a STALE entry too, so a name may only be added with evidence.
+_KNOWN_PUYA_REPORTED: set[str] = set()
 _NAME_BY_PATH = {str(d): n for n, d in _all_contracts()}
 
 
