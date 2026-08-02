@@ -23,7 +23,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 
 from . import pre_ir
-from .taint import _intr, _invoke, source_label, user_input_taint
+from .taint import UNKNOWN_SOURCE, _intr, _invoke, source_label, user_input_taint
 from ..avm import FUND_FIELDS as _FUND_FIELDS
 from ..cfg.dominance import iterative_dominators
 
@@ -789,6 +789,13 @@ def _tainted_sink_flows(lifter, sink_of, taint=None, trusted_args=frozenset(),
                             if tt:
                                 sources |= tt
                                 valreg = a
+                        elif isinstance(a, pre_ir.Undefined):
+                            # The lift could not resolve this operand, so it
+                            # cannot be shown clean either. Skipping the sink
+                            # would report NOTHING for a value the attacker may
+                            # well control — the silent direction. Report it
+                            # with its own source label instead.
+                            sources.add(UNKNOWN_SOURCE)
                     if not sources:
                         continue
                     if valreg is not None:

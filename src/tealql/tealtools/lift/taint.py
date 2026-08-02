@@ -21,6 +21,15 @@ from ..avm import (
 from . import pre_ir
 
 
+#: Taint label for a value the lift could NOT resolve — a slot a callee consumed
+#: out from under its caller, or a shallow return path padded out to a divergent
+#: callee's declared width. It is TOP, never clean: "unknown" cannot be
+#: discharged as "not attacker-controlled", and a may-analysis that reads an
+#: unresolved value as clean turns every one into a SILENT false negative —
+#: precisely the bug the narrow ``frame_dig`` fallback used to have.
+UNKNOWN_SOURCE = "unresolved"
+
+
 def source_label(intr) -> str | None:
     """The user-input source kind an intrinsic reads, or ``None`` — via
     :func:`tealql.tealtools.avm.attacker_input_label`, the ONE source table this
@@ -84,7 +93,11 @@ def _return_summary(lifter, trusted_args=frozenset()) -> dict:
     summary: dict = {s.id: [set(), set()] for s in subs}   # mutable accumulators
 
     def reg_t(v):
-        return taint.get(id(v), set()) if isinstance(v, pre_ir.Register) else set()
+        if isinstance(v, pre_ir.Register):
+            return taint.get(id(v), set())
+        if isinstance(v, pre_ir.Undefined):
+            return {UNKNOWN_SOURCE}          # TOP -- see UNKNOWN_SOURCE
+        return set()
 
     changed = True
     while changed:
@@ -153,7 +166,11 @@ def user_input_taint(lifter, trusted_args=frozenset()) -> dict:
     taint: dict = defaultdict(set)
 
     def reg_t(v):
-        return taint.get(id(v), set()) if isinstance(v, pre_ir.Register) else set()
+        if isinstance(v, pre_ir.Register):
+            return taint.get(id(v), set())
+        if isinstance(v, pre_ir.Undefined):
+            return {UNKNOWN_SOURCE}          # TOP -- see UNKNOWN_SOURCE
+        return set()
 
     changed = True
     while changed:

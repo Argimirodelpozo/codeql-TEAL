@@ -296,3 +296,32 @@ def test_a_callee_that_eats_the_callers_stack_yields_undefined_not_a_stale_value
     assert "2u" not in rendered, (
         "the lift asserted the STALE pre-call value for a slot the callee "
         f"overwrote — the measured outcome-inverting bug is back:\n{rendered}")
+
+
+def test_an_unresolved_value_is_tainted_not_clean():
+    """An `Undefined` the lift emits must read as TOP to every may-analysis.
+
+    When a callee consumes the caller's own stack, the lift marks those slots
+    `Undefined` — it cannot know what the callee left there. That is honest to a
+    human reading the IR, but the taint map is keyed by Register, so an
+    `Undefined` had NO entry and every consumer read it as *clean*. Measured on
+    this contract: attacker-controlled `ApplicationArgs[0]` reaches an inner
+    `pay` Amount, and `ir-tainted-fund-flow` reported NOTHING — a silent false
+    negative, and the same class as the narrow `frame_dig` fallback that
+    produced an output with no inputs.
+
+    Unknown is not clean. It cannot be discharged as "not attacker-controlled",
+    so it is now seeded with `UNKNOWN_SOURCE` in both taint fixpoints and
+    counted as a source at the sink, which names it in the finding."""
+    from tealql.security import DETECTORS
+
+    teal = (Path(__file__).resolve().parent / "contracts" / "hostile-crossband"
+            / "crossband_taint.teal")
+    if not teal.exists():
+        pytest.skip("fixture not present")
+    prog = SSAProgram(str(teal))
+    prog.propagate_constants()
+    vs = DETECTORS["ir-tainted-fund-flow"](prog, file=teal.name).detect()
+    assert vs, (
+        "an attacker-controlled Amount behind a callee that ate the caller's "
+        "stack went UNREPORTED — an unresolved value is being read as clean")
