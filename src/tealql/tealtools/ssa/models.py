@@ -5,7 +5,7 @@
 
 HAZARD — identity keys are source positions, so one instruction per line is
 architectural: SSAVar is ``(file, line, output_index)``, Phi is
-``(file, line, kind, stack_index)``, BasicBlock is
+``(file, line, stack_index)``, BasicBlock is
 ``(file, first_line, last_line)``.
 
 HAZARD — ``Assignment.inputs`` and ``outputs`` are TOP-FIRST (index 0 = topmost
@@ -67,27 +67,27 @@ class SSAVar:
 
 
 class Phi:
-    """An SSA phi at stack slot ``stack_index`` (1-based, top-first); ``args``
-    holds the originating :class:`SSAVar`\\ s that can flow in.
+    """An SSA phi at stack slot ``stack_index`` (1-based, top-first) — identity
+    ``(file, line, stack_index)``; ``args`` holds the originating
+    :class:`SSAVar`\\ s that can flow in.
 
-    ``kind`` is VESTIGIAL — it is always ``"DirectPhi"``. The CodeQL extractor
-    once also emitted ``IndirectPhi`` (a phi holding a single chain-root phi
-    rather than leaves); nothing has produced one since the builder moved to
-    Python, and chain structure now lives on the ``PyPhi`` graph
-    (:meth:`SSAProgram.chain_predecessors`). The field and its place in the
-    identity key are kept only because they are public API."""
+    The CodeQL extractor once split phis into a ``DirectPhi`` (leaf args) and an
+    ``IndirectPhi`` (a single chain-root phi), and a ``kind`` field carried the
+    distinction into the identity key. Nothing has produced an ``IndirectPhi``
+    since the builder moved to Python — chain structure lives on the ``PyPhi``
+    graph now (:meth:`SSAProgram.chain_predecessors`) — so the field was a
+    constant and is gone."""
 
     __slots__ = (
-        "file", "line", "stack_index", "kind",
+        "file", "line", "stack_index",
         "args", "uses", "basic_block",
         "const_value", "range", "type",
     )
 
-    def __init__(self, file: str, line: int, stack_index: int, kind: str):
+    def __init__(self, file: str, line: int, stack_index: int):
         self.file = file
         self.line = line
         self.stack_index = stack_index
-        self.kind = kind
         self.args: list[Union[SSAVar, "Phi"]] = []
         self.uses: list["Assignment"] = []
         self.basic_block: Optional["BasicBlock"] = None
@@ -98,7 +98,7 @@ class Phi:
         self.type: Optional["TealType"] = None
 
     def _key(self) -> tuple:
-        return (self.file, self.line, self.kind, self.stack_index)
+        return (self.file, self.line, self.stack_index)
 
     def __hash__(self) -> int:
         return hash(self._key())

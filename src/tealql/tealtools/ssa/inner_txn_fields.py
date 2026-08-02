@@ -73,8 +73,9 @@ def compute_inner_txn_fields(prog: SSAProgram) -> list:
         if isinstance(op_input, SSAVar):
             return ("SSAVar", op_input.file, op_input.line, op_input.index)
         if isinstance(op_input, Phi):
-            return (op_input.kind, op_input.file, op_input.line,
-                    op_input.stack_index)
+            # A literal discriminator, not a field: ``Phi`` no longer carries a
+            # ``kind`` (the CodeQL-era Direct/Indirect split is gone).
+            return ("Phi", op_input.file, op_input.line, op_input.stack_index)
         return None
 
     entries: list = []

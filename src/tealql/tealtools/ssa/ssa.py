@@ -1396,7 +1396,7 @@ def _seed_consts_and_identity_steps(prog: SSAProgram, scratch_stores: dict) -> N
         if isinstance(o, SSAVar):
             return _ssavar_key(o)
         if isinstance(o, Phi):
-            return ("phi", o.file, o.line, o.kind, o.stack_index)
+            return ("phi", o.file, o.line, o.stack_index)
         return None
 
     # (a) shuffle pass-through
@@ -1420,7 +1420,7 @@ def _seed_consts_and_identity_steps(prog: SSAProgram, scratch_stores: dict) -> N
         _first = _p.args[0]
         if all(a is _first for a in _p.args[1:]):
             _src = _endpoint_key(_first)
-            _snk = ("phi", _p.file, _p.line, _p.kind, _p.stack_index)
+            _snk = ("phi", _p.file, _p.line, _p.stack_index)
             if _src is not None and _src != _snk:
                 _identity_steps.append((_src, _snk))
 
@@ -1535,13 +1535,12 @@ def _apply_pyssa_to(
             if src_v.type is not None:
                 v.type = src_v.type
 
-    # 2) Phis: one per (bb_key, slot). ``kind`` is always "DirectPhi" — it is a
-    # vestigial field kept for public API compatibility (see :class:`Phi`).
+    # 2) Phis: one per (bb_key, slot).
     phi_map: dict = {}  # PyPhi -> Phi
     for (bb_key, slot), py_p in py.phis.items():
-        p = Phi(bb_key[0], bb_key[1], slot, "DirectPhi")
+        p = Phi(bb_key[0], bb_key[1], slot)
         phi_map[py_p] = p
-        prog.phis[(bb_key[0], bb_key[1], "DirectPhi", slot)] = p
+        prog.phis[(bb_key[0], bb_key[1], slot)] = p
 
     # 3) BasicBlocks.
     bb_map: dict = {}
@@ -1594,7 +1593,7 @@ def _apply_pyssa_to(
 
     for bb in prog.blocks.values():
         bb.assignments.sort(key=lambda a: a.location.line)
-        bb.phis.sort(key=lambda p: (p.kind, p.stack_index))
+        bb.phis.sort(key=lambda p: p.stack_index)
 
     # 8) Chain-structure refs (chain root, propagation graph), off the hot path.
     prog._pyssa = py

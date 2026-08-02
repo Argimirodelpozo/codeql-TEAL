@@ -235,8 +235,6 @@ def _prune_dead_assert_edges(prog: SSAProgram):
                 s.predecessors.remove(b)
             undo_edges.append((b, si, s, pi))
             for phi in s.phis:
-                if phi.kind != "DirectPhi":
-                    continue
                 k = phi.stack_index
                 newargs = [p.exit_stack[-k] for p in s.predecessors
                            if len(p.exit_stack) >= k and p.exit_stack[-k] is not None]

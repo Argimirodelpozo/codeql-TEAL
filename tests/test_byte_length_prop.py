@@ -221,7 +221,7 @@ def test_propagate_phi_exact_length_agreement():
     v1, v2 = _var(10, 0), _var(11, 1)
     a1 = _asn("itob", inputs=[_int(5)], outputs=[v1])
     a2 = _asn("itob", inputs=[_int(6)], outputs=[v2])
-    ph = Phi("t.teal", 12, 0, "DirectPhi")
+    ph = Phi("t.teal", 12, 0)
     ph.args = [v1, v2]
     propagate_byte_lengths(_prog([a1, a2], phis=[ph]))
     assert ph.type.byte_length == 8
@@ -232,7 +232,7 @@ def test_propagate_phi_range_union_on_disagreement():
     v1, v2 = _var(10, 0), _var(11, 1)
     a1 = _asn("itob", inputs=[_int(5)], outputs=[v1])           # 8
     a2 = _asn("sha256", inputs=[_bytes_operand(3)], outputs=[v2])  # 32
-    ph = Phi("t.teal", 12, 0, "DirectPhi")
+    ph = Phi("t.teal", 12, 0)
     ph.args = [v1, v2]
     propagate_byte_lengths(_prog([a1, a2], phis=[ph]))
     assert ph.type.byte_length is None

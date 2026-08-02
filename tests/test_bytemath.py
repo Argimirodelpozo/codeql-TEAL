@@ -184,7 +184,7 @@ def test_propagate_phi_unions_bigint_ranges():
     v1, v2 = _var(10, 0), _var(11, 1)
     a1 = _asn("bytec_0", outputs=[v1], const=Const("bytes", "0x05"))   # 5
     a2 = _asn("bytec_1", outputs=[v2], const=Const("bytes", "0x0a"))   # 10
-    ph = Phi("t.teal", 12, 0, "DirectPhi")
+    ph = Phi("t.teal", 12, 0)
     ph.args = [v1, v2]
     propagate_bytemath_ranges(_prog([a1, a2], phis=[ph]))
     assert ph.type.int_value_range == _R(5, 10)

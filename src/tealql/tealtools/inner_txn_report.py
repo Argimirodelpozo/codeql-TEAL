@@ -321,7 +321,7 @@ class InnerTxnReport:
         if kind == "SSAVar":
             return self.prog.var(row["def_file"], row["def_line"], row["def_idx"])
         if kind.endswith("Phi"):
-            return self.prog.phi(row["def_file"], row["def_line"], kind, row["def_idx"])
+            return self.prog.phi(row["def_file"], row["def_line"], row["def_idx"])
         return None
 
     # -- public -----------------------------------------------------

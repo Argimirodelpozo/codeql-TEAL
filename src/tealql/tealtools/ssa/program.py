@@ -244,7 +244,7 @@ class SSAProgram:
         self.assignments.sort(key=lambda a: (a.location.file, a.location.line))
         for bb in self.blocks.values():
             bb.assignments.sort(key=lambda a: a.location.line)
-            bb.phis.sort(key=lambda p: (p.kind, p.stack_index))
+            bb.phis.sort(key=lambda p: p.stack_index)
 
         # The pre-pass above only populates ``self._graph`` / ``self.vars`` (for
         # const/range/type seeding) / ``self.blocks`` / ``self.assignments`` (for
@@ -264,15 +264,8 @@ class SSAProgram:
     def var(self, file: str, line: int, index: int) -> Optional[SSAVar]:
         return self.vars.get((file, line, index))
 
-    def phi(self, file: str, line: int, kind: str, stack_index: int) -> Optional[Phi]:
-        # ``kind`` is vestigial — every phi built here is a ``DirectPhi`` (see
-        # :class:`Phi`). It stays in the signature because it is public API, and
-        # a miss retries under the real kind so a caller still holding an old
-        # CodeQL-era ``"IndirectPhi"`` label resolves rather than getting None.
-        p = self.phis.get((file, line, kind, stack_index))
-        if p is not None:
-            return p
-        return self.phis.get((file, line, "DirectPhi", stack_index))
+    def phi(self, file: str, line: int, stack_index: int) -> Optional[Phi]:
+        return self.phis.get((file, line, stack_index))
 
     def block(self, file: str, first_line: int, last_line: int) -> Optional[BasicBlock]:
         return self.blocks.get((file, first_line, last_line))

@@ -45,7 +45,7 @@ def _operand_key(operand) -> Optional[tuple]:
     if isinstance(operand, SSAVar):
         return ("var", operand.file, operand.line, operand.index)
     if isinstance(operand, Phi):
-        return ("phi", operand.file, operand.line, operand.kind, operand.stack_index)
+        return ("phi", operand.file, operand.line, operand.stack_index)
     return None
 
 

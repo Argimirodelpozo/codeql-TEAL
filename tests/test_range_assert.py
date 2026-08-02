@@ -217,7 +217,7 @@ class TestPhiFedIsNeverNarrowed:
 
     def test_phi_arg_blocks_refinement(self):
         x, prog = self._linear_guarded_var()
-        ph = Phi("f.teal", 30, 1, "join")
+        ph = Phi("f.teal", 30, 1)
         ph.args = [x, Const("int", "7")]
         prog.phis = {("f.teal", 30, 1): ph}
 

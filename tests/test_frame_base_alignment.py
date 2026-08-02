@@ -131,8 +131,6 @@ def _real_edge_violations(prog) -> int:
     by_key = {b.key: b for b in py.blocks}
     bad = 0
     for ph in prog.phis.values():                  # live public phis only
-        if ph.kind != "DirectPhi":
-            continue
         pyph = prog._phi_to_pyphi.get(ph)
         if pyph is None:
             continue

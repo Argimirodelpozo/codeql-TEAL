@@ -18,8 +18,8 @@ def propagate_constants(prog: SSAProgram) -> None:
         if key[0] == "var":
             _, f, l, i = key
             return prog.vars.get((f, l, i))
-        _, f, l, kind, idx = key
-        return prog.phis.get((f, l, kind, idx))
+        _, f, l, idx = key
+        return prog.phis.get((f, l, idx))
 
     resolved_steps: list[tuple] = []
     for src_key, snk_key in steps:

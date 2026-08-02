@@ -76,7 +76,7 @@ def test_exit_stack_phis_are_registered(teal):
             if isinstance(slot, Phi):
                 assert id(slot) in live, (
                     f"{bb.file}:{bb.first_line} exit_stack holds a Phi "
-                    f"({slot.kind} slot {slot.stack_index}) missing from prog.phis")
+                    f"(slot {slot.stack_index}) missing from prog.phis")
 
 
 @pytest.mark.parametrize("teal", CORPUS, ids=_IDS)

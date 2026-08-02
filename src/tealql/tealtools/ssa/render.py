@@ -68,7 +68,7 @@ def functional_by_block(
         succs = ", ".join(f"L{s.first_line}" for s in bb.successors) or "-"
         out.append(f"# {bb}  preds=[{preds}] succs=[{succs}]")
         for p in bb.phis:
-            out.append(f"  {p.kind[0]}_{p.stack_index} = {p!r}")
+            out.append(f"  φ_{p.stack_index} = {p!r}")
         for a in bb.assignments:
             out.append(
                 f"  L{a.location.line:>4}: "
