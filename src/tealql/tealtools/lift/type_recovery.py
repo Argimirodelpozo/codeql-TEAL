@@ -985,6 +985,42 @@ def _hard_expected_type(op, idx, args, imm):
     return _expected_type(op, idx, args, imm)
 
 
+def _coerce_constant_operands(prog) -> None:
+    """A CONSTANT in a langspec-forced uint64 position must BE a uint64.
+
+    :func:`_fix_langspec_operand_types` consults exactly this evidence but skips
+    anything that is not a ``Register``, so a constant in a contradicting
+    position was never corrected. The empty bytes constant is how it shows up:
+    an unresolved value lowers to the typed-zero placeholder, and where the
+    register's reconstructed type was bytes that placeholder is ``0x`` — which
+    then feeds ``itob`` / ``-`` / ``>`` and puya reports ``received =
+    (bytes[0]), expected = (AVMType.uint64)``.
+
+    The operand POSITION is the authority here, exactly as in
+    :func:`to_puya_ir._coerce_slice_operands`, which does this for
+    ``extract3``/``substring3`` alone — this generalises it to every position
+    the langspec pins, and does it on the pre-IR so the lowered IR is right by
+    construction rather than repaired afterwards.
+
+    ONE DIRECTION ONLY. A bytes constant in a uint64 slot has a defined reading
+    (empty -> 0, else its ``btoi``); a uint64 constant in a BYTES slot does not,
+    because the expected width is the field's, not the value's — ``itob``-ing an
+    int into an ``itxn_field Receiver`` would invent an 8-byte address. Those
+    stay for :func:`_warn_residual_unknowns` to surface."""
+    for b in pre_ir.blocks(prog):
+        for o in b.ops:
+            vp = (o.source if isinstance(o, pre_ir.Assignment)
+                  else o.intrinsic if isinstance(o, pre_ir.IntrinsicOp) else None)
+            if not isinstance(vp, pre_ir.Intrinsic):
+                continue
+            for i, a in enumerate(vp.args):
+                if not isinstance(a, pre_ir.BytesConstant):
+                    continue
+                et = _hard_expected_type(vp.op, i, vp.args, vp.immediates)
+                if et and avm(et) == "u":
+                    vp.args[i] = _to_u64_const(a)
+
+
 def _fix_langspec_operand_types(prog) -> None:
     """Correct a register whose recovered type CONTRADICTS the AVM's own.
 
@@ -1060,8 +1096,17 @@ def _fix_langspec_operand_types(prog) -> None:
             continue                       # hard uses disagree -> genuine ambiguity
         r = reg_by_id[rid]
         et = next(iter(types))
-        if r.ir_type == "?" or avm(r.ir_type) == avm(et):
-            continue                       # unset or already the right family
+        if avm(r.ir_type) == avm(et):
+            continue                       # already the right family
+        # An UNSET register is resolved here too, not just a contradicting one.
+        # The fixpoint owns `?` in general, but it cannot reach every producer:
+        # `app_global_get_ex` returns (any, bool), and the `any` half stayed `?`
+        # all the way to lowering, whose default is uint64 — so a recipient
+        # address read out of global state arrived at `itxn_field Receiver` as a
+        # uint64 and puya reported the intrinsic type-invalid. Agreeing hard uses
+        # are better evidence than a default, and every guard below still
+        # applies, so a phi web, an AVM-fixed producer or a disputed call slot is
+        # still left alone.
         if rid in phi_targets:
             continue                       # a phi web is _reconcile_mixed_phis' job
         if rid in fixed:
@@ -1107,6 +1152,7 @@ def finalize_types(prog) -> None:
     # After the two passes above have handed out lowering defaults, and BEFORE
     # copy propagation spreads them.
     _fix_langspec_operand_types(prog)
+    _coerce_constant_operands(prog)
     _propagate_copy_types(prog)
     _unify_comparison_operands(prog)
     _fix_branch_conditions(prog)
