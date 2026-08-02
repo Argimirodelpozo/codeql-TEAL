@@ -325,3 +325,32 @@ def test_an_unresolved_value_is_tainted_not_clean():
     assert vs, (
         "an attacker-controlled Amount behind a callee that ate the caller's "
         "stack went UNREPORTED — an unresolved value is being read as clean")
+
+
+def test_a_panicking_op_survives_into_the_pre_ir_even_when_dead(tmp_path):
+    """`+` and `/` are NOT pure in the AVM, and our IR must keep them.
+
+    `int 2^64-1; int 1; +; pop` overflows, and an AVM overflow PANICS — the
+    transaction rejects. The result being discarded does not make the op
+    unobservable, so the lift must still emit it.
+
+    It does. Recorded here because puya's own optimiser, which
+    `lift_to_teal` runs afterwards, then DELETES it: the recompiled program is
+    `pushint 1; return`, which APPROVES where the original rejects — measured
+    on a live node, 10 of 10 dryrun inputs diverged. Same for a dead
+    divide-by-zero; a LIVE overflow is kept, so the trigger is precisely
+    dead-code elimination of an op puya considers pure.
+
+    That is a mismatch of assumptions rather than a bug in either side: puya's
+    frontend guarantees arithmetic cannot panic, decompiled TEAL guarantees
+    nothing. It matters for `lift_to_teal` round-trips, NOT for the decompiled
+    view — which is what this pins, so a regression that drops the op from the
+    IR itself cannot hide behind the optimiser doing it anyway."""
+    teal = tmp_path / "overflow.teal"
+    teal.write_text("#pragma version 10\nint 18446744073709551615\nint 1\n+\n"
+                    "pop\nint 1\nreturn\n")
+    ir = lift(SSAProgram(str(teal)))
+    rendered = ir.render()
+    assert "(+ " in rendered, (
+        "the overflowing add was dropped from the pre-IR — an AVM overflow "
+        f"panics, so discarding its result does not make it dead:\n{rendered}")
