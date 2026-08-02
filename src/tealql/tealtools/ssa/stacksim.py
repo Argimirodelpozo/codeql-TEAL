@@ -21,12 +21,89 @@ from __future__ import annotations
 
 from typing import Optional
 
+from ..avm import op_arity
+
 
 def _imm_int(op) -> Optional[int]:
     try:
         return int(op.immediates.strip().split()[0])
     except (ValueError, IndexError, AttributeError):
         return None
+
+
+def _narrow(o) -> tuple:
+    """The op's CANONICAL arity, never its recorded one.
+
+    ``PyOp.n_in``/``n_out`` are rewritten in place by the fat-band expansion, so
+    reading them would make this simulation depend on whether the model it
+    replaces has already run."""
+    return op_arity(o.op, o.immediates)
+
+
+def _callee_of(b, bb_to_sub):
+    """The routine a ``callsub`` block enters — the successor that owns itself."""
+    return next((s for s in b.succs if bb_to_sub.get(s) is s), None)
+
+
+def infer_arities(blocks, bb_to_sub, proto_io, return_point) -> dict:
+    """``sub entry -> (nargs, nret)``, read off ``proto`` or inferred.
+
+    A pre-``proto`` sub declares nothing: its args and results are just stack
+    depth, so they are recovered by the same cross-procedural depth fixpoint the
+    lift uses (``lift._infer_arities``) — how far below its entry the body dips
+    is how many arguments it took, and what it leaves at ``retsub`` above that
+    floor is what it returned. Without this a legacy callee reads as ``(0, 0)``
+    and its arguments are left sitting on the CALLER's stack, so the caller's
+    next op consumes the value pushed BEFORE the call instead of the call's
+    result."""
+    subs = [b for b in blocks if bb_to_sub.get(b) is b]
+    arity = {s: proto_io.get(s, (0, 0)) for s in subs}
+    bodies: dict = {}
+    for b in blocks:
+        bodies.setdefault(bb_to_sub.get(b), []).append(b)
+
+    for _ in range(len(subs) + 4):
+        changed = False
+        for s in subs:
+            if s in proto_io:
+                continue
+            body = set(bodies.get(s, ()))
+            depth = {s: 0}
+            order = [s]
+            floor = 0
+            ret_ds: list = []
+            i = 0
+            while i < len(order):
+                b = order[i]
+                i += 1
+                d = mn = depth[b]
+                for o in b.ops:
+                    if o.op == "retsub":
+                        break
+                    if o.op == "callsub":
+                        pop, push = arity.get(_callee_of(b, bb_to_sub), (0, 0))
+                    else:
+                        pop, push = _narrow(o)
+                    d -= pop
+                    mn = min(mn, d)
+                    d += push
+                floor = min(floor, mn)
+                if b.ops and b.ops[-1].op == "retsub":
+                    ret_ds.append(d)
+                for su in _isucc(b, body, return_point):
+                    if su not in depth:
+                        depth[su] = d
+                        order.append(su)
+            # MAX over ALL retsub sites: a sub whose paths diverge would
+            # otherwise silently truncate a deeper path's returns.
+            ret_d = max(ret_ds) if ret_ds else None
+            na, nr = -floor, (ret_d - floor if ret_d is not None else 0)
+            if arity[s] != (na, nr):
+                arity[s] = (na, nr)
+                changed = True
+        if not changed:
+            break
+    return arity
 
 
 class _Result:
@@ -73,6 +150,10 @@ def simulate(blocks, bb_to_sub, proto_io, return_point, phi_factory) -> "_Result
     decides what a phi IS (a ``PyPhi`` in the builder, a stand-in in a test).
     """
     res = _Result()
+    # Real arities FIRST: a legacy callee's (nargs, nret) is not declared
+    # anywhere, and treating it as (0, 0) leaves its arguments on the caller's
+    # stack — which the caller's next op then consumes.
+    arity = infer_arities(blocks, bb_to_sub, proto_io, return_point)
     by_sub: dict = {}
     for b in blocks:
         by_sub.setdefault(bb_to_sub.get(b), []).append(b)
@@ -87,7 +168,7 @@ def simulate(blocks, bb_to_sub, proto_io, return_point, phi_factory) -> "_Result
     for sub, body in by_sub.items():
         if sub is None:
             continue
-        _run_routine(sub, body, res, proto_io, bb_to_sub, return_point,
+        _run_routine(sub, body, res, arity, bb_to_sub, return_point,
                      retsubs, phi_factory)
     return res
 
@@ -103,10 +184,10 @@ def _isucc(b, body, return_point):
     return [s for s in b.succs if s in body]
 
 
-def _run_routine(sub, body_list, res, proto_io, bb_to_sub, return_point,
+def _run_routine(sub, body_list, res, arity, bb_to_sub, return_point,
                  retsubs, phi_factory):
     body = set(body_list)
-    nargs = proto_io.get(sub, (0, 0))[0]
+    nargs = arity.get(sub, (0, 0))[0]
 
     WHITE, GRAY = 0, 1
     color: dict = {}
@@ -163,7 +244,7 @@ def _run_routine(sub, body_list, res, proto_io, bb_to_sub, return_point,
         stack = _entry_stack(b, sub, nargs, preds, back_targets,
                              bpred.get(b, ()), pending, res, phi_factory)
         for o in b.ops:
-            _exec(o, b, stack, nargs, res, bb_to_sub, retsubs, proto_io, phi_factory)
+            _exec(o, b, stack, nargs, res, bb_to_sub, retsubs, arity, phi_factory)
         res.exit[b] = stack
     for ph, slot, bp in pending:
         if bp in res.exit and slot < len(res.exit[bp]):
@@ -204,7 +285,7 @@ def _entry_stack(b, entry, nargs, preds, back_targets, bpred_b, pending,
     return stack
 
 
-def _exec(o, b, stack, nargs, res, bb_to_sub, retsubs, proto_io, phi_factory):
+def _exec(o, b, stack, nargs, res, bb_to_sub, retsubs, arity, phi_factory):
     """One op against the clean stack, recording its operands TOP-FIRST."""
     if o.op in ("frame_dig", "frame_bury"):
         n = _imm_int(o)
@@ -230,8 +311,8 @@ def _exec(o, b, stack, nargs, res, bb_to_sub, retsubs, proto_io, phi_factory):
                 res.unresolved.add(id(o))
         return
     if o.op == "callsub":
-        callee = next((s for s in b.succs if bb_to_sub.get(s) is s), None)
-        a_in, r_out = proto_io.get(callee, (0, 0)) if callee is not None else (0, 0)
+        callee = _callee_of(b, bb_to_sub)
+        a_in, r_out = arity.get(callee, (0, 0)) if callee is not None else (0, 0)
         take = min(a_in, len(stack))
         res.args[id(o)] = [stack.pop() for _ in range(take)]
         if take < a_in:
@@ -253,10 +334,11 @@ def _exec(o, b, stack, nargs, res, bb_to_sub, retsubs, proto_io, phi_factory):
         return
     if o.op in ("proto", "intcblock", "bytecblock"):
         return
+    n_in, _n_out = _narrow(o)
     ins = []
-    for _ in range(o.n_in):
+    for _ in range(n_in):
         ins.append(stack.pop() if stack else None)
-    if len(ins) != o.n_in or any(i is None for i in ins):
+    if any(i is None for i in ins):
         res.unresolved.add(id(o))
     res.args[id(o)] = ins
     for v in reversed(o.outputs):
