@@ -376,21 +376,17 @@ def _shuffle_mapping(a: "Assignment") -> Optional[list[int]]:
         if n >= 1 and n_in == n + 1 and n_out == n:
             return list(range(1, n)) + [0]
     elif op == "frame_dig":
-        # FAT-BAND model, top-first: inputs are [top_local, …, frame[N]] — the
-        # dug slot is the DEEPEST consumed, hence `inputs[n_in-1]` whether N is
-        # positive (locals) or negative (args) — and outputs are that band with
-        # the dug copy prepended. `n_in` already encodes the span, so N is unused.
-        if n_in < 1 or n_out != n_in + 1:
-            return None
-        return [n_in - 1] + list(range(n_in))
+        # A COPY of the slot it addresses: the simulator records the value found
+        # there as input 0 and the op pushes its own output, exactly as the AVM
+        # pushes a copy. N is not needed — the position was already resolved.
+        # (The old fat-band shape, `n_out == n_in + 1` over a whole consumed
+        # band, is gone with the model that produced it.)
+        if n_in == 1 and n_out == 1:
+            return [0]
     elif op == "frame_bury":
-        # FAT-BAND model, top-first: inputs[0] is the popped value, inputs[1:]
-        # the consumed band [top_local, …, frame[N+1]] (the target frame[N] is
-        # written, not read, so it is NOT consumed). Outputs are that band with
-        # the popped value at the deepest position. Independent of N.
-        if n_out < 1 or n_in != n_out + 1:
-            return None
-        return list(range(1, n_out)) + [0]
+        # A WRITE, not a permutation of the operand list: it pops one value and
+        # stores it at a resolved position, with no outputs to map.
+        return None
     return None
 
 

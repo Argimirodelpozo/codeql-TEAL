@@ -260,7 +260,10 @@ def _bind_params(blocks, res, arity, bb_to_sub, phi_factory):
                 if args and pos < len(args) and args[pos] is not None:
                     vals.append(args[pos])
             key = (sub.key, i)
-            if len(vals) == 1:
+            if len({id(v) for v in vals}) == 1:
+                # Every call site passes the SAME value — a phi over it would be
+                # trivial the moment it was built. Counting `vals` instead of
+                # deduping them minted one per multi-site callee.
                 bound[key] = vals[0]
             elif vals:
                 ph = phi_factory(sub, a_in - i)
@@ -442,15 +445,21 @@ def _exec(o, b, stack, nargs, res, bb_to_sub, retsubs, arity, phi_factory,
         pos = None if n is None else nargs + n
         if o.op == "frame_dig":
             if pos is not None and 0 <= pos < len(stack):
-                # RECORD THE SOURCE as the read's input, and push the underlying
-                # value so consumers see the original rather than a handle.
-                # Without the record the op has no inputs at all, which is the
-                # "output with no inputs" shape that reads CLEAN to every
-                # may-analysis — and `frame_flow.frame_unresolved_reads` is
-                # written to detect exactly that, so a resolved read must not
-                # look like one.
+                # RECORD THE SOURCE as the read's input. Without it the op has no
+                # inputs at all, which is the "output with no inputs" shape that
+                # reads CLEAN to every may-analysis — and
+                # `frame_flow.frame_unresolved_reads` is written to detect
+                # exactly that, so a resolved read must not look like one.
+                #
+                # Push the op's OWN output, not the value it copied: `frame_dig`
+                # pushes a copy on the AVM, and `_shuffle_mapping` says that
+                # output IS input 0, so a resolver still reaches the original
+                # while the read itself stays on the provenance chain. Pushing
+                # the underlying value instead made the read invisible — its
+                # declared output went dead and a chain crossing a call boundary
+                # named `txna -> extract`, with no sign a frame read happened.
                 res.args[id(o)] = [stack[pos]]
-                stack.append(stack[pos])
+                stack.append(o.outputs[0] if o.outputs else stack[pos])
             else:
                 res.unresolved.add(id(o))
                 stack.append(None)
@@ -499,8 +508,8 @@ def _exec(o, b, stack, nargs, res, bb_to_sub, retsubs, arity, phi_factory,
             slot = r_out - j                      # top-first within the returns
             vals = [res.exit[rb][-slot] for rb in rets
                     if rb in res.exit and len(res.exit[rb]) >= slot]
-            if len(vals) == 1:
-                stack.append(vals[0])
+            if len({id(v) for v in vals}) == 1:
+                stack.append(vals[0])     # every retsub leaves the same value
             elif vals and can_merge:
                 ph = phi_factory(cont, slot)
                 ph.args.extend(vals)

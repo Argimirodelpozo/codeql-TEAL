@@ -544,11 +544,13 @@ def _untyped(subs):
 
 
 def _infer_params_from_callers(lifter, pairs):
-    # Sub args are passed via scratch / frame here, not callsub operands: the
-    # caller's exit_stack top `nargs` are the args (param order es[-nargs+i]).
-    # Type each by tracing its scratch store, and when it is a `frame_dig` go
-    # straight through to the caller's own param — index = immediate + caller
-    # nargs, independent of the fat-frame output shape.
+    # The args are the callsub's OWN operands, TOP-FIRST, so param `i` (0 =
+    # deepest) is `inputs[nargs - 1 - i]`. They used to be read off the caller's
+    # `exit_stack` top, which held them only while a callsub was modelled as
+    # consuming nothing; that slot is now the call's RESULT, so every parameter
+    # would have been typed from the wrong value.
+    # Type each arg by tracing it, and when it is a `frame_dig` go straight
+    # through to the caller's own param — index = immediate + caller nargs.
     struct2ir = {sb: ir_s for ir_s, sb in pairs}
 
     def _arg_type(arg, owner_ir, owner_nargs):
@@ -569,14 +571,16 @@ def _infer_params_from_callers(lifter, pairs):
             continue
         cols = [set() for _ in range(nargs)]
         for cs in s.callers:
-            es = cs.callsub_bb.exit_stack
-            if len(es) < nargs:
-                continue
-            owner = lifter.sub_of.get(cs.callsub_bb)
+            bb = cs.callsub_bb
+            call = next((x for x in reversed(getattr(bb, "assignments", ()))
+                         if x.op == "callsub"), None)
+            if call is None or len(call.inputs) != nargs:
+                continue        # an unresolved operand shifts every index: skip
+            owner = lifter.sub_of.get(bb)
             owner_ir = struct2ir.get(owner)
             owner_nargs = lifter._sub_io(owner.entry_bb)[0] if owner else 0
             for i in range(nargs):
-                ty = _arg_type(es[-nargs + i], owner_ir, owner_nargs)
+                ty = _arg_type(call.inputs[nargs - 1 - i], owner_ir, owner_nargs)
                 if ty and ty != "?":
                     cols[i].add(ty)
         for i, pp in enumerate(ir_sub.parameters):

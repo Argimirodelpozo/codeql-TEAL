@@ -1,15 +1,22 @@
 """The pure-Python SSA builder behind :class:`SSAProgram`.
 
 Pipeline (:meth:`PySSA._construct`): instantiate PyVars per opcode output ->
-BB arities + surviving locals -> Braun on-demand phi placement -> per-BB stack
-sim filling ``op.inputs`` / ``b.exit_stack`` -> liveness filter.
+routine metadata + call pairing + callee effect classification -> ONE per-routine
+stack simulation (:mod:`.stacksim`) filling ``op.inputs`` / ``b.exit_stack`` ->
+liveness filter.
 
-HAZARD — slot model. Stack slots are 1-based TOP-FIRST. An entry-slot phi ``k``
-of block ``b`` surfaces at exit slot ``L_b + k - C_b`` (locals, consumed), and is
-undefined when ``k <= C_b`` (consumed inside the block). ``frame_dig`` /
-``frame_bury`` (either sign of N) expand under the FAT-STACK convention: consume
-the whole band from the current top down to the target slot, emit fresh outputs
-covering the post-stack.
+ONE SIMULATOR. There used to be two here — Braun on-demand phi placement reading
+values back through ``_read_exit``, and a phase-6c block simulation over a
+"fat band" rewrite of the frame ops — plus the lift's ``_resim`` making three.
+Every PAIR of them produced a silent wrong-value bug (Braun vs 6c in the callsub
+work, SSA vs resim in ``(itob 0x151f7c75)``), each invisible until a bespoke
+metric went looking. Both are gone: :mod:`.stacksim` walks each routine once with
+real ``callsub`` arities and frame slots read and written in place. A ``frame_dig``
+is one input and one output, not a band; there is no depth cap, because a
+per-routine stack cannot spiral the way a whole-program slot model could.
+
+HAZARD — slot model. Stack slots are 1-based TOP-FIRST, both for phi identity
+``(bb_key, slot)`` and for indexing an ``exit_stack`` (``exit_stack[-k]``).
 
 HAZARD — the ``PyPhi.args`` graph can be CYCLIC (constant-stack CFG loops), so
 every traversal needs a ``seen`` set. ``PyPhi`` is unified: the public
@@ -37,18 +44,10 @@ from .program import SSAProgram
 from ..avm import op_arity
 
 
+#: The AVM's stack limit. No longer a construction bound — the old whole-program
+#: slot model could climb to it and had to be capped; a per-routine simulation
+#: cannot. Kept because it is a real property of the machine and is exported.
 STACK_MAX = 1000
-
-#: Build operands with the single clean simulator (:mod:`.stacksim`) instead of
-#: Braun + the fat band. A BRANCH SWITCH, not a supported option: it exists so
-#: the replacement can be run against the oracle, and one of the two paths is
-#: meant to be deleted before this lands.
-import os as _os
-_USE_STACKSIM = _os.environ.get("TEALQL_STACKSIM") == "1"
-
-# "Not yet resolved" — distinct from ``None``, itself a valid resolved value
-# (an entry slot with no incoming definition).
-_MISSING = object()
 
 
 def _frame_imm(op):
@@ -169,11 +168,6 @@ class PySSA:
     vars: dict[tuple, PyVar] = field(default_factory=dict)
     # phi key: ``(bb_key, slot)`` — slot is 1-based top-first.
     phis: dict[tuple, PyPhi] = field(default_factory=dict)
-    # Per-BB cache populated in phase 2.
-    _consumed: dict[PyBlock, int] = field(default_factory=dict)
-    _locals: dict[PyBlock, int] = field(default_factory=dict)
-    # Per-BB list of (survivor_PyVar, outStackOrder) top-first.
-    _surv: dict[PyBlock, list] = field(default_factory=dict)
     # Subroutine metadata.
     _bb_to_sub: dict = field(default_factory=dict)
     _proto_io: dict = field(default_factory=dict)
@@ -182,9 +176,6 @@ class PySSA:
     #   callsub PyBlock -> (cont PyBlock, A, R)
     _call_pairs: dict = field(default_factory=dict)
     _pair_by_cs: dict = field(default_factory=dict)
-    # (bb_key, slot) resolutions currently on the _read_entry stack — the
-    # no-join-cycle guard (see _read_entry).
-    _reading: set = field(default_factory=set)
     # Continuation keys whose callee may have rewritten the caller's residual
     # stack (see _classify_call_effects) — deep continuation slots refuse there;
     # depth crossings remain (permutes change no heights).
@@ -195,19 +186,12 @@ class PySSA:
     # rather than emit a program with different behaviour.
     _residual_clobber_conts: set = field(default_factory=set)
     _clobber_callee_keys: set = field(default_factory=set)
+    # The same callees as blocks, for the simulator (which withdraws at the
+    # ``callsub`` rather than at a paired continuation).
     _unsafe_callee_blocks: set = field(default_factory=set)
-    # Braun on-demand construction state.
-    _surv_by_slot: dict = field(default_factory=dict)   # block -> {slot: PyVar}
-    _entry_val: dict = field(default_factory=dict)       # (bb_key, slot) -> value
-    # HAZARD: both keyed by PyPhi.key() == (bb_key, slot), NEVER by id(). A
-    # removed trivial phi loses its last reference, and with __slots__ CPython
-    # reuses the freed address — an id() key then aliases a NEW live phi and
-    # resolves it to the OLD phi's value.
-    _replaced: dict = field(default_factory=dict)        # PyPhi.key() -> replacement
-    _phi_users: dict = field(default_factory=dict)       # PyPhi.key() -> set[PyPhi]
-    _max_entry: dict = field(default_factory=dict)       # bb_key -> max entry slot read
-    # block -> frame-aware exit-stack sim (or None); see _build_frame_exit_sim.
-    _frame_sim_cache: dict = field(default_factory=dict)
+    # bb_key -> entry stack depth INCLUDING the sub's args; see
+    # _frame_entry_depths. Absent = height-ambiguous, which reads as UNSAFE.
+    _frame_edepth: dict = field(default_factory=dict)
 
     @classmethod
     def build(cls, prog: SSAProgram) -> SSAProgram:
@@ -223,37 +207,18 @@ class PySSA:
         diagnostics); :meth:`build` is the SSAProgram-returning entry point."""
         self = cls()
         self._phase1_instantiate(prog)
-        self._phase2_arities()
-        if _USE_STACKSIM:
-            self._compute_subs_and_protos()
-            # Call/return pairing and the callee effect classification are
-            # analyses OVER THE OP STRUCTURE, not products of Braun's
-            # placement — and `_clobber_callee_keys` is what tells the lift to
-            # fill a clobbered caller slot with `Undefined` instead of the
-            # stale pre-call value. Skipping them with `_phase_braun` left it
-            # empty, which reads as "no callee ever eats the caller's stack":
-            # exactly the silent-wrong-value class the classification exists
-            # to stop.
-            self._compute_call_pairs()
-            # `_frame_entry_depths` is likewise a walk over the op structure,
-            # not a Braun product, and the classification reads it. Keeping it
-            # means the classification is BIT-IDENTICAL on both paths, so the
-            # differential measures the operand builder alone. The simulator
-            # could supply these depths itself — a real follow-up, since a
-            # second depth walk is exactly what this branch exists to remove —
-            # but not in the same step as the operands: changing two inputs
-            # under one metric is how the earlier attempts went wrong.
-            self._frame_edepth = self._frame_entry_depths()
-            self._classify_call_effects()
-            self._phase_stacksim()
-            self._phase8_live_filter()
-            return self
-        # Braun on-demand placement + the forward depth cap in
-        # `_compute_entry_depths`, which fixes the loop spiral at its slot-model
-        # root: a net-changing loop's `L+k-C` map climbs to STACK_MAX under ANY
-        # construction unless the cap stops it.
-        self._phase_braun()
-        self._phase6_sim_blocks()
+        self._compute_subs_and_protos()
+        # Routine metadata, then the two analyses the operand build and the LIFT
+        # both key off. `_clobber_callee_keys` is what tells the lift to fill a
+        # clobbered caller slot with `Undefined` rather than the stale pre-call
+        # value, and `_unsafe_callee_blocks` is what makes the simulation itself
+        # withdraw that residual — a per-routine walk cannot otherwise see a
+        # callee dipping under its own band, because the dip happens on the
+        # callee's own stack.
+        self._compute_call_pairs()
+        self._frame_edepth = self._frame_entry_depths()
+        self._classify_call_effects()
+        self._phase_stacksim()
         self._phase8_live_filter()
         return self
 
@@ -294,10 +259,9 @@ class PySSA:
     def _phase_stacksim(self) -> None:
         """Fill operands from the single clean simulation.
 
-        Replaces `_phase_braun` + `_phase6_sim_blocks` wholesale: one forward
-        per-routine walk with real callsub arities and frame slots read/written
-        in place, so there is no fat band, no depth cap, and no second model to
-        disagree with."""
+        One forward per-routine walk with real ``callsub`` arities and frame
+        slots read and written in place — see the module docstring for what this
+        replaced and why."""
         from . import stacksim
         from ..subroutines import pyblock_partition, _pyblock_return_point
 
@@ -322,197 +286,17 @@ class PySSA:
                 o.inputs = list(res.args.get(id(o), []))
             b.exit_stack = list(res.exit.get(b, []))
 
-    # ----- Phase 2: BB arities + surviving locals ------------------------
-
-    def _phase2_arities(self) -> None:
-        for b in self.blocks:
-            local_stack: list = []  # bottom-first PyVars
-            consumed = 0
-            for op in b.ops:
-                for _ in range(op.n_in):
-                    if local_stack:
-                        local_stack.pop()
-                    else:
-                        consumed += 1
-                for v in reversed(op.outputs):
-                    local_stack.append(v)
-            self._consumed[b] = consumed
-            self._locals[b] = len(local_stack)
-            # outStackOrder: rank among surviving locals, top-first 1-based.
-            top_first = list(reversed(local_stack))
-            self._surv[b] = [(v, k + 1) for k, v in enumerate(top_first)]
-
-    def _phi_node_exit_index(self, k: int, b: PyBlock) -> int | None:
-        """Exit slot ``L + k - C`` of the phi at ``b``'s entry slot ``k``, or
-        ``None`` when the phi is consumed inside ``b`` (``k <= C``)."""
-        C = self._consumed[b]
-        if k <= C:
-            return None
-        L = self._locals[b]
-        new_k = L + k - C
-        if new_k > STACK_MAX:
-            return None
-        return new_k
-
-    # ----- Phase 3: Direct placement -------------------------------------
-
-    def _phase6_sim_blocks(self) -> None:
-        """Build each BB's entry_stack from the placed phis, then sim the block to
-        populate ``op.inputs`` / ``op.outputs`` and ``b.exit_stack``.
-
-        HAZARD: ``frame_dig`` / ``frame_bury`` use the FAT-STACK convention —
-        the op consumes the whole band from the current top down to and
-        including the target frame slot, and emits fresh outputs covering the
-        post-stack (``frame_dig`` n_out == n_in + 1, band plus the dug copy on
-        top; ``frame_bury`` n_out == n_in - 1, band with the target replaced).
-        This must agree with :func:`_shuffle_mapping` or taint / const / range
-        propagation stops carrying values through frame-access chains."""
-        # 6a: entry_stack for every BB first, so the per-op fat expansion can
-        # read sub.entry_stack regardless of iteration order.
-        if self._entry_val:
-            # Braun mode: entry_stack carries the on-demand resolved value at
-            # each read slot -- phi OR a collapsed (trivial-phi) value, which
-            # has no entry in ``self.phis`` -- to its top-first depth.
-            for b in self.blocks:
-                depth = self._max_entry.get(b.key, 0)
-                entry = [None] * depth
-                for k in range(1, depth + 1):
-                    entry[depth - k] = self._resolve(
-                        self._entry_val.get((b.key, k)))
-                b.entry_stack = entry
-        else:
-            # Max phi slot per BB in ONE pass: the per-block scan it replaced was
-            # O(blocks x phis), tens of millions of iterations at 100k+ phis.
-            max_slot_by_bb: dict = {}
-            for (bb_key, s) in self.phis:
-                if s > max_slot_by_bb.get(bb_key, 0):
-                    max_slot_by_bb[bb_key] = s
-            for b in self.blocks:
-                max_slot = max_slot_by_bb.get(b.key, 0)
-                entry = [None] * max_slot
-                for k in range(1, max_slot + 1):
-                    phi = self.phis.get((b.key, k))
-                    entry[max_slot - k] = phi
-                b.entry_stack = entry
-
-        # 6b: routine arg counts + entry stacks, for each fat expansion.
-        self._compute_subs_and_protos()
-
-        # 6c: per-BB simulator. A single-pred block places no phis (nothing
-        # merges), so its 6a entry_stack is empty — losing the stack from its
-        # sole pred and hiding any frame slot that pred set up (e.g. a `bury`d
-        # box name) from a cross-block `frame_dig`. Seed such a block from the
-        # pred's exit_stack, gated on same-sub / non-proto-entry / already
-        # simulated so iteration order can't make it unsound.
-        processed: set = set()
-        for b in self.blocks:
-            local_stack: list = list(b.entry_stack)
-            if len(b.preds) == 1:
-                (p,) = tuple(b.preds)
-                if (p in processed and b not in self._proto_io
-                        and self._bb_to_sub.get(b) is self._bb_to_sub.get(p)):
-                    local_stack = list(p.exit_stack)
-            sub = self._bb_to_sub.get(b)
-            proto = self._proto_io.get(sub) if sub is not None else None
-            # How much of the routine band sits BELOW this seed. Captured once,
-            # from the seed length: both the true depth and local_stack move by
-            # the same net per op, so the shortfall is constant for the block.
-            _ed = getattr(self, "_frame_edepth", {}).get(b.key)
-            missing_below = None if _ed is None else _ed - len(local_stack)
-            for op in b.ops:
-                if (op.op in ("frame_dig", "frame_bury")
-                        and proto is not None and sub is not None
-                        and self._try_expand_frame_op(
-                            op, local_stack, sub, proto, missing_below)):
-                    continue
-                op.inputs = []
-                for _ in range(op.n_in):
-                    if local_stack:
-                        op.inputs.append(local_stack.pop())
-                    else:
-                        op.inputs.append(None)
-                for v in reversed(op.outputs):
-                    local_stack.append(v)
-            b.exit_stack = local_stack
-            processed.add(b)
-
-    # ----- Phase 3+4: on-demand join-only phi placement ------------------
-
-    def _phase_braun(self) -> None:
-        """Braun et al. (2013) on-demand SSA (filled+sealed case): place a phi at
-        an entry slot only when it is READ, recursing into predecessors and
-        collapsing trivial phis at creation.
-
-        Memoising the phi BEFORE recursing is what breaks loop back-edge cycles,
-        and the trivial-phi cascade folds constant-stack-loop chains to a single
-        value instead of churning slots 1..STACK_MAX.
-
-        HAZARD: phase 6 must read ``self._entry_val[(bb_key, slot)]``, not
-        ``self.phis``, to rebuild entry stacks — a collapsed slot has a value but
-        no phi."""
-        import sys as _sys
-        # The depth cap bounds recursion to true stack depth x passthrough chain
-        # length (~35 on real contracts), so a modest raise suffices. try/finally
-        # restores the limit: a build failure is CAUGHT (LiftError), so an
-        # un-restored limit would leak process-wide into later work.
-        _prev_reclimit = _sys.getrecursionlimit()
-        _sys.setrecursionlimit(max(_prev_reclimit, 10_000))
-        try:
-            self._surv_by_slot = {b: {k: v for v, k in self._surv[b]}
-                                  for b in self.blocks}
-            # Routine/frame metadata BEFORE the depth maps and any demand: both
-            # depth BFSes cross verified call pairings, and _read_exit consults
-            # the frame-aware exit sim (frame_bury redefines its slot) from the
-            # very first read, so proto info and pairings must exist now.
-            self._compute_subs_and_protos()
-            self._compute_call_pairs()
-            self._depth = self._compute_entry_depths()
-            self._frame_edepth = self._frame_entry_depths()
-            self._classify_call_effects()
-            # Demand: every entry slot an op consumes (top-first 1..C) per block.
-            # The recursion pulls in the passthrough slots successors read.
-            for b in self.blocks:
-                for k in range(1, self._consumed[b] + 1):
-                    self._read_entry(b, k)
-            # HAZARD: reconcile placement with the 6c frame expander. A
-            # `frame_dig N` (N>=0) reads ABSOLUTE frame position `nargs+N`, i.e.
-            # top-first entry slot `entry_depth(b) - (nargs+N)`, and that depth
-            # only exists in 6c — without demanding the read here, a deep
-            # loop-invariant slot gets no join phi and silently reads as 0.
-            # `frame_bury N` needs the same demand for the opposite reason: its
-            # fat form only runs when the band down to `nargs+N` is present in
-            # the seed (`target_idx < len(local_stack)`), and the narrow
-            # fallback is a bare pop that DROPS the buried value. Demand
-            # EXACTLY each frame op's slot: an over-broad 1..D demand deepens
-            # other blocks and threads wrong values.
-            for b in self.blocks:
-                sub = self._bb_to_sub.get(b)
-                if sub is None or sub not in self._proto_io:
-                    continue
-                nargs = self._proto_io[sub][0]
-                d = self._frame_edepth.get(b.key)
-                if d is None:
-                    continue
-                for o in b.ops:
-                    n = _frame_imm(o)
-                    if (o.op in ("frame_dig", "frame_bury")
-                            and n is not None and n >= 0):
-                        k = d - (nargs + n)
-                        if 1 <= k <= self._depth.get(b.key, 0):
-                            self._read_entry(b, k)
-            # Re-point any entry value / phi arg left at a since-removed phi.
-            for key in list(self._entry_val):
-                self._entry_val[key] = self._resolve(self._entry_val[key])
-            for P in self.phis.values():
-                P.args = [self._resolve(a) for a in P.args]
-        finally:
-            _sys.setrecursionlimit(_prev_reclimit)
-
     def _frame_entry_depths(self) -> dict:
-        """``bb_key -> entry stack depth INCLUDING the sub's args``, simulated
-        exactly as phase 6c builds local_stack, to locate each frame_dig's read
-        slot; first (forward) reach wins, as in :meth:`_compute_entry_depths`."""
-        from collections import deque
+        """``bb_key -> entry stack depth INCLUDING the sub's args``; first
+        (forward) reach wins, and a block reached at two different depths is
+        poisoned rather than resolved to one of them.
+
+        Read by :meth:`_classify_call_effects` as the band height a block starts
+        at, so an absent entry makes that sub UNSAFE. The simulator could supply
+        these depths from its own per-block entry stacks — the remaining second
+        walk over the same structure — but its join rule reconciles differing
+        predecessor depths by truncating to the shallowest instead of refusing,
+        so swapping them in is a behaviour change to measure on its own."""
         def net(op):
             if op.op == "frame_dig":
                 return 1
@@ -604,292 +388,6 @@ class PySSA:
             for key in amb:
                 ed.pop(key, None)
         return ed
-
-    def _compute_entry_depths(self) -> dict:
-        """``bb_key -> entry stack depth`` (top-first slot count) via forward BFS
-        from the no-pred blocks, ``exit = entry + L - C`` along each edge.
-
-        HAZARD: on disagreement KEEP THE FIRST (forward) value. A loop header is
-        reached from its preheader before its latch, so it keeps the true
-        loop-invariant depth ``D``; the latch's differing proposal is the
-        slot-model artifact that drives the spiral. The resulting cap
-        (``_read_entry(b, k>D) -> None``) is what stops the deep phi climb.
-
-        Verified call pairings cross like the values do: a paired continuation
-        gets ``ex - A + R`` from its callsub block (the physical stack after
-        the callee consumed the args and left its results), and the callee's
-        ``retsub`` edge into it proposes nothing — that edge would carry the
-        CALLEE-relative depth, a different frame whose junk cap either culled
-        real reads to None or let artifact chains through uncapped."""
-        from collections import deque
-        depth: dict = {}
-        wl: deque = deque()
-        for b in self.blocks:
-            if not b.preds:
-                depth[b.key] = 0
-                wl.append(b)
-        while wl:
-            b = wl.popleft()
-            ex = depth[b.key] + self._locals[b] - self._consumed[b]
-            if ex < 0:
-                ex = 0
-            pair = self._pair_by_cs.get(b)
-            if pair is not None:
-                cont, a, r = pair
-                if ex - a + r >= 0 and cont.key not in depth:
-                    depth[cont.key] = ex - a + r
-                    wl.append(cont)
-            for s in b.succs:
-                pair_s = self._call_pairs.get(s.key)
-                if pair_s is not None and b.key in pair_s[3]:
-                    continue                    # verified return edge: wrong frame
-                if s.key not in depth:          # first (forward) reach wins
-                    depth[s.key] = ex
-                    wl.append(s)
-        return depth
-
-    def _resolve(self, v):
-        """Follow the trivial-phi replacement chain to the surviving value."""
-        n = 0
-        while isinstance(v, PyPhi) and v.key() in self._replaced:
-            v = self._replaced[v.key()]
-            n += 1
-            if n > STACK_MAX:        # paranoia — replacement chains are acyclic
-                break
-        return v
-
-    def _read_exit(self, p: PyBlock, slot: int):
-        """Value at predecessor ``p``'s EXIT slot ``slot`` (top-first): within
-        ``p``'s own locals (``slot <= L``) that is the producing PyVar, deeper is
-        an entry value passing through, at entry slot ``slot - L + C`` (the
-        inverse of ``L + k - C``).
-
-        HAZARD: blocks containing a ``frame_bury`` are answered from
-        :meth:`_build_frame_exit_sim` instead, because the narrow phase-2 model
-        treats ``frame_bury`` as a bare pop with no definition — so the buried
-        slot would read as an untouched passthrough (collapsing a loop-carried
-        slot to its pre-loop value) and the survivor ranks would be shifted."""
-        sim = self._frame_sim_cache.get(p, _MISSING)
-        if sim is _MISSING:
-            sim = self._build_frame_exit_sim(p)
-            self._frame_sim_cache[p] = sim
-        if sim is not None:
-            st, d = sim
-            idx = len(st) - slot
-            if idx >= 0:
-                v = st[idx]
-                if type(v) is tuple:            # ("entry", k) passthrough
-                    return self._read_entry(p, v[1])
-                return v
-            # Deeper than the routine band: the caller's stack, untouched by
-            # frame ops. The fat and narrow conventions agree on net depth
-            # change, so the narrow passthrough arithmetic applies.
-            if slot > STACK_MAX:
-                return None
-            return self._read_entry(p, slot - (len(st) - d))
-        L = self._locals[p]
-        if slot <= L:
-            return self._surv_by_slot[p].get(slot)
-        if slot > STACK_MAX:
-            # Same guard as ``_phi_node_exit_index``: a net-changing loop maps
-            # the value one slot deeper each lap, so without the cap the
-            # recursion grows unbounded.
-            return None
-        return self._read_entry(p, slot - L + self._consumed[p])
-
-    def _build_frame_exit_sim(self, p: PyBlock):
-        """Symbolic exit stack for a ``frame_bury``-containing block, or ``None``
-        when inapplicable (no parseable bury, block outside a proto'd sub,
-        unknown entry depth, or the sim dips below the routine band).
-
-        Simulated bottom-first over the routine's band — entry slot ``k`` at
-        index ``d - k``, ``d`` the routine-relative entry depth (args + locals;
-        deeper caller stack is unreachable to frame ops). Frame ops use their
-        REAL semantics (``frame_dig N`` pushes frame position ``nargs + N``,
-        ``frame_bury N`` pops the top INTO it) while every other op keeps its
-        narrow phase-1 arity, so the two models agree wherever no bury
-        interferes."""
-        if not any(o.op == "frame_bury" and _frame_imm(o) is not None
-                   for o in p.ops):
-            return None
-        sub = self._bb_to_sub.get(p)
-        if sub is None or sub not in self._proto_io:
-            return None
-        d = getattr(self, "_frame_edepth", {}).get(p.key)
-        if d is None or d < 0:
-            return None
-        nargs = self._proto_io[sub][0]
-        st: list = [("entry", d - i) for i in range(d)]
-        for o in p.ops:
-            n = _frame_imm(o) if o.op in ("frame_dig", "frame_bury") else None
-            if n is not None:
-                pos = nargs + n
-                if o.op == "frame_dig":
-                    if not (0 <= pos < len(st)):
-                        return None
-                    st.append(st[pos])
-                else:  # frame_bury
-                    if not st or pos < 0 or pos > len(st) - 1:
-                        return None
-                    top = st.pop()
-                    if pos < len(st):
-                        st[pos] = top
-                    # pos == len(st): degenerate self-bury — the value lands
-                    # at/above the new top and is gone (fat n_out = 0).
-                continue
-            for _ in range(o.n_in):
-                if not st:
-                    return None      # dips below the band — model mismatch
-                st.pop()
-            for v in reversed(o.outputs):
-                st.append(v)
-        return (st, d)
-
-    def _read_edge(self, b: PyBlock, p: PyBlock, k: int):
-        """Value arriving at ``b``'s entry slot ``k`` along the CFG edge from
-        ``p`` — normally ``p``'s exit slot ``k``, except deep across a verified
-        call return.
-
-        At a paired continuation, slots ``1..R`` really are what the call left
-        on top, so they keep reading the ``retsub`` predecessor's exit. Anything
-        deeper never travelled through the callee: the AVM discards the callee's
-        frame at ``retsub``, leaving the caller's pre-call stack minus the ``A``
-        args, so continuation slot ``k > R`` is the CALLER's pre-call slot
-        ``k - R + A`` — read it from the callsub block, whose exit stack IS the
-        pre-call stack under the ``(0, 0)`` arity convention (args on top, the
-        shape ``frame_param_sources`` and the lift's arg recovery rely on).
-        Reading the retsub edge instead threaded the callee's OWN band into the
-        caller: merge phis over a callee's every local and every OTHER caller's
-        stack (max_args 143 on one mainnet probe), values in slots they never
-        physically occupy."""
-        pair = self._call_pairs.get(b.key)
-        if pair is not None:
-            cs, a_in, r_out, ret_pred_keys = pair[:4]
-            if k > r_out and p.key in ret_pred_keys:
-                if b.key in self._value_unsafe_conts:
-                    # Unmodelable below-band effect, so NEITHER candidate is the
-                    # runtime value: the pre-call slot may have been rewritten,
-                    # and the callee's exit slot is discarded by the truncation.
-                    # Refuse — a surfaced unknown, never a wrong value.
-                    return None
-                return self._read_exit(cs, k - r_out + a_in)
-        return self._read_exit(p, k)
-
-    def _read_entry(self, b: PyBlock, k: int):
-        """Value at ``b``'s ENTRY slot ``k`` (top-first), creating phis on
-        demand (Braun ``readVariableRecursive`` — sealed-block path)."""
-        key = (b.key, k)
-        memo = self._entry_val.get(key, _MISSING)
-        if memo is not _MISSING:
-            return memo
-        if k > self._depth.get(b.key, STACK_MAX):
-            # THE DEPTH CAP: beyond the block's true entry depth no such value
-            # exists at runtime, so stop rather than build the deep phi chain a
-            # net-changing loop would otherwise climb to.
-            self._entry_val[key] = None
-            return None
-        if key in self._reading:
-            # A value-walk cycle re-entered an IN-FLIGHT single-pred
-            # resolution. Braun breaks join cycles by memoising the phi before
-            # recursing, and every reachable CFG cycle contains a >=2-pred
-            # block — but the walk is not the CFG: the call-return reroute
-            # reads the CALLSUB block for deep continuation slots, skipping
-            # the callee entry that may have been the only join on the cycle.
-            # Braun's answer for exactly this is the operandless placeholder
-            # phi: hand it out now, and the outer frame completes it when its
-            # value arrives — whereupon it trivially collapses to that value,
-            # or to None when the cycle defines nothing (joinless passthrough
-            # all the way around). Never registered in ``phis``/``entry_phis``:
-            # a single-arg phi always collapses.
-            P = PyPhi(b.key, k)
-            self._entry_val[key] = P
-            return P
-        if k > self._max_entry.get(b.key, 0):
-            self._max_entry[b.key] = k
-        preds = b.preds
-        if not preds:
-            self._entry_val[key] = None          # routine entry / no incoming def
-            return None
-        self._reading.add(key)
-        try:
-            if len(preds) == 1:
-                v = self._read_edge(b, preds[0], k)
-                ph = self._entry_val.get(key, _MISSING)
-                if (ph is not _MISSING and isinstance(ph, PyPhi)
-                        and ph.key() == key):
-                    # A re-entrant read minted the placeholder for THIS
-                    # resolution while we recursed; complete and collapse it
-                    # so its users get the real value.
-                    ph.args.append(v)
-                    if isinstance(v, PyPhi):
-                        self._phi_users.setdefault(v.key(), set()).add(ph)
-                    v = self._try_remove_trivial(ph)
-                self._entry_val[key] = v
-                return v
-            # Join: create the phi, memoise it (breaks back-edge cycles), fill
-            # args.
-            P = PyPhi(b.key, k)
-            self.phis[key] = P
-            b.entry_phis.append(P)
-            self._entry_val[key] = P
-            for p in preds:
-                a = self._read_edge(b, p, k)
-                P.args.append(a)
-                if isinstance(a, PyPhi):
-                    self._phi_users.setdefault(a.key(), set()).add(P)
-            v = self._try_remove_trivial(P)
-            self._entry_val[key] = v
-            return v
-        finally:
-            self._reading.discard(key)
-
-    def _try_remove_trivial(self, P: PyPhi):
-        """Braun ``tryRemoveTrivialPhi``: if ``P``'s args (ignoring self-refs) are
-        one distinct value ``v``, replace ``P`` with ``v``, cascade into every phi
-        that referenced ``P``, and return ``P``'s replacement.
-
-        HAZARD: the cascade is ORDER-SENSITIVE — processing u1 before u2 can
-        change u2's triviality, and an unstable order makes SSA construction
-        NONDETERMINISTIC. The iterative form (needed because a deep chain would
-        overflow the stack) must therefore reproduce the recursion's traversal
-        exactly: LIFO with users pushed in reverse pops them in sorted order and
-        finishes each user's cascade before the next sibling."""
-        result = None
-        first = True
-        stack: list = [P]
-        while stack:
-            cur = stack.pop()
-            distinct: list = []
-            for a in cur.args:
-                a = self._resolve(a)
-                if a is cur:
-                    continue                      # self-reference
-                if not any(a is d for d in distinct):
-                    distinct.append(a)
-            if len(distinct) > 1:                 # a genuine merge — keep it
-                if first:
-                    result, first = cur, False
-                continue
-            same = distinct[0] if distinct else None  # 0 distinct -> undefined slot
-            if first:
-                result, first = same, False
-            self._replaced[cur.key()] = same
-            self.phis.pop((cur.bb_key, cur.slot), None)
-            b = self._bb_by_key.get(cur.bb_key)
-            if b is not None:
-                b.entry_phis = [ph for ph in b.entry_phis if ph is not cur]
-            # Sort by the STABLE (bb_key, slot) identity: `_phi_users` is a set
-            # and id() is not seed-stable.
-            users = sorted(self._phi_users.pop(cur.key(), ()), key=lambda u: u.key())
-            for u in users:
-                u.args = [same if a is cur else a for a in u.args]
-                if isinstance(same, PyPhi):
-                    self._phi_users.setdefault(same.key(), set()).add(u)
-            for u in reversed(users):             # LIFO -> pops in sorted order
-                stack.append(u)
-        return result
-
-    # ----- Phase 6 helpers ------------------------------------------------
 
     def _compute_subs_and_protos(self) -> None:
         """Populate ``self._bb_to_sub`` (BB -> owning routine entry BB) and
@@ -1117,70 +615,6 @@ class PySSA:
         # simulation identifies a callee by the block it enters.
         self._unsafe_callee_blocks = {sub for sub in unsafe
                                       if sub in self._proto_io}
-
-    def _try_expand_frame_op(
-        self, op: PyOp, local_stack: list, sub: PyBlock, proto: tuple,
-        missing_below: Optional[int] = None,
-    ) -> bool:
-        """Rewrite ``frame_dig N`` / ``frame_bury N`` (either sign of ``N``) to
-        the fat-stack convention; ``False`` falls back to the narrow path.
-
-        The target is an ABSOLUTE frame position: ``nargs + N``, counted from the
-        BOTTOM of the routine band (``N < 0`` are args below the base, ``N >= 0``
-        locals above it). So the index is bottom-anchored — but ``local_stack``
-        is only the TOP of that band, because Braun materialises just the entry
-        slots something demanded. ``missing_below`` is how many band slots sit
-        below ``local_stack[0]`` (``edepth(bb) - len(seed)``, constant for the
-        whole block since both sides move by the same net per op), and the index
-        is ``nargs + N - missing_below``.
-
-        HAZARD: neither half of that is optional. Dropping the correction (as the
-        original ``len(sub.entry_stack) + N`` did) slides the index whenever the
-        seed is short — ``len(sub.entry_stack)`` is not ``nargs``, being shorter
-        for 90 of 202 proto'd subs in the probe corpus. But converting a TOP-first
-        slot against ``len(local_stack)`` instead is just as wrong: an entry-depth
-        slot only matches the current length at the block's first op, so a
-        ``frame_bury`` after a few pushes (``label39``'s ``dupn 4`` … ``frame_bury
-        1``) computed an out-of-range index, fell back to the narrow path — where
-        ``frame_bury`` is a bare pop with NO definition — and silently lost the
-        buried value.
-
-        The consumed band is everything at and above the target; ``frame_dig``
-        emits ``n_consumed + 1`` outputs (band + dug copy on top, per
-        :func:`_shuffle_mapping`) and ``frame_bury`` ``n_consumed - 1``."""
-        try:
-            n = int(op.immediates.strip().split()[0])
-        except (ValueError, IndexError, AttributeError):
-            return False
-        if missing_below is None:
-            return False              # no routine-relative depth -> narrow path
-        target_idx = proto[0] + n - missing_below
-        if target_idx < 0 or target_idx >= len(local_stack):
-            return False
-        n_consumed = len(local_stack) - target_idx      # top to target inclusive
-        band_topfirst = list(reversed(local_stack[target_idx:]))
-
-        if op.op == "frame_dig":
-            n_out_new = n_consumed + 1
-        else:  # frame_bury needs a slot above the target to pop
-            if n_consumed < 1:
-                return False
-            n_out_new = n_consumed - 1
-        op.inputs = list(band_topfirst)
-        del local_stack[target_idx:]
-        new_outs: list = []
-        for k in range(1, n_out_new + 1):
-            v = PyVar(op.file, op.line, k)
-            self.vars[v.key()] = v
-            new_outs.append(v)
-        op.outputs = new_outs
-        op.n_in = n_consumed
-        op.n_out = n_out_new
-        # new_outs is top-first per the shuffle convention; push back bottom-first.
-        local_stack.extend(reversed(new_outs))
-        return True
-
-    # ----- Phase 8: liveness filter --------------------------------------
 
     def _phase8_live_filter(self) -> None:
         """Drop phis not transitively consumed by any op.inputs."""

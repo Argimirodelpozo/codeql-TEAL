@@ -20,23 +20,36 @@ logger = logging.getLogger("tealql.tealtools.passes.frame_flow")
 def frame_param_sources(prog: SSAProgram) -> dict:
     """``{frame_dig output SSAVar -> set(values bound to that param at every call site)}``.
 
-    HAZARD: a ``callsub`` whose ``exit_stack`` is too shallow (PySSA caps the
-    threaded stack at STACK_MAX) is skipped, so this may MISS a source — never
-    invent a wrong one. Consumers must treat absence as unknown, not as clean."""
+    The arguments are the ``callsub``'s OWN operands, TOP-FIRST — so param ``p``
+    (0 = deepest, nargs-1 = top) is ``inputs[nargs - 1 - p]``.
+
+    It used to read them off ``callsub_bb.exit_stack`` instead, which held them
+    only while a ``callsub`` was modelled as consuming nothing. Now that the
+    stack model knows what a call does, that slot is the call's RESULT or the
+    caller's residual: measured over 15 probes, 333 of 342 entries named the
+    wrong value or none. A param source is consumed by MUST reasoning
+    (``security._value_flow``: "every caller pins this arg"), where a wrong
+    value is worse than a missing one.
+
+    HAZARD: a ``callsub`` whose operand list is short — an argument the
+    simulation could not resolve is dropped by ``_build_assignments``, and index
+    ``nargs - 1 - p`` would then name a different argument — is SKIPPED. This may
+    MISS a source, never invent one. Consumers must treat absence as unknown,
+    not as clean."""
     out: dict = {}
     for sub, frames in resolve(prog).items():
         nargs: Optional[int] = _proto_nargs(sub.entry_bb)
         if not nargs or not frames.dig_param or not sub.callers:
             continue
-        # param p (0 = deepest arg, nargs-1 = top) is the value at exit-stack slot
-        # ``-(nargs - p)`` of each call site's callsub BB.
         param_args: dict = {p: set() for p in range(nargs)}
         for cs in sub.callers:
-            es = getattr(cs.callsub_bb, "exit_stack", None)
-            if not es or len(es) < nargs:
-                continue                      # too-shallow / capped stack: skip
+            bb = cs.callsub_bb
+            call = next((a for a in reversed(getattr(bb, "assignments", ()))
+                         if a.op == "callsub"), None)
+            if call is None or len(call.inputs) != nargs:
+                continue                      # unresolved operand: skip, never guess
             for p in range(nargs):
-                arg = es[-(nargs - p)]
+                arg = call.inputs[nargs - 1 - p]
                 if arg is not None:
                     param_args[p].add(arg)
         for dig_out, p in frames.dig_param.items():

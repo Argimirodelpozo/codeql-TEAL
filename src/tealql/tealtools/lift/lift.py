@@ -316,13 +316,14 @@ class _Lifter:
         self._io_by_entry = {s.entry_bb: a for s, a in _arity.items()}
         self._proto_entries = {s.entry_bb for s in struct.subroutines
                                if any(a.op == "proto" for a in s.entry_bb.assignments)}
-        # `resim_*`: every group's value stack re-simulated with correct callsub
-        # arities (`_resim`), replacing the fat SSA wiring in `_build_block`. PySSA
-        # threads the whole-program stack through subs, caps it at STACK_MAX and
-        # loses cross-call survivors -- which surface as used-but-never-defined
-        # operands Puya's destructure_ssa rejects. HAZARD: all-or-nothing --
-        # re-simulating only some subs mismatches the shared call interface and
-        # corrupts the others.
+        # `resim_*`: every group's value stack re-simulated in PRE-IR REGISTER
+        # space (`_resim`), which is what `_build_block` emits operands from. The
+        # SSA now simulates the same way (`ssa.stacksim`, one per-routine walk
+        # with real callsub arities), so this is a translation into the lift's
+        # own value space rather than a second opinion -- the two agree on
+        # arities exactly, and the behavioural gate holds. HAZARD: all-or-nothing
+        # -- re-simulating only some subs mismatches the shared call interface
+        # and corrupts the others.
         self.resim_args: dict = {}                # id(assignment) -> [pre-IR operand]
         self.resim_phis: dict = {}                # PyBlock -> [pre_ir.Phi]
         self.resim_exit: dict = {}                # PyBlock -> re-simulated exit stack
@@ -749,8 +750,8 @@ class _Lifter:
             # HAZARD: `return`, and a block that falls off the end with no explicit
             # terminator, both exit with the STACK TOP (the approval result), never a
             # hardcoded 0 -- that would turn an approve-if-X program into an
-            # unconditional reject. Read it off the clean re-simulated stack;
-            # bb.exit_stack is fat STACK_MAX garbage and yields an undefined operand.
+            # unconditional reject. Read it off the re-simulated stack, which is
+            # already in this lift's register space.
             rsx = self.resim_exit.get(bb, [])
             v = rsx[-1] if rsx else pre_ir.UInt64Constant(0)
             return pre_ir.ProgramExit(v)
@@ -1007,9 +1008,10 @@ class _Lifter:
     def _resim_exec_op(self, a, b, stack, params):
         """Simulate one assignment `a` of block `b` against the clean re-sim `stack`
         (mutated in place), recording per-op operands into `resim_args`."""
-        # Frame ops FIRST: PySSA models them as fat [1..STACK_MAX] band ops (and they
-        # are in _STACK_SHUFFLE_OPS), so the generic / shuffle paths below would pop
-        # the whole stack. On the clean stack frame_dig pushes one value, bury pops one.
+        # Frame ops FIRST: they are in `_STACK_SHUFFLE_OPS`, so the generic /
+        # shuffle paths below would treat them as a permutation of the operand
+        # list. They are not -- a frame op addresses a POSITION, and the value
+        # there is what the passthrough/local maps below reconstruct.
         if a.op == "frame_dig":
             out0 = a.outputs[0] if a.outputs else None
             if out0 is not None and out0 in self.frame_passthrough:
@@ -1154,16 +1156,17 @@ class _Lifter:
             cs = self.callsite.get(bb)
             target = (cs.target_name if cs and cs.target_name
                       else (a.immediates or "?"))
-            # Args are passed via scratch, not callsub operands: take the caller's
-            # exit_stack top nargs in PARAM order (es[-nargs+i]).
+            # The args are the callsub's OWN operands, TOP-FIRST, so PARAM order
+            # (0 = deepest) reverses them. They used to be read off the caller's
+            # `exit_stack` top, which held them only while a callsub was modelled
+            # as consuming nothing — that slot is now the call's RESULT.
             nargs = self._sub_io(cs.target_entry)[0] if (cs and cs.target_entry) else 0
-            es = bb.exit_stack
             if resim:
                 call_args = self.resim_args.get(id(a), [])
-            elif nargs and len(es) >= nargs:
-                call_args = [self.value(es[-nargs + i]) for i in range(nargs)]
+            elif nargs and len(a.inputs) == nargs:
+                call_args = [self.value(a.inputs[nargs - 1 - i]) for i in range(nargs)]
             else:
-                call_args = [self.value(i) for i in a.inputs]
+                call_args = [self.value(i) for i in reversed(a.inputs)]
             invoke = pre_ir.InvokeSubroutine(target, call_args)
             outs = self.call_results.get(bb)      # caller-local return registers
             if outs:
