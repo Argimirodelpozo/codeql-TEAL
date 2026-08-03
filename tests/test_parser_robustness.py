@@ -114,3 +114,35 @@ def test_bnot_is_a_logic_opcode(tmp_path):
     cls = node_class_for_mnemonic("b~")
     assert cls is BnotOpcode
     assert issubclass(cls, LogicOpcode)
+
+
+def test_scoped_subroutine_label_parses(tmp_path):
+    """`a::b` is a legal label to a compiler and unparseable to the grammar.
+
+    puya-ts names subroutines after the source that produced them, e.g.
+    `callsub smart_contracts/main/contract.algo.ts::Main.cardAssetOptIn`. The grammar's label rule
+    stops at the first `:` -- which is what TERMINATES a label definition -- so the `::` and
+    everything after it became an unparsed span and the whole subroutine dropped out of the
+    analysis. On auto-draw-card's Main that silently removed 5 spans.
+    """
+    prog = _prog(tmp_path, "#pragma version 11\n"
+                           "callsub smart_contracts/main/contract.algo.ts::Main.foo\n"
+                           "int 1\n"
+                           "return\n"
+                           "\n"
+                           "smart_contracts/main/contract.algo.ts::Main.foo:\n"
+                           "proto 0 0\n"
+                           "retsub\n")
+    assert not prog.parse_diagnostics, f"scoped label unparsed: {prog.parse_diagnostics}"
+    ops = [a.op for a in prog.assignments]
+    assert "callsub" in ops and "retsub" in ops, f"subroutine dropped: {ops}"
+
+
+def test_double_colon_inside_a_byte_literal_is_data(tmp_path):
+    """The rename must not touch a quoted literal: `pushbytes "a::b"` is DATA, and rewriting it
+    would corrupt the program rather than rename part of it."""
+    prog = _prog(tmp_path, '#pragma version 11\npushbytes "a::b"\nlen\nreturn\n')
+    prog.propagate_constants()
+    vals = [str(o.const_value) for a in prog.assignments if a.op == "pushbytes"
+            for o in a.outputs if o.const_value is not None]
+    assert vals and "a::b" in vals[0].replace('"', '') or vals == ["0x" + b"a::b".hex()], vals
