@@ -22,7 +22,7 @@ HAZARD — the ``PyPhi.args`` graph can be CYCLIC (constant-stack CFG loops), so
 every traversal needs a ``seen`` set. ``PyPhi`` is unified: the public
 Direct/Indirect kind distinction is collapsed here.
 
-CLI: ``python -m tealql.tealtools.ssa <teal-source>`` renders the build.
+CLI: ``python -m tealql.tealtools.ssa.ssa <teal-source>`` renders the build.
 """
 from __future__ import annotations
 
@@ -229,8 +229,10 @@ class PySSA:
         for qbb in prog.blocks.values():
             b = PyBlock((qbb.file, qbb.first_line, qbb.last_line))
             for a in qbb.assignments:
-                # Narrow phase-1 arities; the fat frame_dig/frame_bury/callsub/
-                # retsub forms are rebuilt by later phases.
+                # The op's CANONICAL arity. `callsub`/`retsub` read (0, 0) here
+                # and `frame_dig` (0, 1); the simulation supplies what a call
+                # really consumes and where a frame op really reads, and records
+                # the operands itself — it never rewrites these.
                 n_in, n_out = op_arity(a.op, a.immediates)
                 op = PyOp(
                     op=a.op, immediates=a.immediates,
