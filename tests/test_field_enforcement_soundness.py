@@ -302,3 +302,79 @@ def test_rekey_to_unpinned_sibling_flagged(tmp_path):
     assert _detector(tmp_path, "rekey-to",
                      _H + "gtxn 0 RekeyTo\nglobal ZeroAddress\n==\n"
                      "assert\nint 1\nreturn\n")
+
+
+# --- the COMPILED spellings of a guard ---------------------------------------
+# A hand-written lsig says `txn RekeyTo`. A compiler says `txn GroupIndex` once, then `dup`s that
+# index before each field read of the same transaction, and spells `field === 0` as `!`. Both were
+# invisible to the field-protection resolver, so a logicsig that pinned TypeEnum, RekeyTo,
+# AssetCloseTo and Fee was reported as protecting NONE of them -- six drain findings on a contract
+# that had explicitly guarded against every one (algorandfoundation/auto-draw-card's AutoDraw, built with puya-ts).
+
+_DUP_CARRIED = """#pragma version 11
+txn GroupIndex
+dup
+gtxns TypeEnum
+pushint 4
+==
+assert
+dup
+gtxns RekeyTo
+global ZeroAddress
+==
+assert
+pop
+int 1
+return
+"""
+
+_FEE_VIA_NOT = """#pragma version 11
+txn GroupIndex
+dup
+gtxns Fee
+!
+assert
+pop
+int 1
+return
+"""
+
+
+def _findings(tmp_path, teal: str, detector: str) -> list:
+    from tealql.security import DETECTORS
+    p = tmp_path / "p.teal"
+    p.write_text(teal)
+    return DETECTORS[detector](SSAProgram(str(p)), file="p.teal").detect()
+
+
+@pytest.mark.parametrize("detector", ["rekey-to", "tx-type-check"])
+def test_dup_carried_group_index_counts_as_a_guard(tmp_path, detector):
+    """`gtxns FIELD` on a dup'd `txn GroupIndex` reads THIS transaction, so it is a guard.
+
+    Resolving it needs the stack shuffles propagated first; without that the index operand traces
+    to the `dup` rather than to `txn GroupIndex` and the read is not credited to the signer.
+    """
+    assert not _findings(tmp_path, _DUP_CARRIED, detector), \
+        f"{detector}: a dup-carried guard was not credited"
+
+
+def test_logical_not_is_a_zero_test(tmp_path):
+    """`txn Fee; !` pins the fee to zero exactly as `== 0` does, and is what a compiler emits."""
+    assert not _findings(tmp_path, _FEE_VIA_NOT, "fee-validation"), \
+        "fee-validation: `!` was not recognised as a zero-test"
+
+
+def test_unpinned_sibling_read_is_still_refused(tmp_path):
+    """The soundness half: `gtxn 1 RekeyTo` checks a SIBLING, never the signer, so it must NOT
+    count -- crediting it would let a delegated logicsig be drained through a check that never
+    touched the signed transaction."""
+    sibling = """#pragma version 11
+gtxn 1 RekeyTo
+global ZeroAddress
+==
+assert
+int 1
+return
+"""
+    assert _findings(tmp_path, sibling, "rekey-to"), \
+        "a sibling-only check must not count as protecting the signer"
