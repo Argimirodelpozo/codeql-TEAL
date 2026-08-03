@@ -74,12 +74,12 @@
   "ir-tainted-fund-flow": {
    "contracts": 55,
    "crashes": 0,
-   "findings": 167
+   "findings": 171
   },
   "ir-tainted-log": {
    "contracts": 43,
    "crashes": 0,
-   "findings": 131
+   "findings": 135
   },
   "ir-tainted-state-write": {
    "contracts": 20,
@@ -99,22 +99,22 @@
   "timelock-upgrade": {
    "contracts": 65,
    "crashes": 0,
-   "findings": 131
+   "findings": 133
   },
   "unprotected-deletable": {
    "contracts": 111,
    "crashes": 0,
-   "findings": 275
+   "findings": 273
   },
   "unprotected-updatable": {
    "contracts": 93,
    "crashes": 0,
-   "findings": 250
+   "findings": 248
   },
   "unsafe-division-order": {
    "contracts": 34,
    "crashes": 0,
-   "findings": 111
+   "findings": 112
   },
   "unvalidated-group-sibling": {
    "contracts": 31,
@@ -383,8 +383,8 @@
    "abi-method-selector": 1,
    "delete-funds-check": 1,
    "ir-arbitrary-inner-asset": 2,
-   "ir-tainted-fund-flow": 1,
-   "ir-tainted-log": 4,
+   "ir-tainted-fund-flow": 2,
+   "ir-tainted-log": 7,
    "is-deletable": 1,
    "is-updatable": 1,
    "timelock-upgrade": 1
@@ -863,8 +863,8 @@
    "abi-method-selector": 1,
    "delete-funds-check": 1,
    "ir-arbitrary-inner-asset": 1,
-   "ir-tainted-fund-flow": 1,
-   "ir-tainted-log": 6,
+   "ir-tainted-fund-flow": 4,
+   "ir-tainted-log": 7,
    "is-deletable": 1,
    "is-updatable": 1,
    "timelock-upgrade": 1
@@ -1010,9 +1010,9 @@
    "inner-txn-close-rekey": 2,
    "is-deletable": 6,
    "is-updatable": 6,
-   "timelock-upgrade": 3,
-   "unprotected-deletable": 3,
-   "unprotected-updatable": 3,
+   "timelock-upgrade": 5,
+   "unprotected-deletable": 1,
+   "unprotected-updatable": 1,
    "unsafe-division-order": 3
   },
   "89bc8c1a7f263451": {
@@ -1865,7 +1865,7 @@
    "is-updatable": 2,
    "timelock-upgrade": 1,
    "unprotected-updatable": 1,
-   "unsafe-division-order": 1
+   "unsafe-division-order": 2
   },
   "f6dad0a32cea5b34": {
    "abi-method-selector": 1
