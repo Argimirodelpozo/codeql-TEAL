@@ -532,7 +532,13 @@ def _exec(o, b, stack, nargs, res, bb_to_sub, retsubs, arity, phi_factory,
             slot = r_out - j                      # top-first within the returns
             vals = [res.exit[rb][-slot] for rb in rets
                     if rb in res.exit and len(res.exit[rb]) >= slot]
-            if pending_rets and can_merge and deferred is not None:
+            if pending_rets and not (can_merge and deferred is not None):
+                # A return path exists that we cannot merge in. Taking the
+                # resolved subset would name the base case as THE result and
+                # hide the recursive one — an under-approximation that reads as
+                # a definite value.
+                stack.append(None)
+            elif pending_rets:
                 ph = phi_factory(cont, slot)
                 ph.args.extend(vals)
                 res.phis.setdefault(cont, []).append((slot, ph))
