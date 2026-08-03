@@ -39,6 +39,13 @@ from ..avm import op_arity
 
 STACK_MAX = 1000
 
+#: Build operands with the single clean simulator (:mod:`.stacksim`) instead of
+#: Braun + the fat band. A BRANCH SWITCH, not a supported option: it exists so
+#: the replacement can be run against the oracle, and one of the two paths is
+#: meant to be deleted before this lands.
+import os as _os
+_USE_STACKSIM = _os.environ.get("TEALQL_STACKSIM") == "1"
+
 # "Not yet resolved" — distinct from ``None``, itself a valid resolved value
 # (an entry slot with no incoming definition).
 _MISSING = object()
@@ -216,6 +223,11 @@ class PySSA:
         self = cls()
         self._phase1_instantiate(prog)
         self._phase2_arities()
+        if _USE_STACKSIM:
+            self._compute_subs_and_protos()
+            self._phase_stacksim()
+            self._phase8_live_filter()
+            return self
         # Braun on-demand placement + the forward depth cap in
         # `_compute_entry_depths`, which fixes the loop spiral at its slot-model
         # root: a net-changing loop's `L+k-C` map climbs to STACK_MAX under ANY
@@ -258,6 +270,36 @@ class PySSA:
                 key=lambda x: x.key,
             )
         self.blocks = sorted(by_ql.values(), key=lambda b: b.key)
+
+    def _phase_stacksim(self) -> None:
+        """Fill operands from the single clean simulation.
+
+        Replaces `_phase_braun` + `_phase6_sim_blocks` wholesale: one forward
+        per-routine walk with real callsub arities and frame slots read/written
+        in place, so there is no fat band, no depth cap, and no second model to
+        disagree with."""
+        from . import stacksim
+        from ..subroutines import pyblock_partition, _pyblock_return_point
+
+        def mint(block, slot):
+            # Identity is (bb_key, slot) and the public Phi mirrors it, so a
+            # block's phis must not share a slot — a call-result phi can collide
+            # with a join phi in the same block.
+            s = slot
+            while (block.key, s) in self.phis:
+                s += 1
+            p = PyPhi(block.key, s)
+            self.phis[(block.key, s)] = p
+            block.entry_phis.append(p)
+            return p
+
+        res = stacksim.simulate(self.blocks, pyblock_partition(self.blocks),
+                                self._proto_io, _pyblock_return_point(self.blocks),
+                                mint)
+        for b in self.blocks:
+            for o in b.ops:
+                o.inputs = list(res.args.get(id(o), []))
+            b.exit_stack = list(res.exit.get(b, []))
 
     # ----- Phase 2: BB arities + surviving locals ------------------------
 
