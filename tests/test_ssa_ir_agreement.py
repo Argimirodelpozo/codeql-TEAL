@@ -1,13 +1,15 @@
 """The SSA and the lifted IR must name the SAME value for an op's operands.
 
-There are two independent stack simulations in this pipeline. The SSA's serves
-the SSA-level analyses; the lift's ``_resim`` serves the IR, because PySSA's
-fat-band model and ``STACK_MAX`` cap produce operands Puya's ``destructure_ssa``
-rejects. 100% of the IR's emitted operands come from the re-simulation — the SSA's
-stack wiring is not consulted — so nothing forced the two to agree.
+The SSA simulates the stack once (``ssa.stacksim``) for the SSA-level analyses;
+the lift re-simulates in its OWN register space (``_resim``), and 100% of the
+IR's emitted operands come from that re-simulation — the SSA's wiring is not
+consulted — so nothing forces the two to agree. (It used to be worse: the SSA
+half was itself two models, Braun plus a fat-band block sim, and they could
+disagree with each other as well. Those are gone.)
 
-``test_frame_base_alignment`` pins Braun against phase 6c INSIDE the SSA. Nothing
-pinned SSA against the lift ACROSS the boundary, and a real bug lived there: a
+``test_frame_base_alignment`` pins the SSA's phis against its own exit stacks.
+Nothing pinned SSA against the lift ACROSS the boundary, and a real bug lived
+there: a
 block that appeared in five subroutine bodies was re-simulated in four that could
 not reach it, so it started on an empty stack and ``frame_dig 0`` — which resolves
 by absolute index — read whatever was pushed next. The ARC-4 return-logging idiom
@@ -151,6 +153,60 @@ def test_the_two_stack_models_name_the_same_operands():
         f"{len(found)} operand(s) are named differently by the SSA and by the "
         f"lifted IR (ceiling {_CEILING}) — the two stack models have started "
         f"describing different programs:\n  " + "\n  ".join(found[:10]))
+
+
+def test_a_recursive_call_returns_a_value_not_a_hole(tmp_path):
+    """A recursive subroutine's result must be EXPRESSED, not refused.
+
+    `count_len(b) = b=="" ? 0 : 1 + count_len(b[1:])`. A cycle has no
+    callee-first order, so when the simulator reaches the inner `callsub` the
+    callee's own `retsub` blocks have not run — and pushing None there is not
+    "honest unknown": the value is DEFINED IN TERMS OF ITSELF, which is what a
+    phi is for. The call site mints the phi and fills it once every routine has
+    run, giving φ(0, φ+1).
+
+    Nothing here covered this, so 4072 green tests and a behaviourally identical
+    localnet dryrun all missed it — the recompiled program still ran correctly;
+    what was lost was structure only an IR-level consumer sees. avm-prover
+    caught it: it proves `r == len(arg0)` by k-induction over this exact
+    program, and with a None there the invariant vanished and the proof came
+    back `counterexample` in a fifth of the time.
+    """
+    teal = tmp_path / "rec.teal"
+    teal.write_text(
+        "#pragma version 10\n"
+        "txna ApplicationArgs 0\ncallsub count_len\npop\npushint 1\nreturn\n"
+        "count_len:\nproto 1 1\nframe_dig -1\nlen\npushint 0\n==\nbnz base\n"
+        "frame_dig -1\npushint 1\nframe_dig -1\nlen\npushint 1\n-\nextract3\n"
+        "callsub count_len\npushint 1\n+\nretsub\n"
+        "base:\npushint 0\nretsub\n")
+    prog = SSAProgram(str(teal))
+
+    calls = [a for a in prog.assignments if a.op == "callsub"]
+    assert len(calls) == 2, f"expected an outer and a recursive call, got {calls}"
+
+    # The `+` that consumes the recursive result must HAVE that operand.
+    plus = [a for a in prog.assignments if a.op == "+"]
+    assert len(plus) == 1 and len(plus[0].inputs) == 2, (
+        "the add after the recursive call lost an operand — the call result was "
+        f"refused: {plus}")
+    add_out = plus[0].outputs[0]
+
+    # …and that operand must be a phi over BOTH returns: the base case and the
+    # cycle. Self-reference is the point — a phi whose only argument is the base
+    # case would describe a function that never recurses.
+    result = plus[0].inputs[1]
+    args = [str(a) for a in getattr(result, "args", [])]
+    assert args, f"the recursive call's result is not a merge: {result!r}"
+    assert str(add_out) in args, (
+        f"the phi does not close the cycle — it must stand for the `+` result "
+        f"({add_out}) as well as the base case, got {args}")
+    assert len(set(args)) == 2, (
+        f"expected exactly the base value and the recursive value, got {args}")
+
+    # It must also lift; a phi that no consumer can lower is not an answer.
+    ir = _Lifter(prog).build()
+    assert any("count_len" in s.id for s in ir.subroutines), ir.subroutines
 
 
 def test_a_block_lifted_by_a_group_that_cannot_reach_it_is_caught():
