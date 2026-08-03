@@ -114,3 +114,73 @@ def test_bnot_is_a_logic_opcode(tmp_path):
     cls = node_class_for_mnemonic("b~")
     assert cls is BnotOpcode
     assert issubclass(cls, LogicOpcode)
+
+
+def test_comment_ending_in_backslash_does_not_swallow_next_line(tmp_path):
+    r"""A TEAL comment runs to END OF LINE -- the AVM has no line-continuation, but
+    the tree-sitter grammar lets a trailing backslash continue the `comment` node
+    onto the next line, parsing that instruction as comment text.
+
+    It vanished SILENTLY: `comment` is trivia, so no ERROR node and no diagnostic --
+    the block just lost a stack push and every later stack reference in it shifted by
+    one slot. Puya writes the contract's own Python source into comments and a Python
+    line-continuation ends in exactly that backslash, so this fires on ordinary
+    compiled output (found in Folks Finance's Wormhole NTT NttManager, where the
+    swallowed `bytec_3` made a later `uncover 3` read a frame slot instead of the
+    pushed box key).
+    """
+    src = ("#pragma version 10\n"
+           "bytecblock 0x00 0x11 0x22 0x33\n"
+           "// self.buckets[id].capacity = bucket.limit \\\n"
+           "bytec_3\n"
+           "bytec_2\n"
+           "concat\n"
+           "log\n"
+           "int 1\n"
+           "return\n")
+    prog = _prog(tmp_path, src)
+    ops = [a.op for a in prog.assignments]
+    assert "bytec_3" in ops, f"the backslash comment swallowed the next line: {ops}"
+    assert not prog.parse_diagnostics
+    # and the swallowed push is really back on the stack, not just present
+    (cat,) = [a for a in prog.assignments if a.op == "concat"]
+    assert len(cat.inputs) == 2, f"stack shifted: {cat.inputs}"
+
+
+def test_comment_backslash_parses_identically_to_no_backslash(tmp_path):
+    """The neutralised backslash must change nothing else: same ops, same order."""
+    body = ("#pragma version 10\n"
+            "bytecblock 0x00 0x11 0x22 0x33\n"
+            "// a comment{}\n"
+            "bytec_3\n"
+            "bytec_2\n"
+            "concat\n"
+            "log\n"
+            "int 1\n"
+            "return\n")
+    with_bs = [a.op for a in _prog(tmp_path, body.format(" \\"), "a.teal").assignments]
+    without = [a.op for a in _prog(tmp_path, body.format(""), "b.teal").assignments]
+    assert with_bs == without, f"{with_bs} != {without}"
+
+
+def test_double_slash_inside_a_byte_literal_is_not_a_comment(tmp_path):
+    """The fix must find the comment start the way TEAL does: `//` inside a quoted
+    byte literal is DATA (`pushbytes "http://x"`), not the start of a comment, so a
+    backslash later on that line is still inside the real comment."""
+    src = ('#pragma version 10\n'
+           'bytecblock 0x00 0x11 0x22 0x33\n'
+           'pushbytes "a//b" // a real comment \\\n'
+           'bytec_3\n'
+           'concat\n'
+           'log\n'
+           'int 1\n'
+           'return\n')
+    prog = _prog(tmp_path, src)
+    ops = [a.op for a in prog.assignments]
+    assert "pushbytes" in ops and "bytec_3" in ops, ops
+    prog.propagate_constants()
+    vals = [str(o.const_value) for a in prog.assignments if a.op == "pushbytes"
+            for o in a.outputs if o.const_value is not None]
+    # the literal may render quoted or as hex; either way it must still be `a//b`
+    assert vals in (['"a//b"'], ["0x" + b"a//b".hex()]), \
+        f"the literal's slashes were eaten: {vals}"

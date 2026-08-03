@@ -51,6 +51,64 @@ def _is_trivia(node_type: str) -> bool:
     return node_type in _TRIVIA or node_type.startswith("pragma")
 
 
+def _neutralise_comment_continuations(src: bytes) -> bytes:
+    r"""Stop a comment that ends in ``\`` from swallowing the next line.
+
+    A TEAL comment runs to END OF LINE -- the AVM has no line-continuation. The
+    tree-sitter-teal grammar disagrees: it lets a trailing backslash continue a
+    ``comment`` node onto the following line, so the instruction there is parsed as
+    comment text and vanishes from the node stream entirely. Nothing downstream can
+    see it: ``comment`` is trivia, so no ERROR is raised and no diagnostic fires --
+    the block simply loses a stack push and every later stack reference in it shifts
+    by one slot. Real damage, silently: puya writes the contract's own Python source
+    into comments, and a Python line-continuation ends in exactly that backslash, so
+
+        // self.buckets[id].capacity = bucket.limit \
+        bytec_3                                       <-- swallowed
+
+    lifted with `bytec_3` missing, and the block's later `uncover 3` then read a
+    frame slot instead of the pushed key (seen in Folks Finance's Wormhole NTT
+    NttManager, where it mistyped a `box_replace` value operand).
+
+    The backslash is overwritten with a SPACE rather than deleted: same byte length,
+    so every offset, line and column downstream stays exactly as the source had it.
+    Only bytes inside a comment are ever touched.
+    """
+    if b"\\" not in src:
+        return src
+    out = bytearray(src)
+    n = len(out)
+    i = 0
+    while i < n:
+        eol = out.find(b"\n", i)
+        if eol == -1:
+            eol = n
+        # find this line's comment start: the first `//` that is not inside a
+        # double-quoted byte literal (`pushbytes "http://x"` is not a comment).
+        cstart, in_str, esc, k = -1, False, False, i
+        while k < eol:
+            ch = out[k]
+            if in_str:
+                if esc:
+                    esc = False
+                elif ch == 0x5C:            # backslash
+                    esc = True
+                elif ch == 0x22:            # closing quote
+                    in_str = False
+            elif ch == 0x22:                # opening quote
+                in_str = True
+            elif ch == 0x2F and k + 1 < eol and out[k + 1] == 0x2F:
+                cstart = k
+                break
+            k += 1
+        if cstart >= 0:
+            end = eol - 1 if eol > i and out[eol - 1] == 0x0D else eol
+            if end - 1 > cstart and out[end - 1] == 0x5C:
+                out[end - 1] = 0x20
+        i = eol + 1
+    return bytes(out)
+
+
 def _named_int_error(c, src: bytes = b"") -> bool:
     """A tree-sitter ERROR that is really the ``int <NamedConstant>`` pseudo-op.
 
@@ -355,6 +413,7 @@ def parse_nodes(
     for file, src in sources.items():
         if isinstance(src, str):
             src = src.encode("utf-8")
+        src = _neutralise_comment_continuations(src)
         root = _parser().parse(src).root_node
 
         real: list = []
