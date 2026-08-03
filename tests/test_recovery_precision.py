@@ -18,7 +18,7 @@ import pytest
 
 pytest.importorskip("puya")
 
-from tealql.tealtools.lift import to_puya, to_puya_ir   # noqa: E402
+from tealql.tealtools.lift import lift, to_puya, to_puya_ir   # noqa: E402
 from tealql.tealtools.ssa import SSAProgram             # noqa: E402
 
 
@@ -137,3 +137,46 @@ int 1
 return
 """
     assert _encodings(tmp_path, teal) == []
+
+
+@pytest.mark.parametrize("name,body,expected", [
+    # The op is the ONLY typing signal the parameter has: nothing at the call
+    # site says what `load 5` is, so if the use does not speak, the register
+    # stays `?` and lowers to a DEFAULT that may be the wrong family.
+    ("gtxns", "frame_dig -1\ngtxns Amount\nretsub\n", "uint64"),
+    ("gloads", "frame_dig -1\ngloads 3\nretsub\n", "uint64"),
+    ("gaids", "frame_dig -1\ngaids\nretsub\n", "uint64"),
+    ("args", "frame_dig -1\nargs\nretsub\n", "uint64"),
+])
+def test_an_index_operand_types_its_source(tmp_path, name, body, expected):
+    """`gtxns` and friends pop a uint64 INDEX — a group index, a scratch slot.
+
+    That family was absent from the expected-type tables, which is not a missing
+    refinement but a missing SIGNAL: `_infer_types_from_uses` only refines
+    registers still `?`, so a value consumed ONLY by one of these got no
+    expected type from any use at all. It is exactly the shape of an ARC-4
+    TRANSACTION parameter — `transfer(pay, axfer, ...)` passes its `pay` as a
+    group index and the callee reads it with `gtxns Amount` — so every such
+    subroutine mistyped its own parameters and then mismatched its own call
+    sites (`received = (bytes), expected = (uint64)`).
+    """
+    teal = tmp_path / f"{name}.teal"
+    teal.write_text("#pragma version 10\nload 5\ncallsub f\npop\npushint 1\n"
+                    "return\nf:\nproto 1 1\n" + body)
+    ir = lift(SSAProgram(str(teal)))
+    sub = next(s for s in ir.subroutines if s.id.endswith("f"))
+    got = sub.parameters[0].register.ir_type
+    assert got == expected, (
+        f"a value whose only use is `{name}` typed {got!r}, not {expected!r} — "
+        "the use carries no expected type, so nothing refines the register")
+
+
+def test_log_types_its_operand_as_bytes(tmp_path):
+    """`log` takes a byteslice, and an ARC-4 event payload that reaches it only
+    through a frame slot has no other typing signal."""
+    teal = tmp_path / "log.teal"
+    teal.write_text("#pragma version 10\nload 5\ncallsub f\npushint 1\nreturn\n"
+                    "f:\nproto 1 0\nframe_dig -1\nlog\nretsub\n")
+    ir = lift(SSAProgram(str(teal)))
+    sub = next(s for s in ir.subroutines if s.id.endswith("f"))
+    assert sub.parameters[0].register.ir_type == "bytes"
