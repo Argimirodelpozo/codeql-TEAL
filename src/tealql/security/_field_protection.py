@@ -98,10 +98,17 @@ def _field_enforcement_bbs(
     for cmp in prog.assignments:
         if not file_match(cmp.location.file, file):
             continue
-        if not is_comparison(cmp) or not cmp.outputs:
+        # `!` is a comparison against zero, and it is how a compiler spells `field === 0`:
+        # puya-ts (Algorand TypeScript) emits `gtxns Fee; !; assert` for `assert(txn.fee === 0)`. Requiring a
+        # two-operand CMP_OP missed that entirely, so a fee-pinned logicsig was reported as
+        # having no fee check -- the exact drain finding it had explicitly guarded against.
+        is_zero_test = cmp.op == "!"
+        if not (is_comparison(cmp) or is_zero_test) or not cmp.outputs:
             continue
         n_in = len(cmp.inputs)
-        if n_in != 2 and not (allow_unary_cmp and n_in == 1):
+        if n_in != 2 and not is_zero_test and not (allow_unary_cmp and n_in == 1):
+            continue
+        if is_zero_test and n_in != 1:
             continue
         if not isinstance(cmp.outputs[0], SSAVar):
             continue
@@ -160,6 +167,12 @@ def _signed_txn_field_reads(prog, field: str, *, file: Optional[str] = None) -> 
     signer — crediting it would let a delegated logicsig be drained through a check
     that never touched the signed transaction."""
     from tealql.tealtools import group_reasoning as G
+    # Resolve stack shuffles first, or `gtxns FIELD` is only credited when its index operand comes
+    # DIRECTLY from `txn GroupIndex`. A compiler emits one `txn GroupIndex` and then `dup`s it before
+    # each field read of the same transaction, so every guard after the first reads as absent --
+    # AutoDraw (AlgoKit / puya-ts) checks TypeEnum, RekeyTo, AssetCloseTo and Fee that way and was
+    # reported as protecting NONE of them. Idempotent and cached on the program.
+    prog.propagate_stack_shuffles()
     reads = list(txn_field_reads(prog, field, file=file))
     gtxn_reads = gtxn_field_reads(prog, field, file=file)
     for a in gtxn_reads:                                     # gtxns indexed by GroupIndex
@@ -235,7 +248,11 @@ def _txn_field_seeds(
     prog: SSAProgram, field: str, *, file: Optional[str] = None,
     include_gtxn: bool = False,
 ) -> set[SSAVar]:
-    reads = txn_field_reads(prog, field, file=file)
+    # Reads of THIS transaction's field, in every spelling: `txn F`, and `gtxns F` indexed by
+    # GroupIndex -- which is what a compiler emits, and what the plain `txn_field_reads` misses, so
+    # a guard written the compiled way counted as no guard at all. `_signed_txn_field_reads` also
+    # refuses an unpinned `gtxn N`, which reads a SIBLING and must never be credited to the signer.
+    reads = _signed_txn_field_reads(prog, field, file=file)
     if include_gtxn:
         # Some fields are validated on a SIBLING txn, not the app call itself (e.g.
         # AssetCloseTo on the deposit axfer). Opt-in, so the txn-only detectors
