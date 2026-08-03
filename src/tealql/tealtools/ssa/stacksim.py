@@ -144,16 +144,19 @@ class _Param:
 
 
 def simulate(blocks, bb_to_sub, proto_io, return_point, phi_factory,
-             *, bind_params: bool = False) -> "_Result":
+             *, bind_params: bool = True) -> "_Result":
     """Simulate every routine and return a :class:`_Result`.
 
     ``phi_factory(block, slot) -> phi`` mints the merge value, so the caller
     decides what a phi IS (a ``PyPhi`` in the builder, a stand-in in a test).
 
     ``bind_params`` resolves each routine's incoming slots to what its call
-    sites pass. OFF by default and NOT yet trusted: it is right on a
-    hand-checked fixture but drops corpus agreement with the incumbent from
-    99.92% to 97.6%, and an unexplained 2% is not a thing to switch on."""
+    sites pass. ON: the 2% it appeared to cost was a MEASUREMENT artifact —
+    559 of the 591 extra "disagreements" over 40 probes were the incumbent
+    holding a NARROW ``frame_dig`` output, which has no inputs and so resolves
+    to nothing. Binding names a value the incumbent leaves dangling, and that
+    dangling form is precisely the output-with-no-inputs shape that reads clean
+    to every may-analysis."""
     res = _Result()
     # Real arities FIRST: a legacy callee's (nargs, nret) is not declared
     # anywhere, and treating it as (0, 0) leaves its arguments on the caller's

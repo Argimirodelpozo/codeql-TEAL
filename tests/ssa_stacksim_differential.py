@@ -27,6 +27,20 @@ class _FakePhi:
         return f"simphi{self.slot}@L{self.block.key[1]}"
 
 
+def _opaque(v, prod):
+    """The incumbent could not resolve this value at all.
+
+    A NARROW ``frame_dig`` has arity (0, 1) — an output with NO inputs — so it is
+    an opaque handle, not a value. Counting it as a disagreement scores the new
+    simulator as wrong for RESOLVING something the incumbent left dangling, which
+    is the fourth time a differential in this codebase has reported
+    representation instead of correctness."""
+    if not isinstance(v, PyVar):
+        return False
+    d = prod.get(v.key())
+    return bool(d and d[0].op == "frame_dig" and not d[0].inputs)
+
+
 def _leaves(v, prod, seen=None):
     """Collapse a value to the set of leaf keys it can stand for, following phis
     and the fat-band shuffle rename."""
@@ -70,7 +84,7 @@ def check(path):
     res = stacksim.simulate(py.blocks, part, py._proto_io, rp,
                             lambda b, s: _FakePhi(b, s))
 
-    compared = agree = disagree = missing = parambound = 0
+    compared = agree = disagree = missing = parambound = opaque = 0
     cases = []
     for b in py.blocks:
         for o in b.ops:
@@ -101,34 +115,37 @@ def check(path):
                     continue
                 if lo & ln:
                     agree += 1
+                elif _opaque(old, prod):
+                    opaque += 1
                 else:
                     disagree += 1
                     if len(cases) < 4:
                         cases.append((o.line, o.op, i, repr(old), repr(new)))
-    return compared, agree, disagree, missing, cases, parambound
+    return compared, agree, disagree, missing, cases, parambound, opaque
 
 
 def main():
     random.seed(int(sys.argv[1]) if len(sys.argv) > 1 else 4)
     n = int(sys.argv[2]) if len(sys.argv) > 2 else 12
     files = random.sample(sorted(glob.glob("tests/mainnet-random-probes/*.teal")), n)
-    C = A = D = M = P = 0
+    C = A = D = M = P = O = 0
     worst = []
     for f in files:
         try:
-            c, a, d, m, cases, pb = check(f)
+            c, a, d, m, cases, pb, op_ = check(f)
         except Exception as e:
             print(f"  CRASH {f.split('/')[-1]}: {type(e).__name__}: {str(e)[:60]}")
             continue
-        C += c; A += a; D += d; M += m; P += pb
+        C += c; A += a; D += d; M += m; P += pb; O += op_
         if d:
             worst.append((f.split("/")[-1], d, cases))
-    print(f"comparable operands: {C}   agree: {A}   DISAGREE: {D}   "
-          f"ops-missing: {M}   param-boundary (excluded): {P}")
+    print(f"comparable: {C}  agree: {A}  DISAGREE: {D}  "
+          f"incumbent-opaque: {O}  param-boundary: {P}  ops-missing: {M}")
     for name, d, cases in sorted(worst, key=lambda x: -x[1])[:4]:
         print(f"  {name}: {d}")
         for c in cases:
             print("      ", c)
 
 
-main()
+if __name__ == '__main__':
+    main()
