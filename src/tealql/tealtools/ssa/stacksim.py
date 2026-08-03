@@ -353,9 +353,23 @@ def _run_routine(sub, body_list, res, arity, bb_to_sub, return_point,
         for o in b.ops:
             _exec(o, b, stack, nargs, res, bb_to_sub, retsubs, arity, phi_factory)
         res.exit[b] = stack
-    for ph, slot, bp in pending:
-        if bp in res.exit and slot < len(res.exit[bp]):
-            ph.args.append(res.exit[bp][slot])
+    for ph, slot, depth, bp in pending:
+        if bp in res.exit and len(res.exit[bp]) >= depth:
+            ph.args.append(_at(res.exit[bp], depth, slot))
+
+
+def _at(stack, depth, i):
+    """The value at merged position ``i`` (0 = bottom of the merged window).
+
+    ALIGNED BY THE TOP. Predecessors of a join can arrive at DIFFERENT depths —
+    legal TEAL, and common at a dispatch chain where one arm still holds a value
+    the others consumed — and what corresponds across them is the TOP of the
+    stack, never the bottom. Indexing bottom-first reads a deeper predecessor's
+    residual instead of the value it actually leaves at that slot: at
+    app_1100218544 L359 three preds arrive at depth 1 and one at depth 2, and
+    bottom-first indexing gave the phi that pred's `n0` instead of the
+    `ApplicationArgs 3` sitting on top of it."""
+    return stack[len(stack) - depth + i]
 
 
 def _entry_stack(b, entry, nargs, preds, back_targets, bpred_b, pending,
@@ -367,11 +381,11 @@ def _entry_stack(b, entry, nargs, preds, back_targets, bpred_b, pending,
         stack, phis = [], []
         for slot in range(depth):
             ph = phi_factory(b, depth - slot)
-            ph.args.extend(res.exit[p][slot] for p in preds)
+            ph.args.extend(_at(res.exit[p], depth, slot) for p in preds)
             phis.append((slot, ph))
             stack.append(ph)
             for bp in bpred_b:
-                pending.append((ph, slot, bp))
+                pending.append((ph, slot, depth, bp))
         res.phis[b] = phis
         return stack
     if len(preds) == 1:
@@ -379,7 +393,7 @@ def _entry_stack(b, entry, nargs, preds, back_targets, bpred_b, pending,
     depth = min(len(res.exit[p]) for p in preds)
     stack, phis = [], []
     for slot in range(depth):
-        vals = [res.exit[p][slot] for p in preds]
+        vals = [_at(res.exit[p], depth, slot) for p in preds]
         if all(v is vals[0] for v in vals):
             stack.append(vals[0])
             continue
