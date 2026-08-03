@@ -125,7 +125,7 @@ _FIXTURES = {
 def _effect_class(py) -> "str | None":
     if not py._call_pairs:
         return None
-    return "hard" if py._value_unsafe_conts else "clean"
+    return "hard" if py._unsafe_callee_blocks else "clean"
 
 
 @pytest.mark.parametrize("name", sorted(_FIXTURES))
@@ -296,7 +296,7 @@ def test_a_callee_that_eats_the_callers_stack_yields_undefined_not_a_stale_value
     if not teal.exists():
         pytest.skip("hostile-crossband fixture not present")
     prog = SSAProgram(str(teal))
-    assert prog._pyssa._residual_clobber_conts, (
+    assert prog._pyssa._clobber_callee_keys, (
         "the cross-band cover must be classified as clobbering the caller")
     rendered = lift(prog).render()
     assert "undefined" in rendered, (

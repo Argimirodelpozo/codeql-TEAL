@@ -140,8 +140,7 @@ class PyBlock:
     CFG, callsub and retsub edges included."""
 
     __slots__ = (
-        "key", "ops", "preds", "succs",
-        "entry_phis", "entry_stack", "exit_stack",
+        "key", "ops", "preds", "succs", "entry_phis", "exit_stack",
     )
 
     def __init__(self, key: tuple):
@@ -150,7 +149,6 @@ class PyBlock:
         self.preds: list["PyBlock"] = []
         self.succs: list["PyBlock"] = []
         self.entry_phis: list[PyPhi] = []
-        self.entry_stack: list[Operand] = []
         self.exit_stack: list[Operand] = []
 
     def __repr__(self) -> str:
@@ -176,19 +174,12 @@ class PySSA:
     #   callsub PyBlock -> (cont PyBlock, A, R)
     _call_pairs: dict = field(default_factory=dict)
     _pair_by_cs: dict = field(default_factory=dict)
-    # Continuation keys whose callee may have rewritten the caller's residual
-    # stack (see _classify_call_effects) — deep continuation slots refuse there;
-    # depth crossings remain (permutes change no heights).
-    _value_unsafe_conts: set = field(default_factory=set)
-    # Subset of the above whose callee may have CLOBBERED the caller's residual
-    # (an op consumed past the band). The lift cannot express that — its
-    # re-simulation assumes a call leaves the residual alone — so it refuses
-    # rather than emit a program with different behaviour.
-    _residual_clobber_conts: set = field(default_factory=set)
-    _clobber_callee_keys: set = field(default_factory=set)
-    # The same callees as blocks, for the simulator (which withdraws at the
-    # ``callsub`` rather than at a paired continuation).
+    # Callees that may have rewritten the caller's residual stack (see
+    # _classify_call_effects). Keyed two ways for two consumers: BLOCKS for the
+    # simulator, which withdraws the residual at the `callsub`, and KEYS for the
+    # lift, which fills those slots with `Undefined`.
     _unsafe_callee_blocks: set = field(default_factory=set)
+    _clobber_callee_keys: set = field(default_factory=set)
     # bb_key -> entry stack depth INCLUDING the sub's args; see
     # _frame_entry_depths. Absent = height-ambiguous, which reads as UNSAFE.
     _frame_edepth: dict = field(default_factory=dict)
@@ -591,18 +582,12 @@ class PySSA:
                 if sub not in clobber and callees & clobber:
                     clobber.add(sub)
                     changed = True
-        self._value_unsafe_conts = {
-            cont_key for cont_key, pair in self._call_pairs.items()
-            if pair[4] in unsafe
-        }
-        self._residual_clobber_conts = {
-            cont_key for cont_key, pair in self._call_pairs.items()
-            if pair[4] in clobber
-        }
-        # Keyed by CALLEE ENTRY as well, because the lift pairs calls with the
-        # corrected continuation policy while `_call_pairs` uses the
+        # Keyed by CALLEE ENTRY, not by continuation: the lift pairs calls with
+        # the corrected continuation policy while `_call_pairs` uses the
         # construction one — the two can disagree, and a consumer must not
-        # miss a clobbering callee because the pairing differs.
+        # miss a clobbering callee because the pairing differs. (The
+        # continuation-keyed views this used to publish had no consumer left
+        # once Braun's `_read_edge`/`_read_exit` went.)
         # PROTO'D subs only. "Reached below its own band" presupposes a band:
         # a legacy sub has no ``proto``, so ``nargs`` is 0 and its band starts
         # empty — consuming caller values is simply how it takes arguments, and
@@ -640,10 +625,6 @@ class PySSA:
                 del self.phis[key]
         for b in self.blocks:
             b.entry_phis = [p for p in b.entry_phis if p in live]
-            b.entry_stack = [
-                None if isinstance(e, PyPhi) and e not in live else e
-                for e in b.entry_stack
-            ]
             b.exit_stack = [
                 None if isinstance(e, PyPhi) and e not in live else e
                 for e in b.exit_stack

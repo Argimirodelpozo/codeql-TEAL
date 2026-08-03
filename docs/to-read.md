@@ -106,10 +106,14 @@ analysis — which is also the opportunity.
 ## 6. Foundational SSA — what's already under the hood
 
 - **Braun et al.** "Simple and Efficient Construction of SSA", *CC 2013* —
-  **already our default constructor** (`_phase_braun`).
+  was the constructor until 2026-08-03. Replaced by a forward per-routine stack
+  simulation (`ssa/stacksim.py`), because a stack machine's "variable" is a slot
+  whose identity depends on the DEPTH — a forward fact the on-demand backward
+  walk had to import from a separate BFS. Braun's cycle handling survives
+  though: hand out the phi before recursing, complete it after (`deferred`).
 - **Boissinot et al.** "Revisiting Out-of-SSA Translation", *PLDI 2009* —
-  the principled basis for the block-args out-of-SSA the lift does
-  (`ssa/block_args.py`).
+  the principled basis for out-of-SSA translation. `ssa/block_args.py` was a
+  read-only view of it; `lift/to_puya_ir.py` superseded it and it is gone.
 - **Cytron et al.** "Efficiently Computing SSA and the Control Dependence Graph",
   *TOPLAS 1991* — the classic dominance-frontier construction.
 

@@ -212,9 +212,8 @@ def test_below_band_frame_ops_cannot_run_so_are_never_read_as_clean(tmp_path):
     )
     prog = SSAProgram(str(teal))
     py = prog._pyssa
-    cont_key = next((k for k in py._call_pairs), None)
-    assert cont_key is not None, "the call should still pair (depths stay valid)"
-    assert cont_key in py._value_unsafe_conts, (
+    assert py._call_pairs, "the call should still pair (depths stay valid)"
+    assert py._unsafe_callee_blocks, (
         "an out-of-frame frame_bury must not leave the continuation reading the "
         "caller's pre-call value as if the callee were clean")
     pop_deep = next(a for a in prog.assignments
