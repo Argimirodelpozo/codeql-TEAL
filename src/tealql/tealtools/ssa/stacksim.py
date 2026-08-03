@@ -184,9 +184,23 @@ def simulate(blocks, bb_to_sub, proto_io, return_point, phi_factory,
     # leave, so simulating a caller before its callee makes every call result
     # None — and the ops consuming them then read as unresolved rather than
     # wrong, which is exactly the kind of hole a differential skips over.
+    deferred: list = []
     for sub in _callee_first(by_sub, bb_to_sub):
         _run_routine(sub, by_sub[sub], res, arity, bb_to_sub, return_point,
-                     retsubs, phi_factory, unsafe_callees)
+                     retsubs, phi_factory, unsafe_callees, deferred)
+    # RECURSION. A cycle has no callee-first order, so a call inside it reaches
+    # `retsub` blocks that are not simulated yet. Braun's answer to the same
+    # problem is to hand out the phi BEFORE recursing and complete it after; that
+    # is what `deferred` is. Filling the arguments now — every routine has run —
+    # closes the cycle: `count_len`'s result becomes φ(0, φ+1), which is exactly
+    # the inductive shape a prover needs. Pushing None instead cost avm-prover
+    # the proof that `r == len(arg0)`.
+    for ph, slot, rets in deferred:
+        for rb in rets:
+            if rb in res.exit and len(res.exit[rb]) >= slot:
+                v = res.exit[rb][-slot]
+                if not any(a is v for a in ph.args):
+                    ph.args.append(v)
     if bind_params:
         _bind_params(blocks, res, arity, bb_to_sub, phi_factory)
     return res
@@ -195,8 +209,11 @@ def simulate(blocks, bb_to_sub, proto_io, return_point, phi_factory,
 def _callee_first(by_sub, bb_to_sub):
     """Routine entries ordered so a callee precedes its callers.
 
-    Recursion has no such order, so a cycle is emitted in discovery order and
-    its self-referential call results stay unresolved — honest, and the only
+    Recursion has no such order, so a cycle is emitted in discovery order; the
+    calls inside it get a phi completed after every routine has run (see
+    ``deferred`` in :func:`simulate`). The historical note below described the
+    state before that existed — a cycle's call results stayed unresolved, which
+    was honest, and the only
     thing a single pass can say."""
     calls: dict = {}
     for sub, body in by_sub.items():
@@ -311,7 +328,8 @@ def _isucc(b, body, return_point):
 
 
 def _run_routine(sub, body_list, res, arity, bb_to_sub, return_point,
-                 retsubs, phi_factory, unsafe_callees=frozenset()):
+                 retsubs, phi_factory, unsafe_callees=frozenset(),
+                 deferred=None):
     body = set(body_list)
     nargs = arity.get(sub, (0, 0))[0]
 
@@ -374,7 +392,7 @@ def _run_routine(sub, body_list, res, arity, bb_to_sub, return_point,
                              bpred.get(b, ()), pending, res, phi_factory)
         for o in b.ops:
             _exec(o, b, stack, nargs, res, bb_to_sub, retsubs, arity,
-                  phi_factory, unsafe_callees, return_point, npred)
+                  phi_factory, unsafe_callees, return_point, npred, deferred)
         res.exit[b] = stack
     for ph, slot, depth, bp in pending:
         if bp in res.exit and len(res.exit[bp]) >= depth:
@@ -438,7 +456,8 @@ def _entry_stack(b, entry, nargs, preds, back_targets, bpred_b, pending,
 
 
 def _exec(o, b, stack, nargs, res, bb_to_sub, retsubs, arity, phi_factory,
-          unsafe_callees=frozenset(), return_point=None, npred=None):
+          unsafe_callees=frozenset(), return_point=None, npred=None,
+          deferred=None):
     """One op against the clean stack, recording its operands TOP-FIRST."""
     if o.op in ("frame_dig", "frame_bury"):
         n = _imm_int(o)
@@ -504,11 +523,22 @@ def _exec(o, b, stack, nargs, res, bb_to_sub, retsubs, arity, phi_factory,
         # entry slot of ours to hold the merge.
         can_merge = cont is not None and npred is not None and \
             cont in npred and npred[cont] <= 1
+        # A callee whose `retsub` blocks have not run yet is a RECURSION cycle
+        # (callee-first ordering handles everything else). Its result is not
+        # unknown — it is defined in terms of itself — so hand out a phi now and
+        # fill it once every routine has run.
+        pending_rets = [rb for rb in rets if rb not in res.exit]
         for j in range(r_out):
             slot = r_out - j                      # top-first within the returns
             vals = [res.exit[rb][-slot] for rb in rets
                     if rb in res.exit and len(res.exit[rb]) >= slot]
-            if len({id(v) for v in vals}) == 1:
+            if pending_rets and can_merge and deferred is not None:
+                ph = phi_factory(cont, slot)
+                ph.args.extend(vals)
+                res.phis.setdefault(cont, []).append((slot, ph))
+                deferred.append((ph, slot, tuple(pending_rets)))
+                stack.append(ph)
+            elif len({id(v) for v in vals}) == 1:
                 stack.append(vals[0])     # every retsub leaves the same value
             elif vals and can_merge:
                 ph = phi_factory(cont, slot)
