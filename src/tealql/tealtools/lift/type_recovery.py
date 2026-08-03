@@ -91,6 +91,16 @@ _U64_IN_ALL = frozenset({
     "+", "-", "*", "/", "%", "exp", "expw", "addw", "mulw", "divw", "divmodw",
     "sqrt", "shl", "shr", "bitlen", "<", ">", "<=", ">=", "!", "&&", "||",
     "itob", "assert",
+    # INDEX-operand ops: every stack input is a uint64 index (group index,
+    # scratch slot, array index). Their absence was not a missing refinement but
+    # a missing SIGNAL: a value consumed only by `gtxns` got no expected-type at
+    # all, stayed `?`, and lowered to bytes -- so `gtxns Receiver` was handed a
+    # byteslice where the AVM wants a uint64 group index. That is exactly the
+    # shape of an ARC-4 transaction parameter (`transfer(pay,axfer,...)`), which
+    # is passed to a subroutine AS its group index, so every such sub took
+    # bytes-typed params and mismatched its own call sites.
+    "gtxns", "gtxnsa", "gtxnsas", "gloads", "gloadss", "gaids", "args",
+    "itxnas", "loads",
 })
 
 
@@ -98,6 +108,9 @@ _BYTES_IN_ALL = frozenset({
     "concat", "len", "btoi", "sha256", "sha512_256", "keccak256", "sha3_256",
     "bsqrt", "b+", "b-", "b*", "b/", "b%", "b|", "b&", "b^", "b~",
     "b==", "b!=", "b<", "b>", "b<=", "b>=",
+    # `log` takes a byteslice; an ARC-4 event payload that reaches it only
+    # through a frame slot otherwise has no typing signal at all.
+    "log",
 })
 
 
@@ -133,6 +146,9 @@ _POS_IN = {
     "app_global_del": ("bytes",),                # key
     "app_local_del": ("bytes", None),            # acct key -> [key, acct]
     "bzero": ("uint64",), "txnas": ("uint64",), "gtxnas": ("uint64",),
+    # `stores A B` -- A(slot) B(value); top-first SSA is [value, slot]. Only the
+    # slot is typed: the stored value is deliberately polymorphic.
+    "stores": (None, "uint64"),
     # box ops: the NAME is the deepest operand (so last, top-first) and always
     # bytes; without this a name reaching box_get only through a frame slot stays
     # `?` and lowers to uint64. Position-precise, so the u64 start/len/size
