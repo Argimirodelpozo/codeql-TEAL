@@ -23,12 +23,14 @@ from pathlib import Path
 
 import pytest
 
+from tealql.tealtools.avm import op_arity
 from tealql.tealtools.ssa import SSAProgram
 from tealql.tealtools.passes.frame_flow import (
     frame_local_sources,
     frame_param_sources,
     frame_unresolved_reads,
     frame_value_sources,
+    unresolved_call_results,
 )
 
 TESTS = Path(__file__).resolve().parent
@@ -310,3 +312,84 @@ def test_a_clean_contract_stays_quiet(caplog):
     with caplog.at_level(logging.WARNING, logger="tealql.tealtools.passes.frame_flow"):
         frame_value_sources(prog)
     assert not caplog.records
+
+
+#: Call-result slots the builder cannot name, over the 231 distinct probes.
+#: A CEILING at today's measurement, not a target — 0 is the target.
+_UNRESOLVED_CALL_RESULTS = 15
+
+#: Ops whose operand list is SHORTER than their canonical arity, same corpus.
+#: Convention-independent (it asks "did the builder name every operand?"), so it
+#: is comparable across stack models: main measures 516 of 97,077 here, this
+#: model 22. That gap is the point of the model change, and the ceiling stops it
+#: quietly closing back up.
+_MISSING_OPERANDS = 22
+
+_ARITY_SKIP = frozenset({"frame_dig", "frame_bury", "callsub", "retsub", "proto",
+                         "intcblock", "bytecblock", "return", "err"})
+
+
+def _corpus():
+    from tests.mainnet_ratchet import distinct_probes
+    probes = distinct_probes()
+    if len(probes) < 100:
+        pytest.skip("mainnet probe corpus not present")
+    return probes
+
+
+@pytest.mark.slow
+def test_the_builder_names_what_a_call_returns():
+    """A ``proto A R`` callee promises R values; a ``None`` in those slots is a
+    value no consumer can see, and it reads as CLEAN.
+
+    This assertion did not exist while a recursive callee's result was ``None``
+    in 15 of these very contracts — they lifted, the live-AVM dryrun matched
+    outcome for outcome, and the suite was green. A downstream prover found it.
+    """
+    total, worst = 0, []
+    for _h, path in _corpus():
+        try:
+            prog = SSAProgram(str(path), strict=False)
+        except Exception:
+            continue
+        n = len(unresolved_call_results(prog))
+        total += n
+        if n:
+            worst.append((path.name, n))
+    worst.sort(key=lambda x: -x[1])
+    assert total <= _UNRESOLVED_CALL_RESULTS, (
+        f"{total} call-result slot(s) have no value (ceiling "
+        f"{_UNRESOLVED_CALL_RESULTS}) — a call whose result the builder cannot "
+        f"name is a silent hole:\n  " + "\n  ".join(f"{n}: {c}" for n, c in worst[:8]))
+
+
+@pytest.mark.slow
+def test_the_builder_names_every_operand_it_can():
+    """``len(inputs) < canonical arity`` means an operand the builder could not
+    name — ``_build_assignments`` drops a ``None`` rather than keeping a hole.
+
+    Deliberately asks a question that does NOT depend on the stack model, so the
+    number stays meaningful across one. Frame and call ops are excluded because
+    their arity IS model-specific."""
+    total = examined = 0
+    by_op: dict = {}
+    for _h, path in _corpus():
+        try:
+            prog = SSAProgram(str(path), strict=False)
+        except Exception:
+            continue
+        for a in prog.assignments:
+            if a.op in _ARITY_SKIP:
+                continue
+            n_in, _ = op_arity(a.op, a.immediates)
+            if n_in <= 0:
+                continue
+            examined += 1
+            if len(a.inputs) < n_in:
+                total += 1
+                by_op[a.op] = by_op.get(a.op, 0) + 1
+    assert examined > 50_000, f"metric went vacuous ({examined} ops examined)"
+    assert total <= _MISSING_OPERANDS, (
+        f"{total} op(s) of {examined} are missing an operand (ceiling "
+        f"{_MISSING_OPERANDS}) — the builder stopped naming values it used to: "
+        f"{sorted(by_op.items(), key=lambda kv: -kv[1])[:8]}")

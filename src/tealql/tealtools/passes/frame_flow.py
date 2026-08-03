@@ -1,11 +1,17 @@
-"""The two def-use edges PySSA leaves implicit — caller arg -> callee
-``frame_dig`` param, and ``store N`` value -> ``load N`` output.
+"""The def-use edges PySSA leaves implicit — caller arg -> callee ``frame_dig``
+param, ``store N`` value -> ``load N`` output, and callee ``retsub`` value ->
+the caller's continuation.
 
 Subroutine arguments travel on the stack, and PySSA models ``frame_dig`` as an
 opaque wide-stack read, so value flow dies at every call boundary until these
 edges are added; unioning them makes a def-use analysis interprocedural with no
 IR lift. Defined once here so the boolean taint engine, the byte-interval taint
-and the taint graph cannot drift on what "reaches" means."""
+and the taint graph cannot drift on what "reaches" means.
+
+Each edge has a companion that ENUMERATES what it could not resolve
+(:func:`frame_unresolved_reads`, :func:`unresolved_call_results`). That is the
+project rule applied to dataflow: "0 findings because nothing could be resolved"
+must never read the same as "0 findings because it is clean"."""
 from __future__ import annotations
 
 import logging
@@ -143,6 +149,58 @@ def frame_unresolved_reads(prog: SSAProgram) -> list:
             continue
         if n >= 0 and id(a.outputs[0]) not in covered:
             out.append(a)
+    return out
+
+
+def _proto_nret(entry_bb) -> "Optional[int]":
+    """Return count from a sub entry's ``proto A R``, or None for a legacy sub."""
+    for a in entry_bb.assignments:
+        if a.op == "proto":
+            toks = (a.immediates or "").split()
+            try:
+                return int(toks[1]) if len(toks) > 1 else 0
+            except ValueError:
+                return 0
+    return None
+
+
+def unresolved_call_results(prog: SSAProgram) -> list:
+    """``[(callsub Assignment, slot)]`` for every declared result a call did NOT
+    produce a value for — the call-boundary twin of
+    :func:`frame_unresolved_reads`.
+
+    A ``proto A R`` callee promises R values; they land on the caller's
+    ``exit_stack`` top, position-preserving, so a ``None`` there means the
+    builder could not name what the call returned. Downstream that is silent: a
+    consumer sees a value that simply has no incoming edge, which reads as CLEAN
+    to every may-analysis — the same shape ``frame_unresolved_reads`` exists to
+    surface.
+
+    WHY THIS EXISTS. It should have existed sooner. A recursive callee's result
+    was ``None`` in 15 of the 231 distinct mainnet probes, and nothing noticed:
+    the contracts lifted, the live-AVM dryrun matched outcome for outcome (the
+    lost value did not steer control flow on the paths exercised), and the whole
+    suite was green. It took a downstream prover failing to prove a true
+    inductive invariant to show the value was gone. Only legacy (no ``proto``)
+    callees are skipped, since they declare no result count to check against."""
+    from ..structure import analyze_structure
+
+    out: list = []
+    for cs in analyze_structure(prog).call_sites:
+        entry = cs.target_entry
+        if entry is None:
+            continue
+        nret = _proto_nret(entry)
+        if not nret:
+            continue                       # legacy sub, or returns nothing
+        call = next((a for a in reversed(cs.callsub_bb.assignments)
+                     if a.op == "callsub"), None)
+        if call is None:
+            continue
+        es = cs.callsub_bb.exit_stack
+        for slot in range(1, nret + 1):
+            if len(es) < slot or es[-slot] is None:
+                out.append((call, slot))
     return out
 
 
