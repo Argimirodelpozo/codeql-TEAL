@@ -399,7 +399,14 @@ def _exec(o, b, stack, nargs, res, bb_to_sub, retsubs, arity, phi_factory):
         pos = None if n is None else nargs + n
         if o.op == "frame_dig":
             if pos is not None and 0 <= pos < len(stack):
-                res.args[id(o)] = []
+                # RECORD THE SOURCE as the read's input, and push the underlying
+                # value so consumers see the original rather than a handle.
+                # Without the record the op has no inputs at all, which is the
+                # "output with no inputs" shape that reads CLEAN to every
+                # may-analysis — and `frame_flow.frame_unresolved_reads` is
+                # written to detect exactly that, so a resolved read must not
+                # look like one.
+                res.args[id(o)] = [stack[pos]]
                 stack.append(stack[pos])
             else:
                 res.unresolved.add(id(o))
