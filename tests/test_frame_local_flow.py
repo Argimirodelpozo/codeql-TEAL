@@ -251,37 +251,43 @@ def test_reroute_into_a_context_insensitive_cycle_terminates(tmp_path):
 def test_the_blind_spot_is_reported_not_silent(tmp_path, caplog):
     """A read the layer cannot source must SAY so.
 
-    The remaining honest blind class: a continuation of a LEGACY (no ``proto``)
-    callee. The pairing deliberately refuses it — a legacy callee declares no
-    arity and guessing one would corrupt the frame indexing for every slot —
-    so the band has no depth there, the ``frame_dig`` falls back to the narrow
-    no-input form, and a pushed local it reads has no source map entry.
+    The honest blind class: a read of a slot a CLOBBERING callee sat under.
+    ``evil`` declares ``proto 1 1`` and then ``cover 3`` reaches four deep — the
+    AVM does not bound plain stack ops by the frame, so this runs and permutes
+    the caller's values. The caller's residual is therefore withdrawn, and the
+    ``frame_dig`` that reads into it has nothing to take.
 
     This is the project's own rule applied to a dataflow gap: 0 findings
     because nothing could be resolved must never read the same as 0 findings
     because it is clean. Warned once per program so a corpus sweep stays
-    legible."""
+    legible.
+
+    NB the fixture used to be a LEGACY-callee continuation. That gap is closed —
+    a legacy callee's arity is now inferred rather than refused — so pinning it
+    would pin an absence of capability instead of the reporting contract."""
     import logging
 
-    teal = tmp_path / "legacy_blind.teal"
+    teal = tmp_path / "clobbered_blind.teal"
     teal.write_text(
         "#pragma version 8\n"
         "callsub outer\n"
         "return\n"
         "outer:\n"
         "proto 0 1\n"
-        "int 7\n"
-        "callsub legacy\n"
+        "int 99\n"
+        "int 1\n"
+        "callsub evil\n"
         "frame_dig 0\n"
         "retsub\n"
-        "legacy:\n"
-        "int 1\n"
+        "evil:\n"
+        "proto 1 1\n"
+        "cover 3\n"
         "retsub\n"
     )
     prog = SSAProgram(str(teal))
     blind = frame_unresolved_reads(prog)
-    assert {a.location.line for a in blind} == {8}, (
-        f"expected the legacy-continuation dig@8 to be the one blind read, "
+    assert {a.location.line for a in blind} == {9}, (
+        f"expected the clobbered-residual dig@9 to be the one blind read, "
         f"got {sorted(a.location.line for a in blind)}")
 
     with caplog.at_level(logging.WARNING, logger="tealql.tealtools.passes.frame_flow"):

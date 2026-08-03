@@ -216,10 +216,18 @@ def test_height_ambiguous_region_still_answers_every_frame_read():
     assert ambiguous, "fixture no longer exercises a height-ambiguous region"
     sourced = {id(v) for v in frame_value_sources(prog)}
     reported = {id(a.outputs[0]) for a in frame_unresolved_reads(prog) if a.outputs}
+    # The best of the three answers: the read carries its source as an operand,
+    # so no bridge is needed. `frame_value_sources` only knows the structural
+    # maps and would not list it, and `frame_unresolved_reads` deliberately
+    # skips it — counting it as silent would score a RESOLVED read as a blind
+    # one, which is the same metric trap in the opposite direction.
+    answered = {id(a.outputs[0]) for a in prog.assignments
+                if a.op == "frame_dig" and a.inputs and a.outputs}
     silent = [o for b in ambiguous for o in b.ops
               if o.op == "frame_dig"
               and (v := prog.var(o.file, o.line, 1)) is not None
-              and id(v) not in sourced and id(v) not in reported]
+              and id(v) not in sourced and id(v) not in reported
+              and id(v) not in answered]
     assert not silent, (
         f"{len(silent)} frame read(s) in the height-ambiguous region are neither "
         f"sourced nor reported — the refusal must degrade to an ANSWERED value "

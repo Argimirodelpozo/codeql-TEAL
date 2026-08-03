@@ -144,11 +144,18 @@ class _Param:
 
 
 def simulate(blocks, bb_to_sub, proto_io, return_point, phi_factory,
-             *, bind_params: bool = True) -> "_Result":
+             *, bind_params: bool = True, unsafe_callees=frozenset()) -> "_Result":
     """Simulate every routine and return a :class:`_Result`.
 
     ``phi_factory(block, slot) -> phi`` mints the merge value, so the caller
     decides what a phi IS (a ``PyPhi`` in the builder, a stand-in in a test).
+
+    ``unsafe_callees`` — routine entries that reach BELOW their own band (see
+    ``ssa._classify_call_effects``). A per-routine simulation cannot see this by
+    construction: the callee's dip happens on ITS local stack, so the caller's
+    residual sits here untouched and every value below the call reads as its
+    pre-call self. That is the silent-wrong-value shape, not a missing feature —
+    so the caller's residual is withdrawn at such a call instead.
 
     ``bind_params`` resolves each routine's incoming slots to what its call
     sites pass. ON: the 2% it appeared to cost was a MEASUREMENT artifact —
@@ -179,7 +186,7 @@ def simulate(blocks, bb_to_sub, proto_io, return_point, phi_factory,
     # wrong, which is exactly the kind of hole a differential skips over.
     for sub in _callee_first(by_sub, bb_to_sub):
         _run_routine(sub, by_sub[sub], res, arity, bb_to_sub, return_point,
-                     retsubs, phi_factory)
+                     retsubs, phi_factory, unsafe_callees)
     if bind_params:
         _bind_params(blocks, res, arity, bb_to_sub, phi_factory)
     return res
@@ -242,6 +249,7 @@ def _bind_params(blocks, res, arity, bb_to_sub, phi_factory):
                 sites.setdefault(callee, []).append(b)
 
     bound: dict = {}                       # (sub.key, index) -> value
+    minted: list = []
     for sub, callers in sites.items():
         a_in = arity.get(sub, (0, 0))[0]
         for i in range(a_in):
@@ -258,6 +266,7 @@ def _bind_params(blocks, res, arity, bb_to_sub, phi_factory):
                 ph = phi_factory(sub, a_in - i)
                 bound[key] = ph
                 ph.args.extend(vals)
+                minted.append(ph)
 
     def resolve(v, depth=0):
         while isinstance(v, _Param) and depth < 16:
@@ -278,6 +287,13 @@ def _bind_params(blocks, res, arity, bb_to_sub, phi_factory):
     for phis in res.phis.values():
         for _slot, ph in phis:
             ph.args = [resolve(a) if isinstance(a, _Param) else a for a in ph.args]
+    # The phis minted RIGHT HERE need it too. A call site may pass one of its own
+    # caller's params straight through, so a param phi's arguments can themselves
+    # be `_Param`s — and these phis are not in `res.phis`, so the sweep above
+    # never reached them. Left unresolved, a private marker escapes into a public
+    # phi and the first consumer to call `.key()` on it dies.
+    for ph in minted:
+        ph.args = [resolve(a) if isinstance(a, _Param) else a for a in ph.args]
 
 
 def _isucc(b, body, return_point):
@@ -292,7 +308,7 @@ def _isucc(b, body, return_point):
 
 
 def _run_routine(sub, body_list, res, arity, bb_to_sub, return_point,
-                 retsubs, phi_factory):
+                 retsubs, phi_factory, unsafe_callees=frozenset()):
     body = set(body_list)
     nargs = arity.get(sub, (0, 0))[0]
 
@@ -345,13 +361,17 @@ def _run_routine(sub, body_list, res, arity, bb_to_sub, return_point,
     order.reverse()
     order += [b for b in body_list if b not in seen]
 
+    # Local predecessor count, for deciding where a call-result merge may live.
+    npred = {b: len(fpred.get(b, ())) + len(bpred.get(b, ())) for b in body_list}
+
     pending: list = []
     for b in order:
         preds = [p for p in fpred.get(b, ()) if p in res.exit]
         stack = _entry_stack(b, sub, nargs, preds, back_targets,
                              bpred.get(b, ()), pending, res, phi_factory)
         for o in b.ops:
-            _exec(o, b, stack, nargs, res, bb_to_sub, retsubs, arity, phi_factory)
+            _exec(o, b, stack, nargs, res, bb_to_sub, retsubs, arity,
+                  phi_factory, unsafe_callees, return_point, npred)
         res.exit[b] = stack
     for ph, slot, depth, bp in pending:
         if bp in res.exit and len(res.exit[bp]) >= depth:
@@ -374,8 +394,16 @@ def _at(stack, depth, i):
 
 def _entry_stack(b, entry, nargs, preds, back_targets, bpred_b, pending,
                  res, phi_factory):
-    if b is entry or not preds:
+    if b is entry:
         return [_Param(entry.key, i) for i in range(nargs)]
+    if not preds:
+        # No simulated predecessor: an unreachable block, or one whose preds the
+        # walk could not order. Its entry stack is genuinely unknown, so REFUSE
+        # — the previous fallback handed it the routine's parameters, which is a
+        # guess that reads as a real value and would wire a data flow that does
+        # not exist. Never observed on compiler output (0 such blocks over 12
+        # probes); this is for the hand-written TEAL that can produce one.
+        return []
     if b in back_targets:
         depth = min(len(res.exit[p]) for p in preds)
         stack, phis = [], []
@@ -406,7 +434,8 @@ def _entry_stack(b, entry, nargs, preds, back_targets, bpred_b, pending,
     return stack
 
 
-def _exec(o, b, stack, nargs, res, bb_to_sub, retsubs, arity, phi_factory):
+def _exec(o, b, stack, nargs, res, bb_to_sub, retsubs, arity, phi_factory,
+          unsafe_callees=frozenset(), return_point=None, npred=None):
     """One op against the clean stack, recording its operands TOP-FIRST."""
     if o.op in ("frame_dig", "frame_bury"):
         n = _imm_int(o)
@@ -445,19 +474,43 @@ def _exec(o, b, stack, nargs, res, bb_to_sub, retsubs, arity, phi_factory):
         res.args[id(o)] = [stack.pop() for _ in range(take)]
         if take < a_in:
             res.unresolved.add(id(o))
+        if callee in unsafe_callees:
+            # The callee reached below its own band, so what sits underneath is
+            # whatever IT left — not what this routine pushed. Blank the VALUES,
+            # keep the HEIGHT: the AVM re-checks the frame bound at `retsub`, so
+            # a callee that dips must put the depth back, and the frame base
+            # later `frame_dig`s anchor to is still where it was.
+            stack[:] = [None] * len(stack)
         rets = retsubs.get(callee, ())
+        # A merge over several `retsub` sites belongs to the CONTINUATION, not
+        # here: the continuation is where those return paths actually join (its
+        # CFG predecessors ARE the retsub blocks), so a phi placed there has one
+        # argument per real incoming edge. Minted on this block instead, it
+        # claimed to be an entry value of a block whose only predecessor is the
+        # caller's own code, and the slot then resolved to the caller's value —
+        # a phi standing for something none of its arguments can be.
+        cont = return_point.get(b) if return_point is not None else None
+        # `npred` is keyed on THIS routine's blocks, so membership doubles as the
+        # in-body test — a continuation belonging to another routine has no
+        # entry slot of ours to hold the merge.
+        can_merge = cont is not None and npred is not None and \
+            cont in npred and npred[cont] <= 1
         for j in range(r_out):
             slot = r_out - j                      # top-first within the returns
             vals = [res.exit[rb][-slot] for rb in rets
                     if rb in res.exit and len(res.exit[rb]) >= slot]
             if len(vals) == 1:
                 stack.append(vals[0])
-            elif vals:
-                ph = phi_factory(b, slot)
+            elif vals and can_merge:
+                ph = phi_factory(cont, slot)
                 ph.args.extend(vals)
-                res.phis.setdefault(b, []).append((-1, ph))
+                res.phis.setdefault(cont, []).append((slot, ph))
                 stack.append(ph)
             else:
+                # No continuation, or one that is ALSO a branch target — where a
+                # slot-`slot` phi would collide with the join's own. Measured at
+                # 1 call site in 1439 over 60 probes, so refusing costs almost
+                # nothing and inventing a home for the phi would cost identity.
                 stack.append(None)
         return
     if o.op in ("proto", "intcblock", "bytecblock"):

@@ -195,6 +195,7 @@ class PySSA:
     # rather than emit a program with different behaviour.
     _residual_clobber_conts: set = field(default_factory=set)
     _clobber_callee_keys: set = field(default_factory=set)
+    _unsafe_callee_blocks: set = field(default_factory=set)
     # Braun on-demand construction state.
     _surv_by_slot: dict = field(default_factory=dict)   # block -> {slot: PyVar}
     _entry_val: dict = field(default_factory=dict)       # (bb_key, slot) -> value
@@ -225,6 +226,25 @@ class PySSA:
         self._phase2_arities()
         if _USE_STACKSIM:
             self._compute_subs_and_protos()
+            # Call/return pairing and the callee effect classification are
+            # analyses OVER THE OP STRUCTURE, not products of Braun's
+            # placement — and `_clobber_callee_keys` is what tells the lift to
+            # fill a clobbered caller slot with `Undefined` instead of the
+            # stale pre-call value. Skipping them with `_phase_braun` left it
+            # empty, which reads as "no callee ever eats the caller's stack":
+            # exactly the silent-wrong-value class the classification exists
+            # to stop.
+            self._compute_call_pairs()
+            # `_frame_entry_depths` is likewise a walk over the op structure,
+            # not a Braun product, and the classification reads it. Keeping it
+            # means the classification is BIT-IDENTICAL on both paths, so the
+            # differential measures the operand builder alone. The simulator
+            # could supply these depths itself — a real follow-up, since a
+            # second depth walk is exactly what this branch exists to remove —
+            # but not in the same step as the operands: changing two inputs
+            # under one metric is how the earlier attempts went wrong.
+            self._frame_edepth = self._frame_entry_depths()
+            self._classify_call_effects()
             self._phase_stacksim()
             self._phase8_live_filter()
             return self
@@ -295,7 +315,8 @@ class PySSA:
 
         res = stacksim.simulate(self.blocks, pyblock_partition(self.blocks),
                                 self._proto_io, _pyblock_return_point(self.blocks),
-                                mint)
+                                mint,
+                                unsafe_callees=self._unsafe_callee_blocks)
         for b in self.blocks:
             for o in b.ops:
                 o.inputs = list(res.args.get(id(o), []))
@@ -1090,6 +1111,12 @@ class PySSA:
         # the caller's stack at every legacy call, losing real values.
         self._clobber_callee_keys = {sub.key for sub in clobber
                                      if sub in self._proto_io}
+        # The same set as ENTRY BLOCKS, for a simulator that withdraws at the
+        # `callsub` rather than at a paired continuation. Same proto'd
+        # restriction, same reason; keyed by block because a per-routine
+        # simulation identifies a callee by the block it enters.
+        self._unsafe_callee_blocks = {sub for sub in unsafe
+                                      if sub in self._proto_io}
 
     def _try_expand_frame_op(
         self, op: PyOp, local_stack: list, sub: PyBlock, proto: tuple,

@@ -76,20 +76,25 @@ def _resolve(v, depth=0):
 
 
 def _real_edge_violations(prog) -> int:
-    """Phi-pred edges where the predecessor's exit slot cannot stand for ANY of
-    the slot-k phi's args, i.e. the 6c simulator and Braun genuinely disagree
-    about which value flows on that edge.
+    """Phi-pred edges where the value arriving on the edge cannot stand for ANY
+    of the slot-k phi's args — the builder disagreeing with itself about which
+    value flows there.
 
     Measured in the PRIVATE PySSA representation (None-preserving fat-op
     mappings, ``(file, line, idx)`` key identity — see the module docstring for
-    the two public-representation artifact classes this avoids). On a verified
-    ``retsub`` edge into a paired continuation, a slot ``k > R`` carries the
-    callsub block's exit slot ``k - R + A`` (the caller's pre-call band), which
-    is what the builder's ``_read_edge`` threads there — the retsub block's own
-    exit stack is the callee's frame and cannot express that per-edge value."""
+    the two public-representation artifact classes this avoids).
+
+    Two edge kinds, because a call edge does not carry a stack slot:
+
+    * into a ROUTINE ENTRY — the predecessor ends in ``callsub`` and the
+      arriving value for slot ``k`` is that call's own operand ``k-1``
+      (TOP-FIRST). Reading ``pred.exit_stack[-k]`` instead only worked while a
+      ``callsub`` was modelled as consuming nothing, so the arguments were still
+      sitting on the caller's exit stack;
+    * everything else — ``pred.exit_stack[-k]``, which covers an ordinary branch
+      edge and a ``retsub`` edge into a continuation alike (a returned value is
+      on the retsub block's own stack top)."""
     py = prog._pyssa
-    pairs = getattr(py, "_call_pairs", {}) or {}
-    withdrawn = getattr(py, "_value_unsafe_conts", set()) or set()
     prod = {}
     for b in py.blocks:
         for o in b.ops:
@@ -129,6 +134,7 @@ def _real_edge_violations(prog) -> int:
         return out
 
     by_key = {b.key: b for b in py.blocks}
+    entries = {b for b in py.blocks if py._bb_to_sub.get(b) is b}
     bad = 0
     for ph in prog.phis.values():                  # live public phis only
         pyph = prog._phi_to_pyphi.get(ph)
@@ -139,13 +145,12 @@ def _real_edge_violations(prog) -> int:
             continue
         k = pyph.slot
         arg_vals = _res(pyph)
-        pair = pairs.get(b.key)
         for pred in b.preds:
-            if pair is not None and k > pair[2] and pred.key in pair[3]:
-                if b.key in withdrawn:
-                    continue        # builder REFUSES these; nothing to compare
-                cs, slot = pair[0], k - pair[2] + pair[1]
-                v = cs.exit_stack[-slot] if len(cs.exit_stack) >= slot else None
+            if b in entries:
+                cs = (pred.ops[-1] if pred.ops and pred.ops[-1].op == "callsub"
+                      else None)
+                v = (cs.inputs[k - 1]
+                     if cs is not None and 0 <= k - 1 < len(cs.inputs) else None)
             else:
                 v = pred.exit_stack[-k] if len(pred.exit_stack) >= k else None
             if v is not None and not (_res(v) & arg_vals):
