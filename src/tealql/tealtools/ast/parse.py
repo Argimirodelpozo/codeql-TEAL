@@ -109,6 +109,49 @@ def _neutralise_comment_continuations(src: bytes) -> bytes:
     return bytes(out)
 
 
+def _rewrite_scoped_label_separators(src: bytes) -> bytes:
+    """Make a scoped subroutine label parseable: ``a::b`` -> ``a__b``.
+
+    puya-ts names subroutines after the source that produced them --
+    ``callsub smart_contracts/main/contract.algo.ts::Main.cardAssetOptIn`` -- and the grammar's
+    label rule stops at the first ``:``, since that is what TERMINATES a label definition. The
+    ``::`` and everything after it becomes an unparsed span, so the subroutine drops out of the
+    analysis entirely: on auto-draw-card's Main that is 5 spans, silently removed.
+
+    Renaming is safe where blanking would not be, because a label is only a NAME: the definition
+    and every ``callsub``/``b`` referencing it are rewritten by the same rule, so they still agree.
+    Two bytes for two, so offsets, lines and columns are unchanged. Quoted byte literals are
+    skipped -- ``pushbytes "a::b"`` is DATA, and rewriting it would corrupt the program rather than
+    rename part of it.
+    """
+    if b"::" not in src:
+        return src
+    out = bytearray(src)
+    i, n = 0, len(out)
+    while i < n:
+        eol = out.find(b"\n", i)
+        if eol == -1:
+            eol = n
+        in_str, esc, k = False, False, i
+        while k < eol - 1:
+            ch = out[k]
+            if in_str:
+                if esc:
+                    esc = False
+                elif ch == 0x5C:
+                    esc = True
+                elif ch == 0x22:
+                    in_str = False
+            elif ch == 0x22:
+                in_str = True
+            elif ch == 0x3A and out[k + 1] == 0x3A:      # `::` outside a literal
+                out[k] = out[k + 1] = 0x5F              # -> `__`
+                k += 1
+            k += 1
+        i = eol + 1
+    return bytes(out)
+
+
 def _named_int_error(c, src: bytes = b"") -> bool:
     """A tree-sitter ERROR that is really the ``int <NamedConstant>`` pseudo-op.
 
@@ -414,6 +457,7 @@ def parse_nodes(
         if isinstance(src, str):
             src = src.encode("utf-8")
         src = _neutralise_comment_continuations(src)
+        src = _rewrite_scoped_label_separators(src)
         root = _parser().parse(src).root_node
 
         real: list = []
