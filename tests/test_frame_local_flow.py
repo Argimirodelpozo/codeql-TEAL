@@ -30,6 +30,7 @@ from tealql.tealtools.passes.frame_flow import (
     frame_param_sources,
     frame_unresolved_reads,
     frame_value_sources,
+    shared_execution_blocks,
     unresolved_call_results,
 )
 
@@ -392,3 +393,41 @@ def test_the_builder_names_every_operand_it_can():
         f"{total} op(s) of {examined} are missing an operand (ceiling "
         f"{_MISSING_OPERANDS}) — the builder stopped naming values it used to: "
         f"{sorted(by_op.items(), key=lambda kv: -kv[1])[:8]}")
+
+
+#: Blocks executed by more than one routine, over the 231 distinct probes.
+#: A CEILING. Not a defect to drive to zero — a shared tail is legal TEAL — but
+#: the simulation runs such a block ONCE, on its owner's stack, so its operands
+#: are the wrong values for the other caller. It must stay listed.
+_SHARED_EXECUTION_BLOCKS = 10
+
+
+@pytest.mark.slow
+def test_shared_tails_are_listed_not_silent():
+    """A block two routines branch into is executed by both and simulated once.
+
+    That is context-insensitivity, the same class as `not_function_shaped`, and
+    the same rule applies: list it. What must NOT happen is the operands inside
+    reading like any other resolved value, because for one of the two callers
+    they are simply the wrong ones.
+
+    It is 10 blocks of 29,786 (0.03%), which is why the two partitioners behind
+    it are NOT being converged — `pyblock_partition` runs before the
+    `SSAProgram` exists and cannot reuse the corrected policy, so converging is
+    a semantic change, and this is what it would buy.
+    """
+    total, worst = 0, []
+    for _h, path in _corpus():
+        try:
+            prog = SSAProgram(str(path), strict=False)
+        except Exception:
+            continue
+        n = len(shared_execution_blocks(prog))
+        total += n
+        if n:
+            worst.append((path.name, n))
+    worst.sort(key=lambda x: -x[1])
+    assert total <= _SHARED_EXECUTION_BLOCKS, (
+        f"{total} block(s) are executed by more than one routine (ceiling "
+        f"{_SHARED_EXECUTION_BLOCKS}) — each is simulated on ONE owner's stack, "
+        f"so the other caller's operands there are wrong: {worst[:6]}")

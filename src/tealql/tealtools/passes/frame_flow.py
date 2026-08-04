@@ -204,6 +204,51 @@ def unresolved_call_results(prog: SSAProgram) -> list:
     return out
 
 
+def shared_execution_blocks(prog: SSAProgram) -> dict:
+    """``{block: [routine entry, ...]}`` for blocks EXECUTED by more than one
+    routine — a shared tail, reached by a plain branch from two callees.
+
+    `pyblock_partition` gives every block ONE owner and the simulation runs it
+    once, on that owner's stack. A block two routines branch into is executed by
+    both, so its operands are the owner's; for the other caller they are the
+    wrong values, not missing ones. Context-insensitivity, the same class as the
+    per-call-site inlining gap `_Lifter.not_function_shaped` records — and the
+    same rule applies: it must be listed, never left to read as an ordinary
+    resolved value.
+
+    Rare enough not to be worth converging the two partitioners over: 10 blocks
+    of 29,786 across the 231 distinct mainnet probes (0.03%), 8 of them in two
+    contracts. Converging them is also a SEMANTIC change by construction —
+    `pyblock_partition` runs before the `SSAProgram` exists, so it cannot reuse
+    the corrected policy (see `subroutines` module docstring).
+
+    The ARITY consequence is already gone: `stacksim.infer_arities` measures the
+    dip over what EXECUTES rather than what is owned, so a shared tail no longer
+    makes a call consume too few arguments.
+    """
+    from ..subroutines import pyblock_partition, _pyblock_return_point
+    from ..ssa import stacksim
+
+    py = getattr(prog, "_pyssa", None)
+    if py is None:
+        return {}
+    part = pyblock_partition(py.blocks)
+    rp = _pyblock_return_point(py.blocks)
+    every = set(py.blocks)
+    hits: dict = {}
+    for entry in (b for b in py.blocks if part.get(b) is b):
+        seen, stack = {entry}, [entry]
+        while stack:
+            b = stack.pop()
+            for s in stacksim._isucc(b, every, rp, owned_only=False):
+                if s not in seen:
+                    seen.add(s)
+                    stack.append(s)
+        for b in seen:
+            hits.setdefault(b, []).append(entry)
+    return {b: es for b, es in hits.items() if len(es) > 1}
+
+
 def frame_value_sources(prog: SSAProgram) -> dict:
     """``frame_param_sources`` unioned with :func:`frame_local_sources` — every
     value a ``frame_dig`` may read, wherever it came from.
