@@ -353,14 +353,25 @@ def _cmd_methods(args) -> int:
     (authoritative) or the source's ``method "sig"`` pseudo-ops / ``// method``
     comments. NOTHING is reverse-engineered from the selector hash (it is
     irreversible; the selector is recomputed FORWARD and matched). Raw bytecode
-    with neither simply reports no method info."""
-    from tealql.tealtools.abi import abi_type_byte_length, extract_method_table
-    rows = []   # (label, AbiMethod)
+    with neither simply reports no method info.
+
+    Not every signature in the table is a method the contract SERVES: the same
+    ``method "sig"`` pseudo-ops also carry the selectors of ARC-28 events it logs
+    and of methods it CALLS on other contracts. Those are not attack surface, so
+    each row is marked routable / not-routable by asking whether the router
+    actually dispatches its selector. That question is only answerable when the
+    dispatch shape is recognised; when it is not, every row is left unmarked
+    rather than guessed at."""
+    from tealql.tealtools.abi import (abi_type_byte_length, extract_method_table,
+                                      method_line_ranges)
+    rows = []   # (label, AbiMethod, routable: True | False | None-if-undetermined)
     if getattr(args, "arc56", None):
         from tealql.tealtools import arc56 as _arc56
         spec = _arc56.load(args.arc56)          # explicit path -> surface errors
         label = spec.name or Path(args.arc56).name
-        rows = [(label, m) for m in spec.methods]
+        # An ARC-56 spec lists what the contract SERVES, so every entry is routable
+        # by construction — there is no router to consult and nothing to determine.
+        rows = [(label, m, True) for m in spec.methods]
     elif not getattr(args, "target", None):
         print("error: a target (.teal file or directory) is required unless "
               "--arc56 SPEC.json is given", file=sys.stderr)
@@ -370,25 +381,33 @@ def _cmd_methods(args) -> int:
             src = Path(getattr(prog, "source_path", "") or "")
             label = name or (src.name if src.name else "<program>")
             text = src.read_text(errors="ignore") if src.exists() else ""
+            # method_line_ranges is conservative: an unrecognised dispatch yields NO
+            # attribution. Empty therefore means "could not tell", NOT "serves none" —
+            # collapsing those two would silently blank the table on every contract
+            # whose router this does not model yet.
+            served = {m.selector for _, _, m in method_line_ranges(text)} or None
             for m in extract_method_table(text).values():
-                rows.append((label, m))
+                rows.append((label, m, None if served is None else m.selector in served))
     rows.sort(key=lambda r: (r[0], r[1].name))
+    if getattr(args, "routable", False):
+        rows = [r for r in rows if r[2] is not False]     # keep undetermined rows
     if args.json_out:
         print(_json.dumps([
             {"file": lbl, "selector": m.selector_hex, "name": m.name,
              "arg_types": list(m.arg_types), "arg_names": list(m.arg_names),
              "return_type": m.return_type,
              "arg_byte_lengths": [abi_type_byte_length(a) for a in m.arg_types],
-             "signature": m.signature}
-            for lbl, m in rows], indent=2))
+             "signature": m.signature, "routable": routable}
+            for lbl, m, routable in rows], indent=2))
         return 0
     if not rows:
         print("(no ABI method info in source)")
         return 0
-    for lbl, m in rows:
+    for lbl, m, routable in rows:
         names = m.arg_names or ("",) * len(m.arg_types)
         args_str = ", ".join(_fmt_abi_arg(a, n) for a, n in zip(m.arg_types, names))
-        print(f"  {lbl}: {m.selector_hex}  {m.name}({args_str}) -> {m.return_type}")
+        mark = "" if routable is not False else "   [not routable: event or outgoing call]"
+        print(f"  {lbl}: {m.selector_hex}  {m.name}({args_str}) -> {m.return_type}{mark}")
     return 0
 
 
@@ -568,11 +587,18 @@ def _cmd_audit(args) -> int:
     except Exception as e:
         logger.warning("cross-contract analysis unavailable for app %s: %s", app_id, e)
 
-    # ABI method table (empty on raw/non-ABI bytecode).
+    # ABI method table (empty on raw/non-ABI bytecode). An audit report enumerates
+    # ATTACK SURFACE, so drop the table entries that are not entry points — logged
+    # ARC-28 events and the selectors of methods this app calls on OTHER apps. Only
+    # when the router is recognised at all; otherwise keep the whole table, since an
+    # unmodelled dispatch means "undetermined", not "serves nothing".
     methods = []
     try:
-        from tealql.tealtools.abi import extract_method_table
-        methods = list(extract_method_table(teal_path.read_text()).values())
+        from tealql.tealtools.abi import extract_method_table, method_line_ranges
+        _text = teal_path.read_text()
+        served = {m.selector for _, _, m in method_line_ranges(_text)}
+        methods = [m for m in extract_method_table(_text).values()
+                   if not served or m.selector in served]
     except Exception:
         pass
 
@@ -995,6 +1021,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--arc56", default=None, metavar="SPEC.json",
         help="use an ARC-56 app spec as the AUTHORITATIVE method table "
              "(struct-resolved arg/return types + arg names)")
+    methods_p.add_argument(
+        "--routable", action="store_true",
+        help="list only methods the router actually dispatches — drops ARC-28 "
+             "event signatures and selectors of methods called on OTHER contracts, "
+             "which share the same method table but are not this app's surface")
 
     arc56_p = sub.add_parser(
         "arc56",
