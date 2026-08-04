@@ -265,3 +265,74 @@ def test_pragma_below_a_header_comment_is_honoured(tmp_path):
     assert first == "#pragma version 11", (
         f"recompiled with {first!r}: the source pragma sits below a header, so a "
         "fixed-window probe misses it and floors the version to 10")
+
+
+#: Corpus contracts whose lift does not survive RECOMPILATION (lift -> IR ->
+#: destructure -> MIR -> TEAL). A CEILING at today's measurement; 0 is both the
+#: target and the current value, so any regression fails immediately.
+_RECOMPILE_FAILURES = 0
+
+#: How many distinct probes the gate below recompiles. Bounded for runtime; the
+#: probes are taken in name order so the set is deterministic.
+_RECOMPILE_SAMPLE = 60
+
+#: Probes the gate ALWAYS includes, whatever the sample window catches. A
+#: name-ordered prefix is deterministic but blind to which contracts exercise
+#: the interesting paths: these are the ones whose frame reads are answered by
+#: the bottom-anchored band plan, and the divergent-legacy subs — exactly the
+#: shapes whose lift shape has moved recently, and none of them fall in the
+#: first 60 by name.
+_RECOMPILE_ALWAYS = (
+    "app_2645463331.teal", "app_2300200702.teal", "app_2694165644.teal",
+    "app_2500525325.teal",
+)
+
+
+@pytest.mark.slow
+def test_the_corpus_still_recompiles():
+    """Every corpus contract that recompiles must KEEP recompiling.
+
+    The behavioural differential (``tests.behavioral_lift``) cannot see this:
+    it dryruns the lifted program against the original, so a contract whose
+    lift no longer reaches TEAL at all is reported as a SKIP — "did not lift"
+    — and a skip is not a failure. That blind spot let a real regression
+    through on 2026-08-04: splicing a divergent legacy subroutine into its
+    caller produced IR the MIR backend could not lower ("l-stack too small for
+    store 71"), on the ONE contract the splice reached, and every suite plus
+    the behavioural gate stayed green. Recompilation is therefore gated here,
+    directly.
+
+    Not a behaviour check — ``lift_to_teal`` merely has to produce assemblable
+    TEAL. Faithfulness on top of that is the behavioural gate's job."""
+    from pathlib import Path
+
+    from tealql.tealtools.lift.backend import lift_to_teal
+
+    probes = Path(__file__).resolve().parent / "mainnet-random-probes"
+    if not probes.is_dir():
+        pytest.skip("probe corpus not present")
+    seen: set = set()
+    targets: list = []
+    for p in sorted(probes.glob("*.teal")):
+        h = hash(p.read_text())          # content dedup: templates repeat
+        if h in seen:
+            continue
+        seen.add(h)
+        targets.append(p)
+        if len(targets) >= _RECOMPILE_SAMPLE:
+            break
+    for name in _RECOMPILE_ALWAYS:
+        extra = probes / name
+        if extra.is_file() and extra not in targets:
+            targets.append(extra)
+    failures: list = []
+    for p in targets:
+        try:
+            lift_to_teal(str(p))
+        except Exception as e:           # noqa: BLE001 - any failure counts
+            failures.append(f"{p.name}: {type(e).__name__}: {str(e)[:70]}")
+    assert len(failures) <= _RECOMPILE_FAILURES, (
+        f"{len(failures)} of {len(targets)} corpus contracts no longer "
+        f"recompile (ceiling {_RECOMPILE_FAILURES}) — the lift emits IR the "
+        "backend cannot lower, which the behavioural gate reports only as a "
+        "skip:\n  " + "\n  ".join(failures[:8]))

@@ -262,30 +262,38 @@ class _Lifter:
         self.not_function_shaped: set = set()
         _arity = _infer_arities(struct, self.callsite,
                                 divergent=self.not_function_shaped)
-        self._flatten_divergent(struct)
-        # Legal TEAL that is not a function: a pre-`proto` `retsub` is a jump,
-        # so a sub whose return sites leave different depths has no single
-        # signature. SPLICED ones are now faithful (the body runs on the
-        # caller's own stack, exactly as the AVM does); the rest keep the
-        # over-declared signature, whose shallow paths the re-simulator pads
-        # with `Undefined` — an explicit unknown, but the caller's own value
-        # is what physically sits there, so say so rather than let a silent
-        # `Undefined` read as an ordinary gap.
-        _unspliced = [s_ for s_ in self.not_function_shaped
-                      if s_.entry_bb not in self._flat_entries]
-        if _unspliced:
+        if self.not_function_shaped:
+            # Legal TEAL that is not a function: a pre-`proto` `retsub` is a
+            # jump, so a sub whose return sites leave different depths has no
+            # single signature. The inferred one over-declares its shallow
+            # paths and the re-simulator pads them with `Undefined` — an
+            # explicit unknown, but the caller's own value is what physically
+            # sits there, so say so rather than let a silent `Undefined` read
+            # as an ordinary gap.
+            #
+            # SPLICING THE BODY INTO THE CALLER IS THE FAITHFUL ANSWER AND WAS
+            # TRIED (2026-08-04, reverted): a pre-`proto` callsub/retsub is a
+            # jump, the raw CFG already carries the edges, and with ONE call
+            # site the divergence becomes an ordinary depth-divergent join the
+            # max-window merge represents cell-for-cell. It produced correct
+            # IR but IR the BACKEND cannot lower — app_1050027991 recompiled
+            # before and after failed with "l-stack too small for store 71"
+            # (Puya's MIR allocator: an op consuming from an empty l-stack, so
+            # the spliced body consumes a value its group never pushes). That
+            # was the ONLY contract the splice reached, so it broke the single
+            # case it improved. Re-attempting it means fixing the group's
+            # value plumbing across the splice FIRST, and gating on
+            # `lift_to_teal`, which the behavioural sweep reports as a SKIP
+            # rather than a divergence.
             logger.warning(
                 "%d legacy subroutine(s) are NOT function-shaped (their retsub "
-                "sites leave different stack depths) and could not be spliced "
-                "into their callers, so the lifted signature over-declares the "
-                "shallow paths and values below the call read as Undefined: "
-                "%s. These have SEVERAL call sites, so a faithful splice needs "
-                "one body copy per site — a per-context identity the lift does "
-                "not have (`resim_args` is keyed by global assignment id, so a "
-                "second context would overwrite the first).",
-                len(_unspliced),
+                "sites leave different stack depths), so the lifted signature "
+                "over-declares the shallow paths and values below the call read "
+                "as Undefined: %s. Faithful lifting of these needs per-call-site "
+                "inlining.",
+                len(self.not_function_shaped),
                 ", ".join(sorted(str(getattr(s_, "name", s_))
-                                 for s_ in _unspliced)[:5]))
+                                 for s_ in self.not_function_shaped)[:5]))
         self._io_by_entry = {s.entry_bb: a for s, a in _arity.items()}
         self._proto_entries = {s.entry_bb for s in struct.subroutines
                                if any(a.op == "proto" for a in s.entry_bb.assignments)}
@@ -320,17 +328,8 @@ class _Lifter:
                     self.load_stores[lv] = [self.prog.var(*k) for k in stores]
         all_blocks = sorted(self.prog.blocks.values(), key=self._key)
         main_blocks = [bb for bb in all_blocks if bb not in self.sub_of]
-        # A FLATTENED sub emits no group of its own; its blocks join the
-        # caller's, where the spliced control flow re-simulates them as
-        # ordinary caller code (which is what the AVM does — a legacy
-        # callsub/retsub is a jump).
-        main_blocks += [bb for bb in self._flat_extra.get(None, ())
-                        if bb not in main_blocks]
-        main_blocks.sort(key=self._key)
         groups = [("main", None, main_blocks)]
         for s in sorted(struct.subroutines, key=lambda s: self._key(s.entry_bb)):
-            if s.entry_bb in self._flat_entries:
-                continue
             # Drop blocks this body cannot actually REACH. Bodies overlap, and
             # for two different reasons that must not be conflated:
             #
@@ -360,8 +359,6 @@ class _Lifter:
                     or any(q in s.body for q in bb.predecessors)
                     or self.cont_site.get(bb) is not None
                     and self.cont_site[bb].callsub_bb in s.body]
-            body += [bb for bb in self._flat_extra.get(s, ())
-                     if bb not in body]
             groups.append((s.name or f"sub@L{s.entry_bb.first_line}", s,
                            sorted(body, key=self._key)))
         # Global block ids, though Puya restarts block@0 per subroutine: the
@@ -394,9 +391,6 @@ class _Lifter:
             cont, entry = cs.continuation_bb, cs.target_entry
             if cont is None or entry is None:
                 continue
-            if entry in self._flat_entries:
-                continue          # spliced: the continuation's phis merge the
-                                  # return paths through the ordinary CFG
             nret = self._sub_io(entry)[1]
             if nret <= 0:
                 continue
@@ -719,9 +713,6 @@ class _Lifter:
 
         if op == "callsub":
             cs = self.callsite.get(bb)
-            if (cs is not None and cs.target_entry in self._flat_entries
-                    and cs.target_entry in self.bid):
-                return pre_ir.Goto(self.bid[cs.target_entry])   # spliced
             cont = cs.continuation_bb if cs else None
             if cont is not None and cont in self.bid:
                 return pre_ir.Goto(self.bid[cont])
@@ -732,11 +723,6 @@ class _Lifter:
                 return pre_ir.ProgramExit(pre_ir.UInt64Constant(0))
             return pre_ir.SubroutineReturn([])
         if op == "retsub":
-            if bb in self._flat_blocks:
-                # Spliced: return to the ONE continuation as ordinary flow.
-                fsucc = [s for s in bb.successors if s in self.bid]
-                if len(fsucc) == 1:
-                    return pre_ir.Goto(self.bid[fsucc[0]])
             return self._control_retsub(bb)
         succ = [s for s in bb.successors if s in self.bid]
         if not succ:
@@ -888,16 +874,9 @@ class _Lifter:
             # retsub/return/err LEAVE the sub: their raw successors are the callers'
             # continuations, not internal flow. A callsub flows to its own
             # continuation, not into the callee.
-            last = b.assignments[-1].op if b.assignments else None
-            if last == "retsub" and b in self._flat_blocks:
-                # SPLICED: this retsub is a goto to the continuation, so its
-                # raw successors ARE internal flow.
-                return [s for s in b.successors if s in body]
-            if last in ("retsub", "return", "err"):
+            if b.assignments and b.assignments[-1].op in ("retsub", "return", "err"):
                 return []
             cs = self.callsite.get(b)
-            if cs is not None and cs.target_entry in self._flat_entries:
-                return [s for s in b.successors if s in body]   # into the body
             if cs is not None and cs.continuation_bb in body:
                 return [cs.continuation_bb]
             return [s for s in b.successors if s in body]
@@ -1078,9 +1057,6 @@ class _Lifter:
             return
         if a.op == "callsub":
             cs = self.callsite.get(b)
-            if cs is not None and cs.target_entry in self._flat_entries:
-                return                  # spliced: a jump consumes and pushes
-                                        # nothing; the body runs on this stack
             nargs = self._sub_io(cs.target_entry)[0] if (cs and cs.target_entry) else 0
             nargs = min(nargs, len(stack))
             self.resim_args[id(a)] = stack[len(stack) - nargs:]      # param order
@@ -1122,76 +1098,6 @@ class _Lifter:
         if a.op not in _TERMINATOR_OPS:
             for o in reversed([o for o in a.outputs if isinstance(o, SSAVar)]):
                 stack.append(self._resim_value(o))
-
-    def _flatten_divergent(self, struct) -> None:
-        """Pick the divergent legacy subs to SPLICE into their caller.
-
-        A legacy sub whose ``retsub`` sites leave different depths is not a
-        function: no single ``(nargs, nret)`` describes it, so the inferred
-        signature over-declares the shallow paths and the re-simulator padded
-        them with ``Undefined`` — an explicit unknown, but the value that
-        physically sits there is the CALLER's own.
-
-        Splicing states it exactly. A pre-``proto`` ``callsub``/``retsub`` is
-        a JUMP that truncates nothing, so the body running on the caller's own
-        stack IS the semantics, and the differing return depths become an
-        ordinary depth-divergent join at the continuation — which the
-        max-window merge already represents cell-for-cell.
-
-        ONE call site only. The SSA layer keys blocks on
-        ``(file, first_line, last_line)`` and vars on ``(file, line, index)``,
-        so a body spliced at two sites would need two identities for one
-        source position and the copies would collide. Multi-site divergent
-        subs keep the ``Undefined`` padding and stay reported.
-        """
-        self._flat_entries: set = set()
-        self._flat_blocks: set = set()
-        self._flat_extra: dict = {}          # caller Subroutine|None -> [blocks]
-        if not self.not_function_shaped:
-            return
-        sites: dict = {}
-        for cs in struct.call_sites:
-            if cs.target_entry is not None:
-                sites.setdefault(cs.target_entry, []).append(cs)
-        for s in self.not_function_shaped:
-            entry = s.entry_bb
-            css = sites.get(entry, [])
-            if len(css) != 1:
-                continue                      # would need a second identity
-            cs = css[0]
-            if cs.continuation_bb is None:
-                continue                      # never returns: nothing to splice
-            if any(a.op == "proto" for a in entry.assignments):
-                continue                      # proto'd: retsub TRUNCATES
-            # The body to move: this sub's own blocks, minus anything another
-            # routine owns (a shared tail must keep its single home) and minus
-            # the caller-side continuation, which the caller already has.
-            owned = [bb for bb in s.body
-                     if self.sub_of.get(bb) is s and bb is not cs.continuation_bb]
-            if not owned or entry not in owned:
-                continue
-            if cs.callsub_bb in s.body:
-                continue                      # self-recursive: splicing diverges
-            # Every retsub of the body must land on THE continuation, or the
-            # spliced control flow would invent an edge.
-            rets = [bb for bb in owned
-                    if bb.assignments and bb.assignments[-1].op == "retsub"]
-            if not rets or any(list(bb.successors) != [cs.continuation_bb]
-                               for bb in rets):
-                continue
-            caller = self.sub_of.get(cs.callsub_bb)
-            if caller is s:
-                continue
-            self._flat_entries.add(entry)
-            self._flat_blocks.update(owned)
-            self._flat_extra.setdefault(caller, []).extend(owned)
-        if self._flat_entries:
-            logger.info(
-                "spliced %d divergent legacy subroutine(s) into their single "
-                "call site — a legacy callsub/retsub is a jump, so the body "
-                "runs on the caller's own stack and the differing return "
-                "depths merge at the continuation",
-                len(self._flat_entries))
 
     def _apply_clobber_effect(self, cs, a, stack) -> None:
         """Rewrite the caller residual through the callee's below-band effect
@@ -1283,8 +1189,6 @@ class _Lifter:
             return                              # const shuffle routed to source
         if a.op == "callsub":
             cs = self.callsite.get(bb)
-            if cs is not None and cs.target_entry in self._flat_entries:
-                return                  # spliced: no call op, just flow
             target = (cs.target_name if cs and cs.target_name
                       else (a.immediates or "?"))
             # The args are the callsub's OWN operands, TOP-FIRST, so PARAM order

@@ -398,40 +398,6 @@ def test_a_cross_band_callees_effect_is_recovered_not_blanked(tmp_path):
     assert prog._pyssa._unsafe_callee_blocks
 
 
-def test_a_single_site_divergent_legacy_sub_is_spliced_into_its_caller(tmp_path):
-    """A pre-``proto`` ``callsub``/``retsub`` is a JUMP that truncates
-    nothing, so a divergent legacy sub with ONE call site is faithfully
-    lifted by splicing its body into the caller — no signature to
-    over-declare, so no ``Undefined``.
-
-    ``vary`` leaves 1 value down one path and 2 down the other, on top of the
-    caller's own ``int 55``. Spliced, the caller's ``+`` sees the paths merge
-    at the continuation, which is an ordinary depth-divergent join: the
-    max-window merge pairs the shallow path's cells ``(5, 55)`` with the deep
-    path's ``(7, 6)``, so the addition is ``5 + 55 = 60`` down one path and
-    ``7 + 6 = 13`` down the other — exactly the AVM's two outcomes, with the
-    caller's own value recovered rather than padded away."""
-    from tealql.tealtools.lift.lift import _Lifter
-
-    teal = tmp_path / "vary_spliced.teal"
-    teal.write_text(
-        "#pragma version 8\nint 55\ncallsub vary\n+\npop\nint 1\nreturn\n"
-        "vary:\ntxn NumAppArgs\nbnz two\nint 5\nretsub\n"
-        "two:\nint 6\nint 7\nretsub\n"
-    )
-    lifter = _Lifter(SSAProgram(str(teal)))
-    ir = lifter.build()
-    assert lifter._flat_entries, (
-        "a divergent legacy sub with ONE call site must be spliced")
-    rendered = ir.render()
-    assert "undefined" not in rendered.lower(), (
-        f"splicing must leave no explicit unknown:\n{rendered}")
-    # Both operand pairs must be present: the phis merge (5, 7) and (55, 6).
-    assert "55u" in rendered and "5u" in rendered and "6u" in rendered \
-        and "7u" in rendered, (
-        f"every path's real value must survive the splice:\n{rendered}")
-
-
 def test_a_path_divergent_legacy_callee_is_reported_not_function_shaped(tmp_path):
     """A legacy sub whose ``retsub`` sites leave different depths IS NOT A
     FUNCTION, and the lift must say so rather than let the gap read as ordinary.
@@ -445,12 +411,12 @@ def test_a_path_divergent_legacy_callee_is_reported_not_function_shaped(tmp_path
     unknown rather than a wrong value, which keeps the never-lie contract, but
     the caller's value below the call is lost.
 
-    DETECTION is what this pins, and it stays load-bearing after splicing:
-    the decision to splice is taken FROM this set, and a sub with several call
-    sites cannot be spliced (one body would need one identity per site, which
-    the lift does not have) so it still lifts with the padding above. The
-    single-site splice is pinned separately, by
-    ``test_a_single_site_divergent_legacy_sub_is_spliced_into_its_caller``."""
+    Faithful lifting needs per-call-site INLINING. SPLICING the body into the
+    caller was tried and REVERTED (2026-08-04): it produced correct IR that the
+    BACKEND could not lower — app_1050027991 recompiled before and afterwards
+    failed with "l-stack too small for store 71" — and that was the only
+    contract it reached. Until that is fixed this pins the honest reporting:
+    the sub is collected in ``_Lifter.not_function_shaped`` and warned about."""
     from tealql.tealtools.lift.lift import _Lifter
 
     teal = tmp_path / "vary.teal"
@@ -460,8 +426,8 @@ def test_a_path_divergent_legacy_callee_is_reported_not_function_shaped(tmp_path
     ir = lifter.build()
     assert ir is not None
     assert lifter.not_function_shaped, (
-        "a legacy callee with divergent retsub depths must be reported — the "
-        "splice decision is taken from this set")
+        "a legacy callee with divergent retsub depths must be reported — its "
+        "lifted signature over-declares the shallow path")
 
 
 def test_height_ambiguous_region_still_answers_every_frame_read():
