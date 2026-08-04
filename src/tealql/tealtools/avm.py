@@ -592,7 +592,11 @@ _BYTES_CONSUME = frozenset({
     # only, so they type their operands just as hard as `b<`.
     "b<=", "b>=", "b==", "b!=", "b|", "b&", "b^", "b~", "bsqrt",
     "setbyte", "getbyte", "base64_decode", "mimc", "sumhash512",
-    "ed25519verify_bare", "falcon_verify"})
+    # The signature-verify family: every operand is a byteslice (message,
+    # signature, public key). `ecdsa_pk_recover` is the one exception — its
+    # recovery id is a uint64 — so it is typed positionally by the lift instead.
+    "ed25519verify", "ed25519verify_bare", "falcon_verify",
+    "ecdsa_verify", "ecdsa_pk_decompress", "vrf_verify"})
 
 
 def avm(t) -> str:

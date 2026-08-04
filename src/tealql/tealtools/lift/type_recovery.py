@@ -160,6 +160,9 @@ _POS_IN = {
     "box_extract": ("uint64", "uint64", "bytes"), # name start len
     "box_replace": ("bytes", "uint64", "bytes"),  # name start value
     "box_splice": ("bytes", "uint64", "uint64", "bytes"),  # name start len value
+    # The one signature-verify op with a non-bytes operand: the recovery id is a
+    # uint64, so it cannot ride the all-bytes family set with its siblings.
+    "ecdsa_pk_recover": ("bytes", "bytes", "uint64", "bytes"),  # data id sigA sigB
 }
 
 
@@ -178,12 +181,27 @@ def _expected_type(op, idx, args, imm=None):
     if op in _BYTES_IN_ALL:
         return "bytes"
     pos = _POS_IN.get(op)
-    if pos and idx < len(pos):
-        return pos[idx]
+    if pos is not None:
+        # AUTHORITATIVE for the ops it lists, including the positions it
+        # deliberately leaves `None` (getbit's polymorphic value operand, the
+        # state ops' schema-dependent value). Returning here stops the
+        # family fallback below from overriding a considered "unknown".
+        return pos[idx] if idx < len(pos) else None
     if op in ("==", "!=") and len(args) == 2:
         other = args[1 - idx]
         ot = getattr(other, "ir_type", None)
         return ot if ot and ot != "?" else None
+    # Ops the tables above do not list still type their operands unambiguously —
+    # fall back to the AVM-wide sets, which are the same source the phi-web
+    # reconciliation already consults. Keeping a second, narrower copy of that
+    # knowledge here is what let the whole signature-verify family go untyped:
+    # a pubkey read by app_global_get_ex and used ONLY by ed25519verify_bare had
+    # no typed use at all, stayed `?`, and to-puya defaulted it to uint64 -> a
+    # Bytes/uint64 lowering error that made the contract uncompilable.
+    if op in _BYTES_CONSUME:
+        return "bytes"
+    if op in _U64_CONSUME:
+        return "uint64"
     return None
 
 
