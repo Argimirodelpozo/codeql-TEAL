@@ -162,7 +162,7 @@ def simulate(blocks, bb_to_sub, proto_io, return_point, phi_factory,
     deferred: list = []
     for sub in _callee_first(by_sub, bb_to_sub):
         _run_routine(sub, by_sub[sub], res, arity, bb_to_sub, return_point,
-                     retsubs, phi_factory, unsafe_callees, deferred)
+                     retsubs, phi_factory, unsafe_callees, deferred, proto_io)
     # RECURSION. A cycle has no callee-first order, so a call inside it reaches
     # `retsub` blocks that are not simulated yet. Braun's answer to the same
     # problem is to hand out the phi BEFORE recursing and complete it after; that
@@ -170,15 +170,42 @@ def simulate(blocks, bb_to_sub, proto_io, return_point, phi_factory,
     # closes the cycle: `count_len`'s result becomes φ(0, φ+1), which is exactly
     # the inductive shape a prover needs. Pushing None instead cost avm-prover
     # the proof that `r == len(arg0)`.
-    for ph, slot, rets in deferred:
+    for ph, slot, j, proto, rets in deferred:
         for rb in rets:
-            if rb in res.exit and len(res.exit[rb]) >= slot:
-                v = res.exit[rb][-slot]
-                if not any(a is v for a in ph.args):
-                    ph.args.append(v)
+            if rb not in res.exit:
+                continue
+            v = _return_value(res.exit[rb], j, slot, proto)
+            if v is not None and not any(a is v for a in ph.args):
+                ph.args.append(v)
     if bind_params:
         _bind_params(blocks, res, arity, bb_to_sub, phi_factory)
     return res
+
+
+
+def _return_value(st, j, slot, proto):
+    """The value a callee's `retsub` block leaves as return ``j`` (0 = first).
+
+    `proto A R` returns FRAME SLOTS 0..R-1 -- the first R locals, just above the
+    A args -- NOT the top R of the stack. Reading the top finds it only when the
+    callee happens to leave it there; one that parks it with `frame_bury 0` and
+    keeps working locals above hands the caller its LEFTOVER, or nothing when the
+    stack is shallower than R. Measured on app_2645463331 `label172`
+    (`proto 2 1`): retsub exit is [param0, param1, <return>, leftover], so the
+    top read took the leftover.
+
+    A LEGACY sub is NOT "a sub without a frame" -- it can use `frame_dig` /
+    `frame_bury` perfectly well, addressed off its INFERRED nargs. The reason it
+    reads from the top instead is TRUNCATION: `proto`'s `retsub` truncates to
+    the frame and moves slots 0..R-1 down, so the caller sees exactly those
+    slots; a pre-`proto` `retsub` truncates NOTHING, so the caller receives the
+    callee's exit stack verbatim and physically consumes whatever is on top --
+    even if the callee also parked a value with `frame_bury 0`.
+    """
+    if proto is not None:
+        pos = proto[0] + j
+        return st[pos] if 0 <= pos < len(st) else None
+    return st[-slot] if len(st) >= slot else None
 
 
 def _callee_first(by_sub, bb_to_sub):
@@ -310,7 +337,7 @@ def _isucc(b, body, return_point, *, owned_only=True):
 
 def _run_routine(sub, body_list, res, arity, bb_to_sub, return_point,
                  retsubs, phi_factory, unsafe_callees=frozenset(),
-                 deferred=None):
+                 deferred=None, proto_io=None):
     body = set(body_list)
     nargs = arity.get(sub, (0, 0))[0]
 
@@ -373,9 +400,11 @@ def _run_routine(sub, body_list, res, arity, bb_to_sub, return_point,
                              bpred.get(b, ()), pending, res, phi_factory)
         for o in b.ops:
             _exec(o, b, stack, nargs, res, bb_to_sub, retsubs, arity,
-                  phi_factory, unsafe_callees, return_point, npred, deferred)
+                  phi_factory, unsafe_callees, return_point, npred, deferred,
+                  proto_io)
         res.exit[b] = stack
     for ph, slot, depth, bp in pending:
+        # TOP-aligned, matching the loop-header merge above.
         if bp in res.exit and len(res.exit[bp]) >= depth:
             ph.args.append(_at(res.exit[bp], depth, slot))
 
@@ -407,6 +436,14 @@ def _entry_stack(b, entry, nargs, preds, back_targets, bpred_b, pending,
         # probes); this is for the hand-written TEAL that can produce one.
         return []
     if b in back_targets:
+        # TOP-aligned, like the plain join below — and NOT like the lift, which
+        # merges loop headers bottom-first. That is not an oversight to copy:
+        # the lift's phis are plain registers, while an SSA phi's IDENTITY is
+        # `(bb_key, slot)` with slot counted TOP-first, and consumers read the
+        # matching value as `pred.exit_stack[-slot]`. Bottom-first merging
+        # breaks that correspondence wherever a predecessor is deeper than the
+        # merge window — 11 violated phi-pred edges on app_3300088574, which
+        # `test_frame_base_alignment` exists to catch.
         depth = min(len(res.exit[p]) for p in preds)
         stack, phis = [], []
         for slot in range(depth):
@@ -438,7 +475,7 @@ def _entry_stack(b, entry, nargs, preds, back_targets, bpred_b, pending,
 
 def _exec(o, b, stack, nargs, res, bb_to_sub, retsubs, arity, phi_factory,
           unsafe_callees=frozenset(), return_point=None, npred=None,
-          deferred=None):
+          deferred=None, proto_io=None):
     """One op against the clean stack, recording its operands TOP-FIRST."""
     if o.op in ("frame_dig", "frame_bury"):
         n = _imm_int(o)
@@ -484,11 +521,21 @@ def _exec(o, b, stack, nargs, res, bb_to_sub, retsubs, arity, phi_factory,
         if take < a_in:
             res.unresolved.add(id(o))
         if callee in unsafe_callees:
-            # The callee reached below its own band, so what sits underneath is
-            # whatever IT left — not what this routine pushed. Blank the VALUES,
-            # keep the HEIGHT: the AVM re-checks the frame bound at `retsub`, so
-            # a callee that dips must put the depth back, and the frame base
-            # later `frame_dig`s anchor to is still where it was.
+            # The callee reached below its own band with a PLAIN stack op, so
+            # what sits underneath is whatever IT left — not what this routine
+            # pushed. Blank the VALUES, keep the HEIGHT: the AVM re-checks the
+            # frame bound at `retsub`, so a callee that dips must put the depth
+            # back, and the frame base later `frame_dig`s anchor to is unmoved.
+            #
+            # The UNSAFE set, deliberately WIDER than the lift's clobber-only
+            # policy. Narrowing it to match the lift broke six invariants
+            # (`below_frame_bury_is_dead`, `height_ambiguous_join`, three
+            # frame-flow tests, the two-simulator alignment): the lift can fall
+            # back on `Undefined`, but SSA-level may-analyses read these slots
+            # DIRECTLY, so "could not verify the band height" has to withdraw
+            # here or it reads as a resolved pre-call value. The handful of
+            # operands this costs are honest refusals, listed by
+            # `unresolved_call_results`.
             stack[:] = [None] * len(stack)
         rets = retsubs.get(callee, ())
         # A merge over several `retsub` sites belongs to the CONTINUATION, not
@@ -509,10 +556,14 @@ def _exec(o, b, stack, nargs, res, bb_to_sub, retsubs, arity, phi_factory,
         # unknown — it is defined in terms of itself — so hand out a phi now and
         # fill it once every routine has run.
         pending_rets = [rb for rb in rets if rb not in res.exit]
+        # See `_return_value`: proto'd returns live in FRAME SLOTS, legacy
+        # ones on the physical stack top, because only proto's retsub truncates.
+        a_proto = proto_io.get(callee) if proto_io is not None else None
         for j in range(r_out):
             slot = r_out - j                      # top-first within the returns
-            vals = [res.exit[rb][-slot] for rb in rets
-                    if rb in res.exit and len(res.exit[rb]) >= slot]
+            vals = [v for rb in rets if rb in res.exit
+                    for v in (_return_value(res.exit[rb], j, slot, a_proto),)
+                    if v is not None]
             if pending_rets and not (can_merge and deferred is not None):
                 # A return path exists that we cannot merge in. Taking the
                 # resolved subset would name the base case as THE result and
@@ -523,7 +574,7 @@ def _exec(o, b, stack, nargs, res, bb_to_sub, retsubs, arity, phi_factory,
                 ph = phi_factory(cont, slot)
                 ph.args.extend(vals)
                 res.phis.setdefault(cont, []).append((slot, ph))
-                deferred.append((ph, slot, tuple(pending_rets)))
+                deferred.append((ph, slot, j, a_proto, tuple(pending_rets)))
                 stack.append(ph)
             elif len({id(v) for v in vals}) == 1:
                 stack.append(vals[0])     # every retsub leaves the same value

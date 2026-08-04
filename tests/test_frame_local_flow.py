@@ -186,7 +186,14 @@ def test_the_callsub_return_blind_spot_is_closed():
         by_line[dig_out.defined_by.location.line] = srcs
     assert 872 in _leaf_lines(by_line.get(1390, ())), (
         "dig@1390 no longer sources label74's returned value")
-    assert 1201 in _leaf_lines(by_line.get(1440, ())), (
+    # L1323, NOT L1201. label77 is `proto 1 1` and ends
+    # `frame_dig 0; concat; frame_bury 0; retsub` — a proto'd retsub returns
+    # FRAME SLOT 0, which is what that `frame_bury 0` wrote (the concat at
+    # L1323). L1201 is `extract 186 32`, an unrelated leftover deep in the
+    # callee's working stack, and this assertion pinned it only because the
+    # simulator used to read the return off the STACK TOP. The blind spot was
+    # closed to the wrong value.
+    assert 1323 in _leaf_lines(by_line.get(1440, ())), (
         "dig@1440 no longer sources its callee's returned value")
 
 

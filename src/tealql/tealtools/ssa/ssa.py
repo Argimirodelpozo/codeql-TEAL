@@ -609,7 +609,7 @@ class PySSA:
         # the caller's stack at every legacy call, losing real values.
         self._clobber_callee_keys = {sub.key for sub in clobber
                                      if sub in self._proto_io}
-        # The same set as ENTRY BLOCKS, for a simulator that withdraws at the
+        # The UNSAFE set as ENTRY BLOCKS, for a simulator that withdraws at the
         # `callsub` rather than at a paired continuation. Same proto'd
         # restriction, same reason; keyed by block because a per-routine
         # simulation identifies a callee by the block it enters.
