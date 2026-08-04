@@ -183,6 +183,9 @@ class PySSA:
     # bb_key -> entry stack depth INCLUDING the sub's args; see
     # _frame_entry_depths. Absent = height-ambiguous, which reads as UNSAFE.
     _frame_edepth: dict = field(default_factory=dict)
+    # callsub bb_key -> continuation bb_key (corrected policy), see
+    # subroutines.corrected_return_points.
+    _corrected_rp: dict = field(default_factory=dict)
 
     @classmethod
     def build(cls, prog: SSAProgram) -> SSAProgram:
@@ -198,6 +201,13 @@ class PySSA:
         diagnostics); :meth:`build` is the SSAProgram-returning entry point."""
         self = cls()
         self._phase1_instantiate(prog)
+        # ONE continuation policy for the whole pipeline. `prog.blocks` and
+        # `prog.labels` are already populated here (`_build_from_graph` fills
+        # them before calling us), which is all `identify_subroutines` reads —
+        # so the construction path can use the CORRECTED answer instead of the
+        # naive source-next guess it used to re-derive.
+        from ..subroutines import corrected_return_points
+        self._corrected_rp = corrected_return_points(prog)
         self._compute_subs_and_protos()
         # Routine metadata, then the two analyses the operand build and the LIFT
         # both key off. `_clobber_callee_keys` is what tells the lift to fill a
@@ -270,8 +280,10 @@ class PySSA:
             block.entry_phis.append(p)
             return p
 
-        res = stacksim.simulate(self.blocks, pyblock_partition(self.blocks),
-                                self._proto_io, _pyblock_return_point(self.blocks),
+        res = stacksim.simulate(self.blocks,
+                                pyblock_partition(self.blocks, self._corrected_rp),
+                                self._proto_io,
+                                _pyblock_return_point(self.blocks, self._corrected_rp),
                                 mint,
                                 unsafe_callees=self._unsafe_callee_blocks)
         for b in self.blocks:
@@ -389,7 +401,7 @@ class PySSA:
         # Ownership follows the CONSTRUCTION policy this depth machinery was
         # validated against, which lives verbatim in pyblock_partition.
         from ..subroutines import pyblock_partition
-        self._bb_to_sub = pyblock_partition(self.blocks)
+        self._bb_to_sub = pyblock_partition(self.blocks, self._corrected_rp)
 
         sub_entries: set = set()
         for b in self.blocks:
@@ -432,7 +444,8 @@ class PySSA:
 
         self._call_pairs = {}
         self._pair_by_cs = {}
-        for cs, cont in _pyblock_return_point(self.blocks).items():
+        for cs, cont in _pyblock_return_point(self.blocks,
+                                             self._corrected_rp).items():
             if cont is None or cont is cs:
                 continue
             callee = next((s for s in cs.succs if s in self._proto_io), None)
@@ -502,7 +515,7 @@ class PySSA:
         # Reverse reachability to a retsub over local edges (callsub -> its
         # return point; retsub/return/err terminal), mirroring pyblock_partition.
         from ..subroutines import _pyblock_return_point
-        return_point = _pyblock_return_point(self.blocks)
+        return_point = _pyblock_return_point(self.blocks, self._corrected_rp)
         local_preds: dict = {}
         reach_wl: list = []
         for b in self.blocks:

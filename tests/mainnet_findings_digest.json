@@ -97,19 +97,19 @@
    "findings": 410
   },
   "timelock-upgrade": {
-   "contracts": 65,
+   "contracts": 66,
    "crashes": 0,
-   "findings": 133
+   "findings": 134
   },
   "unprotected-deletable": {
-   "contracts": 111,
+   "contracts": 110,
    "crashes": 0,
-   "findings": 273
+   "findings": 272
   },
   "unprotected-updatable": {
-   "contracts": 93,
+   "contracts": 92,
    "crashes": 0,
-   "findings": 248
+   "findings": 247
   },
   "unsafe-division-order": {
    "contracts": 34,
@@ -951,8 +951,7 @@
    "delete-funds-check": 1,
    "is-deletable": 1,
    "is-updatable": 1,
-   "unprotected-deletable": 1,
-   "unprotected-updatable": 1
+   "timelock-upgrade": 1
   },
   "82f1fcb389a4f53e": {
    "abi-method-selector": 1,

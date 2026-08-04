@@ -42,91 +42,56 @@ _FRAME_OPS = frozenset({"frame_dig", "frame_bury"})
 
 
 def _infer_arities(struct, callsite, *, divergent: "set | None" = None) -> dict:
-    """``Subroutine -> (nargs, nret)``: read off ``proto``, or — for legacy subs that
-    pass args / returns on the stack — inferred by a cross-procedural depth fixpoint.
+    """``Subroutine -> (nargs, nret)``: read off ``proto``, or inferred.
 
-    ``divergent`` (out-param) collects the legacy subs that are NOT FUNCTION-SHAPED:
-    their ``retsub`` sites leave different stack depths, so the callee's net effect
-    depends on the path it took. A pre-``proto`` ``retsub`` does not truncate — it
-    is a jump — so such a sub is perfectly legal TEAL and simply is not a function:
-    NO single ``(nargs, nret)`` describes it, and this fixpoint's ``max`` over
-    return sites necessarily over-declares the shallow paths, which the re-simulator
-    then pads with ``Undefined`` (an explicit unknown — imprecise, never a wrong
-    value; the caller's own pre-call value is what physically sits there).
+    A thin binding of :func:`..subroutines.infer_legacy_arities` to the
+    ``structure.Subroutine`` model. The fixpoint itself is shared with the SSA's
+    `stacksim.infer_arities` — it was implemented twice, the copies drifted, and
+    the SSA's under-counted a sub branching into a shared tail while this one
+    got it right.
 
-    Making those calls faithful means INLINING the callee per call site, which the
-    IR can express (its block ids are synthetic, unlike the SSA layer's
-    source-position identities) but this lift does not yet do. Until it does, the
-    set is surfaced so a consumer can tell "not function-shaped, values below the
-    call are unknown" from "this value happens to be unknown"."""
+    ``divergent`` (out-param) collects the legacy subs that are NOT
+    FUNCTION-SHAPED: their ``retsub`` sites leave different stack depths, so the
+    callee's net effect depends on the path it took. A pre-``proto`` ``retsub``
+    does not truncate — it is a jump — so such a sub is perfectly legal TEAL and
+    simply is not a function: NO single ``(nargs, nret)`` describes it, and the
+    fixpoint's ``max`` over return sites necessarily over-declares the shallow
+    paths, which the re-simulator then pads with ``Undefined`` (an explicit
+    unknown — imprecise, never a wrong value).
+
+    Making those calls faithful means INLINING the callee per call site, which
+    the IR can express (its block ids are synthetic, unlike the SSA layer's
+    source-position identities) but this lift does not yet do.
+    """
+    from ..subroutines import infer_legacy_arities
+
     by_name = {s.name: s for s in struct.subroutines}
-    proto = {s: _proto_io(s.entry_bb) if any(a.op == "proto" for a in s.entry_bb.assignments)
-             else None for s in struct.subroutines}
-    arity = {s: (p if p is not None else (0, 0)) for s, p in proto.items()}
 
-    def block_io(b, depth_in):
-        d = mn = depth_in
-        for a in b.assignments:
-            if a.op == "retsub":
-                break
-            if a.op == "callsub":
-                cs = callsite.get(b)
-                ce = by_name.get(cs.target_name) if cs else None
-                pop, push = arity.get(ce, (0, 0)) if ce else (0, 0)
-            else:
-                pop, push = op_arity(a.op, a.immediates)
-            d -= pop
-            mn = min(mn, d)
-            d += push
-        return d, mn
+    def _proto_of(s):
+        return (_proto_io(s.entry_bb)
+                if any(a.op == "proto" for a in s.entry_bb.assignments) else None)
 
-    def internal_succ(b, body):
+    def _callee_of(b):
+        cs = callsite.get(b)
+        return by_name.get(cs.target_name) if cs else None
+
+    def _succs_of(b, body):
         cs = callsite.get(b)
         if cs is not None and cs.continuation_bb is not None:
             return [cs.continuation_bb] if cs.continuation_bb in body else []
         return [s for s in b.successors if s in body]
 
-    for _ in range(len(struct.subroutines) + 4):
-        changed = False
-        for s in struct.subroutines:
-            if proto[s] is not None:
-                continue
-            depth = {s.entry_bb: 0}
-            order = [s.entry_bb]
-            floor = 0
-            ret_ds: list[int] = []
-            i = 0
-            while i < len(order):
-                b = order[i]
-                i += 1
-                d_out, mn = block_io(b, depth[b])
-                floor = min(floor, mn)
-                if b.assignments and b.assignments[-1].op == "retsub":
-                    ret_ds.append(d_out)
-                for su in internal_succ(b, s.body):
-                    if su not in depth:
-                        depth[su] = d_out
-                        order.append(su)
-            # MAX over ALL retsub sites, not the first reached: a sub whose paths
-            # diverge would otherwise silently truncate a deeper path's returns.
-            ret_d = max(ret_ds) if ret_ds else None
-            # HAZARD: reflect the CONVERGED iteration, so discard as well as add.
-            # Early iterations assume (0, 0) for every legacy callee, which makes
-            # a path THROUGH one look shallower than its siblings — accumulating
-            # the mark would report a sub that is perfectly function-shaped once
-            # its callee's arity is known.
-            if divergent is not None:
-                if len(set(ret_ds)) > 1:
-                    divergent.add(s)
-                else:
-                    divergent.discard(s)
-            na, nr = -floor, (ret_d - floor if ret_d is not None else 0)
-            if arity[s] != (na, nr):
-                arity[s] = (na, nr)
-                changed = True
-        if not changed:
-            break
-    return arity
+    return infer_legacy_arities(
+        struct.subroutines,
+        entry_of=lambda s: s.entry_bb,
+        proto_of=_proto_of,
+        body_of=lambda s: s.body,
+        ops_of=lambda b: b.assignments,
+        succs_of=_succs_of,
+        callee_of=_callee_of,
+        op_arity=lambda o: op_arity(o.op, o.immediates),
+        divergent=divergent,
+    )
 
 
 def _const(cv: Const):

@@ -220,6 +220,102 @@ def identify_subroutines(prog: "SSAProgram") -> dict:
     }
 
 
+
+def infer_legacy_arities(
+    subs, *, entry_of, proto_of, body_of, ops_of, succs_of, callee_of, op_arity,
+    divergent=None,
+):
+    """``{sub: (nargs, nret)}`` for legacy (pre-``proto``) subroutines — THE
+    cross-procedural depth fixpoint, in one place.
+
+    A pre-``proto`` sub declares nothing: its arguments and results are just
+    stack depth. How far below its entry the body dips is how many arguments it
+    took; what it leaves at ``retsub`` above that floor is what it returned.
+    Interprocedural, because a nested call's own arity moves the dip — hence the
+    fixpoint rather than one pass.
+
+    Parameterised over accessors because the same question is asked in two value
+    models: the SSA asks it over ``PyBlock``s mid-construction, the lift over
+    ``structure.Subroutine`` bodies of a finished ``SSAProgram``. That is the
+    same shape :func:`..cfg.dominance.iterative_dominators` already solves by
+    taking its edge accessor as an argument, and it had been solved twice here
+    instead — the two copies drifted, and the SSA's under-counted a sub whose
+    body branches into a SHARED TAIL (`app_1050006430` `label23`: 1 argument
+    counted, 4 actually consumed, three values stranded on the caller's stack).
+
+    ``entry_of(s)`` is explicit rather than sniffed off the object: the two
+    callers name the entry block differently (a ``PyBlock`` IS its own entry,
+    a ``structure.Subroutine`` has ``.entry_bb``), and guessing produced a
+    depth map keyed by the wrong type.
+
+    ``succs_of(b, body)`` is the caller's: it decides whether a plain branch out
+    of the owned body still counts (it must — a shared tail is this routine
+    executing). ``divergent`` (out-param) collects subs whose ``retsub`` sites
+    leave DIFFERENT depths: those are not functions at all, no single
+    ``(nargs, nret)`` describes them, and the ``max`` below necessarily
+    over-declares their shallow paths.
+    """
+    arity = {}
+    for s in subs:
+        p = proto_of(s)
+        arity[s] = p if p is not None else (0, 0)
+
+    for _ in range(len(arity) + 4):
+        changed = False
+        for s in subs:
+            if proto_of(s) is not None:
+                continue
+            body = body_of(s)
+            entry = entry_of(s)
+            depth = {entry: 0}
+            order = [entry]
+            floor = 0
+            ret_ds: list = []
+            i = 0
+            while i < len(order):
+                b = order[i]
+                i += 1
+                d = mn = depth[b]
+                for o in ops_of(b):
+                    if o.op == "retsub":
+                        break
+                    if o.op == "callsub":
+                        pop, push = arity.get(callee_of(b), (0, 0))
+                    else:
+                        pop, push = op_arity(o)
+                    d -= pop
+                    mn = min(mn, d)
+                    d += push
+                floor = min(floor, mn)
+                ops = list(ops_of(b))
+                if ops and ops[-1].op == "retsub":
+                    ret_ds.append(d)
+                for su in succs_of(b, body):
+                    if su not in depth:
+                        depth[su] = d
+                        order.append(su)
+            # MAX over ALL retsub sites, not the first reached: a sub whose
+            # paths diverge would otherwise silently truncate a deeper path.
+            ret_d = max(ret_ds) if ret_ds else None
+            # HAZARD: reflect the CONVERGED iteration, so DISCARD as well as
+            # add. Early rounds assume (0, 0) for every legacy callee, which
+            # makes a path THROUGH one look shallower than its siblings —
+            # accumulating the mark would report a sub that is perfectly
+            # function-shaped once its callee's arity is known.
+            if divergent is not None:
+                if len(set(ret_ds)) > 1:
+                    divergent.add(s)
+                else:
+                    divergent.discard(s)
+            na, nr = -floor, (ret_d - floor if ret_d is not None else 0)
+            if arity[s] != (na, nr):
+                arity[s] = (na, nr)
+                changed = True
+        if not changed:
+            break
+    return arity
+
+
 def sound_return_targets(prog: "SSAProgram") -> tuple[dict, dict]:
     """``(caller_of, return_target_of)``: per ``callsub`` block C, the block B
     execution returns to — the next block in source order.
@@ -256,12 +352,39 @@ def sound_return_targets(prog: "SSAProgram") -> tuple[dict, dict]:
     return caller_of, return_target_of
 
 
-def _pyblock_return_point(blocks) -> dict:
-    """CONSTRUCTION-policy return points: per callsub-terminated block, the block
-    holding the next op in ``(file, line)`` order — NAIVE source-next, with no
-    entry exclusion and no retsub-predecessor requirement. ``blocks`` follows the
-    PyBlock protocol: ``.ops`` (each with ``.op``/``.file``/``.line``),
-    ``.succs``, ``.preds``, ``.key``."""
+
+def corrected_return_points(prog) -> dict:
+    """``{callsub bb_key: continuation bb_key or None}`` under the CORRECTED
+    policy, keyed so a mid-construction PyBlock can look itself up.
+
+    The construction path used to run the NAIVE source-next guess
+    (:func:`_pyblock_return_point`) on the grounds that it "runs BEFORE the
+    SSAProgram exists, so it cannot reuse the corrected policy". That was
+    WRONG: `_build_from_graph` populates `prog.blocks` (with assignments and
+    successors) and `prog.labels` before it calls `PySSA._construct(prog)`, and
+    those are the only things :func:`identify_subroutines` reads — the operand
+    wiring it does NOT read is the only thing missing at that point.
+
+    PyBlock and BasicBlock share the ``(file, first_line, last_line)`` identity,
+    so the corrected answer maps straight across.
+    """
+    conts = identify_subroutines(prog)["continuations"]
+    return {
+        (cs.file, cs.first_line, cs.last_line):
+            (None if c is None else (c.file, c.first_line, c.last_line))
+        for cs, c in conts.items()
+    }
+
+
+def _pyblock_return_point(blocks, corrected=None) -> dict:
+    """Return points per callsub-terminated block.
+
+    ``corrected`` (from :func:`corrected_return_points`) is the SHARED policy
+    and is used when supplied — one answer for the whole pipeline. Without it
+    this falls back to the naive source-next guess: the next op in
+    ``(file, line)`` order, with no entry exclusion and no retsub-predecessor
+    requirement. ``blocks`` follows the PyBlock protocol: ``.ops`` (each with
+    ``.op``/``.file``/``.line``), ``.succs``, ``.preds``, ``.key``."""
     op_lines: list = sorted(
         (op.file, op.line) for b in blocks for op in b.ops
     )
@@ -269,9 +392,14 @@ def _pyblock_return_point(blocks) -> dict:
     for b in blocks:
         for op in b.ops:
             line_to_bb[(op.file, op.line)] = b
+    by_key = {b.key: b for b in blocks}
     rps: dict = {}
     for b in blocks:
         if b.ops and b.ops[-1].op == "callsub":
+            if corrected is not None and b.key in corrected:
+                ck = corrected[b.key]
+                rps[b] = by_key.get(ck) if ck is not None else None
+                continue
             last = b.ops[-1]
             i = bisect.bisect_right(op_lines, (last.file, last.line))
             rp = None
@@ -281,7 +409,7 @@ def _pyblock_return_point(blocks) -> dict:
     return rps
 
 
-def pyblock_partition(blocks) -> dict:
+def pyblock_partition(blocks, corrected=None) -> dict:
     """CONSTRUCTION policy: map every block to its owning routine's entry block.
 
     Roots = main entries (no preds, not a callsub successor) plus every callsub
@@ -290,7 +418,7 @@ def pyblock_partition(blocks) -> dict:
     ``retsub``/``return``/``err`` are terminal. First claim wins (mains first,
     then entries in ``.key`` order) — exactly the construction-time semantics
     the SSA depth machinery was validated against."""
-    return_points = _pyblock_return_point(blocks)
+    return_points = _pyblock_return_point(blocks, corrected)
 
     sub_entries: set = set()
     for b in blocks:

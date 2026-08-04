@@ -48,73 +48,37 @@ def _callee_of(b, bb_to_sub):
 def infer_arities(blocks, bb_to_sub, proto_io, return_point) -> dict:
     """``sub entry -> (nargs, nret)``, read off ``proto`` or inferred.
 
-    A pre-``proto`` sub declares nothing: its args and results are just stack
-    depth, so they are recovered by the same cross-procedural depth fixpoint the
-    lift uses (``lift._infer_arities``) — how far below its entry the body dips
-    is how many arguments it took, and what it leaves at ``retsub`` above that
-    floor is what it returned. Without this a legacy callee reads as ``(0, 0)``
-    and its arguments are left sitting on the CALLER's stack, so the caller's
-    next op consumes the value pushed BEFORE the call instead of the call's
-    result.
+    A thin binding of :func:`..subroutines.infer_legacy_arities` to the PyBlock
+    model — the fixpoint itself lives there, shared with the lift, because the
+    two copies of it drifted and the SSA's under-counted at shared tails.
 
-    THE DIP FOLLOWS CONTROL FLOW, NOT OWNERSHIP. A plain branch out of the body
-    is still this routine executing — a SHARED TAIL (one block several routines
-    `b` into, ending in `retsub`) belongs to exactly one of them under
-    `pyblock_partition`, so measuring the dip over the owned body alone stops at
-    the branch and under-counts. Real case, app_1050006430 `label23`: its body is
-    one block that pops 1, but it branches into `label75`, which pops 3 more
-    before returning. Measured over the body it read (1, 0); its call sites push
-    FOUR values, so the simulation consumed one and stranded three, and every
-    operand after the call in that caller was off by three. Nothing caught it —
-    a too-DEEP stack yields wrong operands, not missing ones."""
+    THE DIP FOLLOWS CONTROL FLOW, NOT OWNERSHIP, which is what `owned_only=False`
+    buys: a plain branch out of the owned body is still this routine executing.
+    A shared tail (one block several routines `b` into, ending in `retsub`)
+    belongs to exactly one of them under `pyblock_partition`, so measuring the
+    dip over the owned body alone stops at the branch. Real case,
+    app_1050006430 `label23`: body of one block popping 1, branching into
+    `label75` which pops 3 more; its call sites push FOUR, so the simulation
+    consumed one and stranded three, and every operand after the call in that
+    caller was off by three. Nothing caught it — a too-DEEP stack yields wrong
+    operands, not missing ones.
+    """
+    from ..subroutines import infer_legacy_arities
+
     subs = [b for b in blocks if bb_to_sub.get(b) is b]
-    arity = {s: proto_io.get(s, (0, 0)) for s in subs}
     bodies: dict = {}
     for b in blocks:
         bodies.setdefault(bb_to_sub.get(b), []).append(b)
-
-    for _ in range(len(subs) + 4):
-        changed = False
-        for s in subs:
-            if s in proto_io:
-                continue
-            body = set(bodies.get(s, ()))
-            depth = {s: 0}
-            order = [s]
-            floor = 0
-            ret_ds: list = []
-            i = 0
-            while i < len(order):
-                b = order[i]
-                i += 1
-                d = mn = depth[b]
-                for o in b.ops:
-                    if o.op == "retsub":
-                        break
-                    if o.op == "callsub":
-                        pop, push = arity.get(_callee_of(b, bb_to_sub), (0, 0))
-                    else:
-                        pop, push = _narrow(o)
-                    d -= pop
-                    mn = min(mn, d)
-                    d += push
-                floor = min(floor, mn)
-                if b.ops and b.ops[-1].op == "retsub":
-                    ret_ds.append(d)
-                for su in _isucc(b, body, return_point, owned_only=False):
-                    if su not in depth:
-                        depth[su] = d
-                        order.append(su)
-            # MAX over ALL retsub sites: a sub whose paths diverge would
-            # otherwise silently truncate a deeper path's returns.
-            ret_d = max(ret_ds) if ret_ds else None
-            na, nr = -floor, (ret_d - floor if ret_d is not None else 0)
-            if arity[s] != (na, nr):
-                arity[s] = (na, nr)
-                changed = True
-        if not changed:
-            break
-    return arity
+    return infer_legacy_arities(
+        subs,
+        entry_of=lambda s: s,
+        proto_of=lambda s: proto_io.get(s),
+        body_of=lambda s: set(bodies.get(s, ())),
+        ops_of=lambda b: b.ops,
+        succs_of=lambda b, body: _isucc(b, body, return_point, owned_only=False),
+        callee_of=lambda b: _callee_of(b, bb_to_sub),
+        op_arity=_narrow,
+    )
 
 
 class _Result:
