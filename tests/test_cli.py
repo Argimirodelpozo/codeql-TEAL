@@ -147,6 +147,60 @@ def test_cli_methods_empty_on_raw_bytecode(tmp_path, capsys):
     assert "no ABI method info" in capsys.readouterr().out
 
 
+_SERVES_AND_CALLS = (             # the router shape puya actually emits: every served
+    '#pragma version 10\n'        # selector on ONE pushbytess line, then match. Alongside
+    'txn NumAppArgs\n'            # it, a logged ARC-28 event and a method this contract
+    'bz bare\n'                   # CALLS on another app — all three land in the method
+    'pushbytess 0x99e69c2b 0x2f2f6a4a '     # table, only the first two are entry points.
+    '// method "enable(uint64)void", method "kill(uint64)void"\n'
+    'txna ApplicationArgs 0\n'
+    'match m1 m2\n'
+    'err\n'
+    'm1:\n'
+    'pushbytes 0x1ccbd925 // method "Enabled(uint64)"\n'   # event: logged, never routed
+    'log\n'
+    'int 1\nreturn\n'
+    'm2:\n'
+    'pushbytes 0x745dbf16 '                                # a CALLEE's method selector
+    '// method "getCardData(address)(address,uint64)"\n'
+    'itxn_field ApplicationArgs\n'
+    'int 1\nreturn\n'
+    'bare:\n'
+    'int 1\nreturn\n')
+
+
+def test_cli_methods_marks_events_and_outgoing_calls_not_routable(tmp_path, capsys):
+    """The method table is not the attack surface: it also carries the signatures of
+    events the contract logs and of methods it calls on OTHER contracts. Reporting
+    those as callable sends an auditor after entry points that do not exist."""
+    (tmp_path / "p.teal").write_text(_SERVES_AND_CALLS)
+    assert main(["methods", str(tmp_path), "--json"]) == 0
+    routable = {r["name"]: r["routable"] for r in json.loads(capsys.readouterr().out)}
+    assert routable == {"enable": True, "kill": True,
+                        "Enabled": False, "getCardData": False}
+
+    assert main(["methods", str(tmp_path), "--routable"]) == 0
+    out = capsys.readouterr().out
+    assert "enable" in out and "kill" in out
+    assert "Enabled" not in out and "getCardData" not in out
+
+
+def test_cli_methods_unrecognised_dispatch_marks_nothing(tmp_path, capsys):
+    """`method_line_ranges` is conservative — an unmodelled router yields NO attribution.
+    That must read as "could not tell", not "serves nothing": treating it as the latter
+    would blank the table for every contract whose dispatch shape is not modelled yet,
+    turning a recall gap in one analysis into silent data loss in another."""
+    (tmp_path / "p.teal").write_text(
+        '#pragma version 10\nmethod "foo(uint64)void"\nint 1\nreturn\n')   # no router
+    assert main(["methods", str(tmp_path), "--json"]) == 0
+    rows = json.loads(capsys.readouterr().out)
+    assert [r["routable"] for r in rows] == [None]
+
+    assert main(["methods", str(tmp_path), "--routable"]) == 0   # kept, not dropped
+    out = capsys.readouterr().out
+    assert "foo" in out and "not routable" not in out
+
+
 def test_cli_methods_json(tmp_path, capsys):
     (tmp_path / "p.teal").write_text(
         '#pragma version 10\nmethod "foo(uint64)void"\nint 1\nreturn\n')
