@@ -81,7 +81,7 @@ class Phi:
     __slots__ = (
         "file", "line", "stack_index",
         "args", "uses", "basic_block",
-        "const_value", "range", "type",
+        "const_value", "range", "type", "partial",
     )
 
     def __init__(self, file: str, line: int, stack_index: int):
@@ -96,6 +96,15 @@ class Phi:
         self.const_value: Optional["Const"] = None
         self.range: Optional["IntRange"] = None
         self.type: Optional["TealType"] = None
+        # PARTIAL: the merged cell does not exist on every incoming path (a
+        # predecessor arrived too shallow — max-window join, or a net-popping
+        # loop's laps >= 2). `args` then lists only the paths that HAVE the
+        # cell. Sound to consume as-is under panic-pruning: on an absent-arm
+        # path the AVM op reading this cell underflows and the txn dies, so
+        # every execution that proceeds past the read took a listed arm.
+        # Analyses reasoning about which paths REACH a point (not values) must
+        # not treat the absent arms as reaching it.
+        self.partial: bool = False
 
     def _key(self) -> tuple:
         return (self.file, self.line, self.stack_index)

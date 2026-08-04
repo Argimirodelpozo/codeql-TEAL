@@ -22,6 +22,7 @@ from __future__ import annotations
 from typing import Optional
 
 from ..avm import op_arity
+from .callee_effects import _Below, _CalleeParam
 
 
 def _imm_int(op) -> Optional[int]:
@@ -95,7 +96,8 @@ class _Result:
     the depth-shift merge in :func:`_exec` instead of the uniform window.
     """
 
-    __slots__ = ("args", "phis", "exit", "unresolved", "divergent")
+    __slots__ = ("args", "phis", "exit", "unresolved", "divergent",
+                 "band_deferred")
 
     def __init__(self):
         self.args: dict = {}
@@ -103,6 +105,10 @@ class _Result:
         self.exit: dict = {}
         self.unresolved: set = set()
         self.divergent: set = set()
+        # (band phi, frame_bury PyOp) pairs whose arm the walk had not
+        # recorded yet (a loop-carried write later in walk order); filled
+        # once every routine has run, like `deferred` for recursion.
+        self.band_deferred: list = []
 
 
 class _Param:
@@ -125,7 +131,9 @@ class _Param:
 
 
 def simulate(blocks, bb_to_sub, proto_io, return_point, phi_factory,
-             *, bind_params: bool = True, unsafe_callees=frozenset()) -> "_Result":
+             *, bind_params: bool = True, unsafe_callees=frozenset(),
+             band_plan=None, poisoned=frozenset(),
+             effect_summaries=None) -> "_Result":
     """Simulate every routine and return a :class:`_Result`.
 
     ``phi_factory(block, slot) -> phi`` mints the merge value, so the caller
@@ -171,7 +179,8 @@ def simulate(blocks, bb_to_sub, proto_io, return_point, phi_factory,
     deferred: list = []
     for sub in _callee_first(by_sub, bb_to_sub):
         _run_routine(sub, by_sub[sub], res, arity, bb_to_sub, return_point,
-                     retsubs, phi_factory, unsafe_callees, deferred, proto_io)
+                     retsubs, phi_factory, unsafe_callees, deferred, proto_io,
+                     band_plan, poisoned, effect_summaries)
     # Blocks NO root claims (``bb_to_sub`` misses them) never simulate, and
     # their ops kept EMPTY inputs with no refusal marker — silence, not
     # honesty. ``pyblock_partition`` now roots the program entry
@@ -193,13 +202,79 @@ def simulate(blocks, bb_to_sub, proto_io, return_point, phi_factory,
         for rb in rets:
             if rb not in res.exit:
                 continue
-            v = _return_value(res.exit[rb], j, slot, proto)
+            if proto is not None and rb.key in poisoned:
+                # Same gate as the call site: a poisoned retsub's frame-slot
+                # read goes through the band plan; an unanswerable arm is
+                # MARKED rather than silently omitted.
+                pe = band_plan.get(id(rb.ops[-1])) if band_plan else None
+                instr = pe[1].get(j) if pe and pe[0] == "ret" else None
+                v = _resolve_band(instr, res)
+                if v is None:
+                    ph.partial = True
+            else:
+                v = _return_value(res.exit[rb], j, slot, proto)
             if v is not None and not any(a is v for a in ph.args):
                 ph.args.append(v)
+    # Loop-carried band arms: the write's operand exists only after its block
+    # ran, which for a write-after-read loop is after the reading dig. Every
+    # routine has run now, so fill; an operand STILL unknown marks the phi
+    # partial rather than silently narrowing it to the entry arm.
+    for ph, wop in res.band_deferred:
+        wargs = res.args.get(id(wop))
+        if wargs and wargs[0] is not None:
+            if not any(a is wargs[0] for a in ph.args):
+                ph.args.append(wargs[0])
+        else:
+            ph.partial = True
     if bind_params:
         _bind_params(blocks, res, arity, bb_to_sub, phi_factory)
     return res
 
+
+
+def _band_cells(plan_entry, res, *, allow_pending=False):
+    """Execute one :mod:`.frame_band` MERGE instruction against the walked
+    state: ``(cells, pending_writes)`` — the resolved per-arm cells (one per
+    region-entry predecessor where the entry value survives, plus each
+    surviving write's operand) and the writes whose operand is NOT recorded
+    yet (a loop-carried ``frame_bury`` whose block the walk has not reached;
+    the arm is fillable after the routine finishes). Returns None where an
+    arm is unknowable outright — a partial arm set would name the resolved
+    subset as THE value — or where pending arms exist and the caller cannot
+    defer (``allow_pending=False``)."""
+    if plan_entry is None or plan_entry[0] != "merge":
+        return None
+    _, _home, entry_preds, p, wops = plan_entry
+    cells = []
+    for pb in entry_preds:
+        st = res.exit.get(pb)
+        if st is None or p >= len(st) or st[p] is None:
+            return None
+        cells.append(st[p])
+    pending = []
+    for wop in wops:
+        wargs = res.args.get(id(wop))
+        if wargs and wargs[0] is not None:
+            cells.append(wargs[0])
+        elif allow_pending:
+            pending.append(wop)
+        else:
+            return None
+    if not cells and not pending:
+        return None
+    return cells, pending
+
+
+def _resolve_band(plan_entry, res):
+    """The SINGLE band answer, for consumers with no phi home: the per-arm
+    cells when they all agree, else None."""
+    got = _band_cells(plan_entry, res)
+    if got is None:
+        return None
+    cells, _pending = got
+    if cells and all(c is cells[0] for c in cells):
+        return cells[0]
+    return None
 
 
 def _return_value(st, j, slot, proto):
@@ -361,7 +436,8 @@ def _isucc(b, body, return_point, *, owned_only=True):
 
 def _run_routine(sub, body_list, res, arity, bb_to_sub, return_point,
                  retsubs, phi_factory, unsafe_callees=frozenset(),
-                 deferred=None, proto_io=None):
+                 deferred=None, proto_io=None, band_plan=None,
+                 poisoned=frozenset(), effect_summaries=None):
     divergent = res.divergent
     body = set(body_list)
     nargs = arity.get(sub, (0, 0))[0]
@@ -426,30 +502,46 @@ def _run_routine(sub, body_list, res, arity, bb_to_sub, return_point,
         for o in b.ops:
             _exec(o, b, stack, nargs, res, bb_to_sub, retsubs, arity,
                   phi_factory, unsafe_callees, return_point, npred, deferred,
-                  proto_io, divergent)
+                  proto_io, divergent, band_plan, poisoned, effect_summaries)
         res.exit[b] = stack
-    for ph, slot, depth, bp in pending:
-        # TOP-aligned, matching the loop-header merge above.
-        if bp in res.exit and len(res.exit[bp]) >= depth:
-            ph.args.append(_at(res.exit[bp], depth, slot))
-
-
-def _at(stack, depth, i):
-    """The value at merged position ``i`` (0 = bottom of the merged window).
-
-    ALIGNED BY THE TOP. Predecessors of a join can arrive at DIFFERENT depths —
-    legal TEAL, and common at a dispatch chain where one arm still holds a value
-    the others consumed — and what corresponds across them is the TOP of the
-    stack, never the bottom. Indexing bottom-first reads a deeper predecessor's
-    residual instead of the value it actually leaves at that slot: at
-    app_1100218544 L359 three preds arrive at depth 1 and one at depth 2, and
-    bottom-first indexing gave the phi that pred's `n0` instead of the
-    `ApplicationArgs 3` sitting on top of it."""
-    return stack[len(stack) - depth + i]
+    for ph, k, bp in pending:
+        # TOP-aligned, matching the loop-header merge below.
+        if bp not in res.exit:
+            continue
+        if len(res.exit[bp]) >= k:
+            ph.args.append(res.exit[bp][-k])
+        else:
+            # The back edge arrives SHALLOWER than this slot — a net-popping
+            # loop, where the cell exists on lap 1 but not on laps >= 2.
+            # Leaving the phi silently forward-only made it read as a definite
+            # lap-1 value on every lap; the mark says an arm is missing.
+            ph.partial = True
 
 
 def _entry_stack(b, entry, nargs, preds, back_targets, bpred_b, pending,
                  res, phi_factory):
+    """The stack a block starts with: params at a routine entry, a predecessor's
+    exit verbatim, or a MERGE at a join.
+
+    Merges are TOP-aligned over the MAX predecessor depth. Top-aligned because
+    what corresponds across paths is what ops consume next, never the bottom:
+    at app_1100218544 L359 three preds arrive at depth 1 and one at depth 2,
+    and bottom-first indexing gave a phi that pred's `n0` instead of the
+    `ApplicationArgs 3` sitting on top of it. (The lift merges loop headers
+    bottom-first — not an oversight to copy: an SSA phi's IDENTITY is
+    `(bb_key, slot)` with slot counted TOP-first, and consumers read the
+    matching value as `pred.exit_stack[-slot]`; `test_frame_base_alignment`
+    pins that correspondence.)
+
+    MAX depth, not min: truncating to the shallowest pred DISCARDED the deeper
+    paths' residual — a later pop past the min window read None where the deep
+    path holds a real value. Padding to the deepest pred keeps every cell; a
+    slot some pred lacks lists only the arms that HAVE it and is marked
+    ``partial``. That is sound under panic-pruning: consuming a cell on a path
+    that does not have it is an AVM stack underflow — the txn dies there, so
+    every execution past the read took a listed arm. Frame anchoring is
+    unaffected either way (bottom-indexed positions in divergent regions are
+    the depth-poisoning machinery's problem, not the window's)."""
     if b is entry:
         return [_Param(entry.key, i) for i in range(nargs)]
     if not preds:
@@ -460,38 +552,41 @@ def _entry_stack(b, entry, nargs, preds, back_targets, bpred_b, pending,
         # not exist. Never observed on compiler output (0 such blocks over 12
         # probes); this is for the hand-written TEAL that can produce one.
         return []
+    if len(preds) == 1 and not (b in back_targets and bpred_b):
+        return list(res.exit[preds[0]])
     if b in back_targets:
-        # TOP-aligned, like the plain join below — and NOT like the lift, which
-        # merges loop headers bottom-first. That is not an oversight to copy:
-        # the lift's phis are plain registers, while an SSA phi's IDENTITY is
-        # `(bb_key, slot)` with slot counted TOP-first, and consumers read the
-        # matching value as `pred.exit_stack[-slot]`. Bottom-first merging
-        # breaks that correspondence wherever a predecessor is deeper than the
-        # merge window — 11 violated phi-pred edges on app_3300088574, which
-        # `test_frame_base_alignment` exists to catch.
-        depth = min(len(res.exit[p]) for p in preds)
+        # Every slot gets a phi (back-edge args arrive only after the body
+        # runs, so nothing can be proven merge-free yet); ``pending`` completes
+        # them TOP-aligned by slot number, which stays meaningful at any
+        # back-edge depth.
+        depth = max(len(res.exit[p]) for p in preds)
         stack, phis = [], []
-        for slot in range(depth):
-            ph = phi_factory(b, depth - slot)
-            ph.args.extend(_at(res.exit[p], depth, slot) for p in preds)
-            phis.append((slot, ph))
+        for i in range(depth):
+            k = depth - i                       # 1-based top-first slot
+            ph = phi_factory(b, k)
+            args = [res.exit[p][-k] for p in preds if len(res.exit[p]) >= k]
+            ph.args.extend(args)
+            if len(args) < len(preds):
+                ph.partial = True
+            phis.append((i, ph))
             stack.append(ph)
             for bp in bpred_b:
-                pending.append((ph, slot, depth, bp))
+                pending.append((ph, k, bp))
         res.phis[b] = phis
         return stack
-    if len(preds) == 1:
-        return list(res.exit[preds[0]])
-    depth = min(len(res.exit[p]) for p in preds)
+    depth = max(len(res.exit[p]) for p in preds)
     stack, phis = [], []
-    for slot in range(depth):
-        vals = [_at(res.exit[p], depth, slot) for p in preds]
-        if all(v is vals[0] for v in vals):
-            stack.append(vals[0])
+    for i in range(depth):
+        k = depth - i                           # 1-based top-first slot
+        args = [res.exit[p][-k] for p in preds if len(res.exit[p]) >= k]
+        if len(args) == len(preds) and all(v is args[0] for v in args):
+            stack.append(args[0])
             continue
-        ph = phi_factory(b, depth - slot)
-        ph.args.extend(vals)
-        phis.append((slot, ph))
+        ph = phi_factory(b, k)
+        ph.args.extend(args)
+        if len(args) < len(preds):
+            ph.partial = True
+        phis.append((i, ph))
         stack.append(ph)
     if phis:
         res.phis[b] = phis
@@ -500,11 +595,77 @@ def _entry_stack(b, entry, nargs, preds, back_targets, bpred_b, pending,
 
 def _exec(o, b, stack, nargs, res, bb_to_sub, retsubs, arity, phi_factory,
           unsafe_callees=frozenset(), return_point=None, npred=None,
-          deferred=None, proto_io=None, divergent=frozenset()):
+          deferred=None, proto_io=None, divergent=frozenset(),
+          band_plan=None, poisoned=frozenset(), effect_summaries=None):
     """One op against the clean stack, recording its operands TOP-FIRST."""
     if o.op in ("frame_dig", "frame_bury"):
         n = _imm_int(o)
         pos = None if n is None else nargs + n
+        if b.key in poisoned:
+            # The working list is NOT bottom-anchored here — that is what the
+            # depth poison means: paths reach this block at different heights,
+            # and the top-aligned merge realigned the shallower paths' cells.
+            # ``stack[pos]`` would read the right cell on the deepest path and
+            # a NEIGHBOURING cell on the others — the silent wrong-cell arm
+            # this gate exists to stop. Frame positions are bottom-anchored
+            # and lap-invariant, so the answer comes from the band plan
+            # (:mod:`.frame_band`): the region-entry snapshot for an untouched
+            # position, the dominating write's operand for a buried one, and
+            # an honest refusal for everything else.
+            if o.op == "frame_bury":
+                if not stack:
+                    res.unresolved.add(id(o))
+                    return
+                v = stack.pop()
+                res.args[id(o)] = [v]
+                # The TARGET cell cannot be located in list coordinates, so
+                # the deepest-path-aligned cell is REFUSED (writing the value
+                # there is right on the deepest path and a wrong-cell write on
+                # the others; leaving it untouched is stale on every path).
+                # The HEIGHT bookkeeping mirrors the depth-known path exactly
+                # — dropping the pos==len append silently shrank the list and
+                # starved every later operand in the region (measured: +53
+                # missing operands over the corpus). Reads of the buried slot
+                # are answered by the plan's dominating-bury instruction.
+                if pos is not None and 0 <= pos < len(stack):
+                    stack[pos] = None
+                elif pos is not None and pos == len(stack):
+                    stack.append(None)
+                else:
+                    res.unresolved.add(id(o))
+                return
+            pe = band_plan.get(id(o)) if band_plan else None
+            got = _band_cells(pe, res, allow_pending=True)
+            cell = None
+            if got is not None:
+                cells, pending_w = got
+                if not pending_w and cells and all(c is cells[0]
+                                                   for c in cells):
+                    cell = cells[0]
+                else:
+                    # Distinct arms (a loop-carried write merging with the
+                    # entry value, or several per-path entry cells). Their
+                    # true merge point is the REGION ENTRY — the loop header
+                    # where laps join — so the phi is minted there; `mint`
+                    # hands out a free slot, and the number is identity only
+                    # (a poisoned block's top-slot arithmetic is exactly what
+                    # the poison voids). A write the walk has not reached yet
+                    # fills in afterwards, like recursion's deferred phis.
+                    home = pe[1]
+                    ph = phi_factory(home, 1)
+                    ph.args.extend(cells)
+                    res.phis.setdefault(home, []).append(
+                        (getattr(ph, "slot", 1), ph))
+                    for wop in pending_w:
+                        res.band_deferred.append((ph, wop))
+                    cell = ph
+            if cell is not None:
+                res.args[id(o)] = [cell]
+                stack.append(o.outputs[0] if o.outputs else cell)
+            else:
+                res.unresolved.add(id(o))
+                stack.append(None)
+            return
         if o.op == "frame_dig":
             if pos is not None and 0 <= pos < len(stack):
                 # RECORD THE SOURCE as the read's input. Without it the op has no
@@ -545,23 +706,6 @@ def _exec(o, b, stack, nargs, res, bb_to_sub, retsubs, arity, phi_factory,
         res.args[id(o)] = [stack.pop() for _ in range(take)]
         if take < a_in:
             res.unresolved.add(id(o))
-        if callee in unsafe_callees:
-            # The callee reached below its own band with a PLAIN stack op, so
-            # what sits underneath is whatever IT left — not what this routine
-            # pushed. Blank the VALUES, keep the HEIGHT: the AVM re-checks the
-            # frame bound at `retsub`, so a callee that dips must put the depth
-            # back, and the frame base later `frame_dig`s anchor to is unmoved.
-            #
-            # The UNSAFE set, deliberately WIDER than the lift's clobber-only
-            # policy. Narrowing it to match the lift broke six invariants
-            # (`below_frame_bury_is_dead`, `height_ambiguous_join`, three
-            # frame-flow tests, the two-simulator alignment): the lift can fall
-            # back on `Undefined`, but SSA-level may-analyses read these slots
-            # DIRECTLY, so "could not verify the band height" has to withdraw
-            # here or it reads as a resolved pre-call value. The handful of
-            # operands this costs are honest refusals, listed by
-            # `unresolved_call_results`.
-            stack[:] = [None] * len(stack)
         rets = retsubs.get(callee, ())
         # A merge over several `retsub` sites belongs to the CONTINUATION, not
         # here: the continuation is where those return paths actually join (its
@@ -576,6 +720,62 @@ def _exec(o, b, stack, nargs, res, bb_to_sub, retsubs, arity, phi_factory,
         # entry slot of ours to hold the merge.
         can_merge = cont is not None and npred is not None and \
             cont in npred and npred[cont] <= 1
+        if callee in unsafe_callees:
+            # The callee reached below its own band with a PLAIN stack op, so
+            # what sits underneath is whatever IT left — not what this routine
+            # pushed. Where :mod:`.callee_effects` could hold the callee's
+            # below-band effect EXACTLY (tree-shaped, callsub-free bodies —
+            # every AVM stack op's effect is static, so the rewrite is a
+            # computable function of the pre-call cells), the residual is
+            # REWRITTEN through it: each touched depth gets the moved caller
+            # cell, the call argument, or the callee-produced value that
+            # really lands there, merged across retsub paths like the
+            # divergent trail. Everything else falls back to the withdrawal:
+            # blank the VALUES, keep the HEIGHT (the AVM re-checks the frame
+            # bound at `retsub`, so a dipping callee must put the depth back).
+            #
+            # The UNSAFE set, deliberately WIDER than the lift's clobber-only
+            # policy. Narrowing it to match the lift broke six invariants
+            # (`below_frame_bury_is_dead`, `height_ambiguous_join`, three
+            # frame-flow tests, the two-simulator alignment): the lift can fall
+            # back on `Undefined`, but SSA-level may-analyses read these slots
+            # DIRECTLY, so "could not verify the band height" has to withdraw
+            # here or it reads as a resolved pre-call value. The remaining
+            # refusals are honest, listed by `unresolved_call_results`.
+            summary = (effect_summaries.get(callee)
+                       if effect_summaries else None)
+            if summary is None or summary.reach > len(stack):
+                stack[:] = [None] * len(stack)
+            else:
+                base = list(stack)
+                args_popped = res.args.get(id(o), ())
+                for d in range(1, summary.reach + 1):
+                    cells = []
+                    for _rb, m in summary.paths:
+                        c = m.get(d)
+                        if c is None:
+                            cells.append(base[-d])       # untouched this path
+                        elif isinstance(c, _Below):
+                            cells.append(base[-c.j]
+                                         if c.j <= len(base) else None)
+                        elif isinstance(c, _CalleeParam):
+                            p = a_in - 1 - c.p           # args are TOP-FIRST
+                            cells.append(args_popped[p]
+                                         if 0 <= p < len(args_popped)
+                                         else None)
+                        else:
+                            cells.append(c)              # callee-produced
+                    if not cells or any(c is None for c in cells):
+                        stack[-d] = None
+                    elif len({id(c) for c in cells}) == 1:
+                        stack[-d] = cells[0]
+                    elif can_merge:
+                        ph = phi_factory(cont, r_out + d)
+                        ph.args.extend(cells)
+                        res.phis.setdefault(cont, []).append((r_out + d, ph))
+                        stack[-d] = ph
+                    else:
+                        stack[-d] = None
         # A callee whose `retsub` blocks have not run yet is a RECURSION cycle
         # (callee-first ordering handles everything else). Its result is not
         # unknown — it is defined in terms of itself — so hand out a phi now and
@@ -622,11 +822,34 @@ def _exec(o, b, stack, nargs, res, bb_to_sub, retsubs, arity, phi_factory,
                     res.phis.setdefault(cont, []).append((slot, ph))
                     pushes.append(ph)
                 continue
-            vals = [v for st in exits
-                    for v in (_return_value(st, j, slot, a_proto),)
-                    if v is not None]
-            if pending_rets and (shifted
-                                 or not (can_merge and deferred is not None)):
+            vals, band_refused = [], False
+            for rb in rets:
+                if rb not in res.exit:
+                    continue
+                if a_proto is not None and rb.key in poisoned:
+                    # A poisoned retsub's frame-slot read has the same
+                    # wrong-cell risk as a frame_dig there (bottom-indexed in
+                    # a bottom-unanchored list): the band plan answers, or the
+                    # WHOLE slot refuses — the resolved subset would name the
+                    # other paths' value as THE result. The plan may answer
+                    # with one cell PER PATH into the retsub (five paths at
+                    # five depths is one poisoned block, not five unknowns);
+                    # this call site's continuation phi is their home.
+                    pe = band_plan.get(id(rb.ops[-1])) if band_plan else None
+                    instr = pe[1].get(j) if pe and pe[0] == "ret" else None
+                    got = _band_cells(instr, res)
+                    if got is None:
+                        band_refused = True
+                    else:
+                        vals.extend(got[0])
+                    continue
+                v = _return_value(res.exit[rb], j, slot, a_proto)
+                if v is not None:
+                    vals.append(v)
+            if band_refused:
+                pushes.append(None)
+            elif pending_rets and (shifted
+                                   or not (can_merge and deferred is not None)):
                 # A return path exists that we cannot merge in. Taking the
                 # resolved subset would name the base case as THE result and
                 # hide the recursive one — an under-approximation that reads as

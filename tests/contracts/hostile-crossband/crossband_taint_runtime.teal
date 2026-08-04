@@ -1,0 +1,27 @@
+#pragma version 10
+// Same cross-band shape as crossband_taint.teal, but the value the callee
+// covers under the band is a RUNTIME value rather than a constant, so the
+// effect summary cannot carry it into the caller: a callee-produced runtime
+// value has no `(nargs, nret)` to travel on. That slot stays `Undefined`,
+// which is what this fixture exists to exercise — an explicit unknown must
+// read as TOP to every may-analysis, never as clean.
+txna ApplicationArgs 0
+btoi
+int 1
+callsub perm
+pop
+itxn_begin
+int pay
+itxn_field TypeEnum
+global CreatorAddress
+itxn_field Receiver
+itxn_field Amount
+itxn_submit
+int 1
+return
+perm:
+proto 1 1
+int 7
+global LatestTimestamp
+cover 3
+retsub

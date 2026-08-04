@@ -1,6 +1,6 @@
 blocks      = 5
 assignments = 10
-phis        = 1
+phis        = 0
 vars        = 5
 opcodes:
   bnz                      1

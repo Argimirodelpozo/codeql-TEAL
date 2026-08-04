@@ -3,13 +3,11 @@
 // using frame_dig -1 to read the input arg from each iteration.
 //
 // The loop GROWS the stack by one per lap (the dug copy is never
-// consumed), so no single depth describes the header. The
-// simulator merges its predecessors TOP-ALIGNED and takes the
-// shallowest window — one cell here — so the header carries one
-// phi over {the entry's arg, the previous lap's dug copy}. Both
-// resolve to the same arg, since a frame_dig IS a copy of what it
-// read; the phi records that the header is reached two ways, not
-// that the value is in doubt.
+// consumed), so no single depth describes the header and the
+// region is depth-poisoned. Frame positions are LAP-INVARIANT
+// (the base does not move), so the band plan resolves the dig
+// straight to the region-entry cell — the sub's argument — on
+// every lap; no phi is needed and none survives the live filter.
 
 intc_0
 callsub mysub

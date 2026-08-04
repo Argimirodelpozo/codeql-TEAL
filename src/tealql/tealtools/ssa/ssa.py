@@ -100,12 +100,16 @@ class PyPhi:
     a chain-predecessor :class:`PyPhi`) forms a graph that can be CYCLIC at
     constant-stack CFG loops; walk it with a ``visited`` set."""
 
-    __slots__ = ("bb_key", "slot", "args")
+    __slots__ = ("bb_key", "slot", "args", "partial")
 
     def __init__(self, bb_key: tuple, slot: int):
         self.bb_key = bb_key
         self.slot = slot
         self.args: list[Optional[Operand]] = []
+        # The cell is absent on >=1 incoming path (max-window join arm too
+        # shallow, or a net-popping loop's later laps). Mirrored onto the
+        # public Phi — see models.Phi.partial for the consumption contract.
+        self.partial: bool = False
 
     def key(self) -> tuple:
         return (self.bb_key, self.slot)
@@ -188,6 +192,12 @@ class PySSA:
     # so SSA-level consumers can see the shape the lift reports as
     # `not_function_shaped` without re-running the fixpoint.
     _divergent_legacy: set = field(default_factory=set)
+    # Callee entry PyBlock -> callee_effects.Summary, for the UNSAFE callees
+    # whose below-band effect is exactly computable (tree-shaped, callsub-free
+    # bodies). The simulation rewrites the caller residual through these
+    # instead of blanking it; the lift still Undefines (`_clobber_callee_keys`
+    # unchanged) until per-call-site inlining lands there.
+    _effect_summaries: dict = field(default_factory=dict)
     # callsub bb_key -> continuation bb_key (corrected policy), see
     # subroutines.corrected_return_points.
     _corrected_rp: dict = field(default_factory=dict)
@@ -224,6 +234,10 @@ class PySSA:
         self._compute_call_pairs()
         self._frame_edepth = self._frame_entry_depths()
         self._classify_call_effects()
+        from . import callee_effects
+        self._effect_summaries = callee_effects.build_summaries(
+            self.blocks, self._bb_to_sub, self._proto_io,
+            self._unsafe_callee_blocks)
         self._phase_stacksim()
         self._phase8_live_filter()
         return self
@@ -285,12 +299,20 @@ class PySSA:
             block.entry_phis.append(p)
             return p
 
-        res = stacksim.simulate(self.blocks,
-                                pyblock_partition(self.blocks, self._corrected_rp),
-                                self._proto_io,
-                                _pyblock_return_point(self.blocks, self._corrected_rp),
-                                mint,
-                                unsafe_callees=self._unsafe_callee_blocks)
+        part = pyblock_partition(self.blocks, self._corrected_rp)
+        rp = _pyblock_return_point(self.blocks, self._corrected_rp)
+        # Bottom-anchored answers for frame ops in depth-poisoned blocks —
+        # where the working list is not bottom-anchored and ``stack[pos]``
+        # would read a neighbouring cell on the shallower paths.
+        from . import frame_band
+        plan, poisoned = frame_band.build_plan(
+            self.blocks, part, self._proto_io, rp, self._frame_edepth,
+            self._unsafe_callee_blocks,
+            stacksim.infer_arities(self.blocks, part, self._proto_io, rp))
+        res = stacksim.simulate(self.blocks, part, self._proto_io, rp, mint,
+                                unsafe_callees=self._unsafe_callee_blocks,
+                                band_plan=plan, poisoned=poisoned,
+                                effect_summaries=self._effect_summaries)
         self._divergent_legacy = {b.key for b in res.divergent}
         for b in self.blocks:
             for o in b.ops:
@@ -1044,6 +1066,7 @@ def _apply_pyssa_to(
     phi_map: dict = {}  # PyPhi -> Phi
     for (bb_key, slot), py_p in py.phis.items():
         p = Phi(bb_key[0], bb_key[1], slot)
+        p.partial = py_p.partial
         phi_map[py_p] = p
         prog.phis[(bb_key[0], bb_key[1], slot)] = p
 

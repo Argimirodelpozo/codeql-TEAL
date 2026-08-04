@@ -139,7 +139,11 @@ def test_hostile_teal_builds_and_lifts(name, tmp_path):
         f"{name}: call-effect classification moved — a callee that writes or "
         f"permutes the caller's residual must never be read as clean")
     ir = lift(prog)                          # (c) must LIFT, never raise
-    assert ir is not None and getattr(ir, "subroutines", ir), (
+    # A program whose only subroutine was SPLICED into its caller (a divergent
+    # legacy sub with one call site) legitimately has no `subroutines` left,
+    # so non-emptiness is asked of the program BODY, not of that list.
+    assert ir is not None and (getattr(ir.main, "body", None)
+                               or getattr(ir, "subroutines", None)), (
         f"{name}: lift returned an empty program")
 
 
@@ -226,6 +230,208 @@ def test_a_divergent_legacy_call_recovers_the_callers_residual(tmp_path):
         f"not the deep path's cell: {leaves(plus.inputs[1])}")
 
 
+def test_a_divergent_join_keeps_the_deep_paths_residual(tmp_path):
+    """Max-window merge: a join whose paths arrive at different depths must
+    keep the DEEP path's below-window cells, as phis marked ``partial``.
+
+    The min-window rule truncated to the shallowest pred, so consuming past
+    it read None where the deep path holds a real value. Padding to the
+    deepest pred is sound under panic-pruning: consuming a cell on the
+    shallow path is an AVM underflow — that path dies at the op, so every
+    execution past it took a listed arm. The mark tells reachability-style
+    consumers an arm is missing; value consumers may use the args as-is."""
+    teal = tmp_path / "maxwin.teal"
+    teal.write_text(
+        "#pragma version 8\nint 1\ncallsub s\npop\nreturn\n"
+        "s:\nproto 0 1\nint 1\nint 2\nint 3\ntxn NumAppArgs\nbnz stwo\n"
+        "b sjoin\nstwo:\nint 8\nsjoin:\n+\npop\npop\npop\nint 1\nretsub\n"
+    )
+    prog = SSAProgram(str(teal))
+    partials = [p for p in prog.phis.values() if p.partial]
+    assert len(partials) == 1, (
+        f"expected exactly the below-window slot to be partial, got "
+        f"{[(p.stack_index, p.partial) for p in prog.phis.values()]}")
+    (p,) = partials
+    assert p.stack_index == 4 and len(p.args) == 1, (
+        "the deep path's bottom cell must survive as the slot-4 phi's only arm")
+    full = [p for p in prog.phis.values() if not p.partial]
+    assert all(len(p.args) == 2 for p in full), (
+        "in-window slots must still merge BOTH paths")
+
+
+def test_a_net_popping_loops_later_laps_are_marked_not_silent(tmp_path):
+    """A loop that net-pops has cells on lap 1 that do not exist on laps >= 2.
+    The back-edge fill used to leave such a phi silently forward-only — it
+    then read as a definite lap-1 value on EVERY lap. The missing back arm
+    must surface as ``partial``."""
+    teal = tmp_path / "shrink.teal"
+    teal.write_text("#pragma version 8\nint 9\nint 9\nloop:\npop\n"
+                    "txn NumAppArgs\nbnz loop\nint 1\nreturn\n")
+    prog = SSAProgram(str(teal))
+    marked = [(p.stack_index, len(p.args)) for p in prog.phis.values()
+              if p.partial]
+    assert marked, (
+        "the net-popping loop's deeper cell lost its back arm with no mark")
+
+
+def test_a_frame_read_in_a_varying_height_loop_answers_bottom_anchored(tmp_path):
+    """Frame positions are LAP-INVARIANT (the frame base does not move), so a
+    pre-loop local read inside a net-growing loop has ONE true value on every
+    lap — the region-entry cell — even though the region is depth-poisoned.
+
+    The old behaviour executed ``stack[pos]`` anyway, whose bottom index in a
+    bottom-unanchored merged list reads a NEIGHBOURING cell on all laps >= 2:
+    a silent wrong-cell arm in the operand phi. The band plan
+    (:mod:`ssa.frame_band`) answers it exactly; the proto'd retsub — the same
+    bottom-anchored read — recovers too, so the CALLER sees the true value."""
+    teal = tmp_path / "bandloop.teal"
+    teal.write_text(
+        "#pragma version 8\nint 1\ncallsub s\npop\nreturn\n"
+        "s:\nproto 0 1\nint 77\nloop:\nframe_dig 0\npop\nint 5\n"
+        "txn NumAppArgs\nbnz loop\nframe_dig 0\nretsub\n"
+    )
+    prog = SSAProgram(str(teal))
+    digs = [a for a in prog.assignments if a.op == "frame_dig"]
+    assert digs and all(
+        a.inputs and a.inputs[0].defined_by.ast_code == "int 77"
+        for a in digs), (
+        f"poisoned-region frame reads must resolve to the lap-invariant "
+        f"cell: {[(a.location.line, a.inputs) for a in digs]}")
+    caller_pop = next(a for a in prog.assignments if a.op == "pop"
+                      and a.location.line == 4)
+    assert caller_pop.inputs and \
+        caller_pop.inputs[0].defined_by.ast_code == "int 77", (
+        "the proto'd retsub in the poisoned region is the same bottom-anchored "
+        "read — the caller must receive the true return value")
+
+
+def test_a_bury_dominated_read_in_a_poisoned_region_answers_the_write(tmp_path):
+    """A ``frame_bury`` whose position is inside the region's safe prefix and
+    which DOMINATES the read answers with its operand, on every lap."""
+    teal = tmp_path / "bandbury.teal"
+    teal.write_text(
+        "#pragma version 8\nint 1\ncallsub s\npop\nreturn\n"
+        "s:\nproto 0 1\nint 77\nloop:\nint 42\nframe_bury 0\nframe_dig 0\n"
+        "pop\nint 5\ntxn NumAppArgs\nbnz loop\nint 1\nretsub\n"
+    )
+    prog = SSAProgram(str(teal))
+    dig = next(a for a in prog.assignments if a.op == "frame_dig")
+    assert dig.inputs and dig.inputs[0].defined_by.ast_code == "int 42", (
+        f"bury-dominated read must take the write's operand, got {dig.inputs}")
+
+
+def test_a_height_divergent_frame_read_recovers_per_path(tmp_path):
+    """At a height-divergent join, ``frame_dig 0`` genuinely reads a
+    DIFFERENT cell per path — position 0 is the shallow path's ``int 7`` at
+    L10 and the deep path's ``int 7`` at L13. One anchor cannot express that,
+    which is why the region is poisoned; but each known predecessor's exit
+    list is exact and bottom-anchored, so the per-path cells ARE knowable and
+    their merge is a phi. Recovering it beats refusing: a phi over the two
+    real values says exactly what the AVM does."""
+    from tealql.tealtools.ssa.models import Phi as PublicPhi
+
+    teal = tmp_path / "bandamb.teal"
+    teal.write_text(
+        "#pragma version 8\nint 1\ncallsub s\npop\nreturn\n"
+        "s:\nproto 0 1\nint 0\nbnz stwo\nint 7\nb sjoin\n"
+        "stwo:\nint 7\nint 8\nsjoin:\nframe_dig 0\nretsub\n"
+    )
+    prog = SSAProgram(str(teal))
+    dig = next(a for a in prog.assignments if a.op == "frame_dig")
+    assert dig.inputs and isinstance(dig.inputs[0], PublicPhi), (
+        f"the per-path cells must merge into a phi, got {dig.inputs}")
+    lines = {v.line for v in dig.inputs[0].args}
+    assert lines == {10, 13}, (
+        f"the phi must carry BOTH paths' bottom cells, got lines {lines}")
+
+
+def test_an_unplaceable_frame_read_refuses_and_is_listed(tmp_path):
+    """Where the band plan cannot place a read — here position 1, which the
+    shallow path does not even have (its whole frame is one cell) — the read
+    must REFUSE and be LISTED, never answered with the deep path's cell."""
+    from tealql.tealtools.passes.frame_flow import frame_unresolved_reads
+
+    teal = tmp_path / "bandunplaceable.teal"
+    teal.write_text(
+        "#pragma version 8\nint 1\ncallsub s\npop\nreturn\n"
+        "s:\nproto 0 1\nint 0\nbnz stwo\nint 7\nb sjoin\n"
+        "stwo:\nint 7\nint 8\nsjoin:\nframe_dig 1\nretsub\n"
+    )
+    prog = SSAProgram(str(teal))
+    dig = next(a for a in prog.assignments if a.op == "frame_dig")
+    assert not dig.inputs, (
+        f"a read below no path's floor must refuse, got {dig.inputs}")
+    assert any(a.location.line == dig.location.line
+               for a in frame_unresolved_reads(prog)), (
+        "the refused read must be LISTED, not silent")
+
+
+def test_a_cross_band_callees_effect_is_recovered_not_blanked(tmp_path):
+    """The measured outcome-inverting shape, recovered with REAL values.
+
+    ``perm`` is ``proto 1 1`` and ``cover 3``s its 8 UNDER the band into the
+    caller's residual — legal, runs (verified live). The old answer withdrew
+    the caller's residual (honest Nones). Every AVM stack op's effect is
+    static, so :mod:`ssa.callee_effects` computes the rewrite exactly for
+    tree-shaped callsub-free callees: the caller's post-call comparison must
+    see the CALLEE's 8 as its operand — the value the AVM really leaves
+    there — with no unknown anywhere."""
+    teal = tmp_path / "crossband.teal"
+    teal.write_text(
+        "#pragma version 8\nint 1\nint 2\nint 3\ncallsub perm\npop\nint 8\n"
+        "==\nreturn\n"
+        "perm:\nproto 1 1\nint 7\nint 8\ncover 3\nretsub\n"
+    )
+    prog = SSAProgram(str(teal))
+    assert prog._pyssa._effect_summaries, (
+        "the cross-band callee must yield an effect summary")
+    eq = next(a for a in prog.assignments if a.op == "==")
+    srcs = {(i.defined_by.ast_code, i.defined_by.location.line)
+            for i in eq.inputs}
+    assert ("int 8", 13) in srcs, (
+        f"the comparison must see the CALLEE's moved 8 (line 13), got {srcs}")
+    assert not any(i is None for i in eq.inputs), (
+        "the recovered operand must be a real value, not a refusal")
+    # The classification is UNCHANGED — the callee still counts unsafe/hard
+    # (the lift keeps Undefining until inlining lands there); only the SSA
+    # residual is recovered.
+    assert prog._pyssa._unsafe_callee_blocks
+
+
+def test_a_single_site_divergent_legacy_sub_is_spliced_into_its_caller(tmp_path):
+    """A pre-``proto`` ``callsub``/``retsub`` is a JUMP that truncates
+    nothing, so a divergent legacy sub with ONE call site is faithfully
+    lifted by splicing its body into the caller — no signature to
+    over-declare, so no ``Undefined``.
+
+    ``vary`` leaves 1 value down one path and 2 down the other, on top of the
+    caller's own ``int 55``. Spliced, the caller's ``+`` sees the paths merge
+    at the continuation, which is an ordinary depth-divergent join: the
+    max-window merge pairs the shallow path's cells ``(5, 55)`` with the deep
+    path's ``(7, 6)``, so the addition is ``5 + 55 = 60`` down one path and
+    ``7 + 6 = 13`` down the other — exactly the AVM's two outcomes, with the
+    caller's own value recovered rather than padded away."""
+    from tealql.tealtools.lift.lift import _Lifter
+
+    teal = tmp_path / "vary_spliced.teal"
+    teal.write_text(
+        "#pragma version 8\nint 55\ncallsub vary\n+\npop\nint 1\nreturn\n"
+        "vary:\ntxn NumAppArgs\nbnz two\nint 5\nretsub\n"
+        "two:\nint 6\nint 7\nretsub\n"
+    )
+    lifter = _Lifter(SSAProgram(str(teal)))
+    ir = lifter.build()
+    assert lifter._flat_entries, (
+        "a divergent legacy sub with ONE call site must be spliced")
+    rendered = ir.render()
+    assert "undefined" not in rendered.lower(), (
+        f"splicing must leave no explicit unknown:\n{rendered}")
+    # Both operand pairs must be present: the phis merge (5, 7) and (55, 6).
+    assert "55u" in rendered and "5u" in rendered and "6u" in rendered \
+        and "7u" in rendered, (
+        f"every path's real value must survive the splice:\n{rendered}")
+
+
 def test_a_path_divergent_legacy_callee_is_reported_not_function_shaped(tmp_path):
     """A legacy sub whose ``retsub`` sites leave different depths IS NOT A
     FUNCTION, and the lift must say so rather than let the gap read as ordinary.
@@ -239,10 +445,12 @@ def test_a_path_divergent_legacy_callee_is_reported_not_function_shaped(tmp_path
     unknown rather than a wrong value, which keeps the never-lie contract, but
     the caller's value below the call is lost.
 
-    Faithful lifting needs per-call-site INLINING (the IR can express it — its
-    block ids are synthetic, unlike the SSA layer's source-position identities).
-    Until that lands, this pins the honest reporting: the sub is collected in
-    ``_Lifter.not_function_shaped`` and warned about."""
+    DETECTION is what this pins, and it stays load-bearing after splicing:
+    the decision to splice is taken FROM this set, and a sub with several call
+    sites cannot be spliced (one body would need one identity per site, which
+    the lift does not have) so it still lifts with the padding above. The
+    single-site splice is pinned separately, by
+    ``test_a_single_site_divergent_legacy_sub_is_spliced_into_its_caller``."""
     from tealql.tealtools.lift.lift import _Lifter
 
     teal = tmp_path / "vary.teal"
@@ -252,8 +460,8 @@ def test_a_path_divergent_legacy_callee_is_reported_not_function_shaped(tmp_path
     ir = lifter.build()
     assert ir is not None
     assert lifter.not_function_shaped, (
-        "a legacy callee with divergent retsub depths must be reported — its "
-        "lifted signature over-declares the shallow path")
+        "a legacy callee with divergent retsub depths must be reported — the "
+        "splice decision is taken from this set")
 
 
 def test_height_ambiguous_region_still_answers_every_frame_read():
@@ -359,21 +567,30 @@ def test_a_real_divergent_legacy_sub_is_still_caught():
     assert {s.name for s in lifter.not_function_shaped} == {"label9"}
 
 
-def test_a_callee_that_eats_the_callers_stack_yields_undefined_not_a_stale_value():
-    """The measured wrong-answer case, and the answer that replaced it.
+def test_a_callee_that_eats_the_callers_stack_yields_the_real_moved_value():
+    """The measured wrong-answer case, and the answer that now replaces it.
 
     ``perm`` is ``proto 1 1`` and does ``cover 3``, which reaches UNDER its own
     frame band and moves an 8 into the caller's residual. The AVM runs this —
     verified live: the frame bounds ``frame_dig``/``frame_bury`` (runtime error
-    outside it) but places NO bound on plain stack ops — so the caller's second
-    value really is 8 after the call, and the contract APPROVES.
+    outside it) but places NO bound on plain stack ops.
 
     ``_resim`` assumed a call leaves everything below its args alone, so the
     lift emitted ``pushints 2 8; ==`` — the STALE pre-call value — and the
     recompiled program REJECTED: 10 of 10 dryrun inputs diverged, outcome
-    inverted. No ``(nargs, nret)`` can express "and it ate two of your values",
-    so recovering the real value needs per-call-site inlining. What the lift
-    owes meanwhile is an explicit unknown, never the stale value."""
+    inverted. The interim answer was ``Undefined``: honest, but a refusal.
+
+    Every AVM stack op's effect is STATIC, so :mod:`ssa.callee_effects` now
+    computes what the callee really leaves there, and the lift carries it
+    across (a moved caller cell and a passed argument are values the caller
+    already holds; a callee-produced constant re-materialises). MEASURED ON A
+    LIVE AVM (2026-08-04), stack trace through the comparison::
+
+        [1, 8] -> int 8 -> [1, 8, 8] -> == -> [1, 1] -> PASS
+
+    so the comparison really is ``8 == 8``, which is exactly what the lift
+    emits. The stale ``2u`` must never come back, and neither should the
+    refusal."""
     probe = Path(__file__).resolve().parent / "contracts" / "hostile-crossband"
     teal = probe / "crossband.teal"
     if not teal.exists():
@@ -382,28 +599,63 @@ def test_a_callee_that_eats_the_callers_stack_yields_undefined_not_a_stale_value
     assert prog._pyssa._clobber_callee_keys, (
         "the cross-band cover must be classified as clobbering the caller")
     rendered = lift(prog).render()
-    assert "undefined" in rendered, (
-        "the clobbered caller slot must lift as an explicit unknown")
+    assert "== 8u 8u" in rendered, (
+        "the clobbered slot must carry the callee's MOVED value — the live "
+        f"AVM compares 8 with 8 here:\n{rendered}")
     assert "2u" not in rendered, (
         "the lift asserted the STALE pre-call value for a slot the callee "
         f"overwrote — the measured outcome-inverting bug is back:\n{rendered}")
+    assert "undefined" not in rendered.lower(), (
+        f"a recoverable clobbered slot must not lift as unknown:\n{rendered}")
 
 
 def test_an_unresolved_value_is_tainted_not_clean():
     """An `Undefined` the lift emits must read as TOP to every may-analysis.
 
-    When a callee consumes the caller's own stack, the lift marks those slots
-    `Undefined` — it cannot know what the callee left there. That is honest to a
-    human reading the IR, but the taint map is keyed by Register, so an
-    `Undefined` had NO entry and every consumer read it as *clean*. Measured on
-    this contract: attacker-controlled `ApplicationArgs[0]` reaches an inner
-    `pay` Amount, and `ir-tainted-fund-flow` reported NOTHING — a silent false
-    negative, and the same class as the narrow `frame_dig` fallback that
-    produced an output with no inputs.
+    When a callee consumes the caller's own stack and the effect summary
+    cannot carry the value across — a callee-produced RUNTIME value has no
+    `(nargs, nret)` to travel on — the lift marks that slot `Undefined`. That
+    is honest to a human reading the IR, but the taint map is keyed by
+    Register, so an `Undefined` had NO entry and every consumer read it as
+    *clean*: a silent false negative, the same class as the narrow
+    `frame_dig` fallback that produced an output with no inputs.
 
-    Unknown is not clean. It cannot be discharged as "not attacker-controlled",
-    so it is now seeded with `UNKNOWN_SOURCE` in both taint fixpoints and
-    counted as a source at the sink, which names it in the finding."""
+    Unknown is not clean. It cannot be discharged as "not attacker-
+    controlled", so it is seeded with `UNKNOWN_SOURCE` in both taint
+    fixpoints and counted as a source at the sink, which names it in the
+    finding."""
+    from tealql.security import DETECTORS
+
+    teal = (Path(__file__).resolve().parent / "contracts" / "hostile-crossband"
+            / "crossband_taint_runtime.teal")
+    if not teal.exists():
+        pytest.skip("fixture not present")
+    prog = SSAProgram(str(teal))
+    prog.propagate_constants()
+    vs = DETECTORS["ir-tainted-fund-flow"](prog, file=teal.name).detect()
+    assert vs, (
+        "an unresolvable Amount behind a callee that ate the caller's stack "
+        "went UNREPORTED — an unresolved value is being read as clean")
+
+
+def test_a_recovered_crossband_amount_is_not_reported_as_attacker_controlled():
+    """The counterpart: where the moved value IS recoverable, the honest
+    answer is NO finding — and the old `Undefined` was a FALSE POSITIVE.
+
+    ``crossband_taint.teal`` was long read as "attacker-controlled
+    ApplicationArgs[0] reaches an inner pay Amount". MEASURED ON A LIVE AVM
+    (2026-08-04) it does not: ``cover 3`` buries the attacker's value BELOW
+    the frame base, the caller's `pop` then discards it, and the constant 8
+    the callee pushed is what reaches ``itxn_field Amount``. Dryrun receipts,
+    same shape with the surviving cell returned::
+
+        no cover:  arg0=0 -> REJECT, arg0=7 -> PASS   (cell IS the attacker's)
+        cover 3:   arg0=0 -> PASS,   arg0=7 -> PASS   (cell is the constant 8)
+
+    The finding only ever existed because the slot was `Undefined` and
+    `UNKNOWN_SOURCE` counted it as a source. Recovering the real value
+    retires it. A regression here means the recovery broke and the unknown —
+    with its false positive — is back."""
     from tealql.security import DETECTORS
 
     teal = (Path(__file__).resolve().parent / "contracts" / "hostile-crossband"
@@ -413,9 +665,9 @@ def test_an_unresolved_value_is_tainted_not_clean():
     prog = SSAProgram(str(teal))
     prog.propagate_constants()
     vs = DETECTORS["ir-tainted-fund-flow"](prog, file=teal.name).detect()
-    assert vs, (
-        "an attacker-controlled Amount behind a callee that ate the caller's "
-        "stack went UNREPORTED — an unresolved value is being read as clean")
+    assert not vs, (
+        "the Amount here is the callee's CONSTANT 8 on a live AVM, not the "
+        f"attacker's value — reporting it is a false positive: {vs}")
 
 
 def test_a_panicking_op_survives_into_the_pre_ir_even_when_dead(tmp_path):
