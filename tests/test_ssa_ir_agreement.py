@@ -223,3 +223,41 @@ def test_a_block_lifted_by_a_group_that_cannot_reach_it_is_caught():
     compared, cases = _disagreements(probe)
     assert compared > 100, f"only {compared} operands compared — check went vacuous"
     assert not cases, "\n  ".join(cases)
+
+
+def test_a_shared_tail_is_counted_in_the_dip_that_reaches_it(tmp_path):
+    """A legacy sub's arity is how far execution dips, NOT how far the OWNED
+    body dips.
+
+    A shared tail — one block that several routines `b` into, ending in
+    `retsub` — belongs to exactly one of them under `pyblock_partition`. Measure
+    the dip over the owned body and every other caller stops at the branch and
+    under-counts, so the simulation consumes too few arguments and STRANDS the
+    rest on the caller's stack. That shifts every later operand in the caller,
+    which is silent: a too-DEEP stack yields wrong operands, not missing ones,
+    so the operand-hole ratchet reads clean.
+
+    Live case: app_1050006430 `label23` popped 1 over its one-block body while
+    its call sites pushed FOUR, leaving three stranded. Here `t` pops one and
+    branches into `tail`, which pops two more — so `t` takes three."""
+    teal = tmp_path / "shared_tail.teal"
+    teal.write_text(
+        "#pragma version 8\n"
+        "int 7\nint 8\nint 9\ncallsub u\n"
+        "int 1\nint 2\nint 3\ncallsub t\n"
+        "int 1\nreturn\n"
+        "u:\npop\nb tail\n"
+        "t:\npop\nb tail\n"
+        "tail:\npop\npop\nretsub\n")
+    prog = SSAProgram(str(teal))
+    # BOTH routines must be called, or the second is unreachable and pruned —
+    # and then the tail is not shared at all and the test is vacuous. `tail` is
+    # owned by `u`, so `t` is the routine whose OWNED body stops at the branch.
+    calls = sorted((a for a in prog.assignments if a.op == "callsub"),
+                   key=lambda a: a.location.line)
+    assert len(calls) == 2, calls
+    for a in calls:
+        assert len(a.inputs) == 3, (
+            f"callsub@L{a.location.line} consumed {len(a.inputs)} of 3 — the dip "
+            "stopped at the branch into the shared tail, so the rest stayed on "
+            "the caller's stack")

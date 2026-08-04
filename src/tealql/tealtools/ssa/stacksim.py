@@ -55,7 +55,18 @@ def infer_arities(blocks, bb_to_sub, proto_io, return_point) -> dict:
     floor is what it returned. Without this a legacy callee reads as ``(0, 0)``
     and its arguments are left sitting on the CALLER's stack, so the caller's
     next op consumes the value pushed BEFORE the call instead of the call's
-    result."""
+    result.
+
+    THE DIP FOLLOWS CONTROL FLOW, NOT OWNERSHIP. A plain branch out of the body
+    is still this routine executing — a SHARED TAIL (one block several routines
+    `b` into, ending in `retsub`) belongs to exactly one of them under
+    `pyblock_partition`, so measuring the dip over the owned body alone stops at
+    the branch and under-counts. Real case, app_1050006430 `label23`: its body is
+    one block that pops 1, but it branches into `label75`, which pops 3 more
+    before returning. Measured over the body it read (1, 0); its call sites push
+    FOUR values, so the simulation consumed one and stranded three, and every
+    operand after the call in that caller was off by three. Nothing caught it —
+    a too-DEEP stack yields wrong operands, not missing ones."""
     subs = [b for b in blocks if bb_to_sub.get(b) is b]
     arity = {s: proto_io.get(s, (0, 0)) for s in subs}
     bodies: dict = {}
@@ -90,7 +101,7 @@ def infer_arities(blocks, bb_to_sub, proto_io, return_point) -> dict:
                 floor = min(floor, mn)
                 if b.ops and b.ops[-1].op == "retsub":
                     ret_ds.append(d)
-                for su in _isucc(b, body, return_point):
+                for su in _isucc(b, body, return_point, owned_only=False):
                     if su not in depth:
                         depth[su] = d
                         order.append(su)
@@ -316,15 +327,21 @@ def _bind_params(blocks, res, arity, bb_to_sub, phi_factory):
         ph.args = [resolve(a) if isinstance(a, _Param) else a for a in ph.args]
 
 
-def _isucc(b, body, return_point):
+def _isucc(b, body, return_point, *, owned_only=True):
     """Successors INSIDE the routine: a call flows to its continuation, never
-    into the callee, and a return leaves."""
+    into the callee, and a return leaves.
+
+    ``owned_only=False`` drops the body filter for PLAIN branches, for the
+    arity walk: a shared tail is owned by one routine but executed by several,
+    and the dip has to be measured over what runs, not over what is owned. The
+    simulation keeps the filter — ownership is exactly what decides whose stack
+    a block runs on."""
     if b.ops and b.ops[-1].op in ("retsub", "return", "err"):
         return []
     if b.ops and b.ops[-1].op == "callsub":
         cont = return_point.get(b)
-        return [cont] if cont is not None and cont in body else []
-    return [s for s in b.succs if s in body]
+        return [cont] if cont is not None and (cont in body or not owned_only) else []
+    return [s for s in b.succs if s in body or not owned_only]
 
 
 def _run_routine(sub, body_list, res, arity, bb_to_sub, return_point,
