@@ -143,6 +143,89 @@ def test_hostile_teal_builds_and_lifts(name, tmp_path):
         f"{name}: lift returned an empty program")
 
 
+def test_a_program_entry_that_is_its_own_loop_header_is_simulated(tmp_path):
+    """The AVM starts at PC 0, so the source-first block executes no matter
+    what else points at it. A first block that is also a branch target
+    (``start:`` ... ``bnz start``, the hand-written retry-loop shape) has
+    itself as a predecessor, so ``pyblock_partition``'s no-preds root test
+    missed it: NO root existed, the whole program stayed unowned and
+    unsimulated, and every op silently kept EMPTY inputs — the
+    output-with-no-inputs shape that reads clean to every may-analysis, with
+    no refusal marker anywhere. 0 of 1019 mainnet probes have this shape
+    (compilers emit a dispatcher first); hand-written TEAL can."""
+    teal = tmp_path / "selfloop.teal"
+    teal.write_text("#pragma version 8\nstart:\nint 7\ntxn NumAppArgs\n"
+                    "bnz start\nint 1\nreturn\n")
+    prog = SSAProgram(str(teal))
+    py = prog._pyssa
+    unowned = [b.key for b in py.blocks if py._bb_to_sub.get(b) is None]
+    assert not unowned, f"blocks with no owning routine: {unowned}"
+    bnz = next(a for a in prog.assignments if a.op == "bnz")
+    assert bnz.inputs, (
+        "the loop branch lost its condition operand — the program entry was "
+        "never rooted, so nothing was simulated")
+
+
+def test_a_deep_verbatim_param_chain_leaks_no_private_markers(tmp_path):
+    """17+ callsubs each passing their own untouched param on exhausted
+    ``_bind_params.resolve``'s hop budget, which then returned the
+    still-unresolved ``_Param`` — a PRIVATE simulator marker — into public
+    ``Assignment.inputs``, where the first consumer to touch ``.key()`` or
+    ``.defined_by`` dies. Exhaustion must be a refusal (the read then shows
+    up in ``frame_unresolved_reads``), never a leak."""
+    n = 18
+    lines = ["#pragma version 8", "int 42", "callsub w1", "pop", "int 1",
+             "return"]
+    for i in range(1, n + 1):
+        lines += [f"w{i}:", "proto 1 1",
+                  f"callsub w{i + 1}" if i < n else "frame_dig -1", "retsub"]
+    teal = tmp_path / "wrap.teal"
+    teal.write_text("\n".join(lines) + "\n")
+    prog = SSAProgram(str(teal))
+    from tealql.tealtools.ssa.models import Const, SSAVar
+    from tealql.tealtools.ssa.models import Phi as PublicPhi
+    foreign = [(a.op, a.location.line, type(i).__name__)
+               for a in prog.assignments for i in a.inputs
+               if not isinstance(i, (SSAVar, PublicPhi, Const))]
+    assert not foreign, f"private simulator objects escaped: {foreign}"
+
+
+def test_a_divergent_legacy_call_recovers_the_callers_residual(tmp_path):
+    """A divergent legacy callee's call site must see the PER-PATH truth, not
+    the deep path's cells asserted for every path.
+
+    ``vary`` returns one value down one path and two down the other; the
+    caller's ``+`` therefore adds (5, its own 55) on the shallow path and
+    (7, 6) on the deep one. The uniform window used to push the deep path's
+    ``int 6`` as THE second operand — silently wrong on the shallow path,
+    where that cell is the caller's own residual. A no-proto ``retsub`` does
+    not truncate, so the continuation stack per path is (caller residual) +
+    (that path's exit) VERBATIM — every window cell is exactly recoverable as
+    a phi over per-path cells, no unknown needed."""
+    teal = tmp_path / "divergent_consumer.teal"
+    teal.write_text(
+        "#pragma version 8\nint 55\ncallsub vary\n+\npop\nint 1\nreturn\n"
+        "vary:\ntxn NumAppArgs\nbnz two\nint 5\nretsub\n"
+        "two:\nint 6\nint 7\nretsub\n"
+    )
+    prog = SSAProgram(str(teal))
+    assert prog._pyssa._divergent_legacy, (
+        "the divergent legacy sub was not marked at the SSA layer")
+    from tealql.tealtools.ssa.models import Phi as PublicPhi
+    plus = next(a for a in prog.assignments if a.op == "+")
+    assert len(plus.inputs) == 2 and all(
+        isinstance(i, PublicPhi) for i in plus.inputs), (
+        f"expected two per-path phis, got {plus.inputs!r}")
+
+    def leaves(ph):
+        return {v.defined_by.ast_code for v in ph.args}
+
+    assert leaves(plus.inputs[0]) == {"int 5", "int 7"}
+    assert leaves(plus.inputs[1]) == {"int 55", "int 6"}, (
+        "the shallow path's operand must be the CALLER's own residual value, "
+        f"not the deep path's cell: {leaves(plus.inputs[1])}")
+
+
 def test_a_path_divergent_legacy_callee_is_reported_not_function_shaped(tmp_path):
     """A legacy sub whose ``retsub`` sites leave different depths IS NOT A
     FUNCTION, and the lift must say so rather than let the gap read as ordinary.

@@ -45,7 +45,8 @@ def _callee_of(b, bb_to_sub):
     return next((s for s in b.succs if bb_to_sub.get(s) is s), None)
 
 
-def infer_arities(blocks, bb_to_sub, proto_io, return_point) -> dict:
+def infer_arities(blocks, bb_to_sub, proto_io, return_point,
+                  divergent=None) -> dict:
     """``sub entry -> (nargs, nret)``, read off ``proto`` or inferred.
 
     A thin binding of :func:`..subroutines.infer_legacy_arities` to the PyBlock
@@ -78,6 +79,7 @@ def infer_arities(blocks, bb_to_sub, proto_io, return_point) -> dict:
         succs_of=lambda b, body: _isucc(b, body, return_point, owned_only=False),
         callee_of=lambda b: _callee_of(b, bb_to_sub),
         op_arity=_narrow,
+        divergent=divergent,
     )
 
 
@@ -88,15 +90,19 @@ class _Result:
     ``phis``  — ``PyBlock -> [(slot, PyPhi)]`` merges created at joins.
     ``exit``  — ``PyBlock -> [operand]`` bottom-first, for the differential only.
     ``unresolved`` — ops the sim could not give a full operand list.
+    ``divergent`` — legacy sub entries whose ``retsub`` sites leave DIFFERENT
+    depths (no single ``(nargs, nret)`` describes them); their call sites take
+    the depth-shift merge in :func:`_exec` instead of the uniform window.
     """
 
-    __slots__ = ("args", "phis", "exit", "unresolved")
+    __slots__ = ("args", "phis", "exit", "unresolved", "divergent")
 
     def __init__(self):
         self.args: dict = {}
         self.phis: dict = {}
         self.exit: dict = {}
         self.unresolved: set = set()
+        self.divergent: set = set()
 
 
 class _Param:
@@ -142,8 +148,11 @@ def simulate(blocks, bb_to_sub, proto_io, return_point, phi_factory,
     res = _Result()
     # Real arities FIRST: a legacy callee's (nargs, nret) is not declared
     # anywhere, and treating it as (0, 0) leaves its arguments on the caller's
-    # stack — which the caller's next op then consumes.
-    arity = infer_arities(blocks, bb_to_sub, proto_io, return_point)
+    # stack — which the caller's next op then consumes. The fixpoint also
+    # names the DIVERGENT legacy subs (retsub sites at different depths):
+    # their calls need the depth-shift merge, not the uniform window.
+    arity = infer_arities(blocks, bb_to_sub, proto_io, return_point,
+                          divergent=res.divergent)
     by_sub: dict = {}
     for b in blocks:
         by_sub.setdefault(bb_to_sub.get(b), []).append(b)
@@ -163,6 +172,16 @@ def simulate(blocks, bb_to_sub, proto_io, return_point, phi_factory,
     for sub in _callee_first(by_sub, bb_to_sub):
         _run_routine(sub, by_sub[sub], res, arity, bb_to_sub, return_point,
                      retsubs, phi_factory, unsafe_callees, deferred, proto_io)
+    # Blocks NO root claims (``bb_to_sub`` misses them) never simulate, and
+    # their ops kept EMPTY inputs with no refusal marker — silence, not
+    # honesty. ``pyblock_partition`` now roots the program entry
+    # unconditionally, so this group should stay empty on real programs; any
+    # block that still lands here gets its consuming ops LISTED as unresolved,
+    # so the gap can never again read as clean.
+    for b in by_sub.get(None, ()):
+        for o in b.ops:
+            if _narrow(o)[0] or o.op in ("callsub", "frame_dig", "frame_bury"):
+                res.unresolved.add(id(o))
     # RECURSION. A cycle has no callee-first order, so a call inside it reaches
     # `retsub` blocks that are not simulated yet. Braun's answer to the same
     # problem is to hand out the phi BEFORE recursing and complete it after; that
@@ -296,7 +315,12 @@ def _bind_params(blocks, res, arity, bb_to_sub, phi_factory):
             if nxt is None or nxt is v:
                 return None                # no call site supplies it
             v, depth = nxt, depth + 1
-        return v
+        # The hop budget can exhaust with ``v`` STILL a _Param — a 17-deep
+        # verbatim pass-through chain is enough (each wrapper's callsub hands
+        # its own untouched param on). Returning it leaked a private simulator
+        # marker into public ``Assignment.inputs``, where the first consumer to
+        # touch ``.key()``/``.defined_by`` dies. Exhaustion is a refusal.
+        return None if isinstance(v, _Param) else v
 
     for k, ins in res.args.items():
         for j, v in enumerate(ins):
@@ -338,6 +362,7 @@ def _isucc(b, body, return_point, *, owned_only=True):
 def _run_routine(sub, body_list, res, arity, bb_to_sub, return_point,
                  retsubs, phi_factory, unsafe_callees=frozenset(),
                  deferred=None, proto_io=None):
+    divergent = res.divergent
     body = set(body_list)
     nargs = arity.get(sub, (0, 0))[0]
 
@@ -401,7 +426,7 @@ def _run_routine(sub, body_list, res, arity, bb_to_sub, return_point,
         for o in b.ops:
             _exec(o, b, stack, nargs, res, bb_to_sub, retsubs, arity,
                   phi_factory, unsafe_callees, return_point, npred, deferred,
-                  proto_io)
+                  proto_io, divergent)
         res.exit[b] = stack
     for ph, slot, depth, bp in pending:
         # TOP-aligned, matching the loop-header merge above.
@@ -475,7 +500,7 @@ def _entry_stack(b, entry, nargs, preds, back_targets, bpred_b, pending,
 
 def _exec(o, b, stack, nargs, res, bb_to_sub, retsubs, arity, phi_factory,
           unsafe_callees=frozenset(), return_point=None, npred=None,
-          deferred=None, proto_io=None):
+          deferred=None, proto_io=None, divergent=frozenset()):
     """One op against the clean stack, recording its operands TOP-FIRST."""
     if o.op in ("frame_dig", "frame_bury"):
         n = _imm_int(o)
@@ -559,36 +584,101 @@ def _exec(o, b, stack, nargs, res, bb_to_sub, retsubs, arity, phi_factory,
         # See `_return_value`: proto'd returns live in FRAME SLOTS, legacy
         # ones on the physical stack top, because only proto's retsub truncates.
         a_proto = proto_io.get(callee) if proto_io is not None else None
+        # A DIVERGENT legacy callee (retsub sites at different depths) is not
+        # a function: `r_out` is the DEEPEST path's count, so the uniform
+        # window below asserted the deep path's below-top cells for every path
+        # — on the shallow path the "second return" is the CALLER's own
+        # residual value, and the exit stacks are shifted against each other
+        # all the way down. Both are exactly recoverable: a no-proto retsub
+        # does not truncate, so the continuation stack on return path p is
+        # (caller residual) + (p's exit stack) VERBATIM — every merged cell's
+        # per-path truth is either p's exit cell or a caller residual cell at
+        # a path-dependent offset. `shifted` takes that per-path merge; only a
+        # cell BELOW a path's whole stack stays a refusal (consuming there
+        # means that path is reading past everything this frame owns).
+        shifted = a_proto is None and callee in divergent
+        exits = [res.exit[rb] for rb in rets if rb in res.exit]
+        if shifted and (pending_rets or not can_merge):
+            # The shift needs every exit depth and a phi home; without either,
+            # the residual's per-path offsets are unknowable — withdraw it
+            # (heights kept) rather than let the pre-call values stand for
+            # cells the shallow paths do not have.
+            stack[:] = [None] * len(stack)
+        pushes: list = []
         for j in range(r_out):
             slot = r_out - j                      # top-first within the returns
-            vals = [v for rb in rets if rb in res.exit
-                    for v in (_return_value(res.exit[rb], j, slot, a_proto),)
+            if shifted and not pending_rets and can_merge:
+                vals = [st[-slot] if len(st) >= slot
+                        else (stack[len(st) - slot]
+                              if slot - len(st) <= len(stack) else None)
+                        for st in exits]
+                if not vals or any(v is None for v in vals):
+                    pushes.append(None)
+                elif len({id(v) for v in vals}) == 1:
+                    pushes.append(vals[0])
+                else:
+                    ph = phi_factory(cont, slot)
+                    ph.args.extend(vals)
+                    res.phis.setdefault(cont, []).append((slot, ph))
+                    pushes.append(ph)
+                continue
+            vals = [v for st in exits
+                    for v in (_return_value(st, j, slot, a_proto),)
                     if v is not None]
-            if pending_rets and not (can_merge and deferred is not None):
+            if pending_rets and (shifted
+                                 or not (can_merge and deferred is not None)):
                 # A return path exists that we cannot merge in. Taking the
                 # resolved subset would name the base case as THE result and
                 # hide the recursive one — an under-approximation that reads as
-                # a definite value.
-                stack.append(None)
+                # a definite value. (A divergent callee joins this refusal:
+                # its deferred fill would read `st[-slot]`, a wrong CELL on
+                # the shorter paths, not merely a missing value.)
+                pushes.append(None)
             elif pending_rets:
                 ph = phi_factory(cont, slot)
                 ph.args.extend(vals)
                 res.phis.setdefault(cont, []).append((slot, ph))
                 deferred.append((ph, slot, j, a_proto, tuple(pending_rets)))
-                stack.append(ph)
+                pushes.append(ph)
             elif len({id(v) for v in vals}) == 1:
-                stack.append(vals[0])     # every retsub leaves the same value
+                pushes.append(vals[0])    # every retsub leaves the same value
             elif vals and can_merge:
                 ph = phi_factory(cont, slot)
                 ph.args.extend(vals)
                 res.phis.setdefault(cont, []).append((slot, ph))
-                stack.append(ph)
+                pushes.append(ph)
             else:
                 # No continuation, or one that is ALSO a branch target — where a
                 # slot-`slot` phi would collide with the join's own. Measured at
                 # 1 call site in 1439 over 60 probes, so refusing costs almost
                 # nothing and inventing a home for the phi would cost identity.
-                stack.append(None)
+                pushes.append(None)
+        if shifted and not pending_rets and can_merge and stack:
+            # The residual TRAIL. Below the pushed window the paths stay
+            # shifted by their depth difference forever, so model position
+            # `r_out + d` holds a different caller cell per path — a phi per
+            # cell down the residual, args all REAL values. A position past a
+            # path's ENTIRE stack has no cell on that path (this frame owns
+            # nothing deeper); one unknowable arm withdraws the cell, because
+            # a phi that silently omits a path reads as clean to every
+            # may-analysis.
+            base = list(stack)
+            for d in range(1, len(base) + 1):
+                k = r_out + d
+                args = [base[len(st) - k] if 0 < k - len(st) <= len(base)
+                        else None
+                        for st in exits]
+                if not args or any(a is None for a in args):
+                    v = None
+                elif len({id(a) for a in args}) == 1:
+                    v = args[0]
+                else:
+                    ph = phi_factory(cont, k)
+                    ph.args.extend(args)
+                    res.phis.setdefault(cont, []).append((k, ph))
+                    v = ph
+                stack[len(base) - d] = v
+        stack.extend(pushes)
         return
     if o.op in ("proto", "intcblock", "bytecblock"):
         return

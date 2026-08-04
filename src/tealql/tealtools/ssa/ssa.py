@@ -183,6 +183,11 @@ class PySSA:
     # bb_key -> entry stack depth INCLUDING the sub's args; see
     # _frame_entry_depths. Absent = height-ambiguous, which reads as UNSAFE.
     _frame_edepth: dict = field(default_factory=dict)
+    # Entry bb_keys of DIVERGENT legacy subs (retsub sites at different
+    # depths — not function-shaped; see stacksim's `shifted` merge). Surfaced
+    # so SSA-level consumers can see the shape the lift reports as
+    # `not_function_shaped` without re-running the fixpoint.
+    _divergent_legacy: set = field(default_factory=set)
     # callsub bb_key -> continuation bb_key (corrected policy), see
     # subroutines.corrected_return_points.
     _corrected_rp: dict = field(default_factory=dict)
@@ -286,6 +291,7 @@ class PySSA:
                                 _pyblock_return_point(self.blocks, self._corrected_rp),
                                 mint,
                                 unsafe_callees=self._unsafe_callee_blocks)
+        self._divergent_legacy = {b.key for b in res.divergent}
         for b in self.blocks:
             for o in b.ops:
                 o.inputs = list(res.args.get(id(o), []))

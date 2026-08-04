@@ -444,6 +444,24 @@ def pyblock_partition(blocks, corrected=None) -> dict:
         b for b in blocks
         if not b.preds and b not in sub_entries
     ]
+    # THE PROGRAM ENTRY IS ALWAYS A ROOT. The AVM starts at PC 0, so the
+    # source-first block executes regardless of what else points at it — and a
+    # first block that is also a branch target (`start:` ... `bnz start`, the
+    # hand-written retry-loop shape) has itself as a predecessor, so the
+    # no-preds filter above missed it. With no root the WHOLE program stayed
+    # unowned: never simulated, every op keeping empty inputs — the
+    # output-with-no-inputs shape that reads CLEAN to every may-analysis, with
+    # no refusal marker anywhere. A first block that is a callsub TARGET is
+    # already a root via ``sub_entries`` (claimed as a sub: the recursive-main
+    # convention), so only the not-a-sub case is added here.
+    firsts: dict = {}
+    for b in blocks:
+        f = b.key[0]
+        if f not in firsts or b.key < firsts[f].key:
+            firsts[f] = b
+    for b in firsts.values():
+        if b not in sub_entries and b not in mains:
+            mains.append(b)
     bb_to_sub: dict = {}
     for root in mains + sorted(sub_entries, key=lambda x: x.key):
         stack = [root]
