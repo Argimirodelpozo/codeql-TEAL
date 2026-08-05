@@ -700,6 +700,33 @@ def materialize_phi_consts(prog) -> None:
                 ph.register.ir_type = ty
             for arg in ph.args:
                 if isinstance(arg.value, pre_ir.Register):
+                    # A register arm is normally already the right type and needs no
+                    # materialising — but skipping it UNCONDITIONALLY also skipped the
+                    # cross-family ones, which are the only arms that cannot work. The
+                    # vote above has already SEEN the disagreement (it is what made the
+                    # count a tie, then broke it arbitrarily with `conc[0]`), so a
+                    # genuinely two-typed cell became a phi declaring one family with an
+                    # arm from the other. Puya rejects that outright —
+                    #   InternalError: Phi node received arguments with unexpected type(s)
+                    # — and the whole lift dies.
+                    if avm(getattr(arg.value, "ir_type", "?")) in ("?", avm(ty)):
+                        continue
+                    # Same policy as the undecided case below: an explicit unknown of the
+                    # phi's own type. Coercing (itob/btoi) would assert a plausible WRONG
+                    # value on a path that may be live, and failing the lift costs every
+                    # analysis downstream. The warning is the point — a real loss of
+                    # precision on that arm, announced rather than silently repaired.
+                    through = block_by_id.get(arg.through)
+                    if through is None:
+                        continue
+                    logger.warning(
+                        "mixed-type merge: arm %s of a %s phi is cross-family — kept as an "
+                        "explicit unknown; that path's value is not modelled",
+                        arg.value, ty)
+                    r = pre_ir.Register(f"pc%{n}", 0, ty)
+                    n += 1
+                    through.ops.append(pre_ir.Assignment([r], pre_ir.Undefined(ir_type=ty)))
+                    arg.value = r
                     continue
                 through = block_by_id.get(arg.through)
                 if through is None:
