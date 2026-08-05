@@ -1152,14 +1152,15 @@ class _Lifter:
         return self.value(o)
 
     def _block_doom_profile(self, b):
-        """Per-op stack DIP for ``b``'s straight line, or None to refuse: each
-        entry is the level RELATIVE TO BLOCK ENTRY right after that op's pops —
-        the underflow-relevant low point. Arity accounting mirrors
-        ``_resim_exec_op`` exactly — canonical shuffle arities (a ``cover n``
-        transiently needs n+1 cells), const pushes, terminators pushing
-        nothing. Frame ops, ``callsub`` and ``retsub`` refuse: their depth
-        behaviour is contextual, and a wrong profile here turns a LIVE path
-        into a reject.
+        """``(dips, net)`` for ``b``'s straight line, or None to refuse: each
+        dip is the level RELATIVE TO BLOCK ENTRY right after an op's pops —
+        the underflow-relevant low point — and ``net`` the level after the
+        last op, which offsets the NEXT block's dips when a doom walk follows
+        an unconditional chain. Arity accounting mirrors ``_resim_exec_op``
+        exactly — canonical shuffle arities (a ``cover n`` transiently needs
+        n+1 cells), const pushes, terminators pushing nothing. Frame ops,
+        ``callsub`` and ``retsub`` refuse: their depth behaviour is
+        contextual, and a wrong profile here turns a LIVE path into a reject.
 
         No purity tracking: a transaction that underflows DISCARDS everything
         it did (state writes, inner txns, logs — group-atomic), so an
@@ -1169,10 +1170,9 @@ class _Lifter:
         — the same outcome."""
         if b in self._doom_profile:
             return self._doom_profile[b]
-        run, out = 0, []
+        run, dips, out = 0, [], None
         for a in b.assignments:
             if a.op in _FRAME_OPS or a.op in ("callsub", "retsub"):
-                out = None
                 break
             if a.op in ("intcblock", "bytecblock", "proto"):
                 continue
@@ -1181,10 +1181,9 @@ class _Lifter:
                 if m is None:
                     m, n_in = _shuffle_mapping(a), len(a.inputs)
                 if m is None:
-                    out = None
                     break
                 run -= n_in
-                out.append(run)
+                dips.append(run)
                 run += n_in
                 continue
             if (not a.inputs and a.outputs and all(
@@ -1193,9 +1192,11 @@ class _Lifter:
                 continue
             ni, _ = op_arity(a.op, a.immediates)
             run -= ni
-            out.append(run)
+            dips.append(run)
             if a.op not in _TERMINATOR_OPS:
                 run += sum(1 for o in a.outputs if isinstance(o, SSAVar))
+        else:
+            out = (dips, run)
         self._doom_profile[b] = out
         return out
 
@@ -1272,12 +1273,33 @@ class _Lifter:
         # `_apply_doomed_edges` retargets it to a `Fail` in the pre-IR. NOT a
         # join-rule change: window, alignment and arms are untouched, so the
         # two stack simulations still agree.
+        # The dip may sit past the join block itself: walk the UNCONDITIONAL
+        # chain (each step a single distinct raw-CFG successor), offsetting
+        # each block's dips by the accumulated net effect — a dip below the
+        # arm's depth anywhere along it is just as inevitable as one in the
+        # join block. A branch stops the walk: past it the dip is conditional,
+        # and killing the edge would reject the arm's LIVE paths too.
         for p in preds:
             d = len(self.resim_exit[p])
             if d >= depth:
                 continue
-            if any(dip < -d for dip in self._block_doom_profile(b) or ()):
-                self.doomed_edges.add((p, b))
+            off, cur, seen_chain = 0, b, set()
+            for _ in range(64):
+                prof = self._block_doom_profile(cur)
+                if prof is None:
+                    break
+                dips, net = prof
+                if any(off + dip < -d for dip in dips):
+                    self.doomed_edges.add((p, b))
+                    break
+                seen_chain.add(cur)
+                succ = set(cur.successors)
+                if len(succ) != 1:
+                    break
+                cur = next(iter(succ))
+                if cur in seen_chain:
+                    break
+                off += net
         tops = self._top_aligned(preds, depth)
         stack, phis = [], []
         for slot in range(depth):

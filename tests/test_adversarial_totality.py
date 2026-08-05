@@ -1067,3 +1067,42 @@ def test_a_live_shallow_arm_keeps_its_unknown_not_a_reject(tmp_path):
     assert "undefined" in rendered.lower(), (
         f"the live shallow arm keeps its explicit unknown:\n{rendered}")
     lift_to_teal(str(teal))
+
+
+def test_an_unconditional_chain_dip_dooms_the_arm_too(tmp_path):
+    """The underflow needn't happen in the join block itself: a shallow arm
+    whose doom sits down an UNCONDITIONAL chain (single distinct successor at
+    every step) is just as inevitable, so the walk offsets each block's dips
+    by the accumulated net effect and kills the edge. Before the walk, this
+    shape approved where the original underflow-rejects — same defect as the
+    same-block case, one block later."""
+    from tealql.tealtools.lift.backend import lift_to_teal
+
+    teal = tmp_path / "chain.teal"
+    teal.write_text(
+        "#pragma version 8\ntxn NumAppArgs\nbnz deep\nb join\ndeep:\nint 5\n"
+        "join:\nint 1\npop\nb tail\ntail:\npop\nint 1\nreturn\n")
+    rendered = lift(SSAProgram(str(teal))).render()
+    assert "fail" in rendered and "underflow" in rendered, (
+        f"the chain-doomed arm must be an explicit reject:\n{rendered}")
+    lift_to_teal(str(teal))
+
+
+def test_a_conditional_dip_past_the_join_keeps_the_arm_alive(tmp_path):
+    """A dip that only happens on ONE side of a branch after the join must NOT
+    kill the edge: the arm's other side approves in the original (measured
+    live: shallow + oc==0 approves in both programs), so an edge-kill would
+    reject live executions. The walk stops at the branch; the residual
+    divergence on the dipping side is the documented per-arm-provenance gap,
+    closable only by duplicating the post-join region per arm."""
+    from tealql.tealtools.lift.backend import lift_to_teal
+
+    teal = tmp_path / "crossblock.teal"
+    teal.write_text(
+        "#pragma version 8\ntxn NumAppArgs\nbnz deep\nb join\ndeep:\nint 5\n"
+        "join:\ntxn OnCompletion\nbnz other\nint 1\nreturn\n"
+        "other:\npop\nint 1\nreturn\n")
+    rendered = lift(SSAProgram(str(teal))).render()
+    assert "fail" not in rendered, (
+        f"a conditionally-live arm must NOT be rejected:\n{rendered}")
+    lift_to_teal(str(teal))
