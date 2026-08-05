@@ -221,6 +221,13 @@ class SSAProgram:
                 continue
             u_bb = self.blocks.get(u_bb_id)
             v_bb = self.blocks.get(v_bb_id)
+            # A LABEL-ONLY block has a bb id but no BasicBlock — nothing defines or
+            # consumes a value there, so none is built. Dropping its edges severs the
+            # control flow THROUGH it: `bz L_end` and the fallthrough above it both
+            # land on the label, and the block after it is left unreachable. Forward
+            # to the first real block instead, which is where control actually goes.
+            if v_bb is None:
+                v_bb = self._forward_through_empty(g, v)
             if u_bb is None or v_bb is None:
                 continue
             if (u_bb, v_bb) in seen_edges:
@@ -644,6 +651,50 @@ class SSAProgram:
     def data_graph(self) -> nx.MultiDiGraph:
         from .render import data_graph as _impl
         return _impl(self)
+
+    def _forward_through_empty(self, g, node, _limit: int = 64):
+        """The first real :class:`BasicBlock` reachable from ``node`` through label-only blocks.
+
+        A label with no instructions between it and the next label gets a bb id but no BasicBlock,
+        because a BasicBlock is built from assignments and it has none. Every CFG edge that targets
+        it was therefore discarded, taking two edges with it each time: the branch that named the
+        label, and the fallthrough from the block above. The block after the label then had no
+        predecessors at all, and the lift — with nowhere to branch — terminated the preceding block
+        by exiting the program, handing puya whatever value the stack simulation happened to be
+        holding. A `Can only exit with uint64 backed value` three layers downstream.
+
+        TEALScript emits exactly this shape whenever an `if` ends where a loop continues::
+
+            *if4_end:                  <- no instructions
+            *for_0_continue:
+
+        18 times in Reti's StakingPool, 16 in its ValidatorRegistry; puya-ts never does it, which is
+        why it went unseen. Empty labels can chain, so this follows them transitively; `_limit`
+        bounds a pathological chain and a `seen` set makes a cycle of empty labels terminate rather
+        than hang.
+        """
+        seen = {node}
+        frontier = [node]
+        while frontier and _limit > 0:
+            _limit -= 1
+            nxt = []
+            for n in frontier:
+                for succ in g.successors(n):
+                    if succ in seen:
+                        continue
+                    # follow CONTROL FLOW only: a data edge would forward to a block
+                    # control never reaches from here.
+                    if not any(d.get("kind") == "cfg"
+                               for d in g.get_edge_data(n, succ).values()):
+                        continue
+                    seen.add(succ)
+                    bb_id = g.nodes[succ].get("bb")
+                    bb = self.blocks.get(bb_id) if bb_id is not None else None
+                    if bb is not None:
+                        return bb
+                    nxt.append(succ)
+            frontier = nxt
+        return None
 
     def cfg(self) -> nx.MultiDiGraph:
         from .render import cfg as _impl
