@@ -663,3 +663,61 @@ def test_a_panicking_op_survives_into_the_pre_ir_even_when_dead(tmp_path):
     assert "(+ " in rendered, (
         "the overflowing add was dropped from the pre-IR — an AVM overflow "
         f"panics, so discarding its result does not make it dead:\n{rendered}")
+
+
+#: A depth-divergent join whose two arms carry the SAME AVM type, so it isolates
+#: the merge-width question. Path A reaches `join` holding one cell, path B two;
+#: the `pop` then takes B's extra cell and the `+` consumes the one below, which
+#: path A does not have.
+_DIVERGENT_JOIN = (
+    "#pragma version 8\nint 1\ntxn NumAppArgs\nbnz two\nb join\n"
+    "two:\nint 8\njoin:\npop\nint 5\n+\npop\nint 1\nreturn\n"
+)
+
+
+def test_the_lift_merge_keeps_the_deep_paths_cell(tmp_path):
+    """The LIFT's join must merge over the MAX predecessor depth, like
+    ``ssa.stacksim._entry_stack`` — the two stack simulations have to agree
+    about what a join is.
+
+    They did not. ``_resim_entry_stack`` truncated to the SHALLOWEST
+    predecessor, discarding the deeper paths' cells, so a later consume found
+    nothing there. Measured as ``AssertionError: l-stack too small for store
+    71`` out of Puya's MIR allocator — a crash rather than a wrong value that
+    time, but the same root cause every module docstring here warns about: two
+    stack models that disagree about the same program point.
+
+    A cell a predecessor lacks contributes ``Undefined`` on that edge. Honest
+    and free at runtime: reaching the consume along the shallow path is an AVM
+    stack underflow, so that path is already dead."""
+    from tealql.tealtools.lift.backend import lift_to_teal
+
+    teal = tmp_path / "divjoin.teal"
+    teal.write_text(_DIVERGENT_JOIN)
+    rendered = lift(SSAProgram(str(teal))).render()
+    assert "undefined" in rendered.lower(), (
+        "the shallow path lacks the deep path's cell, so the merge must carry "
+        f"an explicit unknown on that edge rather than drop the slot:\n"
+        f"{rendered}")
+    assert "φ(" in rendered, f"the surviving cell must be a merge:\n{rendered}"
+    lift_to_teal(str(teal))          # and it must still reach TEAL
+
+
+def test_a_typed_phi_with_an_unknown_arm_does_not_kill_the_lift(tmp_path):
+    """``_unify_phi_types`` propagates a phi's type to its arguments, but every
+    operand class EXCEPT ``Register`` is a frozen dataclass — so writing to one
+    raises ``FrozenInstanceError`` and takes the whole lift down.
+
+    ``Undefined`` is exactly such an operand and its ``ir_type`` IS ``"?"``, so
+    it is a write target. It reaches a phi argument wherever a merge has an arm
+    with no value, which the max-window join above produces from ordinary
+    control flow. The crash additionally needs the phi's REGISTER to be typed,
+    which a downstream consumer does (`+` forces uint64 here) — that
+    combination is why it stayed hidden.
+
+    Skipping non-Registers is also the RIGHT answer, not just a safe one: a
+    constant already carries its own type, and an unknown has none to fix."""
+    teal = tmp_path / "typedphi.teal"
+    teal.write_text(_DIVERGENT_JOIN)
+    ir = lift(SSAProgram(str(teal)))          # must not raise
+    assert ir is not None

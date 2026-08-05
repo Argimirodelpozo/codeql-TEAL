@@ -297,7 +297,19 @@ def _unify_phi_types(subs) -> None:
                         changed = True
                 if rt != "?":
                     for a in phi.args:
-                        if getattr(a.value, "ir_type", None) == "?":
+                        # REGISTERS ONLY. Every other operand class is a frozen
+                        # dataclass, so assigning to one raises
+                        # `FrozenInstanceError` and takes the whole lift down —
+                        # and `Undefined`, whose `ir_type` IS `"?"`, is exactly
+                        # such an operand. It reaches a phi argument wherever a
+                        # merge has an arm with no value (a predecessor that
+                        # arrives too shallow), so the crash is reachable from
+                        # ordinary control flow, not just from experiments.
+                        # Skipping is also the RIGHT answer, not merely a safe
+                        # one: a constant already carries its own type, and an
+                        # unknown has none to fix.
+                        if (isinstance(a.value, pre_ir.Register)
+                                and a.value.ir_type == "?"):
                             a.value.ir_type = rt
                             changed = True
 

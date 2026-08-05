@@ -927,9 +927,20 @@ class _Lifter:
             for a in b.assignments:
                 self._resim_exec_op(a, b, stack, params)
             self.resim_exit[b] = stack
-        for ph, slot, bp in pending:          # close loop back-edges
-            if bp in self.resim_exit and slot < len(self.resim_exit[bp]):
-                ph.args.append(pre_ir.PhiArgument(self.resim_exit[bp][slot], self.bid[bp]))
+        for ph, k, bp in pending:             # close loop back-edges
+            # TOP-ALIGNED (`k` is the 1-based top-first slot), matching the
+            # loop-header merge that created the phi. Indexing bottom-first
+            # coincides with it only while the back edge arrives at exactly the
+            # merge depth; a lap that nets a value read a NEIGHBOURING cell —
+            # the same defect `ssa.stacksim` carried until its `pending` fill
+            # was made top-first. A back edge too shallow to hold the slot
+            # contributes `Undefined`: that lap does not have the cell, and the
+            # phi must not silently become forward-only.
+            if bp not in self.resim_exit:
+                continue
+            ex = self.resim_exit[bp]
+            val = ex[-k] if len(ex) >= k else pre_ir.Undefined()
+            ph.args.append(pre_ir.PhiArgument(val, self.bid[bp]))
 
     def _resim_value(self, o):                # SSA operand -> pre-IR value
         cv = getattr(o, "const_value", None)
@@ -941,37 +952,67 @@ class _Lifter:
             return self.reg(o)
         return self.value(o)
 
+    def _top_aligned(self, preds, depth):
+        """Each predecessor's exit stack as ``depth`` cells, TOP-ALIGNED.
+
+        A predecessor shallower than ``depth`` is padded at the BOTTOM with
+        ``Undefined``: top-alignment is what makes the cells correspond (see the
+        hazard note in :meth:`_resim_entry_stack`), so the cells a shallow path
+        lacks are the DEEP ones."""
+        out = {}
+        for p in preds:
+            ex = self.resim_exit[p]
+            pad = [pre_ir.Undefined()] * (depth - len(ex))
+            out[p] = pad + list(ex[len(ex) - min(len(ex), depth):])
+        return out
+
     def _resim_entry_stack(self, b, entry_bb, params, preds,
                            back_targets, bpred_b, pending):
         """Block `b`'s entry value-stack: the sub's args, a loop-header phi set
         (back-edge args deferred into `pending`), a copy of the single predecessor's
-        exit, or a slot-wise merge that builds `resim_phis`."""
+        exit, or a slot-wise merge that builds `resim_phis`.
+
+        MERGE WIDTH IS THE MAX PREDECESSOR DEPTH, matching
+        ``ssa.stacksim._entry_stack``. Truncating to the SHALLOWEST predecessor
+        discards the deeper paths' cells, and a later consume then finds
+        nothing there — measured as ``l-stack too small for store 71``, a
+        backend crash rather than a wrong value, but the same root cause: the
+        two stack simulations disagreed about what a join means, and this
+        codebase's history is that every such pair eventually produces a silent
+        wrong value. A cell a predecessor lacks contributes ``Undefined`` on
+        that edge, which is honest and costs nothing at runtime: reaching that
+        consume along the shallow path is an AVM stack underflow, so the
+        transaction is already dead there.
+
+        Inert on compiler output — a depth-divergent join is legal TEAL that no
+        compiler emits (0 of 231 corpus probes), so ``max == min`` throughout
+        and the merge is unchanged."""
         if b is entry_bb or not preds:
             return [pp.register for pp in params]          # entry: the args
         if b in back_targets:                              # loop header
-            depth = min(len(self.resim_exit[p]) for p in preds)
+            depth = max(len(self.resim_exit[p]) for p in preds)
+            tops = self._top_aligned(preds, depth)
             stack, phis = [], []
             for slot in range(depth):
                 r = self._new_reg("tmp", "?")
-                ph = pre_ir.Phi(r, [pre_ir.PhiArgument(self.resim_exit[p][slot], self.bid[p])
+                ph = pre_ir.Phi(r, [pre_ir.PhiArgument(tops[p][slot], self.bid[p])
                                 for p in preds])
                 phis.append(ph)
                 stack.append(r)
                 for bp in bpred_b:
-                    pending.append((ph, slot, bp))
+                    pending.append((ph, depth - slot, bp))
             self.resim_phis[b] = phis
             return stack
         if len(preds) == 1:
             return list(self.resim_exit[preds[0]])
-        # Plain merge, slot-wise. HAZARD: align predecessors by their STACK TOP (the
-        # common top `depth` values), never the bottom -- consumers read the top, and
-        # a pred carrying extra DEEP values (an unconsumed `..._get_ex` value left
-        # under the result) keeps its live values there. Bottom-first indexing merges
-        # such a pred's leftover instead of its computed value. For uniform-depth
-        # joins `len-depth+slot == slot`, so this is a no-op.
-        depth = min(len(self.resim_exit[p]) for p in preds)
-        tops = {p: self.resim_exit[p][len(self.resim_exit[p]) - depth:]
-                for p in preds}
+        # Plain merge, slot-wise. HAZARD: align predecessors by their STACK TOP,
+        # never the bottom -- consumers read the top, and a pred carrying extra
+        # DEEP values (an unconsumed `..._get_ex` value left under the result)
+        # keeps its live values there. Bottom-first indexing merges such a
+        # pred's leftover instead of its computed value. For uniform-depth
+        # joins the alignment is the identity, so this is a no-op.
+        depth = max(len(self.resim_exit[p]) for p in preds)
+        tops = self._top_aligned(preds, depth)
         stack, phis = [], []
         for slot in range(depth):
             vals = [tops[p][slot] for p in preds]
