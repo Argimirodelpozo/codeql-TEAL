@@ -7,22 +7,29 @@ AST nodes and the source text (operands / label names), nothing else.
 HAZARD: exactly three successor-type strings exist, and their boolean POLARITY
 is what downstream guard reasoning reads off an edge:
 
-* ``NormalSuccessor``        -- linear fall-through, ``b``/``callsub`` jumps,
-                                ``switch``/``match`` arms (incl. fall-through),
-                                ``retsub`` returns.
-* ``BooleanSuccessor(true)``  -- ``bnz``->target, ``bz``->fall-through,
-                                ``assert``->fall-through.
-* ``BooleanSuccessor(false)`` -- ``bnz``->fall-through, ``bz``->target.
+* ``normal`` -- linear fall-through, ``b``/``callsub`` jumps,
+                ``switch``/``match`` arms (incl. fall-through),
+                ``retsub`` returns.
+* ``true``   -- ``bnz``->target, ``bz``->fall-through, ``assert``->fall-through.
+* ``false``  -- ``bnz``->fall-through, ``bz``->target.
 
 Exit completions (``return``/``err``/assert-false) have no matching successor
 type and so produce no edge.
+
+These were spelled ``NormalSuccessor`` / ``BooleanSuccessor(true|false)`` --
+CodeQL class names, from when a QL extractor produced this relation. The
+extractor is pure Python now (see :mod:`.graph`), and nothing parses these
+strings apart from the three consumers that import the constants below, so
+they are plain values. ALWAYS reference them via ``NORMAL`` / ``BOOL_TRUE`` /
+``BOOL_FALSE``; the literals also appear in the ``graph_golden.txt`` fixtures,
+regenerated with ``python -m tests.gen_graph_golden``.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
-NORMAL = "NormalSuccessor"
-BOOL_TRUE = "BooleanSuccessor(true)"
-BOOL_FALSE = "BooleanSuccessor(false)"
+NORMAL = "normal"
+BOOL_TRUE = "true"
+BOOL_FALSE = "false"
 
 # Control-flow opcode classes (by their ``node_class`` name).
 _RETURN = "ReturnOpcode"
@@ -36,13 +43,13 @@ _BZ = "BzOpcode"
 _SWITCH = "SwitchOpcode"
 _MATCH = "MatchOpcode"
 # Ends a basic block (the boundary the xcontract supergraph splices call/return
-# edges at) but NOT control flow — it keeps its NormalSuccessor edge, like assert.
+# edges at) but NOT control flow — it keeps its `normal` edge, like assert.
 _ITXN_SUBMIT = "InnerTransactionSubmit"
 _LABEL = "Label"
 
 _MULTI = frozenset({_SWITCH, _MATCH})
 _EXIT = frozenset({_RETURN, _ERR})
-# Opcodes that terminate the subroutine-local walk (getNextNode_subroutineAux).
+# Opcodes that terminate the subroutine-local walk (see `_aux_succ`).
 _AUX_STOP = frozenset({_RETURN, _ERR, _RETSUB})
 
 
@@ -102,7 +109,7 @@ _CF_CLASSES = frozenset(
 
 
 def _aux_succ(n: _Node, nxt: _Node | None, labels: dict[str, _Node]) -> list[_Node]:
-    """``getNextNode_subroutineAux``: subroutine-local successors of ``n``.
+    """Subroutine-local successors of ``n``.
 
     Branches follow their target(s); ``callsub`` continues at the next line
     (never descends into the callee); ``return``/``err``/``retsub`` stop.
@@ -152,7 +159,7 @@ def _program_cfg(
     """One program's candidate CFG edges + reachable-node set.
 
     ``(cand, reachable, idx_of)``: candidate ``(pred, succ, type)`` edges, the
-    child indices reachable from the entry (``getChild(0)``), and node identity
+    child indices reachable from the entry (the first child), and node identity
     -> child index. Shared by :func:`build_cfg_edges` and
     :func:`build_basic_blocks` so both see exactly the same reachability.
     """
@@ -263,7 +270,7 @@ def _program_cfg(
         if nxt is not None:
             emit(n, nxt, NORMAL)
 
-    # --- reachability from the entry (getChild(0)) -------------------------
+    # --- reachability from the entry (the first child) ---------------------
     # HAZARD: a `retsub` is context-INSENSITIVE -- it fans a return edge out to
     # EVERY caller's continuation. When a callsub is itself unreachable, its
     # `callsub -> callee` edge is pruned (unreachable predecessor) but the

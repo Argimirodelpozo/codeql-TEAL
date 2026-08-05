@@ -29,33 +29,33 @@ prog.teal	40	0	40	11	InnerTransactionSubmit
 prog.teal	42	0	42	9	PushintOpcode
 prog.teal	43	0	43	6	ReturnOpcode
 ## cfgEdges
-prog.teal	8	prog.teal	9	NormalSuccessor
-prog.teal	9	prog.teal	10	NormalSuccessor
-prog.teal	10	prog.teal	12	NormalSuccessor
-prog.teal	12	prog.teal	13	NormalSuccessor
-prog.teal	13	prog.teal	14	NormalSuccessor
-prog.teal	14	prog.teal	15	NormalSuccessor
-prog.teal	15	prog.teal	17	NormalSuccessor
-prog.teal	17	prog.teal	18	NormalSuccessor
-prog.teal	18	prog.teal	19	NormalSuccessor
-prog.teal	19	prog.teal	20	NormalSuccessor
-prog.teal	20	prog.teal	22	NormalSuccessor
-prog.teal	22	prog.teal	23	NormalSuccessor
-prog.teal	23	prog.teal	24	NormalSuccessor
-prog.teal	24	prog.teal	25	NormalSuccessor
-prog.teal	25	prog.teal	27	NormalSuccessor
-prog.teal	27	prog.teal	28	NormalSuccessor
-prog.teal	28	prog.teal	29	NormalSuccessor
-prog.teal	29	prog.teal	30	NormalSuccessor
-prog.teal	30	prog.teal	32	NormalSuccessor
-prog.teal	32	prog.teal	33	NormalSuccessor
-prog.teal	33	prog.teal	34	NormalSuccessor
-prog.teal	34	prog.teal	35	NormalSuccessor
-prog.teal	35	prog.teal	37	NormalSuccessor
-prog.teal	37	prog.teal	38	NormalSuccessor
-prog.teal	38	prog.teal	40	NormalSuccessor
-prog.teal	40	prog.teal	42	NormalSuccessor
-prog.teal	42	prog.teal	43	NormalSuccessor
+prog.teal	8	prog.teal	9	normal
+prog.teal	9	prog.teal	10	normal
+prog.teal	10	prog.teal	12	normal
+prog.teal	12	prog.teal	13	normal
+prog.teal	13	prog.teal	14	normal
+prog.teal	14	prog.teal	15	normal
+prog.teal	15	prog.teal	17	normal
+prog.teal	17	prog.teal	18	normal
+prog.teal	18	prog.teal	19	normal
+prog.teal	19	prog.teal	20	normal
+prog.teal	20	prog.teal	22	normal
+prog.teal	22	prog.teal	23	normal
+prog.teal	23	prog.teal	24	normal
+prog.teal	24	prog.teal	25	normal
+prog.teal	25	prog.teal	27	normal
+prog.teal	27	prog.teal	28	normal
+prog.teal	28	prog.teal	29	normal
+prog.teal	29	prog.teal	30	normal
+prog.teal	30	prog.teal	32	normal
+prog.teal	32	prog.teal	33	normal
+prog.teal	33	prog.teal	34	normal
+prog.teal	34	prog.teal	35	normal
+prog.teal	35	prog.teal	37	normal
+prog.teal	37	prog.teal	38	normal
+prog.teal	38	prog.teal	40	normal
+prog.teal	40	prog.teal	42	normal
+prog.teal	42	prog.teal	43	normal
 ## basicBlocks
 prog.teal	8	8	40
 prog.teal	9	8	40

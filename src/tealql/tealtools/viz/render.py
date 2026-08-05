@@ -9,6 +9,7 @@ from typing import Iterable
 
 import networkx as nx
 
+from .. import cfg_build as _cfg_build
 from ..ast import AstNode, Location
 from .._utils.dot import escape, render
 class BasicBlockNode:
@@ -53,15 +54,15 @@ def cfg_view(g: nx.MultiDiGraph) -> nx.MultiDiGraph:
 
 # -- Graphviz rendering -------------------------------------------------------
 
+#: Keyed by the successor labels :mod:`..cfg_build` actually emits — imported,
+#: not respelled, so a label change cannot silently fall through to the
+#: `label="<raw>"` default below. The other five keys here
+#: (``*JumpCompletion``, ``RetsubCompletion``) were CodeQL completion classes
+#: that no producer has emitted since the extractor became pure Python.
 _CFG_EDGE_STYLES = {
-    "NormalSuccessor":           "",
-    "BooleanSuccessor(true)":    'color="#2a8f3c", fontcolor="#2a8f3c", label="T"',
-    "BooleanSuccessor(false)":   'color="#c0392b", fontcolor="#c0392b", label="F"',
-    "ConditionalJumpCompletion(true)":  'color="#2a8f3c", fontcolor="#2a8f3c", label="T"',
-    "ConditionalJumpCompletion(false)": 'color="#c0392b", fontcolor="#c0392b", label="F"',
-    "UnconditionalJumpCompletion":      'style=bold, label="jmp"',
-    "RetsubCompletion":          'style=dashed, label="retsub"',
-    "MultilabelJumpCompletion":  'style=dotted',
+    _cfg_build.NORMAL:     "",
+    _cfg_build.BOOL_TRUE:  'color="#2a8f3c", fontcolor="#2a8f3c", label="T"',
+    _cfg_build.BOOL_FALSE: 'color="#c0392b", fontcolor="#c0392b", label="F"',
 }
 
 

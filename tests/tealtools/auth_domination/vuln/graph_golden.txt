@@ -6,10 +6,10 @@ prog.teal	6	0	6	14	AppGlobalPutOpcode
 prog.teal	8	0	8	9	PushintOpcode
 prog.teal	9	0	9	6	ReturnOpcode
 ## cfgEdges
-prog.teal	4	prog.teal	5	NormalSuccessor
-prog.teal	5	prog.teal	6	NormalSuccessor
-prog.teal	6	prog.teal	8	NormalSuccessor
-prog.teal	8	prog.teal	9	NormalSuccessor
+prog.teal	4	prog.teal	5	normal
+prog.teal	5	prog.teal	6	normal
+prog.teal	6	prog.teal	8	normal
+prog.teal	8	prog.teal	9	normal
 ## basicBlocks
 prog.teal	4	4	9
 prog.teal	5	4	9

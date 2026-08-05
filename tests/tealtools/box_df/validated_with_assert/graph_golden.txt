@@ -11,15 +11,15 @@ prog.teal	21	0	21	7	BoxPutOpcode
 prog.teal	23	0	23	9	PushintOpcode
 prog.teal	24	0	24	6	ReturnOpcode
 ## cfgEdges
-prog.teal	11	prog.teal	12	NormalSuccessor
-prog.teal	12	prog.teal	13	NormalSuccessor
-prog.teal	13	prog.teal	14	NormalSuccessor
-prog.teal	14	prog.teal	15	NormalSuccessor
-prog.teal	15	prog.teal	18	BooleanSuccessor(true)
-prog.teal	18	prog.teal	19	NormalSuccessor
-prog.teal	19	prog.teal	21	NormalSuccessor
-prog.teal	21	prog.teal	23	NormalSuccessor
-prog.teal	23	prog.teal	24	NormalSuccessor
+prog.teal	11	prog.teal	12	normal
+prog.teal	12	prog.teal	13	normal
+prog.teal	13	prog.teal	14	normal
+prog.teal	14	prog.teal	15	normal
+prog.teal	15	prog.teal	18	true
+prog.teal	18	prog.teal	19	normal
+prog.teal	19	prog.teal	21	normal
+prog.teal	21	prog.teal	23	normal
+prog.teal	23	prog.teal	24	normal
 ## basicBlocks
 prog.teal	11	11	15
 prog.teal	12	11	15

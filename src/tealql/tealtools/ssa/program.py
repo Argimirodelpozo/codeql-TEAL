@@ -195,9 +195,6 @@ class SSAProgram:
         for u, v, data in g.edges(data=True):
             if data.get("kind") != "cfg":
                 continue
-            succ = data.get("successor")
-            if succ in ("PhiIn", "PhiOut"):
-                continue
             u_bb_id = g.nodes[u].get("bb")
             v_bb_id = g.nodes[v].get("bb")
             if u_bb_id is None or v_bb_id is None:

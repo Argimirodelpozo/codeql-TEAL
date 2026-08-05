@@ -10,14 +10,14 @@ prog.teal	9	0	9	2	AndOpcode
 prog.teal	11	0	11	5	SingleNumericArgumentOpcode
 prog.teal	12	0	12	6	ReturnOpcode
 ## cfgEdges
-prog.teal	3	prog.teal	4	NormalSuccessor
-prog.teal	4	prog.teal	5	NormalSuccessor
-prog.teal	5	prog.teal	6	NormalSuccessor
-prog.teal	6	prog.teal	7	NormalSuccessor
-prog.teal	7	prog.teal	8	NormalSuccessor
-prog.teal	8	prog.teal	9	NormalSuccessor
-prog.teal	9	prog.teal	11	NormalSuccessor
-prog.teal	11	prog.teal	12	NormalSuccessor
+prog.teal	3	prog.teal	4	normal
+prog.teal	4	prog.teal	5	normal
+prog.teal	5	prog.teal	6	normal
+prog.teal	6	prog.teal	7	normal
+prog.teal	7	prog.teal	8	normal
+prog.teal	8	prog.teal	9	normal
+prog.teal	9	prog.teal	11	normal
+prog.teal	11	prog.teal	12	normal
 ## basicBlocks
 prog.teal	3	3	12
 prog.teal	4	3	12

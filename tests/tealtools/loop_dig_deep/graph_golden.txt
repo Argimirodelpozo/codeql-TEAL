@@ -10,15 +10,15 @@ prog.teal	24	0	24	4	BtoiOpcode
 prog.teal	25	0	25	10	BnzOpcode
 prog.teal	27	0	27	6	ReturnOpcode
 ## cfgEdges
-prog.teal	14	prog.teal	16	NormalSuccessor
-prog.teal	16	prog.teal	17	NormalSuccessor
-prog.teal	17	prog.teal	18	NormalSuccessor
-prog.teal	18	prog.teal	21	NormalSuccessor
-prog.teal	21	prog.teal	23	NormalSuccessor
-prog.teal	23	prog.teal	24	NormalSuccessor
-prog.teal	24	prog.teal	25	NormalSuccessor
-prog.teal	25	prog.teal	16	BooleanSuccessor(true)
-prog.teal	25	prog.teal	27	BooleanSuccessor(false)
+prog.teal	14	prog.teal	16	normal
+prog.teal	16	prog.teal	17	normal
+prog.teal	17	prog.teal	18	normal
+prog.teal	18	prog.teal	21	normal
+prog.teal	21	prog.teal	23	normal
+prog.teal	23	prog.teal	24	normal
+prog.teal	24	prog.teal	25	normal
+prog.teal	25	prog.teal	16	true
+prog.teal	25	prog.teal	27	false
 ## basicBlocks
 prog.teal	14	14	14
 prog.teal	16	16	25

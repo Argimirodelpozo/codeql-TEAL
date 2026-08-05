@@ -27,32 +27,32 @@ prog.teal	34	2	34	4	EqualsComparisonOpcode
 prog.teal	35	2	35	8	AssertOpcode
 prog.teal	36	2	36	8	RetsubOpcode
 ## cfgEdges
-prog.teal	6	prog.teal	7	NormalSuccessor
-prog.teal	7	prog.teal	8	NormalSuccessor
-prog.teal	8	prog.teal	9	NormalSuccessor
-prog.teal	9	prog.teal	12	BooleanSuccessor(false)
-prog.teal	9	prog.teal	18	BooleanSuccessor(true)
-prog.teal	12	prog.teal	13	NormalSuccessor
-prog.teal	13	prog.teal	14	NormalSuccessor
-prog.teal	14	prog.teal	15	NormalSuccessor
-prog.teal	15	prog.teal	16	BooleanSuccessor(true)
-prog.teal	16	prog.teal	26	NormalSuccessor
-prog.teal	18	prog.teal	19	NormalSuccessor
-prog.teal	19	prog.teal	20	NormalSuccessor
-prog.teal	20	prog.teal	30	NormalSuccessor
-prog.teal	21	prog.teal	22	NormalSuccessor
-prog.teal	22	prog.teal	23	NormalSuccessor
-prog.teal	23	prog.teal	24	NormalSuccessor
-prog.teal	24	prog.teal	26	BooleanSuccessor(true)
-prog.teal	26	prog.teal	27	NormalSuccessor
-prog.teal	27	prog.teal	28	NormalSuccessor
-prog.teal	30	prog.teal	31	NormalSuccessor
-prog.teal	31	prog.teal	32	NormalSuccessor
-prog.teal	32	prog.teal	33	NormalSuccessor
-prog.teal	33	prog.teal	34	NormalSuccessor
-prog.teal	34	prog.teal	35	NormalSuccessor
-prog.teal	35	prog.teal	36	BooleanSuccessor(true)
-prog.teal	36	prog.teal	21	NormalSuccessor
+prog.teal	6	prog.teal	7	normal
+prog.teal	7	prog.teal	8	normal
+prog.teal	8	prog.teal	9	normal
+prog.teal	9	prog.teal	12	false
+prog.teal	9	prog.teal	18	true
+prog.teal	12	prog.teal	13	normal
+prog.teal	13	prog.teal	14	normal
+prog.teal	14	prog.teal	15	normal
+prog.teal	15	prog.teal	16	true
+prog.teal	16	prog.teal	26	normal
+prog.teal	18	prog.teal	19	normal
+prog.teal	19	prog.teal	20	normal
+prog.teal	20	prog.teal	30	normal
+prog.teal	21	prog.teal	22	normal
+prog.teal	22	prog.teal	23	normal
+prog.teal	23	prog.teal	24	normal
+prog.teal	24	prog.teal	26	true
+prog.teal	26	prog.teal	27	normal
+prog.teal	27	prog.teal	28	normal
+prog.teal	30	prog.teal	31	normal
+prog.teal	31	prog.teal	32	normal
+prog.teal	32	prog.teal	33	normal
+prog.teal	33	prog.teal	34	normal
+prog.teal	34	prog.teal	35	normal
+prog.teal	35	prog.teal	36	true
+prog.teal	36	prog.teal	21	normal
 ## basicBlocks
 prog.teal	6	6	9
 prog.teal	7	6	9

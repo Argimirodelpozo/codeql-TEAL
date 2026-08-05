@@ -16,20 +16,20 @@ prog.teal	25	0	25	9	Label
 prog.teal	26	2	26	11	PushintOpcode
 prog.teal	27	2	27	8	ReturnOpcode
 ## cfgEdges
-prog.teal	7	prog.teal	8	NormalSuccessor
-prog.teal	8	prog.teal	9	NormalSuccessor
-prog.teal	9	prog.teal	10	NormalSuccessor
-prog.teal	10	prog.teal	12	BooleanSuccessor(false)
-prog.teal	10	prog.teal	19	BooleanSuccessor(true)
-prog.teal	12	prog.teal	13	NormalSuccessor
-prog.teal	13	prog.teal	14	NormalSuccessor
-prog.teal	14	prog.teal	15	NormalSuccessor
-prog.teal	15	prog.teal	17	BooleanSuccessor(false)
-prog.teal	15	prog.teal	25	BooleanSuccessor(true)
-prog.teal	19	prog.teal	22	NormalSuccessor
-prog.teal	22	prog.teal	23	NormalSuccessor
-prog.teal	25	prog.teal	26	NormalSuccessor
-prog.teal	26	prog.teal	27	NormalSuccessor
+prog.teal	7	prog.teal	8	normal
+prog.teal	8	prog.teal	9	normal
+prog.teal	9	prog.teal	10	normal
+prog.teal	10	prog.teal	12	false
+prog.teal	10	prog.teal	19	true
+prog.teal	12	prog.teal	13	normal
+prog.teal	13	prog.teal	14	normal
+prog.teal	14	prog.teal	15	normal
+prog.teal	15	prog.teal	17	false
+prog.teal	15	prog.teal	25	true
+prog.teal	19	prog.teal	22	normal
+prog.teal	22	prog.teal	23	normal
+prog.teal	25	prog.teal	26	normal
+prog.teal	26	prog.teal	27	normal
 ## basicBlocks
 prog.teal	7	7	10
 prog.teal	8	7	10

@@ -33,39 +33,39 @@ approval.teal	42	4	42	13	PushintOpcode
 approval.teal	43	4	43	10	BuryOpcode
 approval.teal	44	4	44	26	BOpcode
 ## cfgEdges
-approval.teal	3	approval.teal	6	NormalSuccessor
-approval.teal	6	approval.teal	7	NormalSuccessor
-approval.teal	7	approval.teal	8	NormalSuccessor
-approval.teal	8	approval.teal	9	BooleanSuccessor(true)
-approval.teal	8	approval.teal	35	BooleanSuccessor(false)
-approval.teal	9	approval.teal	10	NormalSuccessor
-approval.teal	10	approval.teal	11	NormalSuccessor
-approval.teal	11	approval.teal	12	NormalSuccessor
-approval.teal	11	approval.teal	18	NormalSuccessor
-approval.teal	12	approval.teal	15	NormalSuccessor
-approval.teal	15	approval.teal	16	NormalSuccessor
-approval.teal	16	approval.teal	17	NormalSuccessor
-approval.teal	18	approval.teal	21	NormalSuccessor
-approval.teal	21	approval.teal	22	NormalSuccessor
-approval.teal	22	approval.teal	23	NormalSuccessor
-approval.teal	23	approval.teal	24	NormalSuccessor
-approval.teal	24	approval.teal	25	NormalSuccessor
-approval.teal	25	approval.teal	28	BooleanSuccessor(true)
-approval.teal	28	approval.teal	29	NormalSuccessor
-approval.teal	29	approval.teal	32	NormalSuccessor
-approval.teal	32	approval.teal	33	NormalSuccessor
-approval.teal	33	approval.teal	34	NormalSuccessor
-approval.teal	34	approval.teal	12	NormalSuccessor
-approval.teal	35	approval.teal	36	NormalSuccessor
-approval.teal	36	approval.teal	37	NormalSuccessor
-approval.teal	37	approval.teal	38	NormalSuccessor
-approval.teal	38	approval.teal	39	NormalSuccessor
-approval.teal	39	approval.teal	40	NormalSuccessor
-approval.teal	40	approval.teal	41	NormalSuccessor
-approval.teal	41	approval.teal	42	BooleanSuccessor(true)
-approval.teal	42	approval.teal	43	NormalSuccessor
-approval.teal	43	approval.teal	44	NormalSuccessor
-approval.teal	44	approval.teal	12	NormalSuccessor
+approval.teal	3	approval.teal	6	normal
+approval.teal	6	approval.teal	7	normal
+approval.teal	7	approval.teal	8	normal
+approval.teal	8	approval.teal	9	true
+approval.teal	8	approval.teal	35	false
+approval.teal	9	approval.teal	10	normal
+approval.teal	10	approval.teal	11	normal
+approval.teal	11	approval.teal	12	normal
+approval.teal	11	approval.teal	18	normal
+approval.teal	12	approval.teal	15	normal
+approval.teal	15	approval.teal	16	normal
+approval.teal	16	approval.teal	17	normal
+approval.teal	18	approval.teal	21	normal
+approval.teal	21	approval.teal	22	normal
+approval.teal	22	approval.teal	23	normal
+approval.teal	23	approval.teal	24	normal
+approval.teal	24	approval.teal	25	normal
+approval.teal	25	approval.teal	28	true
+approval.teal	28	approval.teal	29	normal
+approval.teal	29	approval.teal	32	normal
+approval.teal	32	approval.teal	33	normal
+approval.teal	33	approval.teal	34	normal
+approval.teal	34	approval.teal	12	normal
+approval.teal	35	approval.teal	36	normal
+approval.teal	36	approval.teal	37	normal
+approval.teal	37	approval.teal	38	normal
+approval.teal	38	approval.teal	39	normal
+approval.teal	39	approval.teal	40	normal
+approval.teal	40	approval.teal	41	normal
+approval.teal	41	approval.teal	42	true
+approval.teal	42	approval.teal	43	normal
+approval.teal	43	approval.teal	44	normal
+approval.teal	44	approval.teal	12	normal
 ## basicBlocks
 approval.teal	3	3	8
 approval.teal	6	3	8

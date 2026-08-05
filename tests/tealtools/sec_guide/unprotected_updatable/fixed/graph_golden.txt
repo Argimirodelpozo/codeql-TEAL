@@ -14,18 +14,18 @@ prog.teal	13	0	13	6	AssertOpcode
 prog.teal	14	0	14	5	SingleNumericArgumentOpcode
 prog.teal	15	0	15	6	ReturnOpcode
 ## cfgEdges
-prog.teal	3	prog.teal	4	NormalSuccessor
-prog.teal	4	prog.teal	5	NormalSuccessor
-prog.teal	5	prog.teal	6	NormalSuccessor
-prog.teal	6	prog.teal	7	BooleanSuccessor(false)
-prog.teal	6	prog.teal	9	BooleanSuccessor(true)
-prog.teal	7	prog.teal	8	NormalSuccessor
-prog.teal	9	prog.teal	10	NormalSuccessor
-prog.teal	10	prog.teal	11	NormalSuccessor
-prog.teal	11	prog.teal	12	NormalSuccessor
-prog.teal	12	prog.teal	13	NormalSuccessor
-prog.teal	13	prog.teal	14	BooleanSuccessor(true)
-prog.teal	14	prog.teal	15	NormalSuccessor
+prog.teal	3	prog.teal	4	normal
+prog.teal	4	prog.teal	5	normal
+prog.teal	5	prog.teal	6	normal
+prog.teal	6	prog.teal	7	false
+prog.teal	6	prog.teal	9	true
+prog.teal	7	prog.teal	8	normal
+prog.teal	9	prog.teal	10	normal
+prog.teal	10	prog.teal	11	normal
+prog.teal	11	prog.teal	12	normal
+prog.teal	12	prog.teal	13	normal
+prog.teal	13	prog.teal	14	true
+prog.teal	14	prog.teal	15	normal
 ## basicBlocks
 prog.teal	3	3	6
 prog.teal	4	3	6

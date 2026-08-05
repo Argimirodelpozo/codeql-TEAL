@@ -11,11 +11,19 @@ import pytest
 
 from tealql.tealtools.graph import load_graph, _load_source_bytes
 from tealql.tealtools.ast.parse import parse_nodes
-from tealql.tealtools.cfg_build import build_cfg_edges, build_basic_blocks
+from tealql.tealtools.cfg_build import (
+    BOOL_FALSE,
+    BOOL_TRUE,
+    NORMAL,
+    build_basic_blocks,
+    build_cfg_edges,
+)
 
 TESTS_DIR = Path(__file__).resolve().parent
 
-_SUCC_TYPES = {"NormalSuccessor", "BooleanSuccessor(true)", "BooleanSuccessor(false)"}
+#: Imported, never respelled: a pin that hardcodes the labels stops testing
+#: the producer and starts testing a copy of it.
+_SUCC_TYPES = {NORMAL, BOOL_TRUE, BOOL_FALSE}
 
 
 def _all_contracts() -> list[Path]:

@@ -19,23 +19,23 @@ prog.teal	23	0	23	6	AssertOpcode
 prog.teal	25	0	25	9	PushintOpcode
 prog.teal	26	0	26	6	ReturnOpcode
 ## cfgEdges
-prog.teal	5	prog.teal	6	NormalSuccessor
-prog.teal	6	prog.teal	7	NormalSuccessor
-prog.teal	7	prog.teal	8	NormalSuccessor
-prog.teal	8	prog.teal	10	BooleanSuccessor(true)
-prog.teal	10	prog.teal	11	NormalSuccessor
-prog.teal	11	prog.teal	12	NormalSuccessor
-prog.teal	12	prog.teal	13	NormalSuccessor
-prog.teal	13	prog.teal	15	BooleanSuccessor(true)
-prog.teal	15	prog.teal	16	NormalSuccessor
-prog.teal	16	prog.teal	17	NormalSuccessor
-prog.teal	17	prog.teal	18	NormalSuccessor
-prog.teal	18	prog.teal	20	BooleanSuccessor(true)
-prog.teal	20	prog.teal	21	NormalSuccessor
-prog.teal	21	prog.teal	22	NormalSuccessor
-prog.teal	22	prog.teal	23	NormalSuccessor
-prog.teal	23	prog.teal	25	BooleanSuccessor(true)
-prog.teal	25	prog.teal	26	NormalSuccessor
+prog.teal	5	prog.teal	6	normal
+prog.teal	6	prog.teal	7	normal
+prog.teal	7	prog.teal	8	normal
+prog.teal	8	prog.teal	10	true
+prog.teal	10	prog.teal	11	normal
+prog.teal	11	prog.teal	12	normal
+prog.teal	12	prog.teal	13	normal
+prog.teal	13	prog.teal	15	true
+prog.teal	15	prog.teal	16	normal
+prog.teal	16	prog.teal	17	normal
+prog.teal	17	prog.teal	18	normal
+prog.teal	18	prog.teal	20	true
+prog.teal	20	prog.teal	21	normal
+prog.teal	21	prog.teal	22	normal
+prog.teal	22	prog.teal	23	normal
+prog.teal	23	prog.teal	25	true
+prog.teal	25	prog.teal	26	normal
 ## basicBlocks
 prog.teal	5	5	8
 prog.teal	6	5	8

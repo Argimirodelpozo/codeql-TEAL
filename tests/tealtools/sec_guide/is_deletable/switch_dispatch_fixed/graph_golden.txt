@@ -16,20 +16,20 @@ prog.teal	22	0	22	13	Label
 prog.teal	23	2	23	7	SingleNumericArgumentOpcode
 prog.teal	24	2	24	8	ReturnOpcode
 ## cfgEdges
-prog.teal	6	prog.teal	7	NormalSuccessor
-prog.teal	7	prog.teal	8	NormalSuccessor
-prog.teal	7	prog.teal	10	NormalSuccessor
-prog.teal	7	prog.teal	14	NormalSuccessor
-prog.teal	7	prog.teal	18	NormalSuccessor
-prog.teal	7	prog.teal	22	NormalSuccessor
-prog.teal	10	prog.teal	11	NormalSuccessor
-prog.teal	11	prog.teal	12	NormalSuccessor
-prog.teal	14	prog.teal	15	NormalSuccessor
-prog.teal	15	prog.teal	16	NormalSuccessor
-prog.teal	18	prog.teal	19	NormalSuccessor
-prog.teal	19	prog.teal	20	NormalSuccessor
-prog.teal	22	prog.teal	23	NormalSuccessor
-prog.teal	23	prog.teal	24	NormalSuccessor
+prog.teal	6	prog.teal	7	normal
+prog.teal	7	prog.teal	8	normal
+prog.teal	7	prog.teal	10	normal
+prog.teal	7	prog.teal	14	normal
+prog.teal	7	prog.teal	18	normal
+prog.teal	7	prog.teal	22	normal
+prog.teal	10	prog.teal	11	normal
+prog.teal	11	prog.teal	12	normal
+prog.teal	14	prog.teal	15	normal
+prog.teal	15	prog.teal	16	normal
+prog.teal	18	prog.teal	19	normal
+prog.teal	19	prog.teal	20	normal
+prog.teal	22	prog.teal	23	normal
+prog.teal	23	prog.teal	24	normal
 ## basicBlocks
 prog.teal	6	6	7
 prog.teal	7	6	7
