@@ -9,8 +9,10 @@
 # compiler internals (<5.8) and a git-pinned tree-sitter-teal commit. hatchling
 # stays the build backend; uv is the resolver / installer / runner.
 #
-# Not run here: the behavioural lift gate (needs a live algod localnet) and
-# LIFT_SEMANTICS_BACKEND (opt-in, slow) — both stay developer-side.
+# Not run here: the behavioural lift gate and the assembler differential —
+# both need a live algod localnet, so they stay developer-side. Everything
+# else runs, including the Tier-3 backend harness (LIFT_SEMANTICS_BACKEND —
+# once believed slow, measured 2026-08-05 at +5 tests / ~5s).
 name: CI
 
 on:
@@ -52,6 +54,7 @@ jobs:
       - name: Test — full suite + lift corpus + coverage floor
         env:
           LIFT_SEMANTICS_CORPUS: "1"
+          LIFT_SEMANTICS_BACKEND: "1"
         run: uv run pytest tests/ -q -n auto --cov
 
   wheel-smoke:
