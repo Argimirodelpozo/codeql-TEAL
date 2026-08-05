@@ -65,3 +65,35 @@ def test_plain_int_followed_by_label_not_merged():
     # a real `int 0` then a separate label must NOT be swallowed by the recovery.
     assert _const_of(
         "#pragma version 10\nint 0\nbnz skip\nskip:\nint 1\nreturn\n", "int") == 0
+
+
+def test_state_key_survives_being_shuffled_under_its_value():
+    """A constant state key must still be a constant where it is CONSUMED.
+
+    `app_global_put` takes the value on top, so a compiler that pushes the key first
+    emits `key; value; ...` — or `value; key; swap`, which is what puya does. Either way
+    the key reaching the put has passed through a stack shuffle, and if `const_value` does
+    not survive that, the key is unrecoverable: `_const_key` answers None, the put/get
+    schema cannot be matched up, and the slot's value type cannot be inferred from the
+    contract's own puts. Downstream that shows up as a state-held byteslice typed uint64.
+
+    Asserted at the VALUE level rather than against any particular mechanism, so it holds
+    whether the identity comes from shuffle pass-through, the stack simulation, or
+    anything later.
+    """
+    from tealql.tealtools.lift.type_recovery import _const_key
+
+    d = tempfile.mkdtemp()
+    Path(d, "p.teal").write_text(
+        "#pragma version 10\n"
+        'bytecblock "aa" "bb" "cc" "dd" "ee" "ff" "gg" "hh" "ii" "pwpk"\n'
+        "txna ApplicationArgs 1\n"     # the VALUE first ...
+        "bytec 9\n"                    # ... then the key, so the put needs a swap
+        "swap\n"
+        "app_global_put\n"
+        "int 1\nreturn\n")
+    p = SSAProgram(d)
+    p.propagate_constants()
+    puts = [a for a in p.assignments if a.op == "app_global_put"]
+    assert len(puts) == 1
+    assert _const_key(puts[0].inputs[1]) == "0x7077706b"      # b"pwpk"
