@@ -455,6 +455,16 @@ class _Lifter:
                                        returns=["?"] * nrets, body=body)
                 self.subs.append(sub_ir)
                 sub_pairs.append((sub_ir, s))
+        # Each guarded pass records how often it FIRED. Every one of them
+        # refuses silently when its guards fail -- by design, since each falls
+        # back to a total, honest representation -- so a rotted guard changes
+        # nothing observable and no gate goes red. These counts are what
+        # `tests/test_pass_firing_ratchet.py` pins.
+        stats: dict = {
+            "splice_subs": len(self._spliced_subs),
+            "splice_sites": len(self._splice_entry),
+            "doomed_edges": len(self.doomed_edges),
+        }
         self._apply_doomed_edges()
         transforms.prune_dead_phis(self.subs)
         # Loop: a cross-group passthrough value can itself be another passthrough.
@@ -467,25 +477,26 @@ class _Lifter:
         # stores (runs after recovery, so "mixed" is observable). HAZARD: this
         # PRESERVES the write -- scratch is gload-readable across the group, so a
         # store with no local load is NOT dead and must never be dropped.
-        transforms.sink_mixed_phi_scratch_stores(self.subs)
+        stats["sink_mixed_scratch"] = transforms.sink_mixed_phi_scratch_stores(self.subs)
         main = next(sub for sub in self.subs if sub.is_main)
-        prog_ir = pre_ir.Program(main=main, subroutines=[s for s in self.subs if not s.is_main])
+        prog_ir = pre_ir.Program(main=main, subroutines=[s for s in self.subs if not s.is_main],
+                                 pass_stats=stats)
         type_recovery.finalize_types(prog_ir)
         # A sub called with conflicting result AVM types can't have one Puya return
         # type; clone it per type (after finalize, so caller result types settled).
-        transforms.specialize_polymorphic_returns(prog_ir)
+        stats["specialize_returns"] = transforms.specialize_polymorphic_returns(prog_ir)
         # A still-`?` phi whose arms cross the AVM divide is a dynamically-typed
         # stack cell no single typed register can carry. Faithfulness ladder:
         # tail-duplicate the join when every guard holds (each pred gets its own
         # copy — EXACT, no merge exists); else split into one phi per demanded
         # FAMILY, each use picking its own — before materialize, which stamps
         # the split's Undefined arms.
-        transforms.tail_duplicate_mixed_joins(prog_ir)
-        transforms.split_mixed_phis(prog_ir)
-        transforms.materialize_phi_consts(prog_ir)
+        stats["tail_dup_joins"] = transforms.tail_duplicate_mixed_joins(prog_ir)
+        stats["split_mixed_phis"] = transforms.split_mixed_phis(prog_ir)
+        stats["phi_arms_given_up"] = transforms.materialize_phi_consts(prog_ir)
         # Puya requires per-sub block ownership, so a block reached from more than
         # one subroutine is cloned into each consuming sub.
-        transforms.duplicate_cross_subroutine_blocks(prog_ir)
+        stats["dup_cross_sub_blocks"] = transforms.duplicate_cross_subroutine_blocks(prog_ir)
         return prog_ir
 
     def _sub_io(self, entry_bb):

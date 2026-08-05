@@ -296,6 +296,13 @@ class Subroutine:
 class Program:
     main: Subroutine
     subroutines: list = field(default_factory=list)  # list[Subroutine]
+    #: How often each guarded pass FIRED building this program (pass name ->
+    #: count). Every entry is a pass that refuses silently when its guards
+    #: fail: refusal is safe by design (each falls back to a total, honest
+    #: representation) which is exactly why a rotted guard is invisible —
+    #: nothing raises, nothing changes shape, the fallback just takes over.
+    #: `tests/test_pass_firing_ratchet.py` pins these so that stays loud.
+    pass_stats: dict = field(default_factory=dict)
 
     def render(self) -> str:
         return "\n\n".join(s.render() for s in (self.main, *self.subroutines))

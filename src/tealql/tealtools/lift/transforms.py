@@ -666,18 +666,24 @@ def _split_one_mixed_phi(prog, sub_by_id, sub, bb, ph, ctr) -> int:
     return ctr
 
 
-def materialize_phi_consts(prog) -> None:
+def materialize_phi_consts(prog) -> int:
     """Materialize a constant phi argument as a ``let r = <const>`` at the end of its
-    through block, coerced to the phi's AVM type.
+    through block, coerced to the phi's AVM type; returns the number of arms GIVEN UP
+    (kept as an explicit unknown because no single register can hold them).
 
     HAZARD: Puya requires phi args to be registers and SILENTLY DROPS a constant one,
     leaving the phi short an operand vs its predecessors. The coercion is equally
-    required: ``let pc: uint64 = <bytes>`` fails Puya's assignment check."""
+    required: ``let pc: uint64 = <bytes>`` fails Puya's assignment check.
+
+    The return value is a PRECISION metric, not a health one: every count is a real
+    value the model stopped tracking, so it should only ever fall. It is the last
+    rung of the mixed-cell ladder — whatever tail duplication and the per-use split
+    could not keep lands here."""
     from .type_recovery import _itob_const, _to_u64_const
     block_by_id: dict = {}
     for bb in pre_ir.blocks(prog):
         block_by_id[bb.id] = bb
-    n = 0
+    n = given_up = 0
     for bb in pre_ir.blocks(prog):
         for ph in bb.phis:
             if all(isinstance(a.value, pre_ir.Register) for a in ph.args):
@@ -723,6 +729,7 @@ def materialize_phi_consts(prog) -> None:
                         "mixed-type merge: arm %s of a %s phi is cross-family — kept as an "
                         "explicit unknown; that path's value is not modelled",
                         arg.value, ty)
+                    given_up += 1
                     r = pre_ir.Register(f"pc%{n}", 0, ty)
                     n += 1
                     through.ops.append(pre_ir.Assignment([r], pre_ir.Undefined(ir_type=ty)))
@@ -741,6 +748,7 @@ def materialize_phi_consts(prog) -> None:
                         "mixed-type merge: arm %s of an untyped phi cannot be a "
                         "%s — kept as an explicit unknown; recompiled TEAL may "
                         "compute with 0 on that path", val, ty)
+                    given_up += 1
                     val = pre_ir.Undefined(ir_type=ty)
                 elif avm(ty) == "u" and isinstance(val, pre_ir.BytesConstant):
                     val = _to_u64_const(val)
@@ -757,6 +765,7 @@ def materialize_phi_consts(prog) -> None:
                 n += 1
                 through.ops.append(pre_ir.Assignment([r], val))
                 arg.value = r
+    return given_up
 
 
 def _remap_succ_ids(t, idmap: dict) -> None:
