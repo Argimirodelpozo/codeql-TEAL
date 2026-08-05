@@ -20,6 +20,7 @@ from ..ssa import (
     _canon_shuffle,
     _shuffle_mapping,
 )
+from ..ssa.models import Assignment as _SSAAssignment, BasicBlock as _SSABasicBlock
 from ..structure import analyze_structure
 from . import pre_ir, transforms, type_recovery
 from ..avm import (
@@ -262,38 +263,13 @@ class _Lifter:
         self.not_function_shaped: set = set()
         _arity = _infer_arities(struct, self.callsite,
                                 divergent=self.not_function_shaped)
-        if self.not_function_shaped:
-            # Legal TEAL that is not a function: a pre-`proto` `retsub` is a
-            # jump, so a sub whose return sites leave different depths has no
-            # single signature. The inferred one over-declares its shallow
-            # paths and the re-simulator pads them with `Undefined` — an
-            # explicit unknown, but the caller's own value is what physically
-            # sits there, so say so rather than let a silent `Undefined` read
-            # as an ordinary gap.
-            #
-            # SPLICING THE BODY INTO THE CALLER IS THE FAITHFUL ANSWER AND WAS
-            # TRIED (2026-08-04, reverted): a pre-`proto` callsub/retsub is a
-            # jump, the raw CFG already carries the edges, and with ONE call
-            # site the divergence becomes an ordinary depth-divergent join the
-            # max-window merge represents cell-for-cell. It produced correct
-            # IR but IR the BACKEND cannot lower — app_1050027991 recompiled
-            # before and after failed with "l-stack too small for store 71"
-            # (Puya's MIR allocator: an op consuming from an empty l-stack, so
-            # the spliced body consumes a value its group never pushes). That
-            # was the ONLY contract the splice reached, so it broke the single
-            # case it improved. Re-attempting it means fixing the group's
-            # value plumbing across the splice FIRST, and gating on
-            # `lift_to_teal`, which the behavioural sweep reports as a SKIP
-            # rather than a divergence.
-            logger.warning(
-                "%d legacy subroutine(s) are NOT function-shaped (their retsub "
-                "sites leave different stack depths), so the lifted signature "
-                "over-declares the shallow paths and values below the call read "
-                "as Undefined: %s. Faithful lifting of these needs per-call-site "
-                "inlining.",
-                len(self.not_function_shaped),
-                ", ".join(sorted(str(getattr(s_, "name", s_))
-                                 for s_ in self.not_function_shaped)[:5]))
+        # Legal TEAL that is not a function: a pre-`proto` `retsub` is a jump,
+        # so a sub whose return sites leave different depths has no single
+        # signature. `_splice_divergent_legacy` (below, after the producer maps
+        # exist) gives each CALL SITE its own copy of the body — the call
+        # becomes the jump it really is, and the divergence becomes ordinary
+        # depth-divergent joins at the continuation. Subs its guards refuse
+        # keep the arity-model recovery and are warned about there.
         self._io_by_entry = {s.entry_bb: a for s, a in _arity.items()}
         self._proto_entries = {s.entry_bb for s in struct.subroutines
                                if any(a.op == "proto" for a in s.entry_bb.assignments)}
@@ -326,10 +302,25 @@ class _Lifter:
                 lv = self.prog.var(n.location.file, n.location.start_line, 1)
                 if lv is not None:
                     self.load_stores[lv] = [self.prog.var(*k) for k in stores]
+        # Per-call-site duplication of divergent legacy subroutines. Runs after
+        # `producer` exists (clone outputs register there) and before groups /
+        # `bid` form (clones join their caller's group and need block ids).
+        self._splice_entry: dict = {}     # callsub_bb -> that site's clone of the entry
+        self._splice_retsub: dict = {}    # clone retsub block -> the site's continuation
+        self._clone_map_of: dict = {}     # clone block -> {original -> clone} for its site
+        self._clones_of_group: dict = {}  # struct.Subroutine | None (main) -> [clone blocks]
+        self._spliced_subs: set = set()   # subs spliced at EVERY site: no group is built
+        self.doomed_edges: set = set()    # (pred, join): shallow-arm entry dies in join
+        self._doom_profile: dict = {}     # block -> [(dip, impure_before)] | None
+        self._splice_divergent_legacy(struct)
         all_blocks = sorted(self.prog.blocks.values(), key=self._key)
         main_blocks = [bb for bb in all_blocks if bb not in self.sub_of]
-        groups = [("main", None, main_blocks)]
+        groups = [("main", None,
+                   sorted(main_blocks + self._clones_of_group.get(None, []),
+                          key=self._key))]
         for s in sorted(struct.subroutines, key=lambda s: self._key(s.entry_bb)):
+            if s in self._spliced_subs:
+                continue                  # every site got its own copy: no group
             # Drop blocks this body cannot actually REACH. Bodies overlap, and
             # for two different reasons that must not be conflated:
             #
@@ -360,11 +351,17 @@ class _Lifter:
                     or self.cont_site.get(bb) is not None
                     and self.cont_site[bb].callsub_bb in s.body]
             groups.append((s.name or f"sub@L{s.entry_bb.first_line}", s,
-                           sorted(body, key=self._key)))
+                           sorted(body + self._clones_of_group.get(s, []),
+                                  key=self._key)))
         # Global block ids, though Puya restarts block@0 per subroutine: the
         # partition leaves cross-routine branch edges (tail-calls / shared
         # epilogues), which a per-subroutine-local id would silently mis-target.
+        # Splice clones id AFTER the originals; they never enter `line2block`
+        # (they share their original's lines — label targets resolve to the
+        # original and `_site_target` maps them into the copy).
         self.bid = {bb: i for i, bb in enumerate(all_blocks)}
+        for _cb in (cb for lst in self._clones_of_group.values() for cb in lst):
+            self.bid[_cb] = len(self.bid)
         self.line2block = {bb.first_line: bb for bb in all_blocks}
         self.regs: dict = {}
         self.ctr: dict = {}
@@ -388,6 +385,12 @@ class _Lifter:
         # register space -- a different Puya subroutine, hence "undefined" here.
         self.call_results: dict = {}          # callsub_bb -> [result Register], declared order
         for cs in struct.call_sites:
+            if cs.callsub_bb in self._splice_entry:
+                # A spliced site has no call: the continuation's values arrive
+                # on the re-simulated stack through the copy, and aliasing its
+                # phis to `cr%` registers no InvokeSubroutine defines would
+                # leave orphans.
+                continue
             cont, entry = cs.continuation_bb, cs.target_entry
             if cont is None or entry is None:
                 continue
@@ -452,6 +455,7 @@ class _Lifter:
                                        returns=["?"] * nrets, body=body)
                 self.subs.append(sub_ir)
                 sub_pairs.append((sub_ir, s))
+        self._apply_doomed_edges()
         transforms.prune_dead_phis(self.subs)
         # Loop: a cross-group passthrough value can itself be another passthrough.
         while transforms.isolate_cross_group_phis(self.subs):
@@ -489,6 +493,176 @@ class _Lifter:
 
     def _key(self, bb):
         return (bb.file, bb.first_line)
+
+    def _splice_divergent_legacy(self, struct) -> None:
+        """Give every call site of a divergent legacy subroutine its OWN COPY of
+        the body — the faithful model: a pre-`proto` `callsub`/`retsub` is a
+        jump, so per-site the call becomes `Goto(copy entry)`, the copy's
+        `retsub` becomes `Goto(that site's continuation)`, and the caller's
+        stack flows through VERBATIM. The divergence then joins at the
+        continuation as an ordinary depth-divergent merge, which the max-window
+        join represents cell-for-cell — no signature, no `Undefined` padding.
+
+        Duplication is what makes `retsub` lowerable at all with >1 caller: the
+        return target is correlated with the entry edge (the return-address
+        stack), which a flat CFG cannot express — but each COPY has exactly one
+        continuation, so its retsub is a direct jump. The 2026-08-04 in-place
+        splice attempt lacked this and was reverted; per-site copies also
+        dissolve its identity problem, because every cloned block, assignment
+        and output is a FRESH object (block/var keys get an `@l<site-line>`
+        file suffix — both classes hash by value, so reused keys would conflate
+        clone with original in every map keyed on them).
+
+        GUARDS — any failure refuses the whole sub (all sites or none, so the
+        call interface stays consistent) and keeps the arity-model recovery:
+
+        * every site has a callsub block and a continuation;
+        * the body contains a `retsub` (so continuations keep a resim
+          predecessor) and no nested `callsub` (recursion / callsite-map
+          nesting) and no `frame_dig`/`frame_bury`/`proto`;
+        * every edge into the body comes from the body or a call site, and
+          every non-retsub edge out stays inside it — a stray jump either way
+          would dangle once the original body stops being built;
+        * sites x blocks <= 512.
+
+        Measured 2026-08-05: every affected corpus contract is the same
+        TEALScript-era shape — 2 sites x 9 blocks, no nested calls, no frame
+        ops — so the guards cover the entire real population."""
+        refused = []
+        for d in sorted(self.not_function_shaped,
+                        key=lambda s_: self._key(s_.entry_bb)):
+            sites = [cs for cs in struct.call_sites
+                     if cs.target_entry is d.entry_bb]
+            body = sorted(d.body, key=self._key)
+            body_set = set(body)
+            callsub_bbs = {cs.callsub_bb for cs in sites}
+            ops = [a.op for bb in body for a in bb.assignments]
+
+            def _is_retsub(bb):
+                return bool(bb.assignments) and bb.assignments[-1].op == "retsub"
+
+            ok = (bool(sites)
+                  and all(cs.callsub_bb is not None
+                          and cs.continuation_bb is not None for cs in sites)
+                  and "retsub" in ops
+                  and "callsub" not in ops
+                  and not any(o in ("frame_dig", "frame_bury", "proto")
+                              for o in ops)
+                  and len(sites) * len(body) <= 512
+                  and all(p in body_set or p in callsub_bbs
+                          for bb in body for p in bb.predecessors)
+                  and all(s_ in body_set
+                          for bb in body if not _is_retsub(bb)
+                          for s_ in bb.successors))
+            if not ok:
+                refused.append(d)
+                continue
+            for cs in sites:
+                cmap = self._clone_site(body, d, cs)
+                self._splice_entry[cs.callsub_bb] = cmap[d.entry_bb]
+                caller = self.sub_of.get(cs.callsub_bb)
+                self._clones_of_group.setdefault(caller, []).extend(
+                    cmap[bb] for bb in body)
+            self._spliced_subs.add(d)
+        if refused:
+            logger.warning(
+                "%d legacy subroutine(s) are NOT function-shaped (their retsub "
+                "sites leave different stack depths) and failed the per-site "
+                "splice guards, so the lifted signature over-declares the "
+                "shallow paths and values below the call read as Undefined: %s",
+                len(refused),
+                ", ".join(sorted(str(getattr(s_, "name", s_))
+                                 for s_ in refused)[:5]))
+
+    def _clone_site(self, body, d, cs):
+        """Clone ``body`` for call site ``cs``; returns {original -> clone}.
+
+        Shallow beyond the copy's own defs: cloned assignments keep their
+        original `location` (provenance) and any operand defined OUTSIDE the
+        body (a caller value) stays the original object. Only body-DEFINED
+        outputs are re-minted, and inputs are remapped onto those, so
+        `_shuffle_mapping`-style def/use correspondence survives inside the
+        copy. Clone phis are dropped: the re-simulation supplies every mainline
+        value, and the site's single entry edge means the caller's stack flows
+        in verbatim."""
+        tag = f"@l{cs.line}"
+        cmap = {bb: _SSABasicBlock(bb.file + tag, bb.first_line, bb.last_line)
+                for bb in body}
+        var_map: dict = {}
+        for bb in body:                       # pass 1: mint every body def
+            for a in bb.assignments:
+                for o in a.outputs:
+                    if isinstance(o, SSAVar) and o not in var_map:
+                        nv = SSAVar(o.file + tag, o.line, o.index)
+                        nv.const_value, nv.range, nv.type = \
+                            o.const_value, o.range, o.type
+                        var_map[o] = nv
+        for bb in body:                       # pass 2: clone ops over the map
+            cb = cmap[bb]
+            for a in bb.assignments:
+                ca = _SSAAssignment(
+                    outputs=[var_map.get(o, o) for o in a.outputs],
+                    op=a.op, immediates=a.immediates,
+                    inputs=[var_map.get(i, i) for i in a.inputs],
+                    location=a.location, ast_code=a.ast_code,
+                    const=a.const, basic_block=cb, shuffled=a.shuffled)
+                for o in ca.outputs:
+                    if isinstance(o, SSAVar):
+                        o.defined_by = ca
+                        self.producer[o] = ca
+                cb.assignments.append(ca)
+            if cb.assignments and cb.assignments[-1].op == "retsub":
+                cb.successors = [cs.continuation_bb]
+                self._splice_retsub[cb] = cs.continuation_bb
+            else:
+                cb.successors = [cmap.get(s_, s_) for s_ in bb.successors]
+            self._clone_map_of[cb] = cmap
+        return cmap
+
+    def _apply_doomed_edges(self) -> None:
+        """Retarget every recorded doomed ``(pred, join)`` edge to an explicit
+        ``Fail`` block in the pred's pre-IR subroutine, and drop the join's phi
+        arms for that edge (an arm whose edge no longer exists fails Puya's
+        phi-vs-predecessors check). Runs after the groups are built — the
+        terminators being rewritten are the emitted pre-IR ones — and before
+        ``prune_dead_phis``. Both reject: the original by stack underflow, the
+        recompiled program by ``err`` — and a rejecting transaction discards
+        everything it did first (group-atomic), so rejecting earlier is
+        observationally identical."""
+        if not self.doomed_edges:
+            return
+        blk_of: dict = {}                  # pre-IR block id -> (subroutine, block)
+        for sub in self.subs:
+            for blk in sub.body:
+                blk_of[blk.id] = (sub, blk)
+        next_id = max(blk_of, default=-1) + 1
+        for P, J in sorted(self.doomed_edges,
+                           key=lambda e: (self.bid.get(e[0], -1),
+                                          self.bid.get(e[1], -1))):
+            pid, jid = self.bid.get(P), self.bid.get(J)
+            if pid not in blk_of or jid not in blk_of:
+                continue
+            psub, pblk = blk_of[pid]
+            jblk = blk_of[jid][1]
+            fail = pre_ir.BasicBlock(
+                id=next_id, phis=[], ops=[],
+                terminator=pre_ir.Fail("stack underflow on this path"))
+            next_id += 1
+            psub.body.append(fail)
+            blk_of[fail.id] = (psub, fail)
+            pre_ir.map_succ_ids(pblk.terminator,
+                                lambda b, _j=jid, _f=fail.id: _f if b == _j else b)
+            for ph in jblk.phis:
+                ph.args = [a for a in ph.args if a.through != pid]
+
+    def _site_target(self, bb, blk):
+        """A label-resolved block as seen from ``bb``: label targets resolve via
+        ``line2block`` to ORIGINALS, so inside a spliced copy they must map to
+        that copy's clone (identity everywhere else)."""
+        if blk is None:
+            return None
+        m = self._clone_map_of.get(bb)
+        return m.get(blk, blk) if m else blk
 
     def type_of(self, o, op=None, imm=None) -> str:
         if op in _BOOL_OPS:
@@ -708,7 +882,7 @@ class _Lifter:
             return None, set()
         cases, targets = [], set()
         for i, lbl in enumerate(labels):
-            blk = self.line2block.get(self.label2line.get(lbl))
+            blk = self._site_target(bb, self.line2block.get(self.label2line.get(lbl)))
             if blk is None or blk not in self.bid:
                 return None, set()
             cases.append((ops_[i], self.bid[blk]))
@@ -720,6 +894,9 @@ class _Lifter:
         op = t.op if t is not None else None
 
         if op == "callsub":
+            ce = self._splice_entry.get(bb)
+            if ce is not None:
+                return pre_ir.Goto(self.bid[ce])   # spliced: the call IS a jump
             cs = self.callsite.get(bb)
             cont = cs.continuation_bb if cs else None
             if cont is not None and cont in self.bid:
@@ -731,6 +908,9 @@ class _Lifter:
                 return pre_ir.ProgramExit(pre_ir.UInt64Constant(0))
             return pre_ir.SubroutineReturn([])
         if op == "retsub":
+            sc = self._splice_retsub.get(bb)
+            if sc is not None:                     # spliced copy: direct jump
+                return pre_ir.Goto(self.bid[sc])
             return self._control_retsub(bb)
         succ = [s for s in bb.successors if s in self.bid]
         if not succ:
@@ -748,7 +928,8 @@ class _Lifter:
             return pre_ir.Goto(self.bid[succ[0]])
         if len(succ) == 2 and op in _COND_BRANCH and t is not None:
             cond = self._sel_value(t)
-            taken = self.line2block.get(self.label2line.get((t.immediates or "").strip()))
+            taken = self._site_target(bb, self.line2block.get(
+                self.label2line.get((t.immediates or "").strip())))
             if taken in succ:
                 other = succ[0] if succ[1] is taken else succ[1]
             else:
@@ -761,7 +942,7 @@ class _Lifter:
             if term is not None:
                 return term
         if op == "switch" and t is not None:
-            term = self._control_switch(t, succ)
+            term = self._control_switch(bb, t, succ)
             if term is not None:
                 return term
         # `match` is KEYED, so a POSITIONAL GotoNth over CFG-successor order
@@ -821,7 +1002,7 @@ class _Lifter:
         order = list(range(n))[::-1]           # label[i] -> ins[n - i]
         cases, targets = [], set()
         for i, lbl in enumerate(labels):
-            blk = self.line2block.get(self.label2line.get(lbl))
+            blk = self._site_target(bb, self.line2block.get(self.label2line.get(lbl)))
             ki = 1 + order[i]
             ci = ins[ki] if 0 <= ki < len(ins) else None
             if isinstance(ci, pre_ir.BytesConstant):
@@ -843,7 +1024,7 @@ class _Lifter:
             return pre_ir.Switch(val, cases, self.bid[default])
         return None
 
-    def _control_switch(self, t, succ):
+    def _control_switch(self, bb, t, succ):
         """Build the POSITIONAL ``GotoNth`` for a ``switch`` block, or ``None`` to
         fall through to the generic GotoNth.
 
@@ -856,18 +1037,19 @@ class _Lifter:
         labels = (t.immediates or "").split()
         arms, ok = [], True
         for lbl in labels:
-            blk = self.line2block.get(self.label2line.get(lbl))
+            blk = self._site_target(bb, self.line2block.get(self.label2line.get(lbl)))
             if blk is None or blk not in self.bid:
                 ok = False
                 break
             arms.append(self.bid[blk])
         sl = t.location.line if getattr(t, "location", None) else None
         after = [fl for fl in self.line2block if sl is not None and fl > sl]
-        ft = self.line2block[min(after)] if after else None
+        ft = self._site_target(bb, self.line2block[min(after)] if after else None)
         if ok and ft is not None and ft in self.bid:
             return pre_ir.GotoNth(self._sel_value(t), arms, self.bid[ft])
         if ok and succ:                       # robustness: best-effort default
-            labeled = {self.line2block.get(self.label2line.get(lbl)) for lbl in labels}
+            labeled = {self._site_target(bb, self.line2block.get(self.label2line.get(lbl)))
+                       for lbl in labels}
             dft = next((s for s in succ if s not in labeled), succ[-1])
             return pre_ir.GotoNth(self._sel_value(t), arms, self.bid[dft])
         return None
@@ -881,7 +1063,16 @@ class _Lifter:
         def isucc(b):
             # retsub/return/err LEAVE the sub: their raw successors are the callers'
             # continuations, not internal flow. A callsub flows to its own
-            # continuation, not into the callee.
+            # continuation, not into the callee. SPLICED sites invert both rules:
+            # the callsub jumps INTO its own copy of the callee, and the copy's
+            # retsub jumps to this site's continuation — checked FIRST, before
+            # the terminator-op rules that would misread them.
+            ce = self._splice_entry.get(b)
+            if ce is not None:
+                return [ce] if ce in body else []
+            sc = self._splice_retsub.get(b)
+            if sc is not None:
+                return [sc] if sc in body else []
             if b.assignments and b.assignments[-1].op in ("retsub", "return", "err"):
                 return []
             cs = self.callsite.get(b)
@@ -960,6 +1151,54 @@ class _Lifter:
             return self.reg(o)
         return self.value(o)
 
+    def _block_doom_profile(self, b):
+        """Per-op stack DIP for ``b``'s straight line, or None to refuse: each
+        entry is the level RELATIVE TO BLOCK ENTRY right after that op's pops —
+        the underflow-relevant low point. Arity accounting mirrors
+        ``_resim_exec_op`` exactly — canonical shuffle arities (a ``cover n``
+        transiently needs n+1 cells), const pushes, terminators pushing
+        nothing. Frame ops, ``callsub`` and ``retsub`` refuse: their depth
+        behaviour is contextual, and a wrong profile here turns a LIVE path
+        into a reject.
+
+        No purity tracking: a transaction that underflows DISCARDS everything
+        it did (state writes, inner txns, logs — group-atomic), so an
+        execution that will underflow in this straight line is
+        observationally a reject from its first instruction. Ops before the
+        crossing can only reject SOONER (a failing ``assert``, a pure panic)
+        — the same outcome."""
+        if b in self._doom_profile:
+            return self._doom_profile[b]
+        run, out = 0, []
+        for a in b.assignments:
+            if a.op in _FRAME_OPS or a.op in ("callsub", "retsub"):
+                out = None
+                break
+            if a.op in ("intcblock", "bytecblock", "proto"):
+                continue
+            if a.op in _STACK_SHUFFLE_OPS:
+                n_in, m = _canon_shuffle(a.op, a.immediates)
+                if m is None:
+                    m, n_in = _shuffle_mapping(a), len(a.inputs)
+                if m is None:
+                    out = None
+                    break
+                run -= n_in
+                out.append(run)
+                run += n_in
+                continue
+            if (not a.inputs and a.outputs and all(
+                    getattr(o, "const_value", None) is not None for o in a.outputs)):
+                run += len(a.outputs)
+                continue
+            ni, _ = op_arity(a.op, a.immediates)
+            run -= ni
+            out.append(run)
+            if a.op not in _TERMINATOR_OPS:
+                run += sum(1 for o in a.outputs if isinstance(o, SSAVar))
+        self._doom_profile[b] = out
+        return out
+
     def _top_aligned(self, preds, depth):
         """Each predecessor's exit stack as ``depth`` cells, TOP-ALIGNED.
 
@@ -1020,6 +1259,25 @@ class _Lifter:
         # pred's leftover instead of its computed value. For uniform-depth
         # joins the alignment is the identity, so this is a no-op.
         depth = max(len(self.resim_exit[p]) for p in preds)
+        # DEAD-ARM FAITHFULNESS: an execution entering via a pred SHALLOWER
+        # than the merge window dies the moment the ORIGINAL program consumes
+        # below what that pred actually holds — an AVM stack underflow, a
+        # deterministic reject that (group-atomically) discards everything the
+        # transaction did first. When the dip below the pred's depth happens
+        # in THIS very block (straight line, so inevitable), the recompiled
+        # program must reject there too — otherwise the padded unknown lowers
+        # to a zero and the dead arm APPROVES where the original panics
+        # (measured live: 5/10 dryrun inputs diverged on a two-arm join whose
+        # shallow arm popped past its depth). Record the edge;
+        # `_apply_doomed_edges` retargets it to a `Fail` in the pre-IR. NOT a
+        # join-rule change: window, alignment and arms are untouched, so the
+        # two stack simulations still agree.
+        for p in preds:
+            d = len(self.resim_exit[p])
+            if d >= depth:
+                continue
+            if any(dip < -d for dip in self._block_doom_profile(b) or ()):
+                self.doomed_edges.add((p, b))
         tops = self._top_aligned(preds, depth)
         stack, phis = [], []
         for slot in range(depth):
@@ -1105,6 +1363,11 @@ class _Lifter:
                 stack.append(v)
             return
         if a.op == "callsub":
+            if b in self._splice_entry:
+                # Spliced divergent-legacy site: the call is a JUMP — no args
+                # popped, no results pushed; the stack flows into the copy.
+                self.resim_args[id(a)] = []
+                return
             cs = self.callsite.get(b)
             nargs = self._sub_io(cs.target_entry)[0] if (cs and cs.target_entry) else 0
             nargs = min(nargs, len(stack))
@@ -1237,6 +1500,8 @@ class _Lifter:
         if self._is_routed_shuffle(a):
             return                              # const shuffle routed to source
         if a.op == "callsub":
+            if bb in self._splice_entry:
+                return                        # spliced: control() emits the jump
             cs = self.callsite.get(bb)
             target = (cs.target_name if cs and cs.target_name
                       else (a.immediates or "?"))

@@ -667,11 +667,14 @@ def test_a_panicking_op_survives_into_the_pre_ir_even_when_dead(tmp_path):
 
 #: A depth-divergent join whose two arms carry the SAME AVM type, so it isolates
 #: the merge-width question. Path A reaches `join` holding one cell, path B two;
-#: the `pop` then takes B's extra cell and the `+` consumes the one below, which
-#: path A does not have.
+#: the `pop` takes B's extra cell, and the `+` that consumes the cell path A
+#: does not have sits PAST A BRANCH — inside the join block the shallow arm
+#: never dips below its own depth, so the dead-arm kill stays out of the way
+#: and the merge must carry the missing cell as an explicit unknown.
 _DIVERGENT_JOIN = (
     "#pragma version 8\nint 1\ntxn NumAppArgs\nbnz two\nb join\n"
-    "two:\nint 8\njoin:\npop\nint 5\n+\npop\nint 1\nreturn\n"
+    "two:\nint 8\njoin:\npop\ntxn NumLogs\nbnz other\nint 1\nreturn\n"
+    "other:\nint 5\n+\npop\nint 1\nreturn\n"
 )
 
 
@@ -726,10 +729,13 @@ def test_a_typed_phi_with_an_unknown_arm_does_not_kill_the_lift(tmp_path):
 #: The depth-divergent join above with the arms' TYPES crossed: top-aligned over
 #: the max window, the deep slot holds bytes on one path and nothing on the
 #: other, while the top slot holds bytes on one path and uint64 on the other.
-#: Legal, runnable TEAL — the AVM stack is untyped.
+#: Legal, runnable TEAL — the AVM stack is untyped. The `len` that consumes the
+#: cell the shallow path lacks sits past a branch, keeping the shallow arm live
+#: inside the join block (the dead-arm kill must not swallow the case).
 _DIVERGENT_MIXED_JOIN = (
     "#pragma version 8\nbyte \"aa\"\ntxn NumAppArgs\nbnz two\nb join\n"
-    "two:\nint 8\njoin:\npop\nlen\npop\nint 1\nreturn\n"
+    "two:\nint 8\njoin:\npop\ntxn NumLogs\nbnz other\nint 1\nreturn\n"
+    "other:\nlen\npop\nint 1\nreturn\n"
 )
 
 
@@ -939,3 +945,125 @@ def test_an_any_typed_use_of_a_mixed_register_merge_is_tail_duplicated(tmp_path)
     assert "φ(" not in rendered and "undefined" not in rendered.lower(), (
         f"a duplicated join needs no merge and loses no value:\n{rendered}")
     lift_to_teal(str(teal))          # and it must still reach TEAL
+
+
+#: A LEGACY (pre-`proto`) subroutine whose retsub paths leave DIFFERENT depths —
+#: not a function, no (nargs, nret) describes it — called from TWO sites that
+#: hold different stacks. The only faithful model is one body copy per site.
+_TWO_SITE_DIVERGENT = (
+    "#pragma version 8\nint 7\ntxn NumAppArgs\nbnz second\ncallsub helper\n"
+    "pop\npop\nint 1\nreturn\nsecond:\nint 9\ncallsub helper\npop\npop\npop\n"
+    "int 1\nreturn\nhelper:\ntxn NumLogs\nbnz deep\nretsub\ndeep:\nint 5\nretsub\n"
+)
+
+
+def test_a_divergent_legacy_sub_is_spliced_per_call_site(tmp_path):
+    """Each call site of a divergent legacy sub gets its OWN copy of the body:
+    the `callsub` becomes the jump it really is, the copy's `retsub` a direct
+    jump to THAT site's continuation, and the caller's stack flows through
+    verbatim — the divergence joins at the continuation as an ordinary
+    depth-divergent merge.
+
+    Per-site duplication is what makes `retsub` representable at all with more
+    than one caller: the return target is correlated with the entry edge (the
+    return-address stack), which a flat CFG cannot express — the 2026-08-04
+    in-place splice was reverted over exactly that. A COPY has one continuation,
+    so its retsub is a direct jump; and every cloned block, assignment and
+    output being a FRESH object (an `@l<site-line>` key suffix — both SSA
+    classes hash by value) is what dissolves the documented
+    `resim_args`-keyed-by-`id()` identity problem."""
+    from tealql.tealtools.lift.backend import lift_to_teal
+
+    teal = tmp_path / "twosite.teal"
+    teal.write_text(_TWO_SITE_DIVERGENT)
+    ir = lift(SSAProgram(str(teal)))
+    rendered = ir.render()
+    assert "(helper" not in rendered and "subroutine" not in rendered, (
+        f"a spliced sub must not survive as a callable:\n{rendered}")
+    assert rendered.count("(txn NumLogs)") == 2, (
+        f"each site must own a COPY of the body:\n{rendered}")
+    lift_to_teal(str(teal))          # and the copies must lower
+
+    # The old single-site shape (the one the reverted in-place splice broke)
+    # rides the same path: one site, one copy, still lowers.
+    one = tmp_path / "onesite.teal"
+    one.write_text(
+        "#pragma version 8\nint 7\ncallsub helper\npop\npop\nint 1\nreturn\n"
+        "helper:\ntxn NumLogs\nbnz deep\nretsub\ndeep:\nint 5\nretsub\n")
+    r1 = lift(SSAProgram(str(one))).render()
+    assert "(helper" not in r1, f"single-site must splice too:\n{r1}"
+    lift_to_teal(str(one))
+
+
+def test_a_divergent_legacy_sub_with_a_nested_call_is_refused_not_broken(tmp_path):
+    """The splice guards refuse a divergent legacy sub that CONTAINS a callsub
+    (nesting means callsite-map surgery and recursion is outright
+    unrepresentable by copies) — the sub keeps the arity-model recovery: it is
+    still emitted, still invoked, and the program still reaches TEAL. Refusal
+    must degrade, never break."""
+    from tealql.tealtools.lift.backend import lift_to_teal
+
+    teal = tmp_path / "nested.teal"
+    teal.write_text(
+        "#pragma version 8\nint 7\ntxn NumAppArgs\nbnz second\ncallsub helper\n"
+        "pop\npop\nint 1\nreturn\nsecond:\nint 9\ncallsub helper\npop\npop\npop\n"
+        "int 1\nreturn\nhelper:\ncallsub inner\ntxn NumLogs\nbnz deep\nretsub\n"
+        "deep:\nint 5\nretsub\ninner:\nretsub\n")
+    ir = lift(SSAProgram(str(teal)))
+    rendered = ir.render()
+    assert "(helper" in rendered, (
+        f"a refused sub must stay a callable (arity-model recovery):\n{rendered}")
+    lift_to_teal(str(teal))          # and must still reach TEAL
+
+
+def test_a_dead_shallow_arm_rejects_like_the_underflow_it_is(tmp_path):
+    """A join arm arriving SHALLOWER than the merge window, where the join
+    block's own straight line consumes below that arm's depth: every execution
+    entering there dies in the ORIGINAL program — an AVM stack underflow, a
+    deterministic reject. Lowering the padded unknown to a zero instead made
+    the recompiled program APPROVE on that arm — measured live, 5 of 10 dryrun
+    inputs diverged (orig=reject, lift=APPROVE) on exactly this program before
+    the fix.
+
+    The doomed edge is retargeted to an explicit ``Fail``: both programs
+    reject, and since a rejecting transaction discards everything it did
+    (group-atomic), rejecting at the join entry is observationally identical
+    to underflowing mid-block — which is also why a ``log`` or state write
+    before the underflow point does NOT veto the kill."""
+    from tealql.tealtools.lift.backend import lift_to_teal
+
+    teal = tmp_path / "deadarm.teal"
+    teal.write_text("#pragma version 8\ntxn NumAppArgs\nbnz deep\nb join\n"
+                    "deep:\nint 5\njoin:\npop\nint 1\nreturn\n")
+    rendered = lift(SSAProgram(str(teal))).render()
+    assert "fail" in rendered and "underflow" in rendered, (
+        f"the shallow arm must be an explicit reject:\n{rendered}")
+    lift_to_teal(str(teal))
+
+    # Atomicity: a log BEFORE the underflow point does not save the arm — the
+    # failed transaction discards the log too, so the kill still fires.
+    logged = tmp_path / "deadarm_logged.teal"
+    logged.write_text("#pragma version 8\ntxn NumAppArgs\nbnz deep\nb join\n"
+                      "deep:\nint 5\njoin:\nbyte \"aa\"\nlog\npop\nint 1\nreturn\n")
+    r2 = lift(SSAProgram(str(logged))).render()
+    assert "fail" in r2 and "underflow" in r2, (
+        f"atomicity makes the pre-underflow log unobservable:\n{r2}")
+    lift_to_teal(str(logged))
+
+
+def test_a_live_shallow_arm_keeps_its_unknown_not_a_reject(tmp_path):
+    """The dead-arm kill fires ONLY on proven inevitability: a join block that
+    never dips below the shallow arm's own depth (the deep cell is consumed
+    past a branch) leaves the arm LIVE, and killing it would turn approving
+    executions into rejects. The arm keeps the max-window representation — the
+    missing cell as an explicit unknown."""
+    from tealql.tealtools.lift.backend import lift_to_teal
+
+    teal = tmp_path / "livearm.teal"
+    teal.write_text(_DIVERGENT_JOIN)
+    rendered = lift(SSAProgram(str(teal))).render()
+    assert "fail" not in rendered, (
+        f"a live arm must NOT be rejected:\n{rendered}")
+    assert "undefined" in rendered.lower(), (
+        f"the live shallow arm keeps its explicit unknown:\n{rendered}")
+    lift_to_teal(str(teal))
