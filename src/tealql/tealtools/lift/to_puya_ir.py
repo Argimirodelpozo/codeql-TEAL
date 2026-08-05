@@ -143,7 +143,11 @@ class _Translator:
         if isinstance(v, pre_ir.BytesConstant):
             return _bytes_const(v.value or "0x")
         if isinstance(v, pre_ir.Undefined):
-            return M.Undefined(source_location=None, ir_type=PT.uint64)
+            # An unknown has no type of its own; honour the one stamped on it
+            # (`?` falls back to uint64). Hardcoding uint64 here made
+            # `let pc%N: bytes = undefined` -- a divergent join's missing-arm
+            # cell whose phi settled to bytes -- fail Puya's assignment check.
+            return M.Undefined(source_location=None, ir_type=self.ty(v.ir_type))
         raise TypeError(f"val: {type(v).__name__}")
 
     @staticmethod
@@ -220,6 +224,13 @@ class _Translator:
                 immediates=[self._imm(i) for i in s.immediates],
                 args=[self.val(a) for a in reversed(s.args)],   # top-first -> AVM order
                 **kw)
+        if isinstance(s, pre_ir.Undefined) and result_types and len(result_types) == 1:
+            # A bare undefined ASSIGNED to a register takes the register's type:
+            # post-recovery the target is the single source of truth, and an
+            # unknown adopting it asserts no value. Substitution passes can put
+            # an Undefined in source position after the stamped materialisation,
+            # so this must not rely on the Undefined's own ir_type alone.
+            return M.Undefined(source_location=None, ir_type=result_types[0])
         if isinstance(s, pre_ir.InvokeSubroutine):
             # Subroutine args are positional (args[i] -> param i), NOT AVM-order
             # like Intrinsic args -- Puya builds them `for param in parameters`.

@@ -721,3 +721,221 @@ def test_a_typed_phi_with_an_unknown_arm_does_not_kill_the_lift(tmp_path):
     teal.write_text(_DIVERGENT_JOIN)
     ir = lift(SSAProgram(str(teal)))          # must not raise
     assert ir is not None
+
+
+#: The depth-divergent join above with the arms' TYPES crossed: top-aligned over
+#: the max window, the deep slot holds bytes on one path and nothing on the
+#: other, while the top slot holds bytes on one path and uint64 on the other.
+#: Legal, runnable TEAL — the AVM stack is untyped.
+_DIVERGENT_MIXED_JOIN = (
+    "#pragma version 8\nbyte \"aa\"\ntxn NumAppArgs\nbnz two\nb join\n"
+    "two:\nint 8\njoin:\npop\nlen\npop\nint 1\nreturn\n"
+)
+
+
+def test_a_divergent_mixed_type_join_reaches_teal(tmp_path):
+    """A join whose paths arrive at different DEPTHS and whose merged slots hold
+    different AVM TYPES per path must still reach TEAL.
+
+    It lifted but did not lower. The missing-arm cell of the deep slot is an
+    ``Undefined``, whose ``ir_type`` stays ``"?"`` (``_unify_phi_types`` rightly
+    skips frozen operands: an unknown has no type to fix) — but the translation
+    hardcoded ``PT.uint64`` for every ``Undefined``, so once the slot's phi
+    settled to BYTES, ``let pc%N: bytes = undefined`` failed Puya's assignment
+    check: ``incompatible types on assignment: source = (uint64), target =
+    (bytes)``. Uniform-type divergence (above) dodged it only because uint64
+    happened to match the hardcode; uniform-depth mixed types dodged it because
+    no arm is missing. The fix types the materialised unknown from its phi and
+    makes the translation honour the assignment TARGET — an unknown adopting the
+    register's recovered type asserts no value, so nothing is coerced.
+
+    The mixed-type TOP slot is legitimately absent from the IR: its only
+    consumer is ``pop``, and ``prune_dead_phis`` deliberately refuses to let a
+    discard revive a mixed-AVM-type merge."""
+    from tealql.tealtools.lift import pre_ir
+    from tealql.tealtools.lift.backend import lift_to_teal
+
+    teal = tmp_path / "divmixed.teal"
+    teal.write_text(_DIVERGENT_MIXED_JOIN)
+    ir = lift(SSAProgram(str(teal)))
+    rendered = ir.render()
+    assert "undefined" in rendered.lower(), (
+        f"the shallow path's missing cell must stay an explicit unknown:\n{rendered}")
+    # The pre-IR must be SELF-consistent: an Undefined assigned to a typed
+    # register carries that register's type (the register is the source of
+    # truth; a `?`-typed source under a typed target is the exact shape that
+    # lowered as uint64 and crashed).
+    for sub in (ir.main, *ir.subroutines):
+        for bb in sub.body:
+            for node in bb.ops:
+                if (isinstance(node, pre_ir.Assignment)
+                        and isinstance(node.source, pre_ir.Undefined)
+                        and len(node.targets) == 1
+                        and node.targets[0].ir_type != "?"):
+                    assert node.source.ir_type == node.targets[0].ir_type, (
+                        f"untyped undefined under a typed target in:\n{rendered}")
+    lift_to_teal(str(teal))          # the crash under test: must reach TEAL
+
+
+def test_a_mixed_type_merge_into_a_scratch_store_sinks_per_edge(tmp_path):
+    """A join slot holding ``byte "aa"`` on one path and ``int 8`` on the other,
+    consumed only by ``store 0``, must become one single-typed store per edge —
+    ``sink_mixed_phi_scratch_stores``' designed job — with the ORIGINAL values.
+
+    It did not fire: its mixed-AVM detection read types only off REGISTER args,
+    and at that stage (before ``materialize_phi_consts``) the merge still
+    carries the per-edge CONSTANTS, so the type set came back empty and the phi
+    sailed on to materialisation — which then guessed a type PER ARG, giving one
+    phi differently-typed arguments, and Puya rejected the lift:
+    ``Phi node received arguments with unexpected type(s)``."""
+    from tealql.tealtools.lift.backend import lift_to_teal
+
+    teal = tmp_path / "mixstore.teal"
+    teal.write_text(
+        '#pragma version 8\ntxn NumAppArgs\nbnz two\nbyte "aa"\nb join\n'
+        "two:\nint 8\njoin:\nstore 0\nint 1\nreturn\n")
+    rendered = lift(SSAProgram(str(teal))).render()
+    assert rendered.count("store 0") == 2, (
+        f"the store must be sunk into BOTH predecessors:\n{rendered}")
+    assert "0x6161" in rendered and "8u" in rendered, (
+        f"each edge must store its ORIGINAL value, uncoerced:\n{rendered}")
+    assert "φ(" not in rendered, (
+        f"no mixed-type merge may survive the sink:\n{rendered}")
+    lift_to_teal(str(teal))          # and it must still reach TEAL
+
+
+def test_an_unsinkable_mixed_type_merge_is_tail_duplicated_exactly(tmp_path):
+    """The mixed-type merge feeding a DYNAMIC scratch write (``stores``) is not
+    sinkable — the slot index is a runtime value — and no consumer types it, so
+    no single typed register can hold it. When the join block is self-contained
+    (nothing defined in it escapes, no missing-cell arms, not a loop header),
+    ``tail_duplicate_mixed_joins`` deletes the join instead: each predecessor
+    gets its own copy consuming ITS path's single-typed value directly.
+
+    That is the fully faithful answer — each path stores its ORIGINAL value,
+    which a sibling transaction observes through ``gload``. No merge register
+    exists, so no unknown and no coercion: ``itob``-ing the ``int 8`` to make
+    types line up would assert a plausible wrong value on a live path."""
+    from tealql.tealtools.lift.backend import lift_to_teal
+
+    teal = tmp_path / "mixstores.teal"
+    teal.write_text(
+        "#pragma version 8\nint 0\ntxn NumAppArgs\nbnz two\nbyte \"aa\"\nb join\n"
+        "two:\nint 8\njoin:\nstores\nint 1\nreturn\n")
+    ir = lift(SSAProgram(str(teal)))
+    rendered = ir.render()
+    assert rendered.count("(stores") == 2, (
+        f"the join must be duplicated into BOTH predecessors:\n{rendered}")
+    assert "0x6161" in rendered and "8u" in rendered, (
+        f"each copy must store its ORIGINAL value, uncoerced:\n{rendered}")
+    assert "φ(" not in rendered and "undefined" not in rendered.lower(), (
+        f"a duplicated join needs no merge and loses no value:\n{rendered}")
+    lift_to_teal(str(teal))          # and it must still reach TEAL
+
+
+def test_a_refused_mixed_merge_keeps_the_explicit_unknown_floor(tmp_path):
+    """Tail duplication REFUSES a loop header (self-arm) — restructuring a loop
+    is not V1's business — and the merge falls through to the per-use pick: the
+    majority-family phi keeps its own family's arm verbatim and the arm the
+    register cannot hold becomes an EXPLICIT unknown, never a reinterpreted or
+    coerced value. This pins the fall-back ladder: every guard failure lands on
+    a total, honest floor rather than a crash."""
+    from tealql.tealtools.avm import avm
+    from tealql.tealtools.lift.backend import lift_to_teal
+
+    teal = tmp_path / "mixloop.teal"
+    teal.write_text(
+        "#pragma version 8\ntxn NumAppArgs\nbnz two\ntxn Sender\nb loop\n"
+        "two:\nglobal LatestTimestamp\nloop:\ndup\nint 1\nswap\nstores\n"
+        "txn NumLogs\nbnz loop\npop\nint 1\nreturn\n")
+    ir = lift(SSAProgram(str(teal)))
+    rendered = ir.render()
+    assert "φ(" in rendered, (
+        f"the refused merge must SURVIVE as a phi, not be duplicated:\n{rendered}")
+    assert "undefined" in rendered.lower(), (
+        f"the cross-family arm must be an explicit unknown:\n{rendered}")
+    for sub in (ir.main, *ir.subroutines):
+        for bb in sub.body:
+            for ph in bb.phis:
+                want = avm(ph.register.ir_type)
+                assert want in ("u", "b"), f"an untyped phi survived:\n{rendered}"
+                for a in ph.args:
+                    got = avm(getattr(a.value, "ir_type", "?"))
+                    assert got in ("?", want), (
+                        f"phi {ph.register} carries a {got} arm across the AVM "
+                        f"divide:\n{rendered}")
+    lift_to_teal(str(teal))          # and it must still reach TEAL
+
+
+def test_a_mixed_register_merge_with_conflicting_typed_uses_splits_per_use(tmp_path):
+    """One stack cell holding ``txn Sender`` (bytes) on one path and ``global
+    LatestTimestamp`` (uint64) on the other, later consumed by BOTH ``len`` and
+    ``+``: no single typed register can carry it, and consumer-driven recovery
+    cannot pick a side, so the phi stayed ``?`` with cross-family REGISTER args
+    and Puya rejected the lift (``Phi node received arguments with unexpected
+    type(s)``).
+
+    ``split_mixed_phis`` is the per-use pick: ONE PHI PER FAMILY, each keeping
+    its own family's arms VERBATIM (exactness) with explicit unknowns on the
+    others, and each use consuming the family it demands. Sound under
+    panic-pruning — reaching ``len`` along the uint64 arm is an AVM type panic,
+    so that path is dead at that use, the same argument the depth-divergent
+    merge already stands on."""
+    from tealql.tealtools.avm import avm
+    from tealql.tealtools.lift import pre_ir
+    from tealql.tealtools.lift.backend import lift_to_teal
+
+    teal = tmp_path / "regboth.teal"
+    teal.write_text(
+        "#pragma version 8\ntxn NumAppArgs\nbnz two\ntxn Sender\nb join\n"
+        "two:\nglobal LatestTimestamp\njoin:\ndup\ntxn NumLogs\nbnz blen\n"
+        "int 1\n+\npop\npop\nint 1\nreturn\nblen:\nlen\npop\npop\nint 1\nreturn\n")
+    ir = lift(SSAProgram(str(teal)))
+    rendered = ir.render()
+    phis = [ph for sub in (ir.main, *ir.subroutines)
+            for bb in sub.body for ph in bb.phis]
+    assert {avm(ph.register.ir_type) for ph in phis} == {"u", "b"}, (
+        f"the mixed cell must split into one phi per demanded family:\n{rendered}")
+    for ph in phis:                  # each split phi is family-consistent
+        want = avm(ph.register.ir_type)
+        for a in ph.args:
+            got = avm(getattr(a.value, "ir_type", "?"))
+            assert got in ("?", want), (
+                f"phi {ph.register} carries a {got} arm:\n{rendered}")
+    # Exactness: each family phi keeps its own family's LIVE arm verbatim —
+    # the bytes phi carries the Sender register, the uint64 phi the timestamp.
+    b_phi = next(ph for ph in phis if avm(ph.register.ir_type) == "b")
+    u_phi = next(ph for ph in phis if avm(ph.register.ir_type) == "u")
+    assert any(getattr(a.value, "ir_type", "") == "account"
+               for a in b_phi.args), (
+        f"the bytes phi lost its live Sender arm:\n{rendered}")
+    assert any(isinstance(a.value, pre_ir.Register)
+               and a.value.ir_type == "uint64" and not a.value.name.startswith("pc%")
+               for a in u_phi.args), (
+        f"the uint64 phi lost its live timestamp arm:\n{rendered}")
+    lift_to_teal(str(teal))          # the crash under test: must reach TEAL
+
+
+def test_an_any_typed_use_of_a_mixed_register_merge_is_tail_duplicated(tmp_path):
+    """The mixed-REGISTER cell (``txn Sender`` vs ``global LatestTimestamp``)
+    consumed only by ``stores``: the self-contained join is deleted by tail
+    duplication, and each path's copy stores its OWN register directly — the
+    Sender on one path, the timestamp on the other, both live values kept
+    exactly. Cloning is shallow for the externally-defined registers (pre-IR
+    registers are identity-keyed; a deep copy would sever every reference) and
+    the merge never exists, so nothing is unknown and nothing is retyped."""
+    from tealql.tealtools.lift.backend import lift_to_teal
+
+    teal = tmp_path / "regstores.teal"
+    teal.write_text(
+        "#pragma version 8\nint 0\ntxn NumAppArgs\nbnz two\ntxn Sender\nb join\n"
+        "two:\nglobal LatestTimestamp\njoin:\nstores\nint 1\nreturn\n")
+    ir = lift(SSAProgram(str(teal)))
+    rendered = ir.render()
+    assert rendered.count("(stores") == 2, (
+        f"the join must be duplicated into BOTH predecessors:\n{rendered}")
+    assert "(txn Sender)" in rendered and "(global LatestTimestamp)" in rendered, (
+        f"each copy must consume its path's ORIGINAL register:\n{rendered}")
+    assert "φ(" not in rendered and "undefined" not in rendered.lower(), (
+        f"a duplicated join needs no merge and loses no value:\n{rendered}")
+    lift_to_teal(str(teal))          # and it must still reach TEAL

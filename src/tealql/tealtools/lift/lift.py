@@ -470,6 +470,14 @@ class _Lifter:
         # A sub called with conflicting result AVM types can't have one Puya return
         # type; clone it per type (after finalize, so caller result types settled).
         transforms.specialize_polymorphic_returns(prog_ir)
+        # A still-`?` phi whose arms cross the AVM divide is a dynamically-typed
+        # stack cell no single typed register can carry. Faithfulness ladder:
+        # tail-duplicate the join when every guard holds (each pred gets its own
+        # copy — EXACT, no merge exists); else split into one phi per demanded
+        # FAMILY, each use picking its own — before materialize, which stamps
+        # the split's Undefined arms.
+        transforms.tail_duplicate_mixed_joins(prog_ir)
+        transforms.split_mixed_phis(prog_ir)
         transforms.materialize_phi_consts(prog_ir)
         # Puya requires per-sub block ownership, so a block reached from more than
         # one subroutine is cloned into each consuming sub.

@@ -3,9 +3,12 @@ cleanup and out-of-SSA prep (types live in :mod:`type_recovery`)."""
 from __future__ import annotations
 
 import copy as _copy
+import logging
 
 from . import pre_ir
 from ..avm import avm
+
+logger = logging.getLogger("tealql.tealtools.lift")
 
 
 def _intr(o):
@@ -131,8 +134,14 @@ def sink_mixed_phi_scratch_stores(subs) -> int:
     n = 0
     for B in blocks:
         for ph in list(B.phis):
-            tys = {avm(a.value.ir_type) for a in ph.args
-                   if isinstance(a.value, pre_ir.Register)} - {"?"}
+            # EVERY arg votes, not just Registers: this runs BEFORE
+            # `materialize_phi_consts`, so a merge of raw stack cells still
+            # carries its per-edge CONSTANTS (`byte "aa"` vs `int 8`), and a
+            # Register-only scan sees no types at all — the mixed phi then
+            # survives to materialisation, which cannot give one register two
+            # types, and the lower stage rejects it.
+            tys = {avm(getattr(a.value, "ir_type", "?"))
+                   for a in ph.args} - {"?"}
             if len(tys) < 2:
                 continue                      # not mixed-AVM
             stores = _phi_only_scratch_stores(blocks, ph)
@@ -297,6 +306,366 @@ def isolate_cross_group_phis(subs) -> int:
     return len(removed)
 
 
+def _mapped(v, m: dict):
+    """``v`` mapped through ``m`` (an ``id(value) -> value`` substitution)."""
+    return m.get(id(v), v)
+
+
+def _clone_vp(vp, m: dict):
+    """A NEW ValueProvider with every leaf Value mapped through ``m``. New
+    objects, never mutation — the original block must survive verbatim for the
+    next clone. Bare values map directly (frozen constants are shared)."""
+    if isinstance(vp, pre_ir.Intrinsic):
+        return pre_ir.Intrinsic(vp.op, list(vp.immediates),
+                                [_mapped(a, m) for a in vp.args], vp.line)
+    if isinstance(vp, pre_ir.InvokeSubroutine):
+        return pre_ir.InvokeSubroutine(vp.target, [_mapped(a, m) for a in vp.args])
+    if isinstance(vp, pre_ir.ValueTuple):
+        return pre_ir.ValueTuple([_mapped(v, m) for v in vp.values])
+    return _mapped(vp, m)
+
+
+def _clone_terminator(t, m: dict):
+    """A NEW terminator with mapped operand values and the SAME successor ids."""
+    if isinstance(t, pre_ir.Goto):
+        return pre_ir.Goto(t.target)
+    if isinstance(t, pre_ir.ConditionalBranch):
+        return pre_ir.ConditionalBranch(_mapped(t.condition, m), t.non_zero, t.zero)
+    if isinstance(t, pre_ir.GotoNth):
+        return pre_ir.GotoNth(_mapped(t.value, m), list(t.blocks), t.default)
+    if isinstance(t, pre_ir.Switch):
+        return pre_ir.Switch(_mapped(t.value, m), list(t.cases), t.default)
+    if isinstance(t, pre_ir.SubroutineReturn):
+        return pre_ir.SubroutineReturn([_mapped(r, m) for r in t.result])
+    if isinstance(t, pre_ir.ProgramExit):
+        return pre_ir.ProgramExit(_mapped(t.result, m))
+    if isinstance(t, pre_ir.Fail):
+        return pre_ir.Fail(t.error_message)
+    return None
+
+
+def _tail_dup_preds(prog, sub, B):
+    """The predecessor blocks to clone ``B`` for, or None when any guard of
+    :func:`tail_duplicate_mixed_joins` fails. Guards, in order:
+
+    * ``B`` is a real join in THIS sub (>= 2 preds, none in another sub, not
+      the sub's entry, has a terminator), small enough to copy;
+    * every phi arm is a value defined OUTSIDE ``B`` — no self/sibling phi
+      arms (a loop header), no arm produced by ``B``'s own ops, and no
+      ``Undefined`` missing-cell arms (a depth-divergent join: the phi + pc%
+      representation already carries those honestly, and cloning would turn
+      the marker into a nonsense computation);
+    * every phi covers every pred edge;
+    * nothing defined in ``B`` (phi registers or op targets) is used outside
+      it — the moment a value escapes, deleting the join would need real phi
+      splitting downstream, which is exactly what this pass refuses to do."""
+    if B.terminator is None or not sub.body or B is sub.body[0]:
+        return None
+    preds = [b for b in sub.body if B.id in pre_ir.succ_ids(b.terminator)]
+    if B in preds:
+        # A self-loop: the clone's terminator would still target the deleted
+        # join — dangling. (Usually also caught as a self-arm / escape, but
+        # that relies on the phi shape; this does not.)
+        return None
+    if len(preds) < 2 or len(preds) > 8 or len(preds) * max(1, len(B.ops)) > 256:
+        return None
+    for s2 in (prog.main, *prog.subroutines):
+        if s2 is sub:
+            continue
+        for b2 in s2.body:
+            if B.id in pre_ir.succ_ids(b2.terminator):
+                return None                    # shared across subs: refuse
+    defined = {id(ph.register) for ph in B.phis}
+    for o in B.ops:
+        if isinstance(o, pre_ir.Assignment):
+            defined.update(id(t) for t in o.targets)
+    pred_ids = {p.id for p in preds}
+    for ph in B.phis:
+        covered = set()
+        for a in ph.args:
+            if isinstance(a.value, pre_ir.Undefined) or id(a.value) in defined:
+                return None
+            covered.add(a.through)
+        if not pred_ids <= covered:
+            return None                        # an edge with no arm: refuse
+    for s2 in (prog.main, *prog.subroutines):
+        for b2 in s2.body:
+            if b2 is B:
+                continue
+            for node in (*b2.phis, *b2.ops, b2.terminator):
+                if any(id(v) in defined for v in pre_ir.operands(node)):
+                    return None                # a B-defined value escapes
+    return preds
+
+
+def tail_duplicate_mixed_joins(prog) -> int:
+    """Delete a join whose ``?``-typed phi mixes AVM families by giving each
+    predecessor its OWN COPY of the join block — real tail duplication, the one
+    fully faithful representation of a dynamically-typed stack cell: each copy
+    consumes its path's single-typed value directly, so no merge register ever
+    exists and NOTHING becomes an unknown.
+
+    Cloning is shallow for values defined outside the block (pre-IR registers
+    are identity-keyed — a deep copy would sever every external reference) and
+    fresh only for the block's own defs (``td%N``). Every guard failure falls
+    through to :func:`split_mixed_phis`, whose per-use pick is total — so this
+    pass has no completeness obligation, only a correctness one. Inert on
+    compiler output: a mixed-family merge is hand-written-TEAL-only (0 of the
+    231-probe corpus)."""
+    n_dup = 0
+    ctr = 0
+    for _round in range(64):
+        found = None
+        for sub in (prog.main, *prog.subroutines):
+            for bb in sub.body:
+                if any(ph.register.ir_type == "?"
+                       and len({avm(getattr(a.value, "ir_type", "?"))
+                                for a in ph.args} - {"?"}) >= 2
+                       for ph in bb.phis):
+                    preds = _tail_dup_preds(prog, sub, bb)
+                    if preds is not None:
+                        found = (sub, bb, preds)
+                        break
+            if found:
+                break
+        if found is None:
+            return n_dup
+        sub, B, preds = found
+        next_id = max(b.id for s in (prog.main, *prog.subroutines)
+                      for b in s.body) + 1
+        arm_of = [{a.through: a.value for a in ph.args} for ph in B.phis]
+        clone_ids = []
+        for P in preds:
+            m: dict = {}
+            for ph, arms in zip(B.phis, arm_of):
+                m[id(ph.register)] = arms[P.id]
+            ops = []
+            for o in B.ops:
+                if isinstance(o, pre_ir.Assignment):
+                    tgts = []
+                    for t in o.targets:
+                        nt = pre_ir.Register(f"td%{ctr}", 0, t.ir_type)
+                        ctr += 1
+                        m[id(t)] = nt
+                        tgts.append(nt)
+                    ops.append(pre_ir.Assignment(tgts, _clone_vp(o.source, m),
+                                                 o.comment))
+                elif isinstance(o, pre_ir.IntrinsicOp):
+                    ops.append(pre_ir.IntrinsicOp(_clone_vp(o.intrinsic, m)))
+                elif isinstance(o, pre_ir.Assert):
+                    ops.append(pre_ir.Assert(_mapped(o.condition, m), o.message))
+            clone = pre_ir.BasicBlock(
+                id=next_id, phis=[], ops=ops,
+                terminator=_clone_terminator(B.terminator, m), comment=B.comment)
+            next_id += 1
+            sub.body.append(clone)
+            pre_ir.map_succ_ids(
+                P.terminator, lambda b, _c=clone.id: _c if b == B.id else b)
+            clone_ids.append(clone.id)
+        # A successor phi's `through=B` arm becomes one arm per clone — its
+        # value is defined ABOVE B (the escape guard), so every clone
+        # contributes the same object along its own edge.
+        for s2 in (prog.main, *prog.subroutines):
+            for b2 in s2.body:
+                for ph in b2.phis:
+                    if any(a.through == B.id for a in ph.args):
+                        ph.args = [
+                            na for a in ph.args
+                            for na in (
+                                [pre_ir.PhiArgument(a.value, cid)
+                                 for cid in clone_ids]
+                                if a.through == B.id else [a])]
+        sub.body.remove(B)
+        n_dup += 1
+    logger.warning("tail_duplicate_mixed_joins hit its round cap; "
+                   "remaining mixed joins fall back to the per-use pick")
+    return n_dup
+
+
+def _use_family(node, reg, sub_returns, sub_by_id):
+    """Concrete AVM families (`{"u","b"}` subset) that ``node``'s uses of ``reg``
+    DEMAND, per the langspec position tables. Empty set = every position is
+    any-typed (a discard, a scratch/state VALUE, a copy into an untyped
+    register)."""
+    from .type_recovery import _expected_type
+
+    out: set = set()
+
+    def _intrinsic(intr):
+        for i, a in enumerate(intr.args):
+            if a is reg:
+                et = _expected_type(intr.op, i, intr.args, intr.immediates)
+                if et is not None and avm(et) in ("u", "b"):
+                    out.add(avm(et))
+
+    if isinstance(node, pre_ir.Phi):
+        if any(a.value is reg for a in node.args):
+            f = avm(node.register.ir_type)
+            if f in ("u", "b"):
+                out.add(f)
+    elif isinstance(node, pre_ir.Assignment):
+        s = node.source
+        if isinstance(s, pre_ir.Intrinsic):
+            _intrinsic(s)
+        elif isinstance(s, pre_ir.InvokeSubroutine):
+            callee = sub_by_id.get(s.target)
+            for i, a in enumerate(s.args):
+                if a is reg and callee and i < len(callee.parameters):
+                    f = avm(callee.parameters[i].register.ir_type)
+                    if f in ("u", "b"):
+                        out.add(f)
+        elif isinstance(s, pre_ir.ValueTuple):
+            for i, v in enumerate(s.values):
+                if v is reg and i < len(node.targets):
+                    f = avm(node.targets[i].ir_type)
+                    if f in ("u", "b"):
+                        out.add(f)
+        elif s is reg:                        # bare copy: the target's family
+            f = avm(node.targets[0].ir_type) if node.targets else "?"
+            if f in ("u", "b"):
+                out.add(f)
+    elif isinstance(node, pre_ir.IntrinsicOp):
+        _intrinsic(node.intrinsic)
+    elif isinstance(node, pre_ir.Assert):
+        if node.condition is reg:
+            out.add("u")
+    elif isinstance(node, (pre_ir.ConditionalBranch,)):
+        if node.condition is reg:
+            out.add("u")
+    elif isinstance(node, (pre_ir.Switch, pre_ir.GotoNth)):
+        if node.value is reg:
+            out.add("u")
+    elif isinstance(node, pre_ir.SubroutineReturn):
+        for i, v in enumerate(node.result):
+            if v is reg:
+                f = avm(sub_returns[i]) if i < len(sub_returns) else "?"
+                if f in ("u", "b"):
+                    out.add(f)
+    elif isinstance(node, pre_ir.ProgramExit):
+        if node.result is reg:
+            out.add("u")
+    return out
+
+
+def split_mixed_phis(prog) -> int:
+    """Split a ``?``-typed phi whose args cross the AVM uint64/bytes divide into
+    ONE PHI PER DEMANDED FAMILY, then point each use at the family it demands —
+    the "per-use pick" for a genuinely dynamically-typed stack cell, which a
+    single typed register cannot represent.
+
+    Each family's phi keeps that family's arms VERBATIM and carries an explicit
+    ``Undefined`` on the others. For a TYPED use this is EXACT under
+    panic-pruning: reaching a bytes consumer along the uint64 arm is an AVM
+    runtime type panic, so every execution past that use took a same-family arm
+    (the argument ``_resim_entry_stack`` already makes for depth divergence).
+    An any-typed use (``stores``, a state-put value) has no family to pick, so
+    it takes the phi of the MAJORITY family and the minority arms are logged as
+    explicit unknowns — the honest floor; only real tail duplication could keep
+    both families' values there.
+
+    Runs AFTER type recovery (only consumer-untypable phis are still ``?``) and
+    BEFORE ``materialize_phi_consts`` (which turns the ``Undefined`` arms into
+    per-edge stamped registers). Consumer-TYPED mixed phis never reach here —
+    recovery already replaces their dead cross-family arms."""
+    sub_by_id = {s.id: s for s in prog.subroutines}
+    n_split = 0
+    ctr = 0
+    # A rewrite can newly MIX a downstream `?` phi (its formerly-untyped arm
+    # became a typed pf% register), so iterate rounds; each round splits EVERY
+    # phi that is mixed at its own split time, and a split phi is concretely
+    # typed, so the `?` population shrinks monotonically — the cap is a
+    # backstop, not a budget.
+    for _round in range(64):
+        mixed = [(sub, bb, ph)
+                 for sub in (prog.main, *prog.subroutines)
+                 for bb in sub.body for ph in bb.phis
+                 if ph.register.ir_type == "?"
+                 and len({avm(getattr(a.value, "ir_type", "?"))
+                          for a in ph.args} - {"?"}) >= 2]
+        if not mixed:
+            return n_split
+        for sub, bb, ph in mixed:
+            ctr = _split_one_mixed_phi(prog, sub_by_id, sub, bb, ph, ctr)
+            n_split += 1
+    logger.warning("split_mixed_phis did not converge; a mixed phi may remain")
+    return n_split
+
+
+def _split_one_mixed_phi(prog, sub_by_id, sub, bb, ph, ctr) -> int:
+    """Split ONE mixed phi (see :func:`split_mixed_phis`); returns the advanced
+    ``pf%`` name counter. Arm families are recomputed here because an earlier
+    split in the same round may have retyped this phi's arguments."""
+    reg = ph.register
+    arm_fams = [avm(getattr(a.value, "ir_type", "?")) for a in ph.args]
+    maj = ("u" if arm_fams.count("u") > arm_fams.count("b")
+           else "b" if arm_fams.count("b") > arm_fams.count("u")
+           else next(f for f in arm_fams if f != "?"))
+    # Resolve every use NODE to one family: its demanded family when it is
+    # unanimous, else the majority (a node demanding BOTH families panics on
+    # every path — dead; an any-typed node has nothing to pick by).
+    uses = []                                 # (node, family)
+    for s2 in (prog.main, *prog.subroutines):
+        for b2 in s2.body:
+            for node in (*b2.phis, *b2.ops, b2.terminator):
+                if node is ph or not any(
+                        v is reg for v in pre_ir.operands(node)):
+                    continue
+                dem = _use_family(node, reg, s2.returns, sub_by_id)
+                if len(dem) == 1:
+                    uses.append((node, next(iter(dem))))
+                else:
+                    _i = _intr(node)
+                    discard = (isinstance(_i, pre_ir.Intrinsic)
+                               and _i.op in ("pop", "popn"))
+                    if (not dem and not discard
+                            and any(f not in ("?", maj) for f in arm_fams)):
+                        logger.warning(
+                            "mixed-type merge: an any-typed use takes the "
+                            "majority (%s) phi — the minority arm(s) become "
+                            "explicit unknowns; recompiled TEAL may compute "
+                            "with 0 on those paths", maj)
+                    elif len(dem) == 2:
+                        logger.warning(
+                            "mixed-type merge: one op demands BOTH AVM "
+                            "families of the same value — dead on every "
+                            "path; majority (%s) arm kept", maj)
+                    uses.append((node, maj))
+    needed = {f for _, f in uses}
+    fam_reg: dict = {}
+    for fam in sorted(needed):                # deterministic order
+        ty = "uint64" if fam == "u" else "bytes"
+        nr = pre_ir.Register(f"pf%{ctr}", 0, ty)
+        ctr += 1
+        args = []
+        for a, af in zip(ph.args, arm_fams):
+            v = a.value
+            if v is reg:                      # self-loop arm follows its phi
+                v = nr
+            elif af == fam:
+                pass                          # this family's arm, verbatim
+            elif af == "?":
+                # An untyped arm can serve ONE family only; give it to the
+                # majority phi (stamping a `?` register is the same
+                # monotonic refinement `_unify_phi_types` performs).
+                if fam == maj:
+                    if isinstance(v, pre_ir.Register) and v.ir_type == "?":
+                        v.ir_type = ty
+                else:
+                    v = pre_ir.Undefined()
+            else:
+                v = pre_ir.Undefined()        # cross-family: explicit unknown
+            args.append(pre_ir.PhiArgument(v, a.through))
+        nph = pre_ir.Phi(nr, args)
+        bb.phis.append(nph)
+        fam_reg[fam] = nr
+    for node, fam in uses:
+        pre_ir.map_operands(
+            node, lambda v, _r=fam_reg[fam]: _r if v is reg else v,
+            copy_source=True)
+    bb.phis = [p for p in bb.phis if p is not ph]
+    return ctr
+
+
 def materialize_phi_consts(prog) -> None:
     """Materialize a constant phi argument as a ``let r = <const>`` at the end of its
     through block, coerced to the phi's AVM type.
@@ -311,21 +680,52 @@ def materialize_phi_consts(prog) -> None:
     n = 0
     for bb in pre_ir.blocks(prog):
         for ph in bb.phis:
+            if all(isinstance(a.value, pre_ir.Register) for a in ph.args):
+                continue
+            ty = ph.register.ir_type
+            undecided = ty == "?"
+            if undecided:
+                # No consumer typed this phi, so decide ONCE for the whole
+                # phi — majority AVM family of the args, tie to the first
+                # concrete one — and STAMP it on the register. The old per-arg
+                # guess gave one phi differently-typed args (`byte "aa"` vs
+                # `int 8` at a join both stores to scratch), which no register
+                # can carry, and Puya's phi check rejected the lift.
+                fams = [avm(getattr(a.value, "ir_type", "?")) for a in ph.args]
+                conc = [f for f in fams if f != "?"]
+                fam = (("u" if conc.count("u") > conc.count("b") else
+                        "b" if conc.count("b") > conc.count("u") else conc[0])
+                       if conc else "u")   # residual unknown: translation's default
+                ty = "uint64" if fam == "u" else "bytes"
+                ph.register.ir_type = ty
             for arg in ph.args:
                 if isinstance(arg.value, pre_ir.Register):
                     continue
                 through = block_by_id.get(arg.through)
                 if through is None:
                     continue
-                ty = ph.register.ir_type
-                if ty == "?":
-                    ty = ("uint64" if isinstance(arg.value, pre_ir.UInt64Constant)
-                          else "bytes")
                 val = arg.value
-                if avm(ty) == "u" and isinstance(val, pre_ir.BytesConstant):
+                if undecided and avm(getattr(val, "ir_type", "?")) not in ("?", avm(ty)):
+                    # A COIN-FLIP type with a cross-family arm: the register
+                    # cannot hold that arm's value, and coercing it (itob /
+                    # btoi of the constant) asserts a plausible wrong value on
+                    # a path that may be live. An explicit unknown never lies.
+                    logger.warning(
+                        "mixed-type merge: arm %s of an untyped phi cannot be a "
+                        "%s — kept as an explicit unknown; recompiled TEAL may "
+                        "compute with 0 on that path", val, ty)
+                    val = pre_ir.Undefined(ir_type=ty)
+                elif avm(ty) == "u" and isinstance(val, pre_ir.BytesConstant):
                     val = _to_u64_const(val)
                 elif avm(ty) == "b" and isinstance(val, pre_ir.UInt64Constant):
                     val = _itob_const(val.value)
+                elif isinstance(val, pre_ir.Undefined) and val.ir_type != ty:
+                    # A merge arm with no value (a predecessor that arrives too
+                    # shallow). Stamp the phi's settled type on it — Undefined is
+                    # frozen, so replace the instance — or `let pc%N: bytes =
+                    # undefined` renders as consistent while the untyped source
+                    # still lowers as uint64 and fails Puya's assignment check.
+                    val = pre_ir.Undefined(ir_type=ty)
                 r = pre_ir.Register(f"pc%{n}", 0, ty)
                 n += 1
                 through.ops.append(pre_ir.Assignment([r], val))
