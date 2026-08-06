@@ -1,8 +1,12 @@
 """TEAL program graph: parse source into typed :mod:`.ast` nodes (one per opcode,
-hashed by ``(file, line)``), then derive ``kind="cfg"`` edges — each carrying a
-``successor`` label — plus basic blocks from them via :mod:`.cfg_build`. SSA /
+hashed by ``(file, line)``), then derive control-flow edges — each carrying a
+``successor`` label — plus basic blocks from them via :mod:`.cfg.build`. SSA /
 phis / const values are reconstructed downstream. The source may be a ``.teal``
 file, a directory of them, or an in-memory ``{name: text}`` mapping.
+
+Every edge here is a control-flow edge. Data dependencies live in a SEPARATE
+graph (``ssa.render.data_graph``), and the taint graphs in :mod:`.dataflow` are
+their own objects again — nothing merges them into this one.
 """
 from __future__ import annotations
 
@@ -337,7 +341,7 @@ def load_graph(
 
     # Pass 1: parse into AstNodes. Pass 2: derive CFG edges + BBs from them.
     from .ast.parse import parse_nodes
-    from .cfg_build import build_cfg_edges, build_basic_blocks
+    from .cfg.build import build_cfg
     parse_diags: list = []
     nodes = parse_nodes(_load_source_bytes(source), diagnostics=parse_diags)
     # HAZARD: spans the grammar dropped. Non-empty => the graph, and everything
@@ -347,9 +351,12 @@ def load_graph(
     for node in nodes:
         by_loc[(node.location.file, node.location.start_line)] = node
         g.add_node(node)
-    for u, v, t in build_cfg_edges(nodes):
-        g.add_edge(u, v, kind="cfg", successor=t)
-    for node, bb_first, bb_last in build_basic_blocks(nodes):
+    # One CFG walk for both products: it is the dominant cost of loading a
+    # graph, and edges + blocks must agree on reachability anyway.
+    cfg_edges, cfg_blocks = build_cfg(nodes)
+    for u, v, t in cfg_edges:
+        g.add_edge(u, v, successor=t)
+    for node, bb_first, bb_last in cfg_blocks:
         g.nodes[node]["bb"] = (node.location.file, bb_first, bb_last)
 
     # Resolved literal constants per output: populates ``const_outputs``

@@ -1,8 +1,11 @@
 """AVM / TEAL language metadata — THE single home (one place per AVM bump).
 
-Pure spec data plus tiny lookups, with NO imports from the rest of
+Pure spec data plus tiny lookups, with no imports from the rest of
 ``tealtools`` (leaf module, so ssa / dataflow / lift / cfg / security all
-consume it without cycles): opcode arities (:data:`SIG` / :func:`op_arity`),
+consume it without cycles) — ONE deliberate exception: :func:`op_arity`
+lazily borrows ``const_values._split_byte_literals`` to count ``pushbytess``
+literals, because quoted byte literals contain spaces and real parsing stays
+in ``const_values``. The tables cover opcode arities (:data:`SIG` / :func:`op_arity`),
 opcode groups and txn-field families, op result types and field types, uint64
 range and byte-length seeds, and op classification (shuffles, terminators,
 constblock refs).
@@ -18,9 +21,10 @@ from __future__ import annotations
 
 from typing import Optional
 
-#: AVM/TEAL langspec version these tables target. Informational — the drift test
-#: pins result types to the installed puya, so a mismatch surfaces there.
-AVM_LANGSPEC_VERSION = 11
+#: AVM/TEAL langspec version these tables target (v12 = ``falcon_verify`` /
+#: ``sumhash512``). Informational — the drift test pins result types and
+#: arities to the installed puya, so a mismatch surfaces there.
+AVM_LANGSPEC_VERSION = 12
 
 
 # ===========================================================================
@@ -157,7 +161,13 @@ def unknown_opcodes() -> frozenset[str]:
 
     HAZARD: their stack effect was modelled as ``(0, 0)``, which makes the whole
     downstream stack simulation wrong with no other signal. Non-empty means this
-    build predates the contract's AVM version — treat every result as unreliable."""
+    build predates the contract's AVM version — treat every result as unreliable.
+
+    This is a PROCESS-WIDE union across every program built so far (op_arity is
+    a pure function with no program context), so in a long-lived process it
+    over-reports for any single contract. Per-program callers should read
+    ``SSAProgram.unknown_ops`` instead — the builder records exactly the ops
+    THAT program uses."""
     return frozenset(_UNKNOWN_OPS)
 
 
@@ -227,6 +237,12 @@ UNSTABLE_GLOBAL_FIELDS = frozenset({"OpcodeBudget"})
 ADDRESS_GLOBAL_FIELDS: frozenset[str] = frozenset({
     "ZeroAddress", "CreatorAddress",
     "CurrentApplicationAddress", "CallerApplicationAddress",
+})
+
+#: ``block`` fields reading a 32-byte address (same single-source role): the
+#: round's proposer and the protocol fee sink.
+ADDRESS_BLOCK_FIELDS: frozenset[str] = frozenset({
+    "BlkProposer", "BlkFeeSink",
 })
 
 
@@ -325,15 +341,19 @@ def attacker_input_label(op: str, immediates: str) -> Optional[str]:
     """The attacker-controlled input family ``op`` reads, or ``None`` — THE
     single source for "is this read attacker-steerable", shared by the SSA-level
     and IR-level taint seeds. An absent or non-constant index in ``immediates``
-    still labels the read: a computed index is no less attacker-chosen."""
+    still labels the read: a computed index is no less attacker-chosen.
+
+    HAZARD: the field is matched as an EXACT token via :func:`txn_field_name`,
+    never by substring — ``txn NumAccounts`` (the uint64 array-length read)
+    contains ``"Accounts"`` and used to be mislabelled ``ForeignAccounts``,
+    seeding phantom taint on every count-guarded contract."""
     if op in LSIG_ARG_OPS:
         return "LogicSigArgs"
-    if op in TXN_SOURCE_OPS:
-        if "ApplicationArgs" in immediates:
+    field = txn_field_name(op, immediates)
+    if op in TXN_SOURCE_OPS and field is not None:
+        if field == "ApplicationArgs":
             return "ApplicationArgs"
-        for field in FOREIGN_ARRAY_FIELDS:
-            if field not in immediates:
-                continue
+        if field in FOREIGN_ARRAY_FIELDS:
             # `Accounts 0` is the sender, which is not a free choice.
             toks = immediates.split()
             self_idx = FOREIGN_ARRAY_SELF_INDEX.get(field)
@@ -341,7 +361,7 @@ def attacker_input_label(op: str, immediates: str) -> Optional[str]:
                     and int(toks[-1]) == self_idx:
                 return None
             return f"Foreign{field}"
-    if op in ITXN_SOURCE_OPS and "LastLog" in immediates:
+    if op in ITXN_SOURCE_OPS and field == "LastLog":
         return "ItxnLastLog"
     return None
 
@@ -386,6 +406,18 @@ CMP_OPS: frozenset[str] = U64_CMP_OPS | BYTE_CMP_OPS
 #: Pure boolean combinators; union with :data:`CMP_OPS` for the combined view.
 LOGICAL_OPS: frozenset[str] = frozenset({"&&", "||", "!"})
 
+# --- branch opcode families ------------------------------------------------
+
+#: Two-way conditional branches: pop one uint64, branch on non-zero (``bnz``)
+#: or zero (``bz``). THE definition — three modules once hand-rolled
+#: same-named sets with different contents; derive wider views by union
+#: (``| MULTIWAY_BRANCH_OPS``, ``| {"b"}``), never a fresh literal.
+COND_BRANCH_OPS: frozenset[str] = frozenset({"bnz", "bz"})
+
+#: N-way value-keyed branches: ``switch`` (index into a target list) and
+#: ``match`` (equality against a popped value list).
+MULTIWAY_BRANCH_OPS: frozenset[str] = frozenset({"switch", "match"})
+
 
 # ===========================================================================
 # Op result types and field types
@@ -407,6 +439,7 @@ _U64_OPS = frozenset({"+", "-", "*", "/", "%", "exp", "sqrt", "shl", "shr",
                       "box_create", "box_del",     # both return a uint64 flag
                       "gaid", "gaids",             # created asset/app id (uint64)
                       "falcon_verify",             # verified flag (uint64/bool)
+                      "online_stake",              # total online stake, microalgos
                       "balance", "min_balance", "app_opted_in"}) | _U64_PUSH
 _BYTES_OPS = frozenset({"itob", "concat", "substring", "substring3", "extract",
                         "extract3", "replace2", "replace3", "sha256",
@@ -430,7 +463,6 @@ _POLY_FIRST_OPERAND_OPS = frozenset({"setbit"})
 _NAME_PREFIX = {"len": "len", "==": "eq", "!=": "ne", "<": "lt", ">": "gt",
                 "<=": "le", ">=": "ge", "!": "not", "&&": "and", "||": "or",
                 "btoi": "val", "concat": "concat", "itob": "enc"}
-_COND_BRANCH = frozenset({"bnz", "bz"})
 
 # Transaction-field accessors. The field name is one of the immediate tokens and
 # its POSITION varies (gtxn puts a group index first), so _field_type scans all
@@ -484,15 +516,35 @@ _GLOBAL_FIELD_TYPE = {
 }
 _GLOBAL_FIELD_TYPE.update({f: "account" for f in ADDRESS_GLOBAL_FIELDS})
 
+# ``block`` field types, immediate-keyed like the txn/global tables. Address
+# fields derive from the single source above; the rest are enumerated.
+_BLOCK_FIELD_TYPE = {
+    "BlkSeed": "bytes", "BlkBranch": "bytes", "BlkProtocol": "bytes",
+    "BlkTimestamp": "uint64", "BlkFeesCollected": "uint64", "BlkBonus": "uint64",
+    "BlkTxnCounter": "uint64", "BlkProposerPayout": "uint64",
+}
+_BLOCK_FIELD_TYPE.update({f: "account" for f in ADDRESS_BLOCK_FIELDS})
+
+# ``json_ref``'s single result is keyed by its KIND immediate, not a field —
+# same lookup shape, so _field_type serves it too.
+_JSON_REF_RESULT_TYPE = {
+    "JSONString": "bytes", "JSONObject": "bytes", "JSONUint64": "uint64",
+}
+
 
 def _field_type(op, immediates):
-    """Type of a ``txn``-family / ``global`` field read (immediates scanned for a
-    known field name), or ``None`` if not a field read or the field is unknown."""
+    """Type of an immediate-keyed read — a ``txn``-family / ``global`` /
+    ``block`` field or a ``json_ref`` kind (immediates scanned for a known
+    name) — or ``None`` if ``op`` isn't one or the name is unknown."""
     toks = immediates.split() if immediates else []
     if op in _TXN_OPS:
         table = _TXN_FIELD_TYPE
     elif op == "global":
         table = _GLOBAL_FIELD_TYPE
+    elif op == "block":
+        table = _BLOCK_FIELD_TYPE
+    elif op == "json_ref":
+        table = _JSON_REF_RESULT_TYPE
     else:
         return None
     for tk in toks:
@@ -527,6 +579,7 @@ _MULTI_ALL_U64 = frozenset({"addw", "mulw", "expw", "divmodw", "box_len"})
 _EX_FLAG_OPS = frozenset({
     "app_global_get_ex", "app_local_get_ex", "asset_holding_get",
     "asset_params_get", "app_params_get", "acct_params_get",
+    "voter_params_get",
 })
 _PARAMS_FIELD_TYPE = {
     # acct_params_get
@@ -543,6 +596,8 @@ _PARAMS_FIELD_TYPE = {
     "AppLocalNumUint": "uint64", "AppLocalNumByteSlice": "uint64",
     "AppExtraProgramPages": "uint64", "AppCreator": "account",
     "AppAddress": "account",
+    # voter_params_get
+    "VoterBalance": "uint64", "VoterIncentiveEligible": "bool",
     # asset_holding_get
     "AssetBalance": "uint64", "AssetFrozen": "bool",
     # asset_params_get
@@ -604,17 +659,6 @@ def avm(t) -> str:
     return ("b" if t in ("bytes", "account", "string")
             else "u" if t in ("uint64", "bool", "asset", "application")
             else "?")
-
-
-def _imm0(a) -> int | None:
-    """First immediate of an assignment as an int (slot / frame index), else None."""
-    toks = (a.immediates or "").split()
-    if not toks:
-        return None
-    try:
-        return int(toks[0])
-    except ValueError:
-        return None
 
 
 # ===========================================================================
@@ -740,6 +784,7 @@ _OP_OUTPUT_SEEDS: dict = {
     "asset_params_get":  [(0, 0, 1)],
     "app_params_get":    [(0, 0, 1)],
     "acct_params_get":   [(0, 0, 1)],
+    "voter_params_get":  [(0, 0, 1)],
     "app_global_get_ex": [(0, 0, 1)],
     "app_local_get_ex":  [(0, 0, 1)],
     "box_get":           [(0, 0, 1)],
@@ -763,6 +808,13 @@ _TXN_FIELD_BYTELEN: dict = {
     "StateProofPK": 64,
 }
 _GLOBAL_FIELD_BYTELEN: dict = {f: 32 for f in _ADDR_GLOBAL}
+_BLOCK_FIELD_BYTELEN: dict = {
+    **{f: 32 for f in ADDRESS_BLOCK_FIELDS},
+    # 32-byte VRF seed / block-hash fields (NOT addresses); BlkProtocol is a
+    # variable-length string, so deliberately absent.
+    "BlkSeed":   32,
+    "BlkBranch": 32,
+}
 _OP_OUTPUT_BYTELEN: dict = {
     # ecdsa pubkey ops push two 32-byte words (X, Y).
     "ecdsa_pk_decompress": [(0, 32), (1, 32)],
@@ -787,8 +839,10 @@ FIXED_BYTES_OUTPUT_LEN: dict[str, int] = {
 # (Asset*/App*/Acct*), so one flat table per kind is unambiguous.
 _PARAMS_OPS: frozenset = frozenset({
     "asset_params_get", "app_params_get", "acct_params_get",
+    "voter_params_get",
 })
 _PARAMS_VALUE_RANGES: dict = {
+    "VoterIncentiveEligible": (0, 1),
     "AssetDecimals":        (0, 19),
     "AssetDefaultFrozen":   (0, 1),
     "AppExtraProgramPages": (0, 3),

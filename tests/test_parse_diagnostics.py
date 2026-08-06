@@ -77,7 +77,9 @@ def test_strict_default_refuses_an_unknown_opcode(monkeypatch):
     every value after it lands in the wrong slot. The strict boundary refuses
     with the opcode named (the newer-AVM-version case a decompiler pulling
     chain contracts WILL eventually hit); permissive mode still builds and
-    records it in ``avm.unknown_opcodes()`` for the CLI's warning."""
+    records the ops on ``prog.unknown_ops`` — PER PROGRAM, which is what the
+    CLI's parse-health warning reads (the ``avm.unknown_opcodes()`` process
+    global is a union across every build and over-reports in long runs)."""
     from tealql.tealtools import avm
     from tealql.tealtools.errors import UnknownOpcodeError
 
@@ -88,7 +90,12 @@ def test_strict_default_refuses_an_unknown_opcode(monkeypatch):
     assert "log" in str(ei.value)
     prog = SSAProgram.from_text(src, strict=False)
     assert prog.assignments
-    assert "log" in avm.unknown_opcodes()
+    assert prog.unknown_ops == frozenset({"log"})
+    assert "log" in avm.unknown_opcodes()   # coarse process-wide union
+    # A later clean build does NOT inherit the earlier program's unknowns.
+    clean = SSAProgram.from_text("#pragma version 8\nint 1\nreturn\n",
+                                 strict=False)
+    assert clean.unknown_ops == frozenset()
 
 
 def test_valid_source_has_no_diagnostics(tmp_path):

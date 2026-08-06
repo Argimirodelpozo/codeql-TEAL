@@ -1,4 +1,4 @@
-"""Graph-pipeline tests — exercise the ``ast.parse`` + ``cfg_build`` passes
+"""Graph-pipeline tests — exercise the ``ast.parse`` + ``cfg.build`` passes
 and ``load_graph``.
 
 These complement ``test_graph_golden`` (which pins the passes' exact output to
@@ -11,7 +11,7 @@ import pytest
 
 from tealql.tealtools.graph import load_graph, _load_source_bytes
 from tealql.tealtools.ast.parse import parse_nodes
-from tealql.tealtools.cfg_build import (
+from tealql.tealtools.cfg.build import (
     BOOL_FALSE,
     BOOL_TRUE,
     NORMAL,
@@ -86,8 +86,8 @@ def test_python_load_graph_wellformed(contract: Path) -> None:
 
     for u, v, d in g.edges(data=True):
         assert u in g and v in g
-        if d.get("kind") == "cfg":
-            assert d.get("successor") in _SUCC_TYPES
+        # Every edge is a control-flow edge — the graph carries no other kind.
+        assert d.get("successor") in _SUCC_TYPES
 
     for n in g.nodes:
         bb = g.nodes[n].get("bb")

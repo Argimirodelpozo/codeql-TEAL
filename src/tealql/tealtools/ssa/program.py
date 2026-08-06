@@ -128,7 +128,7 @@ class SSAProgram:
                 continue
             code = n.code or n.node_class
             op_name, _, imms = code.partition(" ")
-            if strict and not is_known_op(op_name):
+            if not is_known_op(op_name):
                 _unknown_ops.add(op_name)
             cv = g.nodes[n].get("const_value")
             const: Optional[Const] = None
@@ -176,7 +176,11 @@ class SSAProgram:
             if bb is not None:
                 bb.assignments.append(a)
 
-        if _unknown_ops:
+        #: Opcodes THIS program uses that this build cannot model (each got a
+        #: (0, 0) stack effect) — per-program, unlike the process-wide union
+        #: ``avm.unknown_opcodes()``; the CLI's parse-health warning reads this.
+        self.unknown_ops: frozenset = frozenset(_unknown_ops)
+        if strict and _unknown_ops:
             from ..errors import UnknownOpcodeError
             raise UnknownOpcodeError(_unknown_ops)
 
@@ -191,10 +195,13 @@ class SSAProgram:
         # the same BB). The previous "u_bb != v_bb" filter dropped
         # such self-loops, so ``bb.predecessors`` for a one-BB loop
         # missed the back-edge entirely.
+        #: bb IDs with a control-flow edge that leaves the program without
+        #: landing on any block (a branch to a label at EOF: the AVM runs off
+        #: the end and terminates). There is no target BB, so this cannot be a
+        #: ``successors`` entry — :attr:`cfg.CFG.exits` reads it here instead.
+        self.off_end_exits: set[tuple] = set()
         seen_edges: set[tuple[BasicBlock, BasicBlock]] = set()
         for u, v, data in g.edges(data=True):
-            if data.get("kind") != "cfg":
-                continue
             u_bb_id = g.nodes[u].get("bb")
             v_bb_id = g.nodes[v].get("bb")
             if u_bb_id is None or v_bb_id is None:
@@ -225,6 +232,20 @@ class SSAProgram:
             # to the first real block instead, which is where control actually goes.
             if v_bb is None:
                 v_bb = self._forward_through_empty(g, v)
+                if v_bb is None:
+                    # No real block behind the label chain: control LEAVES the
+                    # program here. `bz L_end` where `L_end:` is the last line
+                    # runs off the end, which TERMINATES on the AVM (the stack
+                    # top is the result) — a genuine exit with no BB to name.
+                    # Record it, or the path vanishes and post-dominance rules
+                    # the fall-through unavoidable. A pathological empty-label
+                    # cycle also lands here; counting it as an exit only ever
+                    # LOSES a proof, never invents one.
+                    #
+                    # HAZARD: keyed by bb ID, not stored on the BasicBlock —
+                    # PySSA REBUILDS every block object afterwards, so a flag
+                    # set on one here would be silently discarded.
+                    self.off_end_exits.add(u_bb_id)
             if u_bb is None or v_bb is None:
                 continue
             if (u_bb, v_bb) in seen_edges:
@@ -678,11 +699,6 @@ class SSAProgram:
             for n in frontier:
                 for succ in g.successors(n):
                     if succ in seen:
-                        continue
-                    # follow CONTROL FLOW only: a data edge would forward to a block
-                    # control never reaches from here.
-                    if not any(d.get("kind") == "cfg"
-                               for d in g.get_edge_data(n, succ).values()):
                         continue
                     seen.add(succ)
                     bb_id = g.nodes[succ].get("bb")

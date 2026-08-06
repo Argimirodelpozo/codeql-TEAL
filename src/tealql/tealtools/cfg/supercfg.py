@@ -4,7 +4,7 @@ the whole call graph (e.g. "does a caller guard dominate a callee sink?").
 
 Blocks are qualified by the contract they live in (:class:`SuperBlock`,
 ``app_id=None`` = the root caller). At each appcall site — a clean BB boundary,
-since ``itxn_submit`` ENDS a basic block (:mod:`tealql.tealtools.cfg_build`) — two
+since ``itxn_submit`` ENDS a basic block (:mod:`tealql.tealtools.cfg.build`) — two
 edges are spliced in ADDITIVELY, without mutating any per-program CFG: a **call**
 edge (submit BB -> callee entry) and a **return** edge (each callee exit -> the
 submit BB's intra successors). The submit BB's own fall-through is kept, so it

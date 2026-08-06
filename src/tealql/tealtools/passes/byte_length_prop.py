@@ -22,6 +22,7 @@ from ..ssa import (
 )
 from ..avm import (
     FIXED_BYTES_OUTPUT_LEN,
+    _BLOCK_FIELD_BYTELEN,
     _GLOBAL_FIELD_BYTELEN,
     _OP_OUTPUT_BYTELEN,
     _PARAMS_OPS,
@@ -171,6 +172,10 @@ def _op_byte_length(a: Assignment) -> Optional[int]:
                 return n
         if op == "global" and toks:
             n = _GLOBAL_FIELD_BYTELEN.get(toks[0])
+            if n is not None:
+                return n
+        if op == "block" and toks:
+            n = _BLOCK_FIELD_BYTELEN.get(toks[0])
             if n is not None:
                 return n
 

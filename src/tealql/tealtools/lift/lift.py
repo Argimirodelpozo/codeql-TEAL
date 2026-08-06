@@ -26,14 +26,14 @@ from . import pre_ir, transforms, type_recovery
 from ..avm import (
     _BOOL_OPS,
     _BYTES_OPS,
-    _COND_BRANCH,
     _NAME_PREFIX,
     _POLY_FIRST_OPERAND_OPS,
     _U64_OPS,
+    COND_BRANCH_OPS,
     _field_type,
-    _imm0,
     _multi_out_type,
 )
+from ..ssa.operands import imm0 as _imm0
 from .teal_const import _load_src
 from ..ast.literals import tokenize_operands as _tokenize_operands
 
@@ -937,7 +937,7 @@ class _Lifter:
             return pre_ir.ProgramExit(v)
         if len(succ) == 1:
             return pre_ir.Goto(self.bid[succ[0]])
-        if len(succ) == 2 and op in _COND_BRANCH and t is not None:
+        if len(succ) == 2 and op in COND_BRANCH_OPS and t is not None:
             cond = self._sel_value(t)
             taken = self._site_target(bb, self.line2block.get(
                 self.label2line.get((t.immediates or "").strip())))

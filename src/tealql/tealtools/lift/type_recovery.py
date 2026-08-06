@@ -15,9 +15,10 @@ from __future__ import annotations
 import logging
 
 from ..ssa import Const, Phi, SSAVar
+from ..ssa.operands import imm0 as _imm0
 from . import pre_ir
 from ..avm import (_BYTES_CONSUME, _BYTES_OPS, _U64_CONSUME, _U64_OPS,
-                      _field_type, _imm0, avm, txn_field_avm_type)
+                      _field_type, avm, txn_field_avm_type)
 from .teal_const import _const_bytes
 
 logger = logging.getLogger("tealql.tealtools.lift")

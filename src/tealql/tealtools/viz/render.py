@@ -1,15 +1,13 @@
-"""Graphviz rendering for the loaded CFG graph (AST nodes + ``kind="cfg"`` edges +
+"""Graphviz rendering for the loaded CFG graph (AST nodes + control-flow edges +
 per-node ``bb`` annotations), at op level (:func:`to_dot`) or with opcodes
 collapsed into BB boxes (:func:`cfg_bb_graph` + :func:`to_bb_dot`), plus the
 control-tree region renderers.
 """
 from __future__ import annotations
 
-from typing import Iterable
-
 import networkx as nx
 
-from .. import cfg_build as _cfg_build
+from ..cfg import build as _cfg_build
 from ..ast import AstNode, Location
 from .._utils.dot import escape, render
 class BasicBlockNode:
@@ -41,24 +39,18 @@ class BasicBlockNode:
         return f"BBNode({self.file}:{self.first_line}-{self.last_line})"
 
 
-def _edges_of_kind(g: nx.MultiDiGraph, kind: str) -> Iterable[tuple]:
-    for u, v, k, d in g.edges(keys=True, data=True):
-        if d.get("kind") == kind:
-            yield u, v, k
-
-
 def cfg_view(g: nx.MultiDiGraph) -> nx.MultiDiGraph:
-    """Read-only edge-subgraph containing only CFG edges and their endpoints."""
-    return g.edge_subgraph(_edges_of_kind(g, "cfg"))
+    """Read-only edge-subgraph of the CFG edges and their endpoints — i.e. the
+    graph without its unreachable / edge-less nodes (the ``Source`` container,
+    and any node the reachability prune dropped)."""
+    return g.edge_subgraph((u, v, k) for u, v, k in g.edges(keys=True))
 
 
 # -- Graphviz rendering -------------------------------------------------------
 
-#: Keyed by the successor labels :mod:`..cfg_build` actually emits — imported,
+#: Keyed by the successor labels :mod:`..cfg.build` actually emits — imported,
 #: not respelled, so a label change cannot silently fall through to the
-#: `label="<raw>"` default below. The other five keys here
-#: (``*JumpCompletion``, ``RetsubCompletion``) were CodeQL completion classes
-#: that no producer has emitted since the extractor became pure Python.
+#: `label="<raw>"` default below.
 _CFG_EDGE_STYLES = {
     _cfg_build.NORMAL:     "",
     _cfg_build.BOOL_TRUE:  'color="#2a8f3c", fontcolor="#2a8f3c", label="T"',
@@ -71,13 +63,11 @@ def _dot_id(n) -> str:
 
 
 def _edge_attrs(data: dict) -> str:
-    if data.get("kind") == "cfg":
-        succ = data.get("successor", "")
-        style = _CFG_EDGE_STYLES.get(succ)
-        if style is not None:
-            return style
-        return f'label="{escape(succ)}"'
-    return ""
+    succ = data.get("successor", "")
+    style = _CFG_EDGE_STYLES.get(succ)
+    if style is not None:
+        return style
+    return f'label="{escape(succ)}"'
 
 
 def to_dot(
@@ -105,8 +95,6 @@ def to_dot(
         lines.append(f'  {_dot_id(n)} [label="{escape(label)}"];')
 
     for u, v, _, data in g.edges(keys=True, data=True):
-        if data.get("kind") != "cfg":
-            continue
         if u not in node_set or v not in node_set:
             continue
         attrs = _edge_attrs(data)
@@ -165,8 +153,6 @@ def cfg_bb_graph(g: nx.MultiDiGraph) -> nx.MultiDiGraph:
         h.add_node(bb)
 
     for u, v, data in g.edges(data=True):
-        if data.get("kind") != "cfg":
-            continue
         succ = data.get("successor")
         u2 = _bb_for_ast(u)
         v2 = _bb_for_ast(v)
@@ -174,7 +160,7 @@ def cfg_bb_graph(g: nx.MultiDiGraph) -> nx.MultiDiGraph:
             continue
         if u2 is v2:  # collapse intra-BB straight-line edges
             continue
-        h.add_edge(u2, v2, kind="cfg", successor=succ)
+        h.add_edge(u2, v2, successor=succ)
 
     return h
 
@@ -225,8 +211,6 @@ def to_bb_dot(
 
     for u, v, data in h.edges(data=True):
         if u not in node_set or v not in node_set:
-            continue
-        if data.get("kind") != "cfg":
             continue
         attrs = _edge_attrs(data)
         sep = " " if attrs else ""

@@ -4,8 +4,7 @@ Emits ``(pred.startLine, succ.startLine, successorType)`` per edge, plus the
 basic-block ranges; node/edge identity is ``(file, startLine)``. Consumes the
 AST nodes and the source text (operands / label names), nothing else.
 
-HAZARD: exactly three successor-type strings exist, and their boolean POLARITY
-is what downstream guard reasoning reads off an edge:
+Exactly three successor-type strings exist:
 
 * ``normal`` -- linear fall-through, ``b``/``callsub`` jumps,
                 ``switch``/``match`` arms (incl. fall-through),
@@ -16,13 +15,18 @@ is what downstream guard reasoning reads off an edge:
 Exit completions (``return``/``err``/assert-false) have no matching successor
 type and so produce no edge.
 
-These were spelled ``NormalSuccessor`` / ``BooleanSuccessor(true|false)`` --
+They were spelled ``NormalSuccessor`` / ``BooleanSuccessor(true|false)`` --
 CodeQL class names, from when a QL extractor produced this relation. The
-extractor is pure Python now (see :mod:`.graph`), and nothing parses these
-strings apart from the three consumers that import the constants below, so
-they are plain values. ALWAYS reference them via ``NORMAL`` / ``BOOL_TRUE`` /
-``BOOL_FALSE``; the literals also appear in the ``graph_golden.txt`` fixtures,
-regenerated with ``python -m tests.gen_graph_golden``.
+extractor is pure Python now (see :mod:`.graph`), so they are plain values;
+ALWAYS reference them via ``NORMAL`` / ``BOOL_TRUE`` / ``BOOL_FALSE``.
+
+Who actually reads the polarity: the DOT renderer (:mod:`.viz.render`, which
+colours T/F edges) and the ``graph_golden.txt`` fixtures, regenerated with
+``python -m tests.gen_graph_golden``. NOT guard reasoning --
+:mod:`.path_predicates` re-derives polarity from the branch opcode and its own
+label map, so mislabelling an edge here corrupts the picture and the goldens
+while leaving guard verdicts untouched. What guard reasoning DOES depend on is
+which edges EXIST: see the HAZARD on :func:`_program_cfg`'s ``unresolved``.
 """
 from __future__ import annotations
 
@@ -80,9 +84,12 @@ class _Node:
 def _children(nodes) -> dict[str, list[_Node]]:
     """Group AstNodes into per-program child lists ordered by ``(line, col)``.
 
-    The ``Source`` root is dropped; exact-duplicate locations (a node matching
-    two leaf types, e.g. ``==`` -> IntegerEquals + EqualsComparison) collapse to
-    one child, keeping the first object but preferring a control-flow type.
+    The ``Source`` root is dropped (it spans the whole file, so it is not a
+    line); nodes at an exact-duplicate ``(line, col)`` collapse to the first,
+    which is also what ``(file, line)`` node identity does everywhere else. The
+    parser emits one node per tree-sitter child, so a collision needs two
+    instructions at the same line AND column — 0 occurrences across 1166 real
+    programs, and ``parse_nodes`` already diagnoses multi-instruction lines.
     """
     by_file: dict[str, dict[tuple[int, int], _Node]] = {}
     for node in nodes:
@@ -92,20 +99,12 @@ def _children(nodes) -> dict[str, list[_Node]]:
         loc = node.location
         sl, sc = loc.start_line, loc.start_column
         slot = by_file.setdefault(loc.file, {})
-        existing = slot.get((sl, sc))
-        if existing is None:
+        if (sl, sc) not in slot:
             slot[(sl, sc)] = _Node(loc.file, sl, sc, cls, node.code, node)
-        elif existing.cls not in _CF_CLASSES and cls in _CF_CLASSES:
-            existing.cls = cls          # keep existing.ast (the first object)
     return {
         f: [slot[k] for k in sorted(slot)]
         for f, slot in by_file.items()
     }
-
-
-_CF_CLASSES = frozenset(
-    {_RETURN, _ERR, _ASSERT, _B, _CALLSUB, _RETSUB, _BNZ, _BZ, _SWITCH, _MATCH, _LABEL}
-)
 
 
 def _aux_succ(n: _Node, nxt: _Node | None, labels: dict[str, _Node]) -> list[_Node]:
@@ -134,41 +133,69 @@ def _aux_succ(n: _Node, nxt: _Node | None, labels: dict[str, _Node]) -> list[_No
     return [nxt] if nxt is not None else []
 
 
-def build_cfg_edges(nodes) -> list:
-    """The CFG edges as ``(pred_AstNode, succ_AstNode, successorType)``.
+def build_cfg(nodes, *, unresolved: list | None = None) -> tuple[list, list]:
+    """``(edges, blocks)`` from ONE reachability computation per program.
 
-    Candidate edges are pruned to those whose predecessor is reachable from the
-    program entry — dropping, e.g., the ``retsub`` of a sub only ever reached
-    through a ``callsub`` to a sibling that exits via ``return`` (control never
-    flows back).
+    Edges are ``(pred_AstNode, succ_AstNode, successorType)``, pruned to those
+    whose predecessor is reachable from the program entry — dropping, e.g., the
+    ``retsub`` of a sub only ever reached through a ``callsub`` to a sibling
+    that exits via ``return`` (control never flows back). Blocks are
+    ``(AstNode, bbFirstLine, bbLastLine)``, one row per reachable node.
+
+    Both come from a single :func:`_program_cfg` call because that walk is the
+    dominant cost of loading a graph — computing it once per consumer had it
+    running three times per file. ``unresolved``, if given, collects
+    :func:`_program_cfg`'s unresolved branch targets.
     """
     edges: list = []
+    blocks: list = []
     for _file, kids in _children(nodes).items():
         if not kids:
             continue
-        cand, reachable, idx_of = _program_cfg(kids)
+        cand, reachable, idx_of = _program_cfg(kids, unresolved=unresolved)
         for p, s, t in cand:
             if idx_of[id(p)] in reachable:
                 edges.append((p.ast, s.ast, t))
-    return edges
+        blocks.extend(_blocks_of(kids, reachable))
+    return edges, blocks
+
+
+def build_cfg_edges(nodes) -> list:
+    """The CFG edges alone — see :func:`build_cfg`."""
+    return build_cfg(nodes)[0]
 
 
 def _program_cfg(
     kids: list[_Node],
+    *,
+    unresolved: list | None = None,
 ) -> tuple[list[tuple[_Node, _Node, str]], set[int], dict[int, int]]:
     """One program's candidate CFG edges + reachable-node set.
 
     ``(cand, reachable, idx_of)``: candidate ``(pred, succ, type)`` edges, the
     child indices reachable from the entry (the first child), and node identity
-    -> child index. Shared by :func:`build_cfg_edges` and
-    :func:`build_basic_blocks` so both see exactly the same reachability.
+    -> child index.
+
+    ``unresolved``, if given, collects ``(_Node, target_name)`` for every branch
+    / call target naming a label this program does not define. Those edges
+    CANNOT be built, so the graph silently under-approximates control flow
+    unless a caller reports them — see the HAZARD on :func:`_target`.
     """
     cand: list[tuple[_Node, _Node, str]] = []
     # retsub-return candidates, deferred so the fixpoint below can gate them on
     # their callsub being reachable.
     retsub_cand: list[tuple[_Node, _Node, _Node]] = []   # (retsub, cont, callsub)
 
+    # A `switch`/`match` may name one target twice (`switch a a`); the arm is
+    # the same edge, so emit it once rather than as parallel MultiDiGraph edges
+    # that every consumer then has to dedup (or silently double-count).
+    emitted: set[tuple[int, int, str]] = set()
+
     def emit(pred: _Node, succ: _Node, t: str) -> None:
+        key = (id(pred), id(succ), t)
+        if key in emitted:
+            return
+        emitted.add(key)
         cand.append((pred, succ, t))
 
     nxt_of: dict[int, _Node | None] = {
@@ -217,6 +244,20 @@ def _program_cfg(
                         outs.append((nx, c))      # (continuation, its callsub)
         return outs
 
+    def _target(n: _Node, name: str) -> _Node | None:
+        """``name``'s label node, recording a miss in ``unresolved``.
+
+        HAZARD: an unresolvable target yields NO edge, so the branch keeps only
+        its fall-through (a ``bnz``'s guard-true path just disappears) and the
+        code the branch reached is pruned as unreachable — a confidently
+        under-approximated graph. The assembler rejects such a program, so this
+        is hand-written / adversarial source only, but it must be REPORTED
+        rather than silently narrowed."""
+        tgt = labels.get(name)
+        if tgt is None and unresolved is not None:
+            unresolved.append((n, name))
+        return tgt
+
     # --- build candidate edges ---------------------------------------------
     for i, n in enumerate(kids):
         nxt = nxt_of[i]
@@ -230,24 +271,24 @@ def _program_cfg(
             continue
 
         if n.cls == _B:
-            if (t := labels.get(n.operand())) is not None:
+            if (t := _target(n, n.operand())) is not None:
                 emit(n, t, NORMAL)
             continue
 
         if n.cls == _CALLSUB:
-            if (t := labels.get(n.operand())) is not None:
+            if (t := _target(n, n.operand())) is not None:
                 emit(n, t, NORMAL)
             continue
 
         if n.cls == _BNZ:
-            if (t := labels.get(n.operand())) is not None:
+            if (t := _target(n, n.operand())) is not None:
                 emit(n, t, BOOL_TRUE)
             if nxt is not None:
                 emit(n, nxt, BOOL_FALSE)
             continue
 
         if n.cls == _BZ:
-            if (t := labels.get(n.operand())) is not None:
+            if (t := _target(n, n.operand())) is not None:
                 emit(n, t, BOOL_FALSE)
             if nxt is not None:
                 emit(n, nxt, BOOL_TRUE)
@@ -257,7 +298,7 @@ def _program_cfg(
             if nxt is not None:  # arm 0 = fall-through
                 emit(n, nxt, NORMAL)
             for name in n.operands():
-                if (t := labels.get(name)) is not None:
+                if (t := _target(n, name)) is not None:
                     emit(n, t, NORMAL)
             continue
 
@@ -320,7 +361,13 @@ _ENDS_CLASSES = frozenset(
 
 
 def build_basic_blocks(nodes) -> list:
-    """Basic blocks as ``(AstNode, bbFirstLine, bbLastLine)``, one per reachable node.
+    """The basic blocks alone — see :func:`build_cfg`."""
+    return build_cfg(nodes)[1]
+
+
+def _blocks_of(kids: list[_Node], reachable: set[int]) -> list:
+    """One program's basic blocks as ``(AstNode, bbFirstLine, bbLastLine)``, one
+    row per reachable node.
 
     In TEAL a basic block coincides exactly with a codeblock (the maximal
     straight-line region between labels / branch boundaries): every join, branch
@@ -328,24 +375,20 @@ def build_basic_blocks(nodes) -> list:
     structural and is only intersected with CFG reachability.
     """
     rows: list = []
-    for _file, kids in _children(nodes).items():
-        if not kids:
-            continue
-        _cand, reachable, _idx = _program_cfg(kids)
 
-        def ends_codeblock(i: int) -> bool:
-            if kids[i].cls in _ENDS_CLASSES:
-                return True
-            return i + 1 < len(kids) and kids[i + 1].cls == _LABEL
+    def ends_codeblock(i: int) -> bool:
+        if kids[i].cls in _ENDS_CLASSES:
+            return True
+        return i + 1 < len(kids) and kids[i + 1].cls == _LABEL
 
-        # Partition the child sequence into codeblocks [first .. last].
-        start = 0
-        for i in range(len(kids)):
-            if ends_codeblock(i) or i == len(kids) - 1:
-                first_ln, last_ln = kids[start].line, kids[i].line
-                for m in range(start, i + 1):
-                    if m in reachable:
-                        rows.append((kids[m].ast, first_ln, last_ln))
-                start = i + 1
+    # Partition the child sequence into codeblocks [first .. last].
+    start = 0
+    for i in range(len(kids)):
+        if ends_codeblock(i) or i == len(kids) - 1:
+            first_ln, last_ln = kids[start].line, kids[i].line
+            for m in range(start, i + 1):
+                if m in reachable:
+                    rows.append((kids[m].ast, first_ln, last_ln))
+            start = i + 1
     return rows
 

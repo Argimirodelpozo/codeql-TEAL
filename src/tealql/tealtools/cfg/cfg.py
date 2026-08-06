@@ -49,8 +49,16 @@ class CFG:
 
     @property
     def exits(self) -> list[BasicBlock]:
-        """BBs with no successors (program-end terminators: return / err)."""
-        return [b for b in self.blocks if not b.successors]
+        """BBs where the program can end: no successors (return / err), or a
+        branch that runs off the end of the program.
+
+        HAZARD: the second case has no ``successors`` entry to see — there is
+        no target block — so it must be read off
+        :attr:`SSAProgram.off_end_exits`. Missing it drops a real exit from the
+        reversed graph, and post-dominance then over-concludes."""
+        off_end = getattr(self.prog, "off_end_exits", ())
+        return [b for b in self.blocks
+                if not b.successors or b._key() in off_end]
 
     def block_at(self, file: str, line: int) -> Optional[BasicBlock]:
         """The BB whose source range contains ``(file, line)``."""

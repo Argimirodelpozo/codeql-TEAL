@@ -1,21 +1,21 @@
 """Performance regression gate — on SCALING, not wall-clock.
 
-Nothing in this suite noticed cost. That is a real hole: this project has
-shipped quadratic hot spots before (an inner-txn report once took ~28 minutes;
-the detector suite ran at 85s until a linear-scan lookup and two missing memos
-were fixed this session, halving it). A hot spot reintroduced by a future edit
-would simply make CI slower, which nobody reads as a failure.
+This project has shipped quadratic hot spots before (an inner-txn report once
+took ~28 minutes). One reintroduced by a future edit just makes CI slower,
+which nobody reads as a failure.
 
 Wall-clock ceilings are the obvious gate and the wrong one: they encode the
-speed of whichever machine wrote them, so they flake on a slow runner and pass
-on a fast one no matter what the code does. This gates the SHAPE of the cost
-curve instead — run the same analysis over contracts of very different sizes
-and require the growth to stay well short of quadratic. That ratio is
-machine-independent: a slow runner scales both measurements equally.
+speed of whichever machine wrote them. What is gated here is an absolute
+per-line ceiling (catastrophic blowup only) and the COMPONENT lookups that must
+be O(1) — each validated by restoring the old implementation and confirming the
+gate fires.
 
-Measured when written: 11.4x the lines cost 29.5x the detector time (~n^1.35).
-Quadratic on that size ratio would be ~130x, so the bound below sits between
-the two with roughly 2x headroom over today.
+A whole-pipeline ratio gate lived here and was REMOVED: fault-injecting a
+dominating n^2 hot spot moved it 1.53 -> 1.63 against a 1.7 budget, missing the
+regression it existed for, while machine load pushed it past that same budget
+three times on unchanged code. An aggregate only moves once a quadratic
+component dominates every other cost. Per-detector curves are the right shape
+if that question is ever worth re-answering.
 """
 from __future__ import annotations
 
@@ -31,8 +31,9 @@ from tealql.tealtools.ssa import SSAProgram
 
 TESTS = Path(__file__).resolve().parent
 
-#: Growth allowed, as an exponent of the size ratio. 1.0 is linear, 2.0 is
-#: quadratic. Today's ~1.35 passes comfortably; a genuine quadratic does not.
+#: Growth allowed for SSA construction, as an exponent of the size ratio (1.0 =
+#: linear, 2.0 = quadratic). Deliberately loose — see the module note on why an
+#: aggregate ratio cannot be tightened into a real discriminator.
 _MAX_EXPONENT = 1.7
 
 #: Absolute per-line ceiling, deliberately loose — it exists only to catch a
@@ -43,26 +44,11 @@ _MAX_MS_PER_LINE = 25.0
 def _probe_contracts() -> "tuple[Path, Path]":
     """A small and the largest mainnet probe — a wide, real size spread.
 
-    The small end is the 25th percentile, NOT the 10th. A ratio gate only reads
-    as scaling when BOTH measurements are dominated by the analysis; at the 10th
-    percentile (~340 lines) the per-program fixed cost is most of the measurement,
-    so shrinking that fixed cost inflates the ratio and the gate reports
-    "superlinear" for a change that made every absolute time smaller. Measured
-    when the lift stopped re-parsing the program: at the 10th percentile the
-    apparent exponent moved 1.47 -> 1.75 while the 25th/40th/50th all held at
-    1.46-1.56 — the curve had not changed shape, the shortest measurement had
-    just stopped measuring the curve. That probe is now only ~50ms and its
-    readings swing 1.71-1.83 run to run, i.e. flaky as well as wrong.
-
-    TRADE-OFF, recorded because it is a real loss: the shorter probe was the
-    better DISCRIMINATOR. Fault-injecting a dominating n^2 hot spot into one
-    detector reads 1.72 against the 10th percentile (fires, barely) but 1.63
-    against the 25th (misses, budget 1.7) — a small probe barely feels the
-    injected term, so the ratio amplifies it. Between today's 1.53 and an
-    injected quadratic's 1.63 there is not enough room for a threshold that is
-    neither flaky nor blind, which is a limit of gating the AGGREGATE curve: a
-    quadratic component only trips it once it dominates every other cost. A
-    per-detector curve is the fix; this gate still catches a whole-suite blowup."""
+    The small end is the 25th percentile, NOT the 10th. A ratio only reads as
+    scaling when BOTH measurements are dominated by the analysis; at the 10th
+    percentile (~340 lines) per-program fixed cost is most of the measurement,
+    so shrinking that fixed cost inflates the ratio and reports "superlinear"
+    for a change that made every absolute time smaller."""
     files = sorted(glob.glob(str(TESTS / "mainnet-random-probes" / "*.teal")),
                    key=lambda p: len(Path(p).read_text()))
     if len(files) < 20:
@@ -70,9 +56,8 @@ def _probe_contracts() -> "tuple[Path, Path]":
     return Path(files[len(files) // 4]), Path(files[-1])
 
 
-#: Timing samples per measurement. The gates compare a small-vs-large RATIO, so
-#: a single skewed sample on EITHER side moves it — and a short measurement is
-#: the more fragile of the two.
+#: Timing samples per measurement. A single skewed sample on either side moves
+#: a ratio, and the short measurement is the more fragile of the two.
 _REPS = 3
 
 
@@ -80,22 +65,17 @@ def _cpu_best(work, setup=None) -> float:
     """Best-of-``_REPS`` CPU time for ``work``, with ``setup()`` re-run untimed
     before each repetition.
 
-    Two deliberate choices, both because these gates flaked under a loaded
-    machine (twice in one session, and CI runs ``-n auto`` so the contention is
-    not hypothetical):
+    Two deliberate choices, both because these gates flaked on a loaded machine
+    (CI runs ``-n auto``, so contention is not hypothetical):
 
     * ``process_time``, not ``perf_counter`` — it counts THIS process's CPU, so
       a sibling xdist worker saturating a core inflates wall-clock but not this.
-      The gate is about work done, not time elapsed.
-    * the MINIMUM of several runs — interference only ever adds time, never
-      removes it, so the floor is the cleanest estimate of the real cost.
+    * the MINIMUM of several runs — interference only ever adds time.
 
     HAZARD: every repetition must start COLD, which is what ``setup`` is for.
-    Reusing one ``SSAProgram`` across repetitions warms its caches, and not
-    evenly — measured 0.087→0.032s for a 342-line contract against 4.59→3.08s
-    for a 4762-line one. Taking the minimum then deflates the SMALL side ~2x
-    harder than the large, inflating the ratio these gates assert on and failing
-    a pipeline that never regressed."""
+    Reusing one ``SSAProgram`` warms its caches unevenly — measured 0.087→0.032s
+    for a 342-line contract against 4.59→3.08s for a 4762-line one — which
+    deflates the SMALL side ~2x harder and inflates any ratio built on it."""
     best = float("inf")
     for _ in range(_REPS):
         state = setup() if setup is not None else None
@@ -125,24 +105,6 @@ def _time_detectors(path: Path) -> "tuple[int, float]":
 
 
 @pytest.mark.slow
-def test_detector_cost_stays_well_short_of_quadratic():
-    small, large = _probe_contracts()
-    n_small, t_small = _time_detectors(small)
-    n_large, t_large = _time_detectors(large)
-
-    size_ratio = n_large / max(1, n_small)
-    time_ratio = t_large / max(1e-6, t_small)
-    budget = size_ratio ** _MAX_EXPONENT
-
-    assert time_ratio <= budget, (
-        f"detector cost is growing too fast: {size_ratio:.1f}x the lines "
-        f"({n_small} -> {n_large}) cost {time_ratio:.1f}x the time "
-        f"(budget {budget:.1f}x at n^{_MAX_EXPONENT}). Quadratic on this ratio "
-        f"would be {size_ratio ** 2:.0f}x — something has become superlinear."
-    )
-
-
-@pytest.mark.slow
 def test_no_catastrophic_absolute_cost():
     """A blowup that somehow scales linearly still has to be caught."""
     _small, large = _probe_contracts()
@@ -156,8 +118,12 @@ def test_no_catastrophic_absolute_cost():
 
 @pytest.mark.slow
 def test_ssa_construction_scales():
-    """The substrate everything else sits on. A quadratic here is invisible in
-    the detector numbers above because it is dwarfed by analysis time."""
+    """The substrate everything else sits on — a quadratic here is invisible in
+    detector timings because analysis time dwarfs it.
+
+    HAZARD: this is an aggregate ratio, the shape the module note warns about.
+    It is kept only because SSA construction is ONE component rather than a
+    whole pipeline, so a quadratic in it does dominate its own measurement."""
     small, large = _probe_contracts()
 
     def _build(p: Path):
@@ -181,15 +147,11 @@ def test_ssa_construction_scales():
 # ---------------------------------------------------------------------------
 # Component-level gates
 #
-# The whole-pipeline ratio above catches a CATASTROPHIC regression but is too
-# coarse for a component one: restoring the linear-scan scratch lookup this
-# session replaced (a genuine O(graph) where O(1) is available) still came in
-# at 26.8x against a 62.6x budget, because that path is not what dominates.
-# Verified, not assumed — a gate that cannot catch a regression you already
-# know about is decoration.
-#
-# So the lookups that MUST be O(1) are gated directly: their cost is measured
-# on a small and a large program, and required not to grow with program size.
+# The lookups that MUST be O(1) are gated directly: measured on a small and a
+# large program, and required not to grow with program size. This is the shape
+# that works — an aggregate gate could not catch a regression it was pointed
+# at (restoring the linear-scan scratch lookup came in at 26.8x against a 62.6x
+# aggregate budget, because that path is not what dominates).
 # ---------------------------------------------------------------------------
 
 

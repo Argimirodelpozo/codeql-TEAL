@@ -96,10 +96,10 @@ def _check_parse_health(prog, args) -> None:
     HAZARD: the parser DROPS unparseable spans and an opcode unknown to this
     build is modelled with a (0, 0) stack effect that corrupts the whole
     simulation. Both must be surfaced — a partial contract must never read as
-    clean."""
-    from tealql.tealtools.avm import unknown_opcodes
-
-    unknown = sorted(unknown_opcodes())
+    clean. Read the PER-PROGRAM set the builder recorded, not the process-wide
+    ``avm.unknown_opcodes()`` union — in one run over many contracts the union
+    blames every later program for the first one's exotic opcode."""
+    unknown = sorted(getattr(prog, "unknown_ops", ()))
     if unknown:
         logger.warning(
             "%d opcode(s) unknown to this build were modelled with NO stack "

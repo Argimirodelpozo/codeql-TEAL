@@ -19,7 +19,7 @@ from __future__ import annotations
 import tree_sitter as _ts
 import tree_sitter_teal as _tsteal
 
-from ..cfg_build import _children, _program_cfg
+from ..cfg.build import _children, _program_cfg
 from .ast import (
     AstNode, Label, Location, SingleNumericArgumentOpcode, Source,
     ZeroArgumentOpcode, node_class_for_mnemonic,
@@ -610,6 +610,25 @@ def parse_nodes(
         # node (extra pushes vanish, the consumer loses operands). We cannot
         # represent it, so it is reported like unparseable source.
         if diagnostics is not None:
+            # The mirror image of the same architectural rule: a node whose span
+            # COVERS later lines has swallowed them. `match` / `switch` with no
+            # target list absorbs the next instruction as its operand, and that
+            # instruction then exists for nothing downstream. No valid program
+            # produces a multi-line span (0 across 1166 real programs), so this
+            # only ever fires on the mangled case.
+            for n in op_nodes:
+                if n.location.end_line > n.location.start_line:
+                    head = (((n.code or "").splitlines() or [""])[0].strip()
+                            or n.node_class)
+                    diagnostics.append(ParseDiagnostic(
+                        file=file,
+                        start_line=n.location.start_line,
+                        end_line=n.location.end_line,
+                        snippet=(f"{head!r} spans lines {n.location.start_line}-"
+                                 f"{n.location.end_line}: the following line(s) were "
+                                 "absorbed as its operands and are MISSING from "
+                                 "analysis"),
+                    ))
             by_line: dict[int, list] = {}
             for n in op_nodes:
                 by_line.setdefault(n.location.start_line, []).append(n)
@@ -641,8 +660,21 @@ def parse_nodes(
         reach_lines: set[int] = set()
         kids = _children(op_nodes + label_nodes).get(file, [])
         if kids:
-            _cand, reachable, _idx = _program_cfg(kids)
+            # This is the one CFG walk that sees EVERY label — the emit below
+            # drops unreachable ones — so it is the only place holding the true
+            # label universe, and therefore where a target naming no label at
+            # all can be told apart from one whose label was merely pruned.
+            unresolved: list = []
+            _cand, reachable, _idx = _program_cfg(kids, unresolved=unresolved)
             reach_lines = {kids[i].line for i in reachable}
+            if diagnostics is not None:
+                for n, name in unresolved:
+                    diagnostics.append(ParseDiagnostic(
+                        file=file, start_line=n.line, end_line=n.line,
+                        snippet=(f"{n.code.strip()!r} targets {name!r}, which no "
+                                 "label defines; the edge was DROPPED, so any "
+                                 "code reached only through it is missing"),
+                    ))
 
         # Source node spans (line 1, col 0) .. end of the last real child.
         last = real[-1]

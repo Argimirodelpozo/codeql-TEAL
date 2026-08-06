@@ -48,6 +48,14 @@ class AstNode:
     #: Mnemonic this class parses; ``None`` for non-opcode / family classes.
     mnemonic: ClassVar[Optional[str]] = None
 
+    #: Whether this node's identity is its SOURCE LOCATION (``(file, line)``) —
+    #: true for every node that IS a line. A node spanning many lines (only
+    #: :class:`Source`) sets this False and is identified by object instead:
+    #: spanning from line 1, it otherwise compared equal to whatever sat on
+    #: line 1 and displaced it from the graph. Both dunders below honour this,
+    #: so hash and equality cannot disagree.
+    location_identity: ClassVar[bool] = True
+
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
         if "node_class" not in cls.__dict__:
@@ -61,11 +69,18 @@ class AstNode:
         self.code = code
 
     def __hash__(self) -> int:
+        if not self.location_identity:
+            return object.__hash__(self)
         return hash((self.location.file, self.location.start_line))
 
     def __eq__(self, other) -> bool:
         if not isinstance(other, AstNode):
             return NotImplemented
+        # Either side opting out of location identity makes this an OBJECT
+        # comparison — checked on BOTH sides, or the reflected ``__eq__`` would
+        # still call two nodes on line 1 equal while their hashes differ.
+        if not (self.location_identity and other.location_identity):
+            return self is other
         return (
             self.location.file == other.location.file
             and self.location.start_line == other.location.start_line
@@ -99,7 +114,17 @@ class LabelIdentifier(NonOpcodeNode): pass
 class Comment(NonOpcodeNode): pass
 class Token(NonOpcodeNode): pass
 class ReservedWord(NonOpcodeNode): pass
-class Source(NonOpcodeNode): pass
+class Source(NonOpcodeNode):
+    """The whole-file container node — the one node that is not a line.
+
+    HAZARD: it spans the file FROM LINE 1, so under the ``(file, line)``
+    identity every other node uses it compared EQUAL to an instruction on line
+    1 — and the graph's ``add_node`` keeps whichever arrives first (this one),
+    silently deleting that instruction from the graph, from the SSA, and from
+    every analysis downstream, with no diagnostic. Hence
+    :attr:`AstNode.location_identity` is False here."""
+
+    location_identity = False
 
 class PragmaVersion(NonOpcodeNode): pass
 class PragmaTypetrack(NonOpcodeNode): pass

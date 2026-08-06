@@ -28,7 +28,7 @@ from .models import (
 )
 
 from .operands import (binary_operands, const_bytes, const_byte_length, const_int,
-                       source_operands,
+                       imm0, source_operands,
                        is_const, operand_const)
 from .producers import is_field_var, producing_op
 
@@ -67,6 +67,7 @@ __all__ = [
     "binary_operands",
     "source_operands",
     "const_int",
+    "imm0",
     "is_const",
     "operand_const",
     # Operand -> producing assignment

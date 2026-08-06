@@ -36,6 +36,25 @@ def test_substrate_cfg_does_not_pull_supercfg():
     assert out.strip() == "CLEAN", f"substrate cfg eager-loaded: {out!r}"
 
 
+def test_cfg_package_reexports_nothing_eagerly():
+    """``cfg`` spans three tiers: the extractor FLOOR (``build``, below ssa),
+    views over ``SSAProgram`` (``cfg``, ``exits``), and cross-contract analyses
+    (``supercfg``). One eager re-export makes importing the floor — i.e.
+    importing the PARSER — pull the whole stack, and a later
+    ``ssa -> graph -> parse`` edge would close a cycle through a
+    half-initialised package."""
+    import ast as pyast
+    import pathlib
+
+    import tealql.tealtools.cfg as pkg
+
+    tree = pyast.parse(pathlib.Path(pkg.__file__).read_text())
+    for node in pyast.walk(tree):
+        if isinstance(node, pyast.ImportFrom):
+            assert node.level == 0, (
+                f"cfg/__init__ eagerly imports .{node.module} — keep it lazy")
+
+
 def test_supercfg_still_importable_lazily():
     out = _fresh_import_probe("""
         from tealql.tealtools.cfg import SuperCFG, SuperBlock, SuperEdge

@@ -12,6 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
+from .avm import COND_BRANCH_OPS, MULTIWAY_BRANCH_OPS
 from .cfg.dominance import program_entries
 from .ssa import Assignment, BasicBlock, SSAProgram
 
@@ -29,7 +30,9 @@ _SIDE_EFFECT_OPS = frozenset({
 _TERMINAL_OPS = frozenset({"return", "err"})
 _CALL_OPS = frozenset({"callsub", "retsub"})
 
-_COND_BRANCH = frozenset({"bnz", "bz", "switch", "match"})
+# Every branch whose successor choice depends on a VALUE — two-way bnz/bz plus
+# the N-way switch/match — derived from the avm spec sets, never re-listed.
+_VALUE_BRANCH_OPS = COND_BRANCH_OPS | MULTIWAY_BRANCH_OPS
 
 # txn fields a dispatch typically branches on.
 _ROUTING_FIELDS = frozenset({
@@ -42,7 +45,7 @@ _TERM_OPS = _TERMINAL_OPS | _CALL_OPS
 def _terminator(bb: BasicBlock) -> Optional[str]:
     """Last control-flow op of ``bb`` (mat-phi-copy tolerant)."""
     last: Optional[str] = None
-    branch_or_term = _COND_BRANCH | {"b"} | _TERM_OPS
+    branch_or_term = _VALUE_BRANCH_OPS | {"b"} | _TERM_OPS
     for a in bb.assignments:
         if a.op in branch_or_term:
             last = a.op
@@ -217,7 +220,7 @@ def _branches_on_routing_field(bb: BasicBlock, depth: int = 3) -> bool:
     field (OnCompletion / TypeEnum / … / the ABI selector)."""
     cond = None
     for a in bb.assignments:
-        if a.op in _COND_BRANCH and a.inputs:
+        if a.op in _VALUE_BRANCH_OPS and a.inputs:
             cond = a.inputs[0]
     if cond is None:
         return False

@@ -3,12 +3,27 @@
 HAZARD: for an SSAVar / Phi these read ``const_value``, which is set by
 :meth:`SSAProgram.propagate_constants` (a Phi gets one when every arg agrees).
 Query them before that pass has run and every non-literal looks non-constant.
+
+Also home to :func:`imm0`, the immediate-token sibling (assignment → first
+immediate as int) — it was re-rolled per-module before landing here.
 """
 from __future__ import annotations
 
 from typing import Optional
 
 from .models import Const
+
+
+def imm0(a) -> Optional[int]:
+    """First immediate of an assignment as an int (scratch slot / frame index /
+    ``proto`` count), or ``None`` when absent or non-numeric."""
+    toks = (a.immediates or "").split()
+    if not toks:
+        return None
+    try:
+        return int(toks[0])
+    except ValueError:
+        return None
 
 
 def operand_const(op) -> Optional[Const]:

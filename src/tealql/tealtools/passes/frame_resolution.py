@@ -9,14 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from ..ssa import SSAVar
-
-
-def _imm0(a) -> int | None:
-    toks = (a.immediates or "").split()
-    try:
-        return int(toks[0]) if toks else None
-    except ValueError:
-        return None
+from ..ssa.operands import imm0 as _imm0
 
 
 @dataclass

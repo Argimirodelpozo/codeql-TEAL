@@ -18,6 +18,8 @@ import re
 from dataclasses import dataclass
 from typing import Optional
 
+from .avm import COND_BRANCH_OPS
+
 # Matches both forms — the pseudo-op operand and the compiler's trailing
 # `// method "..."` comment — so one scan over the raw source finds all.
 _METHOD_RE = re.compile(r'method\s+"([^"]+)"')
@@ -199,8 +201,9 @@ _LABEL_DEF_RE = re.compile(r"^([A-Za-z_][\w@]*):\s*$")
 #: Ops whose operands are a POSITIONAL list of branch targets, paired 1:1 with the
 #: selectors of the immediately-preceding ``pushbytess ... // method ...`` line.
 _DISPATCH_OPS = ("match", "switch")
-#: Single-selector branch: ``pushbytes SEL // method "sig"``, ``==``, then one of these.
-_COND_BRANCH_OPS = ("bnz", "bz", "b")
+#: Single-selector branch: ``pushbytes SEL // method "sig"``, ``==``, then one of
+#: these — the two-way conditionals (from the avm spec set) plus the plain jump.
+_SELECTOR_BRANCH_OPS = COND_BRANCH_OPS | {"b"}
 #: The selector-pushing ops whose operands are the router's method selectors.
 _PUSH_OPS = ("pushbytess", "pushbytes")
 
@@ -261,7 +264,7 @@ def method_line_ranges(source: str, method_table: "dict | None" = None):
                         entry_method.setdefault(tgt, meth)
                         boundaries.add(tgt)
                 break
-            if len(methods) == 1 and toks[0] in _COND_BRANCH_OPS and len(toks) >= 2:
+            if len(methods) == 1 and toks[0] in _SELECTOR_BRANCH_OPS and len(toks) >= 2:
                 if methods[0] is not None:
                     entry_method.setdefault(toks[1], methods[0])
                     boundaries.add(toks[1])

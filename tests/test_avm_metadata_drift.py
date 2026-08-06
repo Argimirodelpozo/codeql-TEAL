@@ -185,3 +185,90 @@ def test_every_puya_opcode_has_a_sig_entry():
         f"opcodes puya models but avm.SIG does not: {missing} — each is "
         "modelled with NO stack effect. Add them to SIG."
     )
+
+
+# Arity VALUES floor: how many SIG entries have a puya static signature to
+# compare against today. A puya rename that silently drops ops out of the
+# comparison regresses this count instead of shrinking coverage unnoticed.
+_MIN_ARITY_COVERED = 120
+
+
+def test_sig_arities_match_puya_signatures():
+    """The (n_in, n_out) VALUES — not just presence. A wrong arity shifts every
+    later stack slot, corrupting the whole SSA reconstruction with no local
+    symptom, so each entry with a static puya signature is pinned to it.
+    ``return`` is the ONE deliberate divergence (see the HAZARD in avm.SIG:
+    modelling its pop would shrink the exit stack the lift reads)."""
+    mismatches = []
+    checked = 0
+    for member in AVMOp:
+        code = member.code
+        sig = avm.SIG.get(code)
+        if sig is None or code == "return":
+            continue
+        variants = getattr(member, "_variants", None)
+        if not isinstance(variants, Variant):
+            continue  # dynamic-signature ops are field-keyed, typed elsewhere
+        checked += 1
+        want = (len(variants.signature.args), len(variants.signature.returns))
+        if sig != want:
+            mismatches.append((code, sig, want))
+    assert not mismatches, (
+        "SIG arities disagree with puya's langspec "
+        f"(op, SIG_says, puya_says): {mismatches}")
+    assert checked >= _MIN_ARITY_COVERED, (
+        f"only {checked} SIG arities compared against puya "
+        f"(floor {_MIN_ARITY_COVERED}) — did puya restructure AVMOp?")
+
+
+def test_return_pop_divergence_is_deliberate():
+    """``return`` pops the approval value on the AVM but MUST stay (0, 0) here:
+    it terminates the program, and modelling the pop would shrink the exit
+    stack the lift reads its ProgramExit operand off. If this fails, someone
+    'fixed' SIG to match spec — see the HAZARD comment in avm.SIG before
+    keeping that change. (Puya doesn't model ``return`` as an intrinsic at
+    all, so the arity test above can't cover it — this pin is the guard.)"""
+    assert avm.SIG["return"] == (0, 0)
+    assert not any(m.code == "return" for m in AVMOp)
+
+
+def test_immediate_keyed_result_tables_match_puya():
+    """block / json_ref result types are keyed on the immediate (DynamicVariants
+    in puya). Pin the tables COMPLETE in both directions and coarse-type-equal,
+    so a new AVM version's block field fails here instead of going untyped —
+    the exact 'v11 tail' rot this file exists to prevent."""
+    from puya.ir.avm_ops_models import DynamicVariants
+
+    for op_name, table in (("block", avm._BLOCK_FIELD_TYPE),
+                           ("json_ref", avm._JSON_REF_RESULT_TYPE)):
+        variants = getattr(AVMOp, op_name)._variants
+        assert isinstance(variants, DynamicVariants)
+        assert set(table) == set(variants.variant_map), (
+            op_name, set(table) ^ set(variants.variant_map))
+        for key, var in variants.variant_map.items():
+            (ret,) = var.signature.returns  # both ops: single result per kind
+            want = ("u" if ret.avm_type == AVMType.uint64
+                    else "b" if ret.avm_type == AVMType.bytes else "?")
+            assert avm.avm(table[key]) == want, (op_name, key, table[key], want)
+
+    # voter_params_get routes through the *_params_get machinery instead:
+    # exists flag on top via _EX_FLAG_OPS, value typed by field immediate.
+    assert "voter_params_get" in avm._EX_FLAG_OPS
+    voter = AVMOp.voter_params_get._variants
+    for key, var in voter.variant_map.items():
+        assert key in avm._PARAMS_FIELD_TYPE, key
+        value_ret = var.signature.returns[0]  # (value, did_exist): value first
+        want = "u" if value_ret.avm_type == AVMType.uint64 else "b"
+        assert avm.avm(avm._PARAMS_FIELD_TYPE[key]) == want, key
+
+
+def test_block_address_fields_single_source_consistency():
+    """Same single-source lock as the txn/global address universes, for the
+    ``block`` fields added with them: every ADDRESS_BLOCK_FIELDS entry is
+    account-typed AND 32 bytes, and nothing else in the block table claims
+    to be an account."""
+    for f in avm.ADDRESS_BLOCK_FIELDS:
+        assert avm._BLOCK_FIELD_TYPE.get(f) == "account", f
+        assert avm._BLOCK_FIELD_BYTELEN.get(f) == 32, f
+    assert {f for f, t in avm._BLOCK_FIELD_TYPE.items() if t == "account"} \
+        == set(avm.ADDRESS_BLOCK_FIELDS)

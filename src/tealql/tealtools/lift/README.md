@@ -21,7 +21,7 @@ contract.teal  (a file, or a directory of .teal for a multi-program artifact)
 
 CodeQL is not involved anywhere on this path — it was dropped as a runtime and
 test dependency, and the extractor floor underneath is pure Python
-(`ast/parse.py` → `cfg_build.py` → `graph.load_graph`).
+(`ast/parse.py` → `cfg/build.py` → `graph.load_graph`).
 
 > All commands assume the repo root and `PYTHONPATH=src` (the `tealql`
 > package lives under `src/`).
