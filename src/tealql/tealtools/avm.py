@@ -424,7 +424,17 @@ MULTIWAY_BRANCH_OPS: frozenset[str] = frozenset({"switch", "match"})
 # ===========================================================================
 
 
-_BOOL_OPS = CMP_OPS | LOGICAL_OPS
+#: Single-result ops whose value is a 0/1 FLAG rather than a full-width uint64.
+#: Same refinement the did_exist flags get in :func:`_multi_out_type` and that
+#: puya's langspec declares. They stay in :data:`_U64_OPS` too — that set is
+#: consulted for the coarse AVM FAMILY, where bool and uint64 agree.
+BOOL_RESULT_OPS: frozenset[str] = frozenset({
+    "app_opted_in", "box_create", "box_del", "getbit",
+    "falcon_verify", "ecdsa_verify", "ed25519verify", "ed25519verify_bare",
+    "ec_pairing_check", "ec_subgroup_check",
+})
+
+_BOOL_OPS = CMP_OPS | LOGICAL_OPS | BOOL_RESULT_OPS
 # Const-push / const-load ops are normally typed from their folded const value;
 # these sets are the fallback when the parser dropped the operand
 # (`pushbytes base64(..)`, `bytec N`) and there is no value to type them from.
@@ -438,7 +448,13 @@ _U64_OPS = frozenset({"+", "-", "*", "/", "%", "exp", "sqrt", "shl", "shr",
                       "extract_uint16", "extract_uint32", "extract_uint64",
                       "box_create", "box_del",     # both return a uint64 flag
                       "gaid", "gaids",             # created asset/app id (uint64)
-                      "falcon_verify",             # verified flag (uint64/bool)
+                      "&", "|", "^", "~",          # full-width uint64 bitwise
+                      # Verification flags. Their RESULTS were in no table at
+                      # all, so a value produced here and consumed only at a
+                      # polymorphic position stayed `?`.
+                      "falcon_verify", "ecdsa_verify",
+                      "ed25519verify", "ed25519verify_bare",
+                      "ec_pairing_check", "ec_subgroup_check",
                       "online_stake",              # total online stake, microalgos
                       "balance", "min_balance", "app_opted_in"}) | _U64_PUSH
 _BYTES_OPS = frozenset({"itob", "concat", "substring", "substring3", "extract",
@@ -513,6 +529,7 @@ _GLOBAL_FIELD_TYPE = {
     "PayoutsEnabled": "bool",
     "CurrentApplicationID": "application", "CallerApplicationID": "application",
     "GenesisHash": "bytes",
+    "GroupID": "bytes",                 # 32-byte group id (also a txn field)
 }
 _GLOBAL_FIELD_TYPE.update({f: "account" for f in ADDRESS_GLOBAL_FIELDS})
 
@@ -822,7 +839,10 @@ _TXN_FIELD_BYTELEN: dict = {
     "SelectionPK":  32,
     "StateProofPK": 64,
 }
-_GLOBAL_FIELD_BYTELEN: dict = {f: 32 for f in _ADDR_GLOBAL}
+_GLOBAL_FIELD_BYTELEN: dict = {
+    **{f: 32 for f in _ADDR_GLOBAL},
+    "GroupID": 32,                      # fixed-width, but NOT an address
+}
 _BLOCK_FIELD_BYTELEN: dict = {
     **{f: 32 for f in ADDRESS_BLOCK_FIELDS},
     # 32-byte VRF seed / block-hash fields (NOT addresses); BlkProtocol is a

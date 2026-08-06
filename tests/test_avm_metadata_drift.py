@@ -119,9 +119,12 @@ def test_address_fields_single_source_consistency():
     # is the ONLY producer of "account" entries).
     assert {f for f, t in O._TXN_FIELD_TYPE.items() if t == "account"} == set(ADDRESS_TXN_FIELDS)
     assert {f for f, t in O._GLOBAL_FIELD_TYPE.items() if t == "account"} == set(ADDRESS_GLOBAL_FIELDS)
-    # Every global 32-byte field is an address; txn 32-byte fields are addresses
-    # plus exactly the enumerated non-address fixed-width fields.
-    assert {f for f, n in M._GLOBAL_FIELD_BYTELEN.items() if n == 32} == set(ADDRESS_GLOBAL_FIELDS)
+    # 32-byte fields are the addresses PLUS the enumerated non-address
+    # fixed-width ones. Kept as equality on the global side (an exhaustive list,
+    # so a new 32-byte global has to be declared here deliberately rather than
+    # inherited): `GroupID` is 32 bytes and is NOT an account.
+    assert ({f for f, n in M._GLOBAL_FIELD_BYTELEN.items() if n == 32}
+            == set(ADDRESS_GLOBAL_FIELDS) | {"GroupID"})
     assert set(ADDRESS_TXN_FIELDS) <= {f for f, n in M._TXN_FIELD_BYTELEN.items() if n == 32}
 
 
@@ -327,6 +330,58 @@ def test_every_operand_position_has_an_expected_type():
         "operand positions with NO expected type (op, imm, top-first idx, puya "
         f"says): {missing} — a value used only there stays `?` and lowers to uint64")
     assert covered >= 400, f"only {covered} positions compared — did puya restructure?"
+
+
+def test_every_single_result_op_is_typed():
+    """A single-result op absent from every result table produces an UNTYPED
+    value: consumed only at a polymorphic position it stays ``?`` and lowering
+    guesses. That is how the bitwise ops (``&`` ``|`` ``^`` ``~``) and the whole
+    verify-flag family sat untyped — invisible to the family-comparison test,
+    which only checks ops it already finds IN a table.
+
+    Refining beyond puya is allowed (we type ``txna Assets`` ``asset`` where
+    puya says ``uint64``, and ``bytes`` covers its sized ``bytes[N]``); crossing
+    the uint64/bytes divide is not."""
+    from puya.ir.avm_ops_models import DynamicVariants
+
+    from tealql.tealtools.avm import _BOOL_OPS, _BYTES_OPS, _U64_OPS
+
+    def ours(code, imm):
+        if code in _BOOL_OPS:
+            return "bool"
+        ft = avm._field_type(code, imm or "")
+        if ft:
+            return ft
+        if code in _U64_OPS:
+            return "uint64"
+        if code in _BYTES_OPS:
+            return "bytes"
+        return None
+
+    untyped, crossed = [], []
+    for member in AVMOp:
+        variants = getattr(member, "_variants", None)
+        if isinstance(variants, Variant):
+            cases = [(None, variants.signature.returns)]
+        elif isinstance(variants, DynamicVariants):
+            cases = [(k, v.signature.returns) for k, v in variants.variant_map.items()]
+        else:
+            continue
+        for imm, returns in cases:
+            if len(returns) != 1 or str(returns[0]) == "any":
+                continue
+            got = ours(member.code, imm)
+            if got is None:
+                untyped.append((member.code, imm, str(returns[0])))
+                continue
+            want_fam = "u" if getattr(returns[0], "avm_type", None) == AVMType.uint64 else "b"
+            if avm.avm(got) != want_fam:
+                crossed.append((member.code, imm, str(returns[0]), got))
+
+    assert not crossed, f"result type crosses the AVM divide: {crossed}"
+    assert not untyped, (
+        f"single-result ops with NO type: {untyped} — values they produce stay "
+        "`?` and lowering guesses")
 
 
 def test_multi_output_slot_types_match_puya_exactly():

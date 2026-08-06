@@ -45,10 +45,12 @@ def test_v12_opcode_tail_is_typed():
     which the drift test cannot catch for an op in NEITHER result table."""
     assert "online_stake" in avm._U64_OPS
 
-    # voter_params_get routes through the *_params_get machinery: exists flag
-    # on TOP (output 0), field-typed value below.
+    # voter_params_get routes through the *_params_get machinery: did_exist flag
+    # on TOP (output 0) — a `bool` like every other predicate, not a plain
+    # uint64 — and the field-typed value below.
     assert {"voter_params_get"} <= avm._EX_FLAG_OPS & avm._PARAMS_OPS
-    assert _multi_out_type("voter_params_get", "VoterBalance", 0) == "uint64"
+    assert _multi_out_type("voter_params_get", "VoterBalance", 0) == "bool"
+    assert _multi_out_type("voter_params_get", "VoterBalance", 1) == "uint64"
     assert _multi_out_type("voter_params_get", "VoterIncentiveEligible", 1) == "bool"
     assert avm._OP_OUTPUT_SEEDS["voter_params_get"] == [(0, 0, 1)]
 
