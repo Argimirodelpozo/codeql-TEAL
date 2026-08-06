@@ -272,8 +272,17 @@ def test_every_operand_position_has_an_expected_type():
     lowered to uint64 and made a contract uncompilable, and how the whole
     elliptic-curve family sat untyped while its results were typed. Positions
     puya itself declares polymorphic (``any``) are exempt — for those, unknown
-    is the correct answer and the value flow decides."""
+    is the correct answer and the value flow decides.
+
+    HAZARD: this must walk BOTH signature kinds. Checking only the statically
+    signed ops reads as complete while leaving every immediate-keyed op
+    unverified — that gap hid 47 untyped positions (the ``*_params_get`` /
+    ``asset_holding_get`` id operands, ``block``'s round, ``json_ref``'s
+    operands), including the one that left a value feeding
+    ``asset_holding_get`` with no signal at all.
+    """
     from puya.avm import AVMType as _AVMType
+    from puya.ir.avm_ops_models import DynamicVariants
 
     from tealql.tealtools.lift import type_recovery as TR
 
@@ -281,34 +290,43 @@ def test_every_operand_position_has_an_expected_type():
         ir_type = "?"
 
     missing, wrong, covered = [], [], 0
-    for member in AVMOp:
-        variants = getattr(member, "_variants", None)
-        if not isinstance(variants, Variant) or not variants.signature.args:
-            continue
+
+    def check(sig_args, code, imm=None):
+        nonlocal covered
         # puya lists args deepest-first; _expected_type indexes TOP-FIRST.
-        top_first = list(reversed(variants.signature.args))
+        top_first = list(reversed(sig_args))
         args = [_Unknown() for _ in top_first]
         for idx, arg in enumerate(top_first):
             at = getattr(arg, "avm_type", None)
             if at not in (_AVMType.uint64, _AVMType.bytes):
                 continue                      # polymorphic: deliberately open
             want = "uint64" if at == _AVMType.uint64 else "bytes"
-            got = TR._expected_type(member.code, idx, args)
+            got = TR._expected_type(code, idx, args, imm=[imm] if imm else None)
             if got is None:
-                missing.append((member.code, idx, want))
+                missing.append((code, imm, idx, want))
                 continue
             family = ("bytes" if got in TR._BYTES_FAMILY
                       else "uint64" if got in TR._U64_FAMILY else got)
             if family != want:
-                wrong.append((member.code, idx, want, got))
+                wrong.append((code, imm, idx, want, got))
             else:
                 covered += 1
 
-    assert not wrong, f"operand types contradict puya (op, idx, puya, ours): {wrong}"
+    for member in AVMOp:
+        variants = getattr(member, "_variants", None)
+        if isinstance(variants, Variant):
+            if variants.signature.args:
+                check(variants.signature.args, member.code)
+        elif isinstance(variants, DynamicVariants):
+            for key, var in variants.variant_map.items():
+                if var.signature.args:
+                    check(var.signature.args, member.code, key)
+
+    assert not wrong, f"operand types contradict puya (op, imm, idx, puya, ours): {wrong}"
     assert not missing, (
-        "operand positions with NO expected type (op, top-first idx, puya says): "
-        f"{missing} — a value used only there stays `?` and lowers to uint64")
-    assert covered >= 190, f"only {covered} positions compared — did puya restructure?"
+        "operand positions with NO expected type (op, imm, top-first idx, puya "
+        f"says): {missing} — a value used only there stays `?` and lowers to uint64")
+    assert covered >= 400, f"only {covered} positions compared — did puya restructure?"
 
 
 def test_block_address_fields_single_source_consistency():

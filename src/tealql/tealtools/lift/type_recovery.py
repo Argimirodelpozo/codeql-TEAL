@@ -136,6 +136,16 @@ _POS_IN = {
     # is polymorphic in the AVM — an address byteslice OR a uint64 index into
     # the Accounts array — so it is deliberately left to the value flow.
     "app_opted_in": ("uint64", None),             # A(poly acct) B(app id)
+    # The immediate-keyed (field-selecting) ops. Their operand types are the
+    # SAME across every field variant — only the RESULT varies with the field —
+    # so one entry each. These were the last untyped positions: an asset id
+    # reaching `asset_params_get` and nothing else had no typing signal at all.
+    "app_params_get":    ("uint64",),             # A(app id)
+    "asset_params_get":  ("uint64",),             # A(asset id)
+    "asset_holding_get": ("uint64", None),        # A(poly acct) B(asset id)
+    "block":             ("uint64",),             # A(round)
+    "gitxnas":           ("uint64",),             # A(array index)
+    "json_ref":          ("bytes", "bytes"),      # A(json object) B(key)
     "setbyte": ("uint64", "uint64", "bytes"),     # A(bytes) B(idx) C(val)
     "extract3": ("uint64", "uint64", "bytes"),    # A(bytes) B(start) C(len)
     "substring3": ("uint64", "uint64", "bytes"),
