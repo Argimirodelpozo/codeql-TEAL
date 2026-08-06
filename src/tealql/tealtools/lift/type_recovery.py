@@ -64,8 +64,9 @@ def _const_key(operand) -> "str | None":
 # HAZARD: must agree with avm.py's `avm()` and `_AVM_BYTES_TYPES` on what is
 # bytes-backed. A type bytes-backed in one table but not the other makes a phi
 # join of two genuinely-bytes types cross the divide and default to uint64.
-# `string` is bytes-backed (an ARC-4 String is a length-prefixed byte array).
-_BYTES_FAMILY = frozenset({"bytes", "account", "string"})
+# `string` is bytes-backed (an ARC-4 String is a length-prefixed byte array),
+# and so is `biguint` (a big-endian number IN a byte slice).
+_BYTES_FAMILY = frozenset({"bytes", "account", "string", "biguint"})
 
 
 _U64_FAMILY = frozenset({"uint64", "bool", "asset", "application"})
@@ -1019,7 +1020,11 @@ def _reconcile_return_arity(prog) -> None:
         sub.returns = types
         for t in sites:                        # front-pad short return sites
             if len(t.result) < n:
-                pad = [pre_ir.BytesConstant("0x") if types[i] == "bytes"
+                # By FAMILY, not by the name `bytes`: these types come from a
+                # register's recovered ir_type, so they can be any refined
+                # bytes-backed name (`account`, `biguint`, `string`), and
+                # padding one of those with a uint64 crosses the AVM divide.
+                pad = [pre_ir.BytesConstant("0x") if types[i] in _BYTES_FAMILY
                        else pre_ir.UInt64Constant(0)
                        for i in range(n - len(t.result))]
                 t.result = pad + list(t.result)

@@ -122,9 +122,9 @@ def test_address_fields_single_source_consistency():
     # 32-byte fields are the addresses PLUS the enumerated non-address
     # fixed-width ones. Kept as equality on the global side (an exhaustive list,
     # so a new 32-byte global has to be declared here deliberately rather than
-    # inherited): `GroupID` is 32 bytes and is NOT an account.
+    # inherited): `GroupID` and `GenesisHash` are 32 bytes and are NOT accounts.
     assert ({f for f, n in M._GLOBAL_FIELD_BYTELEN.items() if n == 32}
-            == set(ADDRESS_GLOBAL_FIELDS) | {"GroupID"})
+            == set(ADDRESS_GLOBAL_FIELDS) | {"GroupID", "GenesisHash"})
     assert set(ADDRESS_TXN_FIELDS) <= {f for f, n in M._TXN_FIELD_BYTELEN.items() if n == 32}
 
 

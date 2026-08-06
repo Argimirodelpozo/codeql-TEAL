@@ -57,6 +57,7 @@ def _bytes_const(literal: str) -> "M.BytesConstant":
 _IRT = {
     "uint64": PT.uint64, "bytes": PT.bytes, "bool": PT.bool,
     "account": PT.account, "asset": PT.uint64, "application": PT.uint64,
+    "biguint": PT.biguint,
     # Last-resort default for a type recovery could NOT resolve. Any residual `?`
     # is logged by type_recovery._warn_residual_unknowns, so this fallback can't
     # quietly mistype a bytes value.

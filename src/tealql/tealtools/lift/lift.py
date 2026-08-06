@@ -24,6 +24,7 @@ from ..ssa.models import Assignment as _SSAAssignment, BasicBlock as _SSABasicBl
 from ..structure import analyze_structure
 from . import pre_ir, transforms, type_recovery
 from ..avm import (
+    BIGUINT_RESULT_OPS,
     _BOOL_OPS,
     _BYTES_OPS,
     _NAME_PREFIX,
@@ -678,6 +679,8 @@ class _Lifter:
     def type_of(self, o, op=None, imm=None) -> str:
         if op in _BOOL_OPS:
             return "bool"
+        if op in BIGUINT_RESULT_OPS:
+            return "biguint"
         ft = _field_type(op, imm)
         if ft:
             return ft
@@ -1589,6 +1592,8 @@ class _Lifter:
         imm = a.immediates if a else None
         if op in _BOOL_OPS:
             return "bool"
+        if op in BIGUINT_RESULT_OPS:
+            return "biguint"
         ft = _field_type(op, imm)
         if ft:
             return ft

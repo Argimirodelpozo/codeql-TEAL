@@ -570,8 +570,22 @@ def _field_type(op, immediates):
     return None
 
 
+#: Single-result ops producing a BIGUINT — a big-endian arbitrary-precision
+#: number in a byte slice. Distinct from opaque ``bytes`` because it is
+#: NUMERIC: an address or a hash is never byte-math output, so the two being
+#: indistinguishable hid a real type confusion. Only the b-ARITHMETIC ops
+#: qualify — ``b|`` / ``b&`` / ``b^`` / ``b~`` are bitwise over raw byte slices
+#: and stay ``bytes``, exactly as puya declares them.
+#:
+#: HAZARD: results ONLY. Typing the OPERANDS biguint (puya declares `b==`'s
+#: operands biguint) would retype two addresses compared with `b==`, destroying
+#: their `account` typing to say something the comparison does not require.
+BIGUINT_RESULT_OPS: frozenset[str] = frozenset({
+    "b+", "b-", "b*", "b/", "b%", "bsqrt",
+})
+
 #: AVM types that live in a byte-slice stack value vs a uint64.
-_AVM_BYTES_TYPES = frozenset({"bytes", "account", "string"})
+_AVM_BYTES_TYPES = frozenset({"bytes", "account", "string", "biguint"})
 _AVM_UINT64_TYPES = frozenset({"uint64", "bool", "asset", "application"})
 
 
@@ -688,7 +702,7 @@ _BYTES_CONSUME = frozenset({
 
 def avm(t) -> str:
     """Coarse AVM type of a type name: 'b' (bytes), 'u' (uint64), '?' (unknown)."""
-    return ("b" if t in ("bytes", "account", "string")
+    return ("b" if t in ("bytes", "account", "string", "biguint")
             else "u" if t in ("uint64", "bool", "asset", "application")
             else "?")
 
@@ -833,15 +847,19 @@ _ADDR_TXN, _ADDR_GLOBAL = ADDRESS_TXN_FIELDS, ADDRESS_GLOBAL_FIELDS
 
 _TXN_FIELD_BYTELEN: dict = {
     **{f: 32 for f in _ADDR_TXN},
-    # Fixed-width participation keys / lease (NOT addresses).
+    # Fixed-width participation keys / lease / hashes (NOT addresses).
     "Lease":        32,
+    "TxID":                    32,   # transaction hash
+    "ConfigAssetMetadataHash": 32,
     "VotePK":       32,
     "SelectionPK":  32,
     "StateProofPK": 64,
 }
 _GLOBAL_FIELD_BYTELEN: dict = {
     **{f: 32 for f in _ADDR_GLOBAL},
-    "GroupID": 32,                      # fixed-width, but NOT an address
+    # Fixed-width, but NOT addresses.
+    "GroupID":     32,
+    "GenesisHash": 32,
 }
 _BLOCK_FIELD_BYTELEN: dict = {
     **{f: 32 for f in ADDRESS_BLOCK_FIELDS},
@@ -858,8 +876,11 @@ _OP_OUTPUT_BYTELEN: dict = {
     "vrf_verify":          [(1, 64)],
 }
 
-#: Single-output ops with a FIXED-WIDTH bytes result — the hash / digest family.
+#: Single-output ops with a FIXED-WIDTH bytes result: the hash / digest family,
+#: plus ``itob`` — always exactly 8 bytes, and the head of nearly every ARC-4
+#: integer encoding chain, so its width feeds the offset/width reasoning.
 FIXED_BYTES_OUTPUT_LEN: dict[str, int] = {
+    "itob":       8,
     "sha256":     32,
     "sha512_256": 32,
     "keccak256":  32,

@@ -64,6 +64,58 @@ def test_v12_opcode_tail_is_typed():
     assert "BlkProtocol" not in avm._BLOCK_FIELD_BYTELEN
 
 
+def test_biguint_is_distinguished_from_opaque_bytes():
+    """Byte-MATH results are numeric, and an address or hash never is — typing
+    both `bytes` made that confusion inexpressible. Only the b-arithmetic ops
+    qualify: `b|`/`b&`/`b^`/`b~` are bitwise over raw slices and stay `bytes`.
+    Operands are deliberately NOT retyped, or two addresses compared with `b==`
+    would lose their `account` typing."""
+    import logging
+
+    from tealql.tealtools.lift import lift as do_lift, pre_ir
+    from tealql.tealtools.ssa import SSAProgram
+
+    assert avm.avm("biguint") == "b"          # bytes-backed, never crosses
+    assert "b&" not in avm.BIGUINT_RESULT_OPS
+
+    logging.disable(logging.WARNING)
+    try:
+        prog = SSAProgram.from_text(
+            "#pragma version 10\n"
+            "txna ApplicationArgs 0\ntxna ApplicationArgs 1\nb+\nlog\n"
+            "txna ApplicationArgs 0\ntxna ApplicationArgs 1\nb&\nlog\n"
+            "int 1\nreturn\n", strict=False)
+        prog.propagate_constants()
+        ir = do_lift(prog)
+    finally:
+        logging.disable(logging.NOTSET)
+    got = {getattr(o.source, "op", ""): o.targets[0].ir_type
+           for b in ir.main.body for o in b.ops
+           if isinstance(o, pre_ir.Assignment) and o.targets}
+    assert got.get("b+") == "biguint", got
+    assert got.get("b&") == "bytes", got
+
+
+def test_fixed_byte_width_seeds():
+    """Widths puya declares that no table carried: a transaction hash, an asset
+    metadata hash, the genesis hash, and `itob` — always exactly 8 bytes."""
+    from tealql.tealtools.passes.byte_length_prop import propagate_byte_lengths
+    from tealql.tealtools.ssa import SSAProgram
+
+    prog = SSAProgram.from_text(
+        "#pragma version 10\ntxn NumAppArgs\nitob\nlog\ntxn TxID\nlog\n"
+        "global GenesisHash\nlog\nint 1\nreturn\n", strict=False)
+    prog.propagate_constants()
+    propagate_byte_lengths(prog)
+    widths = {a.op if a.op == "itob" else a.immediates.strip():
+              getattr(getattr(a.outputs[0], "type", None), "byte_length", None)
+              for a in prog.assignments if a.op in ("itob", "txn", "global")}
+    assert widths["itob"] == 8
+    assert widths["TxID"] == 32
+    assert widths["GenesisHash"] == 32
+    assert avm._TXN_FIELD_BYTELEN["ConfigAssetMetadataHash"] == 32
+
+
 def test_shared_op_families_have_one_definition():
     """Three modules once carried same-named branch sets with DIFFERENT
     contents, and ``imm0`` was re-rolled per module. Consumers derive now."""
