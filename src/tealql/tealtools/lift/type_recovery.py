@@ -125,6 +125,17 @@ _POS_IN = {
     # `bytes` mis-types a uint64 BITMAP and clashes with the u64 store of the same
     # scratch slot. Leave A unknown so the VALUE FLOW types it; index B is uint64.
     "getbit": ("uint64", None),
+    # `setbit A B C` is polymorphic in its VALUE operand (A) — see
+    # _infer_setbit_types, which unifies it with the result — but the bit index
+    # and bit value are always uint64.
+    "setbit": ("uint64", "uint64", None),         # A(poly) B(idx) C(bit)
+    # `select A B C` picks A or B on condition C. The VALUES are polymorphic
+    # (joined by _infer_select_types); only the condition is fixed.
+    "select": ("uint64", None, None),             # A(poly) B(poly) C(cond)
+    # `app_opted_in A B`: the application id is uint64, but the ACCOUNT operand
+    # is polymorphic in the AVM — an address byteslice OR a uint64 index into
+    # the Accounts array — so it is deliberately left to the value flow.
+    "app_opted_in": ("uint64", None),             # A(poly acct) B(app id)
     "setbyte": ("uint64", "uint64", "bytes"),     # A(bytes) B(idx) C(val)
     "extract3": ("uint64", "uint64", "bytes"),    # A(bytes) B(start) C(len)
     "substring3": ("uint64", "uint64", "bytes"),

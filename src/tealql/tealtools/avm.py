@@ -651,7 +651,14 @@ _BYTES_CONSUME = frozenset({
     # signature, public key). `ecdsa_pk_recover` is the one exception — its
     # recovery id is a uint64 — so it is typed positionally by the lift instead.
     "ed25519verify", "ed25519verify_bare", "falcon_verify",
-    "ecdsa_verify", "ecdsa_pk_decompress", "vrf_verify"})
+    "ecdsa_verify", "ecdsa_pk_decompress", "vrf_verify",
+    # The elliptic-curve family: every operand is a byteslice (curve points,
+    # scalars). Their RESULTS were typed while their operands were not, which is
+    # the exact shape that made a contract uncompilable for `ed25519verify_bare`
+    # above — a value consumed ONLY here had no typing signal, so it lowered to
+    # the uint64 default where the AVM wants bytes.
+    "ec_add", "ec_scalar_mul", "ec_multi_scalar_mul", "ec_pairing_check",
+    "ec_map_to", "ec_subgroup_check"})
 
 
 def avm(t) -> str:

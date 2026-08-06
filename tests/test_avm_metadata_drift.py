@@ -262,6 +262,55 @@ def test_immediate_keyed_result_tables_match_puya():
         assert avm.avm(avm._PARAMS_FIELD_TYPE[key]) == want, key
 
 
+def test_every_operand_position_has_an_expected_type():
+    """Each ARGUMENT POSITION of every statically-signed op must resolve to the
+    AVM family puya declares — the tables are the lift's only typing signal.
+
+    A missing position is not a missing refinement but a missing SIGNAL: a value
+    consumed ONLY there gets no expected type, stays ``?``, and lowering defaults
+    it to uint64. That is how a pubkey used only by ``ed25519verify_bare``
+    lowered to uint64 and made a contract uncompilable, and how the whole
+    elliptic-curve family sat untyped while its results were typed. Positions
+    puya itself declares polymorphic (``any``) are exempt — for those, unknown
+    is the correct answer and the value flow decides."""
+    from puya.avm import AVMType as _AVMType
+
+    from tealql.tealtools.lift import type_recovery as TR
+
+    class _Unknown:
+        ir_type = "?"
+
+    missing, wrong, covered = [], [], 0
+    for member in AVMOp:
+        variants = getattr(member, "_variants", None)
+        if not isinstance(variants, Variant) or not variants.signature.args:
+            continue
+        # puya lists args deepest-first; _expected_type indexes TOP-FIRST.
+        top_first = list(reversed(variants.signature.args))
+        args = [_Unknown() for _ in top_first]
+        for idx, arg in enumerate(top_first):
+            at = getattr(arg, "avm_type", None)
+            if at not in (_AVMType.uint64, _AVMType.bytes):
+                continue                      # polymorphic: deliberately open
+            want = "uint64" if at == _AVMType.uint64 else "bytes"
+            got = TR._expected_type(member.code, idx, args)
+            if got is None:
+                missing.append((member.code, idx, want))
+                continue
+            family = ("bytes" if got in TR._BYTES_FAMILY
+                      else "uint64" if got in TR._U64_FAMILY else got)
+            if family != want:
+                wrong.append((member.code, idx, want, got))
+            else:
+                covered += 1
+
+    assert not wrong, f"operand types contradict puya (op, idx, puya, ours): {wrong}"
+    assert not missing, (
+        "operand positions with NO expected type (op, top-first idx, puya says): "
+        f"{missing} — a value used only there stays `?` and lowers to uint64")
+    assert covered >= 190, f"only {covered} positions compared — did puya restructure?"
+
+
 def test_block_address_fields_single_source_consistency():
     """Same single-source lock as the txn/global address universes, for the
     ``block`` fields added with them: every ADDRESS_BLOCK_FIELDS entry is
