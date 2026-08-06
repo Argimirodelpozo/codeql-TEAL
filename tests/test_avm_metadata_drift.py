@@ -329,6 +329,51 @@ def test_every_operand_position_has_an_expected_type():
     assert covered >= 400, f"only {covered} positions compared — did puya restructure?"
 
 
+def test_multi_output_slot_types_match_puya_exactly():
+    """Per-slot types of multi-result ops, compared EXACTLY — not by AVM family.
+
+    HAZARD: the family comparison the result-table test uses cannot see this.
+    ``bool`` and ``uint64`` are both ``u``, so typing every ``did_exist`` /
+    ``verified`` flag as a plain uint64 read as agreeing with puya while being
+    strictly coarser than the langspec we already have — and coarser than the
+    lift's own treatment of comparison results, which it types ``bool``.
+
+    Slots puya declares polymorphic (``any``, i.e. a state value whose type
+    depends on the contract's schema) are exempt: unknown is correct there."""
+    from puya.ir.avm_ops_models import DynamicVariants
+
+    mismatches = []
+    for member in AVMOp:
+        variants = getattr(member, "_variants", None)
+        if isinstance(variants, Variant):
+            cases = [(None, variants.signature.returns)]
+        elif isinstance(variants, DynamicVariants):
+            cases = [(k, v.signature.returns)
+                     for k, v in variants.variant_map.items()]
+        else:
+            continue
+        for imm, returns in cases:
+            if len(returns) < 2:
+                continue                       # single-result ops typed elsewhere
+            # puya lists returns deepest-first; our slots are TOP-FIRST.
+            for idx, ret in enumerate(reversed(returns)):
+                want = str(ret)
+                if want == "any":
+                    continue                   # schema-dependent: correctly unknown
+                got = avm._multi_out_type(member.code, imm or "", idx)
+                if got is None:
+                    continue                   # deliberately unknowable slot
+                if got != want:
+                    mismatches.append((member.code, imm, idx, want, got))
+
+    # bytes[N] / sized types are a finer distinction than this table models;
+    # only flag a genuine name disagreement, not a width refinement.
+    real = [m for m in mismatches if not m[3].startswith(m[4])]
+    assert not real, (
+        "multi-output slot types disagree with puya "
+        f"(op, immediate, top-first slot, puya, ours): {real}")
+
+
 def test_block_address_fields_single_source_consistency():
     """Same single-source lock as the txn/global address universes, for the
     ``block`` fields added with them: every ADDRESS_BLOCK_FIELDS entry is

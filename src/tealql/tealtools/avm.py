@@ -572,10 +572,16 @@ def txn_field_avm_type(field: str) -> "str | None":
 
 # Per-output-slot types for multi-result intrinsics. HAZARD: outputs are
 # TOP-FIRST — the `*_get_ex` / `*_params_get` / `*_holding_get` / `box_get` ops
-# leave `did_exist` on TOP (output 0, uint64) and the value below (output 1).
+# leave `did_exist` on TOP (output 0) and the value below (output 1).
 # `box_len` puts `did_exist` over a uint64 length; the `w` arithmetic ops give
 # all-uint64 word pairs / quads.
-_MULTI_ALL_U64 = frozenset({"addw", "mulw", "expw", "divmodw", "box_len"})
+#
+# Every did_exist / verified flag is a `bool`, not a plain uint64 — the same
+# refinement the lift already applies to comparison results (`_BOOL_OPS`), and
+# what puya's own langspec declares for all ten. Coarse-typing them uint64 was
+# invisible to the result-table drift test, which compares only AVM FAMILIES
+# (bool and uint64 are both `u`), so it read as agreeing.
+_MULTI_ALL_U64 = frozenset({"addw", "mulw", "expw", "divmodw"})
 _EX_FLAG_OPS = frozenset({
     "app_global_get_ex", "app_local_get_ex", "asset_holding_get",
     "asset_params_get", "app_params_get", "acct_params_get",
@@ -616,14 +622,16 @@ def _multi_out_type(op, immediates, idx):
     schema, not the op)."""
     if op in _MULTI_ALL_U64:
         return "uint64"
+    if op == "box_len":
+        return "bool" if idx == 0 else "uint64"    # did_exist, length
     if op == "box_get":
-        return "uint64" if idx == 0 else "bytes"   # did_exist, value
+        return "bool" if idx == 0 else "bytes"     # did_exist, value
     if op == "vrf_verify":
-        return "uint64" if idx == 0 else "bytes"   # verified flag, 64-byte output
+        return "bool" if idx == 0 else "bytes"     # verified flag, 64-byte output
         # _OP_OUTPUT_BYTELEN pins the 64 only once the slot is typed bytes.
     if op in _EX_FLAG_OPS:
         if idx == 0:
-            return "uint64"                         # did_exist flag
+            return "bool"                           # did_exist flag
         toks = immediates.split() if immediates else []
         for tk in toks:
             if tk in _PARAMS_FIELD_TYPE:
