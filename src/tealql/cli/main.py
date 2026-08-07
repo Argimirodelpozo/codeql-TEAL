@@ -228,6 +228,33 @@ def _cmd_auth(args) -> int:
     )
 
 
+def _cmd_loops(args) -> int:
+    """Loop cost / iteration-bound table."""
+    from tealql.tealtools.pathgraph import analyze_loops, render
+    rc = 0
+    for prog, _file_filter in _load_programs(args):
+        name = getattr(prog, "source_path", None)
+        name = name.name if name else "<program>"
+        loops = analyze_loops(prog)
+        if args.json_out:
+            import json
+            print(json.dumps({
+                "file": name,
+                "loops": [{
+                    "header_line": b.first_line,
+                    "blocks": len(b.body),
+                    "min_iteration_cost": b.min_iteration_cost,
+                    "stack_delta": b.stack_delta,
+                    "max_iterations": b.max_iterations,
+                    "bound": b.bound_reason,
+                } for b in loops],
+            }, indent=1))
+        else:
+            print(f"== {name}")
+            print(render(prog))
+    return rc
+
+
 def _cmd_box_df(args) -> int:
     from tealql.tealtools.dataflow.box import (
         detect_into_box_flows,
@@ -1006,6 +1033,9 @@ def build_parser() -> argparse.ArgumentParser:
         return sp
 
     add("auth", "auth-domination detector", _cmd_auth)
+
+    add("loops", "loop cost + iteration bounds (budget / stack ceilings)",
+        _cmd_loops)
 
     box_df = add("box-df", "box dataflow (into / out / correlated)", _cmd_box_df)
     box_df.add_argument(
