@@ -251,6 +251,12 @@ class PathPredicateAnalysis:
         successful ``itxn_submit``), unioned in AFTER the predecessor
         intersection on every recomputation."""
         self.prog = prog
+        # Run on shuffle-RESOLVED SSA. A `dup` / `swap` output is the same
+        # runtime value as its input but a distinct SSAVar, so a predicate
+        # proved about the original does not match a consumer reading the copy.
+        # `passes.orchestrate` runs this pass, so without it the same program
+        # answered differently depending on whether a pass ran first.
+        prog.propagate_stack_shuffles()
         self.entry_seeds = entry_seeds
         self.bb_seeds: dict[BasicBlock, frozenset[BranchCondition]] = (
             bb_seeds or {}

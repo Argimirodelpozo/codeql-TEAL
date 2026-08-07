@@ -4,9 +4,9 @@
 // With predicate-awareness: suppressed (the assert at L7 constrains
 // the SSAVar that's also consumed by box_put).
 //
-// `dup` ensures the assert and the sink see the *same* SSAVar — the
-// analysis layer otherwise treats two `txna ApplicationArgs 1` reads
-// as distinct vars (a known precision limitation).
+// `dup` ensures the assert and the sink see the *same* SSAVar. The
+// predicate names the `txna`, NOT the `dup`: path predicates run on
+// shuffle-resolved SSA, so a guard names the value it constrains.
 
 txna ApplicationArgs 1
 dup
