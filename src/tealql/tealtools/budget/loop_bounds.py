@@ -250,7 +250,8 @@ def render(prog: SSAProgram, cfg: Optional[CFG] = None) -> str:
 
 
 def to_dot(prog: SSAProgram, cfg: Optional[CFG] = None, *,
-           file: Optional[str] = None, rankdir: str = "TB") -> str:
+           file: Optional[str] = None, rankdir: str = "TB",
+           loops_only: bool = False) -> str:
     """The CFG with each loop boxed and labelled by its bound, and the budget
     already SPENT before it shown.
 
@@ -260,7 +261,12 @@ def to_dot(prog: SSAProgram, cfg: Optional[CFG] = None, *,
 
     A block is drawn inside its INNERMOST loop only: DOT clusters may nest but
     not overlap, and natural loops sharing blocks without nesting (irreducible
-    control flow) would produce an invalid graph."""
+    control flow) would produce an invalid graph.
+
+    ``loops_only`` keeps just the loop bodies and the prefix blocks whose budget
+    they spend. Real contracts run to hundreds of blocks — xgov renders 2285 x
+    4995 px, which is a wall, not a picture — and every dropped block is one the
+    analysis has nothing to say about."""
     cfg = cfg or CFG.of(prog)
     loops = analyze_loops(prog, cfg)
     blocks = [b for b in cfg.blocks if file is None or b.file == file]
@@ -273,6 +279,9 @@ def to_dot(prog: SSAProgram, cfg: Optional[CFG] = None, *,
             owner[bb] = lp
     spent = {b for lp in loops for b in cfg.dominators(lp.header) if b is not lp.header}
     back = {(u, h) for lp in loops for u, h in lp.back_edges}
+    if loops_only:
+        blocks = [b for b in blocks if b in owner or b in spent]
+    shown = set(blocks)
 
     def nid(bb) -> str:
         return f"bb_{bb.first_line}_{bb.last_line}"
