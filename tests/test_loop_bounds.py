@@ -1,4 +1,4 @@
-"""Loop cost and iteration bounds (:mod:`tealql.tealtools.pathgraph`).
+"""Loop cost and iteration bounds (:mod:`tealql.tealtools.loop_bounds`).
 
 The bounds are UPPER limits on what the AVM permits, never trip counts — a loop
 bounded at 700 usually runs three times. What is pinned here is that the two
@@ -8,7 +8,7 @@ bound on cost per iteration).
 """
 from __future__ import annotations
 
-from tealql.tealtools.pathgraph import (
+from tealql.tealtools.loop_bounds import (
     APP_OPCODE_BUDGET,
     analyze_loops,
     op_cost,

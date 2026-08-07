@@ -230,7 +230,7 @@ def _cmd_auth(args) -> int:
 
 def _cmd_loops(args) -> int:
     """Loop cost / iteration-bound table."""
-    from tealql.tealtools.pathgraph import analyze_loops, render
+    from tealql.tealtools.loop_bounds import analyze_loops, render
     rc = 0
     for prog, _file_filter in _load_programs(args):
         name = getattr(prog, "source_path", None)
