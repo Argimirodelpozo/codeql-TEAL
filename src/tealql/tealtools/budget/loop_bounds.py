@@ -30,9 +30,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-from .avm import op_arity
-from .cfg import CFG
-from .ssa import BasicBlock, SSAProgram
+from ..avm import op_arity
+from ..cfg import CFG
+from ..ssa import BasicBlock, SSAProgram
 
 #: Opcode budget for a single application call. POOLED across the group, so a
 #: 16-transaction group affords 16x this — see :attr:`LoopBound.budget_bound`,
