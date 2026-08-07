@@ -273,8 +273,16 @@ def _infer_types_from_uses(subs) -> None:
                 continue
             inferred = {et for (op, i, args, imm) in uses.get(rid, [])
                         if (et := _expected_type(op, i, args, imm)) and et != "?"}
-            if len(inferred) == 1:        # all uses agree -> safe to set
-                r.ir_type = next(iter(inferred))
+            # Unify WITHIN an AVM family: uses that all agree on bytes-vs-uint64
+            # pin the register even when their refined strings differ (e.g. a
+            # value both `len`'d -> "bytes" and `==`'d against an address peer ->
+            # "account" is unambiguously bytes; the raw-set unanimity guard used
+            # to see two strings and bail to `?`, which then defaulted to uint64
+            # -> a Bytes/uint64 mixed-type lowering error). A genuine uint64/bytes
+            # clash joins to None and is left `?`. Monotonic (only `?` -> concrete).
+            j = _avm_join(inferred)
+            if j is not None:
+                r.ir_type = j
                 changed = True
 
 
