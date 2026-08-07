@@ -252,7 +252,7 @@ def _cmd_loops(args) -> int:
                 } for b in loops],
             }, indent=1))
         elif getattr(args, "dot", False):
-            print(to_dot(prog, loops_only=args.only_loops))
+            print(to_dot(prog))
         else:
             print(f"== {name}")
             print(render(prog))
@@ -1044,10 +1044,6 @@ def build_parser() -> argparse.ArgumentParser:
         "--dot", action="store_true",
         help="emit Graphviz DOT: each loop boxed with its bound, and the blocks "
              "whose budget is spent before it can start")
-    loops_p.add_argument(
-        "--only-loops", action="store_true",
-        help="with --dot, keep only loop bodies and the blocks whose budget they "
-             "spend — a real contract's full CFG renders as a wall")
 
     box_df = add("box-df", "box dataflow (into / out / correlated)", _cmd_box_df)
     box_df.add_argument(
