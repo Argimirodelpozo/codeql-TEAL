@@ -12,7 +12,8 @@ from typing import Optional
 
 from ..ssa import BasicBlock, SSAProgram
 from .._utils.dot import bb_label, header, sanitize_id
-from .dominance import iterative_dominators, program_entries
+from .dominance import (control_dependence, iterative_dominators,
+                        program_entries)
 
 
 @dataclass
@@ -223,6 +224,51 @@ class CFG:
                 post[b] = {b}
         self._pdom_cache = post  # type: ignore[attr-defined]
         return post
+
+    # --- control dependence -------------------------------------------
+
+    def control_dependence(self) -> dict:
+        """``BasicBlock -> {(branch block, edge label)}`` — the branches whose
+        OUTCOME decides whether the block runs.
+
+        Sharper than dominance for "what gates this": a dominator may be crossed
+        by every path while gating nothing, whereas a control dependence could
+        have skipped the block. **An empty set means the block runs
+        unconditionally** — for a fund-moving sink, that is the finding.
+
+        Edge labels are the CFG builder's own polarity (``true`` / ``false`` /
+        ``normal``), or ``None`` where a branch's arms collapse onto one block
+        and it therefore partitions nothing."""
+        cached = getattr(self, "_cd_cache", None)
+        if cached is not None:
+            return cached
+        polarity = getattr(self.prog, "edge_polarity", {})
+
+        def label(a: BasicBlock, b: BasicBlock):
+            kinds = polarity.get((a._key(), b._key()), frozenset())
+            return next(iter(kinds)) if len(kinds) == 1 else None
+
+        cd = control_dependence(
+            self.blocks, lambda b: b.successors,
+            self._all_post_dominators(), label,
+        )
+        self._cd_cache = cd  # type: ignore[attr-defined]
+        return cd
+
+    def gating_branches(self, bb: BasicBlock) -> set:
+        """Every branch gating ``bb``, TRANSITIVELY — control dependence is not
+        transitive by construction, so a guard two levels up is only visible by
+        walking the graph."""
+        cd = self.control_dependence()
+        out: set = set()
+        work = list(cd.get(bb, ()))
+        while work:
+            entry = work.pop()
+            if entry in out:
+                continue
+            out.add(entry)
+            work.extend(cd.get(entry[0], ()))
+        return out
 
     # --- loop membership ----------------------------------------------
 

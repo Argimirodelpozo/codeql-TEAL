@@ -175,3 +175,65 @@ class AssertDominance:
             reach = self._reach[guard_block] = reachable_avoiding(
                 self._entries, guard_block)
         return target_block not in reach
+
+
+def immediate_dominators(dom: dict) -> dict:
+    """``node -> its immediate dominator`` from a dominator-SET map; ``None`` for
+    a node with no strict dominator (an entry, or one left saturated).
+
+    The idom is the strict dominator dominated by every other strict one — the
+    lowest in the dominance tree."""
+    idom: dict = {}
+    for n, doms in dom.items():
+        strict = doms - {n}
+        idom[n] = next(
+            (d for d in strict
+             if all(o is d or o in dom.get(d, ()) for o in strict)),
+            None,
+        )
+    return idom
+
+
+def control_dependence(
+    nodes: Iterable[N],
+    succs_of: Callable[[N], Iterable[N]],
+    post_dom: dict,
+    edge_label: Callable[[N, N], object] = lambda _a, _b: None,
+) -> dict:
+    """``node -> {(branch node, edge label)}`` — the branches whose OUTCOME
+    decides whether the node runs (Ferrante-Ottenstein-Warren).
+
+    A node is control-dependent on edge ``A -> B`` when ``B`` does not
+    post-dominate ``A``: taking that edge commits to running the node, and the
+    other edge does not. Walk up the post-dominator tree from ``B`` to ``A``'s
+    immediate post-dominator, marking everything in between.
+
+    This answers a different question from the dominator sets above, and a
+    sharper one for "what gates this". Dominance says which blocks every path
+    HAPPENS to cross — including ones that gate nothing. Control dependence
+    names only the branches that could have skipped the node, so an empty set
+    means the node runs UNCONDITIONALLY.
+
+    HAZARD: soundness rests entirely on ``post_dom``. A block that reaches no
+    exit is conventionally saturated, and a saturated post-dominator set makes
+    every edge look non-dependent — the silent direction, where a gated node
+    reads as unguarded. Pass post-dominators computed against a complete exit
+    set (see :attr:`..cfg.CFG.exits`, which counts a branch running off the end
+    of the program as an exit for exactly this reason).
+    """
+    nodes = list(nodes)
+    ipdom = immediate_dominators(post_dom)
+    cd: dict = {n: set() for n in nodes}
+    for a in nodes:
+        stop = ipdom.get(a)
+        for b in succs_of(a):
+            if b in post_dom.get(a, ()):
+                continue                      # b post-dominates a: not a branch point
+            label = edge_label(a, b)
+            seen: set = set()
+            n = b
+            while n is not None and n is not stop and n not in seen:
+                seen.add(n)
+                cd.setdefault(n, set()).add((a, label))
+                n = ipdom.get(n)
+    return cd

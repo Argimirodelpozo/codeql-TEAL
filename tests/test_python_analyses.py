@@ -272,3 +272,58 @@ def test_snapshot(analysis: str, case_dir: Path) -> None:
         f"snapshot mismatch for {case_dir.relative_to(PY_TESTS)}:\n{diff}\n\n"
         "Re-run with UPDATE_SNAPSHOTS=1 to refresh."
     )
+
+
+def test_control_dependence_names_the_gating_branches():
+    """Control dependence answers "what could have skipped this block", which
+    dominance cannot: a dominator may be crossed by every path while gating
+    nothing. An EMPTY set means the block runs unconditionally.
+
+    HAZARD pinned here too: an `assert` guard is INVISIBLE to control
+    dependence, and correctly so — assert has a single successor, so it
+    post-dominates and creates no dependence; its alternative path is program
+    death, which is not in the graph. Control dependence therefore COMPLEMENTS
+    the assert/branch facts in `path_predicates`, and must never be read alone
+    as "unguarded"."""
+    from tealql.tealtools.cfg import CFG
+    from tealql.tealtools.ssa import SSAProgram
+
+    def gating(src):
+        prog = SSAProgram.from_text(src, strict=False)
+        cfg = CFG.of(prog)
+        sink = next(b for b in cfg.blocks
+                    if any(a.op == "itxn_submit" for a in b.assignments))
+        return sorted((x[0].first_line, x[1]) for x in cfg.gating_branches(sink))
+
+    submit = "itxn_begin\nint 1\nitxn_field Amount\nitxn_submit\n"
+    assert gating(f"#pragma version 10\n{submit}int 1\nreturn\n") == []
+    assert gating("#pragma version 10\ntxn Sender\nglobal CreatorAddress\n==\n"
+                  f"bz reject\n{submit}int 1\nreturn\nreject:\nint 0\nreturn\n"
+                  ) == [(2, "true")]
+    # Reached only while the loop condition holds.
+    assert gating("#pragma version 10\nint 0\nstore 0\nloop:\nload 0\nint 3\n<\n"
+                  f"bz done\n{submit}load 0\nint 1\n+\nstore 0\nb loop\n"
+                  "done:\nint 1\nreturn\n") == [(4, "true")]
+    # The documented blind spot: an assert gate yields NO control dependence.
+    assert gating("#pragma version 10\ntxn Sender\nglobal CreatorAddress\n==\n"
+                  f"assert\n{submit}int 1\nreturn\n") == []
+
+
+def test_control_dependence_is_transitive_only_when_walked():
+    """A guard two levels up is reachable only through `gating_branches`; the
+    raw relation is deliberately one level, as the construction defines it."""
+    from tealql.tealtools.cfg import CFG
+    from tealql.tealtools.ssa import SSAProgram
+
+    prog = SSAProgram.from_text(
+        "#pragma version 10\ntxn Sender\nglobal CreatorAddress\n==\nbz reject\n"
+        "txn NumAppArgs\nint 2\n>\nbz skip\n"
+        "itxn_begin\nint 1\nitxn_field Amount\nitxn_submit\n"
+        "skip:\nint 1\nreturn\nreject:\nint 0\nreturn\n", strict=False)
+    cfg = CFG.of(prog)
+    sink = next(b for b in cfg.blocks
+                if any(a.op == "itxn_submit" for a in b.assignments))
+    assert sorted((x[0].first_line, x[1])
+                  for x in cfg.control_dependence()[sink]) == [(6, "true")]
+    assert sorted((x[0].first_line, x[1])
+                  for x in cfg.gating_branches(sink)) == [(2, "true"), (6, "true")]
