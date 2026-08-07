@@ -184,31 +184,42 @@ def test_one_unstable_leaf_poisons_the_conjunction(tmp_path):
     assert _rooted_in_immutable_fields(v) is False
 
 
-def test_duplicate_label_does_not_invert_branch_polarity():
-    """The label index must resolve a duplicate to its FIRST definition, exactly
-    as ``cfg.build`` routes the branch.
+def test_branch_polarity_comes_from_the_cfg_not_a_second_label_map():
+    """Polarity is read off the CFG builder's own edge label. Re-deriving it by
+    matching ``succ.first_line`` against a second label map inverted it in two
+    real shapes, and an inverted polarity turns an absent guard into a proven
+    one (or asserts a guard that is false on the path).
 
-    Keeping the LAST meant no successor matched the branch target, so EVERY edge
-    out of the branch — including the taken one — got the fall-through
-    predicate: a creator-guarded block came out asserting
-    ``Sender != CreatorAddress``, and the guard vanished from the program.
-    Assembler-rejected source, therefore hand-written / adversarial only, which
-    is the input this tool exists for."""
+    1. A FORWARDED empty label — ordinary compiler output, not adversarial:
+       TEALScript emits ``skip:``/``done:`` back to back, the label-only block
+       is forwarded to the next real block, so the target line never equals the
+       successor's first line and the comparison silently flipped.
+    2. A DUPLICATE label, where the CFG takes the FIRST definition while the
+       map kept the LAST.
+    """
     from tealql.tealtools.path_predicates import PathPredicateAnalysis
     from tealql.tealtools.ssa import SSAProgram
 
-    src = ("#pragma version 10\ntxn Sender\nglobal CreatorAddress\n==\n"
-           "bnz ok\nint 0\nreturn\n"
-           "ok:\nint 1\n"        # first definition — where the branch lands
-           "ok:\nint 1\nreturn\n")
-    prog = SSAProgram.from_text(src, strict=False)
+    # 1. bz to a label-only line: the taken edge means the condition was ZERO,
+    #    so the negation of `<=` must hold there.
+    prog = SSAProgram.from_text(
+        "#pragma version 10\ntxn NumAppArgs\nint 2\n<=\nbz skip\n"
+        "int 1\nreturn\n"          # fall-through exits, so the target joins nothing
+        "skip:\ndone:\nint 1\nreturn\n", strict=False)
     analysis = PathPredicateAnalysis(prog)
-    assert analysis._label_lines[("contract.teal", "ok")] == 8
+    target = prog.block_containing("contract.teal", 10)
+    preds = {str(p) for p in analysis.predicates_at("contract.teal", target.first_line)}
+    assert "(V#1@L2 > 2)" in preds, preds        # NOT `<= 2`
+    assert "(V#1@L2 <= 2)" not in preds, preds
 
+    # 2. Duplicate label: the CFG lands on the FIRST definition, and the guard
+    #    holds there as `==`, never as its negation.
+    prog = SSAProgram.from_text(
+        "#pragma version 10\ntxn Sender\nglobal CreatorAddress\n==\n"
+        "bnz ok\nint 0\nreturn\nok:\nint 1\nok:\nint 1\nreturn\n", strict=False)
+    analysis = PathPredicateAnalysis(prog)
+    assert analysis._label_lines[("contract.teal", "ok")] == 8   # first, like the CFG
     taken = prog.block_containing("contract.teal", 8)
     preds = {str(p) for p in analysis.predicates_at("contract.teal", taken.first_line)}
-    # The Sender/Creator comparison itself must hold as `==` on the taken edge,
-    # never as its negation. (`(… != 0)` also appears — that is the separate,
-    # correct "the branch condition was truthy" predicate.)
     sender_vs_creator = {p for p in preds if "L2" in p and "L3" in p}
     assert sender_vs_creator == {"(V#1@L2 == V#1@L3)"}, preds

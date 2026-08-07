@@ -200,6 +200,18 @@ class SSAProgram:
         #: the end and terminates). There is no target BB, so this cannot be a
         #: ``successors`` entry — :attr:`cfg.CFG.exits` reads it here instead.
         self.off_end_exits: set[tuple] = set()
+        #: ``(pred bb id, succ bb id) -> {successor labels}`` — the branch
+        #: POLARITY :mod:`..cfg.build` already computed, carried down to the BB
+        #: level. ``true`` means the branch condition was non-zero on that edge,
+        #: ``false`` that it was zero, ``normal`` that it carries no condition.
+        #:
+        #: A pair maps to MORE THAN ONE label when a branch's arms collapse onto
+        #: one block (``bnz next`` where ``next:`` is the following line): the
+        #: branch does not partition flow there, so no predicate holds.
+        #: :mod:`..path_predicates` reads this instead of re-deriving polarity
+        #: from a second label map, which is how the two could disagree.
+        self.edge_polarity: dict[tuple, frozenset] = {}
+        _polarity: dict[tuple, set] = {}
         seen_edges: set[tuple[BasicBlock, BasicBlock]] = set()
         for u, v, data in g.edges(data=True):
             u_bb_id = g.nodes[u].get("bb")
@@ -248,11 +260,18 @@ class SSAProgram:
                     self.off_end_exits.add(u_bb_id)
             if u_bb is None or v_bb is None:
                 continue
+            # BEFORE the dedup: a collapsed branch contributes two labels for
+            # ONE (pred, succ) pair, and skipping here would keep only the first.
+            kind = data.get("successor")
+            if kind is not None:
+                _polarity.setdefault((u_bb_id, v_bb._key()), set()).add(kind)
             if (u_bb, v_bb) in seen_edges:
                 continue
             seen_edges.add((u_bb, v_bb))
             u_bb.successors.append(v_bb)
             v_bb.predecessors.append(u_bb)
+
+        self.edge_polarity = {k: frozenset(v) for k, v in _polarity.items()}
 
         # Pass 3: collect Label nodes for rendering. They aren't part of
         # the SSA — they don't define or consume values — but printing

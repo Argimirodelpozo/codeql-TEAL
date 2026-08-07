@@ -28,7 +28,9 @@ from .ssa import (
     binary_operands,
     is_const,
 )
-from .avm import CMP_OPS, LOGICAL_OPS
+from .avm import (CMP_OPS, COND_BRANCH_OPS, LOGICAL_OPS,
+                  MULTIWAY_BRANCH_OPS)
+from .cfg.build import BOOL_FALSE, BOOL_TRUE
 from .ast.literals import render_byte_constant
 
 
@@ -226,11 +228,11 @@ _TOP = _Top()
 
 
 # Branch / assert opcodes that contribute predicates.
-_BNZ = "bnz"
-_BZ = "bz"
 _ASSERT = "assert"
+#: ``switch`` is named on its own because its arms are POSITIONAL (arm k means
+#: `key == k`), which `match` does not share. The branch FAMILIES themselves are
+#: never re-listed — they come from the avm spec sets.
 _SWITCH = "switch"
-_MATCH = "match"
 
 
 class PathPredicateAnalysis:
@@ -451,25 +453,26 @@ class PathPredicateAnalysis:
         if last.op == _ASSERT:
             # The single successor is the success path: the value was non-zero.
             return self._decompose_cond(cond, taken=True)
-        if last.op in (_BNZ, _BZ):
-            target_name = last.immediates.strip()
-            target_line = self._label_lines.get((pred.file, target_name))
-            if target_line is None:
+        if last.op in COND_BRANCH_OPS:
+            # Polarity comes from the CFG BUILDER, which already resolved this
+            # branch's target — including a duplicate label, where it takes the
+            # FIRST definition. Re-deriving it here from a second label map is
+            # how the two could disagree, and a disagreement INVERTS the
+            # predicate: `true` means the condition was non-zero on this edge.
+            #
+            # HAZARD: `bnz next` to the immediately-following label collapses
+            # both arms onto ONE successor, which shows up as BOTH labels on the
+            # pair. The branch does not partition flow there, so neither the
+            # taken nor the fall-through predicate holds.
+            kinds = self.prog.edge_polarity.get(
+                (pred._key(), succ._key()), frozenset())
+            if len(kinds) != 1:
                 return frozenset()
-            # HAZARD: `bnz next` / `bz next` to the immediately-following label
-            # collapses both edges onto ONE successor. The branch does not
-            # partition flow, so NEITHER the taken nor the fall-through
-            # predicate holds there.
-            if len({s.first_line for s in pred.successors}) < 2:
+            (kind,) = kinds
+            if kind not in (BOOL_TRUE, BOOL_FALSE):
                 return frozenset()
-            took_branch = succ.first_line == target_line
-            # The cond is "truthy" when bnz fires (taken) or bz doesn't (fall-through).
-            taken_means_truthy = (
-                (last.op == _BNZ and took_branch)
-                or (last.op == _BZ and not took_branch)
-            )
-            return self._decompose_cond(cond, taken=taken_means_truthy)
-        if last.op in (_SWITCH, _MATCH):
+            return self._decompose_cond(cond, taken=(kind == BOOL_TRUE))
+        if last.op in MULTIWAY_BRANCH_OPS:
             edge = self._switch_or_match_edge(pred, succ, last)
             return frozenset((edge,)) if edge is not None else frozenset()
         return frozenset()
