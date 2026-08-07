@@ -182,3 +182,33 @@ def test_one_unstable_leaf_poisons_the_conjunction(tmp_path):
                  "global OpcodeBudget\nint 5\n>\n"
                  "&&\nbnz ok\nint 0\nreturn\nok:\nint 1\nreturn\n", op="&&")
     assert _rooted_in_immutable_fields(v) is False
+
+
+def test_duplicate_label_does_not_invert_branch_polarity():
+    """The label index must resolve a duplicate to its FIRST definition, exactly
+    as ``cfg.build`` routes the branch.
+
+    Keeping the LAST meant no successor matched the branch target, so EVERY edge
+    out of the branch — including the taken one — got the fall-through
+    predicate: a creator-guarded block came out asserting
+    ``Sender != CreatorAddress``, and the guard vanished from the program.
+    Assembler-rejected source, therefore hand-written / adversarial only, which
+    is the input this tool exists for."""
+    from tealql.tealtools.path_predicates import PathPredicateAnalysis
+    from tealql.tealtools.ssa import SSAProgram
+
+    src = ("#pragma version 10\ntxn Sender\nglobal CreatorAddress\n==\n"
+           "bnz ok\nint 0\nreturn\n"
+           "ok:\nint 1\n"        # first definition — where the branch lands
+           "ok:\nint 1\nreturn\n")
+    prog = SSAProgram.from_text(src, strict=False)
+    analysis = PathPredicateAnalysis(prog)
+    assert analysis._label_lines[("contract.teal", "ok")] == 8
+
+    taken = prog.block_containing("contract.teal", 8)
+    preds = {str(p) for p in analysis.predicates_at("contract.teal", taken.first_line)}
+    # The Sender/Creator comparison itself must hold as `==` on the taken edge,
+    # never as its negation. (`(… != 0)` also appears — that is the separate,
+    # correct "the branch condition was truthy" predicate.)
+    sender_vs_creator = {p for p in preds if "L2" in p and "L3" in p}
+    assert sender_vs_creator == {"(V#1@L2 == V#1@L3)"}, preds

@@ -334,11 +334,23 @@ class PathPredicateAnalysis:
     # -- internals ------------------------------------------------------
 
     def _index_labels(self) -> dict[tuple[str, str], int]:
+        """``(file, label name) -> line``, FIRST definition winning.
+
+        HAZARD: must agree with :mod:`.cfg.build`, which resolves a duplicate
+        label to its FIRST definition — this map decides which successor the
+        branch "took", so disagreeing INVERTS the polarity. Assigning instead of
+        ``setdefault`` kept the LAST definition, and then no successor matched
+        the branch target: every edge out of the branch, including the taken
+        one, was credited with the FALL-THROUGH predicate. A creator-guarded
+        block came out asserting ``Sender != CreatorAddress`` and the guard
+        vanished from the program. Duplicate labels are assembler-rejected, so
+        this is hand-written / adversarial source only — which is the input this
+        tool exists for."""
         idx: dict[tuple[str, str], int] = {}
         for f, ln, code in self.prog.labels:
             # Label code is the source line, e.g. "l_target:".
             name = code.rstrip(":").strip()
-            idx[(f, name)] = ln
+            idx.setdefault((f, name), ln)
         return idx
 
     def _compute(self) -> None:
