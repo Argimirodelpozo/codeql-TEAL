@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from ..ssa import BasicBlock, SSAProgram
-from .._utils.dot import bb_label, header, sanitize_id
+from .._utils.dot import bb_label, escape, header, render, sanitize_id
 from .dominance import (control_dependence, iterative_dominators,
                         program_entries)
 
@@ -248,9 +248,14 @@ class CFG:
             kinds = polarity.get((a._key(), b._key()), frozenset())
             return next(iter(kinds)) if len(kinds) == 1 else None
 
+        # A block ending in `assert` continues OR the program dies. Without
+        # that alternative its single successor post-dominates it and the
+        # assert — the dominant guard idiom in compiler output — gates nothing.
+        may_abort = [b for b in self.blocks
+                     if b.assignments and b.assignments[-1].op == "assert"]
         cd = control_dependence(
-            self.blocks, lambda b: b.successors,
-            self._all_post_dominators(), label,
+            self.blocks, lambda b: b.successors, self.exits,
+            may_abort=may_abort, edge_label=label,
         )
         self._cd_cache = cd  # type: ignore[attr-defined]
         return cd
@@ -269,6 +274,49 @@ class CFG:
             out.add(entry)
             work.extend(cd.get(entry[0], ()))
         return out
+
+    def control_dependence_dot(
+        self, *, file: Optional[str] = None, rankdir: str = "TB",
+    ) -> str:
+        """The CDG as Graphviz DOT: an edge ``guard -> gated`` per dependence,
+        coloured by polarity, with unconditional blocks boxed in red.
+
+        Reads inverted from the CFG on purpose — an arrow points from a branch
+        to what it GATES, so the guards of any block are its in-edges, and a
+        block with none runs unconditionally."""
+        cd = self.control_dependence()
+        blocks = [b for b in self.blocks if file is None or b.file == file]
+        shown = set(blocks)
+        out: list[str] = header("CDG", rankdir=rankdir)
+        for bb in blocks:
+            style = ('shape=box, style="rounded,filled", fillcolor="#f4f4f8"'
+                     if cd.get(bb) else
+                     # Nothing can skip it.
+                     'shape=box, style="rounded,filled", fillcolor="#ffe8e6",'
+                     ' color="#c0392b", penwidth=2')
+            label = f"L{bb.first_line}-L{bb.last_line}"
+            out.append(f'  {_bb_id(bb)} [label="{escape(label)}", {style}];')
+        for bb in blocks:
+            for branch, polarity in sorted(
+                cd.get(bb, ()), key=lambda e: (e[0].first_line, str(e[1]))
+            ):
+                if branch not in shown:
+                    continue
+                colour = {"true": '"#2a8f3c"', "false": '"#c0392b"'}.get(
+                    polarity, '"#777777"')
+                tag = polarity if polarity in ("true", "false") else ""
+                out.append(f'  {_bb_id(branch)} -> {_bb_id(bb)} '
+                           f'[color={colour}, fontcolor={colour}, label="{tag}"];')
+        out.append("}")
+        return "\n".join(out)
+
+    def draw_control_dependence(
+        self, *, file: Optional[str] = None, format: str = "svg",
+        engine: str = "dot", rankdir: str = "TB",
+    ):
+        """Render :meth:`control_dependence_dot` (Jupyter-renderable SVG)."""
+        return render(self.control_dependence_dot(file=file, rankdir=rankdir),
+                      format=format, engine=engine)
 
     # --- loop membership ----------------------------------------------
 

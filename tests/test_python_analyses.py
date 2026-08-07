@@ -279,12 +279,11 @@ def test_control_dependence_names_the_gating_branches():
     dominance cannot: a dominator may be crossed by every path while gating
     nothing. An EMPTY set means the block runs unconditionally.
 
-    HAZARD pinned here too: an `assert` guard is INVISIBLE to control
-    dependence, and correctly so — assert has a single successor, so it
-    post-dominates and creates no dependence; its alternative path is program
-    death, which is not in the graph. Control dependence therefore COMPLEMENTS
-    the assert/branch facts in `path_predicates`, and must never be read alone
-    as "unguarded"."""
+    An `assert` gate counts. Assert has a single successor which would
+    post-dominate it, so plain control dependence sees no branch at all and the
+    dominant guard idiom in compiler output would read as UNGUARDED. A virtual
+    "...or the program dies" edge to the exit restores the alternative — virtual
+    only, so the real CFG still carries no panic edges."""
     from tealql.tealtools.cfg import CFG
     from tealql.tealtools.ssa import SSAProgram
 
@@ -304,9 +303,9 @@ def test_control_dependence_names_the_gating_branches():
     assert gating("#pragma version 10\nint 0\nstore 0\nloop:\nload 0\nint 3\n<\n"
                   f"bz done\n{submit}load 0\nint 1\n+\nstore 0\nb loop\n"
                   "done:\nint 1\nreturn\n") == [(4, "true")]
-    # The documented blind spot: an assert gate yields NO control dependence.
+    # An assert gate is visible via the virtual abort edge.
     assert gating("#pragma version 10\ntxn Sender\nglobal CreatorAddress\n==\n"
-                  f"assert\n{submit}int 1\nreturn\n") == []
+                  f"assert\n{submit}int 1\nreturn\n") == [(2, "true")]
 
 
 def test_control_dependence_is_transitive_only_when_walked():

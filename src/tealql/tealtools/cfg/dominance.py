@@ -177,63 +177,77 @@ class AssertDominance:
         return target_block not in reach
 
 
-def immediate_dominators(dom: dict) -> dict:
-    """``node -> its immediate dominator`` from a dominator-SET map; ``None`` for
-    a node with no strict dominator (an entry, or one left saturated).
-
-    The idom is the strict dominator dominated by every other strict one — the
-    lowest in the dominance tree."""
-    idom: dict = {}
-    for n, doms in dom.items():
-        strict = doms - {n}
-        idom[n] = next(
-            (d for d in strict
-             if all(o is d or o in dom.get(d, ()) for o in strict)),
-            None,
-        )
-    return idom
-
-
 def control_dependence(
     nodes: Iterable[N],
     succs_of: Callable[[N], Iterable[N]],
-    post_dom: dict,
+    exits: Iterable[N],
+    *,
+    may_abort: Iterable[N] = (),
     edge_label: Callable[[N, N], object] = lambda _a, _b: None,
 ) -> dict:
     """``node -> {(branch node, edge label)}`` — the branches whose OUTCOME
     decides whether the node runs (Ferrante-Ottenstein-Warren).
 
     A node is control-dependent on edge ``A -> B`` when ``B`` does not
-    post-dominate ``A``: taking that edge commits to running the node, and the
-    other edge does not. Walk up the post-dominator tree from ``B`` to ``A``'s
-    immediate post-dominator, marking everything in between.
+    post-dominate ``A``: taking that edge commits to running the node, while the
+    other edge does not. Walking up the post-dominator tree from ``B`` to ``A``'s
+    immediate post-dominator marks exactly those nodes.
 
-    This answers a different question from the dominator sets above, and a
-    sharper one for "what gates this". Dominance says which blocks every path
-    HAPPENS to cross — including ones that gate nothing. Control dependence
-    names only the branches that could have skipped the node, so an empty set
-    means the node runs UNCONDITIONALLY.
+    This asks a sharper question than the dominator sets above. Dominance says
+    which blocks every path HAPPENS to cross, including ones that gate nothing;
+    control dependence names only the branches that could have SKIPPED the node,
+    so an empty set means it runs unconditionally.
 
-    HAZARD: soundness rests entirely on ``post_dom``. A block that reaches no
-    exit is conventionally saturated, and a saturated post-dominator set makes
-    every edge look non-dependent — the silent direction, where a gated node
-    reads as unguarded. Pass post-dominators computed against a complete exit
-    set (see :attr:`..cfg.CFG.exits`, which counts a branch running off the end
-    of the program as an exit for exactly this reason).
+    ``may_abort`` nodes get an extra virtual edge to the exit — a block ending in
+    ``assert`` continues OR the program dies, and without that alternative its
+    single successor post-dominates it and the assert gates nothing. The edge is
+    virtual: it exists only inside this computation, so the real CFG keeps no
+    panic edges.
+
+    The post-dominator tree comes from networkx (Lengauer-Tarjan, near-linear)
+    over the reversed graph rooted at a synthetic unique exit — which is also
+    what lets a multi-exit program be handled at all.
     """
-    nodes = list(nodes)
-    ipdom = immediate_dominators(post_dom)
-    cd: dict = {n: set() for n in nodes}
-    for a in nodes:
+    import networkx as nx
+
+    exit_node = _VirtualExit()
+    g = nx.DiGraph()
+    g.add_nodes_from(nodes)
+    for a in list(g.nodes):
+        for b in succs_of(a):
+            g.add_edge(a, b)
+    for e in exits:
+        g.add_edge(e, exit_node)
+    for a in may_abort:
+        g.add_edge(a, exit_node)          # "...or the program dies here"
+    if exit_node not in g:
+        return {n: set() for n in g.nodes}
+
+    # Post-dominance == dominance on the reversed graph, rooted at the exit.
+    ipdom = nx.immediate_dominators(g.reverse(copy=False), exit_node)
+
+    cd: dict = {n: set() for n in g.nodes if n is not exit_node}
+    for a in cd:
         stop = ipdom.get(a)
         for b in succs_of(a):
-            if b in post_dom.get(a, ()):
-                continue                      # b post-dominates a: not a branch point
+            if b is stop:
+                continue                  # b post-dominates a: not a branch point
             label = edge_label(a, b)
-            seen: set = set()
-            n = b
+            n, seen = b, set()
             while n is not None and n is not stop and n not in seen:
                 seen.add(n)
-                cd.setdefault(n, set()).add((a, label))
-                n = ipdom.get(n)
+                if n is not exit_node:
+                    cd.setdefault(n, set()).add((a, label))
+                nxt = ipdom.get(n)
+                n = None if nxt is n else nxt
     return cd
+
+
+class _VirtualExit:
+    """Synthetic unique exit, so a multi-exit program has one post-dominator
+    root. Never escapes: it is stripped from the result."""
+
+    __slots__ = ()
+
+    def __repr__(self) -> str:
+        return "<exit>"
