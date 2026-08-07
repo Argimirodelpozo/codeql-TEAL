@@ -644,17 +644,15 @@ def _langspec_returns(intrinsic: "M.Intrinsic"):
     """An Intrinsic's authoritative return IRTypes from Puya's own ``AVMOpData``
     signature — BOTTOM-FIRST, matching Puya's target order — resolving a field-keyed
     dynamic op by its immediate; ``None`` if it has no static signature."""
-    from puya.ir.avm_ops_models import DynamicVariants, Variant
-    v = _compat.langspec_variants(intrinsic.op)
-    if isinstance(v, Variant):
-        return v.signature.returns
-    if isinstance(v, DynamicVariants):
-        imms = intrinsic.immediates
-        if imms and v.immediate_index < len(imms):
-            var = v.variant_map.get(str(imms[v.immediate_index]))
-            if var is not None:
-                return var.signature.returns
-    return None
+    # PUBLIC accessor: it resolves a field-keyed dynamic op by its own
+    # immediate, which is exactly what this used to hand-roll off the private
+    # `_variants`. It RAISES on an immediate it does not know and indexes the
+    # immediates positionally, so anything it cannot resolve degrades to None —
+    # the same answer the hand-rolled version gave.
+    try:
+        return intrinsic.op.get_variant(intrinsic.immediates).signature.returns
+    except Exception:
+        return None
 
 
 def _address_operand_identities(main, subs) -> set:

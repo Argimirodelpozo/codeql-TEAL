@@ -1,12 +1,27 @@
-"""Single audit point for the FRAGILE puya-internal surface the lift depends on.
+"""Single audit point for the places the lift reaches OUTSIDE puya's API.
 
-HAZARD: puya gives NO stability guarantee on any of this — private module functions,
-the private ``AVMOp._variants``, ``object.__setattr__`` writes to frozen attrs model
-fields, and matchers against ``InternalError`` MESSAGE TEXT (not API at all). A patch
-release may legally break any of it. Keep every such use in THIS file so a puya bump
-is a one-file audit, and keep :func:`check_compat` probing all of them so a break
-fails loudly in CI instead of surfacing as a mysterious lift error. Stable puya
-PUBLIC API is imported directly at use sites, not here.
+This is not a claim that puya's IR API is unstable — it is not. ``Register`` /
+``Intrinsic`` / ``Subroutine``, ``AVMOp.code`` / ``get_variant`` /
+``immediate_types`` / ``cost`` are public and steady, and the lift imports them
+DIRECTLY at use sites; none of that belongs here.
+
+What is collected here is the surface no API promise covers, in three kinds:
+
+* **Private module functions** — ``_get_used_registers``,
+  ``_get_assigned_registers``, ``_split_parallel_copies``, ``_render_body``.
+  Public equivalents do not exist: ``to_text_visitor.render_program`` needs an
+  ``ArtifactCompileContext`` and WRITES output rather than returning a body.
+* **Frozen-model mutation** — ``object.__setattr__`` deliberately bypasses
+  attrs' frozen contract, and one write targets ``_types``, the backing field
+  behind a read-only property.
+* **Error MESSAGE TEXT** — the backend's orphan-define retry matches on the
+  wording of an ``InternalError``. No project promises its error strings,
+  however stable its API; this is the least defensible dependency here and the
+  first worth removing if puya ever grows a typed error for it.
+
+Keeping them in ONE file makes a puya bump a one-file audit, and
+:func:`check_compat` probes every one so a break fails loudly in CI instead of
+surfacing as a mysterious lift error.
 """
 from __future__ import annotations
 
@@ -40,7 +55,13 @@ def split_parallel_copies(ctx, sub):
 
 
 def langspec_variants(op):
-    """The ``_variants`` of an ``AVMOp``: a ``Variant``, a field-keyed ``DynamicVariants``, or ``None``."""
+    """The ``_variants`` of an ``AVMOp``: a ``Variant``, a field-keyed
+    ``DynamicVariants``, or ``None``.
+
+    TESTS ONLY — they ENUMERATE every variant to diff our tables against the
+    langspec, which the public API cannot do (``get_variant`` resolves ONE
+    variant from a given immediate). Production code wants exactly that
+    resolution and uses the public accessor instead."""
     return getattr(op, "_variants", None)
 
 
