@@ -30,6 +30,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
+from .._utils.dot import (bb_label as _bb_label, escape,
+                          header as _dot_header, render as _dot_render)
 from ..avm import op_arity
 from ..cfg import CFG
 from ..ssa import BasicBlock, SSAProgram
@@ -242,3 +244,84 @@ def render(prog: SSAProgram, cfg: Optional[CFG] = None) -> str:
             f"({b.bound_reason}-bound)"
         )
     return "\n".join(rows)
+
+
+# --- visualisation -----------------------------------------------------------
+
+
+def to_dot(prog: SSAProgram, cfg: Optional[CFG] = None, *,
+           file: Optional[str] = None, rankdir: str = "TB") -> str:
+    """The CFG with each loop boxed and labelled by its bound, and the budget
+    already SPENT before it shown.
+
+    The table says what a loop costs; this says where it sits and what the
+    program committed on the way in. Blocks that strictly dominate some loop
+    header are tinted as spent — those are the ones subtracted from the 700.
+
+    A block is drawn inside its INNERMOST loop only: DOT clusters may nest but
+    not overlap, and natural loops sharing blocks without nesting (irreducible
+    control flow) would produce an invalid graph."""
+    cfg = cfg or CFG.of(prog)
+    loops = analyze_loops(prog, cfg)
+    blocks = [b for b in cfg.blocks if file is None or b.file == file]
+    shown = set(blocks)
+
+    # innermost loop per block: the smallest body containing it
+    owner: dict = {}
+    for lp in sorted(loops, key=lambda x: -len(x.body)):
+        for bb in lp.body:
+            owner[bb] = lp
+    spent = {b for lp in loops for b in cfg.dominators(lp.header) if b is not lp.header}
+    back = {(u, h) for lp in loops for u, h in lp.back_edges}
+
+    def nid(bb) -> str:
+        return f"bb_{bb.first_line}_{bb.last_line}"
+
+    def node_line(bb) -> str:
+        cost = block_cost(bb)
+        # via bb_label: it escapes each PART then joins with the literal DOT
+        # break, where escaping the joined string would double the backslash and
+        # print a literal "\n".
+        tag = _bb_label(f"L{bb.first_line}-L{bb.last_line}", [f"{cost} budget"])
+        if bb in spent and bb not in owner:
+            style = 'style="filled", fillcolor="#fdf0d5", color="#b8860b"'
+        elif any(bb is lp.header for lp in loops):
+            style = 'style="filled,bold", fillcolor="#dbe9ff", color="#1f5fa8", penwidth=2'
+        elif bb in owner:
+            style = 'style="filled", fillcolor="#eef4ff", color="#7aa0d0"'
+        else:
+            style = 'style="filled", fillcolor="#f6f6f6", color="#999999"'
+        return f'    {nid(bb)} [shape=box, label="{tag}", {style}];'
+
+    out = _dot_header("loop_bounds", rankdir=rankdir)
+    for i, lp in enumerate(loops):
+        members = [b for b in blocks if owner.get(b) is lp]
+        if not members:
+            continue
+        label = (f"L{lp.header.first_line}: <= {lp.max_iterations} iter "
+                 f"({lp.bound_reason}), {lp.min_iteration_cost}/iter")
+        if lp.prefix_cost:
+            label += f", {lp.prefix_cost} spent before"
+        out.append(f'  subgraph cluster_{i} {{')
+        out.append(f'    label="{escape(label)}"; color="#1f5fa8"; style=rounded;')
+        out.extend(node_line(b) for b in members)
+        out.append("  }")
+    for bb in blocks:
+        if bb not in owner:
+            out.append(node_line(bb))
+    for bb in blocks:
+        for s in bb.successors:
+            if s not in shown:
+                continue
+            attrs = ('[color="#c0392b", style=bold, label="back"]'
+                     if (bb, s) in back else "")
+            out.append(f"  {nid(bb)} -> {nid(s)} {attrs};")
+    out.append("}")
+    return "\n".join(out)
+
+
+def draw(prog: SSAProgram, cfg: Optional[CFG] = None, *, file: Optional[str] = None,
+         format: str = "svg", engine: str = "dot", rankdir: str = "TB"):
+    """Render :func:`to_dot` (Jupyter-renderable SVG)."""
+    return _dot_render(to_dot(prog, cfg, file=file, rankdir=rankdir),
+                       format=format, engine=engine)

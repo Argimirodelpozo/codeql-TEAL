@@ -114,3 +114,26 @@ def test_no_prefix_when_the_loop_starts_at_entry():
                   "int 1\nreturn\n")[0]
     assert loop.prefix_cost == 0
     assert loop.available_budget == APP_OPCODE_BUDGET
+
+
+def test_dot_view_boxes_each_loop_and_marks_the_spent_prefix():
+    """The table says what a loop costs; the graph says where it sits and what
+    the program already committed on the way in.
+
+    Labels go through `bb_label`, which escapes each PART before joining with
+    the DOT break — escaping the joined string doubles the backslash and
+    Graphviz prints a literal "\\l" instead of breaking the line."""
+    from tealql.tealtools.budget import to_dot
+
+    src = ("#pragma version 10\nbyte 0x00\nsha256\npop\nint 0\nstore 0\n"
+           "loop:\nload 0\nint 5\n<\nbz done\n"
+           "load 0\nint 1\n+\nstore 0\nb loop\n"
+           "done:\nint 1\nreturn\n")
+    dot = to_dot(SSAProgram.from_text(src, strict=False))
+
+    assert dot.startswith("digraph loop_bounds {") and dot.rstrip().endswith("}")
+    assert "subgraph cluster_0 {" in dot          # the loop is boxed
+    assert "iter (budget)" in dot                 # labelled with its bound
+    assert "spent before" in dot                  # and with the mandatory prefix
+    assert 'label="back"' in dot                  # the back edge is marked
+    assert "\\l" in dot and "\\\\l" not in dot    # real DOT breaks, not literals

@@ -22,9 +22,11 @@ from .loop_bounds import (  # noqa: F401
     LoopBound,
     analyze_loops,
     block_cost,
+    draw,
     block_stack_delta,
     op_cost,
     render,
+    to_dot,
 )
 
 __all__ = [
@@ -34,6 +36,8 @@ __all__ = [
     "analyze_loops",
     "block_cost",
     "block_stack_delta",
+    "draw",
     "op_cost",
     "render",
+    "to_dot",
 ]

@@ -230,7 +230,7 @@ def _cmd_auth(args) -> int:
 
 def _cmd_loops(args) -> int:
     """Loop cost / iteration-bound table."""
-    from tealql.tealtools.budget import analyze_loops, render
+    from tealql.tealtools.budget import analyze_loops, render, to_dot
     rc = 0
     for prog, _file_filter in _load_programs(args):
         name = getattr(prog, "source_path", None)
@@ -251,6 +251,8 @@ def _cmd_loops(args) -> int:
                     "bound": b.bound_reason,
                 } for b in loops],
             }, indent=1))
+        elif getattr(args, "dot", False):
+            print(to_dot(prog))
         else:
             print(f"== {name}")
             print(render(prog))
@@ -1036,8 +1038,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     add("auth", "auth-domination detector", _cmd_auth)
 
-    add("loops", "loop cost + iteration bounds (budget / stack ceilings)",
+    loops_p = add("loops", "loop cost + iteration bounds (budget / stack ceilings)",
         _cmd_loops)
+    loops_p.add_argument(
+        "--dot", action="store_true",
+        help="emit Graphviz DOT: each loop boxed with its bound, and the blocks "
+             "whose budget is spent before it can start")
 
     box_df = add("box-df", "box dataflow (into / out / correlated)", _cmd_box_df)
     box_df.add_argument(
