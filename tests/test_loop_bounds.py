@@ -73,3 +73,44 @@ def test_one_loop_per_header_and_no_loop_when_there_is_none():
     assert len(two_continues[0].back_edges) == 2
 
     assert _loops("#pragma version 10\nint 1\nreturn\n") == []
+
+
+def test_mandatory_prefix_is_subtracted_from_the_loop_budget():
+    """Blocks that STRICTLY DOMINATE the header run on every path reaching it,
+    so their cost is spent before the first iteration and the loop never gets
+    the full 700.
+
+    Counting a dominator once is the sound direction: one that is itself inside
+    another loop runs MORE than once, which only spends more budget and lowers
+    the bound further."""
+    from tealql.tealtools.cfg import CFG
+
+    # An expensive but unconditional preamble: `sha256` costs 35 and dominates
+    # the loop header, so the loop cannot have all 700.
+    src = ("#pragma version 10\n"
+           "byte 0x00\nsha256\nsha256\nsha256\npop\n"      # 105 budget, mandatory
+           "int 0\nstore 0\n"
+           "loop:\nload 0\nint 5\n<\nbz done\n"
+           "load 0\nint 1\n+\nstore 0\nb loop\n"
+           "done:\nint 1\nreturn\n")
+    prog = SSAProgram.from_text(src, strict=False)
+    loop = analyze_loops(prog)[0]
+
+    assert loop.prefix_cost >= 105               # the three sha256 at least
+    assert loop.available_budget == APP_OPCODE_BUDGET - loop.prefix_cost
+    assert loop.budget_bound == loop.available_budget // loop.min_iteration_cost
+    # Strictly tighter than ignoring the preamble.
+    assert loop.max_iterations < APP_OPCODE_BUDGET // loop.min_iteration_cost
+
+    # The prefix is exactly the STRICT dominators — never the header itself, or
+    # the per-iteration cost would be double-counted.
+    cfg = CFG.of(prog)
+    assert loop.header in cfg.dominators(loop.header)      # reflexive by definition
+    assert loop.header not in (cfg.dominators(loop.header) - {loop.header})
+
+
+def test_no_prefix_when_the_loop_starts_at_entry():
+    loop = _loops("#pragma version 10\nloop:\ntxn NumAppArgs\nbnz loop\n"
+                  "int 1\nreturn\n")[0]
+    assert loop.prefix_cost == 0
+    assert loop.available_budget == APP_OPCODE_BUDGET

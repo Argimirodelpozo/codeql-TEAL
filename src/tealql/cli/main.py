@@ -245,6 +245,8 @@ def _cmd_loops(args) -> int:
                     "blocks": len(b.body),
                     "min_iteration_cost": b.min_iteration_cost,
                     "stack_delta": b.stack_delta,
+                    "prefix_cost": b.prefix_cost,
+                    "available_budget": b.available_budget,
                     "max_iterations": b.max_iterations,
                     "bound": b.bound_reason,
                 } for b in loops],

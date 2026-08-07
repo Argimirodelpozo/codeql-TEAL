@@ -99,8 +99,14 @@ class LoopBound:
     back_edges: tuple          # the (source, header) edges that close it
     min_iteration_cost: int    # budget for the CHEAPEST cycle
     stack_delta: int           # net stack change over that cycle
+    prefix_cost: int           # budget CERTAINLY spent before the loop can start
     budget_bound: int          # iterations before a single call's budget dies
     stack_bound: Optional[int] # iterations before the stack cap, or None
+
+    @property
+    def available_budget(self) -> int:
+        """What is left for the loop after the mandatory prefix."""
+        return max(0, APP_OPCODE_BUDGET - self.prefix_cost)
 
     @property
     def max_iterations(self) -> int:
@@ -121,7 +127,7 @@ class LoopBound:
 
     def __repr__(self) -> str:
         return (f"Loop(L{self.header.first_line} x{len(self.body)}bb "
-                f"cost={self.min_iteration_cost} "
+                f"cost={self.min_iteration_cost} prefix={self.prefix_cost} "
                 f"max_iter={self.max_iterations} by {self.bound_reason})")
 
 
@@ -184,6 +190,21 @@ def _cheapest_cycle(header: BasicBlock, body: set, back_edges: list):
     return best
 
 
+def _prefix_cost(cfg: CFG, header: BasicBlock) -> int:
+    """Budget CERTAINLY spent before ``header`` can run: the cost of its STRICT
+    dominators.
+
+    Every path from entry to the header crosses all of them by definition, so
+    that budget is gone before the first iteration and the loop never gets the
+    full 700. Counting each once is the sound direction — a dominator that is
+    itself inside another loop runs MORE than once, which only spends more.
+
+    HAZARD: dominators of the header are necessarily OUTSIDE this loop (a body
+    block cannot dominate the entry it is reached through), so nothing here
+    double-counts the per-iteration cost."""
+    return sum(block_cost(b) for b in cfg.dominators(header) if b is not header)
+
+
 def analyze_loops(prog: SSAProgram, cfg: Optional[CFG] = None) -> "list[LoopBound]":
     """Every natural loop with its cost and iteration bounds, header order."""
     cfg = cfg or CFG.of(prog)
@@ -191,13 +212,14 @@ def analyze_loops(prog: SSAProgram, cfg: Optional[CFG] = None) -> "list[LoopBoun
     for header, body, back_edges in _natural_loops(cfg):
         cost, delta = _cheapest_cycle(header, body, back_edges)
         cost = max(1, cost)                      # every cycle charges something
-        budget_bound = APP_OPCODE_BUDGET // cost
+        prefix = _prefix_cost(cfg, header)
+        budget_bound = max(0, APP_OPCODE_BUDGET - prefix) // cost
         # Only a net-POSITIVE cycle is bounded by the stack; anything else can
         # spin without growing it.
         stack_bound = (MAX_STACK_DEPTH // delta) if delta > 0 else None
         out.append(LoopBound(
             header=header, body=frozenset(body), back_edges=tuple(back_edges),
-            min_iteration_cost=cost, stack_delta=delta,
+            min_iteration_cost=cost, stack_delta=delta, prefix_cost=prefix,
             budget_bound=budget_bound, stack_bound=stack_bound,
         ))
     return sorted(out, key=lambda b: (b.header.file, b.header.first_line))
@@ -211,10 +233,12 @@ def render(prog: SSAProgram, cfg: Optional[CFG] = None) -> str:
     rows = ["loops (upper bounds on what the AVM PERMITS, not trip counts):"]
     for b in loops:
         stack = (f", stack {b.stack_delta:+d}/iter" if b.stack_delta else "")
+        prefix = (f", {b.prefix_cost} spent before it "
+                  f"(budget left {b.available_budget})" if b.prefix_cost else "")
         rows.append(
             f"  L{b.header.first_line}-L{b.header.last_line}: "
             f"{len(b.body)} block(s), cheapest iteration {b.min_iteration_cost} "
-            f"budget{stack} → at most {b.max_iterations} iterations "
+            f"budget{stack}{prefix} → at most {b.max_iterations} iterations "
             f"({b.bound_reason}-bound)"
         )
     return "\n".join(rows)
