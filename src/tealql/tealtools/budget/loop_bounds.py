@@ -12,8 +12,8 @@ transaction's budget to complete. The per-op costs come from puya's langspec
 Two independent ceilings bound a loop, and the real bound is whichever binds
 first:
 
-* **Budget.** Every iteration costs at least ``min_iteration_cost``, and an
-  application call gets :data:`APP_OPCODE_BUDGET`. Using the CHEAPEST cycle
+* **Budget.** Every iteration costs at least ``min_iteration_cost``, and the
+  pool affords :data:`MAX_POOLED_OPCODE_BUDGET`. Using the CHEAPEST cycle
   through the loop is what makes this an UPPER bound on iterations — a more
   expensive route through the body only runs fewer times.
 * **Stack.** A loop whose cycle leaves the stack net POSITIVE grows it every
@@ -40,14 +40,71 @@ from typing import Optional
 
 from .._utils.dot import (bb_label as _bb_label, escape,
                           header as _dot_header, render as _dot_render)
-from ..avm import op_arity
+from ..avm import APP_ONLY_OPS, op_arity
 from ..cfg import CFG
 from ..ssa import BasicBlock, SSAProgram
 
-#: Opcode budget for a single application call. POOLED across the group, so a
-#: 16-transaction group affords 16x this — see :attr:`LoopBound.budget_bound`,
-#: which reports the single-call figure.
-APP_OPCODE_BUDGET = 700
+#: What ONE application call contributes to the opcode-budget pool.
+APP_CALL_OPCODE_BUDGET = 700
+
+#: Application calls in one atomic group. Each contributes its own budget.
+MAX_GROUP_APP_CALLS = 16
+
+#: Inner application calls a group can make (16 per app call, pooled across a
+#: full group). Each of those ALSO contributes a budget.
+MAX_INNER_APP_CALLS = 256
+
+#: A logic signature is metered SEPARATELY and far more generously: its limit is
+#: a total program COST, not an app call's opcode budget, and the two never mix.
+#: Backward branches (loops) exist only from TEAL v4, where the cost is enforced
+#: during execution rather than statically.
+LOGICSIG_MAX_COST = 20_000
+
+#: Logic signatures in one group, each with its own cost allowance.
+MAX_GROUP_LOGICSIGS = 16
+
+#: The ceiling a loop is bounded against.
+#:
+#: HAZARD: the budget is POOLED, not per-call, and bounding against a single
+#: call's 700 is UNSOUND — it makes every bound ~272x too tight, so a loop that
+#: can really run 4000 times reports 18 and the "upper bound" is not one. A
+#: contract cannot know at analysis time how large its group is or how many
+#: inner calls it will make, so the conservative ceiling is the only sound
+#: default: a full group of app calls plus the inner calls they may spawn.
+#:
+#: Deliberately loose. Group-shape analysis and an inner-call count can tighten
+#: it later by passing ``budget=`` to :func:`analyze_loops`; a too-tight default
+#: cannot be recovered from, because it silently converts a bound into a claim
+#: the program can violate.
+MAX_POOLED_OPCODE_BUDGET = APP_CALL_OPCODE_BUDGET * (
+    MAX_GROUP_APP_CALLS + MAX_INNER_APP_CALLS
+)
+
+#: The same conservative ceiling for a logic signature.
+MAX_POOLED_LOGICSIG_COST = LOGICSIG_MAX_COST * MAX_GROUP_LOGICSIGS
+
+
+def program_mode(prog: SSAProgram) -> str:
+    """``"app"`` if the program uses any application-only OPCODE, else
+    ``"logicsig"`` — the two are metered by different, non-interchangeable
+    limits, so bounding a logicsig against an app call's budget is wrong in
+    both directions.
+
+    HAZARD: key on OPCODES the AVM rejects in Signature mode, NEVER on txn
+    fields. A logicsig can be attached to an ApplicationCall and so legitimately
+    reads ``OnCompletion`` / ``ApplicationArgs`` / ``ApplicationID``; keying on
+    those misclassifies that whole class. Same rule and same
+    :data:`avm.APP_ONLY_OPS` table as ``security.classify_program``, which
+    cannot be imported here — the dependency runs security -> tealtools and
+    never back."""
+    return ("app" if any(a.op in APP_ONLY_OPS for a in prog.assignments)
+            else "logicsig")
+
+
+def default_budget(prog: SSAProgram) -> int:
+    """The conservative ceiling for this program's execution model."""
+    return (MAX_POOLED_OPCODE_BUDGET if program_mode(prog) == "app"
+            else MAX_POOLED_LOGICSIG_COST)
 
 #: The AVM kills a program whose stack exceeds this.
 MAX_STACK_DEPTH = 1000
@@ -110,14 +167,15 @@ class LoopBound:
     min_iteration_cost: int    # budget for the CHEAPEST cycle
     stack_delta: int           # net stack change over that cycle
     prefix_cost: int           # budget CERTAINLY spent before the loop can start
-    budget_bound: int          # iterations before a single call's budget dies
+    budget_bound: int          # iterations before the pooled budget dies
     stack_bound: Optional[int] # iterations before the stack cap, or None
     depth: int = 0             # nesting depth; 0 for an outermost loop
+    budget: int = MAX_POOLED_OPCODE_BUDGET   # ceiling this was bounded against
 
     @property
     def available_budget(self) -> int:
         """What is left for the loop after the mandatory prefix."""
-        return max(0, APP_OPCODE_BUDGET - self.prefix_cost)
+        return max(0, self.budget - self.prefix_cost)
 
     @property
     def max_iterations(self) -> int:
@@ -255,23 +313,31 @@ def _prefix_cost(cfg: CFG, header: BasicBlock, dist: dict) -> int:
     return max(0, reached - block_cost(header))
 
 
-def analyze_loops(prog: SSAProgram, cfg: Optional[CFG] = None) -> "list[LoopBound]":
-    """Every natural loop with its cost and iteration bounds, header order."""
+def analyze_loops(prog: SSAProgram, cfg: Optional[CFG] = None, *,
+                  budget: Optional[int] = None) -> "list[LoopBound]":
+    """Every natural loop with its cost and iteration bounds, header order.
+
+    ``budget`` is the pooled opcode ceiling, defaulting to the conservative
+    maximum. Pass a smaller one once group shape and inner-call count are known
+    — bounding against a budget the program might actually exceed is the unsound
+    direction."""
     cfg = cfg or CFG.of(prog)
+    if budget is None:
+        budget = default_budget(prog)
     dist = _entry_distances(cfg)
     out: list[LoopBound] = []
     for header, body, back_edges in _natural_loops(cfg):
         cost, delta = _cheapest_cycle(header, body, back_edges)
         cost = max(1, cost)                      # every cycle charges something
         prefix = _prefix_cost(cfg, header, dist)
-        budget_bound = max(0, APP_OPCODE_BUDGET - prefix) // cost
+        budget_bound = max(0, budget - prefix) // cost
         # Only a net-POSITIVE cycle is bounded by the stack; anything else can
         # spin without growing it.
         stack_bound = (MAX_STACK_DEPTH // delta) if delta > 0 else None
         out.append(LoopBound(
             header=header, body=frozenset(body), back_edges=tuple(back_edges),
             min_iteration_cost=cost, stack_delta=delta, prefix_cost=prefix,
-            budget_bound=budget_bound, stack_bound=stack_bound,
+            budget_bound=budget_bound, stack_bound=stack_bound, budget=budget,
         ))
     # Natural loops nest or are disjoint, never partially overlap, so a strict
     # body-subset count is the nesting depth.
