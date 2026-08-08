@@ -180,3 +180,47 @@ def test_prefix_is_the_CHEAPEST_PATH_not_just_the_dominators():
     # It took the CHEAP arm: enough for sha256, nowhere near keccak256.
     assert loop.prefix_cost >= 35
     assert loop.prefix_cost < 130
+
+
+def test_nested_loops_are_found_and_their_depth_reported():
+    """A nested loop is its own natural loop, and its body is a strict SUBSET of
+    its parent's — which is what depth is derived from.
+
+    Both bounds are sound alone but NOT jointly: they share one 700 budget and
+    each spends it as if the other did not, so the pair here needs 1374. The
+    hazard is recorded in the module; what is pinned is that the numbers keep
+    their individual meaning and that nesting is visible at all."""
+    src = ("#pragma version 10\nint 0\nstore 0\n"
+           "outer:\nload 0\nint 3\n<\nbz odone\nint 0\nstore 1\n"
+           "inner:\nload 1\nint 4\n<\nbz idone\n"
+           "load 1\nint 1\n+\nstore 1\nb inner\n"
+           "idone:\nload 0\nint 1\n+\nstore 0\nb outer\n"
+           "odone:\nint 1\nreturn\n")
+    outer, inner = analyze_loops(SSAProgram.from_text(src, strict=False))
+
+    assert inner.body < outer.body                # strictly nested, not overlapping
+    assert (outer.depth, inner.depth) == (0, 1)
+    # The inner is reached through the outer, so more is already spent.
+    assert inner.prefix_cost > outer.prefix_cost
+    # Each remains a valid ceiling on its own loop.
+    assert inner.max_iterations == inner.available_budget // inner.min_iteration_cost
+    assert outer.max_iterations == outer.available_budget // outer.min_iteration_cost
+
+
+def test_nested_loops_draw_as_nested_clusters():
+    """Natural loops nest or are disjoint, never partially overlap, so the inner
+    cluster is emitted INSIDE the outer one — drawing them as siblings would
+    misrepresent which loop's budget contains which."""
+    from tealql.tealtools.budget import to_dot
+
+    src = ("#pragma version 10\nint 0\nstore 0\n"
+           "outer:\nload 0\nint 3\n<\nbz odone\nint 0\nstore 1\n"
+           "inner:\nload 1\nint 4\n<\nbz idone\n"
+           "load 1\nint 1\n+\nstore 1\nb inner\n"
+           "idone:\nload 0\nint 1\n+\nstore 0\nb outer\n"
+           "odone:\nint 1\nreturn\n")
+    dot = to_dot(SSAProgram.from_text(src, strict=False))
+    outer_at = dot.index("subgraph cluster_0")
+    inner_at = dot.index("subgraph cluster_1")
+    assert outer_at < inner_at                    # inner opens inside outer
+    assert dot.count("subgraph cluster") == 2

@@ -24,10 +24,18 @@ HAZARD: these are UPPER bounds on what the AVM permits, never predictions. A
 loop bounded at 700 iterations usually runs three times; the bound says only
 that the runtime kills it beyond that. Reading a bound as a trip count invents
 facts about the program.
+
+HAZARD: each bound is sound ALONE but the set is not jointly tight — nested and
+sibling loops share one budget, and every bound spends it as though the others
+did not. A loop nested in one bounded at 46 x 15 may itself report 76 x 9, a
+pair needing 1374 of the 700 that exists. Use a bound to rule a loop OUT ("at
+most 18 iterations, so the index cannot exceed 18"), never to add several up.
+Iteration counts are TOTAL across the execution rather than per entry, which is
+what makes the inner bound already account for being re-entered by its parent.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Optional
 
 from .._utils.dot import (bb_label as _bb_label, escape,
@@ -104,6 +112,7 @@ class LoopBound:
     prefix_cost: int           # budget CERTAINLY spent before the loop can start
     budget_bound: int          # iterations before a single call's budget dies
     stack_bound: Optional[int] # iterations before the stack cap, or None
+    depth: int = 0             # nesting depth; 0 for an outermost loop
 
     @property
     def available_budget(self) -> int:
@@ -112,7 +121,12 @@ class LoopBound:
 
     @property
     def max_iterations(self) -> int:
-        """Whichever ceiling binds first."""
+        """Whichever ceiling binds first.
+
+        TOTAL iterations across the whole execution, NOT per entry. A loop
+        nested in one that runs K times is entered K times, and this bounds the
+        sum — which is the useful reading, because the budget is what is shared.
+        Per-entry is bounded by the same number and more loosely."""
         if self.stack_bound is None:
             return self.budget_bound
         return min(self.budget_bound, self.stack_bound)
@@ -259,7 +273,14 @@ def analyze_loops(prog: SSAProgram, cfg: Optional[CFG] = None) -> "list[LoopBoun
             min_iteration_cost=cost, stack_delta=delta, prefix_cost=prefix,
             budget_bound=budget_bound, stack_bound=stack_bound,
         ))
-    return sorted(out, key=lambda b: (b.header.file, b.header.first_line))
+    # Natural loops nest or are disjoint, never partially overlap, so a strict
+    # body-subset count is the nesting depth.
+    by_depth = [
+        replace(lp, depth=sum(1 for other in out
+                              if other is not lp and lp.body < other.body))
+        for lp in out
+    ]
+    return sorted(by_depth, key=lambda b: (b.header.file, b.header.first_line))
 
 
 def render(prog: SSAProgram, cfg: Optional[CFG] = None) -> str:
@@ -267,13 +288,15 @@ def render(prog: SSAProgram, cfg: Optional[CFG] = None) -> str:
     loops = analyze_loops(prog, cfg)
     if not loops:
         return "no loops"
-    rows = ["loops (upper bounds on what the AVM PERMITS, not trip counts):"]
+    rows = ["loops (upper bounds on what the AVM PERMITS, not trip counts;",
+            " iteration counts are TOTAL across the execution, not per entry):"]
     for b in loops:
         stack = (f", stack {b.stack_delta:+d}/iter" if b.stack_delta else "")
         prefix = (f", {b.prefix_cost} spent before it "
                   f"(budget left {b.available_budget})" if b.prefix_cost else "")
         rows.append(
-            f"  L{b.header.first_line}-L{b.header.last_line}: "
+            "  " + "  " * b.depth +
+            f"L{b.header.first_line}-L{b.header.last_line}: "
             f"{len(b.body)} block(s), cheapest iteration {b.min_iteration_cost} "
             f"budget{stack}{prefix} → at most {b.max_iterations} iterations "
             f"({b.bound_reason}-bound)"
@@ -329,18 +352,33 @@ def to_dot(prog: SSAProgram, cfg: Optional[CFG] = None, *,
         return f'    {nid(bb)} [shape=box, label="{tag}", {style}];'
 
     out = _dot_header("loop_bounds", rankdir=rankdir)
-    for i, lp in enumerate(loops):
-        members = [b for b in blocks if owner.get(b) is lp]
-        if not members:
-            continue
+    index = {lp: i for i, lp in enumerate(loops)}
+    # Children of a loop = the loops directly inside it. Natural loops nest or
+    # are disjoint, so clusters can be emitted RECURSIVELY and a nested loop is
+    # drawn inside its parent instead of beside it.
+    children: dict = {None: []}
+    for lp in loops:
+        parents = [o for o in loops if o is not lp and lp.body < o.body]
+        parent = min(parents, key=lambda o: len(o.body)) if parents else None
+        children.setdefault(parent, []).append(lp)
+        children.setdefault(lp, [])
+
+    def emit(lp, indent: str) -> None:
         label = (f"L{lp.header.first_line}: <= {lp.max_iterations} iter "
                  f"({lp.bound_reason}), {lp.min_iteration_cost}/iter")
         if lp.prefix_cost:
             label += f", {lp.prefix_cost} spent before"
-        out.append(f'  subgraph cluster_{i} {{')
-        out.append(f'    label="{escape(label)}"; color="#1f5fa8"; style=rounded;')
-        out.extend(node_line(b) for b in members)
-        out.append("  }")
+        out.append(f'{indent}subgraph cluster_{index[lp]} {{')
+        out.append(f'{indent}  label="{escape(label)}"; color="#1f5fa8"; style=rounded;')
+        for kid in children.get(lp, ()):
+            emit(kid, indent + "  ")
+        for b in blocks:
+            if owner.get(b) is lp:
+                out.append(node_line(b))
+        out.append(indent + "}")
+
+    for lp in children.get(None, ()):
+        emit(lp, "  ")
     for bb in blocks:
         if bb not in owner:
             out.append(node_line(bb))
