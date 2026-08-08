@@ -61,3 +61,24 @@ def test_opcode_budget_not_unified(tmp_path):
     ins = _consumer_inputs(
         tmp_path, H + "global OpcodeBudget\nglobal OpcodeBudget\n==\nreturn\n", "==")
     assert len(ins) == 2 and ins[0] is not ins[1]
+
+
+def test_reads_from_independent_files_never_unify():
+    """A directory-valued program is a collection of independent AVM programs.
+
+    In particular, ``global CreatorAddress`` can have a different value in each
+    file; canonicalizing only by opcode/immediates created cross-file def-use
+    edges and made file B consume file A's creator.
+    """
+    prog = SSAProgram({
+        "a.teal": H + "global CreatorAddress\nglobal CreatorAddress\n==\nreturn\n",
+        "b.teal": H + "global CreatorAddress\nglobal CreatorAddress\n==\nreturn\n",
+    })
+    prog.propagate_inputs()
+
+    comparisons = {a.location.file: a for a in prog.assignments if a.op == "=="}
+    assert set(comparisons) == {"a.teal", "b.teal"}
+    for file, cmp in comparisons.items():
+        assert len(cmp.inputs) == 2
+        assert cmp.inputs[0] is cmp.inputs[1]
+        assert cmp.inputs[0].file == file

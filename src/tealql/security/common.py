@@ -94,6 +94,7 @@ from ._itxn_taint import (  # noqa: E402,F401
     ir_lifter,
     itxn_value_guarded,
     sender_creator_vars,
+    sender_vars,
     source_label,
     user_input_taint,
     value_is_zero_address,

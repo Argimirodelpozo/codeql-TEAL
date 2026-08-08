@@ -39,13 +39,16 @@ _TXN_SENDER_FAM = frozenset({"txn", "txna"})
 #: Ops whose result depends on the LENGTH, not the VALUE, of their operand: a
 #: guard reaching an input only through these bounds its length, not its value
 #: (see :func:`_classify`).
-_VALUE_OPAQUE_OPS = frozenset({"len", "bitlen"})
+_VALUE_OPAQUE_OPS = frozenset({"len", "bitlen", "bzero"})
 
 #: Equality / inequality comparisons, uint64 and bytes. Which one encloses a
 #: sender read decides whether that read PINS the sender or merely excludes one
 #: address -- see the comparison-sense reasoning in :func:`_classify`.
 _EQ_OPS = frozenset({"==", "b=="})
 _NEQ_OPS = frozenset({"!=", "b!="})
+_CMP_OPS = _EQ_OPS | _NEQ_OPS | frozenset({
+    "<", "<=", ">", ">=", "b<", "b<=", "b>", "b>=",
+})
 
 
 # --------------------------------------------------------------------------
@@ -211,9 +214,10 @@ def _is_sender_op(src) -> bool:
     if not isinstance(src, pre_ir.Intrinsic):
         return False
     imm = " ".join(str(i) for i in (src.immediates or []))
-    if src.op in _TXN_SENDER_FAM and "Sender" in imm:
-        return True
-    return src.op == "global" and ("CreatorAddress" in imm or "Sender" in imm)
+    return src.op in _TXN_SENDER_FAM and (
+        "Sender" in imm
+        or (src.op == "txna" and imm.split() == ["Accounts", "0"])
+    )
 
 
 def _scratch_value_edges(lifter, dom_by_sub) -> dict:
@@ -431,10 +435,13 @@ def _classify(kind, polarity, cond, def_of, sink_regs, sink_keys, inv_ret=None) 
     # path must still credit after a weaker one was walked.
     seen: set = set()
 
-    def _compares_against_user_input(src) -> bool:
-        """The comparison has an operand the ATTACKER supplies, so pinning the
-        sender against it authorises nothing (`Sender == ApplicationArgs[2]` is
-        satisfied by any caller who passes their own address).
+    def _comparison_pins_sender(src) -> bool:
+        """Exactly one operand is Sender and the other is a trusted identity.
+
+        An attacker-supplied counterpart authorises nothing
+        (``Sender == ApplicationArgs[2]`` is satisfied by any caller who passes
+        their own address), nor does ``CreatorAddress == arg`` check Sender at
+        all. Constants must be 32-byte non-zero address values.
 
         HAZARD: walk the operand's whole def-tree, not just its defining op. An
         ARC-4 address argument reaches the comparison through at least one
@@ -442,12 +449,32 @@ def _classify(kind, polarity, cond, def_of, sink_regs, sink_keys, inv_ret=None) 
         sender guard for the COMPILED spelling of the very idiom it exists to
         refuse — while correctly refusing the hand-written one. The benchmark
         pinned only the direct form, so nothing caught it."""
-        for a in src.args:
-            for _r, oo in _walk(a, def_of, inv_ret=inv_ret):
-                s = _intr(oo) if oo is not None else None
-                if s is not None and source_label(s) is not None:
-                    return True
-        return False
+        def has_sender(a) -> bool:
+            return any(
+                _is_sender_op(_intr(oo) if oo is not None else None)
+                for _r, oo in _walk(a, def_of, inv_ret=inv_ret)
+            )
+
+        sender_arms = [has_sender(a) for a in src.args]
+        if sum(sender_arms) != 1:
+            return False
+        other = src.args[0] if sender_arms[1] else src.args[1]
+        if isinstance(other, pre_ir.UInt64Constant):
+            return False
+        if isinstance(other, pre_ir.BytesConstant):
+            h = other.value[2:] if other.value.startswith("0x") else other.value
+            return len(h) == 64 and not set(h) <= {"0"}
+        for _r, oo in _walk(other, def_of, inv_ret=inv_ret):
+            s = _intr(oo) if oo is not None else None
+            if s is None:
+                continue
+            imm = " ".join(str(i) for i in (s.immediates or []))
+            if (source_label(s) is not None or s.op.startswith("gtxn")
+                    or (s.op == "global" and imm in {
+                        "CallerApplicationID", "CallerApplicationAddress",
+                    })):
+                return False
+        return True
 
     def visit(value, guaranteed, value_ok, sense, sender_ok, input_ok=True, depth=0):
         nonlocal ci, cs
@@ -459,6 +486,13 @@ def _classify(kind, polarity, cond, def_of, sink_regs, sink_keys, inv_ret=None) 
         seen.add(key)
         o = def_of.get(id(value))
         src = _intr(o) if o is not None else None
+        if (src is not None and src.op in _CMP_OPS and len(src.args) == 2
+                and src.args[0] is src.args[1]):
+            return                              # x OP x is a constant predicate
+        if (src is not None and src.op == "%" and len(src.args) == 2
+                and isinstance(src.args[0], pre_ir.UInt64Constant)
+                and src.args[0].value == 1):
+            return                              # x % 1 is always zero
         if guaranteed and value_ok and input_ok:
             if id(value) in sink_regs:
                 ci = True
@@ -477,9 +511,9 @@ def _classify(kind, polarity, cond, def_of, sink_regs, sink_keys, inv_ret=None) 
         # NOT hold (or a `!=` that must) only excludes one address.
         child_sender = sender_ok
         if src is not None and src.op in _EQ_OPS:
-            child_sender = child_sense and not _compares_against_user_input(src)
+            child_sender = child_sense and _comparison_pins_sender(src)
         elif src is not None and src.op in _NEQ_OPS:
-            child_sender = (not child_sense) and not _compares_against_user_input(src)
+            child_sender = (not child_sense) and _comparison_pins_sender(src)
         # A relation that only EXCLUDES one value restricts nothing about which
         # value the sink gets. `assert(recipient != ZeroAddress)` says the payee is
         # not the zero address; every other address still passes, so it is not a

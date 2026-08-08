@@ -142,12 +142,12 @@ CONCAT_PROPAGATION_RULE = FlowRule(
 #: Ops whose output is a deterministic FUNCTION of their operands: control `x`
 #: and you control `x + 1`.
 #:
+#: Metadata/boolean results stay included: an attacker who controls a value can
+#: control its length, comparison outcome, and therefore any later value that
+#: consumes that result. Likewise ``bzero(n)`` has fixed byte content but an
+#: attacker-controlled length, which changes the bytes value / box key.
+#:
 #: Deliberately EXCLUDED, each for a reason:
-#:   * ``len`` / ``bitlen`` — metadata about the value, not the value.
-#:   * comparisons and ``&&`` / ``||`` / ``!`` — a branch condition, not a
-#:     value; tainting them marks most guards attacker-derived and swamps
-#:     every consumer.
-#:   * ``bzero`` — the attacker picks the LENGTH, but the content is zeros.
 #:   * the crypto VERIFY ops — a 0/1 validity flag.
 #:   * state / txn-field reads — those are SOURCES; taint on a KEY operand does
 #:     not make the stored value attacker-controlled.
@@ -157,10 +157,15 @@ _VALUE_TRANSFORM_OPS = frozenset({
     "addw", "mulw", "expw", "divw", "divmodw",
     # bitwise
     "&", "|", "^", "~",
+    # metadata, comparisons and boolean derivations
+    "len", "bitlen",
+    "==", "!=", "<", "<=", ">", ">=",
+    "b==", "b!=", "b<", "b<=", "b>", "b>=",
+    "!", "&&", "||",
     # single-bit read (the sibling of `getbyte`, which SLICE already covers)
     "getbit",
     # value transforms / derivations
-    "base64_decode", "mimc", "sumhash512", "json_ref", "bsqrt",
+    "bzero", "base64_decode", "mimc", "sumhash512", "json_ref", "bsqrt",
     "ecdsa_pk_decompress", "ecdsa_pk_recover",
 })
 
@@ -180,9 +185,9 @@ SELECT_PROPAGATION_RULE = FlowRule(
     name="select-of-tainted",
     matches=lambda a: a.op == "select",
     # TOP-FIRST inputs: [0] = condition, [1] = B (returned when cond != 0),
-    # [2] = A. Only the two VALUES matter — the condition chooses but
-    # contributes no bytes, so 1-based indices 2 and 3.
-    flows=lambda a, ti: [1] if (2 in ti or 3 in ti) else [],
+    # [2] = A. A tainted CONDITION matters too: it lets the attacker choose
+    # between two otherwise-clean constants, so the result is attacker-controlled.
+    flows=lambda a, ti: [1] if ti else [],
 )
 
 #: Splice ops write a tainted value INTO a buffer, so the result carries the

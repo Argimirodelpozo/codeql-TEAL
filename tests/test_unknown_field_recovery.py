@@ -422,6 +422,19 @@ def test_ordinary_comments_are_untouched(tmp_path):
     assert ("pushbytes", '"asa_"') in _ops(prog)
 
 
+def test_even_backslashes_close_string_before_quoted_comment(tmp_path):
+    """Two backslashes encode one literal backslash; they do not escape the
+    following quote.  Losing that distinction leaves quote state open and makes
+    the quote in the comment pollute the parsed constant (or reject the file)."""
+    prog = _prog(
+        tmp_path,
+        'pushbytes "a\\\\"   // [name, "a backslash"]\npop\n',
+        version=10,
+    )
+    assert list(getattr(prog, "parse_diagnostics", ()) or []) == []
+    assert ("pushbytes", '"a\\\\"') in _ops(prog)
+
+
 def test_blanking_preserves_line_length():
     """Comments are blanked with spaces, not deleted, so every column span on
     the line stays valid."""

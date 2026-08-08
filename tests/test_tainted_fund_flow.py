@@ -7,6 +7,8 @@ taint/flow helpers.
 """
 from pathlib import Path
 
+import pytest
+
 from tealql.tealtools.ssa import SSAProgram
 from tealql.security import DETECTORS
 
@@ -83,6 +85,48 @@ def test_sender_sanity_check_does_not_clear(tmp_path):
     assert any(v.field == "Receiver" for v in vs)
 
 
+@pytest.mark.parametrize("identity", [
+    "txn ApplicationArgs 1",
+    "gtxn 1 Sender",
+    "byte 0x0102",
+])
+def test_attacker_or_invalid_sender_identity_does_not_clear(identity, tmp_path):
+    teal = f"""#pragma version 10
+txn Sender
+{identity}
+==
+assert
+itxn_begin
+txn ApplicationArgs 0
+itxn_field Receiver
+itxn_submit
+int 1
+return
+"""
+    assert any(v.field == "Receiver" for v in _detect(teal, tmp_path))
+
+
+def test_creator_comparison_without_sender_does_not_clear(tmp_path):
+    teal = """#pragma version 10
+global CreatorAddress
+txn ApplicationArgs 1
+==
+assert
+itxn_begin
+txn ApplicationArgs 0
+itxn_field Receiver
+itxn_submit
+int 1
+return
+"""
+    assert any(v.field == "Receiver" for v in _detect(teal, tmp_path))
+
+
+def test_negated_sender_inequality_clears(tmp_path):
+    teal = _SENDER.replace("==\n", "!=\n    !\n")
+    assert _detect(teal, tmp_path) == []
+
+
 _VALCHECK = """#pragma version 10
     txn ApplicationArgs 0
     btoi
@@ -103,6 +147,26 @@ def test_value_check_same_slot_clears(tmp_path):
     # The amount<=100 assert tests the same ApplicationArgs[0] slot the sink uses
     # (taint propagates through btoi), so it's guarded.
     assert _detect(_VALCHECK, tmp_path) == []
+
+
+@pytest.mark.parametrize("guard", [
+    "txn ApplicationArgs 0\nlen\nint 8\n==\nassert",
+    "txn ApplicationArgs 0\nbtoi\nint 1\n||\nassert",
+    "txn ApplicationArgs 0\ndup\n==\nassert",
+    "txn ApplicationArgs 0\nbtoi\nint 1\n%\nint 0\n==\nassert",
+])
+def test_vacuous_input_predicate_does_not_clear(guard, tmp_path):
+    teal = f"""#pragma version 10
+{guard}
+itxn_begin
+txn ApplicationArgs 0
+itxn_field Receiver
+itxn_submit
+int 1
+return
+"""
+    vs = _detect(teal, tmp_path)
+    assert any(v.field == "Receiver" for v in vs)
 
 
 _BRANCH = """#pragma version 10

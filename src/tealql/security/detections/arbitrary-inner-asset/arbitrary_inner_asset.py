@@ -66,7 +66,7 @@ class ArbitraryInnerAssetDetector:
         taint = common.user_input_taint(self.prog, self.file)
         if not taint:
             return []
-        sender_vars = common.sender_creator_vars(self.prog, file=self.file)
+        sender_vars = common.sender_vars(self.prog, file=self.file)
         receiver_by_block = self._block_receivers()
         violations: list = []
         for fs in common.inner_txn_field_assigns(self.prog, file=self.file):

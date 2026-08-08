@@ -160,6 +160,20 @@ def _index_window(idx_op, width: int) -> tuple:
     return (0, AVM_MAX_BYTES)
 
 
+def _bit_index_window(idx_op) -> tuple:
+    """The byte window a bit index can address (AVM bits are MSB-first).
+
+    A uint64 base is handled separately; this helper is only for a bytes base.
+    """
+    c = const_int(idx_op)
+    if c is not None:
+        return (c // 8, c // 8 + 1)
+    r = getattr(idx_op, "range", None)
+    if r is not None:
+        return (r.lo // 8, min(r.hi // 8 + 1, AVM_MAX_BYTES))
+    return (0, AVM_MAX_BYTES)
+
+
 def _default_sources(a) -> Optional[Intervals]:
     """Seed: every ``ApplicationArgs`` read and every LogicSig ``arg`` read is
     fully tainted, both being wholly attacker-supplied.
@@ -209,13 +223,14 @@ _PURE_COMBINATORS = frozenset({
 # fixed by the chain or the deployment. EXCLUDES ``GroupSize`` / ``GroupID``
 # (the attacker assembles the group) and ``Round`` / ``LatestTimestamp`` /
 # ``OpcodeBudget`` (attacker- or miner-influenceable). ``CallerApplication*``
-# stay because an inner-txn caller cannot forge which app called it. Unknown
-# fields fall through to NOT-clean: a lost proof, never a wrongly cleared taint.
+# are deliberately EXCLUDED: they faithfully identify the immediate caller,
+# but an attacker can deploy and invoke through their own application, so
+# identity alone is not authorisation. Unknown fields fall through to NOT-clean:
+# a lost proof, never a wrongly cleared taint.
 _CLEAN_GLOBALS = frozenset({
     "ZeroAddress", "MinTxnFee", "MinBalance", "MaxTxnLife",
     "LogicSigVersion", "GenesisHash",
     "CurrentApplicationID", "CurrentApplicationAddress", "CreatorAddress",
-    "CallerApplicationID", "CallerApplicationAddress",
     "AssetCreateMinBalance", "AssetOptInMinBalance",
 })
 
@@ -496,6 +511,23 @@ def _unification_confined(prog: SSAProgram, active: bool):
         return
     saved_inputs = [(a, list(a.inputs), a.shuffled) for a in prog.assignments]
     saved_args = [(p, list(p.args)) for p in prog.phis.values()]
+    # Reverse def-use links are part of the same wiring. Both unification
+    # passes rebuild/mutate ``.uses``; restoring only the forward inputs left
+    # a contradictory program whose later dominance and DCE answers depended
+    # on whether byte_taint had happened to run first.
+    use_objects: dict[int, object] = {}
+    for a in prog.assignments:
+        for op in (*a.inputs, *a.outputs):
+            if hasattr(op, "uses"):
+                use_objects[id(op)] = op
+    for p in prog.phis.values():
+        use_objects[id(p)] = p
+        for arg in p.args:
+            if hasattr(arg, "uses"):
+                use_objects[id(arg)] = arg
+    saved_uses = [
+        (op, list(getattr(op, "uses"))) for op in use_objects.values()
+    ]
     had = (getattr(prog, "_inputs_propagated", False),
            getattr(prog, "_shuffles_propagated", False))
     try:
@@ -506,6 +538,8 @@ def _unification_confined(prog: SSAProgram, active: bool):
             a.shuffled = shuf
         for p, args in saved_args:
             p.args[:] = args
+        for op, uses in saved_uses:
+            getattr(op, "uses")[:] = uses
         prog._inputs_propagated, prog._shuffles_propagated = had
 
 
@@ -658,10 +692,49 @@ def _byte_taint_impl(
             # subtracting anything would be a false NEGATIVE. Keep ALL of X's
             # taint and add the written byte over the index's possible window.
             iv = bget(x)
-            if sget(b):
+            if sget(b) or sget(i_op):
+                # Even a clean byte makes the result attacker-controlled when
+                # the attacker chooses WHERE it is written.  Treat the whole
+                # possible index window as influenced; whether some positions
+                # coincidentally already contain ``b`` cannot be proved here.
                 lo, hi = _index_window(i_op, 1)
                 iv = iv.union(Intervals([(lo, hi)]))
             return set_bytes(out, iv)
+        if op == "setbit" and len(a.inputs) == 3:                  # setbit X i b
+            # Polymorphic: result type == X's type. TOP-FIRST inputs are
+            # [bit, index, X]. The old generic fallback always tagged the
+            # output as SCALAR; when X was bytes, a later getbyte/extract saw
+            # no byte taint and the flow disappeared.
+            x, i_op, b = a.inputs[2], a.inputs[1], a.inputs[0]
+            xt = getattr(x, "type", None)
+            xc = operand_const(x)
+            x_is_bytes = (
+                bool(bget(x))
+                or getattr(xt, "kind", None) == "bytes"
+                or (isinstance(xc, Const) and xc.kind == "bytes")
+            )
+            x_is_scalar = (
+                sget(x)
+                or getattr(xt, "kind", None) == "uint64"
+                or (isinstance(xc, Const) and xc.kind == "int")
+            )
+            if x_is_bytes:
+                # Replacing one bit cannot make a tainted BYTE clean. If the
+                # written bit or its position is attacker-controlled, the
+                # possibly addressed byte becomes tainted too.
+                iv = bget(x)
+                if sget(b) or sget(i_op):
+                    lo, hi = _bit_index_window(i_op)
+                    iv = iv.union(Intervals([(lo, hi)]))
+                return set_bytes(out, iv)
+            if x_is_scalar:
+                return set_scalar(out) if any_tainted(a) else False
+            if any_tainted(a):
+                # Unknown polymorphic arm: preserve soundness for both possible
+                # result types. Consumers will use the relevant channel.
+                changed = set_scalar(out)
+                return set_bytes(out, Intervals.whole(_len_bound(out))) or changed
+            return False
         if op in ("replace2", "replace3"):                         # splice V into X at A
             if op == "replace2" and a.immediates and len(a.inputs) == 2:
                 x, v, A = a.inputs[1], a.inputs[0], int(a.immediates.split()[0])

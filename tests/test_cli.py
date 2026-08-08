@@ -18,6 +18,7 @@ import pytest
 from tealql.tealtools._utils import targets
 from tealql.cli.main import main
 from tealql.tealtools._utils.serialize import finding_to_dict
+from tealql.tealtools.ssa import SSAProgram
 
 
 TESTS_ROOT = Path(__file__).resolve().parent
@@ -57,6 +58,40 @@ def test_resolve_target_nonteal_file_raises(tmp_path):
     f.write_text("")
     with pytest.raises(ValueError):
         targets.resolve_target(f)
+
+
+def test_nested_directory_target_is_actually_analyzed(tmp_path, capsys):
+    """Target validation and graph loading must agree on recursive discovery.
+
+    The CLI previously accepted this root (the validator found the nested file)
+    but the graph loader used ``glob('*.teal')`` and analyzed zero instructions.
+    """
+    nested = tmp_path / "contracts" / "vault"
+    nested.mkdir(parents=True)
+    (nested / "approval.teal").write_text(
+        "#pragma version 8\n"
+        "int 1\n"
+        'byte "changed"\n'
+        "app_global_put\n"
+        "int 1\n"
+        "return\n"
+    )
+    rc = main(["auth", str(tmp_path)])
+    captured = capsys.readouterr()
+    assert rc == 1
+    assert "app_global_put" in captured.out
+
+
+def test_recursive_loader_keeps_duplicate_nested_basenames_distinct(tmp_path):
+    for parent, result in (("approval", 1), ("clear", 0)):
+        d = tmp_path / parent
+        d.mkdir()
+        (d / "prog.teal").write_text(
+            f"#pragma version 8\nint {result}\nreturn\n"
+        )
+    prog = SSAProgram(tmp_path)
+    files = {a.location.file for a in prog.assignments}
+    assert files == {"approval/prog.teal", "clear/prog.teal"}
 
 
 # ---------------------------------------------------------------------------

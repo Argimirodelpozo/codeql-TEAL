@@ -137,7 +137,7 @@ def test_substring3_non_const_is_none():
 def test_length_preserving_inherits_buffer():
     # setbyte X i b -> [b, i, X]; replace2 X V -> [V, X]; replace3 X A V -> [V, A, X].
     # The buffer X is pushed first, so it is the DEEPEST operand = inputs[-1].
-    for op in ("setbyte", "replace2", "replace3"):
+    for op in ("setbyte", "setbit", "replace2", "replace3"):
         asn = _asn(op, inputs=[_int(255), _int(0), _bytes_operand(12)])
         assert _op_byte_length(asn) == 12
 

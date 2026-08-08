@@ -56,11 +56,27 @@ def _strip_inline_comment(code: str) -> str:
     constant then never matches, and nothing reports it. The token-boundary rule
     is what go-algorand does: split on whitespace, then ask whether a token
     STARTS with ``//``, so ``int 1// x`` is not a comment at all."""
+    def quote_is_escaped(index: int) -> bool:
+        """A quote is escaped iff an odd run of backslashes precedes it.
+
+        Looking only at the immediately preceding character mistakes the closing
+        quote in ``"a\\\\"`` for an escaped quote: the first backslash escapes
+        the second, so the quote actually terminates the literal.  Once quote
+        state is wrong, a later quote-bearing comment is fed to tree-sitter as
+        source and can turn an otherwise valid program into a partial parse.
+        """
+        backslashes = 0
+        index -= 1
+        while index >= 0 and code[index] == "\\":
+            backslashes += 1
+            index -= 1
+        return backslashes % 2 == 1
+
     q = False
     depth = 0
     for i in range(len(code) - 1):
         c = code[i]
-        if c == '"' and (i == 0 or code[i - 1] != "\\"):
+        if c == '"' and not quote_is_escaped(i):
             q = not q
         elif q:
             continue
@@ -297,14 +313,53 @@ def _resolve_source_files(source):
         yield source.name, _normalize_pseudo_ops(source.read_bytes())
         return
     if source.is_dir():
-        for f in sorted(source.glob("*.teal")):
-            yield f.name, _normalize_pseudo_ops(f.read_bytes())
+        # Keep this in lockstep with ``_utils.targets._discover_teal_files``:
+        # the CLI validates directory targets RECURSIVELY before handing the
+        # directory itself to this loader.  A top-level-only glob accepted a
+        # nested target and then built an EMPTY graph, so every analysis read
+        # as clean despite having inspected no contract at all.
+        for f in sorted(source.rglob("*.teal")):
+            # Top-level files retain their historical basename; nested files
+            # need the relative path so two ``*/prog.teal`` contracts do not
+            # collide in the location-identity key.
+            yield f.relative_to(source).as_posix(), _normalize_pseudo_ops(f.read_bytes())
 
 
-def _load_source_bytes(source: Path) -> dict[str, bytes]:
-    """Map basename -> raw source bytes; basename is the path ``ast.parse``
-    reports for each node."""
-    return {Path(rel).name: data for rel, data in _resolve_source_files(source)}
+def _load_source_bytes(source) -> dict[str, bytes]:
+    """Map reported source name -> normalized source bytes.
+
+    Filesystem directories report paths relative to the target root, preserving
+    the old basename for top-level files while keeping nested duplicate basenames
+    distinct.  In-memory mappings retain their historical basename when it is
+    unique; only an otherwise-colliding name expands to its supplied relative
+    path.  This preserves existing editor integrations while no longer dropping
+    one of two ``*/prog.teal`` entries.
+    """
+    from .errors import TargetError, TargetNotFoundError
+
+    in_memory = isinstance(source, Mapping)
+    resolved = list(_resolve_source_files(source))
+    basenames: dict[str, int] = {}
+    if in_memory:
+        for rel, _data in resolved:
+            base = Path(rel).name
+            basenames[base] = basenames.get(base, 0) + 1
+    out: dict[str, bytes] = {}
+    for rel, data in resolved:
+        base = Path(rel).name
+        name = (Path(rel).as_posix()
+                if in_memory and basenames.get(base, 0) > 1
+                else base if in_memory else str(rel))
+        out[name] = data
+    if out:
+        return out
+
+    if in_memory:
+        return {}                                # historical empty-program API
+    path = Path(source)
+    if path.is_file():
+        raise TargetError(f"{path}: not a .teal file")
+    raise TargetNotFoundError(f"no .teal files found under {path}")
 
 
 def _slice_source(sources: dict[str, list[str]], loc: Location) -> str:
@@ -373,5 +428,3 @@ def load_graph(
             g.nodes[node]["const_value"] = outs[1]
 
     return g
-
-

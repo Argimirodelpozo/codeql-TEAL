@@ -4,9 +4,9 @@
 ``SSAProgram.from_text`` wraps it -- so editor integrations, fuzzing, and tests
 can run the whole pipeline without writing temp files.
 """
-from tealql.tealtools.ssa import SSAProgram
-from tealql.tealtools.graph import load_graph
 from tealql.security import DETECTORS
+from tealql.tealtools.graph import load_graph
+from tealql.tealtools.ssa import SSAProgram
 
 _TEAL = """#pragma version 10
     itxn_begin
@@ -50,3 +50,19 @@ def test_load_graph_accepts_bytes_values():
     g = load_graph({"c.teal": _TEAL.encode("utf-8")})
     assert g.number_of_nodes() > 0
     assert g.graph["source"] == "<memory>"
+
+
+def test_mapping_duplicate_basenames_are_both_loaded():
+    """Ambiguous basenames expand to their relative mapping keys instead of one
+    program silently overwriting the other. Unique basenames remain unchanged."""
+    prog = SSAProgram({
+        "approval/prog.teal": "#pragma version 8\nint 1\nreturn\n",
+        "clear/prog.teal": "#pragma version 8\nint 0\nreturn\n",
+    })
+    assert {a.location.file for a in prog.assignments} == {
+        "approval/prog.teal", "clear/prog.teal",
+    }
+
+
+def test_empty_mapping_preserves_empty_program_api():
+    assert SSAProgram({}).assignments == []

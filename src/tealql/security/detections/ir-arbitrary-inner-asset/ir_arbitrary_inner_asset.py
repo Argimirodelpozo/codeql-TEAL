@@ -41,7 +41,7 @@ class IrArbitraryInnerAssetDetector(_IrTaintSinkDetector):
         ``AssetReceiver`` flowing from the sender. Computed on the SSA ``prog`` and
         correlated back by source line, orthogonally to the IR taint work."""
         prog = self.prog
-        sender_vars = common.sender_creator_vars(prog, file=self.file)
+        sender_vars = common.sender_vars(prog, file=self.file)
         if not sender_vars:
             return set()
         ops = sorted(

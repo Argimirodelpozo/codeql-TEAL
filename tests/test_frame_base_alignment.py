@@ -220,11 +220,9 @@ def test_taint_survives_a_bury_dig_roundtrip_into_a_call():
     engine saw no flow here at all.
 
     Asserts the TAINT REACHES the sink, not that a vulnerability is reported.
-    Those are different claims and this test used to conflate them: label77
-    asserts the sender on its single return, so the flow is legitimately GUARDED
-    and `.detect()` rightly says nothing. Pinning the verdict made this test fail
-    the moment a callee-sender guard started being credited — for a fix that was
-    correct. What the frame index owns is whether the value arrives at all."""
+    Those are different claims and this test used to conflate them. What the
+    frame index owns is whether the value arrives at all; sender-guard semantics
+    have their own focused regression suite."""
     from tealql.security.common import ir_lifter
     from tealql.tealtools.lift import fund_flow as FF
 
@@ -244,6 +242,7 @@ def test_taint_survives_a_bury_dig_roundtrip_into_a_call():
     assert at_1442, (
         "attacker input no longer reaches the `log` in label11 through the "
         "frame-slot roundtrip — the frame target index has slid again")
-    # And it is guarded for the RIGHT reason: the callee pins the sender.
-    assert all(f.guarded for f in at_1442)
-    assert any("sender" in g.describe() for f in at_1442 for g in f.guards)
+    # Guard classification is intentionally not asserted here: label77 equates
+    # the current Sender with a sibling transaction's Sender, but the attacker
+    # composes/signs both, so that is not authentication and must not be baked
+    # into a frame-index regression.

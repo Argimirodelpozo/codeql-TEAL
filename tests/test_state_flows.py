@@ -10,7 +10,7 @@ Two layers:
 """
 import pytest
 
-from tealql.tealtools.ssa import Assignment, Location, SSAVar
+from tealql.tealtools.ssa import Assignment, Location, SSAProgram, SSAVar
 from tealql.tealtools.dataflow.state import (
     APP_GLOBAL_GET_SOURCE,
     APP_GLOBAL_GET_EX_SOURCE,
@@ -19,7 +19,9 @@ from tealql.tealtools.dataflow.state import (
     DEFAULT_OUT_OF_STATE_SOURCES,
     detect_out_of_state_flows,
 )
-from tealql.tealtools.dataflow.engine import Sink, TaintAnalysis
+from tealql.tealtools.dataflow.engine import (
+    ATTACKER_CONTROL_RULES, Sink, Source, TaintAnalysis,
+)
 
 
 def _assign(op: str, n_out: int) -> Assignment:
@@ -49,6 +51,36 @@ class TestSourceConventions:
         assert not APP_GLOBAL_GET_SOURCE.matches(_assign("app_global_get_ex", 2))
         assert not APP_GLOBAL_GET_EX_SOURCE.matches(_assign("app_global_get", 1))
         assert not APP_GLOBAL_GET_SOURCE.matches(_assign("app_local_get", 1))
+
+
+class TestGenericEngineDependencies:
+    """Direct data dependencies must survive the engine's block-by-default policy."""
+
+    @staticmethod
+    def _reaches_log(body: str) -> bool:
+        prog = SSAProgram.from_text(
+            f"#pragma version 8\n{body}\nlog\nint 1\nreturn\n",
+            name="t.teal",
+        )
+        analysis = TaintAnalysis(
+            prog,
+            sources=[Source("arg", lambda a: a.op == "txna")],
+            sinks=[Sink("log", lambda a: a.op == "log", lambda a: 1)],
+            default_rules=ATTACKER_CONTROL_RULES,
+        )
+        return bool(analysis.detect())
+
+    @pytest.mark.parametrize("derived", ("len\nitob", "btoi\nint 10\n<\nitob", "btoi\nbzero"))
+    def test_metadata_boolean_and_length_derived_values_propagate(self, derived):
+        assert self._reaches_log(f"txna ApplicationArgs 0\n{derived}")
+
+    def test_tainted_select_condition_controls_clean_constant_result(self):
+        # TOP-FIRST select inputs are condition, B, A. The attacker chooses
+        # which otherwise-clean byte constant reaches the sink.
+        assert self._reaches_log(
+            "byte 0x00\nbyte 0x01\n"
+            "txna ApplicationArgs 0\nbtoi\nselect"
+        )
 
 
 @pytest.fixture(scope="module")

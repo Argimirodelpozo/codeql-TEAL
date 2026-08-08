@@ -8,6 +8,8 @@ and attacker-controlled halves of a packed byte array are tracked
 separately, including the byte-range -> scalar bridge (``getbyte`` /
 ``extract_uint*`` of a clean offset is NOT tainted).
 """
+import pytest
+
 from tealql.tealtools.ssa import SSAProgram, SSAVar, Phi
 from tealql.tealtools.dataflow.byte_taint import (
     Intervals, byte_taint, byte_taint_view, _byte_strip, INF, AVM_MAX_BYTES,
@@ -98,6 +100,38 @@ class TestSoundnessNoFalseNegatives:
         p, r = _taint("#pragma version 8\ntxna ApplicationArgs 0\nbox_get\nreturn\n")
         outs = _by_op(p, "box_get")[0].outputs
         assert r.tainted_bytes(outs[1])          # value output byte-tainted
+
+    def test_setbit_on_bytes_preserves_byte_taint(self):
+        # `setbit` is polymorphic. Tagging its bytes result as a scalar made a
+        # following getbyte see an empty byte map and lose the flow entirely.
+        p, r = _taint(
+            "#pragma version 8\ntxna ApplicationArgs 0\n"
+            "int 0\nint 0\nsetbit\nint 0\ngetbyte\nreturn\n"
+        )
+        set_out = _by_op(p, "setbit")[0].outputs[0]
+        get_out = _by_op(p, "getbyte")[0].outputs[0]
+        assert r.tainted_bytes(set_out) == Intervals.whole()
+        assert r.is_scalar_tainted(get_out)
+
+    def test_setbit_tainted_bit_marks_only_possible_byte(self):
+        # A tainted bit written at bit index 8 controls byte 1 of a clean buffer.
+        p, r = _taint(
+            "#pragma version 8\nbyte 0x0000\nint 8\n"
+            "txna ApplicationArgs 0\nbtoi\nsetbit\npop\nint 1\nreturn\n"
+        )
+        set_out = _by_op(p, "setbit")[0].outputs[0]
+        assert r.tainted_bytes(set_out) == Intervals([(1, 2)])
+
+    def test_setbyte_tainted_index_controls_possible_output_bytes(self):
+        # The written byte is clean, but choosing whether it lands at offset 0
+        # or 1 still controls the result. Previously only a tainted BYTE value
+        # was considered, so an attacker-selected destination looked clean.
+        p, r = _taint(
+            "#pragma version 8\nbyte 0x0000\n"
+            "txna ApplicationArgs 0\nbtoi\nint 1\nsetbyte\npop\nint 1\nreturn\n"
+        )
+        set_out = _by_op(p, "setbyte")[0].outputs[0]
+        assert r.tainted_bytes(set_out) == Intervals([(0, 2)])
 
 
 class TestForwardPropagation:
@@ -251,6 +285,24 @@ class TestValidationNarrowing:
         arg = [a for a in p.assignments if a.op == "txna"][0].outputs[0]
         return r, gb.outputs[0], arg
 
+    def test_validation_unification_restores_forward_and_reverse_wiring(self):
+        teal = (
+            "#pragma version 8\n"
+            "txna ApplicationArgs 0\npop\n"
+            "txna ApplicationArgs 0\npop\n"
+            "int 1\nreturn\n"
+        )
+        p = SSAProgram.from_text(teal, name="t")
+        inputs_before = {id(a): tuple(id(i) for i in a.inputs) for a in p.assignments}
+        uses_before = {id(v): tuple(id(u) for u in v.uses) for v in p.vars.values()}
+        flags_before = (p._inputs_propagated, p._shuffles_propagated)
+
+        byte_taint(p, validate=True)
+
+        assert {id(a): tuple(id(i) for i in a.inputs) for a in p.assignments} == inputs_before
+        assert {id(v): tuple(id(u) for u in v.uses) for v in p.vars.values()} == uses_before
+        assert (p._inputs_propagated, p._shuffles_propagated) == flags_before
+
     def test_checked_prefix_clears_taint(self):
         # bytes 0..7 pinned to a const -> read of byte 3 is NOT tainted, and
         # the canonical arg's taint narrows to [8, INF).
@@ -333,6 +385,28 @@ class TestValidationNarrowing:
             r = byte_taint(p, validate=True)
             read = [a for a in p.assignments if a.op == "getbyte"][-1].outputs[0]
             assert r.is_scalar_tainted(read), f"{field} wrongly cleared taint"
+
+    @pytest.mark.parametrize(
+        ("field", "convert"),
+        (("CallerApplicationAddress", ""), ("CallerApplicationID", "itob\n")),
+    )
+    def test_caller_application_identity_is_not_authorization(self, field, convert):
+        """An attacker can deploy the immediate caller application.
+
+        Pinning an argument to ``CallerApplication*`` proves who supplied the
+        value but does not make that value trusted; clearing it here hid sinks
+        directed to an attacker-owned caller app/address.
+        """
+        teal = (
+            "#pragma version 8\n"
+            "txna ApplicationArgs 0\ndup\n"
+            f"global {field}\n{convert}==\nassert\n"
+            "log\nint 1\nreturn\n"
+        )
+        p = SSAProgram.from_text(teal, name="t")
+        r = byte_taint(p, validate=True)
+        logged = [a for a in p.assignments if a.op == "log"][0].inputs[0]
+        assert r.tainted_bytes(logged), f"{field} wrongly cleared attacker taint"
 
     def test_slice_eq_attacker_slice_does_not_clear(self):
         # assert(extract 0 8 arg0 == extract 0 8 arg1) — BOTH sides are

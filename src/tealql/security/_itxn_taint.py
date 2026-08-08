@@ -12,7 +12,15 @@ from dataclasses import dataclass
 from typing import Optional
 
 from tealql.tealtools.path_predicates import PathPredicateAnalysis
-from tealql.tealtools.ssa import Assignment, Const, SSAProgram, SSAVar
+from tealql.tealtools.ssa import (
+    Assignment,
+    Const,
+    SSAProgram,
+    SSAVar,
+    binary_operands,
+    const_bytes,
+    const_int,
+)
 
 from ._program_shape import file_match, global_field_reads, ssavar_outputs, txn_field_reads
 from ._value_flow import (
@@ -283,12 +291,154 @@ def _compute_user_input_taint(prog: SSAProgram, file: Optional[str] = None) -> d
 
 
 
+def sender_vars(prog: SSAProgram, *, file: Optional[str] = None) -> set:
+    """SSAVars reading the current ``txn Sender``."""
+    return ssavar_outputs(txn_field_reads(prog, "Sender", file=file))
+
+
 def sender_creator_vars(prog: SSAProgram, *, file: Optional[str] = None) -> set:
-    """SSAVars reading ``txn Sender`` / ``global CreatorAddress`` — seeds for the
-    "this access is gated on who sent it" suppression."""
+    """Compatibility API: current ``txn Sender`` and ``CreatorAddress`` reads.
+
+    New guard-classification code must use :func:`sender_vars`: creator is a
+    sound identity to compare Sender *against*, but is not itself evidence that
+    a condition checks who sent the transaction.
+    """
     return (
-        ssavar_outputs(txn_field_reads(prog, "Sender", file=file))
+        sender_vars(prog, file=file)
         | ssavar_outputs(global_field_reads(prog, "CreatorAddress", file=file))
+    )
+
+
+_GUARD_VALUE_OPAQUE_OPS = frozenset({"len", "bitlen", "bzero"})
+_GUARD_EQ_OPS = frozenset({"==", "b=="})
+_GUARD_NEQ_OPS = frozenset({"!=", "b!="})
+_GUARD_CMP_OPS = frozenset({
+    "==", "!=", "<", "<=", ">", ">=",
+    "b==", "b!=", "b<", "b<=", "b>", "b>=",
+})
+
+
+def _value_predicate_checks_slots(value, kind: str, args: tuple,
+                                  sink_slots: frozenset, taint: dict) -> bool:
+    """Whether a forced predicate meaningfully constrains ``sink_slots``.
+
+    Slot taint alone is insufficient: it also reaches length-only transforms,
+    tautologies, and bypassable boolean arms.  Crediting any of those as a value
+    guard suppresses the fund-flow finding even though the attacker still
+    chooses the complete value.  This is the SSA counterpart of the lifted-IR
+    guard classifier; it deliberately stays local so the public fallback keeps
+    working when lifting fails.
+    """
+    seen: set[tuple[int, bool, bool, bool, bool]] = set()
+
+    def value_origin(v):
+        """Peel stack-copy ops whose several SSA outputs denote one value."""
+        origin_seen: set[int] = set()
+        while id(v) not in origin_seen:
+            origin_seen.add(id(v))
+            d = getattr(v, "defined_by", None)
+            if d is None or d.op not in {"dup", "dupn"} or len(d.inputs) != 1:
+                break
+            v = d.inputs[0]
+        return v
+
+    if kind in {"neq", "not_in_range", "neq_all"}:
+        return False                              # exclusions do not pin the value
+    if (kind in {"eq", "lt", "le", "gt", "ge"} and args
+            and value_origin(value) is value_origin(args[0])):
+        return False                              # decomposed x OP x predicate
+
+    def visit(v, guaranteed: bool, value_ok: bool, sense: bool,
+              input_ok: bool) -> bool:
+        key = (id(v), guaranteed, value_ok, sense, input_ok)
+        if key in seen:
+            return False
+        seen.add(key)
+        if not guaranteed or not value_ok or not input_ok:
+            return False
+
+        d = getattr(v, "defined_by", None)
+        if d is None or not d.inputs:
+            return bool(taint.get(v, frozenset()) & sink_slots)
+
+        operands = binary_operands(d)
+        if (d.op in _GUARD_CMP_OPS and operands is not None
+                and value_origin(operands[0]) is value_origin(operands[1])):
+            return False                         # x OP x is a constant predicate
+        if d.op == "%" and operands is not None and const_int(operands[1]) == 1:
+            return False                         # x % 1 is always zero
+
+        breaks = "||" if sense else "&&"
+        child_guaranteed = guaranteed and d.op != breaks
+        child_value_ok = value_ok and d.op not in _GUARD_VALUE_OPAQUE_OPS
+        child_sense = not sense if d.op == "!" else sense
+        child_input_ok: bool = input_ok
+        if ((d.op in _GUARD_NEQ_OPS and child_sense)
+                or (d.op in _GUARD_EQ_OPS and not child_sense)):
+            # Excluding one value does not meaningfully validate an attacker-
+            # chosen payee/amount; equality only pins on the equality arm.
+            child_input_ok = False
+        return any(
+            visit(inp, child_guaranteed, child_value_ok, child_sense,
+                  child_input_ok)
+            for inp in d.inputs
+        )
+
+    return visit(value, True, True, kind != "zero", True)
+
+
+def _identity_is_attacker_supplied(value, taint: dict,
+                                   seen: Optional[set] = None) -> bool:
+    """Whether ``value`` is not a trustworthy sender-equality counterpart."""
+    if taint.get(value, frozenset()):
+        return True
+    raw = const_bytes(value)
+    if raw is not None:
+        # Sender is always a 32-byte non-zero address. A short/int/zero literal
+        # makes the equality impossible rather than authorizing an identity.
+        h = raw[2:] if raw.startswith("0x") else raw
+        return len(h) != 64 or set(h) <= {"0"}
+    if isinstance(value, Const):
+        return True
+    if seen is None:
+        seen = set()
+    if id(value) in seen:
+        return False
+    seen.add(id(value))
+    d = getattr(value, "defined_by", None)
+    if d is None:
+        return False
+    if d.op.startswith("gtxn"):
+        return True                    # the attacker composes the sibling txn
+    if (d.op == "global"
+            and d.immediates.strip() in {
+                "CallerApplicationID", "CallerApplicationAddress",
+            }):
+        return True                    # an attacker can deploy the caller app
+    return any(_identity_is_attacker_supplied(i, taint, seen) for i in d.inputs)
+
+
+def _sender_equality_pins_identity(prog: SSAProgram, cond, taint: dict,
+                                   sender_vars: set, *, file: str) -> bool:
+    """True only for an equality between Sender and one trusted identity."""
+    operands = None
+    if cond.kind == "eq" and cond.args:
+        operands = (cond.value, cond.args[0])
+    elif cond.kind == "nonzero":
+        d = getattr(cond.value, "defined_by", None)
+        if d is not None and d.op in _GUARD_EQ_OPS:
+            operands = binary_operands(d)
+    if operands is None:
+        return False
+    is_sender = [
+        _operand_flows_from_field_var(prog, op, sender_vars) for op in operands
+    ]
+    if sum(is_sender) != 1:            # no Sender, or Sender == Sender tautology
+        return False
+    other = operands[0] if is_sender[1] else operands[1]
+    return (
+        not _identity_is_attacker_supplied(other, taint)
+        and not value_is_zero_address(prog, other, file=file)
     )
 
 
@@ -313,13 +463,10 @@ def itxn_value_guarded(
     preds = pp.predicates_at(file=file, line=assignment.location.line)
     for cond in preds:
         v = cond.value
-        if taint.get(v, frozenset()) & sink_slots:        # value-check
+        if _value_predicate_checks_slots(
+                v, cond.kind, cond.args, sink_slots, taint):
             return True
-        d = getattr(v, "defined_by", None)
-        if (d is not None and d.op == "==" and cond.kind == "nonzero"
-                and any(_operand_flows_from_field_var(prog, op, sender_vars)
-                        for op in d.inputs)
-                and not any(value_is_zero_address(prog, op, file=file)
-                            for op in d.inputs)):       # sender IDENTITY pin
+        if _sender_equality_pins_identity(
+                prog, cond, taint, sender_vars, file=file):
             return True
     return False

@@ -78,6 +78,26 @@ def test_length_check_is_not_a_value_guard(tmp_path):
     assert not amt[0].guarded, "length-only guard flow must be reported"
 
 
+@pytest.mark.parametrize("guard", [
+    "txn ApplicationArgs 0\nbtoi\nint 1\n||\nassert",
+    "txn ApplicationArgs 0\ndup\n==\nassert",
+    "txn ApplicationArgs 0\nbtoi\nint 1\n%\nint 0\n==\nassert",
+])
+def test_vacuous_input_predicate_is_not_a_value_guard(guard, tmp_path):
+    teal = f"""#pragma version 10
+{guard}
+itxn_begin
+txn ApplicationArgs 0
+itxn_field Receiver
+itxn_submit
+int 1
+return
+"""
+    rec = [f for f in _flows(teal, tmp_path) if f.field == "Receiver"]
+    assert len(rec) == 1
+    assert not rec[0].guarded
+
+
 def test_or_bypassable_sender_guard_not_credited(tmp_path):
     """`assert((Sender == Creator) || attacker_flag)` does NOT guarantee the sender
     check — it passes whenever the attacker sets the flag. The sender check under
@@ -185,6 +205,28 @@ def test_sender_guarded(tmp_path):
     assert len(amt) == 1
     assert amt[0].guarded
     assert any(g.checks_sender for g in amt[0].guards), "the txn Sender check guards it"
+
+
+@pytest.mark.parametrize("identity", [
+    "txn ApplicationArgs 1",
+    "gtxn 1 Sender",
+    "byte 0x0102",
+])
+def test_untrusted_sender_identity_is_not_guarded(identity, tmp_path):
+    teal = f"""#pragma version 10
+txn Sender
+{identity}
+==
+assert
+itxn_begin
+txn ApplicationArgs 0
+itxn_field Receiver
+itxn_submit
+int 1
+return
+"""
+    rec = [f for f in _flows(teal, tmp_path) if f.field == "Receiver"]
+    assert len(rec) == 1 and not rec[0].guarded
 
 
 def test_input_value_guarded(tmp_path):

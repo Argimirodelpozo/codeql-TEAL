@@ -125,7 +125,7 @@ class PartialTaintedFundFlowDetector:
                 self.prog, file=self.file, path_predicates=self.pp).detect()
         }
         bt = _cached_byte_taint(self.prog)
-        sender_vars = common.sender_creator_vars(self.prog, file=self.file)
+        sender_vars = common.sender_vars(self.prog, file=self.file)
         taint = common.user_input_taint(self.prog, self.file)   # input-slot map
         violations: list = []
         for fs in common.inner_txn_field_assigns(self.prog, file=self.file):

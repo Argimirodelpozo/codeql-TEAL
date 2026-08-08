@@ -1,5 +1,5 @@
 """Unify reads of *execution-stable* inputs onto one canonical SSAVar per
-``(op, immediates [, stack-key])``.
+``(file, op, immediates [, stack-key])``.
 
 HAZARD: unifying a read that is NOT execution-stable merges two genuinely
 different values and every downstream verdict inherits the error. Excluded for
@@ -59,7 +59,12 @@ def _input_key(a: Assignment) -> Optional[tuple]:
     if op in _STABLE_INPUT_OPS_IMM_ONLY:
         if op == "global" and a.immediates.strip() in _UNSTABLE_GLOBAL_FIELDS:
             return None
-        return (op, a.immediates)
+        # A directory-valued SSAProgram contains independent AVM programs.
+        # CreatorAddress and other globals can differ between them, and even
+        # transaction reads must not grow def-use edges across disconnected
+        # programs.  Omitting the file rewired every duplicate read in file B
+        # to file A's SSAVar.
+        return (a.location.file, op, a.immediates)
     if op in _STABLE_INPUT_OPS_STACK:
         if not a.inputs:
             return None
@@ -69,7 +74,7 @@ def _input_key(a: Assignment) -> Optional[tuple]:
         idx_keys = tuple(_operand_key(x) for x in a.inputs)
         if any(k is None for k in idx_keys):
             return None
-        return (op, a.immediates, idx_keys)
+        return (a.location.file, op, a.immediates, idx_keys)
     return None
 
 

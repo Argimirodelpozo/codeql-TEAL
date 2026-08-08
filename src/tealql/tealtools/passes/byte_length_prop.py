@@ -152,7 +152,7 @@ def _op_byte_length(a: Assignment) -> Optional[int]:
     # Length-preserving ops inherit the BUFFER's byte_length. The buffer X is
     # pushed first, so TOP-FIRST it is the DEEPEST operand ``inputs[-1]``, not
     # ``inputs[0]``.
-    if op in ("setbyte", "replace2", "replace3"):
+    if op in ("setbyte", "setbit", "replace2", "replace3"):
         if not a.inputs:
             return None
         return _operand_byte_length(a.inputs[-1])

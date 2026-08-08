@@ -99,9 +99,11 @@ def test_string_is_bytes_backed():
 
 def test_vrf_verify_output_is_bytes():
     # vrf_verify pushes (64-byte output, verified-flag) — top-first the flag is
-    # slot 0 (uint64), the 64-byte output is slot 1 (bytes). Previously slot 1
-    # fell through to the uint64 default, mistyping the VRF output.
-    assert _multi_out_type("vrf_verify", "VrfAlgorand", 0) == "uint64"
+    # slot 0 (bool), the 64-byte output is slot 1 (bytes). Previously slot 1 fell
+    # through to the uint64 default, mistyping the VRF output.  The flag became
+    # the more precise `bool` when all multi-output existence/verification flags
+    # were normalized; keep this assertion in step with that public metadata.
+    assert _multi_out_type("vrf_verify", "VrfAlgorand", 0) == "bool"
     assert _multi_out_type("vrf_verify", "VrfAlgorand", 1) == "bytes"
 
 
