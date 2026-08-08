@@ -192,29 +192,64 @@ def _cheapest_cycle(header: BasicBlock, body: set, back_edges: list):
     return best
 
 
-def _prefix_cost(cfg: CFG, header: BasicBlock) -> int:
-    """Budget CERTAINLY spent before ``header`` can run: the cost of its STRICT
-    dominators.
+def _entry_distances(cfg: CFG) -> dict:
+    """``block -> cheapest budget to REACH it from a program entry``, the block's
+    own cost included. Absent when no entry reaches it."""
+    import networkx as nx
 
-    Every path from entry to the header crosses all of them by definition, so
-    that budget is gone before the first iteration and the loop never gets the
-    full 700. Counting each once is the sound direction — a dominator that is
-    itself inside another loop runs MORE than once, which only spends more.
+    g = nx.DiGraph()
+    g.add_nodes_from(cfg.blocks)
+    for bb in cfg.blocks:
+        for s in bb.successors:
+            g.add_edge(bb, s, weight=block_cost(s))     # pay on arrival
+    best: dict = {}
+    for entry in cfg.entries:
+        if entry not in g:
+            continue
+        base = block_cost(entry)
+        for node, d in nx.single_source_dijkstra_path_length(
+                g, entry, weight="weight").items():
+            total = base + d
+            if node not in best or total < best[node]:
+                best[node] = total
+    return best
 
-    HAZARD: dominators of the header are necessarily OUTSIDE this loop (a body
-    block cannot dominate the entry it is reached through), so nothing here
-    double-counts the per-iteration cost."""
-    return sum(block_cost(b) for b in cfg.dominators(header) if b is not header)
+
+def _prefix_cost(cfg: CFG, header: BasicBlock, dist: dict) -> int:
+    """Budget CERTAINLY spent before ``header`` can run.
+
+    The execution takes SOME path from an entry to the header, and every path
+    costs at least the CHEAPEST one — so the cheapest path's cost is a lower
+    bound on what is already gone, and the loop never gets the full 700.
+
+    This subsumes the dominator sum it replaced and is never smaller: every path
+    crosses all of the header's dominators, so any path already costs at least
+    that much, and the cheapest one usually crosses more blocks besides.
+
+    HAZARD: block costs are NON-NEGATIVE, which is what makes plain Dijkstra
+    right here — a back edge can never shorten a path, so a loop on the way to
+    this one needs no special handling and the shortest path is always simple.
+    The header's own cost is excluded: that belongs to the per-iteration cost,
+    and counting it twice would over-subtract and under-report iterations, the
+    unsound direction for an upper bound.
+
+    Falls back to the dominator sum for a header no entry reaches (dead code),
+    where "the cheapest path" does not exist."""
+    reached = dist.get(header)
+    if reached is None:
+        return sum(block_cost(b) for b in cfg.dominators(header) if b is not header)
+    return max(0, reached - block_cost(header))
 
 
 def analyze_loops(prog: SSAProgram, cfg: Optional[CFG] = None) -> "list[LoopBound]":
     """Every natural loop with its cost and iteration bounds, header order."""
     cfg = cfg or CFG.of(prog)
+    dist = _entry_distances(cfg)
     out: list[LoopBound] = []
     for header, body, back_edges in _natural_loops(cfg):
         cost, delta = _cheapest_cycle(header, body, back_edges)
         cost = max(1, cost)                      # every cycle charges something
-        prefix = _prefix_cost(cfg, header)
+        prefix = _prefix_cost(cfg, header, dist)
         budget_bound = max(0, APP_OPCODE_BUDGET - prefix) // cost
         # Only a net-POSITIVE cycle is bounded by the stack; anything else can
         # spin without growing it.

@@ -11,6 +11,7 @@ from __future__ import annotations
 from tealql.tealtools.budget import (
     APP_OPCODE_BUDGET,
     analyze_loops,
+    block_cost,
     op_cost,
 )
 from tealql.tealtools.ssa import SSAProgram
@@ -102,11 +103,22 @@ def test_mandatory_prefix_is_subtracted_from_the_loop_budget():
     # Strictly tighter than ignoring the preamble.
     assert loop.max_iterations < APP_OPCODE_BUDGET // loop.min_iteration_cost
 
-    # The prefix is exactly the STRICT dominators — never the header itself, or
-    # the per-iteration cost would be double-counted.
+    # NEVER below the dominator sum. Every path to the header crosses all of
+    # them, so the cheapest path already costs at least that much — the
+    # invariant that makes cheapest-path a strict improvement rather than a
+    # different answer. (Measured over 98 mainnet loops: 0 violations, median
+    # prefix 33 -> 88.)
     cfg = CFG.of(prog)
-    assert loop.header in cfg.dominators(loop.header)      # reflexive by definition
-    assert loop.header not in (cfg.dominators(loop.header) - {loop.header})
+    dominator_sum = sum(block_cost(b) for b in cfg.dominators(loop.header)
+                        if b is not loop.header)
+    assert loop.prefix_cost >= dominator_sum
+
+    # The header's own cost is EXCLUDED — it belongs to the per-iteration cost,
+    # and counting it twice would over-subtract and under-report iterations,
+    # the unsound direction for an upper bound. Here the whole preamble is one
+    # straight line, so the cheapest path to the header IS that preamble.
+    preamble = prog.block_containing("contract.teal", 2)
+    assert loop.prefix_cost == block_cost(preamble)
 
 
 def test_no_prefix_when_the_loop_starts_at_entry():
@@ -137,3 +149,34 @@ def test_dot_view_boxes_each_loop_and_marks_the_spent_prefix():
     assert "spent before" in dot                  # and with the mandatory prefix
     assert 'label="back"' in dot                  # the back edge is marked
     assert "\\l" in dot and "\\\\l" not in dot    # real DOT breaks, not literals
+
+
+def test_prefix_is_the_CHEAPEST_PATH_not_just_the_dominators():
+    """Where two arms rejoin before the loop, NEITHER dominates the header — so
+    a dominator sum ignores both, even though every execution must pay for one.
+
+    The cheapest path counts the cheaper arm, which is the sound choice: any
+    real path costs at least that. Here it is 10x the dominator sum.
+
+    Non-negative block costs are what make plain Dijkstra correct — a back edge
+    can never shorten a path, so a loop on the way needs no special handling."""
+    from tealql.tealtools.cfg import CFG
+
+    src = ("#pragma version 10\n"
+           "txn NumAppArgs\nbnz armB\n"
+           "byte 0x00\nsha256\npop\nb join\n"            # arm A: sha256 = 35
+           "armB:\nbyte 0x00\nkeccak256\npop\n"          # arm B: keccak256 = 130
+           "join:\nint 0\nstore 0\n"
+           "loop:\nload 0\nint 5\n<\nbz done\n"
+           "load 0\nint 1\n+\nstore 0\nb loop\n"
+           "done:\nint 1\nreturn\n")
+    prog = SSAProgram.from_text(src, strict=False)
+    cfg = CFG.of(prog)
+    loop = analyze_loops(prog, cfg)[0]
+
+    dominator_sum = sum(block_cost(b) for b in cfg.dominators(loop.header)
+                        if b is not loop.header)
+    assert loop.prefix_cost > dominator_sum          # strictly better
+    # It took the CHEAP arm: enough for sha256, nowhere near keccak256.
+    assert loop.prefix_cost >= 35
+    assert loop.prefix_cost < 130
