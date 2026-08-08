@@ -16,9 +16,10 @@ Puya then rejects the result outright:
 
 and the ENTIRE lift dies — no IR, no lowering, no analysis, for a 6258-line contract.
 
-The arm becomes an explicit unknown of the phi's own type, matching the policy already applied to
-non-register arms: coercing (itob/btoi) would assert a plausible WRONG value on a path that may be
-live, and failing the lift costs every analysis downstream.
+The original repair made that arm an explicit unknown of the phi's own type. The first-class
+bottom-position frame lowering now removes the artifact earlier: this contract's offending merge
+was created by the versioned-frame fallback, while its real boundary values agree. No arm needs to
+be lost, and the three frame positions that genuinely remain unproved are counted explicitly.
 
 WHY THE FIXTURE IS A REAL CONTRACT. Every synthetic shape tried lifts without touching this path —
 constant arms are handled by the existing branches, and register arms from `txn`/`txna`, through
@@ -39,7 +40,7 @@ import pytest
 
 pytest.importorskip("puya")
 
-from tealql.tealtools.lift import to_puya                # noqa: E402
+from tealql.tealtools.lift import lift, to_puya          # noqa: E402
 from tealql.tealtools.ssa import SSAProgram              # noqa: E402
 
 CONTRACT = Path(__file__).resolve().parent / "contracts" / "reti-crossfamily-phi" / "approval.teal"
@@ -59,18 +60,21 @@ def test_the_contract_lifts():
     assert len(main.body) > 40, f"degenerate lift — only {len(main.body)} main blocks"
 
 
-def test_exactly_one_arm_is_given_up(caplog):
-    """The reconciliation must stay SURGICAL, and must announce itself.
+def test_no_arm_is_given_up_after_bottom_position_recovery(caplog):
+    """The historical cross-family arm was a frame-reconstruction artifact.
 
-    One arm of one phi in 6258 lines. If this number climbs, the lift is discarding values it could
-    have kept, and the warning is the only thing separating "reconciled one genuinely two-typed
-    cell" from "quietly stopped modelling a lot of the contract".
+    The old versioned-local fallback met a depth-divergent join with a
+    placeholder of the other AVM family and sacrificed one arm. FrameAnalysis
+    now proves the untouched bottom positions across that multi-entry region,
+    so the real values agree and no arm is lost. Keep the remaining three
+    genuinely written/unproved slots explicit and counted.
     """
     with caplog.at_level(logging.WARNING, logger="tealql.tealtools.lift"):
-        to_puya(_prog())
+        ir = lift(_prog())
     lost = [r for r in caplog.records if "cross-family" in r.getMessage()]
-    assert len(lost) == 1, (f"expected exactly 1 cross-family arm, got {len(lost)}: "
-                            f"{[r.getMessage()[:70] for r in lost]}")
+    assert not lost, [r.getMessage() for r in lost]
+    assert ir.pass_stats["frame_position_phis"] == 1
+    assert ir.pass_stats["frame_slot_refusals"] == 3
 
 
 def test_same_family_arms_are_untouched(tmp_path, caplog):

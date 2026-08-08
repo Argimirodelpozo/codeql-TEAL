@@ -18,6 +18,7 @@ pytest.importorskip("puya")  # pre_ir package __init__ eagerly imports the lift
 from tealql.tealtools.avm import avm, _multi_out_type  # noqa: E402
 from tealql.tealtools.lift.type_recovery import (  # noqa: E402
     _avm_join,
+    _stamp_undefined_operands,
     _unify_comparison_operands,
 )
 from tealql.tealtools.lift.transforms import sink_mixed_phi_scratch_stores  # noqa: E402
@@ -113,6 +114,18 @@ def test_string_phi_join_stays_bytes():
     assert _avm_join({"string", "bytes"}) == "bytes"
     # a real cross-divide set is still unresolved (sound).
     assert _avm_join({"string", "uint64"}) is None
+
+
+def test_a_refused_bytes_operand_is_typed_for_its_use():
+    unknown = pre_ir.Undefined()
+    intrinsic = pre_ir.Intrinsic("extract", [113, 8], [unknown])
+    program = pre_ir.Program(main=pre_ir.Subroutine(
+        "main", [], [], [pre_ir.BasicBlock(
+            0, [], [pre_ir.IntrinsicOp(intrinsic)],
+            pre_ir.ProgramExit(pre_ir.UInt64Constant(1)))], is_main=True))
+    _stamp_undefined_operands(program)
+    assert isinstance(intrinsic.args[0], pre_ir.Undefined)
+    assert intrinsic.args[0].ir_type == "bytes"
 
 
 # --------------------------------------------------------------------------
@@ -288,6 +301,31 @@ _RECOMPILE_ALWAYS = (
     "app_2645463331.teal", "app_2300200702.teal", "app_2694165644.teal",
     "app_2500525325.teal",
 )
+
+
+@pytest.mark.parametrize("name", _RECOMPILE_ALWAYS[:3])
+def test_poisoned_frame_templates_use_position_phis_not_versioned_locals(name):
+    """The three varying-height templates that once required ``l%N.version``
+    must stay on the first-class FrameAnalysis -> pre-IR path.
+
+    Five distinct loop-carried positions are recoverable. A second poisoned
+    proto return is recovered from its dominating in-block bury even though its
+    multi-entry region has no global anchor; pinning both numbers keeps
+    precision and honest gaps visible instead of silently falling back to
+    another frame implementation.
+    """
+    from pathlib import Path
+
+    from tealql.tealtools.lift.lift import _Lifter
+    from tealql.tealtools.ssa import SSAProgram
+
+    path = Path(__file__).resolve().parent / "mainnet-random-probes" / name
+    if not path.is_file():
+        pytest.skip(f"{name} not present")
+    ir = _Lifter(SSAProgram(str(path))).build()
+    assert ir.pass_stats["frame_position_phis"] == 5
+    assert ir.pass_stats["frame_slot_refusals"] == 0
+    assert not any(reg.local_id.startswith("l%") for reg in pre_ir.registers(ir))
 
 
 @pytest.mark.slow

@@ -372,6 +372,33 @@ def _frame_cells(instruction, res, *, allow_pending=False):
     return cells, pending
 
 
+def _frame_cell_root(value, seen=None):
+    """Collapse a loop phi that only carries one value plus itself.
+
+    The ordinary stack join must keep ``phi(seed, self)`` structurally, but for
+    a bottom-position equality proof it is exactly ``seed``. Without this
+    normalization a stable frame local crossing an unrelated loop looks like
+    two different boundary values and the multi-entry frame proof refuses it.
+    """
+    visited = set() if seen is None else seen
+    while hasattr(value, "args") and id(value) not in visited:
+        visited.add(id(value))
+        args = [arg for arg in value.args if arg is not value]
+        if not args:
+            break
+        roots = [_frame_cell_root(arg, set(visited)) for arg in args]
+        if not all(root is roots[0] for root in roots[1:]):
+            break
+        value = roots[0]
+    return value
+
+
+def _same_frame_cell(cells):
+    roots = [_frame_cell_root(cell) for cell in cells]
+    return (roots[0] if roots and all(root is roots[0] for root in roots[1:])
+            else None)
+
+
 def _resolve_frame(instruction, res):
     """The single frame answer for consumers with no phi home: the per-arm
     cells when they all agree, else None."""
@@ -379,9 +406,7 @@ def _resolve_frame(instruction, res):
     if got is None:
         return None
     cells, _pending = got
-    if cells and all(c is cells[0] for c in cells):
-        return cells[0]
-    return None
+    return _same_frame_cell(cells)
 
 
 def _return_slot(instruction, index):
@@ -772,10 +797,10 @@ def _exec(o, b, stack, nargs, res, bb_to_sub, retsubs, arity, phi_factory,
             cell = None
             if got is not None:
                 cells, pending_w = got
-                if not pending_w and cells and all(c is cells[0]
-                                                   for c in cells):
-                    cell = cells[0]
-                else:
+                same = _same_frame_cell(cells)
+                if not pending_w and same is not None:
+                    cell = same
+                elif getattr(instruction, "allow_phi", True):
                     # Distinct arms (a loop-carried write merging with the
                     # entry value, or several per-path entry cells). Their
                     # true merge point is the REGION ENTRY — the loop header

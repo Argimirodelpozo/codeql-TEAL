@@ -20,7 +20,7 @@ from ..ssa import (
     _shuffle_mapping,
 )
 from ..ssa import stacksim as stack_engine
-from ..ssa.frame_slots import resolve_layout
+from ..ssa.frame_slots import ReturnSlots, SlotMerge
 from ..ssa.models import Assignment as _SSAAssignment, BasicBlock as _SSABasicBlock
 from ..structure import analyze_structure
 from . import pre_ir, transforms, type_recovery
@@ -288,6 +288,7 @@ class _Lifter:
         self.stack_args: dict = {}                # id(assignment) -> [pre-IR operand]
         self.stack_phis: dict = {}                # BasicBlock -> [pre_ir.Phi]
         self.stack_exit: dict = {}                # BasicBlock -> PRE-IR value stack
+        self._phi_by_register: dict = {}          # id(Register) -> live pre-IR Phi
         self._param_phis: set = set()             # non-proto entry arg phis -> params (skip)
         # Producer map + scratch reaching-def (per `load N`, the SSAVars its
         # influencing `store N`s wrote) -- call args are passed via scratch here,
@@ -373,16 +374,33 @@ class _Lifter:
         # the canonical live stack instead of a second versioned-local model.
         self.frame_map: dict = {}
         self.shuffle_src: dict = {}           # SSAVar (shuffle output) -> source operand
-        # Narrow compatibility fallback for groups whose bottom anchor is
-        # unavailable. Exact-height groups use only the canonical live stack.
-        self.local_regs: dict = {}
-        self._fr_regs: dict = {}
-        self.bury_target: dict = {}
-        self.frame_passthrough: set = set()
-        self.pushed_slot: dict = {}
-        self.frame_local_slot: dict = {}
+        # Bottom-position frame reads in a depth-poisoned region are described
+        # once by SSA's canonical FrameAnalysis.  Translate that typed plan to
+        # edge-correlated pre-IR phis; do not reconstruct a second, versioned
+        # ``l%slot.version`` frame model here.
+        pyssa = getattr(self.prog, "_pyssa", None)
+        frame_analysis = getattr(pyssa, "_frame_analysis", None)
         self._height_poisoned = set(
-            getattr(getattr(self.prog, "_pyssa", None), "_height_poisoned", ()) or ())
+            getattr(frame_analysis, "poisoned", ()) or ())
+        frame_instructions = getattr(frame_analysis, "instructions", {}) or {}
+        self._frame_reads_by_site: dict = {}
+        self._frame_returns_by_site: dict = {}
+        for py_block in getattr(pyssa, "blocks", ()) or ():
+            for py_op in py_block.ops:
+                instruction = frame_instructions.get(id(py_op))
+                if isinstance(instruction, SlotMerge):
+                    self._frame_reads_by_site[(py_op.file, py_op.line)] = instruction
+                elif isinstance(instruction, ReturnSlots):
+                    self._frame_returns_by_site[(py_op.file, py_op.line)] = instruction
+        self._assignment_by_site = {
+            (a.location.file, a.location.line): a for a in self.prog.assignments
+        }
+        self.frame_phis: dict = {}          # BasicBlock -> [position-keyed Phi]
+        self._frame_phi_cache: dict = {}    # SlotMerge signature -> Register
+        self._frame_phi_read_ids: dict = {} # signature -> poisoned read ids
+        self._frame_phi_pending: list = []  # (PhiArgument, known values, writes)
+        self._frame_refusals: set = set()   # poisoned frame_dig Assignment ids
+        self._frame_return_values: dict = {}# retsub Assignment -> [pre-IR value]
         self.cur_gname = "main"
         self.cur_nret = 0                     # proto return count of the group being built
         # Inter-procedural return wiring: alias the continuation's return phi(s) to
@@ -441,7 +459,6 @@ class _Lifter:
             # `_control_retsub` picks its return-slot rule off this: proto subs read
             # returns off frame slots, non-proto subs leave them on the value stack.
             self.cur_is_proto = (s is not None and s.entry_bb in self._proto_entries)
-            self._setup_poisoned_frame_fallback(gb, params)
             self._setup_shuffles(gb)
             self._name_group(gb)
             # Main-group entry = the block holding the first instruction, NOT "a
@@ -449,7 +466,10 @@ class _Lifter:
             # that set is empty, or holds only a dead-code block further down.
             entry = (s.entry_bb if s is not None
                      else min(gb, key=lambda b: (b.file, b.first_line)))
+            self._current_group = set(gb)
             self._simulate_group(gb, entry, params)
+            self._prepare_frame_returns(gb)
+            self._finish_frame_phis()
             body = [self._build_block(bb) for bb in gb]
             if s is None:
                 file = all_blocks[0].file.split("/")[-1] if all_blocks else "program"
@@ -469,6 +489,8 @@ class _Lifter:
             "splice_subs": len(self._spliced_subs),
             "splice_sites": len(self._splice_entry),
             "doomed_edges": len(self.doomed_edges),
+            "frame_position_phis": sum(map(len, self.frame_phis.values())),
+            "frame_slot_refusals": len(self._frame_refusals),
         }
         self._apply_doomed_edges()
         transforms.prune_dead_phis(self.subs)
@@ -768,12 +790,6 @@ class _Lifter:
             self.regs[o] = self._new_reg("v", self.type_of(o))
         return self.regs[o]
 
-    def _local(self, slot: int) -> pre_ir.Register:
-        key = (self.cur_gname, slot)
-        if key not in self.local_regs:
-            self.local_regs[key] = pre_ir.Register(f"l%{slot}", 0, "?")
-        return self.local_regs[key]
-
     def _range_comment(self, outs) -> str | None:
         """``// v0 = 1, len(v1) = 8`` style note for an assignment's ranged outputs,
         or ``None`` when nothing informative is annotated."""
@@ -792,35 +808,196 @@ class _Lifter:
                         parts.append(note)
         return ", ".join(parts) if parts else None
 
-    def _setup_poisoned_frame_fallback(self, blocks, params) -> None:
-        """Materialise frame locals only when no exact bottom anchor exists.
+    def _frame_value_root(self, value, seen=None):
+        """Collapse ``phi(seed, self)`` for bottom-position equality checks."""
+        if not isinstance(value, pre_ir.Register):
+            return value
+        visited = set() if seen is None else seen
+        if id(value) in visited:
+            return value
+        phi = self._phi_by_register.get(id(value))
+        if phi is None:
+            return value
+        visited.add(id(value))
+        args = [arg.value for arg in phi.args if arg.value is not value]
+        if not args:
+            return value
+        roots = [self._frame_value_root(arg, set(visited)) for arg in args]
+        return (roots[0] if all(root == roots[0] for root in roots[1:])
+                else value)
 
-        This preserves recompilation for the three corpus templates whose
-        varying-height frame merges cannot yet be expressed as ordinary pre-IR
-        phis. It is deliberately not the primary frame model: all exact groups
-        bypass it and use the shared stack state directly.
+    def _single_value(self, values):
+        """Return the one semantic value in ``values``, else ``None``.
+
+        Constants can be reconstructed independently on two paths, so value
+        equality is intentional. Register names are globally injective in this
+        lift, making equality just as strict as identity for registers.
         """
-        if not any((bb.file, bb.first_line, bb.last_line) in self._height_poisoned
-                   for bb in blocks):
-            return
-        layout = resolve_layout(blocks, len(params))
-        for output, index in layout.dig_param.items():
-            self.frame_map[output] = params[index].register
-        for output, (slot, version) in layout.dig_local.items():
-            self.frame_map[output] = self._local_reg(slot, version)
-            self.frame_local_slot[output] = slot
-        for assignment_id, (slot, version) in layout.bury.items():
-            self.bury_target[assignment_id] = self._local_reg(slot, version)
-        self.shuffle_src.update(layout.passthrough)
-        self.frame_passthrough |= layout.pushed
-        self.pushed_slot.update(layout.pushed_slot)
+        if not values:
+            return None
+        roots = [self._frame_value_root(value) for value in values]
+        first = roots[0]
+        return first if all(value == first for value in roots[1:]) else None
 
-    def _local_reg(self, slot: int, version: int) -> pre_ir.Register:
-        key = (self.cur_gname, slot, version)
-        reg = self._fr_regs.get(key)
-        if reg is None:
-            reg = self._fr_regs[key] = pre_ir.Register(f"l%{slot}", version, "?")
-        return reg
+    @staticmethod
+    def _frame_signature(instruction: SlotMerge) -> tuple:
+        return (
+            instruction.home.key,
+            instruction.position,
+            tuple(pred.key for pred in instruction.entry_predecessors),
+            tuple((op.file, op.line) for op in instruction.writes),
+        )
+
+    def _frame_read_value(self, assignment, instruction: SlotMerge):
+        """Translate one canonical bottom-position merge to a pre-IR value.
+
+        Entry cells come from the already-walked predecessor exit stacks;
+        frame writes come from their already-recorded operands. Distinct values
+        become one phi at the region entry, correlated with the concrete entry
+        or backedge that carries each value. A write-after-read backedge is
+        filled after the routine walk, exactly like SSA's deferred frame arm.
+        """
+        home = self.prog.blocks.get(instruction.home.key)
+        if home is None:
+            self._frame_refusals.add(id(assignment))
+            return pre_ir.Undefined()
+
+        signature = self._frame_signature(instruction)
+        self._frame_phi_read_ids.setdefault(signature, set()).add(id(assignment))
+        cached = self._frame_phi_cache.get(signature)
+        if cached is not None:
+            return cached
+
+        semantic: list = []
+        semantic_pending: list = []
+        edge_values: dict = {}
+        edge_pending: dict = {}
+
+        for py_pred in instruction.entry_predecessors:
+            pred = self.prog.blocks.get(py_pred.key)
+            stack = self.stack_exit.get(pred)
+            if (pred is None or stack is None
+                    or not 0 <= instruction.position < len(stack)):
+                self._frame_refusals.add(id(assignment))
+                continue
+            value = stack[instruction.position]
+            semantic.append(value)
+            edge_values.setdefault(pred, []).append(value)
+
+        write_edges = {
+            id(write): predecessors
+            for write, predecessors in instruction.write_predecessors
+        }
+        for py_write in instruction.writes:
+            write = self._assignment_by_site.get((py_write.file, py_write.line))
+            if write is None:
+                self._frame_refusals.add(id(assignment))
+                continue
+            args = self.stack_args.get(id(write))
+            if args:
+                semantic.append(args[0])
+            else:
+                semantic_pending.append(write)
+
+            py_predecessors = write_edges.get(id(py_write), ())
+            predecessors = [self.prog.blocks.get(pred.key)
+                            for pred in py_predecessors]
+            predecessors = [pred for pred in predecessors if pred is not None]
+            # Compatibility with a FrameAnalysis produced by an older caller:
+            # a write in the immediate backedge block has an unambiguous edge
+            # even without the new correlation field.
+            if not predecessors and write.basic_block in home.predecessors:
+                predecessors = [write.basic_block]
+            for pred in predecessors:
+                if args:
+                    edge_values.setdefault(pred, []).append(args[0])
+                else:
+                    edge_pending.setdefault(pred, []).append(write)
+
+        one = self._single_value(semantic)
+        if one is not None and not semantic_pending:
+            if isinstance(one, pre_ir.Undefined):
+                self._frame_refusals.add(id(assignment))
+            return one
+        if not semantic and not semantic_pending:
+            self._frame_refusals.add(id(assignment))
+            return pre_ir.Undefined()
+        if not instruction.allow_phi:
+            self._frame_refusals.add(id(assignment))
+            return pre_ir.Undefined()
+
+        register = self._new_reg("tmp", "?")
+        phi = pre_ir.Phi(register, [])
+        self._phi_by_register[id(register)] = phi
+        self._frame_phi_cache[signature] = register
+        self.frame_phis.setdefault(home, []).append(phi)
+
+        predecessors = [pred for pred in home.predecessors
+                        if pred in self._current_group]
+        if not predecessors:
+            self._frame_refusals.add(id(assignment))
+        for pred in predecessors:
+            known = edge_values.get(pred, [])
+            pending = edge_pending.get(pred, [])
+            value = self._single_value(known)
+            if pending:
+                arg = pre_ir.PhiArgument(pre_ir.Undefined(), self.bid[pred])
+                self._frame_phi_pending.append(
+                    (signature, arg, tuple(known), tuple(pending)))
+            elif value is not None:
+                arg = pre_ir.PhiArgument(value, self.bid[pred])
+            else:
+                arg = pre_ir.PhiArgument(pre_ir.Undefined(), self.bid[pred])
+                self._frame_refusals.add(id(assignment))
+            phi.args.append(arg)
+        return register
+
+    def _prepare_frame_returns(self, blocks) -> None:
+        """Resolve poisoned proto return slots before pre-IR blocks are built.
+
+        ``retsub`` truncates a proto frame and returns its bottom-position
+        slots. It is therefore the same operation as a group of frame_digs,
+        and must use FrameAnalysis when the working stack is top-aligned.
+        """
+        if not self.cur_is_proto or not self.cur_nret:
+            return
+        for block in blocks:
+            key = (block.file, block.first_line, block.last_line)
+            if key not in self._height_poisoned:
+                continue
+            retsub = self.term_assign(block)
+            if retsub is None or retsub.op != "retsub":
+                continue
+            instruction = self._frame_returns_by_site.get(
+                (retsub.location.file, retsub.location.line))
+            values = []
+            for index in range(self.cur_nret):
+                slot = instruction.slots.get(index) if instruction else None
+                if slot is None:
+                    self._frame_refusals.add(id(retsub))
+                    values.append(pre_ir.Undefined())
+                else:
+                    values.append(self._frame_read_value(retsub, slot))
+            self._frame_return_values[id(retsub)] = values
+
+    def _finish_frame_phis(self) -> None:
+        """Fill loop-carried frame arms whose writes ran after their reads."""
+        pending, self._frame_phi_pending = self._frame_phi_pending, []
+        for signature, arg, known, writes in pending:
+            values = list(known)
+            missing = False
+            for write in writes:
+                args = self.stack_args.get(id(write))
+                if args:
+                    values.append(args[0])
+                else:
+                    missing = True
+            value = self._single_value(values)
+            if not missing and value is not None:
+                arg.value = value
+            else:
+                self._frame_refusals.update(
+                    self._frame_phi_read_ids.get(signature, ()))
 
     def _setup_shuffles(self, gb):
         # Puya is value-based, so a pure stack shuffle drops out: map each output
@@ -1041,6 +1218,11 @@ class _Lifter:
             return pre_ir.SubroutineReturn([])
         np = self.cur_nargs
         if self.cur_is_proto:
+            term = self.term_assign(bb)
+            planned = (self._frame_return_values.get(id(term))
+                       if term is not None else None)
+            if planned is not None:
+                return pre_ir.SubroutineReturn(planned)
             # Frame slots A..A+R-1: simulation seeds the stack with params, then
             # frame_bury deep-writes each slot at rsx[A+j]. NOT the top R -- a sub
             # keeping working locals past its returns has something else on top.
@@ -1155,6 +1337,7 @@ class _Lifter:
                 for pred, present, value in incoming
             ]
             phi = pre_ir.Phi(reg, args)
+            self._phi_by_register[id(reg)] = phi
             self.stack_phis.setdefault(block, []).append(phi)
             return reg, phi
 
@@ -1301,17 +1484,15 @@ class _Lifter:
             output = a.outputs[0] if a.outputs else None
             slot = _imm0(a)
             pos = len(params) + slot if slot is not None else -1
-            if output is not None and output in self.frame_passthrough:
-                pushed = self.pushed_slot.get(output)
-                live_pos = len(params) + pushed if pushed is not None else -1
-                source = (stack[live_pos] if 0 <= live_pos < len(stack)
-                          else self.value(output))
-            elif output is not None and output in self.frame_local_slot:
-                live_pos = len(params) + self.frame_local_slot[output]
-                source = (stack[live_pos] if 0 <= live_pos < len(stack)
-                          else self.frame_map.get(output) or pre_ir.Undefined())
-            elif output is not None and output in self.frame_map:
-                source = self.frame_map[output]
+            key = (b.file, b.first_line, b.last_line)
+            if key in self._height_poisoned:
+                instruction = self._frame_reads_by_site.get(
+                    (a.location.file, a.location.line))
+                if instruction is None:
+                    self._frame_refusals.add(id(a))
+                    source = pre_ir.Undefined()
+                else:
+                    source = self._frame_read_value(a, instruction)
             elif 0 <= pos < len(stack):
                 source = stack[pos]
             else:
@@ -1322,6 +1503,10 @@ class _Lifter:
             # the canonical register the shared stack state selected.
             if output is not None and isinstance(source, pre_ir.Register):
                 self.frame_map[output] = source
+                if a.inputs and isinstance(a.inputs[0], Phi):
+                    # SSA and pre-IR position phis are the same semantic merge;
+                    # make that boundary agreement visible to annotation users.
+                    self.frame_map[a.inputs[0]] = source
             return
         if a.op == "frame_bury":
             if stack:
@@ -1330,10 +1515,12 @@ class _Lifter:
                 slot = _imm0(a)
                 pos = len(params) + slot if slot is not None else -1
                 key = (b.file, b.first_line, b.last_line)
-                # The compatibility layout gives subsequent reads their
-                # versioned register; keep the physical window conservative.
-                stored = (pre_ir.Undefined() if key in self._height_poisoned
-                          and id(a) not in self.bury_target else v)
+                # A poisoned block has no usable bottom coordinate in this
+                # top-aligned list. FrameAnalysis routes later reads straight
+                # to this recorded operand, so withdraw the physical cell
+                # rather than writing a neighbouring position on shallow arms.
+                stored = (pre_ir.Undefined()
+                          if key in self._height_poisoned else v)
                 if 0 <= pos < len(stack):
                     stack[pos] = stored
                 elif pos == len(stack):
@@ -1461,21 +1648,14 @@ class _Lifter:
                              terminator=self.control(bb), comment=f"L{bb.first_line}")
 
     def _block_phis(self, bb):
-        """Entry phis for block ``bb`` from the canonical stack simulation."""
-        return self.stack_phis.get(bb, [])
+        """Entry phis from stack slots plus bottom-position frame slots."""
+        return [*self.frame_phis.get(bb, ()), *self.stack_phis.get(bb, ())]
 
     def _block_emit_op(self, a, bb, ops):
         """Lower one assignment; value-only frame/shuffle ops emit nothing."""
         if a.op == "frame_dig":
             return
         if a.op == "frame_bury":
-            target = self.bury_target.get(id(a))
-            if target is not None:
-                source = (self.stack_args[id(a)][0]
-                          if id(a) in self.stack_args
-                          else self.value(a.inputs[0]) if a.inputs else None)
-                if source is not None:
-                    ops.append(pre_ir.Assignment([target], source))
             return
         if a.op in _STACK_SHUFFLE_OPS:
             return                              # simulation reorders the stack itself

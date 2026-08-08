@@ -1120,6 +1120,32 @@ def _coerce_constant_operands(prog) -> None:
                     vp.args[i] = _to_u64_const(a)
 
 
+def _stamp_undefined_operands(prog) -> None:
+    """Give a direct unknown operand the AVM family its opcode requires.
+
+    ``Undefined`` deliberately carries no inferred value, but Puya still needs
+    a concrete representation type. Its generic ``?`` fallback is uint64,
+    which makes an honest refused frame read fail lowering when consumed by a
+    bytes-only op such as ``extract``. Stamping the langspec-required family
+    chooses no value and loses no information; it only makes the explicit
+    unknown well-typed at its use site.
+    """
+    for block in pre_ir.blocks(prog):
+        for op in block.ops:
+            provider = (op.source if isinstance(op, pre_ir.Assignment)
+                        else op.intrinsic
+                        if isinstance(op, pre_ir.IntrinsicOp) else None)
+            if not isinstance(provider, pre_ir.Intrinsic):
+                continue
+            for index, value in enumerate(provider.args):
+                if not isinstance(value, pre_ir.Undefined):
+                    continue
+                expected = _hard_expected_type(
+                    provider.op, index, provider.args, provider.immediates)
+                if expected is not None and value.ir_type != expected:
+                    provider.args[index] = pre_ir.Undefined(ir_type=expected)
+
+
 def _fix_langspec_operand_types(prog) -> None:
     """Correct a register whose recovered type CONTRADICTS the AVM's own.
 
@@ -1251,6 +1277,7 @@ def finalize_types(prog) -> None:
     # After the two passes above have handed out lowering defaults, and BEFORE
     # copy propagation spreads them.
     _fix_langspec_operand_types(prog)
+    _stamp_undefined_operands(prog)
     _coerce_constant_operands(prog)
     _propagate_copy_types(prog)
     _unify_comparison_operands(prog)

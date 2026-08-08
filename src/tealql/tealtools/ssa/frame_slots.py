@@ -30,10 +30,10 @@ are already in that snapshot); a "bury" read takes the dominating write's
 operand. Everything else refuses, and a poisoned ``frame_bury`` never writes
 the working list (it cannot locate its cell; the read side routes around it).
 
-WHAT MAKES AN "entry" ANSWER SOUND across laps of a varying-height loop:
+WHAT MAKES A single-entry answer sound across laps of a varying-height loop:
 
 * the region is entered at ONE block whose known predecessors agree on the
-  entry height ``H0`` (multi-entry or conflicting-height regions refuse);
+  entry height ``H0``;
 * relative heights within the region are consistent per lap — a fixpoint
   from the entry (edges INTO the entry excluded: re-entering is a new lap,
   relative height resets by definition), refusing on conflict;
@@ -50,6 +50,14 @@ WHAT MAKES AN "entry" ANSWER SOUND across laps of a varying-height loop:
   answers with its operand; a reaching-but-not-dominating bury (the
   loop-carried write-after-read shape) is a genuine merge of lap values —
 representing it creates a position-keyed phi at the region entry.
+
+A second, deliberately narrower rule handles multi-entry poisoned regions.
+It proves that an untouched bottom position survives every boundary-to-read
+path, then answers only when all reachable boundary snapshots name the same
+semantic value. Distinct values are merged only when the read block itself is
+their ordinary CFG join; otherwise the read refuses. Finally, a same-block
+dominating ``frame_bury`` can answer its later read independently of either
+region proof when intervening operations cannot recreate a consumed cell.
 """
 from __future__ import annotations
 
@@ -71,6 +79,17 @@ class SlotMerge:
     entry_predecessors: tuple
     position: int
     writes: tuple
+    # For every item in ``writes``, the region-entry predecessor edge(s) on
+    # which that write can flow around to the next lap.  SSA phis only need an
+    # unordered may-set, but edge-based IR phis need this correlation.  Keep it
+    # beside the established four fields (and default it for external callers
+    # constructing SlotMerge directly) rather than making the lift rediscover
+    # the frame analysis' private region graph.
+    write_predecessors: tuple = ()
+    # Some multi-entry regions can prove only that every boundary snapshot
+    # names the SAME value. They may answer that equality, but have no one CFG
+    # home at which distinct arms could be correlated exactly.
+    allow_phi: bool = True
 
 
 @dataclass(frozen=True)
@@ -188,6 +207,60 @@ def analyze(blocks, bb_to_sub, proto_io, return_point, edepth,
         _plan_region(region, by_key, sub, bb_to_sub, proto_io, return_point,
                      edepth, unsafe_callees, arity, callee_of, local_succs,
                      plan)
+
+    # A whole poisoned region can be structurally unanchorable (for example it
+    # has several known-height entries), while an individual read is still
+    # exact because the same block unconditionally overwrites that position
+    # first. This proof needs no entry height: after the last in-block bury,
+    # allow only consuming/no-output ops. They either leave the new cell alone
+    # or consume it and make the later read panic; none can recreate a different
+    # value at that position on an execution that reaches the read.
+    def local_write(block, read_index, position):
+        for index in range(read_index - 1, -1, -1):
+            op = block.ops[index]
+            if op.op != "frame_bury":
+                continue
+            slot = _imm_int(op)
+            if slot is None:
+                continue
+            sub = bb_to_sub.get(block)
+            nargs = (proto_io.get(sub) or arity.get(sub, (0, 0)))[0]
+            if nargs + slot != position:
+                continue
+            suffix = block.ops[index + 1:read_index]
+            if all(mid.op != "callsub"
+                   and (mid.op == "frame_bury"
+                        or op_arity(mid.op, mid.immediates)[1] == 0)
+                   for mid in suffix):
+                return SlotMerge(
+                    block, (), position, (op,), ((op, ()),))
+            return None
+        return None
+
+    for block in blocks:
+        if block.key not in poisoned:
+            continue
+        sub = bb_to_sub.get(block)
+        nargs = (proto_io.get(sub) or arity.get(sub, (0, 0)))[0]
+        for index, op in enumerate(block.ops):
+            if op.op == "frame_dig" and id(op) not in plan:
+                slot = _imm_int(op)
+                instruction = (local_write(block, index, nargs + slot)
+                               if slot is not None else None)
+                if instruction is not None:
+                    plan[id(op)] = instruction
+            elif op.op == "retsub" and sub in proto_io:
+                old = plan.get(id(op))
+                slots = dict(old.slots) if isinstance(old, ReturnSlots) else {}
+                for position in range(nargs, nargs + proto_io[sub][1]):
+                    result_index = position - nargs
+                    if result_index in slots:
+                        continue
+                    instruction = local_write(block, index, position)
+                    if instruction is not None:
+                        slots[result_index] = instruction
+                if slots:
+                    plan[id(op)] = ReturnSlots(slots)
     return FrameAnalysis(plan, frozenset(poisoned))
 
 
@@ -238,6 +311,10 @@ def _plan_region(region, by_key, sub, bb_to_sub, proto_io, return_point,
         if known:
             entries.append((b, known))
     if len(entries) != 1:
+        if entries:
+            _plan_equal_boundary_reads(
+                blocks, region, entries, sub, proto_io, edepth, arity,
+                unsafe_callees, callee_of, local_succs, plan)
         return
     entry, known_preds = entries[0]
 
@@ -397,14 +474,43 @@ def _plan_region(region, by_key, sub, bb_to_sub, proto_io, return_point,
             return SlotMerge(entry, tuple(known_preds), pos, ())
         entry_live = not any(dominates(wb, widx, rb, ridx)
                              for wb, widx, _w in reaching)
-        survivors = tuple(
-            w[2] for w in reaching
+        survivor_rows = tuple(
+            w for w in reaching
             if not any(killed(w[0], w[1], s[0], s[1], rb, ridx)
                        for s in reaching if s is not w))
-        if not survivors and not entry_live:
+        if not survivor_rows and not entry_live:
             return None
+
+        def reentry_predecessors(write_block):
+            """Immediate predecessor edges by which ``write_block`` can reach
+            the region entry without crossing the entry first.
+
+            This is the edge correlation an SSA value-set phi does not need,
+            but a conventional IR phi does.  A write may feed several
+            backedges; retaining all of them is exact, while multiple surviving
+            writes feeding one edge remains an explicit unknown in the lift.
+            """
+            out: set = set()
+            seen: set = set()
+            wl = [write_block]
+            while wl:
+                block = wl.pop()
+                if block.key in seen:
+                    continue
+                seen.add(block.key)
+                for succ in local_succs(block):
+                    if succ is entry:
+                        out.add(block)
+                    elif (succ is not None and succ.key in region
+                          and succ.key not in seen):
+                        wl.append(succ)
+            return tuple(sorted(out, key=lambda block: block.key))
+
+        survivors = tuple(w[2] for w in survivor_rows)
+        write_predecessors = tuple(
+            (w[2], reentry_predecessors(w[0])) for w in survivor_rows)
         return SlotMerge(entry, tuple(known_preds) if entry_live else (),
-                         pos, survivors)
+                         pos, survivors, write_predecessors)
 
     for b in blocks:
         for ridx, o in enumerate(b.ops):
@@ -434,6 +540,135 @@ def _plan_region(region, by_key, sub, bb_to_sub, proto_io, return_point,
                     if instr is not None:
                         rets[j] = instr
                 plan[id(b.ops[-1])] = ReturnSlots(rets)
+
+
+def _plan_equal_boundary_reads(blocks, region, entries, sub, proto_io, edepth,
+                               arity, unsafe_callees, callee_of, local_succs,
+                               plan) -> None:
+    """Plan untouched positions in a poisoned region with several entries.
+
+    There is no single phi home: a later poisoned block can be entered both
+    from an earlier poisoned join and from an independent exact-height edge.
+    Still, an untouched bottom position is exact when every boundary snapshot
+    ultimately names the same value.  The simulator performs that equality
+    check; distinct values refuse instead of minting an edge-uncorrelated phi.
+
+    First prove the position survives every region path.  Static stack effects
+    make this a shortest-height fixpoint seeded by every exact boundary edge.
+    A negative-height cycle keeps lowering the minimum and therefore refuses.
+    """
+    def block_net(block):
+        net = 0
+        for op in block.ops:
+            call_arity = (arity.get(callee_of(block), (0, 0))
+                          if op.op == "callsub" else (0, 0))
+            net += _op_net(op, call_arity)
+        return net
+
+    net_by_block = {block: block_net(block) for block in blocks}
+
+    def boundary_exit_height(pred):
+        return edepth[pred.key] + block_net(pred)
+
+    # Minimum possible height at each region block. Taking minima is sufficient
+    # for preservation of a bottom position; a negative-net cycle keeps
+    # lowering one of these values and is detected by the final relaxation.
+    heights: dict = {}
+    for entry, predecessors in entries:
+        for pred in predecessors:
+            height = boundary_exit_height(pred)
+            old = heights.get(entry)
+            if old is None or height < old:
+                heights[entry] = height
+    if not heights:
+        return
+
+    for iteration in range(len(blocks) + 1):
+        changed = False
+        for block in blocks:
+            height = heights.get(block)
+            if height is None:
+                continue
+            out = height + net_by_block[block]
+            for succ in local_succs(block):
+                if succ is None or succ.key not in region:
+                    continue
+                old = heights.get(succ)
+                if old is None or out < old:
+                    heights[succ] = out
+                    changed = True
+        if not changed:
+            break
+        if iteration == len(blocks):
+            return                              # negative-height cycle
+
+    safe_below = min(heights.values())
+    for block, height in heights.items():
+        current = height
+        for op in block.ops:
+            call_arity = (arity.get(callee_of(block), (0, 0))
+                          if op.op == "callsub" else (0, 0))
+            if op.op == "callsub" and callee_of(block) in unsafe_callees:
+                return
+            safe_below = min(safe_below, current - _op_dip(op, call_arity))
+            current += _op_net(op, call_arity)
+    if safe_below <= 0:
+        return
+
+    nargs = (proto_io.get(sub) or arity.get(sub, (0, 0)))[0]
+    written = set()
+    for block in blocks:
+        for op in block.ops:
+            if op.op == "frame_bury":
+                slot = _imm_int(op)
+                if slot is not None:
+                    written.add(nargs + slot)
+
+    entry_reach: dict = {}
+    for entry, _predecessors in entries:
+        seen = {entry.key}
+        work = [entry]
+        while work:
+            block = work.pop()
+            for succ in local_succs(block):
+                if (succ is not None and succ.key in region
+                        and succ.key not in seen):
+                    seen.add(succ.key)
+                    work.append(succ)
+        entry_reach[entry] = seen
+
+    def instruction(block, position):
+        if 0 <= position < safe_below and position not in written:
+            boundary = tuple(sorted({
+                pred for entry, predecessors in entries
+                if block.key in entry_reach[entry]
+                for pred in predecessors
+            }, key=lambda b: b.key))
+            if not boundary:
+                return None
+            # A distinct-value merge is edge-exact only when this read block is
+            # itself the boundary join. Deeper blocks may still use the plan
+            # when all boundary values collapse to one source.
+            allow_phi = set(boundary) == set(block.preds)
+            return SlotMerge(
+                block, boundary, position, (), (), allow_phi=allow_phi)
+        return None
+
+    for block in blocks:
+        for op in block.ops:
+            if op.op == "frame_dig":
+                slot = _imm_int(op)
+                merge = instruction(block, nargs + slot) if slot is not None else None
+                if merge is not None:
+                    plan[id(op)] = merge
+            elif op.op == "retsub" and sub in proto_io:
+                slots = {}
+                for result_index in range(proto_io[sub][1]):
+                    merge = instruction(block, nargs + result_index)
+                    if merge is not None:
+                        slots[result_index] = merge
+                if slots:
+                    plan[id(op)] = ReturnSlots(slots)
 
 
 # ---------------------------------------------------------------------------

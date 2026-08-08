@@ -225,6 +225,49 @@ def test_a_block_lifted_by_a_group_that_cannot_reach_it_is_caught():
     assert not cases, "\n  ".join(cases)
 
 
+def test_bottom_position_phi_is_shared_across_ssa_pre_ir_and_return():
+    """A height-divergent join has no valid top-index for ``frame_dig 0``.
+
+    SSA already represents the two exact bottom cells as a position phi. The
+    lift must lower THAT merge at the region entry, use it for both the dig and
+    proto return, and expose the SSA/pre-IR identity through the annotation
+    bridge. Versioned ``l%`` locals would be a second frame semantics here.
+    """
+    prog = SSAProgram.from_text(
+        "#pragma version 8\n"
+        "callsub s\npop\nint 1\nreturn\n"
+        "s:\nproto 0 1\ntxn NumAppArgs\nbnz two\n"
+        "int 7\nb join\ntwo:\nint 9\nint 8\n"
+        "join:\nframe_dig 0\nretsub\n",
+        name="position-phi.teal",
+    )
+    dig = next(a for a in prog.assignments if a.op == "frame_dig")
+    assert dig.inputs and getattr(dig.inputs[0], "args", None), (
+        "fixture no longer has SSA's bottom-position merge")
+
+    lifter = _Lifter(prog)
+    ir = lifter.build()
+    assert ir.pass_stats["frame_position_phis"] == 1
+    assert ir.pass_stats["frame_slot_refusals"] == 0
+
+    register = lifter.frame_map.get(dig.outputs[0])
+    phis = [phi for sub in [ir.main, *ir.subroutines]
+            for block in sub.body for phi in block.phis
+            if phi.register is register]
+    assert len(phis) == 1 and len(phis[0].args) == 2, (
+        "the two exact predecessor cells must be one edge-correlated pre-IR phi")
+    assert dig.inputs[0] in lifter.register_sources[id(register)], (
+        "the SSA position phi and its pre-IR lowering lost their bridge")
+
+    sub = ir.subroutines[0]
+    returns = [block.terminator for block in sub.body
+               if isinstance(block.terminator, pre_ir.SubroutineReturn)]
+    assert len(returns) == 1 and returns[0].result == [register], (
+        "proto retsub must read the same bottom-position phi as frame_dig")
+    assert not any(reg.local_id.startswith("l%") for reg in pre_ir.registers(ir)), (
+        "the removed versioned-frame fallback reappeared")
+
+
 def test_a_shared_tail_is_counted_in_the_dip_that_reaches_it(tmp_path):
     """A legacy sub's arity is how far execution dips, NOT how far the OWNED
     body dips.

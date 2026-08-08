@@ -366,6 +366,78 @@ def test_an_unplaceable_frame_read_refuses_and_is_listed(tmp_path):
         "the refused read must be LISTED, not silent")
 
 
+def test_a_local_bury_recovers_a_return_in_a_multi_entry_poisoned_region(tmp_path):
+    """A region-wide bottom anchor is sufficient, not necessary.
+
+    ``first`` is poisoned by its two incoming heights; ``final`` joins it with
+    a separate known-height path, giving the connected poisoned region TWO
+    entries, so the region plan must refuse. Nevertheless ``frame_bury 0`` in
+    ``final`` unconditionally defines return slot 0. With only consuming ops
+    after it, every execution reaching retsub returns that exact top value.
+    """
+    from tealql.tealtools.lift import pre_ir
+    from tealql.tealtools.lift.lift import _Lifter
+    from tealql.tealtools.ssa.frame_slots import ReturnSlots
+
+    teal = tmp_path / "local-return.teal"
+    teal.write_text(
+        "#pragma version 8\ncallsub s\npop\nint 1\nreturn\n"
+        "s:\nproto 0 1\ntxn NumAppArgs\nbz shallow\n"
+        "txn NumLogs\nbz deep\nb direct\n"
+        "shallow:\nint 7\nb first\n"
+        "deep:\nint 8\nint 9\nb first\n"
+        "first:\nb final\n"
+        "direct:\nint 10\nb final\n"
+        "final:\nframe_bury 0\nretsub\n")
+    prog = SSAProgram(str(teal))
+    py = prog._pyssa
+    retsub = next(op for block in py.blocks for op in block.ops
+                  if op.op == "retsub")
+    instruction = py._frame_analysis.instructions.get(id(retsub))
+    assert isinstance(instruction, ReturnSlots) and 0 in instruction.slots, (
+        "the dominating local bury was lost with the unanchored region")
+
+    ir = _Lifter(prog).build()
+    assert ir.pass_stats["frame_slot_refusals"] == 0
+    returns = [block.terminator for sub in ir.subroutines for block in sub.body
+               if isinstance(block.terminator, pre_ir.SubroutineReturn)]
+    assert len(returns) == 1
+    assert returns[0].result and not isinstance(returns[0].result[0], pre_ir.Undefined)
+
+
+def test_an_untouched_param_crosses_a_multi_entry_poisoned_region(tmp_path):
+    """Distinct top heights do not make an untouched bottom value ambiguous.
+
+    The connected poisoned region has two boundary joins, so it has no single
+    phi home. Every boundary snapshot nevertheless carries the same parameter
+    at bottom position 0; the equality-only plan must recover it without
+    inventing a phi whose arms cannot be tied to the read block's edges.
+    """
+    from tealql.tealtools.lift.lift import _Lifter
+
+    teal = tmp_path / "multi-entry-param.teal"
+    teal.write_text(
+        "#pragma version 8\nint 42\ncallsub s\nint 1\nreturn\n"
+        "s:\nproto 1 0\ntxn NumAppArgs\nbz shallow\n"
+        "txn NumLogs\nbz deep\nb direct\n"
+        "shallow:\nint 7\nb first\n"
+        "deep:\nint 8\nint 9\nb first\n"
+        "first:\nb final\n"
+        "direct:\nint 10\nb final\n"
+        "final:\nframe_dig -1\npop\nretsub\n")
+    prog = SSAProgram(str(teal))
+    dig = next(a for a in prog.assignments if a.op == "frame_dig")
+    assert dig.inputs and dig.inputs[0].defined_by.location.line == 2
+
+    lifter = _Lifter(prog)
+    ir = lifter.build()
+    assert ir.pass_stats["frame_slot_refusals"] == 0
+    assert ir.pass_stats["frame_position_phis"] == 0
+    source = lifter.frame_map.get(dig.outputs[0])
+    sub = ir.subroutines[0]
+    assert source is sub.parameters[0].register
+
+
 def test_a_cross_band_callees_effect_is_recovered_not_blanked(tmp_path):
     """The measured outcome-inverting shape, recovered with REAL values.
 

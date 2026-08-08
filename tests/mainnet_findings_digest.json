@@ -54,7 +54,7 @@
   "ir-partial-tainted-fund-flow": {
    "contracts": 16,
    "crashes": 0,
-   "findings": 27
+   "findings": 30
   },
   "ir-tainted-asset-admin": {
    "contracts": 4,
@@ -129,7 +129,7 @@
    "delete-funds-check": 27,
    "inner-txn-close-rekey": 1,
    "ir-arbitrary-inner-asset": 4,
-   "ir-partial-tainted-fund-flow": 1,
+   "ir-partial-tainted-fund-flow": 2,
    "ir-tainted-fund-flow": 10,
    "ir-tainted-log": 10,
    "ir-tainted-state-write": 6,
@@ -832,7 +832,7 @@
    "delete-funds-check": 27,
    "inner-txn-close-rekey": 1,
    "ir-arbitrary-inner-asset": 4,
-   "ir-partial-tainted-fund-flow": 1,
+   "ir-partial-tainted-fund-flow": 2,
    "ir-tainted-fund-flow": 10,
    "ir-tainted-log": 10,
    "ir-tainted-state-write": 6,
@@ -1063,7 +1063,7 @@
    "delete-funds-check": 27,
    "inner-txn-close-rekey": 1,
    "ir-arbitrary-inner-asset": 4,
-   "ir-partial-tainted-fund-flow": 1,
+   "ir-partial-tainted-fund-flow": 2,
    "ir-tainted-fund-flow": 10,
    "ir-tainted-log": 10,
    "ir-tainted-state-write": 6,
