@@ -581,12 +581,10 @@ def _byte_taint_impl(
     seed = sources or _default_sources
     validated, validated_by = _validated_intervals(prog) if validate else ({}, {})
 
-    # Both bridges close a def-use gap in PySSA: a `frame_dig` param and a
-    # `load N` have no input, so without them taint dies at the call boundary
-    # and at every `store N; …; load N` roundtrip. Shared with the boolean
-    # engine so the two cannot disagree on what reaches a load.
-    from ..passes.frame_flow import frame_value_sources, scratch_load_sources
-    frame_src = frame_value_sources(prog)
+    # Canonical SSA carries resolved frame reads; retain only its explicit gap
+    # edges. Scratch remains an implicit reaching-definition relation.
+    from ..passes.frame_flow import frame_gap_sources, scratch_load_sources
+    frame_src = frame_gap_sources(prog)
     scratch_src = scratch_load_sources(prog)
 
     bt: dict = {}     # value -> Intervals (tainted byte ranges)

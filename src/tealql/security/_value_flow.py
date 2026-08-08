@@ -1,6 +1,5 @@
-"""Value-flow bridges shared by the detector layer: the per-program
-PathPredicateAnalysis cache, the interprocedural frame-param map, and the
-MUST-flow walk (phi / scratch / proto-frame) from a seed-var set.
+"""Value-flow bridges shared by the detector layer: per-program path predicates,
+frame provenance caches, and the MUST-flow walk (phi / scratch / proto-frame).
 Import via :mod:`tealql.security.common`.
 """
 from __future__ import annotations
@@ -35,7 +34,7 @@ def _frame_param_sources_cached(prog: SSAProgram) -> dict:
     PARAM sources only, deliberately. :func:`field_flows`' walk below is MUST
     ("every operand must flow"), and "every caller pins this arg" is a different
     claim from "every write to this slot flows" — so it must not be handed the
-    unioned map. MAY consumers want :func:`_frame_value_sources_cached`."""
+    unioned map. MAY consumers want :func:`_frame_gap_sources_cached`."""
     cache = getattr(prog, "_sec_frame_param_sources", None)
     if cache is None:
         from tealql.tealtools.passes.frame_flow import frame_param_sources
@@ -48,10 +47,12 @@ def _frame_param_sources_cached(prog: SSAProgram) -> dict:
 
 
 def _frame_value_sources_cached(prog: SSAProgram) -> dict:
-    """``frame_value_sources(prog)`` memoised — params AND written locals, for the
-    MAY-semantics taint consumers. Without the local half a value parked in a
-    frame slot and read back loses its taint entirely (the narrow ``frame_dig``
-    has no inputs at all), which is a false negative rather than imprecision."""
+    """Memoised complete compatibility map: params and written locals.
+
+    Retained for callers that consume the established API. Internal MAY walks
+    use :func:`_frame_gap_sources_cached` because canonical SSA already carries
+    ordinary resolved frame edges.
+    """
     cache = getattr(prog, "_sec_frame_value_sources", None)
     if cache is None:
         from tealql.tealtools.passes.frame_flow import frame_value_sources
@@ -59,6 +60,19 @@ def _frame_value_sources_cached(prog: SSAProgram) -> dict:
         try:
             prog._sec_frame_value_sources = cache
         except AttributeError:      # only if SSAProgram ever gains __slots__
+            pass
+    return cache
+
+
+def _frame_gap_sources_cached(prog: SSAProgram) -> dict:
+    """Only MAY frame edges not already present in normal SSA def-use."""
+    cache = getattr(prog, "_sec_frame_gap_sources", None)
+    if cache is None:
+        from tealql.tealtools.ssa.frame_slots import gap_sources
+        cache = gap_sources(prog)
+        try:
+            prog._sec_frame_gap_sources = cache
+        except AttributeError:
             pass
     return cache
 
@@ -103,8 +117,8 @@ def _operand_flows_from_field_var(
             if not stores:
                 return [], False
             return [prog.var(*s) for s in stores], True
-        # Frame bridge: the fat-frame SSA has no def-use edge across the proto
-        # boundary, so `frame_param_sources` supplies the caller-arg set.
+        # MUST reasoning needs the complete caller set even though canonical
+        # SSA carries ordinary per-value frame provenance.
         args = _frame_param_sources_cached(prog).get(node)
         return (list(args), True) if args else ([], False)
 

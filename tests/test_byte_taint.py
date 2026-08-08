@@ -541,6 +541,36 @@ class TestIrCarryUp:
         assert view.tainted_bytes(reg) == Intervals.whole()
         assert view.sink_tainted(reg)
 
+    def test_conditionally_overwritten_frame_param_keeps_caller_taint(self):
+        # The join has two real frame-slot values: the untouched caller arg and
+        # a conditional frame_bury. The old annotation bridge covered neither
+        # the resulting IR phi nor its param arm, so byte-precise detectors read
+        # this Amount as clean (mainnet witness: app_2750067654 L662).
+        teal = (
+            "#pragma version 8\n"
+            "txna ApplicationArgs 0\nextract 0 8\nbtoi\ncallsub pay\n"
+            "int 1\nreturn\n"
+            "pay:\nproto 1 0\ntxn NumAccounts\nbnz keep\n"
+            "int 7\nframe_bury -1\n"
+            "keep:\nitxn_begin\nint pay\nitxn_field TypeEnum\n"
+            "frame_dig -1\nitxn_field Amount\ntxn Sender\n"
+            "itxn_field Receiver\nint 0\nitxn_field Fee\nitxn_submit\nretsub\n"
+        )
+        prog = SSAProgram.from_text(teal, name="t")
+        lifter = _Lifter(prog)
+        lifter.build()
+        amount = next(
+            source.args[0]
+            for block in pre_ir.blocks(lifter.subs)
+            for op in block.ops
+            if (source := _intr(op)) is not None
+            and source.op == "itxn_field"
+            and source.immediates == ["Amount"]
+        )
+        view = byte_taint_view(lifter)
+        assert view.is_covered(amount), "the frame-slot phi lost its SSA bridge"
+        assert view.is_scalar_tainted(amount), "the untouched caller arm was dropped"
+
     def test_uncovered_operand_is_conservatively_tainted(self):
         # a lift-synthesized register (not in lifter.regs) is uncovered, and the
         # conservative sink verdict treats it as tainted -- no silent FN.

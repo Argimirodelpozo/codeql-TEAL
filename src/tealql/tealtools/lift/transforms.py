@@ -558,7 +558,7 @@ def split_mixed_phis(prog) -> int:
     ``Undefined`` on the others. For a TYPED use this is EXACT under
     panic-pruning: reaching a bytes consumer along the uint64 arm is an AVM
     runtime type panic, so every execution past that use took a same-family arm
-    (the argument ``_resim_entry_stack`` already makes for depth divergence).
+    (the shared stack walk already makes this argument for depth divergence).
     An any-typed use (``stores``, a state-put value) has no family to pick, so
     it takes the phi of the MAJORITY family and the minority arms are logged as
     explicit unknowns — the honest floor; only real tail duplication could keep

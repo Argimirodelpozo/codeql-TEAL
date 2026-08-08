@@ -7,13 +7,14 @@ liveness filter.
 
 ONE SIMULATOR. There used to be two here — Braun on-demand phi placement reading
 values back through ``_read_exit``, and a phase-6c block simulation over a
-"fat band" rewrite of the frame ops — plus the lift's ``_resim`` making three.
+"fat band" rewrite of the frame ops — plus the lift's private scheduler making three.
 Every PAIR of them produced a silent wrong-value bug (Braun vs 6c in the callsub
-work, SSA vs resim in ``(itob 0x151f7c75)``), each invisible until a bespoke
-metric went looking. Both are gone: :mod:`.stacksim` walks each routine once with
-real ``callsub`` arities and frame slots read and written in place. A ``frame_dig``
-is one input and one output, not a band; there is no depth cap, because a
-per-routine stack cannot spiral the way a whole-program slot model could.
+work, SSA vs lift in ``(itob 0x151f7c75)``), each invisible until a bespoke
+metric went looking. The duplicate SSA models are gone, and the lift now shares
+:func:`stacksim.walk_routine`: real ``callsub`` arities and join alignment have
+one owner. A ``frame_dig`` is one input and one output, not a band; there is no
+depth cap, because a per-routine stack cannot spiral the way a whole-program
+slot model could.
 
 HAZARD — slot model. Stack slots are 1-based TOP-FIRST, both for phi identity
 ``(bb_key, slot)`` and for indexing an ``exit_stack`` (``exit_stack[-k]``).
@@ -26,7 +27,6 @@ CLI: ``python -m tealql.tealtools.ssa.ssa <teal-source>`` renders the build.
 """
 from __future__ import annotations
 
-from collections import deque
 from dataclasses import dataclass, field
 from typing import Optional, Union
 
@@ -185,8 +185,12 @@ class PySSA:
     _unsafe_callee_blocks: set = field(default_factory=set)
     _clobber_callee_keys: set = field(default_factory=set)
     # bb_key -> entry stack depth INCLUDING the sub's args; see
-    # _frame_entry_depths. Absent = height-ambiguous, which reads as UNSAFE.
+    # stacksim.entry_heights. Absent = unreachable or height-ambiguous.
     _frame_edepth: dict = field(default_factory=dict)
+    # Owned blocks without an exact bottom anchor. The height result also keeps
+    # its narrower conflict set for diagnostics.
+    _height_poisoned: set = field(default_factory=set)
+    _height_conflicted: set = field(default_factory=set)
     # Entry bb_keys of DIVERGENT legacy subs (retsub sites at different
     # depths — not function-shaped; see stacksim's `shifted` merge). Surfaced
     # so SSA-level consumers can see the shape the lift reports as
@@ -198,6 +202,10 @@ class PySSA:
     # instead of blanking it; the lift still Undefines (`_clobber_callee_keys`
     # unchanged) until per-call-site inlining lands there.
     _effect_summaries: dict = field(default_factory=dict)
+    # Canonical semantic products retained for downstream adapters and
+    # diagnostics; neither mutates the public SSA objects.
+    _frame_analysis: object = None
+    _stack_result: object = None
     # callsub bb_key -> continuation bb_key (corrected policy), see
     # subroutines.corrected_return_points.
     _corrected_rp: dict = field(default_factory=dict)
@@ -232,7 +240,12 @@ class PySSA:
         # callee dipping under its own band, because the dip happens on the
         # callee's own stack.
         self._compute_call_pairs()
-        self._frame_edepth = self._frame_entry_depths()
+        from . import stacksim
+        heights = stacksim.entry_heights(
+            self.blocks, self._bb_to_sub, self._proto_io, self._pair_by_cs)
+        self._frame_edepth = heights.entry
+        self._height_poisoned = heights.poisoned
+        self._height_conflicted = heights.conflicted
         self._classify_call_effects()
         from . import callee_effects
         self._effect_summaries = callee_effects.build_summaries(
@@ -304,123 +317,23 @@ class PySSA:
         # Bottom-anchored answers for frame ops in depth-poisoned blocks —
         # where the working list is not bottom-anchored and ``stack[pos]``
         # would read a neighbouring cell on the shallower paths.
-        from . import frame_band
-        plan, poisoned = frame_band.build_plan(
+        from . import frame_slots
+        frame_analysis = frame_slots.analyze(
             self.blocks, part, self._proto_io, rp, self._frame_edepth,
             self._unsafe_callee_blocks,
-            stacksim.infer_arities(self.blocks, part, self._proto_io, rp))
+            stacksim.infer_arities(self.blocks, part, self._proto_io, rp),
+            poisoned=self._height_poisoned)
+        self._frame_analysis = frame_analysis
         res = stacksim.simulate(self.blocks, part, self._proto_io, rp, mint,
                                 unsafe_callees=self._unsafe_callee_blocks,
-                                band_plan=plan, poisoned=poisoned,
+                                frame_analysis=frame_analysis,
                                 effect_summaries=self._effect_summaries)
+        self._stack_result = res
         self._divergent_legacy = {b.key for b in res.divergent}
         for b in self.blocks:
             for o in b.ops:
                 o.inputs = list(res.args.get(id(o), []))
             b.exit_stack = list(res.exit.get(b, []))
-
-    def _frame_entry_depths(self) -> dict:
-        """``bb_key -> entry stack depth INCLUDING the sub's args``; first
-        (forward) reach wins, and a block reached at two different depths is
-        poisoned rather than resolved to one of them.
-
-        Read by :meth:`_classify_call_effects` as the band height a block starts
-        at, so an absent entry makes that sub UNSAFE. The simulator could supply
-        these depths from its own per-block entry stacks — the remaining second
-        walk over the same structure — but its join rule reconciles differing
-        predecessor depths by truncating to the shallowest instead of refusing,
-        so swapping them in is a behaviour change to measure on its own."""
-        def net(op):
-            if op.op == "frame_dig":
-                return 1
-            if op.op == "frame_bury":
-                return -1
-            return op.n_out - op.n_in
-        ed = {}
-        # proto sub entries start at nargs; main-routine roots at 0.
-        roots = {}
-        for b in self.blocks:
-            sub = self._bb_to_sub.get(b)
-            if sub is b:                       # b is its own routine entry
-                roots[b] = self._proto_io.get(sub, (0, 0))[0]
-        wl = deque()
-        for b, d0 in roots.items():
-            ed[b.key] = d0
-            wl.append(b)
-        conflicted: list = []
-        while wl:
-            b = wl.popleft()
-            d = ed[b.key]
-            for o in b.ops:
-                d += net(o)
-            if d < 0:
-                d = 0
-            # Cross a verified call to its continuation: the callee consumed the
-            # top A and left R, so the caller's band continues at ``d - A + R``.
-            # The CFG only reaches the continuation along the callee's retsub,
-            # which the same-routine gate below rightly refuses — this crossing
-            # is the caller-side depth that edge cannot carry. A negative result
-            # means the args were not on this routine's band (the model does not
-            # hold); refuse rather than clamp, an absent depth surfaces as None.
-            targets: list = []
-            pair = self._pair_by_cs.get(b)
-            if pair is not None:
-                cont, a, r = pair
-                if d - a + r >= 0:
-                    targets.append((cont, d - a + r))
-            # Intra-FRAME successors only, as pyblock_partition walks them: a
-            # callsub block's one CFG succ is the callee ENTRY and a retsub's
-            # succs are continuations — both cross into a different frame, so
-            # neither may carry this frame's depth. The same-routine test alone
-            # is NOT that gate: under RECURSION the callee entry and the
-            # internal call's continuation belong to this very sub, the edges
-            # pass it, and the caller-side depth lands on a fresh-frame block
-            # (first-reach luck used to bury the bogus proposal; the ambiguity
-            # detector below would read it as height variance).
-            term = b.ops[-1].op if b.ops else None
-            if term not in ("callsub", "retsub"):
-                for s in b.succs:
-                    # stay within the routine
-                    if self._bb_to_sub.get(s) is self._bb_to_sub.get(b):
-                        targets.append((s, d))
-            for t, dt in targets:
-                if t.key not in ed:
-                    ed[t.key] = dt
-                    wl.append(t)
-                elif ed[t.key] != dt:
-                    conflicted.append(t)
-
-        # HAZARD — height-ambiguous joins. The AVM has NO static verifier: a
-        # join whose paths arrive at different depths is legal (later ops just
-        # find whatever operands are there), and then this block has no single
-        # frame anchor — a fat expansion anchored to either path's depth reads
-        # or buries a NEIGHBOURING slot on the other path, a silent wrong
-        # value. Compilers never emit this; hand-written TEAL can. Poison the
-        # conflicted blocks and everything depth-reachable from them (their
-        # stored first-reach values are one path's truth at best): a missing
-        # depth makes every consumer refuse — narrow frame ops, no demand, and
-        # the band-unsafe scan flags the sub (unknown height reaching retsub),
-        # withdrawing its callers' deep-slot reroutes.
-        if conflicted:
-            amb: set = set()
-            wl2 = list(conflicted)
-            while wl2:
-                b = wl2.pop()
-                if b.key in amb:
-                    continue
-                amb.add(b.key)
-                pair = self._pair_by_cs.get(b)
-                if pair is not None and pair[0].key not in amb:
-                    wl2.append(pair[0])
-                term = b.ops[-1].op if b.ops else None
-                if term not in ("callsub", "retsub"):
-                    wl2.extend(
-                        s for s in b.succs
-                        if (self._bb_to_sub.get(s) is self._bb_to_sub.get(b)
-                            and s.key not in amb))
-            for key in amb:
-                ed.pop(key, None)
-        return ed
 
     def _compute_subs_and_protos(self) -> None:
         """Populate ``self._bb_to_sub`` (BB -> owning routine entry BB) and

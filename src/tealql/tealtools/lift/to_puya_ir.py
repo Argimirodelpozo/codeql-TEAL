@@ -365,11 +365,6 @@ class _Translator:
 _term_targets = pre_ir.succ_ids          # kept: an established import for callers
 
 
-def _retarget_terminator(term, old: int, new: int) -> None:
-    """Rewrite every ``old`` block-id target in ``term`` to ``new`` (in place)."""
-    pre_ir.map_succ_ids(term, lambda b: new if b == old else b)
-
-
 def _duplicate_shared_epilogues(lifted):
     """Compatibility wrapper; pre-IR construction now performs this repair."""
     return transforms.duplicate_pure_shared_sinks(lifted)

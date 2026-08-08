@@ -33,6 +33,7 @@ from .operands import (binary_operands, const_bytes, const_byte_length, const_in
 from .producers import is_field_var, producing_op
 
 from .program import SSAProgram
+from .frame_slots import FrameAnalysis, FrameLayout, ReturnSlots, SlotMerge
 
 from .ssa import (
     PyBlock,
@@ -81,4 +82,9 @@ __all__ = [
     "PyOp",
     "PyBlock",
     "STACK_MAX",
+    # Frame-slot semantic products
+    "FrameAnalysis",
+    "FrameLayout",
+    "ReturnSlots",
+    "SlotMerge",
 ]

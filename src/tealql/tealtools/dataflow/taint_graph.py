@@ -381,9 +381,10 @@ def _flow_rows_for(prog: SSAProgram) -> list[tuple]:
                 _emit((sf, sl, cls_at.get((sf, sl), "?")),
                       loc.file, loc.start_line, dc, _SCRATCH_KINDS)
 
-    # frame params: each caller arg flows into the callee's `frame_dig` read.
-    from ..passes.frame_flow import frame_value_sources
-    for dig_out, args in frame_value_sources(prog).items():
+    # Frame sources already represented by normal SSA edges are emitted above;
+    # add only compatibility gaps here.
+    from ..passes.frame_flow import frame_gap_sources
+    for dig_out, args in frame_gap_sources(prog).items():
         dst = _node(dig_out)
         if dst is None:
             continue

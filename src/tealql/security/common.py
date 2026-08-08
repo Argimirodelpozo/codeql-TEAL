@@ -37,6 +37,7 @@ from ._program_shape import (  # noqa: E402,F401
     txn_field_reads,
 )
 from ._value_flow import (  # noqa: E402,F401
+    _frame_gap_sources_cached,
     _frame_param_sources_cached,
     _frame_value_sources_cached,
     _operand_flows_from_field_var,

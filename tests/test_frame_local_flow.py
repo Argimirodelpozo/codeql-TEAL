@@ -1,21 +1,10 @@
 """A value parked in a frame slot must not lose its taint on the way back out.
 
-PySSA models a frame op as a wide band read, and the soundness argument for the
-may-analyses rests on that: a read that depends on the whole band
-over-approximates, which is safe. But the argument only holds while the band is
-there. When the fat expansion cannot locate it, the op falls back to the narrow
-arity, where ``frame_dig`` is ``(0, 1)`` — an output with NO inputs. That is not a
-wider read, it is an EMPTY one, and a value with no incoming edge reads as clean
-to every may-analysis, so ``frame_bury`` a tainted value and ``frame_dig`` it back
-and the taint is simply gone. False negative, not imprecision.
-
-``frame_param_sources`` had always reconstructed one half of this (the caller
-argument behind a param read). The local half — the value a ``frame_bury`` wrote
-— was computed by ``frame_resolution`` and consumed ONLY by the lift, so on the
-SSA layer 394 of 564 local frame reads across 40 mainnet probes had no incoming
-edge at all. ``frame_local_sources`` joins the two halves
-(``dig_local`` x ``bury`` on ``(slot, version)``) and
-``frame_value_sources`` unions them for the MAY consumers.
+Canonical SSA now records exact frame reads as ordinary inputs. Bottom-anchor
+ambiguity can still leave an honest gap, so the compatibility provenance API
+reconstructs parameter and local sources while ``frame_gap_sources`` filters
+that map to only edges SSA does not already carry. These tests pin both the
+external complete map and the smaller map used by MAY consumers.
 """
 import glob
 import random
@@ -26,6 +15,7 @@ import pytest
 from tealql.tealtools.avm import op_arity
 from tealql.tealtools.ssa import SSAProgram
 from tealql.tealtools.passes.frame_flow import (
+    frame_gap_sources,
     frame_local_sources,
     frame_param_sources,
     frame_unresolved_reads,
@@ -102,11 +92,35 @@ def test_local_sources_are_disjoint_from_params_and_well_formed(teal):
             assert s is not None
 
 
-def test_may_consumers_use_the_unioned_map():
-    """The join is useless if a consumer still asks for params only, and three of
-    them (engine, taint_graph, byte_taint) are wired by import name where a revert
-    would be invisible. ``byte_taint`` is the one that exposes its map on the
-    result, so assert the local half is actually in there."""
+def test_gap_map_omits_sources_already_carried_by_ssa():
+    prog = SSAProgram.from_text(
+        "#pragma version 8\n"
+        "pushint 7\n"
+        "callsub use\n"
+        "pushint 1\n"
+        "return\n"
+        "use:\n"
+        "proto 1 0\n"
+        "frame_dig -1\n"
+        "pop\n"
+        "retsub\n",
+        name="frame-gap.teal",
+    )
+    full = frame_value_sources(prog)
+    assert full, "fixture must exercise the compatibility source API"
+    gap = frame_gap_sources(prog)
+    assert gap == {}, (
+        "a resolved frame input was redundantly reintroduced as an implicit edge")
+    assert frame_gap_sources(prog) is gap, "the shared MAY bridge must be cached"
+
+
+def test_may_consumers_use_the_gap_map_with_local_sources():
+    """The filtered bridge must retain unresolved local edges.
+
+    The dataflow engine, taint graph and byte taint are wired by import name;
+    byte taint exposes the selected map, so assert its gap still covers a real
+    local read instead of falling back to parameter-only provenance.
+    """
     from tealql.tealtools.dataflow.byte_taint import byte_taint
 
     probe = PROBES / "app_3300088574.teal"
@@ -118,8 +132,8 @@ def test_may_consumers_use_the_unioned_map():
     res = byte_taint(prog)
     got = {id(k) for k in res.frame_src}
     assert got & {id(k) for k in locals_}, (
-        "byte_taint's frame bridge carries no local frame reads — it is back on "
-        "frame_param_sources, so a value read out of a frame slot reads as clean")
+        "byte_taint's frame gap carries no local frame reads — an unresolved "
+        "value read out of a frame slot would therefore read as clean")
 
 
 def test_taint_survives_a_frame_local_roundtrip():

@@ -52,9 +52,9 @@
    "findings": 64
   },
   "ir-partial-tainted-fund-flow": {
-   "contracts": 15,
+   "contracts": 16,
    "crashes": 0,
-   "findings": 26
+   "findings": 27
   },
   "ir-tainted-asset-admin": {
    "contracts": 4,
@@ -811,6 +811,7 @@
   "61bfeed2b4a66494": {
    "delete-funds-check": 14,
    "ir-arbitrary-inner-appcall": 1,
+   "ir-partial-tainted-fund-flow": 1,
    "ir-tainted-fund-flow": 2,
    "is-deletable": 14,
    "is-updatable": 14,

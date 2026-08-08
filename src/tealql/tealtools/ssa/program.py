@@ -779,13 +779,14 @@ class SSAProgram:
         from .render import cfg as _impl
         return _impl(self)
 
-    # -- frame view (opt-in precision over PySSA's fat-frame substrate) ------
+    # -- frame view (compatibility classification over canonical frame SSA) --
 
     def frame_resolution(self) -> dict:
-        """Precise frame-slot model ``{Subroutine: passes.frame_resolution.SubFrames}``
-        — each ``frame_dig``/``frame_bury`` resolved to its logical param / versioned
-        local. Opt-in precision; the conservative fat-frame substrate the may-analyses
-        rely on is untouched. Lazy + cached."""
+        """Compatibility ``{Subroutine: FrameLayout}`` classification.
+
+        Canonical SSA inputs carry live frame provenance. This lazy view remains
+        for callers that classify reads as parameters, locals, or pushed slots.
+        """
         cache = getattr(self, "_frame_resolution_cache", None)
         if cache is None:
             from ..passes.frame_resolution import resolve

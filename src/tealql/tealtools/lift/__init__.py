@@ -27,28 +27,16 @@ def build_lifter(prog, file=None):
     exit (the dead-edge prune is save/restored), so no fresh re-parse is needed
     and in-memory programs lift too. A ``LiftError`` degrades quietly on this
     query-side path; an unexpected crash warns because it points at a bug."""
-    files = getattr(prog, "source_files", ())
-    projected = len(files) > 1 and file is not None
-    cache_name = "_ir_lifters_by_file" if projected else "_ir_lifter"
-    sentinel = object()
-    if projected:
-        cache = getattr(prog, cache_name, None)
-        if cache is None:
-            cache = {}
-            try:
-                setattr(prog, cache_name, cache)
-            except Exception:
-                pass
-        cached = cache.get(file, sentinel)
-    else:
-        cache = None
-        cached = getattr(prog, cache_name, sentinel)
-    if cached is not sentinel:
+    from .cache import LifterRequest
+
+    request = LifterRequest(prog, file)
+    hit, cached = request.lookup()
+    if hit:
         return cached
     lifter = None
     try:
         from .lift import _Lifter
-        target = prog.for_file(file, strict=False) if projected else prog
+        target = request.target()
         target.propagate_constants()
         lf = _Lifter(target)
         lf.build()
@@ -63,13 +51,7 @@ def build_lifter(prog, file=None):
                 "pre-IR lift crashed UNEXPECTEDLY (%s: %s) — degrading to the "
                 "SSA layer; this is likely a bug", type(e).__name__, e)
         lifter = None                # lift failure -> coarse fallback
-    try:
-        if cache is not None:
-            cache[file] = lifter
-        else:
-            setattr(prog, cache_name, lifter)
-    except Exception:
-        pass
+    request.store(lifter)
     return lifter
 
 

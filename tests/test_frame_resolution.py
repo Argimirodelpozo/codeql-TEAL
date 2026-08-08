@@ -1,17 +1,18 @@
-"""Unit tests for ``tealql.tealtools.passes.frame_resolution.resolve_sub`` — the precise
-frame-slot model the lift (and any opt-in consumer) reads instead of PySSA's
-conservative fat-frame substrate.
+"""Compatibility tests for ``passes.frame_resolution.resolve_sub``.
 
 ``resolve_sub`` is a pure function of ``(blocks, nargs)``, so these run on
 hand-built mock SSA — no CodeQL DB. They pin the contract the byte-identical
-lift depends on: ``frame_dig -k`` -> param, other frame ops -> versioned local
+(now implemented by ``ssa.frame_slots.resolve_layout``): ``frame_dig -k`` ->
+param, other frame ops -> versioned local
 (each ``frame_bury`` opens a version, each read takes the reaching one), plus
-the fat-frame band passthrough.
+resolved-copy passthrough.
 """
 import pytest
 
 from tealql.tealtools.ssa import SSAVar
 from tealql.tealtools.passes.frame_resolution import resolve_sub
+from tealql.tealtools.ssa.frame_band import build_plan as legacy_build_plan
+from tealql.tealtools.ssa.frame_slots import build_plan, resolve_layout
 
 
 def _v(line: int, idx: int = 1) -> SSAVar:
@@ -30,6 +31,14 @@ class _Op:
 class _Block:
     def __init__(self, *ops):
         self.assignments = list(ops)
+
+
+def test_legacy_pass_name_is_a_canonical_frame_layout_alias():
+    assert resolve_sub is resolve_layout
+
+
+def test_legacy_frame_band_import_is_a_canonical_alias():
+    assert legacy_build_plan is build_plan
 
 
 def test_frame_dig_negative_reads_params():
@@ -72,7 +81,7 @@ def test_version_counters_are_per_slot():
     assert res.final == {0: 1, 1: 0}
 
 
-def test_fat_frame_band_passthrough():
+def test_resolved_copy_passthrough():
     # dig: out[i] = in[i-1];  bury: out[i] = in[i+1].
     dug, p = _v(1), _v(2)
     i0 = _v(3)

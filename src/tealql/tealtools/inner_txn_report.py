@@ -20,7 +20,7 @@ from .ssa import (
     SSAProgram,
     SSAVar,
 )
-from .passes.frame_flow import frame_value_sources
+from .passes.frame_flow import frame_gap_sources
 
 
 # Inner-txn field operands: a produced value, a join, or a const literal.
@@ -228,7 +228,7 @@ class InnerTxnReport:
         # Interprocedural frame edges so a param-fed field value resolves to its
         # caller args. Best-effort — empty for a program with no proto subs.
         try:
-            frame_src = frame_value_sources(self.prog)
+            frame_src = frame_gap_sources(self.prog)
         except Exception:
             frame_src = {}
 

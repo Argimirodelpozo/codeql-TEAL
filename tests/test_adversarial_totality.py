@@ -282,7 +282,7 @@ def test_a_frame_read_in_a_varying_height_loop_answers_bottom_anchored(tmp_path)
     The old behaviour executed ``stack[pos]`` anyway, whose bottom index in a
     bottom-unanchored merged list reads a NEIGHBOURING cell on all laps >= 2:
     a silent wrong-cell arm in the operand phi. The band plan
-    (:mod:`ssa.frame_band`) answers it exactly; the proto'd retsub — the same
+    (:mod:`ssa.frame_slots`) answers it exactly; the proto'd retsub — the same
     bottom-anchored read — recovers too, so the CALLER sees the true value."""
     teal = tmp_path / "bandloop.teal"
     teal.write_text(
@@ -471,6 +471,8 @@ def test_height_ambiguous_region_still_answers_every_frame_read():
                  if py._bb_to_sub.get(b) is not None
                  and py._frame_edepth.get(b.key) is None]
     assert ambiguous, "fixture no longer exercises a height-ambiguous region"
+    assert py._height_conflicted
+    assert py._height_conflicted <= py._height_poisoned
     sourced = {id(v) for v in frame_value_sources(prog)}
     reported = {id(a.outputs[0]) for a in frame_unresolved_reads(prog) if a.outputs}
     # The best of the three answers: the read carries its source as an operand,
@@ -680,10 +682,9 @@ _DIVERGENT_JOIN = (
 
 def test_the_lift_merge_keeps_the_deep_paths_cell(tmp_path):
     """The LIFT's join must merge over the MAX predecessor depth, like
-    ``ssa.stacksim._entry_stack`` — the two stack simulations have to agree
-    about what a join is.
+    ``ssa.stacksim.walk_routine`` — SSA and lift now share this decision.
 
-    They did not. ``_resim_entry_stack`` truncated to the SHALLOWEST
+    Historically, the lift's private entry-stack merge truncated to the SHALLOWEST
     predecessor, discarding the deeper paths' cells, so a later consume found
     nothing there. Measured as ``AssertionError: l-stack too small for store
     71`` out of Puya's MIR allocator — a crash rather than a wrong value that

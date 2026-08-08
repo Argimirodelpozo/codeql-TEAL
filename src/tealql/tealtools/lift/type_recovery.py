@@ -996,7 +996,7 @@ def recover_types(lifter, sub_pairs) -> None:
 def _reconcile_return_arity(prog) -> None:
     """Widen every ``SubroutineReturn`` site and the signature to one fixed arity.
 
-    An early / fail return path can leave the deepest value off its re-simulated
+    An early / fail return path can leave the deepest value off its simulated
     exit stack, so the lift builds a SHORT site and ``_infer_returns``
     zip-truncates the signature below what call sites consume. Short sites are
     FRONT-padded with a typed zero for the missing (deepest) positions; those

@@ -67,9 +67,10 @@ The public IR everything downstream reads. Dataclasses live in `ssa/models.py`
 
 ## 6. PySSA (private) — `ssa/ssa.py`
 
-Braun on-demand SSA construction over `ssa/stacksim.py` (the only stack
-simulator), with `frame_band.py` and `callee_effects.py` handling subroutine
-frames. `_apply_pyssa_to()` then rebuilds the public `SSAVar` / `Phi` /
+SSA construction over `ssa/stacksim.py` (the shared stack engine), with
+`frame_slots.py` carrying bottom-anchored frame provenance and
+`callee_effects.py` handling below-frame call effects. `_apply_pyssa_to()` then
+rebuilds the public `SSAVar` / `Phi` /
 `BasicBlock` objects from the private ones.
 
 > **Gotcha:** that rebuild *replaces every BasicBlock instance*. State attached

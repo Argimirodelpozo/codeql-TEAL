@@ -24,10 +24,14 @@ from tealql.tealtools.ssa import (
 
 from ._program_shape import file_match, global_field_reads, ssavar_outputs, txn_field_reads
 from ._value_flow import (
-    _frame_value_sources_cached,
+    _frame_gap_sources_cached,
     _operand_flows_from_field_var,
     _scratch_stores_for,
 )
+
+# Compatibility/monkeypatch hook retained under its established name; the
+# default now supplies only edges absent from canonical SSA def-use.
+_frame_value_sources_cached = _frame_gap_sources_cached
 
 logger = logging.getLogger("tealql.security.common")
 
@@ -188,25 +192,14 @@ def ir_lifter(prog: SSAProgram, file: Optional[str] = None):
     Failure is never silent: it warns, and the ir-* detectors then degrade to an
     SSA-sibling fallback or no findings, which the user must be able to see."""
     global _LIFT_IMPORT_WARNED
-    files = getattr(prog, "source_files", ())
-    projected = len(files) > 1 and file is not None
-    sentinel = object()
+    from tealql.tealtools.lift.cache import LifterRequest
+
+    request = LifterRequest(prog, file)
     # Same ``_ir_lifter`` attribute as the query-side ``lift.build_lifter``, so a
     # program is lifted at most once when both a taint-query and the ir-* detectors
     # run: whichever builds first caches here, the other reuses.
-    if projected:
-        cache = getattr(prog, "_ir_lifters_by_file", None)
-        if cache is None:
-            cache = {}
-            try:
-                prog._ir_lifters_by_file = cache
-            except AttributeError:
-                pass
-        cached = cache.get(file, sentinel)
-    else:
-        cache = None
-        cached = getattr(prog, "_ir_lifter", sentinel)
-    if cached is not sentinel:
+    hit, cached = request.lookup()
+    if hit:
         return cached
     lifter = None
     try:
@@ -222,7 +215,7 @@ def ir_lifter(prog: SSAProgram, file: Optional[str] = None):
         src = str(getattr(prog, "source_path", "") or "<in-memory>")
         from tealql.tealtools.errors import LiftError
         try:
-            target = prog.for_file(file, strict=False) if projected else prog
+            target = request.target()
             target.propagate_constants()
             lf = _Lifter(target)
             lf.build()
@@ -239,13 +232,7 @@ def ir_lifter(prog: SSAProgram, file: Optional[str] = None):
                 "Puya-IR lift crashed UNEXPECTEDLY for %s (%s: %s) — this "
                 "is likely a bug; ir-* detections fall back. Please report.",
                 src, type(e).__name__, e)
-    try:
-        if cache is not None:
-            cache[file] = lifter
-        else:
-            prog._ir_lifter = lifter
-    except AttributeError:          # only if SSAProgram ever gains __slots__
-        pass
+    request.store(lifter)
     return lifter
 
 
@@ -257,7 +244,7 @@ def _compute_user_input_taint(prog: SSAProgram, file: Optional[str] = None) -> d
     def t(o):
         return taint.get(o, frozenset())
 
-    frame_src = _frame_value_sources_cached(prog)   # MAY taint: params AND locals
+    frame_src = _frame_value_sources_cached(prog)  # ordinary SSA carries the rest
 
     for a in prog.assignments:                       # seed
         if not file_match(a.location.file, file):

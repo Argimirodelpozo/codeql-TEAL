@@ -403,10 +403,10 @@ def _canon_shuffle(op: str, immediates: str):
     """``(n_in, mapping)`` for a FIXED-arity shuffle from its CANONICAL arity, or
     ``(None, None)``.
 
-    HAZARD: use this, not :func:`_shuffle_mapping`, when re-simulating on a clean
-    stack — that one keys off ``len(a.inputs)``, which the fat-band sim
+    HAZARD: use this, not :func:`_shuffle_mapping`, when executing a clean value
+    stack — that one keys off ``len(a.inputs)``, which an earlier shallow model
     UNDER-counts where its model stack was shallow (``dup2`` recorded with one
-    input), so it returns ``None`` and the resim drops the op, losing depth that
+    input), so it returns ``None`` and the adapter drops the op, losing depth that
     later starves a callsub's args. Excludes ``frame_dig``/``frame_bury``, which
     are genuinely band-dependent."""
     if op == "swap":
@@ -435,5 +435,4 @@ def _canon_shuffle(op: str, immediates: str):
             return (None, None)
         return (n + 1, list(range(1, n)) + [0])
     return (None, None)
-
 
