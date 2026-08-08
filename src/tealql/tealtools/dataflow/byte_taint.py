@@ -908,13 +908,26 @@ def byte_taint_view(
     bytes_view: dict = {}
     scalar_view: set = set()
     covered: set = set()
-    for sv, reg in lifter.regs.items():
-        covered.add(id(reg))
-        iv = result.tainted_bytes(sv)
+    sources = getattr(lifter, "register_sources", None)
+    objects = getattr(lifter, "register_objects", None)
+    if sources is None or objects is None:          # compatibility with custom lifters
+        objects = {id(reg): reg for reg in lifter.regs.values()}
+        sources = {}
+        for sv, reg in lifter.regs.items():
+            sources.setdefault(id(reg), []).append(sv)
+    for rid, ssa_values in sources.items():
+        if rid not in objects:
+            continue
+        covered.add(rid)
+        iv = Intervals.empty()
+        scalar = False
+        for sv in ssa_values:
+            iv = iv.union(result.tainted_bytes(sv))
+            scalar = scalar or result.is_scalar_tainted(sv)
         if iv:
-            bytes_view[id(reg)] = iv
-        if result.is_scalar_tainted(sv):
-            scalar_view.add(id(reg))
+            bytes_view[rid] = iv
+        if scalar:
+            scalar_view.add(rid)
     return IrByteTaint(bytes_view, scalar_view, covered)
 
 

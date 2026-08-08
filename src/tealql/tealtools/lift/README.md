@@ -9,7 +9,7 @@ itself compiles from. From there you can render it, run Puya's own optimiser, or
 lower it all the way back to TEAL.
 
 ```
-contract.teal  (a file, or a directory of .teal for a multi-program artifact)
+contract.teal  (one AVM program; directory collections are projected per file)
   └─ SSAProgram(source)          tealql.tealtools.ssa — stack-machine TEAL in SSA form
        └─ lift(prog)             → pre_ir.Program   (the Puya-SHAPED working model)
             │  recover_types · transforms (phi prune, reused-slot store sink) · …
@@ -68,9 +68,11 @@ from tealql.tealtools.lift import lift_to_teal
 teal = lift_to_teal("path/to/contract.teal")  # TEAL text, re-assemblable
 ```
 
-`build_lifter(prog)` returns (and caches) the `_Lifter` itself, for callers that
-need `load_stores` or the register map — the taint API below, and the
-`avm-prover` submodule.
+`build_lifter(prog, file=None)` returns (and caches) the `_Lifter` itself, for
+callers that need `load_stores` or register provenance — the taint API below,
+and the `avm-prover` submodule. For a directory-backed `SSAProgram`, pass one of
+`prog.source_files`; direct `lift(prog)` refuses to merge independent programs
+under one synthetic main.
 
 ## What it refuses to guess, and why
 
@@ -94,20 +96,21 @@ and each one replaced something that used to be silently wrong.
   the silent false-negative shape this codebase has had to fix more than once.
 
 Separately, a **legacy (non-`proto`) sub whose `retsub` sites leave different
-stack depths is not a function** — no single `(nargs, nret)` describes it — so an
-inferred signature over-declares its shallow paths. Those subs are collected in
-`_Lifter.not_function_shaped` and warned about. Making them faithful needs
-per-call-site inlining, which the IR could express (its block ids are synthetic)
-but the lift does not yet do.
+stack depths is not a function** — no single `(nargs, nret)` describes it. The
+lifter gives guarded cases one body copy per call site, turning the call back
+into the jump it really is. Shapes outside those guards are collected in
+`_Lifter.not_function_shaped` and visibly degrade or refuse rather than claiming
+a false signature.
 
 ## User-input taint (`taint.py`)
 
 An IR-layer dataflow analysis. It forward-propagates taint from the inputs an
 attacker chooses at call time — `ApplicationArgs`, `LogicSigArgs` (`arg`/`args`),
 `ItxnLastLog` — through the IR's value flow, **interprocedurally**, with **precise
-scratch flow** (it consumes the low-layer `load_stores` reaching-def carried up
-through `lifter.regs`, so a `load N` is tainted only by the stores that actually
-reach it).
+scratch flow** (it consumes the low-layer `load_stores` reaching-def carried
+through `lifter.register_sources`, so frame values, aliases, and exact structural
+clones are included and a `load N` is tainted only by stores that actually reach
+it).
 
 ```python
 from tealql.tealtools.ssa import SSAProgram
@@ -131,7 +134,7 @@ taints the result), and the source set is the three families above.
 
 | Module | Role |
 | --- | --- |
-| `pre_ir.py` | The Puya-**shaped** working model (`Register`/`Assignment`/`Phi`/blocks/terminators) the lift builds and annotates. |
+| `pre_ir.py` | The Puya-**shaped** working model (`Register`/`Assignment`/`Phi`/blocks/terminators), shared traversals, and post-transform structural validator. |
 | `lift.py` | `_Lifter`: SSA → `pre_ir`. Subroutine partitioning, arity inference, `_resim` (the per-routine stack re-simulation every emitted operand comes from), frame/scratch/stack-shuffle resolution, constant + phi inlining. `lift(prog)` is the entry. |
 | `type_recovery.py` | AVM type + phi recovery on the pre-IR (`recover_types`: uses/defs/phi-args/state/calls to a fixpoint; reconciles mixed-type phi webs). A langspec operand POSITION outranks a default or a seed — for registers, constants, unset `?` values and phi webs alike. |
 | `transforms.py` | In-place structural rewrites: dead-phi pruning, cross-group phi isolation, `materialize_phi_consts`, and `sink_mixed_phi_scratch_stores` (the reused-slot fix). |

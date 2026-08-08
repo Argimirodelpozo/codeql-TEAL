@@ -11,7 +11,6 @@ from __future__ import annotations
 
 
 import contextlib
-import copy
 import logging
 
 import puya.ir.models as M
@@ -20,7 +19,7 @@ from puya.avm import AVMType
 from puya.ir.types_ import AVMBytesEncoding, PrimitiveIRType as PT
 from puya.parse import SourceLocation
 
-from . import pre_ir
+from . import pre_ir, transforms
 from . import _puya_compat as _compat
 from .lift import _Lifter
 from .teal_const import _const_bytes, _load_src, _tmpl_name
@@ -372,49 +371,8 @@ def _retarget_terminator(term, old: int, new: int) -> None:
 
 
 def _duplicate_shared_epilogues(lifted):
-    """Give each routine its own copy of a shared "epilogue" block (a compiler-shared
-    ``exit 0`` reject branched to from several routines), which Puya's per-subroutine
-    block ownership otherwise rejects.
-
-    HAZARD: only a PURE CONTROL SINK qualifies — no phis, no ops, a terminal
-    terminator, no register operands — so there is nothing to merge or thread across
-    the routine boundary. A block carrying any value needs real tail-duplication with
-    phi splitting, which this does NOT do; leave it untouched."""
-    groups = [lifted.main, *lifted.subroutines]
-    block_by_id = {bb.id: bb for g in groups for bb in g.body}
-    if not block_by_id:
-        return
-    next_id = max(block_by_id) + 1
-
-    def is_pure_sink(bb) -> bool:
-        return (not bb.phis and not bb.ops
-                and not _term_targets(bb.terminator)            # terminal
-                and not any(isinstance(o, pre_ir.Register)
-                            for o in pre_ir.operands(bb.terminator)))
-
-    callers: dict = {}                       # block id -> caller groups (ordered, distinct)
-    for g in groups:
-        for bb in g.body:
-            for succ in _term_targets(bb.terminator):
-                lst = callers.setdefault(succ, [])
-                if not any(cg is g for cg in lst):
-                    lst.append(g)
-
-    for bid, caller_groups in list(callers.items()):
-        bb = block_by_id.get(bid)
-        if bb is None or len(caller_groups) <= 1 or not is_pure_sink(bb):
-            continue
-        for g in groups:                     # drop the shared original
-            if bb in g.body:
-                g.body.remove(bb)
-        for g in caller_groups:              # one private clone per caller routine
-            clone = pre_ir.BasicBlock(id=next_id, phis=[], ops=[],
-                                      terminator=copy.copy(bb.terminator),
-                                      comment=bb.comment)
-            next_id += 1
-            g.body.append(clone)
-            for src in g.body:
-                _retarget_terminator(src.terminator, bid, clone.id)
+    """Compatibility wrapper; pre-IR construction now performs this repair."""
+    return transforms.duplicate_pure_shared_sinks(lifted)
 
 
 @contextlib.contextmanager
@@ -568,16 +526,12 @@ def recovered_min_lengths(prog) -> dict:
     except Exception as e:
         logger.debug("recovered_min_lengths: lower/recover skipped: %s", e)
         return {}
-    reg_src: dict = {}
-    reg_src.update(getattr(lifter, "regs", {}))
-    reg_src.update(getattr(lifter, "frame_map", {}))
+    reg_src = getattr(lifter, "register_sources", {})
+    reg_objects = getattr(lifter, "register_objects", {})
     out: dict = {}
-    for ssa_val, pre in reg_src.items():
-        key = getattr(ssa_val, "_key", None)
-        if key is None:
-            continue
-        k = key()
-        m = t.regs.get(id(pre))
+    for rid, ssa_values in reg_src.items():
+        pre = reg_objects.get(rid)
+        m = t.regs.get(rid) if pre is not None else None
         if m is None:
             continue
         g = guesses.get(id(m))
@@ -585,9 +539,14 @@ def recovered_min_lengths(prog) -> dict:
             continue
         nb = getattr(g, "num_bytes", None)
         nb = 2 if nb is None else nb            # dynamic ⇒ >= 2-byte head
-        prev = out.get(k)
-        if prev is None or nb < prev[0]:        # disagreement: keep the SMALLER bound
-            out[k] = (nb, bool(confident.get(id(m))))
+        for ssa_val in ssa_values:
+            key = getattr(ssa_val, "_key", None)
+            if key is None:
+                continue
+            k = key()
+            prev = out.get(k)
+            if prev is None or nb < prev[0]:    # disagreement: keep the SMALLER bound
+                out[k] = (nb, bool(confident.get(id(m))))
     return out
 
 
@@ -597,15 +556,23 @@ def _byte_length_map(lifter, t) -> dict:
     dropped (ambiguous -> stays plain ``bytes``)."""
     out: dict = {}
     conflict: set = set()
-    src: dict = {}
-    src.update(lifter.regs)
-    src.update(lifter.frame_map)
-    for o, pre in src.items():
-        ty = getattr(o, "type", None)
-        bl = getattr(ty, "byte_length", None) if ty is not None else None
-        if bl is None or getattr(ty, "kind", None) != "bytes":
+    sources = getattr(lifter, "register_sources", {})
+    for rid, ssa_values in sources.items():
+        # An exact register length is valid only when EVERY SSA value aliased to
+        # it proves the same length.  Ignoring an unknown alias would turn one
+        # path's fact into a whole-phi fact.
+        lengths = []
+        for o in ssa_values:
+            ty = getattr(o, "type", None)
+            bl = getattr(ty, "byte_length", None) if ty is not None else None
+            if bl is None or getattr(ty, "kind", None) != "bytes":
+                lengths = []
+                break
+            lengths.append(bl)
+        if not lengths or len(set(lengths)) != 1:
             continue
-        m = t.regs.get(id(pre))
+        bl = lengths[0]
+        m = t.regs.get(rid)
         if m is None:
             continue
         key = id(m)

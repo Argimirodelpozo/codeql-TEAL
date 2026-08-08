@@ -142,6 +142,7 @@ class TaintQuery:
     def __init__(self, prog, *, file: Optional[str] = None):
         from ..source_map import source_map_for, reverse_file_source_map
         self.prog = prog
+        self.file = file
         self.g = TaintGraph.of(prog)
         # Keyed by (teal_file, line) so a directory's programs don't clobber;
         # empty on raw bytecode, where queries work in TEAL lines only.
@@ -236,7 +237,7 @@ class TaintQuery:
         answers whether a reachable sink is actually unguarded."""
         if precise and sources is None:
             from ..lift import build_lifter
-            lifter = build_lifter(self.prog)
+            lifter = build_lifter(self.prog, file=self.file)
             if lifter is not None:
                 return self._ir_sink_hits(lifter)
         srcs = list(sources) if sources is not None else self.all_sources()

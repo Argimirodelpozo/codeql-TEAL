@@ -447,6 +447,7 @@ def tail_duplicate_mixed_joins(prog) -> int:
                         nt = pre_ir.Register(f"td%{ctr}", 0, t.ir_type)
                         ctr += 1
                         m[id(t)] = nt
+                        prog.register_origins[id(nt)] = t
                         tgts.append(nt)
                     ops.append(pre_ir.Assignment(tgts, _clone_vp(o.source, m),
                                                  o.comment))
@@ -777,8 +778,14 @@ def _clone_subroutine(callee, new_id: str, rets: list, base_bid: int):
     """Deep-copy ``callee`` as a new subroutine ``new_id`` returning ``rets``, with
     body block ids renumbered from the global-unique ``base_bid`` and every
     terminator / phi-arg predecessor reference remapped."""
-    body = _copy.deepcopy(callee.body)
-    params = _copy.deepcopy(callee.parameters)
+    # ONE deepcopy operation is load-bearing.  Copying ``body`` and
+    # ``parameters`` separately creates two copies of every parameter register:
+    # the declared parameter and an undefined look-alike consumed by the body.
+    # Puya accepts their equal textual ids, but id()-keyed taint sees the body
+    # value as clean.
+    memo: dict = {}
+    clone = _copy.deepcopy(callee, memo)
+    body = clone.body
     idmap = {bb.id: base_bid + i for i, bb in enumerate(body)}
     for bb in body:
         bb.id = idmap[bb.id]
@@ -793,12 +800,18 @@ def _clone_subroutine(callee, new_id: str, rets: list, base_bid: int):
                 if (i < len(rets) and isinstance(v, pre_ir.Register)
                         and avm(rets[i]) in ("u", "b")):
                     v.ir_type = rets[i]
-    clone = pre_ir.Subroutine(id=new_id, parameters=params,
-                              returns=list(rets), body=body)
+    clone.id = new_id
+    clone.returns = list(rets)
     from . import type_recovery               # settle the retype within the clone
     type_recovery._propagate_copy_types([clone])
     type_recovery._unify_phi_types([clone])
-    return clone
+    original_regs = [p.register for p in callee.parameters]
+    original_regs.extend(r for b in callee.body for r in _block_registers(b))
+    origins = {
+        id(memo[id(r)]): r for r in original_regs
+        if id(r) in memo and isinstance(memo[id(r)], pre_ir.Register)
+    }
+    return clone, origins
 
 
 def specialize_polymorphic_returns(prog) -> int:
@@ -836,9 +849,10 @@ def specialize_polymorphic_returns(prog) -> int:
                 cid = f"{callee.id}__{sig}"
                 while cid in sub_by_id:        # avoid an id collision
                     cid += "_"
-                clone = _clone_subroutine(callee, cid, rets, next_bid)
+                clone, origins = _clone_subroutine(callee, cid, rets, next_bid)
                 next_bid += len(callee.body)
                 prog.subroutines.append(clone)
+                prog.register_origins.update(origins)
                 sub_by_id[cid] = clone
                 clones[key] = cid
                 made += 1
@@ -950,6 +964,14 @@ def duplicate_cross_subroutine_blocks(prog, _max_rounds: int = 12) -> int:
                         memo[id(r)] = r           # external reg -> itself, not copied
             clones = _copy.deepcopy(region_blocks, memo)
             regmap = {rid: memo[rid] for rid in defined if rid in memo}
+            original_regs = {
+                id(r): r for b in region_blocks for r in _block_registers(b)
+            }
+            prog.register_origins.update({
+                id(clone): original_regs[rid]
+                for rid, clone in regmap.items()
+                if rid in original_regs
+            })
             # `defined` is a set of id()s whose iteration order varies run-to-run, so
             # sort by stable SSA identity before numbering (keeps rendered IR diffable).
             for r in sorted(regmap.values(), key=lambda r: (r.name, r.version)):
@@ -978,3 +1000,60 @@ def duplicate_cross_subroutine_blocks(prog, _max_rounds: int = 12) -> int:
             break
         _fix_phi_predecessors([prog.main] + prog.subroutines)
     return made
+
+
+def duplicate_pure_shared_sinks(prog) -> int:
+    """Give every caller its own copy of a cross-routine pure control sink.
+
+    ``duplicate_cross_subroutine_blocks`` deliberately refuses to clone a
+    foreign region into main because an arbitrary region ending in ``retsub``
+    would make main invalid. A compiler-shared terminal ``exit 0``/``err``
+    block is different: it carries no data and can be copied exactly. Keeping
+    that repair here means detector-facing pre-IR already has honest per-routine
+    ownership instead of relying on Puya lowering to repair the graph later.
+
+    A value-carrying sink needs phi/register splitting and is left alone for
+    the structural validator to reject.
+    """
+    groups = [prog.main, *prog.subroutines]
+    block_by_id = {bb.id: bb for group in groups for bb in group.body}
+    if not block_by_id:
+        return 0
+    next_id = max(block_by_id) + 1
+
+    def is_pure_sink(bb) -> bool:
+        return (not bb.phis and not bb.ops
+                and not _succ_ids(bb.terminator)
+                and not any(isinstance(value, pre_ir.Register)
+                            for value in pre_ir.operands(bb.terminator)))
+
+    callers: dict[int, list] = {}
+    for group in groups:
+        for bb in group.body:
+            for target in _succ_ids(bb.terminator):
+                reached_by = callers.setdefault(target, [])
+                if not any(caller is group for caller in reached_by):
+                    reached_by.append(group)
+
+    copies = 0
+    for bid, caller_groups in list(callers.items()):
+        bb = block_by_id.get(bid)
+        if bb is None or len(caller_groups) <= 1 or not is_pure_sink(bb):
+            continue
+        for group in groups:
+            if bb in group.body:
+                group.body.remove(bb)
+        for group in caller_groups:
+            clone = pre_ir.BasicBlock(
+                id=next_id,
+                phis=[],
+                ops=[],
+                terminator=_copy.copy(bb.terminator),
+                comment=bb.comment,
+            )
+            next_id += 1
+            group.body.append(clone)
+            for source in group.body:
+                _remap_succ_ids(source.terminator, {bid: clone.id})
+            copies += 1
+    return copies

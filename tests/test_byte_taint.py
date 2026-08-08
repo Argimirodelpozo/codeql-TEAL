@@ -525,10 +525,10 @@ class TestIrCarryUp:
 
     def test_interprocedural_param_sink_is_soundly_flagged(self):
         # arg passed INTO a sub and logged there. The IR log reads the sub's
-        # PARAM register, which the lift synthesizes fresh (no source SSAVar), so
-        # it is UNCOVERED by the carry-up -> caught by the conservative fallback
-        # (sink_tainted True), sound but not byte-granular. Closing this to
-        # byte-granularity (map param regs to caller args) is the v2 increment.
+        # PARAM register.  The frame-map bridge ties it to the callee frame_dig's
+        # SSA output, whose frame-flow inputs already join every caller arg, so
+        # this is now covered at byte granularity rather than merely caught by
+        # the conservative uncovered fallback.
         teal = ("#pragma version 8\n"
                 "txna ApplicationArgs 0\ncallsub emit\nint 1\nreturn\n"
                 "emit:\nproto 1 0\nframe_dig -1\nlog\nretsub\n")
@@ -537,8 +537,9 @@ class TestIrCarryUp:
         view = byte_taint_view(lf)
         reg = _log_arg_reg(lf)
         assert reg is not None
-        assert not view.is_covered(reg)         # lift-synthesized param register
-        assert view.sink_tainted(reg)           # still flagged, conservatively
+        assert view.is_covered(reg)
+        assert view.tainted_bytes(reg) == Intervals.whole()
+        assert view.sink_tainted(reg)
 
     def test_uncovered_operand_is_conservatively_tainted(self):
         # a lift-synthesized register (not in lifter.regs) is uncovered, and the

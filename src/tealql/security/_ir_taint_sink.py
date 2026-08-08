@@ -128,7 +128,10 @@ class _IrTaintSinkDetector:
                     if not f.guarded and not f.param_derived]
         findings = self._suppress(lifter, findings)
         src = getattr(self.prog, "source_path", None)
-        fname = src.name if src is not None and getattr(src, "name", "") else "<program>"
+        files = getattr(self.prog, "source_files", ())
+        fname = (self.file or (files[0] if len(files) == 1 else None)
+                 or (src.name if src is not None and getattr(src, "name", "") else None)
+                 or "<program>")
         view = self._taint_view(lifter) if findings else None
         out: list = []
         for f in findings:

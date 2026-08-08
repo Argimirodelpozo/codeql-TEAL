@@ -494,11 +494,13 @@ def test_specialize_polymorphic_return_clone():
     from tealql.tealtools.lift import transforms
 
     R = pre_ir.Register
+    param = R("p", 0, "bytes")
     rv = R("rv", 0, "uint64")                       # callee's returned value
     acc = pre_ir.Subroutine(
-        id="acc", parameters=[pre_ir.Parameter(R("p", 0, "bytes"))],
+        id="acc", parameters=[pre_ir.Parameter(param)],
         returns=["uint64"],
-        body=[pre_ir.BasicBlock(id=10, phis=[], ops=[],
+        body=[pre_ir.BasicBlock(id=10, phis=[],
+                                ops=[pre_ir.Assignment([rv], param)],
                                 terminator=pre_ir.SubroutineReturn(result=[rv]))])
     u, b = R("cu", 0, "uint64"), R("cb", 0, "bytes")
     inv_u = pre_ir.Assignment([u], pre_ir.InvokeSubroutine("acc", [pre_ir.BytesConstant("0x01")]))
@@ -518,6 +520,11 @@ def test_specialize_polymorphic_return_clone():
     assert clone.body[0].id != 10, "clone must get a fresh (global-unique) block id"
     ret = clone.body[0].terminator.result[0]
     assert ret.ir_type == "bytes" and ret is not rv, "clone return reg retyped + fresh"
+    clone_param = clone.parameters[0].register
+    assert clone.body[0].ops[0].source is clone_param, (
+        "clone body must consume its declared parameter object, not a separately "
+        "deep-copied undefined look-alike")
+    assert not pre_ir.structural_errors(prog)
     assert acc.returns == ["uint64"] and rv.ir_type == "uint64", "original untouched"
 
 

@@ -279,6 +279,20 @@ def infer_legacy_arities(
                 for o in ops_of(b):
                     if o.op == "retsub":
                         break
+                    # A legacy sub still has a frame: callsub anchors it at the
+                    # caller's current stack height. Negative frame slots are
+                    # implicit arguments even though frame_dig does not POP
+                    # them. Counting only stack-effect dips inferred nargs=0
+                    # and left `frame_dig -1` undefined in SSA and pre-IR. A
+                    # below-frame bury has the same fixed-band requirement in
+                    # addition to popping its value.
+                    if o.op in ("frame_dig", "frame_bury"):
+                        try:
+                            frame_slot = int((o.immediates or "").split()[0])
+                        except (ValueError, IndexError):
+                            frame_slot = 0
+                        if frame_slot < 0:
+                            mn = min(mn, frame_slot)
                     if o.op == "callsub":
                         pop, push = arity.get(callee_of(b), (0, 0))
                     else:

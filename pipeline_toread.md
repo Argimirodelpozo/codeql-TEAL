@@ -74,7 +74,10 @@ frames. `_apply_pyssa_to()` then rebuilds the public `SSAVar` / `Phi` /
 
 > **Gotcha:** that rebuild *replaces every BasicBlock instance*. State attached
 > to a block during graph construction is silently discarded — which is why
-> off-end exits are recorded on `SSAProgram.off_end_exits`, keyed by bb id.
+> off-end exits are recorded on `SSAProgram.off_end_exits`, keyed by bb id. The
+> same replacement also has to carry assignment literals and program-level
+> branch/unknown-op metadata explicitly; boundary regressions are pinned in
+> `tests/test_structural_ir_boundaries.py`.
 
 ## 7. Annotated SSA — `passes/orchestrate.py:run_all_passes()`
 
@@ -94,11 +97,21 @@ fixpoint: registers are born `?` and refined in place, which Puya's frozen
 `Register` (with no unknown `IRType`) cannot express. This layer stays
 puya-free so detectors can use it.
 
+One `pre_ir.Program` represents exactly one AVM execution. A directory-backed
+`SSAProgram` is a collection, so callers project it with `prog.for_file(file)`
+(the detector caches do this automatically). `_Lifter` exposes the many-to-many
+`register_sources` relation rather than asking analyses to invert its historical
+primary `regs` map. After all transforms, `pre_ir.assert_well_formed()` checks
+block ownership/targets, phi coverage, register identity, invoke targets, and
+return arity before any IR detector consumes the result.
+
 ## 9. Real Puya IR — `lift/to_puya_ir.py`
 
-Lowers pre-IR into genuine `puya.ir.models`, validated and optimised by Puya's
-own passes. The only module on this path that imports `puya`, hence the lazy
-export in `lift/__init__.py`.
+Lowers already-validated pre-IR into genuine `puya.ir.models`, then validates
+and optimises it with Puya's own passes. Structural repairs that affect detector
+semantics (for example duplicating a cross-routine pure reject sink) happen in
+pre-IR transforms, not for the first time here. This is the only module on this
+path that imports `puya`, hence the lazy export in `lift/__init__.py`.
 
 ## 10. Back to TEAL — `lift/backend.py:lift_to_teal()`
 

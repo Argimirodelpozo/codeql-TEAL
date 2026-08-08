@@ -253,6 +253,13 @@ class _Lifter:
             _restore_pruned_edges(undo)
 
     def _build_impl(self) -> pre_ir.Program:
+        from ..errors import LiftError
+        files = self.prog.source_files
+        if len(files) != 1:
+            raise LiftError(
+                "lift requires exactly one AVM program; project a directory-backed "
+                "SSAProgram with prog.for_file(file) first "
+                f"(found {len(files)} files)", stage="build")
         self.label2line = {code.rstrip(":").strip(): ln for (_f, ln, code) in self.prog.labels}
         struct = analyze_structure(self.prog)
         self.sub_of = {bb: s for s in struct.subroutines for bb in s.body}
@@ -498,7 +505,54 @@ class _Lifter:
         # Puya requires per-sub block ownership, so a block reached from more than
         # one subroutine is cloned into each consuming sub.
         stats["dup_cross_sub_blocks"] = transforms.duplicate_cross_subroutine_blocks(prog_ir)
+        stats["dup_cross_sub_blocks"] += transforms.duplicate_pure_shared_sinks(prog_ir)
+        # Transforms may append representation-level subroutine clones.  The
+        # detector-facing views MUST be the same objects as Program exposes;
+        # keeping the pre-transform list made every analysis skip specialized
+        # bodies and fail to resolve their InvokeSubroutine targets.
+        self.subs = [prog_ir.main, *prog_ir.subroutines]
+        self.name2sub = {s.id: s for s in prog_ir.subroutines}
+        self._build_register_sources(prog_ir)
+        pre_ir.assert_well_formed(prog_ir)
         return prog_ir
+
+    def _build_register_sources(self, prog_ir: pre_ir.Program) -> None:
+        """Build the many-to-many SSA -> pre-IR annotation bridge.
+
+        ``regs`` remains the established public primary map.  This companion
+        view includes frame parameters/locals, aliased registers, and cloned
+        registers while preserving every SSA source that maps to one IR value.
+        """
+        objects = {id(r): r for r in pre_ir.registers(prog_ir)}
+        sources: dict[int, list] = {}
+        seen: dict[int, set[int]] = {}
+        for mapping in (self.regs, self.frame_map):
+            for ssa_value, reg in mapping.items():
+                rid = id(reg)
+                if rid not in objects:
+                    continue
+                ids = seen.setdefault(rid, set())
+                if id(ssa_value) not in ids:
+                    ids.add(id(ssa_value))
+                    sources.setdefault(rid, []).append(ssa_value)
+        for clone_id, original in prog_ir.register_origins.items():
+            if clone_id not in objects:
+                continue
+            # Cloning passes can compose (for example a specialized subroutine
+            # can then have a shared region duplicated). Resolve to the oldest
+            # surviving origin instead of relying on transform insertion order.
+            seen_origins: set[int] = set()
+            while (id(original) in prog_ir.register_origins
+                   and id(original) not in seen_origins):
+                seen_origins.add(id(original))
+                original = prog_ir.register_origins[id(original)]
+            for ssa_value in sources.get(id(original), ()):
+                ids = seen.setdefault(clone_id, set())
+                if id(ssa_value) not in ids:
+                    ids.add(id(ssa_value))
+                    sources.setdefault(clone_id, []).append(ssa_value)
+        self.register_objects = objects
+        self.register_sources = {rid: tuple(vals) for rid, vals in sources.items()}
 
     def _sub_io(self, entry_bb):
         return self._io_by_entry.get(entry_bb) or _proto_io(entry_bb)

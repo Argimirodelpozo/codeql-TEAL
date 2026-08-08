@@ -84,7 +84,7 @@ def _return_summary(lifter, trusted_args=frozenset()) -> dict:
     HAZARD: a call site must apply BOTH halves — ``srcs`` always, plus the taint of
     each passthrough arg. Using only the args UNDER-taints (it misses a sub that
     reads a source itself); tainting on any arg OVER-taints."""
-    ssa_of = {id(r): sv for sv, r in lifter.regs.items()}
+    ssa_of = getattr(lifter, "register_sources", {})
     subs = [s for s in lifter.subs if not s.is_main]
     taint: dict = defaultdict(set)
     for s in subs:                                  # seed each param with its marker
@@ -122,10 +122,11 @@ def _return_summary(lifter, trusted_args=frozenset()) -> dict:
                             ins |= reg_t(a)
                         if src.op in ("load", "loads"):     # scratch reaching-def
                             out = o.targets[0] if getattr(o, "targets", None) else None
-                            lv = ssa_of.get(id(out)) if out is not None else None
-                            for sv in (lifter.load_stores.get(lv, ()) if lv is not None else ()):
-                                if isinstance(sv, (SSAVar, Phi)):
-                                    ins |= reg_t(lifter.reg(sv))
+                            lvs = ssa_of.get(id(out), ()) if out is not None else ()
+                            for lv in lvs:
+                                for sv in lifter.load_stores.get(lv, ()):
+                                    if isinstance(sv, (SSAVar, Phi)):
+                                        ins |= reg_t(lifter.reg(sv))
                     if isinstance(o, pre_ir.Assignment) and isinstance(o.source, pre_ir.Register):
                         ins |= reg_t(o.source)              # copy
                     inv = _invoke(o)
@@ -161,7 +162,7 @@ def user_input_taint(lifter, trusted_args=frozenset()) -> dict:
     returning ``{id(Register): frozenset(sources)}``; ``trusted_args`` indices are
     exempted from seeding per :func:`_trusted_apparg`."""
     # register -> its SSA var, to consult the scratch reaching-def on a `load`.
-    ssa_of = {id(r): sv for sv, r in lifter.regs.items()}
+    ssa_of = getattr(lifter, "register_sources", {})
     summary = _return_summary(lifter, trusted_args)   # interprocedural param->return summary
     taint: dict = defaultdict(set)
 
@@ -194,10 +195,11 @@ def user_input_taint(lifter, trusted_args=frozenset()) -> dict:
                         ins |= reg_t(a)
                     if src.op in ("load", "loads"):  # scratch: reaching-def precise
                         out = o.targets[0] if getattr(o, "targets", None) else None
-                        lv = ssa_of.get(id(out)) if out is not None else None
-                        for sv in (lifter.load_stores.get(lv, ()) if lv is not None else ()):
-                            if isinstance(sv, (SSAVar, Phi)):
-                                ins |= reg_t(lifter.reg(sv))
+                        lvs = ssa_of.get(id(out), ()) if out is not None else ()
+                        for lv in lvs:
+                            for sv in lifter.load_stores.get(lv, ()):
+                                if isinstance(sv, (SSAVar, Phi)):
+                                    ins |= reg_t(lifter.reg(sv))
                 if isinstance(o, pre_ir.Assignment) and isinstance(o.source, pre_ir.Register):
                     ins |= reg_t(o.source)          # copy
                 inv = _invoke(o)
@@ -385,4 +387,3 @@ if __name__ == "__main__":
         _lf.build()
         _nm = _src.rstrip("/").rsplit("/", 1)[-1]
         print(render_with_taint(_lf, _nm) if _render else taint_report(_lf, _nm))
-

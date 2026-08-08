@@ -303,6 +303,11 @@ class Program:
     #: nothing raises, nothing changes shape, the fallback just takes over.
     #: `tests/test_pass_firing_ratchet.py` pins these so that stays loud.
     pass_stats: dict = field(default_factory=dict)
+    #: ``id(cloned register) -> original Register`` for representation-level
+    #: clones (currently return-type-specialized subroutines).  Analyses bridge
+    #: SSA annotations through this without conflating the clone's SSA identity
+    #: with its independently-defined IR register.
+    register_origins: dict = field(default_factory=dict, repr=False)
 
     def render(self) -> str:
         return "\n\n".join(s.render() for s in (self.main, *self.subroutines))
@@ -355,6 +360,154 @@ def blocks(prog_or_subs):
             if isinstance(prog_or_subs, Program) else prog_or_subs)
     for s in subs:
         yield from s.body
+
+
+def registers(prog_or_subs):
+    """Every distinct :class:`Register` appearing in the IR, definitions first.
+
+    Identity, not ``local_id``, is authoritative in the mutable pre-IR.  This
+    traversal is the shared bridge for analyses that must include parameters,
+    synthesized registers, and representation-level clones rather than only
+    ``_Lifter.regs``' direct SSA products.
+    """
+    subs = ((prog_or_subs.main, *prog_or_subs.subroutines)
+            if isinstance(prog_or_subs, Program) else prog_or_subs)
+    seen: set[int] = set()
+
+    def emit(r):
+        if isinstance(r, Register) and id(r) not in seen:
+            seen.add(id(r))
+            return r
+        return None
+
+    for s in subs:
+        for p in s.parameters:
+            if (r := emit(p.register)) is not None:
+                yield r
+        for bb in s.body:
+            for ph in bb.phis:
+                if (r := emit(ph.register)) is not None:
+                    yield r
+            for op in bb.ops:
+                for target in getattr(op, "targets", ()) or ():
+                    if (r := emit(target)) is not None:
+                        yield r
+            for node in (*bb.phis, *bb.ops, bb.terminator):
+                for value in operands(node):
+                    if (r := emit(value)) is not None:
+                        yield r
+
+
+def structural_errors(prog: Program) -> list[str]:
+    """Return violations of the post-transform pre-IR contract.
+
+    This is intentionally independent of Puya.  Detector-facing analyses run on
+    pre-IR without lowering, and Puya's validator compares register values in a
+    way that can accept two distinct pre-IR objects sharing one ``local_id``.
+    Missing definitions would therefore otherwise become silent clean values.
+    """
+    errors: list[str] = []
+    groups = [prog.main, *prog.subroutines]
+    sub_ids = [s.id for s in groups]
+    if len(sub_ids) != len(set(sub_ids)):
+        errors.append("duplicate subroutine id")
+
+    block_owner: dict[int, object] = {}
+    block_by_id: dict[int, BasicBlock] = {}
+    for sub in groups:
+        if not sub.body:
+            errors.append(f"{sub.id}: empty body")
+        for bb in sub.body:
+            if bb.id in block_by_id:
+                errors.append(f"block@{bb.id}: duplicate global block id")
+            else:
+                block_by_id[bb.id] = bb
+                block_owner[bb.id] = sub
+
+    predecessors: dict[int, set[int]] = {bid: set() for bid in block_by_id}
+    for sub in groups:
+        for bb in sub.body:
+            if bb.terminator is None:
+                errors.append(f"{sub.id}: block@{bb.id} has no terminator")
+            for target in succ_ids(bb.terminator):
+                owner = block_owner.get(target)
+                if owner is None:
+                    errors.append(f"{sub.id}: block@{bb.id} targets missing block@{target}")
+                    continue
+                predecessors[target].add(bb.id)
+                if owner is not sub:
+                    errors.append(
+                        f"{sub.id}: block@{bb.id} crosses into {owner.id}:block@{target}"
+                    )
+
+    target_subs = {s.id for s in prog.subroutines}
+    for sub in groups:
+        definitions: dict[int, str] = {}
+        local_ids: dict[str, int] = {}
+
+        def define(reg: Register, where: str) -> None:
+            old = definitions.get(id(reg))
+            if old is not None:
+                errors.append(f"{sub.id}: {reg.local_id} defined at {old} and {where}")
+                return
+            definitions[id(reg)] = where
+            other = local_ids.get(reg.local_id)
+            if other is not None and other != id(reg):
+                errors.append(
+                    f"{sub.id}: distinct registers share local id {reg.local_id}"
+                )
+            local_ids[reg.local_id] = id(reg)
+
+        for p in sub.parameters:
+            define(p.register, "parameter")
+        for bb in sub.body:
+            for ph in bb.phis:
+                define(ph.register, f"block@{bb.id} phi")
+            for op in bb.ops:
+                for target in getattr(op, "targets", ()) or ():
+                    define(target, f"block@{bb.id} assignment")
+
+        for bb in sub.body:
+            expected_preds = predecessors.get(bb.id, set())
+            for ph in bb.phis:
+                through = [a.through for a in ph.args]
+                if len(through) != len(set(through)):
+                    errors.append(f"{sub.id}: block@{bb.id} phi has duplicate predecessor arms")
+                if set(through) != expected_preds:
+                    errors.append(
+                        f"{sub.id}: block@{bb.id} phi arms {sorted(set(through))} "
+                        f"!= predecessors {sorted(expected_preds)}"
+                    )
+                if any(not isinstance(a.value, Register) for a in ph.args):
+                    errors.append(f"{sub.id}: block@{bb.id} phi has non-register arm")
+            for node in (*bb.phis, *bb.ops, bb.terminator):
+                for value in operands(node):
+                    if isinstance(value, Register) and id(value) not in definitions:
+                        errors.append(
+                            f"{sub.id}: block@{bb.id} uses undefined {value.local_id}"
+                        )
+                vp = (node.source if isinstance(node, Assignment)
+                      else node.intrinsic if isinstance(node, IntrinsicOp) else None)
+                if (isinstance(vp, InvokeSubroutine)
+                        and vp.target not in target_subs):
+                    errors.append(
+                        f"{sub.id}: block@{bb.id} invokes missing subroutine {vp.target}"
+                    )
+            if isinstance(bb.terminator, SubroutineReturn) \
+                    and len(bb.terminator.result) != len(sub.returns):
+                errors.append(
+                    f"{sub.id}: block@{bb.id} returns {len(bb.terminator.result)} "
+                    f"value(s), signature declares {len(sub.returns)}"
+                )
+    return errors
+
+
+def assert_well_formed(prog: Program) -> None:
+    """Raise :class:`ValueError` when :func:`structural_errors` is non-empty."""
+    errors = structural_errors(prog)
+    if errors:
+        shown = "; ".join(errors[:8]) + (" …" if len(errors) > 8 else "")
+        raise ValueError(f"malformed pre-IR ({len(errors)} error(s)): {shown}")
 
 
 def _vp_values(vp):

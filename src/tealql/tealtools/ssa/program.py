@@ -77,6 +77,53 @@ class SSAProgram:
         may be incomplete. Never report a partially-parsed contract as clean."""
         return self._graph.graph.get("parse_diagnostics", ())
 
+    @property
+    def source_files(self) -> tuple[str, ...]:
+        """Source-file identities represented by this program, in stable order.
+
+        A directory-backed :class:`SSAProgram` is a DISJOINT collection of AVM
+        programs, not one executable.  Most SSA analyses can stay file-scoped;
+        representations with a single entry (notably the lifted IR) must project
+        one member first via :meth:`for_file`.
+        """
+        return tuple(sorted({a.location.file for a in self.assignments}))
+
+    def for_file(self, file: str, *, strict: bool = True) -> "SSAProgram":
+        """Reconstruct an independent SSA view containing exactly ``file``.
+
+        The projection starts from the already parsed graph, so it neither
+        reparses nor accidentally carries another contract's CFG edges, phis,
+        diagnostics, or const-block state into this one.  ``file`` is the exact
+        location identity exposed by :attr:`source_files` (nested directory
+        inputs therefore use their relative path, not merely a basename).
+        """
+        files = self.source_files
+        if file not in files:
+            shown = ", ".join(files[:8]) + (" …" if len(files) > 8 else "")
+            raise ValueError(f"source file {file!r} is not in this program ({shown})")
+        if len(files) == 1:
+            return self
+
+        nodes = [
+            n for n in self._graph.nodes
+            if getattr(getattr(n, "location", None), "file", None) == file
+        ]
+        g = self._graph.subgraph(nodes).copy()
+        g.graph["parse_diagnostics"] = tuple(
+            d for d in self.parse_diagnostics if getattr(d, "file", None) == file
+        )
+        # Derived relations are program-wide caches.  Recompute them lazily on
+        # the projected graph rather than retaining endpoints from other files.
+        g.graph.pop("identity_steps", None)
+        g.graph.pop("inner_txn_fields", None)
+
+        src = self.source_path
+        if src and src.is_dir():
+            candidate = src / file
+            if candidate.is_file():
+                g.graph["source"] = str(candidate.resolve())
+        return type(self).from_graph(g, strict=strict)
+
     def _build_from_graph(self, g, *, strict: bool = True) -> None:
         """Reconstruct the SSA program from a loaded graph ``g`` (no parsing).
 

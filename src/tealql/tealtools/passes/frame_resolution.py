@@ -1,9 +1,11 @@
 """Resolve each ``frame_dig`` / ``frame_bury`` to its logical param or versioned
 local — an opt-in layer over PySSA's conservative fat-frame substrate.
 
-Exact rather than heuristic: frame ops only occur in ``proto`` subroutines, where
-the AVM frame layout is fixed. The substrate keeps modelling them as wide stack
-ops so the may-analyses stay sound; precision consumers read this model instead."""
+Exact rather than heuristic for ``proto`` subroutines, where the AVM frame layout
+is declared. Legal legacy subroutines can also use frame ops; the lift invokes
+``resolve_sub`` with their inferred argument band, while the public annotation
+pass below stays restricted to declared frames. The substrate keeps modelling
+them as wide stack ops so may-analyses remain sound."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field

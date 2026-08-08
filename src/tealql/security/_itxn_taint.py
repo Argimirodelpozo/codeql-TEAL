@@ -176,24 +176,36 @@ _LIFT_IMPORT_WARNED = False
 
 def ir_lifter(prog: SSAProgram, file: Optional[str] = None):
     """Build + cache the post-``build`` ``_Lifter`` the ir-* detectors run on, or
-    ``None`` when the contract doesn't lift. Cached per ``prog``; ``file`` is taken
-    for signature parity but unused (the lift is whole-program).
+    ``None`` when the contract doesn't lift. A multi-file SSA collection is
+    projected and cached per ``file``; a single-file program retains the shared
+    ``_ir_lifter`` cache used by :func:`tealql.tealtools.lift.build_lifter`.
 
-    Lifts ``prog`` ITSELF: the lift restores its input CFG on exit (the dead-edge
-    prune + phi rebuild is save/restored inside ``_Lifter.build``), so the
-    SSA-layer detectors reading the same ``prog`` are unaffected and no fresh
-    re-parse is paid — this used to rebuild an ``SSAProgram`` from
-    ``prog.source_path`` per lift, ~45% of the lift path's cost, and made
-    programs without a source path unliftable.
+    A directory-backed collection independently rebuilds ``file``; otherwise
+    this lifts ``prog`` itself. The lift restores its input CFG on exit (the
+    dead-edge prune + phi rebuild is save/restored inside ``_Lifter.build``), so
+    SSA-layer detectors are unaffected and no fresh re-parse is paid.
 
     Failure is never silent: it warns, and the ir-* detectors then degrade to an
     SSA-sibling fallback or no findings, which the user must be able to see."""
     global _LIFT_IMPORT_WARNED
+    files = getattr(prog, "source_files", ())
+    projected = len(files) > 1 and file is not None
     sentinel = object()
     # Same ``_ir_lifter`` attribute as the query-side ``lift.build_lifter``, so a
     # program is lifted at most once when both a taint-query and the ir-* detectors
     # run: whichever builds first caches here, the other reuses.
-    cached = getattr(prog, "_ir_lifter", sentinel)
+    if projected:
+        cache = getattr(prog, "_ir_lifters_by_file", None)
+        if cache is None:
+            cache = {}
+            try:
+                prog._ir_lifters_by_file = cache
+            except AttributeError:
+                pass
+        cached = cache.get(file, sentinel)
+    else:
+        cache = None
+        cached = getattr(prog, "_ir_lifter", sentinel)
     if cached is not sentinel:
         return cached
     lifter = None
@@ -210,8 +222,9 @@ def ir_lifter(prog: SSAProgram, file: Optional[str] = None):
         src = str(getattr(prog, "source_path", "") or "<in-memory>")
         from tealql.tealtools.errors import LiftError
         try:
-            prog.propagate_constants()
-            lf = _Lifter(prog)
+            target = prog.for_file(file, strict=False) if projected else prog
+            target.propagate_constants()
+            lf = _Lifter(target)
             lf.build()
             lifter = lf
         except LiftError as e:
@@ -227,7 +240,10 @@ def ir_lifter(prog: SSAProgram, file: Optional[str] = None):
                 "is likely a bug; ir-* detections fall back. Please report.",
                 src, type(e).__name__, e)
     try:
-        prog._ir_lifter = lifter
+        if cache is not None:
+            cache[file] = lifter
+        else:
+            prog._ir_lifter = lifter
     except AttributeError:          # only if SSAProgram ever gains __slots__
         pass
     return lifter

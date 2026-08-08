@@ -54,7 +54,11 @@ class IrPartialTaintedFundFlowDetector(_IrTaintSinkDetector):
         from tealql.tealtools.dataflow.byte_taint import byte_taint_view
         view = byte_taint_view(lifter)         # validate=True by default
         taint: dict = {}
-        for reg in lifter.regs.values():
+        # Include frame parameters and representation-level clones, not just
+        # direct opcode result registers.  ``byte_taint_view`` bridges those
+        # through lifter.register_sources when their SSA provenance is known.
+        regs = getattr(lifter, "register_objects", {})
+        for reg in regs.values() if regs else lifter.regs.values():
             if view.tainted_bytes(reg) or view.is_scalar_tainted(reg):
                 taint[id(reg)] = {"attacker-bytes"}
         return taint

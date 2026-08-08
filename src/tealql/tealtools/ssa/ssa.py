@@ -805,7 +805,8 @@ def _collapse_phi_args_to_leaves(py: PySSA, phi_map: dict, var_map: dict) -> Non
 
 
 def _build_assignments(prog: SSAProgram, py: PySSA, var_map: dict,
-                       phi_map: dict, bb_map: dict) -> None:
+                       phi_map: dict, bb_map: dict,
+                       source_assignments: dict | None = None) -> None:
     """Build ``prog.assignments`` (+ ``bb.assignments``, def/use back-refs,
     and spec-fixed const seeds) from the PySSA ops."""
     def _xlate(o):
@@ -820,6 +821,7 @@ def _build_assignments(prog: SSAProgram, py: PySSA, var_map: dict,
     for py_b in py.blocks:
         bb = bb_map[py_b]
         for py_op in py_b.ops:
+            source_a = (source_assignments or {}).get((py_op.file, py_op.line))
             inputs = [
                 _xlate(i) for i in py_op.inputs
                 if _xlate(i) is not None
@@ -834,7 +836,14 @@ def _build_assignments(prog: SSAProgram, py: PySSA, var_map: dict,
                 immediates=py_op.immediates,
                 inputs=inputs,
                 location=Location(py_op.file, py_op.line),
-                ast_code=f"{py_op.op} {py_op.immediates}".strip(),
+                ast_code=(source_a.ast_code if source_a is not None
+                          else f"{py_op.op} {py_op.immediates}".strip()),
+                # Const-block and inline-push literals are resolved on the
+                # graph-loaded preliminary Assignment.  Private SSA replaces
+                # that object; preserve the assignment-level seed as well as
+                # the output SSAVar's const_value.  Byte-length/bytemath passes
+                # intentionally consume this field.
+                const=source_a.const if source_a is not None else None,
                 basic_block=bb,
             )
             for v in outputs:
@@ -1027,9 +1036,16 @@ def _apply_pyssa_to(
     # const/range/type annotations being copied over.
     src = source if source is not None else prog
     src_vars_snapshot = dict(getattr(src, "vars", {}))
+    src_assignments_snapshot = {
+        (a.location.file, a.location.line): a
+        for a in getattr(src, "assignments", ())
+    }
     src_labels_snapshot = list(getattr(src, "labels", []))
     src_graph_snapshot = getattr(src, "_graph", None)
     src_source_path_snapshot = getattr(src, "source_path", None)
+    src_off_end_snapshot = set(getattr(src, "off_end_exits", ()))
+    src_polarity_snapshot = dict(getattr(src, "edge_polarity", {}))
+    src_unknown_snapshot = frozenset(getattr(src, "unknown_ops", ()))
 
     prog.vars = {}
     prog.phis = {}
@@ -1038,6 +1054,12 @@ def _apply_pyssa_to(
     prog.labels = src_labels_snapshot
     prog._graph = src_graph_snapshot
     prog.source_path = src_source_path_snapshot
+    # These live beside, rather than inside, the rebuilt BB objects.  The
+    # in-place constructor retained them by accident; the exported
+    # ``PySSA.build`` fresh-shell path used to lose them entirely.
+    prog.off_end_exits = src_off_end_snapshot
+    prog.edge_polarity = src_polarity_snapshot
+    prog.unknown_ops = src_unknown_snapshot
     # Match the state flags `SSAProgram.__init__` sets, so every pass that gates
     # on one of them finds it.
     prog._consts_propagated = False
@@ -1108,7 +1130,9 @@ def _apply_pyssa_to(
     _collapse_phi_args_to_leaves(py, phi_map, var_map)
 
     # 6) Build Assignments (+ bb back-refs, def/use links, spec-fixed seeds).
-    _build_assignments(prog, py, var_map, phi_map, bb_map)
+    _build_assignments(
+        prog, py, var_map, phi_map, bb_map, src_assignments_snapshot,
+    )
 
     # NB inner-txn field grouping, scratch reaching-definitions and const/
     # identity-step seeding are deliberately NOT run here — they were ~58% of
