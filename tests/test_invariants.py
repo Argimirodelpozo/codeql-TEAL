@@ -29,7 +29,7 @@ from pathlib import Path
 import pytest
 
 from tealql.tealtools.ssa import Phi, SSAProgram
-from tealql.tealtools.analysis import DerivedProfile, derived_program
+from tealql.tealtools.analysis import AnalysisContext, DerivedProfile, derived_program
 
 TESTS_ROOT = Path(__file__).resolve().parent
 CORPUS = sorted(
@@ -83,8 +83,11 @@ def test_derived_view_is_repeatable_and_canonical_ssa_is_unchanged(teal):
     prog = SSAProgram(str(teal))
     before = prog.functional(resolve_consts=False, propagate_consts=False)
     revision = prog.revision
-    once = derived_program(prog, DerivedProfile.PRESENTATION).functional()
-    twice = derived_program(prog, DerivedProfile.PRESENTATION).functional()
+    cached = derived_program(prog, DerivedProfile.PRESENTATION)
+    rebuilt = AnalysisContext(prog).derived(DerivedProfile.PRESENTATION)
+    assert cached is not rebuilt, "repeatability check reused the cached view"
+    once = cached.functional()
+    twice = rebuilt.functional()
     assert once == twice, f"derived view not deterministic on {teal.name}"
     assert prog.functional(resolve_consts=False, propagate_consts=False) == before
     assert prog.revision == revision
