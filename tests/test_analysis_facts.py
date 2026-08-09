@@ -77,18 +77,44 @@ def test_fact_cache_is_revision_scoped():
     assert prog.facts(FactDomain.CONSTANTS) is not first
 
 
-def test_fact_superset_and_derived_views_are_reused():
-    prog = _program("#pragma version 8\ntxn Fee\nint 1\n+\nreturn\n")
-    broad = prog.facts(FactDomain.CONSTANTS, FactDomain.RANGES)
-    assert prog.facts(FactDomain.CONSTANTS) is broad
+def test_fact_superset_and_guarded_view_share_the_minimum_snapshots(monkeypatch):
+    import tealql.tealtools.analysis.context as context_module
 
-    first = derived_program(prog, DerivedProfile.GUARDED)
-    assert derived_program(prog, DerivedProfile.GUARDED) is first
-    # Facts on a normal form are copied directly; they do not recursively
-    # reconstruct another SSA graph.
-    assert first.facts(FactDomain.CONSTANTS).constant(
-        next(a for a in first.assignments if a.op == "int").outputs[0]
-    ) is not None
+    copies = 0
+    copy_program = context_module._copy_program
+
+    def counted_copy(program):
+        nonlocal copies
+        copies += 1
+        return copy_program(program)
+
+    monkeypatch.setattr(context_module, "_copy_program", counted_copy)
+
+    prog = _program("#pragma version 8\ntxn Fee\nint 1\n+\nreturn\n")
+    narrow = prog.facts(FactDomain.CONSTANTS)
+    broad = prog.facts(FactDomain.CONSTANTS, FactDomain.RANGES)
+    assert narrow is broad
+    assert copies == 1
+
+    guarded_prog = _program(
+        "#pragma version 8\ntxn Fee\ntxn Fee\n==\nreturn\n"
+    )
+    guarded = derived_program(guarded_prog, DerivedProfile.GUARDED)
+    assert derived_program(guarded_prog, DerivedProfile.GUARDED) is guarded
+    assert copies == 2
+
+    comparison = next(a for a in guarded_prog.assignments if a.op == "==")
+    constants = guarded_prog.facts(FactDomain.CONSTANTS)
+    # Constants come from the existing guarded annotations without another
+    # graph, but alias resolution must stay in the canonical object family.
+    assert copies == 2
+    assert constants.resolve(comparison.inputs[0]) is \
+        constants.resolve(comparison.inputs[1])
+    assert constants.resolve(comparison.inputs[0]) in guarded_prog.vars.values()
+    assert all(fact.type is None for fact in constants.facts.values())
+
+    guarded_prog.facts(FactDomain.CONSTANTS, FactDomain.RANGES)
+    assert copies == 3  # guarded view + one unconditional range snapshot
 
 
 def test_cached_derived_view_allows_completed_passes_but_rejects_refinement():

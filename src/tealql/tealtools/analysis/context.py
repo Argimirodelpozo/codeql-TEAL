@@ -297,6 +297,8 @@ class ValueFacts:
         cls,
         prog: "SSAProgram",
         domains: frozenset[FactDomain],
+        *,
+        annotated_snapshot: Optional["SSAProgram"] = None,
     ) -> "ValueFacts":
         # A derived normal form already carries every annotation and has its
         # identities rewritten locally.  Re-cloning it here used to turn one
@@ -310,8 +312,19 @@ class ValueFacts:
             getattr(prog, "_derived_profile", None) is not None
             and domains <= {FactDomain.CONSTANTS}
         )
-        snapshot = prog if normalized else _base_snapshot(prog, domains)
-        aliases = {} if normalized else _alias_map(snapshot)
+        if annotated_snapshot is not None:
+            if not domains <= {FactDomain.CONSTANTS}:
+                raise ValueError(
+                    "guarded annotations can only seed unconditional constants"
+                )
+            snapshot = annotated_snapshot
+            # The snapshot's physical rewrites are private.  Resolve callers'
+            # canonical operands through the canonical identity relation and
+            # return canonical objects from ValueFacts.resolve().
+            aliases = _alias_map(prog)
+        else:
+            snapshot = prog if normalized else _base_snapshot(prog, domains)
+            aliases = {} if normalized else _alias_map(snapshot)
         facts: dict[ValueKey, ValueFact] = {}
         values = [*snapshot.vars.values(), *snapshot.phis.values()]
         for value in values:
@@ -321,7 +334,12 @@ class ValueFacts:
             facts[key] = ValueFact(
                 constant=value.const_value,
                 int_range=value.range if FactDomain.RANGES in domains else None,
-                type=TypeFact.of(value.type),
+                # Guarded normal forms may carry assert-conditioned range/type
+                # refinements.  A constants-only query must not expose those
+                # through the otherwise unrelated ``type`` field.
+                type=(TypeFact.of(value.type) if domains & {
+                    FactDomain.BYTE_LENGTHS, FactDomain.BIGINT_RANGES,
+                } else None),
             )
         refinements = (
             _range_refinements(snapshot)
@@ -459,11 +477,36 @@ class AnalysisContext:
                 None,
             )
         if result is None:
-            result = ValueFacts.build(self.prog, selected)
+            build_domains = selected
+            annotated_snapshot = None
+            normalized_constants = (
+                getattr(self.prog, "_derived_profile", None) is not None
+                and selected <= {FactDomain.CONSTANTS}
+            )
+            if not normalized_constants and selected <= {
+                FactDomain.CONSTANTS, FactDomain.RANGES,
+            }:
+                guarded = self._derived.get((revision, DerivedProfile.GUARDED))
+                if selected <= {FactDomain.CONSTANTS} and guarded is not None:
+                    # Assert refinement cannot change constants.  Reuse the
+                    # already-built normal form, but keep canonical identities.
+                    annotated_snapshot = guarded
+                else:
+                    # CONSTANTS is a strict subset of this common query.  Build
+                    # the superset up front so query order cannot construct two
+                    # whole SSA snapshots for the same contract.
+                    build_domains = frozenset({
+                        FactDomain.CONSTANTS, FactDomain.RANGES,
+                    })
+            result = ValueFacts.build(
+                self.prog,
+                build_domains,
+                annotated_snapshot=annotated_snapshot,
+            )
             self._cache = {
                 cached_key: cached
                 for cached_key, cached in self._cache.items()
                 if cached_key[0] == revision
             }
-            self._cache[key] = result
+            self._cache[(revision, build_domains)] = result
         return result
