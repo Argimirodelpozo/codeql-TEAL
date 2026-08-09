@@ -78,7 +78,9 @@ class FlowRule:
     """Per-op decision for how taint flows.
 
     ``flows`` returns ``None`` to abstain, ``[]`` to block, or the 1-based output
-    indices to taint. First non-``None`` answer wins, defaults consulted last."""
+    indices to taint. A matching rule may still abstain; only ``None`` falls
+    through to later rules. First non-``None`` answer wins, defaults consulted
+    last."""
 
     name: str
     matches: Callable[[Assignment], bool]
@@ -100,9 +102,10 @@ HASH_PROPAGATION_RULE = FlowRule(
 SLICE_PROPAGATION_RULE = FlowRule(
     name="slice-of-tainted",
     matches=lambda a: a.op in VALUE_FLOW_SLICE_OPS,
-    # TOP-FIRST: the sliced VALUE is the deepest operand, so its 1-based index
-    # is ``len(a.inputs)``. Checking index 1 would test an offset instead.
-    flows=lambda a, ti: [1] if len(a.inputs) in ti else [],
+    # Dynamic offset/length/index operands control WHICH portion of an otherwise
+    # clean value emerges. That is attacker influence, just as a tainted
+    # ``loads`` selector controls which clean scratch value emerges.
+    flows=lambda a, ti: [1] if ti else [],
 )
 
 
@@ -533,8 +536,16 @@ class TaintAnalysis:
                 if not rule.matches(a):
                     continue
                 decision = rule.flows(a, list(tainted_input_indices))
-                if decision is not None:
-                    return list(decision)
+                # ``None`` is ABSTAIN even after ``matches`` accepted the op:
+                # later rules (ultimately the conservative derived-value rule)
+                # still get a vote. ``[]`` is an intentional BLOCK and must
+                # return immediately. Keeping these branches explicit prevents
+                # a falsey test from silently conflating the two policies.
+                if decision is None:
+                    continue
+                if not decision:
+                    return []
+                return list(decision)
         mapping = _shuffle_mapping(a)
         if mapping is not None:
             return [

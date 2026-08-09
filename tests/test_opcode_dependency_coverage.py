@@ -100,6 +100,26 @@ def test_dynamic_transaction_selector_flows_to_selected_value():
     )
 
 
+def test_dynamic_slice_selector_and_value_both_control_the_result():
+    """Choosing a byte from a clean buffer is attacker influence just like
+    choosing a scratch slot.  The value-tainted spelling is the control that
+    the long-standing slice dependency must continue to preserve.
+    """
+    assert _flows_to(
+        "#pragma version 8\n"
+        "byte 0x0102030405060708090a0b0c0d0e0f10\n"
+        "txna ApplicationArgs 0\nbtoi\ngetbyte\nitob\nlog\n"
+        "int 1\nreturn\n",
+        "log",
+    )
+    assert _flows_to(
+        "#pragma version 8\n"
+        "txna ApplicationArgs 0\nint 0\ngetbyte\nitob\nlog\n"
+        "int 1\nreturn\n",
+        "log",
+    )
+
+
 def test_opaque_state_read_is_an_explicit_no_flow_boundary():
     assert not _flows_to(
         "#pragma version 8\n"
