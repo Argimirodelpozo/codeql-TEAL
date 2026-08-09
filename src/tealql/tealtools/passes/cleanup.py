@@ -33,7 +33,7 @@ _PURE_OPS: frozenset[str] = frozenset({
     "intc_0", "intc_1", "intc_2", "intc_3", "intc",
     "bytec_0", "bytec_1", "bytec_2", "bytec_3", "bytec",
     "pushint", "pushbytes", "pushints", "pushbytess",
-    "int", "bytes",
+    "int",
     # Pure arithmetic and comparisons.
     "+", "-", "*", "/", "%",
     "b+", "b-", "b*", "b/", "b%",
@@ -43,7 +43,7 @@ _PURE_OPS: frozenset[str] = frozenset({
     "!", "&&", "||",
     "&", "|", "^", "~",
     "b&", "b|", "b^", "b~",
-    "<<", ">>",
+    "shl", "shr",
     # Byte / int conversions and slicing.
     "len", "bitlen", "concat",
     "extract", "extract3",
@@ -54,7 +54,7 @@ _PURE_OPS: frozenset[str] = frozenset({
     "bzero",
     "itob", "btoi",
     # Math extras.
-    "min", "max", "sqrt", "exp", "expw",
+    "sqrt", "exp", "expw",
     "divw", "divmodw", "mulw", "addw",
     # Hashing.
     "sha256", "keccak256", "sha512_256", "sha3_256",

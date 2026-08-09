@@ -968,3 +968,90 @@ _STACK_SHUFFLE_OPS: frozenset = frozenset({
     "swap", "dup", "dup2", "dupn", "cover", "uncover", "dig", "bury",
     "frame_dig", "frame_bury",
 })
+
+
+# ===========================================================================
+# Generic value-dependency policy
+# ===========================================================================
+
+# These sets classify DATA dependency only. They deliberately do not try to
+# encode detector-specific trust: a source may independently seed an output,
+# and a sink may independently inspect an input.
+VALUE_FLOW_HASH_OPS: frozenset[str] = frozenset({
+    "sha256", "keccak256", "sha512_256", "sha3_256",
+})
+
+VALUE_FLOW_SLICE_OPS: frozenset[str] = frozenset({
+    "extract", "extract3", "extract_uint16", "extract_uint32",
+    "extract_uint64", "substring", "substring3", "getbyte",
+})
+
+VALUE_FLOW_TRANSCODE_OPS: frozenset[str] = frozenset({"itob", "btoi"})
+
+VALUE_FLOW_TRANSFORM_OPS: frozenset[str] = frozenset({
+    # uint64 arithmetic, wide forms, bitwise and comparisons
+    "+", "-", "*", "/", "%", "exp", "sqrt", "shl", "shr",
+    "addw", "mulw", "expw", "divw", "divmodw",
+    "&", "|", "^", "~", "len", "bitlen",
+    "==", "!=", "<", "<=", ">", ">=",
+    "b==", "b!=", "b<", "b<=", "b>", "b>=", "!", "&&", "||",
+    "getbit",
+    # value transforms / derivations
+    "bzero", "base64_decode", "mimc", "sumhash512", "json_ref", "bsqrt",
+    "ecdsa_pk_decompress", "ecdsa_pk_recover",
+})
+
+VALUE_FLOW_SPLICE_OPS: frozenset[str] = frozenset({
+    "setbyte", "setbit", "replace2", "replace3",
+})
+
+VALUE_FLOW_BYTE_MATH_OPS: frozenset[str] = frozenset({
+    "b+", "b-", "b*", "b/", "b%", "bsqrt", "b|", "b&", "b^", "b~",
+})
+
+# Reads whose result is external storage/context selected by the inputs, rather
+# than a function of the input bits. Generic taint does not infer that a tainted
+# key makes the stored value attacker-authored. Analyses that care about those
+# values seed them as sources or use the explicit state/scratch bridges.
+VALUE_FLOW_OPAQUE_READ_OPS: frozenset[str] = frozenset({
+    "app_global_get", "app_global_get_ex", "app_local_get", "app_local_get_ex",
+    "app_opted_in", "app_params_get", "asset_holding_get", "asset_params_get",
+    "acct_params_get", "voter_params_get", "balance", "min_balance",
+    "box_get", "box_len", "box_extract", "block",
+})
+
+VALUE_FLOW_SPECIAL_OPS: frozenset[str] = (
+    VALUE_FLOW_HASH_OPS
+    | VALUE_FLOW_SLICE_OPS
+    | VALUE_FLOW_TRANSCODE_OPS
+    | VALUE_FLOW_TRANSFORM_OPS
+    | VALUE_FLOW_SPLICE_OPS
+    | VALUE_FLOW_BYTE_MATH_OPS
+    | {"concat", "select", "loads"}
+)
+
+
+def value_dependency_kind(op: str) -> str:
+    """Classify a known opcode's generic input-to-output value dependency.
+
+    The result is one of ``special`` (a precise engine rule), ``shuffle``,
+    ``opaque-read`` (explicitly blocked), ``derived`` (conservatively every
+    tainted input may influence every output), ``none`` (no input or output),
+    or ``unknown``. The conservative category is intentional: adding a new AVM
+    transform cannot silently create a taint false negative merely because a
+    hand-maintained allow-list was not updated at the same time.
+    """
+    if op in VALUE_FLOW_SPECIAL_OPS:
+        return "special"
+    if op in _STACK_SHUFFLE_OPS:
+        return "shuffle"
+    if op in VALUE_FLOW_OPAQUE_READ_OPS:
+        return "opaque-read"
+    arity = SIG.get(op) or _FRAME_OVERRIDES.get(op)
+    if arity is not None:
+        return "derived" if arity[0] > 0 and arity[1] > 0 else "none"
+    if op in _IMMEDIATE_ARITY_OPS:
+        # Every immediate-dependent value producer is a stack shuffle; the
+        # remaining dynamic ops are constants, pops, or control flow.
+        return "none"
+    return "unknown"

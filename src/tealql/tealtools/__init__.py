@@ -1,102 +1,94 @@
-"""TEAL static-analysis toolkit (pure-Python: source → graph → SSA → analysis).
+"""TEAL static-analysis toolkit (pure Python: source -> graph -> SSA -> analysis).
 
-Each submodule is loadable directly (``from tealql.tealtools.ssa import
-SSAProgram``); the most-used names are re-exported here for
-convenience interactive use::
-
-    from tealql.tealtools import SSAProgram, AuthDominationDetector
-
-The CLI front-end lives in the separate ``cli`` package — run it with
-the ``tealql`` console script or ``python -m tealql.cli``.
-
-Progress logging: library modules emit through the ``tealtools``
-logger hierarchy (``tealql.tealtools.passes``, ``tealql.tealtools._utils.targets``, …).
-As a library we attach only a :class:`logging.NullHandler` so nothing
-is printed unless the embedding application configures a handler; the
-CLI does that from its ``-v`` / ``-vv`` flags.
+The package root is a compatibility facade, not a dependency hub. Public names
+are resolved lazily so importing a substrate module such as :mod:`ast.parse`
+does not pull SSA, dataflow, detectors, or cross-contract analysis into the
+same import cycle.
 """
-
+from importlib import import_module
 import logging as _logging
+
 
 _logging.getLogger("tealql.tealtools").addHandler(_logging.NullHandler())
 
-# Substrate
-from .errors import (
-    ParseDiagnostic, TargetError, TargetNotFoundError,
-    TealParseError, TealQLError, UnknownOpcodeError,
-)
-from .ssa import SSAProgram, BasicBlock, Const, Phi, SSAVar, Assignment
-from .path_predicates import PathPredicateAnalysis, BranchCondition
-from .cfg import CFG
-from .detector import (
-    Detector, Report, Finding,
-    ALL_DETECTORS, ALL_REPORTS, run_all,
-)
+# Public attribute -> (relative module, attribute). This retains the historical
+# package-root API while keeping every dependency edge demand-driven.
+_LAZY_EXPORTS = {
+    # Errors and source identity.
+    "TealQLError": (".errors", "TealQLError"),
+    "TealParseError": (".errors", "TealParseError"),
+    "TargetError": (".errors", "TargetError"),
+    "TargetNotFoundError": (".errors", "TargetNotFoundError"),
+    "UnknownOpcodeError": (".errors", "UnknownOpcodeError"),
+    "ParseDiagnostic": (".errors", "ParseDiagnostic"),
+    "ProgramSources": (".sources", "ProgramSources"),
+    "SourceFile": (".sources", "SourceFile"),
+    "AnalysisDegradation": (".health", "AnalysisDegradation"),
+    "AnalysisHealth": (".health", "AnalysisHealth"),
+    "AnalysisResult": (".health", "AnalysisResult"),
+    # SSA and CFG.
+    "SSAProgram": (".ssa", "SSAProgram"),
+    "BasicBlock": (".ssa", "BasicBlock"),
+    "Const": (".ssa", "Const"),
+    "Phi": (".ssa", "Phi"),
+    "SSAVar": (".ssa", "SSAVar"),
+    "Assignment": (".ssa", "Assignment"),
+    "PathPredicateAnalysis": (".path_predicates", "PathPredicateAnalysis"),
+    "BranchCondition": (".path_predicates", "BranchCondition"),
+    "CFG": (".cfg", "CFG"),
+    # Detector framework.
+    "Detector": (".detector", "Detector"),
+    "Report": (".detector", "Report"),
+    "Finding": (".detector", "Finding"),
+    "ALL_DETECTORS": (".detector", "ALL_DETECTORS"),
+    "ALL_REPORTS": (".detector", "ALL_REPORTS"),
+    "run_all": (".detector", "run_all"),
+    # Generic taint framework.
+    "TaintAnalysis": (".dataflow.engine", "TaintAnalysis"),
+    "Source": (".dataflow.engine", "Source"),
+    "Sink": (".dataflow.engine", "Sink"),
+    "FlowRule": (".dataflow.engine", "FlowRule"),
+    "Violation": (".dataflow.engine", "Violation"),
+    "TaintedOperand": (".dataflow.engine", "TaintedOperand"),
+    # Reports and analyses.
+    "AuthDominationDetector": (".auth_domination", "AuthDominationDetector"),
+    "AuthViolation": (".auth_domination", "AuthViolation"),
+    "InnerTxnReport": (".inner_txn_report", "InnerTxnReport"),
+    "analyze_group_shape": (".group_reasoning", "analyze"),
+    "GroupShape": (".group_reasoning", "GroupShape"),
+    "filter_validated": (".dataflow.predicate_aware", "filter_validated"),
+    "SuppressedViolation": (".dataflow.predicate_aware", "SuppressedViolation"),
+    # Box and state dataflow.
+    "detect_into_box_flows": (".dataflow.box", "detect_into_box_flows"),
+    "detect_out_of_box_flows": (".dataflow.box", "detect_out_of_box_flows"),
+    "detect_correlated_flows": (".dataflow.box", "detect_correlated_flows"),
+    "CorrelatedViolation": (".dataflow.box", "CorrelatedViolation"),
+    "detect_out_of_state_flows": (".dataflow.state", "detect_out_of_state_flows"),
+    # Cross-contract analysis.
+    "XContractGraph": (".xcontract", "XContractGraph"),
+    "AppcallSite": (".xcontract", "AppcallSite"),
+    "AppcallEdge": (".xcontract", "AppcallEdge"),
+    "cross_auth_findings": (".xcontract", "cross_auth_findings"),
+    "load_registry": (".xcontract", "load_registry"),
+    # Structural partition.
+    "ProgramStructure": (".structure", "ProgramStructure"),
+    "Subroutine": (".structure", "Subroutine"),
+    "CallSite": (".structure", "CallSite"),
+    "analyze_structure": (".structure", "analyze_structure"),
+}
 
-# Generic taint framework
-from .dataflow.engine import (
-    TaintAnalysis, Source, Sink, FlowRule, Violation, TaintedOperand,
-)
+__all__ = list(_LAZY_EXPORTS)
 
-# Reports / detectors
-from .auth_domination import AuthDominationDetector, AuthViolation
-from .inner_txn_report import InnerTxnReport
-from .group_reasoning import analyze as analyze_group_shape, GroupShape
-from .dataflow.predicate_aware import filter_validated, SuppressedViolation
 
-# Box dataflow
-from .dataflow.box import (
-    detect_into_box_flows,
-    detect_out_of_box_flows,
-    detect_correlated_flows,
-    CorrelatedViolation,
-)
+def __getattr__(name: str):
+    target = _LAZY_EXPORTS.get(name)
+    if target is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    module_name, attr = target
+    value = getattr(import_module(module_name, __name__), attr)
+    globals()[name] = value
+    return value
 
-# App-state dataflow
-from .dataflow.state import detect_out_of_state_flows
 
-# Cross-contract
-from .xcontract import (
-    XContractGraph,
-    AppcallSite,
-    AppcallEdge,
-    cross_auth_findings,
-    load_registry,
-)
-
-# Structural partition (routing / subroutines / call sites)
-from .structure import (
-    ProgramStructure,
-    Subroutine,
-    CallSite,
-    analyze_structure,
-)
-from .health import AnalysisDegradation, AnalysisHealth, AnalysisResult
-from .sources import ProgramSources, SourceFile
-
-# The security detectors (Algorand-security-guide ports) live in the separate
-# top-level ``security`` package, which depends on tealtools — not the reverse.
-# tealtools is the pure analysis library and surfaces no detector registry.
-
-__all__ = [
-    "TealQLError", "TealParseError", "TargetError", "TargetNotFoundError",
-    "UnknownOpcodeError",
-    "ParseDiagnostic",
-    "SSAProgram", "BasicBlock", "Const", "Phi", "SSAVar", "Assignment",
-    "PathPredicateAnalysis", "BranchCondition",
-    "CFG",
-    "Detector", "Report", "Finding",
-    "ALL_DETECTORS", "ALL_REPORTS", "run_all",
-    "TaintAnalysis", "Source", "Sink", "FlowRule", "Violation", "TaintedOperand",
-    "AuthDominationDetector", "AuthViolation",
-    "InnerTxnReport",
-    "AnalysisDegradation", "AnalysisHealth", "AnalysisResult",
-    "ProgramSources", "SourceFile",
-    "analyze_group_shape", "GroupShape",
-    "filter_validated", "SuppressedViolation",
-    "detect_into_box_flows", "detect_out_of_box_flows",
-    "detect_correlated_flows", "CorrelatedViolation",
-    "detect_out_of_state_flows",
-    "XContractGraph", "AppcallSite", "AppcallEdge", "cross_auth_findings", "load_registry",
-    "ProgramStructure", "Subroutine", "CallSite", "analyze_structure",
-]
+def __dir__():
+    return sorted(set(globals()) | set(_LAZY_EXPORTS))

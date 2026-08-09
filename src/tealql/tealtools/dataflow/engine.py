@@ -1,10 +1,11 @@
 """Generic taint-flow framework: a detector supplies :class:`Source`,
 :class:`Sink` and :class:`FlowRule` sets and runs :class:`TaintAnalysis`.
 
-HAZARD: the default decision is BLOCK, so taint dies at any op no rule covers.
-Every propagating op has to be enumerated below — a missing one is a silent
-false negative, not a conservative answer. (``byte_taint`` defaults the other
-way and has no such hole.)
+Every known value-producing opcode has a centralized dependency category in
+:mod:`tealql.tealtools.avm`. Precise rules run first; external opaque reads are
+explicitly blocked; all remaining transforms conservatively propagate. An AVM
+bump therefore cannot silently create a taint false negative just because this
+module did not grow another allow-list entry.
 
 Needs the phi structure intact to carry taint across BB joins."""
 from __future__ import annotations
@@ -12,6 +13,15 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Callable, Iterable, Optional, Union
 
+from ..avm import (
+    VALUE_FLOW_BYTE_MATH_OPS,
+    VALUE_FLOW_HASH_OPS,
+    VALUE_FLOW_SLICE_OPS,
+    VALUE_FLOW_SPLICE_OPS,
+    VALUE_FLOW_TRANSCODE_OPS,
+    VALUE_FLOW_TRANSFORM_OPS,
+    value_dependency_kind,
+)
 from ..ssa import (
     Assignment,
     Const,
@@ -80,27 +90,16 @@ class FlowRule:
 # ---------------------------------------------------------------------------
 
 
-_HASH_OPS = frozenset({"sha256", "keccak256", "sha512_256", "sha3_256"})
-
 HASH_PROPAGATION_RULE = FlowRule(
     name="hash-of-tainted",
-    matches=lambda a: a.op in _HASH_OPS,
+    matches=lambda a: a.op in VALUE_FLOW_HASH_OPS,
     flows=lambda a, ti: [1] if 1 in ti else [],
 )
 
 
-_SLICE_OPS = frozenset({
-    "extract", "extract3",
-    "extract_uint16", "extract_uint32", "extract_uint64",
-    "substring", "substring3",
-    # getbyte returns a byte OF the value, so taint flows, and it has the same
-    # operand shape as the extract family.
-    "getbyte",
-})
-
 SLICE_PROPAGATION_RULE = FlowRule(
     name="slice-of-tainted",
-    matches=lambda a: a.op in _SLICE_OPS,
+    matches=lambda a: a.op in VALUE_FLOW_SLICE_OPS,
     # TOP-FIRST: the sliced VALUE is the deepest operand, so its 1-based index
     # is ``len(a.inputs)``. Checking index 1 would test an offset instead.
     flows=lambda a, ti: [1] if len(a.inputs) in ti else [],
@@ -109,11 +108,9 @@ SLICE_PROPAGATION_RULE = FlowRule(
 
 # itob / btoi re-encode the SAME value between uint64 and bytes, so taint
 # passes straight through.
-_TRANSCODE_OPS = frozenset({"itob", "btoi"})
-
 TRANSCODE_PROPAGATION_RULE = FlowRule(
     name="transcode-of-tainted",
-    matches=lambda a: a.op in _TRANSCODE_OPS,
+    matches=lambda a: a.op in VALUE_FLOW_TRANSCODE_OPS,
     flows=lambda a, ti: [1] if 1 in ti else [],
 )
 
@@ -151,31 +148,13 @@ CONCAT_PROPAGATION_RULE = FlowRule(
 #: consumes that result. Likewise ``bzero(n)`` has fixed byte content but an
 #: attacker-controlled length, which changes the bytes value / box key.
 #:
-#: Deliberately EXCLUDED, each for a reason:
-#:   * the crypto VERIFY ops — a 0/1 validity flag.
-#:   * state / txn-field reads — those are SOURCES; taint on a KEY operand does
-#:     not make the stored value attacker-controlled.
-_VALUE_TRANSFORM_OPS = frozenset({
-    # uint64 arithmetic, incl. the wide (two-output) forms
-    "+", "-", "*", "/", "%", "exp", "sqrt", "shl", "shr", "<<", ">>",
-    "addw", "mulw", "expw", "divw", "divmodw",
-    # bitwise
-    "&", "|", "^", "~",
-    # metadata, comparisons and boolean derivations
-    "len", "bitlen",
-    "==", "!=", "<", "<=", ">", ">=",
-    "b==", "b!=", "b<", "b<=", "b>", "b>=",
-    "!", "&&", "||",
-    # single-bit read (the sibling of `getbyte`, which SLICE already covers)
-    "getbit",
-    # value transforms / derivations
-    "bzero", "base64_decode", "mimc", "sumhash512", "json_ref", "bsqrt",
-    "ecdsa_pk_decompress", "ecdsa_pk_recover",
-})
-
+#: This is the PRECISE transform set, not the coverage boundary. Other known
+#: value producers (including crypto validity flags and dynamic txn reads) are
+#: handled by :data:`CONSERVATIVE_VALUE_PROPAGATION_RULE`; external stored-value
+#: reads are classified explicitly by :data:`OPAQUE_READ_RULE`.
 VALUE_TRANSFORM_RULE = FlowRule(
     name="value-transform-of-tainted",
-    matches=lambda a: a.op in _VALUE_TRANSFORM_OPS,
+    matches=lambda a: a.op in VALUE_FLOW_TRANSFORM_OPS,
     # Any tainted operand taints EVERY output — on the multi-output forms
     # (`addw` hi/lo, `divmodw`, `ecdsa_pk_recover` X/Y) the attacker influences
     # both halves, so tainting only output 1 loses the flow.
@@ -196,24 +175,17 @@ SELECT_PROPAGATION_RULE = FlowRule(
 
 #: Splice ops write a tainted value INTO a buffer, so the result carries the
 #: attacker's bytes. ``byte_taint`` models these at byte granularity.
-_SPLICE_OPS = frozenset({"setbyte", "setbit", "replace2", "replace3"})
-
 SPLICE_PROPAGATION_RULE = FlowRule(
     name="splice-into-buffer",
-    matches=lambda a: a.op in _SPLICE_OPS,
+    matches=lambda a: a.op in VALUE_FLOW_SPLICE_OPS,
     flows=lambda a, ti: [1] if ti else [],
 )
 
 #: 512-bit byte arithmetic — a deterministic function of the operands, so
 #: attacker influence carries through.
-_BYTE_MATH_OPS = frozenset({
-    "b+", "b-", "b*", "b/", "b%", "bsqrt",
-    "b|", "b&", "b^", "b~",
-})
-
 BYTE_MATH_PROPAGATION_RULE = FlowRule(
     name="byte-math-of-tainted",
-    matches=lambda a: a.op in _BYTE_MATH_OPS,
+    matches=lambda a: a.op in VALUE_FLOW_BYTE_MATH_OPS,
     flows=lambda a, ti: [1] if ti else [],
 )
 
@@ -226,6 +198,20 @@ SCRATCH_SELECT_PROPAGATION_RULE = FlowRule(
     name="dynamic-scratch-selector",
     matches=lambda a: a.op == "loads",
     flows=lambda a, ti: [1] if 1 in ti else [],
+)
+
+
+OPAQUE_READ_RULE = FlowRule(
+    name="external-value-read",
+    matches=lambda a: value_dependency_kind(a.op) == "opaque-read",
+    flows=lambda a, ti: [],
+)
+
+
+CONSERVATIVE_VALUE_PROPAGATION_RULE = FlowRule(
+    name="conservative-derived-value",
+    matches=lambda a: value_dependency_kind(a.op) == "derived",
+    flows=lambda a, ti: [i + 1 for i in range(len(a.outputs))] if ti else [],
 )
 
 
@@ -248,6 +234,8 @@ DEFAULT_RULES: list[FlowRule] = [
     SPLICE_PROPAGATION_RULE,
     BYTE_MATH_PROPAGATION_RULE,
     SCRATCH_SELECT_PROPAGATION_RULE,
+    OPAQUE_READ_RULE,
+    CONSERVATIVE_VALUE_PROPAGATION_RULE,
 ]
 
 # HAZARD: pick this set for "can the attacker influence the value reaching this
@@ -263,6 +251,8 @@ ATTACKER_CONTROL_RULES: list[FlowRule] = [
     SPLICE_PROPAGATION_RULE,
     BYTE_MATH_PROPAGATION_RULE,
     SCRATCH_SELECT_PROPAGATION_RULE,
+    OPAQUE_READ_RULE,
+    CONSERVATIVE_VALUE_PROPAGATION_RULE,
 ]
 
 
@@ -532,8 +522,12 @@ class TaintAnalysis:
     def _decide_flow(
         self, a: Assignment, tainted_input_indices: list[int]
     ) -> list[int]:
-        """Which outputs taint: user rules, then defaults, then pure shuffles,
-        then BLOCK — first non-``None`` decision wins."""
+        """Which outputs taint: user rules, classified defaults, then shuffles.
+
+        An empty result after those stages is an explicit no-flow decision, or
+        an intentionally caller-supplied default-rule set that opted out of the
+        standard conservative policy.
+        """
         for rule_list in (self.rules, self.default_rules):
             for rule in rule_list:
                 if not rule.matches(a):

@@ -63,6 +63,67 @@ def test_supercfg_still_importable_lazily():
     assert out.strip() == "SuperCFG"
 
 
+def test_parser_import_does_not_pull_ssa_or_analysis_layers():
+    out = _fresh_import_probe("""
+        import sys
+        import tealql.tealtools.ast.parse
+        prefixes = (
+            "tealql.tealtools.ssa", "tealql.tealtools.dataflow",
+            "tealql.tealtools.lift", "tealql.tealtools.passes",
+        )
+        exact = {
+            "tealql.tealtools.detector", "tealql.tealtools.xcontract",
+            "tealql.tealtools.auth_domination",
+            "tealql.tealtools.inner_txn_report", "tealql.tealtools.structure",
+        }
+        forbidden = sorted(m for m in sys.modules
+                           if m.startswith(prefixes) or m in exact)
+        print(",".join(forbidden) or "CLEAN")
+    """)
+    assert out.strip() == "CLEAN", f"parser import crossed a layer: {out!r}"
+
+
+def test_ssa_and_dataflow_facades_import_no_implementation_modules():
+    out = _fresh_import_probe("""
+        import sys
+        import tealql.tealtools.ssa
+        import tealql.tealtools.dataflow
+        forbidden = sorted(m for m in sys.modules if m in {
+            "tealql.tealtools.ssa.models", "tealql.tealtools.ssa.program",
+            "tealql.tealtools.ssa.ssa", "tealql.tealtools.dataflow.engine",
+            "tealql.tealtools.dataflow.box", "tealql.tealtools.dataflow.state",
+        })
+        print(",".join(forbidden) or "CLEAN")
+    """)
+    assert out.strip() == "CLEAN", f"facade imported implementation: {out!r}"
+
+
+def test_package_facades_retain_public_reexports_lazily():
+    out = _fresh_import_probe("""
+        from tealql.tealtools import SSAProgram, ProgramSources
+        from tealql.tealtools.dataflow import TaintAnalysis, CorrelatedViolation
+        from tealql.tealtools.ssa import Assignment, PySSA
+        from tealql.tealtools.lift import lift, pre_ir
+        print(SSAProgram.__name__, ProgramSources.__name__,
+              TaintAnalysis.__name__, CorrelatedViolation.__name__,
+              Assignment.__name__, PySSA.__name__, lift.__name__, pre_ir.__name__)
+    """)
+    assert out.strip().startswith("SSAProgram ProgramSources TaintAnalysis")
+
+
+def test_every_declared_facade_export_resolves():
+    out = _fresh_import_probe("""
+        import tealql.tealtools as root
+        import tealql.tealtools.dataflow as dataflow
+        import tealql.tealtools.ssa as ssa
+        for package in (root, dataflow, ssa):
+            for name in package.__all__:
+                getattr(package, name)
+        print("OK")
+    """)
+    assert out.strip() == "OK"
+
+
 # ---------------------------------------------------------------------------
 # Package dependency direction
 # ---------------------------------------------------------------------------

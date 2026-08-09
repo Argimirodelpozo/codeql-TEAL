@@ -9,9 +9,14 @@ HAZARD: ``render`` / ``to_puya`` are exported LAZILY (PEP 562) because
 detector-facing side — ``lift`` / ``_Lifter`` and the pre-IR taint layer — must stay
 puya-free, so never import them eagerly here.
 """
+from importlib import import_module
 import logging
 
-from . import pre_ir
+# ``lift`` is both a public function and a real child-module name. Python sets
+# ``package.lift`` to that module whenever it is imported, which bypasses PEP
+# 562 and turns ``from ...lift import lift`` into a module nondeterministically.
+# Bind the function once here, after child-module loading, to keep the long-held
+# callable API stable. The expensive Puya backend remains fully deferred.
 from .lift import lift
 
 __all__ = ["render", "to_puya", "lift", "lift_to_teal", "pre_ir", "build_lifter"]
@@ -55,12 +60,25 @@ def build_lifter(prog, file=None):
     return lifter
 
 
-def __getattr__(name: str):
+_LAZY_EXPORTS = {
+    "pre_ir": (".pre_ir", None),
     # Deferred so the package imports without puya installed.
-    if name in ("render", "to_puya"):
-        from . import to_puya_ir
-        return getattr(to_puya_ir, name)
-    if name == "lift_to_teal":
-        from . import backend
-        return backend.lift_to_teal
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    "render": (".to_puya_ir", "render"),
+    "to_puya": (".to_puya_ir", "to_puya"),
+    "lift_to_teal": (".backend", "lift_to_teal"),
+}
+
+
+def __getattr__(name: str):
+    target = _LAZY_EXPORTS.get(name)
+    if target is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    module_name, attr = target
+    module = import_module(module_name, __name__)
+    value = module if attr is None else getattr(module, attr)
+    globals()[name] = value
+    return value
+
+
+def __dir__():
+    return sorted(set(globals()) | set(_LAZY_EXPORTS))
