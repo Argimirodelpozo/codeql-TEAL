@@ -91,9 +91,22 @@ def test_fact_superset_and_derived_views_are_reused():
     ) is not None
 
 
-def test_cached_derived_view_rejects_supported_mutation_entry_points():
+def test_cached_derived_view_allows_completed_passes_but_rejects_refinement():
     prog = _program("#pragma version 8\nint 1\nreturn\n")
     view = derived_program(prog, DerivedProfile.GUARDED)
 
+    # Defensively requesting annotations already present on the shared normal
+    # form is a true no-op and must not perturb its cache revision.
+    revision = view.revision
+    assert view.propagate_constants() is None
+    assert view.propagate_scratch_constants() is None
+    assert view.propagate_ranges() is None
+    assert view.propagate_range_arithmetic() == 0
+    assert view.propagate_byte_lengths() == 0
+    assert view.propagate_bytemath_ranges() == 0
+    assert view.revision == revision
+
+    # An annotation pass not known complete would still mutate the cached view.
+    view._byte_lengths_propagated = False
     with pytest.raises(RuntimeError, match="read-only"):
-        view.propagate_constants()
+        view.propagate_byte_lengths()

@@ -174,6 +174,8 @@ class SSAProgram:
         self._consts_propagated: bool = False
         self._scratch_propagated: bool = False
         self._ranges_propagated: bool = False
+        self._byte_lengths_propagated: bool = False
+        self._bytemath_ranges_propagated: bool = False
 
         def _bb_from_tuple(bb_id: tuple) -> BasicBlock:
             bb = self.blocks.get(bb_id)
@@ -652,9 +654,9 @@ class SSAProgram:
         SSAVar/Phi input with its literal when ``propagate_consts=True``
         (default). Idempotent.
         """
-        self._assert_analysis_mutable()
         if self._consts_propagated:
             return
+        self._assert_analysis_mutable()
 
         # Const_value seeding + the ``identity_steps`` relation the impl reads
         # are now computed lazily (formerly eager at construction). Trigger
@@ -679,9 +681,9 @@ class SSAProgram:
         Must-semantics: any load whose stores include even one non-
         constant value is left non-resolved.
         """
-        self._assert_analysis_mutable()
         if self._scratch_propagated:
             return
+        self._assert_analysis_mutable()
         # Stack-side propagation needs to have run first so each store's
         # consumed SSAVar already has its const_value (if any) set.
         if not self._consts_propagated:
@@ -709,9 +711,9 @@ class SSAProgram:
         :data:`_GLOBAL_FIELD_RANGES` (``global FIELD``). A second pass
         unions arg ranges through phis to fixed point.
         """
-        self._assert_analysis_mutable()
         if self._ranges_propagated:
             return
+        self._assert_analysis_mutable()
 
         from ..analysis._range_seed import propagate_ranges as _impl
         _impl(self)
@@ -731,6 +733,9 @@ class SSAProgram:
         composes them. Lazily imported from
         :mod:`tealql.tealtools.range_arith` so the substrate stays free of
         the AVM arithmetic semantics."""
+        if (getattr(self, "_analysis_read_only", False)
+                and getattr(self, "_range_arith_propagated", False)):
+            return 0
         self._assert_analysis_mutable()
         from ..analysis._range_arithmetic import propagate_range_arithmetic as _impl
         changed = _impl(self)
@@ -749,9 +754,13 @@ class SSAProgram:
         :meth:`propagate_constants` and :meth:`propagate_ranges`
         first. Lazily imported from :mod:`tealql.tealtools.bytemath` so the
         substrate stays free of bytemath semantics."""
+        if (getattr(self, "_analysis_read_only", False)
+                and self._bytemath_ranges_propagated):
+            return 0
         self._assert_analysis_mutable()
         from ..analysis._bigints import propagate_bytemath_ranges as _impl
         changed = _impl(self)
+        self._bytemath_ranges_propagated = True
         if changed:
             self._commit_mutation()
         return changed
@@ -772,9 +781,13 @@ class SSAProgram:
         further to add. Lazily imported from
         :mod:`tealql.tealtools.byte_length_prop` so the TEAL byte-op
         semantics stay out of the substrate."""
+        if (getattr(self, "_analysis_read_only", False)
+                and self._byte_lengths_propagated):
+            return 0
         self._assert_analysis_mutable()
         from ..analysis._byte_lengths import propagate_byte_lengths as _impl
         changed = _impl(self)
+        self._byte_lengths_propagated = True
         if changed:
             self._commit_mutation()
         return changed

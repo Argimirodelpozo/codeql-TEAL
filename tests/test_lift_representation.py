@@ -249,6 +249,43 @@ def test_no_recipient_operand_lowers_as_uint64(probe):
                     f"{probe}: itxn_field {src.immediates[0]} operand typed uint64")
 
 
+def test_guarded_derived_view_keeps_exact_byte_lengths_during_lowering(caplog, tmp_path):
+    """Reusing a fully annotated read-only view must be a no-op, not a failed
+    mutation.  The unsized control is Puya's ordinary type for ``extract``;
+    the SSA length bridge is what refines this particular result to bytes[4].
+    """
+    import logging
+
+    import puya.ir.models as M
+    from puya.ir.avm_ops import AVMOp
+
+    from tealql.tealtools.analysis import DerivedProfile, derived_program
+    from tealql.tealtools.lift import lift_to_teal, to_puya_ir
+    from tealql.tealtools.ssa import SSAProgram
+
+    source = tmp_path / "sized.teal"
+    source.write_text(
+        "#pragma version 10\ntxn TxID\nextract 0 4\nlog\nint 1\nreturn\n"
+    )
+    prog = SSAProgram(str(source))
+    view = derived_program(prog, DerivedProfile.GUARDED)
+    with caplog.at_level(logging.WARNING, logger="tealql.tealtools.lift"):
+        main, _subs = to_puya_ir.to_puya(view)
+
+    extract = next(
+        op for block in main.body for op in block.ops
+        if isinstance(op, M.Assignment)
+        and isinstance(op.source, M.Intrinsic)
+        and op.source.op == AVMOp.extract
+    )
+    result_type = extract.targets[0].ir_type
+    assert type(result_type).__name__ == "SizedBytesType"
+    assert result_type.num_bytes == 4
+    assert "const-propagation FAILED" not in caplog.text
+    assert "sized-bytes bridge FAILED" not in caplog.text
+    assert "extract 0 4" in lift_to_teal(str(source))
+
+
 # ---------------------------------------------------------------------------
 # backend: the AVM version probe must read past a header comment
 # ---------------------------------------------------------------------------
