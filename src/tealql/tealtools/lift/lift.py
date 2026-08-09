@@ -239,9 +239,9 @@ class _Lifter:
 
     def build(self) -> pre_ir.Program:
         """Lift to the pre-IR, surfacing any failure as a typed
-        :class:`tealql.tealtools.core.errors.LiftError` (stage ``"build"``). The
+        :class:`tealql.tealtools.diagnostics.errors.LiftError` (stage ``"build"``). The
         input program's CFG is restored on the way out, success or failure."""
-        from ..core.errors import LiftError
+        from ..diagnostics.errors import LiftError
         # Scratch influence is consumed by the build (load_stores) but CACHED on
         # prog and shared with the SSA layer — force it BEFORE the prune so the
         # cache always holds the un-pruned result. (Entry points that pre-run
@@ -259,7 +259,7 @@ class _Lifter:
             _restore_pruned_edges(undo)
 
     def _build_impl(self) -> pre_ir.Program:
-        from ..core.errors import LiftError
+        from ..diagnostics.errors import LiftError
         files = self.prog.source_files
         if len(files) != 1:
             raise LiftError(

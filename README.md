@@ -84,8 +84,8 @@ Subsystems, bottom to top:
 `src/tealql/tealtools/` is a Python package (installed as `tealql.tealtools`). Each submodule loads a program via `tealql.tealtools.SSAProgram(<source>)` and exposes either an SSA-level helper or a specific detector. `<source>` is a `.teal` file or a directory of them; the graph and SSA are rebuilt in-process (pure Python, milliseconds).
 
 The package root is deliberately only a lazy facade. Implementations are
-grouped by responsibility: `core` (errors and health), `language` (AVM tables
-and literals), `metadata` (ABI/ARC-56), `frontend` (sources and graph loading),
+grouped by responsibility: `diagnostics` (typed failures and analysis health),
+`language` (AVM tables and literals), `metadata` (ABI/ARC-56), `frontend` (sources and graph loading),
 `cfg` (control-flow semantics), `analysis`, `dataflow`, `reporting`,
 `intercontract`, `ssa`, `budget`, `lift`, and `viz`.
 

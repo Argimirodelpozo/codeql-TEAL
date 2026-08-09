@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Callable, Iterable
 
 from tealql.tealtools._utils.targets import resolve_target
-from tealql.tealtools.core.errors import TealParseError, TealQLError
+from tealql.tealtools.diagnostics.errors import TealParseError, TealQLError
 
 logger = logging.getLogger("tealql.tealtools.cli")
 

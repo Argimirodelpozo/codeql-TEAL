@@ -81,7 +81,7 @@ def test_strict_default_refuses_an_unknown_opcode(monkeypatch):
     CLI's parse-health warning reads (the ``avm.unknown_opcodes()`` process
     global is a union across every build and over-reports in long runs)."""
     from tealql.tealtools.language import avm
-    from tealql.tealtools.core.errors import UnknownOpcodeError
+    from tealql.tealtools.diagnostics.errors import UnknownOpcodeError
 
     src = "#pragma version 8\nbyte 0x00\nlog\nint 1\nreturn\n"
     monkeypatch.delitem(avm.SIG, "log")

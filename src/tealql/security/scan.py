@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Optional
 
-from tealql.tealtools.core.errors import (
+from tealql.tealtools.diagnostics.errors import (
     TargetError, TargetNotFoundError, TealParseError, TealQLError,
 )
 from tealql.tealtools.ssa import SSAProgram

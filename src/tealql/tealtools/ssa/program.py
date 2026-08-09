@@ -142,7 +142,7 @@ class SSAProgram:
         if strict:
             _diags = g.graph.get("parse_diagnostics", ())
             if _diags:
-                from ..core.errors import TealParseError
+                from ..diagnostics.errors import TealParseError
                 raise TealParseError(_diags)
 
         self._graph = g
@@ -245,7 +245,7 @@ class SSAProgram:
         #: ``avm.unknown_opcodes()``; the CLI's parse-health warning reads this.
         self.unknown_ops: frozenset = frozenset(_unknown_ops)
         if strict and _unknown_ops:
-            from ..core.errors import UnknownOpcodeError
+            from ..diagnostics.errors import UnknownOpcodeError
             raise UnknownOpcodeError(_unknown_ops)
 
         # Pass 2: wire BB predecessor/successor from CFG edges that
@@ -395,12 +395,12 @@ class SSAProgram:
 
     def health(self, *, deep: bool = False):
         """Completeness of this representation and, optionally, lazy facts."""
-        from ..core.health import health_for
+        from ..diagnostics.health import health_for
         return health_for(self, deep=deep)
 
     def result(self, value, *, deep: bool = False):
         """Wrap an analysis value with standardized completeness metadata."""
-        from ..core.health import AnalysisResult
+        from ..diagnostics.health import AnalysisResult
         return AnalysisResult(value, self.health(deep=deep))
 
     def _rebuild_uses(self) -> None:

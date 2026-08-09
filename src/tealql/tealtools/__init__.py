@@ -15,17 +15,17 @@ _logging.getLogger("tealql.tealtools").addHandler(_logging.NullHandler())
 # package-root API while keeping every dependency edge demand-driven.
 _LAZY_EXPORTS = {
     # Errors and source identity.
-    "TealQLError": (".core.errors", "TealQLError"),
-    "TealParseError": (".core.errors", "TealParseError"),
-    "TargetError": (".core.errors", "TargetError"),
-    "TargetNotFoundError": (".core.errors", "TargetNotFoundError"),
-    "UnknownOpcodeError": (".core.errors", "UnknownOpcodeError"),
-    "ParseDiagnostic": (".core.errors", "ParseDiagnostic"),
+    "TealQLError": (".diagnostics.errors", "TealQLError"),
+    "TealParseError": (".diagnostics.errors", "TealParseError"),
+    "TargetError": (".diagnostics.errors", "TargetError"),
+    "TargetNotFoundError": (".diagnostics.errors", "TargetNotFoundError"),
+    "UnknownOpcodeError": (".diagnostics.errors", "UnknownOpcodeError"),
+    "ParseDiagnostic": (".diagnostics.errors", "ParseDiagnostic"),
     "ProgramSources": (".frontend.sources", "ProgramSources"),
     "SourceFile": (".frontend.sources", "SourceFile"),
-    "AnalysisDegradation": (".core.health", "AnalysisDegradation"),
-    "AnalysisHealth": (".core.health", "AnalysisHealth"),
-    "AnalysisResult": (".core.health", "AnalysisResult"),
+    "AnalysisDegradation": (".diagnostics.health", "AnalysisDegradation"),
+    "AnalysisHealth": (".diagnostics.health", "AnalysisHealth"),
+    "AnalysisResult": (".diagnostics.health", "AnalysisResult"),
     # SSA and CFG.
     "SSAProgram": (".ssa", "SSAProgram"),
     "BasicBlock": (".ssa", "BasicBlock"),

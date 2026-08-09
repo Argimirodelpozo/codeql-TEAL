@@ -402,7 +402,7 @@ def to_puya(prog, *, diagnostics: list | None = None):
     lowering failure surfaced as a typed ``LiftError`` (stage ``"lower"``). Errors
     puya merely LOGS during model validation are appended to ``diagnostics`` (when
     given) — see :func:`_puya_error_capture`."""
-    from ..core.errors import LiftError
+    from ..diagnostics.errors import LiftError
     try:
         with _puya_error_capture("lower", diagnostics):
             return _to_puya_impl(prog)
@@ -826,7 +826,7 @@ def optimize(subs, *, max_rounds: int = 100, aggressive: bool = False,
     enables the CODEGEN-CHANGING simplifications the faithful default leaves off.
     Errors puya merely LOGS while rebuilding ops are appended to ``diagnostics``
     (when given) — see :func:`_puya_error_capture`."""
-    from ..core.errors import LiftError
+    from ..diagnostics.errors import LiftError
     try:
         with _puya_error_capture("optimize", diagnostics):
             rounds = _optimize_impl(subs, max_rounds=max_rounds, aggressive=aggressive)

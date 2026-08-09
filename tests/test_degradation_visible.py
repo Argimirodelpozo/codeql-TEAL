@@ -20,7 +20,7 @@ import pytest
 from tealql.security.scan import (
     ScanNotification, ScanResults, render_json, render_sarif, render_text, scan,
 )
-from tealql.tealtools.core.errors import TealQLError
+from tealql.tealtools.diagnostics.errors import TealQLError
 
 TESTS = Path(__file__).resolve().parent
 

@@ -447,10 +447,10 @@ def parse_nodes(
 
     HAZARD: every unrecovered ``ERROR`` span is DROPPED from the node stream, as
     are extra instructions on a shared line and duplicate labels. Each drop
-    appends a :class:`tealql.tealtools.core.errors.ParseDiagnostic` to ``diagnostics``
+    appends a :class:`tealql.tealtools.diagnostics.errors.ParseDiagnostic` to ``diagnostics``
     when one is passed — the ONLY way a caller can tell a fully-parsed program
     from a partial one."""
-    from ..core.errors import ParseDiagnostic
+    from ..diagnostics.errors import ParseDiagnostic
     from ..frontend.graph import _slice_source        # lazy: graph imports this module
     out: list = []
     for file, src in sources.items():

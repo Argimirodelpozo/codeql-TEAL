@@ -48,7 +48,7 @@ def build_lifter(prog, file=None):
         lifter = lf
     except Exception as e:
         try:
-            from ..core.errors import LiftError
+            from ..diagnostics.errors import LiftError
         except ImportError:
             LiftError = ()
         if not isinstance(e, LiftError):

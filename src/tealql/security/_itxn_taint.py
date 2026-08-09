@@ -213,7 +213,7 @@ def ir_lifter(prog: SSAProgram, file: Optional[str] = None):
                 "the rest report nothing.", e)
     else:
         src = str(getattr(prog, "source_path", "") or "<in-memory>")
-        from tealql.tealtools.core.errors import LiftError
+        from tealql.tealtools.diagnostics.errors import LiftError
         try:
             target = request.target()
             target.propagate_constants()

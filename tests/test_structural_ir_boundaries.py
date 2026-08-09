@@ -13,7 +13,7 @@ import copy
 import pytest
 
 from tealql.security._itxn_taint import ir_lifter
-from tealql.tealtools.core.errors import LiftError
+from tealql.tealtools.diagnostics.errors import LiftError
 from tealql.tealtools.frontend.graph import load_graph
 from tealql.tealtools.lift import build_lifter, pre_ir
 from tealql.tealtools.lift.lift import _Lifter, lift
