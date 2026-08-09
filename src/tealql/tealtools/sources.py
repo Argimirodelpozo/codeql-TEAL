@@ -8,6 +8,15 @@ from pathlib import Path
 from typing import Optional
 
 
+def _numbered_source_name(name: str, ordinal: int) -> str:
+    """Add a stable display suffix without hiding the source's extension."""
+    slash = name.rfind("/") + 1
+    dot = name.rfind(".")
+    if dot < slash:
+        dot = len(name)
+    return f"{name[:dot]}[{ordinal}]{name[dot:]}"
+
+
 def _read_raw_sources(source) -> tuple[dict[str, bytes], Optional[Path], bool]:
     """Return canonical identities, physical origin, and its captured kind."""
     from .errors import TargetError, TargetNotFoundError
@@ -22,9 +31,21 @@ def _read_raw_sources(source) -> tuple[dict[str, bytes], Optional[Path], bool]:
             base = Path(rel).name
             basenames[base] = basenames.get(base, 0) + 1
         out: dict[str, bytes] = {}
+        used: set[str] = set()
         for rel, data in resolved:
             base = Path(rel).name
-            name = Path(rel).as_posix() if basenames.get(base, 0) > 1 else base
+            preferred = (
+                Path(rel).as_posix() if basenames.get(base, 0) > 1 else base
+            )
+            name = preferred
+            ordinal = 2
+            while name in used:
+                # Mapping keys are opaque source identities.  Distinct spellings
+                # such as ``./approval.teal`` and ``approval.teal`` may collapse
+                # through Path normalization, but their programs must not.
+                name = _numbered_source_name(preferred, ordinal)
+                ordinal += 1
+            used.add(name)
             out[name] = data
         return out, None, False
 

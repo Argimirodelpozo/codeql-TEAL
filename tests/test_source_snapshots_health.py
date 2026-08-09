@@ -7,6 +7,7 @@ from tealql.tealtools.analysis import DerivedProfile, derived_program
 from tealql.tealtools.lift import lift
 from tealql.tealtools.lift.teal_const import _load_src
 from tealql.tealtools.source_map import source_map_for
+from tealql.tealtools.sources import ProgramSources
 from tealql.tealtools.ssa import SSAProgram
 
 
@@ -54,6 +55,26 @@ def test_nested_duplicate_basenames_keep_exact_source_maps(tmp_path):
     # Source identity is construction-time metadata too, not a later fs probe.
     (tmp_path / "a/prog.teal").unlink()
     assert projected.sources.physical_path("a/prog.teal") == projected.source_path
+
+
+def test_in_memory_path_aliases_cannot_silently_replace_a_program():
+    """Mapping keys are source identities even when ``Path`` normalizes alike."""
+    approve = b"#pragma version 8\nint 1\nreturn\n"
+    reject = b"#pragma version 8\nint 0\nreturn\n"
+    supplied = {"./approval.teal": approve, "approval.teal": reject}
+
+    sources = ProgramSources.load(supplied)
+    assert len(sources.files) == 2
+    assert {file.raw for file in sources.files} == {approve, reject}
+    assert len(set(sources.names)) == 2
+
+    # Pin the consuming path too: retaining bytes only in snapshot metadata is
+    # insufficient if parsing later collapses the reported file identities.
+    prog = SSAProgram(supplied)
+    returns = [assignment for assignment in prog.assignments
+               if assignment.op == "return"]
+    assert len(returns) == 2
+    assert len({assignment.location.file for assignment in returns}) == 2
 
 
 def test_assert_refined_in_memory_program_rebuilds_from_snapshot():
