@@ -351,25 +351,25 @@ def _value_predicate_checks_slots(value, kind: str, args: tuple,
             and value_origin(value) is value_origin(args[0])):
         return False                              # decomposed x OP x predicate
 
-    def visit(v, guaranteed: bool, value_ok: bool, sense: bool,
-              input_ok: bool) -> bool:
+    def next_inputs(v, guaranteed: bool, value_ok: bool, sense: bool,
+                    input_ok: bool):
         key = (id(v), guaranteed, value_ok, sense, input_ok)
         if key in seen:
-            return False
+            return ()
         seen.add(key)
         if not guaranteed or not value_ok or not input_ok:
-            return False
+            return ()
 
         d = getattr(v, "defined_by", None)
         if d is None or not d.inputs:
-            return bool(taint.get(v, frozenset()) & sink_slots)
+            return None if taint.get(v, frozenset()) & sink_slots else ()
 
         operands = binary_operands(d)
         if (d.op in _GUARD_CMP_OPS and operands is not None
                 and value_origin(operands[0]) is value_origin(operands[1])):
-            return False                         # x OP x is a constant predicate
+            return ()                            # x OP x is a constant predicate
         if d.op == "%" and operands is not None and const_int(operands[1]) == 1:
-            return False                         # x % 1 is always zero
+            return ()                            # x % 1 is always zero
 
         breaks = "||" if sense else "&&"
         child_guaranteed = guaranteed and d.op != breaks
@@ -381,13 +381,25 @@ def _value_predicate_checks_slots(value, kind: str, args: tuple,
             # Excluding one value does not meaningfully validate an attacker-
             # chosen payee/amount; equality only pins on the equality arm.
             child_input_ok = False
-        return any(
-            visit(inp, child_guaranteed, child_value_ok, child_sense,
-                  child_input_ok)
+        return tuple(
+            (inp, child_guaranteed, child_value_ok, child_sense,
+             child_input_ok)
             for inp in d.inputs
         )
 
-    return visit(value, True, True, kind != "zero", True)
+    # Legal TEAL can build definition chains deeper than Python's recursion
+    # limit.  A detector crash is especially dangerous here because the public
+    # runner isolates it and prints "no findings".  The predicate is an
+    # existential walk, so a plain worklist preserves the recursive ``any``
+    # semantics without a host-stack limit.
+    pending = [(value, True, True, kind != "zero", True)]
+    while pending:
+        state = pending.pop()
+        children = next_inputs(*state)
+        if children is None:
+            return True
+        pending.extend(children)
+    return False
 
 
 def _identity_is_attacker_supplied(value, taint: dict,

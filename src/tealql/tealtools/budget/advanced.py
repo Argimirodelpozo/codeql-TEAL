@@ -251,23 +251,29 @@ _ATTACKER_READS = frozenset({
 
 
 def _attacker_rooted(value, facts, seen=None) -> bool:
-    value = facts.resolve(value)
-    if isinstance(value, Const):
-        return False
-    if not isinstance(value, (SSAVar, Phi)):
-        return True
-    seen = set() if seen is None else seen
-    if value in seen:
-        return False
-    seen.add(value)
-    if isinstance(value, Phi):
-        return any(_attacker_rooted(arg, facts, seen) for arg in value.args)
-    definition = value.defined_by
-    if definition is None:
-        return True
-    if definition.op in _ATTACKER_READS:
-        return True
-    return any(_attacker_rooted(item, facts, seen) for item in definition.inputs)
+    """Whether any definition leaf is attacker-controlled, without recursion."""
+    visited = set() if seen is None else set(seen)
+    pending = [value]
+    while pending:
+        current = facts.resolve(pending.pop())
+        if isinstance(current, Const):
+            continue
+        if not isinstance(current, (SSAVar, Phi)):
+            return True
+        key = id(current)
+        if key in visited:
+            continue
+        visited.add(key)
+        if isinstance(current, Phi):
+            pending.extend(current.args)
+            continue
+        definition = current.defined_by
+        if definition is None:
+            return True
+        if definition.op in _ATTACKER_READS:
+            return True
+        pending.extend(definition.inputs)
+    return False
 
 
 def find_budget_exhaustion_candidates(prog: SSAProgram) -> list[BudgetExhaustionCandidate]:

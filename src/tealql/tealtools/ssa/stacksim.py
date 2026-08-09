@@ -372,7 +372,7 @@ def _frame_cells(instruction, res, *, allow_pending=False):
     return cells, pending
 
 
-def _frame_cell_root(value, seen=None):
+def _frame_cell_root(value, seen=None, memo=None):
     """Collapse a loop phi that only carries one value plus itself.
 
     The ordinary stack join must keep ``phi(seed, self)`` structurally, but for
@@ -380,21 +380,76 @@ def _frame_cell_root(value, seen=None):
     normalization a stable frame local crossing an unrelated loop looks like
     two different boundary values and the multi-entry frame proof refuses it.
     """
-    visited = set() if seen is None else seen
-    while hasattr(value, "args") and id(value) not in visited:
-        visited.add(id(value))
-        args = [arg for arg in value.args if arg is not value]
-        if not args:
-            break
-        roots = [_frame_cell_root(arg, set(visited)) for arg in args]
-        if not all(root is roots[0] for root in roots[1:]):
-            break
-        value = roots[0]
-    return value
+    # ``phi(previous, previous)`` is a DAG, not a tree.  A copied path-local
+    # seen set expands its shared predecessor once per path (exponential for a
+    # chain of diamonds).  Resolve with an explicit post-order stack and one
+    # identity memo.  ``active`` is separate from ``resolved``: conflating the
+    # two makes the second arm of a diamond look cyclic and loses the exact
+    # common root this helper exists to prove.
+    active = set() if seen is None else set(seen)
+    resolved = {} if memo is None else memo
+
+    def args_of(node):
+        try:
+            return [arg for arg in node.args if arg is not node]
+        except AttributeError:
+            return None
+
+    key = id(value)
+    if key in resolved:
+        return resolved[key]
+    if key in active:
+        return value
+    first_args = args_of(value)
+    if not first_args:
+        resolved[key] = value
+        return value
+
+    # frame = [node, non-self args, next child index, resolved child roots]
+    stack = [[value, first_args, 0, []]]
+    active.add(key)
+    while stack:
+        node, args, index, roots = stack[-1]
+        if index == len(args):
+            root = (roots[0] if roots
+                    and all(item is roots[0] for item in roots[1:])
+                    else node)
+            resolved[id(node)] = root
+            active.discard(id(node))
+            stack.pop()
+            if not stack:
+                return root
+            stack[-1][3].append(root)
+            stack[-1][2] += 1
+            continue
+
+        child = args[index]
+        child_key = id(child)
+        if child_key in resolved:
+            roots.append(resolved[child_key])
+            stack[-1][2] += 1
+            continue
+        if child_key in active:
+            # Match the old path-local cycle semantics conservatively: the
+            # repeated node is its own root on this arm.
+            roots.append(child)
+            stack[-1][2] += 1
+            continue
+        child_args = args_of(child)
+        if not child_args:
+            resolved[child_key] = child
+            roots.append(child)
+            stack[-1][2] += 1
+            continue
+        active.add(child_key)
+        stack.append([child, child_args, 0, []])
+
+    return value  # pragma: no cover - the root frame always returns above
 
 
 def _same_frame_cell(cells):
-    roots = [_frame_cell_root(cell) for cell in cells]
+    memo = {}
+    roots = [_frame_cell_root(cell, memo=memo) for cell in cells]
     return (roots[0] if roots and all(root is roots[0] for root in roots[1:])
             else None)
 

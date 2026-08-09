@@ -1179,3 +1179,72 @@ def test_a_conditional_dip_past_the_join_keeps_the_arm_alive(tmp_path):
     assert "fail" not in rendered, (
         f"a conditionally-live arm must NOT be rejected:\n{rendered}")
     lift_to_teal(str(teal))
+
+
+def test_shared_frame_phi_diamonds_are_resolved_once_per_node():
+    """A shared phi DAG is linear in its distinct nodes, not its paths.
+
+    Copying the ancestor set for every phi arm revisits the same sub-DAG once
+    per path.  The realistic ``phi(previous, previous)`` diamond therefore
+    grew exponentially and made hostile frame shapes a cheap analyzer DoS.
+    The access counter makes the complexity contract deterministic while the
+    root assertion pins the precision that a bare global visited set loses.
+    """
+    from tealql.tealtools.ssa.stacksim import _frame_cell_root
+
+    accesses = 0
+
+    class SharedPhi:
+        def __init__(self, *args):
+            self._args = args
+
+        @property
+        def args(self):
+            nonlocal accesses
+            accesses += 1
+            return self._args
+
+    root = object()
+    value = root
+    depth = 16
+    for _ in range(depth):
+        value = SharedPhi(value, value)
+
+    assert _frame_cell_root(value) is root
+    assert accesses <= depth, (
+        f"a {depth}-node shared DAG was expanded {accesses} times")
+
+
+def test_deep_guard_and_loop_value_chains_are_total():
+    """Long legal definition chains must not disappear behind RecursionError.
+
+    The security half keeps an attacker-chosen inner app id below an unrelated
+    clean predicate: the predicate does not guard the target, so one finding is
+    required.  The budget half makes an attacker-derived chain control a loop,
+    so one review candidate is required.  Both old recursive walks failed near
+    this depth; crash isolation then rendered the security failure as clean.
+    """
+    from tealql.security import DETECTORS
+    from tealql.tealtools.budget import find_budget_exhaustion_candidates
+
+    depth = 600
+    passthrough = "int 0\n+\n" * depth
+    security = SSAProgram.from_text(
+        "#pragma version 10\n"
+        "txna ApplicationArgs 1\nbtoi\n"
+        "global LatestTimestamp\n"
+        + passthrough
+        + "assert\n"
+        "itxn_begin\nint appl\nitxn_field TypeEnum\n"
+        "itxn_field ApplicationID\nitxn_submit\nint 1\nreturn\n"
+    )
+    findings = DETECTORS["arbitrary-inner-appcall"](security).detect()
+    assert len(findings) == 1
+
+    budget = SSAProgram.from_text(
+        "#pragma version 10\nloop:\ntxn Fee\n"
+        + passthrough
+        + "bnz loop\nint 1\nreturn\n"
+    )
+    candidates = find_budget_exhaustion_candidates(budget)
+    assert len(candidates) == 1 and candidates[0].attacker_controlled
