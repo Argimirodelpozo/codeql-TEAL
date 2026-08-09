@@ -14,7 +14,7 @@ from tealql.security.scan import discover_teal_files, scan
 from tealql.tealtools import avm
 from tealql.tealtools.errors import TargetError, TargetNotFoundError, TealQLError
 from tealql.tealtools.group_reasoning import analyze, analyze_per_exit
-from tealql.tealtools.passes import run_all_passes
+from tealql.tealtools.analysis import DerivedProfile, derived_program
 from tealql.tealtools.path_predicates import PathPredicateAnalysis
 from tealql.tealtools.ssa import SSAProgram
 
@@ -255,7 +255,7 @@ return
     on_fresh = [v.pretty() for v in DETECTORS["constant-condition"](fresh).detect()]
 
     refined = _prog(tmp_path, "b.teal", src)
-    run_all_passes(refined)
+    refined = derived_program(refined, DerivedProfile.GUARDED)
     assert getattr(refined, "_assert_ranges_applied", False)
     on_refined = [v.pretty() for v in DETECTORS["constant-condition"](refined).detect()]
 
@@ -364,7 +364,7 @@ return
     on_fresh = [v.pretty() for v in DETECTORS["constant-condition"](fresh).detect()]
 
     refined = _prog(tmp_path, "a.teal", src)   # same path -> rebuildable
-    run_all_passes(refined)
+    refined = derived_program(refined, DerivedProfile.GUARDED)
     assert getattr(refined, "_assert_ranges_applied", False)
     on_refined = [v.pretty() for v in DETECTORS["constant-condition"](refined).detect()]
 

@@ -25,7 +25,6 @@ def _prog(case: str):
         pytest.skip(f"could not build SSAProgram: {e}")
     prog.propagate_constants()
     prog.propagate_scratch_constants()
-    prog.propagate_scratch_values()
     return prog
 
 

@@ -17,7 +17,7 @@ from dataclasses import dataclass
 
 from ..ssa import SSAProgram
 from ..ssa.operands import const_int
-from ..passes import run_all_passes
+from ..analysis import DerivedProfile, derived_program
 from .relational import LengthRelations
 
 
@@ -169,7 +169,7 @@ def _abi_arg_lengths_impl(prog, method_table: "dict | None" = None) -> dict:
     return out
 
 
-def check_bounds(prog: SSAProgram, *, run_passes: bool = True,
+def check_bounds(prog: SSAProgram, *,
                  speculative: bool = False, arc56=None) -> list:
     """Every byte-access site with its in-bounds verdict.
 
@@ -177,8 +177,10 @@ def check_bounds(prog: SSAProgram, *, run_passes: bool = True,
     buffers a length from type recovery. It reports through the separate
     ``in_bounds_speculative`` field and must never be merged into the sound
     ``in_bounds`` or allowed to affect ``proven_oob``."""
-    if run_passes:
-        run_all_passes(prog)
+    # Bounds still consumes annotation-oriented relational helpers.  Give it a
+    # guarded PRIVATE view; never let its assertion facts, aliases, or cleanup
+    # rewrite the scan-shared canonical program.
+    prog = derived_program(prog, DerivedProfile.GUARDED)
 
     sites = [(a, acc) for a in prog.assignments if (acc := _access(a)) is not None]
     rel = LengthRelations(prog)

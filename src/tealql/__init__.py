@@ -3,7 +3,7 @@
 One installable package, three subpackages:
 
   - :mod:`tealql.tealtools` — the analysis substrate: parse -> graph -> SSA,
-    dataflow/taint, passes, and the Puya-IR lift.
+    dataflow/taint, immutable value analysis, and the Puya-IR lift.
   - :mod:`tealql.security` — the detection layer (detector registry, scanner,
     cross-contract driver). Depends on ``tealtools``, never the reverse.
   - :mod:`tealql.cli`      — the ``tealql`` console entry point.

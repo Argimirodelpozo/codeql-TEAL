@@ -1,18 +1,17 @@
-"""`passes.input_prop` — unify execution-stable input reads WITHOUT merging reads
-that pop distinct indices off the stack."""
+"""Immutable input aliases unify only execution-stable reads."""
 from __future__ import annotations
 
 from tealql.tealtools.ssa import SSAProgram
+from tealql.tealtools.analysis import FactDomain
 
 
 def _consumer_inputs(tmp_path, teal, consumer_op):
     (tmp_path / "p.teal").write_text(teal)
     p = SSAProgram(str(tmp_path / "p.teal"))
-    p.propagate_constants()
-    p.propagate_inputs()
+    facts = p.facts(FactDomain.CONSTANTS)
     for a in p.assignments:
         if a.op == consumer_op:
-            return a.inputs
+            return [facts.resolve(value) for value in a.inputs]
     return []
 
 
@@ -74,11 +73,12 @@ def test_reads_from_independent_files_never_unify():
         "a.teal": H + "global CreatorAddress\nglobal CreatorAddress\n==\nreturn\n",
         "b.teal": H + "global CreatorAddress\nglobal CreatorAddress\n==\nreturn\n",
     })
-    prog.propagate_inputs()
+    facts = prog.facts(FactDomain.CONSTANTS)
 
     comparisons = {a.location.file: a for a in prog.assignments if a.op == "=="}
     assert set(comparisons) == {"a.teal", "b.teal"}
     for file, cmp in comparisons.items():
-        assert len(cmp.inputs) == 2
-        assert cmp.inputs[0] is cmp.inputs[1]
-        assert cmp.inputs[0].file == file
+        resolved = [facts.resolve(value) for value in cmp.inputs]
+        assert len(resolved) == 2
+        assert resolved[0] is resolved[1]
+        assert resolved[0].file == file

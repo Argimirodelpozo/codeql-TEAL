@@ -1,4 +1,4 @@
-"""Unit tests for forward range arithmetic (``tealql.tealtools.passes.range_arith``),
+"""Unit tests for forward range arithmetic (``analysis._range_arithmetic``),
 focused on the two behaviours added on top of the stdlib seeds: const→range
 seeding and the top-first operand order of the non-commutative ops.
 
@@ -7,7 +7,7 @@ These build tiny ``Assignment`` lists directly and short-circuit the
 is needed.
 """
 from tealql.tealtools.ssa import Assignment, Const, Location, SSAVar
-from tealql.tealtools.passes.range_arith import propagate_range_arithmetic
+from tealql.tealtools.analysis._range_arithmetic import propagate_range_arithmetic
 
 
 class _FakeProg:

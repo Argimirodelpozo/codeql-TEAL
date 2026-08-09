@@ -295,13 +295,13 @@ class TestValidationNarrowing:
         p = SSAProgram.from_text(teal, name="t")
         inputs_before = {id(a): tuple(id(i) for i in a.inputs) for a in p.assignments}
         uses_before = {id(v): tuple(id(u) for u in v.uses) for v in p.vars.values()}
-        flags_before = (p._inputs_propagated, p._shuffles_propagated)
 
         byte_taint(p, validate=True)
 
         assert {id(a): tuple(id(i) for i in a.inputs) for a in p.assignments} == inputs_before
         assert {id(v): tuple(id(u) for u in v.uses) for v in p.vars.values()} == uses_before
-        assert (p._inputs_propagated, p._shuffles_propagated) == flags_before
+        assert not hasattr(p, "_inputs_propagated")
+        assert not hasattr(p, "_shuffles_propagated")
 
     def test_checked_prefix_clears_taint(self):
         # bytes 0..7 pinned to a const -> read of byte 3 is NOT tainted, and

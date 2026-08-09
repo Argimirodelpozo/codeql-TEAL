@@ -13,7 +13,7 @@ Soundness of the fact sources, each erring toward proving LESS:
     bound ONLY — it can under-count, which is safe for an in-bounds proof and
     unsafe for the opposite claim.
   * ASSERT facts apply only where the assert dominates the query, with dominance
-    approximated by reachability as in :mod:`..passes.range_assert`; the
+    approximated by reachability as in :mod:`..analysis._range_refinement`; the
     over-approximation means a constraint is at worst skipped.
   * A reachable negative cycle means the constraints contradict, so the site is
     unreachable and NO claim is made in either direction."""

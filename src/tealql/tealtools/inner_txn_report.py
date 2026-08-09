@@ -20,7 +20,7 @@ from .ssa import (
     SSAProgram,
     SSAVar,
 )
-from .passes.frame_flow import frame_gap_sources
+from .ssa.relations import frame_gap_sources
 
 
 # Inner-txn field operands: a produced value, a join, or a const literal.

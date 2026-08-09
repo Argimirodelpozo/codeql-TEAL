@@ -9,7 +9,7 @@ duck-types operands (``getattr(operand, "type"/"const_value", …)``), so it run
 as plain unit tests over hand-built ``Assignment``s with real ``Const`` /
 ``TealType`` operands — no SSA fixpoint, fixture, or puya.
 """
-from tealql.tealtools.passes.byte_length_prop import (
+from tealql.tealtools.analysis._byte_lengths import (
     _hex_byte_length,
     _input_min_length,
     _op_byte_length,

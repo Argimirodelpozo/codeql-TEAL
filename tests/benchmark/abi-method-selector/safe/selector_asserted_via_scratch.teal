@@ -1,10 +1,8 @@
 #pragma version 10
 // SAFE: the selector IS checked, but the comparison round-trips through scratch
-// before the assert. That matters for coverage, not just realism: the existing
-// safe case (`selector_asserted.teal`) stays clean even with
-// `approval_exit_protected_for_arg_reads` forced to False, because the
-// "reached only on a matched-selector edge" arm covers it. Nothing pinned the
-// arg-read protection itself until this case.
+// before the assert. This pins the immutable scratch identity relation used by
+// path predicates: the exit is known to require selector == 0x12345678 without
+// a second, detector-specific enforcement walk.
 txna ApplicationArgs 0
 byte 0x12345678
 ==

@@ -1,4 +1,4 @@
-"""Compatibility tests for ``passes.frame_resolution.resolve_sub``.
+"""Tests for canonical frame-slot layout resolution.
 
 ``resolve_sub`` is a pure function of ``(blocks, nargs)``, so these run on
 hand-built mock SSA — no CodeQL DB. They pin the contract the byte-identical
@@ -10,7 +10,7 @@ resolved-copy passthrough.
 import pytest
 
 from tealql.tealtools.ssa import SSAVar
-from tealql.tealtools.passes.frame_resolution import resolve_sub
+from tealql.tealtools.ssa.frame_slots import resolve_layout as resolve_sub
 from tealql.tealtools.ssa.frame_band import build_plan as legacy_build_plan
 from tealql.tealtools.ssa.frame_slots import build_plan, resolve_layout
 

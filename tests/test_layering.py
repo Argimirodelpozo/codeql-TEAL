@@ -69,7 +69,7 @@ def test_parser_import_does_not_pull_ssa_or_analysis_layers():
         import tealql.tealtools.ast.parse
         prefixes = (
             "tealql.tealtools.ssa", "tealql.tealtools.dataflow",
-            "tealql.tealtools.lift", "tealql.tealtools.passes",
+            "tealql.tealtools.lift", "tealql.tealtools.analysis",
         )
         exact = {
             "tealql.tealtools.detector", "tealql.tealtools.xcontract",

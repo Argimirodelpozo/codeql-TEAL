@@ -23,7 +23,7 @@ from ..ssa import (
     const_int, operand_const,
 )
 
-logger = logging.getLogger("tealql.tealtools.passes.bytemath")
+logger = logging.getLogger("tealql.tealtools.analysis.bigints")
 
 
 _BYTES_OP_RULES = ("b+", "b-", "b*", "b/", "b%", "b&", "b|", "b^")

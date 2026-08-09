@@ -244,7 +244,7 @@ def _fold_bitwise(op: str, operands: list[Const]) -> Optional[Const]:
     """Fold the uint64 bitwise / shift binary ops.
 
     HAZARD: ``operands[0]`` is the deeper stack value ``A``, ``operands[1]`` the top
-    ``B`` (matching the other folders and :mod:`..passes.range_arith`): ``shl`` is
+    ``B`` (matching :mod:`..analysis._range_arithmetic`): ``shl`` is
     ``A * 2^B mod 2^64``, ``shr`` is ``A // 2^B``. A shift ``B > 63`` HALTS the AVM
     ("arg too big"), so it folds to ``None`` — like the ``-`` underflow case."""
     if len(operands) != 2:

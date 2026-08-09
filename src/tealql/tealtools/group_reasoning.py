@@ -97,8 +97,7 @@ def relative_slot(idx_operand: object) -> Optional[str]:
 
     HAZARD: a binary op's ``inputs`` are TOP-FIRST — ``[top_of_stack, deeper]``
     with value ``deeper OP top``, so ``txn GroupIndex; intc_1; -`` has
-    ``inputs=[1, GroupIndex]`` and means ``GroupIndex - 1``. Run
-    ``propagate_scratch_values()`` first so a stored ``GroupIndex-1`` forwards.
+    ``inputs=[1, GroupIndex]`` and means ``GroupIndex - 1``.
     """
     k = _const_int(idx_operand)
     if k is not None:
@@ -141,9 +140,11 @@ def array_counts(prog: SSAProgram) -> dict[str, dict[str, int]]:
 
     A member addressed by ``F i`` must carry at least ``min_count`` ``F``
     elements or the read panics and the accepting path is unreachable. Slots are
-    :func:`relative_slot` strings; run ``propagate_scratch_values()`` on ``prog``
-    first for relative indices.
+    :func:`relative_slot` strings. Scratch and shuffle identities are resolved
+    through immutable value facts.
     """
+    from .analysis import FactDomain
+    facts = prog.facts(FactDomain.CONSTANTS)
     out: dict[str, dict[str, int]] = {}
     for a in prog:
         if a.op == "txna":
@@ -154,7 +155,7 @@ def array_counts(prog: SSAProgram) -> dict[str, dict[str, int]]:
                 continue
             slot, imm = f"gtxn[{parts[0]}]", f"{parts[1]} {parts[2]}"
         elif a.op == "gtxnsa":
-            slot = relative_slot(a.inputs[0]) if a.inputs else None
+            slot = relative_slot(facts.resolve(a.inputs[0])) if a.inputs else None
             imm = a.immediates                    # "F i"
         else:
             continue
@@ -342,11 +343,16 @@ def analyze(
 def _constraints_from(preds) -> list[GroupConstraint]:
     """Distinct group constraints derivable from a predicate set, dedup order-preserving."""
     out: list[GroupConstraint] = []
-    seen: set[GroupConstraint] = set()
+    # Distinct SSA reads can express the same semantic constraint.  Canonical
+    # input rewriting used to collapse those values as a side effect; the fact
+    # based architecture deliberately retains both nodes, so deduplicate at
+    # the semantic boundary instead of relying on operand object equality.
+    seen: set[str] = set()
     for pred in preds:
         c = derive_constraint(pred)
-        if c is not None and c not in seen:
-            seen.add(c)
+        key = c.render() if c is not None else None
+        if c is not None and key not in seen:
+            seen.add(key)
             out.append(c)
     return out
 

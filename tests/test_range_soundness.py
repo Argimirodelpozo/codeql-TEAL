@@ -23,7 +23,7 @@ pytest.importorskip("hypothesis")
 from hypothesis import given, settings                       # noqa: E402
 from hypothesis import strategies as st                      # noqa: E402
 
-from tealql.tealtools.passes.range_arith import (            # noqa: E402
+from tealql.tealtools.analysis._range_arithmetic import (    # noqa: E402
     _arith_result_range,
     _clamp_uint64,
     _unary_result_range,

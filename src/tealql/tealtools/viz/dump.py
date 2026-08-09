@@ -17,6 +17,7 @@ from ..graph import load_graph
 from ..structure import analyze_structure
 from ..path_predicates import PathPredicateAnalysis
 from ..inner_txn_report import InnerTxnReport
+from ..analysis import DerivedProfile, derived_program
 from .._utils.dot import render as _dot_render
 from . import render as _viz
 
@@ -28,16 +29,6 @@ def dump_all(source, out_dir: Optional[str] = None, *, svg: bool = True,
     writes ``contract.txt`` + the graph-shaped layers as ``.svg`` / ``.dot``, and
     ``registry`` adds the cross-contract super-CFG."""
     prog = SSAProgram(source)
-    prog.propagate_constants()
-    # Additive passes only (no materialize/DCE): the SSA section gets its IntRange
-    # overlays while the pre-materialized sections still work.
-    for _p in ("propagate_ranges", "propagate_range_arithmetic",
-               "propagate_assert_ranges", "propagate_byte_lengths",
-               "propagate_bytemath_ranges"):
-        try:
-            getattr(prog, _p)()
-        except Exception:
-            pass
 
     parts: list[str] = []
 
@@ -52,7 +43,7 @@ def dump_all(source, out_dir: Optional[str] = None, *, svg: bool = True,
     add("GRAPH (AST nodes + edges)", lambda: _graph_text(source))
     add("CFG (basic blocks)", lambda: _cfg_text(prog))
     add("SSA (functional + IntRange/byte-length overlay)",
-        lambda: _ssa_overlay(prog))
+        lambda: _ssa_overlay(derived_program(prog, DerivedProfile.GUARDED)))
     add("USER-INPUT TAINT (sources -> sensitive sinks)", lambda: _taint_text(prog))
     add("STRUCTURE (subs / routing / handlers)", lambda: analyze_structure(prog).render())
     add("PATH PREDICATES", lambda: PathPredicateAnalysis(prog).render())

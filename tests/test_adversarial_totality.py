@@ -39,7 +39,7 @@ from pathlib import Path
 import pytest
 
 from tealql.tealtools.lift import lift
-from tealql.tealtools.passes.frame_flow import (
+from tealql.tealtools.ssa.relations import (
     frame_unresolved_reads,
     frame_value_sources,
 )
@@ -349,7 +349,7 @@ def test_an_unplaceable_frame_read_refuses_and_is_listed(tmp_path):
     """Where the band plan cannot place a read — here position 1, which the
     shallow path does not even have (its whole frame is one cell) — the read
     must REFUSE and be LISTED, never answered with the deep path's cell."""
-    from tealql.tealtools.passes.frame_flow import frame_unresolved_reads
+    from tealql.tealtools.ssa.relations import frame_unresolved_reads
 
     teal = tmp_path / "bandunplaceable.teal"
     teal.write_text(

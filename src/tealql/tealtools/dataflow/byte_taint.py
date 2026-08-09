@@ -13,7 +13,6 @@ precise rule taints its output if any input is tainted. Losing a partition is
 acceptable; a false negative is not."""
 from __future__ import annotations
 
-import contextlib
 from typing import Callable, Optional
 
 from ..ssa import (Const, Phi, SSAProgram, SSAVar, binary_operands, const_int,
@@ -120,7 +119,7 @@ def _byte_length(op) -> Optional[int]:
         return t.byte_length
     cv = op if isinstance(op, Const) else getattr(op, "const_value", None)
     if isinstance(cv, Const) and cv.kind == "bytes":
-        from ..passes.byte_length_prop import _const_bytes_length
+        from ..analysis._byte_lengths import _const_bytes_length
         return _const_bytes_length(cv)
     return None
 
@@ -307,7 +306,7 @@ def _validated_intervals(prog: SSAProgram) -> tuple[dict, dict]:
     HAZARD: the clearing is GLOBAL on X, so it is only applied when every other
     use of X is dominated by the guard; a use reachable without passing it would
     otherwise lose taint unsoundly. Same contract as
-    :mod:`tealql.tealtools.passes.range_assert`, with dominance approximated by
+    :mod:`tealql.tealtools.analysis._range_refinement`, with dominance approximated by
     reachability, which over-approximates and so errs toward not clearing."""
     from ..cfg.dominance import AssertDominance
 
@@ -501,58 +500,6 @@ def _byte_strip(iv: Intervals, bound: Optional[int], width: int = 32) -> str:
     return cells + ("→" if open_end else "")
 
 
-@contextlib.contextmanager
-def _unification_confined(prog: SSAProgram, active: bool):
-    """Keep the ``validate=True`` unification from OUTLIVING this analysis.
-
-    ``propagate_inputs`` / ``propagate_stack_shuffles`` REWIRE consumers, and the
-    program they run on is one the caller shares with the SSA-layer detectors
-    (``ir_lifter`` lifts it in place rather than re-parsing a copy). Annotations
-    may cross that boundary — they only ever refine — but a rewiring must not:
-    it replaces a ``frame_dig``/shuffle read with a coarse slot-merge phi, which
-    a MAY-semantics consumer then walks into unrelated producers (a 30-arg phi
-    mixing bytes and uint64 producers is a stack-slot artefact, not a value).
-
-    So snapshot the consumer wiring and put it back. A program that ALREADY
-    carried the unification is left alone — that state is its own, not ours."""
-    if not active or (getattr(prog, "_inputs_propagated", False)
-                      and getattr(prog, "_shuffles_propagated", False)):
-        yield
-        return
-    saved_inputs = [(a, list(a.inputs), a.shuffled) for a in prog.assignments]
-    saved_args = [(p, list(p.args)) for p in prog.phis.values()]
-    # Reverse def-use links are part of the same wiring. Both unification
-    # passes rebuild/mutate ``.uses``; restoring only the forward inputs left
-    # a contradictory program whose later dominance and DCE answers depended
-    # on whether byte_taint had happened to run first.
-    use_objects: dict[int, object] = {}
-    for a in prog.assignments:
-        for op in (*a.inputs, *a.outputs):
-            if hasattr(op, "uses"):
-                use_objects[id(op)] = op
-    for p in prog.phis.values():
-        use_objects[id(p)] = p
-        for arg in p.args:
-            if hasattr(arg, "uses"):
-                use_objects[id(arg)] = arg
-    saved_uses = [
-        (op, list(getattr(op, "uses"))) for op in use_objects.values()
-    ]
-    had = (getattr(prog, "_inputs_propagated", False),
-           getattr(prog, "_shuffles_propagated", False))
-    try:
-        yield
-    finally:
-        for a, ins, shuf in saved_inputs:
-            a.inputs[:] = ins
-            a.shuffled = shuf
-        for p, args in saved_args:
-            p.args[:] = args
-        for op, uses in saved_uses:
-            getattr(op, "uses")[:] = uses
-        prog._inputs_propagated, prog._shuffles_propagated = had
-
-
 def byte_taint(
     prog: SSAProgram,
     *,
@@ -562,14 +509,11 @@ def byte_taint(
     """Forward byte-interval taint to a fixed point.
 
     ``validate=True`` adds the validation-narrowing layer, which CLEARS the
-    bytes a guard pins. It first unifies inputs and shuffles so the validated
-    value and its downstream reads share one canonical SSAVar — on a stack
-    machine they otherwise diverge across dups and re-reads, and the clearing
-    lands on a value nothing reads. That unification is CONFINED to this call
-    (:func:`_unification_confined`); the result keys on def SSAVars, which the
-    rewiring never touches, so nothing downstream needs it to persist."""
-    with _unification_confined(prog, validate):
-        return _byte_taint_impl(prog, sources=sources, validate=validate)
+    bytes a guard pins.  The algorithm runs on a private guarded view: aliases,
+    ranges and byte lengths cannot leak into the caller's canonical SSA."""
+    from ..analysis import DerivedProfile, derived_program
+    view = derived_program(prog, DerivedProfile.GUARDED)
+    return _byte_taint_impl(view, sources=sources, validate=validate)
 
 
 def _byte_taint_impl(
@@ -578,22 +522,19 @@ def _byte_taint_impl(
     sources: Optional[Callable] = None,
     validate: bool = False,
 ) -> ByteTaintResult:
-    prog.propagate_constants()
-    if validate:
-        prog.propagate_inputs()
-        prog.propagate_stack_shuffles()
-    prog.propagate_byte_lengths()
+    # ``byte_taint`` supplies a fully annotated, cached GUARDED normal form.
+    # Do not reopen its construction-only mutators here: the view is shared by
+    # every byte-taint consumer and deliberately read-only.
     # Integer ranges let a const-offset slice with a RUNTIME count bound its
     # length by the count's range: `assert(L <= 32); extract3 X 4 L` taints
     # [4, 36) rather than [4, 4096). Ranges only ever narrow, so this can only
     # tighten taint, never clear a byte that should stay tainted.
-    prog.propagate_assert_ranges()
     seed = sources or _default_sources
     validated, validated_by = _validated_intervals(prog) if validate else ({}, {})
 
     # Canonical SSA carries resolved frame reads; retain only its explicit gap
     # edges. Scratch remains an implicit reaching-definition relation.
-    from ..passes.frame_flow import (
+    from ..ssa.relations import (
         frame_gap_sources,
         scratch_load_sources,
         scratch_unknown_loads,

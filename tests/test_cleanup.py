@@ -1,4 +1,4 @@
-"""Regression tests for SSA cleanup (``tealql.tealtools.passes.cleanup``).
+"""Regression tests for the isolated presentation cleanup.
 
 Guards the phi-leaf liveness bug: a var consumed only as a phi argument
 has an empty ``uses`` list (``uses`` tracks assignment consumers, not
@@ -38,9 +38,10 @@ def _ssavar_defs(prog):
 class TestCleanupPhiLeaf:
     def test_cleanup_keeps_phi_referenced_producers(self):
         from tealql.tealtools.ssa import SSAVar
+        from tealql.tealtools.analysis import DerivedProfile, derived_program
+        from tealql.tealtools.ssa.presentation import cleanup_unused_ssavars
         p = _prog()
-        p.propagate_constants()
-        p.propagate_stack_shuffles()
+        p = derived_program(p, DerivedProfile.VALUE)
         phi_leaves = {
             (a.file, a.line, a.index)
             for ph in p.phis.values() for a in ph.args
@@ -48,7 +49,7 @@ class TestCleanupPhiLeaf:
         }
         produced_before = _ssavar_defs(p)
         live_leaves = {v for v in phi_leaves if v in produced_before}
-        p.cleanup_unused_ssavars()
+        cleanup_unused_ssavars(p)
         produced_after = _ssavar_defs(p)
         # No phi-leaf producer may be removed.
         removed = sorted(live_leaves - produced_after)

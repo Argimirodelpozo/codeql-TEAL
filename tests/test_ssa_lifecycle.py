@@ -4,8 +4,8 @@ from __future__ import annotations
 import pytest
 
 from tealql.tealtools.errors import TealParseError
+from tealql.tealtools.analysis import DerivedProfile, derived_program
 from tealql.tealtools.lift import build_lifter, lift, pre_ir
-from tealql.tealtools.passes import run_all_passes
 from tealql.tealtools.ssa import BasicBlock, Phi, SSAProgram, SSAVar
 
 
@@ -24,7 +24,8 @@ def test_return_owns_approval_operand_and_survives_cleanup():
     prog = _prog("int 1\nreturn")
     ret = next(a for a in prog.assignments if a.op == "return")
     assert len(ret.inputs) == 1
-    run_all_passes(prog)
+    view = derived_program(prog, DerivedProfile.PRESENTATION)
+    assert next(a for a in view.assignments if a.op == "return").inputs
     assert isinstance(_exit(lift(prog)), pre_ir.UInt64Constant)
     assert _exit(lift(prog)).value == 1
 
@@ -37,25 +38,27 @@ def test_return_owns_approval_operand_and_survives_cleanup():
 ])
 def test_lift_uses_canonical_stream_after_functional_cleanup(body, required):
     prog = _prog(body)
-    run_all_passes(prog)
+    view = derived_program(prog, DerivedProfile.PRESENTATION)
     rendered = lift(prog).render()
     assert all(token in rendered for token in required), rendered
-    assert len(prog.stack_assignments) >= len(prog.assignments)
+    assert len(view.stack_assignments) >= len(view.assignments)
+    assert len(prog.stack_assignments) == len(prog.assignments)
 
 
-def test_lifter_cache_is_revision_scoped():
+def test_presentation_query_does_not_invalidate_lifter_cache():
     prog = _prog("txn Sender\ntxn Sender\n==\nreturn")
     first = build_lifter(prog)
     first_revision = prog.revision
     assert first is not None
-    run_all_passes(prog)
-    assert prog.revision > first_revision
+    derived_program(prog, DerivedProfile.PRESENTATION)
+    assert prog.revision == first_revision
     second = build_lifter(prog)
-    assert second is not None and second is not first
+    assert second is first
     assert prog._ir_lifter_revision == prog.revision
 
 
 def test_phi_user_cache_is_invalidated_by_supported_rewrite():
+    from tealql.tealtools.analysis._input_aliases import propagate_inputs
     prog = _prog(
         "txn NumAppArgs\nbz left\n"
         "txn Sender\nb join\nleft:\ntxn Sender\njoin:\nlen\nreturn"
@@ -63,7 +66,8 @@ def test_phi_user_cache_is_invalidated_by_supported_rewrite():
     phi = next(p for p in prog.phis.values() if len(p.args) >= 2)
     old_args = tuple(phi.args)
     assert prog.phi_users(old_args[0])
-    prog.propagate_inputs()
+    propagate_inputs(prog)
+    prog._invalidate_phi_users()
     assert getattr(prog, "_phi_users_index", None) is None
     assert len({id(a) for a in phi.args}) == 1
     assert prog.phi_users(phi.args[0]) == [phi]

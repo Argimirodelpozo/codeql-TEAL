@@ -53,7 +53,7 @@ TEAL source
   │   tree-sitter-teal grammar  →  AST + CFG            (pure-Python extractor, no CodeQL)
   ▼
 Typed SSA                                               (Braun on-demand construction)
-  │   analysis passes:  constants · int/byte ranges · byte-lengths · bigint math
+  │   immutable facts: constants · aliases · ranges · byte facts
   ├─────────────►  Detectors (36)  ──►  findings        (SSA-level + interprocedural `ir-*` family)
   │
   ▼   lift  (needs the `lift` extra: puyapy)
@@ -66,7 +66,7 @@ Genuine Puya IR   (puya.ir.models)                      validated + optimised by
 Subsystems, bottom to top:
 
 - **Extractor & SSA.** A pinned [tree-sitter-teal](https://github.com/Argimirodelpozo/tree-sitter-teal) grammar parses source to an AST; a pure-Python extractor builds the CFG (basic blocks, control-flow + interprocedural `retsub` edges). SSA is reconstructed with **Braun on-demand construction** (minimal phis; a forward depth-cap tames the loop-slot spiral) — the substrate every layer above consumes.
-- **Analysis passes.** An idempotent pass pipeline (`run_all_passes`) annotates the SSA with constant values, uint64 `IntRange`s (seeded from op tables, tightened by the contract's own `assert` guards), exact/ranged byte-lengths, and arbitrary-precision bigint value ranges — kept out of the substrate behind thin lazy-import bridge methods. See [Pipeline](#pipeline).
+- **Value analysis.** The canonical SSA is never rewritten for analysis. A revision-scoped `AnalysisContext` exposes immutable constants, value identities, uint64 ranges, byte lengths, and bigint ranges. Consumers that still need annotation-oriented SSA receive a cached, read-only derived normal form instead of mutating the graph shared by every detector. See [Analysis contexts](#analysis-contexts).
 - **Detectors.** 36 registered detections (`tealql detections --list`), auto-discovered from `src/tealql/security/detections/`. Beyond the SSA-level detectors there is an interprocedural **`ir-*` family** that runs on the lifted IR, where guard-dominance across `callsub` is precise; each is scored against a ground-truth corpus (see [Detector precision / recall](#detector-precision--recall)).
 - **The lift.** `tealql.tealtools.lift` lowers the SSA into *genuine* `puya.ir.models`, validated and optimised by Puya's own passes — not a re-implementation. It is behaviourally verified: ~900 real mainnet contracts (v2–v11) lift → recompile → dryrun **identically to their deployed bytecode** (`tests/behavioral_lift/`, `tests/mainnet-random-probes/`).
 - **Type recovery** (on the lifted IR — types erased by compilation, recovered from byte idioms). Two tiers, kept separate: a **confident** tier that refines the real `ir_type` (langspec-forward + usage-backward `account`), proven annotation-only / TEAL-neutral by `tests/test_recovery_neutral.py`; and a **speculative** side-channel of ARC-4 `String` / dynamic + static arrays / structs / addresses, each tagged fully-vs-somewhat confident, that never touches codegen.
@@ -105,10 +105,12 @@ tealql group-shape     <target>
 tealql group-layout    <target>
 tealql path-predicates <target>
 tealql cfg             <target> [--file F] [--skeleton]
+tealql loops           <target> [--budget-mode auto|app|clear-state|logicsig]
+                               [--app-calls N] [--inner-app-calls N] [--budget N]
 tealql storage-schema  <target>   # reconstruct global/local/box keys + maps with recovered key/value types (needs lift)
 tealql xcontract       <target> {--registry <yml> | --from-chain [--cache-dir D]} [--detections | --detector NAME]
 
-# Annotated SSA dump (runs every pass and prints functional form)
+# Annotated SSA dump (renders an isolated presentation normal form)
 tealql functional      <target> [--show-ranges] [--show-bytes] [--by-block]
 
 # Everything at once (all detectors + all reports)
@@ -120,38 +122,40 @@ Common flags accepted by every analysis subcommand:
 | Flag | Effect |
 | --- | --- |
 | `--json` | emit JSON instead of text |
-| `-v` / `-vv` | progress logging to stderr — `-v` for INFO milestones (target resolution, SSA build, pass pipeline, per-detection counts), `-vv` adds DEBUG per-pass timings |
+| `-v` / `-vv` | progress logging to stderr — `-v` for INFO milestones (target resolution, SSA build, per-detection counts), `-vv` adds DEBUG analysis timings |
 
-### Pipeline
+### Analysis contexts
 
-Every analysis builds on a canonical pass pipeline orchestrated by
-`tealql.tealtools.passes.run_all_passes`. Three phases run in order;
-`tealql functional` is the most convenient way to see the
-fully-annotated result.
+`SSAProgram` is the canonical structural representation. Its assignments,
+operands, phis, and canonical opcode stream do not change because a detector ran.
+`prog.facts(...)` returns immutable facts keyed by stable SSA identities:
 
-| Phase | Pass | What it adds |
-| --- | --- | --- |
-| **A. Value flow** | `propagate_constants` | `const_value` on literal-pushing producers |
-| | `propagate_scratch_constants` | same, across `store` / `load` for scratch slots |
-| | `propagate_inputs` | unify execution-stable reads (`txn` / `gtxn` / `global` / `arg`) to one canonical SSAVar per (op, immediates, stack-key) |
-| | `propagate_scratch_values` | forward a `load N` to its single may-store source SSAVar when every may-influencing store agrees |
-| **B. Analytical annotation** | `propagate_ranges` | uint64 `IntRange` from op tables (boolean comparisons, `getbyte`, txn enum fields, …) + phi union |
-| | `propagate_range_arithmetic` | composes ranges through `+` / `-` / `*` / `/` / `%` with phi re-union |
-| | `propagate_assert_ranges` | tightens ranges from the contract's own `assert` guards (flow-sensitive, dominance-checked) |
-| | `propagate_byte_lengths` | exact `TealType.byte_length` on bytes producers (`itob` → 8, `concat` → sum, `sha256` → 32, …) plus inverse `byte_length_range` constraints from `btoi` / `getbyte` / `extract_uint*` / etc. on their bytes inputs |
-| | `propagate_bytemath_ranges` | bigint `TealType.int_value_range` (Python arbitrary-precision ints) over `b+` / `b-` / `b*` / `b/` / `b%` with the `itob` / `btoi` bridge between uint64 and bytes-bigint value spaces |
-| **C. Structural cleanup** | `propagate_stack_shuffles` | copy-propagate pure shuffles (`dup`, `swap`, `frame_dig`, …); mark them `shuffled=True` so they render as `// …` comments |
-| | `cleanup_unused_ssavars` | drop side-effect-free Assignments whose every output is dead (typical victims: duplicate reader Assignments from phase A) |
+| Fact | Meaning |
+| --- | --- |
+| constant | a compile-time `Const`, including folding and must-agree scratch flow |
+| alias | a proven identity across stable input reads, stack shuffles, or must-agree scratch loads |
+| integer range | an unconditional uint64 `IntRange` from op seeds and arithmetic |
+| `range_at(value, use)` | the range at one use after dominance-checked assertion refinement |
+| type facts | exact/ranged byte lengths and arbitrary-precision bigint value ranges |
 
-(Out-of-SSA lowering is no longer part of this pipeline. The Puya-IR lift lowers
-its pre-IR phis directly; the functional dump renders live SSA phis in phi form.)
+Facts are cached by program revision and domain; a broader cached fact set also
+serves narrower queries. This makes detector order irrelevant without paying for
+the same fixed point repeatedly.
 
-Each pass is idempotent — running `run_all_passes` twice is a
-no-op the second time. The per-pass implementations live in
-`src/tealql/tealtools/passes/<name>.py`; the substrate
-(`src/tealql/tealtools/ssa/`) carries only a thin lazy-import bridge
-method per pass (`SSAProgram.propagate_*` / `cleanup_*`) so
-analysis semantics stay out of the substrate.
+Some older algorithms are easier to express over annotated operands. They call
+`tealql.tealtools.analysis.derived_program` with one of three explicit profiles:
+
+| Profile | Purpose |
+| --- | --- |
+| `VALUE` | constants, aliases, ranges, byte lengths, and bigint ranges |
+| `GUARDED` | `VALUE` plus dominance-scoped assertion refinement |
+| `PRESENTATION` | `GUARDED` plus dead pure-assignment cleanup for rendering |
+
+These normal forms are revision-scoped, cached, and treated as read-only. The
+canonical opcode stream is retained separately, so budget analysis and the IR
+lift never price or execute a presentation-cleaned program. Out-of-SSA lowering
+is likewise not part of value analysis; the Puya-IR lift lowers its pre-IR phis
+directly.
 
 Inline annotations rendered by `tealql functional`:
 
@@ -168,6 +172,8 @@ Inline annotations rendered by `tealql functional`:
 | --- | --- |
 | `tealql.tealtools.ssa.SSAProgram` | SSA representation reconstructed from TEAL source. The foundation everything else consumes. |
 | `tealql.tealtools.path_predicates.PathPredicateAnalysis` | Per-BB path predicates from branch / assert outcomes. Supports `entry_seeds` and `bb_seeds` for cross-contract injection. |
+| `tealql.tealtools.analysis` | Revision-scoped immutable `ValueFacts` and read-only derived SSA normal forms. |
+| `tealql.tealtools.budget` | Version/mode-aware opcode-cost facts, reachable reducible and irreducible loops, minimum-cost reachability, method summaries, `OpcodeBudget` guard checks, and exhaustion review candidates. |
 | `tealql.tealtools.ast`, `tealql.tealtools.graph`, `tealql.tealtools.viz` | AST layer, the source→graph loader, and DOT/SVG rendering. |
 
 **Detectors and reports.**

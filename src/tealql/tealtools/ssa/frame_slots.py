@@ -68,7 +68,7 @@ from ..avm import op_arity
 from .models import SSAVar
 
 # Compatibility logger name: users may filter this established diagnostic.
-logger = logging.getLogger("tealql.tealtools.passes.frame_flow")
+logger = logging.getLogger("tealql.tealtools.ssa.relations")
 
 
 @dataclass(frozen=True)

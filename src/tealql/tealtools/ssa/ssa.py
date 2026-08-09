@@ -1003,8 +1003,6 @@ def _apply_pyssa_to(
     prog._consts_propagated = False
     prog._scratch_propagated = False
     prog._ranges_propagated = False
-    prog._shuffles_propagated = False
-    prog._inputs_propagated = False
 
     # 1) SSAVars, seeding const_value / range / type from the source prog's
     # already-populated var table.

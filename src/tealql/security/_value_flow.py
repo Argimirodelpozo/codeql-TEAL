@@ -37,7 +37,7 @@ def _frame_param_sources_cached(prog: SSAProgram) -> dict:
     unioned map. MAY consumers want :func:`_frame_gap_sources_cached`."""
     cache = getattr(prog, "_sec_frame_param_sources", None)
     if cache is None:
-        from tealql.tealtools.passes.frame_flow import frame_param_sources
+        from tealql.tealtools.ssa.relations import frame_param_sources
         cache = frame_param_sources(prog)
         try:
             prog._sec_frame_param_sources = cache
@@ -55,7 +55,7 @@ def _frame_value_sources_cached(prog: SSAProgram) -> dict:
     """
     cache = getattr(prog, "_sec_frame_value_sources", None)
     if cache is None:
-        from tealql.tealtools.passes.frame_flow import frame_value_sources
+        from tealql.tealtools.ssa.relations import frame_value_sources
         cache = frame_value_sources(prog)
         try:
             prog._sec_frame_value_sources = cache

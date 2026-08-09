@@ -1,6 +1,6 @@
 call site: prog.teal:L13  appl→7000003  (callee)  args[0]="trigger"
   seeds:   (V#1@L7 == "trigger")
-  summary: (V#1@L7 == "trigger"), (V#1@L7 == "trigger"), (V#1@L9 != 0)
+  summary: (V#1@L7 == "trigger"), (V#1@L9 != 0)
 
 cross-contract sec-guide findings:
 app7000003  sec-guide/delete-funds-check  callee  Application handles DeleteApplication at exit prog.teal:27 without checking balance == min_balance — funds may be locked permanently on deletion.

@@ -135,14 +135,8 @@ def test_byte_taint_validation_does_not_rewire_the_caller(tmp_path):
     assert res is not None
     assert _wiring_snapshot(prog) == before, \
         "byte_taint(validate=True) leaked its input/shuffle unification"
-    assert not prog._inputs_propagated and not prog._shuffles_propagated
-    # A program that already carries the unification keeps it (not ours to undo).
-    prog.propagate_inputs()
-    prog.propagate_stack_shuffles()
-    owned = _wiring_snapshot(prog)
-    byte_taint(prog, validate=True)
-    assert _wiring_snapshot(prog) == owned
-    assert prog._inputs_propagated and prog._shuffles_propagated
+    assert not hasattr(prog, "_inputs_propagated")
+    assert not hasattr(prog, "_shuffles_propagated")
 
 
 def test_entry_points_lift_the_shared_program(assert_false_prog):

@@ -36,7 +36,7 @@ analysis — which is also the opportunity.
 
 - **Abstract interpretation** — Cousot & Cousot, *POPL 1977*. Foundational;
   the lattice/fixpoint theory under the range / bytemath / taint passes.
-  *Tie-in:* `passes/range_*`, `bytemath`.
+  *Tie-in:* `analysis/_range_*`, `analysis/_bigints`.
 
 - **Doop / declarative pointer analysis** — Bravenboer & Smaragdakis,
   *OOPSLA 2009*. Datalog-based, context-sensitive analysis; relevant to the

@@ -37,7 +37,7 @@ import pytest
 
 from tealql.tealtools.lift import pre_ir
 from tealql.tealtools.lift.lift import _Lifter
-from tealql.tealtools.passes.frame_flow import frame_value_sources
+from tealql.tealtools.ssa.relations import frame_value_sources
 from tealql.tealtools.ssa import SSAProgram, SSAVar
 from tealql.tealtools.ssa.models import _shuffle_mapping
 

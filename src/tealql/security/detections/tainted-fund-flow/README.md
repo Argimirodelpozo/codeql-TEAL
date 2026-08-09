@@ -10,7 +10,7 @@ A user-input-tainted value reaching an inner-transaction `Receiver` / `AssetRece
 
 This is the SSA-layer detector. It reuses the existing machinery rather than a parallel engine: `common.inner_txn_field_assigns` (sinks), a forward user-input taint over the PySSA def-use / phi / scratch relation (precondition + value-check), and `PathPredicateAnalysis` (guard dominance). Because taint propagates through all ops, a guard like `arg < 100` is automatically tainted by the same input slot, so the value-check is just a taint-slot overlap; the sender-check reuses `common._operand_flows_from_field_var` (Sender is a direct read).
 
-Guard dominance is interprocedural for free (`PathPredicateAnalysis` propagates caller predicates across `callsub` edges), and so is the taint: the base SSA def-use relation leaves `frame_dig` disconnected, but `_user_input_taint` unions each `frame_dig` param read's taint from the caller args bound to it (`tealql.tealtools.passes.frame_flow.frame_param_sources`), so a value fed into a subroutine parameter and paid out inside the callee is caught natively — no IR lift, no per-detector supplement.
+Guard dominance is interprocedural for free (`PathPredicateAnalysis` propagates caller predicates across `callsub` edges), and so is the taint: the base SSA def-use relation leaves unresolved `frame_dig` gaps explicit, while `_user_input_taint` unions each gap from the caller args or local writes exposed by `tealql.tealtools.ssa.relations`. A value fed into a subroutine parameter and paid out inside the callee is therefore caught natively — no IR lift, no per-detector supplement.
 
 ## Examples
 

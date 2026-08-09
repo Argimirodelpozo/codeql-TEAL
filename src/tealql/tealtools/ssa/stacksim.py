@@ -209,7 +209,7 @@ class _Param:
     """A routine's incoming stack slot — the value a caller left there.
 
     Deliberately NOT resolved to the callers' values here. Cross-call value flow
-    is the call-site bridges' job (``passes.frame_flow.frame_param_sources``
+    is the call-site bridges' job (``ssa.relations.frame_param_sources``
     reconstructs it from each ``callsub`` block), and threading it inline is what
     forced the old model to carry a whole-program stack and cap it at
     ``STACK_MAX``."""

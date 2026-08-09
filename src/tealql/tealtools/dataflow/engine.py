@@ -31,7 +31,7 @@ from ..ssa import (
     _shuffle_mapping,
     is_const,
 )
-from ..passes.frame_flow import (
+from ..ssa.relations import (
     frame_gap_sources,
     scratch_load_sources,
     scratch_unknown_loads,

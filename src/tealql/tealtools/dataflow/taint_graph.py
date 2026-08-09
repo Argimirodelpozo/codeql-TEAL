@@ -385,7 +385,7 @@ def _flow_rows_for(prog: SSAProgram) -> list[tuple]:
 
     # Frame sources already represented by normal SSA edges are emitted above;
     # add only compatibility gaps here.
-    from ..passes.frame_flow import frame_gap_sources
+    from ..ssa.relations import frame_gap_sources
     for dig_out, args in frame_gap_sources(prog).items():
         dst = _node(dig_out)
         if dst is None:

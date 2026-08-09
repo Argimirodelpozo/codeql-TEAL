@@ -78,7 +78,7 @@ def _arith_result_range(
         # ``a ^ a == 0`` so the floor is 0; same all-bits-set ceiling as OR.
         hi = (1 << max(ra.hi.bit_length(), rb.hi.bit_length())) - 1
         return (0, hi)
-    if op == "<<":
+    if op == "shl":
         # ``A * 2^B mod 2^64``: the RESULT wraps but the op FAILS for B > 63,
         # so discarding those pairs would also be legal; widening to the full
         # domain is the more conservative choice and sound either way.
@@ -88,7 +88,7 @@ def _arith_result_range(
         if hi > _UINT64_MAX:
             return (0, _UINT64_MAX)
         return (ra.lo << rb.lo, hi)
-    if op == ">>":
+    if op == "shr":
         # ``A // 2^B``: monotonic (larger shift => smaller result), and the
         # ``min(.., 64)`` clamps only widen the result, so the bound stays sound.
         return (ra.lo >> min(rb.hi, 64), ra.hi >> min(rb.lo, 64))
@@ -129,7 +129,7 @@ def propagate_range_arithmetic(prog: SSAProgram) -> int:
     if not getattr(prog, "_ranges_propagated", False):
         prog.propagate_ranges()
 
-    _BINARY_OPS = {"+", "-", "*", "/", "%", "&", "|", "^", "<<", ">>"}
+    _BINARY_OPS = {"+", "-", "*", "/", "%", "&", "|", "^", "shl", "shr"}
     _UNARY_OPS = {"~"}
 
     changed_overall = 0

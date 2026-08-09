@@ -14,7 +14,7 @@ import pytest
 
 from tealql.tealtools.avm import op_arity
 from tealql.tealtools.ssa import SSAProgram
-from tealql.tealtools.passes.frame_flow import (
+from tealql.tealtools.ssa.relations import (
     frame_gap_sources,
     frame_local_sources,
     frame_param_sources,
@@ -130,8 +130,10 @@ def test_may_consumers_use_the_gap_map_with_local_sources():
     locals_ = frame_local_sources(prog)
     assert locals_, "fixture no longer has local frame reads — pick another probe"
     res = byte_taint(prog)
-    got = {id(k) for k in res.frame_src}
-    assert got & {id(k) for k in locals_}, (
+    # Analysis results are produced on an isolated SSA snapshot.  SSAVars have
+    # stable structural identity across snapshots, so callers must not depend
+    # on Python object identity here.
+    assert set(res.frame_src) & set(locals_), (
         "byte_taint's frame gap carries no local frame reads — an unresolved "
         "value read out of a frame slot would therefore read as clean")
 
@@ -313,7 +315,7 @@ def test_the_blind_spot_is_reported_not_silent(tmp_path, caplog):
         f"expected the clobbered-residual dig@9 to be the one blind read, "
         f"got {sorted(a.location.line for a in blind)}")
 
-    with caplog.at_level(logging.WARNING, logger="tealql.tealtools.passes.frame_flow"):
+    with caplog.at_level(logging.WARNING, logger="tealql.tealtools.ssa.relations"):
         frame_value_sources(prog)
         first = len(caplog.records)
         frame_value_sources(prog)
@@ -330,7 +332,7 @@ def test_a_clean_contract_stays_quiet(caplog):
         pytest.skip("app_104988925 not present")
     prog = SSAProgram(str(probe))
     assert frame_unresolved_reads(prog) == []
-    with caplog.at_level(logging.WARNING, logger="tealql.tealtools.passes.frame_flow"):
+    with caplog.at_level(logging.WARNING, logger="tealql.tealtools.ssa.relations"):
         frame_value_sources(prog)
     assert not caplog.records
 

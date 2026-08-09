@@ -4,7 +4,7 @@
   "abi-method-selector": {
    "contracts": 181,
    "crashes": 0,
-   "findings": 458
+   "findings": 449
   },
   "box-key": {
    "contracts": 0,
@@ -12,14 +12,14 @@
    "findings": 0
   },
   "constant-condition": {
-   "contracts": 2,
+   "contracts": 4,
    "crashes": 0,
-   "findings": 2
+   "findings": 6
   },
   "delete-funds-check": {
    "contracts": 175,
    "crashes": 0,
-   "findings": 415
+   "findings": 421
   },
   "group-size-check": {
    "contracts": 52,
@@ -74,37 +74,37 @@
   "ir-tainted-fund-flow": {
    "contracts": 61,
    "crashes": 0,
-   "findings": 186
+   "findings": 191
   },
   "ir-tainted-log": {
    "contracts": 46,
    "crashes": 0,
-   "findings": 144
+   "findings": 152
   },
   "ir-tainted-state-write": {
    "contracts": 20,
    "crashes": 0,
-   "findings": 81
+   "findings": 87
   },
   "is-deletable": {
-   "contracts": 181,
+   "contracts": 178,
    "crashes": 0,
-   "findings": 428
+   "findings": 424
   },
   "is-updatable": {
-   "contracts": 169,
+   "contracts": 166,
    "crashes": 0,
-   "findings": 410
+   "findings": 406
   },
   "timelock-upgrade": {
-   "contracts": 74,
+   "contracts": 73,
    "crashes": 0,
-   "findings": 142
+   "findings": 140
   },
   "unprotected-deletable": {
-   "contracts": 109,
+   "contracts": 110,
    "crashes": 0,
-   "findings": 263
+   "findings": 272
   },
   "unprotected-updatable": {
    "contracts": 92,
@@ -112,9 +112,9 @@
    "findings": 239
   },
   "unsafe-division-order": {
-   "contracts": 36,
+   "contracts": 34,
    "crashes": 0,
-   "findings": 126
+   "findings": 112
   },
   "unvalidated-group-sibling": {
    "contracts": 31,
@@ -137,7 +137,7 @@
    "is-updatable": 27,
    "unprotected-deletable": 27,
    "unprotected-updatable": 27,
-   "unsafe-division-order": 4
+   "unsafe-division-order": 1
   },
   "0395386c2b632561": {
    "abi-method-selector": 9,
@@ -145,7 +145,6 @@
    "inner-txn-close-rekey": 2,
    "is-deletable": 1,
    "is-updatable": 1,
-   "unsafe-division-order": 1,
    "unvalidated-group-sibling": 2
   },
   "03cc9d66e58fef97": {
@@ -156,7 +155,7 @@
    "timelock-upgrade": 2
   },
   "04eaf9230f7557a9": {
-   "abi-method-selector": 4,
+   "abi-method-selector": 2,
    "delete-funds-check": 4,
    "group-size-check": 4,
    "is-deletable": 4,
@@ -188,7 +187,7 @@
    "is-deletable": 2,
    "is-updatable": 2,
    "timelock-upgrade": 1,
-   "unprotected-deletable": 1,
+   "unprotected-deletable": 2,
    "unprotected-updatable": 1
   },
   "0af5902f20fc0646": {
@@ -197,12 +196,14 @@
    "ir-tainted-log": 2,
    "is-deletable": 5,
    "is-updatable": 4,
-   "timelock-upgrade": 4
+   "timelock-upgrade": 4,
+   "unprotected-deletable": 1
   },
   "0b35caf4425ed5f1": {
    "abi-method-selector": 1,
    "delete-funds-check": 1,
    "inner-txn-close-rekey": 2,
+   "ir-partial-tainted-fund-flow": 2,
    "ir-tainted-fund-flow": 4,
    "ir-tainted-state-write": 4,
    "is-deletable": 1,
@@ -225,11 +226,10 @@
   },
   "0c8b7dcb4cfd9a85": {
    "abi-method-selector": 1,
+   "constant-condition": 1,
    "ir-arbitrary-inner-appcall": 1,
    "ir-arbitrary-inner-asset": 1,
-   "ir-tainted-log": 2,
-   "is-deletable": 1,
-   "is-updatable": 1
+   "ir-tainted-log": 2
   },
   "0d3fe23d9a7d7737": {
    "abi-method-selector": 3,
@@ -264,8 +264,7 @@
    "is-updatable": 5,
    "timelock-upgrade": 3,
    "unprotected-deletable": 2,
-   "unprotected-updatable": 2,
-   "unsafe-division-order": 2
+   "unprotected-updatable": 2
   },
   "0f40ad51eb9d8db4": {
    "abi-method-selector": 1,
@@ -333,7 +332,7 @@
    "unprotected-updatable": 1
   },
   "18aec1bfe8fcee5c": {
-   "abi-method-selector": 4,
+   "abi-method-selector": 2,
    "delete-funds-check": 4,
    "group-size-check": 4,
    "is-deletable": 4,
@@ -349,12 +348,11 @@
   },
   "1b39ba79103e2752": {
    "abi-method-selector": 1,
-   "constant-condition": 1,
+   "constant-condition": 3,
    "inner-txn-close-rekey": 3,
    "ir-arbitrary-inner-appcall": 1,
    "ir-arbitrary-inner-asset": 5,
-   "ir-partial-tainted-fund-flow": 2,
-   "ir-tainted-fund-flow": 6,
+   "ir-tainted-fund-flow": 8,
    "ir-tainted-log": 2,
    "is-deletable": 1,
    "is-updatable": 1,
@@ -402,7 +400,7 @@
    "is-deletable": 2,
    "is-updatable": 2,
    "timelock-upgrade": 1,
-   "unprotected-deletable": 1,
+   "unprotected-deletable": 2,
    "unprotected-updatable": 1
   },
   "1fe334d531d78bde": {
@@ -412,7 +410,7 @@
    "is-deletable": 2,
    "is-updatable": 2,
    "timelock-upgrade": 1,
-   "unprotected-deletable": 1,
+   "unprotected-deletable": 2,
    "unprotected-updatable": 1
   },
   "20247df12a05e93c": {
@@ -499,7 +497,7 @@
    "unprotected-deletable": 1
   },
   "26d018d20773cd25": {
-   "abi-method-selector": 4,
+   "abi-method-selector": 2,
    "delete-funds-check": 4,
    "group-size-check": 4,
    "is-deletable": 4,
@@ -567,7 +565,7 @@
    "is-deletable": 2,
    "is-updatable": 2,
    "timelock-upgrade": 1,
-   "unprotected-deletable": 1,
+   "unprotected-deletable": 2,
    "unprotected-updatable": 1
   },
   "36b514112377b00e": {
@@ -579,7 +577,7 @@
    "unsafe-division-order": 4
   },
   "3a5bd89f6f759365": {
-   "abi-method-selector": 1,
+   "abi-method-selector": 2,
    "group-size-check": 6,
    "unvalidated-group-sibling": 6
   },
@@ -692,11 +690,11 @@
   },
   "5347401452b2624a": {
    "abi-method-selector": 1,
-   "delete-funds-check": 4,
+   "delete-funds-check": 3,
    "inner-txn-close-rekey": 1,
-   "is-deletable": 4,
-   "is-updatable": 4,
-   "timelock-upgrade": 2,
+   "is-deletable": 3,
+   "is-updatable": 3,
+   "timelock-upgrade": 1,
    "unprotected-deletable": 2,
    "unprotected-updatable": 2
   },
@@ -753,7 +751,7 @@
    "delete-funds-check": 1,
    "inner-txn-close-rekey": 2,
    "ir-tainted-fund-flow": 6,
-   "ir-tainted-state-write": 3,
+   "ir-tainted-state-write": 5,
    "is-deletable": 1,
    "is-updatable": 1,
    "unprotected-deletable": 1,
@@ -817,7 +815,7 @@
    "is-updatable": 14,
    "unprotected-deletable": 14,
    "unprotected-updatable": 14,
-   "unsafe-division-order": 3
+   "unsafe-division-order": 1
   },
   "63eae75294c0f455": {
    "abi-method-selector": 1,
@@ -840,7 +838,7 @@
    "is-updatable": 27,
    "unprotected-deletable": 27,
    "unprotected-updatable": 27,
-   "unsafe-division-order": 2
+   "unsafe-division-order": 1
   },
   "6753af89b116a777": {
    "abi-method-selector": 4,
@@ -856,7 +854,7 @@
    "is-deletable": 2,
    "is-updatable": 2,
    "timelock-upgrade": 1,
-   "unprotected-deletable": 1,
+   "unprotected-deletable": 2,
    "unprotected-updatable": 1
   },
   "67da7da65cf29166": {
@@ -974,8 +972,8 @@
    "ir-arbitrary-inner-appcall": 1,
    "ir-arbitrary-inner-asset": 1,
    "ir-partial-tainted-fund-flow": 2,
-   "ir-tainted-fund-flow": 3,
-   "ir-tainted-log": 7,
+   "ir-tainted-fund-flow": 5,
+   "ir-tainted-log": 11,
    "is-deletable": 1,
    "is-updatable": 1,
    "timelock-upgrade": 1,
@@ -1012,7 +1010,7 @@
    "unsafe-division-order": 1
   },
   "885e86e21e1027b0": {
-   "abi-method-selector": 4,
+   "abi-method-selector": 2,
    "delete-funds-check": 3,
    "is-deletable": 3,
    "is-updatable": 3,
@@ -1054,7 +1052,7 @@
    "unprotected-deletable": 1
   },
   "92fd7baf5f9da9de": {
-   "ir-tainted-log": 1,
+   "ir-tainted-log": 4,
    "ir-tainted-state-write": 1,
    "unsafe-division-order": 2
   },
@@ -1071,7 +1069,7 @@
    "is-updatable": 27,
    "unprotected-deletable": 27,
    "unprotected-updatable": 27,
-   "unsafe-division-order": 4
+   "unsafe-division-order": 1
   },
   "938f81b7fa63bd22": {
    "ir-arbitrary-inner-appcall": 2
@@ -1269,7 +1267,7 @@
    "is-deletable": 2,
    "is-updatable": 2,
    "timelock-upgrade": 1,
-   "unprotected-deletable": 1,
+   "unprotected-deletable": 2,
    "unprotected-updatable": 1
   },
   "aa3a5729609e158a": {
@@ -1295,6 +1293,7 @@
   },
   "ab4e9c4f469d6954": {
    "abi-method-selector": 9,
+   "delete-funds-check": 8,
    "ir-tainted-fund-flow": 3,
    "ir-tainted-state-write": 3,
    "is-deletable": 8,
@@ -1321,7 +1320,7 @@
   },
   "ae6098a180db5aed": {
    "ir-tainted-fund-flow": 1,
-   "ir-tainted-log": 1,
+   "ir-tainted-log": 2,
    "is-updatable": 1,
    "unprotected-updatable": 1,
    "unsafe-division-order": 1
@@ -1336,7 +1335,7 @@
   "aecda94473307b1a": {
    "group-size-check": 18,
    "ir-tainted-log": 4,
-   "unsafe-division-order": 7,
+   "unsafe-division-order": 6,
    "unvalidated-group-sibling": 3
   },
   "afd001f14db2f41f": {
@@ -1380,7 +1379,7 @@
    "delete-funds-check": 1,
    "inner-txn-close-rekey": 2,
    "ir-tainted-fund-flow": 6,
-   "ir-tainted-state-write": 3,
+   "ir-tainted-state-write": 5,
    "is-deletable": 1,
    "is-updatable": 1,
    "unprotected-deletable": 1,
@@ -1444,7 +1443,7 @@
    "is-deletable": 2,
    "is-updatable": 2,
    "timelock-upgrade": 1,
-   "unprotected-deletable": 1,
+   "unprotected-deletable": 2,
    "unprotected-updatable": 1
   },
   "bb02e777e9305c21": {
@@ -1491,7 +1490,7 @@
    "abi-method-selector": 1
   },
   "bfeec9bc9797a893": {
-   "abi-method-selector": 4,
+   "abi-method-selector": 2,
    "delete-funds-check": 4,
    "group-size-check": 4,
    "is-deletable": 4,
@@ -1553,7 +1552,7 @@
    "delete-funds-check": 1,
    "inner-txn-close-rekey": 2,
    "ir-tainted-fund-flow": 6,
-   "ir-tainted-state-write": 3,
+   "ir-tainted-state-write": 5,
    "is-deletable": 1,
    "is-updatable": 1,
    "unprotected-deletable": 1,
@@ -1716,11 +1715,10 @@
   },
   "e9bd47418d6ad98e": {
    "abi-method-selector": 1,
+   "constant-condition": 1,
    "ir-arbitrary-inner-appcall": 1,
    "ir-arbitrary-inner-asset": 2,
-   "ir-tainted-log": 2,
-   "is-deletable": 1,
-   "is-updatable": 1
+   "ir-tainted-log": 2
   },
   "e9f883f3d064eca9": {
    "abi-method-selector": 3,
@@ -1797,7 +1795,7 @@
    "is-deletable": 2,
    "is-updatable": 2,
    "timelock-upgrade": 1,
-   "unprotected-deletable": 1,
+   "unprotected-deletable": 2,
    "unprotected-updatable": 1
   },
   "eda9a4bab5998fba": {
@@ -1819,7 +1817,7 @@
    "abi-method-selector": 1,
    "group-size-check": 1,
    "inner-txn-close-rekey": 3,
-   "ir-tainted-fund-flow": 2,
+   "ir-tainted-fund-flow": 3,
    "ir-tainted-state-write": 3
   },
   "eead34e66cdb7dde": {
@@ -1844,7 +1842,7 @@
    "ir-tainted-log": 5,
    "is-updatable": 1,
    "timelock-upgrade": 1,
-   "unsafe-division-order": 7,
+   "unsafe-division-order": 6,
    "unvalidated-group-sibling": 3
   },
   "efa9779f8584b2b9": {
@@ -1873,12 +1871,8 @@
   },
   "f484294144c560fd": {
    "abi-method-selector": 1,
-   "delete-funds-check": 1,
    "ir-partial-tainted-fund-flow": 1,
-   "ir-tainted-log": 1,
-   "is-deletable": 1,
-   "is-updatable": 1,
-   "timelock-upgrade": 1
+   "ir-tainted-log": 1
   },
   "f4b4734402e25a05": {
    "abi-method-selector": 2,

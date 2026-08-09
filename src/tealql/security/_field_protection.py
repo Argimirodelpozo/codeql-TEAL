@@ -22,7 +22,6 @@ from ._enforcement import (
     scratch_forward_map,
 )
 from ._program_shape import (
-    _txna_reads,
     approving_exits,
     file_match,
     global_field_reads,
@@ -167,17 +166,13 @@ def _signed_txn_field_reads(prog, field: str, *, file: Optional[str] = None) -> 
     signer — crediting it would let a delegated logicsig be drained through a check
     that never touched the signed transaction."""
     from tealql.tealtools import group_reasoning as G
-    # Resolve stack shuffles first, or `gtxns FIELD` is only credited when its index operand comes
-    # DIRECTLY from `txn GroupIndex`. A compiler emits one `txn GroupIndex` and then `dup`s it before
-    # each field read of the same transaction, so every guard after the first reads as absent --
-    # AutoDraw (AlgoKit / puya-ts) checks TypeEnum, RekeyTo, AssetCloseTo and Fee that way and was
-    # reported as protecting NONE of them. Idempotent and cached on the program.
-    prog.propagate_stack_shuffles()
+    from tealql.tealtools.analysis import FactDomain
+    facts = prog.facts(FactDomain.CONSTANTS)
     reads = list(txn_field_reads(prog, field, file=file))
     gtxn_reads = gtxn_field_reads(prog, field, file=file)
     for a in gtxn_reads:                                     # gtxns indexed by GroupIndex
         if a.op in ("gtxns", "gtxnsa", "gtxnsas") and a.inputs \
-                and G.relative_slot(a.inputs[0]) == "this":
+                and G.relative_slot(facts.resolve(a.inputs[0])) == "this":
             reads.append(a)
     # Only an ABSOLUTE ``gtxn N`` read needs the pin, so run the expensive
     # group-shape analysis only when one is present.
@@ -326,22 +321,3 @@ def approval_exit_protected_for_any_txn_field(
     for f in fields:
         seeds |= _txn_field_seeds(prog, f, file=file)
     return _approval_exit_protected_for_seeds(prog, exit_bb, seeds, file=file)
-
-
-
-
-def approval_exit_protected_for_arg_reads(
-    prog: SSAProgram, exit_bb: BasicBlock, immediates: str,
-    *, file: Optional[str] = None,
-) -> bool:
-    """Protected for a ``txna`` ARRAY read (e.g. ``ApplicationArgs 0``, the ABI
-    method selector) rather than a scalar ``txn FIELD``."""
-    if file is None:
-        file = exit_bb.file
-    seeds = {
-        out for a in _txna_reads(prog, immediates, file=file)
-        for out in a.outputs if isinstance(out, SSAVar)
-    }
-    return _approval_exit_protected_for_seeds(
-        prog, exit_bb, seeds, file=file, allow_unary_cmp=True,
-    )

@@ -16,7 +16,7 @@ from typing import Optional
 from ..ssa import IntRange, SSAProgram, SSAVar, binary_operands
 from ..cfg.dominance import AssertDominance
 from ..avm import U64_CMP_OPS
-from .range_arith import (
+from ._range_arithmetic import (
     _UINT64_MAX,
     _operand_range,
     _set_range,

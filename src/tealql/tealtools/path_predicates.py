@@ -32,6 +32,7 @@ from .avm import (CMP_OPS, COND_BRANCH_OPS, LOGICAL_OPS,
                   MULTIWAY_BRANCH_OPS)
 from .cfg.build import BOOL_FALSE, BOOL_TRUE
 from .ast.literals import render_byte_constant
+from .analysis import FactDomain
 
 
 Operand = Union[SSAVar, Phi, Const]
@@ -251,12 +252,10 @@ class PathPredicateAnalysis:
         successful ``itxn_submit``), unioned in AFTER the predecessor
         intersection on every recomputation."""
         self.prog = prog
-        # Run on shuffle-RESOLVED SSA. A `dup` / `swap` output is the same
-        # runtime value as its input but a distinct SSAVar, so a predicate
-        # proved about the original does not match a consumer reading the copy.
-        # `passes.orchestrate` runs this pass, so without it the same program
-        # answered differently depending on whether a pass ran first.
-        prog.propagate_stack_shuffles()
+        # Resolve stable input/shuffle/scratch identities through an immutable
+        # relation.  Rewriting the shared SSA here used to make every later
+        # detector depend on whether path predicates happened to run first.
+        self._facts = prog.facts(FactDomain.CONSTANTS)
         self.entry_seeds = entry_seeds
         self.bb_seeds: dict[BasicBlock, frozenset[BranchCondition]] = (
             bb_seeds or {}
@@ -265,6 +264,12 @@ class PathPredicateAnalysis:
         self._label_lines: dict[tuple[str, str], int] = self._index_labels()
         self.bb_preds: dict[BasicBlock, frozenset[BranchCondition]] = {}
         self._compute()
+
+    def _operand(self, value):
+        if not hasattr(self, "_facts"):  # synthetic unit-level value webs
+            return value
+        constant = self._facts.constant(value)
+        return constant if constant is not None else self._facts.resolve(value)
 
     # -- public ---------------------------------------------------------
 
@@ -455,7 +460,7 @@ class PathPredicateAnalysis:
         last = pred.assignments[-1]
         if not last.inputs:
             return frozenset()
-        cond = last.inputs[0]
+        cond = self._operand(last.inputs[0])
         if last.op == _ASSERT:
             # The single successor is the success path: the value was non-zero.
             return self._decompose_cond(cond, taken=True)
@@ -503,6 +508,7 @@ class PathPredicateAnalysis:
         stack: list = [(cond, taken)]
         while stack:
             c, t = stack.pop()
+            c = self._operand(c)
             key = (id(c), t)
             if key in seen:
                 continue
@@ -521,22 +527,22 @@ class PathPredicateAnalysis:
             kind = _CMP_OP_TO_KIND_TAKEN.get(op)
             if kind is not None and len(ins) == 2:
                 actual_kind = kind if t else _KIND_NEGATION[kind]
-                lhs, rhs = binary_operands(producer)
+                lhs, rhs = (self._operand(value) for value in binary_operands(producer))
                 out.add(_canonical_binary_pred(lhs, actual_kind, rhs))
                 continue
             # ``!``: invert the truthiness on the single operand.
             if op == "!" and len(ins) == 1:
-                stack.append((ins[0], not t))
+                stack.append((self._operand(ins[0]), not t))
                 continue
             # ``&&``: only the truthy side is fully decomposable.
             if op == "&&" and len(ins) == 2 and t:
-                stack.append((ins[0], True))
-                stack.append((ins[1], True))
+                stack.append((self._operand(ins[0]), True))
+                stack.append((self._operand(ins[1]), True))
                 continue
             # ``||``: only the falsy side is fully decomposable.
             if op == "||" and len(ins) == 2 and not t:
-                stack.append((ins[0], False))
-                stack.append((ins[1], False))
+                stack.append((self._operand(ins[0]), False))
+                stack.append((self._operand(ins[1]), False))
         return frozenset(out)
 
     def _switch_or_match_edge(
@@ -576,7 +582,7 @@ class PathPredicateAnalysis:
         if len({s.first_line for s in pred.successors}) < 2:
             return None
         target_index: Optional[int] = matches[0] if matches else None
-        key = last.inputs[0]
+        key = self._operand(last.inputs[0])
         if target_index is not None:
             if last.op == _SWITCH:
                 # ``key == target_index`` literal.
@@ -590,7 +596,7 @@ class PathPredicateAnalysis:
             if not (0 <= target_index < n_candidates):
                 return None
             # Top-first: target k → candidate vk → ``inputs[N - k]``.
-            candidate = last.inputs[n_candidates - target_index]
+            candidate = self._operand(last.inputs[n_candidates - target_index])
             return BranchCondition(
                 value=key, kind="eq", args=(candidate,),
             )
@@ -605,7 +611,10 @@ class PathPredicateAnalysis:
         if n_candidates <= 0:
             return None
         # Order the candidates ``v0 .. vN-1`` for human readability.
-        candidates = tuple(reversed(last.inputs[1:1 + n_candidates]))
+        candidates = tuple(
+            self._operand(value)
+            for value in reversed(last.inputs[1:1 + n_candidates])
+        )
         return BranchCondition(
             value=key, kind="neq_all", args=candidates,
         )

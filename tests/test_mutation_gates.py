@@ -161,19 +161,3 @@ def test_the_harness_can_actually_report_a_survivor(monkeypatch):
             lambda *a, **k: real(*a, **k),          # behaviourally identical
             "a deliberately inert mutation",
         )
-
-
-def test_unprotected_arg_reads_is_caught(monkeypatch):
-    """If arg reads are never credited as protected, a contract that DOES
-    assert its selector reads as unchecked — the false-positive direction.
-
-    This mutation SURVIVED until the scratch-round-trip fixture was added. The
-    original safe case was covered by the sibling arm ("reached only on a
-    matched-selector edge"), so nothing pinned this predicate at all, and the
-    whole-suite sweep found it only via the mainnet ratchet — which detects
-    CHANGE, not correctness."""
-    _assert_caught(
-        monkeypatch, "tealql.security.common",
-        "approval_exit_protected_for_arg_reads", lambda *a, **k: False,
-        "arg reads are NEVER credited as protected",
-    )

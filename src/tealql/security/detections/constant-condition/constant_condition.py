@@ -3,12 +3,8 @@ compile time — a vacuous ``assert`` (always true, enforces nothing), an
 unsatisfiable one (always false, everything past it dead), or a ``bnz``/``bz``
 with one dead arm.
 
-HAZARD: the ranges consumed here must come from value FACTS only, never from
-assert-refinement (:meth:`SSAProgram.propagate_assert_ranges` tightens operands
-USING the asserts, so every asserted comparison then reads as vacuous). This is a
-precondition on the SHARED program: if anything ran ``run_all_passes`` on it
-first, the detector must rebuild privately from source — refinement only narrows
-and cannot be undone in place.
+Ranges come from immutable value facts, never assertion-conditioned facts, so
+the detector's answer is independent of which other analysis ran first.
 
 Sound by construction: reported only when the operand ranges PROVE the outcome
 (disjoint or fully-ordered intervals). Compound ``&&``/``||`` conditions are not
@@ -17,14 +13,11 @@ compiler-emitted folding — so a finding always involves a non-constant value.
 """
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass
 from typing import Optional
 
-from tealql.tealtools.ssa import IntRange, Location, SSAProgram, binary_operands, is_const
-from tealql.tealtools.passes.range_arith import _operand_range
-
-logger = logging.getLogger("tealql.security.constant-condition")
+from tealql.tealtools.analysis import FactDomain
+from tealql.tealtools.ssa import Const, IntRange, Location, SSAProgram, binary_operands
 
 # uint64 comparison ops, in the top-first ``inputs[1] OP inputs[0]`` form.
 _CMP = frozenset({"<", "<=", ">", ">=", "==", "!="})
@@ -112,14 +105,15 @@ class ConstantConditionDetector:
     def __init__(self, prog: SSAProgram, *, file: Optional[str] = None):
         self.prog = prog
         self.file = file
+        self.facts = prog.facts(FactDomain.CONSTANTS, FactDomain.RANGES)
 
     def _describe(self, cond) -> str:
         """A short label: ``lhs OP rhs`` for a comparison, else the var's own."""
         d = getattr(cond, "defined_by", None)
         if d is not None and d.op in _CMP and len(d.inputs) == 2:
             lhs, rhs = binary_operands(d)
-            return f"{_label(lhs)} {d.op} {_label(rhs)}"
-        return _label(cond)
+            return f"{_label(lhs, self.facts)} {d.op} {_label(rhs, self.facts)}"
+        return _label(cond, self.facts)
 
     def _cond_const(self, cond) -> Optional[int]:
         """1 if ``cond`` is provably non-zero, 0 if provably zero, else ``None`` —
@@ -128,16 +122,16 @@ class ConstantConditionDetector:
         d = getattr(cond, "defined_by", None)
         if d is not None and d.op in _CMP and len(d.inputs) == 2:
             lhs, rhs = binary_operands(d)
-            if is_const(lhs) and is_const(rhs):
+            if self.facts.constant(lhs) is not None and self.facts.constant(rhs) is not None:
                 return None
-            lr = _operand_range(lhs)
-            rr = _operand_range(rhs)
+            lr = self.facts.int_range(lhs)
+            rr = self.facts.int_range(rhs)
             if lr is not None and rr is not None:
                 return _eval_cmp(d.op, lr, rr)
             return None
-        if is_const(cond):
+        if isinstance(cond, Const) or self.facts.constant(cond) is not None:
             return None
-        r = _operand_range(cond)
+        r = self.facts.int_range(cond)
         if r is not None:
             if r.lo >= 1:
                 return 1
@@ -145,34 +139,9 @@ class ConstantConditionDetector:
                 return 0
         return None
 
-    def _range_program(self) -> Optional[SSAProgram]:
-        """The program to read ranges off: the shared one normally, a PRIVATE rebuild
-        from the immutable parsed graph when it is already assert-refined."""
-        prog = self.prog
-        if not getattr(prog, "_assert_ranges_applied", False):
-            return prog
-        logger.info(
-            "constant-condition: shared program is assert-refined; reading "
-            "value-fact ranges off a private snapshot rebuild of %s",
-            getattr(getattr(prog, "sources", None), "label", "<program>"))
-        graph = getattr(prog, "_graph", None)
-        if graph is None:
-            logger.warning("constant-condition skipped: no parsed graph to rebuild")
-            return None
-        return type(prog).from_graph(
-            graph.copy(), strict=bool(getattr(prog, "_strict", False))
-        )
-
     def detect(self) -> list[ConstantConditionViolation]:
-        prog = self._range_program()
-        if prog is None:
-            return []
-        # Value-fact ranges ONLY — never assert-refinement, see the module hazard.
-        prog.propagate_constants()
-        prog.propagate_range_arithmetic()  # lazy-trips propagate_ranges
-
         out: list[ConstantConditionViolation] = []
-        for a in prog.assignments:
+        for a in self.prog.assignments:
             if self.file is not None and a.location.file != self.file:
                 continue
             if not a.inputs:
@@ -196,15 +165,14 @@ class ConstantConditionDetector:
         return out
 
 
-def _label(operand) -> str:
+def _label(operand, facts) -> str:
     """Best-effort short label for an operand in a finding message."""
     d = getattr(operand, "defined_by", None)
     if d is not None and d.op in ("txn", "gtxn", "gtxns", "itxn", "global"):
         return d.immediates or d.op
-    cv = getattr(operand, "const_value", None)
+    cv = facts.constant(operand)
     if cv is not None:
         return getattr(cv, "value", str(cv))
-    from tealql.tealtools.ssa import Const
     if isinstance(operand, Const):
         return getattr(operand, "value", str(operand))
     return str(operand)

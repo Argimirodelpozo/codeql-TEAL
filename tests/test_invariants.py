@@ -3,8 +3,7 @@
 Example-based tests check specific inputs; these assert INVARIANTS that must
 hold for EVERY program, catching whole bug classes the examples miss:
 
-* the pass pipeline is idempotent (documented in orchestrate.py — running it
-  twice is a no-op — but previously untested);
+* derived analysis views are deterministic and do not mutate canonical SSA;
 * SSA construction never crashes on any real fixture (robustness net);
 * detectors are deterministic (same program → same findings, run to run);
 * the lift is deterministic (the ~dN clone-suffix nondeterminism fixed this
@@ -30,7 +29,7 @@ from pathlib import Path
 import pytest
 
 from tealql.tealtools.ssa import Phi, SSAProgram
-from tealql.tealtools.passes import run_all_passes
+from tealql.tealtools.analysis import DerivedProfile, derived_program
 
 TESTS_ROOT = Path(__file__).resolve().parent
 CORPUS = sorted(
@@ -80,16 +79,15 @@ def test_exit_stack_phis_are_registered(teal):
 
 
 @pytest.mark.parametrize("teal", CORPUS, ids=_IDS)
-def test_pass_pipeline_idempotent(teal):
-    # orchestrate.py promises each pass is idempotent — a second run_all_passes
-    # is a no-op. Assert the annotated functional dump is byte-identical after
-    # one vs two runs.
+def test_derived_view_is_repeatable_and_canonical_ssa_is_unchanged(teal):
     prog = SSAProgram(str(teal))
-    run_all_passes(prog)
-    once = prog.functional()
-    run_all_passes(prog)
-    twice = prog.functional()
-    assert once == twice, f"pass pipeline not idempotent on {teal.name}"
+    before = prog.functional(resolve_consts=False, propagate_consts=False)
+    revision = prog.revision
+    once = derived_program(prog, DerivedProfile.PRESENTATION).functional()
+    twice = derived_program(prog, DerivedProfile.PRESENTATION).functional()
+    assert once == twice, f"derived view not deterministic on {teal.name}"
+    assert prog.functional(resolve_consts=False, propagate_consts=False) == before
+    assert prog.revision == revision
 
 
 @pytest.mark.parametrize("teal", CORPUS, ids=_IDS)
@@ -97,10 +95,10 @@ def test_ssa_build_deterministic(teal):
     # Two independent builds of the same source produce the same functional form
     # (no run-to-run nondeterminism leaking from set/dict/id() iteration).
     a = SSAProgram(str(teal))
-    run_all_passes(a)
     b = SSAProgram(str(teal))
-    run_all_passes(b)
-    assert a.functional() == b.functional(), f"SSA nondeterministic on {teal.name}"
+    av = derived_program(a, DerivedProfile.PRESENTATION).functional()
+    bv = derived_program(b, DerivedProfile.PRESENTATION).functional()
+    assert av == bv, f"SSA nondeterministic on {teal.name}"
 
 
 # One representative detector per family, run over the corpus for determinism.

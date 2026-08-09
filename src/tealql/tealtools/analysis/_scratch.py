@@ -53,7 +53,7 @@ def propagate_scratch_values(prog: SSAProgram) -> int:
 
     HAZARD: must iterate to a fixed point. One sweep resolves only one level of
     a chained round-trip (``store 2; load 2; store 3; load 3``), which leaves the
-    value web half-forwarded and makes ``run_all_passes`` non-idempotent."""
+    value web half-forwarded."""
     total = 0
     while True:
         forwarded = _forward_scratch_loads_once(prog)

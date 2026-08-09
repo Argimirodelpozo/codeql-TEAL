@@ -837,7 +837,7 @@ _OP_OUTPUT_SEEDS: dict = {
     "vrf_verify":        [(0, 0, 1)],
 }
 
-# Static byte_length seeds for ``passes/byte_length_prop``: fixed-width txn /
+# Static byte_length seeds for ``analysis._byte_lengths``: fixed-width txn /
 # global field reads, plus ``_OP_OUTPUT_BYTELEN`` positional (TOP-FIRST) lengths
 # on multi-output crypto ops. Address fields are DERIVED from the single source
 # above, never re-listed; only the non-address fixed widths are enumerated here.

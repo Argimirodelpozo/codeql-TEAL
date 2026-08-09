@@ -1,4 +1,4 @@
-"""Unit tests for static range *seeding* (``tealql.tealtools.passes.range_seed``).
+"""Unit tests for static range seeding (``analysis._range_seed``).
 
 Focused on the two enrichment sources the op-alone single-output path can't
 reach on its own:

@@ -1,190 +1,93 @@
-"""Loop extraction with COST and ITERATION BOUNDS.
-
-For each natural loop: what one iteration costs in opcode budget, how the stack
-moves across it, and the resulting upper bound on how many times it can run.
-
-Nothing else in the toolkit reasons about execution COST, which leaves a whole
-class of questions unaskable — is this sink even reachable inside the budget, can
-an attacker spin a loop until the program dies, does this path need more than one
-transaction's budget to complete. The per-op costs come from puya's langspec
-(``AVMOp.cost``), the same source the metadata drift tests already pin.
-
-Two independent ceilings bound a loop, and the real bound is whichever binds
-first:
-
-* **Budget.** Every iteration costs at least ``min_iteration_cost``, and the
-  pool affords :data:`MAX_POOLED_OPCODE_BUDGET`. Using the CHEAPEST cycle
-  through the loop is what makes this an UPPER bound on iterations — a more
-  expensive route through the body only runs fewer times.
-* **Stack.** A loop whose cycle leaves the stack net POSITIVE grows it every
-  iteration and dies at :data:`MAX_STACK_DEPTH`. A net-zero or net-negative loop
-  is unbounded by this ceiling, which is the common case.
-
-HAZARD: these are UPPER bounds on what the AVM permits, never predictions. A
-loop bounded at 700 iterations usually runs three times; the bound says only
-that the runtime kills it beyond that. Reading a bound as a trip count invents
-facts about the program.
-
-HAZARD: each bound is sound ALONE but the set is not jointly tight — nested and
-sibling loops share one budget, and every bound spends it as though the others
-did not. A loop nested in one bounded at 46 x 15 may itself report 76 x 9, a
-pair needing 1374 of the 700 that exists. Use a bound to rule a loop OUT ("at
-most 18 iterations, so the index cannot exceed 18"), never to add several up.
-Iteration counts are TOTAL across the execution rather than per entry, which is
-what makes the inner bound already account for being re-entered by its parent.
-"""
+"""Reachable loop regions with cost and independently proved stack bounds."""
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from typing import Optional
 
-from .._utils.dot import (bb_label as _bb_label, escape,
-                          header as _dot_header, render as _dot_render)
-from ..avm import APP_ONLY_OPS, op_arity
+import networkx as nx
+
+from .._utils.dot import (
+    bb_label as _bb_label,
+    escape,
+    header as _dot_header,
+    render as _dot_render,
+)
 from ..cfg import CFG
+from ..cfg.dominance import iterative_dominators
 from ..ssa import BasicBlock, SSAProgram
-
-#: What ONE application call contributes to the opcode-budget pool.
-APP_CALL_OPCODE_BUDGET = 700
-
-#: Application calls in one atomic group. Each contributes its own budget.
-MAX_GROUP_APP_CALLS = 16
-
-#: Inner application calls a group can make (16 per app call, pooled across a
-#: full group). Each of those ALSO contributes a budget.
-MAX_INNER_APP_CALLS = 256
-
-#: A logic signature is metered SEPARATELY and far more generously: its limit is
-#: a total program COST, not an app call's opcode budget, and the two never mix.
-#: Backward branches (loops) exist only from TEAL v4, where the cost is enforced
-#: during execution rather than statically.
-LOGICSIG_MAX_COST = 20_000
-
-#: Logic signatures in one group, each with its own cost allowance.
-MAX_GROUP_LOGICSIGS = 16
-
-#: The ceiling a loop is bounded against.
-#:
-#: HAZARD: the budget is POOLED, not per-call, and bounding against a single
-#: call's 700 is UNSOUND — it makes every bound ~272x too tight, so a loop that
-#: can really run 4000 times reports 18 and the "upper bound" is not one. A
-#: contract cannot know at analysis time how large its group is or how many
-#: inner calls it will make, so the conservative ceiling is the only sound
-#: default: a full group of app calls plus the inner calls they may spawn.
-#:
-#: Deliberately loose. Group-shape analysis and an inner-call count can tighten
-#: it later by passing ``budget=`` to :func:`analyze_loops`; a too-tight default
-#: cannot be recovered from, because it silently converts a bound into a claim
-#: the program can violate.
-MAX_POOLED_OPCODE_BUDGET = APP_CALL_OPCODE_BUDGET * (
-    MAX_GROUP_APP_CALLS + MAX_INNER_APP_CALLS
+from ..subroutines import identify_subroutines
+from .context import BudgetContext, MAX_STACK_DEPTH, context_for
+from .costs import (
+    CostFact,
+    block_cost,
+    block_stack_delta,
+    canonical_assignments,
+    sum_costs,
 )
 
-#: The same conservative ceiling for a logic signature.
-MAX_POOLED_LOGICSIG_COST = LOGICSIG_MAX_COST * MAX_GROUP_LOGICSIGS
+
+def _terminator(bb: BasicBlock) -> Optional[str]:
+    for assignment in reversed(canonical_assignments(bb)):
+        if assignment.op in {"b", "bz", "bnz", "switch", "match", "callsub",
+                             "retsub", "return", "err"}:
+            return assignment.op
+    return None
 
 
-def program_mode(prog: SSAProgram) -> str:
-    """``"app"`` if the program uses any application-only OPCODE, else
-    ``"logicsig"`` — the two are metered by different, non-interchangeable
-    limits, so bounding a logicsig against an app call's budget is wrong in
-    both directions.
-
-    HAZARD: key on OPCODES the AVM rejects in Signature mode, NEVER on txn
-    fields. A logicsig can be attached to an ApplicationCall and so legitimately
-    reads ``OnCompletion`` / ``ApplicationArgs`` / ``ApplicationID``; keying on
-    those misclassifies that whole class. Same rule and same
-    :data:`avm.APP_ONLY_OPS` table as ``security.classify_program``, which
-    cannot be imported here — the dependency runs security -> tealtools and
-    never back."""
-    return ("app" if any(a.op in APP_ONLY_OPS for a in prog.assignments)
-            else "logicsig")
-
-
-def default_budget(prog: SSAProgram) -> int:
-    """The conservative ceiling for this program's execution model."""
-    return (MAX_POOLED_OPCODE_BUDGET if program_mode(prog) == "app"
-            else MAX_POOLED_LOGICSIG_COST)
-
-#: The AVM kills a program whose stack exceeds this.
-MAX_STACK_DEPTH = 1000
-
-
-def op_cost(op: str, immediates: str = "") -> int:
-    """Opcode budget one execution of ``op`` consumes, from puya's langspec.
-
-    Unknown opcodes cost 1 — the floor every AVM opcode charges — so a cost
-    total is never UNDER-counted into a bigger iteration bound by an op this
-    build does not know."""
-    variants = _puya_costs()
-    return variants.get(op, 1)
-
-
-_COST_CACHE: Optional[dict] = None
-
-
-def _puya_costs() -> dict:
-    """``mnemonic -> cost``. Empty (so everything costs 1) without puya, which
-    keeps this module importable in the puya-free analysis layer."""
-    global _COST_CACHE
-    if _COST_CACHE is None:
-        try:
-            from puya.ir.avm_ops import AVMOp
-            _COST_CACHE = {m.code: int(m.cost) for m in AVMOp
-                           if isinstance(getattr(m, "cost", None), int)}
-        except Exception:
-            _COST_CACHE = {}
-    return _COST_CACHE
-
-
-def block_cost(bb: BasicBlock) -> int:
-    """Opcode budget one pass through ``bb`` consumes."""
-    return sum(op_cost(a.op, a.immediates or "") for a in bb.assignments)
-
-
-def block_stack_delta(bb: BasicBlock) -> int:
-    """Net stack change across ``bb`` (pushes minus pops).
-
-    HAZARD: ``callsub`` / ``retsub`` are modelled ``(0, 0)`` by
-    :func:`avm.op_arity`, so a subroutine's own argument and return effects are
-    NOT counted. A loop whose body calls a stack-changing subroutine therefore
-    reports a delta that is only the caller-visible part; treat a net-positive
-    result as a signal, not a proof."""
-    delta = 0
-    for a in bb.assignments:
-        n_in, n_out = op_arity(a.op, a.immediates or "")
-        delta += n_out - n_in
-    return delta
+@dataclass(frozen=True)
+class _LoopShape:
+    kind: str
+    header: BasicBlock
+    entries: tuple[BasicBlock, ...]
+    body: frozenset[BasicBlock]
+    back_edges: tuple[tuple[BasicBlock, BasicBlock], ...]
 
 
 @dataclass(frozen=True)
 class LoopBound:
-    """One natural loop, with what it costs and how often it can run."""
+    """One reachable cyclic region.
 
+    Budget bounds use the cheapest possible cycle cost.  Stack bounds are
+    present only when *every* relevant simple cycle was exhaustively checked
+    and proved to grow the stack.  The two proofs are intentionally separate.
+    """
+
+    kind: str                         # reducible | irreducible
     header: BasicBlock
-    body: frozenset            # every BasicBlock in the loop
-    back_edges: tuple          # the (source, header) edges that close it
-    min_iteration_cost: int    # budget for the CHEAPEST cycle
-    stack_delta: int           # net stack change over that cycle
-    prefix_cost: int           # budget CERTAINLY spent before the loop can start
-    budget_bound: int          # iterations before the pooled budget dies
-    stack_bound: Optional[int] # iterations before the stack cap, or None
-    depth: int = 0             # nesting depth; 0 for an outermost loop
-    budget: int = MAX_POOLED_OPCODE_BUDGET   # ceiling this was bounded against
+    entries: tuple[BasicBlock, ...]
+    body: frozenset[BasicBlock]
+    back_edges: tuple[tuple[BasicBlock, BasicBlock], ...]
+    iteration_cost: CostFact
+    prefix: CostFact
+    budget_bound: int
+    stack_growth: Optional[int]
+    stack_bound: Optional[int]
+    context: BudgetContext
+    degradations: tuple[str, ...] = ()
+    depth: int = 0
+
+    @property
+    def min_iteration_cost(self) -> int:
+        return self.iteration_cost.lower
+
+    @property
+    def prefix_cost(self) -> int:
+        return self.prefix.lower
+
+    @property
+    def stack_delta(self) -> int:
+        return self.stack_growth or 0
+
+    @property
+    def budget(self) -> int:
+        return self.context.initial_credit
 
     @property
     def available_budget(self) -> int:
-        """What is left for the loop after the mandatory prefix."""
-        return max(0, self.budget - self.prefix_cost)
+        return max(0, self.context.initial_credit - self.prefix.lower)
 
     @property
     def max_iterations(self) -> int:
-        """Whichever ceiling binds first.
-
-        TOTAL iterations across the whole execution, NOT per entry. A loop
-        nested in one that runs K times is entered K times, and this bounds the
-        sum — which is the useful reading, because the budget is what is shared.
-        Per-entry is bounded by the same number and more loosely."""
         if self.stack_bound is None:
             return self.budget_bound
         return min(self.budget_bound, self.stack_bound)
@@ -196,271 +99,399 @@ class LoopBound:
         return "budget"
 
     @property
+    def exact_cost(self) -> bool:
+        return self.iteration_cost.exact and self.prefix.exact
+
+    @property
     def first_line(self) -> int:
         return self.header.first_line
 
-    def __repr__(self) -> str:
-        return (f"Loop(L{self.header.first_line} x{len(self.body)}bb "
-                f"cost={self.min_iteration_cost} prefix={self.prefix_cost} "
-                f"max_iter={self.max_iterations} by {self.bound_reason})")
 
-
-def _natural_loops(cfg: CFG) -> "list[tuple[BasicBlock, set, list]]":
-    """``(header, body, back_edges)`` per natural loop.
-
-    A back edge is ``u -> h`` where ``h`` DOMINATES ``u``: every path into ``u``
-    already passed the header, so the edge closes a genuine loop rather than
-    some other cycle. The body is everything that reaches ``u`` without leaving
-    through ``h``. Back edges sharing a header are one loop, so a
-    multiple-``continue`` loop is not reported several times."""
-    by_header: dict = {}
-    for u in cfg.blocks:
-        for h in u.successors:
-            if h in cfg.dominators(u):
-                by_header.setdefault(h, []).append((u, h))
-    loops = []
-    for h, edges in by_header.items():
-        body = {h}
-        stack = [u for u, _ in edges]
-        while stack:
-            n = stack.pop()
-            if n in body:
-                continue
-            body.add(n)
-            stack.extend(p for p in n.predecessors if p not in body)
-        loops.append((h, body, edges))
-    return loops
-
-
-def _cheapest_cycle(header: BasicBlock, body: set, back_edges: list):
-    """``(cost, stack_delta)`` of the cheapest route header -> back-edge source,
-    staying inside the loop.
-
-    Cheapest, because an upper bound on ITERATIONS needs the lower bound on cost
-    per iteration. Dijkstra over the body with blocks as weights."""
-    import networkx as nx
-
-    g = nx.DiGraph()
-    for bb in body:
-        for s in bb.successors:
-            if s in body:
-                g.add_edge(bb, s, weight=block_cost(s))
-    if header not in g:
-        return block_cost(header), block_stack_delta(header)
-
-    best = None
-    for src, _ in back_edges:
-        if src not in g:
-            continue
-        try:
-            path = nx.shortest_path(g, header, src, weight="weight")
-        except (nx.NetworkXNoPath, nx.NodeNotFound):
-            continue
-        cost = sum(block_cost(b) for b in path)
-        if best is None or cost < best[0]:
-            best = (cost, sum(block_stack_delta(b) for b in path))
-    if best is None:
-        return block_cost(header), block_stack_delta(header)
-    return best
-
-
-def _entry_distances(cfg: CFG) -> dict:
-    """``block -> cheapest budget to REACH it from a program entry``, the block's
-    own cost included. Absent when no entry reaches it."""
-    import networkx as nx
-
-    g = nx.DiGraph()
-    g.add_nodes_from(cfg.blocks)
-    for bb in cfg.blocks:
-        for s in bb.successors:
-            g.add_edge(bb, s, weight=block_cost(s))     # pay on arrival
-    best: dict = {}
+def _reachable(cfg: CFG) -> set[BasicBlock]:
+    out: set[BasicBlock] = set()
     for entry in cfg.entries:
-        if entry not in g:
+        out.update(cfg.reachable_from(entry))
+    return out
+
+
+def _routine_graph(prog: SSAProgram, cfg: CFG) -> tuple[nx.DiGraph, tuple[BasicBlock, ...]]:
+    """Call-summary graph used for loop structure.
+
+    A call block flows to its matched continuation and each subroutine entry is
+    an additional graph root.  A ``retsub`` has no outgoing edge in this view.
+    This prevents one callee's return from being paired with another caller's
+    continuation while still exposing loops in caller and callee routines.
+    Callee execution cost is handled conservatively as a degradation on a
+    cycle containing ``callsub`` rather than splicing context-insensitive
+    return edges into the loop graph.
+    """
+    reached = _reachable(cfg)
+    subs = identify_subroutines(prog)
+    roots = tuple(dict.fromkeys([
+        *(b for b in cfg.entries if b in reached),
+        *(b for b in subs["entries"] if b in reached),
+    ]))
+    graph = nx.DiGraph()
+    graph.add_nodes_from(reached)
+    continuations = subs["continuations"]
+    for bb in reached:
+        term = _terminator(bb)
+        if term == "callsub":
+            cont = continuations.get(bb)
+            if cont in reached:
+                graph.add_edge(bb, cont)
             continue
-        base = block_cost(entry)
-        for node, d in nx.single_source_dijkstra_path_length(
-                g, entry, weight="weight").items():
-            total = base + d
-            if node not in best or total < best[node]:
-                best[node] = total
-    return best
+        if term in {"retsub", "return", "err"}:
+            continue
+        for successor in bb.successors:
+            if successor in reached:
+                graph.add_edge(bb, successor)
+    return graph, roots
 
 
-def _prefix_cost(cfg: CFG, header: BasicBlock, dist: dict) -> int:
-    """Budget CERTAINLY spent before ``header`` can run.
-
-    The execution takes SOME path from an entry to the header, and every path
-    costs at least the CHEAPEST one — so the cheapest path's cost is a lower
-    bound on what is already gone, and the loop never gets the full 700.
-
-    This subsumes the dominator sum it replaced and is never smaller: every path
-    crosses all of the header's dominators, so any path already costs at least
-    that much, and the cheapest one usually crosses more blocks besides.
-
-    HAZARD: block costs are NON-NEGATIVE, which is what makes plain Dijkstra
-    right here — a back edge can never shorten a path, so a loop on the way to
-    this one needs no special handling and the shortest path is always simple.
-    The header's own cost is excluded: that belongs to the per-iteration cost,
-    and counting it twice would over-subtract and under-report iterations, the
-    unsound direction for an upper bound.
-
-    Falls back to the dominator sum for a header no entry reaches (dead code),
-    where "the cheapest path" does not exist."""
-    reached = dist.get(header)
-    if reached is None:
-        return sum(block_cost(b) for b in cfg.dominators(header) if b is not header)
-    return max(0, reached - block_cost(header))
+def _dominators(graph: nx.DiGraph, roots: tuple[BasicBlock, ...]) -> dict:
+    nodes = list(graph.nodes)
+    return iterative_dominators(nodes, roots, lambda b: graph.predecessors(b))
 
 
-def analyze_loops(prog: SSAProgram, cfg: Optional[CFG] = None, *,
-                  budget: Optional[int] = None) -> "list[LoopBound]":
-    """Every natural loop with its cost and iteration bounds, header order.
+def _natural_loops(graph: nx.DiGraph, roots: tuple[BasicBlock, ...]) -> list[_LoopShape]:
+    dom = _dominators(graph, roots)
+    by_header: dict[BasicBlock, list[tuple[BasicBlock, BasicBlock]]] = {}
+    for source, target in graph.edges:
+        if target in dom.get(source, ()):
+            by_header.setdefault(target, []).append((source, target))
 
-    ``budget`` is the pooled opcode ceiling, defaulting to the conservative
-    maximum. Pass a smaller one once group shape and inner-call count are known
-    — bounding against a budget the program might actually exceed is the unsound
-    direction."""
-    cfg = cfg or CFG.of(prog)
-    if budget is None:
-        budget = default_budget(prog)
-    dist = _entry_distances(cfg)
-    out: list[LoopBound] = []
-    for header, body, back_edges in _natural_loops(cfg):
-        cost, delta = _cheapest_cycle(header, body, back_edges)
-        cost = max(1, cost)                      # every cycle charges something
-        prefix = _prefix_cost(cfg, header, dist)
-        budget_bound = max(0, budget - prefix) // cost
-        # Only a net-POSITIVE cycle is bounded by the stack; anything else can
-        # spin without growing it.
-        stack_bound = (MAX_STACK_DEPTH // delta) if delta > 0 else None
-        out.append(LoopBound(
-            header=header, body=frozenset(body), back_edges=tuple(back_edges),
-            min_iteration_cost=cost, stack_delta=delta, prefix_cost=prefix,
-            budget_bound=budget_bound, stack_bound=stack_bound, budget=budget,
+    out: list[_LoopShape] = []
+    for header, edges in by_header.items():
+        body = {header}
+        work = [source for source, _ in edges]
+        while work:
+            node = work.pop()
+            if node in body:
+                continue
+            body.add(node)
+            work.extend(p for p in graph.predecessors(node) if p not in body)
+        out.append(_LoopShape(
+            "reducible", header, (header,), frozenset(body), tuple(edges)
         ))
-    # Natural loops nest or are disjoint, never partially overlap, so a strict
-    # body-subset count is the nesting depth.
-    by_depth = [
-        replace(lp, depth=sum(1 for other in out
-                              if other is not lp and lp.body < other.body))
-        for lp in out
+    return out
+
+
+def _cyclic_sccs(graph: nx.DiGraph) -> list[frozenset[BasicBlock]]:
+    out: list[frozenset[BasicBlock]] = []
+    for raw in nx.strongly_connected_components(graph):
+        comp = frozenset(raw)
+        if len(comp) > 1 or any(graph.has_edge(b, b) for b in comp):
+            out.append(comp)
+    return out
+
+
+def _loop_shapes(graph: nx.DiGraph, roots: tuple[BasicBlock, ...]) -> list[_LoopShape]:
+    natural = _natural_loops(graph, roots)
+    out = list(natural)
+    for comp in _cyclic_sccs(graph):
+        entry_nodes = {
+            node for node in comp
+            if any(pred not in comp for pred in graph.predecessors(node))
+            or node in roots
+        }
+        # A maximal SCC with several entries is irreducible even if it also
+        # contains one or more nested natural loops.
+        if len(entry_nodes) <= 1:
+            continue
+        ordered = tuple(sorted(entry_nodes, key=lambda b: (b.file, b.first_line)))
+        internal_edges = tuple((u, v) for u, v in graph.edges if u in comp and v in comp)
+        out.append(_LoopShape(
+            "irreducible", ordered[0], ordered, comp, internal_edges
+        ))
+    return out
+
+
+def _path_cost(path: list[BasicBlock]) -> CostFact:
+    fact = sum_costs(block_cost(bb) for bb in path)
+    if any(a.op == "callsub" for bb in path for a in canonical_assignments(bb)):
+        fact = fact + CostFact.unknown("callee execution cost omitted from summary edge", lower=0)
+    return fact
+
+
+def _cheapest_path(
+    graph: nx.DiGraph, source: BasicBlock, target: BasicBlock
+) -> Optional[list[BasicBlock]]:
+    weighted = nx.DiGraph()
+    weighted.add_nodes_from(graph.nodes)
+    for u, v in graph.edges:
+        weighted.add_edge(u, v, weight=block_cost(v).lower)
+    try:
+        return nx.shortest_path(weighted, source, target, weight="weight")
+    except (nx.NetworkXNoPath, nx.NodeNotFound):
+        return None
+
+
+def _cheapest_iteration(shape: _LoopShape, graph: nx.DiGraph) -> CostFact:
+    if shape.kind == "reducible":
+        best: Optional[CostFact] = None
+        for source, target in shape.back_edges:
+            if target is not shape.header:
+                continue
+            path = _cheapest_path(graph.subgraph(shape.body), shape.header, source)
+            if path is None:
+                continue
+            fact = _path_cost(path)
+            if best is None or fact.lower < best.lower:
+                best = fact
+        return best or _path_cost([shape.header])
+
+    subgraph = graph.subgraph(shape.body)
+    best = None
+    for u, v in subgraph.edges:
+        if u is v:
+            path = [u]
+        else:
+            tail = _cheapest_path(subgraph, v, u)
+            if tail is None:
+                continue
+            path = tail
+        fact = _path_cost(path)
+        if best is None or fact.lower < best.lower:
+            best = fact
+    return best or CostFact.unknown("cyclic SCC had no materialized cycle")
+
+
+def _entry_distances(cfg: CFG) -> tuple[dict[BasicBlock, int], dict[BasicBlock, list[BasicBlock]]]:
+    """Cheapest raw-CFG paths.
+
+    Raw return edges may admit an impossible caller pairing, which can only
+    lower the result.  That is the conservative direction for the lower-bound
+    fact returned here and is explicitly surfaced by query health.
+    """
+    graph = nx.DiGraph()
+    graph.add_nodes_from(cfg.blocks)
+    for bb in cfg.blocks:
+        for successor in bb.successors:
+            graph.add_edge(bb, successor, weight=block_cost(successor).lower)
+    distances: dict[BasicBlock, int] = {}
+    paths: dict[BasicBlock, list[BasicBlock]] = {}
+    for entry in cfg.entries:
+        if entry not in graph:
+            continue
+        lengths, found_paths = nx.single_source_dijkstra(graph, entry, weight="weight")
+        base = block_cost(entry).lower
+        for node, distance in lengths.items():
+            total = base + distance
+            if node not in distances or total < distances[node]:
+                distances[node] = total
+                paths[node] = found_paths[node]
+    return distances, paths
+
+
+def _prefix(shape: _LoopShape, distances: dict, paths: dict) -> CostFact:
+    candidates = [entry for entry in shape.entries if entry in distances]
+    if not candidates:
+        return CostFact.unknown("loop region has no reachable entry", lower=0)
+    target = min(candidates, key=distances.__getitem__)
+    path = paths[target]
+    # The entry block belongs to an iteration, not the mandatory prefix.
+    return _path_cost(path[:-1]) if len(path) > 1 else CostFact.known(0)
+
+
+def _guaranteed_stack_growth(
+    shape: _LoopShape, graph: nx.DiGraph, *, max_cycles: int = 4096
+) -> tuple[Optional[int], Optional[str]]:
+    subgraph = graph.subgraph(shape.body)
+    if len(shape.body) > 64:
+        return None, "stack proof skipped for a region above 64 blocks"
+    deltas = {bb: block_stack_delta(bb) for bb in shape.body}
+    if any(delta is None for delta in deltas.values()):
+        return None, "stack proof unavailable across call/return boundaries"
+
+    minimum: Optional[int] = None
+    seen = 0
+    for cycle in nx.simple_cycles(subgraph):
+        if shape.kind == "reducible" and shape.header not in cycle:
+            continue
+        seen += 1
+        if seen > max_cycles:
+            return None, f"stack proof exceeded {max_cycles} simple cycles"
+        growth = sum(deltas[bb] for bb in cycle)  # type: ignore[arg-type]
+        if growth <= 0:
+            return None, None
+        minimum = growth if minimum is None else min(minimum, growth)
+    if minimum is None:
+        return None, "no relevant simple cycle was materialized"
+    return minimum, None
+
+
+def analyze_loops(
+    prog: SSAProgram,
+    cfg: Optional[CFG] = None,
+    *,
+    context: Optional[BudgetContext] = None,
+    budget: Optional[int] = None,
+) -> list[LoopBound]:
+    """Return all reachable reducible loops and irreducible cyclic regions."""
+    cfg = cfg or CFG.of(prog)
+    ctx = context_for(prog, context, budget=budget)
+    graph, roots = _routine_graph(prog, cfg)
+    distances, paths = _entry_distances(cfg)
+    out: list[LoopBound] = []
+    for shape in _loop_shapes(graph, roots):
+        iteration = _cheapest_iteration(shape, graph)
+        prefix = _prefix(shape, distances, paths)
+        available = max(0, ctx.initial_credit - prefix.lower)
+        cost_floor = max(1, iteration.lower)
+        growth, stack_degradation = _guaranteed_stack_growth(shape, graph)
+        stack_bound = MAX_STACK_DEPTH // growth if growth is not None else None
+        degradations = tuple(dict.fromkeys((
+            *iteration.reasons,
+            *prefix.reasons,
+            *((stack_degradation,) if stack_degradation else ()),
+            *(("context-insensitive prefix return edges",)
+              if any(_terminator(bb) == "retsub" for bb in paths.get(shape.header, ()))
+              else ()),
+        )))
+        out.append(LoopBound(
+            shape.kind,
+            shape.header,
+            shape.entries,
+            shape.body,
+            shape.back_edges,
+            iteration,
+            prefix,
+            available // cost_floor,
+            growth,
+            stack_bound,
+            ctx,
+            degradations,
+        ))
+
+    nested = [
+        replace(loop, depth=sum(
+            1 for other in out if other is not loop and loop.body < other.body
+        ))
+        for loop in out
     ]
-    return sorted(by_depth, key=lambda b: (b.header.file, b.header.first_line))
+    return sorted(nested, key=lambda item: (
+        item.header.file, item.header.first_line, item.kind
+    ))
 
 
-def render(prog: SSAProgram, cfg: Optional[CFG] = None) -> str:
-    """Human-readable loop table."""
-    loops = analyze_loops(prog, cfg)
+def render(
+    prog: SSAProgram,
+    cfg: Optional[CFG] = None,
+    *,
+    context: Optional[BudgetContext] = None,
+) -> str:
+    loops = analyze_loops(prog, cfg, context=context)
     if not loops:
-        return "no loops"
-    rows = ["loops (upper bounds on what the AVM PERMITS, not trip counts;",
-            " iteration counts are TOTAL across the execution, not per entry):"]
-    for b in loops:
-        stack = (f", stack {b.stack_delta:+d}/iter" if b.stack_delta else "")
-        prefix = (f", {b.prefix_cost} spent before it "
-                  f"(budget left {b.available_budget})" if b.prefix_cost else "")
-        rows.append(
-            "  " + "  " * b.depth +
-            f"L{b.header.first_line}-L{b.header.last_line}: "
-            f"{len(b.body)} block(s), cheapest iteration {b.min_iteration_cost} "
-            f"budget{stack}{prefix} → at most {b.max_iterations} iterations "
-            f"({b.bound_reason}-bound)"
+        return "no reachable loops"
+    rows = ["loops (execution ceilings, not predicted trip counts):"]
+    for loop in loops:
+        precision = "exact cost" if loop.exact_cost else "lower-bound cost"
+        entry = (f", {len(loop.entries)} entries" if len(loop.entries) > 1 else "")
+        stack = (
+            f", guaranteed stack growth +{loop.stack_growth}"
+            if loop.stack_growth is not None else ""
         )
+        rows.append(
+            "  " + "  " * loop.depth
+            + f"L{loop.header.first_line}: {loop.kind}{entry}, "
+            + f">={loop.iteration_cost.lower}/cycle ({precision}), "
+            + f">={loop.prefix.lower} prefix{stack} -> "
+            + f"at most {loop.max_iterations} ({loop.bound_reason})"
+        )
+        for reason in loop.degradations:
+            rows.append("  " + "  " * (loop.depth + 1) + f"~ {reason}")
     return "\n".join(rows)
 
 
-# --- visualisation -----------------------------------------------------------
-
-
-def to_dot(prog: SSAProgram, cfg: Optional[CFG] = None, *,
-           file: Optional[str] = None, rankdir: str = "TB") -> str:
-    """The CFG with each loop boxed and labelled by its bound, and the budget
-    already SPENT before it shown.
-
-    The table says what a loop costs; this says where it sits and what the
-    program committed on the way in. Blocks that strictly dominate some loop
-    header are tinted as spent — those are the ones subtracted from the 700.
-
-    A block is drawn inside its INNERMOST loop only: DOT clusters may nest but
-    not overlap, and natural loops sharing blocks without nesting (irreducible
-    control flow) would produce an invalid graph."""
+def to_dot(
+    prog: SSAProgram,
+    cfg: Optional[CFG] = None,
+    *,
+    file: Optional[str] = None,
+    rankdir: str = "TB",
+    context: Optional[BudgetContext] = None,
+) -> str:
     cfg = cfg or CFG.of(prog)
-    loops = analyze_loops(prog, cfg)
-    blocks = [b for b in cfg.blocks if file is None or b.file == file]
+    loops = analyze_loops(prog, cfg, context=context)
+    blocks = [bb for bb in cfg.blocks if file is None or bb.file == file]
     shown = set(blocks)
+    owner: dict[BasicBlock, LoopBound] = {}
+    for loop in sorted(loops, key=lambda item: -len(item.body)):
+        for bb in loop.body:
+            owner[bb] = loop
+    marked_edges = {edge for loop in loops for edge in loop.back_edges}
 
-    # innermost loop per block: the smallest body containing it
-    owner: dict = {}
-    for lp in sorted(loops, key=lambda x: -len(x.body)):
-        for bb in lp.body:
-            owner[bb] = lp
-    spent = {b for lp in loops for b in cfg.dominators(lp.header) if b is not lp.header}
-    back = {(u, h) for lp in loops for u, h in lp.back_edges}
-
-    def nid(bb) -> str:
+    def node_id(bb: BasicBlock) -> str:
         return f"bb_{bb.first_line}_{bb.last_line}"
 
-    def node_line(bb) -> str:
-        cost = block_cost(bb)
-        # via bb_label: it escapes each PART then joins with the literal DOT
-        # break, where escaping the joined string would double the backslash and
-        # print a literal "\n".
-        tag = _bb_label(f"L{bb.first_line}-L{bb.last_line}", [f"{cost} budget"])
-        if bb in spent and bb not in owner:
-            style = 'style="filled", fillcolor="#fdf0d5", color="#b8860b"'
-        elif any(bb is lp.header for lp in loops):
-            style = 'style="filled,bold", fillcolor="#dbe9ff", color="#1f5fa8", penwidth=2'
-        elif bb in owner:
-            style = 'style="filled", fillcolor="#eef4ff", color="#7aa0d0"'
-        else:
-            style = 'style="filled", fillcolor="#f6f6f6", color="#999999"'
-        return f'    {nid(bb)} [shape=box, label="{tag}", {style}];'
+    def node_line(bb: BasicBlock) -> str:
+        fact = block_cost(bb)
+        suffix = "" if fact.exact else "+"
+        label = _bb_label(
+            f"L{bb.first_line}-L{bb.last_line}", [f"{fact.lower}{suffix} budget"]
+        )
+        style = (
+            'style="filled,bold", fillcolor="#dbe9ff", color="#1f5fa8"'
+            if any(bb in loop.entries for loop in loops)
+            else 'style="filled", fillcolor="#f6f6f6", color="#999999"'
+        )
+        return f'    {node_id(bb)} [shape=box, label="{label}", {style}];'
 
     out = _dot_header("loop_bounds", rankdir=rankdir)
-    index = {lp: i for i, lp in enumerate(loops)}
-    # Children of a loop = the loops directly inside it. Natural loops nest or
-    # are disjoint, so clusters can be emitted RECURSIVELY and a nested loop is
-    # drawn inside its parent instead of beside it.
-    children: dict = {None: []}
-    for lp in loops:
-        parents = [o for o in loops if o is not lp and lp.body < o.body]
-        parent = min(parents, key=lambda o: len(o.body)) if parents else None
-        children.setdefault(parent, []).append(lp)
-        children.setdefault(lp, [])
+    index = {loop: i for i, loop in enumerate(loops)}
+    children: dict[Optional[LoopBound], list[LoopBound]] = {None: []}
+    for loop in loops:
+        parents = [other for other in loops if loop.body < other.body]
+        parent = min(parents, key=lambda item: len(item.body)) if parents else None
+        children.setdefault(parent, []).append(loop)
+        children.setdefault(loop, [])
 
-    def emit(lp, indent: str) -> None:
-        label = (f"L{lp.header.first_line}: <= {lp.max_iterations} iter "
-                 f"({lp.bound_reason}), {lp.min_iteration_cost}/iter")
-        if lp.prefix_cost:
-            label += f", {lp.prefix_cost} spent before"
-        out.append(f'{indent}subgraph cluster_{index[lp]} {{')
+    def emit(loop: LoopBound, indent: str) -> None:
+        quality = "exact" if loop.iteration_cost.exact else "lower"
+        label = (
+            f"{loop.kind} L{loop.header.first_line}: <= {loop.max_iterations} iter, "
+            f"{loop.iteration_cost.lower}/iter ({quality})"
+        )
+        out.append(f"{indent}subgraph cluster_{index[loop]} {{")
         out.append(f'{indent}  label="{escape(label)}"; color="#1f5fa8"; style=rounded;')
-        for kid in children.get(lp, ()):
-            emit(kid, indent + "  ")
-        for b in blocks:
-            if owner.get(b) is lp:
-                out.append(node_line(b))
+        for child in children.get(loop, ()):
+            emit(child, indent + "  ")
+        for bb in blocks:
+            if owner.get(bb) is loop:
+                out.append(node_line(bb))
         out.append(indent + "}")
 
-    for lp in children.get(None, ()):
-        emit(lp, "  ")
+    for root in children[None]:
+        emit(root, "  ")
     for bb in blocks:
         if bb not in owner:
             out.append(node_line(bb))
     for bb in blocks:
-        for s in bb.successors:
-            if s not in shown:
+        for successor in bb.successors:
+            if successor not in shown:
                 continue
-            attrs = ('[color="#c0392b", style=bold, label="back"]'
-                     if (bb, s) in back else "")
-            out.append(f"  {nid(bb)} -> {nid(s)} {attrs};")
+            attrs = (
+                '[color="#c0392b", style=bold, label="cycle"]'
+                if (bb, successor) in marked_edges else ""
+            )
+            out.append(f"  {node_id(bb)} -> {node_id(successor)} {attrs};")
     out.append("}")
     return "\n".join(out)
 
 
-def draw(prog: SSAProgram, cfg: Optional[CFG] = None, *, file: Optional[str] = None,
-         format: str = "svg", engine: str = "dot", rankdir: str = "TB"):
-    """Render :func:`to_dot` (Jupyter-renderable SVG)."""
-    return _dot_render(to_dot(prog, cfg, file=file, rankdir=rankdir),
-                       format=format, engine=engine)
+def draw(
+    prog: SSAProgram,
+    cfg: Optional[CFG] = None,
+    *,
+    file: Optional[str] = None,
+    format: str = "svg",
+    engine: str = "dot",
+    rankdir: str = "TB",
+    context: Optional[BudgetContext] = None,
+):
+    return _dot_render(
+        to_dot(prog, cfg, file=file, rankdir=rankdir, context=context),
+        format=format,
+        engine=engine,
+    )

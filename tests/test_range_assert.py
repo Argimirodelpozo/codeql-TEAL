@@ -1,5 +1,5 @@
 """Unit tests for assert-based range refinement
-(``tealql.tealtools.passes.range_assert``).
+(``tealql.tealtools.analysis._range_refinement``).
 
 The refinement math (``_apply``) is a pure function; the soundness-critical
 part is the *flow sensitivity* — a guard may tighten a var globally only when
@@ -21,7 +21,7 @@ from tealql.tealtools.ssa import (
     SSAVar,
     TealType,
 )
-from tealql.tealtools.passes.range_assert import _apply, propagate_assert_ranges
+from tealql.tealtools.analysis._range_refinement import _apply, propagate_assert_ranges
 
 UMAX = (1 << 64) - 1
 U64 = TealType("uint64")
@@ -275,12 +275,9 @@ class TestShuffleUsesInvariant:
 
     def _prog(self, teal):
         from tealql.tealtools.ssa import SSAProgram
+        from tealql.tealtools.analysis import DerivedProfile, derived_program
         p = SSAProgram.from_text(teal, name="t")
-        p.propagate_constants()
-        p.propagate_inputs()
-        p.propagate_stack_shuffles()
-        p.propagate_assert_ranges()
-        return p
+        return derived_program(p, DerivedProfile.GUARDED)
 
     def test_asserted_then_dupd_value_tightens(self):
         # L is asserted `<= 8`, then flows (through a dup) to a second consumer.

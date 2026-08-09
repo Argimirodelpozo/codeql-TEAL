@@ -3,9 +3,9 @@ from __future__ import annotations
 
 from tealql.security import DETECTORS
 from tealql.tealtools.dataflow.engine import Sink, Source, TaintAnalysis
+from tealql.tealtools.analysis import DerivedProfile, derived_program
 from tealql.tealtools.lift import lift
 from tealql.tealtools.lift.teal_const import _load_src
-from tealql.tealtools.passes import run_all_passes
 from tealql.tealtools.source_map import source_map_for
 from tealql.tealtools.ssa import SSAProgram
 
@@ -72,8 +72,9 @@ return
 """
     fresh = SSAProgram.from_text(src, name="fresh.teal")
     expected = [v.pretty() for v in DETECTORS["constant-condition"](fresh).detect()]
-    refined = SSAProgram.from_text(src, name="refined.teal")
-    run_all_passes(refined)
+    refined = derived_program(
+        SSAProgram.from_text(src, name="refined.teal"), DerivedProfile.GUARDED
+    )
     actual = [v.pretty() for v in DETECTORS["constant-condition"](refined).detect()]
     # File labels differ; the semantic violation kinds/messages do not.
     assert [v.split(":", 1)[-1] for v in actual] == [v.split(":", 1)[-1] for v in expected]

@@ -174,8 +174,6 @@ class SSAProgram:
         self._consts_propagated: bool = False
         self._scratch_propagated: bool = False
         self._ranges_propagated: bool = False
-        self._shuffles_propagated: bool = False
-        self._inputs_propagated: bool = False
 
         def _bb_from_tuple(bb_id: tuple) -> BasicBlock:
             bb = self.blocks.get(bb_id)
@@ -432,8 +430,13 @@ class SSAProgram:
                 graph.nodes[node].pop("scratch_stores", None)
                 graph.nodes[node].pop("scratch_taint_sources", None)
 
+    def _assert_analysis_mutable(self) -> None:
+        if getattr(self, "_analysis_read_only", False):
+            raise RuntimeError("cached derived analysis programs are read-only")
+
     def _commit_mutation(self, *, value_rewrite: bool = False) -> None:
         """Atomically publish one supported mutation to derived consumers."""
+        self._assert_analysis_mutable()
         if value_rewrite:
             self._rebuild_uses()
             self._invalidate_value_relations()
@@ -605,7 +608,26 @@ class SSAProgram:
                     stack.append(p)
         return False
 
-    # -- passes -------------------------------------------------------------
+    # -- query-scoped analysis ----------------------------------------------
+
+    def analysis_context(self):
+        """Return the revision-aware immutable fact cache for this program."""
+        from ..analysis import AnalysisContext
+        context = getattr(self, "_analysis_context_cache", None)
+        if context is None:
+            context = AnalysisContext(self)
+            self._analysis_context_cache = context
+        return context
+
+    def facts(self, *domains):
+        """Immutable value facts; never rewrites this SSA program."""
+        return self.analysis_context().facts(*domains)
+
+    # -- legacy annotation entry points ------------------------------------
+    #
+    # These remain temporarily for internal algorithms operating on a PRIVATE
+    # derived program.  Shared-program consumers must use ``facts()`` or
+    # ``analysis.derived_program`` so query order cannot change later results.
 
     def propagate_constants(self) -> None:
         """Resolve each :class:`SSAVar` and :class:`Phi` to its compile-time
@@ -630,6 +652,7 @@ class SSAProgram:
         SSAVar/Phi input with its literal when ``propagate_consts=True``
         (default). Idempotent.
         """
+        self._assert_analysis_mutable()
         if self._consts_propagated:
             return
 
@@ -638,80 +661,10 @@ class SSAProgram:
         # them here so every ``const_value`` reader — which runs this first —
         # sees the identical post-build state.
         self._ensure_identity_steps()
-        from ..passes.const_prop import propagate_constants as _impl
+        from ..analysis._constants import propagate_constants as _impl
         _impl(self)
         self._consts_propagated = True
         self._commit_mutation()
-
-    def propagate_inputs(self) -> None:
-        """Unify execution-stable input reads (``txn`` / ``txna`` /
-        ``gtxn``-family / ``global`` / ``arg``) so multiple syntactic
-        reads of the same input collapse to one canonical SSAVar.
-
-        Idempotent. Mutates the SSA: duplicate readers' outputs get
-        rewired in every consumer (assignment inputs and phi args) to
-        point at the first reader's output. Lazily imported because
-        the unification logic lives in :mod:`tealql.tealtools.input_prop`
-        — the substrate just provides the entry point.
-
-        ``itxn``-family reads are deliberately *not* included; itxn
-        fields observe the most-recently-submitted inner transaction
-        and can legitimately differ between submits."""
-        if getattr(self, "_inputs_propagated", False):
-            return
-        from ..passes.input_prop import propagate_inputs as _impl
-        _impl(self)
-        self._inputs_propagated = True
-        self._commit_mutation(value_rewrite=True)
-
-    def propagate_scratch_values(self) -> int:
-        """Generalises :meth:`propagate_scratch_constants` from compile-
-        time literals to arbitrary SSA values.
-
-        For each ``load N`` opcode whose may-influencing stores
-        (provided by the ``scratch_stores`` annotation) all
-        write the *same* :class:`SSAVar` ``V``, rewire every consumer
-        of the load's output to reference ``V`` directly. The load's
-        ``Assignment`` stays in the IR with empty ``uses`` until a
-        subsequent :meth:`cleanup_unused_ssavars` removes it.
-
-        Returns the number of loads forwarded. Mutates the SSA in place.
-        Iterates to a fixed point (a chained ``store/load/store/load``
-        round-trip resolves one level per sweep), so a second call finds
-        nothing further to forward.
-
-        Best run after :meth:`propagate_inputs` (so equivalent input
-        reads are already unified and forwarding through scratch can
-        see them as a single SSAVar) and :meth:`propagate_scratch_constants`
-        (so const stores resolve via const_value first). Runs as Phase A
-        step 4 of :func:`tealql.tealtools.passes.run_all_passes`. Callers
-        outside that pipeline should note that the SSAVar-identity change
-        can surprise an analysis expecting a 1:1 mapping between load
-        assignments and their downstream uses.
-        """
-        self._ensure_scratch_influence()
-        from ..passes.scratch_prop import propagate_scratch_values as _impl
-        changed = _impl(self)
-        if changed:
-            self._commit_mutation(value_rewrite=True)
-        return changed
-
-    def cleanup_unused_ssavars(self) -> int:
-        """Drop side-effect-free :class:`Assignment` s whose every
-        output has empty ``uses``. Typically called after
-        :meth:`propagate_inputs` to physically remove the duplicate
-        input reads it unified semantically. Returns the count of
-        assignments removed.
-
-        Idempotent on a fixed IR — repeated calls find nothing more
-        to drop. Lazily imports the implementation from
-        :mod:`tealql.tealtools.cleanup` so the substrate stays free of the
-        per-op pure-set decisions."""
-        from ..passes.cleanup import cleanup_unused_ssavars as _impl
-        changed = _impl(self)
-        if changed:
-            self._commit_mutation()
-        return changed
 
     def propagate_scratch_constants(self) -> None:
         """Resolve each ``load N`` opcode's output to a literal when every
@@ -726,6 +679,7 @@ class SSAProgram:
         Must-semantics: any load whose stores include even one non-
         constant value is left non-resolved.
         """
+        self._assert_analysis_mutable()
         if self._scratch_propagated:
             return
         # Stack-side propagation needs to have run first so each store's
@@ -734,7 +688,7 @@ class SSAProgram:
             self.propagate_constants()
 
         self._ensure_scratch_influence()
-        from ..passes.scratch_prop import propagate_scratch_constants as _impl
+        from ..analysis._scratch import propagate_scratch_constants as _impl
         _impl(self)
         self._scratch_propagated = True
         self._commit_mutation()
@@ -755,10 +709,11 @@ class SSAProgram:
         :data:`_GLOBAL_FIELD_RANGES` (``global FIELD``). A second pass
         unions arg ranges through phis to fixed point.
         """
+        self._assert_analysis_mutable()
         if self._ranges_propagated:
             return
 
-        from ..passes.range_seed import propagate_ranges as _impl
+        from ..analysis._range_seed import propagate_ranges as _impl
         _impl(self)
         self._ranges_propagated = True
         self._commit_mutation()
@@ -776,24 +731,8 @@ class SSAProgram:
         composes them. Lazily imported from
         :mod:`tealql.tealtools.range_arith` so the substrate stays free of
         the AVM arithmetic semantics."""
-        from ..passes.range_arith import propagate_range_arithmetic as _impl
-        changed = _impl(self)
-        if changed:
-            self._commit_mutation()
-        return changed
-
-    def propagate_assert_ranges(self) -> int:
-        """Tighten ``IntRange`` annotations from the contract's ``assert``
-        guards, flow-sensitively (a guard only constrains the paths it
-        dominates). Part of :func:`tealql.tealtools.passes.run_all_passes`
-        (Phase B, after :meth:`propagate_range_arithmetic`).
-
-        Returns the number of ranges newly tightened. Lazy-trips
-        :meth:`propagate_range_arithmetic` (hence :meth:`propagate_ranges`)
-        first so const / arithmetic bounds exist to refine. Lazily imported
-        from :mod:`tealql.tealtools.passes.range_assert` so the substrate stays free
-        of the dominance / refinement logic."""
-        from ..passes.range_assert import propagate_assert_ranges as _impl
+        self._assert_analysis_mutable()
+        from ..analysis._range_arithmetic import propagate_range_arithmetic as _impl
         changed = _impl(self)
         if changed:
             self._commit_mutation()
@@ -810,7 +749,8 @@ class SSAProgram:
         :meth:`propagate_constants` and :meth:`propagate_ranges`
         first. Lazily imported from :mod:`tealql.tealtools.bytemath` so the
         substrate stays free of bytemath semantics."""
-        from ..passes.bytemath import propagate_bytemath_ranges as _impl
+        self._assert_analysis_mutable()
+        from ..analysis._bigints import propagate_bytemath_ranges as _impl
         changed = _impl(self)
         if changed:
             self._commit_mutation()
@@ -818,9 +758,8 @@ class SSAProgram:
 
     def propagate_byte_lengths(self) -> int:
         """Tag bytes-producing SSAVars / Phis with their statically
-        derivable :attr:`TealType.byte_length`. Opt-in (not part of
-        :func:`tealql.tealtools.passes.run_all_passes`) so
-        analyses that don't care about lengths aren't paying for it.
+        derivable :attr:`TealType.byte_length`. Opt-in so analyses that don't
+        care about lengths do not pay for it.
 
         Covers ``itob`` (always 8), ``bzero N`` with const ``N``,
         ``extract A B`` / ``substring A B`` (immediate forms),
@@ -833,37 +772,12 @@ class SSAProgram:
         further to add. Lazily imported from
         :mod:`tealql.tealtools.byte_length_prop` so the TEAL byte-op
         semantics stay out of the substrate."""
-        from ..passes.byte_length_prop import propagate_byte_lengths as _impl
+        self._assert_analysis_mutable()
+        from ..analysis._byte_lengths import propagate_byte_lengths as _impl
         changed = _impl(self)
         if changed:
             self._commit_mutation()
         return changed
-
-    def propagate_stack_shuffles(self) -> None:
-        """Copy-propagate the outputs of pure stack-shuffle opcodes
-        (:data:`_STACK_SHUFFLE_OPS`) into their consumers and mark the
-        shuffle assignments themselves with :attr:`Assignment.shuffled`
-        so :meth:`Assignment.functional` renders them as ``// …``
-        comments — the structural rewrite happens, but the original
-        stack movement stays visible in the dump for inspection.
-
-        For each shuffle ``a``, :func:`_shuffle_mapping` gives the
-        per-output input index. Each output SSAVar ``a.outputs[i]`` is
-        therefore guaranteed equal at runtime to ``a.inputs[m[i]]``, so
-        every consumer (other ``Assignment.inputs`` slots and
-        ``Phi.args``) is rewritten to read the input directly. Chains
-        of shuffles are flattened in one pass via :func:`_resolve` so a
-        single rewrite of consumers suffices.
-
-        Idempotent.
-        """
-        if self._shuffles_propagated:
-            return
-
-        from ..passes.stack_shuffle import propagate_stack_shuffles as _impl
-        _impl(self)
-        self._shuffles_propagated = True
-        self._commit_mutation(value_rewrite=True)
 
     # -- rendering ----------------------------------------------------------
 
@@ -937,8 +851,8 @@ class SSAProgram:
         """
         cache = getattr(self, "_frame_resolution_cache", None)
         if cache is None:
-            from ..passes.frame_resolution import resolve
-            cache = self._frame_resolution_cache = resolve(self)
+            from .frame_slots import resolve_program
+            cache = self._frame_resolution_cache = resolve_program(self)
         return cache
 
     # -- lazy consumer-specific analyses (pay-for-what-you-use) ------------

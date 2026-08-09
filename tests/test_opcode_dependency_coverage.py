@@ -19,7 +19,7 @@ from tealql.tealtools.dataflow.engine import (
     Source,
     TaintAnalysis,
 )
-from tealql.tealtools.passes.cleanup import _PURE_OPS
+from tealql.tealtools.ssa.presentation import _PURE_OPS
 from tealql.tealtools.ssa import Assignment, Location, SSAProgram, SSAVar
 
 

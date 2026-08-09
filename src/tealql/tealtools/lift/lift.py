@@ -2,9 +2,9 @@
 stack machine (frame slots, scratch, shuffles) becomes value-based, typed IR,
 partitioned into ``main`` plus one subroutine per ``callsub`` target.
 
-The public SSA carries both a functional live-assignment view and the canonical
-AVM opcode stream. Analysis passes may rewrite or clean the former; lifting
-always simulates the latter, so pass order cannot change program semantics.
+The public SSA carries both a functional assignment view and the canonical AVM
+opcode stream. Analysis normal forms are separate snapshots; lifting always
+simulates the canonical stream, so analysis order cannot change semantics.
 """
 from __future__ import annotations
 
@@ -171,9 +171,9 @@ def lift(prog: SSAProgram) -> pre_ir.Program:
     typed lift needs (:func:`_prune_dead_assert_edges`) is applied for the
     duration of the build and inverted on exit, success or failure — so a caller
     may lift the very program its SSA-level analyses read (``build_lifter`` /
-    ``security.common.ir_lifter`` do; no fresh re-parse). Annotation passes the
-    build triggers (const/scratch caches) do land on ``prog`` — they are the
-    shared annotation layer, not mutations."""
+    ``security.common.ir_lifter`` do; no fresh re-parse). Lazy const/scratch
+    caches used by the lift may be populated, but operand wiring and the
+    canonical instruction stream remain unchanged."""
     return _Lifter(prog).build()
 
 

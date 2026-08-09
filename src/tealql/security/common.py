@@ -62,7 +62,6 @@ from ._field_protection import (  # noqa: E402,F401
     _global_field_seeds,
     _txn_field_seeds,
     approval_exit_protected_for_any_txn_field,
-    approval_exit_protected_for_arg_reads,
     approval_exit_protected_for_field,
     approval_exit_protected_for_signed_txn_field,
     approval_exit_protected_for_global_field,

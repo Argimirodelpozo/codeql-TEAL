@@ -99,7 +99,7 @@ def test_biguint_is_distinguished_from_opaque_bytes():
 def test_fixed_byte_width_seeds():
     """Widths puya declares that no table carried: a transaction hash, an asset
     metadata hash, the genesis hash, and `itob` — always exactly 8 bytes."""
-    from tealql.tealtools.passes.byte_length_prop import propagate_byte_lengths
+    from tealql.tealtools.analysis._byte_lengths import propagate_byte_lengths
     from tealql.tealtools.ssa import SSAProgram
 
     prog = SSAProgram.from_text(
@@ -121,7 +121,6 @@ def test_shared_op_families_have_one_definition():
     contents, and ``imm0`` was re-rolled per module. Consumers derive now."""
     from tealql.tealtools import abi, structure
     from tealql.tealtools.lift import type_recovery
-    from tealql.tealtools.passes import frame_resolution
     from tealql.tealtools.ssa.operands import imm0
 
     assert avm.COND_BRANCH_OPS == frozenset({"bnz", "bz"})
@@ -130,5 +129,5 @@ def test_shared_op_families_have_one_definition():
     assert structure._VALUE_BRANCH_OPS == avm.COND_BRANCH_OPS | avm.MULTIWAY_BRANCH_OPS
     assert abi._SELECTOR_BRANCH_OPS == avm.COND_BRANCH_OPS | {"b"}
 
-    assert frame_resolution._imm0 is imm0 and type_recovery._imm0 is imm0
+    assert type_recovery._imm0 is imm0
     assert not hasattr(avm, "_imm0")     # left the spec-data leaf entirely
