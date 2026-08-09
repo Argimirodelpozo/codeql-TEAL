@@ -6,11 +6,13 @@ import json
 from tealql.tealtools.budget import (
     APP_CALL_OPCODE_BUDGET,
     LOGICSIG_MAX_COST,
+    MAX_POOLED_LOGICSIG_COST,
     MAX_POOLED_OPCODE_BUDGET,
     BudgetContext,
     ProgramMode,
     analyze_loops,
     block_cost,
+    block_stack_delta,
     infer_avm_version,
     infer_program_mode,
     minimum_cost,
@@ -61,12 +63,13 @@ def test_context_never_infers_logicsig_from_absence_of_app_only_ops():
     assert infer_program_mode(shared_only) is ProgramMode.UNKNOWN
     assert infer_program_mode(app) is ProgramMode.APPLICATION
     assert infer_avm_version(shared_only) == 10
-    assert BudgetContext.conservative(shared_only).initial_credit == MAX_POOLED_OPCODE_BUDGET
+    assert BudgetContext.conservative(app).initial_credit == MAX_POOLED_OPCODE_BUDGET
+    assert BudgetContext.conservative(shared_only).initial_credit == MAX_POOLED_LOGICSIG_COST
 
     lsig = BudgetContext.logic_signature()
     assert lsig.mode is ProgramMode.LOGIC_SIGNATURE
-    assert lsig.initial_credit == LOGICSIG_MAX_COST
-    assert lsig.initial_credit != LOGICSIG_MAX_COST * 16
+    assert lsig.initial_credit == MAX_POOLED_LOGICSIG_COST == LOGICSIG_MAX_COST * 16
+    assert BudgetContext.conservative(shared_only).initial_credit == lsig.initial_credit
 
     one_app = BudgetContext.application(app_calls=1, inner_app_calls=0)
     assert one_app.initial_credit == APP_CALL_OPCODE_BUDGET
@@ -92,7 +95,7 @@ def test_context_never_infers_logicsig_from_absence_of_app_only_ops():
     )
     assert BudgetContext.conservative(old_app).initial_credit == 700
     old_shared = _program("#pragma version 4\nint 1\nreturn\n")
-    assert BudgetContext.conservative(old_shared).initial_credit == LOGICSIG_MAX_COST
+    assert BudgetContext.conservative(old_shared).initial_credit == lsig.initial_credit
 
 
 def test_loop_cost_uses_opcode_budget_and_explicit_context():
@@ -128,6 +131,21 @@ def test_cost_reads_canonical_stream_after_functional_cleanup():
     assert len(view_block.assignments) < len(view_block.stack_assignments)
     assert block_cost(view_block) == before
     assert len(block.assignments) == len(block.stack_assignments)
+
+
+def test_stack_delta_uses_avm_arity_when_ssa_recovery_is_partial():
+    """The canonical opcode stream remains authoritative when stack simulation
+    cannot attach operands.  A fully resolved spelling is the control.
+    """
+    unresolved = _program("#pragma version 8\n+\n")
+    unresolved_block = next(iter(unresolved.blocks.values()))
+    plus = next(a for a in unresolved.assignments if a.op == "+")
+    assert plus.inputs == []  # pin the refusal shape, not an ordinary add
+    assert block_stack_delta(unresolved_block) == -1
+
+    resolved = _program("#pragma version 8\nint 1\nint 2\n+\n")
+    resolved_block = next(iter(resolved.blocks.values()))
+    assert block_stack_delta(resolved_block) == 1
 
 
 def test_irreducible_two_entry_scc_is_reported():

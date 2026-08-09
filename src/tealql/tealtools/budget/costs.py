@@ -141,4 +141,12 @@ def block_stack_delta(bb: "BasicBlock") -> Optional[int]:
     assignments = canonical_assignments(bb)
     if any(a.op in {"callsub", "retsub"} for a in assignments):
         return None
-    return sum(len(a.outputs) - len(a.inputs) for a in assignments)
+    # SSA inputs/outputs describe what stack simulation RECOVERED.  In an
+    # underflow or merge-refusal shape operands and dead outputs may be absent,
+    # but the AVM still executes the opcode's language-specified stack effect.
+    from ..avm import op_arity
+    delta = 0
+    for assignment in assignments:
+        n_in, n_out = op_arity(assignment.op, assignment.immediates or "")
+        delta += n_out - n_in
+    return delta

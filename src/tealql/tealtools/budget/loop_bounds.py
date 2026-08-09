@@ -307,14 +307,18 @@ def _guaranteed_stack_growth(
     minimum: Optional[int] = None
     seen = 0
     for cycle in nx.simple_cycles(subgraph):
-        if shape.kind == "reducible" and shape.header not in cycle:
-            continue
         seen += 1
         if seen > max_cycles:
             return None, f"stack proof exceeded {max_cycles} simple cycles"
         growth = sum(deltas[bb] for bb in cycle)  # type: ignore[arg-type]
+        # A nested cycle can repeat between two header visits.  Zero growth can
+        # avoid the claimed growth entirely; negative growth can offset pushes
+        # on the outer lap.  Either voids an outer stack ceiling even though the
+        # nested cycle itself does not contain the outer header.
         if growth <= 0:
             return None, None
+        if shape.kind == "reducible" and shape.header not in cycle:
+            continue
         minimum = growth if minimum is None else min(minimum, growth)
     if minimum is None:
         return None, "no relevant simple cycle was materialized"

@@ -22,6 +22,7 @@ APP_CALL_OPCODE_BUDGET = 700
 MAX_GROUP_APP_CALLS = 16
 MAX_INNER_APP_CALLS = 256
 LOGICSIG_MAX_COST = 20_000
+MAX_GROUP_LOGICSIGS = 16
 MAX_STACK_DEPTH = 1000
 
 # A whole application group can acquire this much credit in the most permissive
@@ -31,6 +32,11 @@ MAX_STACK_DEPTH = 1000
 MAX_POOLED_OPCODE_BUDGET = APP_CALL_OPCODE_BUDGET * (
     MAX_GROUP_APP_CALLS + MAX_INNER_APP_CALLS
 )
+
+# LogicSig cost is pooled across the atomic group: the total cost may reach
+# LogicSigMaxCost times the group size.  A smaller number is not a ceiling on
+# one member because other members may leave their share unused.
+MAX_POOLED_LOGICSIG_COST = LOGICSIG_MAX_COST * MAX_GROUP_LOGICSIGS
 
 
 class ProgramMode(str, Enum):
@@ -143,13 +149,13 @@ class BudgetContext:
     def logic_signature(
         cls, *, avm_version: Optional[int] = None
     ) -> "BudgetContext":
-        # Logic signatures are metered independently.  The program being
-        # analyzed receives one signature allowance, not 16 pooled allowances.
+        # The group-wide total is pooled even though it is independent of the
+        # application opcode pool.
         return cls(
             ProgramMode.LOGIC_SIGNATURE,
             avm_version,
-            LOGICSIG_MAX_COST,
-            provenance="logic-signature execution",
+            MAX_POOLED_LOGICSIG_COST,
+            provenance="logic-signature group ceiling",
         )
 
     @classmethod
@@ -168,7 +174,7 @@ class BudgetContext:
         return cls(
             ProgramMode.UNKNOWN,
             avm_version,
-            max(app_credit, LOGICSIG_MAX_COST),
+            max(app_credit, MAX_POOLED_LOGICSIG_COST),
             provenance="mode unknown; maximum admissible allowance",
         )
 
@@ -176,38 +182,29 @@ class BudgetContext:
     def tightened_application(
         cls, prog: "SSAProgram", *, avm_version: Optional[int] = None
     ) -> "BudgetContext":
-        """Use absence of inner submits to reduce credit.
+        """Return the application-group ceiling without local-only guesses.
 
         A contract's ``assert(Global.GroupSize == N)`` is intentionally *not*
         used here.  It constrains approving executions, but a loop before that
         guard may run under a larger attacker-supplied group and eventually
         reject.  Applying the approval-path fact globally would under-bound
         exactly the exhaustion executions this analysis is meant to model.
-        No ``itxn_submit`` does prove zero inner application calls everywhere;
-        once a submit exists its type/count needs a richer state analysis and
-        we retain the protocol maximum.
+
+        Absence of ``itxn_submit`` in this program is not useful either: opcode
+        credit is shared group-wide, and a sibling application can add inner
+        application calls (the standard OpUp shape).  Only an explicit whole-
+        group model may safely tighten either count.
         """
         if avm_version is None:
             avm_version = infer_avm_version(prog)
-        app_calls = MAX_GROUP_APP_CALLS
-        has_inner_submit = any(
-            assignment.op == "itxn_submit"
-            for block in prog.blocks.values()
-            for assignment in (block.stack_assignments or tuple(block.assignments))
-        )
-        inner = MAX_INNER_APP_CALLS if has_inner_submit else 0
-        result = cls.application(
-            avm_version=avm_version,
-            app_calls=app_calls,
-            inner_app_calls=inner,
-        )
+        result = cls.application(avm_version=avm_version)
         return cls(
             result.mode,
             result.avm_version,
             result.initial_credit,
             result.app_calls,
             result.inner_app_calls,
-            provenance="protocol group ceiling; inner-submit presence",
+            provenance="protocol application-group ceiling",
         )
 
 

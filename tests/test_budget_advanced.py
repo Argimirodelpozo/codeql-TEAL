@@ -4,6 +4,7 @@ from __future__ import annotations
 from tealql.tealtools.budget import (
     APP_CALL_OPCODE_BUDGET,
     BudgetContext,
+    analyze_loops,
     analyze_opcode_budget_guards,
     find_budget_exhaustion_candidates,
     summarize_methods,
@@ -25,8 +26,8 @@ def test_approval_group_shape_does_not_underbound_pre_guard_execution():
     # GroupSize==2 is only forced on approving paths; a loop before this assert
     # could execute in a 16-member group and later reject.
     assert context.app_calls == 16
-    assert context.inner_app_calls == 0
-    assert context.initial_credit == 16 * APP_CALL_OPCODE_BUDGET
+    assert context.inner_app_calls == 256
+    assert context.initial_credit == (16 + 256) * APP_CALL_OPCODE_BUDGET
 
 
 def test_opcode_budget_guard_proves_only_finite_acyclic_cover():
@@ -97,8 +98,46 @@ def test_attacker_controlled_budget_loop_is_a_review_candidate():
     assert "ranking function" in candidates[0].reason
 
 
+def test_nested_cycle_voids_an_outer_stack_ceiling_and_counts_toward_cap(monkeypatch):
+    """Two inner -1 laps offset the outer +2 pushes, so the outer loop can
+    remain stack-flat.  Non-header cycles must also consume the enumeration
+    budget even when they are positive and do not otherwise void the proof.
+    """
+    import tealql.tealtools.budget.loop_bounds as loop_bounds
+    from tealql.tealtools.cfg import CFG
+
+    prog = _program(
+        "#pragma version 10\n"
+        "outer:\nint 1\nint 1\nint 2\nstore 0\n"
+        "inner:\npop\nload 0\nint 1\n-\ndup\nstore 0\nbnz inner\n"
+        "txn Fee\nbnz outer\nint 1\nreturn\n"
+    )
+    loops = analyze_loops(prog)
+    outer = next(loop for loop in loops if loop.depth == 0)
+    assert outer.stack_growth is None
+    assert outer.stack_bound is None
+    assert any(candidate.loop.header is outer.header
+               for candidate in find_budget_exhaustion_candidates(prog))
+
+    graph, roots = loop_bounds._routine_graph(prog, CFG.of(prog))
+    outer_shape = max(loop_bounds._loop_shapes(graph, roots), key=lambda s: len(s.body))
+    inner_node = next(node for node in outer_shape.body if node.first_line == 7)
+    monkeypatch.setattr(loop_bounds, "block_stack_delta", lambda _bb: 1)
+    monkeypatch.setattr(
+        loop_bounds.nx, "simple_cycles",
+        lambda _graph: iter(([inner_node], [outer_shape.header])),
+    )
+    growth, reason = loop_bounds._guaranteed_stack_growth(
+        outer_shape, graph, max_cycles=1,
+    )
+    assert growth is None
+    assert reason == "stack proof exceeded 1 simple cycles"
+
+
 def test_expensive_growing_loop_can_exhaust_budget_before_stack():
-    expensive = "".join("byte 0x00\nsha256\npop\n" for _ in range(7))
+    # Expensive enough to exhaust even the 320k unknown-mode ceiling before
+    # 1000 stack-growing laps.
+    expensive = "".join("byte 0x00\nsha256\npop\n" for _ in range(9))
     prog = _program(
         "#pragma version 10\nloop:\nint 1\n"
         + expensive
