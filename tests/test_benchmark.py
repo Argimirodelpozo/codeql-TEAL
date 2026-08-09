@@ -211,7 +211,7 @@ _BASELINE: dict[str, tuple[int, int, int, int]] = {
     # to the app being created in that same transaction, which the caller made
     # and already controls. Holds regardless of what the protocol's
     # well-formedness rules permit, so it needed no ruling from a node.
-    "unprotected-deletable": (1, 0, 0, 6),
+    "unprotected-deletable": (1, 0, 0, 7),
     # +2 TN (2026-07-25): the Update-action half of the OnCompletion
     # scratch/phi guard fix — verified clean, now pinned.
     # +1 TN (2026-07-26 review): the creator guard on the ACTION BRANCH,

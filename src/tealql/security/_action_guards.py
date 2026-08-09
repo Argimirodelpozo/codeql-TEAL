@@ -79,11 +79,23 @@ def _is_trusted_address(var) -> bool:
     return False
 
 
-def _is_sender_eq_creator(cmp: Assignment) -> bool:
+def _guard_operand(prog: Optional[SSAProgram], value):
+    """Resolve immutable aliases plus exact scratch/phi copy bridges."""
+    if prog is None:
+        return value
+    from tealql.tealtools.analysis import FactDomain
+
+    value = prog.facts(FactDomain.CONSTANTS).resolve(value)
+    return resolve_through_copies(prog, value)
+
+
+def _is_sender_eq_creator(
+    cmp: Assignment, prog: Optional[SSAProgram] = None,
+) -> bool:
     """``cmp`` pins ``txn Sender`` to any :func:`_is_trusted_address`, not just creator."""
     if cmp.op != "==" or len(cmp.inputs) != 2:
         return False
-    a0, a1 = cmp.inputs
+    a0, a1 = (_guard_operand(prog, value) for value in cmp.inputs)
     return (
         (_is_txn_field_var(a0, "Sender") and _is_trusted_address(a1))
         or
@@ -107,7 +119,7 @@ def sender_creator_guard_dominates(
         v = resolve_through_copies(prog, cond.value)
         if not isinstance(v, SSAVar) or v.defined_by is None:
             continue
-        if _is_sender_eq_creator(v.defined_by):
+        if _is_sender_eq_creator(v.defined_by, prog):
             return True
     return False
 
@@ -128,7 +140,7 @@ def _creator_enforcing_bbs(prog: SSAProgram) -> set:
         v = resolve_through_copies(prog, a.inputs[0])
         if not isinstance(v, SSAVar) or v.defined_by is None:
             continue
-        if not _is_sender_eq_creator(v.defined_by):
+        if not _is_sender_eq_creator(v.defined_by, prog):
             continue
         if a.op == "assert" or branch_gates_rejection(prog, a, label_lines):
             out.add(a.basic_block)
@@ -208,12 +220,14 @@ def _is_oncompletion_var(var) -> bool:
 
 
 
-def _oncompletion_eq_const_value(cmp: Assignment) -> Optional[int]:
+def _oncompletion_eq_const_value(
+    cmp: Assignment, prog: Optional[SSAProgram] = None,
+) -> Optional[int]:
     """``K`` if ``cmp`` is ``txn OnCompletion (==/!=) <const_K>`` (either operand
     order), for any ``K`` — not just the action under test. Else ``None``."""
     if cmp.op not in ("==", "!=") or len(cmp.inputs) != 2:
         return None
-    a0, a1 = cmp.inputs
+    a0, a1 = (_guard_operand(prog, value) for value in cmp.inputs)
     if _is_oncompletion_var(a0):
         return const_int(a1)
     if _is_oncompletion_var(a1):
@@ -305,7 +319,7 @@ def predicates_exclude_action(prog: SSAProgram, conds, action_int: int) -> bool:
         if isinstance(v, SSAVar) and v.defined_by is not None:
             a = v.defined_by
             if a.op in ("==", "!="):
-                k = _oncompletion_eq_const_value(a)
+                k = _oncompletion_eq_const_value(a, prog)
                 if k is not None:
                     if a.op == "==":
                         # V is (OC == K). nonzero ⇒ OC == K. zero ⇒ OC != K.

@@ -1,0 +1,18 @@
+#pragma version 10
+// SAFE: the delete arm pins Sender to CreatorAddress through a dup output.
+// Immutable analysis views keep that copy in canonical SSA, so lifecycle
+// guard classification must follow the facts alias rather than expect a
+// shared-program shuffle rewrite to have erased it.
+txn OnCompletion
+int DeleteApplication
+==
+bz done
+global CreatorAddress
+dup
+txn Sender
+==
+assert
+pop
+done:
+int 1
+return
