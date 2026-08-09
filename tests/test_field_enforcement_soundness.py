@@ -368,6 +368,27 @@ def _findings(tmp_path, teal: str, detector: str) -> list:
     return DETECTORS[detector](SSAProgram(str(p)), file="p.teal").detect()
 
 
+def test_abi_selector_accepts_an_enforced_dynamic_expected_value(tmp_path):
+    """A selector need not be compared with an inline constant: application
+    state can hold the accepted selector.  What matters is that the selector
+    comparison is enforced on every approving path.  Merely computing and
+    dropping that same comparison is the negative control.
+    """
+    checked = """#pragma version 11
+txna ApplicationArgs 0
+byte key
+app_global_get
+==
+assert
+int 1
+return
+"""
+    dropped = checked.replace("assert\n", "pop\n")
+
+    assert not _findings(tmp_path, checked, "abi-method-selector")
+    assert _findings(tmp_path, dropped, "abi-method-selector")
+
+
 @pytest.mark.parametrize("detector", ["rekey-to", "tx-type-check"])
 def test_dup_carried_group_index_counts_as_a_guard(tmp_path, detector):
     """`gtxns FIELD` on a dup'd `txn GroupIndex` reads THIS transaction, so it is a guard.

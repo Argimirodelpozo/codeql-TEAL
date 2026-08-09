@@ -99,6 +99,10 @@ class AbiMethodSelectorDetector:
             common.approving_exits(self.prog, file=self.file),
             key=lambda b: (b.file, b.first_line),
         ):
+            if common.approval_exit_protected_for_arg_reads(
+                self.prog, exit_bb, _SELECTOR, file=self.file,
+            ):
+                continue
             if self._selector_matched_at_exit(exit_bb):
                 continue                       # selector is constrained on every path
             out.append(AbiMethodSelectorViolation(exit_bb))

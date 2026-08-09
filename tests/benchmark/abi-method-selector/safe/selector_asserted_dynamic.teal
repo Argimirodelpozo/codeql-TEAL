@@ -1,0 +1,10 @@
+#pragma version 11
+// SAFE: an application may keep its accepted selector in state rather than an
+// inline constant.  The comparison still gates every approving path.
+txna ApplicationArgs 0
+byte key
+app_global_get
+==
+assert
+int 1
+return

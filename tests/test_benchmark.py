@@ -100,7 +100,7 @@ def _table(scores: dict[str, Score]) -> str:
 # param flow the SSA def-use can't see) is rescued by the IR lift's
 # interprocedural fund-flow, wired into the detector as a callsub-gated supplement.
 _BASELINE: dict[str, tuple[int, int, int, int]] = {
-    "abi-method-selector": (1, 0, 0, 2),
+    "abi-method-selector": (1, 0, 0, 3),
     "arbitrary-inner-appcall": (4, 0, 0, 4),
     "arbitrary-inner-asset": (2, 0, 0, 3),
     # +1 TP (2026-07-26): the `||`-bypass. See the rekey-to entry below — the

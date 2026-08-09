@@ -22,6 +22,7 @@ from ._enforcement import (
     scratch_forward_map,
 )
 from ._program_shape import (
+    _txna_reads,
     approving_exits,
     file_match,
     global_field_reads,
@@ -291,6 +292,29 @@ def approval_exit_protected_for_signed_txn_field(
         file = exit_bb.file
     seeds = ssavar_outputs(_signed_txn_field_reads(prog, field, file=file))
     return _approval_exit_protected_for_seeds(prog, exit_bb, seeds, file=file)
+
+
+
+
+def approval_exit_protected_for_arg_reads(
+    prog: SSAProgram, exit_bb: BasicBlock, immediates: str,
+    *, file: Optional[str] = None,
+) -> bool:
+    """Protected for a ``txna`` array read, such as the ABI method selector.
+
+    Unlike the path-predicate shortcut used for constant router edges, this
+    accepts a dynamically computed expected value only when the comparison is
+    actually enforced on every path to ``exit_bb``.
+    """
+    if file is None:
+        file = exit_bb.file
+    seeds = {
+        out for assignment in _txna_reads(prog, immediates, file=file)
+        for out in assignment.outputs if isinstance(out, SSAVar)
+    }
+    return _approval_exit_protected_for_seeds(
+        prog, exit_bb, seeds, file=file, allow_unary_cmp=True,
+    )
 
 
 

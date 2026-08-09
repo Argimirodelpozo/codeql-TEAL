@@ -145,6 +145,16 @@ def test_sender_guard_always_present_is_caught(monkeypatch):
     )
 
 
+def test_unprotected_arg_reads_is_caught(monkeypatch):
+    """The dynamic-expected-value fixture must depend on the enforcement arm,
+    not only the separate constant-router path-predicate shortcut."""
+    _assert_caught(
+        monkeypatch, "tealql.security.common",
+        "approval_exit_protected_for_arg_reads", lambda *a, **k: False,
+        "enforced argument reads are never credited as protected",
+    )
+
+
 def test_the_harness_can_actually_report_a_survivor(monkeypatch):
     """META. Every mutation above is caught — which is the good outcome, but a
     gate that passes unconditionally proves nothing. Feed it a mutation that
