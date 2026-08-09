@@ -41,6 +41,13 @@ class LifterRequest:
                 value = entry[1]
         elif getattr(self.prog, "_ir_lifter_revision", _MISSING) == revision:
             value = getattr(self.prog, "_ir_lifter", _MISSING)
+        elif (not hasattr(self.prog, "_ir_lifter_revision")
+              and getattr(self.prog, "_ir_lifter", _MISSING) is None):
+            # Backward-compatible private escape hatch used by callers/tests to
+            # disable precise lifting explicitly. Real cached builds always
+            # carry a revision; only a deliberately injected bare ``None`` is
+            # treated as timeless.
+            value = None
         else:
             value = _MISSING
         return value is not _MISSING, None if value is _MISSING else value
