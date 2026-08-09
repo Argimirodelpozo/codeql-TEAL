@@ -891,7 +891,10 @@ class _Lifter:
             if (pred is None or stack is None
                     or not 0 <= instruction.position < len(stack)):
                 self._frame_refusals.add(id(assignment))
-                continue
+                # Frame provenance is a MUST relation: dropping one unknown
+                # entry arm would name the surviving subset as THE value, while
+                # canonical SSA refuses the same SlotMerge outright.
+                return pre_ir.Undefined()
             value = stack[instruction.position]
             semantic.append(value)
             edge_values.setdefault(pred, []).append(value)
@@ -904,7 +907,7 @@ class _Lifter:
             write = self.prog.assignment_for_pyop(py_write)
             if write is None:
                 self._frame_refusals.add(id(assignment))
-                continue
+                return pre_ir.Undefined()
             args = self.stack_args.get(id(write))
             if args:
                 semantic.append(args[0])

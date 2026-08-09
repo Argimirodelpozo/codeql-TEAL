@@ -33,7 +33,13 @@ class LifterRequest:
         produced it; a later pass is allowed to make the lift succeed.
         """
         revision = getattr(self.prog, "revision", 0)
-        if self.cache is not None:
+        if (not hasattr(self.prog, "_ir_lifter_revision")
+                and getattr(self.prog, "_ir_lifter", _MISSING) is None):
+            # Timeless explicit-disable marker.  It belongs to the source
+            # collection, so it must win before both the whole-program and the
+            # per-file projected caches are consulted.
+            value = None
+        elif self.cache is not None:
             entry = self.cache.get(self.file, _MISSING)
             if entry is _MISSING or not isinstance(entry, tuple) or entry[0] != revision:
                 value = _MISSING
@@ -41,13 +47,6 @@ class LifterRequest:
                 value = entry[1]
         elif getattr(self.prog, "_ir_lifter_revision", _MISSING) == revision:
             value = getattr(self.prog, "_ir_lifter", _MISSING)
-        elif (not hasattr(self.prog, "_ir_lifter_revision")
-              and getattr(self.prog, "_ir_lifter", _MISSING) is None):
-            # Backward-compatible private escape hatch used by callers/tests to
-            # disable precise lifting explicitly. Real cached builds always
-            # carry a revision; only a deliberately injected bare ``None`` is
-            # treated as timeless.
-            value = None
         else:
             value = _MISSING
         return value is not _MISSING, None if value is _MISSING else value

@@ -274,3 +274,11 @@ def test_multi_file_lift_projects_one_independent_program():
     assert ir_lifter(prog, file="b.teal") is b
     assert {x.location.file for x in a.prog.assignments} == {"a.teal"}
     assert {x.location.file for x in b.prog.assignments} == {"b.teal"}
+
+    disabled = SSAProgram.from_graph(load_graph({
+        "a.teal": "#pragma version 8\npushint 1\nreturn\n",
+        "b.teal": "#pragma version 8\npushint 1\nreturn\n",
+    }))
+    disabled._ir_lifter = None
+    assert not hasattr(disabled, "_ir_lifter_revision")
+    assert build_lifter(disabled, file="a.teal") is None

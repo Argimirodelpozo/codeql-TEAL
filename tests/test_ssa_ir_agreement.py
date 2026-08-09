@@ -264,6 +264,45 @@ def test_bottom_position_phi_is_shared_across_ssa_pre_ir_and_return():
         "the removed versioned-frame fallback reappeared")
 
 
+def test_partial_frame_entry_is_undefined_in_both_ssa_and_pre_ir():
+    """Dropping one unavailable boundary arm and naming the surviving arm as
+    THE value disagrees with SSA's all-arms-or-none frame contract.
+    """
+    from types import SimpleNamespace
+
+    from tealql.tealtools.ssa.stacksim import _frame_cells
+
+    prog = SSAProgram.from_text(
+        "#pragma version 8\n"
+        "callsub s\npop\nint 1\nreturn\n"
+        "s:\nproto 0 1\ntxn NumAppArgs\nbnz two\n"
+        "int 7\nb join\ntwo:\nint 9\nint 8\n"
+        "join:\nframe_dig 0\nretsub\n",
+        name="partial-frame.teal",
+    )
+    dig = next(a for a in prog.assignments if a.op == "frame_dig")
+    lifter = _Lifter(prog)
+    lifter.build()  # initialize the canonical frame plan and translation state
+    instruction = lifter._frame_reads_by_assignment[dig]
+    assert len(instruction.entry_predecessors) == 2
+
+    one_py_pred = instruction.entry_predecessors[0]
+    ssa_cell = object()
+    ssa_stack = [ssa_cell] * (instruction.position + 1)
+    ssa_state = SimpleNamespace(exit={one_py_pred: ssa_stack}, args={})
+    assert _frame_cells(instruction, ssa_state) is None
+
+    one_pred = prog.block_for_pyblock(one_py_pred)
+    surviving = pre_ir.Register("surviving", 0, "uint64")
+    lifter._frame_phi_cache.clear()
+    lifter._frame_refusals.clear()
+    lifter.stack_exit.clear()
+    lifter.stack_exit[one_pred] = [surviving] * (instruction.position + 1)
+    lifted = lifter._frame_read_value(dig, instruction)
+    assert isinstance(lifted, pre_ir.Undefined)
+    assert id(dig) in lifter._frame_refusals
+
+
 def test_a_shared_tail_is_counted_in_the_dip_that_reaches_it(tmp_path):
     """A legacy sub's arity is how far execution dips, NOT how far the OWNED
     body dips.
