@@ -114,6 +114,18 @@ def _operand_possible_values(
         # SSAVar with a defining assignment → describe by the producing op.
         a = getattr(op, "defined_by", None)
         if a is not None:
+            # Resolved frame reads carry their value as an ordinary SSA input.
+            # ``frame_gap_sources`` intentionally omits that redundant edge, so
+            # stopping at the assignment would hide the caller alternatives in
+            # exactly the well-resolved case. Follow only the selected value
+            # input; arbitrary producers remain concise one-line descriptions.
+            if a.op == "frame_dig" and a.inputs:
+                seen = _seen or set()
+                if op in seen:
+                    return [f"?{op!r}"]
+                return _operand_possible_values(
+                    a.inputs[0], seen | {op}, frame_src
+                )
             return [_describe_assignment(a)]
     # ``defined_by`` cleared (const inlined into every consumer) — fall back to
     # the operand identifier.

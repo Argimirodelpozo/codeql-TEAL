@@ -133,6 +133,49 @@ def test_negative_below_frame_read_stays_local_not_pushed():
     assert res.dig_local.get(out0) == (-2, 0)    # prior behavior preserved
 
 
+def test_inner_txn_report_expands_resolved_frame_input():
+    """A present SSA frame edge must not disappear from the human report."""
+    from tealql.tealtools.inner_txn_report import InnerTxnReport
+    from tealql.tealtools.ssa import SSAProgram
+
+    prog = SSAProgram.from_text("""#pragma version 10
+txn Sender
+callsub emit
+global CurrentApplicationAddress
+callsub emit
+int 1
+return
+emit:
+proto 1 0
+itxn_begin
+int pay
+itxn_field TypeEnum
+frame_dig -1
+itxn_field Receiver
+txn Sender
+itxn_field Sender
+int 0
+itxn_field Fee
+itxn_submit
+retsub
+""")
+    fields = {
+        field.name: field.possible_values()
+        for group in InnerTxnReport(prog)
+        for txn in group.txns
+        for field in txn.fields
+    }
+
+    assert fields["Receiver"] == [
+        "txn Sender",
+        "global CurrentApplicationAddress",
+    ]
+    # Controls: literals and ordinary producers keep their established shape.
+    assert fields["TypeEnum"] == ["1"]
+    assert fields["Sender"] == ["txn Sender"]
+    assert fields["Fee"] == ["0"]
+
+
 # --------------------------------------------------------------------------
 # End-to-end regression: deep loop-invariant frame slot threading (commit
 # ef1433e9). A frame slot kept at the working-stack BOTTOM across a loop and
