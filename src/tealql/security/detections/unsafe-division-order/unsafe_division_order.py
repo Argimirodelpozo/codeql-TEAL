@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import ClassVar, Optional
 
 from tealql.security import common
+from tealql.tealtools.analysis import FactDomain
 from tealql.tealtools.ssa import Assignment, Phi, SSAProgram, SSAVar, const_int
 
 _DIV_OPS = frozenset({"/", "b/", "divw"})
@@ -66,6 +67,7 @@ class UnsafeDivisionOrderDetector:
     def __init__(self, prog: SSAProgram, *, file: Optional[str] = None):
         self.prog = prog
         self.file = file
+        self._facts = prog.facts(FactDomain.CONSTANTS)
 
     def detect(self) -> list:
         out: list = []
@@ -88,6 +90,7 @@ class UnsafeDivisionOrderDetector:
         being scaled". MAY semantics: recall matters for a precision smell."""
         if seen is None:
             seen = set()
+        operand = self._facts.resolve(operand)
         if operand in seen:
             return None
         if isinstance(operand, Phi):                  # phi join (any arg counts)

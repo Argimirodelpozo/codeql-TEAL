@@ -113,6 +113,20 @@ def test_divide_through_scratch_flagged(tmp_path):
     assert vs[0].div.op == "/"
 
 
+def test_divide_through_dup_flagged_without_a_prior_mutating_pass(tmp_path):
+    expr = """    txn NumAppArgs
+    int 3
+    /
+    dup
+    int 100
+    *
+    swap
+    pop"""
+    vs = _detect(expr, tmp_path)
+    assert len(vs) == 1
+    assert vs[0].div.op == "/"
+
+
 # The same scratch indirection in the SAFE order (multiply first) must stay clean.
 _MUL_VIA_SCRATCH = """    txna ApplicationArgs 1
     btoi

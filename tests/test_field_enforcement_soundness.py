@@ -95,6 +95,27 @@ def test_field_never_compared_is_not_validated(tmp_path):
     assert _validated(tmp_path, teal) is False
 
 
+def test_approval_guard_follows_a_dup_without_mutating_shared_ssa():
+    prog = SSAProgram.from_text(
+        "#pragma version 10\n"
+        "txn RekeyTo\n"
+        "dup\n"
+        "global ZeroAddress\n"
+        "==\n"
+        "assert\n"
+        "pop\n"
+        "int 1\n"
+        "return\n"
+    )
+    exit_bb = common.approving_exits(prog)[0]
+    before = tuple(tuple(a.inputs) for a in prog.assignments)
+
+    assert common.approval_exit_protected_for_field(
+        prog, exit_bb, "RekeyTo"
+    )
+    assert tuple(tuple(a.inputs) for a in prog.assignments) == before
+
+
 def test_asset_close_to_detector_flags_branch_enforced(tmp_path):
     """End-to-end: the asset-close-to detector must emit on the dup FN."""
     from tealql.security import DETECTORS

@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from typing import Optional
 
+from tealql.tealtools.analysis import FactDomain
 from tealql.tealtools.path_predicates import PathPredicateAnalysis
 from tealql.tealtools.ssa import Phi, SSAProgram, SSAVar
 
@@ -102,12 +103,18 @@ def _operand_flows_from_field_var(
     """
     if operand is None:
         return False
+    facts = prog.facts(FactDomain.CONSTANTS)
     memo: dict = {}
     on_path: set = set(seen) if seen else set()
 
     def _expand(node) -> "tuple[list, bool]":
         """``(operands that must ALL flow, is_a_bridge)``; ``is_a_bridge`` False
         means no incoming bridge at all, hence not a flow."""
+        alias = facts.resolve(node)
+        if alias is not node:
+            # Stack shuffles and other proven identities live in immutable
+            # facts now; shared SSA operands are deliberately not rewritten.
+            return [alias], True
         if isinstance(node, Phi):
             return list(node.args), bool(node.args)
         # Scratch bridge: every may-influencing store must have written a
