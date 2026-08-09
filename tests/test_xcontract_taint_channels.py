@@ -74,6 +74,29 @@ def test_arg_bridge_reaches_txn_form_read(tmp_path):
     ), [f.sink_name for f in findings]
 
 
+_ARG_CALLEE_DYNAMIC = """#pragma version 10
+itxn_begin
+global GroupSize
+txnas ApplicationArgs
+itxn_field Receiver
+int 1000
+itxn_field Amount
+itxn_submit
+int 1
+return
+"""
+
+
+def test_arg_bridge_reaches_dynamic_index_read(tmp_path):
+    xtg = _build(tmp_path, _ARG_CALLER, _ARG_CALLEE_DYNAMIC)
+    targets = [v for _, v in _bridge_edges(xtg, "appcall-arg")]
+    assert any(xtg.op_of(v) == "txnas"
+               and xtg.immediates_of(v) == "ApplicationArgs" for v in targets)
+    findings = cross_taint_findings(xtg)
+    assert any(f.sink.app_id == 100 and f.sink_name == "itxn_field Receiver"
+               for f in findings), [f.sink_name for f in findings]
+
+
 # --- (2) foreign-array channel: Accounts, offset +1 ----------------------
 
 # Caller forwards arg0 as the inner txn's first foreign account.

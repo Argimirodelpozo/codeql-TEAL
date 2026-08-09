@@ -368,10 +368,12 @@ def _flow_rows_for(prog: SSAProgram) -> list[tuple]:
         for arg in getattr(ph, "args", ()):
             _emit(_node(arg), df, dl, "Phi", _PHIARG_KINDS)
 
-    # scratch bridge: a `store N`-d value reaches each `load N` of that slot.
+    # Scratch bridge: stored values and dynamic slot selectors reach each
+    # ``load``/``loads`` result. Const propagation intentionally reads the
+    # narrower ``scratch_stores`` annotation; taint reads this MAY product.
     if g is not None:
         for n in g.nodes:
-            stores = g.nodes[n].get("scratch_stores")
+            stores = g.nodes[n].get("scratch_taint_sources")
             if not stores:
                 continue
             loc = n.location

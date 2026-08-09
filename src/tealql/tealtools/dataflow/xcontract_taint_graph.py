@@ -203,11 +203,18 @@ def _add_array_bridges(
     site: AppcallSite,
 ) -> None:
     """Forward each array the caller sets on the inner txn to the matching
-    positional read in the callee, applying the implicit-entry offset."""
+    positional read in the callee, applying the implicit-entry offset.
+
+    A dynamic ``txnas`` read may select any position, so every pushed element
+    conservatively reaches it. Its index operand already has a normal def-use
+    edge into the read node and therefore remains a separate dependency.
+    """
     for field, offset in _FORWARD_ARRAYS.items():
         kind = "appcall-arg" if field == "ApplicationArgs" else "appcall-foreign"
+        dynamic_reads = _callee_dynamic_array_reads(callee_tg, field)
         for push_i, caller_node in _caller_field_nodes(caller_tg, site, field):
-            for cn in _callee_array_reads(callee_tg, field, push_i + offset):
+            for cn in (*_callee_array_reads(callee_tg, field, push_i + offset),
+                       *dynamic_reads):
                 big.add_edge(
                     XContractNode(app_id=caller_app_id, inner=caller_node),
                     XContractNode(app_id=site.app_id, inner=cn),
@@ -216,11 +223,15 @@ def _add_array_bridges(
 
 
 def _callee_array_reads(callee_tg: TaintGraph, field: str, index: int) -> list[Node]:
-    """Callee nodes reading ``field`` at literal ``index``, in ``txna`` or ``txn``
-    form; dynamic-index reads pin to no position and are left UNBRIDGED."""
+    """Callee nodes reading ``field`` at literal ``index``."""
     imm = f"{field} {index}"
     return (callee_tg.find(op="txna", immediates=imm)
             + callee_tg.find(op="txn", immediates=imm))
+
+
+def _callee_dynamic_array_reads(callee_tg: TaintGraph, field: str) -> list[Node]:
+    """Callee reads whose array index is popped from the stack."""
+    return callee_tg.find(op="txnas", immediates=field)
 
 
 # Sentinel source standing in for "the caller's application address",

@@ -21,7 +21,11 @@ from ..ssa import (
     _shuffle_mapping,
     is_const,
 )
-from ..passes.frame_flow import frame_gap_sources, scratch_load_sources
+from ..passes.frame_flow import (
+    frame_gap_sources,
+    scratch_load_sources,
+    scratch_unknown_loads,
+)
 
 
 Operand = Union[SSAVar, Phi, Const]
@@ -214,6 +218,17 @@ BYTE_MATH_PROPAGATION_RULE = FlowRule(
 )
 
 
+# ``loads`` returns the value selected by its popped slot index. Even when all
+# stored values are otherwise clean, attacker control of that selector controls
+# which value emerges. Stored-value dependencies themselves are bridged by the
+# typed scratch MAY relation below.
+SCRATCH_SELECT_PROPAGATION_RULE = FlowRule(
+    name="dynamic-scratch-selector",
+    matches=lambda a: a.op == "loads",
+    flows=lambda a, ti: [1] if 1 in ti else [],
+)
+
+
 CONCAT_ANY_PROPAGATION_RULE = FlowRule(
     name="concat-of-any-tainted",
     matches=lambda a: a.op == "concat",
@@ -232,6 +247,7 @@ DEFAULT_RULES: list[FlowRule] = [
     SELECT_PROPAGATION_RULE,
     SPLICE_PROPAGATION_RULE,
     BYTE_MATH_PROPAGATION_RULE,
+    SCRATCH_SELECT_PROPAGATION_RULE,
 ]
 
 # HAZARD: pick this set for "can the attacker influence the value reaching this
@@ -246,6 +262,7 @@ ATTACKER_CONTROL_RULES: list[FlowRule] = [
     SELECT_PROPAGATION_RULE,
     SPLICE_PROPAGATION_RULE,
     BYTE_MATH_PROPAGATION_RULE,
+    SCRATCH_SELECT_PROPAGATION_RULE,
 ]
 
 
@@ -396,6 +413,16 @@ class TaintAnalysis:
                     if v not in tainted:
                         tainted.add(v)
                         source_for[v] = (a, src.name)
+
+        # An unnamed scratch value is TOP for a conservative MAY analysis. It
+        # cannot inherit a real source Assignment, so anchor provenance at the
+        # load itself and make incompleteness visible in the source name.
+        for value in scratch_unknown_loads(self.prog):
+            assignment = getattr(value, "defined_by", None)
+            if assignment is None or not self._in_scope(assignment) or value in tainted:
+                continue
+            tainted.add(value)
+            source_for[value] = (assignment, "unknown-scratch")
 
         # Only the frame edges absent from canonical SSA def-use.
         frame_src = frame_gap_sources(self.prog)

@@ -6,10 +6,10 @@ load still live; DSE must never drop it. Group members have no call/return, and
 the group is assembled EXTERNALLY, so :meth:`GroupTaintGraph.build` takes an
 ORDERED list where the list index IS the group position.
 
-HAZARD: the AVM only lets a member read an EARLIER sibling, so every bridge is
-gated on ``i < k``; bridging forward invents flows that cannot happen. Errs the
-other way too — ``stores`` / ``gloadss`` carry a dynamic SLOT and are left
-unbridged, so a real cross-member flow through them is MISSED."""
+HAZARD: the AVM only lets a member read an EARLIER sibling's scratch/effects, so
+every bridge is gated on ``i < k``; bridging forward invents flows that cannot
+happen. Dynamic member/slot selectors conservatively range over every earlier
+member and compatible writer."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -79,8 +79,18 @@ def _copy_into(big: nx.DiGraph, tg: TaintGraph, *, index: int) -> None:
 def _add_scratch_bridges(big: nx.DiGraph, members: list[TaintGraph]) -> None:
     """Bridge taint from a ``store N`` to the siblings that read that slot.
 
-    ``gload i N`` pins the sibling statically. ``gloads N`` pops the index off
-    the stack, so it OVER-approximates to every earlier member's ``store N``."""
+    ``gload i N`` pins member and slot. ``gloads N`` has a dynamic member;
+    ``gloadss`` has dynamic member and slot. A dynamic ``stores`` writer may
+    target every slot, so it participates in all three read forms."""
+
+    def writers(tg: TaintGraph, slot: str | None):
+        out = list(tg.find(op="stores"))
+        if slot is None:
+            out.extend(tg.find(op="store"))
+        else:
+            out.extend(tg.find(op="store", immediates=slot))
+        return out
+
     for k, tg_k in enumerate(members):
         for gnode in tg_k.find(op="gload"):
             parts = (tg_k.immediates_of(gnode) or "").split()
@@ -92,25 +102,27 @@ def _add_scratch_bridges(big: nx.DiGraph, members: list[TaintGraph]) -> None:
                 continue
             if not 0 <= i < k:                # AVM: only an earlier sibling
                 continue
-            for store in members[i].find(op="store", immediates=str(slot)):
+            for store in writers(members[i], str(slot)):
                 big.add_edge(GroupNode(i, store), GroupNode(k, gnode), kinds={"gload"})
         for gnode in tg_k.find(op="gloads"):  # dynamic index -> any earlier member
             slot = (tg_k.immediates_of(gnode) or "").strip()
             if not slot:
                 continue
             for i in range(k):
-                for store in members[i].find(op="store", immediates=slot):
+                for store in writers(members[i], slot):
+                    big.add_edge(GroupNode(i, store), GroupNode(k, gnode), kinds={"gload"})
+        for gnode in tg_k.find(op="gloadss"):
+            for i in range(k):
+                for store in writers(members[i], None):
                     big.add_edge(GroupNode(i, store), GroupNode(k, gnode), kinds={"gload"})
 
 
 def _add_log_bridges(big: nx.DiGraph, members: list[TaintGraph]) -> None:
     """Bridge every ``log`` in member ``i`` to a sibling's read of it (``i < k``)."""
     for k, tg_k in enumerate(members):
-        # Only the group-indexed forms, whose sibling index is immediate 0. The
-        # `gtxns*` family takes that index off the STACK, so there is no static
-        # sibling to bridge to and excluding them is correct, not an oversight.
-        # `gtxnas` was missing, though: it is index-immediate like the other two
-        # and only its ARRAY index is dynamic.
+        # Immediate-group forms bridge one member. Dynamic-group forms bridge
+        # every earlier member: the selector's def-use edge separately carries
+        # taint from the choice itself into the read node.
         for op in ("gtxn", "gtxna", "gtxnas"):
             for rnode in tg_k.find(op=op):
                 imms = tg_k.immediates_of(rnode) or ""
@@ -125,6 +137,14 @@ def _add_log_bridges(big: nx.DiGraph, members: list[TaintGraph]) -> None:
                     continue
                 for lognode in members[i].find(op="log"):
                     big.add_edge(GroupNode(i, lognode), GroupNode(k, rnode), kinds={"log"})
+        for op in ("gtxns", "gtxnsa", "gtxnsas"):
+            for rnode in tg_k.find(op=op):
+                imms = tg_k.immediates_of(rnode) or ""
+                if txn_field_name(op, imms) not in ("LastLog", "Logs"):
+                    continue
+                for i in range(k):
+                    for lognode in members[i].find(op="log"):
+                        big.add_edge(GroupNode(i, lognode), GroupNode(k, rnode), kinds={"log"})
 
 
 # --- cross-member taint detector ---------------------------------------

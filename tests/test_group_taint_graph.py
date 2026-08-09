@@ -138,6 +138,63 @@ return
         [f.pretty() for f in findings]
 
 
+def test_dynamic_stores_writer_reaches_static_gload(tmp_path):
+    stash_dynamic = """#pragma version 8
+txna ApplicationArgs 0
+global GroupSize
+stores
+int 1
+return
+"""
+    gtg = _build(tmp_path, [stash_dynamic, _DRAIN])
+    findings = group_taint_findings(gtg)
+    assert any(f.source.index == 0 and f.sink.index == 1 for f in findings), \
+        [f.pretty() for f in findings]
+
+
+def test_dynamic_gloadss_reaches_sink(tmp_path):
+    drain = """#pragma version 8
+int 0
+int 3
+gloadss
+itxn_begin
+itxn_field Receiver
+int 1000
+itxn_field Amount
+itxn_submit
+int 1
+return
+"""
+    gtg = _build(tmp_path, [_STASH, drain])
+    findings = group_taint_findings(gtg)
+    assert any(f.source.index == 0 and f.sink.index == 1 for f in findings), \
+        [f.pretty() for f in findings]
+
+
+def test_dynamic_group_log_read_bridges_every_earlier_member(tmp_path):
+    writer = """#pragma version 8
+txna ApplicationArgs 0
+log
+int 1
+return
+"""
+    reader = """#pragma version 8
+int 0
+gtxns LastLog
+itxn_begin
+itxn_field Receiver
+int 1
+itxn_field Amount
+itxn_submit
+int 1
+return
+"""
+    gtg = _build(tmp_path, [writer, reader])
+    findings = group_taint_findings(gtg)
+    assert any(f.source.index == 0 and f.sink.index == 1 for f in findings), \
+        [f.pretty() for f in findings]
+
+
 def test_no_gload_means_no_cross_member_flow(tmp_path):
     # two members that DON'T share scratch — no cross-group finding.
     standalone = """#pragma version 8

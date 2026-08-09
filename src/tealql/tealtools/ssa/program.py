@@ -406,11 +406,13 @@ class SSAProgram:
         self._scratch_influence_done = False
         self._identity_steps_done = False
         self._scratch_influence = None
+        self._scratch_facts = None
         graph = getattr(self, "_graph", None)
         if graph is not None:
             graph.graph.pop("identity_steps", None)
             for node in graph.nodes:
                 graph.nodes[node].pop("scratch_stores", None)
+                graph.nodes[node].pop("scratch_taint_sources", None)
 
     def _commit_mutation(self, *, value_rewrite: bool = False) -> None:
         """Atomically publish one supported mutation to derived consumers."""
@@ -957,8 +959,13 @@ class SSAProgram:
         ``_apply_pyssa_to``."""
         if getattr(self, "_scratch_influence_done", False):
             return
-        from .ssa import _compute_scratch_influence
-        _scratch_stores = _compute_scratch_influence(self)
+        from .scratch_influence import compute_scratch_facts
+        _scratch_facts = compute_scratch_facts(self)
+        _scratch_stores = {
+            location: list(fact.legacy_value_keys())
+            for location, fact in _scratch_facts.items()
+        }
+        self._scratch_facts = _scratch_facts
         self._scratch_influence = _scratch_stores
         if self._graph is not None:
             _nodes_by_loc: dict = {}
@@ -971,6 +978,9 @@ class SSAProgram:
             for _load_key, _val_keys in _scratch_stores.items():
                 for _node in _nodes_by_loc.get(_load_key, []):
                     self._graph.nodes[_node]["scratch_stores"] = list(_val_keys)
+                    self._graph.nodes[_node]["scratch_taint_sources"] = list(
+                        _scratch_facts[_load_key].taint_keys
+                    )
         self._scratch_influence_done = True
 
     def _ensure_identity_steps(self) -> None:

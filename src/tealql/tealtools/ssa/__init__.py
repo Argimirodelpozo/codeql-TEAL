@@ -34,6 +34,7 @@ from .producers import is_field_var, producing_op
 
 from .program import SSAProgram
 from .frame_slots import FrameAnalysis, FrameLayout, ReturnSlots, SlotMerge
+from .scratch_influence import ScratchInfluence
 
 from .ssa import (
     PyBlock,
@@ -87,4 +88,5 @@ __all__ = [
     "FrameLayout",
     "ReturnSlots",
     "SlotMerge",
+    "ScratchInfluence",
 ]

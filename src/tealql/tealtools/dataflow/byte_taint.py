@@ -583,9 +583,14 @@ def _byte_taint_impl(
 
     # Canonical SSA carries resolved frame reads; retain only its explicit gap
     # edges. Scratch remains an implicit reaching-definition relation.
-    from ..passes.frame_flow import frame_gap_sources, scratch_load_sources
+    from ..passes.frame_flow import (
+        frame_gap_sources,
+        scratch_load_sources,
+        scratch_unknown_loads,
+    )
     frame_src = frame_gap_sources(prog)
     scratch_src = scratch_load_sources(prog)
+    scratch_unknown = scratch_unknown_loads(prog)
 
     bt: dict = {}     # value -> Intervals (tainted byte ranges)
     st: set = set()   # scalar (uint64) values that are tainted
@@ -791,6 +796,18 @@ def _byte_taint_impl(
             # result finds an empty byte map and propagates nothing.
             if op in _BYTES_OUT_FALLBACK:
                 return set_bytes(out, Intervals.whole(_len_bound(out)))
+            if op == "loads":
+                # Scratch is polymorphic. A tainted dynamic selector controls
+                # the selected value; when type recovery cannot decide which
+                # AVM kind emerges, record BOTH abstractions rather than
+                # defaulting to scalar and losing later byte slices.
+                kind = getattr(getattr(out, "type", None), "kind", None)
+                if kind == "bytes":
+                    return set_bytes(out, Intervals.whole(_len_bound(out)))
+                if kind == "uint64":
+                    return set_scalar(out)
+                scalar_changed = set_scalar(out)
+                return set_bytes(out, Intervals.whole(_len_bound(out))) or scalar_changed
             if op == "json_ref":
                 # Polymorphic on its immediate: JSONUint64 is a scalar but
                 # JSONString / JSONObject are BYTES, and must be tagged so.
@@ -829,6 +846,15 @@ def _byte_taint_impl(
         if sc:
             changed = set_scalar(target) or changed
         return changed
+
+    # An unnamed scratch value is TOP. Seed both AVM kinds when type recovery
+    # cannot refine it, matching the dynamic-selector fallback above.
+    for out in scratch_unknown:
+        kind = getattr(getattr(out, "type", None), "kind", None)
+        if kind != "bytes":
+            set_scalar(out)
+        if kind != "uint64":
+            set_bytes(out, Intervals.whole(_len_bound(out)))
 
     changed = True
     while changed:

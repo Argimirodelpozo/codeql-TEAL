@@ -91,30 +91,33 @@ def shared_execution_blocks(prog: SSAProgram) -> dict:
 
 
 def scratch_load_sources(prog: SSAProgram) -> dict:
-    """MAY-reaching scratch stores for each ``load`` result.
+    """Named MAY dependencies for each ``load``/``loads`` result.
 
-    Sentinel reaching definitions (zero-init, dynamic or unresolved stores)
-    cannot become an ``SSAVar`` and are omitted here. This is sound only for
-    MAY consumers; MUST consumers must inspect ``_scratch_influence`` directly.
+    Includes both stored values and dynamic slot selectors. Unknown values have
+    no SSAVar identity and are surfaced separately by
+    :func:`scratch_unknown_loads` rather than silently disappearing.
     """
     prog._ensure_scratch_influence()
     out: dict = {}
-    graph = getattr(prog, "_graph", None)
-    if graph is None:
-        return out
-    for node in graph.nodes:
-        stores = graph.nodes[node].get("scratch_stores")
-        location = getattr(node, "location", None)
-        if not stores or location is None:
-            continue
-        load_var = prog.var(location.file, location.start_line, 1)
+    for (file, line), fact in (getattr(prog, "_scratch_facts", {}) or {}).items():
+        load_var = prog.var(file, line, 1)
         if load_var is None:
             continue
-        sources = [value for file, line, index in stores
-                   if (value := prog.var(file, line, index)) is not None]
+        sources = [value for sf, sl, index in fact.taint_keys
+                   if (value := prog.var(sf, sl, index)) is not None]
         if sources:
             out.setdefault(load_var, []).extend(sources)
     return out
+
+
+def scratch_unknown_loads(prog: SSAProgram) -> set:
+    """Scratch result vars whose MAY value contains an unnamed unknown."""
+    prog._ensure_scratch_influence()
+    return {
+        value
+        for (file, line), fact in (getattr(prog, "_scratch_facts", {}) or {}).items()
+        if fact.unknown and (value := prog.var(file, line, 1)) is not None
+    }
 
 
 __all__ = [
@@ -125,6 +128,7 @@ __all__ = [
     "frame_value_sources",
     "logger",
     "scratch_load_sources",
+    "scratch_unknown_loads",
     "shared_execution_blocks",
     "unresolved_call_results",
 ]
