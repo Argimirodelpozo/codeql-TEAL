@@ -2,9 +2,9 @@
 stack machine (frame slots, scratch, shuffles) becomes value-based, typed IR,
 partitioned into ``main`` plus one subroutine per ``callsub`` target.
 
-HAZARD: analysis passes do NOT compose with the lift — running ``run_all_passes``
-before :func:`lift` yields INVALID IR. Only annotations ride up; mutations break
-the builder.
+The public SSA carries both a functional live-assignment view and the canonical
+AVM opcode stream. Analysis passes may rewrite or clean the former; lifting
+always simulates the latter, so pass order cannot change program semantics.
 """
 from __future__ import annotations
 
@@ -44,6 +44,11 @@ logger = logging.getLogger("tealql.tealtools.lift")
 _FRAME_OPS = frozenset({"frame_dig", "frame_bury"})
 
 
+def _ops(bb):
+    """Canonical AVM instructions for ``bb`` (clones fall back to live ops)."""
+    return getattr(bb, "stack_assignments", ()) or bb.assignments
+
+
 def _infer_arities(struct, callsite, *, divergent: "set | None" = None) -> dict:
     """``Subroutine -> (nargs, nret)``: read off ``proto``, or inferred.
 
@@ -72,7 +77,7 @@ def _infer_arities(struct, callsite, *, divergent: "set | None" = None) -> dict:
 
     def _proto_of(s):
         return (_proto_io(s.entry_bb)
-                if any(a.op == "proto" for a in s.entry_bb.assignments) else None)
+                if any(a.op == "proto" for a in _ops(s.entry_bb)) else None)
 
     def _callee_of(b):
         cs = callsite.get(b)
@@ -89,7 +94,7 @@ def _infer_arities(struct, callsite, *, divergent: "set | None" = None) -> dict:
         entry_of=lambda s: s.entry_bb,
         proto_of=_proto_of,
         body_of=lambda s: s.body,
-        ops_of=lambda b: b.assignments,
+        ops_of=_ops,
         succs_of=_succs_of,
         callee_of=_callee_of,
         op_arity=lambda o: op_arity(o.op, o.immediates),
@@ -190,7 +195,7 @@ def _prune_dead_assert_edges(prog: SSAProgram):
     seen_phis: set = set()
     dead = [b for b in prog.blocks.values()
             if any(a.op == "assert" and a.inputs and const_int(a.inputs[0]) == 0
-                   for a in b.assignments)]
+                   for a in _ops(b))]
     for b in dead:
         for s in list(b.successors):
             if len(s.predecessors) <= 1:
@@ -281,7 +286,7 @@ class _Lifter:
         # keep the arity-model recovery and are warned about there.
         self._io_by_entry = {s.entry_bb: a for s, a in _arity.items()}
         self._proto_entries = {s.entry_bb for s in struct.subroutines
-                               if any(a.op == "proto" for a in s.entry_bb.assignments)}
+                               if any(a.op == "proto" for a in _ops(s.entry_bb))}
         # Representation-specific outputs of the canonical `ssa.stacksim`
         # routine walk. Opcode execution translates into PRE-IR values here;
         # traversal, loop discovery and join alignment live in one engine.
@@ -293,7 +298,7 @@ class _Lifter:
         # Producer map + scratch reaching-def (per `load N`, the SSAVars its
         # influencing `store N`s wrote) -- call args are passed via scratch here,
         # not as callsub operands, so typing them needs the reaching-def.
-        self.producer = {o: a for a in self.prog.assignments
+        self.producer = {o: a for a in self.prog.stack_assignments
                          for o in a.outputs if isinstance(o, SSAVar)}
         self.load_stores: dict = {}
         self.prog._ensure_scratch_influence()
@@ -303,9 +308,9 @@ class _Lifter:
                 stores = g.nodes[n].get("scratch_stores")
                 if not stores:
                     continue
-                lv = self.prog.var(n.location.file, n.location.start_line, 1)
+                lv = self.prog.stack_var(n.location.file, n.location.start_line, 1)
                 if lv is not None:
-                    self.load_stores[lv] = [self.prog.var(*k) for k in stores]
+                    self.load_stores[lv] = [self.prog.stack_var(*k) for k in stores]
         # Per-call-site duplication of divergent legacy subroutines. Runs after
         # `producer` exists (clone outputs register there) and before groups /
         # `bid` form (clones join their caller's group and need block ids).
@@ -626,10 +631,11 @@ class _Lifter:
             body = sorted(d.body, key=self._key)
             body_set = set(body)
             callsub_bbs = {cs.callsub_bb for cs in sites}
-            ops = [a.op for bb in body for a in bb.assignments]
+            ops = [a.op for bb in body for a in _ops(bb)]
 
             def _is_retsub(bb):
-                return bool(bb.assignments) and bb.assignments[-1].op == "retsub"
+                instructions = _ops(bb)
+                return bool(instructions) and instructions[-1].op == "retsub"
 
             ok = (bool(sites)
                   and all(cs.callsub_bb is not None
@@ -680,7 +686,7 @@ class _Lifter:
                 for bb in body}
         var_map: dict = {}
         for bb in body:                       # pass 1: mint every body def
-            for a in bb.assignments:
+            for a in _ops(bb):
                 for o in a.outputs:
                     if isinstance(o, SSAVar) and o not in var_map:
                         nv = SSAVar(o.file + tag, o.line, o.index)
@@ -689,7 +695,7 @@ class _Lifter:
                         var_map[o] = nv
         for bb in body:                       # pass 2: clone ops over the map
             cb = cmap[bb]
-            for a in bb.assignments:
+            for a in _ops(bb):
                 ca = _SSAAssignment(
                     outputs=[var_map.get(o, o) for o in a.outputs],
                     op=a.op, immediates=a.immediates,
@@ -701,6 +707,7 @@ class _Lifter:
                         o.defined_by = ca
                         self.producer[o] = ca
                 cb.assignments.append(ca)
+            cb.stack_assignments = tuple(cb.assignments)
             if cb.assignments and cb.assignments[-1].op == "retsub":
                 cb.successors = [cs.continuation_bb]
                 self._splice_retsub[cb] = cs.continuation_bb
@@ -1008,7 +1015,7 @@ class _Lifter:
         # to its source operand and let consumers reference the value directly.
         # The mapping is exact (out[i] = in[m[i]]), hence value-preserving.
         for bb in gb:
-            for a in bb.assignments:
+            for a in _ops(bb):
                 if a.op not in _STACK_SHUFFLE_OPS:
                     continue
                 m = _shuffle_mapping(a)
@@ -1036,7 +1043,7 @@ class _Lifter:
                 for ph in sorted(bb.phis, key=lambda p: p.stack_index):
                     if ph not in self.regs:
                         self.regs[ph] = self._new_reg("tmp", self.type_of(ph))
-            for a in bb.assignments:
+            for a in _ops(bb):
                 if a.op in _FRAME_OPS:
                     continue                       # frame outputs map to params/locals
                 if self._is_routed_shuffle(a):
@@ -1104,7 +1111,7 @@ class _Lifter:
 
     def term_assign(self, bb):
         last = None
-        for a in bb.assignments:
+        for a in _ops(bb):
             if a.op in _TERMINATOR_OPS:
                 last = a
         return last
@@ -1114,7 +1121,7 @@ class _Lifter:
         ``err``) lifts to ``Fail``, not a ``ProgramExit`` of a maybe-non-uint64 top."""
         from ..ssa import const_int
         return any(a.op == "assert" and a.inputs and const_int(a.inputs[0]) == 0
-                   for a in bb.assignments)
+                   for a in _ops(bb))
 
     def _recover_match_keys(self, bb, labels):
         """Recover a `match`'s case keys, in label order, from the source line of a
@@ -1123,7 +1130,7 @@ class _Lifter:
         if len(src) != 1:
             return None, set()
         lines = next(iter(src.values()))
-        push = next((a for a in reversed(bb.assignments)
+        push = next((a for a in reversed(_ops(bb))
                      if a.op in ("pushbytess", "pushints")), None)
         ln = push.location.line if push is not None else 0
         if not (1 <= ln <= len(lines)):
@@ -1168,6 +1175,8 @@ class _Lifter:
         if not succ:
             if op == "err" or self._asserts_false(bb):
                 return pre_ir.Fail()
+            if op == "return" and t is not None:
+                return pre_ir.ProgramExit(self._sel_value(t))
             # HAZARD: `return`, and a block that falls off the end with no explicit
             # terminator, both exit with the STACK TOP (the approval result), never a
             # hardcoded 0 -- that would turn an approve-if-X program into an
@@ -1328,7 +1337,8 @@ class _Lifter:
             sc = self._splice_retsub.get(b)
             if sc is not None:
                 return [sc] if sc in body else []
-            if b.assignments and b.assignments[-1].op in ("retsub", "return", "err"):
+            instructions = _ops(b)
+            if instructions and instructions[-1].op in ("retsub", "return", "err"):
                 return []
             cs = self.callsite.get(b)
             if cs is not None and cs.continuation_bb in body:
@@ -1356,7 +1366,7 @@ class _Lifter:
                 self._mark_doomed_merge(block, preds, depth)
 
         def execute_block(block, stack, _npred):
-            for assignment in block.assignments:
+            for assignment in _ops(block):
                 self._simulate_op(assignment, block, stack, params)
 
         stack_engine.walk_routine(
@@ -1404,7 +1414,7 @@ class _Lifter:
         if b in self._doom_profile:
             return self._doom_profile[b]
         run, dips, out = 0, [], None
-        for a in b.assignments:
+        for a in _ops(b):
             if a.op in _FRAME_OPS or a.op in ("callsub", "retsub"):
                 break
             if a.op in ("intcblock", "bytecblock", "proto"):
@@ -1657,7 +1667,7 @@ class _Lifter:
     def _build_block(self, bb):
         phis = self._block_phis(bb)
         ops = []
-        for a in bb.assignments:
+        for a in _ops(bb):
             self._block_emit_op(a, bb, ops)
         return pre_ir.BasicBlock(id=self.bid[bb], phis=phis, ops=ops,
                              terminator=self.control(bb), comment=f"L{bb.first_line}")
@@ -1759,7 +1769,7 @@ class _Lifter:
 
 
 def _proto_io(entry_bb):
-    for a in entry_bb.assignments:
+    for a in _ops(entry_bb):
         if a.op == "proto":
             toks = (a.immediates or "").split()
             if len(toks) >= 2:

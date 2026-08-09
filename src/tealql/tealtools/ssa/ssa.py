@@ -979,6 +979,7 @@ def _apply_pyssa_to(
     src_off_end_snapshot = set(getattr(src, "off_end_exits", ()))
     src_polarity_snapshot = dict(getattr(src, "edge_polarity", {}))
     src_unknown_snapshot = frozenset(getattr(src, "unknown_ops", ()))
+    src_strict_snapshot = bool(getattr(src, "_strict", False))
 
     prog.vars = {}
     prog.phis = {}
@@ -993,6 +994,8 @@ def _apply_pyssa_to(
     prog.off_end_exits = src_off_end_snapshot
     prog.edge_polarity = src_polarity_snapshot
     prog.unknown_ops = src_unknown_snapshot
+    prog._strict = src_strict_snapshot
+    prog._revision = 0
     # Match the state flags `SSAProgram.__init__` sets, so every pass that gates
     # on one of them finds it.
     prog._consts_propagated = False
@@ -1089,6 +1092,17 @@ def _apply_pyssa_to(
     for bb in prog.blocks.values():
         bb.assignments.sort(key=lambda a: a.location.line)
         bb.phis.sort(key=lambda p: p.stack_index)
+
+    # Preserve the canonical AVM instruction stream independently of the
+    # functional live-assignment view. Copy/input/scratch cleanup is allowed to
+    # remove redundant definitions from ``prog.assignments`` and
+    # ``bb.assignments``; stack-semantic consumers must still execute these
+    # opcodes in source order. The Assignment objects stay shared so sound
+    # annotations and equivalent-value rewrites remain visible in both views.
+    prog._stack_assignments = tuple(prog.assignments)
+    prog._stack_vars = dict(prog.vars)
+    for bb in prog.blocks.values():
+        bb.stack_assignments = tuple(bb.assignments)
 
     # 8) Chain-structure refs (chain root, propagation graph), off the hot path.
     prog._pyssa = py

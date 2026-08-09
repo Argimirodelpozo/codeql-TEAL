@@ -742,7 +742,7 @@ def _infer_state_types(lifter):
     unknown. Put inputs are top-first (value [0], key [1]); the read value is
     output 1 for ``*_get_ex`` (did_exist at 0), the sole output for ``*_get``."""
     key_types: dict = {}
-    for a in lifter.prog.assignments:
+    for a in lifter.prog.stack_assignments:
         if a.op in ("app_global_put", "app_local_put") and len(a.inputs) >= 2:
             key, v = _const_key(a.inputs[1]), a.inputs[0]
             if key is None:
@@ -764,7 +764,7 @@ def _infer_state_types(lifter):
     # here still needs unifying if it is read with CONFLICTING types, else a
     # state-forwarding pass substitutes one access's value into another's
     # wrong-typed register and rejects the cross-type assignment.
-    for a in lifter.prog.assignments:
+    for a in lifter.prog.stack_assignments:
         if a.op in ("app_global_get", "app_local_get"):
             rv = a.outputs[0] if a.outputs else None
         elif a.op in ("app_global_get_ex", "app_local_get_ex"):
@@ -794,7 +794,7 @@ def _infer_state_types(lifter):
                  if (t := _resolve(s)) is not None}
     if not key_types:
         return
-    for a in lifter.prog.assignments:
+    for a in lifter.prog.stack_assignments:
         if a.op in ("app_global_get", "app_local_get"):
             val = a.outputs[0] if a.outputs else None
             k = _const_key(a.inputs[0]) if a.inputs else None
@@ -848,7 +848,7 @@ def _propagate_copy_load_types(lifter):
                     if st and st != "?":
                         op.targets[0].ir_type = st
                         changed = True
-        for a in lifter.prog.assignments:
+        for a in lifter.prog.stack_assignments:
             if a.op != "load" or not a.outputs:
                 continue
             out = a.outputs[0]

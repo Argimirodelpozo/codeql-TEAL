@@ -101,8 +101,15 @@ class SSAProgram:
         if file not in files:
             shown = ", ".join(files[:8]) + (" …" if len(files) > 8 else "")
             raise ValueError(f"source file {file!r} is not in this program ({shown})")
-        if len(files) == 1:
+        if len(files) == 1 and (not strict or self._strict):
             return self
+
+        if len(files) == 1:
+            # A permissively-built program cannot satisfy a later strict
+            # request by returning itself: its parser may already have dropped
+            # instructions. Re-enter the boundary so diagnostics/unknown ops
+            # raise exactly as a fresh strict construction would.
+            return type(self).from_graph(self._graph, strict=True)
 
         nodes = [
             n for n in self._graph.nodes
@@ -143,6 +150,8 @@ class SSAProgram:
                 raise TealParseError(_diags)
 
         self._graph = g
+        self._strict = bool(strict)
+        self._revision = 0
         src = g.graph.get("source", "")
         self.source_path = Path(src).resolve() if src else Path("")
 
@@ -352,6 +361,64 @@ class SSAProgram:
     def __len__(self) -> int:
         return len(self.assignments)
 
+    @property
+    def revision(self) -> int:
+        """Monotonic version of this mutable SSA view.
+
+        Derived caches key on this value. Public mutation still happens through
+        the long-standing pass methods; each one commits a revision only after
+        restoring def/use and invalidating dependent indexes.
+        """
+        return self._revision
+
+    @property
+    def stack_assignments(self) -> tuple[Assignment, ...]:
+        """Canonical AVM opcode stream, unaffected by functional DCE.
+
+        ``assignments`` remains the backward-compatible optimized/live value
+        view. Stack-semantic consumers such as the lifter use this stream so a
+        copy-propagated push cannot disappear underneath their simulation.
+        """
+        return getattr(self, "_stack_assignments", tuple(self.assignments))
+
+    def stack_var(self, file: str, line: int, index: int) -> Optional[SSAVar]:
+        """A value from the canonical opcode stream, including DCE'd values."""
+        return getattr(self, "_stack_vars", self.vars).get((file, line, index))
+
+    def _rebuild_uses(self) -> None:
+        """Rebuild functional def/use after an operand rewrite."""
+        values = {id(v): v for v in getattr(self, "_stack_vars", self.vars).values()}
+        values.update((id(p), p) for p in self.phis.values())
+        for value in values.values():
+            value.uses = []
+        for assignment in self.assignments:
+            if assignment.shuffled:
+                continue
+            for operand in assignment.inputs:
+                if hasattr(operand, "uses"):
+                    operand.uses.append(assignment)
+
+    def _invalidate_value_relations(self) -> None:
+        """Drop products whose keys are SSA operands rewritten by a pass."""
+        self._invalidate_phi_users()
+        self._frame_resolution_cache = None
+        self._frame_gap_sources_cache = None
+        self._scratch_influence_done = False
+        self._identity_steps_done = False
+        self._scratch_influence = None
+        graph = getattr(self, "_graph", None)
+        if graph is not None:
+            graph.graph.pop("identity_steps", None)
+            for node in graph.nodes:
+                graph.nodes[node].pop("scratch_stores", None)
+
+    def _commit_mutation(self, *, value_rewrite: bool = False) -> None:
+        """Atomically publish one supported mutation to derived consumers."""
+        if value_rewrite:
+            self._rebuild_uses()
+            self._invalidate_value_relations()
+        self._revision += 1
+
     def assignment_for_pyop(self, py_op):
         """Return the public :class:`Assignment` rebuilt from ``py_op``.
 
@@ -554,6 +621,7 @@ class SSAProgram:
         from ..passes.const_prop import propagate_constants as _impl
         _impl(self)
         self._consts_propagated = True
+        self._commit_mutation()
 
     def propagate_inputs(self) -> None:
         """Unify execution-stable input reads (``txn`` / ``txna`` /
@@ -574,6 +642,7 @@ class SSAProgram:
         from ..passes.input_prop import propagate_inputs as _impl
         _impl(self)
         self._inputs_propagated = True
+        self._commit_mutation(value_rewrite=True)
 
     def propagate_scratch_values(self) -> int:
         """Generalises :meth:`propagate_scratch_constants` from compile-
@@ -602,7 +671,10 @@ class SSAProgram:
         """
         self._ensure_scratch_influence()
         from ..passes.scratch_prop import propagate_scratch_values as _impl
-        return _impl(self)
+        changed = _impl(self)
+        if changed:
+            self._commit_mutation(value_rewrite=True)
+        return changed
 
     def cleanup_unused_ssavars(self) -> int:
         """Drop side-effect-free :class:`Assignment` s whose every
@@ -616,7 +688,10 @@ class SSAProgram:
         :mod:`tealql.tealtools.cleanup` so the substrate stays free of the
         per-op pure-set decisions."""
         from ..passes.cleanup import cleanup_unused_ssavars as _impl
-        return _impl(self)
+        changed = _impl(self)
+        if changed:
+            self._commit_mutation()
+        return changed
 
     def propagate_scratch_constants(self) -> None:
         """Resolve each ``load N`` opcode's output to a literal when every
@@ -642,6 +717,7 @@ class SSAProgram:
         from ..passes.scratch_prop import propagate_scratch_constants as _impl
         _impl(self)
         self._scratch_propagated = True
+        self._commit_mutation()
 
     def propagate_ranges(self) -> None:
         """Tag SSAVars / Phis with a static integer range and type.
@@ -665,6 +741,7 @@ class SSAProgram:
         from ..passes.range_seed import propagate_ranges as _impl
         _impl(self)
         self._ranges_propagated = True
+        self._commit_mutation()
 
     def propagate_range_arithmetic(self) -> int:
         """Forward ``IntRange`` annotations through ``+`` / ``-`` /
@@ -680,7 +757,10 @@ class SSAProgram:
         :mod:`tealql.tealtools.range_arith` so the substrate stays free of
         the AVM arithmetic semantics."""
         from ..passes.range_arith import propagate_range_arithmetic as _impl
-        return _impl(self)
+        changed = _impl(self)
+        if changed:
+            self._commit_mutation()
+        return changed
 
     def propagate_assert_ranges(self) -> int:
         """Tighten ``IntRange`` annotations from the contract's ``assert``
@@ -694,7 +774,10 @@ class SSAProgram:
         from :mod:`tealql.tealtools.passes.range_assert` so the substrate stays free
         of the dominance / refinement logic."""
         from ..passes.range_assert import propagate_assert_ranges as _impl
-        return _impl(self)
+        changed = _impl(self)
+        if changed:
+            self._commit_mutation()
+        return changed
 
     def propagate_bytemath_ranges(self) -> int:
         """Flow bigint ranges through bytemath ops (``b+``, ``b-``,
@@ -708,7 +791,10 @@ class SSAProgram:
         first. Lazily imported from :mod:`tealql.tealtools.bytemath` so the
         substrate stays free of bytemath semantics."""
         from ..passes.bytemath import propagate_bytemath_ranges as _impl
-        return _impl(self)
+        changed = _impl(self)
+        if changed:
+            self._commit_mutation()
+        return changed
 
     def propagate_byte_lengths(self) -> int:
         """Tag bytes-producing SSAVars / Phis with their statically
@@ -728,7 +814,10 @@ class SSAProgram:
         :mod:`tealql.tealtools.byte_length_prop` so the TEAL byte-op
         semantics stay out of the substrate."""
         from ..passes.byte_length_prop import propagate_byte_lengths as _impl
-        return _impl(self)
+        changed = _impl(self)
+        if changed:
+            self._commit_mutation()
+        return changed
 
     def propagate_stack_shuffles(self) -> None:
         """Copy-propagate the outputs of pure stack-shuffle opcodes
@@ -754,6 +843,7 @@ class SSAProgram:
         from ..passes.stack_shuffle import propagate_stack_shuffles as _impl
         _impl(self)
         self._shuffles_propagated = True
+        self._commit_mutation(value_rewrite=True)
 
     # -- rendering ----------------------------------------------------------
 
@@ -927,7 +1017,11 @@ class SSAProgram:
         if idx is None:
             idx = {}
             for p in self.phis.values():
+                seen_args: set[int] = set()
                 for a in p.args:
+                    if id(a) in seen_args:
+                        continue
+                    seen_args.add(id(a))
                     idx.setdefault(id(a), []).append(p)
             try:
                 self._phi_users_index = idx

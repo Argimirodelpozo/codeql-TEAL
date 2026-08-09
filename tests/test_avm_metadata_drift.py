@@ -224,14 +224,15 @@ def test_sig_arities_match_puya_signatures():
         f"(floor {_MIN_ARITY_COVERED}) — did puya restructure AVMOp?")
 
 
-def test_return_pop_divergence_is_deliberate():
-    """``return`` pops the approval value on the AVM but MUST stay (0, 0) here:
-    it terminates the program, and modelling the pop would shrink the exit
-    stack the lift reads its ProgramExit operand off. If this fails, someone
-    'fixed' SIG to match spec — see the HAZARD comment in avm.SIG before
-    keeping that change. (Puya doesn't model ``return`` as an intrinsic at
-    all, so the arity test above can't cover it — this pin is the guard.)"""
-    assert avm.SIG["return"] == (0, 0)
+def test_return_pop_matches_avm_and_is_an_explicit_live_out():
+    """``return`` consumes its approval value in SSA just as it does on AVM.
+
+    Puya does not model it as an intrinsic, so the generic metadata comparison
+    cannot pin this. An explicit input is load-bearing: DCE must see the
+    approval producer as live and every consumer must agree on the returned
+    value rather than recovering it from a neighbouring instruction/stack.
+    """
+    assert avm.SIG["return"] == (1, 0)
     assert not any(m.code == "return" for m in AVMOp)
 
 

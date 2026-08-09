@@ -49,6 +49,14 @@ class SSAVar:
         self.range: Optional["IntRange"] = None
         self.type: Optional["TealType"] = None
 
+    def __setattr__(self, name, value):
+        # ``file/line/index`` define both equality and the hash.  Letting one of
+        # them change after the object has entered ``prog.vars`` (or any
+        # consumer's set/dict) corrupts that container permanently.
+        if name in {"file", "line", "index"} and hasattr(self, name):
+            raise AttributeError(f"{type(self).__name__}.{name} is immutable")
+        object.__setattr__(self, name, value)
+
     @property
     def identifier(self) -> str:
         return f"V#{self.index}@L{self.line}"
@@ -105,6 +113,11 @@ class Phi:
         # Analyses reasoning about which paths REACH a point (not values) must
         # not treat the absent arms as reaching it.
         self.partial: bool = False
+
+    def __setattr__(self, name, value):
+        if name in {"file", "line", "stack_index"} and hasattr(self, name):
+            raise AttributeError(f"{type(self).__name__}.{name} is immutable")
+        object.__setattr__(self, name, value)
 
     def _key(self) -> tuple:
         return (self.file, self.line, self.stack_index)
@@ -280,7 +293,7 @@ class BasicBlock:
 
     __slots__ = (
         "file", "first_line", "last_line",
-        "assignments", "phis",
+        "assignments", "stack_assignments", "phis",
         "predecessors", "successors",
         "exit_stack",
     )
@@ -290,10 +303,20 @@ class BasicBlock:
         self.first_line = first_line
         self.last_line = last_line
         self.assignments: list[Assignment] = []
+        # Canonical opcode stream for stack-semantic consumers. Functional
+        # cleanup may remove entries from ``assignments`` after their outputs
+        # are redirected, but the lifter must still simulate the instructions
+        # the AVM executes. Frozen to a tuple once SSA construction completes.
+        self.stack_assignments: tuple[Assignment, ...] | list[Assignment] = []
         self.phis: list[Phi] = []
         self.predecessors: list["BasicBlock"] = []
         self.successors: list["BasicBlock"] = []
         self.exit_stack: list = []
+
+    def __setattr__(self, name, value):
+        if name in {"file", "first_line", "last_line"} and hasattr(self, name):
+            raise AttributeError(f"{type(self).__name__}.{name} is immutable")
+        object.__setattr__(self, name, value)
 
     def _key(self) -> tuple:
         return (self.file, self.first_line, self.last_line)
@@ -435,4 +458,3 @@ def _canon_shuffle(op: str, immediates: str):
             return (None, None)
         return (n + 1, list(range(1, n)) + [0])
     return (None, None)
-

@@ -96,7 +96,9 @@ def cleanup_unused_ssavars(prog: SSAProgram) -> int:
     prog.assignments = [a for a in prog.assignments if id(a) not in drop_ids]
     for bb in prog.blocks.values():
         bb.assignments = [a for a in bb.assignments if id(a) not in drop_ids]
-    # Drop the now-orphan SSAVars so downstream walks stop seeing them.
+    # Drop the now-orphan SSAVars from the FUNCTIONAL view so downstream value
+    # walks stop seeing them. ``SSAProgram._stack_vars`` and each block's
+    # ``stack_assignments`` retain the canonical AVM stream for lifting.
     prog.vars = {
         k: v for k, v in prog.vars.items()
         if v.defined_by is None or id(v.defined_by) not in drop_ids

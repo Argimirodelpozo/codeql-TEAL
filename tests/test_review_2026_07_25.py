@@ -132,9 +132,7 @@ return
 
 
 def test_reject_arm_is_not_an_approving_exit(tmp_path):
-    """``return``'s modelled arity is ``(0, 0)``, so the old
-    ``last.inputs[0] == 0`` test could never fire and every ``int 0; return``
-    counted as an approval."""
+    """The explicit ``return`` operand identifies the rejecting arm."""
     prog = _prog(tmp_path, "prog.teal", _REJECT_ARM)
     exits = PathPredicateAnalysis(prog).approving_exits()
     assert len(exits) == 1

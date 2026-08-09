@@ -285,9 +285,9 @@ class PathPredicateAnalysis:
         excluded, so reject-path facts never intersect into
         :meth:`approving_exit_summary`; a non-constant return value stays in.
 
-        HAZARD: do not classify by ``last.inputs`` — ``return`` is modelled as
-        arity ``(0, 0)`` in :data:`.avm.SIG`, so its ``inputs`` are ALWAYS EMPTY
-        and any test on them silently admits every reject arm as approving.
+        The shared exit classifier reads ``return``'s explicit approval
+        operand. Do not recover it from the preceding instruction: propagation
+        may redirect the value and an intervening stack operation is legal.
         """
         return [bb for bb in self.prog.blocks.values() if is_approval_exit(bb)]
 

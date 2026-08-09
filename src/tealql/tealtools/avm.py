@@ -74,13 +74,11 @@ SIG: dict[str, tuple[int, int]] = {
     "intc_2": (0, 1), "intc_3": (0, 1), "pushint": (0, 1), "intcblock": (0, 0),
     "bytec": (0, 1), "bytec_0": (0, 1), "bytec_1": (0, 1), "bytec_2": (0, 1),
     "bytec_3": (0, 1), "pushbytes": (0, 1), "bytecblock": (0, 0), "bzero": (1, 1),
-    # Control flow (callsub/retsub handled by op_arity overrides; match dynamic)
-    # HAZARD: `return` is DELIBERATELY (0, 0) though the AVM pops 1 (the
-    # approval value). It terminates the program, so modelling the pop would
-    # shrink the exit stack the lift reads its ProgramExit operand off. Every
-    # NEW consumer of op_arity must account for this one divergence from spec —
-    # a `return`'s `inputs` are ALWAYS EMPTY, so never classify by them.
-    "return": (0, 0), "err": (0, 0), "assert": (1, 0), "b": (0, 0),
+    # Control flow (callsub/retsub handled by op_arity overrides; match dynamic).
+    # ``return`` consumes the approval value exactly like the AVM. Keeping that
+    # operand explicit makes it a real SSA live-out: DCE, taint, exit
+    # classification and the lifter all read one semantic authority.
+    "return": (1, 0), "err": (0, 0), "assert": (1, 0), "b": (0, 0),
     "bnz": (1, 0), "bz": (1, 0), "switch": (1, 0),
     # Stack manipulation (dig/popn/dupn/bury/cover/uncover/frame_* dynamic)
     "pop": (1, 0), "dup": (1, 2), "dup2": (2, 4), "swap": (2, 2),

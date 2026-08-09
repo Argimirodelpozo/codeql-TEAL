@@ -24,18 +24,14 @@ from ..ssa import BasicBlock, const_int
 def returned_zero(bb: BasicBlock) -> bool:
     """The BB provably terminates the program with ``int 0; return``.
 
-    HAZARD: ``return``'s modelled stack effect is ``(0, 0)`` (:data:`avm.SIG`, so
-    the exit stack survives for the lift), so the approval value is NEVER on
-    ``last.inputs`` — read it off the second-to-last assignment. Anything not
-    provably zero yields ``False``, leaving the exit a potential approval."""
-    if len(bb.assignments) < 2:
+    Anything not provably zero yields ``False``, leaving the exit a potential
+    approval. ``return`` owns its real AVM operand in canonical SSA."""
+    if not bb.assignments:
         return False
-    if bb.assignments[-1].op != "return":
+    last = bb.assignments[-1]
+    if last.op != "return" or not last.inputs:
         return False
-    prev = bb.assignments[-2]
-    if not prev.outputs:
-        return False
-    return const_int(prev.outputs[0]) == 0
+    return const_int(last.inputs[0]) == 0
 
 
 def is_approval_exit(bb: BasicBlock) -> bool:

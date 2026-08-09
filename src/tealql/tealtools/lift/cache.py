@@ -27,9 +27,22 @@ class LifterRequest:
             self.cache = None
 
     def lookup(self):
-        """Return ``(hit, value)``; cached ``None`` is a real hit."""
-        value = (self.cache.get(self.file, _MISSING) if self.cache is not None
-                 else getattr(self.prog, "_ir_lifter", _MISSING))
+        """Return ``(hit, value)`` for the program's CURRENT revision.
+
+        Cached ``None`` is a real hit only for the revision whose failed build
+        produced it; a later pass is allowed to make the lift succeed.
+        """
+        revision = getattr(self.prog, "revision", 0)
+        if self.cache is not None:
+            entry = self.cache.get(self.file, _MISSING)
+            if entry is _MISSING or not isinstance(entry, tuple) or entry[0] != revision:
+                value = _MISSING
+            else:
+                value = entry[1]
+        elif getattr(self.prog, "_ir_lifter_revision", _MISSING) == revision:
+            value = getattr(self.prog, "_ir_lifter", _MISSING)
+        else:
+            value = _MISSING
         return value is not _MISSING, None if value is _MISSING else value
 
     def target(self):
@@ -38,9 +51,11 @@ class LifterRequest:
 
     def store(self, lifter) -> None:
         try:
+            revision = getattr(self.prog, "revision", 0)
             if self.cache is not None:
-                self.cache[self.file] = lifter
+                self.cache[self.file] = (revision, lifter)
             else:
                 self.prog._ir_lifter = lifter
+                self.prog._ir_lifter_revision = revision
         except AttributeError:
             pass

@@ -67,7 +67,11 @@ def compute_scratch_influence(prog: SSAProgram) -> dict:
     for b in prog.blocks.values():
         events: list = []
         loads_here: list = []
-        for i, a in enumerate(b.assignments):
+        # Functional DCE may remove copy-propagated loads/pushes from
+        # ``b.assignments``. Scratch semantics belongs to the canonical AVM
+        # instruction stream and therefore survives that presentation cleanup.
+        instructions = getattr(b, "stack_assignments", ()) or b.assignments
+        for i, a in enumerate(instructions):
             if a.op == "stores":
                 # Runtime target slot — may overwrite ANY slot with a value we
                 # can't name, so record a universal kill; skipping it let a
@@ -169,7 +173,8 @@ def compute_scratch_influence(prog: SSAProgram) -> dict:
             elif kind == "load":
                 srcs = local.get(slot)
                 if srcs:
-                    load_op = b.assignments[ev_i]
+                    instructions = getattr(b, "stack_assignments", ()) or b.assignments
+                    load_op = instructions[ev_i]
                     key = (load_op.location.file, load_op.location.line)
                     influences.setdefault(key, set()).update(srcs)
 
