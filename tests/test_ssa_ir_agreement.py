@@ -88,10 +88,6 @@ def _disagreements(path):
     lifter = _Lifter(prog)
     ir = lifter.build()
     reg2var = {id(r): sv for sv, r in lifter.regs.items()}
-    by_line: dict = {}
-    for a in prog.assignments:
-        by_line.setdefault(a.location.line, a)
-
     compared = 0
     cases: list = []
     for sub in [ir.main] + list(ir.subroutines):
@@ -101,7 +97,7 @@ def _disagreements(path):
                         o.intrinsic if isinstance(o, pre_ir.IntrinsicOp) else None)
                 if not isinstance(intr, pre_ir.Intrinsic) or not intr.line:
                     continue
-                a = by_line.get(intr.line)
+                a = intr.origin
                 if (a is None or a.op in _SKIP or a.op != intr.op
                         or len(intr.args) != len(a.inputs)):
                     continue

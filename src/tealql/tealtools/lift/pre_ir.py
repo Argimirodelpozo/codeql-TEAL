@@ -54,6 +54,14 @@ class BytesConstant:
 
 @dataclass(frozen=True)
 class Undefined:
+    """Analysis TOP: a value reconstruction could not prove.
+
+    Security analyses must treat it as potentially attacker-controlled. Only
+    the Puya/backend boundary may choose a typed placeholder so diagnostic or
+    recompilation output can be produced; that placeholder is never fed back
+    into analysis.
+    """
+
     ir_type: str = "?"
 
     def __str__(self) -> str:
@@ -74,6 +82,29 @@ class Intrinsic:
     immediates: list  # list[str | int]
     args: list  # list[Value]
     line: int = 0  # source line of the originating TEAL op (0 = unknown)
+    # Exact public SSA Assignment that emitted this node. Reporting still uses
+    # ``line``; structural/differential consumers use identity.
+    origin: object = field(default=None, repr=False, compare=False)
+
+    def __deepcopy__(self, memo):
+        """Clone working IR while retaining the non-owning SSA origin.
+
+        Return specialization deep-copies whole subroutines. Following
+        ``origin`` from there would copy the public SSA def/use/CFG graph and
+        recurse through its cycles; the origin is immutable provenance for the
+        IR node, not part of the working graph being cloned.
+        """
+        from copy import deepcopy
+
+        clone = type(self)(
+            self.op,
+            deepcopy(self.immediates, memo),
+            deepcopy(self.args, memo),
+            self.line,
+            self.origin,
+        )
+        memo[id(self)] = clone
+        return clone
 
     def __str__(self) -> str:
         toks = [self.op, *(str(i) for i in self.immediates),
@@ -85,6 +116,19 @@ class Intrinsic:
 class InvokeSubroutine:
     target: str  # subroutine id
     args: list  # list[Value]
+    origin: object = field(default=None, repr=False, compare=False)
+
+    def __deepcopy__(self, memo):
+        """Clone the call and its values, but share its SSA provenance."""
+        from copy import deepcopy
+
+        clone = type(self)(
+            self.target,
+            deepcopy(self.args, memo),
+            self.origin,
+        )
+        memo[id(self)] = clone
+        return clone
 
     def __str__(self) -> str:
         a = " ".join(str(x) for x in self.args)

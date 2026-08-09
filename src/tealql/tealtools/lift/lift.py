@@ -373,6 +373,11 @@ class _Lifter:
         # caller-local result registers. Frame reads themselves now resolve from
         # the canonical live stack instead of a second versioned-local model.
         self.frame_map: dict = {}
+        # SSA operand -> exact pre-IR value, including Undefined. ``frame_map``
+        # remains the Register-only annotation API; this total map is what
+        # value/scratch consumers use so an unresolved frame value never turns
+        # into a freshly-minted clean register.
+        self.ssa_values: dict = {}
         self.shuffle_src: dict = {}           # SSAVar (shuffle output) -> source operand
         # Bottom-position frame reads in a depth-poisoned region are described
         # once by SSA's canonical FrameAnalysis.  Translate that typed plan to
@@ -383,18 +388,18 @@ class _Lifter:
         self._height_poisoned = set(
             getattr(frame_analysis, "poisoned", ()) or ())
         frame_instructions = getattr(frame_analysis, "instructions", {}) or {}
-        self._frame_reads_by_site: dict = {}
-        self._frame_returns_by_site: dict = {}
+        self._frame_reads_by_assignment: dict = {}
+        self._frame_returns_by_assignment: dict = {}
         for py_block in getattr(pyssa, "blocks", ()) or ():
             for py_op in py_block.ops:
                 instruction = frame_instructions.get(id(py_op))
+                assignment = self.prog.assignment_for_pyop(py_op)
+                if assignment is None:
+                    continue
                 if isinstance(instruction, SlotMerge):
-                    self._frame_reads_by_site[(py_op.file, py_op.line)] = instruction
+                    self._frame_reads_by_assignment[assignment] = instruction
                 elif isinstance(instruction, ReturnSlots):
-                    self._frame_returns_by_site[(py_op.file, py_op.line)] = instruction
-        self._assignment_by_site = {
-            (a.location.file, a.location.line): a for a in self.prog.assignments
-        }
+                    self._frame_returns_by_assignment[assignment] = instruction
         self.frame_phis: dict = {}          # BasicBlock -> [position-keyed Phi]
         self._frame_phi_cache: dict = {}    # SlotMerge signature -> Register
         self._frame_phi_read_ids: dict = {} # signature -> poisoned read ids
@@ -842,10 +847,10 @@ class _Lifter:
     @staticmethod
     def _frame_signature(instruction: SlotMerge) -> tuple:
         return (
-            instruction.home.key,
+            id(instruction.home),
             instruction.position,
-            tuple(pred.key for pred in instruction.entry_predecessors),
-            tuple((op.file, op.line) for op in instruction.writes),
+            tuple(id(pred) for pred in instruction.entry_predecessors),
+            tuple(id(op) for op in instruction.writes),
         )
 
     def _frame_read_value(self, assignment, instruction: SlotMerge):
@@ -857,7 +862,7 @@ class _Lifter:
         or backedge that carries each value. A write-after-read backedge is
         filled after the routine walk, exactly like SSA's deferred frame arm.
         """
-        home = self.prog.blocks.get(instruction.home.key)
+        home = self.prog.block_for_pyblock(instruction.home)
         if home is None:
             self._frame_refusals.add(id(assignment))
             return pre_ir.Undefined()
@@ -874,7 +879,7 @@ class _Lifter:
         edge_pending: dict = {}
 
         for py_pred in instruction.entry_predecessors:
-            pred = self.prog.blocks.get(py_pred.key)
+            pred = self.prog.block_for_pyblock(py_pred)
             stack = self.stack_exit.get(pred)
             if (pred is None or stack is None
                     or not 0 <= instruction.position < len(stack)):
@@ -889,7 +894,7 @@ class _Lifter:
             for write, predecessors in instruction.write_predecessors
         }
         for py_write in instruction.writes:
-            write = self._assignment_by_site.get((py_write.file, py_write.line))
+            write = self.prog.assignment_for_pyop(py_write)
             if write is None:
                 self._frame_refusals.add(id(assignment))
                 continue
@@ -900,7 +905,7 @@ class _Lifter:
                 semantic_pending.append(write)
 
             py_predecessors = write_edges.get(id(py_write), ())
-            predecessors = [self.prog.blocks.get(pred.key)
+            predecessors = [self.prog.block_for_pyblock(pred)
                             for pred in py_predecessors]
             predecessors = [pred for pred in predecessors if pred is not None]
             # Compatibility with a FrameAnalysis produced by an older caller:
@@ -968,8 +973,7 @@ class _Lifter:
             retsub = self.term_assign(block)
             if retsub is None or retsub.op != "retsub":
                 continue
-            instruction = self._frame_returns_by_site.get(
-                (retsub.location.file, retsub.location.line))
+            instruction = self._frame_returns_by_assignment.get(retsub)
             values = []
             for index in range(self.cur_nret):
                 slot = instruction.slots.get(index) if instruction else None
@@ -1070,6 +1074,8 @@ class _Lifter:
     def value(self, o, _seen=None):
         seen = _seen if _seen is not None else set()
         while True:
+            if isinstance(o, (SSAVar, Phi)) and o in self.ssa_values:
+                return self.ssa_values[o]
             if isinstance(o, (SSAVar, Phi)) and o in self.frame_map:
                 break                            # param / local / callsub-return reg
             if isinstance(o, SSAVar) and o in self.shuffle_src and id(o) not in seen:
@@ -1486,8 +1492,7 @@ class _Lifter:
             pos = len(params) + slot if slot is not None else -1
             key = (b.file, b.first_line, b.last_line)
             if key in self._height_poisoned:
-                instruction = self._frame_reads_by_site.get(
-                    (a.location.file, a.location.line))
+                instruction = self._frame_reads_by_assignment.get(a)
                 if instruction is None:
                     self._frame_refusals.add(id(a))
                     source = pre_ir.Undefined()
@@ -1507,6 +1512,10 @@ class _Lifter:
                     # SSA and pre-IR position phis are the same semantic merge;
                     # make that boundary agreement visible to annotation users.
                     self.frame_map[a.inputs[0]] = source
+            if output is not None:
+                self.ssa_values[output] = source
+                if a.inputs and isinstance(a.inputs[0], Phi):
+                    self.ssa_values[a.inputs[0]] = source
             return
         if a.op == "frame_bury":
             if stack:
@@ -1599,13 +1608,10 @@ class _Lifter:
         are untouched by the callee and keep their pre-call value."""
         from ..ssa.callee_effects import _Below, _CalleeParam
 
-        summ = None
         py = getattr(self.prog, "_pyssa", None)
         entry = cs.target_entry
-        for blk, s in (getattr(py, "_effect_summaries", {}) or {}).items():
-            if blk.key == (entry.file, entry.first_line, entry.last_line):
-                summ = s
-                break
+        py_entry = self.prog.pyblock_for_block(entry)
+        summ = (getattr(py, "_effect_summaries", {}) or {}).get(py_entry)
         if summ is None or summ.reach > len(stack):
             for _i in range(len(stack)):
                 stack[_i] = pre_ir.Undefined()
@@ -1614,17 +1620,26 @@ class _Lifter:
         base = list(stack)
 
         def one(cell):
-            """The lift-space value for one summary cell, or None if it
-            cannot travel without inlining."""
+            """The lift-space value for one summary cell, or None if it has
+            no public SSA identity to carry across the boundary."""
             if isinstance(cell, _Below):
                 return base[-cell.j] if 0 < cell.j <= len(base) else None
             if isinstance(cell, _CalleeParam):
                 return (args[cell.p] if 0 <= cell.p < len(args) else None)
-            v = self.prog.var(cell.file, cell.line, cell.idx)
+            v = self.prog.var_for_pyvar(cell)
             cv = getattr(v, "const_value", None) if v is not None else None
             # A callee-produced RUNTIME value has no ABI to travel on; only a
-            # constant re-materialises in the caller.
-            return _const(cv) if cv is not None else None
+            # constant re-materialises in the caller. Retain the explicit TOP
+            # against its exact public SSA identity: scratch reaching-defs name
+            # the stored SSA leaf later, and resolving it as a fresh Register
+            # would silently turn this unknown into clean.
+            if cv is not None:
+                return _const(cv)
+            if v is None:
+                return None
+            unknown = pre_ir.Undefined(self._ssa_type(v))
+            self.ssa_values[v] = unknown
+            return unknown
 
         for d in range(1, summ.reach + 1):
             vals = []
@@ -1672,7 +1687,7 @@ class _Lifter:
             # `exit_stack` top, which held them only while a callsub was modelled
             # as consuming nothing — that slot is now the call's RESULT.
             call_args = self.stack_args.get(id(a), [])
-            invoke = pre_ir.InvokeSubroutine(target, call_args)
+            invoke = pre_ir.InvokeSubroutine(target, call_args, origin=a)
             outs = self.call_results.get(bb)      # caller-local return registers
             if outs:
                 ops.append(pre_ir.Assignment(list(outs), invoke))
@@ -1688,7 +1703,7 @@ class _Lifter:
         args = self.stack_args[id(a)] if id(a) in self.stack_args \
             else [self.value(i) for i in a.inputs]
         intr = pre_ir.Intrinsic(a.op, a.immediates.split() if a.immediates else [],
-                            args, line=a.location.line)
+                            args, line=a.location.line, origin=a)
         shown = [o for o in a.outputs if isinstance(o, SSAVar)]
         if a.op == "assert" and not shown:
             ops.append(pre_ir.Assert(args[0] if args else pre_ir.Undefined()))
@@ -1705,6 +1720,8 @@ class _Lifter:
             return o.kind
         if not isinstance(o, SSAVar) or depth > 6:
             return "?"
+        if o in self.ssa_values:
+            return self.ssa_values[o].ir_type
         if o in self.frame_map:                       # a param/local read
             return self.frame_map[o].ir_type
         a = self.producer.get(o)

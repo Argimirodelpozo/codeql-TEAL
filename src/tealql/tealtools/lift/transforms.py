@@ -317,9 +317,11 @@ def _clone_vp(vp, m: dict):
     next clone. Bare values map directly (frozen constants are shared)."""
     if isinstance(vp, pre_ir.Intrinsic):
         return pre_ir.Intrinsic(vp.op, list(vp.immediates),
-                                [_mapped(a, m) for a in vp.args], vp.line)
+                                [_mapped(a, m) for a in vp.args], vp.line,
+                                vp.origin)
     if isinstance(vp, pre_ir.InvokeSubroutine):
-        return pre_ir.InvokeSubroutine(vp.target, [_mapped(a, m) for a in vp.args])
+        return pre_ir.InvokeSubroutine(
+            vp.target, [_mapped(a, m) for a in vp.args], vp.origin)
     if isinstance(vp, pre_ir.ValueTuple):
         return pre_ir.ValueTuple([_mapped(v, m) for v in vp.values])
     return _mapped(vp, m)

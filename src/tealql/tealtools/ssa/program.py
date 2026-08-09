@@ -352,6 +352,48 @@ class SSAProgram:
     def __len__(self) -> int:
         return len(self.assignments)
 
+    def assignment_for_pyop(self, py_op):
+        """Return the public :class:`Assignment` rebuilt from ``py_op``.
+
+        This is the identity-safe bridge for internal consumers that combine
+        canonical Python-SSA products with public SSA annotations.  Source
+        locations are reporting coordinates, not cross-representation keys.
+        ``None`` means the op belongs to a different program/build.
+        """
+        return getattr(self, "_pyop_id_to_assignment", {}).get(id(py_op))
+
+    def pyop_for_assignment(self, assignment):
+        """Return the canonical private op behind a public ``assignment``.
+
+        The returned object is intentionally opaque to most callers; it is
+        useful to consumers of semantic products retained on ``_pyssa``.
+        """
+        return getattr(self, "_assignment_to_pyop", {}).get(assignment)
+
+    def var_for_pyvar(self, py_var):
+        """Return the exact public :class:`SSAVar` rebuilt from ``py_var``."""
+        return getattr(self, "_pyvar_id_to_var", {}).get(id(py_var))
+
+    def pyvar_for_var(self, var):
+        """Return the canonical private value behind a public ``SSAVar``."""
+        return getattr(self, "_var_id_to_pyvar", {}).get(id(var))
+
+    def phi_for_pyphi(self, py_phi):
+        """Return the exact public :class:`Phi` rebuilt from ``py_phi``."""
+        return getattr(self, "_pyphi_id_to_phi", {}).get(id(py_phi))
+
+    def pyphi_for_phi(self, phi):
+        """Return the canonical private phi behind a public ``Phi``."""
+        return getattr(self, "_phi_id_to_pyphi", {}).get(id(phi))
+
+    def block_for_pyblock(self, py_block):
+        """Return the exact public block rebuilt from ``py_block``."""
+        return getattr(self, "_pyblock_to_block", {}).get(py_block)
+
+    def pyblock_for_block(self, block):
+        """Return the canonical private block behind a public block."""
+        return getattr(self, "_block_id_to_pyblock", {}).get(id(block))
+
     def var(self, file: str, line: int, index: int) -> Optional[SSAVar]:
         return self.vars.get((file, line, index))
 
@@ -419,8 +461,8 @@ class SSAProgram:
     # and its leaves (loop detection, chain-root coalescing, etc.).
     #
     # ``Phi.args`` is collapsed to SSAVar leaves for fast iteration, so the
-    # structure lives on the auxiliary back-reference to the PyPhi graph
-    # (``self._pyssa`` / ``self._phi_to_pyphi``). These helpers read it, so
+    # structure lives on the auxiliary back-reference to the PyPhi graph.
+    # These helpers cross through the exact-object bridge, so
     # consumers get structural queries without paying the iteration cost when
     # they don't need them. (The CodeQL extractor used to carry the same
     # structure in an ``IndirectPhi``'s args; nothing produces one any more.)
@@ -429,22 +471,18 @@ class SSAProgram:
         """Phis whose values flow into ``phi`` via propagation. Empty
         for chain roots (whose args are all :class:`SSAVar`)."""
         # Walk via the PyPhi graph if present.
-        ptp = getattr(self, "_phi_to_pyphi", None)
-        ptw = getattr(self, "_pyphi_to_phi", None)
-        if ptp is None or ptw is None:
-            return []
         # Local import to avoid hard dep on the PySSA builder here.
         try:
             from .ssa import PyPhi  # type: ignore
         except Exception:
             return []
-        pyphi = ptp.get(phi)
+        pyphi = self.pyphi_for_phi(phi)
         if pyphi is None:
             return []
         out: list[Phi] = []
         for arg in pyphi.args:
             if isinstance(arg, PyPhi):
-                w = ptw.get(arg)
+                w = self.phi_for_pyphi(arg)
                 if w is not None:
                     out.append(w)
         return out

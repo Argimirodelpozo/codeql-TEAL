@@ -8,6 +8,8 @@ part of the contract here.
 """
 from __future__ import annotations
 
+import copy
+
 import pytest
 
 from tealql.security._itxn_taint import ir_lifter
@@ -15,7 +17,7 @@ from tealql.tealtools.errors import LiftError
 from tealql.tealtools.graph import load_graph
 from tealql.tealtools.lift import build_lifter, pre_ir
 from tealql.tealtools.lift.lift import _Lifter, lift
-from tealql.tealtools.ssa import PySSA, SSAProgram
+from tealql.tealtools.ssa import Location, PySSA, SSAProgram
 
 
 def test_private_ssa_replacement_preserves_assignment_constants():
@@ -57,6 +59,91 @@ def test_exported_pyssa_rebuild_preserves_program_metadata():
     assert rebuilt.edge_polarity == prog.edge_polarity
     assert rebuilt.unknown_ops == prog.unknown_ops
     assert rebuilt.parse_diagnostics == prog.parse_diagnostics
+
+
+def test_private_public_instruction_bridge_is_identity_bijective():
+    """Every canonical PyOp names its exact rebuilt public Assignment.
+
+    Source locations remain value/reporting identities for compatibility, but
+    crossing representation layers by those coordinates is forbidden: it
+    silently becomes last-write-wins if that assumption ever widens.
+    """
+    prog = SSAProgram.from_text(
+        "#pragma version 8\npushint 0\nbnz left\npushint 1\nb join\n"
+        "left:\npushint 2\njoin:\nreturn\n",
+        name="identity.teal",
+    )
+    py_ops = [op for block in prog._pyssa.blocks for op in block.ops]
+    assert len(py_ops) == len(prog.assignments)
+    public = [prog.assignment_for_pyop(op) for op in py_ops]
+    assert all(a is not None for a in public)
+    assert len({id(a) for a in public}) == len(public)
+    assert all(prog.pyop_for_assignment(a) is op
+               for op, a in zip(py_ops, public))
+    assert all(op.source_assignment is None for op in py_ops), (
+        "the private bridge retained the discarded preliminary CFG")
+
+    for py_block in prog._pyssa.blocks:
+        block = prog.block_for_pyblock(py_block)
+        assert block is not None and prog.pyblock_for_block(block) is py_block
+    for py_var in prog._pyssa.vars.values():
+        var = prog.var_for_pyvar(py_var)
+        assert var is not None and prog.pyvar_for_var(var) is py_var
+    for py_phi in prog._pyssa.phis.values():
+        phi = prog.phi_for_pyphi(py_phi)
+        assert phi is not None and prog.pyphi_for_phi(phi) is py_phi
+
+    # Structurally-equal private values from ANOTHER build are not origins in
+    # this one. This is the difference from a source-key dictionary.
+    foreign = PySSA.build(prog)
+    foreign_op = next(op for block in foreign._pyssa.blocks for op in block.ops)
+    foreign_var = next(iter(foreign._pyssa.vars.values()))
+    foreign_block = foreign._pyssa.blocks[0]
+    assert prog.assignment_for_pyop(foreign_op) is None
+    assert prog.var_for_pyvar(foreign_var) is None
+    assert prog.block_for_pyblock(foreign_block) is None
+
+
+def test_frame_bridge_does_not_join_by_mutable_source_location():
+    """FrameAnalysis -> pre-IR uses op identity, not ``(file, line)``.
+
+    Mutating reporting locations after SSA construction is artificial but is a
+    sharp boundary test: the old bridge then lost every frame instruction (or
+    selected an unrelated same-line assignment), while the semantic objects
+    and CFG remained unchanged.
+    """
+    prog = SSAProgram.from_text(
+        "#pragma version 8\n"
+        "callsub s\npop\nint 1\nreturn\n"
+        "s:\nproto 0 1\ntxn NumAppArgs\nbnz two\n"
+        "int 7\nb join\ntwo:\nint 9\nint 8\n"
+        "join:\nframe_dig 0\nretsub\n",
+        name="identity-frame.teal",
+    )
+    for assignment in prog.assignments:
+        if assignment.op in ("frame_dig", "frame_bury", "retsub"):
+            assignment.location = Location("identity-frame.teal", 2)
+
+    ir = _Lifter(prog).build()
+    assert ir.pass_stats["frame_position_phis"] == 1
+    assert ir.pass_stats["frame_slot_refusals"] == 0
+
+
+def test_deepcopy_keeps_ssa_origin_non_owning():
+    """IR specialization must not recursively clone the SSA graph."""
+    prog = SSAProgram.from_text(
+        "#pragma version 8\ntxn NumAppArgs\nreturn\n", name="copy-origin.teal")
+    origin = prog.assignments[0]
+    value = pre_ir.Register("v", 0, "uint64")
+    nodes = [
+        pre_ir.Intrinsic("txn", ["NumAppArgs"], [], line=2, origin=origin),
+        pre_ir.InvokeSubroutine("helper", [value], origin=origin),
+    ]
+
+    clones = copy.deepcopy(nodes)
+    assert clones[0] is not nodes[0] and clones[0].origin is origin
+    assert clones[1] is not nodes[1] and clones[1].origin is origin
+    assert clones[1].args[0] is not value
 
 
 _POLYMORPHIC_GET = """#pragma version 8

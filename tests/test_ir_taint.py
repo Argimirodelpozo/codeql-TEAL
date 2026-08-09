@@ -13,13 +13,22 @@ The summary fixes both: a result is tainted by the callee's internal-source
 returns plus only the params that actually flow through.
 """
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from tealql.tealtools.ssa import SSAProgram
 from tealql.tealtools.lift import pre_ir
 from tealql.tealtools.lift.lift import _Lifter
-from tealql.tealtools.lift.taint import user_input_taint, _return_summary
+from tealql.tealtools.lift.fund_flow import tainted_fund_flows
+from tealql.tealtools.lift.summaries import compute_summaries
+from tealql.tealtools.lift.taint import (
+    UNKNOWN_SOURCE,
+    _return_summary,
+    taint_report,
+    tainted_sinks,
+    user_input_taint,
+)
 
 TESTS_DIR = Path(__file__).resolve().parent
 
@@ -134,3 +143,120 @@ def test_summary_wellformed_on_real_contract():
         assert all(0 <= i < nparams for i in params), f"{sid}: bad passthrough idx"
     # taint still completes end to end
     assert isinstance(user_input_taint(lifter), dict)
+
+
+def _unknown_lifter():
+    """Minimal lifted program: Undefined -> return -> call -> add -> Amount."""
+    unknown_value = pre_ir.Register("unknown", 0, "uint64")
+    call_result = pre_ir.Register("call", 0, "uint64")
+    derived = pre_ir.Register("derived", 0, "uint64")
+    loaded = pre_ir.Register("loaded", 0, "uint64")
+    unknown_sub = pre_ir.Subroutine(
+        "unknown_sub", [], ["uint64"], [pre_ir.BasicBlock(
+            10, [], [pre_ir.Assignment(
+                [unknown_value], pre_ir.Undefined(ir_type="uint64"))],
+            pre_ir.SubroutineReturn([unknown_value]))])
+    main = pre_ir.Subroutine(
+        "main", [], [], [pre_ir.BasicBlock(
+            0,
+            [],
+            [
+                pre_ir.Assignment(
+                    [call_result], pre_ir.InvokeSubroutine("unknown_sub", [])),
+                pre_ir.Assignment(
+                    [derived], pre_ir.Intrinsic(
+                        "+", [], [pre_ir.UInt64Constant(1), call_result], line=7)),
+                pre_ir.IntrinsicOp(pre_ir.Intrinsic(
+                    "itxn_field", ["Amount"], [derived], line=8)),
+                pre_ir.IntrinsicOp(pre_ir.Intrinsic(
+                    "itxn_field", ["Fee"], [pre_ir.Undefined("uint64")], line=9)),
+                pre_ir.IntrinsicOp(pre_ir.Intrinsic(
+                    "store", [3], [pre_ir.Undefined("uint64")], line=10)),
+                pre_ir.Assignment(
+                    [loaded], pre_ir.Intrinsic("load", [3], [], line=11)),
+                pre_ir.IntrinsicOp(pre_ir.Intrinsic(
+                    "log", [], [loaded], line=12)),
+                pre_ir.Assert(pre_ir.Undefined("uint64")),
+            ],
+            pre_ir.ProgramExit(pre_ir.UInt64Constant(1)))],
+        is_main=True,
+    )
+    return SimpleNamespace(
+        subs=[main, unknown_sub],
+        name2sub={unknown_sub.id: unknown_sub},
+        register_sources={},
+        register_objects={
+            id(unknown_value): unknown_value,
+            id(call_result): call_result,
+            id(derived): derived,
+            id(loaded): loaded,
+        },
+        regs={},
+        load_stores={},
+    ), call_result, derived, loaded
+
+
+def test_unknown_is_top_across_calls_summaries_sinks_and_custom_views():
+    lifter, call_result, derived, loaded = _unknown_lifter()
+
+    taint = user_input_taint(lifter)
+    assert UNKNOWN_SOURCE in taint[id(call_result)]
+    assert UNKNOWN_SOURCE in taint[id(derived)]
+    assert UNKNOWN_SOURCE in taint[id(loaded)]
+
+    summary = compute_summaries(lifter)["unknown_sub"]
+    assert UNKNOWN_SOURCE in summary.internal_sources
+
+    sinks = tainted_sinks(lifter, taint={})
+    assert any(op == "itxn_field" and imm == ["Amount"] for _, op, imm in sinks)
+    assert any(op == "itxn_field" and imm == ["Fee"] for _, op, imm in sinks)
+    assert any(op == "assert" for _, op, _ in sinks)
+    assert any(op == "log" for _, op, _ in sinks)
+    report = taint_report(lifter, "unknown.teal")
+    assert "Sources present   : unresolved" in report
+    assert "itxn_field Amount" in report and "itxn_field Fee" in report
+
+    # A specialised/custom source abstraction may replace attacker-input
+    # labels, but never the lattice TOP introduced by the representation.
+    flows = tainted_fund_flows(lifter, taint={})
+    amount = [finding for finding in flows if finding.field == "Amount"]
+    assert len(amount) == 1
+    assert UNKNOWN_SOURCE in amount[0].sources
+
+
+def test_real_unresolved_value_survives_a_scratch_round_trip(tmp_path):
+    """The exact SSA reaching-def bridge must carry TOP through store/load.
+
+    The hostile cross-band callee leaves an unrepresentable runtime value in
+    the caller residual. Naming its SSA leaf with ``lifter.reg`` used to mint a
+    clean orphan at the later load; ``lifter.value`` must recover the original
+    explicit Undefined instead.
+    """
+    source = (TESTS_DIR / "contracts" / "hostile-crossband"
+              / "crossband_taint_runtime.teal")
+    if not source.exists():
+        pytest.skip("hostile-crossband fixture not present")
+    teal = source.read_text().replace(
+        "pop\nitxn_begin", "pop\nstore 0\nload 0\nitxn_begin", 1)
+    lifter = _lifter(teal, tmp_path)
+    amounts = [finding for finding in tainted_fund_flows(lifter)
+               if finding.field == "Amount"]
+    assert len(amounts) == 1
+    assert UNKNOWN_SOURCE in amounts[0].sources
+
+
+def test_value_tuple_unknown_taint_is_positional():
+    unknown, clean = (pre_ir.Register(name, 0, "uint64")
+                      for name in ("unknown", "clean"))
+    main = pre_ir.Subroutine(
+        "main", [], [], [pre_ir.BasicBlock(
+            0, [], [pre_ir.Assignment(
+                [unknown, clean], pre_ir.ValueTuple([
+                    pre_ir.Undefined("uint64"), pre_ir.UInt64Constant(7)]))],
+            pre_ir.ProgramExit(pre_ir.UInt64Constant(1)))], is_main=True)
+    lifter = SimpleNamespace(
+        subs=[main], name2sub={}, register_sources={}, register_objects={},
+        regs={}, load_stores={})
+    taint = user_input_taint(lifter)
+    assert UNKNOWN_SOURCE in taint[id(unknown)]
+    assert id(clean) not in taint

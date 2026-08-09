@@ -127,7 +127,14 @@ class PyPhi:
 @dataclass
 class PyOp:
     """An opcode in SSA form, ``outputs = op immediates (inputs)``, with
-    ``inputs`` / ``outputs`` filled by the per-BB simulator."""
+    ``inputs`` / ``outputs`` filled by the per-BB simulator.
+
+    ``source_assignment`` carries annotations across the preliminary
+    graph-backed SSA and is cleared after rebuilding so it does not retain the
+    discarded preliminary CFG. ``public_assignment`` is the durable identity
+    bridge from this model to public SSA. Source coordinates remain public
+    value keys, but must never join two representation layers internally.
+    """
 
     op: str
     immediates: str
@@ -137,6 +144,8 @@ class PyOp:
     n_out: int
     inputs: list = field(default_factory=list)
     outputs: list = field(default_factory=list)
+    source_assignment: object = field(default=None, repr=False)
+    public_assignment: object = field(default=None, repr=False)
 
 
 class PyBlock:
@@ -271,6 +280,7 @@ class PySSA:
                     op=a.op, immediates=a.immediates,
                     file=a.location.file, line=a.location.line,
                     n_in=n_in, n_out=n_out,
+                    source_assignment=a,
                 )
                 outs: list[PyVar] = []
                 for k in range(1, n_out + 1):
@@ -718,10 +728,17 @@ def _collapse_phi_args_to_leaves(py: PySSA, phi_map: dict, var_map: dict) -> Non
 
 
 def _build_assignments(prog: SSAProgram, py: PySSA, var_map: dict,
-                       phi_map: dict, bb_map: dict,
-                       source_assignments: dict | None = None) -> None:
+                       phi_map: dict, bb_map: dict) -> tuple[dict, dict]:
     """Build ``prog.assignments`` (+ ``bb.assignments``, def/use back-refs,
-    and spec-fixed const seeds) from the PySSA ops."""
+    and spec-fixed const seeds) from the PySSA ops.
+
+    Returns the two identity maps forming the supported private/public bridge:
+    ``id(PyOp) -> Assignment`` and its reverse. PyOp keeps its exported
+    structural equality contract, so the forward map explicitly keys on
+    identity. The old implementation looked the preliminary assignment back
+    up by ``(file, line)`` here; that made a representation boundary depend on
+    a reporting coordinate and silently selected the last value on collision.
+    """
     def _xlate(o):
         if o is None:
             return None
@@ -731,10 +748,12 @@ def _build_assignments(prog: SSAProgram, py: PySSA, var_map: dict,
             return phi_map.get(o)
         return o
 
+    pyop_to_assignment: dict = {}
+    assignment_to_pyop: dict = {}
     for py_b in py.blocks:
         bb = bb_map[py_b]
         for py_op in py_b.ops:
-            source_a = (source_assignments or {}).get((py_op.file, py_op.line))
+            source_a = py_op.source_assignment
             inputs = [
                 _xlate(i) for i in py_op.inputs
                 if _xlate(i) is not None
@@ -770,10 +789,15 @@ def _build_assignments(prog: SSAProgram, py: PySSA, var_map: dict,
             for i in inputs:
                 if hasattr(i, "uses"):
                     i.uses.append(a)
+            py_op.public_assignment = a
+            py_op.source_assignment = None       # release the preliminary CFG
+            pyop_to_assignment[id(py_op)] = a
+            assignment_to_pyop[a] = py_op
             prog.assignments.append(a)
             bb.assignments.append(a)
 
     prog.assignments.sort(key=lambda a: (a.location.file, a.location.line))
+    return pyop_to_assignment, assignment_to_pyop
 
 
 def _seed_consts_and_identity_steps(prog: SSAProgram, scratch_stores: dict) -> None:
@@ -949,10 +973,6 @@ def _apply_pyssa_to(
     # const/range/type annotations being copied over.
     src = source if source is not None else prog
     src_vars_snapshot = dict(getattr(src, "vars", {}))
-    src_assignments_snapshot = {
-        (a.location.file, a.location.line): a
-        for a in getattr(src, "assignments", ())
-    }
     src_labels_snapshot = list(getattr(src, "labels", []))
     src_graph_snapshot = getattr(src, "_graph", None)
     src_source_path_snapshot = getattr(src, "source_path", None)
@@ -996,6 +1016,11 @@ def _apply_pyssa_to(
                 v.range = src_v.range
             if src_v.type is not None:
                 v.type = src_v.type
+    # PyVar equality is source-key based for compatibility, so the supported
+    # cross-representation bridge keys on object id to reject a same-location
+    # value from another build.
+    prog._pyvar_id_to_var = {id(pv): v for pv, v in var_map.items()}
+    prog._var_id_to_pyvar = {id(v): pv for pv, v in var_map.items()}
 
     # 2) Phis: one per (bb_key, slot).
     phi_map: dict = {}  # PyPhi -> Phi
@@ -1004,6 +1029,8 @@ def _apply_pyssa_to(
         p.partial = py_p.partial
         phi_map[py_p] = p
         prog.phis[(bb_key[0], bb_key[1], slot)] = p
+    prog._pyphi_id_to_phi = {id(pp): p for pp, p in phi_map.items()}
+    prog._phi_id_to_pyphi = {id(p): pp for pp, p in phi_map.items()}
 
     # 3) BasicBlocks.
     bb_map: dict = {}
@@ -1014,6 +1041,8 @@ def _apply_pyssa_to(
     for py_b, bb in bb_map.items():
         bb.predecessors = [bb_map[p] for p in py_b.preds if p in bb_map]
         bb.successors = [bb_map[s] for s in py_b.succs if s in bb_map]
+    prog._pyblock_to_block = dict(bb_map)
+    prog._block_id_to_pyblock = {id(bb): py_b for py_b, bb in bb_map.items()}
 
     # 4) Attach phis to host BBs.
     for py_p, p in phi_map.items():
@@ -1043,8 +1072,9 @@ def _apply_pyssa_to(
     _collapse_phi_args_to_leaves(py, phi_map, var_map)
 
     # 6) Build Assignments (+ bb back-refs, def/use links, spec-fixed seeds).
-    _build_assignments(
-        prog, py, var_map, phi_map, bb_map, src_assignments_snapshot,
+    (prog._pyop_id_to_assignment,
+     prog._assignment_to_pyop) = _build_assignments(
+        prog, py, var_map, phi_map, bb_map,
     )
 
     # NB inner-txn field grouping, scratch reaching-definitions and const/

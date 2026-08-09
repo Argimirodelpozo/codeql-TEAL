@@ -28,6 +28,87 @@ from . import pre_ir
 #: unresolved value as clean turns every one into a SILENT false negative —
 #: precisely the bug the narrow ``frame_dig`` fallback used to have.
 UNKNOWN_SOURCE = "unresolved"
+_NO_SOURCES = frozenset()
+_UNKNOWN_SOURCES = frozenset({UNKNOWN_SOURCE})
+
+
+def value_sources(value, taint: dict):
+    """Taint sources carried by one pre-IR value.
+
+    Constants are clean, registers consult ``taint``, and ``Undefined`` is
+    analysis TOP.  Keep this as the one value boundary: several report/sink
+    helpers used to special-case only registers, so a direct unresolved sink
+    disappeared even though both propagation fixpoints handled it correctly.
+    """
+    if isinstance(value, pre_ir.Register):
+        return taint.get(id(value), _NO_SOURCES)
+    if isinstance(value, pre_ir.Undefined):
+        return _UNKNOWN_SOURCES
+    return _NO_SOURCES
+
+
+def _assignment_sources(op, taint: dict) -> tuple:
+    """Direct value-provider sources per assignment target.
+
+    Intrinsics and invokes are handled by their interprocedural rules. Bare
+    values are copies, including ``Undefined``; a ``ValueTuple`` is positional
+    and must not overtaint every target from every element.
+    """
+    if not isinstance(op, pre_ir.Assignment):
+        return ()
+    source = op.source
+    if isinstance(source, pre_ir.ValueTuple):
+        return tuple(value_sources(value, taint) for value in source.values)
+    if isinstance(source, (pre_ir.Register, pre_ir.Undefined)):
+        carried = value_sources(source, taint)
+        return tuple(carried for _ in op.targets)
+    return ()
+
+
+def _merge_unresolved(lifter, taint: dict | None) -> dict:
+    """Return ``taint`` with representation TOP preserved."""
+    if taint is None:
+        return user_input_taint(lifter)
+    result = {rid: set(sources) for rid, sources in taint.items()}
+    for rid, sources in unresolved_taint(lifter).items():
+        result.setdefault(rid, set()).update(sources)
+    return result
+
+
+def _scratch_read_is_unknown(src, slots: set, dynamic: bool) -> bool:
+    if src.op == "loads":
+        return dynamic or bool(slots)
+    if src.op != "load":
+        return False
+    key = str(src.immediates[0]) if src.immediates else None
+    return dynamic or key is None or key in slots
+
+
+def _scratch_unknown_write(src, reg_t) -> tuple[str | None, bool]:
+    """``(static_slot, dynamic)`` for a synthetic scratch write storing TOP.
+
+    Normal lifted stores carry an SSA origin and use the precise reaching-def
+    bridge at their loads. This fallback is only for transform-inserted/custom
+    pre-IR, where no such edge exists.
+    """
+    if getattr(src, "origin", None) is not None:
+        return None, False
+    if src.op == "store":
+        value = src.args[0] if src.args else None
+        if UNKNOWN_SOURCE not in reg_t(value):
+            return None, False
+        key = str(src.immediates[0]) if src.immediates else None
+        return key, key is None
+    if src.op == "stores":
+        # TOP-FIRST: args[0] is the dynamic slot, args[1] the stored value.
+        value = src.args[1] if len(src.args) > 1 else None
+        return None, UNKNOWN_SOURCE in reg_t(value)
+    return None, False
+
+
+def _lift_value(lifter, ssa_value):
+    resolver = getattr(lifter, "value", None)
+    return resolver(ssa_value) if resolver is not None else lifter.reg(ssa_value)
 
 
 def source_label(intr) -> str | None:
@@ -91,13 +172,11 @@ def _return_summary(lifter, trusted_args=frozenset()) -> dict:
         for i, p in enumerate(s.parameters):
             taint[id(p.register)].add(("p", s.id, i))
     summary: dict = {s.id: [set(), set()] for s in subs}   # mutable accumulators
+    unknown_scratch_slots: set = set()
+    unknown_dynamic_scratch = False
 
     def reg_t(v):
-        if isinstance(v, pre_ir.Register):
-            return taint.get(id(v), set())
-        if isinstance(v, pre_ir.Undefined):
-            return {UNKNOWN_SOURCE}          # TOP -- see UNKNOWN_SOURCE
-        return set()
+        return value_sources(v, taint)
 
     changed = True
     while changed:
@@ -120,15 +199,24 @@ def _return_summary(lifter, trusted_args=frozenset()) -> dict:
                             ins.add(lbl)                # honor the caller's pin here too
                         for a in src.args:
                             ins |= reg_t(a)
+                        if _scratch_read_is_unknown(
+                                src, unknown_scratch_slots, unknown_dynamic_scratch):
+                            ins.add(UNKNOWN_SOURCE)
                         if src.op in ("load", "loads"):     # scratch reaching-def
                             out = o.targets[0] if getattr(o, "targets", None) else None
                             lvs = ssa_of.get(id(out), ()) if out is not None else ()
                             for lv in lvs:
                                 for sv in lifter.load_stores.get(lv, ()):
                                     if isinstance(sv, (SSAVar, Phi)):
-                                        ins |= reg_t(lifter.reg(sv))
-                    if isinstance(o, pre_ir.Assignment) and isinstance(o.source, pre_ir.Register):
-                        ins |= reg_t(o.source)              # copy
+                                        ins |= reg_t(_lift_value(lifter, sv))
+                        slot, dynamic = _scratch_unknown_write(src, reg_t)
+                        if slot is not None and slot not in unknown_scratch_slots:
+                            unknown_scratch_slots.add(slot)
+                            changed = True
+                        if dynamic and not unknown_dynamic_scratch:
+                            unknown_dynamic_scratch = True
+                            changed = True
+                    direct = _assignment_sources(o, taint)
                     inv = _invoke(o)
                     if inv is not None:
                         callee = lifter.name2sub.get(inv.target)
@@ -138,9 +226,11 @@ def _return_summary(lifter, trusted_args=frozenset()) -> dict:
                             for i in cparams:
                                 if i < len(inv.args):
                                     ins |= reg_t(inv.args[i])
-                    for t in getattr(o, "targets", ()) or ():
-                        if ins - taint[id(t)]:
-                            taint[id(t)] |= ins
+                    for index, t in enumerate(getattr(o, "targets", ()) or ()):
+                        target_ins = (ins | direct[index]
+                                      if index < len(direct) else ins)
+                        if target_ins - taint[id(t)]:
+                            taint[id(t)] |= target_ins
                             changed = True
             srcs, params = summary[s.id]                    # refine s's own summary
             for b in s.body:
@@ -165,13 +255,11 @@ def user_input_taint(lifter, trusted_args=frozenset()) -> dict:
     ssa_of = getattr(lifter, "register_sources", {})
     summary = _return_summary(lifter, trusted_args)   # interprocedural param->return summary
     taint: dict = defaultdict(set)
+    unknown_scratch_slots: set = set()
+    unknown_dynamic_scratch = False
 
     def reg_t(v):
-        if isinstance(v, pre_ir.Register):
-            return taint.get(id(v), set())
-        if isinstance(v, pre_ir.Undefined):
-            return {UNKNOWN_SOURCE}          # TOP -- see UNKNOWN_SOURCE
-        return set()
+        return value_sources(v, taint)
 
     changed = True
     while changed:
@@ -193,15 +281,24 @@ def user_input_taint(lifter, trusted_args=frozenset()) -> dict:
                         ins.add(lbl)                # seed
                     for a in src.args:
                         ins |= reg_t(a)
+                    if _scratch_read_is_unknown(
+                            src, unknown_scratch_slots, unknown_dynamic_scratch):
+                        ins.add(UNKNOWN_SOURCE)
                     if src.op in ("load", "loads"):  # scratch: reaching-def precise
                         out = o.targets[0] if getattr(o, "targets", None) else None
                         lvs = ssa_of.get(id(out), ()) if out is not None else ()
                         for lv in lvs:
                             for sv in lifter.load_stores.get(lv, ()):
                                 if isinstance(sv, (SSAVar, Phi)):
-                                    ins |= reg_t(lifter.reg(sv))
-                if isinstance(o, pre_ir.Assignment) and isinstance(o.source, pre_ir.Register):
-                    ins |= reg_t(o.source)          # copy
+                                    ins |= reg_t(_lift_value(lifter, sv))
+                    slot, dynamic = _scratch_unknown_write(src, reg_t)
+                    if slot is not None and slot not in unknown_scratch_slots:
+                        unknown_scratch_slots.add(slot)
+                        changed = True
+                    if dynamic and not unknown_dynamic_scratch:
+                        unknown_dynamic_scratch = True
+                        changed = True
+                direct = _assignment_sources(o, taint)
                 inv = _invoke(o)
                 if inv is not None:
                     callee = lifter.name2sub.get(inv.target)
@@ -222,11 +319,36 @@ def user_input_taint(lifter, trusted_args=frozenset()) -> dict:
                     else:                           # unknown callee: stay conservative
                         for a in inv.args:
                             ins |= reg_t(a)
-                for t in getattr(o, "targets", ()) or ():
-                    if ins - taint[id(t)]:
-                        taint[id(t)] |= ins
+                for index, t in enumerate(getattr(o, "targets", ()) or ()):
+                    target_ins = (ins | direct[index]
+                                  if index < len(direct) else ins)
+                    if target_ins - taint[id(t)]:
+                        taint[id(t)] |= target_ins
                         changed = True
     return {k: frozenset(v) for k, v in taint.items() if v}
+
+
+def unresolved_taint(lifter) -> dict:
+    """Register closure reached from any explicit ``Undefined`` value.
+
+    Custom taint views (notably byte-interval taint) replace the normal input
+    seed map, but they must not replace analysis TOP with clean.  Compute this
+    once from the production interprocedural fixpoint and retain only the
+    ``UNKNOWN_SOURCE`` component so callers can union it into any abstraction.
+    """
+    cached = getattr(lifter, "_unresolved_ir_taint", None)
+    if cached is not None:
+        return cached
+    result = {
+        rid: frozenset({UNKNOWN_SOURCE})
+        for rid, sources in user_input_taint(lifter).items()
+        if UNKNOWN_SOURCE in sources
+    }
+    try:
+        lifter._unresolved_ir_taint = result
+    except AttributeError:                  # compatibility with slotted stubs
+        pass
+    return result
 
 
 # Sensitive sinks: persistent-state writes, inner-txn fields (who gets paid, how
@@ -238,8 +360,7 @@ _SINKS = STATE_WRITE_OPS | {"log", "itxn_field"}
 def tainted_sinks(lifter, taint=None) -> list:
     """``(sources, sink_op, immediates)`` for every sink whose operands include a
     tainted value; pass a precomputed ``taint`` map or one is built."""
-    if taint is None:
-        taint = user_input_taint(lifter)
+    taint = _merge_unresolved(lifter, taint)
     out = []
     for b in pre_ir.blocks(lifter.subs):
         for o in b.ops:
@@ -252,8 +373,7 @@ def tainted_sinks(lifter, taint=None) -> list:
                 continue
             hit = set()
             for a in args:
-                if isinstance(a, pre_ir.Register):
-                    hit |= taint.get(id(a), set())
+                hit |= value_sources(a, taint)
             if hit:
                 out.append((frozenset(hit), op, imm))
     return out
@@ -275,7 +395,7 @@ def taint_report(lifter, name: str = "<program>") -> str:
     """A human-readable taint report: every attacker-controlled value reaching a sink,
     grouped by category and annotated with the original TEAL line(s)."""
     taint = user_input_taint(lifter)
-    present = sorted({s for v in taint.values() for s in v})
+    present = {s for v in taint.values() for s in v}
     groups: dict = defaultdict(lambda: {"lines": set(), "sources": set()})
     cat_of = {op: i for i, (_, ops) in enumerate(_CATEGORIES) for op in ops}
     nflows = 0
@@ -292,10 +412,10 @@ def taint_report(lifter, name: str = "<program>") -> str:
                     continue
                 hit = set()
                 for a in args:
-                    if isinstance(a, pre_ir.Register):
-                        hit |= taint.get(id(a), set())
+                    hit |= value_sources(a, taint)
                 if not hit:
                     continue
+                present |= hit
                 nflows += 1
                 g = groups[(cat_of.get(op, 99), op, fld)]
                 g["lines"].add(line)
@@ -308,7 +428,7 @@ def taint_report(lifter, name: str = "<program>") -> str:
            "traced through the lifted IR -- interprocedurally, with scratch flow",
            "resolved via the low-layer reaching-def. Sources are the inputs an",
            "attacker chooses at call time; line numbers are the original TEAL.", "",
-           f"  Sources present   : {', '.join(present) or '(none)'}",
+           f"  Sources present   : {', '.join(sorted(present)) or '(none)'}",
            f"  Tainted IR values : {len(taint)}",
            f"  Sink flows        : {nflows}", ""]
     if not nflows:
@@ -352,8 +472,7 @@ def render_with_taint(lifter, name: str = "<program>") -> str:
         if sink_args is not None:
             hit = set()
             for a in sink_args:
-                if isinstance(a, pre_ir.Register):
-                    hit |= taint.get(id(a), set())
+                hit |= value_sources(a, taint)
             if hit:
                 op = src.op if src is not None else "assert"
                 marks.append(f"SINK {op} <- " + "+".join(sorted(hit)))

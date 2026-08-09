@@ -23,7 +23,14 @@ from collections import defaultdict
 from dataclasses import dataclass
 
 from . import pre_ir
-from .taint import UNKNOWN_SOURCE, _intr, _invoke, source_label, user_input_taint
+from .taint import (
+    UNKNOWN_SOURCE,
+    _intr,
+    _invoke,
+    _merge_unresolved,
+    source_label,
+    user_input_taint,
+)
 from ..avm import FUND_FIELDS as _FUND_FIELDS
 from ..cfg.dominance import iterative_dominators
 
@@ -793,6 +800,10 @@ def _tainted_sink_flows(lifter, sink_of, taint=None, trusted_args=frozenset(),
     guards a different, unchecked one."""
     if taint is None:
         taint = user_input_taint(lifter, trusted_args)
+    else:
+        # A caller-supplied abstraction replaces the input source lattice, not
+        # TOP. Preserve ``Undefined -> op -> register`` through custom views.
+        taint = _merge_unresolved(lifter, taint)
     def_of = _def_map(lifter)
     dom_by_sub = {s.id: _dominators(s) for s in lifter.subs}
     pdom_by_sub = {s.id: _post_dominators(s) for s in lifter.subs}
