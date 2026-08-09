@@ -120,7 +120,6 @@ def _abi_arg_lengths(prog, method_table: "dict | None" = None) -> dict:
 
 
 def _abi_arg_lengths_impl(prog, method_table: "dict | None" = None) -> dict:
-    from pathlib import Path
     from ..abi import extract_method_table
     from ..path_predicates import PathPredicateAnalysis
     from ..ssa.operands import const_bytes
@@ -128,17 +127,13 @@ def _abi_arg_lengths_impl(prog, method_table: "dict | None" = None) -> dict:
     if method_table:                           # authoritative ARC-56 spec wins
         table = method_table
     else:
-        src_path = str(getattr(prog, "source_path", "") or "")
-        if not src_path:
+        sources = getattr(prog, "sources", None)
+        if sources is None:
             return {}
-        p = Path(src_path)
-        if p.is_dir():
-            text = "\n".join(f.read_text(errors="ignore")
-                             for f in sorted(p.rglob("*.teal")))
-        elif p.exists():
-            text = p.read_text(errors="ignore")
-        else:
+        texts = [unit.text() for unit in sources.files]
+        if not texts:
             return {}
+        text = "\n".join(texts)
         table = extract_method_table(text)
     if not table:                              # availability gate
         return {}

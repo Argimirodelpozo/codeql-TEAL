@@ -409,9 +409,12 @@ def _cmd_methods(args) -> int:
         return 2
     else:
         for prog, name in _load_programs(args):
-            src = Path(getattr(prog, "source_path", "") or "")
-            label = name or (src.name if src.name else "<program>")
-            text = src.read_text(errors="ignore") if src.exists() else ""
+            sources = getattr(prog, "sources", None)
+            units = list(sources.files) if sources is not None else []
+            label = name or (units[0].name if len(units) == 1 else "<program>")
+            text = units[0].text() if len(units) == 1 else "\n".join(
+                unit.text() for unit in units
+            )
             # method_line_ranges is conservative: an unrecognised dispatch yields NO
             # attribution. Empty therefore means "could not tell", NOT "serves none" —
             # collapsing those two would silently blank the table on every contract

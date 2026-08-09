@@ -354,6 +354,12 @@ class TaintAnalysis:
         return self.file is None or a.location.file == self.file
 
     def detect(self) -> list[Violation]:
+        """Backward-compatible findings-only view; use :meth:`analyze` when
+        an empty list must be distinguished from an incomplete model."""
+        return self.analyze().value
+
+    def analyze(self):
+        """Findings plus standardized completeness/degradation metadata."""
         tainted, source_for = self._compute_taint()
         violations: list[Violation] = []
         for a in self.prog.assignments:
@@ -376,7 +382,7 @@ class TaintAnalysis:
                     sink_name=sink.name,
                     sink_operand=op,
                 ))
-        return violations
+        return self.prog.result(violations, deep=True)
 
     def tainted_operands(self) -> set[TaintedOperand]:
         """Every operand the propagation marked tainted — a diagnostic hook."""

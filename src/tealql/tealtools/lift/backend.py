@@ -51,7 +51,7 @@ def lift_to_teal(source, *, aggressive: bool = False,
     # too low and the recompiled body stops assembling — the failure this block
     # exists to avoid. Stop at the first non-comment, non-blank line.
     avm_version = 10
-    for _lines in to_puya_ir._load_src(prog.source_path).values():
+    for _lines in to_puya_ir._load_src(prog).values():
         for _ln in _lines:
             _s = _ln.strip()
             if not _s or _s.startswith("//"):

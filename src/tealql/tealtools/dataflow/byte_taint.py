@@ -420,11 +420,21 @@ class ByteTaintResult:
     provenance of which op cleared which range."""
 
     def __init__(self, bytes_taint: dict, scalar_taint: set,
-                 validated_by: Optional[dict] = None, frame_src: Optional[dict] = None):
+                 validated_by: Optional[dict] = None, frame_src: Optional[dict] = None,
+                 health=None):
         self.bytes_taint = bytes_taint
         self.scalar_taint = scalar_taint
         self.validated_by = validated_by or {}   # value -> [(lo, hi, kind, line)]
         self.frame_src = frame_src or {}         # frame_dig out -> caller args (interproc)
+        self.health = health
+
+    @property
+    def complete(self) -> bool:
+        return self.health is None or self.health.complete
+
+    @property
+    def degradations(self) -> tuple:
+        return () if self.health is None else self.health.degradations
 
     def tainted_bytes(self, value) -> Intervals:
         return self.bytes_taint.get(value, Intervals.empty())
@@ -868,7 +878,7 @@ def _byte_taint_impl(
         for load_var, stores in scratch_src.items():
             changed = _join(load_var, stores) or changed
 
-    return ByteTaintResult(bt, st, validated_by, frame_src)
+    return ByteTaintResult(bt, st, validated_by, frame_src, prog.health(deep=True))
 
 
 class IrByteTaint:

@@ -71,6 +71,8 @@ from .structure import (
     CallSite,
     analyze_structure,
 )
+from .health import AnalysisDegradation, AnalysisHealth, AnalysisResult
+from .sources import ProgramSources, SourceFile
 
 # The security detectors (Algorand-security-guide ports) live in the separate
 # top-level ``security`` package, which depends on tealtools — not the reverse.
@@ -88,6 +90,8 @@ __all__ = [
     "TaintAnalysis", "Source", "Sink", "FlowRule", "Violation", "TaintedOperand",
     "AuthDominationDetector", "AuthViolation",
     "InnerTxnReport",
+    "AnalysisDegradation", "AnalysisHealth", "AnalysisResult",
+    "ProgramSources", "SourceFile",
     "analyze_group_shape", "GroupShape",
     "filter_validated", "SuppressedViolation",
     "detect_into_box_flows", "detect_out_of_box_flows",

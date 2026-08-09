@@ -413,30 +413,22 @@ def exit_method_lookup(prog):
     """A ``bb -> ABI method name | None`` resolver over source ``method "sig"``
     info, cached per file.
 
-    HAZARD: ``bb.file`` is a BASENAME and must be resolved back to a real path
-    through ``prog.source_path``. Fully defensive — any failure yields ``None``;
-    this is OPTIONAL labelling, never a fact analysis may depend on."""
-    from pathlib import Path
+    Source is read from the immutable program snapshot using ``bb.file``'s
+    canonical relative identity, so nested duplicate basenames stay distinct.
+    Fully defensive — any failure yields ``None``; this is optional labelling."""
     from .abi import method_line_ranges, method_at_line
 
-    src = Path(str(getattr(prog, "source_path", "") or ""))
-    by_name: dict = {}
-    try:
-        if src.is_dir():
-            for p in src.rglob("*.teal"):
-                by_name.setdefault(p.name, p)
-        elif src.exists():
-            by_name[src.name] = src
-    except Exception:
-        by_name = {}
+    sources = getattr(prog, "sources", None)
+    by_name = ({unit.name: unit.text() for unit in sources.files}
+               if sources is not None else {})
 
     cache: dict = {}
 
     def _ranges(fname):
         if fname not in cache:
-            p = by_name.get(fname) or by_name.get(Path(fname).name)
             try:
-                cache[fname] = method_line_ranges(p.read_text(errors="ignore")) if p else []
+                text = by_name.get(fname)
+                cache[fname] = method_line_ranges(text) if text is not None else []
             except Exception:
                 cache[fname] = []
         return cache[fname]

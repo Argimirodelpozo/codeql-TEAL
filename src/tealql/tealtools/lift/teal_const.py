@@ -8,20 +8,22 @@ from __future__ import annotations
 
 from ..ast.literals import decode_byte_literal
 
-_SRC_CACHE: dict = {}
+def _load_src(source) -> dict:
+    """Map canonical file identity -> RAW source lines from a snapshot.
 
+    ``ProgramSources`` is the normal path. A filesystem argument remains for
+    compatibility, but is captured for this call rather than entering a global
+    path-only cache that could return bytes from an earlier file version.
+    """
+    from ..sources import ProgramSources
 
-def _load_src(source: str) -> dict:
-    """Map ``basename -> source lines`` from a ``.teal`` file/dir (cached)."""
-    if source in _SRC_CACHE:
-        return _SRC_CACHE[source]
-    from ..graph import _load_source_bytes
-    m = {
-        bn: data.decode("utf-8", "replace").splitlines()
-        for bn, data in _load_source_bytes(source).items()
-    }
-    _SRC_CACHE[source] = m
-    return m
+    bundle = source if isinstance(source, ProgramSources) else getattr(source, "sources", None)
+    if not isinstance(bundle, ProgramSources):
+        try:
+            bundle = ProgramSources.load(source)
+        except Exception:
+            return {}
+    return {name: list(lines) for name, lines in bundle.line_map().items()}
 
 
 def _tmpl_name(src_map: dict, line: int) -> str:

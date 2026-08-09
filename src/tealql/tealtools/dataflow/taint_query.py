@@ -144,10 +144,10 @@ class TaintQuery:
         self.prog = prog
         self.file = file
         self.g = TaintGraph.of(prog)
+        self.health = prog.health(deep=True)
         # Keyed by (teal_file, line) so a directory's programs don't clobber;
         # empty on raw bytecode, where queries work in TEAL lines only.
-        src_path = str(getattr(prog, "source_path", "") or "")
-        self.srcmap = source_map_for(src_path, file=file) if src_path else {}
+        self.srcmap = source_map_for(prog, file=file)
         self._rev = reverse_file_source_map(self.srcmap)
 
     def _file_name(self) -> str:

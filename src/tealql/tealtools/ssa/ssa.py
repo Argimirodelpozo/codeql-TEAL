@@ -976,6 +976,7 @@ def _apply_pyssa_to(
     src_labels_snapshot = list(getattr(src, "labels", []))
     src_graph_snapshot = getattr(src, "_graph", None)
     src_source_path_snapshot = getattr(src, "source_path", None)
+    src_sources_snapshot = getattr(src, "sources", None)
     src_off_end_snapshot = set(getattr(src, "off_end_exits", ()))
     src_polarity_snapshot = dict(getattr(src, "edge_polarity", {}))
     src_unknown_snapshot = frozenset(getattr(src, "unknown_ops", ()))
@@ -988,6 +989,7 @@ def _apply_pyssa_to(
     prog.labels = src_labels_snapshot
     prog._graph = src_graph_snapshot
     prog.source_path = src_source_path_snapshot
+    prog.sources = src_sources_snapshot
     # These live beside, rather than inside, the rebuilt BB objects.  The
     # in-place constructor retained them by accident; the exported
     # ``PySSA.build`` fresh-shell path used to lose them entirely.

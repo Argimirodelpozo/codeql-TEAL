@@ -119,16 +119,12 @@ class SSAProgram:
         g.graph["parse_diagnostics"] = tuple(
             d for d in self.parse_diagnostics if getattr(d, "file", None) == file
         )
+        g.graph["sources"] = self.sources.select({file})
         # Derived relations are program-wide caches.  Recompute them lazily on
         # the projected graph rather than retaining endpoints from other files.
         g.graph.pop("identity_steps", None)
         g.graph.pop("inner_txn_fields", None)
 
-        src = self.source_path
-        if src and src.is_dir():
-            candidate = src / file
-            if candidate.is_file():
-                g.graph["source"] = str(candidate.resolve())
         return type(self).from_graph(g, strict=strict)
 
     def _build_from_graph(self, g, *, strict: bool = True) -> None:
@@ -152,8 +148,20 @@ class SSAProgram:
         self._graph = g
         self._strict = bool(strict)
         self._revision = 0
-        src = g.graph.get("source", "")
-        self.source_path = Path(src).resolve() if src else Path("")
+        from ..sources import ProgramSources
+        sources = g.graph.get("sources")
+        if not isinstance(sources, ProgramSources):
+            # Compatibility for third-party graph producers. New graphs always
+            # carry the snapshot; a legacy physical path is captured once here.
+            src = g.graph.get("source", "")
+            try:
+                sources = (ProgramSources.load(src)
+                           if src and src != "<memory>" else ProgramSources.empty())
+            except Exception:
+                sources = ProgramSources.empty()
+            g.graph["sources"] = sources
+        self.sources = sources
+        self.source_path = sources.origin
 
         self.vars: dict[tuple, SSAVar] = {}
         self.phis: dict[tuple, Phi] = {}
@@ -384,6 +392,16 @@ class SSAProgram:
     def stack_var(self, file: str, line: int, index: int) -> Optional[SSAVar]:
         """A value from the canonical opcode stream, including DCE'd values."""
         return getattr(self, "_stack_vars", self.vars).get((file, line, index))
+
+    def health(self, *, deep: bool = False):
+        """Completeness of this representation and, optionally, lazy facts."""
+        from ..health import health_for
+        return health_for(self, deep=deep)
+
+    def result(self, value, *, deep: bool = False):
+        """Wrap an analysis value with standardized completeness metadata."""
+        from ..health import AnalysisResult
+        return AnalysisResult(value, self.health(deep=deep))
 
     def _rebuild_uses(self) -> None:
         """Rebuild functional def/use after an operand rewrite."""

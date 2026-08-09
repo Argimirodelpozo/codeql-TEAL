@@ -303,26 +303,10 @@ def _resolve_source_files(source):
     directory, or an in-memory ``{name: str | bytes}`` mapping (no filesystem) —
     normalized by :func:`_normalize_pseudo_ops` so the parser sees only canonical
     opcodes."""
-    if isinstance(source, Mapping):
-        for name, text in source.items():
-            data = text.encode("utf-8") if isinstance(text, str) else text
-            yield name, _normalize_pseudo_ops(data)
-        return
-    source = Path(source)
-    if source.is_file() and source.suffix == ".teal":
-        yield source.name, _normalize_pseudo_ops(source.read_bytes())
-        return
-    if source.is_dir():
-        # Keep this in lockstep with ``_utils.targets._discover_teal_files``:
-        # the CLI validates directory targets RECURSIVELY before handing the
-        # directory itself to this loader.  A top-level-only glob accepted a
-        # nested target and then built an EMPTY graph, so every analysis read
-        # as clean despite having inspected no contract at all.
-        for f in sorted(source.rglob("*.teal")):
-            # Top-level files retain their historical basename; nested files
-            # need the relative path so two ``*/prog.teal`` contracts do not
-            # collide in the location-identity key.
-            yield f.relative_to(source).as_posix(), _normalize_pseudo_ops(f.read_bytes())
+    from .sources import ProgramSources
+    yield from ProgramSources.load(
+        source, normalize=_normalize_pseudo_ops
+    ).normalized_bytes().items()
 
 
 def _load_source_bytes(source) -> dict[str, bytes]:
@@ -335,31 +319,10 @@ def _load_source_bytes(source) -> dict[str, bytes]:
     path.  This preserves existing editor integrations while no longer dropping
     one of two ``*/prog.teal`` entries.
     """
-    from .errors import TargetError, TargetNotFoundError
-
-    in_memory = isinstance(source, Mapping)
-    resolved = list(_resolve_source_files(source))
-    basenames: dict[str, int] = {}
-    if in_memory:
-        for rel, _data in resolved:
-            base = Path(rel).name
-            basenames[base] = basenames.get(base, 0) + 1
-    out: dict[str, bytes] = {}
-    for rel, data in resolved:
-        base = Path(rel).name
-        name = (Path(rel).as_posix()
-                if in_memory and basenames.get(base, 0) > 1
-                else base if in_memory else str(rel))
-        out[name] = data
-    if out:
-        return out
-
-    if in_memory:
-        return {}                                # historical empty-program API
-    path = Path(source)
-    if path.is_file():
-        raise TargetError(f"{path}: not a .teal file")
-    raise TargetNotFoundError(f"no .teal files found under {path}")
+    from .sources import ProgramSources
+    return ProgramSources.load(
+        source, normalize=_normalize_pseudo_ops
+    ).normalized_bytes()
 
 
 def _slice_source(sources: dict[str, list[str]], loc: Location) -> str:
@@ -380,16 +343,17 @@ def load_graph(
 ) -> nx.MultiDiGraph:
     """Build a MultiDiGraph from a ``.teal`` file, a directory of them, or an
     in-memory ``{name: str | bytes}`` mapping (no filesystem)."""
-    if isinstance(source, Mapping):
-        g_source = "<memory>"
-    else:
+    if not isinstance(source, Mapping):
         source = Path(source).resolve()
         if not source.exists():
             raise FileNotFoundError(source)
-        g_source = str(source)
+    from .sources import ProgramSources
+    sources = ProgramSources.load(source, normalize=_normalize_pseudo_ops)
+    g_source = sources.label
 
     g = nx.MultiDiGraph()
     g.graph["source"] = g_source
+    g.graph["sources"] = sources
 
     # (file, start_line) -> AstNode, for the const-value mapping below.
     by_loc: dict[tuple[str, int], AstNode] = {}
@@ -398,7 +362,7 @@ def load_graph(
     from .ast.parse import parse_nodes
     from .cfg.build import build_cfg
     parse_diags: list = []
-    nodes = parse_nodes(_load_source_bytes(source), diagnostics=parse_diags)
+    nodes = parse_nodes(sources.normalized_bytes(), diagnostics=parse_diags)
     # HAZARD: spans the grammar dropped. Non-empty => the graph, and everything
     # built on it, covers only PART of the source; consumers surface this via
     # SSAProgram.parse_diagnostics.

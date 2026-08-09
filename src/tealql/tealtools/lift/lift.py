@@ -1126,7 +1126,7 @@ class _Lifter:
     def _recover_match_keys(self, bb, labels):
         """Recover a `match`'s case keys, in label order, from the source line of a
         multi-push whose operands the parser stripped (leaving a phantom push)."""
-        src = _load_src(getattr(self.prog, "source_path", ""))
+        src = _load_src(self.prog)
         if len(src) != 1:
             return None, set()
         lines = next(iter(src.values()))

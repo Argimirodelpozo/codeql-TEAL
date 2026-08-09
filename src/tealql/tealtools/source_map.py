@@ -54,23 +54,33 @@ def reverse_file_source_map(fwd: dict[tuple[str, int], tuple[str, int]]
     return rev
 
 
-def source_map_for(source_path: str, file: Optional[str] = None
+def source_map_for(source, file: Optional[str] = None
                    ) -> dict[tuple[str, int], tuple[str, int]]:
     """``{(teal_file, teal_line): (src_file, src_line)}`` for a ``.teal`` file or a
     directory of them — keyed by file so a directory's programs (approval + clear)
     do NOT clobber each other on equal line numbers; any read failure yields ``{}``."""
-    out: dict[tuple[str, int], tuple[str, int]] = {}
+    from .sources import ProgramSources
+
+    bundle = source if isinstance(source, ProgramSources) else getattr(source, "sources", None)
     try:
-        p = Path(source_path)
-        if p.is_dir():
-            for f in sorted(p.rglob("*.teal")):
-                if file is not None and f.name != file:
-                    continue
-                for ln, src in build_source_map(f.read_text(errors="ignore")).items():
-                    out[(f.name, ln)] = src
-        elif p.exists():
-            for ln, src in build_source_map(p.read_text(errors="ignore")).items():
-                out[(p.name, ln)] = src
+        if not isinstance(bundle, ProgramSources):
+            bundle = ProgramSources.load(source)
     except Exception:
-        pass
+        return {}
+
+    selected = list(bundle.files)
+    if file is not None:
+        exact = [unit for unit in selected if unit.name == file]
+        if exact:
+            selected = exact
+        else:
+            # Compatibility for a unique legacy basename; ambiguous nested
+            # basenames deliberately match nothing rather than clobbering.
+            matches = [unit for unit in selected if Path(unit.name).name == file]
+            selected = matches if len(matches) == 1 else []
+
+    out: dict[tuple[str, int], tuple[str, int]] = {}
+    for unit in selected:
+        for line, src in build_source_map(unit.text()).items():
+            out[(unit.name, line)] = src
     return out

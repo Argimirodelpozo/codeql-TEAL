@@ -444,7 +444,7 @@ def _to_puya_full(prog):
     from .transforms import simplify_trivial_phis
     simplify_trivial_phis(lifted)
     _duplicate_shared_epilogues(lifted)
-    t = _Translator(_load_src(getattr(prog, "source_path", "")))
+    t = _Translator(_load_src(prog))
     groups = [lifted.main, *lifted.subroutines]
 
     # Pass 1: shells, so control ops and InvokeSubroutine can reference real

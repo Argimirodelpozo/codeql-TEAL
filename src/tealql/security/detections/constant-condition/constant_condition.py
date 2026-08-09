@@ -147,22 +147,21 @@ class ConstantConditionDetector:
 
     def _range_program(self) -> Optional[SSAProgram]:
         """The program to read ranges off: the shared one normally, a PRIVATE rebuild
-        from source when it is already assert-refined (see the module hazard), and
-        ``None`` when there is no source to rebuild from."""
+        from the immutable parsed graph when it is already assert-refined."""
         prog = self.prog
         if not getattr(prog, "_assert_ranges_applied", False):
             return prog
-        src = str(getattr(prog, "source_path", "") or "")
-        if not src:
-            logger.warning(
-                "constant-condition skipped: this program's ranges were already "
-                "refined USING its asserts (every asserted comparison would read "
-                "as vacuous) and it has no source path to rebuild from.")
-            return None
         logger.info(
             "constant-condition: shared program is assert-refined; reading "
-            "value-fact ranges off a private rebuild of %s", src)
-        return SSAProgram(src)
+            "value-fact ranges off a private snapshot rebuild of %s",
+            getattr(getattr(prog, "sources", None), "label", "<program>"))
+        graph = getattr(prog, "_graph", None)
+        if graph is None:
+            logger.warning("constant-condition skipped: no parsed graph to rebuild")
+            return None
+        return type(prog).from_graph(
+            graph.copy(), strict=bool(getattr(prog, "_strict", False))
+        )
 
     def detect(self) -> list[ConstantConditionViolation]:
         prog = self._range_program()
