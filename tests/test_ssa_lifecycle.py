@@ -57,6 +57,44 @@ def test_presentation_query_does_not_invalidate_lifter_cache():
     assert prog._ir_lifter_revision == prog.revision
 
 
+def test_removed_pass_apis_bridge_to_immutable_analysis_views():
+    """Known downstream imports remain usable without reviving shared mutation."""
+    from tealql.tealtools.group_reasoning import array_counts
+    from tealql.tealtools.passes import functional_dump, run_all_passes
+    from tealql.tealtools.passes.range_assert import propagate_assert_ranges
+
+    prog = _prog(
+        "txn GroupIndex\nint 1\n-\nstore 0\nload 0\n"
+        "gtxnsa ApplicationArgs 1\npop\nint 1\nreturn"
+    )
+    before = prog.functional(propagate_consts=False)
+    revision = prog.revision
+
+    calls = (
+        (prog.propagate_inputs, DerivedProfile.VALUE),
+        (prog.propagate_stack_shuffles, DerivedProfile.VALUE),
+        (prog.propagate_assert_ranges, DerivedProfile.GUARDED),
+        (prog.propagate_scratch_values, DerivedProfile.VALUE),
+        (prog.cleanup_unused_ssavars, DerivedProfile.PRESENTATION),
+        (lambda: run_all_passes(prog), DerivedProfile.PRESENTATION),
+        (lambda: propagate_assert_ranges(prog), DerivedProfile.GUARDED),
+    )
+    for call, profile in calls:
+        with pytest.warns(DeprecationWarning):
+            view = call()
+        assert view is derived_program(prog, profile)
+        assert view is not prog
+        assert view._analysis_read_only
+
+    # The avm-prover call shape ignores propagate_scratch_values()'s return.
+    # Its next query is fact-native, so the compatibility bridge remains useful
+    # without smuggling annotations back into the canonical SSA.
+    assert array_counts(prog) == {"this-1": {"NumAppArgs": 2}}
+    assert prog.functional(propagate_consts=False) == before
+    assert prog.revision == revision
+    assert "return" in functional_dump(prog)
+
+
 def test_phi_user_cache_is_invalidated_by_supported_rewrite():
     from tealql.tealtools.analysis._input_aliases import propagate_inputs
     prog = _prog(

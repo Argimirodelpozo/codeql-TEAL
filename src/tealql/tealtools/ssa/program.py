@@ -625,6 +625,59 @@ class SSAProgram:
         """Immutable value facts; never rewrites this SSA program."""
         return self.analysis_context().facts(*domains)
 
+    def _deprecated_derived_view(self, method: str, profile):
+        """Compatibility bridge for the former in-place analysis methods.
+
+        The returned program is the cached, read-only normal form.  Deliberately
+        do not mutate ``self``: old callers that ignored these methods' return
+        values retain a truthful canonical program, while callers that need the
+        historical annotations can migrate by consuming the returned view.
+        """
+        import warnings
+
+        from ..analysis import derived_program
+
+        warnings.warn(
+            f"SSAProgram.{method}() no longer mutates the canonical program; "
+            "consume the returned derived view or use analysis facts instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return derived_program(self, profile)
+
+    def propagate_inputs(self):
+        """Deprecated: return the immutable value-normalized SSA view."""
+        from ..analysis import DerivedProfile
+        return self._deprecated_derived_view("propagate_inputs", DerivedProfile.VALUE)
+
+    def propagate_stack_shuffles(self):
+        """Deprecated: return the immutable value-normalized SSA view."""
+        from ..analysis import DerivedProfile
+        return self._deprecated_derived_view(
+            "propagate_stack_shuffles", DerivedProfile.VALUE
+        )
+
+    def propagate_assert_ranges(self):
+        """Deprecated: return the immutable guard-refined SSA view."""
+        from ..analysis import DerivedProfile
+        return self._deprecated_derived_view(
+            "propagate_assert_ranges", DerivedProfile.GUARDED
+        )
+
+    def propagate_scratch_values(self):
+        """Deprecated: return the immutable value-normalized SSA view."""
+        from ..analysis import DerivedProfile
+        return self._deprecated_derived_view(
+            "propagate_scratch_values", DerivedProfile.VALUE
+        )
+
+    def cleanup_unused_ssavars(self):
+        """Deprecated: return the immutable presentation SSA view."""
+        from ..analysis import DerivedProfile
+        return self._deprecated_derived_view(
+            "cleanup_unused_ssavars", DerivedProfile.PRESENTATION
+        )
+
     # -- legacy annotation entry points ------------------------------------
     #
     # These remain temporarily for internal algorithms operating on a PRIVATE

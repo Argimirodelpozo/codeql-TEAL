@@ -141,6 +141,17 @@ def test_cli_exit_code_bad_target(capsys):
     assert "does not exist" in err
 
 
+def test_loops_explicit_zero_avm_version_is_rejected(tmp_path, capsys):
+    """An explicit zero must not fall back to the inferred pragma version."""
+    source = tmp_path / "p.teal"
+    source.write_text("#pragma version 8\nint 1\nreturn\n")
+
+    assert main(["loops", str(source), "--avm-version", "8"]) == 0
+    capsys.readouterr()
+    assert main(["loops", str(source), "--avm-version", "0"]) == 2
+    assert "--avm-version must be positive" in capsys.readouterr().err
+
+
 # ---------------------------------------------------------------------------
 # End-to-end: exit codes + JSON shape (pure-Python backend)
 # ---------------------------------------------------------------------------

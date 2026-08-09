@@ -243,7 +243,11 @@ def _cmd_loops(args) -> int:
     for prog, _file_filter in _load_programs(args):
         name = getattr(prog, "source_path", None)
         name = name.name if name else "<program>"
-        version = args.avm_version or infer_avm_version(prog)
+        version = (
+            infer_avm_version(prog)
+            if args.avm_version is None
+            else args.avm_version
+        )
         if version is not None and version < 1:
             raise TealQLError("--avm-version must be positive")
         if args.budget is not None and args.budget < 0:
