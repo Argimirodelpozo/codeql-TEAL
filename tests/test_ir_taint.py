@@ -25,12 +25,28 @@ from tealql.tealtools.lift.summaries import compute_summaries
 from tealql.tealtools.lift.taint import (
     UNKNOWN_SOURCE,
     _return_summary,
+    _scratch_unknown_write,
     taint_report,
     tainted_sinks,
     user_input_taint,
 )
 
 TESTS_DIR = Path(__file__).resolve().parent
+
+
+def test_dynamic_store_fallback_taints_the_top_first_value_not_the_slot():
+    value = pre_ir.Register("value", 0, "uint64")
+    slot = pre_ir.Register("slot", 0, "uint64")
+    stores = pre_ir.Intrinsic("stores", [], [value, slot], line=1)
+
+    def tainting(target):
+        return {UNKNOWN_SOURCE} if target is value else set()
+
+    def selector_only(target):
+        return {UNKNOWN_SOURCE} if target is slot else set()
+
+    assert _scratch_unknown_write(stores, tainting) == (None, True)
+    assert _scratch_unknown_write(stores, selector_only) == (None, False)
 
 
 def _lifter(teal: str, tmp_path: Path) -> _Lifter:

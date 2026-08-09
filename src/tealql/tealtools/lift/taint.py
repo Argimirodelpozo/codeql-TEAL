@@ -100,8 +100,9 @@ def _scratch_unknown_write(src, reg_t) -> tuple[str | None, bool]:
         key = str(src.immediates[0]) if src.immediates else None
         return key, key is None
     if src.op == "stores":
-        # TOP-FIRST: args[0] is the dynamic slot, args[1] the stored value.
-        value = src.args[1] if len(src.args) > 1 else None
+        # Pre-IR intrinsic args retain public SSA's TOP-FIRST order: the
+        # stored value is on top, with the dynamic slot underneath it.
+        value = src.args[0] if src.args else None
         return None, UNKNOWN_SOURCE in reg_t(value)
     return None, False
 

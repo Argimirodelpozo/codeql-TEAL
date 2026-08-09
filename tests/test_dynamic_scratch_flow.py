@@ -27,12 +27,19 @@ def _reaches_log(body: str) -> bool:
 
 
 def test_dynamic_store_value_may_reach_static_load():
-    assert _reaches_log(
+    body = (
+        "int 0\n"
         "txna ApplicationArgs 0\n"
-        "global GroupSize\n"
         "stores\n"
         "load 0\nlog"
     )
+    prog = _prog(body)
+    prog._ensure_scratch_influence()
+    load = next(a for a in prog.assignments if a.op == "load")
+    fact = prog._scratch_facts[("p.teal", load.location.line)]
+    assert fact.values == frozenset({("p.teal", 3, 1)})
+    assert not fact.selectors
+    assert _reaches_log(body)
 
 
 def test_static_store_value_may_reach_dynamic_load():
@@ -55,7 +62,7 @@ def test_dynamic_load_selector_is_a_control_dependency():
 def test_dynamic_store_does_not_kill_previous_may_value_for_const_prop():
     prog = _prog(
         "int 7\nstore 0\n"
-        "int 9\nglobal GroupSize\nstores\n"
+        "global GroupSize\nint 9\nstores\n"
         "load 0\npop"
     )
     prog.propagate_constants()
@@ -63,14 +70,14 @@ def test_dynamic_store_does_not_kill_previous_may_value_for_const_prop():
     load = next(a for a in prog.assignments if a.op == "load")
     assert load.outputs[0].const_value is None
     fact = prog._scratch_facts[("p.teal", load.location.line)]
-    assert {(2, 1), (4, 1)} <= {(line, index) for _file, line, index in fact.values}
+    assert {(2, 1), (5, 1)} <= {(line, index) for _file, line, index in fact.values}
     assert fact.zero_initialized is False
 
 
 def test_constant_dynamic_index_is_narrowed_to_one_slot():
-    prog = _prog("int 5\nint 3\nstores\nload 3\npop")
+    prog = _prog("int 3\nint 5\nstores\nload 3\npop")
     prog._ensure_scratch_influence()
     load = next(a for a in prog.assignments if a.op == "load")
     fact = prog._scratch_facts[("p.teal", load.location.line)]
-    assert fact.values == frozenset({("p.teal", 2, 1)})
+    assert fact.values == frozenset({("p.teal", 3, 1)})
     assert not fact.zero_initialized and not fact.selectors

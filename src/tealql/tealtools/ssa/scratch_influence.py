@@ -158,8 +158,10 @@ def compute_scratch_facts(prog: SSAProgram) -> dict[tuple[str, int], ScratchInfl
                 events.append((i, "store", domain, val_keys, set()))
                 universe.update(domain)
             elif op == "stores":
-                slot_value = assignment.inputs[0] if assignment.inputs else None
-                stored_value = assignment.inputs[1] if len(assignment.inputs) > 1 else None
+                # Public SSA inputs are TOP-FIRST. ``stores`` consumes the
+                # stored value from the top and the dynamic slot below it.
+                stored_value = assignment.inputs[0] if assignment.inputs else None
+                slot_value = assignment.inputs[1] if len(assignment.inputs) > 1 else None
                 domain = _slot_domain(slot_value)
                 val_keys = _leaf_value_keys(stored_value) or {UNKNOWN_STORE}
                 selector_keys = (set() if domain is not None and len(domain) <= 1
