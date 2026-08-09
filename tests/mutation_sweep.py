@@ -58,7 +58,7 @@ GUARD_MODULES = {
     "tealql.security._enforcement": "src/tealql/security/_enforcement.py",
     "tealql.security._field_protection": "src/tealql/security/_field_protection.py",
     "tealql.security._action_guards": "src/tealql/security/_action_guards.py",
-    "tealql.tealtools.path_predicates": "src/tealql/tealtools/path_predicates.py",
+    "tealql.tealtools.cfg.path_predicates": "src/tealql/tealtools/cfg/path_predicates.py",
     "tealql.tealtools.cfg.exits": "src/tealql/tealtools/cfg/exits.py",
 }
 #: ...and TAINT / value questions.

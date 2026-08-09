@@ -25,6 +25,6 @@ def functional_dump(
             file=file, line_range=line_range, show_ranges=show_ranges,
         )
     if show_bytes:
-        from ..render_annotated import annotate_bytes_inline
+        from ..viz.annotated import annotate_bytes_inline
         out = annotate_bytes_inline(view, out)
     return out

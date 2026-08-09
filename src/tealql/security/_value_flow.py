@@ -7,7 +7,7 @@ from __future__ import annotations
 from typing import Optional
 
 from tealql.tealtools.analysis import FactDomain
-from tealql.tealtools.path_predicates import PathPredicateAnalysis
+from tealql.tealtools.cfg.path_predicates import PathPredicateAnalysis
 from tealql.tealtools.ssa import Phi, SSAProgram, SSAVar
 
 

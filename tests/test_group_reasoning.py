@@ -1,4 +1,4 @@
-"""Group-shape reasoning (`tealtools.group_reasoning`).
+"""Group-shape reasoning (``tealtools.cfg.group``).
 
 Covers the comparator-direction correctness fix (top-first operands must not
 invert a non-commutative relation) at the `derive_constraint` level.
@@ -6,8 +6,8 @@ invert a non-commutative relation) at the `derive_constraint` level.
 from __future__ import annotations
 
 from tealql.tealtools.ssa import SSAProgram
-from tealql.tealtools.path_predicates import PathPredicateAnalysis
-from tealql.tealtools import group_reasoning as G
+from tealql.tealtools.cfg.path_predicates import PathPredicateAnalysis
+from tealql.tealtools.cfg import group as G
 
 
 def _constraints(tmp_path, teal):
@@ -91,13 +91,13 @@ return
 
 
 def _per_exit(tmp_path, teal):
-    from tealql.tealtools import group_reasoning as G
+    from tealql.tealtools.cfg import group as G
     (tmp_path / "p.teal").write_text(teal)
     return G.analyze_per_exit(SSAProgram(str(tmp_path)))
 
 
 def test_per_exit_recovers_both_shapes_common_drops_them(tmp_path):
-    from tealql.tealtools import group_reasoning as G
+    from tealql.tealtools.cfg import group as G
     (tmp_path / "p.teal").write_text(_TWO_SHAPE)
     prog = SSAProgram(str(tmp_path))
     # the common-shape summary collapses (2 and 1 don't intersect)
@@ -127,8 +127,8 @@ def test_per_exit_json_shape(tmp_path):
 
 def test_per_exit_labels_abi_method(tmp_path):
     # an exit inside an ABI method body is labelled with the method name.
-    from tealql.tealtools.abi import method_selector
-    from tealql.tealtools import group_reasoning as G
+    from tealql.tealtools.metadata.abi import method_selector
+    from tealql.tealtools.cfg import group as G
     sel = "0x" + method_selector("withdraw(uint64)void").hex()
     (tmp_path / "p.teal").write_text(
         "#pragma version 10\n"
@@ -145,8 +145,8 @@ def test_per_exit_labels_abi_method(tmp_path):
 # --- per-block substrate -----------------------------------------------------
 
 def test_constraints_at_block_before_and_after_guard(tmp_path):
-    from tealql.tealtools import group_reasoning as G
-    from tealql.tealtools.path_predicates import PathPredicateAnalysis
+    from tealql.tealtools.cfg import group as G
+    from tealql.tealtools.cfg.path_predicates import PathPredicateAnalysis
     # gtxn access guarded on one arm (GroupSize==2 in force), unguarded on another.
     teal = ("#pragma version 10\n"
             "txna ApplicationArgs 0\nbyte \"g\"\n==\nbnz guarded\n"

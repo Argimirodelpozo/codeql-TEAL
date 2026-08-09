@@ -11,7 +11,7 @@ Salvaged from the unmerged ``ssa-migration-wip-local-backup`` branch (commit
 """
 from __future__ import annotations
 
-from tealql.tealtools.graph import _sanitize_path_labels
+from tealql.tealtools.frontend.graph import _sanitize_path_labels
 from tealql.tealtools.ssa import SSAProgram
 
 _PATH_LABELS = """#pragma version 10

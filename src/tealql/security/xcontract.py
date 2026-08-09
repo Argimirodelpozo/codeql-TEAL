@@ -1,7 +1,8 @@
 """Cross-contract sec-guide runner: for each callee discovered in the caller's
 ``itxn_submit`` sites, run the registered detectors and tag the violations with
 the caller-side AppID. Answers the callee's own hygiene half of "is the app I'm
-about to call safe?"; the auth half is ``tealtools.xcontract.cross_auth_findings``.
+about to call safe?"; the auth half is
+``tealtools.intercontract.analysis.cross_auth_findings``.
 
 Detectors accepting ``path_predicates`` get the callee's SEEDED analysis, so
 caller-side constraints (``ApplicationArgs[0] == "do_thing"``) reach the callee's
@@ -15,7 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Optional
 
-from tealql.tealtools.xcontract import XContractGraph
+from tealql.tealtools.intercontract.analysis import XContractGraph
 from . import DETECTORS
 
 logger = logging.getLogger("tealql.security.xcontract")

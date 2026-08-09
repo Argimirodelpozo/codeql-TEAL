@@ -5,7 +5,7 @@ dependency stays one-directional (security -> tealtools, never the reverse).
 from __future__ import annotations
 
 from tealql.tealtools.ssa import SSAProgram
-from tealql.tealtools.detector import (
+from tealql.tealtools.reporting.registry import (
     Detector, _FnDetector,
     run_all_dict as _core_run_all_dict,
     run_all_findings as _core_run_all_findings,

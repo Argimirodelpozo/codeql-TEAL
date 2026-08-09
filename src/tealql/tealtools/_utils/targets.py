@@ -6,7 +6,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from ..errors import TargetError, TargetNotFoundError
+from ..core.errors import TargetError, TargetNotFoundError
 
 logger = logging.getLogger("tealql.tealtools._utils.targets")
 
@@ -26,8 +26,8 @@ def _discover_teal_files(path: Path) -> list[Path]:
 
 def resolve_target(target: str | Path) -> Path:
     """Validate a user-supplied target and return its path, raising
-    :class:`~tealql.tealtools.errors.TargetError` /
-    :class:`~tealql.tealtools.errors.TargetNotFoundError` if it doesn't exist or
+    :class:`~tealql.tealtools.core.errors.TargetError` /
+    :class:`~tealql.tealtools.core.errors.TargetNotFoundError` if it doesn't exist or
     holds no ``.teal``."""
     path = Path(target).resolve()
     if not path.exists():

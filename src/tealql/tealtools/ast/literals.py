@@ -41,7 +41,7 @@ def is_template_variable(token: str) -> bool:
 # const_value comes from. Derived from avm.TXN_ENUM_FIELD_NAMES, never re-listed —
 # a second hand-kept copy would silently disagree about which guards resolve.
 def _named_int_constants() -> dict[str, int]:
-    from ..avm import TXN_ENUM_FIELD_NAMES
+    from ..language.avm import TXN_ENUM_FIELD_NAMES
 
     out: dict[str, int] = {}
     for by_value in TXN_ENUM_FIELD_NAMES.values():

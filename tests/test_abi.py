@@ -1,4 +1,4 @@
-"""ABI method-table recovery from source high-level info (`tealtools.abi`).
+"""ABI method-table recovery from source metadata (``tealtools.metadata.abi``).
 
 Signatures survive as source text (`method "sig"` pseudo-ops + `// method "sig"`
 comments); we compute the selector FORWARD and never reverse the hash. Optional:
@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import glob
 
-from tealql.tealtools.abi import (
+from tealql.tealtools.metadata.abi import (
     parse_signature, method_selector, abi_type_byte_length, extract_method_table,
     method_line_ranges, method_at_line,
 )

@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from ..avm import op_arity
+from ..language.avm import op_arity
 from .callee_effects import _Below, _CalleeParam
 
 
@@ -63,7 +63,7 @@ def infer_arities(blocks, bb_to_sub, proto_io, return_point,
     caller was off by three. Nothing caught it — a too-DEEP stack yields wrong
     operands, not missing ones.
     """
-    from ..subroutines import infer_legacy_arities
+    from ..cfg.subroutines import infer_legacy_arities
 
     subs = [b for b in blocks if bb_to_sub.get(b) is b]
     bodies: dict = {}

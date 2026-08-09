@@ -13,7 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import ClassVar, Optional
 
-from tealql.tealtools.path_predicates import PathPredicateAnalysis
+from tealql.tealtools.cfg.path_predicates import PathPredicateAnalysis
 from tealql.tealtools.ssa import BasicBlock, SSAProgram
 from . import common
 

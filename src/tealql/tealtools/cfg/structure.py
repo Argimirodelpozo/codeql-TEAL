@@ -12,9 +12,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-from .avm import COND_BRANCH_OPS, MULTIWAY_BRANCH_OPS
-from .cfg.dominance import program_entries
-from .ssa import Assignment, BasicBlock, SSAProgram
+from ..language.avm import COND_BRANCH_OPS, MULTIWAY_BRANCH_OPS
+from .dominance import program_entries
+from ..ssa import Assignment, BasicBlock, SSAProgram
 
 
 # Real-work ops: a BB containing any of these is a handler, never routing.
@@ -228,7 +228,7 @@ def _branches_on_routing_field(bb: BasicBlock, depth: int = 3) -> bool:
 
 
 def _flows_from_routing_field(operand, depth: int) -> bool:
-    from .ssa import SSAVar
+    from ..ssa import SSAVar
     if depth <= 0 or not isinstance(operand, SSAVar):
         return False
     a = operand.defined_by

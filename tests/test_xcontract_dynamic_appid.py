@@ -7,7 +7,7 @@ only when every write to the slot agrees on one constant (sound: no invented
 target).
 """
 
-from tealql.tealtools.xcontract import find_appcall_sites
+from tealql.tealtools.intercontract.analysis import find_appcall_sites
 from helpers import make_xcontract
 
 _CALLEE = "#pragma version 10\n    int 1\n    return\n"

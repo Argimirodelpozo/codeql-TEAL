@@ -5,7 +5,7 @@
 can run the whole pipeline without writing temp files.
 """
 from tealql.security import DETECTORS
-from tealql.tealtools.graph import load_graph
+from tealql.tealtools.frontend.graph import load_graph
 from tealql.tealtools.ssa import SSAProgram
 
 _TEAL = """#pragma version 10

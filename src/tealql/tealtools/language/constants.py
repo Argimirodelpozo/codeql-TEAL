@@ -9,8 +9,8 @@ from __future__ import annotations
 
 from typing import Optional
 
-from .ast import Opcode
-from .ast.literals import (
+from ..ast import Opcode
+from ..ast.literals import (
     NAMED_INT_CONSTANTS, decode_byte_literal, is_template_variable,
     tokenize_operands,
 )

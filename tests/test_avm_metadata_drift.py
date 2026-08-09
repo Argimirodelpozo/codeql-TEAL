@@ -27,7 +27,7 @@ from puya.ir.avm_ops import AVMOp
 from puya.ir.avm_ops_models import Variant
 
 
-from tealql.tealtools import avm
+from tealql.tealtools.language import avm
 
 # Ops in avm.py's result tables that puya does NOT model under the same
 # mnemonic: TEAL uses symbols (`+`) where puya uses identifiers (`add`), and
@@ -105,8 +105,8 @@ def test_address_fields_single_source_consistency():
     # locks the two derived views against that single source so they can't
     # drift: every address field is account-typed AND 32 bytes, and nothing else
     # claims to be an account.
-    from tealql.tealtools.avm import ADDRESS_TXN_FIELDS, ADDRESS_GLOBAL_FIELDS
-    from tealql.tealtools import avm as O
+    from tealql.tealtools.language.avm import ADDRESS_TXN_FIELDS, ADDRESS_GLOBAL_FIELDS
+    from tealql.tealtools.language import avm as O
     M = O
 
     for f in ADDRESS_TXN_FIELDS:
@@ -345,7 +345,7 @@ def test_every_single_result_op_is_typed():
     the uint64/bytes divide is not."""
     from puya.ir.avm_ops_models import DynamicVariants
 
-    from tealql.tealtools.avm import _BOOL_OPS, _BYTES_OPS, _U64_OPS
+    from tealql.tealtools.language.avm import _BOOL_OPS, _BYTES_OPS, _U64_OPS
 
     def ours(code, imm):
         if code in _BOOL_OPS:

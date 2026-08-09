@@ -5,14 +5,14 @@ contract can be round-tripped: disassemble -> lift -> recompile.
 
 HAZARD: this imports the ``puya`` package, so it must stay behind the lazy
 :func:`lift_to_teal` export — ``import tealql.tealtools.lift`` has to remain
-puya-free. Failures surface as :class:`tealql.tealtools.errors.LiftError`.
+puya-free. Failures surface as :class:`tealql.tealtools.core.errors.LiftError`.
 """
 from __future__ import annotations
 
 import logging
 import re
 
-from ..errors import LiftError
+from ..core.errors import LiftError
 from . import _puya_compat as _compat
 
 logger = logging.getLogger("tealql.tealtools.lift")
@@ -24,7 +24,7 @@ def lift_to_teal(source, *, aggressive: bool = False,
 
     ``aggressive`` additionally runs the codegen-changing optimiser passes (intrinsic
     folding, ARC4 encode/decode elimination). Any failure raises
-    :class:`tealql.tealtools.errors.LiftError`, cause chained, tagged with the stage
+    :class:`tealql.tealtools.core.errors.LiftError`, cause chained, tagged with the stage
     that failed. Errors puya merely LOGS along the way (its validators do not raise)
     are appended to ``diagnostics`` when given — see
     :func:`to_puya_ir._puya_error_capture`."""

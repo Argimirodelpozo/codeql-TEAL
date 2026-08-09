@@ -11,11 +11,11 @@ import pytest
 
 from tealql.security import DETECTORS, common
 from tealql.security.scan import discover_teal_files, scan
-from tealql.tealtools import avm
-from tealql.tealtools.errors import TargetError, TargetNotFoundError, TealQLError
-from tealql.tealtools.group_reasoning import analyze, analyze_per_exit
+from tealql.tealtools.language import avm
+from tealql.tealtools.core.errors import TargetError, TargetNotFoundError, TealQLError
+from tealql.tealtools.cfg.group import analyze, analyze_per_exit
 from tealql.tealtools.analysis import DerivedProfile, derived_program
-from tealql.tealtools.path_predicates import PathPredicateAnalysis
+from tealql.tealtools.cfg.path_predicates import PathPredicateAnalysis
 from tealql.tealtools.ssa import SSAProgram
 
 

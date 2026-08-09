@@ -1,4 +1,4 @@
-"""Tests for the structural partition API (``tealql.tealtools.structure``).
+"""Tests for the structural partition API (``tealql.tealtools.cfg.structure``).
 
 Reuses existing sec-guide fixtures (no new fixture). Skips if unavailable.
 """
@@ -14,7 +14,7 @@ def _struct(rel: str):
     if not contract.exists():
         pytest.skip(f"fixture not present: {contract}")
     from tealql.tealtools.ssa import SSAProgram
-    from tealql.tealtools.structure import analyze_structure
+    from tealql.tealtools.cfg.structure import analyze_structure
     try:
         prog = SSAProgram(str(contract))
     except Exception as e:  # pragma: no cover - environment-dependent
@@ -119,6 +119,6 @@ class TestRender:
             import pytest
             pytest.skip("xgov fixture not present")
         from tealql.tealtools.ssa import SSAProgram
-        from tealql.tealtools.structure import analyze_structure
+        from tealql.tealtools.cfg.structure import analyze_structure
         s = analyze_structure(SSAProgram(str(contract)))
         assert s.render().startswith("arc4_routing:")

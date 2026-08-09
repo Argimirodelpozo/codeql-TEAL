@@ -37,7 +37,7 @@ def unresolved_call_results(prog: SSAProgram) -> list:
     but an absent/``None`` caller exit value would otherwise look clean to a
     MAY analysis. Legacy routines are skipped because they declare no count.
     """
-    from ..structure import analyze_structure
+    from ..cfg.structure import analyze_structure
 
     out: list = []
     for call_site in analyze_structure(prog).call_sites:
@@ -65,7 +65,7 @@ def shared_execution_blocks(prog: SSAProgram) -> dict:
     executes in several contexts, so its single SSA operand set is a known
     context-sensitivity limitation and must remain observable to diagnostics.
     """
-    from ..subroutines import pyblock_partition, _pyblock_return_point
+    from ..cfg.subroutines import pyblock_partition, _pyblock_return_point
     from ..ssa import stacksim
 
     py = getattr(prog, "_pyssa", None)

@@ -120,8 +120,8 @@ def _abi_arg_lengths(prog, method_table: "dict | None" = None) -> dict:
 
 
 def _abi_arg_lengths_impl(prog, method_table: "dict | None" = None) -> dict:
-    from ..abi import extract_method_table
-    from ..path_predicates import PathPredicateAnalysis
+    from ..metadata.abi import extract_method_table
+    from ..cfg.path_predicates import PathPredicateAnalysis
     from ..ssa.operands import const_bytes
 
     if method_table:                           # authoritative ARC-56 spec wins
@@ -193,7 +193,7 @@ def check_bounds(prog: SSAProgram, *,
         from ..lift import to_puya_ir
         mtable = None
         if arc56 is not None:
-            from ..arc56 import Arc56Spec, load_optional
+            from ..metadata.arc56 import Arc56Spec, load_optional
             spec = arc56 if isinstance(arc56, Arc56Spec) else load_optional(arc56)
             mtable = spec.method_table() if spec is not None else None
         fixed = {**to_puya_ir.recovered_min_lengths(prog),

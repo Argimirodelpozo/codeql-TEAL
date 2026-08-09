@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from typing import Iterable, Optional
 
 from .engine import Violation
-from ..path_predicates import BranchCondition, PathPredicateAnalysis
+from ..cfg.path_predicates import BranchCondition, PathPredicateAnalysis
 from ..ssa import SSAProgram
 
 

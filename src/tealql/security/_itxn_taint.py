@@ -11,7 +11,7 @@ import logging
 from dataclasses import dataclass
 from typing import Optional
 
-from tealql.tealtools.path_predicates import PathPredicateAnalysis
+from tealql.tealtools.cfg.path_predicates import PathPredicateAnalysis
 from tealql.tealtools.ssa import (
     Assignment,
     Const,
@@ -141,7 +141,7 @@ def source_label(op: str, imm: str) -> Optional[str]:
     """The user-input source family ``op``/``imm`` reads, or ``None``. Delegates to
     :func:`avm.attacker_input_label` — the ONE table, shared with the IR-level
     seeds; a second hand-kept copy silently drifts to an incomplete source set."""
-    from tealql.tealtools.avm import attacker_input_label
+    from tealql.tealtools.language.avm import attacker_input_label
     return attacker_input_label(op, imm)
 
 
@@ -213,7 +213,7 @@ def ir_lifter(prog: SSAProgram, file: Optional[str] = None):
                 "the rest report nothing.", e)
     else:
         src = str(getattr(prog, "source_path", "") or "<in-memory>")
-        from tealql.tealtools.errors import LiftError
+        from tealql.tealtools.core.errors import LiftError
         try:
             target = request.target()
             target.propagate_constants()

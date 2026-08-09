@@ -1,5 +1,5 @@
 """Tests for the group size + layout report
-(``tealql.tealtools.group_reasoning.analyze_layout`` / GroupLayout).
+(``tealql.tealtools.cfg.group.analyze_layout`` / GroupLayout).
 
 Reuses the existing group_shape fixtures (no new fixture). Skips cleanly if
 the fixture isn't available.
@@ -24,7 +24,7 @@ def _prog(case: str):
 
 class TestForcedLayout:
     def test_render_groups_size_index_and_position(self):
-        from tealql.tealtools.group_reasoning import analyze_layout
+        from tealql.tealtools.cfg.group import analyze_layout
         text = analyze_layout(_prog("forced")).render()
         # Size + this-txn index surface as their own lines.
         assert "group size : == 2" in text
@@ -36,7 +36,7 @@ class TestForcedLayout:
         assert "TypeEnum == pay" in text   # enum-symbolised, matching the shape view
 
     def test_to_dict_structure(self):
-        from tealql.tealtools.group_reasoning import analyze_layout
+        from tealql.tealtools.cfg.group import analyze_layout
         d = analyze_layout(_prog("forced")).to_dict()
         assert d["group_size"] == ["== 2"]
         assert d["this_index"] == ["== 1"]
@@ -47,7 +47,7 @@ class TestForcedLayout:
 
 class TestNoneLayout:
     def test_unconstrained_program(self):
-        from tealql.tealtools.group_reasoning import analyze_layout
+        from tealql.tealtools.cfg.group import analyze_layout
         text = analyze_layout(_prog("none")).render()
         assert "no group-shape constraints" in text
 

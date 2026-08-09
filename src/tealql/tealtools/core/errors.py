@@ -1,4 +1,4 @@
-"""Typed exceptions + parse diagnostics for the TealQL pipeline.
+"""Typed exceptions and parse diagnostics for the TealQL pipeline.
 
 One base class — :class:`TealQLError` — so a tool boundary catches every
 *expected* pipeline failure in one clause while genuine bugs still surface as

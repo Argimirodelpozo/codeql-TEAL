@@ -5,7 +5,7 @@ from typing import Callable, Iterable, Optional
 
 import networkx as nx
 
-from ..avm import SENSITIVE_ITXN_FIELDS, STATE_WRITE_OPS
+from ..language.avm import SENSITIVE_ITXN_FIELDS, STATE_WRITE_OPS
 
 
 def copy_into(big: "nx.DiGraph", tg, wrap: Callable) -> None:

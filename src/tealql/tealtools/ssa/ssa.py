@@ -41,7 +41,7 @@ from .models import (
     _shuffle_mapping,
 )
 from .program import SSAProgram
-from ..avm import op_arity
+from ..language.avm import op_arity
 
 
 #: The AVM's stack limit. No longer a construction bound — the old whole-program
@@ -238,7 +238,7 @@ class PySSA:
         # them before calling us), which is all `identify_subroutines` reads —
         # so the construction path can use the CORRECTED answer instead of the
         # naive source-next guess it used to re-derive.
-        from ..subroutines import corrected_return_points
+        from ..cfg.subroutines import corrected_return_points
         self._corrected_rp = corrected_return_points(prog)
         self._compute_subs_and_protos()
         # Routine metadata, then the two analyses the operand build and the LIFT
@@ -308,7 +308,7 @@ class PySSA:
         slots read and written in place — see the module docstring for what this
         replaced and why."""
         from . import stacksim
-        from ..subroutines import pyblock_partition, _pyblock_return_point
+        from ..cfg.subroutines import pyblock_partition, _pyblock_return_point
 
         def mint(block, slot):
             # Identity is (bb_key, slot) and the public Phi mirrors it, so a
@@ -351,7 +351,7 @@ class PySSA:
         depends only on CFG shape and phase-1 immediates, not on the stack sim."""
         # Ownership follows the CONSTRUCTION policy this depth machinery was
         # validated against, which lives verbatim in pyblock_partition.
-        from ..subroutines import pyblock_partition
+        from ..cfg.subroutines import pyblock_partition
         self._bb_to_sub = pyblock_partition(self.blocks, self._corrected_rp)
 
         sub_entries: set = set()
@@ -391,7 +391,7 @@ class PySSA:
 
         The retsub predecessors are recorded per pair because K may ALSO be an
         ordinary branch target; only the return edges get call semantics."""
-        from ..subroutines import _pyblock_return_point
+        from ..cfg.subroutines import _pyblock_return_point
 
         self._call_pairs = {}
         self._pair_by_cs = {}
@@ -465,7 +465,7 @@ class PySSA:
 
         # Reverse reachability to a retsub over local edges (callsub -> its
         # return point; retsub/return/err terminal), mirroring pyblock_partition.
-        from ..subroutines import _pyblock_return_point
+        from ..cfg.subroutines import _pyblock_return_point
         return_point = _pyblock_return_point(self.blocks, self._corrected_rp)
         local_preds: dict = {}
         reach_wl: list = []

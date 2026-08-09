@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from tealql.tealtools.path_predicates import PathPredicateAnalysis
+from tealql.tealtools.cfg.path_predicates import PathPredicateAnalysis
 from tealql.tealtools.ssa import Assignment, BasicBlock, SSAProgram, SSAVar, const_int, is_field_var
 
 from ._value_flow import _constant_facts_cached, resolve_through_copies
@@ -62,7 +62,7 @@ def _is_trusted_address(var) -> bool:
     HAZARD: anything the CALLER supplies must NOT qualify — ``Sender == <attacker's
     own value>`` authorises nothing. The trust line is drawn against the single
     :func:`avm.attacker_input_label` table so it cannot drift from a second list."""
-    from tealql.tealtools.avm import attacker_input_label
+    from tealql.tealtools.language.avm import attacker_input_label
     a = getattr(var, "defined_by", None)
     if a is None:
         return False

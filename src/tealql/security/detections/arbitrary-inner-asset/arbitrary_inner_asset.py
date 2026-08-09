@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from typing import ClassVar, Optional
 
 from tealql.security import common
-from tealql.tealtools.path_predicates import PathPredicateAnalysis
+from tealql.tealtools.cfg.path_predicates import PathPredicateAnalysis
 from tealql.tealtools.ssa import SSAProgram
 
 _ASSET_SELECTOR_FIELD = "XferAsset"

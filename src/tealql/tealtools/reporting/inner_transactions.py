@@ -14,13 +14,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field as dc_field
 from typing import Iterable, Optional, Union
 
-from .ssa import (
+from ..ssa import (
     Const,
     Phi,
     SSAProgram,
     SSAVar,
 )
-from .ssa.relations import frame_gap_sources
+from ..ssa.relations import frame_gap_sources
 
 
 # Inner-txn field operands: a produced value, a join, or a const literal.

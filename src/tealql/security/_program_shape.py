@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from tealql.tealtools.avm import APP_ONLY_OPS, txn_field_name
+from tealql.tealtools.language.avm import APP_ONLY_OPS, txn_field_name
 from tealql.tealtools.ssa import Assignment, BasicBlock, SSAProgram, SSAVar, const_int
 
 # Exit classification is SUBSTRATE shared with the group-shape / cross-contract

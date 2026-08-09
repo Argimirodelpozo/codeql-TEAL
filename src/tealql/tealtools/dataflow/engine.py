@@ -2,7 +2,7 @@
 :class:`Sink` and :class:`FlowRule` sets and runs :class:`TaintAnalysis`.
 
 Every known value-producing opcode has a centralized dependency category in
-:mod:`tealql.tealtools.avm`. Precise rules run first; external opaque reads are
+:mod:`tealql.tealtools.language.avm`. Precise rules run first; external opaque reads are
 explicitly blocked; all remaining transforms conservatively propagate. An AVM
 bump therefore cannot silently create a taint false negative just because this
 module did not grow another allow-list entry.
@@ -13,7 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Callable, Iterable, Optional, Union
 
-from ..avm import (
+from ..language.avm import (
     VALUE_FLOW_BYTE_MATH_OPS,
     VALUE_FLOW_HASH_OPS,
     VALUE_FLOW_SLICE_OPS,

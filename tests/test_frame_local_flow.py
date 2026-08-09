@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from tealql.tealtools.avm import op_arity
+from tealql.tealtools.language.avm import op_arity
 from tealql.tealtools.ssa import SSAProgram
 from tealql.tealtools.ssa.relations import (
     frame_gap_sources,

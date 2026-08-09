@@ -20,7 +20,7 @@ from ..ssa import (
     Assignment, Const, IntRange, Phi, SSAProgram, SSAVar, TealType,
     const_int, operand_const,
 )
-from ..avm import (
+from ..language.avm import (
     FIXED_BYTES_OUTPUT_LEN,
     _BLOCK_FIELD_BYTELEN,
     _GLOBAL_FIELD_BYTELEN,

@@ -1,6 +1,6 @@
 """Differential gate for the subroutine-partition policies (script-only).
 
-Captures all three policies from :mod:`tealql.tealtools.subroutines`
+Captures all three policies from :mod:`tealql.tealtools.cfg.subroutines`
 (corrected / sound / construction) on EVERY fixture program — the tealtools
 snapshot fixtures, the benchmark corpus, the real contracts, the puya corpus,
 and the merged mainnet-probes program (~490 programs, ~25k callsubs) — keyed
@@ -28,8 +28,8 @@ sys.path.insert(0, str(REPO / "src"))
 
 from tealql.tealtools.ssa import SSAProgram          # noqa: E402
 from tealql.tealtools.ssa.ssa import PySSA           # noqa: E402
-from tealql.tealtools.subroutines import identify_subroutines  # noqa: E402
-from tealql.tealtools.path_predicates import PathPredicateAnalysis  # noqa: E402
+from tealql.tealtools.cfg.subroutines import identify_subroutines  # noqa: E402
+from tealql.tealtools.cfg.path_predicates import PathPredicateAnalysis  # noqa: E402
 
 
 def bb_key(bb):

@@ -25,7 +25,7 @@ def xtg():
         pytest.skip("fixture DBs not present (CodeQL unavailable?)")
     from tealql.tealtools.ssa import SSAProgram
     from tealql.tealtools.dataflow.xcontract_taint_graph import XContractTaintGraph
-    from tealql.tealtools.xcontract import load_registry
+    from tealql.tealtools.intercontract.analysis import load_registry
 
     reg = load_registry(FIXTURE / "registry.yml")
     try:

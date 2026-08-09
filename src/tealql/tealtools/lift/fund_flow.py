@@ -31,7 +31,7 @@ from .taint import (
     source_label,
     user_input_taint,
 )
-from ..avm import FUND_FIELDS as _FUND_FIELDS
+from ..language.avm import FUND_FIELDS as _FUND_FIELDS
 from ..cfg.dominance import iterative_dominators
 
 _SEV_ORDER = {"CRITICAL": 3, "HIGH": 2, "MEDIUM": 1, "LOW": 0}

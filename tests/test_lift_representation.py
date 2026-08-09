@@ -15,7 +15,7 @@ import pytest
 
 pytest.importorskip("puya")  # pre_ir package __init__ eagerly imports the lift
 
-from tealql.tealtools.avm import avm, _multi_out_type  # noqa: E402
+from tealql.tealtools.language.avm import avm, _multi_out_type  # noqa: E402
 from tealql.tealtools.lift.type_recovery import (  # noqa: E402
     _avm_join,
     _stamp_undefined_operands,

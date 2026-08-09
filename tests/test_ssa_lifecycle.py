@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from tealql.tealtools.errors import TealParseError
+from tealql.tealtools.core.errors import TealParseError
 from tealql.tealtools.analysis import DerivedProfile, derived_program
 from tealql.tealtools.lift import build_lifter, lift, pre_ir
 from tealql.tealtools.ssa import BasicBlock, Phi, SSAProgram, SSAVar

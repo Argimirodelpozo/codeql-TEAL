@@ -1,6 +1,6 @@
 """The unified subroutine-partition module: cross-policy invariants.
 
-``tealql.tealtools.subroutines`` hosts three deliberately different policies
+``tealql.tealtools.cfg.subroutines`` hosts three deliberately different policies
 (corrected / sound / construction — see its docstring). These tests pin the
 relationships MEASURED over the full fixture universe (490 programs, ~25k
 callsubs) when the module was unified, so silent drift between the policies
@@ -25,7 +25,7 @@ import pytest
 
 from tealql.tealtools.ssa import SSAProgram
 from tealql.tealtools.ssa.ssa import PySSA
-from tealql.tealtools.subroutines import (
+from tealql.tealtools.cfg.subroutines import (
     identify_subroutines,
     pyblock_partition,
     sound_return_targets,
@@ -95,7 +95,7 @@ def test_policies_deliberately_diverge_on_never_returning_callee():
     cs_key = "xgov_registry_approval_program.teal:24"
     assert corrected.get(cs_key, "<missing>") is None
 
-    from tealql.tealtools.subroutines import _pyblock_return_point
+    from tealql.tealtools.cfg.subroutines import _pyblock_return_point
     py = PySSA._construct(SSAProgram(str(contract)))
     rps = {_py_key(b): (None if rp is None else _py_key(rp))
            for b, rp in _pyblock_return_point(py.blocks).items()}

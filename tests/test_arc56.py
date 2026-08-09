@@ -1,4 +1,4 @@
-"""ARC-56 app-spec ingestion (`tealtools.arc56`).
+"""ARC-56 app-spec ingestion (``tealtools.metadata.arc56``).
 
 The spec is the authoritative HIGH-LEVEL source: methods with struct-resolved
 arg/return types (+ names), and global/local/box state schema. Selectors are
@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import json
 
-from tealql.tealtools import arc56
-from tealql.tealtools.abi import method_selector
+from tealql.tealtools.metadata import arc56
+from tealql.tealtools.metadata.abi import method_selector
 
 
 _SPEC = {

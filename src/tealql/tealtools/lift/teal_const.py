@@ -15,7 +15,7 @@ def _load_src(source) -> dict:
     compatibility, but is captured for this call rather than entering a global
     path-only cache that could return bytes from an earlier file version.
     """
-    from ..sources import ProgramSources
+    from ..frontend.sources import ProgramSources
 
     bundle = source if isinstance(source, ProgramSources) else getattr(source, "sources", None)
     if not isinstance(bundle, ProgramSources):

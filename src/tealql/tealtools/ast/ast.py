@@ -1,4 +1,4 @@
-"""TEAL AST node types — the objects :mod:`tealql.tealtools.graph` stores as graph nodes."""
+"""TEAL AST node types — the objects :mod:`tealql.tealtools.frontend.graph` stores as graph nodes."""
 from __future__ import annotations
 
 from dataclasses import dataclass

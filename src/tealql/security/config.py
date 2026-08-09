@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from tealql.tealtools.errors import TealQLError
+from tealql.tealtools.core.errors import TealQLError
 
 VALID_MODES = ("app", "logicsig")
 

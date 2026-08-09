@@ -83,6 +83,12 @@ Subsystems, bottom to top:
 
 `src/tealql/tealtools/` is a Python package (installed as `tealql.tealtools`). Each submodule loads a program via `tealql.tealtools.SSAProgram(<source>)` and exposes either an SSA-level helper or a specific detector. `<source>` is a `.teal` file or a directory of them; the graph and SSA are rebuilt in-process (pure Python, milliseconds).
 
+The package root is deliberately only a lazy facade. Implementations are
+grouped by responsibility: `core` (errors and health), `language` (AVM tables
+and literals), `metadata` (ABI/ARC-56), `frontend` (sources and graph loading),
+`cfg` (control-flow semantics), `analysis`, `dataflow`, `reporting`,
+`intercontract`, `ssa`, `budget`, `lift`, and `viz`.
+
 ### CLI
 
 ```bash
@@ -171,21 +177,21 @@ Inline annotations rendered by `tealql functional`:
 | Module | Purpose |
 | --- | --- |
 | `tealql.tealtools.ssa.SSAProgram` | SSA representation reconstructed from TEAL source. The foundation everything else consumes. |
-| `tealql.tealtools.path_predicates.PathPredicateAnalysis` | Per-BB path predicates from branch / assert outcomes. Supports `entry_seeds` and `bb_seeds` for cross-contract injection. |
+| `tealql.tealtools.cfg.path_predicates.PathPredicateAnalysis` | Per-BB path predicates from branch / assert outcomes. Supports `entry_seeds` and `bb_seeds` for cross-contract injection. |
 | `tealql.tealtools.analysis` | Revision-scoped immutable `ValueFacts` and read-only derived SSA normal forms. |
 | `tealql.tealtools.budget` | Version/mode-aware opcode-cost facts, reachable reducible and irreducible loops, minimum-cost reachability, method summaries, `OpcodeBudget` guard checks, and exhaustion review candidates. |
-| `tealql.tealtools.ast`, `tealql.tealtools.graph`, `tealql.tealtools.viz` | AST layer, the source→graph loader, and DOT/SVG rendering. |
+| `tealql.tealtools.ast`, `tealql.tealtools.frontend.graph`, `tealql.tealtools.viz` | AST layer, the source→graph loader, and DOT/SVG rendering. |
 
 **Detectors and reports.**
 
 | Module | What it finds |
 | --- | --- |
-| `tealql.tealtools.auth_domination.AuthDominationDetector` | State-mutating ops not dominated by a recognised sender check. |
+| `tealql.tealtools.analysis.auth.AuthDominationDetector` | State-mutating ops not dominated by a recognised sender check. |
 | `tealql.security.NonUniqueBoxKeyDetector` | Non-unique external fields (e.g. `AssetName`) flowing into a box key. Registered as the `box-key` detection — run via `tealql detections --detector box-key`. |
-| `tealql.tealtools.inner_txn_report.InnerTxnReport` | Per-`itxn_submit` group dump: each txn's fields and possible operand values. |
-| `tealql.tealtools.group_reasoning.analyze` | Group shape the contract forces on every approving exit (`Global.GroupSize == 2`, `gtxn[0].Receiver == ...`, etc.). |
+| `tealql.tealtools.reporting.inner_transactions.InnerTxnReport` | Per-`itxn_submit` group dump: each txn's fields and possible operand values. |
+| `tealql.tealtools.cfg.group.analyze` | Group shape the contract forces on every approving exit (`Global.GroupSize == 2`, `gtxn[0].Receiver == ...`, etc.). |
 | `tealql.tealtools.dataflow.box` | Box dataflow in three flavours: `detect_into_box_flows` (external → box write), `detect_out_of_box_flows` (box read → sensitive sink), `detect_correlated_flows` (end-to-end chain via syntactic key matching). |
-| `tealql.tealtools.xcontract.XContractGraph` | Cross-contract analysis: identifies appcall itxns with a constant `ApplicationID` resolvable in a registry, runs path predicates on each callee with seeded args, computes approving-exit summaries, feeds them back into the caller's BB. Includes `cross_auth_findings` for auth-domination across the boundary. |
+| `tealql.tealtools.intercontract.analysis.XContractGraph` | Cross-contract analysis: identifies appcall itxns with a constant `ApplicationID` resolvable in a registry, runs path predicates on each callee with seeded args, computes approving-exit summaries, feeds them back into the caller's BB. Includes `cross_auth_findings` for auth-domination across the boundary. |
 | `tealql.tealtools.dataflow.predicate_aware.filter_validated` | Wraps a taint detector — suppresses violations whose sink operand is constrained by a dominating path predicate. |
 
 The table above is a curated subset. The full detection suite is 36 registered

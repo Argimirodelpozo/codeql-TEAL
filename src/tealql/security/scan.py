@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Optional
 
-from tealql.tealtools.errors import (
+from tealql.tealtools.core.errors import (
     TargetError, TargetNotFoundError, TealParseError, TealQLError,
 )
 from tealql.tealtools.ssa import SSAProgram
@@ -26,7 +26,7 @@ def _method_ranges_for(teal: Path, method_table=None):
     ARC-56 ``method_table``), or ``[]`` — an OPTIONAL enrichment, so every failure
     degrades to no attribution rather than breaking the scan."""
     try:
-        from tealql.tealtools.abi import method_line_ranges
+        from tealql.tealtools.metadata.abi import method_line_ranges
         return method_line_ranges(
             Path(teal).read_text(errors="ignore"), method_table=method_table)
     except Exception:
@@ -39,7 +39,7 @@ def _arc56_method_table(arc56):
     if arc56 is None:
         return None
     try:
-        from tealql.tealtools.arc56 import Arc56Spec, load_optional
+        from tealql.tealtools.metadata.arc56 import Arc56Spec, load_optional
         spec = arc56 if isinstance(arc56, Arc56Spec) else load_optional(arc56)
         return spec.method_table() if spec is not None else None
     except Exception:
@@ -51,7 +51,7 @@ def _method_at(ranges, violation) -> Optional[str]:
     if not ranges:
         return None
     try:
-        from tealql.tealtools.abi import method_at_line
+        from tealql.tealtools.metadata.abi import method_at_line
         from .findings import violation_line
         m = method_at_line(ranges, violation_line(violation))
         return m.name if m is not None else None

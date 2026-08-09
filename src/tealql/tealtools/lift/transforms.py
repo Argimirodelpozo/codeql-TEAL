@@ -6,7 +6,7 @@ import copy as _copy
 import logging
 
 from . import pre_ir
-from ..avm import avm
+from ..language.avm import avm
 
 logger = logging.getLogger("tealql.tealtools.lift")
 

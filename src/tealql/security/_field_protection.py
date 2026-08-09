@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from tealql.tealtools.avm import CMP_OPS
+from tealql.tealtools.language.avm import CMP_OPS
 from tealql.tealtools.ssa import Assignment, BasicBlock, SSAProgram, SSAVar
 
 from ._enforcement import (
@@ -160,7 +160,7 @@ def _pinned_group_index(prog, *, file: Optional[str] = None) -> Optional[int]:
     """The value ``txn GroupIndex`` is pinned to on EVERY approving path, else
     ``None`` — any failure yields ``None``, crediting nothing as position-certain."""
     try:
-        from tealql.tealtools import group_reasoning as G
+        from tealql.tealtools.cfg import group as G
         from tealql.tealtools.ssa import const_int
         for c in G.analyze(prog).constraints:
             if (c.ref.slot == "this" and c.ref.field == "GroupIndex"
@@ -179,7 +179,7 @@ def _signed_txn_field_reads(prog, field: str, *, file: Optional[str] = None) -> 
     HAZARD: a bare ``gtxn N FIELD`` on an unpinned index reads a SIBLING, not the
     signer — crediting it would let a delegated logicsig be drained through a check
     that never touched the signed transaction."""
-    from tealql.tealtools import group_reasoning as G
+    from tealql.tealtools.cfg import group as G
     from tealql.tealtools.analysis import FactDomain
     facts = prog.facts(FactDomain.CONSTANTS)
     reads = list(txn_field_reads(prog, field, file=file))

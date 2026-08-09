@@ -70,7 +70,7 @@ class TestFoldByteKeywords:
     def test_matches_legacy_split_byte_literals(self):
         # the const_values alias must produce identical tokens for the
         # bytecblock forms it was written for.
-        from tealql.tealtools.const_values import _split_byte_literals
+        from tealql.tealtools.language.constants import _split_byte_literals
         for imms in ['0x01 0x02', 'b64 aGk= "hi"', 'base64(AAAA==) 0x00',
                      'b32 NBSWY3DP base32(NBSW)', '5 6 7']:
             assert _split_byte_literals(imms) == tokenize_operands(

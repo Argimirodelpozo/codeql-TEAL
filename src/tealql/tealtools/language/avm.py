@@ -191,7 +191,7 @@ def op_arity(op: str, immediates: str) -> tuple[int, int]:
     if op == "pushints":
         return (0, len(immediates.split()))
     if op == "pushbytess":
-        from .const_values import _split_byte_literals
+        from .constants import _split_byte_literals
         return (0, len(_split_byte_literals(immediates)))
     if op == "match":
         return (len(immediates.split()) + 1, 0)

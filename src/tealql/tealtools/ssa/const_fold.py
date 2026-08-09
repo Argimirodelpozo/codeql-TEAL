@@ -17,7 +17,7 @@ from __future__ import annotations
 from typing import Optional
 
 from .models import Assignment, Const
-from ..avm import CMP_OPS
+from ..language.avm import CMP_OPS
 
 
 # --- Const ↔ runtime-value helpers -----------------------------------------

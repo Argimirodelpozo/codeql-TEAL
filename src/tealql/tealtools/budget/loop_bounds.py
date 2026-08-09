@@ -15,7 +15,7 @@ from .._utils.dot import (
 from ..cfg import CFG
 from ..cfg.dominance import iterative_dominators
 from ..ssa import BasicBlock, SSAProgram
-from ..subroutines import identify_subroutines
+from ..cfg.subroutines import identify_subroutines
 from .context import BudgetContext, MAX_STACK_DEPTH, context_for
 from .costs import (
     CostFact,

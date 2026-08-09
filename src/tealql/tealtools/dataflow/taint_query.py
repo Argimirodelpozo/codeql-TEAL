@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable, Optional
 
-from ..avm import FUND_FIELDS, LSIG_ARG_OPS, TXN_SOURCE_OPS
+from ..language.avm import FUND_FIELDS, LSIG_ARG_OPS, TXN_SOURCE_OPS
 from .taint_graph import Node, TaintGraph
 
 # --- sink taxonomy ----------------------------------------------------------
@@ -140,7 +140,7 @@ class TaintQuery:
     """Open taint-reachability queries over a program's coarse taint graph."""
 
     def __init__(self, prog, *, file: Optional[str] = None):
-        from ..source_map import source_map_for, reverse_file_source_map
+        from ..frontend.source_map import source_map_for, reverse_file_source_map
         self.prog = prog
         self.file = file
         self.g = TaintGraph.of(prog)

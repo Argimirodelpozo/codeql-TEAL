@@ -103,7 +103,7 @@ def _render(analysis: str, case_dir: Path) -> str:
         return render_text(findings) + "\n"
 
     if analysis == "xcontract":
-        from tealql.tealtools.xcontract import (
+        from tealql.tealtools.intercontract.analysis import (
             XContractGraph,
             cross_auth_findings,
             load_registry,
@@ -124,7 +124,7 @@ def _render(analysis: str, case_dir: Path) -> str:
         return body + "\n"
 
     if analysis == "xcontract_sec_guide":
-        from tealql.tealtools.xcontract import XContractGraph, load_registry, render_xcontract
+        from tealql.tealtools.intercontract.analysis import XContractGraph, load_registry, render_xcontract
         from tealql.security.xcontract import (
             cross_detection_findings,
             render_findings as render_sg_findings,
@@ -142,7 +142,7 @@ def _render(analysis: str, case_dir: Path) -> str:
     prog = SSAProgram(str(case_dir))
 
     if analysis == "auth_domination":
-        from tealql.tealtools.auth_domination import AuthDominationDetector
+        from tealql.tealtools.analysis.auth import AuthDominationDetector
 
         violations = AuthDominationDetector(prog).detect()
         body = "\n".join(v.pretty() for v in violations) or "(no violations)"
@@ -200,17 +200,17 @@ def _render(analysis: str, case_dir: Path) -> str:
         return "\n".join(parts) + "\n"
 
     if analysis == "itxn_report":
-        from tealql.tealtools.inner_txn_report import InnerTxnReport
+        from tealql.tealtools.reporting.inner_transactions import InnerTxnReport
 
         return InnerTxnReport(prog).render() + "\n"
 
     if analysis.startswith("path_predicates"):
-        from tealql.tealtools.path_predicates import PathPredicateAnalysis
+        from tealql.tealtools.cfg.path_predicates import PathPredicateAnalysis
 
         return PathPredicateAnalysis(prog).render() + "\n"
 
     if analysis == "group_shape":
-        from tealql.tealtools.group_reasoning import analyze
+        from tealql.tealtools.cfg.group import analyze
 
         return analyze(prog).render() + "\n"
 

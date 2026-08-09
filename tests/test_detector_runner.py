@@ -9,7 +9,7 @@ import logging
 import pytest
 
 from tealql.tealtools.ssa import SSAProgram
-from tealql.tealtools.detector import run_all_findings, run_all_dict
+from tealql.tealtools.reporting.registry import run_all_findings, run_all_dict
 
 
 def _prog():

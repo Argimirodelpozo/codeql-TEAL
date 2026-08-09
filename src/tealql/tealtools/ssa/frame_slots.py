@@ -64,7 +64,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import logging
 
-from ..avm import op_arity
+from ..language.avm import op_arity
 from .models import SSAVar
 
 # Compatibility logger name: users may filter this established diagnostic.
@@ -793,7 +793,7 @@ def _declared_nargs(entry_block) -> int | None:
 
 def resolve_program(prog) -> dict:
     """Return ``{Subroutine: FrameLayout}`` for declared-frame routines."""
-    from ..structure import analyze_structure
+    from ..cfg.structure import analyze_structure
 
     out: dict = {}
     for sub in analyze_structure(prog).subroutines:

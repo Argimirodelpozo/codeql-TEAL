@@ -181,7 +181,7 @@ def test_cli_methods_recovers_table(tmp_path, capsys):
     assert rc == 0
     out = capsys.readouterr().out
     assert "transfer" in out and "address" in out
-    from tealql.tealtools.abi import method_selector
+    from tealql.tealtools.metadata.abi import method_selector
     assert method_selector("transfer(address,uint64)void").hex() in out   # forward selector
 
 

@@ -546,7 +546,7 @@ def _guess_static_arrays(main, subs) -> dict:
 
 # The transaction fields whose value IS a 32-byte address, single-sourced from
 # the canonical langspec-derived set in ``avm.py``.
-from ..avm import ADDRESS_TXN_FIELDS as _ACCOUNT_TXN_FIELDS  # noqa: E402
+from ..language.avm import ADDRESS_TXN_FIELDS as _ACCOUNT_TXN_FIELDS  # noqa: E402
 
 # Ops whose FIRST operand (``args[0]``) is an account address: the local-state
 # family plus the account-parameter reads.

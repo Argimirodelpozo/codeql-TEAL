@@ -10,7 +10,7 @@ guard would reproduce the blind spot. Reports only NET-NEW findings.
 """
 from __future__ import annotations
 
-from tealql.tealtools.avm import PAYMENT_FUND_FIELDS
+from tealql.tealtools.language.avm import PAYMENT_FUND_FIELDS
 
 from tealql.security._ir_taint_sink import _IrTaintSinkDetector, _IrTaintSinkViolation
 

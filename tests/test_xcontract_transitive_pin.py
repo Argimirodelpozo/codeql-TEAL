@@ -7,7 +7,7 @@ attacker-controlled) and the callee finding is suppressed -- for BOTH the IR
 (trusted_args) and SSA (seeded predicates) detectors. An arg that is forwarded but
 NOT pinned at the root still surfaces.
 """
-from tealql.tealtools.xcontract import XContractGraph
+from tealql.tealtools.intercontract.analysis import XContractGraph
 from tealql.security.xcontract import cross_detection_findings
 from helpers import make_xcontract
 

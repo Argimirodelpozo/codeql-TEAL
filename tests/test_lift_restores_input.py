@@ -90,7 +90,7 @@ def test_lift_restores_input_cfg(assert_false_prog):
 def test_lift_restores_input_on_real_probes(probe):
     """The restore holds on real mainnet programs, not just the synthetic."""
     from tealql.tealtools.lift.lift import lift
-    from tealql.tealtools.errors import LiftError
+    from tealql.tealtools.core.errors import LiftError
     path = Path(__file__).resolve().parent / "mainnet-random-probes" / probe
     if not path.exists():
         pytest.skip(f"{probe} not present")

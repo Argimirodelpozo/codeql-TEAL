@@ -1,6 +1,6 @@
 """Inner-transaction field grouping — which inner-transaction ``(start, end)``
 pair each ``itxn_field`` belongs to, for
-:class:`tealql.tealtools.inner_txn_report.InnerTxnReport`.
+:class:`tealql.tealtools.reporting.inner_transactions.InnerTxnReport`.
 """
 from __future__ import annotations
 

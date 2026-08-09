@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from tealql.tealtools.avm import CMP_OPS
+from tealql.tealtools.language.avm import CMP_OPS
 from tealql.tealtools.ssa import (BasicBlock, SSAProgram, SSAVar,
                                   const_int)
 

@@ -2,7 +2,7 @@
 
 The per-program CFG + dominance in :mod:`tealql.tealtools.cfg` are substrate.
 :class:`SuperCFG` / :mod:`super_auth` are cross-contract ANALYSES that
-import :mod:`tealql.tealtools.xcontract` (which pulls auth_domination,
+import :mod:`tealql.tealtools.intercontract.analysis` (which pulls auth_domination,
 inner_txn_report). They live in the cfg/ folder but are re-exported
 lazily, so importing the substrate CFG package must NOT drag the analysis
 layer in. This test pins that — reintroducing an eager
@@ -10,6 +10,7 @@ layer in. This test pins that — reintroducing an eager
 """
 from __future__ import annotations
 
+from pathlib import Path
 import subprocess
 import sys
 import textwrap
@@ -20,6 +21,12 @@ def _fresh_import_probe(body: str) -> str:
                        capture_output=True, text=True)
     assert r.returncode == 0, r.stderr
     return r.stdout
+
+
+def test_tealtools_root_contains_only_the_facade():
+    """Implementation modules belong to named architectural subpackages."""
+    root = Path(__file__).resolve().parents[1] / "src" / "tealql" / "tealtools"
+    assert sorted(path.name for path in root.glob("*.py")) == ["__init__.py"]
 
 
 def test_substrate_cfg_does_not_pull_supercfg():
@@ -72,9 +79,9 @@ def test_parser_import_does_not_pull_ssa_or_analysis_layers():
             "tealql.tealtools.lift", "tealql.tealtools.analysis",
         )
         exact = {
-            "tealql.tealtools.detector", "tealql.tealtools.xcontract",
-            "tealql.tealtools.auth_domination",
-            "tealql.tealtools.inner_txn_report", "tealql.tealtools.structure",
+            "tealql.tealtools.reporting.registry", "tealql.tealtools.intercontract.analysis",
+            "tealql.tealtools.analysis.auth",
+            "tealql.tealtools.reporting.inner_transactions", "tealql.tealtools.cfg.structure",
         }
         forbidden = sorted(m for m in sys.modules
                            if m.startswith(prefixes) or m in exact)

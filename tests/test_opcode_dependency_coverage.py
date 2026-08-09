@@ -1,7 +1,7 @@
 """Coverage guards for generic AVM value dependencies."""
 from __future__ import annotations
 
-from tealql.tealtools.avm import (
+from tealql.tealtools.language.avm import (
     SIG,
     VALUE_FLOW_OPAQUE_READ_OPS,
     VALUE_FLOW_SPECIAL_OPS,

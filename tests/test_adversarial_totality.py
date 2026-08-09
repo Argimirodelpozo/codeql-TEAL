@@ -919,7 +919,7 @@ def test_a_refused_mixed_merge_keeps_the_explicit_unknown_floor(tmp_path):
     register cannot hold becomes an EXPLICIT unknown, never a reinterpreted or
     coerced value. This pins the fall-back ladder: every guard failure lands on
     a total, honest floor rather than a crash."""
-    from tealql.tealtools.avm import avm
+    from tealql.tealtools.language.avm import avm
     from tealql.tealtools.lift.backend import lift_to_teal
 
     teal = tmp_path / "mixloop.teal"
@@ -960,7 +960,7 @@ def test_a_mixed_register_merge_with_conflicting_typed_uses_splits_per_use(tmp_p
     panic-pruning — reaching ``len`` along the uint64 arm is an AVM type panic,
     so that path is dead at that use, the same argument the depth-divergent
     merge already stands on."""
-    from tealql.tealtools.avm import avm
+    from tealql.tealtools.language.avm import avm
     from tealql.tealtools.lift import pre_ir
     from tealql.tealtools.lift.backend import lift_to_teal
 

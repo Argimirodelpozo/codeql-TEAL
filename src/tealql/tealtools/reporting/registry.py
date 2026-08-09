@@ -8,7 +8,7 @@ import logging
 from dataclasses import dataclass
 from typing import Callable, Iterable, Optional, Protocol, runtime_checkable
 
-from .ssa import SSAProgram
+from ..ssa import SSAProgram
 
 logger = logging.getLogger("tealql.tealtools")
 
@@ -77,72 +77,72 @@ class _FnReport:
 # Lazy imports inside each adapter keep import-time cheap and avoid circulars.
 
 def _auth(prog: SSAProgram):
-    from .auth_domination import AuthDominationDetector
+    from ..analysis.auth import AuthDominationDetector
     return AuthDominationDetector(prog).detect()
 
 
 def _box_into(prog: SSAProgram):
-    from .dataflow.box import detect_into_box_flows
+    from ..dataflow.box import detect_into_box_flows
     return detect_into_box_flows(prog)
 
 
 def _box_out(prog: SSAProgram):
-    from .dataflow.box import detect_out_of_box_flows
+    from ..dataflow.box import detect_out_of_box_flows
     return detect_out_of_box_flows(prog)
 
 
 def _box_corr(prog: SSAProgram):
-    from .dataflow.box import detect_correlated_flows
+    from ..dataflow.box import detect_correlated_flows
     return detect_correlated_flows(prog)
 
 
 def _state_out(prog: SSAProgram):
-    from .dataflow.state import detect_out_of_state_flows
+    from ..dataflow.state import detect_out_of_state_flows
     return detect_out_of_state_flows(prog)
 
 
 def _state_corr(prog: SSAProgram):
-    from .dataflow.state import detect_correlated_state_flows
+    from ..dataflow.state import detect_correlated_state_flows
     return detect_correlated_state_flows(prog)
 
 
 def _itxn_report(prog: SSAProgram) -> str:
-    from .inner_txn_report import InnerTxnReport
+    from .inner_transactions import InnerTxnReport
     return InnerTxnReport(prog).render()
 
 
 def _group_shape(prog: SSAProgram) -> str:
-    from .group_reasoning import analyze
+    from ..cfg.group import analyze
     return analyze(prog).render()
 
 
 def _group_layout(prog: SSAProgram) -> str:
-    from .group_reasoning import analyze_layout
+    from ..cfg.group import analyze_layout
     return analyze_layout(prog).render()
 
 
 def _path_preds(prog: SSAProgram) -> str:
-    from .path_predicates import PathPredicateAnalysis
+    from ..cfg.path_predicates import PathPredicateAnalysis
     return PathPredicateAnalysis(prog).render()
 
 
 def _itxn_report_d(prog: SSAProgram) -> dict:
-    from .inner_txn_report import InnerTxnReport
+    from .inner_transactions import InnerTxnReport
     return InnerTxnReport(prog).to_dict()
 
 
 def _group_shape_d(prog: SSAProgram) -> dict:
-    from .group_reasoning import analyze
+    from ..cfg.group import analyze
     return analyze(prog).to_dict()
 
 
 def _group_layout_d(prog: SSAProgram) -> dict:
-    from .group_reasoning import analyze_layout
+    from ..cfg.group import analyze_layout
     return analyze_layout(prog).to_dict()
 
 
 def _path_preds_d(prog: SSAProgram) -> dict:
-    from .path_predicates import PathPredicateAnalysis
+    from ..cfg.path_predicates import PathPredicateAnalysis
     return PathPredicateAnalysis(prog).to_dict()
 
 
@@ -203,7 +203,7 @@ def run_all(prog: SSAProgram, *, extra_detectors: Iterable[Detector] = (),
 def run_all_dict(prog: SSAProgram, *, extra_detectors: Iterable[Detector] = (),
                  strict: bool = False) -> dict:
     """Same coverage as :func:`run_all`, as a JSON-shaped dict."""
-    from ._utils.serialize import finding_to_dict
+    from .._utils.serialize import finding_to_dict
 
     detectors: dict[str, list[dict]] = {}
     for det in [*ALL_DETECTORS, *extra_detectors]:

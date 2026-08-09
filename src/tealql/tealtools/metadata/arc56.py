@@ -54,7 +54,7 @@ class Arc56Spec:
 
     def method_table(self) -> dict:
         """``{selector_hex: AbiMethod}`` — same shape as
-        :func:`tealql.tealtools.abi.extract_method_table`, so a spec is a drop-in
+        :func:`tealql.tealtools.metadata.abi.extract_method_table`, so a spec is a drop-in
         richer method source (last-write-wins on a selector collision)."""
         return {m.selector_hex: m for m in self.methods}
 

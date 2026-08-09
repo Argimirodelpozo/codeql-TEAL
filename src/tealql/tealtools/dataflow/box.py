@@ -20,7 +20,7 @@ from .engine import (
     TaintedOperand,
     Violation,
 )
-from ..avm import SENSITIVE_ITXN_FIELDS as _SENSITIVE_ITXN_FIELDS
+from ..language.avm import SENSITIVE_ITXN_FIELDS as _SENSITIVE_ITXN_FIELDS
 from ..ssa import Assignment, Const, Phi, SSAProgram
 
 

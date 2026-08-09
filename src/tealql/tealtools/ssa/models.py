@@ -347,9 +347,9 @@ class BasicBlock:
             return None
         return self.exit_stack[-k]
 
-# AVM metadata tables all live in :mod:`tealql.tealtools.avm`; only the
+# AVM metadata tables all live in :mod:`tealql.tealtools.language.avm`; only the
 # MODEL-convention algorithms (top-first shuffle permutations) belong here.
-from ..avm import _STACK_SHUFFLE_OPS  # noqa: F401  (re-export: ssa-layer callers)
+from ..language.avm import _STACK_SHUFFLE_OPS  # noqa: F401  (re-export: ssa-layer callers)
 
 
 

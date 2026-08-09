@@ -24,8 +24,8 @@ from dataclasses import dataclass
 from typing import Optional
 
 from .path_predicates import BranchCondition, PathPredicateAnalysis
-from .ssa import Const, SSAProgram, SSAVar, binary_operands, const_int as _const_int
-from .avm import U64_CMP_OPS, enum_field_name
+from ..ssa import Const, SSAProgram, SSAVar, binary_operands, const_int as _const_int
+from ..language.avm import U64_CMP_OPS, enum_field_name
 
 
 # Comparison ops whose result is the boolean we end up asserting / branching on.
@@ -143,7 +143,7 @@ def array_counts(prog: SSAProgram) -> dict[str, dict[str, int]]:
     :func:`relative_slot` strings. Scratch and shuffle identities are resolved
     through immutable value facts.
     """
-    from .analysis import FactDomain
+    from ..analysis import FactDomain
     facts = prog.facts(FactDomain.CONSTANTS)
     out: dict[str, dict[str, int]] = {}
     for a in prog:
@@ -422,7 +422,7 @@ def exit_method_lookup(prog):
     Source is read from the immutable program snapshot using ``bb.file``'s
     canonical relative identity, so nested duplicate basenames stay distinct.
     Fully defensive — any failure yields ``None``; this is optional labelling."""
-    from .abi import method_line_ranges, method_at_line
+    from ..metadata.abi import method_line_ranges, method_at_line
 
     sources = getattr(prog, "sources", None)
     by_name = ({unit.name: unit.text() for unit in sources.files}

@@ -176,7 +176,7 @@ def _named_int_error(c, src: bytes = b"") -> bool:
 #: ``itxn_field`` matters most: it POPS, so dropping it loses the write AND
 #: leaves the stack one deep.
 def _field_arg_mnemonics() -> frozenset:
-    from ..avm import ITXN_SOURCE_OPS, TXN_SOURCE_OPS
+    from ..language.avm import ITXN_SOURCE_OPS, TXN_SOURCE_OPS
     return TXN_SOURCE_OPS | ITXN_SOURCE_OPS | frozenset({
         "itxn_field",
         "app_params_get", "asset_params_get", "acct_params_get",
@@ -323,7 +323,7 @@ def _end_of_line(node, src: bytes) -> "tuple[int, int]":
 def _phantom_is_opcode(c, src: bytes) -> bool:
     """A phantom label whose identifier is a KNOWN opcode mnemonic — an opcode the
     grammar does not model, salvaged as a bare identifier."""
-    from ..avm import SIG
+    from ..language.avm import SIG
     text = src[c.start_byte:c.end_byte].decode("utf-8", "replace").strip()
     return text in SIG
 
@@ -447,11 +447,11 @@ def parse_nodes(
 
     HAZARD: every unrecovered ``ERROR`` span is DROPPED from the node stream, as
     are extra instructions on a shared line and duplicate labels. Each drop
-    appends a :class:`tealql.tealtools.errors.ParseDiagnostic` to ``diagnostics``
+    appends a :class:`tealql.tealtools.core.errors.ParseDiagnostic` to ``diagnostics``
     when one is passed — the ONLY way a caller can tell a fully-parsed program
     from a partial one."""
-    from ..errors import ParseDiagnostic
-    from ..graph import _slice_source        # lazy: graph imports this module
+    from ..core.errors import ParseDiagnostic
+    from ..frontend.graph import _slice_source        # lazy: graph imports this module
     out: list = []
     for file, src in sources.items():
         if isinstance(src, str):

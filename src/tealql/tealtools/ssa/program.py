@@ -21,7 +21,7 @@ from .models import (
     Phi,
     SSAVar,
 )
-from ..avm import _CONST_BLOCK_REF_NAMES, is_known_op, op_arity
+from ..language.avm import _CONST_BLOCK_REF_NAMES, is_known_op, op_arity
 from .._utils.dot import render
 
 
@@ -42,13 +42,13 @@ class SSAProgram:
         a wrong stack model. ``strict=False`` restores the permissive
         behaviour for surfaces that surface partiality themselves (the CLI
         and ``security.scan`` warn and annotate)."""
-        from .. import graph as tg
+        from ..frontend import graph as tg
         self._build_from_graph(tg.load_graph(source), strict=strict)
 
     @classmethod
     def from_source(cls, source: str | Path, *, strict: bool = True) -> "SSAProgram":
         """As ``cls(source)``, named so the parse stage is visible at the call site."""
-        from .. import graph as tg
+        from ..frontend import graph as tg
         return cls.from_graph(tg.load_graph(source), strict=strict)
 
     @classmethod
@@ -65,7 +65,7 @@ class SSAProgram:
 
         The lift's source-text recovery (template names, dropped consts) still
         needs a real path; SSA and detector analysis work fully in-memory."""
-        from .. import graph as tg
+        from ..frontend import graph as tg
         return cls.from_graph(tg.load_graph({name: teal}), strict=strict)
 
     @property
@@ -142,13 +142,13 @@ class SSAProgram:
         if strict:
             _diags = g.graph.get("parse_diagnostics", ())
             if _diags:
-                from ..errors import TealParseError
+                from ..core.errors import TealParseError
                 raise TealParseError(_diags)
 
         self._graph = g
         self._strict = bool(strict)
         self._revision = 0
-        from ..sources import ProgramSources
+        from ..frontend.sources import ProgramSources
         sources = g.graph.get("sources")
         if not isinstance(sources, ProgramSources):
             # Compatibility for third-party graph producers. New graphs always
@@ -245,7 +245,7 @@ class SSAProgram:
         #: ``avm.unknown_opcodes()``; the CLI's parse-health warning reads this.
         self.unknown_ops: frozenset = frozenset(_unknown_ops)
         if strict and _unknown_ops:
-            from ..errors import UnknownOpcodeError
+            from ..core.errors import UnknownOpcodeError
             raise UnknownOpcodeError(_unknown_ops)
 
         # Pass 2: wire BB predecessor/successor from CFG edges that
@@ -395,12 +395,12 @@ class SSAProgram:
 
     def health(self, *, deep: bool = False):
         """Completeness of this representation and, optionally, lazy facts."""
-        from ..health import health_for
+        from ..core.health import health_for
         return health_for(self, deep=deep)
 
     def result(self, value, *, deep: bool = False):
         """Wrap an analysis value with standardized completeness metadata."""
-        from ..health import AnalysisResult
+        from ..core.health import AnalysisResult
         return AnalysisResult(value, self.health(deep=deep))
 
     def _rebuild_uses(self) -> None:
@@ -938,7 +938,7 @@ class SSAProgram:
         """Group each ``itxn_field`` op under its immediately-enclosing
         ``(start, end)`` pair via CFG reach; stash on
         ``self._graph.graph["inner_txn_fields"]`` (the shape
-        :class:`tealql.tealtools.inner_txn_report.InnerTxnReport` expects).
+        :class:`tealql.tealtools.reporting.inner_transactions.InnerTxnReport` expects).
         Lazy + cached; formerly eager in ``_apply_pyssa_to``."""
         if getattr(self, "_inner_txn_fields_done", False):
             return

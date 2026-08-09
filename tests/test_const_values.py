@@ -1,4 +1,4 @@
-"""Integer immediate resolution (`tealtools.const_values`).
+"""Integer immediate resolution (``tealtools.language.constants``).
 
 `goal` / puya accept `0x` / `0o` / `0b` prefixed int literals (`int 0x10`), so the
 extractor must resolve them — a decimal-only parse silently dropped every hex
@@ -9,7 +9,7 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-from tealql.tealtools.const_values import _resolve_int_immediate, _to_int
+from tealql.tealtools.language.constants import _resolve_int_immediate, _to_int
 from tealql.tealtools.ssa import SSAProgram
 
 

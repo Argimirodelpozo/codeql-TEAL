@@ -10,7 +10,7 @@ from typing import Optional
 from tealql.tealtools.ssa import BasicBlock, SSAProgram
 from tealql.security import common
 from tealql.security._approval_exit import _ApprovalExitProtectedDetector
-from tealql.tealtools.avm import ASSET_TRANSFER_FIELDS as _ASSET_TRANSFER_FIELDS
+from tealql.tealtools.language.avm import ASSET_TRANSFER_FIELDS as _ASSET_TRANSFER_FIELDS
 
 
 def _handles_asset_transfer(

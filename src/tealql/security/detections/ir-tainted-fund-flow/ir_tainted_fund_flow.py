@@ -12,7 +12,7 @@ SSA one when the lift fails, making it the single complete entry point.
 """
 from __future__ import annotations
 
-from tealql.tealtools.avm import FUND_FIELDS
+from tealql.tealtools.language.avm import FUND_FIELDS
 
 from tealql.security._ir_taint_sink import _IrTaintSinkDetector, _IrTaintSinkViolation
 

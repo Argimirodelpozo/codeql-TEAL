@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Callable, Iterable
 
 from tealql.tealtools._utils.targets import resolve_target
-from tealql.tealtools.errors import TealParseError, TealQLError
+from tealql.tealtools.core.errors import TealParseError, TealQLError
 
 logger = logging.getLogger("tealql.tealtools.cli")
 
@@ -221,7 +221,7 @@ def _lifted_programs(args, command: str):
 
 
 def _cmd_auth(args) -> int:
-    from tealql.tealtools.auth_domination import AuthDominationDetector
+    from tealql.tealtools.analysis.auth import AuthDominationDetector
     return _emit_findings(
         AuthDominationDetector(_load(args)).detect(),
         json_out=args.json_out,
@@ -415,7 +415,7 @@ def _cmd_storage_schema(args) -> int:
     ``concat(prefix, encode(k))`` key is a map."""
     spec = None
     if getattr(args, "arc56", None):
-        from tealql.tealtools import arc56 as _arc56
+        from tealql.tealtools.metadata import arc56 as _arc56
         spec = _arc56.load(args.arc56)          # explicit path -> surface errors
 
     rows: list = []
@@ -446,7 +446,7 @@ def _cmd_storage_schema(args) -> int:
 def _fmt_abi_arg(t: str, name: str = "") -> str:
     """``name: type[NB]``, or bare ``type[NB]`` when the arg has no declared name
     (source-extracted signatures carry none); ``[NB]`` only for fixed widths."""
-    from tealql.tealtools.abi import abi_type_byte_length
+    from tealql.tealtools.metadata.abi import abi_type_byte_length
     n = abi_type_byte_length(t)
     core = f"{t}[{n}B]" if n is not None else t
     return f"{name}: {core}" if name else core
@@ -468,11 +468,11 @@ def _cmd_methods(args) -> int:
     actually dispatches its selector. That question is only answerable when the
     dispatch shape is recognised; when it is not, every row is left unmarked
     rather than guessed at."""
-    from tealql.tealtools.abi import (abi_type_byte_length, extract_method_table,
+    from tealql.tealtools.metadata.abi import (abi_type_byte_length, extract_method_table,
                                       method_line_ranges)
     rows = []   # (label, AbiMethod, routable: True | False | None-if-undetermined)
     if getattr(args, "arc56", None):
-        from tealql.tealtools import arc56 as _arc56
+        from tealql.tealtools.metadata import arc56 as _arc56
         spec = _arc56.load(args.arc56)          # explicit path -> surface errors
         label = spec.name or Path(args.arc56).name
         # An ARC-56 spec lists what the contract SERVES, so every entry is routable
@@ -523,7 +523,7 @@ def _cmd_methods(args) -> int:
 def _cmd_arc56(args) -> int:
     """Dump an ARC-56 app spec's methods and state schema — the authoritative but
     OPTIONAL source of the ABI typing the analysis consumes; exit 2 on a bad spec."""
-    from tealql.tealtools import arc56 as _arc56
+    from tealql.tealtools.metadata import arc56 as _arc56
     try:
         spec = _arc56.load(args.spec)
     except Exception as e:
@@ -574,13 +574,13 @@ def _cmd_arc56(args) -> int:
 
 
 def _cmd_itxn_report(args) -> int:
-    from tealql.tealtools.inner_txn_report import InnerTxnReport
+    from tealql.tealtools.reporting.inner_transactions import InnerTxnReport
     r = InnerTxnReport(_load(args))
     return _emit_dict(r.to_dict(), json_out=args.json_out, text=r.render())
 
 
 def _cmd_group_shape(args) -> int:
-    from tealql.tealtools.group_reasoning import analyze, analyze_per_exit
+    from tealql.tealtools.cfg.group import analyze, analyze_per_exit
     prog = _load(args)
     if getattr(args, "per_exit", False):
         # DISTINCT shapes per approving exit, not their intersection — the common
@@ -592,7 +592,7 @@ def _cmd_group_shape(args) -> int:
 
 
 def _cmd_group_layout(args) -> int:
-    from tealql.tealtools.group_reasoning import analyze_layout
+    from tealql.tealtools.cfg.group import analyze_layout
     layout = analyze_layout(_load(args))
     return _emit_dict(layout.to_dict(), json_out=args.json_out, text=layout.render())
 
@@ -623,7 +623,7 @@ def _cmd_functional(args) -> int:
 
 
 def _cmd_path_predicates(args) -> int:
-    from tealql.tealtools.path_predicates import PathPredicateAnalysis
+    from tealql.tealtools.cfg.path_predicates import PathPredicateAnalysis
     pp = PathPredicateAnalysis(_load(args))
     return _emit_dict(pp.to_dict(), json_out=args.json_out, text=pp.render())
 
@@ -647,7 +647,7 @@ def _cmd_audit(args) -> int:
     :4001 for disassembly (both env-overridable), cached under ``--cache-dir``."""
     from tealql.tealtools._utils.chain import fetch_approval
     from tealql.tealtools.ssa import SSAProgram
-    from tealql.tealtools.xcontract import _DEFAULT_CALLEE_CACHE, XContractGraph
+    from tealql.tealtools.intercontract.analysis import _DEFAULT_CALLEE_CACHE, XContractGraph
     from tealql.security import DETECTORS
     from tealql.security.scan import default_detection_names
 
@@ -703,7 +703,7 @@ def _cmd_audit(args) -> int:
     # unmodelled dispatch means "undetermined", not "serves nothing".
     methods = []
     try:
-        from tealql.tealtools.abi import extract_method_table, method_line_ranges
+        from tealql.tealtools.metadata.abi import extract_method_table, method_line_ranges
         _text = teal_path.read_text()
         served = {m.selector for _, _, m in method_line_ranges(_text)}
         methods = [m for m in extract_method_table(_text).values()
@@ -785,7 +785,7 @@ def _cmd_audit(args) -> int:
 
 
 def _cmd_xcontract(args) -> int:
-    from tealql.tealtools.xcontract import (
+    from tealql.tealtools.intercontract.analysis import (
         XContractGraph,
         cross_auth_findings,
         load_registry,

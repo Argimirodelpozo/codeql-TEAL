@@ -9,7 +9,7 @@ import networkx as nx
 from ..analysis import FactDomain
 from ..cfg import CFG
 from ..ssa import Assignment, BasicBlock, Const, Phi, SSAProgram, SSAVar, binary_operands, const_int
-from ..structure import analyze_structure
+from ..cfg.structure import analyze_structure
 from .context import BudgetContext, context_for
 from .costs import CostFact, assignment_cost, block_cost, canonical_assignments, sum_costs
 from .loop_bounds import LoopBound, analyze_loops

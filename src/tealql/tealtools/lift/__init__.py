@@ -2,7 +2,7 @@
 
 Map: :mod:`lift` builds the pre-IR (:mod:`pre_ir`), :mod:`to_puya_ir` lowers it to
 real Puya IR, :mod:`backend` carries that down to TEAL again; literals in
-:mod:`teal_const`, AVM metadata in :mod:`tealql.tealtools.avm`.
+:mod:`teal_const`, AVM metadata in :mod:`tealql.tealtools.language.avm`.
 
 HAZARD: ``render`` / ``to_puya`` are exported LAZILY (PEP 562) because
 :mod:`to_puya_ir` is the only module on this path that imports ``puya``. The
@@ -48,7 +48,7 @@ def build_lifter(prog, file=None):
         lifter = lf
     except Exception as e:
         try:
-            from ..errors import LiftError
+            from ..core.errors import LiftError
         except ImportError:
             LiftError = ()
         if not isinstance(e, LiftError):

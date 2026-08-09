@@ -18,7 +18,7 @@ import networkx as nx
 
 from ._nx_view import NxGraphView, copy_into, sensitive_sinks
 
-from ..avm import TXN_FIELD_OPS, txn_field_name
+from ..language.avm import TXN_FIELD_OPS, txn_field_name
 from ..ssa import SSAProgram
 from .taint_graph import Node, TaintGraph
 

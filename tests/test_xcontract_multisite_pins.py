@@ -5,7 +5,7 @@ Regression for the first-site-wins bug: the callee was seeded-analysed once with
 the FIRST site's pins, so a second site leaving the same arg attacker-controlled
 inherited the (over-pinned) analysis and its exploitable flow was suppressed.
 """
-from tealql.tealtools.xcontract import XContractGraph
+from tealql.tealtools.intercontract.analysis import XContractGraph
 from tealql.security.xcontract import cross_detection_findings
 from helpers import make_xcontract
 

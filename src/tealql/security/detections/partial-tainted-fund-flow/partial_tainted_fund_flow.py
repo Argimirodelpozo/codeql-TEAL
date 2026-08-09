@@ -18,7 +18,7 @@ from typing import ClassVar, Optional
 from tealql.security import common
 from tealql.security.detections.tainted_fund_flow import TaintedFundFlowDetector
 from tealql.tealtools.dataflow.byte_taint import Intervals, byte_taint
-from tealql.tealtools.path_predicates import PathPredicateAnalysis
+from tealql.tealtools.cfg.path_predicates import PathPredicateAnalysis
 from tealql.tealtools.ssa import SSAProgram, SSAVar, Phi
 
 
@@ -50,7 +50,7 @@ def _byte_extracted(value, seen=None) -> bool:
     if d.op in _BYTE_POSITION_OPS:
         return True
     return any(_byte_extracted(i, seen) for i in (getattr(d, "inputs", ()) or ()))
-from tealql.tealtools.avm import PAYMENT_FUND_FIELDS
+from tealql.tealtools.language.avm import PAYMENT_FUND_FIELDS
 
 _FUND_FIELDS = PAYMENT_FUND_FIELDS
 

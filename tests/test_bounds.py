@@ -294,8 +294,8 @@ def test_arc56_spec_types_arg_for_speculative(tmp_path):
     proves a fixed-offset read speculatively — where the source alone (no `method`
     text) gives nothing. The spec supersedes the source-text table; sound verdicts
     are unchanged and the read is speculative-only (well-formed-ABI assumption)."""
-    from tealql.tealtools import arc56
-    from tealql.tealtools.abi import method_selector
+    from tealql.tealtools.metadata import arc56
+    from tealql.tealtools.metadata.abi import method_selector
     spec = arc56.from_dict({
         "structs": {"Rec": [{"name": "a", "type": "uint64"},
                             {"name": "b", "type": "address"}]},

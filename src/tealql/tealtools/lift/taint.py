@@ -14,7 +14,7 @@ from __future__ import annotations
 from collections import defaultdict
 
 from ..ssa import Phi, SSAVar
-from ..avm import (
+from ..language.avm import (
     STATE_WRITE_OPS,
     attacker_input_label as _attacker_input_label,
 )
@@ -114,7 +114,7 @@ def _lift_value(lifter, ssa_value):
 
 def source_label(intr) -> str | None:
     """The user-input source kind an intrinsic reads, or ``None`` — via
-    :func:`tealql.tealtools.avm.attacker_input_label`, the ONE source table this
+    :func:`tealql.tealtools.language.avm.attacker_input_label`, the ONE source table this
     shares with the SSA-level seeds so the two layers cannot disagree."""
     if not isinstance(intr, pre_ir.Intrinsic):
         return None

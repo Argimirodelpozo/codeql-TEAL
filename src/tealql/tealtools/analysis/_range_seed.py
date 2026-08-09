@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from ..ssa import IntRange, SSAProgram, SSAVar, TealType, _OP_RANGE_SEEDS
-from ..avm import (
+from ..language.avm import (
     _GLOBAL_FIELD_RANGES,
     _OP_OUTPUT_SEEDS,
     _PARAMS_OPS,

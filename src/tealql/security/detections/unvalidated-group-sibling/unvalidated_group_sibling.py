@@ -56,7 +56,7 @@ def _forward_reachable(starts) -> set:
 def _pinned_typeenum(G, pp, exit_bb, index: int):
     """The txn-type name (``"pay"``/``"axfer"``/…) ``gtxn[index].TypeEnum`` is pinned
     to at ``exit_bb``, or ``None`` when it is not pinned to a resolvable constant."""
-    from tealql.tealtools.avm import enum_field_name
+    from tealql.tealtools.language.avm import enum_field_name
     slot = f"gtxn[{index}]"
     for c in G.constraints_at(pp, exit_bb):
         if c.op == "==" and c.ref.slot == slot and c.ref.field == "TypeEnum":
@@ -265,7 +265,7 @@ class UnvalidatedGroupSiblingDetector:
             if hit is None:
                 continue                     # every way to approve is gated
             if method_of is None:
-                from tealql.tealtools.group_reasoning import exit_method_lookup
+                from tealql.tealtools.cfg.group import exit_method_lookup
                 method_of = exit_method_lookup(self.prog)
             line = getattr(hit, "last_line", None) or hit.first_line
             return line, method_of(hit)
@@ -321,7 +321,7 @@ class UnvalidatedGroupSiblingDetector:
         reachable_exits = [e for e in exits if e in reach]
         if not reachable_exits:
             return False
-        from tealql.tealtools import group_reasoning as G
+        from tealql.tealtools.cfg import group as G
         pp = self._pp()
         for e in reachable_exits:
             pinned = _pinned_typeenum(G, pp, e, index)

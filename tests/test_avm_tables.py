@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import pytest
 
-from tealql.tealtools import avm
-from tealql.tealtools.avm import _field_type, _multi_out_type, attacker_input_label
+from tealql.tealtools.language import avm
+from tealql.tealtools.language.avm import _field_type, _multi_out_type, attacker_input_label
 
 
 @pytest.mark.parametrize("op,imm,want", [
@@ -119,7 +119,8 @@ def test_fixed_byte_width_seeds():
 def test_shared_op_families_have_one_definition():
     """Three modules once carried same-named branch sets with DIFFERENT
     contents, and ``imm0`` was re-rolled per module. Consumers derive now."""
-    from tealql.tealtools import abi, structure
+    from tealql.tealtools.metadata import abi
+    from tealql.tealtools.cfg import structure
     from tealql.tealtools.lift import type_recovery
     from tealql.tealtools.ssa.operands import imm0
 

@@ -438,7 +438,7 @@ def test_even_backslashes_close_string_before_quoted_comment(tmp_path):
 def test_blanking_preserves_line_length():
     """Comments are blanked with spaces, not deleted, so every column span on
     the line stays valid."""
-    from tealql.tealtools.graph import _blank_quoted_comments
+    from tealql.tealtools.frontend.graph import _blank_quoted_comments
     src = 'pushbytes "asa_"   // [name, "asa_"]\nint 1\n'
     out = _blank_quoted_comments(src)
     for a, b in zip(src.split("\n"), out.split("\n")):
@@ -508,7 +508,7 @@ def test_the_whole_corpus_parses_clean():
     53s and byte-identical here (verified: 0 files disagree across the corpus).
     """
     import pathlib
-    from tealql.tealtools import graph as tg
+    from tealql.tealtools.frontend import graph as tg
 
     root = pathlib.Path(__file__).resolve().parent
     # Anchored at THIS file, never at the cwd: the old relative glob found zero

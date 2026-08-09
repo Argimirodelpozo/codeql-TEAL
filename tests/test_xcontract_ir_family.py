@@ -5,7 +5,7 @@ the call site's const_args -> trusted_args -> IR taint).
 """
 import pytest
 
-from tealql.tealtools.xcontract import XContractGraph
+from tealql.tealtools.intercontract.analysis import XContractGraph
 from tealql.security.xcontract import cross_detection_findings
 from helpers import make_xcontract
 

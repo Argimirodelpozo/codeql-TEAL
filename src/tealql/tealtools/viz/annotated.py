@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import re
 
-from .ssa import SSAProgram, TealType
+from ..ssa import SSAProgram, TealType
 
 
 def _len_annot(t: TealType) -> str | None:

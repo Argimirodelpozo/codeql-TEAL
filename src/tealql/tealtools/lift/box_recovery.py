@@ -46,7 +46,7 @@ class StorageEntry:
 
 def annotate_with_arc56(entries: list, spec) -> list:
     """Fill each :class:`StorageEntry` with the declared name / types from a matching
-    ARC-56 :class:`tealql.tealtools.arc56.StateEntry` (matched on ``kind`` +
+    ARC-56 :class:`tealql.tealtools.metadata.arc56.StateEntry` (matched on ``kind`` +
     ``is_map`` + key/prefix bytes) — an OPTIONAL enrichment that mutates and returns
     ``entries``, leaving unmatched ones exactly as recovered."""
     import base64

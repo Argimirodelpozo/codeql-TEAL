@@ -17,7 +17,7 @@ from typing import Callable, Optional
 
 from ..ssa import (Const, Phi, SSAProgram, SSAVar, binary_operands, const_int,
                    operand_const)
-from ..avm import _txn_field_name, _multi_out_type
+from ..language.avm import _txn_field_name, _multi_out_type
 from ..ssa.models import _shuffle_mapping
 
 INF = float("inf")  # sentinel the Intervals algebra tolerates as an open right end
@@ -349,7 +349,7 @@ def _validated_intervals(prog: SSAProgram) -> tuple[dict, dict]:
     # bytes exactly as an assert does, but the loop above only sees literal
     # asserts. Same global-soundness contract: clear only when the predicate
     # holds at every OTHER use of X.
-    from ..path_predicates import PathPredicateAnalysis
+    from ..cfg.path_predicates import PathPredicateAnalysis
     pp = PathPredicateAnalysis(prog)
 
     def _eq_clean_at(value, use) -> bool:

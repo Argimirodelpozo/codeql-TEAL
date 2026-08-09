@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 
-from ..avm import _STACK_SHUFFLE_OPS, _TERMINATOR_OPS, op_arity
+from ..language.avm import _STACK_SHUFFLE_OPS, _TERMINATOR_OPS, op_arity
 from ..ssa import (
     Const,
     Phi,
@@ -22,9 +22,9 @@ from ..ssa import (
 from ..ssa import stacksim as stack_engine
 from ..ssa.frame_slots import ReturnSlots, SlotMerge
 from ..ssa.models import Assignment as _SSAAssignment, BasicBlock as _SSABasicBlock
-from ..structure import analyze_structure
+from ..cfg.structure import analyze_structure
 from . import pre_ir, transforms, type_recovery
-from ..avm import (
+from ..language.avm import (
     BIGUINT_RESULT_OPS,
     _BOOL_OPS,
     _BYTES_OPS,
@@ -71,7 +71,7 @@ def _infer_arities(struct, callsite, *, divergent: "set | None" = None) -> dict:
     the IR can express (its block ids are synthetic, unlike the SSA layer's
     source-position identities) but this lift does not yet do.
     """
-    from ..subroutines import infer_legacy_arities
+    from ..cfg.subroutines import infer_legacy_arities
 
     by_name = {s.name: s for s in struct.subroutines}
 
@@ -239,9 +239,9 @@ class _Lifter:
 
     def build(self) -> pre_ir.Program:
         """Lift to the pre-IR, surfacing any failure as a typed
-        :class:`tealql.tealtools.errors.LiftError` (stage ``"build"``). The
+        :class:`tealql.tealtools.core.errors.LiftError` (stage ``"build"``). The
         input program's CFG is restored on the way out, success or failure."""
-        from ..errors import LiftError
+        from ..core.errors import LiftError
         # Scratch influence is consumed by the build (load_stores) but CACHED on
         # prog and shared with the SSA layer — force it BEFORE the prune so the
         # cache always holds the un-pruned result. (Entry points that pre-run
@@ -259,7 +259,7 @@ class _Lifter:
             _restore_pruned_edges(undo)
 
     def _build_impl(self) -> pre_ir.Program:
-        from ..errors import LiftError
+        from ..core.errors import LiftError
         files = self.prog.source_files
         if len(files) != 1:
             raise LiftError(

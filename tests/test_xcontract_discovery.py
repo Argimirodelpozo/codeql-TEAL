@@ -8,7 +8,7 @@ from pathlib import Path
 
 
 from tealql.tealtools.ssa import SSAProgram
-from tealql.tealtools import xcontract as XC
+from tealql.tealtools.intercontract import analysis as XC
 from helpers import make_xcontract
 
 # Calls app 555 (inline constant) and app 777 (read from global state set to 777).

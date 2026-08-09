@@ -21,7 +21,7 @@ import pytest
 
 pytest.importorskip("puya")
 
-from tealql.tealtools.avm import avm  # noqa: E402
+from tealql.tealtools.language.avm import avm  # noqa: E402
 from tealql.tealtools.lift import _puya_compat as _compat  # noqa: E402
 
 

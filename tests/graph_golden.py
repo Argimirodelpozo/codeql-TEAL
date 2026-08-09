@@ -21,7 +21,7 @@ from pathlib import Path
 
 from tealql.tealtools.ast.parse import parse_nodes
 from tealql.tealtools.cfg.build import build_basic_blocks, build_cfg_edges
-from tealql.tealtools.graph import _load_source_bytes
+from tealql.tealtools.frontend.graph import _load_source_bytes
 
 GOLDEN_NAME = "graph_golden.txt"
 

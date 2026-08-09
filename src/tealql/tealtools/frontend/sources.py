@@ -19,7 +19,7 @@ def _numbered_source_name(name: str, ordinal: int) -> str:
 
 def _read_raw_sources(source) -> tuple[dict[str, bytes], Optional[Path], bool]:
     """Return canonical identities, physical origin, and its captured kind."""
-    from .errors import TargetError, TargetNotFoundError
+    from ..core.errors import TargetError, TargetNotFoundError
 
     if isinstance(source, Mapping):
         resolved = [

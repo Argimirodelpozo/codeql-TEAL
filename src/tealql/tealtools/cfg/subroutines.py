@@ -23,17 +23,17 @@ HAZARD: three DELIBERATELY different policies, not interchangeable.
     policy is a SEMANTIC change — gate any attempt with the c2 differential
     harness + corpus + behavioural.
 
-Pure leaf: imports only :mod:`tealql.tealtools.avm` metadata at runtime.
+Pure leaf: imports only :mod:`tealql.tealtools.language.avm` metadata at runtime.
 """
 from __future__ import annotations
 
 import bisect
 from typing import TYPE_CHECKING, Optional
 
-from .avm import _TERMINATOR_OPS
+from ..language.avm import _TERMINATOR_OPS
 
 if TYPE_CHECKING:  # pragma: no cover
-    from .ssa import BasicBlock, SSAProgram
+    from ..ssa import BasicBlock, SSAProgram
 
 
 def _terminator_op(bb: "BasicBlock") -> Optional[str]:

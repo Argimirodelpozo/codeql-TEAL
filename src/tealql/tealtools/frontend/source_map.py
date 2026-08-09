@@ -1,4 +1,4 @@
-"""TEAL <-> high-level source-line map, read off the compiler's ``// contract.py:26``
+"""TEAL <-> high-level source-line map, read off compiler ``// contract.py:26``
 annotations: a TEAL line belongs to the most recent such comment above it.
 
 Optional — raw / hand-written TEAL carries no such comments and yields an empty

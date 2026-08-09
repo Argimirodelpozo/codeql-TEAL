@@ -187,7 +187,7 @@ def test_one_spelling_of_a_key_matches_another_across_state():
     `'"cfg"'` while `byte "cfg"` resolved to `0x636667`, so the two never
     matched and the AppID silently stayed unresolved — no error, just a callee
     that vanished from the cross-contract graph."""
-    from tealql.tealtools.xcontract import candidate_app_ids
+    from tealql.tealtools.intercontract.analysis import candidate_app_ids
 
     src = ("#pragma version 10\n"
            'pushbytes "cfg"\npushint 1234567\napp_global_put\n'   # write: pushbytes

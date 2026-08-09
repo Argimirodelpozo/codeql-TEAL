@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from tealql.tealtools.graph import load_graph, _load_source_bytes
+from tealql.tealtools.frontend.graph import load_graph, _load_source_bytes
 from tealql.tealtools.ast.parse import parse_nodes
 from tealql.tealtools.cfg.build import (
     BOOL_FALSE,

@@ -104,7 +104,7 @@ def op_cost(op: str, immediates: str = "") -> CostFact:
     # Source-level pseudo ops (``int``) and control terminators are lowered
     # away before Puya IR, so they do not occur in AVMOp even though their AVM
     # execution cost is the fixed floor.
-    from ..avm import is_known_op
+    from ..language.avm import is_known_op
     if is_known_op(op):
         return CostFact.known(1)
     return CostFact.unknown(f"unknown opcode cost for {op}{suffix}")

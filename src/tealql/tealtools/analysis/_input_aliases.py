@@ -32,7 +32,7 @@ _STABLE_INPUT_OPS_STACK = frozenset({
 })
 
 # ``global`` fields that are NOT execution-stable; one home in ``avm``.
-from ..avm import UNSTABLE_GLOBAL_FIELDS as _UNSTABLE_GLOBAL_FIELDS
+from ..language.avm import UNSTABLE_GLOBAL_FIELDS as _UNSTABLE_GLOBAL_FIELDS
 
 
 def _operand_key(operand) -> Optional[tuple]:

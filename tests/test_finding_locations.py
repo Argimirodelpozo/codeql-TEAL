@@ -106,8 +106,8 @@ def test_findings_carry_abi_method_when_source_has_it(tmp_path):
 def test_arc56_recovers_method_names_when_comments_stripped(tmp_path):
     """When the compiler's `method "sig"` comments are stripped, an ARC-56 spec
     still attributes findings to their method via the selector operands."""
-    from tealql.tealtools.abi import method_selector
-    from tealql.tealtools import arc56
+    from tealql.tealtools.metadata.abi import method_selector
+    from tealql.tealtools.metadata import arc56
     sel = "0x" + method_selector("withdraw(uint64)void").hex()
     (tmp_path / "p.teal").write_text(
         "#pragma version 10\n"

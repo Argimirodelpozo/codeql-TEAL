@@ -15,12 +15,12 @@ from typing import Optional
 
 import yaml
 
-logger = logging.getLogger("tealql.tealtools.xcontract")
+logger = logging.getLogger("tealql.tealtools.intercontract.analysis")
 
-from .inner_txn_report import InnerTxn, InnerTxnReport
-from .path_predicates import BranchCondition, PathPredicateAnalysis
-from .ast.literals import render_byte_constant
-from .ssa import Const, SSAProgram, const_bytes as _const_bytes, const_int
+from ..reporting.inner_transactions import InnerTxn, InnerTxnReport
+from ..cfg.path_predicates import BranchCondition, PathPredicateAnalysis
+from ..ast.literals import render_byte_constant
+from ..ssa import Const, SSAProgram, const_bytes as _const_bytes, const_int
 
 # TypeEnum for appl: the assembler folds `int appl` to the literal 6 pre-SSA.
 TYPEENUM_APPL = "6"
@@ -363,7 +363,7 @@ _DEFAULT_CALLEE_CACHE = Path.home() / ".cache" / "tealql" / "xcontract-callees"
 def _default_chain_fetch(app_id: int):
     """Pull a deployed approval program off chain; imported lazily so the analysis
     library doesn't hard-depend on the network-touching tool."""
-    from ._utils.chain import fetch_approval
+    from .._utils.chain import fetch_approval
     return fetch_approval(app_id)
 
 
@@ -777,7 +777,7 @@ def cross_auth_findings(graph: XContractGraph) -> list[CrossAuthFinding]:
     one into a callee's predicates. Cross-contract auth keys on ``global
     CallerApplicationID`` (see :mod:`.cfg.super_auth`).
     """
-    from .auth_domination import AuthDominationDetector
+    from ..analysis.auth import AuthDominationDetector
 
     out: list[CrossAuthFinding] = []
     for app_id, callee in graph.callees.items():

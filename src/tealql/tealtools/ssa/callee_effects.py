@@ -50,7 +50,7 @@ real values, no blanking.
 """
 from __future__ import annotations
 
-from ..avm import op_arity
+from ..language.avm import op_arity
 from .models import _canon_shuffle
 
 _SHUFFLES = frozenset({"swap", "dup", "dup2", "dupn", "cover", "uncover",

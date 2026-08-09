@@ -16,10 +16,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional, Union
 
-from .cfg.dominance import program_entries
-from .cfg.exits import is_approval_exit
+from .dominance import program_entries
+from .exits import is_approval_exit
 from .subroutines import sound_return_targets
-from .ssa import (
+from ..ssa import (
     BasicBlock,
     Const,
     Phi,
@@ -28,11 +28,11 @@ from .ssa import (
     binary_operands,
     is_const,
 )
-from .avm import (CMP_OPS, COND_BRANCH_OPS, LOGICAL_OPS,
-                  MULTIWAY_BRANCH_OPS)
-from .cfg.build import BOOL_FALSE, BOOL_TRUE
-from .ast.literals import render_byte_constant
-from .analysis import FactDomain
+from ..language.avm import (CMP_OPS, COND_BRANCH_OPS, LOGICAL_OPS,
+                            MULTIWAY_BRANCH_OPS)
+from .build import BOOL_FALSE, BOOL_TRUE
+from ..ast.literals import render_byte_constant
+from ..analysis import FactDomain
 
 
 Operand = Union[SSAVar, Phi, Const]
@@ -131,7 +131,7 @@ def _canonical_binary_pred(
 # callee may clobber the caller's stack/scratch but cannot change the
 # transaction. Adding an op a callee CAN affect (load / dig / frame_dig /
 # app_global_get / a sub parameter) makes carried-across-return facts unsound.
-from .avm import UNSTABLE_GLOBAL_FIELDS
+from ..language.avm import UNSTABLE_GLOBAL_FIELDS
 
 _TXN_FIELD_READ_OPS = frozenset({
     "txn", "txna", "txnas", "gtxn", "gtxna", "gtxnas",

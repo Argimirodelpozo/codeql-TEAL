@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from ..ssa import BasicBlock, SSAProgram
-from ..xcontract import AppcallSite, Registry, XContractGraph
+from ..intercontract.analysis import AppcallSite, Registry, XContractGraph
 from .._utils.dot import bb_label, header, sanitize_id
 from .cfg import CFG
 from .dominance import iterative_dominators
@@ -76,7 +76,7 @@ class SuperCFG:
         """Build the super-CFG transitively from ``caller`` over ``registry``
         (a :class:`Registry`, or a path to one)."""
         if isinstance(registry, str):
-            from ..xcontract import load_registry
+            from ..intercontract.analysis import load_registry
             registry = load_registry(registry)
         xg = XContractGraph.build(caller, registry, max_depth=max_depth)
         cfgs: dict[Optional[int], CFG] = {None: CFG.of(xg.caller)}

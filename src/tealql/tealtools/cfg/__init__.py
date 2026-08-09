@@ -9,7 +9,7 @@ which is why nothing here is re-exported eagerly:
 * :mod:`.dominance` — pure graph algorithms (no ``tealtools`` imports at all).
 * :mod:`.cfg`, :mod:`.exits` — views over an already-built ``SSAProgram``.
 * :mod:`.supercfg`, :mod:`.super_auth` — cross-contract ANALYSES, which import
-                      :mod:`tealql.tealtools.xcontract` (the top of the stack).
+                      :mod:`tealql.tealtools.intercontract.analysis` (the top of the stack).
 
 HAZARD: :mod:`.build` sits BELOW ``ssa`` and :mod:`.cfg` sits ABOVE it, in one
 package — they share a SUBJECT, not a layer. An eager re-export here would make

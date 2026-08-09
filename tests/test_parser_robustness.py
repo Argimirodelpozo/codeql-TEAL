@@ -72,7 +72,7 @@ def test_non_ascii_byte_literal_encodes_utf8(tmp_path):
     """`byte "café"` must normalise to the assembler's UTF-8 bytes. The old
     graph.py copy of the decoder emitted ord(c) per char (636166e9), so every
     guard comparing against the constant mis-evaluated."""
-    from tealql.tealtools.graph import _byte_literal
+    from tealql.tealtools.frontend.graph import _byte_literal
 
     assert _byte_literal('"café"') == "café".encode("utf-8")
     assert _byte_literal('"café"').hex() == "636166c3a9"

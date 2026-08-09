@@ -15,7 +15,7 @@ from pathlib import Path
 
 import networkx as nx
 
-from .ast import AstNode, Location
+from ..ast import AstNode, Location
 
 
 import base64
@@ -36,7 +36,7 @@ def _byte_literal(v: str):
     drifts: a per-character ``ord`` decoder turns the non-ASCII literal
     ``byte "caf\u00e9"`` into ``636166e9``, not the
     assembler's UTF-8 ``636166c3a9``, so every guard on it mis-evaluates."""
-    from .ast.literals import decode_byte_literal
+    from ..ast.literals import decode_byte_literal
     try:
         raw, _kind = decode_byte_literal(v.strip())
     except Exception:
@@ -229,7 +229,7 @@ def _opcode_named_labels(text: str) -> str:
 def _opcode_mnemonics() -> frozenset:
     """Every opcode token the grammar recognises, so a label colliding with one
     can be spotted — derived from the AVM arity table, never re-listed."""
-    from .avm import SIG, _FRAME_OVERRIDES
+    from ..language.avm import SIG, _FRAME_OVERRIDES
     return frozenset(SIG) | frozenset(_FRAME_OVERRIDES) | frozenset({
         "dig", "bury", "cover", "uncover", "popn", "dupn",
         "pushints", "pushbytess", "match", "switch", "proto",
@@ -280,7 +280,7 @@ def _normalize_pseudo_ops(data: bytes) -> bytes:
             # Re-encode each operand to `0x..`, which the grammar DOES accept;
             # `tokenize_operands` keeps a `base64(..)` group (and, folded, the
             # `b64 <data>` pair) as ONE token, so the operand list survives.
-            from .ast.literals import tokenize_operands
+            from ..ast.literals import tokenize_operands
             try:
                 toks = tokenize_operands(operand, fold_byte_keywords=True)
                 raws = [_byte_literal(t) for t in toks]
@@ -359,8 +359,8 @@ def load_graph(
     by_loc: dict[tuple[str, int], AstNode] = {}
 
     # Pass 1: parse into AstNodes. Pass 2: derive CFG edges + BBs from them.
-    from .ast.parse import parse_nodes
-    from .cfg.build import build_cfg
+    from ..ast.parse import parse_nodes
+    from ..cfg.build import build_cfg
     parse_diags: list = []
     nodes = parse_nodes(sources.normalized_bytes(), diagnostics=parse_diags)
     # HAZARD: spans the grammar dropped. Non-empty => the graph, and everything
@@ -380,7 +380,7 @@ def load_graph(
 
     # Resolved literal constants per output: populates ``const_outputs``
     # ``{out_idx: (kind, value)}`` and the single-output scalar ``const_value``.
-    from .const_values import compute_const_values
+    from ..language.constants import compute_const_values
     for cf, cl, coi, ckind, cval in compute_const_values(g):
         node = by_loc.get((cf, int(cl)))
         if node is None:

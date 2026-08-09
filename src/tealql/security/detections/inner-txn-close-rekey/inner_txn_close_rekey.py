@@ -11,7 +11,7 @@ from typing import Optional
 
 from tealql.tealtools.ssa import Assignment, SSAProgram
 from tealql.security import common
-from tealql.tealtools.avm import CLOSE_REKEY_FIELDS as _DANGEROUS_FIELDS
+from tealql.tealtools.language.avm import CLOSE_REKEY_FIELDS as _DANGEROUS_FIELDS
 
 
 @dataclass

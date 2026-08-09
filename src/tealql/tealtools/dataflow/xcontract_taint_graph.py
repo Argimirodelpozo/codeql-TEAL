@@ -20,7 +20,7 @@ import networkx as nx
 from ._nx_view import NxGraphView, copy_into, sensitive_sinks
 
 from ..ssa import SSAProgram
-from ..xcontract import AppcallSite, find_appcall_sites, load_registry
+from ..intercontract.analysis import AppcallSite, find_appcall_sites, load_registry
 from .taint_graph import Node, TaintGraph
 
 

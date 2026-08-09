@@ -1,12 +1,12 @@
 """Open taint-reachability query layer (`tealtools.dataflow.taint_query`) and the
-source map (`tealtools.source_map`)."""
+source map (``tealtools.frontend.source_map``)."""
 from __future__ import annotations
 
 
 from tealql.tealtools.ssa import SSAProgram
 from tealql.tealtools.dataflow.taint_query import (
     TaintQuery, classify_sink, is_source)
-from tealql.tealtools.source_map import build_source_map, reverse_source_map
+from tealql.tealtools.frontend.source_map import build_source_map, reverse_source_map
 
 
 # tainted amount, tainted receiver, tainted state-write value/key, plus a

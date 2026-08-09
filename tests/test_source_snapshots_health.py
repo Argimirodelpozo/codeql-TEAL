@@ -4,10 +4,10 @@ from __future__ import annotations
 from tealql.security import DETECTORS
 from tealql.tealtools.dataflow.engine import Sink, Source, TaintAnalysis
 from tealql.tealtools.analysis import DerivedProfile, derived_program
+from tealql.tealtools.frontend.source_map import source_map_for
+from tealql.tealtools.frontend.sources import ProgramSources
 from tealql.tealtools.lift import lift
 from tealql.tealtools.lift.teal_const import _load_src
-from tealql.tealtools.source_map import source_map_for
-from tealql.tealtools.sources import ProgramSources
 from tealql.tealtools.ssa import SSAProgram
 
 

@@ -22,7 +22,7 @@ from __future__ import annotations
 from ..ssa import SSAProgram, SSAVar
 from ..ssa.operands import binary_operands, const_int, const_byte_length
 from ..cfg.dominance import AssertDominance
-from ..avm import U64_CMP_OPS
+from ..language.avm import U64_CMP_OPS
 
 # The DBM origin (the constant 0); constants fold in as ``ORIGIN + n``.
 ORIGIN = "@0"

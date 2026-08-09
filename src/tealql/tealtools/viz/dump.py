@@ -13,10 +13,10 @@ from typing import Optional
 from ..ssa import SSAProgram
 from ..ssa import render as _ssa_render
 from ..cfg import CFG
-from ..graph import load_graph
-from ..structure import analyze_structure
-from ..path_predicates import PathPredicateAnalysis
-from ..inner_txn_report import InnerTxnReport
+from ..frontend.graph import load_graph
+from ..cfg.structure import analyze_structure
+from ..cfg.path_predicates import PathPredicateAnalysis
+from ..reporting.inner_transactions import InnerTxnReport
 from ..analysis import DerivedProfile, derived_program
 from .._utils.dot import render as _dot_render
 from . import render as _viz
@@ -194,7 +194,7 @@ def _ssa_overlay(prog: SSAProgram) -> str:
     substrate renderer, ``/*len=N*/`` / ``/*val=…*/`` from the text post-pass."""
     out = _ssa_render.functional_by_block(prog, show_ranges=True)
     try:
-        from ..render_annotated import annotate_bytes_inline
+        from ..viz.annotated import annotate_bytes_inline
         out = annotate_bytes_inline(prog, out)
     except Exception:
         pass
@@ -205,7 +205,7 @@ def _taint_text(prog: SSAProgram) -> str:
     """User-input → sensitive-sink reachability over the TaintGraph."""
     import networkx as nx
     from ..dataflow.taint_graph import TaintGraph
-    from ..avm import (
+    from ..language.avm import (
         SENSITIVE_ITXN_FIELDS, STATE_WRITE_OPS, TXN_SOURCE_OPS, LSIG_ARG_OPS,
     )
     tg = TaintGraph.of(prog)
@@ -236,7 +236,7 @@ def _supercfg(prog: SSAProgram, registry):
     """Build the SuperCFG for ``prog`` + ``registry`` (dict or yaml path), or ``None``
     if there are no resolvable appcall sites."""
     from ..cfg import SuperCFG
-    from ..xcontract import find_appcall_sites, load_registry
+    from ..intercontract.analysis import find_appcall_sites, load_registry
     reg = registry if isinstance(registry, dict) else load_registry(registry)
     if not find_appcall_sites(prog, reg):
         return None

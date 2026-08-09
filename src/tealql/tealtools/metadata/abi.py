@@ -18,7 +18,7 @@ import re
 from dataclasses import dataclass
 from typing import Optional
 
-from .avm import COND_BRANCH_OPS
+from ..language.avm import COND_BRANCH_OPS
 
 # Matches both forms — the pseudo-op operand and the compiler's trailing
 # `// method "..."` comment — so one scan over the raw source finds all.

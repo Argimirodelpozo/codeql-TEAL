@@ -4,10 +4,10 @@ from importlib import import_module
 
 _LAZY_EXPORTS = {
     # AVM classification metadata historically re-exported here.
-    "_CONST_BLOCK_REF_NAMES": ("..avm", "_CONST_BLOCK_REF_NAMES"),
-    "_OP_RANGE_SEEDS": ("..avm", "_OP_RANGE_SEEDS"),
-    "_STACK_SHUFFLE_OPS": ("..avm", "_STACK_SHUFFLE_OPS"),
-    "_TERMINATOR_OPS": ("..avm", "_TERMINATOR_OPS"),
+    "_CONST_BLOCK_REF_NAMES": ("..language.avm", "_CONST_BLOCK_REF_NAMES"),
+    "_OP_RANGE_SEEDS": ("..language.avm", "_OP_RANGE_SEEDS"),
+    "_STACK_SHUFFLE_OPS": ("..language.avm", "_STACK_SHUFFLE_OPS"),
+    "_TERMINATOR_OPS": ("..language.avm", "_TERMINATOR_OPS"),
     # Models.
     "Assignment": (".models", "Assignment"),
     "BasicBlock": (".models", "BasicBlock"),

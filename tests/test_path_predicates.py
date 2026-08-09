@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from tealql.tealtools.ssa import SSAProgram, SSAVar
 from tealql.tealtools.ssa.models import Assignment, Location
-from tealql.tealtools.path_predicates import PathPredicateAnalysis
+from tealql.tealtools.cfg.path_predicates import PathPredicateAnalysis
 
 
 def _by_op(p, op):
@@ -140,7 +140,7 @@ def test_opcode_budget_is_not_immutable(tmp_path):
 
     `passes/input_prop` already knew this (`_UNSTABLE_GLOBAL_FIELDS`); this
     module did not, which is the whole reason the fact now lives in `avm`."""
-    from tealql.tealtools.path_predicates import _rooted_in_immutable_fields
+    from tealql.tealtools.cfg.path_predicates import _rooted_in_immutable_fields
     assert _rooted_in_immutable_fields(_global_cmp(tmp_path, "OpcodeBudget")) is False
 
 
@@ -151,13 +151,13 @@ def test_stable_globals_are_still_immutable(tmp_path):
     attacker assembles the group) but it does not CHANGE mid-execution — that
     is the trust question, not the stability one, and it is answered elsewhere
     (`byte_taint._CLEAN_GLOBALS`)."""
-    from tealql.tealtools.path_predicates import _rooted_in_immutable_fields
+    from tealql.tealtools.cfg.path_predicates import _rooted_in_immutable_fields
     for field in ("CreatorAddress", "CurrentApplicationID", "GroupSize"):
         assert _rooted_in_immutable_fields(_global_cmp(tmp_path, field)) is True, field
 
 
 def test_txn_fields_and_constants_are_immutable(tmp_path):
-    from tealql.tealtools.path_predicates import _rooted_in_immutable_fields
+    from tealql.tealtools.cfg.path_predicates import _rooted_in_immutable_fields
     v = _cmp_out(tmp_path, "#pragma version 8\ntxn Fee\nint 1000\n>\nbnz ok\n"
                            "int 0\nreturn\nok:\nint 1\nreturn\n")
     assert _rooted_in_immutable_fields(v) is True
@@ -166,7 +166,7 @@ def test_txn_fields_and_constants_are_immutable(tmp_path):
 def test_state_reads_are_not_immutable(tmp_path):
     """An `app_global_get` can be rewritten by the callee, so a predicate on it
     must not cross the return."""
-    from tealql.tealtools.path_predicates import _rooted_in_immutable_fields
+    from tealql.tealtools.cfg.path_predicates import _rooted_in_immutable_fields
     v = _cmp_out(tmp_path, '#pragma version 8\nbyte "k"\napp_global_get\nint 5\n>\n'
                            'bnz ok\nint 0\nreturn\nok:\nint 1\nreturn\n')
     assert _rooted_in_immutable_fields(v) is False
@@ -175,7 +175,7 @@ def test_state_reads_are_not_immutable(tmp_path):
 def test_one_unstable_leaf_poisons_the_conjunction(tmp_path):
     """Rooted-ness is a conjunction over leaves: `Creator == X && budget > 5`
     is NOT carryable, because half of it can change."""
-    from tealql.tealtools.path_predicates import _rooted_in_immutable_fields
+    from tealql.tealtools.cfg.path_predicates import _rooted_in_immutable_fields
     v = _cmp_out(tmp_path,
                  "#pragma version 8\n"
                  "txn Sender\nglobal CreatorAddress\n==\n"
@@ -197,7 +197,7 @@ def test_branch_polarity_comes_from_the_cfg_not_a_second_label_map():
     2. A DUPLICATE label, where the CFG takes the FIRST definition while the
        map kept the LAST.
     """
-    from tealql.tealtools.path_predicates import PathPredicateAnalysis
+    from tealql.tealtools.cfg.path_predicates import PathPredicateAnalysis
     from tealql.tealtools.ssa import SSAProgram
 
     # 1. bz to a label-only line: the taken edge means the condition was ZERO,

@@ -12,7 +12,7 @@ from enum import Enum
 import re
 from typing import TYPE_CHECKING, Optional
 
-from ..avm import APP_ONLY_OPS
+from ..language.avm import APP_ONLY_OPS
 
 if TYPE_CHECKING:  # pragma: no cover
     from ..ssa import SSAProgram

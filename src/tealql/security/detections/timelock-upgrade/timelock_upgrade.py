@@ -7,7 +7,7 @@ from __future__ import annotations
 from typing import Optional
 
 from tealql.tealtools.ssa import SSAProgram
-from tealql.tealtools.avm import CMP_OPS
+from tealql.tealtools.language.avm import CMP_OPS
 from tealql.security import common
 from tealql.security._approval_action_guard import (
     _ApprovalActionGuardDetector,

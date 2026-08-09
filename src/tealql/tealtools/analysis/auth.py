@@ -12,18 +12,18 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable, Iterable, Optional
 
-from .ssa import (
+from ..ssa import (
     Assignment,
     SSAProgram,
     SSAVar,
     const_byte_length,
     is_field_var,
 )
-from .path_predicates import (
+from ..cfg.path_predicates import (
     BranchCondition,
     PathPredicateAnalysis,
 )
-from .avm import STATE_MUTATING_OPS as _STATE_MUTATING_OPS
+from ..language.avm import STATE_MUTATING_OPS as _STATE_MUTATING_OPS
 
 
 # -- pluggable sink and matcher types ---------------------------------------
@@ -134,7 +134,7 @@ class AuthViolation:
         return f"{self.sink.op}@{self.sink.location}  ({self.sink_class})  preds: {body}"
 
     def to_dict(self) -> dict:
-        from ._utils.serialize import assignment_ref
+        from .._utils.serialize import assignment_ref
         return {
             "sink": {"class": self.sink_class, **assignment_ref(self.sink)},
             "dominating_predicates": [repr(p) for p in self.dominating_predicates],
