@@ -135,7 +135,7 @@ def test_negative_below_frame_read_stays_local_not_pushed():
 
 def test_inner_txn_report_expands_resolved_frame_input():
     """A present SSA frame edge must not disappear from the human report."""
-    from tealql.tealtools.inner_txn_report import InnerTxnReport
+    from tealql.tealtools.reporting.inner_transactions import InnerTxnReport
     from tealql.tealtools.ssa import SSAProgram
 
     prog = SSAProgram.from_text("""#pragma version 10

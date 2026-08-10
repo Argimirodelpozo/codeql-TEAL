@@ -59,7 +59,7 @@ def test_presentation_query_does_not_invalidate_lifter_cache():
 
 def test_removed_pass_apis_bridge_to_immutable_analysis_views():
     """Known downstream imports remain usable without reviving shared mutation."""
-    from tealql.tealtools.group_reasoning import array_counts
+    from tealql.tealtools.cfg.group import array_counts
     from tealql.tealtools.passes import functional_dump, run_all_passes
     from tealql.tealtools.passes.range_assert import propagate_assert_ranges
 
