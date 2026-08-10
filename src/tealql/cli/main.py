@@ -1081,13 +1081,31 @@ def _cmd_all(args) -> int:
 
 def _cmd_dump(args) -> int:
     import sys as _sys
-    from tealql.tealtools.viz import dump_all
+    from tealql.tealtools.viz import CATALOG, CATALOG_BY_KEY, dump_all
+    if args.list_views:
+        for view in CATALOG:
+            graph = "dot" if view.has_graph else "text"
+            print(f"{view.key:42} {view.kind.value:14} {graph:4}  {view.title}")
+        return 0
+    unknown = [key for key in args.views or () if key not in CATALOG_BY_KEY]
+    if unknown:
+        raise TealQLError(
+            "unknown visualization view(s): " + ", ".join(unknown)
+            + "; use 'tealql dump --list-views'"
+        )
     source = str(_resolve(args))
-    text = dump_all(source, args.out_dir, svg=not args.no_svg, registry=args.registry)
+    text = dump_all(
+        source,
+        args.out_dir,
+        svg=not args.no_svg,
+        registry=args.registry,
+        group_members=args.group_members,
+        views=args.views,
+    )
     if args.out_dir:
         _sys.stderr.write(
             f"wrote full dump to {args.out_dir}/ "
-            f"(contract.txt + graph/cfg/ssa)\n")
+            f"(contract.txt + one graph per applicable catalog view)\n")
     else:
         print(text, end="")
     return 0
@@ -1222,14 +1240,41 @@ def build_parser() -> argparse.ArgumentParser:
     add("path-predicates", "per-BB path predicates", _cmd_path_predicates)
     add("all", "run every detector + report", _cmd_all)
 
-    dump_p = add("dump", "dump EVERY representation of a contract (debug)", _cmd_dump)
+    dump_p = add(
+        "dump",
+        "visualize every representation, analysis, and pass (debug)",
+        _cmd_dump,
+        optional_target=True,
+    )
     dump_p.add_argument("-o", "--out-dir", default=None,
-                        help="also write contract.txt + graph/cfg/ssa "
-                             ".svg files into this dir (else text to stdout)")
+                        help="write contract.txt + every applicable graph into "
+                             "this directory (else annotated text to stdout)")
     dump_p.add_argument("--no-svg", action="store_true",
                         help="write .dot instead of rendering .svg (no Graphviz needed)")
     dump_p.add_argument("--registry", default=None,
                         help="yaml AppID->.teal registry; adds the cross-contract super-CFG")
+    dump_p.add_argument(
+        "--group-member",
+        dest="group_members",
+        action="append",
+        default=None,
+        metavar="TEAL",
+        help="ordered atomic-group member for analysis.group_taint; repeat in "
+             "exact group order (the main target is not inserted implicitly)",
+    )
+    dump_p.add_argument(
+        "--view",
+        dest="views",
+        action="append",
+        default=None,
+        metavar="KEY",
+        help="render only this catalog key; repeat to select several",
+    )
+    dump_p.add_argument(
+        "--list-views",
+        action="store_true",
+        help="list every maintained view key and exit",
+    )
 
     func_p = add(
         "functional",

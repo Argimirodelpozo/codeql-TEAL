@@ -4,6 +4,7 @@ from the same-named ``SSAProgram`` method.
 """
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Optional
 
 import networkx as nx
@@ -119,6 +120,7 @@ def to_dot(
     resolve_consts: bool = True,
     rankdir: str = "TB",
     max_lines_per_bb: int = 80,
+    assignment_note: Optional[Callable[[object], Optional[str]]] = None,
 ) -> str:
     """Graphviz DOT: one rounded box per BB (entry phis + functional assignments),
     edges pred → succ."""
@@ -133,6 +135,8 @@ def to_dot(
             lines_out.append(f"  φ_{phi.stack_index} = {repr(phi)}")
         for a in bb.assignments:
             lines_out.append(f"  L{a.location.line:>4}: {a.functional(resolve_consts=resolve_consts)}")
+            if assignment_note is not None and (note := assignment_note(a)):
+                lines_out.extend(f"      // {line}" for line in note.splitlines())
         if len(lines_out) > max_lines_per_bb:
             elided = len(lines_out) - (max_lines_per_bb - 1)
             lines_out = lines_out[: max_lines_per_bb - 1] + [f"  ... (+{elided} more)"]

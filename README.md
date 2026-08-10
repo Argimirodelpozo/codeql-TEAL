@@ -119,6 +119,10 @@ tealql xcontract       <target> {--registry <yml> | --from-chain [--cache-dir D]
 # Annotated SSA dump (renders an isolated presentation normal form)
 tealql functional      <target> [--show-ranges] [--show-bytes] [--by-block]
 
+# Maintained visualization catalog (annotated text + DOT/SVG where applicable)
+tealql dump --list-views
+tealql dump <target> [--view KEY ...] [-o artifact-dir] [--no-svg]
+
 # Everything at once (all detectors + all reports)
 tealql all             <target>
 ```
@@ -169,6 +173,47 @@ Inline annotations rendered by `tealql functional`:
 | --- | --- | --- |
 | `--show-ranges` | `/*[V<=hi]*/` after a uint64 SSAVar | `propagate_ranges`, `propagate_range_arithmetic` |
 | `--show-bytes` | `/*len=N*/`, `/*N<=len<=M*/`, `/*val=…*/`, `/*val∈[lo..hi]*/` after a bytes SSAVar | `propagate_byte_lengths`, `propagate_bytemath_ranges` |
+
+### Visualization catalog
+
+`tealql dump` is the structural debugging surface for the whole pipeline, not
+just the final SSA. Its catalog covers the source snapshot, parsed op graph,
+CFG, construction-time `PySSA`, canonical and derived SSA profiles, mutable
+pre-IR, Puya IR, and the cross-contract SuperCFG. It also covers the retained
+whole-program analyses and every named SSA/lift pass. Each entry produces:
+
+- annotated code or a stable text report;
+- Graphviz DOT (or SVG with Graphviz installed) when the product has graph
+  topology; or
+- an explicit `graph: not applicable` reason for scalar/tabular products such
+  as analysis health and recovered storage schema.
+
+```bash
+# Discover stable keys without supplying a target.
+tealql dump --list-views
+
+# Print two annotated views.
+tealql dump approval.teal \
+  --view repr.pyssa \
+  --view analysis.path_predicates
+
+# Write contract.txt plus one .svg per graph-shaped catalog entry.
+tealql dump approval.teal -o viz/
+
+# Graphviz-free output; filenames derive from keys, e.g. repr-pre_ir.dot.
+tealql dump approval.teal -o viz/ --no-svg
+
+# Context-dependent graph: repeat in exact atomic-group order.
+tealql dump approval.teal --view analysis.group_taint \
+  --group-member member0.teal --group-member approval.teal
+```
+
+The same surface is programmatic: `tealql.tealtools.viz.CATALOG` describes the
+coverage contract, `render_views(source, keys=...)` returns independent text/DOT
+artifacts, and `dump_all(...)` writes the combined report. A completeness test
+discovers public pass entry points and fails if a new one has no catalog entry;
+it also executes every builder on a representative contract so a dead renderer
+cannot satisfy the inventory check.
 
 ### Modules
 
