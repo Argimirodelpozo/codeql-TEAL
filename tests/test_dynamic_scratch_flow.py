@@ -75,9 +75,19 @@ def test_dynamic_store_does_not_kill_previous_may_value_for_const_prop():
 
 
 def test_constant_dynamic_index_is_narrowed_to_one_slot():
-    prog = _prog("int 3\nint 5\nstores\nload 3\npop")
+    prog = _prog("int 3\nint 5\nstores\nint 3\nloads\npop")
+    prog.propagate_constants()
+    prog.propagate_scratch_constants()
     prog._ensure_scratch_influence()
-    load = next(a for a in prog.assignments if a.op == "load")
+    load = next(a for a in prog.assignments if a.op == "loads")
     fact = prog._scratch_facts[("p.teal", load.location.line)]
     assert fact.values == frozenset({("p.teal", 3, 1)})
     assert not fact.zero_initialized and not fact.selectors
+    assert load.outputs[0].const_value is not None
+    assert int(load.outputs[0].const_value.value, 0) == 5
+
+    untouched = _prog("int 3\nint 5\nstores\nint 4\nloads\npop")
+    untouched._ensure_scratch_influence()
+    other_load = next(a for a in untouched.assignments if a.op == "loads")
+    other_fact = untouched._scratch_facts[("p.teal", other_load.location.line)]
+    assert other_fact.zero_initialized and not other_fact.values
