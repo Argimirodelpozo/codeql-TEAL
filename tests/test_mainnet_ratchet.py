@@ -8,11 +8,11 @@ distinct real mainnet programs and fails when the answer moves.
     # after an intended detector change
     UPDATE_MAINNET_DIGEST=1 pytest tests/test_mainnet_ratchet.py
 
-CI runs the full distinct set; it takes ~10 minutes, so it carries the ``slow``
-marker for local selection (``-m 'not slow'``).
-
-HAZARD: that ~10 minutes exceeds the global ``timeout = 300`` in pyproject,
-so this test needs its own ceiling — see the mark below.
+CI runs the full distinct set, so it carries the ``slow`` marker for local
+selection (``-m 'not slow'``). Normal verification is sharded one contract per
+pytest item: ``-n auto`` can distribute the work and a hostile contract gets a
+bounded ceiling, including a 3x allowance for coverage tracing. Explicit digest
+regeneration remains one 900-second item because it must write one aggregate.
 """
 from __future__ import annotations
 
@@ -21,51 +21,87 @@ import os
 import pytest
 
 from tests.mainnet_ratchet import (
-    DIGEST, compute_digest, diff_totals, distinct_probes, load_digest, save_digest,
+    DIGEST,
+    _TIMEOUT_S,
+    _analyse,
+    app_mode_detectors,
+    compute_digest,
+    distinct_probes,
+    load_digest,
+    save_digest,
+    summarize_rows,
 )
 
 UPDATE = os.environ.get("UPDATE_MAINNET_DIGEST") == "1"
 
 #: Cap for a quick local run. Unset (the default, and CI) means every contract.
 _LIMIT = int(os.environ.get("MAINNET_RATCHET_LIMIT", "0")) or None
+_PROBES = distinct_probes()
+_SELECTED_PROBES = _PROBES[:_LIMIT] if _LIMIT is not None else _PROBES
+# Coverage tracing is roughly a 3x slowdown on the largest real contract.  Keep
+# a bounded per-contract ceiling while leaving enough room for the exact CI
+# instrumentation; the uninstrumented analysis budget remains ``_TIMEOUT_S``.
+_CONTRACT_TEST_TIMEOUT_S = 3 * _TIMEOUT_S
 
 
 @pytest.mark.slow
-# Runs every detector over all 231 contracts in ONE test, so it cannot fit the
-# global 300s per-test ceiling: 157s standalone on a dev box, and past 300s in
-# CI, where `-n auto` has the other workers competing for the same cores. That
-# timeout — not any behaviour change — is what turned CI red on four
-# consecutive pushes while the local suite stayed green. 900s keeps a genuine
-# hang failing loudly, and stays under the 30-minute job ceiling so a hang is
-# reported as this test failing rather than as the whole job dying.
 @pytest.mark.timeout(900)
-def test_findings_digest_unchanged():
-    """Detector output over the real corpus matches the committed digest."""
-    if not distinct_probes():
+def test_regenerate_findings_digest():
+    """Regenerate once, explicitly; normal CI never enters this slow path."""
+    if not UPDATE:
+        pytest.skip("digest regeneration not requested")
+    if not _PROBES:
         pytest.skip("mainnet probe corpus not present")
+    if _LIMIT is not None:
+        pytest.fail("refusing to overwrite the digest from a partial corpus")
 
-    new = compute_digest(limit=_LIMIT)
+    save_digest(compute_digest())
+    pytest.skip(f"digest regenerated ({DIGEST.name})")
 
+
+@pytest.mark.slow
+def test_findings_digest_manifest_unchanged():
+    """The committed rows cover this corpus and aggregate consistently."""
     if UPDATE:
-        save_digest(new)
-        pytest.skip(f"digest regenerated ({DIGEST.name})")
-
+        pytest.skip("digest regeneration requested")
+    if not _PROBES:
+        pytest.skip("mainnet probe corpus not present")
     old = load_digest()
     assert old is not None, (
         f"{DIGEST.name} is missing — generate it with "
         "UPDATE_MAINNET_DIGEST=1 pytest tests/test_mainnet_ratchet.py")
-
     if _LIMIT is not None:
-        pytest.skip("MAINNET_RATCHET_LIMIT set — partial run cannot be compared")
+        pytest.skip("partial run does not validate the whole-corpus manifest")
 
-    deltas = diff_totals(old, new)
-    assert not deltas, (
-        "detector behaviour on real mainnet contracts changed:\n"
-        + "\n".join(deltas)
-        + "\n\nEvery line above is a behaviour change. If it is intended "
-          "(a fix landing, a detector broadening), regenerate with "
-          "UPDATE_MAINNET_DIGEST=1 and say WHY in the commit message. "
-          "If it is not, you have found a regression the benchmark missed.")
+    names = app_mode_detectors()
+    probe_hashes = {content_hash for content_hash, _ in _PROBES}
+    expected_rows = old.get("per_contract", {})
+    assert old.get("distinct_contracts") == len(_PROBES)
+    assert set(expected_rows) <= probe_hashes
+    assert set(old.get("detectors", {})) == set(names)
+    assert old["detectors"] == summarize_rows(names, expected_rows)
+
+
+@pytest.mark.slow
+@pytest.mark.timeout(_CONTRACT_TEST_TIMEOUT_S)
+@pytest.mark.parametrize(
+    ("content_hash", "path"),
+    _SELECTED_PROBES,
+    ids=[f"{path.stem}-{content_hash}" for content_hash, path in _SELECTED_PROBES],
+)
+def test_findings_digest_unchanged(content_hash, path):
+    """One exact row per contract, so xdist can distribute the real corpus."""
+    if UPDATE:
+        pytest.skip("digest regeneration requested")
+    old = load_digest()
+    assert old is not None, f"{DIGEST.name} is missing"
+    expected = old.get("per_contract", {}).get(content_hash, {})
+    actual = _analyse(path, app_mode_detectors())
+    assert actual == expected, (
+        f"detector behaviour changed for {path.name} ({content_hash}):\n"
+        f"expected {expected}\nactual   {actual}\n\n"
+        "Regenerate only for an intended, classified detector change."
+    )
 
 
 @pytest.mark.slow

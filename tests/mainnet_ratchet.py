@@ -85,6 +85,22 @@ def _analyse(path: Path, names: "list[str]") -> "dict[str, int | str]":
     return row
 
 
+def summarize_rows(names: "list[str]", per_contract: dict) -> dict:
+    """Aggregate detector totals from exact per-contract result rows."""
+    totals: "dict[str, dict]" = {}
+    for name in names:
+        contracts = [h for h, row in per_contract.items() if name in row]
+        crashes = [h for h in contracts if isinstance(per_contract[h][name], str)]
+        findings = sum(per_contract[h][name] for h in contracts
+                       if isinstance(per_contract[h][name], int))
+        totals[name] = {
+            "contracts": len(contracts) - len(crashes),
+            "findings": findings,
+            "crashes": len(crashes),
+        }
+    return totals
+
+
 def compute_digest(limit: "int | None" = None) -> dict:
     """The full digest: per-detector totals plus the per-contract detail that
     makes a diff actionable (which contract started or stopped firing)."""
@@ -99,17 +115,7 @@ def compute_digest(limit: "int | None" = None) -> dict:
         if row:
             per_contract[h] = row
 
-    totals: "dict[str, dict]" = {}
-    for name in names:
-        contracts = [h for h, row in per_contract.items() if name in row]
-        crashes = [h for h in contracts if isinstance(per_contract[h][name], str)]
-        findings = sum(per_contract[h][name] for h in contracts
-                       if isinstance(per_contract[h][name], int))
-        totals[name] = {
-            "contracts": len(contracts) - len(crashes),
-            "findings": findings,
-            "crashes": len(crashes),
-        }
+    totals = summarize_rows(names, per_contract)
 
     return {
         "_comment": "Regenerate with UPDATE_MAINNET_DIGEST=1 pytest "
