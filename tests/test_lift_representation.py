@@ -18,6 +18,7 @@ pytest.importorskip("puya")  # pre_ir package __init__ eagerly imports the lift
 from tealql.tealtools.language.avm import avm, _multi_out_type  # noqa: E402
 from tealql.tealtools.lift.type_recovery import (  # noqa: E402
     _avm_join,
+    _reconcile_mixed_phis,
     _stamp_undefined_operands,
     _unify_comparison_operands,
 )
@@ -31,6 +32,48 @@ def _r(name, ir_type="uint64"):
 
 def _store(slot, val):
     return pre_ir.IntrinsicOp(pre_ir.Intrinsic("store", [slot], [val]))
+
+
+def test_phi_live_in_seed_is_type_evidence():
+    """A typed parameter feeding a phi is live even without an assignment.
+
+    The control web contains only zero/empty coarse-SSA placeholders and should
+    retain the deliberate dead-web uint64 fallback.
+    """
+    seed = _r("arg", "bytes")
+    live = _r("live", "bytes")
+    dead = _r("dead", "bytes")
+    live_phi = pre_ir.Phi(
+        live,
+        [
+            pre_ir.PhiArgument(seed, 0),
+            pre_ir.PhiArgument(pre_ir.BytesConstant(""), 1),
+        ],
+    )
+    dead_phi = pre_ir.Phi(
+        dead,
+        [
+            pre_ir.PhiArgument(pre_ir.UInt64Constant(0), 0),
+            pre_ir.PhiArgument(pre_ir.BytesConstant(""), 1),
+        ],
+    )
+    body = [
+        pre_ir.BasicBlock(0, [], [], pre_ir.Goto(2)),
+        pre_ir.BasicBlock(1, [], [], pre_ir.Goto(2)),
+        pre_ir.BasicBlock(
+            2, [live_phi, dead_phi], [], pre_ir.SubroutineReturn([live])
+        ),
+    ]
+    sub = pre_ir.Subroutine(
+        "echo", [pre_ir.Parameter(seed)], ["bytes"], body, is_main=True
+    )
+
+    _reconcile_mixed_phis(pre_ir.Program(main=sub))
+
+    assert live.ir_type == "bytes"
+    assert live_phi.args[0].value is seed
+    assert dead.ir_type == "uint64"
+    assert isinstance(dead_phi.args[1].value, pre_ir.UInt64Constant)
 
 
 # --------------------------------------------------------------------------

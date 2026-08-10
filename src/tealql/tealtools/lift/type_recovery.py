@@ -356,13 +356,17 @@ def _reg_args(x):
 
 
 def _collect_phi_evidence(blocks, find, phi_ids, parent):
-    """Per-web type evidence in priority tiers -- `(consumer, constev, defev)`,
-    each `web-root -> {"u"|"b"}`. Consumption is strongest: a wrongly-typed seed
-    is dead and cannot be consumed as that type anyway."""
+    """Per-web type evidence, strongest to weakest.
+
+    A typed non-phi seed is the weakest tier: stronger use/constant/definition
+    evidence may prove that such a seed is a dead placeholder, but a parameter
+    feeding an otherwise-unconstrained phi web is still live evidence.
+    """
     from collections import defaultdict
     consumer: dict = defaultdict(set)
     constev: dict = defaultdict(set)
     defev: dict = defaultdict(set)
+    seedev: dict = defaultdict(set)
     for bb in blocks:
         for ph in bb.phis:
             root = find(id(ph.register))
@@ -372,6 +376,16 @@ def _collect_phi_evidence(blocks, find, phi_ids, parent):
                     constev[root].add("u")
                 elif isinstance(v, pre_ir.BytesConstant) and not _empty_bytes(v):
                     constev[root].add("b")
+                elif (
+                    isinstance(v, pre_ir.Register)
+                    and id(v) not in phi_ids
+                    and avm(v.ir_type) in ("u", "b")
+                ):
+                    # Assignment targets contribute through ``defev``. Parameters
+                    # and other live-in registers do not, so retain their declared
+                    # family as the weakest evidence instead of rewriting them to
+                    # the dead-web uint64 placeholder.
+                    seedev[root].add(avm(v.ir_type))
         for o in bb.ops:
             if isinstance(o, pre_ir.Assignment) and not isinstance(o.source, pre_ir.Phi):
                 for t in o.targets:
@@ -407,15 +421,15 @@ def _collect_phi_evidence(blocks, find, phi_ids, parent):
                 for r in _reg_args(o.condition):
                     if id(r) in phi_ids:
                         consumer[find(id(r))].add("u")
-    return consumer, constev, defev
+    return consumer, constev, defev, seedev
 
 
-def _decide_webtypes(phi_ids, find, consumer, constev, defev) -> dict:
+def _decide_webtypes(phi_ids, find, consumer, constev, defev, seedev) -> dict:
     """Pick each web's type from the first tier with a unanimous vote; a web with
     no real evidence at any tier is a dead placeholder -> collapse to uint64."""
     webtype: dict = {}                   # web root -> 'bytes' / 'uint64'
     for root in {find(rid) for rid in phi_ids}:
-        for tier in (consumer, constev, defev):
+        for tier in (consumer, constev, defev, seedev):
             ev = tier.get(root, set())
             if len(ev) == 1:             # unanimous at this tier decides it
                 webtype[root] = "bytes" if "b" in ev else "uint64"
@@ -427,7 +441,12 @@ def _decide_webtypes(phi_ids, find, consumer, constev, defev) -> dict:
             # cross-type phi, but the value is never used, so collapse it to the
             # uint64 lowering default. A web with any REAL evidence is left for
             # the encoder to flag as a true conflict.
-            if not (consumer.get(root) or constev.get(root) or defev.get(root)):
+            if not (
+                consumer.get(root)
+                or constev.get(root)
+                or defev.get(root)
+                or seedev.get(root)
+            ):
                 webtype[root] = "uint64"
     return webtype
 
@@ -495,8 +514,10 @@ def _reconcile_mixed_phis(prog) -> None:
                 if isinstance(a.value, pre_ir.Register):
                     parent[find(note(ph.register))] = find(note(a.value))
 
-    consumer, constev, defev = _collect_phi_evidence(blocks, find, phi_ids, parent)
-    webtype = _decide_webtypes(phi_ids, find, consumer, constev, defev)
+    consumer, constev, defev, seedev = _collect_phi_evidence(
+        blocks, find, phi_ids, parent
+    )
+    webtype = _decide_webtypes(phi_ids, find, consumer, constev, defev, seedev)
     _apply_webtypes(blocks, find, phi_ids, webtype)
 
 
