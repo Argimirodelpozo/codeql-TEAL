@@ -115,6 +115,32 @@ def _post_dominators(sub) -> dict:
     return iterative_dominators(ids, exits, lambda i: succ[i])
 
 
+def _cfg_maps(lifter) -> tuple[dict, dict]:
+    """Revision-by-shape cache for lifted intra-sub CFG analyses.
+
+    Every sink family reads the same completed lift.  Recomputing dominators
+    and post-dominators once per family made one audit run solve identical
+    fixed points roughly ten times.  The compact shape key keeps hand-mutated
+    pre-IR in tests honest: a changed block set or terminator edge misses the
+    cache rather than returning stale control-flow facts.
+    """
+    shape = tuple(
+        (
+            id(sub),
+            tuple((id(block), block.id, tuple(_succs(block.terminator)))
+                  for block in sub.body),
+        )
+        for sub in lifter.subs
+    )
+    cached = getattr(lifter, "_fund_flow_cfg_maps", None)
+    if cached is not None and cached[0] == shape:
+        return cached[1], cached[2]
+    dominators = {sub.id: _dominators(sub) for sub in lifter.subs}
+    post_dominators = {sub.id: _post_dominators(sub) for sub in lifter.subs}
+    lifter._fund_flow_cfg_maps = (shape, dominators, post_dominators)
+    return dominators, post_dominators
+
+
 def _post_dominating_guards(by_id, pdom, sink_bid, sink_idx, def_of, sink_regs,
                             sink_keys, inv_ret=None) -> list:
     """Asserts that MUST run after the sink, and therefore still gate it.
@@ -805,8 +831,7 @@ def _tainted_sink_flows(lifter, sink_of, taint=None, trusted_args=frozenset(),
         # TOP. Preserve ``Undefined -> op -> register`` through custom views.
         taint = _merge_unresolved(lifter, taint)
     def_of = _def_map(lifter)
-    dom_by_sub = {s.id: _dominators(s) for s in lifter.subs}
-    pdom_by_sub = {s.id: _post_dominators(s) for s in lifter.subs}
+    dom_by_sub, pdom_by_sub = _cfg_maps(lifter)
     # Value edges the def-walk follows: a call result into the callee's returns,
     # plus a scratch round-trip back to what was stored (same map shape).
     inv_ret = _invoke_returns(lifter)

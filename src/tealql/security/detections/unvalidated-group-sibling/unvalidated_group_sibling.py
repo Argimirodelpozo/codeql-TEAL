@@ -292,8 +292,7 @@ class UnvalidatedGroupSiblingDetector:
     def _pp(self):
         pp = getattr(self, "_pp_cache", None)
         if pp is None:
-            from tealql.tealtools.path_predicates import PathPredicateAnalysis
-            pp = self._pp_cache = PathPredicateAnalysis(self.prog)
+            pp = self._pp_cache = common.cached_path_predicates(self.prog)
         return pp
 
     def _type_excludes_field(self, index: int, field: str, assigns: list,

@@ -8,7 +8,7 @@ from typing import Optional
 from tealql.tealtools.path_predicates import PathPredicateAnalysis
 from tealql.tealtools.ssa import Assignment, BasicBlock, SSAProgram, SSAVar, const_int, is_field_var
 
-from ._value_flow import resolve_through_copies
+from ._value_flow import _constant_facts_cached, resolve_through_copies
 
 
 
@@ -83,9 +83,7 @@ def _guard_operand(prog: Optional[SSAProgram], value):
     """Resolve immutable aliases plus exact scratch/phi copy bridges."""
     if prog is None:
         return value
-    from tealql.tealtools.analysis import FactDomain
-
-    value = prog.facts(FactDomain.CONSTANTS).resolve(value)
+    value = _constant_facts_cached(prog).resolve(value)
     return resolve_through_copies(prog, value)
 
 

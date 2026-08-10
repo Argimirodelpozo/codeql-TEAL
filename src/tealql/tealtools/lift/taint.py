@@ -251,7 +251,19 @@ def _return_summary(lifter, trusted_args=frozenset()) -> dict:
 def user_input_taint(lifter, trusted_args=frozenset()) -> dict:
     """Forward taint from the user-input sources to a fixpoint over ``lifter``'s IR,
     returning ``{id(Register): frozenset(sources)}``; ``trusted_args`` indices are
-    exempted from seeding per :func:`_trusted_apparg`."""
+    exempted from seeding per :func:`_trusted_apparg`.
+
+    The completed lift is shared and read-only during an audit.  Cache by the
+    only query input so each sink family consumes the same fixed point instead
+    of recomputing it independently.
+    """
+    key = frozenset(trusted_args)
+    cache = getattr(lifter, "_user_input_taint_cache", None)
+    if cache is None:
+        cache = {}
+        lifter._user_input_taint_cache = cache
+    if key in cache:
+        return cache[key]
     # register -> its SSA var, to consult the scratch reaching-def on a `load`.
     ssa_of = getattr(lifter, "register_sources", {})
     summary = _return_summary(lifter, trusted_args)   # interprocedural param->return summary
@@ -326,7 +338,9 @@ def user_input_taint(lifter, trusted_args=frozenset()) -> dict:
                     if target_ins - taint[id(t)]:
                         taint[id(t)] |= target_ins
                         changed = True
-    return {k: frozenset(v) for k, v in taint.items() if v}
+    result = {k: frozenset(v) for k, v in taint.items() if v}
+    cache[key] = result
+    return result
 
 
 def unresolved_taint(lifter) -> dict:

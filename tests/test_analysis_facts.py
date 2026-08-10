@@ -77,6 +77,72 @@ def test_fact_cache_is_revision_scoped():
     assert prog.facts(FactDomain.CONSTANTS) is not first
 
 
+def test_detector_query_caches_share_work_and_follow_revisions(monkeypatch):
+    import tealql.tealtools.analysis.context as context_module
+    from tealql.security._value_flow import (
+        _operand_flows_from_field_var,
+        cached_path_predicates,
+    )
+
+    calls = 0
+    original = context_module.AnalysisContext.facts
+
+    def counted_facts(context, *domains):
+        nonlocal calls
+        calls += 1
+        return original(context, *domains)
+
+    monkeypatch.setattr(context_module.AnalysisContext, "facts", counted_facts)
+    prog = _program("#pragma version 8\ntxn Fee\npop\nint 1\nreturn\n")
+    fee = next(a for a in prog.assignments if a.op == "txn").outputs[0]
+
+    assert not _operand_flows_from_field_var(prog, fee, set())
+    assert not _operand_flows_from_field_var(prog, fee, set())
+    assert calls == 1
+    first_pp = cached_path_predicates(prog)
+    assert cached_path_predicates(prog) is first_pp
+
+    prog.propagate_constants()
+    assert not _operand_flows_from_field_var(prog, fee, set())
+    assert calls == 3  # new constants plus PathPredicateAnalysis's own query
+    assert cached_path_predicates(prog) is not first_pp
+
+
+def test_field_enforcement_cache_is_shared_across_exits_and_revision_scoped(
+    monkeypatch,
+):
+    import tealql.security._field_protection as protection
+
+    prog = _program(
+        "#pragma version 8\n"
+        "txna ApplicationArgs 0\nbyte 0x01020304\n==\nassert\n"
+        "int 1\nreturn\n"
+    )
+    selector = next(a for a in prog.assignments if a.op == "txna").outputs[0]
+    original = protection._operand_flows_from_field_var
+    calls = 0
+
+    def counted_flow(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(
+        protection, "_operand_flows_from_field_var", counted_flow,
+    )
+    args = (prog, {selector})
+    kwargs = {"file": selector.file, "allow_unary_cmp": True}
+    first = protection._field_enforcement_bbs(*args, **kwargs)
+    first_calls = calls
+    assert first and first_calls > 0
+    assert protection._field_enforcement_bbs(*args, **kwargs) is first
+    assert calls == first_calls
+
+    prog.propagate_constants()
+    assert protection._field_enforcement_bbs(*args, **kwargs)
+    assert calls > first_calls
+
+
 def test_fact_superset_and_guarded_view_share_the_minimum_snapshots(monkeypatch):
     import tealql.tealtools.analysis.context as context_module
 
@@ -90,31 +156,35 @@ def test_fact_superset_and_guarded_view_share_the_minimum_snapshots(monkeypatch)
 
     monkeypatch.setattr(context_module, "_copy_program", counted_copy)
 
-    prog = _program("#pragma version 8\ntxn Fee\nint 1\n+\nreturn\n")
+    prog = _program(
+        "#pragma version 8\ntxn Fee\ntxn Fee\n==\nreturn\n"
+    )
     narrow = prog.facts(FactDomain.CONSTANTS)
     broad = prog.facts(FactDomain.CONSTANTS, FactDomain.RANGES)
     assert narrow is broad
     assert copies == 1
+    guarded = derived_program(prog, DerivedProfile.GUARDED)
+    assert derived_program(prog, DerivedProfile.GUARDED) is guarded
+    assert copies == 1  # the facts-first working copy became the guarded view
 
-    guarded_prog = _program(
-        "#pragma version 8\ntxn Fee\ntxn Fee\n==\nreturn\n"
-    )
-    guarded = derived_program(guarded_prog, DerivedProfile.GUARDED)
-    assert derived_program(guarded_prog, DerivedProfile.GUARDED) is guarded
-    assert copies == 2
-
-    comparison = next(a for a in guarded_prog.assignments if a.op == "==")
-    constants = guarded_prog.facts(FactDomain.CONSTANTS)
-    # Constants come from the existing guarded annotations without another
-    # graph, but alias resolution must stay in the canonical object family.
-    assert copies == 2
+    comparison = next(a for a in prog.assignments if a.op == "==")
+    constants = prog.facts(FactDomain.CONSTANTS)
     assert constants.resolve(comparison.inputs[0]) is \
         constants.resolve(comparison.inputs[1])
-    assert constants.resolve(comparison.inputs[0]) in guarded_prog.vars.values()
+    assert constants.resolve(comparison.inputs[0]) in prog.vars.values()
     assert all(fact.type is None for fact in constants.facts.values())
 
-    guarded_prog.facts(FactDomain.CONSTANTS, FactDomain.RANGES)
-    assert copies == 3  # guarded view + one unconditional range snapshot
+    # The reverse query order has the same one-copy construction and fact set.
+    guarded_first = _program(
+        "#pragma version 8\ntxn Fee\ntxn Fee\n==\nreturn\n"
+    )
+    derived_program(guarded_first, DerivedProfile.GUARDED)
+    reverse = guarded_first.facts(FactDomain.CONSTANTS, FactDomain.RANGES)
+    assert copies == 2
+    assert reverse.domains == broad.domains
+    assert reverse.facts == broad.facts
+    assert reverse.aliases == broad.aliases
+    assert reverse._refinements == broad._refinements
 
 
 def test_cached_derived_view_allows_completed_passes_but_rejects_refinement():

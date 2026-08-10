@@ -31,6 +31,52 @@ def _state_writes(teal: str, tmp_path: Path):
     return tainted_state_writes(lifter)
 
 
+def test_sink_families_share_lifted_cfg_and_taint_fixed_points(
+    tmp_path, monkeypatch,
+):
+    from tealql.tealtools.lift import fund_flow as flow_module
+    from tealql.tealtools.lift import taint as taint_module
+
+    p = tmp_path / "cached-flow.teal"
+    p.write_text(
+        "#pragma version 10\n"
+        "txna ApplicationArgs 0\nbtoi\nitxn_begin\n"
+        "itxn_field Amount\nitxn_submit\nint 1\nreturn\n"
+    )
+    lifter = _Lifter(SSAProgram(str(p)))
+    lifter.build()
+
+    calls = {"dom": 0, "pdom": 0, "taint": 0}
+    original_dom = flow_module._dominators
+    original_pdom = flow_module._post_dominators
+    original_summary = taint_module._return_summary
+
+    def counted_dom(sub):
+        calls["dom"] += 1
+        return original_dom(sub)
+
+    def counted_pdom(sub):
+        calls["pdom"] += 1
+        return original_pdom(sub)
+
+    def counted_summary(current, trusted_args=frozenset()):
+        calls["taint"] += 1
+        return original_summary(current, trusted_args)
+
+    monkeypatch.setattr(flow_module, "_dominators", counted_dom)
+    monkeypatch.setattr(flow_module, "_post_dominators", counted_pdom)
+    monkeypatch.setattr(taint_module, "_return_summary", counted_summary)
+
+    assert flow_module.tainted_fund_flows(lifter)
+    assert flow_module.tainted_state_writes(lifter) == []
+    assert calls == {"dom": len(lifter.subs), "pdom": len(lifter.subs), "taint": 1}
+
+    # Query inputs partition taint, while the same immutable CFG still shares
+    # its dominance products.
+    assert flow_module.tainted_fund_flows(lifter, trusted_args={0}) == []
+    assert calls == {"dom": len(lifter.subs), "pdom": len(lifter.subs), "taint": 2}
+
+
 _SENDER_OR_BYPASS = """#pragma version 10
     txn Sender
     global CreatorAddress

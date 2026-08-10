@@ -88,22 +88,18 @@ def _copy_program(prog: "SSAProgram") -> "SSAProgram":
     )
 
 
-def _build_derived_program(
-    prog: "SSAProgram", profile: DerivedProfile = DerivedProfile.VALUE
-) -> "SSAProgram":
-    """Build an isolated, annotated program for algorithms not yet fact-native.
+_COMMON_FACT_DOMAINS = frozenset({FactDomain.CONSTANTS, FactDomain.RANGES})
 
-    Value rewrites and cleanup are safe here because no object in the returned
-    program is shared with ``prog``.  The canonical program remains suitable
-    for cost, lifting, and later security analyses regardless of query order.
+
+def _normalize_value_program(target: "SSAProgram") -> "SSAProgram":
+    """Turn a private fact snapshot into the reusable value normal form.
+
+    Facts must be frozen before this step: the physical identity rewrites below
+    deliberately improve legacy derived consumers, but unconditional fact
+    answers retain the canonical, pre-rewrite semantics of ``_base_snapshot``.
     """
-    target = _copy_program(prog)
-    target.propagate_constants()
-    target.propagate_scratch_constants()
     from ._input_aliases import propagate_inputs
     from ._scratch import propagate_scratch_values
-    from ._range_refinement import propagate_assert_ranges
-    from ..ssa.presentation import cleanup_unused_ssavars
     from ..ssa.value_rewrite import propagate_stack_shuffles
 
     propagate_inputs(target)
@@ -114,8 +110,35 @@ def _build_derived_program(
     target._rebuild_uses()
     propagate_stack_shuffles(target)
     target._rebuild_uses()
-    target.propagate_ranges()
+    # The fact snapshot already seeded ranges.  Re-run arithmetic after operand
+    # rewrites so newly exposed scratch/shuffle sources reach derived consumers.
     target.propagate_range_arithmetic()
+    return target
+
+
+def _build_derived_program(
+    prog: "SSAProgram",
+    profile: DerivedProfile = DerivedProfile.VALUE,
+    *,
+    value_program: Optional["SSAProgram"] = None,
+) -> tuple["SSAProgram", "ValueFacts"]:
+    """Finish an isolated derived view and capture unconditional value facts.
+
+    ``value_program`` is an unshared unconditional fact snapshot.  A facts-first
+    query may have built it; consuming that seed here removes the last redundant
+    SSA graph construction without exposing a mutable program to the caller.
+    """
+    from ._range_refinement import propagate_assert_ranges
+    from ..ssa.presentation import cleanup_unused_ssavars
+
+    target = value_program or _base_snapshot(prog, _COMMON_FACT_DOMAINS)
+    unconditional = ValueFacts._from_snapshot(
+        prog,
+        _COMMON_FACT_DOMAINS,
+        target,
+        aliases=_alias_map(target),
+    )
+    _normalize_value_program(target)
     if profile in {DerivedProfile.GUARDED, DerivedProfile.PRESENTATION}:
         propagate_assert_ranges(target)
     target.propagate_byte_lengths()
@@ -128,7 +151,7 @@ def _build_derived_program(
     # reject further refinement: otherwise one accidental legacy pass would
     # make detector results order-dependent again.
     target._analysis_read_only = True
-    return target
+    return target, unconditional
 
 
 def derived_program(
@@ -297,8 +320,6 @@ class ValueFacts:
         cls,
         prog: "SSAProgram",
         domains: frozenset[FactDomain],
-        *,
-        annotated_snapshot: Optional["SSAProgram"] = None,
     ) -> "ValueFacts":
         # A derived normal form already carries every annotation and has its
         # identities rewritten locally.  Re-cloning it here used to turn one
@@ -312,19 +333,20 @@ class ValueFacts:
             getattr(prog, "_derived_profile", None) is not None
             and domains <= {FactDomain.CONSTANTS}
         )
-        if annotated_snapshot is not None:
-            if not domains <= {FactDomain.CONSTANTS}:
-                raise ValueError(
-                    "guarded annotations can only seed unconditional constants"
-                )
-            snapshot = annotated_snapshot
-            # The snapshot's physical rewrites are private.  Resolve callers'
-            # canonical operands through the canonical identity relation and
-            # return canonical objects from ValueFacts.resolve().
-            aliases = _alias_map(prog)
-        else:
-            snapshot = prog if normalized else _base_snapshot(prog, domains)
-            aliases = {} if normalized else _alias_map(snapshot)
+        snapshot = prog if normalized else _base_snapshot(prog, domains)
+        aliases = {} if normalized else _alias_map(snapshot)
+        return cls._from_snapshot(prog, domains, snapshot, aliases=aliases)
+
+    @classmethod
+    def _from_snapshot(
+        cls,
+        prog: "SSAProgram",
+        domains: frozenset[FactDomain],
+        snapshot: "SSAProgram",
+        *,
+        aliases: Mapping[ValueKey, AliasTarget],
+    ) -> "ValueFacts":
+        """Freeze facts from an already annotated private snapshot."""
         facts: dict[ValueKey, ValueFact] = {}
         values = [*snapshot.vars.values(), *snapshot.phis.values()]
         for value in values:
@@ -440,19 +462,40 @@ class AnalysisContext:
         self.prog = prog
         self._cache: dict[tuple[int, frozenset[FactDomain]], ValueFacts] = {}
         self._derived: dict[tuple[int, DerivedProfile], "SSAProgram"] = {}
+        # A facts-first query owns this private, mutable value normal form until
+        # the first derived view consumes it.  No caller can observe the seed.
+        self._value_seed: Optional[tuple[int, "SSAProgram"]] = None
 
     def derived(self, profile: DerivedProfile) -> "SSAProgram":
         revision = getattr(self.prog, "_revision", 0)
         key = (revision, profile)
         result = self._derived.get(key)
         if result is None:
-            result = _build_derived_program(self.prog, profile)
+            seed = None
+            if self._value_seed is not None:
+                seed_revision, seed = self._value_seed
+                if seed_revision != revision:
+                    seed = None
+                self._value_seed = None
+            result, unconditional = _build_derived_program(
+                self.prog,
+                profile,
+                value_program=seed,
+            )
             self._derived = {
                 cached_key: cached
                 for cached_key, cached in self._derived.items()
                 if cached_key[0] == revision
             }
             self._derived[key] = result
+            self._cache = {
+                cached_key: cached
+                for cached_key, cached in self._cache.items()
+                if cached_key[0] == revision
+            }
+            self._cache.setdefault(
+                (revision, _COMMON_FACT_DOMAINS), unconditional
+            )
         return result
 
     def facts(
@@ -478,7 +521,6 @@ class AnalysisContext:
             )
         if result is None:
             build_domains = selected
-            annotated_snapshot = None
             normalized_constants = (
                 getattr(self.prog, "_derived_profile", None) is not None
                 and selected <= {FactDomain.CONSTANTS}
@@ -486,23 +528,20 @@ class AnalysisContext:
             if not normalized_constants and selected <= {
                 FactDomain.CONSTANTS, FactDomain.RANGES,
             }:
-                guarded = self._derived.get((revision, DerivedProfile.GUARDED))
-                if selected <= {FactDomain.CONSTANTS} and guarded is not None:
-                    # Assert refinement cannot change constants.  Reuse the
-                    # already-built normal form, but keep canonical identities.
-                    annotated_snapshot = guarded
-                else:
-                    # CONSTANTS is a strict subset of this common query.  Build
-                    # the superset up front so query order cannot construct two
-                    # whole SSA snapshots for the same contract.
-                    build_domains = frozenset({
-                        FactDomain.CONSTANTS, FactDomain.RANGES,
-                    })
-            result = ValueFacts.build(
-                self.prog,
-                build_domains,
-                annotated_snapshot=annotated_snapshot,
-            )
+                # Freeze the common unconditional superset before physical
+                # identity rewrites.  Retain its unshared working graph so a
+                # later GUARDED view can normalize and finish it in place.
+                build_domains = _COMMON_FACT_DOMAINS
+                seed = _base_snapshot(self.prog, build_domains)
+                result = ValueFacts._from_snapshot(
+                    self.prog,
+                    build_domains,
+                    seed,
+                    aliases=_alias_map(seed),
+                )
+                self._value_seed = (revision, seed)
+            else:
+                result = ValueFacts.build(self.prog, build_domains)
             self._cache = {
                 cached_key: cached
                 for cached_key, cached in self._cache.items()

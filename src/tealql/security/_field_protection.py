@@ -92,6 +92,18 @@ def _field_enforcement_bbs(
     is never compared, or compared but never enforced. ``allow_unary_cmp`` also
     accepts a 1-input comparison (field against an inlined literal, e.g. an ABI
     selector)."""
+    revision = getattr(prog, "revision", 0)
+    cached = getattr(prog, "_sec_field_enforcement", None)
+    if cached is None or cached[0] != revision:
+        cached = (revision, {})
+        try:
+            prog._sec_field_enforcement = cached
+        except AttributeError:  # only if SSAProgram ever gains __slots__
+            pass
+    key = (frozenset(field_vars), file, allow_unary_cmp)
+    if key in cached[1]:
+        return cached[1][key]
+
     out: set = set()
     label_lines = _label_to_bb_first_line(prog)
     scratch_fwd = scratch_forward_map(prog)
@@ -117,6 +129,7 @@ def _field_enforcement_bbs(
             continue
         _collect_field_enforcement_bbs(prog, cmp.outputs[0], label_lines, out,
                                        set(), scratch_fwd, field_vars)
+    cached[1][key] = out
     return out
 
 

@@ -11,20 +11,41 @@ from tealql.tealtools.path_predicates import PathPredicateAnalysis
 from tealql.tealtools.ssa import Phi, SSAProgram, SSAVar
 
 
+def _constant_facts_cached(prog: SSAProgram):
+    """Revision-scoped constants shared by the detector value-flow walks.
+
+    A single enforcement scan can ask the MUST-flow predicate thousands of
+    times.  Going through ``SSAProgram.facts`` on every root is semantically
+    idempotent but expensive under coverage tracing; retain the immutable fact
+    object while the canonical program revision is unchanged.
+    """
+    revision = getattr(prog, "revision", 0)
+    cached = getattr(prog, "_sec_constant_facts", None)
+    if cached is None or cached[0] != revision:
+        cached = (revision, prog.facts(FactDomain.CONSTANTS))
+        try:
+            prog._sec_constant_facts = cached
+        except AttributeError:  # only if SSAProgram ever gains __slots__
+            pass
+    return cached[1]
+
+
 
 def cached_path_predicates(prog: SSAProgram) -> PathPredicateAnalysis:
     """One :class:`PathPredicateAnalysis` per program, memoised on ``prog`` — the
     guard-family detectors would otherwise each re-run the branch/assert analysis,
     the bulk of a scan's per-contract cost. Sound because the analysis is a pure
     read of the CFG; a caller-SEEDED ``path_predicates`` bypasses the cache."""
-    pp = getattr(prog, "_sec_path_predicates", None)
-    if pp is None:
+    revision = getattr(prog, "revision", 0)
+    cached = getattr(prog, "_sec_path_predicates", None)
+    if cached is None or cached[0] != revision:
         pp = PathPredicateAnalysis(prog)
         try:
-            prog._sec_path_predicates = pp
+            prog._sec_path_predicates = (revision, pp)
         except AttributeError:      # only if SSAProgram ever gains __slots__
             pass
-    return pp
+        return pp
+    return cached[1]
 
 
 
@@ -103,7 +124,7 @@ def _operand_flows_from_field_var(
     """
     if operand is None:
         return False
-    facts = prog.facts(FactDomain.CONSTANTS)
+    facts = _constant_facts_cached(prog)
     memo: dict = {}
     on_path: set = set(seen) if seen else set()
 
