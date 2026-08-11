@@ -22,7 +22,10 @@ from tealql.tealtools.lift.type_recovery import (  # noqa: E402
     _stamp_undefined_operands,
     _unify_comparison_operands,
 )
-from tealql.tealtools.lift.transforms import sink_mixed_phi_scratch_stores  # noqa: E402
+from tealql.tealtools.lift.transforms import (  # noqa: E402
+    sink_mixed_phi_scratch_stores,
+    split_mixed_phis,
+)
 from tealql.tealtools.lift import pre_ir  # noqa: E402
 
 
@@ -130,6 +133,52 @@ def test_sink_applies_when_store_post_dominated():
     assert len(B.phis) == 0, "the mixed phi must be sunk away"
     # per-predecessor stores now carry the single-typed edge values.
     assert body[0].ops and body[1].ops, "each predecessor gets its edge store"
+
+
+def test_byte_switch_demands_the_bytes_arm_of_a_mixed_phi():
+    """A pre-IR ``Switch`` represents keyed ``match`` and is polymorphic.
+
+    Its case keys, not the positional ``switch`` opcode's uint64 rule, decide
+    which family survives mixed-phi splitting.
+    """
+    bytes_arm, uint_arm, selector = (
+        _r("bytes-arm", "bytes"), _r("uint-arm", "uint64"), _r("selector", "?")
+    )
+    phi = pre_ir.Phi(selector, [
+        pre_ir.PhiArgument(bytes_arm, 0),
+        pre_ir.PhiArgument(uint_arm, 1),
+    ])
+    term = pre_ir.Switch(selector, [("0x61", 3)], 4)
+    body = [
+        pre_ir.BasicBlock(0, [], [], pre_ir.Goto(2)),
+        pre_ir.BasicBlock(1, [], [], pre_ir.Goto(2)),
+        pre_ir.BasicBlock(2, [phi], [], term),
+        pre_ir.BasicBlock(3, [], [], pre_ir.ProgramExit(pre_ir.UInt64Constant(1))),
+        pre_ir.BasicBlock(4, [], [], pre_ir.ProgramExit(pre_ir.UInt64Constant(0))),
+    ]
+    program = pre_ir.Program(pre_ir.Subroutine("m", [], [], body, is_main=True))
+
+    assert split_mixed_phis(program) == 1
+    assert isinstance(term.value, pre_ir.Register)
+    assert term.value.ir_type == "bytes"
+
+
+def test_source_fallback_keeps_spaced_byte_encodings_atomic():
+    """The source fallback must not split ``b64 DATA`` into two constants.
+
+    Multi-push and bytecblock recovery use these tokens when the parser cannot
+    retain a source operand; shifting one token shifts every later constant.
+    """
+    from tealql.tealtools.lift.to_puya_ir import _Translator
+
+    translator = _Translator({
+        "p.teal": [
+            "pushbytess b64 YQ== b64 Yg==",
+            "bytecblock b64 Yw== b64 ZA==",
+        ]
+    })
+    assert translator._operands_at(1) == ["b64 YQ==", "b64 Yg=="]
+    assert translator._const_block("bytec", 2) == ["b64 Yw==", "b64 ZA=="]
 
 
 # --------------------------------------------------------------------------

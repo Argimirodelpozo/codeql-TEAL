@@ -191,8 +191,10 @@ _POS_IN = {
 
 def _expected_type(op, idx, args, imm=None):
     """Expected ``ir_type`` of ``args[idx]`` for ``op``, or ``None``."""
-    if op in ("__cond__", "__exit__"):
+    if op in ("__cond__", "__exit__", "__goto_nth__", "__switch_u__"):
         return "uint64"
+    if op == "__switch_b__":
+        return "bytes"
     if op == "itxn_field" and idx == 0 and imm:
         # The operand of `itxn_field <Field>` must be the field's AVM type;
         # without this a non-phi value feeding an address field stays `?` and
@@ -228,6 +230,20 @@ def _expected_type(op, idx, args, imm=None):
     return None
 
 
+def _switch_case_type(cases) -> "str | None":
+    """The AVM family of a keyed ``match``/``Switch`` case set.
+
+    The lifter canonicalises integer keys to decimal strings and byte keys to
+    byte literals (normally ``0x...``).  A mixed or empty set is left unknown;
+    a real AVM match cannot use one selector with keys from both families.
+    """
+    kinds = {
+        "uint64" if str(label).strip().isdigit() else "bytes"
+        for label, _target in cases
+    }
+    return next(iter(kinds)) if len(kinds) == 1 else None
+
+
 def _infer_types_from_uses(subs) -> None:
     """Refine ``?``-typed registers from the ops that consume them: arithmetic and
     branch inputs uint64, bytes-op inputs bytes, ``==`` matching its peer."""
@@ -257,6 +273,13 @@ def _infer_types_from_uses(subs) -> None:
         t = b.terminator
         if isinstance(t, pre_ir.ConditionalBranch):
             use(t.condition, "__cond__", 0, [t.condition])
+        elif isinstance(t, pre_ir.GotoNth):
+            use(t.value, "__goto_nth__", 0, [t.value])
+        elif isinstance(t, pre_ir.Switch):
+            st = _switch_case_type(t.cases)
+            if st is not None:
+                use(t.value, "__switch_b__" if st == "bytes" else "__switch_u__",
+                    0, [t.value])
         elif isinstance(t, pre_ir.ProgramExit):
             # `return` pops a uint64 success value, pinning its producer. Often
             # the only typing signal when the returned value comes from an
@@ -421,6 +444,23 @@ def _collect_phi_evidence(blocks, find, phi_ids, parent):
                 for r in _reg_args(o.condition):
                     if id(r) in phi_ids:
                         consumer[find(id(r))].add("u")
+        term = bb.terminator
+        if isinstance(term, (pre_ir.ConditionalBranch, pre_ir.ProgramExit)):
+            value = term.condition if isinstance(term, pre_ir.ConditionalBranch) \
+                else term.result
+            family = "u"
+        elif isinstance(term, pre_ir.GotoNth):
+            value, family = term.value, "u"
+        elif isinstance(term, pre_ir.Switch):
+            value = term.value
+            st = _switch_case_type(term.cases)
+            family = "b" if st == "bytes" else "u" if st == "uint64" else None
+        else:
+            value = family = None
+        if family is not None:
+            for r in _reg_args(value):
+                if id(r) in phi_ids:
+                    consumer[find(id(r))].add(family)
     return consumer, constev, defev, seedev
 
 
@@ -1060,8 +1100,11 @@ def _reconcile_return_arity(prog) -> None:
 
 
 def _fix_branch_conditions(prog) -> None:
-    """Relabel a bytes-typed ``ConditionalBranch`` condition uint64 — Puya HARD-
-    rejects a bytes one, unlike the intrinsic arg-type mismatches it merely logs.
+    """Relabel control selectors to the family their control op requires.
+
+    Puya HARD-rejects a bytes ``ConditionalBranch`` / ``GotoNth`` selector, and
+    a keyed ``Switch`` must share the family of its case constants.  These uses
+    live in terminators, outside the intrinsic operand tables.
 
     A branch condition is uint64 at runtime by construction (``bnz``/``bz`` pop a
     uint64), so a bytes label is a recovery mislabel, and uint64 is the SAFE
@@ -1072,6 +1115,13 @@ def _fix_branch_conditions(prog) -> None:
         if isinstance(t, pre_ir.ConditionalBranch) and isinstance(t.condition, pre_ir.Register):
             if t.condition.ir_type in _BYTES_FAMILY:
                 t.condition.ir_type = "uint64"
+        elif isinstance(t, pre_ir.GotoNth) and isinstance(t.value, pre_ir.Register):
+            if t.value.ir_type != "uint64":
+                t.value.ir_type = "uint64"
+        elif isinstance(t, pre_ir.Switch) and isinstance(t.value, pre_ir.Register):
+            expected = _switch_case_type(t.cases)
+            if expected is not None and avm(t.value.ir_type) != avm(expected):
+                t.value.ir_type = expected
 
 
 def _avm_fixed_family(src):

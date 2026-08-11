@@ -490,7 +490,7 @@ def _use_family(node, reg, sub_returns, sub_by_id):
     DEMAND, per the langspec position tables. Empty set = every position is
     any-typed (a discard, a scratch/state VALUE, a copy into an untyped
     register)."""
-    from .type_recovery import _expected_type
+    from .type_recovery import _expected_type, _switch_case_type
 
     out: set = set()
 
@@ -535,9 +535,14 @@ def _use_family(node, reg, sub_returns, sub_by_id):
     elif isinstance(node, (pre_ir.ConditionalBranch,)):
         if node.condition is reg:
             out.add("u")
-    elif isinstance(node, (pre_ir.Switch, pre_ir.GotoNth)):
+    elif isinstance(node, pre_ir.GotoNth):
         if node.value is reg:
             out.add("u")
+    elif isinstance(node, pre_ir.Switch):
+        if node.value is reg:
+            f = avm(_switch_case_type(node.cases))
+            if f in ("u", "b"):
+                out.add(f)
     elif isinstance(node, pre_ir.SubroutineReturn):
         for i, v in enumerate(node.result):
             if v is reg:

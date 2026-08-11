@@ -131,6 +131,19 @@ def test_global_single_key(tmp_path):
     assert g and not g[0].is_map and g[0].key_or_prefix == b"admin"
 
 
+def test_discarded_state_read_does_not_invent_uint64(tmp_path):
+    """The lowerer's residual ``? -> uint64`` fallback is not type evidence.
+
+    A polymorphic read whose value is immediately discarded must stay unknown in
+    the recovered schema instead of being advertised as confidently uint64.
+    """
+    teal = '#pragma version 10\nbyte "opaque"\napp_global_get\npop\nint 1\nreturn\n'
+    opaque = [s for s in _schema(tmp_path, teal) if s.key_or_prefix == b"opaque"]
+    assert opaque and opaque[0].arc56_value_type is None
+    assert opaque[0].storage_type == "unknown"
+    assert not opaque[0].value_confident
+
+
 def test_box_value_type_recovered(tmp_path):
     """A fixed-length value written to a box recovers as its sized type."""
     teal = """#pragma version 10
@@ -143,6 +156,85 @@ return
 """
     data = [s for s in _schema(tmp_path, teal) if s.key_or_prefix == b"data"]
     assert data and data[0].arc56_value_type == "byte[8]" and data[0].value_confident
+
+
+def test_uint64_constant_value_type_recovered(tmp_path):
+    """An inlined integer put is still positive uint64 type evidence."""
+    teal = """#pragma version 10
+byte "counter"
+int 7
+app_global_put
+int 1
+return
+"""
+    counter = [s for s in _schema(tmp_path, teal) if s.key_or_prefix == b"counter"]
+    assert counter and counter[0].arc56_value_type == "uint64"
+    assert counter[0].storage_type == "uint64" and counter[0].value_confident
+
+
+def test_partial_box_write_does_not_type_the_whole_box(tmp_path):
+    """Replacing eight bytes with an encoded uint64 does not make a larger box a
+    uint64-valued box. Fragment ops carry no whole-value schema evidence."""
+    teal = """#pragma version 10
+byte "record"
+int 8
+txn Amount
+itob
+box_replace
+int 1
+return
+"""
+    record = [s for s in _schema(tmp_path, teal) if s.key_or_prefix == b"record"]
+    assert record and record[0].arc56_value_type is None
+    assert record[0].storage_type == "bytes"
+
+
+def test_conflicting_full_writes_do_not_keep_first_type(tmp_path):
+    """A key written once as uint64 and once as bytes has no single recovered
+    value type; traversal order must not leave the first observation confident."""
+    teal = """#pragma version 10
+byte "dynamic"
+txn Amount
+app_global_put
+byte "dynamic"
+txna ApplicationArgs 0
+app_global_put
+int 1
+return
+"""
+    dynamic = [s for s in _schema(tmp_path, teal) if s.key_or_prefix == b"dynamic"]
+    assert dynamic and dynamic[0].arc56_value_type is None
+    assert dynamic[0].storage_type == "unknown"
+    assert not dynamic[0].value_confident
+
+
+def test_foreign_app_read_is_not_this_contracts_schema(tmp_path):
+    """``app_global_get_ex 123`` reads app 123, not this contract's global state."""
+    teal = """#pragma version 10
+int 123
+byte "foreign-key"
+app_global_get_ex
+pop
+pop
+int 1
+return
+"""
+    assert _schema(tmp_path, teal) == []
+
+
+def test_current_app_read_ex_stays_in_schema(tmp_path):
+    """AVM app id zero denotes the current application."""
+    teal = """#pragma version 10
+int 0
+byte "own-key"
+app_global_get_ex
+pop
+pop
+int 1
+return
+"""
+    own = [s for s in _schema(tmp_path, teal) if s.key_or_prefix == b"own-key"]
+    assert own and own[0].kind == "global"
 
 
 def test_interprocedural_key_from_caller(tmp_path):

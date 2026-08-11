@@ -40,6 +40,7 @@ from tealql.tealtools.lift.pre_ir import (  # noqa: E402
     blocks,
     map_operands,
     operands,
+    succ_ids,
 )
 
 
@@ -91,6 +92,11 @@ def test_operands_empty_for_operandless():
     assert list(operands(Goto(1))) == []
     assert list(operands(Fail())) == []
     assert list(operands(None)) == []
+
+
+def test_switch_successors_exclude_shadowed_duplicate_cases():
+    term = Switch(_r("selector"), [("0x61", 1), ("0x61", 2), ("0x62", 3)], 4)
+    assert succ_ids(term) == [1, 3, 4]
 
 
 # --------------------------------------------------------------------------

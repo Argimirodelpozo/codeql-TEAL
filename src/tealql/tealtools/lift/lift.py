@@ -36,8 +36,12 @@ from ..language.avm import (
     _multi_out_type,
 )
 from ..ssa.operands import imm0 as _imm0
-from .teal_const import _load_src
-from ..ast.literals import tokenize_operands as _tokenize_operands
+from .teal_const import _const_bytes, _load_src
+from ..ast.literals import (
+    is_template_variable,
+    tokenize_operands as _tokenize_operands,
+)
+from ..language.constants import _resolve_int_immediate
 
 logger = logging.getLogger("tealql.tealtools.lift")
 
@@ -1139,7 +1143,9 @@ class _Lifter:
         if not (1 <= ln <= len(lines)):
             return None, set()
         parts = lines[ln - 1].strip().split(None, 1)
-        ops_ = _tokenize_operands(parts[1]) if len(parts) == 2 else []
+        ops_ = (_tokenize_operands(
+            parts[1], fold_byte_keywords=(push is not None and push.op == "pushbytess"))
+            if len(parts) == 2 else [])
         if len(ops_) < len(labels):
             return None, set()
         cases, targets = [], set()
@@ -1147,7 +1153,20 @@ class _Lifter:
             blk = self._site_target(bb, self.line2block.get(self.label2line.get(lbl)))
             if blk is None or blk not in self.bid:
                 return None, set()
-            cases.append((ops_[i], self.bid[blk]))
+            if push is not None and push.op == "pushints":
+                value = _resolve_int_immediate(ops_[i])
+                if value is None:
+                    return None, set()
+                key = str(value)             # integer cases are always decimal
+            else:
+                if is_template_variable(ops_[i]):
+                    return None, set()
+                try:
+                    raw, _encoding = _const_bytes(ops_[i])
+                except (TypeError, ValueError):
+                    return None, set()
+                key = "0x" + raw.hex()      # byte cases are always canonical hex
+            cases.append((key, self.bid[blk]))
             targets.add(blk)
         return cases, targets
 

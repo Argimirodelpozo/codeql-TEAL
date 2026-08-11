@@ -492,6 +492,118 @@ return
     assert len(dyn) >= 1
 
 
+def test_local_state_roundtrip_uses_value_not_account(tmp_path):
+    """State propagation must read AVM argument positions exactly.
+
+    In ``app_local_put(Sender, key, itob(amount))`` the first register is the
+    account, not the stored value. Selecting it recovered the later state read
+    as ``arc4.Address`` instead of ``arc4.UInt64``.
+    """
+    from puya.ir.encodings import UIntEncoding
+
+    teal = """#pragma version 10
+txn Sender
+byte "k"
+txn Amount
+itob
+app_local_put
+txn Sender
+byte "k"
+app_local_get
+log
+int 1
+return
+"""
+    _guesses, by_op = _guesses_for(tmp_path, teal)
+    reads = by_op.get("app_local_get", [])
+    assert reads
+    assert all(isinstance(et.encoding, UIntEncoding) and et.encoding.n == 64
+               for _reg, et in reads)
+
+
+def test_foreign_state_read_does_not_inherit_own_state_encoding(tmp_path):
+    """A same-named key in app 123 is not the current app's state round-trip."""
+    teal = """#pragma version 10
+byte "k"
+txn Amount
+itob
+app_global_put
+int 123
+byte "k"
+app_global_get_ex
+pop
+log
+int 1
+return
+"""
+    _guesses, by_op = _guesses_for(tmp_path, teal)
+    assert by_op.get("app_global_get_ex", []) == []
+
+
+def test_current_state_read_ex_inherits_own_state_encoding(tmp_path):
+    """App id zero still denotes the current app for state propagation."""
+    from puya.ir.encodings import UIntEncoding
+
+    teal = """#pragma version 10
+byte "k"
+txn Amount
+itob
+app_global_put
+int 0
+byte "k"
+app_global_get_ex
+pop
+log
+int 1
+return
+"""
+    _guesses, by_op = _guesses_for(tmp_path, teal)
+    reads = by_op.get("app_global_get_ex", [])
+    assert reads and all(isinstance(et.encoding, UIntEncoding)
+                         and et.encoding.n == 64 for _reg, et in reads)
+
+
+def test_explicit_current_app_read_ex_inherits_own_state_encoding(tmp_path):
+    """``global CurrentApplicationID`` is the explicit spelling of app id zero."""
+    from puya.ir.encodings import UIntEncoding
+
+    teal = """#pragma version 10
+byte "k"
+txn Amount
+itob
+app_global_put
+global CurrentApplicationID
+byte "k"
+app_global_get_ex
+pop
+log
+int 1
+return
+"""
+    _guesses, by_op = _guesses_for(tmp_path, teal)
+    reads = by_op.get("app_global_get_ex", [])
+    assert reads and all(isinstance(et.encoding, UIntEncoding)
+                         and et.encoding.n == 64 for _reg, et in reads)
+
+
+def test_global_state_encoding_does_not_flow_into_local_state(tmp_path):
+    """Global and local state are distinct namespaces even when keys match."""
+    teal = """#pragma version 10
+byte "k"
+txn Amount
+itob
+app_global_put
+txn Sender
+byte "k"
+app_local_get
+log
+int 1
+return
+"""
+    _guesses, by_op = _guesses_for(tmp_path, teal)
+    assert by_op.get("app_local_get", []) == []
+
+
 # -- is_address_encoding element-type guard (a 32-elem non-byte array is NOT an
 #    address; regression for the omitted element check) --
 

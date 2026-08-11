@@ -25,7 +25,7 @@ class StorageEntry:
     key_or_prefix: bytes
     arc56_key_type: "str | None" = None
     arc56_value_type: "str | None" = None
-    storage_type: str = "bytes"        # 'uint64' | 'bytes'
+    storage_type: str = "bytes"        # 'uint64' | 'bytes' | 'unknown'
     value_confident: bool = False
     ops: set = field(default_factory=set)
     # declared name from a matched ARC-56 spec; None on a spec-less recovery
@@ -92,10 +92,12 @@ def annotate_with_arc56(entries: list, spec) -> list:
 # app_local_get_ex on arg2. Read the wrong slot and the schema is silently wrong.
 _STORAGE_OPS = {
     "box_create": ("box", 0, None, False), "box_put": ("box", 0, 1, False),
-    "box_replace": ("box", 0, 2, False), "box_splice": ("box", 0, 3, False),
+    # replace/splice WRITE only a fragment, and extract READS only a fragment.
+    # None of those fragments describes the whole box's ARC-56 value type.
+    "box_replace": ("box", 0, None, False), "box_splice": ("box", 0, None, False),
     "box_del": ("box", 0, None, False), "box_resize": ("box", 0, None, False),
     "box_len": ("box", 0, None, False), "box_get": ("box", 0, None, True),
-    "box_extract": ("box", 0, None, True),
+    "box_extract": ("box", 0, None, False),
     "app_global_put": ("global", 0, 1, False),
     "app_global_del": ("global", 0, None, False),
     "app_global_get": ("global", 0, None, True),
@@ -270,14 +272,21 @@ def recover_storage_schema(main, subs, guesses=None, confident=None) -> list:
         guesses, confident = to_puya_ir.guess_encoded_types_scored(main, subs)
     confident = confident or {}
     flow = _BoxFlow(main, subs)
+    from . import _puya_compat as _compat
+    used_registers = {
+        (s.id, r.name, r.version)
+        for s in flow.subs_all for r in _compat.get_used_registers(s.body)
+    }
 
     def _type_of(val):
         """``(arc56_type | None, confident, storage_type)`` for a key tail / value —
         types are READ OFF the existing recovery, never inferred here."""
         if isinstance(val, M.BytesConstant):
             return f"byte[{len(val.value)}]", True, "bytes"
+        if isinstance(val, M.UInt64Constant):
+            return "uint64", True, "uint64"
         if not isinstance(val, M.Register):
-            return None, False, "bytes"
+            return None, False, "unknown"
         st = "uint64" if val.ir_type.avm_type == PT.uint64.avm_type else "bytes"
         e = guesses.get(id(val))
         if e is not None:
@@ -305,7 +314,28 @@ def recover_storage_schema(main, subs, guesses=None, confident=None) -> list:
         kt, _, _ = _type_of(kv)                               # unprefixed / composite map
         return True, b"", kt
 
+    def _is_current_app(value, sub) -> bool:
+        """Whether an ``app_*_get_ex`` app operand names this application.
+
+        AVM app id 0 is the current app.  ``global CurrentApplicationID`` is
+        equivalent; everything else is foreign or unresolved and therefore is
+        not part of this contract's own storage declaration.
+        """
+        value, owner = flow.deref(value, sub)
+        if isinstance(value, M.UInt64Constant):
+            return value.value == 0
+        if not isinstance(value, M.Register):
+            return False
+        source = flow.reg_def.get((owner.id, value.name, value.version))
+        return (isinstance(source, M.Intrinsic)
+                and source.op is AVMOp.global_
+                and any(str(i).strip() == "CurrentApplicationID"
+                        for i in source.immediates))
+
     groups: dict = {}
+    # Full-value observations, retained until all sites have been seen. Writes
+    # outrank reads; conflicting/unknown writes poison an exact recovered type.
+    value_observations: dict = {}
     for s in flow.subs_all:
         for bb in s.body:
             for o in bb.ops:
@@ -316,12 +346,18 @@ def recover_storage_schema(main, subs, guesses=None, confident=None) -> list:
                 if meta is None or len(src.args) <= meta[1]:
                     continue
                 kind, kidx, vidx, v_is_result = meta
+                app_idx = (0 if src.op is AVMOp.app_global_get_ex
+                           else 1 if src.op is AVMOp.app_local_get_ex else None)
+                if app_idx is not None and not _is_current_app(src.args[app_idx], s):
+                    continue
                 is_map, kp, kt = _classify_key(src.args[kidx], s)
                 gk = (kind, is_map, kp, kt or "")
                 e = groups.get(gk)
                 if e is None:
                     e = groups[gk] = StorageEntry(
-                        kind=kind, is_map=is_map, key_or_prefix=kp, arc56_key_type=kt)
+                        kind=kind, is_map=is_map, key_or_prefix=kp,
+                        arc56_key_type=kt,
+                        storage_type="bytes" if kind == "box" else "unknown")
                 e.ops.add(src.op.name)
                 # recover the value type (resolving a value passed in as a param)
                 vv = None
@@ -331,8 +367,33 @@ def recover_storage_schema(main, subs, guesses=None, confident=None) -> list:
                     vv, _ = flow.deref(src.args[vidx], s)
                 if vv is not None:
                     vt, vc, st = _type_of(vv)
-                    if vt and e.arc56_value_type in (None, vt):
-                        e.arc56_value_type, e.value_confident, e.storage_type = vt, vc, st
+                    # Puya must concretise a residual `?` before lowering and
+                    # uses uint64 as the fallback. A discarded polymorphic state
+                    # read has no evidence for that family, so do not publish the
+                    # lowering default as a confident recovered schema type.
+                    if (v_is_result and kind in ("global", "local")
+                            and isinstance(vv, M.Register)
+                            and (s.id, vv.name, vv.version) not in used_registers):
+                        vt, vc, st = None, False, "unknown"
+                    value_observations.setdefault(gk, []).append(
+                        (vidx is not None, vt, vc, st))
+
+    for gk, observations in value_observations.items():
+        # A complete write says more about stored values than any read. In
+        # particular, a use-typed read must not override disagreeing writes.
+        writes = [o for o in observations if o[0]]
+        evidence = writes or observations
+        types = {vt for _write, vt, _confident, _storage in evidence if vt is not None}
+        storages = {st for _write, _vt, _confident, st in evidence if st != "unknown"}
+        unknown = any(vt is None for _write, vt, _confident, _storage in evidence)
+        entry = groups[gk]
+        entry.storage_type = next(iter(storages)) if len(storages) == 1 else "unknown"
+        if len(types) == 1 and not unknown:
+            entry.arc56_value_type = next(iter(types))
+            entry.value_confident = all(confident for _w, _t, confident, _s in evidence)
+        else:
+            entry.arc56_value_type = None
+            entry.value_confident = False
     return sorted(groups.values(),
                   key=lambda x: (x.kind, x.key_or_prefix, x.arc56_key_type or ""))
 

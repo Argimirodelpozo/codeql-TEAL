@@ -378,7 +378,16 @@ def succ_ids(term) -> list:
     if isinstance(term, GotoNth):
         return [*term.blocks, term.default]
     if isinstance(term, Switch):
-        return [b for _, b in term.cases] + [term.default]
+        # AVM ``match`` cases are ordered: when a key is repeated, only its
+        # first arm is reachable.  Keeping the shadowed target here creates a
+        # predecessor that the lowered Puya switch does not actually have.
+        seen = set()
+        reachable = []
+        for key, target in term.cases:
+            if key not in seen:
+                seen.add(key)
+                reachable.append(target)
+        return [*reachable, term.default]
     return []
 
 

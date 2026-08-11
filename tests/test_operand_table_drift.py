@@ -119,3 +119,29 @@ def test_box_name_operand_is_bytes_in_the_langspec():
         if val_idx is not None:
             assert val_idx != key_idx, f"_STORAGE_OPS[{op!r}] key and value collide"
     assert checked >= 8, f"only {checked} storage key indices were comparable"
+
+
+def test_arc4_state_roundtrip_layout_uses_the_real_key_and_value_slots():
+    """ARC-4 state propagation has its own Puya-order layout table.
+
+    The local-state account is arg 0, not the key or value; drifting either
+    index silently transfers an account encoding through state as the value.
+    """
+    from tealql.tealtools.lift.arc4_recovery import (
+        _STATE_GET_KEY_IDX,
+        _STATE_PUT_LAYOUT,
+    )
+
+    checked = 0
+    for op, (_scope, key_idx, value_idx) in _STATE_PUT_LAYOUT.items():
+        spec = _langspec_arg_types(op.name)
+        assert spec is not None and key_idx < len(spec) and value_idx < len(spec)
+        assert spec[key_idx] == "b", (op.name, key_idx, spec)
+        assert value_idx != key_idx
+        checked += 1
+    for op, (_scope, key_idx) in _STATE_GET_KEY_IDX.items():
+        spec = _langspec_arg_types(op.name)
+        assert spec is not None and key_idx < len(spec)
+        assert spec[key_idx] == "b", (op.name, key_idx, spec)
+        checked += 1
+    assert checked == 6

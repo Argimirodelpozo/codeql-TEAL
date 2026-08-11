@@ -126,6 +126,89 @@ return
     assert any(isinstance(e, UTF8Encoding) for e in encs), "const must be arc4.String"
 
 
+def test_dynamic_struct_decode_via_extract3(tmp_path):
+    """A dynamic-field offset used by ``extract3`` is the same ARC-4 head/tail
+    evidence as one used by ``substring3``. Both spellings must recover a tuple."""
+    from puya.ir.encodings import TupleEncoding, UIntEncoding
+
+    teal = """#pragma version 10
+txna ApplicationArgs 0
+dup
+int 0
+extract_uint64
+pop
+dup
+int 8
+extract_uint16
+int 4
+extract3
+pop
+pop
+int 1
+return
+"""
+    encs = _encodings(tmp_path, teal)
+    structs = [e for e in encs if isinstance(e, TupleEncoding)]
+    assert structs, "extract3 with a decoded offset must recover a dynamic tuple"
+    assert isinstance(structs[0].elements[0], UIntEncoding)
+
+
+def test_byte_keyed_match_types_an_unknown_selector_as_bytes(tmp_path):
+    """A keyed ``match`` is polymorphic, so its case constants type the selector.
+
+    ``gload`` has no local producer and otherwise falls through the residual
+    ``? -> uint64`` lowering default, silently turning byte key ``0x61`` into
+    integer key ``97``.
+    """
+    import puya.ir.models as M
+    from puya.ir.types_ import PrimitiveIRType as PT
+
+    teal = tmp_path / "byte-match.teal"
+    teal.write_text("""#pragma version 10
+byte "a"
+gload 0 0
+match hit
+int 0
+return
+hit:
+int 1
+return
+""")
+    main, _subs = to_puya(SSAProgram(str(teal)))
+    term = main.body[0].terminator
+    assert isinstance(term, M.Switch)
+    assert term.value.ir_type is PT.bytes
+    assert [k.value for k in term.cases] == [b"a"]
+
+
+def test_match_duplicate_keys_keep_the_first_arm(tmp_path):
+    """AVM ``match`` is ordered; a duplicate key reaches its first label."""
+    import puya.ir.models as M
+
+    teal = tmp_path / "duplicate-match.teal"
+    teal.write_text("""#pragma version 10
+byte "a"
+byte "a"
+gload 0 0
+match first second
+int 0
+return
+first:
+int 1
+return
+second:
+int 0
+return
+""")
+    main, _subs = to_puya(SSAProgram(str(teal)))
+    term = main.body[0].terminator
+    assert isinstance(term, M.Switch)
+    assert len(term.cases) == 1
+    selected = next(iter(term.cases.values())).terminator
+    assert isinstance(selected, M.ProgramExit)
+    assert selected.result.value == 1
+
+
 def test_no_recovery_is_wrong_on_opaque_bytes(tmp_path):
     """An opaque bytes value that is only hashed (no ABI idiom) must yield NO
     encoded-type guess -- recovery invents nothing."""

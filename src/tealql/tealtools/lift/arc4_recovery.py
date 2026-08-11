@@ -356,7 +356,7 @@ def _guess_struct_encodings(main, subs, dynamic_guesses) -> dict:
                         and isinstance(a[1], M.UInt64Constant):
                     slots.setdefault(id(a[0]), {}).setdefault(
                         a[1].value, ("static", 4, UIntEncoding(32)))
-                if src.op is AVMOp.substring3 and len(a) >= 2 \
+                if src.op in (AVMOp.substring3, AVMOp.extract3) and len(a) >= 2 \
                         and isinstance(a[1], M.Register):
                     slice_starts.add(id(a[1]))
                     if o.targets:
@@ -441,7 +441,7 @@ def _guess_decoded_static_arrays(main, subs) -> dict:
     def kv(r):
         return (r.name, r.version)
 
-    reg_def: dict = {}
+    reg_def: dict = {}      # (sub_id, name, version) -> defining assignment
     for s in (main, *subs):
         for bb in s.body:
             for o in bb.ops:
@@ -694,12 +694,21 @@ def guess_encoded_types_scored(main, subs):
     return guesses, confident
 
 
-# State-write ops whose (key, value) a get of the same key can inherit an
-# encoding from. Box put/del excluded: box values come from the decode-side
-# guesses, and del carries no value.
-_STATE_PUT_OPS = (AVMOp.app_global_put, AVMOp.app_local_put)
-_STATE_GET_OPS = (AVMOp.app_global_get, AVMOp.app_local_get,
-                  AVMOp.app_global_get_ex, AVMOp.app_local_get_ex)
+# State ops whose values can carry an encoding through storage. Indices are in
+# Puya/AVM order (the pre-IR's top-first order has already been reversed).
+# HAZARD: selecting the first constant as the key or the first register as the
+# value confuses app_local_put's ACCOUNT with its VALUE, recovering a later
+# ``itob(uint64)`` read as arc4.Address.
+_STATE_PUT_LAYOUT = {
+    AVMOp.app_global_put: ("global", 0, 1),
+    AVMOp.app_local_put: ("local", 1, 2),
+}
+_STATE_GET_KEY_IDX = {
+    AVMOp.app_global_get: ("global", 0),
+    AVMOp.app_local_get: ("local", 1),
+    AVMOp.app_global_get_ex: ("global", 1),
+    AVMOp.app_local_get_ex: ("local", 2),
+}
 
 
 def _propagate_guesses(main, subs, guesses: dict, confident: dict = None) -> None:
@@ -721,6 +730,7 @@ def _propagate_guesses(main, subs, guesses: dict, confident: dict = None) -> Non
     rather than a proof. Side-channel throughout, so a wrong hop cannot reach
     ``ir_type`` or lowering."""
     confident = confident if confident is not None else {}
+    from puya.ir.types_ import EncodedType
 
     # HAZARD: SSA register names are unique only WITHIN a subroutine (params
     # `p%i`, locals `l%slot` recur across subs), so the propagation identity must
@@ -729,6 +739,7 @@ def _propagate_guesses(main, subs, guesses: dict, confident: dict = None) -> Non
     # relations are all intra-sub and state round-trips key on state-key bytes, so
     # per-sub keys are both sufficient and correct.
     reg_sub: dict = {}
+    reg_def: dict = {}
     for s in (main, *subs):
         for bb in s.body:
             for ph in bb.phis:
@@ -742,6 +753,7 @@ def _propagate_guesses(main, subs, guesses: dict, confident: dict = None) -> Non
                     for t in o.targets:
                         if isinstance(t, M.Register):
                             reg_sub[id(t)] = s.id
+                            reg_def[(s.id, t.name, t.version)] = o
                 if isinstance(src, M.Intrinsic):
                     for a in src.args:
                         if isinstance(a, M.Register):
@@ -779,25 +791,53 @@ def _propagate_guesses(main, subs, guesses: dict, confident: dict = None) -> Non
 
     # State keys: encodings written to each (key-bytes, op-family). A key whose
     # writes disagree (or any write is unguessed-but-present) is poisoned.
-    def _key_const(args):
-        for x in args:
-            if isinstance(x, M.BytesConstant):
-                return x.value
-        return None
+    def _state_key(src):
+        layout = (_STATE_PUT_LAYOUT[src.op][:2] if src.op in _STATE_PUT_LAYOUT
+                  else _STATE_GET_KEY_IDX.get(src.op))
+        if layout is None:
+            return None
+        scope, idx = layout
+        if idx >= len(src.args):
+            return None
+        key_value = src.args[idx]
+        return ((scope, key_value.value)
+                if isinstance(key_value, M.BytesConstant) else None)
+
+    def _reads_current_app(src) -> bool:
+        """An ``*_get_ex`` read belongs to the state round-trip only for this app."""
+        app_idx = (0 if src.op is AVMOp.app_global_get_ex
+                   else 1 if src.op is AVMOp.app_local_get_ex else None)
+        if app_idx is None:
+            return True
+        app = src.args[app_idx]
+        if isinstance(app, M.UInt64Constant):
+            return app.value == 0
+        d = reg_def.get(key(app)) if isinstance(app, M.Register) else None
+        return (d is not None and isinstance(d.source, M.Intrinsic)
+                and d.source.op is AVMOp.global_
+                and any(str(i).strip() == "CurrentApplicationID"
+                        for i in d.source.immediates))
 
     def _run_state():
-        writes: dict = {}                 # keybytes -> set(encodings) | None(poisoned)
+        writes: dict = {}       # (scope, keybytes) -> set(encodings) | None(poisoned)
         for s in (main, *subs):
             for bb in s.body:
                 for o in bb.ops:
                     src = o.source if isinstance(o, M.Assignment) else o
-                    if not (isinstance(src, M.Intrinsic) and src.op in _STATE_PUT_OPS):
+                    if not (isinstance(src, M.Intrinsic)
+                            and src.op in _STATE_PUT_LAYOUT):
                         continue
-                    kb = _key_const(src.args)
+                    kb = _state_key(src)
                     if kb is None or writes.get(kb, "unset") is None:
                         continue                     # unknown key or already poisoned
-                    val = next((a for a in src.args if isinstance(a, M.Register)), None)
-                    e = enc.get(key(val)) if val is not None else None
+                    value_idx = _STATE_PUT_LAYOUT[src.op][2]
+                    val = src.args[value_idx] if value_idx < len(src.args) else None
+                    if isinstance(val, M.Register):
+                        e = enc.get(key(val))
+                        if e is None and isinstance(val.ir_type, EncodedType):
+                            e = val.ir_type       # confident tier -> state side-channel
+                    else:
+                        e = guesses.get(id(val)) if val is not None else None
                     if e is None:
                         writes[kb] = None            # an unencoded write poisons the key
                     else:
@@ -834,8 +874,10 @@ def _propagate_guesses(main, subs, guesses: dict, confident: dict = None) -> Non
                     e = ec = None
                     if isinstance(src, M.Register):
                         e, ec = enc.get(key(src)), enc_conf.get(key(src))
-                    elif isinstance(src, M.Intrinsic) and src.op in _STATE_GET_OPS:
-                        kb = _key_const(src.args)
+                    elif (isinstance(src, M.Intrinsic)
+                          and src.op in _STATE_GET_KEY_IDX
+                          and _reads_current_app(src)):
+                        kb = _state_key(src)
                         e, ec = state_enc.get(kb), state_conf.get(kb)
                     if e is None:
                         # BACKWARD copy (``t = r``): when the copy RESULT carries a

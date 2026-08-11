@@ -165,7 +165,14 @@ class _Translator:
         if not (line and 1 <= line <= len(lines)):
             return []
         parts = lines[line - 1].strip().split(None, 1)
-        return _tokenize_operands(parts[1]) if len(parts) == 2 else []
+        if len(parts) != 2:
+            return []
+        return _tokenize_operands(
+            parts[1],
+            fold_byte_keywords=parts[0] in {
+                "byte", "pushbytes", "pushbytess", "bytecblock"
+            },
+        )
 
     def _const_block(self, kind: str, line: int) -> list:
         """The ``intcblock`` / ``bytecblock`` operand list in scope at ``line``, read
@@ -179,7 +186,8 @@ class _Translator:
         for idx, text in enumerate(self._src_lines(), start=1):
             t = text.strip()
             if t.startswith(op + " ") and (not line or idx <= line):
-                best = _tokenize_operands(t[len(op):])
+                best = _tokenize_operands(
+                    t[len(op):], fold_byte_keywords=(kind == "bytec"))
         self._block_cache[key] = best
         return best
 
@@ -313,7 +321,10 @@ class _Translator:
                     key = M.UInt64Constant(source_location=None, value=int(str(lbl), 0))
                 else:
                     key = _bytes_const(str(lbl))
-                cases[key] = B[blk]
+                # AVM ``match`` checks cases in source order. Duplicate keys
+                # therefore select the FIRST label; assigning into the dict
+                # unconditionally kept the last and silently rerouted the arm.
+                cases.setdefault(key, B[blk])
             return M.Switch(source_location=None, value=val,
                             cases=cases, default=B[t.default])
         if isinstance(t, pre_ir.SubroutineReturn):
