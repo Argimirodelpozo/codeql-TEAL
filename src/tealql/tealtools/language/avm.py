@@ -54,6 +54,8 @@ SIG: dict[str, tuple[int, int]] = {
     # Hashing
     "sha256": (1, 1), "sha512_256": (1, 1), "keccak256": (1, 1),
     "sha3_256": (1, 1), "mimc": (1, 1), "sumhash512": (1, 1),
+    "sha512": (1, 1),                    # AVM v13: the FULL 64-byte digest
+
     # Crypto
     "ed25519verify": (3, 1), "ed25519verify_bare": (3, 1), "ecdsa_verify": (5, 1),
     "ecdsa_pk_decompress": (1, 2), "ecdsa_pk_recover": (4, 2), "vrf_verify": (3, 2),
@@ -457,7 +459,7 @@ _U64_OPS = frozenset({"+", "-", "*", "/", "%", "exp", "sqrt", "shl", "shr",
                       "balance", "min_balance", "app_opted_in"}) | _U64_PUSH
 _BYTES_OPS = frozenset({"itob", "concat", "substring", "substring3", "extract",
                         "extract3", "replace2", "replace3", "sha256",
-                        "sha512_256", "keccak256", "sha3_256", "bzero",
+                        "sha512_256", "sha512", "keccak256", "sha3_256", "bzero",
                         "setbyte", "b+", "b-", "b*", "b/", "b%",
                         "b|", "b&", "b^", "b~", "bsqrt", "box_extract",
                         "mimc", "sumhash512", "base64_decode",
@@ -676,7 +678,7 @@ _U64_CONSUME = frozenset({
     "+", "-", "*", "/", "%", "exp", "sqrt", "shl", "shr", "<", ">", "<=", ">=",
     "itob", "bitlen", "!", "&&", "||", "assert", "&", "|", "^", "~"})
 _BYTES_CONSUME = frozenset({
-    "concat", "len", "btoi", "log", "sha256", "sha512_256", "keccak256",
+    "concat", "len", "btoi", "log", "sha256", "sha512_256", "sha512", "keccak256",
     "sha3_256", "extract", "extract3", "substring", "substring3", "replace2",
     "replace3", "b+", "b-", "b*", "b/", "b%", "b<", "b>",
     "extract_uint16", "extract_uint32", "extract_uint64",

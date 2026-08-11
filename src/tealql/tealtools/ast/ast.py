@@ -318,6 +318,10 @@ class Sha256Opcode(HashingOpcode): mnemonic = "sha256"
 class Sha512_256Opcode(HashingOpcode): mnemonic = "sha512_256"
 class Keccak256Opcode(HashingOpcode): mnemonic = "keccak256"
 class Sha3_256Opcode(HashingOpcode): mnemonic = "sha3_256"
+# AVM v13. NOT a variant of sha512_256: that is the TRUNCATED form with a different IV,
+# so the two produce unrelated digests and a program using this one must not be silently
+# read as using the other.
+class Sha512Opcode(HashingOpcode): mnemonic = "sha512"
 class MimcOpcode(HashingOpcode): mnemonic = "mimc"
 
 
