@@ -298,3 +298,50 @@ def test_immediateless_extract_at_column_zero_stays_a_diagnostic(tmp_path):
                            "extract\n"
                            "btoi\nreturn\n")
     assert prog.parse_diagnostics, "unindented bare extract should still be reported"
+
+
+def test_numeric_separators_inside_byte_literals_are_data(tmp_path):
+    """The underscore normaliser must not rewrite QUOTED string data.
+
+    `pushbytes "1_000"` is DATA: packing it to `"1000 "` strips the underscore
+    and injects a space INSIDE the program's bytes — silent value corruption,
+    the exact class the label rewriter's in-string skip exists to prevent. The
+    normaliser gets the same skip; unquoted integers on the same line still
+    normalise."""
+    prog = _prog(tmp_path, '#pragma version 8\n'
+                           'pushbytes "1_000"\n'
+                           'intcblock 1_000\n'
+                           'intc 0\npop\nlog\nint 1\nreturn\n')
+    assert not prog.parse_diagnostics, f"unparsed: {prog.parse_diagnostics}"
+    vals = [o.const_value for a in prog.assignments if a.op == "pushbytes"
+            for o in a.outputs if o.const_value is not None]
+    assert vals and bytes.fromhex(str(vals[0]).removeprefix("0x")) == b"1_000", (
+        f"quoted literal data was rewritten: {vals}")
+    prog.propagate_constants()
+    ints = {int(str(o.const_value)) for a in prog.assignments
+            if a.op.startswith("intc")
+            for o in a.outputs if o.const_value is not None}
+    assert 1000 in ints, f"unquoted separator no longer normalised: {ints}"
+
+
+def test_sha512_lifts_as_itself(tmp_path):
+    """AVM v13 `sha512` must lift as its OWN op — never conflated with
+    `sha512_256` (truncated form, DIFFERENT IV, unrelated digests) — and the
+    puya lowering, which cannot represent it (upstream AVMOp enum gap), must
+    refuse with a typed LiftError rather than crash."""
+    from tealql.tealtools.diagnostics.errors import LiftError
+    from tealql.tealtools.lift import lift
+    from tealql.tealtools.lift.to_puya_ir import to_puya
+
+    prog = _prog(tmp_path, "#pragma version 13\n"
+                           "pushbytes 0x01\nsha512\nlen\nint 64\n==\nreturn\n")
+    assert not prog.parse_diagnostics
+    sha = next(a for a in prog.assignments if a.op == "sha512")
+    assert sha.inputs, "sha512 must consume its bytes operand (arity 1,1)"
+    rendered = lift(prog).render()
+    assert "sha512" in rendered and "sha512_256" not in rendered, (
+        f"sha512 lost its identity in the lift:\n{rendered}")
+    try:
+        to_puya(prog)
+    except LiftError:
+        pass                # honest typed refusal: puya has no sha512 AVMOp

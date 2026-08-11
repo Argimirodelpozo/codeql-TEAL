@@ -69,15 +69,51 @@ def _normalise_numeric_separators(src: bytes) -> bytes:
     whitespace-separated so the padding cannot merge two tokens. Only bytes inside a numeric literal
     are touched, and only when a digit sits on both sides of the underscore -- ``TMPL_x`` and a
     label like ``main_switch_1`` are left alone.
+
+    QUOTED byte literals are skipped with the same in-string scan as the label rewriter:
+    ``pushbytes "1_000"`` is DATA, and packing it would strip the underscore and inject a space
+    inside the program's bytes -- silent value corruption, not a rename. Per-segment application is
+    equivalent to whole-source matching at the boundaries because ``"`` is a non-word character to
+    both the lookbehind and the lookahead.
     """
     if b"_" not in src:
         return src
     import re as _re
+
     def fix(m):
         tok = m.group(0)
         packed = tok.replace(b"_", b"")
         return packed + b" " * (len(tok) - len(packed))
-    return _re.sub(rb"(?<![\w])\d[\d_]*\d(?![\w])", fix, src)
+
+    pattern = _re.compile(rb"(?<![\w])\d[\d_]*\d(?![\w])")
+    out = bytearray()
+    i, n = 0, len(src)
+    while i < n:
+        eol = src.find(b"\n", i)
+        if eol == -1:
+            eol = n
+        line = src[i:eol]
+        seg_start, in_str, esc = 0, False, False
+        for k, ch in enumerate(line):
+            if in_str:
+                if esc:
+                    esc = False
+                elif ch == 0x5C:
+                    esc = True
+                elif ch == 0x22:                    # closing quote
+                    out += line[seg_start:k + 1]    # string span verbatim
+                    seg_start, in_str = k + 1, False
+            elif ch == 0x22:                        # opening quote
+                out += pattern.sub(fix, line[seg_start:k]) + b'"'
+                seg_start, in_str = k + 1, True
+        # Unterminated string: leave the remainder verbatim (data, or a defect
+        # the diagnostics report) rather than rewriting inside it.
+        out += (line[seg_start:] if in_str
+                else pattern.sub(fix, line[seg_start:]))
+        if eol < n:
+            out += b"\n"
+        i = eol + 1
+    return bytes(out)
 
 
 def _neutralise_comment_continuations(src: bytes) -> bytes:
