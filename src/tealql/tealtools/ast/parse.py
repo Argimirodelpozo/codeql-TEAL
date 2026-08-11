@@ -51,6 +51,35 @@ def _is_trivia(node_type: str) -> bool:
     return node_type in _TRIVIA or node_type.startswith("pragma")
 
 
+def _normalise_numeric_separators(src: bytes) -> bytes:
+    r"""Let an integer literal keep its ``_`` separators, as the AVM assembler does.
+
+    ``intcblock 0 1 1_000_000 2_100_000`` is VALID TEAL -- go-algorand's assembler accepts the
+    underscore separator, verified against it directly (``intcblock 1_000_000`` assembles and runs).
+    The tree-sitter-teal grammar does not: it ends the integer at the underscore, so the rest of the
+    constant block becomes an unparsed span and the whole program is refused in strict mode.
+
+    That is not a corner case. TEALScript passes the TypeScript numeric separator straight through,
+    so a contract written with readable constants -- Reti's ``1_000_000`` microalgos, ``2_100_000``
+    for a pool minimum -- fails to parse at line 2, before any analysis begins. Both of Reti's
+    contracts do exactly this.
+
+    The digits are packed left and the freed bytes become trailing SPACES, so the token keeps its
+    exact byte length: every offset, line and column downstream is unchanged, and operands are
+    whitespace-separated so the padding cannot merge two tokens. Only bytes inside a numeric literal
+    are touched, and only when a digit sits on both sides of the underscore -- ``TMPL_x`` and a
+    label like ``main_switch_1`` are left alone.
+    """
+    if b"_" not in src:
+        return src
+    import re as _re
+    def fix(m):
+        tok = m.group(0)
+        packed = tok.replace(b"_", b"")
+        return packed + b" " * (len(tok) - len(packed))
+    return _re.sub(rb"(?<![\w])\d[\d_]*\d(?![\w])", fix, src)
+
+
 def _neutralise_comment_continuations(src: bytes) -> bytes:
     r"""Stop a comment that ends in ``\`` from swallowing the next line.
 
@@ -109,8 +138,45 @@ def _neutralise_comment_continuations(src: bytes) -> bytes:
     return bytes(out)
 
 
+def _spell_immediateless_extract(src: bytes) -> bytes:
+    r"""Spell the immediate-less ``extract`` as ``extract3``, which is the same instruction.
+
+    ``extract`` takes its start and length as IMMEDIATES, but the assembler also accepts it with
+    none, popping both from the stack -- identical to ``extract3``. Verified against go-algorand:
+    ``pushbytes 0x..; int 0; int 8; extract; btoi`` assembles and runs. The grammar only knows the
+    two-immediate form, so the bare one becomes an unparsed span, the block loses an instruction,
+    and every later stack reference in it shifts -- the same silent-corruption shape as the comment
+    backslash, and it surfaced downstream as a bogus ``btoi`` type error rather than as a parse
+    problem.
+
+    The preceding whitespace byte is consumed to pay for the extra character, so the line keeps its
+    exact length and nothing downstream shifts. TEAL ignores indentation, so spending it is free.
+    Without a byte to consume the line is left alone -- a diagnostic is better than a silent shift.
+    """
+    import re as _re
+    return _re.sub(rb"[ \t](extract)([ \t]*(?://[^\n]*)?(?:\r?\n|$))",
+                   lambda m: b"extract3" + m.group(2), src)
+
+
+def _starts_identifier_char(buf, k: int, lo: int, hi: int) -> bool:
+    """True if buf[k] is an asterisk that a NAME continues from, i.e. `*x`.
+
+    The test is the character AFTER, deliberately, and both other readings are wrong:
+
+      * "adjacent to a word character on either side" also matches ``b*`` -- the byteslice-multiply
+        OPCODE -- and rewriting that to ``b_`` turns a real instruction into an undefined mnemonic.
+        The same trap waits in ``b+ b- b/ b%``' neighbourhood for any rule keyed on the left.
+      * "surrounded by word characters" misses the leading asterisk of ``*addStake*return``.
+
+    A label continues into a name, so something word-like always FOLLOWS. An opcode ending in ``*``
+    is always followed by whitespace or end of line, and a bare ``*`` by both.
+    """
+    j = k + 1
+    return lo <= j < hi and (chr(buf[j]).isalnum() or buf[j] == 0x5F)
+
+
 def _rewrite_scoped_label_separators(src: bytes) -> bytes:
-    """Make a scoped subroutine label parseable: ``a::b`` -> ``a__b``.
+    """Make a compiler-generated label parseable: ``a::b`` -> ``a__b`` and ``*a*b`` -> ``_a_b``.
 
     puya-ts names subroutines after the source that produced them --
     ``callsub smart_contracts/main/contract.algo.ts::Main.cardAssetOptIn`` -- and the grammar's
@@ -118,13 +184,23 @@ def _rewrite_scoped_label_separators(src: bytes) -> bytes:
     ``::`` and everything after it becomes an unparsed span, so the subroutine drops out of the
     analysis entirely: on auto-draw-card's Main that is 5 spans, silently removed.
 
+    TEALScript has the same problem with a different character: it names subroutine returns
+    ``*addStake*return``, and the grammar's label rule does not accept ``*`` either. Verified valid
+    against go-algorand's assembler (``b *foo*return`` / ``*foo*return:`` assembles and runs), so
+    this is the grammar refusing real TEAL, not the compiler emitting something illegal.
+
+    HAZARD: ``*`` is ALSO an OPCODE -- bare ``*`` is multiply and ``b*`` is byteslice-multiply -- so
+    only an asterisk that a NAME CONTINUES FROM is rewritten (see :func:`_starts_identifier_char`).
+    Keying on the character BEFORE would rewrite ``b*`` to ``b_``, replacing a real instruction with
+    an undefined mnemonic.
+
     Renaming is safe where blanking would not be, because a label is only a NAME: the definition
     and every ``callsub``/``b`` referencing it are rewritten by the same rule, so they still agree.
-    Two bytes for two, so offsets, lines and columns are unchanged. Quoted byte literals are
+    One byte for one, so offsets, lines and columns are unchanged. Quoted byte literals are
     skipped -- ``pushbytes "a::b"`` is DATA, and rewriting it would corrupt the program rather than
     rename part of it.
     """
-    if b"::" not in src:
+    if b"::" not in src and b"*" not in src:
         return src
     out = bytearray(src)
     i, n = 0, len(out)
@@ -133,7 +209,7 @@ def _rewrite_scoped_label_separators(src: bytes) -> bytes:
         if eol == -1:
             eol = n
         in_str, esc, k = False, False, i
-        while k < eol - 1:
+        while k < eol:
             ch = out[k]
             if in_str:
                 if esc:
@@ -144,9 +220,11 @@ def _rewrite_scoped_label_separators(src: bytes) -> bytes:
                     in_str = False
             elif ch == 0x22:
                 in_str = True
-            elif ch == 0x3A and out[k + 1] == 0x3A:      # `::` outside a literal
+            elif ch == 0x3A and k + 1 < eol and out[k + 1] == 0x3A:   # `::` outside a literal
                 out[k] = out[k + 1] = 0x5F              # -> `__`
                 k += 1
+            elif ch == 0x2A and _starts_identifier_char(out, k, i, eol):   # `*` starting a NAME
+                out[k] = 0x5F                           # -> `_` (never the bare multiply opcode)
             k += 1
         i = eol + 1
     return bytes(out)
@@ -458,6 +536,8 @@ def parse_nodes(
             src = src.encode("utf-8")
         src = _neutralise_comment_continuations(src)
         src = _rewrite_scoped_label_separators(src)
+        src = _normalise_numeric_separators(src)
+        src = _spell_immediateless_extract(src)
         root = _parser().parse(src).root_node
 
         real: list = []

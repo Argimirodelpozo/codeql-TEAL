@@ -214,3 +214,87 @@ def test_double_colon_inside_a_byte_literal_is_data(tmp_path):
     vals = [str(o.const_value) for a in prog.assignments if a.op == "pushbytes"
             for o in a.outputs if o.const_value is not None]
     assert vals and "a::b" in vals[0].replace('"', '') or vals == ["0x" + b"a::b".hex()], vals
+
+
+def test_underscore_separated_integer_parses(tmp_path):
+    """`1_000_000` is a legal integer to the ASSEMBLER and unparseable to the grammar.
+
+    Verified against go-algorand: `intcblock 1_000_000` assembles and runs. The grammar ends the
+    integer at the underscore, so the rest of the constant block becomes an unparsed span and the
+    program is refused at line 2 -- before any analysis begins. TEALScript passes the TypeScript
+    numeric separator straight through, so this hits every TEALScript contract with a readable
+    constant; both of Reti's do.
+    """
+    prog = _prog(tmp_path, "#pragma version 11\n"
+                           "intcblock 0 1 1_000_000 2_100_000\n"
+                           "intc 2\nintc 3\n+\nreturn\n")
+    assert not prog.parse_diagnostics, f"underscore int unparsed: {prog.parse_diagnostics}"
+    prog.propagate_constants()
+    vals = {int(str(o.const_value)) for a in prog.assignments if a.op.startswith("intc")
+            for o in a.outputs if o.const_value is not None}
+    assert 1000000 in vals and 2100000 in vals, f"separators not stripped: {vals}"
+
+
+def test_asterisk_label_parses(tmp_path):
+    """TEALScript names returns `*addStake*return` and router targets `*call_NoOp`.
+
+    Verified against go-algorand: `b *foo*return` / `*foo*return:` assembles and runs.
+    """
+    prog = _prog(tmp_path, "#pragma version 11\n"
+                           "b *addStake*return\n"
+                           "*addStake*return:\n"
+                           "int 1\nreturn\n")
+    assert not prog.parse_diagnostics, f"asterisk label unparsed: {prog.parse_diagnostics}"
+    assert any(a.op == "b" for a in prog.assignments) or prog.labels, "branch/label dropped"
+
+
+def test_asterisk_opcodes_survive_the_label_rewrite(tmp_path):
+    """`*` is multiply and `b*` is byteslice-multiply — neither may be renamed.
+
+    TEALScript's router uses the bare `*` two lines above `switch *call_NoOp ...`, so both readings
+    of the character appear in one idiom. Keying the rewrite on the character BEFORE the asterisk
+    turns `b*` into `b_`, replacing a real instruction with an undefined mnemonic.
+    """
+    prog = _prog(tmp_path, "#pragma version 11\n"
+                           "int 2\nint 3\n*\n"
+                           "itob\npushbytes 0x02\nb*\n"
+                           "pop\nint 1\nreturn\n")
+    assert not prog.parse_diagnostics, f"asterisk opcode unparsed: {prog.parse_diagnostics}"
+    ops = [a.op for a in prog.assignments]
+    assert "*" in ops, f"multiply opcode lost: {ops}"
+    assert "b*" in ops, f"byteslice-multiply lost: {ops}"
+
+
+def test_immediateless_extract_parses(tmp_path):
+    """`extract` with no immediates pops start/length from the stack — a synonym for `extract3`.
+
+    Verified against go-algorand: `pushbytes 0x..; int 0; int 8; extract; btoi` assembles and runs.
+    The grammar knows only the two-immediate form, so the bare one became an unparsed span, the
+    block lost an instruction, and every later stack reference in it shifted -- which surfaced far
+    downstream as a bogus `btoi` type error rather than as a parse problem.
+    """
+    prog = _prog(tmp_path, "#pragma version 11\n"
+                           "\tpushbytes 0x0102030405060708\n"
+                           "\tint 0\n\tint 8\n"
+                           "\textract\n"
+                           "\tbtoi\n\treturn\n")
+    assert not prog.parse_diagnostics, f"bare extract unparsed: {prog.parse_diagnostics}"
+    ops = [a.op for a in prog.assignments]
+    assert "extract3" in ops or "extract" in ops, f"extract dropped: {ops}"
+    assert "btoi" in ops, f"instruction after extract lost: {ops}"
+
+
+def test_immediateless_extract_at_column_zero_stays_a_diagnostic(tmp_path):
+    """The documented limit of the rewrite, pinned so it cannot surprise anyone.
+
+    Spelling `extract` as `extract3` costs a byte, and it is paid for by consuming the preceding
+    whitespace so every offset downstream is unchanged. With no byte to spend the line is left
+    alone and the span is REPORTED -- a diagnostic beats silently shifting every column after it.
+    Every compiler indents its instructions, so this is unreachable in practice; it is here to say
+    which way the tradeoff falls rather than to bless the shift.
+    """
+    prog = _prog(tmp_path, "#pragma version 11\n"
+                           "pushbytes 0x01\nint 0\nint 1\n"
+                           "extract\n"
+                           "btoi\nreturn\n")
+    assert prog.parse_diagnostics, "unindented bare extract should still be reported"
