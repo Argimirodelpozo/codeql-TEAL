@@ -57,10 +57,10 @@ _IRT = {
     "uint64": PT.uint64, "bytes": PT.bytes, "bool": PT.bool,
     "account": PT.account, "asset": PT.uint64, "application": PT.uint64,
     "biguint": PT.biguint,
-    # Last-resort default for a type recovery could NOT resolve. Any residual `?`
-    # is logged by type_recovery._warn_residual_unknowns, so this fallback can't
-    # quietly mistype a bytes value.
-    "?": PT.uint64,
+    # Puya's value IR can represent AVM-polymorphic values exactly. Keep a
+    # residual recovery unknown as `any` for decompilation and analyses instead
+    # of asserting uint64; only MIR/codegen lacks this representation.
+    "?": PT.any,
 }
 
 # Const-push pseudo-ops that survive the lift only when their immediate was a
@@ -117,15 +117,16 @@ def _is_template_push(immediates) -> bool:
 
 
 class _Translator:
-    def __init__(self, src_map: dict | None = None):
+    def __init__(self, src_map: dict | None = None, *, unknown_type=PT.any):
         self.regs: dict = {}      # id(pre-IR Register) -> M.Register
         self.blocks: dict = {}    # pre-IR block id -> M.BasicBlock
         self.subs: dict = {}      # pre-IR Subroutine.id -> M.Subroutine
         self.src: dict = src_map or {}
         self._block_cache: dict = {}   # (kind, line) -> recovered const block
+        self.unknown_type = unknown_type
 
     def ty(self, s):
-        return _IRT.get(s, PT.uint64)
+        return self.unknown_type if s == "?" else _IRT.get(s, self.unknown_type)
 
     def reg(self, r):
         k = id(r)
@@ -144,7 +145,8 @@ class _Translator:
             return _bytes_const(v.value or "0x")
         if isinstance(v, pre_ir.Undefined):
             # An unknown has no type of its own; honour the one stamped on it
-            # (`?` falls back to uint64). Hardcoding uint64 here made
+            # (`?` remains Puya `any` outside the codegen-only path). Hardcoding
+            # uint64 here made
             # `let pc%N: bytes = undefined` -- a divergent join's missing-arm
             # cell whose phi settled to bytes -- fail Puya's assignment check.
             return M.Undefined(source_location=None, ir_type=self.ty(v.ir_type))
@@ -408,27 +410,43 @@ def _puya_error_capture(stage: str, diagnostics: list | None = None):
             "; ".join(msgs[:5]) + (" …" if len(msgs) > 5 else ""))
 
 
-def to_puya(prog, *, diagnostics: list | None = None):
-    """SSAProgram -> (main, subroutines) as real ``puya.ir.models`` objects, with any
-    lowering failure surfaced as a typed ``LiftError`` (stage ``"lower"``). Errors
-    puya merely LOGS during model validation are appended to ``diagnostics`` (when
-    given) — see :func:`_puya_error_capture`."""
+def _lower_with_unknown_type(prog, diagnostics, unknown_type):
+    """Shared guarded lower; ``unknown_type`` is explicit at the boundary."""
     from ..diagnostics.errors import LiftError
     try:
         with _puya_error_capture("lower", diagnostics):
-            return _to_puya_impl(prog)
+            return _to_puya_impl(prog, unknown_type=unknown_type)
     except LiftError:
         raise
     except Exception as e:
         raise LiftError(f"{type(e).__name__}: {e}", stage="lower") from e
 
 
-def _to_puya_impl(prog):
-    main, subs, _lifter, _t = _to_puya_full(prog)
+def to_puya(prog, *, diagnostics: list | None = None):
+    """SSAProgram -> (main, subroutines) as real ``puya.ir.models`` objects, with any
+    lowering failure surfaced as a typed ``LiftError`` (stage ``"lower"``). Errors
+    puya merely LOGS during model validation are appended to ``diagnostics`` (when
+    given) — see :func:`_puya_error_capture`."""
+    return _lower_with_unknown_type(prog, diagnostics, PT.any)
+
+
+def _to_puya_for_codegen(prog, *, diagnostics: list | None = None):
+    """Lower for Puya MIR, which cannot represent ``AVMType.any`` registers.
+
+    The placeholder is isolated here: detector-facing :func:`to_puya` always
+    keeps residual values as ``PT.any``. Selecting uint64 changes no AVM
+    instruction for a value that survived recovery (all family-demanding uses
+    have already typed it), but it is a codegen accommodation, never evidence.
+    """
+    return _lower_with_unknown_type(prog, diagnostics, PT.uint64)
+
+
+def _to_puya_impl(prog, *, unknown_type=PT.any):
+    main, subs, _lifter, _t = _to_puya_full(prog, unknown_type=unknown_type)
     return main, subs
 
 
-def _to_puya_full(prog):
+def _to_puya_full(prog, *, unknown_type=PT.any):
     """The full lower, additionally returning the ``lifter`` (SSAVar -> pre_ir
     Register) and ``t`` translator (id(pre_ir Register) -> M.Register) so a caller
     can bridge an SSA value to its lowered puya register."""
@@ -455,7 +473,7 @@ def _to_puya_full(prog):
     from .transforms import simplify_trivial_phis
     simplify_trivial_phis(lifted)
     _duplicate_shared_epilogues(lifted)
-    t = _Translator(_load_src(prog))
+    t = _Translator(_load_src(prog), unknown_type=unknown_type)
     groups = [lifted.main, *lifted.subroutines]
 
     # Pass 1: shells, so control ops and InvokeSubroutine can reference real
@@ -769,6 +787,8 @@ _BYTES_IRT = frozenset({PT.bytes, PT.account})
 
 
 def _puya_zero(ir_type):
+    if ir_type is PT.any:
+        return M.Undefined(source_location=None, ir_type=PT.any)
     if ir_type in _BYTES_IRT:
         return M.BytesConstant(source_location=None, value=b"",
                                encoding=AVMBytesEncoding.utf8)

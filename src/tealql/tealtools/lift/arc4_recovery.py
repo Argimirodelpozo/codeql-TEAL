@@ -942,21 +942,25 @@ def abi_address_fund_flows(main, subs, guesses=None) -> list:
     through intrinsic operands, register copies and phis; memoised, cycle-safe),
     so it survives the ABI-decode chain compiled contracts interpose:
       - ``caller_supplied`` -- the slice roots in an ABI method-argument read;
-      - ``guarded`` -- some value on the slice is an ``eq``/``neq`` operand, a
-        'was it pinned' proxy.
+      - ``guarded`` -- no represented caller-input path avoids an ``eq``/``neq``
+        operand, a 'was it pinned' proxy (MUST across merged callsites).
     ``caller_supplied and not guarded`` is the arbitrary-recipient shape.
 
-    The slice is INTRA-procedural, so a value arriving as a subroutine frame
-    parameter breaks the chain -- a known gap; taint's interprocedural bridge is
-    the fuller answer. Returns dicts ``{field, subroutine, encoding, confident,
-    caller_supplied, guarded}``; side-channel in, report out, never ``ir_type``."""
+    The slice crosses call arguments -> callee parameters and callee returns ->
+    caller results. Identities are scoped by owning subroutine: Puya reuses names
+    such as ``p%0`` in every sub, so a process-global ``(name, version)`` key
+    fabricates provenance between unrelated helpers. Returns dicts ``{field,
+    subroutine, encoding, confident, caller_supplied, guarded}``; side-channel
+    in, report out, never ``ir_type``."""
     if guesses is None:
         guesses, confident = guess_encoded_types_scored(main, subs)
     else:
         confident = {}
 
-    def kv(r):
-        return (r.name, r.version)
+    groups = (main, *subs)
+
+    def kv(sub, r):
+        return (id(sub), r.name, r.version)
 
     # Backward def-use graph: each identity -> its predecessors, plus the sets of
     # identities that ARE a raw ApplicationArgs read and that are eq/neq operands.
@@ -965,16 +969,17 @@ def abi_address_fund_flows(main, subs, guesses=None) -> list:
     compared: set = set()
     origin_of: dict = {}                  # arg-read identity -> 'ApplicationArgs:N'
 
-    def _add_pred(dst, srcs):
+    def _add_pred(dst, srcs, owner):
         bucket = preds.setdefault(dst, set())
         for s_ in srcs:
             if isinstance(s_, M.Register):
-                bucket.add(kv(s_))
+                bucket.add(kv(owner, s_))
 
-    for s in (main, *subs):
+    callsites = []                 # (caller, InvokeSubroutine, result registers)
+    for s in groups:
         for bb in s.body:
             for ph in bb.phis:
-                _add_pred(kv(ph.register), [pa.value for pa in ph.args])
+                _add_pred(kv(s, ph.register), [pa.value for pa in ph.args], s)
             for o in bb.ops:
                 src = o.source if isinstance(o, M.Assignment) else o
                 if isinstance(o, M.Assignment):
@@ -982,19 +987,41 @@ def abi_address_fund_flows(main, subs, guesses=None) -> list:
                            else list(src.args) if isinstance(src, M.Intrinsic) else [])
                     for t in o.targets:
                         if isinstance(t, M.Register):
-                            _add_pred(kv(t), ins)
+                            _add_pred(kv(s, t), ins, s)
                             if isinstance(src, M.Intrinsic) and src.op in _ABI_ARG_OPS \
                                     and src.immediates \
                                     and "ApplicationArgs" in str(src.immediates[0]):
-                                is_arg.add(kv(t))
+                                is_arg.add(kv(s, t))
                                 idx = (src.immediates[1]
                                        if len(src.immediates) > 1 else None)
                                 if isinstance(idx, int):
-                                    origin_of[kv(t)] = f"ApplicationArgs:{idx}"
+                                    origin_of[kv(s, t)] = f"ApplicationArgs:{idx}"
+                if isinstance(src, M.InvokeSubroutine):
+                    targets = (list(o.targets) if isinstance(o, M.Assignment) else [])
+                    callsites.append((s, src, targets))
                 if isinstance(src, M.Intrinsic) and src.op in (AVMOp.eq, AVMOp.neq):
                     for a in src.args:
                         if isinstance(a, M.Register):
-                            compared.add(kv(a))
+                            compared.add(kv(s, a))
+
+    # Interprocedural identity edges. A parameter inherits every caller argument;
+    # a call result inherits every concrete return site at that position. This is
+    # MAY provenance, matching the report's "some caller can supply it" lead.
+    for caller, invoke, targets in callsites:
+        callee = invoke.target
+        for param, arg in zip(callee.parameters, invoke.args):
+            if isinstance(param, M.Register) and isinstance(arg, M.Register):
+                preds.setdefault(kv(callee, param), set()).add(kv(caller, arg))
+        for pos, target in enumerate(targets):
+            if not isinstance(target, M.Register):
+                continue
+            bucket = preds.setdefault(kv(caller, target), set())
+            for bb in callee.body:
+                term = bb.terminator
+                if isinstance(term, M.SubroutineReturn) and pos < len(term.result):
+                    value = term.result[pos]
+                    if isinstance(value, M.Register):
+                        bucket.add(kv(callee, value))
 
     # Arg-origin closure over `compared`: comparing ONE read of ApplicationArgs N
     # validates the arg, so every distinct-SSA read of the same constant index
@@ -1022,8 +1049,27 @@ def abi_address_fund_flows(main, subs, guesses=None) -> list:
         _slice_cache[start] = seen
         return seen
 
+    def _has_unguarded_arg_path(start) -> bool:
+        """Whether some caller-input path reaches ``start`` without a comparison.
+
+        Interprocedural parameter edges merge all callsites. Treating one guarded
+        caller as proof for the merged parameter hides a different unguarded
+        caller; the security-facing verdict needs ALL attacker paths guarded.
+        """
+        seen: set = set()
+        stack = [start]
+        while stack:
+            node = stack.pop()
+            if node in seen or node in compared:
+                continue
+            seen.add(node)
+            if node in is_arg:
+                return True
+            stack.extend(preds.get(node, ()))
+        return False
+
     leads: list = []
-    for s in (main, *subs):
+    for s in groups:
         for bb in s.body:
             for o in bb.ops:
                 src = o.source if isinstance(o, M.Assignment) else o
@@ -1037,14 +1083,17 @@ def abi_address_fund_flows(main, subs, guesses=None) -> list:
                 if not (isinstance(a, M.Register) and id(a) in guesses
                         and is_address_encoding(guesses[id(a)])):
                     continue
-                sl = bslice(kv(a))
+                start = kv(s, a)
+                sl = bslice(start)
+                caller_supplied = bool(sl & is_arg)
                 leads.append({
                     "field": field,
                     "subroutine": s.id,
                     "encoding": str(guesses[id(a)]),
                     "confident": bool(confident.get(id(a), False)),
-                    "caller_supplied": bool(sl & is_arg),
-                    "guarded": bool(sl & compared),
+                    "caller_supplied": caller_supplied,
+                    "guarded": (caller_supplied
+                                and not _has_unguarded_arg_path(start)),
                 })
     return leads
 

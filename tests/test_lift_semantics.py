@@ -15,9 +15,9 @@ that make the lift correct*, using oracles we already have:
 
   Tier 2 (completeness): walk the pre-IR -- every block terminates, every
     ``InvokeSubroutine``'s arity matches its callee, and type recovery did not
-    collapse (residual ``"?"`` registers, which lowering would silently default
-    to uint64, stay a small fraction). The checker is exercised always-run on
-    hand-built pre-IR, then applied to each real lift.
+    collapse (residual ``"?"`` registers, retained as Puya ``any``, stay a small
+    fraction). The checker is exercised always-run on hand-built pre-IR, then
+    applied to each real lift.
 
   Tier 3 (behavioural): lower the lifted IR through Puya's *real* backend --
     ``program_ir_to_mir`` (with the strict ``global_stack_allocation``) then
@@ -53,7 +53,8 @@ _REAL_CONTRACT_DIR = _ROOT / "contracts"
 _CORPUS_DIR = _ROOT / "experimental_IR_lift" / "puya"
 _EXPLORER_DIR = _ROOT / "experimental_IR_lift" / "explorer"
 # A residual-"?" fraction this high means type recovery has collapsed (a coarse
-# net -- the strong guards are terminator/arity/backend). Observed max ~11%.
+# net -- ``?`` is represented honestly as Puya ``any``, but precision still
+# matters). Observed max ~11%.
 _MAX_UNKNOWN_FRACTION = 0.25
 
 
@@ -134,7 +135,8 @@ def _lower_to_teal(main, subs):
     (``destructure_ssa``) -> ``program_ir_to_mir`` -> ``mir_to_teal``. The lift's
     own undefined-register catch-retry (typed-zero orphan definition) is applied
     at the MIR boundary, mirroring what ``to_puya_ir.optimize`` does at the
-    IR-optimiser boundary."""
+    IR-optimiser boundary. ``main`` / ``subs`` must come from the private
+    codegen lower: analysis-facing Puya ``any`` is intentionally not MIR-valid."""
     import re
 
     import puya.ir.models as M
@@ -220,7 +222,7 @@ def _violations(pre) -> list:
 
 def _unknown_registers(pre):
     """(unknown, total) register-occurrence counts -- a register left ``"?"`` is
-    a type-recovery gap that lowering silently defaults to uint64."""
+    a type-recovery precision gap represented as Puya ``any``."""
     total = unknown = 0
     for bb in pre_ir.blocks(pre):
         regs = [ph.register for ph in bb.phis]
@@ -334,7 +336,15 @@ def test_lowers_through_puya_backend(contract):
     """Tier 3 (tracked/xfail): the lifted IR lowers through Puya's real MIR
     stack-allocator + TEAL backend to actual ops. Currently surfaces the lift's
     not-yet-backend-clean gaps on production contracts; flips to xpass when fixed."""
-    _pre, main, subs, _errs = _process(contract)
+    from tealql.tealtools.lift import to_puya_ir
+    from tealql.tealtools.ssa import SSAProgram
+
+    # Tier 1 deliberately keeps residual values as Puya `any`. MIR has no union
+    # register, so Tier 3 must exercise the same explicit private boundary as
+    # the shipped backend rather than concretising analysis IR in place.
+    with _quiet_puya():
+        main, subs = to_puya_ir._to_puya_for_codegen(SSAProgram(contract))
+        to_puya_ir.optimize([main, *subs])
     teal = _lower_to_teal(main, subs)
     assert sum(len(b.ops) for b in teal.main.blocks) > 0    # produced real TEAL ops
 

@@ -326,6 +326,81 @@ def test_abi_address_fund_flow_survives_decode_chain(tmp_path):
         "provenance must survive an extract off the args tuple")
 
 
+def test_abi_address_fund_flow_crosses_subroutine_parameter(tmp_path):
+    """A caller argument passed into a payout helper remains caller-supplied.
+
+    Puya parameters have no local defining assignment, so an intra-procedural
+    backward slice stopped at ``p%0`` and missed this common compiled shape.
+    """
+    teal = (_PAY_PROLOGUE
+            + "txna ApplicationArgs 0\ncallsub set_receiver\n"
+            + _PAY_EPILOGUE
+            + "set_receiver:\nproto 1 0\nframe_dig -1\n"
+              "itxn_field Receiver\nretsub\n")
+    leads = _leads_for(tmp_path, teal)
+    helper = [x for x in leads if x["subroutine"] == "set_receiver"]
+    assert helper and all(x["caller_supplied"] and not x["guarded"] for x in helper)
+
+
+def test_abi_address_fund_flow_carries_caller_guard_through_parameter(tmp_path):
+    """A comparison on the caller's argument remains visible at the helper sink."""
+    teal = (_PAY_PROLOGUE
+            + "txna ApplicationArgs 0\nglobal CurrentApplicationAddress\n==\nassert\n"
+              "txna ApplicationArgs 0\ncallsub set_receiver\n"
+            + _PAY_EPILOGUE
+            + "set_receiver:\nproto 1 0\nframe_dig -1\n"
+              "itxn_field Receiver\nretsub\n")
+    leads = _leads_for(tmp_path, teal)
+    helper = [x for x in leads if x["subroutine"] == "set_receiver"]
+    assert helper and all(x["caller_supplied"] and x["guarded"] for x in helper)
+
+
+def test_one_guarded_caller_does_not_hide_an_unguarded_caller(tmp_path):
+    """Parameter provenance is MAY, while its guard fact must be MUST.
+
+    The same payout helper is called first with validated arg0 and then with
+    unvalidated arg1. Merging both into ``p%0`` must retain the unsafe path.
+    """
+    teal = (_PAY_PROLOGUE
+            + "txna ApplicationArgs 0\nglobal CurrentApplicationAddress\n==\nassert\n"
+              "txna ApplicationArgs 0\ncallsub set_receiver\n"
+              "txna ApplicationArgs 1\ncallsub set_receiver\n"
+            + _PAY_EPILOGUE
+            + "set_receiver:\nproto 1 0\nframe_dig -1\n"
+              "itxn_field Receiver\nretsub\n")
+    leads = _leads_for(tmp_path, teal)
+    helper = [x for x in leads if x["subroutine"] == "set_receiver"]
+    assert helper and all(x["caller_supplied"] and not x["guarded"] for x in helper)
+
+
+def test_abi_address_subroutine_register_names_are_scoped(tmp_path):
+    """Unrelated helpers both name their first parameter ``p%0``.
+
+    Caller provenance entering one helper must not jump by name into the other
+    helper's app-address parameter and fabricate an arbitrary-recipient lead.
+    """
+    teal = (_PAY_PROLOGUE
+            + "txna ApplicationArgs 0\ncallsub discard\n"
+              "global CurrentApplicationAddress\ncallsub set_receiver\n"
+            + _PAY_EPILOGUE
+            + "discard:\nproto 1 0\nframe_dig -1\npop\nretsub\n"
+              "set_receiver:\nproto 1 0\nframe_dig -1\n"
+              "itxn_field Receiver\nretsub\n")
+    leads = _leads_for(tmp_path, teal)
+    helper = [x for x in leads if x["subroutine"] == "set_receiver"]
+    assert helper and not any(x["caller_supplied"] for x in helper)
+
+
+def test_abi_address_fund_flow_crosses_subroutine_return(tmp_path):
+    """A helper returning its address parameter preserves caller provenance."""
+    teal = (_PAY_PROLOGUE
+            + "txna ApplicationArgs 0\ncallsub identity\nitxn_field Receiver\n"
+            + _PAY_EPILOGUE
+            + "identity:\nproto 1 1\nframe_dig -1\nretsub\n")
+    leads = _leads_for(tmp_path, teal)
+    assert any(x["caller_supplied"] and not x["guarded"] for x in leads)
+
+
 def test_no_fund_lead_without_sink(tmp_path):
     """No fund/asset-transfer sink -> no lead, even for a caller-supplied address
     that is merely logged (the sink-field filter is part of the trigger)."""

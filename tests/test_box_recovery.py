@@ -144,6 +144,17 @@ def test_discarded_state_read_does_not_invent_uint64(tmp_path):
     assert not opaque[0].value_confident
 
 
+def test_any_typed_state_read_used_by_scratch_stays_unknown(tmp_path):
+    """Using an otherwise-untyped read in an any-typed operation is not uint64
+    evidence. Puya ``any`` must survive through storage schema extraction."""
+    teal = ('#pragma version 10\nint 0\nbyte "opaque"\napp_global_get_ex\n'
+            'pop\nstore 0\nint 1\nreturn\n')
+    opaque = [s for s in _schema(tmp_path, teal) if s.key_or_prefix == b"opaque"]
+    assert opaque and opaque[0].arc56_value_type is None
+    assert opaque[0].storage_type == "unknown"
+    assert not opaque[0].value_confident
+
+
 def test_box_value_type_recovered(tmp_path):
     """A fixed-length value written to a box recovers as its sized type."""
     teal = """#pragma version 10

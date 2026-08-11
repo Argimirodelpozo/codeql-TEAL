@@ -400,6 +400,67 @@ def _tail_dup_preds(prog, sub, B):
     return preds
 
 
+def _tail_dup_loop_preds(prog, sub, B):
+    """Entry predecessors and discard ops for an exactly versionable self-loop.
+
+    A loop-header phi of the form ``phi(entry values..., self)`` is invariant:
+    once an entry chooses an AVM family, every iteration retains it. Clone the
+    single-block loop once per external entry and substitute that entry's arm;
+    no union register remains. Anything genuinely loop-carried (a self edge from
+    another definition), missing, cross-block, or escaping except through a
+    successor phi is refused without mutation.
+    """
+    if B.terminator is None or not sub.body or B is sub.body[0]:
+        return None
+    preds = [b for b in sub.body if B.id in pre_ir.succ_ids(b.terminator)]
+    if B not in preds:
+        return None
+    entries = [p for p in preds if p is not B]
+    if not entries or len(entries) > 8 \
+            or len(entries) * max(1, len(B.ops)) > 256:
+        return None
+    for s2 in (prog.main, *prog.subroutines):
+        if s2 is sub:
+            continue
+        if any(B.id in pre_ir.succ_ids(b2.terminator) for b2 in s2.body):
+            return None
+
+    defined = {id(ph.register) for ph in B.phis}
+    for o in B.ops:
+        if isinstance(o, pre_ir.Assignment):
+            defined.update(id(t) for t in o.targets)
+    entry_ids = {p.id for p in entries}
+    for ph in B.phis:
+        arms = {a.through: a.value for a in ph.args}
+        if arms.get(B.id) is not ph.register or not entry_ids <= set(arms):
+            return None
+        if any(isinstance(arms[p.id], pre_ir.Undefined)
+               or id(arms[p.id]) in defined for p in entries):
+            return None
+
+    discards = []
+    for s2 in (prog.main, *prog.subroutines):
+        for b2 in s2.body:
+            if b2 is B:
+                continue
+            for node in (*b2.phis, *b2.ops, b2.terminator):
+                if node is None or not any(
+                        id(v) in defined for v in pre_ir.operands(node)):
+                    continue
+                # A successor phi is the SSA spelling of an escaping value. Its
+                # one B arm can be expanded to one mapped arm per loop version.
+                if isinstance(node, pre_ir.Phi) and all(
+                        a.through == B.id for a in node.args
+                        if id(a.value) in defined):
+                    continue
+                intr = _intr(node)
+                if intr is not None and intr.op in ("pop", "popn"):
+                    discards.append((b2, node))
+                    continue
+                return None
+    return entries, discards
+
+
 def tail_duplicate_mixed_joins(prog) -> int:
     """Delete a join whose ``?``-typed phi mixes AVM families by giving each
     predecessor its OWN COPY of the join block — real tail duplication, the one
@@ -409,11 +470,12 @@ def tail_duplicate_mixed_joins(prog) -> int:
 
     Cloning is shallow for values defined outside the block (pre-IR registers
     are identity-keyed — a deep copy would sever every external reference) and
-    fresh only for the block's own defs (``td%N``). Every guard failure falls
-    through to :func:`split_mixed_phis`, whose per-use pick is total — so this
-    pass has no completeness obligation, only a correctness one. Inert on
-    compiler output: a mixed-family merge is hand-written-TEAL-only (0 of the
-    231-probe corpus)."""
+    fresh only for the block's own defs (``td%N``). A single-block self-loop is
+    also versioned when each mixed phi is loop-invariant (its backedge arm is
+    itself). Every guard failure falls through to :func:`split_mixed_phis`, whose
+    per-use pick is total — so this pass has no completeness obligation, only a
+    correctness one. Inert on compiler output: a mixed-family merge is
+    hand-written-TEAL-only (0 of the 231-probe corpus)."""
     n_dup = 0
     ctr = 0
     for _round in range(64):
@@ -425,18 +487,25 @@ def tail_duplicate_mixed_joins(prog) -> int:
                                 for a in ph.args} - {"?"}) >= 2
                        for ph in bb.phis):
                     preds = _tail_dup_preds(prog, sub, bb)
+                    is_loop = False
+                    discards = []
+                    if preds is None:
+                        loop = _tail_dup_loop_preds(prog, sub, bb)
+                        if loop is not None:
+                            preds, discards = loop
+                            is_loop = True
                     if preds is not None:
-                        found = (sub, bb, preds)
+                        found = (sub, bb, preds, is_loop, discards)
                         break
             if found:
                 break
         if found is None:
             return n_dup
-        sub, B, preds = found
+        sub, B, preds, is_loop, discards = found
         next_id = max(b.id for s in (prog.main, *prog.subroutines)
                       for b in s.body) + 1
         arm_of = [{a.through: a.value for a in ph.args} for ph in B.phis]
-        clone_ids = []
+        clone_maps = []
         for P in preds:
             m: dict = {}
             for ph, arms in zip(B.phis, arm_of):
@@ -460,14 +529,19 @@ def tail_duplicate_mixed_joins(prog) -> int:
             clone = pre_ir.BasicBlock(
                 id=next_id, phis=[], ops=ops,
                 terminator=_clone_terminator(B.terminator, m), comment=B.comment)
+            if is_loop:
+                pre_ir.map_succ_ids(
+                    clone.terminator,
+                    lambda b, _c=clone.id: _c if b == B.id else b,
+                )
             next_id += 1
             sub.body.append(clone)
             pre_ir.map_succ_ids(
                 P.terminator, lambda b, _c=clone.id: _c if b == B.id else b)
-            clone_ids.append(clone.id)
-        # A successor phi's `through=B` arm becomes one arm per clone — its
-        # value is defined ABOVE B (the escape guard), so every clone
-        # contributes the same object along its own edge.
+            clone_maps.append((clone.id, m))
+        # A successor phi's `through=B` arm becomes one arm per clone. External
+        # values remain the same object; a loop-block definition maps to that
+        # version's fresh `td%` register.
         for s2 in (prog.main, *prog.subroutines):
             for b2 in s2.body:
                 for ph in b2.phis:
@@ -475,9 +549,11 @@ def tail_duplicate_mixed_joins(prog) -> int:
                         ph.args = [
                             na for a in ph.args
                             for na in (
-                                [pre_ir.PhiArgument(a.value, cid)
-                                 for cid in clone_ids]
+                                [pre_ir.PhiArgument(_mapped(a.value, mapping), cid)
+                                 for cid, mapping in clone_maps]
                                 if a.through == B.id else [a])]
+        for db, discard in discards:
+            db.ops = [o for o in db.ops if o is not discard]
         sub.body.remove(B)
         n_dup += 1
     logger.warning("tail_duplicate_mixed_joins hit its round cap; "

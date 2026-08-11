@@ -917,14 +917,13 @@ def test_an_unsinkable_mixed_type_merge_is_tail_duplicated_exactly(tmp_path):
     lift_to_teal(str(teal))          # and it must still reach TEAL
 
 
-def test_a_refused_mixed_merge_keeps_the_explicit_unknown_floor(tmp_path):
-    """Tail duplication REFUSES a loop header (self-arm) — restructuring a loop
-    is not V1's business — and the merge falls through to the per-use pick: the
-    majority-family phi keeps its own family's arm verbatim and the arm the
-    register cannot hold becomes an EXPLICIT unknown, never a reinterpreted or
-    coerced value. This pins the fall-back ladder: every guard failure lands on
-    a total, honest floor rather than a crash."""
-    from tealql.tealtools.language.avm import avm
+def test_a_loop_invariant_mixed_merge_is_versioned_exactly(tmp_path):
+    """A self-loop ``phi(bytes-entry, uint-entry, self)`` is loop-invariant.
+
+    Versioning the single-block loop per external entry preserves each original
+    family on every iteration, including its any-typed dynamic scratch write.
+    No cross-family register or explicit unknown is needed.
+    """
     from tealql.tealtools.lift.backend import lift_to_teal
 
     teal = tmp_path / "mixloop.teal"
@@ -934,20 +933,13 @@ def test_a_refused_mixed_merge_keeps_the_explicit_unknown_floor(tmp_path):
         "txn NumLogs\nbnz loop\npop\nint 1\nreturn\n")
     ir = lift(SSAProgram(str(teal)))
     rendered = ir.render()
-    assert "φ(" in rendered, (
-        f"the refused merge must SURVIVE as a phi, not be duplicated:\n{rendered}")
-    assert "undefined" in rendered.lower(), (
-        f"the cross-family arm must be an explicit unknown:\n{rendered}")
-    for sub in (ir.main, *ir.subroutines):
-        for bb in sub.body:
-            for ph in bb.phis:
-                want = avm(ph.register.ir_type)
-                assert want in ("u", "b"), f"an untyped phi survived:\n{rendered}"
-                for a in ph.args:
-                    got = avm(getattr(a.value, "ir_type", "?"))
-                    assert got in ("?", want), (
-                        f"phi {ph.register} carries a {got} arm across the AVM "
-                        f"divide:\n{rendered}")
+    assert rendered.count("(stores") == 2, (
+        f"each family needs its own loop version:\n{rendered}")
+    assert "(txn Sender)" in rendered and "(global LatestTimestamp)" in rendered
+    assert "φ(" not in rendered and "undefined" not in rendered.lower(), (
+        f"loop versioning must preserve both values without an unknown:\n{rendered}")
+    assert ir.pass_stats["tail_dup_joins"] == 1
+    assert ir.pass_stats["split_mixed_phis"] == 0
     lift_to_teal(str(teal))          # and it must still reach TEAL
 
 

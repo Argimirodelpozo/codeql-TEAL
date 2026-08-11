@@ -64,13 +64,13 @@ _SHAPES = {
         "two:\nint 8\njoin:\nstores\nint 1\nreturn\n",
         {"tail_dup_joins": 1},
     ),
-    # The same mixed cell at a LOOP HEADER: tail duplication refuses (it will not
-    # restructure a loop), so the per-use split has to catch it.
-    "per_use_split_at_a_loop_header": (
+    # A loop-invariant mixed cell at a self-loop header: version the loop once
+    # per entry family, so the any-typed store keeps both exact values.
+    "versioned_mixed_self_loop": (
         "#pragma version 8\ntxn NumAppArgs\nbnz two\ntxn Sender\nb loop\n"
         "two:\nglobal LatestTimestamp\nloop:\ndup\nint 1\nswap\nstores\n"
         "txn NumLogs\nbnz loop\npop\nint 1\nreturn\n",
-        {"split_mixed_phis": 1},
+        {"tail_dup_joins": 1},
     ),
     # A mixed-type merge whose only consumer is a STATIC scratch store: sunk into
     # the predecessors, one single-typed store per edge.

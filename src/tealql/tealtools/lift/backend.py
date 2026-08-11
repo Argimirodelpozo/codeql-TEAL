@@ -61,7 +61,11 @@ def lift_to_teal(source, *, aggressive: bool = False,
                 avm_version = max(avm_version, int(_m.group(1)))
             break                      # first real line decides for this file
     # Lower + optimise (these raise LiftError stage lower/optimize themselves).
-    main, subs = to_puya_ir.to_puya(prog, diagnostics=diagnostics)
+    # MIR rejects Puya's exact ``any`` type. This private path concretises only
+    # values whose family recovery genuinely remained unresolved; public Puya
+    # IR and every analysis retain them as ``any`` and cannot mistake the
+    # backend placeholder for recovered uint64 evidence.
+    main, subs = to_puya_ir._to_puya_for_codegen(prog, diagnostics=diagnostics)
     to_puya_ir.optimize([main, *subs], aggressive=aggressive, diagnostics=diagnostics)
     try:
         with to_puya_ir._puya_error_capture("backend", diagnostics):

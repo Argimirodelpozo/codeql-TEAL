@@ -186,5 +186,8 @@ view:
   nothing. Pinned by `test_a_panicking_op_survives_into_the_pre_ir_even_when_dead`
   so that a regression dropping the op from the IR cannot hide behind the
   optimiser doing it anyway.
-- **~0.5% of emitted registers stay `?`-typed** (0.52% over 40 probes) — scratch
-  loads of genuinely reused slots — and default to `uint64` at lowering.
+- **Some emitted registers stay `?`-typed** — principally polymorphic state reads
+  and scratch values with no family-demanding use. Analysis-facing Puya IR now
+  retains these as `AVMType.any`, so they cannot masquerade as recovered uint64.
+  Puya's MIR does not accept `any`; the round-trip backend alone selects a
+  codegen placeholder after all analysis and type extraction are complete.

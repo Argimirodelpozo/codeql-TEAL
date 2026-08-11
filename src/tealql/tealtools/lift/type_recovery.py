@@ -1005,9 +1005,8 @@ def _infer_setbit_types(subs) -> None:
 def _warn_residual_unknowns(subs) -> None:
     """Log any register type recovery could NOT resolve.
 
-    HAZARD: lowering defaults a residual ``?`` to uint64 (``to_puya_ir._IRT``),
-    silently mistyping a value that is really bytes. Not fatal, but the gap must
-    be visible rather than shipped as a wrong type."""
+    Public lowering retains a residual ``?`` as Puya ``any``. The warning is a
+    precision metric: it no longer announces a silently asserted uint64 type."""
     res: list[str] = []
     for sub in subs:
         for pp in sub.parameters:
@@ -1023,8 +1022,7 @@ def _warn_residual_unknowns(subs) -> None:
     if res:
         import logging
         logging.getLogger("tealql.tealtools.lift").warning(
-            "type recovery left %d register(s) unresolved (lowering defaults them "
-            "to uint64; a bytes value would be mistyped): %s%s",
+            "type recovery left %d register(s) unresolved (lowered as AVM any): %s%s",
             len(res), ", ".join(res[:12]), " …" if len(res) > 12 else "")
 
 

@@ -137,6 +137,8 @@ def _arc56_irtype(t) -> "str | None":
         return _arc56_encoding(t.encoding)
     if isinstance(t, SizedBytesType):
         return f"byte[{t.num_bytes}]"
+    if t is PT.any:
+        return None
     return {PT.account: "address", PT.uint64: "uint64", PT.bytes: "bytes",
             PT.biguint: "uint512", PT.bool: "bool"}.get(t, str(t))
 # box ops that MODIFY a box -- an attacker-chosen box WRITE is worse than a read
@@ -287,11 +289,14 @@ def recover_storage_schema(main, subs, guesses=None, confident=None) -> list:
             return "uint64", True, "uint64"
         if not isinstance(val, M.Register):
             return None, False, "unknown"
-        st = "uint64" if val.ir_type.avm_type == PT.uint64.avm_type else "bytes"
+        at = val.ir_type.avm_type
+        st = ("uint64" if at == PT.uint64.avm_type else
+              "bytes" if at == PT.bytes.avm_type else "unknown")
         e = guesses.get(id(val))
         if e is not None:
             return _arc56_encoding(e.encoding), bool(confident.get(id(val))), st
-        return _arc56_irtype(val.ir_type), True, st
+        it = _arc56_irtype(val.ir_type)
+        return it, it is not None, st
 
     def _classify_key(key_val, sub):
         """``(is_map, key_or_prefix, arc56_key_type)`` per the module's fingerprint:

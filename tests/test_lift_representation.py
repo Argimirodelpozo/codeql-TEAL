@@ -25,6 +25,7 @@ from tealql.tealtools.lift.type_recovery import (  # noqa: E402
 from tealql.tealtools.lift.transforms import (  # noqa: E402
     sink_mixed_phi_scratch_stores,
     split_mixed_phis,
+    tail_duplicate_mixed_joins,
 )
 from tealql.tealtools.lift import pre_ir  # noqa: E402
 
@@ -179,6 +180,65 @@ def test_source_fallback_keeps_spaced_byte_encodings_atomic():
     })
     assert translator._operands_at(1) == ["b64 YQ==", "b64 Yg=="]
     assert translator._const_block("bytec", 2) == ["b64 Yw==", "b64 ZA=="]
+
+
+def test_versioned_self_loop_remaps_escaping_definition_per_clone():
+    """A definition leaving a versioned loop through a successor phi must get
+    one fresh arm per loop clone, not retain the deleted block's register."""
+    p, copied, after, cond = (
+        _r("p", "?"), _r("copied", "?"), _r("after", "?"), _r("cond", "uint64")
+    )
+    loop_phi = pre_ir.Phi(p, [
+        pre_ir.PhiArgument(pre_ir.BytesConstant("0x61"), 0),
+        pre_ir.PhiArgument(pre_ir.UInt64Constant(7), 1),
+        pre_ir.PhiArgument(p, 2),
+    ])
+    exit_phi = pre_ir.Phi(after, [pre_ir.PhiArgument(copied, 2)])
+    body = [
+        pre_ir.BasicBlock(0, [], [], pre_ir.Goto(2)),
+        pre_ir.BasicBlock(1, [], [], pre_ir.Goto(2)),
+        pre_ir.BasicBlock(
+            2, [loop_phi], [pre_ir.Assignment([copied], p)],
+            pre_ir.ConditionalBranch(cond, 2, 3),
+        ),
+        pre_ir.BasicBlock(
+            3, [exit_phi], [], pre_ir.ProgramExit(pre_ir.UInt64Constant(1)),
+        ),
+    ]
+    program = pre_ir.Program(pre_ir.Subroutine("m", [], [], body, is_main=True))
+
+    assert tail_duplicate_mixed_joins(program) == 1
+    assert len(exit_phi.args) == 2
+    assert len({a.through for a in exit_phi.args}) == 2
+    assert all(isinstance(a.value, pre_ir.Register)
+               and a.value.name.startswith("td%") for a in exit_phi.args)
+    assert all(a.value is not copied for a in exit_phi.args)
+
+
+def test_mixed_self_loop_with_mutating_backedge_is_refused():
+    """Only ``phi(entries..., self)`` is invariant. A value computed in the loop
+    and carried on the backedge needs a more general loop transform, so the
+    exact versioning pass must leave it untouched for the honest fallback."""
+    p, next_value, cond = _r("p", "?"), _r("next", "uint64"), _r("cond", "uint64")
+    loop_phi = pre_ir.Phi(p, [
+        pre_ir.PhiArgument(pre_ir.BytesConstant("0x61"), 0),
+        pre_ir.PhiArgument(pre_ir.UInt64Constant(7), 1),
+        pre_ir.PhiArgument(next_value, 2),
+    ])
+    body = [
+        pre_ir.BasicBlock(0, [], [], pre_ir.Goto(2)),
+        pre_ir.BasicBlock(1, [], [], pre_ir.Goto(2)),
+        pre_ir.BasicBlock(
+            2, [loop_phi],
+            [pre_ir.Assignment([next_value], pre_ir.UInt64Constant(9))],
+            pre_ir.ConditionalBranch(cond, 2, 3),
+        ),
+        pre_ir.BasicBlock(3, [], [], pre_ir.ProgramExit(pre_ir.UInt64Constant(1))),
+    ]
+    program = pre_ir.Program(pre_ir.Subroutine("m", [], [], body, is_main=True))
+
+    assert tail_duplicate_mixed_joins(program) == 0
+    assert body[2] in program.main.body and body[2].phis == [loop_phi]
 
 
 # --------------------------------------------------------------------------
@@ -339,6 +399,33 @@ def test_no_recipient_operand_lowers_as_uint64(probe):
                 t = getattr(src.args[0].ir_type, "name", None)
                 assert t != "uint64", (
                     f"{probe}: itxn_field {src.immediates[0]} operand typed uint64")
+
+
+def test_residual_polymorphic_value_lowers_as_any_not_uint64(tmp_path):
+    """An untyped state value used only by an any-typed scratch store has no
+    evidence for either AVM family. Public Puya IR must retain that fact as
+    ``any``; the MIR-only placeholder must remain private to ``lift_to_teal``."""
+    import puya.ir.models as M
+    from puya.ir.avm_ops import AVMOp
+    from puya.ir.types_ import PrimitiveIRType as PT
+
+    from tealql.tealtools.lift import lift_to_teal, to_puya_ir
+    from tealql.tealtools.ssa import SSAProgram
+
+    source = tmp_path / "unknown-state.teal"
+    source.write_text(
+        '#pragma version 10\nint 0\nbyte "opaque"\napp_global_get_ex\n'
+        "pop\nstore 0\nint 1\nreturn\n"
+    )
+    main, _subs = to_puya_ir.to_puya(SSAProgram(str(source)))
+    get_ex = next(
+        op for block in main.body for op in block.ops
+        if isinstance(op, M.Assignment)
+        and isinstance(op.source, M.Intrinsic)
+        and op.source.op is AVMOp.app_global_get_ex
+    )
+    assert [t.ir_type for t in get_ex.targets] == [PT.any, PT.bool]
+    assert "store 0" in lift_to_teal(str(source))
 
 
 def test_guarded_derived_view_keeps_exact_byte_lengths_during_lowering(caplog, tmp_path):
