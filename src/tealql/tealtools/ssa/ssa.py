@@ -182,6 +182,10 @@ class PySSA:
     # Subroutine metadata.
     _bb_to_sub: dict = field(default_factory=dict)
     _proto_io: dict = field(default_factory=dict)
+    # Sub entry -> (A, R): its ``proto`` verbatim, else the shared legacy
+    # inference (see _compute_call_pairs). Depth crossing and call-effect
+    # classification read THIS map so the two cannot disagree about a callee.
+    _callsub_arities: dict = field(default_factory=dict)
     # Verified call/return pairings (see _compute_call_pairs):
     #   cont.key -> (callsub PyBlock, A, R, frozenset of verified retsub pred keys)
     #   callsub PyBlock -> (cont PyBlock, A, R)
@@ -376,9 +380,18 @@ class PySSA:
 
         A ``callsub`` block CS pairs with continuation K only when ALL of:
 
-        * CS's callee entry declares ``proto A R`` (a legacy callee has no
-          declared arity — guessing would be worse than the known gap, and
-          ``lift._infer_arities`` handles those separately);
+        * CS's callee has ONE ``(A, R)``: declared by ``proto``, or inferred
+          by the shared legacy fixpoint (``infer_legacy_arities`` — the same
+          arities the simulation executes, so crossing and execution cannot
+          disagree). A DIVERGENT legacy callee — retsub sites at different
+          depths — has no single crossing and pairs with NOTHING: one path's
+          height would be wrong on the others, so its live continuation stays
+          depth-poisoned. Pairing used to require an explicit ``proto``,
+          which left every legacy call's continuation without an entry depth
+          and poisoned the caller's whole local suffix: in a proto'd caller,
+          frame params read AFTER such a call lifted to ``undefined`` (the
+          shape puya-ts emits for auth helpers, called first in nearly every
+          method);
         * the construction partition puts K in CS's own routine (the naive
           return point ``pyblock_partition`` itself uses, so ownership and
           crossing agree about where the call comes back to);
@@ -392,16 +405,27 @@ class PySSA:
         The retsub predecessors are recorded per pair because K may ALSO be an
         ordinary branch target; only the return edges get call semantics."""
         from ..cfg.subroutines import _pyblock_return_point
+        from . import stacksim
 
+        return_point = _pyblock_return_point(self.blocks, self._corrected_rp)
+        divergent: set = set()
+        self._callsub_arities = stacksim.infer_arities(
+            self.blocks, self._bb_to_sub, self._proto_io, return_point,
+            divergent=divergent)
         self._call_pairs = {}
         self._pair_by_cs = {}
-        for cs, cont in _pyblock_return_point(self.blocks,
-                                             self._corrected_rp).items():
+        for cs, cont in return_point.items():
             if cont is None or cont is cs:
                 continue
             callee = next((s for s in cs.succs if s in self._proto_io), None)
             if callee is None:
-                continue
+                # Legacy: the partition-root successor, crossed with its
+                # INFERRED (A, R). A divergent callee gets no pair — no
+                # single depth is true on every return path.
+                callee = next((s for s in cs.succs
+                               if self._bb_to_sub.get(s) is s), None)
+                if callee is None or callee in divergent:
+                    continue
             if self._bb_to_sub.get(cont) is not self._bb_to_sub.get(cs):
                 continue
             ret_pred_keys = frozenset(
@@ -411,7 +435,8 @@ class PySSA:
             )
             if not ret_pred_keys:
                 continue
-            a, r = self._proto_io[callee]
+            a, r = (self._proto_io.get(callee)
+                    or self._callsub_arities[callee])
             self._call_pairs[cont.key] = (cs, a, r, ret_pred_keys, callee)
             self._pair_by_cs[cs] = (cont, a, r)
 
@@ -453,8 +478,9 @@ class PySSA:
         the dead continuation of a call to an assert-fail helper — exactly
         where band heights are legitimately unknowable) cannot compromise it,
         however it writes. Within reaching blocks, an uncomputable height IS
-        unsafe — including every live continuation of a legacy no-proto call,
-        whose frame ops act directly on the CALLER's frame. Unsafety is
+        unsafe — the live continuation of a call whose crossing could not be
+        verified (a DIVERGENT legacy callee leaves no single depth), or a
+        height-conflicted join. Unsafety is
         transitive over ``callsub`` (a clean wrapper inherits its callee's)."""
         def net(op):
             if op.op == "frame_dig":
@@ -519,9 +545,17 @@ class PySSA:
                     if i != len(b.ops) - 1:
                         unsafe.add(sub)      # sim would have to model a call
                         break
+                    # Proto'd or legacy alike: `_callsub_arities` carries the
+                    # inferred (A, R) for proto-less callees, so a legacy
+                    # callee dipping below THIS sub's band still flags it —
+                    # the blanket unsafety its unpaired continuation used to
+                    # provide is gone now that legacy calls cross.
                     a_callee = next(
-                        (self._proto_io[s][0] for s in b.succs
-                         if s in self._proto_io), 0)
+                        ((self._proto_io.get(s)
+                          or self._callsub_arities[s])[0]
+                         for s in b.succs
+                         if s in self._proto_io
+                         or s in self._callsub_arities), 0)
                     if a_callee > h:
                         unsafe.add(sub)
                         clobber.add(sub)

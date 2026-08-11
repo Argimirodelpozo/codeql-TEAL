@@ -454,3 +454,57 @@ def test_shared_tails_are_listed_not_silent():
         f"{total} block(s) are executed by more than one routine (ceiling "
         f"{_SHARED_EXECUTION_BLOCKS}) — each is simulated on ONE owner's stack, "
         f"so the other caller's operands there are wrong: {worst[:6]}")
+
+
+def test_legacy_callee_calls_cross_so_caller_frame_params_survive(tmp_path):
+    """A callee with no ``proto`` must not strand its caller.
+
+    Depth crossing keyed off ``_proto_io`` alone, so a call to a legacy
+    helper never proposed an entry height for its continuation: the caller's
+    whole local suffix went depth-poisoned, and frame params read AFTER the
+    call lifted to ``undefined`` — silently, since a poisoned refusal is not
+    an error. puya-ts emits exactly this shape for auth helpers, called first
+    in nearly every method (auto-draw-card: 18 of 30 call sites stranded, 61
+    poisoned regions spanning 710 lines). The shared arity fixpoint already
+    knew the helper's ``(A, R)``; the pairing just never asked it.
+
+    CONTROL, folded in: a DIVERGENT legacy callee (retsub sites at different
+    depths) has no single crossing, so its continuation must STAY poisoned
+    and the frame read after it must refuse rather than take one path's
+    height."""
+    from tealql.tealtools.lift import to_puya
+
+    teal = tmp_path / "legacy_call.teal"
+    teal.write_text(
+        "#pragma version 10\n"
+        "int 7\nbyte 0x11\ncallsub target\nint 1\nreturn\n"
+        "target:\nproto 2 0\ncallsub helper\nassert\n"
+        "frame_dig -2\npop\nretsub\n"
+        "helper:\ntxn Sender\nglobal ZeroAddress\n==\nretsub\n"
+    )
+    prog = SSAProgram(str(teal))
+    assert not prog._pyssa._height_poisoned, (
+        "a function-shaped legacy callee's continuation must receive an "
+        "entry depth")
+    dig = next(a for a in prog.assignments if a.op == "frame_dig")
+    assert dig.inputs, "the frame param read after the legacy call must resolve"
+    main, _subs = to_puya(prog)
+    assert "Undefined" not in repr(main), (
+        "frame params read after a legacy call must lift to the params")
+
+    divergent = tmp_path / "divergent_call.teal"
+    divergent.write_text(
+        "#pragma version 10\n"
+        "int 7\nbyte 0x11\ncallsub target\nint 1\nreturn\n"
+        "target:\nproto 2 0\ncallsub helper\nassert\n"
+        "frame_dig -2\npop\nretsub\n"
+        "helper:\ntxn NumAppArgs\nbnz two\nint 1\nretsub\n"
+        "two:\nint 1\nint 2\nretsub\n"
+    )
+    prog2 = SSAProgram(str(divergent))
+    assert prog2._pyssa._height_poisoned, (
+        "a divergent legacy callee has no single (A, R) — crossing with one "
+        "path's depth would misanchor the other paths' frame reads")
+    dig2 = next(a for a in prog2.assignments if a.op == "frame_dig")
+    assert not dig2.inputs, "the poisoned frame read must refuse, not guess"
+    assert to_puya(prog2) is not None    # splice path: must lift, never raise

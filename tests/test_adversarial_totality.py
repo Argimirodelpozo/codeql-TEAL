@@ -50,10 +50,13 @@ PROBES = Path(__file__).resolve().parent / "mainnet-random-probes"
 _FIXTURES = {
     # A no-proto callee: retsub does not truncate, the callee's stack lands in
     # the continuation verbatim. Must thread (legacy correctness receipt).
+    # Function-shaped, so the call PAIRS off the inferred (0, 2) and the
+    # continuation keeps its depth — "no pairs" here would be the legacy
+    # stranding gap, not a refusal.
     "legacy_verbatim": (
         "#pragma version 8\nint 99\ncallsub legacy\n+\n+\nreturn\n"
         "legacy:\nint 5\nint 6\nretsub\n",
-        None,
+        "clean",
     ),
     # proto'd callee whose frame_bury targets BELOW its args. The AVM rejects
     # this at runtime, so the program is dead — but it must still build and
@@ -88,11 +91,13 @@ _FIXTURES = {
         None,
     ),
     # frame ops with NO proto: the frame anchors at the callsub, so
-    # frame_dig -1 reads the CALLER's stack directly. Read-only — legal.
+    # frame_dig -1 reads the CALLER's stack directly. Read-only — legal, and
+    # the negative slot counts as an implicit argument, so the call pairs
+    # off the inferred (1, 3).
     "frame_ops_no_proto": (
         "#pragma version 8\nint 9\ncallsub noproto\npop\npop\nint 1\nreturn\n"
         "noproto:\nint 42\nframe_dig -1\nretsub\n",
-        None,
+        "clean",
     ),
     # Deep READ-ONLY access below the band must NOT be flagged — a dig copies.
     "deep_dig_read_only": (
