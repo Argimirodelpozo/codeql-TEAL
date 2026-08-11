@@ -189,6 +189,12 @@ def _attacker_sources(gtg: GroupTaintGraph) -> list[GroupNode]:
             for n in tg.find(op=op):
                 if txn_field_name(op, tg.immediates_of(n) or "") == "ApplicationArgs":
                     out.append(GroupNode(idx, n))
+        # Unknown-scratch loads: a member value the SSA could not name may be
+        # anything an attacker stored, so for the group MAY analysis it is a
+        # source like a sibling's args — skipping it reads unknown as clean.
+        for n in tg.nodes():
+            if tg.is_unknown_scratch(n):
+                out.append(GroupNode(idx, n))
     return out
 
 

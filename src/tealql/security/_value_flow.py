@@ -57,15 +57,16 @@ def _frame_param_sources_cached(prog: SSAProgram) -> dict:
     ("every operand must flow"), and "every caller pins this arg" is a different
     claim from "every write to this slot flows" — so it must not be handed the
     unioned map. MAY consumers want :func:`_frame_gap_sources_cached`."""
-    cache = getattr(prog, "_sec_frame_param_sources", None)
-    if cache is None:
+    revision = getattr(prog, "revision", 0)
+    cached = getattr(prog, "_sec_frame_param_sources", None)
+    if cached is None or cached[0] != revision:
         from tealql.tealtools.ssa.relations import frame_param_sources
-        cache = frame_param_sources(prog)
+        cached = (revision, frame_param_sources(prog))
         try:
-            prog._sec_frame_param_sources = cache
+            prog._sec_frame_param_sources = cached
         except AttributeError:      # only if SSAProgram ever gains __slots__
             pass
-    return cache
+    return cached[1]
 
 
 def _frame_value_sources_cached(prog: SSAProgram) -> dict:
@@ -75,28 +76,26 @@ def _frame_value_sources_cached(prog: SSAProgram) -> dict:
     use :func:`_frame_gap_sources_cached` because canonical SSA already carries
     ordinary resolved frame edges.
     """
-    cache = getattr(prog, "_sec_frame_value_sources", None)
-    if cache is None:
+    revision = getattr(prog, "revision", 0)
+    cached = getattr(prog, "_sec_frame_value_sources", None)
+    if cached is None or cached[0] != revision:
         from tealql.tealtools.ssa.relations import frame_value_sources
-        cache = frame_value_sources(prog)
+        cached = (revision, frame_value_sources(prog))
         try:
-            prog._sec_frame_value_sources = cache
+            prog._sec_frame_value_sources = cached
         except AttributeError:      # only if SSAProgram ever gains __slots__
             pass
-    return cache
+    return cached[1]
 
 
 def _frame_gap_sources_cached(prog: SSAProgram) -> dict:
-    """Only MAY frame edges not already present in normal SSA def-use."""
-    cache = getattr(prog, "_sec_frame_gap_sources", None)
-    if cache is None:
-        from tealql.tealtools.ssa.frame_slots import gap_sources
-        cache = gap_sources(prog)
-        try:
-            prog._sec_frame_gap_sources = cache
-        except AttributeError:
-            pass
-    return cache
+    """Only MAY frame edges not already present in normal SSA def-use.
+
+    Deliberately NOT a second memo layer: ``gap_sources`` already caches on
+    the program and ``_invalidate_value_relations`` clears THAT cache — a
+    security-side copy kept serving the results the invalidation dropped."""
+    from tealql.tealtools.ssa.frame_slots import gap_sources
+    return gap_sources(prog)
 
 
 
@@ -228,8 +227,9 @@ def _scratch_stores_index(prog: SSAProgram) -> dict:
     """``{(file, start_line): scratch_stores}``, built once per program — the
     lookup sits inside two nested fixpoint loops, so a linear graph scan per call
     dominates the runtime."""
-    idx = getattr(prog, "_sec_scratch_store_index", None)
-    if idx is None:
+    revision = getattr(prog, "revision", 0)
+    cached = getattr(prog, "_sec_scratch_store_index", None)
+    if cached is None or cached[0] != revision:
         prog._ensure_scratch_influence()
         idx = {}
         for n in prog._graph.nodes:
@@ -239,11 +239,12 @@ def _scratch_stores_index(prog: SSAProgram) -> dict:
             stores = prog._graph.nodes[n].get("scratch_stores")
             if stores is not None:
                 idx.setdefault((loc.file, loc.start_line), stores)
+        cached = (revision, idx)
         try:
-            prog._sec_scratch_store_index = idx
+            prog._sec_scratch_store_index = cached
         except AttributeError:      # only if SSAProgram ever gains __slots__
             pass
-    return idx
+    return cached[1]
 
 
 def _scratch_stores_for(prog: SSAProgram, load_var: SSAVar) -> Optional[list]:

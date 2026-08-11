@@ -26,7 +26,6 @@ from ._program_shape import file_match, global_field_reads, ssavar_outputs, txn_
 from ._value_flow import (
     _frame_gap_sources_cached,
     _operand_flows_from_field_var,
-    _scratch_stores_for,
 )
 
 # Compatibility/monkeypatch hook retained under its established name; the
@@ -155,17 +154,19 @@ def user_input_taint(prog: SSAProgram, file: Optional[str] = None) -> dict:
 
     Memoised per ``(prog, file)`` so the whole fund-flow family shares one fixpoint
     — sound only because detectors READ ``prog`` and never mutate it mid-scan."""
-    cache = getattr(prog, "_sec_user_input_taint", None)
-    if cache is None:
-        cache = {}
+    revision = getattr(prog, "revision", 0)
+    cached = getattr(prog, "_sec_user_input_taint", None)
+    if cached is None or cached[0] != revision:
+        cached = (revision, {})
         try:
-            prog._sec_user_input_taint = cache
+            prog._sec_user_input_taint = cached
         except AttributeError:      # only if SSAProgram ever gains __slots__
             pass
-    if file in cache:
-        return cache[file]
+    per_file = cached[1]
+    if file in per_file:
+        return per_file[file]
     result = _compute_user_input_taint(prog, file)
-    cache[file] = result
+    per_file[file] = result
     return result
 
 
@@ -239,12 +240,26 @@ def ir_lifter(prog: SSAProgram, file: Optional[str] = None):
 
 
 def _compute_user_input_taint(prog: SSAProgram, file: Optional[str] = None) -> dict:
+    from tealql.tealtools.ssa.relations import (
+        scratch_load_sources,
+        scratch_unknown_loads,
+    )
+
     taint: dict = {}
 
     def t(o):
         return taint.get(o, frozenset())
 
     frame_src = _frame_value_sources_cached(prog)  # ordinary SSA carries the rest
+    # MAY dependencies per load/loads result — stored values AND dynamic slot
+    # selectors, the same product the dataflow engines read (2c there). The
+    # legacy ``_scratch_stores_for`` bridge covered static ``load`` only, and
+    # its unknown-store sentinels resolved through ``prog.var(...)`` to None
+    # and silently vanished — an attacker value stored to scratch and read
+    # back via dynamic ``loads`` reached the itxn sinks with this map calling
+    # it CLEAN while the dataflow layer called it tainted. The divergence was
+    # the bug: only detector-reported flows reach downstream verification.
+    scratch_src = scratch_load_sources(prog)
 
     for a in prog.assignments:                       # seed
         if not file_match(a.location.file, file):
@@ -255,6 +270,16 @@ def _compute_user_input_taint(prog: SSAProgram, file: Optional[str] = None) -> d
             for o in a.outputs:
                 if isinstance(o, SSAVar):
                     taint[o] = t(o) | {key}
+    # An unnamed scratch value is TOP for a conservative MAY analysis: it
+    # cannot inherit a real source key, so it seeds as its own labelled
+    # unknown — visible in detector messages, never silently clean.
+    for value in scratch_unknown_loads(prog):
+        if not file_match(value.file, file):
+            continue
+        a = getattr(value, "defined_by", None)
+        key = ("unknown-scratch",
+               (a.op, a.immediates.strip()) if a is not None else ("loads", ""))
+        taint[value] = t(value) | {key}
 
     changed = True
     while changed:
@@ -279,10 +304,10 @@ def _compute_user_input_taint(prog: SSAProgram, file: Optional[str] = None) -> d
             ins = set()
             for inp in a.inputs:
                 ins |= t(inp)
-            if a.op == "load":                       # scratch reaching-def
+            if a.op in ("load", "loads"):            # scratch reaching-def (MAY)
                 for o in a.outputs:
-                    for s in (_scratch_stores_for(prog, o) or ()):
-                        ins |= t(prog.var(*s))
+                    for source_var in scratch_src.get(o, ()):
+                        ins |= t(source_var)
             if not ins:
                 continue
             for o in a.outputs:

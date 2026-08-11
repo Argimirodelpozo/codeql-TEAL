@@ -83,7 +83,29 @@ class TaintGraph(NxGraphView):
                 g[src][dst]["kinds"].add(kind)
             else:
                 g.add_edge(src, dst, kinds={kind})
+        # A load whose MAY value contains an unnameable unknown has no named
+        # source edge to emit — the connection the rows cannot draw must
+        # surface as the load itself being an attacker-MAY source, or every
+        # flow-row consumer reads the unknown as CLEAN (the
+        # resolved-subset-as-answer shape). Marked here so ALL consumers of
+        # this graph share one policy.
+        from ..ssa.relations import scratch_unknown_loads
+        unknown_locs = {(value.file, value.line)
+                        for value in scratch_unknown_loads(prog)}
+        if unknown_locs:
+            for node in g.nodes:
+                if (node.file, node.line) in unknown_locs:
+                    g.nodes[node]["unknown_scratch"] = True
         return cls(g=g, prog=prog)
+
+    def is_unknown_scratch(self, node: "Node") -> bool:
+        """Whether this load's MAY value contains an unnameable unknown.
+
+        Such a node is a taint SOURCE for MAY consumers: the value it returns
+        cannot be tied to any named producer, so it may be anything an
+        attacker stored."""
+        return (node in self.g
+                and bool(self.g.nodes[node].get("unknown_scratch")))
 
     def const_values_at(self, node: Node) -> tuple[tuple[str, str], ...]:
         """The ``(kind, value)`` literals this node is known to produce, if any."""

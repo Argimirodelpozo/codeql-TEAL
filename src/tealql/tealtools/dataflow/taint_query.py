@@ -187,9 +187,15 @@ class TaintQuery:
         return self._hits(self.g.nodes())
 
     def all_sources(self) -> list[Node]:
-        """Every attacker-input source node."""
+        """Every attacker-input source node.
+
+        Includes unknown-scratch loads: a load whose MAY value the SSA could
+        not name is TOP for a conservative MAY analysis — it may return
+        anything an attacker stored, so skipping it reads the unknown as
+        clean."""
         return sorted((n for n in self.g.nodes()
-                       if is_source(self.g.op_of(n), self.g.immediates_of(n))),
+                       if is_source(self.g.op_of(n), self.g.immediates_of(n))
+                       or self.g.is_unknown_scratch(n)),
                       key=lambda n: (n.file, n.line))
 
     # -- reachability ---------------------------------------------------
@@ -220,7 +226,8 @@ class TaintQuery:
         for sink in self._nodes(line=line, file=file):
             reach |= self.g.reachable_to(sink)
         return sorted((n for n in reach
-                       if is_source(self.g.op_of(n), self.g.immediates_of(n))),
+                       if is_source(self.g.op_of(n), self.g.immediates_of(n))
+                       or self.g.is_unknown_scratch(n)),
                       key=lambda n: (n.file, n.line))
 
     def tainted_sinks(self, sources: Optional[Iterable[Node]] = None,

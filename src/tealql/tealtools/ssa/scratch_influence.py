@@ -41,11 +41,18 @@ class ScratchInfluence:
 
     @classmethod
     def from_sets(cls, values: set, selectors: set) -> "ScratchInfluence":
+        # ``unknown`` covers BOTH halves of the fact: an unnameable stored
+        # value AND an unnameable slot selector. A dynamic write whose index
+        # the sim could not resolve already writes conservatively (every
+        # slot), but recording it with ``selectors == {}`` and ``unknown``
+        # unset described a fully selector-INDEPENDENT write — a consumer
+        # treating selectors as control dependencies never learned the
+        # choice was unknowable (it may be attacker-derived).
         return cls(
             values=frozenset(values - {UNINIT_STORE, UNKNOWN_STORE}),
-            selectors=frozenset(selectors),
+            selectors=frozenset(selectors - {UNKNOWN_STORE}),
             zero_initialized=UNINIT_STORE in values,
-            unknown=UNKNOWN_STORE in values,
+            unknown=UNKNOWN_STORE in values or UNKNOWN_STORE in selectors,
         )
 
     def legacy_value_keys(self) -> tuple[tuple[str, int, int], ...]:
@@ -164,8 +171,11 @@ def compute_scratch_facts(prog: SSAProgram) -> dict[tuple[str, int], ScratchInfl
                 slot_value = assignment.inputs[1] if len(assignment.inputs) > 1 else None
                 domain = _slot_domain(slot_value)
                 val_keys = _leaf_value_keys(stored_value) or {UNKNOWN_STORE}
+                # A dynamic selector with no nameable leaf is UNKNOWN, not
+                # absent — same sentinel policy as the stored value above.
                 selector_keys = (set() if domain is not None and len(domain) <= 1
-                                 else _leaf_value_keys(slot_value))
+                                 else _leaf_value_keys(slot_value)
+                                 or {UNKNOWN_STORE})
                 events.append((i, "store", domain, val_keys, selector_keys))
                 if domain is not None:
                     universe.update(domain)
@@ -181,7 +191,8 @@ def compute_scratch_facts(prog: SSAProgram) -> dict[tuple[str, int], ScratchInfl
                 slot_value = assignment.inputs[0] if assignment.inputs else None
                 domain = _slot_domain(slot_value)
                 selector_keys = (set() if domain is not None and len(domain) <= 1
-                                 else _leaf_value_keys(slot_value))
+                                 else _leaf_value_keys(slot_value)
+                                 or {UNKNOWN_STORE})
                 events.append((i, "load", domain, None, selector_keys))
                 if domain is not None:
                     universe.update(domain)

@@ -132,3 +132,41 @@ def test_hashed_model_identity_is_immutable(obj, attr, value):
     with pytest.raises(AttributeError):
         setattr(obj, attr, value)
     assert hash(obj) == before
+
+
+def test_security_caches_track_the_program_revision():
+    """Security-layer memos must not outlive value-relation invalidation.
+
+    ``_invalidate_value_relations`` clears only tealtools' own caches — the
+    dependency direction forbids it naming the security layer's — so the
+    security wrappers must key on ``prog.revision`` (bumped by every committed
+    mutation) instead of memoising bare attributes. SSA operands are rewritten
+    IN PLACE by supported passes, so a bare memo does not merely leak: its
+    stale entries keep HITTING after the rewrite."""
+    from tealql.security import common
+    from tealql.security._value_flow import (
+        _frame_gap_sources_cached,
+        _frame_param_sources_cached,
+    )
+    from tealql.tealtools.ssa.frame_slots import gap_sources
+
+    prog = _prog(
+        "txna ApplicationArgs 0\ncallsub use\nint 1\nreturn\n"
+        "use:\nproto 1 0\nframe_dig -1\nlog\nretsub",
+        name="cache-rev.teal",
+    )
+    # The gap wrapper must BE the library cache — that one is cleared by
+    # ``_invalidate_value_relations``; a second memo layer on top served the
+    # results the invalidation dropped.
+    first_gap = _frame_gap_sources_cached(prog)
+    assert first_gap is gap_sources(prog)
+    prog._invalidate_value_relations()
+    assert _frame_gap_sources_cached(prog) is not first_gap
+
+    taint_before = common.user_input_taint(prog)
+    params_before = _frame_param_sources_cached(prog)
+    prog._revision += 1        # what _commit_mutation does after a rewrite
+    assert common.user_input_taint(prog) is not taint_before, (
+        "user_input_taint kept serving a pre-mutation fixpoint")
+    assert _frame_param_sources_cached(prog) is not params_before, (
+        "frame param sources kept serving pre-mutation operand maps")

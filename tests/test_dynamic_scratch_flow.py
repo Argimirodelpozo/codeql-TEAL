@@ -91,3 +91,123 @@ def test_constant_dynamic_index_is_narrowed_to_one_slot():
     other_load = next(a for a in untouched.assignments if a.op == "loads")
     other_fact = untouched._scratch_facts[("p.teal", other_load.location.line)]
     assert other_fact.zero_initialized and not other_fact.values
+
+
+def test_security_and_dataflow_layers_agree_on_dynamic_scratch():
+    """The security taint fixpoint must classify store->``loads`` like dataflow.
+
+    It bridged scratch only for static ``load`` through the legacy
+    ``_scratch_stores_for`` shape: ``loads`` got nothing, and unknown-store
+    sentinels resolved through ``prog.var(...)`` to None and vanished. An
+    attacker value stored to scratch and read back dynamically then reached
+    the itxn sinks with the security layer — whose findings are the ONLY
+    flows the downstream verifier examines — calling it clean while the
+    dataflow layer called it tainted. The DIVERGENCE is the defect."""
+    from tealql.security import common
+
+    # The slot selector is deliberately CLEAN (`global GroupSize`): a tainted
+    # selector reaches the ``loads`` output through ordinary def-use and would
+    # mask the missing VALUE channel this test pins.
+    body = (
+        "global GroupSize\n"
+        "txna ApplicationArgs 0\n"
+        "stores\n"
+        "global GroupSize\n"
+        "loads\nlog"
+    )
+    assert _reaches_log(body), "dataflow layer must taint the dynamic round-trip"
+    prog = _prog(body)
+    loads = next(a for a in prog.assignments if a.op == "loads")
+    taint = common.user_input_taint(prog)
+    slots = taint.get(loads.outputs[0], frozenset())
+    assert any(lbl == "ApplicationArgs" for lbl, _slot in slots), (
+        "security layer disagrees with dataflow on the same shape: the "
+        "``loads`` result lost its ApplicationArgs taint")
+
+    # Control: a constant stored and statically re-read stays clean.
+    clean = _prog("int 7\nstore 0\nload 0\nlog")
+    clean_load = next(a for a in clean.assignments if a.op == "load")
+    assert not common.user_input_taint(clean).get(clean_load.outputs[0])
+
+
+def test_unresolvable_selector_marks_the_fact_unknown():
+    """A dynamic ``stores`` whose slot operand the sim withdrew must not read
+    as selector-INDEPENDENT: the write is already conservative (every slot),
+    but ``selectors == {}`` with ``unknown`` unset hid that the CHOICE was
+    unknowable — it may be attacker-derived. The sentinel policy of the value
+    half now covers the selector half."""
+    from tealql.tealtools.ssa.relations import scratch_unknown_loads
+
+    # `perm` rewrites the caller's residual across its band (`cover 3`)
+    # AND contains a nested call, so `callee_effects` cannot summarise it
+    # exactly and the residual is withdrawn; after `pop`, the `stores`
+    # slot operand is exactly such a withdrawn cell.
+    body = (
+        "int 1\nint 2\nint 3\ncallsub perm\npop\n"
+        "txna ApplicationArgs 0\n"
+        "stores\n"
+        "int 0\nloads\nlog\n"
+        "b end\n"
+        "perm:\nproto 1 1\nint 7\nint 8\ncover 3\ncallsub pnop\nretsub\n"
+        "pnop:\nretsub\n"
+        "end:"
+    )
+    prog = _prog(body)
+    loads = next(a for a in prog.assignments if a.op == "loads")
+    stores = next(a for a in prog.assignments if a.op == "stores")
+    assert stores.inputs and len(stores.inputs) < 2, (
+        "fixture drift: the stores slot operand should be a withdrawn cell "
+        "(the public rep drops None inputs, so it must be ABSENT here)")
+    prog._ensure_scratch_influence()
+    fact = prog._scratch_facts[("p.teal", loads.location.line)]
+    assert fact.unknown, (
+        "an unresolvable slot selector must set `unknown` — the fact "
+        "recorded a fully selector-independent write with no marker")
+    assert loads.outputs[0] in scratch_unknown_loads(prog)
+
+    # Control: the same value through a static slot stays fully known.
+    control = _prog(
+        "int 1\nint 2\nint 3\ncallsub perm\npop\n"
+        "txna ApplicationArgs 0\n"
+        "store 0\n"
+        "int 0\nloads\nlog\n"
+        "b end\n"
+        "perm:\nproto 1 1\nint 7\nint 8\ncover 3\ncallsub pnop\nretsub\n"
+        "pnop:\nretsub\n"
+        "end:"
+    )
+    cload = next(a for a in control.assignments if a.op == "loads")
+    control._ensure_scratch_influence()
+    assert not control._scratch_facts[("p.teal", cload.location.line)].unknown
+
+
+def test_unknown_scratch_load_is_a_taint_graph_source():
+    """A load whose MAY value the SSA could not name has no named source edge
+    for the flow rows to draw, so it must surface as a SOURCE node — or every
+    flow-row consumer (TaintQuery, group, xcontract) reads the unknown as
+    clean while the engines call it tainted."""
+    from tealql.security import common
+    from tealql.tealtools.dataflow.taint_query import TaintQuery
+
+    prog = _prog(
+        "int 1\nint 2\nint 3\ncallsub perm\npop\n"
+        "txna ApplicationArgs 0\n"
+        "stores\n"
+        "int 0\nloads\nlog\n"
+        "b end\n"
+        "perm:\nproto 1 1\nint 7\nint 8\ncover 3\ncallsub pnop\nretsub\n"
+        "pnop:\nretsub\n"
+        "end:"
+    )
+    loads = next(a for a in prog.assignments if a.op == "loads")
+    q = TaintQuery(prog)
+    assert any(n.line == loads.location.line for n in q.all_sources()), (
+        "the unknown-scratch load is missing from the source enumeration")
+    log_line = next(a for a in prog.assignments if a.op == "log").location.line
+    assert q.sources_of(line=log_line), (
+        "the sink downstream of the unknown load shows no sources")
+    # The security fixpoint seeds the same load as its own labelled unknown.
+    taint = common.user_input_taint(prog)
+    assert any(lbl == "unknown-scratch"
+               for lbl, _slot in taint.get(loads.outputs[0], frozenset())), (
+        "security layer did not seed the unknown-scratch load")

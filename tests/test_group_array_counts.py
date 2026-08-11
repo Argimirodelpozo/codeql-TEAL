@@ -69,3 +69,31 @@ class TestArrayCounts:
         assert ac.get("this+1") == {"NumAppArgs": 1}
         # own txn: Accounts 3 => NumAccounts>=3, ApplicationArgs 2 => NumAppArgs>=3
         assert ac.get("this") == {"NumAccounts": 3, "NumAppArgs": 3}
+
+
+def test_arith_after_scratch_load_resolves_relative_slot():
+    """`store GroupIndex; load; int 1; -; gtxnsa` — the subtraction happens
+    AFTER the scratch load, so the canonical program's immutable facts cannot
+    name the slot and ``array_counts`` silently returned ``{}`` — a vacuity
+    generator for anyone calling the public API the obvious way. Routed
+    through the VALUE derived view it recovers the slot for both orderings."""
+    from tealql.tealtools.cfg.group import array_counts
+    from tealql.tealtools.ssa import SSAProgram
+
+    arith_before_store = SSAProgram.from_text(
+        "#pragma version 8\n"
+        "txn GroupIndex\nint 1\n-\nstore 0\n"
+        "load 0\n"
+        "gtxnsa ApplicationArgs 2\npop\nint 1\nreturn\n",
+        name="before.teal",
+    )
+    arith_after_load = SSAProgram.from_text(
+        "#pragma version 8\n"
+        "txn GroupIndex\nstore 0\n"
+        "load 0\nint 1\n-\n"
+        "gtxnsa ApplicationArgs 2\npop\nint 1\nreturn\n",
+        name="after.teal",
+    )
+    expected = {"this-1": {"NumAppArgs": 3}}
+    assert array_counts(arith_before_store) == expected
+    assert array_counts(arith_after_load) == expected

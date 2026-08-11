@@ -142,8 +142,18 @@ def array_counts(prog: SSAProgram) -> dict[str, dict[str, int]]:
     elements or the read panics and the accepting path is unreachable. Slots are
     :func:`relative_slot` strings. Scratch and shuffle identities are resolved
     through immutable value facts.
+
+    Runs over the VALUE-profile derived program, not the canonical one: a
+    relative index whose arithmetic happens AFTER a scratch load
+    (``store GroupIndex; load; int 1; -; gtxnsa``) only resolves once the
+    scratch/constant propagation passes have run, and those passes are
+    derived-program-only. Called on the canonical program, this used to
+    silently return ``{}`` for exactly that shape — a vacuity, not an answer.
+    The derived view is revision-scoped and shared, so the reroute is cheap,
+    and passing an already-derived program is an identity hop.
     """
-    from ..analysis import FactDomain
+    from ..analysis import DerivedProfile, FactDomain, derived_program
+    prog = derived_program(prog, DerivedProfile.VALUE)
     facts = prog.facts(FactDomain.CONSTANTS)
     out: dict[str, dict[str, int]] = {}
     for a in prog:

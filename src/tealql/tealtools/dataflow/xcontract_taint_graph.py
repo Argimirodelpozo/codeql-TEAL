@@ -421,6 +421,15 @@ def cross_taint_findings(xtg: "XContractTaintGraph") -> list[CrossTaintFinding]:
                       + xtg.find(app_id=None, op="txn"))
         if (xtg.immediates_of(xn) or "").startswith("ApplicationArgs")
     ]
+    # Caller-scope unknown-scratch loads are attacker-MAY sources too: the
+    # value the SSA could not name may be anything an attacker stored, so a
+    # boundary crossing from one is as reportable as one from an arg read.
+    # Callee-scope unknowns are deliberately NOT seeded — a callee-internal
+    # flow never crosses the boundary, which this reporter is scoped to.
+    sources += [
+        xn for xn in xtg.nodes()
+        if xn.app_id is None and xtg.caller.is_unknown_scratch(xn.inner)
+    ]
     sinks = _sensitive_sinks(xtg)
     findings: list[CrossTaintFinding] = []
     for src in sources:

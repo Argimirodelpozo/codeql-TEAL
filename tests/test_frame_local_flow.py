@@ -508,3 +508,67 @@ def test_legacy_callee_calls_cross_so_caller_frame_params_survive(tmp_path):
     dig2 = next(a for a in prog2.assignments if a.op == "frame_dig")
     assert not dig2.inputs, "the poisoned frame read must refuse, not guess"
     assert to_puya(prog2) is not None    # splice path: must lift, never raise
+
+
+def test_frame_gap_filter_drops_only_phi_closure_edges():
+    """The soundness invariant the gap filter rests on (see ``gap_sources``).
+
+    "Raw-reachable" and "taint will get there" are different predicates for
+    the rule-based engines (opaque reads block; slice/hash rules are
+    positional), so a dropped compat edge is only redundant when the raw path
+    to its source is the read's own binding chain — ``inputs[0]`` and the phi
+    closure over it — whose every step propagates unconditionally. This pins
+    that every dropped source IS on that chain, and that an unresolved read
+    keeps every edge."""
+    from tealql.tealtools.ssa.models import Phi
+
+    prog = SSAProgram.from_text(
+        "#pragma version 8\n"
+        "txna ApplicationArgs 0\ncallsub use\n"
+        "global CurrentApplicationAddress\ncallsub use\n"
+        "int 1\nreturn\n"
+        "use:\nproto 1 0\nframe_dig -1\nlog\nretsub\n",
+        name="gap-closure.teal",
+    )
+    gap = frame_gap_sources(prog)
+    dropped_any = False
+    for dig_out, sources in frame_value_sources(prog).items():
+        a = getattr(dig_out, "defined_by", None)
+        if a is None or not a.inputs or a.inputs[0] is None:
+            assert set(gap.get(dig_out, ())) == set(sources), (
+                "an unresolved read must keep every compatibility edge")
+            continue
+        closure, work = set(), [a.inputs[0]]
+        while work:
+            value = work.pop()
+            if value in closure:
+                continue
+            closure.add(value)
+            if isinstance(value, Phi):
+                work.extend(arg for arg in value.args if arg is not None)
+        kept = set(gap.get(dig_out, ()))
+        for source in sources:
+            if source in kept:
+                continue
+            dropped_any = True
+            assert source in closure, (
+                f"{source!r} was dropped from the gap map but is not on the "
+                f"read's unconditional binding chain — a rule-blocked raw "
+                f"path could then silently lose its taint")
+    assert dropped_any, "fixture no longer exercises the filter"
+
+    # End-to-end: the engine really does carry taint over the binding chain
+    # the filter relies on (txna arg -> call site -> frame_dig -> log).
+    from tealql.tealtools.dataflow.engine import (
+        ATTACKER_CONTROL_RULES,
+        Sink,
+        Source,
+        TaintAnalysis,
+    )
+    hits = TaintAnalysis(
+        prog,
+        sources=[Source("arg", lambda a: a.op == "txna")],
+        sinks=[Sink("log", lambda a: a.op == "log", lambda a: 1)],
+        default_rules=ATTACKER_CONTROL_RULES,
+    ).detect()
+    assert hits, "the engine lost taint along the chain the gap filter trusts"

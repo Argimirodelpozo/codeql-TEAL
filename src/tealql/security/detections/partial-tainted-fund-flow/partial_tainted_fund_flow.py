@@ -68,14 +68,15 @@ def _cached_byte_taint(prog: SSAProgram):
     """The byte-interval taint fixpoint, memoised on ``prog``. ``byte_taint`` is
     program-wide and always run with the same config here, so one result serves
     every file — uncached, the scanner reran the whole fixpoint per file."""
-    bt = getattr(prog, "_sec_partial_byte_taint", None)
-    if bt is None:
-        bt = byte_taint(prog, sources=_byte_sources, validate=True)
+    revision = getattr(prog, "revision", 0)
+    cached = getattr(prog, "_sec_partial_byte_taint", None)
+    if cached is None or cached[0] != revision:
+        cached = (revision, byte_taint(prog, sources=_byte_sources, validate=True))
         try:
-            prog._sec_partial_byte_taint = bt
+            prog._sec_partial_byte_taint = cached
         except AttributeError:      # only if SSAProgram ever gains __slots__
             pass
-    return bt
+    return cached[1]
 
 
 @dataclass
