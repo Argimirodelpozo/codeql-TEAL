@@ -53,9 +53,9 @@ def build_lifter(prog, file=None):
             LiftError = ()
         if not isinstance(e, LiftError):
             logger.warning(
-                "pre-IR lift crashed UNEXPECTEDLY (%s: %s) — degrading to the "
-                "SSA layer; this is likely a bug", type(e).__name__, e)
-        lifter = None                # lift failure -> coarse fallback
+                "pre-IR lift crashed UNEXPECTEDLY (%s: %s) — lifted analyses "
+                "are unavailable; this is likely a bug", type(e).__name__, e)
+        lifter = None
     request.store(lifter)
     return lifter
 

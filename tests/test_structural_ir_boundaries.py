@@ -12,7 +12,6 @@ import copy
 
 import pytest
 
-from tealql.security._itxn_taint import ir_lifter
 from tealql.tealtools.diagnostics.errors import LiftError
 from tealql.tealtools.frontend.graph import load_graph
 from tealql.tealtools.lift import build_lifter, pre_ir
@@ -270,8 +269,8 @@ def test_multi_file_lift_projects_one_independent_program():
     assert a.prog.source_files == ("a.teal",)
     assert b.prog.source_files == ("b.teal",)
     assert build_lifter(prog, file="a.teal") is a       # per-file cache
-    assert ir_lifter(prog, file="a.teal") is a          # shared detector cache
-    assert ir_lifter(prog, file="b.teal") is b
+    assert build_lifter(prog, file="a.teal") is a
+    assert build_lifter(prog, file="b.teal") is b
     assert {x.location.file for x in a.prog.assignments} == {"a.teal"}
     assert {x.location.file for x in b.prog.assignments} == {"b.teal"}
 

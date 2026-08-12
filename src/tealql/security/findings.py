@@ -27,7 +27,7 @@ class Finding:
     """A single normalized detection result; ``line`` is 1-based, or ``None`` for
     a whole-program finding."""
 
-    rule_id: str                 # kebab detector name, e.g. "ir-tainted-fund-flow"
+    rule_id: str                 # kebab detector name, e.g. "tainted-fund-flow"
     message: str
     severity: str = "medium"
     confidence: str = "medium"

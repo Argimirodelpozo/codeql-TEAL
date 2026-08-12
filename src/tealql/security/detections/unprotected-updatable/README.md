@@ -14,7 +14,7 @@ Conjoined per-exit:
 1. Approval exit isn't guarded against `OnCompletion == 4` (the `is-updatable` test).
 2. No dominating predicate ties `Sender` to `Global.CreatorAddress`.
 
-The detector reports each exit where both hold. The Python port reuses `PathPredicateAnalysis` and `common.senderCreatorGuardDominates`.
+The detector reports each exit where both hold. It reuses `PathPredicateAnalysis` and the sender/creator guards owned by `_action_guards.py`.
 
 ## Examples
 

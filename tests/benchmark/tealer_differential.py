@@ -91,11 +91,12 @@ def run_ours(teal: Path) -> "set[str] | None":
     logicsig classifier so the comparison is apples-to-apples with Tealer's
     auto stateful/stateless scoping."""
     from tealql.tealtools.ssa import SSAProgram
-    from tealql.security import DETECTORS, common
+    from tealql.security import DETECTORS
+    from tealql.security._program_shape import classify_program
     try:
         prog = SSAProgram(str(teal))
         prog.propagate_constants()
-        kind = common.classify_program(prog)
+        kind = classify_program(prog)
     except Exception:
         return None
     fired = set()

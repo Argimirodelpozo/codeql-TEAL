@@ -10,7 +10,11 @@ from dataclasses import dataclass
 from typing import Optional
 
 from tealql.tealtools.ssa import Assignment, SSAProgram, const_int, is_field_var
-from tealql.security import common
+from tealql.security._program_shape import file_match, loc, ssavar_outputs
+from tealql.security._value_flow import (
+    _constant_facts_cached,
+    _operand_flows_from_field_var,
+)
 
 
 @dataclass
@@ -29,7 +33,7 @@ class HardcodedMinBalanceViolation:
 
     def pretty(self) -> str:
         return (
-            f"-@{common.loc(self.sub_op)}  "
+            f"-@{loc(self.sub_op)}  "
             "Balance minus hardcoded constant — use the min_balance opcode "
             "instead to dynamically account for boxes, opt-ins, and local state."
         )
@@ -44,9 +48,6 @@ class HardcodedMinBalanceDetector:
     applies_to = frozenset({"app"})  # min_balance is an app idiom
 
     def __init__(self, prog: SSAProgram, *, file: Optional[str] = None):
-        # Const propagation is needed to recognise the hardcoded operand;
-        # idempotent, so this is only a fallback for direct library use.
-        common.prepare(prog)
         self.prog = prog
         self.file = file
 
@@ -55,22 +56,23 @@ class HardcodedMinBalanceDetector:
         # primitive, so say nothing.
         if any(
             a.op == "min_balance" for a in self.prog.assignments
-            if common.file_match(a.location.file, self.file)
+            if file_match(a.location.file, self.file)
         ):
             return []
         # Seed set = every `balance` read output; the flow bridge follows it
         # through scratch / phi / proto-frame into the sub.
         bal_ops = [
             a for a in self.prog.assignments
-            if a.op == "balance" and common.file_match(a.location.file, self.file)
+            if a.op == "balance" and file_match(a.location.file, self.file)
         ]
-        bal_seeds = common.ssavar_outputs(bal_ops)
+        bal_seeds = ssavar_outputs(bal_ops)
         if not bal_seeds:
             return []
         a_bal_op = bal_ops[0]                  # representative, for the finding
+        facts = _constant_facts_cached(self.prog)
         out: list[HardcodedMinBalanceViolation] = []
         for sub in self.prog.assignments:
-            if not common.file_match(sub.location.file, self.file):
+            if not file_match(sub.location.file, self.file):
                 continue
             if sub.op != "-" or len(sub.inputs) != 2:
                 continue
@@ -78,10 +80,10 @@ class HardcodedMinBalanceDetector:
             for bal_idx, const_idx in ((0, 1), (1, 0)):
                 bal = sub.inputs[bal_idx]
                 cnst = sub.inputs[const_idx]
-                if const_int(cnst) is None:
+                if const_int(facts.constant(cnst)) is None:
                     continue
                 if not (is_field_var(bal, "balance")
-                        or common._operand_flows_from_field_var(
+                        or _operand_flows_from_field_var(
                             self.prog, bal, bal_seeds)):
                     continue
                 bop = bal.defined_by if is_field_var(bal, "balance") else a_bal_op

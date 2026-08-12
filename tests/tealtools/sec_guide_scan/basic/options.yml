@@ -1,0 +1,5 @@
+# Scope the scan to a single detector so the expected output stays
+# tightly bounded and the fixture exercises rule-based selection.
+detectors:
+  - match: "**/*.teal"
+    only: [fee-validation]

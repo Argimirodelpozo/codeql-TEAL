@@ -1,6 +1,6 @@
 # Detector precision / recall
 
-36 detectors · 93 vulnerable + 131 safe ground-truth cases.
+32 detectors · 81 vulnerable + 117 safe ground-truth cases.
 
 > **Read this first.** These numbers are measured on a **small, curated**
 > ground-truth corpus (`tests/benchmark/<detector>/{vuln,safe}/`), not on a
@@ -15,7 +15,7 @@
 | --- | --- | --- | --: | --: | --: | --: | --: | --: | --: |
 | `abi-method-selector` | medium | high | 1 | 0 | 0 | 3 | 1.00 | 1.00 | 1.00 |
 | `arbitrary-inner-appcall` | medium | high | 4 | 0 | 0 | 4 | 1.00 | 1.00 | 1.00 |
-| `arbitrary-inner-asset` | medium | high | 2 | 0 | 0 | 3 | 1.00 | 1.00 | 1.00 |
+| `arbitrary-inner-asset` | medium | high | 3 | 0 | 0 | 3 | 1.00 | 1.00 | 1.00 |
 | `asset-close-to` | high | high | 4 | 0 | 0 | 4 | 1.00 | 1.00 | 1.00 |
 | `asset-id-validation` | high | high | 1 | 0 | 0 | 2 | 1.00 | 1.00 | 1.00 |
 | `box-key` | high | high | 3 | 0 | 0 | 2 | 1.00 | 1.00 | 1.00 |
@@ -27,21 +27,17 @@
 | `hardcoded-min-balance` | medium | high | 1 | 0 | 0 | 1 | 1.00 | 1.00 | 1.00 |
 | `inner-txn-close-rekey` | high | high | 1 | 0 | 0 | 1 | 1.00 | 1.00 | 1.00 |
 | `inner-txn-fee` | high | high | 1 | 0 | 0 | 1 | 1.00 | 1.00 | 1.00 |
-| `ir-arbitrary-inner-appcall` | medium | high | 4 | 0 | 0 | 4 | 1.00 | 1.00 | 1.00 |
-| `ir-arbitrary-inner-asset` | medium | high | 2 | 0 | 0 | 3 | 1.00 | 1.00 | 1.00 |
-| `ir-partial-tainted-fund-flow` | medium | high | 4 | 0 | 0 | 4 | 1.00 | 1.00 | 1.00 |
-| `ir-tainted-asset-admin` | medium | high | 2 | 0 | 0 | 3 | 1.00 | 1.00 | 1.00 |
-| `ir-tainted-fee` | medium | high | 1 | 0 | 0 | 2 | 1.00 | 1.00 | 1.00 |
-| `ir-tainted-freeze` | medium | high | 1 | 0 | 0 | 2 | 1.00 | 1.00 | 1.00 |
-| `ir-tainted-fund-flow` | medium | high | 12 | 0 | 0 | 11 | 1.00 | 1.00 | 1.00 |
-| `ir-tainted-log` | medium | high | 2 | 0 | 0 | 3 | 1.00 | 1.00 | 1.00 |
-| `ir-tainted-state-write` | medium | high | 2 | 0 | 0 | 3 | 1.00 | 1.00 | 1.00 |
 | `is-deletable` | informational | high | 1 | 0 | 0 | 3 | 1.00 | 1.00 | 1.00 |
 | `is-updatable` | informational | high | 1 | 0 | 0 | 3 | 1.00 | 1.00 | 1.00 |
 | `lease-validation` | medium | high | 1 | 0 | 0 | 1 | 1.00 | 1.00 | 1.00 |
-| `partial-tainted-fund-flow` | medium | high | 3 | 0 | 0 | 4 | 1.00 | 1.00 | 1.00 |
+| `partial-tainted-fund-flow` | medium | high | 4 | 0 | 0 | 5 | 1.00 | 1.00 | 1.00 |
 | `rekey-to` | high | high | 6 | 0 | 0 | 10 | 1.00 | 1.00 | 1.00 |
-| `tainted-fund-flow` | medium | high | 4 | 0 | 0 | 4 | 1.00 | 1.00 | 1.00 |
+| `tainted-asset-admin` | medium | high | 2 | 0 | 0 | 3 | 1.00 | 1.00 | 1.00 |
+| `tainted-fee` | medium | high | 1 | 0 | 0 | 2 | 1.00 | 1.00 | 1.00 |
+| `tainted-freeze` | medium | high | 1 | 0 | 0 | 2 | 1.00 | 1.00 | 1.00 |
+| `tainted-fund-flow` | medium | high | 12 | 0 | 0 | 11 | 1.00 | 1.00 | 1.00 |
+| `tainted-log` | medium | high | 2 | 0 | 0 | 3 | 1.00 | 1.00 | 1.00 |
+| `tainted-state-write` | medium | high | 2 | 0 | 0 | 3 | 1.00 | 1.00 | 1.00 |
 | `timelock-upgrade` | medium | high | 1 | 0 | 0 | 3 | 1.00 | 1.00 | 1.00 |
 | `tx-type-check` | high | high | 1 | 0 | 0 | 2 | 1.00 | 1.00 | 1.00 |
 | `unprotected-deletable` | high | high | 1 | 0 | 0 | 7 | 1.00 | 1.00 | 1.00 |
@@ -49,6 +45,6 @@
 | `unsafe-division-order` | medium | high | 3 | 0 | 0 | 3 | 1.00 | 1.00 | 1.00 |
 | `unsafe-lsig-args` | high | high | 1 | 0 | 0 | 1 | 1.00 | 1.00 | 1.00 |
 | `unvalidated-group-sibling` | high | high | 7 | 0 | 0 | 10 | 1.00 | 1.00 | 1.00 |
-| **overall** | | | **93** | **0** | **0** | **131** | **1.00** | **1.00** | **1.00** |
+| **overall** | | | **81** | **0** | **0** | **117** | **1.00** | **1.00** | **1.00** |
 
 _Regenerate with_ `python -m tests.gen_precision`.

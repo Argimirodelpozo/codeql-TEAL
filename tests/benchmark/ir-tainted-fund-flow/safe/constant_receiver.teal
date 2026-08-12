@@ -1,9 +1,0 @@
-#pragma version 10
-    itxn_begin
-    global CurrentApplicationAddress
-    itxn_field Receiver
-    int 1
-    itxn_field Amount
-    itxn_submit
-    int 1
-    return

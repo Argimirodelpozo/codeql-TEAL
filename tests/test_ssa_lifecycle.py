@@ -143,30 +143,22 @@ def test_security_caches_track_the_program_revision():
     mutation) instead of memoising bare attributes. SSA operands are rewritten
     IN PLACE by supported passes, so a bare memo does not merely leak: its
     stale entries keep HITTING after the rewrite."""
-    from tealql.security import common
     from tealql.security._value_flow import (
-        _frame_gap_sources_cached,
+        _constant_facts_cached,
         _frame_param_sources_cached,
+        cached_path_predicates,
     )
-    from tealql.tealtools.ssa.frame_slots import gap_sources
 
     prog = _prog(
         "txna ApplicationArgs 0\ncallsub use\nint 1\nreturn\n"
         "use:\nproto 1 0\nframe_dig -1\nlog\nretsub",
         name="cache-rev.teal",
     )
-    # The gap wrapper must BE the library cache — that one is cleared by
-    # ``_invalidate_value_relations``; a second memo layer on top served the
-    # results the invalidation dropped.
-    first_gap = _frame_gap_sources_cached(prog)
-    assert first_gap is gap_sources(prog)
-    prog._invalidate_value_relations()
-    assert _frame_gap_sources_cached(prog) is not first_gap
-
-    taint_before = common.user_input_taint(prog)
     params_before = _frame_param_sources_cached(prog)
+    facts_before = _constant_facts_cached(prog)
+    predicates_before = cached_path_predicates(prog)
     prog._revision += 1        # what _commit_mutation does after a rewrite
-    assert common.user_input_taint(prog) is not taint_before, (
-        "user_input_taint kept serving a pre-mutation fixpoint")
     assert _frame_param_sources_cached(prog) is not params_before, (
         "frame param sources kept serving pre-mutation operand maps")
+    assert _constant_facts_cached(prog) is not facts_before
+    assert cached_path_predicates(prog) is not predicates_before

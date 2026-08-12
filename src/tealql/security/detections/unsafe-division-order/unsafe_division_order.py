@@ -11,7 +11,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import ClassVar, Optional
 
-from tealql.security import common
+from tealql.security._program_shape import file_match, loc
+from tealql.security._value_flow import _scratch_stores_for
 from tealql.tealtools.analysis import FactDomain
 from tealql.tealtools.ssa import Assignment, Phi, SSAProgram, SSAVar, const_int
 
@@ -26,7 +27,7 @@ class UnsafeDivisionOrderViolation:
 
     @property
     def location(self) -> str:
-        return common.loc(self.mul)
+        return loc(self.mul)
 
     @property
     def file(self) -> str:
@@ -40,7 +41,7 @@ class UnsafeDivisionOrderViolation:
     def pretty(self) -> str:
         return (
             f"divide-before-multiply at {self.location}: a `{self.div.op}` result "
-            f"is multiplied by `{self.mul.op}` (div at {common.loc(self.div)}). "
+            f"is multiplied by `{self.mul.op}` (div at {loc(self.div)}). "
             f"Integer division truncates first, so precision is lost — reorder to "
             f"multiply before dividing (`(a * c) / b`)."
         )
@@ -48,7 +49,7 @@ class UnsafeDivisionOrderViolation:
     def to_dict(self) -> dict:
         return {
             "location": self.location,
-            "div_location": common.loc(self.div),
+            "div_location": loc(self.div),
             "div_op": self.div.op,
             "mul_op": self.mul.op,
             "message": self.pretty(),
@@ -74,7 +75,7 @@ class UnsafeDivisionOrderDetector:
         for a in self.prog.assignments:
             if a.op not in _MUL_OPS:
                 continue
-            if not common.file_match(a.location.file, self.file):
+            if not file_match(a.location.file, self.file):
                 continue
             for inp in a.inputs:
                 div = self._div_def(inp)
@@ -109,7 +110,7 @@ class UnsafeDivisionOrderDetector:
         if d.op in _DIV_OPS:
             return d
         if d.op == "load":                            # scratch reaching-def
-            for s in (common._scratch_stores_for(self.prog, operand) or ()):
+            for s in (_scratch_stores_for(self.prog, operand) or ()):
                 found = self._div_def(self.prog.var(*s), seen)
                 if found is not None:
                     return found

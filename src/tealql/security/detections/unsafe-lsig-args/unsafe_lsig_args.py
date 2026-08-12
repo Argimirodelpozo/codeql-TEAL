@@ -14,7 +14,7 @@ from typing import Optional
 
 from tealql.tealtools.ssa import Assignment, SSAProgram
 from tealql.tealtools.dataflow.taint_graph import TaintGraph
-from tealql.security import common
+from tealql.security._program_shape import file_match, loc
 
 
 _ARG_OPS = frozenset({"arg", "arg_0", "arg_1", "arg_2", "arg_3", "args"})
@@ -37,7 +37,7 @@ class UnsafeLsigArgsViolation:
 
     def pretty(self) -> str:
         return (
-            f"{self.arg_op.op}@{common.loc(self.arg_op)}  "
+            f"{self.arg_op.op}@{loc(self.arg_op)}  "
             "LogicSig argument used in equality comparison — args are not covered "
             "by delegation signatures and provide zero security for access control."
         )
@@ -74,14 +74,14 @@ class UnsafeLsigArgsDetector:
         tg = TaintGraph.of(self.prog)
         cmp_set = {
             n for n in tg.nodes()
-            if tg.op_of(n) in _EQ_OPS and common.file_match(n.file, self.file)
+            if tg.op_of(n) in _EQ_OPS and file_match(n.file, self.file)
         }
         if not cmp_set:
             return []
         out: list[UnsafeLsigArgsViolation] = []
         seen_args: set[tuple[str, int]] = set()
         for n in sorted(tg.nodes(), key=lambda x: (x.file, x.line)):
-            if tg.op_of(n) not in _ARG_OPS or not common.file_match(n.file, self.file):
+            if tg.op_of(n) not in _ARG_OPS or not file_match(n.file, self.file):
                 continue
             key = (n.file, n.line)
             if key in seen_args:

@@ -38,7 +38,7 @@ def test_prose_is_not_parsed():
 
 
 def test_line_from_structured_location():
-    f = normalize(_Structured(), rule_id="ir-tainted-fund-flow",
+    f = normalize(_Structured(), rule_id="tainted-fund-flow",
                   rel_path="prog.teal", severity="critical")
     assert f.line == 23
     # witness carries the taint-road sources.

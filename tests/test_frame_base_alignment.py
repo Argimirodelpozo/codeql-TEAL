@@ -223,15 +223,14 @@ def test_taint_survives_a_bury_dig_roundtrip_into_a_call():
     Those are different claims and this test used to conflate them. What the
     frame index owns is whether the value arrives at all; sender-guard semantics
     have their own focused regression suite."""
-    from tealql.security.common import ir_lifter
-    from tealql.tealtools.lift import fund_flow as FF
+    from tealql.tealtools.lift import build_lifter, fund_flow as FF
 
     probe = PROBES / "app_2450560800.teal"
     if not probe.exists():
         pytest.skip("app_2450560800 not present")
     prog = SSAProgram(str(probe))
     prog.propagate_constants()
-    lifter = ir_lifter(prog)
+    lifter = build_lifter(prog)
     assert lifter is not None, "contract no longer lifts"
 
     def sink_of(s):

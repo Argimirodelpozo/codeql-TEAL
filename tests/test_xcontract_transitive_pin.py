@@ -74,7 +74,7 @@ def test_transitive_pin_suppresses_through_forwarding_hop(tmp_path):
     # the forwarding edge B->C carries the propagated pin
     bc = next(e for e in g.edges if e.caller_app_id == 100 and e.site.app_id == 200)
     assert bc.site.const_args == {0: _K}
-    assert cross_detection_findings(g, detector_names=["ir-tainted-fund-flow"]) == []
+    assert cross_detection_findings(g, detector_names=["tainted-fund-flow"]) == []
     assert cross_detection_findings(g, detector_names=["tainted-fund-flow"]) == []
 
 
@@ -83,5 +83,5 @@ def test_forwarded_but_unpinned_still_fires(tmp_path):
     g = XContractGraph.build(caller, registry)
     bc = next(e for e in g.edges if e.caller_app_id == 100 and e.site.app_id == 200)
     assert bc.site.const_args == {}                       # nothing pinned to forward
-    findings = cross_detection_findings(g, detector_names=["ir-tainted-fund-flow"])
+    findings = cross_detection_findings(g, detector_names=["tainted-fund-flow"])
     assert [f.app_id for f in findings] == [200]

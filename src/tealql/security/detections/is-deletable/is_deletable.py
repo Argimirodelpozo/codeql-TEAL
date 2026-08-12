@@ -3,7 +3,7 @@
 """
 from __future__ import annotations
 
-from tealql.security import common
+from tealql.security._action_guards import ONC_DELETE_APPLICATION
 from tealql.security._approval_action_guard import (
     _ApprovalActionGuardDetector,
     _ExitBBViolation,
@@ -20,5 +20,5 @@ class IsDeletableDetector(_ApprovalActionGuardDetector):
     # A PROPERTY, not a vulnerability — deletable is usually deliberate. Whether
     # ANYONE can delete it is the real bug, and that is unprotected-deletable.
     severity = "informational"
-    action = common.ONC_DELETE_APPLICATION
+    action = ONC_DELETE_APPLICATION
     violation_cls = IsDeletableViolation

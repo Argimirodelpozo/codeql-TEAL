@@ -15,7 +15,9 @@ from typing import Optional
 
 from tealql.tealtools.cfg.path_predicates import PathPredicateAnalysis
 from tealql.tealtools.ssa import BasicBlock, SSAProgram, SSAVar, operand_const
-from tealql.security import common
+from tealql.security._field_protection import approval_exit_protected_for_arg_reads
+from tealql.security._program_shape import _txna_reads, approving_exits
+from tealql.security._value_flow import cached_path_predicates
 
 _SELECTOR = "ApplicationArgs 0"
 
@@ -60,14 +62,14 @@ class AbiMethodSelectorDetector:
         self.file = file
         self._pp = path_predicates
         self._selector_vars = {
-            out for a in common._txna_reads(prog, _SELECTOR, file=file)
+            out for a in _txna_reads(prog, _SELECTOR, file=file)
             for out in a.outputs if isinstance(out, SSAVar)
         }
 
     @property
     def pp(self) -> PathPredicateAnalysis:
         if self._pp is None:
-            self._pp = common.cached_path_predicates(self.prog)
+            self._pp = cached_path_predicates(self.prog)
         return self._pp
 
     def _selector_matched_at_exit(self, exit_bb: BasicBlock) -> bool:
@@ -96,10 +98,10 @@ class AbiMethodSelectorDetector:
             return []
         out: list[AbiMethodSelectorViolation] = []
         for exit_bb in sorted(
-            common.approving_exits(self.prog, file=self.file),
+            approving_exits(self.prog, file=self.file),
             key=lambda b: (b.file, b.first_line),
         ):
-            if common.approval_exit_protected_for_arg_reads(
+            if approval_exit_protected_for_arg_reads(
                 self.prog, exit_bb, _SELECTOR, file=self.file,
             ):
                 continue

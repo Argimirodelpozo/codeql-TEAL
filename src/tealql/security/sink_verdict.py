@@ -16,27 +16,27 @@ from tealql.tealtools.ssa import SSAProgram
 
 #: sink category (from ``taint_query``) -> the detector(s) whose verdict covers it.
 _CATEGORY_DETECTORS: dict[str, tuple[str, ...]] = {
-    "inner-payment-receiver": ("ir-tainted-fund-flow",),
-    "inner-payment-amount": ("ir-tainted-fund-flow",),
-    "inner-asset-receiver": ("ir-tainted-fund-flow",),
-    "inner-asset-amount": ("ir-tainted-fund-flow",),
-    "inner-close-remainder": ("ir-tainted-fund-flow",),
-    "inner-asset-close": ("ir-tainted-fund-flow",),
-    # HAZARD: ir-tainted-fund-flow's FUND_FIELDS EXCLUDES RekeyTo, so listing it
+    "inner-payment-receiver": ("tainted-fund-flow",),
+    "inner-payment-amount": ("tainted-fund-flow",),
+    "inner-asset-receiver": ("tainted-fund-flow",),
+    "inner-asset-amount": ("tainted-fund-flow",),
+    "inner-close-remainder": ("tainted-fund-flow",),
+    "inner-asset-close": ("tainted-fund-flow",),
+    # HAZARD: tainted-fund-flow's FUND_FIELDS EXCLUDES RekeyTo, so listing it
     # here would make every itxn-rekey sink read GUARDED. inner-txn-close-rekey is
     # the detector that actually covers RekeyTo/CloseRemainderTo/AssetCloseTo.
     "inner-rekey": ("inner-txn-close-rekey",),
-    "inner-fee": ("ir-tainted-fee",),
-    "inner-appcall-target": ("ir-arbitrary-inner-appcall",),
-    "inner-asset-selector": ("ir-arbitrary-inner-asset",),
-    "asset-freeze-target": ("ir-tainted-freeze",),
-    "asset-freeze-account": ("ir-tainted-freeze",),
-    "asset-admin": ("ir-tainted-asset-admin",),
-    "global-state-write": ("ir-tainted-state-write",),
-    "local-state-write": ("ir-tainted-state-write",),
-    "box-write": ("ir-tainted-state-write",),
-    "box-delete": ("ir-tainted-state-write",),
-    "log-emit": ("ir-tainted-log",),
+    "inner-fee": ("tainted-fee",),
+    "inner-appcall-target": ("arbitrary-inner-appcall",),
+    "inner-asset-selector": ("arbitrary-inner-asset",),
+    "asset-freeze-target": ("tainted-freeze",),
+    "asset-freeze-account": ("tainted-freeze",),
+    "asset-admin": ("tainted-asset-admin",),
+    "global-state-write": ("tainted-state-write",),
+    "local-state-write": ("tainted-state-write",),
+    "box-write": ("tainted-state-write",),
+    "box-delete": ("tainted-state-write",),
+    "log-emit": ("tainted-log",),
 }
 
 
@@ -80,8 +80,8 @@ def verify_sinks(prog: SSAProgram, *, file: Optional[str] = None,
         # Pre-warm through the DETECTOR-grade builder so its coverage/crash
         # warnings fire (the query-side build is quiet) and the detectors below
         # reuse this one lift rather than building a second.
-        from tealql.security.common import ir_lifter
-        ir_lifter(prog, file)
+        from tealql.tealtools.lift import build_lifter
+        build_lifter(prog, file)
 
     q = TaintQuery(prog, file=file)
     sinks = q.tainted_sinks(precise=precise)

@@ -15,7 +15,7 @@ import pytest
 from tealql.cli.main import main
 from tealql.security import DETECTORS, severity_of
 from tealql.security.config import ConfigError, DetectionConfig, glob_match
-from tealql.security.scan import DetectionOptions, ScanConfig, ScanFinding
+from tealql.security.scan import DetectionOptions, ScanFinding
 
 TESTS_ROOT = Path(__file__).resolve().parent
 REKEY_VULN_DIR = TESTS_ROOT / "benchmark" / "rekey-to" / "vuln"
@@ -38,53 +38,53 @@ def test_glob_plain_star_crosses_slash():
 
 
 # ---------------------------------------------------------------------------
-# ScanConfig validation
+# Detector-selection validation through the unified options schema
 # ---------------------------------------------------------------------------
 
 
-def test_scanconfig_unknown_detector_in_only_rejected():
+def test_options_unknown_detector_in_only_rejected():
     with pytest.raises(ConfigError, match="unknown detector"):
-        ScanConfig.from_dict({"rules": [{"match": "*.teal",
-                                         "only": ["rekey-to", "reeky-to"]}]})
+        DetectionOptions.from_dict({"detectors": [{"match": "*.teal",
+                                                    "only": ["rekey-to", "reeky-to"]}]})
 
 
-def test_scanconfig_unknown_detector_in_exclude_rejected():
+def test_options_unknown_detector_in_exclude_rejected():
     with pytest.raises(ConfigError, match="unknown detector"):
-        ScanConfig.from_dict({"rules": [{"match": "*.teal",
-                                         "exclude": ["notadetector"]}]})
+        DetectionOptions.from_dict({"detectors": [{"match": "*.teal",
+                                                    "exclude": ["notadetector"]}]})
 
 
-def test_scanconfig_only_and_exclude_together_rejected():
+def test_options_only_and_exclude_together_rejected():
     with pytest.raises(ConfigError, match="mutually"):
-        ScanConfig.from_dict({"rules": [{"match": "*.teal",
-                                         "only": ["rekey-to"],
-                                         "exclude": ["fee-validation"]}]})
+        DetectionOptions.from_dict({"detectors": [{"match": "*.teal",
+                                                    "only": ["rekey-to"],
+                                                    "exclude": ["fee-validation"]}]})
 
 
-def test_scanconfig_missing_match_rejected():
+def test_options_missing_match_rejected():
     with pytest.raises(ConfigError, match="missing 'match'"):
-        ScanConfig.from_dict({"rules": [{"only": ["rekey-to"]}]})
+        DetectionOptions.from_dict({"detectors": [{"only": ["rekey-to"]}]})
 
 
-def test_scanconfig_unknown_rule_key_rejected():
+def test_options_unknown_rule_key_rejected():
     with pytest.raises(ConfigError, match="unknown key"):
-        ScanConfig.from_dict({"rules": [{"match": "*.teal",
-                                         "onyl": ["rekey-to"]}]})
+        DetectionOptions.from_dict({"detectors": [{"match": "*.teal",
+                                                    "onyl": ["rekey-to"]}]})
 
 
-def test_scanconfig_valid_roundtrips():
-    cfg = ScanConfig.from_dict({"rules": [
+def test_options_valid_selection_roundtrips():
+    cfg = DetectionOptions.from_dict({"detectors": [
         {"match": "*lsig*.teal", "only": ["rekey-to", "fee-validation"]},
         {"match": "*.teal", "exclude": ["unsafe-lsig-args"]},
     ]})
-    assert len(cfg.rules) == 2
+    assert len(cfg.selection.rules) == 2
 
 
-def test_scanconfig_from_path_unknown_top_key(tmp_path):
+def test_options_from_path_rejects_old_rules_key(tmp_path):
     p = tmp_path / "c.yml"
     p.write_text("rulez:\n  - match: '*.teal'\n")
     with pytest.raises(ConfigError, match="unknown top-level"):
-        ScanConfig.from_path(p)
+        DetectionOptions.from_path(p)
 
 
 # ---------------------------------------------------------------------------
@@ -143,15 +143,12 @@ def test_cli_options_fail_on_gates_exit_code(tmp_path, capsys):
     assert rc == 0                           # but not a failure
 
 
-def test_cli_options_conflicts_with_config(tmp_path, capsys):
-    opts = tmp_path / "o.yml"
-    opts.write_text("fail_on: low\n")
+def test_cli_rejects_removed_config_flag(tmp_path, capsys):
     cfg = tmp_path / "c.yml"
     cfg.write_text("rules: []\n")
-    rc = main(["detections-scan", str(tmp_path), "--options", str(opts),
-               "--config", str(cfg)])
-    assert rc == 2
-    assert "INSTEAD" in capsys.readouterr().err
+    with pytest.raises(SystemExit, match="2"):
+        main(["detections-scan", str(tmp_path), "--config", str(cfg)])
+    assert "unrecognized arguments" in capsys.readouterr().err
 
 
 # ---------------------------------------------------------------------------

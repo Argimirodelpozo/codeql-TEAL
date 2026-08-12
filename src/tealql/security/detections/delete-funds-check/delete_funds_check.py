@@ -7,11 +7,14 @@ from __future__ import annotations
 from typing import Optional
 
 from tealql.tealtools.ssa import SSAProgram
-from tealql.security import common
+from tealql.security._action_guards import ONC_DELETE_APPLICATION
 from tealql.security._approval_action_guard import (
     _ApprovalActionGuardDetector,
     _ExitBBViolation,
 )
+from tealql.security._enforcement import enforced_op_exists
+from tealql.security._program_shape import op_output_seeds
+from tealql.security._value_flow import _operand_flows_from_field_var
 
 
 _TIE_OPS = frozenset({
@@ -35,8 +38,8 @@ def _has_balance_minbalance_check(
     HAZARD: opcode presence is not enough. Two unrelated uses — ``min_balance`` of
     one account, ``balance`` of another, never compared — would suppress the
     finding on a contract with no funds check at all."""
-    bal = common.op_output_seeds(prog, "balance", file=file)
-    mb = common.op_output_seeds(prog, "min_balance", file=file)
+    bal = op_output_seeds(prog, "balance", file=file)
+    mb = op_output_seeds(prog, "min_balance", file=file)
     if not bal or not mb:
         return False
 
@@ -46,22 +49,22 @@ def _has_balance_minbalance_check(
             return False
         x, y = op.inputs
         return (
-            (common._operand_flows_from_field_var(prog, x, bal)
-                and common._operand_flows_from_field_var(prog, y, mb))
+            (_operand_flows_from_field_var(prog, x, bal)
+                and _operand_flows_from_field_var(prog, y, mb))
             or
-            (common._operand_flows_from_field_var(prog, y, bal)
-                and common._operand_flows_from_field_var(prog, x, mb))
+            (_operand_flows_from_field_var(prog, y, bal)
+                and _operand_flows_from_field_var(prog, x, mb))
         )
 
     # And ENFORCED: a tie whose result is dropped (`pop`) or sits on an unrelated
     # branch is no funds check, so one dead comparison would silence the detector.
-    return common.enforced_op_exists(prog, _TIE_OPS, _tied, file=file)
+    return enforced_op_exists(prog, _TIE_OPS, _tied, file=file)
 
 
 class DeleteFundsCheckDetector(_ApprovalActionGuardDetector):
     severity = "high"
     name = "sec-guide/delete-funds-check"
-    action = common.ONC_DELETE_APPLICATION
+    action = ONC_DELETE_APPLICATION
     violation_cls = DeleteFundsCheckViolation
 
     def applies(self) -> bool:

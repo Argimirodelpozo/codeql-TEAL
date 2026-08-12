@@ -15,7 +15,12 @@ from typing import ClassVar, Optional
 
 from tealql.tealtools.cfg.path_predicates import PathPredicateAnalysis
 from tealql.tealtools.ssa import BasicBlock, SSAProgram
-from . import common
+from ._action_guards import (
+    approval_exit_unguarded_for_action,
+    sender_creator_guard_covers_action,
+)
+from ._program_shape import approving_exits
+from ._value_flow import cached_path_predicates
 
 
 @dataclass
@@ -65,7 +70,7 @@ class _ApprovalActionGuardDetector:
     ):
         self.prog = prog
         self.file = file
-        self.pp = path_predicates or common.cached_path_predicates(prog)
+        self.pp = path_predicates or cached_path_predicates(prog)
 
     def applies(self) -> bool:
         """Program-level precondition gate; default always-on."""
@@ -76,10 +81,10 @@ class _ApprovalActionGuardDetector:
             return []
         out = []
         for exit_bb in sorted(
-            common.approving_exits(self.prog, file=self.file),
+            approving_exits(self.prog, file=self.file),
             key=lambda b: (b.file, b.first_line),
         ):
-            if not common.approval_exit_unguarded_for_action(
+            if not approval_exit_unguarded_for_action(
                 self.prog, self.pp, exit_bb, self.action,
             ):
                 continue
@@ -88,7 +93,7 @@ class _ApprovalActionGuardDetector:
                 # ACTION-CONSISTENT path, NOT whether it dominates the exit — a
                 # guard on the Update branch that rejoins the common epilogue
                 # dominates nothing, and reads as absent on real contracts.
-                dominates = common.sender_creator_guard_covers_action(
+                dominates = sender_creator_guard_covers_action(
                     self.prog, self.pp, exit_bb, self.action,
                 )
                 if self.creator_guard == "require_absent" and dominates:

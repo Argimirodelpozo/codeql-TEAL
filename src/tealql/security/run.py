@@ -32,8 +32,8 @@ def _secguide_detector(short_name: str, notes: "list | None" = None) -> Detector
     App-vs-logicsig scope is a DECLARED concern of the scanner, not inferred here,
     so ``tealql all`` runs every detector.
 
-    When ``notes`` is given, a detector that reports itself ``degraded`` (an
-    ir-* one whose contract did not lift) records there. That capture has to
+    When ``notes`` is given, a lifted detector that reports itself ``degraded``
+    records there. That capture has to
     happen HERE, in the adapter that owns the instance: the tealtools runner
     only ever sees the returned findings, and teaching it about degradation
     would point the dependency arrow backwards."""

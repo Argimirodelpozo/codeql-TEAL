@@ -1,6 +1,5 @@
 """Field-validation reasoning: ``field_validated_on_all_paths`` and the
 ``approval_exit_protected_for_*`` family, parameterised on seed sets.
-Import via :mod:`tealql.security.common`.
 
 Every member asks the same MUST-reach question — does every entry→exit path CROSS
 a block that ENFORCES a comparison of the seeds? A may-reach ("some enforcement

@@ -8,8 +8,8 @@ from dataclasses import dataclass
 from typing import Optional
 
 from tealql.tealtools.ssa import BasicBlock, SSAProgram
-from tealql.security import common
 from tealql.security._approval_exit import _ApprovalExitProtectedDetector
+from tealql.security._program_shape import gtxn_field_reads, txn_field_reads
 from tealql.tealtools.language.avm import ASSET_TRANSFER_FIELDS as _ASSET_TRANSFER_FIELDS
 
 
@@ -17,9 +17,9 @@ def _handles_asset_transfer(
     prog: SSAProgram, file: Optional[str] = None,
 ) -> bool:
     for field in _ASSET_TRANSFER_FIELDS:
-        if common.txn_field_reads(prog, field, file=file):
+        if txn_field_reads(prog, field, file=file):
             return True
-        if common.gtxn_field_reads(prog, field, file=file):
+        if gtxn_field_reads(prog, field, file=file):
             return True
     return False
 

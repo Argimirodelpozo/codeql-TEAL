@@ -9,8 +9,9 @@ from __future__ import annotations
 
 from typing import Optional
 
-from tealql.security import common
 from tealql.security._field_validated import _FieldValidatedDetector, _FieldValidatedViolation
+from tealql.security._field_protection import field_validated_on_all_paths
+from tealql.security._program_shape import has_instructions
 from tealql.tealtools.ssa import SSAProgram
 
 
@@ -39,15 +40,15 @@ class AssetCloseToDetector(_FieldValidatedDetector):
         super().__init__(prog, file=file)
 
     def detect(self) -> list:
-        if not common.has_instructions(self.prog, file=self.file):
+        if not has_instructions(self.prog, file=self.file):
             return []
         f = self.field[0]
         # The signed txn's OWN field is validated — safe.
-        if common.field_validated_on_all_paths(
+        if field_validated_on_all_paths(
                 self.prog, f, file=self.file, signed_txn_only=True):
             return []
         # A gtxn N check IS enforced, but on an unpinned index, so the signed txn
         # is still exposed; warn specifically rather than clearing it.
-        if common.field_validated_on_all_paths(self.prog, f, file=self.file):
+        if field_validated_on_all_paths(self.prog, f, file=self.file):
             return [self.violation_cls(self.prog, self.unpinned_index_message)]
         return [self.violation_cls(self.prog, self.message)]

@@ -9,13 +9,15 @@ import logging
 
 import pytest
 
-from tealql.security import DETECTORS, common
+from tealql.security import DETECTORS
+from tealql.security._program_shape import classify_program
 from tealql.security.scan import discover_teal_files, scan
 from tealql.tealtools.language import avm
 from tealql.tealtools.diagnostics.errors import TargetError, TargetNotFoundError, TealQLError
 from tealql.tealtools.cfg.group import analyze, analyze_per_exit
 from tealql.tealtools.analysis import DerivedProfile, derived_program
 from tealql.tealtools.cfg.path_predicates import PathPredicateAnalysis
+from tealql.tealtools.cfg.exits import is_approval_exit
 from tealql.tealtools.ssa import SSAProgram
 
 
@@ -136,7 +138,7 @@ def test_reject_arm_is_not_an_approving_exit(tmp_path):
     prog = _prog(tmp_path, "prog.teal", _REJECT_ARM)
     exits = PathPredicateAnalysis(prog).approving_exits()
     assert len(exits) == 1
-    assert not common.is_approval_exit(
+    assert not is_approval_exit(
         next(bb for bb in prog.blocks.values() if bb not in exits
              and bb.assignments and bb.assignments[-1].op == "return"))
 
@@ -219,7 +221,7 @@ def test_scan_of_an_empty_dir_warns_and_strict_refuses(tmp_path, caplog):
     empty = tmp_path / "empty"
     empty.mkdir()
     with caplog.at_level(logging.WARNING, logger="tealql.security.scan"):
-        assert scan(empty) == []
+        assert len(scan(empty)) == 0
     assert "nothing was analyzed" in caplog.text
     with pytest.raises(TealQLError):
         scan(empty, strict=True)
@@ -280,7 +282,7 @@ assert
 int 1
 return
 """)
-    assert common.classify_program(prog) == "app"
+    assert classify_program(prog) == "app"
     for op in ("balance", "min_balance", "gaid", "gaids",
                "voter_params_get", "online_stake"):
         assert op in avm.APP_ONLY_OPS
@@ -372,18 +374,18 @@ return
     assert sorted(on_fresh) == sorted(on_refined)
 
 
-def test_detector_runners_prepare_the_program_once(tmp_path):
-    """``common.prepare`` is the documented handshake; ``scan`` and the CLI's
-    per-file loader both apply it, so a detector's inputs no longer depend on
-    which detector ran before it."""
-    from tealql.security import common
-
+def test_detector_reads_immutable_constant_facts(tmp_path):
+    """A detector query must not annotate or revise the shared SSA program."""
     src = tmp_path / "c.teal"
-    src.write_text("#pragma version 8\nint 1\nreturn\n")
+    src.write_text(
+        "#pragma version 8\nitxn_begin\nint 1\nitxn_field Fee\n"
+        "itxn_submit\nint 1\nreturn\n"
+    )
     prog = SSAProgram(str(src))
-    assert common.prepare(prog) is prog
-    assert getattr(prog, "_consts_propagated", False)
-    common.prepare(prog)              # idempotent
+    before = (prog.revision, tuple(v.const_value for v in prog.vars.values()))
+    assert DETECTORS["inner-txn-fee"](prog).detect()
+    after = (prog.revision, tuple(v.const_value for v in prog.vars.values()))
+    assert after == before
 
 
 def test_fund_flow_walk_reexpands_on_a_shallower_reach():

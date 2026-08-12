@@ -7,7 +7,11 @@ from __future__ import annotations
 from typing import ClassVar, Optional
 
 from tealql.tealtools.ssa import SSAProgram
-from . import common
+from ._field_protection import (
+    approval_exit_protected_for_field,
+    approval_exit_protected_for_signed_txn_field,
+)
+from ._program_shape import approving_exits
 
 
 class _ApprovalExitProtectedDetector:
@@ -37,14 +41,14 @@ class _ApprovalExitProtectedDetector:
             return []
         out = []
         for exit_bb in sorted(
-            common.approving_exits(self.prog, file=self.file),
+            approving_exits(self.prog, file=self.file),
             key=lambda b: (b.file, b.first_line),
         ):
             if self.signed_txn:
-                protected = common.approval_exit_protected_for_signed_txn_field(
+                protected = approval_exit_protected_for_signed_txn_field(
                     self.prog, exit_bb, self.field, file=self.file)
             else:
-                protected = common.approval_exit_protected_for_field(
+                protected = approval_exit_protected_for_field(
                     self.prog, exit_bb, self.field, file=self.file,
                     include_gtxn=self.seed_gtxn)
             if not protected:

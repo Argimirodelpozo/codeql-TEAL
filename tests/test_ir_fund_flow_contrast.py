@@ -1,64 +1,37 @@
-"""The IR-layer fund-flow detector vs the SSA-layer one: a guard-precision case
-the IR gets right and the SSA gets wrong.
+"""The canonical fund-flow policy is representation-independent to callers.
 
-``owner_guard_across_callsub.teal`` is owner-gated (``txn Sender ==
-app_global_get("owner"); assert``) with a ``callsub`` between the guard and the
-itxn sink. The SSA ``PathPredicateAnalysis`` is context-insensitive across
-``callsub`` -- the shared sub has two callers, so the owner predicate is dropped
-at its return merge and the flow is reported UNGUARDED (a false positive). The IR
-``ir-tainted-fund-flow`` computes dominance within the lifted subroutine, where
-the ``InvokeSubroutine`` doesn't break the assert->sink dominance, and correctly
-clears it. This pins that contrast (and the IR detector's correctness on it).
+Its implementation uses lifted pre-IR because that is where call boundaries and
+guard dominance are precise. The former SSA implementation and ``ir-*`` alias no
+longer exist, and lift failure is reported as incomplete instead of falling back.
 """
-import contextlib
-import io
 from pathlib import Path
 
-import pytest
+from tealql.security import DETECTORS
+from tealql.tealtools.ssa import SSAProgram
 
-pytest.importorskip("puya")
-
-from tealql.tealtools.ssa import SSAProgram  # noqa: E402
-from tealql.security import DETECTORS  # noqa: E402
-
-CASE = (Path(__file__).resolve().parent / "benchmark" / "ir-tainted-fund-flow"
-        / "safe" / "owner_guard_across_callsub.teal")
+CASES = Path(__file__).resolve().parent / "benchmark" / "tainted-fund-flow"
 
 
-def _fires(detector: str) -> int:
-    prog = SSAProgram(str(CASE))
-    prog.propagate_constants()
-    with contextlib.redirect_stdout(io.StringIO()):       # silence puya logging
-        return len(DETECTORS[detector](prog).detect())
+def _detect(path: Path):
+    return DETECTORS["tainted-fund-flow"](SSAProgram(str(path))).detect()
 
 
-def test_ir_clears_owner_guard_across_callsub():
-    # the IR layer recognises the owner guard despite the intervening callsub
-    assert _fires("ir-tainted-fund-flow") == 0
+def test_canonical_detector_clears_owner_guard_across_callsub():
+    case = CASES / "safe" / "owner_guard_across_callsub.teal"
+    assert _detect(case) == []
 
 
-def test_ssa_falsepositives_on_owner_guard_across_callsub():
-    # documents the SSA layer's context-insensitivity FP that motivates the IR
-    # sibling; if a future change teaches the SSA detector this guard, update this
-    # test (the FP going away is a WIN, not a regression).
-    assert _fires("tainted-fund-flow") > 0
+def test_representation_prefixed_alias_is_removed():
+    assert "ir-tainted-fund-flow" not in DETECTORS
 
 
-_VULN = (Path(__file__).resolve().parent / "benchmark" / "ir-tainted-fund-flow"
-         / "vuln" / "unguarded_receiver.teal")
+def test_lift_failure_is_visible_and_never_changes_detector_semantics(monkeypatch):
+    import tealql.tealtools.lift as lift_layer
 
+    monkeypatch.setattr(lift_layer, "build_lifter", lambda prog, file=None: None)
+    case = CASES / "vuln" / "unguarded_receiver.teal"
+    detector = DETECTORS["tainted-fund-flow"](SSAProgram(str(case)))
 
-def test_ir_detector_falls_back_to_ssa_when_lift_fails(monkeypatch):
-    # when the lift fails (ir_lifter -> None), the IR detector defers to the SSA
-    # tainted-fund-flow detector so coverage stays complete (IR-primary, SSA-
-    # fallback). Force a lift failure and confirm it matches the SSA's findings.
-    from tealql.security import DETECTORS, common
-    monkeypatch.setattr(common, "ir_lifter", lambda prog, file=None: None)
-
-    def _n(det):
-        p = SSAProgram(str(_VULN))
-        p.propagate_constants()
-        with contextlib.redirect_stdout(io.StringIO()):
-            return len(DETECTORS[det](p).detect())
-
-    assert _n("ir-tainted-fund-flow") == _n("tainted-fund-flow") > 0
+    assert detector.detect() == []
+    assert "did NOT run" in detector.degraded
+    assert "fallback" not in detector.degraded

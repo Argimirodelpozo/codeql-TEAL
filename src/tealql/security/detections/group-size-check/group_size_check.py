@@ -13,7 +13,8 @@ from dataclasses import dataclass
 from typing import Optional
 
 from tealql.tealtools.ssa import BasicBlock, SSAProgram
-from tealql.security import common
+from tealql.security._field_protection import approval_exit_protected_for_global_field
+from tealql.security._program_shape import approving_exits, file_match
 
 
 # Absolute-index group-txn reads (index in the first immediate).
@@ -22,7 +23,7 @@ _ABS_GROUP_INDEX_OPS = frozenset({"gtxn", "gtxna", "gtxnas"})
 
 def _uses_absolute_group_index(prog: SSAProgram, file: Optional[str]) -> bool:
     return any(
-        a.op in _ABS_GROUP_INDEX_OPS and common.file_match(a.location.file, file)
+        a.op in _ABS_GROUP_INDEX_OPS and file_match(a.location.file, file)
         for a in prog.assignments
     )
 
@@ -66,10 +67,10 @@ class GroupSizeCheckDetector:
             return []
         out: list[GroupSizeCheckViolation] = []
         for exit_bb in sorted(
-            common.approving_exits(self.prog, file=self.file),
+            approving_exits(self.prog, file=self.file),
             key=lambda b: (b.file, b.first_line),
         ):
-            if not common.approval_exit_protected_for_global_field(
+            if not approval_exit_protected_for_global_field(
                 self.prog, exit_bb, "GroupSize", file=self.file,
             ):
                 out.append(GroupSizeCheckViolation(exit_bb))

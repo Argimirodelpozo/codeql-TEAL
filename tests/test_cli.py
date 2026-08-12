@@ -377,7 +377,7 @@ def test_cli_taint_query_verify(tmp_path, capsys):
     data = json.loads(capsys.readouterr().out)
     recv = [d for d in data if d["category"] == "inner-payment-receiver"]
     assert recv and recv[0]["verdict"] == "CONFIRMED"
-    assert "ir-tainted-fund-flow" in recv[0]["confirmed_by"]
+    assert "tainted-fund-flow" in recv[0]["confirmed_by"]
 
 
 def test_cli_taint_query_precise(tmp_path, capsys):
@@ -474,7 +474,7 @@ def test_cli_detections_list(capsys):
     assert rc == 0
     names = capsys.readouterr().out.split()
     assert "rekey-to" in names
-    assert "ir-tainted-fund-flow" in names
+    assert "tainted-fund-flow" in names
 
 
 def test_cli_detections_missing_target_clean_error(capsys):
@@ -503,8 +503,7 @@ def test_cli_detections_scan_json_shape(capsys):
     for f in findings:
         assert {"rule_id", "file", "line", "severity", "confidence",
                 "message"} <= f.keys()
-    rk = [f for f in findings if f["rule_id"] == "rekey-to"]
-    assert rk and rk[0]["detector"] == "sec-guide/rekey-to"
+    assert any(f["rule_id"] == "rekey-to" for f in findings)
     # At least some findings carry a real 1-based line (not just prose).
     assert any(isinstance(f["line"], int) for f in findings)
 
@@ -523,24 +522,21 @@ def test_cli_detections_scan_sarif(capsys):
     assert any(r["level"] == "error" for r in res)
 
 
-def test_cli_detections_all_drops_superseded(capsys):
+def test_cli_detections_all_runs_canonical_policy_once(capsys):
     main(["detections", str(SAFE_DB), "--all"])
     out = capsys.readouterr().out
     # --all prints a `=== sec-guide/<name> ===` header per detector run: the
-    # IR successor must run, its superseded SSA sibling must not.
-    assert "=== sec-guide/ir-tainted-fund-flow ===" in out
-    assert "=== sec-guide/tainted-fund-flow ===" not in out
+    assert out.count("=== sec-guide/tainted-fund-flow ===") == 1
+    assert "sec-guide/ir-tainted-fund-flow" not in out
 
 
-def test_cli_all_runs_ir_family_not_superseded(capsys):
-    # `tealql all` derives its detector set from the registry: the ir-*
-    # family (the primary detectors) must be present, superseded SSA
-    # siblings and on-demand-only detections must not.
+def test_cli_all_runs_canonical_lifted_policies(capsys):
+    # `tealql all` derives its detector set from the canonical registry.
     main(["all", str(VULN_DB), "--json"])
     detectors = json.loads(capsys.readouterr().out)["detectors"]
-    assert "detections/ir-tainted-fund-flow" in detectors
-    assert "detections/ir-arbitrary-inner-appcall" in detectors
-    assert "detections/tainted-fund-flow" not in detectors
+    assert "detections/tainted-fund-flow" in detectors
+    assert "detections/arbitrary-inner-appcall" in detectors
+    assert "detections/ir-tainted-fund-flow" not in detectors
     assert "detections/abi-method-selector" not in detectors
     assert "detections/constant-condition" not in detectors
 
@@ -662,16 +658,16 @@ def test_cli_group_taint_json_clean_when_no_sharing(tmp_path, capsys):
     assert rc == 0
 
 
-def test_cli_detections_scan_config_empty_only_exit_zero(tmp_path, capsys):
+def test_cli_detections_scan_options_empty_only_exit_zero(tmp_path, capsys):
     # A bare approve-everything program fires a dozen detectors by design,
     # so exercise the clean-exit path by scoping the scan to zero detectors
-    # via a --config rule (which also covers the config-loading path).
+    # via an options selection rule (which also covers config loading).
     # NB: "*.teal" not "**/*.teal" — fnmatch's `*` crosses `/`, but a literal
     # `**/` prefix requires a slash in the rel path, which root-level files
     # don't have (the scan.py docstring example has this trap).
-    rules = tmp_path / "rules.yml"
-    rules.write_text('rules:\n  - match: "*.teal"\n    only: []\n')
-    rc = main(["detections-scan", str(REKEY_VULN_DIR), "--config", str(rules)])
+    rules = tmp_path / "options.yml"
+    rules.write_text('detectors:\n  - match: "*.teal"\n    only: []\n')
+    rc = main(["detections-scan", str(REKEY_VULN_DIR), "--options", str(rules)])
     assert rc == 0
     assert "(no findings)" in capsys.readouterr().out
 

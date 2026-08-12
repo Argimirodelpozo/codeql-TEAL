@@ -39,7 +39,7 @@ equality comparing that sibling's `Receiver` / `AssetReceiver` against
 branch-to-reject). Missing pin → finding.
 
 - The flow check is the shared phi / scratch / proto-frame-aware
-  `common._operand_flows_from_field_var`, so a pin behind a subroutine or a
+  `_value_flow._operand_flows_from_field_var`, so a pin behind a subroutine or a
   scratch slot still counts (verified).
 - A dynamic-index `gtxns*` read (sibling index on the stack, not statically known)
   is skipped — soundly, no false positive.

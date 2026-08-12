@@ -106,7 +106,7 @@ def test_ssa_build_deterministic(teal):
 
 # One representative detector per family, run over the corpus for determinism.
 _DET_NAMES = ["rekey-to", "fee-validation", "tainted-fund-flow",
-              "ir-tainted-fund-flow", "abi-method-selector"]
+              "tainted-fund-flow", "abi-method-selector"]
 
 
 @pytest.mark.parametrize("teal", CORPUS, ids=_IDS)

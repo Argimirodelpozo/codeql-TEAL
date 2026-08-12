@@ -4,7 +4,7 @@ the application.
 """
 from __future__ import annotations
 
-from tealql.security import common
+from tealql.security._action_guards import ONC_DELETE_APPLICATION
 from tealql.security._approval_action_guard import (
     _ApprovalActionGuardDetector,
     _ExitBBViolation,
@@ -19,6 +19,6 @@ class UnprotectedDeletableViolation(_ExitBBViolation):
 class UnprotectedDeletableDetector(_ApprovalActionGuardDetector):
     severity = "high"
     name = "sec-guide/unprotected-deletable"
-    action = common.ONC_DELETE_APPLICATION
+    action = ONC_DELETE_APPLICATION
     creator_guard = "require_absent"
     violation_cls = UnprotectedDeletableViolation

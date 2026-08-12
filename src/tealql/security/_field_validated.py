@@ -1,6 +1,6 @@
 """Shared base for the whole-program field-validation family (asset-close-to,
 close-remainder-to, tx-type-check), parameterised on field + message over
-:func:`common.field_validated_on_all_paths`.
+:func:`field_validated_on_all_paths`.
 """
 from __future__ import annotations
 
@@ -8,7 +8,8 @@ from dataclasses import dataclass
 from typing import ClassVar, Optional
 
 from tealql.tealtools.ssa import SSAProgram
-from . import common
+from ._field_protection import field_validated_on_all_paths
+from ._program_shape import has_instructions
 
 
 @dataclass
@@ -43,9 +44,9 @@ class _FieldValidatedDetector:
     def detect(self) -> list[_FieldValidatedViolation]:
         # HAZARD: an empty / fully-unparsed program trivially "lacks" the
         # validation — unanalyzable input, not a finding.
-        if not common.has_instructions(self.prog, file=self.file):
+        if not has_instructions(self.prog, file=self.file):
             return []
         for f in self.field:
-            if common.field_validated_on_all_paths(self.prog, f, file=self.file):
+            if field_validated_on_all_paths(self.prog, f, file=self.file):
                 return []
         return [self.violation_cls(self.prog, self.message)]

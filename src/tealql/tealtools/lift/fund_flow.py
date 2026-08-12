@@ -1,6 +1,6 @@
 """Attacker-controlled inner-transaction FUND-FLOW detector (IR layer).
 
-Backs the ``ir-tainted-fund-flow`` detector. Every user-input-tainted value
+Backs the ``tainted-fund-flow`` detector. Every user-input-tainted value
 reaching a fund-flow inner-txn field -- Receiver / Amount / CloseRemainderTo and
 their asset variants -- is a finding, annotated with the guards that dominate the
 sink (asserts and forced branches, classified by whether they check the tainted
@@ -966,6 +966,71 @@ def tainted_itxn_flows(lifter, fields, taint=None, trusted_args=frozenset(),
     (ApplicationID), asset (XferAsset) and asset-admin (acfg roles)."""
     return _tainted_sink_flows(lifter, _itxn_sink_of(fields), taint, trusted_args,
                                sender_only)
+
+
+def itxn_selector_lines_returned_to_sender(
+    lifter, *, selector_field: str, receiver_field: str,
+) -> set[int]:
+    """Selector-field source lines in an inner transaction returned to Sender.
+
+    This is representation evidence, not detector policy: group ``itxn_field``
+    operations by their ``itxn_begin`` / ``itxn_next`` / ``itxn_submit``
+    boundaries and use the lifted def graph to decide whether the paired receiver
+    derives from the current transaction's Sender.  Keeping the correlation here
+    avoids joining an interprocedural pre-IR finding back to a separate SSA scan
+    by source line.
+    """
+    definitions = _def_map(lifter)
+    dominators, _post_dominators = _cfg_maps(lifter)
+    value_edges = _invoke_returns(lifter)
+    value_edges.update(_scratch_value_edges(lifter, dominators))
+
+    def from_sender(value) -> bool:
+        if not isinstance(value, pre_ir.Register):
+            return False
+        for _register, operation in _walk(
+            value, definitions, inv_ret=value_edges,
+        ):
+            source = _intr(operation) if operation is not None else None
+            if source is not None and _is_sender_op(source):
+                return True
+        return False
+
+    returned: set[int] = set()
+    for sub in lifter.subs:
+        ordered = []
+        for block_order, block in enumerate(sub.body):
+            for op_order, operation in enumerate(block.ops):
+                intrinsic = _intr(operation)
+                if intrinsic is not None:
+                    ordered.append((intrinsic.line, block_order, op_order, intrinsic))
+        ordered.sort(key=lambda item: item[:3])
+
+        current = None
+
+        def finish() -> None:
+            if current is not None and any(from_sender(v) for v in current["receivers"]):
+                returned.update(current["selectors"])
+
+        for _line, _block_order, _op_order, intrinsic in ordered:
+            if intrinsic.op in {"itxn_begin", "itxn_next"}:
+                finish()
+                current = {"selectors": [], "receivers": []}
+                continue
+            if intrinsic.op == "itxn_submit":
+                finish()
+                current = None
+                continue
+            if intrinsic.op != "itxn_field" or current is None \
+                    or not intrinsic.immediates:
+                continue
+            field = str(intrinsic.immediates[0]).strip()
+            if field == selector_field:
+                current["selectors"].append(intrinsic.line)
+            elif field == receiver_field:
+                current["receivers"].extend(intrinsic.args)
+        finish()
+    return returned
 
 
 # Persistent-state-write ops -> the index of their KEY operand in the lifted

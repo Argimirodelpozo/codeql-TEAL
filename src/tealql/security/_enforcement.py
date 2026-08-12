@@ -1,6 +1,5 @@
 """Enforcement reachability: does a comparison result reach an ``assert`` /
 branch-to-reject sink, i.e. is the check ENFORCED rather than dropped?
-Import via :mod:`tealql.security.common`.
 """
 from __future__ import annotations
 

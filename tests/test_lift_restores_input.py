@@ -1,7 +1,7 @@
 """The lift leaves its input SSAProgram structurally untouched.
 
 ``_prune_dead_assert_edges`` (the one structural mutation the typed lift needs)
-is save/restored inside ``_Lifter.build``, so ``build_lifter`` / ``ir_lifter``
+is save/restored inside ``_Lifter.build``, so ``build_lifter``
 lift the scan's OWN program instead of re-parsing a fresh ``SSAProgram`` from
 disk — that re-parse was ~45% of the detector lift path, and made programs
 without a ``source_path`` unliftable. The SSA-layer detectors read the same
@@ -72,7 +72,7 @@ def test_prune_returns_a_real_undo_and_restores_exactly(assert_false_prog):
 
 def test_lift_restores_input_cfg(assert_false_prog):
     """End-to-end: a successful lift() hands the program back bit-identical in
-    structure — the contract build_lifter/ir_lifter rely on to share the prog."""
+    structure — the contract build_lifter relies on to share the prog."""
     from tealql.tealtools.lift.lift import lift
     prog = assert_false_prog
     prog.propagate_constants()               # entry points run this pre-lift
@@ -117,7 +117,7 @@ def _wiring_snapshot(prog):
 def test_byte_taint_validation_does_not_rewire_the_caller(tmp_path):
     """``byte_taint(validate=True)`` needs the input/shuffle unification, but must
     not leave it on a program the caller shares — the IR detectors run it on the
-    very program the SSA detectors read (``ir_lifter`` lifts in place).
+    very program the SSA detectors read (``build_lifter`` lifts in place).
 
     Leaking it re-pointed consumers at coarse stack-slot merge phis, and a
     MAY-semantics walker followed those into unrelated producers: it invented an
@@ -139,8 +139,8 @@ def test_byte_taint_validation_does_not_rewire_the_caller(tmp_path):
     assert not hasattr(prog, "_shuffles_propagated")
 
 
-def test_entry_points_lift_the_shared_program(assert_false_prog):
-    """build_lifter/ir_lifter now lift prog ITSELF (no fresh re-parse): the
+def test_entry_point_lifts_the_shared_program(assert_false_prog):
+    """build_lifter lifts prog ITSELF (no fresh re-parse): the
     cached lifter's .prog is the very object handed in."""
     from tealql.tealtools.lift import build_lifter
     prog = assert_false_prog
@@ -150,8 +150,8 @@ def test_entry_points_lift_the_shared_program(assert_false_prog):
     assert prog._ir_lifter is lifter
     assert _cfg_snapshot(prog) == before
 
-    from tealql.security._itxn_taint import ir_lifter
-    del prog._ir_lifter                      # bust the shared cache
-    lifter2 = ir_lifter(prog)
+    del prog._ir_lifter
+    del prog._ir_lifter_revision             # bust the shared cache
+    lifter2 = build_lifter(prog)
     assert lifter2 is not None and lifter2.prog is prog
     assert _cfg_snapshot(prog) == before

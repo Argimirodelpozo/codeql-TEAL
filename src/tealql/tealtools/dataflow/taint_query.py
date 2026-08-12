@@ -256,7 +256,7 @@ class TaintQuery:
     def _ir_sink_hits(self, lifter) -> list[SinkHit]:
         """Attack-surface sinks from the lifted IR taint.
 
-        Reuses the same engine the ir-* detectors run on, so the lines reported
+        Reuses the same engine the lifted detectors run on, so the lines reported
         here match a subsequent detector verdict."""
         from ..lift import fund_flow as FF
         from ..lift.taint import user_input_taint

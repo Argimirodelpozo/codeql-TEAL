@@ -93,8 +93,8 @@ def test_constant_dynamic_index_is_narrowed_to_one_slot():
     assert other_fact.zero_initialized and not other_fact.values
 
 
-def test_security_and_dataflow_layers_agree_on_dynamic_scratch():
-    """The security taint fixpoint must classify store->``loads`` like dataflow.
+def test_lifted_and_dataflow_layers_agree_on_dynamic_scratch():
+    """Lifted taint must classify store->``loads`` like coarse dataflow.
 
     It bridged scratch only for static ``load`` through the legacy
     ``_scratch_stores_for`` shape: ``loads`` got nothing, and unknown-store
@@ -103,7 +103,7 @@ def test_security_and_dataflow_layers_agree_on_dynamic_scratch():
     the itxn sinks with the security layer — whose findings are the ONLY
     flows the downstream verifier examines — calling it clean while the
     dataflow layer called it tainted. The DIVERGENCE is the defect."""
-    from tealql.security import common
+    from tealql.tealtools.dataflow.taint_query import TaintQuery
 
     # The slot selector is deliberately CLEAN (`global GroupSize`): a tainted
     # selector reaches the ``loads`` output through ordinary def-use and would
@@ -117,17 +117,12 @@ def test_security_and_dataflow_layers_agree_on_dynamic_scratch():
     )
     assert _reaches_log(body), "dataflow layer must taint the dynamic round-trip"
     prog = _prog(body)
-    loads = next(a for a in prog.assignments if a.op == "loads")
-    taint = common.user_input_taint(prog)
-    slots = taint.get(loads.outputs[0], frozenset())
-    assert any(lbl == "ApplicationArgs" for lbl, _slot in slots), (
-        "security layer disagrees with dataflow on the same shape: the "
-        "``loads`` result lost its ApplicationArgs taint")
+    assert any(h.category == "log-emit"
+               for h in TaintQuery(prog).tainted_sinks(precise=True))
 
     # Control: a constant stored and statically re-read stays clean.
     clean = _prog("int 7\nstore 0\nload 0\nlog")
-    clean_load = next(a for a in clean.assignments if a.op == "load")
-    assert not common.user_input_taint(clean).get(clean_load.outputs[0])
+    assert not TaintQuery(clean).tainted_sinks(precise=True)
 
 
 def test_unresolvable_selector_marks_the_fact_unknown():
@@ -186,7 +181,6 @@ def test_unknown_scratch_load_is_a_taint_graph_source():
     for the flow rows to draw, so it must surface as a SOURCE node — or every
     flow-row consumer (TaintQuery, group, xcontract) reads the unknown as
     clean while the engines call it tainted."""
-    from tealql.security import common
     from tealql.tealtools.dataflow.taint_query import TaintQuery
 
     prog = _prog(
@@ -206,8 +200,3 @@ def test_unknown_scratch_load_is_a_taint_graph_source():
     log_line = next(a for a in prog.assignments if a.op == "log").location.line
     assert q.sources_of(line=log_line), (
         "the sink downstream of the unknown load shows no sources")
-    # The security fixpoint seeds the same load as its own labelled unknown.
-    taint = common.user_input_taint(prog)
-    assert any(lbl == "unknown-scratch"
-               for lbl, _slot in taint.get(loads.outputs[0], frozenset())), (
-        "security layer did not seed the unknown-scratch load")

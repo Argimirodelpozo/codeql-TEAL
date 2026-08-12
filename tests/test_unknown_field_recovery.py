@@ -91,11 +91,10 @@ def test_recovered_field_reaches_the_lift_correctly_typed(tmp_path):
     """The original fuzzer report: `txn GroupID` vanished from the lifted IR,
     taking `log`'s operand with it. GroupID is 32 bytes, so it must type bytes."""
     puya = pytest.importorskip("puya")  # noqa: F841
-    from tealql.security.common import ir_lifter
-    from tealql.tealtools.lift import pre_ir
+    from tealql.tealtools.lift import build_lifter, pre_ir
 
     prog = _prog(tmp_path, "txn GroupID\nlog\n")
-    lifter = ir_lifter(prog)
+    lifter = build_lifter(prog)
     assert lifter is not None
     rendered = [op.render() if hasattr(op, "render") else str(op)
                 for b in pre_ir.blocks(lifter.subs) for op in b.ops]

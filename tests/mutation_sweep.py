@@ -24,13 +24,11 @@ session and hit the SAME two harness bugs each time. Both make a working
 predicate look untested, which reads as a coverage gap that is not there:
 
 1. Patching only the defining module is a no-op wherever a consumer did
-   `from .mod import pred` — `security/common.py` re-exports the whole guard
-   layer and detectors call `common.pred(...)`. First run reported 28 false
-   gaps. Fix: patch EVERY module holding the name, and assert at least one
-   binding was hit.
+   `from .mod import pred`. First run reported 28 false gaps. Fix: patch EVERY
+   module holding the name, and assert at least one binding was hit.
 2. Collecting predicates by walking `ast.parse(src).body` finds MODULE-LEVEL
    functions only. `FundFlowFinding.guarded` is a `@property`, so it was
-   silently absent and its whole `ir-*` family read as "0 fixtures pinned" —
+   silently absent and its whole lifted family read as "0 fixtures pinned" —
    forcing the property directly shows it pins 16. Fix: walk ClassDef bodies
    too and patch class attributes with `setattr(cls, name, property(...))`.
 
@@ -71,7 +69,6 @@ TAINT_MODULES = {
     "tealql.tealtools.lift.taint": "src/tealql/tealtools/lift/taint.py",
     "tealql.tealtools.lift.fund_flow": "src/tealql/tealtools/lift/fund_flow.py",
     "tealql.security._value_flow": "src/tealql/security/_value_flow.py",
-    "tealql.security._itxn_taint": "src/tealql/security/_itxn_taint.py",
     "tealql.security.sink_verdict": "src/tealql/security/sink_verdict.py",
 }
 
@@ -129,7 +126,6 @@ def _apply(mod_name: str, name: str, kind: str, value: bool):
 
 def firing_safe_fixtures() -> "set[str]":
     from tealql.security import DETECTORS
-    from tealql.security.common import prepare
     from tealql.tealtools.ssa import SSAProgram
 
     out = set()
@@ -139,7 +135,7 @@ def firing_safe_fixtures() -> "set[str]":
         if cls is None:
             continue
         try:
-            if cls(prepare(SSAProgram(str(f)))).detect():
+            if cls(SSAProgram(str(f))).detect():
                 out.add(f"{det}/{f.name}")
         except Exception:
             continue

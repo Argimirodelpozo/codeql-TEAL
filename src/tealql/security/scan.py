@@ -1,7 +1,8 @@
-"""Recursive sec-guide scan over a TEAL codebase — one SSA program per ``.teal``,
-every selected detector run against it. Selection comes from a YAML/JSON config
-(:class:`DetectionOptions`, or the legacy :class:`ScanConfig`).
-CLI: ``tealql detections-scan <root> [--config rules.yml] [--json]``.
+"""Recursive sec-guide scan over a TEAL codebase.
+
+Each ``.teal`` file is reconstructed independently. :class:`DetectionOptions`
+is the single configuration surface for selection, modes, severity, and failure
+thresholds.
 """
 from __future__ import annotations
 
@@ -59,29 +60,9 @@ def _method_at(ranges, violation) -> Optional[str]:
         return None
 
 
-def _drop_superseded(detectors: Iterable[str]) -> list[str]:
-    """Drop detectors whose ``superseded_by`` superseder is also going to run.
-
-    HAZARD: the superseder must be BOTH registered AND present in this very set —
-    if it was filtered out (e.g. ``exclude``-d) the superseded detector is KEPT as
-    the fallback, or the scan silently loses that coverage."""
-    survivors = list(detectors)
-    present = set(survivors)
-    out: list[str] = []
-    for d in survivors:
-        cls = DETECTORS.get(d)
-        sup = getattr(cls, "superseded_by", None)
-        if sup and sup in DETECTORS and sup in present:
-            continue
-        out.append(d)
-    return out
-
-
 def default_detection_names(names: Optional[Iterable[str]] = None) -> list[str]:
-    """``names`` (default: the whole registry) minus detectors superseded by another
-    present in the same set — the "run everything" default. Naming a superseded
-    detector explicitly (``--detector``, an ``only:`` rule) still runs it."""
-    return _drop_superseded(DETECTORS if names is None else names)
+    """Materialize ``names``, defaulting to the canonical detector registry."""
+    return list(DETECTORS if names is None else names)
 
 
 # ---------------------------------------------------------------------------
@@ -90,7 +71,7 @@ def default_detection_names(names: Optional[Iterable[str]] = None) -> list[str]:
 
 
 @dataclass(frozen=True)
-class ScanRule:
+class _DetectorRule:
     """One config rule, matched against the file's path relative to the scan root.
 
     ``match`` globs use ``fnmatch`` semantics: ``*`` matches ``/`` too, so
@@ -110,42 +91,27 @@ class ScanRule:
             return [d for d in self.only if d in DETECTORS]
         if self.exclude is not None:
             excl = set(self.exclude)
-            return _drop_superseded(d for d in all_detectors if d not in excl)
-        return _drop_superseded(all_detectors)
+            return [d for d in all_detectors if d not in excl]
+        return list(all_detectors)
 
 
 @dataclass(frozen=True)
-class ScanConfig:
-    """:class:`ScanRule` list, first-match-wins; no rules means every detector runs."""
+class _DetectorSelection:
+    """First-match-wins detector rules owned by :class:`DetectionOptions`."""
 
-    rules: tuple[ScanRule, ...] = ()
+    rules: tuple[_DetectorRule, ...] = ()
 
     @classmethod
-    def empty(cls) -> "ScanConfig":
+    def empty(cls) -> "_DetectorSelection":
         return cls(())
 
     @classmethod
-    def from_path(cls, path: Path) -> "ScanConfig":
-        text = Path(path).read_text()
-        if str(path).endswith((".yml", ".yaml")):
-            import yaml
-            data = yaml.safe_load(text) or {}
-        else:
-            data = json.loads(text)
-        unknown = set(data) - {"rules"}
-        if unknown:
-            raise ConfigError(
-                f"{path}: unknown top-level key(s) {sorted(unknown)} "
-                f"(a selection config holds only 'rules:')")
-        return cls.from_dict(data)
-
-    @classmethod
-    def from_dict(cls, data: dict) -> "ScanConfig":
+    def from_rules(cls, raw_rules) -> "_DetectorSelection":
         """Build + validate — every mistake that would silently change scan coverage
         (unknown detector name, both ``only`` and ``exclude``, missing ``match``,
         unknown rule key) raises :class:`ConfigError` at load time."""
-        rules: list[ScanRule] = []
-        for raw in data.get("rules", []):
+        rules: list[_DetectorRule] = []
+        for raw in raw_rules or ():
             unknown = set(raw) - {"match", "only", "exclude"}
             if unknown:
                 raise ConfigError(
@@ -167,7 +133,7 @@ class ScanConfig:
                     raise ConfigError(
                         f"rule {key!r} names unknown detector(s) {bad} "
                         f"(run `tealql detections --list` for the registry)")
-            rules.append(ScanRule(
+            rules.append(_DetectorRule(
                 match=match_tuple,
                 only=tuple(raw["only"]) if "only" in raw else None,
                 exclude=tuple(raw["exclude"]) if "exclude" in raw else None,
@@ -179,7 +145,7 @@ class ScanConfig:
         for rule in self.rules:
             if rule.matches(rel_path):
                 return rule.select(DETECTORS)
-        return _drop_superseded(DETECTORS)
+        return list(DETECTORS)
 
 
 # ---------------------------------------------------------------------------
@@ -209,7 +175,7 @@ class DetectionOptions:
     unless ``auto_mode`` is set."""
 
     modes: DetectionConfig = DetectionConfig.empty()
-    selection: ScanConfig = ScanConfig.empty()
+    selection: _DetectorSelection = _DetectorSelection.empty()
     severity: tuple[tuple[str, str], ...] = ()   # (detector, level) pairs
     fail_on: str = "low"
     auto_mode: bool = False
@@ -248,7 +214,7 @@ class DetectionOptions:
                     f"(expected one of {SEVERITY_ORDER})")
         return cls(
             modes=DetectionConfig.from_dict(data),
-            selection=ScanConfig.from_dict({"rules": data.get("detectors", [])}),
+            selection=_DetectorSelection.from_rules(data.get("detectors", [])),
             severity=tuple(sorted(sev.items())),
             fail_on=fail_on,
             auto_mode=bool(data.get("auto_mode", False)),
@@ -258,7 +224,7 @@ class DetectionOptions:
         """Declared mode for ``rel_path``, else opcode inference when ``auto_mode``."""
         m = self.modes.mode_for(rel_path)
         if m is None and self.auto_mode and prog is not None:
-            from .common import classify_program
+            from ._program_shape import classify_program
             return classify_program(prog, file=file)
         return m
 
@@ -268,6 +234,14 @@ class DetectionOptions:
     def severity_for(self, detector_name: str) -> str:
         from . import severity_of
         return dict(self.severity).get(detector_name, severity_of(detector_name))
+
+    def severity_override_for(self, detector_name: str) -> Optional[str]:
+        """An explicitly configured severity, or ``None``.
+
+        Finding-level severities (for example CRITICAL close fields versus
+        MEDIUM amounts) must remain authoritative when no override was declared.
+        """
+        return dict(self.severity).get(detector_name)
 
     def is_failure(self, severity: str) -> bool:
         """A finding of this severity is a FAILURE iff it is at or above ``fail_on``."""
@@ -344,11 +318,8 @@ class ScanFinding:
         )
 
     def to_dict(self) -> dict:
-        """The finding record as a dict; ``detector`` keeps the ``sec-guide/``
-        display form for back-compat alongside the kebab ``rule_id``."""
-        d = self.to_finding().to_dict()
-        d["detector"] = f"sec-guide/{self.detector_name}"
-        return d
+        """Return the versioned normalized finding record."""
+        return self.to_finding().to_dict()
 
 
 @dataclass(frozen=True)
@@ -356,9 +327,8 @@ class ScanNotification:
     """Something the scan could NOT do, carried alongside the findings.
 
     HAZARD: without this, "no findings" has two meanings — analyzed and clean,
-    or never analyzed at all — and the output cannot tell them apart. Five of
-    the nine ``ir-*`` detectors have no SSA sibling, so a contract that fails to
-    lift silently drops them and the report still reads as a clean bill.
+    or never analyzed at all — and the output cannot tell them apart. A contract
+    that fails to lift cannot run lifted policies and must not look clean.
 
     ``kind`` is a stable machine-readable slug; ``message`` is for humans."""
 
@@ -377,37 +347,37 @@ class ScanNotification:
                 "file": self.rel_path, "detector": self.detector}
 
 
-class ScanResults(list):
-    """The findings list, plus what the scan could not do.
-
-    Subclasses ``list`` on purpose: every existing caller treats a scan result
-    as a list of findings (iterate, len, comprehend, index) and keeps working
-    untouched. ``notifications`` is additive."""
+class ScanResults:
+    """Structured scan output: findings plus incomplete-analysis notices."""
 
     def __init__(self, findings=(), notifications=()):
-        super().__init__(findings)
-        self.notifications: list[ScanNotification] = list(notifications)
+        self.findings: tuple[ScanFinding, ...] = tuple(findings)
+        self.notifications: tuple[ScanNotification, ...] = tuple(notifications)
+
+    def __iter__(self):
+        return iter(self.findings)
+
+    def __len__(self):
+        return len(self.findings)
+
+    def __getitem__(self, index):
+        return self.findings[index]
 
 
-def _notifications_of(findings) -> list:
-    """Notifications carried by a scan result; ``()`` for a plain list, so the
-    renderers accept either."""
-    return list(getattr(findings, "notifications", ()))
+def _notifications_of(results: ScanResults) -> tuple[ScanNotification, ...]:
+    return results.notifications
 
 
 def scan(
     root: Path,
-    config: ScanConfig = ScanConfig.empty(),
     *,
-    detection_config: "Optional[DetectionConfig]" = None,
     options: "Optional[DetectionOptions]" = None,
     strict: bool = False,
     arc56=None,
-) -> list[ScanFinding]:
+) -> ScanResults:
     """Discover, reconstruct, and detect; findings sorted by ``(rel_path, detector)``.
 
-    ``options`` (one YAML) supplies selection + mode scoping + severity; the legacy
-    ``config``/``detection_config`` pair is used when it is None. A detector whose
+    ``options`` supplies selection, mode scoping, severity, and failure policy. A detector whose
     ``applies_to`` excludes a file's declared mode is skipped; a file with no declared
     mode is unfiltered unless ``options.auto_mode``. ``arc56`` is an OPTIONAL
     selector→method-name source and degrades cleanly when absent.
@@ -416,9 +386,7 @@ def scan(
     spans excluded — findings there may be missing) and one whose SSA cannot be
     reconstructed is SKIPPED, both with a warning only. ``strict=True`` raises
     instead, so CI can refuse a clean bill for input that was never analyzed."""
-    if options is not None:
-        config = options.selection
-        detection_config = options.modes
+    options = options or DetectionOptions()
     method_table = _arc56_method_table(arc56)
     root = Path(root).resolve()
     by_dir = discover_teal_files(root)
@@ -441,10 +409,7 @@ def scan(
             # per-file detectors O(N^2). Cross-contract analysis lives in
             # `tealql.security.xcontract`, not in this single-contract scanner.
             try:
-                # ONE preparation per program, so every detector sees the same
-                # resolved constants instead of depending on run order.
-                from .common import prepare
-                prog = prepare(SSAProgram(str(teal), strict=False))
+                prog = SSAProgram(str(teal), strict=False)
             except Exception as e:                   # pragma: no cover
                 if strict:
                     raise TealQLError(
@@ -468,13 +433,9 @@ def scan(
                     message=f"{len(diags)} TEAL span(s) failed to parse and "
                             f"were EXCLUDED from analysis, so findings for "
                             f"this file may be incomplete (first: {diags[0]})"))
-            names = config.detectors_for(str(rel))
+            names = options.detectors_for(str(rel))
             try:
-                if options is not None:
-                    mode = options.mode_for(str(rel), prog=prog, file=teal.name)
-                else:
-                    mode = (detection_config.mode_for(str(rel))
-                            if detection_config is not None else None)
+                mode = options.mode_for(str(rel), prog=prog, file=teal.name)
             except Exception as e:                   # auto-mode classifies by opcode
                 if strict:
                     raise TealQLError(
@@ -499,7 +460,7 @@ def scan(
                         continue
                 # The program holds exactly this file (keyed by basename); the
                 # file filter scopes the detector to it.
-                sev = options.severity_for(name) if options is not None else None
+                sev = options.severity_override_for(name)
                 try:
                     # Construction AND detection are both guarded: detectors that
                     # analyze in __init__ must not kill a whole corpus scan either.
@@ -538,7 +499,7 @@ def scan(
 
 
 def failures(
-    findings: list[ScanFinding], options: "Optional[DetectionOptions]" = None,
+    findings: ScanResults, options: "Optional[DetectionOptions]" = None,
 ) -> list[ScanFinding]:
     """Findings at or above ``options.fail_on``; with no options, every finding counts."""
     if options is None:
@@ -546,7 +507,7 @@ def failures(
     return [f for f in findings if options.is_failure(f.severity)]
 
 
-def render_text(findings: list[ScanFinding]) -> str:
+def render_text(findings: ScanResults) -> str:
     notes = _notifications_of(findings)
     body = "\n".join(f.format() for f in findings) if findings else "(no findings)"
     if not notes:
@@ -561,7 +522,7 @@ def render_text(findings: list[ScanFinding]) -> str:
     ])
 
 
-def render_json(findings: list[ScanFinding]) -> str:
+def render_json(findings: ScanResults) -> str:
     """Versioned envelope ``{schema_version, tool, findings, notifications}``.
 
     ``notifications`` is always present, so a consumer can tell "analyzed and
@@ -576,7 +537,7 @@ def render_json(findings: list[ScanFinding]) -> str:
     }, indent=2)
 
 
-def render_sarif(findings: list[ScanFinding]) -> str:
+def render_sarif(findings: ScanResults) -> str:
     """SARIF 2.1.0 — the format GitHub code scanning / most CI dashboards ingest."""
     from . import severity_of
     from .findings import SCHEMA_VERSION

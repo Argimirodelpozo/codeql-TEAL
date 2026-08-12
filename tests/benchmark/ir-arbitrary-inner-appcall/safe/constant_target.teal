@@ -1,9 +1,0 @@
-#pragma version 10
-    itxn_begin
-    int appl
-    itxn_field TypeEnum
-    int 12345
-    itxn_field ApplicationID
-    itxn_submit
-    int 1
-    return

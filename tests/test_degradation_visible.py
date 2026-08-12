@@ -1,10 +1,9 @@
 """A scan that could not do its job must never read as a clean bill.
 
 "No findings" has two meanings — analyzed and clean, or never analyzed — and
-until these gates existed the output could not tell them apart. The concrete
-case: five of the nine ``ir-*`` detectors (asset-admin, state-write, log,
-freeze, fee) have no SSA sibling, so on a contract that fails to lift they
-returned ``[]`` and the report still said clean.
+until these gates existed the output could not tell them apart. Every policy
+that requires lifted evidence now has exactly one implementation; if that
+representation cannot be built, the policy does not silently switch semantics.
 
 Every test here forces the failure on a contract that otherwise lifts fine, so
 the ONLY difference from the passing baseline is the degradation itself.
@@ -24,15 +23,12 @@ from tealql.tealtools.diagnostics.errors import TealQLError
 
 TESTS = Path(__file__).resolve().parent
 
-#: ir-* detectors with no SSA sibling: on lift failure they do not run AT ALL.
-NO_FALLBACK = {
-    "ir-tainted-asset-admin", "ir-tainted-state-write", "ir-tainted-log",
-    "ir-tainted-freeze", "ir-tainted-fee",
-}
-#: ir-* detectors that degrade to a less precise SSA sibling instead.
-WITH_FALLBACK = {
-    "ir-arbitrary-inner-appcall", "ir-arbitrary-inner-asset",
-    "ir-tainted-fund-flow", "ir-partial-tainted-fund-flow",
+#: Canonical lifted policies: on lift failure they do not run at all.
+LIFTED_POLICIES = {
+    "arbitrary-inner-appcall", "arbitrary-inner-asset",
+    "tainted-asset-admin", "tainted-state-write", "tainted-log",
+    "tainted-freeze", "tainted-fee",
+    "tainted-fund-flow", "partial-tainted-fund-flow",
 }
 
 
@@ -48,14 +44,9 @@ def contract(tmp_path) -> Path:
 
 @pytest.fixture
 def lift_fails(monkeypatch):
-    """Force the IR lift to fail.
-
-    Patches ``security.common``, which is what the detectors actually call —
-    patching the defining module instead leaves ``common``'s own binding intact
-    and the fake silently does nothing (which is how this fixture was first
-    written, and it reported a false pass)."""
-    import tealql.security.common as common
-    monkeypatch.setattr(common, "ir_lifter", lambda prog, file=None: None)
+    """Force the canonical representation builder to fail."""
+    import tealql.tealtools.lift as lift_layer
+    monkeypatch.setattr(lift_layer, "build_lifter", lambda prog, file=None: None)
 
 
 # ---------------------------------------------------------------------------
@@ -65,7 +56,7 @@ def lift_fails(monkeypatch):
 
 def test_working_lift_reports_no_degradation(contract):
     res = scan(contract)
-    assert res.notifications == [], (
+    assert not res.notifications, (
         "a contract that lifts fine must produce no degradation notices")
     assert json.loads(render_sarif(res))["runs"][0]["invocations"][0][
         "executionSuccessful"] is True
@@ -76,22 +67,17 @@ def test_working_lift_reports_no_degradation(contract):
 # ---------------------------------------------------------------------------
 
 
-def test_every_ir_detector_reports_when_the_lift_fails(contract, lift_fails):
+def test_every_lifted_policy_reports_when_the_lift_fails(contract, lift_fails):
     res = scan(contract)
     reported = {n.detector for n in res.notifications
                 if n.kind == "detector-degraded"}
-    assert NO_FALLBACK <= reported, f"silent: {NO_FALLBACK - reported}"
-    assert WITH_FALLBACK <= reported, f"silent: {WITH_FALLBACK - reported}"
+    assert LIFTED_POLICIES <= reported, f"silent: {LIFTED_POLICIES - reported}"
 
 
-def test_no_fallback_detectors_say_they_did_not_run(contract, lift_fails):
-    """The two cases must be distinguishable: a detector that answered with a
-    weaker analysis is not the same as one that produced no answer at all."""
+def test_lifted_policies_say_they_did_not_run(contract, lift_fails):
     by_det = {n.detector: n.message for n in scan(contract).notifications}
-    for name in NO_FALLBACK:
+    for name in LIFTED_POLICIES:
         assert "did NOT run" in by_det[name], by_det[name]
-    for name in WITH_FALLBACK:
-        assert "less precise" in by_det[name], by_det[name]
 
 
 # ---------------------------------------------------------------------------
@@ -133,7 +119,7 @@ def test_sarif_uses_invocations_not_results(contract, lift_fails):
     inv = run["invocations"][0]
     assert inv["executionSuccessful"] is False
     notes = inv["toolExecutionNotifications"]
-    assert len(notes) >= len(NO_FALLBACK)
+    assert len(notes) >= len(LIFTED_POLICIES)
     assert all(n["descriptor"]["id"] == "detector-degraded" for n in notes)
     ids = {r["ruleId"] for r in run["results"]}
     assert not any("degraded" in r for r in ids), "degradation leaked into results"
@@ -163,9 +149,8 @@ def test_strict_refuses_a_degraded_scan(contract, lift_fails):
 
 
 def _prog(contract: Path):
-    from tealql.security.common import prepare
     from tealql.tealtools.ssa import SSAProgram
-    return prepare(SSAProgram(str(contract / "prog.teal")))
+    return SSAProgram(str(contract / "prog.teal"))
 
 
 def test_run_all_dict_reports_degradation(contract, lift_fails):
@@ -183,13 +168,13 @@ def test_run_all_text_reports_degradation_without_inflating_the_count(
 
     Measures BOTH sides rather than taking the fixture: the claim is about the
     count staying equal, which needs the undegraded number to compare against."""
-    import tealql.security.common as common
+    import tealql.tealtools.lift as lift_layer
     from tealql.security.run import run_all_findings
 
     clean_text, clean_n = run_all_findings(_prog(contract))
     assert "[DEGRADED]" not in clean_text
 
-    monkeypatch.setattr(common, "ir_lifter", lambda prog, file=None: None)
+    monkeypatch.setattr(lift_layer, "build_lifter", lambda prog, file=None: None)
     degraded_text, degraded_n = run_all_findings(_prog(contract))
 
     assert "[DEGRADED]" in degraded_text and "INCOMPLETE" in degraded_text

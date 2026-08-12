@@ -3,7 +3,7 @@
 """
 from __future__ import annotations
 
-from tealql.security import common
+from tealql.security._action_guards import ONC_UPDATE_APPLICATION
 from tealql.security._approval_action_guard import (
     _ApprovalActionGuardDetector,
     _ExitBBViolation,
@@ -20,5 +20,5 @@ class IsUpdatableDetector(_ApprovalActionGuardDetector):
     # A PROPERTY, not a vulnerability — upgradeable is usually deliberate.
     # Whether ANYONE can update it is the real bug: unprotected-updatable.
     severity = "informational"
-    action = common.ONC_UPDATE_APPLICATION
+    action = ONC_UPDATE_APPLICATION
     violation_cls = IsUpdatableViolation

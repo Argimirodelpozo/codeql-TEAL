@@ -75,7 +75,7 @@ def test_disagreeing_sites_do_not_suppress(tmp_path):
     # intersection drops the pin, so the callee's arg0->Receiver flow FIRES.
     caller, registry = make_xcontract(tmp_path, _CALLER_PINNED_THEN_UNPINNED, {100: _C})
     g = XContractGraph.build(caller, registry)
-    for det in ("ir-tainted-fund-flow", "tainted-fund-flow"):
+    for det in ("tainted-fund-flow", "tainted-fund-flow"):
         findings = cross_detection_findings(g, detector_names=[det])
         assert [f.app_id for f in findings] == [100], det
 
@@ -84,5 +84,5 @@ def test_all_sites_agree_still_suppresses(tmp_path):
     # every site pins arg0 to the same const -> the pin holds, flow suppressed.
     caller, registry = make_xcontract(tmp_path, _CALLER_BOTH_PINNED, {100: _C})
     g = XContractGraph.build(caller, registry)
-    assert cross_detection_findings(g, detector_names=["ir-tainted-fund-flow"]) == []
+    assert cross_detection_findings(g, detector_names=["tainted-fund-flow"]) == []
     assert cross_detection_findings(g, detector_names=["tainted-fund-flow"]) == []

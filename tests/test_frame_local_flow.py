@@ -1,7 +1,7 @@
 """A value parked in a frame slot must not lose its taint on the way back out.
 
 Canonical SSA now records exact frame reads as ordinary inputs. Bottom-anchor
-ambiguity can still leave an honest gap, so the compatibility provenance API
+ambiguity can still leave an honest gap, so the provenance API
 reconstructs parameter and local sources while ``frame_gap_sources`` filters
 that map to only edges SSA does not already carry. These tests pin both the
 external complete map and the smaller map used by MAY consumers.
@@ -107,7 +107,7 @@ def test_gap_map_omits_sources_already_carried_by_ssa():
         name="frame-gap.teal",
     )
     full = frame_value_sources(prog)
-    assert full, "fixture must exercise the compatibility source API"
+    assert full, "fixture must exercise the complete source API"
     gap = frame_gap_sources(prog)
     assert gap == {}, (
         "a resolved frame input was redundantly reintroduced as an implicit edge")
@@ -136,35 +136,6 @@ def test_may_consumers_use_the_gap_map_with_local_sources():
     assert set(res.frame_src) & set(locals_), (
         "byte_taint's frame gap carries no local frame reads — an unresolved "
         "value read out of a frame slot would therefore read as clean")
-
-
-def test_taint_survives_a_frame_local_roundtrip():
-    """End to end on a real contract: the SSA user-input taint must reach STRICTLY
-    more values once the local half is supplied. app_3300088574 gains 281 tainted
-    values, app_3300249437 gains 12 — values that were reachable from attacker
-    input all along and read as clean."""
-    from tealql.security import _itxn_taint as IT
-    from tealql.security._value_flow import (_frame_param_sources_cached,
-                                             _frame_value_sources_cached)
-
-    probe = PROBES / "app_3300088574.teal"
-    if not probe.exists():
-        pytest.skip("app_3300088574 not present")
-    saved = IT._frame_value_sources_cached
-    try:
-        p_old = SSAProgram(str(probe)); p_old.propagate_constants()
-        IT._frame_value_sources_cached = _frame_param_sources_cached   # params only
-        old = IT._compute_user_input_taint(p_old)
-        p_new = SSAProgram(str(probe)); p_new.propagate_constants()
-        IT._frame_value_sources_cached = _frame_value_sources_cached
-        new = IT._compute_user_input_taint(p_new)
-    finally:
-        IT._frame_value_sources_cached = saved
-    n_old = sum(1 for v in old.values() if v)
-    n_new = sum(1 for v in new.values() if v)
-    assert n_new > n_old, (
-        f"the frame-local edge carried no taint ({n_old} -> {n_new}) — either the "
-        "join broke or the MAY consumers stopped using frame_value_sources")
 
 
 def test_the_callsub_return_blind_spot_is_closed():

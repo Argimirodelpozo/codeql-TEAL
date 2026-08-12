@@ -95,11 +95,12 @@ def _render(analysis: str, case_dir: Path) -> str:
     from tealql.tealtools.ssa import SSAProgram
 
     if analysis == "sec_guide_scan":
-        from tealql.security.scan import ScanConfig, render_text, scan
+        from tealql.security.scan import DetectionOptions, render_text, scan
 
-        rules = case_dir / "rules.yml"
-        config = ScanConfig.from_path(rules) if rules.exists() else ScanConfig.empty()
-        findings = scan(case_dir / "src", config=config)
+        options_path = case_dir / "options.yml"
+        options = (DetectionOptions.from_path(options_path)
+                   if options_path.exists() else DetectionOptions())
+        findings = scan(case_dir / "src", options=options)
         return render_text(findings) + "\n"
 
     if analysis == "xcontract":
@@ -149,9 +150,9 @@ def _render(analysis: str, case_dir: Path) -> str:
         return body + "\n"
 
     if analysis == "box_key":
-        from tealql.security import NonUniqueBoxKeyDetector
+        from tealql.security import DETECTORS
 
-        violations = NonUniqueBoxKeyDetector(prog).detect()
+        violations = DETECTORS["box-key"](prog).detect()
         body = "\n".join(v.pretty() for v in violations) or "(no violations)"
         return body + "\n"
 

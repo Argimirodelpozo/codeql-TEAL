@@ -14,18 +14,14 @@ def _opts(d: dict) -> DetectionOptions:
     return DetectionOptions.from_dict(d)
 
 
-def test_superseded_detector_skipped_by_default():
-    # Both SSA fund-flow detectors are superseded by their IR siblings (which fall
-    # back to them internally), so a default scan runs only the IR ones -- no
-    # duplicate findings.
+def test_registry_has_one_canonical_policy_per_fund_flow_check():
     dets = _opts({}).detectors_for("a.teal")
-    assert "ir-tainted-fund-flow" in dets
-    assert "tainted-fund-flow" not in dets
-    assert "ir-partial-tainted-fund-flow" in dets
-    assert "partial-tainted-fund-flow" not in dets
+    assert "tainted-fund-flow" in dets
+    assert "partial-tainted-fund-flow" in dets
+    assert not any(name.startswith("ir-") for name in dets)
 
 
-def test_superseded_overridable_by_explicit_only():
+def test_detector_selection_by_explicit_only():
     o = _opts({"detectors": [{"match": "*.teal", "only": ["tainted-fund-flow"]}]})
     assert o.detectors_for("a.teal") == ["tainted-fund-flow"]
 
@@ -43,6 +39,8 @@ def test_parse_and_lookups():
     assert o.severity_for("rekey-to") == "high"            # override
     assert o.severity_for("is-deletable") == "informational"
     assert o.severity_for("tainted-fund-flow") == "medium"  # default
+    assert o.severity_override_for("tainted-fund-flow") is None
+    assert o.severity_override_for("rekey-to") == "high"
     assert o.is_failure("high") and o.is_failure("medium")
     assert not o.is_failure("low") and not o.is_failure("informational")
 

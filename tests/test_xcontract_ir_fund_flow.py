@@ -1,4 +1,4 @@
-"""Cross-contract fund-flow on the IR-layer detector: the IR ir-tainted-fund-flow
+"""Cross-contract fund-flow on the IR-layer detector: the IR tainted-fund-flow
 run across an appcall boundary, with the caller's pinned args suppressing the
 callee finding.
 
@@ -54,7 +54,7 @@ def _cross(caller_teal, tmp_path):
     caller, registry = make_xcontract(tmp_path, caller_teal, {555: _CALLEE})
     graph = XContractGraph.build(caller, registry)
     return graph, cross_detection_findings(
-        graph, detector_names=["ir-tainted-fund-flow"])
+        graph, detector_names=["tainted-fund-flow"])
 
 
 def test_forwarded_value_surfaces_cross_contract(tmp_path):
@@ -63,7 +63,7 @@ def test_forwarded_value_surfaces_cross_contract(tmp_path):
     assert len(findings) == 1
     f = findings[0]
     assert f.app_id == 555
-    assert f.detector_name == "sec-guide/ir-tainted-fund-flow"
+    assert f.detector_name == "sec-guide/tainted-fund-flow"
     assert "Receiver" in f.violation.pretty()
 
 

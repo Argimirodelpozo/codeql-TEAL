@@ -175,7 +175,7 @@ def lift(prog: SSAProgram) -> pre_ir.Program:
     typed lift needs (:func:`_prune_dead_assert_edges`) is applied for the
     duration of the build and inverted on exit, success or failure — so a caller
     may lift the very program its SSA-level analyses read (``build_lifter`` /
-    ``security.common.ir_lifter`` do; no fresh re-parse). Lazy const/scratch
+    ``lift.build_lifter`` does; no fresh re-parse). Lazy const/scratch
     caches used by the lift may be populated, but operand wiring and the
     canonical instruction stream remain unchanged."""
     return _Lifter(prog).build()

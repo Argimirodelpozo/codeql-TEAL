@@ -1,0 +1,27 @@
+#pragma version 10
+byte "treasury"
+app_global_get
+store 54
+global CurrentApplicationAddress
+store 2
+txna Assets 0
+store 53
+callsub payout
+int 1
+return
+
+payout:
+proto 0 0
+itxn_begin
+int axfer
+itxn_field TypeEnum
+load 53
+itxn_field XferAsset
+load 2
+itxn_field Sender
+load 54
+itxn_field AssetReceiver
+int 1
+itxn_field AssetAmount
+itxn_submit
+retsub

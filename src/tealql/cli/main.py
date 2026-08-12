@@ -965,11 +965,6 @@ def _cmd_detections(args) -> int:
             if mode in getattr(DETECTORS[n], "applies_to",
                                frozenset({"app", "logicsig"}))
         ]
-    if args.all:
-        # Supersession dedup AFTER mode filtering: a superseded detector is
-        # skipped only if its superseder survived the filter and will run.
-        from tealql.security.scan import default_detection_names
-        names = default_detection_names(names)
     logger.info("running %d detection(s) on %d program(s) (mode=%s)",
                 len(names), len(programs), mode or "unfiltered")
 
@@ -1008,28 +1003,15 @@ def _cmd_detections(args) -> int:
 
 def _cmd_detections_scan(args) -> int:
     from tealql.security.scan import (
-        DetectionOptions, ScanConfig, failures,
+        DetectionOptions, failures,
         render_json, render_sarif, render_text, scan,
     )
-    from tealql.security.config import ConfigError, DetectionConfig
 
-    options = None
-    if args.options:
-        if args.config or args.mode_config:
-            raise ConfigError(
-                "--options is the unified config (selection + modes + "
-                "severity + fail_on); pass it INSTEAD of --config/--mode-config")
-        options = DetectionOptions.from_path(Path(args.options))
-    config = ScanConfig.from_path(Path(args.config)) if args.config else ScanConfig.empty()
-    detection_config = (
-        DetectionConfig.from_path(Path(args.mode_config))
-        if args.mode_config else None
-    )
+    options = (DetectionOptions.from_path(Path(args.options))
+               if args.options else DetectionOptions())
     root = Path(args.root)
     findings = scan(
         root,
-        config=config,
-        detection_config=detection_config,
         options=options,
         strict=getattr(args, "strict", False),
         arc56=getattr(args, "arc56", None),
@@ -1057,7 +1039,7 @@ def _cmd_detections_scan(args) -> int:
     if suppressed:
         logger.info("%d finding(s) suppressed (inline / baseline)", len(suppressed))
 
-    # --format wins; --json is the back-compat alias for --format json.
+    # --format wins over the short JSON flag.
     fmt = args.format or ("json" if args.json_out else "text")
     renderer = {"text": render_text, "json": render_json, "sarif": render_sarif}[fmt]
     print(renderer(findings))
@@ -1376,8 +1358,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="detector short name (e.g. fee-validation)",
     )
     group.add_argument("--all", action="store_true",
-                       help="run every detection (skipping ones superseded "
-                            "by a successor that also runs)")
+                       help="run every registered detection")
     group.add_argument("--list", action="store_true",
                        help="list available detector short names and exit")
 
@@ -1393,14 +1374,7 @@ def build_parser() -> argparse.ArgumentParser:
                      help="ONE yaml/json with everything: `detectors:` "
                           "selection rules, `modes:` app/logicsig scoping, "
                           "per-detector `severity:` overrides, `fail_on:` "
-                          "exit-code threshold, `auto_mode:`. Replaces "
-                          "--config/--mode-config")
-    sgs.add_argument("--config", default=None,
-                     help="yaml/json with `rules:` for per-file detector selection")
-    sgs.add_argument("--mode-config", default=None,
-                     help="yaml/json with `modes:` declaring each file's "
-                          "app/logicsig mode; detectors that don't apply to "
-                          "a file's mode are skipped")
+                          "exit-code threshold, `auto_mode:`")
     sgs.add_argument("--format", choices=["text", "json", "sarif"], default=None,
                      help="output format: text (default), json (versioned "
                           "finding schema), or sarif (SARIF 2.1.0 for GitHub "

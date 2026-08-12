@@ -677,7 +677,7 @@ def test_an_unresolved_value_is_tainted_not_clean():
         pytest.skip("fixture not present")
     prog = SSAProgram(str(teal))
     prog.propagate_constants()
-    vs = DETECTORS["ir-tainted-fund-flow"](prog, file=teal.name).detect()
+    vs = DETECTORS["tainted-fund-flow"](prog, file=teal.name).detect()
     assert vs, (
         "an unresolvable Amount behind a callee that ate the caller's stack "
         "went UNREPORTED — an unresolved value is being read as clean")
@@ -709,7 +709,7 @@ def test_a_recovered_crossband_amount_is_not_reported_as_attacker_controlled():
         pytest.skip("fixture not present")
     prog = SSAProgram(str(teal))
     prog.propagate_constants()
-    vs = DETECTORS["ir-tainted-fund-flow"](prog, file=teal.name).detect()
+    vs = DETECTORS["tainted-fund-flow"](prog, file=teal.name).detect()
     assert not vs, (
         "the Amount here is the callee's CONSTANT 8 on a live AVM, not the "
         f"attacker's value — reporting it is a false positive: {vs}")

@@ -36,14 +36,14 @@ REPO = HERE.parent.parent
 sys.path.insert(0, str(REPO / "src"))            # -> the tealql package
 
 from tealql.tealtools.ssa import SSAProgram
-from tealql.security import RekeyToDetector
+from tealql.security import DETECTORS
 
 
 def run_one(kind: str) -> int:
     teal = HERE / kind / "prog.teal"
     print(f"\n=== {kind.upper()} ({teal.relative_to(REPO)}) ===", flush=True)
     prog = SSAProgram(str(teal))
-    viols = RekeyToDetector(prog).detect()
+    viols = DETECTORS["rekey-to"](prog).detect()
     print(f"  rekey-to violations: {len(viols)}")
     for v in viols:
         print(f"    {v}")

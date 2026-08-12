@@ -1,6 +1,4 @@
-"""Sender==creator and OnCompletion action guards, read off path predicates
-(switch/match dispatch included). Import via :mod:`tealql.security.common`.
-"""
+"""Sender==creator and OnCompletion action guards from path predicates."""
 from __future__ import annotations
 
 from typing import Optional
@@ -54,7 +52,7 @@ _STATE_READ_OPS = frozenset({
 })
 
 
-def _is_trusted_address(var) -> bool:
+def _is_trusted_address(prog: Optional[SSAProgram], var) -> bool:
     """``var`` holds an address the caller cannot choose, so pinning ``txn Sender``
     against it is a real authorisation check: ``global CreatorAddress``, an ``addr``
     literal, or an ``app_global_get``/``app_local_get`` read (rotatable admin).
@@ -63,6 +61,10 @@ def _is_trusted_address(var) -> bool:
     own value>`` authorises nothing. The trust line is drawn against the single
     :func:`avm.attacker_input_label` table so it cannot drift from a second list."""
     from tealql.tealtools.language.avm import attacker_input_label
+    if prog is not None:
+        constant = _constant_facts_cached(prog).constant(var)
+        if constant is not None:
+            return constant.kind == "bytes"
     a = getattr(var, "defined_by", None)
     if a is None:
         return False
@@ -74,8 +76,6 @@ def _is_trusted_address(var) -> bool:
         return True
     # A hardcoded address literal: `addr AAAA...` (the parser records the
     # decoded bytes as a const), or a pushbytes of one.
-    if a.op in ("addr", "byte", "pushbytes") and getattr(var, "const_value", None):
-        return True
     return False
 
 
@@ -83,7 +83,8 @@ def _guard_operand(prog: Optional[SSAProgram], value):
     """Resolve immutable aliases plus exact scratch/phi copy bridges."""
     if prog is None:
         return value
-    value = _constant_facts_cached(prog).resolve(value)
+    facts = _constant_facts_cached(prog)
+    value = facts.constant(value) or facts.resolve(value)
     return resolve_through_copies(prog, value)
 
 
@@ -95,9 +96,9 @@ def _is_sender_eq_creator(
         return False
     a0, a1 = (_guard_operand(prog, value) for value in cmp.inputs)
     return (
-        (_is_txn_field_var(a0, "Sender") and _is_trusted_address(a1))
+        (_is_txn_field_var(a0, "Sender") and _is_trusted_address(prog, a1))
         or
-        (_is_txn_field_var(a1, "Sender") and _is_trusted_address(a0))
+        (_is_txn_field_var(a1, "Sender") and _is_trusted_address(prog, a0))
     )
 
 

@@ -1,13 +1,10 @@
-"""Program shape: approval/rejection exits, file-scoped iteration and field reads,
-seed-set builders, app-vs-logicsig classification, location formatting.
-Import via :mod:`tealql.security.common`.
-"""
+"""Program shape, file-scoped iteration, field reads, and source locations."""
 from __future__ import annotations
 
 from typing import Optional
 
 from tealql.tealtools.language.avm import APP_ONLY_OPS, txn_field_name
-from tealql.tealtools.ssa import Assignment, BasicBlock, SSAProgram, SSAVar, const_int
+from tealql.tealtools.ssa import Assignment, BasicBlock, SSAProgram, SSAVar
 
 # Exit classification is SUBSTRATE shared with the group-shape / cross-contract
 # layers; re-exported so detector bodies still reach it through ``common``.
@@ -16,27 +13,6 @@ from tealql.tealtools.cfg.exits import (  # noqa: F401
     is_rejection_exit,
     returned_zero as _return_likely_zero,
 )
-
-
-def prepare(prog: SSAProgram) -> SSAProgram:
-    """Make ``prog`` ready for the detector layer, once (idempotent).
-
-    THE runner↔detector contract: the runner calls this right after building each
-    program, and a detector may then assume ``const_value`` is resolved on anything
-    reachable by propagation, not just direct literal pushes.
-
-    HAZARD: a detector must NOT run this (or any other mutating pass) from its own
-    ``__init__`` — every detector in a scan shares one program, so that makes each
-    one's inputs depend on which detectors ran before it."""
-    prog.propagate_constants()
-    return prog
-
-
-def _is_const_zero(operand) -> bool:
-    return const_int(operand) == 0
-
-
-
 
 # ---------------------------------------------------------------------------
 # File-scoped iteration: the optional ``file`` kwarg below restricts iteration to

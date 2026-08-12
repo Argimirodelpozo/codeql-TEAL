@@ -8,7 +8,8 @@ from dataclasses import dataclass
 from typing import Optional
 
 from tealql.tealtools.ssa import BasicBlock, SSAProgram
-from tealql.security import common
+from tealql.security._field_protection import approval_exit_protected_for_any_txn_field
+from tealql.security._program_shape import approving_exits
 
 
 @dataclass
@@ -51,10 +52,10 @@ class TxTypeCheckDetector:
     def detect(self) -> list[TxTypeCheckViolation]:
         out: list[TxTypeCheckViolation] = []
         for exit_bb in sorted(
-            common.approving_exits(self.prog, file=self.file),
+            approving_exits(self.prog, file=self.file),
             key=lambda b: (b.file, b.first_line),
         ):
-            if not common.approval_exit_protected_for_any_txn_field(
+            if not approval_exit_protected_for_any_txn_field(
                 self.prog, exit_bb, ["TypeEnum", "Type"], file=self.file,
             ):
                 out.append(TxTypeCheckViolation(exit_bb))

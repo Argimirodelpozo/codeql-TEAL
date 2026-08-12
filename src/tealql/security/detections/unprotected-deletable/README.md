@@ -14,7 +14,7 @@ Two conjoined per-exit checks:
 1. Approval exit isn't guarded against `OnCompletion == 5` (the `is-deletable` test).
 2. No dominating predicate ties `Sender` to `Global.CreatorAddress` (or `app.Creator` via `app_params_get`).
 
-If both hold, the exit is reported. The Python port uses the same `PathPredicateAnalysis` machinery and the `common.senderCreatorGuardDominates` helper.
+If both hold, the exit is reported. The implementation uses `PathPredicateAnalysis` and the sender/creator guards owned by `_action_guards.py`.
 
 ## Examples
 

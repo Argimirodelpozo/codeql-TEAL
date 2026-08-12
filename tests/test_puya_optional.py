@@ -2,7 +2,7 @@
 
 puya (the ``puyapy`` distribution) is an optional ``[lift]`` extra: it lowers
 the pre-IR to genuine ``puya.ir.models``, which only decompilation needs. The
-interprocedural ir-* detectors run their taint on the puya-free pre-IR, so a
+interprocedural lifted detectors run their taint on the puya-free pre-IR, so a
 ``pip install tealql`` with no puya must still give full detection.
 
 These run in subprocesses with puya import blocked via a meta_path finder, so
@@ -50,12 +50,12 @@ def test_lift_package_imports_without_puya():
     assert "OK" in r.stdout
 
 
-def test_ir_detectors_run_without_puya():
+def test_lifted_detectors_run_without_puya():
     r = _run_without_puya("""
         from tealql.tealtools.ssa import SSAProgram
         from tealql.security import DETECTORS
         prog = SSAProgram("tests/benchmark/tainted-fund-flow/vuln/unguarded_receiver.teal")
-        n = len(DETECTORS["ir-tainted-fund-flow"](prog).detect())
+        n = len(DETECTORS["tainted-fund-flow"](prog).detect())
         print("FINDINGS", n)
     """)
     assert r.returncode == 0, r.stderr
@@ -77,14 +77,14 @@ def test_render_requires_puya_cleanly():
     assert "CLEAN-IMPORTERROR" in r.stdout
 
 
-def test_ir_findings_identical_with_and_without_puya():
+def test_lifted_findings_identical_with_and_without_puya():
     probe = """
         from tealql.tealtools.ssa import SSAProgram
         from tealql.security import DETECTORS
         import glob
         for f in sorted(glob.glob("tests/benchmark/tainted-fund-flow/vuln/*.teal")):
             prog = SSAProgram(f)
-            for d in ("ir-tainted-fund-flow", "ir-partial-tainted-fund-flow"):
+            for d in ("tainted-fund-flow", "partial-tainted-fund-flow"):
                 print(f.split("/")[-1], d, len(DETECTORS[d](prog).detect()))
     """
     with_puya = subprocess.run(

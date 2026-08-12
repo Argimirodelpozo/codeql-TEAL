@@ -10,10 +10,10 @@ An ABI application routes on the method selector in `txna ApplicationArgs 0` —
 
 The detector is scoped to ABI-shaped apps: if the program never reads `txna ApplicationArgs 0`, it isn't doing method dispatch and nothing is flagged. For such apps it checks *each* approving exit, and treats an exit as protected when EITHER:
 
-1. **Enforcement** — a selector comparison whose result reaches enforcement (`assert` / branch-to-`err`) on every path to the exit (`common.approval_exit_protected_for_arg_reads`); or
+1. **Enforcement** — a selector comparison whose result reaches enforcement (`assert` / branch-to-`err`) on every path to the exit (`_field_protection.approval_exit_protected_for_arg_reads`); or
 2. **Matched-selector edge** — the path predicate at the exit proves the selector equals a specific constant, so the exit is reached only because the selector matched a known method. This covers the `txna ApplicationArgs 0; match m0 m1 …; err` router shape and the `selector == M; bnz handler` shape: reaching a handler means the selector matched, so only the final fall-through `err` rejects an unknown selector.
 
-Case 2 uses the same path-predicate reasoning as the OnCompletion match/switch guard recognition (`common.approval_exit_guarded_for_action`), which removes the earlier imprecision where a correct multi-method router had its handlers flagged. This is an SSA / path-predicate detector, not part of the lifted-IR family.
+Case 2 uses the same path-predicate reasoning as the OnCompletion match/switch guard recognition (`_action_guards.approval_exit_guarded_for_action`), which removes the earlier imprecision where a correct multi-method router had its handlers flagged. This is an SSA/path-predicate detector.
 
 ## Examples
 

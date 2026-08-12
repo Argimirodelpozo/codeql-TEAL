@@ -65,7 +65,7 @@ def test_credit_every_guard_is_caught(monkeypatch):
     every unguarded contract reads as guarded — the classic false-negative
     direction, and the one that hides real vulnerabilities."""
     _assert_caught(
-        monkeypatch, "tealql.security.common", "_operand_flows_from_field_var",
+        monkeypatch, "tealql.security._value_flow", "_operand_flows_from_field_var",
         lambda *a, **k: True,
         "the field-flow walk credits EVERY operand",
     )
@@ -76,7 +76,7 @@ def test_credit_no_guard_is_caught(monkeypatch):
     reads as unguarded. This is the false-POSITIVE direction — the one the
     review actually found three times."""
     _assert_caught(
-        monkeypatch, "tealql.security.common", "_operand_flows_from_field_var",
+        monkeypatch, "tealql.security._value_flow", "_operand_flows_from_field_var",
         lambda *a, **k: False,
         "the field-flow walk credits NOTHING",
     )
@@ -98,7 +98,7 @@ def test_branch_polarity_inversion_is_caught(monkeypatch):
 def test_always_reaching_enforcement_is_caught(monkeypatch):
     """"Every comparison is enforced" turns dropped checks into real ones."""
     _assert_caught(
-        monkeypatch, "tealql.security.common", "def_forward_reaches_enforcement",
+        monkeypatch, "tealql.security._enforcement", "def_forward_reaches_enforcement",
         lambda *a, **k: True,
         "every comparison counts as ENFORCED",
     )
@@ -106,7 +106,7 @@ def test_always_reaching_enforcement_is_caught(monkeypatch):
 
 def test_never_reaching_enforcement_is_caught(monkeypatch):
     _assert_caught(
-        monkeypatch, "tealql.security.common", "def_forward_reaches_enforcement",
+        monkeypatch, "tealql.security._enforcement", "def_forward_reaches_enforcement",
         lambda *a, **k: False,
         "no comparison ever counts as enforced",
     )
@@ -118,7 +118,7 @@ def test_approval_exit_misclassification_is_caught(monkeypatch):
     `PathPredicateAnalysis.approving_exits`, where a dead guard let `int 0;
     return` reject arms through — must be caught."""
     _assert_caught(
-        monkeypatch, "tealql.security.common", "is_approval_exit",
+        monkeypatch, "tealql.tealtools.cfg.exits", "is_approval_exit",
         lambda bb: bool(getattr(bb, "assignments", None)),
         "every non-empty block counts as an approving exit",
     )
@@ -129,7 +129,7 @@ def test_copy_resolution_collapse_is_caught(monkeypatch):
     round-trip or a phi. Making it a no-op restores the exact FP this review
     fixed in the OnCompletion family."""
     _assert_caught(
-        monkeypatch, "tealql.security.common", "resolve_through_copies",
+        monkeypatch, "tealql.security._value_flow", "resolve_through_copies",
         lambda prog, value, *a, **k: value,
         "value-preserving copies are no longer followed",
     )
@@ -139,7 +139,7 @@ def test_sender_guard_always_present_is_caught(monkeypatch):
     """A sender/creator guard suppresses findings. Claiming one always
     dominates silences the whole action-guard family."""
     _assert_caught(
-        monkeypatch, "tealql.security.common", "sender_creator_guard_dominates",
+        monkeypatch, "tealql.security._action_guards", "sender_creator_guard_dominates",
         lambda *a, **k: True,
         "a sender==creator guard is claimed to dominate everywhere",
     )
@@ -149,7 +149,7 @@ def test_unprotected_arg_reads_is_caught(monkeypatch):
     """The dynamic-expected-value fixture must depend on the enforcement arm,
     not only the separate constant-router path-predicate shortcut."""
     _assert_caught(
-        monkeypatch, "tealql.security.common",
+        monkeypatch, "tealql.security._field_protection",
         "approval_exit_protected_for_arg_reads", lambda *a, **k: False,
         "enforced argument reads are never credited as protected",
     )
@@ -162,12 +162,12 @@ def test_the_harness_can_actually_report_a_survivor(monkeypatch):
     harness bug (a patch that silently fails to land, as the first version of
     this file did) shows up as a failure here rather than as eight green ticks.
     """
-    import tealql.security.common as C
+    import tealql.security._value_flow as C
 
     real = C._operand_flows_from_field_var
     with pytest.raises(AssertionError, match="MUTATION SURVIVED"):
         _assert_caught(
-            monkeypatch, "tealql.security.common", "_operand_flows_from_field_var",
+            monkeypatch, "tealql.security._value_flow", "_operand_flows_from_field_var",
             lambda *a, **k: real(*a, **k),          # behaviourally identical
             "a deliberately inert mutation",
         )

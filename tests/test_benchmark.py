@@ -96,13 +96,11 @@ def _table(scores: dict[str, Score]) -> str:
 # regression (a new FP, a lost TP) fails the test. Update DELIBERATELY when the
 # corpus grows or a detector intentionally changes -- and say why.
 #
-# tainted-fund-flow now scores recall 1.0: param_fed_callee.teal (the proto-frame
-# param flow the SSA def-use can't see) is rescued by the IR lift's
-# interprocedural fund-flow, wired into the detector as a callsub-gated supplement.
+# Representation-sensitive policies use one canonical detector ID. Their corpus
+# is the union of the former SSA/IR fixtures, so this ratchet measures the chosen
+# implementation rather than scoring two implementations of the same policy.
 _BASELINE: dict[str, tuple[int, int, int, int]] = {
     "abi-method-selector": (1, 0, 0, 3),
-    "arbitrary-inner-appcall": (4, 0, 0, 4),
-    "arbitrary-inner-asset": (2, 0, 0, 3),
     # +1 TP (2026-07-26): the `||`-bypass. See the rekey-to entry below — the
     # same exploitable hole existed in every detector on this enforcement path.
     "asset-close-to": (4, 0, 0, 4),
@@ -130,11 +128,15 @@ _BASELINE: dict[str, tuple[int, int, int, int]] = {
     "hardcoded-min-balance": (1, 0, 0, 1),
     "inner-txn-close-rekey": (1, 0, 0, 1),
     "inner-txn-fee": (1, 0, 0, 1),
-    "ir-arbitrary-inner-appcall": (4, 0, 0, 4),
-    "ir-arbitrary-inner-asset": (2, 0, 0, 3),
-    "ir-tainted-asset-admin": (2, 0, 0, 3),
-    "ir-tainted-fee": (1, 0, 0, 2),
-    "ir-tainted-freeze": (1, 0, 0, 2),
+    "arbitrary-inner-appcall": (4, 0, 0, 4),
+    # +1 TP (2026-08-11): a real-contract shape keeps the attacker-selected
+    # asset and fixed treasury receiver in scratch across a subroutine call.
+    # The old cross-layer SSA suppression conflated scratch provenance and
+    # called this a withdrawal-to-Sender; pre-IR proves it is not.
+    "arbitrary-inner-asset": (3, 0, 0, 3),
+    "tainted-asset-admin": (2, 0, 0, 3),
+    "tainted-fee": (1, 0, 0, 2),
+    "tainted-freeze": (1, 0, 0, 2),
     # +2 TN (2026-07-25): a sender guard whose RESULT is round-tripped through
     # scratch, and the same joined at a phi — both were FPs until
     # `fund_flow._scratch_value_edges` bridged the IR-level round-trip.
@@ -147,10 +149,10 @@ _BASELINE: dict[str, tuple[int, int, int, int]] = {
     # computed in `_dominating_guards` and stored on `Guard()`; nothing read it.
     # The new TN pins the shape the fix must NOT break: the same guard spelled as
     # a rejecting inequality (`!=; bnz reject`), which is a real guard.
-    "ir-tainted-fund-flow": (12, 0, 0, 11),
-    "ir-tainted-log": (2, 0, 0, 3),
-    "ir-tainted-state-write": (2, 0, 0, 3),
-    "ir-partial-tainted-fund-flow": (4, 0, 0, 4),
+    "tainted-fund-flow": (12, 0, 0, 11),
+    "tainted-log": (2, 0, 0, 3),
+    "tainted-state-write": (2, 0, 0, 3),
+    "partial-tainted-fund-flow": (4, 0, 0, 5),
     # +2 TN each (2026-07-25 review, OnCompletion FP-stress): the guard
     # round-tripped through scratch and the guard joined at a phi were both
     # FALSE POSITIVES — the path predicate lands on the `load`/phi, not the
@@ -160,7 +162,6 @@ _BASELINE: dict[str, tuple[int, int, int, int]] = {
     # scratch/phi guard fix — verified clean, now pinned.
     "is-updatable": (1, 0, 0, 3),
     "lease-validation": (1, 0, 0, 1),
-    "partial-tainted-fund-flow": (3, 0, 0, 4),
     # +3 TN (2026-07-25 review): the two negated-guard branch polarities and the
     # diamond-joined guard — all three were FALSE POSITIVES before the fix, and
     # the corpus had no safe case covering either shape.
@@ -174,7 +175,6 @@ _BASELINE: dict[str, tuple[int, int, int, int]] = {
     # pins the field (a real pin), and the same guard composed with `&&` (which
     # genuinely does force each conjunct).
     "rekey-to": (6, 0, 0, 10),
-    "tainted-fund-flow": (4, 0, 0, 4),
     # +2 TN (2026-07-25): the Update-action half of the OnCompletion
     # scratch/phi guard fix — verified clean, now pinned.
     "timelock-upgrade": (1, 0, 0, 3),

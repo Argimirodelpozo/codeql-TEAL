@@ -15,11 +15,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-# Eager, so detector .py files can resolve ``from tealql.security.common import
-# ...`` when importlib pulls them in below.
-from . import _approval_exit, _field_validated, common  # noqa: F401
-
-
 _DETECTIONS_ROOT = Path(__file__).resolve().parent / "detections"
 
 
@@ -29,14 +24,12 @@ _DETECTIONS_ROOT = Path(__file__).resolve().parent / "detections"
 _DETECTION_ORDER: tuple[str, ...] = (
     "abi-method-selector",
     "arbitrary-inner-appcall",
-    "ir-arbitrary-inner-appcall",
     "arbitrary-inner-asset",
-    "ir-arbitrary-inner-asset",
-    "ir-tainted-asset-admin",
-    "ir-tainted-state-write",
-    "ir-tainted-log",
-    "ir-tainted-freeze",
-    "ir-tainted-fee",
+    "tainted-asset-admin",
+    "tainted-state-write",
+    "tainted-log",
+    "tainted-freeze",
+    "tainted-fee",
     "asset-close-to",
     "asset-id-validation",
     "box-key",
@@ -55,8 +48,6 @@ _DETECTION_ORDER: tuple[str, ...] = (
     "timelock-upgrade",
     "tainted-fund-flow",
     "partial-tainted-fund-flow",
-    "ir-tainted-fund-flow",
-    "ir-partial-tainted-fund-flow",
     "tx-type-check",
     "unprotected-deletable",
     "unprotected-updatable",
@@ -125,10 +116,6 @@ for _kebab in _DETECTION_ORDER:
             "taint-framework detectors)")
     _det_cls = getattr(_module, _dets[0])
     DETECTORS[_kebab] = _det_cls
-    # Re-export at package level: ``from tealql.security import XDetector``.
-    globals()[_dets[0]] = _det_cls
-    for _v in _viols:
-        globals()[_v] = getattr(_module, _v)
 
 # HAZARD: the scanner filters by `mode not in applies_to`, so an unknown mode
 # (e.g. "lsig" for "logicsig") silently disables the detector. Fail fast here.
@@ -142,7 +129,7 @@ for _kebab, _det_cls in DETECTORS.items():
         )
 
 
-# LAST: xcontract needs the detector classes already in this namespace.
+# LAST: xcontract needs the detector registry to be populated.
 from . import xcontract  # noqa: E402
 
 
@@ -178,7 +165,6 @@ def confidence_of(detector_name: str) -> str:
 
 __all__ = [
     "DETECTORS",
-    "common",
     "xcontract",
     "SEVERITY_LEVELS",
     "DEFAULT_SEVERITY",
@@ -186,6 +172,4 @@ __all__ = [
     "CONFIDENCE_LEVELS",
     "DEFAULT_CONFIDENCE",
     "confidence_of",
-    *(cls.__name__ for cls in DETECTORS.values()),
-    *(n for n in list(globals()) if n.endswith("Violation") and not n.startswith("_")),
 ]

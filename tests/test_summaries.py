@@ -186,7 +186,7 @@ retsub
 def _fund_findings(tmp_path, teal):
     from tealql.security import DETECTORS
     (tmp_path / "p.teal").write_text(teal)
-    return DETECTORS["ir-tainted-fund-flow"](SSAProgram(str(tmp_path))).detect()
+    return DETECTORS["tainted-fund-flow"](SSAProgram(str(tmp_path))).detect()
 
 
 def test_callee_internal_validation_guards_across_callsub(tmp_path):

@@ -158,7 +158,7 @@ class TestVerify:
         vs = verify_sinks(SSAProgram(str(tmp_path / "p.teal")))
         fund = [v for v in vs if v.sink.category.startswith("inner-payment")]
         assert fund and all(v.verdict == "CONFIRMED" for v in fund)
-        assert all("ir-tainted-fund-flow" in v.confirmed_by for v in fund)
+        assert all("tainted-fund-flow" in v.confirmed_by for v in fund)
 
     def test_sender_gate_is_guarded(self, tmp_path):
         # reachable but the fund-flow detector's sender-auth reasoning clears it.
@@ -184,7 +184,7 @@ class TestVerify:
         return [v for v in vs if v.sink.category == category]
 
     def test_tainted_rekey_not_falsely_guarded(self, tmp_path):
-        # ir-tainted-fund-flow's FUND_FIELDS excludes RekeyTo — inner-rekey must map
+        # tainted-fund-flow's FUND_FIELDS excludes RekeyTo — inner-rekey must map
         # to inner-txn-close-rekey (which DOES cover it), not report false GUARDED.
         teal = ("#pragma version 8\nitxn_begin\nint pay\nitxn_field TypeEnum\n"
                 "txna ApplicationArgs 0\nitxn_field RekeyTo\nitxn_submit\n"
@@ -200,7 +200,7 @@ class TestVerify:
                 "int 1\nreturn\n")
         vb = self._verdict(tmp_path, teal, "box-delete")
         assert vb and vb[0].verdict == "CONFIRMED"
-        assert "ir-tainted-state-write" in vb[0].confirmed_by
+        assert "tainted-state-write" in vb[0].confirmed_by
 
 
 class TestPrecise:

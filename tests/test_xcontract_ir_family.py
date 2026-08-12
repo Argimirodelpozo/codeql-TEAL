@@ -65,8 +65,8 @@ _PINNED = """#pragma version 10
 """
 
 _CASES = [
-    ("ir-arbitrary-inner-appcall", _CALLEE_APPCALL),
-    ("ir-arbitrary-inner-asset", _CALLEE_ASSET),
+    ("arbitrary-inner-appcall", _CALLEE_APPCALL),
+    ("arbitrary-inner-asset", _CALLEE_ASSET),
 ]
 
 

@@ -875,8 +875,8 @@ def byte_taint_view(
     — the def SSAVars in ``lifter.regs`` persist and still receive their cleared
     taint, so the register bridge does not desync.
 
-    The fixpoint is MEMOISED on the lifter: the ir-* detectors call this several
-    times per program (three sites in ``ir-partial-tainted-fund-flow`` alone) and
+    The fixpoint is MEMOISED on the lifter: lifted detectors call this several
+    times per program (three sites in ``partial-tainted-fund-flow`` alone) and
     each call used to redo the whole analysis."""
     if result is None:
         result = _cached_byte_taint(lifter, validate)

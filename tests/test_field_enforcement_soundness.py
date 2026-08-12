@@ -14,12 +14,17 @@ from __future__ import annotations
 import pytest
 
 from tealql.tealtools.ssa import SSAProgram
-from tealql.security import common
+from tealql.security._enforcement import def_forward_reaches_enforcement
+from tealql.security._field_protection import (
+    approval_exit_protected_for_field,
+    field_validated_on_all_paths,
+)
+from tealql.security._program_shape import approving_exits
 
 
 def _validated(tmp_path, teal: str) -> bool:
     (tmp_path / "p.teal").write_text(teal)
-    return common.field_validated_on_all_paths(SSAProgram(str(tmp_path)), "AssetCloseTo")
+    return field_validated_on_all_paths(SSAProgram(str(tmp_path)), "AssetCloseTo")
 
 
 # AssetCloseTo==Zero computed in the entry (dominates both exits), then enforced
@@ -107,10 +112,10 @@ def test_approval_guard_follows_a_dup_without_mutating_shared_ssa():
         "int 1\n"
         "return\n"
     )
-    exit_bb = common.approving_exits(prog)[0]
+    exit_bb = approving_exits(prog)[0]
     before = tuple(tuple(a.inputs) for a in prog.assignments)
 
-    assert common.approval_exit_protected_for_field(
+    assert approval_exit_protected_for_field(
         prog, exit_bb, "RekeyTo"
     )
     assert tuple(tuple(a.inputs) for a in prog.assignments) == before
@@ -183,9 +188,6 @@ def test_rekey_asserted_on_all_paths_is_clean(tmp_path):
 
 
 # --- scratch-aware enforcement (the pre-existing store/load round-trip gap) ---
-
-from tealql.security.common import def_forward_reaches_enforcement  # noqa: E402
-
 
 def _reaches_enforcement(tmp_path, teal: str, cmp_op: str) -> bool:
     (tmp_path / "p.teal").write_text(teal)

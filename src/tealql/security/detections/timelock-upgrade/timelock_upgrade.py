@@ -8,11 +8,14 @@ from typing import Optional
 
 from tealql.tealtools.ssa import SSAProgram
 from tealql.tealtools.language.avm import CMP_OPS
-from tealql.security import common
+from tealql.security._action_guards import ONC_UPDATE_APPLICATION
 from tealql.security._approval_action_guard import (
     _ApprovalActionGuardDetector,
     _ExitBBViolation,
 )
+from tealql.security._enforcement import enforced_op_exists
+from tealql.security._program_shape import global_field_reads, ssavar_outputs
+from tealql.security._value_flow import _operand_flows_from_field_var
 
 
 class TimelockUpgradeViolation(_ExitBBViolation):
@@ -30,16 +33,16 @@ def _has_timestamp_check(
     HAZARD: opcode PRESENCE is not enough. A timestamp that is only stored or
     logged (``global LatestTimestamp; app_global_put``) enforces no delay, and
     crediting it lets one dead read suppress the finding."""
-    seeds = common.ssavar_outputs(
-        common.global_field_reads(prog, "LatestTimestamp", file=file)
+    seeds = ssavar_outputs(
+        global_field_reads(prog, "LatestTimestamp", file=file)
     )
     if not seeds:
         return False
     # And ENFORCED: a comparison whose result is dropped enforces no delay, so
     # one dead comparison would silence the detector.
-    return common.enforced_op_exists(
+    return enforced_op_exists(
         prog, CMP_OPS,
-        lambda op: any(common._operand_flows_from_field_var(prog, v, seeds)
+        lambda op: any(_operand_flows_from_field_var(prog, v, seeds)
                        for v in op.inputs),
         file=file,
     )
@@ -48,7 +51,7 @@ def _has_timestamp_check(
 class TimelockUpgradeDetector(_ApprovalActionGuardDetector):
     severity = "medium"
     name = "sec-guide/timelock-upgrade"
-    action = common.ONC_UPDATE_APPLICATION
+    action = ONC_UPDATE_APPLICATION
     creator_guard = "require_present"  # only a creator-only upgrade is in scope
     violation_cls = TimelockUpgradeViolation
 

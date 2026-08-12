@@ -1,7 +1,4 @@
-"""Value-flow bridges shared by the detector layer: per-program path predicates,
-frame provenance caches, and the MUST-flow walk (phi / scratch / proto-frame).
-Import via :mod:`tealql.security.common`.
-"""
+"""Detector value-flow bridges: predicates, frames, scratch, and MUST-flow."""
 from __future__ import annotations
 
 from typing import Optional
@@ -56,7 +53,7 @@ def _frame_param_sources_cached(prog: SSAProgram) -> dict:
     PARAM sources only, deliberately. :func:`field_flows`' walk below is MUST
     ("every operand must flow"), and "every caller pins this arg" is a different
     claim from "every write to this slot flows" — so it must not be handed the
-    unioned map. MAY consumers want :func:`_frame_gap_sources_cached`."""
+    unioned map."""
     revision = getattr(prog, "revision", 0)
     cached = getattr(prog, "_sec_frame_param_sources", None)
     if cached is None or cached[0] != revision:
@@ -67,37 +64,6 @@ def _frame_param_sources_cached(prog: SSAProgram) -> dict:
         except AttributeError:      # only if SSAProgram ever gains __slots__
             pass
     return cached[1]
-
-
-def _frame_value_sources_cached(prog: SSAProgram) -> dict:
-    """Memoised complete compatibility map: params and written locals.
-
-    Retained for callers that consume the established API. Internal MAY walks
-    use :func:`_frame_gap_sources_cached` because canonical SSA already carries
-    ordinary resolved frame edges.
-    """
-    revision = getattr(prog, "revision", 0)
-    cached = getattr(prog, "_sec_frame_value_sources", None)
-    if cached is None or cached[0] != revision:
-        from tealql.tealtools.ssa.relations import frame_value_sources
-        cached = (revision, frame_value_sources(prog))
-        try:
-            prog._sec_frame_value_sources = cached
-        except AttributeError:      # only if SSAProgram ever gains __slots__
-            pass
-    return cached[1]
-
-
-def _frame_gap_sources_cached(prog: SSAProgram) -> dict:
-    """Only MAY frame edges not already present in normal SSA def-use.
-
-    Deliberately NOT a second memo layer: ``gap_sources`` already caches on
-    the program and ``_invalidate_value_relations`` clears THAT cache — a
-    security-side copy kept serving the results the invalidation dropped."""
-    from tealql.tealtools.ssa.frame_slots import gap_sources
-    return gap_sources(prog)
-
-
 
 
 def _operand_flows_from_field_var(

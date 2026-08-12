@@ -32,7 +32,8 @@ Either way you get a `tealql` binary (`uv run tealql …` or, with pip, on `$PAT
 analysis needs, including the
 [tree-sitter-teal](https://github.com/Argimirodelpozo/tree-sitter-teal) grammar
 (a pinned git dependency). The `lift` extra is only needed to lower programs to
-genuine `puya.ir` — every detector, including the `ir-*` family, runs without it.
+genuine `puya.ir`. Security detectors use SSA, CFG/path predicates, or the
+puya-free lifted pre-IR and therefore run without that extra.
 
 ### Run an analysis
 
@@ -54,10 +55,14 @@ TEAL source
   ▼
 Typed SSA                                               (Braun on-demand construction)
   │   immutable facts: constants · aliases · ranges · byte facts
-  ├─────────────►  Detectors (36)  ──►  findings        (SSA-level + interprocedural `ir-*` family)
+  ├─────────────►  Fact / CFG detectors
   │
-  ▼   lift  (needs the `lift` extra: puyapy)
-Genuine Puya IR   (puya.ir.models)                      validated + optimised by Puya's own passes
+  ▼   lift
+Typed pre-IR                                             calls · frames · scratch · returns
+  ├─────────────►  Interprocedural taint detectors
+  │
+  ▼   lower  (needs the `lift` extra: puyapy)
+Genuine Puya IR   (puya.ir.models)                      validated + optimised by Puya's passes
   │   type recovery  ·  storage-schema recovery
   ├─────────────►  Type-driven audits  (abi-audit, box-audit)
   └─────────────►  Decompilation output (recovered ARC-4 types, Box/BoxMap schema)
@@ -67,7 +72,7 @@ Subsystems, bottom to top:
 
 - **Extractor & SSA.** A pinned [tree-sitter-teal](https://github.com/Argimirodelpozo/tree-sitter-teal) grammar parses source to an AST; a pure-Python extractor builds the CFG (basic blocks, control-flow + interprocedural `retsub` edges). SSA is reconstructed with **Braun on-demand construction** (minimal phis; a forward depth-cap tames the loop-slot spiral) — the substrate every layer above consumes.
 - **Value analysis.** The canonical SSA is never rewritten for analysis. A revision-scoped `AnalysisContext` exposes immutable constants, value identities, uint64 ranges, byte lengths, and bigint ranges. Consumers that still need annotation-oriented SSA receive a cached, read-only derived normal form instead of mutating the graph shared by every detector. See [Analysis contexts](#analysis-contexts).
-- **Detectors.** 36 registered detections (`tealql detections --list`), auto-discovered from `src/tealql/security/detections/`. Beyond the SSA-level detectors there is an interprocedural **`ir-*` family** that runs on the lifted IR, where guard-dominance across `callsub` is precise; each is scored against a ground-truth corpus (see [Detector precision / recall](#detector-precision--recall)).
+- **Detectors.** 32 canonical detections (`tealql detections --list`), auto-discovered from `src/tealql/security/detections/`. Constants and ranges come from immutable SSA facts; approval and lifecycle policies use CFG/path predicates; attacker-to-state/log/inner-transaction policies use lifted pre-IR, where calls, returns, frames, and scratch are explicit. There are no representation-prefixed aliases or fallback implementations. Each policy is scored against a ground-truth corpus (see [Detector precision / recall](#detector-precision--recall)).
 - **The lift.** `tealql.tealtools.lift` lowers the SSA into *genuine* `puya.ir.models`, validated and optimised by Puya's own passes — not a re-implementation. It is behaviourally verified: ~900 real mainnet contracts (v2–v11) lift → recompile → dryrun **identically to their deployed bytecode** (`tests/behavioral_lift/`, `tests/mainnet-random-probes/`).
 - **Type recovery** (on the lifted IR — types erased by compilation, recovered from byte idioms). Two tiers, kept separate: a **confident** tier that refines the real `ir_type` (langspec-forward + usage-backward `account`), proven annotation-only / TEAL-neutral by `tests/test_recovery_neutral.py`; and a **speculative** side-channel of ARC-4 `String` / dynamic + static arrays / structs / addresses, each tagged fully-vs-somewhat confident, that never touches codegen.
 - **Storage-schema recovery.** Reconstructs Puya's own `ContractState` model — global / local / box, single keys and maps, with recovered key/value types including **composite tuple keys** (e.g. a per-holder balance box keyed `(address, uint64)`) — resolving keys built in a caller and passed into a helper **interprocedurally**. That ARC-56 schema is not in the deployed bytecode.
@@ -98,7 +103,7 @@ tealql --help
 tealql auth             <target>
 tealql box-df           <target> --flavour {into|out|correlated}
 tealql detections       <target> {--detector NAME | --all | --list} [--mode app|logicsig]
-tealql detections-scan  <root>   [--config rules.yml] [--mode-config modes.yml]
+tealql detections-scan  <root>   [--options detections.yml]
 tealql group-taint      <member.teal>...   # cross-member taint over an atomic group (in group order)
 
 # Type-recovery-driven audits (need the lift extra — puyapy; exit 1 on any finding)
@@ -232,17 +237,17 @@ cannot satisfy the inventory check.
 | Module | What it finds |
 | --- | --- |
 | `tealql.tealtools.analysis.auth.AuthDominationDetector` | State-mutating ops not dominated by a recognised sender check. |
-| `tealql.security.NonUniqueBoxKeyDetector` | Non-unique external fields (e.g. `AssetName`) flowing into a box key. Registered as the `box-key` detection — run via `tealql detections --detector box-key`. |
+| `tealql.security.DETECTORS["box-key"]` | Non-unique external fields (e.g. `AssetName`) flowing into a box key. Run via `tealql detections --detector box-key`. |
 | `tealql.tealtools.reporting.inner_transactions.InnerTxnReport` | Per-`itxn_submit` group dump: each txn's fields and possible operand values. |
 | `tealql.tealtools.cfg.group.analyze` | Group shape the contract forces on every approving exit (`Global.GroupSize == 2`, `gtxn[0].Receiver == ...`, etc.). |
 | `tealql.tealtools.dataflow.box` | Box dataflow in three flavours: `detect_into_box_flows` (external → box write), `detect_out_of_box_flows` (box read → sensitive sink), `detect_correlated_flows` (end-to-end chain via syntactic key matching). |
 | `tealql.tealtools.intercontract.analysis.XContractGraph` | Cross-contract analysis: identifies appcall itxns with a constant `ApplicationID` resolvable in a registry, runs path predicates on each callee with seeded args, computes approving-exit summaries, feeds them back into the caller's BB. Includes `cross_auth_findings` for auth-domination across the boundary. |
 | `tealql.tealtools.dataflow.predicate_aware.filter_validated` | Wraps a taint detector — suppresses violations whose sink operand is constrained by a dominating path predicate. |
 
-The table above is a curated subset. The full detection suite is 36 registered
+The table above is a curated subset. The full detection suite is 32 registered
 detectors (`tealql detections --list`), auto-discovered from
-`src/tealql/security/detections/` — including the interprocedural `ir-*` family
-that runs on the lifted IR.
+`src/tealql/security/detections/`. Nine interprocedural taint policies run on
+typed pre-IR; the remainder consume immutable SSA facts or CFG/path analyses.
 
 **Decompilation & recovery** (need the `lift` extra) — reconstruct what compilation erased.
 

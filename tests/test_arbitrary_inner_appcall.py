@@ -2,7 +2,7 @@
 
 A user-input-tainted ``itxn_field ApplicationID`` (the app this contract calls)
 with no dominating check of the target or txn Sender — a confused-deputy. Shares
-the taint + guard machinery with tainted-fund-flow (security.common), so the tests
+the lifted taint + guard machinery with tainted-fund-flow, so the tests
 here focus on the call-target field and the suppression shapes (constant target,
 pinned target, sender-gated).
 """

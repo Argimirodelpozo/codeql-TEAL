@@ -14,7 +14,22 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import ClassVar, Optional
 
-from tealql.security import common
+from tealql.security._enforcement import _label_to_bb_first_line, scratch_forward_map
+from tealql.security._field_protection import (
+    _all_entry_paths_cross,
+    _collect_field_enforcement_bbs,
+)
+from tealql.security._program_shape import (
+    approving_exits,
+    file_match,
+    global_field_reads,
+    loc,
+    ssavar_outputs,
+)
+from tealql.security._value_flow import (
+    _operand_flows_from_field_var,
+    cached_path_predicates,
+)
 from tealql.tealtools.ssa import SSAProgram, SSAVar, const_int, operand_const
 
 # Value field -> the receiver field that must be pinned for that transfer kind.
@@ -128,27 +143,27 @@ class UnvalidatedGroupSiblingDetector:
             if self._type_excludes_field(index, field, assigns, reads, app_seeds):
                 continue                     # inert read: sibling pinned to another type
             a = assigns[0]
-            loc = common.loc(a)
+            location = loc(a)
             pin = (f"gtxn {index} {recv_field} == "
                    f"Global.CurrentApplicationAddress")
             if escape is None:
-                msg = (f"[HIGH] reads gtxn {index} {field} ({loc}) but never pins "
+                msg = (f"[HIGH] reads gtxn {index} {field} ({location}) but never pins "
                        f"{pin} — the app trusts a sibling transfer that may not "
                        f"pay it")
             else:
                 exit_line, method = escape
                 where = f"{method}() at " if method else ""
-                msg = (f"[HIGH] reads gtxn {index} {field} ({loc}) on a path that "
+                msg = (f"[HIGH] reads gtxn {index} {field} ({location}) on a path that "
                        f"can approve ({where}line {exit_line}) without enforcing "
                        f"{pin} — the pin exists on another arm, but this arm "
                        f"trusts a sibling transfer that may not pay it")
             out.append(UnvalidatedGroupSiblingViolation(
-                self.prog, index, field, recv_field, loc, msg))
+                self.prog, index, field, recv_field, location, msg))
         return out
 
     def _has_subroutines(self) -> bool:
         return any(a.op in ("callsub", "retsub", "proto")
-                   and common.file_match(a.location.file, self.file)
+                   and file_match(a.location.file, self.file)
                    for a in self.prog.assignments)
 
     # -- internals ------------------------------------------------------
@@ -162,7 +177,7 @@ class UnvalidatedGroupSiblingDetector:
         a receiver pin for (a deliberate FN)."""
         out: dict = {}
         for a in self.prog.assignments:
-            if not common.file_match(a.location.file, self.file):
+            if not file_match(a.location.file, self.file):
                 continue
             if a.op in ("gtxn", "gtxna", "gtxnas"):
                 toks = a.immediates.split()
@@ -182,8 +197,8 @@ class UnvalidatedGroupSiblingDetector:
         return out
 
     def _global_seeds(self, gfield: str) -> set:
-        return common.ssavar_outputs(
-            common.global_field_reads(self.prog, gfield, file=self.file)
+        return ssavar_outputs(
+            global_field_reads(self.prog, gfield, file=self.file)
         )
 
     def _safe_receiver_targets(self) -> set:
@@ -200,7 +215,7 @@ class UnvalidatedGroupSiblingDetector:
         state_ops = ("app_global_get", "app_local_get",
                      "app_global_get_ex", "app_local_get_ex")
         for a in self.prog.assignments:
-            if a.op in state_ops and common.file_match(a.location.file, self.file):
+            if a.op in state_ops and file_match(a.location.file, self.file):
                 seeds |= {o for o in a.outputs if isinstance(o, SSAVar)}
         return seeds
 
@@ -216,32 +231,32 @@ class UnvalidatedGroupSiblingDetector:
         gates: set = set()
         if not recv_seeds:                # a constant pin still counts w/o app_seeds
             return gates
-        label_lines = common._label_to_bb_first_line(self.prog)
-        scratch_fwd = common.scratch_forward_map(self.prog)
+        label_lines = _label_to_bb_first_line(self.prog)
+        scratch_fwd = scratch_forward_map(self.prog)
 
         def _safe(op):
             # A not-attacker-controlled pin target: flows from a safe address
             # source, or is a constant (a hard-coded address literal).
-            return (common._operand_flows_from_field_var(self.prog, op, app_seeds)
+            return (_operand_flows_from_field_var(self.prog, op, app_seeds)
                     or operand_const(op) is not None)
 
         for cmp in self.prog.assignments:
             if cmp.op != "==" or len(cmp.inputs) != 2:
                 continue
-            if not common.file_match(cmp.location.file, self.file):
+            if not file_match(cmp.location.file, self.file):
                 continue
             x, y = cmp.inputs
             tied = (
-                (common._operand_flows_from_field_var(self.prog, x, recv_seeds)
+                (_operand_flows_from_field_var(self.prog, x, recv_seeds)
                  and _safe(y))
                 or
-                (common._operand_flows_from_field_var(self.prog, y, recv_seeds)
+                (_operand_flows_from_field_var(self.prog, y, recv_seeds)
                  and _safe(x))
             )
             if not tied:
                 continue
             if cmp.outputs and isinstance(cmp.outputs[0], SSAVar):
-                common._collect_field_enforcement_bbs(
+                _collect_field_enforcement_bbs(
                     self.prog, cmp.outputs[0], label_lines, gates, set(),
                     scratch_fwd)
         return gates
@@ -250,7 +265,7 @@ class UnvalidatedGroupSiblingDetector:
         """``(exit_line, abi_method | None)`` witnessing a gate-free entry → read →
         approving-exit path, or ``None`` when every such path is gated. Decomposed
         as prefix ∧ suffix, independent through the read block."""
-        exits = set(common.approving_exits(self.prog, file=self.file))
+        exits = set(approving_exits(self.prog, file=self.file))
         if not exits:
             return None
         method_of = None
@@ -259,7 +274,7 @@ class UnvalidatedGroupSiblingDetector:
                           key=lambda b: (b.file, b.first_line)):
             if rbb in gates:
                 continue                     # pin enforced in the read's own block
-            if gates and common._all_entry_paths_cross(rbb, gates):
+            if gates and _all_entry_paths_cross(rbb, gates):
                 continue                     # every way to reach the read is gated
             hit = self._gate_free_exit(rbb, gates, exits)
             if hit is None:
@@ -292,7 +307,7 @@ class UnvalidatedGroupSiblingDetector:
     def _pp(self):
         pp = getattr(self, "_pp_cache", None)
         if pp is None:
-            pp = self._pp_cache = common.cached_path_predicates(self.prog)
+            pp = self._pp_cache = cached_path_predicates(self.prog)
         return pp
 
     def _type_excludes_field(self, index: int, field: str, assigns: list,
@@ -315,7 +330,7 @@ class UnvalidatedGroupSiblingDetector:
             if comp_gates and self._unpinned_path(assigns, comp_gates) is None:
                 return True
         # Signal 2: explicit TypeEnum excluded at every reachable approving exit.
-        exits = common.approving_exits(self.prog, file=self.file)
+        exits = approving_exits(self.prog, file=self.file)
         reach = _forward_reachable({a.basic_block for a in assigns
                                     if a.basic_block is not None})
         reachable_exits = [e for e in exits if e in reach]
