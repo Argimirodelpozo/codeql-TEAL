@@ -9,6 +9,7 @@ from tealql.tealtools.budget import (
     MAX_POOLED_LOGICSIG_COST,
     MAX_POOLED_OPCODE_BUDGET,
     BudgetContext,
+    CostModel,
     ProgramMode,
     analyze_loops,
     block_cost,
@@ -16,6 +17,7 @@ from tealql.tealtools.budget import (
     infer_avm_version,
     infer_program_mode,
     minimum_cost,
+    minimum_costs,
     op_cost,
     to_dot,
 )
@@ -53,6 +55,43 @@ def test_cost_facts_distinguish_exact_dynamic_and_unknown_costs():
     unknown = op_cost("no_such_opcode_in_this_build")
     assert unknown.lower == 1 and unknown.upper is None and not unknown.exact
     assert "unknown opcode" in unknown.reasons[0]
+
+
+def test_program_cost_model_resolves_immediate_and_length_dependent_costs():
+    prog = _program(
+        "#pragma version 10\n"
+        "byte 0x00000000000000000000000000000000\n"
+        "base64_decode StdEncoding\npop\n"
+        "byte 0x00\ndup\ndup\ndup\ndup\n"
+        "ecdsa_verify Secp256k1\npop\nint 1\nreturn\n"
+    )
+    model = CostModel(prog)
+    base64 = next(a for a in prog.assignments if a.op == "base64_decode")
+    ecdsa = next(a for a in prog.assignments if a.op == "ecdsa_verify")
+    assert model.assignment_cost(base64).lower == 2  # 1 + ceil(16 / 16)
+    assert model.assignment_cost(base64).exact
+    assert model.assignment_cost(ecdsa).lower == 1700
+    assert model.assignment_cost(ecdsa).exact
+
+
+def test_program_cost_model_bounds_unknown_runtime_byte_length():
+    prog = _program(
+        "#pragma version 10\ntxn Note\nbase64_decode StdEncoding\npop\n"
+        "int 1\nreturn\n"
+    )
+    fact = CostModel(prog).assignment_cost(
+        next(a for a in prog.assignments if a.op == "base64_decode")
+    )
+    assert fact.lower >= 1
+    assert fact.upper is not None
+    assert not fact.exact
+    assert "byte length" in fact.reasons[0]
+
+
+def test_program_cost_model_selects_v1_hash_costs():
+    prog = _program("#pragma version 1\nbyte 0x00\nsha256\npop\nint 1\nreturn\n")
+    sha = next(a for a in prog.assignments if a.op == "sha256")
+    assert CostModel(prog).assignment_cost(sha).lower == 7
 
 
 def test_context_never_infers_logicsig_from_absence_of_app_only_ops():
@@ -183,6 +222,16 @@ def test_dead_cycles_are_not_reported():
     assert _loops(source) == []
 
 
+def test_range_infeasible_cycles_are_not_reported():
+    source = (
+        "#pragma version 10\n"
+        "txn OnCompletion\nint 10\n>\nbnz impossible\n"
+        "int 1\nreturn\n"
+        "impossible:\nb impossible\n"
+    )
+    assert _loops(source) == []
+
+
 def test_stack_bound_requires_growth_on_every_cycle_not_the_cheapest_cycle():
     growing = _loops(
         "#pragma version 10\n"
@@ -212,7 +261,7 @@ def test_stack_bound_requires_growth_on_every_cycle_not_the_cheapest_cycle():
     assert mixed.stack_bound is None
 
 
-def test_call_boundaries_disable_stack_proof_and_surface_cost_degradation():
+def test_call_boundaries_disable_stack_proof_but_include_callee_cost():
     source = (
         "#pragma version 8\n"
         "loop:\n"
@@ -230,7 +279,10 @@ def test_call_boundaries_disable_stack_proof_and_surface_cost_degradation():
     loop = _loops(source)[0]
     assert loop.stack_bound is None
     assert any("call/return" in reason for reason in loop.degradations)
-    assert any("callee execution cost" in reason for reason in loop.degradations)
+    assert loop.iteration_cost.exact
+    # int + callsub + (proto + frame_dig + retsub) + txn + bnz
+    assert loop.iteration_cost.lower == 7
+    assert not any("callee execution cost" in reason for reason in loop.degradations)
 
 
 def test_prefix_is_a_lower_cost_bound_and_is_subtracted():
@@ -274,6 +326,83 @@ def test_minimum_cost_can_prove_a_target_budget_infeasible():
     assert result.cost is not None and result.cost.lower >= 70
     assert result.proven_over_budget
     assert result.verdict == "budget-infeasible"
+
+
+def test_minimum_cost_prunes_range_infeasible_shortcut():
+    prog = _program(
+        "#pragma version 10\n"
+        "txn OnCompletion\nint 10\n>\nbnz cheap\n"
+        "byte 0x00\nsha256\nsha256\npop\nb join\n"
+        "cheap:\nb join\n"
+        "join:\nint 1\nreturn\n"
+    )
+    target = next(a for a in prog.assignments if a.op == "return")
+    result = minimum_cost(prog, target)
+    assert result.cost is not None
+    assert result.cost.lower >= 70
+    assert not any(block.first_line == 11 for block in result.path)
+
+
+def test_minimum_cost_charges_returning_callee_once():
+    prog = _program(
+        "#pragma version 10\n"
+        "int 1\ncallsub hash\nint 1\nreturn\n"
+        "hash:\nproto 1 0\nbyte 0x00\nsha256\npop\nretsub\n"
+    )
+    target = next(a for a in prog.assignments if a.op == "return")
+    model = CostModel(prog)
+    info = model._subroutine_info()
+    caller = next(iter(info["callsub_target"]))
+    callee = info["callsub_target"][caller]
+    continuation = info["continuations"][caller]
+    expected = (
+        model.block_cost(caller)
+        + model.subroutine_cost(callee)
+        + model.block_cost(continuation)
+    )
+    result = minimum_cost(prog, target)
+    assert result.cost is not None
+    assert result.cost == expected
+
+
+def test_minimum_cost_keeps_separate_lower_and_finite_upper_witnesses():
+    prog = _program(
+        "#pragma version 10\n"
+        "txn Fee\nbnz dynamic\n"
+        "byte 0x00\nsha256\npop\nb join\n"
+        "dynamic:\ntxn Note\nbase64_decode StdEncoding\npop\n"
+        "join:\nint 1\nreturn\n"
+    )
+    target = next(a for a in prog.assignments if a.op == "return")
+    context = BudgetContext(ProgramMode.APPLICATION, 10, 50)
+    result = minimum_cost(prog, target, context=context)
+    assert result.cost is not None and result.cost.upper is not None
+    assert result.cost.upper > context.initial_credit
+    assert result.within_budget_cost is not None
+    assert result.within_budget_cost.upper <= context.initial_credit
+    assert result.has_within_budget_path
+    assert result.path != result.within_budget_path
+
+
+def test_minimum_costs_shares_two_shortest_path_searches(monkeypatch):
+    import tealql.tealtools.budget.queries as queries
+
+    prog = _program(
+        "#pragma version 10\ntxn Fee\nbnz yes\nint 0\nreturn\n"
+        "yes:\nint 1\nreturn\n"
+    )
+    calls = 0
+    original = queries.nx.single_source_dijkstra
+
+    def counted(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(queries.nx, "single_source_dijkstra", counted)
+    results = minimum_costs(prog)
+    assert len(results) == len(prog.blocks)
+    assert calls == 2  # lower witness + finite-upper witness, not 2 * blocks
 
 
 def test_dot_marks_loop_regions_and_cost_precision():

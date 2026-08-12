@@ -14,6 +14,7 @@ from .context import (
     infer_program_mode,
 )
 from .costs import (
+    CostModel,
     CostFact,
     assignment_cost,
     block_cost,
@@ -46,6 +47,7 @@ __all__ = [
     "infer_avm_version",
     "infer_program_mode",
     "CostFact",
+    "CostModel",
     "assignment_cost",
     "block_cost",
     "block_stack_delta",
