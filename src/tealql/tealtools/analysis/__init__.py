@@ -14,6 +14,15 @@ from .context import (
     derived_program,
 )
 from .render import functional_dump
+from .resource_demand import (
+    BoxAccess,
+    DemandSite,
+    ForeignStateRead,
+    RESOURCE_DEMAND_SCHEMA_VERSION,
+    ResourceDemand,
+    ResourceReference,
+    resource_demand,
+)
 
 __all__ = [
     "AnalysisContext",
@@ -24,4 +33,11 @@ __all__ = [
     "ValueFacts",
     "derived_program",
     "functional_dump",
+    "BoxAccess",
+    "DemandSite",
+    "ForeignStateRead",
+    "RESOURCE_DEMAND_SCHEMA_VERSION",
+    "ResourceDemand",
+    "ResourceReference",
+    "resource_demand",
 ]

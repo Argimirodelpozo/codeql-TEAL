@@ -229,6 +229,7 @@ cannot satisfy the inventory check.
 | `tealql.tealtools.ssa.SSAProgram` | SSA representation reconstructed from TEAL source. The foundation everything else consumes. |
 | `tealql.tealtools.cfg.path_predicates.PathPredicateAnalysis` | Per-BB path predicates from branch / assert outcomes. Supports `entry_seeds` and `bb_seeds` for cross-contract injection. |
 | `tealql.tealtools.analysis` | Revision-scoped immutable `ValueFacts` and read-only derived SSA normal forms. |
+| `tealql.tealtools.analysis.resource_demand` | Versioned conservative resource-demand certificates for verifier handoff ([semantics and trust boundary](docs/RESOURCE_DEMAND.md)). |
 | `tealql.tealtools.budget` | Version/mode-aware opcode-cost facts, reachable reducible and irreducible loops, minimum-cost reachability, method summaries, `OpcodeBudget` guard checks, and exhaustion review candidates. |
 | `tealql.tealtools.ast`, `tealql.tealtools.frontend.graph`, `tealql.tealtools.viz` | AST layer, the source→graph loader, and DOT/SVG rendering. |
 

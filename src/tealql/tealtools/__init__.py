@@ -58,6 +58,16 @@ _LAZY_EXPORTS = {
     "GroupShape": (".cfg.group", "GroupShape"),
     "filter_validated": (".dataflow.predicate_aware", "filter_validated"),
     "SuppressedViolation": (".dataflow.predicate_aware", "SuppressedViolation"),
+    # Conservative verifier resource-demand boundary.
+    "BoxAccess": (".analysis.resource_demand", "BoxAccess"),
+    "DemandSite": (".analysis.resource_demand", "DemandSite"),
+    "ForeignStateRead": (".analysis.resource_demand", "ForeignStateRead"),
+    "RESOURCE_DEMAND_SCHEMA_VERSION": (
+        ".analysis.resource_demand", "RESOURCE_DEMAND_SCHEMA_VERSION"
+    ),
+    "ResourceDemand": (".analysis.resource_demand", "ResourceDemand"),
+    "ResourceReference": (".analysis.resource_demand", "ResourceReference"),
+    "resource_demand": (".analysis.resource_demand", "resource_demand"),
     # Box and state dataflow.
     "detect_into_box_flows": (".dataflow.box", "detect_into_box_flows"),
     "detect_out_of_box_flows": (".dataflow.box", "detect_out_of_box_flows"),

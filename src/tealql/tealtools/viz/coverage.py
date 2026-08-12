@@ -21,6 +21,7 @@ MODULE_VIEW_COVERAGE: dict[str, tuple[str, ...]] = {
     "analysis.context": ("repr.ssa.value", "repr.ssa.guarded",
                          "repr.ssa.presentation", "analysis.facts.constants"),
     "analysis.render": ("repr.ssa.presentation",),
+    "analysis.resource_demand": ("analysis.resource_demand",),
     "ast.ast": ("repr.ast",),
     "ast.literals": ("repr.source", "repr.ast"),
     "ast.parse": ("repr.ast",),

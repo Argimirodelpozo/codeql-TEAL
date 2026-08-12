@@ -533,6 +533,37 @@ def _inner_fields_dot(ctx: VisualizationContext) -> str:
     return annotated_cfg_dot(ctx.prog, annotations, title="inner-transaction grouping")
 
 
+def _resource_demand_result(ctx: VisualizationContext):
+    from ..analysis.resource_demand import resource_demand
+
+    return ctx.cached("resource-demand", lambda: resource_demand(ctx.prog))
+
+
+def _resource_demand_text(ctx: VisualizationContext) -> str:
+    import json
+
+    return json.dumps(_resource_demand_result(ctx).to_dict(), indent=2, sort_keys=True)
+
+
+def _resource_demand_dot(ctx: VisualizationContext) -> str:
+    from .graphs import annotated_cfg_dot
+
+    annotations: dict = {}
+    for site in _resource_demand_result(ctx).sites:
+        assignment = next(
+            (item for item in ctx.prog.assignments
+             if item.location.file == site.file and item.location.line == site.line
+             and item.op == site.op),
+            None,
+        )
+        if assignment is not None and assignment.basic_block is not None:
+            detail = f": {site.field}" if site.field is not None else ""
+            annotations.setdefault(assignment.basic_block, []).append(
+                f"L{site.line} {site.category}{detail}"
+            )
+    return annotated_cfg_dot(ctx.prog, annotations, title="resource demand")
+
+
 def _auth_text(ctx: VisualizationContext) -> str:
     from ..analysis.auth import AuthDominationDetector
 
@@ -1115,6 +1146,9 @@ def _build_catalog() -> tuple[ViewSpec, ...]:
                  ViewKind.ANALYSIS,
                  "Field definitions grouped between begin/next/submit boundaries.",
                  _inner_fields_text, _inner_fields_dot),
+        ViewSpec("analysis.resource_demand", "Resource demand", ViewKind.ANALYSIS,
+                 "Conservative fields, identities, boxes, and inner-txn syntax.",
+                 _resource_demand_text, _resource_demand_dot),
         ViewSpec("analysis.dominance", "Dominance", ViewKind.ANALYSIS,
                  "Dominators, post-dominators, and immediate parents.",
                  _dominance_text, _dominance_dot),

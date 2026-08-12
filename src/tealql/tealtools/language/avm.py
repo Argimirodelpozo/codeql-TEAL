@@ -519,6 +519,39 @@ _TXN_FIELD_TYPE = {
 # Merged from the single source so the address universe isn't listed twice.
 _TXN_FIELD_TYPE.update({f: "account" for f in ADDRESS_TXN_FIELDS})
 
+#: Every transaction/inner-transaction field understood by this AVM metadata
+#: version.  Consumers that need completeness or conservative widening should
+#: use this public view instead of reaching into the typing implementation.
+TXN_FIELD_NAMES: frozenset[str] = frozenset(_TXN_FIELD_TYPE)
+
+#: Transaction fields whose values are resource identities, grouped by the
+#: verifier-facing array family.  This includes the array element field itself
+#: (``Accounts``/``Assets``/``Applications``) and scalar identities such as
+#: ``Sender``, ``XferAsset``, and ``ApplicationID``.
+TXN_RESOURCE_IDENTITY_FIELDS: dict[str, frozenset[str]] = {
+    "Accounts": frozenset(
+        field for field, field_type in _TXN_FIELD_TYPE.items()
+        if field_type == "account"
+    ),
+    "Assets": frozenset(
+        field for field, field_type in _TXN_FIELD_TYPE.items()
+        if field_type == "asset"
+    ),
+    "Applications": frozenset(
+        field for field, field_type in _TXN_FIELD_TYPE.items()
+        if field_type == "application"
+    ),
+}
+
+#: Scalar transaction fields observing the corresponding resource-array
+#: length.  Derived from the array family names and checked against the field
+#: universe so an unsupported spelling cannot enter the public table.
+RESOURCE_ARRAY_COUNT_FIELDS: dict[str, str] = {
+    count_field: family
+    for family in sorted(FOREIGN_ARRAY_FIELDS)
+    if (count_field := f"Num{family}") in TXN_FIELD_NAMES
+}
+
 _GLOBAL_FIELD_TYPE = {
     "MinTxnFee": "uint64", "MinBalance": "uint64", "MaxTxnLife": "uint64",
     "GroupSize": "uint64", "LogicSigVersion": "uint64", "Round": "uint64",
@@ -618,7 +651,11 @@ _EX_FLAG_OPS = frozenset({
     "asset_params_get", "app_params_get", "acct_params_get",
     "voter_params_get",
 })
-_PARAMS_FIELD_TYPE = {
+#: Canonical field -> value-type table for the AVM parameter and holding
+#: getters.  Public because analyses need the exact same field universe as SSA
+#: typing; copying these names into each consumer makes AVM-version additions
+#: silently disappear from one of them.
+PARAMS_FIELD_TYPE = {
     # acct_params_get
     "AcctBalance": "uint64", "AcctMinBalance": "uint64", "AcctAuthAddr": "account",
     "AcctTotalNumUint": "uint64", "AcctTotalNumByteSlice": "uint64",
@@ -632,7 +669,7 @@ _PARAMS_FIELD_TYPE = {
     "AppGlobalNumUint": "uint64", "AppGlobalNumByteSlice": "uint64",
     "AppLocalNumUint": "uint64", "AppLocalNumByteSlice": "uint64",
     "AppExtraProgramPages": "uint64", "AppCreator": "account",
-    "AppAddress": "account",
+    "AppAddress": "account", "AppVersion": "uint64",
     # voter_params_get
     "VoterBalance": "uint64", "VoterIncentiveEligible": "bool",
     # asset_holding_get
@@ -644,6 +681,54 @@ _PARAMS_FIELD_TYPE = {
     "AssetReserve": "account", "AssetFreeze": "account",
     "AssetClawback": "account", "AssetCreator": "account",
 }
+
+#: Parameter/holding field ownership, derived from :data:`PARAMS_FIELD_TYPE`.
+#: ``AssetBalance`` and ``AssetFrozen`` are the only holding fields; every
+#: other ``Asset*`` member belongs to ``asset_params_get``.  The coverage test
+#: pins the partition back to the canonical flat type table.
+PARAMS_FIELDS_BY_OP: dict[str, frozenset[str]] = {
+    "acct_params_get": frozenset(
+        field for field in PARAMS_FIELD_TYPE if field.startswith("Acct")
+    ),
+    "app_params_get": frozenset(
+        field for field in PARAMS_FIELD_TYPE if field.startswith("App")
+    ),
+    "voter_params_get": frozenset(
+        field for field in PARAMS_FIELD_TYPE if field.startswith("Voter")
+    ),
+    "asset_holding_get": frozenset({"AssetBalance", "AssetFrozen"}),
+    "asset_params_get": frozenset(
+        field for field in PARAMS_FIELD_TYPE
+        if field.startswith("Asset") and field not in {"AssetBalance", "AssetFrozen"}
+    ),
+}
+
+#: Resource-bearing opcode families consumed by resource-demand analysis.
+#: Keep the family membership here, beside :data:`SIG`, and pin the analysis'
+#: classified set to it.  This is intentionally wider than reads: local-state
+#: writes and box writes also observe resource identities.
+RESOURCE_PARAM_OPS: frozenset[str] = frozenset({
+    "acct_params_get", "asset_params_get", "app_params_get",
+    "asset_holding_get", "voter_params_get", "balance", "min_balance",
+})
+FOREIGN_APP_STATE_OPS: frozenset[str] = frozenset({
+    "app_global_get_ex", "app_local_get_ex", "app_opted_in",
+})
+LOCAL_ACCOUNT_STATE_OPS: frozenset[str] = frozenset({
+    "app_local_get", "app_local_get_ex", "app_local_put", "app_local_del",
+    "app_opted_in",
+})
+BOX_RESOURCE_OPS: frozenset[str] = frozenset(
+    op for op in SIG if op.startswith("box_")
+)
+INNER_TXN_BUILD_OPS: frozenset[str] = frozenset({
+    "itxn_begin", "itxn_next", "itxn_submit", "itxn_field",
+})
+RESOURCE_ACCESS_OPS: frozenset[str] = (
+    TXN_SOURCE_OPS | ITXN_SOURCE_OPS | RESOURCE_PARAM_OPS
+    | FOREIGN_APP_STATE_OPS | LOCAL_ACCOUNT_STATE_OPS
+    | BOX_RESOURCE_OPS | INNER_TXN_BUILD_OPS
+)
 
 
 def _multi_out_type(op, immediates, idx):
@@ -665,8 +750,8 @@ def _multi_out_type(op, immediates, idx):
             return "bool"                           # did_exist flag
         toks = immediates.split() if immediates else []
         for tk in toks:
-            if tk in _PARAMS_FIELD_TYPE:
-                return _PARAMS_FIELD_TYPE[tk]       # params/holding value field
+            if tk in PARAMS_FIELD_TYPE:
+                return PARAMS_FIELD_TYPE[tk]        # params/holding value field
         return None                                 # state-schema-dependent value
     return None
 

@@ -255,15 +255,20 @@ def test_immediate_keyed_result_tables_match_puya():
                     else "b" if ret.avm_type == AVMType.bytes else "?")
             assert avm.avm(table[key]) == want, (op_name, key, table[key], want)
 
-    # voter_params_get routes through the *_params_get machinery instead:
-    # exists flag on top via _EX_FLAG_OPS, value typed by field immediate.
-    assert "voter_params_get" in avm._EX_FLAG_OPS
-    voter = AVMOp.voter_params_get._variants
-    for key, var in voter.variant_map.items():
-        assert key in avm._PARAMS_FIELD_TYPE, key
-        value_ret = var.signature.returns[0]  # (value, did_exist): value first
-        want = "u" if value_ret.avm_type == AVMType.uint64 else "b"
-        assert avm.avm(avm._PARAMS_FIELD_TYPE[key]) == want, key
+    # Every params/holding getter routes through the same multi-output typing
+    # machinery: value followed by did_exist in puya source order (the SSA
+    # representation reverses that to TOP-FIRST). Pin field completeness in
+    # both directions, not merely the fields TealQL happened to know already;
+    # this is what caught AppVersion when AVM v12 added it.
+    for op_name, fields in avm.PARAMS_FIELDS_BY_OP.items():
+        assert op_name in avm._EX_FLAG_OPS
+        variants = getattr(AVMOp, op_name)._variants
+        assert set(fields) == set(variants.variant_map), (
+            op_name, set(fields) ^ set(variants.variant_map))
+        for key, var in variants.variant_map.items():
+            value_ret = var.signature.returns[0]
+            want = "u" if value_ret.avm_type == AVMType.uint64 else "b"
+            assert avm.avm(avm.PARAMS_FIELD_TYPE[key]) == want, (op_name, key)
 
 
 def test_every_operand_position_has_an_expected_type():
