@@ -6,7 +6,11 @@ from functools import lru_cache
 from typing import Iterable, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover
-    from ..ssa import Assignment, BasicBlock
+    from ..analysis import ValueFacts
+    from ..ssa import Assignment, BasicBlock, SSAProgram
+
+
+_MAX_BYTES_VALUE = 4096
 
 
 @dataclass(frozen=True)
@@ -39,6 +43,12 @@ class CostFact:
     @classmethod
     def unknown(cls, reason: str, *, lower: int = 1) -> "CostFact":
         return cls(lower, None, False, (reason,))
+
+    @classmethod
+    def bounded(cls, lower: int, upper: int, reason: str = "") -> "CostFact":
+        """A finite interval, retaining why it is not exact when it has width."""
+        exact = lower == upper
+        return cls(lower, upper, exact, (() if exact or not reason else (reason,)))
 
     def __add__(self, other: "CostFact") -> "CostFact":
         upper = None if self.upper is None or other.upper is None else self.upper + other.upper
@@ -108,6 +118,341 @@ def op_cost(op: str, immediates: str = "") -> CostFact:
     if is_known_op(op):
         return CostFact.known(1)
     return CostFact.unknown(f"unknown opcode cost for {op}{suffix}")
+
+
+# Immediate-selected costs from the AVM opcode specification.  Puya marks
+# these opcodes as dynamic because its enum-level metadata cannot express a
+# different fixed cost for each immediate.
+_FIELD_COSTS: dict[str, dict[str, int]] = {
+    "ecdsa_verify": {"Secp256k1": 1700, "Secp256r1": 2500},
+    "ecdsa_pk_decompress": {"Secp256k1": 650, "Secp256r1": 2400},
+    "ec_add": {
+        "BN254g1": 125, "BN254g2": 170,
+        "BLS12_381g1": 205, "BLS12_381g2": 290,
+    },
+    "ec_scalar_mul": {
+        "BN254g1": 1810, "BN254g2": 3430,
+        "BLS12_381g1": 2950, "BLS12_381g2": 6530,
+    },
+    "ec_subgroup_check": {
+        "BN254g1": 20, "BN254g2": 3100,
+        "BLS12_381g1": 1850, "BLS12_381g2": 2340,
+    },
+    "ec_map_to": {
+        "BN254g1": 630, "BN254g2": 3300,
+        "BLS12_381g1": 1950, "BLS12_381g2": 8150,
+    },
+}
+
+
+# ``base + per_chunk * ceil(len(input[depth]) / chunk_size)``.  SSA inputs are
+# TOP-FIRST, matching the AVM stack depth used by the protocol cost function.
+_LENGTH_COSTS: dict[str, tuple[int, int, int, int]] = {
+    "base64_decode": (1, 1, 16, 0),
+    "json_ref": (25, 2, 7, 1),
+    "mimc": (10, 550, 32, 0),
+    "sumhash512": (150, 7, 4, 0),
+    "sha512": (15, 32, 2, 0),
+}
+
+
+# Immediate-selected versions of the same linear length formula.
+_FIELD_LENGTH_COSTS: dict[str, dict[str, tuple[int, int, int, int]]] = {
+    "ec_pairing_check": {
+        "BN254g1": (8000, 7400, 64, 0),
+        "BN254g2": (8000, 7400, 128, 0),
+        "BLS12_381g1": (13000, 10000, 96, 0),
+        "BLS12_381g2": (13000, 10000, 192, 0),
+    },
+    "ec_multi_scalar_mul": {
+        "BN254g1": (3600, 90, 32, 0),
+        "BN254g2": (7200, 270, 32, 0),
+        "BLS12_381g1": (6500, 95, 32, 0),
+        "BLS12_381g2": (14850, 485, 32, 0),
+    },
+}
+
+
+def _ceil_div(value: int, divisor: int) -> int:
+    return (value + divisor - 1) // divisor
+
+
+class CostModel:
+    """Program/version-aware opcode costs over immutable value facts.
+
+    The module-level :func:`op_cost` remains the metadata-only query.  This
+    model is the analysis query: it resolves immediate-selected costs, uses
+    byte-length facts for linear dynamic costs, and applies historical opcode
+    revisions selected by the program's AVM version.
+    """
+
+    def __init__(
+        self,
+        prog: "SSAProgram",
+        *,
+        avm_version: Optional[int] = None,
+    ):
+        from ..analysis import FactDomain
+        from .context import infer_avm_version
+
+        self.prog = prog
+        self.avm_version = (
+            infer_avm_version(prog) if avm_version is None else avm_version
+        )
+        self.facts: ValueFacts = prog.facts(
+            FactDomain.CONSTANTS, FactDomain.BYTE_LENGTHS
+        )
+        self._assignment_cache: dict[Assignment, CostFact] = {}
+        self._block_cache: dict[BasicBlock, CostFact] = {}
+        self._execution_block_cache: dict[BasicBlock, CostFact] = {}
+        self._subroutine_cache: dict[BasicBlock, CostFact] = {}
+        self._subroutines = None
+
+    def _byte_length_range(self, value) -> Optional[tuple[int, int]]:
+        from ..ssa import const_byte_length
+
+        constant = self.facts.constant(value)
+        n = const_byte_length(constant if constant is not None else value)
+        if n is not None:
+            return n, n
+        fact_type = self.facts.fact(value).type
+        if fact_type is not None:
+            if fact_type.byte_length is not None:
+                return fact_type.byte_length, fact_type.byte_length
+            if fact_type.byte_length_range is not None:
+                r = fact_type.byte_length_range
+                return r.lo, min(r.hi, _MAX_BYTES_VALUE)
+            if fact_type.kind == "bytes":
+                return 0, _MAX_BYTES_VALUE
+        value_type = getattr(value, "type", None)
+        if value_type is not None and value_type.kind == "bytes":
+            return 0, _MAX_BYTES_VALUE
+        return None
+
+    def _linear_cost(
+        self,
+        assignment: "Assignment",
+        spec: tuple[int, int, int, int],
+    ) -> CostFact:
+        base, per_chunk, chunk_size, depth = spec
+        if depth >= len(assignment.inputs):
+            return CostFact.unknown(
+                f"dynamic cost input unavailable for {assignment.op}",
+                lower=base,
+            )
+        bounds = self._byte_length_range(assignment.inputs[depth])
+        if bounds is None:
+            # Reaching a valid length-priced opcode proves that this operand is
+            # a bytes value even when partial SSA recovery could not annotate
+            # its type.  The AVM bytes-stack cap is therefore a sound fallback
+            # upper bound; malformed programs never execute this operation.
+            bounds = (0, _MAX_BYTES_VALUE)
+        lo, hi = bounds
+        lower = base + per_chunk * _ceil_div(lo, chunk_size)
+        upper = base + per_chunk * _ceil_div(hi, chunk_size)
+        return CostFact.bounded(
+            lower,
+            upper,
+            f"dynamic cost bounded by byte length [{lo},{hi}] for {assignment.op}",
+        )
+
+    def _dynamic_cost(self, assignment: "Assignment") -> Optional[CostFact]:
+        op = assignment.op
+        immediate = (assignment.immediates or "").strip().split()
+        field = immediate[0] if immediate else ""
+        by_field = _FIELD_COSTS.get(op)
+        if by_field is not None:
+            cost = by_field.get(field)
+            return (
+                CostFact.known(cost) if cost is not None
+                else CostFact.unknown(f"unknown cost immediate for {op} {field}".rstrip())
+            )
+        linear = _LENGTH_COSTS.get(op)
+        if linear is not None:
+            return self._linear_cost(assignment, linear)
+        by_field_length = _FIELD_LENGTH_COSTS.get(op)
+        if by_field_length is not None:
+            linear = by_field_length.get(field)
+            return (
+                self._linear_cost(assignment, linear) if linear is not None
+                else CostFact.unknown(f"unknown cost immediate for {op} {field}".rstrip())
+            )
+        return None
+
+    def assignment_cost(self, assignment: "Assignment") -> CostFact:
+        cached = self._assignment_cache.get(assignment)
+        if cached is not None:
+            return cached
+        # Hash costs changed at AVM v2.  The dependency metadata exposes only
+        # the latest value, so select the historical v1 costs here.
+        if self.avm_version == 1 and assignment.op in {
+            "sha256", "keccak256", "sha512_256",
+        }:
+            result = CostFact.known({
+                "sha256": 7, "keccak256": 26, "sha512_256": 9,
+            }[assignment.op])
+        else:
+            result = self._dynamic_cost(assignment) or assignment_cost(assignment)
+        self._assignment_cache[assignment] = result
+        return result
+
+    def block_cost(self, bb: "BasicBlock") -> CostFact:
+        cached = self._block_cache.get(bb)
+        if cached is None:
+            cached = sum_costs(
+                self.assignment_cost(assignment)
+                for assignment in canonical_assignments(bb)
+            )
+            self._block_cache[bb] = cached
+        return cached
+
+    @staticmethod
+    def _terminator(bb: "BasicBlock") -> Optional[str]:
+        for assignment in reversed(canonical_assignments(bb)):
+            if assignment.op in {
+                "b", "bz", "bnz", "switch", "match", "callsub",
+                "retsub", "return", "err",
+            }:
+                return assignment.op
+        return None
+
+    def _subroutine_info(self):
+        if self._subroutines is None:
+            from ..cfg.subroutines import identify_subroutines
+            self._subroutines = identify_subroutines(self.prog)
+        return self._subroutines
+
+    def _subroutine_cost(
+        self,
+        entry: "BasicBlock",
+        active: frozenset["BasicBlock"],
+    ) -> CostFact:
+        cached = self._subroutine_cache.get(entry)
+        if cached is not None:
+            return cached
+        if entry in active:
+            # Recursive calls execute at least their own ``callsub`` (already
+            # in the caller block), but this summary cannot promise any
+            # additional finite cost without solving the recursion.
+            return CostFact.unknown(
+                "recursive subroutine cost is unbounded", lower=0
+            )
+
+        import networkx as nx
+
+        info = self._subroutine_info()
+        body = set(info["bodies"].get(entry, ()))
+        if not body:
+            return CostFact.unknown("subroutine body is unavailable", lower=0)
+        call_targets = info["callsub_target"]
+        continuations = info["continuations"]
+        next_active = active | {entry}
+
+        costs: dict[BasicBlock, CostFact] = {}
+        graph = nx.DiGraph()
+        graph.add_nodes_from(body)
+        for bb in body:
+            fact = self.block_cost(bb)
+            if self._terminator(bb) == "callsub":
+                callee = call_targets.get(bb)
+                if callee is not None:
+                    fact = fact + self._subroutine_cost(callee, next_active)
+                continuation = continuations.get(bb)
+                if continuation in body:
+                    graph.add_edge(bb, continuation)
+            elif self._terminator(bb) != "retsub":
+                for successor in bb.successors:
+                    if successor in body:
+                        graph.add_edge(bb, successor)
+            costs[bb] = fact
+
+        returns = [bb for bb in body if self._terminator(bb) == "retsub"]
+        if not returns or entry not in graph:
+            return CostFact.unknown("subroutine has no reachable retsub", lower=0)
+
+        # Minimum returning cost.  Every node weight is non-negative, so one
+        # Dijkstra from a synthetic source gives a witness-safe lower bound.
+        source = object()
+        weighted = nx.DiGraph()
+        weighted.add_nodes_from(graph.nodes)
+        weighted.add_node(source)
+        weighted.add_edge(source, entry, weight=costs[entry].lower)
+        for left, right in graph.edges:
+            weighted.add_edge(left, right, weight=costs[right].lower)
+        distances, paths = nx.single_source_dijkstra(weighted, source, weight="weight")
+        reachable_returns = [bb for bb in returns if bb in distances]
+        if not reachable_returns:
+            return CostFact.unknown("subroutine has no reachable retsub", lower=0)
+        cheapest_return = min(reachable_returns, key=distances.__getitem__)
+        lower = distances[cheapest_return]
+        lower_path = [bb for bb in paths[cheapest_return] if bb is not source]
+        reasons = [reason for bb in lower_path for reason in costs[bb].reasons]
+
+        # A finite upper bound exists only when every returning execution is
+        # acyclic and every block on one has a finite upper cost.  Non-returning
+        # branches do not poison a summary used after a successful return.
+        can_return = set(reachable_returns)
+        work = list(reachable_returns)
+        while work:
+            bb = work.pop()
+            for predecessor in graph.predecessors(bb):
+                if predecessor not in can_return:
+                    can_return.add(predecessor)
+                    work.append(predecessor)
+        returning_graph = graph.subgraph(can_return).copy()
+        if not nx.is_directed_acyclic_graph(returning_graph):
+            upper = None
+            reasons.append("cyclic subroutine has no finite upper cost")
+        elif any(costs[bb].upper is None for bb in returning_graph.nodes):
+            upper = None
+            reasons.extend(
+                reason for bb in returning_graph.nodes for reason in costs[bb].reasons
+                if costs[bb].upper is None
+            )
+        else:
+            upper_to_return: dict[BasicBlock, int] = {}
+            for bb in reversed(list(nx.topological_sort(returning_graph))):
+                tails = [
+                    upper_to_return[successor]
+                    for successor in returning_graph.successors(bb)
+                    if successor in upper_to_return
+                ]
+                own = costs[bb].upper
+                if bb in returns:
+                    upper_to_return[bb] = own  # type: ignore[assignment]
+                elif tails:
+                    upper_to_return[bb] = own + max(tails)  # type: ignore[operator]
+            upper = upper_to_return.get(entry)
+
+        result = CostFact(
+            lower,
+            upper,
+            upper is not None and lower == upper,
+            tuple(dict.fromkeys(reasons)),
+        )
+        self._subroutine_cache[entry] = result
+        return result
+
+    def subroutine_cost(self, entry: "BasicBlock") -> CostFact:
+        """Cost of one returning invocation, excluding the caller's callsub."""
+        return self._subroutine_cost(entry, frozenset())
+
+    def execution_block_cost(self, bb: "BasicBlock") -> CostFact:
+        """Direct block cost plus the returning callee cost of its callsub."""
+        cached = self._execution_block_cache.get(bb)
+        if cached is not None:
+            return cached
+        fact = self.block_cost(bb)
+        if self._terminator(bb) == "callsub":
+            callee = self._subroutine_info()["callsub_target"].get(bb)
+            if callee is not None:
+                fact = fact + self.subroutine_cost(callee)
+            else:
+                fact = fact + CostFact.unknown(
+                    "callsub target is unavailable", lower=0
+                )
+        self._execution_block_cache[bb] = fact
+        return fact
 
 
 def sum_costs(facts: Iterable[CostFact]) -> CostFact:

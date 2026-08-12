@@ -18,6 +18,7 @@ from ..ssa import BasicBlock, SSAProgram
 from ..cfg.subroutines import identify_subroutines
 from .context import BudgetContext, MAX_STACK_DEPTH, context_for
 from .costs import (
+    CostModel,
     CostFact,
     block_cost,
     block_stack_delta,
@@ -107,14 +108,27 @@ class LoopBound:
         return self.header.first_line
 
 
-def _reachable(cfg: CFG) -> set[BasicBlock]:
+def _reachable(cfg: CFG, pp=None) -> set[BasicBlock]:
     out: set[BasicBlock] = set()
     for entry in cfg.entries:
-        out.update(cfg.reachable_from(entry))
+        if entry in out:
+            continue
+        out.add(entry)
+        work = [entry]
+        while work:
+            block = work.pop()
+            for successor in block.successors:
+                if pp is not None and not pp.edge_is_feasible(block, successor):
+                    continue
+                if successor not in out:
+                    out.add(successor)
+                    work.append(successor)
     return out
 
 
-def _routine_graph(prog: SSAProgram, cfg: CFG) -> tuple[nx.DiGraph, tuple[BasicBlock, ...]]:
+def _routine_graph(
+    prog: SSAProgram, cfg: CFG, pp=None,
+) -> tuple[nx.DiGraph, tuple[BasicBlock, ...]]:
     """Call-summary graph used for loop structure.
 
     A call block flows to its matched continuation and each subroutine entry is
@@ -125,7 +139,10 @@ def _routine_graph(prog: SSAProgram, cfg: CFG) -> tuple[nx.DiGraph, tuple[BasicB
     cycle containing ``callsub`` rather than splicing context-insensitive
     return edges into the loop graph.
     """
-    reached = _reachable(cfg)
+    if pp is None:
+        from ..cfg.path_predicates import PathPredicateAnalysis
+        pp = PathPredicateAnalysis(prog)
+    reached = _reachable(cfg, pp)
     subs = identify_subroutines(prog)
     roots = tuple(dict.fromkeys([
         *(b for b in cfg.entries if b in reached),
@@ -144,7 +161,7 @@ def _routine_graph(prog: SSAProgram, cfg: CFG) -> tuple[nx.DiGraph, tuple[BasicB
         if term in {"retsub", "return", "err"}:
             continue
         for successor in bb.successors:
-            if successor in reached:
+            if successor in reached and pp.edge_is_feasible(bb, successor):
                 graph.add_edge(bb, successor)
     return graph, roots
 
@@ -207,39 +224,46 @@ def _loop_shapes(graph: nx.DiGraph, roots: tuple[BasicBlock, ...]) -> list[_Loop
     return out
 
 
-def _path_cost(path: list[BasicBlock]) -> CostFact:
-    fact = sum_costs(block_cost(bb) for bb in path)
-    if any(a.op == "callsub" for bb in path for a in canonical_assignments(bb)):
-        fact = fact + CostFact.unknown("callee execution cost omitted from summary edge", lower=0)
-    return fact
+def _path_cost(
+    path: list[BasicBlock],
+    model: CostModel,
+    *,
+    summarize_calls: bool,
+) -> CostFact:
+    cost_of = model.execution_block_cost if summarize_calls else model.block_cost
+    return sum_costs(cost_of(bb) for bb in path)
 
 
 def _cheapest_path(
-    graph: nx.DiGraph, source: BasicBlock, target: BasicBlock
+    graph: nx.DiGraph, source: BasicBlock, target: BasicBlock, model: CostModel,
 ) -> Optional[list[BasicBlock]]:
     weighted = nx.DiGraph()
     weighted.add_nodes_from(graph.nodes)
     for u, v in graph.edges:
-        weighted.add_edge(u, v, weight=block_cost(v).lower)
+        weighted.add_edge(u, v, weight=model.execution_block_cost(v).lower)
     try:
         return nx.shortest_path(weighted, source, target, weight="weight")
     except (nx.NetworkXNoPath, nx.NodeNotFound):
         return None
 
 
-def _cheapest_iteration(shape: _LoopShape, graph: nx.DiGraph) -> CostFact:
+def _cheapest_iteration(
+    shape: _LoopShape, graph: nx.DiGraph, model: CostModel,
+) -> CostFact:
     if shape.kind == "reducible":
         best: Optional[CostFact] = None
         for source, target in shape.back_edges:
             if target is not shape.header:
                 continue
-            path = _cheapest_path(graph.subgraph(shape.body), shape.header, source)
+            path = _cheapest_path(
+                graph.subgraph(shape.body), shape.header, source, model
+            )
             if path is None:
                 continue
-            fact = _path_cost(path)
+            fact = _path_cost(path, model, summarize_calls=True)
             if best is None or fact.lower < best.lower:
                 best = fact
-        return best or _path_cost([shape.header])
+        return best or _path_cost([shape.header], model, summarize_calls=True)
 
     subgraph = graph.subgraph(shape.body)
     best = None
@@ -247,17 +271,19 @@ def _cheapest_iteration(shape: _LoopShape, graph: nx.DiGraph) -> CostFact:
         if u is v:
             path = [u]
         else:
-            tail = _cheapest_path(subgraph, v, u)
+            tail = _cheapest_path(subgraph, v, u, model)
             if tail is None:
                 continue
             path = tail
-        fact = _path_cost(path)
+        fact = _path_cost(path, model, summarize_calls=True)
         if best is None or fact.lower < best.lower:
             best = fact
     return best or CostFact.unknown("cyclic SCC had no materialized cycle")
 
 
-def _entry_distances(cfg: CFG) -> tuple[dict[BasicBlock, int], dict[BasicBlock, list[BasicBlock]]]:
+def _entry_distances(
+    cfg: CFG, model: CostModel, pp=None,
+) -> tuple[dict[BasicBlock, int], dict[BasicBlock, list[BasicBlock]]]:
     """Cheapest raw-CFG paths.
 
     Raw return edges may admit an impossible caller pairing, which can only
@@ -268,14 +294,16 @@ def _entry_distances(cfg: CFG) -> tuple[dict[BasicBlock, int], dict[BasicBlock, 
     graph.add_nodes_from(cfg.blocks)
     for bb in cfg.blocks:
         for successor in bb.successors:
-            graph.add_edge(bb, successor, weight=block_cost(successor).lower)
+            if pp is not None and not pp.edge_is_feasible(bb, successor):
+                continue
+            graph.add_edge(bb, successor, weight=model.block_cost(successor).lower)
     distances: dict[BasicBlock, int] = {}
     paths: dict[BasicBlock, list[BasicBlock]] = {}
     for entry in cfg.entries:
         if entry not in graph:
             continue
         lengths, found_paths = nx.single_source_dijkstra(graph, entry, weight="weight")
-        base = block_cost(entry).lower
+        base = model.block_cost(entry).lower
         for node, distance in lengths.items():
             total = base + distance
             if node not in distances or total < distances[node]:
@@ -284,14 +312,19 @@ def _entry_distances(cfg: CFG) -> tuple[dict[BasicBlock, int], dict[BasicBlock, 
     return distances, paths
 
 
-def _prefix(shape: _LoopShape, distances: dict, paths: dict) -> CostFact:
+def _prefix(
+    shape: _LoopShape, distances: dict, paths: dict, model: CostModel,
+) -> CostFact:
     candidates = [entry for entry in shape.entries if entry in distances]
     if not candidates:
         return CostFact.unknown("loop region has no reachable entry", lower=0)
     target = min(candidates, key=distances.__getitem__)
     path = paths[target]
     # The entry block belongs to an iteration, not the mandatory prefix.
-    return _path_cost(path[:-1]) if len(path) > 1 else CostFact.known(0)
+    return (
+        _path_cost(path[:-1], model, summarize_calls=False)
+        if len(path) > 1 else CostFact.known(0)
+    )
 
 
 def _guaranteed_stack_growth(
@@ -335,12 +368,15 @@ def analyze_loops(
     """Return all reachable reducible loops and irreducible cyclic regions."""
     cfg = cfg or CFG.of(prog)
     ctx = context_for(prog, context, budget=budget)
-    graph, roots = _routine_graph(prog, cfg)
-    distances, paths = _entry_distances(cfg)
+    model = CostModel(prog, avm_version=ctx.avm_version)
+    from ..cfg.path_predicates import PathPredicateAnalysis
+    pp = PathPredicateAnalysis(prog)
+    graph, roots = _routine_graph(prog, cfg, pp)
+    distances, paths = _entry_distances(cfg, model, pp)
     out: list[LoopBound] = []
     for shape in _loop_shapes(graph, roots):
-        iteration = _cheapest_iteration(shape, graph)
-        prefix = _prefix(shape, distances, paths)
+        iteration = _cheapest_iteration(shape, graph, model)
+        prefix = _prefix(shape, distances, paths, model)
         available = max(0, ctx.initial_credit - prefix.lower)
         cost_floor = max(1, iteration.lower)
         growth, stack_degradation = _guaranteed_stack_growth(shape, graph)

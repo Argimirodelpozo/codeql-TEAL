@@ -11,7 +11,7 @@ from ..cfg import CFG
 from ..ssa import Assignment, BasicBlock, Const, Phi, SSAProgram, SSAVar, binary_operands, const_int
 from ..cfg.structure import analyze_structure
 from .context import BudgetContext, context_for
-from .costs import CostFact, assignment_cost, block_cost, canonical_assignments, sum_costs
+from .costs import CostFact, CostModel, canonical_assignments, sum_costs
 from .loop_bounds import LoopBound, analyze_loops
 from .queries import MinimumCost, minimum_cost
 
@@ -147,7 +147,9 @@ def _reachable_graph(cfg: CFG, starts) -> nx.DiGraph:
     return graph
 
 
-def _suffix_cost_bounds(read: Assignment, enforcement: Assignment, cfg: CFG):
+def _suffix_cost_bounds(
+    read: Assignment, enforcement: Assignment, cfg: CFG, model: CostModel,
+):
     block = read.basic_block
     if block is None or enforcement.basic_block is not block:
         return None, None, ("budget read and enforcement are in different blocks",)
@@ -156,7 +158,10 @@ def _suffix_cost_bounds(read: Assignment, enforcement: Assignment, cfg: CFG):
         read_index = next(i for i, assignment in enumerate(stream) if assignment is read)
     except StopIteration:
         return None, None, ("budget read is absent from canonical stream",)
-    suffix = sum_costs(assignment_cost(assignment) for assignment in stream[read_index + 1:])
+    suffix = sum_costs(
+        model.assignment_cost(assignment)
+        for assignment in stream[read_index + 1:]
+    )
     reasons = list(suffix.reasons)
     if not block.successors:
         return suffix.lower, suffix.upper, tuple(reasons)
@@ -165,13 +170,13 @@ def _suffix_cost_bounds(read: Assignment, enforcement: Assignment, cfg: CFG):
     if not nx.is_directed_acyclic_graph(graph):
         reasons.append("a reachable cycle makes downstream upper cost unbounded")
         upper = None
-    elif any(block_cost(node).upper is None for node in graph.nodes):
+    elif any(model.block_cost(node).upper is None for node in graph.nodes):
         reasons.append("dynamic opcode cost has no finite downstream upper bound")
         upper = None
     else:
         upper_dp: dict[BasicBlock, int] = {}
         for node in reversed(list(nx.topological_sort(graph))):
-            own = block_cost(node).upper
+            own = model.block_cost(node).upper
             tails = [upper_dp[successor] for successor in graph.successors(node)]
             upper_dp[node] = own + (max(tails) if tails else 0)  # type: ignore[operator]
         tail_upper = max(upper_dp[start] for start in block.successors)
@@ -180,7 +185,9 @@ def _suffix_cost_bounds(read: Assignment, enforcement: Assignment, cfg: CFG):
     weighted = nx.DiGraph()
     weighted.add_nodes_from(graph.nodes)
     for source, target in graph.edges:
-        weighted.add_edge(source, target, weight=block_cost(target).lower)
+        weighted.add_edge(
+            source, target, weight=model.block_cost(target).lower
+        )
     exits = [node for node in graph.nodes if not node.successors]
     tail_lowers = []
     for start in block.successors:
@@ -189,7 +196,7 @@ def _suffix_cost_bounds(read: Assignment, enforcement: Assignment, cfg: CFG):
                 distance = nx.shortest_path_length(weighted, start, exit_block, weight="weight")
             except (nx.NetworkXNoPath, nx.NodeNotFound):
                 continue
-            tail_lowers.append(block_cost(start).lower + distance)
+            tail_lowers.append(model.block_cost(start).lower + distance)
     lower = suffix.lower + (min(tail_lowers) if tail_lowers else 0)
     return lower, upper, tuple(dict.fromkeys(reasons))
 
@@ -204,6 +211,7 @@ def analyze_opcode_budget_guards(prog: SSAProgram) -> list[OpcodeBudgetGuard]:
     """
     facts = prog.facts(FactDomain.CONSTANTS)
     cfg = CFG.of(prog)
+    model = CostModel(prog)
     out: list[OpcodeBudgetGuard] = []
     for assertion in prog.assignments:
         shape = _guard_shape(assertion, facts)
@@ -216,7 +224,7 @@ def analyze_opcode_budget_guards(prog: SSAProgram) -> list[OpcodeBudgetGuard]:
             guaranteed = threshold
         else:
             continue
-        lower, upper, reasons = _suffix_cost_bounds(read, assertion, cfg)
+        lower, upper, reasons = _suffix_cost_bounds(read, assertion, cfg, model)
         if upper is not None and upper <= guaranteed:
             verdict = "sufficient"
         elif lower is not None and guaranteed < lower:
@@ -287,8 +295,19 @@ def find_budget_exhaustion_candidates(prog: SSAProgram) -> list[BudgetExhaustion
     out: list[BudgetExhaustionCandidate] = []
     for loop in analyze_loops(prog):
         controlled = False
-        for source, _target in loop.back_edges:
-            stream = canonical_assignments(source)
+        # A conventional while-loop branches OUT at its header and returns on
+        # an unconditional ``b header`` back edge.  Looking only at the
+        # back-edge terminator therefore misses the condition that actually
+        # decides whether another lap executes.  Inspect every loop block whose
+        # branch partitions successors between the loop body and its exits,
+        # while retaining conditional back edges for do/while shapes.
+        back_edge_sources = {source for source, _target in loop.back_edges}
+        for block in loop.body:
+            inside = any(successor in loop.body for successor in block.successors)
+            outside = any(successor not in loop.body for successor in block.successors)
+            if block not in back_edge_sources and not (inside and outside):
+                continue
+            stream = canonical_assignments(block)
             terminator = next((assignment for assignment in reversed(stream)
                                if assignment.op in {"bnz", "bz", "switch", "match"}), None)
             if terminator is not None and terminator.inputs:

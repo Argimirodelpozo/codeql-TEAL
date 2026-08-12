@@ -98,6 +98,21 @@ def test_attacker_controlled_budget_loop_is_a_review_candidate():
     assert "ranking function" in candidates[0].reason
 
 
+def test_header_controlled_while_loop_is_a_review_candidate():
+    """The continuation condition usually lives at the header while the back
+    edge is an unconditional ``b``.  The condition still controls whether the
+    loop gets another lap."""
+    prog = _program(
+        "#pragma version 8\n"
+        "loop:\ntxn NumAppArgs\nbz done\n"
+        "byte 0x00\nsha256\npop\nb loop\n"
+        "done:\nint 1\nreturn\n"
+    )
+    candidates = find_budget_exhaustion_candidates(prog)
+    assert len(candidates) == 1
+    assert candidates[0].loop.header.first_line == 2
+
+
 def test_nested_cycle_voids_an_outer_stack_ceiling_and_counts_toward_cap(monkeypatch):
     """Two inner -1 laps offset the outer +2 pushes, so the outer loop can
     remain stack-flat.  Non-header cycles must also consume the enumeration

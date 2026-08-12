@@ -26,6 +26,7 @@ from ..ssa import (
     SSAProgram,
     SSAVar,
     binary_operands,
+    const_int,
     is_const,
 )
 from ..language.avm import (CMP_OPS, COND_BRANCH_OPS, LOGICAL_OPS,
@@ -228,6 +229,104 @@ class _Top:
 _TOP = _Top()
 
 
+def predicates_contradict(conditions, facts=None) -> bool:
+    """Whether a conjunction of lightweight branch predicates is infeasible.
+
+    This is deliberately a unary constant/range domain, not a general solver.
+    It codifies complement pairs, distinct equalities, ordered constant bounds,
+    switch/match exclusions, and unconditional value ranges.  Unsupported
+    symbolic relations simply contribute no contradiction proof.
+    """
+    states: dict[Operand, dict] = {}
+
+    def state(value):
+        current = states.get(value)
+        if current is not None:
+            return current
+        lo, hi = 0, (1 << 64) - 1
+        exact = None
+        if facts is not None:
+            constant = facts.constant(value)
+            if constant is not None:
+                exact = constant
+            value_range = facts.int_range(value)
+            if value_range is not None:
+                lo, hi = value_range.lo, value_range.hi
+        if is_const(value):
+            exact = value
+        current = {
+            "lo": lo, "hi": hi, "exact": exact,
+            "excluded": set(), "excluded_ranges": [],
+        }
+        states[value] = current
+        return current
+
+    for condition in conditions:
+        current = state(condition.value)
+        kind, args = condition.kind, condition.args
+        rhs = args[0] if args else None
+        rhs_int = const_int(rhs) if rhs is not None else None
+        if kind == "zero":
+            zero = Const("int", "0")
+            previous = current["exact"]
+            if previous is not None and previous != zero:
+                return True
+            current["exact"] = zero
+        elif kind == "nonzero":
+            current["excluded"].add(Const("int", "0"))
+        elif kind == "eq" and rhs is not None and is_const(rhs):
+            previous = current["exact"]
+            if previous is not None and previous != rhs:
+                return True
+            current["exact"] = rhs
+        elif kind == "neq" and rhs is not None and is_const(rhs):
+            current["excluded"].add(rhs)
+        elif rhs_int is not None:
+            if kind == "lt":
+                current["hi"] = min(current["hi"], rhs_int - 1)
+            elif kind == "le":
+                current["hi"] = min(current["hi"], rhs_int)
+            elif kind == "gt":
+                current["lo"] = max(current["lo"], rhs_int + 1)
+            elif kind == "ge":
+                current["lo"] = max(current["lo"], rhs_int)
+        if kind == "not_in_range" and len(args) >= 2:
+            lo, hi = args[:2]
+            if isinstance(lo, int) and isinstance(hi, int):
+                current["excluded_ranges"].append((lo, hi - 1))
+        elif kind == "neq_all":
+            current["excluded"].update(arg for arg in args if is_const(arg))
+
+    for current in states.values():
+        lo, hi, exact = current["lo"], current["hi"], current["exact"]
+        if lo > hi:
+            return True
+        if exact is not None:
+            if exact in current["excluded"]:
+                return True
+            exact_int = const_int(exact)
+            if exact_int is not None:
+                if not lo <= exact_int <= hi:
+                    return True
+                if any(a <= exact_int <= b for a, b in current["excluded_ranges"]):
+                    return True
+            continue
+        # Exhaustion is cheap and useful for finite enum/range facts, while the
+        # cap prevents a uint64-wide iteration.
+        if hi - lo <= 256:
+            excluded_ints = {
+                value for item in current["excluded"]
+                if (value := const_int(item)) is not None
+            }
+            if all(
+                value in excluded_ints
+                or any(a <= value <= b for a, b in current["excluded_ranges"])
+                for value in range(lo, hi + 1)
+            ):
+                return True
+    return False
+
+
 # Branch / assert opcodes that contribute predicates.
 _ASSERT = "assert"
 #: ``switch`` is named on its own because its arms are POSITIONAL (arm k means
@@ -255,7 +354,7 @@ class PathPredicateAnalysis:
         # Resolve stable input/shuffle/scratch identities through an immutable
         # relation.  Rewriting the shared SSA here used to make every later
         # detector depend on whether path predicates happened to run first.
-        self._facts = prog.facts(FactDomain.CONSTANTS)
+        self._facts = prog.facts(FactDomain.CONSTANTS, FactDomain.RANGES)
         self.entry_seeds = entry_seeds
         self.bb_seeds: dict[BasicBlock, frozenset[BranchCondition]] = (
             bb_seeds or {}
@@ -281,6 +380,20 @@ class PathPredicateAnalysis:
         if bb is None:
             return frozenset()
         return self.bb_preds.get(bb, frozenset())
+
+    def edge_predicates(
+        self, pred: BasicBlock, succ: BasicBlock,
+    ) -> frozenset[BranchCondition]:
+        """Predicates contributed specifically by ``pred -> succ``."""
+        return self._edge_predicates(pred, succ)
+
+    def edge_is_feasible(self, pred: BasicBlock, succ: BasicBlock) -> bool:
+        """False only when entry plus edge facts prove a contradiction."""
+        conditions = (
+            self.bb_preds.get(pred, frozenset())
+            | self._edge_predicates(pred, succ)
+        )
+        return not predicates_contradict(conditions, self._facts)
 
     def approving_exits(self) -> list[BasicBlock]:
         """BBs whose last opcode is an APPROVING ``return``, per

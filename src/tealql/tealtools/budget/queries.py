@@ -9,7 +9,7 @@ import networkx as nx
 from ..cfg import CFG
 from ..ssa import Assignment, BasicBlock, SSAProgram
 from .context import BudgetContext, context_for
-from .costs import CostFact, assignment_cost, block_cost, canonical_assignments, sum_costs
+from .costs import CostFact, CostModel, canonical_assignments, sum_costs
 
 
 BudgetTarget = Union[BasicBlock, Assignment]
@@ -22,6 +22,8 @@ class MinimumCost:
     path: tuple[BasicBlock, ...]
     context: BudgetContext
     degradations: tuple[str, ...] = ()
+    within_budget_path: tuple[BasicBlock, ...] = ()
+    within_budget_cost: Optional[CostFact] = None
 
     @property
     def reachable(self) -> bool:
@@ -40,11 +42,11 @@ class MinimumCost:
 
     @property
     def has_within_budget_path(self) -> bool:
-        """The selected structural path has a finite upper cost within credit."""
+        """Some structural path has a finite upper cost within credit."""
         return (
-            self.cost is not None
-            and self.cost.upper is not None
-            and self.cost.upper <= self.context.initial_credit
+            self.within_budget_cost is not None
+            and self.within_budget_cost.upper is not None
+            and self.within_budget_cost.upper <= self.context.initial_credit
         )
 
     @property
@@ -66,14 +68,14 @@ def _target_block(target: BudgetTarget) -> BasicBlock:
     return target.basic_block
 
 
-def _target_block_cost(target: BudgetTarget) -> CostFact:
+def _target_block_cost(target: BudgetTarget, model: CostModel) -> CostFact:
     block = _target_block(target)
     if isinstance(target, BasicBlock):
-        return block_cost(block)
+        return model.execution_block_cost(block)
     facts = []
     found = False
     for assignment in canonical_assignments(block):
-        facts.append(assignment_cost(assignment))
+        facts.append(model.assignment_cost(assignment))
         if assignment is target or (
             assignment.location == target.location
             and assignment.op == target.op
@@ -86,13 +88,105 @@ def _target_block_cost(target: BudgetTarget) -> CostFact:
     return sum_costs(facts)
 
 
-def _weighted_cfg(cfg: CFG) -> nx.DiGraph:
+def _weighted_cfg(cfg: CFG, model: CostModel, pp, *, upper: bool) -> nx.DiGraph:
     graph = nx.DiGraph()
     graph.add_nodes_from(cfg.blocks)
+    subroutines = model._subroutine_info()
     for block in cfg.blocks:
         for successor in block.successors:
-            graph.add_edge(block, successor, weight=block_cost(successor).lower)
+            if not pp.edge_is_feasible(block, successor):
+                continue
+            # Distances are to block ENTRY.  Charge the source block on its
+            # outgoing edge so a target assignment can use only its in-block
+            # prefix; a dynamic operation later in that block must not erase a
+            # finite witness to an earlier assignment.
+            fact = model.block_cost(block)
+            weight = fact.upper if upper else fact.lower
+            if weight is not None:
+                graph.add_edge(block, successor, weight=weight)
+        # A context-correct returning path can summarize a call directly to its
+        # matched continuation.  Keep the raw call-target edge above as well so
+        # queries for sites inside the callee remain reachable.  Crucially, only
+        # this synthetic edge charges the callee summary; charging it on the raw
+        # edge would count the callee once here and again while traversing it.
+        if model._terminator(block) == "callsub":
+            continuation = subroutines["continuations"].get(block)
+            if continuation is not None:
+                fact = model.execution_block_cost(block)
+                weight = fact.upper if upper else fact.lower
+                if weight is not None:
+                    existing = graph.get_edge_data(block, continuation)
+                    if existing is None or weight < existing["weight"]:
+                        graph.add_edge(block, continuation, weight=weight)
     return graph
+
+
+def _all_distances(cfg: CFG, model: CostModel, pp, *, upper: bool):
+    """Cheapest paths to every block from a synthetic multi-entry source."""
+    graph = _weighted_cfg(cfg, model, pp, upper=upper)
+    source = object()
+    graph.add_node(source)
+    for entry in cfg.entries:
+        graph.add_edge(source, entry, weight=0)
+    distances, paths = nx.single_source_dijkstra(graph, source, weight="weight")
+    return (
+        {block: distance for block, distance in distances.items() if block is not source},
+        {
+            block: tuple(node for node in path if node is not source)
+            for block, path in paths.items() if block is not source
+        },
+    )
+
+
+def _path_cost(
+    path: tuple[BasicBlock, ...], target: BudgetTarget, model: CostModel,
+) -> CostFact:
+    if not path:
+        raise ValueError("a cost witness path must not be empty")
+    return (
+        sum_costs(model.execution_block_cost(block) for block in path[:-1])
+        + _target_block_cost(target, model)
+    )
+
+
+def _minimum_cost_from_maps(
+    target: BudgetTarget,
+    ctx: BudgetContext,
+    model: CostModel,
+    lower_paths,
+    upper_paths,
+) -> MinimumCost:
+    target_block = _target_block(target)
+    lower_block_path = lower_paths.get(target_block)
+    if lower_block_path is None:
+        return MinimumCost(target, None, (), ctx)
+    lower_cost = _path_cost(lower_block_path, target, model)
+
+    upper_block_path = upper_paths.get(target_block)
+    upper_cost = (
+        _path_cost(upper_block_path, target, model)
+        if upper_block_path is not None else None
+    )
+    # An assignment target may occur before an unbounded operation later in
+    # its block, so recompute its prefix before accepting the upper witness.
+    if upper_cost is not None and upper_cost.upper is None:
+        upper_block_path, upper_cost = (), None
+
+    degradations = list(lower_cost.reasons)
+    if any(
+        any(assignment.op == "retsub" for assignment in canonical_assignments(block))
+        for block in lower_block_path
+    ):
+        degradations.append("raw CFG path may pair a return with the wrong caller")
+    return MinimumCost(
+        target,
+        lower_cost,
+        lower_block_path,
+        ctx,
+        tuple(dict.fromkeys(degradations)),
+        upper_block_path or (),
+        upper_cost,
+    )
 
 
 def minimum_cost(
@@ -110,35 +204,17 @@ def minimum_cost(
     """
     cfg = cfg or CFG.of(prog)
     ctx = context_for(prog, context)
-    target_block = _target_block(target)
-    graph = _weighted_cfg(cfg)
-    chosen: Optional[list[BasicBlock]] = None
-    chosen_lower: Optional[int] = None
-    for entry in cfg.entries:
-        try:
-            path = nx.shortest_path(graph, entry, target_block, weight="weight")
-        except (nx.NetworkXNoPath, nx.NodeNotFound):
-            continue
-        lower = sum(block_cost(block).lower for block in path[:-1])
-        lower += _target_block_cost(target).lower
-        if chosen_lower is None or lower < chosen_lower:
-            chosen, chosen_lower = path, lower
-    if chosen is None:
-        return MinimumCost(target, None, (), ctx)
-
-    cost = sum_costs(block_cost(block) for block in chosen[:-1]) + _target_block_cost(target)
-    returns = [block for block in chosen if any(
-        assignment.op == "retsub" for assignment in canonical_assignments(block)
-    )]
-    degradations = list(cost.reasons)
-    if returns:
-        degradations.append("raw CFG path may pair a return with the wrong caller")
-    return MinimumCost(
-        target,
-        cost,
-        tuple(chosen),
-        ctx,
-        tuple(dict.fromkeys(degradations)),
+    model = CostModel(prog, avm_version=ctx.avm_version)
+    from ..cfg.path_predicates import PathPredicateAnalysis
+    pp = PathPredicateAnalysis(prog)
+    _lower_distances, lower_paths = _all_distances(
+        cfg, model, pp, upper=False
+    )
+    _upper_distances, upper_paths = _all_distances(
+        cfg, model, pp, upper=True
+    )
+    return _minimum_cost_from_maps(
+        target, ctx, model, lower_paths, upper_paths
     )
 
 
@@ -151,7 +227,18 @@ def minimum_costs(
     """Minimum cost to every block, sharing a public result shape."""
     cfg = cfg or CFG.of(prog)
     ctx = context_for(prog, context)
+    model = CostModel(prog, avm_version=ctx.avm_version)
+    from ..cfg.path_predicates import PathPredicateAnalysis
+    pp = PathPredicateAnalysis(prog)
+    _lower_distances, lower_paths = _all_distances(
+        cfg, model, pp, upper=False
+    )
+    _upper_distances, upper_paths = _all_distances(
+        cfg, model, pp, upper=True
+    )
     return {
-        block: minimum_cost(prog, block, cfg, context=ctx)
+        block: _minimum_cost_from_maps(
+            block, ctx, model, lower_paths, upper_paths
+        )
         for block in cfg.blocks
     }

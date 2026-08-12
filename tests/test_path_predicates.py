@@ -109,6 +109,35 @@ def test_cyclic_cond_terminates():
     assert any(bc.value is a for bc in preds)
 
 
+def test_contradictory_assert_successor_is_infeasible():
+    prog = SSAProgram.from_text(
+        "#pragma version 10\n"
+        "txn OnCompletion\ndup\nint UpdateApplication\n==\nassert\n"
+        "int UpdateApplication\n!=\nassert\nint 1\nreturn\n",
+        strict=False,
+    )
+    analysis = PathPredicateAnalysis(prog)
+    assertions = [a for a in prog.assignments if a.op == "assert"]
+    second = assertions[1].basic_block
+    assert second is not None and len(second.successors) == 1
+    assert not analysis.edge_is_feasible(second, second.successors[0])
+
+
+def test_field_range_makes_impossible_branch_edge_infeasible():
+    prog = SSAProgram.from_text(
+        "#pragma version 10\n"
+        "txn OnCompletion\nint 10\n>\nbnz impossible\n"
+        "int 1\nreturn\nimpossible:\nint 1\nreturn\n",
+        strict=False,
+    )
+    analysis = PathPredicateAnalysis(prog)
+    branch = next(a for a in prog.assignments if a.op == "bnz").basic_block
+    assert branch is not None
+    impossible = prog.block_containing("contract.teal", 8)
+    assert impossible is not None
+    assert not analysis.edge_is_feasible(branch, impossible)
+
+
 # ---------------------------------------------------------------------------
 # What survives a `callsub` return
 #
