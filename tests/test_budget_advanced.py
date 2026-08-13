@@ -199,3 +199,31 @@ def test_expensive_growing_loop_can_exhaust_budget_before_stack():
     loop = find_budget_exhaustion_candidates(prog)[0].loop
     assert loop.stack_bound is not None
     assert loop.budget_bound < loop.stack_bound
+
+
+def test_constant_capped_loops_are_dropped_on_a_real_contract():
+    """The synthetic cap fixtures above pass with OR without ``_constant_trip_cap``
+    (verified by running them against the pre-fix sources), so they pin nothing on
+    their own: the hand-written shapes never reach the loop-carried-Phi test the
+    helper requires.
+
+    Reti's ValidatorRegistry is the shape the fix was measured on, and it does
+    exercise it — ten candidates before, five after, the dropped five capped at 3
+    to 24 by StaticArray capacities against reported bounds in the thousands. The
+    five that REMAIN are bounded by state values (``curNumPools``,
+    ``maxPoolsPerNodeForThisValidator``), which bound nothing on their own, so this
+    pins both directions at once: the cap drops what it should and keeps what it
+    must."""
+    from pathlib import Path
+
+    contract = (Path(__file__).resolve().parent
+                / "contracts" / "reti-crossfamily-phi" / "approval.teal")
+    if not contract.exists():
+        import pytest
+        pytest.skip("reti fixture not present")
+    prog = SSAProgram(str(contract), strict=False)
+    candidates = find_budget_exhaustion_candidates(prog)
+    assert len(candidates) == 5, (
+        f"budget-exhaustion candidates moved to {len(candidates)} (expected 5). "
+        f"Ten before the constant-cap fix; a rise back toward ten means the cap "
+        f"stopped being credited, a fall means a state-bounded loop was dropped.")
