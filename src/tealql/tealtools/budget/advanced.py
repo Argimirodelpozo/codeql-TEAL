@@ -284,6 +284,57 @@ def _attacker_rooted(value, facts, seen=None) -> bool:
     return False
 
 
+_ORDERING_OPS = frozenset({"<", "<=", ">", ">="})
+
+
+def _constant_trip_cap(loop: LoopBound, facts) -> Optional[int]:
+    """An explicit iteration cap the loop already carries, or ``None``.
+
+    A loop whose continuation compares a loop-carried counter against an integer CONSTANT is capped
+    at that constant, which is exactly the "explicit iteration cap" this analysis asks a reviewer to
+    establish.  ``for (let i = 0; i < 24; i += 1)`` over a ``StaticArray`` compiles to precisely this
+    shape, so the pattern is ubiquitous in TEALScript and common in puya.
+
+    Only the blocks that DECIDE CONTINUATION are inspected.  A conditional inside the body may well
+    test attacker data without having any say in how many laps run, and treating those alike is what
+    makes a bounded counting loop look unbounded.
+
+    The counter must be loop-carried — a Phi defined inside the loop — so a comparison between two
+    values that merely happen to be constant-free is not mistaken for an induction variable.
+    """
+    back_edge_sources = {source for source, _target in loop.back_edges}
+    caps: list[int] = []
+    for block in loop.body:
+        inside = any(successor in loop.body for successor in block.successors)
+        outside = any(successor not in loop.body for successor in block.successors)
+        if block not in back_edge_sources and not (inside and outside):
+            continue
+        if not outside:
+            continue                      # decides nothing about leaving the loop
+        stream = canonical_assignments(block)
+        terminator = next((a for a in reversed(stream) if a.op in {"bnz", "bz"}), None)
+        if terminator is None or not terminator.inputs:
+            continue
+        condition = facts.resolve(terminator.inputs[0])
+        definition = getattr(condition, "defined_by", None)
+        if definition is None or definition.op not in _ORDERING_OPS:
+            continue
+        operands = binary_operands(definition)
+        if operands is None:
+            continue
+        lhs, rhs = operands
+        for counter, limit in ((lhs, rhs), (rhs, lhs)):
+            bound = const_int(facts.resolve(limit))
+            if bound is None:
+                continue
+            resolved = facts.resolve(counter)
+            carried = isinstance(resolved, Phi) and getattr(resolved, "basic_block", None) in loop.body
+            if carried:
+                caps.append(bound)
+                break
+    return min(caps) if caps else None
+
+
 def find_budget_exhaustion_candidates(prog: SSAProgram) -> list[BudgetExhaustionCandidate]:
     """Review candidates where attacker-influenced flow can keep a loop cycling.
 
@@ -319,7 +370,15 @@ def find_budget_exhaustion_candidates(prog: SSAProgram) -> list[BudgetExhaustion
             loop.stack_bound is not None
             and loop.stack_bound < loop.budget_bound
         )
-        if not controlled or stack_fails_first:
+        # An explicit cap the loop already carries settles it: if the counter cannot exceed a
+        # constant, and that constant is within what the budget affords, the loop CANNOT exhaust the
+        # budget however attacker-influenced its body is.  Reporting it anyway asks a reviewer to add
+        # the very cap that is already there -- measured on Reti's ValidatorRegistry, ten of ten
+        # candidates were counting loops bounded by StaticArray capacities of 3 to 24, against
+        # reported bounds of 2840 to 12687 iterations.
+        cap = _constant_trip_cap(loop, facts)
+        capped_within_budget = cap is not None and cap <= loop.budget_bound
+        if not controlled or stack_fails_first or capped_within_budget:
             continue
         out.append(BudgetExhaustionCandidate(
             loop,

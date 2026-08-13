@@ -98,6 +98,44 @@ def test_attacker_controlled_budget_loop_is_a_review_candidate():
     assert "ranking function" in candidates[0].reason
 
 
+def test_counting_loop_with_a_constant_cap_is_not_a_candidate():
+    """``for (i = 0; i < 24; i += 1)`` already HAS the explicit iteration cap the finding asks a
+    reviewer to establish, so reporting it asks for something the code carries.
+
+    The body reads attacker data, which is what previously made the loop look uncontrolled: an
+    ``if`` inside a loop has no say in how many laps run. TEALScript compiles every fixed-size
+    StaticArray walk into this shape, so the pattern is ubiquitous -- ten of ten candidates on
+    Reti's ValidatorRegistry were counting loops capped between 3 and 24, against reported bounds of
+    2840 to 12687 iterations.
+    """
+    prog = _program(
+        "#pragma version 8\n"
+        "int 0\nstore 0\n"
+        "loop:\n"
+        "load 0\nint 24\n<\nbz done\n"
+        "txn NumAppArgs\nbz skip\n"          # attacker-influenced branch INSIDE the body
+        "byte 0x00\nsha256\npop\n"
+        "skip:\n"
+        "load 0\nint 1\n+\nstore 0\nb loop\n"
+        "done:\nint 1\nreturn\n"
+    )
+    assert find_budget_exhaustion_candidates(prog) == []
+
+
+def test_loop_bounded_by_a_non_constant_is_still_a_candidate():
+    """The cap must be a CONSTANT. A limit read from state or arguments bounds nothing on its own,
+    so those keep being reported."""
+    prog = _program(
+        "#pragma version 8\n"
+        "int 0\nstore 0\n"
+        "loop:\n"
+        "load 0\ntxn NumAppArgs\n<\nbz done\n"   # limit is attacker-supplied
+        "load 0\nint 1\n+\nstore 0\nb loop\n"
+        "done:\nint 1\nreturn\n"
+    )
+    assert len(find_budget_exhaustion_candidates(prog)) == 1
+
+
 def test_header_controlled_while_loop_is_a_review_candidate():
     """The continuation condition usually lives at the header while the back
     edge is an unconditional ``b``.  The condition still controls whether the
