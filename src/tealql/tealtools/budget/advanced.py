@@ -285,32 +285,118 @@ def _attacker_rooted(value, facts, seen=None) -> bool:
 
 
 _ORDERING_OPS = frozenset({"<", "<=", ">", ">="})
+_NEGATE_ORDERING = {"<": ">=", "<=": ">", ">": "<=", ">=": "<"}
 
 
-def _constant_trip_cap(loop: LoopBound, facts) -> Optional[int]:
+def _continuation_relation(prog: SSAProgram, loop: LoopBound, block: BasicBlock,
+                           relation: str) -> Optional[str]:
+    """The ordering relation that must hold to stay in ``loop``.
+
+    The comparison result is not necessarily the continuation condition: ``bnz done``
+    continues on the comparison's FALSE arm.  Use the CFG builder's canonical edge
+    polarity rather than recovering labels a second time.
+    """
+    polarities = getattr(prog, "edge_polarity", {})
+
+    def labels(successors) -> set[str]:
+        return {
+            label
+            for successor in successors
+            for label in polarities.get((block._key(), successor._key()), ())
+        }
+
+    inside = labels(successor for successor in block.successors
+                    if successor in loop.body)
+    outside = labels(successor for successor in block.successors
+                     if successor not in loop.body)
+    if inside == {"true"} and outside == {"false"}:
+        return relation
+    if inside == {"false"} and outside == {"true"}:
+        return _NEGATE_ORDERING[relation]
+    return None
+
+
+def _same_induction_value(prog: SSAProgram, value, counter: Phi, facts) -> bool:
+    value = facts.resolve(value)
+    if value == counter:
+        return True
+    # Nested loops materialize an intermediate phi for values they carry through.
+    # Credit it only when the structural phi chain starts at ``counter`` AND its
+    # complete leaf set is identical; mere reachability through a mixed merge is
+    # not an identity proof.
+    return (
+        isinstance(value, Phi)
+        and not value.partial
+        and prog.chain_root(value) == counter
+        and set(value.args) == set(counter.args)
+    )
+
+
+def _positive_induction_step(prog: SSAProgram, value, counter: Phi,
+                             relation: str, facts) -> Optional[int]:
+    """Constant progress made by one back edge, or ``None`` without a proof."""
+    value = facts.resolve(value)
+    definition = getattr(value, "defined_by", None)
+    if definition is None:
+        return None
+    operands = binary_operands(definition)
+    if operands is None:
+        return None
+    lhs, rhs = operands
+
+    if relation in {"<", "<="} and definition.op == "+":
+        pairs = ((lhs, rhs), (rhs, lhs))
+    elif relation in {">", ">="} and definition.op == "-":
+        pairs = ((lhs, rhs),)
+    else:
+        return None
+    for base, step_value in pairs:
+        if not _same_induction_value(prog, base, counter, facts):
+            continue
+        step = const_int(facts.resolve(step_value))
+        if step is not None and step > 0:
+            return step
+    return None
+
+
+def _iterations_to_bound(initial: int, bound: int, step: int, relation: str) -> int:
+    """Maximum successful continuation tests for one monotone induction value."""
+    if relation == "<":
+        return 0 if initial >= bound else (bound - initial + step - 1) // step
+    if relation == "<=":
+        return 0 if initial > bound else (bound - initial) // step + 1
+    if relation == ">":
+        return 0 if initial <= bound else (initial - bound + step - 1) // step
+    return 0 if initial < bound else (initial - bound) // step + 1
+
+
+def _constant_trip_cap(prog: SSAProgram, loop: LoopBound, facts) -> Optional[int]:
     """An explicit iteration cap the loop already carries, or ``None``.
 
-    A loop whose continuation compares a loop-carried counter against an integer CONSTANT is capped
-    at that constant, which is exactly the "explicit iteration cap" this analysis asks a reviewer to
-    establish.  ``for (let i = 0; i < 24; i += 1)`` over a ``StaticArray`` compiles to precisely this
-    shape, so the pattern is ubiquitous in TEALScript and common in puya.
+    Suppression is a proof, so a constant comparison alone is not enough.  The
+    counter must be a reducible-loop header phi; every entry value must be a
+    constant; every back edge must update it by a positive constant in the
+    direction that falsifies the continuation relation.  This recognises the
+    ubiquitous ``for (i = 0; i < 24; i += 1)`` shape without hiding unchanged,
+    backwards-moving, or branch-polarity-inverted loops.
 
     Only the blocks that DECIDE CONTINUATION are inspected.  A conditional inside the body may well
     test attacker data without having any say in how many laps run, and treating those alike is what
     makes a bounded counting loop look unbounded.
-
-    The counter must be loop-carried — a Phi defined inside the loop — so a comparison between two
-    values that merely happen to be constant-free is not mistaken for an induction variable.
     """
-    back_edge_sources = {source for source, _target in loop.back_edges}
+    if loop.kind != "reducible":
+        return None
     caps: list[int] = []
     for block in loop.body:
+        # Every lap enters a reducible loop through its header.  A guard deeper in
+        # the body may be bypassed by another cycle and therefore cannot bound the
+        # region as a whole without a separate dominance proof.
+        if block is not loop.header:
+            continue
         inside = any(successor in loop.body for successor in block.successors)
         outside = any(successor not in loop.body for successor in block.successors)
-        if block not in back_edge_sources and not (inside and outside):
+        if not (inside and outside):
             continue
-        if not outside:
-            continue                      # decides nothing about leaving the loop
         stream = canonical_assignments(block)
         terminator = next((a for a in reversed(stream) if a.op in {"bnz", "bz"}), None)
         if terminator is None or not terminator.inputs:
@@ -323,14 +409,47 @@ def _constant_trip_cap(loop: LoopBound, facts) -> Optional[int]:
         if operands is None:
             continue
         lhs, rhs = operands
-        for counter, limit in ((lhs, rhs), (rhs, lhs)):
+        for counter_value, limit, relation in (
+            (lhs, rhs, definition.op),
+            (rhs, lhs, _FLIP[definition.op]),
+        ):
             bound = const_int(facts.resolve(limit))
             if bound is None:
                 continue
-            resolved = facts.resolve(counter)
-            carried = isinstance(resolved, Phi) and getattr(resolved, "basic_block", None) in loop.body
-            if carried:
-                caps.append(bound)
+            counter = facts.resolve(counter_value)
+            if (not isinstance(counter, Phi) or counter.partial
+                    or counter.basic_block is not loop.header):
+                continue
+            relation = _continuation_relation(prog, loop, block, relation)
+            if relation is None:
+                continue
+
+            initials: list[int] = []
+            steps: list[int] = []
+            complete = True
+            for predecessor in loop.header.predecessors:
+                incoming = predecessor.slot(counter.stack_index)
+                if incoming is None:
+                    complete = False
+                    break
+                if predecessor in loop.body:
+                    step = _positive_induction_step(prog, incoming, counter, relation, facts)
+                    if step is None:
+                        complete = False
+                        break
+                    steps.append(step)
+                else:
+                    initial = const_int(facts.resolve(incoming))
+                    if initial is None:
+                        complete = False
+                        break
+                    initials.append(initial)
+            if complete and initials and steps:
+                slowest_step = min(steps)
+                caps.append(max(
+                    _iterations_to_bound(initial, bound, slowest_step, relation)
+                    for initial in initials
+                ))
                 break
     return min(caps) if caps else None
 
@@ -376,8 +495,10 @@ def find_budget_exhaustion_candidates(prog: SSAProgram) -> list[BudgetExhaustion
         # the very cap that is already there -- measured on Reti's ValidatorRegistry, ten of ten
         # candidates were counting loops bounded by StaticArray capacities of 3 to 24, against
         # reported bounds of 2840 to 12687 iterations.
-        cap = _constant_trip_cap(loop, facts)
-        capped_within_budget = cap is not None and cap <= loop.budget_bound
+        cap = _constant_trip_cap(prog, loop, facts)
+        # Keep one iteration of slack for the final header test that proves the
+        # loop is done; ``budget_bound`` counts complete cycles, not that exit check.
+        capped_within_budget = cap is not None and cap < loop.budget_bound
         if not controlled or stack_fails_first or capped_within_budget:
             continue
         out.append(BudgetExhaustionCandidate(

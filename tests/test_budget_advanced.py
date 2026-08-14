@@ -9,6 +9,8 @@ from tealql.tealtools.budget import (
     find_budget_exhaustion_candidates,
     summarize_methods,
 )
+from tealql.tealtools.budget import advanced as budget_advanced
+from tealql.tealtools.analysis import FactDomain
 from tealql.tealtools.ssa import SSAProgram
 
 
@@ -102,23 +104,85 @@ def test_counting_loop_with_a_constant_cap_is_not_a_candidate():
     """``for (i = 0; i < 24; i += 1)`` already HAS the explicit iteration cap the finding asks a
     reviewer to establish, so reporting it asks for something the code carries.
 
-    The body reads attacker data, which is what previously made the loop look uncontrolled: an
-    ``if`` inside a loop has no say in how many laps run. TEALScript compiles every fixed-size
-    StaticArray walk into this shape, so the pattern is ubiquitous -- ten of ten candidates on
-    Reti's ValidatorRegistry were counting loops capped between 3 and 24, against reported bounds of
-    2840 to 12687 iterations.
+    The attacker decides whether to take each back edge, but the monotone counter independently
+    limits that decision to 24 laps. TEALScript compiles every fixed-size StaticArray walk into this
+    shape, so the pattern is ubiquitous.
     """
     prog = _program(
         "#pragma version 8\n"
-        "int 0\nstore 0\n"
-        "loop:\n"
-        "load 0\nint 24\n<\nbz done\n"
-        "txn NumAppArgs\nbz skip\n"          # attacker-influenced branch INSIDE the body
+        "int 0\n"
+        "loop:\ndup\nint 24\n<\nbz done\n"
         "byte 0x00\nsha256\npop\n"
-        "skip:\n"
-        "load 0\nint 1\n+\nstore 0\nb loop\n"
-        "done:\nint 1\nreturn\n"
+        "int 1\n+\n"
+        "txn NumAppArgs\nbnz loop\n"          # attacker-influenced back edge
+        "done:\npop\nint 1\nreturn\n"
     )
+    assert find_budget_exhaustion_candidates(prog) == []
+
+
+def test_constant_comparison_does_not_hide_an_unchanged_counter():
+    """A constant comparison is not a cap when the back edge makes no progress."""
+    prog = _program(
+        "#pragma version 8\n"
+        "int 0\n"
+        "loop:\ndup\nint 24\n<\nbz done\n"
+        "byte 0x00\nsha256\npop\n"
+        "txn NumAppArgs\nbnz loop\n"
+        "done:\npop\nint 1\nreturn\n"
+    )
+    assert len(find_budget_exhaustion_candidates(prog)) == 1
+
+
+def test_constant_comparison_respects_exit_edge_polarity():
+    """``bnz done`` continues when ``counter < bound`` is false, not true."""
+    prog = _program(
+        "#pragma version 8\n"
+        "int 24\n"
+        "loop:\ndup\nint 24\n<\nbnz done\n"
+        "byte 0x00\nsha256\npop\n"
+        "int 1\n+\ntxn NumAppArgs\nbnz loop\n"
+        "done:\npop\nint 1\nreturn\n"
+    )
+    assert len(find_budget_exhaustion_candidates(prog)) == 1
+
+
+def test_constant_guard_on_a_bypassable_path_does_not_cap_the_loop():
+    """A body-local guard cannot bound laps that take another back-edge path."""
+    prog = _program(
+        "#pragma version 8\n"
+        "int 0\n"
+        "loop:\ntxn NumAppArgs\nbnz loop\n"  # attacker can bypass the guard forever
+        "dup\nint 24\n<\nbz done\n"
+        "int 1\n+\nb loop\n"
+        "done:\npop\nint 1\nreturn\n"
+    )
+    assert len(find_budget_exhaustion_candidates(prog)) == 1
+
+
+def test_inclusive_constant_cap_counts_the_boundary_iteration():
+    prog = _program(
+        "#pragma version 8\n"
+        "int 0\n"
+        "loop:\ndup\nint 24\n<=\nbz done\n"
+        "int 1\n+\ntxn NumAppArgs\nbnz loop\n"
+        "done:\npop\nint 1\nreturn\n"
+    )
+    loop = analyze_loops(prog)[0]
+    facts = prog.facts(FactDomain.CONSTANTS)
+    assert budget_advanced._constant_trip_cap(prog, loop, facts) == 25
+
+
+def test_descending_constant_cap_proves_progress_in_the_other_direction():
+    prog = _program(
+        "#pragma version 8\n"
+        "int 24\n"
+        "loop:\ndup\nint 0\n>\nbz done\n"
+        "int 1\n-\ntxn NumAppArgs\nbnz loop\n"
+        "done:\npop\nint 1\nreturn\n"
+    )
+    loop = analyze_loops(prog)[0]
+    facts = prog.facts(FactDomain.CONSTANTS)
+    assert budget_advanced._constant_trip_cap(prog, loop, facts) == 24
     assert find_budget_exhaustion_candidates(prog) == []
 
 
