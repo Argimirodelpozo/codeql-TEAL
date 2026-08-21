@@ -1738,7 +1738,8 @@ class _Lifter:
                             args, line=a.location.line, origin=a)
         shown = [o for o in a.outputs if isinstance(o, SSAVar)]
         if a.op == "assert" and not shown:
-            ops.append(pre_ir.Assert(args[0] if args else pre_ir.Undefined()))
+            ops.append(pre_ir.Assert(args[0] if args else pre_ir.Undefined(),
+                                     line=a.location.line))
         elif shown:
             ops.append(pre_ir.Assignment([self.reg(o) for o in shown], intr,
                                      comment=self._range_comment(shown)))

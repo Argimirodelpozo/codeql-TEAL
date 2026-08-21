@@ -6,6 +6,7 @@ from tealql.tealtools.budget import (
     BudgetContext,
     analyze_loops,
     analyze_opcode_budget_guards,
+    constant_trip_cap,
     find_budget_exhaustion_candidates,
     summarize_methods,
 )
@@ -170,6 +171,7 @@ def test_inclusive_constant_cap_counts_the_boundary_iteration():
     loop = analyze_loops(prog)[0]
     facts = prog.facts(FactDomain.CONSTANTS)
     assert budget_advanced._constant_trip_cap(prog, loop, facts) == 25
+    assert constant_trip_cap(prog, loop) == 25
 
 
 def test_descending_constant_cap_proves_progress_in_the_other_direction():

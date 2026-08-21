@@ -167,6 +167,7 @@ class Assignment:
 class Assert:
     condition: object  # Value
     message: Optional[str] = None
+    line: int = 0      # source line of the originating TEAL assert (0 = unknown)
 
     def render(self) -> str:
         m = f"  // {self.message}" if self.message else ""

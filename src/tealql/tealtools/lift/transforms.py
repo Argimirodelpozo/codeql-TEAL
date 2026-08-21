@@ -525,7 +525,7 @@ def tail_duplicate_mixed_joins(prog) -> int:
                 elif isinstance(o, pre_ir.IntrinsicOp):
                     ops.append(pre_ir.IntrinsicOp(_clone_vp(o.intrinsic, m)))
                 elif isinstance(o, pre_ir.Assert):
-                    ops.append(pre_ir.Assert(_mapped(o.condition, m), o.message))
+                    ops.append(pre_ir.Assert(_mapped(o.condition, m), o.message, o.line))
             clone = pre_ir.BasicBlock(
                 id=next_id, phis=[], ops=ops,
                 terminator=_clone_terminator(B.terminator, m), comment=B.comment)

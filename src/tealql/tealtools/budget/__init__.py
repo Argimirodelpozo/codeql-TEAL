@@ -29,6 +29,7 @@ from .advanced import (
     MethodBudgetSummary,
     OpcodeBudgetGuard,
     analyze_opcode_budget_guards,
+    constant_trip_cap,
     find_budget_exhaustion_candidates,
     summarize_methods,
 )
@@ -65,6 +66,7 @@ __all__ = [
     "MethodBudgetSummary",
     "OpcodeBudgetGuard",
     "analyze_opcode_budget_guards",
+    "constant_trip_cap",
     "find_budget_exhaustion_candidates",
     "summarize_methods",
 ]

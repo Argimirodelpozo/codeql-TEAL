@@ -230,7 +230,7 @@ class _Translator:
                                      ir_type=PT.uint64 if is_u64 else PT.bytes)
             kw = {} if result_types is None else {"types": result_types}
             return M.Intrinsic(
-                source_location=None, op=AVMOp(s.op),
+                source_location=_sl(s.line), op=AVMOp(s.op),
                 immediates=[self._imm(i) for i in s.immediates],
                 args=[self.val(a) for a in reversed(s.args)],   # top-first -> AVM order
                 **kw)
@@ -245,7 +245,11 @@ class _Translator:
             # Subroutine args are positional (args[i] -> param i), NOT AVM-order
             # like Intrinsic args -- Puya builds them `for param in parameters`.
             return M.InvokeSubroutine(
-                source_location=None, target=self.subs[s.target],
+                source_location=_sl(getattr(getattr(s, "origin", None),
+                                            "location", None).line
+                                    if getattr(getattr(s, "origin", None),
+                                               "location", None) is not None else 0),
+                target=self.subs[s.target],
                 args=[self.val(a) for a in s.args])
         if isinstance(s, pre_ir.ValueTuple):
             return M.ValueTuple(source_location=None,
@@ -266,7 +270,7 @@ class _Translator:
                 if ops and len(ops) == len(tgts):
                     out = []
                     for tgt, operand in zip(tgts, ops):
-                        out.append(M.Assignment(source_location=None, targets=[tgt],
+                        out.append(M.Assignment(source_location=_sl(src.line), targets=[tgt],
                                                 source=_make_const(operand, is_u64)))
                     return out
             targets = [self.reg(t) for t in o.targets]
@@ -275,7 +279,15 @@ class _Translator:
             if isinstance(o.source, pre_ir.Intrinsic) and len(targets) > 1:
                 targets = targets[::-1]
             return M.Assignment(
-                source_location=None, targets=targets,
+                source_location=(
+                    _sl(o.source.line) if isinstance(o.source, pre_ir.Intrinsic)
+                    else _sl(getattr(getattr(o.source, "origin", None),
+                                     "location", None).line)
+                    if isinstance(o.source, pre_ir.InvokeSubroutine)
+                    and getattr(getattr(o.source, "origin", None),
+                                "location", None) is not None
+                    else None),
+                targets=targets,
                 source=self.vp(o.source, [t.ir_type for t in targets]))
         if isinstance(o, pre_ir.IntrinsicOp):
             if isinstance(o.intrinsic, pre_ir.Intrinsic) and o.intrinsic.op in (
@@ -285,7 +297,7 @@ class _Translator:
                 return None
             return self.vp(o.intrinsic)          # side-effecting intrinsic = an Op
         if isinstance(o, pre_ir.Assert):
-            return M.Assert(source_location=None, condition=self.val(o.condition),
+            return M.Assert(source_location=_sl(o.line), condition=self.val(o.condition),
                             message=o.message or "assert", explicit=True)
         raise TypeError(f"op: {type(o).__name__}")
 

@@ -454,6 +454,17 @@ def _constant_trip_cap(prog: SSAProgram, loop: LoopBound, facts) -> Optional[int
     return min(caps) if caps else None
 
 
+def constant_trip_cap(prog: SSAProgram, loop: LoopBound) -> Optional[int]:
+    """Return a proof-backed semantic trip cap for ``loop``, when one is present.
+
+    Unlike :attr:`LoopBound.max_iterations`, this is not the number of laps the available
+    opcode budget can fund.  It recognizes a counter/constant guard already in the program
+    and proves that every back edge advances that counter toward termination.  Consumers
+    may therefore use it as an independent bound when computing a worst-case program cost.
+    """
+    return _constant_trip_cap(prog, loop, prog.facts(FactDomain.CONSTANTS))
+
+
 def find_budget_exhaustion_candidates(prog: SSAProgram) -> list[BudgetExhaustionCandidate]:
     """Review candidates where attacker-influenced flow can keep a loop cycling.
 
