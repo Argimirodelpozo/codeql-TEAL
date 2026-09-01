@@ -100,7 +100,11 @@ def _table(scores: dict[str, Score]) -> str:
 # is the union of the former SSA/IR fixtures, so this ratchet measures the chosen
 # implementation rather than scoring two implementations of the same policy.
 _BASELINE: dict[str, tuple[int, int, int, int]] = {
-    "abi-method-selector": (1, 0, 0, 3),
+    # +1 TN (2026-09-01): match-dispatch on a scratch-round-tripped selector.
+    # The predicate layer already resolves the round-trip for match keys, so
+    # this pins the safe shape; the detector's own matcher now also resolves
+    # through copies defensively (the documented `_value_flow` contract).
+    "abi-method-selector": (1, 0, 0, 4),
     # +1 TP (2026-07-26): the `||`-bypass. See the rekey-to entry below — the
     # same exploitable hole existed in every detector on this enforcement path.
     "asset-close-to": (4, 0, 0, 4),
@@ -174,7 +178,11 @@ _BASELINE: dict[str, tuple[int, int, int, int]] = {
     # TNs are the shapes the fix must NOT break: a disjunction whose every arm
     # pins the field (a real pin), and the same guard composed with `&&` (which
     # genuinely does force each conjunct).
-    "rekey-to": (6, 0, 0, 10),
+    # +1 TP (2026-09-01): a self-loop ENTRY (top-level retry loop). The entry
+    # walk keyed on "no predecessors" saturated — every exit read protected
+    # with an EMPTY gate set — silencing the whole field family on exactly the
+    # hostile shape. Entries now come from `prog.entry_blocks()`.
+    "rekey-to": (7, 0, 0, 10),
     # +2 TN (2026-07-25): the Update-action half of the OnCompletion
     # scratch/phi guard fix — verified clean, now pinned.
     "timelock-upgrade": (1, 0, 0, 3),
@@ -238,7 +246,15 @@ _BASELINE: dict[str, tuple[int, int, int, int]] = {
     # to the app being created in that same transaction, which the caller made
     # and already controls. Holds regardless of what the protocol's
     # well-formedness rules permit, so it needed no ruling from a node.
-    "unprotected-updatable": (2, 0, 0, 7),
+    # +2 TP / +2 TN (2026-09-01): the entry-detection and guard-spelling
+    # cluster. TPs: a single-block always-approve program (the exit IS the
+    # entry, so the creator walk fell through to "covered") and a self-loop
+    # entry. TNs: the creation dispatch spelled `txn ApplicationID; bz create`
+    # (kind "zero" — the commoner spelling, missed by the kind-"eq"-only
+    # check, a mainnet-scale FP) and the creator guard spelled `!=; bnz
+    # reject` (the surviving path carries equality; same defect class as the
+    # fixed disequality-as-input-check).
+    "unprotected-updatable": (4, 0, 0, 9),
     "unsafe-division-order": (3, 0, 0, 3),
     "unsafe-lsig-args": (1, 0, 0, 1),
     # 7th vuln case: a validator sub whose 0-return the caller DISCARDS. It

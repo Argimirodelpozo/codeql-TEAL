@@ -1,0 +1,14 @@
+#pragma version 11
+// SAFE: match-dispatch on the selector AFTER a scratch round-trip. There is no
+// assert/reject enforcement — protection is the dispatch edge itself — and the
+// edge predicate lands on the `load` output, so a matcher reading `cond.value`
+// raw (without resolve_through_copies) loses the pin and flags every handler.
+txna ApplicationArgs 0
+store 0
+pushbytes 0x11223344
+load 0
+match handler_a
+err
+handler_a:
+int 1
+return

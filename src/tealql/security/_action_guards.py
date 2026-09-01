@@ -88,18 +88,30 @@ def _guard_operand(prog: Optional[SSAProgram], value):
     return resolve_through_copies(prog, value)
 
 
+def _sender_trusted_cmp(
+    cmp: Assignment, prog: Optional[SSAProgram] = None,
+) -> Optional[str]:
+    """``cmp.op`` (``"=="`` or ``"!="``) when ``cmp`` compares ``txn Sender``
+    against a :func:`_is_trusted_address`, else ``None``.
+
+    Both spellings occur in the wild — ``==; assert`` and ``!=; bnz reject`` —
+    and each is a guard only under the right POLARITY, so the caller must see
+    which op it got rather than a collapsed boolean."""
+    if cmp.op not in ("==", "!=") or len(cmp.inputs) != 2:
+        return None
+    a0, a1 = (_guard_operand(prog, value) for value in cmp.inputs)
+    if ((_is_txn_field_var(a0, "Sender") and _is_trusted_address(prog, a1))
+            or (_is_txn_field_var(a1, "Sender")
+                and _is_trusted_address(prog, a0))):
+        return cmp.op
+    return None
+
+
 def _is_sender_eq_creator(
     cmp: Assignment, prog: Optional[SSAProgram] = None,
 ) -> bool:
     """``cmp`` pins ``txn Sender`` to any :func:`_is_trusted_address`, not just creator."""
-    if cmp.op != "==" or len(cmp.inputs) != 2:
-        return False
-    a0, a1 = (_guard_operand(prog, value) for value in cmp.inputs)
-    return (
-        (_is_txn_field_var(a0, "Sender") and _is_trusted_address(prog, a1))
-        or
-        (_is_txn_field_var(a1, "Sender") and _is_trusted_address(prog, a0))
-    )
+    return _sender_trusted_cmp(cmp, prog) == "=="
 
 
 
@@ -109,16 +121,19 @@ def sender_creator_guard_dominates(
     pp: PathPredicateAnalysis,
     bb: BasicBlock,
 ) -> bool:
-    """``bb`` is reached only along paths where a sender/trusted-address ``==`` was
-    checked truthy, i.e. its entry predicates carry ``(V, "nonzero")`` for that ``V``."""
+    """``bb`` is reached only along paths where a sender/trusted-address check
+    held: a ``==`` checked TRUTHY (``(V, "nonzero")``), or a ``!=`` checked
+    FALSY (``(V, "zero")`` — the disequality failing IS equality holding)."""
     for cond in pp.predicates_at(bb.file, bb.first_line):
-        if cond.kind != "nonzero":
+        if cond.kind not in ("nonzero", "zero"):
             continue
         # See through a scratch round-trip / value-preserving phi to the real cmp.
         v = resolve_through_copies(prog, cond.value)
         if not isinstance(v, SSAVar) or v.defined_by is None:
             continue
-        if _is_sender_eq_creator(v.defined_by, prog):
+        op = _sender_trusted_cmp(v.defined_by, prog)
+        if (op == "==" and cond.kind == "nonzero") or (
+                op == "!=" and cond.kind == "zero"):
             return True
     return False
 
@@ -128,7 +143,7 @@ def _creator_enforcing_bbs(prog: SSAProgram) -> set:
 
     HAZARD: path predicates describe a block's ENTRY state, so the block PERFORMING
     the check never satisfies :func:`sender_creator_guard_dominates` about itself."""
-    from ._enforcement import _label_to_bb_first_line, branch_gates_rejection
+    from ._enforcement import _label_to_bb_first_line, branch_reject_polarity
     label_lines = _label_to_bb_first_line(prog)
     out: set = set()
     for a in prog.assignments:
@@ -139,10 +154,25 @@ def _creator_enforcing_bbs(prog: SSAProgram) -> set:
         v = resolve_through_copies(prog, a.inputs[0])
         if not isinstance(v, SSAVar) or v.defined_by is None:
             continue
-        if not _is_sender_eq_creator(v.defined_by, prog):
+        op = _sender_trusted_cmp(v.defined_by, prog)
+        if op is None:
             continue
-        if a.op == "assert" or branch_gates_rejection(prog, a, label_lines):
-            out.add(a.basic_block)
+        if op == "==":
+            # `assert` demands the equality; a branch enforces it when EITHER
+            # side rejecting leaves only the equality-holding path alive.
+            if a.op == "assert":
+                out.add(a.basic_block)
+                continue
+            rejects_false, _ = branch_reject_polarity(prog, a, label_lines)
+            if rejects_false:
+                out.add(a.basic_block)
+            continue
+        # `!=`: ONLY a rejection on TRUE proves equality on the surviving path.
+        # `assert` (demanding disequality) and reject-on-FALSE are ANTI-guards.
+        if a.op in ("bnz", "bz"):
+            _, rejects_true = branch_reject_polarity(prog, a, label_lines)
+            if rejects_true:
+                out.add(a.basic_block)
     return out
 
 
@@ -183,27 +213,17 @@ def sender_creator_guard_covers_action(
             return False
         return predicates_exclude_action(prog, conds, action_int)
 
-    if _closed(exit_bb):
-        return True
-    # Backward over EDGES: an edge is closed when its predecessor is guarded /
-    # action-excluded, or the edge itself excludes the action.
-    visited: set = set()
-    stack: list = [exit_bb]
-    seen_blocks: set = {exit_bb}
-    while stack:
-        bb = stack.pop()
-        for pred in bb.predecessors:
-            if (id(pred), id(bb)) in visited:
-                continue
-            visited.add((id(pred), id(bb)))
-            if _edge_excludes_action(pred, bb) or _closed(pred):
-                continue
-            if not pred.predecessors:
-                return False        # an entry reached with neither -> unguarded
-            if pred not in seen_blocks:
-                seen_blocks.add(pred)
-                stack.append(pred)
-    return True
+    # Backward over EDGES via the shared walk: an edge is closed when its
+    # predecessor is guarded / action-excluded, or the edge itself excludes the
+    # action. Entry detection is the walk's — a one-block always-approve
+    # program (the exit IS the entry) and a self-loop entry are both UNGUARDED,
+    # which the old predecessor-based spelling silently credited as covered.
+    from ._program_shape import unguarded_entry_path_exists
+    return not unguarded_entry_path_exists(
+        prog, exit_bb,
+        block_closed=_closed,
+        edge_closed=_edge_excludes_action,
+    )
 
 
 
@@ -261,12 +281,20 @@ def _is_app_creation_path(prog: SSAProgram, conds) -> bool:
     Deliberate FP suppression: a create handler does not inspect ``OnCompletion``,
     so its approving exit IS control-flow-reachable with Update/Delete, but the
     action then applies to the brand-new app the caller is creating and already
-    controls. The deployed app is never touched."""
+    controls. The deployed app is never touched.
+
+    BOTH spellings must be recognised: the comparison form (``int 0; ==; bnz``,
+    predicate kind ``eq``) and the direct truthiness branch (``bz create`` /
+    ``!; bnz create``, kind ``zero``) — the branch form is the COMMONER one in
+    deployed contracts, and missing it flagged fully creator-guarded routers
+    as updatable by anyone."""
     for cond in conds:
-        if cond.kind != "eq" or not cond.args:
-            continue
         v = resolve_through_copies(prog, cond.value)
-        if _is_txn_field_var(v, "ApplicationID") and const_int(cond.args[0]) == 0:
+        if not _is_txn_field_var(v, "ApplicationID"):
+            continue
+        if cond.kind == "zero":
+            return True
+        if cond.kind == "eq" and cond.args and const_int(cond.args[0]) == 0:
             return True
     return False
 

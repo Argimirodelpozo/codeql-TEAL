@@ -1,0 +1,25 @@
+#pragma version 10
+// SAFE: the creator guard spelled as a DISEQUALITY rejection —
+// `txn Sender; global CreatorAddress; !=; bnz reject` — the surviving path
+// carries Sender == CreatorAddress exactly as the ==/assert spelling does.
+txn ApplicationID
+int 0
+==
+bnz create
+txn OnCompletion
+int UpdateApplication
+==
+bz done
+txn Sender
+global CreatorAddress
+!=
+bnz reject
+done:
+int 1
+return
+create:
+int 1
+return
+reject:
+int 0
+return

@@ -1,0 +1,11 @@
+#pragma version 8
+// VULN: RekeyTo is read and DROPPED — no enforcement anywhere — but the entry
+// block is a branch target, so a "no predecessors = entry" walk saturates and
+// silences the finding.
+main:
+txn RekeyTo
+pop
+txn Fee
+bnz main
+int 1
+return

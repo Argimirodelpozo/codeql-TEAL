@@ -1,0 +1,21 @@
+#pragma version 10
+// SAFE: same creation dispatch as create_path_shared_router.teal, but spelled
+// as the DIRECT branch `txn ApplicationID; bz create` (predicate kind "zero")
+// rather than `int 0; ==; bnz` (kind "eq"). The branch spelling is the
+// commoner one in deployed contracts; the update path is creator-guarded.
+txn ApplicationID
+bz create
+txn OnCompletion
+int UpdateApplication
+==
+bz done
+txn Sender
+global CreatorAddress
+==
+assert
+done:
+int 1
+return
+create:
+int 1
+return

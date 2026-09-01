@@ -9,10 +9,10 @@ does not count.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Optional
 
-from tealql.tealtools.ssa import BasicBlock, SSAProgram
+from tealql.tealtools.ssa import SSAProgram
+from tealql.security._approval_exit import _ApprovalExitViolation
 from tealql.security._field_protection import approval_exit_protected_for_global_field
 from tealql.security._program_shape import approving_exits, file_match
 
@@ -28,29 +28,8 @@ def _uses_absolute_group_index(prog: SSAProgram, file: Optional[str]) -> bool:
     )
 
 
-@dataclass
-class GroupSizeCheckViolation:
-    exit_bb: BasicBlock
-
-    @property
-    def file(self) -> str:
-        return self.exit_bb.file
-
-    @property
-    def line(self) -> int:
-        # Must mirror pretty(): the exit's LAST line.
-        return self.exit_bb.last_line
-
-    def pretty(self) -> str:
-        line = self.exit_bb.last_line
-        return (
-            f"Approval exit at {self.exit_bb.file}:{line} "
-            "is reachable without a global GroupSize check — "
-            "attackers can pad the group with extra transactions."
-        )
-
-    def __repr__(self) -> str:
-        return f"GroupSizeCheckViolation({self.pretty()})"
+class GroupSizeCheckViolation(_ApprovalExitViolation):
+    message = ('is reachable without a global GroupSize check — attackers can pad the group with extra transactions.')
 
 
 class GroupSizeCheckDetector:

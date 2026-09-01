@@ -10,11 +10,11 @@ fall-through ``err`` rejects an unknown one.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Optional
 
 from tealql.tealtools.cfg.path_predicates import PathPredicateAnalysis
 from tealql.tealtools.ssa import BasicBlock, SSAProgram, SSAVar, operand_const
+from tealql.security._approval_exit import _ApprovalExitViolation
 from tealql.security._field_protection import approval_exit_protected_for_arg_reads
 from tealql.security._program_shape import _txna_reads, approving_exits
 from tealql.security._value_flow import cached_path_predicates
@@ -22,29 +22,8 @@ from tealql.security._value_flow import cached_path_predicates
 _SELECTOR = "ApplicationArgs 0"
 
 
-@dataclass
-class AbiMethodSelectorViolation:
-    exit_bb: BasicBlock
-
-    @property
-    def file(self) -> str:
-        return self.exit_bb.file
-
-    @property
-    def line(self) -> int:
-        # Must mirror pretty(): the exit's LAST line.
-        return self.exit_bb.last_line
-
-    def pretty(self) -> str:
-        line = self.exit_bb.last_line
-        return (
-            f"Approval exit at {self.exit_bb.file}:{line} "
-            "is reachable without validating the ABI method selector "
-            "(txna ApplicationArgs 0) — unrecognised methods are not rejected."
-        )
-
-    def __repr__(self) -> str:
-        return f"AbiMethodSelectorViolation({self.pretty()})"
+class AbiMethodSelectorViolation(_ApprovalExitViolation):
+    message = ('is reachable without validating the ABI method selector (txna ApplicationArgs 0) — unrecognised methods are not rejected.')
 
 
 class AbiMethodSelectorDetector:
@@ -75,8 +54,12 @@ class AbiMethodSelectorDetector:
     def _selector_matched_at_exit(self, exit_bb: BasicBlock) -> bool:
         """The path predicate at ``exit_bb`` pins the selector to a constant, so the
         exit is reachable only with a matched selector, not an arbitrary one."""
+        from .._value_flow import resolve_through_copies
         for cond in self.pp.predicates_at(exit_bb.file, exit_bb.first_line):
-            v = cond.value
+            # See through a scratch round-trip / value-preserving phi — a
+            # predicate recorded on a `load` output hides every guard behind
+            # one (the documented consumer contract in `_value_flow`).
+            v = resolve_through_copies(self.prog, cond.value)
             # match / switch target edge: (selector, "eq", (K,))
             if (cond.kind == "eq" and v in self._selector_vars
                     and cond.args and operand_const(cond.args[0]) is not None):
@@ -86,7 +69,8 @@ class AbiMethodSelectorDetector:
             if cond.kind == "nonzero" and isinstance(v, SSAVar) \
                     and v.defined_by is not None and v.defined_by.op == "==" \
                     and len(v.defined_by.inputs) == 2:
-                x, y = v.defined_by.inputs
+                x, y = (resolve_through_copies(self.prog, i)
+                        for i in v.defined_by.inputs)
                 if (x in self._selector_vars and operand_const(y) is not None) or \
                    (y in self._selector_vars and operand_const(x) is not None):
                     return True

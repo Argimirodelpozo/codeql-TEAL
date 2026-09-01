@@ -3,34 +3,12 @@ ENFORCED comparison of ``txn Fee`` — an attacker drains the account via the fe
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
 
-from tealql.tealtools.ssa import BasicBlock
-from tealql.security._approval_exit import _ApprovalExitProtectedDetector
+from tealql.security._approval_exit import _ApprovalExitViolation, _ApprovalExitProtectedDetector
 
 
-@dataclass
-class FeeValidationViolation:
-    exit_bb: BasicBlock
-
-    @property
-    def file(self) -> str:
-        return self.exit_bb.file
-
-    @property
-    def line(self) -> int:
-        # Must mirror pretty(): the exit's LAST line.
-        return self.exit_bb.last_line
-
-    def pretty(self) -> str:
-        line = self.exit_bb.last_line
-        return (
-            f"Approval exit at {self.exit_bb.file}:{line} "
-            "is reachable without a txn Fee check — an attacker can drain the account."
-        )
-
-    def __repr__(self) -> str:
-        return f"FeeValidationViolation({self.pretty()})"
+class FeeValidationViolation(_ApprovalExitViolation):
+    message = ('is reachable without a txn Fee check — an attacker can drain the account.')
 
 
 class FeeValidationDetector(_ApprovalExitProtectedDetector):

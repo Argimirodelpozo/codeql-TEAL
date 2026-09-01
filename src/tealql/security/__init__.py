@@ -1,7 +1,7 @@
 """Algorand-security-guide detection registry.
 
-Detector classes live at ``detections/<kebab>/<snake>.py`` so each detection
-directory is self-contained (detector, ``.teal`` fixtures, ``.expected`` output).
+Detector classes live at ``detections/<kebab>/<snake>.py``, one directory per
+detection; their ``.teal`` fixtures live in ``tests/benchmark/<kebab>/``.
 :data:`DETECTORS` is populated by AUTO-DISCOVERY: each name in
 :data:`_DETECTION_ORDER` is importlib-loaded and scanned for the one public
 ``*Detector`` class it DEFINES (re-exports have a different ``__module__``) plus

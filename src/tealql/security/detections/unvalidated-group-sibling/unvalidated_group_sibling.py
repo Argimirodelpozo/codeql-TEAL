@@ -274,7 +274,7 @@ class UnvalidatedGroupSiblingDetector:
                           key=lambda b: (b.file, b.first_line)):
             if rbb in gates:
                 continue                     # pin enforced in the read's own block
-            if gates and _all_entry_paths_cross(rbb, gates):
+            if gates and _all_entry_paths_cross(self.prog, rbb, gates):
                 continue                     # every way to reach the read is gated
             hit = self._gate_free_exit(rbb, gates, exits)
             if hit is None:

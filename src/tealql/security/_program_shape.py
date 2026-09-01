@@ -55,6 +55,55 @@ def approving_exits(
 
 
 
+def unguarded_entry_path_exists(
+    prog: SSAProgram,
+    exit_bb: BasicBlock,
+    *,
+    block_closed,
+    edge_closed=None,
+) -> bool:
+    """Some path from a PROGRAM ENTRY reaches ``exit_bb`` crossing no closed
+    block (and, when ``edge_closed`` is given, no closed edge).
+
+    THE shared backward must-cross walk — every "is this exit protected" family
+    delegates here rather than re-rolling the traversal.
+
+    HAZARD: entries come from ``prog.entry_blocks()``, never from "has no
+    predecessors". TEAL's entry is the FIRST block, and both mis-derivations of
+    that fact have shipped guard bugs: a self-loop entry (``main: … bnz main``)
+    gives every block a predecessor, so the pred-free spelling saturates and
+    reads every exit as protected with an EMPTY gate set; and an exit that IS
+    the entry (a one-block always-approve program) has no predecessors at all,
+    so a walk that only tests predecessors never runs and falls through to its
+    default. A predecessor-less NON-first block, by contrast, is dead code — a
+    "path" through it is not a real execution and does not witness anything."""
+    if block_closed(exit_bb):
+        return False
+    entry_ids = {id(b) for b in prog.entry_blocks() if b.file == exit_bb.file}
+    if id(exit_bb) in entry_ids:
+        return True                # the exit IS the entry: a zero-length path
+    visited_edges: set = set()
+    stack: list = [exit_bb]
+    seen = {id(exit_bb)}
+    while stack:
+        bb = stack.pop()
+        for pred in bb.predecessors:
+            k = (id(pred), id(bb))
+            if k in visited_edges:
+                continue
+            visited_edges.add(k)
+            if edge_closed is not None and edge_closed(pred, bb):
+                continue
+            if block_closed(pred):
+                continue
+            if id(pred) in entry_ids:
+                return True
+            if id(pred) not in seen:
+                seen.add(id(pred))
+                stack.append(pred)
+    return False
+
+
 def txn_field_reads(
     prog: SSAProgram, field: str, *, file: Optional[str] = None,
 ) -> list[Assignment]:

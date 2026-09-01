@@ -249,3 +249,24 @@ class TestPrecise:
         prog._ir_lifter = None                       # force the no-lift path
         q = TQ(prog)
         assert q.tainted_sinks(precise=True) == q.tainted_sinks()
+
+
+class TestDegradedVerify:
+    def test_degraded_lifted_detector_leaves_sinks_unverified(
+            self, tmp_path, monkeypatch):
+        """A failed lift makes `_lifted_taint_sink.detect()` return [] and set
+        `.degraded` WITHOUT raising. `verify_sinks` counted that as "ran
+        clean", flipping every taint-reachable fund-flow sink to GUARDED — the
+        exact wrong verdict the module header forbids. Degraded == crashed:
+        the sinks stay UNVERIFIED (control: the same program reads CONFIRMED
+        with a healthy lift, pinned by test_unguarded_is_confirmed)."""
+        import tealql.tealtools.lift as lift_layer
+        from tealql.security.sink_verdict import verify_sinks
+        (tmp_path / "p.teal").write_text(_TEAL)
+        prog = SSAProgram(str(tmp_path / "p.teal"))
+        monkeypatch.setattr(lift_layer, "build_lifter", lambda *a, **k: None)
+        vs = verify_sinks(prog)
+        fund = [v for v in vs if v.sink.category.startswith("inner-payment")]
+        assert fund, "the taint layer must still report the reachable sink"
+        assert all(v.verdict == "UNVERIFIED" for v in fund), (
+            [(v.sink.category, v.verdict) for v in fund])

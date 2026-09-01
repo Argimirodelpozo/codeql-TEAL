@@ -125,30 +125,66 @@ def _disjunction_is_enforcing(prog: SSAProgram, disj, arrived_from,
         _disjunct_constrains_field(prog, o, field_vars) for o in others)
 
 
-def _acted_on(prog: SSAProgram, var, depth: int = 0) -> bool:
-    """Does ``var`` reach an ``assert``, or a branch whose reject side is a REAL
-    program exit? Walks op uses AND phi membership.
+def _acted_on(prog: SSAProgram, var, depth: int = 0, truthy: bool = False) -> bool:
+    """Does the callee's returned ZERO in ``var`` reject one frame up — reach an
+    ``assert`` while still falsy, or a branch whose side taken ON THIS VALUE is
+    a real rejection exit? Walks op uses AND phi membership.
 
     HAZARD: phi consumers are NOT in ``var.uses`` (that holds op uses only), and
     the caller sees a callee's return value precisely AS a phi over the callee's
     ``retsub`` arms — so skipping phis misses every case this exists for.
 
+    HAZARD: POLARITY. On this arm the value is exactly 0 (``truthy=False``) or,
+    after ``!`` / a const comparison, exactly 1 — so `callsub check; bnz reject`
+    (rejects on NONZERO, approves on the callee's 0) must NOT credit the 0 as a
+    rejection, and ``!; assert`` PASSES on the 0. A value laundered through any
+    other op has unknown truth and credits nothing.
+
     Deliberately calls ``is_rejection_exit`` and never ``_rejects``: recursing
     back through the callee-return credit would not terminate."""
     if depth > 6:
         return False
+    label_lines = None
     for use in getattr(var, "uses", ()):
         if use.op == "assert":
-            return True
+            if not truthy:                     # assert 0 fails -> rejects
+                return True
+            continue
         if use.op in ("bnz", "bz"):
             bb = use.basic_block
-            if bb is not None and any(is_rejection_exit(s) for s in bb.successors):
+            if bb is None:
+                continue
+            if label_lines is None:
+                label_lines = _label_to_bb_first_line(prog)
+            target = None
+            target_line = label_lines.get(
+                (use.location.file, use.immediates.strip()))
+            if target_line is not None:
+                target = _bb_at(prog, use.location.file, target_line)
+            taken = (target if (use.op == "bnz") == truthy
+                     else _fall_through_bb(prog, bb))
+            if taken is not None and is_rejection_exit(taken):
                 return True
-        for o in use.outputs:
-            if _acted_on(prog, o, depth + 1):
+            continue
+        if use.op == "!":
+            if any(_acted_on(prog, o, depth + 1, not truthy)
+                   for o in use.outputs):
                 return True
+            continue
+        if use.op in ("==", "!=") and len(use.inputs) == 2:
+            other = use.inputs[1] if use.inputs[0] is var else use.inputs[0]
+            k = const_int(other)
+            if k is not None:
+                cur = 1 if truthy else 0
+                res = (cur == k) if use.op == "==" else (cur != k)
+                if any(_acted_on(prog, o, depth + 1, res)
+                       for o in use.outputs):
+                    return True
+            continue
+        # Laundered through an arbitrary op: truth unknown, credit nothing.
     for ph in prog.phis.values():
-        if any(a is var for a in ph.args) and _acted_on(prog, ph, depth + 1):
+        if any(a is var for a in ph.args) and _acted_on(
+                prog, ph, depth + 1, truthy):
             return True
     return False
 
@@ -190,9 +226,29 @@ def branch_gates_rejection(
     ``==`` whose FALSE side approves pins the field AWAY from the compared value,
     which is the inverted-check antipattern, not a guard. Compound ``&&``/``||``
     on the true-rejects side stay uncredited (over-report, never under-report)."""
+    rejects_when_false, rejects_when_true = branch_reject_polarity(
+        prog, branch, label_lines)
+    if rejects_when_false:
+        return True
+    if rejects_when_true and branch.inputs:
+        cond = branch.inputs[0]
+        d = getattr(cond, "defined_by", None)
+        return d is not None and d.op in _NEGATED_COND_OPS
+    return False
+
+
+def branch_reject_polarity(
+    prog: SSAProgram, branch, label_lines: dict[tuple[str, str], int],
+) -> tuple[bool, bool]:
+    """``(rejects_when_false, rejects_when_true)`` for a ``bnz``/``bz``.
+
+    The polarity pair is what guard reasoning actually needs: a ``!=``-spelled
+    comparison is a guard only when the TRUE side rejects (the surviving path
+    then carries equality), and :func:`branch_gates_rejection`'s single boolean
+    cannot distinguish that from the rejects-on-FALSE anti-guard."""
     bb = getattr(branch, "basic_block", None)
     if bb is None:
-        return False
+        return False, False
     target = None
     target_line = label_lines.get((branch.location.file, branch.immediates.strip()))
     if target_line is not None:
@@ -202,17 +258,9 @@ def branch_gates_rejection(
     ft_rejects = _rejects(prog, fall_through)
 
     if branch.op == "bnz":       # taken on TRUE, falls through on FALSE
-        rejects_when_false, rejects_when_true = ft_rejects, target_rejects
-    else:                        # bz: taken on FALSE, falls through on TRUE
-        rejects_when_false, rejects_when_true = target_rejects, ft_rejects
-
-    if rejects_when_false:
-        return True
-    if rejects_when_true and branch.inputs:
-        cond = branch.inputs[0]
-        d = getattr(cond, "defined_by", None)
-        return d is not None and d.op in _NEGATED_COND_OPS
-    return False
+        return ft_rejects, target_rejects
+    # bz: taken on FALSE, falls through on TRUE
+    return target_rejects, ft_rejects
 
 
 
@@ -243,9 +291,12 @@ def def_forward_reaches_enforcement(
     if scratch_fwd is None:
         scratch_fwd = scratch_forward_map(prog)
     for fwd in scratch_fwd.get(var, ()):        # survive a store/load round-trip
+        # `field_vars` must survive the round-trip too — dropping it made a
+        # `||` after a scratch bridge non-enforcing while the collecting twin
+        # (`_collect_field_enforcement_bbs`) kept it: same walk, two verdicts.
         if def_forward_reaches_enforcement(
                 prog, fwd, label_lines=label_lines, seen=seen,
-                scratch_fwd=scratch_fwd):
+                scratch_fwd=scratch_fwd, field_vars=field_vars):
             return True
     for cons in var.uses:
         if cons.op == "assert":

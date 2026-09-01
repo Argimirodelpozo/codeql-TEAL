@@ -93,10 +93,16 @@ def verify_sinks(prog: SSAProgram, *, file: Optional[str] = None,
         if cls is None:
             continue
         try:
-            lines = {ln for v in cls(prog, file=file).detect()
+            inst = cls(prog, file=file)
+            lines = {ln for v in inst.detect()
                      if (ln := violation_line(v)) is not None}
         except Exception:
             continue                       # detector crash -> its sinks stay UNVERIFIED
+        if getattr(inst, "degraded", None):
+            # A degraded detector (lift failed) returned [] WITHOUT raising —
+            # counting that as "ran clean" flips every sink it covers to
+            # GUARDED. Its sinks stay UNVERIFIED, same as a crash.
+            continue
         flagged[det] = lines
 
     out: list[SinkVerdict] = []

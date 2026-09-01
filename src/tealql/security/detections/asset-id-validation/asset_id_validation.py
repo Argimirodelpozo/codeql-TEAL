@@ -4,11 +4,10 @@ so an attacker substitutes a worthless token for the intended asset.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Optional
 
-from tealql.tealtools.ssa import BasicBlock, SSAProgram
-from tealql.security._approval_exit import _ApprovalExitProtectedDetector
+from tealql.tealtools.ssa import SSAProgram
+from tealql.security._approval_exit import _ApprovalExitViolation, _ApprovalExitProtectedDetector
 from tealql.security._program_shape import gtxn_field_reads, txn_field_reads
 from tealql.tealtools.language.avm import ASSET_TRANSFER_FIELDS as _ASSET_TRANSFER_FIELDS
 
@@ -24,29 +23,8 @@ def _handles_asset_transfer(
     return False
 
 
-@dataclass
-class AssetIdValidationViolation:
-    exit_bb: BasicBlock
-
-    @property
-    def file(self) -> str:
-        return self.exit_bb.file
-
-    @property
-    def line(self) -> int:
-        # Must mirror pretty(): the exit's LAST line.
-        return self.exit_bb.last_line
-
-    def pretty(self) -> str:
-        line = self.exit_bb.last_line
-        return (
-            f"Approval exit at {self.exit_bb.file}:{line} "
-            "handles asset transfers but is reachable without an XferAsset check "
-            "— attackers can substitute worthless tokens for the intended asset."
-        )
-
-    def __repr__(self) -> str:
-        return f"AssetIdValidationViolation({self.pretty()})"
+class AssetIdValidationViolation(_ApprovalExitViolation):
+    message = ('handles asset transfers but is reachable without an XferAsset check — attackers can substitute worthless tokens for the intended asset.')
 
 
 class AssetIdValidationDetector(_ApprovalExitProtectedDetector):

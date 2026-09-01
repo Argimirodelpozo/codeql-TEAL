@@ -1,0 +1,10 @@
+#pragma version 8
+// VULN: the ENTRY block is a branch target (top-level retry loop), so every
+// block has a predecessor. An entry walk keyed on "no predecessors" saturates
+// and reads the unguarded approving exit as creator-covered.
+main:
+byte "k"
+app_global_get
+bnz main
+int 1
+return

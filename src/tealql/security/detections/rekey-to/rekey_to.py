@@ -4,34 +4,12 @@ partially-guarded contract reports each gap.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
 
-from tealql.tealtools.ssa import BasicBlock
-from tealql.security._approval_exit import _ApprovalExitProtectedDetector
+from tealql.security._approval_exit import _ApprovalExitViolation, _ApprovalExitProtectedDetector
 
 
-@dataclass
-class RekeyToViolation:
-    exit_bb: BasicBlock
-
-    @property
-    def file(self) -> str:
-        return self.exit_bb.file
-
-    @property
-    def line(self) -> int:
-        # Must mirror pretty(): the exit's LAST line.
-        return self.exit_bb.last_line
-
-    def pretty(self) -> str:
-        line = self.exit_bb.last_line
-        return (
-            f"Approval exit at {self.exit_bb.file}:{line} "
-            "is reachable without a RekeyTo check — an attacker can rekey the account."
-        )
-
-    def __repr__(self) -> str:
-        return f"RekeyToViolation({self.pretty()})"
+class RekeyToViolation(_ApprovalExitViolation):
+    message = ('is reachable without a RekeyTo check — an attacker can rekey the account.')
 
 
 class RekeyToDetector(_ApprovalExitProtectedDetector):

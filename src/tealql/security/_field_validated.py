@@ -1,5 +1,5 @@
-"""Shared base for the whole-program field-validation family (asset-close-to,
-close-remainder-to, tx-type-check), parameterised on field + message over
+"""Shared base for the whole-program field-validation family (today:
+asset-close-to), parameterised on field + message over
 :func:`field_validated_on_all_paths`.
 """
 from __future__ import annotations

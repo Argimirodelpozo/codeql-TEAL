@@ -1,0 +1,9 @@
+#pragma version 8
+// VULN: one basic block, approves unconditionally — anyone can update the app.
+// The exit IS the entry, so a guard walk keyed on "reached a predecessor-less
+// block" never runs; this is the most vulnerable possible shape.
+byte "k"
+app_global_get
+pop
+int 1
+return

@@ -132,27 +132,16 @@ def _field_enforcement_bbs(
     return out
 
 
-def _all_entry_paths_cross(exit_bb: BasicBlock, gates: set) -> bool:
-    """Every path from a no-predecessor entry BB to ``exit_bb`` crosses a ``gates``
-    BB — backward BFS, where reaching an entry witnesses an uncrossed path."""
-    if exit_bb in gates:
-        return True
-    if not exit_bb.predecessors:
-        return False
-    visited: set = {exit_bb}
-    stack: list = [exit_bb]
-    while stack:
-        bb = stack.pop()
-        for pred in bb.predecessors:
-            if pred in visited:
-                continue
-            visited.add(pred)
-            if pred in gates:
-                continue
-            if not pred.predecessors:
-                return False
-            stack.append(pred)
-    return True
+def _all_entry_paths_cross(
+    prog: SSAProgram, exit_bb: BasicBlock, gates: set,
+) -> bool:
+    """Every path from a PROGRAM ENTRY to ``exit_bb`` crosses a ``gates`` BB —
+    the shared backward walk, whose entry detection handles the self-loop
+    entry and exit-is-entry shapes the old no-predecessor spelling silently
+    credited as protected."""
+    from ._program_shape import unguarded_entry_path_exists
+    return not unguarded_entry_path_exists(
+        prog, exit_bb, block_closed=lambda bb: bb in gates)
 
 
 def _pinned_group_index(prog, *, file: Optional[str] = None) -> Optional[int]:
@@ -226,7 +215,7 @@ def field_validated_on_all_paths(
     gates = _field_enforcement_bbs(prog, field_vars, file=file)
     if not gates:
         return False
-    return all(_all_entry_paths_cross(exit_bb, gates) for exit_bb in exits)
+    return all(_all_entry_paths_cross(prog, exit_bb, gates) for exit_bb in exits)
 
 
 
@@ -247,7 +236,7 @@ def _approval_exit_protected_for_seeds(
         return False
     gates = _field_enforcement_bbs(
         prog, field_vars, file=file, allow_unary_cmp=allow_unary_cmp)
-    return _all_entry_paths_cross(exit_bb, gates)
+    return _all_entry_paths_cross(prog, exit_bb, gates)
 
 
 
