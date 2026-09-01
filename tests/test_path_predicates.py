@@ -252,3 +252,26 @@ def test_branch_polarity_comes_from_the_cfg_not_a_second_label_map():
     preds = {str(p) for p in analysis.predicates_at("contract.teal", taken.first_line)}
     sender_vs_creator = {p for p in preds if "L2" in p and "L3" in p}
     assert sender_vs_creator == {"(V#1@L2 == V#1@L3)"}, preds
+
+
+def test_switch_arm_colliding_with_fall_through_gets_no_predicate(tmp_path):
+    """A switch/match arm that is ALSO the lexical fall-through is reached for
+    every out-of-range key, so `key == k` on it is a proven-guard-that-isn't
+    (the unsound direction for every guard-dominates-sink detector). The
+    DISTINCT arm keeps its predicate (control)."""
+    src = ("#pragma version 8\n"
+           "txn OnCompletion\n"
+           "switch La Lb\n"
+           "La:\n"          # arm 0 AND fall-through: refuse
+           "int 1\nreturn\n"
+           "Lb:\n"          # distinct arm: keep `key == 1`
+           "int 1\nreturn\n")
+    p = tmp_path / "t.teal"
+    p.write_text(src)
+    from tealql.tealtools.ssa import SSAProgram
+    prog = SSAProgram(str(p), strict=False)
+    pp = PathPredicateAnalysis(prog)
+    at = {bb.first_line: pp.predicates_at(bb.file, bb.first_line)
+          for bb in prog.blocks.values()}
+    assert not at[4], f"colliding arm got a fabricated guard: {at[4]}"
+    assert any(c.kind == "eq" for c in at[7]), f"distinct arm lost its pin: {at[7]}"

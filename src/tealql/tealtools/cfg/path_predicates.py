@@ -370,6 +370,22 @@ class PathPredicateAnalysis:
         constant = self._facts.constant(value)
         return constant if constant is not None else self._facts.resolve(value)
 
+    def _lexical_fall_through_line(self, file: str, line: int) -> Optional[int]:
+        """First line of the block lexically FOLLOWING ``line`` in ``file`` —
+        where a switch/match at ``line`` falls through. ``None`` at file end."""
+        starts = getattr(self, "_block_starts", None)
+        if starts is None:
+            starts = {}
+            for bb in self.prog.blocks.values():
+                starts.setdefault(bb.file, []).append(bb.first_line)
+            for lines in starts.values():
+                lines.sort()
+            self._block_starts = starts
+        import bisect
+        lines = starts.get(file, ())
+        i = bisect.bisect_right(lines, line)
+        return lines[i] if i < len(lines) else None
+
     # -- public ---------------------------------------------------------
 
     def predicates_at(
@@ -695,6 +711,15 @@ class PathPredicateAnalysis:
         if len({s.first_line for s in pred.successors}) < 2:
             return None
         target_index: Optional[int] = matches[0] if matches else None
+        # HAZARD: the collapsed-edge trap is PER-ARM, not just all-arms. With
+        # another distinct target present, the arm that is ALSO the lexical
+        # fall-through still carries both roles: the AVM reaches it for every
+        # out-of-range (switch) / unmatched (match) key, so ``key == k`` on
+        # that edge is a proven-guard-that-isn't. Refuse that arm only.
+        if (target_index is not None
+                and succ.first_line == self._lexical_fall_through_line(
+                    pred.file, last.location.line)):
+            return None
         key = self._operand(last.inputs[0])
         if target_index is not None:
             if last.op == _SWITCH:

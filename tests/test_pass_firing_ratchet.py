@@ -86,6 +86,22 @@ _SHAPES = {
         "join:\nint 1\npop\nb tail\ntail:\npop\nint 1\nreturn\n",
         {"doomed_edges": 1},
     ),
+    # A LIVE shallow arm whose join body nets positive through `dup` — the doom
+    # profile modelled every shuffle as net-zero, dooming this real approving
+    # path to Fail (a live path became an unconditional reject).
+    "dup_in_join_live_arm_is_not_doomed": (
+        "#pragma version 8\ntxn ApplicationID\nbnz deep\nint 1\nb join\n"
+        "deep:\nint 1\nint 2\nint 3\njoin:\ndup\npop\npop\nint 1\nreturn\n",
+        {"doomed_edges": 0},
+    ),
+    # The inverse direction: `bury` nets NEGATIVE (-1), so a shallow arm that
+    # genuinely underflows through it must be doomed — modelled as net-zero the
+    # padded zero approved where the real machine panics.
+    "bury_underflow_is_doomed": (
+        "#pragma version 8\ntxn ApplicationID\nbnz deep\nint 1\nb join\n"
+        "deep:\nint 1\nint 2\njoin:\nbury 1\npop\nint 1\nreturn\n",
+        {"doomed_edges": 1},
+    ),
 }
 
 
@@ -120,7 +136,12 @@ _CORPUS_SAMPLE = [
 _CORPUS_BASELINE = {
     "splice_subs": 6,          # divergent legacy subs given per-site copies
     "splice_sites": 11,        # copies made (one per call site)
-    "doomed_edges": 67,        # shallow join arms that reject as the underflow they are
+    # 67 → 6 (2026-09-01): the doom profile modelled every stack shuffle as
+    # net-zero (`run += n_in` instead of `+= len(m)`), so `dup`/`cover`-heavy
+    # compiled joins were mass-doomed — 61 of the 67 were LIVE approving paths
+    # lifted to Fail. Verified against the full corpus semantics + backend
+    # tiers; the 6 that remain are the splice shallow arms, real underflows.
+    "doomed_edges": 6,         # shallow join arms that reject as the underflow they are
     "sink_mixed_scratch": 1,   # mixed-type merges sunk into per-edge stores
     "specialize_returns": 0,
     "dup_cross_sub_blocks": 6,

@@ -592,3 +592,37 @@ def test_the_corpus_still_recompiles():
         f"recompile (ceiling {_RECOMPILE_FAILURES}) — the lift emits IR the "
         "backend cannot lower, which the behavioural gate reports only as a "
         "skip:\n  " + "\n  ".join(failures[:8]))
+
+
+def test_typed_all_register_phi_with_cross_family_arm_is_repaired():
+    """A TYPED phi whose arms are ALL registers, one cross-family, is the exact
+    shape Puya rejects (`Phi node received arguments with unexpected type(s)`)
+    — and the reactive retypes in type recovery (state-put authority,
+    comparison unification, webtypes) can mint it after inference settles.
+    `materialize_phi_consts` used to early-skip every all-register phi, making
+    the repair unreachable. Control: an all-register phi whose arms AGREE must
+    stay untouched."""
+    from tealql.tealtools.lift.transforms import materialize_phi_consts
+
+    pa, pb = _r("a", "uint64"), _r("b", "bytes")     # b is cross-family
+    p = _r("p", "uint64")
+    bad = pre_ir.Phi(p, [pre_ir.PhiArgument(pa, 0), pre_ir.PhiArgument(pb, 1)])
+    ca, cb = _r("ca", "bytes"), _r("cb", "bytes")
+    q = _r("q", "bytes")
+    ok = pre_ir.Phi(q, [pre_ir.PhiArgument(ca, 0), pre_ir.PhiArgument(cb, 1)])
+    body = [
+        pre_ir.BasicBlock(0, [], [], pre_ir.Goto(2)),
+        pre_ir.BasicBlock(1, [], [], pre_ir.Goto(2)),
+        pre_ir.BasicBlock(2, [bad, ok], [],
+                          pre_ir.ProgramExit(pre_ir.UInt64Constant(1))),
+    ]
+    sub = pre_ir.Subroutine("m", [], [], body, is_main=True)
+
+    given_up = materialize_phi_consts(pre_ir.Program(main=sub))
+
+    assert given_up == 1, f"expected exactly the cross-family arm: {given_up}"
+    repaired = bad.args[1].value
+    assert isinstance(repaired, pre_ir.Register) and repaired.ir_type == "uint64", (
+        f"cross-family arm not repaired to a typed unknown: {repaired}")
+    assert ok.args[0].value is ca and ok.args[1].value is cb, (
+        "the agreeing all-register phi must stay untouched")

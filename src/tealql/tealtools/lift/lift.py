@@ -114,6 +114,15 @@ def _const(cv: Const):
         try:
             return pre_ir.UInt64Constant(int(cv.value))
         except ValueError:
+            # Every Const("int", ...) constructor upstream emits a numeric
+            # string and templates are refused before they become const_value —
+            # this firing means an upstream invariant broke, and it would
+            # surface as a WRONG constant folded into control flow. Degrade
+            # loudly, never silently.
+            logger.warning(
+                "non-numeric int const %r reached the lift — an upstream "
+                "invariant broke; substituting 0 and the lifted program is "
+                "WRONG wherever this value matters", cv.value)
             return pre_ir.UInt64Constant(0)
     return pre_ir.BytesConstant(cv.value)
 
@@ -765,7 +774,12 @@ class _Lifter:
         m = self._clone_map_of.get(bb)
         return m.get(blk, blk) if m else blk
 
-    def type_of(self, o, op=None, imm=None) -> str:
+    def _core_type(self, o, op, imm, *, poly=None) -> "str | None":
+        """The ONE op→type decision ladder shared by :meth:`type_of` and
+        :meth:`_ssa_type` — two hand-copies of it drifted (only one knew the
+        setbit family). ``poly`` answers the poly-first-operand step (result
+        type == the value operand's) and is TERMINAL for callers that supply
+        it; ``None`` means undecided."""
         if op in _BOOL_OPS:
             return "bool"
         if op in BIGUINT_RESULT_OPS:
@@ -778,10 +792,18 @@ class _Lifter:
             return t.kind
         if getattr(o, "range", None) is not None:
             return "uint64"
+        if poly is not None and op in _POLY_FIRST_OPERAND_OPS:
+            return poly()
         if op in _U64_OPS:
             return "uint64"
         if op in _BYTES_OPS:
             return "bytes"
+        return None
+
+    def type_of(self, o, op=None, imm=None) -> str:
+        t = self._core_type(o, op, imm)
+        if t is not None:
+            return t
         if op == "load":
             # The slot itself carries no type (hence `?` above); type the load by
             # what was stored, via the reaching-def in `_ssa_type`.
@@ -1449,7 +1471,11 @@ class _Lifter:
                     break
                 run -= n_in
                 dips.append(run)
-                run += n_in
+                # Push what the shuffle PUSHES (`len(m)`), not what it popped:
+                # `dup` is net +1, `bury` net -1. Restoring `n_in` doomed a
+                # live path through `dup` to Fail and let a real underflow
+                # after `bury` approve on the padded zero.
+                run += len(m)
                 continue
             if (not a.inputs and a.outputs and all(
                     getattr(o, "const_value", None) is not None for o in a.outputs)):
@@ -1760,29 +1786,18 @@ class _Lifter:
         a = self.producer.get(o)
         op = a.op if a else None
         imm = a.immediates if a else None
-        if op in _BOOL_OPS:
-            return "bool"
-        if op in BIGUINT_RESULT_OPS:
-            return "biguint"
-        ft = _field_type(op, imm)
-        if ft:
-            return ft
-        t = getattr(o, "type", None)
-        if t is not None and getattr(t, "kind", None):
-            return t.kind
-        if getattr(o, "range", None) is not None:
-            return "uint64"
-        if op in _POLY_FIRST_OPERAND_OPS and a is not None:   # setbit: result == value operand
+
+        def _poly() -> str:                       # setbit: result == value operand
             ins = getattr(a, "inputs", None)
             if ins:                               # SSA inputs are top-first; value is deepest
                 vt = self._ssa_type(ins[-1], depth + 1)
                 if vt != "?":
                     return vt
             return "?"
-        if op in _U64_OPS:
-            return "uint64"
-        if op in _BYTES_OPS:
-            return "bytes"
+
+        t = self._core_type(o, op, imm, poly=_poly if a is not None else None)
+        if t is not None:
+            return t
         if o in self.load_stores:
             ts = {self._ssa_type(s, depth + 1) for s in self.load_stores[o] if s is not None}
             ts.discard("?")

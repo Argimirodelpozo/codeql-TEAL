@@ -274,9 +274,14 @@ def derive_constraint(pred: BranchCondition) -> Optional[GroupConstraint]:
         if pred.kind in _KIND_TO_OP and len(pred.args) >= 1:
             return GroupConstraint(direct, _KIND_TO_OP[pred.kind], pred.args[0])
         if pred.kind == "not_in_range" and len(pred.args) >= 2:
-            # value ∉ [lo .. hi-1]: the only faithful single-comparator
-            # rendering is against the exclusive upper bound.
-            return GroupConstraint(direct, ">=", pred.args[1])
+            # value ∉ [lo .. hi-1] means value < lo OR value >= hi; the single
+            # ``>= hi`` rendering is faithful ONLY when lo == 0. Today's sole
+            # producer (switch fall-through) always emits lo == 0 — refuse any
+            # other lo rather than render a wrong fact. The bound is a bare
+            # int, so wrap it as a Const for the renderer.
+            if pred.args[0] != 0:
+                return None
+            return GroupConstraint(direct, ">=", Const("int", str(pred.args[1])))
         # ``neq_all`` is a conjunction of != over N candidates that one
         # GroupConstraint cannot express — emit nothing rather than one
         # arbitrary disjunct posing as the whole fact.

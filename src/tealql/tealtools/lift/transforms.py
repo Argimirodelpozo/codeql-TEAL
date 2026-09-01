@@ -771,7 +771,17 @@ def materialize_phi_consts(prog) -> int:
     for bb in pre_ir.blocks(prog):
         for ph in bb.phis:
             if all(isinstance(a.value, pre_ir.Register) for a in ph.args):
-                continue
+                # An all-register phi normally needs nothing — but a TYPED one
+                # carrying a cross-family register arm is exactly the shape
+                # Puya rejects, and the reactive retypes in type recovery
+                # (state-put authority, comparison unification, webtype
+                # decisions) can mint it AFTER inference settles. Fall through
+                # so the per-arm repair below sees it.
+                ty0 = ph.register.ir_type
+                if ty0 == "?" or all(
+                        avm(getattr(a.value, "ir_type", "?")) in ("?", avm(ty0))
+                        for a in ph.args):
+                    continue
             ty = ph.register.ir_type
             undecided = ty == "?"
             if undecided:
@@ -1078,6 +1088,14 @@ def duplicate_cross_subroutine_blocks(prog, _max_rounds: int = 12) -> int:
                 _remap_succ_ids(b.terminator, idmap)
                 for node in (*b.phis, *b.ops, b.terminator):
                     pre_ir.map_operands(node, _rm)
+                # A cloned foreign predecessor of an owned JOIN gets a new id;
+                # the join's phi arms must follow it, or `_fix_phi_predecessors`
+                # drops the stale arm, cannot invent the clone's, and the whole
+                # lift is rejected by `structural_errors`. Mirrors the clone
+                # path's own `through` remap above.
+                for ph in b.phis:
+                    for a in ph.args:
+                        a.through = idmap.get(a.through, a.through)
             made += 1
         if not changed:
             break

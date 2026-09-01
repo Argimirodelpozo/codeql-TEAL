@@ -493,11 +493,14 @@ def _decide_webtypes(phi_ids, find, consumer, constev, defev, seedev) -> dict:
 
 def _apply_webtypes(blocks, find, phi_ids, webtype) -> None:
     """Retype every phi-register web member to its decided type and coerce
-    wrong-AVM-type args (const -> the other family's const; a cross-type non-phi
-    seed register -> a dead placeholder)."""
-    def placeholder(T):
-        return _itob_const(0) if T == "bytes" else pre_ir.UInt64Constant(0)
+    wrong-AVM-type constant args to the other family's constant.
 
+    A cross-type NON-PHI seed register is left AS-IS: replacing it with a
+    typed-zero constant fabricated a clean value on a possibly-live arm (taint
+    treats constants as clean — a silent false negative — and recompiled TEAL
+    computes with 0). ``materialize_phi_consts`` repairs the surviving
+    cross-family arm into an explicit Undefined, WITH a warning and a
+    pass-stat, exactly like every other give-up in the ladder."""
     for bb in blocks:                    # retype every phi-register member
         for ph in bb.phis:
             T = webtype.get(find(id(ph.register)))
@@ -508,16 +511,14 @@ def _apply_webtypes(blocks, find, phi_ids, webtype) -> None:
             T = webtype.get(find(id(ph.register)))
             if not T:
                 continue
-            want = "b" if T == "bytes" else "u"
             for a in ph.args:
                 v = a.value
                 if isinstance(v, pre_ir.UInt64Constant) and T == "bytes":
                     a.value = _itob_const(v.value)
                 elif isinstance(v, pre_ir.BytesConstant) and T == "uint64":
                     a.value = _to_u64_const(v)
-                elif (isinstance(v, pre_ir.Register) and id(v) not in phi_ids
-                      and avm(v.ir_type) not in ("?", want)):
-                    a.value = placeholder(T)   # cross-type non-phi seed -> dead placeholder
+                # A cross-type non-phi register arm survives untouched here —
+                # see the docstring: materialize_phi_consts owns that repair.
 
 
 def _reconcile_mixed_phis(prog) -> None:
