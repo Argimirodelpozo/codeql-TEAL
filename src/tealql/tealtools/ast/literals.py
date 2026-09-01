@@ -80,7 +80,14 @@ def _teal_str_bytes(s: str) -> bytes:
                 out.extend(c.encode("utf-8"))      # malformed -> literal
                 i += 1
                 continue
-            out.append({"n": 10, "r": 13, "t": 9, "\\": 92, '"': 34}.get(n, ord(n)))
+            known = {"n": 10, "r": 13, "t": 9, "\\": 92, '"': 34}.get(n)
+            if known is not None:
+                out.append(known)
+            else:
+                # Unknown escape: the escaped character itself, UTF-8 encoded —
+                # ``ord`` would raise for a non-Latin-1 char, breaking the
+                # never-raise contract, and mis-encode 128..255.
+                out.extend(n.encode("utf-8"))
             i += 2
             continue
         out.extend(c.encode("utf-8"))
@@ -130,6 +137,64 @@ def decode_byte_literal(v: str) -> tuple[bytes, str]:
 _BYTE_ENC_KW = frozenset({"b64", "base64", "b32", "base32"})
 
 
+def is_recognized_byte_literal(v: str) -> bool:
+    """``v`` is one of the byte-literal spellings the assembler accepts
+    (``0x..`` / ``"str"`` / ``b64|base64|b32|base32`` keyword or paren forms).
+
+    A BARE token (a ``TMPL_*`` deployment template, a stray identifier) is NOT
+    one: resolving it through :func:`decode_byte_literal`'s utf-8 fallback
+    fabricates a constant — the text of the token — that every downstream
+    comparison then trusts."""
+    v = v.strip()
+    if v.startswith("0x") or (len(v) >= 2 and v[0] == '"' and v[-1] == '"'):
+        return True
+    for kw in ("b64", "base64", "b32", "base32"):
+        if v.startswith(f"{kw} ") or (v.startswith(f"{kw}(") and v.endswith(")")):
+            return True
+    return False
+
+
+def quote_is_escaped(text: str, index: int) -> bool:
+    """A quote at ``index`` is escaped iff an ODD run of backslashes precedes it.
+
+    Looking only at the immediately preceding character mistakes the closing
+    quote in ``"a\\\\"`` for an escaped quote: the first backslash escapes the
+    second, so the quote actually terminates the literal.  Once quote state is
+    wrong, operands merge and every constant index after them shifts."""
+    backslashes = 0
+    index -= 1
+    while index >= 0 and text[index] == "\\":
+        backslashes += 1
+        index -= 1
+    return backslashes % 2 == 1
+
+
+def strip_inline_comment(code: str) -> str:
+    """Drop a ``//`` inline comment that sits outside a quoted string, outside a
+    parenthesised group, and at a TOKEN BOUNDARY.
+
+    The token-boundary rule is what go-algorand does: split on whitespace, then
+    ask whether a token STARTS with ``//``, so ``int 1// x`` is not a comment at
+    all.  Quote state honors escaped quotes (see :func:`quote_is_escaped`), so a
+    ``//`` inside ``byte "a//b"`` is data, not a comment."""
+    q = False
+    depth = 0
+    for i in range(len(code) - 1):
+        c = code[i]
+        if c == '"' and not quote_is_escaped(code, i):
+            q = not q
+        elif q:
+            continue
+        elif c == "(":
+            depth += 1
+        elif c == ")":
+            depth = max(0, depth - 1)
+        elif (depth == 0 and code[i:i + 2] == "//"
+                and (i == 0 or code[i - 1].isspace())):
+            return code[:i]
+    return code
+
+
 def tokenize_operands(text: str, *, fold_byte_keywords: bool = False) -> list:
     """Split the text after an opcode into tokens, honoring ``"quoted strings"``,
     parenthesised ``base64(..)`` groups and a between-token ``//`` comment.
@@ -148,7 +213,8 @@ def tokenize_operands(text: str, *, fold_byte_keywords: bool = False) -> list:
             break
         if c == '"':
             j = i + 1
-            while j < n and not (text[j] == '"' and text[j - 1] != "\\"):
+            while j < n and not (text[j] == '"'
+                                 and not quote_is_escaped(text, j)):
                 j += 1
             toks.append(text[i:j + 1])
             i = j + 1

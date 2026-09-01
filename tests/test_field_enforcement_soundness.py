@@ -378,7 +378,7 @@ def test_abi_selector_accepts_an_enforced_dynamic_expected_value(tmp_path):
     """
     checked = """#pragma version 11
 txna ApplicationArgs 0
-byte key
+byte "key"
 app_global_get
 ==
 assert

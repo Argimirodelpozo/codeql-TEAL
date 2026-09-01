@@ -406,24 +406,64 @@ def _is_phantom_label(c) -> bool:
 _TEMPLATE_PUSH_MNEMONICS = frozenset({"pushint", "pushbytes", "int", "byte"})
 
 
+def _template_pair_groups(children, src: bytes) -> "tuple[list, list]":
+    """Segment ERROR children into ``(groups, unconsumed)``, each group a
+    ``(push mnemonic, TEMPLATE identifier)`` pair on ONE line.
+
+    ERROR recovery is GREEDY: consecutive template pushes (or a const block's
+    template tail followed by one) collapse into a single multi-line ERROR, and
+    recovering only the first construct silently drops the rest — each dropped
+    push leaves the stack short."""
+    def _text(k) -> str:
+        return src[k.start_byte:k.end_byte].decode("utf-8", "replace").strip()
+
+    groups: list = []
+    unconsumed: list = []
+    kids = [k for k in children if not _is_trivia(k.type)]
+    i = 0
+    while i < len(kids):
+        a = kids[i]
+        b = kids[i + 1] if i + 1 < len(kids) else None
+        # The mnemonic may arrive as its own token OR, mid-ERROR, lexed as a
+        # bare ``label_identifier`` whose TEXT is the mnemonic — match both.
+        is_mnemonic = (a.type in _TEMPLATE_PUSH_MNEMONICS
+                       or (a.type == "label_identifier"
+                           and _text(a) in _TEMPLATE_PUSH_MNEMONICS))
+        if (is_mnemonic and b is not None
+                and b.type == "label_identifier"
+                and b.start_point[0] == a.start_point[0]
+                and is_template_variable(_text(b))):
+            groups.append((a, b))
+            i += 2
+            continue
+        unconsumed.append(a)
+        i += 1
+    return groups, unconsumed
+
+
+def _template_pair_class(a, src: bytes) -> "tuple[type, str | None]":
+    """Node class for a template-push pair's mnemonic, resolved by TEXT — the
+    mnemonic child can be a disguised ``label_identifier`` whose ``.type`` says
+    nothing about the opcode."""
+    mnem = src[a.start_byte:a.end_byte].decode("utf-8", "replace").strip()
+    cls = node_class_for_mnemonic(mnem)
+    if cls is not None:
+        return cls, None
+    return AstNode, _ts_to_pascal(f"{mnem}_opcode")
+
+
 def _template_push_error(c, src: bytes) -> bool:
-    """``ERROR[<push mnemonic>, <TEMPLATE identifier>]`` — the BARE form.
+    """``ERROR[<push mnemonic>, <TEMPLATE identifier>]+`` — the BARE form(s).
 
     GRAMMAR DEFECT: `pushint TMPL_X // comment` parses as an opcode plus a
     salvaged tail (:func:`_template_var_tail`), but WITHOUT the trailing comment
-    the same line parses as one ERROR that CONTAINS the mnemonic. Two shapes for
-    one construct; miss this one and the push is dropped, leaving the stack
-    short."""
+    the same line parses as one ERROR that CONTAINS the mnemonic — and greedy
+    recovery merges CONSECUTIVE such lines into one multi-line ERROR. Miss any
+    of them and a push is dropped, leaving the stack short."""
     if c.type != "ERROR" or len(c.children) < 2:
         return False
-    if c.children[0].type not in _TEMPLATE_PUSH_MNEMONICS:
-        return False
-    rest = [k for k in c.children[1:] if not _is_trivia(k.type)]
-    return bool(rest) and all(
-        k.type == "label_identifier"
-        and is_template_variable(
-            src[k.start_byte:k.end_byte].decode("utf-8", "replace"))
-        for k in rest)
+    groups, unconsumed = _template_pair_groups(c.children, src)
+    return bool(groups) and not unconsumed
 
 
 def _end_of_line(node, src: bytes) -> "tuple[int, int]":
@@ -460,7 +500,12 @@ def _template_var_tail(ch, nxt, src: bytes) -> bool:
         return False
     if ch.end_point[0] != nxt.start_point[0]:
         return False
-    kids = [k for k in nxt.children if k.type == "label_identifier"]
+    # Only the SAME-LINE identifiers belong to this const block's tail; a
+    # greedy ERROR can also swallow the next line's instruction, which the
+    # driver re-emits separately (spillover) — its content must not veto the
+    # tail recovery of THIS line.
+    kids = [k for k in nxt.children if k.type == "label_identifier"
+            and k.start_point[0] == ch.end_point[0]]
     if not kids:
         return False
     return all(is_template_variable(
@@ -631,17 +676,56 @@ def parse_nodes(
                 # long operand list sheds more than one, and a leftover becomes
                 # its own phantom label. Safe — the span is already clamped and
                 # one instruction per line is architectural.
+                absorbed = [nxt]
                 i += 2
                 while (i < len(real)
                        and real[i].start_point[0] == ch.start_point[0]):
+                    absorbed.append(real[i])
                     i += 1
+                # A GREEDY tail ERROR can merge the NEXT line's grammar-refused
+                # instruction (a template push) into itself; the clamp keeps it
+                # out of `.code`, but it must still be EMITTED — swallowing it
+                # drops a push and leaves the stack short.
+                row = ch.start_point[0]
+                for t in absorbed:
+                    if t.end_point[0] <= row:
+                        continue
+                    # Zero-width / MISSING tokens (the phantom `:` a salvaged
+                    # label carries) are recovery artifacts, not swallowed
+                    # source — reporting them is a false alarm on valid input.
+                    spill = [k for k in t.children
+                             if not _is_trivia(k.type)
+                             and k.start_point[0] > row
+                             and k.start_byte < k.end_byte
+                             and not k.is_missing]
+                    sp_groups, sp_left = _template_pair_groups(spill, src)
+                    for a, b in sp_groups:
+                        s_cls, s_override = _template_pair_class(a, src)
+                        op_nodes.append(_node(
+                            a.start_point[0] + 1, a.start_point[1],
+                            b.end_point[0] + 1, b.end_point[1],
+                            s_cls, s_override))
+                    if sp_left and diagnostics is not None:
+                        lo = min(u.start_point[0] for u in sp_left) + 1
+                        hi = max(u.end_point[0] for u in sp_left) + 1
+                        text = src[sp_left[0].start_byte:
+                                   sp_left[-1].end_byte].decode("utf-8", "replace")
+                        snippet = (text.splitlines()[0].strip()[:80]
+                                   if text.strip() else "")
+                        diagnostics.append(ParseDiagnostic(
+                            file=file, start_line=lo, end_line=hi,
+                            snippet=snippet,
+                        ))
                 continue
             if _unknown_txn_field_error(ch, src):
                 # `_class_for` keys on the ERROR's first child — the mnemonic —
                 # so each group emits as the node a known field would have got.
                 groups, unconsumed = _split_txn_field_error(ch)
                 for grp in groups:
-                    cls, override = _class_for(ch)
+                    # Key on the GROUP's own mnemonic: a greedy ERROR can merge
+                    # adjacent instructions with different mnemonics, and the
+                    # ERROR's first child only names the first one.
+                    cls, override = _class_for(grp[0])
                     op_nodes.append(_node(
                         grp[0].start_point[0] + 1, grp[0].start_point[1],
                         grp[-1].end_point[0] + 1, grp[-1].end_point[1],
@@ -656,6 +740,19 @@ def parse_nodes(
                     diagnostics.append(ParseDiagnostic(
                         file=file, start_line=lo, end_line=hi, snippet=snippet,
                     ))
+                i += 1
+                continue
+            if ch.type == "ERROR" and _template_push_error(ch, src):
+                # One node PER (mnemonic, template) pair: greedy recovery merges
+                # consecutive template pushes into one multi-line ERROR, and a
+                # single node spanning it would swallow all but the first.
+                t_groups, _ = _template_pair_groups(ch.children, src)
+                for a, b in t_groups:
+                    t_cls, t_override = _template_pair_class(a, src)
+                    op_nodes.append(_node(
+                        a.start_point[0] + 1, a.start_point[1],
+                        b.end_point[0] + 1, b.end_point[1],
+                        t_cls, t_override))
                 i += 1
                 continue
             if _named_int_error(ch, src):

@@ -11,8 +11,8 @@ from typing import Optional
 
 from ..ast import Opcode
 from ..ast.literals import (
-    NAMED_INT_CONSTANTS, decode_byte_literal, is_template_variable,
-    tokenize_operands,
+    NAMED_INT_CONSTANTS, decode_byte_literal, is_recognized_byte_literal,
+    is_template_variable, strip_inline_comment, tokenize_operands,
 )
 
 
@@ -22,7 +22,10 @@ def _opname(n) -> str:
 
 
 def _imms(n) -> str:
-    code = n.code or ""
+    # HAZARD: a tail-recovered opcode's ``.code`` spans to end of line, so it
+    # can carry a trailing ``// comment`` — ``int 0x10 // sixteen`` must
+    # resolve as ``0x10``, not silently fail on the whole text.
+    code = strip_inline_comment(n.code or "")
     parts = code.split(None, 1)
     return parts[1].strip() if len(parts) > 1 else ""
 
@@ -65,9 +68,16 @@ def _canonical_bytes(literal: str) -> "str | None":
 
     ONE representation per value: consumers compare these for equality (xcontract
     matches state keys, ``_bytes_const_to_int`` accepts only ``0x``), so raw source
-    text would make ``byte "cfg"`` and ``pushbytes "cfg"`` silently unequal."""
+    text would make ``byte "cfg"`` and ``pushbytes "cfg"`` silently unequal.
+
+    HAZARD: only recognised literal shapes resolve. The decoder's utf-8
+    fallback for a bare token (``pushbytes TMPL_X``) fabricates a constant —
+    the token's own text — that every downstream comparison then trusts."""
+    literal = literal.strip()
+    if not is_recognized_byte_literal(literal):
+        return None
     try:
-        raw, _kind = decode_byte_literal(literal.strip())
+        raw, _kind = decode_byte_literal(literal)
     except Exception:
         return None
     return f"0x{raw.hex()}"

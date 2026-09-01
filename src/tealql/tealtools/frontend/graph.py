@@ -35,59 +35,32 @@ def _byte_literal(v: str):
     HAZARD: delegate to the one canonical decoder, never re-implement — a copy
     drifts: a per-character ``ord`` decoder turns the non-ASCII literal
     ``byte "caf\u00e9"`` into ``636166e9``, not the
-    assembler's UTF-8 ``636166c3a9``, so every guard on it mis-evaluates."""
-    from ..ast.literals import decode_byte_literal
+    assembler's UTF-8 ``636166c3a9``, so every guard on it mis-evaluates.
+
+    HAZARD: only RECOGNISED literal shapes are decoded here. The canonical
+    decoder's utf-8 fallback for a bare token must not reach a rewrite: it
+    turns ``byte TMPL_NAME`` (a deploy-time template with NO static value)
+    into a pushbytes of the text "TMPL_NAME", fabricating a constant every
+    downstream comparison then trusts."""
+    v = v.strip()
+    from ..ast.literals import decode_byte_literal, is_recognized_byte_literal
+    if not is_recognized_byte_literal(v):
+        return None
     try:
-        raw, _kind = decode_byte_literal(v.strip())
+        raw, _kind = decode_byte_literal(v)
     except Exception:
         return None
     return raw
 
 
-def _strip_inline_comment(code: str) -> str:
-    """Drop a ``//`` inline comment that sits outside a quoted string, outside a
-    parenthesised group, and at a TOKEN BOUNDARY.
-
-    HAZARD: all three rules are load-bearing, because the base64 alphabet
-    includes ``/`` and a payload containing ``//`` is ordinary. Cutting at the
-    first ``//`` truncates ``pushbytes base64(AA//)`` to ``base64(AA`` (the
-    value silently becomes the ASCII of the fragment) and decodes
-    ``pushbytes base64 AAAAAA//`` to four zero bytes — a guard against such a
-    constant then never matches, and nothing reports it. The token-boundary rule
-    is what go-algorand does: split on whitespace, then ask whether a token
-    STARTS with ``//``, so ``int 1// x`` is not a comment at all."""
-    def quote_is_escaped(index: int) -> bool:
-        """A quote is escaped iff an odd run of backslashes precedes it.
-
-        Looking only at the immediately preceding character mistakes the closing
-        quote in ``"a\\\\"`` for an escaped quote: the first backslash escapes
-        the second, so the quote actually terminates the literal.  Once quote
-        state is wrong, a later quote-bearing comment is fed to tree-sitter as
-        source and can turn an otherwise valid program into a partial parse.
-        """
-        backslashes = 0
-        index -= 1
-        while index >= 0 and code[index] == "\\":
-            backslashes += 1
-            index -= 1
-        return backslashes % 2 == 1
-
-    q = False
-    depth = 0
-    for i in range(len(code) - 1):
-        c = code[i]
-        if c == '"' and not quote_is_escaped(i):
-            q = not q
-        elif q:
-            continue
-        elif c == "(":
-            depth += 1
-        elif c == ")":
-            depth = max(0, depth - 1)
-        elif (depth == 0 and code[i:i + 2] == "//"
-                and (i == 0 or code[i - 1].isspace())):
-            return code[:i]
-    return code
+# HAZARD: quote-, paren- and token-boundary-aware comment stripping is
+# load-bearing here, because the base64 alphabet includes ``/`` and a payload
+# containing ``//`` is ordinary. Cutting at the first ``//`` truncates
+# ``pushbytes base64(AA//)`` to ``base64(AA`` (the value silently becomes the
+# ASCII of the fragment) — the one canonical implementation lives beside the
+# literal decoders.
+from ..ast.literals import is_template_variable as _is_template
+from ..ast.literals import strip_inline_comment as _strip_inline_comment
 
 
 #: a ``byte`` / ``method`` / ``addr`` pseudo-op at line start, any whitespace
@@ -257,14 +230,26 @@ def _normalize_pseudo_ops(data: bytes) -> bytes:
     out = []
     for line in text.split("\n"):
         body = line.strip()
-        if not body or body.startswith("//") or body.endswith(":"):
+        if not body or body.startswith("//"):
+            out.append(line); continue
+        # The label test must run on the COMMENT-STRIPPED body: a pseudo-op
+        # line whose trailing comment ends in ``:`` (``byte "k" // key:``) is
+        # not a label, and skipping it drops the push from the node stream.
+        code = _strip_inline_comment(body).strip()
+        if not code or code.endswith(":"):
             out.append(line); continue
         indent = line[:len(line) - len(line.lstrip())]
-        parts = _strip_inline_comment(body).split(None, 1)
+        parts = code.split(None, 1)
         op = parts[0]
         operand = parts[1].strip() if len(parts) > 1 else ""
         new = None
-        if op == "byte":
+        if op in ("byte", "addr") and _is_template(operand):
+            # A template has no value until deploy. Rewriting to the canonical
+            # push op KEEPS the push in the node stream (the parse layer's
+            # template recovery emits a const-free node); leaving the pseudo-op
+            # verbatim would drop it and shift every later stack reference.
+            new = f"pushbytes {operand.strip()}"
+        elif op == "byte":
             b = _byte_literal(operand)
             new = f"pushbytes 0x{b.hex()}" if b is not None else None
         elif op == "addr":
@@ -283,9 +268,14 @@ def _normalize_pseudo_ops(data: bytes) -> bytes:
             from ..ast.literals import tokenize_operands
             try:
                 toks = tokenize_operands(operand, fold_byte_keywords=True)
-                raws = [_byte_literal(t) for t in toks]
-                new = (f"{op} " + " ".join(f"0x{r.hex()}" for r in raws)
-                       if toks and all(r is not None for r in raws) else None)
+                # A template slot has no value until deploy: keep its token
+                # VERBATIM (per-slot recovery resolves that slot to nothing)
+                # so the other slots still rewrite and slot indices survive.
+                pieces = [t if _is_template(t)
+                          else (r := _byte_literal(t)) and f"0x{r.hex()}"
+                          for t in toks]
+                new = (f"{op} " + " ".join(pieces)
+                       if toks and all(p for p in pieces) else None)
             except Exception:
                 new = None                          # leave it for the diagnostic
         elif op == "method":

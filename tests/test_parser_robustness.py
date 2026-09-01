@@ -345,3 +345,102 @@ def test_sha512_lifts_as_itself(tmp_path):
         to_puya(prog)
     except LiftError:
         pass                # honest typed refusal: puya has no sha512 AVMOp
+
+
+def test_template_variables_never_fabricate_constants(tmp_path):
+    """A `TMPL_*` deployment template has NO value until deploy. The pseudo-op
+    rewrite used to feed the bare token to the byte decoder, whose utf-8
+    fallback turned `byte TMPL_GREETING` into a pushbytes of the TEXT
+    "TMPL_GREETING" — a fabricated constant every guard comparison then
+    trusts. The push must SURVIVE (a dropped node shifts every later stack
+    reference) but resolve to nothing; sibling non-template slots must keep
+    resolving."""
+    prog = _prog(tmp_path, "#pragma version 8\n"
+                           "bytecblock b64 AAAA TMPL_GREETING\n"
+                           "byte TMPL_OTHER\nbytec_0\nbytec_1\nconcat\nconcat\n"
+                           "len\npop\nint 1\nreturn\n")
+    prog.propagate_constants()
+    by_op = {}
+    for a in prog.assignments:
+        by_op.setdefault(a.op, []).extend(
+            None if o.const_value is None else str(o.const_value)
+            for o in a.outputs)
+    # The `byte TMPL_OTHER` push survives as a const-free pushbytes.
+    assert by_op.get("pushbytes") == [None], f"template push: {by_op}"
+    fabricated = "0x" + b"TMPL_GREETING".hex()
+    assert by_op.get("bytec_0") == ["0x000000"], f"sibling slot lost: {by_op}"
+    assert by_op.get("bytec_1") == [None], f"template slot fabricated: {by_op}"
+    assert fabricated not in {v for vs in by_op.values() for v in vs}
+    # Stack accounting stayed intact: both concats consume two operands.
+    concats = [a for a in prog.assignments if a.op == "concat"]
+    assert len(concats) == 2 and all(len(a.inputs) == 2 for a in concats)
+
+
+def test_pseudo_op_with_colon_ending_comment_is_not_a_label(tmp_path):
+    """`byte "k" // key:` — the label test used to run on the RAW body, so the
+    trailing comment's `:` skipped the pseudo-op rewrite and the push vanished
+    from the node stream. A REAL label with a comment must still be a label."""
+    prog = _prog(tmp_path, '#pragma version 8\n'
+                           'byte "k" // key:\n'
+                           'len\npop\n'
+                           'b done\n'
+                           'done: // exit:\n'
+                           'int 1\nreturn\n')
+    prog.propagate_constants()
+    pushes = [str(o.const_value) for a in prog.assignments
+              if a.op == "pushbytes" for o in a.outputs]
+    assert pushes == ["0x6b"], f"byte push lost or wrong: {pushes}"
+    (ln,) = [a for a in prog.assignments if a.op == "len"]
+    assert len(ln.inputs) == 1
+
+
+def test_escaped_backslash_before_closing_quote_terminates_the_literal(tmp_path):
+    r"""In `bytecblock "\\" 0x01` the first backslash escapes the second, so
+    the quote CLOSES the literal: two slots. The single-char look-behind
+    tokenizer merged them into one, silently shifting every constant index
+    after it."""
+    prog = _prog(tmp_path, '#pragma version 8\n'
+                           'bytecblock "\\\\" 0x01\n'
+                           'bytec_0\nbytec_1\nconcat\nlen\npop\nint 1\nreturn\n')
+    prog.propagate_constants()
+    by_op = {a.op: [str(o.const_value) for o in a.outputs]
+             for a in prog.assignments if a.op.startswith("bytec_")}
+    assert by_op == {"bytec_0": ["0x5c"], "bytec_1": ["0x01"]}, by_op
+
+
+def test_non_latin1_escape_never_raises(tmp_path):
+    """An escape of a non-Latin-1 char (`\\€`) must decode to the char's UTF-8
+    bytes — the `ord()` path raised ValueError on untrusted source, breaking
+    the decoder's documented never-raise contract."""
+    prog = _prog(tmp_path, '#pragma version 8\n'
+                           'byte "\\€"\nlen\npop\nint 1\nreturn\n')
+    prog.propagate_constants()
+    pushes = [str(o.const_value) for a in prog.assignments
+              if a.op == "pushbytes" for o in a.outputs]
+    assert pushes == ["0x" + "€".encode("utf-8").hex()], pushes
+
+
+def test_tail_recovered_hex_int_keeps_constant_past_a_comment(tmp_path):
+    """`int 0x10 // sixteen` — the hex-tail recovery re-spans `.code` to end of
+    line, so the immediate text carried the comment and the constant silently
+    resolved to nothing. Constants gate guard reasoning; a comment must not
+    void them."""
+    prog = _prog(tmp_path, "#pragma version 8\nint 0x10 // sixteen\npop\nint 1\nreturn\n")
+    prog.propagate_constants()
+    vals = [str(o.const_value) for a in prog.assignments if a.op == "int"
+            for o in a.outputs if o.const_value is not None]
+    assert "16" in vals, f"hex constant lost behind its comment: {vals}"
+
+
+def test_mixed_mnemonic_error_group_keeps_each_groups_class(tmp_path):
+    """Adjacent unknown-field instructions with DIFFERENT mnemonics collapse
+    into one greedy ERROR; each recovered group must get its OWN mnemonic's
+    node class, not the first group's."""
+    from tealql.tealtools.ast.parse import parse_nodes
+    nodes = parse_nodes({"t.teal": "#pragma version 8\n"
+                                   "txn NotAField\nitxn_field AlsoNot\n"
+                                   "int 1\nreturn\n"})
+    classes = {n.code.split()[0]: type(n).__name__
+               for n in nodes if getattr(n, "code", "").strip()
+               and n.code.split()[0] in ("txn", "itxn_field")}
+    assert classes["txn"] != classes["itxn_field"], classes
