@@ -155,10 +155,10 @@ def summarize(callee, body, proto) -> "Summary | None":
     paths: list = []
     refused = False
 
-    def walk(b, virtual):
+    def process(b, virtual):
+        """Run ``b``'s ops over a copy of ``virtual``; record retsub paths;
+        return the exit stack for a live fall-through, else ``None``."""
         nonlocal refused
-        if refused:
-            return
         virtual = list(virtual)
         for o in b.ops:
             if o.op == "proto":
@@ -217,13 +217,29 @@ def summarize(callee, body, proto) -> "Summary | None":
                 if not (isinstance(cell, _Below) and cell.j == j):
                     exit_map[j] = cell
             paths.append((b, exit_map))
-            return
+            return None
         if last in ("return", "err"):
-            return
-        for s in _succs_in(b, body):
-            walk(s, virtual)
+            return None
+        return virtual
 
-    walk(callee, init)
+    # Iterative worklist: the recursive spelling died with RecursionError on a
+    # ~1000-block chain (the same shape `walk_routine` was made iterative
+    # for), killing the whole build instead of refusing. The step budget turns
+    # a cyclic body — which the recursion would have crashed on — into an
+    # honest refusal.
+    stack: list = [(callee, init)]
+    steps = 0
+    while stack and not refused:
+        steps += 1
+        if steps > 100_000:
+            refused = True
+            break
+        b, virtual = stack.pop()
+        out = process(b, virtual)
+        if out is None:
+            continue
+        for s in _succs_in(b, body):
+            stack.append((s, out))
     if refused or not paths:
         return None
     return Summary(k_reach, paths)

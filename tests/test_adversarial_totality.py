@@ -1245,3 +1245,34 @@ def test_deep_guard_and_loop_value_chains_are_total():
     )
     candidates = find_budget_exhaustion_candidates(budget)
     assert len(candidates) == 1 and candidates[0].attacker_controlled
+
+
+def test_below_band_dipping_callee_returns_refuse_never_lie():
+    """A callee that legally dips below its own band (`proto 1 1; swap`) skews
+    its interior model: the list bottom stops being the frame base, so a
+    proto'd retsub's bottom-anchored return slots name WRONG cells — `42`
+    silently lost, or with two returns the wrong value named as return #1.
+    Both must REFUSE (empty consumer inputs), never resolve a wrong value.
+    Control: a well-behaved callee's return stays fully resolved."""
+    hostile = SSAProgram.from_text(
+        "#pragma version 8\n"
+        "int 7\ncallsub sub\nreturn\n"
+        "sub:\nproto 1 1\nswap\nint 42\nretsub\n")
+    ret = next(a for a in hostile.assignments if a.op == "return")
+    assert not ret.inputs, f"skewed callee return resolved: {ret.inputs}"
+
+    two = SSAProgram.from_text(
+        "#pragma version 8\n"
+        "int 7\ncallsub sub\npop\nreturn\n"
+        "sub:\nproto 1 2\nswap\nint 42\nint 43\nretsub\n")
+    for op in ("return", "pop"):
+        a = next(x for x in two.assignments if x.op == op)
+        assert not a.inputs, f"{op} named a possibly-wrong return: {a.inputs}"
+
+    control = SSAProgram.from_text(
+        "#pragma version 8\n"
+        "int 7\ncallsub sub\nreturn\n"
+        "sub:\nproto 1 1\nint 42\nretsub\n")
+    ret = next(a for a in control.assignments if a.op == "return")
+    assert ret.inputs and str(getattr(ret.inputs[0], "const_value", "")) == "42", (
+        f"well-behaved callee's return must still resolve: {ret.inputs}")

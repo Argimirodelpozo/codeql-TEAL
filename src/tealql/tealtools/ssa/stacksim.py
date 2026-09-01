@@ -19,7 +19,6 @@ from __future__ import annotations
 
 from typing import Optional
 
-from ..language.avm import op_arity
 from .callee_effects import _Below, _CalleeParam
 
 
@@ -31,12 +30,13 @@ def _imm_int(op) -> Optional[int]:
 
 
 def _narrow(o) -> tuple:
-    """The op's CANONICAL arity, never its recorded one.
+    """The op's arity as recorded at instantiation.
 
-    ``PyOp.n_in``/``n_out`` are rewritten in place by the fat-band expansion, so
-    reading them would make this simulation depend on whether the model it
-    replaces has already run."""
-    return op_arity(o.op, o.immediates)
+    ``PyOp.n_in``/``n_out`` are set once from ``op_arity`` and never rewritten
+    (the fat-band expansion that used to mutate them is deleted); re-parsing
+    the immediates here cost ~5 string parses per op per build for nothing.
+    ``_classify_call_effects`` already trusts the recorded fields."""
+    return o.n_in, o.n_out
 
 
 def _callee_of(b, bb_to_sub):
@@ -191,7 +191,7 @@ class _Result:
     """
 
     __slots__ = ("args", "phis", "exit", "unresolved", "divergent",
-                 "frame_deferred")
+                 "frame_deferred", "frame_skewed")
 
     def __init__(self):
         self.args: dict = {}
@@ -203,6 +203,13 @@ class _Result:
         # recorded yet (a loop-carried write later in walk order); filled
         # once every routine has run, like `deferred` for recursion.
         self.frame_deferred: list = []
+        # Routine entries where some op dipped BELOW the local model's bottom
+        # (the pad kept executing but the list bottom no longer equals the
+        # frame base). Every bottom-anchored coordinate there — `frame_dig`
+        # positions, a proto'd retsub's return slots — is off by the
+        # underflow, so those reads REFUSE instead of resolving one-per-cell
+        # wrong. Legacy retsub reads are top-relative and stay unaffected.
+        self.frame_skewed: set = set()
 
 
 class _Param:
@@ -226,8 +233,9 @@ class _Param:
 
 def simulate(blocks, bb_to_sub, proto_io, return_point, phi_factory,
              *, bind_params: bool = True, unsafe_callees=frozenset(),
-             frame_analysis=None, band_plan=None, poisoned=frozenset(),
-             effect_summaries=None) -> "_Result":
+             frame_analysis=None, poisoned=frozenset(),
+             effect_summaries=None, arity=None,
+             divergent_subs=None) -> "_Result":
     """Simulate every routine and return a :class:`_Result`.
 
     ``phi_factory(block, slot) -> phi`` mints the merge value, so the caller
@@ -252,15 +260,19 @@ def simulate(blocks, bb_to_sub, proto_io, return_point, phi_factory,
         frame_instructions = frame_analysis.instructions
         poisoned = frame_analysis.poisoned
     else:
-        # Compatibility for direct users of the former internal API.
-        frame_instructions = band_plan or {}
+        frame_instructions = {}
     # Real arities FIRST: a legacy callee's (nargs, nret) is not declared
     # anywhere, and treating it as (0, 0) leaves its arguments on the caller's
     # stack — which the caller's next op then consumes. The fixpoint also
     # names the DIVERGENT legacy subs (retsub sites at different depths):
     # their calls need the depth-shift merge, not the uniform window.
-    arity = infer_arities(blocks, bb_to_sub, proto_io, return_point,
-                          divergent=res.divergent)
+    # A caller that already ran the fixpoint (PySSA construction runs it for
+    # call pairing) hands both results in rather than paying it again.
+    if arity is None:
+        arity = infer_arities(blocks, bb_to_sub, proto_io, return_point,
+                              divergent=res.divergent)
+    else:
+        res.divergent.update(divergent_subs or ())
     by_sub: dict = {}
     for b in blocks:
         by_sub.setdefault(bb_to_sub.get(b), []).append(b)
@@ -312,7 +324,15 @@ def simulate(blocks, bb_to_sub, proto_io, return_point, phi_factory,
                 if v is None:
                     ph.partial = True
             else:
-                v = _return_value(res.exit[rb], j, slot, proto)
+                skewed = (proto is not None
+                          and bb_to_sub.get(rb) in res.frame_skewed)
+                v = (None if skewed
+                     else _return_value(res.exit[rb], j, slot, proto))
+                if v is None:
+                    # An unanswerable non-poisoned arm was silently OMITTED
+                    # here — the resolved subset then read as the whole
+                    # answer. Mark it, same as the poisoned gate above.
+                    ph.partial = True
             if v is not None and not any(a is v for a in ph.args):
                 ph.args.append(v)
     # Loop-carried frame-slot arms: the write's operand exists only after its block
@@ -342,16 +362,11 @@ def _frame_cells(instruction, res, *, allow_pending=False):
     arm is unknowable outright — a partial arm set would name the resolved
     subset as THE value — or where pending arms exist and the caller cannot
     defer (``allow_pending=False``)."""
-    if instruction is None:
+    if instruction is None or not hasattr(instruction, "position"):
         return None
-    if hasattr(instruction, "position"):
-        entry_preds = instruction.entry_predecessors
-        position = instruction.position
-        writes = instruction.writes
-    elif instruction[0] == "merge":              # former tuple API
-        _, _home, entry_preds, position, writes = instruction
-    else:
-        return None
+    entry_preds = instruction.entry_predecessors
+    position = instruction.position
+    writes = instruction.writes
     cells = []
     for pb in entry_preds:
         st = res.exit.get(pb)
@@ -465,17 +480,13 @@ def _resolve_frame(instruction, res):
 
 
 def _return_slot(instruction, index):
-    if instruction is None:
+    if instruction is None or not hasattr(instruction, "slots"):
         return None
-    if hasattr(instruction, "slots"):
-        return instruction.slots.get(index)
-    return instruction[1].get(index) if instruction[0] == "ret" else None
+    return instruction.slots.get(index)
 
 
 def _frame_home(instruction):
-    if instruction is None:
-        return None
-    return instruction.home if hasattr(instruction, "home") else instruction[1]
+    return None if instruction is None else instruction.home
 
 
 def _return_value(st, j, slot, proto):
@@ -813,6 +824,15 @@ def _exec(o, b, stack, nargs, res, bb_to_sub, retsubs, arity, phi_factory,
     if o.op in ("frame_dig", "frame_bury"):
         n = _imm_int(o)
         pos = None if n is None else nargs + n
+        if bb_to_sub.get(b) in res.frame_skewed:
+            # An earlier op in this routine dipped below the band; `stack[pos]`
+            # would read/write a cell off by the underflow. Refuse honestly.
+            if o.op == "frame_bury" and stack:
+                stack.pop()
+            res.unresolved.add(id(o))
+            if o.op == "frame_dig":
+                stack.append(None)
+            return
         if b.key in poisoned:
             # The working list is NOT bottom-anchored here — that is what the
             # depth poison means: paths reach this block at different heights,
@@ -1057,9 +1077,22 @@ def _exec(o, b, stack, nargs, res, bb_to_sub, retsubs, arity, phi_factory,
                     else:
                         vals.extend(got[0])
                     continue
-                v = _return_value(res.exit[rb], j, slot, a_proto)
+                if (a_proto is not None
+                        and bb_to_sub.get(rb) in res.frame_skewed):
+                    # This callee dipped below its band: its exit list is no
+                    # longer frame-anchored, so `res.exit[rb][proto[0]+j]` is
+                    # a wrong CELL, not a missing value.
+                    v = None
+                else:
+                    v = _return_value(res.exit[rb], j, slot, a_proto)
                 if v is not None:
                     vals.append(v)
+                else:
+                    # The resolved-subset trap: one unreadable retsub path
+                    # plus one resolved path must NOT name the resolved one
+                    # as THE result (same policy the `pending_rets` branch
+                    # already enforces below).
+                    band_refused = True
             if band_refused:
                 pushes.append(None)
             elif pending_rets and (shifted
@@ -1121,8 +1154,20 @@ def _exec(o, b, stack, nargs, res, bb_to_sub, retsubs, arity, phi_factory,
         return
     n_in, _n_out = _narrow(o)
     ins = []
+    underflowed = False
     for _ in range(n_in):
-        ins.append(stack.pop() if stack else None)
+        if stack:
+            ins.append(stack.pop())
+        else:
+            ins.append(None)
+            underflowed = True
+    if underflowed:
+        # This op dipped below the model's bottom: the pad keeps the walk
+        # alive, but the list bottom no longer equals the frame base, so the
+        # routine's bottom-anchored coordinates are poisoned from here on.
+        routine = bb_to_sub.get(b)
+        if routine is not None:
+            res.frame_skewed.add(routine)
     if any(i is None for i in ins):
         res.unresolved.add(id(o))
     res.args[id(o)] = ins

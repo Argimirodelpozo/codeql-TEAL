@@ -1006,12 +1006,8 @@ class SSAProgram:
         spelling silently returns nothing for exactly those programs. That
         criterion is documented as wrong in ``cfg.dominance.program_entries`` and
         was still re-derived in three places, one of them incorrectly."""
-        first: dict = {}
-        for bb in self.blocks.values():
-            cur = first.get(bb.file)
-            if cur is None or bb.first_line < cur.first_line:
-                first[bb.file] = bb
-        return [first[f] for f in sorted(first)]
+        from ..cfg.dominance import program_entries
+        return program_entries(self.blocks.values())
 
     def phi_users(self, value) -> list:
         """Every ``Phi`` that takes ``value`` as an argument.
@@ -1034,7 +1030,7 @@ class SSAProgram:
             try:
                 self._phi_users_index = idx
             except AttributeError:      # only if SSAProgram ever gains __slots__
-                idx = idx
+                pass
         return idx.get(id(value), [])
 
     def _invalidate_phi_users(self) -> None:

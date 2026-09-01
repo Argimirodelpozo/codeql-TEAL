@@ -60,7 +60,33 @@ def identify_subroutines(prog: "SSAProgram") -> dict:
       later BB in the same file that is also a ``retsub`` successor of the
       callee.
     - ``callsub_target``: ``callsub_bb → callee entry BB``.
+
+    Revision-cached on the program: construction, `analyze_structure`,
+    `frame_slots.resolve_program` and the budget layers each re-ran the whole
+    fixpoint (which itself rebuilds every body twice per round) with an
+    unchanged program. Callers must treat the result as READ-ONLY.
+
+    HAZARD: the key must carry block INSTANCE identity, not just the revision.
+    ``BasicBlock`` hashes/compares by VALUE, and construction (which calls this
+    via ``corrected_return_points`` before the final blocks exist) can replace
+    the instances — a value-equal cached result full of pre-construction
+    objects then feeds consumers that read per-instance state (``exit_stack``),
+    which silently reads as thousands of unresolved call results.
     """
+    revision = getattr(prog, "revision", 0)
+    ids = frozenset(map(id, prog.blocks.values()))
+    cached = getattr(prog, "_identify_subroutines_cache", None)
+    if cached is not None and cached[0] == (revision, ids):
+        return cached[1]
+    out = _identify_subroutines_uncached(prog)
+    try:
+        prog._identify_subroutines_cache = ((revision, ids), out)
+    except AttributeError:      # only if SSAProgram ever gains __slots__
+        pass
+    return out
+
+
+def _identify_subroutines_uncached(prog: "SSAProgram") -> dict:
     entries: set[BasicBlock] = set()
     callsub_target: dict[BasicBlock, BasicBlock] = {}
 

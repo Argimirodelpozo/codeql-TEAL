@@ -312,7 +312,6 @@ class PySSA:
         slots read and written in place — see the module docstring for what this
         replaced and why."""
         from . import stacksim
-        from ..cfg.subroutines import pyblock_partition, _pyblock_return_point
 
         def mint(block, slot):
             # Identity is (bb_key, slot) and the public Phi mirrors it, so a
@@ -326,8 +325,11 @@ class PySSA:
             block.entry_phis.append(p)
             return p
 
-        part = pyblock_partition(self.blocks, self._corrected_rp)
-        rp = _pyblock_return_point(self.blocks, self._corrected_rp)
+        # The partition, return-point map and arity fixpoint were computed
+        # once in `_compute_subs_and_protos` / `_compute_call_pairs` from
+        # exactly these inputs — reuse them instead of a 2nd and 3rd run.
+        part = self._bb_to_sub
+        rp = self._return_point
         # Bottom-anchored answers for frame ops in depth-poisoned blocks —
         # where the working list is not bottom-anchored and ``stack[pos]``
         # would read a neighbouring cell on the shallower paths.
@@ -335,13 +337,15 @@ class PySSA:
         frame_analysis = frame_slots.analyze(
             self.blocks, part, self._proto_io, rp, self._frame_edepth,
             self._unsafe_callee_blocks,
-            stacksim.infer_arities(self.blocks, part, self._proto_io, rp),
+            self._callsub_arities,
             poisoned=self._height_poisoned)
         self._frame_analysis = frame_analysis
         res = stacksim.simulate(self.blocks, part, self._proto_io, rp, mint,
                                 unsafe_callees=self._unsafe_callee_blocks,
                                 frame_analysis=frame_analysis,
-                                effect_summaries=self._effect_summaries)
+                                effect_summaries=self._effect_summaries,
+                                arity=self._callsub_arities,
+                                divergent_subs=self._arity_divergent)
         self._stack_result = res
         self._divergent_legacy = {b.key for b in res.divergent}
         for b in self.blocks:
@@ -408,10 +412,15 @@ class PySSA:
         from . import stacksim
 
         return_point = _pyblock_return_point(self.blocks, self._corrected_rp)
+        # Cache both for the later phases: `_classify_call_effects` and
+        # `_phase_stacksim` used to recompute this return-point map (×3) and
+        # re-run the whole-program arity FIXPOINT (×3) with identical inputs.
+        self._return_point = return_point
         divergent: set = set()
         self._callsub_arities = stacksim.infer_arities(
             self.blocks, self._bb_to_sub, self._proto_io, return_point,
             divergent=divergent)
+        self._arity_divergent = divergent
         self._call_pairs = {}
         self._pair_by_cs = {}
         for cs, cont in return_point.items():
@@ -491,8 +500,7 @@ class PySSA:
 
         # Reverse reachability to a retsub over local edges (callsub -> its
         # return point; retsub/return/err terminal), mirroring pyblock_partition.
-        from ..cfg.subroutines import _pyblock_return_point
-        return_point = _pyblock_return_point(self.blocks, self._corrected_rp)
+        return_point = self._return_point
         local_preds: dict = {}
         reach_wl: list = []
         for b in self.blocks:
