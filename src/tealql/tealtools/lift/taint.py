@@ -158,6 +158,87 @@ def _invoke(o):
     return None
 
 
+def transfer_fixpoint(lifter, taint: dict, *, seed_label, invoke_ins,
+                      per_round=None, subs=None) -> None:
+    """THE taint transfer fixpoint — shared by :func:`user_input_taint`,
+    :func:`_return_summary` and :func:`summaries.compute_summaries`, which
+    used to carry three near-verbatim ~80-line copies of this body, so every
+    conservatism fix (the unknown-scratch series included) had to be mirrored
+    by hand three times.
+
+    ``taint`` maps ``id(Register) -> set`` and is mutated to the least
+    fixpoint. The three knobs:
+
+    * ``seed_label(intrinsic) -> label | None`` — the trusted-args exemption
+      lives in the caller's lambda;
+    * ``invoke_ins(o, inv, reg_t) -> (ins: set, changed: bool)`` — the
+      interprocedural rule (summary lookup, param seeding, unknown-callee
+      fallback);
+    * ``per_round(reg_t) -> bool`` — the caller's per-round epilogue
+      (return-marker / checked-param refinement), run after each sweep.
+    """
+    ssa_of = getattr(lifter, "register_sources", {})
+    unknown_scratch_slots: set = set()
+    unknown_dynamic = False
+
+    def reg_t(v):
+        return value_sources(v, taint)
+
+    blocks = list(pre_ir.blocks(lifter.subs if subs is None else subs))
+    changed = True
+    while changed:
+        changed = False
+        for b in blocks:
+            for ph in b.phis:
+                new = set()
+                for a in ph.args:
+                    new |= reg_t(a.value)
+                if new - taint[id(ph.register)]:
+                    taint[id(ph.register)] |= new
+                    changed = True
+            for o in b.ops:
+                ins = set()
+                src = _intr(o)
+                if src is not None:
+                    lbl = seed_label(src)
+                    if lbl:
+                        ins.add(lbl)
+                    for a in src.args:
+                        ins |= reg_t(a)
+                    if _scratch_read_is_unknown(
+                            src, unknown_scratch_slots, unknown_dynamic):
+                        ins.add(UNKNOWN_SOURCE)
+                    if src.op in ("load", "loads"):     # scratch reaching-def
+                        out = (o.targets[0]
+                               if getattr(o, "targets", None) else None)
+                        lvs = ssa_of.get(id(out), ()) if out is not None else ()
+                        for lv in lvs:
+                            for sv in lifter.load_stores.get(lv, ()):
+                                if isinstance(sv, (SSAVar, Phi)):
+                                    ins |= reg_t(_lift_value(lifter, sv))
+                    slot, dynamic = _scratch_unknown_write(src, reg_t)
+                    if slot is not None and slot not in unknown_scratch_slots:
+                        unknown_scratch_slots.add(slot)
+                        changed = True
+                    if dynamic and not unknown_dynamic:
+                        unknown_dynamic = True
+                        changed = True
+                direct = _assignment_sources(o, taint)
+                inv = _invoke(o)
+                if inv is not None:
+                    extra, inv_changed = invoke_ins(o, inv, reg_t)
+                    ins |= extra
+                    changed = changed or inv_changed
+                for index, t in enumerate(getattr(o, "targets", ()) or ()):
+                    target_ins = (ins | direct[index]
+                                  if index < len(direct) else ins)
+                    if target_ins - taint[id(t)]:
+                        taint[id(t)] |= target_ins
+                        changed = True
+        if per_round is not None and per_round(reg_t):
+            changed = True
+
+
 def _return_summary(lifter, trusted_args=frozenset()) -> dict:
     """Per-subroutine taint summary ``{sub.id: (srcs, params)}`` — ``srcs`` = source
     labels reaching a returned value from INSIDE the sub, ``params`` = the parameter
@@ -166,74 +247,33 @@ def _return_summary(lifter, trusted_args=frozenset()) -> dict:
     HAZARD: a call site must apply BOTH halves — ``srcs`` always, plus the taint of
     each passthrough arg. Using only the args UNDER-taints (it misses a sub that
     reads a source itself); tainting on any arg OVER-taints."""
-    ssa_of = getattr(lifter, "register_sources", {})
     subs = [s for s in lifter.subs if not s.is_main]
     taint: dict = defaultdict(set)
     for s in subs:                                  # seed each param with its marker
         for i, p in enumerate(s.parameters):
             taint[id(p.register)].add(("p", s.id, i))
     summary: dict = {s.id: [set(), set()] for s in subs}   # mutable accumulators
-    unknown_scratch_slots: set = set()
-    unknown_dynamic_scratch = False
 
-    def reg_t(v):
-        return value_sources(v, taint)
+    def _seed(src):
+        lbl = source_label(src)
+        # Honor the caller's pin here too.
+        return lbl if lbl and not _trusted_apparg(src, trusted_args) else None
 
-    changed = True
-    while changed:
+    def _inv(o, inv, reg_t):
+        ins: set = set()
+        callee = lifter.name2sub.get(inv.target)
+        if callee is not None:                      # resolve via the summary
+            csrcs, cparams = summary[callee.id]
+            ins |= csrcs
+            for i in cparams:
+                if i < len(inv.args):
+                    ins |= reg_t(inv.args[i])
+        return ins, False
+
+    def _refine(reg_t) -> bool:
         changed = False
-        for s in subs:
-            for b in s.body:
-                for ph in b.phis:
-                    new = set()
-                    for a in ph.args:
-                        new |= reg_t(a.value)
-                    if new - taint[id(ph.register)]:
-                        taint[id(ph.register)] |= new
-                        changed = True
-                for o in b.ops:
-                    ins = set()
-                    src = _intr(o)
-                    if src is not None:
-                        lbl = source_label(src)
-                        if lbl and not _trusted_apparg(src, trusted_args):
-                            ins.add(lbl)                # honor the caller's pin here too
-                        for a in src.args:
-                            ins |= reg_t(a)
-                        if _scratch_read_is_unknown(
-                                src, unknown_scratch_slots, unknown_dynamic_scratch):
-                            ins.add(UNKNOWN_SOURCE)
-                        if src.op in ("load", "loads"):     # scratch reaching-def
-                            out = o.targets[0] if getattr(o, "targets", None) else None
-                            lvs = ssa_of.get(id(out), ()) if out is not None else ()
-                            for lv in lvs:
-                                for sv in lifter.load_stores.get(lv, ()):
-                                    if isinstance(sv, (SSAVar, Phi)):
-                                        ins |= reg_t(_lift_value(lifter, sv))
-                        slot, dynamic = _scratch_unknown_write(src, reg_t)
-                        if slot is not None and slot not in unknown_scratch_slots:
-                            unknown_scratch_slots.add(slot)
-                            changed = True
-                        if dynamic and not unknown_dynamic_scratch:
-                            unknown_dynamic_scratch = True
-                            changed = True
-                    direct = _assignment_sources(o, taint)
-                    inv = _invoke(o)
-                    if inv is not None:
-                        callee = lifter.name2sub.get(inv.target)
-                        if callee is not None:              # resolve via the summary
-                            csrcs, cparams = summary[callee.id]
-                            ins |= csrcs
-                            for i in cparams:
-                                if i < len(inv.args):
-                                    ins |= reg_t(inv.args[i])
-                    for index, t in enumerate(getattr(o, "targets", ()) or ()):
-                        target_ins = (ins | direct[index]
-                                      if index < len(direct) else ins)
-                        if target_ins - taint[id(t)]:
-                            taint[id(t)] |= target_ins
-                            changed = True
-            srcs, params = summary[s.id]                    # refine s's own summary
+        for s in subs:                              # refine each sub's summary
+            srcs, params = summary[s.id]
             for b in s.body:
                 if isinstance(b.terminator, pre_ir.SubroutineReturn):
                     for rv in b.terminator.result:
@@ -245,6 +285,10 @@ def _return_summary(lifter, trusted_args=frozenset()) -> dict:
                             elif m not in srcs:
                                 srcs.add(m)
                                 changed = True
+        return changed
+
+    transfer_fixpoint(lifter, taint, seed_label=_seed, invoke_ins=_inv,
+                      per_round=_refine, subs=subs)
     return {sid: (frozenset(sv[0]), frozenset(sv[1])) for sid, sv in summary.items()}
 
 
@@ -264,80 +308,37 @@ def user_input_taint(lifter, trusted_args=frozenset()) -> dict:
         lifter._user_input_taint_cache = cache
     if key in cache:
         return cache[key]
-    # register -> its SSA var, to consult the scratch reaching-def on a `load`.
-    ssa_of = getattr(lifter, "register_sources", {})
     summary = _return_summary(lifter, trusted_args)   # interprocedural param->return summary
     taint: dict = defaultdict(set)
-    unknown_scratch_slots: set = set()
-    unknown_dynamic_scratch = False
 
-    def reg_t(v):
-        return value_sources(v, taint)
+    def _seed(src):
+        lbl = source_label(src)
+        return lbl if lbl and not _trusted_apparg(src, trusted_args) else None
 
-    changed = True
-    while changed:
+    def _inv(o, inv, reg_t):
+        ins: set = set()
         changed = False
-        for b in pre_ir.blocks(lifter.subs):
-            for ph in b.phis:
-                new = set()
-                for a in ph.args:
-                    new |= reg_t(a.value)
-                if new - taint[id(ph.register)]:
-                    taint[id(ph.register)] |= new
-                    changed = True
-            for o in b.ops:
-                ins = set()
-                src = _intr(o)
-                if src is not None:
-                    lbl = source_label(src)
-                    if lbl and not _trusted_apparg(src, trusted_args):
-                        ins.add(lbl)                # seed
-                    for a in src.args:
-                        ins |= reg_t(a)
-                    if _scratch_read_is_unknown(
-                            src, unknown_scratch_slots, unknown_dynamic_scratch):
-                        ins.add(UNKNOWN_SOURCE)
-                    if src.op in ("load", "loads"):  # scratch: reaching-def precise
-                        out = o.targets[0] if getattr(o, "targets", None) else None
-                        lvs = ssa_of.get(id(out), ()) if out is not None else ()
-                        for lv in lvs:
-                            for sv in lifter.load_stores.get(lv, ()):
-                                if isinstance(sv, (SSAVar, Phi)):
-                                    ins |= reg_t(_lift_value(lifter, sv))
-                    slot, dynamic = _scratch_unknown_write(src, reg_t)
-                    if slot is not None and slot not in unknown_scratch_slots:
-                        unknown_scratch_slots.add(slot)
+        callee = lifter.name2sub.get(inv.target)
+        if callee is not None:
+            # result <- the callee's summary: its internal-source returns
+            # plus only the params that actually flow through.
+            csrcs, cparams = summary.get(callee.id, (frozenset(), frozenset()))
+            ins |= csrcs
+            for i in cparams:
+                if i < len(inv.args):
+                    ins |= reg_t(inv.args[i])
+            for i, p in enumerate(callee.parameters):   # arg -> callee param
+                if i < len(inv.args):
+                    pt = reg_t(inv.args[i])
+                    if pt - taint[id(p.register)]:
+                        taint[id(p.register)] |= pt
                         changed = True
-                    if dynamic and not unknown_dynamic_scratch:
-                        unknown_dynamic_scratch = True
-                        changed = True
-                direct = _assignment_sources(o, taint)
-                inv = _invoke(o)
-                if inv is not None:
-                    callee = lifter.name2sub.get(inv.target)
-                    if callee is not None:
-                        # result <- the callee's summary: its internal-source returns
-                        # plus only the params that actually flow through.
-                        csrcs, cparams = summary.get(callee.id, (frozenset(), frozenset()))
-                        ins |= csrcs
-                        for i in cparams:
-                            if i < len(inv.args):
-                                ins |= reg_t(inv.args[i])
-                        for i, p in enumerate(callee.parameters):   # arg -> callee param
-                            if i < len(inv.args):
-                                pt = reg_t(inv.args[i])
-                                if pt - taint[id(p.register)]:
-                                    taint[id(p.register)] |= pt
-                                    changed = True
-                    else:                           # unknown callee: stay conservative
-                        for a in inv.args:
-                            ins |= reg_t(a)
-                for index, t in enumerate(getattr(o, "targets", ()) or ()):
-                    target_ins = (ins | direct[index]
-                                  if index < len(direct) else ins)
-                    if target_ins - taint[id(t)]:
-                        taint[id(t)] |= target_ins
-                        changed = True
+        else:                           # unknown callee: stay conservative
+            for a in inv.args:
+                ins |= reg_t(a)
+        return ins, changed
+
+    transfer_fixpoint(lifter, taint, seed_label=_seed, invoke_ins=_inv)
     result = {k: frozenset(v) for k, v in taint.items() if v}
     cache[key] = result
     return result

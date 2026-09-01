@@ -63,16 +63,10 @@ _CMP_OPS = _EQ_OPS | _NEQ_OPS | frozenset({
 # --------------------------------------------------------------------------
 
 
-def _succs(term) -> list:
-    if isinstance(term, pre_ir.Goto):
-        return [term.target]
-    if isinstance(term, pre_ir.ConditionalBranch):
-        return [term.non_zero, term.zero]
-    if isinstance(term, pre_ir.GotoNth):
-        return list(term.blocks) + [term.default]
-    if isinstance(term, pre_ir.Switch):
-        return [b for _, b in term.cases] + [term.default]
-    return []
+# The one canonical successor spelling — a local copy had already drifted
+# (it kept Switch's shadowed-key duplicate arms, minting phantom predecessors
+# that weaken every dominance fact computed here).
+_succs = pre_ir.succ_ids
 
 
 def _dominators(sub) -> dict:
@@ -139,6 +133,46 @@ def _cfg_maps(lifter) -> tuple[dict, dict]:
     post_dominators = {sub.id: _post_dominators(sub) for sub in lifter.subs}
     lifter._fund_flow_cfg_maps = (shape, dominators, post_dominators)
     return dominators, post_dominators
+
+
+def _value_maps(lifter) -> tuple:
+    """The taint-INDEPENDENT def/guard maps every sink family shares, cached
+    like :func:`_cfg_maps` — an audit calls one family after another on the
+    same completed lift, and each used to rebuild all six maps in full.
+    Results are READ-ONLY to callers. The key adds op identity to the CFG
+    shape so hand-mutated pre-IR in tests misses the cache."""
+    dom_by_sub, pdom_by_sub = _cfg_maps(lifter)
+    vshape = tuple(
+        (id(sub), tuple(id(o) for b in sub.body for o in b.ops))
+        for sub in lifter.subs
+    )
+    cached = getattr(lifter, "_fund_flow_value_maps", None)
+    if cached is not None and cached[0] == vshape:
+        return (dom_by_sub, pdom_by_sub, *cached[1])
+    def_of = _def_map(lifter)
+    # Value edges the def-walk follows: a call result into the callee's returns,
+    # plus a scratch round-trip back to what was stored (same map shape).
+    inv_ret = _invoke_returns(lifter)
+    inv_ret.update(_scratch_value_edges(lifter, dom_by_sub))
+    callee_pg = _callee_param_guards(lifter, def_of, dom_by_sub, inv_ret)
+    callee_sender = _callee_sender_guards(lifter, def_of, dom_by_sub, inv_ret)
+    payload = (def_of, inv_ret, callee_pg, callee_sender)
+    lifter._fund_flow_value_maps = (vshape, payload)
+    return (dom_by_sub, pdom_by_sub, *payload)
+
+
+def _cached_entry_guards(lifter, def_of, dom_by_sub, taint, inv_ret):
+    """`_entry_guards` keyed on the taint map's IDENTITY: `user_input_taint`
+    is itself cached, so the same dict recurs across sink families. The cache
+    holds a strong reference and compares with ``is`` — a bare ``id()`` key
+    can be reused after GC and would serve stale guards for a different
+    taint view (the id()-reuse trap this repo has been bitten by before)."""
+    cached = getattr(lifter, "_fund_flow_entry_guards", None)
+    if cached is not None and cached[0] is taint:
+        return cached[1]
+    out = _entry_guards(lifter, def_of, dom_by_sub, taint, inv_ret)
+    lifter._fund_flow_entry_guards = (taint, out)
+    return out
 
 
 def _post_dominating_guards(by_id, pdom, sink_bid, sink_idx, def_of, sink_regs,
@@ -830,15 +864,10 @@ def _tainted_sink_flows(lifter, sink_of, taint=None, trusted_args=frozenset(),
         # A caller-supplied abstraction replaces the input source lattice, not
         # TOP. Preserve ``Undefined -> op -> register`` through custom views.
         taint = _merge_unresolved(lifter, taint)
-    def_of = _def_map(lifter)
-    dom_by_sub, pdom_by_sub = _cfg_maps(lifter)
-    # Value edges the def-walk follows: a call result into the callee's returns,
-    # plus a scratch round-trip back to what was stored (same map shape).
-    inv_ret = _invoke_returns(lifter)
-    inv_ret.update(_scratch_value_edges(lifter, dom_by_sub))
-    entry_guards, called = _entry_guards(lifter, def_of, dom_by_sub, taint, inv_ret)
-    callee_pg = _callee_param_guards(lifter, def_of, dom_by_sub, inv_ret)
-    callee_sender = _callee_sender_guards(lifter, def_of, dom_by_sub, inv_ret)
+    dom_by_sub, pdom_by_sub, def_of, inv_ret, callee_pg, callee_sender = (
+        _value_maps(lifter))
+    entry_guards, called = _cached_entry_guards(
+        lifter, def_of, dom_by_sub, taint, inv_ret)
     findings: list = []
     for sub in lifter.subs:
         dom = dom_by_sub[sub.id]
@@ -981,7 +1010,7 @@ def itxn_selector_lines_returned_to_sender(
     by source line.
     """
     definitions = _def_map(lifter)
-    dominators, _post_dominators = _cfg_maps(lifter)
+    dominators, _unused_post_dom = _cfg_maps(lifter)
     value_edges = _invoke_returns(lifter)
     value_edges.update(_scratch_value_edges(lifter, dominators))
 

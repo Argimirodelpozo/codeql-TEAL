@@ -19,18 +19,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 
 from . import pre_ir
-from .taint import (
-    UNKNOWN_SOURCE,
-    _assignment_sources,
-    _intr,
-    _invoke,
-    _lift_value,
-    _scratch_read_is_unknown,
-    _scratch_unknown_write,
-    source_label,
-    value_sources,
-)
-from ..ssa import Phi, SSAVar
+from .taint import source_label, transfer_fixpoint
 
 
 @dataclass(frozen=True)
@@ -67,67 +56,21 @@ def compute_summaries(lifter) -> dict:
             taint[id(p.register)].add(("p", s.id, i))
     # mutable accumulators: [internal_sources, passthrough, checked]
     acc: dict = {s.id: [set(), set(), set()] for s in subs}
-    ssa_of = getattr(lifter, "register_sources", {})
-    unknown_scratch_slots: set = set()
-    unknown_dynamic_scratch = False
 
-    def reg_t(v):
-        return value_sources(v, taint)
+    def _inv(o, inv, reg_t):
+        ins: set = set()
+        callee = lifter.name2sub.get(inv.target)
+        if callee is not None:
+            csrcs, cparams, _ = acc[callee.id]
+            ins |= csrcs
+            for i in cparams:
+                if i < len(inv.args):
+                    ins |= reg_t(inv.args[i])
+        return ins, False
 
-    changed = True
-    while changed:
+    def _refine(reg_t) -> bool:
         changed = False
         for s in subs:
-            for b in s.body:
-                for ph in b.phis:
-                    new = set()
-                    for a in ph.args:
-                        new |= reg_t(a.value)
-                    if new - taint[id(ph.register)]:
-                        taint[id(ph.register)] |= new
-                        changed = True
-                for o in b.ops:
-                    ins = set()
-                    src = _intr(o)
-                    if src is not None:
-                        lbl = source_label(src)
-                        if lbl:
-                            ins.add(lbl)
-                        for a in src.args:
-                            ins |= reg_t(a)
-                        if _scratch_read_is_unknown(
-                                src, unknown_scratch_slots, unknown_dynamic_scratch):
-                            ins.add(UNKNOWN_SOURCE)
-                        slot, dynamic = _scratch_unknown_write(src, reg_t)
-                        if slot is not None and slot not in unknown_scratch_slots:
-                            unknown_scratch_slots.add(slot)
-                            changed = True
-                        if dynamic and not unknown_dynamic_scratch:
-                            unknown_dynamic_scratch = True
-                            changed = True
-                        if src.op in ("load", "loads"):
-                            out = o.targets[0] if getattr(o, "targets", None) else None
-                            for lv in ssa_of.get(id(out), ()) if out is not None else ():
-                                for sv in lifter.load_stores.get(lv, ()):
-                                    if isinstance(sv, (SSAVar, Phi)):
-                                        ins |= reg_t(_lift_value(lifter, sv))
-                    direct = _assignment_sources(o, taint)
-                    inv = _invoke(o)
-                    if inv is not None:
-                        callee = lifter.name2sub.get(inv.target)
-                        if callee is not None:
-                            csrcs, cparams, _ = acc[callee.id]
-                            ins |= csrcs
-                            for i in cparams:
-                                if i < len(inv.args):
-                                    ins |= reg_t(inv.args[i])
-                    for index, t in enumerate(getattr(o, "targets", ()) or ()):
-                        target_ins = (ins | direct[index]
-                                      if index < len(direct) else ins)
-                        if target_ins - taint[id(t)]:
-                            taint[id(t)] |= target_ins
-                            changed = True
-
             srcs, params, checked = acc[s.id]
             # taint transfer: markers reaching a returned value
             for b in s.body:
@@ -151,6 +94,10 @@ def compute_summaries(lifter) -> dict:
                                     and m[2] not in checked:
                                 checked.add(m[2])
                                 changed = True
+        return changed
+
+    transfer_fixpoint(lifter, taint, seed_label=source_label, invoke_ins=_inv,
+                      per_round=_refine, subs=subs)
 
     return {
         sid: SubSummary(frozenset(v[1]), frozenset(v[0]), frozenset(v[2]))
