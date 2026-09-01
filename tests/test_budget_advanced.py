@@ -293,3 +293,26 @@ def test_constant_capped_loops_are_dropped_on_a_real_contract():
         f"budget-exhaustion candidates moved to {len(candidates)} (expected 5). "
         f"Ten before the constant-cap fix; a rise back toward ten means the cap "
         f"stopped being credited, a fall means a state-bounded loop was dropped.")
+
+
+def test_opaque_leaf_conditions_are_attacker_possible():
+    """The attacker-rooted walk DIED at no-input opaque reads — a group
+    sibling's scratch (`gloads`, attacker-assembled group) or an unresolved
+    multi-store `load` — and returned False, silently excluding exactly the
+    loops a reviewer must see. Unknown = attacker-possible for a candidate
+    generator. Control: a constant-conditioned loop stays excluded."""
+    gloads_loop = _program(
+        "#pragma version 8\nloop:\nint 0\ngloads 0\nbz done\nb loop\n"
+        "done:\nint 1\nreturn\n")
+    assert find_budget_exhaustion_candidates(gloads_loop), (
+        "group-sibling-scratch-conditioned loop must be a candidate")
+    scratch_loop = _program(
+        "#pragma version 8\ntxn Fee\nstore 0\ntxn Amount\nstore 0\n"
+        "loop:\nload 0\nbz done\nb loop\ndone:\nint 1\nreturn\n")
+    assert find_budget_exhaustion_candidates(scratch_loop), (
+        "multi-store scratch-conditioned loop must be a candidate")
+    const_loop = _program(
+        "#pragma version 8\nint 0\nloop:\ndup\nint 24\n<\nbz done\nint 1\n+\n"
+        "b loop\ndone:\nint 1\nreturn\n")
+    assert not find_budget_exhaustion_candidates(const_loop), (
+        "the honest bounded for-loop must stay suppressed")

@@ -63,19 +63,27 @@ def infer_program_mode(prog: "SSAProgram") -> ProgramMode:
 
 
 def infer_avm_version(prog: "SSAProgram") -> Optional[int]:
-    """Highest ``#pragma version`` in the immutable source snapshot."""
+    """Highest ``#pragma version`` in the immutable source snapshot.
+
+    A readable source with NO pragma assembles as version 1 (the assembler's
+    default), so it reports 1 — v1's distinct opcode costs (hashes) apply.
+    ``None`` only when no source text could be read at all."""
     versions: list[int] = []
+    saw_source = False
     sources = getattr(prog, "sources", None)
     for unit in getattr(sources, "files", ()):
         try:
             text = unit.text()
         except Exception:
             continue
+        saw_source = True
         versions.extend(
             int(match.group(1))
             for match in re.finditer(r"(?m)^\s*#pragma\s+version\s+(\d+)\b", text)
         )
-    return max(versions) if versions else None
+    if versions:
+        return max(versions)
+    return 1 if saw_source else None
 
 
 @dataclass(frozen=True)

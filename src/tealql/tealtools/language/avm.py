@@ -21,10 +21,10 @@ from __future__ import annotations
 
 from typing import Optional
 
-#: AVM/TEAL langspec version these tables target (v12 = ``falcon_verify`` /
-#: ``sumhash512``). Informational — the drift test pins result types and
+#: AVM/TEAL langspec version these tables target (v13 = ``sha512``).
+#: Informational — the drift test pins result types and
 #: arities to the installed puya, so a mismatch surfaces there.
-AVM_LANGSPEC_VERSION = 12
+AVM_LANGSPEC_VERSION = 13
 
 
 # ===========================================================================
@@ -970,6 +970,7 @@ FIXED_BYTES_OUTPUT_LEN: dict[str, int] = {
     "sha512_256": 32,
     "keccak256":  32,
     "sha3_256":   32,
+    "sha512":     64,
     "mimc":       32,
     "sumhash512": 64,
 }
@@ -1065,7 +1066,7 @@ _STACK_SHUFFLE_OPS: frozenset = frozenset({
 # encode detector-specific trust: a source may independently seed an output,
 # and a sink may independently inspect an input.
 VALUE_FLOW_HASH_OPS: frozenset[str] = frozenset({
-    "sha256", "keccak256", "sha512_256", "sha3_256",
+    "sha256", "keccak256", "sha512_256", "sha3_256", "sha512",
 })
 
 VALUE_FLOW_SLICE_OPS: frozenset[str] = frozenset({

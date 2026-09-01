@@ -521,12 +521,16 @@ class _Collector:
                 if family == "Applications" and index == 0:
                     return self.add_reference(family, "implicit", "current", assignment)
                 # AVM deliberately makes resource IDs below 256 invalid, so
-                # small uints are unambiguously legacy array offsets.  Apps
-                # have the current app at offset 0; ForeignApps starts at 1.
+                # small uints are unambiguously legacy array offsets.  A scalar
+                # ``int i`` resolves EXACTLY like ``txna <family> i`` does
+                # (for Applications, 0 is the current app — handled above —
+                # and i>=1 is ForeignApps[i-1], which is what ``txna
+                # Applications i`` returns), so both forms must emit the SAME
+                # label: a shifted one made ``int 3`` and ``txna Applications
+                # 3`` (the same app) read as two different apps.
                 if index is not None and index < 256:
-                    array_index = index - 1 if family == "Applications" else index
                     return self.add_reference(
-                        family, "position", f"txn.{family}[{array_index}]", assignment
+                        family, "position", f"txn.{family}[{index}]", assignment
                     )
                 return self.add_reference(family, "identity", constant.value, assignment)
 

@@ -140,13 +140,40 @@ def _all_distances(cfg: CFG, model: CostModel, pp, *, upper: bool):
 
 def _path_cost(
     path: tuple[BasicBlock, ...], target: BudgetTarget, model: CostModel,
+    *, upper: bool,
 ) -> CostFact:
+    """Total charge of the witness ``path`` plus the target's own prefix.
+
+    HAZARD: mirror :func:`_weighted_cfg` EDGE BY EDGE. Charging
+    ``execution_block_cost`` on every prefix block counts a callee TWICE when
+    the path walks the raw ``callsub``→entry edge (the summary on the call
+    block plus the callee's own blocks) — which produced a wrong
+    "budget-infeasible" PROOF at a truly affordable in-callee target."""
     if not path:
         raise ValueError("a cost witness path must not be empty")
-    return (
-        sum_costs(model.execution_block_cost(block) for block in path[:-1])
-        + _target_block_cost(target, model)
-    )
+    subroutines = model._subroutine_info()
+
+    def bound(fact: CostFact):
+        return fact.upper if upper else fact.lower
+
+    charges = []
+    for block, nxt in zip(path, path[1:]):
+        plain = model.block_cost(block)
+        if (model._terminator(block) == "callsub"
+                and subroutines["continuations"].get(block) is nxt):
+            summarized = model.execution_block_cost(block)
+            if nxt in block.successors:
+                # Both edges existed; the search took the lighter one at
+                # THIS bound — charge the same.
+                b_p, b_s = bound(plain), bound(summarized)
+                charges.append(
+                    plain if b_p is not None and (b_s is None or b_p <= b_s)
+                    else summarized)
+            else:
+                charges.append(summarized)
+        else:
+            charges.append(plain)
+    return sum_costs(charges) + _target_block_cost(target, model)
 
 
 def _minimum_cost_from_maps(
@@ -160,11 +187,11 @@ def _minimum_cost_from_maps(
     lower_block_path = lower_paths.get(target_block)
     if lower_block_path is None:
         return MinimumCost(target, None, (), ctx)
-    lower_cost = _path_cost(lower_block_path, target, model)
+    lower_cost = _path_cost(lower_block_path, target, model, upper=False)
 
     upper_block_path = upper_paths.get(target_block)
     upper_cost = (
-        _path_cost(upper_block_path, target, model)
+        _path_cost(upper_block_path, target, model, upper=True)
         if upper_block_path is not None else None
     )
     # An assignment target may occur before an unbounded operation later in

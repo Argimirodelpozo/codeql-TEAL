@@ -445,3 +445,32 @@ def test_block_address_fields_single_source_consistency():
         assert avm._BLOCK_FIELD_BYTELEN.get(f) == 32, f
     assert {f for f, t in avm._BLOCK_FIELD_TYPE.items() if t == "account"} \
         == set(avm.ADDRESS_BLOCK_FIELDS)
+
+
+def test_new_opcode_wiring_has_no_half_wired_gaps():
+    """A new AVM version's opcode must land in EVERY table that models it, not
+    just `SIG` — `sha512` (v13) shipped half-wired: absent from
+    `FIXED_BYTES_OUTPUT_LEN` (it is a fixed 64-byte digest) and classified
+    `derived` instead of `special`, so the dataflow engine's precise hash rule
+    skipped it. Pin the cross-table consistency so the NEXT opcode cannot
+    repeat the drift."""
+    from tealql.tealtools.budget.costs import (
+        _FIELD_COSTS, _FIELD_LENGTH_COSTS, _LENGTH_COSTS, op_cost,
+    )
+    from tealql.tealtools.language.avm import (
+        FIXED_BYTES_OUTPUT_LEN, VALUE_FLOW_HASH_OPS, value_dependency_kind,
+    )
+
+    assert FIXED_BYTES_OUTPUT_LEN.get("sha512") == 64
+    assert "sha512" in VALUE_FLOW_HASH_OPS
+    # Every fixed-width digest/transcode producer is a modelled special op —
+    # a `derived` classification means a value-flow set was forgotten.
+    for op in FIXED_BYTES_OUTPUT_LEN:
+        assert value_dependency_kind(op) == "special", (
+            f"{op} has a fixed output width but no value-flow classification")
+    # An op with a length/immediate-dependent cost table must never price as
+    # EXACTLY the 1-credit floor just because Puya's enum lacks it.
+    for op in {*_LENGTH_COSTS, *_FIELD_COSTS, *_FIELD_LENGTH_COSTS}:
+        fact = op_cost(op)
+        assert not (fact.exact and fact.lower == 1), (
+            f"{op} priced exact-1 despite a cost table entry")

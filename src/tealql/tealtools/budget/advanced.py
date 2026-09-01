@@ -8,12 +8,13 @@ import networkx as nx
 
 from ..analysis import FactDomain
 from ..cfg import CFG
+from ..language.avm import VALUE_FLOW_OPAQUE_READ_OPS
 from ..ssa import Assignment, BasicBlock, Const, Phi, SSAProgram, SSAVar, binary_operands, const_int
 from ..cfg.structure import analyze_structure
 from .context import BudgetContext, context_for
 from .costs import CostFact, CostModel, canonical_assignments, sum_costs
 from .loop_bounds import LoopBound, analyze_loops
-from .queries import MinimumCost, minimum_cost
+from .queries import MinimumCost
 
 
 @dataclass(frozen=True)
@@ -45,6 +46,27 @@ def summarize_methods(
     structure = analyze_structure(prog)
     loops = analyze_loops(prog, context=ctx)
     from ..cfg.exits import is_approval_exit
+
+    # ONE pair of whole-program searches shared across every exit: calling
+    # `minimum_cost` per approving exit rebuilt the CFG, the cost model, the
+    # predicate fixpoint and both Dijkstras N·M times for a router with N
+    # handlers × M exits.
+    shared = None
+
+    def _shared():
+        nonlocal shared
+        if shared is None:
+            from ..cfg import CFG
+            from ..cfg.path_predicates import PathPredicateAnalysis
+            from .queries import _all_distances
+            cfg = CFG.of(prog)
+            model = CostModel(prog, avm_version=ctx.avm_version)
+            pp = PathPredicateAnalysis(prog)
+            _ld, lower_paths = _all_distances(cfg, model, pp, upper=False)
+            _ud, upper_paths = _all_distances(cfg, model, pp, upper=True)
+            shared = (model, lower_paths, upper_paths)
+        return shared
+
     out: list[MethodBudgetSummary] = []
     for name, blocks in structure.handler_functions():
         exits = tuple(
@@ -60,10 +82,15 @@ def summarize_methods(
             and assignment.basic_block is not None
             and is_approval_exit(assignment.basic_block)
         )
-        results = [
-            minimum_cost(prog, exit_assignment, context=ctx)
-            for exit_assignment in approving
-        ]
+        results = []
+        if approving:
+            from .queries import _minimum_cost_from_maps
+            model, lower_paths, upper_paths = _shared()
+            results = [
+                _minimum_cost_from_maps(
+                    exit_assignment, ctx, model, lower_paths, upper_paths)
+                for exit_assignment in approving
+            ]
         reachable = [result for result in results if result.cost is not None]
         cheapest = min(reachable, key=lambda result: result.cost.lower) if reachable else None
         out.append(MethodBudgetSummary(
@@ -257,9 +284,23 @@ _ATTACKER_READS = frozenset({
     "gtxns", "gtxnsa", "gtxnsas",
 })
 
+#: Reads whose RESULT is external to the value walk — a scratch slot the facts
+#: layer could not resolve, a group SIBLING's scratch (attacker-assembled
+#: group), stored app/asset/box state. Walking into their INPUTS (a slot index,
+#: a key) says nothing about the value itself.
+_OPAQUE_LEAF_OPS = VALUE_FLOW_OPAQUE_READ_OPS | frozenset({
+    "load", "loads", "gload", "gloads", "gloadss",
+})
+
 
 def _attacker_rooted(value, facts, seen=None) -> bool:
-    """Whether any definition leaf is attacker-controlled, without recursion."""
+    """Whether any definition leaf is attacker-controlled, without recursion.
+
+    HAZARD: for a REVIEW-candidate generator, an UNKNOWN leaf must count as
+    attacker-possible. The walk used to simply die at a no-input opaque read
+    (`load` of a multi-store slot, `gloads` of a group sibling's scratch) and
+    return False — silently excluding every scratch- or group-conditioned loop,
+    inverting the repo convention that unknown scratch is a SOURCE."""
     visited = set() if seen is None else set(seen)
     pending = [value]
     while pending:
@@ -280,12 +321,36 @@ def _attacker_rooted(value, facts, seen=None) -> bool:
             return True
         if definition.op in _ATTACKER_READS:
             return True
+        if definition.op in _OPAQUE_LEAF_OPS:
+            return True
         pending.extend(definition.inputs)
     return False
 
 
 _ORDERING_OPS = frozenset({"<", "<=", ">", ">="})
 _NEGATE_ORDERING = {"<": ">=", "<=": ">", ">": "<=", ">=": "<"}
+
+#: Terminators that can decide loop continuation. ONE set for every consumer:
+#: the candidate scan and the cap check each hand-rolled theirs and drifted
+#: ({bnz,bz,switch,match} vs {bnz,bz}), so a switch-continued loop could
+#: become a candidate the cap check could never inspect.
+_EXIT_DECIDING_OPS = frozenset({"bnz", "bz", "switch", "match"})
+
+
+def _exit_deciding_terminators(loop: LoopBound, extra_blocks: frozenset = frozenset()):
+    """``(block, terminator)`` for each loop block whose branch partitions
+    successors between body and exit (plus ``extra_blocks``, for conditional
+    back edges in do/while shapes) — the blocks that DECIDE CONTINUATION."""
+    for block in loop.body:
+        inside = any(s in loop.body for s in block.successors)
+        outside = any(s not in loop.body for s in block.successors)
+        if block not in extra_blocks and not (inside and outside):
+            continue
+        stream = canonical_assignments(block)
+        terminator = next(
+            (a for a in reversed(stream) if a.op in _EXIT_DECIDING_OPS), None)
+        if terminator is not None and terminator.inputs:
+            yield block, terminator
 
 
 def _continuation_relation(prog: SSAProgram, loop: LoopBound, block: BasicBlock,
@@ -387,19 +452,15 @@ def _constant_trip_cap(prog: SSAProgram, loop: LoopBound, facts) -> Optional[int
     if loop.kind != "reducible":
         return None
     caps: list[int] = []
-    for block in loop.body:
+    for block, terminator in _exit_deciding_terminators(loop):
         # Every lap enters a reducible loop through its header.  A guard deeper in
         # the body may be bypassed by another cycle and therefore cannot bound the
         # region as a whole without a separate dominance proof.
         if block is not loop.header:
             continue
-        inside = any(successor in loop.body for successor in block.successors)
-        outside = any(successor not in loop.body for successor in block.successors)
-        if not (inside and outside):
-            continue
-        stream = canonical_assignments(block)
-        terminator = next((a for a in reversed(stream) if a.op in {"bnz", "bz"}), None)
-        if terminator is None or not terminator.inputs:
+        # A switch/match-continued loop has no ordering comparison to prove a
+        # cap from — it stays a candidate rather than being suppressed.
+        if terminator.op not in ("bnz", "bz"):
             continue
         condition = facts.resolve(terminator.inputs[0])
         definition = getattr(condition, "defined_by", None)
@@ -482,17 +543,12 @@ def find_budget_exhaustion_candidates(prog: SSAProgram) -> list[BudgetExhaustion
         # decides whether another lap executes.  Inspect every loop block whose
         # branch partitions successors between the loop body and its exits,
         # while retaining conditional back edges for do/while shapes.
-        back_edge_sources = {source for source, _target in loop.back_edges}
-        for block in loop.body:
-            inside = any(successor in loop.body for successor in block.successors)
-            outside = any(successor not in loop.body for successor in block.successors)
-            if block not in back_edge_sources and not (inside and outside):
-                continue
-            stream = canonical_assignments(block)
-            terminator = next((assignment for assignment in reversed(stream)
-                               if assignment.op in {"bnz", "bz", "switch", "match"}), None)
-            if terminator is not None and terminator.inputs:
-                controlled = controlled or _attacker_rooted(terminator.inputs[0], facts)
+        back_edge_sources = frozenset(
+            source for source, _target in loop.back_edges)
+        for _block, terminator in _exit_deciding_terminators(
+                loop, extra_blocks=back_edge_sources):
+            controlled = controlled or _attacker_rooted(
+                terminator.inputs[0], facts)
         # A growing stack suppresses a *budget* exhaustion candidate only when
         # it provably fails first.  Expensive growing loops can still consume
         # all opcode credit before reaching the depth limit.

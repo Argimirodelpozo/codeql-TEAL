@@ -111,6 +111,25 @@ def op_cost(op: str, immediates: str = "") -> CostFact:
         return CostFact.unknown("Puya cost metadata unavailable")
     if op in table.dynamic:
         return CostFact.unknown(f"dynamic cost for {op}{suffix}")
+    # An opcode Puya's table has not shipped yet may still be in OUR cost
+    # tables (a new AVM version's op, e.g. ``sha512``): claiming the fixed
+    # floor of 1 as EXACT for it would understate every path it sits on.
+    linear = _LENGTH_COSTS.get(op)
+    if linear is not None:
+        return CostFact.unknown(
+            f"length-dependent cost for {op}{suffix}", lower=linear[0])
+    by_field = _FIELD_COSTS.get(op) or _FIELD_LENGTH_COSTS.get(op)
+    if by_field is not None:
+        imm = immediates.split()[0] if immediates.strip() else ""
+        sel = by_field.get(imm)
+        if isinstance(sel, int):
+            return CostFact.known(sel)
+        if isinstance(sel, tuple):            # length-dependent for this field
+            return CostFact.unknown(
+                f"length-dependent cost for {op}{suffix}", lower=sel[0])
+        floors = [v[0] if isinstance(v, tuple) else v for v in by_field.values()]
+        return CostFact.unknown(
+            f"immediate-selected cost for {op}{suffix}", lower=min(floors))
     # Source-level pseudo ops (``int``) and control terminators are lowered
     # away before Puya IR, so they do not occur in AVMOp even though their AVM
     # execution cost is the fixed floor.
@@ -175,6 +194,21 @@ _FIELD_LENGTH_COSTS: dict[str, dict[str, tuple[int, int, int, int]]] = {
 
 def _ceil_div(value: int, divisor: int) -> int:
     return (value + divisor - 1) // divisor
+
+
+def terminator_op(bb: "BasicBlock") -> Optional[str]:
+    """The control op ending ``bb``'s canonical stream, or ``None``.
+
+    The ONE spelling of the control-op set — `loop_bounds` and the cost model
+    each carried a verbatim copy, so a future control op would have to be
+    remembered twice or the loop graph and the cost model silently disagree."""
+    for assignment in reversed(canonical_assignments(bb)):
+        if assignment.op in {
+            "b", "bz", "bnz", "switch", "match", "callsub",
+            "retsub", "return", "err",
+        }:
+            return assignment.op
+    return None
 
 
 class CostModel:
@@ -306,15 +340,7 @@ class CostModel:
             self._block_cache[bb] = cached
         return cached
 
-    @staticmethod
-    def _terminator(bb: "BasicBlock") -> Optional[str]:
-        for assignment in reversed(canonical_assignments(bb)):
-            if assignment.op in {
-                "b", "bz", "bnz", "switch", "match", "callsub",
-                "retsub", "return", "err",
-            }:
-                return assignment.op
-        return None
+    _terminator = staticmethod(terminator_op)
 
     def _subroutine_info(self):
         if self._subroutines is None:

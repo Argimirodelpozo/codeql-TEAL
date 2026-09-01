@@ -454,3 +454,27 @@ def test_resource_classifier_and_parameter_partition_cannot_drift_silently():
     owned = [field for fields in PARAMS_FIELDS_BY_OP.values() for field in fields]
     assert len(owned) == len(set(owned))
     assert set(owned) == set(PARAMS_FIELD_TYPE)
+
+
+def test_scalar_and_array_application_references_share_one_index_space():
+    """A scalar small int resolves exactly like the txna accessor — `int 3;
+    app_params_get` and `txna Applications 3` denote the SAME app — so both
+    must emit the same label. The old `- 1` shift put scalars in
+    ForeignApps-relative space: same label = different apps, and a consumer
+    populating access arrays from references picked wrong slots."""
+    demand = resource_demand(_program("""
+        int 3
+        app_params_get AppCreator
+        pop
+        pop
+        txna Applications 3
+        app_params_get AppCreator
+        pop
+        pop
+        int 1
+        return
+    """))
+    labels = {ref.value for ref in demand.references
+              if ref.family == "Applications"}
+    assert labels == {"txn.Applications[3]"}, (
+        f"the two spellings of the same app must share one label: {labels}")

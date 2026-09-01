@@ -22,17 +22,12 @@ from .costs import (
     CostFact,
     block_cost,
     block_stack_delta,
-    canonical_assignments,
     sum_costs,
 )
 
 
-def _terminator(bb: BasicBlock) -> Optional[str]:
-    for assignment in reversed(canonical_assignments(bb)):
-        if assignment.op in {"b", "bz", "bnz", "switch", "match", "callsub",
-                             "retsub", "return", "err"}:
-            return assignment.op
-    return None
+# The one canonical control-op spelling lives beside the cost model.
+from .costs import terminator_op as _terminator
 
 
 @dataclass(frozen=True)

@@ -432,3 +432,37 @@ def test_loops_cli_exposes_explicit_budget_context(tmp_path, capsys):
         "loops", str(source), "--budget-mode", "clear-state", "--app-calls", "2"
     ]) == 2
     assert "does not accept pooled" in capsys.readouterr().err
+
+
+def test_pragma_less_source_is_version_1():
+    """The assembler defaults to version 1 when no `#pragma version` is
+    present, so a readable pragma-less source must report 1 — otherwise the v1
+    hash-cost override never fires and `sha256` prices as 35-EXACT where the
+    real v1 cost is 7 (an over-stated lower bound, the unsound direction for
+    over-budget proofs)."""
+    prog = _program("byte 0x00\nsha256\npop\nint 1\nreturn\n")
+    assert infer_avm_version(prog) == 1
+    sha = next(a for a in prog.assignments if a.op == "sha256")
+    assert CostModel(prog).assignment_cost(sha).lower == 7
+
+
+def test_in_callee_target_is_not_double_charged():
+    """`_path_cost` charged the full callee summary on every prefix block, so
+    a witness path entering the callee through the raw callsub edge counted
+    the callee TWICE — and `proven_over_budget` (a documented can't-happen)
+    fired at a truly affordable in-callee target."""
+    teal = ("#pragma version 8\n"
+            "callsub big\nint 1\nreturn\n"
+            "big:\nproto 0 0\n"
+            + "byte 0x01\nsha256\npop\n" * 5
+            + "retsub\n")
+    prog = _program(teal)
+    target = next(a for a in prog.assignments if a.op == "retsub")
+    result = minimum_cost(prog, target)
+    # 5×(1+35+1) in the callee + the cheap caller prefix: nowhere near double.
+    assert result.cost.lower < 200, f"callee double-charged: {result.cost}"
+    exact = BudgetContext(result.context.mode, result.context.avm_version,
+                          result.cost.lower, provenance="test")
+    at_minimum = minimum_cost(prog, target, context=exact)
+    assert not at_minimum.proven_over_budget, (
+        "wrong budget-infeasible PROOF at the exact minimum credit")
