@@ -18,7 +18,7 @@ from typing import Optional, Union
 
 from .dominance import program_entries
 from .exits import is_approval_exit
-from .subroutines import sound_return_targets
+from .subroutines import call_executed_blocks, is_retsub_block, sound_return_targets
 from ..ssa import (
     BasicBlock,
     Const,
@@ -128,10 +128,14 @@ def _canonical_binary_pred(
 
 # Opcodes reading an IMMUTABLE transaction / global field.
 #
-# HAZARD: only a predicate rooted ONLY in these survives a `callsub` return — a
-# callee may clobber the caller's stack/scratch but cannot change the
-# transaction. Adding an op a callee CAN affect (load / dig / frame_dig /
-# app_global_get / a sub parameter) makes carried-across-return facts unsound.
+# HAZARD: a predicate rooted ONLY in these survives a `callsub` return
+# unconditionally — the callee cannot change the transaction. Any OTHER leaf
+# (load / app_global_get / arith / …) survives only under the block criterion
+# of `_rooted_walk(executed=...)`: its definition must lie outside every block
+# the call may execute (:func:`.subroutines.call_executed_blocks`), so the SSA
+# value the predicate is about is provably not recomputed by the call. Without
+# that set (unit callers, an unresolved callee) such leaves are refused — the
+# `_rooted_in_immutable_fields` tests pin that fallback.
 from ..language.avm import UNSTABLE_GLOBAL_FIELDS
 
 _TXN_FIELD_READ_OPS = frozenset({
@@ -144,21 +148,26 @@ _PURE_COMBINATOR_OPS = CMP_OPS | LOGICAL_OPS
 
 
 def _rooted_in_immutable_fields(v, seen: Optional[set] = None,
-                                memo: Optional[dict] = None) -> bool:
-    """True if every leaf of ``v`` is an immutable txn/global field read or a
-    constant, combined only through pure comparison/boolean ops — so a predicate
-    on it survives a ``callsub`` return.
+                                memo: Optional[dict] = None,
+                                executed: Optional[frozenset] = None) -> bool:
+    """True if a predicate on ``v`` survives a ``callsub`` return: every leaf is
+    an immutable txn/global field read or a constant (combined only through
+    pure comparison/boolean ops), OR — when ``executed`` (the blocks the call
+    may run, :func:`.subroutines.call_executed_blocks`) is given — a value whose
+    definition lies outside ``executed``, so the call cannot recompute it.
 
-    HAZARD: ``memo`` must stay PER-ANALYSIS. ``SSAVar`` hashes by
-    ``(file, line, index)``, so a module-level cache collides across two programs
-    sharing a basename. A result whose walk took the ``seen`` cycle
-    short-circuit is likewise never cached — it holds only for that traversal."""
+    HAZARD: ``memo`` must stay PER-ANALYSIS and PER-``executed``. ``SSAVar``
+    hashes by ``(file, line, index)``, so a module-level cache collides across
+    two programs sharing a basename, and the block criterion's answer depends on
+    the call site. A result whose walk took the ``seen`` cycle short-circuit is
+    likewise never cached — it holds only for that traversal."""
     return _rooted_walk(v, set() if seen is None else seen,
-                        {} if memo is None else memo)[0]
+                        {} if memo is None else memo, executed)[0]
 
 
-def _rooted_walk(v, seen: set, memo: dict) -> "tuple[bool, bool]":
-    """``(rooted_in_immutable_fields, took_a_cycle_shortcut)``."""
+def _rooted_walk(v, seen: set, memo: dict,
+                 executed: Optional[frozenset] = None) -> "tuple[bool, bool]":
+    """``(survives_the_call, took_a_cycle_shortcut)``."""
     if is_const(v):
         return True, False
     if not isinstance(v, (SSAVar, Phi)):
@@ -184,13 +193,18 @@ def _rooted_walk(v, seen: set, memo: dict) -> "tuple[bool, bool]":
                         and d.immediates.strip() in UNSTABLE_GLOBAL_FIELDS):
                     return _cache(memo, v, False)
                 return _cache(memo, v, True)
-            if d.op not in _PURE_COMBINATOR_OPS:
-                return _cache(memo, v, False)         # load / state / arith / …
+            if d.op not in _PURE_COMBINATOR_OPS and not (
+                    executed is not None
+                    and d.basic_block is not None
+                    and d.basic_block not in executed):
+                # load / state / arith defined where the call may re-run it
+                # (or with no executed-set to check against).
+                return _cache(memo, v, False)
             parts, ok = d.inputs, True
         cut = False
         if ok:
             for part in parts:
-                rooted, part_cut = _rooted_walk(part, seen, memo)
+                rooted, part_cut = _rooted_walk(part, seen, memo, executed)
                 cut = cut or part_cut
                 if not rooted:
                     ok = False
@@ -480,16 +494,20 @@ class PathPredicateAnalysis:
     def _compute(self) -> None:
         prog = self.prog
         # Context-INSENSITIVE: a subroutine intersects all callers' facts at its
-        # entry, so a caller-specific predicate is gone by `retsub`. But each
-        # return TARGET is reached only via its own call, so the caller's
-        # IMMUTABLE-field predicates still hold there and are unioned back in
-        # (sound — a callee cannot change txn/global fields). `caller_of`:
-        # return-target BB → its callsub BB; `return_target_of` is the reverse,
-        # so a change to a caller re-queues its return target.
+        # entry, so a caller-specific predicate is gone by `retsub`. But a
+        # `retsub` EDGE into a return target is taken only when returning from
+        # that target's own call site, so the caller's call-stable predicates
+        # are unioned into that edge's contribution (per EDGE: a `b` into the
+        # same label is a different path and keeps only its own facts).
+        # `caller_of`: return-target BB → its callsub BB; `return_target_of` is
+        # the reverse, so a change to a caller re-queues its return target.
         caller_of, return_target_of = self._callsub_return_maps()
-        # One immutability memo for the whole fixpoint (per-analysis, see
-        # _rooted_in_immutable_fields).
-        rooted_memo: dict = {}
+        # Which facts survive: field-rooted ones always; anything else only when
+        # defined outside the blocks the call may execute (`None` = unknown
+        # closure, field-only). Memos are per call site — the block criterion's
+        # answer is (see _rooted_in_immutable_fields).
+        executed_during = call_executed_blocks(prog)
+        rooted_memos: dict = {}
 
         # Initial: TOP everywhere; ∅ for BBs with no predecessors (unreachable
         # BBs and the usual no-pred program entry).
@@ -513,12 +531,16 @@ class PathPredicateAnalysis:
             new_preds: Optional[set[BranchCondition]] = None
             if bb in program_entry_set:
                 new_preds = set(self.entry_seeds)
+            carried = self._carried_across_return(
+                bb, caller_of, bb_preds, executed_during, rooted_memos)
             for pred in bb.predecessors:
                 pred_preds = bb_preds[pred]
                 if pred_preds is _TOP:
                     continue
                 edge = self._edge_predicates(pred, bb)
                 contribution = set(pred_preds) | edge  # type: ignore[arg-type]
+                if carried and is_retsub_block(pred):
+                    contribution |= carried
                 if new_preds is None:
                     new_preds = contribution
                 else:
@@ -528,18 +550,6 @@ class PathPredicateAnalysis:
             extra = self.bb_seeds.get(bb)
             if extra:
                 new_preds |= extra
-            # Carry the caller's immutable-field predicates across the return.
-            caller = caller_of.get(bb)
-            if caller is not None:
-                caller_preds = bb_preds[caller]
-                if caller_preds is not _TOP:
-                    new_preds |= {
-                        c for c in caller_preds  # type: ignore[union-attr]
-                        if _rooted_in_immutable_fields(c.value, memo=rooted_memo)
-                        and all(
-                            _rooted_in_immutable_fields(a, memo=rooted_memo)
-                            for a in c.args if isinstance(a, (SSAVar, Phi)))
-                    }
             new_frozen = frozenset(new_preds)
             old = bb_preds[bb]
             if old is _TOP or old != new_frozen:
@@ -555,6 +565,28 @@ class PathPredicateAnalysis:
             if bb_preds[bb] is _TOP:
                 bb_preds[bb] = frozenset()
         self.bb_preds = bb_preds  # type: ignore[assignment]
+
+    @staticmethod
+    def _carried_across_return(bb, caller_of, bb_preds, executed_during,
+                               rooted_memos) -> Optional[set]:
+        """The call site's predicates that survive the call into return target
+        ``bb`` (for its ``retsub`` in-edges); ``None`` when ``bb`` is no return
+        target or its call site is still TOP (the caller's change re-queues it)."""
+        caller = caller_of.get(bb)
+        if caller is None:
+            return None
+        caller_preds = bb_preds[caller]
+        if caller_preds is _TOP:
+            return None
+        executed = executed_during.get(caller)
+        memo = rooted_memos.setdefault(caller, {})
+        return {
+            c for c in caller_preds
+            if _rooted_in_immutable_fields(c.value, memo=memo, executed=executed)
+            and all(
+                _rooted_in_immutable_fields(a, memo=memo, executed=executed)
+                for a in c.args if isinstance(a, (SSAVar, Phi)))
+        }
 
     def _callsub_return_maps(self):
         """``(caller_of, return_target_of)`` under :func:`.subroutines.sound_return_targets`."""

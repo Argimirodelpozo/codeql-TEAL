@@ -13,6 +13,8 @@ HAZARD: three DELIBERATELY different policies, not interchangeable.
     EVERY predecessor is a retsub, the condition under which caller-specific
     facts may be carried across the call. A deliberate SUBSET of the corrected
     policy; where it resolves it never disagrees with it.
+    :func:`call_executed_blocks` is its companion: WHICH facts survive — those
+    on values whose definition is outside everything the call may execute.
 
   * :func:`pyblock_partition` — CONSTRUCTION: every-block ownership over the
     mid-build PyBlock model, using the NAIVE next-op return point. It runs
@@ -356,16 +358,35 @@ def infer_legacy_arities(
     return arity
 
 
+def is_retsub_block(bb: "BasicBlock") -> bool:
+    """``bb`` ends in ``retsub`` — its out-edges are returns to caller continuations."""
+    return bool(bb.assignments) and bb.assignments[-1].op == "retsub"
+
+
 def sound_return_targets(prog: "SSAProgram") -> tuple[dict, dict]:
     """``(caller_of, return_target_of)``: per ``callsub`` block C, the block B
-    execution returns to — the next block in source order.
+    execution returns to — the next block in source order, which is where the
+    machine's return address points.
 
-    HAZARD: B qualifies only when its predecessors are ALL ``retsub`` blocks, so
-    B is reached ONLY via the return and C's caller-specific facts hold there.
-    Any non-return predecessor and B is skipped — the facts wouldn't hold on
-    that other path."""
+    B qualifies when at least one predecessor is a ``retsub`` block and the
+    corrected continuation of C agrees. C's caller-specific facts hold on B's
+    ``retsub`` in-EDGES only: a return lands on B solely from C's activation
+    (B's first instruction follows exactly one ``callsub``), while any other
+    predecessor (a branch into the same label) is an unrelated path that must
+    keep its own facts. Consumers therefore inject per edge, never per block —
+    the block-level spelling had to refuse every mixed-predecessor B, and a
+    guarded arm whose continuation is also a ``b`` target lost its guard.
+
+    HAZARD: a call site inside its own callee's closure (self-recursion, see
+    :func:`call_executed_blocks`) is REFUSED outright. The ``retsub`` block's
+    facts describe the INNER activation while the call site's describe the
+    OUTER one; the static SSA identity conflates them, and their union at B
+    was a contradiction (``NumAppArgs == 7`` from the call, ``!= 7`` from the
+    base case) that marked every return target of a recursive call infeasible."""
     caller_of: dict[BasicBlock, BasicBlock] = {}
     return_target_of: dict[BasicBlock, BasicBlock] = {}
+    corrected = identify_subroutines(prog)["continuations"]
+    executed = call_executed_blocks(prog)
     # Per-file blocks sorted by first_line so "the next block" is a bisect, not
     # an O(callsubs x blocks) scan — this runs inside PathPredicateAnalysis on
     # every program.
@@ -383,13 +404,74 @@ def sound_return_targets(prog: "SSAProgram") -> tuple[dict, dict]:
         if i >= len(siblings):
             continue
         b = siblings[i]
-        if b.predecessors and all(
-            p.assignments and p.assignments[-1].op == "retsub"
-            for p in b.predecessors
-        ):
+        closure = executed.get(c)
+        if closure is not None and c in closure:
+            continue                                  # self-recursive call site
+        if corrected.get(c) is b and any(is_retsub_block(p) for p in b.predecessors):
             caller_of[b] = c
             return_target_of[c] = b
     return caller_of, return_target_of
+
+
+def call_executed_blocks(prog: "SSAProgram") -> dict:
+    """``{callsub bb: frozenset[BB] | None}`` — every block that MAY execute
+    between the ``callsub`` and its return: the callee's body plus, transitively,
+    the bodies of everything it calls. ``None`` when the closure meets a
+    ``callsub`` whose target is unresolved (the set is then unknowable).
+
+    This is the criterion for carrying a caller-side fact across the return: an
+    SSA value is unchanged by the call exactly when its DEFINITION is not
+    re-executed during it. ``proto`` plays no role — a legacy sub's single
+    ``retsub`` block fanning out to every continuation is still entered only
+    via the return, so the same argument holds. A self-recursive sub puts its
+    own blocks (its call sites included) in the set, so nothing defined inside
+    it is carried across its recursive calls — the conservative answer, and the
+    one that needs no special case.
+
+    Revision-cached alongside :func:`identify_subroutines`; READ-ONLY result."""
+    revision = getattr(prog, "revision", 0)
+    ids = frozenset(map(id, prog.blocks.values()))
+    cached = getattr(prog, "_call_executed_blocks_cache", None)
+    if cached is not None and cached[0] == (revision, ids):
+        return cached[1]
+    subs = identify_subroutines(prog)
+    bodies, target_of = subs["bodies"], subs["callsub_target"]
+    closure: dict = {}
+
+    def _closure(entry):
+        if entry in closure:
+            return closure[entry]
+        closure[entry] = None                      # provisional: a cycle reads as unknown
+        seen: set = set()
+        stack = [entry]
+        unknown = False
+        while stack and not unknown:
+            e = stack.pop()
+            if e in seen:
+                continue
+            seen.add(e)
+            for bb in bodies.get(e, ()):
+                if _terminator_op(bb) != "callsub":
+                    continue
+                t = target_of.get(bb)
+                if t is None:
+                    unknown = True
+                    break
+                stack.append(t)
+        if unknown:
+            return None
+        out = frozenset().union(*(bodies.get(e, ()) for e in seen))
+        closure[entry] = out
+        return out
+
+    result: dict = {}
+    for cs_bb, callee in target_of.items():
+        result[cs_bb] = _closure(callee)
+    try:
+        prog._call_executed_blocks_cache = ((revision, ids), result)
+    except AttributeError:      # only if SSAProgram ever gains __slots__
+        pass
+    return result
 
 
 
