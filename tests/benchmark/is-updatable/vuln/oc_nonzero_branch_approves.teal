@@ -1,0 +1,11 @@
+#pragma version 10
+// VULN: `txn OnCompletion; bnz other` — a TRUTHINESS dispatch. The OC != 0 arm
+// approves unconditionally, so Update (4) and Delete (5) both reach an approval
+// with no creator check. "OC != 0" excludes NoOp ONLY (mutation M10, 2026-09-02).
+txn OnCompletion
+bnz other
+int 1
+return
+other:
+int 1
+return

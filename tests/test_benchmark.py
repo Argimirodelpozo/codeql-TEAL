@@ -164,7 +164,10 @@ _BASELINE: dict[str, tuple[int, int, int, int]] = {
     "is-deletable": (1, 0, 0, 3),
     # +2 TN (2026-07-25): the Update-action half of the OnCompletion
     # scratch/phi guard fix — verified clean, now pinned.
-    "is-updatable": (1, 0, 0, 3),
+    # +1 TP (2026-09-02): `txn OnCompletion; bnz other` truthiness dispatch —
+    # OC != 0 excludes NoOp ONLY, yet a mutant excluding every action survived
+    # every gate (tests F1 / M10). The corpus had no truthiness dispatch.
+    "is-updatable": (2, 0, 0, 3),
     "lease-validation": (1, 0, 0, 1),
     # +3 TN (2026-07-25 review): the two negated-guard branch polarities and the
     # diamond-joined guard — all three were FALSE POSITIVES before the fix, and
@@ -219,7 +222,13 @@ _BASELINE: dict[str, tuple[int, int, int, int]] = {
     # to the app being created in that same transaction, which the caller made
     # and already controls. Holds regardless of what the protocol's
     # well-formedness rules permit, so it needed no ruling from a node.
-    "unprotected-deletable": (1, 0, 0, 7),
+    # +1 TP / +2 TN (2026-09-02): TP = `ApplicationID == 1234` dispatch, which
+    # is NOT the creation path (a mutant dropping the `== 0` test survived every
+    # gate — tests F1 / M14). TNs = the PuyaPy `txn OnCompletion; switch` router
+    # with creator-guarded `proto` Update/Delete handlers (first switch-on-OC
+    # fixture in the lifecycle family) and the `bz`-spelled creation dispatch
+    # (previously pinned for Update only).
+    "unprotected-deletable": (2, 0, 0, 9),
     # +2 TN (2026-07-25): the Update-action half of the OnCompletion
     # scratch/phi guard fix — verified clean, now pinned.
     # +1 TN (2026-07-26 review): the creator guard on the ACTION BRANCH,
@@ -254,7 +263,14 @@ _BASELINE: dict[str, tuple[int, int, int, int]] = {
     # check, a mainnet-scale FP) and the creator guard spelled `!=; bnz
     # reject` (the surviving path carries equality; same defect class as the
     # fixed disequality-as-input-check).
-    "unprotected-updatable": (4, 0, 0, 9),
+    # +3 TP / +1 TN (2026-09-02): the three guard-helper mutants that survived
+    # every gate (tests F1): an INVERTED creator guard spelled as a branch
+    # (`Sender != Creator; bnz upd` — polarity-blind M9, previously caught only
+    # by the mainnet ratchet), the `txn OnCompletion; bnz` truthiness dispatch
+    # (M10) and `ApplicationID == 1234` read as the creation path (M14). TN =
+    # the PuyaPy `txn OnCompletion; switch` router with creator-guarded `proto`
+    # handlers — no switch-on-OC fixture existed in any OC-family detector.
+    "unprotected-updatable": (7, 0, 0, 10),
     "unsafe-division-order": (3, 0, 0, 3),
     "unsafe-lsig-args": (1, 0, 0, 1),
     # 7th vuln case: a validator sub whose 0-return the caller DISCARDS. It

@@ -1,0 +1,23 @@
+#pragma version 10
+// SAFE: creation dispatch spelled as the DIRECT branch `txn ApplicationID; bz
+// create` (predicate kind "zero") rather than `int 0; ==; bnz` (kind "eq") —
+// the commoner spelling in deployed contracts. The create handler approves
+// every OnCompletion, but with ApplicationID == 0 that applies to the app being
+// created; the Delete path proper is creator-guarded. Deletable twin of the
+// unprotected-updatable fixture of the same name (idiom coverage, 2026-09-02).
+txn ApplicationID
+bz create
+txn OnCompletion
+int DeleteApplication
+==
+bz done
+txn Sender
+global CreatorAddress
+==
+assert
+done:
+int 1
+return
+create:
+int 1
+return

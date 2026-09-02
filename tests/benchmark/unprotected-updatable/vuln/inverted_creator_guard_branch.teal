@@ -1,0 +1,21 @@
+#pragma version 10
+// VULN: the Update arm is gated by an INVERTED creator check spelled as a branch,
+// `Sender != Creator; bnz upd` — the creator is rejected and every OTHER account
+// may update. The `upd` exit's entry predicate is (Sender != Creator) nonzero: a
+// guard only under the WRONG polarity (mutation M9, 2026-09-02).
+txn OnCompletion
+int UpdateApplication
+==
+bz other
+txn Sender
+global CreatorAddress
+!=
+bnz upd
+int 0
+return
+upd:
+int 1
+return
+other:
+int 1
+return

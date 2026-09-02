@@ -1,0 +1,50 @@
+#pragma version 10
+// SAFE: PuyaPy-style router — `txn ApplicationID; bnz` creation dispatch, then
+// `txn OnCompletion; switch` onto per-action arms; the Update and Delete arms
+// call `proto` handlers that assert Sender == Creator. The first switch-on-OC
+// fixture in the lifecycle family (benchmark idiom coverage, 2026-09-02).
+txn ApplicationID
+bnz main_after_create
+int 1
+return
+main_after_create:
+txn OnCompletion
+switch main_noop main_optin main_closeout main_clear main_update main_delete
+err
+main_noop:
+callsub do_noop
+int 1
+return
+main_optin:
+int 1
+return
+main_closeout:
+int 1
+return
+main_clear:
+err
+main_update:
+callsub update
+int 1
+return
+main_delete:
+callsub delete
+int 1
+return
+do_noop:
+proto 0 0
+retsub
+update:
+proto 0 0
+txn Sender
+global CreatorAddress
+==
+assert
+retsub
+delete:
+proto 0 0
+txn Sender
+global CreatorAddress
+==
+assert
+retsub

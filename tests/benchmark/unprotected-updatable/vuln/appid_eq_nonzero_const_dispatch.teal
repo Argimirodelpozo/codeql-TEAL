@@ -1,0 +1,14 @@
+#pragma version 10
+// VULN: dispatch on `ApplicationID == 1234` — NOT a creation check (1234 is the
+// deployed app). The matched arm approves every OnCompletion, so the app is
+// updatable/deletable by anyone. Only `ApplicationID == 0` is the creation
+// path whose approval cannot touch the deployed app (mutation M14, 2026-09-02).
+txn ApplicationID
+int 1234
+==
+bnz matched
+int 0
+return
+matched:
+int 1
+return

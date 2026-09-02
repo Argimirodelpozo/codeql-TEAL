@@ -96,18 +96,28 @@ def test_branch_polarity_inversion_is_caught(monkeypatch):
 
 
 def test_always_reaching_enforcement_is_caught(monkeypatch):
-    """"Every comparison is enforced" turns dropped checks into real ones."""
+    """"Every comparison is enforced" turns dropped checks into real ones.
+
+    Targets the COLLECTING walk `_collect_field_enforcement_bbs`: since the
+    2026-09-02 per-exit conversion of timelock-upgrade / delete-funds-check it is
+    the one enforcement engine every benchmarked detector runs; the boolean twin
+    `def_forward_reaches_enforcement` has no detector caller left (only
+    `test_field_enforcement_soundness` uses it as an oracle), so mutating IT
+    measured nothing — both gates here reported "survived" against a dead
+    function until retargeted."""
+    def every_block(prog, var, label_lines, out, seen, *a, **k):
+        out.update(prog.blocks.values())
+
     _assert_caught(
-        monkeypatch, "tealql.security._enforcement", "def_forward_reaches_enforcement",
-        lambda *a, **k: True,
-        "every comparison counts as ENFORCED",
+        monkeypatch, "tealql.security._field_protection", "_collect_field_enforcement_bbs",
+        every_block, "every block counts as ENFORCING every comparison",
     )
 
 
 def test_never_reaching_enforcement_is_caught(monkeypatch):
     _assert_caught(
-        monkeypatch, "tealql.security._enforcement", "def_forward_reaches_enforcement",
-        lambda *a, **k: False,
+        monkeypatch, "tealql.security._field_protection", "_collect_field_enforcement_bbs",
+        lambda *a, **k: None,
         "no comparison ever counts as enforced",
     )
 
@@ -142,6 +152,75 @@ def test_sender_guard_always_present_is_caught(monkeypatch):
         monkeypatch, "tealql.security._action_guards", "sender_creator_guard_dominates",
         lambda *a, **k: True,
         "a sender==creator guard is claimed to dominate everywhere",
+    )
+
+
+# The three 2026-09-02 survivors (tests F1: M9, M10, M14). Each is an
+# "accept MORE" mutation of one guard decision, spelled as `real(...) or
+# <the dropped test>`, so it is exactly the defect the hand-applied diff made
+# — and each was 71/71 green against the corpus before its fixture landed.
+
+
+def test_sender_guard_polarity_blindness_is_caught(monkeypatch):
+    """M9: `sender_creator_guard_dominates` (now `_preds_prove_sender_guard`)
+    accepting `==`/`!=` under EITHER truth value credits `Sender != Creator;
+    bnz upd` — the creator is rejected and everyone else updates. Only the
+    mainnet ratchet caught this; the corpus had no branch-spelled inversion."""
+    import tealql.security._action_guards as G
+
+    real = G._preds_prove_sender_guard
+
+    def polarity_blind(prog, conds):
+        return real(prog, conds) or any(
+            c.kind in ("nonzero", "zero")
+            and G._trusted_sender_pin_op(c.value, prog) in ("==", "!=")
+            for c in conds)
+
+    _assert_caught(
+        monkeypatch, "tealql.security._action_guards", "_preds_prove_sender_guard",
+        polarity_blind, "a sender pin counts as a guard under EITHER polarity",
+    )
+
+
+def test_oc_nonzero_excluding_every_action_is_caught(monkeypatch):
+    """M10: Case 0 of `predicates_exclude_action` without `and action_int == 0`
+    reads `OC != 0` as excluding Update/Delete — a `txn OnCompletion; bnz other`
+    truthiness dispatch then approves every lifecycle action unguarded."""
+    import tealql.security._action_guards as G
+    from tealql.security._value_flow import resolve_through_copies
+
+    real = G.predicates_exclude_action
+
+    def nonzero_excludes_all(prog, conds, action_int):
+        return real(prog, conds, action_int) or any(
+            c.kind == "nonzero"
+            and G._is_oncompletion_var(resolve_through_copies(prog, c.value))
+            for c in conds)
+
+    _assert_caught(
+        monkeypatch, "tealql.security._action_guards", "predicates_exclude_action",
+        nonzero_excludes_all, "`OC != 0` is read as excluding every action",
+    )
+
+
+def test_creation_path_for_any_appid_constant_is_caught(monkeypatch):
+    """M14: `_is_app_creation_path` without the `== 0` test treats
+    `ApplicationID == 1234; bnz matched` as the creation path, whose approvals
+    are (rightly) exempt — so the deployed app's unguarded arm reads safe."""
+    import tealql.security._action_guards as G
+    from tealql.security._value_flow import resolve_through_copies
+
+    real = G._is_app_creation_path
+
+    def any_const_is_creation(prog, conds):
+        return real(prog, conds) or any(
+            c.kind == "eq" and c.args
+            and G._is_txn_field_var(resolve_through_copies(prog, c.value), "ApplicationID")
+            for c in conds)
+
+    _assert_caught(
+        monkeypatch, "tealql.security._action_guards", "_is_app_creation_path",
+        any_const_is_creation, "`ApplicationID == <any const>` counts as creation",
     )
 
 
