@@ -64,7 +64,7 @@ def test_partial_validation_bypass_flagged(tmp_path):
 _EXACT_VALIDATED = """#pragma version 10
     txna ApplicationArgs 0
     extract 2 32
-    addr AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA5HFFY
+    addr AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ
     ==
     assert
     itxn_begin

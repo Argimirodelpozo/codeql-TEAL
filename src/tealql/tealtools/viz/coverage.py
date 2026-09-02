@@ -36,6 +36,7 @@ MODULE_VIEW_COVERAGE: dict[str, tuple[str, ...]] = {
     "cfg.dominance": ("analysis.dominance", "analysis.control_dependence"),
     "cfg.exits": ("analysis.path_predicates", "repr.structure"),
     "cfg.group": ("analysis.group",),
+    "cfg.labels": ("analysis.path_predicates", "repr.structure"),
     "cfg.path_predicates": ("analysis.path_predicates",),
     "cfg.structure": ("repr.structure",),
     "cfg.subroutines": ("repr.structure", "analysis.callee_effects"),

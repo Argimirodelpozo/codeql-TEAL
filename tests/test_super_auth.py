@@ -18,7 +18,7 @@ from helpers import make_xcontract
 # Caller: admin-gates the appcall, then calls app 100.
 _CALLER = """#pragma version 10
 txn Sender
-addr AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+addr AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ
 ==
 assert
 itxn_begin
@@ -36,7 +36,7 @@ _CALLEE_VULN = """#pragma version 10
 itxn_begin
 int 1
 itxn_field TypeEnum
-addr BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
+addr CEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEI7JH2AYM
 itxn_field Receiver
 int 1000000
 itxn_field Amount
@@ -54,7 +54,7 @@ assert
 itxn_begin
 int 1
 itxn_field TypeEnum
-addr BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
+addr CEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEI7JH2AYM
 itxn_field Receiver
 int 1000000
 itxn_field Amount
@@ -73,7 +73,7 @@ def _build(tmp_path, callee_src):
 # assert — must be recognised exactly like the assert form.
 _CALLER_BNZ = """#pragma version 10
 txn Sender
-addr AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+addr AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ
 ==
 bnz admin
 int 0

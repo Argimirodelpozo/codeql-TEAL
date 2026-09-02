@@ -31,7 +31,7 @@ _VULN = """#pragma version 10
     txna ApplicationArgs 1
     btoi
     itxn_field XferAsset
-    addr AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA5HFFY
+    addr AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ
     itxn_field AssetReceiver
     int 1000
     itxn_field AssetAmount
@@ -84,7 +84,7 @@ _PINNED = """#pragma version 10
     txna ApplicationArgs 1
     btoi
     itxn_field XferAsset
-    addr AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA5HFFY
+    addr AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ
     itxn_field AssetReceiver
     int 1000
     itxn_field AssetAmount
