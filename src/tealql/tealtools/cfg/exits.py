@@ -71,6 +71,24 @@ def _off_end_rejects(bb: BasicBlock) -> bool:
                for cell in stack)
 
 
+def verdict_operand(bb: BasicBlock):
+    """The operand whose value DECIDES the program's verdict at this exit —
+    ``return``'s popped input, or the exit-stack top of a block that runs off
+    the end — or ``None`` when ``bb`` is not an exit / the value is unknown.
+
+    ONE home for "what did this exit return", so a guard reader crediting a
+    comparison that IS the approval (``Sender == Creator; return`` — and its
+    v1 twin ``Sender == Creator`` at EOF) sees both spellings."""
+    if not bb.assignments:
+        return None
+    last = bb.assignments[-1]
+    if last.op == "return":
+        return last.inputs[0] if last.inputs else None
+    if _runs_off_end(bb) and bb.exit_stack:
+        return bb.exit_stack[-1]
+    return None
+
+
 def returned_zero(bb: BasicBlock) -> bool:
     """The BB provably terminates the program with the constant zero as its
     verdict: ``int 0; return``, or running off the end with a provably

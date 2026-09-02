@@ -30,12 +30,15 @@ def test_off_end_exits_classified_as_approval_or_rejection(tmp_path):
     ``return`` (same exit set, shifted to the ``return`` line), an ``int 0``
     off-end twin (rejection, not approval), and ``retsub`` staying no exit."""
     from tealql.tealtools.cfg.cfg import CFG
-    from tealql.tealtools.cfg.exits import is_approval_exit, is_rejection_exit
+    from tealql.tealtools.cfg.exits import (
+        is_approval_exit, is_rejection_exit, verdict_operand)
     from tealql.security._program_shape import approving_exits
 
     # (a) v1 fall-off: the `==` result IS the verdict.
     v1 = _prog(tmp_path, "#pragma version 2\n" + _OC_UPDATE, "v1.teal")
     assert _exit_lines(v1, is_approval_exit) == {4}
+    (v1_exit,) = (bb for bb in v1.blocks.values() if is_approval_exit(bb))
+    assert repr(verdict_operand(v1_exit)) == "V#1@L4"      # the `==` output
     assert _exit_lines(v1, is_rejection_exit) == set()
     assert [bb.last_line for bb in approving_exits(v1)] == [4]
 
@@ -70,6 +73,9 @@ def test_off_end_exits_classified_as_approval_or_rejection(tmp_path):
     ctrl = _prog(tmp_path, cs + "return\n", "cs_ctrl.teal")
     assert ctrl.off_end_exits == set()
     assert _exit_lines(ctrl, is_approval_exit) == {14}
+    (cs_exit,) = (bb for bb in p.blocks.values() if is_approval_exit(bb))
+    (ctrl_exit,) = (bb for bb in ctrl.blocks.values() if is_approval_exit(bb))
+    assert repr(verdict_operand(cs_exit)) == repr(verdict_operand(ctrl_exit)) == "V#1@L4"
 
     # Detector-level: every variant is an unguarded UpdateApplication approval.
     from tealql.security import DETECTORS
