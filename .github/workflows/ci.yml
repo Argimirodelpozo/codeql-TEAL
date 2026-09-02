@@ -55,7 +55,7 @@ jobs:
         env:
           LIFT_SEMANTICS_CORPUS: "1"
           LIFT_SEMANTICS_BACKEND: "1"
-        run: uv run pytest tests/ -q -n auto --cov
+        run: uv run pytest tests/ -q -ra -n auto --cov
 
   wheel-smoke:
     runs-on: ubuntu-latest
