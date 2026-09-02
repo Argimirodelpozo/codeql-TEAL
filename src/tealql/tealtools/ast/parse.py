@@ -172,13 +172,16 @@ def _spell_immediateless_extract(src: bytes) -> bytes:
     backslash, and it surfaced downstream as a bogus ``btoi`` type error rather than as a parse
     problem.
 
-    The preceding whitespace byte is consumed to pay for the extra character, so the line keeps its
-    exact length and nothing downstream shifts. TEAL ignores indentation, so spending it is free.
-    Without a byte to consume the line is left alone -- a diagnostic is better than a silent shift.
+    When there is a preceding whitespace byte it is consumed to pay for the extra character, so the
+    line keeps its exact length. At COLUMN 0 -- how hand-written TEAL is laid out -- there is none,
+    and the line grows by one byte: safe, because spans are computed against this normalized text
+    and line numbers do not move (the same trade `_opcode_named_labels` makes). Requiring the
+    byte silently dropped every unindented bare `extract`: the instruction (2 pops, 1 push) left
+    the stream with only a parse warning, and the stack skewed from there on.
     """
     import re as _re
-    return _re.sub(rb"[ \t](extract)([ \t]*(?://[^\n]*)?(?:\r?\n|$))",
-                   lambda m: b"extract3" + m.group(2), src)
+    return _re.sub(rb"(?m)(?:[ \t]|^)extract([ \t]*(?://[^\n]*)?(?:\r?\n|$))",
+                   lambda m: b"extract3" + m.group(1), src)
 
 
 def _starts_identifier_char(buf, k: int, lo: int, hi: int) -> bool:

@@ -284,20 +284,21 @@ def test_immediateless_extract_parses(tmp_path):
     assert "btoi" in ops, f"instruction after extract lost: {ops}"
 
 
-def test_immediateless_extract_at_column_zero_stays_a_diagnostic(tmp_path):
-    """The documented limit of the rewrite, pinned so it cannot surprise anyone.
-
-    Spelling `extract` as `extract3` costs a byte, and it is paid for by consuming the preceding
-    whitespace so every offset downstream is unchanged. With no byte to spend the line is left
-    alone and the span is REPORTED -- a diagnostic beats silently shifting every column after it.
-    Every compiler indents its instructions, so this is unreachable in practice; it is here to say
-    which way the tradeoff falls rather than to bless the shift.
+def test_immediateless_extract_at_column_zero_is_rewritten_too(tmp_path):
+    """Spelling `extract` as `extract3` costs a byte; with a preceding whitespace byte it is paid
+    for by consuming it. At column 0 — how HAND-WRITTEN TEAL is laid out — there is none, and
+    the line simply grows by one: spans are computed against the normalized text and line
+    numbers never move (the trade `_opcode_named_labels` already makes), so refusing the rewrite
+    bought nothing and dropped a real instruction (2 pops, 1 push) with only a warning. `goal`
+    assembles the unindented form as `extract3`; so do we, and the line stays exact.
     """
     prog = _prog(tmp_path, "#pragma version 11\n"
                            "pushbytes 0x01\nint 0\nint 1\n"
                            "extract\n"
                            "btoi\nreturn\n")
-    assert prog.parse_diagnostics, "unindented bare extract should still be reported"
+    assert not prog.parse_diagnostics
+    (e3,) = [a for a in prog.assignments if a.op == "extract3"]
+    assert e3.location.line == 5 and len(e3.inputs) == 3
 
 
 def test_numeric_separators_inside_byte_literals_are_data(tmp_path):
