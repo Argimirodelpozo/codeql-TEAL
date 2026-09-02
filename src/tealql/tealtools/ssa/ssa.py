@@ -255,7 +255,8 @@ class PySSA:
         self._compute_call_pairs()
         from . import stacksim
         heights = stacksim.entry_heights(
-            self.blocks, self._bb_to_sub, self._proto_io, self._pair_by_cs)
+            self.blocks, self._bb_to_sub, self._proto_io, self._pair_by_cs,
+            arity=self._callsub_arities)
         self._frame_edepth = heights.entry
         self._height_poisoned = heights.poisoned
         self._height_conflicted = heights.conflicted
@@ -542,7 +543,15 @@ class PySSA:
             if h is None:
                 unsafe.add(sub)
                 continue
-            nargs = self._proto_io.get(sub, (0, 0))[0]
+            # The sub's band starts at its argument count: declared by
+            # `proto`, or INFERRED for a legacy sub by the shared fixpoint —
+            # the same count the simulation seeds its stack with. Measuring
+            # a legacy sub from 0 made its first consuming op look like a dip
+            # under the band (every arg-taking legacy sub `unsafe`+`clobber`),
+            # and the transitive loop below then poisoned its PROTO'D callers,
+            # whose call sites withdrew the caller's whole residual.
+            nargs = (self._proto_io.get(sub)
+                     or self._callsub_arities.get(sub, (0, 0)))[0]
             for i, o in enumerate(b.ops):
                 if o.op == "frame_bury":
                     n = _frame_imm(o)

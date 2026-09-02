@@ -101,7 +101,8 @@ class HeightResult:
         self.conflicted = conflicted
 
 
-def entry_heights(blocks, bb_to_sub, proto_io, call_pairs) -> HeightResult:
+def entry_heights(blocks, bb_to_sub, proto_io, call_pairs,
+                  arity=None) -> HeightResult:
     """Compute exact bottom-anchored entry depths for every routine block.
 
     ``call_pairs`` maps a verified callsub block to ``(continuation, A, R)``.
@@ -109,6 +110,13 @@ def entry_heights(blocks, bb_to_sub, proto_io, call_pairs) -> HeightResult:
     A conflicting proposal poisons the whole locally reachable suffix instead
     of choosing one path's depth. This is the height half of the canonical
     stack model and replaces the SSA builder's separate phase-6c-era walk.
+
+    A routine's entry depth is its ARGUMENT COUNT — ``proto``'s, or for a
+    legacy sub the one ``arity`` (the shared :func:`infer_arities` map)
+    inferred from its dip, which is exactly how many cells
+    :func:`_run_routine` seeds its stack with. Rooting a legacy sub at 0
+    while the simulation ran it at ``nargs`` made every height it reported
+    off by ``nargs``.
     """
     def net(op):
         if op.op == "frame_dig":
@@ -118,8 +126,9 @@ def entry_heights(blocks, bb_to_sub, proto_io, call_pairs) -> HeightResult:
         n_in, n_out = _narrow(op)
         return n_out - n_in
 
+    arity = arity or {}
     roots = {
-        block: proto_io.get(block, (0, 0))[0]
+        block: (proto_io.get(block) or arity.get(block, (0, 0)))[0]
         for block in blocks if bb_to_sub.get(block) is block
     }
     entry = {block.key: depth for block, depth in roots.items()}

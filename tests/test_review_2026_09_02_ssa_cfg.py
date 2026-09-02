@@ -90,11 +90,12 @@ def _preds(prog, first_line: int, file: str = "t.teal") -> set[str]:
 
 def test_switch_match_arms_refuse_missing_operands_and_resolve_aliased_labels(tmp_path):
     """(a) ``match`` reads its candidates POSITIONALLY off ``inputs``, which
-    DROP an unresolved cell — here the unsafe proto'd callee ``outer`` withdraws
-    the ``int 4`` candidate — so the ``t0`` arm (reached iff GroupSize == 4) was
-    credited ``GroupSize == 5``: a fabricated guard. Refuse when the op's arity
-    is not met. Control: the same program with ``leg`` proto'd (nothing
-    withdrawn) keeps ``t0: GroupSize == 4`` and ``t1: GroupSize == 5``.
+    DROP an unresolved cell — here ``outer`` reaches under its band with
+    ``cover 2`` (permuting the caller's ``int 4``) and then calls a sub, so its
+    below-band effect cannot be summarised and the residual is WITHDRAWN — so
+    the ``t0`` arm (reached iff GroupSize == 7 after the permute) was credited
+    ``GroupSize == 5``: a fabricated guard. Refuse when the op's arity is not
+    met. Control: a clean ``outer`` keeps ``t0: == 4`` and ``t1: == 5``.
     (b) an EMPTY label aliased onto the next one owns no block, so matching the
     arm target by LINE found no successor and the NoOp arm carried the
     fall-through's ``not in [0..1]`` (``OnCompletion >= CloseOut`` on the NoOp
@@ -102,15 +103,15 @@ def test_switch_match_arms_refuse_missing_operands_and_resolve_aliased_labels(tm
     ``key == 0``; ``switch a a`` (same block twice) still refuses."""
     body = ("int 4\nint 7\ncallsub outer\npop\nint 5\nglobal GroupSize\n"
             "match t0 t1\nerr\nt0:\nint 1\nreturn\nt1:\nint 1\nreturn\n"
-            "outer:\nproto 1 1\nframe_dig -1\ncallsub leg\nretsub\nleg:\n")
-    withdrawn = _prog(tmp_path, "#pragma version 10\n" + body + "int 2\n+\nretsub\n")
+            "outer:\nproto 1 1\nframe_dig -1\n")
+    withdrawn = _prog(tmp_path, "#pragma version 10\n" + body +
+                      "cover 2\ncallsub leg\nretsub\nleg:\nint 2\n+\nretsub\n")
     m = next(a for a in withdrawn.assignments if a.op == "match")
     assert len(m.inputs) == 2, "premise: the withdrawn candidate is dropped"
     assert _preds(withdrawn, 10) == set()          # t0 arm: refused, not `== 5`
     assert _preds(withdrawn, 13) == set()
     assert _preds(withdrawn, 9) == set()           # fall-through refused too
-    ctrl = _prog(tmp_path, "#pragma version 10\n" + body +
-                 "proto 1 1\nframe_dig -1\nint 2\n+\nretsub\n")
+    ctrl = _prog(tmp_path, "#pragma version 10\n" + body + "int 2\n+\nretsub\n")
     assert _preds(ctrl, 10) == {"(V#1@L7 == 4)"}
     assert _preds(ctrl, 13) == {"(V#1@L7 == 5)"}
 
@@ -149,3 +150,37 @@ def test_concat_does_not_fold_past_max_string_size(tmp_path):
     assert _ret(4096, 4096) is None        # would panic: nothing to fold
     assert _ret(4095, 2) is None           # 4097: one past the cap
     assert _ret(4095, 1) == 1              # exactly 4096: legal, folds
+
+
+# --- 3.1: legacy sub band origin ---------------------------------------------
+
+def test_legacy_sub_band_starts_at_inferred_nargs(tmp_path):
+    """A legacy (proto-less) sub's band was measured from 0, so its first
+    arg-consuming op looked like a dip under the band: `unsafe`+`clobber`,
+    propagated to its PROTO'D caller `outer`, whose call site then withdrew the
+    caller's whole residual — `itxn_field Receiver` lost its
+    `txna ApplicationArgs 0` provenance (unresolved). Measure the band from the
+    INFERRED nargs. Controls: the proto'd twin resolves identically; a proto'd
+    sub that GENUINELY reaches under its band (`cover 2`) is still flagged."""
+    main = ("#pragma version 10\ntxna ApplicationArgs 0\nint 7\ncallsub outer\npop\n"
+            "itxn_begin\nint pay\nitxn_field TypeEnum\nitxn_field Receiver\n"
+            "int 1000\nitxn_field Amount\nitxn_submit\nint 1\nreturn\n"
+            "outer:\nproto 1 1\nframe_dig -1\ncallsub leg\nint 1\n+\nretsub\nleg:\n")
+
+    def _receiver(prog):
+        a = next(x for x in prog.assignments
+                 if x.op == "itxn_field" and x.immediates.strip() == "Receiver")
+        return [repr(v) for v in a.inputs]
+
+    legacy = _prog(tmp_path, main + "int 2\n+\nretsub\n", "leg.teal")
+    ctrl = _prog(tmp_path, main + "proto 1 1\nframe_dig -1\nint 2\n+\nretsub\n",
+                 "ctrl.teal")
+    assert _receiver(ctrl) == ["V#1@L2"]
+    assert _receiver(legacy) == _receiver(ctrl)
+    assert not legacy._pyssa._unsafe_callee_blocks
+    assert not legacy._pyssa._clobber_callee_keys
+    # A real below-band reach in a proto'd sub is still HARD (and clobbers).
+    dip = _prog(tmp_path, main.replace("callsub leg\n", "cover 2\ncallsub leg\n")
+                + "int 2\n+\nretsub\n", "dip.teal")
+    assert dip._pyssa._unsafe_callee_blocks and dip._pyssa._clobber_callee_keys
+    assert _receiver(dip) == []
