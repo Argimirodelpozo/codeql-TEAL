@@ -26,10 +26,13 @@ from tests.mainnet_ratchet import (
     _analyse,
     app_mode_detectors,
     compute_digest,
+    diff_rows,
+    diff_totals,
     distinct_probes,
     load_digest,
     save_digest,
     summarize_rows,
+    unlocated_detectors,
 )
 
 UPDATE = os.environ.get("UPDATE_MAINNET_DIGEST") == "1"
@@ -55,8 +58,22 @@ def test_regenerate_findings_digest():
     if _LIMIT is not None:
         pytest.fail("refusing to overwrite the digest from a partial corpus")
 
-    save_digest(compute_digest())
-    pytest.skip(f"digest regenerated ({DIGEST.name})")
+    new = compute_digest()
+    old = load_digest() or {}
+    # PRINT what moved BEFORE writing: a regen must never absorb a behaviour
+    # change silently (run with -s, or read the captured stdout in the report).
+    rows = diff_rows(old, new, dict(_PROBES))
+    totals = diff_totals(old, new)
+    print(f"\n== mainnet digest delta: {len(rows)} (contract, detector) rows moved ==")
+    print("\n".join(rows) or "  (no row moved)")
+    print("== per-detector totals ==")
+    print("\n".join(totals) or "  (no total moved)")
+    unlocated = unlocated_detectors(new.get("per_contract", {}))
+    if unlocated:
+        print(f"== findings recorded WITHOUT a line (count-only): {unlocated} ==")
+    save_digest(new)
+    pytest.skip(f"digest regenerated ({DIGEST.name}); {len(rows)} rows moved "
+                "— see captured stdout for the row-level diff")
 
 
 @pytest.mark.slow
@@ -97,10 +114,13 @@ def test_findings_digest_unchanged(content_hash, path):
     assert old is not None, f"{DIGEST.name} is missing"
     expected = old.get("per_contract", {}).get(content_hash, {})
     actual = _analyse(path, app_mode_detectors())
+    moved = diff_rows({"per_contract": {content_hash: expected}},
+                      {"per_contract": {content_hash: actual}}, {content_hash: path})
     assert actual == expected, (
-        f"detector behaviour changed for {path.name} ({content_hash}):\n"
-        f"expected {expected}\nactual   {actual}\n\n"
-        "Regenerate only for an intended, classified detector change."
+        f"detector behaviour changed for {path.name} ({content_hash}) — "
+        f"cells are sorted finding LINES ('?' = no line), old -> new:\n"
+        + "\n".join(moved) +
+        "\n\nRegenerate only for an intended, classified detector change."
     )
 
 

@@ -10,10 +10,11 @@ diff, and nothing in CI would have caught it. The corpus pins *instances*; real
 contracts explore the *space*.
 
 This module turns that manual diff into a committed number. It runs every
-app-mode detector over the mainnet probe corpus and records, per detector, how
-many contracts it fires on and how many findings it produces. A change in
-detector behaviour — in either direction — moves the digest and must be
-explained.
+app-mode detector over the mainnet probe corpus and records, per (contract,
+detector), the sorted finding LINES (``"12,45,45"``; ``?`` for a finding with
+no location), plus per-detector totals. A change in detector behaviour — in
+either direction, including the same count at a different line — moves the
+digest and must be explained.
 
 Deduplication is not optional
 -----------------------------
@@ -37,6 +38,7 @@ import json
 from pathlib import Path
 
 from tealql.security import DETECTORS
+from tealql.security.findings import violation_line
 from tealql.security.scan import default_detection_names
 from tealql.tealtools.ssa import SSAProgram
 
@@ -66,9 +68,39 @@ def distinct_probes() -> "list[tuple[str, Path]]":
     return sorted(seen.items())
 
 
-def _analyse(path: Path, names: "list[str]") -> "dict[str, int | str]":
-    """``{detector: finding_count}`` for one program, with crashes recorded."""
-    row: "dict[str, int | str]" = {}
+#: Placeholder for a finding that anchors to no line (whole-program finding).
+#: It still counts as ONE finding, so the digest degrades to a count for it.
+_NO_LINE = "?"
+
+
+def encode_findings(violations) -> str:
+    """The digest cell for one (contract, detector): the SORTED finding lines
+    joined by ``,`` (e.g. ``"12,45,45"``), ``?`` for a finding with no line.
+
+    Lines, not counts: a detector that reports the right NUMBER of findings at
+    the wrong location (or swaps one exit for another inside the same contract)
+    must move the digest. The count is recoverable as the number of tokens."""
+    lines = [violation_line(v) for v in violations]
+    keyed = sorted((ln is None, ln if ln is not None else 0) for ln in lines)
+    return ",".join(_NO_LINE if none else str(ln) for none, ln in keyed)
+
+
+def is_crash(cell) -> bool:
+    return isinstance(cell, str) and cell.startswith("CRASH:")
+
+
+def finding_count(cell) -> int:
+    """Number of findings in a digest cell (0 for a crash)."""
+    if is_crash(cell):
+        return 0
+    if isinstance(cell, int):                   # legacy count-only cell
+        return cell
+    return len(cell.split(",")) if cell else 0
+
+
+def _analyse(path: Path, names: "list[str]") -> "dict[str, str]":
+    """``{detector: encoded_finding_lines}`` for one program, with crashes recorded."""
+    row: "dict[str, str]" = {}
     try:
         prog = SSAProgram(str(path))
         prog.propagate_constants()
@@ -81,7 +113,7 @@ def _analyse(path: Path, names: "list[str]") -> "dict[str, int | str]":
             row[name] = f"CRASH:{type(e).__name__}"
             continue
         if vs:
-            row[name] = len(vs)
+            row[name] = encode_findings(vs)
     return row
 
 
@@ -90,15 +122,26 @@ def summarize_rows(names: "list[str]", per_contract: dict) -> dict:
     totals: "dict[str, dict]" = {}
     for name in names:
         contracts = [h for h, row in per_contract.items() if name in row]
-        crashes = [h for h in contracts if isinstance(per_contract[h][name], str)]
-        findings = sum(per_contract[h][name] for h in contracts
-                       if isinstance(per_contract[h][name], int))
+        crashes = [h for h in contracts if is_crash(per_contract[h][name])]
+        findings = sum(finding_count(per_contract[h][name]) for h in contracts)
         totals[name] = {
             "contracts": len(contracts) - len(crashes),
             "findings": findings,
             "crashes": len(crashes),
         }
     return totals
+
+
+def unlocated_detectors(per_contract: dict) -> "dict[str, int]":
+    """``{detector: n}`` findings recorded WITHOUT a line (count-only fallback)."""
+    out: "dict[str, int]" = {}
+    for row in per_contract.values():
+        for name, cell in row.items():
+            if isinstance(cell, str) and not is_crash(cell):
+                n = cell.split(",").count(_NO_LINE)
+                if n:
+                    out[name] = out.get(name, 0) + n
+    return out
 
 
 def compute_digest(limit: "int | None" = None) -> dict:
@@ -135,6 +178,23 @@ def load_digest() -> "dict | None":
 
 def save_digest(digest: dict) -> None:
     DIGEST.write_text(json.dumps(digest, indent=1, sort_keys=True) + "\n")
+
+
+def diff_rows(old: dict, new: dict,
+              paths: "dict[str, Path] | None" = None) -> "list[str]":
+    """Row-level deltas: one line per moved ``(contract, detector)`` cell,
+    ``old -> new`` — what a reviewer classifies (TP gained / FP removed /
+    regression) by opening the contract at the reported lines."""
+    out: "list[str]" = []
+    o, n = old.get("per_contract", {}), new.get("per_contract", {})
+    for h in sorted(set(o) | set(n)):
+        a, b = o.get(h, {}), n.get(h, {})
+        label = f"{paths[h].name} ({h})" if paths and h in paths else h
+        for name in sorted(set(a) | set(b)):
+            if a.get(name) != b.get(name):
+                out.append(f"  {label:48} {name:32} "
+                           f"{a.get(name, '-')} -> {b.get(name, '-')}")
+    return out
 
 
 def diff_totals(old: dict, new: dict) -> "list[str]":
