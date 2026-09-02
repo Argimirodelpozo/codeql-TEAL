@@ -17,6 +17,7 @@ from typing import ClassVar, Optional
 from tealql.security._enforcement import _label_to_bb_first_line, scratch_forward_map
 from tealql.security._field_protection import (
     _all_entry_paths_cross,
+    _collect_disequality_pin_bbs,
     _collect_field_enforcement_bbs,
 )
 from tealql.security._program_shape import (
@@ -221,10 +222,10 @@ class UnvalidatedGroupSiblingDetector:
 
     def _pin_gates(self, index: int, recv_field: str, reads: dict,
                    app_seeds: set) -> set:
-        """Blocks ENFORCING the receiver pin (``assert``/branch-to-reject on an
-        equality tying ``gtxn <index> <recv_field>`` to a safe address); crossing one
-        means that path enforced the pin. Empty when never compared or never
-        enforced."""
+        """Blocks ENFORCING the receiver pin (``assert``/branch-to-reject/approving
+        ``return`` on an equality tying ``gtxn <index> <recv_field>`` to a safe
+        address, or a ``!=`` whose TRUTH rejects); crossing one means that path
+        enforced the pin. Empty when never compared or never enforced."""
         recv_assigns = reads.get((index, recv_field), [])
         recv_seeds = {o for a in recv_assigns for o in a.outputs
                       if isinstance(o, SSAVar)}
@@ -241,7 +242,7 @@ class UnvalidatedGroupSiblingDetector:
                     or operand_const(op) is not None)
 
         for cmp in self.prog.assignments:
-            if cmp.op != "==" or len(cmp.inputs) != 2:
+            if cmp.op not in ("==", "!=") or len(cmp.inputs) != 2:
                 continue
             if not file_match(cmp.location.file, self.file):
                 continue
@@ -255,8 +256,16 @@ class UnvalidatedGroupSiblingDetector:
             )
             if not tied:
                 continue
-            if cmp.outputs and isinstance(cmp.outputs[0], SSAVar):
+            if not cmp.outputs or not isinstance(cmp.outputs[0], SSAVar):
+                continue
+            if cmp.op == "==":
                 _collect_field_enforcement_bbs(
+                    self.prog, cmp.outputs[0], label_lines, gates, set(),
+                    scratch_fwd)
+            else:
+                # `!=`: only a rejection on TRUE leaves the equality alive;
+                # `assert`/reject-on-FALSE demand the disequality (anti-pin).
+                _collect_disequality_pin_bbs(
                     self.prog, cmp.outputs[0], label_lines, gates, set(),
                     scratch_fwd)
         return gates

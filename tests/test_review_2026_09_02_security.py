@@ -214,3 +214,28 @@ def test_ordered_compare_rejecting_on_true_is_credited(tmp_path):
     gs_eq_inverted = _prog(tmp_path, gs + "==\nbnz reject\ngtxn 0 Amount\npop\nint 1\n"
                            "return\nreject:\nerr\n", "gs2.teal")
     assert _flags("group-size-check", gs_eq_inverted)
+
+
+# ---------------------------------------------------------------------------
+# 2.9 — sibling receiver pin spelled `!=; bnz reject` or `==; return`
+# ---------------------------------------------------------------------------
+
+
+def test_sibling_pin_disequality_and_returned_equality(tmp_path):
+    """``gtxn 0 Receiver != CurrentApplicationAddress; bnz reject`` and
+    ``…==; return`` are both real pins (hostile/hand-written shapes; the same
+    disequality class as the creator guard). Controls: ``!=; assert`` and
+    ``!=; bz reject`` DEMAND the disequality (anti-pins) and must stay flagged;
+    the plain ``==; assert`` pin stays clean."""
+    det = "unvalidated-group-sibling"
+    pin = "gtxn 0 Receiver\nglobal CurrentApplicationAddress\n"
+    body = "gtxn 0 Amount\npop\nint 1\nreturn\nreject:\nerr\n"
+    assert not _flags(det, _prog(tmp_path, pin + "!=\nbnz reject\n" + body, "a.teal"))
+    assert not _flags(det, _prog(tmp_path, "gtxn 0 Amount\npop\n" + pin + "==\nreturn\n",
+                                 "b.teal"))
+    assert not _flags(det, _prog(tmp_path, pin + "==\nassert\n" + body, "c.teal"))
+
+    assert _flags(det, _prog(tmp_path, pin + "!=\nassert\n" + body, "d.teal"))
+    assert _flags(det, _prog(tmp_path, pin + "!=\nbz reject\n" + body, "e.teal"))
+    assert _flags(det, _prog(tmp_path, "gtxn 0 Amount\npop\n" + pin + "!=\nreturn\n",
+                             "f.teal"))

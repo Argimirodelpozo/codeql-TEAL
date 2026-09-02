@@ -19,6 +19,7 @@ from ._enforcement import (
     _disjunction_is_enforcing,
     _label_to_bb_first_line,
     branch_gates_rejection,
+    branch_reject_polarity,
     scratch_forward_map,
 )
 from ._program_shape import (
@@ -84,6 +85,38 @@ def _collect_field_enforcement_bbs(
             if isinstance(o, SSAVar):
                 _collect_field_enforcement_bbs(prog, o, label_lines, out, seen,
                                                scratch_fwd, field_vars)
+
+
+def _collect_disequality_pin_bbs(
+    prog: SSAProgram, var: SSAVar, label_lines: dict, out: set, seen: set,
+    scratch_fwd: Optional[dict] = None,
+) -> None:
+    """Record the blocks where a ``!=``-spelled pin in ``var`` is ENFORCED as
+    a pin — i.e. where its TRUTH rejects, so the surviving path carries the
+    equality: ``X != safe; bnz reject`` / ``bz ok; err``, or ``!`` (which turns
+    it into the equality and hands over to :func:`_collect_field_enforcement_bbs`).
+
+    HAZARD: POLARITY is the whole point. ``assert(X != safe)``, ``return (X !=
+    safe)`` and a branch rejecting on FALSE all demand the DISEQUALITY — the
+    anti-pin — and must record nothing, which is why this cannot reuse the
+    polarity-agnostic collecting twin directly."""
+    if var in seen:
+        return
+    seen.add(var)
+    if scratch_fwd is None:
+        scratch_fwd = scratch_forward_map(prog)
+    for fwd in scratch_fwd.get(var, ()):
+        _collect_disequality_pin_bbs(prog, fwd, label_lines, out, seen, scratch_fwd)
+    for cons in var.uses:
+        if cons.op in ("bnz", "bz") and cons.basic_block is not None:
+            _, rejects_true = branch_reject_polarity(prog, cons, label_lines)
+            if rejects_true:
+                out.add(cons.basic_block)
+        elif cons.op == "!":
+            for o in cons.outputs:
+                if isinstance(o, SSAVar):
+                    _collect_field_enforcement_bbs(prog, o, label_lines, out, seen,
+                                                   scratch_fwd)
 
 
 def _field_enforcement_bbs(
