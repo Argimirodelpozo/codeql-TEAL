@@ -146,6 +146,21 @@ _TXN_FIELD_READ_OPS = frozenset({
 # Pure boolean / comparison combinators: immutable-in ⇒ immutable-out.
 _PURE_COMBINATOR_OPS = CMP_OPS | LOGICAL_OPS
 
+#: Reads whose SSA value is fixed once computed, so a predicate on one carries
+#: across a ``callsub`` when its defining block lies OUTSIDE everything the call
+#: executes (:func:`.subroutines.call_executed_blocks`). Deliberately a short
+#: list of LEAF reads (their operands still have to be rooted): admitting ANY
+#: out-of-call definition was equally sound but let every phi/loop-carried
+#: value in a big caller be re-walked on every fixpoint visit (cycle results
+#: are never memoised) — one mainnet probe went from 20s to >10min. This bounds
+#: the walk shape, not the soundness.
+_CALL_STABLE_READ_OPS = frozenset({
+    "app_global_get", "app_global_get_ex", "app_local_get", "app_local_get_ex",
+    "box_get", "box_extract", "box_len", "load", "loads", "gload", "gloads",
+    "gloadss", "app_params_get", "asset_params_get", "asset_holding_get",
+    "acct_params_get", "balance", "min_balance",
+})
+
 
 def _rooted_in_immutable_fields(v, seen: Optional[set] = None,
                                 memo: Optional[dict] = None,
@@ -195,10 +210,11 @@ def _rooted_walk(v, seen: set, memo: dict,
                 return _cache(memo, v, True)
             if d.op not in _PURE_COMBINATOR_OPS and not (
                     executed is not None
+                    and d.op in _CALL_STABLE_READ_OPS
                     and d.basic_block is not None
                     and d.basic_block not in executed):
-                # load / state / arith defined where the call may re-run it
-                # (or with no executed-set to check against).
+                # arith / a read the call may re-run (or with no executed-set
+                # to check against) / any non-leaf op: see _CALL_STABLE_READ_OPS.
                 return _cache(memo, v, False)
             parts, ok = d.inputs, True
         cut = False
