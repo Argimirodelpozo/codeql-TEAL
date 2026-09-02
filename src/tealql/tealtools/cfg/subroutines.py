@@ -90,19 +90,19 @@ def _identify_subroutines_uncached(prog: "SSAProgram") -> dict:
     entries: set[BasicBlock] = set()
     callsub_target: dict[BasicBlock, BasicBlock] = {}
 
-    # Label line + blocks by line, to recover a callsub whose CFG entry edge is
+    # Label -> block by NAME, to recover a callsub whose CFG entry edge is
     # missing: a sub whose entry block is empty and merged into a reentrant
     # loop-header successor leaves `callsub -> entry` dangling, so the callee is
-    # never seen via `bb.successors`.
-    _label_line = {code.rstrip(":").strip(): ln for _f, ln, code in prog.labels}
-    _by_line = sorted(prog.blocks.values(), key=lambda b: b.first_line)
+    # never seen via `bb.successors`. Shared resolver (first definition wins,
+    # file-scoped, empty label -> next real block) — see `labels.LabelIndex`.
+    from .labels import LabelIndex
+    _labels = LabelIndex(prog)
 
     def _target_by_name(bb: BasicBlock) -> Optional[BasicBlock]:
         imm = next((a.immediates for a in bb.assignments if a.op == "callsub"), None)
-        ln = _label_line.get((imm or "").strip())
-        if ln is None:
+        if imm is None:
             return None
-        return next((b for b in _by_line if b.first_line >= ln), None)
+        return _labels.block(getattr(bb, "file", None), imm)
 
     callsub_bbs: list[BasicBlock] = []
     retsub_bbs: list[BasicBlock] = []

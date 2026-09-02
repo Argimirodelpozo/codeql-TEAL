@@ -247,7 +247,7 @@ def test_branch_polarity_comes_from_the_cfg_not_a_second_label_map():
         "#pragma version 10\ntxn Sender\nglobal CreatorAddress\n==\n"
         "bnz ok\nint 0\nreturn\nok:\nint 1\nok:\nint 1\nreturn\n", strict=False)
     analysis = PathPredicateAnalysis(prog)
-    assert analysis._label_lines[("contract.teal", "ok")] == 8   # first, like the CFG
+    assert analysis._labels.line("contract.teal", "ok") == 8   # first, like the CFG
     taken = prog.block_containing("contract.teal", 8)
     preds = {str(p) for p in analysis.predicates_at("contract.teal", taken.first_line)}
     sender_vs_creator = {p for p in preds if "L2" in p and "L3" in p}

@@ -79,3 +79,73 @@ def test_off_end_exits_classified_as_approval_or_rejection(tmp_path):
                       ("bnzd.teal", bnz), ("csd.teal", cs)):
         prog = _prog(tmp_path, src, name)
         assert DETECTORS["unprotected-updatable"](prog).detect(), name
+
+
+# --- 1.3: switch/match arm predicates ----------------------------------------
+
+def _preds(prog, first_line: int, file: str = "t.teal") -> set[str]:
+    from tealql.tealtools.cfg.path_predicates import PathPredicateAnalysis
+    return {repr(p) for p in PathPredicateAnalysis(prog).predicates_at(file, first_line)}
+
+
+def test_switch_match_arms_refuse_missing_operands_and_resolve_aliased_labels(tmp_path):
+    """(a) ``match`` reads its candidates POSITIONALLY off ``inputs``, which
+    DROP an unresolved cell — here the unsafe proto'd callee ``outer`` withdraws
+    the ``int 4`` candidate — so the ``t0`` arm (reached iff GroupSize == 4) was
+    credited ``GroupSize == 5``: a fabricated guard. Refuse when the op's arity
+    is not met. Control: the same program with ``leg`` proto'd (nothing
+    withdrawn) keeps ``t0: GroupSize == 4`` and ``t1: GroupSize == 5``.
+    (b) an EMPTY label aliased onto the next one owns no block, so matching the
+    arm target by LINE found no successor and the NoOp arm carried the
+    fall-through's ``not in [0..1]`` (``OnCompletion >= CloseOut`` on the NoOp
+    path). Resolve targets to BLOCKS. Controls: the non-aliased switch keeps
+    ``key == 0``; ``switch a a`` (same block twice) still refuses."""
+    body = ("int 4\nint 7\ncallsub outer\npop\nint 5\nglobal GroupSize\n"
+            "match t0 t1\nerr\nt0:\nint 1\nreturn\nt1:\nint 1\nreturn\n"
+            "outer:\nproto 1 1\nframe_dig -1\ncallsub leg\nretsub\nleg:\n")
+    withdrawn = _prog(tmp_path, "#pragma version 10\n" + body + "int 2\n+\nretsub\n")
+    m = next(a for a in withdrawn.assignments if a.op == "match")
+    assert len(m.inputs) == 2, "premise: the withdrawn candidate is dropped"
+    assert _preds(withdrawn, 10) == set()          # t0 arm: refused, not `== 5`
+    assert _preds(withdrawn, 13) == set()
+    assert _preds(withdrawn, 9) == set()           # fall-through refused too
+    ctrl = _prog(tmp_path, "#pragma version 10\n" + body +
+                 "proto 1 1\nframe_dig -1\nint 2\n+\nretsub\n")
+    assert _preds(ctrl, 10) == {"(V#1@L7 == 4)"}
+    assert _preds(ctrl, 13) == {"(V#1@L7 == 5)"}
+
+    alias = _prog(tmp_path, "#pragma version 10\ntxn OnCompletion\n"
+                  "switch on_noop on_optin\nerr\non_noop:\nreal_noop:\n"
+                  "int 1\nreturn\non_optin:\nint 1\nreturn\n")
+    assert _preds(alias, 6) == {"(V#1@L2 == 0)"}
+    assert _preds(alias, 9) == {"(V#1@L2 == 1)"}
+    assert _preds(alias, 4) == {"(V#1@L2 not in [0..1])"}
+    plain = _prog(tmp_path, "#pragma version 10\ntxn OnCompletion\n"
+                  "switch on_noop on_optin\nerr\non_noop:\n"
+                  "int 1\nreturn\non_optin:\nint 1\nreturn\n")
+    assert _preds(plain, 5) == {"(V#1@L2 == 0)"}
+    twice = _prog(tmp_path, "#pragma version 10\ntxn OnCompletion\n"
+                  "switch on_noop real_noop on_optin\nerr\non_noop:\nreal_noop:\n"
+                  "int 1\nreturn\non_optin:\nint 1\nreturn\n")
+    assert _preds(twice, 6) == set()               # disjunction of keys: refused
+    assert _preds(twice, 9) == {"(V#1@L2 == 2)"}
+
+
+# --- 1.10: concat past MaxStringSize -----------------------------------------
+
+def test_concat_does_not_fold_past_max_string_size(tmp_path):
+    """``concat`` PANICS when the result exceeds 4096 bytes; folding it turned
+    a halting program into a constant approval (``len`` → 8192, ``==`` → 1,
+    ``return (1)``). Control: 4096 exactly still folds."""
+    from tealql.tealtools.ssa import const_int
+
+    def _ret(n_a: int, n_b: int):
+        prog = _prog(tmp_path, f"#pragma version 10\nint {n_a}\nbzero\nint {n_b}\n"
+                     f"bzero\nconcat\nlen\nint {n_a + n_b}\n==\nreturn\n",
+                     f"c{n_a}_{n_b}.teal")
+        ret = next(a for a in prog.assignments if a.op == "return")
+        return const_int(ret.inputs[0])
+
+    assert _ret(4096, 4096) is None        # would panic: nothing to fold
+    assert _ret(4095, 2) is None           # 4097: one past the cap
+    assert _ret(4095, 1) == 1              # exactly 4096: legal, folds

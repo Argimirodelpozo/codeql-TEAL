@@ -30,7 +30,7 @@ from ..ssa import (
     is_const,
 )
 from ..language.avm import (CMP_OPS, COND_BRANCH_OPS, LOGICAL_OPS,
-                            MULTIWAY_BRANCH_OPS)
+                            MULTIWAY_BRANCH_OPS, op_arity)
 from .build import BOOL_FALSE, BOOL_TRUE
 from ..ast.literals import render_byte_constant
 from ..analysis import FactDomain
@@ -359,8 +359,10 @@ class PathPredicateAnalysis:
         self.bb_seeds: dict[BasicBlock, frozenset[BranchCondition]] = (
             bb_seeds or {}
         )
-        # (file, label_name) → source line, to resolve branch immediates.
-        self._label_lines: dict[tuple[str, str], int] = self._index_labels()
+        # Label -> BLOCK, to resolve switch/match immediates (shared resolver:
+        # first definition wins like the builder, empty label -> next block).
+        from .labels import LabelIndex
+        self._labels = LabelIndex(prog)
         self.bb_preds: dict[BasicBlock, frozenset[BranchCondition]] = {}
         self._compute()
 
@@ -474,26 +476,6 @@ class PathPredicateAnalysis:
         return {"blocks": blocks}
 
     # -- internals ------------------------------------------------------
-
-    def _index_labels(self) -> dict[tuple[str, str], int]:
-        """``(file, label name) -> line``, FIRST definition winning.
-
-        HAZARD: must agree with :mod:`.cfg.build`, which resolves a duplicate
-        label to its FIRST definition — this map decides which successor the
-        branch "took", so disagreeing INVERTS the polarity. Assigning instead of
-        ``setdefault`` kept the LAST definition, and then no successor matched
-        the branch target: every edge out of the branch, including the taken
-        one, was credited with the FALL-THROUGH predicate. A creator-guarded
-        block came out asserting ``Sender != CreatorAddress`` and the guard
-        vanished from the program. Duplicate labels are assembler-rejected, so
-        this is hand-written / adversarial source only — which is the input this
-        tool exists for."""
-        idx: dict[tuple[str, str], int] = {}
-        for f, ln, code in self.prog.labels:
-            # Label code is the source line, e.g. "l_target:".
-            name = code.rstrip(":").strip()
-            idx.setdefault((f, name), ln)
-        return idx
 
     def _compute(self) -> None:
         prog = self.prog
@@ -685,18 +667,30 @@ class PathPredicateAnalysis:
         ``match t0 t1 t2`` → ``inputs[0] = key`` and the candidates fill
         ``inputs[1..N]`` REVERSED: ``inputs[N] = v0`` (pushed first/deepest),
         ``inputs[1] = vN-1`` (pushed last). Target ``k`` is ``inputs[N - k]``.
+
+        HAZARD: that positional read is only meaningful when EVERY operand is
+        present. The public ``inputs`` DROP an unresolved cell (an unsafe
+        callee's withdrawn residual, a poisoned frame read), which shifts every
+        deeper candidate one position up — and a missing KEY makes the top
+        candidate pose as the key. Refuse unless the op's arity is met.
         """
         target_names = last.immediates.split()
         if not target_names:
             return None
-        # None for an unresolved label, kept POSITIONAL so a missing one doesn't
-        # shift the other targets' indices.
-        target_lines: list[Optional[int]] = [
-            self._label_lines.get((pred.file, n)) for n in target_names
-        ]
+        n_in, _ = op_arity(last.op, last.immediates)
+        if len(last.inputs) != n_in:
+            return None
+        # The BLOCK each target lands on (None for an unresolved label or one
+        # at EOF), kept POSITIONAL so a missing one doesn't shift the other
+        # targets' indices. By block, not line: an EMPTY label (alias) owns no
+        # block, so its line matches no successor and the arm would read as
+        # the fall-through; resolved to the next real block instead, two
+        # aliased targets land on ONE block and the disjunction refusal below
+        # sees them.
+        targets: list = [self._labels.block(pred.file, n) for n in target_names]
         # Which target ``succ`` corresponds to (or fall-through).
-        matches = [k for k, ln in enumerate(target_lines)
-                   if ln is not None and succ.first_line == ln]
+        matches = [k for k, t in enumerate(targets)
+                   if t is not None and t._key() == succ._key()]
         # HAZARD: a label at MORE THAN ONE position is reached under a
         # DISJUNCTION of keys (``switch a a b`` → a on key==0 OR key==1), so a
         # single ``key == target_index`` would be over-strong. Emit nothing
