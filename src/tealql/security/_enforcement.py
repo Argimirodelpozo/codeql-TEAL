@@ -9,7 +9,7 @@ from tealql.tealtools.language.avm import CMP_OPS
 from tealql.tealtools.ssa import (BasicBlock, SSAProgram, SSAVar,
                                   const_int)
 
-from ._program_shape import file_match, is_rejection_exit
+from ._program_shape import is_rejection_exit
 
 
 
@@ -354,24 +354,3 @@ def _fall_through_bb(prog: SSAProgram, bb: BasicBlock) -> Optional[BasicBlock]:
         return None
     candidates.sort(key=lambda b: b.first_line)
     return candidates[0]
-
-
-
-
-def enforced_op_exists(prog: SSAProgram, ops, flows, *, file: Optional[str] = None) -> bool:
-    """Some file-matched assignment with op in ``ops`` satisfying ``flows(op)`` has
-    its result reach enforcement — the shared "is there a genuine, ENFORCED check
-    of form X?" recogniser, since a check whose result is dropped enforces nothing."""
-    label_lines = _label_to_bb_first_line(prog)
-    scratch_fwd = scratch_forward_map(prog)
-    for op in prog.assignments:
-        if op.op not in ops or not file_match(op.location.file, file):
-            continue
-        if not flows(op):
-            continue
-        if op.outputs and isinstance(op.outputs[0], SSAVar) and \
-                def_forward_reaches_enforcement(
-                    prog, op.outputs[0], label_lines=label_lines,
-                    scratch_fwd=scratch_fwd):
-            return True
-    return False

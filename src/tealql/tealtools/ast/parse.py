@@ -274,6 +274,16 @@ def _named_int_error(c, src: bytes = b"") -> bool:
         and c.children[1].type == "label_identifier"
     )
 
+def _known_named_int(ident, src: bytes) -> bool:
+    """``ident`` spells a constant the assembler knows (``pay``, ``NoOp``, …).
+
+    HAZARD: recovering ``int Foo`` for ANY identifier minted a const-free push
+    with no diagnostic; the assembler rejects it, so the honest answer is to
+    leave the span unparsed (visible degradation), never a phantom operand."""
+    text = src[ident.start_byte:ident.end_byte].decode("utf-8", "replace").strip()
+    return text in NAMED_INT_CONSTANTS
+
+
 #: Every mnemonic carrying a FIELD-NAME immediate — i.e. every op the grammar's
 #: hard-coded field enumeration can break. txn-family reads are derived from the
 #: AVM tables; the field WRITE and params/holding queries are added here.
@@ -869,7 +879,8 @@ def parse_nodes(
                     a = kids_e[j]
                     b = kids_e[j + 1] if j + 1 < len(kids_e) else None
                     if (a.type == "int" and b is not None
-                            and b.type == "label_identifier"):
+                            and b.type == "label_identifier"
+                            and _known_named_int(b, src)):
                         op_nodes.append(_node(
                             a.start_point[0] + 1, a.start_point[1],
                             b.end_point[0] + 1, b.end_point[1],

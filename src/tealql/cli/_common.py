@@ -103,6 +103,13 @@ def _check_parse_health(prog, args) -> None:
             "(%s). This build may predate the contract's AVM version.",
             len(unknown), ", ".join(unknown[:8]),
         )
+    health = getattr(prog, "health", None)
+    if callable(health):
+        others = [d for d in health().degradations
+                  if d.code not in ("parse-diagnostic", "unknown-opcode")]
+        for d in others:                     # e.g. multiple-constant-blocks
+            where = f"{d.file}:{d.line}: " if d.file and d.line else ""
+            logger.warning("analysis degraded (%s): %s%s", d.code, where, d.message)
     diags = getattr(prog, "parse_diagnostics", ())
     if not diags:
         return
