@@ -39,15 +39,17 @@ from tealql.tealtools.ssa.const_fold import (                # noqa: E402
 
 MAX = 2 ** 64 - 1
 _ARITH = ("+", "-", "*", "/", "%")
-_BITWISE = ("&", "|", "^", "<<", ">>")
+# AVM mnemonics: the kernel and the const_fold oracle both key on ``shl`` /
+# ``shr``; spelled ``<<`` / ``>>`` every shift sample was vacuous (both None).
+_BITWISE = ("&", "|", "^", "shl", "shr")
 
 
 @st.composite
-def _range_and_value(draw):
+def _range_and_value(draw, max_value=MAX):
     """An ``IntRange`` over uint64 plus a concrete value inside it — so the
     concrete input is a member of the range by construction."""
-    lo = draw(st.integers(min_value=0, max_value=MAX))
-    hi = draw(st.integers(min_value=lo, max_value=MAX))
+    lo = draw(st.integers(min_value=0, max_value=max_value))
+    hi = draw(st.integers(min_value=lo, max_value=max_value))
     v = draw(st.integers(min_value=lo, max_value=hi))
     return IntRange(lo, hi), v
 
@@ -58,9 +60,7 @@ def _concrete(op, a, b):
     return None if r is None else _int_from_const(r)
 
 
-@settings(max_examples=800)
-@given(_range_and_value(), _range_and_value(), st.sampled_from(_ARITH + _BITWISE))
-def test_binary_range_contains_every_concrete_result(av, bv, op):
+def _check_binary(op, av, bv):
     ra, a = av
     rb, b = bv
     val = _concrete(op, a, b)
@@ -76,6 +76,22 @@ def test_binary_range_contains_every_concrete_result(av, bv, op):
     assert lo <= val <= hi, (
         f"UNSOUND: {a} {op} {b} = {val} not in [{lo},{hi}] "
         f"(ranges {ra.lo}..{ra.hi} {op} {rb.lo}..{rb.hi})")
+
+
+@settings(max_examples=800)
+@given(_range_and_value(), _range_and_value(), st.sampled_from(_ARITH + _BITWISE))
+def test_binary_range_contains_every_concrete_result(av, bv, op):
+    _check_binary(op, av, bv)
+
+
+@settings(max_examples=400)
+@given(_range_and_value(), _range_and_value(max_value=63), st.sampled_from(("shl", "shr")))
+def test_shift_range_contains_every_concrete_result(av, bv, op):
+    """Shifts need their own driver: a shift amount over 63 HALTS, so with the
+    amount drawn over all of uint64 practically every shift sample was skipped
+    (both kernel mutations of the shift rules survived the generic test).
+    Drawing the amount in [0, 63] makes the samples execute."""
+    _check_binary(op, av, bv)
 
 
 @settings(max_examples=300)
