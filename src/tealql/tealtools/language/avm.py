@@ -521,7 +521,7 @@ _TXN_FIELD_TYPE = {
     "LastValid": "uint64", "TypeEnum": "uint64", "GroupIndex": "uint64",
     "Amount": "uint64", "AssetAmount": "uint64", "OnCompletion": "uint64",
     "NumAppArgs": "uint64", "NumAccounts": "uint64", "NumAssets": "uint64",
-    "NumApplications": "uint64", "NumLogs": "uint64", "AssetCloseAmount": "uint64",
+    "NumApplications": "uint64", "NumLogs": "uint64",
     "GlobalNumUint": "uint64", "GlobalNumByteSlice": "uint64",
     "LocalNumUint": "uint64", "LocalNumByteSlice": "uint64",
     "ExtraProgramPages": "uint64", "ConfigAssetTotal": "uint64",
@@ -538,8 +538,11 @@ _TXN_FIELD_TYPE = {
     "ApplicationID": "application", "Applications": "application",
     "CreatedApplicationID": "application",
     # bytes
-    "Note": "bytes", "Lease": "bytes", "Type": "bytes", "GroupID": "bytes",
+    "Note": "bytes", "Lease": "bytes", "Type": "bytes",
     "TxID": "bytes",                  # 32-byte transaction hash
+    # NOT txn fields (goal: `txn unknown field`): `GroupID` is a GLOBAL field
+    # only, and `AssetCloseAmount` does not exist. Pinned bidirectionally
+    # against puya's `txn` variant_map in test_avm_metadata_drift.
     "ApplicationArgs": "bytes", "Logs": "bytes", "LastLog": "bytes",
     "ApprovalProgram": "bytes", "ClearStateProgram": "bytes",
     "ApprovalProgramPages": "bytes", "ClearStateProgramPages": "bytes",
@@ -593,7 +596,7 @@ _GLOBAL_FIELD_TYPE = {
     "PayoutsEnabled": "bool",
     "CurrentApplicationID": "application", "CallerApplicationID": "application",
     "GenesisHash": "bytes",
-    "GroupID": "bytes",                 # 32-byte group id (also a txn field)
+    "GroupID": "bytes",                 # 32-byte group id (global ONLY, not a txn field)
 }
 _GLOBAL_FIELD_TYPE.update({f: "account" for f in ADDRESS_GLOBAL_FIELDS})
 

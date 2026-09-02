@@ -270,6 +270,24 @@ def test_immediate_keyed_result_tables_match_puya():
             want = "u" if value_ret.avm_type == AVMType.uint64 else "b"
             assert avm.avm(avm.PARAMS_FIELD_TYPE[key]) == want, (op_name, key)
 
+    # The txn-field universe, BOTH directions: `TXN_FIELD_NAMES` drives
+    # `itxn_field` acceptance and the grammar-unknown-field recovery, so a
+    # phantom entry (`AssetCloseAmount`, `GroupID` — neither is a txn field;
+    # goal: `txn unknown field`) is "recovered" as a read the AVM rejects, and
+    # a missing one drops the instruction. puya's `txn` variant_map is the
+    # scalar universe; the array fields (`txna`) are its complement in ours.
+    txn_variants = AVMOp.txn._variants
+    assert isinstance(txn_variants, DynamicVariants)
+    txna_variants = AVMOp.txna._variants
+    assert isinstance(txna_variants, DynamicVariants)
+    puya_txn = set(txn_variants.variant_map) | set(txna_variants.variant_map)
+    assert set(avm.TXN_FIELD_NAMES) == puya_txn, set(avm.TXN_FIELD_NAMES) ^ puya_txn
+    for key, var in txn_variants.variant_map.items():
+        (ret,) = var.signature.returns
+        want = ("u" if ret.avm_type == AVMType.uint64
+                else "b" if ret.avm_type == AVMType.bytes else "?")
+        assert avm.avm(avm._TXN_FIELD_TYPE[key]) == want, (key, avm._TXN_FIELD_TYPE[key], want)
+
 
 def test_every_operand_position_has_an_expected_type():
     """Each ARGUMENT POSITION of every statically-signed op must resolve to the

@@ -10,10 +10,11 @@ analysis is built on is short a value from that point; and `itxn_field` POPS,
 so dropping it loses the inner-transaction field write AND leaves the stack one
 too deep.
 
-Found by the fuzzer on `txn GroupID`. The real scope was three txn fields
-(`GroupID`, `AssetCloseAmount`, `RejectVersion`) plus the `itxn_field` and
-`*_params_get` forms — two real AVM-12 corpus contracts went from a parse
-diagnostic to none.
+Found by the fuzzer on `txn GroupID` — which turned out NOT to be a txn field
+at all (goal: `txn unknown field: "GroupID"`; it is a `global` field), so the
+vectors here are the REAL grammar-unknown field, `RejectVersion` (AVM 12), in
+every txn-family spelling plus the `itxn_field` and `*_params_get` forms —
+two real AVM-12 corpus contracts went from a parse diagnostic to none.
 """
 from __future__ import annotations
 
@@ -21,7 +22,7 @@ import pytest
 
 from tealql.tealtools.ssa import SSAProgram
 
-_UNKNOWN_TXN_FIELDS = ["GroupID", "AssetCloseAmount", "RejectVersion"]
+_UNKNOWN_TXN_FIELDS = ["RejectVersion"]
 
 
 def _prog(tmp_path, body, version=12):
@@ -45,9 +46,9 @@ def test_txn_field_the_grammar_rejects_is_recovered(tmp_path, field):
 
 
 @pytest.mark.parametrize("line,op,imm", [
-    ("gtxn 0 GroupID", "gtxn", "0 GroupID"),
-    ("itxn GroupID", "itxn", "GroupID"),
-    ("gtxn 1 RejectVersion", "gtxn", "1 RejectVersion"),
+    ("gtxn 0 RejectVersion", "gtxn", "0 RejectVersion"),
+    ("itxn RejectVersion", "itxn", "RejectVersion"),
+    ("gitxn 1 RejectVersion", "gitxn", "1 RejectVersion"),
 ])
 def test_indexed_and_inner_forms_recover(tmp_path, line, op, imm):
     prog = _prog(tmp_path, f"{line}\npop\n")
@@ -72,12 +73,12 @@ def test_greedy_error_recovery_keeps_every_instruction(tmp_path):
     """tree-sitter ERROR recovery is GREEDY: adjacent unknown-field reads
     collapse into ONE node. Recovering only the first silently swallowed the
     rest — the same trap the named-int recovery documents."""
-    prog = _prog(tmp_path, "txn GroupID\ntxn RejectVersion\ntxn AssetCloseAmount\n"
+    prog = _prog(tmp_path, "txn RejectVersion\nitxn RejectVersion\ntxn RejectVersion\n"
                            "pop\npop\npop\n")
     assert list(getattr(prog, "parse_diagnostics", ()) or []) == []
     ops = _ops(prog)
-    for f in _UNKNOWN_TXN_FIELDS:
-        assert ("txn", f) in ops
+    assert ops.count(("txn", "RejectVersion")) == 2
+    assert ("itxn", "RejectVersion") in ops
 
 
 def test_known_fields_are_untouched(tmp_path):
@@ -88,17 +89,18 @@ def test_known_fields_are_untouched(tmp_path):
 
 
 def test_recovered_field_reaches_the_lift_correctly_typed(tmp_path):
-    """The original fuzzer report: `txn GroupID` vanished from the lifted IR,
-    taking `log`'s operand with it. GroupID is 32 bytes, so it must type bytes."""
+    """The original fuzzer report: the recovered read vanished from the lifted
+    IR, taking `log`'s operand with it. RejectVersion is a uint64, so the
+    recovered read must type uint64 (langspec-driven, not a lowering default)."""
     puya = pytest.importorskip("puya")  # noqa: F841
     from tealql.tealtools.lift import build_lifter, pre_ir
 
-    prog = _prog(tmp_path, "txn GroupID\nlog\n")
+    prog = _prog(tmp_path, "txn RejectVersion\nitob\nlog\n")
     lifter = build_lifter(prog)
     assert lifter is not None
     rendered = [op.render() if hasattr(op, "render") else str(op)
                 for b in pre_ir.blocks(lifter.subs) for op in b.ops]
-    assert any("(txn GroupID)" in r and "bytes" in r for r in rendered), rendered
+    assert any("(txn RejectVersion)" in r and "uint64" in r for r in rendered), rendered
     assert not any(r.strip() == "(log)" for r in rendered), "log lost its operand"
 
 

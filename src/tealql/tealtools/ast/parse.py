@@ -293,8 +293,8 @@ _TXN_FIELD_MNEMONICS = _field_arg_mnemonics()
 
 def _unknown_txn_field_error(c, src: bytes = b"") -> bool:
     """A tree-sitter ERROR that is really a txn-family read of a field the
-    grammar's enumeration omits (``txn GroupID`` / ``AssetCloseAmount`` /
-    ``RejectVersion``, and the ``gtxn``/``itxn``/… forms of each).
+    grammar's enumeration omits (``txn RejectVersion`` — v12 — and the
+    ``gtxn``/``itxn``/… forms of it; the next AVM version's fields next).
 
     GRAMMAR DEFECT: the field-name set is hard-coded, so a newer or missed field
     parses as ERROR and the WHOLE instruction is dropped — the push disappears
