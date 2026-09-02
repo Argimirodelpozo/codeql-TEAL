@@ -1,19 +1,23 @@
 """sec-guide/delete-funds-check: an approval exit reachable with ``OnCompletion ==
-DeleteApplication`` in a program with no genuine balance-vs-min-balance check, the
+DeleteApplication`` whose paths carry no genuine balance-vs-min-balance check, the
 canonical "are the funds out?" guard before a delete.
 """
 from __future__ import annotations
 
 from typing import Optional
 
-from tealql.tealtools.ssa import SSAProgram
+from tealql.tealtools.ssa import BasicBlock, SSAProgram, SSAVar
 from tealql.security._action_guards import ONC_DELETE_APPLICATION
 from tealql.security._approval_action_guard import (
     _ApprovalActionGuardDetector,
     _ExitBBViolation,
 )
-from tealql.security._enforcement import enforced_op_exists
-from tealql.security._program_shape import op_output_seeds
+from tealql.security._enforcement import _label_to_bb_first_line, scratch_forward_map
+from tealql.security._field_protection import (
+    _all_entry_paths_cross,
+    _collect_field_enforcement_bbs,
+)
+from tealql.security._program_shape import file_match, op_output_seeds
 from tealql.security._value_flow import _operand_flows_from_field_var
 
 
@@ -29,19 +33,21 @@ class DeleteFundsCheckViolation(_ExitBBViolation):
     detail = "funds may be locked permanently on deletion."
 
 
-def _has_balance_minbalance_check(
+def _funds_check_gates(
     prog: SSAProgram, file: Optional[str] = None,
-) -> bool:
-    """A genuine funds check: ``balance`` and ``min_balance`` values flow into the
-    SAME comparison or subtraction, one on each side.
+) -> set:
+    """Blocks ENFORCING a genuine funds check: ``balance`` and ``min_balance``
+    values flow into the SAME comparison or subtraction, one on each side, and
+    that result reaches an enforcement sink. Empty when no such tie exists.
 
-    HAZARD: opcode presence is not enough. Two unrelated uses — ``min_balance`` of
-    one account, ``balance`` of another, never compared — would suppress the
-    finding on a contract with no funds check at all."""
+    HAZARD: opcode presence is not enough. Two unrelated uses — ``min_balance``
+    of one account, ``balance`` of another, never compared — enforce nothing,
+    and a tie whose result is dropped (``pop``) is no check either."""
     bal = op_output_seeds(prog, "balance", file=file)
     mb = op_output_seeds(prog, "min_balance", file=file)
+    gates: set = set()
     if not bal or not mb:
-        return False
+        return gates
 
     def _tied(op) -> bool:
         # balance on one side, min_balance on the other (either order).
@@ -56,9 +62,16 @@ def _has_balance_minbalance_check(
                 and _operand_flows_from_field_var(prog, x, mb))
         )
 
-    # And ENFORCED: a tie whose result is dropped (`pop`) or sits on an unrelated
-    # branch is no funds check, so one dead comparison would silence the detector.
-    return enforced_op_exists(prog, _TIE_OPS, _tied, file=file)
+    label_lines = _label_to_bb_first_line(prog)
+    scratch_fwd = scratch_forward_map(prog)
+    for op in prog.assignments:
+        if op.op not in _TIE_OPS or not file_match(op.location.file, file):
+            continue
+        if not _tied(op) or not op.outputs or not isinstance(op.outputs[0], SSAVar):
+            continue
+        _collect_field_enforcement_bbs(
+            prog, op.outputs[0], label_lines, gates, set(), scratch_fwd)
+    return gates
 
 
 class DeleteFundsCheckDetector(_ApprovalActionGuardDetector):
@@ -67,5 +80,12 @@ class DeleteFundsCheckDetector(_ApprovalActionGuardDetector):
     action = ONC_DELETE_APPLICATION
     violation_cls = DeleteFundsCheckViolation
 
-    def applies(self) -> bool:
-        return not _has_balance_minbalance_check(self.prog, self.file)
+    def exit_protected(self, exit_bb: BasicBlock) -> bool:
+        """Every entry path to THIS exit crosses an enforced balance/min_balance
+        tie. Per-exit, not program-wide: a funds check in the NoOp arm proves
+        nothing about a Delete arm that approves without one (finding 1.6, the
+        delete-funds-check twin of timelock-upgrade)."""
+        gates = getattr(self, "_gates_cache", None)
+        if gates is None:
+            gates = self._gates_cache = _funds_check_gates(self.prog, self.file)
+        return bool(gates) and _all_entry_paths_cross(self.prog, exit_bb, gates)

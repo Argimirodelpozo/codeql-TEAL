@@ -76,6 +76,18 @@ class _ApprovalActionGuardDetector:
         """Program-level precondition gate; default always-on."""
         return True
 
+    def exit_protected(self, exit_bb: BasicBlock) -> bool:
+        """PER-EXIT precondition: ``True`` suppresses the finding for this exit
+        because every entry path to it crosses the detector's own protective
+        check (a timelock, a funds check). Default: never.
+
+        HAZARD: this is per-EXIT on purpose. A whole-program "some enforced
+        check exists" precondition (the former ``applies()`` spelling of
+        timelock-upgrade and delete-funds-check) lets a deadline in the NoOp
+        arm silence an undelayed creator Update arm — the check must lie on the
+        paths to THIS exit, exactly as every other exit detector demands."""
+        return False
+
     def detect(self) -> list:
         if not self.applies():
             return []
@@ -100,5 +112,7 @@ class _ApprovalActionGuardDetector:
                     continue
                 if self.creator_guard == "require_present" and not dominates:
                     continue
+            if self.exit_protected(exit_bb):
+                continue
             out.append(self.violation_cls(exit_bb))
         return out

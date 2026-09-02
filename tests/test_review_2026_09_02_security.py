@@ -239,3 +239,42 @@ def test_sibling_pin_disequality_and_returned_equality(tmp_path):
     assert _flags(det, _prog(tmp_path, pin + "!=\nbz reject\n" + body, "e.teal"))
     assert _flags(det, _prog(tmp_path, "gtxn 0 Amount\npop\n" + pin + "!=\nreturn\n",
                              "f.teal"))
+
+
+# ---------------------------------------------------------------------------
+# 1.6 — timelock-upgrade / delete-funds-check are per-EXIT, not whole-program
+# ---------------------------------------------------------------------------
+
+
+def test_protective_check_must_lie_on_the_exit_paths(tmp_path):
+    """A whole-program "some enforced check exists" precondition let an
+    auction deadline in the NoOp arm silence an undelayed creator Update arm
+    (timelock-upgrade), and a balance/min_balance tie in the NoOp arm silence
+    an unchecked Delete arm (delete-funds-check). Both are now per-exit
+    must-cross. Controls: the SAME check moved onto the action arm's path
+    suppresses the finding; the check with its result dropped (`pop`) does not."""
+    ts_check = "global LatestTimestamp\nint 1700000000\n>\n"
+    dispatch = "txn OnCompletion\nint UpdateApplication\n==\nbnz update\n"
+    update_arm = "update:\n" + _CREATOR_CMP + "assert\nint 1\nreturn\n"
+    elsewhere = _prog(tmp_path, dispatch + ts_check + "assert\nint 1\nreturn\n"
+                      + update_arm, "t1.teal")
+    assert _flags("timelock-upgrade", elsewhere)
+    on_path = _prog(tmp_path, dispatch + "int 1\nreturn\nupdate:\n" + _CREATOR_CMP
+                    + "assert\n" + ts_check + "assert\nint 1\nreturn\n", "t2.teal")
+    assert not _flags("timelock-upgrade", on_path)
+    dropped = _prog(tmp_path, dispatch + "int 1\nreturn\nupdate:\n" + _CREATOR_CMP
+                    + "assert\n" + ts_check + "pop\nint 1\nreturn\n", "t3.teal")
+    assert _flags("timelock-upgrade", dropped)
+
+    funds = ("global CurrentApplicationAddress\nbalance\n"
+             "global CurrentApplicationAddress\nmin_balance\n==\n")
+    d_dispatch = "txn OnCompletion\nint DeleteApplication\n==\nbnz delete\n"
+    d_elsewhere = _prog(tmp_path, d_dispatch + funds + "assert\nint 1\nreturn\n"
+                        "delete:\nint 1\nreturn\n", "d1.teal")
+    assert _flags("delete-funds-check", d_elsewhere)
+    d_on_path = _prog(tmp_path, d_dispatch + "int 1\nreturn\ndelete:\n" + funds
+                      + "assert\nint 1\nreturn\n", "d2.teal")
+    assert not _flags("delete-funds-check", d_on_path)
+    d_dropped = _prog(tmp_path, d_dispatch + "int 1\nreturn\ndelete:\n" + funds
+                      + "pop\nint 1\nreturn\n", "d3.teal")
+    assert _flags("delete-funds-check", d_dropped)
