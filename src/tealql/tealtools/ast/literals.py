@@ -154,90 +154,133 @@ def is_recognized_byte_literal(v: str) -> bool:
     return False
 
 
-def quote_is_escaped(text: str, index: int) -> bool:
-    """A quote at ``index`` is escaped iff an ODD run of backslashes precedes it.
+#: go-algorand ``tokenSeparators``: blank, tab and ``;`` (the multi-op separator,
+#: which is itself a token). Other whitespace is added only because a caller may
+#: hand us a line still carrying its ``\r`` / ``\n`` — Go's line reader never does.
+_TOKEN_SEPARATORS = frozenset(" \t;\r\n\f\v")
+_BASE64_KEYWORDS = frozenset({"b64", "base64"})
 
-    Looking only at the immediately preceding character mistakes the closing
-    quote in ``"a\\\\"`` for an escaped quote: the first backslash escapes the
-    second, so the quote actually terminates the literal.  Once quote state is
-    wrong, operands merge and every constant index after them shifts."""
-    backslashes = 0
-    index -= 1
-    while index >= 0 and text[index] == "\\":
-        backslashes += 1
-        index -= 1
-    return backslashes % 2 == 1
+
+def _is_separator(c: str) -> bool:
+    return c in _TOKEN_SEPARATORS
+
+
+def scan_line(text: str) -> "tuple[list[tuple[int, int]], int]":
+    """Tokenize one TEAL source line exactly as go-algorand's assembler does
+    (``assembler.go: tokensFromLine``) -> ``(token spans, comment start)``, the
+    spans being ``(start, end)`` half-open indexes into ``text`` and the comment
+    start the index of the ``//`` that ends the code (``-1`` when there is none).
+
+    This is THE comment/tokenizer rule; every ``//`` decision in the parse floor
+    must route through it, because the assembler's is not a "token-boundary"
+    rule and every home-grown approximation drifted from it in a way that
+    changed a constant:
+
+    * ``//`` starts a comment ANYWHERE it is not inside a string or a base64
+      payload — glued to a token too: ``byte "a"//c`` pushes ``"a"`` and
+      ``method "x()void"//c`` hashes ``x()void`` (a tokenizer that kept the
+      ``//c`` hashed a WRONG selector, silently).
+    * ``inBase64`` — set after a bare ``b64`` / ``base64`` keyword token or on
+      ``b64(`` / ``base64(``, cleared at the next separator or ``)`` — keeps a
+      payload's leading ``//`` as data: ``bytecblock b64 //// base64(AA//)``
+      are the constants ``0xffffff 0x000fff``, not a comment (reading them as one
+      dropped the WHOLE constant block; every ``bytec_N`` then resolved to
+      nothing).
+    * A ``"`` opens a string only at a token start, and a ``"`` inside a string
+      closes it unless the IMMEDIATELY preceding byte is a backslash — Go's
+      rule, verified against ``goal``: ``pushbytess "a\\\\" "b"`` assembles to ONE
+      constant, so an odd-run escape rule (which reads two) fabricates a stack
+      shape the assembler never produces.
+    * Whitespace ends a token even inside ``base64(..)``: ``base64(a b)`` is two
+      tokens, and the assembler rejects it ("lacks closing parenthesis").
+
+    Semantics only — no fabrication: on input the assembler rejects the split
+    here is still the assembler's, so what follows refuses on the same shapes.
+    """
+    n = len(text)
+    spans: list = []
+    i = 0
+    while i < n and _is_separator(text[i]):
+        if text[i] == ";":
+            spans.append((i, i + 1))
+        i += 1
+    start = i
+    in_string = False                     # spaces and `//` are data inside
+    in_base64 = False                     # `//` is payload inside
+    while i < n:
+        c = text[i]
+        if not _is_separator(c):
+            if c == '"':
+                if not in_string:
+                    if i == 0 or _is_separator(text[i - 1]):
+                        in_string = True
+                elif text[i - 1] != "\\":
+                    in_string = False
+            elif c == "/":
+                if (i + 1 < n and text[i + 1] == "/"
+                        and not in_base64 and not in_string):
+                    if start != i:        # a comment glued to a token
+                        spans.append((start, i))
+                    return spans, i
+            elif c == "(":
+                if text[start:i] in _BASE64_KEYWORDS:
+                    in_base64 = True
+            elif c == ")":
+                in_base64 = False
+            i += 1
+            continue
+        # A separator ends the current token — unless it sits inside a string.
+        if not in_string:
+            tok = text[start:i]
+            spans.append((start, i))
+            if c == ";":
+                spans.append((i, i + 1))
+            if in_base64:
+                in_base64 = False
+            elif tok in _BASE64_KEYWORDS:
+                in_base64 = True
+        i += 1
+        if not in_string:
+            while i < n and _is_separator(text[i]):
+                if text[i] == ";":
+                    spans.append((i, i + 1))
+                i += 1
+            start = i
+    if start < n:
+        spans.append((start, n))
+    return spans, -1
 
 
 def strip_inline_comment(code: str) -> str:
-    """Drop a ``//`` inline comment that sits outside a quoted string, outside a
-    parenthesised group, and at a TOKEN BOUNDARY.
-
-    The token-boundary rule is what go-algorand does: split on whitespace, then
-    ask whether a token STARTS with ``//``, so ``int 1// x`` is not a comment at
-    all.  Quote state honors escaped quotes (see :func:`quote_is_escaped`), so a
-    ``//`` inside ``byte "a//b"`` is data, not a comment."""
-    q = False
-    depth = 0
-    for i in range(len(code) - 1):
-        c = code[i]
-        if c == '"' and not quote_is_escaped(code, i):
-            q = not q
-        elif q:
-            continue
-        elif c == "(":
-            depth += 1
-        elif c == ")":
-            depth = max(0, depth - 1)
-        elif (depth == 0 and code[i:i + 2] == "//"
-                and (i == 0 or code[i - 1].isspace())):
-            return code[:i]
-    return code
+    """Drop the ``//`` comment from a source line, by the assembler's own rule
+    (:func:`scan_line`): a ``//`` outside a string and outside a base64 payload
+    starts the comment wherever it sits, and one inside either is data."""
+    _spans, cut = scan_line(code)
+    return code if cut < 0 else code[:cut]
 
 
 def tokenize_operands(text: str, *, fold_byte_keywords: bool = False) -> list:
-    """Split the text after an opcode into tokens, honoring ``"quoted strings"``,
-    parenthesised ``base64(..)`` groups and a between-token ``//`` comment.
+    """Split the text after an opcode into the assembler's tokens
+    (:func:`scan_line`): ``"quoted strings"`` stay whole, a ``//`` comment ends
+    the list, and a ``//`` inside a base64 payload is data.
 
-    HAZARD: a ``bytecblock`` / ``intcblock`` literal list needs
-    ``fold_byte_keywords=True`` — without it ``b64 AAAA`` splits into two tokens and
-    every constant index after it shifts."""
+    HAZARD: a ``bytecblock`` / ``pushbytess`` literal list needs
+    ``fold_byte_keywords=True`` — without it ``b64 AAAA`` splits into two tokens
+    (as the assembler itself sees them) and every constant index after it
+    shifts. Folding joins the keyword and its payload with ONE space, the form
+    :func:`decode_byte_literal` accepts."""
+    spans, _cut = scan_line(text)
+    raw = [text[a:b] for a, b in spans]
+    if not fold_byte_keywords:
+        return raw
     toks: list = []
-    i, n = 0, len(text)
-    while i < n:
-        c = text[i]
-        if c.isspace():
-            i += 1
+    i = 0
+    while i < len(raw):
+        tok = raw[i]
+        if tok in _BYTE_ENC_KW and i + 1 < len(raw):
+            toks.append(tok + " " + raw[i + 1])
+            i += 2
             continue
-        if text[i:i + 2] == "//":            # inline comment (between operands)
-            break
-        if c == '"':
-            j = i + 1
-            while j < n and not (text[j] == '"'
-                                 and not quote_is_escaped(text, j)):
-                j += 1
-            toks.append(text[i:j + 1])
-            i = j + 1
-            continue
-        j, depth = i, 0
-        while j < n and (depth > 0 or not text[j].isspace()):
-            if text[j] == "(":
-                depth += 1
-            elif text[j] == ")":
-                depth -= 1
-            j += 1
-        tok = text[i:j]
-        i = j
-        if fold_byte_keywords and tok in _BYTE_ENC_KW:
-            k = i
-            while k < n and text[k].isspace():
-                k += 1
-            m = k
-            while m < n and not text[m].isspace():
-                m += 1
-            if m > k:
-                toks.append(tok + " " + text[k:m])
-                i = m
-                continue
         toks.append(tok)
+        i += 1
     return toks

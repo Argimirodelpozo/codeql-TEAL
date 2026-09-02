@@ -24,7 +24,7 @@ from .ast import (
     AstNode, Label, Location, SingleNumericArgumentOpcode, Source,
     ZeroArgumentOpcode, node_class_for_mnemonic,
 )
-from .literals import is_template_variable
+from .literals import is_template_variable, scan_line
 
 _LANG = _ts.Language(_tsteal.language())
 
@@ -148,24 +148,11 @@ def _neutralise_comment_continuations(src: bytes) -> bytes:
         eol = out.find(b"\n", i)
         if eol == -1:
             eol = n
-        # find this line's comment start: the first `//` that is not inside a
-        # double-quoted byte literal (`pushbytes "http://x"` is not a comment).
-        cstart, in_str, esc, k = -1, False, False, i
-        while k < eol:
-            ch = out[k]
-            if in_str:
-                if esc:
-                    esc = False
-                elif ch == 0x5C:            # backslash
-                    esc = True
-                elif ch == 0x22:            # closing quote
-                    in_str = False
-            elif ch == 0x22:                # opening quote
-                in_str = True
-            elif ch == 0x2F and k + 1 < eol and out[k + 1] == 0x2F:
-                cstart = k
-                break
-            k += 1
+        # This line's comment start by the assembler's own rule (a `//` inside
+        # `pushbytes "http://x"` or a `b64 //8=` payload is data). latin-1 keeps
+        # one char per byte, so the index maps straight back onto `out`.
+        _spans, rel = scan_line(out[i:eol].decode("latin-1"))
+        cstart = i + rel if rel >= 0 else -1
         if cstart >= 0:
             end = eol - 1 if eol > i and out[eol - 1] == 0x0D else eol
             if end - 1 > cstart and out[end - 1] == 0x5C:

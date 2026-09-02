@@ -394,18 +394,25 @@ def test_pseudo_op_with_colon_ending_comment_is_not_a_label(tmp_path):
     assert len(ln.inputs) == 1
 
 
-def test_escaped_backslash_before_closing_quote_terminates_the_literal(tmp_path):
-    r"""In `bytecblock "\\" 0x01` the first backslash escapes the second, so
-    the quote CLOSES the literal: two slots. The single-char look-behind
-    tokenizer merged them into one, silently shifting every constant index
-    after it."""
-    prog = _prog(tmp_path, '#pragma version 8\n'
-                           'bytecblock "\\\\" 0x01\n'
-                           'bytec_0\nbytec_1\nconcat\nlen\npop\nint 1\nreturn\n')
-    prog.propagate_constants()
-    by_op = {a.op: [str(o.const_value) for o in a.outputs]
-             for a in prog.assignments if a.op.startswith("bytec_")}
-    assert by_op == {"bytec_0": ["0x5c"], "bytec_1": ["0x01"]}, by_op
+def test_backslash_before_closing_quote_follows_the_assembler(tmp_path):
+    r"""go-algorand's tokenizer (`tokensFromLine`) does NOT close a string at a
+    quote whose immediately preceding byte is a backslash — even when that
+    backslash is itself escaped. Verified against `goal clerk compile`:
+    `bytecblock 0x01 "\\"` assembles to the two slots `0x01 0x5c`, while
+    `bytecblock "\\" 0x01` is REJECTED ("arg did not parse: "\\" 0x01") because
+    the string swallows the rest of the line. An odd-run escape rule read the
+    rejected spelling as two slots — a constant table the assembler never
+    produces — so both spellings are pinned to the assembler's answer."""
+    def slots(src):
+        prog = _prog(tmp_path, '#pragma version 8\n' + src + '\n'
+                               'bytec_0\nbytec_1\nconcat\nlen\npop\nint 1\nreturn\n')
+        prog.propagate_constants()
+        return {a.op: [str(o.const_value) for o in a.outputs]
+                for a in prog.assignments if a.op.startswith("bytec_")}
+
+    assert slots('bytecblock 0x01 "\\\\"') == {"bytec_0": ["0x01"], "bytec_1": ["0x5c"]}
+    # goal-rejected: refuse both slots rather than invent a two-slot table.
+    assert slots('bytecblock "\\\\" 0x01') == {"bytec_0": ["None"], "bytec_1": ["None"]}
 
 
 def test_non_latin1_escape_never_raises(tmp_path):

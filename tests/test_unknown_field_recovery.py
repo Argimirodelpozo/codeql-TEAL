@@ -421,17 +421,23 @@ def test_ordinary_comments_are_untouched(tmp_path):
     assert ("pushbytes", '"asa_"') in _ops(prog)
 
 
-def test_even_backslashes_close_string_before_quoted_comment(tmp_path):
-    """Two backslashes encode one literal backslash; they do not escape the
-    following quote.  Losing that distinction leaves quote state open and makes
-    the quote in the comment pollute the parsed constant (or reject the file)."""
-    prog = _prog(
+def test_backslash_before_quote_keeps_the_assemblers_string_state(tmp_path):
+    """go-algorand's tokenizer leaves a string OPEN at a quote whose preceding
+    byte is a backslash, escaped or not, so `pushbytes "a\\\\"   // [name, "a
+    backslash"]` is REJECTED by `goal clerk compile` ("arg did not parse") —
+    the `//` sits inside the still-open string. An odd-run escape rule read the
+    line as a clean push of `"a\\\\"`, a constant the assembler never emits.
+    The parse must not read clean; the control is the same string with the
+    comment removed, which goal assembles to `0x615c`."""
+    rejected = _prog(
         tmp_path,
         'pushbytes "a\\\\"   // [name, "a backslash"]\npop\n',
         version=10,
     )
-    assert list(getattr(prog, "parse_diagnostics", ()) or []) == []
-    assert ("pushbytes", '"a\\\\"') in _ops(prog)
+    assert list(getattr(rejected, "parse_diagnostics", ()) or []) != []
+    ok = _prog(tmp_path, 'pushbytes "a\\\\"\npop\n', version=10)
+    assert list(getattr(ok, "parse_diagnostics", ()) or []) == []
+    assert ("pushbytes", '"a\\\\"') in _ops(ok)
 
 
 def test_blanking_preserves_line_length():

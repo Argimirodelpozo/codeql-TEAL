@@ -216,7 +216,10 @@ def _dispatch_methods(line: str, method_table: "dict | None"):
     sigs = _METHOD_RE.findall(line)
     if sigs:
         return [parse_signature(s) for s in sigs]
-    toks = line.split("//", 1)[0].split()
+    # The assembler's tokenizer, not `split("//")`: a `//` inside a base64
+    # selector payload is data, and a comment glued to the last operand is not.
+    from ..ast.literals import tokenize_operands
+    toks = tokenize_operands(line)
     if not method_table or not toks or toks[0] not in _PUSH_OPS:
         return []
     hits = [method_table.get(t.lower()) for t in toks[1:] if t.startswith("0x")]

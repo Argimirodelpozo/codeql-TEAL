@@ -39,9 +39,13 @@ class TestTokenizeOperands:
     def test_quoted_string_with_spaces(self):
         assert tokenize_operands('"x y" 5') == ['"x y"', "5"]
 
-    def test_base64_group_with_spaces_and_slash(self):
-        # parenthesised base64(..) is one token even with spaces and '/'
-        assert tokenize_operands("base64(a b/c==) 1") == ["base64(a b/c==)", "1"]
+    def test_base64_group_with_slashes(self):
+        # `//` inside a base64(..) payload is data, not a comment (go-algorand's
+        # inBase64 state); a SPACE still ends the token — goal rejects
+        # `pushbytes base64(a b)` with "lacks closing parenthesis", so keeping the
+        # group whole would have been a leniency the assembler does not share.
+        assert tokenize_operands("base64(a//c==) 1") == ["base64(a//c==)", "1"]
+        assert tokenize_operands("base64(a b)") == ["base64(a", "b)"]
 
     def test_stops_at_inline_comment(self):
         assert tokenize_operands("5 6 // trailing") == ["5", "6"]
