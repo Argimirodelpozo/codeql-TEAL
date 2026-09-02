@@ -72,6 +72,12 @@ def test_returned_comparison_is_the_approval_guard(tmp_path):
                      "return\n", "d.teal")
     assert _lifecycle(and_zero) == set()
 
+    # The v1 twin: the comparison is the exit-stack top at EOF (no ``return``
+    # at all). ``cfg.exits.verdict_operand`` is the one home for both
+    # spellings; mainnet app_1050058646 is exactly this shape.
+    eof_cmp = _prog(tmp_path, _CREATOR_CMP, "g.teal")
+    assert _lifecycle(eof_cmp) == _NO_UNPROTECTED
+
     # Controls.
     const_true = _prog(tmp_path, "int 1\nreturn\n", "e.teal")
     assert _lifecycle(const_true) == _ALL_FOUR
