@@ -362,11 +362,16 @@ def load_graph(
         g.add_node(node)
     # One CFG walk for both products: it is the dominant cost of loading a
     # graph, and edges + blocks must agree on reachability anyway.
-    cfg_edges, cfg_blocks = build_cfg(nodes)
+    off_end_callsubs: list = []
+    cfg_edges, cfg_blocks = build_cfg(nodes, off_end=off_end_callsubs)
     for u, v, t in cfg_edges:
         g.add_edge(u, v, successor=t)
     for node, bb_first, bb_last in cfg_blocks:
         g.nodes[node]["bb"] = (node.location.file, bb_first, bb_last)
+    # A `callsub` whose return runs off the end of the program: an exit no
+    # edge can show. SSAProgram reads it into `off_end_exits`.
+    for node in off_end_callsubs:
+        g.nodes[node.ast]["off_end"] = True
 
     # Resolved literal constants per output: populates ``const_outputs``
     # ``{out_idx: (kind, value)}`` and the single-output scalar ``const_value``.

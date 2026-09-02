@@ -1090,6 +1090,12 @@ def _apply_pyssa_to(
         bb.successors = [bb_map[s] for s in py_b.succs if s in bb_map]
     prog._pyblock_to_block = dict(bb_map)
     prog._block_id_to_pyblock = {id(bb): py_b for py_b, bb in bb_map.items()}
+    # Block-level mirror of `off_end_exits` (the set survived above; the flag
+    # on the OLD block objects did not — they were just rebuilt).
+    for bb_key in prog.off_end_exits:
+        bb = prog.blocks.get(bb_key)
+        if bb is not None:
+            bb.off_end = True
 
     # 4) Attach phis to host BBs.
     for py_p, p in phi_map.items():

@@ -133,7 +133,9 @@ def _aux_succ(n: _Node, nxt: _Node | None, labels: dict[str, _Node]) -> list[_No
     return [nxt] if nxt is not None else []
 
 
-def build_cfg(nodes, *, unresolved: list | None = None) -> tuple[list, list]:
+def build_cfg(
+    nodes, *, unresolved: list | None = None, off_end: list | None = None,
+) -> tuple[list, list]:
     """``(edges, blocks)`` from ONE reachability computation per program.
 
     Edges are ``(pred_AstNode, succ_AstNode, successorType)``, pruned to those
@@ -145,14 +147,16 @@ def build_cfg(nodes, *, unresolved: list | None = None) -> tuple[list, list]:
     Both come from a single :func:`_program_cfg` call because that walk is the
     dominant cost of loading a graph — computing it once per consumer had it
     running three times per file. ``unresolved``, if given, collects
-    :func:`_program_cfg`'s unresolved branch targets.
+    :func:`_program_cfg`'s unresolved branch targets; ``off_end`` its
+    ``callsub`` nodes whose return runs off the end of the program.
     """
     edges: list = []
     blocks: list = []
     for _file, kids in _children(nodes).items():
         if not kids:
             continue
-        cand, reachable, idx_of = _program_cfg(kids, unresolved=unresolved)
+        cand, reachable, idx_of = _program_cfg(
+            kids, unresolved=unresolved, off_end=off_end)
         for p, s, t in cand:
             if idx_of[id(p)] in reachable:
                 edges.append((p.ast, s.ast, t))
@@ -169,6 +173,7 @@ def _program_cfg(
     kids: list[_Node],
     *,
     unresolved: list | None = None,
+    off_end: list | None = None,
 ) -> tuple[list[tuple[_Node, _Node, str]], set[int], dict[int, int]]:
     """One program's candidate CFG edges + reachable-node set.
 
@@ -180,6 +185,13 @@ def _program_cfg(
     / call target naming a label this program does not define. Those edges
     CANNOT be built, so the graph silently under-approximates control flow
     unless a caller reports them — see the HAZARD on :func:`_target`.
+
+    ``off_end``, if given, collects every REACHABLE ``callsub`` that is the
+    program's last instruction: its ``retsub`` resumes at ``pc ==
+    len(program)``, which TERMINATES with the stack top as the verdict. There
+    is no continuation node, so no edge can carry that exit; a caller must
+    record it (:attr:`SSAProgram.off_end_exits`) or the return simply
+    vanishes and the approving path with it.
     """
     cand: list[tuple[_Node, _Node, str]] = []
     # retsub-return candidates, deferred so the fixpoint below can gate them on
@@ -233,6 +245,10 @@ def _program_cfg(
             stack.extend(_aux_succ(cur, nxt_of[ci], labels))
         entry_body[name] = seen
 
+    # (retsub, callsub-at-EOF) pairs: a return with NO continuation node. Kept
+    # aside, gated on reachability below like every other retsub return.
+    eof_returns: list[tuple[_Node, _Node]] = []
+
     def retsub_returns(rn: _Node) -> list[tuple[_Node, _Node]]:
         ri = idx_of[id(rn)]
         outs: list[tuple[_Node, _Node]] = []
@@ -242,6 +258,8 @@ def _program_cfg(
                     nx = nxt_of[idx_of[id(c)]]
                     if nx is not None:
                         outs.append((nx, c))      # (continuation, its callsub)
+                    else:
+                        eof_returns.append((rn, c))
         return outs
 
     def _target(n: _Node, name: str) -> _Node | None:
@@ -349,6 +367,13 @@ def _program_cfg(
         reachable = _reach(live)
     for rn, r, _c in live:
         emit(rn, r, NORMAL)
+    if off_end is not None:
+        seen_eof: set[int] = set()
+        for rn, c in eof_returns:
+            if (idx_of[id(rn)] in reachable and idx_of[id(c)] in reachable
+                    and id(c) not in seen_eof):
+                seen_eof.add(id(c))
+                off_end.append(c)
 
     return cand, reachable, idx_of
 

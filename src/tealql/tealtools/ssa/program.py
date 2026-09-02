@@ -336,6 +336,17 @@ class SSAProgram:
             v_bb.predecessors.append(u_bb)
 
         self.edge_polarity = {k: frozenset(v) for k, v in _polarity.items()}
+        # A `callsub` as the program's LAST instruction: its `retsub` resumes at
+        # `pc == len(program)` and terminates with the stack top as the verdict
+        # (`cfg.build` flags the node; there is no continuation to draw an edge
+        # to). Same exit class as the branch-to-EOF above, same home.
+        for n, data in g.nodes(data=True):
+            if data.get("off_end") and data.get("bb") is not None:
+                self.off_end_exits.add(data["bb"])
+        for bb_id in self.off_end_exits:
+            bb = self.blocks.get(bb_id)
+            if bb is not None:
+                bb.off_end = True
 
         # Pass 3: collect Label nodes for rendering. They aren't part of
         # the SSA — they don't define or consume values — but printing

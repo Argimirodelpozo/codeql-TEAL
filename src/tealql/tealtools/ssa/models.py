@@ -295,7 +295,7 @@ class BasicBlock:
         "file", "first_line", "last_line",
         "assignments", "stack_assignments", "phis",
         "predecessors", "successors",
-        "exit_stack",
+        "exit_stack", "off_end",
     )
 
     def __init__(self, file: str, first_line: int, last_line: int):
@@ -312,6 +312,14 @@ class BasicBlock:
         self.predecessors: list["BasicBlock"] = []
         self.successors: list["BasicBlock"] = []
         self.exit_stack: list = []
+        #: Control can LEAVE THE PROGRAM at this block's end without a
+        #: ``return``/``err``: a branch to a label at EOF, or a ``callsub``
+        #: whose ``retsub`` returns to ``pc == len(program)``. The AVM then
+        #: terminates with the stack top as the verdict, so this is a real
+        #: exit that ``successors`` cannot show (there is no target block).
+        #: Mirror of :attr:`SSAProgram.off_end_exits` at block level, set by
+        #: construction; :mod:`..cfg.exits` reads it.
+        self.off_end: bool = False
 
     def __setattr__(self, name, value):
         if name in {"file", "first_line", "last_line"} and hasattr(self, name):
