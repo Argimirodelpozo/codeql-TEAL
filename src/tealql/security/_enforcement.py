@@ -71,6 +71,16 @@ def _bb_at(prog: SSAProgram, file: str, line: int) -> Optional[BasicBlock]:
 #: Conditions whose FALSITY is itself a positive pin: ``!(a != b)`` is ``a == b``.
 _NEGATED_COND_OPS = frozenset({"!=", "b!=", "!"})
 
+#: Comparisons whose complement is ITSELF a bound: ``!(Fee > 1000)`` is
+#: ``Fee <= 1000``. Only ``==``/``b==`` is excluded — ``!(Fee == 0)`` pins the
+#: field AWAY from one value, the inverted-check antipattern, not a guard.
+_COMPLEMENT_IS_BOUND_OPS = CMP_OPS - {"==", "b=="}
+
+#: Sinks that FORCE their operand truthy on every continuing/approving path:
+#: ``assert V`` fails otherwise, and an approving ``return V`` is an approval
+#: precisely because V held. Both make the checked comparison ENFORCED.
+_FORCING_SINK_OPS = frozenset({"assert", "return"})
+
 #: ``assert(A && B)`` forces A, so the walk crosses ``&&`` unconditionally.
 #: ``||`` does NOT — see :func:`_disjunction_is_enforcing`.
 _CONJUNCTION_OPS = frozenset({"&&"})
@@ -146,8 +156,10 @@ def _acted_on(prog: SSAProgram, var, depth: int = 0, truthy: bool = False) -> bo
         return False
     label_lines = None
     for use in getattr(var, "uses", ()):
-        if use.op == "assert":
-            if not truthy:                     # assert 0 fails -> rejects
+        if use.op in _FORCING_SINK_OPS:
+            # `assert 0` fails; `return 0` rejects — the caller returning the
+            # callee's verdict unchanged (`callsub check; return`) acts on it.
+            if not truthy:
                 return True
             continue
         if use.op in ("bnz", "bz"):
@@ -221,19 +233,26 @@ def branch_gates_rejection(
     reaching an approval past it means the condition held.
 
     HAZARD: polarity decides the verdict. Rejecting on FALSE credits the
-    comparison AS WRITTEN, always. Rejecting on TRUE credits only its NEGATION,
-    so it counts only for a negated condition (``!=``/``b!=``/``!``) — a plain
-    ``==`` whose FALSE side approves pins the field AWAY from the compared value,
-    which is the inverted-check antipattern, not a guard. Compound ``&&``/``||``
-    on the true-rejects side stay uncredited (over-report, never under-report)."""
+    comparison AS WRITTEN, always. Rejecting on TRUE credits its NEGATION, so it
+    counts when that negation is itself a pin: a negated condition
+    (``!=``/``b!=``/``!``) or an ORDERED comparison, whose complement is a bound
+    (``Fee > 1000; bnz reject`` pins ``Fee <= 1000`` — the same check spelled
+    ``<=; assert`` was always credited, and the verdict must not depend on the
+    spelling). A plain ``==`` whose FALSE side approves pins the field AWAY from
+    the compared value, which is the inverted-check antipattern, not a guard.
+    Compound ``&&``/``||`` on the true-rejects side stay uncredited (over-report,
+    never under-report). The condition is seen through copies so ``>; store 1;
+    …; load 1; bnz reject`` is the same check."""
     rejects_when_false, rejects_when_true = branch_reject_polarity(
         prog, branch, label_lines)
     if rejects_when_false:
         return True
     if rejects_when_true and branch.inputs:
-        cond = branch.inputs[0]
+        from ._value_flow import resolve_through_copies
+        cond = resolve_through_copies(prog, branch.inputs[0])
         d = getattr(cond, "defined_by", None)
-        return d is not None and d.op in _NEGATED_COND_OPS
+        return d is not None and (d.op in _NEGATED_COND_OPS
+                                  or d.op in _COMPLEMENT_IS_BOUND_OPS)
     return False
 
 
@@ -299,7 +318,7 @@ def def_forward_reaches_enforcement(
                 scratch_fwd=scratch_fwd, field_vars=field_vars):
             return True
     for cons in var.uses:
-        if cons.op == "assert":
+        if cons.op in _FORCING_SINK_OPS:
             return True
         if cons.op in ("bnz", "bz") and branch_gates_rejection(
                 prog, cons, label_lines):

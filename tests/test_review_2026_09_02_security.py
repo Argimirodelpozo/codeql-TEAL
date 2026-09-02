@@ -175,3 +175,42 @@ def test_accounts_zero_is_the_current_sender(tmp_path):
         prog = _prog(tmp_path, spelling + "global CreatorAddress\n==\nassert\n"
                      "int 1\nreturn\n", f"c{len(spelling)}.teal")
         assert _lifecycle(prog) == _ALL_FOUR, spelling
+
+
+# ---------------------------------------------------------------------------
+# 2.2 — an ORDERED comparison rejecting on TRUE is a bound
+# ---------------------------------------------------------------------------
+
+
+def test_ordered_compare_rejecting_on_true_is_credited(tmp_path):
+    """``Fee > 1000; bnz reject`` pins ``Fee <= 1000`` on every approving path —
+    the complement of an ordered comparison is itself a bound, and the SAME
+    check spelled ``<=; assert`` was always credited, so the verdict depended
+    on the spelling. Covers the whole field family (lsig ``fee-validation``
+    here), the TealScript ``if (x > y) throw`` shape (``>; bz ok; err``), a
+    rejecting ``int 0; return``, a scratch round-trip before the branch, and
+    the app-mode consumer ``group-size-check``. Controls: ``==; bnz reject`` IS
+    the inverted-check antipattern (rejects only fee==0) and must stay flagged,
+    in both families; the already-credited spellings stay clean."""
+    fee = "txn Fee\nint 1000\n"
+    clean = {
+        "gt_bnz": fee + ">\nbnz reject\nint 1\nreturn\nreject:\nint 0\nreturn\n",
+        "gt_bz_err": fee + ">\nbz ok\nerr\nok:\nint 1\nreturn\n",
+        "ge_bnz_err": "txn Fee\nint 1001\n>=\nbnz reject\nint 1\nreturn\nreject:\nerr\n",
+        "stored": fee + ">\nstore 1\nload 1\nbnz reject\nint 1\nreturn\nreject:\nerr\n",
+        "le_assert": fee + "<=\nassert\nint 1\nreturn\n",           # already credited
+        "lt_bz": "txn Fee\nint 1001\n<\nbz reject\nint 1\nreturn\nreject:\nerr\n",
+    }
+    for name, body in clean.items():
+        assert not _flags("fee-validation", _prog(tmp_path, body, f"{name}.teal")), name
+    inverted = _prog(tmp_path, "txn Fee\nint 0\n==\nbnz reject\nint 1\nreturn\n"
+                     "reject:\nerr\n", "inv.teal")
+    assert _flags("fee-validation", inverted)
+
+    gs = "global GroupSize\nint 2\n"
+    gs_gt = _prog(tmp_path, gs + ">\nbnz reject\ngtxn 0 Amount\npop\nint 1\nreturn\n"
+                  "reject:\nerr\n", "gs1.teal")
+    assert not _flags("group-size-check", gs_gt)
+    gs_eq_inverted = _prog(tmp_path, gs + "==\nbnz reject\ngtxn 0 Amount\npop\nint 1\n"
+                           "return\nreject:\nerr\n", "gs2.teal")
+    assert _flags("group-size-check", gs_eq_inverted)

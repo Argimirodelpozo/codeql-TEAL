@@ -15,6 +15,7 @@ from tealql.tealtools.ssa import Assignment, BasicBlock, SSAProgram, SSAVar
 
 from ._enforcement import (
     _DISJUNCTION_OPS,
+    _FORCING_SINK_OPS,
     _disjunction_is_enforcing,
     _label_to_bb_first_line,
     branch_gates_rejection,
@@ -62,7 +63,9 @@ def _collect_field_enforcement_bbs(
         _collect_field_enforcement_bbs(prog, fwd, label_lines, out, seen,
                                        scratch_fwd, field_vars)
     for cons in var.uses:
-        if cons.op == "assert":
+        if cons.op in _FORCING_SINK_OPS:
+            # `assert V`, or the approving exit `return V` — approving through
+            # that block means V held (same sink set as the boolean twin).
             if cons.basic_block is not None:
                 out.add(cons.basic_block)
         elif cons.op in ("bnz", "bz"):
