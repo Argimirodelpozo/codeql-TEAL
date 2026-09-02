@@ -53,6 +53,28 @@ def _byte_literal(v: str):
     return raw
 
 
+def _addr_pubkey(text: str):
+    """The 32-byte public key an ``addr`` operand denotes, or ``None`` wherever
+    the assembler rejects it (``basics.UnmarshalChecksumAddress``): exactly 36
+    decoded bytes, trailing 4 == ``sha512_256(pubkey)[-4:]``, and the CANONICAL
+    base32 spelling (a different final char decodes to the same 36 bytes but
+    goal calls it "non-canonical").
+
+    HAZARD: taking ``raw[:32]`` of anything that decodes fabricated a pubkey
+    constant from a mistyped or forged address — a value the program could
+    never carry on chain, trusted by every guard downstream."""
+    s = text.strip()
+    try:
+        raw = base64.b32decode(s + "=" * (-len(s) % 8))
+    except Exception:
+        return None
+    if len(raw) != 36 or base64.b32encode(raw).decode().rstrip("=") != s:
+        return None
+    if hashlib.new("sha512_256", raw[:32]).digest()[-4:] != raw[32:]:
+        return None
+    return raw[:32]
+
+
 # HAZARD: quote-, paren- and token-boundary-aware comment stripping is
 # load-bearing here, because the base64 alphabet includes ``/`` and a payload
 # containing ``//`` is ordinary. Cutting at the first ``//`` truncates
@@ -253,14 +275,8 @@ def _normalize_pseudo_ops(data: bytes) -> bytes:
             b = _byte_literal(operand)
             new = f"pushbytes 0x{b.hex()}" if b is not None else None
         elif op == "addr":
-            try:                                   # 58-char base32 = 32B pubkey + 4B csum
-                raw = base64.b32decode(operand.strip() + "=" * (-len(operand.strip()) % 8))
-                # The pubkey is the 32-byte prefix (+4B checksum = 36). A shorter
-                # decode would silently corrupt the constant — reject it and let
-                # the parser handle the original line.
-                new = f"pushbytes 0x{raw[:32].hex()}" if len(raw) >= 32 else None
-            except Exception:
-                new = None
+            pubkey = _addr_pubkey(operand)
+            new = f"pushbytes 0x{pubkey.hex()}" if pubkey is not None else None
         elif op in _BYTE_LITERAL_OPS and _BYTE_ENC_RE.search(operand):
             # Re-encode each operand to `0x..`, which the grammar DOES accept;
             # `tokenize_operands` keeps a `base64(..)` group (and, folded, the
@@ -279,11 +295,18 @@ def _normalize_pseudo_ops(data: bytes) -> bytes:
             except Exception:
                 new = None                          # leave it for the diagnostic
         elif op == "method":
+            # The assembler (`asmMethod`) accepts ONLY the quoted form and runs
+            # the string-literal decoder on it before hashing; an unquoted
+            # `method add(uint64)void` is "unable to parse method signature".
+            # Hashing it anyway fabricated a selector the program can't have.
             sig = operand.strip()
-            if sig.startswith('"') and sig.endswith('"'):
-                sig = sig[1:-1]
-            sel = hashlib.new("sha512_256", sig.encode()).digest()[:4]
-            new = f"pushbytes 0x{sel.hex()}"
+            if len(sig) > 1 and sig[0] == '"' and sig[-1] == '"':
+                from ..ast.literals import decode_byte_literal
+                raw, _kind = decode_byte_literal(sig)
+                sel = hashlib.new("sha512_256", raw).digest()[:4]
+                new = f"pushbytes 0x{sel.hex()}"
+            else:
+                new = None                          # leave it for the diagnostic
         out.append(f"{indent}{new}" if new is not None else line)
     return "\n".join(out).encode("utf-8")
 
