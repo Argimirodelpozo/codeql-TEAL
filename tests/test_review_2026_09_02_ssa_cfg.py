@@ -2,8 +2,6 @@
 defect, controls folded in (findings.md 1.2, 1.3, 1.10, 3.1, 3.6)."""
 from __future__ import annotations
 
-import pytest
-
 from tealql.tealtools.ssa import SSAProgram
 
 
@@ -184,3 +182,25 @@ def test_legacy_sub_band_starts_at_inferred_nargs(tmp_path):
                 + "int 2\n+\nretsub\n", "dip.teal")
     assert dip._pyssa._unsafe_callee_blocks and dip._pyssa._clobber_callee_keys
     assert _receiver(dip) == []
+
+
+# --- 3.6: multiple constant blocks -------------------------------------------
+
+def test_multiple_constant_blocks_surface_as_health_degradation(tmp_path):
+    """Two ``intcblock``s leave every ``intc_*`` unresolved by design (which
+    table is live depends on control flow), but silently: the program read as
+    a clean analysis with unknown constants. Health now names it. Control: one
+    block resolves and reports nothing."""
+    from tealql.tealtools.ssa import const_int
+
+    two = _prog(tmp_path, "#pragma version 10\nintcblock 1 2\nintc_0\nintcblock 5 6\n"
+                "intc_0\n+\nint 6\n==\nreturn\n", "two.teal")
+    codes = {d.code for d in two.health().degradations}
+    assert "multiple-constant-blocks" in codes
+    plus = next(a for a in two.assignments if a.op == "+")
+    assert all(const_int(v) is None for v in plus.inputs)   # unchanged: refuses
+    one = _prog(tmp_path, "#pragma version 10\nintcblock 1 2\nintc_0\nintc_1\n+\n"
+                "int 3\n==\nreturn\n", "one.teal")
+    assert one.health().complete
+    plus = next(a for a in one.assignments if a.op == "+")
+    assert sorted(const_int(v) for v in plus.inputs) == [1, 2]

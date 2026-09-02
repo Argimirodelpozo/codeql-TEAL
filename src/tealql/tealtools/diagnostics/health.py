@@ -59,6 +59,23 @@ def health_for(prog, *, deep: bool = False) -> AnalysisHealth:
             "unknown-opcode",
             "unknown opcode stack effects: " + ", ".join(unknown_ops),
         ))
+    # More than one `intcblock` / `bytecblock` in a file: the constant table
+    # depends on WHICH one executed last, so `language.constants` resolves no
+    # `intc_*`/`bytec_*` at all rather than guess (assembler-legal, compilers
+    # emit one). Every such reference is then an unknown value; say so.
+    cblocks: dict[tuple[str, str], list[int]] = {}
+    for a in getattr(prog, "assignments", ()) or ():
+        if a.op in ("intcblock", "bytecblock"):
+            cblocks.setdefault((a.location.file, a.op), []).append(a.location.line)
+    for (file, op), lines in sorted(cblocks.items()):
+        if len(lines) > 1:
+            items.append(AnalysisDegradation(
+                "multiple-constant-blocks",
+                f"{len(lines)} `{op}` ops (lines {', '.join(map(str, lines))}); "
+                f"no `{op[:-5]}_*` reference in this file resolves to a constant",
+                file,
+                lines[0],
+            ))
     if deep:
         try:
             prog._ensure_scratch_influence()
