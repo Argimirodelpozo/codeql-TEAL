@@ -139,7 +139,9 @@ def test_foreign_global_local_and_optin_state_are_distinct():
     assert by_scope["global"].key == "0x676c6f62616c2d6b6579"
     assert by_scope["global"].self_only is True
     assert by_scope["local"].key == "0x6c6f63616c2d6b6579"
-    assert by_scope["local"].self_only is False
+    # ``int 4`` is a txn.Applications OFFSET; the array may hold the current
+    # app, so "not self" is NOT proven (2026-09-02 review 3.3).
+    assert by_scope["local"].self_only is None
     assert by_scope["optin"].key is None
     assert by_scope["optin"].self_only is True
 
@@ -175,7 +177,7 @@ def test_current_foreign_and_dynamic_application_references_are_not_guessed():
 
     by_key = {read.key: read.self_only for read in demand.foreign_app_state}
     assert by_key["0x73656c66"] is True
-    assert by_key["0x666f726569676e"] is False
+    assert by_key["0x666f726569676e"] is None        # offset 2: may be self
     assert by_key["0x64796e616d6963"] is None
     assert by_key["0x7261772d6964"] is None
     assert by_key["0x61727261792d76616c7565"] is None

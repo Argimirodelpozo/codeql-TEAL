@@ -574,8 +574,10 @@ class _Collector:
             value = _token_int(constant.value)
             if value == 0:
                 return True
-            if value is not None and value < 256:
-                return False
+            # ``int 1..255`` is a ``txn.Applications`` OFFSET (same denotation
+            # as ``txna Applications i`` below) and a larger constant an
+            # application ID; either may name the current app, so neither is a
+            # proof of "not self".  ``False`` here fabricated that proof.
             return None
         resolved = facts.resolve(operand)
         producer = producing_op(resolved)
