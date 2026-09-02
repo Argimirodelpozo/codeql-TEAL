@@ -211,6 +211,23 @@ def sender_creator_guard_dominates(
     return _preds_prove_sender_guard(prog, pp.predicates_at(bb.file, bb.first_line))
 
 
+def _verdict_operand(bb: BasicBlock):
+    """The value ``bb`` approves on when it is an exit: the ``return`` operand
+    today; ``None`` for any other block.
+
+    TODO(integration): replace with ``tealql.tealtools.cfg.exits.verdict_operand``
+    (landing from the ssa_cfg branch), which also yields the exit-stack top for
+    an OFF-END exit (v1 fall-off / branch-to-EOF / callsub-at-EOF, flagged
+    ``BasicBlock.off_end``) so the v1 spelling ``txn Sender; global
+    CreatorAddress; ==`` at EOF (mainnet app_1050058646) is credited too."""
+    if not bb.assignments:
+        return None
+    last = bb.assignments[-1]
+    if last.op != "return" or not last.inputs:
+        return None
+    return last.inputs[0]
+
+
 def approving_return_conds(
     prog: SSAProgram, pp: PathPredicateAnalysis, bb: BasicBlock,
 ) -> frozenset:
@@ -224,12 +241,10 @@ def approving_return_conds(
     entry predicates alone calls that guard absent. ``select`` with a constant-0
     arm pins its selector: ``int 0; int 1; C; select; return`` approves only
     when ``C`` is truthy (and with the 0 as the taken arm, only when falsy)."""
-    if not bb.assignments:
+    operand = _verdict_operand(bb)
+    if operand is None:
         return frozenset()
-    last = bb.assignments[-1]
-    if last.op != "return" or not last.inputs:
-        return frozenset()
-    v = resolve_through_copies(prog, last.inputs[0])
+    v = resolve_through_copies(prog, operand)
     truthy = True
     d = getattr(v, "defined_by", None)
     if d is not None and d.op == "select" and len(d.inputs) == 3:
