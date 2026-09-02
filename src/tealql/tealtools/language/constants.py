@@ -30,18 +30,62 @@ def _imms(n) -> str:
     return parts[1].strip() if len(parts) > 1 else ""
 
 
+_DIGITS_FOR_BASE = {2: "01", 8: "01234567", 10: "0123456789",
+                    16: "0123456789abcdef"}
+
+
+def _underscore_ok(s: str) -> bool:
+    """Go ``strconv.underscoreOK``: a ``_`` may only follow a digit or a base
+    prefix and must be followed by a digit (``1_0``, ``0x_10``, ``0_7`` yes;
+    ``_1``, ``1_``, ``1__0`` no)."""
+    saw = "^"
+    i = 0
+    is_hex = False
+    if len(s) >= 2 and s[0] == "0" and s[1].lower() in "box":
+        i, saw, is_hex = 2, "0", s[1].lower() == "x"
+    while i < len(s):
+        c = s[i].lower()
+        if c.isdigit() or (is_hex and c in "abcdef"):
+            saw = "0"
+        elif c == "_":
+            if saw != "0":
+                return False
+            saw = "_"
+        else:
+            if saw == "_":
+                return False
+            saw = "!"
+        i += 1
+    return saw != "_"
+
+
 def _to_int(tok: str) -> Optional[int]:
-    """Parse an integer literal — decimal, or ``0x`` / ``0o`` / ``0b`` prefixed
-    (``int 0x10``); no named constants."""
+    """Parse an integer literal exactly as the assembler does —
+    ``strconv.ParseUint(s, 0, 64)`` — or ``None`` where it would reject.
+
+    Base is implied by the prefix (``0x`` / ``0o`` / ``0b``, either case) and a
+    bare leading ``0`` means OCTAL: ``int 010`` is 8, verified against ``goal``
+    (``intcblock 1 16 7 8`` for ``1 0x10 07 010``). No sign, ``_`` only between
+    digits or after the prefix, and the value must fit in 64 bits; ``08``,
+    ``-1``, ``2**64``, ``1__0`` are all assembler errors. A decimal-first
+    ``int()`` read ``010`` as 10 and accepted every one of those — a wrong or
+    fabricated constant on which every downstream comparison then relied.
+    No named constants here."""
     tok = tok.strip()
-    try:
-        return int(tok)                 # decimal first: base 0 rejects leading zeros
-    except (ValueError, TypeError):
-        pass
-    try:
-        return int(tok, 0)              # 0x.. / 0o.. / 0b.. prefixed
-    except (ValueError, TypeError):
+    if not tok or tok[0] in "+-" or not _underscore_ok(tok):
         return None
+    base, body = 10, tok
+    if len(tok) >= 2 and tok[0] == "0":
+        prefix = tok[1].lower()
+        if prefix in "xob":
+            base, body = {"x": 16, "o": 8, "b": 2}[prefix], tok[2:]
+        else:
+            base, body = 8, tok[1:]
+    body = body.replace("_", "").lower()
+    if not body or any(c not in _DIGITS_FOR_BASE[base] for c in body):
+        return None
+    value = int(body, base)
+    return value if value < (1 << 64) else None
 
 
 def _resolve_int_immediate(tok: str) -> Optional[int]:

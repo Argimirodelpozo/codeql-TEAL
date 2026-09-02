@@ -191,3 +191,85 @@ def test_mangled_multiline_txn_node_is_resegmented_per_line():
         assert len(ln.inputs) == 1 and ln.inputs[0].identifier.endswith("@L3"), mnem
     prog = _prog("txn RejectVersion\ntxn Sender\nlen\n+\nreturn\n", version=13)
     assert _diags(prog) == [] and [a.immediates for a in _ops(prog, "txn")] == ["RejectVersion", "Sender"]
+
+
+# ---------------------------------------------------------------------------
+# 5.4 — `_to_int` must be strconv.ParseUint(s, 0, 64)
+# ---------------------------------------------------------------------------
+
+
+def test_int_literals_parse_like_strconv_parseuint_base0():
+    """A decimal-first `int()` read `int 010` as 10 where the assembler reads
+    OCTAL 8, and accepted `08`, `-1`, 2**64 and `1__0` — literals goal
+    rejects — as constants. Every value here is goal's (`intcblock 1 16 7 8
+    1000` for `1 0x10 0o7 010 1000`; `pushints 1 16 8`)."""
+    from tealql.tealtools.language.constants import _to_int
+
+    table = {
+        "010": 8, "017": 15, "00": 0, "0": 0, "0_7": 7, "0X1F": 31, "0O17": 15,
+        "0B11": 3, "0x_10": 16, "0b_1": 1, "1_0": 10, "1_000_000": 1_000_000,
+        "18446744073709551615": (1 << 64) - 1, "16": 16, "0xDEAD": 0xDEAD,
+        # goal-rejected → None, never a fabricated value
+        "08": None, "-1": None, "+1": None, "18446744073709551616": None,
+        "1__0": None, "_1": None, "1_": None, "0x": None, "0x_": None,
+        "0x0x10": None, "TMPL_X": None, "": None, "1.5": None,
+    }
+    got = {k: _to_int(k) for k in table}
+    assert got == table, {k: (got[k], table[k]) for k in table if got[k] != table[k]}
+
+    prog = _prog("intcblock 1 0x10 0o7 010 1_000\nintc_3\nintc 4\n+\nreturn\n")
+    assert _consts(prog, "intc_3", "intc") == [("intc_3", ["8"]), ("intc", ["1000"])]
+    prog = _prog("pushints 1 0x10 010\n+\n+\nreturn\n")
+    (pi,) = _consts(prog, "pushints")
+    assert pi[1] == ["8", "16", "1"]                 # outputs are TOP-FIRST
+    prog = _prog("int 010\nint 08\n+\nreturn\n")
+    assert _consts(prog, "int") == [("int", ["8"]), ("int", [None])]
+
+
+# ---------------------------------------------------------------------------
+# 5.5 — bare `extract` at column 0
+# ---------------------------------------------------------------------------
+
+
+def test_bare_extract_at_column_zero_is_extract3():
+    """The `extract` -> `extract3` respelling needed a preceding whitespace
+    byte to keep the line length, so unindented hand-written TEAL lost the
+    instruction (2 pops, 1 push) with only a parse warning. Control: the
+    indented form, and `extract 0 8` (immediates) untouched."""
+    src = "byte 0x0102030405060708\nint 0\nint 8\n{ex}\nbtoi\nreturn\n"
+    for ex in ("extract", "  extract", "extract // c", "\textract\t"):
+        prog = _prog(src.format(ex=ex))
+        assert _diags(prog) == [], ex
+        (e3,) = _ops(prog, "extract3")
+        assert len(e3.inputs) == 3 and len(e3.outputs) == 1, ex
+        (btoi,) = _ops(prog, "btoi")
+        assert btoi.inputs[0].identifier == e3.outputs[0].identifier, ex
+    prog = _prog("byte 0x0102030405060708\nextract 0 8\nbtoi\nreturn\n")
+    assert _ops(prog, "extract3") == [] and [a.immediates for a in _ops(prog, "extract")] == ["0 8"]
+
+
+# ---------------------------------------------------------------------------
+# 5.6 — `addr` checksum / canonical form, `method` quoted form
+# ---------------------------------------------------------------------------
+
+
+def test_addr_and_method_pseudo_ops_refuse_what_the_assembler_rejects():
+    """`addr` took `raw[:32]` of anything that base32-decoded, fabricating a
+    pubkey for a mistyped address (goal: "non-canonical" for a wrong last
+    char, "checksum verification failed" for all-A); unquoted `method
+    add(uint64,uint64)uint64` was hashed like the quoted form (goal: "unable
+    to parse method signature"). Controls: the valid address (goal: 32×0xff)
+    and the quoted signature (goal: 0xfe6bdf69)."""
+    good = "7777777777777777777777777777777777777777777777777774MSJUVU"
+    prog = _prog(f"addr {good}\nlen\nreturn\n")
+    assert _diags(prog) == [] and _consts(prog, "pushbytes") == [("pushbytes", ["0x" + "ff" * 32])]
+    for bad in (good[:-1] + "V",                           # non-canonical
+                "A" * 58,                                  # checksum fails
+                good[:-8]):                                # 50 chars: 31 bytes
+        prog = _prog(f"addr {bad}\nlen\nreturn\n")
+        assert _consts(prog, "pushbytes") == [] and _diags(prog) != [], bad
+
+    prog = _prog('method "add(uint64,uint64)uint64"\nlen\nreturn\n')
+    assert _diags(prog) == [] and _consts(prog, "pushbytes") == [("pushbytes", ["0xfe6bdf69"])]
+    prog = _prog("method add(uint64,uint64)uint64\nlen\nreturn\n")
+    assert _consts(prog, "pushbytes") == [] and _diags(prog) != []
