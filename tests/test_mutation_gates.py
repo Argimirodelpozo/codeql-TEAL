@@ -250,3 +250,29 @@ def test_the_harness_can_actually_report_a_survivor(monkeypatch):
             lambda *a, **k: real(*a, **k),          # behaviourally identical
             "a deliberately inert mutation",
         )
+
+
+def test_gtxns_any_index_as_signed_txn_is_caught(monkeypatch):
+    """M11 (findings.md 1.7): `_signed_txn_field_reads` credits a `gtxns FIELD`
+    read only when its index resolves to `txn GroupIndex` ("this"). Dropping
+    that test lets a delegated lsig that checks RekeyTo at an ATTACKER-CHOSEN
+    sibling index read as guarded — the signer is rekeyable. The mutant appends
+    every gtxns/gtxnsa/gtxnsas read of the field, exactly what the slot test
+    excludes."""
+    import tealql.security._field_protection as FP
+
+    real = FP._signed_txn_field_reads
+
+    def any_index_is_self(prog, field, *, file=None):
+        reads = list(real(prog, field, file=file))
+        seen = {id(a) for a in reads}
+        for a in FP.gtxn_field_reads(prog, field, file=file):
+            if a.op in ("gtxns", "gtxnsa", "gtxnsas") and id(a) not in seen:
+                reads.append(a)
+        return reads
+
+    _assert_caught(
+        monkeypatch, "tealql.security._field_protection", "_signed_txn_field_reads",
+        any_index_is_self,
+        "a gtxns read at ANY group index counts as the signed txn's own field",
+    )

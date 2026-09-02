@@ -1,0 +1,16 @@
+#pragma version 10
+    // `proto`/`frame_dig` spelling (PuyaPy/TealScript helper shape): the signed
+    // txn's RekeyTo is passed as a subroutine ARGUMENT, compared to ZeroAddress
+    // inside the callee via `frame_dig -1`, and the returned bool is asserted by
+    // the caller before approving -> SAFE.
+    txn RekeyTo
+    callsub is_zero_addr
+    assert
+    int 1
+    return
+is_zero_addr:
+    proto 1 1
+    frame_dig -1
+    global ZeroAddress
+    ==
+    retsub

@@ -1,0 +1,13 @@
+#pragma version 10
+    // Subroutine-guard spelling: the Fee check lives in a legacy (no-proto)
+    // subroutine that leaves a bool on the stack; the caller `callsub; assert`s it
+    // before approving. Every approving path is dominated by the assert -> SAFE.
+    callsub check_fee
+    assert
+    int 1
+    return
+check_fee:
+    txn Fee
+    int 1000
+    <=
+    retsub

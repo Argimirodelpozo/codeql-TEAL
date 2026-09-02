@@ -1,0 +1,14 @@
+#pragma version 8
+// Delegated lsig: checks RekeyTo of gtxns[<attacker-chosen index>], NOT the signed
+// txn's own field (`txn RekeyTo` / `gtxns` indexed by `txn GroupIndex`). An
+// attacker points the index at a clean sibling and rekeys the signer. VULN
+// (mutation M11: dropping the `relative_slot(...) == "this"` test in
+// `_field_protection._signed_txn_field_reads` silences this finding).
+txna ApplicationArgs 0
+btoi
+gtxns RekeyTo
+global ZeroAddress
+==
+assert
+int 1
+return

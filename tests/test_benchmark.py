@@ -127,7 +127,7 @@ _BASELINE: dict[str, tuple[int, int, int, int]] = {
     # FP found this session was an idiomatic hand-written guard no compiler
     # emits, so no fixture contained one.
     # +1 TP (2026-07-26): the `||`-bypass — see the rekey-to entry.
-    "fee-validation": (2, 0, 0, 3),
+    "fee-validation": (2, 0, 0, 4),
     "group-size-check": (1, 0, 0, 2),
     "hardcoded-min-balance": (1, 0, 0, 1),
     "inner-txn-close-rekey": (1, 0, 0, 1),
@@ -190,7 +190,7 @@ _BASELINE: dict[str, tuple[int, int, int, int]] = {
     # walk keyed on "no predecessors" saturated — every exit read protected
     # with an EMPTY gate set — silencing the whole field family on exactly the
     # hostile shape. Entries now come from `prog.entry_blocks()`.
-    "rekey-to": (7, 0, 0, 10),
+    "rekey-to": (8, 0, 0, 11),
     # +2 TN (2026-07-25): the Update-action half of the OnCompletion
     # scratch/phi guard fix — verified clean, now pinned.
     "timelock-upgrade": (1, 0, 0, 3),
