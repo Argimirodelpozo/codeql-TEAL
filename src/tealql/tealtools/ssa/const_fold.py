@@ -53,6 +53,9 @@ def _int_const(n: int) -> Const:
 
 
 _UINT64_MAX = (1 << 64) - 1
+#: go-algorand ``MaxStringSize``: a byte-string result longer than this PANICS
+#: (``concat``, ``bzero``), so folding past it fabricates a value on a halting path.
+_MAX_BYTES_LEN = 4096
 
 
 # --- Per-op folders (operands DEEPEST-FIRST; see module header) --------------
@@ -64,6 +67,8 @@ def _fold_concat(operands: list[Const]) -> Optional[Const]:
     a, b = _bytes_from_const(operands[0]), _bytes_from_const(operands[1])
     if a is None or b is None:
         return None
+    if len(a) + len(b) > _MAX_BYTES_LEN:
+        return None                       # AVM panics past MaxStringSize
     return _bytes_const(a + b)
 
 
@@ -179,7 +184,7 @@ def _fold_bzero(operands: list[Const]) -> Optional[Const]:
     if len(operands) != 1:
         return None
     n = _int_from_const(operands[0])
-    if n is None or n < 0 or n > 4096:
+    if n is None or n < 0 or n > _MAX_BYTES_LEN:
         return None
     return _bytes_const(b"\x00" * n)
 
