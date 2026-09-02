@@ -1,0 +1,23 @@
+#pragma version 10
+// Recipient = Accounts[arg[4:12]] — an attacker-chosen index into the Accounts
+// array the attacker also supplies; only the 4-byte selector is validated.
+// Pins: `txnas Accounts` output must carry BYTE taint so the `extract` keeps it.
+    txna ApplicationArgs 0
+    extract 0 4
+    byte 0x11223344
+    ==
+    assert
+    itxn_begin
+    int pay
+    itxn_field TypeEnum
+    int 1000
+    itxn_field Amount
+    txna ApplicationArgs 0
+    int 4
+    extract_uint64
+    txnas Accounts
+    extract 0 32
+    itxn_field Receiver
+    itxn_submit
+    int 1
+    return

@@ -17,7 +17,8 @@ from typing import Callable, Optional
 
 from ..ssa import (Const, Phi, SSAProgram, SSAVar, binary_operands, const_int,
                    operand_const)
-from ..language.avm import _txn_field_name, _multi_out_type
+from ..language.avm import (FIXED_BYTES_OUTPUT_LEN, VALUE_FLOW_HASH_OPS,
+                            _txn_field_name, _multi_out_type)
 from ..ssa.models import _shuffle_mapping
 
 INF = float("inf")  # sentinel the Intervals algebra tolerates as an open right end
@@ -192,15 +193,11 @@ def _default_sources(a) -> Optional[Intervals]:
     return None
 
 
-_HASH_OPS = frozenset({"sha256", "sha512_256", "keccak256", "sha3_256"})
+# The digest family is the AVM table, not a hand list: a hash missing here
+# (sha512 was) fell to the generic fallback and was tagged SCALAR, so the
+# taint died at the next slice of the digest.
+_HASH_OPS = VALUE_FLOW_HASH_OPS
 _EXTRACT_UINT = {"extract_uint16": 2, "extract_uint32": 4, "extract_uint64": 8}
-# Bytes-PRODUCING ops with no precise rule: the fallback must record BYTE
-# taint for these, not scalar (json_ref is polymorphic, handled separately).
-_BYTES_OUT_FALLBACK = frozenset({
-    "b+", "b-", "b*", "b/", "b%", "bsqrt",      # bigint arithmetic
-    "b|", "b&", "b^", "b~", "bzero",            # bytewise
-    "base64_decode",
-})
 
 
 # Ops whose output is a deterministic function of their stack inputs with no
@@ -215,8 +212,7 @@ _PURE_COMBINATORS = frozenset({
     "concat", "extract", "extract3", "substring", "substring3",
     "len", "bitlen", "getbyte", "setbyte", "getbit", "setbit",
     "replace2", "replace3", "itob", "btoi",
-    "sha256", "sha512_256", "keccak256", "sha3_256",
-})
+}) | VALUE_FLOW_HASH_OPS
 
 # HAZARD: the ONLY globals safe to treat as an attacker-independent pin —
 # fixed by the chain or the deployment. EXCLUDES ``GroupSize`` / ``GroupID``
@@ -616,6 +612,16 @@ def _byte_taint_impl(
             if A is not None and B is not None:
                 hi = A + B if op == "extract3" else B
                 return set_bytes(out, bget(x).clip(A, hi).shift(-A))
+            # HAZARD: an attacker-chosen START selects WHICH bytes of an
+            # otherwise clean buffer emerge (an unaligned window of a whitelist
+            # table) — attacker influence over the whole output, exactly as the
+            # boolean engine's SLICE_PROPAGATION_RULE and the `setbyte` rule
+            # below already say.  A tainted COUNT/END alone moves no byte:
+            # out[j] = X[A+j] still holds position by position, so the exact
+            # mapping below stays (the byte engine models WHICH bytes, not how
+            # many).
+            if sget(a.inputs[1]):
+                return set_bytes(out, Intervals.whole(_len_bound(out)))
             if A is not None:
                 # Const OFFSET, runtime count: the byte mapping is still EXACT
                 # (out[j] = X[A+j]), only the length is uncertain — so X's taint
@@ -708,17 +714,22 @@ def _byte_taint_impl(
                 return set_bytes(out, iv)
             return set_bytes(out, Intervals.whole(_len_bound(out))) if any_tainted(a) else False
         if op in _HASH_OPS and a.inputs:                           # digest of tainted -> tainted
-            return set_bytes(out, Intervals.whole(32)) if bget(a.inputs[0]) else False
+            width = FIXED_BYTES_OUTPUT_LEN.get(op) or _len_bound(out)
+            return set_bytes(out, Intervals.whole(width)) if bget(a.inputs[0]) else False
 
         # ---- bytes -> scalar bridge ----
-        # A non-const index uses its range window rather than "any taint", so a
-        # read whose possible bytes miss X's tainted region stays clean.
+        # A non-const CLEAN index uses its range window rather than "any taint",
+        # so a read whose possible bytes miss X's tainted region stays clean. A
+        # TAINTED index picks the byte(s) — attacker influence over the result
+        # even from a clean buffer (see the extract3 rule above).
         if op == "getbyte" and len(a.inputs) == 2:
             lo, hi = _index_window(a.inputs[0], 1)
-            return set_scalar(out) if bget(a.inputs[1]).overlaps(lo, hi) else False
+            hit = sget(a.inputs[0]) or bget(a.inputs[1]).overlaps(lo, hi)
+            return set_scalar(out) if hit else False
         if op in _EXTRACT_UINT and len(a.inputs) == 2:
             lo, hi = _index_window(a.inputs[0], _EXTRACT_UINT[op])
-            return set_scalar(out) if bget(a.inputs[1]).overlaps(lo, hi) else False
+            hit = sget(a.inputs[0]) or bget(a.inputs[1]).overlaps(lo, hi)
+            return set_scalar(out) if hit else False
         if op == "btoi" and a.inputs:
             return set_scalar(out) if bget(a.inputs[0]).overlaps(0, 8) else False
 
@@ -742,23 +753,6 @@ def _byte_taint_impl(
             # len / bitlen derive metadata, not content — don't propagate.
             if op in ("len", "bitlen"):
                 return False
-            # HAZARD: a bytes-PRODUCING op must record BYTE taint, not scalar.
-            # A later extract / getbyte / extract_uintN of a scalar-tagged
-            # result finds an empty byte map and propagates nothing.
-            if op in _BYTES_OUT_FALLBACK:
-                return set_bytes(out, Intervals.whole(_len_bound(out)))
-            if op == "loads":
-                # Scratch is polymorphic. A tainted dynamic selector controls
-                # the selected value; when type recovery cannot decide which
-                # AVM kind emerges, record BOTH abstractions rather than
-                # defaulting to scalar and losing later byte slices.
-                kind = getattr(getattr(out, "type", None), "kind", None)
-                if kind == "bytes":
-                    return set_bytes(out, Intervals.whole(_len_bound(out)))
-                if kind == "uint64":
-                    return set_scalar(out)
-                scalar_changed = set_scalar(out)
-                return set_bytes(out, Intervals.whole(_len_bound(out))) or scalar_changed
             if op == "json_ref":
                 # Polymorphic on its immediate: JSONUint64 is a scalar but
                 # JSONString / JSONObject are BYTES, and must be tagged so.
@@ -767,7 +761,20 @@ def _byte_taint_impl(
                     return set_bytes(out, Intervals.whole(_len_bound(out)))
                 return set_scalar(out)
             if len(a.outputs) == 1:
-                return set_scalar(out)
+                # HAZARD: the channel follows the recovered TYPE of the output,
+                # never a hand list of ops. A bytes-producing op tagged SCALAR
+                # (sha512, `txnas Accounts` at an attacker index, a state read)
+                # left an empty byte map, so the next extract / getbyte /
+                # extract_uintN propagated nothing. Scratch (`loads`) and every
+                # other polymorphic result with no recovered kind record BOTH
+                # abstractions rather than guessing one and losing the other.
+                kind = getattr(getattr(out, "type", None), "kind", None)
+                if kind == "bytes":
+                    return set_bytes(out, Intervals.whole(_len_bound(out)))
+                if kind == "uint64":
+                    return set_scalar(out)
+                scalar_changed = set_scalar(out)
+                return set_bytes(out, Intervals.whole(_len_bound(out))) or scalar_changed
             # HAZARD: a multi-result op must taint EVERY output by its slot
             # type. The interesting value is often NOT output 0 — a `box_get` /
             # `*_get_ex` value sits BELOW its exists flag, and divmodw and the

@@ -156,7 +156,12 @@ _BASELINE: dict[str, tuple[int, int, int, int]] = {
     "tainted-fund-flow": (12, 0, 0, 11),
     "tainted-log": (2, 0, 0, 3),
     "tainted-state-write": (2, 0, 0, 3),
-    "partial-tainted-fund-flow": (4, 0, 0, 5),
+    # +3 TP (2026-09-02 review 1.4/1.5): the byte engine's generic fallback
+    # tagged bytes-producing ops SCALAR (sha512, `txnas Accounts` at an
+    # attacker index) so the taint died at the next slice, and an
+    # attacker-chosen offset into a CLEAN table read as clean. All three were
+    # silent while the sha256 / direct-txnas controls fired.
+    "partial-tainted-fund-flow": (7, 0, 0, 5),
     # +2 TN each (2026-07-25 review, OnCompletion FP-stress): the guard
     # round-tripped through scratch and the guard joined at a phi were both
     # FALSE POSITIVES — the path predicate lands on the `load`/phi, not the

@@ -199,14 +199,22 @@ class TestForwardPropagation:
         assert rd.is_scalar_tainted(_by_op(pd, "getbyte")[0].outputs[0])
 
     def test_getbyte_ranged_index_uses_window(self):
-        # getbyte X (arg%8): the index is a RUNTIME value bounded to [0,7], so the
-        # read can only touch the clean prefix — scalar result is clean, where the
-        # old non-const fallback ("tainted iff X has any taint") flagged it.
-        teal = ("#pragma version 8\n" + _PREFIX +
-                "txna ApplicationArgs 1\nbtoi\nint 8\n%\ngetbyte\npop\nint 1\nreturn\n")
-        p, r = _taint(teal)
+        # getbyte X (GroupIndex%8): a CLEAN runtime index bounded to [0,7] can only
+        # touch the clean prefix — scalar result is clean, where the old
+        # non-const fallback ("tainted iff X has any taint") flagged it. The
+        # same window under an ATTACKER-chosen index (arg%8) is tainted: the
+        # attacker picks WHICH clean byte emerges (engine SLICE_PROPAGATION_RULE;
+        # 2026-09-02 review 1.5 — this pin previously read it as clean).
+        clean_idx = ("#pragma version 8\n" + _PREFIX +
+                     "txn GroupIndex\nint 8\n%\ngetbyte\npop\nint 1\nreturn\n")
+        p, r = _taint(clean_idx)
         g = _by_op(p, "getbyte")[0].outputs[0]
         assert not r.is_scalar_tainted(g)            # clean prefix proven
+        tainted_idx = ("#pragma version 8\n" + _PREFIX +
+                       "txna ApplicationArgs 1\nbtoi\nint 8\n%\ngetbyte\npop\nint 1\nreturn\n")
+        p, r = _taint(tainted_idx)
+        g = _by_op(p, "getbyte")[0].outputs[0]
+        assert r.is_scalar_tainted(g)                # attacker-selected byte
 
     def test_getbyte_ranged_index_into_tainted_is_tainted(self):
         # Soundness: index in [8,15] reaches the tainted suffix -> tainted.
