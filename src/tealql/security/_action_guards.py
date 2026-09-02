@@ -4,7 +4,8 @@ from __future__ import annotations
 from typing import Optional
 
 from tealql.tealtools.cfg.path_predicates import PathPredicateAnalysis
-from tealql.tealtools.ssa import Assignment, BasicBlock, SSAProgram, SSAVar, const_int, is_field_var
+from tealql.tealtools.ssa import (Assignment, BasicBlock, SSAProgram, SSAVar,
+                                  const_int, is_field_var, producing_op)
 
 from ._value_flow import _constant_facts_cached, resolve_through_copies
 
@@ -42,6 +43,30 @@ ONC_DELETE_APPLICATION = 5
 
 def _is_txn_field_var(var, field: str) -> bool:
     return is_field_var(var, "txn", field)
+
+
+def _is_current_sender_read(var) -> bool:
+    """``var`` is THIS transaction's sender: ``txn Sender``, ``txna Accounts 0``
+    or ``int 0; txnas Accounts`` — the AVM defines ``Accounts[0] == Sender``
+    (:data:`avm.FOREIGN_ARRAY_SELF_INDEX`), and real contracts spell the sender
+    all three ways. Exact-token matching only: ``txn AssetSender`` is an axfer
+    field the caller sets on their own txn and must NOT qualify.
+
+    TODO(consolidate): the lift side is adding ``is_current_sender_read`` under
+    ``tealtools`` (``language/avm.py`` or ``ssa/``) for ``fund_flow._is_sender_op``;
+    replace this local copy with that shared helper at integration so one guard
+    cannot get two verdicts (finding 2.6)."""
+    a = producing_op(var)
+    if a is None:
+        return False
+    imm = a.immediates.strip()
+    if a.op == "txn":
+        return imm == "Sender"
+    if a.op == "txna":
+        return imm.split() == ["Accounts", "0"]
+    if a.op == "txnas":
+        return imm == "Accounts" and len(a.inputs) == 1 and const_int(a.inputs[0]) == 0
+    return False
 
 
 
@@ -100,8 +125,8 @@ def _sender_trusted_cmp(
     if cmp.op not in ("==", "!=") or len(cmp.inputs) != 2:
         return None
     a0, a1 = (_guard_operand(prog, value) for value in cmp.inputs)
-    if ((_is_txn_field_var(a0, "Sender") and _is_trusted_address(prog, a1))
-            or (_is_txn_field_var(a1, "Sender")
+    if ((_is_current_sender_read(a0) and _is_trusted_address(prog, a1))
+            or (_is_current_sender_read(a1)
                 and _is_trusted_address(prog, a0))):
         return cmp.op
     return None
@@ -114,6 +139,66 @@ def _is_sender_eq_creator(
     return _sender_trusted_cmp(cmp, prog) == "=="
 
 
+def _disjunction_leaves(prog: SSAProgram, var) -> list:
+    """The producing assignments of every NON-``||`` leaf under the ``||`` tree
+    rooted at ``var`` (each seen through copies), or ``[]`` when any leaf is not
+    a resolvable SSA definition — an unknown arm fails CLOSED, since one free
+    arm alone satisfies the disjunction."""
+    out: list = []
+    seen: set = set()
+    stack = [var]
+    while stack:
+        v = resolve_through_copies(prog, stack.pop())
+        if not isinstance(v, SSAVar) or v.defined_by is None:
+            return []
+        if id(v) in seen:
+            continue
+        seen.add(id(v))
+        d = v.defined_by
+        if d.op == "||":
+            stack.extend(d.inputs)
+            continue
+        out.append(d)
+    return out
+
+
+def _trusted_sender_pin_op(value, prog: Optional[SSAProgram]) -> Optional[str]:
+    """``"=="`` when ``value`` (seen through copies) is a trusted-sender ``==``
+    pin OR a ``||`` tree whose EVERY leaf is one; ``"!="`` for a bare
+    disequality pin; else ``None``.
+
+    ``Sender == creator || Sender == admin`` is a real authorisation: whichever
+    arm holds, the sender is one the contract trusts. Same all-arms shape as
+    :func:`_enforcement._disjunction_is_enforcing`; a ``||`` with any other
+    leaf (or a ``!=`` leaf, whose truthy side pins nothing) is NOT a guard."""
+    v = resolve_through_copies(prog, value)
+    if not isinstance(v, SSAVar) or v.defined_by is None:
+        return None
+    if v.defined_by.op == "||":
+        leaves = _disjunction_leaves(prog, v)
+        if leaves and all(_sender_trusted_cmp(leaf, prog) == "==" for leaf in leaves):
+            return "=="
+        return None
+    return _sender_trusted_cmp(v.defined_by, prog)
+
+
+def _preds_prove_sender_guard(prog: SSAProgram, conds) -> bool:
+    """``conds`` — a block's entry state, a single CFG EDGE, or an approving
+    ``return``'s operand decomposed — proves a sender/trusted-address check
+    held: a ``==`` pin TRUTHY (``(V, "nonzero")``), or a ``!=`` pin FALSY
+    (``(V, "zero")`` — the disequality failing IS equality holding).
+
+    Takes a raw predicate set so the SAME recogniser serves block entries and
+    edges: at a join the entry set is the INTERSECTION over incoming paths,
+    which drops a guard proven on only one edge into a shared approve block."""
+    for cond in conds:
+        if cond.kind not in ("nonzero", "zero"):
+            continue
+        op = _trusted_sender_pin_op(cond.value, prog)
+        if (op == "==" and cond.kind == "nonzero") or (
+                op == "!=" and cond.kind == "zero"):
+            return True
+    return False
 
 
 def sender_creator_guard_dominates(
@@ -122,20 +207,42 @@ def sender_creator_guard_dominates(
     bb: BasicBlock,
 ) -> bool:
     """``bb`` is reached only along paths where a sender/trusted-address check
-    held: a ``==`` checked TRUTHY (``(V, "nonzero")``), or a ``!=`` checked
-    FALSY (``(V, "zero")`` — the disequality failing IS equality holding)."""
-    for cond in pp.predicates_at(bb.file, bb.first_line):
-        if cond.kind not in ("nonzero", "zero"):
-            continue
-        # See through a scratch round-trip / value-preserving phi to the real cmp.
-        v = resolve_through_copies(prog, cond.value)
-        if not isinstance(v, SSAVar) or v.defined_by is None:
-            continue
-        op = _sender_trusted_cmp(v.defined_by, prog)
-        if (op == "==" and cond.kind == "nonzero") or (
-                op == "!=" and cond.kind == "zero"):
-            return True
-    return False
+    held (see :func:`_preds_prove_sender_guard`)."""
+    return _preds_prove_sender_guard(prog, pp.predicates_at(bb.file, bb.first_line))
+
+
+def approving_return_conds(
+    prog: SSAProgram, pp: PathPredicateAnalysis, bb: BasicBlock,
+) -> frozenset:
+    """Predicates that hold whenever ``bb``'s terminating ``return V`` APPROVES:
+    an approving exit is an ``assert V`` edge, so ``V`` decomposes exactly like a
+    branch condition (``&&``-truthy, ``!``, comparisons). Empty for any block not
+    ending in a ``return`` with an operand, and for a constant operand.
+
+    PyTeal ``Return(Txn.sender() == Global.creator_address())`` compiles to
+    ``==; return`` — the comparison IS the approval, and reading the exit's
+    entry predicates alone calls that guard absent. ``select`` with a constant-0
+    arm pins its selector: ``int 0; int 1; C; select; return`` approves only
+    when ``C`` is truthy (and with the 0 as the taken arm, only when falsy)."""
+    if not bb.assignments:
+        return frozenset()
+    last = bb.assignments[-1]
+    if last.op != "return" or not last.inputs:
+        return frozenset()
+    v = resolve_through_copies(prog, last.inputs[0])
+    truthy = True
+    d = getattr(v, "defined_by", None)
+    if d is not None and d.op == "select" and len(d.inputs) == 3:
+        # TOP-FIRST: inputs = [C, B, A]; result is B when C != 0, else A.
+        c, b_arm, a_arm = d.inputs
+        if const_int(a_arm) == 0:
+            v, truthy = resolve_through_copies(prog, c), True
+        elif const_int(b_arm) == 0:
+            v, truthy = resolve_through_copies(prog, c), False
+    try:
+        return pp._decompose_cond(v, taken=truthy)
+    except Exception:
+        return frozenset()
 
 
 def _creator_enforcing_bbs(prog: SSAProgram) -> set:
@@ -151,10 +258,8 @@ def _creator_enforcing_bbs(prog: SSAProgram) -> set:
             continue
         if a.basic_block is None:
             continue
-        v = resolve_through_copies(prog, a.inputs[0])
-        if not isinstance(v, SSAVar) or v.defined_by is None:
-            continue
-        op = _sender_trusted_cmp(v.defined_by, prog)
+        # Sees through copies and an all-trusted `||` tree (finding 2.3).
+        op = _trusted_sender_pin_op(a.inputs[0], prog)
         if op is None:
             continue
         if op == "==":
@@ -191,27 +296,38 @@ def sender_creator_guard_covers_action(
     guarded branch REJOINING an unguarded one (the shared return epilogue every
     optimising compiler emits) hides the check and reads as "anyone can update"."""
     enforcing = _creator_enforcing_bbs(prog)
+    # The exit's own `return V` is an `assert V` edge (finding 2.1): approving
+    # through it proves V, which may BE the sender check.
+    return_conds = approving_return_conds(prog, pp, exit_bb)
 
     def _closed(bb: BasicBlock) -> bool:
-        # Three ways a path stops mattering: this very block performs the check
-        # (entry-state predicates miss it), the check already held on entry, or
-        # the block cannot be on an ``action_int`` path at all.
+        # Four ways a path stops mattering: this very block performs the check
+        # (entry-state predicates miss it), the check already held on entry,
+        # the block cannot be on an ``action_int`` path at all, or the exit's
+        # returned value is itself the check.
         return (bb in enforcing
                 or sender_creator_guard_dominates(prog, pp, bb)
-                or approval_exit_guarded_for_action(prog, pp, bb, action_int))
+                or approval_exit_guarded_for_action(prog, pp, bb, action_int)
+                or (bb is exit_bb
+                    and _preds_prove_sender_guard(prog, return_conds)))
 
-    def _edge_excludes_action(pred: BasicBlock, succ: BasicBlock) -> bool:
-        """The EDGE ``pred → succ`` proves this is not an ``action_int`` path.
+    def _edge_closed(pred: BasicBlock, succ: BasicBlock) -> bool:
+        """The EDGE ``pred → succ`` proves this is not an ``action_int`` path,
+        or carries the sender check itself.
 
         HAZARD: this must stay per-EDGE. ``OC == Update; bz done`` leaves an entry
         block that is neither creator-checked nor action-excluded even though BOTH
         its out-edges are fine (one carries ``OC != Update``, the other leads into
-        the guard) — reasoning per block reports that dispatch as unguarded."""
+        the guard) — reasoning per block reports that dispatch as unguarded. The
+        same holds for the guard: ``OC == Update && Sender == Creator; bnz approve``
+        proves the check on the TAKEN edge only, and a NoOp path rejoining at
+        ``approve`` intersects it away from the block's entry set (finding 2.5)."""
         try:
             conds = pp._edge_predicates(pred, succ)
         except Exception:
             return False
-        return predicates_exclude_action(prog, conds, action_int)
+        return (predicates_exclude_action(prog, conds, action_int)
+                or _preds_prove_sender_guard(prog, conds))
 
     # Backward over EDGES via the shared walk: an edge is closed when its
     # predecessor is guarded / action-excluded, or the edge itself excludes the
@@ -222,7 +338,7 @@ def sender_creator_guard_covers_action(
     return not unguarded_entry_path_exists(
         prog, exit_bb,
         block_closed=_closed,
-        edge_closed=_edge_excludes_action,
+        edge_closed=_edge_closed,
     )
 
 
@@ -266,9 +382,14 @@ def approval_exit_guarded_for_action(
     (guard shapes enumerated in :func:`predicates_exclude_action`).
 
     Deliberately tight: a contract that routes ``OC == K`` to ``err`` is treated as
-    guarded, so this under-reports rather than emitting a wrong verdict."""
-    return predicates_exclude_action(
-        prog, pp.predicates_at(exit_bb.file, exit_bb.first_line), action_int)
+    guarded, so this under-reports rather than emitting a wrong verdict.
+
+    The exit's own ``return V`` counts as an ``assert V`` edge (finding 2.1):
+    ``txn OnCompletion; !; txn ApplicationID; !; &&; return`` approves ONLY a
+    NoOp-on-create call, so the returned conjunction excludes every action."""
+    conds = pp.predicates_at(exit_bb.file, exit_bb.first_line)
+    conds = conds | approving_return_conds(prog, pp, exit_bb)
+    return predicates_exclude_action(prog, conds, action_int)
 
 
 #: Lifecycle actions that can only ever apply to an app that ALREADY exists.
@@ -345,6 +466,20 @@ def predicates_exclude_action(prog: SSAProgram, conds, action_int: int) -> bool:
         # SSA-level ``V = OC ==/!= K`` whose truth is captured by the predicate.
         if isinstance(v, SSAVar) and v.defined_by is not None:
             a = v.defined_by
+            # Truthy `||` of `OC == k_i` leaves is SET-MEMBERSHIP (PyTeal
+            # `Or(OC == NoOp, OC == OptIn); bnz handler`): on the surviving
+            # edge OC ∈ {k_i}, which excludes every action outside the set.
+            # `_decompose_cond` rightly refuses to split a truthy `||`, so the
+            # tree is read here; any non-`OC == const` leaf fails CLOSED.
+            if a.op == "||" and cond.kind == "nonzero":
+                leaves = _disjunction_leaves(prog, v)
+                members = [
+                    _oncompletion_eq_const_value(leaf, prog) if leaf.op == "==" else None
+                    for leaf in leaves
+                ]
+                if members and all(k is not None for k in members) \
+                        and action_int not in members:
+                    return True
             if a.op in ("==", "!="):
                 k = _oncompletion_eq_const_value(a, prog)
                 if k is not None:
