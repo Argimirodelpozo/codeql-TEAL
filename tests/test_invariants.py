@@ -131,9 +131,12 @@ def test_lift_deterministic(teal):
     # rendering the same contract twice gives byte-identical Puya IR text.
     pytest.importorskip("puya")
     from tealql.tealtools.lift import render
+    from tealql.tealtools.diagnostics.errors import LiftError
     try:
         a = render(SSAProgram(str(teal)))
-    except Exception:
-        pytest.skip("contract does not lift (coverage limit, not a determinism bug)")
+    except LiftError:
+        # LiftError is the DOCUMENTED coverage limit (the lift refused). Any other
+        # exception is a crash of the code under test and must fail, not skip.
+        pytest.skip("contract does not lift (LiftError: coverage limit, not a determinism bug)")
     b = render(SSAProgram(str(teal)))
     assert a == b, f"lift nondeterministic on {teal.name}"

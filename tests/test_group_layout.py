@@ -16,10 +16,8 @@ def _prog(case: str):
     if not contract.exists():
         pytest.skip(f"fixture not present: {contract}")
     from tealql.tealtools.ssa import SSAProgram
-    try:
-        return SSAProgram(str(contract))
-    except Exception as e:  # pragma: no cover - environment-dependent
-        pytest.skip(f"could not build SSAProgram: {e}")
+    # A construction failure IS a test failure — never skip on it.
+    return SSAProgram(str(contract))
 
 
 class TestForcedLayout:

@@ -19,10 +19,8 @@ def _prog(case: str):
     if not teal.exists():
         pytest.skip(f"fixture not present: {teal}")
     from tealql.tealtools.ssa import SSAProgram
-    try:
-        prog = SSAProgram(str(teal))
-    except Exception as e:  # pragma: no cover - environment-dependent
-        pytest.skip(f"could not build SSAProgram: {e}")
+    # A construction failure IS a test failure — never skip on it.
+    prog = SSAProgram(str(teal))
     prog.propagate_constants()
     prog.propagate_scratch_constants()
     return prog

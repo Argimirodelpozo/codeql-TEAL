@@ -20,10 +20,8 @@ def _prog():
     if not XGOV.exists():
         pytest.skip("xgov fixture not present")
     from tealql.tealtools.ssa import SSAProgram
-    try:
-        return SSAProgram(str(XGOV))
-    except Exception as e:  # pragma: no cover - environment-dependent
-        pytest.skip(f"could not build SSAProgram: {e}")
+    # A construction failure IS a test failure — never skip on it.
+    return SSAProgram(str(XGOV))
 
 
 def _ssavar_defs(prog):

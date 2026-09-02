@@ -236,10 +236,8 @@ def _xgov():
         pytest.skip("xgov fixture not present")
     from tealql.tealtools.ssa import SSAProgram
 
-    try:
-        return SSAProgram(str(contract))
-    except Exception as e:  # pragma: no cover
-        pytest.skip(f"could not build SSAProgram: {e}")
+    # A construction failure IS a test failure — never skip on it.
+    return SSAProgram(str(contract))
 
 
 class TestXgovIntegration:

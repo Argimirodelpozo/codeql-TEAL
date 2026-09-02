@@ -28,10 +28,8 @@ def xtg():
     from tealql.tealtools.intercontract.analysis import load_registry
 
     reg = load_registry(FIXTURE / "registry.yml")
-    try:
-        caller = SSAProgram(str(FIXTURE / "caller"))
-    except Exception as e:  # pragma: no cover - environment-dependent
-        pytest.skip(f"could not build SSAProgram: {e}")
+    # A construction failure IS a test failure — never skip on it.
+    caller = SSAProgram(str(FIXTURE / "caller"))
     return XContractTaintGraph.build(caller, reg)
 
 

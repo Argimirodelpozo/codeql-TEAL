@@ -206,18 +206,21 @@ class TestVerify:
 class TestPrecise:
     """`tainted_sinks(precise=True)` backs reachability with the lifted IR."""
 
-    def _lifts(self, prog):
+    def _require_lift(self, prog):
+        # Skip ONLY when puya is genuinely absent. `build_lifter` returns None for
+        # ANY exception, so a None here with puya installed is a lift crash — a
+        # failure of the code under test, never a skip.
+        import pytest
+        pytest.importorskip("puya")
         from tealql.tealtools.lift import build_lifter
-        return build_lifter(prog) is not None
+        assert build_lifter(prog) is not None, "pre-IR lift failed with puya installed"
 
     def test_precise_is_guard_blind_and_line_parity(self, tmp_path):
         # a straight tainted payment: precise reaches the same sink LINES as coarse
         # (guard-blind, so the join key with the verdict layer is preserved).
         (tmp_path / "p.teal").write_text(_TEAL)
         prog = SSAProgram(str(tmp_path / "p.teal"))
-        if not self._lifts(prog):
-            import pytest
-            pytest.skip("contract does not lift (puya unavailable?)")
+        self._require_lift(prog)
         q = TaintQuery(prog)
         coarse = {(h.node.line, h.category) for h in q.tainted_sinks()}
         precise = {(h.node.line, h.category) for h in q.tainted_sinks(precise=True)}
@@ -234,9 +237,7 @@ class TestPrecise:
             import pytest
             pytest.skip("fixture missing")
         prog = SSAProgram(d)
-        if not self._lifts(prog):
-            import pytest
-            pytest.skip("contract does not lift (puya unavailable?)")
+        self._require_lift(prog)
         q = TaintQuery(prog, file=os.path.basename(glob.glob(d + "/*.teal")[0]))
         assert len(q.tainted_sinks()) > 0            # coarse over-reports
         assert len(q.tainted_sinks(precise=True)) == 0   # IR: none truly reachable

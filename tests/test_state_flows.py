@@ -94,10 +94,8 @@ def updatable_prog():
           / "tealtools/sec_guide/is_updatable/gabe_vuln")
     if not contract.exists():
         pytest.skip(f"fixture not present: {contract}")
-    try:
-        return SSAProgram(str(contract))
-    except Exception as e:  # pragma: no cover - environment-dependent
-        pytest.skip(f"could not build SSAProgram: {e}")
+    # A construction failure IS a test failure — never skip on it.
+    return SSAProgram(str(contract))
 
 
 class TestEndToEnd:

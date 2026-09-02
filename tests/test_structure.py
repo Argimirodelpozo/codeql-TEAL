@@ -15,10 +15,8 @@ def _struct(rel: str):
         pytest.skip(f"fixture not present: {contract}")
     from tealql.tealtools.ssa import SSAProgram
     from tealql.tealtools.cfg.structure import analyze_structure
-    try:
-        prog = SSAProgram(str(contract))
-    except Exception as e:  # pragma: no cover - environment-dependent
-        pytest.skip(f"could not build SSAProgram: {e}")
+    # A construction failure IS a test failure — never skip on it.
+    prog = SSAProgram(str(contract))
     return prog, analyze_structure(prog)
 
 
