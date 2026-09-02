@@ -333,8 +333,39 @@ FOREIGN_ARRAY_FIELDS: frozenset[str] = frozenset({
     "Accounts", "Assets", "Applications",
 })
 
-#: ``Accounts 0`` is ``Sender`` — implicit, not caller-chosen.
-FOREIGN_ARRAY_SELF_INDEX: dict[str, int] = {"Accounts": 0}
+#: ``Accounts 0`` is ``Sender`` and ``Applications 0`` is the CURRENT app
+#: (go-algorand ``appIDByIndex``: index 0 -> ``txn.ApplicationID``, index i>0 ->
+#: ``ForeignApps[i-1]``) — both implicit, neither caller-chosen. HAZARD: with
+#: ``Applications`` missing here, ``txna Applications 0; app_params_get
+#: AppCreator`` (PAY THE CREATOR OF THIS APP) was a ForeignApplications taint
+#: source, and the sink it fed a fund-flow finding. ``Assets`` has no implicit
+#: index 0.
+FOREIGN_ARRAY_SELF_INDEX: dict[str, int] = {"Accounts": 0, "Applications": 0}
+
+
+def is_current_sender_read(op: str, immediates, index: Optional[int] = None) -> bool:
+    """``True`` when ``(op, immediates[, index])`` reads the CURRENT transaction's
+    sender — the ONE authorisation-identity spelling shared by the SSA-level
+    lifecycle guards and the IR-level fund-flow guards (they had two, and one
+    program got two verdicts).
+
+    Recognised: ``txn Sender``, ``txna Accounts 0``, and ``txnas Accounts`` when
+    the caller resolved its stack index to the constant ``0`` and passes it as
+    ``index`` (a non-constant or unknown index is caller-chosen: ``None``).
+
+    HAZARD: exact-token matching. A substring test on ``"Sender"`` also matched
+    ``txn AssetSender`` — an asset-clawback field the attacker sets on their own
+    txn — and credited it as a sender pin. The ``gtxn*`` family is DELIBERATELY
+    absent: whoever composes the group chooses ``gtxn 1 Sender``."""
+    toks = (immediates.split() if isinstance(immediates, str)
+            else [str(t) for t in (immediates or ())])
+    if op == "txn":
+        return toks == ["Sender"] or toks == ["Accounts", "0"]
+    if op == "txna":
+        return toks == ["Accounts", "0"]
+    if op == "txnas":
+        return toks == ["Accounts"] and index == 0
+    return False
 
 
 def attacker_input_label(op: str, immediates: str) -> Optional[str]:

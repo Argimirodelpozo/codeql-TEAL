@@ -31,7 +31,7 @@ from .taint import (
     source_label,
     user_input_taint,
 )
-from ..language.avm import FUND_FIELDS as _FUND_FIELDS
+from ..language.avm import FUND_FIELDS as _FUND_FIELDS, is_current_sender_read
 from ..cfg.dominance import iterative_dominators
 
 _SEV_ORDER = {"CRITICAL": 3, "HIGH": 2, "MEDIUM": 1, "LOW": 0}
@@ -41,7 +41,7 @@ _SEV_ORDER = {"CRITICAL": 3, "HIGH": 2, "MEDIUM": 1, "LOW": 0}
 #: so counting it as authorisation lets an attacker-satisfiable condition
 #: suppress a real fund flow. Only the current txn's sender and the immutable
 #: creator are sound authorisation signals.
-_TXN_SENDER_FAM = frozenset({"txn", "txna"})
+_TXN_SENDER_FAM = frozenset({"txn", "txna", "txnas"})
 
 #: Ops whose result depends on the LENGTH, not the VALUE, of their operand: a
 #: guard reaching an input only through these bounds its length, not its value
@@ -161,7 +161,8 @@ def _value_maps(lifter) -> tuple:
     return (dom_by_sub, pdom_by_sub, *payload)
 
 
-def _cached_entry_guards(lifter, def_of, dom_by_sub, taint, inv_ret):
+def _cached_entry_guards(lifter, def_of, dom_by_sub, taint, inv_ret,
+                         callee_sender=None):
     """`_entry_guards` keyed on the taint map's IDENTITY: `user_input_taint`
     is itself cached, so the same dict recurs across sink families. The cache
     holds a strong reference and compares with ``is`` — a bare ``id()`` key
@@ -170,7 +171,7 @@ def _cached_entry_guards(lifter, def_of, dom_by_sub, taint, inv_ret):
     cached = getattr(lifter, "_fund_flow_entry_guards", None)
     if cached is not None and cached[0] is taint:
         return cached[1]
-    out = _entry_guards(lifter, def_of, dom_by_sub, taint, inv_ret)
+    out = _entry_guards(lifter, def_of, dom_by_sub, taint, inv_ret, callee_sender)
     lifter._fund_flow_entry_guards = (taint, out)
     return out
 
@@ -224,20 +225,33 @@ def _invoke_returns(lifter) -> dict:
             if callee is None:
                 continue
             rets_by_pos: dict = defaultdict(list)
+            ntargets = len(getattr(o, "targets", ()) or ())
             for cb in callee.body:
                 t = cb.terminator
                 if isinstance(t, pre_ir.SubroutineReturn):
                     for i, v in enumerate(t.result):
-                        if isinstance(v, pre_ir.Register):
-                            rets_by_pos[i].append(v)
+                        # EVERY arm, constants and unknowns included. The
+                        # return set is a JOIN (one arm per `retsub` path), and
+                        # `_classify` conjoins it: a `int 1; retsub` arm that
+                        # was silently skipped here made the remaining
+                        # `Sender == creator; retsub` arm read as the whole
+                        # answer — the multi-return OR-bypass.
+                        rets_by_pos[i].append(v)
+                    for i in range(len(t.result), ntargets):
+                        rets_by_pos[i].append(pre_ir.Undefined())   # short return: unknown arm
             for i, tgt in enumerate(getattr(o, "targets", ()) or ()):
                 if isinstance(tgt, pre_ir.Register):
                     out[id(tgt)] = rets_by_pos.get(i, [])
     return out
 
 
-#: Depth bound on :func:`_walk`; the def-expression tree is unbounded in principle.
-_WALK_MAX_DEPTH = 8
+#: Depth bound shared by :func:`_walk` (the sink side) and
+#: :func:`_classify`'s ``visit`` (the guard side). ONE constant, deliberately:
+#: with separate caps the two walks disagreed on what is "reachable", and at 8
+#: a check nine copies/phis/`+ 1` steps upstream of the sink — ordinary compiled
+#: depth — turned a validated value into an UNGUARDED finding. The def tree is a
+#: DAG of registers memoised on shallowest reach, so 64 is cheap.
+_WALK_MAX_DEPTH = 64
 
 
 def _walk(value, def_of, depth=0, seen=None, inv_ret=None):
@@ -278,13 +292,16 @@ def _walk(value, def_of, depth=0, seen=None, inv_ret=None):
 
 
 def _is_sender_op(src) -> bool:
-    if not isinstance(src, pre_ir.Intrinsic):
+    """The current txn's sender, per :func:`avm.is_current_sender_read` — the
+    rule the SSA-level lifecycle guards share, so one program cannot get two
+    verdicts. A ``txnas Accounts`` counts only under a CONSTANT index 0."""
+    if not isinstance(src, pre_ir.Intrinsic) or src.op not in _TXN_SENDER_FAM:
         return False
-    imm = " ".join(str(i) for i in (src.immediates or []))
-    return src.op in _TXN_SENDER_FAM and (
-        "Sender" in imm
-        or (src.op == "txna" and imm.split() == ["Accounts", "0"])
-    )
+    index = None
+    if src.op == "txnas":
+        a0 = src.args[0] if src.args else None
+        index = a0.value if isinstance(a0, pre_ir.UInt64Constant) else None
+    return is_current_sender_read(src.op, src.immediates or [], index)
 
 
 def _scratch_value_edges(lifter, dom_by_sub) -> dict:
@@ -495,12 +512,12 @@ def _classify(kind, polarity, cond, def_of, sink_regs, sink_keys, inv_ret=None) 
     # condition must evaluate to for the guard to hold -- True normally, False on
     # a branch whose FALSE edge reaches the sink; `!` flips it, and De Morgan
     # swaps which connective destroys the guarantee.
-    ci = cs = False
-    # Key the visited-set on the CONTEXT, not the register: one register can be
-    # reached under different (guaranteed, value_ok, sense, sender_ok) flags
+    # Memoise on the CONTEXT, not the register: one register can be reached
+    # under different (guaranteed, value_ok, sense, sender_ok) flags
     # (`(A||B) && A`), and since the flags only weaken down a path, a stronger
     # path must still credit after a weaker one was walked.
-    seen: set = set()
+    memo: dict = {}
+    active: set = set()       # id(register) on the current descent: cycle guard
 
     def _comparison_pins_sender(src) -> bool:
         """Exactly one operand is Sender and the other is a trusted identity.
@@ -543,23 +560,112 @@ def _classify(kind, polarity, cond, def_of, sink_regs, sink_keys, inv_ret=None) 
                 return False
         return True
 
+    def _every_leaf_pins_sender(src, connective, sense) -> bool:
+        """``src`` is a ``connective`` tree (``||`` under a required-True
+        condition, ``&&`` under a required-False one) whose EVERY leaf is a
+        sender pin of the matching polarity (``==`` / ``!=``).
+
+        `assert(Sender == creator || Sender == admin_state)` admits exactly the
+        union of two trusted identities — a real authorisation check, the
+        marketplace-template idiom — while `Sender == creator || btoi(arg)`
+        admits anyone who passes a nonzero arg. Any leaf that is not a pin
+        (an attacker-satisfiable term, an unknown, a deeper structure) keeps the
+        existing refusal: nothing under a disjunction is guaranteed."""
+        pin_ops = _EQ_OPS if sense else _NEQ_OPS
+        stack, budget = list(src.args), _WALK_MAX_DEPTH
+        while stack:
+            v = stack.pop()
+            budget -= 1
+            if budget < 0:
+                return False
+            oo = None
+            for _ in range(8):                          # through plain copies
+                oo = def_of.get(id(v)) if isinstance(v, pre_ir.Register) else None
+                if (isinstance(oo, pre_ir.Assignment)
+                        and isinstance(oo.source, pre_ir.Register)):
+                    v = oo.source
+                    continue
+                break
+            leaf = _intr(oo) if oo is not None else None
+            if leaf is None:
+                return False
+            if leaf.op == connective:
+                stack.extend(leaf.args)
+            elif not (leaf.op in pin_ops and len(leaf.args) == 2
+                      and _comparison_pins_sender(leaf)):
+                return False
+        return True
+
+    def _arm_credit(v, sense, flags, depth):
+        """Credit of ONE arm of a join (phi arm / `retsub` return), or ``None``
+        for an arm that cannot be taken under the required sense: a constant
+        whose truth contradicts it (`assert` of a `0` arm fails, so that path
+        never reaches the sink), or the join's own value carried round a loop
+        (by induction it equals a value already being conjoined)."""
+        # `materialize_phi_consts` has already turned a constant arm into a
+        # `let pc%N = <const>` register, so read the constant back through
+        # plain copies — otherwise every constant arm looks like an opaque
+        # register and the dead-arm rule below can never fire.
+        for _ in range(8):
+            oo = def_of.get(id(v)) if isinstance(v, pre_ir.Register) else None
+            if (isinstance(oo, pre_ir.Assignment) and not isinstance(
+                    oo.source, (pre_ir.Register, pre_ir.Intrinsic, pre_ir.InvokeSubroutine))):
+                v = oo.source
+                break
+            if isinstance(oo, pre_ir.Assignment) and isinstance(oo.source, pre_ir.Register):
+                v = oo.source
+                continue
+            break
+        if isinstance(v, pre_ir.UInt64Constant):
+            if (v.value == 0) if sense else (v.value != 0):
+                return None                             # dead under `sense`
+            return (False, False)                       # LIVE constant: bypass
+        if not isinstance(v, pre_ir.Register):
+            return (False, False)                       # bytes / unknown: no credit
+        if id(v) in active:
+            return None
+        return visit(v, *flags, depth=depth)
+
+    def _join_credit(arms, sense, flags, depth):
+        """A join is an OR of its arms, so the assert guarantees a check only
+        if EVERY live arm carries it. This is the phi / multi-return twin of
+        the `||` rule: `assert(phi(1, Sender == creator))` — PuyaPy's inlining
+        of `if n == 3: return True; return sender == creator` — is bypassable
+        on the constant arm, exactly like `assert(1 || Sender == creator)`."""
+        credits = [c for c in (_arm_credit(v, sense, flags, depth) for v in arms)
+                   if c is not None]
+        if not credits:
+            return (False, False)
+        return (all(c[0] for c in credits), all(c[1] for c in credits))
+
     def visit(value, guaranteed, value_ok, sense, sender_ok, input_ok=True, depth=0):
-        nonlocal ci, cs
-        if not isinstance(value, pre_ir.Register) or depth > 8:
-            return
+        if not isinstance(value, pre_ir.Register) or depth > _WALK_MAX_DEPTH:
+            return (False, False)
         key = (id(value), guaranteed, value_ok, sense, sender_ok, input_ok)
-        if key in seen:
-            return
-        seen.add(key)
+        if key in memo:
+            return memo[key]
+        if id(value) in active:
+            return (False, False)         # a cycle contributes nothing new
+        active.add(id(value))
+        try:
+            out = _visit_body(value, guaranteed, value_ok, sense, sender_ok,
+                              input_ok, depth)
+        finally:
+            active.discard(id(value))
+        memo[key] = out
+        return out
+
+    def _visit_body(value, guaranteed, value_ok, sense, sender_ok, input_ok, depth):
+        ci = cs = False
         o = def_of.get(id(value))
         src = _intr(o) if o is not None else None
         if (src is not None and src.op in _CMP_OPS and len(src.args) == 2
                 and src.args[0] is src.args[1]):
-            return                              # x OP x is a constant predicate
+            return (False, False)               # x OP x is a constant predicate
         if (src is not None and src.op == "%" and len(src.args) == 2
                 and isinstance(src.args[0], pre_ir.UInt64Constant)
                 and src.args[0].value == 1):
-            return                              # x % 1 is always zero
+            return (False, False)               # x % 1 is always zero
         if guaranteed and value_ok and input_ok:
             if id(value) in sink_regs:
                 ci = True
@@ -572,6 +678,11 @@ def _classify(kind, polarity, cond, def_of, sink_regs, sink_keys, inv_ret=None) 
         # `&&` under a required-False one.
         breaks = "||" if sense else "&&"
         child_guar = guaranteed and not (src is not None and src.op == breaks)
+        # ... unless EVERY leaf of that tree pins the sender: the union of
+        # trusted identities is itself a sender guard.
+        if (guaranteed and src is not None and src.op == breaks
+                and _every_leaf_pins_sender(src, breaks, sense)):
+            cs = True
         child_val = value_ok and not (src is not None and src.op in _VALUE_OPAQUE_OPS)
         child_sense = (not sense) if (src is not None and src.op == "!") else sense
         # An equality that must hold PINS a sender read below it; one that must
@@ -593,23 +704,30 @@ def _classify(kind, polarity, cond, def_of, sink_regs, sink_keys, inv_ret=None) 
                 (src.op in _NEQ_OPS and child_sense)
                 or (src.op in _EQ_OPS and not child_sense)):
             child_input = False
+        flags = (child_guar, child_val, child_sense, child_sender, child_input)
+        # An intrinsic's operands are conjuncts of one expression: `A && B`
+        # guarantees both, so the credits OR together. A JOIN (phi arms, the
+        # `retsub` set of an asserted callee) is the opposite: its arms are
+        # alternatives, so they AND — see `_join_credit`.
         if src is not None:
             for a in src.args:
-                visit(a, child_guar, child_val, child_sense, child_sender,
-                      child_input, depth + 1)
+                a_ci, a_cs = visit(a, *flags, depth=depth + 1)
+                ci, cs = ci or a_ci, cs or a_cs
         elif isinstance(o, pre_ir.Assignment) and isinstance(o.source, pre_ir.Register):
-            visit(o.source, child_guar, child_val, child_sense, child_sender,
-                  child_input, depth + 1)
+            a_ci, a_cs = visit(o.source, *flags, depth=depth + 1)
+            ci, cs = ci or a_ci, cs or a_cs
         elif isinstance(o, pre_ir.Phi):
-            for pa in o.args:
-                visit(pa.value, child_guar, child_val, child_sense, child_sender,
-                      child_input, depth + 1)
+            a_ci, a_cs = _join_credit([pa.value for pa in o.args], child_sense,
+                                      flags, depth + 1)
+            ci, cs = ci or a_ci, cs or a_cs
         if inv_ret:                       # descend into an asserted validation sub
-            for rv in inv_ret.get(id(value), ()):
-                visit(rv, child_guar, child_val, child_sense, child_sender,
-                      child_input, depth + 1)
+            rvs = inv_ret.get(id(value), ())
+            if rvs:
+                a_ci, a_cs = _join_credit(rvs, child_sense, flags, depth + 1)
+                ci, cs = ci or a_ci, cs or a_cs
+        return (ci, cs)
 
-    visit(cond, True, True, polarity != "false", False)
+    ci, cs = visit(cond, True, True, polarity != "false", False)
     return Guard(kind, polarity, ci, cs)
 
 
@@ -705,21 +823,56 @@ class FundFlowFinding:
         }
 
 
-def _entry_guards(lifter, def_of, dom_by_sub, taint, inv_ret=None):
+def _sender_guard_dominates(by_id, dom, bid, idx, def_of, inv_ret, name2sub,
+                            callee_sender) -> bool:
+    """A sender pin holds at op ``idx`` of block ``bid``: a dominating
+    assert/forced branch classified `checks_sender` (empty match sets — the
+    sender is not about any value), or a dominating call to a sub that pins
+    the sender on every return (the ``self._check_owner()`` helper)."""
+    if any(g.checks_sender for g in _dominating_guards(
+            by_id, dom, bid, idx, def_of, set(), set(), inv_ret)):
+        return True
+    if not callee_sender:
+        return False
+    for cbid in dom.get(bid, {bid}):
+        cblk = by_id.get(cbid)
+        if cblk is None:
+            continue
+        for co in (cblk.ops if cbid != bid else cblk.ops[:idx]):
+            inv = _invoke(co)
+            callee = name2sub.get(inv.target) if inv else None
+            if callee is not None and callee_sender.get(callee.id):
+                return True
+    return False
+
+
+def _entry_guards(lifter, def_of, dom_by_sub, taint, inv_ret=None,
+                  callee_sender=None):
     """Interprocedural guard summary ``{sub.id: {param_idx: (checks_input,
-    checks_sender)}}``, plus the set of subs that are called somewhere.
+    checks_sender)}}``, the set of subs that are called somewhere, and
+    ``{sub.id: bool}`` — EVERY call site of the sub runs under a sender pin.
 
     HAZARD: param ``i`` of sub ``S`` is entry-guarded only if EVERY call site
     passing a TAINTED value for arg ``i`` dominates that call with a guard on
     that value or the sender -- AND-across-sites, because the guard must hold on
     every path in. Transitive through the caller's own params; monotone fixpoint,
     so guards only grow. An untainted-passing site cannot expose the sink, so it
-    does not constrain the summary."""
+    does not constrain the summary.
+
+    The per-SUB sender bit is the same fact with no argument attached: a
+    ``proto 0 0`` helper that reads ``txna ApplicationArgs`` ITSELF has nothing
+    the per-param map could key on, so the owner check in the dispatcher that
+    dominates its only ``callsub`` was invisible to it (the PyTeal
+    ``@Subroutine`` helper idiom). ALL sites count here, tainted-passing or not
+    — the callee's own read is what exposes the sink — AND-across-sites,
+    transitive through the caller's own bit, least fixpoint from ``False``."""
     subs = {s.id: s for s in lifter.subs}
+    name2sub = {s.id: s for s in lifter.subs if not s.is_main}
     # Per-call-site arg facts, computed once (only the transitive part changes
     # across iterations): (caller_id, tainted, intra_input, intra_sender,
     # [caller param indices the arg flows from]).
     recs: dict = {sid: [] for sid in subs}
+    site_sender: dict = {sid: [] for sid in subs}   # (caller_id, sender pinned here)
     for s in lifter.subs:
         dom, by_id = dom_by_sub[s.id], {b.id: b for b in s.body}
         cpidx = {id(p.register): i for i, p in enumerate(s.parameters)}
@@ -728,6 +881,8 @@ def _entry_guards(lifter, def_of, dom_by_sub, taint, inv_ret=None):
                 inv = _invoke(o)
                 if inv is None or inv.target not in subs:
                     continue
+                site_sender[inv.target].append((s.id, _sender_guard_dominates(
+                    by_id, dom, b.id, idx, def_of, inv_ret, name2sub, callee_sender)))
                 facts = []
                 for arg in inv.args:
                     walked = list(_walk(arg, def_of))
@@ -782,7 +937,16 @@ def _entry_guards(lifter, def_of, dom_by_sub, taint, inv_ret=None):
                 if new != eg[tid][i]:
                     eg[tid][i] = new
                     changed = True
-    return eg, called
+    sub_sender = {sid: False for sid in subs}
+    changed = True
+    while changed:
+        changed = False
+        for tid, sites in site_sender.items():
+            new = bool(sites) and all(pinned or sub_sender[cid] for cid, pinned in sites)
+            if new != sub_sender[tid]:
+                sub_sender[tid] = new
+                changed = True
+    return eg, called, sub_sender
 
 
 def _callee_param_guards(lifter, def_of, dom_by_sub, inv_ret=None) -> dict:
@@ -866,8 +1030,8 @@ def _tainted_sink_flows(lifter, sink_of, taint=None, trusted_args=frozenset(),
         taint = _merge_unresolved(lifter, taint)
     dom_by_sub, pdom_by_sub, def_of, inv_ret, callee_pg, callee_sender = (
         _value_maps(lifter))
-    entry_guards, called = _cached_entry_guards(
-        lifter, def_of, dom_by_sub, taint, inv_ret)
+    entry_guards, called, sub_sender = _cached_entry_guards(
+        lifter, def_of, dom_by_sub, taint, inv_ret, callee_sender)
     findings: list = []
     for sub in lifter.subs:
         dom = dom_by_sub[sub.id]
@@ -924,6 +1088,10 @@ def _tainted_sink_flows(lifter, sink_of, taint=None, trusted_args=frozenset(),
                     if any(egp.get(i, (False, False))[0] for i in feeding):
                         guards.append(Guard("caller", None, True, False))
                     if any(egp.get(i, (False, False))[1] for i in feeding):
+                        guards.append(Guard("caller", None, False, True))
+                    # ... and the sender pin needs no feeding param at all: every
+                    # path INTO this sub runs under one.
+                    elif sub_sender.get(sub.id):
                         guards.append(Guard("caller", None, False, True))
                     # Interprocedural (callee-side): the sink value was passed to
                     # a helper that validates that param, on a call dominating
