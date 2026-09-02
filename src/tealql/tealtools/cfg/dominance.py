@@ -168,7 +168,11 @@ class AssertDominance:
                   target_line: int) -> bool:
         if target_block is None:
             return False
-        if target_block is guard_block:
+        # By VALUE, not identity: a derived-view copy of the guard's block is
+        # a distinct object, and an identity miss fell through to the reach
+        # test — in which the guard block never sits — so a use BEFORE the
+        # guard in the same block read as dominated.
+        if target_block == guard_block:
             return target_line > guard_line
         reach = self._reach.get(guard_block)
         if reach is None:
