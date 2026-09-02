@@ -331,8 +331,11 @@ def _cmd_detections(args) -> int:
     from tealql.security import DETECTORS
 
     if args.list:
-        for name in sorted(DETECTORS):
-            print(name)
+        if args.json_out:
+            print(_json.dumps(sorted(DETECTORS), indent=2))
+        else:
+            for name in sorted(DETECTORS):
+                print(name)
         return 0
 
     if args.detector is not None and args.detector not in DETECTORS:

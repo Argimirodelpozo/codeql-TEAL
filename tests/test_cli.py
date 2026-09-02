@@ -879,3 +879,20 @@ def test_lift_commands_emit_parseable_json(cmd, tmp_path, capsys):
     main([cmd, str(tmp_path), "--json"])
     out = capsys.readouterr().out
     json.loads(out)          # raises if a log line leaked into stdout
+
+
+def test_cli_json_honoured_by_functional_dump_and_detections_list(tmp_path, capsys):
+    """`--json` is a common flag but `functional`, `dump --list-views` and
+    `detections --list` ignored it and printed text (2026-09-02 audit, 5.8):
+    a caller parsing stdout as JSON broke. Each now emits pure JSON."""
+    p = tmp_path / "p.teal"
+    p.write_text("#pragma version 8\nint 1\nreturn\n")
+    assert main(["functional", str(p), "--json"]) == 0
+    data = json.loads(capsys.readouterr().out)
+    assert set(data) == {"text"} and "int 1" in data["text"]
+    assert main(["dump", "--list-views", "--json"]) == 0
+    views = json.loads(capsys.readouterr().out)
+    assert views and {"key", "kind", "graph", "title"} <= set(views[0])
+    assert main(["detections", "--list", "--json"]) == 0
+    names = json.loads(capsys.readouterr().out)
+    assert isinstance(names, list) and "rekey-to" in names

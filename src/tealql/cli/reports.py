@@ -83,7 +83,10 @@ def _cmd_functional(args) -> int:
         show_ranges=args.show_ranges,
         show_bytes=args.show_bytes,
     )
-    print(out)
+    # `--json` is a common flag: honour it (a caller parsing stdout as JSON
+    # must never get the text dump) — the dump has no structured form, so the
+    # payload wraps it.
+    print(_json.dumps({"text": out}, indent=2) if args.json_out else out)
     return 0
 
 
@@ -108,6 +111,12 @@ def _cmd_dump(args) -> int:
     import sys as _sys
     from tealql.tealtools.viz import CATALOG, CATALOG_BY_KEY, dump_all
     if args.list_views:
+        if args.json_out:
+            print(_json.dumps([
+                {"key": view.key, "kind": view.kind.value,
+                 "graph": "dot" if view.has_graph else "text", "title": view.title}
+                for view in CATALOG], indent=2))
+            return 0
         for view in CATALOG:
             graph = "dot" if view.has_graph else "text"
             print(f"{view.key:42} {view.kind.value:14} {graph:4}  {view.title}")
@@ -131,6 +140,10 @@ def _cmd_dump(args) -> int:
         _sys.stderr.write(
             f"wrote full dump to {args.out_dir}/ "
             f"(contract.txt + one graph per applicable catalog view)\n")
+        if args.json_out:
+            print(_json.dumps({"out_dir": args.out_dir, "text": text}, indent=2))
+    elif args.json_out:
+        print(_json.dumps({"text": text}, indent=2))
     else:
         print(text, end="")
     return 0
