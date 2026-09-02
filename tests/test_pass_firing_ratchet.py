@@ -102,6 +102,33 @@ _SHAPES = {
         "deep:\nint 1\nint 2\njoin:\nbury 1\npop\nint 1\nreturn\n",
         {"doomed_edges": 1},
     ),
+    # Main enters on an EMPTY stack (the one exact entry depth): a straight-line
+    # dip below it is a certain underflow — `_simulate_op` used to clamp the pops
+    # and the lift APPROVED. The block itself is doomed, not an edge.
+    "main_entry_underflow_is_doomed": (
+        "#pragma version 8\nint 1\ncover 3\nreturn\n",
+        {"doomed_blocks": 1, "doomed_edges": 0},
+    ),
+    # `bury 0` fails unconditionally in the AVM; it used to be dropped.
+    "bury0_is_doomed": (
+        "#pragma version 8\nint 1\nint 1\nbury 0\nreturn\n",
+        {"doomed_blocks": 1},
+    ),
+    # A proto sub's entry depth is NOT exact — plain stack ops may legally reach
+    # below its params into the caller's residual — so a sub dip stays LIVE.
+    "sub_below_frame_reach_is_not_doomed": (
+        "#pragma version 10\nint 1\nint 2\nint 3\ncallsub sub\nreturn\nsub:\n"
+        "proto 1 1\ntxn NumAppArgs\nbz shallow\nint 7\nb join\nshallow:\njoin:\n"
+        "pop\npop\nint 5\nint 6\nint 1\nretsub\n",
+        {"doomed_blocks": 0, "doomed_edges": 0},
+    ),
+    # A LIVE cross-family constant (`int 5` merged with `byte "hello"` under
+    # `len`) is an explicit unknown, never itob-coerced to 0x…05.
+    "live_cross_family_const_gives_up": (
+        '#pragma version 10\ntxn NumAppArgs\nbz A\nint 5\nb J\nA:\nbyte "hello"\n'
+        "J:\nlen\nreturn\n",
+        {"cross_family_consts": 1, "phi_arms_given_up": 0},
+    ),
 }
 
 
@@ -149,6 +176,10 @@ _CORPUS_BASELINE = {
     "tail_dup_joins": 0,
     "split_mixed_phis": 0,
     "phi_arms_given_up": 0,
+    # 2026-09-02: hostile-only as well — no compiled contract underflows from
+    # main's entry or carries a live cross-family constant.
+    "doomed_blocks": 0,
+    "cross_family_consts": 0,
 }
 
 

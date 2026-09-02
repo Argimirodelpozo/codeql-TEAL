@@ -763,7 +763,8 @@ def materialize_phi_consts(prog) -> int:
     value the model stopped tracking, so it should only ever fall. It is the last
     rung of the mixed-cell ladder — whatever tail duplication and the per-use split
     could not keep lands here."""
-    from .type_recovery import _itob_const, _to_u64_const
+    from .type_recovery import cross_family_const
+    stats = getattr(prog, "pass_stats", None)
     block_by_id: dict = {}
     for bb in pre_ir.blocks(prog):
         block_by_id[bb.id] = bb
@@ -844,10 +845,11 @@ def materialize_phi_consts(prog) -> int:
                         "compute with 0 on that path", val, ty)
                     given_up += 1
                     val = pre_ir.Undefined(ir_type=ty)
-                elif avm(ty) == "u" and isinstance(val, pre_ir.BytesConstant):
-                    val = _to_u64_const(val)
-                elif avm(ty) == "b" and isinstance(val, pre_ir.UInt64Constant):
-                    val = _itob_const(val.value)
+                elif isinstance(val, (pre_ir.UInt64Constant, pre_ir.BytesConstant)):
+                    # A dead placeholder crosses; a LIVE cross-family constant is
+                    # an explicit unknown (counted as `cross_family_consts`, not
+                    # here — one event, one counter).
+                    val = cross_family_const(val, ty, stats=stats, where="phi arm")
                 elif isinstance(val, pre_ir.Undefined) and val.ir_type != ty:
                     # A merge arm with no value (a predecessor that arrives too
                     # shallow). Stamp the phi's settled type on it — Undefined is

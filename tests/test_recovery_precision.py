@@ -143,7 +143,6 @@ extract_uint16
 int 4
 extract3
 pop
-pop
 int 1
 return
 """

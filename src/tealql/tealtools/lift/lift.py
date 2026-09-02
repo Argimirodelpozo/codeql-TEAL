@@ -333,6 +333,8 @@ class _Lifter:
         self._clones_of_group: dict = {}  # struct.Subroutine | None (main) -> [clone blocks]
         self._spliced_subs: set = set()   # subs spliced at EVERY site: no group is built
         self.doomed_edges: set = set()    # (pred, join): shallow-arm entry dies in join
+        self.doomed_blocks: set = set()   # blocks that fail from their OWN entry
+        self._group_entries: set = set()  # every group's entry block
         self._doom_profile: dict = {}     # block -> [(dip, impure_before)] | None
         self._splice_divergent_legacy(struct)
         all_blocks = sorted(self.prog.blocks.values(), key=self._key)
@@ -512,6 +514,7 @@ class _Lifter:
             "splice_subs": len(self._spliced_subs),
             "splice_sites": len(self._splice_entry),
             "doomed_edges": len(self.doomed_edges),
+            "doomed_blocks": len(self.doomed_blocks),
             "frame_position_phis": sum(map(len, self.frame_phis.values())),
             "frame_slot_refusals": len(self._frame_refusals),
         }
@@ -739,17 +742,56 @@ class _Lifter:
         recompiled program by ``err`` — and a rejecting transaction discards
         everything it did first (group-atomic), so rejecting earlier is
         observationally identical."""
-        if not self.doomed_edges:
+        if not self.doomed_edges and not self.doomed_blocks:
             return
         blk_of: dict = {}                  # pre-IR block id -> (subroutine, block)
         for sub in self.subs:
             for blk in sub.body:
                 blk_of[blk.id] = (sub, blk)
         next_id = max(blk_of, default=-1) + 1
-        for P, J in sorted(self.doomed_edges,
-                           key=lambda e: (self.bid.get(e[0], -1),
-                                          self.bid.get(e[1], -1))):
-            pid, jid = self.bid.get(P), self.bid.get(J)
+        edges = sorted({(self.bid.get(P), self.bid.get(J)) for P, J in self.doomed_edges},
+                       key=lambda e: (e[0] if e[0] is not None else -1,
+                                      e[1] if e[1] is not None else -1))
+        # A block that fails from its OWN first instruction — `bury 0`, or
+        # main's entry dipping below the empty stack it starts on — rejects on
+        # EVERY path in, so every incoming edge is doomed. An ENTRY has no edge
+        # to retarget: the group gets a fresh `Fail` entry instead, and the old
+        # one stays behind (unreachable) so nothing it defined loses its
+        # definition.
+        for B in sorted(self.doomed_blocks, key=lambda b: self.bid.get(b, -1)):
+            bid_ = self.bid.get(B)
+            if bid_ not in blk_of:
+                continue
+            bsub, _bblk = blk_of[bid_]
+            if B in self._group_entries:
+                fail = pre_ir.BasicBlock(
+                    id=next_id, phis=[], ops=[],
+                    terminator=pre_ir.Fail("stack underflow from entry"))
+                next_id += 1
+                bsub.body.insert(0, fail)
+                blk_of[fail.id] = (bsub, fail)
+                # Everything the old entry alone reached is dead now; keeping
+                # it would hand Puya the very op that underflowed (clamped to
+                # fewer operands — an arity-invalid intrinsic). Prune what the
+                # new entry cannot reach, and the arms it fed into survivors.
+                reach, todo = {fail.id}, [fail]
+                while todo:
+                    for sid in pre_ir.succ_ids(todo.pop().terminator):
+                        if sid not in reach and sid in blk_of and blk_of[sid][0] is bsub:
+                            reach.add(sid)
+                            todo.append(blk_of[sid][1])
+                dead = {blk.id for blk in bsub.body if blk.id not in reach}
+                bsub.body[:] = [blk for blk in bsub.body if blk.id in reach]
+                for blk in bsub.body:
+                    for ph in blk.phis:
+                        ph.args = [a for a in ph.args if a.through not in dead]
+                for did in dead:
+                    blk_of.pop(did, None)
+                continue
+            for pid, (psub, pblk) in blk_of.items():
+                if psub is bsub and bid_ in pre_ir.succ_ids(pblk.terminator):
+                    edges.append((pid, bid_))
+        for pid, jid in dict.fromkeys(edges):
             if pid not in blk_of or jid not in blk_of:
                 continue
             psub, pblk = blk_of[pid]
@@ -1413,6 +1455,16 @@ class _Lifter:
             for assignment in _ops(block):
                 self._simulate_op(assignment, block, stack, params)
 
+        self._group_entries.add(entry_bb)
+        # Main enters on an EMPTY stack — the one entry depth that is EXACT — so
+        # a straight-line dip below it from the entry is a certain underflow,
+        # the same reject `_mark_doomed_merge` proves for a shallow join arm
+        # (`_simulate_op` otherwise clamps the pops and the recompiled program
+        # APPROVES where the chain panics). A sub's entry depth is NOT exact:
+        # plain stack ops may legally reach below its params into the caller's
+        # residual (the `doom_below_frame` shape), so subs stay refused here.
+        if self.cur_is_main and self._chain_underflows(entry_bb, len(params)):
+            self.doomed_blocks.add(entry_bb)
         stack_engine.walk_routine(
             body_list,
             entry_bb,
@@ -1520,23 +1572,31 @@ class _Lifter:
             d = len(self.stack_exit[p])
             if d >= depth:
                 continue
-            off, cur, seen_chain = 0, b, set()
-            for _ in range(64):
-                prof = self._block_doom_profile(cur)
-                if prof is None:
-                    break
-                dips, net = prof
-                if any(off + dip < -d for dip in dips):
-                    self.doomed_edges.add((p, b))
-                    break
-                seen_chain.add(cur)
-                succ = set(cur.successors)
-                if len(succ) != 1:
-                    break
-                cur = next(iter(succ))
-                if cur in seen_chain:
-                    break
-                off += net
+            if self._chain_underflows(b, d):
+                self.doomed_edges.add((p, b))
+
+    def _chain_underflows(self, b, d) -> bool:
+        """``True`` when the straight line from ``b``'s entry — followed along
+        its UNCONDITIONAL successor chain — provably pops below an entry depth
+        of exactly ``d`` cells. Shared by the shallow-join-arm check and the
+        main-entry check; a refused profile (frame ops, calls) is ``False``."""
+        off, cur, seen_chain = 0, b, set()
+        for _ in range(64):
+            prof = self._block_doom_profile(cur)
+            if prof is None:
+                return False
+            dips, net = prof
+            if any(off + dip < -d for dip in dips):
+                return True
+            seen_chain.add(cur)
+            succ = set(cur.successors)
+            if len(succ) != 1:
+                return False
+            cur = next(iter(succ))
+            if cur in seen_chain:
+                return False
+            off += net
+        return False
 
     def _simulate_op(self, a, b, stack, params):
         """Execute one SSA assignment against the PRE-IR value stack."""
@@ -1592,6 +1652,12 @@ class _Lifter:
                     stack[pos] = stored
                 elif pos == len(stack):
                     stack.append(stored)       # target is the vacated top cell
+            return
+        if a.op == "bury" and _imm0(a) == 0:
+            # `bury 0` fails unconditionally in the AVM (`_canon_shuffle` refuses
+            # to model it), so this block never completes: record it as a reject
+            # from its first instruction rather than silently dropping the op.
+            self.doomed_blocks.add(b)
             return
         if a.op in _STACK_SHUFFLE_OPS:
             # Use the op's CANONICAL arity, not a.inputs: the SSA's fat-band sim can

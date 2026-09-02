@@ -176,7 +176,6 @@ pop
 int 16
 extract_uint64
 pop
-pop
 int 1
 return
 """

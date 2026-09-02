@@ -117,7 +117,9 @@ def _is_template_push(immediates) -> bool:
 
 
 class _Translator:
-    def __init__(self, src_map: dict | None = None, *, unknown_type=PT.any):
+    def __init__(self, src_map: dict | None = None, *, unknown_type=PT.any,
+                 pass_stats: dict | None = None):
+        self.pass_stats = pass_stats
         self.regs: dict = {}      # id(pre-IR Register) -> M.Register
         self.blocks: dict = {}    # pre-IR block id -> M.BasicBlock
         self.subs: dict = {}      # pre-IR Subroutine.id -> M.Subroutine
@@ -302,13 +304,16 @@ class _Translator:
         raise TypeError(f"op: {type(o).__name__}")
 
     def _u64_cond(self, v):
-        """Coerce a branch selector to uint64 (a bytes *constant* there is a
-        reconstruction artifact for an undefined value)."""
-        c = self.val(v)
-        if isinstance(c, M.BytesConstant):
-            return M.UInt64Constant(source_location=None,
-                                    value=int.from_bytes(c.value[-8:], "big") if c.value else 0)
-        return c
+        """A branch selector as uint64. The empty bytes placeholder (an
+        undefined value's typed zero) reads as 0; a LIVE bytes constant is an
+        explicit unknown, never its ``btoi`` (:func:`cross_family_const`) —
+        `_fix_branch_conditions` has normally already turned that block into a
+        ``Fail`` on the pre-IR, so this is the backend's last line."""
+        if isinstance(v, pre_ir.BytesConstant):
+            from .type_recovery import cross_family_const
+            v = cross_family_const(v, "uint64", stats=self.pass_stats,
+                                   where="lowered branch selector")
+        return self.val(v)
 
     def ctrl(self, t):
         B = self.blocks
@@ -485,7 +490,8 @@ def _to_puya_full(prog, *, unknown_type=PT.any):
     from .transforms import simplify_trivial_phis
     simplify_trivial_phis(lifted)
     _duplicate_shared_epilogues(lifted)
-    t = _Translator(_load_src(prog), unknown_type=unknown_type)
+    t = _Translator(_load_src(prog), unknown_type=unknown_type,
+                    pass_stats=lifted.pass_stats)
     groups = [lifted.main, *lifted.subroutines]
 
     # Pass 1: shells, so control ops and InvokeSubroutine can reference real
@@ -836,11 +842,14 @@ def _define_named_orphan(subs, name: str, version: int) -> bool:
     return False
 
 
-def _coerce_slice_operands(subs) -> None:
+def _coerce_slice_operands(subs, diagnostics: list | None = None) -> None:
     """extract3/substring3 take (bytes, uint64, uint64). The undefined-register typed-zero fallback
-    can leave a uint64 start/len operand as an empty BytesConstant (the register's reconstructed type
-    was bytes) -> a type-invalid slice length. Coerce it to a uint64 (empty -> 0), mirroring
-    _u64_cond: the operand position IS uint64, so a bytes there is a reconstruction artifact."""
+    can leave a uint64 start/len operand as an EMPTY BytesConstant (the register's reconstructed type
+    was bytes) -> a type-invalid slice length. That placeholder reads as 0. A NON-EMPTY bytes constant
+    there is a live value the AVM rejects: it is never read as its ``btoi`` — the backend has no
+    Undefined to offer this late, so it becomes the typed-zero placeholder WITH a warning and a
+    diagnostic (the pre-IR :func:`type_recovery._coerce_constant_operands` normally catches it
+    first, as an explicit unknown)."""
     import attrs
     for sub in subs:
         for bb in getattr(sub, "body", []):
@@ -854,9 +863,14 @@ def _coerce_slice_operands(subs) -> None:
                 for i in (1, 2):
                     a = new_args[i]
                     if isinstance(a, M.BytesConstant):
-                        new_args[i] = M.UInt64Constant(
-                            source_location=None,
-                            value=int.from_bytes(a.value[-8:], "big") if a.value else 0)
+                        if a.value:
+                            msg = (f"{src.op.code} operand {i}: live bytes constant "
+                                   f"{a.value!r} where uint64 is required — the AVM "
+                                   f"rejects this op; placeholder 0 emitted, NOT its btoi")
+                            logger.warning(msg)
+                            if diagnostics is not None:
+                                diagnostics.append(msg)
+                        new_args[i] = M.UInt64Constant(source_location=None, value=0)
                         changed = True
                 if changed:
                     o.source = attrs.evolve(src, args=new_args)
@@ -873,7 +887,7 @@ def optimize(subs, *, max_rounds: int = 100, aggressive: bool = False,
     try:
         with _puya_error_capture("optimize", diagnostics):
             rounds = _optimize_impl(subs, max_rounds=max_rounds, aggressive=aggressive)
-            _coerce_slice_operands(subs)   # repair a typed-zero fallback that left a slice len as bytes
+            _coerce_slice_operands(subs, diagnostics)   # typed-zero fallback left a slice len as bytes
         return rounds
     except LiftError:
         raise

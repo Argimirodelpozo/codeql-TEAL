@@ -50,6 +50,54 @@ def _to_u64_const(b) -> "pre_ir.UInt64Constant":
         return pre_ir.UInt64Constant(0)
 
 
+def _is_dead_placeholder(value) -> bool:
+    """The typed zero the lift seeds an UNRESOLVED value with: ``0`` / ``0x``.
+    Only these carry no information, so only these may change family."""
+    if isinstance(value, pre_ir.UInt64Constant):
+        return value.value == 0
+    if isinstance(value, pre_ir.BytesConstant):
+        h = value.value[2:] if value.value.startswith("0x") else value.value
+        return h == ""
+    return False
+
+
+def cross_family_const(value, ty, *, stats=None, where=""):
+    """The value a CONSTANT takes in a slot whose AVM family is ``ty``'s — the
+    ONE place a constant may cross the uint64/bytes divide.
+
+    Same family (or not a constant): returned unchanged. A DEAD PLACEHOLDER
+    (``0`` in a bytes slot, ``0x`` in a uint64 slot) is the lowering default
+    the lift seeds an unresolved value with — e.g. ``intc_0 0`` before a bytes
+    accumulator — and coerces to the other family's placeholder (``0x`` / ``0``),
+    as ever. A LIVE cross-family constant (``int 5`` where bytes is required,
+    ``byte "abc"`` under ``+`` or ``bnz``) is a value the AVM REJECTS at that op
+    (runtime type error): coercing it — the old behaviour at five sites —
+    computed on with ``0x…05`` / ``6382179`` and the recompiled program
+    APPROVED where the chain panics. It becomes an explicit ``Undefined`` of the
+    slot's type, announced by a warning and counted in
+    ``pass_stats["cross_family_consts"]`` — the same explicit-unknown ladder rung
+    :func:`transforms.materialize_phi_consts` already takes for a cross-family
+    REGISTER arm. Callers that can do better (a branch selector that is a live
+    bytes constant is an unconditional reject) test for ``Undefined`` and refine.
+    """
+    fam = avm(ty)
+    if isinstance(value, pre_ir.UInt64Constant) and fam == "b":
+        if _is_dead_placeholder(value):
+            return _itob_const(0)
+    elif isinstance(value, pre_ir.BytesConstant) and fam == "u":
+        if _is_dead_placeholder(value):
+            return pre_ir.UInt64Constant(0)
+    else:
+        return value
+    logger.warning(
+        "cross-family constant %s where %s is required (%s) — the AVM rejects "
+        "this op; kept as an explicit unknown, never coerced", value, ty,
+        where or "operand")
+    if isinstance(stats, dict):
+        stats["cross_family_consts"] = stats.get("cross_family_consts", 0) + 1
+    return pre_ir.Undefined(ir_type=ty)
+
+
 def _const_key(operand) -> "str | None":
     """The constant bytes value of a state-key operand (verbatim ``0x…`` hex), or
     ``None`` for a dynamic key, which cannot be matched across put / get."""
@@ -491,9 +539,10 @@ def _decide_webtypes(phi_ids, find, consumer, constev, defev, seedev) -> dict:
     return webtype
 
 
-def _apply_webtypes(blocks, find, phi_ids, webtype) -> None:
-    """Retype every phi-register web member to its decided type and coerce
-    wrong-AVM-type constant args to the other family's constant.
+def _apply_webtypes(blocks, find, phi_ids, webtype, stats=None) -> None:
+    """Retype every phi-register web member to its decided type and repair
+    wrong-AVM-type constant args through :func:`cross_family_const` (a dead
+    placeholder crosses; a live constant becomes an explicit unknown).
 
     A cross-type NON-PHI seed register is left AS-IS: replacing it with a
     typed-zero constant fabricated a clean value on a possibly-live arm (taint
@@ -513,10 +562,9 @@ def _apply_webtypes(blocks, find, phi_ids, webtype) -> None:
                 continue
             for a in ph.args:
                 v = a.value
-                if isinstance(v, pre_ir.UInt64Constant) and T == "bytes":
-                    a.value = _itob_const(v.value)
-                elif isinstance(v, pre_ir.BytesConstant) and T == "uint64":
-                    a.value = _to_u64_const(v)
+                if isinstance(v, (pre_ir.UInt64Constant, pre_ir.BytesConstant)):
+                    a.value = cross_family_const(v, T, stats=stats,
+                                                 where="phi web arm")
                 # A cross-type non-phi register arm survives untouched here —
                 # see the docstring: materialize_phi_consts owns that repair.
 
@@ -559,7 +607,7 @@ def _reconcile_mixed_phis(prog) -> None:
         blocks, find, phi_ids, parent
     )
     webtype = _decide_webtypes(phi_ids, find, consumer, constev, defev, seedev)
-    _apply_webtypes(blocks, find, phi_ids, webtype)
+    _apply_webtypes(blocks, find, phi_ids, webtype, getattr(prog, "pass_stats", None))
 
 
 def _unify_comparison_operands(prog) -> None:
@@ -1108,9 +1156,33 @@ def _fix_branch_conditions(prog) -> None:
     A branch condition is uint64 at runtime by construction (``bnz``/``bz`` pop a
     uint64), so a bytes label is a recovery mislabel, and uint64 is the SAFE
     direction: a uint64 reaching a bytes op is tolerated, only the reverse is
-    fatal. Reactive — only the fatal sites are touched."""
+    fatal. Reactive — only the fatal sites are touched.
+
+    A bytes CONSTANT selector is not a mislabel but a value: the empty
+    placeholder reads as ``0`` (:func:`cross_family_const`), while a live one
+    (``byte "abc"; bnz``) is an op the AVM rejects unconditionally, so the block
+    ends in ``Fail`` — exact, not a refusal — and its arms leave the successors'
+    phis, as a doomed edge's do."""
+    stats = getattr(prog, "pass_stats", None)
+    block_by_id = {bb.id: bb for bb in pre_ir.blocks(prog)}
     for b in pre_ir.blocks(prog):
         t = b.terminator
+        sel = (t.condition if isinstance(t, pre_ir.ConditionalBranch)
+               else t.value if isinstance(t, pre_ir.GotoNth) else None)
+        if isinstance(sel, pre_ir.BytesConstant):
+            nv = cross_family_const(sel, "uint64", stats=stats, where="branch selector")
+            if isinstance(nv, pre_ir.Undefined):
+                for sid in pre_ir.succ_ids(t):
+                    sb = block_by_id.get(sid)
+                    if sb is not None:
+                        for ph in sb.phis:
+                            ph.args = [a for a in ph.args if a.through != b.id]
+                b.terminator = pre_ir.Fail("bytes value where the branch needs uint64")
+            elif isinstance(t, pre_ir.ConditionalBranch):
+                t.condition = nv
+            else:
+                t.value = nv
+            continue
         if isinstance(t, pre_ir.ConditionalBranch) and isinstance(t.condition, pre_ir.Register):
             if t.condition.ir_type in _BYTES_FAMILY:
                 t.condition.ir_type = "uint64"
@@ -1171,11 +1243,15 @@ def _coerce_constant_operands(prog) -> None:
     the langspec pins, and does it on the pre-IR so the lowered IR is right by
     construction rather than repaired afterwards.
 
-    ONE DIRECTION ONLY. A bytes constant in a uint64 slot has a defined reading
-    (empty -> 0, else its ``btoi``); a uint64 constant in a BYTES slot does not,
-    because the expected width is the field's, not the value's — ``itob``-ing an
-    int into an ``itxn_field Receiver`` would invent an 8-byte address. Those
-    stay for :func:`_warn_residual_unknowns` to surface."""
+    ONE DIRECTION ONLY. Only the EMPTY bytes constant is a placeholder with a
+    defined reading (``0x`` -> ``0``); a non-empty one in a uint64 slot is a live
+    value the AVM rejects and becomes an explicit unknown
+    (:func:`cross_family_const`). A uint64 constant in a BYTES slot is not
+    repaired here at all, because the expected width is the field's, not the
+    value's — ``itob``-ing an int into an ``itxn_field Receiver`` would invent
+    an 8-byte address. Those stay for :func:`_warn_residual_unknowns` to
+    surface."""
+    stats = getattr(prog, "pass_stats", None)
     for b in pre_ir.blocks(prog):
         for o in b.ops:
             vp = (o.source if isinstance(o, pre_ir.Assignment)
@@ -1187,7 +1263,8 @@ def _coerce_constant_operands(prog) -> None:
                     continue
                 et = _hard_expected_type(vp.op, i, vp.args, vp.immediates)
                 if et and avm(et) == "u":
-                    vp.args[i] = _to_u64_const(a)
+                    vp.args[i] = cross_family_const(
+                        a, et, stats=stats, where=f"{vp.op} operand {i}")
 
 
 def _stamp_undefined_operands(prog) -> None:
