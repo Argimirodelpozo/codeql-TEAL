@@ -123,13 +123,18 @@ class BudgetContext:
             raise ValueError("app_calls is outside the AVM group limit")
         if not 0 <= inner_app_calls <= MAX_INNER_APP_CALLS:
             raise ValueError("inner_app_calls is outside the modeled limit")
-        # Pooling was introduced in AVM v5; inner application calls started
-        # contributing credit in v6.  Earlier versions are limited to the one
-        # program's 700-unit allowance even when their transaction is grouped.
-        if avm_version is not None and avm_version < 5:
+        # Opcode-cost pooling is a PROTOCOL property (go-algorand
+        # ``EnableAppCostPooling`` in ``NewAppEvalParams``; inner application
+        # calls add to the SAME shared pool in ``NewInnerEvalParams``), not a
+        # property of the program's own version: a v4 or v5 program grouped
+        # with other application calls — or with a v6 sibling issuing inner
+        # calls, the OpUp shape — runs under the whole pool, so ``initial_credit``
+        # (the greatest credit an execution may obtain) must include it.
+        # Versions 1-3 differ for a different reason: ``check()`` enforces the
+        # 700-unit cost STATICALLY over the entire program and no backward
+        # branch exists, so every path costs at most 700 and pooling is moot.
+        if avm_version is not None and avm_version < 4:
             app_calls, inner_app_calls = 1, 0
-        elif avm_version is not None and avm_version < 6:
-            inner_app_calls = 0
         return cls(
             ProgramMode.APPLICATION,
             avm_version,

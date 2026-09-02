@@ -109,11 +109,12 @@ def op_cost(op: str, immediates: str = "") -> CostFact:
     suffix = f" {immediates.strip()}" if immediates and immediates.strip() else ""
     if not table.available:
         return CostFact.unknown("Puya cost metadata unavailable")
-    if op in table.dynamic:
-        return CostFact.unknown(f"dynamic cost for {op}{suffix}")
-    # An opcode Puya's table has not shipped yet may still be in OUR cost
-    # tables (a new AVM version's op, e.g. ``sha512``): claiming the fixed
-    # floor of 1 as EXACT for it would understate every path it sits on.
+    # OUR tables answer before Puya's "dynamic" verdict: Puya marks an op
+    # dynamic when its enum cannot express a per-immediate or per-length cost,
+    # but the AVM spec still fixes the immediate-selected cost (``ecdsa_verify
+    # Secp256k1`` = 1700) and the length-dependent FLOOR.  Answering
+    # ``lower=1`` for those understated every path they sit on.  An opcode
+    # Puya's table has not shipped yet (``sha512``) is served the same way.
     linear = _LENGTH_COSTS.get(op)
     if linear is not None:
         return CostFact.unknown(
@@ -130,6 +131,8 @@ def op_cost(op: str, immediates: str = "") -> CostFact:
         floors = [v[0] if isinstance(v, tuple) else v for v in by_field.values()]
         return CostFact.unknown(
             f"immediate-selected cost for {op}{suffix}", lower=min(floors))
+    if op in table.dynamic:
+        return CostFact.unknown(f"dynamic cost for {op}{suffix}")
     # Source-level pseudo ops (``int``) and control terminators are lowered
     # away before Puya IR, so they do not occur in AVMOp even though their AVM
     # execution cost is the fixed floor.

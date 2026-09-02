@@ -48,9 +48,15 @@ def test_cost_facts_distinguish_exact_dynamic_and_unknown_costs():
     assert op_cost("ed25519verify").lower == 1900
     assert op_cost("ed25519verify").exact
 
-    dynamic = op_cost("ecdsa_verify", "Secp256k1")
-    assert dynamic.lower == 1 and dynamic.upper is None and not dynamic.exact
-    assert "dynamic cost" in dynamic.reasons[0]
+    # Puya marks ecdsa_verify "dynamic" (its enum cannot express a per-immediate
+    # cost); the AVM spec fixes it per curve, so the immediate answers EXACTLY
+    # and the immediate-less query answers the true FLOOR, never 1 (2026-09-02
+    # review 3.5: the dynamic early-return used to precede the table consult).
+    by_curve = op_cost("ecdsa_verify", "Secp256k1")
+    assert by_curve.exact and by_curve.lower == 1700
+    floor = op_cost("ecdsa_verify")
+    assert floor.lower == 1700 and floor.upper is None and not floor.exact
+    assert "immediate-selected" in floor.reasons[0]
 
     unknown = op_cost("no_such_opcode_in_this_build")
     assert unknown.lower == 1 and unknown.upper is None and not unknown.exact
@@ -117,22 +123,26 @@ def test_context_never_infers_logicsig_from_absence_of_app_only_ops():
     assert clear.mode is ProgramMode.CLEAR_STATE
     assert clear.initial_credit == APP_CALL_OPCODE_BUDGET
 
-    # Pooling starts at v5 and inner-call credit at v6.  Supplying a version
-    # must not apply a later protocol's larger allowance retroactively.
+    # Pooling is a protocol flag, not a program-version feature: a v4/v5
+    # program in a full group (with a v6 sibling adding inner-call credit to the
+    # shared pool) may obtain the whole ceiling.  Only v1-3, whose 700-unit
+    # cost is enforced statically over the entire program, stay at 700.
+    for version in (4, 5, 6):
+        assert BudgetContext.application(
+            avm_version=version, app_calls=16, inner_app_calls=256
+        ).initial_credit == MAX_POOLED_OPCODE_BUDGET
     assert BudgetContext.application(
-        avm_version=4, app_calls=16, inner_app_calls=256
+        avm_version=3, app_calls=16, inner_app_calls=256
     ).initial_credit == 700
-    assert BudgetContext.application(
-        avm_version=5, app_calls=16, inner_app_calls=256
-    ).initial_credit == 11_200
-    assert BudgetContext.application(
-        avm_version=6, app_calls=16, inner_app_calls=256
-    ).initial_credit == MAX_POOLED_OPCODE_BUDGET
 
     old_app = _program(
-        '#pragma version 4\nbyte "k"\napp_global_get\npop\nint 1\nreturn\n'
+        '#pragma version 3\nbyte "k"\napp_global_get\npop\nint 1\nreturn\n'
     )
     assert BudgetContext.conservative(old_app).initial_credit == 700
+    v4_app = _program(
+        '#pragma version 4\nbyte "k"\napp_global_get\npop\nint 1\nreturn\n'
+    )
+    assert BudgetContext.conservative(v4_app).initial_credit == MAX_POOLED_OPCODE_BUDGET
     old_shared = _program("#pragma version 4\nint 1\nreturn\n")
     assert BudgetContext.conservative(old_shared).initial_credit == lsig.initial_credit
 
