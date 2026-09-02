@@ -24,7 +24,7 @@ from .ast import (
     AstNode, Label, Location, SingleNumericArgumentOpcode, Source,
     ZeroArgumentOpcode, node_class_for_mnemonic,
 )
-from .literals import is_template_variable, scan_line
+from .literals import NAMED_INT_CONSTANTS, is_template_variable, scan_line
 
 _LANG = _ts.Language(_tsteal.language())
 
@@ -307,29 +307,84 @@ def _unknown_txn_field_error(c, src: bytes = b"") -> bool:
     return any(k.type == "label_identifier" for k in c.children[1:])
 
 
-def _split_txn_field_error(c) -> "tuple[list, list]":
-    """Segment a greedy txn-field ERROR into ``(groups, unconsumed)``, each group
-    ``[mnemonic, …immediates…, field_identifier]`` — one recovered instruction;
-    children that do not fit come back separately so the caller reports them."""
+def _is_field_token(k) -> bool:
+    """A token that can close a txn-family read: the bare identifier the
+    grammar salvaged for a field it does not know, or a field token it does
+    (``Sender``) — the latter appears when a MANGLED node's leaves are
+    re-segmented (:func:`_mangled_txn_read`)."""
+    if k.type == "label_identifier":
+        return True
+    from ..language.avm import TXN_FIELD_NAMES
+    return k.type in TXN_FIELD_NAMES
+
+
+def _split_txn_field_error(kids) -> "tuple[list, list]":
+    """Segment the token children of a greedy txn-field ERROR (or the leaves of
+    a mangled txn-family node) into ``(groups, unconsumed)``, each group
+    ``[mnemonic, …immediates…, field]`` — one recovered instruction; tokens that
+    do not fit come back separately so the caller reports them.
+
+    A group never crosses a line: one instruction per line is architectural,
+    and a mnemonic whose field sits on the NEXT line is two broken reads, not
+    one."""
     groups: list = []
     unconsumed: list = []
-    kids = [k for k in c.children if not _is_trivia(k.type)]
+    kids = [k for k in kids if not _is_trivia(k.type)]
     i = 0
     while i < len(kids):
         if kids[i].type not in _TXN_FIELD_MNEMONICS:
             unconsumed.append(kids[i])
             i += 1
             continue
+        row = kids[i].start_point[0]
         j = i + 1
-        while j < len(kids) and kids[j].type == "numeric_argument":
+        while (j < len(kids) and kids[j].type == "numeric_argument"
+               and kids[j].start_point[0] == row):
             j += 1                                   # immediate group/array index
-        if j < len(kids) and kids[j].type == "label_identifier":
+        if (j < len(kids) and _is_field_token(kids[j])
+                and kids[j].start_point[0] == row):
             groups.append(kids[i:j + 1])
             i = j + 1
         else:
-            unconsumed.extend(kids[i:j + 1])         # mnemonic with no field
-            i = j + 1
+            unconsumed.extend(kids[i:j])             # mnemonic with no field
+            i = j
     return groups, unconsumed
+
+
+def _leaf_tokens(node) -> list:
+    """The real source tokens under ``node`` in order — trivia, zero-width and
+    MISSING (invented) tokens dropped."""
+    out: list = []
+
+    def walk(n):
+        if not n.children:
+            if (not _is_trivia(n.type) and not n.is_missing
+                    and n.start_byte < n.end_byte):
+                out.append(n)
+            return
+        for k in n.children:
+            walk(k)
+
+    walk(node)
+    return out
+
+
+def _mangled_txn_read(ch) -> bool:
+    """A txn-family opcode node the grammar's error recovery MANGLED: it spans
+    more than one line, or carries an ERROR inside.
+
+    GRAMMAR DEFECT: ``gtxn 0 RejectVersion`` followed by ``gtxn 0 Sender``
+    parses as ONE ``gtxn_opcode`` covering both lines, with a nested
+    ``ERROR[RejectVersion, gtxn]`` and the second line's field as its own. The
+    top-level child is not an ERROR, so no recovery ran; the multi-line span
+    sliced to an EMPTY ``.code``, the op fell back to its node class
+    (``GtxnOpcode``, arity (0, 0), an unknown op) and BOTH pushes vanished.
+    Its leaves re-segment per line through :func:`_split_txn_field_error`."""
+    if ch.type in ("ERROR", "label") or not ch.children:
+        return False
+    if ch.children[0].type not in _TXN_FIELD_MNEMONICS:
+        return False
+    return ch.end_point[0] > ch.start_point[0] or ch.has_error
 
 
 #: Opcode nodes whose trailing NUMERIC immediate the grammar drops into a bare
@@ -393,12 +448,21 @@ def _is_phantom_label(c) -> bool:
 _TEMPLATE_PUSH_MNEMONICS = frozenset({"pushint", "pushbytes", "int", "byte"})
 
 
+def _salvaged_push_operand(mnem: str, operand: str) -> bool:
+    """A ``(push mnemonic, bare identifier)`` pair the grammar refused that IS
+    one instruction: a deployment template on any const push, or a named AVM
+    constant on ``int`` — ``int`` only, goal rejects ``pushint DeleteApplication``."""
+    return (is_template_variable(operand)
+            or (mnem == "int" and operand in NAMED_INT_CONSTANTS))
+
+
 def _template_pair_groups(children, src: bytes) -> "tuple[list, list]":
     """Segment ERROR children into ``(groups, unconsumed)``, each group a
-    ``(push mnemonic, TEMPLATE identifier)`` pair on ONE line.
+    ``(push mnemonic, TEMPLATE-or-named-constant identifier)`` pair on ONE line.
 
     ERROR recovery is GREEDY: consecutive template pushes (or a const block's
-    template tail followed by one) collapse into a single multi-line ERROR, and
+    template tail followed by one, or a comment-split ``int DeleteApplication``
+    followed by ``int NoOp``) collapse into a single multi-line ERROR, and
     recovering only the first construct silently drops the rest — each dropped
     push leaves the stack short."""
     def _text(k) -> str:
@@ -419,7 +483,7 @@ def _template_pair_groups(children, src: bytes) -> "tuple[list, list]":
         if (is_mnemonic and b is not None
                 and b.type == "label_identifier"
                 and b.start_point[0] == a.start_point[0]
-                and is_template_variable(_text(b))):
+                and _salvaged_push_operand(_text(a), _text(b))):
             groups.append((a, b))
             i += 2
             continue
@@ -433,6 +497,11 @@ def _template_pair_class(a, src: bytes) -> "tuple[type, str | None]":
     mnemonic child can be a disguised ``label_identifier`` whose ``.type`` says
     nothing about the opcode."""
     mnem = src[a.start_byte:a.end_byte].decode("utf-8", "replace").strip()
+    if mnem == "int":
+        # `int` registers no mnemonic (its grammar node is the generic
+        # `single_numeric_argument_opcode`); the PascalCase fallback would make
+        # it a bare `AstNode` — not an Opcode, so the push silently vanished.
+        return SingleNumericArgumentOpcode, None
     cls = node_class_for_mnemonic(mnem)
     if cls is not None:
         return cls, None
@@ -523,6 +592,49 @@ def _hex_int_split(ch, nxt, src: bytes) -> bool:
                                                       b"b", b"B")
 
 
+def _missing_immediate_tail(ch, nxt, src: bytes) -> bool:
+    """An ``int`` / txn-family opcode whose immediate the grammar left EMPTY,
+    followed on the SAME line by the salvaged identifier that IS the immediate.
+
+    GRAMMAR DEFECT: with a ``// comment`` on the same or the NEXT line,
+    ``int DeleteApplication`` no longer parses as one ERROR
+    (:func:`_named_int_error`) but as ``int`` with a zero-width
+    ``numeric_argument`` plus a phantom ``label`` (or ERROR) holding
+    ``DeleteApplication`` and the comment; ``txn RejectVersion`` likewise
+    yields ``txn`` with a MISSING field. The bare opcode was emitted with NO
+    constant — the OnCompletion arm's ``==`` became ``== <unknown>`` and the
+    verdict on the delete arm changed against IDENTICAL bytecode — and the
+    identifier was reported as a stray token.
+
+    Deliberately narrow: ``int`` + a name in ``NAMED_INT_CONSTANTS`` (never
+    ``pushint``, which goal rejects with a name), or a txn-family mnemonic + a
+    field in ``TXN_FIELD_NAMES``. Only the ONE same-line identifier counts: the
+    phantom's comment child, and next-line content a greedy ERROR swallowed,
+    cannot veto (the driver re-emits spillover)."""
+    if nxt is None or nxt.type not in ("label", "ERROR") or not ch.children:
+        return False
+    row = ch.start_point[0]
+    if ch.end_point[0] != row or nxt.start_point[0] != row:
+        return False
+    same_line = [k for k in nxt.children
+                 if k.type == "label_identifier" and k.start_point[0] == row]
+    if len(same_line) != 1:
+        return False
+    ident = src[same_line[0].start_byte:same_line[0].end_byte].decode(
+        "utf-8", "replace")
+    mnem = ch.children[0].type
+    imms = ch.children[1:]
+    if mnem == "int":
+        return (ident in NAMED_INT_CONSTANTS
+                and any(k.type == "numeric_argument"
+                        and (k.is_missing or k.start_byte == k.end_byte)
+                        for k in imms))
+    if mnem in _TXN_FIELD_MNEMONICS:
+        from ..language.avm import TXN_FIELD_NAMES
+        return ident in TXN_FIELD_NAMES and any(k.is_missing for k in imms)
+    return False
+
+
 #: RECOVERY REGISTRIES — the list of valid TEAL the grammar rejects. Each gap is
 #: recovered in one of two shapes: STANDALONE, an ERROR node that IS one or more
 #: instructions, emitted on its own (`_class_for` keys on its first child, the
@@ -539,6 +651,7 @@ _TAIL_RECOVERIES = (
     _hex_int_split,              # `int 0x10` split into `int 0` + `x10`
     _itxna_index_split,          # `itxna Logs 1` / `gaid 5` losing the index
     _template_var_tail,          # `bytecblock "a" TMPL_X`
+    _missing_immediate_tail,     # `int DeleteApplication // c`, `txn RejectVersion\n// c`
 )
 
 
@@ -707,7 +820,7 @@ def parse_nodes(
             if _unknown_txn_field_error(ch, src):
                 # `_class_for` keys on the ERROR's first child — the mnemonic —
                 # so each group emits as the node a known field would have got.
-                groups, unconsumed = _split_txn_field_error(ch)
+                groups, unconsumed = _split_txn_field_error(ch.children)
                 for grp in groups:
                     # Key on the GROUP's own mnemonic: a greedy ERROR can merge
                     # adjacent instructions with different mnemonics, and the
@@ -775,6 +888,30 @@ def parse_nodes(
                     ))
                 i += 1
                 continue
+            if _mangled_txn_read(ch):
+                # A multi-line / ERROR-bearing txn-family node: re-segment its
+                # real tokens per line, one read each, instead of emitting the
+                # mangled node (empty `.code`, unknown op, every push lost).
+                groups, unconsumed = _split_txn_field_error(_leaf_tokens(ch))
+                if groups:
+                    for grp in groups:
+                        cls, override = _class_for(grp[0])
+                        op_nodes.append(_node(
+                            grp[0].start_point[0] + 1, grp[0].start_point[1],
+                            grp[-1].end_point[0] + 1, grp[-1].end_point[1],
+                            cls, override))
+                    if unconsumed and diagnostics is not None:
+                        lo = min(u.start_point[0] for u in unconsumed) + 1
+                        hi = max(u.end_point[0] for u in unconsumed) + 1
+                        text = src[unconsumed[0].start_byte:
+                                   unconsumed[-1].end_byte].decode("utf-8", "replace")
+                        snippet = (text.splitlines()[0].strip()[:80]
+                                   if text.strip() else "")
+                        diagnostics.append(ParseDiagnostic(
+                            file=file, start_line=lo, end_line=hi, snippet=snippet,
+                        ))
+                    i += 1
+                    continue
             sl, sc, el, ec = _loc(ch)
             if _is_phantom_label(ch) and _phantom_is_opcode(ch, src):
                 # GRAMMAR DEFECT: an opcode the grammar has never heard of (a
