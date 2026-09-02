@@ -17,8 +17,10 @@ from typing import Callable, Optional
 
 from ..ssa import (Const, Phi, SSAProgram, SSAVar, binary_operands, const_int,
                    operand_const)
-from ..language.avm import (FIXED_BYTES_OUTPUT_LEN, VALUE_FLOW_HASH_OPS,
-                            _txn_field_name, _multi_out_type)
+from ..language.avm import (_AVM_BYTES_TYPES, _AVM_UINT64_TYPES, _BOOL_OPS,
+                            _BYTES_OPS, _U64_OPS, FIXED_BYTES_OUTPUT_LEN,
+                            VALUE_FLOW_HASH_OPS, _field_type, _multi_out_type,
+                            _txn_field_name)
 from ..ssa.models import _shuffle_mapping
 
 INF = float("inf")  # sentinel the Intervals algebra tolerates as an open right end
@@ -146,6 +148,31 @@ def _uint_hi(op) -> Optional[int]:
         return c
     r = getattr(op, "range", None)
     return getattr(r, "hi", None) if r is not None else None
+
+
+def _output_kind(a, out) -> Optional[str]:
+    """``"bytes"`` / ``"uint64"`` for a single-output op, or ``None`` when the
+    result is genuinely polymorphic (scratch, state values, subroutine returns).
+
+    The view's recovered type is a BY-PRODUCT of the byte-length / range
+    passes — a ``-`` over untyped inputs carries none — so the langspec result
+    family (``_U64_OPS`` / ``_BYTES_OPS`` / bool results / field tables) is
+    consulted before giving up: it is the same table the lift types from, and
+    it never contradicts a recovered kind."""
+    kind = getattr(getattr(out, "type", None), "kind", None)
+    if kind in ("bytes", "uint64"):
+        return kind
+    op = a.op
+    if op in _U64_OPS or op in _BOOL_OPS:
+        return "uint64"
+    if op in _BYTES_OPS:
+        return "bytes"
+    ft = _field_type(op, a.immediates)
+    if ft in _AVM_BYTES_TYPES:
+        return "bytes"
+    if ft in _AVM_UINT64_TYPES:
+        return "uint64"
+    return None
 
 
 def _index_window(idx_op, width: int) -> tuple:
@@ -761,14 +788,15 @@ def _byte_taint_impl(
                     return set_bytes(out, Intervals.whole(_len_bound(out)))
                 return set_scalar(out)
             if len(a.outputs) == 1:
-                # HAZARD: the channel follows the recovered TYPE of the output,
-                # never a hand list of ops. A bytes-producing op tagged SCALAR
-                # (sha512, `txnas Accounts` at an attacker index, a state read)
-                # left an empty byte map, so the next extract / getbyte /
-                # extract_uintN propagated nothing. Scratch (`loads`) and every
-                # other polymorphic result with no recovered kind record BOTH
-                # abstractions rather than guessing one and losing the other.
-                kind = getattr(getattr(out, "type", None), "kind", None)
+                # HAZARD: the channel follows the TYPE of the output (recovered,
+                # else langspec family), never a hand list of ops. A
+                # bytes-producing op tagged SCALAR (sha512, `txnas Accounts` at
+                # an attacker index, a state read) left an empty byte map, so
+                # the next extract / getbyte / extract_uintN propagated nothing.
+                # Scratch (`loads`), state values and other polymorphic results
+                # with no kind record BOTH abstractions rather than guessing
+                # one and losing the other.
+                kind = _output_kind(a, out)
                 if kind == "bytes":
                     return set_bytes(out, Intervals.whole(_len_bound(out)))
                 if kind == "uint64":

@@ -45,6 +45,23 @@ def test_byte_taint_fallback_channel_follows_output_type():
     digest = next(a for a in prog.assignments if a.op == "sha512").outputs[0]
     assert r.tainted_bytes(digest).parts == ((0, 64),)
 
+    # With NO recovered type (the view's kind is a by-product of the
+    # byte-length / range passes and is absent on e.g. arithmetic over
+    # legacy-sub scratch params), the channel comes from the langspec result
+    # family, never "both": a `-` is uint64 (byte taint on it made the partial
+    # detector report 28 mainnet Amount sinks) and `txnas Accounts` is bytes.
+    from tealql.tealtools.dataflow.byte_taint import _byte_taint_impl
+    untyped = SSAProgram.from_text(
+        "#pragma version 10\ntxna ApplicationArgs 0\nbtoi\ndup\nint 3\n-\npop\n"
+        "txnas Accounts\npop\nint 1\nreturn\n", name="t")
+    assert all(getattr(o, "type", None) is None
+               for a in untyped.assignments for o in a.outputs)   # canonical: untyped
+    r = _byte_taint_impl(untyped)
+    minus = next(a for a in untyped.assignments if a.op == "-").outputs[0]
+    acct = next(a for a in untyped.assignments if a.op == "txnas").outputs[0]
+    assert r.is_scalar_tainted(minus) and not r.tainted_bytes(minus)
+    assert r.tainted_bytes(acct) and not r.is_scalar_tainted(acct)
+
 
 def test_byte_taint_attacker_index_into_clean_buffer_is_tainted():
     """1.5: an attacker-chosen OFFSET/INDEX into a CLEAN buffer selects which
