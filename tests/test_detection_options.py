@@ -117,3 +117,37 @@ def test_auto_mode_opt_in(tmp_path):
     assert o.mode_for("prog.teal") is None                 # no prog -> declared only
     names = {f.detector_name for f in scan(tmp_path, options=o)}
     assert "is-deletable" in names                          # classified app
+
+
+def test_mode_scoping_on_benchmark_fixtures(tmp_path):
+    # findings.md 4.3: the benchmark's `_fires()` calls `detect()` with no mode,
+    # so it never exercises scan()'s applies_to scoping. Pin it on REAL benchmark
+    # files: an lsig-only detector (rekey-to) is dropped on an app fixture and
+    # applied on a logicsig fixture — both when the mode is DECLARED (glob) and
+    # when it is inferred (auto_mode / classify_program).
+    import shutil
+    from pathlib import Path
+    from tealql.security import DETECTORS
+    bench = Path(__file__).resolve().parent / "benchmark"
+    app_src = bench / "unprotected-updatable" / "safe" / "admin_address_in_global_state.teal"
+    lsig_src = bench / "rekey-to" / "vuln" / "approves_unchecked.teal"
+    src = tmp_path / "src"
+    src.mkdir()
+    shutil.copy(app_src, src / "app.teal")
+    shutil.copy(lsig_src, src / "lsig.teal")
+    assert DETECTORS["rekey-to"].applies_to == frozenset({"logicsig"})
+
+    declared = _opts({"modes": [{"match": "**/app.teal", "mode": "app"},
+                                {"match": "**/lsig.teal", "mode": "logicsig"}]})
+    inferred = _opts({"auto_mode": True})
+    for opts in (declared, inferred):
+        by_file = {}
+        for f in scan(tmp_path, options=opts):
+            by_file.setdefault(Path(f.rel_path).name, set()).add(f.detector_name)
+        # lsig-only family scoped OUT of the app fixture ...
+        assert "rekey-to" not in by_file.get("app.teal", set())
+        assert "fee-validation" not in by_file.get("app.teal", set())
+        # ... and applied to the lsig fixture, where the vuln fires.
+        assert "rekey-to" in by_file.get("lsig.teal", set())
+        # control: an app-only detector never runs on the lsig file.
+        assert "is-updatable" not in by_file.get("lsig.teal", set())
