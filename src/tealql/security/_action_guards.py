@@ -5,8 +5,9 @@ from typing import Optional
 
 from tealql.tealtools.cfg.exits import verdict_operand
 from tealql.tealtools.cfg.path_predicates import PathPredicateAnalysis
+from tealql.tealtools.ssa.producers import is_current_sender_var
 from tealql.tealtools.ssa import (Assignment, BasicBlock, SSAProgram, SSAVar,
-                                  const_int, is_field_var, producing_op)
+                                  const_int, is_field_var)
 
 from ._value_flow import _constant_facts_cached, resolve_through_copies
 
@@ -44,32 +45,6 @@ ONC_DELETE_APPLICATION = 5
 
 def _is_txn_field_var(var, field: str) -> bool:
     return is_field_var(var, "txn", field)
-
-
-def _is_current_sender_read(var) -> bool:
-    """``var`` is THIS transaction's sender: ``txn Sender``, ``txna Accounts 0``
-    or ``int 0; txnas Accounts`` — the AVM defines ``Accounts[0] == Sender``
-    (:data:`avm.FOREIGN_ARRAY_SELF_INDEX`), and real contracts spell the sender
-    all three ways. Exact-token matching only: ``txn AssetSender`` is an axfer
-    field the caller sets on their own txn and must NOT qualify.
-
-    TODO(consolidate): the lift side is adding ``is_current_sender_read`` under
-    ``tealtools`` (``language/avm.py`` or ``ssa/``) for ``fund_flow._is_sender_op``;
-    replace this local copy with that shared helper at integration so one guard
-    cannot get two verdicts (finding 2.6)."""
-    a = producing_op(var)
-    if a is None:
-        return False
-    imm = a.immediates.strip()
-    if a.op == "txn":
-        return imm == "Sender"
-    if a.op == "txna":
-        return imm.split() == ["Accounts", "0"]
-    if a.op == "txnas":
-        return imm == "Accounts" and len(a.inputs) == 1 and const_int(a.inputs[0]) == 0
-    return False
-
-
 
 
 #: State reads that yield an address the CONTRACT controls, not the caller.
@@ -126,8 +101,8 @@ def _sender_trusted_cmp(
     if cmp.op not in ("==", "!=") or len(cmp.inputs) != 2:
         return None
     a0, a1 = (_guard_operand(prog, value) for value in cmp.inputs)
-    if ((_is_current_sender_read(a0) and _is_trusted_address(prog, a1))
-            or (_is_current_sender_read(a1)
+    if ((is_current_sender_var(a0) and _is_trusted_address(prog, a1))
+            or (is_current_sender_var(a1)
                 and _is_trusted_address(prog, a0))):
         return cmp.op
     return None
