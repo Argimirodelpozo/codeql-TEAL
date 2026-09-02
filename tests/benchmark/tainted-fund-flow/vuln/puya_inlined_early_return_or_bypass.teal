@@ -1,5 +1,10 @@
 #pragma version 11
 #pragma typetrack false
+// VULN: puyapy 5.7.1 -O1 output. `pay2` asserts `is_ok()`, which Puya INLINES
+// as a phi of `intc_0 // 1` (the `if num_app_args == 3: return True` arm) and
+// `Sender == CreatorAddress`: a join is an OR, so the sender pin is bypassable
+// by passing a 3rd app arg. `pay` is the plain `looks_fine(amt) || Sender ==
+// creator` bypass. Source: OrBypass in the 2026-09-02 lift audit repros.
 
 // algopy.arc4.ARC4Contract.approval_program() -> uint64:
 main:

@@ -1,0 +1,21 @@
+#pragma version 10
+// SAFE: `txna Applications 0` is the CURRENT application (not a caller-listed
+// foreign app), so `AppCreator` of it is this app's creator — an immutable,
+// contract-controlled identity. Pinning the sender to it is a real owner check;
+// it was read as attacker-steerable and flagged (mainnet app_3200608346 label7).
+txn Sender
+txna Applications 0
+app_params_get AppCreator
+pop
+==
+assert
+txna ApplicationArgs 0
+itxn_begin
+int pay
+itxn_field TypeEnum
+itxn_field Receiver
+int 1000000
+itxn_field Amount
+itxn_submit
+int 1
+return

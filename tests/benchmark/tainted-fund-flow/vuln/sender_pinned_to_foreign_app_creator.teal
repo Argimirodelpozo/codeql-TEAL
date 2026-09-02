@@ -1,13 +1,17 @@
 #pragma version 10
 // VULN: the sender is pinned against the CREATOR OF A FOREIGN APP — and the
 // caller composes the foreign-apps array. The attacker deploys a throwaway app,
-// names it in Applications[0], and AppCreator of it is their own address, so the
+// names it in Applications[1], and AppCreator of it is their own address, so the
 // assert passes for anyone. Same class as pinning against ApplicationArgs, but
 // reached through `app_params_get`, so a one-hop check of the comparison's
 // operands saw only that opcode and credited the guard.
-// Found in the wild: app_3200608346 label7/label8.
+// HAZARD (2026-09-02): index 0 of Applications is the CURRENT app (go-algorand
+// appIDByIndex: 0 -> txn.ApplicationID, i>0 -> ForeignApps[i-1]), so the
+// earlier `Applications 0` spelling of this fixture pinned a FALSE POSITIVE —
+// see the safe twin `sender_pinned_to_own_app_creator.teal` (app_3200608346
+// label7/label8 is that SAFE owner-or-admin shape, not this one).
 txn Sender
-txna Applications 0
+txna Applications 1
 app_params_get AppCreator
 pop
 ==

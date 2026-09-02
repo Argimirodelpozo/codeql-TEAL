@@ -14,7 +14,7 @@ import pytest
 from tealql.tealtools.ssa import SSAProgram
 
 TESTS_DIR = Path(__file__).resolve().parent
-_REPRO = TESTS_DIR / "contracts" / "repro"
+_BENCH = TESTS_DIR / "benchmark"
 
 
 def _lifter(path):
@@ -61,10 +61,11 @@ def test_join_is_a_disjunction_every_arm_must_pin(tmp_path):
                     "txn Sender\nglobal CreatorAddress\n==\nretsub\nskip:\nint 1\nretsub\n")
     assert _verdict(_flows(multi_return, tmp_path)) == {"Receiver": False}
 
-    # puyapy 5.7.1 -O1 output of tests/contracts/repro/or_bypass_puya (is_ok inlined):
-    # `pay2` asserts a phi of `intc_0 // 1` and `Sender == CreatorAddress`.
+    # puyapy 5.7.1 -O1 output (is_ok inlined): `pay2` asserts a phi of
+    # `intc_0 // 1` and `Sender == CreatorAddress`.
     from tealql.tealtools.lift.fund_flow import tainted_fund_flows
-    puya = tainted_fund_flows(_lifter(_REPRO / "or_bypass_puya.approval.teal"))
+    puya = tainted_fund_flows(_lifter(
+        _BENCH / "tainted-fund-flow" / "vuln" / "puya_inlined_early_return_or_bypass.teal"))
     assert puya and not any(f.guarded for f in puya), [f.pretty() for f in puya]
 
     both_pin = (_HEAD + "txn NumAppArgs\nint 2\n==\nbnz short\n"
@@ -185,6 +186,94 @@ def test_applications_index_zero_is_the_current_app_not_attacker_input(tmp_path)
                 "int 1\nreturn\ncreate:\nint 1\nreturn\n")
     assert _flows(prog(0), tmp_path) == []
     assert _verdict(_flows(prog(1), tmp_path)) == {"Receiver": False}
+
+
+def _lifted(teal: str, tmp_path, name):
+    from tealql.tealtools.lift.lift import lift
+    p = tmp_path / name
+    p.write_text(teal)
+    prog = SSAProgram(str(p))
+    prog.propagate_constants()
+    return prog, lift(prog)
+
+
+def _main_fails_outright(ir) -> bool:
+    from tealql.tealtools.lift import pre_ir
+    entry = ir.main.body[0]
+    return isinstance(entry.terminator, pre_ir.Fail) and not entry.ops
+
+
+def test_straight_line_underflow_from_main_entry_is_a_reject(tmp_path):
+    """`cover 3` on one cell, `bury 0`, `int 1; +`: the AVM panics, the lift
+    clamped the pops and APPROVED (finding 1.8). Main enters on an empty stack
+    — the one exact depth — so the entry is doomed and lowers to `fail`, with
+    nothing arity-invalid left for Puya. Controls: a legal `cover 1` approves;
+    a proto sub reaching below its own params is LIVE (the caller's residual is
+    there) and must stay un-doomed."""
+    from tealql.tealtools.lift.to_puya_ir import render
+    for name, body in {
+        "cover": "int 1\ncover 3\nreturn\n",
+        "bury0": "int 1\nint 1\nbury 0\nreturn\n",
+        "plus": "int 1\n+\nreturn\n",
+    }.items():
+        prog, ir = _lifted("#pragma version 10\n" + body, tmp_path, f"{name}.teal")
+        assert _main_fails_outright(ir), (name, ir.render())
+        assert ir.pass_stats["doomed_blocks"] == 1
+        lowered = render(prog)
+        assert "fail" in lowered and "(+ 1u)" not in lowered, lowered
+
+    prog, ir = _lifted("#pragma version 10\nint 1\nint 2\ncover 1\npop\nreturn\n",
+                       tmp_path, "legal.teal")
+    assert not _main_fails_outright(ir) and ir.pass_stats["doomed_blocks"] == 0
+    assert "exit 2u" in ir.render()
+
+    below = ("#pragma version 10\nint 1\nint 2\nint 3\ncallsub sub\nreturn\nsub:\n"
+             "proto 1 1\ntxn NumAppArgs\nbz shallow\nint 7\nb join\nshallow:\njoin:\n"
+             "pop\npop\nint 5\nint 6\nint 1\nretsub\n")
+    _prog, ir = _lifted(below, tmp_path, "below.teal")
+    assert ir.pass_stats["doomed_blocks"] == 0 and ir.pass_stats["doomed_edges"] == 0
+    assert "fail" not in ir.render()
+
+
+def test_live_cross_family_constant_is_never_coerced(tmp_path):
+    """A LIVE constant of the wrong AVM family is an op the AVM rejects; four
+    sites still itob/btoi-coerced it and the recompiled program approved with a
+    fabricated value (finding 1.9). Every site now goes through ONE helper:
+    `int 5` merged with a bytes value -> explicit unknown (never 0x…05); `byte
+    "abc"` under `+` -> unknown (never 6382179u); `byte "abc"; bnz` -> `fail`.
+    Control: the dead placeholders (`int 0` into a bytes web, `0x` into a uint64
+    slot) still coerce silently, as the lift's typed-zero seeds require."""
+    from tealql.tealtools.lift.to_puya_ir import render
+    from tealql.tealtools.lift.type_recovery import cross_family_const
+    from tealql.tealtools.lift import pre_ir
+
+    prog, ir = _lifted('#pragma version 10\ntxn NumAppArgs\nbz A\nint 5\nb J\nA:\n'
+                       'byte "hello"\nJ:\nlen\nreturn\n', tmp_path, "phi.teal")
+    text = ir.render() + render(prog)
+    assert "0x0000000000000005" not in text and "undefined" in text, text
+    assert ir.pass_stats["cross_family_consts"] == 1
+
+    prog, ir = _lifted('#pragma version 10\nbyte "abc"\nint 1\n+\nreturn\n',
+                       tmp_path, "plus.teal")
+    text = ir.render() + render(prog)
+    assert "6382179" not in text and "undefined" in text, text
+
+    prog, ir = _lifted('#pragma version 10\nbyte "abc"\nbnz yes\nint 0\nreturn\nyes:\n'
+                       'int 1\nreturn\n', tmp_path, "bnz.teal")
+    assert isinstance(ir.main.body[0].terminator, pre_ir.Fail), ir.render()
+    assert "6382179" not in render(prog)
+
+    stats: dict = {}
+    assert cross_family_const(pre_ir.UInt64Constant(0), "bytes", stats=stats) == \
+        pre_ir.BytesConstant("0x")
+    assert cross_family_const(pre_ir.BytesConstant("0x"), "uint64", stats=stats) == \
+        pre_ir.UInt64Constant(0)
+    assert cross_family_const(pre_ir.UInt64Constant(7), "uint64", stats=stats) == \
+        pre_ir.UInt64Constant(7)
+    assert stats == {}
+    assert cross_family_const(pre_ir.UInt64Constant(7), "bytes", stats=stats) == \
+        pre_ir.Undefined(ir_type="bytes")
+    assert stats == {"cross_family_consts": 1}
 
 
 @pytest.mark.parametrize("shape", ["no_check"])
