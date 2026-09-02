@@ -9,6 +9,7 @@ and ``tests/contracts`` that carries source. Run after an intentional change to 
 """
 from __future__ import annotations
 
+import difflib
 import sys
 from pathlib import Path
 
@@ -33,17 +34,31 @@ def _all_contracts() -> list[Path]:
     return contracts
 
 
+def _print_diff(path: Path, old: str, new: str) -> None:
+    """Show what a regen changes BEFORE it lands, so a behaviour change can never
+    be absorbed silently into 149 goldens (findings.md 4.5)."""
+    diff = "\n".join(difflib.unified_diff(
+        old.splitlines(), new.splitlines(),
+        fromfile=f"{path} (old)", tofile=f"{path} (new)", lineterm=""))
+    print(diff or f"{path}: unchanged")
+
+
 def main(argv: list[str]) -> int:
     contracts = [Path(a) for a in argv] if argv else _all_contracts()
-    written = skipped = 0
+    written = changed = skipped = 0
     for contract in contracts:
         text = compute_golden(contract)
         if text is None:
             skipped += 1
             continue
-        golden_path(contract).write_text(text)
+        path = golden_path(contract)
+        old = path.read_text() if path.exists() else ""
+        if old != text:
+            changed += 1
+            _print_diff(path, old, text)
+        path.write_text(text)
         written += 1
-    print(f"wrote {written} golden(s), skipped {skipped} (no source)")
+    print(f"wrote {written} golden(s), {changed} changed, skipped {skipped} (no source)")
     return 0
 
 

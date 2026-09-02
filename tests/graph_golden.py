@@ -9,9 +9,11 @@ reproduction. Regression is caught exactly; correctness *beyond* regression is
 anchored by the downstream SSA / ``test_lift_semantics`` / behavioural tests,
 which execute the producers' output on a real AVM.
 
-The golden lives next to its source (``<contract>/graph_golden.txt``): committed for the
-in-repo ``tests/tealtools`` fixtures, local-only (gitignored) for the heavy
-``tests/contracts`` real contracts. Regenerate after an intentional producer change::
+The golden lives next to its source (``<contract>/graph_golden.txt``) and is
+COMMITTED for every fixture — the in-repo ``tests/tealtools`` fixtures and the
+``tests/contracts`` real contracts alike (nothing in ``.gitignore`` excludes them).
+Regenerate after an intentional producer change; the generator prints a unified
+diff of every golden it changes, which the commit must explain::
 
     python -m tests.gen_graph_golden
 """

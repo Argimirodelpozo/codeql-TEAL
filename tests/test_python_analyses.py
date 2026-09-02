@@ -249,14 +249,15 @@ def _render(analysis: str, case_dir: Path) -> str:
 def test_snapshot(analysis: str, case_dir: Path) -> None:
     actual = _render(analysis, case_dir)
     expected_path = case_dir / "expected.txt"
+    rel = expected_path.relative_to(PY_TESTS.parent.parent)
 
-    if UPDATE or not expected_path.exists():
-        expected_path.write_text(actual)
-        if not UPDATE:
-            pytest.skip(f"created baseline at {expected_path.relative_to(PY_TESTS.parent.parent)}")
-        return
+    if not expected_path.exists() and not UPDATE:
+        # A missing golden is a FAILURE, never "create + skip": a new case dir
+        # would otherwise pass CI on first run and pin whatever the code did.
+        pytest.fail(f"missing snapshot {rel} — review the output and create it "
+                    f"with UPDATE_SNAPSHOTS=1")
 
-    expected = expected_path.read_text()
+    expected = expected_path.read_text() if expected_path.exists() else ""
     if actual == expected:
         return
 
@@ -269,6 +270,13 @@ def test_snapshot(analysis: str, case_dir: Path) -> None:
             lineterm="",
         )
     )
+    if UPDATE:
+        # Print what moved BEFORE writing so a regen never absorbs a behaviour
+        # change silently (visible with -s / in the captured stdout).
+        print(f"\n== snapshot {rel} {'updated' if expected else 'created'} ==\n{diff}")
+        expected_path.write_text(actual)
+        pytest.skip(f"snapshot {'updated' if expected else 'created'}: {rel}")
+
     pytest.fail(
         f"snapshot mismatch for {case_dir.relative_to(PY_TESTS)}:\n{diff}\n\n"
         "Re-run with UPDATE_SNAPSHOTS=1 to refresh."
