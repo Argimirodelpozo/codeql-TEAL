@@ -209,3 +209,9 @@ cross-contract health; shared helpers have explicit support classifications.
 All ten catalog tests pass both with and without Puya, including rendering every
 view/graph and semantic checks of the new results. The second full run was
 interrupted to include this integration in the final gate.
+
+The coverage run exposed two legacy tests using the shared walk-depth constant
+through `fund_flow`. The guard behavior assertion passed, but the compatibility
+export was missing after extraction. Restoring that one export fixes both
+unchanged tests; all 52 tests in the two review modules and the lifted fund-flow
+module pass. No guard depth or detector verdict was changed by this repair.

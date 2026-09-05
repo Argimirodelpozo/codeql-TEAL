@@ -33,6 +33,7 @@ from .taint import (
 from ..language.avm import FUND_FIELDS as _FUND_FIELDS
 from ..cfg.dominance import iterative_dominators
 from .guards import (
+    _WALK_MAX_DEPTH as _WALK_MAX_DEPTH,
     Guard as Guard,
     _Definitions as _Definitions,
     _GuardDefinitions as _GuardDefinitions,
