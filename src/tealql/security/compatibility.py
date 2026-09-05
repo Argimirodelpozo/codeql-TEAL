@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from .obligations import ObligationResult
+from .semantic_compatibility import compare_programs  # noqa: F401
 
 
 def compare_contracts(before, after):

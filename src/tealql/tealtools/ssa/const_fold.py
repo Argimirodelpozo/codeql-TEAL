@@ -294,6 +294,8 @@ def _fold_cmp(op: str, operands: list[Const]) -> Optional[Const]:
     a, b = operands[0], operands[1]
     if a is None or b is None:
         return None
+    if op.startswith("b") and (a.kind != "bytes" or b.kind != "bytes"):
+        return None
     if a.kind == "int" and b.kind == "int":
         x, y = int(a.value), int(b.value)
     elif a.kind == "bytes" and b.kind == "bytes":
@@ -303,6 +305,9 @@ def _fold_cmp(op: str, operands: list[Const]) -> Optional[Const]:
             return None
         # b-prefixed comparisons treat bytes as big-endian unsigned ints.
         if op.startswith("b"):
+            # The interpreter checks the encoded width before stripping zeros.
+            if len(bx) > 64 or len(by) > 64:
+                return None
             x = int.from_bytes(bx, "big")
             y = int.from_bytes(by, "big")
         else:

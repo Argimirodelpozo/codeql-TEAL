@@ -6,28 +6,49 @@ Callers are responsible for tying atoms to exact, immutable value identities.
 """
 from __future__ import annotations
 
+from fractions import Fraction
 
-def affine(expression):
-    if type(expression) is int:
-        return {}, expression
-    if isinstance(expression, str):
-        return {expression: 1}, 0
-    if not isinstance(expression, tuple) or len(expression) != 3:
-        return None
-    op, left, right = expression
-    a, b = affine(left), affine(right)
-    if a is None or b is None or op not in {'+', '-', '*'}:
-        return None
-    if op == '*':
-        if a[0] and b[0]:
+
+def affine(expression, *, max_nodes=256, max_bits=4096):
+    """Normalize a bounded expression DAG without expanding shared subtrees."""
+    memo = {}
+    remaining = max_nodes
+
+    def visit(expression, depth=0):
+        nonlocal remaining
+        if remaining <= 0 or depth > 64:
             return None
-        scalar, other = (a[1], b) if not a[0] else (b[1], a)
-        return {k: v * scalar for k, v in other[0].items() if v * scalar}, other[1] * scalar
-    sign = 1 if op == '+' else -1
-    coeffs = dict(a[0])
-    for key, coefficient in b[0].items():
-        coeffs[key] = coeffs.get(key, 0) + sign * coefficient
-    return {k: v for k, v in coeffs.items() if v}, a[1] + sign * b[1]
+        if type(expression) is int:
+            return ({}, expression) if expression.bit_length() <= max_bits else None
+        if isinstance(expression, str):
+            return {expression: 1}, 0
+        if not isinstance(expression, tuple) or len(expression) != 3:
+            return None
+        key = id(expression)
+        if key in memo:
+            return memo[key]
+        remaining -= 1
+        op, left, right = expression
+        a, b = visit(left, depth + 1), visit(right, depth + 1)
+        if a is None or b is None or op not in {'+', '-', '*'}:
+            return None
+        if op == '*':
+            if a[0] and b[0]:
+                return None
+            scalar, other = (a[1], b) if not a[0] else (b[1], a)
+            result = {k: v * scalar for k, v in other[0].items() if v * scalar}, other[1] * scalar
+        else:
+            sign = 1 if op == '+' else -1
+            coeffs = dict(a[0])
+            for key, coefficient in b[0].items():
+                coeffs[key] = coeffs.get(key, 0) + sign * coefficient
+            result = {k: v for k, v in coeffs.items() if v}, a[1] + sign * b[1]
+        if any(value.bit_length() > max_bits for value in (*result[0].values(), result[1])):
+            return None
+        memo[id(expression)] = result
+        return result
+
+    return visit(expression)
 
 
 def _bound(left, right, strict=False):
@@ -111,3 +132,92 @@ class DifferenceConstraints:
         hi = self.bounds.get((x, y))
         lo = self.bounds.get((lower[0], lower[1]))
         return (lower[2] - lo, hi - offset) if lo is not None and hi is not None else None
+
+
+class LinearEqualities:
+    """Bounded rational elimination proving integer linear identities.
+
+    Rational solutions overapproximate integer solutions. No witness is claimed;
+    a goal is proved only when it follows from all admitted equality rows.
+    Detected contradictions, exhaustion, and oversized coefficients refuse.
+    """
+
+    def __init__(self, premises=(), *, max_atoms=64, max_rows=256, max_bits=512):
+        self.rows = {}
+        self.complete = True
+        self.consistent = True
+        self.max_bits = max_bits
+        atoms, deferred = set(), []
+        for index, (left, relation, right) in enumerate(premises):
+            if index >= max_rows:
+                self.complete = False
+                break
+            result = affine(('-', left, right))
+            if result is None:
+                continue
+            coefficients, offset = result
+            atoms.update(coefficients)
+            if len(atoms) > max_atoms:
+                self.complete = False
+                break
+            row = {key: Fraction(value) for key, value in coefficients.items()}
+            if offset:
+                row[None] = Fraction(offset)
+            if not self._bounded(row):
+                break
+            if relation != 'eq':
+                deferred.append((row, relation))
+                continue
+            row = self._reduce(row)
+            variables = sorted(key for key in row if key is not None)
+            if not variables:
+                self.consistent &= not row.get(None, 0)
+            else:
+                pivot = variables[0]
+                divisor = row[pivot]
+                row = {key: value / divisor for key, value in row.items()}
+                if not self._bounded(row):
+                    break
+                self.rows[pivot] = row
+        # A guard reduced to a false constant is an explicit contradiction.
+        for row, relation in deferred:
+            row = self._reduce(row)
+            if any(key is not None for key in row):
+                continue
+            value = row.get(None, 0)
+            checks = {'neq': value != 0, 'le': value <= 0, 'lt': value < 0,
+                      'ge': value >= 0, 'gt': value > 0}
+            self.consistent &= checks.get(relation, True)
+
+    def _bounded(self, row):
+        if any(max(value.numerator.bit_length(), value.denominator.bit_length()) > self.max_bits
+               for value in row.values()):
+            self.complete = False
+        return self.complete
+
+    def _reduce(self, row):
+        row = dict(row)
+        for pivot, known in sorted(self.rows.items()):
+            factor = row.get(pivot, 0)
+            if not factor:
+                continue
+            for key, value in known.items():
+                row[key] = row.get(key, 0) - factor * value
+                if row[key] == 0:
+                    del row[key]
+            if not self._bounded(row):
+                break
+        return row
+
+    def proves(self, left, right):
+        result = affine(('-', left, right))
+        if result is None or not self.complete or not self.consistent:
+            return False
+        coefficients, offset = result
+        row = {key: Fraction(value) for key, value in coefficients.items()}
+        if offset:
+            row[None] = Fraction(offset)
+        if not self._bounded(row):
+            return False
+        reduced = self._reduce(row)
+        return self.complete and not reduced

@@ -17,6 +17,8 @@ from tealql.tealtools.diagnostics.health import health_for, AnalysisDegradation,
 from tealql.tealtools.language.spec import opcode_spec
 from tealql.tealtools.ssa import Const, SSAVar
 
+from .encoding import encoding_leaves
+
 
 @dataclass(frozen=True)
 class ObligationResult:
@@ -44,23 +46,36 @@ class ObligationContext:
             self.health = AnalysisHealth(self.health.degradations + (AnalysisDegradation(
                 'unsupported-byte-comparison', 'numeric byte comparisons require explicit width semantics'),))
         self.by_line = {a.location.line: a for a in program.assignments}
+        self._expressions = {}
 
-    def expression(self, value, active=frozenset()):
+    def expression(self, value, active=frozenset(), _budget=None):
         """Exact field identities and evaluated arithmetic; state reads stay distinct."""
         value = self.facts.constant(value) or self.facts.resolve(value)
         if isinstance(value, Const):
             return int(value.value) if value.kind == 'int' else 'bytes:' + value.value
-        if not isinstance(value, SSAVar) or id(value) in active or len(active) >= 64:
+        budget = [128] if _budget is None else _budget
+        if not isinstance(value, SSAVar) or id(value) in active or len(active) >= 64 or budget[0] <= 0:
             return None
+        if value in self._expressions:
+            return self._expressions[value]
+        budget[0] -= 1
         assignment = value.defined_by
         if assignment is None:
             return None
         op, imm = assignment.op, str(assignment.immediates).strip()
         if op in {'txn', 'global', 'gtxn', 'txna', 'gtxna'}:
             return op + ' ' + imm
+        if op in {'gtxns', 'gtxnsa'} and len(assignment.inputs) == 1:
+            index = self.facts.range_at(assignment.inputs[0], assignment)
+            if index is not None and 0 <= index.lo == index.hi < 16:
+                return ('gtxn ' if op == 'gtxns' else 'gtxna ') + str(index.lo) + ' ' + imm
         if op in {'+', '-', '*'} and len(assignment.inputs) == 2:
-            left, right = [self.expression(v, active | {id(value)}) for v in reversed(assignment.inputs)]
-            return (op, left, right) if left is not None and right is not None else None
+            left, right = [self.expression(v, active | {id(value)}, budget) for v in reversed(assignment.inputs)]
+            if left is None or right is None:
+                return None
+            result = op, left, right
+            self._expressions[value] = result
+            return result
         # A value identity is safe for exact comparisons. Different reads of
         # mutable storage, phi arms and opaque computations are not equated.
         return f'value:{value.file}:{value.line}:{value.index}'
@@ -167,29 +182,6 @@ def crypto_binding(context, policy):
     verify = context.by_line.get(policy['verify_line'])
     line = policy['line']
     fields = policy['fields']
-    leaves = []
-
-    def flatten(value, active=frozenset()):
-        value = context.facts.resolve(value)
-        if id(value) in active or len(active) >= 64:
-            return False
-        assignment = getattr(value, 'defined_by', None)
-        if assignment and assignment.op in {'sha256', 'sha512_256', 'keccak256', 'concat'}:
-            return all(flatten(v, active | {id(value)}) for v in reversed(assignment.inputs))
-        # itob is fixed-width and injective over uint64.
-        expression = context.expression(value)
-        width = 8 if assignment and assignment.op == 'itob' else None
-        if width:
-            expression = context.expression(assignment.inputs[0])
-        else:
-            fact = context.facts.constant(value)
-            if fact is not None and fact.kind != 'int':
-                width = len(fact.value.removeprefix('0x')) // 2
-            elif expression in {'txn Sender', 'global CreatorAddress', 'global CurrentApplicationAddress'}:
-                width = 32
-        leaves.append((expression, width))
-        return expression is not None and width is not None
-
     ok = bool(fields and policy.get('domain') and policy.get('assumptions') and policy.get('public_key'))
     if verify is None or verify.op not in {'ed25519verify', 'ed25519verify_bare'} or len(verify.inputs) != 3 or len(verify.outputs) != 1:
         ok = False
@@ -197,9 +189,9 @@ def crypto_binding(context, policy):
         ok &= context.proves(line, context.expression(verify.outputs[0]), 'neq', 0)
         ok &= bool(policy.get('public_key')) and context.proves(line,
             context.expression(verify.inputs[0]), 'eq', context.annotation(policy['public_key']))
-        ok &= flatten(verify.inputs[2])
-        expected = [(context.annotation(row['value']), row['width']) for row in fields]
-        ok &= leaves == expected and context.annotation(policy.get('domain')) in [v for v, _ in leaves]
+        leaves = encoding_leaves(context, verify.inputs[2])
+        expected = tuple((context.annotation(row['value']), row['width']) for row in fields)
+        ok &= leaves is not None and leaves == expected and context.annotation(policy.get('domain')) in [v for v, _ in leaves]
     return context.result('crypto-binding', str(policy['verify_line']), line, ok,
                           'exact ordered fixed-width preimage fields and accepted verification',
                           policy.get('assumptions', ()))
@@ -255,14 +247,19 @@ def conservation_obligation(context, policy):
 
 
 def analyze_obligations(program, policy):
-    allowed = {'authority', 'initial_authorities', 'groups', 'crypto', 'lifecycle', 'conservation'}
+    from .state_obligations import authority_freshness, proposal_invariant, replay_protection
+    from .payment_obligations import group_funding, payment_conservation
+    allowed = {'authority', 'initial_authorities', 'groups', 'crypto', 'lifecycle', 'conservation',
+               'authority_uses', 'replay', 'proposal_invariants', 'funding_groups', 'payment_conservation'}
     if not isinstance(policy, dict) or set(policy) - allowed:
         raise ValueError('unknown obligation policy fields')
     context = ObligationContext(program)
     results = authority_provenance(context, policy.get('authority', ()),
                                    initial_keys=policy.get('initial_authorities', ()))
     for name, run in (('groups', group_obligation), ('crypto', crypto_binding),
-                      ('lifecycle', lifecycle_obligation)):
+                      ('lifecycle', lifecycle_obligation), ('authority_uses', authority_freshness),
+                      ('replay', replay_protection), ('proposal_invariants', proposal_invariant),
+                      ('funding_groups', group_funding), ('payment_conservation', payment_conservation)):
         results.extend(run(context, row) for row in policy.get(name, ()))
     for row in policy.get('conservation', ()):
         results.extend(conservation_obligation(context, row))

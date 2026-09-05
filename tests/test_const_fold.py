@@ -7,6 +7,7 @@ AVM semantics have sharp edges (``<<`` wraps mod 2^64; shift counts
 sign-flipping ``~``).
 """
 from tealql.tealtools.ssa import Assignment, Const, Location, SSAVar
+import pytest
 from tealql.tealtools.ssa.const_fold import (
     _fold_bitwise,
     _fold_bitwise_not,
@@ -92,6 +93,20 @@ def _assign(op: str, *const_inputs: Const) -> Assignment:
         const=None,
         basic_block=None,
     )
+
+
+@pytest.mark.parametrize('op', ['b==', 'b!=', 'b<', 'b<=', 'b>', 'b>='])
+def test_numeric_byte_comparison_preserves_type_and_encoded_width_traps(op):
+    # Numeric byte comparisons require byte operands, each at most 64 bytes.
+    # Leading zeros do not exempt an oversized representation from the limit.
+    short = Const('bytes', '0x01')
+    wide = Const('bytes', '0x' + '00' * 64 + '01')
+    assert try_fold_assignment(_assign(op, _c(1), _c(1))) is None
+    assert try_fold_assignment(_assign(op, short, wide)) is None
+    assert try_fold_assignment(_assign(op, wide, short)) is None
+    boundary = Const('bytes', '0x' + '00' * 63 + '01')
+    expected = int(op in {'b==', 'b<=', 'b>='})
+    assert _val(try_fold_assignment(_assign(op, short, boundary))) == expected
 
 
 def test_wide_constant_outputs_match_uint128_arithmetic():

@@ -59,6 +59,64 @@ def test_oracle_detects_changed_committed_state(node):
     assert result['status'] == 'DIVERGES' and result['completed'] == 1
 
 
+@pytest.mark.parametrize('size', [64, 65])
+def test_numeric_byte_comparison_width_matches_the_private_interpreter(node, size):
+    from tealql.tealtools.ssa import SSAProgram
+    from tests.behavioral_lift.simulate import creation, simulate_transactions
+    from tests.behavioral_lift.observations import observe_simulate
+    client, sender, round = node
+    source = '#pragma version 13\nbyte 0x' + '00' * (size - 1) + '01\nbyte 0x01\nb==\nreturn'
+    program = SSAProgram.from_text(source)
+    comparison = next(a for a in program.assignments if a.op == 'b==')
+    value = program.facts().constant(comparison.outputs[0])
+    # Supply the same bytes at runtime: the assembler itself rejects a known
+    # 65-byte literal at b== before it can reach the interpreter.
+    code = _compile(client, '#pragma version 13\ntxna ApplicationArgs 0\nbyte 0x01\nb==\nreturn')
+    txn = creation(client, code, _compile(client, '#pragma version 13\nint 1'), sender=sender, round=round)
+    txn.app_args = [bytes(size - 1) + b'\x01']
+    observed = observe_simulate(simulate_transactions(client, [txn], round=round))
+    assert observed.approved is (size == 64), observed
+    assert (value is not None) is (size == 64)
+    if size == 65:
+        assert 'large byte-array' in observed.detail
+
+
+def test_source_resource_bound_covers_assembler_constant_tables(node):
+    from tealql.tealtools.analysis.resource_sufficiency import resource_sufficiency
+    from tealql.tealtools.ssa import SSAProgram
+    from tests.behavioral_lift.simulate import creation, simulate_transactions
+    client, sender, round = node
+    source = '#pragma version 13\n' + 'int 7\nitob\nlog\n' * 4 + 'int 1\nreturn'
+    report = resource_sufficiency(SSAProgram.from_text(source), {
+        'opcode_budget': 700, 'fee_credit': 0, 'spendable_balance': 0, 'box_io_budget': 0, 'boxes': {}})
+    assert report.complete and all(row.status == 'PROVED' for row in report.value)
+    code, clear = _compile(client, source), _compile(client, '#pragma version 13\nint 1')
+    response = simulate_transactions(client, [creation(client, code, clear, sender=sender, round=round)], round=round)
+    group = response['txn-groups'][0]
+    assert not group.get('failure-message'), group
+    required = next(row.required for row in report.value if row.dimension == 'opcode-budget')
+    assert 14 < group['app-budget-consumed'] <= required
+
+
+@pytest.mark.parametrize('body, equivalent', [
+    ('int 2\nint 3\n+\nitob\nlog\nint 1\nreturn', True),
+    ('byte "changed"\nlog\nint 1\nreturn', False),
+])
+def test_revision_comparison_matches_private_constant_execution(node, body, equivalent):
+    from tealql.security.compatibility import compare_programs
+    from tealql.tealtools.ssa import SSAProgram
+    client, sender, round = node
+    before = '#pragma version 13\nbyte 0x0000000000000005\nlog\nint 1\nreturn'
+    after = '#pragma version 13\n' + body
+    result = compare_programs(SSAProgram.from_text(before), SSAProgram.from_text(after))
+    assert result.status == ('PROVED' if equivalent else 'REFUTED')
+    clear = _compile(client, '#pragma version 13\nint 1')
+    observations = [simulate_creation(client, _compile(client, source), clear, sender=sender, round=round)
+                    for source in (before, after)]
+    assert all(observation.approved for observation in observations)
+    assert (observations[0].effects == observations[1].effects) is equivalent
+
+
 _EXISTING = {
     'global': '''
 txn ApplicationID

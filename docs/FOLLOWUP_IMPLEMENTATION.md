@@ -9,7 +9,7 @@ its validation remain recorded in `REVIEW_IMPLEMENTATION.md`.
 - [x] Fix or precisely classify the 7 unresolved return slots, 13 missing operands, and 10 shared execution blocks in the corpus census.
 - [x] Consolidate guard/fact consumers, retire redundant paths, and reduce oversized modules.
 - [x] Expand independent behavioral fixtures, add an unseen family evaluation, and improve taint/callee-effect coverage.
-- [ ] Deepen authority, box permissions, relational groups, crypto/replay, lifecycle, conservation, resource sufficiency/recoverability, and revision compatibility analyses.
+- [x] Deepen authority, box permissions, relational groups, crypto/replay, lifecycle, conservation, resource sufficiency/recoverability, and revision compatibility analyses.
 - [x] Secondary priority: loop invariants, numeric call summaries, relational intervals, and divisibility/bit integration.
 - [ ] Validate the final core/backend/node behavior and full suite; record classified baseline changes and remaining limits.
 
@@ -36,8 +36,8 @@ Sender in a calculation no longer establishes an identity check.
 
 The supported fragment does not establish authority for foreign mutable state,
 addresses extracted from packed records, unresolved scratch, arbitrary computed
-application addresses, or unrestricted writers. It does not prove temporal
-revocation/freshness of a previously loaded authority. The work budget is bounded
+application addresses, or unrestricted writers. Temporal freshness is added in
+the later SAST milestone below. The work budget is bounded
 and exhausted/unsupported queries cannot become authority proofs.
 
 Validation: 124 combined detector/benchmark/contract regressions passed, as did
@@ -163,3 +163,35 @@ passed; the external gate and observation tests add 34 passes. All 15 external
 provenance/evaluation/assembly checks also passed against the private node. The 231-program
 finding comparison remains unchanged with no crashes. Final full-suite validation
 and the deeper eight-direction SAST work remain outstanding.
+
+Deeper SAST inference
+---------------------
+
+`SAST_INFERENCE.md` records implemented fragments and explicit unknowns for all
+eight directions. Authority uses infer read freshness; replay checks combine
+accepted fixed-width signatures with a monotone consumed-key writer invariant;
+proposal checks infer creator-authorized proposal/time pairs. Funding checks
+infer actual group roles, and a bounded linear solver relates actual inner
+payment amounts to incoming funding. Numeric congruences provide exact-division
+facts for the rounding obligation.
+
+Closed box call traces now infer and propagate family marks. Quantitative
+resource bounds preserve allocation peaks, values read before resize and pooled
+fee/inner-count limits, with conditional retry credit witnesses. Revision
+comparison normalizes actual implementation traces while preserving traps,
+state/log/scratch effects and implicit program dependencies. Branches, calls,
+mutable environments and exhausted bounds remain unknown where unsupported.
+These opt-in checks share immutable facts and bounded trace/flow machinery.
+
+Review found and fixed numeric byte comparisons folded through illegal operand
+types or encoded widths greater than 64 bytes. Resource cost includes possible
+assembler-generated constant tables, and expression DAGs have node, depth and
+coefficient bounds. The private interpreter independently confirms the byte
+boundary, source cost allowance and constant revision agreement/difference.
+
+Validation: 157 combined focused tests passed, as did the same 157 in the core
+environment without Puya. An additional 113 numeric/state/resource integration
+checks passed after the last resource changes. All five new private runtime
+controls passed. The complete 231-program offline finding comparison has zero
+changed cells and no crashes. Ruff and whitespace checks pass. The final full
+suite, core suite and combined backend/private-node gates remain outstanding.
